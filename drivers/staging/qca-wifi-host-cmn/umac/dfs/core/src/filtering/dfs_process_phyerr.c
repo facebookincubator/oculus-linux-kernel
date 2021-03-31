@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  * Copyright (c) 2002-2010, Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -411,7 +411,7 @@ static void dfs_dump_phyerr_contents(const char *d, int len)
 
 		n += snprintf(buf + n, bufsize - n, "%02x ", d[i] & 0xff);
 		if (i % 16 == 15) {
-			dfs_info(NULL, WLAN_DEBUG_DFS_ALWAYS, "%s", buf);
+			dfs_debug(NULL, WLAN_DEBUG_DFS_ALWAYS, "%s", buf);
 			n = 0;
 			buf[0] = '\0';
 		}
@@ -419,7 +419,7 @@ static void dfs_dump_phyerr_contents(const char *d, int len)
 
 	/* Print the final line if we didn't print it above. */
 	if (n != 0)
-		dfs_info(NULL, WLAN_DEBUG_DFS_ALWAYS, "%s", buf);
+		dfs_debug(NULL, WLAN_DEBUG_DFS_ALWAYS, "%s", buf);
 }
 
 /**
@@ -655,7 +655,8 @@ void dfs_process_phyerr(struct wlan_dfs *dfs, void *buf, uint16_t datalen,
 		 * BIN 5 chirping pulses are only for FCC or Japan MMK4 domain
 		 */
 		if (((dfs->dfsdomain == DFS_FCC_DOMAIN) ||
-			    (dfs->dfsdomain == DFS_MKK4_DOMAIN)) &&
+			    (dfs->dfsdomain == DFS_MKK4_DOMAIN) ||
+			    (dfs->dfsdomain == DFS_MKKN_DOMAIN)) &&
 			(e.dur >= MAYBE_BIN5_DUR) && (e.dur < MAX_BIN5_DUR)) {
 			int add_dur;
 			int slope = 0, dc_found = 0;
@@ -693,7 +694,8 @@ void dfs_process_phyerr(struct wlan_dfs *dfs, void *buf, uint16_t datalen,
 			 * MAX_BIN5_DUR or less than MAYBE_BIN5_DUR
 			 */
 			if ((dfs->dfsdomain == DFS_FCC_DOMAIN) ||
-					(dfs->dfsdomain == DFS_MKK4_DOMAIN)) {
+					(dfs->dfsdomain == DFS_MKK4_DOMAIN) ||
+					(dfs->dfsdomain == DFS_MKKN_DOMAIN)) {
 				/*
 				 * Would this result in very large pulses
 				 * wrapping around to become short pulses?
@@ -923,8 +925,7 @@ void dfs_process_phyerr_filter_offload(struct wlan_dfs *dfs,
 	if (!event) {
 		WLAN_DFSEVENTQ_UNLOCK(dfs);
 		dfs_err(dfs, WLAN_DEBUG_DFS_ALWAYS,
-			"%s: No more space left for queuing DFS Phyerror events",
-			__func__);
+			"No more space left for queuing DFS Phyerror events");
 		return;
 	}
 	STAILQ_REMOVE_HEAD(&(dfs->dfs_eventq), re_list);
@@ -967,11 +968,10 @@ void dfs_process_phyerr_filter_offload(struct wlan_dfs *dfs,
 	} else {
 		if (dfs->dfs_extchan_radindex == -1)
 			dfs_debug(dfs, WLAN_DEBUG_DFS1,
-				"%s phyerr on ext channel", __func__);
+				 "phyerr on ext channel");
 		event->re_chanindex = (uint8_t) dfs->dfs_extchan_radindex;
 		dfs_debug(dfs, WLAN_DEBUG_DFS1,
-			"%s:New extension channel event is added to queue",
-			 __func__);
+			"New extension channel event is added to queue");
 	}
 
 	WLAN_DFSQ_LOCK(dfs);

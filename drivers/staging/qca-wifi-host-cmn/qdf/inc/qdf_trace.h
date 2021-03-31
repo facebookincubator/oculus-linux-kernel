@@ -36,7 +36,11 @@
 
 /* Type declarations */
 
+#ifdef LOG_LINE_NUMBER
 #define FL(x)    "%s: %d: " x, __func__, __LINE__
+#else
+#define FL(x)    "%s: " x, __func__
+#endif
 
 #define QDF_TRACE_BUFFER_SIZE (512)
 
@@ -54,10 +58,7 @@
  */
 #define QDF_WMI_MTRACE_CMD_ID(message_id) ((message_id) & 0x7F)
 
-#ifdef CONFIG_MCL
-#define QDF_DEFAULT_TRACE_LEVEL \
-	((1 << QDF_TRACE_LEVEL_FATAL) | (1 << QDF_TRACE_LEVEL_ERROR))
-#else
+#ifdef QDF_TRACE_PRINT_ENABLE
 #define QDF_DEFAULT_TRACE_LEVEL (1 << QDF_TRACE_LEVEL_INFO)
 #endif
 
@@ -155,7 +156,7 @@ typedef struct qdf_trace_record_s {
 	uint64_t qtime;
 	char time[18];
 	uint8_t module;
-	uint8_t code;
+	uint16_t code;
 	uint16_t session;
 	uint32_t data;
 	uint32_t pid;
@@ -207,6 +208,7 @@ typedef struct s_qdf_trace_data {
  * @QDF_DP_TRACE_ICMPv6_PACKET_RECORD - record ICMPv6 packet
  * @QDF_DP_TRACE_HDD_TX_TIMEOUT - HDD tx timeout
  * @QDF_DP_TRACE_HDD_SOFTAP_TX_TIMEOUT- SOFTAP HDD tx timeout
+ * @QDF_DP_TRACE_TX_CREDIT_RECORD - credit update record
  * @QDF_DP_TRACE_ULTRA_LOW_VERBOSITY - Below this is not logged for >4PPS
  * @QDF_DP_TRACE_TX_PACKET_RECORD - record 32 bytes of tx pkt at any layer
  * @QDF_DP_TRACE_RX_PACKET_RECORD - record 32 bytes of rx pkt at any layer
@@ -253,6 +255,7 @@ enum  QDF_DP_TRACE_ID {
 	QDF_DP_TRACE_ICMPv6_PACKET_RECORD,
 	QDF_DP_TRACE_HDD_TX_TIMEOUT,
 	QDF_DP_TRACE_HDD_SOFTAP_TX_TIMEOUT,
+	QDF_DP_TRACE_TX_CREDIT_RECORD,
 	QDF_DP_TRACE_ULTRA_LOW_VERBOSITY,
 	QDF_DP_TRACE_TX_PACKET_RECORD,
 	QDF_DP_TRACE_RX_PACKET_RECORD,
@@ -298,6 +301,36 @@ enum qdf_proto_dir {
 };
 
 /**
+ * QDF_CREDIT_UPDATE_SOURCE - source of credit record
+ * @QDF_TX_SCHED: Tx scheduler
+ * @QDF_TX_COMP: TX completion
+ * @QDF_TX_CREDIT_UPDATE: credit update indication
+ * @QDF_HTT_ATTACH: HTT attach
+ * @QDF_TX_HTT_MSG: HTT TX message
+ */
+enum QDF_CREDIT_UPDATE_SOURCE {
+	QDF_TX_SCHED,
+	QDF_TX_COMP,
+	QDF_TX_CREDIT_UPDATE,
+	QDF_HTT_ATTACH,
+	QDF_TX_HTT_MSG
+};
+
+/**
+ * QDF_CREDIT_OPERATION - operation on credit
+ * @QDF_CREDIT_INC: credit increment
+ * @QDF_CREDIT_DEC: credit decrement
+ * @QDF_CREDIT_ABS: Abosolute credit
+ * @QDF_OP_NA: Not applicable
+ */
+enum QDF_CREDIT_OPERATION {
+	QDF_CREDIT_INC,
+	QDF_CREDIT_DEC,
+	QDF_CREDIT_ABS,
+	QDF_OP_NA
+};
+
+/**
  * struct qdf_dp_trace_ptr_buf - pointer record buffer
  * @cookie: cookie value
  * @msdu_id: msdu_id
@@ -337,6 +370,24 @@ struct qdf_dp_trace_mgmt_buf {
 	uint8_t vdev_id;
 	uint8_t type;
 	uint8_t subtype;
+};
+
+/**
+ * struct qdf_dp_trace_credit_record - tx credit record
+ * @source: credit record source
+ * @operation: credit operation
+ * @delta: delta of credit
+ * @total_credits: total credit
+ * @g0_credit: group 0 credit
+ * @g1_credit: group 1 credit
+ */
+struct qdf_dp_trace_credit_record {
+	enum QDF_CREDIT_UPDATE_SOURCE source;
+	enum QDF_CREDIT_OPERATION operation;
+	int delta;
+	int total_credits;
+	int g0_credit;
+	int g1_credit;
 };
 
 /**
@@ -429,7 +480,7 @@ struct s_qdf_dp_trace_data {
 	uint32_t head;
 	uint32_t tail;
 	uint32_t num;
-	uint8_t proto_bitmap;
+	uint32_t proto_bitmap;
 	uint8_t no_of_record;
 	uint16_t num_records_to_dump;
 	uint16_t dump_counter;
@@ -505,7 +556,7 @@ static inline void qdf_register_debugcb_init(void)
 void qdf_trace_register(QDF_MODULE_ID, tp_qdf_trace_cb);
 void qdf_trace_init(void);
 void qdf_trace_deinit(void);
-void qdf_trace(uint8_t module, uint8_t code, uint16_t session, uint32_t data);
+void qdf_trace(uint8_t module, uint16_t code, uint16_t session, uint32_t data);
 void qdf_trace_enable(uint32_t, uint8_t enable);
 void qdf_trace_dump_all(void *, uint8_t, uint8_t, uint32_t, uint32_t);
 QDF_STATUS qdf_trace_spin_lock_init(void);
@@ -527,7 +578,7 @@ void qdf_trace_enable(uint32_t bitmask_of_module_id, uint8_t enable)
 }
 
 static inline
-void qdf_trace(uint8_t module, uint8_t code, uint16_t session, uint32_t data)
+void qdf_trace(uint8_t module, uint16_t code, uint16_t session, uint32_t data)
 {
 }
 
@@ -540,7 +591,7 @@ void qdf_trace_dump_all(void *p_mac, uint8_t code, uint8_t session,
 static inline
 QDF_STATUS qdf_trace_spin_lock_init(void)
 {
-	return QDF_STATUS_E_INVAL;
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 #endif
@@ -624,11 +675,11 @@ bool qdf_dp_trace_log_pkt(uint8_t vdev_id, struct sk_buff *skb,
 
 void qdf_dp_trace_init(bool live_mode_config, uint8_t thresh,
 				uint16_t time_limit, uint8_t verbosity,
-				uint8_t proto_bitmap);
+				uint32_t proto_bitmap);
 void qdf_dp_trace_deinit(void);
 void qdf_dp_trace_spin_lock_init(void);
-void qdf_dp_trace_set_value(uint8_t proto_bitmap, uint8_t no_of_records,
-			 uint8_t verbosity);
+void qdf_dp_trace_set_value(uint32_t proto_bitmap, uint8_t no_of_records,
+			    uint8_t verbosity);
 void qdf_dp_trace_set_track(qdf_nbuf_t nbuf, enum qdf_proto_dir dir);
 void qdf_dp_trace(qdf_nbuf_t nbuf, enum QDF_DP_TRACE_ID code, uint8_t pdev_id,
 			uint8_t *data, uint8_t size, enum qdf_proto_dir dir);
@@ -726,6 +777,20 @@ qdf_dp_display_data_pkt_record(struct qdf_dp_trace_record_s *record,
 			       uint16_t rec_index, uint8_t pdev_id,
 			       uint8_t info);
 
+/**
+ * qdf_dp_get_status_from_htt() - Convert htt tx status to qdf dp status
+ * @status : htt_tx_status which needs to be converted
+ *
+ * Return : the status that from qdf_dp_tx_rx_status
+ */
+enum qdf_dp_tx_rx_status qdf_dp_get_status_from_htt(uint8_t status);
+/**
+ * qdf_dp_get_status_from_a_status() - Convert A_STATUS to qdf dp status
+ * @status : A_STATUS which needs to be converted
+ *
+ * Return : the status that from qdf_dp_tx_rx_status
+ */
+enum qdf_dp_tx_rx_status qdf_dp_get_status_from_a_status(uint8_t status);
 void qdf_dp_trace_ptr(qdf_nbuf_t nbuf, enum QDF_DP_TRACE_ID code,
 		      uint8_t pdev_id, uint8_t *data, uint8_t size,
 		      uint16_t msdu_id, uint16_t status);
@@ -753,7 +818,7 @@ void qdf_dp_trace_data_pkt(qdf_nbuf_t nbuf, uint8_t pdev_id,
 			   enum QDF_DP_TRACE_ID code, uint16_t msdu_id,
 			   enum qdf_proto_dir dir);
 
-uint8_t qdf_dp_get_proto_bitmap(void);
+uint32_t qdf_dp_get_proto_bitmap(void);
 uint8_t qdf_dp_get_verbosity(void);
 uint8_t qdf_dp_get_no_of_record(void);
 
@@ -795,6 +860,20 @@ void qdf_dp_trace_mgmt_pkt(enum QDF_DP_TRACE_ID code, uint8_t vdev_id,
 			   enum qdf_proto_subtype subtype);
 
 /**
+ * qdf_dp_trace_credit_record() - record credit update
+ * @source: source of record
+ * @operation: credit operation
+ * @delta: credit delta
+ * @total_credits: total credit
+ * @g0_credit: group 0 credit
+ * @g1_credit: group 1 credit
+ */
+void qdf_dp_trace_credit_record(enum QDF_CREDIT_UPDATE_SOURCE source,
+				enum QDF_CREDIT_OPERATION operation,
+				int delta, int total_credits,
+				int g0_credit, int g1_credit);
+
+/**
  * qdf_dp_display_mgmt_pkt() - display proto packet
  * @record: dptrace record
  * @index: index
@@ -805,6 +884,17 @@ void qdf_dp_trace_mgmt_pkt(enum QDF_DP_TRACE_ID code, uint8_t vdev_id,
  */
 void qdf_dp_display_mgmt_pkt(struct qdf_dp_trace_record_s *record,
 			     uint16_t index, uint8_t pdev_id, uint8_t info);
+
+/**
+ * qdf_dp_display_credit_record() - display credit record
+ * @record: dptrace record
+ * @index: index
+ * @pdev_id: pdev id
+ * @info: metadeta info
+ */
+void qdf_dp_display_credit_record(struct qdf_dp_trace_record_s *record,
+				  uint16_t index, uint8_t pdev_id,
+				  uint8_t info);
 
 /**
  * qdf_dp_display_event_record() - display event records
@@ -870,7 +960,7 @@ bool qdf_dp_trace_log_pkt(uint8_t vdev_id, struct sk_buff *skb,
 static inline
 void qdf_dp_trace_init(bool live_mode_config, uint8_t thresh,
 				uint16_t time_limit, uint8_t verbosity,
-				uint8_t proto_bitmap)
+				uint32_t proto_bitmap)
 {
 }
 
@@ -884,8 +974,8 @@ void qdf_dp_trace_set_track(qdf_nbuf_t nbuf, enum qdf_proto_dir dir)
 {
 }
 static inline
-void qdf_dp_trace_set_value(uint8_t proto_bitmap, uint8_t no_of_records,
-			 uint8_t verbosity)
+void qdf_dp_trace_set_value(uint32_t proto_bitmap, uint8_t no_of_records,
+			    uint8_t verbosity)
 {
 }
 
@@ -960,6 +1050,18 @@ void qdf_dp_log_proto_pkt_info(uint8_t *sa, uint8_t *da, uint8_t type,
 static inline
 void qdf_dp_track_noack_check(qdf_nbuf_t nbuf, enum qdf_proto_subtype *subtype)
 {
+}
+
+static inline
+enum qdf_dp_tx_rx_status qdf_dp_get_status_from_htt(uint8_t status)
+{
+	return QDF_TX_RX_STATUS_OK;
+}
+
+static inline
+enum qdf_dp_tx_rx_status qdf_dp_get_status_from_a_status(uint8_t status)
+{
+	return QDF_TX_RX_STATUS_OK;
 }
 #endif
 
@@ -1093,8 +1195,39 @@ qdf_tso_seg_dbg_zero(struct qdf_tso_seg_elem_t *tsoseg)
 
 #endif /* TSOSEG_DEBUG */
 
+/**
+ * qdf_trace_hex_dump() - externally called hex dump function
+ * @module: Module identifier a member of the QDF_MODULE_ID enumeration that
+ * identifies the module issuing the trace message.
+ * @level: Trace level a member of the QDF_TRACE_LEVEL enumeration indicating
+ * the severity of the condition causing the trace message to be
+ * issued. More severe conditions are more likely to be logged.
+ * @data: The base address of the buffer to be logged.
+ * @buf_len: The size of the buffer to be logged.
+ *
+ * Checks the level of severity and accordingly prints the trace messages
+ *
+ * Return:  None
+ */
 void qdf_trace_hex_dump(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
 			void *data, int buf_len);
+
+/**
+ * qdf_trace_hex_ascii_dump() - externally called hex and ascii dump function
+ * @module: Module identifier a member of the QDF_MODULE_ID enumeration that
+ * identifies the module issuing the trace message.
+ * @level: Trace level a member of the QDF_TRACE_LEVEL enumeration indicating
+ * the severity of the condition causing the trace message to be
+ * issued. More severe conditions are more likely to be logged.
+ * @data: The base address of the buffer to be logged.
+ * @buf_len: The size of the buffer to be logged.
+ *
+ * Checks the level of severity and accordingly prints the trace messages
+ *
+ * Return:  None
+ */
+void qdf_trace_hex_ascii_dump(QDF_MODULE_ID module, QDF_TRACE_LEVEL level,
+			      void *data, int buf_len);
 
 #define ERROR_CODE                      -1
 #define QDF_MAX_NAME_SIZE               32
@@ -1404,6 +1537,16 @@ static inline
 void qdf_minidump_log(void *start_addr, size_t size, const char *name)
 {
 	__qdf_minidump_log(start_addr, size, name);
+}
+
+/**
+ * qdf_minidump_remove() - Remove memory address from minidump
+ * @addr: Start address of the memory previously added
+ */
+static inline
+void qdf_minidump_remove(void *addr)
+{
+	__qdf_minidump_remove(addr);
 }
 
 #endif /* __QDF_TRACE_H */

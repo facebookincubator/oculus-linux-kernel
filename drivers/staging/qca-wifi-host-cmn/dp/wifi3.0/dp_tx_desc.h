@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -23,20 +23,6 @@
 #include "dp_tx.h"
 #include "dp_internal.h"
 
-#ifdef TX_PER_PDEV_DESC_POOL
-#ifdef QCA_LL_TX_FLOW_CONTROL_V2
-#define DP_TX_GET_DESC_POOL_ID(vdev) (vdev->vdev_id)
-#else /* QCA_LL_TX_FLOW_CONTROL_V2 */
-#define DP_TX_GET_DESC_POOL_ID(vdev) (vdev->pdev->pdev_id)
-#endif /* QCA_LL_TX_FLOW_CONTROL_V2 */
-	#define DP_TX_GET_RING_ID(vdev) (vdev->pdev->pdev_id)
-#else
-	#ifdef TX_PER_VDEV_DESC_POOL
-		#define DP_TX_GET_DESC_POOL_ID(vdev) (vdev->vdev_id)
-		#define DP_TX_GET_RING_ID(vdev) (vdev->pdev->pdev_id)
-	#endif /* TX_PER_VDEV_DESC_POOL */
-#endif /* TX_PER_PDEV_DESC_POOL */
-
 /**
  * 21 bits cookie
  * 2 bits pool id 0 ~ 3,
@@ -50,6 +36,21 @@
 #define DP_TX_DESC_ID_PAGE_OS      5
 #define DP_TX_DESC_ID_OFFSET_MASK  0x00001F
 #define DP_TX_DESC_ID_OFFSET_OS    0
+
+/**
+ * Compilation assert on tx desc size
+ *
+ * if assert is hit please update POOL_MASK,
+ * PAGE_MASK according to updated size
+ *
+ * for current PAGE mask allowed size range of tx_desc
+ * is between 128 and 256
+ */
+QDF_COMPILE_TIME_ASSERT(dp_tx_desc_size,
+			((sizeof(struct dp_tx_desc_s)) <=
+			 (PAGE_SIZE >> DP_TX_DESC_ID_PAGE_OS)) &&
+			((sizeof(struct dp_tx_desc_s)) >
+			 (PAGE_SIZE >> (DP_TX_DESC_ID_PAGE_OS + 1))));
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 #define TX_DESC_LOCK_CREATE(lock)
@@ -92,17 +93,32 @@ do {                                                   \
 #define MAX_POOL_BUFF_COUNT 10000
 
 QDF_STATUS dp_tx_desc_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
-		uint16_t num_elem);
-QDF_STATUS dp_tx_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+				 uint16_t num_elem);
+QDF_STATUS dp_tx_desc_pool_init(struct dp_soc *soc, uint8_t pool_id,
+				uint16_t num_elem);
+void dp_tx_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
+
 QDF_STATUS dp_tx_ext_desc_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
-		uint16_t num_elem);
-QDF_STATUS dp_tx_ext_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+				     uint16_t num_elem);
+QDF_STATUS dp_tx_ext_desc_pool_init(struct dp_soc *soc, uint8_t pool_id,
+				    uint16_t num_elem);
+void dp_tx_ext_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_ext_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
+
 QDF_STATUS dp_tx_tso_desc_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
-		uint16_t num_elem);
+				     uint16_t num_elem);
+QDF_STATUS dp_tx_tso_desc_pool_init(struct dp_soc *soc, uint8_t pool_id,
+				    uint16_t num_elem);
 void dp_tx_tso_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_tso_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
+
 QDF_STATUS dp_tx_tso_num_seg_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
 		uint16_t num_elem);
+QDF_STATUS dp_tx_tso_num_seg_pool_init(struct dp_soc *soc, uint8_t pool_id,
+				       uint16_t num_elem);
 void dp_tx_tso_num_seg_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_tso_num_seg_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 void dp_tx_flow_control_init(struct dp_soc *);
@@ -110,9 +126,9 @@ void dp_tx_flow_control_deinit(struct dp_soc *);
 
 QDF_STATUS dp_txrx_register_pause_cb(struct cdp_soc_t *soc,
 	tx_pause_callback pause_cb);
-QDF_STATUS dp_tx_flow_pool_map(struct cdp_soc_t *soc, struct cdp_pdev *pdev,
-				uint8_t vdev_id);
-void dp_tx_flow_pool_unmap(struct cdp_soc_t *soc, struct cdp_pdev *pdev,
+QDF_STATUS dp_tx_flow_pool_map(struct cdp_soc_t *soc, uint8_t pdev_id,
+			       uint8_t vdev_id);
+void dp_tx_flow_pool_unmap(struct cdp_soc_t *handle, uint8_t pdev_id,
 			   uint8_t vdev_id);
 void dp_tx_clear_flow_pool_stats(struct dp_soc *soc);
 struct dp_tx_desc_pool_s *dp_tx_create_flow_pool(struct dp_soc *soc,
@@ -301,7 +317,7 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 	enum netif_action_type act = WLAN_WAKE_ALL_NETIF_QUEUE;
 
 	qdf_spin_lock_bh(&pool->flow_pool_lock);
-	tx_desc->vdev = NULL;
+	tx_desc->vdev_id = DP_INVALID_VDEV_ID;
 	tx_desc->nbuf = NULL;
 	tx_desc->flags = 0;
 	dp_tx_put_desc_flow_pool(pool, tx_desc);
@@ -356,6 +372,7 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		break;
 	case FLOW_POOL_INVALID:
 		if (pool->avail_desc == pool->pool_size) {
+			dp_tx_desc_pool_deinit(soc, desc_pool_id);
 			dp_tx_desc_pool_free(soc, desc_pool_id);
 			qdf_spin_unlock_bh(&pool->flow_pool_lock);
 			QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
@@ -460,7 +477,7 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 	struct dp_tx_desc_pool_s *pool = &soc->tx_desc[desc_pool_id];
 
 	qdf_spin_lock_bh(&pool->flow_pool_lock);
-	tx_desc->vdev = NULL;
+	tx_desc->vdev_id = DP_INVALID_VDEV_ID;
 	tx_desc->nbuf = NULL;
 	tx_desc->flags = 0;
 	dp_tx_put_desc_flow_pool(pool, tx_desc);
@@ -475,6 +492,7 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		break;
 	case FLOW_POOL_INVALID:
 		if (pool->avail_desc == pool->pool_size) {
+			dp_tx_desc_pool_deinit(soc, desc_pool_id);
 			dp_tx_desc_pool_free(soc, desc_pool_id);
 			qdf_spin_unlock_bh(&pool->flow_pool_lock);
 			qdf_print("%s %d pool is freed!!",
@@ -505,17 +523,22 @@ out:
 #endif /* QCA_AC_BASED_FLOW_CONTROL */
 
 static inline bool
-dp_tx_desc_thresh_reached(struct cdp_vdev *vdev)
+dp_tx_desc_thresh_reached(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
 {
-	struct dp_vdev *dp_vdev = (struct dp_vdev *)vdev;
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	struct dp_vdev *vdev = dp_vdev_get_ref_by_id(soc, vdev_id,
+						     DP_MOD_ID_CDP);
 	struct dp_tx_desc_pool_s *pool;
+	bool status;
 
 	if (!vdev)
 		return false;
 
-	pool = dp_vdev->pool;
+	pool = vdev->pool;
+	status = dp_tx_is_threshold_reached(pool, pool->avail_desc);
+	dp_vdev_unref_delete(soc, vdev, DP_MOD_ID_CDP);
 
-	return  dp_tx_is_threshold_reached(pool, pool->avail_desc);
+	return status;
 }
 #else /* QCA_LL_TX_FLOW_CONTROL_V2 */
 
@@ -551,25 +574,25 @@ static inline struct dp_tx_desc_s *dp_tx_desc_alloc(struct dp_soc *soc,
 						uint8_t desc_pool_id)
 {
 	struct dp_tx_desc_s *tx_desc = NULL;
+	struct dp_tx_desc_pool_s *pool = &soc->tx_desc[desc_pool_id];
 
-	TX_DESC_LOCK_LOCK(&soc->tx_desc[desc_pool_id].lock);
+	TX_DESC_LOCK_LOCK(&pool->lock);
 
-	tx_desc = soc->tx_desc[desc_pool_id].freelist;
+	tx_desc = pool->freelist;
 
 	/* Pool is exhausted */
 	if (!tx_desc) {
-		TX_DESC_LOCK_UNLOCK(&soc->tx_desc[desc_pool_id].lock);
+		TX_DESC_LOCK_UNLOCK(&pool->lock);
 		return NULL;
 	}
 
-	soc->tx_desc[desc_pool_id].freelist =
-		soc->tx_desc[desc_pool_id].freelist->next;
-	soc->tx_desc[desc_pool_id].num_allocated++;
-	soc->tx_desc[desc_pool_id].num_free--;
+	pool->freelist = pool->freelist->next;
+	pool->num_allocated++;
+	pool->num_free--;
 
 	tx_desc->flags = DP_TX_DESC_FLAG_ALLOCATED;
 
-	TX_DESC_LOCK_UNLOCK(&soc->tx_desc[desc_pool_id].lock);
+	TX_DESC_LOCK_UNLOCK(&pool->lock);
 
 	return tx_desc;
 }
@@ -590,20 +613,21 @@ static inline struct dp_tx_desc_s *dp_tx_desc_alloc_multiple(
 {
 	struct dp_tx_desc_s *c_desc = NULL, *h_desc = NULL;
 	uint8_t count;
+	struct dp_tx_desc_pool_s *pool = &soc->tx_desc[desc_pool_id];
 
-	TX_DESC_LOCK_LOCK(&soc->tx_desc[desc_pool_id].lock);
+	TX_DESC_LOCK_LOCK(&pool->lock);
 
 	if ((num_requested == 0) ||
-			(soc->tx_desc[desc_pool_id].num_free < num_requested)) {
-		TX_DESC_LOCK_UNLOCK(&soc->tx_desc[desc_pool_id].lock);
+			(pool->num_free < num_requested)) {
+		TX_DESC_LOCK_UNLOCK(&pool->lock);
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
 			"%s, No Free Desc: Available(%d) num_requested(%d)",
-			__func__, soc->tx_desc[desc_pool_id].num_free,
+			__func__, pool->num_free,
 			num_requested);
 		return NULL;
 	}
 
-	h_desc = soc->tx_desc[desc_pool_id].freelist;
+	h_desc = pool->freelist;
 
 	/* h_desc should never be NULL since num_free > requested */
 	qdf_assert_always(h_desc);
@@ -613,12 +637,12 @@ static inline struct dp_tx_desc_s *dp_tx_desc_alloc_multiple(
 		c_desc->flags = DP_TX_DESC_FLAG_ALLOCATED;
 		c_desc = c_desc->next;
 	}
-	soc->tx_desc[desc_pool_id].num_free -= count;
-	soc->tx_desc[desc_pool_id].num_allocated += count;
-	soc->tx_desc[desc_pool_id].freelist = c_desc->next;
+	pool->num_free -= count;
+	pool->num_allocated += count;
+	pool->freelist = c_desc->next;
 	c_desc->next = NULL;
 
-	TX_DESC_LOCK_UNLOCK(&soc->tx_desc[desc_pool_id].lock);
+	TX_DESC_LOCK_UNLOCK(&pool->lock);
 	return h_desc;
 }
 
@@ -633,19 +657,20 @@ static inline void
 dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		uint8_t desc_pool_id)
 {
-	TX_DESC_LOCK_LOCK(&soc->tx_desc[desc_pool_id].lock);
-
-	tx_desc->vdev = NULL;
+	struct dp_tx_desc_pool_s *pool = NULL;
+	tx_desc->vdev_id = DP_INVALID_VDEV_ID;
 	tx_desc->nbuf = NULL;
 	tx_desc->flags = 0;
-	tx_desc->next = soc->tx_desc[desc_pool_id].freelist;
-	soc->tx_desc[desc_pool_id].freelist = tx_desc;
-	soc->tx_desc[desc_pool_id].num_allocated--;
-	soc->tx_desc[desc_pool_id].num_free++;
 
-
-	TX_DESC_LOCK_UNLOCK(&soc->tx_desc[desc_pool_id].lock);
+	pool = &soc->tx_desc[desc_pool_id];
+	TX_DESC_LOCK_LOCK(&pool->lock);
+	tx_desc->next = pool->freelist;
+	pool->freelist = tx_desc;
+	pool->num_allocated--;
+	pool->num_free++;
+	TX_DESC_LOCK_UNLOCK(&pool->lock);
 }
+
 #endif /* QCA_LL_TX_FLOW_CONTROL_V2 */
 
 #ifdef QCA_DP_TX_DESC_ID_CHECK
@@ -736,6 +761,24 @@ dp_tx_is_desc_id_valid(struct dp_soc *soc, uint32_t tx_desc_id)
 }
 #endif /* QCA_DP_TX_DESC_ID_CHECK */
 
+#ifdef QCA_DP_TX_DESC_FAST_COMP_ENABLE
+static inline void dp_tx_desc_update_fast_comp_flag(struct dp_soc *soc,
+						    struct dp_tx_desc_s *desc,
+						    uint8_t allow_fast_comp)
+{
+	if (qdf_likely(!(desc->flags & DP_TX_DESC_FLAG_TO_FW)) &&
+	    qdf_likely(allow_fast_comp)) {
+		desc->flags |= DP_TX_DESC_FLAG_SIMPLE;
+	}
+}
+#else
+static inline void dp_tx_desc_update_fast_comp_flag(struct dp_soc *soc,
+						    struct dp_tx_desc_s *desc,
+						    uint8_t allow_fast_comp)
+{
+}
+#endif /* QCA_DP_TX_DESC_FAST_COMP_ENABLE */
+
 /**
  * dp_tx_desc_find() - find dp tx descriptor from cokie
  * @soc - handle for the device sending the data
@@ -817,7 +860,7 @@ static inline void dp_tx_ext_desc_free_multiple(struct dp_soc *soc,
 	uint8_t freed = num_free;
 
 	/* caller should always guarantee atleast list of num_free nodes */
-	qdf_assert_always(head);
+	qdf_assert_always(elem);
 
 	head = elem;
 	c_elem = head;
@@ -945,7 +988,8 @@ dp_tx_me_alloc_buf(struct dp_pdev *pdev)
 }
 
 /*
- * dp_tx_me_free_buf() - Free me descriptor and add it to pool
+ * dp_tx_me_free_buf() - Unmap the buffer holding the dest
+ * address, free me descriptor and add it to the free-pool
  * @pdev: DP_PDEV handle for datapath
  * @buf : Allocated ME BUF
  *
@@ -954,6 +998,20 @@ dp_tx_me_alloc_buf(struct dp_pdev *pdev)
 static inline void
 dp_tx_me_free_buf(struct dp_pdev *pdev, struct dp_tx_me_buf_t *buf)
 {
+	/*
+	 * If the buf containing mac address was mapped,
+	 * it must be unmapped before freeing the me_buf.
+	 * The "paddr_macbuf" member in the me_buf structure
+	 * holds the mapped physical address and it must be
+	 * set to 0 after unmapping.
+	 */
+	if (buf->paddr_macbuf) {
+		qdf_mem_unmap_nbytes_single(pdev->soc->osdev,
+					    buf->paddr_macbuf,
+					    QDF_DMA_TO_DEVICE,
+					    QDF_MAC_ADDR_SIZE);
+		buf->paddr_macbuf = 0;
+	}
 	qdf_spin_lock_bh(&pdev->tx_mutex);
 	buf->next = pdev->me_buf.freelist;
 	pdev->me_buf.freelist = buf;

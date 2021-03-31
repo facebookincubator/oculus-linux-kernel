@@ -1356,6 +1356,7 @@ void spi_finalize_current_message(struct spi_controller *ctlr)
 	struct spi_message *mesg;
 	unsigned long flags;
 	int ret;
+	bool need_pump;
 
 	spin_lock_irqsave(&ctlr->queue_lock, flags);
 	mesg = ctlr->cur_msg;
@@ -1374,7 +1375,21 @@ void spi_finalize_current_message(struct spi_controller *ctlr)
 	spin_lock_irqsave(&ctlr->queue_lock, flags);
 	ctlr->cur_msg = NULL;
 	ctlr->cur_msg_prepared = false;
-	kthread_queue_work(&ctlr->kworker, &ctlr->pump_messages);
+
+	/*
+	 * Skip scheduling work on the kthread if the queue is empty and
+	 * neither unprepare_transfer_hardware nor auto_runtime_pm are
+	 * implemented by the SPI driver. In such situations, there is
+	 * no power to be saved by the pump_messages work teardown path.
+	 * We can defer that cleanup until the queue is stopped by
+	 * spi_stop_queue().
+	 */
+	need_pump = !list_empty(&ctlr->queue) ||
+			ctlr->unprepare_transfer_hardware ||
+			ctlr->auto_runtime_pm;
+	if (need_pump)
+		kthread_queue_work(&ctlr->kworker, &ctlr->pump_messages);
+
 	spin_unlock_irqrestore(&ctlr->queue_lock, flags);
 
 	trace_spi_message_done(mesg);
@@ -1412,6 +1427,14 @@ static int spi_stop_queue(struct spi_controller *ctlr)
 	int ret = 0;
 
 	spin_lock_irqsave(&ctlr->queue_lock, flags);
+
+	/*
+	 * Pump the kthread once, even if the message queue is already
+	 * empty. This will ensure the queue teardown path runs if the
+	 * spi_finalize_current_message() decided to defer the cleanup.
+	 */
+	ctlr->busy = true;
+	kthread_queue_work(&ctlr->kworker, &ctlr->pump_messages);
 
 	/*
 	 * This is a bit lame, but is optimized for the common execution path.

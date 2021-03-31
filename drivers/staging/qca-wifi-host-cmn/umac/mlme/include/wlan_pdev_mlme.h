@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -22,6 +22,18 @@
 
 #include <qdf_timer.h>
 #include <include/wlan_vdev_mlme.h>
+#include <wlan_ext_mlme_obj_types.h>
+
+/*
+ * struct pdev_restart_attr - Pdev restart attributes
+ * @vdev: vdev on which the pdev restart cmd was enqueued
+ * @restart_bmap: Bitmap for vdev requesting multivdev restart
+ */
+struct pdev_restart_attr {
+	struct wlan_objmgr_vdev *vdev;
+	qdf_bitmap(restart_bmap, WLAN_UMAC_PSOC_MAX_VDEVS);
+};
+
 /**
  * struct pdev_mlme_obj -  PDEV MLME component object
  * @pdev:                  PDEV object
@@ -35,13 +47,15 @@
  */
 struct pdev_mlme_obj {
 	struct wlan_objmgr_pdev *pdev;
-	void *ext_pdev_ptr;
+	mlme_pdev_ext_t *ext_pdev_ptr;
 	QDF_STATUS (*mlme_register_ops)(struct vdev_mlme_obj *vdev_mlme);
 	qdf_spinlock_t vdev_restart_lock;
 	qdf_timer_t restart_req_timer;
-	unsigned long restart_pend_vdev_bmap[2];
-	unsigned long restart_send_vdev_bmap[2];
-	unsigned long start_send_vdev_arr[2];
+	qdf_bitmap(restart_pend_vdev_bmap, WLAN_UMAC_PSOC_MAX_VDEVS);
+	qdf_bitmap(restart_send_vdev_bmap, WLAN_UMAC_PSOC_MAX_VDEVS);
+	qdf_bitmap(start_send_vdev_arr, WLAN_UMAC_PSOC_MAX_VDEVS);
+	struct pdev_restart_attr pdev_restart;
+	qdf_atomic_t multivdev_restart_wait_cnt;
 };
 
 #endif

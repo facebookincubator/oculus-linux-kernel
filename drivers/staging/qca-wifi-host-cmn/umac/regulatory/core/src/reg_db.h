@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -49,6 +49,7 @@ struct regulatory_rule {
  * @ctl_val: CTL value
  * @dfs_region: dfs region
  * @min_bw: minimum bandwidth
+ * @max_bw: maximum bandwidth
  * @num_reg_rules: number of regulatory rules
  * @reg_rules_id: regulatory rule index
  */
@@ -56,6 +57,7 @@ struct regdomain   {
 	uint8_t ctl_val;
 	enum dfs_reg dfs_region;
 	uint16_t min_bw;
+	uint16_t max_bw;
 	uint8_t ant_gain;
 	uint8_t num_reg_rules;
 	uint8_t reg_rule_id[MAX_REG_RULES];
@@ -104,4 +106,20 @@ QDF_STATUS reg_get_default_country(uint16_t *default_country);
  * Return: true or false
  */
 bool reg_etsi13_regdmn(uint8_t reg_dmn);
+
+/**
+ * reg_fcc_regdmn () - Checks if the reg domain is FCC3/FCC8/FCC15/FCC16 or not
+ * @reg_dmn: reg domain
+ *
+ * Return: true or false
+ */
+bool reg_fcc_regdmn(uint8_t reg_dmn);
+
+/**
+ * reg_en302_502_regdmn() - Check if the reg domain is en302_502 applicable.
+ * @reg_dmn: Regulatory domain pair ID.
+ *
+ * Return: True if EN302_502 applicable, else false.
+ */
+bool reg_en302_502_regdmn(uint16_t reg_dmn);
 #endif

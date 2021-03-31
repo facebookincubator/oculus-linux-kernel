@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -47,34 +47,34 @@ QDF_STATUS wmi_unified_nan_disable_req_cmd(wmi_unified_t wmi_handle,
 
 /**
  * wmi_unified_ndp_initiator_req_cmd_send - api to send initiator request to FW
- * @wmi_hdl: wmi handle
+ * @wmi_handle: wmi handle
  * @req: pointer to request buffer
  *
  * Return: status of operation
  */
 QDF_STATUS
-wmi_unified_ndp_initiator_req_cmd_send(void *wmi_hdl,
+wmi_unified_ndp_initiator_req_cmd_send(wmi_unified_t wmi_handle,
 				       struct nan_datapath_initiator_req *req);
 
 /**
  * wmi_unified_ndp_responder_req_cmd_send - api to send responder request to FW
- * @wmi_hdl: wmi handle
+ * @wmi_handle: wmi handle
  * @req: pointer to request buffer
  *
  * Return: status of operation
  */
 QDF_STATUS
-wmi_unified_ndp_responder_req_cmd_send(void *wmi_hdl,
+wmi_unified_ndp_responder_req_cmd_send(wmi_unified_t wmi_handle,
 				       struct nan_datapath_responder_req *req);
 
 /**
  * wmi_unified_ndp_end_req_cmd_send - api to send end request to FW
- * @wmi_hdl: wmi handle
+ * @wmi_handle: wmi handle
  * @req: pointer to request buffer
  *
  * Return: status of operation
  */
-QDF_STATUS wmi_unified_ndp_end_req_cmd_send(void *wmi_hdl,
+QDF_STATUS wmi_unified_ndp_end_req_cmd_send(wmi_unified_t wmi_handle,
 					    struct nan_datapath_end_req *req);
 
 /**
@@ -110,6 +110,16 @@ wmi_extract_ndp_initiator_rsp(wmi_unified_t wmi_handle, uint8_t *data,
  */
 QDF_STATUS wmi_extract_ndp_ind(wmi_unified_t wmi_handle, uint8_t *data,
 			       struct nan_datapath_indication_event *ind);
+
+/**
+ * wmi_extract_nan_msg - api to extract ndp dmesg buffer to print logs
+ * @data: event buffer
+ * @msg: buffer to populate
+ *
+ * Return: status of operation
+ */
+QDF_STATUS wmi_extract_nan_msg(wmi_unified_t wmi_handle, uint8_t *data,
+			       struct nan_dump_msg *msg);
 
 /**
  * wmi_extract_ndp_confirm - api to extract ndp confim struct from even buffer

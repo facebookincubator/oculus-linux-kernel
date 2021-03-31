@@ -55,6 +55,9 @@ enum {
 	BOLERO_MACRO_EVT_BCS_CLK_OFF,
 	BOLERO_MACRO_EVT_SSR_GFMUX_UP,
 	BOLERO_MACRO_EVT_PRE_SSR_UP,
+	BOLERO_MACRO_EVT_RX_PA_GAIN_UPDATE,
+	BOLERO_MACRO_EVT_HPHL_HD2_ENABLE, /* Enable HD2 cfg for HPHL */
+	BOLERO_MACRO_EVT_HPHR_HD2_ENABLE, /* Enable HD2 cfg for HPHR */
 };
 
 enum {
@@ -89,8 +92,7 @@ struct macro_ops {
 			    u32 size, void *data);
 	int (*clk_div_get)(struct snd_soc_component *component);
 	int (*clk_switch)(struct snd_soc_component *component, int clk_src);
-	int (*reg_evt_listener)(struct snd_soc_component *component,
-			bool en, bool is_dmic_sva);
+	int (*reg_evt_listener)(struct snd_soc_component *component, bool en);
 	int (*clk_enable)(struct snd_soc_component *c, bool en);
 	char __iomem *io_base;
 	u16 clk_id_req;
@@ -102,6 +104,7 @@ typedef int (*rsc_clk_cb_t)(struct device *dev, u16 event);
 #if IS_ENABLED(CONFIG_SND_SOC_BOLERO)
 int bolero_register_res_clk(struct device *dev, rsc_clk_cb_t cb);
 void bolero_unregister_res_clk(struct device *dev);
+bool bolero_is_va_macro_registered(struct device *dev);
 int bolero_register_macro(struct device *dev, u16 macro_id,
 			  struct macro_ops *ops);
 void bolero_unregister_macro(struct device *dev, u16 macro_id);
@@ -117,7 +120,7 @@ int bolero_runtime_suspend(struct device *dev);
 int bolero_set_port_map(struct snd_soc_component *component, u32 size, void *data);
 int bolero_tx_clk_switch(struct snd_soc_component *component, int clk_src);
 int bolero_register_event_listener(struct snd_soc_component *component,
-				   bool enable, bool is_dmic_sva);
+				   bool enable);
 void bolero_wsa_pa_on(struct device *dev, bool adie_lb);
 bool bolero_check_core_votes(struct device *dev);
 int bolero_tx_mclk_enable(struct snd_soc_component *c, bool enable);
@@ -131,6 +134,11 @@ static inline int bolero_register_res_clk(struct device *dev, rsc_clk_cb_t cb)
 }
 static inline void bolero_unregister_res_clk(struct device *dev)
 {
+}
+
+static inline bool bolero_is_va_macro_registered(struct device *dev)
+{
+	return false;
 }
 
 static inline int bolero_register_macro(struct device *dev,
@@ -179,7 +187,7 @@ static inline int bolero_tx_clk_switch(struct snd_soc_component *component,
 
 static inline int bolero_register_event_listener(
 					struct snd_soc_component *component,
-					bool enable, bool is_dmic_sva)
+					bool enable)
 {
 	return 0;
 }

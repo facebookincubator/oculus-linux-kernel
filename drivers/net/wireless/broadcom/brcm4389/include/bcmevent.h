@@ -308,9 +308,15 @@ typedef union bcm_event_msg_u {
 #define WLC_E_AUTH_START		194	/* notify upper layer to start auth */
 #define WLC_E_TWT				195	/* TWT event */
 #define WLC_E_AMT			196	/* Address Management Table (AMT) */
-#define WLC_E_LAST			197	/* highest val + 1 for range checking */
-#if (WLC_E_LAST > 197)
-#error "WLC_E_LAST: Invalid value for last event; must be <= 197."
+#define WLC_E_ROAM_SCAN_RESULT		197	/* roam/reassoc scan result event */
+#if defined(XRAPI)
+#define WLC_E_XR_SOFTAP_PSMODE		198	/* XR event to notify SoftAP PS mode change
+						 * to request from STA
+						 */
+#endif /* XRAPI */
+#define WLC_E_LAST			199	/* highest val + 1 for range checking */
+#if (WLC_E_LAST > 199)
+#error "WLC_E_LAST: Invalid value for last event; must be <= 198."
 #endif /* WLC_E_LAST */
 
 /* define an API for getting the string name of an event */
@@ -456,6 +462,11 @@ typedef enum wlc_roam_cache_update_reason {
 #define WLC_E_REASON_INFRA_DISASSOC	3
 #define WLC_E_REASON_NO_MODE_CHANGE_NEEDED	4
 
+#if defined(XRAPI)
+#define WLC_E_XR_SOFTAP_PSMODE_SLEEP	0
+#define WLC_E_XR_SOFTAP_PSMODE_AWAKE	1
+#endif /* XRAPI */
+
 /* TX STAT ERROR REASON CODE */
 #define WLC_E_REASON_TXBACKOFF_NOT_DECREMENTED 0x1
 
@@ -538,6 +549,8 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_PRUNE_RSSI_ASSOC_REJ	22	/* OCE RSSI-based assoc rejection */
 #define WLC_E_PRUNE_MAC_AVOID		23	/* AP's MAC addr is in STA's MAC avoid list */
 #define WLC_E_PRUNE_TRANSITION_DISABLE	24	/* AP's Transition Disable Policy */
+#define WLC_E_PRUNE_WRONG_COUNTRY_CODE	25	/* Prune AP due to Wrong Country Code */
+#define WLC_E_PRUNE_CHANNEL_NOT_IN_VLP	26	/* Prune AP  due to Chanspec not in VLP cat */
 
 /* WPA failure reason codes carried in the WLC_E_PSK_SUP event */
 #define WLC_E_SUP_OTHER			0	/* Other reason */
@@ -971,10 +984,15 @@ typedef enum wl_nan_events {
 	WL_NAN_EVENT_DISC_CACHE_TIMEOUT		= 46,	/* Disc cache timeout */
 	WL_NAN_EVENT_OOB_AF_TXS			= 47,	/* OOB AF transmit status */
 	WL_NAN_EVENT_OOB_AF_RX			= 48,   /* OOB AF receive event */
+	WL_NAN_EVENT_NMI_ADDR			= 49,	/* NMI address change event */
 
 	/* keep WL_NAN_EVENT_INVALID as the last element */
 	WL_NAN_EVENT_INVALID				/* delimiter for max value */
 } nan_app_events_e;
+
+/* WL_NAN_EVENT_STOP reason codes */
+#define	  WL_NAN_EVENT_STOP_HOSTCMD		  0u
+#define	  WL_NAN_EVENT_STOP_CNTRY_CODE_CHNG	  1u
 
 /* remove after precommit */
 #define NAN_EV_MASK(ev)	(1 << (ev - 1))
@@ -1482,7 +1500,8 @@ typedef struct wlc_obss_hw_event_data {
 #define WLC_OBSS_BW_AVAILABLE	2 /* Sent When a change in BW is detected / noticed */
 
 /* WLC_E_DYNSAR event structure version */
-#define WL_DYNSAR_VERSION 1
+#define WL_DYNSAR_VERSION 1u
+#define WL_DYNSAR_VERSION_2 2u
 
 /* bits used in status field */
 #define WL_STATUS_DYNSAR_PWR_OPT	(1 << 0)	/* power optimized */
@@ -1500,15 +1519,26 @@ typedef struct wl_event_dynsar {
 	uint8  status;		/* WL_STATUS_DYNSAR_XXX, to indicate which optimization
 				* is being applied
 				*/
-	uint8  pad;
+	uint8  fs_reason;	/* failsafe reason */
 } wl_event_dynsar_t;
 
-/* status when WLC_E_AP_BCN_MUTE event is sent */
+/* Reason code when WLC_E_AP_BCN_MUTE event is sent */
 #define BCN_MUTE_MITI_ACTIVE	1u	/* Mitigation is activated when probe response received
 					 * but Beacon is not received
 					 */
 #define BCN_MUTE_MITI_END	2u	/* Sent when beacon is received */
 #define BCN_MUTE_MITI_TIMEOUT	3u	/* Mitigation period is reached */
+
+/* Status code for sending event */
+#define BCN_MUTE_MITI_UNKNOWN		0u	/* Mitigation status unknown */
+#define BCN_MUTE_MITI_ASSOC_COMP	1u	/* Mitigation during Assoc phase */
+#define BCN_MUTE_MITI_BCN_LOST		2u	/* Mitigation due to beacon lost */
+#define BCN_MUTE_MITI_BCN_RECV		3u	/* Mitigation end due to bcn reception */
+#define BCN_MUTE_MITI_ROAM		4u	/* Mitigation end due to Roam */
+#define BCN_MUTE_MITI_LINK_DOWN		5u	/* Mitigation end due to link down */
+#define BCN_MUTE_MITI_RX_DEAUTH		6u	/* Mitigation end due to AP deauth */
+#define BCN_MUTE_MITI_RX_DISASSOC	7u	/* Mitigation end due to AP disassoc */
+#define BCN_MUTE_MITI_LOW_RSSI		8u	/* Mitigation end due to Low RSSI */
 
 /* bcn_mute_miti event data */
 #define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_1	1u
@@ -1518,6 +1548,15 @@ typedef struct wlc_bcn_mute_miti_event_data_v1 {
 	uint16	uatbtt_count;	/* Number of UATBTT during mitigation */
 	uint8	PAD[2];		/* Pad to fit to 32 bit alignment */
 } wlc_bcn_mute_miti_event_data_v1_t;
+
+#define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_2	2u
+typedef struct wlc_bcn_mute_miti_event_data_v2 {
+	uint16	version;	/* Structure version number */
+	uint16	length;		/* Length of the whole struct */
+	uint16	uatbtt_count;	/* Number of UATBTT during mitigation */
+	int8	rssi;		/* Mitigation Probe response RSSI */
+	uint8	PAD[1];		/* Pad to fit to 32 bit alignment */
+} wlc_bcn_mute_miti_event_data_v2_t;
 
 /* bcn_drift event data */
 #define WLC_BCN_DRIFT_EVENT_DATA_VER_1	(1u)

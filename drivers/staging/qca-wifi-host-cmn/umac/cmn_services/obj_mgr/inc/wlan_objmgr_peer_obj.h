@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -143,6 +143,7 @@ struct wlan_objmgr_peer_mlme {
  * @ref_cnt:           Ref count
  * @ref_id_dbg:        Array to track Ref count
  * @print_cnt:         Count to throttle Logical delete prints
+ * @wlan_objmgr_trace: Trace ref and deref
  */
 struct wlan_objmgr_peer_objmgr {
 	struct wlan_objmgr_vdev *vdev;
@@ -151,14 +152,9 @@ struct wlan_objmgr_peer_objmgr {
 	qdf_atomic_t ref_id_dbg[WLAN_REF_ID_MAX];
 #endif
 	uint8_t print_cnt;
-};
-
-/**
- * struct wlan_peer_activity -- peer inactivity info
- *
- */
-struct wlan_peer_activity {  /*TODO */
-
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+	struct wlan_objmgr_trace trace;
+#endif
 };
 
 /**
@@ -167,12 +163,10 @@ struct wlan_peer_activity {  /*TODO */
  * @vdev_peer:        peer list node for vdev's qdf list
  * @macaddr[]:        Peer MAC address
  * @peer_mlme:	      Peer MLME common structure
- * @peer_activity:    peer activity
  * @peer_objmgr:      Peer Object manager common structure
  * @peer_comp_priv_obj[]:  Component's private object pointers
  * @obj_status[]:     status of each component object
  * @obj_state:        Status of Peer object
- * @dp_handle:        DP module handle
  * @pdev_id:          Pdev ID
  * @peer_lock:        Lock for access/update peer contents
  */
@@ -182,12 +176,10 @@ struct wlan_objmgr_peer {
 	uint8_t macaddr[QDF_MAC_ADDR_SIZE];
 	uint8_t pdev_id;
 	struct wlan_objmgr_peer_mlme peer_mlme;
-	struct wlan_peer_activity peer_activity;
 	struct wlan_objmgr_peer_objmgr peer_objmgr;
 	void *peer_comp_priv_obj[WLAN_UMAC_MAX_COMPONENTS];
 	QDF_STATUS obj_status[WLAN_UMAC_MAX_COMPONENTS];
 	WLAN_OBJ_STATE obj_state;
-	void *dp_handle;
 	qdf_spinlock_t peer_lock;
 };
 
@@ -381,8 +373,17 @@ static inline void wlan_peer_obj_unlock(struct wlan_objmgr_peer *peer)
  *
  * Return: void
  */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+void wlan_objmgr_peer_get_ref_debug(struct wlan_objmgr_peer *peer,
+				    wlan_objmgr_ref_dbgid id,
+				    const char *func, int line);
+
+#define wlan_objmgr_peer_get_ref(peer, dbgid) \
+		wlan_objmgr_peer_get_ref_debug(peer, dbgid, __func__, __LINE__)
+#else
 void wlan_objmgr_peer_get_ref(struct wlan_objmgr_peer *peer,
 					wlan_objmgr_ref_dbgid id);
+#endif
 
 /**
  * wlan_objmgr_peer_try_get_ref() - increment ref count, if allowed
@@ -393,8 +394,18 @@ void wlan_objmgr_peer_get_ref(struct wlan_objmgr_peer *peer,
  *
  * Return: void
  */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+QDF_STATUS wlan_objmgr_peer_try_get_ref_debug(struct wlan_objmgr_peer *peer,
+					      wlan_objmgr_ref_dbgid id,
+					      const char *func, int line);
+
+#define wlan_objmgr_peer_try_get_ref(peer, dbgid) \
+		wlan_objmgr_peer_try_get_ref_debug(peer, dbgid, \
+		__func__, __LINE__)
+#else
 QDF_STATUS wlan_objmgr_peer_try_get_ref(struct wlan_objmgr_peer *peer,
 						 wlan_objmgr_ref_dbgid id);
+#endif
 
 /**
  * wlan_objmgr_peer_release_ref() - decrement ref count
@@ -406,8 +417,200 @@ QDF_STATUS wlan_objmgr_peer_try_get_ref(struct wlan_objmgr_peer *peer,
  *
  * Return: void
  */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+void wlan_objmgr_peer_release_ref_debug(struct wlan_objmgr_peer *peer,
+					wlan_objmgr_ref_dbgid id,
+					const char *func, int line);
+
+#define wlan_objmgr_peer_release_ref(peer, dbgid) \
+		wlan_objmgr_peer_release_ref_debug(peer, dbgid, \
+		__func__, __LINE__)
+#else
 void wlan_objmgr_peer_release_ref(struct wlan_objmgr_peer *peer,
 						 wlan_objmgr_ref_dbgid id);
+#endif
+
+/**
+ * wlan_peer_get_next_peer_of_psoc_ref() - get next peer to psoc peer list
+ *                                         with lock and ref taken
+ * @peer_list: Peer list
+ * @hash_index: peer list hash index
+ * @peer: PEER object
+ * @dbg_id: Ref count debug module id
+ *
+ * API to get the next peer of given peer (of psoc's peer list)
+ *
+ * Return:
+ * @next_peer: PEER object
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+struct wlan_objmgr_peer *wlan_peer_get_next_peer_of_psoc_ref_debug(
+				struct wlan_peer_list *peer_list,
+				uint8_t hash_index,
+				struct wlan_objmgr_peer *peer,
+				wlan_objmgr_ref_dbgid dbg_id,
+				const char *func, int line);
+
+#define wlan_peer_get_next_peer_of_psoc_ref(peer_list, hash_index, peer, \
+	dbgid) \
+		wlan_peer_get_next_peer_of_psoc_ref_debug(peer_list, \
+		hash_index, peer, dbgid, __func__, __LINE__)
+#else
+struct wlan_objmgr_peer *wlan_peer_get_next_peer_of_psoc_ref(
+				struct wlan_peer_list *peer_list,
+				uint8_t hash_index,
+				struct wlan_objmgr_peer *peer,
+				wlan_objmgr_ref_dbgid dbg_id);
+#endif
+
+/**
+ * wlan_peer_get_next_active_peer_of_psoc() - get next active peer to psoc peer
+ *                                            list
+ * @peer_list: Peer list
+ * @hash_index: peer list hash index
+ * @peer: PEER object
+ * @dbg_id: Ref count debug module id
+ *
+ * API to get the next peer of given peer (of psoc's peer list)
+ *
+ * Return:
+ * @next_peer: PEER object
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+struct wlan_objmgr_peer *wlan_peer_get_next_active_peer_of_psoc_debug(
+					struct wlan_peer_list *peer_list,
+					uint8_t hash_index,
+					struct wlan_objmgr_peer *peer,
+					wlan_objmgr_ref_dbgid dbg_id,
+					const char *func, int line);
+
+#define wlan_peer_get_next_active_peer_of_psoc(peer_list, hash_index, \
+	peer, dbgid) \
+		wlan_peer_get_next_active_peer_of_psoc_debug(peer_list, \
+		hash_index, peer, dbgid, __func__, __LINE__)
+#else
+struct wlan_objmgr_peer *wlan_peer_get_next_active_peer_of_psoc(
+					struct wlan_peer_list *peer_list,
+					uint8_t hash_index,
+					struct wlan_objmgr_peer *peer,
+					wlan_objmgr_ref_dbgid dbg_id);
+#endif
+
+/**
+ * wlan_peer_get_next_active_peer_of_vdev() - get next active_peer of vdev list
+ * @vdev: VDEV object
+ * @peer_list: Peer object list
+ * @peer: PEER object
+ * @dbg_id: Ref count debug module id
+ *
+ * API to get the next active peer of given peer (of vdev's peer list)
+ *
+ * Return:
+ * @next_peer: PEER object
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+struct wlan_objmgr_peer *wlan_peer_get_next_active_peer_of_vdev_debug(
+				struct wlan_objmgr_vdev *vdev,
+				qdf_list_t *peer_list,
+				struct wlan_objmgr_peer *peer,
+				wlan_objmgr_ref_dbgid dbg_id,
+				const char *func, int line);
+
+#define wlan_peer_get_next_active_peer_of_vdev(vdev, peer_list, peer, dbgid) \
+		wlan_peer_get_next_active_peer_of_vdev_debug(vdev, peer_list, \
+		peer, dbgid, __func__, __LINE__)
+#else
+struct wlan_objmgr_peer *wlan_peer_get_next_active_peer_of_vdev(
+				struct wlan_objmgr_vdev *vdev,
+				qdf_list_t *peer_list,
+				struct wlan_objmgr_peer *peer,
+				wlan_objmgr_ref_dbgid dbg_id);
+#endif
+
+/**
+ * wlan_vdev_peer_list_peek_active_head() - get active head of vdev peer list
+ * @vdev: VDEV object
+ * @peer_list: qdf_list_t
+ * @dbg_id: Ref count debug module id
+ *
+ * API to get the active head peer of given peer (of vdev's peer list)
+ *
+ * Return:
+ * @peer: active head peer
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+struct wlan_objmgr_peer *wlan_vdev_peer_list_peek_active_head_debug(
+				struct wlan_objmgr_vdev *vdev,
+				qdf_list_t *peer_list,
+				wlan_objmgr_ref_dbgid dbg_id,
+				const char *func, int line);
+
+#define wlan_vdev_peer_list_peek_active_head(vdev, peer_list, dbgid) \
+		wlan_vdev_peer_list_peek_active_head_debug(vdev, peer_list, \
+		dbgid, __func__, __LINE__)
+#else
+struct wlan_objmgr_peer *wlan_vdev_peer_list_peek_active_head(
+				struct wlan_objmgr_vdev *vdev,
+				qdf_list_t *peer_list,
+				wlan_objmgr_ref_dbgid dbg_id);
+#endif
+
+/**
+ * wlan_psoc_peer_list_peek_head_ref() - get head of psoc peer list
+ *                                            with ref and lock protected
+ * @peer_list: wlan_peer_list
+ * @hash_index: peer list hash index
+ * @dbg_id: Ref count debug module id
+ *
+ * API to get the head peer of given peer (of psoc's peer list)
+ *
+ * Return:
+ * @peer: head peer
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_head_ref_debug(
+					struct wlan_peer_list *peer_list,
+					uint8_t hash_index,
+					wlan_objmgr_ref_dbgid dbg_id,
+					const char *func, int line);
+
+#define wlan_psoc_peer_list_peek_head_ref(peer_list, hash_index, dbgid) \
+		wlan_psoc_peer_list_peek_head_ref_debug(peer_list, hash_index, \
+		dbgid, __func__, __LINE__)
+#else
+struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_head_ref(
+					struct wlan_peer_list *peer_list,
+					uint8_t hash_index,
+					wlan_objmgr_ref_dbgid dbg_id);
+#endif
+
+/**
+ * wlan_psoc_peer_list_peek_active_head() - get active head of psoc peer list
+ * @peer_list: wlan_peer_list
+ * @hash_index: peer list hash index
+ * @dbg_id: Ref count debug module id
+ *
+ * API to get the head peer of given peer (of psoc's peer list)
+ *
+ * Return:
+ * @peer: head peer
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_active_head_debug(
+					struct wlan_peer_list *peer_list,
+					uint8_t hash_index,
+					wlan_objmgr_ref_dbgid dbg_id,
+					const char *func, int line);
+
+#define wlan_psoc_peer_list_peek_active_head(peer_list, hash_index, dbgid) \
+		wlan_psoc_peer_list_peek_active_head_debug(peer_list, \
+		hash_index, dbgid, __func__, __LINE__)
+#else
+struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_active_head(
+					struct wlan_peer_list *peer_list,
+					uint8_t hash_index,
+					wlan_objmgr_ref_dbgid dbg_id);
+#endif
 
 /**
  * wlan_psoc_peer_list_peek_head() - get head of psoc peer list
@@ -435,39 +638,6 @@ static inline struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_head(
 }
 
 /**
- * wlan_psoc_peer_list_peek_active_head() - get active head of psoc peer list
- * @peer_list: wlan_peer_list
- * @hash_index: peer list hash index
- * @dbg_id: Ref count debug module id
- *
- * API to get the head peer of given peer (of psoc's peer list)
- *
- * Return:
- * @peer: head peer
- */
-struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_active_head(
-					struct wlan_peer_list *peer_list,
-					uint8_t hash_index,
-					wlan_objmgr_ref_dbgid dbg_id);
-
-/**
- * wlan_psoc_peer_list_peek_head_lock_ref() - get head of psoc peer list
- *                                            with ref and lock protected
- * @peer_list: wlan_peer_list
- * @hash_index: peer list hash index
- * @dbg_id: Ref count debug module id
- *
- * API to get the head peer of given peer (of psoc's peer list)
- *
- * Return:
- * @peer: head peer
- */
-struct wlan_objmgr_peer *wlan_psoc_peer_list_peek_head_ref(
-					struct wlan_peer_list *peer_list,
-					uint8_t hash_index,
-					wlan_objmgr_ref_dbgid dbg_id);
-
-/**
  * wlan_vdev_peer_list_peek_head() - get head of vdev peer list
  * @peer_list: qdf_list_t
  *
@@ -491,22 +661,6 @@ static inline struct wlan_objmgr_peer *wlan_vdev_peer_list_peek_head(
 	peer = qdf_container_of(vdev_node, struct wlan_objmgr_peer, vdev_peer);
 	return peer;
 }
-
-/**
- * wlan_vdev_peer_list_peek_active_head() - get active head of vdev peer list
- * @vdev: VDEV object
- * @peer_list: qdf_list_t
- * @dbg_id: Ref count debug module id
- *
- * API to get the active head peer of given peer (of vdev's peer list)
- *
- * Return:
- * @peer: active head peer
- */
-struct wlan_objmgr_peer *wlan_vdev_peer_list_peek_active_head(
-				struct wlan_objmgr_vdev *vdev,
-				qdf_list_t *peer_list,
-				wlan_objmgr_ref_dbgid dbg_id);
 
 /**
  * wlan_peer_get_next_peer_of_vdev() - get next peer of vdev list
@@ -539,24 +693,6 @@ static inline struct wlan_objmgr_peer *wlan_peer_get_next_peer_of_vdev(
 					vdev_peer);
 	return peer_next;
 }
-
-/**
- * wlan_peer_get_next_active_peer_of_vdev() - get next active_peer of vdev list
- * @vdev: VDEV object
- * @peer_list: Peer object list
- * @peer: PEER object
- * @dbg_id: Ref count debug module id
- *
- * API to get the next active peer of given peer (of vdev's peer list)
- *
- * Return:
- * @next_peer: PEER object
- */
-struct wlan_objmgr_peer *wlan_peer_get_next_active_peer_of_vdev(
-				struct wlan_objmgr_vdev *vdev,
-				qdf_list_t *peer_list,
-				struct wlan_objmgr_peer *peer,
-				wlan_objmgr_ref_dbgid dbg_id);
 
 /**
  * wlan_peer_set_next_peer_of_vdev() - add peer to vdev peer list
@@ -610,45 +746,6 @@ static inline struct wlan_objmgr_peer *wlan_peer_get_next_peer_of_psoc(
 					psoc_peer);
 	return peer_next;
 }
-
-/**
- * wlan_peer_get_next_active_peer_of_psoc() - get next active peer to psoc peer
- *                                            list
- * @peer_list: Peer list
- * @hash_index: peer list hash index
- * @peer: PEER object
- * @dbg_id: Ref count debug module id
- *
- * API to get the next peer of given peer (of psoc's peer list)
- *
- * Return:
- * @next_peer: PEER object
- */
-struct wlan_objmgr_peer *wlan_peer_get_next_active_peer_of_psoc(
-					struct wlan_peer_list *peer_list,
-					uint8_t hash_index,
-					struct wlan_objmgr_peer *peer,
-					wlan_objmgr_ref_dbgid dbg_id);
-
-
-/**
- * wlan_peer_get_next_peer_of_psoc_ref() - get next peer to psoc peer list
- *                                         with lock and ref taken
- * @peer_list: Peer list
- * @hash_index: peer list hash index
- * @peer: PEER object
- * @dbg_id: Ref count debug module id
- *
- * API to get the next peer of given peer (of psoc's peer list)
- *
- * Return:
- * @next_peer: PEER object
- */
-struct wlan_objmgr_peer *wlan_peer_get_next_peer_of_psoc_ref(
-				struct wlan_peer_list *peer_list,
-				uint8_t hash_index,
-				struct wlan_objmgr_peer *peer,
-				wlan_objmgr_ref_dbgid dbg_id);
 
 /**
  * wlan_peer_set_next_peer_of_psoc() - add peer to psoc peer list
@@ -806,7 +903,7 @@ static inline void wlan_peer_set_vdev(struct wlan_objmgr_peer *peer,
  * Return: void
  */
 static inline void wlan_peer_mlme_flag_set(struct wlan_objmgr_peer *peer,
-				uint32_t flag)
+					   uint32_t flag)
 {
 	peer->peer_mlme.peer_flags |= flag;
 }
@@ -958,40 +1055,6 @@ static inline void wlan_peer_mlme_reset_seq_num(
 }
 
 /**
- * wlan_peer_set_dp_handle() - set dp handle
- * @peer: peer object pointer
- * @dp_handle: Data path module handle
- *
- * Return: void
- */
-static inline void wlan_peer_set_dp_handle(struct wlan_objmgr_peer *peer,
-		void *dp_handle)
-{
-	if (qdf_unlikely(!peer)) {
-		QDF_BUG(0);
-		return;
-	}
-
-	peer->dp_handle = dp_handle;
-}
-
-/**
- * wlan_peer_get_dp_handle() - get dp handle
- * @peer: peer object pointer
- *
- * Return: dp handle
- */
-static inline void *wlan_peer_get_dp_handle(struct wlan_objmgr_peer *peer)
-{
-	if (qdf_unlikely(!peer)) {
-		QDF_BUG(0);
-		return NULL;
-	}
-
-	return peer->dp_handle;
-}
-
-/**
  * wlan_peer_get_psoc() - get psoc
  * @peer: PEER object
  *
@@ -1058,5 +1121,62 @@ void wlan_objmgr_print_peer_ref_ids(struct wlan_objmgr_peer *peer,
 uint32_t
 wlan_objmgr_peer_get_comp_ref_cnt(struct wlan_objmgr_peer *peer,
 				  enum wlan_umac_comp_id id);
+
+/**
+ * wlan_objmgr_peer_trace_init_lock() - Initialize peer trace lock
+ * @peer: peer object pointer
+ *
+ * Return: void
+ */
+#ifdef WLAN_OBJMGR_TRACE
+static inline void
+wlan_objmgr_peer_trace_init_lock(struct wlan_objmgr_peer *peer)
+{
+	wlan_objmgr_trace_init_lock(&peer->peer_objmgr.trace);
+}
+#else
+static inline void
+wlan_objmgr_peer_trace_init_lock(struct wlan_objmgr_peer *peer)
+{
+}
+#endif
+
+/**
+ * wlan_objmgr_peer_trace_deinit_lock() - Deinitialize peer trace lock
+ * @peer: peer object pointer
+ *
+ * Return: void
+ */
+#ifdef WLAN_OBJMGR_TRACE
+static inline void
+wlan_objmgr_peer_trace_deinit_lock(struct wlan_objmgr_peer *peer)
+{
+	wlan_objmgr_trace_deinit_lock(&peer->peer_objmgr.trace);
+}
+#else
+static inline void
+wlan_objmgr_peer_trace_deinit_lock(struct wlan_objmgr_peer *peer)
+{
+}
+#endif
+
+/**
+ * wlan_objmgr_peer_trace_del_ref_list() - Delete peer trace reference list
+ * @peer: peer object pointer
+ *
+ * Return: void
+ */
+#ifdef WLAN_OBJMGR_REF_ID_TRACE
+static inline void
+wlan_objmgr_peer_trace_del_ref_list(struct wlan_objmgr_peer *peer)
+{
+	wlan_objmgr_trace_del_ref_list(&peer->peer_objmgr.trace);
+}
+#else
+static inline void
+wlan_objmgr_peer_trace_del_ref_list(struct wlan_objmgr_peer *peer)
+{
+}
+#endif
 
 #endif /* _WLAN_OBJMGR_PEER_OBJ_H_*/

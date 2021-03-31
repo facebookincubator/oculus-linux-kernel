@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,7 @@
 
 struct channel_list_info {
 	uint8_t num_channels;
-	uint8_t channels[CFG_VALID_CHANNEL_LIST_LEN];
+	uint8_t channels[NUM_CHANNELS];
 };
 
 #ifdef __linux__
@@ -226,7 +226,7 @@ enum {
 	QCSAP_PARAM_CHAN_WIDTH,
 	QCSAP_PARAM_SET_TXRX_STATS,
 	QCASAP_SET_11AX_RATE,
-	QCASAP_SET_PEER_RATE,
+	QCASAP_SET_PEER_RATE, /* Not Supported */
 	QCASAP_PARAM_DCM,
 	QCASAP_PARAM_RANGE_EXT,
 	QCSAP_SET_DEFAULT_AMPDU,
@@ -236,9 +236,11 @@ enum {
 	QCSAP_SET_BTCOEX_LOW_RSSI_THRESHOLD,
 };
 
-int iw_get_channel_list(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
+int iw_get_channel_list_with_cc(struct net_device *dev,
+				mac_handle_t mac_handle,
+				struct iw_request_info *info,
+				union iwreq_data *wrqu,
+				char *extra);
 
 #endif /* __linux__ */
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,7 +23,7 @@
 #include <qdf_atomic.h>         /* qdf_atomic_read */
 
 /* header files for utilities */
-#include <cds_queue.h>          /* TAILQ */
+#include "queue.h"         /* TAILQ */
 
 /* header files for configuration API */
 #include <ol_cfg.h>             /* ol_cfg_is_high_latency */
@@ -106,21 +106,18 @@ struct ol_txrx_ipa_uc_tx_hdr ipa_uc_tx_hdr = {
 };
 #endif
 
-/**
- * ol_txrx_ipa_uc_get_resource() - Client request resource information
- * @pdev: handle to the HTT instance
- *
- *  OL client will request IPA UC related resource information
- *  Resource information will be distributted to IPA module
- *  All of the required resources should be pre-allocated
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_uc_get_resource(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_uc_get_resource(struct cdp_soc_t *soc_hdl,
+				       uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
-	struct ol_txrx_ipa_resources *ipa_res = &pdev->ipa_resource;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+	struct ol_txrx_ipa_resources *ipa_res;
 	qdf_device_t osdev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	if (!osdev) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
@@ -128,6 +125,7 @@ QDF_STATUS ol_txrx_ipa_uc_get_resource(struct cdp_pdev *ppdev)
 		return QDF_STATUS_E_NOENT;
 	}
 
+	ipa_res = &pdev->ipa_resource;
 	htt_ipa_uc_get_resource(pdev->htt_pdev,
 				&ipa_res->ce_sr,
 				&ipa_res->tx_comp_ring,
@@ -155,21 +153,20 @@ QDF_STATUS ol_txrx_ipa_uc_get_resource(struct cdp_pdev *ppdev)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_set_doorbell_paddr() - Client set IPA UC doorbell register
- * @pdev: handle to the HTT instance
- *
- *  IPA UC let know doorbell register physical address
- *  WLAN firmware will use this physical address to notify IPA UC
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_uc_set_doorbell_paddr(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_uc_set_doorbell_paddr(struct cdp_soc_t *soc_hdl,
+					     uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
-	struct ol_txrx_ipa_resources *ipa_res = &pdev->ipa_resource;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+	struct ol_txrx_ipa_resources *ipa_res;
 	int ret;
 
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	ipa_res = &pdev->ipa_resource;
 	ret = htt_ipa_uc_set_doorbell_paddr(pdev->htt_pdev,
 				      ipa_res->tx_comp_doorbell_dmaaddr,
 				      ipa_res->rx_ready_doorbell_dmaaddr);
@@ -183,22 +180,17 @@ QDF_STATUS ol_txrx_ipa_uc_set_doorbell_paddr(struct cdp_pdev *ppdev)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_set_active() - Client notify IPA UC data path active or not
- * @pdev: handle to the HTT instance
- * @uc_active: WDI UC path enable or not
- * @is_tx: TX path or RX path
- *
- *  IPA UC let know doorbell register physical address
- *  WLAN firmware will use this physical address to notify IPA UC
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_uc_set_active(struct cdp_pdev *ppdev, bool uc_active,
-			       bool is_tx)
+QDF_STATUS ol_txrx_ipa_uc_set_active(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
+				     bool uc_active, bool is_tx)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	int ret;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	ret = htt_h2t_ipa_uc_set_active(pdev->htt_pdev, uc_active, is_tx);
 	if (ret) {
@@ -210,16 +202,16 @@ QDF_STATUS ol_txrx_ipa_uc_set_active(struct cdp_pdev *ppdev, bool uc_active,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_op_response() - Handle OP command response from firmware
- * @pdev: handle to the device instance
- * @op_msg: op response message from firmware
- *
- * Return: none
- */
-QDF_STATUS ol_txrx_ipa_uc_op_response(struct cdp_pdev *ppdev, uint8_t *op_msg)
+QDF_STATUS ol_txrx_ipa_uc_op_response(struct cdp_soc_t *soc_hdl,
+				      uint8_t pdev_id, uint8_t *op_msg)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	if (pdev->ipa_uc_op_cb) {
 		pdev->ipa_uc_op_cb(op_msg, pdev->usr_ctxt);
@@ -233,17 +225,18 @@ QDF_STATUS ol_txrx_ipa_uc_op_response(struct cdp_pdev *ppdev, uint8_t *op_msg)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_register_op_cb() - Register OP handler function
- * @pdev: handle to the device instance
- * @op_cb: handler function pointer
- *
- * Return: none
- */
-QDF_STATUS ol_txrx_ipa_uc_register_op_cb(struct cdp_pdev *ppdev,
-				   ipa_uc_op_cb_type op_cb, void *usr_ctxt)
+QDF_STATUS ol_txrx_ipa_uc_register_op_cb(struct cdp_soc_t *soc_hdl,
+					 uint8_t pdev_id,
+					 ipa_uc_op_cb_type op_cb,
+					 void *usr_ctxt)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	pdev->ipa_uc_op_cb = op_cb;
 	pdev->usr_ctxt = usr_ctxt;
@@ -251,16 +244,16 @@ QDF_STATUS ol_txrx_ipa_uc_register_op_cb(struct cdp_pdev *ppdev,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_get_stat() - Get firmware wdi status
- * @pdev: handle to the HTT instance
- *
- * Return: none
- */
-QDF_STATUS ol_txrx_ipa_uc_get_stat(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_uc_get_stat(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	int ret;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	ret = htt_h2t_ipa_uc_get_stats(pdev->htt_pdev);
 
@@ -273,30 +266,104 @@ QDF_STATUS ol_txrx_ipa_uc_get_stat(struct cdp_pdev *ppdev)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_enable_autonomy() - Enable autonomy RX path
- * @pdev: handle to the device instance
- *
- * Set all RX packet route to IPA
- * Return: none
- */
-QDF_STATUS ol_txrx_ipa_enable_autonomy(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_enable_autonomy(struct cdp_soc_t *soc_hdl,
+				       uint8_t pdev_id)
 {
 	/* TBD */
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_disable_autonomy() - Disable autonomy RX path
- * @pdev: handle to the device instance
- *
- * Disable RX packet route to host
- * Return: none
- */
-QDF_STATUS ol_txrx_ipa_disable_autonomy(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_disable_autonomy(struct cdp_soc_t *soc_hdl,
+					uint8_t pdev_id)
 {
 	/* TBD */
 	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS __ol_txrx_ipa_tx_buf_smmu_mapping(struct ol_txrx_pdev_t *pdev,
+						    bool create)
+{
+	uint32_t index;
+	uint32_t unmap_cnt = 0;
+	uint32_t tx_buffer_cnt;
+	QDF_STATUS ret = QDF_STATUS_SUCCESS;
+	struct htt_pdev_t *htt_pdev = pdev->htt_pdev;
+	qdf_mem_info_t *mem_map_table = NULL, *mem_info = NULL;
+
+	if (!htt_pdev) {
+		ol_txrx_err("htt_pdev is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (qdf_mem_smmu_s1_enabled(htt_pdev->osdev)) {
+		ol_txrx_info("SMMU-S1 mapping is disabled");
+		return QDF_STATUS_SUCCESS;
+	}
+
+	tx_buffer_cnt = htt_pdev->ipa_uc_tx_rsc.alloc_tx_buf_cnt;
+	mem_map_table = qdf_mem_map_table_alloc(tx_buffer_cnt);
+	if (!mem_map_table) {
+		ol_txrx_err("Failed to allocate memory");
+		return QDF_STATUS_E_FAILURE;
+	}
+	mem_info = mem_map_table;
+
+	for (index = 0; index < tx_buffer_cnt; index++) {
+		if (htt_pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[index]) {
+			*mem_info = htt_pdev->ipa_uc_tx_rsc.
+					tx_buf_pool_strg[index]->mem_info;
+			mem_info++;
+			unmap_cnt++;
+		}
+	}
+
+	ret = cds_smmu_map_unmap(create, unmap_cnt, mem_map_table);
+	qdf_assert_always(!ret);
+	qdf_mem_free(mem_map_table);
+
+	return ret;
+}
+
+QDF_STATUS ol_txrx_ipa_tx_buf_smmu_mapping(struct cdp_soc_t *soc_hdl,
+					   uint8_t pdev_id)
+{
+	QDF_STATUS ret;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+
+	if (!pdev) {
+		ol_txrx_err("invalid instance");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!qdf_mem_smmu_s1_enabled(pdev->htt_pdev->osdev)) {
+		ol_txrx_err("SMMU S1 disabled");
+		return QDF_STATUS_SUCCESS;
+	}
+	ret = __ol_txrx_ipa_tx_buf_smmu_mapping(pdev, true);
+
+	return ret;
+}
+
+QDF_STATUS ol_txrx_ipa_tx_buf_smmu_unmapping(struct cdp_soc_t *soc_hdl,
+					     uint8_t pdev_id)
+{
+	QDF_STATUS ret;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+
+	if (!pdev) {
+		ol_txrx_err("invalid instance");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!qdf_mem_smmu_s1_enabled(pdev->htt_pdev->osdev)) {
+		ol_txrx_err("SMMU S1 disabled");
+		return QDF_STATUS_SUCCESS;
+	}
+	ret = __ol_txrx_ipa_tx_buf_smmu_mapping(pdev, false);
+
+	return ret;
 }
 
 #ifdef CONFIG_IPA_WDI_UNIFIED_API
@@ -325,6 +392,7 @@ static inline void ol_txrx_setup_mcc_sys_pipes(
 #endif
 
 #ifdef ENABLE_SMMU_S1_TRANSLATION
+#ifdef QCA_WIFI_3_0
 /**
  * ol_txrx_ipa_wdi_tx_smmu_params() - Config IPA TX params
  * @ipa_res: IPA resources
@@ -334,7 +402,75 @@ static inline void ol_txrx_setup_mcc_sys_pipes(
  */
 static inline void ol_txrx_ipa_wdi_tx_smmu_params(
 				struct ol_txrx_ipa_resources *ipa_res,
-				qdf_ipa_wdi_pipe_setup_info_smmu_t *tx_smmu)
+				qdf_ipa_wdi_pipe_setup_info_smmu_t *tx_smmu,
+				bool over_gsi)
+{
+	QDF_IPA_WDI_SETUP_INFO_SMMU_CLIENT(tx_smmu) =
+		IPA_CLIENT_WLAN1_CONS;
+	qdf_mem_copy(&QDF_IPA_WDI_SETUP_INFO_SMMU_TRANSFER_RING_BASE(
+				tx_smmu),
+		     &ipa_res->tx_comp_ring->sgtable,
+		     sizeof(sgtable_t));
+	QDF_IPA_WDI_SETUP_INFO_SMMU_TRANSFER_RING_SIZE(tx_smmu) =
+		ipa_res->tx_comp_ring->mem_info.size;
+	qdf_mem_copy(&QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_BASE(
+				tx_smmu),
+		     &ipa_res->ce_sr->sgtable,
+		     sizeof(sgtable_t));
+	QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_SIZE(tx_smmu) =
+		ipa_res->ce_sr_ring_size;
+	QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_DOORBELL_PA(tx_smmu) =
+		ipa_res->ce_reg_paddr;
+	if (over_gsi)
+		QDF_IPA_WDI_SETUP_INFO_SMMU_IS_EVT_RN_DB_PCIE_ADDR(tx_smmu) = true;
+	QDF_IPA_WDI_SETUP_INFO_SMMU_NUM_PKT_BUFFERS(tx_smmu) =
+		ipa_res->tx_num_alloc_buffer;
+	QDF_IPA_WDI_SETUP_INFO_SMMU_PKT_OFFSET(tx_smmu) = 0;
+}
+
+/**
+ * ol_txrx_ipa_wdi_rx_smmu_params() - Config IPA RX params
+ * @ipa_res: IPA resources
+ * @rx_smmu: IPA WDI pipe setup info
+ *
+ * Return: None
+ */
+static inline void ol_txrx_ipa_wdi_rx_smmu_params(
+				struct ol_txrx_ipa_resources *ipa_res,
+				qdf_ipa_wdi_pipe_setup_info_smmu_t *rx_smmu,
+				bool over_gsi)
+{
+	QDF_IPA_WDI_SETUP_INFO_SMMU_CLIENT(rx_smmu) =
+		IPA_CLIENT_WLAN1_PROD;
+	qdf_mem_copy(&QDF_IPA_WDI_SETUP_INFO_SMMU_TRANSFER_RING_BASE(
+				rx_smmu),
+		     &ipa_res->rx_rdy_ring->sgtable,
+		     sizeof(sgtable_t));
+	QDF_IPA_WDI_SETUP_INFO_SMMU_TRANSFER_RING_SIZE(rx_smmu) =
+		ipa_res->rx_rdy_ring->mem_info.size;
+	QDF_IPA_WDI_SETUP_INFO_SMMU_TRANSFER_RING_DOORBELL_PA(rx_smmu) =
+		ipa_res->rx_proc_done_idx->mem_info.pa;
+	if (over_gsi)
+		QDF_IPA_WDI_SETUP_INFO_SMMU_IS_TXR_RN_DB_PCIE_ADDR(rx_smmu) = false;
+	qdf_mem_copy(&QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_BASE(
+				rx_smmu),
+		     &ipa_res->rx2_rdy_ring->sgtable,
+		     sizeof(sgtable_t));
+	QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_SIZE(rx_smmu) =
+		ipa_res->rx2_rdy_ring->mem_info.size;
+	QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_DOORBELL_PA(rx_smmu) =
+		ipa_res->rx2_proc_done_idx->mem_info.pa;
+	if (over_gsi)
+		QDF_IPA_WDI_SETUP_INFO_SMMU_IS_EVT_RN_DB_PCIE_ADDR(rx_smmu) = false;
+	QDF_IPA_WDI_SETUP_INFO_SMMU_PKT_OFFSET(rx_smmu) = 0;
+
+}
+#else
+
+static inline void ol_txrx_ipa_wdi_tx_smmu_params(
+				struct ol_txrx_ipa_resources *ipa_res,
+				qdf_ipa_wdi_pipe_setup_info_smmu_t *tx_smmu,
+				bool over_gsi)
 {
 	QDF_IPA_WDI_SETUP_INFO_SMMU_CLIENT(tx_smmu) =
 		IPA_CLIENT_WLAN1_CONS;
@@ -357,16 +493,10 @@ static inline void ol_txrx_ipa_wdi_tx_smmu_params(
 	QDF_IPA_WDI_SETUP_INFO_SMMU_PKT_OFFSET(tx_smmu) = 0;
 }
 
-/**
- * ol_txrx_ipa_wdi_rx_smmu_params() - Config IPA RX params
- * @ipa_res: IPA resources
- * @rx_smmu: IPA WDI pipe setup info
- *
- * Return: None
- */
 static inline void ol_txrx_ipa_wdi_rx_smmu_params(
 				struct ol_txrx_ipa_resources *ipa_res,
-				qdf_ipa_wdi_pipe_setup_info_smmu_t *rx_smmu)
+				qdf_ipa_wdi_pipe_setup_info_smmu_t *rx_smmu,
+				bool over_gsi)
 {
 	QDF_IPA_WDI_SETUP_INFO_SMMU_CLIENT(rx_smmu) =
 		IPA_CLIENT_WLAN1_PROD;
@@ -378,33 +508,29 @@ static inline void ol_txrx_ipa_wdi_rx_smmu_params(
 		ipa_res->rx_rdy_ring->mem_info.size;
 	QDF_IPA_WDI_SETUP_INFO_SMMU_TRANSFER_RING_DOORBELL_PA(rx_smmu) =
 		ipa_res->rx_proc_done_idx->mem_info.pa;
-	qdf_mem_copy(&QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_BASE(
-				rx_smmu),
-		     &ipa_res->rx2_rdy_ring->sgtable,
-		     sizeof(sgtable_t));
-	QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_SIZE(rx_smmu) =
-		ipa_res->rx2_rdy_ring->mem_info.size;
-	QDF_IPA_WDI_SETUP_INFO_SMMU_EVENT_RING_DOORBELL_PA(rx_smmu) =
-		ipa_res->rx2_proc_done_idx->mem_info.pa;
 	QDF_IPA_WDI_SETUP_INFO_SMMU_PKT_OFFSET(rx_smmu) = 0;
-
 }
+
+#endif
 
 #else
 
 static inline void ol_txrx_ipa_wdi_tx_smmu_params(
 				struct ol_txrx_ipa_resources *ipa_res,
-				qdf_ipa_wdi_pipe_setup_info_smmu_t *tx_smmu)
+				qdf_ipa_wdi_pipe_setup_info_smmu_t *tx_smmu,
+				bool over_gsi)
 {
 }
 
 static inline void ol_txrx_ipa_wdi_rx_smmu_params(
 				struct ol_txrx_ipa_resources *ipa_res,
-				qdf_ipa_wdi_pipe_setup_info_smmu_t *rx_smmu)
+				qdf_ipa_wdi_pipe_setup_info_smmu_t *rx_smmu,
+				bool over_gsi)
 {
 }
 #endif
 
+#ifdef QCA_WIFI_3_0
 /**
  * ol_txrx_ipa_wdi_tx_params() - Config IPA TX params
  * @ipa_res: IPA resources
@@ -414,7 +540,74 @@ static inline void ol_txrx_ipa_wdi_rx_smmu_params(
  */
 static inline void ol_txrx_ipa_wdi_tx_params(
 				struct ol_txrx_ipa_resources *ipa_res,
-				qdf_ipa_wdi_pipe_setup_info_t *tx)
+				qdf_ipa_wdi_pipe_setup_info_t *tx,
+				bool over_gsi)
+{
+	qdf_device_t osdev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
+
+	if (!osdev) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  "%s: qdf device is null!", __func__);
+		return;
+	}
+
+	QDF_IPA_WDI_SETUP_INFO_CLIENT(tx) = IPA_CLIENT_WLAN1_CONS;
+	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_BASE_PA(tx) =
+		qdf_mem_get_dma_addr(osdev,
+				&ipa_res->tx_comp_ring->mem_info);
+	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_SIZE(tx) =
+		ipa_res->tx_comp_ring->mem_info.size;
+	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_BASE_PA(tx) =
+		qdf_mem_get_dma_addr(osdev,
+				&ipa_res->ce_sr->mem_info);
+	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_SIZE(tx) =
+		ipa_res->ce_sr_ring_size;
+	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_DOORBELL_PA(tx) =
+		ipa_res->ce_reg_paddr;
+	if (over_gsi)
+		QDF_IPA_WDI_SETUP_INFO_IS_EVT_RN_DB_PCIE_ADDR(tx) = true;
+	QDF_IPA_WDI_SETUP_INFO_NUM_PKT_BUFFERS(tx) =
+		ipa_res->tx_num_alloc_buffer;
+	QDF_IPA_WDI_SETUP_INFO_PKT_OFFSET(tx) = 0;
+}
+
+/**
+ * ol_txrx_ipa_wdi_rx_params() - Config IPA RX params
+ * @ipa_res: IPA resources
+ * @rx: IPA WDI pipe setup info
+ *
+ * Return: None
+ */
+static inline void ol_txrx_ipa_wdi_rx_params(
+				struct ol_txrx_ipa_resources *ipa_res,
+				qdf_ipa_wdi_pipe_setup_info_t *rx,
+				bool over_gsi)
+{
+	QDF_IPA_WDI_SETUP_INFO_CLIENT(rx) = IPA_CLIENT_WLAN1_PROD;
+	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_BASE_PA(rx) =
+		ipa_res->rx_rdy_ring->mem_info.pa;
+	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_SIZE(rx) =
+		ipa_res->rx_rdy_ring->mem_info.size;
+	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_DOORBELL_PA(rx) =
+		ipa_res->rx_proc_done_idx->mem_info.pa;
+	if (over_gsi)
+		QDF_IPA_WDI_SETUP_INFO_IS_TXR_RN_DB_PCIE_ADDR(rx) = false;
+	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_BASE_PA(rx) =
+		ipa_res->rx2_rdy_ring->mem_info.pa;
+	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_SIZE(rx) =
+		ipa_res->rx2_rdy_ring->mem_info.size;
+	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_DOORBELL_PA(rx) =
+		ipa_res->rx2_proc_done_idx->mem_info.pa;
+	if (over_gsi)
+		QDF_IPA_WDI_SETUP_INFO_IS_EVT_RN_DB_PCIE_ADDR(rx) = false;
+	QDF_IPA_WDI_SETUP_INFO_PKT_OFFSET(rx) = 0;
+}
+
+#else
+static inline void ol_txrx_ipa_wdi_tx_params(
+				struct ol_txrx_ipa_resources *ipa_res,
+				qdf_ipa_wdi_pipe_setup_info_t *tx,
+				bool over_gsi)
 {
 	qdf_device_t osdev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
 
@@ -442,16 +635,10 @@ static inline void ol_txrx_ipa_wdi_tx_params(
 	QDF_IPA_WDI_SETUP_INFO_PKT_OFFSET(tx) = 0;
 }
 
-/**
- * ol_txrx_ipa_wdi_rx_params() - Config IPA RX params
- * @ipa_res: IPA resources
- * @rx: IPA WDI pipe setup info
- *
- * Return: None
- */
 static inline void ol_txrx_ipa_wdi_rx_params(
 				struct ol_txrx_ipa_resources *ipa_res,
-				qdf_ipa_wdi_pipe_setup_info_t *rx)
+				qdf_ipa_wdi_pipe_setup_info_t *rx,
+				bool over_gsi)
 {
 	QDF_IPA_WDI_SETUP_INFO_CLIENT(rx) = IPA_CLIENT_WLAN1_PROD;
 	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_BASE_PA(rx) =
@@ -460,53 +647,39 @@ static inline void ol_txrx_ipa_wdi_rx_params(
 		ipa_res->rx_rdy_ring->mem_info.size;
 	QDF_IPA_WDI_SETUP_INFO_TRANSFER_RING_DOORBELL_PA(rx) =
 		ipa_res->rx_proc_done_idx->mem_info.pa;
-	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_BASE_PA(rx) =
-		ipa_res->rx2_rdy_ring->mem_info.pa;
-	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_SIZE(rx) =
-		ipa_res->rx2_rdy_ring->mem_info.size;
-	QDF_IPA_WDI_SETUP_INFO_EVENT_RING_DOORBELL_PA(rx) =
-		ipa_res->rx2_proc_done_idx->mem_info.pa;
 	QDF_IPA_WDI_SETUP_INFO_PKT_OFFSET(rx) = 0;
 }
 
-/**
- * ol_txrx_ipa_setup() - Setup and connect IPA pipes
- * @pdev: handle to the device instance
- * @ipa_i2w_cb: IPA to WLAN callback
- * @ipa_w2i_cb: WLAN to IPA callback
- * @ipa_wdi_meter_notifier_cb: IPA WDI metering callback
- * @ipa_desc_size: IPA descriptor size
- * @ipa_priv: handle to the HTT instance
- * @is_rm_enabled: Is IPA RM enabled or not
- * @p_tx_pipe_handle: pointer to Tx pipe handle
- * @p_rx_pipe_handle: pointer to Rx pipe handle
- * @is_smmu_enabled: Is SMMU enabled or not
- * @sys_in: parameters to setup sys pipe in mcc mode
- * @over_gsi: is ipa ver gsi fw
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
-			     void *ipa_w2i_cb, void *ipa_wdi_meter_notifier_cb,
+#endif
+
+QDF_STATUS ol_txrx_ipa_setup(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
+			     void *ipa_i2w_cb, void *ipa_w2i_cb,
+			     void *ipa_wdi_meter_notifier_cb,
 			     uint32_t ipa_desc_size, void *ipa_priv,
 			     bool is_rm_enabled, uint32_t *p_tx_pipe_handle,
 			     uint32_t *p_rx_pipe_handle, bool is_smmu_enabled,
 			     qdf_ipa_sys_connect_params_t *sys_in,
 			     bool over_gsi)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
-	struct ol_txrx_ipa_resources *ipa_res = &pdev->ipa_resource;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+	struct ol_txrx_ipa_resources *ipa_res;
 	qdf_ipa_ep_cfg_t *tx_cfg;
 	qdf_ipa_ep_cfg_t *rx_cfg;
 	qdf_ipa_wdi_pipe_setup_info_t *tx;
 	qdf_ipa_wdi_pipe_setup_info_t *rx;
 	qdf_ipa_wdi_pipe_setup_info_smmu_t *tx_smmu;
 	qdf_ipa_wdi_pipe_setup_info_smmu_t *rx_smmu;
-	qdf_ipa_wdi_conn_in_params_t pipe_in;
+	qdf_ipa_wdi_conn_in_params_t *pipe_in = NULL;
 	qdf_ipa_wdi_conn_out_params_t pipe_out;
 	qdf_device_t osdev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
 	uint32_t tx_comp_db_dmaaddr = 0, rx_rdy_db_dmaaddr = 0;
 	int ret;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	if (!osdev) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
@@ -514,19 +687,24 @@ QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
 		return QDF_STATUS_E_NOENT;
 	}
 
-	qdf_mem_zero(&pipe_in, sizeof(pipe_in));
+	pipe_in = qdf_mem_malloc(sizeof(*pipe_in));
+	if (!pipe_in)
+		return QDF_STATUS_E_NOMEM;
+
+	ipa_res = &pdev->ipa_resource;
+	qdf_mem_zero(pipe_in, sizeof(*pipe_in));
 	qdf_mem_zero(&pipe_out, sizeof(pipe_out));
 
-	ol_txrx_setup_mcc_sys_pipes(sys_in, &pipe_in);
+	ol_txrx_setup_mcc_sys_pipes(sys_in, pipe_in);
 
 	/* TX PIPE */
 	if (is_smmu_enabled) {
-		QDF_IPA_WDI_CONN_IN_PARAMS_SMMU_ENABLED(&pipe_in) = true;
-		tx_smmu = &QDF_IPA_WDI_CONN_IN_PARAMS_TX_SMMU(&pipe_in);
+		QDF_IPA_WDI_CONN_IN_PARAMS_SMMU_ENABLED(pipe_in) = true;
+		tx_smmu = &QDF_IPA_WDI_CONN_IN_PARAMS_TX_SMMU(pipe_in);
 		tx_cfg = &QDF_IPA_WDI_SETUP_INFO_SMMU_EP_CFG(tx_smmu);
 	} else {
-		QDF_IPA_WDI_CONN_IN_PARAMS_SMMU_ENABLED(&pipe_in) = false;
-		tx = &QDF_IPA_WDI_CONN_IN_PARAMS_TX(&pipe_in);
+		QDF_IPA_WDI_CONN_IN_PARAMS_SMMU_ENABLED(pipe_in) = false;
+		tx = &QDF_IPA_WDI_CONN_IN_PARAMS_TX(pipe_in);
 		tx_cfg = &QDF_IPA_WDI_SETUP_INFO_EP_CFG(tx);
 	}
 
@@ -540,17 +718,17 @@ QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
 	QDF_IPA_EP_CFG_HDR_LITTLE_ENDIAN(tx_cfg) = true;
 
 	if (is_smmu_enabled)
-		ol_txrx_ipa_wdi_tx_smmu_params(ipa_res, tx_smmu);
+		ol_txrx_ipa_wdi_tx_smmu_params(ipa_res, tx_smmu, over_gsi);
 	else
-		ol_txrx_ipa_wdi_tx_params(ipa_res, tx);
+		ol_txrx_ipa_wdi_tx_params(ipa_res, tx, over_gsi);
 
 
 	/* RX PIPE */
 	if (is_smmu_enabled) {
-		rx_smmu = &QDF_IPA_WDI_CONN_IN_PARAMS_RX_SMMU(&pipe_in);
+		rx_smmu = &QDF_IPA_WDI_CONN_IN_PARAMS_RX_SMMU(pipe_in);
 		rx_cfg = &QDF_IPA_WDI_SETUP_INFO_EP_CFG(rx_smmu);
 	} else {
-		rx = &QDF_IPA_WDI_CONN_IN_PARAMS_RX(&pipe_in);
+		rx = &QDF_IPA_WDI_CONN_IN_PARAMS_RX(pipe_in);
 		rx_cfg = &QDF_IPA_WDI_SETUP_INFO_EP_CFG(rx);
 	}
 
@@ -566,19 +744,20 @@ QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
 	QDF_IPA_EP_CFG_HDR_LITTLE_ENDIAN(rx_cfg) = true;
 
 	if (is_smmu_enabled)
-		ol_txrx_ipa_wdi_rx_smmu_params(ipa_res, rx_smmu);
+		ol_txrx_ipa_wdi_rx_smmu_params(ipa_res, rx_smmu, over_gsi);
 	else
-		ol_txrx_ipa_wdi_rx_params(ipa_res, rx);
+		ol_txrx_ipa_wdi_rx_params(ipa_res, rx, over_gsi);
 
-	QDF_IPA_WDI_CONN_IN_PARAMS_NOTIFY(&pipe_in) = ipa_w2i_cb;
-	QDF_IPA_WDI_CONN_IN_PARAMS_PRIV(&pipe_in) = ipa_priv;
+	QDF_IPA_WDI_CONN_IN_PARAMS_NOTIFY(pipe_in) = ipa_w2i_cb;
+	QDF_IPA_WDI_CONN_IN_PARAMS_PRIV(pipe_in) = ipa_priv;
 
 	/* Connect WDI IPA PIPE */
-	ret = qdf_ipa_wdi_conn_pipes(&pipe_in, &pipe_out);
+	ret = qdf_ipa_wdi_conn_pipes(pipe_in, &pipe_out);
 	if (ret) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
 			  "%s: ipa_wdi_conn_pipes: IPA pipe setup failed: ret=%d",
 			  __func__, ret);
+		qdf_mem_free(pipe_in);
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -605,19 +784,54 @@ QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
 		ipa_res->rx_ready_doorbell_dmaaddr = rx_rdy_db_dmaaddr;
 	}
 
+	qdf_mem_free(pipe_in);
 	return QDF_STATUS_SUCCESS;
 }
 
 /**
  * ol_txrx_ipa_cleanup() - Disconnect IPA pipes
+ * @soc_hdl: soc handle
+ * @pdev_id: pdev id
  * @tx_pipe_handle: Tx pipe handle
  * @rx_pipe_handle: Rx pipe handle
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS ol_txrx_ipa_cleanup(uint32_t tx_pipe_handle, uint32_t rx_pipe_handle)
+QDF_STATUS ol_txrx_ipa_cleanup(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
+			       uint32_t tx_pipe_handle,
+			       uint32_t rx_pipe_handle)
 {
 	int ret;
+	struct ol_txrx_ipa_resources *ipa_res;
+	struct ol_txrx_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
+	qdf_device_t osdev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
+	ol_txrx_pdev_handle pdev;
+
+	if (!soc || !osdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	pdev = ol_txrx_get_pdev_from_pdev_id(soc, OL_TXRX_PDEV_ID);
+	if (!pdev) {
+		ol_txrx_err("%s NULL pdev invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	ipa_res = &pdev->ipa_resource;
+	if (osdev->smmu_s1_enabled) {
+		ret = pld_smmu_unmap(osdev->dev,
+				     ipa_res->rx_ready_doorbell_dmaaddr,
+				     sizeof(uint32_t));
+		if (ret)
+			ol_txrx_err("%s rx_ready, smmu unmap failed", __func__);
+
+		ret = pld_smmu_unmap(osdev->dev,
+				     ipa_res->tx_comp_doorbell_dmaaddr,
+				     sizeof(uint32_t));
+		if (ret)
+			ol_txrx_err("%s tx_comp, smmu unmap failed", __func__);
+	}
 
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
 		  "%s: Disconnect IPA pipe", __func__);
@@ -654,8 +868,8 @@ QDF_STATUS ol_txrx_ipa_setup_iface(char *ifname, uint8_t *mac_addr,
 	int ret = -EINVAL;
 
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
-		  "%s: Add Partial hdr: %s, %pM",
-		  __func__, ifname, mac_addr);
+		  "%s: Add Partial hdr: %s, "QDF_MAC_ADDR_FMT,
+		  __func__, ifname, QDF_MAC_ADDR_REF(mac_addr));
 
 	qdf_mem_zero(&hdr_info, sizeof(qdf_ipa_wdi_hdr_info_t));
 	memcpy(&uc_tx_hdr, &ipa_uc_tx_hdr, OL_TXRX_IPA_UC_WLAN_TX_HDR_LEN);
@@ -723,17 +937,17 @@ QDF_STATUS ol_txrx_ipa_cleanup_iface(char *ifname, bool is_ipv6_enabled)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_enable_pipes() - Enable and resume traffic on Tx/Rx pipes
- * @pdev: handle to the device instance
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	QDF_STATUS status;
 	int ret;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	status = htt_rx_update_smmu_map(pdev->htt_pdev, true);
 	if (status != QDF_STATUS_SUCCESS) {
@@ -757,22 +971,22 @@ QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_pdev *ppdev)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	ol_txrx_ipa_uc_set_active((struct cdp_pdev *)pdev, true, true);
-	ol_txrx_ipa_uc_set_active((struct cdp_pdev *)pdev, true, false);
+	ol_txrx_ipa_uc_set_active(soc_hdl, pdev_id, true, true);
+	ol_txrx_ipa_uc_set_active(soc_hdl, pdev_id, true, false);
 
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_disable_pipes() – Suspend traffic and disable Tx/Rx pipes
- * @pdev: handle to the device instance
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_disable_pipes(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_disable_pipes(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	int ret;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
 		  "%s: Disable IPA pipes", __func__);
@@ -963,34 +1177,26 @@ static inline void ol_txrx_ipa_rx_params(
 			     osdev);
 }
 
-/**
- * ol_txrx_ipa_setup() - Setup and connect IPA pipes
- * @pdev: handle to the device instance
- * @ipa_i2w_cb: IPA to WLAN callback
- * @ipa_w2i_cb: WLAN to IPA callback
- * @ipa_wdi_meter_notifier_cb: IPA WDI metering callback
- * @ipa_desc_size: IPA descriptor size
- * @ipa_priv: handle to the HTT instance
- * @is_rm_enabled: Is IPA RM enabled or not
- * @p_tx_pipe_handle: pointer to Tx pipe handle
- * @p_rx_pipe_handle: pointer to Rx pipe handle
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
-			     void *ipa_w2i_cb, void *ipa_wdi_meter_notifier_cb,
+QDF_STATUS ol_txrx_ipa_setup(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
+			     void *ipa_i2w_cb, void *ipa_w2i_cb,
+			     void *ipa_wdi_meter_notifier_cb,
 			     uint32_t ipa_desc_size, void *ipa_priv,
 			     bool is_rm_enabled, uint32_t *p_tx_pipe_handle,
 			     uint32_t *p_rx_pipe_handle)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	qdf_device_t osdev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
-	struct ol_txrx_ipa_resources *ipa_res = &pdev->ipa_resource;
+	struct ol_txrx_ipa_resources *ipa_res;
 	qdf_ipa_wdi_in_params_t pipe_in;
 	qdf_ipa_wdi_out_params_t pipe_out;
 	uint32_t tx_comp_db_dmaaddr = 0, rx_rdy_db_dmaaddr = 0;
-
 	int ret;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	if (!osdev) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
@@ -998,6 +1204,7 @@ QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
 		return QDF_STATUS_E_NOENT;
 	}
 
+	ipa_res = &pdev->ipa_resource;
 	qdf_mem_zero(&pipe_in, sizeof(pipe_in));
 	qdf_mem_zero(&pipe_out, sizeof(pipe_out));
 
@@ -1096,12 +1303,16 @@ QDF_STATUS ol_txrx_ipa_setup(struct cdp_pdev *ppdev, void *ipa_i2w_cb,
 
 /**
  * ol_txrx_ipa_cleanup() - Disconnect IPA pipes
+ * @soc_hdl: soc handle
+ * @pdev_id: pdev id
  * @tx_pipe_handle: Tx pipe handle
  * @rx_pipe_handle: Rx pipe handle
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS ol_txrx_ipa_cleanup(uint32_t tx_pipe_handle, uint32_t rx_pipe_handle)
+QDF_STATUS ol_txrx_ipa_cleanup(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
+			       uint32_t tx_pipe_handle,
+			       uint32_t rx_pipe_handle)
 {
 	int ret;
 
@@ -1190,7 +1401,8 @@ static int ol_txrx_ipa_add_header_info(char *ifname, uint8_t *mac_addr,
 	struct ol_txrx_ipa_uc_tx_hdr *uc_tx_hdr = NULL;
 
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
-		  "Add Partial hdr: %s, %pM", ifname, mac_addr);
+		  "Add Partial hdr: %s, "QDF_MAC_ADDR_FMT, ifname,
+		  QDF_MAC_ADDR_REF(mac_addr));
 
 	/* dynamically allocate the memory to add the hdrs */
 	ipa_hdr = qdf_mem_malloc(sizeof(qdf_ipa_ioc_add_hdr_t)
@@ -1457,19 +1669,20 @@ QDF_STATUS ol_txrx_ipa_cleanup_iface(char *ifname, bool is_ipv6_enabled)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * ol_txrx_ipa_uc_enable_pipes() - Enable and resume traffic on Tx/Rx pipes
- * @pdev: handle to the device instance
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
-	struct ol_txrx_ipa_resources *ipa_res = &pdev->ipa_resource;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+	struct ol_txrx_ipa_resources *ipa_res;
 	int result;
 	QDF_STATUS status;
 
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	ipa_res = &pdev->ipa_resource;
 	status = htt_rx_update_smmu_map(pdev->htt_pdev, true);
 	if (status != QDF_STATUS_SUCCESS) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
@@ -1495,7 +1708,7 @@ QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_pdev *ppdev)
 				__func__, result);
 		goto smmu_unmap;
 	}
-	ol_txrx_ipa_uc_set_active((struct cdp_pdev *)pdev, true, true);
+	ol_txrx_ipa_uc_set_active(soc_hdl, pdev_id, true, true);
 
 	/* ACTIVATE RX PIPE */
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
@@ -1515,7 +1728,7 @@ QDF_STATUS ol_txrx_ipa_enable_pipes(struct cdp_pdev *ppdev)
 				__func__, result);
 		goto smmu_unmap;
 	}
-	ol_txrx_ipa_uc_set_active((struct cdp_pdev *)pdev, true, false);
+	ol_txrx_ipa_uc_set_active(soc_hdl, pdev_id, true, false);
 
 	return QDF_STATUS_SUCCESS;
 
@@ -1529,18 +1742,19 @@ smmu_unmap:
 	return QDF_STATUS_E_FAILURE;
 }
 
-/**
- * ol_txrx_ipa_uc_disable_pipes() – Suspend traffic and disable Tx/Rx pipes
- * @pdev: handle to the device instance
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ol_txrx_ipa_disable_pipes(struct cdp_pdev *ppdev)
+QDF_STATUS ol_txrx_ipa_disable_pipes(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
-	ol_txrx_pdev_handle pdev = (ol_txrx_pdev_handle)ppdev;
-	struct ol_txrx_ipa_resources *ipa_res = &pdev->ipa_resource;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
+	struct ol_txrx_ipa_resources *ipa_res;
 	int result;
 
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	ipa_res = &pdev->ipa_resource;
 	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
 			"%s: Disable RX PIPE", __func__);
 	result = qdf_ipa_suspend_wdi_pipe(ipa_res->rx_pipe_handle);
@@ -1627,11 +1841,17 @@ QDF_STATUS ol_txrx_ipa_set_perf_level(int client,
 #endif /* CONFIG_IPA_WDI_UNIFIED_API */
 
 #ifdef FEATURE_METERING
-QDF_STATUS ol_txrx_ipa_uc_get_share_stats(struct cdp_pdev *ppdev,
-					   uint8_t reset_stats)
+QDF_STATUS ol_txrx_ipa_uc_get_share_stats(struct cdp_soc_t *soc_hdl,
+					  uint8_t pdev_id, uint8_t reset_stats)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	int result;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	result = htt_h2t_ipa_uc_get_share_stats(pdev->htt_pdev, reset_stats);
 
@@ -1644,11 +1864,17 @@ QDF_STATUS ol_txrx_ipa_uc_get_share_stats(struct cdp_pdev *ppdev,
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS ol_txrx_ipa_uc_set_quota(struct cdp_pdev *ppdev,
-				     uint64_t quota_bytes)
+QDF_STATUS ol_txrx_ipa_uc_set_quota(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
+				    uint64_t quota_bytes)
 {
-	struct ol_txrx_pdev_t *pdev = (struct ol_txrx_pdev_t *)ppdev;
+	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
+	ol_txrx_pdev_handle pdev = ol_txrx_get_pdev_from_pdev_id(soc, pdev_id);
 	int result;
+
+	if (!pdev) {
+		ol_txrx_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	result = htt_h2t_ipa_uc_set_quota(pdev->htt_pdev, quota_bytes);
 

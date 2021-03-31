@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018,2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -234,7 +234,7 @@
  * gThrottleDutyCycleLevel1 - Set Thermal mitigation throttle duty cycle level1
  * @Min: 0
  * @Max: 100
- * @Default: 50
+ * @Default: 10
  *
  * Usage: External
  *
@@ -244,7 +244,7 @@
 			"gThrottleDutyCycleLevel1", \
 			0, \
 			100, \
-			50, \
+			10, \
 			CFG_VALUE_OR_DEFAULT, \
 			"Thermal mitigation throttle duty cycle level1")
 
@@ -253,7 +253,7 @@
  * gThrottleDutyCycleLevel2 - Set Thermal mitigation throttle duty cycle level2
  * @Min: 0
  * @Max: 100
- * @Default: 75
+ * @Default: 30
  *
  * Usage: External
  *
@@ -263,7 +263,7 @@
 			"gThrottleDutyCycleLevel2", \
 			0, \
 			100, \
-			75, \
+			30, \
 			CFG_VALUE_OR_DEFAULT, \
 			"Thermal mitigation throttle duty cycle level2")
 
@@ -272,7 +272,7 @@
  * gThrottleDutyCycleLevel3 - Set Thermal mitigation throttle duty cycle level3
  * @Min: 0
  * @Max: 100
- * @Default: 94
+ * @Default: 50
  *
  * Usage: External
  *
@@ -282,9 +282,153 @@
 			"gThrottleDutyCycleLevel3", \
 			0, \
 			100, \
-			94, \
+			50, \
 			CFG_VALUE_OR_DEFAULT, \
 			"Thermal mitigation throttle duty cycle level3")
+
+/*
+ * <ini>
+ * gThrottleDutyCycleLevel4 - Set Thermal mitigation throttle duty cycle level4
+ * @Min: 0
+ * @Max: 100
+ * @Default: 70
+ *
+ * This ini will apply the thermal throttle duty cycle value in FW
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_THROTTLE_DUTY_CYCLE_LEVEL4 CFG_INI_UINT( \
+			"gThrottleDutyCycleLevel4", \
+			0, \
+			100, \
+			70, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Thermal mitigation throttle duty cycle level4")
+
+/*
+ * <ini>
+ * gThrottleDutyCycleLevel5 - Set Thermal mitigation throttle duty cycle level5
+ * @Min: 0
+ * @Max: 100
+ * @Default: 90
+ *
+ * This ini will apply the thermal throttle duty cycle value in FW
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_THROTTLE_DUTY_CYCLE_LEVEL5 CFG_INI_UINT( \
+			"gThrottleDutyCycleLevel5", \
+			0, \
+			100, \
+			90, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Thermal mitigation throttle duty cycle level5")
+
+/* <ini>
+ *gThermalSamplingTime - Configure the thermal mitigation sampling time in ms.
+ *
+ * @Min: 10
+ * @Max: 100
+ * @Default: 100
+ *
+ * This ini will control the sampling time that the thermal mitigation in FW
+ * will consider while applying the duty cycle.
+ *
+ * Usage: External
+ *
+ * Supported features: Thermal Mitigation
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_SAMPLING_TIME CFG_INI_UINT( \
+				"gThermalSamplingTime", \
+				10, \
+				100, \
+				100, \
+				CFG_VALUE_OR_DEFAULT, \
+				"Thermal mitigation sampling time")
+
+/* <ini>
+ * gThermalAppsPriority - Configure the thermal mitigation APPS priority
+ *
+ * @Min: 1
+ * @Max: 10
+ * @Default: 1
+ *
+ * This ini will control the priority of the thermal mitigation in FW.
+ * FW will consider this priority while applying the duty cycle from the
+ * multiple clients. 1 being the least priority and 10 being highest.
+ *
+ * Usage: External
+ *
+ * Supported features: Thermal Mitigation
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_APPS_PRIORITY CFG_INI_UINT( \
+				"gThermalAppsPriority", \
+				1, \
+				10, \
+				1, \
+				CFG_VALUE_OR_DEFAULT, \
+				"Thermal mitigation priority for APPS")
+
+/* <ini>
+ * gThermalWppsPriority - Configure the thermal mitigation WPPS priority
+ *
+ * @Min: 1
+ * @Max: 10
+ * @Default: 1
+ *
+ * This ini will control the priority of the thermal mitigation in FW.
+ * FW will consider this priority while applying the duty cycle from the
+ * multiple clients. 1 being the least priority and 10 being highest.
+ *
+ * Usage: External
+ *
+ * Supported features: Thermal Mitigation
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_WPPS_PRIOITY CFG_INI_UINT( \
+				"gThermalWppsPriority", \
+				1, \
+				10, \
+				1, \
+				CFG_VALUE_OR_DEFAULT, \
+				"Thermal mitigation priority for WPPS")
+
+/* <ini>
+ * gThermalMgmtAction - Configure the thermal management action
+ *
+ * @Min: 0
+ * @Max: 3
+ * @Default: 0
+ *
+ * This ini will control the thermal throttle action to be performed by target
+ * when the thermal temperature increase/decrease to threshold.
+ * The valid thermal mgmt action INI value is defined as
+ * enum thermal_mgmt_action_code.
+ * 0 - THERMAL_MGMT_ACTION_DEFAULT: target default throttle behaviour
+ * 1 - THERMAL_MGMT_ACTION_HALT_TRAFFIC: Halt tx traffic
+ * 2 - THERMAL_MGMT_ACTION_NOTIFY_HOST: Notify host
+ * 3 - THERMAL_MGMT_ACTION_CHAINSCALING: Tx Chain scaling
+ *
+ * Usage: External
+ *
+ * Supported features: Thermal Mitigation
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_MGMT_ACTION CFG_INI_UINT( \
+				"gThermalMgmtAction", \
+				0, \
+				3, \
+				0, \
+				CFG_VALUE_OR_DEFAULT, \
+				"Thermal management action")
 
 #define CFG_THERMAL_TEMP_ALL \
 	CFG(CFG_THERMAL_TEMP_MIN_LEVEL0) \
@@ -300,7 +444,12 @@
 	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL0) \
 	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL1) \
 	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL2) \
-	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL3)
-
+	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL3) \
+	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL4) \
+	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL5) \
+	CFG(CFG_THERMAL_SAMPLING_TIME) \
+	CFG(CFG_THERMAL_APPS_PRIORITY) \
+	CFG(CFG_THERMAL_WPPS_PRIOITY) \
+	CFG(CFG_THERMAL_MGMT_ACTION)
 #endif
 

@@ -182,6 +182,38 @@ dhd_dbg_ring_get_pending_len(dhd_dbg_ring_t *ring)
 	return pending_len;
 }
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+int
+dhd_dbg_ring_update(void *dbg_ring, uint32 w_len)
+{
+	unsigned long flags;
+	dhd_dbg_ring_t *ring = (dhd_dbg_ring_t *)dbg_ring;
+
+	if (ring->id != PACKET_LOG_RING_ID) {
+		return BCME_UNSUPPORTED;
+	}
+
+	DHD_DBG_RING_LOCK(ring->lock, flags);
+
+	if (ring->state != RING_ACTIVE) {
+		DHD_DBG_RING_UNLOCK(ring->lock, flags);
+		return BCME_OK;
+	}
+
+	/* update statistics */
+	ring->stat.written_records++;
+	ring->stat.written_bytes += w_len;
+	DHD_DBGIF(("%s : RING%d[%s] written_records %d, written_bytes %d, read_bytes=%d,"
+		" ring->threshold=%d, wp=%d, rp=%d\n", __FUNCTION__, ring->id, ring->name,
+		ring->stat.written_records, ring->stat.written_bytes, ring->stat.read_bytes,
+		ring->threshold, ring->wp, ring->rp));
+
+	DHD_DBG_RING_UNLOCK(ring->lock, flags);
+
+	return BCME_OK;
+}
+#endif /* DHD_PKT_LOGGING_DBGRING */
+
 int
 dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 {

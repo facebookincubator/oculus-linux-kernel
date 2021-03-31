@@ -89,8 +89,6 @@ static int cam_lrme_hw_dev_probe(struct platform_device *pdev)
 	const struct of_device_id *match_dev = NULL;
 	struct cam_lrme_hw_info *hw_info;
 	int rc, i;
-	int32_t camera_hw_version;
-
 
 	lrme_hw = kzalloc(sizeof(struct cam_hw_info), GFP_KERNEL);
 	if (!lrme_hw) {
@@ -120,7 +118,7 @@ static int cam_lrme_hw_dev_probe(struct platform_device *pdev)
 
 	rc = cam_req_mgr_workq_create("cam_lrme_hw_worker",
 		CAM_LRME_HW_WORKQ_NUM_TASK,
-		&lrme_core->work, CRM_WORKQ_USAGE_IRQ, 0,
+		&lrme_core->work, CRM_WORKQ_USAGE_IRQ, 0, false,
 		cam_req_mgr_process_workq_cam_lrme_hw_worker);
 	if (rc) {
 		CAM_ERR(CAM_LRME, "Unable to create a workq, rc=%d", rc);
@@ -160,18 +158,10 @@ static int cam_lrme_hw_dev_probe(struct platform_device *pdev)
 		goto release_cdm;
 	}
 
-	rc = cam_cpas_get_cpas_hw_version(&camera_hw_version);
+	rc = cam_lrme_hw_start(lrme_hw, NULL, 0);
 	if (rc) {
-		CAM_ERR(CAM_ISP, "Failed to get HW version rc:%d", rc);
-		goto release_cdm;
-	}
-
-	if (camera_hw_version != CAM_CPAS_TITAN_170_V200) {
-		rc = cam_lrme_hw_start(lrme_hw, NULL, 0);
-		if (rc) {
-			CAM_ERR(CAM_LRME, "Failed to hw init, rc=%d", rc);
-			goto detach_smmu;
-		}
+		CAM_ERR(CAM_LRME, "Failed to hw init, rc=%d", rc);
+		goto detach_smmu;
 	}
 
 	rc = cam_lrme_hw_util_get_caps(lrme_hw, &lrme_core->hw_caps);
@@ -182,12 +172,10 @@ static int cam_lrme_hw_dev_probe(struct platform_device *pdev)
 		goto detach_smmu;
 	}
 
-	if (camera_hw_version != CAM_CPAS_TITAN_170_V200) {
-		rc = cam_lrme_hw_stop(lrme_hw, NULL, 0);
-		if (rc) {
-			CAM_ERR(CAM_LRME, "Failed to deinit hw, rc=%d", rc);
-			goto detach_smmu;
-		}
+	rc = cam_lrme_hw_stop(lrme_hw, NULL, 0);
+	if (rc) {
+		CAM_ERR(CAM_LRME, "Failed to deinit hw, rc=%d", rc);
+		goto detach_smmu;
 	}
 
 	lrme_core->hw_idx = lrme_hw->soc_info.index;

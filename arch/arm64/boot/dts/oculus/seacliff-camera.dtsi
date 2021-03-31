@@ -1,3 +1,53 @@
+&cam_sensor_mclk5_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk5_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&pm8150a_l2 {
+	/* Teton power */
+	regulator-always-on;
+	regulator-min-microvolt = <1050000>;
+	regulator-max-microvolt = <1050000>;
+	qcom,init-voltage = <1050000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150a_l3 {
+	/* Glacier power */
+	regulator-always-on;
+	qcom,init-voltage = <1200000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150a_l10 {
+	/* Canyon, Glacier, Teton power */
+	regulator-always-on;
+	regulator-min-microvolt = <2960000>;
+	regulator-max-microvolt = <2960000>;
+	qcom,init-voltage = <2960000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150_l10 {
+	/* Esker power */
+	regulator-always-on;
+	qcom,init-voltage = <2960000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150_l15 {
+	/* Canyon, Glacier, Teton, Esker power */
+	regulator-always-on;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
 &soc {
 	qcom,cam-cdm-intf {
 		cdm-client-names = "vfe", "ife", "jpegdma", "jpegenc";
@@ -19,11 +69,11 @@
 		cell-index = <0>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <1>;
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l3>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -56,11 +106,11 @@
 		cell-index = <1>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <2>;
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l3>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -93,10 +143,10 @@
 		cell-index = <2>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <3>;
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd",
+		regulator-names = "cam_vana", "cam_vio",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -129,10 +179,10 @@
 		cell-index = <3>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <4>;
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd",
+		regulator-names = "cam_vana", "cam_vio",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -165,11 +215,11 @@
 		cell-index = <4>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <0>;
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l2>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -202,10 +252,10 @@
 		cell-index = <5>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <5>;
-		cam_avdd-supply = <&pm8150_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
+		cam_vana-supply = <&pm8150_l10>;
+		cam_vio-supply = <&pm8150_l15>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_clk";
+		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
 		rgltr-min-voltage = <2960000 1800000 0>;

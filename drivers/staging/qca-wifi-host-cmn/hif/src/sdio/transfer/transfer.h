@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  *
  *
@@ -65,13 +65,8 @@ struct hif_sendContext {
 	unsigned int head_data_len;
 };
 
-void hif_dev_dump_registers(struct hif_sdio_device *pdev,
-			    struct MBOX_IRQ_PROC_REGISTERS *irq_proc,
-			    struct MBOX_IRQ_ENABLE_REGISTERS *irq_en,
-			    struct MBOX_COUNTER_REGISTERS *mbox_regs);
-
 int hif_get_send_address(struct hif_sdio_device *pdev,
-			 uint8_t pipe, uint32_t *addr);
+			 uint8_t pipe, unsigned long *addr);
 
 QDF_STATUS hif_dev_alloc_and_prepare_rx_packets(struct hif_sdio_device *pdev,
 						uint32_t look_aheads[],
@@ -99,12 +94,24 @@ static inline uint32_t hif_get_send_buffer_flags(struct hif_sdio_device *pdev)
 	if (pdev)
 		return (uint32_t)HIF_WR_ASYNC_BLOCK_INC;
 
-	HIF_ERROR("%s: hif obj is null. Not populating xfer flags", __func__);
+	hif_err("hif obj is null. Not populating xfer flags");
 
 	return 0;
 }
+
+static inline int hif_sdio_bus_configure(struct hif_softc *hif_sc)
+{
+	return 0;
+}
+
 #elif defined(CONFIG_SDIO_TRANSFER_ADMA)
-#error "Error - Not implemented yet"
+static inline uint32_t hif_get_send_buffer_flags(struct hif_sdio_device *pdev)
+{
+	/* ADAM-TODO */
+	return (uint32_t)HIF_WR_ASYNC_BLOCK_FIX;
+}
+
+int hif_sdio_bus_configure(struct hif_softc *hif_sc);
 #endif
 
 #endif /* __TRANSFER_H__ */

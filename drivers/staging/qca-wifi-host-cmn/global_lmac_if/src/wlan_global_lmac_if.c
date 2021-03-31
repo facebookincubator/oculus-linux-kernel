@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -25,6 +25,8 @@
 #ifdef WLAN_CONV_SPECTRAL_ENABLE
 #include <wlan_spectral_utils_api.h>
 #endif
+#include <target_if_psoc_wake_lock.h>
+
 /* Function pointer to call DA/OL specific tx_ops registration function */
 QDF_STATUS (*wlan_global_lmac_if_tx_ops_register[MAX_DEV_TYPE])
 				(struct wlan_lmac_if_tx_ops *tx_ops);
@@ -78,6 +80,34 @@ static void wlan_spectral_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops)
 }
 #endif /*WLAN_CONV_SPECTRAL_ENABLE*/
 
+#ifdef WLAN_IOT_SIM_SUPPORT
+/* Function pointer for iot_sim rx_ops registration function */
+void (*wlan_lmac_if_iot_sim_rx_ops)(struct wlan_lmac_if_rx_ops *rx_ops);
+
+QDF_STATUS wlan_lmac_if_iot_sim_set_rx_ops_register_cb(void (*handler)
+				(struct wlan_lmac_if_rx_ops *))
+{
+	wlan_lmac_if_iot_sim_rx_ops = handler;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+qdf_export_symbol(wlan_lmac_if_iot_sim_set_rx_ops_register_cb);
+
+static void wlan_iot_sim_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops)
+{
+	if (wlan_lmac_if_iot_sim_rx_ops)
+		wlan_lmac_if_iot_sim_rx_ops(rx_ops);
+	else
+		qdf_print("\n***** IOT SIM MODULE NOT LOADED *****\n");
+}
+
+#else
+static void wlan_iot_sim_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops)
+{
+}
+#endif
+
 /**
  * wlan_global_lmac_if_rx_ops_register() - Global lmac_if
  * rx handler register
@@ -96,7 +126,7 @@ wlan_global_lmac_if_rx_ops_register(struct wlan_lmac_if_rx_ops *rx_ops)
 	 * Ex: rx_ops->fp = function;
 	 */
 	if (!rx_ops) {
-		qdf_print("%s: lmac if rx ops pointer is NULL", __func__);
+		qdf_err("lmac if rx ops pointer is NULL");
 		return QDF_STATUS_E_INVAL;
 	}
 	/* Registeration for UMAC componets */
@@ -104,6 +134,9 @@ wlan_global_lmac_if_rx_ops_register(struct wlan_lmac_if_rx_ops *rx_ops)
 
 	/* spectral rx_ops registration*/
 	wlan_spectral_register_rx_ops(rx_ops);
+
+	/* iot_sim rx_ops registration*/
+	wlan_iot_sim_register_rx_ops(rx_ops);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -121,19 +154,47 @@ QDF_STATUS wlan_global_lmac_if_open(struct wlan_objmgr_psoc *psoc)
 {
 	WLAN_DEV_TYPE dev_type;
 
+	struct wlan_lmac_if_tx_ops *tx_ops;
+	struct wlan_lmac_if_rx_ops *rx_ops;
+
+	if (!psoc) {
+		qdf_err("psoc is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	tx_ops = qdf_mem_malloc(sizeof(*tx_ops));
+	if (!tx_ops) {
+		qdf_err("tx_ops is NULL");
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	rx_ops = qdf_mem_malloc(sizeof(*rx_ops));
+	if (!rx_ops) {
+		qdf_err("rx_ops is NULL");
+		qdf_mem_free(tx_ops);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	wlan_psoc_set_lmac_if_txops(psoc, tx_ops);
+	wlan_psoc_set_lmac_if_rxops(psoc, rx_ops);
+
 	dev_type = psoc->soc_nif.phy_type;
 
-	if (dev_type == WLAN_DEV_DA || dev_type == WLAN_DEV_OL) {
+	if (dev_type == WLAN_DEV_OL) {
 		wlan_global_lmac_if_tx_ops_register[dev_type]
-					(&psoc->soc_cb.tx_ops);
+					(tx_ops);
 	} else {
 		/* Control should ideally not reach here */
 		qdf_print("Invalid device type");
+		qdf_mem_free(tx_ops);
+		qdf_mem_free(rx_ops);
 		return QDF_STATUS_E_INVAL;
 	}
 
 	/* Function call to register rx-ops handlers */
-	wlan_global_lmac_if_rx_ops_register(&psoc->soc_cb.rx_ops);
+	wlan_global_lmac_if_rx_ops_register(rx_ops);
+
+	target_if_wake_lock_init(psoc);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -149,8 +210,23 @@ qdf_export_symbol(wlan_global_lmac_if_open);
  */
 QDF_STATUS wlan_global_lmac_if_close(struct wlan_objmgr_psoc *psoc)
 {
-	qdf_mem_zero(&psoc->soc_cb.tx_ops, sizeof(psoc->soc_cb.tx_ops));
-	qdf_mem_zero(&psoc->soc_cb.rx_ops, sizeof(psoc->soc_cb.rx_ops));
+	struct wlan_lmac_if_tx_ops *tx_ops;
+	struct wlan_lmac_if_rx_ops *rx_ops;
+
+	if (!psoc) {
+		qdf_err("psoc is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	target_if_wake_lock_deinit(psoc);
+	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+	rx_ops = wlan_psoc_get_lmac_if_rxops(psoc);
+
+	wlan_psoc_set_lmac_if_txops(psoc, NULL);
+	wlan_psoc_set_lmac_if_rxops(psoc, NULL);
+
+	qdf_mem_free(tx_ops);
+	qdf_mem_free(rx_ops);
 
 	return QDF_STATUS_SUCCESS;
 }

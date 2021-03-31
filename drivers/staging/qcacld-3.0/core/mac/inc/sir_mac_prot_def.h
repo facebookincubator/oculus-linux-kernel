@@ -54,9 +54,6 @@
 #define SIR_MAC_CTRL_FRAME    0x1
 #define SIR_MAC_DATA_FRAME    0x2
 
-#define SIR_MAC_FRAME_TYPE_START   0x0
-#define SIR_MAC_FRAME_TYPE_END     0x3
-
 /* Data frame subtype definitions */
 #define SIR_MAC_DATA_DATA                 0
 #define SIR_MAC_DATA_DATA_ACK             1
@@ -74,9 +71,6 @@
 #define SIR_MAC_DATA_QOS_NULL_ACK         13
 #define SIR_MAC_DATA_QOS_NULL_POLL        14
 #define SIR_MAC_DATA_QOS_NULL_ACK_POLL    15
-
-#define SIR_MAC_FRAME_SUBTYPE_START       0
-#define SIR_MAC_FRAME_SUBTYPE_END         16
 
 #define SIR_MAC_DATA_QOS_MASK             8
 #define SIR_MAC_DATA_NULL_MASK            4
@@ -103,9 +97,7 @@
 #define SIR_MAC_ACTION_TX             1
 #define SIR_MAC_ACTION_RX             2
 
-#define SIR_MAC_BA_POLICY_DELAYED       0
 #define SIR_MAC_BA_POLICY_IMMEDIATE     1
-#define SIR_MAC_BA_AMSDU_SUPPORTED      1
 #define SIR_MAC_BA_DEFAULT_BUFF_SIZE    64
 
 #define MAX_BA_BUFF_SIZE    256
@@ -139,11 +131,6 @@
 /* HT Action Field Codes */
 #define SIR_MAC_SM_POWER_SAVE       1
 
-/* DLP action frame types */
-#define SIR_MAC_DLP_REQ             0
-#define SIR_MAC_DLP_RSP             1
-#define SIR_MAC_DLP_TEARDOWN        2
-
 /* block acknowledgment action frame types */
 #define SIR_MAC_ACTION_VENDOR_SPECIFIC 9
 #define SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY     0x7F
@@ -159,26 +146,11 @@
 #define SIR_MAC_ACTION_GAS_COMEBACK_REQUEST     0x0C
 #define SIR_MAC_ACTION_GAS_COMEBACK_RESPONSE    0x0D
 
-#ifdef WLAN_FEATURE_11W
-/* 11w SA query request/response action frame category code */
-#define SIR_MAC_SA_QUERY_REQ             0
-#define SIR_MAC_SA_QUERY_RSP             1
-#endif
-
-/* WNM Action field values; IEEE Std 802.11-2012, 8.5.14.1, Table 8-250 */
-#define SIR_MAC_WNM_BSS_TM_QUERY         6
-#define SIR_MAC_WNM_BSS_TM_REQUEST       7
-#define SIR_MAC_WNM_BSS_TM_RESPONSE      8
-#define SIR_MAC_WNM_NOTIF_REQUEST        26
-#define SIR_MAC_WNM_NOTIF_RESPONSE       27
-
 /* Protected Dual of Public Action(PDPA) frames Action field */
 #define SIR_MAC_PDPA_GAS_INIT_REQ      10
 #define SIR_MAC_PDPA_GAS_INIT_RSP      11
 #define SIR_MAC_PDPA_GAS_COMEBACK_REQ  12
 #define SIR_MAC_PDPA_GAS_COMEBACK_RSP  13
-
-#define SIR_MAC_MAX_RANDOM_LENGTH   2306
 
 /* ----------------------------------------------------------------------------- */
 /* EID (Element ID) definitions */
@@ -196,8 +168,25 @@
 #define VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_2_2       780
 #define VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_2_2       780
 
+#define VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_1_1_SGI80 433
+#define VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_1_1_SGI80 433
+#define VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_2_2_SGI80 866
+#define VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_2_2_SGI80 866
+
+#define VHT_CAP_NO_160M_SUPP 0
 #define VHT_CAP_160_SUPP 1
 #define VHT_CAP_160_AND_80P80_SUPP 2
+
+#define VHT_NO_EXTD_NSS_BW_SUPP			0
+#define VHT_EXTD_NSS_80_HALF_NSS_160		1
+#define VHT_EXTD_NSS_80_HALF_NSS_80P80		2
+#define VHT_EXTD_NSS_80_3QUART_NSS_80P80	3
+#define VHT_EXTD_NSS_160_HALF_NSS_80P80		1
+#define VHT_EXTD_NSS_160_3QUART_NSS_80P80	2
+#define VHT_EXTD_NSS_2X_NSS_160_1X_NSS_80P80	3
+#define VHT_EXTD_NSS_2X_NSS_80_1X_NSS_80P80	3
+
+#define VHT_MAX_NSS 8
 
 #define VHT_MCS_1x1 0xFFFC
 #define VHT_MCS_2x2 0xFFF3
@@ -228,6 +217,8 @@
 
 /* OWE DH Parameter element https://tools.ietf.org/html/rfc8110 */
 #define SIR_DH_PARAMETER_ELEMENT_EXT_EID 32
+
+#define SIR_MSCS_ELEMENT_EXT_EID 88
 
 /* OUI and type definition for WPA IE in network byte order */
 #define SIR_MAC_WPA_OUI             0x01F25000
@@ -262,7 +253,10 @@
 #define SIR_MAC_B_PR_SSID_OFFSET             12
 
 /* Association/Reassociation offsets */
-#define SIR_MAC_REASSOC_SSID_OFFSET          10
+#define SIR_MAC_REASSOC_REQ_SSID_OFFSET      10
+
+/* Association Request offsets */
+#define SIR_MAC_ASSOC_REQ_SSID_OFFSET        4
 
 /* / Transaction sequence number definitions (used in Authentication frames) */
 #define    SIR_MAC_AUTH_FRAME_1        1
@@ -346,175 +340,6 @@
 /* Maximum allowable size of a beacon and probe rsp frame */
 #define SIR_MAX_BEACON_SIZE    512
 #define SIR_MAX_PROBE_RESP_SIZE 512
-
-/* Status Code (present in Management response frames) enum */
-/* (IEEE Std 802.11-2016, 9.4.1.9, Table 9-46) */
-
-enum mac_status_code {
-	eSIR_MAC_SUCCESS_STATUS = 0,    /* Reserved */
-	eSIR_MAC_UNSPEC_FAILURE_STATUS = 1,     /* Unspecified reason */
-	/* 802.11 reserved                              2-9 */
-	/*
-	   WMM status codes(standard 1.1 table 9)
-	   Table 9 ADDTS Response Status Codes
-	   Value Operation
-	   0 Admission accepted
-	   1 Invalid parameters
-	   2 Reserved
-	   3 Refused
-	   4-255 Reserved
-	 */
-	eSIR_MAC_WME_INVALID_PARAMS_STATUS = 1, /* ?? */
-	eSIR_MAC_WME_REFUSED_STATUS = 3,        /* ?? */
-	eSIR_MAC_CAPABILITIES_NOT_SUPPORTED_STATUS = 10,        /* Cannot support all requested capabilities in the Capability Information field */
-	eSIR_MAC_INABLITY_TO_CONFIRM_ASSOC_STATUS = 11, /* Reassociation denied due to inability to confirm that association exists */
-	eSIR_MAC_OUTSIDE_SCOPE_OF_SPEC_STATUS = 12,     /* Association denied due to reason outside the scope of this standard */
-	eSIR_MAC_AUTH_ALGO_NOT_SUPPORTED_STATUS = 13,   /* Responding station does not support the specified authentication algorithm */
-	eSIR_MAC_AUTH_FRAME_OUT_OF_SEQ_STATUS = 14,     /* Received an Authentication frame with authentication transaction sequence number */
-	/* out of expected sequence */
-	eSIR_MAC_CHALLENGE_FAILURE_STATUS = 15, /* Authentication rejected because of challenge failure */
-	eSIR_MAC_AUTH_RSP_TIMEOUT_STATUS = 16,  /* Authentication rejected due to timeout waiting for next frame in sequence */
-	eSIR_MAC_MAX_ASSOC_STA_REACHED_STATUS = 17,     /* Association denied because AP is unable to handle additional associated stations */
-	eSIR_MAC_BASIC_RATES_NOT_SUPPORTED_STATUS = 18, /* Association denied due to requesting station not supporting all of the data rates in the */
-	/* BSSBasicRateSet parameter */
-	eSIR_MAC_SHORT_PREAMBLE_NOT_SUPPORTED_STATUS = 19,      /* Association denied due to requesting station not supporting the short preamble */
-	/* option */
-	eSIR_MAC_PBCC_NOT_SUPPORTED_STATUS = 20,        /* Association denied due to requesting station not supporting the PBCC modulation */
-	/* option */
-	eSIR_MAC_CHANNEL_AGILITY_NOT_SUPPORTED_STATUS = 21,     /* Association denied due to requesting station not supporting the Channel Agility */
-	/* option */
-	eSIR_MAC_SPECTRUM_MGMT_REQD_STATUS = 22,        /* Association request rejected because Spectrum Management capability is required */
-	eSIR_MAC_PWR_CAPABILITY_BAD_STATUS = 23,        /* Association request rejected because the information in the Power Capability */
-	/* element is unacceptable */
-	eSIR_MAC_SPRTD_CHANNELS_BAD_STATUS = 24,        /* Association request rejected because the information in the Supported Channels */
-	/* element is unacceptable */
-	eSIR_MAC_SHORT_SLOT_NOT_SUPPORTED_STATUS = 25,   /* Association denied due to requesting station not supporting the Short Slot Time */
-	/* option */
-	eSIR_MAC_DSSS_OFDM_NOT_SUPPORTED_STATUS = 26,   /* Association denied due to requesting station not supporting the DSSS-OFDM option */
-	/* reserved                                     27-29 */
-	eSIR_MAC_TRY_AGAIN_LATER = 30,  /* Association request rejected temporarily, try again later */
-#ifdef WLAN_FEATURE_11W
-	eSIR_MAC_ROBUST_MGMT_FRAMES_POLICY_VIOLATION_STATUS = 31,    /* Robust management frames policy violation */
-#endif
-	eSIR_MAC_QOS_UNSPECIFIED_FAILURE_STATUS = 32,   /* Unspecified, QoS-related failure */
-	eSIR_MAC_QAP_NO_BANDWIDTH_STATUS = 33,  /* Association denied because QoS AP has insufficient bandwidth to handle another */
-	/* QoS STA */
-	/*
-	 * Association denied due to excessive frame loss rates
-	 * and/or poor conditions/RSSI on cur channel
-	 */
-	eSIR_MAC_XS_FRAME_LOSS_POOR_CHANNEL_RSSI_STATUS = 34,
-	/* rent operating channel */
-	eSIR_MAC_STA_QOS_NOT_SUPPORTED_STATUS = 35,     /* Association (with QoS BSS) denied because the requesting STA does not support the */
-	/* QoS facility */
-	eSIR_MAC_STA_BLK_ACK_NOT_SUPPORTED_STATUS = 36, /* Reserved */
-	eSIR_MAC_REQ_DECLINED_STATUS = 37,      /* The request has been declined */
-	eSIR_MAC_INVALID_PARAM_STATUS = 38,     /* The request has not been successful as one or more parameters have invalid values */
-	eSIR_MAC_TS_NOT_HONOURED_STATUS = 39,   /* The TS has not been created because the request cannot be honored; however, a suggested */
-	/* TSPEC is provided so that the initiating STA may attempt to set another TS */
-	/* with the suggested changes to the TSPEC */
-	eSIR_MAC_INVALID_IE_STATUS = 40,       /* Invalid information element, i.e., an information element defined in this standard for */
-	/* which the content does not meet the specifications in Clause 7 */
-	eSIR_MAC_INVALID_GROUP_CIPHER_STATUS = 41,      /* Invalid group cipher */
-	eSIR_MAC_INVALID_PAIRWISE_CIPHER_STATUS = 42,   /* Invalid pairwise cipher */
-	eSIR_MAC_INVALID_AKMP_STATUS = 43,      /* Invalid AKMP */
-	eSIR_MAC_UNSUPPORTED_RSN_IE_VERSION_STATUS = 44,        /* Unsupported RSN information element version */
-	eSIR_MAC_INVALID_RSN_IE_CAPABILITIES_STATUS = 45,       /* Invalid RSN information element capabilities */
-	eSIR_MAC_CIPHER_SUITE_REJECTED_STATUS = 46,     /* Cipher suite rejected because of security policy */
-	eSIR_MAC_TS_NOT_CREATED_STATUS = 47,    /* The TS has not been created; however, the HC may be capable of creating a TS, in */
-	/* response to a request, after the time indicated in the TS Delay element */
-	eSIR_MAC_DL_NOT_ALLOWED_STATUS = 48,    /* Direct link is not allowed in the BSS by policy */
-	eSIR_MAC_DEST_STA_NOT_KNOWN_STATUS = 49,        /* The Destination STA is not present within this BSS */
-	eSIR_MAC_DEST_STA_NOT_QSTA_STATUS = 50, /* The Destination STA is not a QoS STA */
-	eSIR_MAC_INVALID_LISTEN_INTERVAL_STATUS = 51,   /* Association denied because the ListenInterval is too large */
-
-	eSIR_MAC_INVALID_FT_ACTION_FRAME_COUNT = 52,
-	eSIR_MAC_INVALID_PMKID = 53,
-#ifdef FEATURE_WLAN_ESE
-	eSIR_MAC_ESE_UNSPECIFIED_QOS_FAILURE_STATUS = 200,      /* ESE-Unspecified, QoS related failure in (Re)Assoc response frames */
-	eSIR_MAC_ESE_TSPEC_REQ_REFUSED_STATUS = 201,    /* ESE-TSPEC request refused due to AP's policy configuration in AddTs Rsp, (Re)Assoc Rsp. */
-	eSIR_MAC_ESE_ASSOC_DENIED_INSUFF_BW_STATUS = 202,       /* ESE-Assoc denied due to insufficient bandwidth to handle new TS in (Re)Assoc Rsp. */
-	eSIR_MAC_ESE_INVALID_PARAMETERS_STATUS = 203,   /* ESE-Invalid parameters. (Re)Assoc request had one or more TSPEC parameters with */
-	/* invalid values. */
-#endif
-};
-
-/**
- * Reason Code (present in Deauthentication/Disassociation
- * Management frames) enum
- */
-typedef enum eSirMacReasonCodes {
-	eSIR_MAC_UNSPEC_FAILURE_REASON = 1,     /* Unspecified reason */
-	eSIR_MAC_PREV_AUTH_NOT_VALID_REASON = 2,        /* Previous authentication no longer valid */
-	eSIR_MAC_DEAUTH_LEAVING_BSS_REASON = 3, /* Deauthenticated because sending station is leaving (or has left) IBSS or ESS */
-	eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON = 4, /* Disassociated due to inactivity */
-	eSIR_MAC_DISASSOC_DUE_TO_DISABILITY_REASON = 5, /* Disassociated because AP is unable to handle all currently associated stations */
-	eSIR_MAC_CLASS2_FRAME_FROM_NON_AUTH_STA_REASON = 6,     /* Class 2 frame received from nonauthenticated station */
-	eSIR_MAC_CLASS3_FRAME_FROM_NON_ASSOC_STA_REASON = 7,    /* Class 3 frame received from nonassociated station */
-	eSIR_MAC_DISASSOC_LEAVING_BSS_REASON = 8,       /* Disassociated because sending station is leaving (or has left) BSS */
-	eSIR_MAC_STA_NOT_PRE_AUTHENTICATED_REASON = 9,  /* Station requesting (re)association is not authenticated with responding station */
-	eSIR_MAC_PWR_CAPABILITY_BAD_REASON = 10,        /* Disassociated because the information in the Power Capability element is unacceptable */
-	eSIR_MAC_SPRTD_CHANNELS_BAD_REASON = 11,        /* Disassociated because the information in the Supported Channels element is unacceptable */
-	eSIR_MAC_BSS_TRANSITION_DISASSOC = 12,
-	eSIR_MAC_INVALID_IE_REASON = 13,        /* Invalid information element, i.e., an information element defined in this standard for */
-	/* which the content does not meet the specifications in Clause 7 */
-	eSIR_MAC_MIC_FAILURE_REASON = 14,       /* Message integrity code (MIC) failure */
-	eSIR_MAC_4WAY_HANDSHAKE_TIMEOUT_REASON = 15,    /* 4-Way Handshake timeout */
-	eSIR_MAC_GR_KEY_UPDATE_TIMEOUT_REASON = 16,     /* Group Key Handshake timeout */
-	eSIR_MAC_RSN_IE_MISMATCH_REASON = 17,   /* Information element in 4-Way Handshake different from (Re)Association Request/Probe */
-	/* Response/Beacon frame */
-	eSIR_MAC_INVALID_MC_CIPHER_REASON = 18, /* Invalid group cipher */
-	eSIR_MAC_INVALID_UC_CIPHER_REASON = 19, /* Invalid pairwise cipher */
-	eSIR_MAC_INVALID_AKMP_REASON = 20,      /* Invalid AKMP */
-	eSIR_MAC_UNSUPPORTED_RSN_IE_VER_REASON = 21,    /* Unsupported RSN information element version */
-	eSIR_MAC_INVALID_RSN_CAPABILITIES_REASON = 22,  /* Invalid RSN information element capabilities */
-	eSIR_MAC_1X_AUTH_FAILURE_REASON = 23,   /* IEEE 802.1X authentication failed */
-	eSIR_MAC_CIPHER_SUITE_REJECTED_REASON = 24,     /* Cipher suite rejected because of the security policy */
-#ifdef FEATURE_WLAN_TDLS
-	eSIR_MAC_TDLS_TEARDOWN_PEER_UNREACHABLE = 25,   /* TDLS direct link teardown due to TDLS peer STA unreachable via the TDLS direct link */
-	eSIR_MAC_TDLS_TEARDOWN_UNSPEC_REASON = 26,      /* TDLS direct link teardown for unspecified reason */
-#endif
-	/* reserved                                        27 - 30 */
-#ifdef WLAN_FEATURE_11W
-	eSIR_MAC_ROBUST_MGMT_FRAMES_POLICY_VIOLATION = 31,      /* Robust management frames policy violation */
-#endif
-	eSIR_MAC_QOS_UNSPECIFIED_REASON = 32,   /* Disassociated for unspecified, QoS-related reason */
-	eSIR_MAC_QAP_NO_BANDWIDTH_REASON = 33,  /* Disassociated because QoS AP lacks sufficient bandwidth for this QoS STA */
-	eSIR_MAC_XS_UNACKED_FRAMES_REASON = 34, /* Disassociated because excessive number of frames need to be acknowledged, but are not */
-	/* acknowledged due to AP transmissions and/or poor channel conditions */
-	eSIR_MAC_BAD_TXOP_USE_REASON = 35,      /* Disassociated because STA is transmitting outside the limits of its TXOPs */
-	eSIR_MAC_PEER_STA_REQ_LEAVING_BSS_REASON = 36,  /* Requested from peer STA as the STA is leaving the BSS (or resetting) */
-	eSIR_MAC_PEER_REJECT_MECHANISIM_REASON = 37,    /* Requested from peer STA as it does not want to use the mechanism */
-	eSIR_MAC_MECHANISM_NOT_SETUP_REASON = 38,       /* Requested from peer STA as the STA received frames using the mechanism for which a */
-	/* setup is required */
-	eSIR_MAC_PEER_TIMEDOUT_REASON = 39,     /* Requested from peer STA due to timeout */
-	eSIR_MAC_CIPHER_NOT_SUPPORTED_REASON = 45,      /* Peer STA does not support the requested cipher suite */
-	eSIR_MAC_DISASSOC_DUE_TO_FTHANDOFF_REASON = 46, /* FT reason */
-	/* reserved                                         47 - 65535. */
-
-	/*
-	 * Internal reason codes: Add any internal reason code just after
-	 * eSIR_MAC_REASON_PROP_START and decrease the value of
-	 * eSIR_MAC_REASON_PROP_START accordingly.
-	 */
-	eSIR_MAC_REASON_PROP_START = 65519,
-	eSIR_MAC_HOST_TRIGGERED_ROAM_FAILURE  = 65519,
-	eSIR_MAC_FW_TRIGGERED_ROAM_FAILURE = 65520,
-	eSIR_MAC_GATEWAY_REACHABILITY_FAILURE = 65521,
-	eSIR_MAC_UNSUPPORTED_CHANNEL_CSA = 65522,
-	eSIR_MAC_OPER_CHANNEL_DISABLED_INDOOR = 65523,
-	eSIR_MAC_OPER_CHANNEL_USER_DISABLED = 65524,
-	eSIR_MAC_DEVICE_RECOVERY = 65525,
-	eSIR_MAC_KEY_TIMEOUT = 65526,
-	eSIR_MAC_OPER_CHANNEL_BAND_CHANGE = 65527,
-	eSIR_MAC_IFACE_DOWN = 65528,
-	eSIR_MAC_PEER_XRETRY_FAIL = 65529,
-	eSIR_MAC_PEER_INACTIVITY = 65530,
-	eSIR_MAC_SA_QUERY_TIMEOUT = 65531,
-	eSIR_MAC_CHANNEL_SWITCH_FAILED = 65532,
-	eSIR_MAC_BEACON_MISSED = 65533,
-	eSIR_MAC_USER_TRIGGERED_ROAM_FAILURE = 65534,
-} tSirMacReasonCodes;
 
 /* / Frame control field format (2 bytes) */
 typedef struct sSirMacFrameCtl {
@@ -1030,7 +855,7 @@ typedef struct sSirMacCfParamSetIE {
 } qdf_packed tSirMacCfParamSetIE;
 
 typedef struct sSirMacChanInfo {
-	tSirMacChanNum firstChanNum;
+	uint32_t first_freq;
 	uint8_t numChannels;
 	int8_t maxTxPower;
 } qdf_packed tSirMacChanInfo;
@@ -1072,7 +897,7 @@ typedef struct sSirMacMeasReqIE {
 /* VHT Capabilities Info */
 typedef struct sSirMacVHTCapabilityInfo {
 #ifndef ANI_LITTLE_BIT_ENDIAN
-	uint32_t reserved1:2;
+	uint32_t extended_nss_bw_supp:2;
 	uint32_t txAntPattern:1;
 	uint32_t rxAntPattern:1;
 	uint32_t vhtLinkAdaptCap:2;
@@ -1112,27 +937,29 @@ typedef struct sSirMacVHTCapabilityInfo {
 	uint32_t vhtLinkAdaptCap:2;
 	uint32_t rxAntPattern:1;
 	uint32_t txAntPattern:1;
-	uint32_t reserved1:2;
+	uint32_t extended_nss_bw_supp:2;
 #endif
 } qdf_packed tSirMacVHTCapabilityInfo;
 
 typedef struct sSirMacVHTTxSupDataRateInfo {
 #ifndef ANI_LITTLE_BIT_ENDIAN
-	uint16_t reserved:3;
+	uint16_t reserved:2;
+	uint16_t vht_extended_nss_bw_cap:1;
 	uint16_t txSupDataRate:13;
 #else
 	uint16_t txSupDataRate:13;
-	uint16_t reserved:3;
+	uint16_t vht_extended_nss_bw_cap:1;
+	uint16_t reserved:2;
 #endif
 } qdf_packed tSirMacVHTTxSupDataRateInfo;
 
 typedef struct sSirMacVHTRxSupDataRateInfo {
 #ifndef ANI_LITTLE_BIT_ENDIAN
-	uint16_t reserved:3;
+	uint16_t max_nsts_total:3;
 	uint16_t rxSupDataRate:13;
 #else
 	uint16_t rxSupDataRate:13;
-	uint16_t reserved:3;
+	uint16_t max_nsts_total:3;
 #endif
 } qdf_packed tSirMacVHTRxSupDataRateInfo;
 
@@ -1483,9 +1310,9 @@ typedef struct sSirMacLinkReport {
 	uint8_t rsni;
 } tSirMacLinkReport, *tpSirMacLinkReport;
 
-#define BEACON_REPORT_MAX_IES 224       /* Refer IEEE 802.11k-2008, Table 7-31d */
+#define BEACON_REPORT_MAX_IES 215
 /* Max number of beacon reports per channel supported in the driver */
-#define MAX_BEACON_REPORTS 8
+#define MAX_BEACON_REPORTS 32
 /* Offset of IEs after Fixed Fields in Beacon Frame */
 #define BEACON_FRAME_IES_OFFSET 12
 
@@ -1541,7 +1368,7 @@ typedef struct sSirMacBeaconReport {
 
 } tSirMacBeaconReport, *tpSirMacBeaconReport;
 
-#define RADIO_REPORTS_MAX_IN_A_FRAME 4
+#define RADIO_REPORTS_MAX_IN_A_FRAME 7
 typedef struct sSirMacRadioMeasureReport {
 	uint8_t token;
 	uint8_t refused;
@@ -1894,7 +1721,10 @@ struct he_capability_info {
 /*
  * frame parser does not include optional 160 and 80+80 mcs set for MIN IE len
  */
-#define SIR_MAC_HE_CAP_MIN_LEN       (DOT11F_IE_HE_CAP_MIN_LEN + 8)
+#define SIR_MAC_HE_CAP_MIN_LEN       (DOT11F_IE_HE_CAP_MIN_LEN)
+#define HE_CAP_160M_MCS_MAP_LEN      4
+#define HE_CAP_80P80_MCS_MAP_LEN     4
+#define HE_CAP_OUI_LEN               3
 
 /* QOS action frame definitions */
 
@@ -1997,7 +1827,7 @@ struct he_capability_info {
 #define SIR_MAC_VHT_CAP_LINK_ADAPT_CAP            26
 #define SIR_MAC_VHT_CAP_RX_ANTENNA_PATTERN        28
 #define SIR_MAC_VHT_CAP_TX_ANTENNA_PATTERN        29
-#define SIR_MAC_VHT_CAP_RESERVED2                 30
+#define SIR_MAC_VHT_CAP_EXTD_NSS_BW               30
 
 #define SIR_MAC_HT_CAP_ADVCODING_S                 0
 #define SIR_MAC_HT_CAP_CHWIDTH40_S                 1

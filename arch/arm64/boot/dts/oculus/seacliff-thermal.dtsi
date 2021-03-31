@@ -1,0 +1,5 @@
+&thermal_zones {
+	soc {
+		status = "disabled";
+	};
+};

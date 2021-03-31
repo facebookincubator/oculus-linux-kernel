@@ -1,5 +1,3 @@
-CONFIG_AR6320_SUPPORT := y
-
 ifeq ($(CONFIG_CLD_HL_SDIO_CORE), y)
 	CONFIG_QCA_WIFI_SDIO := y
 ifndef CONFIG_SDIO_TRANSFER
@@ -21,6 +19,16 @@ ifndef CONFIG_ROME_IF
 	CONFIG_ROME_IF = pci
 endif
 endif
+
+ifeq (m,$(findstring m,$(CONFIG_CNSS) $(CONFIG_CNSS2)))
+ifndef CONFIG_ROME_IF
+	#use pci as default interface
+	CONFIG_ROME_IF = pci
+endif
+endif
+
+# Enable FCC TYPE4 DURATION CHECK
+CONFIG_DFS_FCC_TYPE4_DURATION_CHECK := y
 
 # Make WLAN as open-source driver by default
 WLAN_OPEN_SOURCE := y
@@ -70,11 +78,11 @@ ifeq ($(CONFIG_ARCH_QCS405), y)
 	CONFIG_WLAN_SYNC_TSF_PLUS_NOIRQ := y
 endif
 
-#Flag to enable Legacy Fast Roaming2(LFR2)
-CONFIG_QCACLD_WLAN_LFR2 := y
 #Flag to enable Legacy Fast Roaming3(LFR3)
-ifneq ($(CONFIG_ARCH_SDX20), y)
-CONFIG_QCACLD_WLAN_LFR3 := y
+ifeq (y,$(findstring y,$(CONFIG_HELIUMPLUS) $(CONFIG_LITHIUM)))
+	CONFIG_QCACLD_WLAN_LFR3 := y
+else
+	CONFIG_QCACLD_WLAN_LFR2 := y
 endif
 
 ifneq ($(CONFIG_MOBILE_ROUTER), y)
@@ -85,7 +93,6 @@ CONFIG_WLAN_SYSFS := y
 endif
 
 CONFIG_QCACLD_FEATURE_GREEN_AP := y
-CONFIG_CRYPTO_COMPONENT := y
 #Flag to enable Android Packet Filtering
 CONFIG_QCACLD_FEATURE_APF := y
 
@@ -139,6 +146,17 @@ ifneq ($(CONFIG_QCA_CLD_WLAN),)
 		CONFIG_WLAN_FEATURE_LPSS := y
 		endif
 	endif
+
+	ifeq (m,$(findstring m,$(CONFIG_CNSS2)))
+	#Flag to enable Protected Management Frames (11w) feature
+	CONFIG_WLAN_FEATURE_11W := y
+	#Flag to enable LTE CoEx feature
+	CONFIG_QCOM_LTE_COEX := y
+		ifneq ($(CONFIG_MOBILE_ROUTER), y)
+		#Flag to enable LPSS feature
+		CONFIG_WLAN_FEATURE_LPSS := y
+		endif
+	endif
 endif
 
 #Flag to enable Protected Management Frames (11w) feature
@@ -154,10 +172,8 @@ ifeq ($(CONFIG_ROME_IF),usb)
 	CONFIG_QCA_TXDESC_SANITY_CHECKS := y
 endif
 
-ifneq ($(CONFIG_MOBILE_ROUTER), y)
-	#Flag to enable NAN
-	CONFIG_QCACLD_FEATURE_NAN := y
-endif
+#Flag to disable NAN
+CONFIG_QCACLD_FEATURE_NAN := n
 
 ifneq ($(CONFIG_MOBILE_ROUTER), y)
 	#Flag to enable NAN Data path
@@ -184,15 +200,15 @@ CONFIG_WLAN_FEATURE_DSRC := y
 endif
 
 ifneq ($(CONFIG_ROME_IF),usb)
+	#Flag to enable SAE
+	CONFIG_WLAN_FEATURE_SAE := y
+
 ifneq ($(CONFIG_ROME_IF),sdio)
 	#Flag to enable DISA
 	CONFIG_WLAN_FEATURE_DISA := y
 
 	#Flag to enable FIPS
 	CONFIG_WLAN_FEATURE_FIPS := y
-
-	#Flag to enable SAE
-	CONFIG_WLAN_FEATURE_SAE := y
 
 	# Flag to enable NAPI
 	CONFIG_WLAN_NAPI := y
@@ -233,7 +249,7 @@ else
 CONFIG_LL_DP_SUPPORT := y
 endif
 
-ifeq ($(CONFIG_HIF_PCI), y)
+ifeq ($(CONFIG_ROME_IF),pci)
 ifneq ($(CONFIG_WLAN_TX_FLOW_CONTROL_V2), y)
 ifneq ($(CONFIG_LITHIUM), y)
 CONFIG_WLAN_TX_FLOW_CONTROL_LEGACY := y
@@ -256,9 +272,13 @@ CONFIG_ADRASTEA_SHADOW_REGISTERS := y
 endif
 endif
 
+# Enable fw stats version 2
+ifeq (y,$(findstring y,$(CONFIG_HELIUMPLUS) $(CONFIG_LITHIUM)))
+CONFIG_AR900B := y
+endif
+
 # NOTE: CONFIG_64BIT_PADDR requires CONFIG_HELIUMPLUS
 ifeq ($(CONFIG_HELIUMPLUS), y)
-CONFIG_AR900B := y
 
 ifeq ($(CONFIG_64BIT_PADDR), y)
 CONFIG_HTT_PADDR64 := y
@@ -399,8 +419,6 @@ CONFIG_FEATURE_WLAN_STA_AP_MODE_DFS_DISABLE := y
 CONFIG_FEATURE_AP_MCC_CH_AVOIDANCE := y
 else
 CONFIG_QCOM_ESE := y
-CONFIG_QCA_IBSS_SUPPORT := y
-CONFIG_FEATURE_WLAN_RMC := y
 CONFIG_WLAN_OPEN_P2P_INTERFACE := y
 CONFIG_WLAN_ENABLE_SOCIAL_CHANNELS_5G_ONLY := y
 endif
@@ -460,11 +478,6 @@ CONFIG_CHECKSUM_OFFLOAD := y
 #Enable GTK offload
 CONFIG_GTK_OFFLOAD := y
 
-#Enable EXT WOW
-ifeq ($(CONFIG_HIF_PCI), y)
-	CONFIG_EXT_WOW := y
-endif
-
 #Set this to 1 to catch erroneous Target accesses during debug.
 CONFIG_ATH_PCIE_ACCESS_DEBUG := n
 
@@ -476,6 +489,13 @@ ifeq ($(CONFIG_IPA3), y)
 CONFIG_IPA_OFFLOAD := y
 endif
 
+#Set MAX IPA Offload Interface
+ifeq ($(CONFIG_ARCH_SDXPOORWILLS), y)
+ifeq ($(CONFIG_IPA_OFFLOAD), y)
+CONFIG_NUM_IPA_IFACE := 2
+endif
+endif
+
 #Flag to enable SMMU S1 support
 ifeq ($(CONFIG_ARCH_SDM845), y)
 ifeq ($(CONFIG_IPA_OFFLOAD), y)
@@ -484,6 +504,12 @@ endif
 endif
 
 ifeq ($(CONFIG_ARCH_SM8150), y)
+ifeq ($(CONFIG_IPA_OFFLOAD), y)
+CONFIG_ENABLE_SMMU_S1_TRANSLATION := y
+endif
+endif
+
+ifeq ($(CONFIG_ARCH_SDXPOORWILLS), y)
 ifeq ($(CONFIG_IPA_OFFLOAD), y)
 CONFIG_ENABLE_SMMU_S1_TRANSLATION := y
 endif
@@ -532,7 +558,9 @@ CONFIG_FEATURE_ROAM_DEBUG := y
 CONFIG_WLAN_DFS_MASTER_ENABLE := y
 
 #Flag to enable WEXT support for STA/AP/P2P interfaces
+ifeq ($(CONFIG_WIRELESS_EXT), y)
 CONFIG_WLAN_WEXT_SUPPORT_ENABLE := y
+endif
 
 #Flag to enable/disable MTRACE feature
 CONFIG_ENABLE_MTRACE_LOG := y
@@ -573,12 +601,11 @@ CONFIG_FEATURE_WLAN_LPHB := y
 CONFIG_QCA_SUPPORT_TX_THROTTLE := y
 CONFIG_WMI_INTERFACE_EVENT_LOGGING := y
 CONFIG_WLAN_FEATURE_LINK_LAYER_STATS := y
-CONFIG_FEATURE_WLAN_EXTSCAN := y
+CONFIG_FEATURE_WLAN_EXTSCAN := n
 CONFIG_WMI_BCN_OFFLOAD := y
 CONFIG_160MHZ_SUPPORT := y
 CONFIG_MCL := y
 CONFIG_REG_CLIENT := y
-CONFIG_LEGACY_CHAN_ENUM := y
 CONFIG_WLAN_PMO_ENABLE := y
 CONFIG_CONVERGED_P2P_ENABLE := y
 CONFIG_WLAN_POLICY_MGR_ENABLE := y
@@ -611,6 +638,9 @@ CONFIG_WMI_STA_SUPPORT := y
 
 #Flag to enable LTE COEX feature
 CONFIG_LTE_COEX := y
+
+#Flag to enable/disable TARGET 11d scan
+CONFIG_TARGET_11D_SCAN := y
 
 #Flag to enable HOST OPCLASS feature
 CONFIG_HOST_OPCLASS := y
@@ -693,16 +723,29 @@ CONFIG_PLD_PCIE_INIT_FLAG := y
 endif
 endif
 
+ifeq ($(CONFIG_CNSS2), m)
+ifeq ($(CONFIG_HIF_PCI), y)
+CONFIG_PLD_PCIE_CNSS_FLAG := y
+CONFIG_PLD_PCIE_INIT_FLAG := y
+endif
+endif
+
 #Enable STATE MACHINE HISTORY
 CONFIG_SM_ENG_HIST := n
 
 #Enable Beacon Reception Stats
+ifeq ($(CONFIG_WLAN_SYSFS), y)
 CONFIG_FEATURE_BECN_STATS := y
+endif
 
 ifeq (y,$(findstring y,$(CONFIG_ARCH_MSM) $(CONFIG_ARCH_QCOM)))
 CONFIG_WLAN_FEATURE_DP_BUS_BANDWIDTH := y
 endif
 
+CONFIG_SAP_DHCP_FW_IND := y
+
 #Enable FW Offload
 CONFIG_WLAN_FW_OFFLOAD := y
+
+CONFIG_FEATURE_SG := y
 

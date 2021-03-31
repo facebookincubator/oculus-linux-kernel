@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,8 +26,10 @@
 #include "hif_debug.h"
 #include "epping_main.h"
 #include "hif_main.h"
-#include "qwlan_version.h"
 #include "usb_api.h"
+#ifdef CONFIG_PLD_USB_CNSS
+#include "pld_common.h"
+#endif
 
 #define DELAY_FOR_TARGET_READY 200	/* 200ms */
 
@@ -58,7 +60,7 @@ hif_usb_diag_write_cold_reset(struct hif_softc *scn)
 	if (tgt_info->target_type == TARGET_TYPE_QCN7605)
 		return QDF_STATUS_SUCCESS;
 
-	HIF_DBG("%s: resetting SOC", __func__);
+	hif_debug("resetting SOC");
 
 	return hif_diag_write_access(hif_hdl,
 				(ROME_USB_SOC_RESET_CONTROL_COLD_RST_LSB |
@@ -80,7 +82,7 @@ hif_usb_procfs_init(struct hif_softc *scn)
 	HIF_ENTER();
 
 	if (athdiag_procfs_init(scn) != 0) {
-		HIF_ERROR("athdiag_procfs_init failed");
+		hif_err("athdiag_procfs_init failed");
 		ret = A_ERROR;
 	}
 
@@ -140,7 +142,7 @@ static int hif_usb_disable_lpm(struct usb_device *udev)
 	HIF_ENTER();
 
 	if (!udev || !udev->bus) {
-		HIF_ERROR("Invalid input parameters");
+		hif_err("Invalid input parameters");
 		goto exit;
 	}
 
@@ -151,17 +153,15 @@ static int hif_usb_disable_lpm(struct usb_device *udev)
 			if (!ret) {
 				udev->usb2_hw_lpm_enabled = false;
 				udev->usb2_hw_lpm_capable = false;
-				HIF_TRACE("%s: LPM is disabled", __func__);
+				hif_info("LPM is disabled");
 			} else {
-				HIF_TRACE("%s: Fail to disable LPM",
-						__func__);
+				hif_info("Fail to disable LPM");
 			}
 		} else {
-			HIF_TRACE("%s: hcd doesn't support LPM",
-						__func__);
+			hif_info("hcd doesn't support LPM");
 		}
 	} else {
-		HIF_TRACE("%s: LPM isn't enabled", __func__);
+		hif_info("LPM isn't enabled");
 	}
 exit:
 	HIF_EXIT();
@@ -186,7 +186,7 @@ QDF_STATUS hif_usb_enable_bus(struct hif_softc *scn,
 {
 	struct usb_interface *interface = (struct usb_interface *)bdev;
 	struct usb_device_id *id = (struct usb_device_id *)bid;
-	int ret = 0;
+	QDF_STATUS ret = QDF_STATUS_SUCCESS;
 	struct hif_usb_softc *sc;
 	struct usb_device *usbdev = interface_to_usbdev(interface);
 	int vendor_id, product_id;
@@ -195,17 +195,14 @@ QDF_STATUS hif_usb_enable_bus(struct hif_softc *scn,
 	u32 hif_type;
 	u32 target_type;
 
-	usb_get_dev(usbdev);
-
 	if (!scn) {
-		HIF_ERROR("%s: hif_ctx is NULL", __func__);
+		hif_err("hif_ctx is NULL");
 		goto err_usb;
 	}
 
 	sc = HIF_GET_USB_SOFTC(scn);
 
-	HIF_INFO("%s hif_softc %pK usbdev %pK interface %pK\n",
-		__func__,
+	hif_debug("hif_softc %pK usbdev %pK interface %pK",
 		scn,
 		usbdev,
 		interface);
@@ -213,8 +210,8 @@ QDF_STATUS hif_usb_enable_bus(struct hif_softc *scn,
 	vendor_id = qdf_le16_to_cpu(usbdev->descriptor.idVendor);
 	product_id = qdf_le16_to_cpu(usbdev->descriptor.idProduct);
 
-	HIF_ERROR("%s: con_mode = 0x%x, vendor_id = 0x%x product_id = 0x%x",
-		__func__, hif_get_conparam(scn), vendor_id, product_id);
+	hif_err("con_mode = 0x%x, vendor_id = 0x%x product_id = 0x%x",
+		hif_get_conparam(scn), vendor_id, product_id);
 
 	sc->pdev = (void *)usbdev;
 	sc->dev = &usbdev->dev;
@@ -230,10 +227,11 @@ QDF_STATUS hif_usb_enable_bus(struct hif_softc *scn,
 	 * by CNSS driver.
 	 */
 	if (target_type != TARGET_TYPE_QCN7605) {
+		usb_get_dev(usbdev);
 		if ((usb_control_msg(usbdev, usb_sndctrlpipe(usbdev, 0),
 				     USB_REQ_SET_CONFIGURATION, 0, 1, 0,
 				     NULL, 0, HZ)) < 0) {
-			HIF_ERROR("%s[%d]", __func__, __LINE__);
+			hif_err("usb_control_msg failed");
 			goto err_usb;
 		}
 		usb_set_interface(usbdev, 0, 0);
@@ -252,7 +250,7 @@ QDF_STATUS hif_usb_enable_bus(struct hif_softc *scn,
 
 	sc->interface = interface;
 	if (hif_usb_device_init(sc) != QDF_STATUS_SUCCESS) {
-		HIF_ERROR("ath: %s: hif_usb_device_init failed", __func__);
+		hif_err("hif_usb_device_init failed");
 		goto err_reset;
 	}
 
@@ -262,7 +260,7 @@ QDF_STATUS hif_usb_enable_bus(struct hif_softc *scn,
 	hif_usb_unload_dev_num = usbdev->devnum;
 	g_usb_sc = sc;
 	HIF_EXIT();
-	return 0;
+	return QDF_STATUS_SUCCESS;
 
 err_reset:
 	hif_usb_diag_write_cold_reset(scn);
@@ -272,7 +270,8 @@ err_reset:
 		unregister_reboot_notifier(&sc->reboot_notifier);
 err_usb:
 	ret = QDF_STATUS_E_FAILURE;
-	usb_put_dev(usbdev);
+	if (target_type != TARGET_TYPE_QCN7605)
+		usb_put_dev(usbdev);
 	return ret;
 }
 
@@ -301,12 +300,13 @@ void hif_usb_disable_bus(struct hif_softc *hif_ctx)
 	struct usb_device *udev = interface_to_usbdev(interface);
 	struct hif_target_info *tgt_info = &hif_ctx->target_info;
 
-	HIF_TRACE("%s: trying to remove hif_usb!", __func__);
+	hif_info("trying to remove hif_usb!");
 
 	/* disable lpm to avoid following cold reset will
 	 * cause xHCI U1/U2 timeout
 	 */
-	usb_disable_lpm(udev);
+	if (tgt_info->target_type != TARGET_TYPE_QCN7605)
+		usb_disable_lpm(udev);
 
 	/* wait for disable lpm */
 	set_current_state(TASK_INTERRUPTIBLE);
@@ -319,14 +319,14 @@ void hif_usb_disable_bus(struct hif_softc *hif_ctx)
 	if (g_usb_sc->suspend_state)
 		hif_bus_resume(GET_HIF_OPAQUE_HDL(hif_ctx));
 
-	if (tgt_info->target_type != TARGET_TYPE_QCN7605)
+	if (tgt_info->target_type != TARGET_TYPE_QCN7605) {
 		unregister_reboot_notifier(&sc->reboot_notifier);
-
-	usb_put_dev(interface_to_usbdev(interface));
+		usb_put_dev(udev);
+	}
 
 	hif_usb_device_deinit(sc);
 
-	HIF_TRACE("%s hif_usb removed !!!!!!", __func__);
+	hif_info("hif_usb removed !!!!!!");
 }
 
 /**
@@ -477,8 +477,7 @@ void hif_usb_reg_tbl_attach(struct hif_softc *scn)
 					RTC_SOC_BASE_ADDRESS),
 					&chip_id);
 		if (rv != QDF_STATUS_SUCCESS) {
-			HIF_ERROR("%s: get chip id val (%d)", __func__,
-				rv);
+			hif_err("get chip id val: %d", rv);
 		}
 		tgt_info->target_revision =
 				CHIP_ID_REVISION_GET(chip_id);
@@ -532,8 +531,7 @@ int hif_usb_bus_configure(struct hif_softc *scn)
 	else
 		mode = PLD_MISSION;
 
-	return pld_wlan_enable(scn->qdf_dev->dev, &cfg,
-			       mode, QWLAN_VERSIONSTR);
+	return pld_wlan_enable(scn->qdf_dev->dev, &cfg, mode);
 }
 #else
 /**
@@ -630,7 +628,7 @@ void hif_fw_assert_ramdump_pattern(struct hif_usb_softc *sc)
 	reg = (uint32_t *) (data + 4);
 	if (sc->fw_ram_dumping == 0) {
 		sc->fw_ram_dumping = 1;
-		HIF_ERROR("Firmware %s dump:\n", fw_ram_seg_name[i]);
+		hif_info("Firmware %s dump:", fw_ram_seg_name[i]);
 		sc->ramdump[i] =
 			qdf_mem_malloc(sizeof(struct fw_ramdump) +
 					fw_ram_reg_size[i]);
@@ -639,9 +637,8 @@ void hif_fw_assert_ramdump_pattern(struct hif_usb_softc *sc)
 
 		(sc->ramdump[i])->mem = (uint8_t *) (sc->ramdump[i] + 1);
 		fw_ram_seg_addr[i] = (sc->ramdump[i])->mem;
-		HIF_ERROR("FW %s start addr = %#08x\n",
-			fw_ram_seg_name[i], *reg);
-		HIF_ERROR("Memory addr for %s = %pK\n",
+		hif_info("FW %s start addr = %#08x Memory addr for %s = %pK",
+			fw_ram_seg_name[i], *reg,
 			fw_ram_seg_name[i],
 			(sc->ramdump[i])->mem);
 		(sc->ramdump[i])->start_addr = *reg;
@@ -653,13 +650,13 @@ void hif_fw_assert_ramdump_pattern(struct hif_usb_softc *sc)
 	if (sc->ramdump[i]->length <= fw_ram_reg_size[i]) {
 		qdf_mem_copy(ram_ptr, (uint8_t *) reg, len - 8);
 	} else {
-		HIF_ERROR("memory copy overlap\n");
+		hif_err("memory copy overlap");
 		QDF_BUG(0);
 	}
 
 	if (pattern == FW_RAMDUMP_END_PATTERN) {
-		HIF_ERROR("%s memory size = %d\n", fw_ram_seg_name[i],
-				(sc->ramdump[i])->length);
+		hif_err("%s memory size = %d", fw_ram_seg_name[i],
+			(sc->ramdump[i])->length);
 		if (i == (FW_RAM_SEG_CNT - 1))
 			QDF_BUG(0);
 
@@ -705,9 +702,8 @@ void hif_usb_ramdump_handler(struct hif_opaque_softc *scn)
 	pattern = *((uint32_t *) data);
 
 	if (pattern == FW_ASSERT_PATTERN) {
-		HIF_ERROR("Firmware crash detected...\n");
-		HIF_ERROR("Host SW version: %s\n", QWLAN_VERSIONSTR);
-		HIF_ERROR("target_type: %d.target_version %d. target_revision%d.",
+		hif_err("Firmware crash detected...");
+		hif_err("target_type: %d target_version: %d target_revision: %d",
 			tgt_info->target_type,
 			tgt_info->target_version,
 			tgt_info->target_revision);
@@ -722,7 +718,7 @@ void hif_usb_ramdump_handler(struct hif_opaque_softc *scn)
 		reg = (uint32_t *) (data + 4);
 		start_addr = *reg++;
 		if (sc->fw_ram_dumping == 0) {
-			pr_err("Firmware stack dump:");
+			qdf_nofl_err("Firmware stack dump:");
 			sc->fw_ram_dumping = 1;
 			fw_stack_addr = start_addr;
 		}
@@ -731,13 +727,13 @@ void hif_usb_ramdump_handler(struct hif_opaque_softc *scn)
 		for (i = 0; i < (len - 8); i += 16) {
 			if ((*reg == FW_REG_END_PATTERN) && (i == len - 12)) {
 				sc->fw_ram_dumping = 0;
-				pr_err("Stack start address = %#08x\n",
-					fw_stack_addr);
+				qdf_nofl_err("Stack start address = %#08x",
+					     fw_stack_addr);
 				break;
 			}
 			hex_dump_to_buffer(reg, remaining, 16, 4, str_buf,
 						sizeof(str_buf), false);
-			pr_err("%#08x: %s\n", start_addr + i, str_buf);
+			qdf_nofl_err("%#08x: %s", start_addr + i, str_buf);
 			remaining -= 16;
 			reg += 4;
 		}

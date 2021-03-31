@@ -2876,7 +2876,7 @@ sme_qos_ese_save_tspec_response(struct mac_context *mac, uint8_t sessionId,
 	pAddtsRsp->rc = QDF_STATUS_SUCCESS;
 	pAddtsRsp->sessionId = sessionId;
 	pAddtsRsp->rsp.dialogToken = 0;
-	pAddtsRsp->rsp.status = eSIR_MAC_SUCCESS_STATUS;
+	pAddtsRsp->rsp.status = STATUS_SUCCESS;
 	pAddtsRsp->rsp.wmeTspecPresent = pTspec->present;
 	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 		  "%s: Copy Tspec to local data structure ac=%d, tspecIdx=%d",
@@ -3774,7 +3774,7 @@ QDF_STATUS sme_qos_process_ft_reassoc_rsp_ev(struct mac_context *mac_ctx,
 				 csr_conn_info->nAssocRspLength));
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	if (!csr_session->roam_synch_in_progress) {
+	if (!MLME_IS_ROAM_SYNCH_IN_PROGRESS(mac_ctx->psoc, sessionid)) {
 #endif
 		for (ac = QCA_WLAN_AC_BE; ac < QCA_WLAN_AC_ALL; ac++) {
 			ac_info = &qos_session->ac_info[ac];
@@ -4714,6 +4714,55 @@ static QDF_STATUS sme_qos_process_reassoc_failure_ev(struct mac_context *mac,
 	return QDF_STATUS_SUCCESS;
 }
 
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+#ifdef FEATURE_WLAN_ESE
+static bool sme_qos_ft_handoff_required(struct mac_context *mac,
+					uint8_t session_id)
+{
+	struct csr_roam_session *csr_roam_session;
+
+	if (csr_roam_is11r_assoc(mac, session_id))
+		return true;
+
+	csr_roam_session = CSR_GET_SESSION(mac, session_id);
+
+	if (csr_roam_session &&
+	    MLME_IS_ROAM_SYNCH_IN_PROGRESS(mac->psoc, session_id) &&
+	    csr_roam_is_ese_assoc(mac, session_id) &&
+	    csr_roam_session->connectedInfo.nTspecIeLength)
+		return true;
+
+	return false;
+}
+#else
+static inline bool sme_qos_ft_handoff_required(struct mac_context *mac,
+					       uint8_t session_id)
+{
+	return csr_roam_is11r_assoc(mac, session_id) ? true : false;
+}
+#endif
+#else
+static inline bool sme_qos_ft_handoff_required(struct mac_context *mac,
+					       uint8_t session_id)
+{
+	return false;
+}
+#endif
+
+#ifdef FEATURE_WLAN_ESE
+static inline bool sme_qos_legacy_handoff_required(struct mac_context *mac,
+						   uint8_t session_id)
+{
+	return csr_roam_is_ese_assoc(mac, session_id) ? false : true;
+}
+#else
+static inline bool sme_qos_legacy_handoff_required(struct mac_context *mac,
+						   uint8_t session_id)
+{
+	return true;
+}
+#endif
+
 /*
  * sme_qos_process_handoff_assoc_req_ev() - Function to process the
  *  SME_QOS_CSR_HANDOFF_ASSOC_REQ event indication from CSR
@@ -4751,7 +4800,7 @@ static QDF_STATUS sme_qos_process_handoff_assoc_req_ev(struct mac_context *mac,
 					  __func__, __LINE__);
 				break;
 			}
-
+			/* fallthrough */
 		case SME_QOS_CLOSED:
 		case SME_QOS_INIT:
 		default:
@@ -4762,16 +4811,13 @@ static QDF_STATUS sme_qos_process_handoff_assoc_req_ev(struct mac_context *mac,
 			break;
 		}
 	}
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	if (csr_roam_is11r_assoc(mac, sessionId))
+
+	if (sme_qos_ft_handoff_required(mac, sessionId))
 		pSession->ftHandoffInProgress = true;
-#endif
+
 	/* If FT handoff/ESE in progress, legacy handoff need not be enabled */
-	if (!pSession->ftHandoffInProgress
-#ifdef FEATURE_WLAN_ESE
-	    && !csr_roam_is_ese_assoc(mac, sessionId)
-#endif
-	   )
+	if (!pSession->ftHandoffInProgress &&
+	    sme_qos_legacy_handoff_required(mac, sessionId))
 		pSession->handoffRequested = true;
 
 	/* this session no longer needs UAPSD */
@@ -6750,8 +6796,9 @@ static QDF_STATUS sme_qos_add_ts_failure_fnp(struct mac_context *mac, tListElem
 		break;
 	case SME_QOS_REASON_MODIFY:
 		flow_info->reason = SME_QOS_REASON_REQ_SUCCESS;
+		/* fallthrough */
 	case SME_QOS_REASON_REQ_SUCCESS:
-	/* fallthrough */
+		/* fallthrough */
 	default:
 		inform_hdd = false;
 		break;
@@ -7222,7 +7269,7 @@ static bool sme_qos_validate_requested_params(struct mac_context *mac,
 	return true;
 }
 
-static QDF_STATUS qos_issue_command(struct mac_context *mac, uint8_t sessionId,
+static QDF_STATUS qos_issue_command(struct mac_context *mac, uint8_t vdev_id,
 				    eSmeCommandType cmdType,
 				    struct sme_qos_wmmtspecinfo *pQoSInfo,
 				    enum qca_wlan_ac_type ac, uint8_t tspec_mask)
@@ -7239,7 +7286,7 @@ static QDF_STATUS qos_issue_command(struct mac_context *mac, uint8_t sessionId,
 			break;
 		}
 		pCommand->command = cmdType;
-		pCommand->sessionId = sessionId;
+		pCommand->vdev_id = vdev_id;
 		switch (cmdType) {
 		case eSmeCommandAddTs:
 			if (pQoSInfo) {
@@ -7285,7 +7332,7 @@ bool qos_process_command(struct mac_context *mac, tSmeCmd *pCommand)
 		case eSmeCommandAddTs:
 			status =
 				sme_qos_add_ts_req(mac, (uint8_t)
-						pCommand->sessionId,
+						pCommand->vdev_id,
 						  &pCommand->u.qosCmd.tspecInfo,
 						   pCommand->u.qosCmd.ac);
 			if (QDF_IS_STATUS_SUCCESS(status))
@@ -7294,7 +7341,7 @@ bool qos_process_command(struct mac_context *mac, tSmeCmd *pCommand)
 		case eSmeCommandDelTs:
 			status =
 				sme_qos_del_ts_req(mac, (uint8_t)
-						pCommand->sessionId,
+						pCommand->vdev_id,
 						   pCommand->u.qosCmd.ac,
 						 pCommand->u.qosCmd.tspec_mask);
 			if (QDF_IS_STATUS_SUCCESS(status))
@@ -7481,13 +7528,11 @@ static QDF_STATUS sme_qos_request_reassoc(struct mac_context *mac,
 		session = CSR_GET_SESSION(mac, sessionId);
 		roam_profile = session->pCurRoamProfile;
 		connected_profile = session->connectedProfile;
-		status = sme_fast_reassoc(
-			MAC_HANDLE(mac),
-			roam_profile,
-			connected_profile.bssid.bytes,
-			connected_profile.operationChannel,
-			sessionId,
-			connected_profile.bssid.bytes);
+		status = sme_fast_reassoc(MAC_HANDLE(mac), roam_profile,
+					  connected_profile.bssid.bytes,
+					  connected_profile.op_freq,
+					  sessionId,
+					  connected_profile.bssid.bytes);
 	} else {
 		status = csr_reassoc(mac, sessionId, pModFields,
 				     &pSession->roamID, fForce);

@@ -134,7 +134,6 @@ static int print_mem_entry(void *data, void *ptr)
 	char flags[10];
 	char usage[16];
 	struct kgsl_memdesc *m = &entry->memdesc;
-	struct kgsl_process_private *allocator;
 	unsigned int usermem_type = kgsl_memdesc_usermem_type(m);
 	int egl_surface_count = 0, egl_image_count = 0, total_count = 0;
 

@@ -367,6 +367,7 @@ typedef struct bcmpcie_msi_offset_config {
 #define BCMPCIE_CMNHDR_FLAGS_DMA_R_IDX		0x1
 #define BCMPCIE_CMNHDR_FLAGS_DMA_R_IDX_INTR	0x2
 #define BCMPCIE_CMNHDR_FLAGS_TS_SEQNUM_INIT	0x4
+#define BCMPCIE_CMNHDR_FLAGS_WAKE_PACKET	0x8
 #define BCMPCIE_CMNHDR_FLAGS_PHASE_BIT		0x80
 #define BCMPCIE_CMNHDR_PHASE_BIT_INIT		0x80
 
@@ -990,6 +991,14 @@ typedef union rxbuf_submit_item {
 	host_rxbuf_post_t	rxpost;
 	unsigned char		check[H2DRING_RXPOST_ITEMSIZE];
 } rxbuf_submit_item_t;
+
+/* marker */
+#define BCMPCIE_RX_PKT_RSSI_MASK		0xFFu
+#define BCMPCIE_RX_PKT_RSSI_SHIFT		0u
+#define BCMPCIE_RX_PKT_DUR0_MASK		0xFFFF00u
+#define BCMPCIE_RX_PKT_DUR0_SHIFT		8u
+#define BCMPCIE_RX_PKT_BAND_MASK		0x1000000u
+#define BCMPCIE_RX_PKT_BAND_SHIFT		24u
 
 /* D2H Rxcompletion ring work items for IPC rev7 */
 typedef struct host_rxbuf_cmpl {

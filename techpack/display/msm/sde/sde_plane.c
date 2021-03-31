@@ -3475,9 +3475,9 @@ static void _sde_plane_install_properties(struct drm_plane *plane,
 		{SDE_SSPP_COLOR_FILTER_B, "blue"}
 	};
 	static const struct drm_prop_enum_list e_layout_index[] = {
-		{SDE_SSPP_LAYOUT_NONE, "none"},
-		{SDE_SSPP_LAYOUT_LEFT, "left"},
-		{SDE_SSPP_LAYOUT_RIGHT, "right"},
+		{SDE_LAYOUT_NONE, "none"},
+		{SDE_LAYOUT_LEFT, "left"},
+		{SDE_LAYOUT_RIGHT, "right"},
 	};
 	const struct sde_format_extended *format_list;
 	struct sde_kms_info *info;
@@ -4191,6 +4191,15 @@ sde_plane_duplicate_state(struct drm_plane *plane)
 	pstate->pending = false;
 
 	__drm_atomic_helper_plane_duplicate_state(plane, &pstate->base);
+
+	/* reset layout offset */
+	if (pstate->layout_offset) {
+		if (pstate->layout_offset > 0)
+			pstate->base.crtc_x += pstate->layout_offset;
+		pstate->property_values[PLANE_PROP_LAYOUT].value =
+				SDE_LAYOUT_NONE;
+		pstate->layout_offset = 0;
+	}
 
 	return &pstate->base;
 }

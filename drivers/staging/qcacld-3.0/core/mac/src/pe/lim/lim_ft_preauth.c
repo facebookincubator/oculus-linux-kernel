@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -141,9 +141,9 @@ int lim_process_ft_pre_auth_req(struct mac_context *mac_ctx,
 					   ft_pre_auth_req->currbssId,
 					   &session_id);
 	if (!session) {
-		pe_err("Unable to find session for the bssid"
-			   QDF_MAC_ADDR_STR,
-			   QDF_MAC_ADDR_ARRAY(ft_pre_auth_req->currbssId));
+		pe_err("Unable to find session for the bssid "
+			QDF_MAC_ADDR_FMT,
+			QDF_MAC_ADDR_REF(ft_pre_auth_req->currbssId));
 		/* Post the FT Pre Auth Response to SME */
 		lim_post_ft_pre_auth_rsp(mac_ctx, QDF_STATUS_E_FAILURE, NULL, 0,
 					 session);
@@ -190,8 +190,8 @@ int lim_process_ft_pre_auth_req(struct mac_context *mac_ctx,
 	 * Dont need to suspend if APs are in same channel and DUT
 	 * is not in MCC state
 	 */
-	if ((session->currentOperChannel !=
-	    session->ftPEContext.pFTPreAuthReq->preAuthchannelNum)
+	if ((session->curr_op_freq !=
+	     session->ftPEContext.pFTPreAuthReq->pre_auth_channel_freq)
 	    || lim_is_in_mcc(mac_ctx)) {
 		/* Need to suspend link only if the channels are different */
 		pe_debug("Performing pre-auth on diff channel(session %pK)",
@@ -273,14 +273,14 @@ void lim_perform_ft_pre_auth(struct mac_context *mac, QDF_STATUS status,
 	authFrame.authTransactionSeqNumber = SIR_MAC_AUTH_FRAME_1;
 	authFrame.authStatusCode = 0;
 
-	mac->lim.limTimers.g_lim_periodic_auth_retry_timer.sessionId =
+	mac->lim.lim_timers.g_lim_periodic_auth_retry_timer.sessionId =
 				pe_session->peSessionId;
 
 	/* Start timer here to come back to operating channel */
-	mac->lim.limTimers.gLimFTPreAuthRspTimer.sessionId =
+	mac->lim.lim_timers.gLimFTPreAuthRspTimer.sessionId =
 		pe_session->peSessionId;
 	if (TX_SUCCESS !=
-	    tx_timer_activate(&mac->lim.limTimers.gLimFTPreAuthRspTimer)) {
+	    tx_timer_activate(&mac->lim.lim_timers.gLimFTPreAuthRspTimer)) {
 		pe_err("FT Auth Rsp Timer Start Failed");
 		goto preauth_fail;
 	}
@@ -318,6 +318,7 @@ QDF_STATUS lim_ft_setup_auth_session(struct mac_context *mac,
 {
 	struct pe_session *ft_session = NULL;
 	uint8_t sessionId = 0;
+	struct sSirFTPreAuthReq *req;
 
 	ft_session =
 		pe_find_session_by_bssid(mac, pe_session->limReAssocbssId,
@@ -334,15 +335,13 @@ QDF_STATUS lim_ft_setup_auth_session(struct mac_context *mac,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (pe_session->ftPEContext.pFTPreAuthReq &&
-	    pe_session->ftPEContext.pFTPreAuthReq->pbssDescription) {
+	req = pe_session->ftPEContext.pFTPreAuthReq;
+	if (req && req->pbssDescription) {
 		lim_fill_ft_session(mac,
-				    pe_session->ftPEContext.pFTPreAuthReq->
-				    pbssDescription, ft_session,
-				    pe_session);
-
-		lim_ft_prepare_add_bss_req(mac, false, ft_session,
-		     pe_session->ftPEContext.pFTPreAuthReq->pbssDescription);
+				    req->pbssDescription, ft_session,
+				    pe_session, WLAN_PHYMODE_AUTO);
+		lim_ft_prepare_add_bss_req(mac, ft_session,
+					   req->pbssDescription);
 	}
 
 	return QDF_STATUS_SUCCESS;
@@ -440,7 +439,8 @@ void lim_handle_ft_pre_auth_rsp(struct mac_context *mac, QDF_STATUS status,
 		      pe_session->ftPEContext.pFTPreAuthReq->pbssDescription;
 		ft_session =
 			pe_create_session(mac, pbssDescription->bssId,
-					  &sessionId, mac->lim.maxStation,
+					  &sessionId,
+					  mac->lim.max_sta_of_pe_session,
 					  pe_session->bssType,
 					  pe_session->vdev_id,
 					  pe_session->opmode);
@@ -457,9 +457,7 @@ void lim_handle_ft_pre_auth_rsp(struct mac_context *mac, QDF_STATUS status,
 				  pbssDescription->bssId);
 
 		/* Update the beacon/probe filter in mac_ctx */
-		lim_set_bcn_probe_filter(mac,
-					 ft_session,
-					 NULL, 0);
+		lim_set_bcn_probe_filter(mac, ft_session, 0);
 
 		if (ft_session->bssType == eSIR_INFRASTRUCTURE_MODE)
 			ft_session->limSystemRole = eLIM_STA_ROLE;
@@ -470,11 +468,11 @@ void lim_handle_ft_pre_auth_rsp(struct mac_context *mac, QDF_STATUS status,
 		ft_session->ht_config = pe_session->ht_config;
 		ft_session->limSmeState = eLIM_SME_WT_REASSOC_STATE;
 
-		if (IS_5G_CH(pe_session->ftPEContext.pFTPreAuthReq->
-			preAuthchannelNum))
-			ft_session->vdev_nss = mac->vdev_type_nss_5g.sta;
-		else
+		if (wlan_reg_is_24ghz_ch_freq(pe_session->ftPEContext.
+		    pFTPreAuthReq->pre_auth_channel_freq))
 			ft_session->vdev_nss = mac->vdev_type_nss_2g.sta;
+		else
+			ft_session->vdev_nss = mac->vdev_type_nss_5g.sta;
 
 		pe_debug("created session (%pK) with id = %d",
 			ft_session, ft_session->peSessionId);
@@ -485,18 +483,17 @@ void lim_handle_ft_pre_auth_rsp(struct mac_context *mac, QDF_STATUS status,
 		lim_print_mac_addr(mac, pe_session->limReAssocbssId, LOGD);
 	}
 send_rsp:
-	if ((pe_session->currentOperChannel !=
-	     pe_session->ftPEContext.pFTPreAuthReq->preAuthchannelNum) ||
+	if ((pe_session->curr_op_freq !=
+	     pe_session->ftPEContext.pFTPreAuthReq->pre_auth_channel_freq) ||
 	    lim_is_in_mcc(mac)) {
 		/* Need to move to the original AP channel */
 		lim_process_abort_scan_ind(mac, pe_session->smeSessionId,
 			pe_session->ftPEContext.pFTPreAuthReq->scan_id,
 			mac->lim.req_id | PREAUTH_REQUESTOR_ID);
 	} else {
-		pe_debug("Pre auth on same channel as connected AP channel %d\
-			and no mcc pe sessions exist",
-			pe_session->ftPEContext.pFTPreAuthReq->
-			preAuthchannelNum);
+		pe_debug("Pre auth on same freq as connected AP freq %d and no mcc pe sessions exist",
+			 pe_session->ftPEContext.pFTPreAuthReq->
+			 pre_auth_channel_freq);
 		lim_ft_process_pre_auth_result(mac, pe_session);
 	}
 }
@@ -521,7 +518,7 @@ void lim_process_ft_preauth_rsp_timeout(struct mac_context *mac_ctx)
 	 */
 	pe_err("FT Pre-Auth Time Out!!!!");
 	session = pe_find_session_by_session_id(mac_ctx,
-			mac_ctx->lim.limTimers.gLimFTPreAuthRspTimer.sessionId);
+		     mac_ctx->lim.lim_timers.gLimFTPreAuthRspTimer.sessionId);
 	if (!session) {
 		pe_err("Session Does not exist for given sessionID");
 		return;
@@ -539,7 +536,7 @@ void lim_process_ft_preauth_rsp_timeout(struct mac_context *mac_ctx)
 	if (!session->ftPEContext.pFTPreAuthReq) {
 		/* Auth Rsp might already be posted to SME and ftcleanup done */
 		pe_err("pFTPreAuthReq is NULL sessionId: %d",
-			mac_ctx->lim.limTimers.gLimFTPreAuthRspTimer.sessionId);
+		       mac_ctx->lim.lim_timers.gLimFTPreAuthRspTimer.sessionId);
 		return;
 	}
 
@@ -610,7 +607,7 @@ void lim_post_ft_pre_auth_rsp(struct mac_context *mac_ctx,
 			qdf_mem_free(ft_pre_auth_rsp);
 			return;
 		}
-		ft_pre_auth_rsp->smeSessionId = session->smeSessionId;
+		ft_pre_auth_rsp->vdev_id = session->vdev_id;
 		/* The bssid of the AP we are sending Auth1 to. */
 		if (session->ftPEContext.pFTPreAuthReq)
 			sir_copy_mac_addr(ft_pre_auth_rsp->preAuthbssId,
@@ -720,7 +717,7 @@ QDF_STATUS lim_send_preauth_scan_offload(struct mac_context *mac_ctx,
 
 	req->scan_req.chan_list.num_chan = 1;
 	req->scan_req.chan_list.chan[0].freq =
-			cds_chan_to_freq(ft_preauth_req->preAuthchannelNum);
+			ft_preauth_req->pre_auth_channel_freq;
 
 	req->scan_req.dwell_time_active = LIM_FT_PREAUTH_SCAN_TIME;
 	req->scan_req.dwell_time_passive = LIM_FT_PREAUTH_SCAN_TIME;
@@ -734,25 +731,9 @@ QDF_STATUS lim_send_preauth_scan_offload(struct mac_context *mac_ctx,
 	return status;
 }
 
-/**
- * lim_preauth_scan_event_handler() - Process firmware preauth scan events
- *
- * @mac_ctx:Pointer to global MAC structure
- * @event: Scan event
- * @session_id: session entry
- * @scan_id: scan id from WMA scan event.
- *
- * If scan event signifies failure or successful completion, operation
- * is complete.
- * If scan event signifies that STA is on foreign channel, send auth frame
- *
- * Return: void
- */
-
 void lim_preauth_scan_event_handler(struct mac_context *mac_ctx,
-				enum sir_scan_event_type event,
-				uint8_t session_id,
-				uint32_t scan_id)
+				    enum sir_scan_event_type event,
+				    uint8_t vdev_id, uint32_t scan_id)
 {
 	struct pe_session *session_entry;
 
@@ -769,14 +750,12 @@ void lim_preauth_scan_event_handler(struct mac_context *mac_ctx,
 		/* For the first pre-auth request
 		 * need to get it by sme session id (vdev id)
 		 */
-		session_entry = pe_find_session_by_sme_session_id(mac_ctx,
-								  session_id);
+		session_entry = pe_find_session_by_vdev_id(mac_ctx, vdev_id);
 	}
 
 	if (!session_entry) {
-		pe_err("SmeSessionId:%d PeSessionId:%d does not exist",
-			session_id,
-			mac_ctx->lim.limTimers.gLimFTPreAuthRspTimer.sessionId);
+		pe_err("vdev_id :%d PeSessionId:%d does not exist", vdev_id,
+			mac_ctx->lim.lim_timers.gLimFTPreAuthRspTimer.sessionId);
 		return;
 	}
 

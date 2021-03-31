@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,11 +52,12 @@ QDF_STATUS wlan_serialization_psoc_disable(struct wlan_objmgr_psoc *psoc)
 	if (status != QDF_STATUS_SUCCESS)
 		ser_err("ser cleanning up all timer failed");
 
+	/* Use lock to free to avoid any race where timer is still in use */
+	wlan_serialization_acquire_lock(&ser_soc_obj->timer_lock);
 	qdf_mem_free(ser_soc_obj->timers);
 	ser_soc_obj->timers = NULL;
 	ser_soc_obj->max_active_cmds = 0;
-
-	wlan_serialization_destroy_lock(&ser_soc_obj->timer_lock);
+	wlan_serialization_release_lock(&ser_soc_obj->timer_lock);
 error:
 	return status;
 }
@@ -87,7 +88,6 @@ QDF_STATUS wlan_serialization_psoc_enable(struct wlan_objmgr_psoc *psoc)
 		goto error;
 	}
 
-	wlan_serialization_create_lock(&ser_soc_obj->timer_lock);
 	status = QDF_STATUS_SUCCESS;
 
 error:
@@ -127,6 +127,7 @@ static QDF_STATUS wlan_serialization_psoc_create_handler(
 		ser_err("Obj attach failed");
 		goto error;
 	}
+	wlan_serialization_create_lock(&soc_ser_obj->timer_lock);
 	ser_debug("ser psoc obj created");
 	status = QDF_STATUS_SUCCESS;
 
@@ -144,16 +145,14 @@ static void wlan_serialization_destroy_cmd_pool(
 		struct wlan_serialization_pdev_queue *pdev_queue)
 {
 	qdf_list_node_t *node = NULL;
-	struct wlan_serialization_command_list *cmd_list;
 
-	ser_debug("Destroy cmd pool list %pk, size %d",
+	ser_debug("Destroy cmd pool list %pK, size %d",
 		  &pdev_queue->cmd_pool_list,
 		  qdf_list_size(&pdev_queue->cmd_pool_list));
 	while (!qdf_list_empty(&pdev_queue->cmd_pool_list)) {
 		qdf_list_remove_front(&pdev_queue->cmd_pool_list,
 				      &node);
-		cmd_list = (struct wlan_serialization_command_list *)node;
-		qdf_mem_free(cmd_list);
+		qdf_mem_free(node);
 	}
 
 	qdf_list_destroy(&pdev_queue->cmd_pool_list);
@@ -271,7 +270,9 @@ static QDF_STATUS wlan_serialization_pdev_create_handler(
 			goto error_free;
 		}
 
-		pdev_queue->vdev_active_cmd_bitmap = 0;
+		qdf_mem_zero(pdev_queue->vdev_active_cmd_bitmap,
+			     sizeof(pdev_queue->vdev_active_cmd_bitmap));
+
 		pdev_queue->blocking_cmd_active = 0;
 		pdev_queue->blocking_cmd_waiting = 0;
 	}
@@ -329,6 +330,7 @@ wlan_serialization_psoc_destroy_handler(struct wlan_objmgr_psoc *psoc,
 	if (status != QDF_STATUS_SUCCESS)
 		ser_err("ser psoc private obj detach failed");
 
+	wlan_serialization_destroy_lock(&ser_soc_obj->timer_lock);
 	ser_debug("ser psoc obj deleted with status %d", status);
 	qdf_mem_free(ser_soc_obj);
 
@@ -618,7 +620,7 @@ QDF_STATUS wlan_serialization_deinit(void)
 		ret_status = QDF_STATUS_E_FAILURE;
 	}
 
-	ser_alert("deregistered callbacks with obj mgr successfully");
+	ser_debug("deregistered callbacks with obj mgr successfully");
 
 	return ret_status;
 }

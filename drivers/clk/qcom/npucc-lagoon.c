@@ -145,11 +145,11 @@ static struct clk_alpha_pll npu_cc_pll0 = {
 	},
 };
 
-/* 300MHz Configuration */
+/* 1500MHz Configuration */
 static struct alpha_pll_config npu_cc_pll1_config = {
-	.l = 0xF,
+	.l = 0x4E,
 	.cal_l = 0x33,
-	.alpha = 0xA000,
+	.alpha = 0x2000,
 	.config_ctl_val = 0x20485699,
 	.config_ctl_hi_val = 0x00002067,
 	.test_ctl_val = 0x40000000,
@@ -181,11 +181,11 @@ static struct clk_alpha_pll npu_cc_pll1 = {
 	},
 };
 
-/* 250MHz Configuration */
+/* 600MHz Configuration */
 static struct alpha_pll_config npu_q6ss_pll_config = {
-	.l = 0xD,
+	.l = 0x1F,
 	.cal_l = 0x1E,
-	.alpha = 0x555,
+	.alpha = 0x4000,
 	.config_ctl_val = 0x20485699,
 	.config_ctl_hi_val = 0x00002067,
 	.test_ctl_val = 0x40000000,
@@ -319,12 +319,12 @@ static struct clk_rcg2 npu_cc_xo_clk_src = {
 };
 
 static const struct freq_tbl ftbl_npu_dsp_core_clk_src[] = {
-	F(250000000, P_NPU_Q6SS_PLL_OUT_MAIN, 1, 0, 0),
-	F(300000000, P_NPU_Q6SS_PLL_OUT_MAIN, 1, 0, 0),
-	F(400000000, P_NPU_Q6SS_PLL_OUT_MAIN, 1, 0, 0),
-	F(500000000, P_NPU_Q6SS_PLL_OUT_MAIN, 1, 0, 0),
-	F(660000000, P_NPU_Q6SS_PLL_OUT_MAIN, 1, 0, 0),
-	F(800000000, P_NPU_Q6SS_PLL_OUT_MAIN, 1, 0, 0),
+	F(250000000, P_NPU_Q6SS_PLL_OUT_MAIN, 2, 0, 0),
+	F(300000000, P_NPU_Q6SS_PLL_OUT_MAIN, 2, 0, 0),
+	F(400000000, P_NPU_Q6SS_PLL_OUT_MAIN, 2, 0, 0),
+	F(500000000, P_NPU_Q6SS_PLL_OUT_MAIN, 2, 0, 0),
+	F(660000000, P_NPU_Q6SS_PLL_OUT_MAIN, 2, 0, 0),
+	F(800000000, P_NPU_Q6SS_PLL_OUT_MAIN, 2, 0, 0),
 	{ }
 };
 

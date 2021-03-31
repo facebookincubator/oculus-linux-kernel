@@ -33,14 +33,33 @@
 
 struct peer_nan_datapath_map;
 
+/**
+ * lim_process_ndi_mlm_add_bss_rsp() - Process ADD_BSS response for NDI
+ * @mac_ctx: Pointer to Global MAC structure
+ * @add_bss_rsp: Bss params including rsp data
+ * @session_entry: PE session
+ *
+ * Return: None
+ */
 void lim_process_ndi_mlm_add_bss_rsp(struct mac_context *mac_ctx,
-				     struct scheduler_msg *lim_msg_q,
+				     struct add_bss_rsp *add_bss_rsp,
 				     struct pe_session *session_entry);
 /* Handler for DEL BSS resp for NDI interface */
-void lim_ndi_del_bss_rsp(struct mac_context * mac_ctx,
-			void *msg, struct pe_session *session_entry);
 
-void lim_ndp_add_sta_rsp(struct mac_context *mac_ctx, struct pe_session *session_entry,
+/**
+ * lim_ndi_del_bss_rsp() - Handler for DEL BSS resp for NDI interface
+ * @mac_ctx: handle to mac structure
+ * @del_bss: pointer to del bss response
+ * @session_entry: session entry
+ *
+ * Return: None
+ */
+void lim_ndi_del_bss_rsp(struct mac_context * mac_ctx,
+			 struct del_bss_resp *del_bss,
+			 struct pe_session *session_entry);
+
+void lim_ndp_add_sta_rsp(struct mac_context *mac_ctx,
+			 struct pe_session *session_entry,
 			 tAddStaParams *add_sta_rsp);
 
 void lim_process_ndi_del_sta_rsp(struct mac_context *mac_ctx,
@@ -57,24 +76,39 @@ void lim_ndp_delete_peers_by_addr_converged(uint8_t vdev_id,
 					struct qdf_mac_addr peer_ndi_mac_addr);
 
 #else
-static inline void lim_process_ndi_mlm_add_bss_rsp(struct mac_context *mac_ctx,
-					struct scheduler_msg *lim_msg_q,
-					struct pe_session *session_entry)
-{
-}
-static inline void lim_ndi_del_bss_rsp(struct mac_context *mac_ctx,
-					void *msg, struct pe_session *session_entry)
-{
-}
-static inline void lim_process_ndi_del_sta_rsp(struct mac_context *mac_ctx,
-				struct scheduler_msg *lim_msg,
-				struct pe_session *pe_session)
+static inline
+void lim_process_ndi_mlm_add_bss_rsp(struct mac_context *mac_ctx,
+				     struct add_bss_rsp *add_bss_rsp,
+				     struct pe_session *session_entry)
 {
 }
 
-static inline void lim_ndp_add_sta_rsp(struct mac_context *mac_ctx,
-					struct pe_session *session_entry,
-					tAddStaParams *add_sta_rsp)
+/**
+ * lim_ndi_del_bss_rsp() - Handler for DEL BSS resp for NDI interface
+ * @mac_ctx: handle to mac structure
+ * @del_bss: pointer to del bss response
+ * @session_entry: session entry
+ *
+ * Return: None
+ */
+static inline
+void lim_ndi_del_bss_rsp(struct mac_context *mac_ctx,
+			 struct del_bss_resp *del_bss,
+			 struct pe_session *session_entry)
+{
+}
+
+static inline
+void lim_process_ndi_del_sta_rsp(struct mac_context *mac_ctx,
+				 struct scheduler_msg *lim_msg,
+				 struct pe_session *pe_session)
+{
+}
+
+static inline
+void lim_ndp_add_sta_rsp(struct mac_context *mac_ctx,
+			 struct pe_session *session_entry,
+			 tAddStaParams *add_sta_rsp)
 {
 }
 

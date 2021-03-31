@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -74,7 +74,6 @@ static QDF_STATUS ocb_set_chan_info(void *dp_soc,
 				    uint32_t vdev_id,
 				    struct ocb_config *config)
 {
-	struct cdp_vdev *dp_vdev;
 	struct ol_txrx_ocb_set_chan ocb_set_chan;
 	struct ol_txrx_ocb_chan_info *ocb_channel_info;
 
@@ -83,16 +82,10 @@ static QDF_STATUS ocb_set_chan_info(void *dp_soc,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	dp_vdev = cdp_get_vdev_from_vdev_id(dp_soc, dp_pdev, vdev_id);
-	if (!dp_vdev) {
-		ocb_err("DP vdev handle is NULL");
-		return QDF_STATUS_E_FAILURE;
-	}
-
 	ocb_set_chan.ocb_channel_count = config->channel_count;
 
 	/* release old settings */
-	ocb_channel_info = cdp_get_ocb_chan_info(dp_soc, dp_vdev);
+	ocb_channel_info = cdp_get_ocb_chan_info(dp_soc, vdev_id);
 	if (ocb_channel_info)
 		qdf_mem_free(ocb_channel_info);
 
@@ -101,10 +94,9 @@ static QDF_STATUS ocb_set_chan_info(void *dp_soc,
 
 		buf_size = sizeof(*ocb_channel_info) * config->channel_count;
 		ocb_set_chan.ocb_channel_info = qdf_mem_malloc(buf_size);
-		if (!ocb_set_chan.ocb_channel_info) {
-			ocb_err("Failed to allocate buffer for chan info");
+		if (!ocb_set_chan.ocb_channel_info)
 			return QDF_STATUS_E_NOMEM;
-		}
+
 		ocb_channel_info = ocb_set_chan.ocb_channel_info;
 		for (i = 0; i < config->channel_count; i++) {
 			ocb_channel_info[i].chan_freq =
@@ -118,7 +110,7 @@ static QDF_STATUS ocb_set_chan_info(void *dp_soc,
 		ocb_set_chan.ocb_channel_info = NULL;
 	}
 	ocb_debug("Sync channel config to dp");
-	cdp_set_ocb_chan_info(dp_soc, dp_vdev, ocb_set_chan);
+	cdp_set_ocb_chan_info(dp_soc, vdev_id, ocb_set_chan);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -167,7 +159,7 @@ static QDF_STATUS ocb_channel_config_status(struct ocb_rx_event *evt)
 		/* Sync channel status to data path */
 		if (config_rsp.status == OCB_CHANNEL_CONFIG_SUCCESS)
 			ocb_set_chan_info(ocb_obj->dp_soc,
-					  ocb_obj->dp_pdev,
+					  ocb_obj->pdev,
 					  vdev_id,
 					  ocb_obj->channel_config);
 		qdf_mem_free(ocb_obj->channel_config);
@@ -218,7 +210,7 @@ static QDF_STATUS ocb_tsf_timer(struct ocb_rx_event *evt)
 	ocb_debug("TSF timer low=%d, high=%d",
 		  tsf_timer->timer_low, tsf_timer->timer_high);
 	if (cbs && cbs->ocb_get_tsf_timer_callback) {
-		ocb_debug("%s: send TSF timer.", __func__);
+		ocb_debug("send TSF timer");
 		cbs->ocb_get_tsf_timer_callback(cbs->ocb_get_tsf_timer_context,
 						tsf_timer);
 		status = QDF_STATUS_SUCCESS;
@@ -256,7 +248,7 @@ static QDF_STATUS ocb_dcc_stats_response(struct ocb_rx_event *evt)
 	cbs = wlan_ocb_get_callbacks(pdev);
 	dcc_stats = &event->rsp.dcc_stats;
 	if (cbs && cbs->ocb_dcc_get_stats_callback) {
-		ocb_debug("%s: send DCC stats", __func__);
+		ocb_debug("send DCC stats");
 		cbs->ocb_dcc_get_stats_callback(cbs->ocb_dcc_get_stats_context,
 						dcc_stats);
 		status = QDF_STATUS_SUCCESS;
@@ -293,7 +285,7 @@ static QDF_STATUS ocb_ndl_response(struct ocb_rx_event *evt)
 	cbs = wlan_ocb_get_callbacks(pdev);
 	ndl = &event->rsp.ndl;
 	if (cbs && cbs->ocb_dcc_update_ndl_callback) {
-		ocb_debug("%s: NDL update response", __func__);
+		ocb_debug("NDL update response");
 		cbs->ocb_dcc_update_ndl_callback(
 				cbs->ocb_dcc_update_ndl_context, ndl);
 		status = QDF_STATUS_SUCCESS;
@@ -331,7 +323,7 @@ static QDF_STATUS ocb_dcc_indication(struct ocb_rx_event *evt)
 	cbs = wlan_ocb_get_callbacks(pdev);
 	dcc_stats = &event->rsp.dcc_stats;
 	if (cbs && cbs->ocb_dcc_stats_event_callback) {
-		ocb_debug("%s: DCC stats indication", __func__);
+		ocb_debug("DCC stats indication");
 		cbs->ocb_dcc_stats_event_callback(
 				cbs->ocb_dcc_stats_event_context, dcc_stats);
 		status = QDF_STATUS_SUCCESS;
@@ -523,10 +515,8 @@ QDF_STATUS ocb_pdev_obj_create_notification(struct wlan_objmgr_pdev *pdev,
 
 	ocb_notice("ocb pdev created");
 	ocb_obj = qdf_mem_malloc(sizeof(*ocb_obj));
-	if (!ocb_obj) {
-		ocb_err("Failed to allocate memory for ocb pdev object");
+	if (!ocb_obj)
 		return QDF_STATUS_E_FAILURE;
-	}
 
 	status = wlan_objmgr_pdev_component_obj_attach(pdev,
 						       WLAN_UMAC_COMP_OCB,

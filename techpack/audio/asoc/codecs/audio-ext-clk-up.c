@@ -615,6 +615,7 @@ static struct platform_driver audio_ref_clk_driver = {
 	.remove = audio_ref_clk_remove,
 };
 
+#ifdef CONFIG_SND_SOC_WCD9XXX_V2
 int audio_ref_clk_platform_init(void)
 {
 	return platform_driver_register(&audio_ref_clk_driver);
@@ -624,6 +625,19 @@ void audio_ref_clk_platform_exit(void)
 {
 	platform_driver_unregister(&audio_ref_clk_driver);
 }
+#else
+static int __init audio_ref_clk_platform_init(void)
+{
+	return platform_driver_register(&audio_ref_clk_driver);
+}
+module_init(audio_ref_clk_platform_init);
+
+static void __exit audio_ref_clk_platform_exit(void)
+{
+	platform_driver_unregister(&audio_ref_clk_driver);
+}
+module_exit(audio_ref_clk_platform_exit);
+#endif
 
 MODULE_DESCRIPTION("Audio Ref Up Clock module platform driver");
 MODULE_LICENSE("GPL v2");

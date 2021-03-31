@@ -83,6 +83,7 @@ struct cnss_pci_data {
 	dma_addr_t smmu_iova_start;
 	size_t smmu_iova_len;
 	dma_addr_t smmu_iova_ipa_start;
+	dma_addr_t smmu_iova_ipa_current;
 	size_t smmu_iova_ipa_len;
 	void __iomem *bar;
 	struct cnss_msi_config *msi_config;
@@ -101,6 +102,7 @@ struct cnss_pci_data {
 	u32 pcie_reg_size;
 	struct cnss_misc_reg *wlaon_reg;
 	u32 wlaon_reg_size;
+	u8 iommu_geometry;
 };
 
 static inline void cnss_set_pci_priv(struct pci_dev *pci_dev, void *data)
@@ -175,6 +177,7 @@ void cnss_pci_free_qdss_mem(struct cnss_pci_data *pci_priv);
 int cnss_pci_load_m3(struct cnss_pci_data *pci_priv);
 int cnss_pci_start_mhi(struct cnss_pci_data *pci_priv);
 void cnss_pci_collect_dump_info(struct cnss_pci_data *pci_priv, bool in_panic);
+void cnss_pci_device_crashed(struct cnss_pci_data *pci_priv);
 void cnss_pci_clear_dump_info(struct cnss_pci_data *pci_priv);
 u32 cnss_pci_get_wake_msi(struct cnss_pci_data *pci_priv);
 int cnss_pci_force_fw_assert_hdlr(struct cnss_pci_data *pci_priv);

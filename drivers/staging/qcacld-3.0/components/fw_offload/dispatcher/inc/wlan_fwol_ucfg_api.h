@@ -161,6 +161,16 @@ QDF_STATUS ucfg_get_enable_rts_sifsbursting(struct wlan_objmgr_psoc *psoc,
 					    bool *enable_rts_sifsbursting);
 
 /**
+ * ucfg_get_enable_sifs_burst() - Get the enable_sifs_burst value
+ * @psoc: pointer to the psoc object
+ * @enable_sifs_burst: pointer to return enable_sifs_burst value
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_get_enable_sifs_burst(struct wlan_objmgr_psoc *psoc,
+				      uint8_t *enable_sifs_burst);
+
+/**
  * ucfg_get_max_mpdus_inampdu() - Assigns the max_mpdus_inampdu value
  * @psoc: pointer to the psoc object
  *
@@ -276,6 +286,16 @@ QDF_STATUS ucfg_fwol_get_enable_fw_module_log_level(
 QDF_STATUS ucfg_fwol_get_sap_xlna_bypass(struct wlan_objmgr_psoc *psoc,
 					 bool *sap_xlna_bypass);
 
+/**
+ * ucfg_fwol_get_ocl_cfg() - Assigns ocl_cfg value
+ * @psoc: pointer to the psoc object
+ * @ocl_cfg: pointer to return ocl_cfg
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_fwol_get_ocl_cfg(struct wlan_objmgr_psoc *psoc,
+				 uint32_t *ocl_cfg);
+
 #ifdef FEATURE_WLAN_RA_FILTERING
 /**
  * ucfg_fwol_set_is_rate_limit_enabled() - Sets the is_rate_limit_enabled value
@@ -318,6 +338,19 @@ QDF_STATUS ucfg_fwol_get_tsf_gpio_pin(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 ucfg_fwol_get_tsf_irq_host_gpio_pin(struct wlan_objmgr_psoc *psoc,
 				    uint32_t *tsf_irq_host_gpio_pin);
+#endif
+
+#ifdef WLAN_FEATURE_TSF_PLUS_EXT_GPIO_SYNC
+/**
+ * ucfg_fwol_get_tsf_sync_host_gpio_pin() - Assigns tsf_sync_host_gpio_pin value
+ * @psoc: pointer to the psoc object
+ *
+ * Return: QDF Status
+ */
+
+QDF_STATUS
+ucfg_fwol_get_tsf_sync_host_gpio_pin(struct wlan_objmgr_psoc *psoc,
+				     uint32_t *tsf_irq_host_gpio_pin);
 #endif
 
 #ifdef DHCP_SERVER_OFFLOAD
@@ -551,6 +584,36 @@ QDF_STATUS ucfg_fwol_send_dscp_up_map_to_fw(
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+/**
+ * ucfg_fwol_configure_global_params - API to configure global params
+ * @psoc: pointer to psoc object
+ * @pdev: pointer to pdev object
+ *
+ * Used to configure global firmware params. This is invoked from hdd during
+ * bootup.
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_fwol_configure_global_params(struct wlan_objmgr_psoc *psoc,
+					     struct wlan_objmgr_pdev *pdev);
+
+/**
+ * ucfg_fwol_configure_vdev_params - API to configure vdev specific params
+ * @psoc: pointer to psoc object
+ * @pdev: pointer to pdev object
+ * @device_mode: device mode
+ * @vdev_id: vdev ID
+ *
+ * Used to configure per vdev firmware params based on device mode. This is
+ * invoked from hdd during vdev creation.
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_fwol_configure_vdev_params(struct wlan_objmgr_psoc *psoc,
+					   struct wlan_objmgr_pdev *pdev,
+					   enum QDF_OPMODE device_mode,
+					   uint8_t vdev_id);
 #else
 static inline QDF_STATUS ucfg_fwol_psoc_open(struct wlan_objmgr_psoc *psoc)
 {
@@ -719,6 +782,12 @@ ucfg_fwol_get_sap_xlna_bypass(struct wlan_objmgr_psoc *psoc,
 }
 
 static inline QDF_STATUS
+ucfg_fwol_get_ocl_cfg(struct wlan_objmgr_psoc *psoc, uint32_t *ocl_cfg)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline QDF_STATUS
 ucfg_fwol_get_tsf_gpio_pin(struct wlan_objmgr_psoc *psoc,
 			   uint32_t *tsf_gpio_pin)
 {
@@ -838,6 +907,21 @@ ucfg_fwol_get_is_rate_limit_enabled(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_E_FAILURE;
 }
 #endif /* FEATURE_WLAN_RA_FILTERING */
+
+static inline QDF_STATUS
+ucfg_fwol_configure_global_params(struct wlan_objmgr_psoc *psoc,
+				  struct wlan_objmgr_pdev *pdev)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline QDF_STATUS
+ucfg_fwol_configure_vdev_params(struct wlan_objmgr_psoc *psoc,
+				struct wlan_objmgr_pdev *pdev,
+				enum QDF_OPMODE device_mode, uint8_t vdev_id)
+{
+	return QDF_STATUS_E_FAILURE;
+}
 
 #endif /* WLAN_FW_OFFLOAD */
 

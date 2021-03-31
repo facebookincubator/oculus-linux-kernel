@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,6 +40,23 @@ QDF_STATUS ipa_init(void);
  * Return: QDF_STATUS_SUCCESS on success
  */
 QDF_STATUS ipa_deinit(void);
+
+/**
+ * ipa_register_is_ipa_ready() - Register IPA ready callback
+ * @pdev: pointer to pdev
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+QDF_STATUS ipa_register_is_ipa_ready(struct wlan_objmgr_pdev *pdev);
+
+/**
+ * ipa_disable_register_cb() - Reset the IPA is ready flag
+ *
+ * Return: Set the ipa_is_ready flag to false when module is
+ * unloaded to indicate that ipa ready cb is not registered
+ */
+void ipa_disable_register_cb(void);
+
 #else
 
 static inline QDF_STATUS ipa_init(void)
@@ -50,6 +67,16 @@ static inline QDF_STATUS ipa_init(void)
 static inline QDF_STATUS ipa_deinit(void)
 {
 	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS ipa_register_is_ipa_ready(
+	struct wlan_objmgr_pdev *pdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline void ipa_disable_register_cb(void)
+{
 }
 #endif /* IPA_OFFLOAD */
 

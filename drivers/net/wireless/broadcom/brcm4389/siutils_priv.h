@@ -515,5 +515,5 @@ void ai_force_clocks(const si_t *sih, uint clock_state);
 #define nci_wrapper_dump_last_timeout(a, b, c, d, e) (0)
 #define nci_check_enable_backplane_log(a) (FALSE)
 #define nci_wrapper_dump_buf_size(a) (0)
-#endif /* SOCI_NCI_BUS */
+#endif /* !SOCI_NCI_BUS */
 #endif	/* _siutils_priv_h_ */

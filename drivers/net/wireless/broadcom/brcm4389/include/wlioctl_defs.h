@@ -41,6 +41,8 @@
 #define D11AC_IOTYPES
 
 #ifndef USE_NEW_RSPEC_DEFS
+typedef uint32 ratespec_t;
+
 /* Remove when no referencing branches exist.
  * These macros will be used only in older branches (prior to K branch).
  * Wl layer in newer branches and trunk use those defined in bcmwifi_rspec.h.
@@ -428,6 +430,10 @@
 #define WL_BSS_FLAGS_SNR_INVALID	0x40	/* BSS contains invalid SNR */
 #define WL_BSS_FLAGS_NF_INVALID		0x80	/* BSS contains invalid noise floor */
 
+/* bss_info_cap_t flags_2 */
+#define WL_BSS_FLAGS_THRU_LPSC		0x01	/* bss_info obtained thru' LPSC */
+#define WL_BSS_FLAGS_QBSS_LOAD		0x02	/* QBSS load value present */
+
 /* bit definitions for bcnflags in wl_bss_info */
 #define WL_BSS_BCNFLAGS_INTERWORK_PRESENT	0x01 /* beacon had IE, accessnet valid */
 #define WL_BSS_BCNFLAGS_INTERWORK_PRESENT_VALID 0x02 /* on indicates support for this API */
@@ -638,23 +644,18 @@
 
 #ifdef MACOSX
 /* Macos limits ioctl maxlen to 2k */
-#define	WLC_IOCTL_MAXLEN		2048	/* max length ioctl buffer required */
+#define WLC_IOCTL_MAXLEN            2048u   /* "max" length ioctl buffer */
 #else
-/* SROM12 changes */
-#define	WLC_IOCTL_MAXLEN		8192	/* max length ioctl buffer required */
+#define WLC_IOCTL_MAXLEN            8192u   /* "max" length ioctl buffer */
 #endif /* MACOSX */
 
-#define WLC_IOCTL_SMLEN		256	/* "small" length ioctl buffer required */
-#define WLC_IOCTL_MEDLEN		1896	/* "med" length ioctl buffer required */
-#if defined(LCNCONF) || defined(LCN40CONF) || defined(LCN20CONF)
-#define WLC_SAMPLECOLLECT_MAXLEN	8192	/* Max Sample Collect buffer */
-#else
-#define WLC_SAMPLECOLLECT_MAXLEN	10240	/* Max Sample Collect buffer for two cores */
-#endif
-#define WLC_SAMPLECOLLECT_MAXLEN_LCN40  8192
+#define WLC_IOCTL_MEDLEN            1912u   /* "med" length ioctl buffer */
+#define WLC_IOCTL_SMLEN              256u   /* "small" length ioctl buffer */
 
-#define WLC_IOCTL_NANRESP_MAXLEN        4096u    /* "max" length nan ioctl resp buffer required */
-#define WLC_IOCTL_NANRESP_MEDLEN        800u     /* "med" length nan ioctl resp buffer required */
+#define WLC_SAMPLECOLLECT_MAXLEN   10240u   /* Max Sample Collect buffer for two cores */
+
+#define WLC_IOCTL_NANRESP_MAXLEN    4096u   /* "max" length nan ioctl resp buffer */
+#define WLC_IOCTL_NANRESP_MEDLEN     800u   /* "med" length nan ioctl resp buffer */
 
 /* common ioctl definitions */
 #define WLC_GET_MAGIC				0
@@ -1471,6 +1472,7 @@
 #define WL_FILS_VAL		0x00000002
 #define WL_LATENCY_VAL		0x00000004
 #define WL_WBUS_VAL		0x00000008
+#define WL_DTPC_DBG_VAL		0x00000010
 
 /* number of bytes needed to define a proper bit mask for MAC event reporting */
 #define BCMIO_ROUNDUP(x, y)	((((x) + ((y) - 1)) / (y)) * (y))
@@ -2490,4 +2492,29 @@
 /* Add get and set macros for each of the configs? */
 
 /* === Place holder for cnx and nan cfgs === */
+
+/* Timeout checks to disable. Bits in mask, returned by hnd_get_dbg_disable_to_mask() */
+/* Disables H2D DMA stall health check */
+#define DBG_DISABLE_PCIE_H2D_DMA_TO_MASK	0x00000001
+/* Disables D2H DMA stall health check */
+#define DBG_DISABLE_PCIE_D2H_DMA_TO_MASK	0x00000002
+/* Disables IOCTL timeout health check */
+#define DBG_DISABLE_PCIE_IOCTL_TO_MASK		0x00000004
+/* Disables flowring timeout health check */
+#define DBG_DISABLE_PCIE_FLOWRING_TO_MASK	0x00000008
+/* Disables rxpost timeout health check */
+#define DBG_DISABLE_PCIE_RXPOST_TO_MASK		0x00000010
+/* Disables D3ACK timeout health check */
+#define DBG_DISABLE_PCIE_D3ACK_TO_MASK		0x00000020
+/* Disables DS ACK timeout health check */
+#define DBG_DISABLE_PCIE_DSACK_TO_MASK		0x00000040
+/* Disables host wake assert timeout health check */
+#define DBG_DISABLE_PCIE_HOST_WAKE_TO_MASK	0x00000080
+/* Disables deep sleep wake timeout health check */
+#define DBG_DISABLE_DS_NO_SLEEP_TO_MASK		0x00000100
+/* Disables RX DMA stall health check */
+#define DBG_DISABLE_RX_STALL_TO_MASK		0x00000200
+/* Disables TX DMA stall health check */
+#define DBG_DISABLE_TX_STALL_TO_MASK		0x00000400
+
 #endif /* wlioctl_defs_h */

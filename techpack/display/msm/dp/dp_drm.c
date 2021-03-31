@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <drm/drm_atomic_helper.h>
@@ -367,6 +367,10 @@ int dp_connector_post_init(struct drm_connector *connector, void *display)
 	dp_display->bridge->dp_panel = sde_conn->drv_panel;
 
 	rc = dp_mst_init(dp_display);
+
+	if (dp_display->dsc_cont_pps)
+		sde_conn->ops.update_pps = NULL;
+
 end:
 	return rc;
 }
@@ -433,6 +437,7 @@ int dp_connector_get_info(struct drm_connector *connector,
 		struct msm_display_info *info, void *data)
 {
 	struct dp_display *display = data;
+	const char *display_type = NULL;
 
 	if (!info || !display || !display->drm_dev) {
 		DP_ERR("invalid params\n");
@@ -440,6 +445,12 @@ int dp_connector_get_info(struct drm_connector *connector,
 	}
 
 	info->intf_type = DRM_MODE_CONNECTOR_DisplayPort;
+
+	display->get_display_type(display, &display_type);
+
+	if (display_type)
+		if (!strcmp(display_type, "primary"))
+			info->display_type = SDE_CONNECTOR_PRIMARY;
 
 	info->num_of_h_tiles = 1;
 	info->h_tile_instance[0] = 0;
@@ -578,6 +589,19 @@ int dp_connector_get_modes(struct drm_connector *connector,
 	kfree(dp_mode);
 
 	return rc;
+}
+
+int dp_connnector_set_info_blob(struct drm_connector *connector,
+		void *info, void *display, struct msm_mode_info *mode_info)
+{
+	struct dp_display *dp_display = display;
+	const char *display_type = NULL;
+
+	dp_display->get_display_type(dp_display, &display_type);
+	sde_kms_info_add_keystr(info,
+		"display type", display_type);
+
+	return 0;
 }
 
 int dp_drm_bridge_init(void *data, struct drm_encoder *encoder)

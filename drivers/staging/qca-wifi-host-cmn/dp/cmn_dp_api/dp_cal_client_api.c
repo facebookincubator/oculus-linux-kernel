@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,9 +27,10 @@
  *
  * return: void
  */
-void dp_cal_client_attach(void **cal_client_ctx, void *pdev,
+void dp_cal_client_attach(struct cdp_cal_client **cal_client_ctx,
+			  struct cdp_pdev *pdev,
 			  qdf_device_t osdev,
-			  void (*dp_iterate_peer_list)(void *))
+			  void (*dp_iterate_peer_list)(struct cdp_pdev *))
 {
 	struct cal_client *cal_cl;
 
@@ -54,7 +55,7 @@ qdf_export_symbol(dp_cal_client_attach);
  *
  * return: void
  */
-void dp_cal_client_detach(void **cal_client_ctx)
+void dp_cal_client_detach(struct cdp_cal_client **cal_client_ctx)
 {
 	struct cal_client *cal_cl;
 
@@ -146,6 +147,14 @@ void dp_cal_client_update_peer_stats(struct cdp_peer_stats *peer_stats)
 					peer_stats->tx.tx_data_success_last;
 	peer_stats->tx.tx_data_ucast_rate = temp_tx_ucast_pkts -
 					peer_stats->tx.tx_data_ucast_last;
+
+	/* Check tx and rx packets in last one second, and increment
+	 * inactive time for peer
+	 */
+	if (peer_stats->tx.tx_data_rate || peer_stats->rx.rx_data_rate)
+		peer_stats->tx.inactive_time = 0;
+	else
+		peer_stats->tx.inactive_time++;
 
 	peer_stats->rx.rx_bytes_success_last = temp_rx_bytes;
 	peer_stats->rx.rx_data_success_last = temp_rx_data;

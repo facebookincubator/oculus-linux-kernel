@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -43,16 +43,10 @@ enum wlan_frm_fmt {
 };
 
 /* Max throughput */
-#ifdef QCS403_MEM_OPTIMIZE
+#ifdef SLUB_MEM_OPTIMIZE
 #define MAX_THROUGHPUT 400
 #else
 #define MAX_THROUGHPUT 800
-#endif
-
-#ifdef QCA_LL_TX_FLOW_CONTROL_V2
-#define TARGET_TX_CREDIT CFG_TGT_NUM_MSDU_DESC
-#else
-#define TARGET_TX_CREDIT 900
 #endif
 
 /* Throttle period Different level Duty Cycle values*/
@@ -96,10 +90,13 @@ struct txrx_pdev_cfg_t {
 #endif
 	struct wlan_ipa_uc_rsc_t ipa_uc_rsc;
 	bool ip_tcp_udp_checksum_offload;
+	bool p2p_ip_tcp_udp_checksum_offload;
 	bool enable_rxthread;
 	bool ce_classify_enabled;
+#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
 	uint32_t tx_flow_stop_queue_th;
 	uint32_t tx_flow_start_queue_offset;
+#endif
 	bool flow_steering_enabled;
 	/*
 	 * To track if credit reporting through
@@ -123,6 +120,21 @@ struct txrx_pdev_cfg_t {
 	uint32_t uc_tx_partition_base;
 	/* Flag to indicate whether new htt format is supported */
 	bool new_htt_format_enabled;
+
+#ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
+	/* enable the tcp delay ack feature in the driver */
+	bool  del_ack_enable;
+	/* timeout if no more tcp ack frames, unit is ms */
+	uint16_t del_ack_timer_value;
+	/* the maximum number of replaced tcp ack frames */
+	uint16_t del_ack_pkt_count;
+#endif
+
+#ifdef WLAN_SUPPORT_TXRX_HL_BUNDLE
+	uint16_t bundle_timer_value;
+	uint16_t bundle_size;
+#endif
+	uint8_t pktlog_buffer_size;
 };
 
 /**
@@ -132,8 +144,16 @@ struct txrx_pdev_cfg_t {
  *
  * Return: none
  */
+#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
 void ol_tx_set_flow_control_parameters(struct cdp_cfg *cfg_ctx,
 				       struct txrx_pdev_cfg_param_t *cfg_param);
+#else
+static inline
+void ol_tx_set_flow_control_parameters(struct cdp_cfg *cfg_ctx,
+				       struct txrx_pdev_cfg_param_t *cfg_param)
+{
+}
+#endif
 
 /**
  * ol_pdev_cfg_attach - setup configuration parameters
@@ -486,9 +506,11 @@ int ol_cfg_is_ip_tcp_udp_checksum_offload_enabled(struct cdp_cfg *cfg_pdev)
 }
 
 
+#if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
 int ol_cfg_get_tx_flow_stop_queue_th(struct cdp_cfg *cfg_pdev);
 
 int ol_cfg_get_tx_flow_start_queue_offset(struct cdp_cfg *cfg_pdev);
+#endif
 
 bool ol_cfg_is_ce_classify_enabled(struct cdp_cfg *cfg_pdev);
 
@@ -715,6 +737,60 @@ ol_cfg_is_htt_new_format_enabled(struct cdp_cfg *cfg_pdev)
 	return cfg->new_htt_format_enabled;
 }
 
+#ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
+/**
+ * ol_cfg_get_del_ack_timer_value() - get delayed ack timer value
+ * @cfg_pdev: pdev handle
+ *
+ * Return: timer value
+ */
+int ol_cfg_get_del_ack_timer_value(struct cdp_cfg *cfg_pdev);
+
+/**
+ * ol_cfg_get_del_ack_enable_value() - get delayed ack enable value
+ * @cfg_pdev: pdev handle
+ *
+ * Return: enable/disable
+ */
+bool ol_cfg_get_del_ack_enable_value(struct cdp_cfg *cfg_pdev);
+
+/**
+ * ol_cfg_get_del_ack_count_value() - get delayed ack count value
+ * @cfg_pdev: pdev handle
+ *
+ * Return: count value
+ */
+int ol_cfg_get_del_ack_count_value(struct cdp_cfg *cfg_pdev);
+
+/**
+ * ol_cfg_update_del_ack_params() - update delayed ack params
+ * @cfg_ctx: cfg context
+ * @cfg_param: parameters
+ *
+ * Return: none
+ */
+void ol_cfg_update_del_ack_params(struct txrx_pdev_cfg_t *cfg_ctx,
+				  struct txrx_pdev_cfg_param_t *cfg_param);
+#else
+/**
+ * ol_cfg_update_del_ack_params() - update delayed ack params
+ * @cfg_ctx: cfg context
+ * @cfg_param: parameters
+ *
+ * Return: none
+ */
+static inline
+void ol_cfg_update_del_ack_params(struct txrx_pdev_cfg_t *cfg_ctx,
+				  struct txrx_pdev_cfg_param_t *cfg_param)
+{
+}
+#endif
+
+#ifdef WLAN_SUPPORT_TXRX_HL_BUNDLE
+int ol_cfg_get_bundle_timer_value(struct cdp_cfg *cfg_pdev);
+int ol_cfg_get_bundle_size(struct cdp_cfg *cfg_pdev);
+#else
+#endif
 /**
  * ol_cfg_get_wrr_skip_weight() - brief Query for the param of wrr_skip_weight
  * @pdev: handle to the physical device.

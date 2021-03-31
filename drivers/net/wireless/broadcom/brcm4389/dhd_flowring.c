@@ -664,7 +664,8 @@ dhd_flowid_find(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *sa, char *da)
 		}
 	} else {
 
-		if (ETHER_ISMULTI(da)) {
+		if (ETHER_ISMULTI(da) &&
+			TRUE) {
 			ismcast = TRUE;
 			hash = 0;
 		} else {
@@ -698,6 +699,13 @@ dhd_flowid_map_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *da)
 {
 	uint16 flowid = FLOWID_INVALID;
 	ASSERT(dhdp->flowid_allocator != NULL);
+
+	/* P2P Connections are always 80Mhz */
+	if (DHD_IF_ROLE_P2PGC(dhdp, ifindex) ||
+	    DHD_IF_ROLE_P2PGO(dhdp, ifindex)) {
+		flowid = id16_map_alloc(dhdp->flowid_allocator);
+		return flowid;
+	}
 
 #if defined(DHD_HTPUT_TUNABLES)
 	if (dhdp->htput_flowid_allocator) {
@@ -793,7 +801,9 @@ dhd_flowid_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *sa, char *da)
 	} else {
 
 		/* For bcast/mcast assign first slot in in interface */
-		hash = ETHER_ISMULTI(da) ? 0 : DHD_FLOWRING_HASHINDEX(da, prio);
+		hash = (ETHER_ISMULTI(da) &&
+			TRUE) ?  0 : DHD_FLOWRING_HASHINDEX(da, prio);
+
 		cur = if_flow_lkup[ifindex].fl_hash[hash];
 		if (cur) {
 			while (cur->next) {
@@ -1240,6 +1250,10 @@ dhd_flow_rings_flush(dhd_pub_t *dhdp, uint8 ifindex)
 
 	DHD_INFO(("%s: ifindex %u\n", __FUNCTION__, ifindex));
 
+#if defined(XRAPI) && defined(QFLUSH_LOG)
+	dhdp->flush_logging = TRUE;
+#endif /* XRAPI && QFLUSH_LOG */
+
 	ASSERT(ifindex < DHD_MAX_IFS);
 	if (ifindex >= DHD_MAX_IFS)
 		return;
@@ -1250,7 +1264,9 @@ dhd_flow_rings_flush(dhd_pub_t *dhdp, uint8 ifindex)
 
 	for (id = 0; id < dhdp->num_h2d_rings; id++) {
 		if (flow_ring_table[id].active &&
+#ifndef XRAPI
 			(flow_ring_table[id].flow_info.ifindex == ifindex) &&
+#endif /* XRAPI */
 			(flow_ring_table[id].status == FLOW_RING_STATUS_OPEN)) {
 			dhd_bus_flow_ring_flush_request(dhdp->bus,
 			                                 (void *) &flow_ring_table[id]);

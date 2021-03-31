@@ -26,9 +26,24 @@
 #define ATH_DBG_DEFAULT   0
 #define DRAM_SIZE               0x000a8000
 #include "hif.h"
+#include "hif_runtime_pm.h"
 #include "cepci.h"
 #include "ce_main.h"
-#include <qdf_threads.h>
+
+#ifdef FORCE_WAKE
+/* Register to wake the UMAC from power collapse */
+#define PCIE_SOC_PCIE_REG_PCIE_SCRATCH_0_SOC_PCIE_REG 0x4040
+/* Register used for handshake mechanism to validate UMAC is awake */
+#define PCIE_PCIE_LOCAL_REG_PCIE_SOC_WAKE_PCIE_LOCAL_REG 0x3004
+/* Timeout duration to validate UMAC wake status */
+#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#define FORCE_WAKE_DELAY_TIMEOUT_MS 500
+#else
+#define FORCE_WAKE_DELAY_TIMEOUT_MS 50
+#endif /* HAL_CONFIG_SLUB_DEBUG_ON */
+/* Validate UMAC status every 5ms */
+#define FORCE_WAKE_DELAY_MS 5
+#endif /* FORCE_WAKE */
 
 #ifdef QCA_HIF_HIA_EXTND
 extern int32_t frac, intval, ar900b_20_targ_clk, qca9888_20_targ_clk;
@@ -41,61 +56,6 @@ struct hif_tasklet_entry {
 	uint8_t id;        /* 0 - 9: maps to CE, 10: fw */
 	void *hif_handler; /* struct hif_pci_softc */
 };
-
-/**
- * enum hif_pm_runtime_state - Driver States for Runtime Power Management
- * HIF_PM_RUNTIME_STATE_NONE: runtime pm is off
- * HIF_PM_RUNTIME_STATE_ON: runtime pm is active and link is active
- * HIF_PM_RUNTIME_STATE_RESUMING: a runtime resume is in progress
- * HIF_PM_RUNTIME_STATE_SUSPENDING: a runtime suspend is in progress
- * HIF_PM_RUNTIME_STATE_SUSPENDED: the driver is runtime suspended
- */
-enum hif_pm_runtime_state {
-	HIF_PM_RUNTIME_STATE_NONE,
-	HIF_PM_RUNTIME_STATE_ON,
-	HIF_PM_RUNTIME_STATE_RESUMING,
-	HIF_PM_RUNTIME_STATE_SUSPENDING,
-	HIF_PM_RUNTIME_STATE_SUSPENDED,
-};
-
-#ifdef FEATURE_RUNTIME_PM
-
-/**
- * struct hif_pm_runtime_lock - data structure for preventing runtime suspend
- * @list - global list of runtime locks
- * @active - true if this lock is preventing suspend
- * @name - character string for tracking this lock
- */
-struct hif_pm_runtime_lock {
-	struct list_head list;
-	bool active;
-	uint32_t timeout;
-	const char *name;
-};
-
-/* Debugging stats for Runtime PM */
-struct hif_pci_pm_stats {
-	u32 suspended;
-	u32 suspend_err;
-	u32 resumed;
-	atomic_t runtime_get;
-	atomic_t runtime_put;
-	atomic_t runtime_get_dbgid[RTPM_ID_MAX];
-	atomic_t runtime_put_dbgid[RTPM_ID_MAX];
-	uint64_t runtime_get_timestamp_dbgid[RTPM_ID_MAX];
-	uint64_t runtime_put_timestamp_dbgid[RTPM_ID_MAX];
-	u32 request_resume;
-	atomic_t allow_suspend;
-	atomic_t prevent_suspend;
-	u32 prevent_suspend_timeout;
-	u32 allow_suspend_timeout;
-	u32 runtime_get_err;
-	void *last_resume_caller;
-	void *last_busy_marker;
-	qdf_time_t last_busy_timestamp;
-	unsigned long suspend_jiffies;
-};
-#endif
 
 /**
  * struct hif_msi_info - Structure to hold msi info
@@ -111,9 +71,33 @@ struct hif_msi_info {
 	OS_DMA_MEM_CONTEXT(dmacontext);
 };
 
+/**
+ * struct hif_pci_stats - Account for hif pci based statistics
+ * @mhi_force_wake_request_vote: vote for mhi
+ * @mhi_force_wake_failure: mhi force wake failure
+ * @mhi_force_wake_success: mhi force wake success
+ * @soc_force_wake_register_write_success: write to soc wake
+ * @soc_force_wake_failure: soc force wake failure
+ * @soc_force_wake_success: soc force wake success
+ * @mhi_force_wake_release_success: mhi force wake release success
+ * @soc_force_wake_release_success: soc force wake release
+ */
+struct hif_pci_stats {
+	uint32_t mhi_force_wake_request_vote;
+	uint32_t mhi_force_wake_failure;
+	uint32_t mhi_force_wake_success;
+	uint32_t soc_force_wake_register_write_success;
+	uint32_t soc_force_wake_failure;
+	uint32_t soc_force_wake_success;
+	uint32_t mhi_force_wake_release_failure;
+	uint32_t mhi_force_wake_release_success;
+	uint32_t soc_force_wake_release_success;
+};
+
 struct hif_pci_softc {
 	struct HIF_CE_state ce_sc;
 	void __iomem *mem;      /* PCI address. */
+	void __iomem *mem_ce;   /* PCI address for CE. */
 	size_t mem_len;
 
 	struct device *dev;	/* For efficiency, should be first in struct */
@@ -136,27 +120,18 @@ struct hif_pci_softc {
 	qdf_work_t reschedule_tasklet_work;
 	uint32_t lcr_val;
 #ifdef FEATURE_RUNTIME_PM
-	atomic_t pm_state;
-	atomic_t monitor_wake_intr;
-	uint32_t prevent_suspend_cnt;
-	struct hif_pci_pm_stats pm_stats;
-	struct work_struct pm_work;
-	spinlock_t runtime_lock;
-	qdf_timer_t runtime_timer;
-	struct list_head prevent_suspend_list;
-	unsigned long runtime_timer_expires;
-	qdf_runtime_lock_t prevent_linkdown_lock;
-	atomic_t pm_dp_rx_busy;
-	qdf_time_t dp_last_busy_timestamp;
-#ifdef WLAN_OPEN_SOURCE
-	struct dentry *pm_dentry;
-#endif
+	struct hif_runtime_pm_ctx rpm_ctx;
 #endif
 	int (*hif_enable_pci)(struct hif_pci_softc *sc, struct pci_dev *pdev,
 			      const struct pci_device_id *id);
 	void (*hif_pci_deinit)(struct hif_pci_softc *sc);
 	void (*hif_pci_get_soc_info)(struct hif_pci_softc *sc,
 				     struct device *dev);
+	struct hif_pci_stats stats;
+#ifdef HIF_CPU_PERF_AFFINE_MASK
+	/* Stores the affinity hint mask for each CE IRQ */
+	qdf_cpu_mask ce_irq_cpu_mask[CE_COUNT_MAX];
+#endif
 };
 
 bool hif_pci_targ_is_present(struct hif_softc *scn, void *__iomem *mem);
@@ -201,23 +176,18 @@ int hif_pci_addr_in_boundary(struct hif_softc *scn, uint32_t offset);
 #define OL_ATH_TX_DRAIN_WAIT_CNT       60
 #endif
 
-#ifdef FEATURE_RUNTIME_PM
-#include <linux/pm_runtime.h>
-
-static inline int hif_pm_request_resume(struct device *dev)
+#ifdef FORCE_WAKE
+/**
+ * hif_print_pci_stats() - Display HIF PCI stats
+ * @hif_ctx - HIF pci handle
+ *
+ * Return: None
+ */
+void hif_print_pci_stats(struct hif_pci_softc *pci_scn);
+#else
+static inline
+void hif_print_pci_stats(struct hif_pci_softc *pci_scn)
 {
-	return pm_request_resume(dev);
 }
-
-static inline int __hif_pm_runtime_get(struct device *dev)
-{
-	return pm_runtime_get(dev);
-}
-
-static inline int hif_pm_runtime_put_auto(struct device *dev)
-{
-	return pm_runtime_put_autosuspend(dev);
-}
-
-#endif /* FEATURE_RUNTIME_PM */
+#endif /* FORCE_WAKE */
 #endif /* __ATH_PCI_H__ */

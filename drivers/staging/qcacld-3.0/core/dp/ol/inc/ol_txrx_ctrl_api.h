@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -54,11 +54,12 @@
  *  to the target has to be done in the separate pdev_attach_target call
  *  that is invoked after HTC setup is complete.
  *
- * @param pdev - txrx_pdev handle
+ * @param soc - datapath soc handle
+ * @param pdev_id - physical device instance id
  * @return 0 for success or error code
  */
 int
-ol_txrx_pdev_post_attach(struct cdp_pdev *pdev);
+ol_txrx_pdev_post_attach(struct cdp_soc_t *soc, uint8_t pdev_id);
 
 /**
  * @brief Parameter type to be input to ol_txrx_peer_update
@@ -280,14 +281,15 @@ void ol_txrx_tx_sync(ol_txrx_pdev_handle data_pdev, uint8_t sync_cnt);
  *  when transmission completes.  Rather, these specially-marked frames
  *  are provided to the callback registered with this function.
  *
- * @param data_vdev - which vdev the callback is being registered with
+ * @param soc - datapath soc handle
+ * @param vdev_id - id of which vdev the callback is being registered with
  *      (Currently the callback is stored in the pdev rather than the vdev.)
  * @param callback - the function to call when tx frames marked as "no free"
  *      are done being transmitted
  * @param ctxt - the context argument provided to the callback function
  */
 void
-ol_txrx_data_tx_cb_set(struct cdp_vdev *data_vdev,
+ol_txrx_data_tx_cb_set(struct cdp_soc_t *soc, uint8_t vdev_id,
 		       ol_txrx_data_tx_cb callback, void *ctxt);
 
 /**
@@ -300,32 +302,6 @@ ol_txrx_data_tx_cb_set(struct cdp_vdev *data_vdev,
  * @return - void
  */
 void ol_txrx_discard_tx_pending(ol_txrx_pdev_handle pdev);
-
-/**
- * @brief set the safemode of the device
- * @details
- *  This flag is used to bypass the encrypt and decrypt processes when send and
- *  receive packets. It works like open AUTH mode, HW will treate all packets
- *  as non-encrypt frames because no key installed. For rx fragmented frames,
- *  it bypasses all the rx defragmentaion.
- *
- * @param vdev - the data virtual device object
- * @param val - the safemode state
- * @return - void
- */
-void ol_txrx_set_safemode(ol_txrx_vdev_handle vdev, uint32_t val);
-
-/**
- * @brief configure the drop unencrypted frame flag
- * @details
- *  Rx related. When set this flag, all the unencrypted frames
- *  received over a secure connection will be discarded
- *
- * @param vdev - the data virtual device object
- * @param val - flag
- * @return - void
- */
-void ol_txrx_set_drop_unenc(ol_txrx_vdev_handle vdev, uint32_t val);
 
 void
 ol_txrx_peer_keyinstalled_state_update(ol_txrx_peer_handle data_peer,
@@ -432,27 +408,37 @@ int16_t ol_txrx_peer_rssi(ol_txrx_peer_handle peer);
 #if defined(CONFIG_HL_SUPPORT) && defined(QCA_BAD_PEER_TX_FLOW_CL)
 
 /**
- * @brief Configure the bad peer tx limit setting.
- * @details
+ * ol_txrx_bad_peer_txctl_set_setting() - Configure the bad peer tx
+ *					  limit setting.
+ * @soc_hdl: soc handle
+ * @pdev_id: datapath pdev identifier
+ * @enable: enable/disable setting
+ * @period: balance period in ms
+ * @txq_limit: balance txq limit
  *
  * @param pdev - the physics device
  */
 void
 ol_txrx_bad_peer_txctl_set_setting(
-	struct cdp_pdev *pdev,
+	struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	int enable,
 	int period,
 	int txq_limit);
 
 /**
- * @brief Configure the bad peer tx threshold limit
- * @details
+ * ol_txrx_bad_peer_txctl_update_threshold() - Configure the bad peer tx
+ *					       threshold limit
+ * @soc_hdl: soc handle
+ * @pdev_id: datapath pdev identifier
+ * @level: txctl level
+ * @tput_thresh throughput threshold
+ * @tx_limit: balance tx limit
  *
  * @param pdev - the physics device
  */
 void
 ol_txrx_bad_peer_txctl_update_threshold(
-	struct cdp_pdev *pdev,
+	struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	int level,
 	int tput_thresh,
 	int tx_limit);
@@ -461,7 +447,7 @@ ol_txrx_bad_peer_txctl_update_threshold(
 
 static inline void
 ol_txrx_bad_peer_txctl_set_setting(
-	struct cdp_pdev *pdev,
+	struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	int enable,
 	int period,
 	int txq_limit)
@@ -470,7 +456,7 @@ ol_txrx_bad_peer_txctl_set_setting(
 
 static inline void
 ol_txrx_bad_peer_txctl_update_threshold(
-	struct cdp_pdev *pdev,
+	struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	int level,
 	int tput_thresh,
 	int tx_limit)
@@ -510,7 +496,8 @@ static inline void ol_tx_flow_pool_resize_handler(uint8_t flow_pool_id,
 
 void ol_tx_register_flow_control(struct ol_txrx_pdev_t *pdev);
 void ol_tx_deregister_flow_control(struct ol_txrx_pdev_t *pdev);
-void ol_tx_dump_flow_pool_info(void *);
+void ol_tx_dump_flow_pool_info(struct cdp_soc_t *soc_hdl);
+void ol_tx_dump_flow_pool_info_compact(struct ol_txrx_pdev_t *pdev);
 void ol_tx_clear_flow_pool_stats(void);
 void ol_tx_flow_pool_map_handler(uint8_t flow_id, uint8_t flow_type,
 				 uint8_t flow_pool_id, uint16_t flow_pool_size);
@@ -545,6 +532,7 @@ QDF_STATUS ol_tx_inc_pool_ref(struct ol_tx_flow_pool_t *pool);
  * Return: QDF_STATUS_SUCCESS - in case of success
  */
 QDF_STATUS ol_tx_dec_pool_ref(struct ol_tx_flow_pool_t *pool, bool force);
+
 #else
 
 static inline void ol_tx_register_flow_control(struct ol_txrx_pdev_t *pdev)
@@ -553,9 +541,21 @@ static inline void ol_tx_register_flow_control(struct ol_txrx_pdev_t *pdev)
 static inline void ol_tx_deregister_flow_control(struct ol_txrx_pdev_t *pdev)
 {
 }
-static inline void ol_tx_dump_flow_pool_info(void *ctx)
+
+#if defined(CONFIG_HL_SUPPORT) && defined(QCA_HL_NETDEV_FLOW_CONTROL)
+void ol_tx_dump_flow_pool_info(struct cdp_soc_t *soc_hdl);
+void ol_tx_dump_flow_pool_info_compact(struct ol_txrx_pdev_t *pdev);
+#else
+static inline void ol_tx_dump_flow_pool_info(struct cdp_soc_t *soc_hdl)
 {
 }
+
+static inline
+void ol_tx_dump_flow_pool_info_compact(struct ol_txrx_pdev_t *pdev)
+{
+}
+#endif
+
 static inline void ol_tx_clear_flow_pool_stats(void)
 {
 }

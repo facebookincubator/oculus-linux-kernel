@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,9 @@
  * @Min: 0 minimum length of tx power
  * @Max: default data length of tx power in string format
  * @Default: 1, 14, 20
+ *
+ * This ini contains the string in the form of first_channel number,
+ * number of channels and max tx power triplets
  */
 #define CFG_MAX_TX_POWER_2_4_DATA "1, 14, 20"
 #define CFG_MAX_TX_POWER_2_4 CFG_STRING( \
@@ -44,6 +47,9 @@
  * @Min: 0 minimum length of tx power
  * @Max: default data length of tx power in string format
  * @Default: 36, 126, 20
+ *
+ * This ini contains the string in the form of first_channel number,
+ * number of channels and max tx power triplets
  */
 #define CFG_MAX_TX_POWER_5_DATA "36, 126, 20"
 #define CFG_MAX_TX_POWER_5 CFG_STRING( \
@@ -111,31 +117,6 @@
 			"power limit 5g")
 
 /*
- * <ini>
- * gTxPowerCap - WLAN max tx power
- * @Min: 0
- * @Max: 128
- * @Default: 128
- *
- * This ini is used to configure the device max tx power.
- *
- * Related: None.
- *
- * Supported Feature: Concurrency
- *
- * Usage: Internal/External
- *
- * </ini>
- */
-#define CFG_MAX_TX_POWER CFG_INI_UINT( \
-			"gTxPowerCap", \
-			0, \
-			128, \
-			128, \
-			CFG_VALUE_OR_DEFAULT, \
-			"WLAN max tx power")
-
-/*
  * <cfg>
  * current_tx_power_level - current tx power level
  * @Min: 0
@@ -171,7 +152,6 @@
 	CFG(CFG_POWER_USAGE) \
 	CFG(CFG_SET_TXPOWER_LIMIT2G) \
 	CFG(CFG_SET_TXPOWER_LIMIT5G) \
-	CFG(CFG_MAX_TX_POWER) \
 	CFG(CFG_CURRENT_TX_POWER_LEVEL) \
 	CFG(CFG_LOCAL_POWER_CONSTRAINT)
 

@@ -465,7 +465,8 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 	chg->pd_not_supported = chg->pd_not_supported ||
 			of_property_read_bool(node, "qcom,usb-pd-disable");
 
-	chg->lpd_disabled = of_property_read_bool(node, "qcom,lpd-disable");
+	chg->lpd_disabled = chg->lpd_disabled ||
+			of_property_read_bool(node, "qcom,lpd-disable");
 
 	chg->dam_enabled = of_property_read_bool(node, "qcom,typec-dam-enable");
 
@@ -925,7 +926,7 @@ static int smb5_usb_get_prop(struct power_supply *psy,
 		val->intval = get_client_vote(chg->usb_icl_votable, PD_VOTER);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		rc = smblib_get_prop_input_current_settled(chg, val);
+		rc = smblib_get_prop_input_current_max(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = POWER_SUPPLY_TYPE_USB_PD;
@@ -1572,6 +1573,7 @@ static enum power_supply_property smb5_dc_props[] = {
 	POWER_SUPPLY_PROP_DC_RESET,
 	POWER_SUPPLY_PROP_AICL_DONE,
 	POWER_SUPPLY_PROP_PD_ACTIVE,
+	POWER_SUPPLY_PROP_HW_CURRENT_MAX,
 };
 
 static int smb5_dc_get_prop(struct power_supply *psy,
@@ -1616,6 +1618,9 @@ static int smb5_dc_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PD_ACTIVE:
 		rc = smblib_get_prop_dc_pd_active(chg, val);
 		break;
+	case POWER_SUPPLY_PROP_HW_CURRENT_MAX:
+		rc = smblib_get_prop_dc_hw_current_max(chg, val);
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -1647,6 +1652,9 @@ static int smb5_dc_set_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_DC_RESET:
 		rc = smblib_set_prop_dc_reset(chg);
+		break;
+	case POWER_SUPPLY_PROP_HW_CURRENT_MAX:
+		rc = smblib_set_prop_dc_hw_current_max(chg, val);
 		break;
 	default:
 		return -EINVAL;
@@ -2180,13 +2188,23 @@ static int smb5_configure_typec(struct smb_charger *chg)
 
 	smblib_apsd_enable(chg, true);
 
-	rc = smblib_masked_write(chg, TYPE_C_CFG_REG,
-				BC1P2_START_ON_CC_BIT, 0);
+	rc = smblib_read(chg, TYPE_C_SNK_STATUS_REG, &val);
 	if (rc < 0) {
-		dev_err(chg->dev, "failed to write TYPE_C_CFG_REG rc=%d\n",
+		dev_err(chg->dev, "failed to read TYPE_C_SNK_STATUS_REG rc=%d\n",
 				rc);
 
 		return rc;
+	}
+
+	if (!(val & SNK_DAM_MASK)) {
+		rc = smblib_masked_write(chg, TYPE_C_CFG_REG,
+					BC1P2_START_ON_CC_BIT, 0);
+		if (rc < 0) {
+			dev_err(chg->dev, "failed to write TYPE_C_CFG_REG rc=%d\n",
+					rc);
+
+			return rc;
+		}
 	}
 
 	/* Use simple write to clear interrupts */

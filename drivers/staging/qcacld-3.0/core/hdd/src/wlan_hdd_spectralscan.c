@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,7 @@
 #include "wlan_hdd_spectralscan.h"
 #include <wlan_spectral_ucfg_api.h>
 #include "wma.h"
+#include "wlan_hdd_object_manager.h"
 #ifdef CNSS_GENL
 #include <net/cnss_nl.h>
 #endif
@@ -58,6 +59,7 @@ static int __wlan_hdd_cfg80211_spectral_scan_start(struct wiphy *wiphy,
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 	struct net_device *dev = wdev->netdev;
 	struct hdd_adapter *adapter;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter();
 
@@ -71,13 +73,20 @@ static int __wlan_hdd_cfg80211_spectral_scan_start(struct wiphy *wiphy,
 	}
 
 	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-	if (wlan_hdd_validate_vdev_id(adapter->vdev_id))
-		return -EINVAL;
+	ret = hdd_validate_adapter(adapter);
+	if (ret)
+		return ret;
 
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("can't get vdev");
+		return -EINVAL;
+	}
 	wlan_spectral_update_rx_chainmask(adapter);
-	ret = wlan_cfg80211_spectral_scan_config_and_start(wiphy,
-					hdd_ctx->pdev,
-					data, data_len);
+	ret = wlan_cfg80211_spectral_scan_config_and_start(
+						wiphy, hdd_ctx->pdev,
+						vdev, data, data_len);
+	hdd_objmgr_put_vdev(vdev);
 	hdd_exit();
 
 	return ret;
@@ -101,6 +110,9 @@ static int __wlan_hdd_cfg80211_spectral_scan_stop(struct wiphy *wiphy,
 {
 	int ret;
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter();
 
@@ -113,8 +125,19 @@ static int __wlan_hdd_cfg80211_spectral_scan_stop(struct wiphy *wiphy,
 		return -EPERM;
 	}
 
+	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	ret = hdd_validate_adapter(adapter);
+	if (ret)
+		return ret;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("can't get vdev");
+		return -EINVAL;
+	}
 	ret = wlan_cfg80211_spectral_scan_stop(wiphy, hdd_ctx->pdev,
-					       data, data_len);
+					       vdev, data, data_len);
+	hdd_objmgr_put_vdev(vdev);
 	hdd_exit();
 
 	return ret;
@@ -139,6 +162,9 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_config(
 {
 	int ret;
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter();
 
@@ -151,8 +177,19 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_config(
 		return -EPERM;
 	}
 
+	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	ret = hdd_validate_adapter(adapter);
+	if (ret)
+		return ret;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("can't get vdev");
+		return -EINVAL;
+	}
 	ret = wlan_cfg80211_spectral_scan_get_config(wiphy, hdd_ctx->pdev,
-						     data, data_len);
+						     vdev, data, data_len);
+	hdd_objmgr_put_vdev(vdev);
 	hdd_exit();
 
 	return ret;
@@ -177,6 +214,9 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_diag_stats(
 {
 	int ret;
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter();
 
@@ -189,9 +229,20 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_diag_stats(
 		return -EPERM;
 	}
 
-	ret = wlan_cfg80211_spectral_scan_get_diag_stats(wiphy,
-					hdd_ctx->pdev,
-					data, data_len);
+	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	ret = hdd_validate_adapter(adapter);
+	if (ret)
+		return ret;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("can't get vdev");
+		return -EINVAL;
+	}
+	ret = wlan_cfg80211_spectral_scan_get_diag_stats(
+						wiphy, hdd_ctx->pdev,
+						vdev, data, data_len);
+	hdd_objmgr_put_vdev(vdev);
 	hdd_exit();
 
 	return ret;
@@ -216,6 +267,9 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_cap_info(
 {
 	int ret;
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter();
 
@@ -228,8 +282,19 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_cap_info(
 		return -EPERM;
 	}
 
+	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	ret = hdd_validate_adapter(adapter);
+	if (ret)
+		return ret;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("can't get vdev");
+		return -EINVAL;
+	}
 	ret = wlan_cfg80211_spectral_scan_get_cap(wiphy, hdd_ctx->pdev,
-						  data, data_len);
+						  vdev, data, data_len);
+	hdd_objmgr_put_vdev(vdev);
 	hdd_exit();
 
 	return ret;
@@ -255,6 +320,9 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_status(
 {
 	int ret;
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter();
 
@@ -267,8 +335,19 @@ static int __wlan_hdd_cfg80211_spectral_scan_get_status(
 		return -EPERM;
 	}
 
+	adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	ret = hdd_validate_adapter(adapter);
+	if (ret)
+		return ret;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("can't get vdev");
+		return -EINVAL;
+	}
 	ret = wlan_cfg80211_spectral_scan_get_status(wiphy, hdd_ctx->pdev,
-						     data, data_len);
+						     vdev, data, data_len);
+	hdd_objmgr_put_vdev(vdev);
 	hdd_exit();
 
 	return ret;
@@ -401,49 +480,6 @@ void hdd_spectral_register_to_dbr(struct hdd_context *hdd_ctx)
 }
 
 #if defined(CNSS_GENL) && defined(WLAN_CONV_SPECTRAL_ENABLE)
-static void spectral_get_version(struct wlan_objmgr_pdev *pdev,
-				 uint32_t *version,
-				 uint32_t *sub_version)
-{
-	struct spectral_cp_request sscan_req;
-	QDF_STATUS status;
-
-	if (!pdev || !version || !sub_version) {
-		hdd_err("invalid param");
-		return;
-	}
-
-	sscan_req.ss_mode = SPECTRAL_SCAN_MODE_NORMAL;
-	sscan_req.req_id = SPECTRAL_GET_CAPABILITY_INFO;
-	status = ucfg_spectral_control(pdev, &sscan_req);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		*version = SPECTRAL_VERSION_2;
-		*sub_version = SPECTRAL_SUB_VERSION_0;
-		hdd_err("get spectral cap fail");
-		return;
-	}
-
-	switch (sscan_req.caps_req.sscan_caps.hw_gen) {
-	case 0:
-		*version = SPECTRAL_VERSION_1;
-		*sub_version = SPECTRAL_SUB_VERSION_0;
-		break;
-	case 1:
-		*version = SPECTRAL_VERSION_2;
-		*sub_version = SPECTRAL_SUB_VERSION_1;
-		break;
-	case 2:
-		*version = SPECTRAL_VERSION_3;
-		*sub_version = SPECTRAL_SUB_VERSION_0;
-		break;
-	default:
-		*version = SPECTRAL_VERSION_2;
-		*sub_version = SPECTRAL_SUB_VERSION_0;
-		hdd_err("invalid hw gen");
-		break;
-	}
-}
-
 static void send_spectral_scan_reg_rsp_msg(struct hdd_context *hdd_ctx)
 {
 	struct sk_buff *skb;
@@ -467,8 +503,8 @@ static void send_spectral_scan_reg_rsp_msg(struct hdd_context *hdd_ctx)
 	rsp_msg = NLMSG_DATA(nlh);
 	rsp_msg->msg_type = SPECTRAL_SCAN_REGISTER_RSP;
 	rsp_msg->pid = hdd_ctx->sscan_pid;
-	spectral_get_version(hdd_ctx->pdev, &rsp_msg->version,
-			     &rsp_msg->sub_version);
+	ucfg_spectral_get_version(hdd_ctx->pdev, &rsp_msg->version,
+				  &rsp_msg->sub_version);
 
 	nlh->nlmsg_len = NLMSG_LENGTH(sizeof(struct spectral_scan_msg_v));
 	skb_put(skb, NLMSG_SPACE(sizeof(struct spectral_scan_msg_v)));
@@ -577,23 +613,22 @@ void spectral_scan_deactivate_service(void)
 
 QDF_STATUS wlan_spectral_update_rx_chainmask(struct hdd_adapter *adapter)
 {
-	uint32_t version;
-	uint32_t sub_version;
 	uint32_t chainmask_2g = 0;
 	uint32_t chainmask_5g = 0;
 	uint32_t chainmask;
 	uint8_t home_chan;
 	uint8_t pdev_id;
-
-	spectral_get_version(adapter->hdd_ctx->pdev, &version, &sub_version);
-	if (version != SPECTRAL_VERSION_3)
-		return QDF_STATUS_SUCCESS;
+	struct wlan_objmgr_vdev *vdev;
 
 	home_chan = hdd_get_adapter_home_channel(adapter);
 	pdev_id = wlan_objmgr_pdev_get_pdev_id(adapter->hdd_ctx->pdev);
 	wma_get_rx_chainmask(pdev_id, &chainmask_2g, &chainmask_5g);
 	chainmask = home_chan > MAX_24GHZ_CHANNEL ? chainmask_5g : chainmask_2g;
-	wlan_vdev_mlme_set_rxchainmask(adapter->vdev, chainmask);
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev)
+		return QDF_STATUS_E_FAILURE;
+	wlan_vdev_mlme_set_rxchainmask(vdev, chainmask);
+	hdd_objmgr_put_vdev(vdev);
 
 	return QDF_STATUS_SUCCESS;
 }

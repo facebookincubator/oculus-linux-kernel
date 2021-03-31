@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -91,6 +91,7 @@ static void pld_pcie_remove(struct pci_dev *pdev)
 		return;
 
 	osif_psoc_sync_unregister(&pdev->dev);
+
 	osif_psoc_sync_wait_for_ops(psoc_sync);
 
 	pld_context = pld_get_global_context();
@@ -241,7 +242,7 @@ static void pld_pcie_notify_handler(struct pci_dev *pdev, int state)
 static void pld_pcie_uevent(struct pci_dev *pdev, uint32_t status)
 {
 	struct pld_context *pld_context;
-	struct pld_uevent_data data;
+	struct pld_uevent_data data = {0};
 
 	pld_context = pld_get_global_context();
 	if (!pld_context)
@@ -264,6 +265,51 @@ static void pld_pcie_uevent(struct pci_dev *pdev, uint32_t status)
 out:
 	return;
 }
+
+/**
+ * pld_pcie_update_event() - update wlan driver status callback function
+ * @pdev: PCIE device
+ * @cnss_uevent_data: driver uevent data
+ *
+ * This function will be called when platform driver wants to update wlan
+ * driver's status.
+ *
+ * Return: void
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static int pld_pcie_update_event(struct pci_dev *pdev,
+				 struct cnss_uevent_data *uevent_data)
+{
+	struct pld_context *pld_context;
+	struct pld_uevent_data data = {0};
+	struct cnss_hang_event *hang_event;
+
+	pld_context = pld_get_global_context();
+
+	if (!pld_context || !uevent_data)
+		return -EINVAL;
+
+	switch (uevent_data->status) {
+	case CNSS_HANG_EVENT:
+		if (!uevent_data->data)
+			return -EINVAL;
+		hang_event = (struct cnss_hang_event *)uevent_data->data;
+		data.uevent = PLD_FW_HANG_EVENT;
+		data.hang_data.hang_event_data = hang_event->hang_event_data;
+		data.hang_data.hang_event_data_len =
+					hang_event->hang_event_data_len;
+		break;
+	default:
+		goto out;
+	}
+
+	if (pld_context->ops->uevent)
+		pld_context->ops->uevent(&pdev->dev, &data);
+
+out:
+	return 0;
+}
+#endif
 
 #ifdef FEATURE_RUNTIME_PM
 /**
@@ -304,6 +350,50 @@ static int pld_pcie_runtime_resume(struct pci_dev *pdev)
 							PLD_BUS_TYPE_PCIE);
 
 	return -ENODEV;
+}
+#endif
+
+#ifdef FEATURE_GET_DRIVER_MODE
+/**
+ * pld_pcie_get_mode() - Get current WLAN driver mode
+ *
+ * This function is to get current driver mode
+ *
+ * Return: mission mode or ftm mode
+ */
+static
+enum cnss_driver_mode pld_pcie_get_mode(void)
+{
+	struct pld_context *pld_ctx =  pld_get_global_context();
+	enum cnss_driver_mode cnss_mode = CNSS_MISSION;
+
+	if (!pld_ctx)
+		return cnss_mode;
+
+	switch (pld_ctx->mode) {
+	case QDF_GLOBAL_MISSION_MODE:
+		cnss_mode = CNSS_MISSION;
+		break;
+	case QDF_GLOBAL_WALTEST_MODE:
+		cnss_mode = CNSS_WALTEST;
+		break;
+	case QDF_GLOBAL_FTM_MODE:
+		cnss_mode = CNSS_FTM;
+		break;
+	case QDF_GLOBAL_COLDBOOT_CALIB_MODE:
+		cnss_mode = CNSS_CALIBRATION;
+		break;
+	case QDF_GLOBAL_EPPING_MODE:
+		cnss_mode = CNSS_EPPING;
+		break;
+	case QDF_GLOBAL_QVIT_MODE:
+		cnss_mode = CNSS_QVIT;
+		break;
+	default:
+		cnss_mode = CNSS_MISSION;
+		break;
+	}
+	return cnss_mode;
 }
 #endif
 #endif
@@ -535,6 +625,9 @@ struct cnss_wlan_driver pld_pcie_ops = {
 	.crash_shutdown = pld_pcie_crash_shutdown,
 	.modem_status   = pld_pcie_notify_handler,
 	.update_status  = pld_pcie_uevent,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	.update_event = pld_pcie_update_event,
+#endif
 #ifdef CONFIG_PM
 	.suspend    = pld_pcie_suspend,
 	.resume     = pld_pcie_resume,
@@ -543,6 +636,9 @@ struct cnss_wlan_driver pld_pcie_ops = {
 #endif
 #ifdef FEATURE_RUNTIME_PM
 	.runtime_ops = &runtime_pm_ops,
+#endif
+#ifdef FEATURE_GET_DRIVER_MODE
+	.get_driver_mode  = pld_pcie_get_mode,
 #endif
 };
 

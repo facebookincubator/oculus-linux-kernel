@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -76,6 +76,7 @@ struct wlan_sm_history_info {
 	uint8_t event_type;
 	uint8_t initial_state;
 	uint8_t final_state;
+	uint64_t time;
 };
 
 /**
@@ -137,6 +138,18 @@ void wlan_sm_history_delete(struct wlan_sm *sm);
  */
 void wlan_sm_print_history(struct wlan_sm *sm);
 
+#if SM_HIST_DEBUGFS_SUPPORT
+/**
+ * wlan_sm_print_fs_history() - API to print SM history in proc
+ * @sm: state machine handle
+ * @m: debug fs file handle
+ *
+ * Prints SM history through proc
+ *
+ * Return: void
+ */
+void wlan_sm_print_fs_history(struct wlan_sm *sm, qdf_debugfs_file_t m);
+#endif
 #else /* SM_ENG_HIST_ENABLE */
 
 /**

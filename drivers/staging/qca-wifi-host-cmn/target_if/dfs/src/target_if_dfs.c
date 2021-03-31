@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -172,7 +172,7 @@ static int target_if_radar_event_handler(
 static QDF_STATUS target_if_reg_phyerr_events_dfs2(
 				struct wlan_objmgr_psoc *psoc)
 {
-	int ret;
+	QDF_STATUS ret;
 	wmi_unified_t wmi_handle;
 
 	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
@@ -184,7 +184,7 @@ static QDF_STATUS target_if_reg_phyerr_events_dfs2(
 	ret = wmi_unified_register_event(wmi_handle,
 					 wmi_dfs_radar_event_id,
 					 target_if_radar_event_handler);
-	if (ret) {
+	if (QDF_IS_STATUS_ERROR(ret)) {
 		target_if_err("failed to register wmi_dfs_radar_event_id");
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -211,6 +211,27 @@ static bool target_if_dfs_offload(struct wlan_objmgr_psoc *psoc)
 
 	return wmi_service_enabled(wmi_handle,
 				   wmi_service_dfs_phyerr_offload);
+}
+
+static QDF_STATUS target_if_dfs_get_target_type(struct wlan_objmgr_pdev *pdev,
+						uint32_t *target_type)
+{
+	struct wlan_objmgr_psoc *psoc;
+	struct target_psoc_info *tgt_psoc_info;
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc) {
+		target_if_err("null psoc");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	tgt_psoc_info = wlan_psoc_get_tgt_if_handle(psoc);
+	if (!tgt_psoc_info) {
+		target_if_err("null tgt_psoc_info");
+		return QDF_STATUS_E_FAILURE;
+	}
+	*target_type = target_psoc_get_target_type(tgt_psoc_info);
+	return QDF_STATUS_SUCCESS;
 }
 
 static QDF_STATUS target_if_dfs_register_event_handler(
@@ -285,7 +306,7 @@ static QDF_STATUS target_if_dfs_set_phyerr_filter_offload(
 					bool dfs_phyerr_filter_offload)
 {
 	QDF_STATUS status;
-	void *wmi_handle;
+	wmi_unified_t wmi_handle;
 
 	if (!pdev) {
 		target_if_err("null pdev");
@@ -386,5 +407,6 @@ QDF_STATUS target_if_register_dfs_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 		&target_send_usenol_pdev_param;
 	dfs_tx_ops->dfs_send_subchan_marking_pdev_param =
 		&target_send_subchan_marking_pdev_param;
+	dfs_tx_ops->dfs_get_target_type = &target_if_dfs_get_target_type;
 	return QDF_STATUS_SUCCESS;
 }

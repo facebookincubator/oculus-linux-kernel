@@ -37,9 +37,9 @@ qcom,4284132_goertek_hollywood_50k_3710mah_jun9th2020 {
 	qcom,chg-disable-ranges-1 = <3600000 4100000 0
 				4101000 4400000 1>;
 	/* rblt-low, rblt-high, max-voltage-throttle */
-	qcom,rblt-ranges = <0   52000  3900000
-				52100 118000 4200000
-				118100 200000 4400000>;
+	qcom,rblt-ranges = <0   59000  3900000
+				59100 119000 4200000
+				119100 200000 4400000>;
 	qcom,step-chg-ranges-0 = <3600000 4060000 2000000
 				4061000 4400000 2000000>;
 	qcom,step-chg-ranges-1 = <3600000 4060000 2000000

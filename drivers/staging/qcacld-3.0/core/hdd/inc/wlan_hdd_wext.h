@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -184,6 +184,27 @@ void hdd_unregister_wext(struct net_device *dev);
  */
 void hdd_register_wext(struct net_device *dev);
 
+/**
+ * hdd_wext_unregister() - unregister wext context with rtnl lock dependency
+ * @dev: net device from which wireless extensions are being unregistered
+ * @rtnl_held: flag which indicates if caller is holding the rtnl_lock
+ *
+ * Unregisters wext context for a given net device. This behaves the
+ * same as hdd_unregister_wext() except it does not take the rtnl_lock
+ * if the caller is already holding it.
+ *
+ * Returns: None
+ */
+void hdd_wext_unregister(struct net_device *dev,
+			 bool rtnl_held);
+
+static inline
+void hdd_wext_send_event(struct net_device *dev, unsigned int cmd,
+			 union iwreq_data *wrqu, const char *extra)
+{
+	wireless_send_event(dev, cmd, wrqu, extra);
+}
+
 void hdd_wlan_get_stats(struct hdd_adapter *adapter, uint16_t *length,
 		       char *buffer, uint16_t buf_len);
 void hdd_wlan_list_fw_profile(uint16_t *length,
@@ -202,17 +223,6 @@ int hdd_priv_get_data(struct iw_point *p_priv_data,
 
 void *mem_alloc_copy_from_user_helper(const void *wrqu_data, size_t len);
 
-int hdd_get_ldpc(struct hdd_adapter *adapter, int *value);
-
-/**
- * hdd_set_ldpc() - Set adapter LDPC
- * @adapter: adapter being modified
- * @value: new LDPC value
- *
- * Return: 0 on success, negative errno on failure
- */
-int hdd_set_ldpc(struct hdd_adapter *adapter, int value);
-
 /**
  * hdd_we_set_short_gi() - Set adapter Short GI
  * @adapter: adapter being modified
@@ -221,28 +231,6 @@ int hdd_set_ldpc(struct hdd_adapter *adapter, int value);
  * Return: 0 on success, negative errno on failure
  */
 int hdd_we_set_short_gi(struct hdd_adapter *adapter, int sgi);
-
-int hdd_get_tx_stbc(struct hdd_adapter *adapter, int *value);
-
-/**
- * hdd_set_tx_stbc() - Set adapter TX STBC
- * @adapter: adapter being modified
- * @value: new TX STBC value
- *
- * Return: 0 on success, negative errno on failure
- */
-int hdd_set_tx_stbc(struct hdd_adapter *adapter, int value);
-
-int hdd_get_rx_stbc(struct hdd_adapter *adapter, int *value);
-
-/**
- * hdd_set_rx_stbc() - Set adapter RX STBC
- * @adapter: adapter being modified
- * @value: new RX STBC value
- *
- * Return: 0 on success, negative errno on failure
- */
-int hdd_set_rx_stbc(struct hdd_adapter *adapter, int value);
 
 /**
  * hdd_assemble_rate_code() - assemble rate code to be sent to FW
@@ -270,7 +258,7 @@ int hdd_set_11ax_rate(struct hdd_adapter *adapter, int value,
 		      struct sap_config *sap_config);
 
 /**
- * wlan_hdd_update_phymode() - handle change in PHY mode
+ * hdd_we_update_phymode() - handle change in PHY mode
  * @adapter: adapter being modified
  * @new_phymode: new PHY mode for the device
  *
@@ -282,7 +270,8 @@ int hdd_set_11ax_rate(struct hdd_adapter *adapter, int value,
  *
  * Return: 0 on success, negative errno value on error
  */
-int wlan_hdd_update_phymode(struct hdd_adapter *adapter, int new_phymode);
+int hdd_we_update_phymode(struct hdd_adapter *adapter, int new_phymode);
+
 /**
  * wlan_hdd_update_btcoex_mode() - set BTCoex Mode
  * @adapter: adapter being modified
@@ -326,28 +315,6 @@ struct iw_request_info;
 int hdd_check_private_wext_control(struct hdd_context *hdd_ctx,
 				   struct iw_request_info *info);
 
-/**
- * hdd_crash_inject() - Inject a crash
- * @adapter: Adapter upon which the command was received
- * @v1: first value to inject
- * @v2: second value to inject
- *
- * This function is the handler for the crash inject debug feature.
- * This feature only exists for internal testing and must not be
- * enabled on a production device.
- *
- * Return: result of the command
- */
-#ifdef CONFIG_WLAN_DEBUG_CRASH_INJECT
-int hdd_crash_inject(struct hdd_adapter *adapter, uint32_t v1, uint32_t v2);
-#else
-static inline
-int hdd_crash_inject(struct hdd_adapter *adapter, uint32_t v1, uint32_t v2)
-{
-	return -ENOTSUPP;
-}
-#endif
-
 #ifdef CONFIG_DP_TRACE
 void hdd_set_dump_dp_trace(uint16_t cmd_type, uint16_t count);
 #else
@@ -361,6 +328,17 @@ static inline void hdd_unregister_wext(struct net_device *dev)
 }
 
 static inline void hdd_register_wext(struct net_device *dev)
+{
+}
+
+static inline void hdd_wext_unregister(struct net_device *dev,
+				       bool rtnl_locked)
+{
+}
+
+static inline
+void hdd_wext_send_event(struct net_device *dev, unsigned int cmd,
+			 union iwreq_data *wrqu, const char *extra)
 {
 }
 #endif /* WLAN_WEXT_SUPPORT_ENABLE */

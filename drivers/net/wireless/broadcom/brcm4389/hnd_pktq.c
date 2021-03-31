@@ -50,7 +50,7 @@
  * hi_prec is always >= the number of the highest non-empty precedence
  */
 void *
-BCMFASTPATH(pktq_penq)(struct pktq *pq, int prec, void *p)
+BCMPOSTTRAPFASTPATH(pktq_penq)(struct pktq *pq, int prec, void *p)
 {
 	struct pktq_prec *q;
 
@@ -1364,7 +1364,7 @@ pktq_mlen(struct pktq *pq, uint prec_bmp)
 
 /* Priority peek from a specific set of precedences */
 void *
-BCMFASTPATH(pktq_mpeek)(struct pktq *pq, uint prec_bmp, int *prec_out)
+BCMPOSTTRAPFASTPATH(pktq_mpeek)(struct pktq *pq, uint prec_bmp, int *prec_out)
 {
 	struct pktq_prec *q;
 	void *p = NULL;

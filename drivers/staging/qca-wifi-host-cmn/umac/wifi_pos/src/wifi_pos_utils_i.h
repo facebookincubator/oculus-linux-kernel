@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,6 +30,9 @@
 #include "qdf_status.h"
 #include "ol_defines.h"
 #include "qdf_trace.h"
+#include "qdf_module.h"
+#include "wifi_pos_utils_pub.h"
+#include "wlan_cmn.h"
 
 struct wlan_objmgr_psoc;
 struct wifi_pos_req_msg;
@@ -58,11 +61,6 @@ struct wifi_pos_req_msg;
 
 #define OEM_APP_SIGNATURE_LEN      16
 #define OEM_APP_SIGNATURE_STR      "QUALCOMM-OEM-APP"
-
-#define OEM_TARGET_SIGNATURE_LEN   8
-#define OEM_TARGET_SIGNATURE       "QUALCOMM"
-
-#define OEM_CAP_MAX_NUM_CHANNELS   128
 
 #ifndef OEM_DATA_RSP_SIZE
 #define OEM_DATA_RSP_SIZE 1724
@@ -121,70 +119,39 @@ struct oem_data_rsp {
 };
 
 /**
- * struct wifi_pos_driver_version - Driver version identifier (w.x.y.z)
- * @major: Version ID major number
- * @minor: Version ID minor number
- * @patch: Version ID patch number
- * @build: Version ID build number
+ * struct wifi_pos_err_rpt - Error report response for userspace.
+ * @tag_len: tlv header of the message.
+ * @info: Report info. Reserved for error report.
+ * @dest_mac: Mac address of the sta in the request.
+ * @reserved: Reserved in error report.
  */
-struct qdf_packed wifi_pos_driver_version {
-	uint8_t major;
-	uint8_t minor;
-	uint8_t patch;
-	uint8_t build;
+struct qdf_packed wifi_pos_err_rpt {
+	uint32_t tag_len;
+	uint32_t info;
+	uint8_t  dest_mac[QDF_MAC_ADDR_SIZE + 2];
+	uint32_t reserved;
 };
 
+#define OEM_MSG_RSP_HEAD_TAG_ID 33
+#define OEM_MEAS_RSP_HEAD_TAG_ID 41
 /**
- * struct wifi_pos_driver_caps - OEM Data Capabilities
- * @oem_target_signature: Signature of chipset vendor, e.g. QUALCOMM
- * @oem_target_type: Chip type
- * @oem_fw_version: Firmware version
- * @driver_version: Host software version
- * @allowed_dwell_time_min: Channel dwell time - allowed minimum
- * @allowed_dwell_time_max: Channel dwell time - allowed maximum
- * @curr_dwell_time_min: Channel dwell time - current minimim
- * @curr_dwell_time_max: Channel dwell time - current maximum
- * @supported_bands: Supported bands, 2.4G or 5G Hz
- * @num_channels: Num of channels IDs to follow
- * @channel_list: List of channel IDs
+ * struct wifi_pos_err_msg_report - Error report message
+ * @msg_tag_len: Message tlv header
+ * @msg_subtype: Message subtype
+ * @req_id: id corresponding to the request.
+ * @fragment_info: Valid only for fragments.
+ * @pdev_id: pdev_id of radion.
+ * @time_left: time left in the measurment req.
+ * @err_rpt: Error report data.
  */
-struct qdf_packed wifi_pos_driver_caps {
-	uint8_t oem_target_signature[OEM_TARGET_SIGNATURE_LEN];
-	uint32_t oem_target_type;
-	uint32_t oem_fw_version;
-	struct wifi_pos_driver_version driver_version;
-	uint16_t allowed_dwell_time_min;
-	uint16_t allowed_dwell_time_max;
-	uint16_t curr_dwell_time_min;
-	uint16_t curr_dwell_time_max;
-	uint16_t supported_bands;
-	uint16_t num_channels;
-	uint8_t channel_list[OEM_CAP_MAX_NUM_CHANNELS];
-};
-
-/**
- * struct wifi_pos_user_defined_caps - OEM capability to be exchanged between
- * host and userspace
- * @ftm_rr: FTM range report capability bit
- * @lci_capability: LCI capability bit
- * @reserved1: reserved
- * @reserved2: reserved
- */
-struct wifi_pos_user_defined_caps {
-	uint32_t ftm_rr:1;
-	uint32_t lci_capability:1;
-	uint32_t reserved1:30;
-	uint32_t reserved2;
-};
-
-/**
- * struct wifi_pos_oem_get_cap_rsp - capabilities set by userspace and target.
- * @driver_cap: target capabilities
- * @user_defined_cap: capabilities set by userspace via set request
- */
-struct qdf_packed wifi_pos_oem_get_cap_rsp {
-	struct wifi_pos_driver_caps driver_cap;
-	struct wifi_pos_user_defined_caps user_defined_cap;
+struct qdf_packed wifi_pos_err_msg_report {
+	uint32_t msg_tag_len;
+	uint32_t msg_subtype;
+	uint32_t req_id;
+	uint32_t fragment_info;
+	uint32_t pdev_id;
+	uint32_t time_left;
+	struct wifi_pos_err_rpt err_rpt;
 };
 
 /**
@@ -241,6 +208,10 @@ struct wifi_pos_dma_rings_cfg {
 	void *srng;
 };
 
+typedef void (*wifi_pos_send_rsp_handler)(struct wlan_objmgr_psoc *, uint32_t,
+					  enum wifi_pos_cmd_ids,
+					  uint32_t, uint8_t *);
+
 /**
  * struct wifi_pos_psoc_priv_obj - psoc obj data for wifi_pos
  * @app_pid: pid of app registered to host driver
@@ -264,8 +235,17 @@ struct wifi_pos_dma_rings_cfg {
  * @dma_buf_pool: DMA buffer pools maintained at host: this will be 2-D array
  * where with num_rows = number of rings num_elements in each row = ring depth
  * @wifi_pos_lock: lock to access wifi pos priv object
+ * @oem_6g_support_disable: oem target 6ghz support is disabled if set
  * @wifi_pos_req_handler: function pointer to handle TLV or non-TLV
  * @wifi_pos_send_rsp: function pointer to send msg to userspace APP
+ * @wifi_pos_get_phy_mode: function pointer to get wlan phymode for given
+ *                         channel, channel width
+ * @wifi_pos_get_fw_phy_mode_for_freq: function pointer to get fw phymode
+ *                                     for given freq and channel width
+ * @wifi_pos_send_action: function pointer to send registered action frames
+ *                        to userspace APP
+ * @wifi_pos_get_pdev_id_by_dev_name: get pdev_id from device name
+ * @rsp_version: rsp version
  *
  * wifi pos request messages
  * <----- fine_time_meas_cap (in bits) ----->
@@ -301,10 +281,21 @@ struct wifi_pos_psoc_priv_obj {
 	struct wifi_pos_dma_buf_info **dma_buf_pool;
 
 	qdf_spinlock_t wifi_pos_lock;
+	bool oem_6g_support_disable;
 	QDF_STATUS (*wifi_pos_req_handler)(struct wlan_objmgr_psoc *psoc,
 				    struct wifi_pos_req_msg *req);
-	void (*wifi_pos_send_rsp)(uint32_t, uint32_t, uint32_t, uint8_t *);
-	void (*wifi_pos_get_phy_mode)(uint8_t, uint32_t, uint32_t *);
+	wifi_pos_send_rsp_handler wifi_pos_send_rsp;
+	void (*wifi_pos_get_phy_mode)(qdf_freq_t freq, uint32_t chan_width,
+				      enum wlan_phymode *phy_mode);
+	void (*wifi_pos_get_fw_phy_mode_for_freq)(uint32_t, uint32_t,
+						  uint32_t *);
+	void (*wifi_pos_send_action)(struct wlan_objmgr_psoc *psoc,
+				     uint32_t oem_subtype, uint8_t *buf,
+				     uint32_t len);
+	QDF_STATUS (*wifi_pos_get_pdev_id_by_dev_name)(
+			char *dev_name, uint8_t *pdev_id,
+			struct wlan_objmgr_psoc **psoc);
+	uint32_t rsp_version;
 };
 
 /**

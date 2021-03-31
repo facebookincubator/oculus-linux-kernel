@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -217,45 +217,6 @@ pmo_core_psoc_get_power_save_mode(struct wlan_objmgr_psoc *psoc)
 }
 
 /**
- * pmo_core_psoc_get_qpower_config() - get qpower configuration
- * @psoc: objmgr psoc handle
- *
- * Power Save Offload configuration:
- * 0 -> Power save offload is disabled
- * 1 -> Legacy Power save enabled + Deep sleep Disabled
- * 2 -> QPower enabled + Deep sleep Disabled
- * 3 -> Legacy Power save enabled + Deep sleep Enabled
- * 4 -> QPower enabled + Deep sleep Enabled
- * 5 -> Duty cycling QPower enabled
- *
- * Return: enum powersave_qpower_mode with below values
- * QPOWER_DISABLED if QPOWER is disabled
- * QPOWER_ENABLED if QPOWER is enabled
- * QPOWER_DUTY_CYCLING if DUTY CYCLING QPOWER is enabled
- */
-static inline
-enum pmo_power_save_qpower_mode pmo_core_psoc_get_qpower_config(
-		struct wlan_objmgr_psoc *psoc)
-{
-	uint8_t ps_mode = pmo_core_psoc_get_power_save_mode(psoc);
-
-	switch (ps_mode) {
-	case pmo_ps_qpower_no_deep_sleep:
-	case pmo_ps_qpower_deep_sleep:
-		pmo_debug("QPOWER is enabled in power save mode %d", ps_mode);
-		return pmo_qpower_enabled;
-	case pmo_ps_duty_cycling_qpower:
-		pmo_debug("DUTY cycling QPOWER is enabled in power save mode %d",
-			ps_mode);
-		return pmo_qpower_duty_cycling;
-	default:
-		pmo_debug("QPOWER is disabled in power save mode %d",
-			ps_mode);
-		return pmo_qpower_disabled;
-	}
-}
-
-/**
  * pmo_core_vdev_get_pause_bitmap() - Get vdev pause bitmap
  * @psoc_ctx: psoc priv ctx
  * @vdev_id: vdev id
@@ -298,33 +259,6 @@ bool pmo_is_vdev_in_ap_mode(struct wlan_objmgr_vdev *vdev)
 
 	return (mode == QDF_SAP_MODE || mode == QDF_P2P_GO_MODE) == 1 ? 1 : 0;
 }
-
-#ifdef QCA_IBSS_SUPPORT
-/**
- * pmo_is_vdev_in_ibss_mode() - check that vdev is in ibss mode or not
- * @vdev: objmgr vdev handle
- * @vdev_id: vdev id
- *
- * Helper function to know whether given vdev id
- * is in IBSS mode or not.
- *
- * Return: True/False
- */
-static inline
-bool pmo_is_vdev_in_ibss_mode(struct wlan_objmgr_vdev *vdev)
-{
-	enum QDF_OPMODE mode;
-
-	mode = pmo_get_vdev_opmode(vdev);
-
-	return (mode == QDF_IBSS_MODE) ? true : false;
-}
-#else
-static inline bool pmo_is_vdev_in_ibss_mode(struct wlan_objmgr_vdev *vdev)
-{
-	return false;
-}
-#endif /* QCA_IBSS_SUPPORT */
 
 /**
  * pmo_handle_initial_wake_up() - handle initial wake up

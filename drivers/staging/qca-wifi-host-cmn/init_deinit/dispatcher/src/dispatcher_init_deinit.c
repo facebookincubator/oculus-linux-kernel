@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -25,6 +25,7 @@
 #include <wlan_ftm_init_deinit_api.h>
 #include <wlan_mgmt_txrx_utils_api.h>
 #include <wlan_serialization_api.h>
+#include "wlan_psoc_mlme_api.h"
 #include <include/wlan_mlme_cmn.h>
 #ifdef WLAN_ATF_ENABLE
 #include <wlan_atf_utils_api.h>
@@ -72,6 +73,18 @@
 #include <wlan_cfr_utils_api.h>
 #endif
 
+#ifdef FEATURE_COEX
+#include <wlan_coex_utils_api.h>
+#endif
+
+#ifdef DCS_INTERFERENCE_DETECTION
+#include <wlan_dcs_init_deinit_api.h>
+#endif
+
+#ifdef WLAN_FEATURE_INTERFACE_MGR
+#include <wlan_if_mgr_main.h>
+#endif
+
 /**
  * DOC: This file provides various init/deinit trigger point for new
  * components.
@@ -82,7 +95,7 @@
  * their actual handlers are ready
  */
 
-spectral_pdev_open_handler dispatcher_spectral_pdev_open_handler_cb;
+struct dispatcher_spectral_ops ops_spectral;
 
 #ifdef WLAN_CFR_ENABLE
 static QDF_STATUS dispatcher_init_cfr(void)
@@ -189,6 +202,68 @@ static QDF_STATUS cp_stats_psoc_disable(struct wlan_objmgr_psoc *psoc)
 }
 #endif
 
+#ifdef DCS_INTERFERENCE_DETECTION
+static QDF_STATUS dispatcher_init_dcs(void)
+{
+	return wlan_dcs_init();
+}
+
+static QDF_STATUS dispatcher_deinit_dcs(void)
+{
+	return wlan_dcs_deinit();
+}
+
+static QDF_STATUS dcs_psoc_enable(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_dcs_enable(psoc);
+}
+
+static QDF_STATUS dcs_psoc_disable(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_dcs_disable(psoc);
+}
+
+static QDF_STATUS dcs_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_dcs_psoc_open(psoc);
+}
+
+static QDF_STATUS dcs_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static QDF_STATUS dispatcher_init_dcs(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dispatcher_deinit_dcs(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dcs_psoc_enable(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dcs_psoc_disable(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dcs_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dcs_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 #if defined QCA_SUPPORT_SON && QCA_SUPPORT_SON >= 1
 static QDF_STATUS dispatcher_init_son(void)
 {
@@ -252,31 +327,47 @@ static QDF_STATUS dispatcher_regulatory_psoc_close(struct wlan_objmgr_psoc
 	return regulatory_psoc_close(psoc);
 }
 
-static QDF_STATUS dispatcher_regulatory_pdev_open(struct wlan_objmgr_pdev
-						  *pdev)
+#ifdef WLAN_CONV_SPECTRAL_ENABLE
+#ifdef SPECTRAL_MODULIZED_ENABLE
+QDF_STATUS
+dispatcher_register_spectral_ops_handler(struct dispatcher_spectral_ops *sops)
 {
-	return regulatory_pdev_open(pdev);
-}
-
-#if defined(WLAN_CONV_SPECTRAL_ENABLE) && defined(SPECTRAL_MODULIZED_ENABLE)
-QDF_STATUS dispatcher_register_spectral_pdev_open_handler(
-			spectral_pdev_open_handler handler)
-{
-	dispatcher_spectral_pdev_open_handler_cb = handler;
+	qdf_mem_copy(&ops_spectral, sops,
+		     qdf_min(sizeof(*sops), sizeof(ops_spectral)));
 
 	return QDF_STATUS_SUCCESS;
 }
-qdf_export_symbol(dispatcher_register_spectral_pdev_open_handler);
 
-static QDF_STATUS dispatcher_spectral_pdev_open(struct wlan_objmgr_pdev
-						  *pdev)
+qdf_export_symbol(dispatcher_register_spectral_ops_handler);
+
+static QDF_STATUS dispatcher_spectral_pdev_open(struct wlan_objmgr_pdev *pdev)
 {
-	return dispatcher_spectral_pdev_open_handler_cb(pdev);
+	return ops_spectral.spectral_pdev_open_handler(pdev);
 }
 
 static QDF_STATUS dispatcher_spectral_pdev_close(struct wlan_objmgr_pdev *pdev)
 {
 	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS spectral_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return ops_spectral.spectral_psoc_open_handler(psoc);
+}
+
+static QDF_STATUS spectral_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return ops_spectral.spectral_psoc_close_handler(psoc);
+}
+
+static QDF_STATUS spectral_psoc_enable(struct wlan_objmgr_psoc *psoc)
+{
+	return ops_spectral.spectral_psoc_enable_handler(psoc);
+}
+
+static QDF_STATUS spectral_psoc_disable(struct wlan_objmgr_psoc *psoc)
+{
+	return ops_spectral.spectral_psoc_disable_handler(psoc);
 }
 #else
 static QDF_STATUS dispatcher_spectral_pdev_open(struct wlan_objmgr_pdev
@@ -289,7 +380,65 @@ static QDF_STATUS dispatcher_spectral_pdev_close(struct wlan_objmgr_pdev *pdev)
 {
 	return QDF_STATUS_SUCCESS;
 }
+
+static QDF_STATUS spectral_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_spectral_psoc_open(psoc);
+}
+
+static QDF_STATUS spectral_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_spectral_psoc_close(psoc);
+}
+
+static QDF_STATUS spectral_psoc_enable(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_spectral_psoc_enable(psoc);
+}
+
+static QDF_STATUS spectral_psoc_disable(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_spectral_psoc_disable(psoc);
+}
 #endif
+#else
+static QDF_STATUS dispatcher_spectral_pdev_open(struct wlan_objmgr_pdev
+						  *pdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dispatcher_spectral_pdev_close(struct wlan_objmgr_pdev *pdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS spectral_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS spectral_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS spectral_psoc_enable(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS spectral_psoc_disable(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
+static QDF_STATUS dispatcher_regulatory_pdev_open(struct wlan_objmgr_pdev
+						  *pdev)
+{
+	return regulatory_pdev_open(pdev);
+}
 
 static QDF_STATUS dispatcher_regulatory_pdev_close(struct wlan_objmgr_pdev
 						  *pdev)
@@ -592,6 +741,11 @@ static QDF_STATUS dispatcher_dbr_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	struct wlan_lmac_if_tx_ops *tx_ops;
 
 	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+	if (!tx_ops) {
+		qdf_err("tx_ops is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	if (tx_ops->dbr_tx_ops.direct_buf_rx_register_events)
 		return tx_ops->dbr_tx_ops.direct_buf_rx_register_events(psoc);
 
@@ -603,6 +757,11 @@ static QDF_STATUS dispatcher_dbr_psoc_disable(struct wlan_objmgr_psoc *psoc)
 	struct wlan_lmac_if_tx_ops *tx_ops;
 
 	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+	if (!tx_ops) {
+		qdf_err("tx_ops is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	if (tx_ops->dbr_tx_ops.direct_buf_rx_unregister_events)
 		return tx_ops->dbr_tx_ops.direct_buf_rx_unregister_events(psoc);
 
@@ -707,6 +866,72 @@ static QDF_STATUS fd_psoc_disable(struct wlan_objmgr_psoc *psoc)
 }
 #endif /* WLAN_SUPPORT_FILS */
 
+#ifdef WLAN_FEATURE_INTERFACE_MGR
+static QDF_STATUS dispatcher_if_mgr_init(void)
+{
+	return wlan_if_mgr_init();
+}
+
+static QDF_STATUS dispatcher_if_mgr_deinit(void)
+{
+	return wlan_if_mgr_deinit();
+}
+#else
+static QDF_STATUS dispatcher_if_mgr_init(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS dispatcher_if_mgr_deinit(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
+#ifdef FEATURE_COEX
+static QDF_STATUS dispatcher_coex_init(void)
+{
+	return wlan_coex_init();
+}
+
+static QDF_STATUS dispatcher_coex_deinit(void)
+{
+	return wlan_coex_deinit();
+}
+
+static QDF_STATUS dispatcher_coex_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_coex_psoc_open(psoc);
+}
+
+static QDF_STATUS dispatcher_coex_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_coex_psoc_close(psoc);
+}
+#else
+static inline QDF_STATUS dispatcher_coex_init(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS dispatcher_coex_deinit(void)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+dispatcher_coex_psoc_open(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+dispatcher_coex_psoc_close(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* FEATURE_COEX */
+
 QDF_STATUS dispatcher_init(void)
 {
 	if (QDF_STATUS_SUCCESS != wlan_objmgr_global_obj_init())
@@ -726,6 +951,9 @@ QDF_STATUS dispatcher_init(void)
 
 	if (QDF_STATUS_SUCCESS != dispatcher_init_cp_stats())
 		goto cp_stats_init_fail;
+
+	if (QDF_STATUS_SUCCESS != dispatcher_init_dcs())
+		goto dcs_init_fail;
 
 	if (QDF_STATUS_SUCCESS != dispatcher_init_atf())
 		goto atf_init_fail;
@@ -772,6 +1000,12 @@ QDF_STATUS dispatcher_init(void)
 	if (QDF_STATUS_SUCCESS != dispatcher_init_cfr())
 		goto cfr_init_fail;
 
+	if (QDF_STATUS_SUCCESS != dispatcher_coex_init())
+		goto coex_init_fail;
+
+	if (QDF_STATUS_SUCCESS != dispatcher_if_mgr_init())
+		goto ifmgr_init_fail;
+
 	/*
 	 * scheduler INIT has to be the last as each component's
 	 * initialization has to happen first and then at the end
@@ -783,6 +1017,10 @@ QDF_STATUS dispatcher_init(void)
 	return QDF_STATUS_SUCCESS;
 
 scheduler_init_fail:
+	dispatcher_if_mgr_deinit();
+ifmgr_init_fail:
+	dispatcher_coex_deinit();
+coex_init_fail:
 	dispatcher_deinit_cfr();
 cfr_init_fail:
 	wlan_cmn_mlme_deinit();
@@ -813,6 +1051,8 @@ wifi_pos_init_fail:
 sa_api_init_fail:
 	dispatcher_deinit_atf();
 atf_init_fail:
+	dispatcher_deinit_dcs();
+dcs_init_fail:
 	dispatcher_deinit_cp_stats();
 cp_stats_init_fail:
 	dispatcher_deinit_crypto();
@@ -835,6 +1075,10 @@ QDF_STATUS dispatcher_deinit(void)
 	QDF_STATUS status;
 
 	QDF_BUG(QDF_STATUS_SUCCESS == scheduler_deinit());
+
+	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_if_mgr_deinit());
+
+	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_coex_deinit());
 
 	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_deinit_cfr());
 
@@ -868,6 +1112,8 @@ QDF_STATUS dispatcher_deinit(void)
 	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_deinit_atf());
 
 	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_deinit_cp_stats());
+
+	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_deinit_dcs());
 
 	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_deinit_crypto());
 
@@ -903,6 +1149,8 @@ qdf_export_symbol(dispatcher_disable);
 
 QDF_STATUS dispatcher_psoc_open(struct wlan_objmgr_psoc *psoc)
 {
+	QDF_STATUS status;
+
 	if (QDF_STATUS_SUCCESS != wlan_mgmt_txrx_psoc_open(psoc))
 		goto out;
 
@@ -924,8 +1172,29 @@ QDF_STATUS dispatcher_psoc_open(struct wlan_objmgr_psoc *psoc)
 	if (QDF_STATUS_SUCCESS != dispatcher_ftm_psoc_open(psoc))
 		goto ftm_psoc_open_fail;
 
+	if (QDF_STATUS_SUCCESS != dispatcher_coex_psoc_open(psoc))
+		goto coex_psoc_open_fail;
+
+	if (QDF_STATUS_SUCCESS != dcs_psoc_open(psoc))
+		goto dcs_psoc_open_fail;
+
+	status = spectral_psoc_open(psoc);
+	if (status != QDF_STATUS_SUCCESS && status != QDF_STATUS_COMP_DISABLED)
+		goto spectral_psoc_open_fail;
+
+	if (QDF_IS_STATUS_ERROR(mlme_psoc_open(psoc)))
+		goto mlme_psoc_open_fail;
+
 	return QDF_STATUS_SUCCESS;
 
+mlme_psoc_open_fail:
+	spectral_psoc_close(psoc);
+spectral_psoc_open_fail:
+	dcs_psoc_close(psoc);
+dcs_psoc_open_fail:
+	dispatcher_coex_psoc_close(psoc);
+coex_psoc_open_fail:
+	dispatcher_ftm_psoc_close(psoc);
 ftm_psoc_open_fail:
 	son_psoc_close(psoc);
 psoc_son_fail:
@@ -946,6 +1215,14 @@ qdf_export_symbol(dispatcher_psoc_open);
 
 QDF_STATUS dispatcher_psoc_close(struct wlan_objmgr_psoc *psoc)
 {
+	QDF_STATUS status;
+
+	QDF_BUG(QDF_STATUS_SUCCESS == mlme_psoc_close(psoc));
+
+	QDF_BUG(QDF_STATUS_SUCCESS == dcs_psoc_close(psoc));
+
+	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_coex_psoc_close(psoc));
+
 	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_ftm_psoc_close(psoc));
 
 	QDF_BUG(QDF_STATUS_SUCCESS == son_psoc_close(psoc));
@@ -960,12 +1237,18 @@ QDF_STATUS dispatcher_psoc_close(struct wlan_objmgr_psoc *psoc)
 
 	QDF_BUG(QDF_STATUS_SUCCESS == wlan_mgmt_txrx_psoc_close(psoc));
 
+	status = spectral_psoc_close(psoc);
+	QDF_BUG((status == QDF_STATUS_SUCCESS) ||
+		(status == QDF_STATUS_COMP_DISABLED));
+
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(dispatcher_psoc_close);
 
 QDF_STATUS dispatcher_psoc_enable(struct wlan_objmgr_psoc *psoc)
 {
+	QDF_STATUS status;
+
 	if (QDF_STATUS_SUCCESS != wlan_serialization_psoc_enable(psoc))
 		goto out;
 
@@ -977,6 +1260,9 @@ QDF_STATUS dispatcher_psoc_enable(struct wlan_objmgr_psoc *psoc)
 
 	if (QDF_STATUS_SUCCESS != cp_stats_psoc_enable(psoc))
 		goto cp_stats_psoc_enable_fail;
+
+	if (QDF_STATUS_SUCCESS != dcs_psoc_enable(psoc))
+		goto dcs_psoc_enable_fail;
 
 	if (QDF_STATUS_SUCCESS != atf_psoc_enable(psoc))
 		goto atf_psoc_enable_fail;
@@ -996,8 +1282,14 @@ QDF_STATUS dispatcher_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	if (QDF_STATUS_SUCCESS != wlan_mlme_psoc_enable(psoc))
 		goto mlme_psoc_enable_fail;
 
+	status = spectral_psoc_enable(psoc);
+	if (status != QDF_STATUS_SUCCESS && status != QDF_STATUS_COMP_DISABLED)
+		goto spectral_psoc_enable_fail;
+
 	return QDF_STATUS_SUCCESS;
 
+spectral_psoc_enable_fail:
+	wlan_mlme_psoc_disable(psoc);
 mlme_psoc_enable_fail:
 	dispatcher_dbr_psoc_disable(psoc);
 dbr_psoc_enable_fail:
@@ -1009,6 +1301,8 @@ wifi_dfs_psoc_enable_fail:
 wifi_pos_psoc_enable_fail:
 	atf_psoc_disable(psoc);
 atf_psoc_enable_fail:
+	dcs_psoc_disable(psoc);
+dcs_psoc_enable_fail:
 	cp_stats_psoc_disable(psoc);
 cp_stats_psoc_enable_fail:
 	sa_api_psoc_disable(psoc);
@@ -1023,6 +1317,8 @@ qdf_export_symbol(dispatcher_psoc_enable);
 
 QDF_STATUS dispatcher_psoc_disable(struct wlan_objmgr_psoc *psoc)
 {
+	QDF_STATUS status;
+
 	QDF_BUG(QDF_STATUS_SUCCESS == wlan_mlme_psoc_disable(psoc));
 
 	QDF_BUG(QDF_STATUS_SUCCESS == dispatcher_dbr_psoc_disable(psoc));
@@ -1042,6 +1338,10 @@ QDF_STATUS dispatcher_psoc_disable(struct wlan_objmgr_psoc *psoc)
 	QDF_BUG(QDF_STATUS_SUCCESS == ucfg_scan_psoc_disable(psoc));
 
 	QDF_BUG(QDF_STATUS_SUCCESS == wlan_serialization_psoc_disable(psoc));
+
+	status = spectral_psoc_disable(psoc);
+	QDF_BUG((status == QDF_STATUS_SUCCESS) ||
+		(status == QDF_STATUS_COMP_DISABLED));
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1064,6 +1364,7 @@ QDF_STATUS dispatcher_pdev_open(struct wlan_objmgr_pdev *pdev)
 
 	if (QDF_STATUS_SUCCESS != wlan_mgmt_txrx_pdev_open(pdev))
 		goto mgmt_txrx_pdev_open_fail;
+
 	if (QDF_IS_STATUS_ERROR(dispatcher_green_ap_pdev_open(pdev)))
 		goto green_ap_pdev_open_fail;
 
@@ -1078,6 +1379,7 @@ cfr_pdev_open_fail:
 spectral_pdev_open_fail:
 	dispatcher_regulatory_pdev_close(pdev);
 regulatory_pdev_open_fail:
+
 	return QDF_STATUS_E_FAILURE;
 }
 qdf_export_symbol(dispatcher_pdev_open);

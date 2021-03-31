@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,30 +27,79 @@
 #define __WLAN_VDEV_MGR_TGT_IF_RX_DEFS_H__
 
 #include <qdf_timer.h>
+#include <qdf_atomic.h>
+#include <qdf_util.h>
+#include <wlan_cmn.h>
+#ifdef FEATURE_RUNTIME_PM
+#include <wlan_pmo_common_public_struct.h>
+#endif
 
-#define START_RESPONSE_BIT  0x1
-#define RESTART_RESPONSE_BIT  0x2
-#define STOP_RESPONSE_BIT   0x3
-#define DELETE_RESPONSE_BIT 0x4
-#define RESPONSE_BIT_MAX (START_RESPONSE_BIT | RESTART_RESPONSE_BIT |\
-			  STOP_RESPONSE_BIT | DELETE_RESPONSE_BIT)
+/**
+ * enum wlan_vdev_mgr_tgt_if_rsp_bit - response status bit
+ * START_RESPONSE_BIT: vdev start response bit
+ * RESTART_RESPONSE_BIT: vdev restart response bit
+ * STOP_RESPONSE_BIT: vdev stop response bit
+ * DELETE_RESPONSE_BIT:  vdev delete response bit
+ * PEER_DELETE_ALL_RESPONSE_BIT: vdev peer delete all response bit
+ */
+enum wlan_vdev_mgr_tgt_if_rsp_bit {
+	START_RESPONSE_BIT = 0,
+	RESTART_RESPONSE_BIT = 1,
+	STOP_RESPONSE_BIT = 2,
+	DELETE_RESPONSE_BIT = 3,
+	PEER_DELETE_ALL_RESPONSE_BIT = 4,
+	RESPONSE_BIT_MAX,
+};
 
-#define START_RESPONSE_TIMER 6000 /* 6 seconds */
-#define STOP_RESPONSE_TIMER  3000 /* 3 seconds */
-#define DELETE_RESPONSE_TIMER  3000 /* 3 seconds */
+/**
+ * string_from_rsp_bit() - Convert response bit to string
+ * @bit - response bit as in wlan_vdev_mgr_tgt_if_rsp_bit
+ *
+ * Please note to add new string in the array at index equal to
+ * its enum value in wlan_vdev_mgr_tgt_if_rsp_bit.
+ */
+static inline char *string_from_rsp_bit(enum wlan_vdev_mgr_tgt_if_rsp_bit bit)
+{
+	static const char *strings[] = { "START",
+					"RESTART",
+					"STOP",
+					"DELETE",
+					"PEER DELETE ALL",
+					"RESPONE MAX"};
+	return (char *)strings[bit];
+}
+
+#ifdef FEATURE_RUNTIME_PM
+/* Add extra PMO_RESUME_TIMEOUT for runtime PM resume timeout */
+#define START_RESPONSE_TIMER           (6000 + PMO_RESUME_TIMEOUT)
+#define STOP_RESPONSE_TIMER            (4000 + PMO_RESUME_TIMEOUT)
+#define DELETE_RESPONSE_TIMER          (4000 + PMO_RESUME_TIMEOUT)
+#define PEER_DELETE_ALL_RESPONSE_TIMER (6000 + PMO_RESUME_TIMEOUT)
+#else
+#define START_RESPONSE_TIMER           6000
+#define STOP_RESPONSE_TIMER            4000
+#define DELETE_RESPONSE_TIMER          4000
+#define PEER_DELETE_ALL_RESPONSE_TIMER 6000
+#endif
 
 /**
  * struct vdev_response_timer - vdev mgmt response ops timer
+ * @psoc: Object manager psoc
  * @rsp_timer: VDEV MLME mgmt response timer
  * @rsp_status: variable to check response status
  * @expire_time: time to expire timer
  * @timer_status: status of timer
+ * @rsp_timer_inuse: Status bit to inform whether the rsp timer is inuse
+ * @vdev_id: vdev object id
  */
 struct vdev_response_timer {
+	struct wlan_objmgr_psoc *psoc;
 	qdf_timer_t rsp_timer;
 	unsigned long rsp_status;
 	uint32_t expire_time;
 	QDF_STATUS timer_status;
+	qdf_atomic_t rsp_timer_inuse;
+	uint8_t vdev_id;
 };
 
 /**
@@ -64,6 +113,7 @@ struct vdev_response_timer {
  * @mac_id: mac id
  * @cfgd_tx_streams: configured tx streams
  * @cfgd_rx_streams: configured rx streams
+ * @max_allowed_tx_power: max tx power allowed
  */
 struct vdev_start_response {
 	uint8_t vdev_id;
@@ -75,6 +125,7 @@ struct vdev_start_response {
 	uint32_t mac_id;
 	uint32_t cfgd_tx_streams;
 	uint32_t cfgd_rx_streams;
+	uint32_t max_allowed_tx_power;
 };
 
 /**
@@ -91,6 +142,28 @@ struct vdev_stop_response {
  */
 struct vdev_delete_response {
 	uint8_t vdev_id;
+};
+
+/**
+ * struct peer_delete_all_response - peer delete all response structure
+ * @vdev_id: vdev id
+ * @status: FW status for vdev delete all peer request
+ */
+struct peer_delete_all_response {
+	uint8_t vdev_id;
+	uint8_t status;
+};
+
+/**
+ * struct multi_vdev_restart_resp - multi-vdev restart response structure
+ * @pdev_id: pdev id
+ * @status: FW status for multi vdev restart request
+ * @vdev_id_bmap: Bitmap of vdev_ids
+ */
+struct multi_vdev_restart_resp {
+	uint8_t pdev_id;
+	uint8_t status;
+	qdf_bitmap(vdev_id_bmap, WLAN_UMAC_PSOC_MAX_VDEVS);
 };
 
 #endif /* __WLAN_VDEV_MGR_TGT_IF_RX_DEFS_H__ */

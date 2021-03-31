@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -57,6 +57,7 @@ QDF_STATUS hdd_softap_ipa_start_xmit(qdf_nbuf_t nbuf, qdf_netdev_t dev);
 /**
  * hdd_softap_tx_timeout() - TX timeout handler
  * @dev: pointer to network device
+ * @txqueue: tx queue
  *
  * Function registered as a net_device .ndo_tx_timeout() method for
  * master mode interfaces (SoftAP/P2P GO), called by the OS if the
@@ -64,16 +65,18 @@ QDF_STATUS hdd_softap_ipa_start_xmit(qdf_nbuf_t nbuf, qdf_netdev_t dev);
  *
  * Return: None
  */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+void hdd_softap_tx_timeout(struct net_device *dev, unsigned int txqueue);
+#else
 void hdd_softap_tx_timeout(struct net_device *dev);
-
+#endif
 /**
  * hdd_softap_init_tx_rx() - Initialize Tx/Rx module
  * @adapter: pointer to adapter context
  *
- * Return: QDF_STATUS_E_FAILURE if any errors encountered,
- *	   QDF_STATUS_SUCCESS otherwise
+ * Return: None
  */
-QDF_STATUS hdd_softap_init_tx_rx(struct hdd_adapter *adapter);
+void hdd_softap_init_tx_rx(struct hdd_adapter *adapter);
 
 /**
  * hdd_softap_deinit_tx_rx() - Deinitialize Tx/Rx module
@@ -87,26 +90,13 @@ QDF_STATUS hdd_softap_deinit_tx_rx(struct hdd_adapter *adapter);
 /**
  * hdd_softap_init_tx_rx_sta() - Initialize Tx/Rx for a softap station
  * @adapter: pointer to adapter context
- * @sta_id: Station ID to initialize
  * @sta_mac: pointer to the MAC address of the station
  *
  * Return: QDF_STATUS_E_FAILURE if any errors encountered,
  *	   QDF_STATUS_SUCCESS otherwise
  */
 QDF_STATUS hdd_softap_init_tx_rx_sta(struct hdd_adapter *adapter,
-				     uint8_t sta_id,
 				     struct qdf_mac_addr *sta_mac);
-
-/**
- * hdd_softap_deinit_tx_rx_sta() - Deinitialize Tx/Rx for a softap station
- * @adapter: pointer to adapter context
- * @sta_id: Station ID to deinitialize
- *
- * Return: QDF_STATUS_E_FAILURE if any errors encountered,
- *	   QDF_STATUS_SUCCESS otherwise
- */
-QDF_STATUS hdd_softap_deinit_tx_rx_sta(struct hdd_adapter *adapter,
-				       uint8_t sta_id);
 
 /**
  * hdd_softap_rx_packet_cbk() - Receive packet handler
@@ -125,30 +115,29 @@ QDF_STATUS hdd_softap_rx_packet_cbk(void *adapter_context, qdf_nbuf_t rx_buf);
 /**
  * hdd_softap_deregister_sta() - Deregister a STA with the Data Path
  * @adapter: pointer to adapter context
- * @sta_id: Station ID to deregister
+ * @sta_info: double pointer to HDD station info structure
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
 QDF_STATUS hdd_softap_deregister_sta(struct hdd_adapter *adapter,
-				     uint8_t sta_id);
+				     struct hdd_station_info **sta_info);
 
 /**
  * hdd_softap_register_sta() - Register a SoftAP STA
  * @adapter: pointer to adapter context
  * @auth_required: is additional authentication required?
  * @privacy_required: should 802.11 privacy bit be set?
- * @sta_id: station ID assigned to this station
  * @sta_mac: station MAC address
- * @wmm_enabled: is WMM enabled for this STA?
+ * @event: STA assoc complete event (Can be NULL)
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
-QDF_STATUS hdd_softap_register_sta(struct hdd_adapter *adapter,
-				   bool auth_required,
-				   bool privacy_required,
-				   uint8_t sta_id,
-				   struct qdf_mac_addr *sta_mac,
-				   bool wmm_enabled);
+QDF_STATUS
+hdd_softap_register_sta(struct hdd_adapter *adapter,
+			bool auth_required,
+			bool privacy_required,
+			struct qdf_mac_addr *sta_mac,
+			tSap_StationAssocReassocCompleteEvent *event);
 
 /**
  * hdd_softap_register_bc_sta() - Register the SoftAP broadcast STA
@@ -179,20 +168,6 @@ QDF_STATUS hdd_softap_stop_bss(struct hdd_adapter *adapter);
 QDF_STATUS hdd_softap_change_sta_state(struct hdd_adapter *adapter,
 				       struct qdf_mac_addr *sta_mac,
 				       enum ol_txrx_peer_state state);
-
-/**
- * hdd_softap_get_sta_id() - Find station ID from MAC address
- * @adapter: pointer to adapter context
- * @sta_mac: MAC address of the destination
- * @sta_id: Station ID associated with the MAC address
- *
- * Return: QDF_STATUS_SUCCESS if a match was found, in which case
- *	   @sta_id is populated, QDF_STATUS_E_FAILURE if a match is
- *	   not found
- */
-QDF_STATUS hdd_softap_get_sta_id(struct hdd_adapter *adapter,
-				 struct qdf_mac_addr *sta_mac,
-				 uint8_t *sta_id);
 
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 /**
@@ -229,29 +204,75 @@ void hdd_softap_tx_resume_cb(void *adapter_context, bool tx_resume)
 }
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
 
+#ifdef SAP_DHCP_FW_IND
 /**
  * hdd_post_dhcp_ind() - Send DHCP START/STOP indication to FW
  * @adapter: pointer to hdd adapter
- * @sta_id: peer station ID
+ * @mac_addr: mac address
  * @type: WMA message type
  *
  * Return: error number
  */
 int hdd_post_dhcp_ind(struct hdd_adapter *adapter,
-		      uint8_t sta_id, uint16_t type);
+		      uint8_t *mac_addr, uint16_t type);
 
 /**
- * hdd_inspect_dhcp_packet() -  Inspect DHCP packet
+ * hdd_softap_inspect_dhcp_packet() - Inspect DHCP packet
  * @adapter: pointer to hdd adapter
- * @sta_id: peer station ID
  * @skb: pointer to OS packet (sk_buff)
  * @dir: direction
  *
+ * Inspect the Tx/Rx frame, and send DHCP START/STOP notification to the FW
+ * through WMI message, during DHCP based IP address acquisition phase.
+ *
+ * - Send DHCP_START notification to FW when SAP gets DHCP Discovery
+ * - Send DHCP_STOP notification to FW when SAP sends DHCP ACK/NAK
+ *
+ * DHCP subtypes are determined by a status octet in the DHCP Message type
+ * option (option code 53 (0x35)).
+ *
+ * Each peer will be in one of 4 DHCP phases, starts from QDF_DHCP_PHASE_ACK,
+ * and transitioned per DHCP message type as it arrives.
+ *
+ * - QDF_DHCP_PHASE_DISCOVER: upon receiving DHCP_DISCOVER message in ACK phase
+ * - QDF_DHCP_PHASE_OFFER: upon receiving DHCP_OFFER message in DISCOVER phase
+ * - QDF_DHCP_PHASE_REQUEST: upon receiving DHCP_REQUEST message in OFFER phase
+ *	or ACK phase (Renewal process)
+ * - QDF_DHCP_PHASE_ACK : upon receiving DHCP_ACK/NAK message in REQUEST phase
+ *	or DHCP_DELINE message in OFFER phase
+ *
  * Return: error number
  */
-int hdd_inspect_dhcp_packet(struct hdd_adapter *adapter,
-			    uint8_t sta_id,
-			    struct sk_buff *skb,
-			    enum qdf_proto_dir dir);
+int hdd_softap_inspect_dhcp_packet(struct hdd_adapter *adapter,
+				   struct sk_buff *skb,
+				   enum qdf_proto_dir dir);
+#else
+static inline
+int hdd_post_dhcp_ind(struct hdd_adapter *adapter,
+		      uint8_t *mac_addr, uint16_t type)
+{
+	return 0;
+}
 
+static inline
+int hdd_softap_inspect_dhcp_packet(struct hdd_adapter *adapter,
+				   struct sk_buff *skb,
+				   enum qdf_proto_dir dir)
+{
+	return 0;
+}
+#endif
+
+/**
+ * hdd_softap_check_wait_for_tx_eap_pkt() - Check and wait for eap failure
+ * pkt completion event
+ * @adapter: pointer to hdd adapter
+ * @mac_addr: mac address of peer
+ *
+ * Check and wait for eap failure pkt tx completion.
+ *
+ * Return: void
+ */
+void hdd_softap_check_wait_for_tx_eap_pkt(struct hdd_adapter *adapter,
+					  struct qdf_mac_addr *mac_addr);
 #endif /* end #if !defined(WLAN_HDD_SOFTAP_TX_RX_H) */

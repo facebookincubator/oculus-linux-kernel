@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -51,7 +51,7 @@ typedef struct sSirFTPreAuthReq {
 	 * We expect only one response per request.
 	 */
 	bool bPreAuthRspProcessed;
-	uint8_t preAuthchannelNum;
+	uint16_t pre_auth_channel_freq;
 	/* BSSID currently associated to suspend the link */
 	tSirMacAddr currbssId;
 	tSirMacAddr preAuthbssId;       /* BSSID to preauth to */
@@ -68,7 +68,7 @@ typedef struct sSirFTPreAuthReq {
 typedef struct sSirFTPreAuthRsp {
 	uint16_t messageType;   /* eWNI_SME_FT_PRE_AUTH_RSP */
 	uint16_t length;
-	uint8_t smeSessionId;
+	uint8_t vdev_id;
 	tSirMacAddr preAuthbssId;       /* BSSID to preauth to */
 	QDF_STATUS status;
 	uint16_t ft_ies_length;
@@ -83,19 +83,10 @@ typedef struct sSirFTPreAuthRsp {
 typedef struct sSirFTUpdateKeyInfo {
 	uint16_t messageType;
 	uint16_t length;
-	uint32_t smeSessionId;
+	uint32_t vdev_id;
 	struct qdf_mac_addr bssid;
 	tSirKeyMaterial keyMaterial;
 } tSirFTUpdateKeyInfo, *tpSirFTUpdateKeyInfo;
-
-/*--------------------------------------------------------------------------
-   FT Pre Auth Rsp Key SME<->PE
-   ------------------------------------------------------------------------*/
-typedef struct sSirFTPreAuthKeyInfo {
-	uint8_t extSetStaKeyParamValid; /* Ext Bss Config Msg if set */
-	/* SetStaKeyParams for ext bss msg */
-	tLimMlmSetKeysReq extSetStaKeyParam;
-} tSirFTPreAuthKeyInfo, *tpSirFTPreAuthKeyInfo;
 
 /*-------------------------------------------------------------------------
    Global FT Information
@@ -105,7 +96,6 @@ typedef struct sFTPEContext {
 	QDF_STATUS ftPreAuthStatus;
 	uint16_t saved_auth_rsp_length;
 	uint8_t saved_auth_rsp[MAX_FTIE_SIZE];
-	tSirFTPreAuthKeyInfo PreAuthKeyInfo;
 	/* Items created for the new FT, session */
 	void *pAddBssReq;       /* Save add bss req */
 	void *pAddStaReq;       /*Save add sta req  */

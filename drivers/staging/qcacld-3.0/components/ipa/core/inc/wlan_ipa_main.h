@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -164,13 +164,13 @@ QDF_STATUS ipa_send_uc_offload_enable_disable(struct wlan_objmgr_pdev *pdev,
 void ipa_set_dp_handle(struct wlan_objmgr_psoc *psoc, void *dp_soc);
 
 /**
- * ipa_set_txrx_handle() - set dp txrx handle
+ * ipa_set_pdev_id() - set dp pdev id
  * @psoc: psoc handle
- * @txrx_handle: dp txrx handle
+ * @pdev_id: dp txrx physical device id
  *
  * Return: None
  */
-void ipa_set_txrx_handle(struct wlan_objmgr_psoc *psoc, void *txrx_handle);
+void ipa_set_pdev_id(struct wlan_objmgr_psoc *psoc, uint8_t pdev_id);
 
 /**
  * ipa_rm_set_perf_level() - set ipa rm perf level
@@ -277,11 +277,13 @@ void ipa_set_dfs_cac_tx(struct wlan_objmgr_pdev *pdev, bool tx_block);
 /**
  * ipa_set_ap_ibss_fwd() - Set AP intra bss forward
  * @pdev: pdev obj
+ * @session_id: vdev id
  * @intra_bss: enable or disable ap intra bss forward
  *
  * Return: void
  */
-void ipa_set_ap_ibss_fwd(struct wlan_objmgr_pdev *pdev, bool intra_bss);
+void ipa_set_ap_ibss_fwd(struct wlan_objmgr_pdev *pdev, uint8_t session_id,
+			 bool intra_bss);
 
 /**
  * ipa_uc_force_pipe_shutdown() - Force IPA pipe shutdown
@@ -356,7 +358,6 @@ QDF_STATUS ipa_send_mcc_scc_msg(struct wlan_objmgr_pdev *pdev,
  * @pdev: pdev obj
  * @net_dev: Interface net device
  * @device_mode: Net interface device mode
- * @sta_id: station id for the event
  * @session_id: session id for the event
  * @type: event enum of type ipa_wlan_event
  * @mac_address: MAC address associated with the event
@@ -364,7 +365,7 @@ QDF_STATUS ipa_send_mcc_scc_msg(struct wlan_objmgr_pdev *pdev,
  * Return: QDF_STATUS
  */
 QDF_STATUS ipa_wlan_evt(struct wlan_objmgr_pdev *pdev, qdf_netdev_t net_dev,
-			uint8_t device_mode, uint8_t sta_id, uint8_t session_id,
+			uint8_t device_mode, uint8_t session_id,
 			enum wlan_ipa_wlan_event ipa_event_type,
 			uint8_t *mac_addr);
 
@@ -446,6 +447,13 @@ void ipa_fw_rejuvenate_send_msg(struct wlan_objmgr_pdev *pdev);
 void ipa_component_config_update(struct wlan_objmgr_psoc *psoc);
 
 /**
+ * ipa_component_config_free() - Free ipa config
+ *
+ * Return: None
+ */
+void ipa_component_config_free(void);
+
+/**
  * ipa_get_tx_buf_count() - get IPA config tx buffer count
  *
  * Return: IPA config tx buffer count
@@ -454,11 +462,33 @@ uint32_t ipa_get_tx_buf_count(void);
 
 /**
  * ipa_update_tx_stats() - Update embedded tx traffic in bytes to IPA
+ * @pdev: pdev obj
+ * @sta_tx: tx in bytes on sta vdev
+ * @ap_tx: tx in bytes on sap vdev
  *
- * Return: IPA config tx buffer count
+ * Return: None
  */
 void ipa_update_tx_stats(struct wlan_objmgr_pdev *pdev, uint64_t sta_tx,
 			 uint64_t ap_tx);
+
+/**
+ * ipa_flush_pending_vdev_events() - flush pending vdev wlan ipa events
+ * @pdev: pdev obj
+ * @vdev_id: vdev id
+ *
+ * Return: None
+ */
+void ipa_flush_pending_vdev_events(struct wlan_objmgr_pdev *pdev,
+				   uint8_t vdev_id);
+
+/**
+ * ipa_is_ready() - Is IPA register callback is invoked
+ *
+ * Return: true if IPA register callback is invoked or false
+ * otherwise
+ */
+bool ipa_is_ready(void);
+
 #else /* Not IPA_OFFLOAD */
 typedef QDF_STATUS (*wlan_ipa_softap_xmit)(qdf_nbuf_t nbuf, qdf_netdev_t dev);
 typedef void (*wlan_ipa_send_to_nw)(qdf_nbuf_t nbuf, qdf_netdev_t dev);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,7 +36,7 @@
  *
  * Supported Feature: ACS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -58,7 +58,7 @@
  *
  * Supported Feature: ACS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * bits 0-3:   rssi weight
  * bits 4-7:   bss count weight
@@ -92,7 +92,7 @@
  *
  * Supported Feature: ACS
  *
- * Usage: External/Internal
+ * Usage: External
  *
  * </ini>
  */
@@ -127,44 +127,6 @@
 
 /*
  * <ini>
- * np_chan_weight - chan weightage for non preferred channels
- * @Min: 0x00000000
- * @Max: 0x64646464
- * @Default: 0x00000000
- *
- * This INI give percentage value of weights to be considered in the ACS algo
- * for the non preferred channels. the distribution of the channel type is:-
- * Example:- If the percentage of lets say DFS channels is set to 50%, and
- * the weight comes out to be x, then we would increase the weight of DFS
- * channels by 50% ( 100 - y% set in INI), so that it gets de-prioritized in
- * the ACS sorted channel list, the lesser the weight, the better the channel.
- * So the channel with more weight is less likely to be selected. So by default
- * the np chan weightage for DFS is set to 0, that is it will be assigned max
- * weightage, so no probality of getting selected, as for standlaone, DFS is not
- * recommended (it takes 60 sec/10min to start depending upon channel type).
- *
- * Indexes are defined in this way.
- *     0 Index (BITS 0-7): DFS - Def 0%
- *     1 Index (BITS 8-15): Reserved
- *     2 Index (BITS 16-23): Reserved
- *     3 Index (BITS 24-31): Reserved
- * These percentage values are stored in HEX. Max can be 0x64
- * Supported Feature: ACS
- *
- * Usage: External
- *
- * </ini>
- */
-#define CFG_ACS_NP_CHAN_WEIGHT CFG_INI_UINT( \
-		"np_chan_weight", \
-		0x00000000, \
-		0x64646464, \
-		0x00000000, \
-		CFG_VALUE_OR_DEFAULT, \
-		"np chan weight")
-
-/*
- * <ini>
  * acs_policy - External ACS policy control
  * @Min: 0
  * @Max: 1
@@ -183,7 +145,7 @@
  *
  * Supported Feature: ACS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -192,6 +154,30 @@
 		"acs_policy", \
 		1, \
 		"External ACS Policy Control")
+
+#define ACS_WEIGHT_MAX_STR_LEN            500
+
+/*
+ * <ini>
+ * normalize_acs_weight - Used to control the ACS channel weightage.
+ *
+ * This ini is used to specify the weight percentage of the channel. Channel
+ * weights can be controlled by user to prioritize or de-prioritize channels.
+ *
+ * Related: ACS
+ *
+ * Supported Feature: ACS
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_NORMALIZE_ACS_WEIGHT CFG_INI_STRING( \
+		"normalize_acs_weight", \
+		0, \
+		ACS_WEIGHT_MAX_STR_LEN, \
+		"5945-7125=0, 5975=100, 6055=100, 6135=100, 6215=100, 6295=100, 6375=100, 6615=100, 6695=100, 6775=100, 6855=100", \
+		"Used to specify the channel weights")
 
 /*
  * <ini>
@@ -216,13 +202,52 @@
 		0, \
 		"Force start SAP")
 
+/*
+ * <ini>
+ * np_chan_weight - chan weightage for non preferred channels
+ * @Min: 0x00000000
+ * @Max: 0x64646464
+ * @Default: 0x00000000
+ *
+ * This INI give percentage value of weights to be considered in the ACS algo
+ * for the non preferred channels. the distribution of the channel type is:-
+ * Example:- If the percentage of lets say DFS channels is set to 50%, and
+ * the weight comes out to be x, then we would increase the weight of DFS
+ * channels by 50% ( 100 - y% set in INI), so that it gets de-prioritized in
+ * the ACS sorted channel list, the lesser the weight, the better the channel.
+ * So the channel with more weight is less likely to be selected. So by default
+ * the np chan weightage for DFS is set to 0, that is it will be assigned max
+ * weightage, so no probality of getting selected, as for standlaone, DFS is not
+ * recommended (it takes 60 sec/10min to start depending upon channel type).
+ *
+ * Indexes are defined in this way.
+ *     0 Index (BITS 0-7): DFS - Def 1%
+ *     1 Index (BITS 8-15): Reserved
+ *     2 Index (BITS 16-23): Reserved
+ *     3 Index (BITS 24-31): Reserved
+ * These percentage values are stored in HEX. Max can be 0x64
+ * Supported Feature: ACS
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ACS_NP_CHAN_WEIGHT CFG_INI_UINT( \
+		"np_chan_weight", \
+		0x00000000, \
+		0x64646464, \
+		0x00000001, \
+		CFG_VALUE_OR_DEFAULT, \
+		"np chan weight")
+
 #define CFG_ACS_ALL \
 	CFG(CFG_ACS_WITH_MORE_PARAM) \
 	CFG(CFG_AUTO_CHANNEL_SELECT_WEIGHT) \
-	CFG(CFG_ACS_NP_CHAN_WEIGHT) \
 	CFG(CFG_USER_AUTO_CHANNEL_SELECTION) \
 	CFG(CFG_USER_ACS_DFS_LTE) \
 	CFG(CFG_EXTERNAL_ACS_POLICY) \
-	CFG(CFG_ACS_FORCE_START_SAP)
+	CFG(CFG_NORMALIZE_ACS_WEIGHT) \
+	CFG(CFG_ACS_FORCE_START_SAP) \
+	CFG(CFG_ACS_NP_CHAN_WEIGHT)
 
 #endif /* __CFG_MLME_ACS_H */

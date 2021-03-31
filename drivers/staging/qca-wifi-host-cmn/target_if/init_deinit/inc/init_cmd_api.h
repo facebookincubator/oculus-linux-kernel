@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,19 +31,8 @@
 #define TXBF_CV_POOL0 2
 #define TXBF_CV_POOL1 3
 #define TXBF_CV_POOL2 4
+#define CFR_CAPTURE_HOST_MEM_REQ_ID 9
 #define HOST_CONTIGUOUS_MEM_CHUNK_REQUIRED 0x8
-
-/**
- * enum wlan_fw_mem_prio - defines FW Memory requirement type
- * @FW_MEM_HIGH_PRIORITY:   Memory requires contiguous memory allocation
- * @FW_MEM_LOW_PRIORITY:    Memory can be fragmented
- * @FW_PRIORITY_MAX:        Invalid type
- */
-enum wlan_fw_mem_prio {
-	FW_MEM_HIGH_PRIORITY = 0,
-	FW_MEM_LOW_PRIORITY,
-	FW_PRIORITY_MAX
-};
 
 /**
  * init_deinit_handle_host_mem_req() - handle host memory request
@@ -77,7 +66,7 @@ QDF_STATUS init_deinit_free_num_units(struct wlan_objmgr_psoc *psoc,
  * init_deinit_derive_band_to_mac_param() - Derive band to mac param
  * @psoc: PSOC object
  * @tgt_info: PSOC_INFO object
- * @band_to_mac: BAND_TO_MAC object
+ * @init_param: Pointer to init param
  *
  * API to derive band to mac param
  *
@@ -86,7 +75,7 @@ QDF_STATUS init_deinit_free_num_units(struct wlan_objmgr_psoc *psoc,
 void init_deinit_derive_band_to_mac_param(
 		struct wlan_objmgr_psoc *psoc,
 		struct target_psoc_info *tgt_info,
-		struct wmi_host_pdev_band_to_mac *band_to_mac);
+		struct wmi_init_cmd_param *init_param);
 
 /**
  * init_deinit_prepare_send_init_cmd() - prepare send init cmd

@@ -74,6 +74,9 @@
 
 /* PHY preserve */
 #define EVENT_LOG_SET_PRSRV_PHY		(14u)
+/* PHY periodic */
+/* Use the newer name in future */
+#define EVENT_LOG_SET_PERIODIC_PHY	(14u)
 
 /* RTE entity */
 #define EVENT_LOG_SET_RTE		(15u)

@@ -46,6 +46,10 @@ typedef void *WMA_HANDLE;
  * @GEN_PARAM_CAPTURE_TSF: read tsf
  * @GEN_PARAM_RESET_TSF_GPIO: reset tsf gpio
  * @GEN_VDEV_ROAM_SYNCH_DELAY: roam sync delay
+ * @GEN_VDEV_PARAM_TX_AMPDU: Set tx ampdu size
+ * @GEN_VDEV_PARAM_RX_AMPDU: Set rx ampdu size
+ * @GEN_VDEV_PARAM_TX_AMSDU: Set tx amsdu size
+ * @GEN_VDEV_PARAM_RX_AMSDU: Set rx amsdu size
  */
 enum GEN_PARAM {
 	GEN_VDEV_PARAM_AMPDU = 0x1,
@@ -54,6 +58,10 @@ enum GEN_PARAM {
 	GEN_PARAM_CAPTURE_TSF,
 	GEN_PARAM_RESET_TSF_GPIO,
 	GEN_VDEV_ROAM_SYNCH_DELAY,
+	GEN_VDEV_PARAM_TX_AMPDU,
+	GEN_VDEV_PARAM_RX_AMPDU,
+	GEN_VDEV_PARAM_TX_AMSDU,
+	GEN_VDEV_PARAM_RX_AMSDU,
 };
 
 /**
@@ -133,14 +141,25 @@ int wma_cli_set2_command(int vdev_id, int param_id, int sval1,
 			 int sval2, int vpdev);
 
 /**
+ * wma_get_fw_phy_mode_for_freq_cb() - Callback to get current PHY Mode.
+ * @freq: channel freq
+ * @chan_width: maximum channel width possible
+ * @phy_mode: firmware PHY Mode
+ *
+ * Return: None
+ */
+void wma_get_fw_phy_mode_for_freq_cb(uint32_t freq, uint32_t chan_width,
+				     uint32_t  *phy_mode);
+/**
  * wma_get_phy_mode_cb() - Callback to get current PHY Mode.
- * @chan: channel number
+ * @freq: channel frequency
  * @chan_width: maximum channel width possible
  * @phy_mode: PHY Mode
  *
  * Return: None
  */
-void wma_get_phy_mode_cb(uint8_t chan, uint32_t chan_width, uint32_t *phy_mode);
+void wma_get_phy_mode_cb(qdf_freq_t freq, uint32_t chan_width,
+			 enum wlan_phymode  *phy_mode);
 
 QDF_STATUS wma_set_htconfig(uint8_t vdev_id, uint16_t ht_capab, int value);
 
@@ -154,12 +173,22 @@ QDF_STATUS wma_get_link_speed(WMA_HANDLE handle,
 QDF_STATUS wma_update_channel_list(WMA_HANDLE handle, void *scan_chan_info);
 #endif
 
+/**
+ * wma_get_vdev_address_by_vdev_id() - lookup MAC address from vdev ID
+ * @vdev_id: vdev id
+ *
+ * Return: mac address
+ */
 uint8_t *wma_get_vdev_address_by_vdev_id(uint8_t vdev_id);
 struct wma_txrx_node *wma_get_interface_by_vdev_id(uint8_t vdev_id);
 QDF_STATUS wma_get_connection_info(uint8_t vdev_id,
 		struct policy_mgr_vdev_entry_info *conn_table_entry);
 QDF_STATUS wma_ndi_update_connection_info(uint8_t vdev_id,
 		struct nan_datapath_channel_info *ndp_chan_info);
+
+#ifdef WLAN_FEATURE_PKT_CAPTURE
+int wma_get_rmf_status(uint8_t vdev_id);
+#endif
 
 bool wma_is_vdev_up(uint8_t vdev_id);
 
@@ -172,10 +201,14 @@ QDF_STATUS wma_post_ctrl_msg(struct mac_context *mac, struct scheduler_msg *pMsg
 
 void wma_update_intf_hw_mode_params(uint32_t vdev_id, uint32_t mac_id,
 				uint32_t cfgd_hw_mode_index);
+#ifdef MPC_UT_FRAMEWORK
 void wma_set_dbs_capability_ut(uint32_t dbs);
+#else
+static inline void wma_set_dbs_capability_ut(uint32_t dbs) {}
+#endif
 QDF_STATUS wma_get_caps_for_phyidx_hwmode(struct wma_caps_per_phy *caps_per_phy,
 		enum hw_mode_dbs_capab hw_mode, enum cds_band_type band);
-bool wma_is_rx_ldpc_supported_for_channel(uint32_t channel);
+bool wma_is_rx_ldpc_supported_for_channel(uint32_t ch_freq);
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
 int wma_unified_radio_tx_mem_free(void *handle);
@@ -194,12 +227,6 @@ wma_unified_link_stats_results_mem_free(tSirLLStatsResults *link_stats_results);
 static inline int wma_unified_radio_tx_mem_free(void *handle)
 {
 	return 0;
-}
-
-static void
-wma_unified_link_stats_results_mem_free(tSirLLStatsResults *link_stats_results)
-{
-	return;
 }
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
@@ -266,9 +293,6 @@ static inline bool wma_is_p2p_lo_capable(void)
 }
 #endif
 bool wma_capability_enhanced_mcast_filter(void);
-#ifndef QCA_SUPPORT_CP_STATS
-QDF_STATUS wma_get_wakelock_stats(struct sir_wake_lock_stats *wake_lock_stats);
-#endif
 void wma_process_pdev_hw_mode_trans_ind(void *wma,
 	wmi_pdev_hw_mode_transition_event_fixed_param *fixed_param,
 	wmi_pdev_set_hw_mode_response_vdev_mac_entry *vdev_mac_entry,
@@ -286,8 +310,6 @@ void wma_process_pdev_hw_mode_trans_ind(void *wma,
  */
 QDF_STATUS wma_set_cts2self_for_p2p_go(void *wma_handle,
 		uint32_t cts2self_for_p2p_go);
-QDF_STATUS wma_set_tx_rx_aggregation_size
-	(struct sir_set_tx_rx_aggregation_size *tx_rx_aggregation_size);
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
@@ -309,19 +331,42 @@ QDF_STATUS wma_get_roam_scan_ch(wmi_unified_t wma,
 #endif
 
 /**
- * wma_set_tx_rx_aggregation_size_per_ac() - set aggregation size per ac
- * @tx_rx_aggregation_size: the parameter for aggregation size
+ * wma_set_tx_rx_aggr_size() - set tx rx aggregation size
+ * @vdev_id: vdev id
+ * @tx_size: tx aggr size
+ * @rx_size: rx aggr size
+ * @aggr_type: aggregation type
  *
- *  This function try to set the aggregation size per AC.
+ *  This function try to set the aggregation size.
  *
  *  Return: QDF_STATUS enumeration
  */
-QDF_STATUS wma_set_tx_rx_aggregation_size_per_ac
-	(struct sir_set_tx_rx_aggregation_size *tx_rx_aggregation_size);
+QDF_STATUS wma_set_tx_rx_aggr_size(uint8_t vdev_id,
+				   uint32_t tx_size,
+				   uint32_t rx_size,
+				   wmi_vdev_custom_aggr_type_t aggr_type);
+/**
+ * wma_set_tx_rx_aggr_size_per_ac() - set aggregation size per ac
+ * @wma_handle: pointer to wma handle.
+ * @vdev_id: vdev_id
+ * @qos_aggr: QoS data
+ * @aggr_type: aggregation type
+ *
+ * This function try to set the aggregation size per AC.
+ *
+ * Return: QDF_STATUS enumeration
+ */
+QDF_STATUS
+wma_set_tx_rx_aggr_size_per_ac(WMA_HANDLE wma_handle,
+			       uint8_t vdev_id,
+			       struct wlan_mlme_qos *qos_aggr,
+			       wmi_vdev_custom_aggr_type_t aggr_type);
+
 /**
  * wma_set_sw_retry_threshold_per_ac() - set sw retry threshold per AC for tx
  * @handle: wma handle
- * @tx_sw_retry_threshold: value needs to set to firmware
+ * @vdev_id: vdev id
+ * @qos_aggr: pointer to QOS TX/RX aggregation values
  *
  * This function sends WMI command to set the sw retry threshold per AC
  * for Tx.
@@ -330,19 +375,20 @@ QDF_STATUS wma_set_tx_rx_aggregation_size_per_ac
  */
 QDF_STATUS wma_set_sw_retry_threshold_per_ac
 	(WMA_HANDLE handle,
-	 struct sir_set_tx_sw_retry_threshold *tx_sw_retry_threshold);
+	 uint8_t vdev_id, struct wlan_mlme_qos *qos_aggr);
 /**
  * wma_set_sw_retry_threshold() - set sw retry threshold for tx
  * @vdev_id: vdev
  * @retry: retry number
- * @param: for aggregation or non-aggregation
+ * @param_id: aggregrate sw retry threshold param id
  *
  * This function sends WMI command to set the sw retry threshold for Tx.
  *
  * Return: QDF_STATUS.
  */
 QDF_STATUS wma_set_sw_retry_threshold(uint8_t vdev_id, uint32_t retry,
-				      uint32_t param);
+				      uint32_t param_id);
+
 /**
  * wma_get_sar_limit() - get SAR limits from the target
  * @handle: wma handle
@@ -381,13 +427,24 @@ QDF_STATUS wma_send_coex_config_cmd(WMA_HANDLE wma_handle,
 				    struct coex_config_params *coex_cfg_params);
 
 /**
- * wma_set_qpower_config() - update qpower config in wma
+ * wma_send_ocl_cmd() - Send OCL command
+ * @wma_handle: wma handle
+ * @ocl_params: OCL command params
+ *
+ * This function sends WMI command to send OCL mode configuration
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wma_send_ocl_cmd(WMA_HANDLE wma_handle,
+			    struct ocl_cmd_params *ocl_params);
+/**
+ * wma_set_power_config() - update power config in wma
  * @vdev_id:	the Id of the vdev to configure
- * @qpower:	new qpower value
+ * @power:	new power value
  *
  * Return: QDF_STATUS_SUCCESS on success, error number otherwise
  */
-QDF_STATUS wma_set_qpower_config(uint8_t vdev_id, uint8_t qpower);
+QDF_STATUS wma_set_power_config(uint8_t vdev_id, enum powersave_mode power);
 
 #ifdef FEATURE_WLAN_D0WOW
 static inline bool wma_d0_wow_is_supported(void)
@@ -619,6 +676,17 @@ QDF_STATUS wma_ap_mlme_vdev_stop_start_send(struct vdev_mlme_obj *vdev_mlme,
  */
 QDF_STATUS wma_sta_mlme_vdev_down_send(struct vdev_mlme_obj *vdev_mlme,
 				       uint16_t data_len, void *data);
+/**
+ * wma_post_vdev_create_setup() - Post vdev create setup
+ * @vdev: vdev obj
+ *
+ * This API is invoked after vded is created to perform post
+ * vdev create operations i.e. creating peer and setting vdev params.
+ *
+ * Return: SUCCESS on successful post vdev operations, FAILURE, if it
+ *         fails due to any
+ */
+QDF_STATUS wma_post_vdev_create_setup(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wma_mon_mlme_vdev_start_continue() - VDEV start response handling
@@ -676,6 +744,38 @@ QDF_STATUS wma_mon_mlme_vdev_stop_send(struct vdev_mlme_obj *vdev_mlme,
 QDF_STATUS wma_mon_mlme_vdev_down_send(struct vdev_mlme_obj *vdev_mlme,
 				       uint16_t data_len, void *data);
 
+/**
+ * wma_vdev_detach_callback() - VDEV delete response handler
+ * @rsp: pointer to vdev delete response
+ *
+ * This API proccesses vdev delete response and gives to upper layers
+ *
+ * Return: SUCCESS on successful completion of VDEV delete operation
+ *         FAILURE, if it fails due to any
+ */
+QDF_STATUS wma_vdev_detach_callback(struct vdev_delete_response *rsp);
+
+/**
+ * wma_vdev_stop_resp_handler() - vdev stop response handler
+ * @handle: wma handle
+ * @cmd_param_info: event buffer
+ * @len: buffer length
+ *
+ * Return: 0 for success or error code
+ */
+QDF_STATUS wma_vdev_stop_resp_handler(struct vdev_mlme_obj *vdev_mlme,
+				struct vdev_stop_response *rsp);
+
+/**
+ * wma_vdev_start_resp_handler() - vdev start response handler
+ * @vdev_mlme: vdev mlme obj
+ * @rsp: vdev start response
+ *
+ * Return: QDF status
+ */
+QDF_STATUS wma_vdev_start_resp_handler(struct vdev_mlme_obj *vdev_mlme,
+				       struct vdev_start_response *rsp);
+
 #ifdef FEATURE_WLM_STATS
 /**
  * typedef wma_wlm_stats_cb() - Callback function for WLM stats
@@ -717,6 +817,7 @@ int wma_wlm_stats_req(int vdev_id, uint32_t bitmask, uint32_t max_size,
 int wma_wlm_stats_rsp(void *wma_ctx, uint8_t *event, uint32_t len);
 #endif /* FEATURE_WLM_STATS */
 
+#ifndef ROAM_OFFLOAD_V1
 /**
  * wma_update_roam_offload_flag() -  update roam offload flag to fw
  * @wma:     wma handle
@@ -726,4 +827,35 @@ int wma_wlm_stats_rsp(void *wma_ctx, uint8_t *event, uint32_t len);
  */
 void wma_update_roam_offload_flag(void *handle,
 				  struct roam_init_params *params);
+/**
+ * wma_set_roam_disable_cfg() - Set roam module disable cfg to fw
+ * @wma: wma handle
+ * @params: Roaming module enable/disable params
+ *
+ * Return: none
+ */
+void wma_set_roam_disable_cfg(void *handle, struct roam_disable_cfg *params);
+#endif
+
+/**
+ * wma_self_peer_create() - create self peer in objmgr
+ * @vdev_mlme: vdev mlme component private object
+ *
+ * Create the self peer in firmware for beaconing vdev's and create then
+ * object manager self-peer for the vdev.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wma_vdev_self_peer_create(struct vdev_mlme_obj *vdev_mlme);
+
+/**
+ * wma_cleanup_vdev() - cleanup wma layers vdev
+ * @vdev: Object manager vdev
+ *
+ * This function cleansup the wma layers vdev related data.
+ *
+ * Return: None
+ */
+void wma_cleanup_vdev(struct wlan_objmgr_vdev *vdev);
+
 #endif /* WMA_API_H */

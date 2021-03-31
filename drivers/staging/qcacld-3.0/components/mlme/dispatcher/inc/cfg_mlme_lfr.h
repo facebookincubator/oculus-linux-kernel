@@ -115,7 +115,7 @@
  * </ini>
  */
 #define CFG_LFR_MAWC_ROAM_RSSI_HIGH_ADJUST CFG_INI_UINT( \
-	"mawc_roam_ap_rssi_threshold", \
+	"mawc_roam_rssi_high_adjust", \
 	3, \
 	5, \
 	5, \
@@ -322,36 +322,6 @@
 
 /*
  * <ini>
- * gFirstScanBucketThreshold - Set first scan bucket
- * threshold
- * @Min: -50
- * @Max: -30
- * @Default: -30
- *
- * This ini will configure the first scan bucket
- * threshold to the mentioned value and all the AP's which
- * have RSSI under this threshold will fall under this
- * bucket. This configuration item used to tweak and
- * test the input for internal algorithm.
- *
- * Related: None
- *
- * Supported Feature: Scan
- *
- * Usage: Internal
- *
- * </ini>
- */
-#define CFG_LFR_FIRST_SCAN_BUCKET_THRESHOLD CFG_INI_INT( \
-	"gFirstScanBucketThreshold", \
-	-50, \
-	-30, \
-	-30, \
-	CFG_VALUE_OR_DEFAULT, \
-	"Set first scan bucket")
-
-/*
- * <ini>
  * gtraffic_threshold - Dense traffic threshold
  * @Min: 0
  * @Max: 0xffffffff
@@ -529,6 +499,93 @@
 	40, \
 	CFG_VALUE_OR_DEFAULT, \
 	"RSSI threshold offset for 2G to 5G roam")
+
+/*
+ * <ini>
+ * roam_data_rssi_threshold_triggers - triggers of data rssi threshold for roam
+ * @Min: 0
+ * @Max: 0xffff
+ * @Default: 0x3
+ *
+ * If the DUT is connected to an AP with weak signal, during latest
+ * rx_data_inactivity_time, if there is no activity or avg of data_rssi is
+ * better than roam_data_rssi_threshold(-70dbM), then suppress roaming
+ * triggered by roam_data_rssi_threshold_triggers: low RSSI or bg scan.
+ * Triggers bitmap definition:
+ * ROAM_DATA_RSSI_FLAG_LOW_RSSI   1<<0
+ * ROAM_DATA_RSSI_FLAG_BACKGROUND 1<<1
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_TRIGGERS CFG_INI_UINT( \
+	"roam_data_rssi_threshold_triggers", \
+	0, \
+	0xffff, \
+	0x3, \
+	CFG_VALUE_OR_DEFAULT, \
+	"Triggers of DATA RSSI threshold for roam")
+
+/*
+ * <ini>
+ * roam_data_rssi_threshold - Data RSSI threshold for background roam
+ * @Min: -96
+ * @Max: 0
+ * @Default: -70
+ *
+ * If the DUT is connected to an AP with weak signal, during latest
+ * rx_data_inactivity_time, if there is no activity or avg of data_rssi is
+ * better than roam_data_rssi_threshold(-70dbM), then suppress roaming
+ * triggered by roam_data_rssi_threshold_triggers: low RSSI or bg scan.
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ROAM_DATA_RSSI_THRESHOLD CFG_INI_INT( \
+	"roam_data_rssi_threshold", \
+	-96, \
+	0, \
+	-70, \
+	CFG_VALUE_OR_DEFAULT, \
+	"DATA RSSI threshold for roam")
+
+/*
+ * <ini>
+ * rx_data_inactivity_time - Duration to check data rssi
+ * @Min: 0
+ * @Max: 100000 ms
+ * @Default: 2000
+ *
+ * If the DUT is connected to an AP with weak signal, during latest
+ * rx_data_inactivity_time, if there is no activity or avg of data_rssi is
+ * better than roam_data_rssi_threshold(-70dbM), then suppress roaming
+ * triggered by roam_data_rssi_threshold_triggers: low RSSI or bg scan.
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_RX_DATA_INACTIVITY_TIME CFG_INI_UINT( \
+	"rx_data_inactivity_time", \
+	0, \
+	100000, \
+	2000, \
+	CFG_VALUE_OR_DEFAULT, \
+	"Rx inactivity time to check data rssi")
 
 /*
  * <ini>
@@ -1019,6 +1076,7 @@
 	"Maximum penalty that can be applied to 5GHz RSSI")
 
 /*
+ * <ini>
  * max_num_pre_auth - Configure max number of pre-auth
  * @Min: 0
  * @Max: 256
@@ -1028,6 +1086,7 @@
  *
  * Usage: Internal
  *
+ * </ini>
  */
 #define CFG_LFR_MAX_NUM_PRE_AUTH CFG_UINT( \
 	"max_num_pre_auth", \
@@ -1038,6 +1097,7 @@
 	"")
 
 /*
+ * <ini>
  * roam_preauth_retry_count
  *
  * @Min: 1
@@ -1073,7 +1133,7 @@
  * @Default: 5
  *
  * Time to wait (in ms) after sending an preauth or reassoc
- * request which didn’t have an ack, before considering
+ * request which didn't have an ack, before considering
  * it as a failure and making another software retry.
  *
  * Related: N/A
@@ -1189,6 +1249,34 @@
 	5, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Enable roam based on rssi")
+
+/*
+ * <ini>
+ * bg_rssi_threshold - To set RSSI Threshold for BG scan roaming
+ * @Min: 0
+ * @Max: 100
+ * @Default: 5
+ *
+ * This INI is used to set the value of rssi threshold to trigger roaming
+ * after background scan. To trigger roam after bg scan, value of rssi of
+ * candidate AP should be higher by this threshold than the rssi of the
+ * currrently associated AP.
+ *
+ * Related: RoamRssiDiff
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_LFR_ROAM_BG_RSSI_TH CFG_INI_UINT( \
+	"bg_rssi_threshold", \
+	0, \
+	100, \
+	5, \
+	CFG_VALUE_OR_DEFAULT, \
+	"Enable roam based on rssi after BG scan")
 
 /*
  * <ini>
@@ -1577,30 +1665,6 @@
 	20, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Final beacon miss count")
-
-/*
- * <ini>
- * gRoamBeaconRssiWeight - Set beacon miss weight
- * @Min: 5
- * @Max: 16
- * @Default: 14
- *
- * This ini controls how many beacons' RSSI values will be used to calculate
- * the average value of RSSI.
- *
- * Related: None
- *
- * Usage: External
- *
- * </ini>
- */
-#define CFG_LFR_ROAM_BEACON_RSSI_WEIGHT CFG_INI_UINT( \
-	"gRoamBeaconRssiWeight", \
-	0, \
-	16, \
-	14, \
-	CFG_VALUE_OR_DEFAULT, \
-	"Beacon miss weight")
 
 /*
  * <ini>
@@ -2366,9 +2430,13 @@
  * <ini>
  * roam_triggers - Bitmap of roaming triggers. Setting this to
  * zero will disable roaming altogether for the STA interface.
+ * ESS report element of beacon explores BSS information, for roaming station
+ * uses it to consider next AP to roam. ROAM_TRIGGER_REASON_ESS_RSSI bit is
+ * to enable/disable roam trigger for ESS RSSI reason. This bit of ini is also
+ * used for WFA certification.
  * @Min: 0
  * @Max: 0xFFFFFFFF
- * @Default: 0xFFFF
+ * @Default: 0x1FFFF
  *
  * ROAM_TRIGGER_REASON_PER         BIT 1
  * ROAM_TRIGGER_REASON_BMISS       BIT 2
@@ -2385,13 +2453,14 @@
  * ROAM_TRIGGER_REASON_DEAUTH      BIT 13
  * ROAM_TRIGGER_REASON_IDLE        BIT 14
  * ROAM_TRIGGER_REASON_STA_KICKOUT BIT 15
- * ROAM_TRIGGER_REASON_MAX     BIT 16
+ * ROAM_TRIGGER_REASON_ESS_RSSI    BIT 16
+ * ROAM_TRIGGER_REASON_MAX         BIT 17
  *
  * Related: none
  *
  * Supported Feature: Roaming
  *
- * Usage: Internal
+ * Usage: External
  *
  * </ini>
  */
@@ -2399,7 +2468,7 @@
 			"roam_triggers", \
 			0, \
 			0xFFFFFFFF, \
-			0xFFFF, \
+			0x1FFFF, \
 			CFG_VALUE_OR_DEFAULT, \
 			"Bitmap of roaming triggers")
 
@@ -2434,6 +2503,35 @@
 		CFG_VALUE_OR_DEFAULT, \
 		"disable roam on STA iface if one of the iface mentioned in default is in connected state")
 
+/*
+ * <ini>
+ * enable_dual_sta_roam_offload - Enable roaming offload on both interfaces
+ * for STA + STA
+ * @Min: 0 - Dual STA Roam offload Disabled
+ * @Max: 1 - Dual STA Roam offload Enabled
+ * @Default: 1
+ *
+ * Enabling this ini will:
+ *  a) Enforce the STA + STA connection be DBS if the hw is capable.
+ *  b) Enable Roam Scan Offload on both the STA vdev.
+ *  c) Enable firmware to support sequential roaming on both STA vdev
+ *     if the firmware is capable of dual sta roaming.
+ *
+ * Related: None.
+ *
+ * Supported Feature: ROAM
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ENABLE_DUAL_STA_ROAM_OFFLOAD CFG_INI_UINT( \
+		"enable_dual_sta_roam_offload", \
+		false, \
+		true, \
+		true, \
+		CFG_VALUE_OR_DEFAULT, \
+		"Enable roam on both STA vdev")
 
 #define ROAM_OFFLOAD_ALL \
 	CFG(CFG_LFR3_ROAMING_OFFLOAD) \
@@ -2447,6 +2545,7 @@
 	CFG(CFG_LFR_IDLE_ROAM_BAND) \
 	CFG(CFG_ROAM_TRIGGER_BITMAP) \
 	CFG(CFG_STA_DISABLE_ROAM) \
+	CFG(CFG_ENABLE_DUAL_STA_ROAM_OFFLOAD) \
 
 #else
 #define ROAM_OFFLOAD_ALL
@@ -2602,6 +2701,31 @@
 
 /*
  * <ini>
+ * enable_ft_im_roaming - FW needs to perform FT initial moiblity association
+ * instead of FT roaming for deauth roam trigger
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to FT roaming for deauth roam trigger behavior from HOST
+ * 0 - To disable FT-IM
+ * 1 - To enable FT-IM
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_FT_IM_ROAMING CFG_INI_BOOL( \
+		"enable_ft_im_roaming", \
+		1, \
+		"FT roaming for deauth roam trigger")
+
+/*
+ * <ini>
  * roam_scan_inactivity_time - Device inactivity monitoring time in
  * milliseconds for which the device is considered to be inactive with data
  * packets count is less than configured roam_inactive_data_count.
@@ -2697,6 +2821,36 @@
 	CFG_VALUE_OR_DEFAULT, \
 	"Roam scan period post inactivity")
 
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/*
+ * <ini>
+ * enable_roam_reason_vsie - Enable/Disable inclusion of Roam Reason
+ * in Re(association) frame
+ *
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used to enable fw to include/exclude roam reason vsie in
+ * Re(association)
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: internal
+ *
+ * </ini>
+ */
+#define CFG_ENABLE_ROAM_REASON_VSIE CFG_INI_BOOL( \
+		"enable_roam_reason_vsie", \
+		0, \
+		"To Enable enable_roam_reason_vsie")
+#define ROAM_REASON_VSIE_ALL CFG(CFG_ENABLE_ROAM_REASON_VSIE)
+#else
+#define ROAM_REASON_VSIE_ALL
+#endif
+
 #define CFG_LFR_ALL \
 	CFG(CFG_LFR_MAWC_ROAM_ENABLED) \
 	CFG(CFG_LFR_MAWC_ROAM_TRAFFIC_THRESHOLD) \
@@ -2709,13 +2863,15 @@
 	CFG(CFG_LFR_EARLY_STOP_SCAN_ENABLE) \
 	CFG(CFG_LFR_EARLY_STOP_SCAN_MIN_THRESHOLD) \
 	CFG(CFG_LFR_EARLY_STOP_SCAN_MAX_THRESHOLD) \
-	CFG(CFG_LFR_FIRST_SCAN_BUCKET_THRESHOLD) \
 	CFG(CFG_LFR_ROAM_DENSE_TRAFFIC_THRESHOLD) \
 	CFG(CFG_LFR_ROAM_DENSE_RSSI_THRE_OFFSET) \
 	CFG(CFG_LFR_ROAM_DENSE_MIN_APS) \
 	CFG(CFG_LFR_ROAM_BG_SCAN_BAD_RSSI_THRESHOLD) \
 	CFG(CFG_LFR_ROAM_BG_SCAN_CLIENT_BITMAP) \
 	CFG(CFG_LFR_ROAM_BG_SCAN_BAD_RSSI_OFFSET_2G) \
+	CFG(CFG_ROAM_DATA_RSSI_THRESHOLD_TRIGGERS) \
+	CFG(CFG_ROAM_DATA_RSSI_THRESHOLD) \
+	CFG(CFG_RX_DATA_INACTIVITY_TIME) \
 	CFG(CFG_LFR_ADAPTIVE_ROAMSCAN_DWELL_MODE) \
 	CFG(CFG_LFR_PER_ROAM_ENABLE) \
 	CFG(CFG_LFR_PER_ROAM_CONFIG_HIGH_RATE_TH) \
@@ -2741,6 +2897,7 @@
 	CFG(CFG_LFR_MAWC_FEATURE_ENABLED) \
 	CFG(CFG_LFR_FAST_TRANSITION_ENABLED) \
 	CFG(CFG_LFR_ROAM_RSSI_DIFF) \
+	CFG(CFG_LFR_ROAM_BG_RSSI_TH) \
 	CFG(CFG_LFR_ENABLE_WES_MODE) \
 	CFG(CFG_LFR_ROAM_SCAN_OFFLOAD_ENABLED) \
 	CFG(CFG_LFR_NEIGHBOR_SCAN_CHANNEL_LIST) \
@@ -2755,7 +2912,6 @@
 	CFG(CFG_LFR_EMPTY_SCAN_REFRESH_PERIOD) \
 	CFG(CFG_LFR_ROAM_BMISS_FIRST_BCNT) \
 	CFG(CFG_LFR_ROAM_BMISS_FINAL_BCNT) \
-	CFG(CFG_LFR_ROAM_BEACON_RSSI_WEIGHT) \
 	CFG(CFG_LFR_ROAMING_DFS_CHANNEL) \
 	CFG(CFG_LFR_ROAM_SCAN_HI_RSSI_MAXCOUNT) \
 	CFG(CFG_LFR_ROAM_SCAN_HI_RSSI_DELTA) \
@@ -2776,6 +2932,7 @@
 	CFG(CFG_LFR_ROAM_FORCE_RSSI_TRIGGER) \
 	CFG(CFG_ROAM_SCAN_SCAN_POLICY) \
 	CFG(CFG_ROAM_SCAN_INACTIVITY_TIME) \
+	CFG(CFG_FT_IM_ROAMING) \
 	CFG(CFG_ROAM_INACTIVE_COUNT) \
 	CFG(CFG_POST_INACTIVITY_ROAM_SCAN_PERIOD) \
 	CFG(CFG_BSS_LOAD_TRIG_5G_RSSI_THRES) \
@@ -2785,6 +2942,7 @@
 	ROAM_OFFLOAD_ALL \
 	LFR_ESE_ALL \
 	LFR_SUBNET_DETECTION_ALL \
-	SAE_SINGLE_PMK_ALL
+	SAE_SINGLE_PMK_ALL \
+	ROAM_REASON_VSIE_ALL
 
 #endif /* CFG_MLME_LFR_H__ */

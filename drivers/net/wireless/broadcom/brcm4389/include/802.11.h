@@ -669,13 +669,26 @@ typedef struct dot11_extcap_ie dot11_extcap_ie_t;
 
 #define TDLS_CAP_MAX_BIT			39	/* TDLS max bit defined in ext cap */
 
-/* FIXME: remove redundant DOT11_CAP_SAE_HASH_TO_ELEMENT */
-#define DOT11_CAP_SAE_HASH_TO_ELEMENT		5u	/* SAE Hash-to-element support */
+/* Extended RSN capabilities (RSNXE capabilities) */
 #define DOT11_EXT_RSN_CAP_SAE_H2E		5u	/* SAE Hash-to-element support */
-/* FIXME: Use these temporary IDs until ANA assigns IDs */
+#define DOT11_CAP_SAE_HASH_TO_ELEMENT		DOT11_EXT_RSN_CAP_SAE_H2E /* duped. to be removed */
 #define DOT11_EXT_RSN_CAP_SAE_PK		6u	/* SAE-PK support */
-/* Last bit in extended rsn capabilities (RSNXE) */
-#define DOT11_EXT_RSN_CAP_MAX_BIT		DOT11_EXT_RSN_CAP_SAE_PK
+/* Draft P802.11az/D2.5 - Table 9-321 Extended RSN Capabilities field */
+#define DOT11_EXT_RSN_CAP_SECURE_LTF		8u	/* Secure LTF support */
+#define DOT11_EXT_RSN_CAP_SECURE_RTT		9u	/* Secure RTT(EDMG measurement) support */
+#define DOT11_EXT_RSN_CAP_RANGE_PMF_REQUIRED	10u	/* Protection of Ranging frm required */
+
+/* Last bit in Extended RSN Capabilities defined in P802.11
+ * Please update DOT11_EXT_RSN_CAP_LAST_BIT_IDX to the last bit when P802.11 inteoduced new bit
+ */
+#define DOT11_EXT_RSN_CAP_LAST_BIT_IDX	DOT11_EXT_RSN_CAP_RANGE_PMF_REQUIRED /* update this */
+#define DOT11_EXT_RSN_CAP_NUM_BITS_MAX	(DOT11_EXT_RSN_CAP_LAST_BIT_IDX + 1) /* last bit idx + 1 */
+
+/* Please use DOT11_EXT_RSN_CAP_BYTE_LEN_MAX for any of RSNXE cap buffer size ONLY in ATTACH time.
+ * Othewise, change of DOT11_EXT_RSN_CAP_BYTE_LEN_MAX cause ROM invalidation.
+ * DOT11_EXT_RSN_CAP_BYTE_LEN_MAX can grow with 802.11 change.
+ */
+#define DOT11_EXT_RSN_CAP_BYTE_LEN_MAX	((DOT11_EXT_RSN_CAP_NUM_BITS_MAX + 7) >> 3) /* byte len */
 
 BWL_PRE_PACKED_STRUCT struct dot11_rsnxe {
 	uint8 id;	/* id DOT11_MNG_RSNXE_ID */
@@ -1752,6 +1765,8 @@ enum dot11_tag_ids {
 #define DOT11_MNG_BSSCOLOR_CHANGE_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_BSSCOLOR_CHANGE_ID)
 #define OCV_EXTID_MNG_OCI_ID			54u     /* OCI element */
 #define DOT11_MNG_OCI_ID			(DOT11_MNG_ID_EXT_ID + OCV_EXT_OCI_ID)
+#define EXT_MNG_NON_INHERITANCE_ID		56u     /* Non-Inheritance element */
+#define DOT11_MNG_NON_INHERITANCE_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_NON_INHERITANCE_ID)
 #define EXT_MNG_SHORT_SSID_ID			58u	/* SHORT SSID ELEMENT */
 #define DOT11_MNG_SHORT_SSID_LIST_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_SHORT_SSID_ID)
 #define EXT_MNG_HE_6G_CAP_ID			59u	/* HE Extended Capabilities, 11ax */
@@ -1768,6 +1783,33 @@ enum dot11_tag_ids {
 #define SAE_EXT_ANTICLOG_TOKEN_CONTAINER_ID	93u	/* SAE Anti-clogging token container */
 #define DOT11_MNG_ANTICLOG_TOKEN_CONTAINER_ID	(DOT11_MNG_ID_EXT_ID + \
 						 SAE_EXT_ANTICLOG_TOKEN_CONTAINER_ID)
+
+/* P802.11az/D2.5 Table 9-92 */
+#define EXT_MNG_SLTF_PARAMS_ID			94u	/* Secure LTF Parameters */
+#define DOT11_MNG_SLTF_PARAMS_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_SLTF_PARAMS_ID)
+#define EXT_MNG_ISTA_PASV_TB_RMR_ID		95u	/* ISTA Passive TB Ranging Meas. Report */
+#define DOT11_MNG_ISTA_PASV_TB_RMR_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_ISTA_PASV_TB_RMR_ID)
+#define EXT_MNG_RSTA_PASV_TB_RMR_ID		96u	/* RSTA Passive TB Ranging Meas. Report */
+#define DOT11_MNG_RSTA_PASV_TB_RMR_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_RSTA_PASV_TB_RMR_ID)
+#define EXT_MNG_PASV_TB_LCI_TABLE_ID		97u	/* Passive TB Ranging LCI Table element */
+#define DOT11_MNG_PASV_TB_LCI_TABLE_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_PASV_TB_LCI_TABLE_ID)
+#define EXT_MNG_ISTA_AVAIL_WINDOW_ID		98u	/* ISTA Availablity Window */
+#define DOT11_MNG_ISTA_AVAIL_WINDOW_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_ISTA_AVAIL_WINDOW_ID)
+#define EXT_MNG_RSTA_AVAIL_WINDOW_ID		99u	/* RSTA Availablity Window */
+#define DOT11_MNG_RSTA_AVAIL_WINDOW_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_RSTA_AVAIL_WINDOW_ID)
+#define EXT_MNG_PASN_PARAMS_ID			100u	/* PASN Parameters */
+#define DOT11_MNG_PASN_PARAMS_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_PASN_PARAMS_ID)
+#define EXT_MNG_RANGING_PARAMS_ID		101u	/* Ranging Parameters */
+#define DOT11_MNG_RANGING_PARAMS_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_RANGING_PARAMS_ID)
+#define EXT_MNG_DIR_MEAS_RESULTS_ID		102u	/* Direction Measurement Results */
+#define DOT11_MNG_DIR_MEAS_RESULTS_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_DIR_MEAS_RESULTS_ID)
+#define EXT_MNG_MULTI_AOD_FEEDBACK_ID		103u	/* Multiple AOD Feedback */
+#define DOT11_MNG_MULTI_AOD_FEEDDBACK_ID       (DOT11_MNG_ID_EXT_ID + EXT_MNG_MULTI_AOD_FEEDBACK_ID)
+#define EXT_MNG_MULTI_BEST_AWV_ID_ID		104u	/* Multiple Best AWV ID */
+#define DOT11_MNG_MULTI_BEST_AWV_ID_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_MULTI_BEST_AWV_ID_ID)
+#define EXT_MNG_LOS_LIKELIHOOD_ID		105u	/* LOS Likelihood */
+#define DOT11_MNG_LOS_LIKELIHOOD_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_LOS_LIKELIHOOD_ID)
+
 /* FIXME: Use these temp. IDs until ANA assigns IDs */
 #define EXT_MNG_NON_INH_ID			110u	/* Non-inheritance */
 #define DOT11_MNG_NON_INH_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_NON_INH_ID)
@@ -1778,16 +1820,10 @@ enum dot11_tag_ids {
 #define EXT_MNG_EHT_CAP_ID			113u	/* EHT Capabilities */
 #define DOT11_MNG_EHT_CAP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_EHT_CAP_ID)
 
-/* unassigned IDs for ranging parameter elements. To be updated after final
- * assignement.
- */
-#define DOT11_MNG_FTM_RANGING_EXT_ID		100u /* 11AZ sounding mode parameter element */
-#define DOT11_MNG_FTM_ISTA_AVAIL_EXT_ID		101u /* 11 AZ TN ISTA avaialability window */
-#define DOT11_MNG_FTM_RSTA_AVAIL_EXT_ID		102u /* 11 AZ TN RSTA avaialability window */
-#define DOT11_MNG_FTM_SECURE_LTF_EXT_ID		103u /* 11 AZ Secure LTF parameter element */
-
-#define DOT11_FTM_NTB_SUB_ELT_ID		0u /* non-TB ranging parameter sub-element ID */
-#define DOT11_FTM_TB_SUB_ELT_ID			1u /* TB ranging parameter sub-element ID */
+/* P802.11az/D2.5 - Table 9-322h23fd Ranging Subelement IDs for Ranging Parameters */
+#define RANGING_PARAMS_NTB_SUB_ELT_ID		0u	/* Non-TB specific subelement */
+#define RANGING_PARAMS_TB_SUB_ELT_ID		1u	/* TB specific subelement */
+#define RANGING_PARAMS_VNDR_SUB_ELT_ID		221u	/* Vendor specific subelement */
 
 /* deprecated definitions, do not use, to be deleted later */
 #define FILS_HLP_CONTAINER_EXT_ID		FILS_EXTID_MNG_HLP_CONTAINER_ID
@@ -1943,6 +1979,34 @@ enum dot11_tag_ids {
 
 /* Mirrored SCS (MSCS) support */
 #define DOT11_EXT_CAP_MSCS			85u
+
+/* Draft P802.11az/D2.5 - Table 9-153 Extended Capabilities field */
+#define DOT11_EXT_CAP_NTB_RANGING_RESPONDER	90u /* 11az NTB RSTA */
+#define DOT11_EXT_CAP_TB_RANGING_RESPONDER	91u /* 11az TB RSTA */
+#define DOT11_EXT_CAP_PSV_RANGING_RESPONDER	92u /* 11az Passive RSTA */
+#define DOT11_EXT_CAP_PSV_RANGING_INITIATOR	93u /* 11az Passive ISTA */
+#define DOT11_EXT_CAP_AOA_MEASUREMENT		94u /* AOA measurement available */
+#define DOT11_EXT_CAP_PHASE_SHIFT_FEEDBACK	95u /* Phase shift feedback support */
+#define DOT11_EXT_CAP_DMG_LOCATION_SUPPORT_AP	96u /* DMG/Location supporting APs in the area */
+#define DOT11_EXT_CAP_I2R_LMR_FEEDBACK_POLICY	97u /* I2R LMR Feedback policy (of RSTA) */
+
+/* Last bit index of Extended Capabilities defined in P802.11
+ * Please update DOT11_EXT_CAP_LAST_BIT_IDX to the last bit when P802.11 inteoduced new bit
+ */
+#define DOT11_EXT_CAP_LAST_BIT_IDX	DOT11_EXT_CAP_I2R_LMR_FEEDBACK_POLICY /* update this */
+#define DOT11_EXT_CAP_NUM_BITS_MAX	(DOT11_EXT_CAP_LAST_BIT_IDX + 1) /* last bit index + 1 */
+
+/* Please use DOT11_EXT_CAP_BYTE_LEN_MAX for any of ext cap buffer size ONLY in ATTACH time.
+ * Othewise, change of DOT11_EXT_CAP_BYTE_LEN_MAX cause ROM invalidation.
+ * DOT11_EXT_CAP_BYTE_LEN_MAX can grow with 802.11 change.
+ */
+#define DOT11_EXT_CAP_BYTE_LEN_MAX	((DOT11_EXT_CAP_NUM_BITS_MAX + 7) >> 3) /* byte len */
+
+/********************************************************************
+ * DO NOT use following macros for Trunk/PUMA and later branch
+ * DOT11_EXT_CAP_MAX_IDX, DOT11_EXT_CAP_MAX_BIT_IDX,
+ * DOT11_EXTCAP_LEN_MAX and dot11_extcap_t will be cleaned up
+ */
 
 /* TODO: Update DOT11_EXT_CAP_MAX_IDX to reflect the highest offset.
  * Note: DOT11_EXT_CAP_MAX_IDX must only be used in attach path.
@@ -2110,6 +2174,8 @@ typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 /* HE Action frames - Draft P802.11ax D7.0 Table 9-53 Category values */
 #define DOT11_ACTION_CAT_HE		30	/* HE action frame */
 #define DOT11_ACTION_CAT_HEP		31	/* Protected HE action frame */
+/* Protected Fine Timing action frame - Draft P802.11az/D2.5 Table 9-51 Category values */
+#define DOT11_ACTION_CAT_PFT		34u	/* Protected Fine Timing action frame */
 #define DOT11_ACTION_CAT_VSP		126	/* protected vendor specific */
 #define DOT11_ACTION_CAT_VS		127	/* category Vendor Specific */
 
@@ -2139,10 +2205,10 @@ typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 #define DOT11_PUB_ACTION_GAS_CB_REQ	12	/* GAS Comeback Request */
 #define DOT11_PUB_ACTION_FTM_REQ	32	/* FTM request */
 #define DOT11_PUB_ACTION_FTM		33	/* FTM measurement */
-/* unassigned value. Will change after final assignement.
- * for now, use 34(same as FILS DISC) due to QT/TB/chipsim support from uCode
- */
-#define DOT11_PUB_ACTION_FTM_LMR	34	/* FTM 11AZ Location Management Report */
+#define DOT11_PUB_ACTION_LMR		47	/* 11az Location Measurement Report */
+#define DOT11_PUB_ACTION_PSV_TB_RMR_ISTA	48 /* ISTA Passive TB Ranging Measurement Report */
+#define DOT11_PUB_ACTION_PSV_TB_RMR_RSTA_PRI	49 /* Primary RSTA Broadcast Passive TB RMR */
+#define DOT11_PUB_ACTION_PSV_TB_RMR_RSTA_2ND	50 /* Secondary RSTA Broadcast Passive TB RMR */
 
 #define DOT11_PUB_ACTION_FTM_REQ_TRIGGER_START	1u	/* FTM request start trigger */
 #define DOT11_PUB_ACTION_FTM_REQ_TRIGGER_STOP	0u	/* FTM request stop trigger */
@@ -2228,6 +2294,12 @@ typedef struct dot11_oper_mode_notif_ie dot11_oper_mode_notif_ie_t;
 
 /* FILS category action types - 802.11ai D11.0 - 9.6.8.1 */
 #define DOT11_FILS_ACTION_DISCOVERY		34	/* FILS Discovery */
+
+/* Protected Fine Timing frame action field values - 802.11az/D2.5 - Table 9.353 */
+#define DOT11_PFT_ACTION_RESERVED0	0u /* Reserved */
+#define DOT11_PFT_ACTION_FTM_REQ	1u /* Protected Fine Timing Measurement Request */
+#define DOT11_PFT_ACTION_FTM		2u /* Protected Fine Timing Measurement */
+#define DOT11_PFT_ACTION_LMR		3u /* Protected Location Measurement Report */
 
 /** DLS Request frame header */
 BWL_PRE_PACKED_STRUCT struct dot11_dls_req {
@@ -4953,6 +5025,7 @@ typedef struct dot11_sae_pk_element dot11_sae_pk_element_t;
 #define RSN_AKM_OWE			18	/* RFC 8110  OWE */
 #define RSN_AKM_FBT_SHA384_PSK		19
 #define RSN_AKM_PSK_SHA384		20
+#define RSN_AKM_PASN			21u	/* Pre-Association Security Negotiation */
 /* OSEN authenticated key managment suite */
 #define OSEN_AKM_UNSPECIFIED	RSN_AKM_UNSPECIFIED	/* Over 802.1x */
 /* WFA DPP RSN authenticated key managment */
@@ -5243,8 +5316,8 @@ BWL_PRE_PACKED_STRUCT struct dot11_ftm_lmr {
 	uint8    toa[6];            /* RSTA t2 or ISTA t4:
 	                             * last arrival of NDP
 	                             */
-	uint8    tod_err[2];        /* t3 or t1 error */
-	uint8    toa_err[2];        /* t2 or t4 error */
+	uint8    tod_err;           /* t3 or t1 error */
+	uint8    toa_err;           /* t2 or t4 error */
 	uint16   cfo;               /* I2R LMR: clock difference between ISTA and RSTA. */
 	uint8    sec_ltf_params[];  /* Optional Secure LTF parameters */
 	/* no AOA feedback */
@@ -5346,7 +5419,7 @@ typedef struct dot11_ftm_params dot11_ftm_params_t;
 BWL_PRE_PACKED_STRUCT struct dot11_ftm_ranging_params {
 	uint8 id; /* 255 */
 	uint8 len;
-	uint8 ext_id; /* DOT11_MNG_FTM_RANGING_EXT_ID */
+	uint8 ext_id; /* EXT_MNG_RANGING_PARAMS_ID */
 	uint8 info[6];
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_ftm_ranging_params dot11_ftm_ranging_params_t;
@@ -5354,19 +5427,19 @@ typedef struct dot11_ftm_ranging_params dot11_ftm_ranging_params_t;
 
 /* FTM NTB specific */
 BWL_PRE_PACKED_STRUCT struct dot11_ftm_ntb_params {
-	uint8 id; /* DOT11_FTM_NTB_SUB_ELT_ID */
+	uint8 id; /* RANGING_PARAMS_NTB_SUB_ELT_ID */
 	uint8 len;
 	uint8 info[6];
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_ftm_ntb_params dot11_ftm_ntb_params_t;
 
 #define DOT11_FTM_NTB_PARAMS_SUB_IE_LEN (sizeof(dot11_ftm_ntb_params_t))
-#define DOT11_FTM_NTB_PARAMS_IE_LEN DOT11_FTM_CMN_RANGING_PARAMS_IE_LEN + \
-	DOT11_FTM_NTB_PARAMS_SUB_IE_LEN
+#define DOT11_FTM_NTB_PARAMS_IE_LEN (DOT11_FTM_CMN_RANGING_PARAMS_IE_LEN + \
+	DOT11_FTM_NTB_PARAMS_SUB_IE_LEN)
 
 /* FTM TB specific */
 BWL_PRE_PACKED_STRUCT struct dot11_ftm_tb_params {
-	uint8 id; /* DOT11_FTM_TB_SUB_ELT_ID */
+	uint8 id; /* RANGING_PARAMS_TB_SUB_ELT_ID */
 	uint8 len;
 	uint8 info[1]; /* variable length, minimum 1 */
 } BWL_POST_PACKED_STRUCT;

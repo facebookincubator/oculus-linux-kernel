@@ -2442,6 +2442,7 @@
 		#clock-cells = <1>;
 		mboxes = <&qmp_aop 0>;
 		mbox-names = "qdss_clk";
+		qcom,clk-stop-bimc-log;
 	};
 
 	clock_gcc: qcom,gcc@100000 {
@@ -4721,8 +4722,9 @@
 		pinctrl-0 = <&cnss_wlan_en_active>;
 		pinctrl-1 = <&cnss_wlan_en_sleep>;
 		qcom,wlan-rc-num = <0>;
-		qcom,wlan-ramdump-dynamic = <0x400000>;
+		qcom,wlan-ramdump-dynamic = <0x420000>;
 		qcom,smmu-s1-enable;
+		qcom,converged-dt;
 		cnss-daemon-support;
 		qcom,cmd_db_name = "smpf2";
 		qcom,set-wlaon-pwr-ctrl;

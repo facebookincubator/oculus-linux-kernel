@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,13 +31,13 @@
 static inline struct wlan_lmac_if_tdls_tx_ops *
 wlan_psoc_get_tdls_txops(struct wlan_objmgr_psoc *psoc)
 {
-	return &psoc->soc_cb.tx_ops.tdls_tx_ops;
+	return &psoc->soc_cb.tx_ops->tdls_tx_ops;
 }
 
 static inline struct wlan_lmac_if_tdls_rx_ops *
 wlan_psoc_get_tdls_rxops(struct wlan_objmgr_psoc *psoc)
 {
-	return &psoc->soc_cb.rx_ops.tdls_rx_ops;
+	return &psoc->soc_cb.rx_ops->tdls_rx_ops;
 }
 
 QDF_STATUS tgt_tdls_set_fw_state(struct wlan_objmgr_psoc *psoc,
@@ -184,14 +184,12 @@ tgt_tdls_event_handler(struct wlan_objmgr_psoc *psoc,
 		tdls_err("psoc: 0x%pK, info: 0x%pK", psoc, info);
 		return QDF_STATUS_E_NULL_VALUE;
 	}
-	tdls_debug("vdev: %d, type: %d, reason: %d" QDF_MAC_ADDR_STR,
+	tdls_debug("vdev: %d, type: %d, reason: %d" QDF_MAC_ADDR_FMT,
 		   info->vdev_id, info->message_type, info->peer_reason,
-		   QDF_MAC_ADDR_ARRAY(info->peermac.bytes));
+		   QDF_MAC_ADDR_REF(info->peermac.bytes));
 	notify = qdf_mem_malloc(sizeof(*notify));
-	if (!notify) {
-		tdls_err("mem allocate fail");
+	if (!notify)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	vdev_id = info->vdev_id;
 	notify->vdev =
@@ -278,10 +276,8 @@ QDF_STATUS tgt_tdls_mgmt_frame_process_rx_cb(
 	}
 
 	rx_mgmt_event = qdf_mem_malloc_atomic(sizeof(*rx_mgmt_event));
-	if (!rx_mgmt_event) {
-		tdls_debug_rl("Failed to allocate rx mgmt event");
+	if (!rx_mgmt_event)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	rx_mgmt = qdf_mem_malloc_atomic(sizeof(*rx_mgmt) +
 			mgmt_rx_params->buf_len);
@@ -293,7 +289,7 @@ QDF_STATUS tgt_tdls_mgmt_frame_process_rx_cb(
 
 	pdata = (uint8_t *)qdf_nbuf_data(buf);
 	rx_mgmt->frame_len = mgmt_rx_params->buf_len;
-	rx_mgmt->rx_chan = mgmt_rx_params->channel;
+	rx_mgmt->rx_freq = mgmt_rx_params->chan_freq;
 	rx_mgmt->vdev_id = vdev_id;
 	rx_mgmt->frm_type = frm_type;
 	rx_mgmt->rx_rssi = mgmt_rx_params->rssi;

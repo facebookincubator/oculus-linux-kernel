@@ -25,26 +25,37 @@
 #ifndef __WLAN_VDEV_MGR_RX_OPS_H__
 #define __WLAN_VDEV_MGR_RX_OPS_H__
 
-#ifdef CMN_VDEV_MGR_TGT_IF_ENABLE
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_vdev_mgr_tgt_if_rx_defs.h>
 
 /**
- * tgt_vdev_mgr_register_rx_ops(): API to register rx ops with lmac
+ * tgt_vdev_mgr_register_rx_ops() - API to register rx ops with lmac
  * @rx_ops: rx ops struct
  *
  * Return: none
  */
 void tgt_vdev_mgr_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops);
-#else
+
 /**
- * tgt_vdev_mgr_register_rx_ops(): API to register rx ops with lmac
- * @rx_ops: rx ops struct
+ * tgt_vdev_mgr_ext_tbttoffset_update_handle() - API to handle ext tbtt offset
+ * update event
+ * @num_vdevs: number of vdevs
+ * @is_ext: ext is set/reset
  *
- * Return: none
+ * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
-static inline void
-tgt_vdev_mgr_register_rx_ops(struct wlan_lmac_if_rx_ops *rx_ops) {}
-#endif /* CMN_VDEV_MGR_TGT_IF_ENABLE */
+QDF_STATUS
+tgt_vdev_mgr_ext_tbttoffset_update_handle(uint32_t num_vdevs, bool is_ext);
+
+/**
+ * tgt_vdev_mgr_get_response_timer_info() - API to get vdev_mgr timer info
+ * @psoc: objmgr psoc object
+ * @vdev_id: vdev id
+ *
+ * Return: struct vdev_response_timer on success else NULL
+ */
+struct vdev_response_timer *
+tgt_vdev_mgr_get_response_timer_info(struct wlan_objmgr_psoc *psoc,
+				     uint8_t vdev_id);
 
 #endif /* __WLAN_VDEV_MGR_RX_OPS_H__ */

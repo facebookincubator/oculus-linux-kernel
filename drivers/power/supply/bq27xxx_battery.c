@@ -2171,6 +2171,7 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 {
 	int ret;
 	char buf[BQ27Z561_MAC_BLOCK_LEN + 1];
+	char tmp_str[7];
 
 	memset(di->mac_buf, 0x00, BQ27Z561_MAC_LEN);
 	mutex_lock(&bq27xxx_list_lock);
@@ -2194,7 +2195,20 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 			mutex_unlock(&bq27xxx_list_lock);
 			return ret;
 		}
-		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+		/* Refer to Battery Pack Genealogy ERS document
+		 * (https://fburl.com/diff/uo2prae3) for more information.
+		 *
+		 * The first three bytes of manufacturer info block B are hex
+		 * convert them to string after read these three bytes out
+		 */
+		if (buf[0] < '0') {
+			memset(tmp_str, 0x00, sizeof(tmp_str));
+			snprintf(tmp_str, sizeof(tmp_str) - 1, "%02X%02X%02X",
+					buf[0], buf[1], buf[2]);
+			strlcat(di->mac_buf, tmp_str, BQ27Z561_MAC_LEN);
+			strlcat(di->mac_buf, buf + 3, BQ27Z561_MAC_LEN);
+		} else
+			strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
 		ret = bq27z561_battery_read_mac_block(di,
 				BQ27Z561_MAC_CMD_MI_C, buf,
 				BQ27Z561_MAC_BLOCK_LEN + 1);

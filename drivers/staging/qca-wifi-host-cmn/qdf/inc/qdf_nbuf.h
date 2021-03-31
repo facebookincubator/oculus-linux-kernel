@@ -39,6 +39,7 @@
 #define QDF_NBUF_PKT_TRAC_TYPE_ARP		0x10
 #define QDF_NBUF_PKT_TRAC_TYPE_ICMP		0x20
 #define QDF_NBUF_PKT_TRAC_TYPE_ICMPv6		0x40
+#define QDF_HL_CREDIT_TRACKING			0x80
 
 #define QDF_NBUF_PKT_TRAC_MAX_STRING		12
 #define QDF_NBUF_PKT_TRAC_PROTO_STRING		4
@@ -50,6 +51,8 @@
 #define QDF_NBUF_TRAC_DHCP_SRV_PORT		67
 #define QDF_NBUF_TRAC_DHCP_CLI_PORT		68
 #define QDF_NBUF_TRAC_ETH_TYPE_OFFSET		12
+#define QDF_NBUF_TRAC_VLAN_ETH_TYPE_OFFSET	16
+#define QDF_NBUF_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET	20
 #define QDF_NBUF_TRAC_EAPOL_ETH_TYPE		0x888E
 #define QDF_NBUF_TRAC_WAPI_ETH_TYPE		0x88b4
 #define QDF_NBUF_TRAC_ARP_ETH_TYPE		0x0806
@@ -83,7 +86,11 @@
 #define QDF_NBUF_TRAC_DHCP6_SRV_PORT		547
 #define QDF_NBUF_TRAC_DHCP6_CLI_PORT		546
 #define QDF_NBUF_TRAC_MDNS_SRC_N_DST_PORT	5353
-
+#define QDF_NBUF_TRAC_IP_OFFSET		14
+#define QDF_NBUF_TRAC_VLAN_IP_OFFSET		18
+#define QDF_NBUF_TRAC_DOUBLE_VLAN_IP_OFFSET	22
+/* One dword for IPv4 header size unit */
+#define QDF_NBUF_IPV4_HDR_SIZE_UNIT	4
 
 /* EAPOL Related MASK */
 #define EAPOL_PACKET_TYPE_OFFSET		15
@@ -147,6 +154,9 @@
 #define QDF_NBUF_TX_PKT_STATE_MAX            10
 #define QDF_NBUF_TX_PKT_LI_DP                11
 
+/* nbuf allocations only come from one domain */
+#define QDF_DEBUG_NBUF_DOMAIN		     0
+
 /* qdf_nbuf allocate and map max retry threshold when failed */
 #define QDF_NBUF_ALLOC_MAP_RETRY_THRESHOLD      20
 
@@ -166,6 +176,7 @@
 #endif
 
 #define MAX_CHAIN 8
+#define QDF_MON_STATUS_MPDU_FCS_BMAP_NWORDS 8
 
 /**
  * struct mon_rx_status - This will have monitor mode rx_status extracted from
@@ -239,12 +250,16 @@
  * @first_data_seq_ctrl: Sequence ctrl field of first data frame
  * @rxpcu_filter_pass: Flag which indicates whether RX packets are received in
  *						BSS mode(not in promisc mode)
+ * @rssi_chain: Rssi chain per nss per bw
+ * @tx_status: packet tx status
+ * @tx_retry_cnt: tx retry count
+ * @add_rtap_ext: add radio tap extension
  */
 struct mon_rx_status {
 	uint64_t tsft;
 	uint32_t ppdu_timestamp;
 	uint32_t preamble_type;
-	uint16_t chan_freq;
+	qdf_freq_t chan_freq;
 	uint16_t chan_num;
 	uint16_t chan_flags;
 	uint16_t ht_flags;
@@ -318,23 +333,74 @@ struct mon_rx_status {
 	uint16_t first_data_seq_ctrl;
 	uint8_t ltf_size;
 	uint8_t rxpcu_filter_pass;
+	int8_t rssi_chain[8][8];
+	uint32_t rx_antenna;
+	uint8_t  tx_status;
+	uint8_t  tx_retry_cnt;
+	bool add_rtap_ext;
 };
 
 /**
- * struct mon_rx_status - This will have monitor mode per user rx_status
+ * struct mon_rx_user_status - This will have monitor mode per user rx_status
  * extracted from hardware TLV.
  * @mcs: MCS index of Rx frame
  * @nss: Number of spatial streams
- * @ofdma_info_valid: OFDMA info below is valid
- * @dl_ofdma_ru_start_index: OFDMA RU start index
- * @dl_ofdma_ru_width: OFDMA total RU width
+ * @mu_ul_info_valid: MU UL info below is valid
+ * @ofdma_ru_start_index: OFDMA RU start index
+ * @ofdma_ru_width: OFDMA total RU width
+ * @ofdma_ru_size: OFDMA RU size index
+ * @mu_ul_user_v0_word0: MU UL user info word 0
+ * @mu_ul_user_v0_word1: MU UL user info word 1
+ * @ast_index: AST table hash index
+ * @tid: QoS traffic tid number
+ * @tcp_msdu_count: tcp protocol msdu count
+ * @udp_msdu_count: udp protocol msdu count
+ * @other_msdu_count: other protocol msdu count
+ * @frame_control: frame control field
+ * @frame_control_info_valid: field indicates if fc value is valid
+ * @data_sequence_control_info_valid: field to indicate validity of seq control
+ * @first_data_seq_ctrl: Sequence ctrl field of first data frame
+ * @preamble_type: Preamble type in radio header
+ * @ht_flags: HT flags, only present for HT frames.
+ * @vht_flags: VHT flags, only present for VHT frames.
+ * @he_flags: HE (11ax) flags, only present in HE frames
+ * @rtap_flags: Bit map of available fields in the radiotap
+ * @rs_flags: Flags to indicate AMPDU or AMSDU aggregation
+ * @mpdu_cnt_fcs_ok: mpdu count received with fcs ok
+ * @mpdu_cnt_fcs_err: mpdu count received with fcs ok bitmap
+ * @mpdu_fcs_ok_bitmap: mpdu with fcs ok bitmap
+ * @mpdu_ok_byte_count: mpdu byte count with fcs ok
+ * @mpdu_err_byte_count: mpdu byte count with fcs err
  */
 struct mon_rx_user_status {
 	uint32_t mcs:4,
 		 nss:3,
-		 ofdma_info_valid:1,
-		 dl_ofdma_ru_start_index:7,
-		 dl_ofdma_ru_width:7;
+		 mu_ul_info_valid:1,
+		 ofdma_ru_start_index:7,
+		 ofdma_ru_width:7,
+		 ofdma_ru_size:8;
+	uint32_t mu_ul_user_v0_word0;
+	uint32_t mu_ul_user_v0_word1;
+	uint32_t ast_index;
+	uint32_t tid;
+	uint16_t tcp_msdu_count;
+	uint16_t udp_msdu_count;
+	uint16_t other_msdu_count;
+	uint16_t frame_control;
+	uint8_t frame_control_info_valid;
+	uint8_t data_sequence_control_info_valid;
+	uint16_t first_data_seq_ctrl;
+	uint32_t preamble_type;
+	uint16_t ht_flags;
+	uint16_t vht_flags;
+	uint16_t he_flags;
+	uint8_t rtap_flags;
+	uint8_t rs_flags;
+	uint32_t mpdu_cnt_fcs_ok;
+	uint32_t mpdu_cnt_fcs_err;
+	uint32_t mpdu_fcs_ok_bitmap[QDF_MON_STATUS_MPDU_FCS_BMAP_NWORDS];
+	uint32_t mpdu_ok_byte_count;
+	uint32_t mpdu_err_byte_count;
 };
 
 /**
@@ -351,7 +417,7 @@ struct qdf_radiotap_vendor_ns {
 } __attribute__((__packed__));
 
 /**
- * strcut qdf_radiotap_vendor_ns_ath - Combined QTI Vendor NS
+ * struct qdf_radiotap_vendor_ns_ath - Combined QTI Vendor NS
  * including the Radiotap specified Vendor Namespace header and
  * QTI specific Vendor Namespace data
  * @lsig: L_SIG_A (or L_SIG)
@@ -367,6 +433,8 @@ struct qdf_radiotap_vendor_ns_ath {
 	uint32_t lsig_b;
 	uint32_t ppdu_start_timestamp;
 } __attribute__((__packed__));
+
+#define QDF_MEM_FUNC_NAME_SIZE 48
 
 /* Masks for HE SIG known fields in mon_rx_status structure */
 #define QDF_MON_STATUS_HE_SIG_B_COMMON_KNOWN_RU0	0x00000001
@@ -596,6 +664,37 @@ enum cb_ftype {
  * @qdf_nbuf_t - Platform indepedent packet abstraction
  */
 typedef __qdf_nbuf_t qdf_nbuf_t;
+
+/**
+ * struct qdf_nbuf_track_t - Network buffer track structure
+ *
+ * @p_next: Pointer to next
+ * @net_buf: Pointer to network buffer
+ * @func_name: Function name
+ * @line_num: Line number
+ * @size: Size
+ * @map_func_name: nbuf mapping function name
+ * @map_line_num: mapping function line number
+ * @unmap_func_name: nbuf unmapping function name
+ * @unmap_line_num: mapping function line number
+ * @is_nbuf_mapped: indicate mapped/unmapped nbuf
+ * @time: mapping function timestamp
+ */
+struct qdf_nbuf_track_t {
+	struct qdf_nbuf_track_t *p_next;
+	qdf_nbuf_t net_buf;
+	char func_name[QDF_MEM_FUNC_NAME_SIZE];
+	uint32_t line_num;
+	size_t size;
+	char map_func_name[QDF_MEM_FUNC_NAME_SIZE];
+	uint32_t map_line_num;
+	char unmap_func_name[QDF_MEM_FUNC_NAME_SIZE];
+	uint32_t unmap_line_num;
+	bool is_nbuf_mapped;
+	qdf_time_t time;
+};
+
+typedef struct qdf_nbuf_track_t QDF_NBUF_TRACK;
 
 /**
  * typedef qdf_nbuf_queue_head_t - Platform indepedent nbuf queue head
@@ -875,6 +974,19 @@ static inline void
 qdf_nbuf_sync_for_cpu(qdf_device_t osdev, qdf_nbuf_t buf, qdf_dma_dir_t dir)
 {
 	__qdf_nbuf_sync_for_cpu(osdev, buf, dir);
+}
+
+/**
+ * qdf_nbuf_dma_inv_range() - Invalidate the specified virtual address range
+ * @buf_start: start address
+ * @buf_end: end address
+ *
+ * Return: none
+ */
+static inline void
+qdf_nbuf_dma_inv_range(const void *buf_start, const void *buf_end)
+{
+	__qdf_nbuf_dma_inv_range(buf_start, buf_end);
 }
 
 static inline int qdf_nbuf_get_num_frags(qdf_nbuf_t buf)
@@ -1384,6 +1496,9 @@ static inline qdf_nbuf_t qdf_nbuf_next(qdf_nbuf_t buf)
 }
 
 #ifdef NBUF_MEMORY_DEBUG
+
+#define QDF_NET_BUF_TRACK_MAX_SIZE    (1024)
+
 void qdf_net_buf_debug_init(void);
 void qdf_net_buf_debug_exit(void);
 void qdf_net_buf_debug_clean(void);
@@ -1450,6 +1565,25 @@ qdf_nbuf_t qdf_nbuf_alloc_debug(qdf_device_t osdev, qdf_size_t size,
 				int reserve, int align, int prio,
 				const char *func, uint32_t line);
 
+/**
+ * qdf_nbuf_alloc_no_recycler() - Allocates skb
+ * @size: Size to be allocated for skb
+ * @reserve: Reserved headroom size
+ * @align: Align
+ * @func: Function name of the call site
+ * @line: Line number of the callsite
+ *
+ * This API allocates skb of required size and aligns if needed and reserves
+ * some space in the front. This skb allocation is not from skb recycler pool.
+ *
+ * Return: Allocated nbuf pointer
+ */
+#define qdf_nbuf_alloc_no_recycler(s, r, a) \
+	qdf_nbuf_alloc_no_recycler_debug(s, r, a, __func__, __LINE__)
+
+qdf_nbuf_t qdf_nbuf_alloc_no_recycler_debug(size_t size, int reserve, int align,
+					    const char *func, uint32_t line);
+
 #define qdf_nbuf_free(d) \
 	qdf_nbuf_free_debug(d, __func__, __LINE__)
 
@@ -1488,6 +1622,38 @@ qdf_nbuf_t qdf_nbuf_clone_debug(qdf_nbuf_t buf, const char *func,
  * Return: copied buffer
  */
 qdf_nbuf_t qdf_nbuf_copy_debug(qdf_nbuf_t buf, const char *func, uint32_t line);
+
+#define qdf_nbuf_copy_expand(buf, headroom, tailroom)     \
+	qdf_nbuf_copy_expand_debug(buf, headroom, tailroom, __func__, __LINE__)
+
+/**
+ * qdf_nbuf_copy_expand_debug() - copy and expand nbuf
+ * @buf: Network buf instance
+ * @headroom: Additional headroom to be added
+ * @tailroom: Additional tailroom to be added
+ * @func: name of the calling function
+ * @line: line number of the callsite
+ *
+ * Return: New nbuf that is a copy of buf, with additional head and tailroom
+ *	or NULL if there is no memory
+ */
+qdf_nbuf_t
+qdf_nbuf_copy_expand_debug(qdf_nbuf_t buf, int headroom, int tailroom,
+			   const char *func, uint32_t line);
+
+/**
+ * qdf_nbuf_unshare() - make a copy of the shared nbuf
+ * @buf: Network buf instance
+ *
+ * Return: New nbuf which is a copy of the received nbuf if it is cloned,
+ *      else, return the original nbuf
+ */
+#define qdf_nbuf_unshare(d) \
+	qdf_nbuf_unshare_debug(d, __func__, __LINE__)
+
+qdf_nbuf_t
+qdf_nbuf_unshare_debug(qdf_nbuf_t buf, const char *func_name,
+		       uint32_t line_num);
 
 #else /* NBUF_MEMORY_DEBUG */
 
@@ -1528,11 +1694,47 @@ qdf_net_buf_debug_update_unmap_node(qdf_nbuf_t net_buf,
 #define qdf_nbuf_alloc(osdev, size, reserve, align, prio) \
 	qdf_nbuf_alloc_fl(osdev, size, reserve, align, prio, \
 			  __func__, __LINE__)
+
+#define qdf_nbuf_alloc_no_recycler(size, reserve, align) \
+	qdf_nbuf_alloc_no_recycler_fl(size, reserve, align, __func__, __LINE__)
+
 static inline qdf_nbuf_t
 qdf_nbuf_alloc_fl(qdf_device_t osdev, qdf_size_t size, int reserve, int align,
 		  int prio, const char *func, uint32_t line)
 {
-	return __qdf_nbuf_alloc(osdev, size, reserve, align, prio, func, line);
+	qdf_nbuf_t nbuf;
+
+	nbuf = __qdf_nbuf_alloc(osdev, size, reserve, align, prio, func, line);
+	if (qdf_likely(nbuf))
+		qdf_mem_skb_inc(nbuf->truesize);
+	return nbuf;
+}
+
+/**
+ * qdf_nbuf_alloc_no_recycler_fl() - Allocate SKB
+ * @size: Size to be allocated for skb
+ * @reserve: Reserved headroom size
+ * @align: Align
+ * @func: Function name of the call site
+ * @line: Line number of the callsite
+ *
+ * This API allocates skb of required size and aligns if needed and reserves
+ * some space in the front. This skb allocation is not from skb recycler pool.
+ *
+ * Return: Allocated nbuf pointer
+ */
+static inline qdf_nbuf_t
+qdf_nbuf_alloc_no_recycler_fl(size_t size, int reserve, int align,
+			      const char *func, uint32_t line)
+{
+	qdf_nbuf_t nbuf;
+
+	nbuf = __qdf_nbuf_alloc_no_recycler(size, reserve, align, func, line);
+
+	if (qdf_likely(nbuf))
+		qdf_mem_skb_inc(nbuf->truesize);
+
+	return nbuf;
 }
 
 static inline void qdf_nbuf_free(qdf_nbuf_t buf)
@@ -1569,7 +1771,49 @@ static inline qdf_nbuf_t qdf_nbuf_copy(qdf_nbuf_t buf)
 	return __qdf_nbuf_copy(buf);
 }
 
+/**
+ * qdf_nbuf_copy_expand() - copy and expand nbuf
+ * @buf: Network buf instance
+ * @headroom: Additional headroom to be added
+ * @tailroom: Additional tailroom to be added
+ *
+ * Return: New nbuf that is a copy of buf, with additional head and tailroom
+ *	or NULL if there is no memory
+ */
+static inline qdf_nbuf_t qdf_nbuf_copy_expand(qdf_nbuf_t buf, int headroom,
+					      int tailroom)
+{
+	return __qdf_nbuf_copy_expand(buf, headroom, tailroom);
+}
+
+static inline qdf_nbuf_t qdf_nbuf_unshare(qdf_nbuf_t buf)
+{
+	return __qdf_nbuf_unshare(buf);
+}
 #endif /* NBUF_MEMORY_DEBUG */
+
+/**
+ * qdf_nbuf_copy_expand_fraglist() - copy and expand nbuf and
+ * get reference of the fraglist.
+ * @buf: Network buf instance
+ * @headroom: Additional headroom to be added
+ * @tailroom: Additional tailroom to be added
+ *
+ * Return: New nbuf that is a copy of buf, with additional head and tailroom
+ *	or NULL if there is no memory
+ */
+static inline qdf_nbuf_t
+qdf_nbuf_copy_expand_fraglist(qdf_nbuf_t buf, int headroom,
+			      int tailroom)
+{
+	buf = qdf_nbuf_copy_expand(buf, headroom, tailroom);
+
+	/* get fraglist reference */
+	if (buf)
+		__qdf_nbuf_get_ref_fraglist(buf);
+
+	return buf;
+}
 
 #ifdef WLAN_FEATURE_FASTPATH
 /**
@@ -1983,7 +2227,10 @@ qdf_nbuf_queue_append(qdf_nbuf_queue_t *dest, qdf_nbuf_queue_t *src)
 static inline void
 qdf_nbuf_queue_free(qdf_nbuf_queue_t *head)
 {
-	__qdf_nbuf_queue_free(head);
+	qdf_nbuf_t  buf = NULL;
+
+	while ((buf = qdf_nbuf_queue_remove(head)) != NULL)
+		qdf_nbuf_free(buf);
 }
 
 static inline qdf_nbuf_t
@@ -3111,6 +3358,17 @@ static inline void qdf_nbuf_unmap_tso_segment(qdf_device_t osdev,
 }
 
 /**
+ * qdf_nbuf_get_tcp_payload_len() - function to return the tso payload len
+ * @nbuf: network buffer
+ *
+ * Return: size of the tso packet
+ */
+static inline size_t qdf_nbuf_get_tcp_payload_len(qdf_nbuf_t nbuf)
+{
+	return __qdf_nbuf_get_tcp_payload_len(nbuf);
+}
+
+/**
  * qdf_nbuf_get_tso_num_seg() - function to calculate the number
  * of TCP segments within the TSO jumbo packet
  * @nbuf:   TSO jumbo network buffer to be segmented
@@ -3214,35 +3472,6 @@ qdf_nbuf_linearize(qdf_nbuf_t buf)
 {
 	return __qdf_nbuf_linearize(buf);
 }
-
-#ifdef NBUF_MEMORY_DEBUG
-#define qdf_nbuf_unshare(d) \
-	qdf_nbuf_unshare_debug(d, __func__, __LINE__)
-
-static inline qdf_nbuf_t
-qdf_nbuf_unshare_debug(qdf_nbuf_t buf, const char *func_name, uint32_t line_num)
-{
-	qdf_nbuf_t unshared_buf;
-
-	unshared_buf = __qdf_nbuf_unshare(buf);
-
-	if (qdf_likely(buf != unshared_buf)) {
-		qdf_net_buf_debug_delete_node(buf);
-
-		qdf_net_buf_debug_add_node(unshared_buf, 0,
-					   func_name, line_num);
-	}
-
-	return unshared_buf;
-}
-
-#else
-static inline qdf_nbuf_t
-qdf_nbuf_unshare(qdf_nbuf_t buf)
-{
-	return __qdf_nbuf_unshare(buf);
-}
-#endif
 
 static inline bool
 qdf_nbuf_is_cloned(qdf_nbuf_t buf)
@@ -3524,7 +3753,243 @@ static inline void qdf_nbuf_orphan(qdf_nbuf_t buf)
 	return __qdf_nbuf_orphan(buf);
 }
 
-#ifdef CONFIG_WIN
+/**
+ * qdf_nbuf_get_frag_size_by_idx() - Get size of nbuf frag at index idx
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index for which frag size is requested
+ *
+ * Return: Frag size
+ */
+static inline unsigned int qdf_nbuf_get_frag_size_by_idx(qdf_nbuf_t nbuf,
+							 uint8_t idx)
+{
+	return __qdf_nbuf_get_frag_size_by_idx(nbuf, idx);
+}
+
+/**
+ * qdf_nbuf_get_frag_addr() - Get nbuf frag address at index idx
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index for which frag address is requested
+ *
+ * Return: Frag address
+ */
+static inline qdf_frag_t qdf_nbuf_get_frag_addr(qdf_nbuf_t nbuf, uint8_t idx)
+{
+	return __qdf_nbuf_get_frag_addr(nbuf, idx);
+}
+
+/**
+ * qdf_nbuf_trim_add_frag_size() - Increase/Decrease frag_size by size
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index
+ * @size: Size by which frag_size needs to be increased/decreased
+ *        +Ve means increase, -Ve means decrease
+ * @truesize: truesize
+ */
+static inline void qdf_nbuf_trim_add_frag_size(qdf_nbuf_t nbuf, uint8_t idx,
+					       int size, unsigned int truesize)
+{
+	__qdf_nbuf_trim_add_frag_size(nbuf, idx, size, truesize);
+}
+
+/**
+ * qdf_nbuf_set_mark() - Set nbuf mark
+ * @nbuf: qdf_nbuf_t
+ * @mark: Value to set mark
+ *
+ * Return: none
+ */
+static inline void qdf_nbuf_set_mark(qdf_nbuf_t nbuf, uint32_t mark)
+{
+	__qdf_nbuf_set_mark(nbuf, mark);
+}
+
+/**
+ * qdf_nbuf_get_mark() - Get nbuf mark
+ * @nbuf: qdf_nbuf_t
+ *
+ * Return: mark value
+ */
+static inline uint32_t qdf_nbuf_get_mark(qdf_nbuf_t nbuf)
+{
+	return __qdf_nbuf_get_mark(nbuf);
+}
+
+/**
+ * qdf_nbuf_get_data_len() - Return the size of the nbuf from
+ * data pointer to end pointer
+ * @nbuf: qdf_nbuf_t
+ *
+ * Return: size of network buffer from data pointer to end
+ * pointer
+ */
+static inline qdf_size_t qdf_nbuf_get_data_len(qdf_nbuf_t nbuf)
+{
+	return __qdf_nbuf_get_data_len(nbuf);
+}
+
+#ifdef NBUF_FRAG_MEMORY_DEBUG
+
+#define qdf_nbuf_move_frag_page_offset(f, i, o) \
+	qdf_nbuf_move_frag_page_offset_debug(f, i, o, __func__, __LINE__)
+
+/**
+ * qdf_nbuf_move_frag_page_offset_debug() - Move frag page_offset by size
+ *          and adjust length by size.
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index
+ * @offset: Frag page offset should be moved by offset.
+ *      +Ve - Move offset forward.
+ *      -Ve - Move offset backward.
+ * @func: Caller function name
+ * @line: Caller function line no.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS qdf_nbuf_move_frag_page_offset_debug(qdf_nbuf_t nbuf, uint8_t idx,
+						int offset, const char *func,
+						uint32_t line);
+
+#define qdf_nbuf_add_rx_frag(f, b, o, l, s, r) \
+	qdf_nbuf_add_rx_frag_debug(f, b, o, l, s, r, __func__, __LINE__)
+
+/**
+ * qdf_nbuf_add_rx_frag_debug() - Add frag to nbuf at index frag_idx
+ * @buf: Frag pointer needs to be added in nbuf
+ * @nbuf: qdf_nbuf_t where frag will be added
+ * @offset: Offset in frag to be added to nbuf_frags
+ * @frag_len: Frag length
+ * @truesize: truesize
+ * @take_frag_ref: Whether to take ref for frag or not
+ *      This bool must be set as per below comdition:
+ *      1. False: If this frag is being added in any nbuf
+ *              for the first time after allocation
+ *      2. True: If frag is already attached part of any
+ *              nbuf
+ * @func: Caller function name
+ * @line: Caller function line no.
+ *
+ * Return: none
+ */
+void qdf_nbuf_add_rx_frag_debug(qdf_frag_t buf, qdf_nbuf_t nbuf,
+				int offset, int frag_len,
+				unsigned int truesize, bool take_frag_ref,
+				const char *func, uint32_t line);
+
+/**
+ * qdf_net_buf_debug_acquire_frag() - Add frag nodes to frag debug tracker
+ *	when nbuf is received from network stack
+ * @buf: qdf_nbuf_t
+ * @func: Caller function name
+ * @line: Caller function line no.
+ *
+ * Return: none
+ */
+void qdf_net_buf_debug_acquire_frag(qdf_nbuf_t buf, const char *func,
+				    uint32_t line);
+
+/**
+ * qdf_net_buf_debug_release_frag() - Update frag nodes in frag debug tracker
+ *	when nbuf is sent to network stack
+ * @buf: qdf_nbuf_t
+ * @func: Caller function name
+ * @line: Caller function line no.
+ *
+ * Return: none
+ */
+void qdf_net_buf_debug_release_frag(qdf_nbuf_t buf, const char *func,
+				    uint32_t line);
+
+#else /* NBUF_FRAG_MEMORY_DEBUG */
+
+/**
+ * qdf_nbuf_move_frag_page_offset() - Move frag page_offset by size
+ *          and adjust length by size.
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index
+ * @offset: Frag page offset should be moved by offset.
+ *      +Ve - Move offset forward.
+ *      -Ve - Move offset backward.
+ */
+static inline QDF_STATUS qdf_nbuf_move_frag_page_offset(qdf_nbuf_t nbuf,
+							uint8_t idx,
+							int offset)
+{
+	return __qdf_nbuf_move_frag_page_offset(nbuf, idx, offset);
+}
+
+/**
+ * qdf_nbuf_add_rx_frag() - Add frag to nbuf at index frag_idx
+ * @buf: Frag pointer needs to be added in nbuf frag
+ * @nbuf: qdf_nbuf_t where frag will be added
+ * @offset: Offset in frag to be added to nbuf_frags
+ * @frag_len: Frag length
+ * @truesize: truesize
+ * @take_frag_ref: Whether to take ref for frag or not
+ *      This bool must be set as per below comdition:
+ *      1. False: If this frag is being added in any nbuf
+ *              for the first time after allocation
+ *      2. True: If frag is already attached part of any
+ *              nbuf
+ *
+ * qdf_nbuf_add_rx_frag takes ref_count based on boolean flag take_frag_ref
+ */
+static inline void qdf_nbuf_add_rx_frag(qdf_frag_t buf, qdf_nbuf_t nbuf,
+					int offset, int frag_len,
+					unsigned int truesize,
+					bool take_frag_ref)
+{
+	__qdf_nbuf_add_rx_frag(buf, nbuf, offset,
+			       frag_len, truesize, take_frag_ref);
+}
+
+static inline void qdf_net_buf_debug_acquire_frag(qdf_nbuf_t buf,
+						  const char *func,
+						  uint32_t line)
+{
+}
+
+static inline void qdf_net_buf_debug_release_frag(qdf_nbuf_t buf,
+						  const char *func,
+						  uint32_t line)
+{
+}
+#endif /* NBUF_FRAG_MEMORY_DEBUG */
+
+#ifdef MEMORY_DEBUG
+/**
+ * qdf_nbuf_acquire_track_lock - acquire the nbuf spinlock at the
+ * specified index
+ * @index: index to get the lock
+ * @irq_flag: lock flag for using nbuf lock
+ *
+ * Return: none
+ */
+void qdf_nbuf_acquire_track_lock(uint32_t index,
+				 unsigned long irq_flag);
+
+/**
+ * qdf_nbuf_release_track_lock - release the nbuf spinlock at the
+ * specified index
+ * @index: index of the lock to be released
+ * @irq_flag: lock flag for using nbuf lock
+ *
+ * Return: none
+ */
+void qdf_nbuf_release_track_lock(uint32_t index,
+				 unsigned long irq_flag);
+
+/**
+ * qdf_nbuf_get_track_tbl - get the QDF_NBUF_TRACK entry from the track
+ * table at the specified index
+ * @index: index to get the table entry
+ *
+ * Return: the QDF_NBUF_TRACK entry at the specified index in the table
+ */
+QDF_NBUF_TRACK *qdf_nbuf_get_track_tbl(uint32_t index);
+#endif /* MEMORY_DEBUG */
+
+#ifdef CONFIG_NBUF_AP_PLATFORM
 #include <i_qdf_nbuf_api_w.h>
 #else
 #include <i_qdf_nbuf_api_m.h>

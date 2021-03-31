@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -108,7 +108,12 @@ end:
 	return;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+static void epping_tx_queue_timeout(struct net_device *dev,
+				    unsigned int txqueue)
+#else
 static void epping_tx_queue_timeout(struct net_device *dev)
+#endif
 {
 	epping_adapter_t *adapter;
 
@@ -419,7 +424,8 @@ int epping_connect_service(epping_context_t *pEpping_ctx)
 	connect.EpCallbacks.EpRecvRefill = epping_refill;
 	connect.EpCallbacks.EpSendFull =
 		epping_tx_queue_full /* ar6000_tx_queue_full */;
-#elif defined(HIF_USB) || defined(HIF_PCI) || defined(HIF_SNOC)
+#elif defined(HIF_USB) || defined(HIF_PCI) || defined(HIF_SNOC) || \
+      defined(HIF_IPCI)
 	connect.EpCallbacks.EpRecvRefill = NULL /* provided by HIF */;
 	connect.EpCallbacks.EpSendFull = NULL /* provided by HIF */;
 	/* disable flow control for hw flow control */
@@ -440,7 +446,8 @@ int epping_connect_service(epping_context_t *pEpping_ctx)
 	}
 	pEpping_ctx->EppingEndpoint[0] = response.Endpoint;
 
-#if defined(HIF_PCI) || defined(HIF_USB) || defined(HIF_SNOC)
+#if defined(HIF_PCI) || defined(HIF_USB) || defined(HIF_SNOC) || \
+    defined(HIF_IPCI)
 	connect.service_id = WMI_DATA_BK_SVC;
 	status = htc_connect_service(pEpping_ctx->HTCHandle, &connect, &response);
 	if (QDF_IS_STATUS_ERROR(status)) {

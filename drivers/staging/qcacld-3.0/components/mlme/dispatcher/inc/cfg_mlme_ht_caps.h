@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,7 +40,7 @@
  *
  * Supported Feature: Concurrency/Standalone
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -57,7 +57,7 @@
  * gEnableRXLDPC - Config Param to enable Rx LDPC capability
  * @Min: 0
  * @Max: 1
- * @Default: 0
+ * @Default: 1
  *
  * This ini is used to enable/disable Rx LDPC capability
  * 0 - disable Rx LDPC
@@ -67,13 +67,13 @@
  *
  * Supported Feature: Concurrency/Standalone
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
 #define CFG_RX_LDPC_ENABLE CFG_INI_BOOL( \
 		"gEnableRXLDPC", \
-		0, \
+		1, \
 		"Rx LDPC capability")
 
 /*
@@ -89,7 +89,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -111,7 +111,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -133,7 +133,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -156,7 +156,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -186,7 +186,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -248,7 +248,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -274,7 +274,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -292,8 +292,12 @@
  * @Min: 0
  * @Max: 15
  * @Default: 0
- * gMaxAmsduNum is the number of MSDU's transmitted in the 11n aggregate
+ *
+ * gMaxAmsduNum is the number of MSDU's transmitted in the aggregated
  * frame. Setting it to a value larger than 1 enables transmit aggregation.
+ * Set the value to 0 to enable FW automode selection where it decides
+ * the maximum number of MSDUs in AMSDU based on connection mode.
+ *
  * It is a PHY parameter that applies to all vdev's in firmware.
  *
  * Supported Feature: 11n aggregation
@@ -323,7 +327,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -348,7 +352,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * As per (Table 8-125 802.11-2012)
  * 0 for no restriction
@@ -383,7 +387,7 @@
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */

@@ -125,7 +125,7 @@
  * gStaPrefer80MHzOver160MHz - set sta preference to connect in 80HZ/160HZ
  * @Min: 0
  * @Max: 1
- * @Default: 1
+ * @Default: 0
  *
  * This ini is used to set sta preference to connect in 80HZ/160HZ
  *
@@ -142,7 +142,7 @@
  */
 #define CFG_STA_PREFER_80MHZ_OVER_160MHZ CFG_INI_BOOL( \
 	"gStaPrefer80MHzOver160MHz", \
-	1, \
+	0, \
 	"Sta preference to connect in 80HZ/160HZ")
 
 /*
@@ -192,6 +192,31 @@
 	"gSendDeauthBeforeCon", \
 	0, \
 	"send deauth before connection")
+
+/*
+ * <ini>
+ * deauth_retry_cnt- No. of deauth retries if the Tx is failed
+ * @Min: 0
+ * @Max: 4
+ * @Default: 2
+ *
+ * This ini is used to set retry deauth if Tx is not success.
+ *
+ * Related: None
+ *
+ * Supported Feature: STA
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
+#define CFG_DEAUTH_RETRY_CNT CFG_INI_UINT( \
+	"deauth_retry_cnt", \
+	0, \
+	4, \
+	2, \
+	CFG_VALUE_OR_DEFAULT, \
+	"Set Deauth retry count")
 
 /*
  * <ini>
@@ -288,30 +313,6 @@
 	0, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Set maximum channel guard time")
-
-/*
- * <ini>
- * force_rsne_override - force rsnie override from user
- * @Min: 0
- * @Max: 1
- * @Default: 0
- *
- * This ini is used to enable/disable test mode to force rsne override used in
- * security enhancement test cases to pass the RSNIE sent by user in
- * assoc request.
- *
- * Related: None
- *
- * Supported Feature: STA
- *
- * Usage: internal
- *
- * </ini>
- */
-#define CFG_FORCE_RSNE_OVERRIDE CFG_INI_BOOL( \
-	"force_rsne_override", \
-	0, \
-	"Set obss active dwelltime")
 
 /*
  * <ini>
@@ -456,6 +457,31 @@
 			CFG_VALUE_OR_DEFAULT, \
 			"Which keepalive method to use")
 
+/*
+ * <ini>
+ * gMaxLIModulatedDTIM - Set MaxLIModulate Dtim
+ * @Min: 1
+ * @Max: 10
+ * @Default: 5
+ *
+ * This ini is used to set default MaxLIModulatedDTIM
+ *
+ * Related: None
+ *
+ * Supported Feature: STA
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
+#define CFG_MAX_LI_MODULATED_DTIM CFG_INI_UINT( \
+			"gMaxLIModulatedDTIM", \
+			1, \
+			10, \
+			5, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Max modulated dtim")
+
 #define CFG_STA_ALL \
 	CFG(CFG_INFRA_STA_KEEP_ALIVE_PERIOD) \
 	CFG(CFG_TGT_GTX_USR_CFG) \
@@ -465,11 +491,11 @@
 	CFG(CFG_PPS_ENABLE_5G_EBT) \
 	CFG(CFG_ENABLE_DEAUTH_BEFORE_CONNECTION) \
 	CFG(CFG_DOT11P_MODE) \
+	CFG(CFG_DEAUTH_RETRY_CNT) \
 	CFG(CFG_ENABLE_GO_CTS2SELF_FOR_STA) \
 	CFG(CFG_QCN_IE_SUPPORT) \
 	CFG(CFG_STA_MCAST_MCC_REST_TIME) \
 	CFG(CFG_FILS_MAX_CHAN_GUARD_TIME) \
-	CFG(CFG_FORCE_RSNE_OVERRIDE) \
 	CFG(CFG_SINGLE_TID_RC) \
 	CFG(CFG_STA_KEEPALIVE_METHOD) \
 	CFG(CFG_WT_CNF_TIMEOUT) \

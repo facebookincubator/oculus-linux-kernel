@@ -42,7 +42,7 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -68,7 +68,7 @@
  *
  * Supported Feature: DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -89,7 +89,7 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -147,7 +147,7 @@
  *
  * Supported Feature: DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -186,7 +186,7 @@
  *
  * Supported Feature: DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -210,7 +210,7 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -236,7 +236,7 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -258,14 +258,13 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
-#define CFG_ENABLE_MCC_ADAPTIVE_SCH_ENABLED_NAME CFG_INI_UINT(\
+#define CFG_ENABLE_MCC_ADAPTIVE_SCH_ENABLED_NAME CFG_INI_BOOL(\
 					"gEnableMCCAdaptiveScheduler", \
-					0, 1, 1, \
-					CFG_VALUE_OR_DEFAULT, \
+					true, \
 					"Enable/Disable MCC Adaptive Scheduler")
 
 /*
@@ -281,7 +280,7 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -319,7 +318,7 @@
  *
  * Supported Feature: Concurrency
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -341,7 +340,7 @@ CFG_INI_UINT("gAllowMCCGODiffBI", 0, 4, 4, CFG_VALUE_OR_DEFAULT, \
  *
  * Supported Feature: STA
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -376,7 +375,7 @@ CFG_INI_UINT("gEnableOverLapCh", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
  *
  * Supported Feature: DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -401,11 +400,15 @@ CFG_INI_UINT("gDualMacFeatureDisable", 0, 6, 6, CFG_VALUE_OR_DEFAULT, \
  *	 b. Allow CAC process on DFS channel in single SAP (GO) mode
  *	 c. Allow DFS radar event process in single SAP (GO) mode
  *	 d. Disallow CAC and radar event process in SAP (GO) + STA mode.
+ *	 The value 2 of this ini requires master mode to be enabled so it is
+ *	 mandatory to enable the dfs master mode ini gEnableDFSMasterCap
+ *	 along with it.
+ *
  * Related: None.
  *
  * Supported Feature: Non-DBS, DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -456,7 +459,7 @@ CFG_INI_UINT("gForce1x1Exception", 0, 2, 1, CFG_VALUE_OR_DEFAULT, \
  * Supported Feature: SAP
  *
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -480,7 +483,7 @@ CFG_INI_UINT("gEnableSAPManadatoryChanList", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
  *
  * Supported Feature: Non-DBS, DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -503,7 +506,7 @@ CFG_INI_BOOL("g_nan_sap_scc_on_lte_coex_chan", 1, \
  *
  * Supported Feature: Non-DBS, DBS
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -559,6 +562,33 @@ CFG_INI_UINT("g_mark_sap_indoor_as_disable", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
 CFG_INI_UINT("g_enable_go_force_scc", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
 	     "Enable/Disable P2P GO force SCC")
 
+/**
+ * <ini>
+ * g_pcl_band_priority - Set 5G/6G Channel order
+ * Options.
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used to set preference between 5G and 6G channels during
+ * PCL population.
+ * 0 - Prefer 5G channels, 5G channels will be placed before the 6G channels
+ *	in PCL.
+ * 1 - Prefer 6G channels, 6G channels will be placed before the 5G channels
+ *	in PCL.
+ *
+ * Supported Feature: STA, SAP
+ *
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+
+#define CFG_PCL_BAND_PRIORITY \
+CFG_INI_UINT("g_pcl_band_priority", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
+	     "Set 5G and 6G Channel order")
+
 /*
  * <ini>
  * g_prefer_5g_scc_to_dbs - prefer 5g scc to dbs
@@ -601,6 +631,7 @@ CFG_INI_UINT("g_prefer_5g_scc_to_dbs", 0, 0xFFFFFFFF, 0, CFG_VALUE_OR_DEFAULT, \
 		CFG(CFG_NAN_SAP_SCC_ON_LTE_COEX_CHAN) \
 		CFG(CFG_MARK_INDOOR_AS_DISABLE_FEATURE)\
 		CFG(CFG_ALLOW_MCC_GO_DIFF_BI) \
-		CFG(CFG_PREFER_5G_SCC_TO_DBS) \
-		CFG(CFG_P2P_GO_ENABLE_FORCE_SCC)
+		CFG(CFG_P2P_GO_ENABLE_FORCE_SCC) \
+		CFG(CFG_PCL_BAND_PRIORITY) \
+		CFG(CFG_PREFER_5G_SCC_TO_DBS)
 #endif

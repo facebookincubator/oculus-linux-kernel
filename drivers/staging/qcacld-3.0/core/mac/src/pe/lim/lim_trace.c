@@ -116,138 +116,138 @@ void lim_trace_dump(void *mac, tp_qdf_trace_record pRecord,
 	switch (pRecord->code) {
 	case TRACE_CODE_MLM_STATE:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"MLM State:",
-			lim_trace_get_mlm_state_string(
-						(uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			     "MLM State:",
+			      lim_trace_get_mlm_state_string(
+						(uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 	case TRACE_CODE_SME_STATE:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"SME State:",
-			lim_trace_get_sme_state_string(
-						(uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			     "SME State:",
+			     lim_trace_get_sme_state_string(
+						(uint16_t)pRecord->data),
+			     pRecord->data);
 		break;
 	case TRACE_CODE_TX_MGMT:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"TX Mgmt:", frameSubtypeStr[pRecord->data],
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "TX Mgmt:", frameSubtypeStr[pRecord->data],
+			      pRecord->data);
 		break;
 
 	case TRACE_CODE_RX_MGMT:
 		if (LIM_TRACE_MAX_SUBTYPES <=
 		    LIM_TRACE_GET_SUBTYPE(pRecord->data))
 			pe_nofl_debug("Wrong Subtype - %d",
-				LIM_TRACE_GET_SUBTYPE(pRecord->data));
+				      LIM_TRACE_GET_SUBTYPE(pRecord->data));
 		else
 			pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(%d) SN: %d",
-				recIndex, pRecord->qtime, pRecord->time,
-				pRecord->session, "RX Mgmt:",
-				frameSubtypeStr[LIM_TRACE_GET_SUBTYPE
+				      recIndex, pRecord->qtime, pRecord->time,
+				      pRecord->session, "RX Mgmt:",
+				      frameSubtypeStr[LIM_TRACE_GET_SUBTYPE
 							(pRecord->data)],
-				LIM_TRACE_GET_SUBTYPE(pRecord->data),
-				LIM_TRACE_GET_SSN(pRecord->data));
+				      LIM_TRACE_GET_SUBTYPE(pRecord->data),
+				      LIM_TRACE_GET_SSN(pRecord->data));
 		break;
 	case TRACE_CODE_RX_MGMT_DROP:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(%d)",
-			recIndex, pRecord->qtime, pRecord->time,
-			pRecord->session, "Drop RX Mgmt:",
-			__lim_trace_get_mgmt_drop_reason_string(
-					(uint16_t) pRecord->data),
-			pRecord->data);
+			      recIndex, pRecord->qtime, pRecord->time,
+			      pRecord->session, "Drop RX Mgmt:",
+			      __lim_trace_get_mgmt_drop_reason_string(
+					(uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 
 	case TRACE_CODE_RX_MGMT_TSF:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s0x%x(%d)",
-			recIndex, pRecord->qtime, pRecord->time,
-			pRecord->session, "RX Mgmt TSF:", " ",
-			pRecord->data, pRecord->data);
+			      recIndex, pRecord->qtime, pRecord->time,
+			      pRecord->session, "RX Mgmt TSF:", " ",
+			      pRecord->data, pRecord->data);
 		break;
 
 	case TRACE_CODE_TX_COMPLETE:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %d", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"TX Complete", pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "TX Complete", pRecord->data);
 		break;
 
 	case TRACE_CODE_TX_SME_MSG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"TX SME Msg:",
-			mac_trace_get_sme_msg_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "TX SME Msg:",
+			      mac_trace_get_sme_msg_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 	case TRACE_CODE_RX_SME_MSG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			LIM_TRACE_GET_DEFRD_OR_DROPPED(
-			pRecord->data) ? "Def/Drp LIM Msg:" : "RX Sme Msg:",
-			mac_trace_get_sme_msg_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      LIM_TRACE_GET_DEFRD_OR_DROPPED(
+			      pRecord->data) ? "Def/Drp LIM Msg:" : "RX Sme Msg:",
+			      mac_trace_get_sme_msg_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 
 	case TRACE_CODE_TX_WMA_MSG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"TX WMA Msg:",
-			mac_trace_get_wma_msg_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "TX WMA Msg:",
+			      mac_trace_get_wma_msg_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 
 	case TRACE_CODE_RX_WMA_MSG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			LIM_TRACE_GET_DEFRD_OR_DROPPED(
-			pRecord->data) ? "Def/Drp LIM Msg:" : "RX WMA Msg:",
-			mac_trace_get_wma_msg_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      LIM_TRACE_GET_DEFRD_OR_DROPPED(
+			      pRecord->data) ? "Def/Drp LIM Msg:" : "RX WMA Msg:",
+			      mac_trace_get_wma_msg_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 
 	case TRACE_CODE_TX_LIM_MSG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"TX LIM Msg:",
-			mac_trace_get_lim_msg_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "TX LIM Msg:",
+			      mac_trace_get_lim_msg_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 	case TRACE_CODE_RX_LIM_MSG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			LIM_TRACE_GET_DEFRD_OR_DROPPED(
-			pRecord->data) ? "Def/Drp LIM Msg:" : "RX LIM Msg",
-			mac_trace_get_lim_msg_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      LIM_TRACE_GET_DEFRD_OR_DROPPED(
+			      pRecord->data) ? "Def/Drp LIM Msg:" : "RX LIM Msg",
+			      mac_trace_get_lim_msg_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 	case TRACE_CODE_TIMER_ACTIVATE:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"Timer Actvtd",
-			__lim_trace_get_timer_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "Timer Actvtd",
+			      __lim_trace_get_timer_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 	case TRACE_CODE_TIMER_DEACTIVATE:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)", recIndex,
-			pRecord->qtime, pRecord->time, pRecord->session,
-			"Timer DeActvtd",
-			__lim_trace_get_timer_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      pRecord->qtime, pRecord->time, pRecord->session,
+			      "Timer DeActvtd",
+			      __lim_trace_get_timer_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 
 	case TRACE_CODE_INFO_LOG:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
-			recIndex, pRecord->qtime, pRecord->time,
-			pRecord->session, "INFORMATION_LOG",
-			mac_trace_get_info_log_string((uint16_t) pRecord->data),
-			pRecord->data);
+			      recIndex, pRecord->qtime, pRecord->time,
+			      pRecord->session, "INFORMATION_LOG",
+			      mac_trace_get_info_log_string((uint16_t)pRecord->data),
+			      pRecord->data);
 		break;
 	default:
 		pe_nofl_debug("%04d %012llu %s S%d %-14s(%d) (0x%x)",
-			recIndex, pRecord->qtime, pRecord->time,
-			pRecord->session, "Unknown Code",
-			pRecord->code, pRecord->data);
+			      recIndex, pRecord->qtime, pRecord->time,
+			      pRecord->session, "Unknown Code",
+			      pRecord->code, pRecord->data);
 		break;
 	}
 }
@@ -294,7 +294,7 @@ void mac_trace_msg_rx(struct mac_context *mac, uint8_t session, uint32_t data)
 		mac_trace(mac, TRACE_CODE_RX_WMA_MSG, session, data);
 		break;
 	default:
-		mac_trace(mac, module_id, session, data);
+		mac_trace(mac, msgId, session, data);
 		break;
 	}
 }

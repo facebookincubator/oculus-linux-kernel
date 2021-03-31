@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -497,7 +497,6 @@ action_oui_extension_store(struct action_oui_psoc_priv *psoc_priv,
 	ext_priv = qdf_mem_malloc(sizeof(*ext_priv));
 	if (!ext_priv) {
 		qdf_mutex_release(&oui_priv->extension_lock);
-		action_oui_err("Failed to allocate memory for action oui extension priv");
 		return QDF_STATUS_E_NOMEM;
 	}
 
@@ -538,7 +537,7 @@ action_oui_parse(struct action_oui_psoc_priv *psoc_priv,
 	str1 = qdf_str_trim((char *)oui_string);
 
 	while (str1) {
-		str2 = skip_spaces(str1);
+		str2 = (char *)qdf_str_left_trim(str1);
 		if (str2[0] == '\0') {
 			action_oui_err("Invalid spaces in action oui: %u at extension: %u for token: %s",
 				action_id,
@@ -698,7 +697,6 @@ QDF_STATUS action_oui_send(struct action_oui_psoc_priv *psoc_priv,
 	len = sizeof(*req) + no_oui_extensions * sizeof(*extension);
 	req = qdf_mem_malloc(len);
 	if (!req) {
-		action_oui_err("Failed to allocate memory for action_oui");
 		qdf_mutex_release(&oui_priv->extension_lock);
 		return QDF_STATUS_E_NOMEM;
 	}
@@ -846,16 +844,12 @@ check_for_vendor_ap_capabilities(struct action_oui_extension *extension,
 		}
 	}
 
-	if (extension->info_mask & ACTION_OUI_INFO_AP_CAPABILITY_BAND) {
-		if ((*extension->capability &
-		    ACTION_OUI_CAPABILITY_2G_BAND_MASK) &&
-		    !attr->enable_2g)
-			return false;
-		if ((*extension->capability &
-		    ACTION_CAPABILITY_5G_BAND_MASK) &&
-		    !attr->enable_5g)
-			return false;
-	}
+	if (extension->info_mask & ACTION_OUI_INFO_AP_CAPABILITY_BAND &&
+	    ((attr->enable_5g &&
+	    !(*extension->capability & ACTION_CAPABILITY_5G_BAND_MASK)) ||
+	    (attr->enable_2g &&
+	    !(*extension->capability & ACTION_OUI_CAPABILITY_2G_BAND_MASK))))
+		return false;
 
 	return true;
 }

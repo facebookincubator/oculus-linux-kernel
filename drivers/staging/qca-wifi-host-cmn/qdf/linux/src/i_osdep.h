@@ -24,11 +24,7 @@
 #ifndef _I_OSDEP_H
 #define _I_OSDEP_H
 
-#ifdef CONFIG_MCL
-#include <cds_queue.h>
-#else
-#include <sys/queue.h>
-#endif
+#include "queue.h"
 
 /*
  * Byte Order stuff
@@ -54,8 +50,8 @@
 	do { \
 		if (!spin_is_locked(x)) { \
 			WARN_ON(1); \
-			printk(KERN_EMERG " %s:%d unlock addr=%pK, %s \n", __func__,  __LINE__, x, \
-			       !spin_is_locked(x) ? "Not locked" : "");	\
+			qdf_info("unlock addr=%pK, %s", x, \
+				      !spin_is_locked(x) ? "Not locked" : ""); \
 		} \
 		spin_unlock_bh(x); \
 	} while (0)

@@ -116,6 +116,9 @@ static int cam_vfe_top_ver3_set_hw_clk_rate(
 			rc = 0;
 			goto end;
 		}
+
+		soc_private->ife_clk_src = max_clk_rate;
+
 		ahb_vote.type = CAM_VOTE_ABSOLUTE;
 		ahb_vote.vote.level = clk_lvl;
 		cam_cpas_update_ahb_vote(soc_private->cpas_handle, &ahb_vote);
@@ -208,6 +211,19 @@ static int cam_vfe_top_ver3_mux_get_reg_update(
 	if (cmd_update->res->process_cmd)
 		return cmd_update->res->process_cmd(cmd_update->res,
 			CAM_ISP_HW_CMD_GET_REG_UPDATE, cmd_args, arg_size);
+
+	return -EINVAL;
+}
+
+static int cam_vfe_top_ver3_get_data(
+	struct cam_vfe_top_ver3_priv *top_priv,
+	void *cmd_args, uint32_t arg_size)
+{
+	struct cam_isp_resource_node  *res = cmd_args;
+
+	if (res->process_cmd)
+		return res->process_cmd(res,
+			CAM_ISP_HW_CMD_CAMIF_DATA, cmd_args, arg_size);
 
 	return -EINVAL;
 }
@@ -461,6 +477,8 @@ int cam_vfe_top_ver3_stop(void *device_priv,
 	struct cam_vfe_top_ver3_priv            *top_priv;
 	struct cam_isp_resource_node            *mux_res;
 	struct cam_hw_info                      *hw_info = NULL;
+	struct cam_hw_soc_info                  *soc_info = NULL;
+	struct cam_vfe_soc_private              *soc_private = NULL;
 	int i, rc = 0;
 
 	if (!device_priv || !stop_args) {
@@ -471,6 +489,8 @@ int cam_vfe_top_ver3_stop(void *device_priv,
 	top_priv = (struct cam_vfe_top_ver3_priv   *)device_priv;
 	mux_res = (struct cam_isp_resource_node *)stop_args;
 	hw_info = (struct cam_hw_info  *)mux_res->hw_intf->hw_priv;
+	soc_info = top_priv->common_data.soc_info;
+	soc_private = soc_info->soc_private;
 
 	if (mux_res->res_id < CAM_ISP_HW_VFE_IN_MAX) {
 		rc = mux_res->stop(mux_res);
@@ -493,6 +513,7 @@ int cam_vfe_top_ver3_stop(void *device_priv,
 		}
 	}
 
+	soc_private->ife_clk_src = 0;
 	return rc;
 }
 
@@ -543,6 +564,19 @@ int cam_vfe_top_ver3_query(struct cam_vfe_top_ver3_priv *top_priv,
 	return rc;
 }
 
+static int cam_vfe_top_ver3_get_irq_register_dump(
+	struct cam_vfe_top_ver3_priv *top_priv,
+	void *cmd_args, uint32_t arg_size)
+{
+	struct cam_isp_hw_get_cmd_update  *cmd_update = cmd_args;
+
+	if (cmd_update->res->process_cmd)
+		cmd_update->res->process_cmd(cmd_update->res,
+			CAM_ISP_HW_CMD_GET_IRQ_REGISTER_DUMP, cmd_args,
+			arg_size);
+	return 0;
+}
+
 int cam_vfe_top_ver3_process_cmd(void *device_priv, uint32_t cmd_type,
 	void *cmd_args, uint32_t arg_size)
 {
@@ -573,6 +607,10 @@ int cam_vfe_top_ver3_process_cmd(void *device_priv, uint32_t cmd_type,
 		rc = cam_vfe_top_ver3_mux_get_reg_update(top_priv, cmd_args,
 			arg_size);
 		break;
+	case CAM_ISP_HW_CMD_CAMIF_DATA:
+		rc = cam_vfe_top_ver3_get_data(top_priv, cmd_args,
+			arg_size);
+		break;
 	case CAM_ISP_HW_CMD_CLOCK_UPDATE:
 		rc = cam_vfe_top_ver3_clock_update(top_priv, cmd_args,
 			arg_size);
@@ -598,6 +636,10 @@ int cam_vfe_top_ver3_process_cmd(void *device_priv, uint32_t cmd_type,
 		break;
 	case CAM_ISP_HW_CMD_QUERY:
 		rc = cam_vfe_top_ver3_query(top_priv, cmd_args, arg_size);
+		break;
+	case CAM_ISP_HW_CMD_GET_IRQ_REGISTER_DUMP:
+		rc = cam_vfe_top_ver3_get_irq_register_dump(top_priv,
+			cmd_args, arg_size);
 		break;
 	default:
 		rc = -EINVAL;

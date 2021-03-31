@@ -36,6 +36,7 @@
 #include <wlan_hdd_misc.h>
 #include <wlan_hdd_napi.h>
 #include <cds_api.h>
+#include <wlan_hdd_regulatory.h>
 #include "wlan_hdd_he.h"
 #include <wlan_policy_mgr_api.h>
 #include "wifi_pos_api.h"
@@ -47,6 +48,7 @@
 #include "wlan_fwol_ucfg_api.h"
 #include "cfg_ucfg_api.h"
 #include "hdd_dp_cfg.h"
+#include <wma_api.h>
 
 /**
  * get_next_line() - find and locate the new line pointer
@@ -258,9 +260,7 @@ QDF_STATUS hdd_update_mac_config(struct hdd_context *hdd_ctx)
 	hdd_debug("wlan_mac.bin size %zu", fw->size);
 
 	temp = qdf_mem_malloc(fw->size + 1);
-
 	if (!temp) {
-		hdd_err("fail to alloc memory");
 		qdf_status = QDF_STATUS_E_NOMEM;
 		goto config_exit;
 	}
@@ -338,39 +338,85 @@ config_exit:
 	return qdf_status;
 }
 
+#ifdef FEATURE_RUNTIME_PM
 /**
  * hdd_disable_runtime_pm() - Override to disable runtime_pm.
  * @cfg_ini: Handle to struct hdd_config
  *
  * Return: None
  */
-#ifdef FEATURE_RUNTIME_PM
 static void hdd_disable_runtime_pm(struct hdd_config *cfg_ini)
 {
 	cfg_ini->runtime_pm = 0;
+}
+
+/**
+ * hdd_restore_runtime_pm() - Restore runtime_pm configuration.
+ * @cfg_ini: Handle to struct hdd_config
+ *
+ * Return: None
+ */
+static void hdd_restore_runtime_pm(struct hdd_context *hdd_ctx)
+{
+	struct hdd_config *cfg_ini = hdd_ctx->config;
+
+	cfg_ini->runtime_pm = cfg_get(hdd_ctx->psoc, CFG_ENABLE_RUNTIME_PM);
 }
 #else
 static void hdd_disable_runtime_pm(struct hdd_config *cfg_ini)
 {
 }
+
+static void hdd_restore_runtime_pm(struct hdd_context *hdd_ctx)
+{
+}
 #endif
 
+#ifdef FEATURE_WLAN_AUTO_SHUTDOWN
 /**
  * hdd_disable_auto_shutdown() - Override to disable auto_shutdown.
  * @cfg_ini: Handle to struct hdd_config
  *
  * Return: None
  */
-#ifdef FEATURE_WLAN_AUTO_SHUTDOWN
 static void hdd_disable_auto_shutdown(struct hdd_config *cfg_ini)
 {
 	cfg_ini->wlan_auto_shutdown = 0;
+}
+
+/**
+ * hdd_restore_auto_shutdown() - Restore auto_shutdown configuration.
+ * @cfg_ini: Handle to struct hdd_config
+ *
+ * Return: None
+ */
+static void hdd_restore_auto_shutdown(struct hdd_context *hdd_ctx)
+{
+	struct hdd_config *cfg_ini = hdd_ctx->config;
+
+	cfg_ini->wlan_auto_shutdown = cfg_get(hdd_ctx->psoc,
+					      CFG_WLAN_AUTO_SHUTDOWN);
 }
 #else
 static void hdd_disable_auto_shutdown(struct hdd_config *cfg_ini)
 {
 }
+
+static void hdd_restore_auto_shutdown(struct hdd_context *hdd_ctx)
+{
+}
 #endif
+
+void hdd_restore_all_ps(struct hdd_context *hdd_ctx)
+{
+	/*
+	 * imps/bmps configuration will be restored in driver mode change
+	 * sequence as part of hdd_wlan_start_modules
+	 */
+
+	hdd_restore_runtime_pm(hdd_ctx);
+	hdd_restore_auto_shutdown(hdd_ctx);
+}
 
 void hdd_override_all_ps(struct hdd_context *hdd_ctx)
 {
@@ -478,6 +524,26 @@ static void hdd_set_fine_time_meas_cap(struct hdd_context *hdd_ctx)
 	ucfg_mlme_get_fine_time_meas_cap(hdd_ctx->psoc, &capability);
 	ucfg_wifi_pos_set_ftm_cap(hdd_ctx->psoc, capability);
 	hdd_debug("fine time meas capability - Enabled: %04x", capability);
+}
+
+/**
+ * hdd_set_oem_6g_supported() - set oem 6g support enabled/disable
+ * @hdd_ctx: HDD context
+ *
+ * This function is used to pass oem 6g support enabled/disable value
+ * coming from INI to SME. This function make sure that configure
+ * INI is supported by the device.
+ *
+ * Return: None
+ */
+static void hdd_set_oem_6g_supported(struct hdd_context *hdd_ctx)
+{
+	bool oem_6g_disable = 1;
+
+	ucfg_mlme_get_oem_6g_supported(hdd_ctx->psoc, &oem_6g_disable);
+	ucfg_wifi_pos_set_oem_6g_supported(hdd_ctx->psoc, oem_6g_disable);
+	hdd_debug("oem 6g support is - %s",
+		  oem_6g_disable ? "Enabled" : "Disbaled");
 }
 
 /**
@@ -622,10 +688,8 @@ QDF_STATUS hdd_set_policy_mgr_user_cfg(struct hdd_context *hdd_ctx)
 	struct policy_mgr_user_cfg *user_cfg;
 
 	user_cfg = qdf_mem_malloc(sizeof(*user_cfg));
-	if (!user_cfg) {
-		hdd_err("unable to allocate user_cfg");
+	if (!user_cfg)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	status = ucfg_mlme_get_vht_enable2x2(hdd_ctx->psoc,
 					     &user_cfg->enable2x2);
@@ -812,21 +876,11 @@ QDF_STATUS hdd_set_sme_config(struct hdd_context *hdd_ctx)
 #ifdef FEATURE_WLAN_ESE
 	bool ese_enabled;
 #endif
-	struct wlan_mlme_ibss_cfg ibss_cfg = {0};
-
 	struct hdd_config *config = hdd_ctx->config;
 
-	if (QDF_IS_STATUS_ERROR(ucfg_mlme_get_ibss_cfg(
-				hdd_ctx->psoc, &ibss_cfg))) {
-		hdd_err("Unable to get IBSS config params");
-		return QDF_STATUS_E_FAILURE;
-	}
-
 	sme_config = qdf_mem_malloc(sizeof(*sme_config));
-	if (!sme_config) {
-		hdd_err("unable to allocate sme_config");
+	if (!sme_config)
 		return QDF_STATUS_E_NOMEM;
-	}
 
 	/* Config params obtained from the registry
 	 * To Do: set regulatory information here
@@ -856,8 +910,6 @@ QDF_STATUS hdd_set_sme_config(struct hdd_context *hdd_ctx)
 	 */
 	/* This param cannot be configured from INI */
 	sme_config->csr_config.send_smps_action = true;
-	sme_config->csr_config.AdHocChannel5G = ibss_cfg.adhoc_ch_5g;
-	sme_config->csr_config.AdHocChannel24 = ibss_cfg.adhoc_ch_2g;
 	sme_config->csr_config.ProprietaryRatesEnabled = 0;
 	sme_config->csr_config.HeartbeatThresh50 = 40;
 	ucfg_scan_cfg_get_dfs_chan_scan_allowed(hdd_ctx->psoc,
@@ -883,13 +935,11 @@ QDF_STATUS hdd_set_sme_config(struct hdd_context *hdd_ctx)
 					hdd_ctx->psoc, false);
 	}
 
-	sme_config->csr_config.isCoalesingInIBSSAllowed =
-						ibss_cfg.coalesing_enable;
-
 	/* Update maximum interfaces information */
 	sme_config->csr_config.max_intf_count = hdd_ctx->max_intf_count;
 
 	hdd_set_fine_time_meas_cap(hdd_ctx);
+	hdd_set_oem_6g_supported(hdd_ctx);
 
 	cds_set_multicast_logging(hdd_ctx->config->multicast_host_fw_msgs);
 
@@ -1013,19 +1063,6 @@ hdd_set_nss_params(struct hdd_adapter *adapter,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * hdd_update_nss() - Update the number of spatial streams supported.
- * Ensure that nss is either 1 or 2 before calling this.
- *
- * @adapter: the pointer to adapter
- * @nss: the number of spatial streams to be updated
- *
- * This function is used to modify the number of spatial streams
- * supported when not in connected state.
- *
- * Return: QDF_STATUS_SUCCESS if nss is correctly updated,
- *              otherwise QDF_STATUS_E_FAILURE would be returned
- */
 QDF_STATUS hdd_update_nss(struct hdd_adapter *adapter, uint8_t nss)
 {
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
@@ -1214,4 +1251,558 @@ skip_ht_cap_update:
 	hdd_set_policy_mgr_user_cfg(hdd_ctx);
 
 	return (status == false) ? QDF_STATUS_E_FAILURE : QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS hdd_get_nss(struct hdd_adapter *adapter, uint8_t *nss)
+{
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	bool bval;
+	QDF_STATUS status;
+
+	status = ucfg_mlme_get_vht_enable2x2(hdd_ctx->psoc, &bval);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		hdd_err("unable to get vht_enable2x2");
+		return status;
+	}
+
+	*nss = (bval) ? 2 : 1;
+	if (!policy_mgr_is_hw_dbs_2x2_capable(hdd_ctx->psoc) &&
+	    policy_mgr_is_current_hwmode_dbs(hdd_ctx->psoc))
+		*nss = *nss - 1;
+
+	return status;
+}
+
+int hdd_vendor_mode_to_phymode(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
+			       eCsrPhyMode *csr_phy_mode)
+{
+	switch (vendor_phy_mode) {
+	case QCA_WLAN_VENDOR_PHY_MODE_AUTO:
+	case QCA_WLAN_VENDOR_PHY_MODE_2G_AUTO:
+	case QCA_WLAN_VENDOR_PHY_MODE_5G_AUTO:
+		*csr_phy_mode = eCSR_DOT11_MODE_AUTO;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11A:
+		*csr_phy_mode = eCSR_DOT11_MODE_11a;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11B:
+		*csr_phy_mode = eCSR_DOT11_MODE_11b;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11G:
+		*csr_phy_mode = eCSR_DOT11_MODE_11g;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AGN:
+		*csr_phy_mode = eCSR_DOT11_MODE_11n;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT80P80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT160:
+		*csr_phy_mode = eCSR_DOT11_MODE_11ac;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE80P80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE160:
+		*csr_phy_mode = eCSR_DOT11_MODE_11ax;
+		break;
+	default:
+		hdd_err("Not supported mode %d", vendor_phy_mode);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int hdd_vendor_mode_to_band(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
+			    uint8_t *supported_band, bool is_6ghz_supported)
+{
+	switch (vendor_phy_mode) {
+	case QCA_WLAN_VENDOR_PHY_MODE_AUTO:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT80P80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT160:
+		*supported_band = BIT(REG_BAND_2G) | BIT(REG_BAND_5G);
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE80P80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE160:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AGN:
+		if (is_6ghz_supported)
+			*supported_band = REG_BAND_MASK_ALL;
+		else
+			*supported_band = BIT(REG_BAND_2G) | BIT(REG_BAND_5G);
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11A:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_5G_AUTO:
+		*supported_band = BIT(REG_BAND_5G);
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11B:
+	case QCA_WLAN_VENDOR_PHY_MODE_11G:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_2G_AUTO:
+		*supported_band = BIT(REG_BAND_2G);
+		break;
+	default:
+		hdd_err("Not supported mode %d", vendor_phy_mode);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int
+hdd_vendor_mode_to_bonding_mode(enum qca_wlan_vendor_phy_mode vendor_phy_mode,
+				uint32_t *bonding_mode)
+{
+	switch (vendor_phy_mode) {
+	case QCA_WLAN_VENDOR_PHY_MODE_AUTO:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT80P80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT160:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40PLUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE40MINUS:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE80P80:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE160:
+	case QCA_WLAN_VENDOR_PHY_MODE_2G_AUTO:
+	case QCA_WLAN_VENDOR_PHY_MODE_5G_AUTO:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AGN:
+		*bonding_mode = WNI_CFG_CHANNEL_BONDING_MODE_ENABLE;
+		break;
+	case QCA_WLAN_VENDOR_PHY_MODE_11A:
+	case QCA_WLAN_VENDOR_PHY_MODE_11B:
+	case QCA_WLAN_VENDOR_PHY_MODE_11G:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NA_HT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11NG_HT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AC_VHT20:
+	case QCA_WLAN_VENDOR_PHY_MODE_11AX_HE20:
+		*bonding_mode = WNI_CFG_CHANNEL_BONDING_MODE_DISABLE;
+		break;
+	default:
+		hdd_err("Not supported mode %d", vendor_phy_mode);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int hdd_phymode_to_dot11_mode(eCsrPhyMode phymode,
+				     enum hdd_dot11_mode *dot11_mode)
+{
+	switch (phymode) {
+	case eCSR_DOT11_MODE_AUTO:
+		*dot11_mode = eHDD_DOT11_MODE_AUTO;
+		break;
+	case eCSR_DOT11_MODE_11a:
+		*dot11_mode = eHDD_DOT11_MODE_11a;
+		break;
+	case eCSR_DOT11_MODE_11b:
+		*dot11_mode = eHDD_DOT11_MODE_11b;
+		break;
+	case eCSR_DOT11_MODE_11g:
+		*dot11_mode = eHDD_DOT11_MODE_11g;
+		break;
+	case eCSR_DOT11_MODE_11n:
+		*dot11_mode = eHDD_DOT11_MODE_11n;
+		break;
+	case eCSR_DOT11_MODE_11ac:
+		*dot11_mode = eHDD_DOT11_MODE_11ac;
+		break;
+	case eCSR_DOT11_MODE_11ax:
+		*dot11_mode = eHDD_DOT11_MODE_11ax;
+		break;
+	default:
+		hdd_err("Not supported mode %d", phymode);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+#ifdef QCA_HT_2040_COEX
+static QDF_STATUS
+hdd_set_ht2040_mode(struct hdd_adapter *adapter,
+		    struct csr_config_params *csr_config,
+		    uint32_t bonding_mode)
+{
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	if (csr_config->phyMode == eCSR_DOT11_MODE_11n) {
+		if (bonding_mode == WNI_CFG_CHANNEL_BONDING_MODE_ENABLE)
+			csr_config->obssEnabled = true;
+		else
+			csr_config->obssEnabled = false;
+		status = sme_set_ht2040_mode(hdd_ctx->mac_handle,
+					     adapter->vdev_id,
+					     eHT_CHAN_HT20,
+					     csr_config->obssEnabled);
+	}
+
+	return status;
+}
+#else
+static QDF_STATUS
+hdd_set_ht2040_mode(struct hdd_adapter *adapter,
+		    struct csr_config_params *csr_config,
+		    uint32_t bonding_mode)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
+int hdd_update_phymode(struct hdd_adapter *adapter, eCsrPhyMode phymode,
+		       uint8_t supported_band, uint32_t bonding_mode)
+{
+	struct net_device *net = adapter->dev;
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	struct sme_config_params *sme_config = NULL;
+	struct csr_config_params *csr_config;
+	eCsrPhyMode old_phymode;
+	enum hdd_dot11_mode hdd_dot11mode;
+	int ret = 0;
+	QDF_STATUS status;
+
+	ret = wlan_hdd_validate_context(hdd_ctx);
+	if (ret < 0)
+		return ret;
+
+	ret = hdd_phymode_to_dot11_mode(phymode, &hdd_dot11mode);
+	if (ret < 0)
+		return ret;
+
+	hdd_debug("phymode=%d bonding_mode=%d supported_band=%d",
+		  phymode, bonding_mode, supported_band);
+
+	old_phymode = sme_get_phy_mode(hdd_ctx->mac_handle);
+
+	sme_set_phy_mode(hdd_ctx->mac_handle, phymode);
+
+	if (hdd_reg_set_band(net, supported_band)) {
+		sme_set_phy_mode(hdd_ctx->mac_handle, old_phymode);
+		return -EIO;
+	}
+
+	sme_config = qdf_mem_malloc(sizeof(*sme_config));
+	if (!sme_config)
+		return -ENOMEM;
+
+	sme_get_config_param(hdd_ctx->mac_handle, sme_config);
+	csr_config = &sme_config->csr_config;
+	csr_config->phyMode = phymode;
+
+	status = hdd_set_ht2040_mode(adapter, csr_config, bonding_mode);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to set ht2040 mode");
+		ret = -EIO;
+		goto free;
+	}
+
+	status = ucfg_mlme_set_band_capability(hdd_ctx->psoc, supported_band);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("failed to set MLME band capability");
+		ret = -EIO;
+		goto free;
+	}
+
+	if (supported_band == BIT(REG_BAND_2G)) {
+		status = ucfg_mlme_set_11h_enabled(hdd_ctx->psoc, 0);
+		if (!QDF_IS_STATUS_SUCCESS(status)) {
+			hdd_err("Failed to set 11h_enable flag");
+			ret = -EIO;
+			goto free;
+		}
+	}
+	if (supported_band & BIT(REG_BAND_2G))
+		csr_config->channelBondingMode24GHz = bonding_mode;
+
+	if (supported_band & BIT(REG_BAND_5G))
+		csr_config->channelBondingMode5GHz = bonding_mode;
+
+	sme_update_config(hdd_ctx->mac_handle, sme_config);
+
+	hdd_ctx->config->dot11Mode = hdd_dot11mode;
+	ucfg_mlme_set_channel_bonding_24ghz(hdd_ctx->psoc,
+					   csr_config->channelBondingMode24GHz);
+	ucfg_mlme_set_channel_bonding_5ghz(hdd_ctx->psoc,
+					   csr_config->channelBondingMode5GHz);
+	if (hdd_update_config_cfg(hdd_ctx) == false) {
+		hdd_err("could not update config_dat");
+		ret = -EIO;
+		goto free;
+	}
+
+	if (supported_band & BIT(REG_BAND_5G)) {
+		struct ieee80211_supported_band *ieee_band;
+		uint32_t channel_bonding_mode;
+
+		ucfg_mlme_get_channel_bonding_5ghz(hdd_ctx->psoc,
+						   &channel_bonding_mode);
+		ieee_band = hdd_ctx->wiphy->bands[HDD_NL80211_BAND_5GHZ];
+		if (channel_bonding_mode)
+			ieee_band->ht_cap.cap |=
+					IEEE80211_HT_CAP_SUP_WIDTH_20_40;
+		else
+			ieee_band->ht_cap.cap &=
+					~IEEE80211_HT_CAP_SUP_WIDTH_20_40;
+	}
+
+free:
+	if (sme_config)
+		qdf_mem_free(sme_config);
+	return ret;
+}
+
+int hdd_get_ldpc(struct hdd_adapter *adapter, int *value)
+{
+	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
+	int ret;
+
+	hdd_enter();
+	ret = sme_get_ht_config(mac_handle, adapter->vdev_id,
+				WNI_CFG_HT_CAP_INFO_ADVANCE_CODING);
+	if (ret < 0) {
+		hdd_err("Failed to get LDPC value");
+	} else {
+		*value = ret;
+		ret = 0;
+	}
+	return ret;
+}
+
+int hdd_set_ldpc(struct hdd_adapter *adapter, int value)
+{
+	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
+	int ret;
+	QDF_STATUS status;
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	struct mlme_ht_capabilities_info ht_cap_info;
+
+	hdd_debug("%d", value);
+
+	if (!mac_handle) {
+		hdd_err("NULL Mac handle");
+		return -EINVAL;
+	}
+
+	status = ucfg_mlme_get_ht_cap_info(hdd_ctx->psoc, &ht_cap_info);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to get HT capability info");
+		return -EIO;
+	}
+
+	ht_cap_info.adv_coding_cap = value;
+	status = ucfg_mlme_set_ht_cap_info(hdd_ctx->psoc, ht_cap_info);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to set HT capability info");
+		return -EIO;
+	}
+	status = ucfg_mlme_cfg_set_vht_ldpc_coding_cap(hdd_ctx->psoc, value);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to set VHT LDPC capability info");
+		return -EIO;
+	}
+	ret = sme_update_ht_config(mac_handle, adapter->vdev_id,
+				   WNI_CFG_HT_CAP_INFO_ADVANCE_CODING,
+				   value);
+	if (ret)
+		hdd_err("Failed to set LDPC value");
+	ret = sme_update_he_ldpc_supp(mac_handle, adapter->vdev_id, value);
+	if (ret)
+		hdd_err("Failed to set HE LDPC value");
+	ret = sme_set_auto_rate_ldpc(mac_handle, adapter->vdev_id,
+				     (value ? 0 : 1));
+
+	return ret;
+}
+
+int hdd_get_tx_stbc(struct hdd_adapter *adapter, int *value)
+{
+	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
+	int ret;
+
+	hdd_enter();
+	ret = sme_get_ht_config(mac_handle, adapter->vdev_id,
+				WNI_CFG_HT_CAP_INFO_TX_STBC);
+	if (ret < 0) {
+		hdd_err("Failed to get TX STBC value");
+	} else {
+		*value = ret;
+		ret = 0;
+	}
+
+	return ret;
+}
+
+int hdd_set_tx_stbc(struct hdd_adapter *adapter, int value)
+{
+	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	int ret;
+	QDF_STATUS status;
+	struct mlme_ht_capabilities_info ht_cap_info;
+
+	hdd_debug("%d", value);
+
+	if (!mac_handle) {
+		hdd_err("NULL Mac handle");
+		return -EINVAL;
+	}
+
+	if (value) {
+		/* make sure HT capabilities allow this */
+		status = ucfg_mlme_get_ht_cap_info(hdd_ctx->psoc,
+						   &ht_cap_info);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			hdd_err("Failed to get HT capability info");
+			return -EIO;
+		}
+		if (!ht_cap_info.tx_stbc) {
+			hdd_err("TX STBC not supported");
+			return -EINVAL;
+		}
+	}
+	ret = sme_update_ht_config(mac_handle, adapter->vdev_id,
+				   WNI_CFG_HT_CAP_INFO_TX_STBC,
+				   value);
+	if (ret)
+		hdd_err("Failed to set TX STBC value");
+	ret = sme_update_he_tx_stbc_cap(mac_handle, adapter->vdev_id, value);
+	if (ret)
+		hdd_err("Failed to set HE TX STBC value");
+
+	return ret;
+}
+
+int hdd_get_rx_stbc(struct hdd_adapter *adapter, int *value)
+{
+	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
+	int ret;
+
+	hdd_enter();
+	ret = sme_get_ht_config(mac_handle, adapter->vdev_id,
+				WNI_CFG_HT_CAP_INFO_RX_STBC);
+	if (ret < 0) {
+		hdd_err("Failed to get RX STBC value");
+	} else {
+		*value = ret;
+		ret = 0;
+	}
+
+	return ret;
+}
+
+int hdd_set_rx_stbc(struct hdd_adapter *adapter, int value)
+{
+	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	int ret;
+	QDF_STATUS status;
+	struct mlme_ht_capabilities_info ht_cap_info;
+
+	hdd_debug("%d", value);
+
+	if (!mac_handle) {
+		hdd_err("NULL Mac handle");
+		return -EINVAL;
+	}
+
+	if (value) {
+		/* make sure HT capabilities allow this */
+		status = ucfg_mlme_get_ht_cap_info(hdd_ctx->psoc,
+						   &ht_cap_info);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			hdd_err("Failed to get HT capability info");
+			return -EIO;
+		}
+		if (!ht_cap_info.rx_stbc) {
+			hdd_warn("RX STBC not supported");
+			return -EINVAL;
+		}
+	}
+	ret = sme_update_ht_config(mac_handle, adapter->vdev_id,
+				   WNI_CFG_HT_CAP_INFO_RX_STBC,
+				   value);
+	if (ret)
+		hdd_err("Failed to set RX STBC value");
+
+	ret = sme_update_he_rx_stbc_cap(mac_handle, adapter->vdev_id, value);
+	if (ret)
+		hdd_err("Failed to set HE RX STBC value");
+
+	return ret;
+}
+
+int hdd_update_channel_width(struct hdd_adapter *adapter,
+			     enum eSirMacHTChannelWidth chwidth,
+			     uint32_t bonding_mode)
+{
+	struct hdd_context *hdd_ctx;
+	struct sme_config_params *sme_config;
+	int ret;
+
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	if (!hdd_ctx) {
+		hdd_err("hdd_ctx failure");
+		return -EINVAL;
+	}
+
+	sme_config = qdf_mem_malloc(sizeof(*sme_config));
+	if (!sme_config)
+		return -ENOMEM;
+
+	ret = wma_cli_set_command(adapter->vdev_id, WMI_VDEV_PARAM_CHWIDTH,
+				  chwidth, VDEV_CMD);
+	if (ret)
+		goto free_config;
+
+	sme_get_config_param(hdd_ctx->mac_handle, sme_config);
+	sme_config->csr_config.channelBondingMode5GHz = bonding_mode;
+	sme_config->csr_config.channelBondingMode24GHz = bonding_mode;
+	sme_update_config(hdd_ctx->mac_handle, sme_config);
+
+free_config:
+	qdf_mem_free(sme_config);
+	return ret;
+
 }

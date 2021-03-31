@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,6 +30,7 @@
 #include <crypto/skcipher.h>
 #include <crypto/aead.h>
 #include <linux/ieee80211.h>
+#include <qdf_module.h>
 
 /* Function Definitions and Documentation */
 #define MAX_HMAC_ELEMENT_CNT 10
@@ -77,6 +78,63 @@ int qdf_get_hmac_hash(uint8_t *type, uint8_t *key,
 				  src_len, element_cnt,  hash);
 }
 
+QDF_STATUS
+qdf_default_hmac_sha256_kdf(uint8_t *secret, uint32_t secret_len,
+			    uint8_t *label, uint8_t *optional_data,
+			    uint32_t optional_data_len, uint8_t *key,
+			    uint32_t keylen)
+{
+	uint8_t tmp_hash[SHA256_DIGEST_SIZE] = {0};
+	uint8_t count = 1;
+	uint8_t *addr[4];
+	uint32_t len[4];
+	uint32_t current_position = 0, remaining_data = SHA256_DIGEST_SIZE;
+
+	addr[0] = tmp_hash;
+	len[0] = SHA256_DIGEST_SIZE;
+	addr[1] = label;
+	len[1] = strlen(label) + 1;
+	addr[2] = optional_data;
+	len[2] = optional_data_len;
+	addr[3] = &count;
+	len[3] = 1;
+
+	if (keylen == 0 ||
+	    (keylen > (WLAN_MAX_PRF_INTERATIONS_COUNT * SHA256_DIGEST_SIZE))) {
+		qdf_err("invalid key length %d", keylen);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	/* Create T1 */
+	if (qdf_get_hmac_hash(HMAC_SHA256_CRYPTO_TYPE, secret, secret_len, 3,
+			      &addr[1], &len[1], tmp_hash) < 0) {
+		qdf_err("failed to get hmac hash");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	/* Update hash from tmp_hash */
+	qdf_mem_copy(key + current_position, tmp_hash, remaining_data);
+	current_position += remaining_data;
+
+	for (count = 2; current_position < keylen; count++) {
+		remaining_data = keylen - current_position;
+		if (remaining_data > SHA256_DIGEST_SIZE)
+			remaining_data = SHA256_DIGEST_SIZE;
+
+		/* Create T-n */
+		if (qdf_get_hmac_hash(HMAC_SHA256_CRYPTO_TYPE, secret,
+				      secret_len, 4, addr, len, tmp_hash) < 0) {
+			qdf_err("failed to get hmac hash");
+			return QDF_STATUS_E_FAILURE;
+		}
+		/* Update hash from tmp_hash */
+		qdf_mem_copy(key + current_position, tmp_hash, remaining_data);
+		current_position += remaining_data;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
 /* qdf_update_dbl from RFC 5297. Length of d is AES_BLOCK_SIZE (128 bits) */
 void qdf_update_dbl(uint8_t *d)
 {
@@ -94,6 +152,157 @@ void qdf_update_dbl(uint8_t *d)
 	if (msb)
 		d[AES_BLOCK_SIZE - 1] ^= 0x87;
 }
+
+static inline void xor_128(const uint8_t *a, const uint8_t *b, uint8_t *out)
+{
+	uint8_t i;
+
+	for (i = 0; i < AES_BLOCK_SIZE; i++)
+		out[i] = a[i] ^ b[i];
+}
+
+static inline void leftshift_onebit(const uint8_t *input, uint8_t *output)
+{
+	int i, overflow = 0;
+
+	for (i = (AES_BLOCK_SIZE - 1); i >= 0; i--) {
+		output[i] = input[i] << 1;
+		output[i] |= overflow;
+		overflow = (input[i] & 0x80) ? 1 : 0;
+	}
+}
+
+static void generate_subkey(struct crypto_cipher *tfm, uint8_t *k1, uint8_t *k2)
+{
+	uint8_t l[AES_BLOCK_SIZE], tmp[AES_BLOCK_SIZE];
+	const uint8_t const_rb[AES_BLOCK_SIZE] = {
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87
+	};
+	const uint8_t const_zero[AES_BLOCK_SIZE] = {
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	crypto_cipher_encrypt_one(tfm, l, const_zero);
+
+	if ((l[0] & 0x80) == 0) {       /* If MSB(l) = 0, then k1 = l << 1 */
+		leftshift_onebit(l, k1);
+	} else {                /* Else k1 = ( l << 1 ) (+) Rb */
+		leftshift_onebit(l, tmp);
+		xor_128(tmp, const_rb, k1);
+	}
+
+	if ((k1[0] & 0x80) == 0) {
+		leftshift_onebit(k1, k2);
+	} else {
+		leftshift_onebit(k1, tmp);
+		xor_128(tmp, const_rb, k2);
+	}
+}
+
+static inline void padding(const uint8_t *lastb, uint8_t *pad, uint16_t length)
+{
+	uint8_t j;
+
+	/* original last block */
+	for (j = 0; j < AES_BLOCK_SIZE; j++) {
+		if (j < length)
+			pad[j] = lastb[j];
+		else if (j == length)
+			pad[j] = 0x80;
+		else
+			pad[j] = 0x00;
+	}
+}
+
+int qdf_crypto_aes_128_cmac(const uint8_t *key, const uint8_t *data,
+			    uint16_t len, uint8_t *mic)
+{
+	uint8_t x[AES_BLOCK_SIZE], y[AES_BLOCK_SIZE];
+	uint8_t m_last[AES_BLOCK_SIZE], padded[AES_BLOCK_SIZE];
+	uint8_t k1[AES_KEYSIZE_128], k2[AES_KEYSIZE_128];
+	int cmp_blk;
+	int i, num_block = (len + 15) / AES_BLOCK_SIZE;
+	struct crypto_cipher *tfm;
+	int ret;
+
+	/*
+	 * Calculate MIC and then copy
+	 */
+	tfm = crypto_alloc_cipher("aes", 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(tfm)) {
+		ret = PTR_ERR(tfm);
+		qdf_err("crypto_alloc_cipher failed (%d)", ret);
+		return ret;
+	}
+
+	ret = crypto_cipher_setkey(tfm, key, AES_KEYSIZE_128);
+	if (ret) {
+		qdf_err("crypto_cipher_setkey failed (%d)", ret);
+		crypto_free_cipher(tfm);
+		return ret;
+	}
+
+	generate_subkey(tfm, k1, k2);
+
+	if (num_block == 0) {
+		num_block = 1;
+		cmp_blk = 0;
+	} else {
+		cmp_blk = ((len % AES_BLOCK_SIZE) == 0) ? 1 : 0;
+	}
+
+	if (cmp_blk) {
+		/* Last block is complete block */
+		xor_128(&data[AES_BLOCK_SIZE * (num_block - 1)], k1, m_last);
+	} else {
+		/* Last block is not complete block */
+		padding(&data[AES_BLOCK_SIZE * (num_block - 1)], padded,
+			len % AES_BLOCK_SIZE);
+		xor_128(padded, k2, m_last);
+	}
+
+	for (i = 0; i < AES_BLOCK_SIZE; i++)
+		x[i] = 0;
+
+	for (i = 0; i < (num_block - 1); i++) {
+		/* y = Mi (+) x */
+		xor_128(x, &data[AES_BLOCK_SIZE * i], y);
+		/* x = AES-128(KEY, y) */
+		crypto_cipher_encrypt_one(tfm, x, y);
+	}
+
+	xor_128(x, m_last, y);
+	crypto_cipher_encrypt_one(tfm, x, y);
+
+	crypto_free_cipher(tfm);
+
+	memcpy(mic, x, CMAC_TLEN);
+
+	return 0;
+}
+
+/**
+ * set_desc_flags() - set flags variable in the shash_desc struct
+ * @desc: pointer to shash_desc struct
+ * @tfm: pointer to crypto_shash struct
+ *
+ * Set the flags variable in the shash_desc struct by getting the flag
+ * from the crypto_hash struct. The flag is not actually used, prompting
+ * its removal from kernel code in versions 5.2 and above. Thus, for
+ * versions 5.2 and above, do not set the flag variable of shash_desc.
+ */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0))
+static void set_desc_flags(struct shash_desc *desc, struct crypto_shash *tfm)
+{
+	desc->flags = crypto_shash_get_flags(tfm);
+}
+#else
+static void set_desc_flags(struct shash_desc *desc, struct crypto_shash *tfm)
+{
+}
+#endif
 
 int qdf_get_keyed_hash(const char *alg, const uint8_t *key,
 			unsigned int key_len, const uint8_t *src[],
@@ -124,7 +333,7 @@ int qdf_get_keyed_hash(const char *alg, const uint8_t *key,
 	do {
 		SHASH_DESC_ON_STACK(desc, tfm);
 		desc->tfm = tfm;
-		desc->flags = crypto_shash_get_flags(tfm);
+		set_desc_flags(desc, tfm);
 
 		ret = crypto_shash_init(desc);
 		if (ret) {
@@ -156,6 +365,8 @@ error:
 	crypto_free_shash(tfm);
 	return ret;
 }
+
+qdf_export_symbol(qdf_get_keyed_hash);
 
 /* AES String to Vector from RFC 5297, 'out' should be of length AES_BLOCK_SIZE
  */
@@ -356,9 +567,9 @@ int qdf_aes_ctr(const uint8_t *key, unsigned int key_len, uint8_t *siv,
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
-int qdf_crypto_aes_gmac(uint8_t *key, uint16_t key_length,
-			uint8_t *iv, uint8_t *aad, uint8_t *data,
-			uint16_t data_len, uint8_t *mic)
+int qdf_crypto_aes_gmac(const uint8_t *key, uint16_t key_length,
+			uint8_t *iv, const uint8_t *aad,
+			const uint8_t *data, uint16_t data_len, uint8_t *mic)
 {
 	struct crypto_aead *tfm;
 	int ret = 0;

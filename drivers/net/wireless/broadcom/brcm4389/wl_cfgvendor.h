@@ -164,6 +164,11 @@ typedef enum {
 	/* define all customer related setting command between 0x2000 and 0x20FF */
 	ANDROID_NL80211_SUBCMD_CUSTOM_SETTING_START =	0x2000,
 	ANDROID_NL80211_SUBCMD_CUSTOM_SETTING_END   =	0x20FF,
+
+	/* define all Channel Avoidance related commands between 0x2100 and 0x211F */
+	ANDROID_NL80211_SUBCMD_CHAVOID_RANGE_START =	0x2100,
+	ANDROID_NL80211_SUBCMD_CHAVOID_RANGE_END   =	0x211F,
+
 	/* This is reserved for future usage */
 
 } ANDROID_VENDOR_SUB_COMMAND;
@@ -198,6 +203,8 @@ enum andr_vendor_subcmd {
 	WIFI_SUBCMD_FW_ROAM_POLICY,
 	WIFI_SUBCMD_ROAM_CAPABILITY,
 	WIFI_SUBCMD_SET_LATENCY_MODE,
+	WIFI_SUBCMD_SET_MULTISTA_PRIMARY_CONNECTION,
+	WIFI_SUBCMD_SET_MULTISTA_USE_CASE,
 	RTT_SUBCMD_SET_CONFIG = ANDROID_NL80211_SUBCMD_RTT_RANGE_START,
 	RTT_SUBCMD_CANCEL_CONFIG,
 	RTT_SUBCMD_GETCAPABILITY,
@@ -226,6 +233,7 @@ enum andr_vendor_subcmd {
 	DEBUG_SET_HAL_START,
 	DEBUG_SET_HAL_STOP,
 	DEBUG_SET_HAL_PID,
+	DEBUG_SET_TPUT_DEBUG_DUMP_CMD,
 
 	WIFI_OFFLOAD_SUBCMD_START_MKEEP_ALIVE = ANDROID_NL80211_SUBCMD_WIFI_OFFLOAD_RANGE_START,
 	WIFI_OFFLOAD_SUBCMD_STOP_MKEEP_ALIVE,
@@ -256,6 +264,7 @@ enum andr_vendor_subcmd {
 	WIFI_SUBCMD_THERMAL_MITIGATION = ANDROID_NL80211_SUBCMD_MITIGATION_RANGE_START,
 	WIFI_SUBCMD_CUSTOM_MAPPING_OF_DSCP = ANDROID_NL80211_SUBCMD_CUSTOM_SETTING_START,
 	WIFI_SUBCMD_CUSTOM_MAPPING_OF_DSCP_RESET,
+	WIFI_SUBCMD_CHAVOID_SUBCMD_SET_CONFIG = ANDROID_NL80211_SUBCMD_CHAVOID_RANGE_START,
 	/* Add more sub commands here */
 	VENDOR_SUBCMD_MAX
 };
@@ -504,6 +513,8 @@ typedef enum {
 	DUMP_LEN_ATTR_RTT_LOG = 37,
 	DUMP_LEN_ATTR_SDTC_ETB_DUMP = 38,
 	DUMP_FILENAME_ATTR_SDTC_ETB_DUMP = 39,
+	DUMP_LEN_ATTR_PKTID_MAP_LOG = 40,
+	DUMP_LEN_ATTR_PKTID_UNMAP_LOG = 41,
 	/* Please add new attributes from here to sync up old HAL */
 	DUMP_TYPE_ATTR_MAX
 } EWP_DUMP_EVENT_ATTRIBUTE;
@@ -536,6 +547,8 @@ typedef enum {
 	DUMP_BUF_ATTR_AXI_ERROR = 23,
 	DUMP_BUF_ATTR_RTT_LOG = 24,
 	DUMP_BUF_ATTR_SDTC_ETB_DUMP = 25,
+	DUMP_BUF_ATTR_PKTID_MAP_LOG = 26,
+	DUMP_BUF_ATTR_PKTID_UNMAP_LOG = 27,
 	/* Please add new attributes from here to sync up old HAL */
 	DUMP_BUF_ATTR_MAX
 } EWP_DUMP_CMD_ATTRIBUTE;
@@ -559,6 +572,33 @@ enum custom_setting_attributes {
 	CUSTOM_SETTING_ATTRIBUTE_ACCESS_CATEGORY	= 3,
 	CUSTOM_SETTING_ATTRIBUTE_MAX
 };
+
+#ifdef CHANNEL_AVOIDANCE_SUPPORT
+enum wifi_chavoid_attributes {
+	CHAVOID_ATTRIBUTE_INVALID   = 0,
+	CHAVOID_ATTRIBUTE_CNT       = 1,
+	CHAVOID_ATTRIBUTE_CONFIG    = 2,
+	CHAVOID_ATTRIBUTE_BAND      = 3,
+	CHAVOID_ATTRIBUTE_CHANNEL   = 4,
+	CHAVOID_ATTRIBUTE_PWRCAP    = 5,
+	CHAVOID_ATTRIBUTE_MANDATORY = 6,
+	/* Add more attributes here */
+	CHAVOID_ATTRIBUTE_MAX
+};
+
+#define CHAVOID_WIFI_DIRECT 0x0001
+#define CHAVOID_SOFTAP      0x0002
+#define CHAVOID_WIFI_AWARE  0x0004
+#endif /* CHANNEL_AVOIDANCE_SUPPORT */
+
+#ifdef TPUT_DEBUG_DUMP
+enum tput_debug_attributes {
+	DUMP_TPUT_DEBUG_ATTR_INVALID = 0,
+	DUMP_TPUT_DEBUG_ATTR_FILE_NAME  = 1,
+	DUMP_TPUT_DEBUG_ATTR_CMD = 2,
+	DUMP_TPUT_DEBUG_ATTR_BUF = 3
+};
+#endif /* TPUT_DEBUG_DUMP */
 
 typedef enum wl_vendor_event {
 	BRCM_VENDOR_EVENT_UNSPEC		= 0,
@@ -611,6 +651,8 @@ typedef enum wl_vendor_event {
 	BRCM_VENDOR_EVENT_RCC_INFO		= 41,
 	BRCM_VENDOR_EVENT_ACS			= 42,
 	BRCM_VENDOR_EVENT_TWT			= 43,
+	BRCM_VENDOR_EVENT_TPUT_DUMP		= 44,
+	GOOGLE_NAN_EVENT_MATCH_EXPIRY		= 45,
 	BRCM_VENDOR_EVENT_LAST
 } wl_vendor_event_t;
 
@@ -817,6 +859,58 @@ typedef enum {
 } wifi_twt_attribute;
 #endif /* WL_TWT */
 
+typedef enum {
+	/**
+	* Usage:
+	* - This will be sent down for make before break use-case.
+	* - Platform is trying to speculatively connect to a second network and evaluate it without
+	*   disrupting the primary connection.
+	*
+	* Requirements for Firmware:
+	* - Do not reduce the number of tx/rx chains of primary connection.
+	* - If using MCC, should set the MCC duty cycle of the primary connection to be higher than
+	*   the secondary connection (maybe 70/30 split).
+	* - Should pick the best BSSID for the secondary STA (disregard the chip mode)
+	*   independent of the primary STA:
+	* - Dont optimize for DBS vs MCC/SCC
+	* - Should not impact the primary connections bssid selection:
+	* - Dont downgrade chains of the existing primary connection.
+	* - Dont optimize for DBS vs MCC/SCC.
+	*/
+	WIFI_DUAL_STA_TRANSIENT_PREFER_PRIMARY = 0,
+	/**
+	* Usage:
+	* - This will be sent down for any app requested peer to peer connections.
+	* - In this case, both the connections needs to be allocated equal resources.
+	* - For the peer to peer use case, BSSID for the secondary connection will be chosen by the
+	*   framework.
+	*
+	* Requirements for Firmware:
+	* - Can choose MCC or DBS mode depending on the MCC efficiency and HW capability.
+	* - If using MCC, set the MCC duty cycle of the primary connection to be equal to the
+	*   secondary connection.
+	* - Prefer BSSID candidates which will help provide the best "overall" performance for
+	*   both the connections.
+	*/
+	WIFI_DUAL_STA_NON_TRANSIENT_UNBIASED = 1
+} wifi_multi_sta_use_case;
+
+enum wifi_multista_attr {
+    MULTISTA_ATTRIBUTE_PRIM_CONN_IFACE,
+    MULTISTA_ATTRIBUTE_USE_CASE,
+    /* Add more attributes here */
+    MULTISTA_ATTRIBUTE_MAX
+};
+
+#ifdef TPUT_DEBUG_DUMP
+typedef enum {
+	TPUT_DEBUG_ATTRIBUTE_CMD_STR = 0x0001,
+	TPUT_DEBUG_ATTRIBUTE_SUB_CMD_STR_AMPDU = 0x0002,
+	TPUT_DEBUG_ATTRIBUTE_SUB_CMD_STR_CLEAR = 0x0003,
+	TPUT_DEBUG_ATTRIBUTE_MAX
+} TPUT_DEBUG_ATTRIBUTE;
+#endif /* TPUT_DEBUG_DUMP */
+
 /* Capture the BRCM_VENDOR_SUBCMD_PRIV_STRINGS* here */
 #define BRCM_VENDOR_SCMD_CAPA	"cap"
 #define MEMDUMP_PATH_LEN	128
@@ -931,4 +1025,10 @@ int wl_cfgvendor_start_ap_params_handler(struct wiphy *wiphy, struct wireless_de
 #ifdef WL_CFGVENDOR_SEND_ALERT_EVENT
 void wl_cfgvendor_send_alert_event(struct net_device *dev, uint32 reason);
 #endif /* WL_CFGVENDOR_SEND_ALERT_EVENT */
+#ifdef TPUT_DEBUG_DUMP
+void wl_cfgdbg_tput_debug_mode(struct net_device *ndev, bool enable);
+void wl_cfgdbg_tput_debug_work(struct work_struct *work);
+int wl_cfgdbg_tput_debug_get_cmd(struct wiphy *wiphy,
+	struct wireless_dev *wdev, const void *data, int len);
+#endif /* TPUT_DEBUG_DUMP */
 #endif /* _wl_cfgvendor_h_ */

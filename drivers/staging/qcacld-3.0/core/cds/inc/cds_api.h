@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -61,6 +61,7 @@
  * CDS_DRIVER_STATE_RECOVERING: Recovery in progress.
  * CDS_DRIVER_STATE_BAD: Driver in bad state.
  * CDS_DRIVER_STATE_MODULE_STOPPING: Module stop in progress.
+ * CDS_DRIVER_STATE_ASSERTING_TARGET: Driver assert target in progress.
  */
 enum cds_driver_state {
 	CDS_DRIVER_STATE_UNINITIALIZED          = 0,
@@ -71,6 +72,7 @@ enum cds_driver_state {
 	CDS_DRIVER_STATE_BAD                    = BIT(4),
 	CDS_DRIVER_STATE_FW_READY               = BIT(5),
 	CDS_DRIVER_STATE_MODULE_STOPPING        = BIT(6),
+	CDS_DRIVER_STATE_ASSERTING_TARGET       = BIT(7),
 };
 
 /**
@@ -273,6 +275,33 @@ static inline bool cds_is_driver_loaded(void)
 }
 
 /**
+ * cds_set_assert_target_in_progress() - Setting assert target in progress
+ *
+ * @value: value to set
+ *
+ * Return: none
+ */
+static inline void cds_set_assert_target_in_progress(bool value)
+{
+	if (value)
+		cds_set_driver_state(CDS_DRIVER_STATE_ASSERTING_TARGET);
+	else
+		cds_clear_driver_state(CDS_DRIVER_STATE_ASSERTING_TARGET);
+}
+
+/**
+ * cds_is_target_asserting() - Is driver asserting target
+ *
+ * Return: true if driver is asserting target
+ */
+static inline bool cds_is_target_asserting(void)
+{
+	enum cds_driver_state state = cds_get_driver_state();
+
+	return __CDS_IS_DRIVER_STATE(state, CDS_DRIVER_STATE_ASSERTING_TARGET);
+}
+
+/**
  * cds_init() - Initialize CDS
  *
  * This function allocates the resource required for CDS, but does not
@@ -327,8 +356,6 @@ QDF_STATUS cds_dp_close(struct wlan_objmgr_psoc *psoc);
 
 void *cds_get_context(QDF_MODULE_ID module_id);
 
-uint8_t cds_get_datapath_handles(void **soc, struct cdp_pdev **pdev,
-			 struct cdp_vdev **vdev, uint8_t sessionId);
 void *cds_get_global_context(void);
 
 QDF_STATUS cds_alloc_context(QDF_MODULE_ID module_id, void **module_context,
@@ -337,9 +364,6 @@ QDF_STATUS cds_alloc_context(QDF_MODULE_ID module_id, void **module_context,
 QDF_STATUS cds_free_context(QDF_MODULE_ID module_id, void *module_context);
 
 QDF_STATUS cds_set_context(QDF_MODULE_ID module_id, void *context);
-
-QDF_STATUS cds_get_vdev_types(enum QDF_OPMODE mode, uint32_t *type,
-			      uint32_t *subType);
 
 void cds_flush_work(void *work);
 void cds_flush_delayed_work(void *dwork);
@@ -377,6 +401,10 @@ void cds_reset_recovery_reason(void);
  */
 #define cds_trigger_recovery(reason) \
 	__cds_trigger_recovery(reason, __func__, __LINE__)
+
+void cds_trigger_recovery_psoc(void *psoc, enum qdf_hang_reason reason,
+			       const char *func, const uint32_t line);
+
 void __cds_trigger_recovery(enum qdf_hang_reason reason, const char *func,
 			    const uint32_t line);
 
@@ -498,21 +526,12 @@ bool cds_is_group_addr(uint8_t *mac_addr)
 }
 
 /**
- * cds_get_arp_stats_gw_ip() - get arp stats track IP
- * @context: osif dev
- *
- * Return: ARP stats IP to track.
- */
-uint32_t cds_get_arp_stats_gw_ip(void *context);
-/**
  * cds_get_connectivity_stats_pkt_bitmap() - get pkt-type bitmap
  * @context: osif dev context
  *
  * Return: pkt bitmap to track
  */
 uint32_t cds_get_connectivity_stats_pkt_bitmap(void *context);
-void cds_incr_arp_stats_tx_tgt_delivered(void);
-void cds_incr_arp_stats_tx_tgt_acked(void);
 
 #ifdef FEATURE_ALIGN_STATS_FROM_DP
 /**

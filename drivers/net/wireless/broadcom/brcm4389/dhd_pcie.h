@@ -263,6 +263,13 @@ typedef struct _dhd_flow_ring_status_trace_t {
 } dhd_frs_trace_t;
 #endif /* DHD_FLOW_RING_STATUS_TRACE */
 
+typedef enum dhd_pcie_link_state {
+	DHD_PCIE_ALL_GOOD = 0,
+	DHD_PCIE_LINK_DOWN = 1,
+	DHD_PCIE_COMMON_BP_DOWN = 2,
+	DHD_PCIE_WLAN_BP_DOWN = 3
+} dhd_pcie_link_state_type_t;
+
 /** Instantiated once for each hardware (dongle) instance that this DHD manages */
 typedef struct dhd_bus {
 	dhd_pub_t	*dhd;	/**< pointer to per hardware (dongle) unique instance */
@@ -586,6 +593,7 @@ typedef struct dhd_bus {
 	uint64 rd_shared_pass_time;
 	uint32 hwa_mem_base;
 	uint32 hwa_mem_size;
+	dhd_pcie_link_state_type_t link_state;
 } dhd_bus_t;
 
 #ifdef DHD_MSI_SUPPORT
@@ -758,6 +766,7 @@ extern uint32 dhdpcie_rc_access_cap(dhd_bus_t *bus, int cap, uint offset, bool i
 extern uint32 dhdpcie_ep_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext,
 		bool is_write, uint32 writeval);
 extern uint32 dhd_debug_get_rc_linkcap(dhd_bus_t *bus);
+extern void dhdpcie_enable_irq_loop(dhd_bus_t *bus);
 #else
 static INLINE uint32 dhdpcie_rc_config_read(dhd_bus_t *bus, uint offset) { return 0;}
 static INLINE uint32 dhdpcie_rc_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext,
@@ -765,7 +774,8 @@ static INLINE uint32 dhdpcie_rc_access_cap(dhd_bus_t *bus, int cap, uint offset,
 static INLINE uint32 dhdpcie_ep_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext,
 		bool is_write, uint32 writeval) { return -1;}
 static INLINE uint32 dhd_debug_get_rc_linkcap(dhd_bus_t *bus) { return -1;}
-#endif
+static INLINE void dhdpcie_enable_irq_loop(dhd_bus_t *bus) { return; }
+#endif /* LINUX || linux */
 #if defined(linux) || defined(LINUX)
 extern int dhdpcie_start_host_dev(dhd_bus_t *bus);
 extern int dhdpcie_stop_host_dev(dhd_bus_t *bus);
@@ -833,7 +843,7 @@ extern void dhd_bus_doorbell_timeout_reset(struct dhd_bus *bus);
 #error "Not supported platform"
 #endif /* CONFIG_SOC_EXYNOSXXXX & CONFIG_MACH_UNIVERSALXXXX */
 extern void exynos_pcie_pm_suspend(int ch_num);
-extern void exynos_pcie_pm_resume(int ch_num);
+extern int exynos_pcie_pm_resume(int ch_num);
 #endif /* CONFIG_ARCH_EXYNOS */
 
 #if defined(CONFIG_ARCH_MSM)

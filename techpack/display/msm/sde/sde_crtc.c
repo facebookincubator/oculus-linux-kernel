@@ -918,44 +918,44 @@ static bool _sde_crtc_setup_is_3dmux_dsc(struct drm_crtc_state *state)
 {
 	int i;
 	struct sde_crtc_state *cstate;
-	bool is_3dmux_dsc = false;
+	uint64_t topology = SDE_RM_TOPOLOGY_NONE;
 
 	cstate = to_sde_crtc_state(state);
 
 	for (i = 0; i < cstate->num_connectors; i++) {
 		struct drm_connector *conn = cstate->connectors[i];
 
-		if (sde_connector_get_topology_name(conn) ==
-				SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC ||
-				sde_connector_get_topology_name(conn) ==
-				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC)
-			is_3dmux_dsc = true;
+		topology = sde_connector_get_topology_name(conn);
+		if ((topology == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC) ||
+				(topology ==
+				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC))
+			return true;
 	}
 
-	return is_3dmux_dsc;
+	return false;
 }
 
 static bool _sde_crtc_setup_is_quad_pipe(struct drm_crtc_state *state)
 {
 	int i;
 	struct sde_crtc_state *cstate;
-	bool is_quad_pipe = false;
+	uint64_t topology = SDE_RM_TOPOLOGY_NONE;
 
 	cstate = to_sde_crtc_state(state);
 
 	for (i = 0; i < cstate->num_connectors; i++) {
 		struct drm_connector *conn = cstate->connectors[i];
 
-		if (sde_connector_get_topology_name(conn) ==
-				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE ||
-				sde_connector_get_topology_name(conn) ==
-				SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE ||
-				sde_connector_get_topology_name(conn) ==
-				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC)
-			is_quad_pipe = true;
+		topology = sde_connector_get_topology_name(conn);
+		if ((topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE) ||
+				(topology ==
+				SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE) ||
+				(topology ==
+				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC))
+			return true;
 	}
 
-	return is_quad_pipe;
+	return false;
 }
 
 static int _sde_crtc_set_crtc_roi(struct drm_crtc *crtc,
@@ -1382,6 +1382,7 @@ static void _sde_crtc_program_lm_output_roi(struct drm_crtc *crtc)
 	struct sde_crtc_state *crtc_state;
 	const struct sde_rect *lm_roi;
 	struct sde_hw_mixer *hw_lm;
+	bool right_mixer = false;
 	int lm_idx;
 
 	if (!crtc)
@@ -1395,21 +1396,22 @@ static void _sde_crtc_program_lm_output_roi(struct drm_crtc *crtc)
 
 		lm_roi = &crtc_state->lm_roi[lm_idx];
 		hw_lm = sde_crtc->mixers[lm_idx].hw_lm;
+		right_mixer = (hw_lm->idx - LM_0) % CRTC_DUAL_MIXERS;
 
 		SDE_EVT32(DRMID(crtc_state->base.crtc), lm_idx,
-			lm_roi->x, lm_roi->y, lm_roi->w, lm_roi->h);
+				lm_roi->x, lm_roi->y, lm_roi->w, lm_roi->h,
+				right_mixer);
 
 		if (sde_kms_rect_is_null(lm_roi))
 			continue;
 
 		hw_lm->cfg.out_width = lm_roi->w;
 		hw_lm->cfg.out_height = lm_roi->h;
-		hw_lm->cfg.right_mixer = (hw_lm->idx - LM_0) %
-				CRTC_DUAL_MIXERS;
+		hw_lm->cfg.right_mixer = right_mixer;
 
 		cfg.out_width = lm_roi->w;
 		cfg.out_height = lm_roi->h;
-		cfg.right_mixer = hw_lm->cfg.right_mixer;
+		cfg.right_mixer = right_mixer;
 		cfg.flags = 0;
 		hw_lm->ops.setup_mixer_out(hw_lm, &cfg);
 	}
@@ -1676,8 +1678,9 @@ static void _sde_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 					sde_plane_pipe(plane);
 		stage_cfg->multirect_index[pstate->stage][stage_idx] =
 					pstate->multirect_index;
-		stage_cfg->layout_index[pstate->stage][stage_idx] =
-			    sde_plane_get_property(pstate, PLANE_PROP_LAYOUT);
+		stage_cfg->sspp_layout[pstate->stage][stage_idx] =
+				sde_plane_get_property(pstate,
+				PLANE_PROP_LAYOUT);
 
 		SDE_EVT32(DRMID(crtc), DRMID(plane), stage_idx,
 			sde_plane_pipe(plane) - SSPP_VIG0, pstate->stage,
@@ -1870,7 +1873,7 @@ static void _sde_crtc_blend_setup(struct drm_crtc *crtc,
 			cfg.pending_flush_mask);
 
 		ctl->ops.setup_blendstage(ctl, mixer[i].hw_lm->idx,
-			mixer[i].hw_lm->cfg.flags,
+			mixer[i].hw_lm->cfg.lm_layout,
 			&sde_crtc->stage_cfg);
 	}
 
@@ -3263,33 +3266,27 @@ static void _sde_crtc_wait_for_fences(struct drm_crtc *crtc)
 	SDE_ATRACE_END("plane_wait_input_fence");
 }
 
-static void _sde_crtc_setup_lm_layout(
-		struct sde_crtc *sde_crtc,
-		struct sde_crtc_mixer *mixer,
-		bool swap_mixers)
+static void _sde_crtc_setup_quad_lm_layout(struct sde_crtc *sde_crtc,
+	struct sde_crtc_mixer *mixer, int mixer_num, bool swap_mixers)
 {
 	struct sde_hw_mixer_cfg *lm_cfg;
-	int num_mixers;
 
-	if (!sde_crtc || !mixer) {
+	if (!sde_crtc || !mixer || mixer_num >= CRTC_QUAD_MIXERS) {
 		SDE_ERROR("invalid arguments\n");
 		return;
 	}
 
-	num_mixers = sde_crtc->num_mixers;
 	lm_cfg = &mixer->hw_lm->cfg;
 
-	if (num_mixers < CRTC_DUAL_MIXERS)
-		lm_cfg->flags |= swap_mixers ?
-			SDE_MIXER_LAYOUT_RIGHT : SDE_MIXER_LAYOUT_LEFT;
+	if (mixer_num < CRTC_DUAL_MIXERS)
+		lm_cfg->lm_layout = swap_mixers ?
+			SDE_LAYOUT_RIGHT : SDE_LAYOUT_LEFT;
 	else
-		lm_cfg->flags |= swap_mixers ?
-			SDE_MIXER_LAYOUT_LEFT : SDE_MIXER_LAYOUT_RIGHT;
+		lm_cfg->lm_layout = swap_mixers ?
+			SDE_LAYOUT_LEFT : SDE_LAYOUT_RIGHT;
 
-	lm_cfg->right_mixer = (num_mixers % CRTC_DUAL_MIXERS) ? true : false;
-
-	SDE_DEBUG("mixer layout:%d, rigth mixer:%d\n",
-			lm_cfg->flags, lm_cfg->right_mixer);
+	SDE_DEBUG("mixer number:%d, lm layout:%d\n", mixer_num,
+			lm_cfg->lm_layout);
 }
 
 static void _sde_crtc_setup_mixer_for_encoder(
@@ -3335,9 +3332,8 @@ static void _sde_crtc_setup_mixer_for_encoder(
 		}
 
 		if (_sde_crtc_setup_is_quad_pipe(sde_crtc->base.state))
-			_sde_crtc_setup_lm_layout(
-					sde_crtc,
-					mixer,
+			_sde_crtc_setup_quad_lm_layout(sde_crtc, mixer,
+					sde_crtc->num_mixers,
 					sde_kms->catalog->swap_mixers);
 
 		/* Dspp may be null */
@@ -5068,6 +5064,58 @@ static int _sde_crtc_atomic_check_pstates(struct drm_crtc *crtc,
 	return 0;
 }
 
+static int _sde_crtc_check_plane_layout(struct drm_crtc *crtc,
+		struct drm_crtc_state *crtc_state)
+{
+	struct drm_plane *plane;
+	struct drm_plane_state *plane_state;
+	struct sde_plane_state *pstate;
+	enum sde_layout layout;
+	int layout_split;
+
+	if (!_sde_crtc_setup_is_quad_pipe(crtc_state))
+		return 0;
+
+	drm_atomic_crtc_state_for_each_plane(plane, crtc_state) {
+		plane_state = drm_atomic_get_existing_plane_state(
+				crtc_state->state, plane);
+		if (!plane_state)
+			continue;
+
+		pstate = to_sde_plane_state(plane_state);
+		layout = sde_plane_get_property(pstate, PLANE_PROP_LAYOUT);
+		layout_split = crtc_state->mode.hdisplay >> 1;
+
+		/* update layout if global coordinate is used */
+		if (layout == SDE_LAYOUT_NONE) {
+			if (plane_state->crtc_x >= layout_split) {
+				layout = SDE_LAYOUT_RIGHT;
+				plane_state->crtc_x -= layout_split;
+				pstate->layout_offset = layout_split;
+			} else {
+				layout = SDE_LAYOUT_LEFT;
+				pstate->layout_offset = -1;
+			}
+			pstate->property_values[PLANE_PROP_LAYOUT].value =
+					layout;
+			SDE_DEBUG("plane%d updated: crtc_x=%d layout=%d\n",
+				DRMID(plane), plane_state->crtc_x, layout);
+		}
+
+		/* check layout boundary */
+		if (CHECK_LAYER_BOUNDS(plane_state->crtc_x,
+				plane_state->crtc_w, layout_split)) {
+			SDE_ERROR("invalid horizontal destination\n");
+			SDE_ERROR("x:%d w:%d hdisp:%d layout:%d\n",
+				plane_state->crtc_x, plane_state->crtc_w,
+				layout_split, layout);
+			return -E2BIG;
+		}
+	}
+
+	return 0;
+}
+
 static int sde_crtc_atomic_check(struct drm_crtc *crtc,
 		struct drm_crtc_state *state)
 {
@@ -5118,6 +5166,13 @@ static int sde_crtc_atomic_check(struct drm_crtc *crtc,
 	rc = _sde_crtc_check_dest_scaler_data(crtc, state);
 	if (rc) {
 		SDE_ERROR("crtc%d failed dest scaler check %d\n",
+			crtc->base.id, rc);
+		goto end;
+	}
+
+	rc = _sde_crtc_check_plane_layout(crtc, state);
+	if (rc) {
+		SDE_ERROR("crtc%d failed plane layout check %d\n",
 			crtc->base.id, rc);
 		goto end;
 	}

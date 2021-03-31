@@ -877,7 +877,8 @@ static int cm710x_write_firmware_Codec_CMD(
 
 	for (idx = 0; idx < Count; idx++) {
 		if (cm710x_codec->bSuspendRequestPending)
-			break;
+			return -ECANCELED;
+
 		reg = I2CCommand[idx * 4];
 		data = I2CCommand[(idx * 4) + 2] |
 			I2CCommand[(idx * 4) + 3] << 8;
@@ -909,6 +910,9 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 	int ret = 0;
 
 	do {
+		if (cm710x_codec->bSuspendRequestPending)
+			return -ECANCELED;
+
 		if (len > 16 * 1024)
 			iWriteSize = 16 * 1024;
 		else
@@ -918,7 +922,7 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 			"SPI Write chunk Addr 0x%08x Len = %d\n",
 			uAddr, iWriteSize);
 		ret = cm710x_write_SPI_Dsp(uAddr, fwData, iWriteSize);
-		if (ret != 0 || cm710x_codec->bSuspendRequestPending) {
+		if (ret != 0) {
 			pr_err("%s: Firmware Load Chunk SPI interface failed\n",
 					__func__);
 			ret = -ECANCELED;
@@ -981,15 +985,14 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		cm710x_codec->bDspMode = true;
 
 	fwData += lSize;
-	if (cm710x_codec->bSuspendRequestPending) {
-		ret = -ECANCELED;
-		goto __EXIT;
-	}
 
 	cm710x_codec->bDelayForPopNoise = true;
 
 	idx = 0;
 	do {
+		if (cm710x_codec->bSuspendRequestPending)
+			return -ECANCELED;
+
 		ret = regmap_read(cm710x_codec->virt_regmap, CM710X_PWR_DSP_ST,
 				&stardsp);
 		if (ret < 0)
@@ -1001,10 +1004,6 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		dev_info(cm710x_codec->dev, "stardsp = 0x%04x\n", stardsp);
 		if (stardsp != 0x3ff)
 			usleep_range(10000, 15000);
-		if (cm710x_codec->bSuspendRequestPending) {
-			ret = -ECANCELED;
-			break;
-		}
 	} while (stardsp != 0x3ff && idx < 1000);
 
 	if (stardsp != 0x3ff) {
@@ -1014,6 +1013,9 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	}
 
 	for (idx = 0; idx < iDspBlockCount; idx++) {
+		if (cm710x_codec->bSuspendRequestPending)
+			return -ECANCELED;
+
 		uAddr = fwData[0] | (fwData[1] << 8) | (fwData[2] << 16) |
 			(fwData[3] << 24);
 		lSize = fwData[4] | (fwData[5] << 8) | (fwData[6] << 16) |
@@ -1358,6 +1360,8 @@ static int cm710x_get_EQ_Default(struct cm710x_codec_priv *cm710x_codec)
 static void cm710x_mic_bypass_dsp(struct cm710x_codec_priv *cm710x_codec,
 					bool enable)
 {
+	const u32 DSPElement = 0x80000000;
+
 	if (enable) {
 		/* MIC bypass DSP */
 		regmap_update_bits(cm710x_codec->virt_regmap,
@@ -1375,6 +1379,11 @@ static void cm710x_mic_bypass_dsp(struct cm710x_codec_priv *cm710x_codec,
 				CM710X_PWR_DSP1, 0x1, 0x0);
 		usleep_range(50000, 50100);
 		cm710x_codec->bEnableMicDspBypass = false;
+
+		mutex_lock(&cm710x_codec->Dsp_Access_Lock);
+		cm710x_dsp_mode_i2c_write_mem(cm710x_codec->real_regmap,
+				0x5FFC0004, (u8 *)&DSPElement, 4);
+		mutex_unlock(&cm710x_codec->Dsp_Access_Lock);
 	}
 }
 
@@ -1442,9 +1451,9 @@ static void cm710x_firmware_download_work(struct work_struct *work)
 
 		cm710x_update_eq_pregain_enable(cm710x_codec);
 		cm710x_mic_recalibration(cm710x_codec);
-	}
 
-	complete_all(&cm710x_codec->fw_download_complete);
+		complete_all(&cm710x_codec->fw_download_complete);
+	}
 }
 
 static void cm710x_pop_noise_work(struct work_struct *work)
@@ -1485,8 +1494,12 @@ static int cm710x_pm_notify(struct notifier_block *nb,
 			container_of(nb, struct cm710x_codec_priv, pm_nb);
 
 	switch (mode) {
+	case PM_SUSPEND_PREPARE:
+		cm710x_codec->bSuspendRequestPending = true;
+		cancel_work_sync(&cm710x_codec->fw_download_work);
+		cm710x_codec->bSuspendRequestPending = false;
+		break;
 	case PM_POST_SUSPEND:
-		reinit_completion(&cm710x_codec->fw_download_complete);
 		schedule_work(&cm710x_codec->fw_download_work);
 		break;
 	default:
@@ -1560,9 +1573,8 @@ static void cm710x_update_DSP_Effect_enable(
 {
 	u32 DSPElement = 0;
 
-	DSPElement = cm710x_codec->bEnableMicDspProcess | 0x0E;
-	if (!cm710x_codec->bEnableAEC)
-		DSPElement |= 0x10;
+	if (cm710x_codec->bEnableMicDspProcess)
+		DSPElement = 0x1;
 
 	dev_info(cm710x_codec->dev, "%s DSPElement = 0x%08x\n",
 		__func__, DSPElement);
@@ -1635,19 +1647,15 @@ static int cm710x_put_vu(struct snd_kcontrol *kcontrol,
 		else
 			cm710x_codec->bEnableAEC = true;
 
-		cm710x_update_DSP_Effect_enable(cm710x_codec);
-
-		if (cm710x_codec->bEnableAEC) {
-			/* Skip AEC for headphone devices */
-			cm710x_codec->bSkipAEC = cm710x_codec->bHeadphoneEnable;
-			cm710x_update_DSP_Effect_Param(cm710x_codec,
-				MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC,
-				cm710x_codec->bSkipAEC);
-		} else {
+		/* Skip AEC for headphone devices */
+		if (cm710x_codec->bEnableAEC && !cm710x_codec->bHeadphoneEnable)
 			cm710x_codec->bSkipAEC = false;
-			cm710x_update_DSP_Effect_Param(cm710x_codec,
-				MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC, 0);
-		}
+		else
+			cm710x_codec->bSkipAEC = true;
+
+		cm710x_update_DSP_Effect_Param(cm710x_codec,
+			MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC,
+			cm710x_codec->bSkipAEC);
 
 		dev_info(cm710x_codec->dev,
 			"%s MIC_DSP_AEC_ON_OFF set Value = %ld\n",
@@ -2438,10 +2446,13 @@ static int cm710x_put_device_switch(struct snd_kcontrol *kcontrol,
 	if (reg == CM710X_STO1_ADC_DIG_VOL)
 		cm710x_codec->bHeadphoneEnable = enabled;
 
-	if (enabled && cm710x_codec->bEnableMicDspProcess &&
-			cm710x_codec->bEnableAEC) {
+	if (cm710x_codec->bEnableMicDspProcess) {
 		/* Skip AEC for headphone devices */
-		cm710x_codec->bSkipAEC = cm710x_codec->bHeadphoneEnable;
+		if (cm710x_codec->bEnableAEC && !cm710x_codec->bHeadphoneEnable)
+			cm710x_codec->bSkipAEC = false;
+		else
+			cm710x_codec->bSkipAEC = true;
+
 		cm710x_update_DSP_Effect_Param(cm710x_codec,
 			MIC_DSP_SKIP_AEC - MIC_DSP_MAXNR_AEC,
 			cm710x_codec->bSkipAEC);
@@ -2468,8 +2479,9 @@ static const struct snd_kcontrol_new cm710x_snd_controls[] = {
 	SOC_DOUBLE_EXT("Speaker Switch", CM710X_STO1_DAC_MIXER,
 		CM710X_M_DAC1_L_STO_L_SFT, CM710X_M_DAC1_R_STO_R_SFT, 1, 1,
 		snd_soc_get_volsw, cm710x_put_device_switch),
-	SOC_DOUBLE("Mic Switch", CM710X_STO2_ADC_DIG_VOL,
-		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1),
+	SOC_DOUBLE_EXT("Mic Switch", CM710X_STO2_ADC_DIG_VOL,
+		CM710X_L_MUTE_SFT, CM710X_R_MUTE_SFT, 1, 1,
+		snd_soc_get_volsw, cm710x_put_device_switch),
 
 	SOC_SINGLE_EXT("Mic DSP Bypass",
 		MIC_DSP_BYPASS_ON_OFF, 0, 1, 0,
@@ -2926,10 +2938,6 @@ static int cm710x_codec_suspend(struct snd_soc_component *component)
 		snd_soc_component_get_drvdata(component);
 	int ret;
 
-	cm710x_codec->bSuspendRequestPending = true;
-	cancel_work_sync(&cm710x_codec->fw_download_work);
-	cm710x_codec->bSuspendRequestPending = false;
-
 	regmap_write(cm710x_codec->virt_regmap, CM710X_RESET, 0x10ec);
 	cm710x_codec->bDspMode = false;
 
@@ -2954,6 +2962,12 @@ static int cm710x_codec_suspend(struct snd_soc_component *component)
 	ret = regulator_disable(cm710x_codec->dvdd_core);
 	if (ret < 0)
 		dev_err(cm710x_codec->dev, "DVDD regulator_disable failed\n");
+
+	/*
+	 * Reinitialize completion since powering off regulators requires
+	 * a firmware reload before any audio playback function will work.
+	 */
+	reinit_completion(&cm710x_codec->fw_download_complete);
 
 	return 0;
 }

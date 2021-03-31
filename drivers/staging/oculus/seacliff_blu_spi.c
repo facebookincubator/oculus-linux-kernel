@@ -262,6 +262,13 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 	struct spi_device *spi = blu->spi;
 	int mux = 0, ret = 0;
 
+	/*
+	 * BLU init requirement of hardware:
+	 * frame [0]: enter soft reset mode and set up global LED current.
+	 * frame [1, STABLE_FRAME_COUNTS1): wait of PLL signal to be stable.
+	 * frame [STABLE_FRAME_COUNTS]: exit soft reset mode.
+	 * frame (STABLE_FRAME_COUNTS, ): input backlight matrix.
+	**/
 	if (blu->frame_counts == 0) {
 		ret = spi_write(spi, blu_enter_reset_cmd, sizeof(blu_enter_reset_cmd));
 		if (ret)
@@ -270,11 +277,11 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		ret = spi_write(spi, blu_led_cmd, sizeof(blu_led_cmd));
 		if (ret)
 			dev_err(&spi->dev, "failed to set LED current, errot %d\n", ret);
-
+	} else if (blu->frame_counts == STABLE_FRAME_COUNTS) {
 		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
 		if (ret)
 			dev_err(&spi->dev, "failed to exit soft reset mode, error %d\n", ret);
-	} else if (blu->frame_counts >= STABLE_FRAME_COUNTS) {
+	} else {
 		for (mux = 0; mux < NUMBER_OF_MUX; ++mux) {
 			ret = spi_write(spi, &(blu->backlight_matrix[blu->mux_size * mux]), blu->mux_size);
 			if (ret)

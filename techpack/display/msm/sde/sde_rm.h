@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __SDE_RM_H__
@@ -26,8 +26,8 @@
  * @SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE:    2 LM, 2 PP, 2 DSC Merge, 1 INTF/WB
  * @SDE_RM_TOPOLOGY_PPSPLIT:              1 LM, 2 PPs, 2 INTF/WB
  * @SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE      4 LM, 4 PP, 3DMux, 2 INTF
+ * @SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC  4 LM, 4 PP, 3DMux, 3 DSC, 2 INTF
  * @SDE_RM_TOPOLOGY_QUADPIPE_DSCMERE      4 LM, 4 PP, 4 DSC Merge, 2 INTF
- * @SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC  4 LM, 4 PP, 3DMux, 2 DSC, 2 INTF
  */
 enum sde_rm_topology_name {
 	SDE_RM_TOPOLOGY_NONE = 0,
@@ -40,8 +40,8 @@ enum sde_rm_topology_name {
 	SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE,
 	SDE_RM_TOPOLOGY_PPSPLIT,
 	SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE,
-	SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,
 	SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC,
+	SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,
 	SDE_RM_TOPOLOGY_MAX,
 };
 

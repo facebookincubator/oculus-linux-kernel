@@ -83,7 +83,7 @@ struct osif_request *osif_request_alloc(const struct osif_request_params *params
 	struct osif_request *request;
 
 	if (!is_initialized) {
-		cfg80211_err("invoked when not initialized");
+		osif_err("invoked when not initialized");
 		return NULL;
 	}
 
@@ -119,7 +119,7 @@ struct osif_request *osif_request_get(void *cookie)
 	struct osif_request *request;
 
 	if (!is_initialized) {
-		cfg80211_err("invoked when not initialized");
+		osif_err("invoked when not initialized");
 		return NULL;
 	}
 	qdf_spin_lock_bh(&spinlock);

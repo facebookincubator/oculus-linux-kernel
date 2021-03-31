@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -83,8 +83,8 @@ static int wlan_hdd_set_chan_before_pre_cac(struct hdd_adapter *ap_adapter,
  * wlan_hdd_validate_and_get_pre_cac_ch() - Validate and get pre cac channel
  * @hdd_ctx: HDD context
  * @ap_adapter: AP adapter
- * @channel: Channel requested by userspace
- * @pre_cac_chan: Pointer to the pre CAC channel
+ * @chan_freq: Channel frequency requested by userspace
+ * @pre_cac_chan_freq: Pointer to the pre CAC channel frequency storage
  *
  * Validates the channel provided by userspace. If user provided channel 0,
  * a valid outdoor channel must be selected from the regulatory channel.
@@ -93,18 +93,18 @@ static int wlan_hdd_set_chan_before_pre_cac(struct hdd_adapter *ap_adapter,
  */
 static int wlan_hdd_validate_and_get_pre_cac_ch(struct hdd_context *hdd_ctx,
 						struct hdd_adapter *ap_adapter,
-						uint8_t channel,
-						uint8_t *pre_cac_chan)
+						uint32_t chan_freq,
+						uint32_t *pre_cac_chan_freq)
 {
 	uint32_t i;
 	QDF_STATUS status;
 	uint32_t weight_len = 0;
 	uint32_t len = CFG_VALID_CHANNEL_LIST_LEN;
-	uint8_t channel_list[NUM_CHANNELS] = {0};
+	uint32_t freq_list[NUM_CHANNELS] = {0};
 	uint8_t pcl_weights[NUM_CHANNELS] = {0};
 	mac_handle_t mac_handle;
 
-	if (channel == 0) {
+	if (!chan_freq) {
 		/* Channel is not obtained from PCL because PCL may not have
 		 * the entire channel list. For example: if SAP is up on
 		 * channel 6 and PCL is queried for the next SAP interface,
@@ -113,23 +113,23 @@ static int wlan_hdd_validate_and_get_pre_cac_ch(struct hdd_context *hdd_ctx,
 		 * first channel from the valid channel list.
 		 */
 		status = policy_mgr_get_valid_chans(hdd_ctx->psoc,
-						    channel_list, &len);
+						    freq_list, &len);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			hdd_err("Failed to get channel list");
 			return -EINVAL;
 		}
 		policy_mgr_update_with_safe_channel_list(hdd_ctx->psoc,
-							 channel_list, &len,
+							 freq_list, &len,
 							 pcl_weights,
 							 weight_len);
 		for (i = 0; i < len; i++) {
-			if (wlan_reg_is_dfs_ch(hdd_ctx->pdev,
-					       channel_list[i])) {
-				*pre_cac_chan = channel_list[i];
+			if (wlan_reg_is_dfs_for_freq(hdd_ctx->pdev,
+						     freq_list[i])) {
+				*pre_cac_chan_freq = freq_list[i];
 				break;
 			}
 		}
-		if (*pre_cac_chan == 0) {
+		if (*pre_cac_chan_freq == 0) {
 			hdd_err("unable to find outdoor channel");
 			return -EINVAL;
 		}
@@ -139,21 +139,21 @@ static int wlan_hdd_validate_and_get_pre_cac_ch(struct hdd_context *hdd_ctx,
 		 * the user is expected to take care of this.
 		 */
 		mac_handle = hdd_ctx->mac_handle;
-		if (!sme_is_channel_valid(mac_handle, channel) ||
-		    !wlan_reg_is_dfs_ch(hdd_ctx->pdev, channel)) {
-			hdd_err("Invalid channel for pre cac:%d", channel);
+		if (!sme_is_channel_valid(mac_handle, chan_freq) ||
+		    !wlan_reg_is_dfs_for_freq(hdd_ctx->pdev, chan_freq)) {
+			hdd_err("Invalid channel for pre cac:%d", chan_freq);
 			return -EINVAL;
 		}
-		*pre_cac_chan = channel;
+		*pre_cac_chan_freq = chan_freq;
 	}
-	hdd_debug("selected pre cac channel:%d", *pre_cac_chan);
+	hdd_debug("selected pre cac channel:%d", *pre_cac_chan_freq);
 	return 0;
 }
 
 /**
  * __wlan_hdd_request_pre_cac() - Start pre CAC in the driver
  * @hdd_ctx: the HDD context to operate against
- * @channel: Channel option provided by userspace
+ * @chan_freq: Channel frequency option provided by userspace
  * @out_adapter: out parameter for the newly created pre-cac adapter
  *
  * Sets the driver to the required hardware mode and start an adapter for
@@ -162,10 +162,11 @@ static int wlan_hdd_validate_and_get_pre_cac_ch(struct hdd_context *hdd_ctx,
  * Return: Zero on success, non-zero value on error
  */
 static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
-				      uint8_t channel,
+				      uint32_t chan_freq,
 				      struct hdd_adapter **out_adapter)
 {
-	uint8_t pre_cac_chan = 0, *mac_addr;
+	uint8_t *mac_addr;
+	uint32_t pre_cac_chan_freq = 0;
 	int ret;
 	struct hdd_adapter *ap_adapter, *pre_cac_adapter;
 	struct hdd_ap_ctx *hdd_ap_ctx;
@@ -174,7 +175,6 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 	struct net_device *dev;
 	struct cfg80211_chan_def chandef;
 	enum nl80211_channel_type channel_type;
-	uint32_t freq;
 	struct ieee80211_channel *chan;
 	mac_handle_t mac_handle;
 	bool val;
@@ -203,16 +203,16 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		return -EINVAL;
 	}
 
-	if (wlan_reg_is_dfs_ch(hdd_ctx->pdev,
-			       hdd_ap_ctx->operating_channel)) {
+	if (wlan_reg_is_dfs_for_freq(hdd_ctx->pdev,
+				     hdd_ap_ctx->operating_chan_freq)) {
 		hdd_err("SAP is already on DFS channel:%d",
-			hdd_ap_ctx->operating_channel);
+			hdd_ap_ctx->operating_chan_freq);
 		return -EINVAL;
 	}
 
-	if (!WLAN_REG_IS_24GHZ_CH(hdd_ap_ctx->operating_channel)) {
+	if (!WLAN_REG_IS_24GHZ_CH_FREQ(hdd_ap_ctx->operating_chan_freq)) {
 		hdd_err("pre CAC alllowed only when SAP is in 2.4GHz:%d",
-			hdd_ap_ctx->operating_channel);
+			hdd_ap_ctx->operating_chan_freq);
 		return -EINVAL;
 	}
 
@@ -222,10 +222,10 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		return -EINVAL;
 	}
 
-	hdd_debug("channel:%d", channel);
+	hdd_debug("channel: %d", chan_freq);
 
-	ret = wlan_hdd_validate_and_get_pre_cac_ch(hdd_ctx, ap_adapter, channel,
-						   &pre_cac_chan);
+	ret = wlan_hdd_validate_and_get_pre_cac_ch(
+		hdd_ctx, ap_adapter, chan_freq, &pre_cac_chan_freq);
 	if (ret != 0) {
 		hdd_err("can't validate pre-cac channel");
 		goto release_intf_addr_and_return_failure;
@@ -278,10 +278,9 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 	 */
 	pre_cac_adapter->session.ap.beacon = qdf_mem_malloc(
 			sizeof(*ap_adapter->session.ap.beacon));
-	if (!pre_cac_adapter->session.ap.beacon) {
-		hdd_err("failed to alloc mem for beacon");
+	if (!pre_cac_adapter->session.ap.beacon)
 		goto stop_close_pre_cac_adapter;
-	}
+
 	qdf_mem_copy(pre_cac_adapter->session.ap.beacon,
 		     ap_adapter->session.ap.beacon,
 		     sizeof(*pre_cac_adapter->session.ap.beacon));
@@ -299,8 +298,8 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		channel_type = NL80211_CHAN_HT20;
 		break;
 	case CH_WIDTH_40MHZ:
-		if (ap_adapter->session.ap.sap_config.sec_ch >
-				ap_adapter->session.ap.sap_config.channel)
+		if (ap_adapter->session.ap.sap_config.sec_ch_freq >
+				ap_adapter->session.ap.sap_config.chan_freq)
 			channel_type = NL80211_CHAN_HT40PLUS;
 		else
 			channel_type = NL80211_CHAN_HT40MINUS;
@@ -310,18 +309,16 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		break;
 	}
 
-	freq = cds_chan_to_freq(pre_cac_chan);
-	chan = ieee80211_get_channel(wiphy, freq);
+	chan = ieee80211_get_channel(wiphy, pre_cac_chan_freq);
 	if (!chan) {
 		hdd_err("channel converion failed");
 		goto stop_close_pre_cac_adapter;
 	}
-
 	cfg80211_chandef_create(&chandef, chan, channel_type);
 
 	hdd_debug("orig width:%d channel_type:%d freq:%d",
 		  ap_adapter->session.ap.sap_config.ch_width_orig,
-		  channel_type, freq);
+		  channel_type, pre_cac_chan_freq);
 	/*
 	 * Doing update after opening and starting pre-cac adapter will make
 	 * sure that driver won't do hardware mode change if there are any
@@ -330,10 +327,8 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 	 * connection update should result in DBS mode
 	 */
 	status = policy_mgr_update_and_wait_for_connection_update(
-					hdd_ctx->psoc,
-					ap_adapter->vdev_id,
-					pre_cac_chan,
-					POLICY_MGR_UPDATE_REASON_PRE_CAC);
+			hdd_ctx->psoc, ap_adapter->vdev_id, pre_cac_chan_freq,
+			POLICY_MGR_UPDATE_REASON_PRE_CAC);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("error in moving to DBS mode");
 		goto stop_close_pre_cac_adapter;
@@ -364,14 +359,17 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		goto stop_close_pre_cac_adapter;
 	}
 
-	ret = wlan_hdd_set_chan_before_pre_cac(ap_adapter,
-					       hdd_ap_ctx->operating_channel);
+	ret = wlan_hdd_set_chan_before_pre_cac(
+			ap_adapter,
+			wlan_reg_freq_to_chan(
+			hdd_ctx->pdev,
+			hdd_ap_ctx->operating_chan_freq));
 	if (ret != 0) {
 		hdd_err("failed to set channel before pre cac");
 		goto stop_close_pre_cac_adapter;
 	}
 
-	ap_adapter->pre_cac_chan = pre_cac_chan;
+	ap_adapter->pre_cac_freq = pre_cac_chan_freq;
 
 	*out_adapter = pre_cac_adapter;
 
@@ -394,7 +392,7 @@ release_intf_addr_and_return_failure:
 	return -EINVAL;
 }
 
-int wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx, uint8_t channel)
+int wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx, uint32_t chan_freq)
 {
 	struct hdd_adapter *adapter;
 	struct osif_vdev_sync *vdev_sync;
@@ -405,7 +403,7 @@ int wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx, uint8_t channel)
 	if (errno)
 		return errno;
 
-	errno = __wlan_hdd_request_pre_cac(hdd_ctx, channel, &adapter);
+	errno = __wlan_hdd_request_pre_cac(hdd_ctx, chan_freq, &adapter);
 	if (errno)
 		goto destroy_sync;
 
@@ -420,6 +418,14 @@ destroy_sync:
 
 	return errno;
 }
+
+const struct nla_policy conditional_chan_switch_policy[
+		QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_FREQ_LIST] = {
+				.type = NLA_BINARY },
+	[QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_STATUS] = {
+				.type = NLA_U32 },
+};
 
 /**
  * __wlan_hdd_cfg80211_conditional_chan_switch() - Conditional channel switch
@@ -447,7 +453,6 @@ __wlan_hdd_cfg80211_conditional_chan_switch(struct wiphy *wiphy,
 		*tb[QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_MAX + 1];
 	uint32_t freq_len, i;
 	uint32_t *freq;
-	uint8_t chans[NUM_CHANNELS] = {0};
 	bool is_dfs_mode_enabled = false;
 
 	hdd_enter_dev(dev);
@@ -485,7 +490,7 @@ __wlan_hdd_cfg80211_conditional_chan_switch(struct wiphy *wiphy,
 	 */
 	if (wlan_cfg80211_nla_parse(tb,
 			   QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_MAX,
-			   data, data_len, NULL)) {
+			   data, data_len, conditional_chan_switch_policy)) {
 		hdd_err("Invalid ATTR");
 		return -EINVAL;
 	}
@@ -509,14 +514,8 @@ __wlan_hdd_cfg80211_conditional_chan_switch(struct wiphy *wiphy,
 	freq = nla_data(
 		tb[QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_FREQ_LIST]);
 
-	for (i = 0; i < freq_len; i++) {
-		if (freq[i] == 0)
-			chans[i] = 0;
-		else
-			chans[i] = ieee80211_frequency_to_channel(freq[i]);
-
+	for (i = 0; i < freq_len; i++)
 		hdd_debug("freq[%d]=%d", i, freq[i]);
-	}
 
 	/*
 	 * The input frequency list from user space is designed to be a
@@ -527,7 +526,7 @@ __wlan_hdd_cfg80211_conditional_chan_switch(struct wiphy *wiphy,
 	 * If channel is zero, any channel in the available outdoor regulatory
 	 * domain will be selected.
 	 */
-	ret = wlan_hdd_request_pre_cac(hdd_ctx, chans[0]);
+	ret = wlan_hdd_request_pre_cac(hdd_ctx, freq[0]);
 	if (ret) {
 		hdd_err("pre cac request failed with reason:%d", ret);
 		return ret;

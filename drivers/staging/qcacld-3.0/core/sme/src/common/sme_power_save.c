@@ -166,6 +166,7 @@ sme_ps_enable_ps_req_params(struct mac_context *mac_ctx, uint32_t vdev_id)
 	wma_enable_sta_ps_mode(enable_ps_req_params);
 
 	qdf_mem_free(enable_ps_req_params);
+
 	sme_debug("Powersave Enable sent to FW");
 	ps_param->ps_state = ps_state;
 
@@ -390,8 +391,6 @@ QDF_STATUS sme_ps_enable_disable(mac_handle_t mac_handle, uint32_t session_id,
 		 * In non associated state driver wont handle the power save
 		 * But kernel expects return status success even
 		 * in the disconnected state.
-		 * TODO: If driver to remember the ps state to further use
-		 * after connection.
 		 */
 		if (!csr_is_conn_state_connected_infra(mac_ctx, session_id))
 			status = QDF_STATUS_SUCCESS;
@@ -751,6 +750,7 @@ QDF_STATUS sme_ps_enable_auto_ps_timer(mac_handle_t mac_handle,
 	struct ps_global_info *ps_global_info = &mac_ctx->sme.ps_global_info;
 	struct ps_params *ps_param = &ps_global_info->ps_params[session_id];
 	QDF_STATUS qdf_status;
+	QDF_TIMER_STATE cur_state;
 
 	if (!timeout && !mac_ctx->usr_cfg_ps_enable) {
 		sme_debug("auto_ps_timer called with timeout 0; ignore");
@@ -759,8 +759,15 @@ QDF_STATUS sme_ps_enable_auto_ps_timer(mac_handle_t mac_handle,
 	if (!timeout)
 		timeout = AUTO_PS_ENTRY_TIMER_DEFAULT_VALUE;
 
-	sme_debug("Start auto_ps_timer for %d ms", timeout);
+	cur_state =
+		qdf_mc_timer_get_current_state(&ps_param->auto_ps_enable_timer);
+	if (cur_state == QDF_TIMER_STATE_STARTING ||
+	    cur_state == QDF_TIMER_STATE_RUNNING) {
+		sme_debug("auto_ps_timer is already started: %d", cur_state);
+		return QDF_STATUS_SUCCESS;
+	}
 
+	sme_debug("Start auto_ps_timer for %d ms", timeout);
 	qdf_status = qdf_mc_timer_start(&ps_param->auto_ps_enable_timer,
 		timeout);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
@@ -772,6 +779,7 @@ QDF_STATUS sme_ps_enable_auto_ps_timer(mac_handle_t mac_handle,
 			return QDF_STATUS_E_FAILURE;
 		}
 	}
+
 	return QDF_STATUS_SUCCESS;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,8 +22,6 @@
 
 #ifndef CFG_MLME_REG_H__
 #define CFG_MLME_REG_H__
-
-#define VALID_CHANNEL_LIST_DEFAULT "36, 40, 44, 48, 52, 56, 60, 64, 1, 6, 11, 34, 38, 42, 46, 2, 3, 4,  5, 7, 8, 9, 10, 12, 13, 14, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 149, 151, 153, 155, 157, 159, 161, 50, 54, 58, 62, 240, 242, 244, 246, 248, 250, 252"
 
 /*
  * <ini>
@@ -73,14 +71,20 @@
 
 /*
  * <ini>
- * etsi13_srd_chan_in_master_mode - Enable/disable ETSI SRD channels in
+ * etsi_srd_chan_in_master_mode - Enable/disable ETSI SRD channels in
  * master mode PCL and ACS functionality
  * @Min: 0
- * @Max: 1
- * @Default: 0
+ * @Max: 0xFF
+ * @Default: 6
  *
- * etsi13_srd_chan_in_master_mode is to enable/disable ETSI SRD channels in
+ * etsi_srd_chan_in_master_mode is to enable/disable ETSI SRD channels in
  * master mode PCL and ACS functionality
+ * Bit map for enabling the SRD mode in various modes are as follows:-
+ * BIT 0:- Enable/Disable SRD channels for SAP.
+ * BIT 1:- Enable/Disable SRD channels for P2P-GO.
+ * BIT 2:- Enable/Disable SRD channels for NAN.
+ * Rest of the bits are currently reserved for future SRD channel support for
+ * other vdevs.
  *
  * Related: None
  *
@@ -90,10 +94,37 @@
  *
  * </ini>
  */
-#define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE CFG_INI_BOOL( \
+#define CFG_ETSI_SRD_CHAN_IN_MASTER_MODE CFG_INI_UINT( \
 	"etsi13_srd_chan_in_master_mode", \
 	0, \
+	0xff, \
+	6, \
+	CFG_VALUE_OR_DEFAULT, \
 	"enable/disable ETSI SRD channels in master mode")
+
+/*
+ * <ini>
+ * fcc_5dot9_ghz_chan_in_master_mode - Enable/disable 5.9 GHz channels in
+ * master mode for US
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * fcc_5dot9_ghz_chan_in_master_mode is to enable/disable 5.9 GHz channels
+ * in master mode for FCC reg domain
+ *
+ * Related: None
+ *
+ * Supported Feature: SAP/P2P-GO
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
+#define CFG_FCC_5DOT9_GHZ_CHAN_IN_MASTER_MODE CFG_INI_BOOL( \
+	"fcc_5dot9_ghz_chan_in_master_mode", \
+	0, \
+	"enable/disable FCC 5.9 GHz channels in master mode")
 
 #ifdef SAP_AVOID_ACS_FREQ_LIST
 #define SAP_AVOID_ACS_FREQ_LIST_DEFAULT ""
@@ -210,38 +241,6 @@
 	CFG_VALUE_OR_DEFAULT, \
 	"set the 11d scan interval in FW")
 
- /*
-  * valid_chan_list - Configure valid channel list
-  * @Default: VALID_CHANNEL_LIST_DEFAULT
-  *
-  * This ini is used to configure valid channel list
-  *
-  * Usage: Internal
-  *
-  */
-#define CFG_VALID_CHANNEL_LIST CFG_STRING( \
-		 "valid_chan_list", \
-		 0, \
-		 CFG_VALID_CHANNEL_LIST_STRING_LEN, \
-		 VALID_CHANNEL_LIST_DEFAULT, \
-		 "valid channel list")
-
- /*
-  * country_code - Set country code
-  * @Default: NA
-  *
-  * This ini is used to set country code
-  *
-  * Usage: Internal
-  *
-  */
-#define CFG_COUNTRY_CODE CFG_STRING( \
-		 "country_code", \
-		 0, \
-		 CFG_COUNTRY_CODE_LEN, \
-		 "", \
-		 "country code")
-
 /*
  * <ini>
  * ignore_fw_reg_offload_ind - If set, Ignore the FW offload indication
@@ -251,15 +250,6 @@
  *
  * This ini is used to ignore regdb offload indication from FW and
  * regulatory will be treated as non offload.
- * There is a case where FW is sending the offload indication in
- * service ready event but not sending the cc list event
- * WMI_REG_CHAN_LIST_CC_EVENTID and because of this driver is not
- * able to populate the channel list. To address this issue, this ini
- * is added. If this ini is enabled, regulatory will always be treated as
- * non offload solution.
- *
- * This ini should only be enabled to circumvent the above mentioned firmware
- * bug.
  *
  * Related: None
  *
@@ -274,16 +264,63 @@
 		0, \
 		"Ignore Regulatory offloads Indication from FW")
 
+/*
+ * <ini>
+ * enable_pending_list_req - Sets Pending channel List Req.
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This option enables/disables SCAN_CHAN_LIST_CMDID channel list command to FW
+ * till the current scan is complete.
+ *
+ * Related: None
+ *
+ * Supported Feature: STA
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ENABLE_PENDING_CHAN_LIST_REQ CFG_INI_BOOL( \
+			"enable_pending_list_req", \
+			0, \
+			"Enable Pending list req")
+
+/*
+ * <ini>
+ * retain_nol_across_regdmn - Retain NOL across reg domain
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to set if NOL needs to be retained
+ * on the reg domain change.
+ *
+ * Related: None
+ *
+ * Supported Feature: SAP
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_RETAIN_NOL_ACROSS_REG_DOMAIN CFG_INI_BOOL( \
+		"retain_nol_across_regdmn", \
+		1, \
+		"Retain NOL even if the regdomain changes")
+
 #define CFG_REG_ALL \
 	CFG(CFG_SELF_GEN_FRM_PWR) \
+	CFG(CFG_ENABLE_PENDING_CHAN_LIST_REQ) \
 	CFG(CFG_ENABLE_11D_IN_WORLD_MODE) \
-	CFG(CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE) \
+	CFG(CFG_ETSI_SRD_CHAN_IN_MASTER_MODE) \
+	CFG(CFG_FCC_5DOT9_GHZ_CHAN_IN_MASTER_MODE) \
 	CFG(CFG_RESTART_BEACONING_ON_CH_AVOID) \
 	CFG(CFG_INDOOR_CHANNEL_SUPPORT) \
 	CFG(CFG_SCAN_11D_INTERVAL) \
-	CFG(CFG_VALID_CHANNEL_LIST) \
-	CFG(CFG_COUNTRY_CODE) \
 	CFG(CFG_IGNORE_FW_REG_OFFLOAD_IND) \
+	CFG(CFG_RETAIN_NOL_ACROSS_REG_DOMAIN) \
 	CFG_SAP_AVOID_ACS_FREQ_LIST_ALL
 
 #endif /* CFG_MLME_REG_H__ */

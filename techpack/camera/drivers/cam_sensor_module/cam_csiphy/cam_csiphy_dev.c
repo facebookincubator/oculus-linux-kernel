@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "cam_csiphy_dev.h"
@@ -8,6 +8,25 @@
 #include "cam_csiphy_soc.h"
 #include "cam_csiphy_core.h"
 #include <media/cam_sensor.h>
+
+static void cam_csiphy_subdev_handle_message(
+	struct v4l2_subdev *sd,
+	enum cam_subdev_message_type_t message_type,
+	uint32_t data)
+{
+	struct csiphy_device *csiphy_dev = v4l2_get_subdevdata(sd);
+
+	switch (message_type) {
+	case CAM_SUBDEV_MESSAGE_IRQ_ERR:
+		CAM_INFO(CAM_CSIPHY, "subdev index : %d CSIPHY index: %d",
+			csiphy_dev->soc_info.index, data);
+		if (data == csiphy_dev->soc_info.index)
+			cam_csiphy_status_dmp(csiphy_dev);
+		break;
+	default:
+		break;
+	}
+}
 
 static long cam_csiphy_subdev_ioctl(struct v4l2_subdev *sd,
 	unsigned int cmd, void *arg)
@@ -31,6 +50,26 @@ static long cam_csiphy_subdev_ioctl(struct v4l2_subdev *sd,
 	return rc;
 }
 
+
+static int cam_csiphy_subdev_open(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
+{
+	struct csiphy_device *csiphy_dev =
+		v4l2_get_subdevdata(sd);
+
+	if (!csiphy_dev) {
+		CAM_ERR(CAM_CSIPHY, "csiphy_dev ptr is NULL");
+		return -EINVAL;
+	}
+
+	mutex_lock(&csiphy_dev->mutex);
+	csiphy_dev->open_cnt++;
+	CAM_DBG(CAM_CSIPHY, "csiphy_dev open count %d", csiphy_dev->open_cnt);
+	mutex_unlock(&csiphy_dev->mutex);
+
+	return 0;
+}
+
 static int cam_csiphy_subdev_close(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
@@ -43,7 +82,14 @@ static int cam_csiphy_subdev_close(struct v4l2_subdev *sd,
 	}
 
 	mutex_lock(&csiphy_dev->mutex);
-	cam_csiphy_shutdown(csiphy_dev);
+	if (csiphy_dev->open_cnt <= 0) {
+		mutex_unlock(&csiphy_dev->mutex);
+		return -EINVAL;
+	}
+	csiphy_dev->open_cnt--;
+	CAM_DBG(CAM_CSIPHY, "csiphy_dev open count %d", csiphy_dev->open_cnt);
+	if (csiphy_dev->open_cnt == 0)
+		cam_csiphy_shutdown(csiphy_dev);
 	mutex_unlock(&csiphy_dev->mutex);
 
 	return 0;
@@ -101,6 +147,7 @@ static const struct v4l2_subdev_ops csiphy_subdev_ops = {
 };
 
 static const struct v4l2_subdev_internal_ops csiphy_subdev_intern_ops = {
+	.open  = cam_csiphy_subdev_open,
 	.close = cam_csiphy_subdev_close,
 };
 
@@ -109,6 +156,7 @@ static int32_t cam_csiphy_platform_probe(struct platform_device *pdev)
 	struct cam_cpas_register_params cpas_parms;
 	struct csiphy_device *new_csiphy_dev;
 	int32_t              rc = 0;
+	int i;
 
 	new_csiphy_dev = devm_kzalloc(&pdev->dev,
 		sizeof(struct csiphy_device), GFP_KERNEL);
@@ -148,6 +196,8 @@ static int32_t cam_csiphy_platform_probe(struct platform_device *pdev)
 		(V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS);
 	new_csiphy_dev->v4l2_dev_str.ent_function =
 		CAM_CSIPHY_DEVICE_TYPE;
+	new_csiphy_dev->v4l2_dev_str.msg_cb =
+		cam_csiphy_subdev_handle_message;
 	new_csiphy_dev->v4l2_dev_str.token =
 		new_csiphy_dev;
 
@@ -159,18 +209,25 @@ static int32_t cam_csiphy_platform_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, &(new_csiphy_dev->v4l2_dev_str.sd));
 
-	new_csiphy_dev->bridge_intf.device_hdl[0] = -1;
-	new_csiphy_dev->bridge_intf.device_hdl[1] = -1;
-	new_csiphy_dev->bridge_intf.ops.get_dev_info =
-		NULL;
-	new_csiphy_dev->bridge_intf.ops.link_setup =
-		NULL;
-	new_csiphy_dev->bridge_intf.ops.apply_req =
-		NULL;
+	for (i = 0; i < CSIPHY_MAX_INSTANCES_PER_PHY; i++) {
+		new_csiphy_dev->csiphy_info[i].hdl_data.device_hdl = -1;
+		new_csiphy_dev->csiphy_info[i].hdl_data.session_hdl = -1;
+		new_csiphy_dev->csiphy_info[i].csiphy_3phase = -1;
+		new_csiphy_dev->csiphy_info[i].data_rate = 0;
+		new_csiphy_dev->csiphy_info[i].settle_time = 0;
+		new_csiphy_dev->csiphy_info[i].lane_cnt = 0;
+		new_csiphy_dev->csiphy_info[i].lane_assign = 0;
+		new_csiphy_dev->csiphy_info[i].lane_enable = 0;
+		new_csiphy_dev->csiphy_info[i].mipi_flags = 0;
+	}
+
+	new_csiphy_dev->ops.get_dev_info = NULL;
+	new_csiphy_dev->ops.link_setup = NULL;
+	new_csiphy_dev->ops.apply_req = NULL;
 
 	new_csiphy_dev->acquire_count = 0;
 	new_csiphy_dev->start_dev_count = 0;
-	new_csiphy_dev->is_acquired_dev_combo_mode = 0;
+	new_csiphy_dev->open_cnt = 0;
 
 	cpas_parms.cam_cpas_client_cb = NULL;
 	cpas_parms.cell_index = new_csiphy_dev->soc_info.index;
@@ -181,13 +238,16 @@ static int32_t cam_csiphy_platform_probe(struct platform_device *pdev)
 	rc = cam_cpas_register_client(&cpas_parms);
 	if (rc) {
 		CAM_ERR(CAM_CSIPHY, "CPAS registration failed rc: %d", rc);
-		goto csiphy_no_resource;
+		goto csiphy_unregister_subdev;
 	}
 	CAM_DBG(CAM_CSIPHY, "CPAS registration successful handle=%d",
 		cpas_parms.client_handle);
 	new_csiphy_dev->cpas_handle = cpas_parms.client_handle;
 
 	return rc;
+
+csiphy_unregister_subdev:
+	cam_unregister_subdev(&(new_csiphy_dev->v4l2_dev_str));
 csiphy_no_resource:
 	mutex_destroy(&new_csiphy_dev->mutex);
 	kfree(new_csiphy_dev->ctrl_reg);

@@ -38,13 +38,13 @@ int os_if_fwol_set_elna_bypass(struct wlan_objmgr_vdev *vdev,
 	req.vdev_id = vdev->vdev_objmgr.vdev_id;
 	req.en_dis = nla_get_u8(attr);
 	if (req.en_dis > 1) {
-		cfg80211_err("Invalid elna_bypass value %d", req.en_dis);
+		osif_err("Invalid elna_bypass value %d", req.en_dis);
 		return -EINVAL;
 	}
 
 	status = ucfg_fwol_set_elna_bypass(vdev, &req);
 	if (!QDF_IS_STATUS_SUCCESS(status))
-		cfg80211_err("Failed to set ELNA BYPASS, %d", status);
+		osif_err("Failed to set ELNA BYPASS, %d", status);
 
 	return qdf_status_to_os_return(status);
 }
@@ -69,7 +69,7 @@ os_if_fwol_get_elna_bypass_callback(void *context,
 
 	request = osif_request_get(context);
 	if (!request) {
-		cfg80211_err("Obsolete request");
+		osif_err("Obsolete request");
 		return;
 	}
 
@@ -99,7 +99,7 @@ int os_if_fwol_get_elna_bypass(struct wlan_objmgr_vdev *vdev,
 
 	request = osif_request_alloc(&params);
 	if (!request) {
-		cfg80211_err("Request allocation failure");
+		osif_err("Request allocation failure");
 		return -ENOMEM;
 	}
 	cookie = osif_request_cookie(request);
@@ -108,21 +108,21 @@ int os_if_fwol_get_elna_bypass(struct wlan_objmgr_vdev *vdev,
 					   os_if_fwol_get_elna_bypass_callback,
 					   cookie);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
-		cfg80211_err("Failed to get ELNA BYPASS, %d", status);
+		osif_err("Failed to get ELNA BYPASS, %d", status);
 		ret = qdf_status_to_os_return(status);
 		goto end;
 	}
 
 	ret = osif_request_wait_for_response(request);
 	if (ret) {
-		cfg80211_err("Operation timed out");
+		osif_err("Operation timed out");
 		goto end;
 	}
 
 	priv = osif_request_priv(request);
 	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_CONFIG_ELNA_BYPASS,
 		       priv->en_dis)) {
-		cfg80211_err("put fail");
+		osif_err("put fail");
 		ret = -EINVAL;
 	}
 
@@ -140,7 +140,7 @@ int os_if_fwol_send_dscp_up_map_to_fw(struct wlan_objmgr_vdev *vdev,
 
 	status = ucfg_fwol_send_dscp_up_map_to_fw(vdev, dscp_to_up_map);
 	if (!QDF_IS_STATUS_SUCCESS(status))
-		cfg80211_err("Failed to send dscp_up_map to FW, %d", status);
+		osif_err("Failed to send dscp_up_map to FW, %d", status);
 
 	return qdf_status_to_os_return(status);
 }

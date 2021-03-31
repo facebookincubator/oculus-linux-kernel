@@ -293,6 +293,7 @@ wl_dongle_roam(struct net_device *ndev, u32 roamvar, u32 bcn_timeout)
 		WL_ERR(("roam_off error (%d)\n", err));
 		goto dongle_rom_out;
 	}
+	ROAMOFF_DBG_SAVE(ndev, SET_ROAM_FILS_TOGGLE, roamvar);
 dongle_rom_out:
 	return err;
 }

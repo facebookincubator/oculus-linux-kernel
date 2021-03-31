@@ -130,6 +130,10 @@ endif
 	WCD9XXX_OBJS += wcd-dsp-utils.o
 	WCD9XXX_OBJS += wcd-dsp-mgr.o
 	WCD9XXX_OBJS += audio-ext-clk-up.o
+else
+ifdef CONFIG_AUDIO_EXT_CLK_UP
+	AUDIO_EXT_CLK_UP_OBJS += audio-ext-clk-up.o
+endif
 endif
 
 ifdef CONFIG_SND_SOC_WCD9335
@@ -230,6 +234,9 @@ ifeq ($(KERNEL_BUILD), 1)
 	obj-y	+= rouleur/
 endif
 # Module information used by KBuild framework
+obj-$(CONFIG_AUDIO_EXT_CLK_UP) += audio_ext_clk_up_dlkm.o
+audio_ext_clk_up_dlkm-y := $(AUDIO_EXT_CLK_UP_OBJS)
+
 obj-$(CONFIG_WCD9XXX_CODEC_CORE) += wcd_core_dlkm.o
 obj-$(CONFIG_WCD9XXX_CODEC_CORE_V2) += wcd_core_dlkm.o
 wcd_core_dlkm-y := $(CORE_OBJS)

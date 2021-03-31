@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -25,10 +25,13 @@
 #include <net/cfg80211.h>
 #include <qdf_module.h>
 #include <wlan_vdev_mlme_api.h>
+#include "cfg_ucfg_api.h"
 
 uint32_t wlan_chan_to_freq(uint8_t chan)
 {
-	/* ch 0 - ch 13 */
+	if (chan == 0 )
+		return 0;
+
 	if (chan < WLAN_24_GHZ_CHANNEL_14)
 		return WLAN_24_GHZ_BASE_FREQ + chan * WLAN_CHAN_SPACING_5MHZ;
 	else if (chan == WLAN_24_GHZ_CHANNEL_14)
@@ -46,6 +49,9 @@ uint32_t wlan_chan_to_freq(uint8_t chan)
 uint8_t wlan_freq_to_chan(uint32_t freq)
 {
 	uint8_t chan;
+
+	if (freq == 0)
+		return 0;
 
 	if (freq > WLAN_24_GHZ_BASE_FREQ && freq < WLAN_CHAN_14_FREQ)
 		chan = ((freq - WLAN_24_GHZ_BASE_FREQ) /
@@ -234,6 +240,11 @@ bool wlan_util_map_index_is_set(unsigned long *map, uint8_t id)
 	return qdf_test_bit(id, map);
 }
 
+bool wlan_util_map_is_any_index_set(unsigned long *map, unsigned long nbytes)
+{
+	return !qdf_bitmap_empty(map, QDF_CHAR_BIT * nbytes);
+}
+
 static void wlan_vdev_chan_change_pending(struct wlan_objmgr_pdev *pdev,
 					  void *object, void *arg)
 {
@@ -270,6 +281,91 @@ QDF_STATUS wlan_pdev_chan_change_pending_vdevs(struct wlan_objmgr_pdev *pdev,
 
 	wlan_objmgr_pdev_iterate_obj_list(pdev, WLAN_VDEV_OP,
 					  wlan_vdev_chan_change_pending,
+					  vdev_id_map, 0, dbg_id);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static void wlan_vdev_down_pending(struct wlan_objmgr_pdev *pdev,
+				   void *object, void *arg)
+{
+	struct wlan_objmgr_vdev *vdev = (struct wlan_objmgr_vdev *)object;
+	unsigned long *vdev_id_map = (unsigned long *)arg;
+	uint8_t id = 0;
+	struct wlan_objmgr_psoc *psoc;
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc)
+		return;
+
+	wlan_vdev_obj_lock(vdev);
+	if (wlan_vdev_mlme_is_init_state(vdev) != QDF_STATUS_SUCCESS) {
+		id = wlan_vdev_get_id(vdev);
+		/* Invalid vdev id */
+		if (id >= wlan_psoc_get_max_vdev_count(psoc)) {
+			wlan_vdev_obj_unlock(vdev);
+			return;
+		}
+		wlan_util_change_map_index(vdev_id_map, id, 1);
+	}
+
+	wlan_vdev_obj_unlock(vdev);
+}
+
+static void wlan_vdev_ap_down_pending(struct wlan_objmgr_pdev *pdev,
+				      void *object, void *arg)
+{
+	struct wlan_objmgr_vdev *vdev = (struct wlan_objmgr_vdev *)object;
+	unsigned long *vdev_id_map = (unsigned long *)arg;
+	uint8_t id = 0;
+	struct wlan_objmgr_psoc *psoc;
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc)
+		return;
+
+	if (wlan_vdev_mlme_get_opmode(vdev) != QDF_SAP_MODE)
+		return;
+
+	wlan_vdev_obj_lock(vdev);
+	if (wlan_vdev_mlme_is_init_state(vdev) != QDF_STATUS_SUCCESS) {
+		id = wlan_vdev_get_id(vdev);
+		/* Invalid vdev id */
+		if (id >= wlan_psoc_get_max_vdev_count(psoc)) {
+			wlan_vdev_obj_unlock(vdev);
+			return;
+		}
+		wlan_util_change_map_index(vdev_id_map, id, 1);
+	}
+
+	wlan_vdev_obj_unlock(vdev);
+}
+
+QDF_STATUS wlan_pdev_chan_change_pending_vdevs_down(
+					struct wlan_objmgr_pdev *pdev,
+					unsigned long *vdev_id_map,
+					wlan_objmgr_ref_dbgid dbg_id)
+{
+	if (!pdev)
+		return QDF_STATUS_E_INVAL;
+
+	wlan_objmgr_pdev_iterate_obj_list(pdev, WLAN_VDEV_OP,
+					  wlan_vdev_down_pending,
+					  vdev_id_map, 0, dbg_id);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS wlan_pdev_chan_change_pending_ap_vdevs_down(
+						struct wlan_objmgr_pdev *pdev,
+						unsigned long *vdev_id_map,
+						wlan_objmgr_ref_dbgid dbg_id)
+{
+	if (!pdev)
+		return QDF_STATUS_E_INVAL;
+
+	wlan_objmgr_pdev_iterate_obj_list(pdev, WLAN_VDEV_OP,
+					  wlan_vdev_ap_down_pending,
 					  vdev_id_map, 0, dbg_id);
 
 	return QDF_STATUS_SUCCESS;
@@ -513,3 +609,125 @@ uint16_t wlan_util_get_peer_count_for_mode(struct wlan_objmgr_pdev *pdev,
 	return count.peer_count;
 }
 
+#ifdef CONFIG_QCA_MINIDUMP
+void wlan_minidump_log(void *start_addr, size_t size,
+		       void *psoc_obj,
+		       enum wlan_minidump_host_data type,
+		       const char *name)
+{
+	int setval = 0;
+
+	struct wlan_objmgr_psoc *psoc;
+
+	if (!psoc_obj) {
+		qdf_debug("Minidump: Psoc is NULL");
+		return;
+	}
+
+	psoc = (struct wlan_objmgr_psoc *)psoc_obj;
+
+	switch (type) {
+	case WLAN_MD_CP_EXT_PDEV:
+		if (cfg_get(psoc, CFG_OL_MD_CP_EXT_PDEV))
+			setval = 1;
+		break;
+	case WLAN_MD_CP_EXT_PSOC:
+		if (cfg_get(psoc, CFG_OL_MD_CP_EXT_PSOC))
+			setval = 1;
+		break;
+	case WLAN_MD_CP_EXT_VDEV:
+		if (cfg_get(psoc, CFG_OL_MD_CP_EXT_VDEV))
+			setval = 1;
+		break;
+	case WLAN_MD_CP_EXT_PEER:
+		if (cfg_get(psoc, CFG_OL_MD_CP_EXT_PEER))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_SOC:
+		if (cfg_get(psoc, CFG_OL_MD_DP_SOC))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_PDEV:
+		if (cfg_get(psoc, CFG_OL_MD_DP_PDEV))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_PEER:
+		if (cfg_get(psoc, CFG_OL_MD_DP_PEER))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_SRNG_REO_DEST:
+	case WLAN_MD_DP_SRNG_REO_EXCEPTION:
+	case WLAN_MD_DP_SRNG_RX_REL:
+	case WLAN_MD_DP_SRNG_REO_REINJECT:
+	case WLAN_MD_DP_SRNG_REO_CMD:
+	case WLAN_MD_DP_SRNG_REO_STATUS:
+		if (cfg_get(psoc, CFG_OL_MD_DP_SRNG_REO))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_SRNG_TCL_DATA:
+	case WLAN_MD_DP_SRNG_TCL_CMD:
+	case WLAN_MD_DP_SRNG_TCL_STATUS:
+	case WLAN_MD_DP_SRNG_TX_COMP:
+		if (cfg_get(psoc, CFG_OL_MD_DP_SRNG_TCL))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_SRNG_WBM_DESC_REL:
+	case WLAN_MD_DP_SRNG_WBM_IDLE_LINK:
+		if (cfg_get(psoc, CFG_OL_MD_DP_SRNG_WBM))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_LINK_DESC_BANK:
+		if (cfg_get(psoc, CFG_OL_MD_DP_LINK_DESC_BANK))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_SRNG_RXDMA_MON_BUF:
+	case WLAN_MD_DP_SRNG_RXDMA_MON_DST:
+	case WLAN_MD_DP_SRNG_RXDMA_MON_DESC:
+	case WLAN_MD_DP_SRNG_RXDMA_ERR_DST:
+	case WLAN_MD_DP_SRNG_RXDMA_MON_STATUS:
+		if (cfg_get(psoc, CFG_OL_MD_DP_SRNG_RXDMA))
+			setval = 1;
+		break;
+	case WLAN_MD_DP_HAL_SOC:
+		if (cfg_get(psoc, CFG_OL_MD_DP_HAL_SOC))
+			setval = 1;
+		break;
+	case WLAN_MD_OBJMGR_PSOC:
+	case WLAN_MD_OBJMGR_PSOC_TGT_INFO:
+		if (cfg_get(psoc, CFG_OL_MD_OBJMGR_PSOC))
+			setval = 1;
+		break;
+	case WLAN_MD_OBJMGR_PDEV:
+	case WLAN_MD_OBJMGR_PDEV_MLME:
+		if (cfg_get(psoc, CFG_OL_MD_OBJMGR_PDEV))
+			setval = 1;
+		break;
+	case WLAN_MD_OBJMGR_VDEV_MLME:
+	case WLAN_MD_OBJMGR_VDEV_SM:
+	case WLAN_MD_OBJMGR_VDEV:
+		if (cfg_get(psoc, CFG_OL_MD_OBJMGR_VDEV))
+			setval = 1;
+		break;
+	default:
+		qdf_debug("Minidump: Type not implemented");
+	}
+	if (setval)
+		qdf_minidump_log(start_addr, size, name);
+}
+qdf_export_symbol(wlan_minidump_log);
+
+void wlan_minidump_remove(void *addr)
+{
+	qdf_minidump_remove(addr);
+}
+qdf_export_symbol(wlan_minidump_remove);
+#else
+void wlan_minidump_log(void *start_addr, size_t size,
+		       void *psoc_obj,
+		       enum wlan_minidump_host_data type,
+		       const char *name) {}
+qdf_export_symbol(wlan_minidump_log);
+
+void wlan_minidump_remove(void *addr) {}
+qdf_export_symbol(wlan_minidump_remove);
+#endif /* CONFIG_QCA_MINIDUMP */

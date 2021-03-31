@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -346,12 +346,9 @@ lim_is_bss_descr_valid_in_sme_req_message(struct mac_context *mac,
 {
 	uint8_t valid = true;
 
-	if (QDF_IS_ADDR_BROADCAST(pBssDescr->bssId) || !pBssDescr->channelId) {
+	if (QDF_IS_ADDR_BROADCAST(pBssDescr->bssId) || !pBssDescr->chan_freq)
 		valid = false;
-		goto end;
-	}
 
-end:
 	return valid;
 } /*** end lim_is_bss_descr_valid_in_sme_req_message() ***/
 
@@ -360,12 +357,6 @@ bool lim_is_sme_start_bss_req_valid(struct mac_context *mac_ctx,
 {
 	uint8_t i = 0;
 	tSirMacRateSet *opr_rates = &start_bss_req->operationalRateSet;
-
-	pe_debug("Parsed START_BSS_REQ fields are bssType: %s (%d) channelId: %d SSID len: %d rsnIE len: %d nwType: %d rateset len: %d",
-	       lim_bss_type_to_string(start_bss_req->bssType),
-	       start_bss_req->bssType, start_bss_req->channelId,
-	       start_bss_req->ssId.length, start_bss_req->rsnIE.length,
-	       start_bss_req->nwType, opr_rates->numRates);
 
 	switch (start_bss_req->bssType) {
 	case eSIR_INFRASTRUCTURE_MODE:
@@ -376,8 +367,6 @@ bool lim_is_sme_start_bss_req_valid(struct mac_context *mac_ctx,
 		pe_warn("Invalid bssType: %d in eWNI_SME_START_BSS_REQ",
 			start_bss_req->bssType);
 		return false;
-		break;
-	case eSIR_IBSS_MODE:
 		break;
 	case eSIR_INFRA_AP_MODE:
 		break;
@@ -390,13 +379,6 @@ bool lim_is_sme_start_bss_req_valid(struct mac_context *mac_ctx,
 		 */
 		pe_warn("Invalid bssType: %d in eWNI_SME_START_BSS_REQ",
 			start_bss_req->bssType);
-		return false;
-	}
-
-	if (start_bss_req->bssType == eSIR_IBSS_MODE
-	    && (!start_bss_req->ssId.length
-		|| start_bss_req->ssId.length > WLAN_SSID_MAX_LEN)) {
-		pe_warn("Invalid SSID length in eWNI_SME_START_BSS_REQ");
 		return false;
 	}
 

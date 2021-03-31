@@ -27,7 +27,6 @@
 #ifndef __WLAN_VDEV_MGR_TX_OPS_API_H__
 #define __WLAN_VDEV_MGR_TX_OPS_API_H__
 
-#ifdef CMN_VDEV_MGR_TGT_IF_ENABLE
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_vdev_mgr_tgt_if_tx_defs.h>
 #include <include/wlan_vdev_mlme.h>
@@ -222,6 +221,33 @@ QDF_STATUS tgt_vdev_mgr_beacon_tmpl_send(
 				struct vdev_mlme_obj *mlme_obj,
 				struct beacon_tmpl_params *param);
 
+#if defined(WLAN_SUPPORT_FILS) || defined(CONFIG_BAND_6GHZ)
+/**
+ * tgt_vdev_mgr_fils_enable_send()- API to send fils enable command
+ * @mlme_obj: pointer to vdev_mlme_obj
+ * @param: pointer to config_fils_params struct
+ *
+ * Return: QDF_STATUS - Success or Failure
+ */
+QDF_STATUS tgt_vdev_mgr_fils_enable_send(
+				struct vdev_mlme_obj *mlme_obj,
+				struct config_fils_params *param);
+#else
+/**
+ * tgt_vdev_mgr_fils_enable_send()- API to send fils enable command
+ * @mlme_obj: pointer to vdev_mlme_obj
+ * @param: pointer to config_fils_params struct
+ *
+ * Return: QDF_STATUS - Success or Failure
+ */
+static inline QDF_STATUS tgt_vdev_mgr_fils_enable_send(
+				struct vdev_mlme_obj *mlme_obj,
+				struct config_fils_params *param)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 /**
  * tgt_vdev_mgr_multiple_vdev_restart_send() – API to send multiple vdev
  * restart
@@ -233,6 +259,18 @@ QDF_STATUS tgt_vdev_mgr_beacon_tmpl_send(
 QDF_STATUS tgt_vdev_mgr_multiple_vdev_restart_send(
 				struct wlan_objmgr_pdev *pdev,
 				struct multiple_vdev_restart_params *param);
+
+/**
+ * tgt_vdev_mgr_set_tx_rx_decap_type() – API to send tx rx decap type
+ * @mlme_obj: pointer to vdev mlme obj
+ * @param_id: param id
+ * value: value to set for param id
+ *
+ * Return: QDF_STATUS - Success or Failure
+ */
+QDF_STATUS tgt_vdev_mgr_set_tx_rx_decap_type(struct vdev_mlme_obj *mlme_obj,
+					     enum wlan_mlme_cfg_id param_id,
+					     uint32_t value);
 
 /**
  * tgt_vdev_mgr_set_param_send() – API to send parameter cfg
@@ -253,5 +291,15 @@ QDF_STATUS tgt_vdev_mgr_set_param_send(
  */
 QDF_STATUS tgt_vdev_mgr_bcn_miss_offload_send(struct vdev_mlme_obj *mlme_obj);
 
-#endif /* CMN_VDEV_MGR_TGT_IF_ENABLE */
+/**
+ * tgt_vdev_mgr_peer_delete_all_send() – API to send peer delete all request
+ * @mlme_obj: pointer to vdev_mlme_obj
+ * @param: pointer to peer_delete_all_params
+ *
+ * Return: QDF_STATUS - Success or Failure
+ */
+QDF_STATUS tgt_vdev_mgr_peer_delete_all_send(
+				struct vdev_mlme_obj *mlme_obj,
+				struct peer_delete_all_params *param);
+
 #endif /* __WLAN_VDEV_MGR_TX_OPS_API_H__ */

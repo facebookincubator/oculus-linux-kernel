@@ -6343,7 +6343,7 @@ static int msm_init_aux_dev(struct platform_device *pdev,
 			ret = -EINVAL;
 			goto err;
 		}
-		if (soc_find_component(wsa_of_node, NULL)) {
+		if (soc_find_component_locked(wsa_of_node, NULL)) {
 			/* WSA device registered with ALSA core */
 			wsa881x_dev_info[found].of_node = wsa_of_node;
 			wsa881x_dev_info[found].index = i;
@@ -6440,7 +6440,7 @@ codec_aux_dev:
 			ret = -EINVAL;
 			goto err;
 		}
-		if (soc_find_component(aux_codec_of_node, NULL)) {
+		if (soc_find_component_locked(aux_codec_of_node, NULL)) {
 			/* AUX codec registered with ALSA core */
 			aux_cdc_dev_info[codecs_found].of_node =
 						aux_codec_of_node;
@@ -6817,8 +6817,14 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	}
 	buf = nvmem_cell_read(cell, &len);
 	nvmem_cell_put(cell);
-	if (IS_ERR_OR_NULL(buf) || len <= 0 || len > sizeof(32)) {
+	if (IS_ERR_OR_NULL(buf)) {
 		dev_dbg(&pdev->dev, "%s: FAILED to read nvmem cell \n", __func__);
+		goto ret;
+	}
+	if (len <= 0 || len > sizeof(u32)) {
+		dev_dbg(&pdev->dev, "%s: nvmem cell length out of range: %d\n",
+			__func__, len);
+		kfree(buf);
 		goto ret;
 	}
 	memcpy(&adsp_var_idx, buf, len);

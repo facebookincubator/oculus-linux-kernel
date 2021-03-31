@@ -44,6 +44,9 @@
  * @twt_responder: TWT responder capability
  * @bcn_reception_stats: Beacon Reception stats capability
  * @is_roam_scan_ch_to_host: Get roam scan channels from fw supported
+ * @ll_stats_per_chan_rx_tx_time: Per channel tx and rx time support in ll stats
+ * @is_get_station_clubbed_in_ll_stats_req: Get station req support within ll
+ *                                          stats req
  */
 struct wma_tgt_services {
 	uint32_t sta_power_save;
@@ -77,6 +80,10 @@ struct wma_tgt_services {
 	bool obss_scan_offload;
 	bool bcn_reception_stats;
 	bool is_roam_scan_ch_to_host;
+	bool ll_stats_per_chan_rx_tx_time;
+#ifdef FEATURE_CLUB_LL_STATS_AND_GET_STATION
+	bool is_get_station_clubbed_in_ll_stats_req;
+#endif
 };
 
 /**
@@ -157,7 +164,7 @@ struct board_info {
  * struct wma_tgt_cfg - target config
  * @target_fw_version: target fw version
  * @target_fw_vers_ext: target fw extended sub version
- * @band_cap: band capability
+ * @band_cap: band capability bitmap
  * @reg_domain: reg domain
  * @eeprom_rd_ext: eeprom rd ext
  * @hw_macaddr: hw mcast addr
@@ -177,11 +184,12 @@ struct board_info {
  * @obss_color_collision_offloaded: obss color collision offloaded to firmware
  * @sar_version: Version of SAR supported by firmware
  * @bcast_twt_support: braodcast twt support
+ * @restricted_80p80_bw_supp: Restricted 80+80MHz(165MHz BW) support
  */
 struct wma_tgt_cfg {
 	uint32_t target_fw_version;
 	uint32_t target_fw_vers_ext;
-	uint8_t band_cap;
+	uint32_t band_cap;
 	uint32_t reg_domain;
 	uint32_t eeprom_rd_ext;
 	struct qdf_mac_addr hw_macaddr;
@@ -205,6 +213,8 @@ struct wma_tgt_cfg {
 	uint8_t ppet_5g[HE_MAX_PPET_SIZE];
 	tDot11fIEhe_cap he_cap_2g;
 	tDot11fIEhe_cap he_cap_5g;
+	uint16_t he_mcs_12_13_supp_2g;
+	uint16_t he_mcs_12_13_supp_5g;
 #endif
 	bool dfs_cac_offload;
 	bool tx_bfee_8ss_enabled;
@@ -217,5 +227,6 @@ struct wma_tgt_cfg {
 	enum sar_version sar_version;
 	struct nan_tgt_caps nan_caps;
 	bool bcast_twt_support;
+	bool restricted_80p80_bw_supp;
 };
 #endif /* WMA_TGT_CFG_H */

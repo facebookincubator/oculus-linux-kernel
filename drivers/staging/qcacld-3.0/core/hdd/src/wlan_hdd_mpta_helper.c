@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,7 @@
 #include "wlan_osif_request_manager.h"
 #include "osif_sync.h"
 
-static const struct nla_policy
+const struct nla_policy
 qca_wlan_vendor_mpta_helper_attr[QCA_MPTA_HELPER_VENDOR_ATTR_MAX + 1] = {
 	[QCA_MPTA_HELPER_VENDOR_ATTR_ZIGBEE_STATE] = {.type = NLA_U32 },
 	[QCA_MPTA_HELPER_VENDOR_ATTR_INT_WLAN_DURATION] = {.type = NLA_U32 },
@@ -61,14 +61,13 @@ __wlan_hdd_cfg80211_mpta_helper_config(struct wiphy *wiphy,
 				       const void *data,
 				       int data_len)
 {
-	struct net_device *netdev = wdev->netdev;
 	struct hdd_context *hdd_ctx  = wiphy_priv(wiphy);
 	struct nlattr *tb[QCA_MPTA_HELPER_VENDOR_ATTR_MAX + 1];
 	struct coex_config_params coex_cfg_params = {0};
 	int errno;
 	QDF_STATUS status;
 
-	hdd_enter_dev(netdev);
+	hdd_enter_dev(wdev->netdev);
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");

@@ -36,7 +36,7 @@
  *
  * Supported Feature: P2P
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -62,7 +62,7 @@
  *
  * Supported Feature: P2P
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -89,7 +89,7 @@
  *
  * Supported Feature: P2P
  *
- * Usage: Internal/External
+ * Usage: External
  *
  * </ini>
  */
@@ -101,6 +101,6 @@
 #define CFG_P2P_ALL \
 	CFG(CFG_GO_KEEP_ALIVE_PERIOD) \
 	CFG(CFG_GO_LINK_MONITOR_PERIOD) \
-	CFG(CFG_P2P_DEVICE_ADDRESS_ADMINISTRATED) \
+	CFG(CFG_P2P_DEVICE_ADDRESS_ADMINISTRATED)
 
 #endif

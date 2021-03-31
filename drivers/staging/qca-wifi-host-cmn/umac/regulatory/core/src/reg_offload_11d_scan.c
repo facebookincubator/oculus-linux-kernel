@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -43,6 +43,7 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
 	QDF_STATUS status;
 	struct wlan_lmac_if_reg_tx_ops *tx_ops;
 	uint8_t pdev_id;
+	uint8_t phy_id;
 
 	if (!country) {
 		reg_err("Null country code");
@@ -59,8 +60,10 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
 	}
 
 	if (!qdf_mem_cmp(psoc_priv_obj->cur_country, country, REG_ALPHA2_LEN)) {
-		reg_debug("same country");
-		return QDF_STATUS_SUCCESS;
+		if (psoc_priv_obj->cc_src == SOURCE_11D) {
+			reg_debug("same country");
+			return QDF_STATUS_SUCCESS;
+		}
 	}
 
 	reg_info("set new 11d country:%c%c to fW",
@@ -69,7 +72,13 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
 	qdf_mem_copy(country_code.country, country, REG_ALPHA2_LEN + 1);
 	country_code.pdev_id = pdev_id;
 
-	psoc_priv_obj->new_11d_ctry_pending[pdev_id] = true;
+	tx_ops = reg_get_psoc_tx_ops(psoc);
+	if (tx_ops->get_phy_id_from_pdev_id)
+		tx_ops->get_phy_id_from_pdev_id(psoc, pdev_id, &phy_id);
+	else
+		phy_id = pdev_id;
+
+	psoc_priv_obj->new_11d_ctry_pending[phy_id] = true;
 
 	if (psoc_priv_obj->offload_enabled) {
 		tx_ops = reg_get_psoc_tx_ops(psoc);
@@ -77,7 +86,7 @@ QDF_STATUS reg_set_11d_country(struct wlan_objmgr_pdev *pdev,
 			tx_ops->set_country_code(psoc, &country_code);
 		} else {
 			reg_err("country set fw handler not present");
-			psoc_priv_obj->new_11d_ctry_pending[pdev_id] = false;
+			psoc_priv_obj->new_11d_ctry_pending[phy_id] = false;
 			return QDF_STATUS_E_FAULT;
 		}
 		status = QDF_STATUS_SUCCESS;
@@ -404,7 +413,7 @@ QDF_STATUS reg_save_new_11d_country(struct wlan_objmgr_psoc *psoc,
 		if (tx_ops->set_country_code) {
 			tx_ops->set_country_code(psoc, &country_code);
 		} else {
-			reg_err("country set handler is not present");
+			reg_err("NULL country set handler");
 			for (ctr = 0; ctr < psoc_priv_obj->num_phy; ctr++)
 				psoc_priv_obj->new_11d_ctry_pending[ctr] =
 					false;

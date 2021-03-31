@@ -30,7 +30,14 @@
 #define LOW_2GHZ_FREQ 2312
 #define HIGH_2GHZ_FREQ 2732
 #define LOW_5GHZ_FREQ  4912
-#define HIGH_5GHZ_FREQ 6100
+
+#ifdef CONFIG_BAND_6GHZ
+#define HIGH_5GHZ_FREQ 7200
+#else
+#define HIGH_5GHZ_FREQ 5920
+#endif
+
+#define HIGH_5GHZ_FREQ_NO_6GHZ 5920
 
 static void hdd_init_pdev_os_priv(struct hdd_context *hdd_ctx,
 	struct pdev_osif_priv *os_priv)
@@ -47,7 +54,6 @@ static void hdd_deinit_pdev_os_priv(struct wlan_objmgr_pdev *pdev)
 	os_if_spectral_netlink_deinit(pdev);
 	wlan_cfg80211_scan_priv_deinit(pdev);
 }
-
 static void hdd_init_psoc_qdf_ctx(struct wlan_objmgr_psoc *psoc)
 {
 	qdf_device_t qdf_ctx;
@@ -135,10 +141,8 @@ int hdd_objmgr_create_and_store_pdev(struct hdd_context *hdd_ctx)
 	}
 
 	priv = qdf_mem_malloc(sizeof(*priv));
-	if (!priv) {
-		hdd_err("pdev os obj create failed");
+	if (!priv)
 		return -ENOMEM;
-	}
 
 	reg_cap_ptr = ucfg_reg_get_hal_reg_cap(psoc);
 	if (!reg_cap_ptr) {
@@ -152,12 +156,18 @@ int hdd_objmgr_create_and_store_pdev(struct hdd_context *hdd_ctx)
 	reg_cap_ptr->low_5ghz_chan = LOW_5GHZ_FREQ;
 	reg_cap_ptr->high_5ghz_chan = HIGH_5GHZ_FREQ;
 
+	if (!wlan_reg_is_6ghz_supported(psoc)) {
+		hdd_debug("disabling 6ghz channels");
+		reg_cap_ptr->high_5ghz_chan = HIGH_5GHZ_FREQ_NO_6GHZ;
+	}
+
 	pdev = wlan_objmgr_pdev_obj_create(psoc, priv);
 	if (!pdev) {
 		hdd_err("pdev obj create failed");
 		status = QDF_STATUS_E_NOMEM;
 		goto free_priv;
 	}
+
 
 	status = wlan_objmgr_pdev_try_get_ref(pdev, WLAN_HDD_ID_OBJ_MGR);
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -206,85 +216,6 @@ int hdd_objmgr_release_and_destroy_pdev(struct hdd_context *hdd_ctx)
 
 	status = wlan_objmgr_pdev_obj_delete(pdev);
 	wlan_objmgr_pdev_release_ref(pdev, WLAN_HDD_ID_OBJ_MGR);
-
-	return qdf_status_to_os_return(status);
-}
-
-int hdd_objmgr_create_and_store_vdev(struct wlan_objmgr_pdev *pdev,
-				     struct hdd_adapter *adapter)
-{
-	QDF_STATUS status;
-	int errno = 0;
-	struct wlan_objmgr_vdev *vdev;
-	struct vdev_osif_priv *osif_priv;
-	struct wlan_vdev_create_params vdev_params = {0};
-
-	QDF_BUG(pdev);
-	if (!pdev) {
-		hdd_err("pdev is null");
-		return -EINVAL;
-	}
-
-	vdev_params.opmode = adapter->device_mode;
-	qdf_mem_copy(vdev_params.macaddr,
-		     adapter->mac_addr.bytes,
-		     QDF_NET_MAC_ADDR_MAX_LEN);
-
-	vdev_params.size_vdev_priv = sizeof(*osif_priv);
-
-	vdev = wlan_objmgr_vdev_obj_create(pdev, &vdev_params);
-	if (!vdev) {
-		hdd_err("Failed to create vdev object");
-		errno = -ENOMEM;
-		return errno;
-	}
-
-	/* Initialize the vdev OS private structure*/
-	osif_priv = wlan_vdev_get_ospriv(vdev);
-	osif_priv->wdev = adapter->dev->ieee80211_ptr;
-	osif_priv->legacy_osif_priv = adapter;
-
-	/*
-	 * To enable legacy use cases, we need to delay physical vdev destroy
-	 * until after the sme session has been closed. We accomplish this by
-	 * getting a reference here.
-	 */
-	status = wlan_objmgr_vdev_try_get_ref(vdev, WLAN_HDD_ID_OBJ_MGR);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		hdd_err("Failed to acquire vdev ref; status:%d", status);
-		errno = qdf_status_to_os_return(status);
-		goto vdev_destroy;
-	}
-
-	qdf_spin_lock_bh(&adapter->vdev_lock);
-	adapter->vdev = vdev;
-	adapter->vdev_id = wlan_vdev_get_id(vdev);
-	qdf_spin_unlock_bh(&adapter->vdev_lock);
-
-	return 0;
-
-vdev_destroy:
-	wlan_objmgr_vdev_obj_delete(vdev);
-	return errno;
-}
-
-int hdd_objmgr_release_and_destroy_vdev(struct hdd_adapter *adapter)
-{
-	QDF_STATUS status;
-	struct wlan_objmgr_vdev *vdev;
-
-	qdf_spin_lock_bh(&adapter->vdev_lock);
-	vdev = adapter->vdev;
-	adapter->vdev = NULL;
-	adapter->vdev_id = WLAN_UMAC_VDEV_ID_MAX;
-	qdf_spin_unlock_bh(&adapter->vdev_lock);
-
-	QDF_BUG(vdev);
-	if (!vdev)
-		return -EINVAL;
-
-	status = wlan_objmgr_vdev_obj_delete(vdev);
-	wlan_objmgr_vdev_release_ref(vdev, WLAN_HDD_ID_OBJ_MGR);
 
 	return qdf_status_to_os_return(status);
 }

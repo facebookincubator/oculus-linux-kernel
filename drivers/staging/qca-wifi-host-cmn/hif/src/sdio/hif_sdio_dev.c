@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -104,7 +104,7 @@ struct hif_sdio_device *hif_dev_create(struct hif_sdio_dev *hif_device,
 				      HIF_DEVICE_SET_HTC_CONTEXT,
 				      (void *)pdev, sizeof(pdev));
 	if (status != QDF_STATUS_SUCCESS)
-		HIF_ERROR("%s: set context failed", __func__);
+		hif_err("set context failed");
 
 	A_MEMCPY(&pdev->hif_callbacks, callbacks, sizeof(*callbacks));
 
@@ -127,7 +127,7 @@ void hif_dev_destroy(struct hif_sdio_device *pdev)
 				      HIF_DEVICE_SET_HTC_CONTEXT,
 				      (void *)NULL, 0);
 	if (status != QDF_STATUS_SUCCESS)
-		HIF_ERROR("%s: set context failed", __func__);
+		hif_err("set context failed");
 
 	qdf_mem_free(pdev);
 }
@@ -149,7 +149,7 @@ struct hif_sdio_device *hif_dev_from_hif(struct hif_sdio_dev *hif_device)
 				      (void **)&pdev,
 				      sizeof(struct hif_sdio_device));
 	if (status != QDF_STATUS_SUCCESS)
-		HIF_ERROR("%s: set context failed", __func__);
+		hif_err("set context failed");
 
 	return pdev;
 }
@@ -208,127 +208,6 @@ QDF_STATUS hif_dev_enable_interrupts(struct hif_sdio_device *pdev)
 	return status;
 }
 
-#define DEV_CHECK_RECV_YIELD(pdev) \
-	((pdev)->CurrentDSRRecvCount >= \
-	 (pdev)->HifIRQYieldParams.recv_packet_yield_count)
-
-/**
- * hif_dev_dsr_handler() - Synchronous interrupt handler
- *
- * @context: hif send context
- *
- * Return: 0 for success and non-zero for failure
- */
-QDF_STATUS hif_dev_dsr_handler(void *context)
-{
-	struct hif_sdio_device *pdev = (struct hif_sdio_device *)context;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	bool done = false;
-	bool async_proc = false;
-
-	HIF_ENTER();
-
-	/* reset the recv counter that tracks when we need
-	 * to yield from the DSR
-	 */
-	pdev->CurrentDSRRecvCount = 0;
-	/* reset counter used to flag a re-scan of IRQ
-	 * status registers on the target
-	 */
-	pdev->RecheckIRQStatusCnt = 0;
-
-	while (!done) {
-		status = hif_dev_process_pending_irqs(pdev, &done, &async_proc);
-		if (QDF_IS_STATUS_ERROR(status))
-			break;
-
-		if (pdev->HifIRQProcessingMode == HIF_DEVICE_IRQ_SYNC_ONLY) {
-			/* the HIF layer does not allow async IRQ processing,
-			 * override the asyncProc flag
-			 */
-			async_proc = false;
-			/* this will cause us to re-enter ProcessPendingIRQ()
-			 * and re-read interrupt status registers.
-			 * This has a nice side effect of blocking us until all
-			 * async read requests are completed. This behavior is
-			 * required as we  do not allow ASYNC processing
-			 * in interrupt handlers (like Windows CE)
-			 */
-
-			if (pdev->DSRCanYield && DEV_CHECK_RECV_YIELD(pdev))
-				/* ProcessPendingIRQs() pulled enough recv
-				 * messages to satisfy the yield count, stop
-				 * checking for more messages and return
-				 */
-				break;
-		}
-
-		if (async_proc) {
-			/* the function does some async I/O for performance,
-			 * we need to exit the ISR immediately, the check below
-			 * will prevent the interrupt from being
-			 * Ack'd while we handle it asynchronously
-			 */
-			break;
-		}
-	}
-
-	if (QDF_IS_STATUS_SUCCESS(status) && !async_proc) {
-		/* Ack the interrupt only if :
-		 *  1. we did not get any errors in processing interrupts
-		 *  2. there are no outstanding async processing requests
-		 */
-		if (pdev->DSRCanYield) {
-			/* if the DSR can yield do not ACK the interrupt, there
-			 * could be more pending messages. The HIF layer
-			 * must ACK the interrupt on behalf of HTC
-			 */
-			HIF_INFO("%s:  Yield (RX count: %d)",
-				 __func__, pdev->CurrentDSRRecvCount);
-		} else {
-			HIF_INFO("%s: Ack interrupt", __func__);
-			hif_ack_interrupt(pdev->HIFDevice);
-		}
-	}
-
-	HIF_EXIT();
-	return status;
-}
-
-/** hif_dev_set_mailbox_swap() - Set the mailbox swap from firmware
- * @pdev : The HIF layer object
- *
- * Return: none
- */
-void hif_dev_set_mailbox_swap(struct hif_sdio_dev *pdev)
-{
-	struct hif_sdio_device *hif_device = hif_dev_from_hif(pdev);
-
-	HIF_ENTER();
-
-	hif_device->swap_mailbox = true;
-
-	HIF_EXIT();
-}
-
-/** hif_dev_get_mailbox_swap() - Get the mailbox swap setting
- * @pdev : The HIF layer object
- *
- * Return: none
- */
-bool hif_dev_get_mailbox_swap(struct hif_sdio_dev *pdev)
-{
-	struct hif_sdio_device *hif_device;
-
-	HIF_ENTER();
-
-	hif_device = hif_dev_from_hif(pdev);
-
-	HIF_EXIT();
-
-	return hif_device->swap_mailbox;
-}
-
 /**
  * hif_dev_setup() - set up sdio device.
  * @pDev: sdio device context
@@ -346,9 +225,8 @@ QDF_STATUS hif_dev_setup(struct hif_sdio_device *pdev)
 
 	status = hif_dev_setup_device(pdev);
 
-
 	if (status != QDF_STATUS_SUCCESS) {
-		HIF_ERROR("%s: device specific setup failed", __func__);
+		hif_err("device specific setup failed");
 		return QDF_STATUS_E_INVAL;
 	}
 

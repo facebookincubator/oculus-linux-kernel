@@ -24,11 +24,13 @@
 #include <net/rtnetlink.h>
 
 #include <bcmutils.h>
+#include <bcmendian.h>
 #include <wldev_common.h>
 #include <wl_cfg80211.h>
 #include <dhd_cfg80211.h>
 #include <dngl_stats.h>
 #include <dhd.h>
+#include <bcmiov.h>
 #include <dhdioctl.h>
 #include <wlioctl.h>
 
@@ -598,4 +600,288 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 	}
 	return 0;
 }
+
+#ifdef WL_UWB_COEX
+const uint16 uwb_6g_chmap[UWB_COEX_CH_MAP_NUM] = {
+	1,    5,  9,   13,  17,  21,  25,  29,  33,  37,  41,  45,  49,  53,  57,  61,
+	65,  69,  73,  77,  81,  85,  89,  93,  97,  101, 105, 109, 113, 117, 121, 125,
+	129, 133, 137, 141, 145, 149, 153, 157, 161, 165, 169, 173, 177, 181, 185, 189,
+	193, 197, 201, 205, 209, 213, 217, 221, 225, 229, 233, 0,   0,   0,   0,   0
+};
+
+static int
+wl_cfg_uwb_coex_get_iovar_status_cbfn(void *ctx, const uint8 *data, uint16 type, uint16 len)
+{
+	bcm_iov_batch_buf_t *b_resp = (bcm_iov_batch_buf_t *)ctx;
+	uint32 status;
+	uint16 resp_len;
+
+	/* if all tlvs are parsed, we should not be here */
+	if (b_resp->count == 0) {
+		return BCME_BADLEN;
+	}
+
+	/*  cbfn params may be used in f/w */
+	if (len < sizeof(status)) {
+		return BCME_BUFTOOSHORT;
+	}
+
+	/* first 4 bytes consists status */
+	status = dtoh32(*(uint32 *)data);
+	resp_len = len - sizeof(status);
+
+	if (status != BCME_OK) {
+		WL_ERR(("%s - cmd type %d failed, status: %04x\n",
+			__FUNCTION__, type, status));
+		return status;
+	}
+	if (!resp_len) {
+		if (b_resp->is_set) {
+			/* Set cmd resp may have only status, so len might be zero.
+			 * just decrement batch resp count
+			 */
+			goto counter;
+		}
+		/* Every response for get command expects some data,
+		 * return error if there is no data
+		 */
+		return BCME_ERROR;
+	}
+counter:
+	if (b_resp->count > 0) {
+		b_resp->count--;
+	}
+
+	if (!b_resp->count) {
+		status = BCME_IOV_LAST_CMD;
+	}
+
+	return status;
+}
+
+static int
+wl_cfg_uwb_coex_proc_resp_buf(bcm_iov_batch_buf_t *resp, uint16 max_len, uint8 is_set)
+{
+	int ret = BCME_UNSUPPORTED;
+	uint16 version;
+	uint16 tlvs_len;
+
+	version = dtoh16(*(uint16 *)resp);
+	if (version & (BCM_IOV_XTLV_VERSION | BCM_IOV_BATCH_MASK)) {
+		if (!resp->count) {
+			return BCME_RANGE;
+		} else {
+			resp->is_set = is_set;
+			/* number of tlvs count */
+			tlvs_len = max_len - OFFSETOF(bcm_iov_batch_buf_t, cmds[0]);
+			/* Extract the tlvs and print their resp in cb fn */
+			ret = bcm_unpack_xtlv_buf((void *)resp, (const uint8 *)&resp->cmds[0],
+				tlvs_len, BCM_IOV_CMD_OPT_ALIGN32,
+				wl_cfg_uwb_coex_get_iovar_status_cbfn);
+
+			if (ret == BCME_IOV_LAST_CMD) {
+				ret = BCME_OK;
+			}
+		}
+	}
+
+	return ret;
+}
+
+static int
+wl_cfg_uwb_coex_execute_cmd(struct net_device *dev, struct bcm_cfg80211 *cfg,
+	bcm_iov_batch_buf_t *buf, uint16 buf_sz,
+	uint8 *resp_buf, uint16 resp_buf_sz)
+{
+	int ret = BCME_ERROR;
+
+	char *iov = "uwbcx";
+	bcm_iov_batch_buf_t *p_resp = NULL;
+
+	if (buf->is_set) {
+		ret = wldev_iovar_setbuf(dev, iov, buf, buf_sz,
+			resp_buf, resp_buf_sz, NULL);
+		p_resp = (bcm_iov_batch_buf_t *)(resp_buf + strlen(iov) + 1);
+		resp_buf_sz -= (strlen(iov) + 1);
+	} else {
+		ret = wldev_iovar_getbuf(dev, iov, buf, buf_sz,
+			resp_buf, resp_buf_sz, NULL);
+		p_resp = (bcm_iov_batch_buf_t *)resp_buf;
+	}
+	if (unlikely(ret)) {
+		WL_ERR(("%s - failed to execute uwbcx cmd, err = %d\n", __FUNCTION__, ret));
+		goto fail;
+	}
+
+	if (ret == BCME_OK && p_resp != NULL) {
+		ret = wl_cfg_uwb_coex_proc_resp_buf(p_resp, resp_buf_sz, buf->is_set);
+	}
+fail:
+	return ret;
+}
+
+static int
+wl_cfg_uwb_coex_fill_ioctl_data(bcm_iov_batch_buf_t *b_buf, const uint8 is_set,
+	const uint16 id, void *data, uint16 data_len)
+{
+	uint16 len;
+
+	bcm_iov_batch_subcmd_t *sub_cmd;
+
+	/* Fill the header */
+	b_buf->version = htol16(BCM_IOV_XTLV_VERSION | BCM_IOV_BATCH_MASK);
+	b_buf->count = 1;
+	b_buf->is_set = is_set;
+	len = OFFSETOF(bcm_iov_batch_buf_t, cmds[0]);
+
+	/* Fill the sub command */
+	sub_cmd = (bcm_iov_batch_subcmd_t *)(uint8 *)(&b_buf->cmds[0]);
+	sub_cmd->id = htod16(id);
+	sub_cmd->len = sizeof(sub_cmd->u.options) + data_len;
+	sub_cmd->u.options = htol32(BCM_XTLV_OPTION_ALIGN32);
+	len += OFFSETOF(bcm_iov_batch_subcmd_t, data);
+
+	if (data) {
+		(void)memcpy_s(sub_cmd->data, data_len, (uint8 *)data, data_len);
+		len += ALIGN_SIZE(data_len, 4);
+	}
+
+	return len;
+}
+
+static int
+wl_cfg_uwb_coex_get_ch_idx(const int ch)
+{
+	int i;
+	bool found = FALSE;
+
+	if (ch < UWB_COEX_CH_MIN || ch > UWB_COEX_CH_MAX) {
+		return BCME_UNSUPPORTED;
+	}
+
+	for (i = 0; i < UWB_COEX_CH_MAP_NUM; i++) {
+		if (uwb_6g_chmap[i] == ch) {
+			found = TRUE;
+			break;
+		}
+	}
+
+	return found ? i : BCME_UNSUPPORTED;
+}
+
+static void
+wl_cfg_uwb_coex_make_coex_bitmap(int start_ch_idx, int end_ch_idx,
+	uwbcx_coex_bitmap_t *coex_bitmap)
+{
+	int i;
+
+	for (i = start_ch_idx; i <= end_ch_idx; i++) {
+		if (i < 16u) {
+			coex_bitmap->low_bitmap |= (1 << i);
+		} else if (i >= 16u && i < 32u) {
+			coex_bitmap->mid_low_bitmap |= (1 << (i - 16u));
+		} else if (i >= 32u && i < 48u) {
+			coex_bitmap->mid_high_bitmap |= (1 << (i - 32u));
+		} else if (i >= 48u) {
+			coex_bitmap->high_bitmap |= (1 << (i - 48u));
+		}
+	}
+}
+
+uint16
+wl_cfg_uwb_coex_get_ch_val(const int idx)
+{
+	return uwb_6g_chmap[idx];
+}
+
+int
+wl_cfg_uwb_coex_execute_ioctl(struct net_device *dev, struct bcm_cfg80211 *cfg,
+	const uint8 is_set, uint16 id, void *data, uint16 data_len,
+	uint8 *resp_buf, uint16 resp_buf_sz)
+{
+	int ret;
+
+	uint8 *buf = NULL;
+	bcm_iov_batch_buf_t *b_buf;
+
+	uint16 iov_len;
+
+	buf = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
+	if (unlikely(!buf)) {
+		WL_ERR(("%s - Failed to alloc mem\n", __FUNCTION__));
+		ret = BCME_NOMEM;
+		goto exit;
+	}
+	b_buf = (bcm_iov_batch_buf_t *)buf;
+
+	if (is_set) {
+		iov_len = wl_cfg_uwb_coex_fill_ioctl_data(b_buf, TRUE,
+			id, data, data_len);
+	} else {
+		iov_len = wl_cfg_uwb_coex_fill_ioctl_data(b_buf, FALSE,
+			id, NULL, 0);
+	}
+
+	ret = wl_cfg_uwb_coex_execute_cmd(dev, cfg, b_buf, iov_len,
+		(void *)resp_buf, resp_buf_sz);
+	if (unlikely(ret)) {
+		WL_ERR(("%s - Failed to execute uwb coex ioctl, ret = %d\n",
+			__FUNCTION__, ret));
+	}
+exit:
+	if (buf) {
+		MFREE(cfg->osh, buf, WLC_IOCTL_SMLEN);
+	}
+
+	return ret;
+}
+
+int
+wl_cfg_uwb_coex_enable(struct net_device *dev, int enable, int start_ch, int end_ch)
+{
+	int ret = BCME_OK;
+
+	int start_ch_idx;
+	int end_ch_idx;
+
+	uint8 *resp_buf = NULL;
+
+	uwbcx_coex_bitmap_t coex_bitmap;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	resp_buf = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
+	if (unlikely(!resp_buf)) {
+		WL_ERR(("%s - Failed to alloc mem\n", __FUNCTION__));
+		ret = BCME_NOMEM;
+		goto exit;
+	}
+
+	bzero(&coex_bitmap, sizeof(uwbcx_coex_bitmap_t));
+
+	/* Validate UWB Coex channel in case of turnning on */
+	if (enable && (((start_ch_idx = wl_cfg_uwb_coex_get_ch_idx(start_ch)) < 0) ||
+		((end_ch_idx = wl_cfg_uwb_coex_get_ch_idx(end_ch)) < 0))) {
+		WL_ERR(("%s - Unsupported ch.%d, ch.%d\n", __FUNCTION__, start_ch, end_ch));
+		ret = BCME_UNSUPPORTED;
+		goto exit;
+	}
+
+	if (enable) {
+		wl_cfg_uwb_coex_make_coex_bitmap(start_ch_idx, end_ch_idx, &coex_bitmap);
+	}
+
+	ret = wl_cfg_uwb_coex_execute_ioctl(dev, cfg, TRUE, WL_UWBCX_CMD_COEX_BITMAP,
+		&coex_bitmap, (uint16)sizeof(coex_bitmap),
+		resp_buf, WLC_IOCTL_SMLEN);
+	WL_ERR(("%s - UWB Coex %s %s - Ch. [%d/%d] (ret = %d)\n", __FUNCTION__,
+	       enable ? "On" : "Off", !ret ? "Success" : "Fail",
+	       start_ch, end_ch, ret));
+exit:
+	if (resp_buf) {
+		MFREE(cfg->osh, resp_buf, WLC_IOCTL_SMLEN);
+	}
+
+	return ret;
+}
+#endif /* WL_UWB_COEX */
 #endif /* defined(OEM_ANDROID) */

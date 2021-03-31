@@ -42,9 +42,12 @@
 #include <sme_api.h>
 #include <sir_api.h>
 #endif
+#include "wlan_hdd_object_manager.h"
 #include "hif.h"
 #include "wlan_scan_ucfg_api.h"
 #include "wlan_reg_ucfg_api.h"
+#include "qdf_func_tracker.h"
+#include "wlan_cm_roam_ucfg_api.h"
 
 #if defined(LINUX_QCMBR)
 #define SIOCIOCTLTX99 (SIOCDEVPRIVATE+13)
@@ -63,13 +66,6 @@
  *                                one (NULL terminating character)
  */
 #define SIZE_OF_GETCOUNTRYREV_OUTPUT 20
-
-/*
- * Ibss prop IE from command will be of size:
- * size  = sizeof(oui) + sizeof(oui_data) + 1(Element ID) + 1(EID Length)
- * OUI_DATA should be at least 3 bytes long
- */
-#define WLAN_HDD_IBSS_MIN_OUI_DATA_LENGTH (3)
 
 #ifdef FEATURE_WLAN_ESE
 #define TID_MIN_VALUE 0
@@ -149,8 +145,6 @@ struct hdd_drv_cmd {
 #define WLAN_HDD_MAX_TCP_PORT            65535
 #endif
 
-static uint16_t cesium_pid;
-
 /**
  * drv_cmd_validate() - Validates for space in hdd driver command
  * @command: pointer to input data (its a NULL terminated string)
@@ -175,7 +169,7 @@ struct tsm_priv {
 };
 
 static void hdd_get_tsm_stats_cb(tAniTrafStrmMetrics tsm_metrics,
-				 const uint32_t sta_id, void *context)
+				 void *context)
 {
 	struct osif_request *request;
 	struct tsm_priv *priv;
@@ -225,7 +219,6 @@ static int hdd_get_tsm_stats(struct hdd_adapter *adapter,
 	cookie = osif_request_cookie(request);
 
 	status = sme_get_tsm_stats(hdd_ctx->mac_handle, hdd_get_tsm_stats_cb,
-				   hdd_sta_ctx->conn_info.sta_id[0],
 				   hdd_sta_ctx->conn_info.bssid,
 				   cookie, tid);
 	if (QDF_STATUS_SUCCESS != status) {
@@ -249,173 +242,6 @@ static int hdd_get_tsm_stats(struct hdd_adapter *adapter,
 	return ret;
 }
 #endif /*FEATURE_WLAN_ESE */
-
-/**
- * hdd_get_ibss_peer_info_cb() - IBSS peer Info request callback
- * @context: callback context (adapter supplied by caller)
- * @peer_info: Peer info response
- *
- * This is an asynchronous callback function from SME when the peer info
- * is received
- *
- * Return: 0 for success non-zero for failure
- */
-void
-hdd_get_ibss_peer_info_cb(void *context,
-			  tSirPeerInfoRspParams *peer_info)
-{
-	struct hdd_adapter *adapter = context;
-	struct hdd_station_ctx *sta_ctx;
-	uint8_t i;
-
-	if ((!adapter) ||
-	    (WLAN_HDD_ADAPTER_MAGIC != adapter->magic)) {
-		hdd_err("invalid adapter or adapter has invalid magic");
-		return;
-	}
-
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-	if (peer_info && QDF_STATUS_SUCCESS == peer_info->status) {
-		/* validate number of peers */
-		if (peer_info->numPeers > SIR_MAX_NUM_STA_IN_IBSS) {
-			hdd_warn("Limiting num_peers %u to %u",
-				peer_info->numPeers, SIR_MAX_NUM_STA_IN_IBSS);
-			peer_info->numPeers = SIR_MAX_NUM_STA_IN_IBSS;
-		}
-		sta_ctx->ibss_peer_info.status = peer_info->status;
-		sta_ctx->ibss_peer_info.numPeers = peer_info->numPeers;
-
-		for (i = 0; i < peer_info->numPeers; i++)
-			sta_ctx->ibss_peer_info.peerInfoParams[i] =
-				peer_info->peerInfoParams[i];
-	} else {
-		hdd_debug("peerInfo %s: status %u, numPeers %u",
-			peer_info ? "valid" : "null",
-			peer_info ? peer_info->status : QDF_STATUS_E_FAILURE,
-			peer_info ? peer_info->numPeers : 0);
-		sta_ctx->ibss_peer_info.numPeers = 0;
-		sta_ctx->ibss_peer_info.status = QDF_STATUS_E_FAILURE;
-	}
-
-	complete(&adapter->ibss_peer_info_comp);
-}
-
-/**
- * hdd_cfg80211_get_ibss_peer_info_all() - get ibss peers' info
- * @adapter:	Adapter context
- *
- * Request function to get IBSS peer info from lower layers
- *
- * Return: 0 for success non-zero for failure
- */
-static
-QDF_STATUS hdd_cfg80211_get_ibss_peer_info_all(struct hdd_adapter *adapter)
-{
-	QDF_STATUS status;
-	unsigned long rc;
-
-	INIT_COMPLETION(adapter->ibss_peer_info_comp);
-
-	status = sme_request_ibss_peer_info(adapter->hdd_ctx->mac_handle,
-					    adapter,
-					    hdd_get_ibss_peer_info_cb,
-					    true, 0xFF);
-
-	if (QDF_STATUS_SUCCESS == status) {
-		rc = wait_for_completion_timeout
-			     (&adapter->ibss_peer_info_comp,
-			     msecs_to_jiffies(IBSS_PEER_INFO_REQ_TIMOEUT));
-
-		/* status will be 0 if timed out */
-		if (!rc) {
-			hdd_warn("Warning: IBSS_PEER_INFO_TIMEOUT");
-			status = QDF_STATUS_E_FAILURE;
-		}
-	} else {
-		hdd_warn("Warning: sme_request_ibss_peer_info Request failed");
-	}
-
-	return status;
-}
-
-/**
- * hdd_cfg80211_get_ibss_peer_info() - get ibss peer info
- * @adapter:	Adapter context
- * @sta_id:	Sta index for which the peer info is requested
- *
- * Request function to get IBSS peer info from lower layers
- *
- * Return: 0 for success non-zero for failure
- */
-static QDF_STATUS
-hdd_cfg80211_get_ibss_peer_info(struct hdd_adapter *adapter, uint8_t sta_id)
-{
-	unsigned long rc;
-	QDF_STATUS status;
-
-	INIT_COMPLETION(adapter->ibss_peer_info_comp);
-
-	status = sme_request_ibss_peer_info(adapter->hdd_ctx->mac_handle,
-					    adapter,
-					    hdd_get_ibss_peer_info_cb,
-					    false, sta_id);
-
-	if (QDF_STATUS_SUCCESS == status) {
-		rc = wait_for_completion_timeout(
-				&adapter->ibss_peer_info_comp,
-				msecs_to_jiffies(IBSS_PEER_INFO_REQ_TIMOEUT));
-
-		/* status = 0 on timeout */
-		if (!rc) {
-			hdd_warn("Warning: IBSS_PEER_INFO_TIMEOUT");
-			status = QDF_STATUS_E_FAILURE;
-		}
-	} else {
-		hdd_warn("Warning: sme_request_ibss_peer_info Request failed");
-	}
-
-	return status;
-}
-
-/* Function header is left blank intentionally */
-static QDF_STATUS
-hdd_parse_get_ibss_peer_info(uint8_t *command,
-			     struct qdf_mac_addr *peer_macaddr)
-{
-	uint8_t *in_ptr = command;
-	size_t in_ptr_len = strlen(command);
-
-	in_ptr = strnchr(command, in_ptr_len, SPACE_ASCII_VALUE);
-
-	if (!in_ptr)
-		return QDF_STATUS_E_FAILURE;
-	else if (SPACE_ASCII_VALUE != *in_ptr)
-		return QDF_STATUS_E_FAILURE;
-
-	while ((SPACE_ASCII_VALUE == *in_ptr) && ('\0' != *in_ptr))
-		in_ptr++;
-
-	if ('\0' == *in_ptr)
-		return QDF_STATUS_E_FAILURE;
-
-	in_ptr_len -= (in_ptr - command);
-	if (in_ptr_len < 17)
-		return QDF_STATUS_E_FAILURE;
-
-	if (in_ptr[2] != ':' || in_ptr[5] != ':' || in_ptr[8] != ':' ||
-	    in_ptr[11] != ':' || in_ptr[14] != ':')
-		return QDF_STATUS_E_FAILURE;
-
-	sscanf(in_ptr, "%2x:%2x:%2x:%2x:%2x:%2x",
-	       (unsigned int *)&peer_macaddr->bytes[0],
-	       (unsigned int *)&peer_macaddr->bytes[1],
-	       (unsigned int *)&peer_macaddr->bytes[2],
-	       (unsigned int *)&peer_macaddr->bytes[3],
-	       (unsigned int *)&peer_macaddr->bytes[4],
-	       (unsigned int *)&peer_macaddr->bytes[5]);
-
-	return QDF_STATUS_SUCCESS;
-}
 
 static void hdd_get_band_helper(struct hdd_context *hdd_ctx, int *ui_band)
 {
@@ -443,16 +269,41 @@ static void hdd_get_band_helper(struct hdd_context *hdd_ctx, int *ui_band)
 }
 
 /**
+ * hdd_check_and_fill_freq() - to validate chan and convert into freq
+ * @in_chan: input as channel number or freq to be checked
+ * @freq: frequency for input in_chan (output parameter)
+ *
+ * This function checks input "in_chan" is channel number, if yes then fills
+ * appropriate frequency into "freq" out param. If the "in_param" is greater
+ * than WNI_CFG_CURRENT_CHANNEL_STAMAX then checks for valid frequencies.
+ *
+ * Return: true if "in_chan" is valid channel/frequency; false otherwise
+ */
+static bool hdd_check_and_fill_freq(uint32_t in_chan, qdf_freq_t *freq)
+{
+	if (in_chan <= WNI_CFG_CURRENT_CHANNEL_STAMAX)
+		*freq = wlan_chan_to_freq(in_chan);
+	else if (WLAN_REG_IS_24GHZ_CH_FREQ(in_chan) ||
+		 WLAN_REG_IS_5GHZ_CH_FREQ(in_chan) ||
+		 WLAN_REG_IS_6GHZ_CHAN_FREQ(in_chan))
+		*freq = in_chan;
+	else
+		return false;
+
+	return true;
+}
+
+/**
  * _hdd_parse_bssid_and_chan() - helper function to parse bssid and channel
  * @data:            input data
  * @target_ap_bssid: pointer to bssid (output parameter)
- * @channel:         pointer to channel (output parameter)
+ * @freq:         pointer to freq (output parameter)
  *
  * Return: 0 if parsing is successful; -EINVAL otherwise
  */
 static int _hdd_parse_bssid_and_chan(const uint8_t **data,
 				     uint8_t *bssid,
-				     uint8_t *channel)
+				     qdf_freq_t *freq)
 {
 	const uint8_t *in_ptr;
 	int            v = 0;
@@ -517,17 +368,17 @@ static int _hdd_parse_bssid_and_chan(const uint8_t **data,
 	if ('\0' == *in_ptr)
 		goto error;
 
-	/* get the next argument ie the channel number */
+	/* get the next argument ie the channel/freq number */
 	v = sscanf(in_ptr, "%31s ", temp_buf);
 	if (1 != v)
 		goto error;
 
 	v = kstrtos32(temp_buf, 10, &temp_int);
-	if ((v < 0) || (temp_int < 0) ||
-	    (temp_int > WNI_CFG_CURRENT_CHANNEL_STAMAX))
-		return -EINVAL;
+	if (v < 0 || temp_int < 0)
+		goto error;
+	else if (!hdd_check_and_fill_freq(temp_int, freq))
+		goto error;
 
-	*channel = temp_int;
 	*data = in_ptr;
 	return 0;
 error:
@@ -536,7 +387,7 @@ error:
 }
 
 /**
- * hdd_parse_send_action_frame_data() - HDD Parse send action frame data
+ * hdd_parse_send_action_frame_v1_data() - HDD Parse send action frame data
  * @command: Pointer to input data
  * @bssid: Pointer to target Ap bssid
  * @channel: Pointer to the Target AP channel
@@ -546,14 +397,15 @@ error:
  * @buf_len: Pointer to data length
  *
  * This function parses the send action frame data passed in the format
- * SENDACTIONFRAME<space><bssid><space><channel><space><dwelltime><space><data>
+ * SENDACTIONFRAME<space><bssid><space><channel | frequency><space><dwelltime>
+ * <space><data>
  *
  * Return: 0 for success non-zero for failure
  */
 static int
 hdd_parse_send_action_frame_v1_data(const uint8_t *command,
 				    uint8_t *bssid,
-				    uint8_t *channel, uint8_t *dwell_time,
+				    qdf_freq_t *freq, uint8_t *dwell_time,
 				    uint8_t **buf, uint8_t *buf_len)
 {
 	const uint8_t *in_ptr = command;
@@ -565,7 +417,7 @@ hdd_parse_send_action_frame_v1_data(const uint8_t *command,
 	uint8_t temp_buf[32];
 	uint8_t temp_u8 = 0;
 
-	if (_hdd_parse_bssid_and_chan(&in_ptr, bssid, channel))
+	if (_hdd_parse_bssid_and_chan(&in_ptr, bssid, freq))
 		return -EINVAL;
 
 	/* point to the next argument */
@@ -624,10 +476,8 @@ hdd_parse_send_action_frame_v1_data(const uint8_t *command,
 	 * If N = 19, then we need 10 bytes, hence (19 + 1)/2 = 10 bytes
 	 */
 	*buf = qdf_mem_malloc((*buf_len + 1) / 2);
-	if (!*buf) {
-		hdd_err("qdf_mem_malloc failed");
+	if (!*buf)
 		return -ENOMEM;
-	}
 
 	/* the buffer received from the upper layer is character buffer,
 	 * we need to prepare the buffer taking 2 characters in to a U8 hex
@@ -652,20 +502,20 @@ hdd_parse_send_action_frame_v1_data(const uint8_t *command,
  * hdd_parse_reassoc_command_data() - HDD Parse reassoc command data
  * @command: Pointer to input data (its a NULL terminated string)
  * @bssid: Pointer to target Ap bssid
- * @channel: Pointer to the Target AP channel
+ * @freq: Pointer to the Target AP frequency
  *
  * This function parses the reasoc command data passed in the format
- * REASSOC<space><bssid><space><channel>
+ * REASSOC<space><bssid><space><channel/frequency>
  *
  * Return: 0 for success non-zero for failure
  */
 static int hdd_parse_reassoc_command_v1_data(const uint8_t *command,
 					     uint8_t *bssid,
-					     uint8_t *channel)
+					     qdf_freq_t *freq)
 {
 	const uint8_t *in_ptr = command;
 
-	if (_hdd_parse_bssid_and_chan(&in_ptr, bssid, channel))
+	if (_hdd_parse_bssid_and_chan(&in_ptr, bssid, freq))
 		return -EINVAL;
 
 	return 0;
@@ -674,7 +524,7 @@ static int hdd_parse_reassoc_command_v1_data(const uint8_t *command,
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 QDF_STATUS hdd_wma_send_fastreassoc_cmd(struct hdd_adapter *adapter,
 					const tSirMacAddr bssid,
-					int channel)
+					uint32_t ch_freq)
 {
 	struct hdd_station_ctx *hdd_sta_ctx =
 			WLAN_HDD_GET_STATION_CTX_PTR(adapter);
@@ -685,24 +535,39 @@ QDF_STATUS hdd_wma_send_fastreassoc_cmd(struct hdd_adapter *adapter,
 	qdf_mem_copy(connected_bssid, hdd_sta_ctx->conn_info.bssid.bytes,
 		     ETH_ALEN);
 	return sme_fast_reassoc(adapter->hdd_ctx->mac_handle,
-				roam_profile, bssid, channel,
+				roam_profile, bssid, ch_freq,
 				adapter->vdev_id, connected_bssid);
 }
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 /**
- * hdd_reassoc() - perform a userspace-directed reassoc
- * @adapter:    Adapter upon which the command was received
- * @bssid:      BSSID with which to reassociate
- * @channel:    channel upon which to reassociate
- * @src:        The source for the trigger of this action
+ * hdd_is_fast_reassoc_allowed  - check if roaming offload init is
+ * done. If roaming offload is not initialized, don't allow roam invoke
+ * to be triggered.
+ * @psoc: Pointer to psoc object
+ * @vdev_id: vdev_id
  *
- * This function performs a userspace-directed reassoc operation
+ * This API should return true if kernel version is less than 4.9, because
+ * the earlier versions don't have the fix to handle reassociation failure.
  *
- * Return: 0 for success non-zero for failure
+ * Return: true if roaming module initialization is done else false
  */
+static bool
+hdd_is_fast_reassoc_allowed(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)
+{
+	return MLME_IS_ROAM_INITIALIZED(psoc, vdev_id);
+}
+#else
+static inline bool
+hdd_is_fast_reassoc_allowed(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)
+{
+	return true;
+}
+#endif
+
 int hdd_reassoc(struct hdd_adapter *adapter, const uint8_t *bssid,
-		uint8_t channel, const handoff_src src)
+		uint32_t ch_freq, const handoff_src src)
 {
 	struct hdd_station_ctx *sta_ctx;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
@@ -745,23 +610,29 @@ int hdd_reassoc(struct hdd_adapter *adapter, const uint8_t *bssid,
 	 * use the current connections's channel.
 	 */
 	if (!memcmp(bssid, sta_ctx->conn_info.bssid.bytes,
-			QDF_MAC_ADDR_SIZE)) {
+		    QDF_MAC_ADDR_SIZE)) {
 		hdd_warn("Reassoc BSSID is same as currently associated AP bssid");
-		channel = sta_ctx->conn_info.channel;
+		ch_freq = sta_ctx->conn_info.chan_freq;
 	}
 
-	/* Check channel number is a valid channel number */
 	if (QDF_STATUS_SUCCESS !=
-	    wlan_hdd_validate_operation_channel(adapter, channel)) {
-		hdd_err("Invalid Channel: %d", channel);
+	    wlan_hdd_validate_operation_channel(adapter, ch_freq)) {
+		hdd_err("Invalid Ch freq: %d", ch_freq);
 		ret = -EINVAL;
 		goto exit;
 	}
 
 	/* Proceed with reassoc */
 	if (roaming_offload_enabled(hdd_ctx)) {
-		status = hdd_wma_send_fastreassoc_cmd(adapter,
-						 bssid, (int)channel);
+		if (!hdd_is_fast_reassoc_allowed(hdd_ctx->psoc,
+						adapter->vdev_id)) {
+			hdd_err("LFR3: vdev[%d] Roaming module is not initialized",
+				adapter->vdev_id);
+			ret = -EPERM;
+			goto exit;
+		}
+
+		status = hdd_wma_send_fastreassoc_cmd(adapter, bssid, ch_freq);
 		if (status != QDF_STATUS_SUCCESS) {
 			hdd_err("Failed to send fast reassoc cmd");
 			ret = -EINVAL;
@@ -769,7 +640,7 @@ int hdd_reassoc(struct hdd_adapter *adapter, const uint8_t *bssid,
 	} else {
 		tCsrHandoffRequest handoff;
 
-		handoff.channel = channel;
+		handoff.ch_freq = ch_freq;
 		handoff.src = src;
 		qdf_mem_copy(handoff.bssid.bytes, bssid, QDF_MAC_ADDR_SIZE);
 		sme_handoff_request(hdd_ctx->mac_handle, adapter->vdev_id,
@@ -786,27 +657,28 @@ exit:
  *
  * This function parses the v1 REASSOC command with the format
  *
- *    REASSOC xx:xx:xx:xx:xx:xx CH
+ *    REASSOC xx:xx:xx:xx:xx:xx CH/FREQ
  *
  * Where "xx:xx:xx:xx:xx:xx" is the Hex-ASCII representation of the
- * BSSID and CH is the ASCII representation of the channel.  For
- * example
+ * BSSID and CH/FREQ is the ASCII representation of the channel/frequency.
+ * For example
  *
  *    REASSOC 00:0a:0b:11:22:33 48
+ *    REASSOC 00:0a:0b:11:22:33 2412
  *
  * Return: 0 for success non-zero for failure
  */
 static int hdd_parse_reassoc_v1(struct hdd_adapter *adapter, const char *command)
 {
-	uint8_t channel = 0;
+	qdf_freq_t freq = 0;
 	tSirMacAddr bssid;
 	int ret;
 
-	ret = hdd_parse_reassoc_command_v1_data(command, bssid, &channel);
+	ret = hdd_parse_reassoc_command_v1_data(command, bssid, &freq);
 	if (ret)
 		hdd_err("Failed to parse reassoc command data");
 	else
-		ret = hdd_reassoc(adapter, bssid, channel, REASSOC);
+		ret = hdd_reassoc(adapter, bssid, freq, REASSOC);
 
 	return ret;
 }
@@ -830,6 +702,7 @@ static int hdd_parse_reassoc_v2(struct hdd_adapter *adapter,
 {
 	struct android_wifi_reassoc_params params;
 	tSirMacAddr bssid;
+	qdf_freq_t freq = 0;
 	int ret;
 
 	if (total_len < sizeof(params) + 8) {
@@ -844,8 +717,18 @@ static int hdd_parse_reassoc_v2(struct hdd_adapter *adapter,
 		hdd_err("MAC address parsing failed");
 		ret = -EINVAL;
 	} else {
-		ret = hdd_reassoc(adapter, bssid, params.channel, REASSOC);
+		/*
+		 * In Reassoc command, user can send channel number or frequency
+		 * along with BSSID. If params.channel param of REASSOC command
+		 * is less than WNI_CFG_CURRENT_CHANNEL_STAMAX, then host
+		 * consider this as channel number else frequency.
+		 */
+		if (!hdd_check_and_fill_freq(params.channel, &freq))
+			return -EINVAL;
+
+		ret = hdd_reassoc(adapter, bssid, freq, REASSOC);
 	}
+
 	return ret;
 }
 
@@ -871,7 +754,7 @@ static int hdd_parse_reassoc(struct hdd_adapter *adapter, const char *command,
 
 	/* both versions start with "REASSOC "
 	 * v1 has a bssid and channel # as an ASCII string
-	 *    REASSOC xx:xx:xx:xx:xx:xx CH
+	 *    REASSOC xx:xx:xx:xx:xx:xx CH/FREQ
 	 * v2 has a C struct
 	 *    REASSOC <binary c struct>
 	 *
@@ -896,11 +779,24 @@ static int hdd_parse_reassoc(struct hdd_adapter *adapter, const char *command,
 	return ret;
 }
 
+#ifdef ROAM_OFFLOAD_V1
+static inline
+void hdd_abort_roam_scan(struct hdd_context *hdd_ctx, uint8_t vdev_id)
+{
+	ucfg_cm_abort_roam_scan(hdd_ctx->pdev, vdev_id);
+}
+#else
+static inline
+void hdd_abort_roam_scan(struct hdd_context *hdd_ctx, uint8_t vdev_id)
+{
+	sme_abort_roam_scan(hdd_ctx->mac_handle, vdev_id);
+}
+#endif
 /**
  * hdd_sendactionframe() - send a userspace-supplied action frame
  * @adapter:	Adapter upon which the command was received
  * @bssid:	BSSID target of the action frame
- * @channel:	Channel upon which to send the frame
+ * @freq:	Frequency upon which to send the frame
  * @dwell_time:	Amount of time to dwell when the frame is sent
  * @payload_len:Length of the payload
  * @payload:	Payload of the frame
@@ -911,7 +807,7 @@ static int hdd_parse_reassoc(struct hdd_adapter *adapter, const char *command,
  */
 static int
 hdd_sendactionframe(struct hdd_adapter *adapter, const uint8_t *bssid,
-		    const uint8_t channel, const uint8_t dwell_time,
+		    const qdf_freq_t freq, const uint8_t dwell_time,
 		    const int payload_len, const uint8_t *payload)
 {
 	struct ieee80211_channel chan;
@@ -926,6 +822,11 @@ hdd_sendactionframe(struct hdd_adapter *adapter, const uint8_t *bssid,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
 	struct cfg80211_mgmt_tx_params params;
 #endif
+
+	if (payload_len < sizeof(tSirMacVendorSpecificFrameHdr)) {
+		hdd_warn("Invalid payload length: %d", payload_len);
+		return -EINVAL;
+	}
 
 	if (QDF_STA_MODE != adapter->device_mode) {
 		hdd_warn("Unsupported in mode %s(%d)",
@@ -955,7 +856,7 @@ hdd_sendactionframe(struct hdd_adapter *adapter, const uint8_t *bssid,
 		goto exit;
 	}
 
-	chan.center_freq = sme_chn_to_freq(channel);
+	chan.center_freq = freq;
 	/* Check if it is specific action frame */
 	if (vendor->category ==
 	    SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY) {
@@ -963,16 +864,14 @@ hdd_sendactionframe(struct hdd_adapter *adapter, const uint8_t *bssid,
 
 		if (!qdf_mem_cmp(vendor->Oui, oui, 3)) {
 			/*
-			 * if the channel number is different from operating
-			 * channel then no need to send action frame
+			 * if the freq number is different from operating
+			 * freq then no need to send action frame
 			 */
-			if (channel != 0) {
-				if (channel !=
-				    sta_ctx->conn_info.channel) {
-					hdd_warn("channel(%d) is different from operating channel(%d)",
-						  channel,
-						  sta_ctx->conn_info.
-						  channel);
+			if (freq) {
+				if (freq != sta_ctx->conn_info.chan_freq) {
+					hdd_warn("freq(%u) is different from operating freq(%u)",
+						 freq,
+						 sta_ctx->conn_info.chan_freq);
 					ret = -EINVAL;
 					goto exit;
 				}
@@ -984,21 +883,18 @@ hdd_sendactionframe(struct hdd_adapter *adapter, const uint8_t *bssid,
 				 * may cause long delays in sending action
 				 * frames.
 				 */
-				sme_abort_roam_scan(hdd_ctx->mac_handle,
-						    adapter->vdev_id);
+				hdd_abort_roam_scan(hdd_ctx, adapter->vdev_id);
 			} else {
 				/*
-				 * 0 is accepted as current home channel,
+				 * 0 is accepted as current home frequency,
 				 * delayed transmission of action frame is ok.
 				 */
-				chan.center_freq =
-					sme_chn_to_freq(sta_ctx->conn_info.
-							channel);
+				chan.center_freq = sta_ctx->conn_info.chan_freq;
 			}
 		}
 	}
 	if (chan.center_freq == 0) {
-		hdd_err("Invalid channel number: %d", channel);
+		hdd_nofl_err("Invalid freq : %d", freq);
 		ret = -EINVAL;
 		goto exit;
 	}
@@ -1006,7 +902,6 @@ hdd_sendactionframe(struct hdd_adapter *adapter, const uint8_t *bssid,
 	frame_len = payload_len + 24;
 	frame = qdf_mem_malloc(frame_len);
 	if (!frame) {
-		hdd_err("memory allocation failed");
 		ret = -ENOMEM;
 		goto exit;
 	}
@@ -1064,20 +959,20 @@ exit:
 static int
 hdd_parse_sendactionframe_v1(struct hdd_adapter *adapter, const char *command)
 {
-	uint8_t channel = 0;
+	qdf_freq_t freq = 0;
 	uint8_t dwell_time = 0;
 	uint8_t payload_len = 0;
 	uint8_t *payload = NULL;
 	tSirMacAddr bssid;
 	int ret;
 
-	ret = hdd_parse_send_action_frame_v1_data(command, bssid, &channel,
+	ret = hdd_parse_send_action_frame_v1_data(command, bssid, &freq,
 						  &dwell_time, &payload,
 						  &payload_len);
 	if (ret) {
-		hdd_err("Failed to parse send action frame data");
+		hdd_nofl_err("Failed to parse send action frame data");
 	} else {
-		ret = hdd_sendactionframe(adapter, bssid, channel,
+		ret = hdd_sendactionframe(adapter, bssid, freq,
 					  dwell_time, payload_len, payload);
 		qdf_mem_free(payload);
 	}
@@ -1106,6 +1001,7 @@ hdd_parse_sendactionframe_v2(struct hdd_adapter *adapter,
 	tSirMacAddr bssid;
 	int ret;
 	int len_wo_payload = 0;
+	qdf_freq_t freq = 0;
 
 	/* The params are located after "SENDACTIONFRAME " */
 	total_len -= 16;
@@ -1139,8 +1035,13 @@ hdd_parse_sendactionframe_v2(struct hdd_adapter *adapter,
 		return -EINVAL;
 	}
 
-	ret = hdd_sendactionframe(adapter, bssid, params->channel,
-				params->dwell_time, params->len, params->data);
+	if (!hdd_check_and_fill_freq(params->channel, &freq)) {
+		hdd_err("Invalid channel: %d", params->channel);
+		return -EINVAL;
+	}
+
+	ret = hdd_sendactionframe(adapter, bssid, freq, params->dwell_time,
+				  params->len, params->data);
 
 	return ret;
 }
@@ -1196,8 +1097,9 @@ hdd_parse_sendactionframe(struct hdd_adapter *adapter, const char *command,
 
 /**
  * hdd_parse_channellist() - HDD Parse channel list
+ * @hdd_ctx: hdd context
  * @command: Pointer to input channel list
- * @channel_list: Pointer to local output array to record
+ * @channel_freq_list: Pointer to local output array to record
  *                channel list
  * @num_channels: Pointer to number of roam scan channels
  *
@@ -1214,7 +1116,9 @@ hdd_parse_sendactionframe(struct hdd_adapter *adapter, const char *command,
  * Return: 0 for success non-zero for failure
  */
 static int
-hdd_parse_channellist(const uint8_t *command, uint8_t *channel_list,
+hdd_parse_channellist(struct hdd_context *hdd_ctx,
+		      const uint8_t *command,
+		      uint32_t *channel_freq_list,
 		      uint8_t *num_channels)
 {
 	const uint8_t *in_ptr = command;
@@ -1291,10 +1195,11 @@ hdd_parse_channellist(const uint8_t *command, uint8_t *channel_list,
 		    (temp_int > WNI_CFG_CURRENT_CHANNEL_STAMAX)) {
 			return -EINVAL;
 		}
-		channel_list[j] = temp_int;
+		channel_freq_list[j] =
+			wlan_reg_legacy_chan_to_freq(hdd_ctx->pdev, temp_int);
 
 		hdd_debug("Channel %d added to preferred channel list",
-			  channel_list[j]);
+			  channel_freq_list[j]);
 	}
 
 	return 0;
@@ -1327,14 +1232,21 @@ static int
 hdd_parse_set_roam_scan_channels_v1(struct hdd_adapter *adapter,
 				    const char *command)
 {
-	uint8_t channel_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
+	uint32_t channel_freq_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
 	uint8_t num_chan = 0;
 	QDF_STATUS status;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	int ret;
 	mac_handle_t mac_handle;
 
-	ret = hdd_parse_channellist(command, channel_list, &num_chan);
+	if (!hdd_ctx) {
+		hdd_err("invalid hdd ctx");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ret = hdd_parse_channellist(hdd_ctx, command, channel_freq_list,
+				    &num_chan);
 	if (ret) {
 		hdd_err("Failed to parse channel list information");
 		goto exit;
@@ -1352,7 +1264,8 @@ hdd_parse_set_roam_scan_channels_v1(struct hdd_adapter *adapter,
 	}
 
 	mac_handle = hdd_ctx->mac_handle;
-	if (!sme_validate_channel_list(mac_handle, channel_list, num_chan)) {
+	if (!sme_validate_channel_list(mac_handle,
+				       channel_freq_list, num_chan)) {
 		hdd_err("List contains invalid channel(s)");
 		ret = -EINVAL;
 		goto exit;
@@ -1360,7 +1273,8 @@ hdd_parse_set_roam_scan_channels_v1(struct hdd_adapter *adapter,
 
 	status = sme_change_roam_scan_channel_list(mac_handle,
 						   adapter->vdev_id,
-						   channel_list, num_chan);
+						   channel_freq_list,
+						   num_chan);
 	if (QDF_STATUS_SUCCESS != status) {
 		hdd_err("Failed to update channel list information");
 		ret = -EINVAL;
@@ -1393,7 +1307,7 @@ hdd_parse_set_roam_scan_channels_v2(struct hdd_adapter *adapter,
 				    const char *command)
 {
 	const uint8_t *value;
-	uint8_t channel_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
+	uint32_t channel_freq_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
 	uint8_t channel;
 	uint8_t num_chan;
 	int i;
@@ -1433,11 +1347,13 @@ hdd_parse_set_roam_scan_channels_v2(struct hdd_adapter *adapter,
 			ret = -EINVAL;
 			goto exit;
 		}
-		channel_list[i] = channel;
+		channel_freq_list[i] = wlan_reg_chan_to_freq(hdd_ctx->pdev,
+							     channel);
 	}
 
 	mac_handle = hdd_ctx->mac_handle;
-	if (!sme_validate_channel_list(mac_handle, channel_list, num_chan)) {
+	if (!sme_validate_channel_list(mac_handle, channel_freq_list,
+				       num_chan)) {
 		hdd_err("List contains invalid channel(s)");
 		ret = -EINVAL;
 		goto exit;
@@ -1445,7 +1361,7 @@ hdd_parse_set_roam_scan_channels_v2(struct hdd_adapter *adapter,
 
 	status = sme_change_roam_scan_channel_list(mac_handle,
 						   adapter->vdev_id,
-						   channel_list, num_chan);
+						   channel_freq_list, num_chan);
 	if (QDF_STATUS_SUCCESS != status) {
 		hdd_err("Failed to update channel list information");
 		ret = -EINVAL;
@@ -1725,8 +1641,8 @@ static QDF_STATUS hdd_parse_plm_cmd(uint8_t *command,
 			req->mac_addr.bytes[count] = content;
 		}
 
-		hdd_debug("MAC addr " QDF_MAC_ADDR_STR,
-			  QDF_MAC_ADDR_ARRAY(req->mac_addr.bytes));
+		hdd_debug("MAC addr " QDF_MAC_ADDR_FMT,
+			  QDF_MAC_ADDR_REF(req->mac_addr.bytes));
 
 		in_ptr = strpbrk(in_ptr, " ");
 
@@ -1774,8 +1690,9 @@ static QDF_STATUS hdd_parse_plm_cmd(uint8_t *command,
 			    content > WNI_CFG_CURRENT_CHANNEL_STAMAX)
 				return QDF_STATUS_E_FAILURE;
 
-			req->plm_ch_list[count] = content;
-			hdd_debug(" ch- %d", req->plm_ch_list[count]);
+			req->plm_ch_freq_list[count] =
+				cds_chan_to_freq(content);
+			hdd_debug(" ch-freq- %d", req->plm_ch_freq_list[count]);
 		}
 	}
 	/* If PLM START */
@@ -1965,8 +1882,9 @@ static int hdd_set_app_type1_parser(struct hdd_adapter *adapter,
 	params.pass_length = strlen(password);
 	qdf_mem_copy(params.password, password, params.pass_length);
 
-	hdd_debug("%d %pM %.8s %u %.16s %u",
-		  params.vdev_id, params.wakee_mac_addr.bytes,
+	hdd_debug("%d "QDF_MAC_ADDR_FMT" %.8s %u %.16s %u",
+		  params.vdev_id,
+		  QDF_MAC_ADDR_REF(params.wakee_mac_addr.bytes),
 		  params.identification_id, params.id_length,
 		  params.password, params.pass_length);
 
@@ -2026,7 +1944,7 @@ static int hdd_set_app_type2_parser(struct hdd_adapter *adapter,
 		return -EINVAL;
 	}
 
-	if (6 != sscanf(mac_addr, QDF_MAC_ADDR_STR,
+	if (6 != sscanf(mac_addr, "%02x:%02x:%02x:%02x:%02x:%02x",
 			&gateway_mac[0], &gateway_mac[1], &gateway_mac[2],
 			&gateway_mac[3], &gateway_mac[4], &gateway_mac[5])) {
 		hdd_err("Invalid MacAddress Input %s", mac_addr);
@@ -2079,8 +1997,8 @@ static int hdd_set_app_type2_parser(struct hdd_adapter *adapter,
 		params.tcp_rx_timeout_val =
 		  ucfg_pmo_extwow_app2_tcp_rx_timeout(hdd_ctx->psoc);
 
-	hdd_debug("%pM %.16s %u %u %u %u %u %u %u %u %u %u %u %u %u",
-		  gateway_mac, rc4_key, params.ip_id,
+	hdd_debug(QDF_MAC_ADDR_FMT" %.16s %u %u %u %u %u %u %u %u %u %u %u %u %u",
+		  QDF_MAC_ADDR_REF(gateway_mac), rc4_key, params.ip_id,
 		  params.ip_device_ip, params.ip_server_ip, params.tcp_seq,
 		  params.tcp_ack_seq, params.tcp_src_port, params.tcp_dst_port,
 		  params.keepalive_init, params.keepalive_min,
@@ -2402,136 +2320,6 @@ static int wlan_hdd_get_link_status(struct hdd_adapter *adapter)
 	return adapter->link_status;
 }
 
-static void hdd_tx_fail_ind_callback(uint8_t *macaddr, uint8_t seq_no)
-{
-	int payload_len;
-	struct sk_buff *skb;
-	struct nlmsghdr *nlh;
-	uint8_t *data;
-
-	payload_len = ETH_ALEN;
-
-	if (0 == cesium_pid || !cesium_nl_srv_sock) {
-		hdd_err("cesium process not registered");
-		return;
-	}
-
-	skb = nlmsg_new(payload_len, GFP_ATOMIC);
-	if (!skb) {
-		hdd_err("nlmsg_new() failed for msg size[%d]",
-			 NLMSG_SPACE(payload_len));
-		return;
-	}
-
-	nlh = nlmsg_put(skb, cesium_pid, seq_no, 0, payload_len, NLM_F_REQUEST);
-
-	if (!nlh) {
-		hdd_err("nlmsg_put() failed for msg size[%d]",
-			 NLMSG_SPACE(payload_len));
-
-		kfree_skb(skb);
-		return;
-	}
-
-	data = nlmsg_data(nlh);
-	memcpy(data, macaddr, ETH_ALEN);
-
-	if (nlmsg_unicast(cesium_nl_srv_sock, skb, cesium_pid) < 0) {
-		hdd_err("nlmsg_unicast() failed for msg size[%d]",
-			 NLMSG_SPACE(payload_len));
-	}
-}
-
-
-/**
- * hdd_parse_user_params() - return a pointer to the next argument
- * @command: Input argument string
- * @arg: Output pointer to the next argument
- *
- * This function parses argument stream and finds the pointer
- * to the next argument
- *
- * Return: 0 if the next argument found; -EINVAL otherwise
- */
-static int hdd_parse_user_params(uint8_t *command, uint8_t **arg)
-{
-	uint8_t *cursor;
-
-	cursor = strnchr(command, strlen(command), SPACE_ASCII_VALUE);
-
-	/* no argument remains ? */
-	if (!cursor)
-		return -EINVAL;
-
-	/* no space after the current arg ? */
-	if (SPACE_ASCII_VALUE != *cursor)
-		return -EINVAL;
-
-	cursor++;
-
-	/* remove empty spaces */
-	while (SPACE_ASCII_VALUE == *cursor)
-		cursor++;
-
-	/* no argument after the spaces ? */
-	if ('\0' == *cursor)
-		return -EINVAL;
-
-	*arg = cursor;
-
-	return 0;
-}
-
-/**
- * hdd_parse_ibsstx_fail_event_params - Parse params
- *                                             for SETIBSSTXFAILEVENT
- * @command: Input ibss tx fail event argument
- * @tx_fail_count: (Output parameter) Tx fail counter
- * @pid: (Output parameter) PID
- *
- * Return: 0 if the parsing succeeds; -EINVAL otherwise
- */
-static int hdd_parse_ibsstx_fail_event_params(uint8_t *command,
-					      uint8_t *tx_fail_count,
-					      uint16_t *pid)
-{
-	uint8_t *param = NULL;
-	int ret;
-
-	ret = hdd_parse_user_params(command, &param);
-
-	if (0 == ret && param) {
-		if (1 != sscanf(param, "%hhu", tx_fail_count)) {
-			ret = -EINVAL;
-			goto done;
-		}
-	} else {
-		goto done;
-	}
-
-	if (0 == *tx_fail_count) {
-		*pid = 0;
-		goto done;
-	}
-
-	command = param;
-	command++;
-
-	ret = hdd_parse_user_params(command, &param);
-
-	if (0 == ret) {
-		if (1 != sscanf(param, "%hu", pid)) {
-			ret = -EINVAL;
-			goto done;
-		}
-	} else {
-		goto done;
-	}
-
-done:
-	return ret;
-}
-
 #ifdef FEATURE_WLAN_ESE
 /**
  * hdd_parse_ese_beacon_req() - Parse ese beacon request
@@ -2552,7 +2340,8 @@ done:
  *
  * Return: 0 for success non-zero for failure
  */
-static int hdd_parse_ese_beacon_req(uint8_t *command,
+static int hdd_parse_ese_beacon_req(struct wlan_objmgr_pdev *pdev,
+				    uint8_t *command,
 				    tCsrEseBeaconReq *req)
 {
 	uint8_t *in_ptr = command;
@@ -2639,7 +2428,8 @@ static int hdd_parse_ese_beacon_req(uint8_t *command,
 						  temp_int);
 					return -EINVAL;
 				}
-				req->bcnReq[j].channel = temp_int;
+				req->bcnReq[j].ch_freq =
+				wlan_reg_chan_to_freq(pdev, temp_int);
 				break;
 
 			case 2: /* Scan mode */
@@ -2670,10 +2460,10 @@ static int hdd_parse_ese_beacon_req(uint8_t *command,
 	}
 
 	for (j = 0; j < req->numBcnReqIe; j++) {
-		hdd_debug("Index: %d Measurement Token: %u Channel: %u Scan Mode: %u Measurement Duration: %u",
+		hdd_debug("Index: %d Measurement Token: %u ch_freq: %u Scan Mode: %u Measurement Duration: %u",
 			  j,
 			  req->bcnReq[j].measurementToken,
-			  req->bcnReq[j].channel,
+			  req->bcnReq[j].ch_freq,
 			  req->bcnReq[j].scanMode,
 			  req->bcnReq[j].measurementDuration);
 	}
@@ -2733,10 +2523,9 @@ static int hdd_parse_get_cckm_ie(uint8_t *command, uint8_t **cckm_ie,
 	 * If N = 19, then we need 10 bytes, hence (19 + 1) / 2 = 10 bytes
 	 */
 	*cckm_ie = qdf_mem_malloc((*cckm_ie_len + 1) / 2);
-	if (!*cckm_ie) {
-		hdd_err("qdf_mem_malloc failed");
+	if (!*cckm_ie)
 		return -ENOMEM;
-	}
+
 	/*
 	 * the buffer received from the upper layer is character buffer,
 	 * we need to prepare the buffer taking 2 characters in to a U8 hex
@@ -2764,13 +2553,12 @@ int wlan_hdd_set_mc_rate(struct hdd_adapter *adapter, int target_rate)
 		hdd_err("HDD context is null");
 		return -EINVAL;
 	}
-	if ((QDF_IBSS_MODE != adapter->device_mode) &&
-	    (QDF_SAP_MODE != adapter->device_mode) &&
+	if ((QDF_SAP_MODE != adapter->device_mode) &&
 	    (QDF_STA_MODE != adapter->device_mode)) {
 		hdd_err("Received SETMCRATE cmd in invalid mode %s(%d)",
 			qdf_opmode_str(adapter->device_mode),
 			adapter->device_mode);
-		hdd_err("SETMCRATE cmd is allowed only in STA, IBSS or SOFTAP mode");
+		hdd_err("SETMCRATE cmd is allowed only in STA or SOFTAP mode");
 		return -EINVAL;
 	}
 
@@ -2787,8 +2575,9 @@ int wlan_hdd_set_mc_rate(struct hdd_adapter *adapter, int target_rate)
 	rate_update.mcastDataRate5GHz = target_rate;
 	rate_update.bcastDataRate = -1;
 	qdf_copy_macaddr(&rate_update.bssid, &adapter->mac_addr);
-	hdd_debug("MC Target rate %d, mac = %pM, dev_mode %s(%d)",
-		  rate_update.mcastDataRate24GHz, rate_update.bssid.bytes,
+	hdd_debug("MC Target rate %d, mac = "QDF_MAC_ADDR_FMT", dev_mode %s(%d)",
+		  rate_update.mcastDataRate24GHz,
+		  QDF_MAC_ADDR_REF(rate_update.bssid.bytes),
 		  qdf_opmode_str(adapter->device_mode), adapter->device_mode);
 	status = sme_send_rate_update_ind(hdd_ctx->mac_handle, &rate_update);
 	if (QDF_STATUS_SUCCESS != status) {
@@ -2877,6 +2666,7 @@ static int drv_cmd_set_band(struct hdd_adapter *adapter,
 {
 	int err;
 	uint8_t band;
+	uint32_t band_bitmap;
 
 	/*
 	 * Parse the band value passed from userspace. The first 8 bytes
@@ -2888,7 +2678,9 @@ static int drv_cmd_set_band(struct hdd_adapter *adapter,
 		return err;
 	}
 
-	return hdd_reg_set_band(adapter->dev, band);
+	band_bitmap = hdd_reg_legacy_setband_to_reg_wifi_band_bitmap(band);
+
+	return hdd_reg_set_band(adapter->dev, band_bitmap);
 }
 
 static int drv_cmd_set_wmmps(struct hdd_adapter *adapter,
@@ -3525,11 +3317,9 @@ void hdd_get_roam_scan_ch_cb(hdd_handle_t hdd_handle,
 			return;
 		}
 		event = (uint8_t *)qdf_mem_malloc(len);
-		if (!event) {
-			hdd_err("Failed to alloc event response buf vdev_id: %d",
-				roam_ch->vdev_id);
+		if (!event)
 			return;
-		}
+
 		freq = (uint32_t *)event;
 		for (i = 0; i < roam_ch->num_channels &&
 		     i < WNI_CFG_VALID_CHANNEL_LIST_LEN; i++) {
@@ -3559,7 +3349,7 @@ void hdd_get_roam_scan_ch_cb(hdd_handle_t hdd_handle,
 }
 
 static uint32_t
-hdd_get_roam_chan_from_fw(struct hdd_adapter *adapter, uint8_t *chan_list,
+hdd_get_roam_chan_from_fw(struct hdd_adapter *adapter, uint32_t *chan_list,
 			  uint8_t *num_channels)
 {
 	QDF_STATUS status = QDF_STATUS_E_INVAL;
@@ -3606,25 +3396,44 @@ hdd_get_roam_chan_from_fw(struct hdd_adapter *adapter, uint8_t *chan_list,
 	priv = osif_request_priv(request);
 	*num_channels = priv->roam_ch.num_channels;
 	for (i = 0; i < *num_channels; i++)
-		chan_list[i] = wlan_reg_freq_to_chan(
-				hdd_ctx->pdev, priv->roam_ch.chan_list[i]);
+		chan_list[i] = priv->roam_ch.chan_list[i];
 
 cleanup:
 	osif_request_put(request);
 
 	return ret;
 }
-#else
-static bool is_roam_ch_from_fw_supported(struct hdd_context *hdd_ctx)
-{
-	return false;
-}
 
-static uint32_t
-hdd_get_roam_chan_from_fw(struct hdd_adapter *adapter, uint8_t *chan_list,
-			  uint8_t *num_channels)
+int
+hdd_get_roam_scan_freq(struct hdd_adapter *adapter, mac_handle_t mac_handle,
+		       uint32_t *chan_list, uint8_t *num_channels)
 {
-	return QDF_STATUS_E_INVAL;
+	int ret = 0;
+
+	if (!adapter || !mac_handle || !chan_list || !num_channels) {
+		hdd_err("failed to get roam scan channel, invalid input");
+		return -EFAULT;
+	}
+
+	if (is_roam_ch_from_fw_supported(adapter->hdd_ctx)) {
+		ret = hdd_get_roam_chan_from_fw(adapter, chan_list,
+						num_channels);
+		if (ret != QDF_STATUS_SUCCESS) {
+			hdd_err("failed to get roam scan channel list from FW");
+			return -EFAULT;
+		}
+
+		return ret;
+	}
+
+	if (sme_get_roam_scan_channel_list(mac_handle, chan_list,
+					   num_channels, adapter->vdev_id) !=
+					   QDF_STATUS_SUCCESS) {
+		hdd_err("failed to get roam scan channel list");
+		return -EFAULT;
+	}
+
+	return ret;
 }
 #endif
 
@@ -3635,35 +3444,18 @@ static int drv_cmd_get_roam_scan_channels(struct hdd_adapter *adapter,
 					  struct hdd_priv_data *priv_data)
 {
 	int ret = 0;
-	uint8_t channel_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
+	uint32_t freq_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
 	uint8_t num_channels = 0;
 	uint8_t j = 0;
 	char extra[128] = { 0 };
 	int len;
+	uint8_t chan;
 
-	if (is_roam_ch_from_fw_supported(hdd_ctx)) {
-		ret = hdd_get_roam_chan_from_fw(adapter, channel_list,
-						&num_channels);
-		if (ret == QDF_STATUS_SUCCESS) {
-			goto fill_ch_resp;
-		} else {
-			hdd_err("failed to get roam scan channel list from FW");
-			ret = -EFAULT;
-			goto exit;
-		}
-	}
-
-	if (QDF_STATUS_SUCCESS !=
-		sme_get_roam_scan_channel_list(hdd_ctx->mac_handle,
-					       channel_list,
-					       &num_channels,
-					       adapter->vdev_id)) {
-		hdd_err("failed to get roam scan channel list");
-		ret = -EFAULT;
+	ret = hdd_get_roam_scan_freq(adapter, hdd_ctx->mac_handle, freq_list,
+				     &num_channels);
+	if (ret != QDF_STATUS_SUCCESS)
 		goto exit;
-	}
 
-fill_ch_resp:
 	qdf_mtrace(QDF_MODULE_ID_HDD, QDF_MODULE_ID_HDD,
 		   TRACE_CODE_HDD_GETROAMSCANCHANNELS_IOCTL,
 		   adapter->vdev_id, num_channels);
@@ -3675,10 +3467,11 @@ fill_ch_resp:
 	 */
 	len = scnprintf(extra, sizeof(extra), "%s %d", command,
 			num_channels);
-	for (j = 0; (j < num_channels) && len <= sizeof(extra); j++)
+	for (j = 0; (j < num_channels) && len <= sizeof(extra); j++) {
+		chan = wlan_reg_freq_to_chan(hdd_ctx->pdev, freq_list[j]);
 		len += scnprintf(extra + len, sizeof(extra) - len,
-				 " %d", channel_list[j]);
-
+				 " %d", chan);
+	}
 	len = QDF_MIN(priv_data->total_len, len + 1);
 	if (copy_to_user(priv_data->buf, &extra, len)) {
 		hdd_err("failed to copy data to user buffer");
@@ -4078,9 +3871,19 @@ static int drv_cmd_set_roam_intra_band(struct hdd_adapter *adapter,
 		  val);
 
 	ucfg_mlme_set_roam_intra_band(hdd_ctx->psoc, (bool)val);
-	policy_mgr_set_pcl_for_existing_combo(
-					hdd_ctx->psoc,
-					PM_STA_MODE);
+
+	/* Disable roaming on Vdev before setting PCL */
+	sme_stop_roaming(hdd_ctx->mac_handle, adapter->vdev_id,
+			 REASON_DRIVER_DISABLED,
+			 RSO_SET_PCL);
+
+	policy_mgr_set_pcl_for_existing_combo(hdd_ctx->psoc, PM_STA_MODE,
+					      adapter->vdev_id);
+
+	/* Enable roaming once SET pcl is done */
+	sme_start_roaming(hdd_ctx->mac_handle, adapter->vdev_id,
+			  REASON_DRIVER_ENABLED,
+			  RSO_SET_PCL);
 
 exit:
 	return ret;
@@ -4531,7 +4334,7 @@ static int drv_cmd_fast_reassoc(struct hdd_adapter *adapter,
 {
 	int ret = 0;
 	uint8_t *value = command;
-	uint8_t channel = 0;
+	qdf_freq_t freq = 0;
 	tSirMacAddr bssid;
 	uint32_t roam_id = INVALID_ROAM_ID;
 	tCsrRoamModifyProfileFields mod_fields;
@@ -4547,6 +4350,7 @@ static int drv_cmd_fast_reassoc(struct hdd_adapter *adapter,
 	}
 
 	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 
 	/* if not associated, no need to proceed with reassoc */
 	if (eConnectionState_Associated != sta_ctx->conn_info.conn_state) {
@@ -4556,14 +4360,13 @@ static int drv_cmd_fast_reassoc(struct hdd_adapter *adapter,
 	}
 
 	ret = hdd_parse_reassoc_command_v1_data(value, bssid,
-						&channel);
+						&freq);
 	if (ret) {
 		hdd_err("Failed to parse reassoc command data");
 		goto exit;
 	}
 
 	mac_handle = hdd_ctx->mac_handle;
-
 	/*
 	 * if the target bssid is same as currently associated AP,
 	 * issue reassoc to same AP
@@ -4572,9 +4375,8 @@ static int drv_cmd_fast_reassoc(struct hdd_adapter *adapter,
 			 QDF_MAC_ADDR_SIZE)) {
 		hdd_warn("Reassoc BSSID is same as currently associated AP bssid");
 		if (roaming_offload_enabled(hdd_ctx)) {
-			channel = sta_ctx->conn_info.channel;
-			hdd_wma_send_fastreassoc_cmd(adapter, bssid,
-						     channel);
+			hdd_wma_send_fastreassoc_cmd(
+				adapter, bssid, sta_ctx->conn_info.chan_freq);
 		} else {
 			sme_get_modify_profile_fields(mac_handle,
 				adapter->vdev_id,
@@ -4585,19 +4387,19 @@ static int drv_cmd_fast_reassoc(struct hdd_adapter *adapter,
 		return 0;
 	}
 
-	/* Check channel number is a valid channel number */
-	if (channel && (QDF_STATUS_SUCCESS !=
-		wlan_hdd_validate_operation_channel(adapter, channel))) {
-		hdd_err("Invalid Channel [%d]", channel);
+	/* Check freq number is a valid freq number */
+	if (freq && QDF_STATUS_SUCCESS !=
+		wlan_hdd_validate_operation_channel(adapter, freq)) {
+		hdd_err("Invalid freq [%d]", freq);
 		return -EINVAL;
 	}
 
 	if (roaming_offload_enabled(hdd_ctx)) {
-		hdd_wma_send_fastreassoc_cmd(adapter, bssid, (int)channel);
+		hdd_wma_send_fastreassoc_cmd(adapter, bssid, freq);
 		goto exit;
 	}
 	/* Proceed with reassoc */
-	req.channel = channel;
+	req.ch_freq = freq;
 	req.src = FASTREASSOC;
 	qdf_mem_copy(req.bssid.bytes, bssid, sizeof(tSirMacAddr));
 	sme_handoff_request(mac_handle, adapter->vdev_id, &req);
@@ -4887,738 +4689,6 @@ exit:
 	return ret;
 }
 
-/* Function header is left blank intentionally */
-static int hdd_parse_set_ibss_oui_data_command(uint8_t *command, uint8_t *ie,
-					int32_t *oui_length, int32_t limit)
-{
-	uint8_t len;
-	uint8_t data;
-
-	while ((SPACE_ASCII_VALUE == *command) && ('\0' != *command)) {
-		command++;
-		limit--;
-	}
-
-	len = 2;
-
-	while ((SPACE_ASCII_VALUE != *command) && ('\0' != *command) &&
-		(limit > 1)) {
-		sscanf(command, "%02x", (unsigned int *)&data);
-		ie[len++] = data;
-		command += 2;
-		limit -= 2;
-	}
-
-	*oui_length = len - 2;
-
-	while ((SPACE_ASCII_VALUE == *command) && ('\0' != *command)) {
-		command++;
-		limit--;
-	}
-
-	while ((SPACE_ASCII_VALUE != *command) && ('\0' != *command) &&
-		(limit > 1)) {
-		sscanf(command, "%02x", (unsigned int *)&data);
-		ie[len++] = data;
-		command += 2;
-		limit -= 2;
-	}
-
-	ie[0] = WLAN_ELEMID_VENDOR;
-	ie[1] = len - 2;
-
-	return len;
-}
-
-/**
- * drv_cmd_set_ibss_beacon_oui_data() - set ibss oui data command
- * @adapter: Pointer to adapter
- * @hdd_ctx: Pointer to HDD context
- * @command: Pointer to command string
- * @command_len : Command length
- * @priv_data : Pointer to priv data
- *
- * Return:
- *      int status code
- */
-static int drv_cmd_set_ibss_beacon_oui_data(struct hdd_adapter *adapter,
-					    struct hdd_context *hdd_ctx,
-					    uint8_t *command,
-					    uint8_t command_len,
-					    struct hdd_priv_data *priv_data)
-{
-	int i = 0;
-	int status;
-	int ret = 0;
-	uint8_t *ibss_ie;
-	int32_t oui_length = 0;
-	uint32_t ibss_ie_length;
-	uint8_t *value = command;
-	tSirModifyIE modify_ie;
-	struct csr_roam_profile *roam_profile;
-	mac_handle_t mac_handle;
-
-	if (QDF_IBSS_MODE != adapter->device_mode) {
-		hdd_debug("Device_mode %s(%d) not IBSS",
-			  qdf_opmode_str(adapter->device_mode),
-			  adapter->device_mode);
-		return ret;
-	}
-
-	hdd_debug("received command %s", ((char *)value));
-
-	/* validate argument of command */
-	if (strlen(value) <= command_len) {
-		hdd_err("No arguments in command length %zu",
-			 strlen(value));
-		ret = -EFAULT;
-		goto exit;
-	}
-
-	/* moving to arguments of commands */
-	value = value + command_len;
-	command_len = strlen(value);
-
-	/* oui_data can't be less than 3 bytes */
-	if (command_len < (2 * WLAN_HDD_IBSS_MIN_OUI_DATA_LENGTH)) {
-		hdd_err("Invalid SETIBSSBEACONOUIDATA command length %d",
-			 command_len);
-		ret = -EFAULT;
-		goto exit;
-	}
-
-	ibss_ie = qdf_mem_malloc(command_len);
-	if (!ibss_ie) {
-		hdd_err("Could not allocate memory for command length %d",
-			 command_len);
-		ret = -ENOMEM;
-		goto exit;
-	}
-
-	ibss_ie_length = hdd_parse_set_ibss_oui_data_command(value, ibss_ie,
-							     &oui_length,
-							     command_len);
-	if (ibss_ie_length <= (2 * WLAN_HDD_IBSS_MIN_OUI_DATA_LENGTH)) {
-		hdd_err("Could not parse command %s return length %d",
-			 value, ibss_ie_length);
-		ret = -EFAULT;
-		qdf_mem_free(ibss_ie);
-		goto exit;
-	}
-
-	roam_profile = hdd_roam_profile(adapter);
-
-	qdf_copy_macaddr(&modify_ie.bssid,
-		     roam_profile->BSSIDs.bssid);
-
-	modify_ie.smeSessionId = adapter->vdev_id;
-	modify_ie.notify = true;
-	modify_ie.ieID = WLAN_ELEMID_VENDOR;
-	modify_ie.ieIDLen = ibss_ie_length;
-	modify_ie.ieBufferlength = ibss_ie_length;
-	modify_ie.pIEBuffer = ibss_ie;
-	modify_ie.oui_length = oui_length;
-
-	hdd_warn("ibss_ie length %d oui_length %d ibss_ie:",
-		 ibss_ie_length, oui_length);
-	while (i < modify_ie.ieBufferlength)
-		hdd_warn("0x%x", ibss_ie[i++]);
-
-	/* Probe Bcn modification */
-	mac_handle = hdd_ctx->mac_handle;
-	sme_modify_add_ie(mac_handle, &modify_ie, eUPDATE_IE_PROBE_BCN);
-
-	/* Populating probe resp frame */
-	sme_modify_add_ie(mac_handle, &modify_ie, eUPDATE_IE_PROBE_RESP);
-
-	qdf_mem_free(ibss_ie);
-
-	status = sme_send_cesium_enable_ind(mac_handle,
-					    adapter->vdev_id);
-	if (QDF_STATUS_SUCCESS != status) {
-		hdd_err("Could not send cesium enable indication %d",
-			  status);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-exit:
-	return ret;
-}
-
-#ifdef FEATURE_WLAN_RMC
-/* Function header is left blank intentionally */
-static int hdd_parse_setrmcenable_command(uint8_t *command,
-					  uint8_t *rmc_enable)
-{
-	uint8_t *in_ptr = command;
-	int temp_int;
-	int v = 0;
-	char buf[32];
-	*rmc_enable = 0;
-
-	in_ptr = strnchr(command, strlen(command), SPACE_ASCII_VALUE);
-
-	if (!in_ptr)
-		return 0;
-	else if (SPACE_ASCII_VALUE != *in_ptr)
-		return 0;
-
-	while ((SPACE_ASCII_VALUE == *in_ptr) && ('\0' != *in_ptr))
-		in_ptr++;
-
-	if ('\0' == *in_ptr)
-		return 0;
-
-	v = sscanf(in_ptr, "%31s ", buf);
-	if (1 != v)
-		return -EINVAL;
-
-	v = kstrtos32(buf, 10, &temp_int);
-	if (v < 0)
-		return -EINVAL;
-
-	*rmc_enable = temp_int;
-
-	hdd_debug("rmc_enable: %d", *rmc_enable);
-
-	return 0;
-}
-
-/* Function header is left blank intentionally */
-static int hdd_parse_setrmcactionperiod_command(uint8_t *pvalue,
-						uint32_t *paction_period)
-{
-	uint8_t *inptr = pvalue;
-	int temp_int;
-	int v = 0;
-	char buf[32];
-	*paction_period = 0;
-
-	inptr = strnchr(pvalue, strlen(pvalue), SPACE_ASCII_VALUE);
-
-	if (!inptr)
-		return -EINVAL;
-	else if (SPACE_ASCII_VALUE != *inptr)
-		return -EINVAL;
-
-	while ((SPACE_ASCII_VALUE == *inptr) && ('\0' != *inptr))
-		inptr++;
-
-	if ('\0' == *inptr)
-		return 0;
-
-	v = sscanf(inptr, "%31s ", buf);
-	if (1 != v)
-		return -EINVAL;
-
-	v = kstrtos32(buf, 10, &temp_int);
-	if (v < 0)
-		return -EINVAL;
-
-	if (!cfg_in_range(CFG_RMC_ACTION_PERIOD_FREQUENCY, temp_int))
-		return -EINVAL;
-
-	*paction_period = temp_int;
-
-	hdd_debug("action_period: %d", *paction_period);
-
-	return 0;
-}
-
-/* Function header is left blank intentionally */
-static int hdd_parse_setrmcrate_command(uint8_t *command,
-					uint32_t *rate,
-					enum tx_rate_info *tx_flags)
-{
-	uint8_t *in_ptr = command;
-	int temp_int;
-	int v = 0;
-	char buf[32];
-	*rate = 0;
-	*tx_flags = 0;
-
-	in_ptr = strnchr(command, strlen(command), SPACE_ASCII_VALUE);
-
-	if (!in_ptr)
-		return -EINVAL;
-	else if (SPACE_ASCII_VALUE != *in_ptr)
-		return -EINVAL;
-
-	while ((SPACE_ASCII_VALUE == *in_ptr) && ('\0' != *in_ptr))
-		in_ptr++;
-
-	if ('\0' == *in_ptr)
-		return 0;
-
-	v = sscanf(in_ptr, "%31s ", buf);
-	if (1 != v)
-		return -EINVAL;
-
-	v = kstrtos32(buf, 10, &temp_int);
-	if (v < 0)
-		return -EINVAL;
-
-	switch (temp_int) {
-	default:
-		hdd_warn("Unsupported rate: %d", temp_int);
-		return -EINVAL;
-	case 0:
-	case 6:
-	case 9:
-	case 12:
-	case 18:
-	case 24:
-	case 36:
-	case 48:
-	case 54:
-		*tx_flags = TX_RATE_LEGACY;
-		*rate = temp_int * 10;
-		break;
-	case 65:
-		*tx_flags = TX_RATE_HT20;
-		*rate = temp_int * 10;
-		break;
-	case 72:
-		*tx_flags = TX_RATE_HT20 | TX_RATE_SGI;
-		*rate = 722;
-		break;
-	}
-
-	hdd_debug("Rate: %d", *rate);
-
-	return 0;
-}
-
-static int drv_cmd_set_rmc_enable(struct hdd_adapter *adapter,
-				  struct hdd_context *hdd_ctx,
-				  uint8_t *command,
-				  uint8_t command_len,
-				  struct hdd_priv_data *priv_data)
-{
-	int ret = 0;
-	uint8_t *value = command;
-	uint8_t rmc_enable = 0;
-	int status;
-	mac_handle_t mac_handle;
-
-	if ((QDF_IBSS_MODE != adapter->device_mode) &&
-	    (QDF_SAP_MODE != adapter->device_mode)) {
-		hdd_err("Received SETRMCENABLE cmd in invalid mode %s(%d)",
-			qdf_opmode_str(adapter->device_mode),
-			adapter->device_mode);
-		hdd_err("SETRMCENABLE cmd is allowed only in IBSS/SOFTAP mode");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	status = hdd_parse_setrmcenable_command(value, &rmc_enable);
-	if (status) {
-		hdd_err("Invalid SETRMCENABLE command");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	hdd_debug("rmc_enable %d", rmc_enable);
-	mac_handle = hdd_ctx->mac_handle;
-
-	if (true == rmc_enable) {
-		status = sme_enable_rmc(mac_handle, adapter->vdev_id);
-	} else if (false == rmc_enable) {
-		status = sme_disable_rmc(mac_handle, adapter->vdev_id);
-	} else {
-		hdd_err("Invalid SETRMCENABLE command %d", rmc_enable);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	if (QDF_STATUS_SUCCESS != status) {
-		hdd_err("SETRMC %d failed status %d", rmc_enable, status);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-exit:
-	return ret;
-}
-
-static int drv_cmd_set_rmc_action_period(struct hdd_adapter *adapter,
-					 struct hdd_context *hdd_ctx,
-					 uint8_t *command,
-					 uint8_t command_len,
-					 struct hdd_priv_data *priv_data)
-{
-	int ret = 0;
-	uint8_t *value = command;
-	uint32_t action_period = 0;
-	int status;
-	mac_handle_t mac_handle;
-
-	if ((QDF_IBSS_MODE != adapter->device_mode) &&
-	    (QDF_SAP_MODE != adapter->device_mode)) {
-		hdd_err("Received SETRMC cmd in invalid mode %s(%d)",
-			qdf_opmode_str(adapter->device_mode),
-			adapter->device_mode);
-		hdd_err("SETRMC cmd is allowed only in IBSS/SOFTAP mode");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	status = hdd_parse_setrmcactionperiod_command(value, &action_period);
-	if (status) {
-		hdd_err("Invalid SETRMCACTIONPERIOD command");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	hdd_debug("action_period %d", action_period);
-	mac_handle = hdd_ctx->mac_handle;
-
-	if (ucfg_mlme_set_rmc_action_period_freq(hdd_ctx->psoc,
-						 action_period) !=
-						 QDF_STATUS_SUCCESS) {
-		hdd_err("Could not set SETRMCACTIONPERIOD %d", action_period);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	status = sme_send_rmc_action_period(mac_handle,
-					    adapter->vdev_id);
-	if (QDF_STATUS_SUCCESS != status) {
-		hdd_err("Could not send cesium enable indication %d",
-			  status);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-exit:
-	return ret;
-}
-
-static int drv_cmd_set_rmc_tx_rate(struct hdd_adapter *adapter,
-				   struct hdd_context *hdd_ctx,
-				   uint8_t *command,
-				   uint8_t command_len,
-				   struct hdd_priv_data *priv_data)
-{
-	int ret = 0;
-	uint8_t *value = command;
-	uint32_t rate = 0;
-	enum tx_rate_info tx_flags = 0;
-	tSirRateUpdateInd params = {0};
-	int status;
-	bool bval = false;
-
-	if ((QDF_IBSS_MODE != adapter->device_mode) &&
-	    (QDF_SAP_MODE != adapter->device_mode)) {
-		hdd_err("Received SETRMCTXRATE cmd in invalid mode %s(%d)",
-			qdf_opmode_str(adapter->device_mode),
-			adapter->device_mode);
-		hdd_err("SETRMCTXRATE cmd is allowed only in IBSS/SOFTAP mode");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	status = hdd_parse_setrmcrate_command(value, &rate, &tx_flags);
-	if (status) {
-		hdd_err("Invalid SETRMCTXRATE command");
-		ret = -EINVAL;
-		goto exit;
-	}
-	hdd_debug("rate %d", rate);
-
-	/*
-	 * Fill the user specifieed RMC rate param
-	 * and the derived tx flags.
-	 */
-	status = ucfg_mlme_get_vht_enable2x2(hdd_ctx->psoc, &bval);
-	if (!QDF_IS_STATUS_SUCCESS(status)) {
-		hdd_err("unable to get vht_enable2x2");
-		ret = -EINVAL;
-		goto exit;
-	}
-	params.nss = (bval == 0) ? 0 : 1;
-	params.reliableMcastDataRate = rate;
-	params.reliableMcastDataRateTxFlag = tx_flags;
-	params.dev_mode = adapter->device_mode;
-	params.bcastDataRate = -1;
-	memcpy(params.bssid.bytes,
-	       adapter->mac_addr.bytes,
-	       sizeof(params.bssid));
-	status = sme_send_rate_update_ind(hdd_ctx->mac_handle,
-					  &params);
-
-exit:
-	return ret;
-}
-#endif /* FEATURE_WLAN_RMC */
-
-static int drv_cmd_get_ibss_peer_info_all(struct hdd_adapter *adapter,
-					  struct hdd_context *hdd_ctx,
-					  uint8_t *command,
-					  uint8_t command_len,
-					  struct hdd_priv_data *priv_data)
-{
-	int ret = 0;
-	int status = QDF_STATUS_SUCCESS;
-	struct hdd_station_ctx *sta_ctx = NULL;
-	char *extra = NULL;
-	int idx = 0;
-	int length = 0;
-	uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
-	uint32_t print_break_index = 0;
-
-	if (QDF_IBSS_MODE != adapter->device_mode) {
-		hdd_warn("Unsupported in mode %s(%d)",
-			 qdf_opmode_str(adapter->device_mode),
-			 adapter->device_mode);
-		return -EINVAL;
-	}
-
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-	hdd_debug("Received GETIBSSPEERINFOALL Command");
-
-	/* Handle the command */
-	status = hdd_cfg80211_get_ibss_peer_info_all(adapter);
-	if (QDF_STATUS_SUCCESS == status) {
-		size_t user_size = qdf_min(WLAN_MAX_BUF_SIZE,
-					   priv_data->total_len);
-
-		/*
-		 * The variable extra needed to be allocated on the heap since
-		 * amount of memory required to copy the data for 32 devices
-		 * exceeds the size of 1024 bytes of default stack size. On
-		 * 64 bit devices, the default max stack size of 2048 bytes
-		 */
-		extra = qdf_mem_malloc(user_size);
-
-		if (!extra) {
-			hdd_err("memory allocation failed");
-			ret = -ENOMEM;
-			goto exit;
-		}
-
-		/* Copy number of stations */
-		length = scnprintf(extra, user_size, "%d ",
-				   sta_ctx->ibss_peer_info.numPeers);
-		print_break_index = length;
-		for (idx = 0; idx < sta_ctx->ibss_peer_info.numPeers;
-								idx++) {
-			int8_t rssi;
-			uint32_t tx_rate;
-
-			qdf_mem_copy(mac_addr,
-				sta_ctx->ibss_peer_info.peerInfoParams[idx].
-				mac_addr, sizeof(mac_addr));
-
-			tx_rate =
-				sta_ctx->ibss_peer_info.peerInfoParams[idx].
-									txRate;
-			/*
-			 * Only lower 3 bytes are rate info. Mask of the MSByte
-			 */
-			tx_rate &= 0x00FFFFFF;
-
-			rssi = sta_ctx->ibss_peer_info.peerInfoParams[idx].
-									rssi;
-
-			length += scnprintf(extra + length,
-				user_size - length,
-				QDF_MAC_ADDR_STR" %d %d ",
-				QDF_MAC_ADDR_ARRAY(mac_addr),
-				tx_rate, rssi);
-			/*
-			 * cdf_trace_msg has limitation of 512 bytes for the
-			 * print buffer. Hence printing the data in two chunks.
-			 * The first chunk will have the data for 16 devices
-			 * and the second chunk will have the rest.
-			 */
-			if (idx < NUM_OF_STA_DATA_TO_PRINT)
-				print_break_index = length;
-		}
-
-		/*
-		 * Copy the data back into buffer, if the data to copy is
-		 * more than 512 bytes than we will split the data and do
-		 * it in two shots
-		 */
-		if (copy_to_user(priv_data->buf, extra, print_break_index)) {
-			hdd_err("Copy into user data buffer failed");
-			ret = -EFAULT;
-			goto mem_free;
-		}
-
-		/* This overwrites the last space, which we already copied */
-		extra[print_break_index - 1] = '\0';
-		hdd_debug("%s", extra);
-
-		if (length > print_break_index) {
-			if (copy_to_user
-				    (priv_data->buf + print_break_index,
-				    extra + print_break_index,
-				    length - print_break_index + 1)) {
-				hdd_err("Copy into user data buffer failed");
-				ret = -EFAULT;
-				goto mem_free;
-			}
-			hdd_debug("%s", &extra[print_break_index]);
-		}
-	} else {
-		/* Command failed, log error */
-		hdd_err("GETIBSSPEERINFOALL command failed with status code %d",
-			  status);
-		ret = -EINVAL;
-		goto exit;
-	}
-	ret = 0;
-
-mem_free:
-	qdf_mem_free(extra);
-exit:
-	return ret;
-}
-
-/* Peer Info <Peer Addr> command */
-static int drv_cmd_get_ibss_peer_info(struct hdd_adapter *adapter,
-				      struct hdd_context *hdd_ctx,
-				      uint8_t *command,
-				      uint8_t command_len,
-				      struct hdd_priv_data *priv_data)
-{
-	int ret = 0;
-	uint8_t *value = command;
-	QDF_STATUS status;
-	struct hdd_station_ctx *sta_ctx = NULL;
-	char extra[128] = { 0 };
-	uint32_t length = 0;
-	uint8_t sta_id = 0;
-	struct qdf_mac_addr peer_macaddr;
-
-	if (QDF_IBSS_MODE != adapter->device_mode) {
-		hdd_warn("Unsupported in mode %s(%d)",
-			 qdf_opmode_str(adapter->device_mode),
-			 adapter->device_mode);
-		return -EINVAL;
-	}
-
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-
-	hdd_debug("Received GETIBSSPEERINFO Command");
-
-	/* if there are no peers, no need to continue with the command */
-	if (eConnectionState_IbssConnected !=
-	    sta_ctx->conn_info.conn_state) {
-		hdd_err("No IBSS Peers coalesced");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	/* Parse the incoming command buffer */
-	status = hdd_parse_get_ibss_peer_info(value, &peer_macaddr);
-	if (QDF_STATUS_SUCCESS != status) {
-		hdd_err("Invalid GETIBSSPEERINFO command");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	/* Get station index for the peer mac address and sanitize it */
-	hdd_get_peer_sta_id(sta_ctx, &peer_macaddr, &sta_id);
-
-	if (sta_id > MAX_PEERS) {
-		hdd_err("Invalid StaIdx %d returned", sta_id);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	/* Handle the command */
-	status = hdd_cfg80211_get_ibss_peer_info(adapter, sta_id);
-	if (QDF_STATUS_SUCCESS == status) {
-		uint32_t tx_rate =
-			sta_ctx->ibss_peer_info.peerInfoParams[0].txRate;
-		/* Only lower 3 bytes are rate info. Mask of the MSByte */
-		tx_rate &= 0x00FFFFFF;
-
-		length = scnprintf(extra, sizeof(extra), "%d %d",
-				(int)tx_rate,
-				(int)sta_ctx->ibss_peer_info.
-				peerInfoParams[0].rssi);
-		length = QDF_MIN(priv_data->total_len, length + 1);
-
-		/* Copy the data back into buffer */
-		if (copy_to_user(priv_data->buf, &extra, length)) {
-			hdd_err("copy data to user buffer failed GETIBSSPEERINFO command");
-			ret = -EFAULT;
-			goto exit;
-		}
-	} else {
-		/* Command failed, log error */
-		hdd_err("GETIBSSPEERINFO command failed with status code %d",
-			  status);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	/* Success ! */
-	hdd_debug("%s", extra);
-	ret = 0;
-
-exit:
-	return ret;
-}
-
-static int drv_cmd_set_ibss_tx_fail_event(struct hdd_adapter *adapter,
-					  struct hdd_context *hdd_ctx,
-					  uint8_t *command,
-					  uint8_t command_len,
-					  struct hdd_priv_data *priv_data)
-{
-	int ret = 0;
-	char *value;
-	uint8_t tx_fail_count = 0;
-	uint16_t pid = 0;
-	mac_handle_t mac_handle;
-
-	value = command;
-
-	ret = hdd_parse_ibsstx_fail_event_params(value, &tx_fail_count, &pid);
-
-	if (0 != ret) {
-		hdd_err("Failed to parse SETIBSSTXFAILEVENT arguments");
-		goto exit;
-	}
-
-	hdd_debug("tx_fail_cnt=%hhu, pid=%hu", tx_fail_count, pid);
-	mac_handle = hdd_ctx->mac_handle;
-
-	if (0 == tx_fail_count) {
-		/* Disable TX Fail Indication */
-		if (QDF_STATUS_SUCCESS ==
-		    sme_tx_fail_monitor_start_stop_ind(mac_handle,
-						       tx_fail_count,
-						       NULL)) {
-			cesium_pid = 0;
-		} else {
-			hdd_err("failed to disable TX Fail Event");
-			ret = -EINVAL;
-		}
-	} else {
-		if (QDF_STATUS_SUCCESS ==
-		    sme_tx_fail_monitor_start_stop_ind(mac_handle,
-				tx_fail_count,
-				(void *)hdd_tx_fail_ind_callback)) {
-			cesium_pid = pid;
-			hdd_debug("Registered Cesium pid %u",
-				  cesium_pid);
-		} else {
-			hdd_err("Failed to enable TX Fail Monitoring");
-			ret = -EINVAL;
-		}
-	}
-
-exit:
-	return ret;
-}
-
 #ifdef FEATURE_WLAN_ESE
 static int drv_cmd_set_ccx_roam_scan_channels(struct hdd_adapter *adapter,
 					      struct hdd_context *hdd_ctx,
@@ -5628,12 +4698,19 @@ static int drv_cmd_set_ccx_roam_scan_channels(struct hdd_adapter *adapter,
 {
 	int ret = 0;
 	uint8_t *value = command;
-	uint8_t channel_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
+	uint32_t channel_freq_list[CFG_VALID_CHANNEL_LIST_LEN] = { 0 };
 	uint8_t num_channels = 0;
 	QDF_STATUS status;
 	mac_handle_t mac_handle;
 
-	ret = hdd_parse_channellist(value, channel_list, &num_channels);
+	if (!hdd_ctx) {
+		hdd_err("invalid hdd ctx");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ret = hdd_parse_channellist(hdd_ctx, value, channel_freq_list,
+				    &num_channels);
 	if (ret) {
 		hdd_err("Failed to parse channel list information");
 		goto exit;
@@ -5647,7 +4724,7 @@ static int drv_cmd_set_ccx_roam_scan_channels(struct hdd_adapter *adapter,
 	}
 
 	mac_handle = hdd_ctx->mac_handle;
-	if (!sme_validate_channel_list(mac_handle, channel_list,
+	if (!sme_validate_channel_list(mac_handle, channel_freq_list,
 				       num_channels)) {
 		hdd_err("List contains invalid channel(s)");
 		ret = -EINVAL;
@@ -5656,7 +4733,7 @@ static int drv_cmd_set_ccx_roam_scan_channels(struct hdd_adapter *adapter,
 
 	status = sme_set_ese_roam_scan_channel_list(mac_handle,
 						    adapter->vdev_id,
-						    channel_list,
+						    channel_freq_list,
 						    num_channels);
 	if (QDF_STATUS_SUCCESS != status) {
 		hdd_err("Failed to update channel list information");
@@ -5828,7 +4905,7 @@ static int drv_cmd_ccx_beacon_req(struct hdd_adapter *adapter,
 		return -EINVAL;
 	}
 
-	ret = hdd_parse_ese_beacon_req(value, &req);
+	ret = hdd_parse_ese_beacon_req(hdd_ctx->pdev, value, &req);
 	if (ret) {
 		hdd_err("Failed to parse ese beacon req");
 		goto exit;
@@ -6017,10 +5094,10 @@ static int drv_cmd_max_tx_power(struct hdd_adapter *adapter,
 				 &adapter->mac_addr);
 
 		hdd_debug("Device mode %d max tx power %d selfMac: "
-			  QDF_MAC_ADDR_STR " bssId: " QDF_MAC_ADDR_STR,
+			  QDF_MAC_ADDR_FMT " bssId: " QDF_MAC_ADDR_FMT,
 			  adapter->device_mode, tx_power,
-			  QDF_MAC_ADDR_ARRAY(selfmac.bytes),
-			  QDF_MAC_ADDR_ARRAY(bssid.bytes));
+			  QDF_MAC_ADDR_REF(selfmac.bytes),
+			  QDF_MAC_ADDR_REF(bssid.bytes));
 
 		status = sme_set_max_tx_power(hdd_ctx->mac_handle,
 					      bssid, selfmac, tx_power);
@@ -6292,24 +5369,28 @@ static int drv_cmd_tdls_off_channel(struct hdd_adapter *adapter,
 {
 	int ret;
 	uint8_t *value = command;
-	int set_value;
+	int channel;
+	enum channel_state reg_state;
 
 	/* Move pointer to point the string */
 	value += command_len;
 
-	ret = sscanf(value, "%d", &set_value);
+	ret = sscanf(value, "%d", &channel);
 	if (ret != 1)
 		return -EINVAL;
+	reg_state = wlan_reg_get_channel_state(hdd_ctx->pdev, channel);
 
-	if (wlan_reg_is_dfs_ch(hdd_ctx->pdev, set_value)) {
-		hdd_err("DFS channel %d is passed for hdd_set_tdls_offchannel",
-		    set_value);
+	if (reg_state == CHANNEL_STATE_DFS ||
+		reg_state == CHANNEL_STATE_DISABLE ||
+		reg_state == CHANNEL_STATE_INVALID) {
+		hdd_err("reg state of the  channel %d is %d and not supported",
+			channel, reg_state);
 		return -EINVAL;
 	}
 
-	hdd_debug("Tdls offchannel num: %d", set_value);
+	hdd_debug("Tdls offchannel num: %d", channel);
 
-	ret = hdd_set_tdls_offchannel(hdd_ctx, adapter, set_value);
+	ret = hdd_set_tdls_offchannel(hdd_ctx, adapter, channel);
 
 	return ret;
 }
@@ -6456,10 +5537,9 @@ static int hdd_set_rx_filter(struct hdd_adapter *adapter, bool action,
 
 
 		filter = qdf_mem_malloc(sizeof(*filter));
-		if (!filter) {
-			hdd_err("Could not allocate Memory");
+		if (!filter)
 			return -ENOMEM;
-		}
+
 		filter->action = action;
 		for (i = 0, j = 0; i < adapter->mc_addr_list.mc_cnt; i++) {
 			if (!memcmp(adapter->mc_addr_list.addr[i],
@@ -6469,9 +5549,9 @@ static int hdd_set_rx_filter(struct hdd_adapter *adapter, bool action,
 					sizeof(adapter->mc_addr_list.addr[i]));
 
 				hdd_debug("%s RX filter : addr ="
-				    QDF_MAC_ADDR_STR,
+				    QDF_MAC_ADDR_FMT,
 				    action ? "setting" : "clearing",
-				    QDF_MAC_ADDR_ARRAY(filter->multicastAddr[j].bytes));
+				    QDF_MAC_ADDR_REF(filter->multicastAddr[j].bytes));
 				j++;
 			}
 			if (j == SIR_MAX_NUM_MULTICAST_ADDRESS)
@@ -6763,79 +5843,6 @@ wlan_hdd_soc_set_antenna_mode_cb(enum set_antenna_mode_status status,
 	osif_request_put(request);
 }
 
-static QDF_STATUS
-hdd_populate_vdev_chains(struct wlan_mlme_nss_chains *nss_chains_cfg,
-			 uint8_t tx_chains,
-			 uint8_t rx_chains,
-			 enum nss_chains_band_info band,
-			 struct wlan_objmgr_vdev *vdev)
-{
-	struct wlan_mlme_nss_chains *dynamic_cfg;
-
-	nss_chains_cfg->num_rx_chains[band] = rx_chains;
-	nss_chains_cfg->num_tx_chains[band] = tx_chains;
-
-	dynamic_cfg = ucfg_mlme_get_dynamic_vdev_config(vdev);
-	if (!dynamic_cfg) {
-		hdd_err("nss chain dynamic config NULL");
-		return QDF_STATUS_E_FAILURE;
-	}
-	/*
-	 * If user gives any nss value, then chains will be adjusted based on
-	 * nss (in SME func sme_validate_user_nss_chain_params).
-	 * If Chains are not suitable as per current NSS then, we need to
-	 * return, and the below logic is added for the same.
-	 */
-
-	if ((dynamic_cfg->rx_nss[band] > rx_chains) ||
-	    (dynamic_cfg->tx_nss[band] > tx_chains)) {
-		hdd_err("Chains less than nss, configure correct nss first.");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-
-static int
-hdd_set_dynamic_antenna_mode(struct hdd_adapter *adapter,
-			     uint8_t num_rx_chains,
-			     uint8_t num_tx_chains)
-{
-	enum nss_chains_band_info band;
-	struct wlan_mlme_nss_chains user_cfg;
-	QDF_STATUS status;
-	mac_handle_t mac_handle;
-	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-
-	mac_handle = hdd_ctx->mac_handle;
-	if (!mac_handle) {
-		hdd_err("NULL MAC handle");
-		return -EINVAL;
-	}
-
-	if (!hdd_is_vdev_in_conn_state(adapter)) {
-		hdd_debug("Vdev (id %d) not in connected/started state, cannot accept command",
-			  adapter->vdev_id);
-		return -EINVAL;
-	}
-
-	qdf_mem_zero(&user_cfg, sizeof(user_cfg));
-	for (band = NSS_CHAINS_BAND_2GHZ; band < NSS_CHAINS_BAND_MAX; band++) {
-		status = hdd_populate_vdev_chains(&user_cfg,
-						  num_rx_chains,
-						  num_tx_chains, band,
-						  adapter->vdev);
-		if (QDF_IS_STATUS_ERROR(status))
-			return -EINVAL;
-	}
-	status = sme_nss_chains_update(mac_handle,
-				       &user_cfg,
-				       adapter->vdev_id);
-	if (QDF_IS_STATUS_ERROR(status))
-		return -EINVAL;
-
-	return 0;
-}
 int hdd_set_antenna_mode(struct hdd_adapter *adapter,
 				  struct hdd_context *hdd_ctx, int mode)
 {
@@ -7013,12 +6020,19 @@ static inline int drv_cmd_get_antenna_mode(struct hdd_adapter *adapter,
 	uint32_t antenna_mode = 0;
 	char extra[32];
 	uint8_t len = 0;
+	struct wlan_objmgr_vdev *vdev;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("vdev is NULL");
+		return -EINVAL;
+	}
 
 	antenna_mode = hdd_ctx->current_antenna_mode;
 	/* Overwrite this antenna mode if dynamic vdev chains are supported */
 	hdd_get_dynamic_antenna_mode(&antenna_mode,
-				     hdd_ctx->dynamic_nss_chains_support,
-				     adapter->vdev);
+				     hdd_ctx->dynamic_nss_chains_support, vdev);
+	hdd_objmgr_put_vdev(vdev);
 	len = scnprintf(extra, sizeof(extra), "%s %d", command,
 			antenna_mode);
 	len = QDF_MIN(priv_data->total_len, len + 1);
@@ -7224,7 +6238,9 @@ static int drv_cmd_set_channel_switch(struct hdd_adapter *adapter,
 
 	wlan_hdd_set_sap_csa_reason(hdd_ctx->psoc, adapter->vdev_id,
 				    CSA_REASON_USER_INITIATED);
-	status = hdd_softap_set_channel_change(dev, chan_number, width, true);
+	status = hdd_softap_set_channel_change(dev,
+					       wlan_reg_legacy_chan_to_freq(hdd_ctx->pdev, chan_number),
+					       width, true);
 	if (status) {
 		hdd_err("Set channel change fail");
 		return status;
@@ -7267,16 +6283,14 @@ static int hdd_alloc_chan_cache(struct hdd_context *hdd_ctx, int num_chan)
 {
 	hdd_ctx->original_channels =
 			qdf_mem_malloc(sizeof(struct hdd_cache_channels));
-	if (!hdd_ctx->original_channels) {
-		hdd_err("QDF_MALLOC_ERR");
+	if (!hdd_ctx->original_channels)
 		return -ENOMEM;
-	}
+
 	hdd_ctx->original_channels->num_channels = num_chan;
 	hdd_ctx->original_channels->channel_info =
 					qdf_mem_malloc(num_chan *
 					sizeof(struct hdd_cache_channel_info));
 	if (!hdd_ctx->original_channels->channel_info) {
-		hdd_err("QDF_MALLOC_ERR");
 		hdd_ctx->original_channels->num_channels = 0;
 		qdf_mem_free(hdd_ctx->original_channels);
 		hdd_ctx->original_channels = NULL;
@@ -7316,7 +6330,7 @@ static bool check_disable_channels(struct hdd_context *hdd_ctx,
  * disconnect_sta_and_stop_sap() - Disconnect STA and stop SAP
  *
  * @hdd_ctx: Pointer to hdd context
- * @reason: Disconnect reason code as per @enum eSirMacReasonCodes
+ * @reason: Disconnect reason code as per @enum wlan_reason_code
  *
  * Disable channels provided by user and disconnect STA if it is
  * connected to any AP, stop SAP and send deauthentication request
@@ -7325,10 +6339,11 @@ static bool check_disable_channels(struct hdd_context *hdd_ctx,
  * Return: None
  */
 static void disconnect_sta_and_stop_sap(struct hdd_context *hdd_ctx,
-					enum eSirMacReasonCodes reason)
+					enum wlan_reason_code reason)
 {
 	struct hdd_adapter *adapter, *next = NULL;
 	QDF_STATUS status;
+	uint8_t ap_ch;
 
 	if (!hdd_ctx)
 		return;
@@ -7338,10 +6353,13 @@ static void disconnect_sta_and_stop_sap(struct hdd_context *hdd_ctx,
 	status = hdd_get_front_adapter(hdd_ctx, &adapter);
 	while (adapter && (status == QDF_STATUS_SUCCESS)) {
 		if (!hdd_validate_adapter(adapter) &&
-		    (adapter->device_mode == QDF_SAP_MODE) &&
-		    (check_disable_channels(hdd_ctx,
-		     adapter->session.ap.operating_channel)))
-			wlan_hdd_stop_sap(adapter);
+		    adapter->device_mode == QDF_SAP_MODE) {
+			ap_ch = wlan_reg_freq_to_chan(
+				hdd_ctx->pdev,
+				adapter->session.ap.operating_chan_freq);
+			if (check_disable_channels(hdd_ctx, ap_ch))
+				wlan_hdd_stop_sap(adapter);
+		}
 
 		status = hdd_get_next_adapter(hdd_ctx, adapter, &next);
 		adapter = next;
@@ -7371,7 +6389,7 @@ static int hdd_parse_disable_chan_cmd(struct hdd_adapter *adapter, uint8_t *ptr)
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	uint8_t *param;
 	int j, i, temp_int, ret = 0, num_channels;
-	uint32_t parsed_channels[MAX_CHANNEL];
+	uint32_t parsed_channels[NUM_CHANNELS];
 	bool is_command_repeated = false;
 
 	if (!hdd_ctx) {
@@ -7404,7 +6422,7 @@ static int hdd_parse_disable_chan_cmd(struct hdd_adapter *adapter, uint8_t *ptr)
 		return -EINVAL;
 	}
 
-	if (temp_int < 0 || temp_int > MAX_CHANNEL) {
+	if (temp_int < 0 || temp_int > NUM_CHANNELS) {
 		hdd_err("Invalid Number of channel received");
 		return -EINVAL;
 	}
@@ -7528,7 +6546,7 @@ mem_alloc_failed:
 		if (ret)
 			return ret;
 		disconnect_sta_and_stop_sap(hdd_ctx,
-					    eSIR_MAC_OPER_CHANNEL_BAND_CHANGE);
+					    REASON_OPER_CHANNEL_BAND_CHANGE);
 	}
 
 	hdd_exit();
@@ -7638,6 +6656,237 @@ static int drv_cmd_get_disable_chan_list(struct hdd_adapter *adapter,
 	return 0;
 }
 #endif
+
+#ifdef FEATURE_ANI_LEVEL_REQUEST
+static int drv_cmd_get_ani_level(struct hdd_adapter *adapter,
+				 struct hdd_context *hdd_ctx,
+				 uint8_t *command,
+				 uint8_t command_len,
+				 struct hdd_priv_data *priv_data)
+{
+	char *extra;
+	int copied_length = 0, j, temp_int, ret = 0;
+	uint8_t *param, num_freqs, num_recv_channels;
+	uint32_t parsed_freqs[MAX_NUM_FREQS_FOR_ANI_LEVEL];
+	struct wmi_host_ani_level_event ani[MAX_NUM_FREQS_FOR_ANI_LEVEL];
+	size_t user_size = priv_data->total_len;
+
+	hdd_debug("Received Command to get ANI level");
+
+	param = strnchr(command, strlen(command), ' ');
+
+	/* No argument after the command */
+	if (!param)
+		return -EINVAL;
+
+	/* No space after the command */
+	else if (SPACE_ASCII_VALUE != *param)
+		return -EINVAL;
+
+	param++;
+
+	/* Removing empty spaces*/
+	while ((SPACE_ASCII_VALUE  == *param) && ('\0' !=  *param))
+		param++;
+
+	/*no argument followed by spaces */
+	if ('\0' == *param)
+		return -EINVAL;
+
+	/* Getting the first argument ie the number of channels */
+	if (sscanf(param, "%d ", &temp_int) != 1) {
+		hdd_err("Cannot get number of freq from input");
+		return -EINVAL;
+	}
+
+	if (temp_int < 0 || temp_int > MAX_NUM_FREQS_FOR_ANI_LEVEL) {
+		hdd_err("Invalid Number of channel received");
+		return -EINVAL;
+	}
+
+	hdd_debug("Number of freq to fetch ANI level are: %d", temp_int);
+
+	if (!temp_int)
+		return 0;
+
+	num_freqs = temp_int;
+
+	for (j = 0; j < num_freqs; j++) {
+		/*
+		 * Param pointing to the beginning of first space
+		 * after number of channels.
+		 */
+		param = strpbrk(param, " ");
+		/*no channel list after the number of channels argument*/
+		if (!param) {
+			hdd_err("Invalid No of freq provided in the list");
+			ret = -EINVAL;
+			goto parse_failed;
+		}
+
+		param++;
+
+		/* Removing empty space */
+		while ((SPACE_ASCII_VALUE == *param) && ('\0' != *param))
+			param++;
+
+		if ('\0' == *param) {
+			hdd_err("No freq is provided in the list");
+			ret = -EINVAL;
+			goto parse_failed;
+		}
+
+		if (sscanf(param, "%d ", &temp_int) != 1) {
+			hdd_err("Cannot read freq number");
+			ret = -EINVAL;
+			goto parse_failed;
+		}
+
+		hdd_debug("channel_freq[%d] = %d", j, temp_int);
+		parsed_freqs[j] = temp_int;
+	}
+
+	/* Extra arguments check */
+	param = strpbrk(param, " ");
+	if (param) {
+		while ((SPACE_ASCII_VALUE == *param) && ('\0' != *param))
+			param++;
+
+		if ('\0' !=  *param) {
+			hdd_err("Invalid argument received");
+			ret = -EINVAL;
+			goto parse_failed;
+		}
+	}
+
+	qdf_mem_zero(ani, sizeof(ani));
+	hdd_debug("num_freq: %d", num_freqs);
+	if (QDF_IS_STATUS_ERROR(wlan_hdd_get_ani_level(adapter, ani,
+						       parsed_freqs,
+						       num_freqs))) {
+		hdd_err("Unable to retrieve ani level");
+		return -EINVAL;
+	}
+
+	extra = qdf_mem_malloc(user_size);
+	if (!extra) {
+		ret = -ENOMEM;
+		goto parse_failed;
+	}
+
+	/*
+	 * Find the number of channels that are populated. If freq is not
+	 * filled then stop count there
+	 */
+	for (num_recv_channels = 0;
+	     (num_recv_channels < num_freqs &&
+	     ani[num_recv_channels].chan_freq); num_recv_channels++)
+		;
+
+	for (j = 0; j < num_recv_channels; j++) {
+		/* Sanity check for ANI level validity */
+		if (ani[j].ani_level > MAX_ANI_LEVEL)
+			continue;
+
+		copied_length += scnprintf(extra + copied_length,
+					   user_size - copied_length, "%d:%d\n",
+					   ani[j].chan_freq, ani[j].ani_level);
+	}
+
+	if (copied_length == 0) {
+		hdd_err("ANI level not fetched");
+		ret = -EINVAL;
+		goto free;
+	}
+
+	hdd_debug("data: %s", extra);
+
+	if (copy_to_user(priv_data->buf, extra, copied_length + 1)) {
+		hdd_err("failed to copy data to user buffer");
+		ret = -EFAULT;
+		goto free;
+	}
+
+free:
+	qdf_mem_free(extra);
+
+parse_failed:
+	return ret;
+}
+
+#else
+static int drv_cmd_get_ani_level(struct hdd_adapter *adapter,
+				 struct hdd_context *hdd_ctx,
+				 uint8_t *command,
+				 uint8_t command_len,
+				 struct hdd_priv_data *priv_data)
+{
+	return 0;
+}
+#endif
+
+#ifdef FUNC_CALL_MAP
+static int drv_cmd_get_function_call_map(struct hdd_adapter *adapter,
+					 struct hdd_context *hdd_ctx,
+					 uint8_t *command,
+					 uint8_t command_len,
+					 struct hdd_priv_data *priv_data)
+{
+	char *cc_buf = qdf_mem_malloc(QDF_FUNCTION_CALL_MAP_BUF_LEN);
+	uint8_t *param;
+	int temp_int;
+
+	param = strnchr(command, strlen(command), ' ');
+	/*no argument after the command*/
+	if (NULL == param)
+		return -EINVAL;
+
+	/*no space after the command*/
+	else if (SPACE_ASCII_VALUE != *param)
+		return -EINVAL;
+
+	param++;
+
+	/*removing empty spaces*/
+	while ((SPACE_ASCII_VALUE  == *param) && ('\0' !=  *param))
+		param++;
+
+	/*no argument followed by spaces*/
+	if ('\0' == *param)
+		return -EINVAL;
+
+	/*getting the first argument */
+	if (sscanf(param, "%d ", &temp_int) != 1) {
+		hdd_err("No option given");
+		return -EINVAL;
+	}
+
+	if (temp_int < 0 || temp_int > 1) {
+		hdd_err("Invalid option given");
+		return -EINVAL;
+	}
+
+	/* Read the buffer */
+	if (temp_int) {
+	/*
+	 * These logs are required as these indicates the start and end of the
+	 * dump for the auto script to parse
+	 */
+		hdd_info("Function call map dump start");
+		qdf_get_func_call_map(cc_buf);
+		qdf_trace_hex_dump(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG,
+				   cc_buf, QDF_FUNCTION_CALL_MAP_BUF_LEN);
+		hdd_info("Function call map dump end");
+	} else {
+		qdf_clear_func_call_map();
+		hdd_info("Function call map clear");
+	}
+	qdf_mem_free(cc_buf);
+
+	return 0;
+}
+#endif
+
 /*
  * The following table contains all supported WLAN HDD
  * IOCTL driver commands and the handler for each of them.
@@ -7709,15 +6958,6 @@ static const struct hdd_drv_cmd hdd_drv_cmds[] = {
 	{"GETDWELLTIME",              drv_cmd_get_dwell_time, false},
 	{"SETDWELLTIME",              drv_cmd_set_dwell_time, true},
 	{"MIRACAST",                  drv_cmd_miracast, true},
-	{"SETIBSSBEACONOUIDATA",      drv_cmd_set_ibss_beacon_oui_data, true},
-#ifdef FEATURE_WLAN_RMC
-	{"SETRMCENABLE",              drv_cmd_set_rmc_enable, true},
-	{"SETRMCACTIONPERIOD",        drv_cmd_set_rmc_action_period, true},
-	{"SETRMCTXRATE",              drv_cmd_set_rmc_tx_rate, true},
-#endif
-	{"GETIBSSPEERINFOALL",        drv_cmd_get_ibss_peer_info_all, false},
-	{"GETIBSSPEERINFO",           drv_cmd_get_ibss_peer_info, true},
-	{"SETIBSSTXFAILEVENT",        drv_cmd_set_ibss_tx_fail_event, true},
 #ifdef FEATURE_WLAN_ESE
 	{"SETCCXROAMSCANCHANNELS",    drv_cmd_set_ccx_roam_scan_channels, true},
 	{"GETTSMSTATS",               drv_cmd_get_tsm_stats, true},
@@ -7755,6 +6995,10 @@ static const struct hdd_drv_cmd hdd_drv_cmds[] = {
 	{"GETANTENNAMODE",            drv_cmd_get_antenna_mode, false},
 	{"SET_DISABLE_CHANNEL_LIST",  drv_cmd_set_disable_chan_list, true},
 	{"GET_DISABLE_CHANNEL_LIST",  drv_cmd_get_disable_chan_list, false},
+	{"GET_ANI_LEVEL",             drv_cmd_get_ani_level, false},
+#ifdef FUNC_CALL_MAP
+	{"GET_FUNCTION_CALL_MAP",     drv_cmd_get_function_call_map, true},
+#endif
 	{"STOP",                      drv_cmd_dummy, false},
 	/* Deprecated commands */
 	{"RXFILTER-START",            drv_cmd_dummy, false},
@@ -7872,7 +7116,6 @@ static int hdd_driver_command(struct hdd_adapter *adapter,
 	/* Allocate +1 for '\0' */
 	command = qdf_mem_malloc(priv_data->total_len + 1);
 	if (!command) {
-		hdd_err("failed to allocate memory");
 		ret = -ENOMEM;
 		goto exit;
 	}

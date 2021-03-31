@@ -33,14 +33,17 @@
 typedef uint16_t wlan_scan_requester;
 typedef uint32_t wlan_scan_id;
 
+#define WLAN_SCAN_MAX_HINT_S_SSID        10
+#define WLAN_SCAN_MAX_HINT_BSSID         10
+#define MAX_RNR_BSS                      5
 #define WLAN_SCAN_MAX_NUM_SSID          16
 #define WLAN_SCAN_MAX_NUM_BSSID         4
-#define WLAN_SCAN_MAX_NUM_CHANNELS      68
 
 #define SCM_CANCEL_SCAN_WAIT_TIME 50
 #define SCM_CANCEL_SCAN_WAIT_ITERATION 600
 
 #define INVAL_SCAN_ID        0xFFFFFFFF
+#define CANCEL_HOST_SCAN_ID  0xFFFFFFFE
 #define INVAL_VDEV_ID        0xFFFFFFFF
 #define INVAL_PDEV_ID        0xFFFFFFFF
 
@@ -55,40 +58,6 @@ typedef uint32_t wlan_scan_id;
 #define PROBE_REQ_BITMAP_LEN 8
 #define MAX_PROBE_REQ_OUIS 16
 
-#define RSSI_WEIGHTAGE 20
-#define HT_CAPABILITY_WEIGHTAGE 2
-#define VHT_CAP_WEIGHTAGE 1
-#define HE_CAP_WEIGHTAGE 2
-#define CHAN_WIDTH_WEIGHTAGE 17
-#define CHAN_BAND_WEIGHTAGE 2
-#define NSS_WEIGHTAGE 16
-#define BEAMFORMING_CAP_WEIGHTAGE 2
-#define PCL_WEIGHT 10
-#define CHANNEL_CONGESTION_WEIGHTAGE 5
-#define OCE_WAN_WEIGHTAGE 0
-#define BEST_CANDIDATE_MAX_WEIGHT 100
-#define MAX_INDEX_SCORE 100
-#define MAX_INDEX_PER_INI 4
-
-#ifdef CONFIG_MCL
-#define MAX_BCN_PROBE_IN_SCAN_QUEUE 150
-#else
-#define MAX_BCN_PROBE_IN_SCAN_QUEUE 2000
-#endif
-
-#define WLAN_GET_BITS(_val, _index, _num_bits) \
-	(((_val) >> (_index)) & ((1 << (_num_bits)) - 1))
-
-#define WLAN_SET_BITS(_var, _index, _num_bits, _val) do { \
-	(_var) &= ~(((1 << (_num_bits)) - 1) << (_index)); \
-	(_var) |= (((_val) & ((1 << (_num_bits)) - 1)) << (_index)); \
-	} while (0)
-
-#define WLAN_GET_SCORE_PERCENTAGE(value32, bw_index) \
-	WLAN_GET_BITS(value32, (8 * (bw_index)), 8)
-#define WLAN_SET_SCORE_PERCENTAGE(value32, score_pcnt, bw_index) \
-	WLAN_SET_BITS(value32, (8 * (bw_index)), 8, score_pcnt)
-
 /* forward declaration */
 struct wlan_objmgr_vdev;
 struct wlan_objmgr_pdev;
@@ -96,26 +65,16 @@ struct wlan_objmgr_psoc;
 
 /**
  * struct channel_info - BSS channel information
- * @chan_idx: current operating channel index
+ * @chan_freq: channel frequency
  * @cfreq0: channel frequency index0
  * @cfreq1: channel frequency index1
  * @priv: channel private information
  */
 struct channel_info {
-	uint8_t chan_idx;
-	uint8_t cfreq0;
-	uint8_t cfreq1;
+	uint32_t chan_freq;
+	uint32_t cfreq0;
+	uint32_t cfreq1;
 	void *priv;
-};
-
-/**
- * struct element_info - defines length of a memory block and memory block
- * @len: length of memory block
- * @ptr: memory block pointer
- */
-struct element_info {
-	uint32_t len;
-	uint8_t *ptr;
 };
 
 /**
@@ -155,12 +114,16 @@ struct element_info {
  * @cswrp:      pointer to channel switch announcement wrapper ie
  * @widebw:     pointer to wide band channel switch sub ie
  * @txpwrenvlp: pointer to tx power envelop sub ie
+ * @hecap:      pointer to hecap ie
+ * @hecap_6g:   pointer to he 6ghz cap ie
  * @srp: pointer to spatial reuse parameter sub extended ie
  * @fils_indication: pointer to FILS indication ie
  * @esp: pointer to ESP indication ie
  * @mbo_oce: pointer to mbo/oce indication ie
+ * @rnrie: reduced neighbor report IE
  * @adaptive_11r: pointer to adaptive 11r IE
  * @single_pmk: Pointer to sae single pmk IE
+ * @rsnxe: Pointer to rsnxe IE
  */
 struct ie_list {
 	uint8_t *tim;
@@ -202,15 +165,18 @@ struct ie_list {
 	uint8_t *secchanoff;
 	uint8_t *mdie;
 	uint8_t *hecap;
+	uint8_t *hecap_6g;
 	uint8_t *heop;
 	uint8_t *srp;
 	uint8_t *fils_indication;
 	uint8_t *esp;
 	uint8_t *mbo_oce;
 	uint8_t *muedca;
+	uint8_t *rnrie;
 	uint8_t *extender;
 	uint8_t *adaptive_11r;
 	uint8_t *single_pmk;
+	uint8_t *rsnxe;
 };
 
 enum scan_entry_connection_state {
@@ -241,12 +207,12 @@ struct mlme_info {
 
 /**
  * struct bss_info - information required to uniquely define a bss
- * @chan: bss operating primary channel index
+ * @freq: freq of operating primary channel
  * @ssid: ssid of bss
  * @bssid: bssid of bss
  */
 struct bss_info {
-	uint8_t chan;
+	uint32_t freq;
 	struct wlan_ssid ssid;
 	struct qdf_mac_addr bssid;
 };
@@ -266,10 +232,22 @@ struct scan_cache_node {
 	struct scan_cache_entry *entry;
 };
 
+/**
+ * struct security_info - Scan cache security info
+ * @authmodeset: auth mode
+ * @key_mgmt: key management
+ * @ucastcipherset: unicast cipher set
+ * @mcastcipherset: multicast cipher set
+ * @mgmtcipherset: mgmt cipher set
+ * @rsn_caps: rsn caps of scan entry
+ */
 struct security_info {
-	enum wlan_enc_type uc_enc;
-	enum wlan_enc_type mc_enc;
-	enum wlan_auth_type auth_type;
+	uint32_t authmodeset;
+	uint32_t key_mgmt;
+	uint32_t ucastcipherset;
+	uint32_t mcastcipherset;
+	uint32_t mgmtcipherset;
+	uint16_t rsn_caps;
 };
 
 /**
@@ -282,6 +260,90 @@ struct scan_mbssid_info {
 	uint8_t profile_num;
 	uint8_t profile_count;
 	uint8_t trans_bssid[QDF_MAC_ADDR_SIZE];
+};
+
+/**
+ * struct rnr_bss_info - Reduced Neighbor Report BSS information
+ * @neighbor_ap_tbtt_offset: Neighbor AP TBTT offset
+ * @channel_number: channel number
+ * @operating_class: operting class
+ * @bssid: BSS MAC address
+ * @short_ssid: short ssid
+ * @bss_params: BSS parameters
+ * @psd_20mhz: 20MHz power spectral density
+ */
+struct rnr_bss_info {
+	uint8_t neighbor_ap_tbtt_offset;
+	uint32_t channel_number;
+	uint32_t operating_class;
+	struct qdf_mac_addr bssid;
+	uint32_t short_ssid;
+	uint8_t bss_params;
+	uint8_t psd_20mhz;
+};
+
+/**
+ * struct tbtt_information_header - TBTT information header
+ * @tbbt_info_fieldtype: TBTT information field type
+ * @filter_neighbor_ap: filtered neighbor ap
+ * @tbbt_info_count: TBTT information count
+ * @tbtt_info_length: TBTT informaiton length
+ */
+struct tbtt_information_header {
+	uint16_t tbbt_info_fieldtype:2;
+	uint16_t filtered_neighbor_ap:1;
+	uint16_t reserved:1;
+	uint16_t tbtt_info_count:4;
+	uint16_t tbtt_info_length:8;
+};
+
+/**
+ * struct neighbor_ap_info_field - Neighbor information field
+ * @tbtt_info_header: TBTT information header
+ * @operting_class: operating class
+ * @channel_number: channel number
+ */
+struct neighbor_ap_info_field {
+	struct tbtt_information_header tbtt_header;
+	uint8_t operting_class;
+	uint8_t channel_number;
+};
+
+/**
+ * enum tbtt_information_field - TBTT information field
+ * @TBTT_NEIGHBOR_AP_OFFSET_ONLY: TBTT information field type
+ * @TBTT_NEIGHBOR_AP_BSS_PARAM: neighbor AP and bss param
+ * @TBTT_NEIGHBOR_AP_SHORTSSID: neighbor AP and Short ssid
+ * @TBTT_NEIGHBOR_AP_S_SSID_BSS_PARAM: neighbor AP, short ssid and bss param
+ * @TBTT_NEIGHBOR_AP_BSSID: neighbor AP and bssid
+ * @TBTT_NEIGHBOR_AP_BSSID_BSS_PARAM: neighbor AP, bssid and bss param
+ * @TBTT_NEIGHBOR_AP_BSSID_BSS_PARAM_20MHZ_PSD: neighbor AP, bssid and bss
+ * param and 20MHz PSD
+ * @TBTT_NEIGHBOR_AP_BSSSID_S_SSID: neighbor AP, bssid and short ssid
+ * @TBTT_NEIGHBOR_AP_BSSID_S_SSID_BSS_PARAM: neighbor AP, bssid, short ssid
+ * and bss params
+ * @TBTT_NEIGHBOR_AP_BSSID_S_SSID_BSS_PARAM_20MHZ_PSD: neighbor AP, bssid,
+ * short ssid, bss params and 20MHz PSD
+ */
+enum tbtt_information_field {
+	TBTT_NEIGHBOR_AP_OFFSET_ONLY = 1,
+	TBTT_NEIGHBOR_AP_BSS_PARAM = 2,
+	TBTT_NEIGHBOR_AP_SHORTSSID = 5,
+	TBTT_NEIGHBOR_AP_S_SSID_BSS_PARAM = 6,
+	TBTT_NEIGHBOR_AP_BSSID = 7,
+	TBTT_NEIGHBOR_AP_BSSID_BSS_PARAM = 8,
+	TBTT_NEIGHBOR_AP_BSSID_BSS_PARAM_20MHZ_PSD = 9,
+	TBTT_NEIGHBOR_AP_BSSSID_S_SSID = 11,
+	TBTT_NEIGHBOR_AP_BSSID_S_SSID_BSS_PARAM = 12,
+	TBTT_NEIGHBOR_AP_BSSID_S_SSID_BSS_PARAM_20MHZ_PSD = 13
+};
+
+/**
+ * struct reduced_neighbor_report - Reduced Neighbor Report
+ * @bss_info: RNR BSS Information
+ */
+struct reduced_neighbor_report {
+	struct rnr_bss_info bss_info[MAX_RNR_BSS];
 };
 
 #define SCAN_SECURITY_TYPE_WEP 0x01
@@ -299,8 +361,10 @@ struct scan_mbssid_info {
  * @security_type: security supported
  * @seq_num: sequence number
  * @phy_mode: Phy mode of the AP
- * @avg_rssi: Average RSSI fof the AP
+ * @avg_rssi: Average RSSI of the AP
  * @rssi_raw: The rssi of the last beacon/probe received
+ * @snr: The snr of the last beacon/probe received
+ * @avg_snr: Average SNR of the AP
  * @bcn_int: Beacon interval of the AP
  * @cap_info: Capability of the AP
  * @tsf_info: TSF info
@@ -316,6 +380,7 @@ struct scan_mbssid_info {
  * @hidden_ssid_timestamp: boottime in microsec when hidden
  *                         ssid was received
  * @mbssid_info: Multi bssid information
+ * @rnr: Reduced neighbor report information
  * @channel: channel info on which AP is present
  * @channel_mismatch: if channel received in metadata
  *                    doesnot match the one in beacon
@@ -329,6 +394,7 @@ struct scan_mbssid_info {
  * @alt_wcn_ie: alternate WCN IE
  * @ie_list: IE list pointers
  * @raw_frame: contain raw frame and the length of the raw frame
+ * @pdev_id: pdev id
  */
 struct scan_cache_entry {
 	uint8_t frm_subtype;
@@ -341,6 +407,8 @@ struct scan_cache_entry {
 	enum wlan_phymode phy_mode;
 	int32_t avg_rssi;
 	int8_t rssi_raw;
+	uint8_t snr;
+	uint32_t avg_snr;
 	uint16_t bcn_int;
 	union wlan_capability cap_info;
 	union {
@@ -358,6 +426,7 @@ struct scan_cache_entry {
 	qdf_time_t rssi_timestamp;
 	qdf_time_t hidden_ssid_timestamp;
 	struct scan_mbssid_info mbssid_info;
+	struct reduced_neighbor_report rnr;
 	struct channel_info channel;
 	bool channel_mismatch;
 	struct mlme_info mlme_info;
@@ -370,133 +439,16 @@ struct scan_cache_entry {
 	struct element_info alt_wcn_ie;
 	struct ie_list ie_list;
 	struct element_info raw_frame;
+	/*
+	 * This is added temporarily for 6GHz channel to freq conversion
+	 * to get pdev wherever it requores to convert frequency to
+	 * channel as regulatory apis requires pdev as argument
+	 */
+	uint8_t pdev_id;
 };
 
 #define MAX_FAVORED_BSSID 16
 #define MAX_ALLOWED_SSID_LIST 4
-
-/**
- * struct weight_config - weight params to calculate best candidate
- * @rssi_weightage: RSSI weightage
- * @ht_caps_weightage: HT caps weightage
- * @vht_caps_weightage: VHT caps weightage
- * @he_caps_weightage: HE caps weightage
- * @chan_width_weightage: Channel width weightage
- * @chan_band_weightage: Channel band weightage
- * @nss_weightage: NSS weightage
- * @beamforming_cap_weightage: Beamforming caps weightage
- * @pcl_weightage: PCL weightage
- * @channel_congestion_weightage: channel congestion weightage
- * @oce_wan_weightage: OCE WAN metrics weightage
- */
-struct  weight_config {
-	uint8_t rssi_weightage;
-	uint8_t ht_caps_weightage;
-	uint8_t vht_caps_weightage;
-	uint8_t he_caps_weightage;
-	uint8_t chan_width_weightage;
-	uint8_t chan_band_weightage;
-	uint8_t nss_weightage;
-	uint8_t beamforming_cap_weightage;
-	uint8_t pcl_weightage;
-	uint8_t channel_congestion_weightage;
-	uint8_t oce_wan_weightage;
-};
-
-/**
- * struct rssi_cfg_score - rssi related params for scoring logic
- * @best_rssi_threshold: RSSI weightage
- * @good_rssi_threshold: HT caps weightage
- * @bad_rssi_threshold: VHT caps weightage
- * @good_rssi_pcnt: HE caps weightage
- * @bad_rssi_pcnt: Channel width weightage
- * @good_rssi_bucket_size: Channel band weightage
- * @bad_rssi_bucket_size: NSS weightage
- * @rssi_pref_5g_rssi_thresh: Beamforming caps weightage
- */
-struct rssi_cfg_score  {
-	uint32_t best_rssi_threshold;
-	uint32_t good_rssi_threshold;
-	uint32_t bad_rssi_threshold;
-	uint32_t good_rssi_pcnt;
-	uint32_t bad_rssi_pcnt;
-	uint32_t good_rssi_bucket_size;
-	uint32_t bad_rssi_bucket_size;
-	uint32_t rssi_pref_5g_rssi_thresh;
-};
-
-/**
- * struct per_slot_scoring - define % score for differents slots for a
- *                               scoring param.
- * num_slot: number of slots in which the param will be divided.
- *           Max 15. index 0 is used for 'not_present. Num_slot will
- *           equally divide 100. e.g, if num_slot = 4 slot 0 = 0-25%, slot
- *           1 = 26-50% slot 2 = 51-75%, slot 3 = 76-100%
- * score_pcnt3_to_0: Conatins score percentage for slot 0-3
- *             BITS 0-7   :- the scoring pcnt when not present
- *             BITS 8-15  :- SLOT_1
- *             BITS 16-23 :- SLOT_2
- *             BITS 24-31 :- SLOT_3
- * score_pcnt7_to_4: Conatins score percentage for slot 4-7
- *             BITS 0-7   :- SLOT_4
- *             BITS 8-15  :- SLOT_5
- *             BITS 16-23 :- SLOT_6
- *             BITS 24-31 :- SLOT_7
- * score_pcnt11_to_8: Conatins score percentage for slot 8-11
- *             BITS 0-7   :- SLOT_8
- *             BITS 8-15  :- SLOT_9
- *             BITS 16-23 :- SLOT_10
- *             BITS 24-31 :- SLOT_11
- * score_pcnt15_to_12: Conatins score percentage for slot 12-15
- *             BITS 0-7   :- SLOT_12
- *             BITS 8-15  :- SLOT_13
- *             BITS 16-23 :- SLOT_14
- *             BITS 24-31 :- SLOT_15
- */
-struct per_slot_scoring {
-	uint32_t num_slot;
-	uint32_t score_pcnt3_to_0;
-	uint32_t score_pcnt7_to_4;
-	uint32_t score_pcnt11_to_8;
-	uint32_t score_pcnt15_to_12;
-};
-
-/**
- * struct scoring_config - Scoring related configuration
- * @weight_cfg: weigtage config for config
- * @rssi_score: Rssi related config for scoring config
- * @esp_qbss_scoring: esp and qbss related scoring config
- * @oce_wan_scoring: oce related scoring config
- * @bandwidth_weight_per_index: BW wight per index
- * @nss_weight_per_index: nss weight per index
- * @band_weight_per_index: band weight per index
- * @cb_mode_24G: cb mode supprted for 2.4Ghz
- * @cb_mode_5G: cb mode supprted for 5Ghz
- * @nss: Number of NSS the device support
- * @ht_cap: If dev is configured as HT capable
- * @vht_cap:If dev is configured as VHT capable
- * @he_cap: If dev is configured as HE capable
- * @vht_24G_cap:If dev is configured as VHT capable for 2.4Ghz
- * @beamformee_cap:If dev is configured as BF capable
- */
-struct scoring_config {
-	struct weight_config weight_cfg;
-	struct rssi_cfg_score rssi_score;
-	struct per_slot_scoring esp_qbss_scoring;
-	struct per_slot_scoring oce_wan_scoring;
-	uint32_t bandwidth_weight_per_index;
-	uint32_t nss_weight_per_index;
-	uint32_t band_weight_per_index;
-	uint8_t cb_mode_24G;
-	uint8_t cb_mode_5G;
-	uint8_t vdev_nss_24g;
-	uint8_t vdev_nss_5g;
-	uint8_t ht_cap:1,
-		vht_cap:1,
-		he_cap:1,
-		vht_24G_cap:1,
-		beamformee_cap:1;
-};
 
 #define WLAN_SCAN_FILTER_NUM_SSID 5
 #define WLAN_SCAN_FILTER_NUM_BSSID 5
@@ -505,6 +457,7 @@ struct scoring_config {
 #define CACHE_IDENTIFIER_LEN 2
 #define HESSID_LEN 6
 
+#ifdef WLAN_FEATURE_FILS_SK
 /**
  * struct fils_filter_info: FILS info present in scan filter
  * @realm_check: whether realm check is required
@@ -516,79 +469,94 @@ struct fils_filter_info {
 	uint8_t fils_realm[REAM_HASH_LEN];
 	uint8_t security_type;
 };
+#endif
+
+/*
+ * struct filter_arg: Opaque pointer for the filter arguments
+ */
+struct filter_arg;
+typedef struct filter_arg *bss_filter_arg_t;
 
 /**
- * @bss_scoring_required :- flag to bypass scoring filtered results
+ * enum dot11_mode_filter - Filter APs according to dot11mode
+ * @ALLOW_ALL: ignore check
+ * @ALLOW_11N_ONLY: allow only 11n AP
+ * @ALLOW_11AC_ONLY: allow only 11ac AP
+ * @ALLOW_11AX_ONLY: allow only 11ax AP
+ */
+enum dot11_mode_filter {
+	ALLOW_ALL,
+	ALLOW_11N_ONLY,
+	ALLOW_11AC_ONLY,
+	ALLOW_11AX_ONLY,
+};
+
+/**
+ * struct scan_filter: scan filter
  * @enable_adaptive_11r:    flag to check if adaptive 11r ini is enabled
- * @age_threshold: If set return entry which are newer than the age_threshold
- * @p2p_results: If only p2p entries is required
  * @rrm_measurement_filter: For measurement reports.if set, only SSID, BSSID
  *                          and channel is considered for filtering.
+ * @ignore_pmf_cap: Ignore pmf capability match
+ * @ignore_auth_enc_type: Ignore enc type if
+ *                        this is set (For WPS/OSEN connection)
+ * @ignore_nol_chan: Ignore entry with channel in the NOL list
+ * @age_threshold: If set return entry which are newer than the age_threshold
  * @num_of_bssid: number of bssid passed
  * @num_of_ssid: number of ssid
  * @num_of_channels: number of  channels
- * @num_of_auth: number of auth types
- * @num_of_enc_type: number of unicast enc type
- * @num_of_mc_enc_type: number of multicast enc type
  * @pmf_cap: Pmf capability
- * @ignore_pmf_cap: Ignore pmf capability match
- * @num_of_pcl_channels: number of pcl channels
- * @bss_type: bss type BSS/IBSS etc
- * @dot11_mode: operating modes 0 mean any
- *              11a , 11g, 11n , 11ac , 11b etc
+ * @dot11mode: Filter APs based upon dot11mode
  * @band: to get specific band 2.4G, 5G or 4.9 G
  * @rssi_threshold: AP having RSSI greater than
  *                  rssi threasholed (ignored if set 0)
- * @only_wmm_ap: If only Qos AP is needed
- * @ignore_auth_enc_type: Ignore enc type if
- *                        this is set (For WPS/OSEN connection)
  * @mobility_domain: Mobility domain for 11r
- * @country[3]: Ap with specific country code
+ * @authmodeset: auth mode
+ * @key_mgmt: key management
+ * @ucastcipherset: unicast cipher set
+ * @mcastcipherset: multicast cipher set
+ * @mgmtcipherset: mgmt cipher set
+ * @fils_scan_filter: FILS info
+ * @bssid_hint: Mac address of bssid_hint
  * @bssid_list: bssid list
  * @ssid_list: ssid list
- * @channel_list: channel list
- * @auth_type: auth type list
- * @enc_type: unicast enc type list
- * @mc_enc_type: multicast cast enc type list
- * @pcl_channel_list: PCL channel list
- * @fils_scan_filter: FILS info
- * @pcl_weight_list: PCL Weight list
- * @bssid_hint: Mac address of bssid_hint
+ * @chan_freq_list: channel frequency list, frequency unit: MHz
+ * @match_security_func: Function pointer to custom security filter
+ * @match_security_func_arg: Function argument to custom security filter
+ * @ccx_validate_bss: Function pointer to custom bssid filter
+ * @ccx_validate_bss_arg: Function argument to custom bssid filter
  */
 struct scan_filter {
-	bool bss_scoring_required;
-	bool enable_adaptive_11r;
+	uint8_t enable_adaptive_11r:1,
+		rrm_measurement_filter:1,
+		ignore_pmf_cap:1,
+		ignore_auth_enc_type:1,
+		ignore_nol_chan:1;
 	qdf_time_t age_threshold;
-	uint32_t p2p_results;
-	uint32_t rrm_measurement_filter;
-	uint32_t num_of_bssid;
-	uint32_t num_of_ssid;
-	uint32_t num_of_channels;
-	uint32_t num_of_auth;
-	uint32_t num_of_enc_type;
-	uint32_t num_of_mc_enc_type;
+	uint8_t num_of_bssid;
+	uint8_t num_of_ssid;
+	uint16_t num_of_channels;
 	enum wlan_pmf_cap pmf_cap;
-	bool ignore_pmf_cap;
-	uint32_t num_of_pcl_channels;
-	enum wlan_bss_type bss_type;
-	enum wlan_phymode dot11_mode;
+	enum dot11_mode_filter dot11mode;
 	enum wlan_band band;
-	uint32_t rssi_threshold;
-	uint32_t only_wmm_ap;
-	uint32_t ignore_auth_enc_type;
+	uint8_t rssi_threshold;
 	uint32_t mobility_domain;
+	uint32_t authmodeset;
+	uint32_t key_mgmt;
+	uint32_t ucastcipherset;
+	uint32_t mcastcipherset;
+	uint32_t mgmtcipherset;
+#ifdef WLAN_FEATURE_FILS_SK
+	struct fils_filter_info fils_scan_filter;
+#endif
+	struct qdf_mac_addr bssid_hint;
 	/* Variable params list */
-	uint8_t country[3];
 	struct qdf_mac_addr bssid_list[WLAN_SCAN_FILTER_NUM_BSSID];
 	struct wlan_ssid ssid_list[WLAN_SCAN_FILTER_NUM_SSID];
-	uint8_t channel_list[NUM_CHANNELS];
-	enum wlan_auth_type auth_type[WLAN_NUM_OF_SUPPORT_AUTH_TYPE];
-	enum wlan_enc_type enc_type[WLAN_NUM_OF_ENCRYPT_TYPE];
-	enum wlan_enc_type mc_enc_type[WLAN_NUM_OF_ENCRYPT_TYPE];
-	uint8_t pcl_channel_list[NUM_CHANNELS];
-	struct fils_filter_info fils_scan_filter;
-	uint8_t pcl_weight_list[NUM_CHANNELS];
-	struct qdf_mac_addr bssid_hint;
+	qdf_freq_t chan_freq_list[NUM_CHANNELS];
+	bool (*match_security_func)(void *, struct scan_cache_entry *);
+	bss_filter_arg_t match_security_func_arg;
+	bool (*ccx_validate_bss)(void *, struct scan_cache_entry *, int);
+	bss_filter_arg_t ccx_validate_bss_arg;
 };
 
 /**
@@ -621,27 +589,6 @@ enum scan_priority {
 	SCAN_PRIORITY_HIGH,
 	SCAN_PRIORITY_VERY_HIGH,
 	SCAN_PRIORITY_COUNT,
-};
-
-
-/**
- * enum scan_type - type of scan
- * @SCAN_TYPE_BACKGROUND: background scan
- * @SCAN_TYPE_FOREGROUND: foregrounc scan
- * @SCAN_TYPE_SPECTRAL: spectral scan
- * @SCAN_TYPE_REPEATER_BACKGROUND: background scan in repeater
- * @SCAN_TYPE_REPEATER_EXT_BACKGROUND: background scan in extended repeater
- * @SCAN_TYPE_RADIO_MEASUREMENTS: redio measurement
- * @SCAN_TYPE_COUNT: number of scan types supported
- */
-enum scan_type {
-	SCAN_TYPE_BACKGROUND,
-	SCAN_TYPE_FOREGROUND,
-	SCAN_TYPE_SPECTRAL,
-	SCAN_TYPE_REPEATER_BACKGROUND,
-	SCAN_TYPE_REPEATER_EXT_BACKGROUND,
-	SCAN_TYPE_RADIO_MEASUREMENTS,
-	SCAN_TYPE_COUNT,
 };
 
 /**
@@ -703,21 +650,6 @@ enum scan_phy_mode {
 };
 
 /**
- * struct scan_extra_params_legacy
- * extra parameters required for legacy DA scan module
- * @scan_type: type of scan
- * @min_dwell_active: min active dwell time
- * @min_dwell_passive: min passive dwell time
- * @init_rest_time: init rest time for enhanced independent repeater
- */
-struct scan_extra_params_legacy {
-	enum scan_type scan_type;
-	uint32_t min_dwell_active;
-	uint32_t min_dwell_passive;
-	uint32_t init_rest_time;
-};
-
-/**
  * enum scan_dwelltime_adaptive_mode: dwelltime_mode
  * @SCAN_DWELL_MODE_DEFAULT: Use firmware default mode
  * @SCAN_DWELL_MODE_CONSERVATIVE: Conservative adaptive mode
@@ -765,7 +697,7 @@ struct probe_req_whitelist_attr {
  * @phymode: phymode in which @frequency should be scanned
  */
 struct chan_info {
-	uint32_t freq;
+	qdf_freq_t freq;
 	uint32_t phymode;
 };
 
@@ -776,8 +708,32 @@ struct chan_info {
  * @chan: channel parameters used for this scan
  */
 struct chan_list {
-	uint32_t num_chan;
-	struct chan_info chan[WLAN_SCAN_MAX_NUM_CHANNELS];
+	uint8_t num_chan;
+	struct chan_info chan[NUM_CHANNELS];
+};
+
+/**
+ * struct hint_short_ssid - short SSID hint
+ *  and their phymode
+ * @freq_flags: freq unit: MHz (upper 16bits)
+ *              flags (lower 16bits)
+ * @short_ssid: short SSID
+ */
+struct hint_short_ssid {
+	uint32_t freq_flags;
+	uint32_t short_ssid;
+};
+
+/**
+ * struct hint_bssid - BSSID hint
+ *  and their phymode
+ * @freq_flags: freq unit: MHz (upper 16bits)
+ *              flags (lower 16bits)
+ * @bssid: BSSID
+ */
+struct hint_bssid {
+	uint32_t freq_flags;
+	struct qdf_mac_addr bssid;
 };
 
 /**
@@ -786,12 +742,14 @@ struct chan_list {
  * @SCAN_TYPE_P2P_SEARCH: P2P Search
  * @SCAN_TYPE_P2P_LISTEN: P2P listed
  * @SCAN_TYPE_RRM: RRM scan request
+ * @SCAN_TYPE_SCAN_FOR_CONNECT : Scan for connect
  */
 enum scan_request_type {
 	SCAN_TYPE_DEFAULT = 0,
 	SCAN_TYPE_P2P_SEARCH = 1,
 	SCAN_TYPE_P2P_LISTEN = 2,
-	SCAN_TYPE_RRM = 3
+	SCAN_TYPE_RRM = 3,
+	SCAN_TYPE_SCAN_FOR_CONNECT = 4
 };
 
 /**
@@ -819,6 +777,8 @@ enum scan_request_type {
  * @dwell_time_active: active dwell time
  * @dwell_time_active_2g: active dwell time for 2G channels, if it's not zero
  * @dwell_time_passive: passive dwell time
+ * @dwell_time_active_6g: 6Ghz active dwell time
+ * @dwell_time_passive_6g: 6Ghz passive dwell time
  * @min_rest_time: min rest time
  * @max_rest_time: max rest time
  * @repeat_probe_time: repeat probe time
@@ -868,6 +828,10 @@ enum scan_request_type {
  * @htcap: htcap ie
  * @vhtcap: vhtcap ie
  * @scan_ctrl_flags_ext: scan control flag extended
+ * @num_hint_s_ssid: number of short SSID hints
+ * @num_hint_bssid: number of BSSID hints
+ * @hint_s_ssid: short SSID hints
+ * @hint_bssid: BSSID hints
  */
 
 struct scan_req_params {
@@ -898,6 +862,8 @@ struct scan_req_params {
 	uint32_t dwell_time_active;
 	uint32_t dwell_time_active_2g;
 	uint32_t dwell_time_passive;
+	uint32_t dwell_time_active_6g;
+	uint32_t dwell_time_passive_6g;
 	uint32_t min_rest_time;
 	uint32_t max_rest_time;
 	uint32_t repeat_probe_time;
@@ -959,17 +925,19 @@ struct scan_req_params {
 	struct element_info htcap;
 	struct element_info vhtcap;
 	uint32_t scan_ctrl_flags_ext;
+	uint32_t num_hint_s_ssid;
+	uint32_t num_hint_bssid;
+	struct hint_short_ssid hint_s_ssid[WLAN_SCAN_MAX_HINT_S_SSID];
+	struct hint_bssid hint_bssid[WLAN_SCAN_MAX_HINT_BSSID];
 };
 
 /**
  * struct scan_start_request - scan request config
  * @vdev: vdev
- * @legacy_params: extra parameters required for legacy DA arch
  * @scan_req: common scan start request parameters
  */
 struct scan_start_request {
 	struct wlan_objmgr_vdev *vdev;
-	struct scan_extra_params_legacy legacy_params;
 	struct scan_req_params scan_req;
 };
 
@@ -977,12 +945,15 @@ struct scan_start_request {
  * enum scan_cancel_type - type specifiers for cancel scan request
  * @WLAN_SCAN_CANCEL_SINGLE: cancel particular scan specified by scan_id
  * @WLAN_SCAN_CANCEL_VAP_ALL: cancel all scans running on a particular vdevid
- * WLAN_SCAN_CANCEL_PDEV_ALL: cancel all scans running on parent pdev of vdevid
+ * @WLAN_SCAN_CANCEL_PDEV_ALL: cancel all scans running on parent pdev of vdevid
+ * @WLAN_SCAN_CANCEL_HOST_VDEV_ALL: Cancel all host triggered scans alone on
+ * vdev
  */
 enum scan_cancel_req_type {
 	WLAN_SCAN_CANCEL_SINGLE = 1,
 	WLAN_SCAN_CANCEL_VDEV_ALL,
 	WLAN_SCAN_CANCEL_PDEV_ALL,
+	WLAN_SCAN_CANCEL_HOST_VDEV_ALL,
 };
 
 /**
@@ -1301,12 +1272,10 @@ struct pno_scan_req_params {
  * struct scan_user_cfg - user configuration required for for scan
  * @ie_whitelist: probe req IE whitelist attrs
  * @sta_miracast_mcc_rest_time: sta miracast mcc rest time
- * @score_config: scoring logic configuration
  */
 struct scan_user_cfg {
 	struct probe_req_whitelist_attr ie_whitelist;
 	uint32_t sta_miracast_mcc_rest_time;
-	struct scoring_config score_config;
 };
 
 /**
@@ -1353,4 +1322,62 @@ enum ext_cap_bit_field {
 	OBSS_NARROW_BW_RU_IN_ULOFDMA_TOLERENT_SUPPORT = 79,
 };
 
+/**
+ * scan_rnr_info - RNR information
+ * @timestamp: time stamp of beacon/probe
+ * @short_ssid: Short SSID
+ * @bssid: BSSID
+ */
+struct scan_rnr_info {
+	qdf_time_t timestamp;
+	uint32_t short_ssid;
+	struct qdf_mac_addr bssid;
+};
+
+/**
+ * struct scan_rnr_node - Scan RNR entry node
+ * @node: node pointers
+ * @entry: scan RNR entry pointer
+ */
+struct scan_rnr_node {
+	qdf_list_node_t node;
+	struct scan_rnr_info entry;
+};
+
+/**
+ * meta_rnr_channel - Channel information for scan priority algorithm
+ * @chan_freq: channel frequency
+ * @bss_beacon_probe_count: Beacon and probe request count
+ * @saved_profile_count: Saved profile count
+ * @beacon_probe_last_time_found: Timestamp of beacon/probe observed
+ * @rnr_list: RNR list to store RNR IE information
+ */
+struct meta_rnr_channel {
+	uint32_t chan_freq;
+	uint32_t bss_beacon_probe_count;
+	uint32_t saved_profile_count;
+	qdf_time_t beacon_probe_last_time_found;
+	qdf_list_t rnr_list;
+};
+
+#define RNR_UPDATE_SCAN_CNT_THRESHOLD 2
+/**
+ * channel_list_db - Database for channel information
+ * @channel: channel meta information
+ * @scan_count: scan count since the db was updated
+ */
+struct channel_list_db {
+	struct meta_rnr_channel channel[NUM_6GHZ_CHANNELS];
+	uint8_t scan_count;
+};
+
+/**
+ * rnr_chan_weight - RNR channel weightage
+ * @chan_freq: channel frequency
+ * @weight: weightage of the channel
+ */
+struct rnr_chan_weight {
+	uint32_t chan_freq;
+	uint32_t weight;
+};
 #endif

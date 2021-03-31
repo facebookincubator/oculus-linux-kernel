@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -316,6 +316,7 @@ typedef struct {
  * @est_link_speed: link speed of connection, units in Mbps
  * @result_code: result code of connection success or failure
  * @reason_code: if failed then what is the reason
+ * @op_freq: channel frequency in MHz on which AP is connected
  */
 struct host_event_wlan_connection_stats {
 	int8_t rssi;
@@ -333,6 +334,7 @@ struct host_event_wlan_connection_stats {
 	uint32_t est_link_speed;
 	uint16_t result_code;
 	uint16_t reason_code;
+	uint32_t op_freq;
 } qdf_packed;
 
 /*-------------------------------------------------------------------------
@@ -896,6 +898,8 @@ enum wifi_connectivity_events {
  * @WIFI_POWER_EVENT_WAKELOCK_IFACE_CHANGE_TIMER: iface change timer running
  * @WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE: Montitor mode wakelock
  * @WIFI_POWER_EVENT_WAKELOCK_DRIVER_IDLE_RESTART: Wakelock for Idle Restart
+ * @WIFI_POWER_EVENT_WAKELOCK_DRIVER_IDLE_SHUTDOWN: Wakelock for Idle Shutdown
+ * @WIFI_POWER_EVENT_WAKELOCK_TDLS: Wakelock for TDLS
  *
  * Indicates the reason for which the wakelock was taken/released
  */
@@ -923,6 +927,8 @@ enum wake_lock_reason {
 	WIFI_POWER_EVENT_WAKELOCK_IFACE_CHANGE_TIMER,
 	WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE,
 	WIFI_POWER_EVENT_WAKELOCK_DRIVER_IDLE_RESTART,
+	WIFI_POWER_EVENT_WAKELOCK_DRIVER_IDLE_SHUTDOWN,
+	WIFI_POWER_EVENT_WAKELOCK_TDLS,
 };
 
 /* The length of interface name should >= IFNAMSIZ */

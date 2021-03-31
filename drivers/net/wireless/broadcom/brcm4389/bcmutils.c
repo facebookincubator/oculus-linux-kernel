@@ -369,6 +369,7 @@ end:
 }
 #endif /* WL_FWSIGN */
 
+#if defined(BCMNVRAMR) || defined(BCMNVRAMW)
 /* Search for token in comma separated token-string */
 static int
 findmatch(const char *string, const char *name)
@@ -422,6 +423,7 @@ getgpiopin(char *vars, char *pin_name, uint def_pin)
 	}
 	return def_pin;
 }
+#endif /* BCMNVRAMR || BCMNVRAMW */
 #endif /* !BCMDONGLEHOST */
 
 /* return total length of buffer chain. In case of CSO, submsdu may have extra tsohdr and if
@@ -2378,7 +2380,7 @@ void
 dll_pool_detach(void * osh, dll_pool_t * pool, uint16 elems_max, uint16 elem_size)
 {
 	uint32 mem_size;
-	mem_size = sizeof(dll_pool_t) + (elems_max * elem_size);
+	mem_size = (uint32)sizeof(dll_pool_t) + ((uint32)elems_max * (uint32)elem_size);
 	if (pool)
 		MFREE(osh, pool, mem_size);
 }
@@ -2391,7 +2393,7 @@ dll_pool_init(void * osh, uint16 elems_max, uint16 elem_size)
 
 	ASSERT(elem_size > sizeof(dll_t));
 
-	mem_size = sizeof(dll_pool_t) + (elems_max * elem_size);
+	mem_size = (uint32)sizeof(dll_pool_t) + ((uint32)elems_max * (uint32)elem_size);
 
 	if ((dll_pool_p = (dll_pool_t *)MALLOCZ(osh, mem_size)) == NULL) {
 		ASSERT(0);
@@ -3971,7 +3973,7 @@ hndcrc16(
 	return crc;
 }
 
-static const uint32 crc32_table[256] = {
+static const uint32 BCMPOST_TRAP_RODATA(crc32_table)[256] = {
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA,
     0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
     0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988,

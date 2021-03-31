@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,6 +22,7 @@
 
 #include <scheduler_api.h>
 #include <wlan_defs.h>
+#include <wlan_objmgr_pdev_obj.h>
 #include <wlan_reg_services_api.h>
 #include <wlan_objmgr_psoc_obj.h>
 #include <wlan_objmgr_global_obj.h>
@@ -133,8 +134,8 @@ QDF_STATUS ocb_psoc_disable(struct wlan_objmgr_psoc *psoc)
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS ucfg_ocb_set_txrx_handle(struct wlan_objmgr_psoc *psoc,
-				    void *txrx_handle)
+QDF_STATUS ucfg_ocb_set_txrx_pdev_id(struct wlan_objmgr_psoc *psoc,
+				     uint8_t pdev_id)
 {
 	struct wlan_objmgr_pdev *pdev;
 	struct ocb_pdev_obj *ocb_obj;
@@ -151,7 +152,7 @@ QDF_STATUS ucfg_ocb_set_txrx_handle(struct wlan_objmgr_psoc *psoc,
 		ocb_err("OCB object is NULL");
 		return QDF_STATUS_E_FAILURE;
 	}
-	ocb_obj->dp_pdev = txrx_handle;
+	ocb_obj->dp_pdev_id = pdev_id;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -279,7 +280,7 @@ QDF_STATUS ucfg_ocb_set_channel_config(struct wlan_objmgr_vdev *vdev,
 	ocb_cbs->ocb_set_config_context = arg;
 
 	state = wlan_vdev_mlme_get_state(vdev);
-	if (state != WLAN_VDEV_S_RUN) {
+	if (state != WLAN_VDEV_S_START) {
 		/* Vdev is not started, start it */
 		ocb_debug("OCB vdev%d is not up", config->vdev_id);
 		status = ocb_vdev_start(ocb_obj);

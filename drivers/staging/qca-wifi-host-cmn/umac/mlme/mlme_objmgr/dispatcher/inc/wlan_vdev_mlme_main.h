@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -33,7 +33,15 @@
 static inline struct wlan_lmac_if_mlme_tx_ops *
 wlan_mlme_get_lmac_tx_ops(struct wlan_objmgr_psoc *psoc)
 {
-	return &psoc->soc_cb.tx_ops.mops;
+	struct wlan_lmac_if_tx_ops *tx_ops;
+
+	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+	if (!tx_ops) {
+		qdf_err("tx_ops is NULL");
+		return NULL;
+	}
+
+	return &tx_ops->mops;
 }
 
 /**
@@ -116,6 +124,8 @@ enum wlan_vdev_state {
  * @WLAN_VDEV_SM_EV_DOWN_COMPLETE:       Notification of DOWN complete
  * @WLAN_VDEV_SM_EV_ROAM:                Notifiction on ROAMING
  * @WLAN_VDEV_SM_EV_STOP_REQ:            Invoke API to initiate STOP handshake
+ * @WLAN_VDEV_SM_EV_CHAN_SWITCH_DISABLED:Test only, CSA completes without
+ *					 change in channel
  */
 enum wlan_vdev_sm_evt {
 	WLAN_VDEV_SM_EV_START = 0,
@@ -148,6 +158,7 @@ enum wlan_vdev_sm_evt {
 	WLAN_VDEV_SM_EV_DOWN_COMPLETE = 27,
 	WLAN_VDEV_SM_EV_ROAM = 28,
 	WLAN_VDEV_SM_EV_STOP_REQ = 29,
+	WLAN_VDEV_SM_EV_CHAN_SWITCH_DISABLED = 30,
 };
 
 /**

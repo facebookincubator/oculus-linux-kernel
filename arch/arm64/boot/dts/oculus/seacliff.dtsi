@@ -11,6 +11,7 @@
 #include "seacliff-panel.dtsi"
 #include "seacliff-projector.dtsi"
 #include "seacliff-syncboss.dtsi"
+#include "seacliff-thermal.dtsi"
 #include "seacliff-ufs.dtsi"
 
 &qupv3_se0_spi {
@@ -70,44 +71,11 @@
 	status = "disabled";
 };
 
-&pm8150a_l10 {
-	regulator-always-on;
-	regulator-min-microvolt = <2960000>;
-	regulator-max-microvolt = <2960000>;
-	qcom,init-voltage = <2960000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
-&pm8150_l10 {
-	regulator-always-on;
-	qcom,init-voltage = <2960000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
 &pm8150_l13 {
 	regulator-always-on;
 	regulator-min-microvolt = <2500000>;
 	regulator-max-microvolt = <2500000>;
 	qcom,init-voltage = <2500000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
-&pm8150a_l2 {
-	regulator-always-on;
-	regulator-min-microvolt = <1050000>;
-	regulator-max-microvolt = <1050000>;
-	qcom,init-voltage = <1050000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
-&pm8150a_l3 {
-	regulator-always-on;
-	qcom,init-voltage = <1200000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
-&pm8150_l15 {
-	regulator-always-on;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
@@ -162,17 +130,5 @@
 	blue {
 		qcom,continuous-mode;
 		qcom,default-brightness = <10>;
-	};
-};
-
-&cam_sensor_mclk5_active {
-	config {
-		drive-strength = <6>; /* 6 MA */
-	};
-};
-
-&cam_sensor_mclk5_suspend {
-	config {
-		drive-strength = <6>; /* 6 MA */
 	};
 };

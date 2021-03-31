@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -21,9 +21,14 @@
 #include "qdf_mem.h"   /* qdf_mem_malloc,free */
 
 #ifdef WDI_EVENT_ENABLE
-void *dp_get_pldev(struct cdp_pdev *txrx_pdev)
+void *dp_get_pldev(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
-	struct dp_pdev *pdev = (struct dp_pdev *)txrx_pdev;
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	struct dp_pdev *pdev = dp_get_pdev_from_soc_pdev_id_wifi3(soc, pdev_id);
+
+	if (!pdev)
+		return NULL;
+
 	return pdev->pl_dev;
 }
 /*
@@ -110,7 +115,7 @@ dp_wdi_event_iter_sub(
 void
 dp_wdi_event_handler(
 	enum WDI_EVENT event,
-	void *soc,
+	struct dp_soc *soc,
 	void *data,
 	uint16_t peer_id,
 	int status, uint8_t pdev_id)
@@ -149,7 +154,8 @@ dp_wdi_event_handler(
 
 /*
  * dp_wdi_event_sub() - Subscribe WDI event
- * @txrx_pdev_handle: cdp_pdev handle
+ * @soc: soc handle
+ * @pdev_id: id of pdev
  * @event_cb_sub_handle: subcribe evnet handle
  * @event: Event to be subscribe
  *
@@ -157,13 +163,15 @@ dp_wdi_event_handler(
  */
 int
 dp_wdi_event_sub(
-	struct cdp_pdev *txrx_pdev_handle,
-	void *event_cb_sub_handle,
+	struct cdp_soc_t *soc, uint8_t pdev_id,
+	wdi_event_subscribe *event_cb_sub_handle,
 	uint32_t event)
 {
 	uint32_t event_index;
 	wdi_event_subscribe *wdi_sub;
-	struct dp_pdev *txrx_pdev = (struct dp_pdev *)txrx_pdev_handle;
+	struct dp_pdev *txrx_pdev =
+		dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc,
+						   pdev_id);
 	wdi_event_subscribe *event_cb_sub =
 		(wdi_event_subscribe *) event_cb_sub_handle;
 
@@ -206,7 +214,8 @@ dp_wdi_event_sub(
 
 /*
  * dp_wdi_event_unsub() - WDI event unsubscribe
- * @txrx_pdev_handle: cdp_pdev handle
+ * @soc: soc handle
+ * @pdev_id: id of pdev
  * @event_cb_sub_handle: subscribed event handle
  * @event: Event to be unsubscribe
  *
@@ -215,18 +224,20 @@ dp_wdi_event_sub(
  */
 int
 dp_wdi_event_unsub(
-	struct cdp_pdev *txrx_pdev_handle,
-	void *event_cb_sub_handle,
+	struct cdp_soc_t *soc, uint8_t pdev_id,
+	wdi_event_subscribe *event_cb_sub_handle,
 	uint32_t event)
 {
 	uint32_t event_index = event - WDI_EVENT_BASE;
-	struct dp_pdev *txrx_pdev = (struct dp_pdev *)txrx_pdev_handle;
+	struct dp_pdev *txrx_pdev =
+		dp_get_pdev_from_soc_pdev_id_wifi3((struct dp_soc *)soc,
+						   pdev_id);
 	wdi_event_subscribe *event_cb_sub =
 		(wdi_event_subscribe *) event_cb_sub_handle;
 
-	if (!event_cb_sub) {
+	if (!txrx_pdev || !event_cb_sub) {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
-			"Invalid callback in %s", __func__);
+			"Invalid callback or pdev in %s", __func__);
 		return -EINVAL;
 	}
 

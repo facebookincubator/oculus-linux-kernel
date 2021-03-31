@@ -481,7 +481,6 @@ static int cypd3177_probe(struct i2c_client *i2c,
 	int rc;
 	struct cypd3177 *chip;
 	struct power_supply_config cfg = {0};
-	struct device_node *np = i2c->dev.of_node;
 
 	if (!i2c_check_functionality(i2c->adapter, I2C_FUNC_I2C)) {
 		dev_err(&i2c->dev, "I2C functionality not supported\n");

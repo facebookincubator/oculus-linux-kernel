@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -124,6 +124,22 @@ static const struct osif_akm_type_crypto_mapping
 		.akm_type_crypto = WLAN_CRYPTO_KEY_MGMT_FT_PSK,
 	},
 #endif
+#ifdef FEATURE_WLAN_ESE
+	{
+#ifndef WLAN_AKM_SUITE_CCKM
+#define WLAN_AKM_SUITE_CCKM         0x00409600
+#endif
+		.akm_suite = WLAN_AKM_SUITE_CCKM,
+		.akm_type_crypto = WLAN_CRYPTO_KEY_MGMT_CCKM,
+	},
+#endif
+	{
+#ifndef WLAN_AKM_SUITE_OSEN
+#define WLAN_AKM_SUITE_OSEN         0x506f9a01
+#endif
+		.akm_suite = WLAN_AKM_SUITE_OSEN,
+		.akm_type_crypto = WLAN_CRYPTO_KEY_MGMT_OSEN,
+	},
 #if defined(WLAN_AKM_SUITE_8021X_SUITE_B) || \
 		defined(FEATURE_WLAN_IEEE8021X_SUITE_B)
 	{
@@ -166,6 +182,20 @@ static const struct osif_akm_type_crypto_mapping
 		.akm_type_crypto = WLAN_CRYPTO_KEY_MGMT_FT_FILS_SHA384,
 	},
 #endif
+	{
+#ifndef WLAN_AKM_SUITE_OWE
+#define WLAN_AKM_SUITE_OWE          0x000FAC12
+#endif
+		.akm_suite = WLAN_AKM_SUITE_OWE,
+		.akm_type_crypto = WLAN_CRYPTO_KEY_MGMT_OWE,
+	},
+	{
+#ifndef WLAN_AKM_SUITE_DPP
+#define WLAN_AKM_SUITE_DPP      0x506f9a02
+#endif
+		.akm_suite = WLAN_AKM_SUITE_DPP,
+		.akm_type_crypto = WLAN_CRYPTO_KEY_MGMT_DPP,
+	},
 };
 
 /* mapping table for cipher type received from NL and cryto cipher type */
@@ -246,7 +276,8 @@ static const struct osif_cipher_crypto_mapping
 #endif
 };
 
-int osif_nl_to_crypto_auth_type(enum nl80211_auth_type auth_type)
+wlan_crypto_auth_mode
+osif_nl_to_crypto_auth_type(enum nl80211_auth_type auth_type)
 {
 	wlan_crypto_auth_mode crypto_auth_type = WLAN_CRYPTO_AUTH_NONE;
 
@@ -254,15 +285,17 @@ int osif_nl_to_crypto_auth_type(enum nl80211_auth_type auth_type)
 	    auth_type >= QDF_ARRAY_SIZE(osif_auth_type_crypto_mapping)) {
 		QDF_TRACE_ERROR(QDF_MODULE_ID_OS_IF, "Unknown type: %d",
 				auth_type);
-		return -EINVAL;
+		return crypto_auth_type;
 	}
+
+	crypto_auth_type = osif_auth_type_crypto_mapping[auth_type];
 	QDF_TRACE_DEBUG(QDF_MODULE_ID_OS_IF, "Auth type, NL: %d, crypto: %d",
-			auth_type, osif_auth_type_crypto_mapping[auth_type]);
+			auth_type, crypto_auth_type);
 
 	return crypto_auth_type;
 }
 
-int osif_nl_to_crypto_akm_type(u32 key_mgmt)
+wlan_crypto_key_mgmt osif_nl_to_crypto_akm_type(u32 key_mgmt)
 {
 	uint8_t index;
 	wlan_crypto_key_mgmt crypto_akm_type = WLAN_CRYPTO_KEY_MGMT_NONE;
@@ -277,13 +310,12 @@ int osif_nl_to_crypto_akm_type(u32 key_mgmt)
 			break;
 		}
 	}
-	if (!akm_type_crypto_exist) {
+	if (!akm_type_crypto_exist)
 		QDF_TRACE_ERROR(QDF_MODULE_ID_OS_IF, "Unknown type: %d",
 				key_mgmt);
-		return -EINVAL;
-	}
-	QDF_TRACE_DEBUG(QDF_MODULE_ID_OS_IF, "Akm suite, NL: %d, crypto: %d",
-			key_mgmt, crypto_akm_type);
+	else
+		QDF_TRACE_DEBUG(QDF_MODULE_ID_OS_IF, "Akm suite, NL: %d, crypto: %d",
+				key_mgmt, crypto_akm_type);
 
 	return crypto_akm_type;
 }

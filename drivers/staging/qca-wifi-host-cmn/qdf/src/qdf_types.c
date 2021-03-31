@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -56,6 +56,10 @@ const char *qdf_opmode_str(const enum QDF_OPMODE opmode)
 		return "BTAMP";
 	case QDF_AHDEMO_MODE:
 		return "AHDEMO";
+	case QDF_TDLS_MODE:
+		return "TDLS";
+	case QDF_NAN_DISC_MODE:
+		return "NAN";
 	default:
 		return "Invalid operating mode";
 	}
@@ -323,8 +327,8 @@ qdf_export_symbol(qdf_uint32_parse);
 QDF_STATUS qdf_int64_parse(const char *int_str, int64_t *out_int)
 {
 	QDF_STATUS status;
-	bool negate;
-	uint64_t value;
+	bool negate = false;
+	uint64_t value = 0;
 	int64_t signed_value;
 
 	status = qdf_int_parse(int_str, &value, &negate);
@@ -350,8 +354,8 @@ qdf_export_symbol(qdf_int64_parse);
 QDF_STATUS qdf_uint64_parse(const char *int_str, uint64_t *out_int)
 {
 	QDF_STATUS status;
-	bool negate;
-	uint64_t value;
+	bool negate = false;
+	uint64_t value = 0;
 
 	status = qdf_int_parse(int_str, &value, &negate);
 	if (QDF_IS_STATUS_ERROR(status))
@@ -611,6 +615,55 @@ QDF_STATUS qdf_ipv6_parse(const char *ipv6_str, struct qdf_ipv6_addr *out_addr)
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_ipv6_parse);
+
+QDF_STATUS qdf_uint32_array_parse(const char *in_str, uint32_t *out_array,
+				  qdf_size_t array_size, qdf_size_t *out_size)
+{
+	QDF_STATUS status;
+	bool negate;
+	qdf_size_t size = 0;
+	uint64_t value;
+
+	QDF_BUG(in_str);
+	if (!in_str)
+		return QDF_STATUS_E_INVAL;
+
+	QDF_BUG(out_array);
+	if (!out_array)
+		return QDF_STATUS_E_INVAL;
+
+	QDF_BUG(out_size);
+	if (!out_size)
+		return QDF_STATUS_E_INVAL;
+
+	while (size < array_size) {
+		status = __qdf_int_parse_lazy(&in_str, &value, &negate);
+		if (QDF_IS_STATUS_ERROR(status))
+			return status;
+
+		if ((uint32_t)value != value || negate)
+			return QDF_STATUS_E_RANGE;
+
+		in_str = qdf_str_left_trim(in_str);
+
+		switch (in_str[0]) {
+		case ',':
+			out_array[size++] = value;
+			in_str++;
+			break;
+		case '\0':
+			out_array[size++] = value;
+			*out_size = size;
+			return QDF_STATUS_SUCCESS;
+		default:
+			return QDF_STATUS_E_FAILURE;
+		}
+	}
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+qdf_export_symbol(qdf_uint32_array_parse);
 
 QDF_STATUS qdf_uint16_array_parse(const char *in_str, uint16_t *out_array,
 				  qdf_size_t array_size, qdf_size_t *out_size)

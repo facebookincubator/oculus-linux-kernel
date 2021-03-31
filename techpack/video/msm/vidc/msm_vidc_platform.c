@@ -621,7 +621,7 @@ static struct msm_vidc_codec_capability bengal_capabilities_v0[] = {
 	{CAP_SECURE_BITRATE, DOMAINS_ALL, CODECS_ALL, 1, 35000000, 1, 20000000},
 
 	/* All intra encoding usecase specific */
-	{CAP_ALLINTRA_MAX_FPS, ENC, H264|HEVC, 1, 30, 1, 30},
+	{CAP_ALLINTRA_MAX_FPS, ENC, H264|HEVC, 1, 60, 1, 30},
 
 	/* Image specific */
 	{CAP_HEVC_IMAGE_FRAME_WIDTH, ENC, HEVC, 128, 512, 1, 512},
@@ -685,7 +685,7 @@ static struct msm_vidc_codec_capability bengal_capabilities_v1[] = {
 	{CAP_SECURE_BITRATE, DOMAINS_ALL, CODECS_ALL, 1, 35000000, 1, 20000000},
 
 	/* All intra encoding usecase specific */
-	{CAP_ALLINTRA_MAX_FPS, ENC, H264|HEVC, 1, 30, 1, 30},
+	{CAP_ALLINTRA_MAX_FPS, ENC, H264|HEVC, 1, 60, 1, 30},
 
 	/* Image specific */
 	{CAP_HEVC_IMAGE_FRAME_WIDTH, ENC, HEVC, 128, 512, 1, 512},
@@ -2131,7 +2131,7 @@ static int msm_vidc_read_rank(
 		d_vpr_e("Failed to get ddr rank of device\n");
 		return num_ranks;
 	} else if (num_ranks == 1)
-		data->sku_version = SKU_VERSION_1;
+		data->sku_version = SKU_VERSION_0;
 
 	d_vpr_h("DDR Rank of device: %u", num_ranks);
 

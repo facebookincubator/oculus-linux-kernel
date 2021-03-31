@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,9 +35,6 @@
 #endif
 #ifdef MSM_PLATFORM
 #include <asm/arch_timer.h>
-#endif
-#ifdef CONFIG_CNSS
-#include <net/cnss.h>
 #endif
 
 typedef unsigned long __qdf_time_t;
@@ -75,6 +72,16 @@ static inline ktime_t __qdf_ktime_add(ktime_t ktime1, ktime_t ktime2)
 static inline ktime_t __qdf_ktime_get(void)
 {
 	return ktime_get();
+}
+
+/**
+ * __qdf_ktime_real_get() - Gets the current wall clock as ktime object
+ *
+ * Return: current wall clock as ktime object
+ */
+static inline ktime_t __qdf_ktime_real_get(void)
+{
+	return ktime_get_real();
 }
 
 /**
@@ -252,11 +259,7 @@ static inline bool __qdf_system_time_after_eq(__qdf_time_t a, __qdf_time_t b)
  */
 static inline uint64_t __qdf_get_monotonic_boottime(void)
 {
-	struct timespec ts;
-
-	get_monotonic_boottime(&ts);
-
-	return ((uint64_t) ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+	return (uint64_t)ktime_to_us(ktime_get_boottime());
 }
 
 #if defined (MSM_PLATFORM)
@@ -269,7 +272,12 @@ static inline uint64_t __qdf_get_monotonic_boottime(void)
  *
  * Return: QTIMER(19.2 MHz) clock ticks
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0))
+static inline uint64_t __qdf_get_log_timestamp(void)
+{
+	return __arch_counter_get_cntvct();
+}
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static inline uint64_t __qdf_get_log_timestamp(void)
 {
 	return arch_counter_get_cntvct();
@@ -287,6 +295,16 @@ static inline uint64_t __qdf_get_log_timestamp(void)
  *
  * Return: system tick for non MSM platfroms
  */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0))
+static inline uint64_t __qdf_get_log_timestamp(void)
+{
+	struct timespec64 ts;
+
+	ktime_get_ts64(&ts);
+
+	return ((uint64_t)ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+}
+#else
 static inline uint64_t __qdf_get_log_timestamp(void)
 {
 	struct timespec ts;
@@ -295,6 +313,7 @@ static inline uint64_t __qdf_get_log_timestamp(void)
 
 	return ((uint64_t) ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
+#endif
 #endif
 
 /**
@@ -308,7 +327,13 @@ static inline uint64_t __qdf_get_log_timestamp(void)
  * The time since system booted in nanoseconds
  */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
+static inline uint64_t __qdf_get_bootbased_boottime_ns(void)
+{
+	return ktime_get_boottime_ns();
+}
+
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0))
 static inline uint64_t __qdf_get_bootbased_boottime_ns(void)
 {
 	return ktime_get_boot_ns();

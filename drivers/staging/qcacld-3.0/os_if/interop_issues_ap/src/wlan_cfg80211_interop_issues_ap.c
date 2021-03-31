@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,6 +33,7 @@
 #include <wlan_utility.h>
 #include "wlan_hdd_main.h"
 #include "cfg_ucfg_api.h"
+#include "wlan_hdd_object_manager.h"
 
 const struct nla_policy
 interop_issues_ap_policy[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_MAX + 1] = {
@@ -42,9 +43,8 @@ interop_issues_ap_policy[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_LIST] = {
 						.type = NLA_U32,
 						.len = sizeof(uint32_t) },
-	[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_BSSID] = {
-						.type = NLA_UNSPEC,
-						.len = QDF_MAC_ADDR_SIZE },
+	[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_BSSID] =
+						VENDOR_NLA_POLICY_MAC_ADDR,
 };
 
 /**
@@ -66,18 +66,18 @@ wlan_cfg80211_send_interop_issues_ap_cb(
 	uint32_t index, len;
 
 	if (!data) {
-		cfg80211_err("Invalid result.");
+		osif_err("Invalid result.");
 		return;
 	}
 
 	pdev = data->pdev;
 	if (!pdev) {
-		cfg80211_err("pdev is null.");
+		osif_err("pdev is null.");
 		return;
 	}
 	os_priv = wlan_pdev_get_ospriv(pdev);
 	if (!os_priv) {
-		cfg80211_err("os_priv is null.");
+		osif_err("os_priv is null.");
 		return;
 	}
 
@@ -86,17 +86,17 @@ wlan_cfg80211_send_interop_issues_ap_cb(
 	skb = cfg80211_vendor_event_alloc(os_priv->wiphy, NULL, len, index,
 					  GFP_KERNEL);
 	if (!skb) {
-		cfg80211_err("skb alloc failed");
+		osif_err("skb alloc failed");
 		return;
 	}
 
-	cfg80211_debug("interop issues ap mac:" QDF_MAC_ADDR_STR,
-		       QDF_MAC_ADDR_ARRAY(data->rap_addr.bytes));
+	osif_debug("interop issues ap mac:" QDF_MAC_ADDR_FMT,
+		   QDF_MAC_ADDR_REF(data->rap_addr.bytes));
 
 	if (nla_put(skb,
 		    QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_BSSID,
 		    QDF_MAC_ADDR_SIZE, data->rap_addr.bytes)) {
-		cfg80211_err("nla put fail");
+		osif_err("nla put fail");
 		kfree_skb(skb);
 		return;
 	}
@@ -131,7 +131,7 @@ wlan_parse_interop_issues_ap(struct qdf_mac_addr *interop_issues_ap,
 
 	nla_for_each_nested(curr_attr, attr, rem) {
 		if (i == MAX_INTEROP_ISSUES_AP_NUM) {
-			cfg80211_err("Ignoring excess");
+			osif_err("Ignoring excess");
 			break;
 		}
 
@@ -140,18 +140,18 @@ wlan_parse_interop_issues_ap(struct qdf_mac_addr *interop_issues_ap,
 				nla_data(curr_attr),
 				nla_len(curr_attr),
 				interop_issues_ap_policy)) {
-			cfg80211_err("nla_parse failed");
+			osif_err("nla_parse failed");
 			return -EINVAL;
 		}
 		if (!tb2[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_BSSID]) {
-			cfg80211_err("attr addr failed");
+			osif_err("attr addr failed");
 			return -EINVAL;
 		}
 		nla_memcpy(interop_issues_ap[i].bytes,
 			   tb2[QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_BSSID],
 			   QDF_MAC_ADDR_SIZE);
-		cfg80211_debug(QDF_MAC_ADDR_STR,
-			       QDF_MAC_ADDR_ARRAY(interop_issues_ap[i].bytes));
+		osif_debug(QDF_MAC_ADDR_FMT,
+			   QDF_MAC_ADDR_REF(interop_issues_ap[i].bytes));
 		i++;
 	}
 
@@ -178,12 +178,27 @@ __wlan_cfg80211_set_interop_issues_ap_config(struct wiphy *wiphy,
 	struct nlattr *attr;
 	uint32_t count = 0;
 	struct wlan_interop_issues_ap_info interop_issues_ap = {0};
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_objmgr_vdev *vdev;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		osif_err("Invalid vdev");
+		return -EINVAL;
+	}
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	hdd_objmgr_put_vdev(vdev);
+	if (!psoc) {
+		osif_err("Invalid psoc");
+		return -EINVAL;
+	}
 
 	if (wlan_cfg80211_nla_parse(tb,
 				    QCA_WLAN_VENDOR_ATTR_INTEROP_ISSUES_AP_MAX,
 				    data, data_len,
 				    interop_issues_ap_policy)) {
-		cfg80211_err("Invalid ATTR");
+		osif_err("Invalid ATTR");
 		return -EINVAL;
 	}
 
@@ -196,14 +211,15 @@ __wlan_cfg80211_set_interop_issues_ap_config(struct wiphy *wiphy,
 			return -EINVAL;
 	}
 
-	cfg80211_debug("Num of interop issues ap: %d", count);
+	osif_debug("Num of interop issues ap: %d", count);
 	interop_issues_ap.count = count;
+	interop_issues_ap.detect_enable = true;
 
 	/*
 	 * need to figure out a converged way of obtaining the vdev for
 	 * a given netdev that doesn't involve the legacy mechanism.
 	 */
-	ucfg_set_interop_issues_ap_config(adapter->vdev, &interop_issues_ap);
+	ucfg_set_interop_issues_ap_config(psoc, &interop_issues_ap);
 
 	return 0;
 }
@@ -234,9 +250,19 @@ void wlan_cfg80211_init_interop_issues_ap(struct wlan_objmgr_pdev *pdev)
 	 * cnss-daemon does not restart.
 	 */
 	uint8_t fmac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+	struct wlan_interop_issues_ap_info interop_issues_ap = {0};
 	struct wlan_interop_issues_ap_event data;
+	struct wlan_objmgr_psoc *psoc;
 
 	wlan_interop_issues_ap_register_cbk(pdev);
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc) {
+		osif_err("Invalid psoc");
+		return;
+	}
+	interop_issues_ap.detect_enable = true;
+	ucfg_set_interop_issues_ap_config(psoc, &interop_issues_ap);
 
 	data.pdev = pdev;
 	qdf_mem_copy(data.rap_addr.bytes, fmac, QDF_MAC_ADDR_SIZE);

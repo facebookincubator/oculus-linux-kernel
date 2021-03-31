@@ -2536,7 +2536,7 @@ static void dp_panel_config_dsc(struct dp_panel *dp_panel, bool enable)
 		dsc->be_in_lane = _dp_panel_calc_be_in_lane(dp_panel);
 		dsc->dsc_en = true;
 		dsc->dto_en = true;
-
+		dsc->continuous_pps = dp_panel->dsc_continuous_pps;
 		_dp_panel_get_dto_m_n(comp_info->comp_ratio, pinfo->bpp,
 				&dsc->dto_n, &dsc->dto_d);
 	} else {
@@ -2544,6 +2544,7 @@ static void dp_panel_config_dsc(struct dp_panel *dp_panel, bool enable)
 		dsc->dto_en = false;
 		dsc->dto_n = 0;
 		dsc->dto_d = 0;
+		dsc->continuous_pps = false;
 	}
 
 	catalog->stream_id = dp_panel->stream_id;
@@ -3352,6 +3353,7 @@ struct dp_panel *dp_panel_get(struct dp_panel_in *in)
 
 	dp_panel->dsc_feature_enable = panel->parser->dsc_feature_enable;
 	dp_panel->fec_feature_enable = panel->parser->fec_feature_enable;
+	dp_panel->dsc_continuous_pps = panel->parser->dsc_continuous_pps;
 
 	if (in->base_panel) {
 		memcpy(dp_panel->dpcd, in->base_panel->dpcd,

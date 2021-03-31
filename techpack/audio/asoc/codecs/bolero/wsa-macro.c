@@ -166,7 +166,6 @@ struct wsa_macro_swr_ctrl_platform_data {
 							  void *data),
 			  void *swrm_handle,
 			  int action);
-	int (*pinctrl_setup)(void *handle, bool enable);
 };
 
 struct wsa_macro_bcl_pmic_params {
@@ -3143,6 +3142,12 @@ static int wsa_macro_probe(struct platform_device *pdev)
 	u32 is_used_wsa_swr_gpio = 1;
 	const char *is_used_wsa_swr_gpio_dt = "qcom,is-used-swr-gpio";
 
+	if (!bolero_is_va_macro_registered(&pdev->dev)) {
+		dev_err(&pdev->dev,
+			"%s: va-macro not registered yet, defer\n", __func__);
+		return -EPROBE_DEFER;
+	}
+
 	wsa_priv = devm_kzalloc(&pdev->dev, sizeof(struct wsa_macro_priv),
 				GFP_KERNEL);
 	if (!wsa_priv)
@@ -3198,7 +3203,6 @@ static int wsa_macro_probe(struct platform_device *pdev)
 	wsa_priv->swr_plat_data.clk = wsa_swrm_clock;
 	wsa_priv->swr_plat_data.core_vote = wsa_macro_core_vote;
 	wsa_priv->swr_plat_data.handle_irq = NULL;
-	wsa_priv->swr_plat_data.pinctrl_setup = NULL;
 
 	ret = of_property_read_u32(pdev->dev.of_node, "qcom,default-clk-id",
 				   &default_clk_id);
@@ -3227,6 +3231,7 @@ static int wsa_macro_probe(struct platform_device *pdev)
 	wsa_macro_init_ops(&ops, wsa_io_base);
 	ops.clk_id_req = wsa_priv->default_clk_id;
 	ops.default_clk_id = wsa_priv->default_clk_id;
+
 	ret = bolero_register_macro(&pdev->dev, WSA_MACRO, &ops);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "%s: register macro failed\n", __func__);

@@ -25,6 +25,8 @@
 #include <lim_session.h>
 #include <qdf_crypto.h>
 #include "qdf_util.h"
+#include "wlan_crypto_global_api.h"
+#include "wlan_cm_roam_api.h"
 
 #ifdef WLAN_FEATURE_FILS_SK
 
@@ -61,7 +63,8 @@ static int lim_get_crypto_digest_len(uint8_t *type)
 		return SHA384_DIGEST_SIZE;
 	else if (!strcmp(type, HMAC_SHA256_CRYPTO_TYPE))
 		return SHA256_DIGEST_SIZE;
-	return -EINVAL;
+
+	return 0;
 }
 
 /**
@@ -283,6 +286,11 @@ static QDF_STATUS lim_get_key_from_prf(uint8_t *type, uint8_t *secret,
 	uint8_t crypto_digest_len = lim_get_crypto_digest_len(type);
 	uint8_t tmp_hash[SHA384_DIGEST_SIZE] = {0};
 
+	if (!crypto_digest_len) {
+		pe_err("Incorrect crypto length");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	addr[0] = count;
 	len[0] = sizeof(count);
 
@@ -310,83 +318,6 @@ static QDF_STATUS lim_get_key_from_prf(uint8_t *type, uint8_t *secret,
 		}
 		qdf_mem_copy(&key[i], tmp_hash, remain_len);
 		i += crypto_digest_len;
-	}
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * lim_default_hmac_sha256_kdf()- This API calculates key data using default kdf
- * defined in RFC4306.
- * @secret: key which needs to be used in crypto
- * @secret_len: key_len of secret
- * @label: PRF label
- * @optional_data: Data used for hash
- * @optional_data_len: data length
- * @key: key data output
- * @keylen: key data length
- *
- * This API creates default KDF as defined in RFC4306
- * PRF+ (K,S) = T1 | T2 | T3 | T4 | ...
- * T1 = PRF (K, S | 0x01)
- * T2 = PRF (K, T1 | S | 0x02)
- * T3 = PRF (K, T2 | S | 0x03)
- * T4 = PRF (K, T3 | S | 0x04)
- *
- * for every iteration its creates 32 bit of hash
- *
- * Return: QDF_STATUS
- */
-static QDF_STATUS
-lim_default_hmac_sha256_kdf(uint8_t *secret, uint32_t secret_len,
-		uint8_t *label, uint8_t *optional_data,
-		uint32_t optional_data_len, uint8_t *key, uint32_t keylen)
-{
-	uint8_t tmp_hash[SHA256_DIGEST_SIZE] = {0};
-	uint8_t count = 1;
-	uint8_t *addr[4];
-	uint32_t len[4];
-	uint32_t current_position = 0, remaining_data = SHA256_DIGEST_SIZE;
-
-	addr[0] = tmp_hash;
-	len[0] = SHA256_DIGEST_SIZE;
-	addr[1] = label;
-	len[1] = strlen(label) + 1;
-	addr[2] = optional_data;
-	len[2] = optional_data_len;
-	addr[3] = &count;
-	len[3] = 1;
-
-	if (keylen == 0 ||
-	   (keylen > (MAX_PRF_INTERATIONS_COUNT * SHA256_DIGEST_SIZE))) {
-		pe_err("invalid key length %d", keylen);
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	/* Create T1 */
-	if (qdf_get_hmac_hash(HMAC_SHA256_CRYPTO_TYPE, secret, secret_len, 3,
-			&addr[1], &len[1], tmp_hash) < 0) {
-		pe_err("failed to get hmac hash");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	/* Update hash from tmp_hash */
-	qdf_mem_copy(key + current_position, tmp_hash, remaining_data);
-	current_position += remaining_data;
-
-	for (count = 2; current_position < keylen; count++) {
-		remaining_data = keylen - current_position;
-		if (remaining_data > SHA256_DIGEST_SIZE)
-			remaining_data = SHA256_DIGEST_SIZE;
-
-		/* Create T-n */
-		if (qdf_get_hmac_hash(HMAC_SHA256_CRYPTO_TYPE, secret,
-				secret_len, 4, addr, len, tmp_hash) < 0) {
-			pe_err("failed to get hmac hash");
-			return QDF_STATUS_E_FAILURE;
-		}
-		/* Update hash from tmp_hash */
-		qdf_mem_copy(key + current_position, tmp_hash, remaining_data);
-		current_position += remaining_data;
 	}
 	return QDF_STATUS_SUCCESS;
 }
@@ -600,7 +531,8 @@ static void lim_generate_key_auth(struct pe_session *pe_session)
  *
  * Return: None
  */
-static void lim_get_keys(struct pe_session *pe_session)
+static void lim_get_keys(struct mac_context *mac_ctx,
+			 struct pe_session *pe_session)
 {
 	uint8_t key_label[] = PTK_KEY_LABEL;
 	uint8_t *data;
@@ -613,6 +545,7 @@ static void lim_get_keys(struct pe_session *pe_session)
 	uint8_t fils_ft_len = 0;
 	uint8_t tk_len = lim_get_tk_len(pe_session->encryptType);
 	uint8_t *buf;
+	QDF_STATUS status;
 
 	if (!fils_info)
 		return;
@@ -681,6 +614,12 @@ static void lim_get_keys(struct pe_session *pe_session)
 	if (pe_session->is11Rconnection && fils_ft_len) {
 		qdf_mem_copy(fils_info->fils_ft, buf, fils_ft_len);
 		fils_info->fils_ft_len = fils_ft_len;
+		status = wlan_cm_update_fils_ft(mac_ctx->psoc,
+						pe_session->vdev_id,
+						fils_info->fils_ft,
+						fils_ft_len);
+		if  (QDF_IS_STATUS_ERROR(status))
+			pe_err("Failed to update FILS FT to mlme");
 	}
 	qdf_mem_zero(data, data_len);
 	qdf_mem_free(data);
@@ -782,10 +721,10 @@ static void lim_generate_rmsk_data(struct pe_session *pe_session)
 	 */
 	lim_copy_u16_be(&optional_data[0], fils_info->sequence_number);
 	lim_copy_u16_be(&optional_data[2], fils_info->fils_rrk_len);
-	lim_default_hmac_sha256_kdf(fils_info->fils_rrk,
-			fils_info->fils_rrk_len, rmsk_label,
-			optional_data, sizeof(optional_data),
-			fils_info->fils_rmsk, fils_info->fils_rmsk_len);
+	qdf_default_hmac_sha256_kdf(
+		fils_info->fils_rrk, fils_info->fils_rrk_len, rmsk_label,
+		optional_data, sizeof(optional_data), fils_info->fils_rmsk,
+		fils_info->fils_rmsk_len);
 }
 
 /**
@@ -928,36 +867,6 @@ bool lim_is_valid_fils_auth_frame(struct mac_context *mac_ctx,
 	return true;
 }
 
-QDF_STATUS lim_create_fils_rik(uint8_t *rrk, uint8_t rrk_len,
-					uint8_t *rik, uint32_t *rik_len)
-{
-	uint8_t optional_data[SIR_FILS_OPTIONAL_DATA_LEN];
-	uint8_t label[] = SIR_FILS_RIK_LABEL;
-
-	if (!rrk || !rik) {
-		pe_err("FILS rrk/rik NULL");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	optional_data[0] = HMAC_SHA256_128;
-	/* basic validation */
-	if (rrk_len <= 0) {
-		pe_err("invalid r_rk length %d", rrk_len);
-		return QDF_STATUS_E_FAILURE;
-	}
-	lim_copy_u16_be(&optional_data[1], rrk_len);
-	if (lim_default_hmac_sha256_kdf(rrk, rrk_len, label,
-				optional_data, sizeof(optional_data),
-				rik, rrk_len)
-			!= QDF_STATUS_SUCCESS) {
-		pe_err("failed to create rik");
-		return QDF_STATUS_E_FAILURE;
-	}
-	*rik_len = rrk_len;
-
-	return QDF_STATUS_SUCCESS;
-}
-
 /**
  * lim_create_fils_wrapper_data()- This API create warpped data which will be
  * sent in auth request.
@@ -975,6 +884,11 @@ static int lim_create_fils_wrapper_data(struct pe_fils_session *fils_info)
 
 	if (!fils_info)
 		return 0;
+
+	if (!fils_info->keyname_nai_length || !fils_info->fils_rrk_len) {
+		pe_debug("FILS_PMKSA: NO keyname nai/RRK configured. Use PMKSA caching");
+		return 0;
+	}
 
 	buf_len =
 		/* code + identifier */
@@ -1046,10 +960,11 @@ static int lim_create_fils_wrapper_data(struct pe_fils_session *fils_info)
 		fils_info->fils_erp_reauth_pkt = NULL;
 		return -EINVAL;
 	}
-	status = lim_create_fils_rik(fils_info->fils_rrk,
-				     fils_info->fils_rrk_len,
-				     fils_info->fils_rik,
-				     &fils_info->fils_rik_len);
+
+	status = wlan_crypto_create_fils_rik(fils_info->fils_rrk,
+					     fils_info->fils_rrk_len,
+					     fils_info->fils_rik,
+					     &fils_info->fils_rik_len);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		pe_err("RIK create fails");
 		qdf_mem_free(fils_info->fils_erp_reauth_pkt);
@@ -1167,6 +1082,12 @@ void lim_add_fils_data_to_auth_frame(struct pe_session *session,
 	/* dump data */
 	lim_fils_data_dump("Fils Session",
 		fils_info->fils_session, SIR_FILS_SESSION_LENGTH);
+
+	if (!fils_info->fils_erp_reauth_pkt ||
+	    !fils_info->fils_erp_reauth_pkt_len) {
+		pe_debug("FILS: No ERP data. Dont add auth wrapped data");
+		return;
+	}
 
 	/*  ERP Packet  */
 	/* Add element id */
@@ -1472,7 +1393,7 @@ bool lim_process_fils_auth_frame2(struct mac_context *mac_ctx,
 			rx_auth_frm_body->wrapped_data_len))
 			return false;
 	}
-	lim_get_keys(pe_session);
+	lim_get_keys(mac_ctx, pe_session);
 	if (pe_session->is11Rconnection) {
 		status = lim_generate_fils_pmkr0(pe_session);
 		if (QDF_IS_STATUS_ERROR(status))
@@ -1492,55 +1413,63 @@ void lim_update_fils_config(struct mac_context *mac_ctx,
 			    struct join_req *sme_join_req)
 {
 	struct pe_fils_session *pe_fils_info;
-	struct cds_fils_connection_info *fils_config_info;
+	struct wlan_fils_connection_info *fils_info = NULL;
 	tDot11fIERSN dot11f_ie_rsn = {0};
 	uint32_t ret;
 
-	fils_config_info = &sme_join_req->fils_con_info;
-	pe_fils_info = session->fils_info;
+	fils_info = wlan_cm_get_fils_connection_info(mac_ctx->psoc,
+						     session->vdev_id);
+	if (!fils_info)
+		return;
 
+	pe_fils_info = session->fils_info;
 	if (!pe_fils_info)
 		return;
 
-	if (fils_config_info->is_fils_connection == false)
+	if (!fils_info->is_fils_connection)
 		return;
 
-	pe_fils_info->is_fils_connection =
-		fils_config_info->is_fils_connection;
-	pe_fils_info->keyname_nai_length =
-		fils_config_info->key_nai_length;
-	pe_fils_info->fils_rrk_len =
-		fils_config_info->r_rk_length;
-	pe_fils_info->akm = fils_config_info->akm_type;
-	pe_fils_info->auth = fils_config_info->auth_type;
-	pe_fils_info->sequence_number = fils_config_info->sequence_number;
-	if (fils_config_info->key_nai_length > FILS_MAX_KEYNAME_NAI_LENGTH) {
+	pe_fils_info->is_fils_connection = fils_info->is_fils_connection;
+	pe_fils_info->keyname_nai_length = fils_info->key_nai_length;
+	pe_fils_info->fils_rrk_len = fils_info->r_rk_length;
+	pe_fils_info->akm = fils_info->akm_type;
+	pe_fils_info->auth = fils_info->auth_type;
+	pe_fils_info->sequence_number = fils_info->erp_sequence_number;
+
+	if (fils_info->key_nai_length > FILS_MAX_KEYNAME_NAI_LENGTH) {
 		pe_err("Restricting the key_nai_length of %d to max %d",
-		       fils_config_info->key_nai_length,
+		       fils_info->key_nai_length,
 		       FILS_MAX_KEYNAME_NAI_LENGTH);
-		fils_config_info->key_nai_length = FILS_MAX_KEYNAME_NAI_LENGTH;
-	}
-	pe_fils_info->keyname_nai_data =
-		qdf_mem_malloc(fils_config_info->key_nai_length);
-	if (!pe_fils_info->keyname_nai_data)
-		return;
-
-	qdf_mem_copy(pe_fils_info->keyname_nai_data,
-		     fils_config_info->keyname_nai,
-		     fils_config_info->key_nai_length);
-	pe_fils_info->fils_rrk =
-		qdf_mem_malloc(fils_config_info->r_rk_length);
-	if (!pe_fils_info->fils_rrk) {
-		qdf_mem_free(pe_fils_info->keyname_nai_data);
-		return;
+		fils_info->key_nai_length = FILS_MAX_KEYNAME_NAI_LENGTH;
 	}
 
-	if (fils_config_info->r_rk_length <= FILS_MAX_RRK_LENGTH)
-		qdf_mem_copy(pe_fils_info->fils_rrk, fils_config_info->r_rk,
-			     fils_config_info->r_rk_length);
+	if (fils_info->key_nai_length) {
+		pe_fils_info->keyname_nai_data =
+			qdf_mem_malloc(fils_info->key_nai_length);
+		if (!pe_fils_info->keyname_nai_data)
+			return;
 
-	qdf_mem_copy(pe_fils_info->fils_pmkid, fils_config_info->pmkid,
+		qdf_mem_copy(pe_fils_info->keyname_nai_data,
+			     fils_info->keyname_nai,
+			     fils_info->key_nai_length);
+	}
+
+	if (fils_info->r_rk_length) {
+		pe_fils_info->fils_rrk =
+			qdf_mem_malloc(fils_info->r_rk_length);
+		if (!pe_fils_info->fils_rrk)
+			qdf_mem_free(pe_fils_info->keyname_nai_data);
+			return;
+
+		if (fils_info->r_rk_length <= WLAN_FILS_MAX_RRK_LENGTH)
+			qdf_mem_copy(pe_fils_info->fils_rrk,
+				     fils_info->r_rk,
+				     fils_info->r_rk_length);
+	}
+
+	qdf_mem_copy(pe_fils_info->fils_pmkid, fils_info->pmkid,
 		     PMKID_LEN);
+
 	pe_fils_info->rsn_ie_len = sme_join_req->rsnIE.length;
 	qdf_mem_copy(pe_fils_info->rsn_ie,
 		     sme_join_req->rsnIE.rsnIEdata,
@@ -1565,25 +1494,25 @@ void lim_update_fils_config(struct mac_context *mac_ctx,
 	else
 		pe_err("FT-FILS: Invalid RSN IE");
 
-	pe_fils_info->fils_pmk_len = fils_config_info->pmk_len;
-	if (fils_config_info->pmk_len) {
+	pe_fils_info->fils_pmk_len = fils_info->pmk_len;
+	if (fils_info->pmk_len) {
 		pe_fils_info->fils_pmk =
-			qdf_mem_malloc(fils_config_info->pmk_len);
+			qdf_mem_malloc(fils_info->pmk_len);
 		if (!pe_fils_info->fils_pmk) {
 			qdf_mem_free(pe_fils_info->keyname_nai_data);
 			qdf_mem_free(pe_fils_info->fils_rrk);
 			return;
 		}
-		qdf_mem_copy(pe_fils_info->fils_pmk, fils_config_info->pmk,
-			     fils_config_info->pmk_len);
+		qdf_mem_copy(pe_fils_info->fils_pmk, fils_info->pmk,
+			     fils_info->pmk_len);
 	}
-	pe_debug("fils=%d nai-len=%d rrk_len=%d akm=%d auth=%d pmk_len=%d",
-		 fils_config_info->is_fils_connection,
-		 fils_config_info->key_nai_length,
-		 fils_config_info->r_rk_length,
-		 fils_config_info->akm_type,
-		 fils_config_info->auth_type,
-		 fils_config_info->pmk_len);
+	pe_debug("FILS: fils=%d nai-len=%d rrk_len=%d akm=%d auth=%d pmk_len=%d",
+		 fils_info->is_fils_connection,
+		 fils_info->key_nai_length,
+		 fils_info->r_rk_length,
+		 fils_info->akm_type,
+		 fils_info->auth_type,
+		 fils_info->pmk_len);
 }
 
 #define EXTENDED_IE_HEADER_LEN 3
@@ -1596,41 +1525,49 @@ void lim_update_fils_config(struct mac_context *mac_ctx,
  *
  * Return: length of fils data
  */
-uint32_t lim_create_fils_auth_data(struct mac_context *mac_ctx,
-		tpSirMacAuthFrameBody auth_frame,
-		struct pe_session *session)
+QDF_STATUS lim_create_fils_auth_data(struct mac_context *mac_ctx,
+				     tpSirMacAuthFrameBody auth_frame,
+				     struct pe_session *session,
+				     uint32_t *frame_len)
 {
-	uint32_t frame_len = 0;
+	uint16_t frm_len = 0;
 	int32_t wrapped_data_len;
 
 	if (!session->fils_info)
-		return 0;
+		return QDF_STATUS_SUCCESS;
 
 	/* These memory may already been allocated if auth retry */
 	if (session->fils_info->fils_rik) {
 		qdf_mem_free(session->fils_info->fils_rik);
 		session->fils_info->fils_rik = NULL;
 	}
+
 	if  (session->fils_info->fils_erp_reauth_pkt) {
 		qdf_mem_free(session->fils_info->fils_erp_reauth_pkt);
 		session->fils_info->fils_erp_reauth_pkt = NULL;
 	}
+
 	if (auth_frame->authAlgoNumber == SIR_FILS_SK_WITHOUT_PFS) {
-		frame_len += session->fils_info->rsn_ie_len;
+		frm_len += session->fils_info->rsn_ie_len;
 		/* FILS nounce */
-		frame_len += SIR_FILS_NONCE_LENGTH + EXTENDED_IE_HEADER_LEN;
+		frm_len += SIR_FILS_NONCE_LENGTH + EXTENDED_IE_HEADER_LEN;
 		/* FILS Session */
-		frame_len += SIR_FILS_SESSION_LENGTH + EXTENDED_IE_HEADER_LEN;
+		frm_len += SIR_FILS_SESSION_LENGTH + EXTENDED_IE_HEADER_LEN;
 		/* Calculate data/length for FILS Wrapped Data */
 		wrapped_data_len =
 			lim_create_fils_wrapper_data(session->fils_info);
 		if (wrapped_data_len < 0) {
-			pe_err("failed to create warpped data");
-			return 0;
+			pe_err("failed to allocate wrapped data");
+			return QDF_STATUS_E_FAILURE;
 		}
-		frame_len += wrapped_data_len + EXTENDED_IE_HEADER_LEN;
+
+		if (wrapped_data_len)
+			frm_len += wrapped_data_len + EXTENDED_IE_HEADER_LEN;
 	}
-	return frame_len;
+
+	*frame_len += frm_len;
+
+	return QDF_STATUS_SUCCESS;
 }
 
 void populate_fils_connect_params(struct mac_context *mac_ctx,
@@ -1897,7 +1834,7 @@ bool lim_verify_fils_params_assoc_rsp(struct mac_context *mac_ctx,
 
 verify_fils_params_fails:
 	assoc_cnf->resultCode = eSIR_SME_ASSOC_REFUSED;
-	assoc_cnf->protStatusCode = eSIR_MAC_UNSPEC_FAILURE_STATUS;
+	assoc_cnf->protStatusCode = STATUS_UNSPECIFIED_FAILURE;
 	return false;
 }
 
@@ -2239,6 +2176,7 @@ QDF_STATUS aead_decrypt_assoc_rsp(struct mac_context *mac_ctx,
 	return status;
 }
 
+#ifndef ROAM_OFFLOAD_V1
 void lim_update_fils_rik(struct pe_session *pe_session,
 			 struct roam_offload_scan_req *req_buffer)
 {
@@ -2254,20 +2192,20 @@ void lim_update_fils_rik(struct pe_session *pe_session,
 	 */
 	if ((!lim_is_fils_connection(pe_session) ||
 	     !pe_fils_info) && (req_buffer->is_fils_connection)) {
-		if (roam_fils_params->rrk_length > FILS_MAX_RRK_LENGTH) {
+		if (roam_fils_params->rrk_length > WLAN_FILS_MAX_RRK_LENGTH) {
 			if (lim_is_fils_connection(pe_session))
 				pe_debug("FILS rrk len(%d) max (%d)",
 					 roam_fils_params->rrk_length,
-					 FILS_MAX_RRK_LENGTH);
+					 WLAN_FILS_MAX_RRK_LENGTH);
 			return;
 		}
 
-		lim_create_fils_rik(roam_fils_params->rrk,
-				    roam_fils_params->rrk_length,
-				    roam_fils_params->rik,
-				    &roam_fils_params->rik_length);
+		wlan_crypto_create_fils_rik(roam_fils_params->rrk,
+					    roam_fils_params->rrk_length,
+					    roam_fils_params->rik,
+					    &roam_fils_params->rik_length);
 		pe_debug("Fils created rik len %d",
-					roam_fils_params->rik_length);
+			 roam_fils_params->rik_length);
 		return;
 	}
 
@@ -2275,12 +2213,12 @@ void lim_update_fils_rik(struct pe_session *pe_session,
 		pe_debug("No FILS info available in the session");
 		return;
 	}
-	if ((pe_fils_info->fils_rik_len > FILS_MAX_RIK_LENGTH) ||
+	if (pe_fils_info->fils_rik_len > WLAN_FILS_MAX_RIK_LENGTH ||
 	    !pe_fils_info->fils_rik) {
 		if (pe_fils_info->fils_rik)
 			pe_debug("Fils rik len(%d) max %d",
 				 pe_fils_info->fils_rik_len,
-				 FILS_MAX_RIK_LENGTH);
+				 WLAN_FILS_MAX_RIK_LENGTH);
 		return;
 	}
 
@@ -2293,4 +2231,5 @@ void lim_update_fils_rik(struct pe_session *pe_session,
 	pe_debug("fils rik len %d ft-len:%d", roam_fils_params->rik_length,
 		 pe_fils_info->fils_ft_len);
 }
+#endif
 #endif

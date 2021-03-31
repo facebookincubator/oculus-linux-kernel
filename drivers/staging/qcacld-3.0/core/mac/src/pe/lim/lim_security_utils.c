@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -363,8 +363,9 @@ void lim_delete_pre_auth_node(struct mac_context *mac, tSirMacAddr macAddr)
 
 		mac->lim.pLimPreAuthList = pTempNode->next;
 
-		pe_debug("fRelease data for %d peer %pM",
-			 pTempNode->authNodeIdx, macAddr);
+		pe_debug("fRelease data for %d peer "QDF_MAC_ADDR_FMT,
+			 pTempNode->authNodeIdx,
+			 QDF_MAC_ADDR_REF(macAddr));
 		lim_release_pre_auth_node(mac, pTempNode);
 
 		return;
@@ -462,12 +463,12 @@ lim_restore_from_auth_state(struct mac_context *mac, tSirResultCodes resultCode,
 
 	/* Auth retry and AUth failure timers are not started for SAE */
 	/* 'Change' timer for future activations */
-	if (tx_timer_running(&mac->lim.limTimers.
+	if (tx_timer_running(&mac->lim.lim_timers.
 	    g_lim_periodic_auth_retry_timer))
 		lim_deactivate_and_change_timer(mac,
 				eLIM_AUTH_RETRY_TIMER);
 	/* 'Change' timer for future activations */
-	if (tx_timer_running(&mac->lim.limTimers.gLimAuthFailureTimer))
+	if (tx_timer_running(&mac->lim.lim_timers.gLimAuthFailureTimer))
 		lim_deactivate_and_change_timer(mac,
 				eLIM_AUTH_FAIL_TIMER);
 
@@ -515,6 +516,14 @@ lim_encrypt_auth_frame(struct mac_context *mac, uint8_t keyId, uint8_t *pKey,
 	frame_len = ((tpSirMacAuthFrameBody)pPlainText)->length +
 			SIR_MAC_AUTH_FRAME_INFO_LEN + SIR_MAC_CHALLENGE_ID_LEN;
 	keyLength += 3;
+
+	/*
+	 * Make sure that IV is non-zero, because few IOT APs fails to decrypt
+	 * auth sequence 3 encrypted frames if initialization vector value is 0
+	 */
+	qdf_get_random_bytes(seed, SIR_MAC_WEP_IV_LENGTH);
+	while (!(*(uint32_t *)seed))
+		qdf_get_random_bytes(seed, SIR_MAC_WEP_IV_LENGTH);
 
 	/* Bytes 3-7 of seed is key */
 	qdf_mem_copy((uint8_t *) &seed[3], pKey, keyLength - 3);
@@ -751,271 +760,4 @@ void lim_post_sme_set_keys_cnf(struct mac_context *mac,
 
 	lim_post_sme_message(mac,
 			     LIM_MLM_SETKEYS_CNF, (uint32_t *) mlmSetKeysCnf);
-}
-
-/**
- * lim_send_set_bss_key_req()
- *
- ***FUNCTION:
- * This function is called from lim_process_mlm_set_keys_req(),
- * when PE is trying to setup the Group Keys related
- * to a specified encryption type
- *
- ***LOGIC:
- *
- ***ASSUMPTIONS:
- * NA
- *
- ***NOTE:
- * NA
- *
- * @param mac           Pointer to Global MAC structure
- * @param pMlmSetKeysReq Pointer to MLM_SETKEYS_REQ buffer
- * @return none
- */
-void lim_send_set_bss_key_req(struct mac_context *mac,
-			      tLimMlmSetKeysReq *pMlmSetKeysReq,
-			      struct pe_session *pe_session)
-{
-	struct scheduler_msg msgQ = {0};
-	tpSetBssKeyParams pSetBssKeyParams = NULL;
-	tLimMlmSetKeysCnf mlmSetKeysCnf;
-	QDF_STATUS retCode;
-
-	if (pMlmSetKeysReq->numKeys > SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS) {
-		pe_debug("numKeys = %d is more than SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS",
-			pMlmSetKeysReq->numKeys);
-
-		/* Respond to SME with error code */
-		mlmSetKeysCnf.resultCode = eSIR_SME_INVALID_PARAMETERS;
-		goto end;
-	}
-	/* Package WMA_SET_BSSKEY_REQ message parameters */
-
-	pSetBssKeyParams = qdf_mem_malloc(sizeof(tSetBssKeyParams));
-	if (!pSetBssKeyParams) {
-		/* Respond to SME with error code */
-		mlmSetKeysCnf.resultCode = eSIR_SME_RESOURCES_UNAVAILABLE;
-		goto end;
-	}
-
-	/* Update the WMA_SET_BSSKEY_REQ parameters */
-	pSetBssKeyParams->bss_idx = pe_session->bss_idx;
-	pSetBssKeyParams->encType = pMlmSetKeysReq->edType;
-
-	pSetBssKeyParams->singleTidRc =
-		(uint8_t)(mac->mlme_cfg->sta.single_tid);
-	/* Update PE session Id */
-	pSetBssKeyParams->sessionId = pe_session->peSessionId;
-
-	pSetBssKeyParams->smesessionId = pMlmSetKeysReq->smesessionId;
-
-	if (pMlmSetKeysReq->key[0].keyId &&
-	    ((pMlmSetKeysReq->edType == eSIR_ED_WEP40) ||
-	     (pMlmSetKeysReq->edType == eSIR_ED_WEP104))
-	    ) {
-		/* IF the key id is non-zero and encryption type is WEP, Send all the 4
-		 * keys to HAL with filling the key at right index in pSetBssKeyParams->key. */
-		pSetBssKeyParams->numKeys = SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS;
-		qdf_mem_copy((uint8_t *) &pSetBssKeyParams->
-			     key[pMlmSetKeysReq->key[0].keyId],
-			     (uint8_t *) &pMlmSetKeysReq->key[0],
-			     sizeof(pMlmSetKeysReq->key[0]));
-
-	} else {
-		pSetBssKeyParams->numKeys = pMlmSetKeysReq->numKeys;
-		qdf_mem_copy((uint8_t *) &pSetBssKeyParams->key,
-			     (uint8_t *) &pMlmSetKeysReq->key,
-			     sizeof(tSirKeys) * pMlmSetKeysReq->numKeys);
-	}
-
-	SET_LIM_PROCESS_DEFD_MESGS(mac, false);
-	msgQ.type = WMA_SET_BSSKEY_REQ;
-	msgQ.reserved = 0;
-	msgQ.bodyptr = pSetBssKeyParams;
-	msgQ.bodyval = 0;
-
-	pe_debug("Sending WMA_SET_BSSKEY_REQ...");
-	MTRACE(mac_trace_msg_tx(mac, pe_session->peSessionId, msgQ.type));
-	retCode = wma_post_ctrl_msg(mac, &msgQ);
-	if (QDF_STATUS_SUCCESS != retCode) {
-		pe_err("Posting SET_BSSKEY to HAL failed, reason=%X",
-			retCode);
-
-		/* Respond to SME with LIM_MLM_SETKEYS_CNF */
-		mlmSetKeysCnf.resultCode = eSIR_SME_HAL_SEND_MESSAGE_FAIL;
-		qdf_mem_zero(pSetBssKeyParams, sizeof(tSetBssKeyParams));
-		qdf_mem_free(pSetBssKeyParams);
-	} else
-		return;         /* Continue after WMA_SET_BSSKEY_RSP... */
-
-end:
-	lim_post_sme_set_keys_cnf(mac, pMlmSetKeysReq, &mlmSetKeysCnf);
-
-}
-
-/**
- * @function : lim_send_set_sta_key_req()
- *
- * @brief :  This function is called from lim_process_mlm_set_keys_req(),
- * when PE is trying to setup the Unicast Keys related
- * to a specified STA with specified encryption type
- *
- ***LOGIC:
- *
- ***ASSUMPTIONS:
- * NA
- *
- ***NOTE:
- * NA
- *
- * @param mac           Pointer to Global MAC structure
- * @param pMlmSetKeysReq Pointer to MLM_SETKEYS_REQ buffer
- * @param staIdx         STA index for which the keys are being set
- * @param defWEPIdx      The default WEP key index [0..3]
- * @return none
- */
-void lim_send_set_sta_key_req(struct mac_context *mac,
-			      tLimMlmSetKeysReq *pMlmSetKeysReq,
-			      uint16_t staIdx,
-			      uint8_t defWEPIdx,
-			      struct pe_session *pe_session, bool sendRsp)
-{
-	struct scheduler_msg msgQ = {0};
-	tpSetStaKeyParams pSetStaKeyParams = NULL;
-	tLimMlmSetKeysCnf mlmSetKeysCnf;
-	QDF_STATUS retCode;
-
-	/* Package WMA_SET_STAKEY_REQ message parameters */
-	pSetStaKeyParams = qdf_mem_malloc(sizeof(tSetStaKeyParams));
-	if (!pSetStaKeyParams)
-		goto fail;
-
-	/* Update the WMA_SET_STAKEY_REQ parameters */
-	pSetStaKeyParams->staIdx = staIdx;
-	pSetStaKeyParams->encType = pMlmSetKeysReq->edType;
-
-	pSetStaKeyParams->singleTidRc =
-		(uint8_t)(mac->mlme_cfg->sta.single_tid);
-	/* Update  PE session ID */
-	pSetStaKeyParams->sessionId = pe_session->peSessionId;
-
-	/**
-	 * For WEP - defWEPIdx indicates the default WEP
-	 * Key to be used for TX
-	 * For all others, there's just one key that can
-	 * be used and hence it is assumed that
-	 * defWEPIdx = 0 (from the caller)
-	 */
-
-	pSetStaKeyParams->defWEPIdx = defWEPIdx;
-
-	pSetStaKeyParams->smesessionId = pMlmSetKeysReq->smesessionId;
-	qdf_copy_macaddr(&pSetStaKeyParams->peer_macaddr,
-			 &pMlmSetKeysReq->peer_macaddr);
-
-	if (sendRsp == true) {
-		/** Store the Previous MlmState*/
-		pe_session->limPrevMlmState = pe_session->limMlmState;
-		SET_LIM_PROCESS_DEFD_MESGS(mac, false);
-	}
-
-	if (LIM_IS_IBSS_ROLE(pe_session)
-	    && !pMlmSetKeysReq->key[0].unicast) {
-		if (sendRsp == true)
-			pe_session->limMlmState =
-				eLIM_MLM_WT_SET_STA_BCASTKEY_STATE;
-		msgQ.type = WMA_SET_STA_BCASTKEY_REQ;
-	} else {
-		if (sendRsp == true)
-			pe_session->limMlmState =
-				eLIM_MLM_WT_SET_STA_KEY_STATE;
-		msgQ.type = WMA_SET_STAKEY_REQ;
-	}
-	MTRACE(mac_trace
-		       (mac, TRACE_CODE_MLM_STATE, pe_session->peSessionId,
-		       pe_session->limMlmState));
-
-	/**
-	 * In the Case of WEP_DYNAMIC, ED_TKIP and ED_CCMP
-	 * the Key[0] contains the KEY, so just copy that alone,
-	 * for the case of WEP_STATIC the hal gets the key from cfg
-	 */
-	switch (pMlmSetKeysReq->edType) {
-	case eSIR_ED_WEP40:
-	case eSIR_ED_WEP104:
-		/* FIXME! Is this OK? */
-		if (0 == pMlmSetKeysReq->numKeys) {
-			uint32_t i;
-
-			for (i = 0; i < SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS; i++) {
-				qdf_mem_copy((uint8_t *) &pSetStaKeyParams->
-					     key[i],
-					     (uint8_t *) &pMlmSetKeysReq->
-					     key[i], sizeof(tSirKeys));
-			}
-			pe_session->limMlmState =
-				eLIM_MLM_WT_SET_STA_KEY_STATE;
-			MTRACE(mac_trace
-				       (mac, TRACE_CODE_MLM_STATE,
-				       pe_session->peSessionId,
-				       pe_session->limMlmState));
-		} else {
-			/*This case the keys are coming from upper layer so need to fill the
-			 * key at the default wep key index and send to the HAL */
-			if (defWEPIdx < SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS) {
-				qdf_mem_copy((uint8_t *) &pSetStaKeyParams->
-					     key[defWEPIdx],
-					     (uint8_t *) &pMlmSetKeysReq->
-					     key[0],
-					     sizeof(pMlmSetKeysReq->key[0]));
-				pMlmSetKeysReq->numKeys =
-					SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS;
-			} else {
-				pe_err("Wrong Key Index %d", defWEPIdx);
-				goto free_sta_key;
-			}
-		}
-		break;
-	case eSIR_ED_TKIP:
-	case eSIR_ED_CCMP:
-	case eSIR_ED_GCMP:
-	case eSIR_ED_GCMP_256:
-#ifdef FEATURE_WLAN_WAPI
-	case eSIR_ED_WPI:
-#endif
-		{
-			qdf_mem_copy((uint8_t *) &pSetStaKeyParams->key,
-				     (uint8_t *) &pMlmSetKeysReq->key[0],
-				     sizeof(tSirKeys));
-		}
-		break;
-	default:
-		break;
-	}
-
-	pSetStaKeyParams->sendRsp = sendRsp;
-
-	msgQ.reserved = 0;
-	msgQ.bodyptr = pSetStaKeyParams;
-	msgQ.bodyval = 0;
-
-	pe_debug("Sending WMA_SET_STAKEY_REQ...");
-	MTRACE(mac_trace_msg_tx(mac, pe_session->peSessionId, msgQ.type));
-	retCode = wma_post_ctrl_msg(mac, &msgQ);
-	if (QDF_STATUS_SUCCESS != retCode) {
-		pe_err("Posting SET_STAKEY to HAL failed, reason=%X",
-			retCode);
-		goto free_sta_key;
-	} else
-		return;         /* Continue after WMA_SET_STAKEY_RSP... */
-
-free_sta_key:
-	qdf_mem_zero(pSetStaKeyParams, sizeof(tSetStaKeyParams));
-	qdf_mem_free(pSetStaKeyParams);
-fail:
-	/* Respond to SME with LIM_MLM_SETKEYS_CNF */
-	mlmSetKeysCnf.resultCode = eSIR_SME_HAL_SEND_MESSAGE_FAIL;
-	if (sendRsp == true)
-		lim_post_sme_set_keys_cnf(mac, pMlmSetKeysReq, &mlmSetKeysCnf);
 }

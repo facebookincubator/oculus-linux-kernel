@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,6 +37,7 @@
 #include <qdf_mem.h>
 #include <linux/tcp.h>
 #include <qdf_util.h>
+#include <qdf_nbuf_frag.h>
 
 /*
  * Use socket buffer as the underlying implementation as skbuf .
@@ -53,6 +54,8 @@ typedef struct sk_buff *__qdf_nbuf_t;
 typedef struct sk_buff_head __qdf_nbuf_queue_head_t;
 
 #define QDF_NBUF_CB_TX_MAX_OS_FRAGS 1
+
+#define QDF_SHINFO_SIZE    SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
 
 /* QDF_NBUF_CB_TX_MAX_EXTRA_FRAGS -
  * max tx fragments added by the driver
@@ -101,29 +104,30 @@ typedef union {
  * @rx.dev.priv_cb_w.fctx: ctx to handle special pkts defined by ftype
  * @rx.dev.priv_cb_w.msdu_len: length of RX packet
  * @rx.dev.priv_cb_w.peer_id: peer_id for RX packet
- * @rx.dev.priv_cb_w.protocol_tag:	protocol tag set by application for
- *				received packet type
- * @rx.dev.priv_cb_w.reserved1: reserved for flow tag set by application
- *				for 5 tuples received
+ * @rx.dev.priv_cb_w.protocol_tag: protocol tag set by app for rcvd packet type
+ * @rx.dev.priv_cb_w.flow_tag: flow tag set by application for 5 tuples rcvd
  *
+ * @rx.dev.priv_cb_m.peer_cached_buf_frm: peer cached buffer
+ * @rx.dev.priv_cb_m.flush_ind: flush indication
+ * @rx.dev.priv_cb_m.packet_buf_pool:  packet buff bool
+ * @rx.dev.priv_cb_m.l3_hdr_pad: L3 header padding offset
+ * @rx.dev.priv_cb_m.exc_frm: exception frame
+ * @rx.dev.priv_cb_m.ipa_smmu_map: do IPA smmu map
  * @rx.dev.priv_cb_m.tcp_seq_num: TCP sequence number
  * @rx.dev.priv_cb_m.tcp_ack_num: TCP ACK number
  * @rx.dev.priv_cb_m.lro_ctx: LRO context
  * @rx.dev.priv_cb_m.dp.wifi3.msdu_len: length of RX packet
  * @rx.dev.priv_cb_m.dp.wifi3.peer_id:  peer_id for RX packet
  * @rx.dev.priv_cb_m.dp.wifi2.map_index:
- * @rx.dev.priv_cb_m.vdev_id: vdev_id for RX pkt
  * @rx.dev.priv_cb_m.ipa_owned: packet owned by IPA
  *
  * @rx.lro_eligible: flag to indicate whether the MSDU is LRO eligible
- * @rx.peer_cached_buf_frm: peer cached buffer
  * @rx.tcp_proto: L4 protocol is TCP
  * @rx.tcp_pure_ack: A TCP ACK packet with no payload
  * @rx.ipv6_proto: L3 protocol is IPV6
  * @rx.ip_offset: offset to IP header
  * @rx.tcp_offset: offset to TCP header
  * @rx_ctx_id: Rx context id
- * @flush_ind: flush indication
  * @num_elements_in_list: number of elements in the nbuf list
  *
  * @rx.tcp_udp_chksum: L4 payload checksum
@@ -134,7 +138,7 @@ typedef union {
  * @rx.flag_chfrag_start: first MSDU in an AMSDU
  * @rx.flag_chfrag_cont: middle or part of MSDU in an AMSDU
  * @rx.flag_chfrag_end: last MSDU in an AMSDU
- * @rx.packet_buff_pool: indicate packet from pre-allocated pool for Rx ring
+ * @rx.flag_retry: flag to indicate MSDU is retried
  * @rx.flag_da_mcbc: flag to indicate mulicast or broadcast packets
  * @rx.flag_da_valid: flag to indicate DA is valid for RX packet
  * @rx.flag_sa_valid: flag to indicate SA is valid for RX packet
@@ -148,12 +152,12 @@ typedef union {
  * @rx.trace.packet_track: RX_DATA packet
  * @rx.trace.rsrvd: enable packet logging
  *
- * @rx.ftype: mcast2ucast, TSO, SG, MESH
+ * @rx.vdev_id: vdev_id for RX pkt
  * @rx.is_raw_frame: RAW frame
  * @rx.fcs_err: FCS error
  * @rx.tid_val: tid value
- * @rx.flag_retry: flag to indicate MSDU is retried
  * @rx.reserved: reserved
+ * @rx.ftype: mcast2ucast, TSO, SG, MESH
  *
  * @tx.dev.priv_cb_w.fctx: ctx to handle special pkts defined by ftype
  * @tx.dev.priv_cb_w.ext_cb_ptr: extended cb pointer
@@ -213,7 +217,7 @@ struct qdf_nbuf_cb {
 					uint16_t msdu_len;
 					uint16_t peer_id;
 					uint16_t protocol_tag;
-					uint16_t reserved1;
+					uint16_t flow_tag;
 				} priv_cb_w;
 				struct {
 					/* ipa_owned bit is common between rx
@@ -221,9 +225,15 @@ struct qdf_nbuf_cb {
 					 * Do not change location of this bit.
 					 */
 					uint32_t ipa_owned:1,
-						 reserved:15,
-						 vdev_id:8,
-						 reserved1:8;
+						 peer_cached_buf_frm:1,
+						 flush_ind:1,
+						 packet_buf_pool:1,
+						 l3_hdr_pad:3,
+						 /* exception frame flag */
+						 exc_frm:1,
+						 ipa_smmu_map:1,
+						 reserved:7,
+						 reserved1:16;
 					uint32_t tcp_seq_num;
 					uint32_t tcp_ack_num;
 					union {
@@ -239,14 +249,14 @@ struct qdf_nbuf_cb {
 				} priv_cb_m;
 			} dev;
 			uint32_t lro_eligible:1,
-				peer_cached_buf_frm:1,
 				tcp_proto:1,
 				tcp_pure_ack:1,
 				ipv6_proto:1,
 				ip_offset:7,
 				tcp_offset:7,
 				rx_ctx_id:4,
-				flush_ind:1,
+				fcs_err:1,
+				is_raw_frame:1,
 				num_elements_in_list:8;
 			uint32_t tcp_udp_chksum:16,
 				 tcp_win:16;
@@ -254,7 +264,7 @@ struct qdf_nbuf_cb {
 			uint8_t flag_chfrag_start:1,
 				flag_chfrag_cont:1,
 				flag_chfrag_end:1,
-				packet_buff_pool:1,
+				flag_retry:1,
 				flag_da_mcbc:1,
 				flag_da_valid:1,
 				flag_sa_valid:1,
@@ -265,12 +275,9 @@ struct qdf_nbuf_cb {
 					packet_track:4,
 					rsrvd:3;
 			} trace;
-			uint8_t ftype;
-			uint8_t is_raw_frame:1,
-				fcs_err:1,
-				tid_val:4,
-				flag_retry:1,
-				reserved:1;
+			uint16_t vdev_id:8,
+				 tid_val:4,
+				 ftype:4;
 		} rx;
 
 		/* Note: MAX: 40 bytes */
@@ -334,8 +341,15 @@ struct qdf_nbuf_cb {
 	} u;
 }; /* struct qdf_nbuf_cb: MAX 48 bytes */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0))
 QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
-	(sizeof(struct qdf_nbuf_cb)) <= FIELD_SIZEOF(struct sk_buff, cb));
+			(sizeof(struct qdf_nbuf_cb)) <=
+			sizeof_field(struct sk_buff, cb));
+#else
+QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
+			(sizeof(struct qdf_nbuf_cb)) <=
+			FIELD_SIZEOF(struct sk_buff, cb));
+#endif
 
 /**
  *  access macros to qdf_nbuf_cb
@@ -349,8 +363,6 @@ QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
 
 #define QDF_NBUF_CB_RX_LRO_ELIGIBLE(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.lro_eligible)
-#define QDF_NBUF_CB_RX_PEER_CACHED_FRM(skb) \
-	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.peer_cached_buf_frm)
 #define QDF_NBUF_CB_RX_TCP_PROTO(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.tcp_proto)
 #define QDF_NBUF_CB_RX_TCP_PURE_ACK(skb) \
@@ -363,8 +375,6 @@ QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.tcp_offset)
 #define QDF_NBUF_CB_RX_CTX_ID(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.rx_ctx_id)
-#define QDF_NBUF_CB_RX_FLUSH_IND(skb) \
-		(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.flush_ind)
 #define QDF_NBUF_CB_RX_NUM_ELEMENTS_IN_LIST(skb) \
 		(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.num_elements_in_list)
 
@@ -384,6 +394,9 @@ QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
 #define QDF_NBUF_CB_RX_FTYPE(skb) \
 	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.ftype)
 
+#define QDF_NBUF_CB_RX_VDEV_ID(skb) \
+	(((struct qdf_nbuf_cb *)((skb)->cb))->u.rx.vdev_id)
+
 #define QDF_NBUF_CB_RX_CHFRAG_START(skb) \
 	(((struct qdf_nbuf_cb *) \
 	((skb)->cb))->u.rx.flag_chfrag_start)
@@ -393,9 +406,6 @@ QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
 #define QDF_NBUF_CB_RX_CHFRAG_END(skb) \
 		(((struct qdf_nbuf_cb *) \
 		((skb)->cb))->u.rx.flag_chfrag_end)
-#define QDF_NBUF_CB_RX_PACKET_BUFF_POOL(skb) \
-		(((struct qdf_nbuf_cb *) \
-		((skb)->cb))->u.rx.packet_buff_pool)
 
 #define QDF_NBUF_CB_RX_DA_MCBC(skb) \
 	(((struct qdf_nbuf_cb *) \
@@ -746,6 +756,22 @@ __qdf_nbuf_t
 __qdf_nbuf_alloc(__qdf_device_t osdev, size_t size, int reserve, int align,
 		 int prio, const char *func, uint32_t line);
 
+/**
+ * __qdf_nbuf_alloc_no_recycler() - Allocates skb
+ * @size: Size to be allocated for skb
+ * @reserve: Reserve headroom size
+ * @align: Align data
+ * @func: Function name of the call site
+ * @line: Line number of the callsite
+ *
+ * This API allocates a nbuf and aligns it if needed and reserves some headroom
+ * space after the alignment where nbuf is not allocated from skb recycler pool.
+ *
+ * Return: Allocated nbuf pointer
+ */
+__qdf_nbuf_t __qdf_nbuf_alloc_no_recycler(size_t size, int reserve, int align,
+					  const char *func, uint32_t line);
+
 void __qdf_nbuf_free(struct sk_buff *skb);
 QDF_STATUS __qdf_nbuf_map(__qdf_device_t osdev,
 			struct sk_buff *skb, qdf_dma_dir_t dir);
@@ -769,10 +795,6 @@ void __qdf_nbuf_unmap_nbytes(qdf_device_t osdev, struct sk_buff *skb,
 void __qdf_nbuf_sync_for_cpu(qdf_device_t osdev, struct sk_buff *skb,
 	qdf_dma_dir_t dir);
 
-QDF_STATUS __qdf_nbuf_map_nbytes_single(
-	qdf_device_t osdev, struct sk_buff *buf, qdf_dma_dir_t dir, int nbytes);
-void __qdf_nbuf_unmap_nbytes_single(
-	qdf_device_t osdev, struct sk_buff *buf, qdf_dma_dir_t dir, int nbytes);
 void __qdf_nbuf_dma_map_info(__qdf_dma_map_t bmap, qdf_dmamap_info_t *sg);
 uint32_t __qdf_nbuf_get_frag_size(__qdf_nbuf_t nbuf, uint32_t cur_frag);
 void __qdf_nbuf_frag_info(struct sk_buff *skb, qdf_sglist_t  *sg);
@@ -1001,6 +1023,17 @@ uint8_t __qdf_nbuf_get_exemption_type(struct sk_buff *skb);
 void __qdf_nbuf_ref(struct sk_buff *skb);
 int __qdf_nbuf_shared(struct sk_buff *skb);
 
+/**
+ * __qdf_nbuf_get_nr_frags() - return the number of fragments in an skb,
+ * @skb: sk buff
+ *
+ * Return: number of fragments
+ */
+static inline size_t __qdf_nbuf_get_nr_frags(struct sk_buff *skb)
+{
+	return skb_shinfo(skb)->nr_frags;
+}
+
 /*
  * qdf_nbuf_pool_delete() implementation - do nothing in linux
  */
@@ -1023,9 +1056,10 @@ static inline struct sk_buff *__qdf_nbuf_clone(struct sk_buff *skb)
 	struct sk_buff *skb_new = NULL;
 
 	skb_new = skb_clone(skb, GFP_ATOMIC);
-	if (skb_new)
+	if (skb_new) {
+		__qdf_frag_count_inc(__qdf_nbuf_get_nr_frags(skb_new));
 		__qdf_nbuf_count_inc(skb_new);
-
+	}
 	return skb_new;
 }
 
@@ -1043,9 +1077,10 @@ static inline struct sk_buff *__qdf_nbuf_copy(struct sk_buff *skb)
 	struct sk_buff *skb_new = NULL;
 
 	skb_new = skb_copy(skb, GFP_ATOMIC);
-	if (skb_new)
+	if (skb_new) {
+		__qdf_frag_count_inc(__qdf_nbuf_get_nr_frags(skb_new));
 		__qdf_nbuf_count_inc(skb_new);
-
+	}
 	return skb_new;
 }
 
@@ -1474,9 +1509,23 @@ void __qdf_nbuf_unmap_tso_segment(qdf_device_t osdev,
 			  bool is_last_seg);
 
 #ifdef FEATURE_TSO
+/**
+ * __qdf_nbuf_get_tcp_payload_len() - function to return the tcp
+ *                                    payload len
+ * @skb: buffer
+ *
+ * Return: size
+ */
+size_t __qdf_nbuf_get_tcp_payload_len(struct sk_buff *skb);
 uint32_t __qdf_nbuf_get_tso_num_seg(struct sk_buff *skb);
 
 #else
+static inline
+size_t __qdf_nbuf_get_tcp_payload_len(struct sk_buff *skb)
+{
+	return 0;
+}
+
 static inline uint32_t __qdf_nbuf_get_tso_num_seg(struct sk_buff *skb)
 {
 	return 0;
@@ -1688,23 +1737,6 @@ struct sk_buff *__qdf_nbuf_queue_remove(__qdf_nbuf_queue_t *qhead)
 }
 
 /**
- * __qdf_nbuf_queue_free() - free a queue
- * @qhead: head of queue
- *
- * Return: QDF status
- */
-static inline QDF_STATUS
-__qdf_nbuf_queue_free(__qdf_nbuf_queue_t *qhead)
-{
-	__qdf_nbuf_t  buf = NULL;
-
-	while ((buf = __qdf_nbuf_queue_remove(qhead)) != NULL)
-		__qdf_nbuf_free(buf);
-	return QDF_STATUS_SUCCESS;
-}
-
-
-/**
  * __qdf_nbuf_queue_first() - returns the first skb in the queue
  * @qhead: head of queue
  *
@@ -1854,7 +1886,15 @@ __qdf_nbuf_linearize(struct sk_buff *skb)
 static inline struct sk_buff *
 __qdf_nbuf_unshare(struct sk_buff *skb)
 {
-	return skb_unshare(skb, GFP_ATOMIC);
+	struct sk_buff *skb_new;
+
+	__qdf_frag_count_dec(__qdf_nbuf_get_nr_frags(skb));
+
+	skb_new = skb_unshare(skb, GFP_ATOMIC);
+	if (skb_new)
+		__qdf_frag_count_inc(__qdf_nbuf_get_nr_frags(skb_new));
+
+	return skb_new;
 }
 
 /**
@@ -1901,6 +1941,36 @@ __qdf_nbuf_expand(struct sk_buff *skb, uint32_t headroom, uint32_t tailroom)
 
 	dev_kfree_skb_any(skb);
 	return NULL;
+}
+
+/**
+ * __qdf_nbuf_copy_expand() - copy and expand nbuf
+ * @buf: Network buf instance
+ * @headroom: Additional headroom to be added
+ * @tailroom: Additional tailroom to be added
+ *
+ * Return: New nbuf that is a copy of buf, with additional head and tailroom
+ *	or NULL if there is no memory
+ */
+static inline struct sk_buff *
+__qdf_nbuf_copy_expand(struct sk_buff *buf, int headroom, int tailroom)
+{
+	return skb_copy_expand(buf, headroom, tailroom, GFP_ATOMIC);
+}
+
+/**
+ * __qdf_nbuf_get_ref_fraglist() - get reference to fragments
+ * @buf: Network buf instance
+ *
+ * Return: void
+ */
+static inline void
+__qdf_nbuf_get_ref_fraglist(struct sk_buff *buf)
+{
+	struct sk_buff *list;
+
+	skb_walk_frags(buf, list)
+		skb_get(list);
 }
 
 /**
@@ -1992,17 +2062,6 @@ static inline size_t
 __qdf_nbuf_headlen(struct sk_buff *skb)
 {
 	return skb_headlen(skb);
-}
-
-/**
- * __qdf_nbuf_get_nr_frags() - return the number of fragments in an skb,
- * @skb: sk buff
- *
- * Return: number of fragments
- */
-static inline size_t __qdf_nbuf_get_nr_frags(struct sk_buff *skb)
-{
-	return skb_shinfo(skb)->nr_frags;
 }
 
 /**
@@ -2180,6 +2239,71 @@ static inline void __qdf_nbuf_orphan(struct sk_buff *skb)
 	return skb_orphan(skb);
 }
 
+/**
+ * __qdf_nbuf_map_nbytes_single() - map nbytes
+ * @osdev: os device
+ * @buf: buffer
+ * @dir: direction
+ * @nbytes: number of bytes
+ *
+ * Return: QDF_STATUS
+ */
+#ifdef A_SIMOS_DEVHOST
+static inline QDF_STATUS __qdf_nbuf_map_nbytes_single(
+		qdf_device_t osdev, struct sk_buff *buf,
+		qdf_dma_dir_t dir, int nbytes)
+{
+	qdf_dma_addr_t paddr;
+
+	QDF_NBUF_CB_PADDR(buf) = paddr = buf->data;
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static inline QDF_STATUS __qdf_nbuf_map_nbytes_single(
+		qdf_device_t osdev, struct sk_buff *buf,
+		qdf_dma_dir_t dir, int nbytes)
+{
+	qdf_dma_addr_t paddr;
+
+	/* assume that the OS only provides a single fragment */
+	QDF_NBUF_CB_PADDR(buf) = paddr =
+		dma_map_single(osdev->dev, buf->data,
+			       nbytes, __qdf_dma_dir_to_os(dir));
+	return dma_mapping_error(osdev->dev, paddr) ?
+		QDF_STATUS_E_FAULT : QDF_STATUS_SUCCESS;
+}
+#endif
+/**
+ * __qdf_nbuf_unmap_nbytes_single() - unmap nbytes
+ * @osdev: os device
+ * @buf: buffer
+ * @dir: direction
+ * @nbytes: number of bytes
+ *
+ * Return: none
+ */
+#if defined(A_SIMOS_DEVHOST)
+static inline void
+__qdf_nbuf_unmap_nbytes_single(qdf_device_t osdev, struct sk_buff *buf,
+			       qdf_dma_dir_t dir, int nbytes)
+{
+}
+
+#else
+static inline void
+__qdf_nbuf_unmap_nbytes_single(qdf_device_t osdev, struct sk_buff *buf,
+			       qdf_dma_dir_t dir, int nbytes)
+{
+	qdf_dma_addr_t paddr = QDF_NBUF_CB_PADDR(buf);
+
+	if (qdf_likely(paddr)) {
+		dma_unmap_single(osdev->dev, paddr, nbytes,
+				 __qdf_dma_dir_to_os(dir));
+		return;
+	}
+}
+#endif
+
 static inline struct sk_buff *
 __qdf_nbuf_queue_head_dequeue(struct sk_buff_head *skb_queue_head)
 {
@@ -2235,7 +2359,125 @@ void __qdf_nbuf_queue_head_unlock(struct sk_buff_head *skb_queue_head)
 	spin_unlock_bh(&skb_queue_head->lock);
 }
 
-#ifdef CONFIG_WIN
+/**
+ * __qdf_nbuf_get_frag_size_by_idx() - Get nbuf frag size at index idx
+ * @nbuf: qdf_nbuf_t
+ * @idx: Index for which frag size is requested
+ *
+ * Return: Frag size
+ */
+static inline unsigned int __qdf_nbuf_get_frag_size_by_idx(__qdf_nbuf_t nbuf,
+							   uint8_t idx)
+{
+	unsigned int size = 0;
+
+	if (likely(idx < __QDF_NBUF_MAX_FRAGS))
+		size = skb_frag_size(&skb_shinfo(nbuf)->frags[idx]);
+	return size;
+}
+
+/**
+ * __qdf_nbuf_get_frag_address() - Get nbuf frag address at index idx
+ * @nbuf: qdf_nbuf_t
+ * @idx: Index for which frag address is requested
+ *
+ * Return: Frag address in success, else NULL
+ */
+static inline __qdf_frag_t __qdf_nbuf_get_frag_addr(__qdf_nbuf_t nbuf,
+						    uint8_t idx)
+{
+	__qdf_frag_t frag_addr = NULL;
+
+	if (likely(idx < __QDF_NBUF_MAX_FRAGS))
+		frag_addr = skb_frag_address(&skb_shinfo(nbuf)->frags[idx]);
+	return frag_addr;
+}
+
+/**
+ * __qdf_nbuf_trim_add_frag_size() - Increase/Decrease frag_size by size
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index
+ * @size: Size by which frag_size needs to be increased/decreased
+ *        +Ve means increase, -Ve means decrease
+ * @truesize: truesize
+ */
+static inline void __qdf_nbuf_trim_add_frag_size(__qdf_nbuf_t nbuf, uint8_t idx,
+						 int size,
+						 unsigned int truesize)
+{
+	skb_coalesce_rx_frag(nbuf, idx, size, truesize);
+}
+
+/**
+ * __qdf_nbuf_move_frag_page_offset() - Move frag page_offset by size
+ *          and adjust length by size.
+ * @nbuf: qdf_nbuf_t
+ * @idx: Frag index
+ * @offset: Frag page offset should be moved by offset.
+ *      +Ve - Move offset forward.
+ *      -Ve - Move offset backward.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS __qdf_nbuf_move_frag_page_offset(__qdf_nbuf_t nbuf, uint8_t idx,
+					    int offset);
+
+/**
+ * __qdf_nbuf_add_rx_frag() - Add frag to nbuf at nr_frag index
+ * @buf: Frag pointer needs to be added in nbuf frag
+ * @nbuf: qdf_nbuf_t where frag will be added
+ * @offset: Offset in frag to be added to nbuf_frags
+ * @frag_len: Frag length
+ * @truesize: truesize
+ * @take_frag_ref: Whether to take ref for frag or not
+ *      This bool must be set as per below comdition:
+ *      1. False: If this frag is being added in any nbuf
+ *              for the first time after allocation.
+ *      2. True: If frag is already attached part of any
+ *              nbuf.
+ *
+ * It takes ref_count based on boolean flag take_frag_ref
+ */
+void __qdf_nbuf_add_rx_frag(__qdf_frag_t buf, __qdf_nbuf_t nbuf,
+			    int offset, int frag_len,
+			    unsigned int truesize, bool take_frag_ref);
+
+/**
+ * __qdf_nbuf_set_mark() - Set nbuf mark
+ * @buf: Pointer to nbuf
+ * @mark: Value to set mark
+ *
+ * Return: None
+ */
+static inline void __qdf_nbuf_set_mark(__qdf_nbuf_t buf, uint32_t mark)
+{
+	buf->mark = mark;
+}
+
+/**
+ * __qdf_nbuf_get_mark() - Get nbuf mark
+ * @buf: Pointer to nbuf
+ *
+ * Return: Value of mark
+ */
+static inline uint32_t __qdf_nbuf_get_mark(__qdf_nbuf_t buf)
+{
+	return buf->mark;
+}
+
+/**
+ * __qdf_nbuf_get_data_len() - Return the size of the nbuf from
+ * the data pointer to the end pointer
+ * @nbuf: qdf_nbuf_t
+ *
+ * Return: size of skb from data pointer to end pointer
+ */
+static inline qdf_size_t __qdf_nbuf_get_data_len(__qdf_nbuf_t nbuf)
+{
+	return (skb_end_pointer(nbuf) - nbuf->data);
+}
+
+#ifdef CONFIG_NBUF_AP_PLATFORM
 #include <i_qdf_nbuf_w.h>
 #else
 #include <i_qdf_nbuf_m.h>

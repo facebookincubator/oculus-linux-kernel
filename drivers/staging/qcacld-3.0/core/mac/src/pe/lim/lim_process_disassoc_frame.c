@@ -41,6 +41,7 @@
 #include "lim_ser_des_utils.h"
 #include "lim_send_messages.h"
 #include "sch_api.h"
+#include "wlan_blm_api.h"
 
 /**
  * lim_process_disassoc_frame
@@ -146,8 +147,9 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 	/* Get reasonCode from Disassociation frame body */
 	reasonCode = sir_read_u16(pBody);
 
-	pe_nofl_info("Disassoc RX: vdev %d from %pM for %pM RSSI = %d reason %d mlm state = %d, sme state = %d systemrole = %d ",
-		     pe_session->vdev_id, pHdr->sa, pHdr->da, frame_rssi,
+	pe_nofl_info("Disassoc RX: vdev %d from "QDF_MAC_ADDR_FMT" for "QDF_MAC_ADDR_FMT" RSSI = %d reason %d mlm state = %d, sme state = %d systemrole = %d ",
+		     pe_session->vdev_id, QDF_MAC_ADDR_REF(pHdr->sa),
+		     QDF_MAC_ADDR_REF(pHdr->da), frame_rssi,
 		     reasonCode, pe_session->limMlmState,
 		     pe_session->limSmeState,
 		     GET_LIM_SYSTEM_ROLE(pe_session));
@@ -168,8 +170,8 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 		 * Log error.
 		 */
 		pe_err("received Disassoc frame from STA that does not have context"
-			"reasonCode=%d, addr " QDF_MAC_ADDR_STR,
-			reasonCode, QDF_MAC_ADDR_ARRAY(pHdr->sa));
+			"reasonCode=%d, addr " QDF_MAC_ADDR_FMT,
+			reasonCode, QDF_MAC_ADDR_REF(pHdr->sa));
 		return;
 	}
 
@@ -190,7 +192,7 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 		 * so check if the disassoc is received from current AP when
 		 * roaming is being done in the firmware
 		 */
-		if (pe_session->fw_roaming_started &&
+		if (MLME_IS_ROAMING_IN_PROG(mac->psoc, pe_session->vdev_id) &&
 		    IS_CURRENT_BSSID(mac, pHdr->sa, pe_session)) {
 			pe_debug("Dropping disassoc frame from connected AP");
 			pe_session->recvd_disassoc_while_roaming = true;
@@ -221,21 +223,21 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 
 	if (LIM_IS_AP_ROLE(pe_session)) {
 		switch (reasonCode) {
-		case eSIR_MAC_UNSPEC_FAILURE_REASON:
-		case eSIR_MAC_DISASSOC_DUE_TO_INACTIVITY_REASON:
-		case eSIR_MAC_DISASSOC_LEAVING_BSS_REASON:
-		case eSIR_MAC_MIC_FAILURE_REASON:
-		case eSIR_MAC_4WAY_HANDSHAKE_TIMEOUT_REASON:
-		case eSIR_MAC_GR_KEY_UPDATE_TIMEOUT_REASON:
-		case eSIR_MAC_RSN_IE_MISMATCH_REASON:
-		case eSIR_MAC_1X_AUTH_FAILURE_REASON:
+		case REASON_UNSPEC_FAILURE:
+		case REASON_DISASSOC_DUE_TO_INACTIVITY:
+		case REASON_DISASSOC_NETWORK_LEAVING:
+		case REASON_MIC_FAILURE:
+		case REASON_4WAY_HANDSHAKE_TIMEOUT :
+		case REASON_GROUP_KEY_UPDATE_TIMEOUT:
+		case REASON_IN_4WAY_DIFFERS:
+		case REASON_1X_AUTH_FAILURE:
 			/* Valid reasonCode in received Disassociation frame */
 			break;
 
 		default:
 			/* Invalid reasonCode in received Disassociation frame */
-			pe_warn("received Disassoc frame with invalid reasonCode: %d from " QDF_MAC_ADDR_STR,
-				reasonCode, QDF_MAC_ADDR_ARRAY(pHdr->sa));
+			pe_warn("received Disassoc frame with invalid reasonCode: %d from " QDF_MAC_ADDR_FMT,
+				reasonCode, QDF_MAC_ADDR_REF(pHdr->sa));
 			break;
 		}
 	} else if (LIM_IS_STA_ROLE(pe_session) &&
@@ -244,14 +246,15 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 		   (pe_session->limSmeState != eLIM_SME_WT_ASSOC_STATE) &&
 		   (pe_session->limSmeState != eLIM_SME_WT_REASSOC_STATE))) {
 		switch (reasonCode) {
-		case eSIR_MAC_DEAUTH_LEAVING_BSS_REASON:
-		case eSIR_MAC_DISASSOC_LEAVING_BSS_REASON:
+		case REASON_DEAUTH_NETWORK_LEAVING:
+		case REASON_DISASSOC_NETWORK_LEAVING:
+		case REASON_POOR_RSSI_CONDITIONS:
 			/* Valid reasonCode in received Disassociation frame */
 			/* as long as we're not about to channel switch */
 			if (pe_session->gLimChannelSwitch.state !=
 			    eLIM_CHANNEL_SWITCH_IDLE) {
-				pe_err("Ignoring disassoc frame due to upcoming channel switch, from "QDF_MAC_ADDR_STR,
-					QDF_MAC_ADDR_ARRAY(pHdr->sa));
+				pe_err("Ignoring disassoc frame due to upcoming channel switch, from "QDF_MAC_ADDR_FMT,
+					QDF_MAC_ADDR_REF(pHdr->sa));
 				return;
 			}
 			break;
@@ -260,12 +263,11 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 			break;
 		}
 	} else {
-		/* Received Disassociation frame in either IBSS */
-		/* or un-known role. Log and ignore it */
+		/* Received Disassoc in un-known role. Log and ignore it */
 		pe_err("received Disassoc frame with invalid reasonCode: %d in role:"
-				"%d in sme state: %d from " QDF_MAC_ADDR_STR, reasonCode,
+				"%d in sme state: %d from " QDF_MAC_ADDR_FMT, reasonCode,
 			GET_LIM_SYSTEM_ROLE(pe_session), pe_session->limSmeState,
-			QDF_MAC_ADDR_ARRAY(pHdr->sa));
+			QDF_MAC_ADDR_REF(pHdr->sa));
 
 		return;
 	}
@@ -277,8 +279,9 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 		 * Already in the process of deleting context for the peer
 		 * and received Disassociation frame. Log and Ignore.
 		 */
-		pe_debug("Deletion is in progress (%d) for peer:%pM in mlmState %d",
-			 sta->sta_deletion_in_progress, pHdr->sa,
+		pe_debug("Deletion is in progress (%d) for peer:"QDF_MAC_ADDR_FMT" in mlmState %d",
+			 sta->sta_deletion_in_progress,
+			 QDF_MAC_ADDR_REF(pHdr->sa),
 			 sta->mlmStaContext.mlmState);
 		return;
 	}
@@ -293,21 +296,35 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 		    eLIM_MLM_WT_ASSOC_CNF_STATE)
 			sta->mlmStaContext.updateContext = 1;
 
-		pe_err("received Disassoc frame from peer that is in state: %X, addr "QDF_MAC_ADDR_STR,
+		pe_err("received Disassoc frame from peer that is in state: %X, addr "QDF_MAC_ADDR_FMT,
 			sta->mlmStaContext.mlmState,
-			       QDF_MAC_ADDR_ARRAY(pHdr->sa));
+			       QDF_MAC_ADDR_REF(pHdr->sa));
 
 	} /* if (sta->mlmStaContext.mlmState != eLIM_MLM_LINK_ESTABLISHED_STATE) */
 
+	if (reasonCode == REASON_POOR_RSSI_CONDITIONS) {
+		struct sir_rssi_disallow_lst ap_info = {{0}};
+
+		ap_info.retry_delay = 0;
+		ap_info.expected_rssi = frame_rssi +
+			wlan_blm_get_rssi_blacklist_threshold(mac->pdev);
+		qdf_mem_copy(ap_info.bssid.bytes, pHdr->sa, QDF_MAC_ADDR_SIZE);
+		ap_info.reject_reason = REASON_ASSOC_REJECT_POOR_RSSI;
+		ap_info.source = ADDED_BY_DRIVER;
+		ap_info.original_timeout = ap_info.retry_delay;
+		ap_info.received_time = qdf_mc_timer_get_system_time();
+
+		lim_add_bssid_to_reject_list(mac->pdev, &ap_info);
+	}
 	lim_extract_ies_from_deauth_disassoc(pe_session, (uint8_t *)pHdr,
 					WMA_GET_RX_MPDU_LEN(pRxPacketInfo));
 	lim_perform_disassoc(mac, frame_rssi, reasonCode,
 			     pe_session, pHdr->sa);
 
 	if (mac->mlme_cfg->gen.fatal_event_trigger &&
-	    (reasonCode != eSIR_MAC_UNSPEC_FAILURE_REASON &&
-	    reasonCode != eSIR_MAC_DEAUTH_LEAVING_BSS_REASON &&
-	    reasonCode != eSIR_MAC_DISASSOC_LEAVING_BSS_REASON)) {
+	    (reasonCode != REASON_UNSPEC_FAILURE &&
+	    reasonCode != REASON_DEAUTH_NETWORK_LEAVING &&
+	    reasonCode != REASON_DISASSOC_NETWORK_LEAVING)) {
 		cds_flush_logs(WLAN_LOG_TYPE_FATAL,
 			       WLAN_LOG_INDICATOR_HOST_DRIVER,
 			       WLAN_LOG_REASON_DISCONNECT,
@@ -348,6 +365,7 @@ void lim_perform_disassoc(struct mac_context *mac_ctx, int32_t frame_rssi,
 	tLimMlmDisassocInd mlmDisassocInd;
 	uint16_t aid;
 	tpDphHashNode sta_ds;
+	tpSirAssocRsp assoc_rsp;
 
 	sta_ds = dph_lookup_hash_entry(mac_ctx, addr, &aid,
 				       &pe_session->dph.dphHashTable);
@@ -356,7 +374,7 @@ void lim_perform_disassoc(struct mac_context *mac_ctx, int32_t frame_rssi,
 		return;
 	}
 	sta_ds->mlmStaContext.cleanupTrigger = eLIM_PEER_ENTITY_DISASSOC;
-	sta_ds->mlmStaContext.disassocReason = (tSirMacReasonCodes) rc;
+	sta_ds->mlmStaContext.disassocReason = rc;
 
 	/* Issue Disassoc Indication to SME. */
 	qdf_mem_copy((uint8_t *) &mlmDisassocInd.peerMacAddr,
@@ -378,6 +396,10 @@ void lim_perform_disassoc(struct mac_context *mac_ctx, int32_t frame_rssi,
 		pe_debug("received Disassoc from AP while waiting for Reassoc Rsp");
 
 		if (pe_session->limAssocResponseData) {
+			assoc_rsp = (tpSirAssocRsp) pe_session->
+						limAssocResponseData;
+			qdf_mem_free(assoc_rsp->sha384_ft_subelem.gtk);
+			qdf_mem_free(assoc_rsp->sha384_ft_subelem.igtk);
 			qdf_mem_free(pe_session->limAssocResponseData);
 			pe_session->limAssocResponseData = NULL;
 		}

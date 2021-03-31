@@ -531,6 +531,39 @@ struct nan_event_params {
 	uint8_t buf[];
 };
 
+#define NAN_MSG_ID_DISABLE_INDICATION 26
+/**
+ * struct nan_msg_hdr - NAN msg header to be sent to userspace
+ * @msg_version: NAN msg version
+ * @msg_id: NAN message id
+ * @reserved: Reserved for now to avoid padding
+ *
+ * 8-byte control message header used by NAN
+ *
+ */
+struct nan_msg_hdr {
+	uint16_t msg_version:4;
+	uint16_t msg_id:12;
+	uint16_t reserved[3];
+};
+
+#define NAN_STATUS_SUCCESS 0
+#define NAN_STATUS_UNSUPPORTED_CONCURRENCY_NAN_DISABLED 12
+
+/**
+ * struct nan_disable_ind_msg - NAN disable ind params
+ * @msg_hdr: NAN msg header
+ * @reason: NAN disable reason, below are valid reasons for NAN disable ind
+ *          NAN_STATUS_SUCCESS
+ *          NAN_STATUS_UNSUPPORTED_CONCURRENCY_NAN_DISABLED
+ * @reserved: Reserved for now to avoid padding
+ */
+struct nan_disable_ind_msg {
+	struct nan_msg_hdr msg_hdr;
+	uint16_t reason;
+	uint16_t reserved;
+};
+
 /**
  * struct nan_msg_params - NAN request params
  * @request_data_len: request data length
@@ -573,14 +606,14 @@ struct nan_disable_req {
 /**
  * struct nan_enable_req - NAN request to enable NAN Discovery
  * @psoc: Pointer to the psoc object
- * @social_chan_2g: Social channel in 2G band for the NAN Discovery
- * @social_chan_5g: Social channel in 5G band for the NAN Discovery
+ * @social_chan_2g_freq: Social channel in 2G band for the NAN Discovery
+ * @social_chan_5g_freq: Social channel in 5G band for the NAN Discovery
  * @params: NAN request structure containing message for the target
  */
 struct nan_enable_req {
 	struct wlan_objmgr_psoc *psoc;
-	uint8_t social_chan_2g;
-	uint8_t social_chan_5g;
+	uint32_t social_chan_2g_freq;
+	uint32_t social_chan_5g_freq;
 	/* Variable length, do not add anything after this */
 	struct nan_msg_params params;
 };
@@ -610,6 +643,17 @@ struct nan_datapath_end_indication_event {
 	struct wlan_objmgr_vdev *vdev;
 	uint32_t num_ndp_ids;
 	struct peer_nan_datapath_map ndp_map[];
+};
+
+/**
+ * struct nan_datapath_peer_ind - ndp peer indication
+ * @msg: msg received by FW
+ * @data_len: data length
+ *
+ */
+struct nan_dump_msg {
+	uint8_t *msg;
+	uint32_t data_len;
 };
 
 /**
@@ -789,20 +833,25 @@ struct wlan_nan_rx_ops {
 
 /**
  * struct nan_tgt_caps - NAN Target capabilities
- * @nan_disable_supported: Target supports disabling NAN Discovery
+ * @nan_conc_control: Target supports disabling NAN Discovery from host
+ *		      so that host is able to handle(disable) NAN
+ *		      concurrencies.
  * @nan_dbs_supported: Target supports NAN Discovery with DBS
  * @ndi_dbs_supported: Target supports NAN Datapath with DBS
  * @nan_sap_supported: Target supports NAN Discovery with SAP concurrency
  * @ndi_sap_supported: Target supports NAN Datapth with SAP concurrency
  * @nan_vdev_allowed: Allow separate vdev creation for NAN discovery
+ * @sta_nan_ndi_ndi_allowed: 4 port concurrency of STA+NAN+NDI+NDI is supported
+ * by Fw or not.
  */
 struct nan_tgt_caps {
-	uint32_t nan_disable_supported:1;
+	uint32_t nan_conc_control:1;
 	uint32_t nan_dbs_supported:1;
 	uint32_t ndi_dbs_supported:1;
 	uint32_t nan_sap_supported:1;
 	uint32_t ndi_sap_supported:1;
 	uint32_t nan_vdev_allowed:1;
+	uint32_t sta_nan_ndi_ndi_allowed:1;
 };
 
 #endif

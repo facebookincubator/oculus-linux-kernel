@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -105,6 +105,8 @@ int get_next_record_index(qdf_atomic_t *table_index, int array_size)
 	return record_index;
 }
 
+qdf_export_symbol(get_next_record_index);
+
 #ifdef HIF_CE_DEBUG_DATA_BUF
 void hif_ce_desc_data_record(struct hif_ce_desc_event *event, int len)
 {
@@ -129,16 +131,22 @@ void hif_ce_desc_data_record(struct hif_ce_desc_event *event, int len)
 	}
 }
 
+qdf_export_symbol(hif_ce_desc_data_record);
+
 void hif_clear_ce_desc_debug_data(struct hif_ce_desc_event *event)
 {
 	qdf_mem_zero(event,
 		     offsetof(struct hif_ce_desc_event, data));
 }
+
+qdf_export_symbol(hif_clear_ce_desc_debug_data);
 #else
 void hif_clear_ce_desc_debug_data(struct hif_ce_desc_event *event)
 {
 	qdf_mem_zero(event, sizeof(struct hif_ce_desc_event));
 }
+
+qdf_export_symbol(hif_clear_ce_desc_debug_data);
 #endif /* HIF_CE_DEBUG_DATA_BUF */
 
 #if defined(HIF_RECORD_PADDR)
@@ -202,6 +210,7 @@ void hif_record_ce_desc_event(struct hif_softc *scn, int ce_id,
 
 	event->type = type;
 	event->time = qdf_get_log_timestamp();
+	event->cpu_id = qdf_get_cpu();
 
 	if (descriptor)
 		qdf_mem_copy(&event->descriptor, descriptor,
@@ -367,7 +376,7 @@ void war_ce_src_ring_write_idx_set(struct hif_softc *scn,
 
 qdf_export_symbol(war_ce_src_ring_write_idx_set);
 
-int
+QDF_STATUS
 ce_send(struct CE_handle *copyeng,
 		void *per_transfer_context,
 		qdf_dma_addr_t buffer,
@@ -377,7 +386,7 @@ ce_send(struct CE_handle *copyeng,
 		uint32_t user_flag)
 {
 	struct CE_state *CE_state = (struct CE_state *)copyeng;
-	int status;
+	QDF_STATUS status;
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(CE_state->scn);
 
 	qdf_spin_lock_bh(&CE_state->ce_index_lock);
@@ -402,7 +411,7 @@ void ce_sendlist_init(struct ce_sendlist *sendlist)
 	sl->num_items = 0;
 }
 
-int
+QDF_STATUS
 ce_sendlist_buf_add(struct ce_sendlist *sendlist,
 					qdf_dma_addr_t buffer,
 					uint32_t nbytes,
@@ -428,7 +437,7 @@ ce_sendlist_buf_add(struct ce_sendlist *sendlist,
 	return QDF_STATUS_SUCCESS;
 }
 
-int
+QDF_STATUS
 ce_sendlist_send(struct CE_handle *copyeng,
 		 void *per_transfer_context,
 		 struct ce_sendlist *sendlist, unsigned int transfer_id)
@@ -492,7 +501,7 @@ qdf_nbuf_t ce_batch_send(struct CE_handle *ce_tx_hdl,  qdf_nbuf_t msdu,
 		if (deltacount < 2) {
 			if (sendhead)
 				return msdu;
-			HIF_ERROR("%s: Out of descriptors", __func__);
+			hif_err("Out of descriptors");
 			src_ring->write_index = write_index;
 			war_ce_src_ring_write_idx_set(scn, ctrl_addr,
 					write_index);
@@ -616,9 +625,8 @@ QDF_STATUS ce_send_single(struct CE_handle *ce_tx_hdl, qdf_nbuf_t msdu,
 
 	if (qdf_unlikely(CE_RING_DELTA(nentries_mask, write_index,
 					sw_index-1) < 1)) {
-		/* ol_tx_stats_inc_ring_error(sc->scn->pdev_txrx_handle, 1); */
-		HIF_ERROR("%s: ce send fail %d %d %d", __func__, nentries_mask,
-			  write_index, sw_index);
+		hif_err("ce send fail %d %d %d", nentries_mask,
+		       write_index, sw_index);
 		return QDF_STATUS_E_RESOURCES;
 	}
 
@@ -663,9 +671,9 @@ QDF_STATUS ce_send_single(struct CE_handle *ce_tx_hdl, qdf_nbuf_t msdu,
  * @per_recv_context: virtual address of the nbuf
  * @buffer: physical address of the nbuf
  *
- * Return: 0 if the buffer is enqueued
+ * Return: QDF_STATUS_SUCCESS if the buffer is enqueued
  */
-int
+QDF_STATUS
 ce_recv_buf_enqueue(struct CE_handle *copyeng,
 		    void *per_recv_context, qdf_dma_addr_t buffer)
 {
@@ -741,7 +749,7 @@ unsigned int ce_recv_entries_avail(struct CE_handle *copyeng)
  * Guts of ce_completed_recv_next.
  * The caller takes responsibility for any necessary locking.
  */
-int
+QDF_STATUS
 ce_completed_recv_next(struct CE_handle *copyeng,
 		       void **per_CE_contextp,
 		       void **per_transfer_contextp,
@@ -750,7 +758,7 @@ ce_completed_recv_next(struct CE_handle *copyeng,
 		       unsigned int *transfer_idp, unsigned int *flagsp)
 {
 	struct CE_state *CE_state = (struct CE_state *)copyeng;
-	int status;
+	QDF_STATUS status;
 	struct hif_softc *scn = CE_state->scn;
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
 	struct ce_ops *ce_services;
@@ -796,7 +804,7 @@ ce_cancel_send_next(struct CE_handle *copyeng,
 }
 qdf_export_symbol(ce_cancel_send_next);
 
-int
+QDF_STATUS
 ce_completed_send_next(struct CE_handle *copyeng,
 		       void **per_CE_contextp,
 		       void **per_transfer_contextp,
@@ -811,7 +819,7 @@ ce_completed_send_next(struct CE_handle *copyeng,
 	struct hif_softc *scn = CE_state->scn;
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
 	struct ce_ops *ce_services;
-	int status;
+	QDF_STATUS status;
 
 	ce_services = hif_state->ce_services;
 	qdf_spin_lock_bh(&CE_state->ce_index_lock);
@@ -1081,9 +1089,8 @@ more_watermarks:
 			goto more_completions;
 		} else {
 			if (!ce_srng_based(scn)) {
-				HIF_ERROR(
-					"%s:Potential infinite loop detected during Rx processing nentries_mask:0x%x sw read_idx:0x%x hw read_idx:0x%x",
-					__func__,
+				hif_err(
+					"Potential infinite loop detected during Rx processing nentries_mask:0x%x sw read_idx:0x%x hw read_idx:0x%x",
 					CE_state->dest_ring->nentries_mask,
 					CE_state->dest_ring->sw_index,
 					CE_DEST_RING_READ_IDX_GET(scn,
@@ -1100,9 +1107,8 @@ more_watermarks:
 			goto more_completions;
 		} else {
 			if (!ce_srng_based(scn)) {
-				HIF_ERROR(
-					"%s:Potential infinite loop detected during send completion nentries_mask:0x%x sw read_idx:0x%x hw read_idx:0x%x",
-					__func__,
+				hif_err(
+					"Potential infinite loop detected during send completion nentries_mask:0x%x sw read_idx:0x%x hw read_idx:0x%x",
 					CE_state->src_ring->nentries_mask,
 					CE_state->src_ring->sw_index,
 					CE_SRC_RING_READ_IDX_GET(scn,
@@ -1135,7 +1141,7 @@ int ce_per_engine_service(struct hif_softc *scn, unsigned int CE_id)
 		return CE_state->receive_count;
 
 	if (Q_TARGET_ACCESS_BEGIN(scn) < 0) {
-		HIF_ERROR("[premature rc=0]");
+		hif_err("[premature rc=0]");
 		return 0; /* no work done */
 	}
 
@@ -1155,7 +1161,7 @@ int ce_per_engine_service(struct hif_softc *scn, unsigned int CE_id)
 	qdf_spin_unlock(&CE_state->ce_index_lock);
 
 	if (Q_TARGET_ACCESS_END(scn) < 0)
-		HIF_ERROR("<--[premature rc=%d]", CE_state->receive_count);
+		hif_err("<--[premature rc=%d]", CE_state->receive_count);
 	return CE_state->receive_count;
 }
 qdf_export_symbol(ce_per_engine_service);
@@ -1277,13 +1283,13 @@ ce_send_cb_register(struct CE_handle *copyeng,
 	struct HIF_CE_state *hif_state;
 
 	if (!CE_state) {
-		HIF_ERROR("%s: Error CE state = NULL", __func__);
+		hif_err("Error CE state = NULL");
 		return;
 	}
 	scn = CE_state->scn;
 	hif_state = HIF_GET_CE_STATE(scn);
 	if (!hif_state) {
-		HIF_ERROR("%s: Error HIF state = NULL", __func__);
+		hif_err("Error HIF state = NULL");
 		return;
 	}
 	CE_state->send_context = ce_send_context;
@@ -1315,13 +1321,13 @@ ce_recv_cb_register(struct CE_handle *copyeng,
 	struct HIF_CE_state *hif_state;
 
 	if (!CE_state) {
-		HIF_ERROR("%s: ERROR CE state = NULL", __func__);
+		hif_err("ERROR CE state = NULL");
 		return;
 	}
 	scn = CE_state->scn;
 	hif_state = HIF_GET_CE_STATE(scn);
 	if (!hif_state) {
-		HIF_ERROR("%s: Error HIF state = NULL", __func__);
+		hif_err("Error HIF state = NULL");
 		return;
 	}
 	CE_state->recv_context = CE_recv_context;
@@ -1386,6 +1392,28 @@ bool ce_check_rx_pending(struct CE_state *CE_state)
 qdf_export_symbol(ce_check_rx_pending);
 
 #ifdef IPA_OFFLOAD
+#ifdef QCN7605_SUPPORT
+static qdf_dma_addr_t ce_ipa_get_wr_index_addr(struct CE_state *CE_state)
+{
+	u_int32_t ctrl_addr = CE_state->ctrl_addr;
+	struct hif_softc *scn = CE_state->scn;
+	qdf_dma_addr_t wr_index_addr;
+
+	wr_index_addr = shadow_sr_wr_ind_addr(scn, ctrl_addr);
+	return wr_index_addr;
+}
+#else
+static qdf_dma_addr_t ce_ipa_get_wr_index_addr(struct CE_state *CE_state)
+{
+	struct hif_softc *scn = CE_state->scn;
+	qdf_dma_addr_t wr_index_addr;
+
+	wr_index_addr = CE_BASE_ADDRESS(CE_state->id) +
+			SR_WR_INDEX_ADDRESS;
+	return wr_index_addr;
+}
+#endif
+
 /**
  * ce_ipa_get_resource() - get uc resource on copyengine
  * @ce: copyengine context
@@ -1434,9 +1462,10 @@ void ce_ipa_get_resource(struct CE_handle *ce,
 	*ce_sr = CE_state->scn->ipa_ce_ring;
 	*ce_sr_ring_size = (uint32_t)(CE_state->src_ring->nentries *
 		sizeof(struct CE_src_desc));
-	*ce_reg_paddr = phy_mem_base + CE_BASE_ADDRESS(CE_state->id) +
-			SR_WR_INDEX_ADDRESS;
+	*ce_reg_paddr = phy_mem_base + ce_ipa_get_wr_index_addr(CE_state);
+
 }
+
 #endif /* IPA_OFFLOAD */
 
 #ifdef HIF_CE_DEBUG_DATA_BUF
@@ -1590,7 +1619,7 @@ ssize_t hif_dump_desc_event(struct hif_softc *scn, char *buf)
 			ce_event_type_to_str(event->type),
 			event->index, event->memory);
 #ifdef HIF_CE_DEBUG_DATA_BUF
-	len += snprintf(buf + len, PAGE_SIZE - len, ", Data len=%lu",
+	len += snprintf(buf + len, PAGE_SIZE - len, ", Data len=%zu",
 			event->actual_data_len);
 #endif
 
@@ -1637,13 +1666,13 @@ ssize_t hif_input_desc_trace_buf_index(struct hif_softc *scn,
 	ce_hist = &scn->hif_ce_desc_hist;
 
 	if (!size) {
-		pr_err("%s: Invalid input buffer.\n", __func__);
+		qdf_nofl_err("%s: Invalid input buffer.", __func__);
 		return -EINVAL;
 	}
 
 	if (sscanf(buf, "%u %u", (unsigned int *)&ce_hist->hist_id,
 		   (unsigned int *)&ce_hist->hist_index) != 2) {
-		pr_err("%s: Invalid input value.\n", __func__);
+		qdf_nofl_err("%s: Invalid input value.", __func__);
 		return -EINVAL;
 	}
 	if ((ce_hist->hist_id >= CE_COUNT_MAX) ||
@@ -1682,13 +1711,14 @@ ssize_t hif_ce_en_desc_hist(struct hif_softc *scn, const char *buf, size_t size)
 	ce_hist = &scn->hif_ce_desc_hist;
 
 	if (!size) {
-		pr_err("%s: Invalid input buffer.\n", __func__);
+		qdf_nofl_err("%s: Invalid input buffer.", __func__);
 		return -EINVAL;
 	}
 
 	if (sscanf(buf, "%u %u", (unsigned int *)&ce_id,
 		   (unsigned int *)&cfg) != 2) {
-		pr_err("%s: Invalid input: Enter CE Id<sp><1/0>.\n", __func__);
+		qdf_nofl_err("%s: Invalid input: Enter CE Id<sp><1/0>.",
+			     __func__);
 		return -EINVAL;
 	}
 	if (ce_id >= CE_COUNT_MAX) {

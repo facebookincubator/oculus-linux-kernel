@@ -162,14 +162,14 @@ os_if_spectral_init_nl(struct wlan_objmgr_pdev *pdev)
 
 	memset(&cfg, 0, sizeof(cfg));
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return -EINVAL;
 	}
 	ps = wlan_objmgr_pdev_get_comp_private_obj(pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return -EINVAL;
 	}
 	os_if_spectral_init_nl_cfg(&cfg);
@@ -178,14 +178,14 @@ os_if_spectral_init_nl(struct wlan_objmgr_pdev *pdev)
 		os_if_spectral_create_nl_sock(&cfg);
 
 		if (!os_if_spectral_nl_sock) {
-			cfg80211_err("NETLINK_KERNEL_CREATE FAILED");
+			osif_err("NETLINK_KERNEL_CREATE FAILED");
 			return -ENODEV;
 		}
 	}
 	ps->spectral_sock = os_if_spectral_nl_sock;
 
 	if (!ps->spectral_sock) {
-		cfg80211_err("ps->spectral_sock is NULL");
+		osif_err("ps->spectral_sock is NULL");
 		return -ENODEV;
 	}
 	atomic_inc(&spectral_nl_users);
@@ -206,14 +206,14 @@ os_if_spectral_destroy_netlink(struct wlan_objmgr_pdev *pdev)
 	struct pdev_spectral *ps = NULL;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return -EINVAL;
 	}
 	ps = wlan_objmgr_pdev_get_comp_private_obj(pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return -EINVAL;
 	}
 	ps->spectral_sock = NULL;
@@ -248,17 +248,17 @@ os_if_spectral_prep_skb(struct wlan_objmgr_pdev *pdev,
 	void *buf = NULL;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return NULL;
 	}
 
 	if (smsg_type >= SPECTRAL_MSG_TYPE_MAX) {
-		cfg80211_err("Invalid Spectral message type %u", smsg_type);
+		osif_err("Invalid Spectral message type %u", smsg_type);
 		return NULL;
 	}
 
 	if (buf_type >= SPECTRAL_MSG_BUF_TYPE_MAX) {
-		cfg80211_err("Invalid Spectral message buffer type %u",
+		osif_err("Invalid Spectral message buffer type %u",
 			 buf_type);
 		return NULL;
 	}
@@ -267,7 +267,7 @@ os_if_spectral_prep_skb(struct wlan_objmgr_pdev *pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return NULL;
 	}
 
@@ -278,7 +278,7 @@ os_if_spectral_prep_skb(struct wlan_objmgr_pdev *pdev,
 					       0, 0, false);
 
 		if (!ps->skb[smsg_type]) {
-			cfg80211_err("alloc skb (len=%u, msg_type=%u) failed",
+			osif_err("alloc skb (len=%u, msg_type=%u) failed",
 				 MAX_SPECTRAL_PAYLOAD, smsg_type);
 			return NULL;
 		}
@@ -307,7 +307,7 @@ os_if_spectral_prep_skb(struct wlan_objmgr_pdev *pdev,
 		spectral_nlh = (struct nlmsghdr *)ps->skb[smsg_type]->data;
 		buf = NLMSG_DATA(spectral_nlh);
 	} else {
-		cfg80211_err("Failed to get spectral report buffer");
+		osif_err("Failed to get spectral report buffer");
 		buf = NULL;
 	}
 
@@ -364,29 +364,29 @@ os_if_spectral_nl_unicast_msg(struct wlan_objmgr_pdev *pdev,
 	int status;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return -EINVAL;
 	}
 
 	if (smsg_type >= SPECTRAL_MSG_TYPE_MAX) {
-		cfg80211_err("Invalid Spectral message type %u", smsg_type);
+		osif_err("Invalid Spectral message type %u", smsg_type);
 		return -EINVAL;
 	}
 
 	ps = wlan_objmgr_pdev_get_comp_private_obj(pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return -EINVAL;
 	}
 
 	if (!ps->skb[smsg_type]) {
-		cfg80211_err("Socket buffer is null, msg_type= %u", smsg_type);
+		osif_err("Socket buffer is null, msg_type= %u", smsg_type);
 		return -EINVAL;
 	}
 
 	if (!ps->spectral_sock) {
-		cfg80211_err("Spectral Socket is invalid, msg_type= %u",
+		osif_err("Spectral Socket is invalid, msg_type= %u",
 			 smsg_type);
 		qdf_nbuf_free(ps->skb[smsg_type]);
 		ps->skb[smsg_type] = NULL;
@@ -421,24 +421,24 @@ os_if_spectral_nl_unicast_msg(struct wlan_objmgr_pdev *pdev,
 	int status;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return -EINVAL;
 	}
 
 	if (smsg_type >= SPECTRAL_MSG_TYPE_MAX) {
-		cfg80211_err("Invalid Spectral message type %u", smsg_type);
+		osif_err("Invalid Spectral message type %u", smsg_type);
 		return -EINVAL;
 	}
 
 	ps = wlan_objmgr_pdev_get_comp_private_obj(pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return -EINVAL;
 	}
 
 	if (!ps->skb[smsg_type]) {
-		cfg80211_err("Socket buffer is null, msg_type= %u", smsg_type);
+		osif_err("Socket buffer is null, msg_type= %u", smsg_type);
 		return -EINVAL;
 	}
 
@@ -449,7 +449,7 @@ os_if_spectral_nl_unicast_msg(struct wlan_objmgr_pdev *pdev,
 			      MSG_DONTWAIT, WLAN_NL_MSG_SPECTRAL_SCAN,
 			      CLD80211_MCGRP_OEM_MSGS);
 	if (status < 0)
-		cfg80211_err("failed to send to spectral scan app");
+		osif_err("failed to send to spectral scan app");
 
 	/* clear the local copy, free would be done by netlink layer */
 	ps->skb[smsg_type] = NULL;
@@ -482,12 +482,12 @@ os_if_spectral_nl_bcast_msg(struct wlan_objmgr_pdev *pdev,
 #endif
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return -EINVAL;
 	}
 
 	if (smsg_type >= SPECTRAL_MSG_TYPE_MAX) {
-		cfg80211_err("Invalid Spectral message type %u", smsg_type);
+		osif_err("Invalid Spectral message type %u", smsg_type);
 		return -EINVAL;
 	}
 
@@ -495,12 +495,12 @@ os_if_spectral_nl_bcast_msg(struct wlan_objmgr_pdev *pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return -EINVAL;
 	}
 
 	if (!ps->skb[smsg_type]) {
-		cfg80211_err("Socket buffer is null, msg_type= %u", smsg_type);
+		osif_err("Socket buffer is null, msg_type= %u", smsg_type);
 		return -EINVAL;
 	}
 
@@ -537,12 +537,12 @@ os_if_spectral_free_skb(struct wlan_objmgr_pdev *pdev,
 	struct pdev_spectral *ps = NULL;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return;
 	}
 
 	if (smsg_type >= SPECTRAL_MSG_TYPE_MAX) {
-		cfg80211_err("Invalid Spectral message type %u", smsg_type);
+		osif_err("Invalid Spectral message type %u", smsg_type);
 		return;
 	}
 
@@ -550,12 +550,12 @@ os_if_spectral_free_skb(struct wlan_objmgr_pdev *pdev,
 						   WLAN_UMAC_COMP_SPECTRAL);
 
 	if (!ps) {
-		cfg80211_err("PDEV SPECTRAL object is NULL!");
+		osif_err("PDEV SPECTRAL object is NULL!");
 		return;
 	}
 
 	if (!ps->skb[smsg_type]) {
-		cfg80211_info("Socket buffer is null, msg_type= %u", smsg_type);
+		osif_info("Socket buffer is null, msg_type= %u", smsg_type);
 		return;
 	}
 
@@ -575,14 +575,14 @@ os_if_spectral_netlink_init(struct wlan_objmgr_pdev *pdev)
 	struct spectral_context *sptrl_ctx;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return;
 	}
 
 	sptrl_ctx = spectral_get_spectral_ctx_from_pdev(pdev);
 
 	if (!sptrl_ctx) {
-		cfg80211_err("Spectral context is NULL!");
+		osif_err("Spectral context is NULL!");
 		return;
 	}
 
@@ -605,14 +605,14 @@ void os_if_spectral_netlink_deinit(struct wlan_objmgr_pdev *pdev)
 	enum spectral_msg_type msg_type = SPECTRAL_MSG_NORMAL_MODE;
 
 	if (!pdev) {
-		cfg80211_err("PDEV is NULL!");
+		osif_err("PDEV is NULL!");
 		return;
 	}
 
 	sptrl_ctx = spectral_get_spectral_ctx_from_pdev(pdev);
 
 	if (!sptrl_ctx) {
-		cfg80211_err("Spectral context is NULL!");
+		osif_err("Spectral context is NULL!");
 		return;
 	}
 

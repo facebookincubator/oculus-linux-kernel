@@ -79,13 +79,19 @@ enum p2p_frame_type {
  * enum p2p_frame_sub_type - frame sub type
  * @P2P_MGMT_PROBE_REQ:       probe request frame
  * @P2P_MGMT_PROBE_RSP:       probe response frame
+ * @P2P_MGMT_DISASSOC:        disassociation frame
+ * @P2P_MGMT_AUTH:            authentication frame
+ * @P2P_MGMT_DEAUTH:          deauthentication frame
  * @P2P_MGMT_ACTION:          action frame
  * @P2P_MGMT_NOT_SUPPORT:     not support sub frame type
  */
 enum p2p_frame_sub_type {
 	P2P_MGMT_PROBE_REQ = 4,
 	P2P_MGMT_PROBE_RSP,
-	P2P_MGMT_ACTION = 13,
+	P2P_MGMT_DISASSOC = 10,
+	P2P_MGMT_AUTH,
+	P2P_MGMT_DEAUTH,
+	P2P_MGMT_ACTION,
 	P2P_MGMT_NOT_SUPPORT,
 };
 
@@ -434,5 +440,16 @@ void p2p_init_random_mac_vdev(struct p2p_vdev_priv_obj *p2p_vdev_obj);
  * Return: void
  */
 void p2p_deinit_random_mac_vdev(struct p2p_vdev_priv_obj *p2p_vdev_obj);
+
+/**
+ * p2p_get_p2pie_ptr() - get the pointer to p2p ie
+ * @ie:      source ie
+ * @ie_len:  source ie length
+ *
+ * This function finds out p2p ie by p2p oui and return the pointer.
+ *
+ * Return: pointer to p2p ie
+ */
+const uint8_t *p2p_get_p2pie_ptr(const uint8_t *ie, uint16_t ie_len);
 
 #endif /* _WLAN_P2P_OFF_CHAN_TX_H_ */

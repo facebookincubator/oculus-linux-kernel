@@ -1999,9 +1999,6 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 
 	regulator_left_on = regulators_left_on(device);
 
-	/* Clear any GPU faults that might have been left over */
-	adreno_clear_gpu_fault(adreno_dev);
-
 	/*
 	 * Keep high bus vote to reduce AHB latency
 	 * during FW loading and wakeup.
@@ -2036,6 +2033,14 @@ static int _adreno_start(struct adreno_device *adreno_dev)
 	 * halted GPU transactions.
 	 */
 	adreno_deassert_gbif_halt(adreno_dev);
+
+	/*
+	 * Observed race between timeout fault (long IB detection) and
+	 * MISC hang (hard fault). MISC hang can be set while in recovery from
+	 * timeout fault. If fault flag is set in start path CP init fails.
+	 * Clear gpu fault to avoid such race.
+	 */
+	adreno_clear_gpu_fault(adreno_dev);
 
 	adreno_ringbuffer_set_global(adreno_dev, 0);
 
@@ -3040,7 +3045,7 @@ void adreno_spin_idle_debug(struct adreno_device *adreno_dev,
 	struct kgsl_device *device = &adreno_dev->dev;
 	unsigned int rptr, wptr;
 	unsigned int status, status3, intstatus;
-	unsigned int hwfault;
+	unsigned int hwfault, cx_status;
 
 	dev_err(device->dev, str);
 
@@ -3052,21 +3057,31 @@ void adreno_spin_idle_debug(struct adreno_device *adreno_dev,
 	adreno_readreg(adreno_dev, ADRENO_REG_RBBM_INT_0_STATUS, &intstatus);
 	adreno_readreg(adreno_dev, ADRENO_REG_CP_HW_FAULT, &hwfault);
 
-	dev_err(device->dev,
-		"rb=%d pos=%X/%X rbbm_status=%8.8X/%8.8X int_0_status=%8.8X\n",
-		adreno_dev->cur_rb->id, rptr, wptr, status, status3, intstatus);
-
-	dev_err(device->dev, " hwfault=%8.8X\n", hwfault);
 
 	/*
 	 * If CP is stuck, gmu may not perform as expected. So force a gmu
 	 * snapshot which captures entire state as well as sets the gmu fault
 	 * because things need to be reset anyway.
 	 */
-	if (gmu_core_isenabled(device))
+	if (gmu_core_isenabled(device)) {
+		gmu_core_regread(device,
+				A6XX_GPU_GMU_AO_GPU_CX_BUSY_STATUS, &cx_status);
+		dev_err(device->dev,
+				"rb=%d pos=%X/%X rbbm_status=%8.8X/%8.8X int_0_status=%8.8X cx_busy_status:%8.8X\n",
+				adreno_dev->cur_rb->id, rptr, wptr, status,
+				status3, intstatus, cx_status);
+
+		dev_err(device->dev, " hwfault=%8.8X\n", hwfault);
 		gmu_core_snapshot(device);
-	else
+	} else {
+		dev_err(device->dev,
+				"rb=%d pos=%X/%X rbbm_status=%8.8X/%8.8X int_0_status=%8.8X\n",
+				adreno_dev->cur_rb->id, rptr, wptr, status,
+				status3, intstatus);
+
+		dev_err(device->dev, " hwfault=%8.8X\n", hwfault);
 		kgsl_device_snapshot(device, NULL, false);
+	}
 }
 
 /**
@@ -3959,6 +3974,19 @@ static bool adreno_is_hwcg_on(struct kgsl_device *device)
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 
 	return test_bit(ADRENO_HWCG_CTRL, &adreno_dev->pwrctrl_flag);
+}
+
+u32 adreno_get_ucode_version(const u32 *data)
+{
+	u32 version;
+
+	version = data[1];
+
+	if ((version & 0xf) != 0xa)
+		return version;
+
+	version &= ~0xfff;
+	return  version | ((data[3] & 0xfff000) >> 12);
 }
 
 static const struct kgsl_functable adreno_functable = {

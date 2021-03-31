@@ -116,7 +116,6 @@ ucfg_action_oui_parse(struct wlan_objmgr_psoc *psoc,
 
 	oui_str = qdf_mem_malloc(len + 1);
 	if (!oui_str) {
-		action_oui_err("Mem alloc failed for string: %u", action_id);
 		status = QDF_STATUS_E_NOMEM;
 		goto exit;
 	}
@@ -153,6 +152,8 @@ QDF_STATUS ucfg_action_oui_send(struct wlan_objmgr_psoc *psoc)
 	}
 
 	for (id = 0; id < ACTION_OUI_MAXIMUM_ID; id++) {
+		if (id >= ACTION_OUI_HOST_ONLY)
+			continue;
 		status = action_oui_send(psoc_priv, id);
 		if (!QDF_IS_STATUS_SUCCESS(status))
 			action_oui_err("Failed to send: %u", id);

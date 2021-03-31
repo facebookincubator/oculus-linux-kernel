@@ -41,6 +41,7 @@ enum {
 	DBG_DRIVER_DUMP_SUPPORTED = (1 << (7)), /* dumps driver state */
 	DBG_PACKET_FATE_SUPPORTED = (1 << (8)), /* tracks connection packets' fate */
 	DBG_NAN_EVENT_SUPPORTED = (1 << (9)), /* NAN Events */
+	DBG_PACKET_LOG_SUPPORTED = (1 << (10)), /* Packet log with dbgring */
 };
 
 enum {
@@ -48,6 +49,14 @@ enum {
 	DBG_RING_ENTRY_FLAGS_HAS_BINARY = (1 << (0)),
 	/* set if 64 bits timestamp is present */
 	DBG_RING_ENTRY_FLAGS_HAS_TIMESTAMP = (1 << (1))
+};
+
+enum {
+	/* Verbose logging level to set for each debug ring buffer */
+	RING_LOG_LEVEL_NONE = 0,
+	RING_LOG_LEVEL_DEFAULT = 1,
+	RING_LOG_LEVEL_VERBOSE = 2,
+	RING_LOG_LEVEL_EXCESSIVE = 3
 };
 
 /* firmware verbose ring, ring id 1 */
@@ -77,6 +86,12 @@ enum {
 #define BT_LOG_RING_NAME		"bt_log"
 #define BT_LOG_RING_SIZE		(64 * 1024)
 #endif	/* BTLOG */
+
+/* Packet log ring, ring id 7 */
+#ifdef DHD_PKT_LOGGING_DBGRING
+#define DHD_PACKET_LOG_RING_NAME	"packet_log"
+#define DHD_PACKET_LOG_RING_SIZE	(MIN_PKTLOG_LEN * sizeof(dhd_pktlog_ring_info_t))
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 #define TLV_LOG_SIZE(tlv) ((tlv) ? (sizeof(tlv_log) + (tlv)->len) : 0)
 
@@ -424,6 +439,10 @@ typedef enum {
 	/* Packet free by firmware. */
 	TX_PKT_FATE_FW_PKT_FREE,
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+	/* Indicate to wait for updating txfate. */
+	TX_PKT_FATE_DRV_WAIT_UPDATE = 0x80000000,
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	} wifi_tx_packet_fate;
 
 typedef enum {
@@ -803,6 +822,10 @@ extern void dhd_dbg_verboselog_printf(dhd_pub_t *dhdp, prcd_event_log_hdr_t *plo
 int dhd_dbg_pull_from_ring(dhd_pub_t *dhdp, int ring_id, void *data, uint32 buf_len);
 int dhd_dbg_pull_single_from_ring(dhd_pub_t *dhdp, int ring_id, void *data, uint32 buf_len,
 	bool strip_header);
+#ifdef DHD_PKT_LOGGING_DBGRING
+int dhd_dbg_update_to_ring(dhd_pub_t *dhdp, void *ring, uint32 w_len);
+int dhd_dbg_pull_from_pktlog(dhd_pub_t *dhdp, int ring_id, void *data, uint32 buf_len);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 int dhd_dbg_push_to_ring(dhd_pub_t *dhdp, int ring_id, dhd_dbg_ring_entry_t *hdr,
 		void *data);
 int __dhd_dbg_get_ring_status(dhd_dbg_ring_t *ring, dhd_dbg_ring_status_t *ring_status);

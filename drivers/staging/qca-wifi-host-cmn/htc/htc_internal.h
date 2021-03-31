@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,9 +39,15 @@ extern "C" {
 #define HTC_TARGET_DEBUG_INTR_MASK          0x01
 #define HTC_TARGET_CREDIT_INTR_MASK         0xF0
 #define HTC_MIN_MSG_PER_BUNDLE              2
+
 #if defined(HIF_USB)
+
 #define HTC_MAX_MSG_PER_BUNDLE_RX           11
-#define HTC_MAX_MSG_PER_BUNDLE_TX           8
+#if defined(CFG_HTC_MAX_MSG_PER_BUNDLE_TX)
+#define HTC_MAX_MSG_PER_BUNDLE_TX	 CFG_HTC_MAX_MSG_PER_BUNDLE_TX
+#else
+#define HTC_MAX_MSG_PER_BUNDLE_TX	8
+#endif /* CFG_HTC_MAX_MSG_PER_BUNDLE_TX */
 #else
 #define HTC_MAX_MSG_PER_BUNDLE_RX           64
 #define HTC_MAX_MSG_PER_BUNDLE              16
@@ -134,6 +140,8 @@ typedef struct _HTC_ENDPOINT {
 	qdf_timer_t ul_poll_timer;
 	int ul_poll_timer_active;
 	int ul_outstanding_cnt;
+	uint32_t htc_send_cnt;
+	uint32_t htc_comp_cnt;
 	/* Need to call HIF to fetch rx?  (Not currently supported.) */
 	int dl_is_polled;
 	/* not currently supported */
@@ -161,6 +169,12 @@ typedef struct _HTC_ENDPOINT {
 	bool TxCreditFlowEnabled;
 	bool async_update;  /* packets can be queued asynchronously */
 	qdf_spinlock_t lookup_queue_lock;
+
+	/* number of consecutive requeue attempts used for print */
+	uint32_t num_requeues_warn;
+	/* total number of requeue attempts */
+	uint32_t total_num_requeues;
+
 } HTC_ENDPOINT;
 
 #ifdef HTC_EP_STAT_PROFILING
@@ -242,6 +256,14 @@ typedef struct _HTC_TARGET {
 	uint8_t wmi_ep_count;
 	/* Flag to indicate whether htc header length check is required */
 	bool htc_hdr_length_check;
+
+	/* flag to enable packet send debug */
+	bool htc_pkt_dbg;
+
+#ifdef FEATURE_RUNTIME_PM
+	/* Runtime count for H2T msg with response */
+	qdf_atomic_t htc_runtime_cnt;
+#endif
 } HTC_TARGET;
 
 

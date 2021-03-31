@@ -623,10 +623,20 @@ typedef struct {
 /* requires  tsk_ctl_t tsk  argument, the caller's priv data is passed in owner ptr */
 /* note this macro assumes there may be only one context waiting on thread's completion */
 #ifdef DHD_DEBUG
+#ifndef CUSTOM_PREFIX
 #define DBG_THR(x) printk x
 #else
+extern char* osl_get_rtctime(void);
+#define DBG_THR_PREFIX "[%s]"CUSTOM_PREFIX, osl_get_rtctime()
+#define DBG_THR(x)	\
+do {	\
+	pr_cont(DBG_THR_PREFIX);	\
+	pr_cont x;			\
+} while (0)
+#endif /* !CUSTOM_PREFIX */
+#else
 #define DBG_THR(x)
-#endif
+#endif /* DHD_DEBUG */
 
 extern unsigned long osl_spin_lock(void *lock);
 extern void osl_spin_unlock(void *lock, unsigned long flags);

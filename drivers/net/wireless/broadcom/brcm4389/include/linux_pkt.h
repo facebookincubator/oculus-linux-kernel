@@ -141,6 +141,14 @@ extern void osl_pkt_orphan_partial(struct sk_buff *skb);
 #define PKTORPHAN(skb)          ({BCM_REFERENCE(skb); 0;})
 #endif /* Linux Version >= 3.6 */
 
+#ifdef RX_PKT_POOL
+#ifdef DHD_USE_ATOMIC_PKTGET
+#error "Don't enable both DHD_USE_ATOMIC_PKTGET and RX_PKT_POOL, "
+		"as RX_PKT_POOL runs in non atomic context"
+#endif /* DHD_USE_ATOMIC_PKTGET */
+#define	PKTGET_RX_POOL(osh, dhd, len, send) dhd_rxpool_pktget((osh), (dhd), (len))
+#endif /* RX_PKT_POOL */
+
 #ifdef BCMDBG_CTRACE
 #define	DEL_CTRACE(zosh, zskb) { \
 	unsigned long zflags; \

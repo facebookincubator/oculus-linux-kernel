@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -229,8 +229,7 @@ csr_get_qos_from_bss_desc(struct mac_context *mac_ctx,
 
 bool csr_is_nullssid(uint8_t *pBssSsid, uint8_t len);
 bool csr_is_infra_bss_desc(struct bss_description *pSirBssDesc);
-bool csr_is_ibss_bss_desc(struct bss_description *pSirBssDesc);
-bool csr_is_privacy(struct bss_description *pSirBssDesc);
+
 tSirResultCodes csr_get_de_auth_rsp_status_code(struct deauth_rsp *pSmeRsp);
 uint32_t csr_get_frag_thresh(struct mac_context *mac_ctx);
 uint32_t csr_get_rts_thresh(struct mac_context *mac_ctx);
@@ -292,17 +291,7 @@ bool csr_rates_is_dot11_rate11b_supported_rate(uint8_t dot11Rate);
 bool csr_rates_is_dot11_rate11a_supported_rate(uint8_t dot11Rate);
 tAniEdType csr_translate_encrypt_type_to_ed_type(
 		eCsrEncryptionType EncryptType);
-/*
- * pIes shall contain IEs from pSirBssDesc.
- * It shall be returned from function csr_get_parsed_bss_description_ies
- */
-bool csr_is_security_match(struct mac_context *mac_ctx, tCsrAuthList *auth_type,
-			   tCsrEncryptionList *uc_enc_type,
-			   tCsrEncryptionList *mc_enc_type, bool *mfp_enabled,
-			   uint8_t *mfp_required, uint8_t *mfp_capable,
-			   struct bss_description *bss_desc,
-			   tDot11fBeaconIEs *ies_ptr, uint8_t session_id);
-bool csr_is_bss_type_ibss(eCsrRoamBssType bssType);
+
 bool csr_is_bssid_match(struct qdf_mac_addr *pProfBssid,
 			struct qdf_mac_addr *BssBssid);
 void csr_add_rate_bitmap(uint8_t rate, uint16_t *pRateBitmap);
@@ -341,7 +330,7 @@ QDF_STATUS csr_reassoc(struct mac_context *mac, uint32_t sessionId,
 /**
  * csr_validate_mcc_beacon_interval() - to validate the mcc beacon interval
  * @mac_ctx: pointer to mac context
- * @chnl_id: channel number
+ * @ch_freq: channel frequency
  * @bcn_interval: provided beacon interval
  * @cur_session_id: current session id
  * @cur_bss_persona: Current BSS persona
@@ -351,7 +340,7 @@ QDF_STATUS csr_reassoc(struct mac_context *mac, uint32_t sessionId,
  * Return: QDF_STATUS
  */
 QDF_STATUS csr_validate_mcc_beacon_interval(struct mac_context *mac_ctx,
-					    uint8_t chnl_id,
+					    uint32_t ch_freq,
 					    uint16_t *bcn_interval,
 					    uint32_t cur_session_id,
 					    enum QDF_OPMODE cur_bss_persona);

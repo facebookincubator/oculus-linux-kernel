@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,11 @@ struct cdp_raw_ast;
 struct cdp_soc;
 
 /**
+ * cdp_ctrl_objmgr_psoc - opaque handle for UMAC psoc object
+ */
+struct cdp_ctrl_objmgr_psoc;
+
+/**
  * cdp_ctrl_objmgr_pdev - opaque handle for UMAC pdev object
  */
 struct cdp_ctrl_objmgr_pdev;
@@ -48,4 +53,13 @@ struct cdp_ctrl_objmgr_vdev;
  */
 struct cdp_ctrl_objmgr_peer;
 
+/**
+ * cdp_cal_client - opaque handle for cal client object
+ */
+struct cdp_cal_client;
+
+/**
+ * cdp_ext_vdev - opaque handle for extended vdev data path handle
+ */
+struct cdp_ext_vdev;
 #endif

@@ -438,20 +438,59 @@ static int
 _dhd_pno_set(dhd_pub_t *dhd, const dhd_pno_params_t *pno_params, dhd_pno_mode_t mode)
 {
 	int err = BCME_OK;
-	wl_pfn_param_t pfn_param;
+	wl_pfn_param_v3_t pfn_param;
 	dhd_pno_params_t *_params;
 	dhd_pno_status_info_t *_pno_state;
 	bool combined_scan = FALSE;
+	uint16 size;
+	bool use_v3 = FALSE;
 	DHD_PNO(("%s enter\n", __FUNCTION__));
 
 	NULL_CHECK(dhd, "dhd is NULL", err);
 	NULL_CHECK(dhd->pno_state, "pno_state is NULL", err);
 	_pno_state = PNO_GET_PNOSTATE(dhd);
 
-	memset(&pfn_param, 0, sizeof(pfn_param));
+	/* Query pfn version */
+	bzero(&pfn_param, sizeof(pfn_param));
+	err = dhd_iovar(dhd, 0, "pfn_set", (char *)&pfn_param, sizeof(pfn_param),
+		(char *)&pfn_param, sizeof(pfn_param), FALSE);
+	if (err < 0) {
+		if (err == BCME_UNSUPPORTED) {
+			DHD_PNO(("%s : PFN versioning not supported. Use v2\n",
+				__FUNCTION__));
+			use_v3 = FALSE;
+		} else {
+			DHD_ERROR(("%s : failed to query pfn_set %d\n", __FUNCTION__, err));
+			goto exit;
+		}
+	} else {
+		if (pfn_param.version == PFN_VERSION_V3) {
+			DHD_ERROR(("%s : using pfn_param v3\n", __FUNCTION__));
+			use_v3 = TRUE;
+		} else if (pfn_param.version == PFN_VERSION_V2) {
+			DHD_ERROR(("%s : using pfn_param v2\n", __FUNCTION__));
+			use_v3 = FALSE;
+		}  else {
+			DHD_ERROR(("unsupported pfn ver:%d\n", pfn_param.version));
+			err = BCME_UNSUPPORTED;
+			goto exit;
+		}
+	}
 
 	/* set pfn parameters */
-	pfn_param.version = htod32(PFN_VERSION);
+	bzero(&pfn_param, sizeof(pfn_param));
+	if (use_v3) {
+		pfn_param.version = PFN_VERSION_V3;
+		pfn_param.version = htod32(pfn_param.version);
+		size = sizeof(wl_pfn_param_v3_t);
+		pfn_param.length = htod32(size);
+	} else {
+		wl_pfn_param_v2_t *pfn_param_v2 = (wl_pfn_param_v2_t *)&pfn_param;
+		pfn_param_v2->version = PFN_VERSION_V2;
+		pfn_param_v2->version = htod32(pfn_param_v2->version);
+		size = sizeof(wl_pfn_param_v2_t);
+	}
+
 	pfn_param.flags = ((PFN_LIST_ORDER << SORT_CRITERIA_BIT) |
 		(ENABLE << IMMEDIATE_SCAN_BIT) | (ENABLE << REPORT_SEPERATELY_BIT));
 	if (mode == DHD_PNO_LEGACY_MODE) {
@@ -627,7 +666,7 @@ _dhd_pno_set(dhd_pub_t *dhd, const dhd_pno_params_t *pno_params, dhd_pno_mode_t 
 		DHD_PNO((" returned mscan : %d, set bestn : %d mscan %d\n", _tmp, pfn_param.bestn,
 		        pfn_param.mscan));
 	}
-	err = dhd_iovar(dhd, 0, "pfn_set", (char *)&pfn_param, sizeof(pfn_param), NULL, 0, TRUE);
+	err = dhd_iovar(dhd, 0, "pfn_set", (char *)&pfn_param, size, NULL, 0, TRUE);
 	if (err < 0) {
 		DHD_ERROR(("%s : failed to execute pfn_set %d\n", __FUNCTION__, err));
 		goto exit;

@@ -46,13 +46,13 @@ hdd_trace_dump(void *mac, tp_qdf_trace_record record, uint16_t index)
 			       index, record->qtime, record->time,
 			       record->session, "RX SME MSG:",
 			       get_e_roam_cmd_status_str(record->data),
-			       record->data);
+							 record->data);
 	else
 		hdd_nofl_debug("%04d %012llu %s S%d %-14s %-30s(0x%x)",
 			       index, record->qtime, record->time,
 			       record->session, "HDD Event:",
 			       hdd_trace_event_string(record->code),
-			       record->data);
+						      record->data);
 }
 
 /**

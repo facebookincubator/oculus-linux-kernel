@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,7 +49,11 @@
 #define WLAN_CRYPTO_KEYIX_NONE       ((uint16_t)-1)
 #define WLAN_CRYPTO_MAXKEYIDX        (4)
 #define WLAN_CRYPTO_MAXIGTKKEYIDX    (2)
-#define WLAN_CRYPTO_MAX_PMKID        (3)
+#define WLAN_CRYPTO_MAXBIGTKKEYIDX   (2)
+#ifndef WLAN_CRYPTO_MAX_VLANKEYIX
+#define WLAN_CRYPTO_MAX_VLANKEYIX    WLAN_CRYPTO_MAXKEYIDX
+#endif
+#define WLAN_CRYPTO_MAX_PMKID        (16)
 
 /* 40 bit wep key len */
 #define WLAN_CRYPTO_KEY_WEP40_LEN    (5)
@@ -71,6 +75,10 @@
 #define WLAN_CRYPTO_WPI_SMS4_PADLEN  (1)
 #define WLAN_CRYPTO_WPI_SMS4_MICLEN  (16)
 
+/* FILS definitions */
+#define WLAN_CRYPTO_FILS_OPTIONAL_DATA_LEN 3
+#define WLAN_CRYPTO_FILS_RIK_LABEL "Re-authentication Integrity Key@ietf.org"
+
 /* key used for xmit */
 #define WLAN_CRYPTO_KEY_XMIT         (0x01)
 /* key used for recv */
@@ -91,6 +99,8 @@
 #define WLAN_CRYPTO_KEY_SWDECRYPT    (0x100)
 /* host-based demic */
 #define WLAN_CRYPTO_KEY_SWDEMIC      (0x200)
+/* get pn from fw for key */
+#define WLAN_CRYPTO_KEY_GET_PN       (0x400)
 
 #define WLAN_CRYPTO_KEY_SWCRYPT      (WLAN_CRYPTO_KEY_SWENCRYPT \
 						| WLAN_CRYPTO_KEY_SWDECRYPT)
@@ -171,7 +181,14 @@ typedef enum wlan_crypto_rsn_cap {
 	WLAN_CRYPTO_RSN_CAP_PREAUTH       = 0x01,
 	WLAN_CRYPTO_RSN_CAP_MFP_ENABLED   = 0x80,
 	WLAN_CRYPTO_RSN_CAP_MFP_REQUIRED  = 0x40,
+	WLAN_CRYPTO_RSN_CAP_OCV_SUPPORTED  = 0x4000,
 } wlan_crypto_rsn_cap;
+
+enum wlan_crypto_rsnx_cap {
+	WLAN_CRYPTO_RSNX_CAP_PROTECTED_TWT = 0x10,
+	WLAN_CRYPTO_RSNX_CAP_SAE_H2E = 0x20,
+	WLAN_CRYPTO_RSNX_CAP_SAE_PK = 0x40,
+};
 
 typedef enum wlan_crypto_key_mgmt {
 	WLAN_CRYPTO_KEY_MGMT_IEEE8021X             = 0,
@@ -198,8 +215,9 @@ typedef enum wlan_crypto_key_mgmt {
 	WLAN_CRYPTO_KEY_MGMT_FT_FILS_SHA384        = 21,
 	WLAN_CRYPTO_KEY_MGMT_OWE                   = 22,
 	WLAN_CRYPTO_KEY_MGMT_DPP                   = 23,
+	WLAN_CRYPTO_KEY_MGMT_FT_IEEE8021X_SHA384   = 24,
 	/** Keep WLAN_CRYPTO_KEY_MGMT_MAX at the end. */
-	WLAN_CRYPTO_KEY_MGMT_MAX                   = WLAN_CRYPTO_KEY_MGMT_DPP,
+	WLAN_CRYPTO_KEY_MGMT_MAX   = WLAN_CRYPTO_KEY_MGMT_FT_IEEE8021X_SHA384,
 } wlan_crypto_key_mgmt;
 
 enum wlan_crypto_key_type {
@@ -210,19 +228,43 @@ enum wlan_crypto_key_type {
 #define IS_WEP_CIPHER(_c)      ((_c == WLAN_CRYPTO_CIPHER_WEP) || \
 				(_c == WLAN_CRYPTO_CIPHER_WEP_40) || \
 				(_c == WLAN_CRYPTO_CIPHER_WEP_104))
+
+/*
+ * enum fils_erp_cryptosuite: this enum defines the cryptosuites used
+ * to calculate auth tag and auth tag length as defined by RFC 6696 5.3.1
+ * @HMAC_SHA256_64: sha256 with auth tag len as 64 bits
+ * @HMAC_SHA256_128: sha256 with auth tag len as 128 bits
+ * @HMAC_SHA256_256: sha256 with auth tag len as 256 bits
+ */
+enum fils_erp_cryptosuite {
+	INVALID_CRYPTO = 0, /* reserved */
+	HMAC_SHA256_64,
+	HMAC_SHA256_128,
+	HMAC_SHA256_256,
+};
+
 /**
  * struct wlan_crypto_pmksa - structure of crypto to contain pmkid
  * @bssid: bssid for which pmkid is saved
  * @pmkid: pmkid info
  * @pmk: pmk info
  * @pmk_len: pmk len
+ * @ssid_len: ssid length
+ * @ssid: ssid information
+ * @cache_id: cache id
+ * @single_pmk_supported: SAE single pmk supported BSS
  */
-
 struct wlan_crypto_pmksa {
 	struct qdf_mac_addr bssid;
 	uint8_t    pmkid[PMKID_LEN];
 	uint8_t    pmk[MAX_PMK_LEN];
 	uint8_t    pmk_len;
+	uint8_t    ssid_len;
+	uint8_t    ssid[WLAN_SSID_MAX_LEN];
+	uint8_t    cache_id[WLAN_CACHE_ID_LEN];
+#if defined(WLAN_SAE_SINGLE_PMK) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
+	bool       single_pmk_supported;
+#endif
 };
 
 /**
@@ -348,6 +390,7 @@ struct wlan_crypto_req_key {
  * @delkey: function pointer to delkey in hw
  * @defaultkey: function pointer to set default key
  * @set_key: converged function pointer to set key in hw
+ * @getpn: function pointer to get current pn value of peer
  */
 
 struct wlan_lmac_if_crypto_tx_ops {
@@ -365,6 +408,8 @@ struct wlan_lmac_if_crypto_tx_ops {
 	QDF_STATUS (*set_key)(struct wlan_objmgr_vdev *vdev,
 			      struct wlan_crypto_key *key,
 			      enum wlan_crypto_key_type key_type);
+	QDF_STATUS(*getpn)(struct wlan_objmgr_vdev *vdev,
+			   uint8_t *macaddr, uint32_t key_type);
 };
 
 /**

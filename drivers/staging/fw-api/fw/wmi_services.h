@@ -444,6 +444,10 @@ typedef  enum  {
     WMI_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT = 249, /* Support for SRG, SRP based spatial reuse support */
     WMI_REQUEST_CTRL_PATH_STATS_REQUEST = 250, /* FW supports control path stats */
     WMI_SERVICE_TPC_STATS_EVENT = 251, /* FW support to dump the TPC tables */
+    WMI_SERVICE_NO_INTERBAND_MCC_SUPPORT = 252, /* Indicates FW doesn't support interband MCC */
+    WMI_SERVICE_MBSS_PARAM_IN_VDEV_START_SUPPORT = 253, /* FW supports VDEV's MBSS param exchange in VDEV start command */
+    WMI_SERVICE_CONFIGURE_ROAM_TRIGGER_PARAM_SUPPORT = 254, /* FW supports ROAM trigger configuration param TLV */
+    WMI_SERVICE_CFR_TA_RA_AS_FP_SUPPORT = 255, /* indicates FW support to program CFR TA/RA filtered packets as Filter pass */
 
 
     /******* ADD NEW SERVICES UP TO 256 HERE *******/
@@ -468,6 +472,16 @@ typedef  enum  {
 
 
     /******* ADD NEW SERVICES 256 AND BEYOND HERE *******/
+
+    WMI_SERVICE_CFR_CAPTURE_COUNT_SUPPORT = 256, /* indicates FW support to program CFR capture mode and capture count */
+    WMI_SERVICE_OCV_SUPPORT = 257, /* FW supports OCV (Operating Channel Validation) */
+    WMI_SERVICE_LL_STATS_PER_CHAN_RX_TX_TIME_SUPPORT = 258, /* Indicates firmware support sending per channel own tx & rx time in radio stats of LL stats. */
+    WMI_SERVICE_THERMAL_MULTI_CLIENT_SUPPORT = 259, /* Indicates FW Thermal Mgr will support multiple clients for mitigation */
+    WMI_SERVICE_NAN_SEND_NAN_ENABLE_RESPONSE_TO_HOST = 260, /* Indicates FW will include an additional TLV in nan enable response for Host driver to parse */
+    WMI_SERVICE_UNIFIED_LL_GET_STA_CMD_SUPPORT = 261, /* Indicates that FW supports handling Link Layer and Get Station stats Commands together (WMI_REQUEST_UNIFIED_LL_GET_STA_CMDID) */
+    WMI_SERVICE_FSE_CMEM_ALLOC_SUPPORT = 262, /* Indicates that FW supports non-secure CMEM allocation for FSE table */
+    WMI_SERVICE_PASSIVE_SCAN_START_TIME_ENHANCE = 263, /* Indicates FW support to not skip beacon if passive scan dwell time + channel switch delay is lesser than beacon interval */
+    WMI_SERVICE_QOS_NULL_FRAME_TX_OVER_WMI = 264, /* Indicates that FW supports tx of QoS null frame downloaded through WMI interface */
 
 
     WMI_MAX_EXT2_SERVICE

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -143,19 +143,19 @@ struct CE_attr;
  *   nbytes          - number of bytes to send
  *   transfer_id     - arbitrary ID; reflected to destination
  *   flags           - CE_SEND_FLAG_* values
- * Returns 0 on success; otherwise an error status.
+ * Returns QDF_STATUS.
  *
  * Note: If no flags are specified, use CE's default data swap mode.
  *
  * Implementation note: pushes 1 buffer to Source ring
  */
-int ce_send(struct CE_handle *copyeng,
-		void *per_transfer_send_context,
-		qdf_dma_addr_t buffer,
-		unsigned int nbytes,
-		unsigned int transfer_id,
-		unsigned int flags,
-		unsigned int user_flags);
+QDF_STATUS ce_send(struct CE_handle *copyeng,
+		   void *per_transfer_send_context,
+		   qdf_dma_addr_t buffer,
+		   unsigned int nbytes,
+		   unsigned int transfer_id,
+		   unsigned int flags,
+		   unsigned int user_flags);
 
 #ifdef WLAN_FEATURE_FASTPATH
 int ce_send_fast(struct CE_handle *copyeng, qdf_nbuf_t msdu,
@@ -194,44 +194,57 @@ unsigned int ce_sendlist_sizeof(void);
 /* Initialize a sendlist */
 void ce_sendlist_init(struct ce_sendlist *sendlist);
 
-/* Append a simple buffer (address/length) to a sendlist. */
-int ce_sendlist_buf_add(struct ce_sendlist *sendlist,
-		qdf_dma_addr_t buffer,
-		unsigned int nbytes,
-		/* OR-ed with internal flags */
-		uint32_t flags,
-		uint32_t user_flags);
+/**
+ * ce_sendlist_buf_add() - Append a simple buffer (address/length) to a sendlist
+ * @sendlist: Sendlist
+ * @buffer: buffer
+ * @nbytes: numer of bytes to append
+ * @flags: flags
+ * @user_flags: user flags
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS ce_sendlist_buf_add(struct ce_sendlist *sendlist,
+			       qdf_dma_addr_t buffer,
+			       unsigned int nbytes,
+			       /* OR-ed with internal flags */
+			       uint32_t flags,
+			       uint32_t user_flags);
 
 /*
- * Queue a "sendlist" of buffers to be sent using gather to a single
- * anonymous destination buffer
- *   copyeng         - which copy engine to use
- *   sendlist        - list of simple buffers to send using gather
- *   transfer_id     - arbitrary ID; reflected to destination
- * Returns 0 on success; otherwise an error status.
+ * ce_sendlist_send() - Queue a "sendlist" of buffers to be sent using gather to
+ * a single anonymous destination buffer
+ * @copyeng: which copy engine to use
+ * @per_transfer_send_context: Per transfer send context
+ * @sendlist: list of simple buffers to send using gather
+ * @transfer_id: arbitrary ID; reflected to destination
  *
  * Implementation note: Pushes multiple buffers with Gather to Source ring.
+ *
+ * Return: QDF_STATUS
  */
-int ce_sendlist_send(struct CE_handle *copyeng,
-		void *per_transfer_send_context,
-		struct ce_sendlist *sendlist,
-		unsigned int transfer_id);
+QDF_STATUS ce_sendlist_send(struct CE_handle *copyeng,
+			    void *per_transfer_send_context,
+			    struct ce_sendlist *sendlist,
+			    unsigned int transfer_id);
 
 /*==================Recv=====================================================*/
 
-/*
- * Make a buffer available to receive. The buffer must be at least of a
- * minimal size appropriate for this copy engine (src_sz_max attribute).
- *   copyeng                    - which copy engine to use
- *   per_transfer_recv_context  - context passed back to caller's recv_cb
- *   buffer                     - address of buffer in CE space
- * Returns 0 on success; otherwise an error status.
+/**
+ * ce_recv_buf_enqueue() -  Make a buffer available to receive. The buffer must
+ * be at least of a minimal size appropriate for this copy engine (src_sz_max
+ * attribute).
+ * @copyeng: which copy engine to use
+ * @per_transfer_recv_context: context passed back to caller's recv_cb
+ * @buffer: address of buffer in CE space
  *
  * Implementation note: Pushes a buffer to Dest ring.
+ *
+ * Return: QDF_STATUS.
  */
-int ce_recv_buf_enqueue(struct CE_handle *copyeng,
-			void *per_transfer_recv_context,
-			qdf_dma_addr_t buffer);
+QDF_STATUS ce_recv_buf_enqueue(struct CE_handle *copyeng,
+			       void *per_transfer_recv_context,
+			       qdf_dma_addr_t buffer);
 
 /*
  * Register a Receive Callback function.
@@ -302,8 +315,16 @@ unsigned int ce_recv_entries_avail(struct CE_handle *copyeng);
 /* Data is byte-swapped */
 #define CE_RECV_FLAG_SWAPPED            1
 
-/*
- * Supply data for the next completed unprocessed receive descriptor.
+/**
+ * ce_completed_recv_next() - Supply data for the next completed unprocessed
+ * receive descriptor.
+ * @copyeng: which copy engine to use
+ * @per_CE_contextp: CE context
+ * @per_transfer_contextp: Transfer context
+ * @bufferp: buffer pointer
+ * @nbytesp: number of bytes
+ * @transfer_idp: Transfer idp
+ * @flagsp: flags
  *
  * For use
  *    with CE Watermark callback,
@@ -311,33 +332,47 @@ unsigned int ce_recv_entries_avail(struct CE_handle *copyeng);
  *    in a recv_cb function in order to mitigate recv_cb's.
  *
  * Implementation note: Pops buffer from Dest ring.
+ *
+ * Return: QDF_STATUS
  */
-int ce_completed_recv_next(struct CE_handle *copyeng,
-			   void **per_CE_contextp,
-			   void **per_transfer_contextp,
-			   qdf_dma_addr_t *bufferp,
-			   unsigned int *nbytesp,
-			   unsigned int *transfer_idp,
-			   unsigned int *flagsp);
+QDF_STATUS ce_completed_recv_next(struct CE_handle *copyeng,
+				  void **per_CE_contextp,
+				  void **per_transfer_contextp,
+				  qdf_dma_addr_t *bufferp,
+				  unsigned int *nbytesp,
+				  unsigned int *transfer_idp,
+				  unsigned int *flagsp);
 
-/*
- * Supply data for the next completed unprocessed send descriptor.
+/**
+ * ce_completed_send_next() - Supply data for the next completed unprocessed
+ * send descriptor.
+ * @copyeng: which copy engine to use
+ * @per_CE_contextp: CE context
+ * @per_transfer_contextp: Transfer context
+ * @bufferp: buffer pointer
+ * @nbytesp: number of bytes
+ * @transfer_idp: Transfer idp
+ * @sw_idx: SW index
+ * @hw_idx: HW index
+ * @toeplitz_hash_result: toeplitz hash result
  *
  * For use
  *    with CE Watermark callback
  *    in a send_cb function in order to mitigate send_cb's.
  *
  * Implementation note: Pops 1 completed send buffer from Source ring
+ *
+ * Return: QDF_STATUS
  */
-int ce_completed_send_next(struct CE_handle *copyeng,
-			   void **per_CE_contextp,
-			   void **per_transfer_contextp,
-			   qdf_dma_addr_t *bufferp,
-			   unsigned int *nbytesp,
-			   unsigned int *transfer_idp,
-			   unsigned int *sw_idx,
-			   unsigned int *hw_idx,
-			   uint32_t *toeplitz_hash_result);
+QDF_STATUS ce_completed_send_next(struct CE_handle *copyeng,
+				  void **per_CE_contextp,
+				  void **per_transfer_contextp,
+				  qdf_dma_addr_t *bufferp,
+				  unsigned int *nbytesp,
+				  unsigned int *transfer_idp,
+				  unsigned int *sw_idx,
+				  unsigned int *hw_idx,
+				  uint32_t *toeplitz_hash_result);
 
 /*==================CE Engine Initialization=================================*/
 
@@ -499,16 +534,17 @@ struct ce_ops {
 	int (*ce_ring_setup)(struct hif_softc *scn, uint8_t ring_type,
 		uint32_t ce_id, struct CE_ring_state *ring,
 		struct CE_attr *attr);
-	int (*ce_send_nolock)(struct CE_handle *copyeng,
-			   void *per_transfer_context,
-			   qdf_dma_addr_t buffer,
-			   uint32_t nbytes,
-			   uint32_t transfer_id,
-			   uint32_t flags,
-			   uint32_t user_flags);
-	int (*ce_sendlist_send)(struct CE_handle *copyeng,
-			void *per_transfer_context,
-			struct ce_sendlist *sendlist, unsigned int transfer_id);
+	QDF_STATUS (*ce_send_nolock)(struct CE_handle *copyeng,
+				     void *per_transfer_context,
+				     qdf_dma_addr_t buffer,
+				     uint32_t nbytes,
+				     uint32_t transfer_id,
+				     uint32_t flags,
+				     uint32_t user_flags);
+	QDF_STATUS (*ce_sendlist_send)(struct CE_handle *copyeng,
+				       void *per_transfer_context,
+				       struct ce_sendlist *sendlist,
+				       unsigned int transfer_id);
 	QDF_STATUS (*ce_revoke_recv_next)(struct CE_handle *copyeng,
 			void **per_CE_contextp,
 			void **per_transfer_contextp,
@@ -518,17 +554,20 @@ struct ce_ops {
 			qdf_dma_addr_t *bufferp, unsigned int *nbytesp,
 			unsigned int *transfer_idp,
 			uint32_t *toeplitz_hash_result);
-	int (*ce_recv_buf_enqueue)(struct CE_handle *copyeng,
-			void *per_recv_context, qdf_dma_addr_t buffer);
+	QDF_STATUS (*ce_recv_buf_enqueue)(struct CE_handle *copyeng,
+					  void *per_recv_context,
+					  qdf_dma_addr_t buffer);
 	bool (*watermark_int)(struct CE_state *CE_state, unsigned int *flags);
-	int (*ce_completed_recv_next_nolock)(struct CE_state *CE_state,
+	QDF_STATUS (*ce_completed_recv_next_nolock)(
+			struct CE_state *CE_state,
 			void **per_CE_contextp,
 			void **per_transfer_contextp,
 			qdf_dma_addr_t *bufferp,
 			unsigned int *nbytesp,
 			unsigned int *transfer_idp,
 			unsigned int *flagsp);
-	int (*ce_completed_send_next_nolock)(struct CE_state *CE_state,
+	QDF_STATUS (*ce_completed_send_next_nolock)(
+			struct CE_state *CE_state,
 			void **per_CE_contextp,
 			void **per_transfer_contextp,
 			qdf_dma_addr_t *bufferp,
@@ -546,6 +585,8 @@ struct ce_ops {
 	void (*ce_prepare_shadow_register_v2_cfg)(struct hif_softc *scn,
 			    struct pld_shadow_reg_v2_cfg **shadow_config,
 			    int *num_shadow_registers_configured);
+	int (*ce_get_index_info)(struct hif_softc *scn, void *ce_state,
+				 struct ce_index *info);
 };
 
 int hif_ce_bus_early_suspend(struct hif_softc *scn);

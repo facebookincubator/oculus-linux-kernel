@@ -142,6 +142,10 @@ int get_roam_channel_list(struct bcm_cfg80211 *cfg, chanspec_t target_chan, chan
 void set_roam_band(int band);
 #endif /* ESCAN_CHANNEL_CACHE */
 
+#ifdef WL_SCHED_SCAN
+void wl_cfg80211_stop_pno(struct bcm_cfg80211 *cfg, struct net_device *dev);
+#endif /* WL_SCHED_SCAN */
+
 #ifdef ROAM_CHANNEL_CACHE
 void print_roam_cache(struct bcm_cfg80211 *cfg);
 #endif /* ROAM_CHANNEL_CACHE */
@@ -688,13 +692,21 @@ exit:
 
 #ifdef ESCAN_BUF_OVERFLOW_MGMT
 #ifndef WL_DRV_AVOID_SCANCACHE
+#ifdef WL_6G_BAND
+#define WL_6G_CMP	30	/* (dBm) 6G Band RSSI compensation */
+#define BSSRSSI(b)	\
+	(CHSPEC_IS6G((b)->chanspec) ? (((b)->RSSI) + (WL_6G_CMP)) : ((b)->RSSI))
+#else
+#define BSSRSSI(b)	((b)->RSSI)
+#endif /* WL_6G_BAND */
+
 static void
 wl_cfg80211_find_removal_candidate(wl_bss_info_t *bss, removal_element_t *candidate)
 {
 	int idx;
 	for (idx = 0; idx < BUF_OVERFLOW_MGMT_COUNT; idx++) {
 		int len = BUF_OVERFLOW_MGMT_COUNT - idx - 1;
-		if (bss->RSSI < candidate[idx].RSSI) {
+		if (BSSRSSI(bss) < candidate[idx].RSSI) {
 			if (len) {
 				/* In the below memcpy operation the candidate array always has the
 				* buffer space available to max 'len' calculated in the for loop.
@@ -703,7 +715,7 @@ wl_cfg80211_find_removal_candidate(wl_bss_info_t *bss, removal_element_t *candid
 					(sizeof(removal_element_t) * len),
 					&candidate[idx], sizeof(removal_element_t) * len);
 			}
-			candidate[idx].RSSI = bss->RSSI;
+			candidate[idx].RSSI = BSSRSSI(bss);
 			candidate[idx].length = bss->length;
 			(void)memcpy_s(&candidate[idx].BSSID, ETHER_ADDR_LEN,
 				&bss->BSSID, ETHER_ADDR_LEN);
@@ -721,7 +733,7 @@ wl_cfg80211_remove_lowRSSI_info(wl_scan_results_t *list, removal_element_t *cand
 	for (idx1 = 0; idx1 < BUF_OVERFLOW_MGMT_COUNT; idx1++) {
 		int cur_len = WL_SCAN_RESULTS_FIXED_SIZE;
 		wl_bss_info_t *bss = NULL;
-		if (candidate[idx1].RSSI >= bi->RSSI)
+		if (candidate[idx1].RSSI >= BSSRSSI(bi))
 			continue;
 		for (idx2 = 0; idx2 < list->count; idx2++) {
 			bss = bss ? (wl_bss_info_t *)((uintptr)bss + dtoh32(bss->length)) :
@@ -730,7 +742,7 @@ wl_cfg80211_remove_lowRSSI_info(wl_scan_results_t *list, removal_element_t *cand
 				continue;
 			}
 			if (!bcmp(&candidate[idx1].BSSID, &bss->BSSID, ETHER_ADDR_LEN) &&
-				candidate[idx1].RSSI == bss->RSSI &&
+				candidate[idx1].RSSI == BSSRSSI(bss) &&
 				candidate[idx1].length == dtoh32(bss->length)) {
 				u32 delete_len = dtoh32(bss->length);
 				WL_DBG(("delete scan info of " MACDBG " to add new AP\n",
@@ -1326,16 +1338,13 @@ static u32
 wl_cfgscan_map_nl80211_scan_type(struct bcm_cfg80211 *cfg, struct cfg80211_scan_request *request)
 {
 	u32 scan_flags = 0;
-	struct net_device *pri_dev;
-
-	pri_dev = bcmcfg_to_prmry_ndev(cfg);
 
 	if (!request) {
 		return scan_flags;
 	}
 
 	if (cfg->latency_mode &&
-		wl_get_drv_status(cfg, CONNECTED, pri_dev)) {
+		wl_is_sta_connected(cfg)) {
 		WL_DBG_MEM(("latency mode on. force LP scan\n"));
 		scan_flags |= WL_SCANFLAGS_LOW_POWER_SCAN;
 		goto exit;
@@ -1424,7 +1433,6 @@ wl_cfgscan_populate_scan_channels(struct bcm_cfg80211 *cfg,
 {
 	u32 i = 0, j = 0;
 	u32 chanspec = 0;
-	struct wireless_dev *wdev;
 	bool is_p2p_scan = false;
 #ifdef P2P_SKIP_DFS
 	int is_printed = false;
@@ -1433,13 +1441,6 @@ wl_cfgscan_populate_scan_channels(struct bcm_cfg80211 *cfg,
 	if (!channels || !n_channels) {
 		/* Do full channel scan */
 		return;
-	}
-
-	 wdev = GET_SCAN_WDEV(cfg->scan_request);
-	if (!skip_dfs && wdev && wdev->netdev &&
-			(wdev->netdev != bcmcfg_to_prmry_ndev(cfg))) {
-		/* SKIP DFS channels for Secondary interface */
-		skip_dfs = true;
 	}
 
 	/* Check if request is for p2p scans */
@@ -2106,6 +2107,12 @@ wl_cfgscan_handle_scanbusy(struct bcm_cfg80211 *cfg, struct net_device *ndev, s3
 		busy_count = 0;
 		return scanbusy_err;
 	}
+
+	if (!p2p_scan(cfg) && wl_get_drv_status_all(cfg, REMAINING_ON_CHANNEL)) {
+		WL_ERR(("Scan err = (%d) due to p2p scan, nothing to do\n", err));
+		busy_count = 0;
+	}
+
 	if (err == BCME_BUSY || err == BCME_NOTREADY) {
 		WL_ERR(("Scan err = (%d), busy?%d", err, -EBUSY));
 		scanbusy_err = -EBUSY;
@@ -2237,6 +2244,13 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		WL_ERR(("Sending Action Frames. Try it again.\n"));
 		return -EAGAIN;
 	}
+
+#ifdef WL_SCHED_SCAN
+	if (cfg->sched_scan_running) {
+		WL_ERR(("PNO SCAN in progress\n"));
+		return -EAGAIN;
+	}
+#endif /* WL_SCHED_SCAN */
 
 	WL_DBG(("Enter wiphy (%p)\n", wiphy));
 	mutex_lock(&cfg->scan_sync);
@@ -2765,11 +2779,9 @@ wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 
 		if (cfg->bss_list && (cfg->bss_list->count == 0)) {
 			WL_INFORM_MEM(("bss list empty. report sched_scan_stop\n"));
-			/* Indicated sched scan stopped so that user space
-			 * can do a full scan incase found match is empty.
-			 */
-			CFG80211_SCHED_SCAN_STOPPED(wiphy, cfg->sched_scan_req);
-			cfg->sched_scan_req = NULL;
+			wl_cfg80211_stop_pno(cfg,  bcmcfg_to_prmry_ndev(cfg));
+			/* schedule the work to indicate sched scan stop to cfg layer */
+			schedule_work(&cfg->sched_scan_stop_work);
 		}
 	}
 #endif /* WL_SCHED_SCAN */
@@ -3720,19 +3732,12 @@ exit:
 	return ret;
 }
 
-int
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(4, 11, 0))
-wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev, u64 reqid)
-#else
-wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
-#endif /* LINUX_VER > 4.11 */
+void
+wl_cfg80211_stop_pno(struct bcm_cfg80211 *cfg, struct net_device *dev)
 {
-	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+#if defined(BCMDONGLEHOST)
 	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 
-	WL_INFORM((">>> SCHED SCAN STOP\n"));
-
-#if defined(BCMDONGLEHOST)
 	if (dhd_dev_pno_stop_for_ssid(dev) < 0) {
 		WL_ERR(("PNO Stop for SSID failed"));
 	} else {
@@ -3743,6 +3748,19 @@ wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
 		DBG_EVENT_LOG(dhdp, WIFI_EVENT_DRIVER_PNO_REMOVE);
 	}
 #endif /* BCMDONGLEHOST */
+}
+
+int
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(4, 11, 0))
+wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev, u64 reqid)
+#else
+wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
+#endif /* LINUX_VER > 4.11 */
+{
+	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+
+	WL_INFORM((">>> SCHED SCAN STOP\n"));
+	wl_cfg80211_stop_pno(cfg, dev);
 
 	mutex_lock(&cfg->scan_sync);
 	if (cfg->sched_scan_req) {
@@ -3761,6 +3779,33 @@ wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
 	mutex_unlock(&cfg->scan_sync);
 
 	return 0;
+}
+
+void
+wl_cfgscan_sched_scan_stop_work(struct work_struct *work)
+{
+	struct bcm_cfg80211 *cfg = NULL;
+	struct wiphy *wiphy = NULL;
+
+	cfg = container_of(work, struct bcm_cfg80211, sched_scan_stop_work);
+	wiphy = cfg->sched_scan_req->wiphy;
+
+	/* Hold rtnl_lock -> scan_sync lock to be in sync with cfg80211_ops path */
+	rtnl_lock();
+	mutex_lock(&cfg->scan_sync);
+	if (cfg->sched_scan_req) {
+		/* Indicate sched scan stopped so that user space
+		 * can do a full scan incase found match is empty.
+		 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0))
+		cfg80211_sched_scan_stopped_rtnl(wiphy, cfg->sched_scan_req->reqid);
+#else
+		cfg80211_sched_scan_stopped_rtnl(wiphy);
+#endif /* KERNEL > 4.12.0 */
+		cfg->sched_scan_req = NULL;
+	}
+	mutex_unlock(&cfg->scan_sync);
+	rtnl_unlock();
 }
 #endif /* WL_SCHED_SCAN */
 
@@ -4589,12 +4634,9 @@ out_err:
 		 */
 		if (cfg->sched_scan_req) {
 			WL_ERR(("sched_scan stopped\n"));
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
-			cfg80211_sched_scan_stopped(wiphy, cfg->sched_scan_req->reqid);
-#else
-			cfg80211_sched_scan_stopped(wiphy);
-#endif /* KERNEL > 4.11.0 */
-			cfg->sched_scan_req = NULL;
+			wl_cfg80211_stop_pno(cfg,  bcmcfg_to_prmry_ndev(cfg));
+			/* schedule the work to indicate sched scan stop to cfg layer */
+			schedule_work(&cfg->sched_scan_stop_work);
 		} else {
 			WL_ERR(("sched scan req null!\n"));
 		}
@@ -4662,7 +4704,11 @@ wl_notify_pfn_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	/* If cfg80211 scheduled scan is supported, report the pno results via sched
 	 * scan results
 	 */
-	wl_notify_sched_scan_results(cfg, ndev, e, data);
+	if (cfg->sched_scan_req) {
+		wl_notify_sched_scan_results(cfg, ndev, e, data);
+	} else {
+		WL_ERR(("No sched scan running. ignore.\n"));
+	}
 #endif /* WL_SCHED_SCAN */
 	return 0;
 }
@@ -5017,8 +5063,7 @@ wl_priortize_scan_over_listen(struct bcm_cfg80211 *cfg,
 
 	wl_clr_p2p_status(cfg, LISTEN_EXPIRED);
 
-	INIT_TIMER(&cfg->p2p->listen_timer,
-		wl_cfgp2p_listen_expired, duration, 0);
+	mod_timer(&cfg->p2p->listen_timer, jiffies + msecs_to_jiffies(duration));
 }
 #endif /* WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST */
 
@@ -5242,7 +5287,8 @@ wl_android_get_roam_scan_chanlist(struct bcm_cfg80211 *cfg)
 	wlc_ssid_t *ssid = NULL;
 	wl_roam_channel_list_t channel_list;
 	uint16 channels[MAX_ROAM_CHANNEL] = {0};
-	int i = 0;
+	char chanspec_buf[CHANSPEC_STR_LEN];
+	int i = 0, nchan = 0;
 
 	ndev = bcmcfg_to_prmry_ndev(cfg);
 	wiphy = bcmcfg_to_wiphy(cfg);
@@ -5278,9 +5324,15 @@ wl_android_get_roam_scan_chanlist(struct bcm_cfg80211 *cfg)
 
 	WL_DBG(("SSID %s(%d), RCC(%d)\n", ssid->SSID, ssid->SSID_len, channel_list.n));
 	for (i = 0; i < channel_list.n; i++) {
-		channels[i] = CHSPEC_CHANNEL(channel_list.channels[i]);
-		WL_DBG(("Chanspec[%d] CH:%03d(0x%04x)\n",
-			i, channels[i], channel_list.channels[i]));
+		WL_DBG(("Chanspec[%d] CH: %s (0x%04x)\n",
+			i, wf_chspec_ntoa_ex(channel_list.channels[i], chanspec_buf),
+			channel_list.channels[i]));
+		if (CHSPEC_IS6G(channel_list.channels[i])) {
+			WL_DBG(("Skip 6G channel\n"));
+			continue;
+		}
+		channels[nchan] = CHSPEC_CHANNEL(channel_list.channels[i]);
+		nchan++;
 	}
 
 	err = nla_put_string(skb, RCC_ATTRIBUTE_SSID, ssid->SSID);
@@ -5295,7 +5347,7 @@ wl_android_get_roam_scan_chanlist(struct bcm_cfg80211 *cfg)
 		goto fail;
 	}
 
-	err = nla_put_u32(skb, RCC_ATTRIBUTE_NUM_CHANNELS, channel_list.n);
+	err = nla_put_u32(skb, RCC_ATTRIBUTE_NUM_CHANNELS, nchan);
 	if (unlikely(err)) {
 		WL_ERR(("nla_put_u32 RCC_ATTRIBUTE_NUM_CHANNELS failed\n"));
 		goto fail;
@@ -5378,6 +5430,7 @@ wl_get_assoc_channels(struct bcm_cfg80211 *cfg,
 					WL_INFORM_MEM(("6G channel in rcc. use fw nw sel\n"));
 					/* skip bssid hint inclusion and provide bcast bssid */
 					info->bssid_hint = false;
+					info->targeted_join = false;
 					(void)memcpy_s(&info->bssid,
 							ETH_ALEN, &ether_bcast, ETH_ALEN);
 					break;
@@ -5416,14 +5469,31 @@ wl_cfgscan_is_dfs_set(wifi_band band)
 }
 
 s32
-wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg, int band,
-	uint16 *list, uint32 *num_channels)
+wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev, int band,
+	uint32 *list, uint32 *num_channels)
 {
 	s32 err = BCME_OK;
 	uint32 i, freq, list_count, count = 0;
 	struct net_device *dev = bcmcfg_to_prmry_ndev(cfg);
 	uint32 chspec, chaninfo;
 	bool dfs_set = false;
+	bool ap_iface;
+
+	if (!wdev) {
+		WL_ERR(("wdev null\n"));
+		return -EINVAL;
+	}
+
+	ap_iface = IS_AP_IFACE(wdev);
+#ifndef WL_DUAL_APSTA
+	if (!ap_iface && (wdev->netdev != bcmcfg_to_prmry_ndev(cfg))) {
+		/* The GETCHANNEL API could come before role conversion. so
+		 * for now consider the requests coming on non primary I/F
+		 * too as request for AP.
+		 */
+		ap_iface = TRUE;
+	}
+#endif /* WL_DUAL_APSTA */
 
 	dfs_set = wl_cfgscan_is_dfs_set(band);
 	err = wldev_iovar_getbuf_bsscfg(dev, "chan_info_list", NULL,
@@ -5442,14 +5512,25 @@ wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg, int band,
 		chaninfo = dtoh32(((wl_chanspec_list_v1_t *)list)->chspecs[i].chaninfo);
 		freq = wl_channel_to_frequency(wf_chspec_ctlchan(chspec),
 			CHSPEC_BAND(chspec));
-		if (((band & WIFI_BAND_BG) && CHSPEC_IS2G(chspec)) ||
-				((band & WIFI_BAND_6GHZ) && CHSPEC_IS6G(chspec))) {
-			/* add 2g/6g channels */
-			list[i] = freq;
-			count++;
+
+		if ((band & WIFI_BAND_BG) && CHSPEC_IS2G(chspec)) {
+			/* add 2g channels */
+			list[count++] = freq;
 		}
+
+		if ((band & WIFI_BAND_6GHZ) && CHSPEC_IS6G(chspec) && CHSPEC_IS20(chspec)) {
+			/* For AP interface and 6G band, use only VLP, PSC channels */
+			if (ap_iface && (!(chaninfo & WL_CHAN_BAND_6G_PSC) ||
+					!(chaninfo & WL_CHAN_BAND_6G_VLP))) {
+				WL_DBG(("skipping chspec:%x freq:%d for ap_iface\n", chspec, freq));
+				continue;
+			}
+			/* add 6g channels */
+			list[count++] = freq;
+		}
+
 		/* handle 5g separately */
-		if (CHSPEC_IS5G(chspec)) {
+		if (CHSPEC_IS5G(chspec) && CHSPEC_IS20(chspec)) {
 			if (!((band == WIFI_BAND_A_DFS) && IS_DFS(chaninfo)) &&
 				!(band & WIFI_BAND_A)) {
 				/* Not DFS only case nor 5G case */
@@ -5459,11 +5540,11 @@ wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg, int band,
 			if ((band & WIFI_BAND_A) && !dfs_set && IS_DFS(chaninfo)) {
 				continue;
 			}
-
-			list[i] = freq;
-			count++;
+			list[count++] = freq;
 		}
 	}
+
+	WL_INFORM_MEM(("get_freqlist_cnt:%d band:%d\n", count, band));
 	*num_channels = count;
 	return err;
 }

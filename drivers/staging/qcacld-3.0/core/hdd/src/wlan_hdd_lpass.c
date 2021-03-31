@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,33 +34,32 @@
  * wlan_hdd_get_channel_info() - Get channel info
  * @hdd_ctx: HDD context
  * @chan_info: Pointer to the structure that stores channel info
- * @chan_id: Channel ID
+ * @chan_freq: Channel freq
  *
  * Fill in the channel info to chan_info structure.
  */
 static void wlan_hdd_get_channel_info(struct hdd_context *hdd_ctx,
 				      struct svc_channel_info *chan_info,
-				      uint32_t chan_id)
+				      uint32_t chan_freq)
 {
 	uint32_t reg_info_1;
 	uint32_t reg_info_2;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 
-	status = sme_get_reg_info(hdd_ctx->mac_handle, chan_id,
+	status = sme_get_reg_info(hdd_ctx->mac_handle, chan_freq,
 				  &reg_info_1, &reg_info_2);
 	if (status != QDF_STATUS_SUCCESS)
 		return;
 
-	chan_info->mhz = cds_chan_to_freq(chan_id);
+	chan_info->mhz = chan_freq;
 	chan_info->band_center_freq1 = chan_info->mhz;
 	chan_info->band_center_freq2 = 0;
 	chan_info->info = 0;
 	if (CHANNEL_STATE_DFS ==
-	    wlan_reg_get_channel_state(hdd_ctx->pdev,
-				       chan_id))
+	    wlan_reg_get_channel_state_for_freq(hdd_ctx->pdev, chan_freq))
 		WMI_SET_CHANNEL_FLAG(chan_info,
 				     WMI_CHAN_FLAG_DFS);
-	hdd_update_channel_bw_info(hdd_ctx, chan_id,
+	hdd_update_channel_bw_info(hdd_ctx, chan_freq,
 				   chan_info);
 	chan_info->reg_info_1 = reg_info_1;
 	chan_info->reg_info_2 = reg_info_2;
@@ -85,11 +84,11 @@ static int wlan_hdd_gen_wlan_status_pack(struct wlan_status_data *data,
 					 uint8_t is_on, uint8_t is_connected)
 {
 	struct hdd_context *hdd_ctx = NULL;
-	uint8_t buflen = WLAN_SVC_COUNTRY_CODE_LEN;
 	int i;
 	uint32_t chan_id;
+	uint32_t *chan_freq_list, chan_freq_len;
 	struct svc_channel_info *chan_info;
-	bool lpass_support;
+	bool lpass_support, wls_6ghz_capable = false;
 	QDF_STATUS status;
 
 	if (!data) {
@@ -117,31 +116,50 @@ static int wlan_hdd_gen_wlan_status_pack(struct wlan_status_data *data,
 		hdd_err("Failed to get LPASS support config");
 		return -EIO;
 	}
-
+	ucfg_mlme_get_wls_6ghz_cap(hdd_ctx->psoc, &wls_6ghz_capable);
 	if (hdd_ctx->lpss_support && lpass_support)
 		data->lpss_support = 1;
 	else
 		data->lpss_support = 0;
-	data->numChannels = WLAN_SVC_MAX_NUM_CHAN;
-	sme_get_cfg_valid_channels(data->channel_list,
-				   &data->numChannels);
 
-	for (i = 0; i < data->numChannels; i++) {
-		chan_info = &data->channel_info[i];
-		chan_id = data->channel_list[i];
+	chan_freq_list =
+		qdf_mem_malloc(sizeof(uint32_t) * WLAN_SVC_MAX_NUM_CHAN);
+	if (!chan_freq_list)
+		return -ENOMEM;
+
+	chan_freq_len = WLAN_SVC_MAX_NUM_CHAN;
+	sme_get_cfg_valid_channels(chan_freq_list, &chan_freq_len);
+
+	data->numChannels = 0;
+	for (i = 0; i < chan_freq_len; i++) {
+		if (!wls_6ghz_capable &&
+		    wlan_reg_is_6ghz_chan_freq(chan_freq_list[i]))
+			continue;
+
+		chan_id = wlan_reg_freq_to_chan(hdd_ctx->pdev,
+						chan_freq_list[i]);
+		if (!chan_id)
+			continue;
+
+		chan_info = &data->channel_info[data->numChannels];
+		data->channel_list[data->numChannels] = chan_id;
 		chan_info->chan_id = chan_id;
-		wlan_hdd_get_channel_info(hdd_ctx, chan_info, chan_id);
+		wlan_hdd_get_channel_info(hdd_ctx,
+					  chan_info,
+					  chan_freq_list[i]);
+		data->numChannels++;
 	}
 
-	sme_get_country_code(hdd_ctx->mac_handle, data->country_code, &buflen);
+	qdf_mem_free(chan_freq_list);
+
+	wlan_reg_get_cc_and_src(hdd_ctx->psoc, data->country_code);
 	data->is_on = is_on;
 	data->vdev_id = adapter->vdev_id;
 	data->vdev_mode = adapter->device_mode;
 	if (sta_ctx) {
 		data->is_connected = is_connected;
 		data->rssi = adapter->rssi;
-		data->freq =
-			cds_chan_to_freq(sta_ctx->conn_info.channel);
+		data->freq = sta_ctx->conn_info.chan_freq;
 		if (WLAN_SVC_MAX_SSID_LEN >=
 		    sta_ctx->conn_info.ssid.SSID.length) {
 			data->ssid_len = sta_ctx->conn_info.ssid.SSID.length;

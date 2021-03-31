@@ -43,34 +43,121 @@ int hif_get_next_record_index(qdf_atomic_t *table_index,
 	return record_index & (array_size - 1);
 }
 
+/**
+ * hif_hist_is_prev_record() - Check if index is the immediate
+ *  previous record wrt curr_index
+ * @curr_index: curr index in the event history
+ * @index: index to be checked
+ * @hist_size: history size
+ *
+ * Return: true if index is immediately behind curr_index else false
+ */
+static inline
+bool hif_hist_is_prev_record(int32_t curr_index, int32_t index,
+			     uint32_t hist_size)
+{
+	return (((index + 1) & (hist_size - 1)) == curr_index) ?
+			true : false;
+}
+
+/**
+ * hif_hist_skip_event_record() - Check if current event needs to be
+ *  recorded or not
+ * @hist_ev: HIF event history
+ * @event: DP event entry
+ *
+ * Return: true if current event needs to be skipped else false
+ */
+static bool
+hif_hist_skip_event_record(struct hif_event_history *hist_ev,
+			   struct hif_event_record *event)
+{
+	struct hif_event_record *rec;
+	struct hif_event_record *last_irq_rec;
+	int32_t index;
+
+	index = qdf_atomic_read(&hist_ev->index);
+	if (index < 0)
+		return false;
+
+	index &= (HIF_EVENT_HIST_MAX - 1);
+	rec = &hist_ev->event[index];
+
+	switch (event->type) {
+	case HIF_EVENT_IRQ_TRIGGER:
+		/*
+		 * The prev record check is to prevent skipping the IRQ event
+		 * record in case where BH got re-scheduled due to force_break
+		 * but there are no entries to be reaped in the rings.
+		 */
+		if (rec->type == HIF_EVENT_BH_SCHED &&
+		    hif_hist_is_prev_record(index,
+					    hist_ev->misc.last_irq_index,
+					    HIF_EVENT_HIST_MAX)) {
+			last_irq_rec =
+				&hist_ev->event[hist_ev->misc.last_irq_index];
+			last_irq_rec->timestamp = qdf_get_log_timestamp();
+			last_irq_rec->cpu_id = qdf_get_cpu();
+			last_irq_rec->hp++;
+			last_irq_rec->tp = last_irq_rec->timestamp -
+						hist_ev->misc.last_irq_ts;
+			return true;
+		}
+		break;
+	case HIF_EVENT_BH_SCHED:
+		if (rec->type == HIF_EVENT_BH_SCHED) {
+			rec->timestamp = qdf_get_log_timestamp();
+			rec->cpu_id = qdf_get_cpu();
+			return true;
+		}
+		break;
+	case HIF_EVENT_SRNG_ACCESS_START:
+		if (event->hp == event->tp)
+			return true;
+		break;
+	case HIF_EVENT_SRNG_ACCESS_END:
+		if (rec->type != HIF_EVENT_SRNG_ACCESS_START)
+			return true;
+		break;
+	default:
+		break;
+	}
+
+	return false;
+}
+
 void hif_hist_record_event(struct hif_opaque_softc *hif_ctx,
 			   struct hif_event_record *event, uint8_t intr_grp_id)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
-	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
-	struct hif_exec_context *hif_ext_group;
 	struct hif_event_history *hist_ev;
 	struct hif_event_record *record;
 	int record_index;
 
-	if (!hif_state->hif_num_extgroup)
-		return;
-
 	if (scn->event_disable_mask & BIT(event->type))
 		return;
 
-	if (intr_grp_id >= HIF_NUM_INT_CONTEXTS) {
+	if (qdf_unlikely(intr_grp_id >= HIF_NUM_INT_CONTEXTS)) {
 		hif_err("Invalid interrupt group id %d", intr_grp_id);
 		return;
 	}
 
-	hif_ext_group = hif_state->hif_ext_group[intr_grp_id];
-	hist_ev = hif_ext_group->evt_hist;
+	hist_ev = scn->evt_hist[intr_grp_id];
+	if (qdf_unlikely(!hist_ev))
+		return;
+
+	if (hif_hist_skip_event_record(hist_ev, event))
+		return;
 
 	record_index = hif_get_next_record_index(
 			&hist_ev->index, HIF_EVENT_HIST_MAX);
 
 	record = &hist_ev->event[record_index];
+
+	if (event->type == HIF_EVENT_IRQ_TRIGGER) {
+		hist_ev->misc.last_irq_index = record_index;
+		hist_ev->misc.last_irq_ts = qdf_get_log_timestamp();
+	}
 
 	record->hal_ring_id = event->hal_ring_id;
 	record->hp = event->hp;
@@ -80,14 +167,22 @@ void hif_hist_record_event(struct hif_opaque_softc *hif_ctx,
 	record->type = event->type;
 }
 
-static void hif_event_history_init(struct hif_exec_context *hif_ext_grp)
+void hif_event_history_init(struct hif_opaque_softc *hif_ctx, uint8_t id)
 {
-	hif_ext_grp->evt_hist = &hif_event_desc_history[hif_ext_grp->grp_id];
-	qdf_atomic_set(&hif_ext_grp->evt_hist->index, -1);
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+
+	scn->evt_hist[id] = &hif_event_desc_history[id];
+	qdf_atomic_set(&scn->evt_hist[id]->index, -1);
+
+	hif_info("SRNG events history initialized for group: %d", id);
 }
-#else
-static inline void hif_event_history_init(struct hif_exec_context *hif_ext_grp)
+
+void hif_event_history_deinit(struct hif_opaque_softc *hif_ctx, uint8_t id)
 {
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+
+	scn->evt_hist[id] = NULL;
+	hif_info("SRNG events history de-initialized for group: %d", id);
 }
 #endif /* WLAN_FEATURE_DP_EVENT_HISTORY */
 
@@ -467,7 +562,8 @@ static void hif_latency_profile_measure(struct hif_exec_context *hif_ext_group)
 		hif_ext_group->sched_latency_stats[7]++;
 }
 #else
-static void hif_latency_profile_measure(struct hif_exec_context *hif_ext_group)
+static inline
+void hif_latency_profile_measure(struct hif_exec_context *hif_ext_group)
 {
 }
 #endif
@@ -484,11 +580,13 @@ static void hif_latency_profile_start(struct hif_exec_context *hif_ext_group)
 	hif_ext_group->tstamp = qdf_ktime_to_ms(qdf_ktime_get());
 }
 #else
-static void hif_latency_profile_start(struct hif_exec_context *hif_ext_group)
+static inline
+void hif_latency_profile_start(struct hif_exec_context *hif_ext_group)
 {
 }
 #endif
 
+#ifdef FEATURE_NAPI
 /**
  * hif_exec_poll() - napi poll
  * napi: napi struct
@@ -585,7 +683,6 @@ struct hif_execution_ops napi_sched_ops = {
 	.kill = &hif_exec_napi_kill,
 };
 
-#ifdef FEATURE_NAPI
 /**
  * hif_exec_napi_create() - allocate and initialize a napi exec context
  * @scale: a binary shift factor to map NAPI budget from\to internal
@@ -612,7 +709,7 @@ static struct hif_exec_context *hif_exec_napi_create(uint32_t scale)
 #else
 static struct hif_exec_context *hif_exec_napi_create(uint32_t scale)
 {
-	HIF_WARN("%s: FEATURE_NAPI not defined, making tasklet");
+	hif_warn("FEATURE_NAPI not defined, making tasklet");
 	return hif_exec_tasklet_create();
 }
 #endif
@@ -704,7 +801,7 @@ void hif_config_irq_set_perf_affinity_hint(
 qdf_export_symbol(hif_config_irq_set_perf_affinity_hint);
 #endif
 
-uint32_t hif_configure_ext_group_interrupts(struct hif_opaque_softc *hif_ctx)
+QDF_STATUS hif_configure_ext_group_interrupts(struct hif_opaque_softc *hif_ctx)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(hif_ctx);
@@ -712,7 +809,7 @@ uint32_t hif_configure_ext_group_interrupts(struct hif_opaque_softc *hif_ctx)
 	int i, status;
 
 	if (scn->ext_grp_irq_configured) {
-		HIF_ERROR("%s Called after ext grp irq configured\n", __func__);
+		hif_err("Called after ext grp irq configured");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -726,7 +823,7 @@ uint32_t hif_configure_ext_group_interrupts(struct hif_opaque_softc *hif_ctx)
 			status = hif_grp_irq_configure(scn, hif_ext_group);
 		}
 		if (status != 0) {
-			HIF_ERROR("%s: failed for group %d", __func__, i);
+			hif_err("Failed for group %d", i);
 			hif_ext_group->irq_enabled = false;
 		}
 	}
@@ -765,6 +862,23 @@ static inline void hif_check_and_trigger_ut_resume(struct hif_softc *scn)
 #endif
 
 /**
+ * hif_check_and_trigger_sys_resume() - Check for bus suspend and
+ *  trigger system resume
+ * @scn: hif context
+ * @irq: irq number
+ *
+ * Return: None
+ */
+static inline void
+hif_check_and_trigger_sys_resume(struct hif_softc *scn, int irq)
+{
+	if (scn->bus_suspended && scn->linkstate_vote) {
+		hif_info_rl("interrupt rcvd:%d trigger sys resume", irq);
+		qdf_pm_system_wakeup();
+	}
+}
+
+/**
  * hif_ext_group_interrupt_handler() - handler for related interrupts
  * @irq: irq number of the interrupt
  * @context: the associated hif_exec_group context
@@ -798,6 +912,9 @@ irqreturn_t hif_ext_group_interrupt_handler(int irq, void *context)
 		 * in reality APSS didn't really suspend.
 		 */
 		hif_check_and_trigger_ut_resume(scn);
+
+		hif_check_and_trigger_sys_resume(scn, irq);
+
 		qdf_atomic_inc(&scn->active_grp_tasklet_cnt);
 
 		hif_ext_group->sched_ops->schedule(hif_ext_group);
@@ -834,29 +951,30 @@ void hif_exec_kill(struct hif_opaque_softc *hif_ctx)
  * @cb_ctx: context to passed in callback
  * @type: napi vs tasklet
  *
- * Return: status
+ * Return: QDF_STATUS
  */
-uint32_t hif_register_ext_group(struct hif_opaque_softc *hif_ctx,
-		uint32_t numirq, uint32_t irq[], ext_intr_handler handler,
-		void *cb_ctx, const char *context_name,
-		enum hif_exec_type type, uint32_t scale)
+QDF_STATUS hif_register_ext_group(struct hif_opaque_softc *hif_ctx,
+				  uint32_t numirq, uint32_t irq[],
+				  ext_intr_handler handler,
+				  void *cb_ctx, const char *context_name,
+				  enum hif_exec_type type, uint32_t scale)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
 	struct hif_exec_context *hif_ext_group;
 
 	if (scn->ext_grp_irq_configured) {
-		HIF_ERROR("%s Called after ext grp irq configured\n", __func__);
+		hif_err("Called after ext grp irq configured");
 		return QDF_STATUS_E_FAILURE;
 	}
 
 	if (hif_state->hif_num_extgroup >= HIF_MAX_GROUP) {
-		HIF_ERROR("%s Max groups reached\n", __func__);
+		hif_err("Max groups: %d reached", hif_state->hif_num_extgroup);
 		return QDF_STATUS_E_FAILURE;
 	}
 
 	if (numirq >= HIF_MAX_GRP_IRQ) {
-		HIF_ERROR("%s invalid numirq\n", __func__);
+		hif_err("Invalid numirq: %d", numirq);
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -876,7 +994,6 @@ uint32_t hif_register_ext_group(struct hif_opaque_softc *hif_ctx,
 	hif_ext_group->hif = hif_ctx;
 	hif_ext_group->context_name = context_name;
 	hif_ext_group->type = type;
-	hif_event_history_init(hif_ext_group);
 
 	hif_state->hif_num_extgroup++;
 	return QDF_STATUS_SUCCESS;

@@ -2,7 +2,15 @@
 	tlmm: pinctrl@f100000 {
 		compatible = "qcom,lagoon-pinctrl";
 		reg = <0x0f100000 0x300000>;
-		interrupts = <GIC_SPI 208 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 208 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 209 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 210 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 211 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 212 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 215 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 216 IRQ_TYPE_LEVEL_HIGH>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		interrupt-controller;
@@ -97,6 +105,19 @@
 				<155 0 &pdc 67 0>;
 		irqdomain-map-mask = <0xff 0>;
 		irqdomain-map-pass-thru = <0 0xff>;
+
+		trigout_a: trigout_a {
+			mux {
+				pins = "gpio87";
+				function = "qdss_cti";
+			};
+
+			config {
+				pins = "gpio87";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
 
 		ufs_dev_reset_assert: ufs_dev_reset_assert {
 			config {
@@ -972,6 +993,34 @@
 
 			config {
 				pins = "gpio43", "gpio44";
+				bias-pull-down; /* PULL DOWN */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		cci3_active: cci3_active {
+			mux {
+				/* CLK, DATA */
+				pins = "gpio2", "gpio3";
+				function = "CCI_I2C";
+			};
+
+			config {
+				pins = "gpio2", "gpio3";
+				bias-pull-up; /* PULL UP*/
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		cci3_suspend: cci3_suspend {
+			mux {
+				/* CLK, DATA */
+				pins = "gpio2", "gpio3";
+				function = "CCI_I2C";
+			};
+
+			config {
+				pins = "gpio2", "gpio3";
 				bias-pull-down; /* PULL DOWN */
 				drive-strength = <2>; /* 2 MA */
 			};

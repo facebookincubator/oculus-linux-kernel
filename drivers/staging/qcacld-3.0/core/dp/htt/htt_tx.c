@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -865,7 +865,42 @@ htt_tx_send_nonstd(htt_pdev_handle pdev,
 	return htt_tx_send_std(pdev, msdu, msdu_id);
 }
 
+#ifndef QCA_TX_PADDING_CREDIT_SUPPORT
+int htt_tx_padding_credit_update_handler(void *context, int pad_credit)
+{
+	return 1;
+}
+#endif
+
 #else                           /*ATH_11AC_TXCOMPACT */
+
+#ifdef QCA_TX_PADDING_CREDIT_SUPPORT
+static int htt_tx_padding_credit_update(htt_pdev_handle htt_pdev,
+					int pad_credit)
+{
+	int ret = 0;
+
+	if (pad_credit)
+		qdf_atomic_add(pad_credit,
+			       &htt_pdev->txrx_pdev->pad_reserve_tx_credit);
+
+	ret = qdf_atomic_read(&htt_pdev->txrx_pdev->pad_reserve_tx_credit);
+
+	return ret;
+}
+
+int htt_tx_padding_credit_update_handler(void *context, int pad_credit)
+{
+	struct htt_pdev_t *htt_pdev = (struct htt_pdev_t *)context;
+
+	return htt_tx_padding_credit_update(htt_pdev, pad_credit);
+}
+#else
+int htt_tx_padding_credit_update_handler(void *context, int pad_credit)
+{
+	return 1;
+}
+#endif
 
 #ifdef QCA_TX_HTT2_SUPPORT
 static inline HTC_ENDPOINT_ID
@@ -1041,6 +1076,40 @@ void htt_tx_desc_display(void *tx_desc)
 
 #ifdef IPA_OFFLOAD
 #ifdef QCA_WIFI_3_0
+
+#ifndef LIMIT_IPA_TX_BUFFER
+#define LIMIT_IPA_TX_BUFFER 2048
+#endif
+
+/**
+ * htt_tx_ipa_get_tx_buf_count() - Update WDI TX buffers count
+ * @uc_tx_buf_cnt: TX Buffer count
+ *
+ * Return: new uc tx buffer count
+ */
+static int htt_tx_ipa_get_limit_tx_buf_count(unsigned int uc_tx_buf_cnt)
+{
+	/* In order to improve the Genoa IPA DBS KPI, need to set
+	 * IpaUcTxBufCount=2048, so tx complete ring size=2048, and
+	 * total tx buffer count = 2047.
+	 * But in fact, wlan fw just only have 5G 1100 tx desc +
+	 * 2.4G 400 desc, it can cover about 1500 packets from
+	 * IPA side.
+	 * So the remaining 2047-1500 packet are not used,
+	 * in order to save some memory, so we can use
+	 * LIMIT_IPA_TX_BUFFER to limit the max tx buffer
+	 * count, which varied from platform.
+	 * And then the tx buffer count always equal to tx complete
+	 * ring size -1 is not mandatory now.
+	 * From the trying, it has the same KPI achievement while
+	 * set LIMIT_IPA_TX_BUFFER=1500 or 2048.
+	 */
+	if (uc_tx_buf_cnt > LIMIT_IPA_TX_BUFFER)
+		return LIMIT_IPA_TX_BUFFER;
+	else
+		return uc_tx_buf_cnt;
+}
+
 /**
  * htt_tx_ipa_uc_wdi_tx_buf_alloc() - Alloc WDI TX buffers
  * @pdev: htt context
@@ -1059,23 +1128,12 @@ static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 					  unsigned int uc_tx_partition_base)
 {
 	unsigned int tx_buffer_count;
-	unsigned int  tx_buffer_count_pwr2;
 	qdf_dma_addr_t buffer_paddr;
 	uint32_t *header_ptr;
-	qdf_dma_addr_t *ring_vaddr;
-	uint16_t idx;
-	qdf_mem_info_t *mem_map_table = NULL, *mem_info = NULL;
+	target_paddr_t *ring_vaddr;
 	qdf_shared_mem_t *shared_tx_buffer;
 
-	ring_vaddr = (qdf_dma_addr_t *)pdev->ipa_uc_tx_rsc.tx_comp_ring->vaddr;
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		mem_map_table = qdf_mem_map_table_alloc(uc_tx_buf_cnt);
-		if (!mem_map_table) {
-			qdf_print("Failed to allocate memory");
-			return 0;
-		}
-		mem_info = mem_map_table;
-	}
+	ring_vaddr = (target_paddr_t *)pdev->ipa_uc_tx_rsc.tx_comp_ring->vaddr;
 
 	/* Allocate TX buffers as many as possible */
 	for (tx_buffer_count = 0;
@@ -1086,7 +1144,7 @@ static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 		if (!shared_tx_buffer || !shared_tx_buffer->vaddr) {
 			qdf_print("IPA WDI TX buffer alloc fail %d allocated\n",
 				tx_buffer_count);
-			goto pwr2;
+			goto out;
 		}
 
 		header_ptr = shared_tx_buffer->vaddr;
@@ -1130,45 +1188,11 @@ static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 		/* Memory barrier to ensure actual value updated */
 
 		ring_vaddr++;
-		if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-			*mem_info = pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[
-						tx_buffer_count]->mem_info;
-			 mem_info++;
-		}
 	}
 
-pwr2:
-	/*
-	 * Tx complete ring buffer count should be power of 2.
-	 * So, allocated Tx buffer count should be one less than ring buffer
-	 * size.
-	 */
-	tx_buffer_count_pwr2 = qdf_rounddown_pow_of_two(tx_buffer_count + 1)
-			       - 1;
-	if (tx_buffer_count > tx_buffer_count_pwr2) {
-		QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_INFO,
-			  "%s: Allocated Tx buffer count %d is rounded down to %d",
-			  __func__, tx_buffer_count, tx_buffer_count_pwr2);
+out:
 
-		/* Free over allocated buffers below power of 2 */
-		for (idx = tx_buffer_count_pwr2; idx < tx_buffer_count; idx++) {
-			if (pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[idx]) {
-				qdf_mem_shared_mem_free(pdev->osdev,
-					pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[
-								idx]);
-				 pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[idx] =
-									NULL;
-			}
-		}
-	}
-
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		cds_smmu_map_unmap(true, tx_buffer_count_pwr2,
-				   mem_map_table);
-		qdf_mem_free(mem_map_table);
-	}
-
-	return tx_buffer_count_pwr2;
+	return tx_buffer_count;
 }
 
 /**
@@ -1182,41 +1206,22 @@ pwr2:
 static void htt_tx_buf_pool_free(struct htt_pdev_t *pdev)
 {
 	uint16_t idx;
-	qdf_mem_info_t *mem_map_table = NULL, *mem_info = NULL;
-	uint32_t num_unmapped = 0;
-
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		mem_map_table = qdf_mem_map_table_alloc(
-					pdev->ipa_uc_tx_rsc.alloc_tx_buf_cnt);
-		if (!mem_map_table) {
-			qdf_print("Failed to allocate memory");
-			return;
-		}
-		mem_info = mem_map_table;
-	}
 
 	for (idx = 0; idx < pdev->ipa_uc_tx_rsc.alloc_tx_buf_cnt; idx++) {
 		if (pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[idx]) {
-			if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-				*mem_info = pdev->ipa_uc_tx_rsc.
-					      tx_buf_pool_strg[idx]->mem_info;
-				mem_info++;
-				num_unmapped++;
-			}
 			qdf_mem_shared_mem_free(pdev->osdev,
 						pdev->ipa_uc_tx_rsc.
 							tx_buf_pool_strg[idx]);
 			pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[idx] = NULL;
 		}
 	}
-
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		if (num_unmapped)
-			cds_smmu_map_unmap(false, num_unmapped, mem_map_table);
-		qdf_mem_free(mem_map_table);
-	}
 }
 #else
+static int htt_tx_ipa_get_limit_tx_buf_count(unsigned int uc_tx_buf_cnt)
+{
+	return uc_tx_buf_cnt;
+}
+
 static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 					  unsigned int uc_tx_buf_sz,
 					  unsigned int uc_tx_buf_cnt,
@@ -1228,18 +1233,9 @@ static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 	uint32_t *header_ptr;
 	uint32_t *ring_vaddr;
 	uint16_t idx;
-	qdf_mem_info_t *mem_map_table = NULL, *mem_info = NULL;
 	qdf_shared_mem_t *shared_tx_buffer;
 
 	ring_vaddr = pdev->ipa_uc_tx_rsc.tx_comp_ring->vaddr;
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		mem_map_table = qdf_mem_map_table_alloc(uc_tx_buf_cnt);
-		if (!mem_map_table) {
-			qdf_print("Failed to allocate memory");
-			return 0;
-		}
-		mem_info = mem_map_table;
-	}
 
 	/* Allocate TX buffers as many as possible */
 	for (tx_buffer_count = 0;
@@ -1283,11 +1279,6 @@ static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 		/* Memory barrier to ensure actual value updated */
 
 		ring_vaddr++;
-		if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-			*mem_info = pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[
-						tx_buffer_count]->mem_info;
-			 mem_info++;
-		}
 	}
 
 pwr2:
@@ -1315,50 +1306,20 @@ pwr2:
 		}
 	}
 
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		cds_smmu_map_unmap(true, tx_buffer_count_pwr2,
-				   mem_map_table);
-		qdf_mem_free(mem_map_table);
-	}
-
 	return tx_buffer_count_pwr2;
 }
 
 static void htt_tx_buf_pool_free(struct htt_pdev_t *pdev)
 {
 	uint16_t idx;
-	qdf_mem_info_t *mem_map_table = NULL, *mem_info = NULL;
-	uint32_t num_unmapped = 0;
-
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		mem_map_table = qdf_mem_map_table_alloc(
-					pdev->ipa_uc_tx_rsc.alloc_tx_buf_cnt);
-		if (!mem_map_table) {
-			qdf_print("Failed to allocate memory");
-			return;
-		}
-		mem_info = mem_map_table;
-	}
 
 	for (idx = 0; idx < pdev->ipa_uc_tx_rsc.alloc_tx_buf_cnt; idx++) {
 		if (pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[idx]) {
-			if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-				*mem_info = pdev->ipa_uc_tx_rsc.
-					      tx_buf_pool_strg[idx]->mem_info;
-				mem_info++;
-				num_unmapped++;
-			}
 			qdf_mem_shared_mem_free(pdev->osdev,
 						pdev->ipa_uc_tx_rsc.
 							tx_buf_pool_strg[idx]);
 			pdev->ipa_uc_tx_rsc.tx_buf_pool_strg[idx] = NULL;
 		}
-	}
-
-	if (qdf_mem_smmu_s1_enabled(pdev->osdev)) {
-		if (num_unmapped)
-			cds_smmu_map_unmap(false, num_unmapped, mem_map_table);
-		qdf_mem_free(mem_map_table);
 	}
 }
 #endif
@@ -1401,6 +1362,7 @@ int htt_tx_ipa_uc_attach(struct htt_pdev_t *pdev,
 		goto free_tx_ce_idx;
 	}
 
+	uc_tx_buf_cnt = htt_tx_ipa_get_limit_tx_buf_count(uc_tx_buf_cnt);
 	/* Allocate TX BUF vAddress Storage */
 	pdev->ipa_uc_tx_rsc.tx_buf_pool_strg =
 		qdf_mem_malloc(uc_tx_buf_cnt *
