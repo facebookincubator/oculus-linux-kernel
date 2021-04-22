@@ -10,6 +10,8 @@ config VS1_BOARD
 	bool "VS1 (Monterey) Platform"
 	depends on OCULUS
 	depends on ARCH_MSM8998
+	select SND_SOC_CM710X
+	select SND_SOC_CM710X_SPI
 	help
 	  Enabling this option adds support for the Oculus Monterey platform
 	  and enables the required drivers.

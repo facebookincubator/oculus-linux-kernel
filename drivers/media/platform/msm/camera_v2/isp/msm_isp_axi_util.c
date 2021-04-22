@@ -2052,7 +2052,8 @@ static int msm_isp_cfg_ping_pong_address(
 		buf = msm_isp_get_stream_buffer(vfe_dev, stream_info);
 
 	if (!buf) {
-		pr_err("%s: msm_isp_get_stream_buffer() returned null, configuring scratch\n",
+		pr_err_ratelimited(
+				"%s: msm_isp_get_stream_buffer() returned null, configuring scratch\n",
 				__func__);
 		msm_isp_cfg_stream_scratch(stream_info, pingpong_status);
 		if (stream_info->controllable_output)

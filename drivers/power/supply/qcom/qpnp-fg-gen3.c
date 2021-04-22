@@ -2813,7 +2813,7 @@ out:
 
 static int fg_get_cycle_count(struct fg_chip *chip)
 {
-	int count;
+	int count = 0;
 
 	if (!chip->cyc_ctr.en)
 		return 0;
@@ -2827,14 +2827,11 @@ static int fg_get_cycle_count(struct fg_chip *chip)
 	mutex_unlock(&chip->cyc_ctr.lock);
 #else
 	mutex_lock(&chip->cyc_ctr.lock);
-	{
-		int i;
+	int i;
 
-		count = 0;
-		for (i = 0 ; i < BUCKET_COUNT; i++)
-			count += chip->cyc_ctr.count[i];
-		count = DIV_ROUND_CLOSEST(count, 8);
-	}
+	for (i = 0 ; i < BUCKET_COUNT; i++)
+		count += chip->cyc_ctr.count[i];
+	count = DIV_ROUND_CLOSEST(count, 8);
 	mutex_unlock(&chip->cyc_ctr.lock);
 #endif
 	return count;

@@ -26,9 +26,6 @@ obj-$(CONFIG_SND_SOC_MSM8996_VM) += snd-soc-msm8996-vm.o
 snd-soc-msm8998-objs := msm8998.o
 obj-$(CONFIG_SND_SOC_MSM8998) += snd-soc-msm8998.o
 
-snd-soc-msm8998-cm710x-objs := msm8998-cm710x.o
-obj-$(CONFIG_SND_SOC_MSM8998_CM710X) += snd-soc-msm8998-cm710x.o
-
 # for SDM660 sound card driver
 snd-soc-sdm660-common-objs := sdm660-common.o
 obj-$(CONFIG_SND_SOC_SDM660_COMMON) += snd-soc-sdm660-common.o

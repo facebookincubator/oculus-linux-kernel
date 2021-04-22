@@ -63,6 +63,7 @@
 #define WCD9XXX_MBHC_DEF_BUTTONS    8
 #define WCD9XXX_MBHC_DEF_RLOADS     5
 #define CODEC_EXT_CLK_RATE          9600000
+#define CM710X_CODEC_EXT_CLK_RATE   19200000
 #define ADSP_STATE_READY_TIMEOUT_MS 3000
 #define DEV_NAME_STR_LEN            32
 
@@ -201,6 +202,8 @@ struct msm_pinctrl_info {
 struct msm_asoc_mach_data {
 	u32 mclk_freq;
 	int us_euro_gpio; /* used by gpio driver API */
+	int left_jack_detect_gpio;
+	int right_jack_detect_gpio;
 	struct device_node *us_euro_gpio_p; /* used by pinctrl API */
 	struct device_node *hph_en1_gpio_p; /* used by pinctrl API */
 	struct device_node *hph_en0_gpio_p; /* used by pinctrl API */
@@ -3760,6 +3763,12 @@ static const struct snd_soc_dapm_widget msm_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Digital Mic5", NULL),
 };
 
+static const struct snd_soc_dapm_widget cm710x_dapm_widgets[] = {
+	SND_SOC_DAPM_SPK("Speaker Jack", NULL),
+	SND_SOC_DAPM_MIC("Mic Jack", NULL),
+	SND_SOC_DAPM_HP("Headphone Jack", NULL),
+};
+
 static inline int param_is_mask(int p)
 {
 	return (p >= SNDRV_PCM_HW_PARAM_FIRST_MASK) &&
@@ -5034,6 +5043,108 @@ static int msm_mi2s_set_sclk(struct snd_pcm_substream *substream, bool enable)
 
 done:
 	return ret;
+}
+
+static struct snd_soc_jack msm_cm710x_hp_jack;
+
+static struct snd_soc_jack_pin msm_cm710x_hp_jack_pins[] = {
+	{
+		.pin = "Headphone Jack",
+		.mask = SND_JACK_HEADPHONE,
+	},
+};
+
+static struct snd_soc_jack_gpio msm_cm710x_hp_jack_gpios[] = {
+	[0] = {
+		.name = "Left headphone detection",
+		.report = SND_JACK_HEADPHONE,
+		.debounce_time = 150,
+		.invert = 1,
+	},
+	[1] = {
+		.name = "Right headphone detection",
+		.report = SND_JACK_HEADPHONE,
+		.debounce_time = 150,
+		.invert = 1,
+	},
+};
+
+static int msm_cm710x_jack_status_check(void *data)
+{
+	int left_jack_enabled = !gpio_get_value(
+			msm_cm710x_hp_jack_gpios[0].gpio);
+	int right_jack_enabled = !gpio_get_value(
+			msm_cm710x_hp_jack_gpios[1].gpio);
+
+	return left_jack_enabled | right_jack_enabled;
+}
+
+static int msm_cm710x_init(struct snd_soc_pcm_runtime *rtd)
+{
+	int ret = 0;
+	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
+	struct msm_asoc_mach_data *pdata = snd_soc_card_get_drvdata(rtd->card);
+
+	dev_dbg(codec->dev, "%s: Entry\n", __func__);
+
+	ret = snd_soc_add_codec_controls(codec, msm_snd_controls,
+					 ARRAY_SIZE(msm_snd_controls));
+	if (ret < 0) {
+		dev_err(codec->dev, "%s: add_codec_controls failed, err%d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	snd_soc_dapm_new_controls(dapm, cm710x_dapm_widgets,
+				ARRAY_SIZE(cm710x_dapm_widgets));
+
+	/* headphone jack detection */
+	ret = snd_soc_card_jack_new(rtd->card, "Headphone Jack",
+		SND_JACK_HEADPHONE, &msm_cm710x_hp_jack,
+		msm_cm710x_hp_jack_pins, ARRAY_SIZE(msm_cm710x_hp_jack_pins));
+	if (ret < 0) {
+		dev_err(codec->dev, "%s: card_jack_new failed, err = %d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	if (gpio_is_valid(pdata->left_jack_detect_gpio)) {
+		msm_cm710x_hp_jack_gpios[0].gpio =
+		    pdata->left_jack_detect_gpio;
+
+		msm_cm710x_hp_jack_gpios[0].jack_status_check =
+			msm_cm710x_jack_status_check;
+	}
+
+	if (gpio_is_valid(pdata->right_jack_detect_gpio)) {
+		msm_cm710x_hp_jack_gpios[1].gpio =
+		    pdata->right_jack_detect_gpio;
+
+		msm_cm710x_hp_jack_gpios[1].jack_status_check =
+			msm_cm710x_jack_status_check;
+	}
+
+	ret = snd_soc_jack_add_gpios(&msm_cm710x_hp_jack,
+		ARRAY_SIZE(msm_cm710x_hp_jack_gpios),
+		msm_cm710x_hp_jack_gpios);
+
+	if (ret < 0)
+		dev_err(codec->dev, "%s: jack_add_gpios failed, err = %d\n",
+			__func__, ret);
+
+
+	snd_soc_dapm_enable_pin(dapm, "Speaker Jack");
+	snd_soc_dapm_enable_pin(dapm, "Headphone Jack");
+	snd_soc_dapm_enable_pin(dapm, "Mic Jack");
+	snd_soc_dapm_ignore_suspend(dapm, "OUTL");
+	snd_soc_dapm_ignore_suspend(dapm, "OUTR");
+	snd_soc_dapm_ignore_suspend(dapm, "INL");
+	snd_soc_dapm_ignore_suspend(dapm, "INR");
+
+	snd_soc_dapm_sync(dapm);
+
+	return 0;
 }
 
 static int msm_set_pinctrl(struct msm_pinctrl_info *pinctrl_info,
@@ -7534,118 +7645,6 @@ static struct snd_soc_dai_link msm_common_be_dai_links[] = {
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},
-	{
-		.name = LPASS_BE_PRI_TDM_RX_0,
-		.stream_name = "Primary TDM0 Playback",
-		.cpu_dai_name = "msm-dai-q6-tdm.36864",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.be_id = MSM_BACKEND_DAI_PRI_TDM_RX_0,
-		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_PRI_TDM_TX_0,
-		.stream_name = "Primary TDM0 Capture",
-		.cpu_dai_name = "msm-dai-q6-tdm.36865",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-tx",
-		.no_pcm = 1,
-		.dpcm_capture = 1,
-		.be_id = MSM_BACKEND_DAI_PRI_TDM_TX_0,
-		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_SEC_TDM_RX_0,
-		.stream_name = "Secondary TDM0 Playback",
-		.cpu_dai_name = "msm-dai-q6-tdm.36880",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.be_id = MSM_BACKEND_DAI_SEC_TDM_RX_0,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_SEC_TDM_TX_0,
-		.stream_name = "Secondary TDM0 Capture",
-		.cpu_dai_name = "msm-dai-q6-tdm.36881",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-tx",
-		.no_pcm = 1,
-		.dpcm_capture = 1,
-		.be_id = MSM_BACKEND_DAI_SEC_TDM_TX_0,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_TERT_TDM_RX_0,
-		.stream_name = "Tertiary TDM0 Playback",
-		.cpu_dai_name = "msm-dai-q6-tdm.36896",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.be_id = MSM_BACKEND_DAI_TERT_TDM_RX_0,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_TERT_TDM_TX_0,
-		.stream_name = "Tertiary TDM0 Capture",
-		.cpu_dai_name = "msm-dai-q6-tdm.36897",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-tx",
-		.no_pcm = 1,
-		.dpcm_capture = 1,
-		.be_id = MSM_BACKEND_DAI_TERT_TDM_TX_0,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_QUAT_TDM_RX_0,
-		.stream_name = "Quaternary TDM0 Playback",
-		.cpu_dai_name = "msm-dai-q6-tdm.36912",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.be_id = MSM_BACKEND_DAI_QUAT_TDM_RX_0,
-		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_QUAT_TDM_TX_0,
-		.stream_name = "Quaternary TDM0 Capture",
-		.cpu_dai_name = "msm-dai-q6-tdm.36913",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-tx",
-		.no_pcm = 1,
-		.dpcm_capture = 1,
-		.be_id = MSM_BACKEND_DAI_QUAT_TDM_TX_0,
-		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
-		.ops = &msm8998_tdm_be_ops,
-		.ignore_suspend = 1,
-	},
 };
 
 static struct snd_soc_dai_link msm_tasha_be_dai_links[] = {
@@ -8100,8 +8099,14 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.stream_name = "Primary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
+#ifdef CONFIG_VS1_BOARD
+		.codec_name = "cm710x.8-002c",
+		.codec_dai_name = "cm710x-aif1",
+		.init = &msm_cm710x_init,
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
+#endif
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_PRI_MI2S_RX,
@@ -8115,8 +8120,13 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.stream_name = "Primary MI2S Capture",
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
+#ifdef CONFIG_VS1_BOARD
+		.codec_name = "cm710x.8-002c",
+		.codec_dai_name = "cm710x-aif1",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
+#endif
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_id = MSM_BACKEND_DAI_PRI_MI2S_TX,
@@ -8342,6 +8352,76 @@ static struct snd_soc_dai_link msm_auxpcm_be_dai_links[] = {
 
 static struct snd_soc_dai_link msm_ext_tdm_tx_group_be_dai[] = {
 	{
+		.name = LPASS_BE_PRI_TDM_RX_0,
+		.stream_name = "Primary TDM0 Playback",
+		.cpu_dai_name = "msm-dai-q6-tdm.36864",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_PRI_TDM_RX_0,
+		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_SEC_TDM_RX_0,
+		.stream_name = "Secondary TDM0 Playback",
+		.cpu_dai_name = "msm-dai-q6-tdm.36880",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_SEC_TDM_RX_0,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_TERT_TDM_RX_0,
+		.stream_name = "Tertiary TDM0 Playback",
+		.cpu_dai_name = "msm-dai-q6-tdm.36896",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERT_TDM_RX_0,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_TDM_RX_0,
+		.stream_name = "Quaternary TDM0 Playback",
+		.cpu_dai_name = "msm-dai-q6-tdm.36912",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_QUAT_TDM_RX_0,
+		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_PRI_TDM_TX_0,
+		.stream_name = "Primary TDM0 Capture",
+		.cpu_dai_name = "msm-dai-q6-tdm.36865",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_PRI_TDM_TX_0,
+		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = LPASS_BE_PRI_TDM_TX_1,
 		.stream_name = "Primary TDM1 Capture",
 		.cpu_dai_name = "msm-dai-q6-tdm.36867",
@@ -8379,6 +8459,48 @@ static struct snd_soc_dai_link msm_ext_tdm_tx_group_be_dai[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.be_id = MSM_BACKEND_DAI_PRI_TDM_TX_3,
+		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_SEC_TDM_TX_0,
+		.stream_name = "Secondary TDM0 Capture",
+		.cpu_dai_name = "msm-dai-q6-tdm.36881",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_SEC_TDM_TX_0,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_TERT_TDM_TX_0,
+		.stream_name = "Tertiary TDM0 Capture",
+		.cpu_dai_name = "msm-dai-q6-tdm.36897",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_TERT_TDM_TX_0,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm8998_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_TDM_TX_0,
+		.stream_name = "Quaternary TDM0 Capture",
+		.cpu_dai_name = "msm-dai-q6-tdm.36913",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_QUAT_TDM_TX_0,
 		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
 		.ops = &msm8998_tdm_be_ops,
 		.ignore_suspend = 1,
@@ -8446,6 +8568,15 @@ static struct snd_soc_dai_link msm_tavil_dai_links[
 			 ARRAY_SIZE(msm_common_misc_fe_dai_links) +
 			 ARRAY_SIZE(msm_common_be_dai_links) +
 			 ARRAY_SIZE(msm_tavil_be_dai_links) +
+			 ARRAY_SIZE(msm_wcn_be_dai_links) +
+			 ARRAY_SIZE(ext_disp_be_dai_link) +
+			 ARRAY_SIZE(msm_mi2s_be_dai_links) +
+			 ARRAY_SIZE(msm_auxpcm_be_dai_links)];
+
+static struct snd_soc_dai_link msm_cm710x_dai_links[
+			 ARRAY_SIZE(msm_common_dai_links) +
+			 ARRAY_SIZE(msm_common_misc_fe_dai_links) +
+			 ARRAY_SIZE(msm_common_be_dai_links) +
 			 ARRAY_SIZE(msm_wcn_be_dai_links) +
 			 ARRAY_SIZE(ext_disp_be_dai_link) +
 			 ARRAY_SIZE(msm_mi2s_be_dai_links) +
@@ -8525,6 +8656,57 @@ err_pcm_runtime:
 	return ret;
 }
 
+static int cm710x_snd_card_probe(struct snd_soc_card *card)
+{
+	int ret = 0;
+	struct pinctrl *pinctrl = NULL;
+	struct pinctrl_state *pins_default = NULL;
+	struct msm_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
+	struct device *cdev = card->dev;
+
+	/* headphone jack detection */
+	pdata->left_jack_detect_gpio = of_get_named_gpio(cdev->of_node,
+					"cm710x,left-jack-detect-gpio", 0);
+	if (pdata->left_jack_detect_gpio < 0) {
+		dev_err(cdev, "%s: failed to get %s\n", __func__,
+					"cm710x,left-jack-detect-gpio");
+	}
+	pdata->right_jack_detect_gpio = of_get_named_gpio(cdev->of_node,
+					"cm710x,right-jack-detect-gpio", 0);
+	if (pdata->right_jack_detect_gpio < 0) {
+		dev_err(cdev, "%s: failed to get %s\n", __func__,
+					"cm710x,right-jack-detect-gpio");
+	}
+
+	pinctrl = devm_pinctrl_get(cdev);
+	if (IS_ERR_OR_NULL(pinctrl)) {
+		dev_err(cdev, "%s: Failed to get pin ctrl\n", __func__);
+		ret = PTR_ERR(pinctrl);
+		goto err;
+	}
+	pins_default = pinctrl_lookup_state(pinctrl,
+			"headphone_jack_detect_default");
+	if (IS_ERR_OR_NULL(pins_default)) {
+		dev_err(cdev,
+			"%s: Failed to lookup pinctrl headphone jack default state\n",
+			__func__);
+		ret = PTR_ERR(pins_default);
+		goto pinctrl_err;
+	}
+	ret = pinctrl_select_state(pinctrl, pins_default);
+	if (ret != 0) {
+		dev_err(cdev,
+			"%s: Failed to set headphone jack pin state\n",
+			__func__);
+		goto pinctrl_err;
+	}
+
+pinctrl_err:
+	devm_pinctrl_put(pinctrl);
+err:
+	return ret;
+}
+
 struct snd_soc_card snd_soc_card_tasha_msm = {
 	.name		= "msm8998-tasha-snd-card",
 	.late_probe	= msm_snd_card_late_probe,
@@ -8533,6 +8715,11 @@ struct snd_soc_card snd_soc_card_tasha_msm = {
 struct snd_soc_card snd_soc_card_tavil_msm = {
 	.name		= "msm8998-tavil-snd-card",
 	.late_probe	= msm_snd_card_tavil_late_probe,
+};
+
+struct snd_soc_card snd_soc_card_cm710x_msm = {
+	.name		= "msm8998-cm710x-snd-card",
+	.probe		= cm710x_snd_card_probe,
 };
 
 static int msm_populate_dai_link_component_of_node(
@@ -8770,6 +8957,8 @@ static const struct of_device_id msm8998_asoc_machine_of_match[]  = {
 	  .data = "tavil_codec"},
 	{ .compatible = "qcom,msm8998-asoc-snd-stub",
 	  .data = "stub_codec"},
+	{ .compatible = "qcom,msm8998-asoc-snd-cm710x",
+	  .data = "cm710x_codec"},
 	{},
 };
 
@@ -8926,6 +9115,54 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 
 		dailink = msm_stub_dai_links;
 		total_links = len_2;
+	} else if (!strcmp(match->data, "cm710x_codec")) {
+		card = &snd_soc_card_cm710x_msm;
+		len_1 = ARRAY_SIZE(msm_common_dai_links);
+		len_2 = len_1 + ARRAY_SIZE(msm_common_misc_fe_dai_links);
+		total_links = len_2 + ARRAY_SIZE(msm_common_be_dai_links);
+		memcpy(msm_cm710x_dai_links,
+		       msm_common_dai_links,
+		       sizeof(msm_common_dai_links));
+		memcpy(msm_cm710x_dai_links + len_1,
+		       msm_common_misc_fe_dai_links,
+		       sizeof(msm_common_misc_fe_dai_links));
+		memcpy(msm_cm710x_dai_links + len_2,
+		       msm_common_be_dai_links,
+		       sizeof(msm_common_be_dai_links));
+
+		if (of_property_read_bool(dev->of_node, "qcom,wcn-btfm")) {
+			dev_dbg(dev, "%s(): WCN BTFM support present\n",
+				__func__);
+			memcpy(msm_cm710x_dai_links + total_links,
+			       msm_wcn_be_dai_links,
+			       sizeof(msm_wcn_be_dai_links));
+			total_links += ARRAY_SIZE(msm_wcn_be_dai_links);
+		}
+
+		if (of_property_read_bool(dev->of_node,
+					  "qcom,ext-disp-audio-rx")) {
+			dev_dbg(dev, "%s(): ext disp audio support present\n",
+				__func__);
+			memcpy(msm_cm710x_dai_links + total_links,
+			       ext_disp_be_dai_link,
+			       sizeof(ext_disp_be_dai_link));
+			total_links += ARRAY_SIZE(ext_disp_be_dai_link);
+		}
+		if (of_property_read_bool(dev->of_node,
+					  "qcom,mi2s-audio-intf")) {
+			memcpy(msm_cm710x_dai_links + total_links,
+			       msm_mi2s_be_dai_links,
+			       sizeof(msm_mi2s_be_dai_links));
+			total_links += ARRAY_SIZE(msm_mi2s_be_dai_links);
+		}
+		if (of_property_read_bool(dev->of_node,
+					  "qcom,auxpcm-audio-intf")) {
+			memcpy(msm_cm710x_dai_links + total_links,
+			msm_auxpcm_be_dai_links,
+			sizeof(msm_auxpcm_be_dai_links));
+			total_links += ARRAY_SIZE(msm_auxpcm_be_dai_links);
+		}
+		dailink = msm_cm710x_dai_links;
 	}
 
 	if (card) {
@@ -9291,6 +9528,8 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 
 	if (!strcmp(match->data, "tasha_codec"))
 		mclk_freq_prop_name = "qcom,tasha-mclk-clk-freq";
+	else if (!strcmp(match->data, "cm710x_codec"))
+		mclk_freq_prop_name = "qcom,cm710x-mclk-clk-freq";
 	else
 		mclk_freq_prop_name = "qcom,tavil-mclk-clk-freq";
 
@@ -9304,7 +9543,8 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	if (pdata->mclk_freq != CODEC_EXT_CLK_RATE) {
+	if (pdata->mclk_freq != CODEC_EXT_CLK_RATE &&
+	    pdata->mclk_freq != CM710X_CODEC_EXT_CLK_RATE) {
 		dev_err(&pdev->dev, "unsupported mclk freq %u\n",
 			pdata->mclk_freq);
 		ret = -EINVAL;

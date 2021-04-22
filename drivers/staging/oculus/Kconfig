@@ -109,13 +109,29 @@ config NAUTILUS_CLK
 	default n
 	depends on OCULUS
 	help
-	  Use GPIO 108 for the clock
+	  Enable support for controlling the nautilus device clock
 
 config OCULUS
 	bool "Oculus feature support"
 	default y
 	---help---
 	  Enable support for Oculus drivers and features
+
+config OCULUS_HOLLYWOOD
+	bool "Enable support for hollywood device"
+	default n
+	depends on OCULUS
+	select ARCH_KONA
+	---help---
+	  Enable support for the hollywood device
+
+config OCULUS_unknown1
+	bool "Enable support for unknown1 device"
+	default n
+	depends on OCULUS
+	select ARCH_KONA
+	---help---
+	  Enable support for the unknown1 device
 
 config unknown1_BLU
 	tristate "Oculus unknown1 SPI BLU Driver"

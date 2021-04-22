@@ -250,34 +250,6 @@ config SND_SOC_MSM8998
 	 the machine driver and the corresponding
 	 DAI-links
 
-config SND_SOC_MSM8998_CM710X
-	tristate "SoC Machine driver for MSM8998 boards with CM710X codec"
-	depends on ARCH_QCOM
-	select SND_SOC_COMPRESS
-	select SND_SOC_QDSP6V2
-	select SND_SOC_MSM_STUB
-	select SND_SOC_MSM_HOSTLESS_PCM
-	select SND_DYNAMIC_MINORS
-	select MSM_QDSP6_APRV2_GLINK
-	select MSM_QDSP6_SSR
-	select MSM_QDSP6_PDR
-	select MSM_QDSP6_NOTIFIER
-	select MSM_QDSP6V2_CODECS
-	select SND_SOC_WCD9335
-	select SND_SOC_WCD934X
-	select SND_SOC_CM710X
-	select SND_SOC_CM710X_SPI
-	select QTI_PP
-	select SND_SOC_CPE
-	select SND_HWDEP
-	help
-	 To add support for SoC audio on MSM8998
-	 with external CM710X codec.
-	 This will enable sound soc drivers which
-	 interfaces with DSP, also it will enable
-	 the machine driver and the corresponding
-	 DAI-links
-
 config SND_SOC_660
 	tristate "SoC Machine driver for SDM660 boards"
 	depends on ARCH_SDM660

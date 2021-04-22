@@ -86,8 +86,6 @@
 	sound-vs1 {
 		compatible = "qcom,msm8998-asoc-snd-cm710x";
 		qcom,model = "msm8998-cm710x-snd_card";
-		qcom,ext-disp-audio-rx;
-		qcom,wcn-btfm;
 		qcom,mi2s-audio-intf;
 		qcom,auxpcm-audio-intf;
 		qcom,msm-mi2s-master = <1>, <1>, <1>, <1>;
@@ -113,16 +111,16 @@
 		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
 				<&afe>, <&lsm>, <&routing>, <&cpe>, <&compr>,
-				<&pcm_noirq>;
+				<&pcm_noirq>, <&cpe3>, <&trans_loopback>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-pcm-dsp.2", "msm-voip-dsp",
 				"msm-pcm-voice", "msm-pcm-loopback",
 				"msm-compress-dsp", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-lsm-client",
 				"msm-pcm-routing", "msm-cpe-lsm",
-				"msm-compr-dsp", "msm-pcm-dsp-noirq";
-		asoc-cpu = <&dai_hdmi>, <&dai_dp>,
-				<&dai_mi2s0>, <&dai_mi2s1>,
+				"msm-compr-dsp", "msm-pcm-dsp-noirq",
+				"msm-cpe-lsm.3", "msm-transcode-loopback";
+		asoc-cpu = <&dai_mi2s0>, <&dai_mi2s1>,
 				<&dai_mi2s2>, <&dai_mi2s3>,
 				<&dai_pri_auxpcm>, <&dai_sec_auxpcm>,
 				<&dai_tert_auxpcm>, <&dai_quat_auxpcm>,
@@ -134,13 +132,8 @@
 				<&incall_record_tx>, <&incall_music_rx>,
 				<&incall_music_2_rx>, <&sb_5_rx>, <&sb_6_rx>,
 				<&sb_7_rx>, <&sb_7_tx>, <&sb_8_tx>,
-				<&usb_audio_rx>, <&usb_audio_tx>,
-				<&dai_pri_tdm_rx_0>, <&dai_pri_tdm_tx_0>,
-				<&dai_sec_tdm_rx_0>, <&dai_sec_tdm_tx_0>,
-				<&dai_tert_tdm_rx_0>, <&dai_tert_tdm_tx_0>,
-				<&dai_quat_tdm_rx_0>, <&dai_quat_tdm_tx_0>;
-		asoc-cpu-names = "msm-dai-q6-hdmi.8", "msm-dai-q6-dp.24608",
-				"msm-dai-q6-mi2s.0", "msm-dai-q6-mi2s.1",
+				<&usb_audio_rx>, <&usb_audio_tx>;
+		asoc-cpu-names = "msm-dai-q6-mi2s.0", "msm-dai-q6-mi2s.1",
 				"msm-dai-q6-mi2s.2", "msm-dai-q6-mi2s.3",
 				"msm-dai-q6-auxpcm.1", "msm-dai-q6-auxpcm.2",
 				"msm-dai-q6-auxpcm.3", "msm-dai-q6-auxpcm.4",
@@ -156,15 +149,11 @@
 				"msm-dai-q6-dev.32770", "msm-dai-q6-dev.16394",
 				"msm-dai-q6-dev.16396", "msm-dai-q6-dev.16398",
 				"msm-dai-q6-dev.16399", "msm-dai-q6-dev.16401",
-				"msm-dai-q6-dev.28672", "msm-dai-q6-dev.28673",
-				"msm-dai-q6-tdm.36864", "msm-dai-q6-tdm.36865",
-				"msm-dai-q6-tdm.36880", "msm-dai-q6-tdm.36881",
-				"msm-dai-q6-tdm.36896", "msm-dai-q6-tdm.36897",
-				"msm-dai-q6-tdm.36912", "msm-dai-q6-tdm.36913";
-		asoc-codec = <&stub_codec>, <&ext_disp_audio_codec>, <&cm710x>;
+				"msm-dai-q6-dev.28672", "msm-dai-q6-dev.28673";
+		asoc-codec = <&stub_codec>, <&cm710x>;
 		asoc-codec-names = "msm-stub-codec.1",
-				   "msm-ext-disp-audio-codec-rx",
-				   "cm710x,8-002c";
+				   "cm710x.8-002c";
+		qcom,wsa-max-devs = <0>;
 
 		pinctrl-names = "headphone_jack_detect_default";
 		pinctrl-0 = <&left_jack_detect_gpio_default
