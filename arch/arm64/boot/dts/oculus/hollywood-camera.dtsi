@@ -24,7 +24,7 @@
 
 &soc {
 	qcom,cam-cdm-intf {
-		cdm-client-names = "vfe", "ife";
+		cdm-client-names = "vfe", "vife";
 	};
 
 	qcom,cam-icp {

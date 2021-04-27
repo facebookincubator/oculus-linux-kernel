@@ -50,7 +50,7 @@
 
 &soc {
 	qcom,cam-cdm-intf {
-		cdm-client-names = "vfe", "ife", "jpegdma", "jpegenc";
+		cdm-client-names = "vfe", "vife", "jpegdma", "jpegenc";
 	};
 
 	qcom,cam-res-mgr {

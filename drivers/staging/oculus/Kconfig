@@ -109,13 +109,29 @@ config NAUTILUS_CLK
 	default n
 	depends on OCULUS
 	help
-	  Use GPIO 108 for the clock
+	  Enable support for controlling the nautilus device clock
 
 config OCULUS
 	bool "Oculus feature support"
 	default y
 	---help---
 	  Enable support for Oculus drivers and features
+
+config OCULUS_HOLLYWOOD
+	bool "Enable support for hollywood device"
+	default n
+	depends on OCULUS
+	select ARCH_KONA
+	---help---
+	  Enable support for the hollywood device
+
+config OCULUS_SEACLIFF
+	bool "Enable support for seacliff device"
+	default n
+	depends on OCULUS
+	select ARCH_KONA
+	---help---
+	  Enable support for the seacliff device
 
 config SEACLIFF_BLU
 	tristate "Oculus Seacliff SPI BLU Driver"

@@ -3593,6 +3593,7 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 	struct msm_compression_info *comp_info = NULL;
 	struct drm_display_mode *cur_mode = NULL;
 	struct msm_display_info *disp_info;
+	unsigned long lock_flags;
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
@@ -3615,6 +3616,7 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 	SDE_DEBUG_ENC(sde_enc, "\n");
 	SDE_EVT32(DRMID(drm_enc), cur_mode->hdisplay, cur_mode->vdisplay);
 
+	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	sde_enc->cur_master = NULL;
 	for (i = 0; i < sde_enc->num_phys_encs; i++) {
 		struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
@@ -3625,6 +3627,7 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 			break;
 		}
 	}
+	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
 
 	if (!sde_enc->cur_master) {
 		SDE_ERROR("virt encoder has no master! num_phys %d\n", i);

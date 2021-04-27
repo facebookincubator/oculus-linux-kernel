@@ -5651,6 +5651,9 @@ static void *def_wcd_mbhc_cal(void)
 	return wcd_mbhc_cal;
 }
 
+#if (IS_ENABLED(CONFIG_SND_SOC_CM710X) || \
+		IS_ENABLED(CONFIG_SND_SOC_CM7120) || \
+		IS_ENABLED(CONFIG_SND_SOC_AK4331))
 static int cm710x_init(struct snd_soc_pcm_runtime *rtd)
 {
 	int ret = -EINVAL;
@@ -5688,6 +5691,7 @@ static int cm710x_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_sync(dapm);
 	return 0;
 }
+#endif
 
 /* Digital audio interface glue - connects codec <---> CPU */
 static struct snd_soc_dai_link msm_common_dai_links[] = {

@@ -11,6 +11,7 @@
 #include <linux/timer.h>
 #include <linux/interrupt.h>
 #include <linux/irqreturn.h>
+#include <linux/pinctrl/pinctrl.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/consumer.h>
 #include <linux/extcon-provider.h>
@@ -420,6 +421,7 @@ struct smb_charger {
 	/* regulators */
 	struct smb_regulator	*vbus_vreg;
 	struct smb_regulator	*vconn_vreg;
+	struct smb_regulator	*otg_boost_vreg;
 	struct regulator	*dpdm_reg;
 
 	/* votables */
@@ -607,6 +609,9 @@ struct smb_charger {
 	int			last_wls_vout;
 	int			dcin_icl_voltage;
 	bool			dcin_icl_state;
+
+	/* boost 5v ext */
+	bool			boost_5v_ext_status;
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -644,6 +649,10 @@ int smblib_vbus_regulator_is_enabled(struct regulator_dev *rdev);
 int smblib_vconn_regulator_enable(struct regulator_dev *rdev);
 int smblib_vconn_regulator_disable(struct regulator_dev *rdev);
 int smblib_vconn_regulator_is_enabled(struct regulator_dev *rdev);
+
+int smblib_otg_boost_regulator_enable(struct regulator_dev *rdev);
+int smblib_otg_boost_regulator_disable(struct regulator_dev *rdev);
+int smblib_otg_boost_regulator_is_enabled(struct regulator_dev *rdev);
 
 irqreturn_t default_irq_handler(int irq, void *data);
 irqreturn_t smb_en_irq_handler(int irq, void *data);

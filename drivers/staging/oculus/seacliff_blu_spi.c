@@ -348,7 +348,11 @@ static int blu_spi_probe(struct spi_device *spi)
 
 	init_backlight_matrix(blu);
 
-	blu->frame_counts = 0;
+	if (of_property_read_bool(spi->dev.of_node, "oculus,continuous-splash")) {
+		blu->frame_counts = 0;
+	} else {
+		blu->frame_counts = STABLE_FRAME_COUNTS + 1;
+	}
 
 	blu->backlight_level = blu->max_brightness;
 

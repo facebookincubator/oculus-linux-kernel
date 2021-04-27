@@ -3030,12 +3030,13 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 		CAM_DBG(CAM_ISP, "RDI only context");
 		cdm_acquire.id = CAM_CDM_VIRTUAL;
 		cdm_acquire.cell_index = CAM_CDM_VIRTUAL;
+		memcpy(cdm_acquire.identifier, "vife", sizeof("vife"));
 	} else {
 		cdm_acquire.id = CAM_CDM_HW_ANY;
 		cdm_acquire.cell_index = CAM_CDM_HW_ANY;
+		memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
 	}
 
-	memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
 	cdm_acquire.handle = 0;
 	cdm_acquire.userdata = ife_ctx;
 	cdm_acquire.base_array_cnt = CAM_IFE_HW_NUM_MAX;
@@ -3319,12 +3320,12 @@ static int cam_ife_mgr_acquire_dev(void *hw_mgr_priv, void *acquire_hw_args)
 		CAM_DBG(CAM_ISP, "RDI only context");
 		cdm_acquire.id = CAM_CDM_VIRTUAL;
 		cdm_acquire.cell_index = CAM_CDM_VIRTUAL;
+		memcpy(cdm_acquire.identifier, "vife", sizeof("vife"));
 	} else {
 		cdm_acquire.id = CAM_CDM_HW_ANY;
 		cdm_acquire.cell_index = CAM_CDM_HW_ANY;
+		memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
 	}
-
-	memcpy(cdm_acquire.identifier, "ife", sizeof("ife"));
 
 	cdm_acquire.handle = 0;
 	cdm_acquire.userdata = ife_ctx;

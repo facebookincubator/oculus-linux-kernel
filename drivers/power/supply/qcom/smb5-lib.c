@@ -1922,6 +1922,81 @@ int smblib_vbus_regulator_is_enabled(struct regulator_dev *rdev)
 	return (cmd & OTG_EN_BIT) ? 1 : 0;
 }
 
+/***********************
+ * OTG BOOST REGULATOR *
+ ***********************/
+
+int enable_boost_5v_ext(struct smb_charger *chg, bool enable)
+{
+	struct pinctrl *pinctrl = NULL;
+	struct pinctrl_state *pins_default = NULL;
+	struct pinctrl_state *pins_active = NULL;
+	int result = 0;
+
+	pinctrl = devm_pinctrl_get(chg->dev);
+	if (IS_ERR_OR_NULL(pinctrl)) {
+		dev_err(chg->dev, "Failed to get pin ctrl\n");
+		return -EINVAL;
+	}
+
+	if (enable) {
+		pins_active = pinctrl_lookup_state(pinctrl, "boost_5v_active");
+		if (IS_ERR_OR_NULL(pins_active)) {
+			dev_err(chg->dev, "Failed to lookup pinctrl active state\n");
+			return -EINVAL;
+		}
+		result = pinctrl_select_state(pinctrl, pins_active);
+	} else {
+		pins_default = pinctrl_lookup_state(pinctrl, "default");
+		if (IS_ERR_OR_NULL(pins_default)) {
+			dev_err(chg->dev, "Failed to lookup pinctrl default state\n");
+			return -EINVAL;
+		}
+		result = pinctrl_select_state(pinctrl, pins_default);
+	}
+	if (result != 0)
+		dev_err(chg->dev, "Failed to set pin state\n");
+	else
+		chg->boost_5v_ext_status = enable;
+
+	return result;
+}
+
+int smblib_otg_boost_regulator_enable(struct regulator_dev *rdev)
+{
+	struct smb_charger *chg = rdev_get_drvdata(rdev);
+	int rc, suspend = 0;
+
+	smblib_dbg(chg, PR_OTG, "enabling OTG BOOST\n");
+
+	rc = smblib_get_usb_suspend(chg, &suspend);
+	if (!suspend) {
+		rc = smblib_set_usb_suspend(chg, true);
+		if (rc < 0) {
+			smblib_err(chg, "Couldn't suspend usb rc=%d\n", rc);
+			return rc;
+		}
+	}
+
+	return enable_boost_5v_ext(chg, true);
+}
+
+int smblib_otg_boost_regulator_disable(struct regulator_dev *rdev)
+{
+	struct smb_charger *chg = rdev_get_drvdata(rdev);
+
+	smblib_dbg(chg, PR_OTG, "disabling OTG BOOST\n");
+
+	return enable_boost_5v_ext(chg, false);
+}
+
+int smblib_otg_boost_regulator_is_enabled(struct regulator_dev *rdev)
+{
+	struct smb_charger *chg = rdev_get_drvdata(rdev);
+
+	return chg->boost_5v_ext_status;
+}
+
 /********************
  * BATT PSY GETTERS *
  ********************/

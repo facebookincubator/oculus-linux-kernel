@@ -149,15 +149,6 @@ config POWER_RESET_QCOM
 	  Say Y here if you have a Qualcomm Tecnologies, Inc. board and wish to
 	  enable restart driver.
 
-config QCOM_PANIC_TO_DLOAD_MODE
-	bool "Enable kernel panics to boot into download mode"
-	depends on POWER_RESET_QCOM
-	default n
-	help
-	  The default behavior is to warm reboot into HLOS when the kernel
-	  panics. This allows the SoC to enter download mode when it
-          resets due to a kernel panic.
-
 config POWER_RESET_QNAP
 	bool "QNAP power-off driver"
 	depends on OF_GPIO && PLAT_ORION

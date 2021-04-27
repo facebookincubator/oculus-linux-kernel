@@ -2,17 +2,22 @@
 /plugin/;
 
 #include "seacliff-p2.dtsi"
+#include "seacliff-dd.dtsi"
 
 / {
-	model = "Seacliff (P2)";
+	model = "Seacliff (P2) DD";
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 64>;
+	qcom,board-id = <8 98>;
+};
+
+&cypd3177 {
+	status = "disabled";
 };
 
 &qupv3_se19_spi {
 	oculusnrf@0 {
 		swd@0 {
-			oculus,fw-path = "syncboss_P2_BOARD.bin";
+			oculus,fw-path = "syncboss_DOUBLE_DOUBLE_P2_BOARD.bin";
 		};
 	};
 };

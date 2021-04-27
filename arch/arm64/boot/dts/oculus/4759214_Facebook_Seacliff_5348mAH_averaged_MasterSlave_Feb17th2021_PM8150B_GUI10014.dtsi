@@ -1,7 +1,7 @@
 
-qcom,4693686_facebook_seacliff_5348mah_slave_jul23rd2020 {
+qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 	qcom,profile-revision = <24>;
-	/* #4693686_Facebook_Seacliff_5348mAh_Slave_Jul23rd2020*/
+	/* #4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021*/
 	qcom,max-voltage-uv = <4400000>;
 	qcom,fastchg-current-ma = <2674>;/* 0.5C */
 	qcom,jeita-fcc-ranges-0 = <10 100  1069000
@@ -59,118 +59,118 @@ qcom,4693686_facebook_seacliff_5348mah_slave_jul23rd2020 {
 	qcom,batt-id-kohm = <150>;
 	qcom,battery-beta = <4250>;
 	qcom,therm-room-temp = <100000>;
-	qcom,battery-type = "4693686_facebook_seacliff_5348mah_slave_jul23rd2020";
-	qcom,therm-coefficients = <0x2318 0xd0c 0xdaf7 0xc556 0x848d>;
+	qcom,battery-type = "4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021";
+	qcom,therm-coefficients = <0x2319 0xcb5 0xdb70 0xc48e 0x856b>;
 	qcom,therm-center-offset = <0x70>;
 	qcom,therm-pull-up = <100>;
-	qcom,rslow-normal-coeffs = <0xf2 0x02 0xa3 0x12>;
-	qcom,rslow-low-coeffs = <0xeb 0x06 0x33 0x0b>;
-	qcom,checksum = <0xD2D6>;
+	qcom,rslow-normal-coeffs = <0x68 0x02 0x41 0x12>;
+	qcom,rslow-low-coeffs = <0x6c 0x0c 0xaf 0xdc>;
+	qcom,checksum = <0xF260>;
 	qcom,gui-version = "PM855GUI - 1.0.0.14";
 	qcom,fg-profile-data = [
-		 09 00 53 EA
-		 85 DC 44 E3
-		 52 DC 00 00
-		 DD BC 63 8A
-		 00 00 3D 92
-		 09 95 2A 80
-		 1A 00 F2 02
-		 A3 12 A8 05
-		 EB F3 CE 07
-		 32 00 0E F2
-		 C3 ED FB E5
-		 2D 02 25 E4
-		 FA BC 2E 22
-		 0B 01 DE D5
-		 60 00 46 00
-		 43 00 40 00
+		 09 00 5D E3
+		 6E DD 5F E2
+		 62 DD 00 00
+		 DC BD 90 86
+		 14 80 FF 95
+		 FC 8C 4E 80
+		 27 00 68 02
+		 41 12 BF FB
+		 E1 0D CE 07
+		 32 00 D4 EA
+		 BF 07 56 C2
+		 C9 0A 5D 07
+		 ED CD E0 0B
+		 4E 0A F8 DB
+		 60 00 62 00
+		 52 00 46 00
 		 37 00 37 00
-		 3A 00 3A 00
-		 43 00 42 00
-		 3F 00 60 00
-		 28 00 37 00
-		 3C 00 39 00
-		 32 00 54 00
-		 4E 64 40 00
-		 37 00 36 08
-		 60 F8 52 00
-		 4E 00 75 10
-		 5D 10 4B 00
-		 9F 28 6F 48
-		 5A 58 4A 0E
-		 4A 00 D8 F8
-		 AC 1F 7B 05
-		 56 EA 65 05
-		 5E 1C 8D 0B
-		 73 0D B6 22
-		 CC 17 01 42
-		 E5 5D 14 03
-		 68 11 9B 1E
-		 A7 05 C1 02
-		 0D F4 BD 1C
-		 82 02 8C 04
-		 FC 03 E7 17
-		 92 23 C3 44
-		 06 52 61 13
-		 E0 1E 7F EE
-		 54 D3 CE 8C
-		 C9 1C C2 C9
-		 8A 04 EA BB
-		 E6 17 1E 8B
-		 86 85 B4 9A
-		 7B A8 09 80
-		 31 F2 DA 0D
-		 A2 05 B9 03
-		 00 00 CB E4
-		 85 EB F7 F7
-		 BC 03 C7 C4
-		 60 11 11 00
-		 77 CC 35 03
-		 88 05 4D 01
+		 3C 00 40 00
+		 46 00 44 00
+		 3E 00 60 00
+		 36 00 47 00
+		 49 00 45 00
+		 3F 00 75 00
+		 68 64 52 00
+		 46 00 40 08
+		 60 F8 5E 00
+		 59 00 7D 10
+		 73 10 5D 00
+		 B9 20 89 40
+		 6F 58 5D 10
+		 5D 00 D8 00
+		 A3 1F 91 0D
+		 35 FA CB FD
+		 93 1C FD 0A
+		 E8 0D 3E 22
+		 72 18 49 43
+		 DF 54 12 02
+		 6C 12 99 1F
+		 AB FD 46 02
+		 4B F5 E1 1C
+		 DB 03 D3 0D
+		 6D 0A 93 18
+		 FE 22 6F 3D
+		 07 53 7A 14
+		 96 1E 69 E5
+		 4E CB 67 BC
+		 BA 1C 07 C2
+		 B2 05 B2 BA
+		 9C 18 99 8A
+		 04 84 1D 92
+		 6B A0 09 80
+		 12 EB 44 0D
+		 65 03 94 EB
+		 00 F8 3E ED
+		 B5 EA F9 CF
+		 E0 E5 87 CC
+		 1A 11 1C F8
+		 CD E4 2A 02
+		 93 06 7A 03
 		 CE 07 32 00
-		 68 01 C1 03
-		 B3 04 5A 05
-		 49 00 5D 04
-		 FD 02 27 01
-		 9F 04 42 00
-		 3B 00 3F 00
-		 46 64 48 00
-		 4B 00 4A 08
-		 4B 00 49 00
-		 4A F8 43 00
-		 47 08 36 00
-		 4D 20 51 40
-		 60 50 66 12
-		 51 00 69 00
-		 7A 08 87 00
-		 8B 00 60 00
-		 4F 10 6F 10
-		 6B 00 81 28
-		 99 48 62 60
-		 78 0C 89 00
-		 92 F8 6A 00
-		 D8 00 7F 1F
-		 D8 05 13 0A
-		 E1 0E E7 1C
-		 87 23 3E 44
-		 19 52 06 18
-		 47 03 40 05
-		 2A 03 7F 10
-		 3F 0A 8F 1F
-		 E0 05 19 02
-		 CC 06 95 1C
-		 AD 03 48 05
-		 F8 02 4F 18
-		 41 02 22 05
-		 89 02 62 00
-		 42 1F 3D 04
-		 F3 03 E4 06
-		 D3 1C 64 02
-		 FC 04 56 03
-		 91 18 3F 03
-		 FA 04 E4 03
-		 6D 00 56 01
+		 B7 02 6A 02
+		 BF 04 0B 05
+		 48 05 F8 02
+		 62 02 4D 03
+		 E5 05 45 00
+		 3C 00 48 00
+		 4A 64 4D 00
+		 4F 08 4C 10
+		 52 08 4C 00
+		 50 00 4D 08
+		 47 08 39 00
+		 54 28 5C 48
+		 6A 60 77 0D
+		 5B 00 6D 00
+		 76 08 86 00
+		 68 00 59 00
+		 4C 10 70 10
+		 6E 00 88 28
+		 9E 48 66 58
+		 7A 0D 89 00
+		 8E 00 5E 08
+		 D8 00 AF 25
+		 08 04 D6 0A
+		 EE 15 04 1D
+		 80 22 4B 45
+		 69 5A 79 18
+		 2D 02 69 05
+		 1F 02 9F 0F
+		 3F 0A 07 20
+		 3D 05 AE 02
+		 2C 06 B7 1C
+		 3D 03 B8 05
+		 76 02 7B 18
+		 0F 02 94 05
+		 F4 03 6A 00
+		 1C 1F 2F 06
+		 13 02 AE 06
+		 BB 1C C5 02
+		 2C 04 34 02
+		 9C 18 5E 03
+		 AD 04 46 02
+		 63 00 CA 00
 		 C0 00 FA 00
-		 CE 14 00 00
+		 EF 15 00 00
 	];
 };

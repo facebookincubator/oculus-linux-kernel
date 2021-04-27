@@ -3,7 +3,6 @@
  * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  */
 
-#include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/sched/clock.h>
 
@@ -540,6 +539,7 @@ static int sendcmd(struct adreno_device *adreno_dev,
 				ADRENO_DRAWOBJ_DISPATCH_DRAWQUEUE(drawobj);
 	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
 	struct adreno_submit_time time;
+	uint64_t profile_offset;
 	uint64_t secs = 0;
 	unsigned long nsecs = 0;
 	int ret;
@@ -571,10 +571,23 @@ static int sendcmd(struct adreno_device *adreno_dev,
 
 	if (test_bit(ADRENO_DEVICE_DRAWOBJ_PROFILE, &adreno_dev->priv)) {
 		set_bit(CMDOBJ_PROFILE, &cmdobj->priv);
-		cmdobj->profile_index = adreno_dev->profile_index;
-		adreno_dev->profile_index =
-			(adreno_dev->profile_index + 1) %
+		cmdobj->profile_index =
+			(atomic_inc_return(&adreno_dev->profile_index) - 1) %
 			ADRENO_DRAWOBJ_PROFILE_COUNT;
+		profile_offset = cmdobj->profile_index *
+			sizeof(struct adreno_drawobj_profile_entry) +
+			ADRENO_DRAWOBJ_PROFILE_BASE;
+
+		/* Zero out the profile entry */
+		kgsl_sharedmem_set(device, &adreno_dev->profile_buffer,
+			profile_offset,	0,
+			sizeof(struct adreno_drawobj_profile_entry));
+
+		/*
+		 * We are writing to shared memory between CPU and GPU.
+		 * Make sure write above is posted immediately
+		 */
+		smp_wmb();
 	}
 
 	ret = adreno_ringbuffer_submitcmd(adreno_dev, cmdobj, &time);
@@ -2366,18 +2379,38 @@ static void _print_recovery(struct kgsl_device *device,
 }
 
 static void cmdobj_profile_ticks(struct adreno_device *adreno_dev,
-	struct kgsl_drawobj_cmd *cmdobj, uint64_t *start, uint64_t *retire)
+		struct kgsl_drawobj_cmd *cmdobj, uint64_t *start,
+		uint64_t *active, uint64_t *retire)
 {
 	void *ptr = adreno_dev->profile_buffer.hostptr;
 	struct adreno_drawobj_profile_entry *entry;
 
 	entry = (struct adreno_drawobj_profile_entry *)
-		(ptr + (cmdobj->profile_index * sizeof(*entry)));
+		(ptr + (cmdobj->profile_index * sizeof(*entry)) +
+		 ADRENO_DRAWOBJ_PROFILE_BASE);
 
 	/* get updated values of started and retired */
-	rmb();
+	smp_rmb();
 	*start = entry->started;
+	*active = entry->activated;
 	*retire = entry->retired;
+}
+
+
+/*
+ * Calculate the time delta from the sync in nsecs by converting from GPU
+ * ticks (which operates on a 19.2 MHz timer) and add that to the sync
+ * ktime. Global sync times are updated on cmdobj submission, so we need
+ * to handle event timing on either side of the sync update hence the
+ * conversion to int64_t.
+ */
+#define _gpu_ticks_to_ns(delta_ticks) ((int64_t)(delta_ticks) * 10000 / 192)
+
+static uint64_t _calculate_sync_relative_time(
+		struct kgsl_thread_private *thread, uint64_t event_ticks)
+{
+	return thread->sync_ktime +
+		_gpu_ticks_to_ns(event_ticks - thread->sync_ticks);
 }
 
 static void consume_cmdobj(struct adreno_device *adreno_dev,
@@ -2400,31 +2433,15 @@ static void consume_cmdobj(struct adreno_device *adreno_dev,
 		struct adreno_drawobj_profile_entry *entry;
 
 		entry = (struct adreno_drawobj_profile_entry *)
-			(ptr + (cmdobj->profile_index * sizeof(*entry)));
+			(ptr + (cmdobj->profile_index * sizeof(*entry)) +
+			 ADRENO_DRAWOBJ_PROFILE_BASE);
+
+		/* Make sure that we're reading the latest value. */
+		smp_rmb();
 		start = entry->started;
 
-		/*
-		 * If the start tick count is less than the sync ticks, the
-		 * ringbuffer has started executing, but it probably hasn't
-		 * reached the command to dump the start time out to memory yet.
-		 * Try waiting for five microseconds, which in testing was
-		 * generally long enough for things to clear, and bail out if
-		 * it's still not ready.
-		 */
-		if (start < thread->sync_ticks) {
-			udelay(5);
-			start = entry->started;
-			if (start < thread->sync_ticks)
-				return;
-		}
-
-		/*
-		 * Calculate the time delta from the sync in nsecs by converting
-		 * from GPU ticks (which operates on a 19.2 MHz timer) and
-		 * add that to the sync ktime.
-		 */
-		thread->stats[KGSL_THREADSTATS_CONSUMED] = thread->sync_ktime +
-			(start - thread->sync_ticks) * 10000 / 192;
+		thread->stats[KGSL_THREADSTATS_CONSUMED] =
+			_calculate_sync_relative_time(thread, start);
 	}
 
 	thread->stats[KGSL_THREADSTATS_CONSUMED_ID] = drawobj->timestamp;
@@ -2484,7 +2501,7 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 	struct kgsl_drawobj *drawobj = DRAWOBJ(cmdobj);
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(drawobj->context);
 	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
-	uint64_t start = 0, end = 0;
+	uint64_t start = 0, active = 0, end = 0;
 
 	if (cmdobj->fault_recovery != 0) {
 		set_bit(ADRENO_CONTEXT_FAULT, &drawobj->context->priv);
@@ -2492,17 +2509,15 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 	}
 
 	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv)) {
-		cmdobj_profile_ticks(adreno_dev, cmdobj, &start, &end);
-		/*
-		 * Calculate the time delta from the sync in nsecs by converting
-		 * from GPU ticks (which operates on a 19.2 MHz timer) and
-		 * add that to the sync ktime.
-		 */
+		cmdobj_profile_ticks(adreno_dev, cmdobj, &start, &active, &end);
+
 		thread->stats[KGSL_THREADSTATS_RETIRED] =
-			thread->sync_ktime +
-			(end - thread->sync_ticks) * 10000 / 192;
-		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] +=
-			(end - start) * 10000 / 192;
+			_calculate_sync_relative_time(thread, end);
+
+		/* Add any active time that hasn't yet been accounted for. */
+		if (active > 0 && active < end)
+			thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] +=
+				_gpu_ticks_to_ns(end - active);
 	}
 
 	thread->stats[KGSL_THREADSTATS_RETIRED_ID] = drawobj->timestamp;

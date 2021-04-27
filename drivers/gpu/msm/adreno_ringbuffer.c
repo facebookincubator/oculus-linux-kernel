@@ -457,6 +457,20 @@ static inline int cp_mem_write(struct adreno_device *adreno_dev,
 	return dwords;
 }
 
+static inline int cp_mem_to_mem(struct adreno_device *adreno_dev,
+		unsigned int *cmds, unsigned int flags,
+		uint64_t dst_gpuaddr, uint64_t src_gpuaddr)
+{
+	int dwords = 0;
+
+	cmds[dwords++] = cp_mem_packet(adreno_dev, CP_MEM_TO_MEM, 3, 2);
+	cmds[dwords++] = flags;
+	dwords += cp_gpuaddr(adreno_dev, &cmds[dwords], dst_gpuaddr);
+	dwords += cp_gpuaddr(adreno_dev, &cmds[dwords], src_gpuaddr);
+
+	return dwords;
+}
+
 static bool _check_secured(struct adreno_context *drawctxt, unsigned int flags)
 {
 	return ((drawctxt->base.flags & KGSL_CONTEXT_SECURE) &&
@@ -568,7 +582,7 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 	 * required in ringbuffer and adjust the write pointer depending on
 	 * gpucore at the end of this function.
 	 */
-	total_sizedwords += 8; /* sop timestamp */
+	total_sizedwords += 4; /* sop timestamp */
 	total_sizedwords += 5; /* eop timestamp */
 
 	if (drawctxt && !is_internal_cmds(flags)) {
@@ -641,12 +655,6 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 	if (profile_ready)
 		adreno_profile_preib_processing(adreno_dev, drawctxt,
 				&flags, &ringcmds);
-
-	/* start-of-pipeline timestamp for the context */
-	if (drawctxt && !is_internal_cmds(flags))
-		ringcmds += cp_mem_write(adreno_dev, ringcmds,
-			MEMSTORE_ID_GPU_ADDR(device, context_id, soptimestamp),
-			timestamp);
 
 	/* start-of-pipeline timestamp for the ringbuffer */
 	ringcmds += cp_mem_write(adreno_dev, ringcmds,
@@ -1042,9 +1050,21 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 
 	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv)) {
 		kernel_profiling = true;
-		dwords += 6;
+		/*
+		 * start:
+		 * CP_REG_TO_MEM:      3 (+1 w/ 64-bit addresses)
+		 * CP_MEM_TO_MEM:      4 (+2)
+		 * CP_MEM_WRITE:       3 (+1)
+		 * CP_WAIT_MEM_WRITES: 1
+		 *
+		 * end:
+		 * CP_REG_TO_MEM:      3 (+1)
+		 * CP_MEM_WRITE:       3 (+1)
+		 * CP_WAIT_MEM_WRITES: 1
+		 */
+		dwords += 18;
 		if (!ADRENO_LEGACY_PM4(adreno_dev))
-			dwords += 2;
+			dwords += 6;
 	}
 
 	if (adreno_is_preemption_enabled(adreno_dev))
@@ -1058,6 +1078,14 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 
 	if (gpudev->ccu_invalidate)
 		dwords += 4;
+
+	/*
+	 * Add space for writing the start-of-pipeline timestamp event.
+	 * CP_EVENT_WRITE : 4 (+1 w/ 64-bit addresses)
+	 */
+	dwords += 4;
+	if (!ADRENO_LEGACY_PM4(adreno_dev))
+		dwords += 1;
 
 	link = kcalloc(dwords, sizeof(unsigned int), GFP_KERNEL);
 	if (!link) {
@@ -1074,7 +1102,38 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 			adreno_dev->profile_buffer.gpuaddr +
 			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
 				started));
+
+		/*
+		 * Track when this cmdobj becomes active so we can avoid
+		 * counting ticks when it has been preempted.
+		 */
+		cmds += cp_mem_to_mem(adreno_dev, cmds,
+			CP_MEM_TO_MEM_64BIT_FLAG | CP_MEM_TO_MEM_WAIT_FLAG,
+			adreno_dev->profile_buffer.gpuaddr +
+			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
+				activated),
+			adreno_dev->profile_buffer.gpuaddr +
+			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
+				started));
+		cmds += cp_mem_write(adreno_dev, cmds,
+			adreno_dev->profile_buffer.gpuaddr +
+			RB_PROFILE_INDEX_OFFSET(rb),
+			cmdobj->profile_index);
+		*cmds++ = cp_packet(adreno_dev, CP_WAIT_MEM_WRITES, 0);
 	}
+
+	/*
+	 * Write the start-of-pipeline timestamp for the context and trigger
+	 * a CP interrupt to make sure the dispatcher consumes the cmdobj. We
+	 * do this *after* the profiling data is written out to ensure that
+	 * apps relying on timing against the consumed event don't see the
+	 * wrong time.
+	 */
+	*cmds++ = cp_mem_packet(adreno_dev, CP_EVENT_WRITE, 3, 1);
+	*cmds++ = CACHE_FLUSH_TS | (1 << 31);
+	cmds += cp_gpuaddr(adreno_dev, cmds,
+		MEMSTORE_ID_GPU_ADDR(device, context->id, soptimestamp));
+	*cmds++ = drawobj->timestamp;
 
 	/*
 	 * Add IB1 to read the GPU ticks at the start of command obj and
@@ -1130,6 +1189,13 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 			adreno_dev->profile_buffer.gpuaddr +
 			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
 				retired));
+
+		/* Mark the ringbuffer as inactive */
+		cmds += cp_mem_write(adreno_dev, cmds,
+			adreno_dev->profile_buffer.gpuaddr +
+			RB_PROFILE_INDEX_OFFSET(rb),
+			UINT_MAX);
+		*cmds++ = cp_packet(adreno_dev, CP_WAIT_MEM_WRITES, 0);
 	}
 
 	/*

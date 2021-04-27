@@ -2144,6 +2144,47 @@ static int smb5_init_vconn_regulator(struct smb5 *chip)
 	return rc;
 }
 
+static struct regulator_ops smb5_otg_boost_reg_ops = {
+	.enable = smblib_otg_boost_regulator_enable,
+	.disable = smblib_otg_boost_regulator_disable,
+	.is_enabled = smblib_otg_boost_regulator_is_enabled,
+};
+
+static int smb5_init_otg_boost_regulator(struct smb5 *chip)
+{
+	struct smb_charger *chg = &chip->chg;
+	struct regulator_config cfg = {};
+	int rc = 0;
+
+	chg->boost_5v_ext_status = false;
+	chg->otg_boost_vreg = devm_kzalloc(chg->dev,
+				sizeof(*chg->otg_boost_vreg), GFP_KERNEL);
+	if (!chg->otg_boost_vreg)
+		return -ENOMEM;
+
+	cfg.dev = chg->dev;
+	cfg.driver_data = chip;
+
+	chg->otg_boost_vreg->rdesc.owner = THIS_MODULE;
+	chg->otg_boost_vreg->rdesc.type = REGULATOR_VOLTAGE;
+	chg->otg_boost_vreg->rdesc.ops = &smb5_otg_boost_reg_ops;
+	chg->otg_boost_vreg->rdesc.of_match = "qcom,smb5-otg_boost";
+	chg->otg_boost_vreg->rdesc.name = "qcom,smb5-otg_boost";
+
+	chg->otg_boost_vreg->rdev = devm_regulator_register(chg->dev,
+						&chg->otg_boost_vreg->rdesc,
+						&cfg);
+	if (IS_ERR(chg->otg_boost_vreg->rdev)) {
+		rc = PTR_ERR(chg->otg_boost_vreg->rdev);
+		chg->otg_boost_vreg->rdev = NULL;
+		if (rc != -EPROBE_DEFER)
+			pr_err("Couldn't register OTG BOOST regulator rc=%d\n",
+				rc);
+	}
+
+	return rc;
+}
+
 /***************************
  * HARDWARE INITIALIZATION *
  ***************************/
@@ -3634,6 +3675,13 @@ static int smb5_probe(struct platform_device *pdev)
 		rc = smb5_init_vconn_regulator(chip);
 		if (rc < 0) {
 			pr_err("Couldn't initialize vconn regulator rc=%d\n",
+				rc);
+			goto cleanup;
+		}
+
+		rc = smb5_init_otg_boost_regulator(chip);
+		if (rc < 0) {
+			pr_err("Couldn't initialize otg boost regulator rc=%d\n",
 				rc);
 			goto cleanup;
 		}

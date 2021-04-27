@@ -26,3 +26,7 @@ config QCOM_ADRENO_DEFAULT_GOVERNOR
 config QCOM_KGSL_IOMMU
 	bool
 	default y if QCOM_KGSL && (MSM_IOMMU || ARM_SMMU)
+
+config QCOM_KGSL_MEM_ENTRY_RBTREE
+	bool "Track memory entries with RB trees"
+	depends on QCOM_KGSL

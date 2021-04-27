@@ -76,6 +76,96 @@ static inline bool adreno_move_preempt_state(struct adreno_device *adreno_dev,
 	return (atomic_cmpxchg(&adreno_dev->preempt.state, old, new) == old);
 }
 
+static void _a6xx_update_active_time(struct adreno_device *adreno_dev)
+{
+	struct adreno_context *drawctxt;
+	struct kgsl_thread_private *thread;
+	struct adreno_drawobj_profile_entry *entry;
+	void *hostptr;
+
+	volatile uint64_t *activated_ptr;
+	uint64_t active_ticks = 0, preempt_ticks = 0;
+	unsigned int profile_index;
+
+	/*
+	 * Grab the profiling buffer and thread pointers. Bail if either
+	 * pointer is invalid.
+	 */
+	hostptr = adreno_dev->profile_buffer.hostptr;
+	drawctxt = adreno_dev->cur_rb->drawctxt_active;
+	thread = (drawctxt != NULL) ? drawctxt->base.thread_priv : NULL;
+	if (hostptr == NULL || IS_ERR_OR_NULL(thread))
+		return;
+
+	/* Read out the always-on counter ticks. Bail out on failure. */
+	adreno_readreg64(adreno_dev,
+		ADRENO_REG_RBBM_ALWAYSON_COUNTER_LO,
+		ADRENO_REG_RBBM_ALWAYSON_COUNTER_HI,
+		&preempt_ticks);
+	if (preempt_ticks == 0)
+		return;
+
+	/*
+	 * Grab the latest value of the current RB's profile index. Skip over
+	 * it if it's out-of-bounds.
+	 */
+	smp_rmb();
+	profile_index = *(volatile unsigned int *)
+		(hostptr + RB_PROFILE_INDEX_OFFSET(adreno_dev->cur_rb));
+	if (profile_index < ADRENO_DRAWOBJ_PROFILE_COUNT) {
+		/* Grab the entry pointer associated with this profile index. */
+		entry = (struct adreno_drawobj_profile_entry *)
+			(hostptr + (profile_index * sizeof(*entry)) +
+			ADRENO_DRAWOBJ_PROFILE_BASE);
+		activated_ptr = (volatile uint64_t *)&entry->activated;
+
+		/*
+		 * Read out when this cmdobj last became active. Nothing needs
+		 * to be done if the cmdobj has already retired or is already
+		 * inactive.
+		 */
+		active_ticks = *activated_ptr;
+		if (entry->retired > 0 || active_ticks == 0)
+			goto handle_next_rb;
+		*activated_ptr = 0;
+
+		/* Make sure the update to entry->activated flushes. */
+		smp_wmb();
+
+		/*
+		 * Add the time since this entry last activated to the cmdobj's
+		 * active time and then update the activated time entry to
+		 * match preempt_ticks.
+		 */
+		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] +=
+			(preempt_ticks - active_ticks) * 10000 / 192;
+	}
+
+handle_next_rb:
+	/*
+	 * Now grab the latest value for the next RB's profile index. If it
+	 * is valid, then that ringbuffer is being reactivated, so we need
+	 * to update its 'activated' ticks. This happens when the GPU returns
+	 * to working on a preempted cmdobj, for example.
+	 */
+	smp_rmb();
+	profile_index = *(volatile unsigned int *)
+		(hostptr + RB_PROFILE_INDEX_OFFSET(adreno_dev->next_rb));
+	if (profile_index < ADRENO_DRAWOBJ_PROFILE_COUNT) {
+		/* Grab the entry pointer associated with this profile index. */
+		entry = (struct adreno_drawobj_profile_entry *)
+			(hostptr + (profile_index * sizeof(*entry)) +
+			ADRENO_DRAWOBJ_PROFILE_BASE);
+		activated_ptr = (volatile uint64_t *)&entry->activated;
+
+		/* Mark the next RB's cmdobj as active. */
+		*activated_ptr = preempt_ticks;
+
+		/* Make sure the update to entry->activated flushes. */
+		smp_wmb();
+	}
+}
+
 static void _a6xx_preemption_done(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
@@ -111,6 +201,8 @@ static void _a6xx_preemption_done(struct adreno_device *adreno_dev)
 	adreno_dev->preempt.count++;
 
 	del_timer_sync(&adreno_dev->preempt.timer);
+
+	_a6xx_update_active_time(adreno_dev);
 
 	adreno_readreg(adreno_dev, ADRENO_REG_CP_PREEMPT_LEVEL_STATUS, &status);
 
@@ -440,6 +532,8 @@ void a6xx_preemption_callback(struct adreno_device *adreno_dev, int bit)
 				A6XX_GMU_AO_SPARE_CNTL, 0x2, 0x0);
 
 	del_timer(&adreno_dev->preempt.timer);
+
+	_a6xx_update_active_time(adreno_dev);
 
 	adreno_readreg(adreno_dev, ADRENO_REG_CP_PREEMPT_LEVEL_STATUS, &status);
 

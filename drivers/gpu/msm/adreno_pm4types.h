@@ -65,6 +65,13 @@
 /* write N 32-bit words to memory */
 #define CP_MEM_WRITE		0x3d
 
+/* copy (d)words from one memory location to another */
+#define CP_MEM_TO_MEM		0x73
+/* copy dwords */
+#define CP_MEM_TO_MEM_64BIT_FLAG	(1 << 29)
+/* wait for memory writes first */
+#define CP_MEM_TO_MEM_WAIT_FLAG		(1 << 30)
+
 /* conditional execution of a sequence of packets */
 #define CP_COND_EXEC		0x44
 

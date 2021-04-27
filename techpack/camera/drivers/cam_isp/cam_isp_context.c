@@ -390,7 +390,7 @@ static struct cam_ctx_request *__cam_isp_alloc_request(
 	if (IS_ERR_OR_NULL(req))
 		return ERR_PTR(-ENOMEM);
 
-	req_priv = kmem_cache_alloc(cam_isp_ctx_req_cachep, GFP_KERNEL);
+	req_priv = kmem_cache_zalloc(cam_isp_ctx_req_cachep, GFP_KERNEL);
 	if (req_priv == NULL) {
 		cam_context_free_request(req);
 		return ERR_PTR(-ENOMEM);
