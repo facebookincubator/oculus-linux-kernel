@@ -68,6 +68,7 @@
 #include "format.h"
 #include "power.h"
 #include "stream.h"
+#include "usb_audio_qmi_svc.h"
 
 MODULE_AUTHOR("Takashi Iwai <tiwai@suse.de>");
 MODULE_DESCRIPTION("USB Audio");
@@ -991,4 +992,22 @@ static struct usb_driver usb_audio_driver = {
 	.supports_autosuspend = 1,
 };
 
-module_usb_driver(usb_audio_driver);
+static int __init usb_audio_driver_init(void)
+{
+	int rc = 0;
+
+	rc = uaudio_qmi_plat_init();
+	if (rc)
+		return rc;
+
+	return usb_register_driver(&usb_audio_driver, THIS_MODULE, KBUILD_MODNAME);
+}
+
+static void __init usb_audio_driver_exit(void)
+{
+	uaudio_qmi_plat_exit();
+	usb_deregister(&usb_audio_driver);
+}
+
+module_init(usb_audio_driver_init);
+module_exit(usb_audio_driver_exit);

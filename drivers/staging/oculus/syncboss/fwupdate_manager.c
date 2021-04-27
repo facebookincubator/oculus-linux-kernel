@@ -7,6 +7,7 @@
 #include "hubert_swd_ops.h"
 #include "swd.h"
 #include "syncboss_swd_ops.h"
+#include "safetyboss_swd_ops.h"
 
 #define FW_UPDATE_STATE_IDLE_STR      "idle"
 #define FW_UPDATE_STATE_WRITING_STR   "writing"
@@ -37,6 +38,15 @@ static struct {
 			.target_program_write_chunk = hubert_swd_write_chunk,
 			.target_get_write_chunk_size = hubert_get_write_chunk_size,
 			.target_program_read = hubert_swd_read,
+		}
+	},
+	{
+		.flavor = "stm32g0",
+		.swd_ops = {
+			.target_prepare = safetyboss_swd_prepare,
+			.target_erase = safetyboss_swd_erase_app,
+			.target_program_write_chunk = safetyboss_swd_write_chunk,
+			.target_get_write_chunk_size = safetyboss_get_write_chunk_size,
 		}
 	},
 };

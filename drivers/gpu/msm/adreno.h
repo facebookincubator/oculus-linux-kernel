@@ -509,7 +509,7 @@ struct adreno_device {
 	unsigned long pwrctrl_flag;
 
 	struct kgsl_memdesc profile_buffer;
-	unsigned int profile_index;
+	atomic_t profile_index;
 	struct kgsl_memdesc pwrup_reglist;
 	const struct firmware *lm_fw;
 	uint32_t *lm_sequence;
@@ -587,18 +587,34 @@ enum adreno_device_flags {
  * kernel profiling buffer
  * @started: Number of GPU ticks at start of the drawobj
  * @retired: Number of GPU ticks at the end of the drawobj
+ * @activated: Number of GPU ticks when the drawobj last became active
  */
 struct adreno_drawobj_profile_entry {
 	uint64_t started;
 	uint64_t retired;
+	uint64_t activated;
 };
 
+/*
+ * PROFILING BUFFER SCRATCH MEMORY:
+ * Offset: Length(bytes): What
+ * 0x0: 4 * KGSL_PRIORITY_MAX_RB_LEVELS: Current cmdobj profile indices
+ */
+#define RB_PROFILE_INDEX_OFFSET(rb) \
+	((rb)->id * sizeof(unsigned int))
+
+#define ADRENO_DRAWOBJ_PROFILE_BASE \
+	(ALIGN(KGSL_PRIORITY_MAX_RB_LEVELS * sizeof(unsigned int), \
+	       sizeof(uint64_t)))
+
 #define ADRENO_DRAWOBJ_PROFILE_COUNT \
-	(PAGE_SIZE / sizeof(struct adreno_drawobj_profile_entry))
+	((PAGE_SIZE - ADRENO_DRAWOBJ_PROFILE_BASE) \
+	 / sizeof(struct adreno_drawobj_profile_entry))
 
 #define ADRENO_DRAWOBJ_PROFILE_OFFSET(_index, _member) \
 	 ((_index) * sizeof(struct adreno_drawobj_profile_entry) \
-	  + offsetof(struct adreno_drawobj_profile_entry, _member))
+	  + offsetof(struct adreno_drawobj_profile_entry, _member) \
+	  + ADRENO_DRAWOBJ_PROFILE_BASE)
 
 
 /**

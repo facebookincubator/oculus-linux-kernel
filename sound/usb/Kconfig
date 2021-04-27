@@ -163,7 +163,7 @@ config SND_BCD2000
 source "sound/usb/line6/Kconfig"
 
 config SND_USB_AUDIO_QMI
-	tristate "USB Audio QMI Service driver"
+	bool "USB Audio QMI Service driver"
 	depends on QCOM_QMI_HELPERS
 	help
 	  Starts USB Audio QMI server to communicate with remote entity

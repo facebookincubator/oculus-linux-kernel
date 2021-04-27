@@ -1098,9 +1098,10 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		mutex_unlock(&devdata->msg_queue_lock);
 
 		smsg->spi_xfer.speed_hz = spi_max_clk_rate;
+		smsg->spi_xfer.len = transaction_length;
 		if (first_attempt) {
 			smsg->tx.header.checksum = calculate_checksum(&smsg->tx,
-								      devdata->transaction_length);
+								      transaction_length);
 			syncboss_snoop_write(devdata, &smsg->tx);
 		}
 
@@ -1172,7 +1173,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			 */
 			print_hex_dump_bytes("syncboss sending: ",
 					    DUMP_PREFIX_OFFSET, &smsg->tx,
-					    devdata->transaction_length);
+					    transaction_length);
 		}
 #endif
 

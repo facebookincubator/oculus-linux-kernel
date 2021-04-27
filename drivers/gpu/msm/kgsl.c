@@ -233,6 +233,9 @@ static struct kgsl_mem_entry *kgsl_mem_entry_create(void)
 
 	entry = kmem_cache_zalloc(kgsl_mem_entry_cache, GFP_KERNEL);
 	if (entry != NULL) {
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+		RB_CLEAR_NODE(&entry->node);
+#endif
 		kref_init(&entry->refcount);
 		/* put this ref in userspace memory alloc and map ioctls */
 		kref_get(&entry->refcount);
@@ -430,6 +433,32 @@ static void kgsl_mem_entry_commit_process(struct kgsl_mem_entry *entry)
 	spin_unlock(&entry->priv->mem_lock);
 }
 
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+static void _attach_entry_to_mem_tree(struct kgsl_process_private *process,
+		struct kgsl_mem_entry *entry)
+{
+	struct rb_node **node = &process->mem_tree.rb_node;
+	struct rb_node *parent = NULL;
+
+	while (*node != NULL) {
+		struct kgsl_mem_entry *this;
+
+		parent = *node;
+		this = rb_entry(parent, struct kgsl_mem_entry, node);
+
+		if (entry->memdesc.gpuaddr < this->memdesc.gpuaddr)
+			node = &parent->rb_left;
+		else if (entry->memdesc.gpuaddr > this->memdesc.gpuaddr)
+			node = &parent->rb_right;
+		else
+			return;
+	}
+
+	rb_link_node(&entry->node, parent, node);
+	rb_insert_color(&entry->node, &process->mem_tree);
+}
+#endif
+
 /*
  * Attach the memory object to a process by (possibly) getting a GPU address and
  * (possibly) mapping it
@@ -488,6 +517,19 @@ static int kgsl_mem_entry_attach_process(struct kgsl_device *device,
 	kgsl_memfree_purge(entry->memdesc.pagetable, entry->memdesc.gpuaddr,
 		entry->memdesc.size);
 
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+	if (!ret && entry->memdesc.gpuaddr &&
+			!(entry->memdesc.flags & KGSL_MEMFLAGS_SPARSE_VIRT)) {
+		/*
+		 * Attach this memory entry to the process memory RB tree now
+		 * that we're sure that it's properly mapped.
+		 */
+		spin_lock(&process->mem_lock);
+		_attach_entry_to_mem_tree(process, entry);
+		spin_unlock(&process->mem_lock);
+	}
+#endif
+
 	return ret;
 }
 
@@ -497,11 +539,22 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 	if (entry == NULL)
 		return;
 
+	spin_lock(&entry->priv->mem_lock);
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
 	/*
-	 * First remove the entry from mem_idr list
+	 * First remove the entry from the process memory
+	 * RB tree (if necessary).
+	 */
+	if (!RB_EMPTY_NODE(&entry->node)) {
+		rb_erase(&entry->node, &entry->priv->mem_tree);
+		RB_CLEAR_NODE(&entry->node);
+	}
+#endif
+
+	/*
+	 * Next remove the entry from mem_idr list
 	 * so that no one can operate on obsolete values
 	 */
-	spin_lock(&entry->priv->mem_lock);
 	if (entry->id != 0)
 		idr_remove(&entry->priv->mem_idr, entry->id);
 	entry->id = 0;
@@ -1017,6 +1070,11 @@ static struct kgsl_process_private *kgsl_process_private_new(
 		private = ERR_PTR(err);
 	}
 
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+	/* Initialize the memory entry RB tree. */
+	private->mem_tree = RB_ROOT;
+#endif
+
 	return private;
 }
 
@@ -1308,6 +1366,33 @@ err:
 	(((_val) >= (_memdesc)->gpuaddr) && \
 	 ((_val) < ((_memdesc)->gpuaddr + (_memdesc)->size)))
 
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+static struct kgsl_mem_entry *_find_entry_in_mem_tree(
+		struct kgsl_process_private *private, uint64_t gpuaddr)
+{
+	struct rb_node **node = &private->mem_tree.rb_node;
+	struct rb_node *parent = NULL;
+
+	while (*node != NULL) {
+		struct kgsl_mem_entry *this;
+
+		parent = *node;
+		this = rb_entry(parent, struct kgsl_mem_entry, node);
+
+		if (GPUADDR_IN_MEMDESC(gpuaddr, &this->memdesc))
+			return this;
+		else if (gpuaddr < this->memdesc.gpuaddr)
+			node = &parent->rb_left;
+		else if (gpuaddr > this->memdesc.gpuaddr)
+			node = &parent->rb_right;
+		else
+			break;
+	}
+
+	return NULL;
+}
+#endif
+
 /**
  * kgsl_sharedmem_find() - Find a gpu memory allocation
  *
@@ -1330,13 +1415,30 @@ kgsl_sharedmem_find(struct kgsl_process_private *private, uint64_t gpuaddr)
 		return NULL;
 
 	spin_lock(&private->mem_lock);
+
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+	/* First try searching through the process memory RB tree. */
+	entry = _find_entry_in_mem_tree(private, gpuaddr);
+	if (entry != NULL) {
+		if (!entry->pending_free)
+			ret = kgsl_mem_entry_get(entry);
+		goto done;
+	}
+#endif
+
+	/*
+	 * If not found in the RB tree, fall back on going through the
+	 * IDR list.
+	 */
 	idr_for_each_entry(&private->mem_idr, entry, id) {
 		if (GPUADDR_IN_MEMDESC(gpuaddr, &entry->memdesc)) {
 			if (!entry->pending_free)
 				ret = kgsl_mem_entry_get(entry);
-			break;
+			goto done;
 		}
 	}
+
+done:
 	spin_unlock(&private->mem_lock);
 
 	return (ret == 0) ? NULL : entry;

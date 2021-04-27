@@ -62,7 +62,7 @@ static void scm_disable_sdi(void);
  * There is no API from TZ to re-enable the registers.
  * So the SDI cannot be re-enabled when it already by-passed.
  */
-static int download_mode = 1;
+static int download_mode = 0;
 static struct kobject dload_kobj;
 
 static int in_panic;
@@ -162,7 +162,6 @@ int scm_set_dload_mode(int arg1, int arg2)
 				&desc);
 }
 
-#ifdef CONFIG_QCOM_PANIC_TO_DLOAD_MODE
 static void set_dload_mode(int on)
 {
 	int ret;
@@ -181,24 +180,6 @@ static void set_dload_mode(int on)
 
 	dload_mode_enabled = on;
 }
-#else
-static void set_dload_mode(int on)
-{
-	/* Always disable download mode, but retain the setting externally */
-
-	if (dload_mode_addr) {
-		__raw_writel(0, dload_mode_addr);
-		__raw_writel(0,
-		       dload_mode_addr + sizeof(unsigned int));
-		/* Make sure the download cookie is updated */
-		mb();
-	}
-
-	scm_set_dload_mode(0, 0);
-
-	dload_mode_enabled = on;
-}
-#endif
 
 static bool get_dload_mode(void)
 {
@@ -507,6 +488,11 @@ static void msm_restart_prepare(const char *cmd)
 
 	if (force_warm_reboot)
 		pr_info("Forcing a warm reset of the system\n");
+
+#ifdef CONFIG_PSTORE_RAM
+	if (in_panic)
+		need_warm_reset = true;
+#endif
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
 	if (force_warm_reboot || need_warm_reset)

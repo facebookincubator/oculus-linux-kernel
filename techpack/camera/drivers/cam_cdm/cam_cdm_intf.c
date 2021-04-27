@@ -125,11 +125,7 @@ int cam_cdm_get_iommu_handle(char *identifier,
 	}
 	CAM_DBG(CAM_CDM, "Looking for Iommu handle of %s", identifier);
 
-	/*
-	 * Search from Index CAM_CDM_HW_ANY as index 0 is reserved for
-	 * virtual cdm which does not have any iommu handles
-	 */
-	for (i = CAM_CDM_HW_ANY; i < cdm_mgr.cdm_count; i++) {
+	for (i = 0; i < cdm_mgr.cdm_count; i++) {
 		mutex_lock(&cdm_mgr.nodes[i].lock);
 		if (!cdm_mgr.nodes[i].data) {
 			mutex_unlock(&cdm_mgr.nodes[i].lock);

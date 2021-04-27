@@ -17,7 +17,3 @@
 		/delete-property/ swr2;
 	};
 };
-
-&soc {
-	/delete-node/ usb_audio_qmi_dev;
-};

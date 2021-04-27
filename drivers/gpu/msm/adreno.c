@@ -1849,7 +1849,7 @@ static int adreno_init(struct kgsl_device *device)
 			&adreno_dev->profile_buffer, PAGE_SIZE,
 			0, priv, "alwayson");
 
-		adreno_dev->profile_index = 0;
+		atomic_set(&adreno_dev->profile_index, 0);
 
 		if (r == 0) {
 			set_bit(ADRENO_DEVICE_DRAWOBJ_PROFILE,
@@ -1857,6 +1857,14 @@ static int adreno_init(struct kgsl_device *device)
 			kgsl_sharedmem_set(device,
 				&adreno_dev->profile_buffer, 0, 0,
 				PAGE_SIZE);
+
+			/* Set the default RB profile indices out-of-bounds */
+			kgsl_sharedmem_set(device,
+				&adreno_dev->profile_buffer, 0, 0xFF,
+				ADRENO_DRAWOBJ_PROFILE_BASE);
+
+			/* Make sure the writes above post before continuing. */
+			smp_wmb();
 		}
 
 	}

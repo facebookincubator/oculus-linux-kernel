@@ -1344,7 +1344,6 @@ static const struct of_device_id of_uaudio_matach[] = {
 	},
 	{ },
 };
-MODULE_DEVICE_TABLE(of, of_uaudio_matach);
 
 static struct platform_driver uaudio_qmi_driver = {
 	.probe		= uaudio_qmi_plat_probe,
@@ -1426,7 +1425,7 @@ static void uaudio_qmi_svc_exit(void)
 	uaudio_svc = NULL;
 }
 
-static int __init uaudio_qmi_plat_init(void)
+int uaudio_qmi_plat_init(void)
 {
 	int ret;
 
@@ -1437,14 +1436,11 @@ static int __init uaudio_qmi_plat_init(void)
 	return uaudio_qmi_svc_init();
 }
 
-static void __exit uaudio_qmi_plat_exit(void)
+void uaudio_qmi_plat_exit(void)
 {
 	uaudio_qmi_svc_exit();
 	platform_driver_unregister(&uaudio_qmi_driver);
 }
-
-module_init(uaudio_qmi_plat_init);
-module_exit(uaudio_qmi_plat_exit);
 
 MODULE_DESCRIPTION("USB AUDIO QMI Service Driver");
 MODULE_LICENSE("GPL v2");
