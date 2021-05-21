@@ -318,6 +318,10 @@ enum {
 /* DCIN Interrupt Bits */
 #define DCIN_PLUGIN_RT_STS_BIT			BIT(4)
 
+#define DCIN_INT_RT_STS_REG			(DCIN_BASE + 0x10)
+#define DCIN_PON_RT_STS_BIT			BIT(6)
+#define DCIN_PON_SHIFT				6
+
 #define DCIN_CMD_IL_REG				(DCIN_BASE + 0x40)
 #define DCIN_SUSPEND_BIT			BIT(0)
 #define DCIN_EN_OVERRIDE_BIT			BIT(1)

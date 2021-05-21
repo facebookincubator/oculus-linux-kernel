@@ -4,7 +4,7 @@
  * See
  * RFC 2284: PPP Extensible Authentication Protocol (EAP)
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

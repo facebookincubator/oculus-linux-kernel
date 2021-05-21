@@ -2,7 +2,7 @@
  * Process CIS information from OTP for customer platform
  * (Handle the MAC address and module information)
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -296,7 +296,6 @@ naming_info_t bcm4389_naming_table[] = {
 	{ {"1wk_es43"}, {"_1wk_es43_c0"}, {"_c0"} },
 	{ {"1wk_es50"}, {"_1wk_es50_c1"}, {"_c1"} },
 	{ {"1wk_es51"}, {"_1wk_es51_c1"}, {"_c1"} },
-	{ {"1wk_es60"}, {"_1wk_es60_c1"}, {"_c1"} },
 	{ {"1wk_es10"}, {"_1wk_es10_c1"}, {"_c1"} },
 	{ {"1wk_es11"}, {"_1wk_es11_c1"}, {"_c1"} },
 	{ {"usi_es10"}, {"_ES10"}, {"_c0"} },
@@ -1666,7 +1665,6 @@ vid_info_t vid_info[] = {
 	{ 3, { 0x43, 0x22, }, { "murata_mur_1wk_es43" } },
 	{ 3, { 0x50, 0x22, }, { "murata_mur_1wk_es50" } },
 	{ 3, { 0x51, 0x24, }, { "murata_mur_1wk_es51" } },
-	{ 3, { 0x60, 0x24, }, { "murata_mur_1wk_es60" } },
 	{ 3, { 0x10, 0x25, }, { "murata_mur_1wk_es10" } },
 	{ 3, { 0x11, 0x25, }, { "murata_mur_1wk_es11" } },
 	{ 3, { 0x10, 0x99, }, { "USI_WM_usi_es10" } },

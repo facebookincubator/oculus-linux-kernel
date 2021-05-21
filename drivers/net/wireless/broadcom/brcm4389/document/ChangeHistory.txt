@@ -1,4 +1,8 @@
-BCM4389 DHD 101.10.452.1  for FB Project R4 Release
+BCM4389 DHD 101.10.452.2  for FB Project R5 Release
+
+DHD 101.10.452.2 - 2021.02.01
+- Added to set bcn_li_dtim at disable MAX_DTIM_IN_SUSPEND if suspend mode
+- Update filter pattern in case cur_etheraddr is changed by random mac 
 
 DHD 101.10.452.1 - 2020.12.30
 - Fixed a kernel crash during rmmod - patch2, CS1436509

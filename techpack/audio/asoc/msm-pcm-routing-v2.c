@@ -5562,7 +5562,7 @@ static const struct soc_enum msm_route_ec_ref_params_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(ec_ref_rate_text), ec_ref_rate_text),
 };
 
-static const char *const ec_ref_rx[] = { "None", "SLIM_RX", "I2S_RX",
+static const char *const ec_ref_rx[] = { "None", "SLIM_RX", "PRI_MI2S_RX",
 	"PRI_MI2S_TX", "SEC_MI2S_TX",
 	"TERT_MI2S_TX", "QUAT_MI2S_TX", "SEC_I2S_RX", "PROXY_RX",
 	"SLIM_5_RX", "SLIM_1_TX", "QUAT_TDM_TX_1",
@@ -16264,7 +16264,7 @@ static const struct snd_kcontrol_new mmul2_mixer_controls[] = {
 	MSM_FRONTEND_DAI_MULTIMEDIA2, 1, 0, msm_routing_get_audio_mixer,
 	msm_routing_put_audio_mixer),
 #endif
-	
+
 	SOC_DOUBLE_EXT("SLIM_8_TX", SND_SOC_NOPM,
 	MSM_BACKEND_DAI_SLIMBUS_8_TX,
 	MSM_FRONTEND_DAI_MULTIMEDIA2, 1, 0, msm_routing_get_audio_mixer,
@@ -17650,7 +17650,7 @@ static const struct snd_kcontrol_new mmul16_mixer_controls[] = {
 	MSM_FRONTEND_DAI_MULTIMEDIA16, 1, 0, msm_routing_get_audio_mixer,
 	msm_routing_put_audio_mixer),
 #endif
-	
+
 	SOC_DOUBLE_EXT("SLIM_7_TX", SND_SOC_NOPM,
 	MSM_BACKEND_DAI_SLIMBUS_7_TX,
 	MSM_FRONTEND_DAI_MULTIMEDIA16, 1, 0, msm_routing_get_audio_mixer,
@@ -24331,7 +24331,7 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets_tdm[] = {
 	/* Frontend AIF */
 	/* Widget name equals to Front-End DAI name<Need confirmation>,
 	 * Stream name must contains substring of front-end dai name
-	 */	
+	 */
 
 	SND_SOC_DAPM_AIF_IN("PRI_TDM_RX_0_DL_HL",
 		"Primary TDM0 Hostless Playback",

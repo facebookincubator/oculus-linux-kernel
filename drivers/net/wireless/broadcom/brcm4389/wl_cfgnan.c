@@ -1,7 +1,7 @@
 /*
  * Neighbor Awareness Networking
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1826,6 +1826,10 @@ wl_cfgnan_set_if_addr(struct bcm_cfg80211 *cfg)
 		WL_ERR(("Failed to copy nmi addr\n"));
 		goto fail;
 	}
+#ifdef WL_NMI_IF
+	/* copy new nmi addr to dedicated NMI interface */
+	eacopy(if_addr.octet, cfg->nmi_ndev->dev_addr);
+#endif /* WL_NMI_IF */
 	return ret;
 fail:
 	if (!rand_mac) {
@@ -8715,7 +8719,7 @@ wl_cfgnan_notify_nan_status(struct bcm_cfg80211 *cfg,
 				entry_idx++;
 			}
 		}
-		break;
+		goto exit;
 	}
 #ifdef RTT_SUPPORT
 	case WL_NAN_EVENT_RNG_REQ_IND: {
@@ -9287,6 +9291,20 @@ wl_cfgnan_update_dp_info(struct bcm_cfg80211 *cfg, bool add,
 }
 
 bool
+wl_cfgnan_is_nan_active(struct net_device *ndev)
+{
+	struct bcm_cfg80211 *cfg;
+
+	if (!ndev || !ndev->ieee80211_ptr) {
+		WL_ERR(("ndev/wdev null\n"));
+		return false;
+	}
+
+	cfg =  wiphy_priv(ndev->ieee80211_ptr->wiphy);
+	return cfg->nancfg->nan_enable;
+}
+
+bool
 wl_cfgnan_is_dp_active(struct net_device *ndev)
 {
 	struct bcm_cfg80211 *cfg;
@@ -9606,6 +9624,147 @@ fail:
 	return ret;
 }
 
+#ifdef WL_NMI_IF
+/* AWARE NMI interface name */
+#define NMI_IFNAME		"aware_nmi0"
+
+static int
+wl_cfgnan_nmi_if_dummy_open(struct net_device *net)
+{
+	WL_DBG(("(%s) NMI aware iface open \n", __FUNCTION__));
+	return 0;
+}
+
+static int
+wl_cfgnan_nmi_if_dummy_close(struct net_device *net)
+{
+	WL_DBG(("(%s) NMI aware iface close \n", __FUNCTION__));
+	return 0;
+}
+
+static netdev_tx_t
+wl_cfgnan_nmi_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+{
+
+	if (skb)
+	{
+		WL_DBG(("(%s) is not used for data operations.Droping the packet.\n",
+			ndev->name));
+		dev_kfree_skb_any(skb);
+	}
+
+	return 0;
+}
+
+static int
+wl_cfgnan_nmi_if_dummy_do_ioctl(struct net_device *net, struct ifreq *ifr, int cmd)
+{
+	WL_DBG(("(%s) NMI aware iface do_ioctl cmd %d \n", __FUNCTION__, cmd));
+	return 0;
+}
+
+static const struct net_device_ops wl_cfgnan_nmi_if_ops = {
+	.ndo_open       = wl_cfgnan_nmi_if_dummy_open,
+	.ndo_stop       = wl_cfgnan_nmi_if_dummy_close,
+	.ndo_do_ioctl   = wl_cfgnan_nmi_if_dummy_do_ioctl,
+	.ndo_start_xmit = wl_cfgnan_nmi_start_xmit,
+};
+
+s32
+wl_cfgnan_register_nmi_ndev(struct bcm_cfg80211 *cfg)
+{
+	int ret = 0;
+	struct net_device* ndev = NULL;
+	struct wireless_dev *wdev = NULL;
+	uint8 temp_addr[ETHER_ADDR_LEN] = { 0x00, 0x90, 0x4c, 0x33, 0x22, 0x11 };
+	struct bcm_cfg80211 **priv;
+
+	if (cfg->nmi_ndev) {
+		WL_ERR(("nmi_ndev defined already.\n"));
+		return -EINVAL;
+	}
+
+	/* Allocate etherdev, including space for private structure */
+	if (!(ndev = alloc_etherdev(sizeof(struct bcm_cfg80211 *)))) {
+		WL_ERR(("%s: OOM - alloc_etherdev\n", __FUNCTION__));
+		return -ENODEV;
+	}
+
+	wdev = (struct wireless_dev *)MALLOCZ(cfg->osh, sizeof(*wdev));
+	if (unlikely(!wdev)) {
+		WL_ERR(("Could not allocate wireless device\n"));
+		free_netdev(ndev);
+		return -ENOMEM;
+	}
+
+	strlcpy(ndev->name, NMI_IFNAME, sizeof(ndev->name));
+
+	/* Copy the reference to bcm_cfg80211 */
+	priv = (struct bcm_cfg80211 **)netdev_priv(ndev);
+	*priv = cfg;
+
+	ASSERT(!ndev->netdev_ops);
+	ndev->netdev_ops = &wl_cfgnan_nmi_if_ops;
+
+	/* Register with a dummy MAC addr */
+	eacopy(temp_addr, ndev->dev_addr);
+
+	ndev->ieee80211_ptr = wdev;
+	wdev->netdev = ndev;
+	wdev->wiphy = bcmcfg_to_wiphy(cfg);
+	wdev->iftype = NL80211_IFTYPE_STATION;
+
+	ret = register_netdev(ndev);
+	if (ret) {
+		WL_ERR((" NMI register_netdevice failed (%d)\n", ret));
+		goto fail;
+	}
+
+	/* store nmi ndev ptr for further reference. Note that iflist won't have this
+	 * entry as there corresponding firmware interface is a "Hidden" interface.
+	 */
+	cfg->nmi_wdev = wdev;
+	cfg->nmi_ndev = ndev;
+
+	WL_INFORM_MEM(("%s: NMI Interface Registered\n", ndev->name));
+	return ret;
+fail:
+	free_netdev(ndev);
+	MFREE(cfg->osh, wdev, sizeof(*wdev));
+	return -ENODEV;
+}
+
+static s32
+wl_cfgnan_unregister_nmi_ndev(struct bcm_cfg80211 *cfg)
+{
+	struct wireless_dev *wdev;
+
+	if (!cfg) {
+		WL_ERR(("NMI IF unreg, invalid cfg \n"));
+		return -EINVAL;
+	}
+	if (!cfg->nmi_ndev) {
+		WL_ERR(("NMI IF unreg, invalid nmi_ndev \n"));
+		goto free_wdev;
+	}
+
+	unregister_netdev(cfg->nmi_ndev);
+	free_netdev(cfg->nmi_ndev);
+
+	cfg->nmi_ndev = NULL;
+
+free_wdev:
+	wdev = cfg->nmi_wdev;
+	if (!wdev) {
+		WL_ERR(("NMI IF unreg, invalid NMI Iface wdev ptr \n"));
+		return -EINVAL;
+	}
+	MFREE(cfg->osh, wdev, sizeof(*wdev));
+	cfg->nmi_wdev = NULL;
+	return BCME_OK;
+}
+#endif /* WL_NMI_IF */
+
 int
 wl_cfgnan_attach(struct bcm_cfg80211 *cfg)
 {
@@ -9625,6 +9784,12 @@ wl_cfgnan_attach(struct bcm_cfg80211 *cfg)
 	}
 
 	nancfg = cfg->nancfg;
+#ifdef WL_NMI_IF
+	if (wl_cfgnan_register_nmi_ndev(cfg) < 0) {
+		WL_ERR(("NAN NMI ndev reg failed in attach \n"));
+		return -ENODEV;
+	}
+#endif /* WL_NMI_IF */
 	mutex_init(&nancfg->nan_sync);
 	init_waitqueue_head(&nancfg->nan_event_wait);
 	INIT_DELAYED_WORK(&nancfg->nan_disable, wl_cfgnan_delayed_disable);
@@ -9650,6 +9815,12 @@ wl_cfgnan_detach(struct bcm_cfg80211 *cfg)
 			WL_DBG(("Cancel nan_nmi_rand workq\n"));
 			cancel_delayed_work_sync(&cfg->nancfg->nan_nmi_rand);
 		}
+
+#ifdef WL_NMI_IF
+		/* Unregister NMI ndev */
+		wl_cfgnan_unregister_nmi_ndev(cfg);
+#endif /* WL_NMI_IF */
+
 		MFREE(cfg->osh, cfg->nancfg, sizeof(wl_nancfg_t));
 		cfg->nancfg = NULL;
 	}

@@ -2,7 +2,7 @@
 * @file Broadcom Dongle Host Driver (DHD), xrapi handler
 *
 * handles xrapi reqeust, messages*
-* Copyright (C) 2020, Broadcom.
+* Copyright (C) 2021, Broadcom.
 *
 *      Unless you and Broadcom execute a separate written software license
 * agreement governing use of this software, this software is licensed to you
@@ -230,10 +230,44 @@ int dhd_xrapi_softap_psmode_handler(dhd_pub_t *dhd, const wl_event_msg_t *event)
 }
 
 #if defined(DHD_MAGIC_PKT_FILTER)
+int dhd_xrapi_validate_pkt_filter(dhd_pub_t *dhd)
+{
+	char iovbuf[WLC_IOCTL_SMLEN];
+	struct ether_addr cur_mac;
+	int ret;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhdp is NULL\n", __FUNCTION__));
+		return BCME_BADARG;
+	}
+
+	/* Read the current mac address */
+	ret = dhd_iovar(dhd, 0, "cur_etheraddr", NULL, 0, iovbuf, sizeof(iovbuf), FALSE);
+	if (ret < 0) {
+		DHD_ERROR(("%s: Can't get the default MAC address\n", __FUNCTION__));
+		return BCME_NOTUP;
+	}
+
+	/* Update the current MAC address */
+	memcpy_s(&cur_mac, ETHER_ADDR_LEN, iovbuf, ETHER_ADDR_LEN);
+
+	/* Check if cur mac is updated */
+	if (memcmp(&cur_mac, &(dhd->filter_mac), ETHER_ADDR_LEN)) {
+		DHD_ERROR(("%s: MAC is updated, change the filter_mac\n", __FUNCTION__));
+		/* Delete installed magic filter */
+		dhd_wl_ioctl_set_intiovar(dhd, "pkt_filter_delete",
+			XRAPI_WAKE_PKT_FILTER_MIN_ID, WLC_SET_VAR, TRUE, 0);
+		/* Re-install the magic filter */
+		return dhd_xrapi_install_wake_pkt_filter(dhd);
+	}
+
+	return BCME_OK;
+}
+
 int dhd_xrapi_install_wake_pkt_filter(dhd_pub_t *dhd)
 {
 	char iovbuf[WLC_IOCTL_SMLEN];
-	struct ether_addr filter_mac;
+	struct ether_addr *filter_mac;
 	wl_pkt_filter_t *pkt_filterp;
 	uint8 *mask, *pattern;
 	uint8 buf[sizeof(wl_pkt_filter_t) + XRAPI_WAKE_MASK_SIZE + XRAPI_WAKE_PATTERN_SIZE];
@@ -244,15 +278,16 @@ int dhd_xrapi_install_wake_pkt_filter(dhd_pub_t *dhd)
 		return BCME_BADARG;
 	}
 
-	/* Read the default filter_mac address */
+	filter_mac = &dhd->filter_mac;
+	/* Read current MAC address */
 	ret = dhd_iovar(dhd, 0, "cur_etheraddr", NULL, 0, iovbuf, sizeof(iovbuf), FALSE);
 	if (ret < 0) {
 		DHD_ERROR(("%s: Can't get the default MAC address\n", __FUNCTION__));
 		return BCME_NOTUP;
 	}
 
-	/* Update the default MAC address */
-	memcpy(&filter_mac, iovbuf, ETHER_ADDR_LEN);
+	/* Update the default filter_mac address */
+	memcpy_s(filter_mac, ETHER_ADDR_LEN, iovbuf, ETHER_ADDR_LEN);
 
 	/* Update filter */
 	pkt_filterp = (wl_pkt_filter_t *) buf;
@@ -271,7 +306,7 @@ int dhd_xrapi_install_wake_pkt_filter(dhd_pub_t *dhd)
 
 	for (i = 0u; i < XRAPI_WAKE_PKT_PATTERN_ITER; i++) {
 		(void)memcpy_s(&pattern[ETHER_ADDR_LEN + i * ETHER_ADDR_LEN], ETHER_ADDR_LEN,
-			(uint8*)&filter_mac, ETHER_ADDR_LEN);
+			(uint8*)filter_mac, ETHER_ADDR_LEN);
 	}
 
 	/* Install packet filter */
@@ -307,6 +342,15 @@ int dhd_xrapi_enable_wake_pkt_filter(dhd_pub_t *dhd, bool enable)
 		return BCME_UNSUPPORTED;
 	}
 
+	/* Verify the installed filter_mac is correct */
+	if (enable) {
+		ret = dhd_xrapi_validate_pkt_filter(dhd);
+		if (ret != BCME_OK) {
+			DHD_ERROR(("%s: pkt_filter_verification failed ret %d\n",
+				__FUNCTION__, ret));
+			return ret;
+		}
+	}
 	ret = dhd_iovar(dhd, 0, "pkt_filter_enable", (char *)&pkt_flt_en,
 			sizeof(pkt_flt_en), NULL, 0, TRUE);
 

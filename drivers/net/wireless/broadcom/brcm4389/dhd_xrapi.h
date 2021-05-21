@@ -3,7 +3,7 @@
 *
 * Provides type definitions and function prototypes used to handle xrapi functionality.
 *
-* Copyright (C) 2020, Broadcom.
+* Copyright (C) 2021, Broadcom.
 *
 *      Unless you and Broadcom execute a separate written software license
 * agreement governing use of this software, this software is licensed to you
@@ -54,6 +54,8 @@ extern int
 dhd_xrapi_install_wake_pkt_filter(dhd_pub_t *dhd);
 extern int
 dhd_xrapi_enable_wake_pkt_filter(dhd_pub_t *dhd, bool enable);
+extern int
+dhd_xrapi_validate_pkt_filter(dhd_pub_t *dhd);
 #endif /* DHD_MAGIC_PKT_FILTER */
 
 #endif  /* _dhd_xrapi_h_ */

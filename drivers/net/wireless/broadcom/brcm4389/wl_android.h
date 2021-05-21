@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Android related functions
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -194,3 +194,7 @@ extern int wl_android_bcnrecv_event(struct net_device *ndev,
 				return BCME_ERROR; \
 		} \
 	}
+
+#if defined(CUSTOM_CONTROL_HE_6G_FEATURES)
+extern int wl_android_set_he_6g_band(struct net_device *dev, bool enable);
+#endif /* CUSTOM_CONTROL_HE_6G_FEATURES */

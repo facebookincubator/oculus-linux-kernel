@@ -2,7 +2,7 @@
  * Common stats definitions for clients of dongle
  * ports
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -246,6 +246,21 @@ typedef enum
 } wifi_peer_type;
 
 /* per peer statistics */
+typedef struct bssload_info {
+	uint16 sta_count;	/* station count */
+	uint16 chan_util;	/* channel utilization */
+	uint8 PAD[4];
+} bssload_info_t;
+
+typedef struct {
+	wifi_peer_type type;			/* peer type (AP, TDLS, GO etc.) */
+	uint8 peer_mac_address[6];		/* mac address */
+	uint32 capabilities;			/* peer WIFI_CAPABILITY_XXX */
+	bssload_info_t bssload;			/* STA count and CU */
+	uint32 num_rate;				/* number of rates */
+	wifi_rate_stat rate_stats[1];	/* per rate statistics, number of entries  = num_rate */
+} wifi_peer_info_v1;
+
 typedef struct {
 	wifi_peer_type type;           /* peer type (AP, TDLS, GO etc.) */
 	uint8 peer_mac_address[6];        /* mac address */
@@ -322,7 +337,11 @@ typedef struct {
 					       */
 	wifi_wmm_ac_stat ac[WIFI_AC_MAX];     /* per ac data packet statistics */
 	uint32 num_peers;                        /* number of peers */
+#ifdef LINKSTAT_EXT_SUPPORT
+	wifi_peer_info_v1 peer_info[1];        /* per peer statistics */
+#else
 	wifi_peer_info peer_info[1];           /* per peer statistics */
+#endif /* LINKSTAT_EXT_SUPPORT */
 } wifi_iface_stat;
 
 #ifdef CONFIG_COMPAT
@@ -368,7 +387,11 @@ typedef struct {
 					       */
 	wifi_wmm_ac_stat ac[WIFI_AC_MAX];     /* per ac data packet statistics */
 	uint32 num_peers;                        /* number of peers */
+#ifdef LINKSTAT_EXT_SUPPORT
+	wifi_peer_info_v1 peer_info[1];        /* per peer statistics */
+#else
 	wifi_peer_info peer_info[1];           /* per peer statistics */
+#endif /* LINKSTAT_EXT_SUPPORT */
 } compat_wifi_iface_stat;
 #endif /* CONFIG_COMPAT */
 

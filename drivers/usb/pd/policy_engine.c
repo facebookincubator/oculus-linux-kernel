@@ -377,6 +377,7 @@ struct usbpd {
 	struct workqueue_struct	*wq;
 	struct work_struct	sm_work;
 	struct work_struct	start_periph_work;
+	struct work_struct	otg_boost_work;
 	struct hrtimer		timer;
 	bool			sm_queued;
 
@@ -409,6 +410,7 @@ struct usbpd {
 	struct power_supply	*usb_psy;
 	struct power_supply	*bat_psy;
 	struct power_supply	*bms_psy;
+	struct power_supply	*dc_psy;
 	struct notifier_block	psy_nb;
 
 	int			bms_charge_full;
@@ -440,8 +442,10 @@ struct usbpd {
 
 	struct regulator	*vbus;
 	struct regulator	*vconn;
+	struct regulator	*otg_boost;
 	bool			vbus_enabled;
 	bool			vconn_enabled;
+	bool			otg_boost_enabled;
 
 	u8			tx_msgid[SOPII_MSG + 1];
 	u8			rx_msgid[SOPII_MSG + 1];
@@ -1986,11 +1990,39 @@ static int enable_vbus(struct usbpd *pd)
 			return -EAGAIN;
 		}
 	}
-	ret = regulator_enable(pd->vbus);
-	if (ret)
-		usbpd_err(&pd->dev, "Unable to enable vbus (%d)\n", ret);
-	else
-		pd->vbus_enabled = true;
+
+	if (!pd->otg_boost) {
+		pd->otg_boost = devm_regulator_get(pd->dev.parent, "otg_boost");
+		if (IS_ERR(pd->otg_boost)) {
+			usbpd_err(&pd->dev, "Unable to get otg_boost\n");
+			return -EAGAIN;
+		}
+	}
+
+	val.intval = 0;
+
+	ret = power_supply_get_property(pd->dc_psy,
+				POWER_SUPPLY_PROP_IRQ_STATUS, &val);
+	if (ret < 0) {
+		usbpd_err(&pd->dev, "Could not get POWER_SUPPLY_PROP_IRQ_STATUS ret = %d\n",
+			ret);
+	}
+
+	if (val.intval) {
+		ret = regulator_enable(pd->otg_boost);
+		if (ret)
+			usbpd_err(&pd->dev, "Unable to enable otg_boost (%d)\n",
+				ret);
+		else
+			pd->otg_boost_enabled = true;
+	} else {
+		ret = regulator_enable(pd->vbus);
+		if (ret)
+			usbpd_err(&pd->dev, "Unable to enable vbus (%d)\n",
+				ret);
+		else
+			pd->vbus_enabled = true;
+	}
 
 	count = 10;
 	/*
@@ -3467,6 +3499,11 @@ static void handle_disconnect(struct usbpd *pd)
 		pd->vbus_enabled = false;
 	}
 
+	if (pd->otg_boost_enabled) {
+		regulator_disable(pd->otg_boost);
+		pd->otg_boost_enabled = false;
+	}
+
 	reset_vdm_state(pd);
 	if (pd->current_dr == DR_UFP)
 		stop_usb_peripheral(pd);
@@ -3734,6 +3771,82 @@ static int usbpd_process_typec_mode(struct usbpd *pd,
 	return 1; /* kick state machine */
 }
 
+static int switch_boost_5v_to_vbus(struct usbpd *pd, bool enable)
+{
+	int ret = 0;
+
+	if (enable) {
+		ret = regulator_enable(pd->vbus);
+		if (ret) {
+			usbpd_err(&pd->dev, "Unable to enable vbus (%d)\n",
+				ret);
+			return ret;
+		}
+		pd->vbus_enabled = true;
+
+		ret = regulator_disable(pd->otg_boost);
+		if (ret) {
+			usbpd_err(&pd->dev, "Error disabling otg_boost (%d)\n",
+				ret);
+			return ret;
+		}
+		pd->otg_boost_enabled = false;
+	} else {
+		ret = regulator_enable(pd->otg_boost);
+		if (ret) {
+			usbpd_err(&pd->dev, "Unable to enable otg_boost (%d)\n",
+				ret);
+			return ret;
+		}
+		pd->otg_boost_enabled = true;
+
+		ret = regulator_disable(pd->vbus);
+		if (ret) {
+			usbpd_err(&pd->dev, "Error disabling vbus (%d)\n", ret);
+			return ret;
+		}
+		pd->vbus_enabled = false;
+	}
+
+	return ret;
+}
+
+static void regulator_check_and_switch_work(struct work_struct *w)
+{
+	struct usbpd *pd = container_of(w, struct usbpd, otg_boost_work);
+	union power_supply_propval val = {0};
+	int ret;
+
+	ret = power_supply_get_property(pd->dc_psy,
+				POWER_SUPPLY_PROP_IRQ_STATUS, &val);
+	if (ret < 0) {
+		usbpd_err(&pd->dev, "Could not get POWER_SUPPLY_PROP_IRQ_STATUS ret=%d\n",
+			ret);
+		return;
+	}
+
+	/*
+	 * If DCIN_PON is enabled and otg_boost is disabled, switch
+	 * to OTG_BOOST, if DCIN_PON is disabled and otg_boost is
+	 * enabled, switch to VBUS.
+	 */
+	if (val.intval && !pd->otg_boost_enabled) {
+		ret = switch_boost_5v_to_vbus(pd, false);
+		if (ret) {
+			usbpd_err(&pd->dev, "Switch to otg_boost failed, ret=%d\n",
+				ret);
+			return;
+		}
+	} else if (!val.intval && pd->otg_boost_enabled) {
+		ret = switch_boost_5v_to_vbus(pd, true);
+		if (ret) {
+			usbpd_err(&pd->dev, "Switch to vbus failed, ret=%d\n",
+				ret);
+			return;
+		}
+	}
+}
+
 static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 {
 	struct usbpd *pd = container_of(nb, struct usbpd, psy_nb);
@@ -3742,7 +3855,8 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	int ret;
 
 	if (ptr != pd->usb_psy || evt != PSY_EVENT_PROP_CHANGED)
-		return 0;
+		if (ptr != pd->dc_psy)
+			return 0;
 
 	ret = power_supply_get_property(pd->usb_psy,
 			POWER_SUPPLY_PROP_TYPEC_MODE, &val);
@@ -3752,6 +3866,14 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 	}
 
 	typec_mode = val.intval;
+
+	/* If psy changed is DC and Type-C mode is sink, queue otg boost work */
+	if (ptr == pd->dc_psy &&
+		(typec_mode >= POWER_SUPPLY_TYPEC_SINK &&
+		typec_mode <= POWER_SUPPLY_TYPEC_SINK_AUDIO_ADAPTER)) {
+		queue_work(pd->wq, &pd->otg_boost_work);
+		return 0;
+	}
 
 	ret = power_supply_get_property(pd->usb_psy,
 			POWER_SUPPLY_PROP_PE_START, &val);
@@ -4683,6 +4805,7 @@ struct usbpd *usbpd_create(struct device *parent)
 	}
 	INIT_WORK(&pd->sm_work, usbpd_sm);
 	INIT_WORK(&pd->start_periph_work, start_usb_peripheral_work);
+	INIT_WORK(&pd->otg_boost_work, regulator_check_and_switch_work);
 	hrtimer_init(&pd->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	pd->timer.function = pd_timeout;
 	mutex_init(&pd->swap_lock);
@@ -4691,6 +4814,13 @@ struct usbpd *usbpd_create(struct device *parent)
 	pd->usb_psy = power_supply_get_by_name("usb");
 	if (!pd->usb_psy) {
 		usbpd_dbg(&pd->dev, "Could not get USB power_supply, deferring probe\n");
+		ret = -EPROBE_DEFER;
+		goto destroy_wq;
+	}
+
+	pd->dc_psy = power_supply_get_by_name("dc");
+	if (!pd->dc_psy) {
+		usbpd_dbg(&pd->dev, "Could not get DC power_supply, deferring probe\n");
 		ret = -EPROBE_DEFER;
 		goto destroy_wq;
 	}

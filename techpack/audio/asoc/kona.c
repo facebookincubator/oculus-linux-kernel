@@ -5661,7 +5661,7 @@ static int cm710x_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_dapm_context *dapm = NULL;
 	const char *codec_name = rtd->dai_link->codec_name;
 
-	if (codec_name && !strcmp(codec_name, "cm7120.1-002d"))
+	if (codec_name && !strcmp(codec_name, "cm7120"))
 		codec_name = "cm7120";
 	else
 		codec_name = "cm710x";
@@ -6873,7 +6873,7 @@ static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
 #if IS_ENABLED(CONFIG_SND_SOC_CM7120)
-		.codec_name = "cm7120.1-002d",
+		.codec_name = "cm7120",
 		.codec_dai_name = "cm7120-aif2",
 		.init = cm710x_init,
 		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
@@ -6895,7 +6895,7 @@ static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
 #if IS_ENABLED(CONFIG_SND_SOC_CM7120)
-		.codec_name = "cm7120.1-002d",
+		.codec_name = "cm7120",
 		.codec_dai_name = "cm7120-aif2",
 #else
 		.codec_name = "msm-stub-codec.1",
@@ -6914,7 +6914,7 @@ static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
 		.cpu_dai_name = "msm-dai-q6-mi2s.4",
 		.platform_name = "msm-pcm-routing",
 #if IS_ENABLED(CONFIG_SND_SOC_CM7120)
-		.codec_name = "cm7120.1-002d",
+		.codec_name = "cm7120",
 		.codec_dai_name = "cm7120-aif1",
 #else
 		.codec_name = "msm-stub-codec.1",
@@ -6934,7 +6934,7 @@ static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
 		.cpu_dai_name = "msm-dai-q6-mi2s.4",
 		.platform_name = "msm-pcm-routing",
 #if IS_ENABLED(CONFIG_SND_SOC_CM7120)
-		.codec_name = "cm7120.1-002d",
+		.codec_name = "cm7120",
 		.codec_dai_name = "cm7120-aif1",
 #else
 		.codec_name = "msm-stub-codec.1",

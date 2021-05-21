@@ -3260,6 +3260,24 @@ int smblib_get_prop_dc_hw_current_max(struct smb_charger *chg,
 	return rc;
 }
 
+int smblib_get_prop_dc_pon_status(struct smb_charger *chg,
+				    union power_supply_propval *val)
+{
+	int rc;
+	u8 stat;
+
+	rc = smblib_read(chg, DCIN_INT_RT_STS_REG, &stat);
+	if (rc < 0) {
+		dev_err(chg->dev, "Couldn't get DCIN_INT_RT_STS_REG, rc=%d\n",
+			rc);
+		return rc;
+	}
+
+	val->intval = (stat & DCIN_PON_RT_STS_BIT) >> DCIN_PON_SHIFT;
+
+	return rc;
+}
+
 /*******************
  * DC PSY SETTERS *
  *******************/
@@ -4036,6 +4054,7 @@ int smblib_get_prop_usb_current_now(struct smb_charger *chg,
 {
 	union power_supply_propval pval = {0, };
 	int rc = 0, buck_scale = 1, boost_scale = 1;
+	bool usb_present, usb_online;
 
 	if (chg->iio.usbin_i_chan) {
 		rc = iio_read_channel_processed(chg->iio.usbin_i_chan,
@@ -4075,9 +4094,18 @@ int smblib_get_prop_usb_current_now(struct smb_charger *chg,
 				rc);
 			return -ENODATA;
 		}
+		usb_present = (bool)(pval.intval);
 
-		/* If USB is not present, return 0 */
-		if (!pval.intval)
+		rc = smblib_get_prop_usb_online(chg, &pval);
+		if (rc < 0) {
+			smblib_err(chg, "Couldn't get usb present status,rc=%d\n",
+				rc);
+			return -ENODATA;
+		};
+		usb_online = (bool)(pval.intval);
+
+		/* If USB is not present or usb offline, return 0 */
+		if (!usb_present || !usb_online)
 			val->intval = 0;
 		else
 			val->intval = DIV_ROUND_CLOSEST(val->intval * 100,
@@ -5195,6 +5223,8 @@ irqreturn_t dcin_pon_irq_handler(int irq, void *data)
 	}
 	if (stat & USBIN_SUSPEND_STS_BIT)
 		smblib_set_usb_suspend(chg, false);
+
+	power_supply_changed(chg->dc_psy);
 
 	return IRQ_HANDLED;
 }
@@ -7849,13 +7879,23 @@ static void smblib_dc_detect_work(struct work_struct *work)
 		return;
 	}
 	if (val.intval) {
-		if (chg->pd_active != USBPD_REV_30) {
-			smblib_get_prop_usb_voltage_max(chg, &val);
-			smblib_dbg(chg, PR_WLS, "detect usb voltage max: %d uV\n",
-					val.intval);
-			if (val.intval < DC_VOLTAGE_9V)
-				smblib_set_usb_suspend(chg, true);
+		rc = smblib_get_prop_dc_pd_active(chg, &val);
+		if (rc < 0) {
+			smblib_err(chg, "Couldn't get usb present rc = %d\n",
+					rc);
+			return;
 		}
+
+		if (val.intval) {
+			if (chg->pd_active != USBPD_REV_30) {
+				smblib_get_prop_usb_voltage_max(chg, &val);
+				smblib_dbg(chg, PR_WLS, "detect usb voltage max: %d uV\n",
+						val.intval);
+				if (val.intval < DC_VOLTAGE_9V)
+					smblib_set_usb_suspend(chg, true);
+			}
+		} else
+			smblib_set_prop_dc_reset(chg);
 	}
 
 	/* Wait 500ms to get CYPD3177 ready */

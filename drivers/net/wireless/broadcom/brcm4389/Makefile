@@ -1,6 +1,6 @@
 # bcmdhd
 #
-# Copyright (C) 2020, Broadcom.
+# Copyright (C) 2021, Broadcom.
 #
 #      Unless you and Broadcom execute a separate written software license
 # agreement governing use of this software, this software is licensed to you
@@ -563,6 +563,9 @@ ifneq ($(CONFIG_CFG80211_SAE_BKPORT),)
 DHDCFLAGS += -DWL_SAE
 endif
 DHDCFLAGS += -DWL_GCMP_SUPPORT
+
+# Using extenal supplicant for WPA3
+DHDCFLAGS += -DWL_CLIENT_SAE
 
 # Disable HE on P2P based on peer support
 DHDCFLAGS += -DWL_DISABLE_HE_P2P

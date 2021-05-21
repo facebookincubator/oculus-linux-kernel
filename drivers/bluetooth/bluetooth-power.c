@@ -250,6 +250,61 @@ static int bt_clk_disable(struct bt_power_clk_data *clk)
 	return rc;
 }
 
+static int bt_enable_bt_reset_gpios_safely(void)
+{
+	int rc = 0;
+	int bt_reset_gpio = bt_power_pdata->bt_gpio_sys_rst;
+	int wl_reset_gpio = bt_power_pdata->wl_gpio_sys_rst;
+
+	if (gpio_is_valid(wl_reset_gpio)) {
+		BT_PWR_INFO("%s: BTON:Turn Bt On", __func__);
+		BT_PWR_INFO("%s: wl-reset-gpio(%d) value(%d)",
+			__func__, wl_reset_gpio,
+				gpio_get_value(wl_reset_gpio));
+	}
+
+	if (!gpio_is_valid(wl_reset_gpio) ||
+		(gpio_is_valid(wl_reset_gpio) &&
+			gpio_get_value(wl_reset_gpio))) {
+		BT_PWR_INFO("%s: BTON: Asserting BT_EN",
+			__func__);
+		rc = gpio_direction_output(bt_reset_gpio, 1);
+		if (rc) {
+			BT_PWR_ERR("%s: Unable to set direction",
+				__func__);
+			return rc;
+		}
+	}
+
+	if (gpio_is_valid(wl_reset_gpio) &&
+		(gpio_get_value(wl_reset_gpio) == 0)) {
+		if (gpio_get_value(bt_reset_gpio)) {
+			BT_PWR_INFO("%s: Wlan Off and BT On too close",
+				__func__);
+			BT_PWR_INFO("%s: Reset BT_EN", __func__);
+			BT_PWR_INFO("%s: Enable it after delay",
+				__func__);
+			rc = gpio_direction_output(bt_reset_gpio, 0);
+			if (rc) {
+				BT_PWR_ERR("%s:Unable to set direction",
+					__func__);
+				return rc;
+			}
+		}
+		BT_PWR_INFO("%s: 100ms delay added", __func__);
+		BT_PWR_INFO("%s: for AON output to fully discharge",
+			__func__);
+		msleep(100);
+		rc = gpio_direction_output(bt_reset_gpio, 1);
+		if (rc) {
+			BT_PWR_ERR("%s: Unable to set direction",
+				__func__);
+			return rc;
+		}
+	}
+	return rc;
+}
+
 static int bt_configure_gpios(int on)
 {
 	int rc = 0;
@@ -281,9 +336,10 @@ static int bt_configure_gpios(int on)
 					gpio_get_value(bt_sw_ctrl_gpio));
 		}
 
-		rc = gpio_direction_output(bt_reset_gpio, 1);
+		rc = bt_enable_bt_reset_gpios_safely();
 		if (rc) {
-			BT_PWR_ERR("Unable to set direction\n");
+			BT_PWR_ERR("%s:bt_enable_bt_reset_gpios_safely failed",
+				__func__);
 			return rc;
 		}
 		msleep(50);
@@ -717,6 +773,12 @@ static int bt_power_populate_dt_pinfo(struct platform_device *pdev)
 						"qca,bt-reset-gpio", 0);
 		if (bt_power_pdata->bt_gpio_sys_rst < 0)
 			BT_PWR_INFO("bt-reset-gpio not provided in devicetree");
+
+		bt_power_pdata->wl_gpio_sys_rst =
+			of_get_named_gpio(pdev->dev.of_node,
+						"qca,wl-reset-gpio", 0);
+		if (bt_power_pdata->wl_gpio_sys_rst < 0)
+			BT_PWR_INFO("wl-reset-gpio not provided in devicetree");
 
 		bt_power_pdata->bt_gpio_sw_ctrl  =
 			of_get_named_gpio(pdev->dev.of_node,
