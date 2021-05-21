@@ -3,6 +3,7 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/hwmon.h>
 #include <linux/interrupt.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/notifier.h>
 #include <linux/of.h>
@@ -11,7 +12,6 @@
 #include <linux/pwm.h>
 #include <linux/regulator/consumer.h>
 #include <linux/thermal.h>
-#include <linux/time.h>
 #include <linux/version.h>
 
 #define VS1_GPIO_ALLOC 0x8000000UL
@@ -35,7 +35,7 @@
 #define DEFAULT_PWM_PERIOD (40 * 1000)
 
 #define MAX_PWM 255
-#define FAN_FAILURE_TIME_S 3
+#define FAN_FAILURE_TIME_MS 3000
 
 #define MAX_NUM_THERMAL_ZONES 29
 
@@ -70,9 +70,12 @@ struct fan_ctx {
 	struct pinctrl_state *pin_default;
 	struct pinctrl_state *pin_suspend;
 
-	struct timeval time_stamp;
+	ktime_t time_stamp;
+	ktime_t fan_pre_t;
+	ktime_t fan_diff_t;
 	unsigned int irq;
-	unsigned int rpm_count;
+	u64 rpm_count;
+	u64 irq_rpm_count;
 	bool force_failure;
 
 	struct notifier_block fb_notif;
@@ -269,14 +272,12 @@ static ssize_t show_pwm(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	struct fan_ctx *ctx = dev_get_drvdata(dev);
-	struct timeval current_t;
+	s64 elapsed_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->time_stamp));
 
-	do_gettimeofday(&current_t);
-
-	if ((current_t.tv_sec - ctx->time_stamp.tv_sec) > 1)
+	if (elapsed_ms > 1000)
 		ctx->rpm_count = 0;
 
-	return scnprintf(buf, PAGE_SIZE, "RPM: %d\n", ctx->rpm_count / 2);
+	return scnprintf(buf, PAGE_SIZE, "RPM: %llu\n", ctx->rpm_count / 2);
 }
 static DEVICE_ATTR(force_failure, 0600, show_force_failure, set_force_failure);
 static DEVICE_ATTR(pwm1, S_IRUGO | S_IWUSR, show_pwm, set_pwm);
@@ -303,20 +304,18 @@ static int fan_get_max_state(struct thermal_cooling_device *cdev,
 
 static bool fan_has_failure(struct fan_ctx *ctx)
 {
-	time_t elapsed_s;
+	s64 elapsed_ms;
 	unsigned long pwm;
-	struct timeval current_t;
 
 	if (ctx->force_failure)
 		return true;
 
 	mutex_lock(&ctx->lock);
-	do_gettimeofday(&current_t);
-	elapsed_s = current_t.tv_sec - ctx->time_stamp.tv_sec;
+	elapsed_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->time_stamp));
 	pwm = ctx->pwm_value;
 	mutex_unlock(&ctx->lock);
 
-	return ((pwm != 0) && (elapsed_s > FAN_FAILURE_TIME_S));
+	return ((pwm != 0) && (elapsed_ms > FAN_FAILURE_TIME_MS));
 }
 
 static int fan_get_cur_state(struct thermal_cooling_device *cdev,
@@ -327,10 +326,10 @@ static int fan_get_cur_state(struct thermal_cooling_device *cdev,
 	if (!ctx)
 		return -ENODEV;
 
-	if (fan_has_failure(ctx))
-		*state = ctx->fan_max_state + 1;
-	else if (!ctx->is_screen_on)
+	if (!ctx->is_screen_on)
 		*state = 0;
+	else if (fan_has_failure(ctx))
+		*state = ctx->fan_max_state + 1;
 	else
 		*state = ctx->fan_state;
 
@@ -409,23 +408,24 @@ static void fan_poll_tz(struct work_struct *work)
 static irqreturn_t fan_irq_handler(int irq, void *dev)
 {
 	struct fan_ctx *ctx = dev_get_drvdata(dev);
-	static time_t pre_t;
-	static time_t diff_t;
-	static unsigned long rpm_count;
+	ktime_t zero = ktime_set(0, 0);
 
-	do_gettimeofday(&ctx->time_stamp);
+	ctx->time_stamp = ktime_get();
 
 	/* Get seconds */
-	if (pre_t)
-		diff_t = diff_t + (ctx->time_stamp.tv_sec - pre_t);
+	if (ktime_compare(ctx->fan_pre_t, zero))
+		ctx->fan_diff_t = ktime_add(ktime_sub(ctx->time_stamp,
+					ctx->fan_pre_t), ctx->fan_diff_t);
 
-	pre_t = ctx->time_stamp.tv_sec;
-	rpm_count++;
+	ctx->fan_pre_t = ctx->time_stamp;
 
-	if (diff_t >= 1) {
-		ctx->rpm_count = rpm_count * 60;
-		diff_t = pre_t = 0;
-		rpm_count = 0;
+	ctx->irq_rpm_count++;
+
+	if (ktime_to_ms(ctx->fan_diff_t) >= 1000) {
+		ctx->rpm_count = ctx->irq_rpm_count * 60;
+		ctx->fan_diff_t = ktime_set(0, 0);
+		ctx->fan_pre_t = ktime_set(0, 0);
+		ctx->irq_rpm_count = 0;
 	}
 
 	return IRQ_HANDLED;
