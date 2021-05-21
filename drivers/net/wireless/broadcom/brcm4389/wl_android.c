@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Android related functions
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -3254,6 +3254,14 @@ wl_android_ncho_private_command(struct net_device *net, char *command, int total
 			WL_ERR(("fccpwrlimit2g is deactivated\n"));
 		}
 #endif /* FCC_PWR_LIMIT_2G */
+#if defined(CUSTOM_CONTROL_HE_6G_FEATURES)
+		if (wl_android_set_he_6g_band(net, TRUE) != BCME_OK) {
+			WL_ERR(("%s: 6g band activation is failed\n", __FUNCTION__));
+		} else {
+			WL_ERR(("%s: 6g band is activated\n", __FUNCTION__));
+		}
+#endif /* CUSTOM_CONTROL_HE_6G_FEATURES */
+
 	} else if (strnicmp(command, CMD_COUNTRYREV_GET, strlen(CMD_COUNTRYREV_GET)) == 0) {
 		bytes_written = wl_android_get_country_rev(net, command, total_len);
 	} else
@@ -3844,6 +3852,9 @@ wl_android_set_fcc_pwr_limit_2g(struct net_device *dev, char *command)
 		return BCME_ERROR;
 	}
 
+#if defined(CUSTOM_CONTROL_HE_6G_FEATURES)
+	error = wl_android_set_he_6g_band(dev, (enable == 0) ? TRUE : FALSE);
+#endif /* CUSTOM_CONTROL_HE_6G_FEATURES */
 	return error;
 }
 
@@ -6739,42 +6750,6 @@ wl_android_get_sta_channel(struct bcm_cfg80211 *cfg)
 	return channel;
 }
 
-chanspec_t
-wl_android_get_sta_chanspec(struct bcm_cfg80211 *cfg)
-{
-	chanspec_t *sta_chanspec = NULL;
-
-#ifdef WL_DUAL_APSTA
-	if (wl_get_drv_status_all(cfg, CONNECTED) >= 2) {
-		/* If both STA interfaces are connected return failure */
-		return 0;
-	} else {
-		struct net_info *iter, *next;
-
-		GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
-		for_each_ndev(cfg, iter, next) {
-			GCC_DIAGNOSTIC_POP();
-			if ((iter->ndev) && (wl_get_drv_status(cfg, CONNECTED, iter->ndev)) &&
-				(iter->ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)) {
-				if ((sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
-					iter->ndev, WL_PROF_CHAN))) {
-					return *sta_chanspec;
-				}
-			}
-		}
-	}
-#else
-	if (wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
-		if ((sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
-			bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN))) {
-			return *sta_chanspec;
-		}
-	}
-#endif /* WL_DUAL_APSTA */
-
-	return 0;
-}
-
 static int
 wl_cfg80211_get_acs_band(int band)
 {
@@ -6886,7 +6861,7 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 	/* If STA is connected, return is STA chanspec, else ACS can be issued,
 	 * set spect to 0 and proceed with ACS
 	 */
-	sta_chanspec = wl_android_get_sta_chanspec(cfg);
+	sta_chanspec = wl_cfg80211_get_sta_chanspec(cfg);
 	if (sta_chanspec) {
 		sta_channel = wf_chspec_ctlchan((chanspec_t)sta_chanspec);
 		sta_band = CHSPEC_BAND((chanspec_t)sta_chanspec);
@@ -12291,6 +12266,13 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			DHD_ERROR(("%s: fccpwrlimit2g is deactivated\n", __FUNCTION__));
 		}
 #endif /* FCC_PWR_LIMIT_2G */
+#if defined(CUSTOM_CONTROL_HE_6G_FEATURES)
+		if (wl_android_set_he_6g_band(net, TRUE) != BCME_OK) {
+			DHD_ERROR(("%s: 6g band activation is failed\n", __FUNCTION__));
+		} else {
+			DHD_ERROR(("%s: 6g band is activated\n", __FUNCTION__));
+		}
+#endif /* CUSTOM_CONTROL_HE_6G_FEATURES */
 #endif /* CUSTOMER_HW4_PRIVATE_CMD */
 	}
 #endif /* CUSTOMER_SET_COUNTRY */
@@ -14669,3 +14651,45 @@ exit:
 	return bytes_written;
 }
 #endif /* WL_UWB_COEX */
+
+#if defined(CUSTOM_CONTROL_HE_6G_FEATURES)
+int
+wl_android_set_he_6g_band(struct net_device *dev, bool enable)
+{
+	s32 err = BCME_OK;
+	s32 bssidx = 0;
+	struct bcm_cfg80211 *cfg = NULL;
+
+	if (!dev) {
+		err = BCME_NOTFOUND;
+		return err;
+	}
+
+	cfg = wl_get_cfg(dev);
+	if (!cfg) {
+		err = BCME_NOTFOUND;
+		return err;
+	}
+
+	if ((bssidx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr)) < 0) {
+		WL_ERR(("find bss index from wdev failed\n"));
+		err = BCME_NOTFOUND;
+		return err;
+	}
+#ifdef DHD_PM_CONTROL_FROM_FILE
+	if (g_pm_control) {
+		enable = TRUE;
+	}
+#endif	/* DHD_PM_CONTROL_FROM_FILE */
+
+	WL_ERR(("%s: Set he mode 6G band to %s\n", __FUNCTION__, enable ? "Enable" : "Disable"));
+	/* Enable/disable for 6G */
+	err = wl_cfg80211_set_he_mode(dev, cfg, bssidx, WL_HE_FEATURES_6G, enable);
+	if (err != BCME_OK) {
+		WL_ERR(("%s: failed to set he mode 6G band - err(%d)\n",
+			__FUNCTION__, err));
+	}
+
+	return err;
+}
+#endif /* CUSTOM_CONTROL_HE_6G_FEATURES */

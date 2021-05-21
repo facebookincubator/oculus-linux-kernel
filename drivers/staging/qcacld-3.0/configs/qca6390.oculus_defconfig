@@ -101,6 +101,9 @@ CONFIG_LL_DP_SUPPORT := y
 #Whether have QMI support
 CONFIG_QMI_SUPPORT := y
 
+# Enable fw stats version 2
+CONFIG_AR900B := y
+
 #
 # Enable Shadow V2 for all lithium platform
 #

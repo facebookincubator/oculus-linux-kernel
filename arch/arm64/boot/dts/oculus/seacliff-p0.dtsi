@@ -29,3 +29,7 @@
 &mdss_mdp {
 	qcom,swap-mixers;
 };
+
+&oculusnrf {
+	oculus,syncboss-has-prox;
+};

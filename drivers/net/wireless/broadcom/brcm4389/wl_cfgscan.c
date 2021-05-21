@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver scan related code
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -2781,7 +2781,7 @@ wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 			WL_INFORM_MEM(("bss list empty. report sched_scan_stop\n"));
 			wl_cfg80211_stop_pno(cfg,  bcmcfg_to_prmry_ndev(cfg));
 			/* schedule the work to indicate sched scan stop to cfg layer */
-			schedule_work(&cfg->sched_scan_stop_work);
+			schedule_delayed_work(&cfg->sched_scan_stop_work, 0);
 		}
 	}
 #endif /* WL_SCHED_SCAN */
@@ -3573,6 +3573,13 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 	unsigned long flags;
 	bool adaptive_pno = false;
 
+#ifdef WL_DUAL_STA
+	if ((wl_get_drv_status_all(cfg, CONNECTED) >= 2) || cfg->latency_mode) {
+		WL_ERR(("Sched scan not supported in multi sta connected state"
+			" or latency mode %d\n", cfg->latency_mode));
+		return -EOPNOTSUPP;
+	}
+#endif /* WL_DUAL_STA */
 	if (!request) {
 		WL_ERR(("Sched scan request was NULL\n"));
 		return -EINVAL;
@@ -3762,6 +3769,8 @@ wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
 	WL_INFORM((">>> SCHED SCAN STOP\n"));
 	wl_cfg80211_stop_pno(cfg, dev);
 
+	cancel_delayed_work(&cfg->sched_scan_stop_work);
+
 	mutex_lock(&cfg->scan_sync);
 	if (cfg->sched_scan_req) {
 		if (cfg->sched_scan_running && wl_get_drv_status(cfg, SCANNING, dev)) {
@@ -3786,14 +3795,17 @@ wl_cfgscan_sched_scan_stop_work(struct work_struct *work)
 {
 	struct bcm_cfg80211 *cfg = NULL;
 	struct wiphy *wiphy = NULL;
+	struct delayed_work *dw = to_delayed_work(work);
 
-	cfg = container_of(work, struct bcm_cfg80211, sched_scan_stop_work);
-	wiphy = cfg->sched_scan_req->wiphy;
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	cfg = container_of(dw, struct bcm_cfg80211, sched_scan_stop_work);
+	GCC_DIAGNOSTIC_POP();
 
 	/* Hold rtnl_lock -> scan_sync lock to be in sync with cfg80211_ops path */
 	rtnl_lock();
 	mutex_lock(&cfg->scan_sync);
 	if (cfg->sched_scan_req) {
+		wiphy = cfg->sched_scan_req->wiphy;
 		/* Indicate sched scan stopped so that user space
 		 * can do a full scan incase found match is empty.
 		 */
@@ -4636,7 +4648,7 @@ out_err:
 			WL_ERR(("sched_scan stopped\n"));
 			wl_cfg80211_stop_pno(cfg,  bcmcfg_to_prmry_ndev(cfg));
 			/* schedule the work to indicate sched scan stop to cfg layer */
-			schedule_work(&cfg->sched_scan_stop_work);
+			schedule_delayed_work(&cfg->sched_scan_stop_work, 0);
 		} else {
 			WL_ERR(("sched scan req null!\n"));
 		}

@@ -1,7 +1,7 @@
 /*
  * Header for Linux cfg80211 scan
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -174,6 +174,17 @@ typedef enum {
 	/* 2.4 GHz + 5 GHz with DFS + 6 GHz */
 	WIFI_BAND_24GHZ_5GHZ_WITH_DFS_6GHZ = 15
 } wifi_band;
+
+#define MAX_AP_IFACES 2
+typedef struct ap_iface_data {
+	chanspec_t chspec;
+	struct net_device *ndev;
+} wl_ap_iface_data_t;
+
+typedef struct ap_oper_data {
+	u8 count;
+	wl_ap_iface_data_t iface[MAX_AP_IFACES];
+} wl_ap_oper_data_t;
 
 extern bool wl_cfgscan_is_dfs_set(wifi_band band);
 extern s32 wl_cfgscan_get_band_freq_list(struct bcm_cfg80211 *cfg,

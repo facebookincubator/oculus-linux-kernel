@@ -41,6 +41,7 @@ qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 				72300 134800 4200000
 				134900 145700 4400000
 				145800 179400 4200000>;
+	qcom,rblt-limited-check;
 	qcom,step-chg-ranges-0 = <3600000 4060000 2674000
 				4061000 4400000 2674000>;
 	qcom,step-chg-ranges-1 = <3600000 4060000 2674000

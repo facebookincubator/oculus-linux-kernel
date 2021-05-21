@@ -45,7 +45,7 @@
 		mboxes = <&qmp_aop 0>;
 	};
 
-	aliases {
+	aliases: aliases {
 		ufshc1 = &ufshc_mem; /* Embedded UFS slot */
 		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
 		pci-domain0 = &pcie0; /* PCIe0 domain */
@@ -4718,6 +4718,7 @@
 		      <0xb2e5510 0x5c0>;
 		reg-names = "smmu_iova_ipa", "tcs_cmd";
 		wlan-en-gpio = <&tlmm 20 0>;
+		qcom,bt-en-gpio = <&tlmm 21 0>;
 		pinctrl-names = "wlan_en_active", "wlan_en_sleep";
 		pinctrl-0 = <&cnss_wlan_en_active>;
 		pinctrl-1 = <&cnss_wlan_en_sleep>;

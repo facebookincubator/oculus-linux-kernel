@@ -93,7 +93,7 @@
 		status = "ok";
 	};
 
-	bt_bluesleep {
+	bt_bluesleep: bt_bluesleep {
 		compatible = "brcm,bluesleep";
 		brcm,bt-wake-gpio = <&tlmm 30 0>;
 		brcm,bt-host-wake-gpio = <&tlmm 31 0>;

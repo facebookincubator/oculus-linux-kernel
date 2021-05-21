@@ -358,6 +358,10 @@ static int pd_handle_response(struct cypd3177 *chip)
 			power_supply_changed(chip->psy);
 		break;
 	case TYPEC_DISCONNECT:
+		chip->typec_status = false;
+		chip->pd_attach = 0;
+		power_supply_changed(chip->psy);
+		break;
 	case HARD_RESET:
 		chip->typec_status = false;
 		chip->pd_attach = 0;
@@ -399,8 +403,8 @@ static irqreturn_t cypd3177_hpi_irq_handler(int irq, void *dev_id)
 		pd_handle_response(chip);
 		break;
 	default:
-		dev_err(&chip->client->dev, "cypd3177 read interrupt event error\n");
-		cypd3177_dev_reset(chip);
+		dev_err(&chip->client->dev, "cypd3177 read interrupt event irq_raw=%d\n",
+			irq_raw);
 		break;
 	}
 

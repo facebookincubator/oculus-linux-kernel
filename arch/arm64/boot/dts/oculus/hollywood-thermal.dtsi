@@ -105,6 +105,11 @@
 				hysteresis = <1000>;
 				type = "passive";
 			};
+			batt_virt_trip2: batt-virt-trip2 {
+				temperature = <64000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
 		};
 	};
 
@@ -151,6 +156,11 @@
 			};
 			virt_trip2: virt-trip2 {
 				temperature = <115000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_trip3: virt-trip3 {
+				temperature = <125000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};

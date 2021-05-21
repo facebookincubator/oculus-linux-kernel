@@ -4348,6 +4348,7 @@ static int cm7120_i2c_probe(struct i2c_client *i2c,
 	struct cm7120_priv *cm7120;
 	int count = 10;
 	int ret;
+	char *i2c_dev_name;
 
 	dev_info(&i2c->dev, "%s entry\n", __func__);
 
@@ -4444,8 +4445,27 @@ static int cm7120_i2c_probe(struct i2c_client *i2c,
 	init_completion(&cm7120->fw_download_complete);
 	usleep_range(10000, 15000);
 
-	return snd_soc_register_component(&i2c->dev, &soc_component_dev_cm7120,
+	/* Save I2C device name */
+	i2c_dev_name = kstrdup(dev_name(&i2c->dev), GFP_KERNEL);
+	/* Replace I2C device name with component name. This component name
+	 * should be consistent with the codec name specified in the DAI link.
+	 * In this way, the codec name no longer depends on the
+	 * I2C bus-addr format like "1-002d".
+	 */
+	dev_set_name(&i2c->dev, "cm7120");
+	ret = snd_soc_register_component(&i2c->dev, &soc_component_dev_cm7120,
 					  cm7120_dai, ARRAY_SIZE(cm7120_dai));
+	if (ret)
+		dev_err(&i2c->dev, "Failed to register componet: %d\n", ret);
+	/* Restore I2C device name. When requesting firmware later, the name
+	 * of the I2C device will be used as the path to load the firmware
+	 * through the kobject uevent of sysfs, for example:
+	 * "devices/platform/soc/a80000.i2c/i2c-1/1-002d/firmware/CM7120.bin"
+	 */
+	dev_set_name(&i2c->dev, i2c_dev_name);
+	kfree(i2c_dev_name);
+
+	return ret;
 }
 
 static int cm7120_i2c_remove(struct i2c_client *i2c)

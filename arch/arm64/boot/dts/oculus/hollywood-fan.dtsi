@@ -46,6 +46,7 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&fan_pwm_default &fan_tach_default>;
 			status = "okay";
+			max-rpm = <7000>;
 			#cooling-cells = <2>;
 			cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000>;
 		};

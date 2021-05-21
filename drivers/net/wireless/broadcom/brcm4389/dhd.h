@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1970,6 +1970,9 @@ typedef struct dhd_pub {
 	bool flush_logging;
 	txstatus_hist_t txs_histo;
 #endif /* XRAPI && QFLUSH_LOG */
+#if defined(XRAPI) && defined(DHD_MAGIC_PKT_FILTER)
+	struct ether_addr filter_mac;
+#endif /* XRAPI && DHD_MAGIC_PKT_FILTER */
 #if defined(SUPPORT_AP_INIT_BWCONF)
 	uint32 wl_softap_bw;
 #endif /* SUPPORT_AP_INIT_BWCONF */
@@ -2797,6 +2800,7 @@ extern int dhd_get_suspend_bcn_li_dtim(dhd_pub_t *dhd, int *dtim_period, int *bc
 #else
 extern int dhd_get_suspend_bcn_li_dtim(dhd_pub_t *dhd);
 #endif /* OEM_ANDROID && BCMPCIE */
+extern int dhd_set_suspend_bcn_li_dtim(dhd_pub_t *dhd, bool set_suspend);
 
 extern bool dhd_support_sta_mode(dhd_pub_t *dhd);
 extern int write_to_file(dhd_pub_t *dhd, uint8 *buf, int size);

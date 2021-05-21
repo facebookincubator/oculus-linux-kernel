@@ -45,7 +45,6 @@
 #define FAN_STARTUP_TIME_MS 800
 #define MIN_PWM 15
 #define MAX_PWM 255
-#define MAX_RPM 7000
 #define MAX_STR_LEN 10
 #define MAX_RPM_HISTORY 3
 
@@ -74,6 +73,7 @@ struct pwm_fan_ctx {
 	u64 tach_periods;
 	atomic64_t rpm;
 	ktime_t last_tach_timestamp;
+	int max_rpm;
 	int rpm_value;
 	int rpm_history[MAX_RPM_HISTORY];
 	int resume_rpm_value;
@@ -341,11 +341,11 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 	if (!ctx)
 		return -EINVAL;
 
-	if (pwm_fan_has_failure(ctx))
+	if (!ctx->is_display_on)
+		*state = 0;
+	else if (pwm_fan_has_failure(ctx))
 		/* Set a state that exceeds the maximum to signal userspace. */
 		*state = ctx->pwm_fan_max_state + 1;
-	else if (!ctx->is_display_on)
-		*state = 0;
 	else
 		*state = ctx->pwm_fan_state;
 
@@ -542,9 +542,9 @@ static int pwm_fan_of_get_cooling_data(struct device *dev,
 
 	/* Cooling levels are expressed in RPM */
 	for (i = 0; i < num; i++) {
-		if (ctx->pwm_fan_cooling_levels[i] > MAX_RPM) {
+		if (ctx->pwm_fan_cooling_levels[i] > ctx->max_rpm) {
 			dev_err(dev, "RPM fan state[%d]:%d > %d\n", i,
-				ctx->pwm_fan_cooling_levels[i], MAX_RPM);
+				ctx->pwm_fan_cooling_levels[i], ctx->max_rpm);
 			return -EINVAL;
 		}
 	}
@@ -678,6 +678,12 @@ static int pwm_fan_probe(struct platform_device *pdev)
 			goto err_tach_gpio_dir;
 	}
 #endif
+
+	ret = of_property_read_u32(pdev->dev.of_node, "max-rpm", &ctx->max_rpm);
+	if (ret) {
+		dev_err(&pdev->dev, "Property 'max-rpm' cannot be read!\n");
+		goto err_tach_gpio_dir;
+	}
 
 	ret = pwm_fan_of_get_cooling_data(&pdev->dev, ctx);
 	if (ret)

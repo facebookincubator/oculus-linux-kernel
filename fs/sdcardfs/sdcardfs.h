@@ -224,6 +224,9 @@ struct sdcardfs_sb_info {
 	struct path obbpath;
 	void *pkgl_id;
 	struct list_head list;
+#ifdef CONFIG_SDCARD_FS_DEBUG
+	void *debug_data;
+#endif
 };
 
 /*
@@ -651,5 +654,17 @@ static inline bool qstr_case_eq(const struct qstr *q1, const struct qstr *q2)
 }
 
 #define QSTR_LITERAL(string) QSTR_INIT(string, sizeof(string)-1)
+
+#ifdef CONFIG_SDCARD_FS_DEBUG
+int sdcardfs_debug_init(void);
+int sdcardfs_sb_debug_init(struct sdcardfs_sb_info *spd);
+void sdcardfs_sb_debug_destroy(struct sdcardfs_sb_info *spd);
+void sdcardfs_debug_log_read(struct dentry *dentry, loff_t pos, size_t len);
+#else
+static inline int sdcardfs_debug_init(void) { return 0; }
+static inline int sdcardfs_sb_debug_init(struct sdcardfs_sb_info *spd) { return 0; }
+static inline void sdcardfs_sb_debug_destroy(struct sdcardfs_sb_info *spd) { }
+static inline void sdcardfs_debug_log_read(struct dentry *dentry, loff_t pos, size_t len) { }
+#endif
 
 #endif	/* not _SDCARDFS_H_ */

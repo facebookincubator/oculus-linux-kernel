@@ -5,7 +5,7 @@
  * IEEE Std 802.1X-2001
  * IEEE 802.1X RADIUS Usage Guidelines
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

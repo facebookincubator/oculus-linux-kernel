@@ -3,11 +3,15 @@
 #include <linux/backlight.h>
 #include <linux/device.h>
 #include <linux/interrupt.h>
+#include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/property.h>
 #include <linux/spi/spi.h>
+#include <linux/uaccess.h>
+
+#include "linux/seacliff_blu_spi.h"
 
 /* Compatible table name of the blu */
 #define BLU_SPI_NODE_TABLE "oculus,seacliff-blu-spi"
@@ -23,11 +27,17 @@
 
 #define BL_NODE_NAME_SIZE 32
 
+/* keep track of the number of driver instances */
+static int number_of_devices = 0;
+
 struct blu_device {
 	const char *name;
 
 	/* SPI device */
 	struct spi_device *spi;
+
+	/* misc device for receiving the backlight matrix*/
+	struct miscdevice misc;
 
 	/* Backlight device */
 	struct backlight_device *bl_device;
@@ -42,6 +52,13 @@ struct blu_device {
 	/* The arrray contains brightness info of 8 muxes */
 	u8 *backlight_matrix;
 	u32 mux_size;
+	u32 matrix_size;
+
+	/* backlight matrix intermediate buffer */
+	u8 *back_buffer;
+
+	/* flag to control read/write to the temp buffer */
+	atomic_t buffer_dirty;
 };
 
 /* Blu irq handler, transfer the SPI commands according to blu state */
@@ -247,7 +264,15 @@ static void init_backlight_matrix(struct blu_device *blu)
 
 	blu->backlight_matrix = devm_kzalloc(&blu->spi->dev, sizeof(input_matrix), GFP_KERNEL | GFP_DMA);
 	blu->mux_size = sizeof(input_matrix) / NUMBER_OF_MUX;
+	blu->back_buffer = devm_kzalloc(&blu->spi->dev, sizeof(input_matrix), GFP_KERNEL | GFP_DMA);
 	memcpy(blu->backlight_matrix, input_matrix, sizeof(input_matrix));
+}
+
+static void swap_buffers(u8 **buffer1, u8 **buffer2) {
+	u8 *temp;
+	temp = *buffer1;
+	*buffer1 = *buffer2;
+	*buffer2 = temp;
 }
 
 static irqreturn_t blu_isr(int isr, void *blu_dev)
@@ -261,6 +286,7 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 	struct blu_device *blu = (struct blu_device *)blu_dev;
 	struct spi_device *spi = blu->spi;
 	int mux = 0, ret = 0;
+	int old;
 
 	/*
 	 * BLU init requirement of hardware:
@@ -282,11 +308,18 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		if (ret)
 			dev_err(&spi->dev, "failed to exit soft reset mode, error %d\n", ret);
 	} else {
+		old = atomic_read(&blu->buffer_dirty);
+
+		/* if the back buffer is dirty, get the new matrix */
+		if (old)
+			swap_buffers(&(blu->backlight_matrix), &(blu->back_buffer));
+
 		for (mux = 0; mux < NUMBER_OF_MUX; ++mux) {
 			ret = spi_write(spi, &(blu->backlight_matrix[blu->mux_size * mux]), blu->mux_size);
 			if (ret)
 				dev_err(&spi->dev, "failed to send backlight matrix, error %d\n", ret);
 		}
+		atomic_set(&blu->buffer_dirty, 0);
 	}
 
 	++blu->frame_counts;
@@ -294,11 +327,95 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 	return IRQ_HANDLED;
 }
 
+static int blu_spi_open(struct inode *inode, struct file *file)
+{
+	if (!try_module_get(THIS_MODULE))
+		return -ENODEV;
+
+	return 0;
+}
+
+static int blu_spi_release(struct inode *inode, struct file *file)
+{
+	module_put(THIS_MODULE);
+
+	return 0;
+}
+
+static int transfer_backlight_matrix(struct blu_device *blu,
+		struct blu_spi_backlight_matrix __user *blm)
+{
+	int ret;
+	struct blu_spi_backlight_matrix blu_matrix;
+	int old;
+
+	old = atomic_read(&blu->buffer_dirty);
+
+	/* if the intermediate buffer is still dirty, don't update it */
+	if (old) {
+		dev_dbg(&blu->spi->dev, "Cannot update the backlight matrix, " \
+			"temp buffer values are still dirty\n");
+		return 0;
+	}
+
+	/* first get the struct from user space */
+	ret = copy_from_user(&blu_matrix, blm, sizeof(blu_matrix));
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from " \
+			"backlight matrix struct\n", ret);
+		return -EFAULT;
+	}
+
+	blu->matrix_size = blu_matrix.matrix_size;
+
+	/* get the matrix from the struct and place in intermediate buffer */
+	ret = copy_from_user(blu->back_buffer, blu_matrix.backlight_matrix,
+			blu->matrix_size);
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from " \
+			"backlight matrix\n", ret);
+		return -EFAULT;
+	}
+
+	/* set the buffer values to dirty */
+	atomic_set(&blu->buffer_dirty, 1);
+
+	return ret;
+}
+
+static long blu_spi_ioctl(struct file *file, unsigned int cmd,
+		unsigned long arg)
+{
+	struct blu_device *blu = container_of(file->private_data,
+		struct blu_device, misc);
+
+	switch(cmd) {
+		case BLU_SPI_SET_BACKLIGHT_IOCTL:
+			return transfer_backlight_matrix(blu,
+				(struct blu_spi_backlight_matrix *)arg);
+		default:
+			dev_err(&blu->spi->dev, "Unrecognized IOCTL %ul\n", cmd);
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static struct file_operations blu_spi_fops = {
+	.owner = THIS_MODULE,
+	.read = NULL,
+	.write = NULL,
+	.open = blu_spi_open,
+	.release = blu_spi_release,
+	.unlocked_ioctl = blu_spi_ioctl
+};
+
 static int blu_spi_probe(struct spi_device *spi)
 {
 	struct blu_device *blu;
 	int vsync_gpio;
 	int ret = 0;
+	char device_name[8];
 
 	spi->mode = BLU_SPI_MODE;
 	spi->bits_per_word = BLU_SPI_BITS_PER_WORD;
@@ -308,6 +425,8 @@ static int blu_spi_probe(struct spi_device *spi)
 		return -ENOMEM;
 
 	blu->spi = spi;
+
+	atomic_set(&blu->buffer_dirty, 0);
 
 	ret = of_property_read_string(spi->dev.of_node, "oculus,blu-name", &blu->name);
 	if (ret) {
@@ -322,6 +441,21 @@ static int blu_spi_probe(struct spi_device *spi)
 	ret = blu_spi_panel_backlight_node_setup(blu);
 	if (ret) {
 		dev_err(&spi->dev, "%s: failed to setup backlight node, ret=%d\n", __func__, ret);
+		return ret;
+	}
+
+	snprintf(device_name, sizeof(device_name), "blu%d", number_of_devices++);
+
+	/* misc device info */
+	blu->misc.name = device_name;
+	blu->misc.minor = MISC_DYNAMIC_MINOR;
+	blu->misc.fops = &blu_spi_fops;
+
+	/* register the misc device */
+	ret = misc_register(&blu->misc);
+	if (ret < 0) {
+		dev_err(&spi->dev, "%s fails to register misc device, error %d",
+			__func__, ret);
 		return ret;
 	}
 
@@ -377,6 +511,9 @@ static int blu_spi_remove(struct spi_device *spi)
 	if (blu->irq > 0) {
 		disable_irq(blu->irq);
 	}
+
+	/* unregister the misc device */
+	misc_deregister(&blu->misc);
 
 	return 0;
 }

@@ -99,7 +99,7 @@
 	status = "ok";
 	qcom,rt;
 
-	oculusnrf@0 {
+	oculusnrf: oculusnrf@0 {
 		status = "okay";
 		compatible = "oculus,syncboss";
 		reg = <0>;
@@ -116,7 +116,6 @@
 		oculus,syncboss-timesync = <&tlmm 68 0>;
 		oculus,syncboss-wakeup  = <&tlmm 4 0>;
 
-		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
 		oculus,transaction-length = <248>;
 

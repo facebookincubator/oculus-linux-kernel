@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -141,7 +141,16 @@ module_param(wl_reassoc_support, uint, 0660);
 
 static struct device *cfg80211_parent_dev = NULL;
 static struct bcm_cfg80211 *g_bcmcfg = NULL;
+
+/*
+ * wl_dbg_level : a default level to print to dmesg buffer
+ * wl_log_level : a default level to log to DLD or Ring
+ * To keep one level operation(dhd_msg_level) in HW4,
+ * dhd_msg_level and dhd_log_level have the same level
+ * IOVAR(loglevel) can adjust logging level dynamically
+ */
 u32 wl_dbg_level = WL_DBG_ERR | WL_DBG_P2P_ACTION | WL_DBG_INFO;
+u32 wl_log_level = WL_DBG_ERR | WL_DBG_P2P_ACTION | WL_DBG_INFO;
 
 #define MAX_WAIT_TIME 1500
 #ifdef WLAIBSS_MCHAN
@@ -311,6 +320,60 @@ common_iface_combinations[] = {
 	},
 };
 #endif /* LINUX_VER >= 3.0 && (WL_IFACE_COMB_NUM_CHANNELS || WL_CFG80211_P2P_DEV_IF) */
+
+#if defined(WL_CFG80211_AKM_TYPES_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, \
+	7, 0))
+static const uint32
+akm_suites_station[] = {
+	WLAN_AKM_SUITE_8021X,
+	WLAN_AKM_SUITE_PSK,
+	WLAN_AKM_SUITE_SAE,
+	WLAN_AKM_SUITE_FT_OVER_SAE,
+	WLAN_AKM_SUITE_8021X_SHA256,
+	WLAN_AKM_SUITE_PSK_SHA256,
+	WLAN_AKM_SUITE_FT_PSK,
+	WLAN_AKM_SUITE_FT_8021X,
+	WLAN_AKM_SUITE_8021X_SUITE_B,
+	WLAN_AKM_SUITE_8021X_SUITE_B_192,
+	WLAN_AKM_SUITE_FILS_SHA256,
+	WLAN_AKM_SUITE_FILS_SHA384,
+	WLAN_AKM_SUITE_FT_FILS_SHA256,
+	WLAN_AKM_SUITE_FT_FILS_SHA384,
+	WLAN_AKM_SUITE_OWE
+};
+
+static const uint32
+akm_suites_ap[] = {
+	WLAN_AKM_SUITE_PSK,
+	WLAN_AKM_SUITE_SAE,
+	WL_AKM_SUITE_SHA256_PSK,
+};
+
+static const uint32
+akm_suites_p2p[] = {
+	WLAN_AKM_SUITE_PSK,
+	WL_AKM_SUITE_SHA256_PSK,
+};
+
+static const struct wiphy_iftype_akm_suites
+iftype_akm_suites[] = {
+	{
+	.iftypes_mask = BIT(NL80211_IFTYPE_STATION),
+	.akm_suites = akm_suites_station,
+	.n_akm_suites = ARRAY_SIZE(akm_suites_station),
+	},
+	{
+	.iftypes_mask = BIT(NL80211_IFTYPE_AP),
+	.akm_suites = akm_suites_ap,
+	.n_akm_suites = ARRAY_SIZE(akm_suites_ap),
+	},
+	{
+	.iftypes_mask = BIT(NL80211_IFTYPE_P2P_CLIENT) | BIT(NL80211_IFTYPE_P2P_GO),
+	.akm_suites = akm_suites_p2p,
+	.n_akm_suites = ARRAY_SIZE(akm_suites_p2p),
+	},
+};
+#endif /* (WL_CFG80211_AKM_TYPES_BKPORT ) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)) */
 
 static const char *wl_if_state_strs[WL_IF_STATE_MAX + 1] = {
 	"WL_IF_CREATE_REQ",
@@ -5301,7 +5364,7 @@ wl_set_set_sharedkey(struct net_device *dev,
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	struct wl_security *sec;
-	struct wl_wsec_key key;
+	struct wl_wsec_key key = {0};
 	s32 val;
 	s32 err = 0;
 	s32 bssidx;
@@ -5332,9 +5395,14 @@ wl_set_set_sharedkey(struct net_device *dev,
 			key.index = (u32) sme->key_idx;
 			if (unlikely(key.len > sizeof(key.data))) {
 				WL_ERR(("Too long key length (%u)\n", key.len));
-				return -EINVAL;
+				err = -EINVAL;
+				goto exit;
 			}
-			memcpy(key.data, sme->key, key.len);
+			if (memcpy_s(key.data, sizeof(key.data), sme->key,
+					key.len) != BCME_OK) {
+				err = -EINVAL;
+				goto exit;
+			}
 			key.flags = WL_PRIMARY_KEY;
 			if ((sec->cipher_pairwise == WLAN_CIPHER_SUITE_WEP40) ||
 			    (sec->cipher_pairwise == WLAN_CIPHER_SUITE_WEP104)) {
@@ -5342,7 +5410,8 @@ wl_set_set_sharedkey(struct net_device *dev,
 			} else {
 				WL_ERR(("Invalid algorithm (%d)\n",
 					sme->crypto.ciphers_pairwise[0]));
-				return -EINVAL;
+				err = -EINVAL;
+				goto exit;
 			}
 			/* Set the new key/index */
 			WL_DBG(("key length (%d) key index (%d) algo (%d)\n",
@@ -5353,7 +5422,8 @@ wl_set_set_sharedkey(struct net_device *dev,
 				iov_buf, WLC_IOCTL_SMLEN, bssidx, NULL);
 			if (unlikely(err)) {
 				WL_ERR(("WLC_SET_KEY error (%d)\n", err));
-				return err;
+				err = -EINVAL;
+				goto exit;
 			}
 			WL_INFORM_MEM(("key applied to fw\n"));
 			if (sec->auth_type == NL80211_AUTHTYPE_SHARED_KEY) {
@@ -5362,11 +5432,16 @@ wl_set_set_sharedkey(struct net_device *dev,
 				err = wldev_iovar_setint_bsscfg(dev, "auth", val, bssidx);
 				if (unlikely(err)) {
 					WL_ERR(("set auth failed (%d)\n", err));
-					return err;
+					err = -EINVAL;
+					goto exit;
 				}
 			}
 		}
 	}
+exit:
+	bzero(&key, sizeof(key));
+	bzero(iov_buf, sizeof(iov_buf));
+
 	return err;
 }
 
@@ -6639,12 +6714,14 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 			iov_buf, WLC_IOCTL_SMLEN, bssidx, NULL);
 		if (unlikely(err)) {
 			WL_ERR(("key delete error (%d)\n", err));
-			return err;
+			err = -EINVAL;
+			goto exit;
 		}
 	} else {
 		if (key.len > sizeof(key.data)) {
 			WL_ERR(("Invalid key length (%d)\n", key.len));
-			return -EINVAL;
+			err = -EINVAL;
+			goto exit;
 		}
 		WL_DBG(("Setting the key index %d\n", key.index));
 		memcpy(key.data, params->key, key.len);
@@ -6655,6 +6732,7 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 			memcpy(keybuf, &key.data[24], sizeof(keybuf));
 			memcpy(&key.data[24], &key.data[16], sizeof(keybuf));
 			memcpy(&key.data[16], keybuf, sizeof(keybuf));
+			bzero(keybuf, sizeof(keybuf));
 		}
 
 		/* if IW_ENCODE_EXT_RX_SEQ_VALID set */
@@ -6670,7 +6748,8 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 		key.algo = wl_rsn_cipher_wsec_key_algo_lookup(params->cipher);
 		if (key.algo == CRYPTO_ALGO_OFF) { //not found.
 			WL_ERR(("Invalid cipher (0x%x)\n", params->cipher));
-			return -EINVAL;
+			err = -EINVAL;
+			goto exit;
 		}
 		swap_key_from_BE(&key);
 #if defined(BCMDONGLEHOST) && !defined(CUSTOMER_HW4)
@@ -6681,10 +6760,16 @@ wl_add_keyext(struct wiphy *wiphy, struct net_device *dev,
 			iov_buf, WLC_IOCTL_SMLEN, bssidx, NULL);
 		if (unlikely(err)) {
 			WL_ERR(("WLC_SET_KEY error (%d)\n", err));
-			return err;
+			err = -EINVAL;
+			goto exit;
 		}
 		WL_INFORM_MEM(("[%s] wsec key set\n", dev->name));
 	}
+exit:
+	/* clear buffers that held the keys */
+	bzero(&key, sizeof(key));
+	bzero(iov_buf, sizeof(iov_buf));
+
 	return err;
 }
 
@@ -6789,7 +6874,7 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	u8 key_idx, bool pairwise, const u8 *mac_addr,
 	struct key_params *params)
 {
-	struct wl_wsec_key key;
+	struct wl_wsec_key key = {0};
 	s32 val = 0;
 	s32 wsec = 0;
 	s32 err = 0;
@@ -6847,7 +6932,8 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 
 	if (unlikely(key.len > sizeof(key.data))) {
 		WL_ERR(("Too long key length (%u)\n", key.len));
-		return -EINVAL;
+		err = -EINVAL;
+		goto exit;
 	}
 	memcpy(key.data, params->key, key.len);
 
@@ -6865,19 +6951,22 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	 */
 		if (params->cipher != WLAN_CIPHER_SUITE_PMK)
 #endif /* defined(WLAN_CIPHER_SUITE_PMK) */
-		return -EINVAL;
+		err = -EINVAL;
+		goto exit;
 	}
 	switch (params->cipher) {
 	case WLAN_CIPHER_SUITE_TKIP:
 		if (params->key_len != TKIP_KEY_SIZE) {
 			WL_ERR(("wrong TKIP Key length:%d", params->key_len));
-			return -EINVAL;
+			err = -EINVAL;
+			goto exit;
 		}
 		/* wpa_supplicant switches the third and fourth quarters of the TKIP key */
 		if (mode == WL_MODE_BSS) {
 			bcopy(&key.data[24], keybuf, sizeof(keybuf));
 			bcopy(&key.data[16], &key.data[24], sizeof(keybuf));
 			bcopy(keybuf, &key.data[16], sizeof(keybuf));
+			bzero(keybuf, sizeof(keybuf));
 		}
 		WL_DBG(("WLAN_CIPHER_SUITE_TKIP\n"));
 		break;
@@ -6894,7 +6983,8 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 
 		if (params->key_len > sizeof(pmk.key)) {
 			WL_ERR(("Worng PMK key length:%d", params->key_len));
-			return -EINVAL;
+			err = -EINVAL;
+			goto exit;
 		}
 		bzero(&pmk, sizeof(pmk));
 		bcopy(params->key, &pmk.key, params->key_len);
@@ -6913,8 +7003,9 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 
 		err = wldev_ioctl_set(dev, WLC_SET_WSEC_PMK, &pmk, sizeof(pmk));
 		if (err) {
+			bzero(&pmk, sizeof(pmk));
 			WL_ERR(("pmk failed, err=%d (ignore)\n", err));
-			return err;
+			goto exit;
 		} else {
 			WL_DBG(("pmk set. flags:0x%x\n", pmk.flags));
 		}
@@ -6959,10 +7050,19 @@ wl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 		WLC_IOCTL_SMLEN, bssidx, NULL);
 	if (unlikely(err)) {
 		WL_ERR(("WLC_SET_KEY error (%d)\n", err));
-		return err;
 	}
 
 exit:
+	/* clear buffer used for setting pmk/keys */
+	bzero(&key, sizeof(key));
+	bzero(iov_buf, sizeof(iov_buf));
+	bzero(&pmk, sizeof(pmk));
+
+	if (err) {
+		WL_ERR(("add key failed\n"));
+		return err;
+	}
+
 	err = wldev_iovar_getint_bsscfg(dev, "wsec", &wsec, bssidx);
 	if (unlikely(err)) {
 		WL_ERR(("get wsec error (%d)\n", err));
@@ -6987,7 +7087,7 @@ static s32
 wl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 	u8 key_idx, bool pairwise, const u8 *mac_addr)
 {
-	struct wl_wsec_key key;
+	struct wl_wsec_key key = {0};
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	s32 err = 0;
 	s32 bssidx;
@@ -7032,6 +7132,8 @@ wl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 	swap_key_from_BE(&key);
 	err = wldev_iovar_setbuf_bsscfg(dev, "wsec_key", &key, sizeof(key), iov_buf,
 		WLC_IOCTL_SMLEN, bssidx, NULL);
+	bzero(iov_buf, sizeof(iov_buf));
+	bzero(&key, sizeof(key));
 	if (unlikely(err)) {
 		if (err == -EINVAL) {
 			if (key.index >= DOT11_MAX_DEFAULT_KEYS) {
@@ -7239,6 +7341,14 @@ wl_cfg80211_ifstats_counters_cb(void *ctx, const uint8 *data, uint16 type, uint1
 		memcpy(ctx, data, sizeof(wl_if_stats_t));
 		break;
 	}
+	case WL_IFSTATS_XTLV_INFRA_SPECIFIC: {
+		if (len > sizeof(wl_if_infra_enh_stats_v2_t)) {
+			WL_INFORM(("type 0x%x: cntbuf length too long! %d > %d\n",
+				type, len, (int)sizeof(wl_if_infra_enh_stats_v2_t)));
+		}
+		(void)memcpy_s(ctx, len, data, sizeof(wl_if_infra_enh_stats_v2_t));
+		break;
+	}
 	default:
 		WL_DBG(("Unsupported counter type 0x%x\n", type));
 		break;
@@ -7247,11 +7357,157 @@ wl_cfg80211_ifstats_counters_cb(void *ctx, const uint8 *data, uint16 type, uint1
 	return BCME_OK;
 }
 
+#define IF_COUNTERS_PARAM_CONTAINER_LEN_MAX	228
 /* Parameters to if_counters iovar need to be converted to XTLV format
  * before sending to FW. The length of the top level XTLV container
  * containing parameters should not exceed 228 bytes
  */
-#define IF_COUNTERS_PARAM_CONTAINER_LEN_MAX	228
+int
+wl_cfg80211_if_infra_enh_ifstats_counters(struct net_device *dev,
+	wl_if_infra_enh_stats_v2_t *if_infra_enh_stats)
+{
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+	uint8 *pbuf = NULL;
+	bcm_xtlvbuf_t xtlvbuf, local_xtlvbuf;
+	bcm_xtlv_t *xtlv;
+	uint16 expected_resp_len;
+	wl_stats_report_t *request = NULL, *response = NULL;
+	int bsscfg_idx;
+	int ret = BCME_OK;
+
+	pbuf = (uint8 *)MALLOCZ(dhdp->osh, WLC_IOCTL_MEDLEN);
+	if (!pbuf) {
+		WL_ERR(("Failed to allocate local pbuf\n"));
+		return BCME_NOMEM;
+	}
+
+	/* top level container length cannot exceed 228 bytes.
+	 * This is because the output buffer is 1535 bytes long.
+	 * Allow 1300 bytes for reporting stats coming in XTLV format
+	 */
+	request = (wl_stats_report_t *)
+		MALLOCZ(dhdp->osh, IF_COUNTERS_PARAM_CONTAINER_LEN_MAX);
+	if (!request) {
+		WL_ERR(("Failed to allocate wl_stats_report_t with length (%d)\n",
+			IF_COUNTERS_PARAM_CONTAINER_LEN_MAX));
+		ret = BCME_NOMEM;
+		goto fail;
+	}
+
+	request->version = WL_STATS_REPORT_REQUEST_VERSION_V2;
+
+	/* Top level container... we will create it ourselves */
+	/* Leave space for report version, length, and top level XTLV
+	 * WL_IFSTATS_XTLV_IF.
+	 */
+	ret = bcm_xtlv_buf_init(&local_xtlvbuf,
+		(uint8*)(request->data) + BCM_XTLV_HDR_SIZE,
+		IF_COUNTERS_PARAM_CONTAINER_LEN_MAX -
+		offsetof(wl_stats_report_t, data) - BCM_XTLV_HDR_SIZE,
+		BCM_XTLV_OPTION_ALIGN32);
+
+	if (ret) {
+		goto fail;
+	}
+
+	/* Populate requests using this the local_xtlvbuf context. The xtlvbuf
+	 * is used to fill the container containing the XTLVs populated using
+	 * local_xtlvbuf.
+	 */
+	ret = bcm_xtlv_buf_init(&xtlvbuf,
+		(uint8*)(request->data),
+		IF_COUNTERS_PARAM_CONTAINER_LEN_MAX -
+		offsetof(wl_stats_report_t, data),
+		BCM_XTLV_OPTION_ALIGN32);
+
+	if (ret) {
+		goto fail;
+	}
+
+	ret = bcm_xtlv_put_data(&local_xtlvbuf,
+		WL_IFSTATS_XTLV_INFRA_SPECIFIC, NULL, 0);
+	if (ret) {
+		goto fail;
+	}
+
+	/* Complete the outer container with type and length
+	 * only.
+	 */
+	ret = bcm_xtlv_put_data(&xtlvbuf,
+		WL_IFSTATS_XTLV_IF,
+		NULL, bcm_xtlv_buf_len(&local_xtlvbuf));
+	if (ret) {
+		goto fail;
+	}
+
+	request->length = bcm_xtlv_buf_len(&xtlvbuf) +
+		offsetof(wl_stats_report_t, data);
+	bsscfg_idx = wl_get_bssidx_by_wdev(cfg, dev->ieee80211_ptr);
+
+	/* send the command over to the device and get teh output */
+	ret = wldev_iovar_getbuf_bsscfg(dev, "if_counters", (void *)request,
+		request->length, pbuf, WLC_IOCTL_MEDLEN, bsscfg_idx,
+		&cfg->ioctl_buf_sync);
+	if (ret < 0) {
+		WL_ERR(("if_counters not supported ret=%d\n", ret));
+		goto fail;
+	}
+
+	/* Reuse request to process response */
+	response = (wl_stats_report_t *)pbuf;
+
+	/* version check */
+	if (response->version != WL_STATS_REPORT_REQUEST_VERSION_V2) {
+		ret = BCME_VERSION;
+		goto fail;
+	}
+
+	xtlv = (bcm_xtlv_t *)(response->data);
+
+	expected_resp_len =
+		(BCM_XTLV_LEN(xtlv) + OFFSETOF(wl_stats_report_t, data));
+
+	/* Check if the received length is as expected */
+	if ((response->length > WLC_IOCTL_MEDLEN) ||
+		(response->length < expected_resp_len)) {
+		ret = BCME_ERROR;
+		WL_ERR(("Illegal response length received. Got: %d"
+			" Expected: %d. Expected len must be <= %u\n",
+			response->length, expected_resp_len, WLC_IOCTL_MEDLEN));
+		goto fail;
+	}
+
+	/* check the type. The return data will be in
+	 * WL_IFSTATS_XTLV_IF container. So check if that container is
+	 * present
+	 */
+	if (BCM_XTLV_ID(xtlv) != WL_IFSTATS_XTLV_IF) {
+		ret = BCME_ERROR;
+		WL_ERR(("unexpected type received: %d Expected: %d\n",
+			BCM_XTLV_ID(xtlv), WL_IFSTATS_XTLV_IF));
+		goto fail;
+	}
+
+	/* Process XTLVs within WL_IFSTATS_XTLV_INFRA_SPECIFIC container */
+	ret = bcm_unpack_xtlv_buf(if_infra_enh_stats,
+		(uint8*)response->data + BCM_XTLV_HDR_SIZE,
+		BCM_XTLV_LEN(xtlv), /* total length of all TLVs in container */
+		BCM_XTLV_OPTION_ALIGN32, wl_cfg80211_ifstats_counters_cb);
+	if (ret) {
+		WL_ERR(("Error unpacking XTLVs in wl_if_infra_enh_stats_v2_t counters: %d\n", ret));
+	}
+
+fail:
+	if (pbuf) {
+		MFREE(dhdp->osh, pbuf, WLC_IOCTL_MEDLEN);
+	}
+
+	if (request) {
+		MFREE(dhdp->osh, request, IF_COUNTERS_PARAM_CONTAINER_LEN_MAX);
+	}
+	return ret;
+}
 
 int
 wl_cfg80211_ifstats_counters(struct net_device *dev, wl_if_stats_t *if_stats)
@@ -7800,7 +8056,6 @@ wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 #ifdef RTT_SUPPORT
 	rtt_status_info_t *rtt_status;
 #endif /* RTT_SUPPORT */
-	int bcn_li_dtim = 0;
 	RETURN_EIO_IF_NOT_UP(cfg);
 
 	WL_DBG(("Enter\n"));
@@ -7857,31 +8112,9 @@ wl_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 		_net_info->ps_managed_start_ts = OSL_SYSUPTIME();
 	}
 
-	/* Set MAX bcn_li_dtim in suspend */
-	if (enabled) {
-		/* PM Enabled  */
-		dhd->max_dtim_enable = TRUE;
-		dhd->suspend_bcn_li_dtim = CUSTOM_SUSPEND_BCN_LI_DTIM;
-	} else {
-		/* PM Disabled  */
-		dhd->max_dtim_enable = FALSE;
-		dhd->suspend_bcn_li_dtim = NO_DTIM_SKIP;
-	}
-
-	/* Set bcn_li_dtim if suspend mode */
-	if (dhd->early_suspended) {
-		/* LCD off */
-#if defined(OEM_ANDROID) && defined(BCMPCIE)
-		int dtim_period = 0;
-		int bcn_interval = 0;
-		bcn_li_dtim = dhd_get_suspend_bcn_li_dtim(dhd, &dtim_period, &bcn_interval);
-#else
-		bcn_li_dtim = dhd_get_suspend_bcn_li_dtim(dhd);
-#endif /* OEM_ANDROID && BCMPCIE */
-		err = wldev_iovar_setint(dev, "bcn_li_dtim", bcn_li_dtim);
-		if (unlikely(err)) {
-			WL_ERR(("error (%d)\n", err));
-		}
+	if (dhd->in_suspend) {
+		/* Enable/Disable bcn_li_dtim if suspend mode */
+		dhd_set_suspend_bcn_li_dtim(dhd, enabled);
 	}
 
 	return err;
@@ -10598,6 +10831,12 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 	wdev->wiphy->n_iface_combinations =
 		ARRAY_SIZE(common_iface_combinations);
 #endif /* LINUX_VER >= 3.0 && (WL_IFACE_COMB_NUM_CHANNELS || WL_CFG80211_P2P_DEV_IF) */
+#if defined(WL_CFG80211_AKM_TYPES_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, \
+	7, 0))
+	wdev->wiphy->iftype_akm_suites = iftype_akm_suites;
+	wdev->wiphy->num_iftype_akm_suites =
+		ARRAY_SIZE(iftype_akm_suites);
+#endif /* (WL_CFG80211_AKM_TYPES_BKPORT ) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)) */
 
 	wdev->wiphy->bands[IEEE80211_BAND_2GHZ] = &__wl_band_2ghz;
 
@@ -14605,6 +14844,10 @@ static void wl_init_event_handler(struct bcm_cfg80211 *cfg)
 #endif /* WL_CHAN_UTIL */
 #ifdef WL_TWT
 	cfg->evt_handler[WLC_E_TWT] = wl_notify_twt_event;
+#else
+#ifdef WL_TWT_HAL_IF
+	cfg->evt_handler[WLC_E_TWT] = wl_cfgvendor_notify_twt_event;
+#endif /* WL_TWT_HAL_IF */
 #endif /* WL_TWT */
 #ifdef WL_CLIENT_SAE
 	cfg->evt_handler[WLC_E_AUTH_START] = wl_notify_start_auth;
@@ -15521,6 +15764,9 @@ static void wl_deinit_priv(struct bcm_cfg80211 *cfg)
 	wl_destroy_event_handler(cfg);
 	wl_flush_eq(cfg);
 	wl_link_down(cfg);
+#ifdef WL_SCHED_SCAN
+	cancel_delayed_work_sync(&cfg->sched_scan_stop_work);
+#endif /* WL_SCHED_SCAN */
 	del_timer_sync(&cfg->scan_timeout);
 #ifdef DHD_LOSSLESS_ROAMING
 	del_timer_sync(&cfg->roam_timeout);
@@ -15776,7 +16022,7 @@ s32 wl_cfg80211_attach(struct net_device *ndev, void *context)
 #endif /* DHCP_SCAN_SUPPRESS */
 
 #ifdef WL_SCHED_SCAN
-	INIT_WORK(&cfg->sched_scan_stop_work, wl_cfgscan_sched_scan_stop_work);
+	INIT_DELAYED_WORK(&cfg->sched_scan_stop_work, wl_cfgscan_sched_scan_stop_work);
 #endif /* WL_SCHED_SCAN */
 	INIT_DELAYED_WORK(&cfg->pm_enable_work, wl_cfg80211_work_handler);
 	INIT_DELAYED_WORK(&cfg->loc.work, wl_cfgscan_listen_complete_work);
@@ -17273,8 +17519,17 @@ static s32 __wl_cfg80211_down(struct bcm_cfg80211 *cfg)
 #endif /* DHCP_SCAN_SUPPRESS */
 
 #ifdef WL_SCHED_SCAN
-	cancel_work_sync(&cfg->sched_scan_stop_work);
+	if (cfg->sched_scan_req) {
+		struct wireless_dev *wdev = ndev->ieee80211_ptr;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+		wl_cfg80211_sched_scan_stop(wdev->wiphy, ndev,
+				cfg->sched_scan_req->reqid);
+#else
+		wl_cfg80211_sched_scan_stop(wdev->wiphy, ndev);
+#endif /* KERNEL >= 4.11 */
+	}
 #endif /* WL_SCHED_SCAN */
+
 #ifdef WL_SAR_TX_POWER
 	cfg->wifi_tx_power_mode = WIFI_POWER_SCENARIO_INVALID;
 #if defined(WL_SAR_TX_POWER_CONFIG)
@@ -18931,6 +19186,15 @@ int wl_cfg80211_do_driver_init(struct net_device *net)
 	return 0;
 }
 
+void wl_cfg80211_enable_log_trace(bool set, u32 level)
+{
+	if (set) {
+		wl_log_level = level & WL_DBG_LEVEL;
+	} else {
+		wl_log_level |= (WL_DBG_LEVEL & level);
+	}
+}
+
 void wl_cfg80211_enable_trace(bool set, u32 level)
 {
 	if (set)
@@ -18938,6 +19202,17 @@ void wl_cfg80211_enable_trace(bool set, u32 level)
 	else
 		wl_dbg_level |= (WL_DBG_LEVEL & level);
 }
+
+uint32 wl_cfg80211_get_print_level()
+{
+	return wl_dbg_level;
+}
+
+uint32 wl_cfg80211_get_log_level()
+{
+	return wl_log_level;
+}
+
 #if defined(WL_SUPPORT_BACKPORTED_KPATCHES) || (LINUX_VERSION_CODE >= KERNEL_VERSION(3, \
 	2, 0))
 static s32
@@ -20509,9 +20784,11 @@ wl_cfg80211_set_dbg_verbose(struct net_device *ndev, u32 level)
 	if (level) {
 		/* Enable increased verbose */
 		wl_dbg_level |= WL_DBG_DBG;
+		wl_log_level |= WL_DBG_DBG;
 	} else {
 		/* Disable */
 		wl_dbg_level &= ~WL_DBG_DBG;
+		wl_log_level &= ~WL_DBG_DBG;
 	}
 	WL_INFORM(("debug verbose set to %d\n", level));
 
@@ -23740,3 +24017,39 @@ wl_cleanup_keep_alive(struct bcm_cfg80211 *cfg)
 	return;
 }
 #endif /* defined(KEEP_ALIVE) && defined(DHD_CLEANUP_KEEP_ALIVE) */
+
+chanspec_t
+wl_cfg80211_get_sta_chanspec(struct bcm_cfg80211 *cfg)
+{
+	chanspec_t *sta_chanspec = NULL;
+
+#ifdef WL_DUAL_APSTA
+	if (wl_get_drv_status_all(cfg, CONNECTED) >= 2) {
+		/* If both STA interfaces are connected return failure */
+		return 0;
+	} else {
+		struct net_info *iter, *next;
+
+		GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+		for_each_ndev(cfg, iter, next) {
+			GCC_DIAGNOSTIC_POP();
+			if ((iter->ndev) && (wl_get_drv_status(cfg, CONNECTED, iter->ndev)) &&
+				(iter->ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)) {
+				if ((sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
+					iter->ndev, WL_PROF_CHAN))) {
+					return *sta_chanspec;
+				}
+			}
+		}
+	}
+#else
+	if (wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
+		if ((sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
+			bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN))) {
+			return *sta_chanspec;
+		}
+	}
+#endif /* WL_DUAL_APSTA */
+
+	return 0;
+}

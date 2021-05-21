@@ -31,10 +31,10 @@
 	status = "disabled";
 };
 
-&qupv3_se19_spi {
-	oculusnrf@0 {
-		swd@0 {
-			oculus,fw-path = "syncboss_P1_BOARD.bin";
-		};
+&oculusnrf {
+	oculus,syncboss-has-prox;
+
+	swd@0 {
+		oculus,fw-path = "syncboss_P1_BOARD.bin";
 	};
 };

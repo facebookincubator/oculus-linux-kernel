@@ -34,6 +34,7 @@ static ssize_t sdcardfs_read(struct file *file, char __user *buf,
 #endif
 
 	lower_file = sdcardfs_lower_file(file);
+	sdcardfs_debug_log_read(dentry, *ppos, count);
 
 #ifdef CONFIG_SDCARD_FS_FADV_NOACTIVE
 	if (file->f_mode & FMODE_NOACTIVE) {

@@ -375,6 +375,8 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 	list_add(&sb_info->list, &sdcardfs_super_list);
 	mutex_unlock(&sdcardfs_super_list_lock);
 
+	sdcardfs_sb_debug_init(sb_info);
+
 	if (!silent)
 		pr_info("sdcardfs: mounted on top of %s type %s\n",
 				dev_name, lower_sb->s_type->name);
@@ -448,6 +450,7 @@ void sdcardfs_kill_sb(struct super_block *sb)
 		mutex_lock(&sdcardfs_super_list_lock);
 		list_del(&sbi->list);
 		mutex_unlock(&sdcardfs_super_list_lock);
+		sdcardfs_sb_debug_destroy(sbi);
 	}
 	kill_anon_super(sb);
 }
@@ -485,6 +488,8 @@ out:
 		sdcardfs_destroy_dentry_cache();
 		packagelist_exit();
 	}
+
+	(void) sdcardfs_debug_init();
 	return err;
 }
 

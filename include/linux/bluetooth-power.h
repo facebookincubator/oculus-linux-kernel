@@ -50,6 +50,8 @@ struct bt_power_clk_data {
 struct bluetooth_power_platform_data {
 	/* Bluetooth reset gpio */
 	int bt_gpio_sys_rst;
+	/* Wlan reset gpio */
+	int wl_gpio_sys_rst;
 	/* Bluetooth sw_ctrl gpio */
 	int bt_gpio_sw_ctrl;
 	/* Bluetooth debug gpio */

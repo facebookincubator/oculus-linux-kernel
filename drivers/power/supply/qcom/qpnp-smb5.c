@@ -1574,6 +1574,7 @@ static enum power_supply_property smb5_dc_props[] = {
 	POWER_SUPPLY_PROP_AICL_DONE,
 	POWER_SUPPLY_PROP_PD_ACTIVE,
 	POWER_SUPPLY_PROP_HW_CURRENT_MAX,
+	POWER_SUPPLY_PROP_IRQ_STATUS,
 };
 
 static int smb5_dc_get_prop(struct power_supply *psy,
@@ -1620,6 +1621,9 @@ static int smb5_dc_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_HW_CURRENT_MAX:
 		rc = smblib_get_prop_dc_hw_current_max(chg, val);
+		break;
+	case POWER_SUPPLY_PROP_IRQ_STATUS:
+		rc = smblib_get_prop_dc_pon_status(chg, val);
 		break;
 	default:
 		return -EINVAL;

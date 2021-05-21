@@ -243,6 +243,10 @@
 	qcom,pwrdn-delay-ms = <8>;
 };
 
+&lcdb_bst_vreg {
+	qcom,bst-ilim-ma = <600>;
+};
+
 &lcdb_ldo_vreg {
 	regulator-min-microvolt = <5700000>;
 	regulator-max-microvolt = <5800000>;
