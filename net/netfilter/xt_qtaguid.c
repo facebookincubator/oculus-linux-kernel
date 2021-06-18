@@ -2414,8 +2414,14 @@ static int ctrl_cmd_untag(const char *input)
 			     "User space forgot to open /dev/xt_qtaguid? "
 			     "pid=%u tgid=%u uid=%u\n", __func__,
 			     current->pid, current->tgid, from_kuid(&init_user_ns, current_fsuid()));
-	else
+	/*
+	 * This check is needed because tagging from a process that
+	 * didn’t open /dev/xt_qtaguid still adds the sock_tag_entry
+	 * to sock_tag_tree.
+	 */
+	if (sock_tag_entry->list.next)
 		list_del(&sock_tag_entry->list);
+
 	spin_unlock_bh(&uid_tag_data_tree_lock);
 	/*
 	 * We don't free tag_ref from the utd_entry here,

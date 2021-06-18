@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2008-2016,2020-2021, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -141,7 +141,11 @@ static int print_mem_entry(void *data, void *ptr)
 	flags[3] = get_alignflag(m);
 	flags[4] = get_cacheflag(m);
 	flags[5] = kgsl_memdesc_use_cpu_map(m) ? 'p' : '-';
-	flags[6] = (m->useraddr) ? 'Y' : 'N';
+	/*
+	 * Show Y if at least one vma has this entry
+	 * mapped (could be multiple)
+	 */
+	flags[6] = atomic_read(&entry->map_count) ? 'Y' : 'N';
 	flags[7] = kgsl_memdesc_is_secured(m) ?  's' : '-';
 	flags[8] = '\0';
 
@@ -151,12 +155,16 @@ static int print_mem_entry(void *data, void *ptr)
 		kgsl_get_egl_counts(entry, &egl_surface_count,
 						&egl_image_count);
 
-	seq_printf(s, "%pK %pK %16llu %5d %9s %10s %16s %5d %16llu %6d %6d",
+	seq_printf(s, "%pK %d %16llu %5d %9s %10s %16s %5d %16d %6d %6d",
 			(uint64_t *)(uintptr_t) m->gpuaddr,
-			(unsigned long *) m->useraddr,
-			m->size, entry->id, flags,
+			/*
+			 * Show zero for the useraddr - we can't reliably track
+			 * that value for multiple vmas anyway
+			 */
+			0, m->size, entry->id, flags,
 			memtype_str(usermem_type),
-			usage, (m->sgt ? m->sgt->nents : 0), m->mapsize,
+			usage, (m->sgt ? m->sgt->nents : 0),
+			atomic_read(&entry->map_count),
 			egl_surface_count, egl_image_count);
 
 	if (entry->metadata[0] != 0)
@@ -226,7 +234,7 @@ static int process_mem_seq_show(struct seq_file *s, void *ptr)
 	if (ptr == SEQ_START_TOKEN) {
 		seq_printf(s, "%16s %16s %16s %5s %9s %10s %16s %5s %16s %6s %6s\n",
 			"gpuaddr", "useraddr", "size", "id", "flags", "type",
-			"usage", "sglen", "mapsize", "eglsrf", "eglimg");
+			"usage", "sglen", "mapcount", "eglsrf", "eglimg");
 		return 0;
 	} else
 		return print_mem_entry(s, ptr);
@@ -318,7 +326,7 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 	unsigned char name[16];
 	struct dentry *dentry;
 
-	snprintf(name, sizeof(name), "%d", private->pid);
+	snprintf(name, sizeof(name), "%d", pid_nr(private->pid));
 
 	private->debug_root = debugfs_create_dir(name, proc_d_debugfs);
 
@@ -338,7 +346,8 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 	}
 
 	dentry = debugfs_create_file("mem", 0444, private->debug_root,
-		(void *) ((unsigned long) private->pid), &process_mem_fops);
+		(void *) ((unsigned long) pid_nr(private->pid)),
+		&process_mem_fops);
 
 	if (IS_ERR_OR_NULL(dentry))
 		WARN((dentry == NULL),

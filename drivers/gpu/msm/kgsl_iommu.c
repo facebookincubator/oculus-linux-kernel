@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2017,2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017,2019,2021 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -264,6 +264,7 @@ static void kgsl_setup_qdss_desc(struct kgsl_device *device)
 		return;
 	}
 
+	spin_lock_init(&gpu_qdss_desc.lock);
 	gpu_qdss_desc.flags = 0;
 	gpu_qdss_desc.priv = 0;
 	gpu_qdss_desc.physaddr = gpu_qdss_entry[0];
@@ -634,7 +635,7 @@ static void _get_entries(struct kgsl_process_private *private,
 		prev->flags = p->memdesc.flags;
 		prev->priv = p->memdesc.priv;
 		prev->pending_free = p->pending_free;
-		prev->pid = private->pid;
+		prev->pid = pid_nr(private->pid);
 		__kgsl_get_memory_usage(prev);
 	}
 
@@ -644,7 +645,7 @@ static void _get_entries(struct kgsl_process_private *private,
 		next->flags = n->memdesc.flags;
 		next->priv = n->memdesc.priv;
 		next->pending_free = n->pending_free;
-		next->pid = private->pid;
+		next->pid = pid_nr(private->pid);
 		__kgsl_get_memory_usage(next);
 	}
 }
@@ -1432,6 +1433,7 @@ static int _setstate_alloc(struct kgsl_device *device,
 {
 	int ret;
 
+	spin_lock_init(&iommu->setstate.lock);
 	ret = kgsl_sharedmem_alloc_contig(device, &iommu->setstate, PAGE_SIZE);
 
 	if (!ret) {
@@ -2292,6 +2294,11 @@ static int kgsl_iommu_get_gpuaddr(struct kgsl_pagetable *pagetable,
 		goto out;
 	}
 
+	/*
+	 * This path is only called in a non-SVM path with locks so we can be
+	 * sure we aren't racing with anybody so we don't need to worry about
+	 * taking the lock
+	 */
 	ret = _insert_gpuaddr(pagetable, addr, size);
 	if (ret == 0) {
 		memdesc->gpuaddr = addr;
