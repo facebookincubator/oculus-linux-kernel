@@ -1328,6 +1328,16 @@ int dbglog_set_mod_log_lvl(wmi_unified_t wmi_handle, uint32_t mod_log_lvl)
 	return 0;
 }
 
+int dbglog_set_mod_wow_log_lvl(wmi_unified_t wmi_handle, uint32_t mod_log_lvl)
+{
+	/* set the global module level to log_lvl */
+	wma_config_debug_module_cmd(wmi_handle,
+				    WMI_DEBUG_LOG_PARAM_WOW_MOD_ENABLE_BITMAP,
+				    mod_log_lvl, NULL, 0);
+
+	return 0;
+}
+
 void
 dbglog_set_vap_enable_bitmap(wmi_unified_t wmi_handle,
 			     uint32_t vap_enable_bitmap)
@@ -1740,8 +1750,7 @@ send_diag_netlink_data(const uint8_t *buffer, uint32_t len, uint32_t cmd)
 
 		skb_out = nlmsg_new(slot_len, GFP_ATOMIC);
 		if (!skb_out) {
-			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-					("Failed to allocate new skb\n"));
+			diag_err_rl("Failed to allocate new skb");
 			return A_ERROR;
 		}
 
@@ -4214,6 +4223,7 @@ static void cnss_diag_cmd_handler(const void *data, int data_len,
 {
 	struct dbglog_slot *slot = NULL;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_MAX + 1];
+	int len;
 
 	/*
 	 * audit note: it is ok to pass a NULL policy here since a
@@ -4232,15 +4242,17 @@ static void cnss_diag_cmd_handler(const void *data, int data_len,
 		return;
 	}
 
-	if (nla_len(tb[CLD80211_ATTR_DATA]) != sizeof(struct dbglog_slot)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("%s: attr length check fails\n",
+	len = nla_len(tb[CLD80211_ATTR_DATA]);
+	if (len < sizeof(struct dbglog_slot)) {
+		AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("%s: attr length less than sizeof(struct dbglog_slot)\n",
 				__func__));
 		return;
 	}
-	slot = (struct dbglog_slot *)nla_data(tb[CLD80211_ATTR_DATA]);
 
-	if (!slot) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("%s: data NULL\n", __func__));
+	slot = (struct dbglog_slot *)nla_data(tb[CLD80211_ATTR_DATA]);
+	if (len != (sizeof(struct dbglog_slot) + (uint64_t) slot->length)) {
+		AR_DEBUG_PRINTF(ATH_DEBUG_ERR, ("%s: attr length check fails\n",
+				__func__));
 		return;
 	}
 
@@ -4496,7 +4508,7 @@ int dbglog_init(wmi_unified_t wmi_handle)
 		wmi_unified_register_event_handler(wmi_handle,
 						   wmi_dbg_msg_event_id,
 						   dbglog_parse_debug_logs,
-						   WMA_RX_WORK_CTX);
+						   WMI_RX_DIAG_WORK_CTX);
 	if (QDF_IS_STATUS_ERROR(res))
 		return A_ERROR;
 
@@ -4504,14 +4516,14 @@ int dbglog_init(wmi_unified_t wmi_handle)
 	res = wmi_unified_register_event_handler(wmi_handle,
 						 wmi_diag_container_event_id,
 						 fw_diag_data_event_handler,
-						 WMA_RX_WORK_CTX);
+						 WMI_RX_DIAG_WORK_CTX);
 	if (QDF_IS_STATUS_ERROR(res))
 		return A_ERROR;
 
 	/* Register handler for new FW diag  Event, LOG, MSG combined */
 	res = wmi_unified_register_event_handler(wmi_handle, wmi_diag_event_id,
 						 diag_fw_handler,
-						 WMA_RX_WORK_CTX);
+						 WMI_RX_DIAG_WORK_CTX);
 	if (QDF_IS_STATUS_ERROR(res))
 		return A_ERROR;
 

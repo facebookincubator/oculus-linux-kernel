@@ -24,7 +24,7 @@
 #include "internal.h"
 #include "wcd938x-registers.h"
 #include "wcd938x.h"
-
+#include "asoc/bolero-slave-internal.h"
 
 #define WCD938X_DRV_NAME "wcd938x_codec"
 #define NUM_SWRS_DT_PARAMS 5
@@ -764,7 +764,7 @@ static int wcd938x_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 						0x80, 0x80);
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX2 << 0x10 | 0x1));
 		ret = swr_slvdev_datapath_control(wcd938x->rx_swr_dev,
 				    wcd938x->rx_swr_dev->dev_num,
@@ -804,7 +804,7 @@ static int wcd938x_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 					WCD938X_ANA_RX_SUPPLIES, 0x02, 0x02);
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX2 << 0x10));
 		wcd_enable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_HPHR_PDM_WD_INT);
@@ -812,13 +812,13 @@ static int wcd938x_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_PRE_PMD:
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX2 << 0x10 | 0x1));
 		wcd_disable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_HPHR_PDM_WD_INT);
 		if (wcd938x->update_wcd_event && wcd938x->comp2_enable)
 			wcd938x->update_wcd_event(wcd938x->handle,
-					WCD_BOLERO_EVT_RX_COMPANDER_SOFT_RST,
+					SLV_BOLERO_EVT_RX_COMPANDER_SOFT_RST,
 					(WCD_RX2 << 0x10));
 		/*
 		 * 7ms sleep is required if compander is enabled as per
@@ -889,7 +889,7 @@ static int wcd938x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 						0x80, 0x80);
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x01));
 		ret = swr_slvdev_datapath_control(wcd938x->rx_swr_dev,
 				    wcd938x->rx_swr_dev->dev_num,
@@ -929,7 +929,7 @@ static int wcd938x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 					WCD938X_ANA_RX_SUPPLIES, 0x02, 0x02);
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10));
 		wcd_enable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_HPHL_PDM_WD_INT);
@@ -937,13 +937,13 @@ static int wcd938x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_PRE_PMD:
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x1));
 		wcd_disable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_HPHL_PDM_WD_INT);
 		if (wcd938x->update_wcd_event && wcd938x->comp1_enable)
 			wcd938x->update_wcd_event(wcd938x->handle,
-					WCD_BOLERO_EVT_RX_COMPANDER_SOFT_RST,
+					SLV_BOLERO_EVT_RX_COMPANDER_SOFT_RST,
 					(WCD_RX1 << 0x10));
 		/*
 		 * 7ms sleep is required if compander is enabled as per
@@ -1025,7 +1025,7 @@ static int wcd938x_codec_enable_aux_pa(struct snd_soc_dapm_widget *w,
 					0x02, 0x02);
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX3 << 0x10));
 		wcd_enable_irq(&wcd938x->irq_info, WCD938X_IRQ_AUX_PDM_WD_INT);
 		break;
@@ -1034,7 +1034,7 @@ static int wcd938x_codec_enable_aux_pa(struct snd_soc_dapm_widget *w,
 					WCD938X_IRQ_AUX_PDM_WD_INT);
 		if (wcd938x->update_wcd_event)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX3 << 0x10 | 0x1));
 		break;
 	case SND_SOC_DAPM_POST_PMD:
@@ -1105,14 +1105,14 @@ static int wcd938x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 		if (wcd938x->ear_rx_path & EAR_RX_PATH_AUX) {
 			if (wcd938x->update_wcd_event)
 				wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX3 << 0x10));
 			wcd_enable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_AUX_PDM_WD_INT);
 		} else {
 			if (wcd938x->update_wcd_event)
 				wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10));
 			wcd_enable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_HPHL_PDM_WD_INT);
@@ -1124,14 +1124,14 @@ static int wcd938x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 					WCD938X_IRQ_AUX_PDM_WD_INT);
 			if (wcd938x->update_wcd_event)
 				wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX3 << 0x10 | 0x1));
 		} else {
 			wcd_disable_irq(&wcd938x->irq_info,
 					WCD938X_IRQ_HPHL_PDM_WD_INT);
 			if (wcd938x->update_wcd_event)
 				wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_RX_MUTE,
+						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x1));
 		}
 		break;
@@ -1755,10 +1755,10 @@ void wcd938x_disable_bcs_before_slow_insert(struct snd_soc_component *component,
 	if (wcd938x->update_wcd_event) {
 		if (bcs_disable)
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_BCS_CLK_OFF, 0);
+						SLV_BOLERO_EVT_BCS_CLK_OFF, 0);
 		else
 			wcd938x->update_wcd_event(wcd938x->handle,
-						WCD_BOLERO_EVT_BCS_CLK_OFF, 1);
+						SLV_BOLERO_EVT_BCS_CLK_OFF, 1);
 	}
 }
 
@@ -1989,7 +1989,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 	struct wcd_mbhc *mbhc;
 
 	switch (event) {
-	case BOLERO_WCD_EVT_TX_CH_HOLD_CLEAR:
+	case BOLERO_SLV_EVT_TX_CH_HOLD_CLEAR:
 		if (test_bit(WCD_ADC1, &wcd938x->status_mask)) {
 			snd_soc_component_update_bits(component,
 					WCD938X_ANA_TX_CH2, 0x40, 0x00);
@@ -2015,7 +2015,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 			clear_bit(WCD_ADC4, &wcd938x->status_mask);
 		}
 		break;
-	case BOLERO_WCD_EVT_PA_OFF_PRE_SSR:
+	case BOLERO_SLV_EVT_PA_OFF_PRE_SSR:
 		snd_soc_component_update_bits(component, WCD938X_ANA_HPH,
 					0xC0, 0x00);
 		snd_soc_component_update_bits(component, WCD938X_ANA_EAR,
@@ -2023,7 +2023,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 		snd_soc_component_update_bits(component, WCD938X_AUX_AUXPA,
 					0x80, 0x00);
 		break;
-	case BOLERO_WCD_EVT_SSR_DOWN:
+	case BOLERO_SLV_EVT_SSR_DOWN:
 		wcd938x->dev_up = false;
 		wcd938x->mbhc->wcd_mbhc.deinit_in_progress = true;
 		mbhc = &wcd938x->mbhc->wcd_mbhc;
@@ -2032,7 +2032,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 		wcd938x_mbhc_ssr_down(wcd938x->mbhc, component);
 		wcd938x_reset_low(wcd938x->dev);
 		break;
-	case BOLERO_WCD_EVT_SSR_UP:
+	case BOLERO_SLV_EVT_SSR_UP:
 		wcd938x_reset(wcd938x->dev);
 		/* allow reset to take effect */
 		usleep_range(10000, 10010);
@@ -2057,7 +2057,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 		wcd938x->mbhc->wcd_mbhc.deinit_in_progress = false;
 		wcd938x->dev_up = true;
 		break;
-	case BOLERO_WCD_EVT_CLK_NOTIFY:
+	case BOLERO_SLV_EVT_CLK_NOTIFY:
 		snd_soc_component_update_bits(component,
 				WCD938X_DIGITAL_TOP_CLK_CFG, 0x06,
 				((val >> 0x10) << 0x01));

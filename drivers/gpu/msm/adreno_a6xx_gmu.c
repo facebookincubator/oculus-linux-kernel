@@ -1164,18 +1164,18 @@ static int a6xx_gmu_load_firmware(struct kgsl_device *device)
 	int ret, offset = 0;
 
 	/* GMU fw already saved and verified so do nothing new */
-	if (gmu->fw_image)
-		return 0;
+	if (!gmu->fw_image) {
 
-	if (a6xx_core->gmufw_name == NULL)
-		return -EINVAL;
+		if (a6xx_core->gmufw_name == NULL)
+			return -EINVAL;
 
-	ret = request_firmware(&gmu->fw_image, a6xx_core->gmufw_name,
-			device->dev);
-	if (ret) {
-		dev_err(device->dev, "request_firmware (%s) failed: %d\n",
-				a6xx_core->gmufw_name, ret);
-		return ret;
+		ret = request_firmware(&gmu->fw_image, a6xx_core->gmufw_name,
+				device->dev);
+		if (ret) {
+			dev_err(device->dev, "request_firmware (%s) failed: %d\n",
+					a6xx_core->gmufw_name, ret);
+			return ret;
+		}
 	}
 
 	/*
@@ -1198,11 +1198,12 @@ static int a6xx_gmu_load_firmware(struct kgsl_device *device)
 		offset += sizeof(*blk);
 
 		if (blk->type == GMU_BLK_TYPE_PREALLOC_REQ ||
-				blk->type == GMU_BLK_TYPE_PREALLOC_PERSIST_REQ)
+			blk->type == GMU_BLK_TYPE_PREALLOC_PERSIST_REQ) {
 			ret = gmu_prealloc_req(device, blk);
 
-		if (ret)
-			return ret;
+			if (ret)
+				return ret;
+		}
 	}
 
 	 /* Request any other cache ranges that might be required */

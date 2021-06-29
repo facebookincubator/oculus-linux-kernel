@@ -2664,7 +2664,10 @@ cdp_rx_get_pending(ol_txrx_soc_handle soc)
 	    !soc->ol_ops->dp_rx_get_pending)
 		return 0;
 
-	return soc->ol_ops->dp_rx_get_pending(soc);
+	if (cdp_cfg_get(soc, cfg_dp_wow_check_rx_pending))
+		return soc->ol_ops->dp_rx_get_pending(soc);
+	else
+		return 0;
 }
 
 #ifdef QCA_SUPPORT_WDS_EXTENDED
@@ -2706,4 +2709,25 @@ cdp_wds_ext_set_peer_rx(ol_txrx_soc_handle soc, uint8_t vdev_id,
 			(soc, vdev_id, mac, rx, osif_peer);
 }
 #endif /* QCA_SUPPORT_WDS_EXTENDED */
+
+/**
+ * cdp_drain_txrx() - drain TX/RX SRNGs
+ * @soc: opaque soc handle
+ */
+static inline void
+cdp_drain_txrx(ol_txrx_soc_handle soc)
+{
+	if (!soc || !soc->ops) {
+		QDF_TRACE(QDF_MODULE_ID_CDP, QDF_TRACE_LEVEL_DEBUG,
+			  "%s: Invalid Instance", __func__);
+		QDF_BUG(0);
+		return;
+	}
+
+	if (!soc->ops->cmn_drv_ops ||
+	    !soc->ops->cmn_drv_ops->txrx_drain)
+		return;
+
+	return soc->ops->cmn_drv_ops->txrx_drain(soc);
+}
 #endif /* _CDP_TXRX_CMN_H_ */

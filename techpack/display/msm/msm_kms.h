@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019, 2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -42,6 +42,8 @@
 #define MSM_MODE_FLAG_SEAMLESS_POMS			(1<<4)
 /* Request to switch the bit clk */
 #define MSM_MODE_FLAG_SEAMLESS_DYN_CLK			(1<<5)
+/* Indicates Field sequential color mode is enabled */
+#define MSM_MODE_FLAG_FSC_MODE				(1<<6)
 
 /* As there are different display controller blocks depending on the
  * snapdragon version, the kms support is split out and the appropriate
@@ -212,6 +214,11 @@ static inline bool msm_is_mode_dynamic_fps(const struct drm_display_mode *mode)
 {
 	return ((mode->flags & DRM_MODE_FLAG_SEAMLESS) &&
 		(mode->private_flags & MSM_MODE_FLAG_SEAMLESS_DYNAMIC_FPS));
+}
+
+static inline bool msm_is_mode_fsc(const struct drm_display_mode *mode)
+{
+	return (mode->private_flags & MSM_MODE_FLAG_FSC_MODE);
 }
 
 static inline bool msm_is_mode_seamless_vrr(const struct drm_display_mode *mode)

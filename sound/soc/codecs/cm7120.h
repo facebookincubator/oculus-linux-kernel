@@ -2366,7 +2366,7 @@ struct cm7120_priv {
 	struct regulator *codec_1v8;
 
 	struct pinctrl *pinctrl;
-	struct pinctrl_state *pin_default;
+	struct pinctrl_state *pin_active;
 	struct pinctrl_state *pin_suspend;
 	struct pinctrl_state *pin_spk_en;
 	struct pinctrl_state *pin_spk_suspend;

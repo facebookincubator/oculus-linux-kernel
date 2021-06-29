@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -56,23 +56,25 @@ static int wlan_hdd_set_pre_cac_status(struct hdd_adapter *pre_cac_adapter,
 }
 
 /**
- * wlan_hdd_set_chan_before_pre_cac() - Save the channel before pre cac
+ * wlan_hdd_set_chan_freq_before_pre_cac() - Save the channel before pre cac
  * @ap_adapter: AP adapter
- * @chan_before_pre_cac: Channel
+ * @freq_before_pre_cac: Channel
  *
- * Saves the channel which the AP was beaconing on before moving to the pre
- * cac channel. If radar is detected on the pre cac channel, this saved
+ * Saves the channel frequency which the AP was beaconing on before moving to
+ * the pre cac channel. If radar is detected on the pre cac channel, this saved
  * channel will be used for AP operations.
  *
  * Return: Zero on success, non-zero on failure
  */
-static int wlan_hdd_set_chan_before_pre_cac(struct hdd_adapter *ap_adapter,
-					    uint8_t chan_before_pre_cac)
+static int
+wlan_hdd_set_chan_freq_before_pre_cac(struct hdd_adapter *ap_adapter,
+				      qdf_freq_t freq_before_pre_cac)
 {
 	QDF_STATUS ret;
+	struct sap_context *sap_ctx = WLAN_HDD_GET_SAP_CTX_PTR(ap_adapter);
 
-	ret = wlan_sap_set_chan_before_pre_cac(
-		WLAN_HDD_GET_SAP_CTX_PTR(ap_adapter), chan_before_pre_cac);
+	ret = wlan_sap_set_chan_freq_before_pre_cac(sap_ctx,
+						    freq_before_pre_cac);
 	if (QDF_IS_STATUS_ERROR(ret))
 		return -EINVAL;
 
@@ -165,7 +167,7 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 				      uint32_t chan_freq,
 				      struct hdd_adapter **out_adapter)
 {
-	uint8_t *mac_addr;
+	uint8_t *mac_addr = NULL;
 	uint32_t pre_cac_chan_freq = 0;
 	int ret;
 	struct hdd_adapter *ap_adapter, *pre_cac_adapter;
@@ -179,14 +181,32 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 	mac_handle_t mac_handle;
 	bool val;
 
-	if (policy_mgr_get_connection_count(hdd_ctx->psoc) > 1) {
-		hdd_err("pre cac not allowed in concurrency");
+	if (!policy_mgr_is_hw_dbs_capable(hdd_ctx->psoc)) {
+		hdd_debug("Pre CAC is not supported on non-dbs platforms");
 		return -EINVAL;
+	}
+
+	pre_cac_adapter = hdd_get_adapter_by_iface_name(hdd_ctx,
+							SAP_PRE_CAC_IFNAME);
+	if (pre_cac_adapter) {
+		/* Flush existing pre_cac work */
+		if (hdd_ctx->sap_pre_cac_work.fn)
+			cds_flush_work(&hdd_ctx->sap_pre_cac_work);
+	} else {
+		if (policy_mgr_get_connection_count(hdd_ctx->psoc) > 1) {
+			hdd_err("pre cac not allowed in concurrency");
+			return -EINVAL;
+		}
 	}
 
 	ap_adapter = hdd_get_adapter(hdd_ctx, QDF_SAP_MODE);
 	if (!ap_adapter) {
 		hdd_err("unable to get SAP adapter");
+		return -EINVAL;
+	}
+
+	if (qdf_atomic_read(&ap_adapter->ch_switch_in_progress)) {
+		hdd_err("pre cac not allowed during CSA");
 		return -EINVAL;
 	}
 
@@ -216,12 +236,6 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		return -EINVAL;
 	}
 
-	mac_addr = wlan_hdd_get_intf_addr(hdd_ctx, QDF_SAP_MODE);
-	if (!mac_addr) {
-		hdd_err("can't add virtual intf: Not getting valid mac addr");
-		return -EINVAL;
-	}
-
 	hdd_debug("channel: %d", chan_freq);
 
 	ret = wlan_hdd_validate_and_get_pre_cac_ch(
@@ -233,28 +247,40 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 
 	hdd_debug("starting pre cac SAP  adapter");
 
-	/* Starting a SAP adapter:
-	 * Instead of opening an adapter, we could just do a SME open session
-	 * for AP type. But, start BSS would still need an adapter.
-	 * So, this option is not taken.
-	 *
-	 * hdd open adapter is going to register this precac interface with
-	 * user space. This interface though exposed to user space will be in
-	 * DOWN state. Consideration was done to avoid this registration to the
-	 * user space. But, as part of SAP operations multiple events are sent
-	 * to user space. Some of these events received from unregistered
-	 * interface was causing crashes. So, retaining the registration.
-	 *
-	 * So, this interface would remain registered and will remain in DOWN
-	 * state for the CAC duration. We will add notes in the feature
-	 * announcement to not use this temporary interface for any activity
-	 * from user space.
-	 */
-	pre_cac_adapter = hdd_open_adapter(hdd_ctx, QDF_SAP_MODE, "precac%d",
-					   mac_addr, NET_NAME_UNKNOWN, true);
 	if (!pre_cac_adapter) {
-		hdd_err("error opening the pre cac adapter");
-		goto release_intf_addr_and_return_failure;
+		mac_addr = wlan_hdd_get_intf_addr(hdd_ctx, QDF_SAP_MODE);
+		if (!mac_addr) {
+			hdd_err("can't add virtual intf: Not getting valid mac addr");
+			return -EINVAL;
+		}
+
+		/**
+		 * Starting a SAP adapter:
+		 * Instead of opening an adapter, we could just do a SME open
+		 * session for AP type. But, start BSS would still need an
+		 * adapter. So, this option is not taken.
+		 *
+		 * hdd open adapter is going to register this precac interface
+		 * with user space. This interface though exposed to user space
+		 * will be in DOWN state. Consideration was done to avoid this
+		 * registration to the user space. But, as part of SAP
+		 * operations multiple events are sent to user space. Some of
+		 * these events received from unregistered interface was
+		 * causing crashes. So, retaining the registration.
+		 *
+		 * So, this interface would remain registered and will remain
+		 * in DOWN state for the CAC duration. We will add notes in the
+		 * feature announcement to not use this temporary interface for
+		 * any activity from user space.
+		 */
+		pre_cac_adapter = hdd_open_adapter(hdd_ctx, QDF_SAP_MODE,
+						   SAP_PRE_CAC_IFNAME, mac_addr,
+						   NET_NAME_UNKNOWN, true);
+
+		if (!pre_cac_adapter) {
+			hdd_err("error opening the pre cac adapter");
+			goto release_intf_addr_and_return_failure;
+		}
 	}
 
 	/*
@@ -359,17 +385,15 @@ static int __wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx,
 		goto stop_close_pre_cac_adapter;
 	}
 
-	ret = wlan_hdd_set_chan_before_pre_cac(
-			ap_adapter,
-			wlan_reg_freq_to_chan(
-			hdd_ctx->pdev,
-			hdd_ap_ctx->operating_chan_freq));
+	ret = wlan_hdd_set_chan_freq_before_pre_cac(ap_adapter,
+						    hdd_ap_ctx->operating_chan_freq);
 	if (ret != 0) {
 		hdd_err("failed to set channel before pre cac");
 		goto stop_close_pre_cac_adapter;
 	}
 
 	ap_adapter->pre_cac_freq = pre_cac_chan_freq;
+	pre_cac_adapter->is_pre_cac_adapter = true;
 
 	*out_adapter = pre_cac_adapter;
 
@@ -388,8 +412,43 @@ release_intf_addr_and_return_failure:
 	 * adapter which is trying to come wouldn't get valid
 	 * mac address. Remember we have limited pool of mac addresses
 	 */
-	wlan_hdd_release_intf_addr(hdd_ctx, mac_addr);
+	if (mac_addr)
+		wlan_hdd_release_intf_addr(hdd_ctx, mac_addr);
 	return -EINVAL;
+}
+
+static int
+wlan_hdd_start_pre_cac_trans(struct hdd_context *hdd_ctx,
+			     struct osif_vdev_sync **out_vdev_sync,
+			     bool *is_vdev_sync_created)
+{
+	struct hdd_adapter *adapter, *next_adapter = NULL;
+	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_START_PRE_CAC_TRANS;
+	int errno;
+
+	hdd_for_each_adapter_dev_held_safe(hdd_ctx, adapter, next_adapter,
+					   dbgid) {
+		if (!qdf_str_cmp(adapter->dev->name, SAP_PRE_CAC_IFNAME)) {
+			errno = osif_vdev_sync_trans_start(adapter->dev,
+							   out_vdev_sync);
+
+			hdd_adapter_dev_put_debug(adapter, dbgid);
+			if (next_adapter)
+				hdd_adapter_dev_put_debug(next_adapter,
+							  dbgid);
+			return errno;
+
+		}
+		hdd_adapter_dev_put_debug(adapter, dbgid);
+	}
+
+	errno = osif_vdev_sync_create_and_trans(hdd_ctx->parent_dev,
+						out_vdev_sync);
+	if (errno)
+		return errno;
+
+	*is_vdev_sync_created = true;
+	return 0;
 }
 
 int wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx, uint32_t chan_freq)
@@ -397,9 +456,10 @@ int wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx, uint32_t chan_freq)
 	struct hdd_adapter *adapter;
 	struct osif_vdev_sync *vdev_sync;
 	int errno;
+	bool is_vdev_sync_created = false;
 
-	errno = osif_vdev_sync_create_and_trans(hdd_ctx->parent_dev,
-						&vdev_sync);
+	errno = wlan_hdd_start_pre_cac_trans(hdd_ctx, &vdev_sync,
+					     &is_vdev_sync_created);
 	if (errno)
 		return errno;
 
@@ -407,14 +467,16 @@ int wlan_hdd_request_pre_cac(struct hdd_context *hdd_ctx, uint32_t chan_freq)
 	if (errno)
 		goto destroy_sync;
 
-	osif_vdev_sync_register(adapter->dev, vdev_sync);
+	if (is_vdev_sync_created)
+		osif_vdev_sync_register(adapter->dev, vdev_sync);
 	osif_vdev_sync_trans_stop(vdev_sync);
 
 	return 0;
 
 destroy_sync:
 	osif_vdev_sync_trans_stop(vdev_sync);
-	osif_vdev_sync_destroy(vdev_sync);
+	if (is_vdev_sync_created)
+		osif_vdev_sync_destroy(vdev_sync);
 
 	return errno;
 }

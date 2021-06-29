@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -147,7 +147,7 @@ typedef void (*sme_send_oem_data_rsp_msg)(struct oem_data_rsp *);
 #ifdef WLAN_SUPPORT_TWT
 /**
  * typedef twt_enable_cb - TWT enable callback signature.
- * @hdd_handle: Opaque handle to the HDD context
+ * @hdd_handle: Opaque HDD handle
  * @params: TWT enable complete event parameters.
  */
 typedef
@@ -156,47 +156,91 @@ void (*twt_enable_cb)(hdd_handle_t hdd_handle,
 
 /**
  * typedef twt_disable_cb - TWT enable callback signature.
- * @hdd_handle: Opaque handle to the HDD context
+ * @hdd_handle: Opaque HDD handle
  */
 typedef void (*twt_disable_cb)(hdd_handle_t hdd_handle);
 
 /**
  * typedef twt_add_dialog_cb - TWT add dialog callback signature.
- * @context: Opaque context that the client can use to associate the
- *           callback with the request.
- * @add_dialog_event: pointer to event buf containing twt response parameters
+ * @psoc: Pointer to global psoc
+ * @add_dialog_evt: pointer to event buf containing twt response parameters
  */
-typedef void (*twt_add_dialog_cb)(void *context,
-				  struct twt_add_dialog_complete_event *add_dialog_event);
+typedef
+void (*twt_add_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+			  struct twt_add_dialog_complete_event *add_dialog_evt);
 
 /**
  * typedef twt_del_dialog_cb - TWT delete dialog callback signature.
- * @context: Opaque context that the client can use to associate the
- *           callback with the request.
+ * @psoc: Pointer to global psoc
  * @params: TWT delete dialog complete event parameters.
  */
-typedef void (*twt_del_dialog_cb)(void *context,
-				  struct wmi_twt_del_dialog_complete_event_param *params);
+typedef void (*twt_del_dialog_cb)(
+	struct wlan_objmgr_psoc *psoc,
+	struct wmi_twt_del_dialog_complete_event_param *params);
 
 /**
  * typedef twt_pause_dialog_cb - TWT pause dialog callback signature.
- * @context: Opaque context that the client can use to associate the
- *           callback with the request.
+ * @psoc: Pointer to global psoc
  * @params: TWT pause dialog complete event parameters.
  */
 typedef
-void (*twt_pause_dialog_cb)(void *context,
+void (*twt_pause_dialog_cb)(struct wlan_objmgr_psoc *psoc,
 			    struct wmi_twt_pause_dialog_complete_event_param *params);
 
 /**
+ * typedef twt_nudge_dialog_cb - TWT nudge dialog callback signature.
+ * @psoc: Pointer to global psoc
+ * @params: TWT nudge dialog complete event parameters.
+ */
+typedef
+void (*twt_nudge_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+		      struct wmi_twt_nudge_dialog_complete_event_param *params);
+
+/**
  * typedef twt_resume_dialog_cb - TWT resume dialog callback signature.
- * @context: Opaque context that the client can use to associate the
- *           callback with the request.
+ * @psoc: Pointer to global psoc
  * @params: TWT resume dialog complete event parameters.
  */
 typedef
-void (*twt_resume_dialog_cb)(void *context,
+void (*twt_resume_dialog_cb)(struct wlan_objmgr_psoc *psoc,
 			     struct wmi_twt_resume_dialog_complete_event_param *params);
+
+/**
+ * typedef twt_notify_cb - TWT notify callback signature.
+ * @psoc: Pointer to global psoc
+ * @params: TWT twt notify event parameters.
+ */
+typedef
+void (*twt_notify_cb)(struct wlan_objmgr_psoc *psoc,
+		      struct wmi_twt_notify_event_param *params);
+/**
+ * struct twt_callbacks - TWT response callback pointers
+ * @twt_enable_cb: TWT enable completion callback
+ * @twt_disable_cb: TWT disable completion callback
+ * @twt_add_dialog_cb: TWT add dialog completion callback
+ * @twt_del_dialog_cb: TWT delete dialog completion callback
+ * @twt_pause_dialog_cb: TWT pause dialog completion callback
+ * @twt_resume_dialog_cb: TWT resume dialog completion callback
+ * @twt_notify_cb: TWT notify event callback
+ * @twt_nudge_dialog_cb: TWT nudge dialog completion callback
+ */
+struct twt_callbacks {
+	void (*twt_enable_cb)(hdd_handle_t hdd_handle,
+			      struct wmi_twt_enable_complete_event_param *params);
+	void (*twt_disable_cb)(hdd_handle_t hdd_handle);
+	void (*twt_add_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+				  struct twt_add_dialog_complete_event *add_dialog_event);
+	void (*twt_del_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+				  struct wmi_twt_del_dialog_complete_event_param *params);
+	void (*twt_pause_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+				    struct wmi_twt_pause_dialog_complete_event_param *params);
+	void (*twt_resume_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+				     struct wmi_twt_resume_dialog_complete_event_param *params);
+	void (*twt_notify_cb)(struct wlan_objmgr_psoc *psoc,
+			      struct wmi_twt_notify_event_param *params);
+	void (*twt_nudge_dialog_cb)(struct wlan_objmgr_psoc *psoc,
+		    struct wmi_twt_nudge_dialog_complete_event_param *params);
+};
 #endif
 
 #ifdef FEATURE_WLAN_APF
@@ -409,11 +453,9 @@ struct sme_context {
 	twt_add_dialog_cb twt_add_dialog_cb;
 	twt_del_dialog_cb twt_del_dialog_cb;
 	twt_pause_dialog_cb twt_pause_dialog_cb;
+	twt_nudge_dialog_cb twt_nudge_dialog_cb;
 	twt_resume_dialog_cb twt_resume_dialog_cb;
-	void *twt_add_dialog_context;
-	void *twt_del_dialog_context;
-	void *twt_pause_dialog_context;
-	void *twt_resume_dialog_context;
+	twt_notify_cb twt_notify_cb;
 #endif
 #ifdef FEATURE_WLAN_APF
 	apf_get_offload_cb apf_get_offload_cb;

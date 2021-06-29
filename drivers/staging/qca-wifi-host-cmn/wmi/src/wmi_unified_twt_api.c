@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -73,6 +73,17 @@ wmi_unified_twt_pause_dialog_cmd(wmi_unified_t wmi_handle,
 {
 	if (wmi_handle->ops->send_twt_pause_dialog_cmd)
 		return wmi_handle->ops->send_twt_pause_dialog_cmd(
+				wmi_handle, params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_unified_twt_nudge_dialog_cmd(wmi_unified_t wmi_handle,
+				 struct wmi_twt_nudge_dialog_cmd_param *params)
+{
+	if (wmi_handle->ops->send_twt_nudge_dialog_cmd)
+		return wmi_handle->ops->send_twt_nudge_dialog_cmd(
 				wmi_handle, params);
 
 	return QDF_STATUS_E_FAILURE;
@@ -187,6 +198,18 @@ QDF_STATUS wmi_extract_twt_pause_dialog_comp_event(
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_extract_twt_nudge_dialog_comp_event(
+		wmi_unified_t wmi_handle,
+		uint8_t *evt_buf,
+		struct wmi_twt_nudge_dialog_complete_event_param *params)
+{
+	if (wmi_handle->ops->extract_twt_nudge_dialog_comp_event)
+		return wmi_handle->ops->extract_twt_nudge_dialog_comp_event(
+				wmi_handle, evt_buf, params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 QDF_STATUS wmi_extract_twt_resume_dialog_comp_event(
 		wmi_unified_t wmi_handle,
 		uint8_t *evt_buf,
@@ -195,6 +218,19 @@ QDF_STATUS wmi_extract_twt_resume_dialog_comp_event(
 	if (wmi_handle->ops->extract_twt_resume_dialog_comp_event)
 		return wmi_handle->ops->extract_twt_resume_dialog_comp_event(
 				wmi_handle, evt_buf, params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_extract_twt_notify_event(
+		wmi_unified_t wmi_handle,
+		uint8_t *evt_buf,
+		struct wmi_twt_notify_event_param *params)
+{
+	if (wmi_handle->ops->extract_twt_notify_event)
+		return wmi_handle->ops->extract_twt_notify_event(wmi_handle,
+								 evt_buf,
+								 params);
 
 	return QDF_STATUS_E_FAILURE;
 }

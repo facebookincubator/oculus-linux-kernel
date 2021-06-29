@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -902,9 +902,15 @@ struct drm_framebuffer *msm_framebuffer_create(struct drm_device *dev,
 struct drm_framebuffer * msm_alloc_stolen_fb(struct drm_device *dev,
 		int w, int h, int p, uint32_t format);
 
-struct drm_fb_helper *msm_fbdev_init(struct drm_device *dev);
-void msm_fbdev_free(struct drm_device *dev);
-
+#ifdef CONFIG_DRM_FBDEV_EMULATION
+static inline struct drm_fb_helper *msm_fbdev_init(struct drm_device *dev)
+{
+	return NULL;
+}
+static inline void msm_fbdev_free(struct drm_device *dev)
+{
+}
+#endif
 struct hdmi;
 #ifdef CONFIG_DRM_MSM_HDMI
 int msm_hdmi_modeset_init(struct hdmi *hdmi, struct drm_device *dev,

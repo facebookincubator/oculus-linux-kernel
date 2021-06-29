@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
 
@@ -352,7 +352,7 @@ void sde_hw_setup_scaler3(struct sde_hw_blk_reg_map *c,
 	u32 phase_init, preload, src_y_rgb, src_uv, dst;
 	scaler_lut_type setup_lut = NULL;
 
-	if (!scaler3_cfg->enable)
+	if (!scaler3_cfg->enable || SDE_FORMAT_IS_FSC(format))
 		goto end;
 
 	op_mode |= BIT(0);
@@ -433,7 +433,7 @@ end:
 	if (format && !SDE_FORMAT_IS_DX(format))
 		op_mode |= BIT(14);
 
-	if (format && format->alpha_enable) {
+	if (format && format->alpha_enable && (!SDE_FORMAT_IS_FSC(format))) {
 		op_mode |= BIT(10);
 		if (scaler_version == 0x1002)
 			op_mode |= (scaler3_cfg->alpha_filter_cfg & 0x1) << 30;

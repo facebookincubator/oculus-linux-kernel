@@ -31,6 +31,9 @@
 #include "dp_rx.h"
 #include "dp_ipa.h"
 
+/* Ring index for WBM2SW2 release ring */
+#define IPA_TX_COMP_RING_IDX HAL_IPA_TX_COMP_RING_IDX
+
 /* Hard coded config parameters until dp_ops_cfg.cfg_attach implemented */
 #define CFG_IPA_UC_TX_BUF_SIZE_DEFAULT            (2048)
 
@@ -106,11 +109,9 @@ static QDF_STATUS __dp_ipa_handle_buf_smmu_mapping(struct dp_soc *soc,
 				 size);
 
 	if (create)
-		qdf_ipa_wdi_create_smmu_mapping(1, &mem_map_table);
+		return qdf_ipa_wdi_create_smmu_mapping(1, &mem_map_table);
 	else
-		qdf_ipa_wdi_release_smmu_mapping(1, &mem_map_table);
-
-	return QDF_STATUS_SUCCESS;
+		return qdf_ipa_wdi_release_smmu_mapping(1, &mem_map_table);
 }
 
 QDF_STATUS dp_ipa_handle_rx_buf_smmu_mapping(struct dp_soc *soc,
@@ -169,6 +170,11 @@ static QDF_STATUS __dp_ipa_tx_buf_smmu_mapping(
 	qdf_nbuf_t nbuf;
 	uint32_t buf_len;
 
+	if (!ipa_is_ready()) {
+		dp_info("IPA is not READY");
+		return 0;
+	}
+
 	for (index = 0; index < tx_buffer_cnt; index++) {
 		nbuf = (qdf_nbuf_t)
 			soc->ipa_uc_tx_rsc.tx_buf_pool_vaddr_unaligned[index];
@@ -176,8 +182,10 @@ static QDF_STATUS __dp_ipa_tx_buf_smmu_mapping(
 			continue;
 		buf_len = qdf_nbuf_get_data_len(nbuf);
 		ret = __dp_ipa_handle_buf_smmu_mapping(
-				soc, nbuf, buf_len, true);
+				soc, nbuf, buf_len, create);
+		qdf_assert_always(!ret);
 	}
+
 	return ret;
 }
 
@@ -294,19 +302,12 @@ static void dp_tx_ipa_uc_detach(struct dp_soc *soc, struct dp_pdev *pdev)
 	int idx;
 	qdf_nbuf_t nbuf;
 	struct dp_ipa_resources *ipa_res;
-	bool is_ipa_ready = qdf_ipa_is_ready();
-	uint32_t buf_len;
 
 	for (idx = 0; idx < soc->ipa_uc_tx_rsc.alloc_tx_buf_cnt; idx++) {
 		nbuf = (qdf_nbuf_t)
 			soc->ipa_uc_tx_rsc.tx_buf_pool_vaddr_unaligned[idx];
 		if (!nbuf)
 			continue;
-		buf_len = qdf_nbuf_get_data_len(nbuf);
-		if (qdf_mem_smmu_s1_enabled(soc->osdev) && is_ipa_ready)
-			__dp_ipa_handle_buf_smmu_mapping(
-					soc, nbuf, buf_len, false);
-
 		qdf_nbuf_unmap_single(soc->osdev, nbuf, QDF_DMA_BIDIRECTIONAL);
 		qdf_nbuf_free(nbuf);
 		soc->ipa_uc_tx_rsc.tx_buf_pool_vaddr_unaligned[idx] =
@@ -754,6 +755,7 @@ QDF_STATUS dp_ipa_set_doorbell_paddr(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 			soc->reo_dest_ring[IPA_REO_DEST_RING_IDX].hal_srng;
 	uint32_t tx_comp_doorbell_dmaaddr;
 	uint32_t rx_ready_doorbell_dmaaddr;
+	int ret = 0;
 
 	if (!pdev) {
 		dp_err("Invalid instance");
@@ -772,13 +774,19 @@ QDF_STATUS dp_ipa_set_doorbell_paddr(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 				ioremap(ipa_res->tx_comp_doorbell_paddr, 4);
 
 	if (qdf_mem_smmu_s1_enabled(soc->osdev)) {
-		pld_smmu_map(soc->osdev->dev, ipa_res->tx_comp_doorbell_paddr,
-			     &tx_comp_doorbell_dmaaddr, sizeof(uint32_t));
+		ret = pld_smmu_map(soc->osdev->dev,
+				   ipa_res->tx_comp_doorbell_paddr,
+				   &tx_comp_doorbell_dmaaddr,
+				   sizeof(uint32_t));
 		ipa_res->tx_comp_doorbell_paddr = tx_comp_doorbell_dmaaddr;
+		qdf_assert_always(!ret);
 
-		pld_smmu_map(soc->osdev->dev, ipa_res->rx_ready_doorbell_paddr,
-			     &rx_ready_doorbell_dmaaddr, sizeof(uint32_t));
+		ret = pld_smmu_map(soc->osdev->dev,
+				   ipa_res->rx_ready_doorbell_paddr,
+				   &rx_ready_doorbell_dmaaddr,
+				   sizeof(uint32_t));
 		ipa_res->rx_ready_doorbell_paddr = rx_ready_doorbell_dmaaddr;
+		qdf_assert_always(!ret);
 	}
 
 	hal_srng_dst_set_hp_paddr(wbm_srng, ipa_res->tx_comp_doorbell_paddr);
@@ -845,6 +853,21 @@ QDF_STATUS dp_ipa_register_op_cb(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	pdev->usr_ctxt = usr_ctxt;
 
 	return QDF_STATUS_SUCCESS;
+}
+
+void dp_ipa_deregister_op_cb(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
+{
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	struct dp_pdev *pdev = dp_get_pdev_from_soc_pdev_id_wifi3(soc, pdev_id);
+
+	if (!pdev) {
+		dp_err("Invalid instance");
+		return;
+	}
+
+	dp_debug("Deregister OP handler callback");
+	pdev->ipa_uc_op_cb = NULL;
+	pdev->usr_ctxt = NULL;
 }
 
 QDF_STATUS dp_ipa_get_stat(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
@@ -1686,14 +1709,12 @@ QDF_STATUS dp_ipa_cleanup(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 		ret = pld_smmu_unmap(soc->osdev->dev,
 				     ipa_res->rx_ready_doorbell_paddr,
 				     sizeof(uint32_t));
-		if (ret)
-			dp_err_rl("IPA RX DB smmu unmap failed");
+		qdf_assert_always(!ret);
 
 		ret = pld_smmu_unmap(soc->osdev->dev,
 				     ipa_res->tx_comp_doorbell_paddr,
 				     sizeof(uint32_t));
-		if (ret)
-			dp_err_rl("IPA TX DB smmu unmap failed");
+		qdf_assert_always(!ret);
 	}
 
 exit:
@@ -1753,24 +1774,78 @@ QDF_STATUS dp_ipa_enable_pipes(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 	}
 
 	if (soc->ipa_first_tx_db_access) {
-		hal_srng_dst_init_hp(wbm_srng, ipa_res->tx_comp_doorbell_vaddr);
+		hal_srng_dst_init_hp(
+			soc->hal_soc, wbm_srng,
+			ipa_res->tx_comp_doorbell_vaddr);
 		soc->ipa_first_tx_db_access = false;
 	}
 
 	return QDF_STATUS_SUCCESS;
 }
 
+#ifdef DEVICE_FORCE_WAKE_ENABLED
+/*
+ * dp_ipa_get_tx_comp_pending_check() - Check if tx completions are pending.
+ * @soc: DP pdev Context
+ *
+ * Ring full condition is checked to find if buffers are left for
+ * processing as host only allocates buffers in this ring and IPA HW processes
+ * the buffer.
+ *
+ * Return: True if tx completions are pending
+ */
+static bool dp_ipa_get_tx_comp_pending_check(struct dp_soc *soc)
+{
+	struct dp_srng *tx_comp_ring =
+				&soc->tx_comp_ring[IPA_TX_COMP_RING_IDX];
+	uint32_t hp, tp, entry_size, buf_cnt;
+
+	hal_get_hw_hptp(soc->hal_soc, tx_comp_ring->hal_srng, &hp, &tp,
+			WBM2SW_RELEASE);
+	entry_size = hal_srng_get_entrysize(soc->hal_soc, WBM2SW_RELEASE) >> 2;
+
+	if (hp > tp)
+		buf_cnt = (hp - tp) / entry_size;
+	else
+		buf_cnt = (tx_comp_ring->num_entries - tp + hp) / entry_size;
+
+	return (soc->ipa_uc_tx_rsc.alloc_tx_buf_cnt != buf_cnt);
+}
+#endif
+
 QDF_STATUS dp_ipa_disable_pipes(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 {
 	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
 	struct dp_pdev *pdev =
 		dp_get_pdev_from_soc_pdev_id_wifi3(soc, pdev_id);
+	int timeout = TX_COMP_DRAIN_WAIT_TIMEOUT_MS;
 	QDF_STATUS result;
 
 	if (!pdev) {
 		dp_err("Invalid instance");
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	/*
+	 * The tx completions pending check will trigger register read
+	 * for HP and TP of wbm2sw2 ring. There is a possibility for
+	 * these reg read to cause a NOC error if UMAC is in low power
+	 * state. The WAR is to sleep for the drain timeout without checking
+	 * for the pending tx completions. This WAR can be replaced with
+	 * poll logic for HP/TP difference once force wake is in place.
+	 */
+#ifdef DEVICE_FORCE_WAKE_ENABLED
+	while (dp_ipa_get_tx_comp_pending_check(soc)) {
+		qdf_sleep(TX_COMP_DRAIN_WAIT_MS);
+		timeout -= TX_COMP_DRAIN_WAIT_MS;
+		if (timeout <= 0) {
+			dp_err("Tx completions pending. Force Disabling pipes");
+			break;
+		}
+	}
+#else
+	qdf_sleep(timeout);
+#endif
 
 	result = qdf_ipa_wdi_disable_pipes();
 	if (result) {
@@ -2049,6 +2124,30 @@ QDF_STATUS dp_ipa_tx_buf_smmu_mapping(
 		return QDF_STATUS_SUCCESS;
 	}
 	ret = __dp_ipa_tx_buf_smmu_mapping(soc, pdev, true);
+
+	return ret;
+}
+
+QDF_STATUS dp_ipa_tx_buf_smmu_unmapping(
+	struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
+{
+	QDF_STATUS ret;
+
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	struct dp_pdev *pdev =
+		dp_get_pdev_from_soc_pdev_id_wifi3(soc, pdev_id);
+
+	if (!pdev) {
+		dp_err("%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!qdf_mem_smmu_s1_enabled(soc->osdev)) {
+		dp_debug("SMMU S1 disabled");
+		return QDF_STATUS_SUCCESS;
+	}
+	ret = __dp_ipa_tx_buf_smmu_mapping(soc, pdev, false);
+
 	return ret;
 }
 

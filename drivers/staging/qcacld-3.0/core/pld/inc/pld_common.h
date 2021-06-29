@@ -470,6 +470,7 @@ void pld_allow_l1(struct device *dev);
 int pld_set_pcie_gen_speed(struct device *dev, u8 pcie_gen_speed);
 
 void pld_is_pci_link_down(struct device *dev);
+void pld_get_bus_reg_dump(struct device *dev, uint8_t *buf, uint32_t len);
 int pld_shadow_control(struct device *dev, bool enable);
 void pld_schedule_recovery_work(struct device *dev,
 				enum pld_recovery_reason reason);
@@ -743,7 +744,7 @@ unsigned int pld_socinfo_get_serial_number(struct device *dev);
 int pld_is_qmi_disable(struct device *dev);
 int pld_is_fw_down(struct device *dev);
 int pld_force_assert_target(struct device *dev);
-int pld_collect_rddm(struct device *dev);
+int pld_force_collect_target_dump(struct device *dev);
 int pld_qmi_send_get(struct device *dev);
 int pld_qmi_send_put(struct device *dev);
 int pld_qmi_send(struct device *dev, int type, void *cmd,

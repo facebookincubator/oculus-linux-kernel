@@ -88,6 +88,11 @@ struct dsi_phy_per_lane_cfgs {
 	u32 count_per_lane;
 };
 
+struct dsi_phy_drive_strength_cfgs {
+	u32 addr;
+	u32 val;
+};
+
 /**
  * struct dsi_phy_cfg - DSI PHY configuration
  * @lanecfg:          Lane configuration settings.

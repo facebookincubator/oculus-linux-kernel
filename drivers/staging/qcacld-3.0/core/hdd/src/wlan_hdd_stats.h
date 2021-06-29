@@ -473,6 +473,58 @@ int wlan_hdd_get_link_speed(struct hdd_adapter *adapter, uint32_t *link_speed);
  */
 int wlan_hdd_get_station_stats(struct hdd_adapter *adapter);
 
+#ifdef WLAN_FEATURE_BIG_DATA_STATS
+/**
+ * wlan_hdd_get_big_data_station_stats() - Get big data station statistics
+ * @adapter: adapter for which statistics are desired
+ *
+ * Return: status of operation
+ */
+int wlan_hdd_get_big_data_station_stats(struct hdd_adapter *adapter);
+
+/**
+ * wlan_cfg80211_mc_cp_get_big_data_stats() - API to get big data
+ * statistics from firmware
+ * @vdev:    Pointer to vdev
+ * @errno:   error type in case of failure
+ *
+ * Return: big data stats buffer on success, Null on failure
+ */
+struct big_data_stats_event *
+wlan_cfg80211_mc_cp_get_big_data_stats(struct wlan_objmgr_vdev *vdev,
+				       int *errno);
+
+/**
+ * wlan_cfg80211_mc_cp_stats_free_big_data_stats_event() - API to release big
+ * data statistics buffer
+ * @vdev:    Pointer to vdev
+ * @info:    pointer to object to populate with big data stats
+ *
+ * Return: None
+ */
+void wlan_cfg80211_mc_cp_stats_free_big_data_stats_event(
+					struct big_data_stats_event *info);
+#else
+static inline int wlan_hdd_get_big_data_station_stats(
+						struct hdd_adapter *adapter)
+{
+	return 0;
+}
+
+static inline struct big_data_stats_event *
+wlan_cfg80211_mc_cp_get_big_data_stats(struct wlan_objmgr_vdev *vdev,
+				       int *errno)
+{
+	return 0;
+}
+
+static inline
+void wlan_cfg80211_mc_cp_stats_free_big_data_stats_event(
+					struct big_data_stats_event *info)
+{
+}
+#endif
+
 /**
  * wlan_hdd_get_temperature() - get current device temperature
  * @adapter: device upon which the request was made
@@ -516,6 +568,20 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 			 uint8_t mcs_index,
 			 uint16_t fw_rate, uint8_t nss);
 
+/**
+ * hdd_check_and_update_nss() - Check and update NSS as per DBS capability
+ * @hdd_ctx: HDD Context pointer
+ * @tx_nss: pointer to variable storing the tx_nss
+ * @rx_nss: pointer to variable storing the rx_nss
+ *
+ * The parameters include the NSS obtained from the FW or static NSS. This NSS
+ * could be invalid in the case the current HW mode is DBS where the connection
+ * are 1x1. Rectify these NSS values as per the current HW mode.
+ *
+ * Return: none
+ */
+void hdd_check_and_update_nss(struct hdd_context *hdd_ctx,
+			      uint8_t *tx_nss, uint8_t *rx_nss);
 #ifdef QCA_SUPPORT_CP_STATS
 /**
  * wlan_hdd_register_cp_stats_cb() - Register hdd stats specific

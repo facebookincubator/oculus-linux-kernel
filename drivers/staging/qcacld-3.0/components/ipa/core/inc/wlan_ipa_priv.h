@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -357,6 +357,7 @@ struct wlan_ipa_iface_context {
  * @num_tx_dequeued: Number of TX dequeued
  * @num_max_pm_queue: Number of packets in PM queue
  * @num_rx_excep: Number of RX IPA exception packets
+ * @num_rx_no_iface_eapol: No of EAPOL pkts before iface setup
  * @num_tx_fwd_ok: Number of TX forward packet success
  * @num_tx_fwd_err: Number of TX forward packet failures
  */
@@ -377,6 +378,7 @@ struct wlan_ipa_stats {
 	uint64_t num_tx_dequeued;
 	uint64_t num_max_pm_queue;
 	uint64_t num_rx_excep;
+	uint64_t num_rx_no_iface_eapol;
 	uint64_t num_tx_fwd_ok;
 	uint64_t num_tx_fwd_err;
 };
@@ -584,6 +586,13 @@ struct wlan_ipa_tx_desc {
 typedef QDF_STATUS (*wlan_ipa_softap_xmit)(qdf_nbuf_t nbuf, qdf_netdev_t dev);
 typedef void (*wlan_ipa_send_to_nw)(qdf_nbuf_t nbuf, qdf_netdev_t dev);
 
+/**
+ * typedef wlan_ipa_rps_enable - Enable/disable RPS for adapter using vdev id
+ * @vdev_id: vdev_id of adapter
+ * @enable: Set true to enable RPS
+ */
+typedef void (*wlan_ipa_rps_enable)(uint8_t vdev_id, bool enable);
+
 /* IPA private context structure definition */
 struct wlan_ipa_priv {
 	struct wlan_objmgr_pdev *pdev;
@@ -691,12 +700,18 @@ struct wlan_ipa_priv {
 	wlan_ipa_send_to_nw send_to_nw;
 	ipa_uc_offload_control_req ipa_tx_op;
 
+#ifdef IPA_LAN_RX_NAPI_SUPPORT
+	/*Callback to enable RPS for STA in STA+SAP scenario*/
+	wlan_ipa_rps_enable rps_enable;
+#endif
+
 	qdf_event_t ipa_resource_comp;
 
 	uint32_t wdi_version;
 	bool is_smmu_enabled;	/* IPA caps returned from ipa_wdi_init */
 	qdf_atomic_t stats_quota;
 	uint8_t curr_bw_level;
+	qdf_atomic_t deinit_in_prog;
 };
 
 #define WLAN_IPA_WLAN_FRAG_HEADER        sizeof(struct frag_header)

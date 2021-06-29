@@ -1,9 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
 #include "sde_hw_mdss.h"
+
+#define RGB_PLANAR_UBWC_FMTS \
+	{DRM_FORMAT_RGB888, DRM_FORMAT_MOD_QCOM_FSC_TILE}, \
+	{DRM_FORMAT_BGR888, DRM_FORMAT_MOD_QCOM_FSC_TILE}
 
 #define RGB_10BIT_FMTS	{DRM_FORMAT_BGRA1010102, 0}, \
 	{DRM_FORMAT_BGRX1010102, 0}, \
@@ -59,12 +63,14 @@
 
 static const struct sde_format_extended plane_formats[] = {
 	RGB_FMTS,
+	RGB_PLANAR_UBWC_FMTS,
 	RGB_10BIT_FMTS,
 	{0, 0},
 };
 
 static const struct sde_format_extended plane_formats_vig[] = {
 	RGB_FMTS,
+	RGB_PLANAR_UBWC_FMTS,
 
 	{DRM_FORMAT_NV12, 0},
 	{DRM_FORMAT_NV12, DRM_FORMAT_MOD_QCOM_COMPRESSED},

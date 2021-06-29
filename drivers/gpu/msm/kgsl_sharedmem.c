@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <asm/cacheflush.h>
@@ -190,30 +190,99 @@ imported_mem_show(struct kgsl_process_private *priv,
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", imported_mem);
 }
 
+static void gpumem_account(struct kgsl_process_private *priv, int type,
+		int64_t *mapped, int64_t *unmapped)
+{
+	struct kgsl_mem_entry *entry;
+	int64_t gpumem_mapped = 0;
+	int64_t gpumem_unmapped = 0;
+	int id = 0;
+	int i;
+
+	spin_lock(&priv->mem_lock);
+	idr_for_each_entry_continue(&priv->mem_idr, entry, id) {
+		struct kgsl_memdesc *m = &entry->memdesc;
+		int64_t entry_mapped = 0;
+		int64_t entry_unmapped = m->size;
+
+		if (kgsl_memdesc_usermem_type(m) != type)
+			continue;
+
+		if (atomic_read(&entry->map_count) <= 0 ||
+				kgsl_mem_entry_get(entry) == 0) {
+			gpumem_unmapped += entry_unmapped;
+			continue;
+		}
+		spin_unlock(&priv->mem_lock);
+
+		/*
+		 * Multiple VMAs may cover this entry. Walk the backing pages
+		 * for counting PSS to match proc/smaps behavior.
+		 */
+		for (i = 0; i < m->page_count; i++) {
+			const int mapcount = page_mapcount(m->pages[i]);
+
+			if (mapcount <= 0)
+				continue;
+
+			entry_mapped += PAGE_SIZE / mapcount;
+			entry_unmapped -= PAGE_SIZE;
+		}
+
+		gpumem_mapped += entry_mapped;
+		gpumem_unmapped += entry_unmapped;
+
+		kgsl_mem_entry_put_deferred(entry);
+		spin_lock(&priv->mem_lock);
+	}
+	spin_unlock(&priv->mem_lock);
+
+	if (mapped)
+		*mapped = gpumem_mapped;
+	if (unmapped)
+		*unmapped = gpumem_unmapped;
+}
+
+static ssize_t
+gpumem_account_show(struct kgsl_process_private *priv,
+				int type, char *buf)
+{
+	int64_t gpumem_mapped = 0;
+	int64_t gpumem_unmapped = 0;
+
+	gpumem_account(priv, type, &gpumem_mapped, &gpumem_unmapped);
+
+	return scnprintf(buf, PAGE_SIZE, "%lld,%lld\n", gpumem_mapped,
+			gpumem_unmapped);
+}
+
 static ssize_t
 gpumem_mapped_show(struct kgsl_process_private *priv,
 				int type, char *buf)
 {
-	return scnprintf(buf, PAGE_SIZE, "%ld\n",
-			atomic_long_read(&priv->gpumem_mapped));
+	int64_t gpumem_mapped = 0;
+
+	gpumem_account(priv, type, &gpumem_mapped, NULL);
+
+	return scnprintf(buf, PAGE_SIZE, "%lld\n", gpumem_mapped);
 }
 
 static ssize_t
 gpumem_unmapped_show(struct kgsl_process_private *priv, int type, char *buf)
 {
-	u64 gpumem_total = atomic_long_read(&priv->stats[type].cur);
-	u64 gpumem_mapped = atomic_long_read(&priv->gpumem_mapped);
+	int64_t gpumem_unmapped = 0;
 
-	if (gpumem_mapped > gpumem_total)
-		return -EIO;
+	gpumem_account(priv, type, NULL, &gpumem_unmapped);
 
-	return scnprintf(buf, PAGE_SIZE, "%llu\n",
-			gpumem_total - gpumem_mapped);
+	return scnprintf(buf, PAGE_SIZE, "%lld\n", gpumem_unmapped);
 }
 
 static struct kgsl_mem_entry_attribute debug_memstats[] = {
 	__MEM_ENTRY_ATTR(0, imported_mem, imported_mem_show),
-	__MEM_ENTRY_ATTR(0, gpumem_mapped, gpumem_mapped_show),
+	__MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_account,
+				gpumem_account_show),
+	__MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_mapped,
+				gpumem_mapped_show),
 	__MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_unmapped,
 				gpumem_unmapped_show),
 };
@@ -323,9 +392,9 @@ void kgsl_process_init_sysfs(struct kgsl_device *device,
 	kgsl_process_private_get(private);
 
 	if (kobject_init_and_add(&private->kobj, &ktype_mem_entry,
-		kgsl_driver.prockobj, "%d", private->pid)) {
+		kgsl_driver.prockobj, "%d", pid_nr(private->pid))) {
 		dev_err(device->dev, "Unable to add sysfs for process %d\n",
-			private->pid);
+			pid_nr(private->pid));
 		return;
 	}
 
@@ -340,7 +409,7 @@ void kgsl_process_init_sysfs(struct kgsl_device *device,
 		if (ret)
 			dev_err(device->dev,
 				"Unable to create sysfs files for process %d\n",
-				private->pid);
+				pid_nr(private->pid));
 	}
 
 	for (i = 0; i < ARRAY_SIZE(debug_memstats); i++) {
@@ -496,8 +565,6 @@ static int kgsl_page_alloc_vmfault(struct kgsl_memdesc *memdesc,
 
 		get_page(page);
 		vmf->page = page;
-
-		atomic_long_add(PAGE_SIZE, &memdesc->mapsize);
 
 		return 0;
 	}
@@ -678,8 +745,6 @@ static int kgsl_contiguous_vmfault(struct kgsl_memdesc *memdesc,
 		return VM_FAULT_OOM;
 	else if (ret == -EFAULT)
 		return VM_FAULT_SIGBUS;
-
-	atomic_long_add(PAGE_SIZE, &memdesc->mapsize);
 
 	return VM_FAULT_NOPAGE;
 }
@@ -906,6 +971,7 @@ void kgsl_memdesc_init(struct kgsl_device *device,
 		(memdesc->flags & KGSL_MEMALIGN_MASK) >> KGSL_MEMALIGN_SHIFT,
 		ilog2(PAGE_SIZE));
 	kgsl_memdesc_set_align(memdesc, align);
+	spin_lock_init(&memdesc->lock);
 }
 
 int

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __SDE_RM_H__
@@ -13,6 +13,22 @@
 
 #define SINGLE_CTL	1
 #define DUAL_CTL	2
+
+#define TOPOLOGY_SINGLEPIPE_MODE(x) \
+	(x == SDE_RM_TOPOLOGY_SINGLEPIPE ||\
+		x == SDE_RM_TOPOLOGY_SINGLEPIPE_DSC)
+
+#define TOPOLOGY_DUALPIPE_MODE(x) \
+	(x == SDE_RM_TOPOLOGY_DUALPIPE ||\
+		x == SDE_RM_TOPOLOGY_DUALPIPE_DSC ||\
+		x == SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE ||\
+		x == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE ||\
+		x == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC)
+
+#define TOPOLOGY_QUADPIPE_MODE(x) \
+	(x == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE ||\
+		x == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC ||\
+		x == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE)
 
 /**
  * enum sde_rm_topology_name - HW resource use case in use by connector
@@ -43,6 +59,27 @@ enum sde_rm_topology_name {
 	SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC,
 	SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,
 	SDE_RM_TOPOLOGY_MAX,
+};
+
+/**
+ * enum sde_rm_topology_group - Topology group selection
+ * @SDE_RM_TOPOLOGY_GROUP_NONE:        No topology group in use currently
+ * @SDE_RM_TOPOLOGY_GROUP_SINGLEPIPE:  Any topology that uses 1 LM
+ * @SDE_RM_TOPOLOGY_GROUP_DUALPIPE:    Any topology that uses 2 LM
+ * @SDE_RM_TOPOLOGY_GROUP_QUADPIPE:    Any topology that uses 4 LM
+ * @SDE_RM_TOPOLOGY_GROUP_3DMERGE:     Any topology that uses 3D merge only
+ * @SDE_RM_TOPOLOGY_GROUP_3DMERGE_DSC: Any topology that uses 3D merge + DSC
+ * @SDE_RM_TOPOLOGY_GROUP_DSCMERGE:    Any topology that uses DSC merge
+ */
+enum sde_rm_topology_group {
+	SDE_RM_TOPOLOGY_GROUP_NONE = 0,
+	SDE_RM_TOPOLOGY_GROUP_SINGLEPIPE,
+	SDE_RM_TOPOLOGY_GROUP_DUALPIPE,
+	SDE_RM_TOPOLOGY_GROUP_QUADPIPE,
+	SDE_RM_TOPOLOGY_GROUP_3DMERGE,
+	SDE_RM_TOPOLOGY_GROUP_3DMERGE_DSC,
+	SDE_RM_TOPOLOGY_GROUP_DSCMERGE,
+	SDE_RM_TOPOLOGY_GROUP_MAX,
 };
 
 /**
@@ -312,6 +349,18 @@ static inline bool sde_rm_topology_is_dual_ctl(struct sde_rm *rm,
 
 	return rm->topology_tbl[topology].num_ctl == DUAL_CTL;
 }
+
+/**
+ * sde_rm_topology_is_group - check if the topology in use
+ *	is part of the requested group
+ * @rm: SDE Resource Manager handle
+ * @state: drm state of the crtc
+ * @group: topology group to check
+ * @return: true if attached connector is in the topology group
+ */
+bool sde_rm_topology_is_group(struct sde_rm *rm,
+		struct drm_crtc_state *state,
+		enum sde_rm_topology_group group);
 
 /**
  * sde_rm_ext_blk_create_reserve - Create external HW blocks

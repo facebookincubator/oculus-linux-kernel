@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -121,15 +121,15 @@ static inline void *pld_pcie_get_fw_ptr(struct device *dev)
 }
 #endif
 
-#if (!defined(CONFIG_PLD_PCIE_CNSS)) || (!defined(CONFIG_PCI_MSM))
+#ifdef CONFIG_PLD_PCIE_CNSS
 static inline int pld_pcie_wlan_pm_control(struct device *dev, bool vote)
 {
-	return 0;
+	return cnss_wlan_pm_control(dev, vote);
 }
 #else
 static inline int pld_pcie_wlan_pm_control(struct device *dev, bool vote)
 {
-	return cnss_wlan_pm_control(dev, vote);
+	return 0;
 }
 #endif
 
@@ -185,6 +185,12 @@ static inline int pld_pcie_set_gen_speed(struct device *dev, u8 pcie_gen_speed)
 
 static inline void pld_pcie_link_down(struct device *dev)
 {
+}
+
+static inline int pld_pcie_get_reg_dump(struct device *dev, uint8_t *buf,
+					uint32_t len)
+{
+	return 0;
 }
 
 static inline int pld_pcie_is_fw_down(struct device *dev)
@@ -499,6 +505,20 @@ static inline void pld_pcie_link_down(struct device *dev)
 {
 	cnss_pci_link_down(dev);
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static inline int pld_pcie_get_reg_dump(struct device *dev, uint8_t *buf,
+					uint32_t len)
+{
+	return cnss_pci_get_reg_dump(dev, buf, len);
+}
+#else
+static inline int pld_pcie_get_reg_dump(struct device *dev, uint8_t *buf,
+					uint32_t len)
+{
+	return 0;
+}
+#endif
 
 static inline int pld_pcie_is_fw_down(struct device *dev)
 {

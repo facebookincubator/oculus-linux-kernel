@@ -27,7 +27,6 @@
 #include "wlan_crypto_global_api.h"
 #include "wlan_mlme_main.h"
 
-#if defined(WLAN_FEATURE_ROAM_OFFLOAD) || defined(ROAM_OFFLOAD_V1)
 static struct wmi_unified
 *target_if_cm_roam_get_wmi_handle_from_vdev(struct wlan_objmgr_vdev *vdev)
 {
@@ -48,7 +47,6 @@ static struct wmi_unified
 
 	return wmi_handle;
 }
-#endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
@@ -87,7 +85,6 @@ target_if_cm_roam_register_lfr3_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 {}
 #endif
 
-#ifdef ROAM_OFFLOAD_V1
 /**
  * target_if_is_vdev_valid - vdev id is valid or not
  * @vdev_id: vdev id
@@ -516,65 +513,6 @@ target_if_cm_roam_scan_offload_scan_period(
 	return wmi_unified_roam_scan_offload_scan_period(wmi_handle, req);
 }
 
-#ifdef WLAN_FEATURE_11W
-/**
- * target_if_roam_fill_11w_params() - Fill the 11w related parameters
- * for ap profile
- * @vdev: vdev object
- * @req: roam ap profile parameters
- *
- * Return: None
- */
-static void
-target_if_cm_roam_fill_11w_params(struct wlan_objmgr_vdev *vdev,
-				  struct ap_profile_params *req)
-{
-	uint32_t group_mgmt_cipher;
-	uint16_t rsn_caps;
-	bool peer_rmf_capable = false;
-	uint32_t keymgmt;
-
-	if (!vdev) {
-		target_if_err("Invalid vdev");
-		return;
-	}
-
-	rsn_caps = (uint16_t)wlan_crypto_get_param(vdev,
-						   WLAN_CRYPTO_PARAM_RSN_CAP);
-	if (wlan_crypto_vdev_has_mgmtcipher(
-					vdev,
-					(1 << WLAN_CRYPTO_CIPHER_AES_GMAC) |
-					(1 << WLAN_CRYPTO_CIPHER_AES_GMAC_256) |
-					(1 << WLAN_CRYPTO_CIPHER_AES_CMAC)) &&
-					(rsn_caps &
-					 WLAN_CRYPTO_RSN_CAP_MFP_ENABLED))
-		peer_rmf_capable = true;
-
-	keymgmt = wlan_crypto_get_param(vdev, WLAN_CRYPTO_PARAM_MGMT_CIPHER);
-
-	if (keymgmt & (1 << WLAN_CRYPTO_CIPHER_AES_CMAC))
-		group_mgmt_cipher = WMI_CIPHER_AES_CMAC;
-	else if (keymgmt & (1 << WLAN_CRYPTO_CIPHER_AES_GMAC))
-		group_mgmt_cipher = WMI_CIPHER_AES_GMAC;
-	else if (keymgmt & (1 << WLAN_CRYPTO_CIPHER_AES_GMAC_256))
-		group_mgmt_cipher = WMI_CIPHER_BIP_GMAC_256;
-	 else
-		group_mgmt_cipher = WMI_CIPHER_NONE;
-
-	if (peer_rmf_capable) {
-		req->profile.rsn_mcastmgmtcipherset = group_mgmt_cipher;
-		req->profile.flags |= WMI_AP_PROFILE_FLAG_PMF;
-	} else {
-		req->profile.rsn_mcastmgmtcipherset = WMI_CIPHER_NONE;
-	}
-}
-#else
-static inline
-void target_if_cm_roam_fill_11w_params(struct wlan_objmgr_vdev *vdev,
-				       struct ap_profile_params *req)
-{}
-#endif
-
 /**
  * target_if_cm_roam_scan_offload_ap_profile() - send roam ap profile to
  * firmware
@@ -606,8 +544,6 @@ target_if_cm_roam_scan_offload_ap_profile(
 		req->profile.rsn_authmode =
 		target_if_cm_roam_scan_get_cckm_mode(vdev, rsn_authmode);
 
-	target_if_cm_roam_fill_11w_params(vdev, req);
-
 	db2dbm_enabled = wmi_service_enabled(wmi_handle,
 					     wmi_service_hw_db2dbm_support);
 	if (!req->profile.rssi_abs_thresh) {
@@ -627,6 +563,12 @@ target_if_cm_roam_scan_offload_ap_profile(
 		req->min_rssi_params[BMISS_MIN_RSSI].min_rssi -=
 						NOISE_FLOOR_DBM_DEFAULT;
 		req->min_rssi_params[BMISS_MIN_RSSI].min_rssi &= 0x000000ff;
+
+		req->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM].min_rssi -=
+						NOISE_FLOOR_DBM_DEFAULT;
+		req->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM].min_rssi &=
+						0x000000ff;
+
 	}
 
 	return wmi_unified_send_roam_scan_offload_ap_cmd(wmi_handle, req);
@@ -1128,6 +1070,7 @@ target_if_cm_roam_send_stop(struct wlan_objmgr_vdev *vdev,
 	if (mode == WMI_ROAM_SCAN_MODE_NONE) {
 		req->roam_triggers.vdev_id = vdev_id;
 		req->roam_triggers.trigger_bitmap = 0;
+		req->roam_triggers.roam_scan_scheme_bitmap = 0;
 		target_if_cm_roam_triggers(vdev, &req->roam_triggers);
 	}
 end:
@@ -1349,12 +1292,6 @@ target_if_cm_roam_register_rso_req_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 	tx_ops->send_roam_disable_config =
 					target_if_cm_roam_send_disable_config;
 }
-#else
-static void
-target_if_cm_roam_register_rso_req_ops(struct wlan_cm_roam_tx_ops *tx_ops)
-{
-}
-#endif
 
 QDF_STATUS target_if_cm_roam_register_tx_ops(struct wlan_cm_roam_tx_ops *tx_ops)
 {

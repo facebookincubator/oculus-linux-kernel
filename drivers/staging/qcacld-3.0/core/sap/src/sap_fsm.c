@@ -235,6 +235,16 @@ static qdf_freq_t sap_random_channel_sel(struct sap_context *sap_ctx)
 		 sap_operating_chan_preferred_location == 2)
 		flag |= DFS_RANDOM_CH_FLAG_NO_LOWER_5G_CH;
 
+	/*
+	 * Dont choose 6ghz channel currently as legacy clients wont be able to
+	 * scan them. In future create an ini if any customer wants 6ghz freq
+	 * to be prioritize over 5ghz/2.4ghz.
+	 * Currently for SAP there is a high chance of 6ghz being selected as
+	 * an op frequency as PCL will have only 5, 6ghz freq as preferred for
+	 * standalone SAP, and 6ghz channels being high in number.
+	 */
+	flag |= DFS_RANDOM_CH_FLAG_NO_6GHZ_CH;
+
 	if (QDF_IS_STATUS_ERROR(utils_dfs_get_vdev_random_channel_for_freq(
 					pdev, sap_ctx->vdev, flag, ch_params,
 					&hw_mode, &chan_freq, &acs_info))) {
@@ -413,6 +423,46 @@ static uint8_t sap_ch_params_to_bonding_channels(
 	}
 
 	return nchannels;
+}
+
+/**
+ * sap_operating_on_dfs() - check current sap operating on dfs
+ * @mac_ctx: mac ctx
+ * @sap_ctx: SAP context
+ *
+ * Return: true if any sub channel is dfs channel
+ */
+static
+bool sap_operating_on_dfs(struct mac_context *mac_ctx,
+			  struct sap_context *sap_ctx)
+{
+	uint8_t is_dfs = false;
+	struct csr_roam_profile *profile =
+			&sap_ctx->csr_roamProfile;
+	uint32_t chan_freq = profile->op_freq;
+	struct ch_params *ch_params = &profile->ch_params;
+
+	if (WLAN_REG_IS_6GHZ_CHAN_FREQ(chan_freq) ||
+	    WLAN_REG_IS_24GHZ_CH_FREQ(chan_freq))
+		return false;
+	if (ch_params->ch_width == CH_WIDTH_160MHZ) {
+		is_dfs = true;
+	} else if (ch_params->ch_width == CH_WIDTH_80P80MHZ) {
+		if (wlan_reg_is_passive_or_disable_for_freq(
+						mac_ctx->pdev,
+						chan_freq) ||
+		    wlan_reg_is_passive_or_disable_for_freq(
+					mac_ctx->pdev,
+					ch_params->mhz_freq_seg1 - 10))
+			is_dfs = true;
+	} else {
+		if (wlan_reg_is_passive_or_disable_for_freq(
+						mac_ctx->pdev,
+						chan_freq))
+			is_dfs = true;
+	}
+
+	return is_dfs;
 }
 
 void sap_get_cac_dur_dfs_region(struct sap_context *sap_ctx,
@@ -597,8 +647,8 @@ sap_dfs_is_channel_in_nol_list(struct sap_context *sap_context,
 		ch_state = wlan_reg_get_channel_state(pdev, channels[i]);
 		if (CHANNEL_STATE_ENABLE != ch_state &&
 		    CHANNEL_STATE_DFS != ch_state) {
-			sap_err("Invalid ch num=%d, ch state=%d",
-				  channels[i], ch_state);
+			sap_err_rl("Invalid ch num=%d, ch state=%d",
+				   channels[i], ch_state);
 			return true;
 		}
 	} /* loop for bonded channels */
@@ -806,10 +856,11 @@ sap_validate_chan(struct sap_context *sap_context,
 					  sap_context->chan_freq,
 					con_ch_freq);
 				sap_context->chan_freq = con_ch_freq;
-				if (WLAN_REG_IS_24GHZ_CH_FREQ(
-				    sap_context->chan_freq))
-					sap_context->ch_params.ch_width =
-							CH_WIDTH_20MHZ;
+				sap_context->ch_params.ch_width =
+				    wlan_sap_get_concurrent_bw(mac_ctx->pdev,
+							       mac_ctx->psoc,
+							       con_ch_freq,
+					       sap_context->ch_params.ch_width);
 				wlan_reg_set_channel_params_for_freq(
 					mac_ctx->pdev,
 					sap_context->chan_freq,
@@ -1039,13 +1090,14 @@ sap_find_valid_concurrent_session(mac_handle_t mac_handle)
 	return NULL;
 }
 
-static QDF_STATUS sap_clear_global_dfs_param(mac_handle_t mac_handle)
+static QDF_STATUS sap_clear_global_dfs_param(mac_handle_t mac_handle,
+					     struct sap_context *sap_ctx)
 {
 	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
-	struct sap_context *sap_ctx;
+	struct sap_context *con_sap_ctx;
 
-	sap_ctx = sap_find_valid_concurrent_session(mac_handle);
-	if (sap_ctx && WLAN_REG_IS_5GHZ_CH_FREQ(sap_ctx->chan_freq)) {
+	con_sap_ctx = sap_find_valid_concurrent_session(mac_handle);
+	if (con_sap_ctx && WLAN_REG_IS_5GHZ_CH_FREQ(con_sap_ctx->chan_freq)) {
 		sap_debug("conc session exists, no need to clear dfs struct");
 		return QDF_STATUS_SUCCESS;
 	}
@@ -1055,12 +1107,7 @@ static QDF_STATUS sap_clear_global_dfs_param(mac_handle_t mac_handle)
 	 * immediately once the radar detected or timedout. So
 	 * as per design CAC timer should be destroyed after stop
 	 */
-	if (mac_ctx->sap.SapDfsInfo.is_dfs_cac_timer_running) {
-		qdf_mc_timer_stop(&mac_ctx->sap.SapDfsInfo.sap_dfs_cac_timer);
-		mac_ctx->sap.SapDfsInfo.is_dfs_cac_timer_running = 0;
-		qdf_mc_timer_destroy(
-			&mac_ctx->sap.SapDfsInfo.sap_dfs_cac_timer);
-	}
+	wlansap_cleanup_cac_timer(sap_ctx);
 	mac_ctx->sap.SapDfsInfo.cac_state = eSAP_DFS_DO_NOT_SKIP_CAC;
 	sap_cac_reset_notify(mac_handle);
 
@@ -1115,7 +1162,7 @@ QDF_STATUS sap_set_session_param(mac_handle_t mac_handle,
 	sapctx->sessionId = session_id;
 	sapctx->is_pre_cac_on = false;
 	sapctx->pre_cac_complete = false;
-	sapctx->chan_before_pre_cac = 0;
+	sapctx->freq_before_pre_cac = 0;
 
 	/* When SSR, SAP will restart, clear the old context,sessionId */
 	for (i = 0; i < SAP_MAX_NUM_SESSION; i++) {
@@ -1144,7 +1191,7 @@ QDF_STATUS sap_clear_session_param(mac_handle_t mac_handle,
 	mac_ctx->sap.sapCtxList[sapctx->sessionId].sap_context = NULL;
 	mac_ctx->sap.sapCtxList[sapctx->sessionId].sapPersona =
 		QDF_MAX_NO_OF_MODE;
-	sap_clear_global_dfs_param(mac_handle);
+	sap_clear_global_dfs_param(mac_handle, sapctx);
 	sap_free_roam_profile(&sapctx->csr_roamProfile);
 	sap_err("Set sapCtxList null for session %d", sapctx->sessionId);
 	qdf_mem_zero(sapctx, sizeof(*sapctx));
@@ -2309,7 +2356,6 @@ static QDF_STATUS sap_fsm_handle_radar_during_cac(struct sap_context *sap_ctx,
 
 	for (intf = 0; intf < SAP_MAX_NUM_SESSION; intf++) {
 		struct sap_context *t_sap_ctx;
-		struct csr_roam_profile *profile;
 
 		t_sap_ctx = mac_ctx->sap.sapCtxList[intf].sap_context;
 		if (((QDF_SAP_MODE ==
@@ -2317,10 +2363,8 @@ static QDF_STATUS sap_fsm_handle_radar_during_cac(struct sap_context *sap_ctx,
 		     (QDF_P2P_GO_MODE ==
 		      mac_ctx->sap.sapCtxList[intf].sapPersona)) &&
 		    t_sap_ctx && t_sap_ctx->fsm_state != SAP_INIT) {
-			profile = &t_sap_ctx->csr_roamProfile;
-			if (!wlan_reg_is_passive_or_disable_for_freq(
-				mac_ctx->pdev, profile->op_freq))
-			continue;
+			if (!sap_operating_on_dfs(mac_ctx, t_sap_ctx))
+				continue;
 			t_sap_ctx->is_chan_change_inprogress = true;
 			/*
 			 * eSAP_DFS_CHANNEL_CAC_RADAR_FOUND:
@@ -2661,13 +2705,14 @@ static QDF_STATUS sap_fsm_state_started(struct sap_context *sap_ctx,
 				 * no need to move them
 				 */
 				profile = &temp_sap_ctx->csr_roamProfile;
-				if (!wlan_reg_is_passive_or_disable_for_freq(
-				    mac_ctx->pdev, profile->op_freq)) {
+				if (!sap_operating_on_dfs(
+						mac_ctx, temp_sap_ctx)) {
 					sap_debug("vdev %d freq %d (state %d) is not DFS or disabled so continue",
 						  temp_sap_ctx->sessionId,
 						  profile->op_freq,
-						 wlan_reg_get_channel_state_for_freq(mac_ctx->pdev,
-						 profile->op_freq));
+						  wlan_reg_get_channel_state_for_freq(
+						  mac_ctx->pdev,
+						  profile->op_freq));
 					continue;
 				}
 				sap_debug("vdev %d switch freq %d -> %d",
@@ -3518,10 +3563,10 @@ qdf_freq_t sap_indicate_radar(struct sap_context *sap_ctx)
 	/* set the Radar Found flag in SapDfsInfo */
 	mac->sap.SapDfsInfo.sap_radar_found_status = true;
 
-	if (sap_ctx->chan_before_pre_cac) {
-		sap_info("sapdfs: set chan before pre cac %d as target chan",
-			 sap_ctx->chan_before_pre_cac);
-		return sap_ctx->chan_before_pre_cac;
+	if (sap_ctx->freq_before_pre_cac) {
+		sap_info("sapdfs: set chan freq before pre cac %d as target chan",
+			 sap_ctx->freq_before_pre_cac);
+		return sap_ctx->freq_before_pre_cac;
 	}
 
 	if (sap_ctx->vendor_acs_dfs_lte_enabled && (QDF_STATUS_SUCCESS ==

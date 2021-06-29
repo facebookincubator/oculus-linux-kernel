@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -404,6 +404,14 @@ bool ucfg_nan_is_vdev_creation_allowed(struct wlan_objmgr_psoc *psoc);
 bool ucfg_nan_is_sta_nan_ndi_4_port_allowed(struct wlan_objmgr_psoc *psoc);
 
 /**
+ * ucfg_nan_is_beamforming_supported- Get support for beamforing
+ * @psoc: pointer to psoc object
+ *
+ * Return: True if beamforming is supported, false if not.
+ */
+bool ucfg_nan_is_beamforming_supported(struct wlan_objmgr_psoc *psoc);
+
+/**
  * ucfg_disable_nan_discovery() - Disable NAN discovery
  * @psoc: pointer to psoc object
  * @data: Data to be sent to NAN discovery engine, which runs in firmware
@@ -476,6 +484,16 @@ QDF_STATUS ucfg_nan_disable_ind_to_userspace(struct wlan_objmgr_psoc *psoc);
  * Return: True if NAN is allowed on the given frequency
  */
 bool ucfg_is_nan_allowed_on_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq);
+
+/**
+ * ucfg_get_disable_6g_nan() - Get NAN feature configuration for 6GHz
+ * @psoc: pointer to psoc object
+ *
+ * Return: Boolean flag indicating whether the NAN feature is disabled in
+ *         6GHz or not
+ */
+bool ucfg_get_disable_6g_nan(struct wlan_objmgr_psoc *psoc);
+
 #else /* WLAN_FEATURE_NAN */
 
 static inline
@@ -546,6 +564,12 @@ bool ucfg_nan_is_sta_nan_ndi_4_port_allowed(struct wlan_objmgr_psoc *psoc)
 }
 
 static inline
+bool ucfg_nan_is_beamforming_supported(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline
 QDF_STATUS ucfg_disable_nan_discovery(struct wlan_objmgr_psoc *psoc,
 				      uint8_t *data, uint32_t data_len)
 {
@@ -594,6 +618,11 @@ static inline
 bool ucfg_is_nan_allowed_on_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq)
 {
 	return false;
+}
+
+static inline bool ucfg_get_disable_6g_nan(struct wlan_objmgr_psoc *psoc)
+{
+	return true;
 }
 #endif /* WLAN_FEATURE_NAN */
 #endif /* _NAN_UCFG_API_H_ */

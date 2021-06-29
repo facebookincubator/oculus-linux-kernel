@@ -451,8 +451,21 @@ lim_fill_sme_assoc_ind_params(
 	struct mac_context *mac_ctx,
 	tpLimMlmAssocInd assoc_ind, struct assoc_ind *sme_assoc_ind,
 	struct pe_session *session_entry, bool assoc_req_alloc);
-void lim_send_mlm_assoc_ind(struct mac_context *mac, tpDphHashNode sta,
-			    struct pe_session *pe_session);
+
+/**
+ * lim_send_mlm_assoc_ind() - Sends assoc indication to SME
+ * @mac_ctx: Global Mac context
+ * @sta_ds: Station DPH hash entry
+ * @session_entry: PE session entry
+ *
+ * This function sends either LIM_MLM_ASSOC_IND
+ * or LIM_MLM_REASSOC_IND to SME.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS lim_send_mlm_assoc_ind(struct mac_context *mac,
+				  tpDphHashNode sta,
+				  struct pe_session *pe_session);
 
 #define ASSOC_FRAME_LEN 0
 /**
@@ -641,6 +654,24 @@ void lim_send_delts_req_action_frame(struct mac_context *mac, tSirMacAddr peer,
 				     struct pe_session *pe_session);
 void lim_send_addts_req_action_frame(struct mac_context *mac, tSirMacAddr peerMacAddr,
 				     tSirAddtsReqInfo *addts, struct pe_session *);
+
+#ifdef WLAN_FEATURE_MSCS
+/**
+ * lim_send_mscs_req_action_frame() - Send mscs req
+ * @mac_ctx: Handle for mac context
+ * @peer_mac: Mac address of requesting peer
+ * @mscs_req: mscs request buffer
+ * @pe_session: PE session id.
+ *
+ * Builds and sends mscs action frame to the peer.
+ *
+ * Return: void
+ */
+void lim_send_mscs_req_action_frame(struct mac_context *mac,
+				    struct qdf_mac_addr peer_mac,
+				    struct mscs_req_info *mscs_req,
+				    struct pe_session *pe_session);
+#endif
 
 /**
  * lim_send_assoc_rsp_mgmt_frame() - Send assoc response
@@ -1348,6 +1379,22 @@ void lim_process_mlm_start_req(struct mac_context *mac_ctx,
  */
 void lim_process_mlm_join_req(struct mac_context *mac_ctx,
 			      tLimMlmJoinReq *mlm_join_req);
+
+/**
+ * lim_post_join_set_link_state_callback()- registered callback to perform post
+ * peer creation operations
+ * @mac: pointer to global mac structure
+ * @callback_arg: registered callback argument
+ * @status: peer creation status
+ *
+ * This is registered callback function during association to perform
+ * post peer creation operation based on the peer creation status
+ *
+ * Return: none
+ */
+void
+lim_post_join_set_link_state_callback(struct mac_context *mac, uint32_t vdev_id,
+				      QDF_STATUS status);
 
 /*
  * lim_process_mlm_deauth_req() - This function is called to process

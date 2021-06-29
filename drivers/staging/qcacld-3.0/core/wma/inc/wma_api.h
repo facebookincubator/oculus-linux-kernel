@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -427,17 +427,6 @@ QDF_STATUS wma_send_coex_config_cmd(WMA_HANDLE wma_handle,
 				    struct coex_config_params *coex_cfg_params);
 
 /**
- * wma_send_ocl_cmd() - Send OCL command
- * @wma_handle: wma handle
- * @ocl_params: OCL command params
- *
- * This function sends WMI command to send OCL mode configuration
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS wma_send_ocl_cmd(WMA_HANDLE wma_handle,
-			    struct ocl_cmd_params *ocl_params);
-/**
  * wma_set_power_config() - update power config in wma
  * @vdev_id:	the Id of the vdev to configure
  * @power:	new power value
@@ -519,6 +508,7 @@ void wma_wmi_stop(void);
  * wma_get_mcs_idx() - get mcs index
  * @raw_rate: raw rate from fw
  * @rate_flags: rate flags
+ * @is_he_mcs_12_13_supported: is he mcs12/13 supported
  * @nss: nss
  * @dcm: dcm
  * @guard_interval: guard interval
@@ -527,6 +517,7 @@ void wma_wmi_stop(void);
  *  Return: mcs index
  */
 uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
+			bool is_he_mcs_12_13_supported,
 			uint8_t *nss, uint8_t *dcm,
 			enum txrate_gi *guard_interval,
 			enum tx_rate_info *mcs_rate_flag);
@@ -817,26 +808,6 @@ int wma_wlm_stats_req(int vdev_id, uint32_t bitmask, uint32_t max_size,
 int wma_wlm_stats_rsp(void *wma_ctx, uint8_t *event, uint32_t len);
 #endif /* FEATURE_WLM_STATS */
 
-#ifndef ROAM_OFFLOAD_V1
-/**
- * wma_update_roam_offload_flag() -  update roam offload flag to fw
- * @wma:     wma handle
- * @params: Roaming enable/disable params
- *
- * Return: none
- */
-void wma_update_roam_offload_flag(void *handle,
-				  struct roam_init_params *params);
-/**
- * wma_set_roam_disable_cfg() - Set roam module disable cfg to fw
- * @wma: wma handle
- * @params: Roaming module enable/disable params
- *
- * Return: none
- */
-void wma_set_roam_disable_cfg(void *handle, struct roam_disable_cfg *params);
-#endif
-
 /**
  * wma_self_peer_create() - create self peer in objmgr
  * @vdev_mlme: vdev mlme component private object
@@ -857,5 +828,15 @@ QDF_STATUS wma_vdev_self_peer_create(struct vdev_mlme_obj *vdev_mlme);
  * Return: None
  */
 void wma_cleanup_vdev(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * wma_set_wakeup_logs_to_console() - Enable/disable wakeup logs to console
+ * @value: boolean value
+ *
+ * API to enable/disable wow host wakeup event logs to console.
+ *
+ * Return: None
+ */
+void wma_set_wakeup_logs_to_console(bool value);
 
 #endif /* WMA_API_H */

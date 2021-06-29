@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,12 +37,14 @@ struct dp_txrx_handle_cmn;
 /**
  * struct dp_txrx_handle - main dp txrx container handle
  * @soc: ol_txrx_soc_handle soc handle
+ * @refill_thread: rx refill thread infra handle
  * @rx_tm_hdl: rx thread infrastructure handle
  */
 struct dp_txrx_handle {
 	ol_txrx_soc_handle soc;
 	struct cdp_pdev *pdev;
 	struct dp_rx_tm_handle rx_tm_hdl;
+	struct dp_rx_refill_thread refill_thread;
 	struct dp_txrx_config config;
 };
 
@@ -73,7 +75,15 @@ static inline void dp_rx_napi_gro_flush(struct napi_struct *napi,
 	}
 }
 #else
-#define dp_rx_napi_gro_flush(_napi, flush_code) napi_gro_flush((_napi), false)
+static inline void dp_rx_napi_gro_flush(struct napi_struct *napi,
+					enum dp_rx_gro_flush_code flush_code)
+{
+	if (napi->poll) {
+		/* Skipping GRO flush in low TPUT */
+		if (flush_code != DP_RX_GRO_LOW_TPUT_FLUSH)
+			napi_gro_flush(napi, false);
+	}
+}
 #endif
 
 #ifdef FEATURE_WLAN_DP_RX_THREADS
@@ -179,6 +189,7 @@ static inline QDF_STATUS dp_txrx_resume(ol_txrx_soc_handle soc)
 {
 	struct dp_txrx_handle *dp_ext_hdl;
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
+	struct dp_rx_refill_thread *refill_thread;
 
 	if (!soc) {
 		qdf_status = QDF_STATUS_E_INVAL;
@@ -189,6 +200,13 @@ static inline QDF_STATUS dp_txrx_resume(ol_txrx_soc_handle soc)
 	if (!dp_ext_hdl) {
 		qdf_status = QDF_STATUS_E_FAULT;
 		goto ret;
+	}
+
+	refill_thread = &dp_ext_hdl->refill_thread;
+	if (refill_thread->enabled) {
+		qdf_status = dp_rx_refill_thread_resume(refill_thread);
+		if (qdf_status != QDF_STATUS_SUCCESS)
+			return qdf_status;
 	}
 
 	qdf_status = dp_rx_tm_resume(&dp_ext_hdl->rx_tm_hdl);
@@ -206,6 +224,7 @@ static inline QDF_STATUS dp_txrx_suspend(ol_txrx_soc_handle soc)
 {
 	struct dp_txrx_handle *dp_ext_hdl;
 	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
+	struct dp_rx_refill_thread *refill_thread;
 
 	if (!soc) {
 		qdf_status = QDF_STATUS_E_INVAL;
@@ -216,6 +235,13 @@ static inline QDF_STATUS dp_txrx_suspend(ol_txrx_soc_handle soc)
 	if (!dp_ext_hdl) {
 		qdf_status = QDF_STATUS_E_FAULT;
 		goto ret;
+	}
+
+	refill_thread = &dp_ext_hdl->refill_thread;
+	if (refill_thread->enabled) {
+		qdf_status = dp_rx_refill_thread_suspend(refill_thread);
+		if (qdf_status != QDF_STATUS_SUCCESS)
+			return qdf_status;
 	}
 
 	qdf_status = dp_rx_tm_suspend(&dp_ext_hdl->rx_tm_hdl);
@@ -467,6 +493,31 @@ QDF_STATUS dp_prealloc_init(void);
  * Return: None
  */
 void dp_prealloc_deinit(void);
+
+/**
+ * dp_prealloc_get_context_memory() - gets pre-alloc DP context memory from
+ *				      global pool
+ * @ctxt_type: type of DP context
+ *
+ * This is done only as part of init happening in a single context. Hence
+ * no lock is used for protection
+ *
+ * Return: Address of context
+ */
+void *dp_prealloc_get_context_memory(uint32_t ctxt_type);
+
+/**
+ * dp_prealloc_put_context_memory() - puts back pre-alloc DP context memory to
+ *				      global pool
+ * @ctxt_type: type of DP context
+ * @vaddr: address of DP context
+ *
+ * This is done only as part of de-init happening in a single context. Hence
+ * no lock is used for protection
+ *
+ * Return: Failure if address not found
+ */
+QDF_STATUS dp_prealloc_put_context_memory(uint32_t ctxt_type, void *vaddr);
 
 /**
  * dp_prealloc_get_coherent() - gets pre-alloc DP memory

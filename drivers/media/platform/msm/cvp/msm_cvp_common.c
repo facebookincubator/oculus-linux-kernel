@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/jiffies.h>
@@ -1749,7 +1749,8 @@ int cvp_comm_set_arp_buffers(struct msm_cvp_inst *inst)
 	return rc;
 
 error:
-	cvp_comm_release_persist_buffers(inst);
+	if (rc != -ENOMEM)
+		cvp_comm_release_persist_buffers(inst);
 	return rc;
 }
 

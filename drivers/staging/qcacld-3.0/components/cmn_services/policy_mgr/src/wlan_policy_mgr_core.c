@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1268,11 +1268,11 @@ void policy_mgr_dump_current_concurrency(struct wlan_objmgr_psoc *psoc)
 		if (pm_conc_connection_list[0].freq ==
 			pm_conc_connection_list[1].freq) {
 			strlcat(cc_mode, " SCC", sizeof(cc_mode));
-		} else if (pm_conc_connection_list[0].mac ==
-					pm_conc_connection_list[1].mac) {
-			strlcat(cc_mode, " MCC", sizeof(cc_mode));
-		} else
+		} else if (policy_mgr_is_dbs_enable(psoc)) {
 			strlcat(cc_mode, " DBS", sizeof(cc_mode));
+		} else {
+			strlcat(cc_mode, " MCC", sizeof(cc_mode));
+		}
 		qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
 		policy_mgr_debug("%s", cc_mode);
 		break;
@@ -1552,6 +1552,7 @@ static uint32_t pm_get_vdev_id_of_first_conn_idx(struct wlan_objmgr_psoc *psoc)
 {
 	uint32_t conn_index = 0, vdev_id = 0;
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
+	struct wlan_objmgr_vdev *vdev;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -1563,16 +1564,22 @@ static uint32_t pm_get_vdev_id_of_first_conn_idx(struct wlan_objmgr_psoc *psoc)
 	     conn_index++)  {
 		if (pm_conc_connection_list[conn_index].in_use) {
 			vdev_id = pm_conc_connection_list[conn_index].vdev_id;
+			policy_mgr_debug("Use vdev_id:%d for opportunistic upgrade",
+					 vdev_id);
 			break;
 		}
 	}
 	qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
-	if (conn_index == MAX_NUMBER_OF_CONC_CONNECTIONS)
+	if (conn_index == MAX_NUMBER_OF_CONC_CONNECTIONS) {
+		vdev = wlan_objmgr_pdev_get_first_vdev(pm_ctx->pdev,
+						       WLAN_POLICY_MGR_ID);
+		if (vdev) {
+			vdev_id = wlan_vdev_get_id(vdev);
+			wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+		}
 		policy_mgr_debug("Use default vdev_id:%d for opportunistic upgrade",
 				 vdev_id);
-	else
-		policy_mgr_debug("Use vdev_id:%d for opportunistic upgrade",
-				 vdev_id);
+	}
 
 	return vdev_id;
 }
@@ -2823,17 +2830,8 @@ bool policy_mgr_allow_new_home_channel(
 		QDF_MCC_TO_SCC_SWITCH_FORCE_PREFERRED_WITHOUT_DISCONNECTION)
 		) && (pm_conc_connection_list[0].mac ==
 			pm_conc_connection_list[1].mac)) {
-			if (!policy_mgr_is_hw_dbs_capable(psoc) &&
-			    policy_mgr_is_interband_mcc_supported(psoc)) {
-				if (ch_freq !=
-				    pm_conc_connection_list[0].freq &&
-				    ch_freq !=
-				    pm_conc_connection_list[1].freq) {
-					policy_mgr_rl_debug("don't allow 3rd home channel on same MAC");
-					status = false;
-				}
-			} else if ((pm_conc_connection_list[0].mode ==
-							    PM_NAN_DISC_MODE &&
+			if ((pm_conc_connection_list[0].mode ==
+							PM_NAN_DISC_MODE &&
 				    pm_conc_connection_list[1].mode ==
 								PM_NDI_MODE) ||
 				   (pm_conc_connection_list[0].mode ==
@@ -2847,6 +2845,15 @@ bool policy_mgr_allow_new_home_channel(
 				 * same MAC is possible.
 				 */
 				status = true;
+			} else if (!policy_mgr_is_hw_dbs_capable(psoc) &&
+				   policy_mgr_is_interband_mcc_supported(psoc)) {
+				if (ch_freq !=
+				    pm_conc_connection_list[0].freq &&
+				    ch_freq !=
+				    pm_conc_connection_list[1].freq) {
+					policy_mgr_rl_debug("don't allow 3rd home channel on same MAC");
+					status = false;
+				}
 			} else if (((WLAN_REG_IS_24GHZ_CH_FREQ(ch_freq)) &&
 				   (WLAN_REG_IS_24GHZ_CH_FREQ
 				   (pm_conc_connection_list[0].freq)) &&
@@ -3466,7 +3473,10 @@ void policy_mgr_add_sap_mandatory_chan(struct wlan_objmgr_psoc *psoc,
 		if (ch_freq == pm_ctx->sap_mandatory_channels[i])
 			return;
 	}
-
+	if (pm_ctx->sap_mandatory_channels_len >= NUM_CHANNELS) {
+		policy_mgr_err("mand list overflow (%hu)", ch_freq);
+		return;
+	}
 	policy_mgr_debug("Ch freq: %hu", ch_freq);
 	pm_ctx->sap_mandatory_channels[pm_ctx->sap_mandatory_channels_len++]
 		= ch_freq;
@@ -3486,7 +3496,79 @@ uint32_t policy_mgr_get_sap_mandatory_chan_list_len(
 	return pm_ctx->sap_mandatory_channels_len;
 }
 
-void  policy_mgr_init_sap_mandatory_2g_chan(struct wlan_objmgr_psoc *psoc)
+#if defined(CONFIG_BAND_6GHZ)
+/**
+ * policy_mgr_add_sap_mandatory_6ghz_chan() - Add 6GHz SAP mandatory channel
+ * list
+ * @psoc: Pointer to soc
+ *
+ * Add the 6GHz PSC VLP channel to SAP mandatory channel list.
+ *
+ * Return: None
+ */
+static
+void  policy_mgr_add_sap_mandatory_6ghz_chan(struct wlan_objmgr_psoc *psoc)
+{
+	uint32_t ch_freq_list[NUM_CHANNELS] = {0};
+	uint32_t len = 0;
+	int i;
+	QDF_STATUS status;
+	struct policy_mgr_psoc_priv_obj *pm_ctx;
+	bool is_psd;
+	uint16_t tx_power;
+	uint16_t eirp_psd_power;
+
+	pm_ctx = policy_mgr_get_context(psoc);
+	if (!pm_ctx) {
+		policy_mgr_err("Invalid Context");
+		return;
+	}
+
+	status = policy_mgr_get_valid_chans(psoc, ch_freq_list, &len);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		policy_mgr_err("Error in getting valid channels");
+		return;
+	}
+
+	for (i = 0; (i < len) && (i < NUM_CHANNELS) &&
+		    (pm_ctx->sap_mandatory_channels_len < NUM_CHANNELS); i++) {
+		if (!WLAN_REG_IS_6GHZ_CHAN_FREQ(ch_freq_list[i]))
+			continue;
+		if (WLAN_REG_IS_6GHZ_PSC_CHAN_FREQ(ch_freq_list[i])) {
+			status = wlan_reg_get_6g_chan_ap_power(
+				pm_ctx->pdev, ch_freq_list[i], &is_psd,
+				&tx_power, &eirp_psd_power);
+			if (status != QDF_STATUS_SUCCESS || !tx_power)
+				continue;
+
+			policy_mgr_debug("Add chan %hu to mandatory list",
+					 ch_freq_list[i]);
+			pm_ctx->sap_mandatory_channels[
+				pm_ctx->sap_mandatory_channels_len++] =
+				ch_freq_list[i];
+		}
+	}
+}
+#else
+static inline
+void  policy_mgr_add_sap_mandatory_6ghz_chan(struct wlan_objmgr_psoc *psoc)
+{
+}
+#endif
+
+/**
+ * policy_mgr_init_sap_mandatory_chan_by_band() - Init SAP mandatory channel
+ * list based on band
+ * @psoc: Pointer to soc
+ * @band_bitmap: band bitmap of type reg_wifi_band
+ *
+ * Initialize the 2.4G 5G 6G SAP mandatory channels based on band
+ *
+ * Return: None
+ */
+static void
+policy_mgr_init_sap_mandatory_chan_by_band(struct wlan_objmgr_psoc *psoc,
+					   uint32_t band_bitmap)
 {
 	uint32_t ch_freq_list[NUM_CHANNELS] = {0};
 	uint32_t len = 0;
@@ -3506,7 +3588,6 @@ void  policy_mgr_init_sap_mandatory_2g_chan(struct wlan_objmgr_psoc *psoc)
 		return;
 	}
 	pm_ctx->sap_mandatory_channels_len = 0;
-
 	for (i = 0; (i < len) && (i < NUM_CHANNELS); i++) {
 		if (WLAN_REG_IS_24GHZ_CH_FREQ(ch_freq_list[i])) {
 			policy_mgr_debug("Add chan %hu to mandatory list",
@@ -3515,6 +3596,33 @@ void  policy_mgr_init_sap_mandatory_2g_chan(struct wlan_objmgr_psoc *psoc)
 				pm_ctx->sap_mandatory_channels_len++] =
 				ch_freq_list[i];
 		}
+	}
+	if (band_bitmap & BIT(REG_BAND_5G))
+		policy_mgr_add_sap_mandatory_chan(psoc,
+						  SAP_MANDATORY_5G_CH_FREQ);
+	if (band_bitmap & BIT(REG_BAND_6G))
+		policy_mgr_add_sap_mandatory_6ghz_chan(psoc);
+}
+
+void  policy_mgr_init_sap_mandatory_chan(struct wlan_objmgr_psoc *psoc,
+					 uint32_t org_ch_freq)
+{
+	if (WLAN_REG_IS_5GHZ_CH_FREQ(org_ch_freq)) {
+		policy_mgr_debug("channel %hu, sap mandatory chan list enabled",
+				 org_ch_freq);
+		if (!policy_mgr_get_sap_mandatory_chan_list_len(psoc))
+			policy_mgr_init_sap_mandatory_chan_by_band(
+				psoc, BIT(REG_BAND_2G));
+		policy_mgr_add_sap_mandatory_chan(
+			psoc, org_ch_freq);
+	} else if (WLAN_REG_IS_6GHZ_CHAN_FREQ(org_ch_freq)) {
+		policy_mgr_init_sap_mandatory_chan_by_band(
+				psoc,
+				BIT(REG_BAND_2G) | BIT(REG_BAND_5G) |
+				BIT(REG_BAND_6G));
+	} else {
+		policy_mgr_init_sap_mandatory_chan_by_band(
+				psoc, BIT(REG_BAND_2G));
 	}
 }
 

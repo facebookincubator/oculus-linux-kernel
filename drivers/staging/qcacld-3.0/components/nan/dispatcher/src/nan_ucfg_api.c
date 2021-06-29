@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -60,6 +60,7 @@ static void nan_cfg_init(struct wlan_objmgr_psoc *psoc,
 	nan_obj->cfg_param.max_ndi = cfg_get(psoc, CFG_NDI_MAX_SUPPORT);
 	nan_obj->cfg_param.nan_feature_config =
 					cfg_get(psoc, CFG_NAN_FEATURE_CONFIG);
+	nan_obj->cfg_param.disable_6g_nan = cfg_get(psoc, CFG_DISABLE_6G_NAN);
 }
 
 /**
@@ -93,6 +94,18 @@ static void nan_cfg_dp_init(struct wlan_objmgr_psoc *psoc,
 {
 }
 #endif
+
+bool ucfg_get_disable_6g_nan(struct wlan_objmgr_psoc *psoc)
+{
+	struct nan_psoc_priv_obj *nan_obj = nan_get_psoc_priv_obj(psoc);
+
+	if (!nan_obj) {
+		nan_err("nan psoc priv object is NULL");
+		return cfg_default(CFG_DISABLE_6G_NAN);
+	}
+
+	return nan_obj->cfg_param.disable_6g_nan;
+}
 
 QDF_STATUS ucfg_nan_psoc_open(struct wlan_objmgr_psoc *psoc)
 {
@@ -645,6 +658,9 @@ QDF_STATUS ucfg_nan_discovery_req(void *in_req, uint32_t req_type)
 				return QDF_STATUS_E_INVAL;
 			}
 
+			if (policy_mgr_is_sta_mon_concurrency(psoc))
+				return QDF_STATUS_E_INVAL;
+
 			/*
 			 * Take a psoc reference while it is being used by the
 			 * NAN requests.
@@ -1109,6 +1125,19 @@ ucfg_nan_is_sta_nan_ndi_4_port_allowed(struct wlan_objmgr_psoc *psoc)
 	}
 
 	return psoc_nan_obj->nan_caps.sta_nan_ndi_ndi_allowed;
+}
+
+bool ucfg_nan_is_beamforming_supported(struct wlan_objmgr_psoc *psoc)
+{
+	struct nan_psoc_priv_obj *psoc_nan_obj;
+
+	psoc_nan_obj = nan_get_psoc_priv_obj(psoc);
+	if (!psoc_nan_obj) {
+		nan_err("psoc_nan_obj is null");
+		return false;
+	}
+
+	return psoc_nan_obj->nan_caps.ndi_txbf_supported;
 }
 
 static inline bool

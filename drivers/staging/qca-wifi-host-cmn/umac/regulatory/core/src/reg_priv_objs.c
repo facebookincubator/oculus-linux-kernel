@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -96,6 +96,7 @@ QDF_STATUS wlan_regulatory_psoc_obj_created_notification(
 	soc_reg_obj->five_dot_nine_ghz_supported = false;
 	soc_reg_obj->enable_5dot9_ghz_chan_in_master_mode = false;
 	soc_reg_obj->retain_nol_across_regdmn_update = false;
+	soc_reg_obj->is_ext_tpc_supported = false;
 
 	for (i = 0; i < MAX_STA_VDEV_CNT; i++)
 		soc_reg_obj->vdev_ids_11d[i] = INVALID_VDEV_ID;
@@ -173,6 +174,51 @@ reg_reset_unii_5g_bitmap(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
 #else
 static void inline
 reg_reset_unii_5g_bitmap(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+{
+}
+#endif
+
+#if defined(CONFIG_BAND_6GHZ)
+#if defined(CONFIG_REG_CLIENT)
+/**
+ * reg_init_def_client_type() - Initialize the regulatory 6G client type.
+ *
+ * @pdev_priv_obj: pointer to wlan_regulatory_pdev_priv_obj.
+ *
+ * Return : void
+ */
+static void
+reg_init_def_client_type(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+{
+	pdev_priv_obj->reg_cur_6g_client_mobility_type = REG_DEFAULT_CLIENT;
+}
+#else
+static void
+reg_init_def_client_type(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+{
+	pdev_priv_obj->reg_cur_6g_client_mobility_type = REG_SUBORDINATE_CLIENT;
+}
+#endif
+
+/**
+ * reg_init_6g_vars() - Initialize the regulatory 6G variables viz.
+ * AP power type, client mobility type, rnr tpe usable and unspecified ap
+ * usable.
+ * @pdev_priv_obj: pointer to wlan_regulatory_pdev_priv_obj.
+ *
+ * Return : void
+ */
+static void
+reg_init_6g_vars(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+{
+	pdev_priv_obj->reg_cur_6g_ap_pwr_type = REG_INDOOR_AP;
+	pdev_priv_obj->reg_rnr_tpe_usable = false;
+	pdev_priv_obj->reg_unspecified_ap_usable = false;
+	reg_init_def_client_type(pdev_priv_obj);
+}
+#else
+static void
+reg_init_6g_vars(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
 {
 }
 #endif
@@ -256,6 +302,7 @@ QDF_STATUS wlan_regulatory_pdev_obj_created_notification(
 	pdev_priv_obj->range_5g_low = range_5g_low;
 	pdev_priv_obj->range_5g_high = range_5g_high;
 	pdev_priv_obj->wireless_modes = reg_cap_ptr->wireless_modes;
+	reg_init_6g_vars(pdev_priv_obj);
 
 	reg_init_pdev_mas_chan_list(pdev_priv_obj,
 				    &psoc_priv_obj->mas_chan_params[phy_id]);

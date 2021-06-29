@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DP_PANEL_H_
@@ -148,7 +148,7 @@ struct dp_panel {
 	int (*get_modes)(struct dp_panel *dp_panel,
 		struct drm_connector *connector, struct dp_display_mode *mode);
 	void (*handle_sink_request)(struct dp_panel *dp_panel);
-	int (*set_edid)(struct dp_panel *dp_panel, u8 *edid);
+	int (*set_edid)(struct dp_panel *dp_panel, u8 *edid, size_t edid_size);
 	int (*set_dpcd)(struct dp_panel *dp_panel, u8 *dpcd);
 	int (*setup_hdr)(struct dp_panel *dp_panel,
 		struct drm_msm_ext_hdr_metadata *hdr_meta,

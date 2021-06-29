@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  */
 #ifndef __KGSL_PWRCTRL_H
 #define __KGSL_PWRCTRL_H
@@ -23,7 +23,7 @@
 #define KGSL_GPU_CFG_PATH_LOW	1
 #define KGSL_GPU_CFG_PATH_HIGH	2
 
-#define KGSL_MAX_CLKS 17
+#define KGSL_MAX_CLKS 18
 #define KGSL_MAX_REGULATORS 2
 
 #define KGSL_MAX_PWRLEVELS 10

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,6 +52,11 @@
 #include <cdp_txrx_peer_ops.h>
 #include "dot11f.h"
 #include "wlan_p2p_cfg_api.h"
+
+#define SA_QUERY_REQ_MIN_LEN \
+(DOT11F_FF_CATEGORY_LEN + DOT11F_FF_ACTION_LEN + DOT11F_FF_TRANSACTIONID_LEN)
+#define SA_QUERY_RESP_MIN_LEN \
+(DOT11F_FF_CATEGORY_LEN + DOT11F_FF_ACTION_LEN + DOT11F_FF_TRANSACTIONID_LEN)
 
 static last_processed_msg rrm_link_action_frm;
 
@@ -1248,8 +1253,8 @@ static void __lim_process_sa_query_request_action_frame(struct mac_context *mac,
 	pBody = WMA_GET_RX_MPDU_DATA(pRxPacketInfo);
 	frame_len = WMA_GET_RX_PAYLOAD_LEN(pRxPacketInfo);
 
-	if (frame_len < sizeof(struct sDot11fSaQueryReq)) {
-		pe_err("Invalid frame length");
+	if (frame_len < SA_QUERY_REQ_MIN_LEN) {
+		pe_err("Invalid frame length %d", frame_len);
 		return;
 	}
 	/* If this is an unprotected SA Query Request, then ignore it. */
@@ -1315,8 +1320,8 @@ static void __lim_process_sa_query_response_action_frame(struct mac_context *mac
 	pBody = WMA_GET_RX_MPDU_DATA(pRxPacketInfo);
 	pe_debug("SA Query Response received");
 
-	if (frame_len < sizeof(struct sDot11fSaQueryRsp)) {
-		pe_err("Invalid frame length");
+	if (frame_len < SA_QUERY_RESP_MIN_LEN) {
+		pe_err("Invalid frame length %d", frame_len);
 		return;
 	}
 	/* When a station, supplicant handles SA Query Response.
@@ -1468,6 +1473,8 @@ static void lim_process_addba_req(struct mac_context *mac_ctx, uint8_t *rx_pkt_i
 				       &session->dph.dphHashTable);
 	if (sta_ds && lim_is_session_he_capable(session))
 		he_cap = lim_is_sta_he_capable(sta_ds);
+	if (sta_ds && sta_ds->staType == STA_ENTRY_NDI_PEER)
+		he_cap = lim_is_session_he_capable(session);
 
 	if (he_cap)
 		buff_size = MAX_BA_BUFF_SIZE;

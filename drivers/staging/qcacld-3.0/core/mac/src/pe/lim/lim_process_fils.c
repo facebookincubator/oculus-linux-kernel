@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1419,8 +1419,10 @@ void lim_update_fils_config(struct mac_context *mac_ctx,
 
 	fils_info = wlan_cm_get_fils_connection_info(mac_ctx->psoc,
 						     session->vdev_id);
-	if (!fils_info)
+	if (!fils_info) {
+		pe_debug("FILS: CM Fils info is NULL");
 		return;
+	}
 
 	pe_fils_info = session->fils_info;
 	if (!pe_fils_info)
@@ -1457,9 +1459,10 @@ void lim_update_fils_config(struct mac_context *mac_ctx,
 	if (fils_info->r_rk_length) {
 		pe_fils_info->fils_rrk =
 			qdf_mem_malloc(fils_info->r_rk_length);
-		if (!pe_fils_info->fils_rrk)
+		if (!pe_fils_info->fils_rrk) {
 			qdf_mem_free(pe_fils_info->keyname_nai_data);
 			return;
+		}
 
 		if (fils_info->r_rk_length <= WLAN_FILS_MAX_RRK_LENGTH)
 			qdf_mem_copy(pe_fils_info->fils_rrk,
@@ -1506,6 +1509,7 @@ void lim_update_fils_config(struct mac_context *mac_ctx,
 		qdf_mem_copy(pe_fils_info->fils_pmk, fils_info->pmk,
 			     fils_info->pmk_len);
 	}
+
 	pe_debug("FILS: fils=%d nai-len=%d rrk_len=%d akm=%d auth=%d pmk_len=%d",
 		 fils_info->is_fils_connection,
 		 fils_info->key_nai_length,
@@ -1774,8 +1778,7 @@ bool lim_verify_fils_params_assoc_rsp(struct mac_context *mac_ctx,
 {
 	struct pe_fils_session *fils_info = session_entry->fils_info;
 	tDot11fIEfils_session fils_session = assoc_rsp->fils_session;
-	tDot11fIEfils_key_confirmation fils_key_auth = assoc_rsp->fils_key_auth;
-	tDot11fIEfils_kde fils_kde = assoc_rsp->fils_kde;
+	tDot11fIEfils_key_confirmation *fils_key_auth;
 	QDF_STATUS status;
 
 	if (!lim_is_fils_connection(session_entry))
@@ -1798,28 +1801,39 @@ bool lim_verify_fils_params_assoc_rsp(struct mac_context *mac_ctx,
 		goto verify_fils_params_fails;
 	}
 
+	fils_key_auth = qdf_mem_malloc(sizeof(*fils_key_auth));
+	if (!fils_key_auth)
+		goto verify_fils_params_fails;
+
+	*fils_key_auth = assoc_rsp->fils_key_auth;
+
 	/* Compare FILS key auth */
-	if ((fils_key_auth.num_key_auth != fils_info->key_auth_len) ||
-		qdf_mem_cmp(fils_info->ap_key_auth_data, fils_key_auth.key_auth,
-					 fils_info->ap_key_auth_len)) {
+	if (fils_key_auth->num_key_auth != fils_info->key_auth_len ||
+	    qdf_mem_cmp(fils_info->ap_key_auth_data,
+			fils_key_auth->key_auth,
+			fils_info->ap_key_auth_len)) {
 		lim_fils_data_dump("session keyauth",
 				   fils_info->ap_key_auth_data,
 				   fils_info->ap_key_auth_len);
 		lim_fils_data_dump("Pkt keyauth",
-				   fils_key_auth.key_auth,
-				   fils_key_auth.num_key_auth);
+				   fils_key_auth->key_auth,
+				   fils_key_auth->num_key_auth);
+		qdf_mem_free(fils_key_auth);
 		goto verify_fils_params_fails;
 	}
 
+	qdf_mem_free(fils_key_auth);
+
 	/* Verify the Key Delivery Element presence */
-	if (!fils_kde.num_kde_list) {
+	if (!assoc_rsp->fils_kde.num_kde_list) {
 		pe_err("FILS KDE list absent");
 		goto verify_fils_params_fails;
 	}
 
 	/* Derive KDE elements */
-	status = lim_parse_kde_elements(mac_ctx, fils_info, fils_kde.kde_list,
-					fils_kde.num_kde_list);
+	status = lim_parse_kde_elements(mac_ctx, fils_info,
+					assoc_rsp->fils_kde.kde_list,
+					assoc_rsp->fils_kde.num_kde_list);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		pe_err("KDE parsing fails");
 		goto verify_fils_params_fails;
@@ -2146,6 +2160,11 @@ QDF_STATUS aead_decrypt_assoc_rsp(struct mac_context *mac_ctx,
 	uint8_t *fils_ies;
 	struct pe_fils_session *fils_info = session->fils_info;
 
+	if (*n_frame < FIXED_PARAM_OFFSET_ASSOC_RSP) {
+		pe_debug("payload len is less than ASSOC RES offset");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	status = find_ie_data_after_fils_session_ie(mac_ctx, p_frame +
 					      FIXED_PARAM_OFFSET_ASSOC_RSP,
 					      ((*n_frame) -
@@ -2175,61 +2194,4 @@ QDF_STATUS aead_decrypt_assoc_rsp(struct mac_context *mac_ctx,
 	(*n_frame) -= AES_BLOCK_SIZE;
 	return status;
 }
-
-#ifndef ROAM_OFFLOAD_V1
-void lim_update_fils_rik(struct pe_session *pe_session,
-			 struct roam_offload_scan_req *req_buffer)
-{
-	struct pe_fils_session *pe_fils_info = pe_session->fils_info;
-	struct roam_fils_params *roam_fils_params =
-		&req_buffer->roam_fils_params;
-
-	/*
-	 * If it is first connection, LIM session entries will not be
-	 * set with FILS. However in RSO, CSR filled the RRK, realm
-	 * info and is_fils_connection to true in req_buffer, RIK
-	 * can be created with RRK and send all the FILS info to fw
-	 */
-	if ((!lim_is_fils_connection(pe_session) ||
-	     !pe_fils_info) && (req_buffer->is_fils_connection)) {
-		if (roam_fils_params->rrk_length > WLAN_FILS_MAX_RRK_LENGTH) {
-			if (lim_is_fils_connection(pe_session))
-				pe_debug("FILS rrk len(%d) max (%d)",
-					 roam_fils_params->rrk_length,
-					 WLAN_FILS_MAX_RRK_LENGTH);
-			return;
-		}
-
-		wlan_crypto_create_fils_rik(roam_fils_params->rrk,
-					    roam_fils_params->rrk_length,
-					    roam_fils_params->rik,
-					    &roam_fils_params->rik_length);
-		pe_debug("Fils created rik len %d",
-			 roam_fils_params->rik_length);
-		return;
-	}
-
-	if (!pe_fils_info) {
-		pe_debug("No FILS info available in the session");
-		return;
-	}
-	if (pe_fils_info->fils_rik_len > WLAN_FILS_MAX_RIK_LENGTH ||
-	    !pe_fils_info->fils_rik) {
-		if (pe_fils_info->fils_rik)
-			pe_debug("Fils rik len(%d) max %d",
-				 pe_fils_info->fils_rik_len,
-				 WLAN_FILS_MAX_RIK_LENGTH);
-		return;
-	}
-
-	roam_fils_params->rik_length = pe_fils_info->fils_rik_len;
-	qdf_mem_copy(roam_fils_params->rik, pe_fils_info->fils_rik,
-		     roam_fils_params->rik_length);
-	qdf_mem_copy(roam_fils_params->fils_ft, pe_fils_info->fils_ft,
-		     pe_fils_info->fils_ft_len);
-	roam_fils_params->fils_ft_len = pe_fils_info->fils_ft_len;
-	pe_debug("fils rik len %d ft-len:%d", roam_fils_params->rik_length,
-		 pe_fils_info->fils_ft_len);
-}
-#endif
 #endif

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
@@ -30,6 +30,25 @@
  * UBWC support for a pixel format is indicated by the flag,
  * there is additional meta data plane for such formats
  */
+
+#define PLANAR_RGB_FMT_TILED(fmt, a, r, g, b, e0, e1, e2, e3, uc, alpha,  \
+bp, flg, fm, np, th)                                                      \
+{                                                                         \
+	.base.pixel_format = DRM_FORMAT_ ## fmt,                          \
+	.fetch_planes = SDE_PLANE_PLANAR,                                 \
+	.alpha_enable = alpha,                                            \
+	.element = { (e0), (e1), (e2), (e3) },                            \
+	.bits = { g, b, r, a },                                           \
+	.chroma_sample = SDE_CHROMA_RGB,                                  \
+	.unpack_align_msb = 0,                                            \
+	.unpack_tight = 1,                                                \
+	.unpack_count = uc,                                               \
+	.bpp = bp,                                                        \
+	.fetch_mode = fm,                                                 \
+	.flag = {(flg)},                                                  \
+	.num_planes = np,                                                 \
+	.tile_height = th                                                 \
+}
 
 #define INTERLEAVED_RGB_FMT(fmt, a, r, g, b, e0, e1, e2, e3, uc, alpha,   \
 bp, flg, fm, np)                                                          \
@@ -555,6 +574,19 @@ static const struct sde_format sde_format_map_tile[] = {
 		SDE_FETCH_UBWC, 2, SDE_TILE_HEIGHT_NV12),
 };
 
+static const struct sde_format sde_format_map_rgb888_tile[] = {
+	PLANAR_RGB_FMT_TILED(RGB888,
+		COLOR_8BIT, COLOR_8BIT, COLOR_8BIT, COLOR_8BIT,
+		C1_B_Cb, C0_G_Y, C2_R_Cr, C3_ALPHA, 3,
+		false, 1, SDE_FORMAT_FLAG_FSC,
+		SDE_FETCH_UBWC, 2, SDE_TILE_HEIGHT_TILED),
+	PLANAR_RGB_FMT_TILED(BGR888,
+		COLOR_8BIT, COLOR_8BIT, COLOR_8BIT, COLOR_8BIT,
+		C1_B_Cb, C0_G_Y, C2_R_Cr, C3_ALPHA, 3,
+		false, 1, SDE_FORMAT_FLAG_FSC,
+		SDE_FETCH_UBWC, 2, SDE_TILE_HEIGHT_TILED),
+};
+
 static const struct sde_format sde_format_map_p010_tile[] = {
 	PSEUDO_YUV_FMT_LOOSE_TILED(NV12,
 		0, COLOR_8BIT, COLOR_8BIT, COLOR_8BIT,
@@ -695,6 +727,16 @@ static int _sde_format_get_media_color_ubwc(const struct sde_format *fmt)
 	int color_fmt = -1;
 	int i;
 
+	if (SDE_FORMAT_IS_FSC(fmt)) {
+		if (fmt->base.pixel_format == DRM_FORMAT_RGB888 ||
+				fmt->base.pixel_format == DRM_FORMAT_BGR888)
+			color_fmt = COLOR_FMT_NV12_UBWC;
+		else
+			DRM_ERROR("FSC format not supported for fmt: %4.4s\n",
+				(char *)&fmt->base.pixel_format);
+		return color_fmt;
+	}
+
 	if (fmt->base.pixel_format == DRM_FORMAT_NV12) {
 		if (SDE_FORMAT_IS_DX(fmt)) {
 			if (fmt->unpack_tight)
@@ -722,7 +764,7 @@ static int _sde_format_get_plane_sizes_ubwc(
 {
 	int i;
 	int color;
-	bool meta = SDE_FORMAT_IS_UBWC(fmt);
+	bool meta = SDE_FORMAT_IS_UBWC(fmt) || SDE_FORMAT_IS_FSC(fmt);
 
 	memset(layout, 0, sizeof(struct sde_hw_fmt_layout));
 	layout->format = fmt;
@@ -767,6 +809,22 @@ static int _sde_format_get_plane_sizes_ubwc(
 		layout->plane_size[3] = MSM_MEDIA_ALIGN(layout->plane_pitch[3] *
 			uv_meta_scanlines, SDE_UBWC_PLANE_SIZE_ALIGNMENT);
 
+	} else if (SDE_FORMAT_IS_FSC(layout->format)) {
+		uint32_t rgb_scanlines, rgb_meta_scanlines;
+
+		layout->num_planes = 1;
+		layout->plane_pitch[0] = VENUS_Y_STRIDE(color, width);
+		rgb_meta_scanlines = VENUS_Y_SCANLINES(color, height);
+		layout->plane_size[0] = MSM_MEDIA_ALIGN(layout->plane_pitch[0] *
+			rgb_meta_scanlines * 3, SDE_UBWC_PLANE_SIZE_ALIGNMENT);
+		if (!meta)
+			goto done;
+
+		layout->num_planes++;
+		layout->plane_pitch[2] = VENUS_Y_META_STRIDE(color, width);
+		rgb_scanlines = VENUS_Y_META_SCANLINES(color, height);
+		layout->plane_size[2] = MSM_MEDIA_ALIGN(layout->plane_pitch[2] *
+			rgb_scanlines * 3, SDE_UBWC_PLANE_SIZE_ALIGNMENT);
 	} else {
 		uint32_t rgb_scanlines, rgb_meta_scanlines;
 
@@ -882,7 +940,8 @@ int sde_format_get_plane_sizes(
 		return -ERANGE;
 	}
 
-	if (SDE_FORMAT_IS_UBWC(fmt) || SDE_FORMAT_IS_TILE(fmt))
+	if (SDE_FORMAT_IS_UBWC(fmt) || SDE_FORMAT_IS_TILE(fmt) ||
+			SDE_FORMAT_IS_FSC(fmt))
 		return _sde_format_get_plane_sizes_ubwc(fmt, w, h, layout);
 
 	return _sde_format_get_plane_sizes_linear(fmt, w, h, layout, pitches);
@@ -951,7 +1010,8 @@ static int _sde_format_populate_addrs_ubwc(
 		return -EFAULT;
 	}
 
-	meta = SDE_FORMAT_IS_UBWC(layout->format);
+	meta = SDE_FORMAT_IS_UBWC(layout->format) ||
+		SDE_FORMAT_IS_FSC(layout->format);
 
 	/* Per-format logic for verifying active planes */
 	if (SDE_FORMAT_IS_YUV(layout->format)) {
@@ -993,6 +1053,25 @@ static int _sde_format_populate_addrs_ubwc(
 			+ layout->plane_size[2];
 
 	} else {
+		/* FSC FORMAT */
+		/************************************************/
+		/*      UBWC            **                      */
+		/*      buffer          **      SDE PLANE       */
+		/*      format          **                      */
+		/************************************************/
+		/* -------------------  ** -------------------- */
+		/* |      RGB meta   |  ** |   RGB bitstream  | */
+		/* |       data      |  ** |       plane      | */
+		/* -------------------  ** -------------------- */
+		/* |  RGB bitstream  |  ** |       NONE       | */
+		/* |       data      |  ** |                  | */
+		/* -------------------  ** -------------------- */
+		/*                      ** |     RGB meta     | */
+		/*                      ** |       plane      | */
+		/*                      ** -------------------- */
+		/************************************************/
+
+		/* UBWC FORMAT */
 		/************************************************/
 		/*      UBWC            **                      */
 		/*      buffer          **      SDE PLANE       */
@@ -1087,7 +1166,8 @@ int sde_format_populate_layout(
 
 	/* Populate the addresses given the fb */
 	if (SDE_FORMAT_IS_UBWC(layout->format) ||
-			SDE_FORMAT_IS_TILE(layout->format))
+			SDE_FORMAT_IS_TILE(layout->format) ||
+			SDE_FORMAT_IS_FSC(layout->format))
 		ret = _sde_format_populate_addrs_ubwc(aspace, fb, layout);
 	else
 		ret = _sde_format_populate_addrs_linear(aspace, fb, layout);
@@ -1276,6 +1356,13 @@ const struct sde_format *sde_get_sde_format_ext(
 			"found fmt: %4.4s DRM_FORMAT_MOD_QCOM_TILE/DX/TIGHT\n",
 				(char *)&format);
 		break;
+	case (DRM_FORMAT_MOD_QCOM_FSC_TILE):
+		map = sde_format_map_rgb888_tile;
+		map_size = ARRAY_SIZE(sde_format_map_rgb888_tile);
+		SDE_DEBUG(
+			"found fsc fmt: %4.4s DRM_FORMAT_MOD_QCOM_FSC_TILE\n",
+				(char *)&format);
+		break;
 	default:
 		SDE_ERROR("unsupported format modifier %llX\n", modifier);
 		return NULL;
@@ -1292,10 +1379,11 @@ const struct sde_format *sde_get_sde_format_ext(
 		SDE_ERROR("unsupported fmt: %4.4s modifier 0x%llX\n",
 				(char *)&format, modifier);
 	else
-		SDE_DEBUG("fmt %4.4s mod 0x%llX ubwc %d yuv %d\n",
+		SDE_DEBUG("fmt %4.4s mod 0x%llX ubwc %d yuv %d fsc %d\n",
 				(char *)&format, modifier,
 				SDE_FORMAT_IS_UBWC(fmt),
-				SDE_FORMAT_IS_YUV(fmt));
+				SDE_FORMAT_IS_YUV(fmt),
+				SDE_FORMAT_IS_FSC(fmt));
 
 	return fmt;
 }

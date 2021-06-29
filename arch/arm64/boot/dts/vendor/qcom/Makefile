@@ -11,7 +11,9 @@ ifneq ($(CONFIG_OCULUS),y)
                 kona-qrd-overlay.dtbo \
 		kona-xrfusion-overlay.dtbo \
 		kona-xrfusion-ult-overlay.dtbo \
-                kona-hdk-overlay.dtbo
+                kona-hdk-overlay.dtbo \
+                kona-iot-mtp-overlay.dtbo \
+                kona-iot-hdk-overlay.dtbo
 
 kona-cdp-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-cdp-lcd-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
@@ -24,6 +26,8 @@ kona-qrd-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-xrfusion-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-xrfusion-ult-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-hdk-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
+kona-iot-mtp-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb
+kona-iot-hdk-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb
 endif
 else
 dtb-$(CONFIG_ARCH_KONA) += kona-rumi.dtb \
@@ -52,7 +56,12 @@ dtb-$(CONFIG_ARCH_KONA) += kona-rumi.dtb \
         kona-v2.1-qrd.dtb \
         kona-v2.1-hdk.dtb \
 	kona-v2.1-xrfusion.dtb \
-	kona-v2.1-xrfusion-ult.dtb
+	kona-v2.1-xrfusion-ult.dtb \
+        kona-iot-mtp.dtb \
+        kona-iot-v2-mtp.dtb \
+        kona-iot-hdk.dtb \
+        kona-iot-v2.1-mtp.dtb \
+        kona-iot-v2.1-hdk.dtb
 endif
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)

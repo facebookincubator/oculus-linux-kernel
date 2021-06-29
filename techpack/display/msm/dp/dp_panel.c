@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #include "dp_panel.h"
 #include <linux/unistd.h>
 #include <drm/drm_fixed.h>
 #include "dp_debug.h"
+#include <drm/drm_edid.h>
 
 #define DP_KHZ_TO_HZ 1000
 #define DP_PANEL_DEFAULT_BPP 24
@@ -1934,7 +1935,25 @@ static int dp_panel_set_default_link_params(struct dp_panel *dp_panel)
 	return 0;
 }
 
-static int dp_panel_set_edid(struct dp_panel *dp_panel, u8 *edid)
+static bool dp_panel_validate_edid(struct edid *edid, size_t edid_size)
+{
+	if (!edid || (edid_size < EDID_LENGTH))
+		return false;
+
+	if (EDID_LENGTH * (edid->extensions + 1) > edid_size) {
+		DP_ERR("edid size does not match allocated.\n");
+		return false;
+	}
+
+	if (!drm_edid_is_valid(edid)) {
+		DP_ERR("invalid edid.\n");
+		return false;
+	}
+	return true;
+}
+
+static int dp_panel_set_edid(struct dp_panel *dp_panel, u8 *edid,
+		size_t edid_size)
 {
 	struct dp_panel_private *panel;
 
@@ -1945,7 +1964,7 @@ static int dp_panel_set_edid(struct dp_panel *dp_panel, u8 *edid)
 
 	panel = container_of(dp_panel, struct dp_panel_private, dp_panel);
 
-	if (edid) {
+	if (edid && dp_panel_validate_edid((struct edid *)edid, edid_size)) {
 		dp_panel->edid_ctrl->edid = (struct edid *)edid;
 		panel->custom_edid = true;
 	} else {

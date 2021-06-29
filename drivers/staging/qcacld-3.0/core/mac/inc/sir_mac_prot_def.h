@@ -254,6 +254,7 @@
 
 /* Association/Reassociation offsets */
 #define SIR_MAC_REASSOC_REQ_SSID_OFFSET      10
+#define SIR_MAC_ASSOC_RSP_STATUS_CODE_OFFSET 2
 
 /* Association Request offsets */
 #define SIR_MAC_ASSOC_REQ_SSID_OFFSET        4
@@ -1368,7 +1369,6 @@ typedef struct sSirMacBeaconReport {
 
 } tSirMacBeaconReport, *tpSirMacBeaconReport;
 
-#define RADIO_REPORTS_MAX_IN_A_FRAME 7
 typedef struct sSirMacRadioMeasureReport {
 	uint8_t token;
 	uint8_t refused;

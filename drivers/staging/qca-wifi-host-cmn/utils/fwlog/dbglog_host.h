@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011, 2014-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -69,6 +69,14 @@ extern "C" {
 #define DIAG_GET_PAYLEN16(arg) \
 	((arg & DIAG_PAYLEN_MASK16) >> DIAG_PAYLEN_OFFSET16)
 
+#define diag_alert(params...) QDF_TRACE_FATAL(QDF_MODULE_ID_DIAG, params)
+#define diag_err(params...) QDF_TRACE_ERROR(QDF_MODULE_ID_DIAG, params)
+#define diag_warn(params...) QDF_TRACE_WARN(QDF_MODULE_ID_DIAG, params)
+#define diag_info(params...) QDF_TRACE_INFO(QDF_MODULE_ID_DIAG, params)
+#define diag_debug(params...) QDF_TRACE_DEBUG(QDF_MODULE_ID_DIAG, params)
+
+#define diag_err_rl(params...) QDF_TRACE_ERROR_RL(QDF_MODULE_ID_DIAG, params)
+
 #ifdef FEATURE_FW_LOG_PARSING
 /*
  * set the dbglog parser type
@@ -102,7 +110,7 @@ int
 dbglog_set_timestamp_resolution(wmi_unified_t wmi_handle,
 				uint16_t tsr);
 
-/** Enable reporting. If it is set to false then Traget wont deliver
+/** Enable reporting. If it is set to false then Target wont deliver
  * any debug information
  */
 int
@@ -128,6 +136,19 @@ dbglog_set_log_lvl(wmi_unified_t wmi_handle, DBGLOG_LOG_LVL log_lvl);
  */
 int
 dbglog_set_mod_log_lvl(wmi_unified_t wmi_handle, uint32_t mod_id_lvl);
+
+/*
+ * set the debug log level for wow module
+ *  mod_id_lvl : the format is more user friendly.
+ *    module_id =  mod_id_lvl/10;
+ *    log_level =  mod_id_lvl%10;
+ * example : mod_id_lvl is 153. then module id is 15 and log level is 3.
+ *           this format allows user to pass a sinlge value
+ *           (which is the most convenient way for most of the OSs)
+ *           to be passed from user to the driver.
+ */
+int
+dbglog_set_mod_wow_log_lvl(wmi_unified_t wmi_handle, uint32_t mod_id_lvl);
 
 /** Enable/Disable the logging for VAP */
 int
@@ -234,6 +255,12 @@ dbglog_vap_log_enable(wmi_unified_t wmi_handle, uint16_t vap_id,
 
 static inline int
 dbglog_set_mod_log_lvl(wmi_unified_t wmi_handle, uint32_t mod_id_lvl)
+{
+	return A_OK;
+}
+
+static inline int
+dbglog_set_mod_wow_log_lvl(wmi_unified_t wmi_handle, uint32_t mod_id_lvl)
 {
 	return A_OK;
 }

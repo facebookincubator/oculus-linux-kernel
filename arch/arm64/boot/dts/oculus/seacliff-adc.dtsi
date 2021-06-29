@@ -112,7 +112,7 @@
 	qcom,sw-jeita-enable;
 	qcom,wd-bark-time-secs = <16>;
 	qcom,suspend-input-on-debug-batt;
-	qcom,fcc-max-ua = <2000000>;
+	qcom,fcc-max-ua = <2674000>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,dc-icl-ua = <3000000>;
 	qcom,typec-dam-enable;

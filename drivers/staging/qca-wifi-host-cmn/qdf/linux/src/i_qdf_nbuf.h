@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -113,6 +113,7 @@ typedef union {
  * @rx.dev.priv_cb_m.l3_hdr_pad: L3 header padding offset
  * @rx.dev.priv_cb_m.exc_frm: exception frame
  * @rx.dev.priv_cb_m.ipa_smmu_map: do IPA smmu map
+ * @rx.dev.priv_cb_m.reo_dest_ind: reo destination indication
  * @rx.dev.priv_cb_m.tcp_seq_num: TCP sequence number
  * @rx.dev.priv_cb_m.tcp_ack_num: TCP ACK number
  * @rx.dev.priv_cb_m.lro_ctx: LRO context
@@ -191,6 +192,7 @@ typedef union {
  *                       +          (TXRX)|(HTT)|(HTC)|(HIF)|(CE)|(FREE)]
  * @tx.trace.is_packet_priv:
  * @tx.trace.packet_track: {NBUF_TX_PKT_[(DATA)|(MGMT)]_TRACK}
+ * @tx.trace.to_fw: Flag to indicate send this packet to FW
  * @tx.trace.proto_type: bitmap of NBUF_PKT_TRAC_TYPE[(EAPOL)|(DHCP)|
  *                          + (MGMT_ACTION)] - 4 bits
  * @tx.trace.dp_trace: flag (Datapath trace)
@@ -232,7 +234,8 @@ struct qdf_nbuf_cb {
 						 /* exception frame flag */
 						 exc_frm:1,
 						 ipa_smmu_map:1,
-						 reserved:7,
+						 reo_dest_ind:5,
+						 reserved:2,
 						 reserved1:16;
 					uint32_t tcp_seq_num;
 					uint32_t tcp_ack_num;
@@ -272,8 +275,8 @@ struct qdf_nbuf_cb {
 			union {
 				uint8_t packet_state;
 				uint8_t dp_trace:1,
-					packet_track:4,
-					rsrvd:3;
+					packet_track:3,
+					rsrvd:4;
 			} trace;
 			uint16_t vdev_id:8,
 				 tid_val:4,
@@ -325,7 +328,8 @@ struct qdf_nbuf_cb {
 			struct {
 				uint8_t packet_state:7,
 					is_packet_priv:1;
-				uint8_t packet_track:4,
+				uint8_t packet_track:3,
+					to_fw:1,
 					proto_type:4;
 				uint8_t dp_trace:1,
 					is_bcast:1,
@@ -493,6 +497,10 @@ QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
 #define QDF_NBUF_CB_TX_PACKET_TRACK(skb)\
 	(((struct qdf_nbuf_cb *) \
 		((skb)->cb))->u.tx.trace.packet_track)
+
+#define QDF_NBUF_CB_TX_PACKET_TO_FW(skb)\
+	(((struct qdf_nbuf_cb *) \
+		((skb)->cb))->u.tx.trace.to_fw)
 
 #define QDF_NBUF_CB_RX_PACKET_TRACK(skb)\
 		(((struct qdf_nbuf_cb *) \
@@ -1471,8 +1479,11 @@ static inline void __qdf_nbuf_set_pktlen(struct sk_buff *skb, uint32_t len)
 			if (unlikely(pskb_expand_head(skb, 0,
 				len - skb->len - skb_tailroom(skb),
 				GFP_ATOMIC))) {
+				QDF_DEBUG_PANIC(
+				   "SKB tailroom is lessthan requested length."
+				   " tail-room: %u, len: %u, skb->len: %u",
+				   skb_tailroom(skb), len, skb->len);
 				dev_kfree_skb_any(skb);
-				qdf_assert(0);
 			}
 		}
 		skb_put(skb, (len - skb->len));
@@ -2475,6 +2486,17 @@ static inline uint32_t __qdf_nbuf_get_mark(__qdf_nbuf_t buf)
 static inline qdf_size_t __qdf_nbuf_get_data_len(__qdf_nbuf_t nbuf)
 {
 	return (skb_end_pointer(nbuf) - nbuf->data);
+}
+
+/**
+ * __qdf_nbuf_get_gso_segs() - Return the number of gso segments
+ * @skb: Pointer to network buffer
+ *
+ * Return: Return the number of gso segments
+ */
+static inline uint16_t __qdf_nbuf_get_gso_segs(struct sk_buff *skb)
+{
+	return skb_shinfo(skb)->gso_segs;
 }
 
 #ifdef CONFIG_NBUF_AP_PLATFORM

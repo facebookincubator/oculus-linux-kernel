@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -466,7 +466,7 @@ void hif_get_cfg_from_psoc(struct hif_softc *scn,
 }
 #endif /* WLAN_CE_INTERRUPT_THRESHOLD_CONFIG */
 
-#ifdef HIF_CE_LOG_INFO
+#if defined(HIF_CE_LOG_INFO) || defined(HIF_BUS_LOG_INFO)
 /**
  * hif_recovery_notifier_cb - Recovery notifier callback to log
  *  hang event data
@@ -493,6 +493,8 @@ int hif_recovery_notifier_cb(struct notifier_block *block, unsigned long state,
 	if (!hif_handle)
 		return -EINVAL;
 
+	hif_log_bus_info(hif_handle, notif_data->hang_data,
+			 &notif_data->offset);
 	hif_log_ce_info(hif_handle, notif_data->hang_data,
 			&notif_data->offset);
 
@@ -663,6 +665,7 @@ struct hif_opaque_softc *hif_open(qdf_device_t qdf_ctx,
 		     sizeof(struct hif_driver_state_callbacks));
 	scn->bus_type  = bus_type;
 
+	hif_pm_set_link_state(GET_HIF_OPAQUE_HDL(scn), HIF_PM_LINK_STATE_DOWN);
 	hif_get_cfg_from_psoc(scn, psoc);
 
 	hif_set_event_hist_mask(GET_HIF_OPAQUE_HDL(scn));
@@ -723,6 +726,7 @@ void hif_close(struct hif_opaque_softc *hif_ctx)
 	}
 
 	hif_uninit_rri_on_ddr(scn);
+	hif_cleanup_static_buf_to_target(scn);
 	hif_cpuhp_unregister(scn);
 
 	hif_bus_close(scn);
@@ -836,6 +840,28 @@ static QDF_STATUS hif_hal_detach(struct hif_softc *scn)
 }
 #endif
 
+int hif_init_dma_mask(struct device *dev, enum qdf_bus_type bus_type)
+{
+	int ret;
+
+	switch (bus_type) {
+	case QDF_BUS_TYPE_IPCI:
+		ret = qdf_set_dma_coherent_mask(dev,
+						DMA_COHERENT_MASK_DEFAULT);
+		if (ret) {
+			hif_err("Failed to set dma mask error = %d", ret);
+			return ret;
+		}
+
+		break;
+	default:
+		/* Follow the existing sequence for other targets */
+		break;
+	}
+
+	return 0;
+}
+
 /**
  * hif_enable(): hif_enable
  * @hif_ctx: hif_ctx
@@ -867,6 +893,7 @@ QDF_STATUS hif_enable(struct hif_opaque_softc *hif_ctx, struct device *dev,
 		return status;
 	}
 
+	hif_pm_set_link_state(GET_HIF_OPAQUE_HDL(scn), HIF_PM_LINK_STATE_UP);
 	status = hif_hal_attach(scn);
 	if (status != QDF_STATUS_SUCCESS) {
 		hif_err("hal attach failed");
@@ -920,6 +947,7 @@ void hif_disable(struct hif_opaque_softc *hif_ctx, enum hif_disable_type type)
 
 	hif_hal_detach(scn);
 
+	hif_pm_set_link_state(hif_ctx, HIF_PM_LINK_STATE_DOWN);
 	hif_disable_bus(scn);
 
 	hif_wlan_disable(scn);
@@ -1679,6 +1707,13 @@ void hif_ramdump_handler(struct hif_opaque_softc *scn)
 {
 	if (hif_get_bus_type(scn) == QDF_BUS_TYPE_USB)
 		hif_usb_ramdump_handler(scn);
+}
+
+hif_pm_wake_irq_type hif_pm_get_wake_irq_type(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+
+	return scn->wake_irq_type;
 }
 
 irqreturn_t hif_wake_interrupt_handler(int irq, void *context)

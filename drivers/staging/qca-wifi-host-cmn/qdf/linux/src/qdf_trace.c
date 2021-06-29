@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1632,14 +1632,14 @@ void qdf_dp_log_proto_pkt_info(uint8_t *sa, uint8_t *da, uint8_t type,
 		last_ticks_rx[subtype] = curr_ticks;
 
 	if (status == QDF_TX_RX_STATUS_INVALID)
-		qdf_nofl_info("%s %s: SA:"QDF_MAC_ADDR_FMT" DA:"QDF_MAC_ADDR_FMT,
+		qdf_nofl_info("%s %s: SA:" QDF_MAC_ADDR_FMT " DA:" QDF_MAC_ADDR_FMT,
 			      qdf_get_pkt_type_string(type, subtype),
-			      dir ? "RX":"TX", QDF_MAC_ADDR_REF(sa),
+			      dir ? "RX" : "TX", QDF_MAC_ADDR_REF(sa),
 			      QDF_MAC_ADDR_REF(da));
 	else
-		qdf_nofl_info("%s %s: SA:"QDF_MAC_ADDR_FMT" DA:"QDF_MAC_ADDR_FMT" msdu_id:%d status: %s",
+		qdf_nofl_info("%s %s: SA:" QDF_MAC_ADDR_FMT " DA:" QDF_MAC_ADDR_FMT " msdu_id:%d status: %s",
 			      qdf_get_pkt_type_string(type, subtype),
-			      dir ? "RX":"TX", QDF_MAC_ADDR_REF(sa),
+			      dir ? "RX" : "TX", QDF_MAC_ADDR_REF(sa),
 			      QDF_MAC_ADDR_REF(da), msdu_id,
 			      qdf_get_pkt_status_string(status));
 }
@@ -3273,6 +3273,7 @@ struct category_name_info g_qdf_category_name[MAX_SUPPORTED_CATEGORY] = {
 	[QDF_MODULE_ID_MSCS] = {"MSCS"},
 	[QDF_MODULE_ID_GPIO] = {"GPIO_CFG"},
 	[QDF_MODULE_ID_IFMGR] = {"IF_MGR"},
+	[QDF_MODULE_ID_DIAG] = {"DIAG"},
 };
 qdf_export_symbol(g_qdf_category_name);
 
@@ -3745,6 +3746,7 @@ static void set_default_trace_levels(struct category_info *cinfo)
 		[QDF_MODULE_ID_MSCS] = QDF_TRACE_LEVEL_INFO,
 		[QDF_MODULE_ID_GPIO] = QDF_TRACE_LEVEL_NONE,
 		[QDF_MODULE_ID_IFMGR] = QDF_TRACE_LEVEL_ERROR,
+		[QDF_MODULE_ID_DIAG] = QDF_TRACE_LEVEL_ERROR,
 	};
 
 	for (i = 0; i < MAX_SUPPORTED_CATEGORY; i++) {

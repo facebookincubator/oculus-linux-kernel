@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -173,14 +173,73 @@ static struct index_vht_data_rate_type supported_vht_mcs_rate_nss2[] = {
 };
 
 /*array index points to MCS and array value points respective rssi*/
-static int rssi_mcs_tbl[][12] = {
-/*  MCS 0   1    2   3    4    5    6    7    8    9    10   11*/
-	{-82, -79, -77, -74, -70, -66, -65, -64, -59, -57, -52, -48},  /* 20 */
-	{-79, -76, -74, -71, -67, -63, -62, -61, -56, -54, -49, -45},  /* 40 */
-	{-76, -73, -71, -68, -64, -60, -59, -58, -53, -51, -46, -42}   /* 80 */
+static int rssi_mcs_tbl[][14] = {
+/*  MCS 0   1    2   3    4    5    6    7    8    9    10   11   12   13*/
+	/* 20 */
+	{-82, -79, -77, -74, -70, -66, -65, -64, -59, -57, -52, -48, -46, -42},
+	/* 40 */
+	{-79, -76, -74, -71, -67, -63, -62, -61, -56, -54, -49, -45, -43, -39},
+	/* 80 */
+	{-76, -73, -71, -68, -64, -60, -59, -58, -53, -51, -46, -42, -46, -36}
 };
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+static bool wlan_hdd_is_he_mcs_12_13_supported(uint16_t he_mcs_12_13_map)
+{
+	if (he_mcs_12_13_map)
+		return true;
+	else
+		return false;
+}
+#else
+static bool wlan_hdd_is_he_mcs_12_13_supported(uint16_t he_mcs_12_13_map)
+{
+	return false;
+}
+#endif
+
 static bool get_station_fw_request_needed = true;
+
+#ifdef WLAN_FEATURE_BIG_DATA_STATS
+/*
+ * copy_station_big_data_stats_to_adapter() - Copy big data stats to adapter
+ * @adapter: Pointer to the adapter
+ * @stats: Pointer to the big data stats event
+ *
+ * Return: 0 if success, non-zero for failure
+ */
+static void copy_station_big_data_stats_to_adapter(
+					struct hdd_adapter *adapter,
+					struct big_data_stats_event *stats)
+{
+	adapter->big_data_stats.vdev_id = stats->vdev_id;
+	adapter->big_data_stats.tsf_out_of_sync = stats->tsf_out_of_sync;
+	adapter->big_data_stats.ani_level = stats->ani_level;
+	adapter->big_data_stats.last_data_tx_pwr =
+					stats->last_data_tx_pwr;
+	adapter->big_data_stats.target_power_dsss =
+					stats->target_power_dsss;
+	adapter->big_data_stats.target_power_ofdm =
+					stats->target_power_ofdm;
+	adapter->big_data_stats.last_tx_data_rix = stats->last_tx_data_rix;
+	adapter->big_data_stats.last_tx_data_rate_kbps =
+					stats->last_tx_data_rate_kbps;
+}
+#endif
+
+#ifdef FEATURE_CLUB_LL_STATS_AND_GET_STATION
+static void
+hdd_update_station_stats_cached_timestamp(struct hdd_adapter *adapter)
+{
+	adapter->hdd_stats.sta_stats_cached_timestamp =
+				qdf_system_ticks_to_msecs(qdf_system_ticks());
+}
+#else
+static void
+hdd_update_station_stats_cached_timestamp(struct hdd_adapter *adapter)
+{
+}
+#endif /* FEATURE_CLUB_LL_STATS_AND_GET_STATION */
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
 
@@ -584,9 +643,6 @@ bool hdd_get_interface_info(struct hdd_adapter *adapter,
 			    struct wifi_interface_info *info)
 {
 	struct hdd_station_ctx *sta_ctx;
-	mac_handle_t mac_handle = adapter->hdd_ctx->mac_handle;
-	/* pre-existing layering violation */
-	struct mac_context *mac = MAC_CONTEXT(mac_handle);
 
 	info->mode = hdd_map_device_to_ll_iface_mode(adapter->device_mode);
 
@@ -629,11 +685,8 @@ bool hdd_get_interface_info(struct hdd_adapter *adapter,
 		}
 	}
 
-	qdf_mem_copy(info->countryStr,
-		     mac->scan.countryCodeCurrent, REG_ALPHA2_LEN + 1);
-
-	qdf_mem_copy(info->apCountryStr,
-		     mac->scan.countryCodeCurrent, REG_ALPHA2_LEN + 1);
+	wlan_reg_get_cc_and_src(adapter->hdd_ctx->psoc, info->countryStr);
+	wlan_reg_get_cc_and_src(adapter->hdd_ctx->psoc, info->apCountryStr);
 
 	return true;
 }
@@ -881,18 +934,37 @@ static int hdd_llstats_radio_fill_channels(struct hdd_adapter *adapter,
 }
 
 /**
+ * hdd_llstats_free_radio_stats() - free wifi_radio_stats member pointers
+ * @radiostat: Pointer to stats data
+ *
+ * Return: void
+ */
+static void hdd_llstats_free_radio_stats(struct wifi_radio_stats *radiostat)
+{
+	if (radiostat->total_num_tx_power_levels &&
+	    radiostat->tx_time_per_power_level) {
+		qdf_mem_free(radiostat->tx_time_per_power_level);
+		radiostat->tx_time_per_power_level = NULL;
+	}
+	if (radiostat->num_channels && radiostat->channels) {
+		qdf_mem_free(radiostat->channels);
+		radiostat->channels = NULL;
+	}
+}
+
+/**
  * hdd_llstats_post_radio_stats() - post radio stats
  * @adapter: Pointer to device adapter
  * @more_data: More data
  * @radiostat: Pointer to stats data
  * @num_radio: Number of radios
  *
- * Return: 0 on success; errno on failure
+ * Return: void
  */
-static int hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
-					u32 more_data,
-					struct wifi_radio_stats *radiostat,
-					u32 num_radio)
+static void hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
+					 u32 more_data,
+					 struct wifi_radio_stats *radiostat,
+					 u32 num_radio)
 {
 	struct sk_buff *vendor_event;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
@@ -913,7 +985,8 @@ static int hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
 
 	if (!vendor_event) {
 		hdd_err("cfg80211_vendor_cmd_alloc_reply_skb failed");
-		return -ENOMEM;
+		hdd_llstats_free_radio_stats(radiostat);
+		goto failure;
 	}
 
 	if (nla_put_u32(vendor_event,
@@ -962,6 +1035,7 @@ static int hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
 			QCA_WLAN_VENDOR_ATTR_LL_STATS_RADIO_NUM_CHANNELS,
 			radiostat->num_channels)) {
 		hdd_err("QCA_WLAN_VENDOR_ATTR put fail");
+		hdd_llstats_free_radio_stats(radiostat);
 
 		goto failure;
 	}
@@ -973,11 +1047,7 @@ static int hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
 			    sizeof(u32) *
 			    radiostat->total_num_tx_power_levels,
 			    radiostat->tx_time_per_power_level);
-		qdf_mem_free(radiostat->tx_time_per_power_level);
-		radiostat->tx_time_per_power_level = NULL;
 		if (ret) {
-			qdf_mem_free(radiostat->channels);
-			radiostat->channels = NULL;
 			hdd_err("nla_put fail");
 			goto failure;
 		}
@@ -986,18 +1056,17 @@ static int hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
 	if (radiostat->num_channels) {
 		ret = hdd_llstats_radio_fill_channels(adapter, radiostat,
 						      vendor_event);
-		qdf_mem_free(radiostat->channels);
-		radiostat->channels = NULL;
 		if (ret)
 			goto failure;
 	}
 
 	cfg80211_vendor_cmd_reply(vendor_event);
-	return 0;
+	hdd_llstats_free_radio_stats(radiostat);
+	return;
 
 failure:
 	kfree_skb(vendor_event);
-	return -EINVAL;
+	hdd_llstats_free_radio_stats(radiostat);
 }
 
 /**
@@ -1019,7 +1088,7 @@ hdd_link_layer_process_radio_stats(struct hdd_adapter *adapter,
 				   struct wifi_radio_stats *radio_stat,
 				   u32 num_radio)
 {
-	int i, nr, ret;
+	int i, nr;
 	struct wifi_radio_stats *radio_stat_save = radio_stat;
 
 	/*
@@ -1054,11 +1123,8 @@ hdd_link_layer_process_radio_stats(struct hdd_adapter *adapter,
 
 	radio_stat = radio_stat_save;
 	for (nr = 0; nr < num_radio; nr++) {
-		ret = hdd_llstats_post_radio_stats(adapter, more_data,
-						   radio_stat, num_radio);
-		if (ret)
-			return;
-
+		hdd_llstats_post_radio_stats(adapter, more_data,
+					     radio_stat, num_radio);
 		radio_stat++;
 	}
 
@@ -1569,20 +1635,6 @@ static void wlan_hdd_dealloc_ll_stats(void *priv)
 	qdf_list_destroy(&ll_stats_priv->ll_stats_q);
 }
 
-#ifdef FEATURE_CLUB_LL_STATS_AND_GET_STATION
-static void
-hdd_update_station_stats_cached_timestamp(struct hdd_adapter *adapter)
-{
-	adapter->hdd_stats.sta_stats_cached_timestamp =
-				qdf_system_ticks_to_msecs(qdf_system_ticks());
-}
-#else
-static void
-hdd_update_station_stats_cached_timestamp(struct hdd_adapter *adapter)
-{
-}
-#endif /* FEATURE_CLUB_LL_STATS_AND_GET_STATION */
-
 /*
  * copy_station_stats_to_adapter() - Copy station stats to adapter
  * @adapter: Pointer to the adapter
@@ -1597,6 +1649,8 @@ static int copy_station_stats_to_adapter(struct hdd_adapter *adapter,
 	struct wlan_mlme_nss_chains *dynamic_cfg;
 	uint32_t tx_nss, rx_nss;
 	struct wlan_objmgr_vdev *vdev;
+	uint16_t he_mcs_12_13_map;
+	bool is_he_mcs_12_13_supported;
 
 	vdev = hdd_objmgr_get_vdev(adapter);
 	if (!vdev)
@@ -1675,16 +1729,21 @@ static int copy_station_stats_to_adapter(struct hdd_adapter *adapter,
 	adapter->hdd_stats.class_a_stat.tx_rate = stats->tx_rate;
 	adapter->hdd_stats.class_a_stat.rx_rate = stats->rx_rate;
 	adapter->hdd_stats.class_a_stat.tx_rx_rate_flags = stats->tx_rate_flags;
+
+	he_mcs_12_13_map = wlan_vdev_mlme_get_he_mcs_12_13_map(vdev);
+	is_he_mcs_12_13_supported =
+			wlan_hdd_is_he_mcs_12_13_supported(he_mcs_12_13_map);
 	adapter->hdd_stats.class_a_stat.tx_mcs_index =
 		sme_get_mcs_idx(stats->tx_rate, stats->tx_rate_flags,
+				is_he_mcs_12_13_supported,
 				&adapter->hdd_stats.class_a_stat.tx_nss,
 				&adapter->hdd_stats.class_a_stat.tx_dcm,
 				&adapter->hdd_stats.class_a_stat.tx_gi,
 				&adapter->hdd_stats.class_a_stat.
 				tx_mcs_rate_flags);
-
 	adapter->hdd_stats.class_a_stat.rx_mcs_index =
 		sme_get_mcs_idx(stats->rx_rate, stats->tx_rate_flags,
+				is_he_mcs_12_13_supported,
 				&adapter->hdd_stats.class_a_stat.rx_nss,
 				&adapter->hdd_stats.class_a_stat.rx_dcm,
 				&adapter->hdd_stats.class_a_stat.rx_gi,
@@ -1712,23 +1771,28 @@ out:
  */
 static void cache_station_stats_cb(struct stats_event *ev, void *cookie)
 {
-	struct hdd_adapter *adapter = cookie;
+	struct hdd_adapter *adapter = cookie, *next_adapter = NULL;
 	struct hdd_context *hdd_ctx = adapter->hdd_ctx;
 	uint8_t vdev_id = adapter->vdev_id;
+	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_DISPLAY_TXRX_STATS;
 
-	hdd_for_each_adapter_dev_held(hdd_ctx, adapter) {
+	hdd_for_each_adapter_dev_held_safe(hdd_ctx, adapter, next_adapter,
+					   dbgid) {
 		if (adapter->vdev_id != vdev_id) {
-			dev_put(adapter->dev);
+			hdd_adapter_dev_put_debug(adapter, dbgid);
 			continue;
 		}
 		copy_station_stats_to_adapter(adapter, ev);
 		/* dev_put has to be done here */
-		dev_put(adapter->dev);
+		hdd_adapter_dev_put_debug(adapter, dbgid);
+		if (next_adapter)
+			hdd_adapter_dev_put_debug(next_adapter,
+						  dbgid);
 		break;
 	}
 }
 
-static void
+static QDF_STATUS
 wlan_hdd_set_station_stats_request_pending(struct hdd_adapter *adapter)
 {
 	struct wlan_objmgr_peer *peer;
@@ -1736,18 +1800,17 @@ wlan_hdd_set_station_stats_request_pending(struct hdd_adapter *adapter)
 	struct wlan_objmgr_vdev *vdev;
 
 	if (!adapter->hdd_ctx->is_get_station_clubbed_in_ll_stats_req)
-		return;
+		return QDF_STATUS_E_INVAL;
 
 	vdev = hdd_objmgr_get_vdev(adapter);
 	if (!vdev)
-		return;
+		return QDF_STATUS_E_INVAL;
 
 	if (adapter->hdd_stats.is_ll_stats_req_in_progress) {
 		hdd_err("Previous ll_stats request is in progress");
-		goto get_station_stats_fail;
+		hdd_objmgr_put_vdev(vdev);
+		return QDF_STATUS_E_ALREADY;
 	}
-
-	adapter->hdd_stats.is_ll_stats_req_in_progress = true;
 
 	info.cookie = adapter;
 	info.u.get_station_stats_cb = cache_station_stats_cb;
@@ -1756,8 +1819,11 @@ wlan_hdd_set_station_stats_request_pending(struct hdd_adapter *adapter)
 	peer = wlan_objmgr_vdev_try_get_bsspeer(vdev, WLAN_OSIF_ID);
 	if (!peer) {
 		osif_err("peer is null");
-		goto get_station_stats_fail;
+		hdd_objmgr_put_vdev(vdev);
+		return QDF_STATUS_E_INVAL;
 	}
+
+	adapter->hdd_stats.is_ll_stats_req_in_progress = true;
 
 	qdf_mem_copy(info.peer_mac_addr, peer->macaddr, QDF_MAC_ADDR_SIZE);
 
@@ -1765,9 +1831,8 @@ wlan_hdd_set_station_stats_request_pending(struct hdd_adapter *adapter)
 
 	ucfg_mc_cp_stats_set_pending_req(wlan_vdev_get_psoc(vdev),
 					 TYPE_STATION_STATS, &info);
-
-get_station_stats_fail:
 	hdd_objmgr_put_vdev(vdev);
+	return QDF_STATUS_SUCCESS;
 }
 
 static void
@@ -1817,9 +1882,10 @@ static QDF_STATUS wlan_hdd_stats_request_needed(struct hdd_adapter *adapter)
 }
 
 #else
-static void
+static QDF_STATUS
 wlan_hdd_set_station_stats_request_pending(struct hdd_adapter *adapter)
 {
+	return QDF_STATUS_SUCCESS;
 }
 
 static void
@@ -1853,7 +1919,9 @@ static int wlan_hdd_send_ll_stats_req(struct hdd_adapter *adapter,
 
 	hdd_enter_dev(adapter->dev);
 
-	wlan_hdd_set_station_stats_request_pending(adapter);
+	status = wlan_hdd_set_station_stats_request_pending(adapter);
+	if (status == QDF_STATUS_E_ALREADY)
+		return qdf_status_to_os_return(status);
 
 	request = osif_request_alloc(&params);
 	if (!request) {
@@ -1876,8 +1944,6 @@ static int wlan_hdd_send_ll_stats_req(struct hdd_adapter *adapter,
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("sme_ll_stats_get_req Failed");
 		ret = qdf_status_to_os_return(status);
-		wlan_hdd_reset_station_stats_request_pending(hdd_ctx->psoc,
-							     adapter);
 		goto exit;
 	}
 	ret = osif_request_wait_for_response(request);
@@ -1888,8 +1954,6 @@ static int wlan_hdd_send_ll_stats_req(struct hdd_adapter *adapter,
 		priv->request_bitmap = 0;
 		qdf_spin_unlock(&priv->ll_stats_lock);
 		ret = -ETIMEDOUT;
-		wlan_hdd_reset_station_stats_request_pending(hdd_ctx->psoc,
-							     adapter);
 	} else {
 		hdd_update_station_stats_cached_timestamp(adapter);
 	}
@@ -1908,6 +1972,7 @@ static int wlan_hdd_send_ll_stats_req(struct hdd_adapter *adapter,
 	}
 	qdf_list_destroy(&priv->ll_stats_q);
 exit:
+	wlan_hdd_reset_station_stats_request_pending(hdd_ctx->psoc, adapter);
 	hdd_exit();
 	osif_request_put(request);
 
@@ -4842,10 +4907,11 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 			 uint8_t mcs_index,
 			 uint16_t fw_rate, uint8_t nss)
 {
-	uint8_t i, j, rssidx;
+	uint8_t i, j, rssidx = 0;
 	uint16_t max_rate = 0;
 	uint32_t vht_mcs_map;
 	bool is_vht20_mcs9 = false;
+	uint16_t he_mcs_12_13_map = 0;
 	uint16_t current_rate = 0;
 	qdf_size_t or_leng = CSR_DOT11_SUPPORTED_RATES_MAX;
 	uint8_t operational_rates[CSR_DOT11_SUPPORTED_RATES_MAX];
@@ -4878,12 +4944,7 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 				       &link_speed_rssi_low,
 				       &link_speed_rssi_report);
 
-	/* we do not want to necessarily report the current speed */
-	if (ucfg_mlme_stats_is_link_speed_report_max(hdd_ctx->psoc)) {
-		/* report the max possible speed */
-		rssidx = 0;
-	} else if (ucfg_mlme_stats_is_link_speed_report_max_scaled(
-				hdd_ctx->psoc)) {
+	if (ucfg_mlme_stats_is_link_speed_report_max_scaled(hdd_ctx->psoc)) {
 		/* report the max possible speed with RSSI scaling */
 		if (signal >= link_speed_rssi_high) {
 			/* report the max possible speed */
@@ -4898,14 +4959,7 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 			/* report actual speed */
 			rssidx = 3;
 		}
-	} else {
-		/* unknown, treat as eHDD_LINK_SPEED_REPORT_MAX */
-		hdd_err("Invalid value for reportMaxLinkSpeed: %u",
-			link_speed_rssi_report);
-		rssidx = 0;
 	}
-
-	max_rate = 0;
 
 	vdev = hdd_objmgr_get_vdev(adapter);
 	if (!vdev) {
@@ -4946,6 +5000,8 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 		/*To keep GUI happy */
 		return false;
 	}
+
+	he_mcs_12_13_map = wlan_vdev_mlme_get_he_mcs_12_13_map(vdev);
 
 	hdd_objmgr_put_vdev(vdev);
 
@@ -5020,8 +5076,11 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 			}
 
 			if (rate_flags & (TX_RATE_HE20 | TX_RATE_HE40 |
-			    TX_RATE_HE80 | TX_RATE_HE160))
+			    TX_RATE_HE80 | TX_RATE_HE160)) {
 				max_mcs_idx = 11;
+				if (he_mcs_12_13_map)
+					max_mcs_idx = 13;
+			}
 
 			if (rssidx != 0) {
 				for (i = 0; i <= max_mcs_idx; i++) {
@@ -5091,8 +5150,9 @@ bool hdd_report_max_rate(struct hdd_adapter *adapter,
 	if ((max_rate < fw_rate) || (0 == max_rate)) {
 		max_rate = fw_rate;
 	}
-	hdd_debug("rate_flags 0x%x, max_rate %d mcs %d nss %d",
-		  rate_flags, max_rate, max_mcs_idx, nss);
+	hdd_debug("RLMS %u, rate_flags 0x%x, max_rate %d mcs %d nss %d",
+		  link_speed_rssi_report, rate_flags,
+		  max_rate, max_mcs_idx, nss);
 	wlan_hdd_fill_os_rate_info(rate_flags, max_rate, rate,
 				   max_mcs_idx, nss, 0, 0);
 
@@ -5185,32 +5245,20 @@ static void hdd_fill_fcs_and_mpdu_count(struct hdd_adapter *adapter,
 }
 #endif
 
-/**
- * hdd_check_and_update_nss() - Check and update NSS as per DBS capability
- * @hdd_ctx: HDD Context pointer
- * @tx_nss: pointer to variable storing the tx_nss
- * @rx_nss: pointer to variable storing the rx_nss
- *
- * The parameters include the NSS obtained from the FW or static NSS. This NSS
- * could be invalid in the case the current HW mode is DBS where the connection
- * are 1x1. Rectify these NSS values as per the current HW mode.
- *
- * Return: none
- */
-static void hdd_check_and_update_nss(struct hdd_context *hdd_ctx,
-				     uint8_t *tx_nss, uint8_t *rx_nss)
+void hdd_check_and_update_nss(struct hdd_context *hdd_ctx,
+			      uint8_t *tx_nss, uint8_t *rx_nss)
 {
-	if ((*tx_nss > 1) &&
+	if (tx_nss && (*tx_nss > 1) &&
 	    policy_mgr_is_current_hwmode_dbs(hdd_ctx->psoc) &&
 	    !policy_mgr_is_hw_dbs_2x2_capable(hdd_ctx->psoc)) {
 		hdd_debug("Hw mode is DBS, Reduce tx nss(%d) to 1", *tx_nss);
 		(*tx_nss)--;
 	}
 
-	if ((*rx_nss > 1) &&
+	if (rx_nss && (*rx_nss > 1) &&
 	    policy_mgr_is_current_hwmode_dbs(hdd_ctx->psoc) &&
 	    !policy_mgr_is_hw_dbs_2x2_capable(hdd_ctx->psoc)) {
-		hdd_debug("Hw mode is DBS, Reduce tx nss(%d) to 1", *rx_nss);
+		hdd_debug("Hw mode is DBS, Reduce rx nss(%d) to 1", *rx_nss);
 		(*rx_nss)--;
 	}
 }
@@ -6433,8 +6481,10 @@ int wlan_hdd_get_station_stats(struct hdd_adapter *adapter)
 	struct stats_event *stats;
 	struct wlan_objmgr_vdev *vdev;
 
-	if (!get_station_fw_request_needed)
+	if (!get_station_fw_request_needed) {
+		hdd_debug("return cached get_station stats");
 		return 0;
+	}
 
 	vdev = hdd_objmgr_get_vdev(adapter);
 	if (!vdev)
@@ -6446,6 +6496,8 @@ int wlan_hdd_get_station_stats(struct hdd_adapter *adapter)
 		goto out;
 	}
 
+	/* update get stats cached time stamp */
+	hdd_update_station_stats_cached_timestamp(adapter);
 	copy_station_stats_to_adapter(adapter, stats);
 	wlan_cfg80211_mc_cp_stats_free_stats_event(stats);
 
@@ -6453,6 +6505,32 @@ out:
 	hdd_objmgr_put_vdev(vdev);
 	return ret;
 }
+
+#ifdef WLAN_FEATURE_BIG_DATA_STATS
+int wlan_hdd_get_big_data_station_stats(struct hdd_adapter *adapter)
+{
+	int ret = 0;
+	struct big_data_stats_event *big_data_stats;
+	struct wlan_objmgr_vdev *vdev;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev)
+		return -EINVAL;
+
+	big_data_stats = wlan_cfg80211_mc_cp_get_big_data_stats(vdev,
+								&ret);
+	if (ret || !big_data_stats)
+		goto out;
+
+	copy_station_big_data_stats_to_adapter(adapter, big_data_stats);
+out:
+	if (big_data_stats)
+		wlan_cfg80211_mc_cp_stats_free_big_data_stats_event(
+								big_data_stats);
+	hdd_objmgr_put_vdev(vdev);
+	return ret;
+}
+#endif
 
 struct temperature_priv {
 	int temperature;
@@ -6543,13 +6621,15 @@ int wlan_hdd_get_temperature(struct hdd_adapter *adapter, int *temperature)
 
 void wlan_hdd_display_txrx_stats(struct hdd_context *ctx)
 {
-	struct hdd_adapter *adapter = NULL;
+	struct hdd_adapter *adapter = NULL, *next_adapter = NULL;
 	struct hdd_tx_rx_stats *stats;
 	int i = 0;
 	uint32_t total_rx_pkt, total_rx_dropped,
 		 total_rx_delv, total_rx_refused;
+	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_CACHE_STATION_STATS_CB;
 
-	hdd_for_each_adapter_dev_held(ctx, adapter) {
+	hdd_for_each_adapter_dev_held_safe(ctx, adapter, next_adapter,
+					   dbgid) {
 		total_rx_pkt = 0;
 		total_rx_dropped = 0;
 		total_rx_delv = 0;
@@ -6557,7 +6637,7 @@ void wlan_hdd_display_txrx_stats(struct hdd_context *ctx)
 		stats = &adapter->hdd_stats.tx_rx_stats;
 
 		if (adapter->vdev_id == INVAL_VDEV_ID) {
-			dev_put(adapter->dev);
+			hdd_adapter_dev_put_debug(adapter, dbgid);
 			continue;
 		}
 
@@ -6570,7 +6650,7 @@ void wlan_hdd_display_txrx_stats(struct hdd_context *ctx)
 		}
 
 		/* dev_put has to be done here */
-		dev_put(adapter->dev);
+		hdd_adapter_dev_put_debug(adapter, dbgid);
 
 		hdd_debug("TX - called %u, dropped %u orphan %u",
 			  stats->tx_called, stats->tx_dropped,

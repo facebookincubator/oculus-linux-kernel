@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -82,6 +82,7 @@ struct chan_change_cbk_entry {
 
 /**
  * struct wlan_regulatory_psoc_priv_obj - wlan regulatory psoc private object
+ * @mas_chan_params: master channel parameters list
  * @chan_list_recvd: whether channel list has been received
  * @new_user_ctry_pending: In this array, element[phy_id] is true if any user
  *	country update is pending for pdev (phy_id), used in case of MCL.
@@ -101,6 +102,13 @@ struct chan_change_cbk_entry {
  *	master mode (ini fcc_5dot9_ghz_chan_in_master_mode)
  * @retain_nol_across_regdmn_update: Retain the NOL list across the regdomain
  *	changes.
+ * @domain_code_6g_ap: domain code for 6G AP
+ * @domain_code_6g_client: domain code for 6G client
+ * @is_ext_tpc_supported: Whether FW supports new WMI command for TPC
+ * @is_lower_6g_edge_ch_supported: whether lower 6ghz edge channel 5935MHz is
+ * supported
+ * @is_upper_6g_edge_ch_disabled: whether upper 6ghz edge channel 7115MHz is
+ * disabled
  */
 struct wlan_regulatory_psoc_priv_obj {
 	struct mas_chan_params mas_chan_params[PSOC_MAX_PHY_REG_CAP];
@@ -153,17 +161,44 @@ struct wlan_regulatory_psoc_priv_obj {
 	bool enable_5dot9_ghz_chan_in_master_mode;
 	qdf_spinlock_t cbk_list_lock;
 	bool retain_nol_across_regdmn_update;
+#ifdef CONFIG_BAND_6GHZ
+	uint8_t domain_code_6g_ap[REG_CURRENT_MAX_AP_TYPE];
+	uint8_t domain_code_6g_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE];
+#endif
+	bool is_ext_tpc_supported;
+#if defined(CONFIG_BAND_6GHZ) && defined(CONFIG_REG_CLIENT)
+	bool is_lower_6g_edge_ch_supported;
+	bool is_upper_6g_edge_ch_disabled;
+#endif
 };
 
 /**
  * struct wlan_regulatory_pdev_priv_obj - wlan regulatory pdev private object
- * @pdev_opened: whether pdev has been opened by application
+ * @cur_chan_list: current channel list, includes 6G channels
+ * @mas_chan_list: master channel list
+ * @is_6g_channel_list_populated: indicates the channel lists are populated
+ * @mas_chan_list_6g_ap: master channel list for 6G AP, includes all power types
+ * @mas_chan_list_6g_client: master channel list for 6G client, includes
+ *	all power types
  * @band_capability: bitmap of bands enabled, using enum reg_wifi_band as the
  *	bit position value
+ * @reg_6g_superid: 6Ghz super domain id
+ * @pdev_opened: whether pdev has been opened by application
+ * @reg_cur_6g_ap_pwr_type: 6G AP type ie VLP/SP/LPI.
+ * @reg_cur_6g_client_mobility_type: 6G client type ie Default/Subordinate.
+ * @reg_rnr_tpe_usable: Indicates whether RNR IE is applicable for current reg
+ * domain.
+ * @reg_unspecified_ap_usable: Indicates if the AP type mentioned is not part of
+ * 802.11 standard.
  */
 struct wlan_regulatory_pdev_priv_obj {
 	struct regulatory_channel cur_chan_list[NUM_CHANNELS];
 	struct regulatory_channel mas_chan_list[NUM_CHANNELS];
+#ifdef CONFIG_BAND_6GHZ
+	bool is_6g_channel_list_populated;
+	struct regulatory_channel mas_chan_list_6g_ap[REG_CURRENT_MAX_AP_TYPE][NUM_6GHZ_CHANNELS];
+	struct regulatory_channel mas_chan_list_6g_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE][NUM_6GHZ_CHANNELS];
+#endif
 #ifdef DISABLE_CHANNEL_LIST
 	struct regulatory_channel cache_disable_chan_list[NUM_CHANNELS];
 	uint32_t num_cache_channels;
@@ -174,6 +209,7 @@ struct wlan_regulatory_pdev_priv_obj {
 	uint16_t def_country_code;
 	char current_country[REG_ALPHA2_LEN + 1];
 	uint16_t reg_dmn_pair;
+	uint16_t reg_6g_superid;
 	uint16_t ctry_code;
 #ifdef DISABLE_UNII_SHARED_BANDS
 	uint8_t unii_5g_bitmap;
@@ -198,6 +234,12 @@ struct wlan_regulatory_pdev_priv_obj {
 	qdf_spinlock_t reg_rules_lock;
 	bool chan_list_recvd;
 	bool pdev_opened;
+#if defined(CONFIG_BAND_6GHZ)
+	enum reg_6g_ap_type reg_cur_6g_ap_pwr_type;
+	enum reg_6g_client_type reg_cur_6g_client_mobility_type;
+	bool reg_rnr_tpe_usable;
+	bool reg_unspecified_ap_usable;
+#endif
 };
 
 /**

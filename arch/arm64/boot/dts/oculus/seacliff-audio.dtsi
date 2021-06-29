@@ -175,7 +175,7 @@
 		cm7120,codec_3v3-supply = <&pm8150_l16>;
 
 		qcom,use-pinctrl = <1>;
-		pinctrl-names = "default", "suspend",
+		pinctrl-names = "active", "suspend",
 			"spk_en", "spk_suspend";
 		pinctrl-0 = <&cm7120_codec_ldo_en_default
 			&cm7120_codec_reset_default>;

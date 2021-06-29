@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
  */
 
 
@@ -85,6 +85,7 @@ struct cam_vfe_bus_ver3_common_data {
 	uint32_t                                    comp_done_shift;
 	bool                                        is_lite;
 	bool                                        hw_init;
+	bool                                        disable_ubwc_comp;
 	cam_hw_mgr_event_cb_func                    event_cb;
 	int                        rup_irq_handle[CAM_VFE_BUS_VER3_SRC_GRP_MAX];
 };
@@ -1387,6 +1388,13 @@ static int cam_vfe_bus_ver3_start_wm(struct cam_isp_resource_node *wm_res)
 	if (rsrc_data->en_ubwc) {
 		val = cam_io_r_mb(common_data->mem_base + ubwc_regs->mode_cfg);
 		val |= 0x1;
+		if (rsrc_data->common_data->disable_ubwc_comp) {
+			val &= ~ubwc_regs->ubwc_comp_en_bit;
+			CAM_DBG(CAM_ISP,
+				"UBWC force disable VFE:%d WM:%d val= 0x%x",
+				rsrc_data->common_data->core_index,
+				rsrc_data->index, val);
+		}
 		cam_io_w_mb(val, common_data->mem_base + ubwc_regs->mode_cfg);
 	}
 
@@ -1937,6 +1945,8 @@ static int cam_vfe_bus_ver3_acquire_vfe_out(void *bus_priv, void *acquire_args,
 
 	rsrc_data = rsrc_node->res_priv;
 	rsrc_data->common_data->event_cb = acq_args->event_cb;
+	rsrc_data->common_data->disable_ubwc_comp =
+		out_acquire_args->disable_ubwc_comp;
 	rsrc_data->priv = acq_args->priv;
 
 	secure_caps = cam_vfe_bus_ver3_can_be_secure(
@@ -2456,6 +2466,8 @@ static int cam_vfe_bus_ver3_print_dimensions(
 	struct cam_isp_resource_node              *rsrc_node = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data      *rsrc_data = NULL;
 	struct cam_vfe_bus_ver3_wm_resource_data  *wm_data   = NULL;
+	struct cam_vfe_bus_ver3_common_data       *common_data = NULL;
+	uint32_t addr_status0, addr_status1, addr_status2, addr_status3;
 	int                                        i, wm_idx;
 
 	rsrc_node = &bus_priv->vfe_out[vfe_out_res_id];
@@ -2469,6 +2481,15 @@ static int cam_vfe_bus_ver3_print_dimensions(
 			return -EINVAL;
 		}
 		wm_data = bus_priv->bus_client[wm_idx].res_priv;
+		common_data = rsrc_data->common_data;
+		addr_status0 = cam_io_r_mb(common_data->mem_base +
+			wm_data->hw_regs->addr_status_0);
+		addr_status1 = cam_io_r_mb(common_data->mem_base +
+			wm_data->hw_regs->addr_status_1);
+		addr_status2 = cam_io_r_mb(common_data->mem_base +
+			wm_data->hw_regs->addr_status_2);
+		addr_status3 = cam_io_r_mb(common_data->mem_base +
+			wm_data->hw_regs->addr_status_3);
 		CAM_INFO(CAM_ISP,
 			"VFE:%d WM:%d width:%u height:%u stride:%u x_init:%u en_cfg:%u acquired width:%u height:%u",
 			wm_data->common_data->core_index, wm_idx,
@@ -2478,6 +2499,14 @@ static int cam_vfe_bus_ver3_print_dimensions(
 			wm_data->en_cfg,
 			wm_data->acquired_width,
 			wm_data->acquired_height);
+		CAM_INFO(CAM_ISP,
+			"hw:%d WM:%d last consumed address:0x%x last frame addr:0x%x fifo cnt:0x%x current client address:0x%x",
+			common_data->hw_intf->hw_idx,
+			wm_data->index,
+			addr_status0,
+			addr_status1,
+			addr_status2,
+			addr_status3);
 	}
 	return 0;
 }
@@ -2960,6 +2989,13 @@ static int cam_vfe_bus_ver3_update_ubwc_regs(
 	CAM_DBG(CAM_ISP, "WM:%d meta stride 0x%X",
 		wm_data->index, reg_val_pair[*j-1]);
 
+	if (wm_data->common_data->disable_ubwc_comp) {
+		wm_data->ubwc_mode_cfg &= ~ubwc_regs->ubwc_comp_en_bit;
+		CAM_DBG(CAM_ISP,
+			"UBWC force WM:%d val= x%x",
+			wm_data->index, wm_data->ubwc_mode_cfg);
+	}
+
 	CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, *j,
 		ubwc_regs->mode_cfg, wm_data->ubwc_mode_cfg);
 	CAM_DBG(CAM_ISP, "WM:%d ubwc_mode_cfg 0x%X",
@@ -3145,22 +3181,28 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 
 		/* WM Image address */
 		for (k = 0; k < loop_size; k++) {
-			if (wm_data->en_ubwc)
+			if (wm_data->en_ubwc) {
 				CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
 					wm_data->hw_regs->image_addr,
 					update_buf->wm_update->image_buf[i] +
 					io_cfg->planes[i].meta_size +
 					k * frame_inc);
-			else if (wm_data->en_cfg & (0x3 << 16))
+				update_buf->wm_update->image_buf_offset[i] =
+					io_cfg->planes[i].meta_size;
+			} else if (wm_data->en_cfg & (0x3 << 16)) {
 				CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
 					wm_data->hw_regs->image_addr,
 					(update_buf->wm_update->image_buf[i] +
 					wm_data->offset + k * frame_inc));
-			else
+				update_buf->wm_update->image_buf_offset[i] =
+					wm_data->offset;
+			} else {
 				CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
 					wm_data->hw_regs->image_addr,
 					(update_buf->wm_update->image_buf[i] +
 					k * frame_inc));
+				update_buf->wm_update->image_buf_offset[i] = 0;
+			}
 
 			CAM_DBG(CAM_ISP, "WM:%d image address 0x%X",
 				wm_data->index, reg_val_pair[j-1]);

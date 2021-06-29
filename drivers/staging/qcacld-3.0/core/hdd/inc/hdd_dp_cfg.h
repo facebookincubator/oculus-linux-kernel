@@ -353,6 +353,65 @@
 
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
 
+#ifdef WLAN_FEATURE_MSCS
+/*
+ * <ini>
+ * mscs_pkt_threshold - Voice pkt count threshold
+ *
+ * @Min: 0
+ * @Max: 10000
+ * @Default: 1200
+ *
+ * This ini specifies the Voice pkt count threshold to
+ * Send MSCS action frame to AP
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_VO_PKT_COUNT_THRESHOLD \
+		CFG_INI_UINT( \
+		"mscs_pkt_threshold", \
+		0, \
+		10000, \
+		1200, \
+		CFG_VALUE_OR_DEFAULT, \
+		"Voice pkt count threshold")
+
+/*
+ * <ini>
+ * mscs_voice_interval - mscs voice interval in sec
+ *
+ * @Min: 0
+ * @Max: 300
+ * @Default: 30
+ *
+ * This ini specifies the mscs voice interval to
+ * monitor voice tx packet count to send MSCS action frame
+ *
+ * Related: mscs_pkt_threshold
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_MSCS_VOICE_INTERVAL \
+		CFG_INI_UINT( \
+		"mscs_voice_interval", \
+		0, \
+		300, \
+		30, \
+		CFG_VALUE_OR_DEFAULT, \
+		"mscs voice interval")
+
+#define CFG_MSCS_FEATURE_ALL \
+		CFG(CFG_VO_PKT_COUNT_THRESHOLD) \
+		CFG(CFG_MSCS_VOICE_INTERVAL)
+
+#else
+#define CFG_MSCS_FEATURE_ALL
+#endif
+
 #ifdef WLAN_FEATURE_DP_BUS_BANDWIDTH
 /*
  * <ini>
@@ -1370,6 +1429,40 @@
 		 WLAN_CFG_WMI_CREDIT_DEFAULT, \
 		 CFG_VALUE_OR_DEFAULT, "WMI HTC CREDIT COUNT")
 
+#define WLAN_CFG_ICMP_REQ_TO_FW_MARK_ALL (-1)
+#define WLAN_CFG_ICMP_REQ_TO_FW_MARK_INTERVAL 0
+#define WLAN_CFG_ICMP_REQ_TO_FW_MARK_INTERVAL_MIN (-1)
+#define WLAN_CFG_ICMP_REQ_TO_FW_MARK_INTERVAL_MAX 100000
+
+/*
+ * <ini>
+ * icmp_req_to_fw_mark_interval - Interval to mark the ICMP Request packet
+ *				  to be sent to FW.
+ * @Min: -1
+ * @Max:  100000
+ * @Default: 0
+ *
+ * This ini is used to control DP Software to mark the ICMP request packets
+ * to be sent to FW at certain interval (in milliseconds).
+ * The value 0 is used to disable marking of ICMP requests to be sent to FW.
+ * The value -1 is used to mark all the ICMP requests to be sent to FW.
+ * Any value greater than zero indicates the time interval (in milliseconds)
+ * at which ICMP requests are marked to be sent to FW.
+ *
+ * Supported modes: All modes
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_DP_ICMP_REQ_TO_FW_MARK_INTERVAL \
+	CFG_INI_INT("icmp_req_to_fw_mark_interval", \
+		    WLAN_CFG_ICMP_REQ_TO_FW_MARK_INTERVAL_MIN, \
+		    WLAN_CFG_ICMP_REQ_TO_FW_MARK_INTERVAL_MAX, \
+		    WLAN_CFG_ICMP_REQ_TO_FW_MARK_INTERVAL, \
+		    CFG_VALUE_OR_DEFAULT, \
+		    "Interval to mark ICMP Request packets to be sent to FW")
+
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 #define CFG_HDD_DP_LEGACY_TX_FLOW \
 	CFG(CFG_DP_LL_TX_FLOW_LWM) \
@@ -1445,6 +1538,8 @@
 	CFG(CFG_DP_RX_WAKELOCK_TIMEOUT) \
 	CFG(CFG_DP_NUM_DP_RX_THREADS) \
 	CFG(CFG_DP_HTC_WMI_CREDIT_CNT) \
+	CFG(CFG_DP_ICMP_REQ_TO_FW_MARK_INTERVAL) \
+	CFG_MSCS_FEATURE_ALL \
 	CFG_DP_ENABLE_FASTPATH_ALL \
 	CFG_HDD_DP_BUS_BANDWIDTH \
 	CFG_DP_DRIVER_TCP_DELACK \

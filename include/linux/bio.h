@@ -73,9 +73,15 @@
 
 #define bio_sectors(bio)	bvec_iter_sectors((bio)->bi_iter)
 #define bio_end_sector(bio)	bvec_iter_end_sector((bio)->bi_iter)
+#ifdef CONFIG_PFK
 #define bio_dun(bio)		((bio)->bi_iter.bi_dun)
 #define bio_duns(bio)		(bio_sectors(bio) >> 3) /* 4KB unit */
 #define bio_end_dun(bio)	(bio_dun(bio) + bio_duns(bio))
+#else
+#define bio_dun(bio)		0
+#define bio_duns(bio)		0
+#define bio_end_dun(bio)	0
+#endif
 
 /*
  * Return the data direction, READ or WRITE.

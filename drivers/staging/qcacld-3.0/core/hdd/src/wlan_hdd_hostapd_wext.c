@@ -868,7 +868,8 @@ static __iw_softap_setparam(struct net_device *dev,
 		}
 
 		qdf_mem_zero(&radar, sizeof(radar));
-		if (wlan_reg_is_dfs_for_freq(pdev, ap_ctx->operating_chan_freq))
+		if (policy_mgr_get_dfs_beaconing_session_id(hdd_ctx->psoc) !=
+		    WLAN_UMAC_VDEV_ID_MAX)
 			tgt_dfs_process_radar_ind(pdev, &radar);
 		else
 			hdd_debug("Ignore set radar, op ch_freq(%d) is not dfs",
@@ -899,7 +900,7 @@ static __iw_softap_setparam(struct net_device *dev,
 	case QCASAP_NSS_CMD:
 	{
 		hdd_debug("QCASAP_NSS_CMD val %d", set_value);
-		hdd_update_nss(adapter, set_value);
+		hdd_update_nss(adapter, set_value, set_value);
 		ret = wma_cli_set_command(adapter->vdev_id,
 					  WMI_VDEV_PARAM_NSS,
 					  set_value, VDEV_CMD);
@@ -1141,7 +1142,7 @@ static __iw_softap_getparam(struct net_device *dev,
 
 	switch (sub_cmd) {
 	case QCSAP_PARAM_MAX_ASSOC:
-		if (ucfg_mlme_set_assoc_sta_limit(hdd_ctx->psoc, *value) !=
+		if (ucfg_mlme_get_assoc_sta_limit(hdd_ctx->psoc, value) !=
 		    QDF_STATUS_SUCCESS) {
 			hdd_err("CFG_ASSOC_STA_LIMIT failed");
 			ret = -EIO;

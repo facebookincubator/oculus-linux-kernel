@@ -161,6 +161,79 @@ static void hal_update_srng_hp_tp_address(struct hal_soc *hal_soc,
 
 }
 
+#ifdef GENERIC_SHADOW_REGISTER_ACCESS_ENABLE
+void hal_set_one_target_reg_config(struct hal_soc *hal,
+				   uint32_t target_reg_offset,
+				   int list_index)
+{
+	int i = list_index;
+
+	qdf_assert_always(i < MAX_GENERIC_SHADOW_REG);
+	hal->list_shadow_reg_config[i].target_register =
+		target_reg_offset;
+	hal->num_generic_shadow_regs_configured++;
+}
+
+qdf_export_symbol(hal_set_one_target_reg_config);
+
+#define REO_R0_DESTINATION_RING_CTRL_ADDR_OFFSET 0x4
+#define MAX_REO_REMAP_SHADOW_REGS 4
+QDF_STATUS hal_set_shadow_regs(void *hal_soc)
+{
+	uint32_t target_reg_offset;
+	struct hal_soc *hal = (struct hal_soc *)hal_soc;
+	int i;
+	struct hal_hw_srng_config *srng_config =
+		&hal->hw_srng_table[WBM2SW_RELEASE];
+
+	target_reg_offset =
+		HWIO_REO_R0_DESTINATION_RING_CTRL_IX_0_ADDR(
+			SEQ_WCSS_UMAC_REO_REG_OFFSET);
+
+	for (i = 0; i < MAX_REO_REMAP_SHADOW_REGS; i++) {
+		hal_set_one_target_reg_config(hal, target_reg_offset, i);
+		target_reg_offset += REO_R0_DESTINATION_RING_CTRL_ADDR_OFFSET;
+	}
+
+	target_reg_offset = srng_config->reg_start[HP_OFFSET_IN_REG_START];
+	target_reg_offset += (srng_config->reg_size[HP_OFFSET_IN_REG_START]
+			      * HAL_IPA_TX_COMP_RING_IDX);
+
+	hal_set_one_target_reg_config(hal, target_reg_offset, i);
+	return QDF_STATUS_SUCCESS;
+}
+
+qdf_export_symbol(hal_set_shadow_regs);
+
+QDF_STATUS hal_construct_shadow_regs(void *hal_soc)
+{
+	struct hal_soc *hal = (struct hal_soc *)hal_soc;
+	int shadow_config_index = hal->num_shadow_registers_configured;
+	int i;
+	int num_regs = hal->num_generic_shadow_regs_configured;
+
+	for (i = 0; i < num_regs; i++) {
+		qdf_assert_always(shadow_config_index < MAX_SHADOW_REGISTERS);
+		hal->shadow_config[shadow_config_index].addr =
+			hal->list_shadow_reg_config[i].target_register;
+		hal->list_shadow_reg_config[i].shadow_config_index =
+			shadow_config_index;
+		hal->list_shadow_reg_config[i].va =
+			SHADOW_REGISTER(shadow_config_index) +
+			(uintptr_t)hal->dev_base_addr;
+		hal_debug("target_reg %x, shadow register 0x%x shadow_index 0x%x",
+			  hal->shadow_config[shadow_config_index].addr,
+			  SHADOW_REGISTER(shadow_config_index),
+			  shadow_config_index);
+		shadow_config_index++;
+		hal->num_shadow_registers_configured++;
+	}
+	return QDF_STATUS_SUCCESS;
+}
+
+qdf_export_symbol(hal_construct_shadow_regs);
+#endif
+
 QDF_STATUS hal_set_one_shadow_config(void *hal_soc,
 				     int ring_type,
 				     int ring_num)
@@ -202,7 +275,7 @@ QDF_STATUS hal_set_one_shadow_config(void *hal_soc,
 
 qdf_export_symbol(hal_set_one_shadow_config);
 
-QDF_STATUS hal_construct_shadow_config(void *hal_soc)
+QDF_STATUS hal_construct_srng_shadow_regs(void *hal_soc)
 {
 	int ring_type, ring_num;
 	struct hal_soc *hal = (struct hal_soc *)hal_soc;
@@ -227,7 +300,7 @@ QDF_STATUS hal_construct_shadow_config(void *hal_soc)
 	return QDF_STATUS_SUCCESS;
 }
 
-qdf_export_symbol(hal_construct_shadow_config);
+qdf_export_symbol(hal_construct_srng_shadow_regs);
 
 void hal_get_shadow_config(void *hal_soc,
 	struct pld_shadow_reg_v2_cfg **shadow_config,
@@ -373,17 +446,8 @@ uint32_t hal_get_target_type(hal_soc_handle_t hal_soc_hdl)
 
 qdf_export_symbol(hal_get_target_type);
 
-#ifdef FEATURE_HAL_DELAYED_REG_WRITE
-#ifdef MEMORY_DEBUG
-/*
- * Length of the queue(array) used to hold delayed register writes.
- * Must be a multiple of 2.
- */
-#define HAL_REG_WRITE_QUEUE_LEN 128
-#else
-#define HAL_REG_WRITE_QUEUE_LEN 32
-#endif
-
+#if defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HAL_DELAYED_REG_WRITE_V2)
 /**
  * hal_is_reg_write_tput_level_high() - throughput level for delayed reg writes
  * @hal: hal_soc pointer
@@ -397,6 +461,162 @@ static inline bool hal_is_reg_write_tput_level_high(struct hal_soc *hal)
 	return (bw_level >= PLD_BUS_WIDTH_MEDIUM) ? true : false;
 }
 
+static inline
+char *hal_fill_reg_write_srng_stats(struct hal_srng *srng,
+				    char *buf, qdf_size_t size)
+{
+	qdf_scnprintf(buf, size, "enq %u deq %u coal %u direct %u",
+		      srng->wstats.enqueues, srng->wstats.dequeues,
+		      srng->wstats.coalesces, srng->wstats.direct);
+	return buf;
+}
+
+/* bytes for local buffer */
+#define HAL_REG_WRITE_SRNG_STATS_LEN 100
+
+void hal_dump_reg_write_srng_stats(hal_soc_handle_t hal_soc_hdl)
+{
+	struct hal_srng *srng;
+	char buf[HAL_REG_WRITE_SRNG_STATS_LEN];
+	struct hal_soc *hal = (struct hal_soc *)hal_soc_hdl;
+
+	srng = hal_get_srng(hal, HAL_SRNG_SW2TCL1);
+	hal_debug("SW2TCL1: %s",
+		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
+
+	srng = hal_get_srng(hal, HAL_SRNG_WBM2SW0_RELEASE);
+	hal_debug("WBM2SW0: %s",
+		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
+
+	srng = hal_get_srng(hal, HAL_SRNG_REO2SW1);
+	hal_debug("REO2SW1: %s",
+		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
+
+	srng = hal_get_srng(hal, HAL_SRNG_REO2SW2);
+	hal_debug("REO2SW2: %s",
+		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
+
+	srng = hal_get_srng(hal, HAL_SRNG_REO2SW3);
+	hal_debug("REO2SW3: %s",
+		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
+}
+
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE_V2
+/**
+ * hal_dump_tcl_stats() - dump the TCL reg write stats
+ * @hal: hal_soc pointer
+ *
+ * Return: None
+ */
+static inline void hal_dump_tcl_stats(struct hal_soc *hal)
+{
+	struct hal_srng *srng = hal_get_srng(hal, HAL_SRNG_SW2TCL1);
+	uint32_t *hist = hal->tcl_stats.sched_delay;
+	char buf[HAL_REG_WRITE_SRNG_STATS_LEN];
+
+	hal_debug("TCL: %s sched-delay hist %u %u %u %u",
+		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)),
+		  hist[REG_WRITE_SCHED_DELAY_SUB_100us],
+		  hist[REG_WRITE_SCHED_DELAY_SUB_1000us],
+		  hist[REG_WRITE_SCHED_DELAY_SUB_5000us],
+		  hist[REG_WRITE_SCHED_DELAY_GT_5000us]);
+	hal_debug("wq_dly %u wq_dir %u tim_enq %u tim_dir %u enq_tim_cnt %u dir_tim_cnt %u rst_tim_cnt %u",
+		  hal->tcl_stats.wq_delayed,
+		  hal->tcl_stats.wq_direct,
+		  hal->tcl_stats.timer_enq,
+		  hal->tcl_stats.timer_direct,
+		  hal->tcl_stats.enq_timer_set,
+		  hal->tcl_stats.direct_timer_set,
+		  hal->tcl_stats.timer_reset);
+}
+
+#else
+static inline void hal_dump_tcl_stats(struct hal_soc *hal)
+{
+}
+#endif
+
+void hal_dump_reg_write_stats(hal_soc_handle_t hal_soc_hdl)
+{
+	uint32_t *hist;
+	struct hal_soc *hal = (struct hal_soc *)hal_soc_hdl;
+
+	hist = hal->stats.wstats.sched_delay;
+	hal_debug("wstats: enq %u deq %u coal %u direct %u q_depth %u max_q %u sched-delay hist %u %u %u %u",
+		  qdf_atomic_read(&hal->stats.wstats.enqueues),
+		  hal->stats.wstats.dequeues,
+		  qdf_atomic_read(&hal->stats.wstats.coalesces),
+		  qdf_atomic_read(&hal->stats.wstats.direct),
+		  qdf_atomic_read(&hal->stats.wstats.q_depth),
+		  hal->stats.wstats.max_q_depth,
+		  hist[REG_WRITE_SCHED_DELAY_SUB_100us],
+		  hist[REG_WRITE_SCHED_DELAY_SUB_1000us],
+		  hist[REG_WRITE_SCHED_DELAY_SUB_5000us],
+		  hist[REG_WRITE_SCHED_DELAY_GT_5000us]);
+
+	hal_dump_tcl_stats(hal);
+}
+
+int hal_get_reg_write_pending_work(void *hal_soc)
+{
+	struct hal_soc *hal = (struct hal_soc *)hal_soc;
+
+	return qdf_atomic_read(&hal->active_work_cnt);
+}
+
+#endif
+
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#ifdef MEMORY_DEBUG
+/*
+ * Length of the queue(array) used to hold delayed register writes.
+ * Must be a multiple of 2.
+ */
+#define HAL_REG_WRITE_QUEUE_LEN 128
+#else
+#define HAL_REG_WRITE_QUEUE_LEN 32
+#endif
+
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE_V2
+/**
+ * hal_process_reg_write_q_elem() - process a regiter write queue element
+ * @hal: hal_soc pointer
+ * @q_elem: pointer to hal regiter write queue element
+ *
+ * Return: The value which was written to the address
+ */
+static uint32_t
+hal_process_reg_write_q_elem(struct hal_soc *hal,
+			     struct hal_reg_write_q_elem *q_elem)
+{
+	struct hal_srng *srng = q_elem->srng;
+	uint32_t write_val;
+
+	SRNG_LOCK(&srng->lock);
+	srng->reg_write_in_progress = false;
+	srng->wstats.dequeues++;
+
+	if (srng->ring_dir == HAL_SRNG_SRC_RING) {
+		write_val = srng->u.src_ring.hp;
+		q_elem->dequeue_val = write_val;
+		q_elem->valid = 0;
+		SRNG_UNLOCK(&srng->lock);
+		hal_write_address_32_mb(hal,
+					srng->u.src_ring.hp_addr,
+					write_val, false);
+	} else {
+		write_val = srng->u.dst_ring.tp;
+		q_elem->dequeue_val = write_val;
+		q_elem->valid = 0;
+		SRNG_UNLOCK(&srng->lock);
+		hal_write_address_32_mb(hal,
+					srng->u.dst_ring.tp_addr,
+					write_val, false);
+	}
+
+	return write_val;
+}
+#else
 /**
  * hal_process_reg_write_q_elem() - process a regiter write queue element
  * @hal: hal_soc pointer
@@ -435,6 +655,7 @@ hal_process_reg_write_q_elem(struct hal_soc *hal,
 
 	return write_val;
 }
+#endif
 
 /**
  * hal_reg_write_fill_sched_delay_hist() - fill reg write delay histogram in hal
@@ -474,6 +695,7 @@ static void hal_reg_write_work(void *arg)
 	uint64_t delta_us;
 	uint8_t ring_id;
 	uint32_t *addr;
+	uint32_t num_processed = 0;
 
 	q_elem = &hal->reg_write_queue[(hal->read_idx)];
 	q_elem->work_scheduled_time = qdf_get_log_timestamp();
@@ -511,26 +733,34 @@ static void hal_reg_write_work(void *arg)
 		hal_verbose_debug("read_idx %u srng 0x%x, addr 0x%pK dequeue_val %u sched delay %llu us",
 				  hal->read_idx, ring_id, addr, write_val, delta_us);
 
-		qdf_atomic_dec(&hal->active_work_cnt);
+		num_processed++;
 		hal->read_idx = (hal->read_idx + 1) &
 					(HAL_REG_WRITE_QUEUE_LEN - 1);
 		q_elem = &hal->reg_write_queue[(hal->read_idx)];
 	}
 
 	hif_allow_link_low_power_states(hal->hif_handle);
+	/*
+	 * Decrement active_work_cnt by the number of elements dequeued after
+	 * hif_allow_link_low_power_states.
+	 * This makes sure that hif_try_complete_tasks will wait till we make
+	 * the bus access in hif_allow_link_low_power_states. This will avoid
+	 * race condition between delayed register worker and bus suspend
+	 * (system suspend or runtime suspend).
+	 *
+	 * The following decrement should be done at the end!
+	 */
+	qdf_atomic_sub(num_processed, &hal->active_work_cnt);
 }
 
-/**
- * hal_flush_reg_write_work() - flush all writes from regiter write queue
- * @arg: hal_soc pointer
- *
- * Return: None
- */
-static inline void hal_flush_reg_write_work(struct hal_soc *hal)
+static void __hal_flush_reg_write_work(struct hal_soc *hal)
 {
 	qdf_cancel_work(&hal->reg_write_work);
-	qdf_flush_work(&hal->reg_write_work);
-	qdf_flush_workqueue(0, hal->reg_write_wq);
+
+}
+
+void hal_flush_reg_write_work(hal_soc_handle_t hal_handle)
+{	__hal_flush_reg_write_work((struct hal_soc *)hal_handle);
 }
 
 /**
@@ -612,21 +842,6 @@ static void hal_reg_write_enqueue(struct hal_soc *hal_soc,
 		       &hal_soc->reg_write_work);
 }
 
-void hal_delayed_reg_write(struct hal_soc *hal_soc,
-			   struct hal_srng *srng,
-			   void __iomem *addr,
-			   uint32_t value)
-{
-	if (pld_is_device_awake(hal_soc->qdf_dev->dev) ||
-	    hal_is_reg_write_tput_level_high(hal_soc)) {
-		qdf_atomic_inc(&hal_soc->stats.wstats.direct);
-		srng->wstats.direct++;
-		hal_write_address_32_mb(hal_soc, addr, value, false);
-	} else {
-		hal_reg_write_enqueue(hal_soc, srng, addr, value);
-	}
-}
-
 /**
  * hal_delayed_reg_write_init() - Initialization function for delayed reg writes
  * @hal_soc: hal_soc pointer
@@ -666,76 +881,11 @@ static QDF_STATUS hal_delayed_reg_write_init(struct hal_soc *hal)
  */
 static void hal_delayed_reg_write_deinit(struct hal_soc *hal)
 {
-	hal_flush_reg_write_work(hal);
+	__hal_flush_reg_write_work(hal);
+
+	qdf_flush_workqueue(0, hal->reg_write_wq);
 	qdf_destroy_workqueue(0, hal->reg_write_wq);
 	qdf_mem_free(hal->reg_write_queue);
-}
-
-static inline
-char *hal_fill_reg_write_srng_stats(struct hal_srng *srng,
-				    char *buf, qdf_size_t size)
-{
-	qdf_scnprintf(buf, size, "enq %u deq %u coal %u direct %u",
-		      srng->wstats.enqueues, srng->wstats.dequeues,
-		      srng->wstats.coalesces, srng->wstats.direct);
-	return buf;
-}
-
-/* bytes for local buffer */
-#define HAL_REG_WRITE_SRNG_STATS_LEN 100
-
-void hal_dump_reg_write_srng_stats(hal_soc_handle_t hal_soc_hdl)
-{
-	struct hal_srng *srng;
-	char buf[HAL_REG_WRITE_SRNG_STATS_LEN];
-	struct hal_soc *hal = (struct hal_soc *)hal_soc_hdl;
-
-	srng = hal_get_srng(hal, HAL_SRNG_SW2TCL1);
-	hal_debug("SW2TCL1: %s",
-		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
-
-	srng = hal_get_srng(hal, HAL_SRNG_WBM2SW0_RELEASE);
-	hal_debug("WBM2SW0: %s",
-		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
-
-	srng = hal_get_srng(hal, HAL_SRNG_REO2SW1);
-	hal_debug("REO2SW1: %s",
-		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
-
-	srng = hal_get_srng(hal, HAL_SRNG_REO2SW2);
-	hal_debug("REO2SW2: %s",
-		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
-
-	srng = hal_get_srng(hal, HAL_SRNG_REO2SW3);
-	hal_debug("REO2SW3: %s",
-		  hal_fill_reg_write_srng_stats(srng, buf, sizeof(buf)));
-}
-
-void hal_dump_reg_write_stats(hal_soc_handle_t hal_soc_hdl)
-{
-	uint32_t *hist;
-	struct hal_soc *hal = (struct hal_soc *)hal_soc_hdl;
-
-	hist = hal->stats.wstats.sched_delay;
-
-	hal_debug("enq %u deq %u coal %u direct %u q_depth %u max_q %u sched-delay hist %u %u %u %u",
-		  qdf_atomic_read(&hal->stats.wstats.enqueues),
-		  hal->stats.wstats.dequeues,
-		  qdf_atomic_read(&hal->stats.wstats.coalesces),
-		  qdf_atomic_read(&hal->stats.wstats.direct),
-		  qdf_atomic_read(&hal->stats.wstats.q_depth),
-		  hal->stats.wstats.max_q_depth,
-		  hist[REG_WRITE_SCHED_DELAY_SUB_100us],
-		  hist[REG_WRITE_SCHED_DELAY_SUB_1000us],
-		  hist[REG_WRITE_SCHED_DELAY_SUB_5000us],
-		  hist[REG_WRITE_SCHED_DELAY_GT_5000us]);
-}
-
-int hal_get_reg_write_pending_work(void *hal_soc)
-{
-	struct hal_soc *hal = (struct hal_soc *)hal_soc;
-
-	return qdf_atomic_read(&hal->active_work_cnt);
 }
 
 #else
@@ -747,6 +897,401 @@ static inline QDF_STATUS hal_delayed_reg_write_init(struct hal_soc *hal)
 static inline void hal_delayed_reg_write_deinit(struct hal_soc *hal)
 {
 }
+#endif
+
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE_V2
+#ifdef MEMORY_DEBUG
+/**
+ * hal_reg_write_get_timestamp() - Function to get the timestamp
+ *
+ * Return: return present simestamp
+ */
+static inline qdf_time_t hal_del_reg_write_get_ts(void)
+{
+	return qdf_get_log_timestamp();
+}
+
+/**
+ * hal_del_reg_write_ts_usecs() - Convert the timestamp to micro secs
+ * @ts: timestamp value to be converted
+ *
+ * Return: return the timestamp in micro secs
+ */
+static inline qdf_time_t hal_del_reg_write_ts_usecs(qdf_time_t ts)
+{
+	return qdf_log_timestamp_to_usecs(ts);
+}
+
+/**
+ * hal_tcl_write_fill_sched_delay_hist() - fill TCL reg write delay histogram
+ * @hal: hal_soc pointer
+ * @delay: delay in us
+ *
+ * Return: None
+ */
+static inline void hal_tcl_write_fill_sched_delay_hist(struct hal_soc *hal)
+{
+	uint32_t *hist;
+	uint32_t delay_us;
+
+	hal->tcl_stats.deq_time = hal_del_reg_write_get_ts();
+	delay_us = hal_del_reg_write_ts_usecs(hal->tcl_stats.deq_time -
+					      hal->tcl_stats.enq_time);
+
+	hist = hal->tcl_stats.sched_delay;
+	if (delay_us < 100)
+		hist[REG_WRITE_SCHED_DELAY_SUB_100us]++;
+	else if (delay_us < 1000)
+		hist[REG_WRITE_SCHED_DELAY_SUB_1000us]++;
+	else if (delay_us < 5000)
+		hist[REG_WRITE_SCHED_DELAY_SUB_5000us]++;
+	else
+		hist[REG_WRITE_SCHED_DELAY_GT_5000us]++;
+}
+
+#else
+static inline qdf_time_t hal_del_reg_write_get_ts(void)
+{
+	return 0;
+}
+
+static inline qdf_time_t hal_del_reg_write_ts_usecs(qdf_time_t ts)
+{
+	return 0;
+}
+
+static inline void hal_tcl_write_fill_sched_delay_hist(struct hal_soc *hal)
+{
+}
+#endif
+
+/**
+ * hal_tcl_reg_write_work() - Worker to process delayed SW2TCL1 writes
+ * @arg: hal_soc pointer
+ *
+ * Return: None
+ */
+static void hal_tcl_reg_write_work(void *arg)
+{
+	struct hal_soc *hal = arg;
+	struct hal_srng *srng = hal_get_srng(hal, HAL_SRNG_SW2TCL1);
+
+	SRNG_LOCK(&srng->lock);
+	srng->wstats.dequeues++;
+	hal_tcl_write_fill_sched_delay_hist(hal);
+
+	/*
+	 * During the tranition of low to high tput scenario, reg write moves
+	 * from delayed to direct write context, there is a little chance that
+	 * worker thread gets scheduled later than direct context write which
+	 * already wrote the latest HP value. This check can catch that case
+	 * and avoid the repetitive writing of the same HP value.
+	 */
+	if (srng->last_reg_wr_val != srng->u.src_ring.hp) {
+		srng->last_reg_wr_val = srng->u.src_ring.hp;
+		if (hal->tcl_direct) {
+			/*
+			 * TCL reg writes have been moved to direct context and
+			 * the assumption is that PCIe bus stays in Active state
+			 * during high tput, hence its fine to write the HP
+			 * while the SRNG_LOCK is being held.
+			 */
+			hal->tcl_stats.wq_direct++;
+			hal_write_address_32_mb(hal, srng->u.src_ring.hp_addr,
+						srng->last_reg_wr_val, false);
+			srng->reg_write_in_progress = false;
+			SRNG_UNLOCK(&srng->lock);
+		} else {
+			/*
+			 * TCL reg write to happen in delayed context,
+			 * write operation might take time due to possibility of
+			 * PCIe bus stays in low power state during low tput,
+			 * Hence release the SRNG_LOCK before writing.
+			 */
+			hal->tcl_stats.wq_delayed++;
+			srng->reg_write_in_progress = false;
+			SRNG_UNLOCK(&srng->lock);
+			hal_write_address_32_mb(hal, srng->u.src_ring.hp_addr,
+						srng->last_reg_wr_val, false);
+		}
+	} else {
+		srng->reg_write_in_progress = false;
+		SRNG_UNLOCK(&srng->lock);
+	}
+
+	/*
+	 * Decrement active_work_cnt to make sure that hif_try_complete_tasks
+	 * will wait. This will avoid race condition between delayed register
+	 * worker and bus suspend (system suspend or runtime suspend).
+	 *
+	 * The following decrement should be done at the end!
+	 */
+	qdf_atomic_dec(&hal->active_work_cnt);
+	qdf_atomic_set(&hal->tcl_work_active, false);
+}
+
+static void __hal_flush_tcl_reg_write_work(struct hal_soc *hal)
+{
+	qdf_cancel_work(&hal->tcl_reg_write_work);
+}
+
+/**
+ * hal_tcl_reg_write_enqueue() - enqueue TCL register writes into kworker
+ * @hal_soc: hal_soc pointer
+ * @srng: srng pointer
+ * @addr: iomem address of regiter
+ * @value: value to be written to iomem address
+ *
+ * This function executes from within the SRNG LOCK
+ *
+ * Return: None
+ */
+static void hal_tcl_reg_write_enqueue(struct hal_soc *hal_soc,
+				      struct hal_srng *srng,
+				      void __iomem *addr,
+				      uint32_t value)
+{
+	hal_soc->tcl_stats.enq_time = hal_del_reg_write_get_ts();
+
+	if (qdf_queue_work(hal_soc->qdf_dev, hal_soc->tcl_reg_write_wq,
+			   &hal_soc->tcl_reg_write_work)) {
+		srng->reg_write_in_progress  = true;
+		qdf_atomic_inc(&hal_soc->active_work_cnt);
+		qdf_atomic_set(&hal_soc->tcl_work_active, true);
+		srng->wstats.enqueues++;
+	} else {
+		hal_soc->tcl_stats.enq_timer_set++;
+		qdf_timer_mod(&hal_soc->tcl_reg_write_timer, 1);
+	}
+}
+
+/**
+ * hal_tcl_reg_write_timer() - timer handler to take care of pending TCL writes
+ * @arg: srng handle
+ *
+ * This function handles the pending TCL reg writes missed due to the previous
+ * scheduled worker running.
+ *
+ * Return: None
+ */
+static void hal_tcl_reg_write_timer(void *arg)
+{
+	hal_ring_handle_t srng_hdl = arg;
+	struct hal_srng *srng;
+	struct hal_soc *hal;
+
+	srng = (struct hal_srng *)srng_hdl;
+	hal = srng->hal_soc;
+
+	if (hif_pm_runtime_get(hal->hif_handle, RTPM_ID_DW_TX_HW_ENQUEUE,
+			       true)) {
+		hal_srng_set_event(srng_hdl, HAL_SRNG_FLUSH_EVENT);
+		hal_srng_inc_flush_cnt(srng_hdl);
+		goto fail;
+	}
+
+	SRNG_LOCK(&srng->lock);
+	if (hal->tcl_direct) {
+		/*
+		 * Due to the previous scheduled worker still running,
+		 * direct reg write cannot be performed, so posted the
+		 * pending writes to timer context.
+		 */
+		if (srng->last_reg_wr_val != srng->u.src_ring.hp) {
+			srng->last_reg_wr_val = srng->u.src_ring.hp;
+			srng->wstats.direct++;
+			hal->tcl_stats.timer_direct++;
+			hal_write_address_32_mb(hal, srng->u.src_ring.hp_addr,
+						srng->last_reg_wr_val, false);
+		}
+	} else {
+		/*
+		 * Due to the previous scheduled worker still running,
+		 * queue_work from delayed context would fail,
+		 * so retry from timer context.
+		 */
+		if (qdf_queue_work(hal->qdf_dev, hal->tcl_reg_write_wq,
+				   &hal->tcl_reg_write_work)) {
+			srng->reg_write_in_progress  = true;
+			qdf_atomic_inc(&hal->active_work_cnt);
+			qdf_atomic_set(&hal->tcl_work_active, true);
+			srng->wstats.enqueues++;
+			hal->tcl_stats.timer_enq++;
+		} else {
+			if (srng->last_reg_wr_val != srng->u.src_ring.hp) {
+				hal->tcl_stats.timer_reset++;
+				qdf_timer_mod(&hal->tcl_reg_write_timer, 1);
+			}
+		}
+	}
+	SRNG_UNLOCK(&srng->lock);
+	hif_pm_runtime_put(hal->hif_handle, RTPM_ID_DW_TX_HW_ENQUEUE);
+
+fail:
+	return;
+}
+
+/**
+ * hal_delayed_tcl_reg_write_init() - Initialization for delayed TCL reg writes
+ * @hal_soc: hal_soc pointer
+ *
+ * Initialize main data structures to process TCL register writes in a delayed
+ * workqueue.
+ *
+ * Return: QDF_STATUS_SUCCESS on success else a QDF error.
+ */
+static QDF_STATUS hal_delayed_tcl_reg_write_init(struct hal_soc *hal)
+{
+	struct hal_srng *srng = hal_get_srng(hal, HAL_SRNG_SW2TCL1);
+	QDF_STATUS status;
+
+	hal->tcl_reg_write_wq =
+		qdf_alloc_high_prior_ordered_workqueue("hal_tcl_reg_write_wq");
+	if (!hal->tcl_reg_write_wq) {
+		hal_err("hal_tcl_reg_write_wq alloc failed");
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	status = qdf_create_work(0, &hal->tcl_reg_write_work,
+				 hal_tcl_reg_write_work, hal);
+	if (status != QDF_STATUS_SUCCESS) {
+		hal_err("tcl_reg_write_work create failed");
+		goto fail;
+	}
+
+	status = qdf_timer_init(hal->qdf_dev, &hal->tcl_reg_write_timer,
+				hal_tcl_reg_write_timer, (void *)srng,
+				QDF_TIMER_TYPE_WAKE_APPS);
+	if (status != QDF_STATUS_SUCCESS) {
+		hal_err("tcl_reg_write_timer init failed");
+		goto fail;
+	}
+
+	qdf_atomic_init(&hal->tcl_work_active);
+
+	return QDF_STATUS_SUCCESS;
+
+fail:
+	qdf_destroy_workqueue(0, hal->tcl_reg_write_wq);
+	return status;
+}
+
+/**
+ * hal_delayed_tcl_reg_write_deinit() - De-Initialize delayed TCL reg writes
+ * @hal_soc: hal_soc pointer
+ *
+ * De-initialize main data structures to process TCL register writes in a
+ * delayed workqueue.
+ *
+ * Return: None
+ */
+static void hal_delayed_tcl_reg_write_deinit(struct hal_soc *hal)
+{
+	qdf_timer_stop(&hal->tcl_reg_write_timer);
+	qdf_timer_free(&hal->tcl_reg_write_timer);
+
+	__hal_flush_tcl_reg_write_work(hal);
+	qdf_flush_workqueue(0, hal->tcl_reg_write_wq);
+	qdf_destroy_workqueue(0, hal->tcl_reg_write_wq);
+}
+
+#else
+static inline QDF_STATUS hal_delayed_tcl_reg_write_init(struct hal_soc *hal)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline void hal_delayed_tcl_reg_write_deinit(struct hal_soc *hal)
+{
+}
+#endif
+
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE_V2
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+static inline void hal_reg_write_enqueue_v2(struct hal_soc *hal_soc,
+					    struct hal_srng *srng,
+					    void __iomem *addr,
+					    uint32_t value)
+{
+	hal_reg_write_enqueue(hal_soc, srng, addr, value);
+}
+#else
+static inline void hal_reg_write_enqueue_v2(struct hal_soc *hal_soc,
+					    struct hal_srng *srng,
+					    void __iomem *addr,
+					    uint32_t value)
+{
+	qdf_atomic_inc(&hal_soc->stats.wstats.direct);
+	srng->wstats.direct++;
+	hal_write_address_32_mb(hal_soc, addr, value, false);
+}
+#endif
+void hal_delayed_reg_write(struct hal_soc *hal_soc,
+			   struct hal_srng *srng,
+			   void __iomem *addr,
+			   uint32_t value)
+{
+	switch (srng->ring_type) {
+	case TCL_DATA:
+		if (hal_is_reg_write_tput_level_high(hal_soc)) {
+			hal_soc->tcl_direct = true;
+			if (srng->reg_write_in_progress ||
+			    !qdf_atomic_read(&hal_soc->tcl_work_active)) {
+				/*
+				 * Now the delayed work have either completed
+				 * the writing or not even scheduled and would
+				 * be blocked by SRNG_LOCK, hence it is fine to
+				 * do direct write here.
+				 */
+				srng->last_reg_wr_val = srng->u.src_ring.hp;
+				srng->wstats.direct++;
+				hal_write_address_32_mb(hal_soc, addr,
+							srng->last_reg_wr_val,
+							false);
+			} else {
+				hal_soc->tcl_stats.direct_timer_set++;
+				qdf_timer_mod(&hal_soc->tcl_reg_write_timer, 1);
+			}
+		} else {
+			hal_soc->tcl_direct = false;
+			if (srng->reg_write_in_progress) {
+				srng->wstats.coalesces++;
+			} else {
+				hal_tcl_reg_write_enqueue(hal_soc, srng,
+							  addr, value);
+			}
+		}
+		break;
+	case CE_SRC:
+	case CE_DST:
+	case CE_DST_STATUS:
+		hal_reg_write_enqueue_v2(hal_soc, srng, addr, value);
+		break;
+	default:
+		qdf_atomic_inc(&hal_soc->stats.wstats.direct);
+		srng->wstats.direct++;
+		hal_write_address_32_mb(hal_soc, addr, value, false);
+		break;
+	}
+}
+
+#else
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+void hal_delayed_reg_write(struct hal_soc *hal_soc,
+			   struct hal_srng *srng,
+			   void __iomem *addr,
+			   uint32_t value)
+{
+	if (pld_is_device_awake(hal_soc->qdf_dev->dev) ||
+	    hal_is_reg_write_tput_level_high(hal_soc)) {
+		qdf_atomic_inc(&hal_soc->stats.wstats.direct);
+		srng->wstats.direct++;
+		hal_write_address_32_mb(hal_soc, addr, value, false);
+	} else {
+		hal_reg_write_enqueue(hal_soc, srng, addr, value);
+	}
+}
+#endif
 #endif
 
 /**
@@ -819,6 +1364,7 @@ void *hal_attach(struct hif_opaque_softc *hif_handle, qdf_device_t qdf_dev)
 
 	qdf_atomic_init(&hal->active_work_cnt);
 	hal_delayed_reg_write_init(hal);
+	hal_delayed_tcl_reg_write_init(hal);
 
 	return (void *)hal;
 
@@ -869,6 +1415,7 @@ extern void hal_detach(void *hal_soc)
 	struct hal_soc *hal = (struct hal_soc *)hal_soc;
 
 	hal_delayed_reg_write_deinit(hal);
+	hal_delayed_tcl_reg_write_deinit(hal);
 
 	qdf_mem_free_consistent(hal->qdf_dev, hal->qdf_dev->dev,
 		sizeof(*(hal->shadow_rdptr_mem_vaddr)) * HAL_SRNG_ID_MAX,
@@ -1015,18 +1562,26 @@ void hal_srng_dst_set_hp_paddr(struct hal_srng *srng,
 }
 
 /**
- * hal_srng_dst_init_hp() - Initilaize destination ring head pointer
+ * hal_srng_dst_init_hp() - Initialize destination ring head
+ * pointer
+ * @hal_soc: hal_soc handle
  * @srng: sring pointer
  * @vaddr: virtual address
  */
-void hal_srng_dst_init_hp(struct hal_srng *srng,
+void hal_srng_dst_init_hp(struct hal_soc_handle *hal_soc,
+			  struct hal_srng *srng,
 			  uint32_t *vaddr)
 {
+	uint32_t reg_offset;
+	struct hal_soc *hal = (struct hal_soc *)hal_soc;
+
 	if (!srng)
 		return;
 
 	srng->u.dst_ring.hp_addr = vaddr;
-	SRNG_DST_REG_WRITE_CONFIRM(srng, HP, srng->u.dst_ring.cached_hp);
+	reg_offset = SRNG_DST_ADDR(srng, HP) - hal->dev_base_addr;
+	HAL_REG_WRITE_CONFIRM_RETRY(
+		hal, reg_offset, srng->u.dst_ring.cached_hp, true);
 
 	if (vaddr) {
 		*srng->u.dst_ring.hp_addr = srng->u.dst_ring.cached_hp;
@@ -1105,6 +1660,7 @@ void *hal_srng_setup(void *hal_soc, int ring_type, int ring_num,
 
 	dev_base_addr = hal->dev_base_addr;
 	srng->ring_id = ring_id;
+	srng->ring_type = ring_type;
 	srng->ring_dir = ring_config->ring_dir;
 	srng->ring_base_paddr = ring_params->ring_base_paddr;
 	srng->ring_base_vaddr = ring_params->ring_base_vaddr;

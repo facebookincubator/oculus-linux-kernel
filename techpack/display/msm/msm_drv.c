@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -132,7 +132,7 @@ module_param(reglog, bool, 0600);
 #endif
 
 #ifdef CONFIG_DRM_FBDEV_EMULATION
-static bool fbdev = true;
+static bool fbdev;
 MODULE_PARM_DESC(fbdev, "Enable fbdev compat layer");
 module_param(fbdev, bool, 0600);
 #endif

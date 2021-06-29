@@ -6,6 +6,7 @@
 #include "seacliff.dtsi"
 #include "seacliff-bcmdhd.dtsi"
 #include "seacliff-eye-face-led.dtsi"
+#include "seacliff-safetyboss.dtsi"
 
 &aliases {
 	hsuart14 = "/soc/qcom,qup_uart@98c000";
@@ -78,6 +79,10 @@
 	qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
 };
 
+&display_panel_avdd {
+	status = "disabled";
+};
+
 &dsi_dual_boe_spi_blu_dsc_video {
 	qcom,platform-en-gpio = <&tlmm 23 0>;
 	qcom,platform-reset-gpio = <&tlmm 101 0>;
@@ -112,6 +117,22 @@
 	config {
 		pins = "gpio83";
 	};
+};
+
+&mdss_dsi_phy0 {
+	qcom,platform-phy-drive-strength = <0x0F4 0x1F
+		0x0F8 0x1F
+		0x0FC 0x1F
+		0x020 0x50
+		0x110 0x55>;
+};
+
+&mdss_dsi_phy1 {
+	qcom,platform-phy-drive-strength = <0x0F4 0x1F
+		0x0F8 0x1F
+		0x0FC 0x1F
+		0x020 0x50
+		0x110 0x55>;
 };
 
 &pm8150_l7 {
@@ -163,9 +184,12 @@
 			   "psns_res";
 	dcin-icl-uv = <40000>;
 
-	pinctrl-names = "default", "boost_5v_active";
+	pinctrl-names = "default", "boost_5v_active",
+			"vdd_vconn_suspend", "vdd_vconn_active";
 	pinctrl-0 = <&pmb_boost_5v_ext_default>;
 	pinctrl-1 = <&pmb_boost_5v_ext_active>;
+	pinctrl-2 = <&pmb_vdd_vconn_suspend>;
+	pinctrl-3 = <&pmb_vdd_vconn_active>;
 
 	smb5_otg_boost: qcom,smb5-otg_boost {
 		regulator-name = "smb5-otg_boost";
@@ -184,6 +208,24 @@
 		};
 		pmb_boost_5v_ext_active: pmb_boost_5v_ext_active {
 			pins = "gpio2", "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-high;
+			power-source = <0>;
+		};
+
+		pmb_vdd_vconn_suspend: pmb_vdd_vconn_suspend {
+			pins = "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-low;
+			power-source = <0>;
+		};
+
+		pmb_vdd_vconn_active: pmb_vdd_vconn_active {
+			pins = "gpio5";
 			function = "normal";
 			input-disable;
 			output-enable;
@@ -275,7 +317,7 @@
 			oculus,swd-io = <&tlmm 120 0>;
 
 			oculus,swd-flavor = "nrf52832";
-			oculus,fw-path = "syncboss.bin";
+			oculus,fw-path = "syncboss_P2_BOARD.bin";
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;
@@ -387,8 +429,15 @@
 };
 
 &sde_dsi {
-	pinctrl-0 = <&sde_dsi_active &sde_te_active &seacliff_blu_en_active>;
-	pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend &seacliff_blu_en_suspend>;
+	pinctrl-0 = <&seacliff_blu_en_active>;
+	pinctrl-1 = <&seacliff_blu_en_suspend>;
+	avdd-supply = <>;
+};
+
+&sde_dsi1 {
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+	avdd-supply = <>;
 };
 
 &syncboss_float_swd {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SDE_HW_MDSS_H
@@ -43,14 +43,18 @@ enum sde_format_flags {
 	SDE_FORMAT_FLAG_YUV_BIT,
 	SDE_FORMAT_FLAG_DX_BIT,
 	SDE_FORMAT_FLAG_COMPRESSED_BIT,
+	SDE_FORMAT_FLAG_FSC_BIT,
 	SDE_FORMAT_FLAG_BIT_MAX,
 };
 
 #define SDE_FORMAT_FLAG_YUV		BIT(SDE_FORMAT_FLAG_YUV_BIT)
 #define SDE_FORMAT_FLAG_DX		BIT(SDE_FORMAT_FLAG_DX_BIT)
 #define SDE_FORMAT_FLAG_COMPRESSED	BIT(SDE_FORMAT_FLAG_COMPRESSED_BIT)
+#define SDE_FORMAT_FLAG_FSC		BIT(SDE_FORMAT_FLAG_FSC_BIT)
 #define SDE_FORMAT_IS_YUV(X)		\
 	(test_bit(SDE_FORMAT_FLAG_YUV_BIT, (X)->flag))
+#define SDE_FORMAT_IS_FSC(X)		\
+	(test_bit(SDE_FORMAT_FLAG_FSC_BIT, (X)->flag))
 #define SDE_FORMAT_IS_DX(X)		\
 	(test_bit(SDE_FORMAT_FLAG_DX_BIT, (X)->flag))
 #define SDE_FORMAT_IS_LINEAR(X)		((X)->fetch_mode == SDE_FETCH_LINEAR)

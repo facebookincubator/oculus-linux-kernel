@@ -6,6 +6,7 @@
 #include "seacliff.dtsi"
 #include "seacliff-bcmdhd.dtsi"
 #include "seacliff-eye-face-led.dtsi"
+#include "seacliff-safetyboss.dtsi"
 
 &cam_cci0 {
 	qcom,cam-sensor0 {
@@ -47,6 +48,22 @@
 		qcom,supply-min-voltage = <3120000>;
 		qcom,supply-max-voltage = <3120000>;
 	};
+};
+
+&mdss_dsi_phy0 {
+	qcom,platform-phy-drive-strength = <0x0F4 0x1F
+		0x0F8 0x1F
+		0x0FC 0x1F
+		0x020 0x50
+		0x110 0x55>;
+};
+
+&mdss_dsi_phy1 {
+	qcom,platform-phy-drive-strength = <0x0F4 0x1F
+		0x0F8 0x1F
+		0x0FC 0x1F
+		0x020 0x50
+		0x110 0x55>;
 };
 
 &pm8150_l7 {
@@ -98,9 +115,12 @@
 			   "psns_res";
 	dcin-icl-uv = <40000>;
 
-	pinctrl-names = "default", "boost_5v_active";
+	pinctrl-names = "default", "boost_5v_active",
+			"vdd_vconn_suspend", "vdd_vconn_active";
 	pinctrl-0 = <&pmb_boost_5v_ext_default>;
 	pinctrl-1 = <&pmb_boost_5v_ext_active>;
+	pinctrl-2 = <&pmb_vdd_vconn_suspend>;
+	pinctrl-3 = <&pmb_vdd_vconn_active>;
 
 	smb5_otg_boost: qcom,smb5-otg_boost {
 		regulator-name = "smb5-otg_boost";
@@ -119,6 +139,24 @@
 		};
 		pmb_boost_5v_ext_active: pmb_boost_5v_ext_active {
 			pins = "gpio2", "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-high;
+			power-source = <0>;
+		};
+
+		pmb_vdd_vconn_suspend: pmb_vdd_vconn_suspend {
+			pins = "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-low;
+			power-source = <0>;
+		};
+
+		pmb_vdd_vconn_active: pmb_vdd_vconn_active {
+			pins = "gpio5";
 			function = "normal";
 			input-disable;
 			output-enable;
@@ -230,27 +268,15 @@
 };
 
 &sde_dsi {
-	pinctrl-0 = <&sde_dsi_active &sde_te_active &seacliff_blu_en_active>;
-	pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend &seacliff_blu_en_suspend>;
+	pinctrl-0 = <&seacliff_blu_en_active>;
+	pinctrl-1 = <&seacliff_blu_en_suspend>;
+	avdd-supply = <>;
 };
 
-&soc {
-	oculus,safetyboss-swd {
-		compatible = "oculus,swd";
-
-		pinctrl-names = "swd_default";
-		pinctrl-0 = <&safetyboss_reset_default &safetyboss_float_swd>;
-
-		oculus,swd-flavor = "stm32g0";
-		oculus,fw-path = "safetyboss.bin";
-		oculus,swd-clk = <&tlmm 15 0>;
-		oculus,swd-io  = <&tlmm 14 0>;
-		oculus,swd-core-voltage-level = <1808000 1808000>;
-		oculus,flash-block-size = <8>;
-		oculus,flash-page-size = <2048>;
-		oculus,flash-page-count = <64>;
-		oculus,flash-page-retained-count = <6>;
-	};
+&sde_dsi1 {
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+	avdd-supply = <>;
 };
 
 &thermal_zones {
@@ -297,37 +323,6 @@
 			pins = "gpio22", "gpio23";
 			drive-strength = <2>;
 			input-enable;
-		};
-	};
-
-	// 11 = NRESET
-	// 14 = SWDIO
-	// 15 = SWDCLK
-	safetyboss_float_swd: safetyboss_float_swd {
-		mux {
-			pins = "gpio14", "gpio15";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio14", "gpio15";
-			drive-strength = <6>;
-			bias-disable;
-			input-enable;
-		};
-	};
-
-	safetyboss_reset_default: safetyboss_reset_default {
-		mux {
-			pins = "gpio11";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio11";
-			// Reset is active-low - pull up to avoid
-			// keeping it in reset
-			bias-pull-up;
 		};
 	};
 

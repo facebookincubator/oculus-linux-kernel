@@ -588,6 +588,36 @@ QDF_STATUS mlme_set_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev,
 	return QDF_STATUS_SUCCESS;
 }
 
+#ifdef WLAN_FEATURE_MSCS
+QDF_STATUS mlme_set_is_mscs_req_sent(struct wlan_objmgr_vdev *vdev, bool val)
+{
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_legacy_err("vdev legacy private object is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	mlme_priv->mscs_req_info.is_mscs_req_sent = val;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+bool mlme_get_is_mscs_req_sent(struct wlan_objmgr_vdev *vdev)
+{
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_legacy_err("vdev legacy private object is NULL");
+		return false;
+	}
+
+	return mlme_priv->mscs_req_info.is_mscs_req_sent;
+}
+#endif
+
 bool mlme_is_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev)
 {
 	struct mlme_legacy_priv *mlme_priv;
@@ -1127,6 +1157,7 @@ QDF_STATUS vdevmgr_mlme_ext_hdl_create(struct vdev_mlme_obj *vdev_mlme)
 				     &vdev_mlme->mgmt.generic.subtype);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		mlme_err("Get vdev type failed; status:%d", status);
+		qdf_mem_free(vdev_mlme->ext_vdev_ptr);
 		return status;
 	}
 
@@ -1134,6 +1165,7 @@ QDF_STATUS vdevmgr_mlme_ext_hdl_create(struct vdev_mlme_obj *vdev_mlme)
 	if (QDF_IS_STATUS_ERROR(status)) {
 		mlme_err("Failed to create vdev for vdev id %d",
 			 wlan_vdev_get_id(vdev_mlme->vdev));
+		qdf_mem_free(vdev_mlme->ext_vdev_ptr);
 		return status;
 	}
 
@@ -1517,6 +1549,31 @@ QDF_STATUS mlme_vdev_self_peer_delete(struct scheduler_msg *self_peer_del_msg)
 }
 
 /**
+ * ap_mlme_vdev_csa_complete() - callback to initiate csa complete
+ *
+ * @vdev_mlme: vdev mlme object
+ *
+ * This function is called for csa complete indication
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS ap_mlme_vdev_csa_complete(struct vdev_mlme_obj *vdev_mlme)
+
+{
+	uint8_t vdev_id;
+
+	vdev_id = wlan_vdev_get_id(vdev_mlme->vdev);
+	mlme_legacy_debug("vdev id = %d ", vdev_id);
+
+	if (lim_is_csa_tx_pending(vdev_id))
+		lim_send_csa_tx_complete(vdev_id);
+	else
+		mlme_legacy_debug("CSAIE_TX_COMPLETE_IND already sent");
+
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
  * struct sta_mlme_ops - VDEV MLME operation callbacks strucutre for sta
  * @mlme_vdev_start_send:               callback to initiate actions of VDEV
  *                                      MLME start operation
@@ -1613,6 +1670,7 @@ static struct vdev_mlme_ops ap_mlme_ops = {
 	.mlme_vdev_ext_start_rsp = vdevmgr_vdev_start_rsp_handle,
 	.mlme_vdev_ext_peer_delete_all_rsp =
 				vdevmgr_vdev_peer_delete_all_rsp_handle,
+	.mlme_vdev_csa_complete = ap_mlme_vdev_csa_complete,
 };
 
 static struct vdev_mlme_ops mon_mlme_ops = {

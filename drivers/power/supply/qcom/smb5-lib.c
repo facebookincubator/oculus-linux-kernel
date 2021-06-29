@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/device.h>
@@ -1812,6 +1812,41 @@ static int smblib_temp_change_irq_disable_vote_callback(struct votable *votable,
  * VCONN REGULATOR *
  * *****************/
 
+int enable_vdd_vconn(struct smb_charger *chg, bool enable)
+{
+	struct pinctrl *pinctrl = NULL;
+	struct pinctrl_state *pins_default = NULL;
+	struct pinctrl_state *pins_active = NULL;
+	int result = 0;
+
+	pinctrl = devm_pinctrl_get(chg->dev);
+	if (IS_ERR_OR_NULL(pinctrl)) {
+		smblib_dbg(chg, PR_OTG, "Failed to get pin ctrl\n");
+		return -EINVAL;
+	}
+
+	if (enable) {
+		pins_active = pinctrl_lookup_state(pinctrl, "vdd_vconn_active");
+		if (IS_ERR_OR_NULL(pins_active)) {
+			smblib_dbg(chg, PR_OTG, "Failed to lookup pinctrl active state\n");
+			return -EINVAL;
+		}
+		result = pinctrl_select_state(pinctrl, pins_active);
+	} else {
+		pins_default = pinctrl_lookup_state(pinctrl,
+						"vdd_vconn_suspend");
+		if (IS_ERR_OR_NULL(pins_default)) {
+			smblib_dbg(chg, PR_OTG, "Failed to lookup pinctrl suspend state\n");
+			return -EINVAL;
+		}
+		result = pinctrl_select_state(pinctrl, pins_default);
+	}
+
+	if (result != 0)
+		smblib_dbg(chg, PR_OTG, "Failed to set pin state\n");
+	return result;
+}
+
 int smblib_vconn_regulator_enable(struct regulator_dev *rdev)
 {
 	struct smb_charger *chg = rdev_get_drvdata(rdev);
@@ -1819,6 +1854,11 @@ int smblib_vconn_regulator_enable(struct regulator_dev *rdev)
 	u8 stat, orientation;
 
 	smblib_dbg(chg, PR_OTG, "enabling VCONN\n");
+
+	/* Enable VDD_VCONN first */
+	rc = enable_vdd_vconn(chg, true);
+	if (rc < 0)
+		smblib_err(chg, "Enable VDD_VCONN failed rc=%d\n", rc);
 
 	rc = smblib_read(chg, TYPE_C_MISC_STATUS_REG, &stat);
 	if (rc < 0) {
@@ -1851,6 +1891,11 @@ int smblib_vconn_regulator_disable(struct regulator_dev *rdev)
 				 VCONN_EN_VALUE_BIT, 0);
 	if (rc < 0)
 		smblib_err(chg, "Couldn't disable vconn regulator rc=%d\n", rc);
+
+	/* Disable VDD_VCONN after disable VCONN */
+	rc = enable_vdd_vconn(chg, false);
+	if (rc < 0)
+		smblib_err(chg, "Enable VDD_VCONN failed rc=%d\n", rc);
 
 	return 0;
 }
@@ -5311,7 +5356,9 @@ static void smblib_eval_chg_termination(struct smb_charger *chg, u8 batt_status)
 	 * battery. Trigger the charge termination WA once charging is completed
 	 * to prevent overcharing.
 	 */
-	if ((batt_status == TERMINATE_CHARGE) && (pval.intval == 100)) {
+	if ((batt_status == TERMINATE_CHARGE) && (pval.intval == 100) &&
+		(ktime_to_ms(alarm_expires_remaining(/* alarm not pending */
+				&chg->chg_termination_alarm)) <= 0)) {
 		chg->cc_soc_ref = 0;
 		chg->last_cc_soc = 0;
 		chg->term_vbat_uv = 0;
@@ -7430,6 +7477,7 @@ static void smblib_chg_termination_work(struct work_struct *work)
 						chg_termination_work);
 	int rc, input_present, delay = CHG_TERM_WA_ENTRY_DELAY_MS;
 	int vbat_now_uv, max_fv_uv;
+	u8 stat = 0;
 
 	/*
 	 * Hold awake votable to prevent pm_relax being called prior to
@@ -7444,16 +7492,31 @@ static void smblib_chg_termination_work(struct work_struct *work)
 	rc = smblib_get_prop_from_bms(chg,
 				POWER_SUPPLY_PROP_REAL_CAPACITY, &pval);
 	if ((rc < 0) || (pval.intval < 100)) {
-		vote(chg->usb_icl_votable, CHG_TERMINATION_VOTER, false, 0);
-		vote(chg->dc_suspend_votable, CHG_TERMINATION_VOTER, false, 0);
-		goto out;
+		rc = smblib_read(chg, BATTERY_CHARGER_STATUS_1_REG, &stat);
+		if (rc < 0)
+			goto out;
+
+		/* check we are not in termination to exit the WA */
+		if ((stat & BATTERY_CHARGER_STATUS_MASK) != TERMINATE_CHARGE) {
+			vote(chg->usb_icl_votable,
+				CHG_TERMINATION_VOTER, false, 0);
+			vote(chg->dc_suspend_votable,
+				CHG_TERMINATION_VOTER, false, 0);
+			goto out;
+		}
 	}
 
 	/* Get the battery float voltage */
 	rc = smblib_get_prop_from_bms(chg, POWER_SUPPLY_PROP_VOLTAGE_MAX,
 				&pval);
-	if (rc < 0)
-		goto out;
+	if (rc < 0) {
+		/* FG based targets supports only MAX_DESIGN property */
+		rc = smblib_get_prop_from_bms(chg,
+					POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
+					&pval);
+		if (rc < 0)
+			goto out;
+	}
 
 	max_fv_uv = pval.intval;
 
@@ -8166,7 +8229,7 @@ int smblib_init(struct smb_charger *chg)
 		}
 
 		rc = qcom_step_chg_init(chg->dev, chg->step_chg_enabled,
-						chg->sw_jeita_enabled, false);
+				chg->sw_jeita_enabled, chg->jeita_arb_enable);
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't init qcom_step_chg_init rc=%d\n",
 				rc);

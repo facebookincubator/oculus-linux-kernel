@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -438,6 +438,80 @@ enum hdd_auth_key_mgmt {
 	HDD_AUTH_KEY_MGMT_PSK = BIT(1),
 	HDD_AUTH_KEY_MGMT_CCKM = BIT(2)
 };
+
+/**
+ * wlan_net_dev_ref_dbgid - Debug IDs to detect net device reference leaks
+ */
+/*
+ * New value added to the enum must also be reflected in function
+ *  net_dev_ref_debug_string_from_id()
+ */
+typedef enum {
+	NET_DEV_HOLD_ID_RESERVED = 0,
+	NET_DEV_HOLD_GET_STA_CONNECTION_IN_PROGRESS = 1,
+	NET_DEV_HOLD_CHECK_DFS_CHANNEL_FOR_ADAPTER = 2,
+	NET_DEV_HOLD_GET_SAP_OPERATING_BAND = 3,
+	NET_DEV_HOLD_RECOVERY_NOTIFIER_CALL = 4,
+	NET_DEV_HOLD_IS_ANY_STA_CONNECTING = 5,
+	NET_DEV_HOLD_SAP_DESTROY_CTX_ALL = 6,
+	NET_DEV_HOLD_DRV_CMD_MAX_TX_POWER = 7,
+	NET_DEV_HOLD_IPA_SET_TX_FLOW_INFO = 8,
+	NET_DEV_HOLD_SET_RPS_CPU_MASK = 9,
+	NET_DEV_HOLD_DFS_INDICATE_RADAR = 10,
+	NET_DEV_HOLD_MAX_STA_INTERFACE_UP_COUNT_REACHED = 11,
+	NET_DEV_HOLD_IS_CHAN_SWITCH_IN_PROGRESS = 12,
+	NET_DEV_HOLD_STA_DESTROY_CTX_ALL = 13,
+	NET_DEV_HOLD_CHECK_FOR_EXISTING_MACADDR = 14,
+	NET_DEV_HOLD_DEINIT_ALL_ADAPTERS = 15,
+	NET_DEV_HOLD_STOP_ALL_ADAPTERS = 16,
+	NET_DEV_HOLD_RESET_ALL_ADAPTERS = 17,
+	NET_DEV_HOLD_IS_ANY_INTERFACE_OPEN = 18,
+	NET_DEV_HOLD_START_ALL_ADAPTERS = 19,
+	NET_DEV_HOLD_GET_ADAPTER_BY_RAND_MACADDR = 20,
+	NET_DEV_HOLD_GET_ADAPTER_BY_MACADDR = 21,
+	NET_DEV_HOLD_GET_ADAPTER_BY_VDEV = 22,
+	NET_DEV_HOLD_ADAPTER_GET_BY_REFERENCE = 23,
+	NET_DEV_HOLD_GET_ADAPTER_BY_IFACE_NAME = 24,
+	NET_DEV_HOLD_GET_ADAPTER = 25,
+	NET_DEV_HOLD_GET_OPERATING_CHAN_FREQ = 26,
+	NET_DEV_HOLD_UNREGISTER_WEXT_ALL_ADAPTERS = 27,
+	NET_DEV_HOLD_ABORT_MAC_SCAN_ALL_ADAPTERS = 28,
+	NET_DEV_HOLD_ABORT_SCHED_SCAN_ALL_ADAPTERS = 29,
+	NET_DEV_HOLD_GET_FIRST_VALID_ADAPTER = 30,
+	NET_DEV_HOLD_CLEAR_RPS_CPU_MASK = 31,
+	NET_DEV_HOLD_BUS_BW_WORK_HANDLER = 32,
+	NET_DEV_HOLD_DISPLAY_NETIF_QUEUE_HISTORY_COMPACT = 33,
+	NET_DEV_HOLD_DISPLAY_NETIF_QUEUE_HISTORY = 34,
+	NET_DEV_HOLD_CLEAR_NETIF_QUEUE_HISTORY = 35,
+	NET_DEV_HOLD_UNSAFE_CHANNEL_RESTART_SAP = 36,
+	NET_DEV_HOLD_INDICATE_MGMT_FRAME = 37,
+	NET_DEV_HOLD_STATE_INFO_DUMP = 38,
+	NET_DEV_HOLD_DISABLE_ROAMING = 39,
+	NET_DEV_HOLD_ENABLE_ROAMING = 40,
+	NET_DEV_HOLD_AUTO_SHUTDOWN_ENABLE = 41,
+	NET_DEV_HOLD_GET_CON_SAP_ADAPTER = 42,
+	NET_DEV_HOLD_IS_ANY_ADAPTER_CONNECTED = 43,
+	NET_DEV_HOLD_IS_ROAMING_IN_PROGRESS = 44,
+	NET_DEV_HOLD_DEL_P2P_INTERFACE = 45,
+	NET_DEV_HOLD_IS_NDP_ALLOWED = 46,
+	NET_DEV_HOLD_NDI_OPEN = 47,
+	NET_DEV_HOLD_SEND_OEM_REG_RSP_NLINK_MSG = 48,
+	NET_DEV_HOLD_PERIODIC_STA_STATS_DISPLAY = 49,
+	NET_DEV_HOLD_SUSPEND_WLAN = 50,
+	NET_DEV_HOLD_RESUME_WLAN = 51,
+	NET_DEV_HOLD_SSR_RESTART_SAP = 52,
+	NET_DEV_HOLD_SEND_DEFAULT_SCAN_IES = 53,
+	NET_DEV_HOLD_CFG80211_SUSPEND_WLAN = 54,
+	NET_DEV_HOLD_COUNTRY_CHANGE_UPDATE_STA = 55,
+	NET_DEV_HOLD_COUNTRY_CHANGE_UPDATE_SAP = 56,
+	NET_DEV_HOLD_CACHE_STATION_STATS_CB = 57,
+	NET_DEV_HOLD_DISPLAY_TXRX_STATS = 58,
+	NET_DEV_HOLD_GET_MODE_SPECIFIC_IF_COUNT = 59,
+	NET_DEV_HOLD_START_PRE_CAC_TRANS = 60,
+
+	/* Keep it at the end */
+	NET_DEV_HOLD_ID_MAX
+} wlan_net_dev_ref_dbgid;
 
 /**
  * struct hdd_tx_rx_histogram - structure to keep track of tx and rx packets
@@ -910,6 +984,11 @@ enum hdd_mic_work_status {
 	MIC_DISABLED
 };
 
+enum hdd_work_status {
+	HDD_WORK_UNINITIALIZED,
+	HDD_WORK_INITIALIZED,
+};
+
 /**
  * struct hdd_mic_work - mic work info in HDD
  * @mic_error_work: mic error work
@@ -1061,6 +1140,8 @@ struct hdd_chan_change_params {
  * @dfs: dfs context to prevent/allow runtime pm
  * @connect: connect context to prevent/allow runtime pm
  * @user: user context to prevent/allow runtime pm
+ * @is_user_wakelock_acquired: boolean to check if user wakelock status
+ * @monitor_mode: monitor mode context to prevent/allow runtime pm
  *
  * Runtime PM control for underlying activities
  */
@@ -1069,6 +1150,7 @@ struct hdd_runtime_pm_context {
 	qdf_runtime_lock_t connect;
 	qdf_runtime_lock_t user;
 	bool is_user_wakelock_acquired;
+	qdf_runtime_lock_t monitor_mode;
 };
 
 /*
@@ -1119,6 +1201,8 @@ struct hdd_context;
  * @latency_level: 0 - normal, 1 - moderate, 2 - low, 3 - ultralow
  * @last_disconnect_reason: Last disconnected internal reason code
  *                          as per enum qca_disconnect_reason_codes
+ * @connect_req_status: Last disconnected internal status code
+ *                          as per enum qca_sta_connect_fail_reason_codes
  * @upgrade_udp_qos_threshold: The threshold for user priority upgrade for
 			       any UDP packet.
  * @gro_disallowed: Flag to check if GRO is enabled or disable for adapter
@@ -1126,7 +1210,11 @@ struct hdd_context;
  * @handle_feature_update: Handle feature update only if it is triggered
  *			   by hdd_netdev_feature_update
  * @netdev_features_update_work: work for handling the netdev features update
-				 for the adapter.
+ *				 for the adapter.
+ * @netdev_features_update_work_status: status for netdev_features_update_work
+ * @delete_in_progress: Flag to indicate that the adapter delete is in
+ *			progress, and any operation using rtnl lock inside
+ *			the driver can be avoided/skipped.
  */
 struct hdd_adapter {
 	/* Magic cookie for adapter sanity verification.  Note that this
@@ -1316,6 +1404,11 @@ struct hdd_adapter {
 	uint64_t prev_fwd_rx_packets;
 #endif /*WLAN_FEATURE_DP_BUS_BANDWIDTH*/
 
+#ifdef WLAN_FEATURE_MSCS
+	unsigned long mscs_prev_tx_vo_pkts;
+	uint32_t mscs_counter;
+#endif /* WLAN_FEATURE_MSCS */
+
 #if  defined(QCA_LL_LEGACY_TX_FLOW_CONTROL) || \
 				defined(QCA_HL_NETDEV_FLOW_CONTROL)
 	qdf_mc_timer_t tx_flow_control_timer;
@@ -1407,6 +1500,7 @@ struct hdd_adapter {
 	uint32_t motion_det_baseline_value;
 #endif /* WLAN_FEATURE_MOTION_DETECTION */
 	enum qca_disconnect_reason_codes last_disconnect_reason;
+	enum wlan_status_code connect_req_status;
 
 #ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 	/* Indicate whether to display sta periodic stats */
@@ -1428,6 +1522,14 @@ struct hdd_adapter {
 	ol_txrx_rx_fp rx_stack;
 
 	qdf_work_t netdev_features_update_work;
+	enum hdd_work_status netdev_features_update_work_status;
+	/* Flag to indicate whether it is a pre cac adapter or not */
+	bool is_pre_cac_adapter;
+#ifdef WLAN_FEATURE_BIG_DATA_STATS
+	struct big_data_stats_event big_data_stats;
+#endif
+	bool delete_in_progress;
+	qdf_atomic_t net_dev_hold_ref_count[NET_DEV_HOLD_ID_MAX];
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(adapter) (&(adapter)->session.station)
@@ -1746,6 +1848,8 @@ struct hdd_adapter_ops_history {
  * @qos_cpu_mask: voted cpu core mask
  * @adapter_ops_wq: High priority workqueue for handling adapter operations
  * @multi_client_thermal_mitigation: Multi client thermal mitigation by fw
+ * @disconnect_for_sta_mon_conc: disconnect if sta monitor intf concurrency
+ * @is_dual_mac_cfg_updated: indicate whether dual mac cfg has been updated
  */
 struct hdd_context {
 	struct wlan_objmgr_psoc *psoc;
@@ -2087,6 +2191,11 @@ struct hdd_context {
 #ifdef FEATURE_WPSS_THERMAL_MITIGATION
 	bool multi_client_thermal_mitigation;
 #endif
+	bool disconnect_for_sta_mon_conc;
+	bool is_dual_mac_cfg_updated;
+	bool is_regulatory_update_in_progress;
+	qdf_event_t regulatory_update_event;
+	qdf_mutex_t regulatory_status_lock;
 };
 
 /**
@@ -2347,37 +2456,58 @@ QDF_STATUS hdd_adapter_iterate(hdd_adapter_iterate_cb cb,
 			       void *context);
 
 /**
- * hdd_for_each_adapter - adapter iterator macro
- * @hdd_ctx: the global HDD context
- * @adapter: an hdd_adapter pointer to use as a cursor
+ * hdd_adapter_dev_hold_debug - Debug API to call dev_hold
+ * @adapter: hdd_adapter pointer
+ * @dbgid: Debug ID corresponding to API that is requesting the dev_hold
+ *
+ * Return: none
  */
-#define hdd_for_each_adapter(hdd_ctx, adapter) \
-	for (hdd_get_front_adapter(hdd_ctx, &adapter); \
-	     adapter; \
-	     hdd_get_next_adapter(hdd_ctx, adapter, &adapter))
+void hdd_adapter_dev_hold_debug(struct hdd_adapter *adapter,
+				wlan_net_dev_ref_dbgid dbgid);
 
 /**
- * __hdd_take_ref_and_fetch_front_adapter - Helper macro to lock, fetch front
- * adapter, take ref and unlock.
+ * hdd_adapter_dev_put_debug - Debug API to call dev_put
+ * @adapter: hdd_adapter pointer
+ * @dbgid: Debug ID corresponding to API that is requesting the dev_put
+ *
+ * Return: none
+ */
+void hdd_adapter_dev_put_debug(struct hdd_adapter *adapter,
+			       wlan_net_dev_ref_dbgid dbgid);
+
+/**
+ * __hdd_take_ref_and_fetch_front_adapter_safe - Helper macro to lock, fetch
+ * front and next adapters, take ref and unlock.
  * @hdd_ctx: the global HDD context
  * @adapter: an hdd_adapter pointer to use as a cursor
+ * @next_adapter: hdd_adapter pointer to next adapter
+ * @dbgid: debug ID to detect reference leaks
  */
-#define __hdd_take_ref_and_fetch_front_adapter(hdd_ctx, adapter) \
+#define __hdd_take_ref_and_fetch_front_adapter_safe(hdd_ctx, adapter, \
+						    next_adapter, dbgid) \
 	qdf_spin_lock_bh(&hdd_ctx->hdd_adapter_lock), \
 	hdd_get_front_adapter_no_lock(hdd_ctx, &adapter), \
-	(adapter) ? dev_hold(adapter->dev) : (false), \
+	(adapter) ? hdd_adapter_dev_hold_debug(adapter, dbgid) : (false), \
+	hdd_get_next_adapter_no_lock(hdd_ctx, adapter, &next_adapter), \
+	(next_adapter) ? hdd_adapter_dev_hold_debug(next_adapter, dbgid) : \
+			 (false), \
 	qdf_spin_unlock_bh(&hdd_ctx->hdd_adapter_lock)
 
 /**
- * __hdd_take_ref_and_fetch_next_adapter - Helper macro to lock, fetch next
+ * __hdd_take_ref_and_fetch_next_adapter_safe - Helper macro to lock, fetch next
  * adapter, take ref and unlock.
  * @hdd_ctx: the global HDD context
- * @adapter: an hdd_adapter pointer to use as a cursor
+ * @adapter: hdd_adapter pointer to use as a cursor
+ * @next_adapter: hdd_adapter pointer to next adapter
+ * @dbgid: debug ID to detect reference leaks
  */
-#define __hdd_take_ref_and_fetch_next_adapter(hdd_ctx, adapter) \
+#define __hdd_take_ref_and_fetch_next_adapter_safe(hdd_ctx, adapter, \
+						   next_adapter, dbgid) \
 	qdf_spin_lock_bh(&hdd_ctx->hdd_adapter_lock), \
-	hdd_get_next_adapter_no_lock(hdd_ctx, adapter, &adapter), \
-	(adapter) ? dev_hold(adapter->dev) : (false), \
+	adapter = next_adapter, \
+	hdd_get_next_adapter_no_lock(hdd_ctx, adapter, &next_adapter), \
+	(next_adapter) ? hdd_adapter_dev_hold_debug(next_adapter, dbgid) : \
+			 (false), \
 	qdf_spin_unlock_bh(&hdd_ctx->hdd_adapter_lock)
 
 /**
@@ -2387,30 +2517,41 @@ QDF_STATUS hdd_adapter_iterate(hdd_adapter_iterate_cb cb,
 #define __hdd_is_adapter_valid(_adapter) !!_adapter
 
 /**
- * hdd_for_each_adapter_dev_held - Adapter iterator with dev_hold called
+ * hdd_for_each_adapter_dev_held_safe - Adapter iterator with dev_hold called
+ *                                      in a delete safe manner
  * @hdd_ctx: the global HDD context
  * @adapter: an hdd_adapter pointer to use as a cursor
+ * @next_adapter: hdd_adapter pointer to the next adapter
  *
  * This iterator will take the reference of the netdev associated with the
- * given adapter so as to prevent it from being removed in other context.
- * If the control goes inside the loop body then the dev_hold has been invoked.
+ * given adapter so as to prevent it from being removed in other context. It
+ * also takes the reference of the next adapter if exist. This avoids infinite
+ * loop due to deletion of the adapter list entry inside the loop. Deletion of
+ * list entry will make the list entry to point to self. If the control goes
+ * inside the loop body then the dev_hold has been invoked.
  *
  *                           ***** NOTE *****
- * Before the end of each iteration, dev_put(adapter->dev) must be
- * called. Not calling this will keep hold of a reference, thus preventing
- * unregister of the netdevice.
+ * Before the end of each iteration, hdd_adapter_dev_put_debug(adapter, dbgid)
+ * must be called. Not calling this will keep hold of a reference, thus
+ * preventing unregister of the netdevice. If the loop is terminated in
+ * between with return/goto/break statements,
+ * hdd_adapter_dev_put_debug(next_adapter, dbgid) must be done along with
+ * hdd_adapter_dev_put_debug(adapter, dbgid) before termination of the loop.
  *
  * Usage example:
- *                 hdd_for_each_adapter_dev_held(hdd_ctx, adapter) {
- *                         <work involving adapter>
- *                         <some more work>
- *                         dev_put(adapter->dev)
- *                 }
+ *  hdd_for_each_adapter_dev_held_safe(hdd_ctx, adapter, next_adapter, dbgid) {
+ *        <work involving adapter>
+ *        <some more work>
+ *        hdd_adapter_dev_put_debug(adapter, dbgid)
+ *  }
  */
-#define hdd_for_each_adapter_dev_held(hdd_ctx, adapter) \
-	for (__hdd_take_ref_and_fetch_front_adapter(hdd_ctx, adapter); \
+#define hdd_for_each_adapter_dev_held_safe(hdd_ctx, adapter, next_adapter, \
+					   dbgid) \
+	for (__hdd_take_ref_and_fetch_front_adapter_safe(hdd_ctx, adapter, \
+							 next_adapter, dbgid); \
 	     __hdd_is_adapter_valid(adapter); \
-	     __hdd_take_ref_and_fetch_next_adapter(hdd_ctx, adapter))
+	     __hdd_take_ref_and_fetch_next_adapter_safe(hdd_ctx, adapter, \
+							next_adapter, dbgid))
 
 /**
  * wlan_hdd_get_adapter_by_vdev_id_from_objmgr() - Fetch adapter from objmgr
@@ -2566,6 +2707,11 @@ void hdd_deinit_adapter(struct hdd_context *hdd_ctx,
 QDF_STATUS hdd_stop_adapter(struct hdd_context *hdd_ctx,
 			    struct hdd_adapter *adapter);
 
+/**
+ * hdd_set_station_ops() - update net_device ops
+ * @dev: Handle to struct net_device to be updated.
+ * Return: None
+ */
 void hdd_set_station_ops(struct net_device *dev);
 
 /**
@@ -2721,8 +2867,8 @@ hdd_add_latency_critical_client(struct hdd_adapter *adapter,
 		if (adapter->device_mode == QDF_STA_MODE)
 			qdf_atomic_inc(&hdd_ctx->num_latency_critical_clients);
 
-		hdd_info("Adding latency critical connection for vdev %d",
-			 adapter->vdev_id);
+		hdd_debug("Adding latency critical connection for vdev %d",
+			  adapter->vdev_id);
 		cdp_vdev_inform_ll_conn(cds_get_context(QDF_MODULE_ID_SOC),
 					adapter->vdev_id,
 					CDP_VDEV_LL_CONN_ADD);
@@ -3403,6 +3549,18 @@ int hdd_update_config(struct hdd_context *hdd_ctx);
  */
 int hdd_update_components_config(struct hdd_context *hdd_ctx);
 
+/**
+ * hdd_chan_change_notify() - Function to notify hostapd about channel change
+ * @hostapd_adapter:	hostapd adapter
+ * @dev:		Net device structure
+ * @chan_change:	New channel change parameters
+ * @legacy_phymode:	is the phymode legacy
+ *
+ * This function is used to notify hostapd about the channel change
+ *
+ * Return: Success on intimating userspace
+ *
+ */
 QDF_STATUS hdd_chan_change_notify(struct hdd_adapter *adapter,
 		struct net_device *dev,
 		struct hdd_chan_change_params chan_change,
@@ -4502,7 +4660,57 @@ QDF_STATUS hdd_common_roam_callback(struct wlan_objmgr_psoc *psoc,
 				    eCsrRoamResult roam_result);
 
 #ifdef WLAN_FEATURE_PKT_CAPTURE
+/**
+ * wlan_hdd_is_mon_concurrency() - check if MONITOR and STA concurrency
+ * is UP when packet capture mode is enabled.
+ *
+ * Return: True - if STA and monitor concurrency is there, else False
+ *
+ */
+bool wlan_hdd_is_mon_concurrency(void);
 
+/**
+ * wlan_hdd_del_monitor() - delete monitor interface
+ * @hdd_ctx: pointer to hdd context
+ * @adapter: adapter to be deleted
+ * @rtnl_held: rtnl lock held
+ *
+ * This function is invoked to delete monitor interface.
+ *
+ * Return: None
+ */
+void wlan_hdd_del_monitor(struct hdd_context *hdd_ctx,
+			  struct hdd_adapter *adapter, bool rtnl_held);
+
+/**
+ * wlan_hdd_del_p2p_interface() - delete p2p interface
+ * @hdd_ctx: pointer to hdd context
+ *
+ * This function is invoked to delete p2p interface.
+ *
+ * Return: None
+ */
+void
+wlan_hdd_del_p2p_interface(struct hdd_context *hdd_ctx);
+
+#else
+static inline
+void wlan_hdd_del_monitor(struct hdd_context *hdd_ctx,
+			  struct hdd_adapter *adapter, bool rtnl_held)
+{
+}
+
+static inline
+bool wlan_hdd_is_mon_concurrency(void)
+{
+	return false;
+}
+
+static inline
+void wlan_hdd_del_p2p_interface(struct hdd_context *hdd_ctx)
+{
+}
+#endif /* WLAN_FEATURE_PKT_CAPTURE */
 /**
  * wlan_hdd_is_session_type_monitor() - check if session type is MONITOR
  * @session_type: session type
@@ -4511,15 +4719,6 @@ QDF_STATUS hdd_common_roam_callback(struct wlan_objmgr_psoc *psoc,
  *
  */
 bool wlan_hdd_is_session_type_monitor(uint8_t session_type);
-
-/**
- * wlan_hdd_check_mon_concurrency() - check if MONITOR and STA concurrency
- * is UP when packet capture mode is enabled.
- *
- * Return: True - if STA and monitor concurrency is there, else False
- *
- */
-bool wlan_hdd_check_mon_concurrency(void);
 
 /**
  * wlan_hdd_add_monitor_check() - check for monitor intf and add if needed
@@ -4536,47 +4735,6 @@ int wlan_hdd_add_monitor_check(struct hdd_context *hdd_ctx,
 			       struct hdd_adapter **adapter,
 			       const char *name, bool rtnl_held,
 			       unsigned char name_assign_type);
-
-/**
- * wlan_hdd_del_monitor() - delete monitor interface
- * @hdd_ctx: pointer to hdd context
- * @adapter: adapter to be deleted
- * @rtnl_held: rtnl lock held
- *
- * This function is invoked to delete monitor interface.
- *
- * Return: None
- */
-void wlan_hdd_del_monitor(struct hdd_context *hdd_ctx,
-			  struct hdd_adapter *adapter, bool rtnl_held);
-#else
-static inline
-bool wlan_hdd_is_session_type_monitor(uint8_t session_type)
-{
-	return false;
-}
-
-static inline
-bool wlan_hdd_check_mon_concurrency(void)
-{
-	return false;
-}
-
-static inline
-int wlan_hdd_add_monitor_check(struct hdd_context *hdd_ctx,
-			       struct hdd_adapter **adapter,
-			       const char *name, bool rtnl_held,
-			       unsigned char name_assign_type)
-{
-	return 0;
-}
-
-static inline
-void wlan_hdd_del_monitor(struct hdd_context *hdd_ctx,
-			  struct hdd_adapter *adapter, bool rtnl_held)
-{
-}
-#endif /* WLAN_FEATURE_PKT_CAPTURE */
 
 #ifdef CONFIG_WLAN_DEBUG_CRASH_INJECT
 /**

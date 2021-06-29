@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "ipa_i.h"
@@ -939,7 +939,10 @@ static int __ipa_finish_flt_rule_add(struct ipa3_flt_tbl *tbl,
 {
 	int id;
 
-	tbl->rule_cnt++;
+	if (tbl->rule_cnt < IPA_RULE_CNT_MAX)
+		tbl->rule_cnt++;
+	else
+		return -EINVAL;
 	if (entry->rt_tbl)
 		entry->rt_tbl->ref_cnt++;
 	id = ipa3_id_alloc(entry);
