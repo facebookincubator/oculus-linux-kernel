@@ -213,9 +213,6 @@ struct syncboss_dev_data {
 	/* Current power state of the device */
 	int power_state;
 
-	/* Indicates if driver initiated reset */
-	bool reset_requested;
-
 	/* Should we send headers with the data packets */
 	bool enable_headers;
 
@@ -267,11 +264,14 @@ struct syncboss_dev_data {
 
 	/* True if we should enable the fastpath spi code path */
 	bool use_fastpath;
+
+	/* True if the MCU enter its shutdown/sleep state upon reset */
+	bool boots_to_shutdown_state;
 };
 
 int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata);
 void syncboss_deinit_sysfs_attrs(struct syncboss_dev_data *devdata);
 
-void syncboss_reset(struct syncboss_dev_data *devdata);
+void syncboss_pin_reset(struct syncboss_dev_data *devdata);
 
 #endif
