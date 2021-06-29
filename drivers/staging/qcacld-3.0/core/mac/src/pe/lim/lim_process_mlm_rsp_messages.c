@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,6 +42,7 @@
 #include "wlan_reg_services_api.h"
 #include "wma.h"
 #include "wlan_pkt_capture_ucfg_api.h"
+#include "wlan_lmac_if_def.h"
 
 #define MAX_SUPPORTED_PEERS_WEP 16
 
@@ -1281,7 +1282,7 @@ QDF_STATUS lim_sta_handle_connect_fail(join_params *param)
 		 * make sure PE is sending eWNI_SME_JOIN_RSP
 		 * to SME
 		 */
-		lim_cleanup_rx_path(mac_ctx, sta_ds, session);
+		lim_cleanup_rx_path(mac_ctx, sta_ds, session, true);
 		qdf_mem_free(session->lim_join_req);
 		session->lim_join_req = NULL;
 		/* Cleanup if add bss failed */
@@ -1977,7 +1978,14 @@ void lim_process_ap_mlm_add_sta_rsp(struct mac_context *mac,
 	 * 2) PE receives eWNI_SME_ASSOC_CNF from SME
 	 * 3) BTAMP-AP sends Re/Association Response to BTAMP-STA
 	 */
-	lim_send_mlm_assoc_ind(mac, sta, pe_session);
+	if (lim_send_mlm_assoc_ind(mac, sta, pe_session) != QDF_STATUS_SUCCESS)
+		lim_reject_association(mac, sta->staAddr,
+				       sta->mlmStaContext.subType,
+				       true, sta->mlmStaContext.authType,
+				       sta->assocId, true,
+				       STATUS_UNSPECIFIED_FAILURE,
+				       pe_session);
+
 	/* fall though to reclaim the original Add STA Response message */
 end:
 	if (0 != limMsgQ->bodyptr) {
@@ -2019,7 +2027,8 @@ static void lim_process_ap_mlm_add_bss_rsp(struct mac_context *mac,
 		pe_session->limSystemRole = eLIM_AP_ROLE;
 
 		sch_edca_profile_update(mac, pe_session);
-		lim_init_pre_auth_list(mac);
+		/* For dual AP case, delete pre auth node if any */
+		lim_delete_pre_auth_list(mac);
 		/* Check the SAP security configuration.If configured to
 		 * WEP then max clients supported is 16
 		 */
@@ -2270,9 +2279,11 @@ void lim_handle_add_bss_rsp(struct mac_context *mac_ctx,
 	tLimMlmStartCnf mlm_start_cnf;
 	struct pe_session *session_entry;
 	enum bss_type bss_type;
+	struct wlan_lmac_if_reg_tx_ops *tx_ops;
+	struct vdev_mlme_obj *mlme_obj;
 
 	if (!add_bss_rsp) {
-		pe_err("add_bss_rspis NULL");
+		pe_err("add_bss_rsp is NULL");
 		return;
 	}
 
@@ -2292,7 +2303,24 @@ void lim_handle_add_bss_rsp(struct mac_context *mac_ctx,
 		       add_bss_rsp->vdev_id);
 		goto err;
 	}
+	if (LIM_IS_AP_ROLE(session_entry)) {
+		if (wlan_reg_is_ext_tpc_supported(mac_ctx->psoc)) {
+			mlme_obj =
+			wlan_vdev_mlme_get_cmpt_obj(session_entry->vdev);
+			if (!mlme_obj) {
+				pe_err("vdev component object is NULL");
+				goto err;
+			}
+			tx_ops = wlan_reg_get_tx_ops(mac_ctx->psoc);
 
+			lim_calculate_tpc(mac_ctx, session_entry, false);
+
+			if (tx_ops->set_tpc_power)
+				tx_ops->set_tpc_power(mac_ctx->psoc,
+						      session_entry->vdev_id,
+						      &mlme_obj->reg_tpc_obj);
+		}
+	}
 	bss_type = session_entry->bssType;
 	/* update PE session Id */
 	mlm_start_cnf.sessionId = session_entry->peSessionId;
@@ -2655,6 +2683,9 @@ static void lim_process_switch_channel_join_req(
 	tLimMlmJoinCnf join_cnf;
 	uint8_t nontx_bss_id = 0;
 	struct bss_description *bss;
+	struct vdev_mlme_obj *mlme_obj;
+	struct wlan_lmac_if_reg_tx_ops *tx_ops;
+	bool tpe_change = false;
 
 	if (status != QDF_STATUS_SUCCESS) {
 		pe_err("Change channel failed!!");
@@ -2755,6 +2786,25 @@ static void lim_process_switch_channel_join_req(
 		goto error;
 	}
 
+	if (wlan_reg_is_ext_tpc_supported(mac_ctx->psoc)) {
+		tx_ops = wlan_reg_get_tx_ops(mac_ctx->psoc);
+
+		lim_process_tpe_ie_from_beacon(mac_ctx, session_entry, bss,
+					       &tpe_change);
+
+		mlme_obj = wlan_vdev_mlme_get_cmpt_obj(session_entry->vdev);
+		if (!mlme_obj) {
+			pe_err("vdev component object is NULL");
+			goto error;
+		}
+
+		lim_calculate_tpc(mac_ctx, session_entry, false);
+
+		if (tx_ops->set_tpc_power)
+			tx_ops->set_tpc_power(mac_ctx->psoc,
+					      session_entry->vdev_id,
+					      &mlme_obj->reg_tpc_obj);
+	}
 	/* include additional IE if there is */
 	lim_send_probe_req_mgmt_frame(mac_ctx, &ssId,
 		session_entry->pLimMlmJoinReq->bssDescription.bssId,
@@ -2848,6 +2898,7 @@ void lim_process_switch_channel_rsp(struct mac_context *mac,
 	QDF_STATUS status;
 	uint16_t channelChangeReasonCode;
 	struct pe_session *pe_session;
+	struct wlan_channel *vdev_chan;
 	/* we need to process the deferred message since the initiating req. there might be nested request. */
 	/* in the case of nested request the new request initiated from the response will take care of resetting */
 	/* the deffered flag. */
@@ -2865,6 +2916,18 @@ void lim_process_switch_channel_rsp(struct mac_context *mac,
 	pe_session->chainMask = rsp->chain_mask;
 	pe_session->smpsMode = rsp->smps_mode;
 	pe_session->channelChangeReasonCode = 0xBAD;
+
+	vdev_chan = wlan_vdev_mlme_get_des_chan(pe_session->vdev);
+
+	if (WLAN_REG_IS_24GHZ_CH_FREQ(vdev_chan->ch_freq)) {
+		if (vdev_chan->ch_phymode == WLAN_PHYMODE_11B)
+			pe_session->nwType = eSIR_11B_NW_TYPE;
+		else
+			pe_session->nwType = eSIR_11G_NW_TYPE;
+	} else {
+		pe_session->nwType = eSIR_11A_NW_TYPE;
+	}
+	pe_debug("new network type for peer: %d", pe_session->nwType);
 	switch (channelChangeReasonCode) {
 	case LIM_SWITCH_CHANNEL_REASSOC:
 		lim_process_switch_channel_re_assoc_req(mac, pe_session, status);

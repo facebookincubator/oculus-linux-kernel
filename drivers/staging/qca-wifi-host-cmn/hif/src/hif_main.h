@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -186,7 +186,7 @@ struct hif_softc {
 	/* Packet statistics */
 	struct hif_ce_stats pkt_stats;
 	enum hif_target_status target_status;
-	uint64_t event_disable_mask;
+	uint64_t event_enable_mask;
 
 	struct targetdef_s *targetdef;
 	struct ce_reg_def *target_ce_def;
@@ -204,6 +204,10 @@ struct hif_softc {
 	atomic_t link_suspended;
 	uint32_t *vaddr_rri_on_ddr;
 	qdf_dma_addr_t paddr_rri_on_ddr;
+#ifdef CONFIG_BYPASS_QMI
+	uint32_t *vaddr_qmi_bypass;
+	qdf_dma_addr_t paddr_qmi_bypass;
+#endif
 	int linkstate_vote;
 	bool fastpath_mode_on;
 	atomic_t tasklet_from_intr;
@@ -226,6 +230,7 @@ struct hif_softc {
 	uint32_t hif_attribute;
 	int wake_irq;
 	int disable_wake_irq;
+	hif_pm_wake_irq_type wake_irq_type;
 	void (*initial_wakeup_cb)(void *);
 	void *initial_wakeup_priv;
 #ifdef REMOVE_PKT_LOG
@@ -259,6 +264,10 @@ struct hif_softc {
 	/* Should the unlzay support for interrupt delivery be disabled */
 	/* Flag to indicate whether bus is suspended */
 	bool bus_suspended;
+#ifdef FEATURE_RUNTIME_PM
+	/* Variable to track the link state change in RTPM */
+	qdf_atomic_t pm_link_state;
+#endif
 };
 
 static inline
@@ -314,7 +323,7 @@ static inline void hif_set_event_hist_mask(struct hif_opaque_softc *hif_handle)
 {
 	struct hif_softc *scn = (struct hif_softc *)hif_handle;
 
-	scn->event_disable_mask = HIF_EVENT_HIST_DISABLE_MASK;
+	scn->event_enable_mask = HIF_EVENT_HIST_ENABLE_MASK;
 }
 #else
 static inline void hif_set_event_hist_mask(struct hif_opaque_softc *hif_handle)
@@ -475,4 +484,5 @@ void hif_uninit_rri_on_ddr(struct hif_softc *scn);
 static inline
 void hif_uninit_rri_on_ddr(struct hif_softc *scn) {}
 #endif
+void hif_cleanup_static_buf_to_target(struct hif_softc *scn);
 #endif /* __HIF_MAIN_H__ */

@@ -482,6 +482,7 @@ struct mem_size_stats {
 	u64 pss;
 	u64 pss_locked;
 	u64 swap_pss;
+	u64 swap_uss;
 	bool check_shmem_swap;
 };
 
@@ -580,6 +581,7 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 				mss->swap_pss += pss_delta;
 			} else {
 				mss->swap_pss += (u64)PAGE_SIZE << PSS_SHIFT;
+				mss->swap_uss += PAGE_SIZE;
 			}
 		} else if (is_migration_entry(swpent))
 			page = migration_entry_to_page(swpent);
@@ -816,6 +818,26 @@ static void smap_gather_stats(struct vm_area_struct *vma,
 #define SEQ_PUT_DEC(str, val) \
 		seq_put_decimal_ull_width(m, str, (val) >> 10, 8)
 
+static int show_private_map(struct seq_file *m, void *v)
+{
+	struct vm_area_struct *vma = v;
+	struct mem_size_stats mss;
+
+	memset(&mss, 0, sizeof(mss));
+
+	smap_gather_stats(vma, &mss);
+
+	SEQ_PUT_DEC(NULL, mss.private_clean);
+	SEQ_PUT_DEC(" ", mss.private_dirty);
+	SEQ_PUT_DEC(" ", mss.swap_uss);
+	seq_puts(m, " : ");
+	show_map_vma(m, vma);
+
+	m_cache_vma(m, vma);
+
+	return 0;
+}
+
 /* Show the contents common for smaps and smaps_rollup */
 static void __show_smap(struct seq_file *m, const struct mem_size_stats *mss)
 {
@@ -836,6 +858,7 @@ static void __show_smap(struct seq_file *m, const struct mem_size_stats *mss)
 	SEQ_PUT_DEC(" kB\nSwap:           ", mss->swap);
 	SEQ_PUT_DEC(" kB\nSwapPss:        ",
 					mss->swap_pss >> PSS_SHIFT);
+	SEQ_PUT_DEC(" kB\nSwapUss:        ", mss->swap_uss);
 	SEQ_PUT_DEC(" kB\nLocked:         ",
 					mss->pss_locked >> PSS_SHIFT);
 	seq_puts(m, " kB\n");
@@ -925,6 +948,18 @@ out_put_task:
 }
 #undef SEQ_PUT_DEC
 
+static const struct seq_operations proc_pid_private_maps_op = {
+	.start	= m_start,
+	.next	= m_next,
+	.stop	= m_stop,
+	.show	= show_private_map
+};
+
+static int pid_private_maps_open(struct inode *inode, struct file *file)
+{
+	return do_maps_open(inode, file, &proc_pid_private_maps_op);
+}
+
 static const struct seq_operations proc_pid_smaps_op = {
 	.start	= m_start,
 	.next	= m_next,
@@ -977,6 +1012,13 @@ static int smaps_rollup_release(struct inode *inode, struct file *file)
 	kfree(priv);
 	return single_release(inode, file);
 }
+
+const struct file_operations proc_pid_private_maps_operations = {
+	.open		= pid_private_maps_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= proc_map_release,
+};
 
 const struct file_operations proc_pid_smaps_operations = {
 	.open		= pid_smaps_open,

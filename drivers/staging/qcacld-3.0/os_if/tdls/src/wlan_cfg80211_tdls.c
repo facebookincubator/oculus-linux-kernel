@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -96,52 +96,6 @@ void wlan_cfg80211_tdls_osif_priv_deinit(struct wlan_objmgr_vdev *vdev)
 	if (osif_priv->osif_tdls)
 		qdf_mem_free(osif_priv->osif_tdls);
 	osif_priv->osif_tdls = NULL;
-}
-
-void hdd_notify_teardown_tdls_links(struct wlan_objmgr_psoc *psoc)
-{
-	struct vdev_osif_priv *osif_priv;
-	struct osif_tdls_vdev *tdls_priv;
-	QDF_STATUS status;
-	unsigned long rc;
-	struct wlan_objmgr_vdev *vdev;
-
-	vdev = ucfg_get_tdls_vdev(psoc, WLAN_OSIF_ID);
-	if (!vdev)
-		return;
-
-	osif_priv = wlan_vdev_get_ospriv(vdev);
-
-	if (!osif_priv || !osif_priv->osif_tdls) {
-		osif_err("osif priv or tdls priv is NULL");
-		goto release_ref;
-	}
-	tdls_priv = osif_priv->osif_tdls;
-
-	reinit_completion(&tdls_priv->tdls_teardown_comp);
-	status = ucfg_tdls_teardown_links(psoc);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		osif_err("ucfg_tdls_teardown_links failed err %d", status);
-		goto release_ref;
-	}
-
-	osif_debug("Wait for tdls teardown completion. Timeout %u ms",
-		   WAIT_TIME_FOR_TDLS_TEARDOWN_LINKS);
-
-	rc = wait_for_completion_timeout(
-		&tdls_priv->tdls_teardown_comp,
-		msecs_to_jiffies(WAIT_TIME_FOR_TDLS_TEARDOWN_LINKS));
-
-	if (0 == rc) {
-		osif_err(" Teardown Completion timed out rc: %ld", rc);
-		goto release_ref;
-	}
-
-	osif_debug("TDLS teardown completion status %ld ", rc);
-
-release_ref:
-	wlan_objmgr_vdev_release_ref(vdev,
-				     WLAN_OSIF_ID);
 }
 
 void hdd_notify_tdls_reset_adapter(struct wlan_objmgr_vdev *vdev)
@@ -337,6 +291,39 @@ tdls_calc_channels_from_staparams(struct tdls_update_peer_params *req_info,
 		   req_info->supported_channels_len);
 }
 
+#ifdef WLAN_FEATURE_11AX
+#define MIN_TDLS_HE_CAP_LEN 21
+
+static void
+wlan_cfg80211_tdls_extract_he_params(struct tdls_update_peer_params *req_info,
+				     struct station_parameters *params)
+{
+	if (params->he_capa_len < MIN_TDLS_HE_CAP_LEN) {
+		osif_debug("he_capa_len %d less than MIN_TDLS_HE_CAP_LEN",
+			   params->he_capa_len);
+		return;
+	}
+
+	if (!params->he_capa) {
+		osif_debug("he_capa not present");
+		return;
+	}
+
+	req_info->he_cap_len = params->he_capa_len;
+	qdf_mem_copy(&req_info->he_cap, params->he_capa,
+		     sizeof(struct hecap));
+
+	return;
+}
+
+#else
+static void
+wlan_cfg80211_tdls_extract_he_params(struct tdls_update_peer_params *req_info,
+				     struct station_parameters *params)
+{
+}
+#endif
+
 static void
 wlan_cfg80211_tdls_extract_params(struct tdls_update_peer_params *req_info,
 				  struct station_parameters *params)
@@ -419,6 +406,8 @@ wlan_cfg80211_tdls_extract_params(struct tdls_update_peer_params *req_info,
 		osif_debug("TDLS peer pmf capable");
 		req_info->is_pmf = 1;
 	}
+
+	wlan_cfg80211_tdls_extract_he_params(req_info, params);
 }
 
 int wlan_cfg80211_tdls_update_peer(struct wlan_objmgr_vdev *vdev,
@@ -971,9 +960,6 @@ void wlan_cfg80211_tdls_event_callback(void *user_data,
 		break;
 	case TDLS_EVENT_SETUP_REQ:
 		wlan_cfg80211_tdls_indicate_setup(ind);
-		break;
-	case TDLS_EVENT_TEARDOWN_LINKS_DONE:
-		complete(&tdls_priv->tdls_teardown_comp);
 		break;
 	case TDLS_EVENT_USER_CMD:
 		tdls_priv->tdls_user_cmd_len = ind->status;

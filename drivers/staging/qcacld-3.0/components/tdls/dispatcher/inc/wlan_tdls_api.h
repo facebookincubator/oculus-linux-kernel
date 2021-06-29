@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015, 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,8 +14,29 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
- * DOC: osif_cm_roam_rsp.c
- *
- * This file maintains definitaions of roam response apis.
+/*
+ * DOC: contains tdls link teardown declarations
  */
+ #ifndef _WLAN_TDLS_API_H_
+ #define _WLAN_TDLS_API_H_
+
+#include "wlan_objmgr_psoc_obj.h"
+#include "wlan_objmgr_pdev_obj.h"
+#include "wlan_objmgr_vdev_obj.h"
+
+/**
+ * wlan_tdls_teardown_links() - notify TDLS module to teardown all TDLS links
+ * @psoc: psoc object
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_tdls_teardown_links(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * wlan_tdls_teardown_links_sync() - teardown all the TDLS links
+ * @psoc: psoc object
+ *
+ * Return: None
+ */
+void wlan_tdls_teardown_links_sync(struct wlan_objmgr_psoc *psoc);
+#endif

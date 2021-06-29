@@ -177,7 +177,7 @@
  * idle roam trigger(in dBm).
  * @Min: -120
  * @Max: 0
- * @Default: -70
+ * @Default: -75
  *
  * Minimum RSSI value of the candidate AP to consider it as candidate for
  * roaming when roam trigger is Deauthentication/Disconnection from current
@@ -196,7 +196,7 @@
 		"candidate_min_rssi_for_disconnect", \
 		-120, \
 		0, \
-		-70, \
+		-75, \
 		CFG_VALUE_OR_DEFAULT, \
 		"Minimum RSSI of candidate AP for Disconnect roam trigger")
 
@@ -206,7 +206,7 @@
  * miss roam trigger (in dBm)
  * @Min: -120
  * @Max: 0
- * @Default: -70
+ * @Default: -75
  *
  * Minimum RSSI value of the candidate AP to consider it as candidate for
  * roaming when roam trigger is disconnection from current AP due to beacon
@@ -225,9 +225,36 @@
 	"candidate_min_rssi_for_beacon_miss", \
 	-120, \
 	0, \
-	-70, \
+	-75, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Minimum RSSI of candidate AP for Bmiss roam trigger")
+
+/*
+ * <ini>
+ * min_rssi_for_2g_to_5g_roam - Candidate AP minimum RSSI for
+ * 2G to 5G roam trigger (in dBm)
+ * @Min: -120
+ * @Max: 0
+ * @Default: -70
+ *
+ * Minimum RSSI value of the candidate AP to consider it as candidate
+ * for 2G to 5G roam.
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: Internal/External
+ *
+ * </ini>
+ */
+#define CFG_2G_TO_5G_ROAM_MIN_RSSI CFG_INI_INT( \
+	"min_rssi_for_2g_to_5g_roam", \
+	-120, \
+	0, \
+	-70, \
+	CFG_VALUE_OR_DEFAULT, \
+	"Minimum RSSI of candidate AP for 2G to 5G roam trigger")
 
 /*
  * <ini>
@@ -287,34 +314,6 @@
 	CFG_VALUE_OR_DEFAULT, \
 	"Roam score delta for BTM roam trigger")
 
-/*
- * <ini>
- * vendor_roam_score_algorithm - Algorithm to calculate AP score
- * @Min: 0
- * @Max: 1
- * @Default: 0
- *
- * By default the value is 0 and default roam algorithm will be used.
- * When the value is 1, the V2 roaming algorithm will be used:
- * For this V2 algo, AP score calculation is based on below equation:
- * AP Score = (RSSIfactor * rssiweight(0.65)) + (CUfactor *cuweight(0.35))
- *
- * Related: None
- *
- * Supported Feature: roam score algorithm
- *
- * Usage: External
- *
- * </ini>
- */
-#define CFG_VENDOR_ROAM_SCORE_ALGORITHM CFG_INI_UINT( \
-	"vendor_roam_score_algorithm", \
-	0, \
-	1, \
-	0, \
-	CFG_VALUE_OR_DEFAULT, \
-	"Roam candidate selection score algorithm")
-
 #define CFG_ROAM_SCORING_ALL \
 	CFG(CFG_ROAM_SCORE_DELTA_TRIGGER_BITMAP) \
 	CFG(CFG_ROAM_SCORE_DELTA) \
@@ -323,8 +322,8 @@
 	CFG(CFG_APSD_ENABLED) \
 	CFG(CFG_DISCONNECT_ROAM_TRIGGER_MIN_RSSI) \
 	CFG(CFG_BMISS_ROAM_MIN_RSSI) \
+	CFG(CFG_2G_TO_5G_ROAM_MIN_RSSI) \
 	CFG(CFG_IDLE_ROAM_SCORE_DELTA) \
-	CFG(CFG_BTM_ROAM_SCORE_DELTA) \
-	CFG(CFG_VENDOR_ROAM_SCORE_ALGORITHM)
+	CFG(CFG_BTM_ROAM_SCORE_DELTA)
 
 #endif /* __CFG_MLME_ROAM_SCORING_H */

@@ -31,7 +31,6 @@
 /* Default value of reason code */
 #define DISABLE_VENDOR_BTM_CONFIG 2
 
-#ifdef ROAM_OFFLOAD_V1
 #if defined(WLAN_FEATURE_HOST_ROAM) || defined(WLAN_FEATURE_ROAM_OFFLOAD)
 /**
  * wlan_cm_enable_roaming_on_connected_sta() - Enable roaming on other connected
@@ -327,15 +326,6 @@ QDF_STATUS
 wlan_cm_roam_cfg_set_value(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 			   enum roam_cfg_param roam_cfg_type,
 			   struct cm_roam_values_copy *src_config);
-#else
-static inline QDF_STATUS
-wlan_cm_roam_cfg_set_value(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
-			   enum roam_cfg_param roam_cfg_type,
-			   struct cm_roam_values_copy *src_config)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
 
 #ifdef WLAN_FEATURE_FILS_SK
 /**
@@ -415,6 +405,19 @@ QDF_STATUS
 wlan_cm_roam_extract_roam_initial_info(wmi_unified_t wmi, void *evt_buf,
 				       struct roam_initial_data *dst,
 				       uint8_t idx);
+
+/**
+ * wlan_cm_roam_extract_roam_msg_info() - Extract Roam msg stats
+ * @wmi:       wmi handle
+ * @evt_buf:   Pointer to the event buffer
+ * @dst:       Pointer to destination structure to fill data
+ * @idx:       TLV id
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_cm_roam_extract_roam_msg_info(wmi_unified_t wmi, void *evt_buf,
+				   struct roam_msg_info *dst, uint8_t idx);
 
 /**
  * wlan_cm_roam_activate_pcl_per_vdev() - Set the PCL command to be sent per
@@ -513,6 +516,79 @@ wlan_cm_roam_get_vendor_btm_params(struct wlan_objmgr_psoc *psoc,
 				   uint8_t vdev_id,
 				   struct wlan_cm_roam_vendor_btm_params
 								*param);
+
+/**
+ * wlan_cm_roam_get_score_delta_params() - API to get roam score delta param
+ * @psoc: PSOC pointer
+ * @params: roam trigger param
+ *
+ * Return: none
+ */
+void
+wlan_cm_roam_get_score_delta_params(struct wlan_objmgr_psoc *psoc,
+				    struct wlan_roam_triggers *params);
+
+/**
+ * wlan_cm_roam_get_min_rssi_params() - API to get roam trigger min rssi param
+ * @psoc: PSOC pointer
+ * @params: roam trigger param
+ *
+ * Return: none
+ */
+void
+wlan_cm_roam_get_min_rssi_params(struct wlan_objmgr_psoc *psoc,
+				 struct wlan_roam_triggers *params);
+
+/**
+ * wlan_cm_update_roam_scan_scheme_bitmap() - Set roam scan scheme bitmap for
+ * each vdev
+ * @psoc: PSOC pointer
+ * @vdev_id: VDEV id
+ * @roam_scan_scheme_bitmap: bitmap of roam triggers for which partial roam
+ * scan needs to be enabled
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_cm_update_roam_scan_scheme_bitmap(struct wlan_objmgr_psoc *psoc,
+				       uint8_t vdev_id,
+				       uint32_t roam_scan_scheme_bitmap);
+
+/**
+ * wlan_cm_get_roam_scan_scheme_bitmap() - Get roam scan scheme bitmap value
+ * @psoc: PSOC pointer
+ * @vdev_id: VDEV id
+ *
+ * Return: Roam scan scheme bitmap value
+ */
+uint32_t wlan_cm_get_roam_scan_scheme_bitmap(struct wlan_objmgr_psoc *psoc,
+					     uint8_t vdev_id);
+
+/**
+ * wlan_cm_update_roam_states() - Set roam states for the vdev
+ * @psoc: PSOC pointer
+ * @vdev_id: VDEV id
+ * @value: Value to update
+ * @states: type of value to update
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_cm_update_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			   uint32_t value, enum roam_fail_params states);
+
+/**
+ * wlan_cm_get_roam_states() - Get roam states value
+ * @psoc: PSOC pointer
+ * @vdev_id: VDEV id
+ * @states: For which action get roam states
+ *
+ * Return: Roam fail reason value
+ */
+uint32_t
+wlan_cm_get_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			enum roam_fail_params states);
+
 #else
 static inline
 void wlan_cm_roam_activate_pcl_per_vdev(struct wlan_objmgr_psoc *psoc,
@@ -544,7 +620,7 @@ wlan_cm_roam_extract_btm_response(wmi_unified_t wmi, void *evt_buf,
 				  struct roam_btm_response_data *dst,
 				  uint8_t idx)
 {
-	return true;
+	return QDF_STATUS_E_NOSUPPORT;
 }
 
 static inline QDF_STATUS
@@ -552,7 +628,14 @@ wlan_cm_roam_extract_roam_initial_info(wmi_unified_t wmi, void *evt_buf,
 				       struct roam_initial_data *dst,
 				       uint8_t idx)
 {
-	return true;
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS
+wlan_cm_roam_extract_roam_msg_info(wmi_unified_t wmi, void *evt_buf,
+				   struct roam_msg_info *dst, uint8_t idx)
+{
+	return QDF_STATUS_E_NOSUPPORT;
 }
 
 static inline void
@@ -570,5 +653,46 @@ wlan_cm_roam_get_vendor_btm_params(struct wlan_objmgr_psoc *psoc,
 				   uint8_t vdev_id,
 				   struct wlan_cm_roam_vendor_btm_params *param)
 {}
+
+static inline void
+wlan_cm_roam_get_score_delta_params(struct wlan_objmgr_psoc *psoc,
+				    uint8_t vdev_id,
+				    struct roam_trigger_score_delta *param)
+{}
+
+static inline void
+wlan_cm_roam_get_min_rssi_params(struct wlan_objmgr_psoc *psoc,
+				 struct wlan_roam_triggers *params)
+{}
+
+static inline QDF_STATUS
+wlan_cm_update_roam_scan_scheme_bitmap(struct wlan_objmgr_psoc *psoc,
+				       uint8_t vdev_id,
+				       uint32_t roam_scan_scheme_bitmap)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline
+uint32_t wlan_cm_get_roam_scan_scheme_bitmap(struct wlan_objmgr_psoc *psoc,
+					     uint8_t vdev_id)
+{
+	return 0;
+}
+
+static inline QDF_STATUS
+wlan_cm_update_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			   uint32_t value, enum roam_fail_params states)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline uint32_t
+wlan_cm_get_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			enum roam_fail_params states)
+{
+	return 0;
+}
+
 #endif  /* FEATURE_ROAM_OFFLOAD */
 #endif  /* WLAN_CM_ROAM_API_H__ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -48,6 +48,22 @@ QDF_STATUS ucfg_fwol_psoc_open(struct wlan_objmgr_psoc *psoc);
  * Return: None
  */
 void ucfg_fwol_psoc_close(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_fwol_psoc_enable() - FWOL component enable
+ * @psoc: pointer to psoc object
+ *
+ * Return: None
+ */
+void ucfg_fwol_psoc_enable(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_fwol_psoc_disable() - FWOL component disable
+ * @psoc: pointer to psoc object
+ *
+ * Return: None
+ */
+void ucfg_fwol_psoc_disable(struct wlan_objmgr_psoc *psoc);
 
 /**
  * ucfg_fwol_init() - initialize fwol_ctx context.
@@ -267,7 +283,7 @@ QDF_STATUS ucfg_fwol_get_enable_fw_log_type(struct wlan_objmgr_psoc *psoc,
  * @enable_fw_module_log_level:
  * pointer to enable_fw_module_log_level array
  * @enable_fw_module_log_level_num:
- * pointer to enable_fw_module_log_leve array element num
+ * pointer to enable_fw_module_log_level array element num
  *
  * Return: QDF Status
  */
@@ -275,6 +291,23 @@ QDF_STATUS ucfg_fwol_get_enable_fw_module_log_level(
 				struct wlan_objmgr_psoc *psoc,
 				uint8_t **enable_fw_module_log_level,
 				uint8_t *enable_fw_module_log_level_num);
+
+/**
+ * ucfg_fwol_wow_get_enable_fw_module_log_level() - Assigns
+ * enable_fw_module_log_level string
+ *
+ * @psoc: pointer to the psoc object
+ * @enable_fw_wow_module_log_level:
+ * pointer to enable_fw_wow_module_log_level array
+ * @enable_fw_wow_module_log_level_num:
+ * pointer to enable_fw_wow_module_log_level array element num
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_fwol_wow_get_enable_fw_module_log_level(
+				struct wlan_objmgr_psoc *psoc,
+				uint8_t **enable_fw_wow_module_log_level,
+				uint8_t *enable_fw_wow_module_log_level_num);
 
 /**
  * ucfg_fwol_get_sap_xlna_bypass() - Assigns sap_xlna_bypass value
@@ -285,16 +318,6 @@ QDF_STATUS ucfg_fwol_get_enable_fw_module_log_level(
  */
 QDF_STATUS ucfg_fwol_get_sap_xlna_bypass(struct wlan_objmgr_psoc *psoc,
 					 bool *sap_xlna_bypass);
-
-/**
- * ucfg_fwol_get_ocl_cfg() - Assigns ocl_cfg value
- * @psoc: pointer to the psoc object
- * @ocl_cfg: pointer to return ocl_cfg
- *
- * Return: QDF Status
- */
-QDF_STATUS ucfg_fwol_get_ocl_cfg(struct wlan_objmgr_psoc *psoc,
-				 uint32_t *ocl_cfg);
 
 #ifdef FEATURE_WLAN_RA_FILTERING
 /**
@@ -777,12 +800,6 @@ ucfg_fwol_get_enable_fw_module_log_level(
 static inline QDF_STATUS
 ucfg_fwol_get_sap_xlna_bypass(struct wlan_objmgr_psoc *psoc,
 			      uint8_t *sap_xlna_bypass)
-{
-	return QDF_STATUS_E_FAILURE;
-}
-
-static inline QDF_STATUS
-ucfg_fwol_get_ocl_cfg(struct wlan_objmgr_psoc *psoc, uint32_t *ocl_cfg)
 {
 	return QDF_STATUS_E_FAILURE;
 }

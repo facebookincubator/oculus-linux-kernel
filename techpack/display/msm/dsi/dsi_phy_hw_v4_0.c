@@ -9,6 +9,7 @@
 #include "dsi_hw.h"
 #include "dsi_phy_hw.h"
 #include "dsi_catalog.h"
+#include "dsi_phy.h"
 
 #define DSIPHY_CMN_REVISION_ID0						0x000
 #define DSIPHY_CMN_REVISION_ID1						0x004
@@ -221,6 +222,8 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 	u32 glbl_rescode_top_ctrl = 0;
 	u32 glbl_rescode_bot_ctrl = 0;
 	u32 glbl_rescode_mid_ctrl = 0;
+	struct dsi_phy_drive_strength_cfgs *strength_arr = NULL;
+	struct msm_dsi_phy *phy_init_config = container_of(phy, struct msm_dsi_phy, hw);
 
 	if (phy->version == DSI_PHY_VERSION_4_1) {
 		glbl_rescode_top_ctrl = 0x1f;
@@ -235,6 +238,8 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 		glbl_rescode_top_ctrl = 0x03;
 		glbl_rescode_bot_ctrl = 0x3c;
 	}
+
+	strength_arr = (struct dsi_phy_drive_strength_cfgs *)phy_init_config->phy_drive_strength;
 
 	/* de-assert digital and pll power down */
 	data = BIT(6) | BIT(5);
@@ -258,19 +263,30 @@ static void dsi_phy_hw_cphy_enable(struct dsi_phy_hw *phy,
 	DSI_W32(phy, DSIPHY_CMN_GLBL_CTRL, BIT(6));
 
 	/* Enable LDO */
-	DSI_W32(phy, DSIPHY_CMN_VREG_CTRL_0, vreg_ctrl_0);
-	DSI_W32(phy, DSIPHY_CMN_VREG_CTRL_1, 0x55);
+	if (phy_init_config->phy_drive_strength) {
+		DSI_W32(phy, (strength_arr + 3)->addr, (strength_arr + 3)->val & 0xFF);
+		DSI_W32(phy, (strength_arr + 4)->addr, (strength_arr + 4)->val & 0xFF);
+	} else {
+		DSI_W32(phy, DSIPHY_CMN_VREG_CTRL_0, vreg_ctrl_0);
+		DSI_W32(phy, DSIPHY_CMN_VREG_CTRL_1, 0x55);
+	}
 	DSI_W32(phy, DSIPHY_CMN_GLBL_STR_SWI_CAL_SEL_CTRL,
 					glbl_str_swi_cal_sel_ctrl);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_HSTX_STR_CTRL_0, glbl_hstx_str_ctrl_0);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_PEMPH_CTRL_0, 0x11);
 	DSI_W32(phy, DSIPHY_CMN_GLBL_PEMPH_CTRL_1, 0x01);
-	DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_TOP_CTRL,
-			glbl_rescode_top_ctrl);
-	DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_BOT_CTRL,
-			glbl_rescode_bot_ctrl);
-	DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_MID_CTRL,
-			glbl_rescode_mid_ctrl);
+	if (phy_init_config->phy_drive_strength) {
+		DSI_W32(phy, strength_arr->addr, strength_arr->val & 0xFF);
+		DSI_W32(phy, (strength_arr + 1)->addr, (strength_arr + 1)->val & 0xFF);
+		DSI_W32(phy, (strength_arr + 2)->addr, (strength_arr + 2)->val & 0xFF);
+	} else {
+		DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_TOP_CTRL,
+				glbl_rescode_top_ctrl);
+		DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_BOT_CTRL,
+				glbl_rescode_bot_ctrl);
+		DSI_W32(phy, DSIPHY_CMN_GLBL_RESCODE_OFFSET_MID_CTRL,
+				glbl_rescode_mid_ctrl);
+	}
 	DSI_W32(phy, DSIPHY_CMN_GLBL_LPTX_STR_CTRL, 0x55);
 
 	/* Remove power down from all blocks */

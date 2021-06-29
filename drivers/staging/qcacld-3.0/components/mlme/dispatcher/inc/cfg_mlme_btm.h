@@ -103,7 +103,14 @@
  *
  * BIT 8: BTM query preference over 11k neighbor report request
  *
- * BIT 9-31: Reserved
+ * BIT 9: BTM query with candidate list
+ *
+ * BIT 10: When this bit is set, Firmware will forward BTM Request Frame to
+ * driver when the frame contains MBO assoc retry attribute. Driver will send
+ * this frame to supplicant and supplicant will use the frame info for
+ * blacklisting the AP so for the next connection framework will avoid this AP.
+ *
+ * BIT 11-31: Reserved
  *
  * Supported Feature: STA
  *

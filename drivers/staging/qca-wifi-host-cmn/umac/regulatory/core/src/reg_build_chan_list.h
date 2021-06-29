@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -46,6 +46,7 @@ void reg_init_pdev_mas_chan_list(
 		struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj,
 		struct mas_chan_params *mas_chan_params);
 
+#ifdef CONFIG_REG_CLIENT
 /**
  * reg_save_reg_rules_to_pdev() - Save psoc reg-rules to pdev.
  * @pdev_priv_obj: Pointer to regdb pdev private object.
@@ -53,6 +54,13 @@ void reg_init_pdev_mas_chan_list(
 void reg_save_reg_rules_to_pdev(
 		struct reg_rule_info *psoc_reg_rules,
 		struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj);
+#else
+static inline void
+reg_save_reg_rules_to_pdev(struct reg_rule_info *psoc_reg_rules,
+			   struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+{
+}
+#endif
 
 /**
  * reg_compute_pdev_current_chan_list() - Compute pdev current channel list.
@@ -70,6 +78,17 @@ void reg_compute_pdev_current_chan_list(
 void reg_propagate_mas_chan_list_to_pdev(struct wlan_objmgr_psoc *psoc,
 					 void *object, void *arg);
 
+#ifdef CONFIG_BAND_6GHZ
+/**
+ * reg_process_master_chan_list_ext() - Compute master channel extended list
+ * based on the regulatory rules.
+ * @reg_info: Pointer to regulatory info
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+reg_process_master_chan_list_ext(struct cur_regulatory_info *reg_info);
+#endif
 /**
  * reg_process_master_chan_list() - Compute master channel list based on the
  * regulatory rules.

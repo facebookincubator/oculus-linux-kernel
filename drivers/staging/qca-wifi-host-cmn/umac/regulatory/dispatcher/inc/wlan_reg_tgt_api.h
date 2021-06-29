@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -26,8 +26,25 @@
 #ifndef __WLAN_REG_TGT_API_H
 #define __WLAN_REG_TGT_API_H
 
+/**
+ * tgt_process_master_chan_list() - process master channel list
+ * @reg_info: regulatory info
+ *
+ * Return: QDF_STATUS
+ */
 QDF_STATUS tgt_reg_process_master_chan_list(struct cur_regulatory_info
 					    *reg_info);
+
+#ifdef CONFIG_BAND_6GHZ
+/**
+ * tgt_reg_process_master_chan_list_ext() - process master ext channel list
+ * @reg_info: regulatory info
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS tgt_reg_process_master_chan_list_ext(struct cur_regulatory_info
+						*reg_info);
+#endif
 
 /**
  * tgt_reg_process_11d_new_country() - process new 11d country event
@@ -89,4 +106,49 @@ QDF_STATUS tgt_reg_set_6ghz_supported(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS tgt_reg_set_5dot9_ghz_supported(struct wlan_objmgr_psoc *psoc,
 					   bool val);
 
+/**
+ * tgt_reg_set_ext_tpc_supported() - Whether FW supports new WMI cmd for TPC
+ * @psoc: Pointer to psoc
+ * @val: value
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS tgt_reg_set_ext_tpc_supported(struct wlan_objmgr_psoc *psoc,
+					 bool val);
+
+#if defined(CONFIG_BAND_6GHZ) && defined(CONFIG_REG_CLIENT)
+/**
+ * tgt_reg_set_lower_6g_edge_ch_supp() - Assign the value set by FW for lower
+ * 6ghz edge channel (5935 MHz) support
+ * @psoc: Pointer to psoc
+ * @val: value
+ */
+QDF_STATUS tgt_reg_set_lower_6g_edge_ch_supp(struct wlan_objmgr_psoc *psoc,
+					     bool val);
+
+/**
+ * tgt_reg_set_disable_upper_6g_edge_ch_supp() - Assign the value set by FW
+ * for upper 6G edge channel {7115MHz) disablement
+ * @psoc: Pointer to psoc
+ * @val: value
+ */
+QDF_STATUS
+tgt_reg_set_disable_upper_6g_edge_ch_supp(struct wlan_objmgr_psoc *psoc,
+					  bool val);
+#else
+static inline
+QDF_STATUS tgt_reg_set_lower_6g_edge_ch_supp(struct wlan_objmgr_psoc *psoc,
+					     bool val)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline QDF_STATUS
+tgt_reg_set_disable_upper_6g_edge_ch_supp(struct wlan_objmgr_psoc *psoc,
+					  bool val)
+
+{
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
 #endif

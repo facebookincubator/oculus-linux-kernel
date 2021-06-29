@@ -27,6 +27,9 @@
 #include "hif_io32.h"
 #include "qdf_platform.h"
 
+/* Ring index for WBM2SW2 release ring */
+#define HAL_IPA_TX_COMP_RING_IDX 2
+
 /* calculate the register address offset from bar0 of shadow register x */
 #if defined(QCA_WIFI_QCA6390) || defined(QCA_WIFI_QCA6490)
 #define SHADOW_REGISTER_START_ADDRESS_OFFSET 0x000008FC
@@ -130,8 +133,7 @@ static inline void hal_reg_write_result_check(struct hal_soc *hal_soc,
 	}
 }
 
-#if !defined(QCA_WIFI_QCA6390) && !defined(QCA_WIFI_QCA6490) || \
-    !defined(QCA_WIFI_QCA6750)
+#if !defined(QCA_WIFI_QCA6390) && !defined(QCA_WIFI_QCA6490)
 static inline void hal_lock_reg_access(struct hal_soc *soc,
 				       unsigned long *flags)
 {
@@ -287,8 +289,8 @@ static inline void hal_write32_mb(struct hal_soc *hal_soc, uint32_t offset,
 	if (!hal_soc->init_phase) {
 		ret = hif_force_wake_request(hal_soc->hif_handle);
 		if (ret) {
-			hal_err("Wake up request failed");
-			qdf_check_state_before_panic();
+			hal_err_rl("Wake up request failed");
+			qdf_check_state_before_panic(__func__, __LINE__);
 			return;
 		}
 	}
@@ -313,7 +315,7 @@ static inline void hal_write32_mb(struct hal_soc *hal_soc, uint32_t offset,
 		ret = hif_force_wake_release(hal_soc->hif_handle);
 		if (ret) {
 			hal_err("Wake up release failed");
-			qdf_check_state_before_panic();
+			qdf_check_state_before_panic(__func__, __LINE__);
 			return;
 		}
 	}
@@ -348,7 +350,7 @@ static inline void hal_write32_mb_confirm(struct hal_soc *hal_soc,
 		ret = hif_force_wake_request(hal_soc->hif_handle);
 		if (ret) {
 			hal_err("Wake up request failed");
-			qdf_check_state_before_panic();
+			qdf_check_state_before_panic(__func__, __LINE__);
 			return;
 		}
 	}
@@ -383,7 +385,7 @@ static inline void hal_write32_mb_confirm(struct hal_soc *hal_soc,
 		ret = hif_force_wake_release(hal_soc->hif_handle);
 		if (ret) {
 			hal_err("Wake up release failed");
-			qdf_check_state_before_panic();
+			qdf_check_state_before_panic(__func__, __LINE__);
 			return;
 		}
 	}
@@ -449,7 +451,8 @@ static inline void hal_srng_write_address_32_mb(struct hal_soc *hal_soc,
 {
 	qdf_iowrite32(addr, value);
 }
-#elif defined(FEATURE_HAL_DELAYED_REG_WRITE)
+#elif defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HAL_DELAYED_REG_WRITE_V2)
 static inline void hal_srng_write_address_32_mb(struct hal_soc *hal_soc,
 						struct hal_srng *srng,
 						void __iomem *addr,
@@ -535,7 +538,7 @@ uint32_t hal_read32_mb(struct hal_soc *hal_soc, uint32_t offset)
 	if ((!hal_soc->init_phase) &&
 	    hif_force_wake_request(hal_soc->hif_handle)) {
 		hal_err("Wake up request failed");
-		qdf_check_state_before_panic();
+		qdf_check_state_before_panic(__func__, __LINE__);
 		return 0;
 	}
 
@@ -558,7 +561,7 @@ uint32_t hal_read32_mb(struct hal_soc *hal_soc, uint32_t offset)
 	if ((!hal_soc->init_phase) &&
 	    hif_force_wake_release(hal_soc->hif_handle)) {
 		hal_err("Wake up release failed");
-		qdf_check_state_before_panic();
+		qdf_check_state_before_panic(__func__, __LINE__);
 		return 0;
 	}
 
@@ -602,6 +605,121 @@ uint32_t hal_read32_mb_cmem(struct hal_soc *hal_soc, uint32_t offset)
 /* Delay milliseconds for each time retry */
 #define HAL_REG_WRITE_RETRY_DELAY	1
 
+#ifdef GENERIC_SHADOW_REGISTER_ACCESS_ENABLE
+/* To check shadow config index range between 0..31 */
+#define HAL_SHADOW_REG_INDEX_LOW 32
+/* To check shadow config index range between 32..39 */
+#define HAL_SHADOW_REG_INDEX_HIGH 40
+/* Dirty bit reg offsets corresponding to shadow config index */
+#define HAL_SHADOW_REG_DIRTY_BIT_DATA_LOW_OFFSET 0x30C8
+#define HAL_SHADOW_REG_DIRTY_BIT_DATA_HIGH_OFFSET 0x30C4
+/* PCIE_PCIE_TOP base addr offset */
+#define HAL_PCIE_PCIE_TOP_WRAPPER 0x01E00000
+/* Max retry attempts to read the dirty bit reg */
+#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#define HAL_SHADOW_DIRTY_BIT_POLL_MAX 10000
+#else
+#define HAL_SHADOW_DIRTY_BIT_POLL_MAX 2000
+#endif
+/* Delay in usecs for polling dirty bit reg */
+#define HAL_SHADOW_DIRTY_BIT_POLL_DELAY 5
+
+/**
+ * hal_poll_dirty_bit_reg() - Poll dirty register bit to confirm
+ * write was successful
+ * @hal_soc: hal soc handle
+ * @shadow_config_index: index of shadow reg used to confirm
+ * write
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS hal_poll_dirty_bit_reg(struct hal_soc *hal,
+						int shadow_config_index)
+{
+	uint32_t read_value = 0;
+	int retry_cnt = 0;
+	uint32_t reg_offset = 0;
+
+	if (shadow_config_index > 0 &&
+	    shadow_config_index < HAL_SHADOW_REG_INDEX_LOW) {
+		reg_offset =
+			HAL_SHADOW_REG_DIRTY_BIT_DATA_LOW_OFFSET;
+	} else if (shadow_config_index >= HAL_SHADOW_REG_INDEX_LOW &&
+		   shadow_config_index < HAL_SHADOW_REG_INDEX_HIGH) {
+		reg_offset =
+			HAL_SHADOW_REG_DIRTY_BIT_DATA_HIGH_OFFSET;
+	} else {
+		hal_err("Invalid shadow_config_index = %d",
+			shadow_config_index);
+		return QDF_STATUS_E_INVAL;
+	}
+	while (retry_cnt < HAL_SHADOW_DIRTY_BIT_POLL_MAX) {
+		read_value = hal_read32_mb(
+				hal, HAL_PCIE_PCIE_TOP_WRAPPER + reg_offset);
+		/* Check if dirty bit corresponding to shadow_index is set */
+		if (read_value & BIT(shadow_config_index)) {
+			/* Dirty reg bit not reset */
+			qdf_udelay(HAL_SHADOW_DIRTY_BIT_POLL_DELAY);
+			retry_cnt++;
+		} else {
+			hal_debug("Shadow write: offset 0x%x read val 0x%x",
+				  reg_offset, read_value);
+			return QDF_STATUS_SUCCESS;
+		}
+	}
+	return QDF_STATUS_E_TIMEOUT;
+}
+
+/**
+ * hal_write32_mb_shadow_confirm() - write to shadow reg and
+ * poll dirty register bit to confirm write
+ * @hal_soc: hal soc handle
+ * @reg_offset: target reg offset address from BAR
+ * @value: value to write
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS hal_write32_mb_shadow_confirm(
+	struct hal_soc *hal,
+	uint32_t reg_offset,
+	uint32_t value)
+{
+	int i;
+	QDF_STATUS ret;
+	uint32_t shadow_reg_offset;
+	int shadow_config_index;
+	bool is_reg_offset_present = false;
+
+	for (i = 0; i < MAX_GENERIC_SHADOW_REG; i++) {
+		/* Found the shadow config for the reg_offset */
+		struct shadow_reg_config *hal_shadow_reg_list =
+			&hal->list_shadow_reg_config[i];
+		if (hal_shadow_reg_list->target_register ==
+			reg_offset) {
+			shadow_config_index =
+				hal_shadow_reg_list->shadow_config_index;
+			shadow_reg_offset =
+				SHADOW_REGISTER(shadow_config_index);
+			hal_write32_mb_confirm(
+				hal, shadow_reg_offset, value);
+			is_reg_offset_present = true;
+			break;
+		}
+		ret = QDF_STATUS_E_FAILURE;
+	}
+	if (is_reg_offset_present) {
+		ret = hal_poll_dirty_bit_reg(hal, shadow_config_index);
+		hal_info("Shadow write:reg 0x%x val 0x%x ret %d",
+			 reg_offset, value, ret);
+		if (QDF_IS_STATUS_ERROR(ret)) {
+			HAL_STATS_INC(hal, shadow_reg_write_fail, 1);
+			return ret;
+		}
+		HAL_STATS_INC(hal, shadow_reg_write_succ, 1);
+	}
+	return ret;
+}
+
 /**
  * hal_write32_mb_confirm_retry() - write register with confirming and
 				    do retry/recovery if writing failed
@@ -617,6 +735,19 @@ uint32_t hal_read32_mb_cmem(struct hal_soc *hal_soc, uint32_t offset)
  *
  * Return: None
  */
+static inline void hal_write32_mb_confirm_retry(struct hal_soc *hal_soc,
+						uint32_t offset,
+						uint32_t value,
+						bool recovery)
+{
+	QDF_STATUS ret;
+
+	ret = hal_write32_mb_shadow_confirm(hal_soc, offset, value);
+	if (QDF_IS_STATUS_ERROR(ret) && recovery)
+		qdf_trigger_self_recovery(NULL, QDF_HAL_REG_WRITE_FAILURE);
+}
+#else /* GENERIC_SHADOW_REGISTER_ACCESS_ENABLE */
+
 static inline void hal_write32_mb_confirm_retry(struct hal_soc *hal_soc,
 						uint32_t offset,
 						uint32_t value,
@@ -641,8 +772,10 @@ static inline void hal_write32_mb_confirm_retry(struct hal_soc *hal_soc,
 	if (retry_cnt > HAL_REG_WRITE_RETRY_MAX && recovery)
 		qdf_trigger_self_recovery(NULL, QDF_HAL_REG_WRITE_FAILURE);
 }
+#endif /* GENERIC_SHADOW_REGISTER_ACCESS_ENABLE */
 
-#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#if defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HAL_DELAYED_REG_WRITE_V2)
 /**
  * hal_dump_reg_write_srng_stats() - dump SRNG reg write stats
  * @hal_soc: HAL soc handle
@@ -726,35 +859,6 @@ void *hal_attach(struct hif_opaque_softc *hif_handle, qdf_device_t qdf_dev);
  *
  */
 extern void hal_detach(void *hal_soc);
-
-/* SRNG type to be passed in APIs hal_srng_get_entrysize and hal_srng_setup */
-enum hal_ring_type {
-	REO_DST = 0,
-	REO_EXCEPTION = 1,
-	REO_REINJECT = 2,
-	REO_CMD = 3,
-	REO_STATUS = 4,
-	TCL_DATA = 5,
-	TCL_CMD_CREDIT = 6,
-	TCL_STATUS = 7,
-	CE_SRC = 8,
-	CE_DST = 9,
-	CE_DST_STATUS = 10,
-	WBM_IDLE_LINK = 11,
-	SW2WBM_RELEASE = 12,
-	WBM2SW_RELEASE = 13,
-	RXDMA_BUF = 14,
-	RXDMA_DST = 15,
-	RXDMA_MONITOR_BUF = 16,
-	RXDMA_MONITOR_STATUS = 17,
-	RXDMA_MONITOR_DST = 18,
-	RXDMA_MONITOR_DESC = 19,
-	DIR_BUF_RX_DMA_SRC = 20,
-#ifdef WLAN_FEATURE_CIF_CFR
-	WIFI_POS_SRC,
-#endif
-	MAX_RING_TYPES
-};
 
 #define HAL_SRNG_LMAC_RING 0x80000000
 /* SRNG flags passed in hal_srng_params.flags */
@@ -889,12 +993,13 @@ struct hal_srng_params {
 	uint32_t prefetch_timer;
 };
 
-/* hal_construct_shadow_config() - initialize the shadow registers for dp rings
+/* hal_construct_srng_shadow_regs() - initialize the shadow
+ * registers for srngs
  * @hal_soc: hal handle
  *
  * Return: QDF_STATUS_OK on success
  */
-extern QDF_STATUS hal_construct_shadow_config(void *hal_soc);
+QDF_STATUS hal_construct_srng_shadow_regs(void *hal_soc);
 
 /* hal_set_one_shadow_config() - add a config for the specified ring
  * @hal_soc: hal handle
@@ -911,8 +1016,8 @@ extern QDF_STATUS hal_construct_shadow_config(void *hal_soc);
  *
  * Return: QDF_STATUS_OK on success
  */
-extern QDF_STATUS hal_set_one_shadow_config(void *hal_soc, int ring_type,
-					    int ring_num);
+QDF_STATUS hal_set_one_shadow_config(void *hal_soc, int ring_type,
+				     int ring_num);
 /**
  * hal_get_shadow_config() - retrieve the config table
  * @hal_soc: hal handle
@@ -964,6 +1069,15 @@ extern void *hal_srng_setup(void *hal_soc, int ring_type, int ring_num,
 	  DESTINATION_RING_ ## _OFFSET ## _SHFT))
 
 /*
+ * Macro to access HWIO_REO_R0_ERROR_DESTINATION_RING_CTRL_IX_1
+ * to map destination to rings
+ */
+#define HAL_REO_ERR_REMAP_IX1(_VALUE, _OFFSET) \
+	((_VALUE) << \
+	 (HWIO_REO_R0_ERROR_DESTINATION_MAPPING_IX_1_ERROR_ ## \
+	  DESTINATION_RING_ ## _OFFSET ## _SHFT))
+
+/*
  * Macro to access HWIO_REO_R0_DESTINATION_RING_CTRL_IX_0
  * to map destination to rings
  */
@@ -1012,10 +1126,13 @@ extern void hal_srng_dst_set_hp_paddr(struct hal_srng *sring, uint64_t paddr);
 
 /**
  * hal_srng_dst_init_hp() - Initilaize head pointer with cached head pointer
+ * @hal_soc: hal_soc handle
  * @srng: sring pointer
  * @vaddr: virtual address
  */
-extern void hal_srng_dst_init_hp(struct hal_srng *srng, uint32_t *vaddr);
+void hal_srng_dst_init_hp(struct hal_soc_handle *hal_soc,
+			  struct hal_srng *srng,
+			  uint32_t *vaddr);
 
 /**
  * hal_srng_cleanup - Deinitialize HW SRNG ring.
@@ -2415,4 +2532,73 @@ static inline void hal_reo_set_err_dst_remap(hal_soc_handle_t hal_soc_hdl)
 	if (hal_soc->ops->hal_reo_set_err_dst_remap)
 		hal_soc->ops->hal_reo_set_err_dst_remap(hal_soc);
 }
+
+#ifdef GENERIC_SHADOW_REGISTER_ACCESS_ENABLE
+
+/**
+ * hal_set_one_target_reg_config() - Populate the target reg
+ * offset in hal_soc for one non srng related register at the
+ * given list index
+ * @hal_soc: hal handle
+ * @target_reg_offset: target register offset
+ * @list_index: index in hal list for shadow regs
+ *
+ * Return: none
+ */
+void hal_set_one_target_reg_config(struct hal_soc *hal,
+				   uint32_t target_reg_offset,
+				   int list_index);
+
+/**
+ * hal_set_shadow_regs() - Populate register offset for
+ * registers that need to be populated in list_shadow_reg_config
+ * in order to be sent to FW. These reg offsets will be mapped
+ * to shadow registers.
+ * @hal_soc: hal handle
+ *
+ * Return: QDF_STATUS_OK on success
+ */
+QDF_STATUS hal_set_shadow_regs(void *hal_soc);
+
+/**
+ * hal_construct_shadow_regs() - initialize the shadow registers
+ * for non-srng related register configs
+ * @hal_soc: hal handle
+ *
+ * Return: QDF_STATUS_OK on success
+ */
+QDF_STATUS hal_construct_shadow_regs(void *hal_soc);
+
+#else /* GENERIC_SHADOW_REGISTER_ACCESS_ENABLE */
+static inline void hal_set_one_target_reg_config(
+	struct hal_soc *hal,
+	uint32_t target_reg_offset,
+	int list_index)
+{
+}
+
+static inline QDF_STATUS hal_set_shadow_regs(void *hal_soc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS hal_construct_shadow_regs(void *hal_soc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* GENERIC_SHADOW_REGISTER_ACCESS_ENABLE */
+
+#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+/**
+ * hal_flush_reg_write_work() - flush all writes from register write queue
+ * @arg: hal_soc pointer
+ *
+ * Return: None
+ */
+void hal_flush_reg_write_work(hal_soc_handle_t hal_handle);
+
+#else
+static inline void hal_flush_reg_write_work(hal_soc_handle_t hal_handle) { }
+#endif
+
 #endif /* _HAL_APIH_ */

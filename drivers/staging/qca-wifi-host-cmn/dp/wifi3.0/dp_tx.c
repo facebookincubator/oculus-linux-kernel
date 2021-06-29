@@ -870,6 +870,29 @@ dp_tx_wds_ext(struct dp_soc *soc, struct dp_vdev *vdev, uint16_t peer_id,
 }
 #endif
 
+#ifdef WLAN_DP_FEATURE_MARK_ICMP_REQ_TO_FW
+/**
+ * dp_tx_is_nbuf_marked_exception() - Check if the packet has been marked as
+ *				      exception by the upper layer (OS_IF)
+ * @soc: DP soc handle
+ * @nbuf: packet to be transmitted
+ *
+ * Returns: 1 if the packet is marked as exception,
+ *	    0, if the packet is not marked as exception.
+ */
+static inline int dp_tx_is_nbuf_marked_exception(struct dp_soc *soc,
+						 qdf_nbuf_t nbuf)
+{
+	return QDF_NBUF_CB_TX_PACKET_TO_FW(nbuf);
+}
+#else
+static inline int dp_tx_is_nbuf_marked_exception(struct dp_soc *soc,
+						 qdf_nbuf_t nbuf)
+{
+	return 0;
+}
+#endif
+
 /**
  * dp_tx_desc_prepare_single - Allocate and prepare Tx descriptor
  * @vdev: DP vdev handle
@@ -928,6 +951,9 @@ struct dp_tx_desc_s *dp_tx_prepare_desc_single(struct dp_vdev *vdev,
 	if (qdf_unlikely(dp_is_tx_extended(vdev, tx_exc_metadata)))
 		return tx_desc;
 
+	/* Packets marked by upper layer (OS-IF) to be sent to FW */
+	if (dp_tx_is_nbuf_marked_exception(soc, nbuf))
+		is_exception = 1;
 	/*
 	 * For special modes (vdev_type == ocb or mesh), data frames should be
 	 * transmitted using varying transmit parameters (tx spec) which include
@@ -1316,8 +1342,73 @@ dp_tx_ring_access_end(struct dp_soc *soc, hal_ring_handle_t hal_ring_hdl,
 {
 	dp_tx_hal_ring_access_end(soc, hal_ring_hdl);
 }
-
 #endif
+
+#ifdef FEATURE_RUNTIME_PM
+/**
+ * dp_tx_ring_access_end_wrapper() - Wrapper for ring access end
+ * @soc: Datapath soc handle
+ * @hal_ring_hdl: HAL ring handle
+ * @coalesce: Coalesce the current write or not
+ *
+ * Wrapper for HAL ring access end for data transmission for
+ * FEATURE_RUNTIME_PM
+ *
+ * Returns: none
+ */
+static inline void
+dp_tx_ring_access_end_wrapper(struct dp_soc *soc,
+			      hal_ring_handle_t hal_ring_hdl,
+			      int coalesce)
+{
+	int ret;
+
+	ret = hif_pm_runtime_get(soc->hif_handle,
+				 RTPM_ID_DW_TX_HW_ENQUEUE, true);
+	switch (ret) {
+	case 0:
+		dp_tx_ring_access_end(soc, hal_ring_hdl, coalesce);
+		hif_pm_runtime_put(soc->hif_handle,
+				   RTPM_ID_DW_TX_HW_ENQUEUE);
+		break;
+	/*
+	 * If hif_pm_runtime_get returns -EBUSY or -EINPROGRESS,
+	 * take the dp runtime refcount using dp_runtime_get,
+	 * check link state,if up, write TX ring HP, else just set flush event.
+	 * In dp_runtime_resume, wait until dp runtime refcount becomes
+	 * zero or time out, then flush pending tx.
+	 */
+	case -EBUSY:
+	case -EINPROGRESS:
+		dp_runtime_get(soc);
+		if (hif_pm_get_link_state(soc->hif_handle) ==
+		    HIF_PM_LINK_STATE_UP) {
+			dp_tx_ring_access_end(soc, hal_ring_hdl, coalesce);
+		} else {
+			dp_tx_hal_ring_access_end_reap(soc, hal_ring_hdl);
+			hal_srng_set_event(hal_ring_hdl, HAL_SRNG_FLUSH_EVENT);
+			hal_srng_inc_flush_cnt(hal_ring_hdl);
+		}
+		dp_runtime_put(soc);
+		break;
+	default:
+		dp_runtime_get(soc);
+		dp_tx_hal_ring_access_end_reap(soc, hal_ring_hdl);
+		hal_srng_set_event(hal_ring_hdl, HAL_SRNG_FLUSH_EVENT);
+		hal_srng_inc_flush_cnt(hal_ring_hdl);
+		dp_runtime_put(soc);
+	}
+}
+#else
+static inline void
+dp_tx_ring_access_end_wrapper(struct dp_soc *soc,
+			      hal_ring_handle_t hal_ring_hdl,
+			      int coalesce)
+{
+	dp_tx_ring_access_end(soc, hal_ring_hdl, coalesce);
+}
+#endif
+
 /**
  * dp_tx_hw_enqueue() - Enqueue to TCL HW for transmit
  * @soc: DP Soc Handle
@@ -1470,16 +1561,7 @@ dp_tx_hw_enqueue(struct dp_soc *soc, struct dp_vdev *vdev,
 	status = QDF_STATUS_SUCCESS;
 
 ring_access_fail:
-	if (hif_pm_runtime_get(soc->hif_handle,
-			       RTPM_ID_DW_TX_HW_ENQUEUE) == 0) {
-		dp_tx_ring_access_end(soc, hal_ring_hdl, coalesce);
-		hif_pm_runtime_put(soc->hif_handle,
-				   RTPM_ID_DW_TX_HW_ENQUEUE);
-	} else {
-		dp_tx_hal_ring_access_end_reap(soc, hal_ring_hdl);
-		hal_srng_set_event(hal_ring_hdl, HAL_SRNG_FLUSH_EVENT);
-		hal_srng_inc_flush_cnt(hal_ring_hdl);
-	}
+	dp_tx_ring_access_end_wrapper(soc, hal_ring_hdl, coalesce);
 
 	return status;
 }
@@ -2065,6 +2147,48 @@ fail_return:
 }
 
 /**
+ * dp_tx_comp_free_buf() - Free nbuf associated with the Tx Descriptor
+ * @soc: Soc handle
+ * @desc: software Tx descriptor to be processed
+ *
+ * Return: none
+ */
+static inline void dp_tx_comp_free_buf(struct dp_soc *soc,
+				       struct dp_tx_desc_s *desc)
+{
+	qdf_nbuf_t nbuf = desc->nbuf;
+
+	/* nbuf already freed in vdev detach path */
+	if (!nbuf)
+		return;
+
+	/* If it is TDLS mgmt, don't unmap or free the frame */
+	if (desc->flags & DP_TX_DESC_FLAG_TDLS_FRAME)
+		return dp_non_std_tx_comp_free_buff(soc, desc);
+
+	/* 0 : MSDU buffer, 1 : MLE */
+	if (desc->msdu_ext_desc) {
+		/* TSO free */
+		if (hal_tx_ext_desc_get_tso_enable(
+					desc->msdu_ext_desc->vaddr)) {
+			/* unmap eash TSO seg before free the nbuf */
+			dp_tx_tso_unmap_segment(soc, desc->tso_desc,
+						desc->tso_num_desc);
+			qdf_nbuf_free(nbuf);
+			return;
+		}
+	}
+
+	qdf_nbuf_unmap_nbytes_single(soc->osdev, nbuf,
+				     QDF_DMA_TO_DEVICE, nbuf->len);
+
+	if (desc->flags & DP_TX_DESC_FLAG_MESH_MODE)
+		return dp_mesh_tx_comp_free_buff(soc, desc);
+
+	qdf_nbuf_free(nbuf);
+}
+
+/**
  * dp_tx_send_msdu_multiple() - Enqueue multiple MSDUs
  * @vdev: DP vdev handle
  * @nbuf: skb
@@ -2149,6 +2273,22 @@ qdf_nbuf_t dp_tx_send_msdu_multiple(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 				i++;
 				continue;
 			}
+
+			if (msdu_info->frm_type == dp_tx_frm_tso) {
+				dp_tx_tso_unmap_segment(soc,
+							msdu_info->u.tso_info.
+							curr_seg,
+							msdu_info->u.tso_info.
+							tso_num_seg_list);
+
+				if (msdu_info->u.tso_info.curr_seg->next) {
+					msdu_info->u.tso_info.curr_seg =
+					msdu_info->u.tso_info.curr_seg->next;
+					i++;
+					continue;
+				}
+			}
+
 			goto done;
 		}
 
@@ -2167,15 +2307,38 @@ qdf_nbuf_t dp_tx_send_msdu_multiple(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 		}
 
 		/*
+		 * For frames with multiple segments (TSO, ME), jump to next
+		 * segment.
+		 */
+		if (msdu_info->frm_type == dp_tx_frm_tso) {
+			if (msdu_info->u.tso_info.curr_seg->next) {
+				msdu_info->u.tso_info.curr_seg =
+					msdu_info->u.tso_info.curr_seg->next;
+
+				/*
+				 * If this is a jumbo nbuf, then increment the
+				 * number of nbuf users for each additional
+				 * segment of the msdu. This will ensure that
+				 * the skb is freed only after receiving tx
+				 * completion for all segments of an nbuf
+				 */
+				qdf_nbuf_inc_users(nbuf);
+
+				/* Check with MCL if this is needed */
+				/* nbuf = msdu_info->u.tso_info.curr_seg->nbuf;
+				 */
+			}
+		}
+
+		/*
 		 * Enqueue the Tx MSDU descriptor to HW for transmit
 		 */
 		status = dp_tx_hw_enqueue(soc, vdev, tx_desc, htt_tcl_metadata,
 					  NULL, msdu_info);
 
 		if (status != QDF_STATUS_SUCCESS) {
-			QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
-					"%s Tx_hw_enqueue Fail tx_desc %pK queue %d",
-					__func__, tx_desc, tx_q->ring_id);
+			dp_info("Tx_hw_enqueue Fail tx_desc %pK queue %d",
+				tx_desc, tx_q->ring_id);
 
 			dp_tx_get_tid(vdev, nbuf, msdu_info);
 			tid_stats = &pdev->stats.tid_stats.
@@ -2210,6 +2373,23 @@ qdf_nbuf_t dp_tx_send_msdu_multiple(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 				i++;
 				continue;
 			}
+
+			/*
+			 * For TSO frames, the nbuf users increment done for
+			 * the current segment has to be reverted, since the
+			 * hw enqueue for this segment failed
+			 */
+			if (msdu_info->frm_type == dp_tx_frm_tso &&
+			    msdu_info->u.tso_info.curr_seg) {
+				/*
+				 * unmap and free current,
+				 * retransmit remaining segments
+				 */
+				dp_tx_comp_free_buf(soc, tx_desc);
+				i++;
+				continue;
+			}
+
 			goto done;
 		}
 
@@ -2219,28 +2399,6 @@ qdf_nbuf_t dp_tx_send_msdu_multiple(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 		 * as first element, following 2 blocks of code (for TSO and SG)
 		 * can be combined into 1
 		 */
-
-		/*
-		 * For frames with multiple segments (TSO, ME), jump to next
-		 * segment.
-		 */
-		if (msdu_info->frm_type == dp_tx_frm_tso) {
-			if (msdu_info->u.tso_info.curr_seg->next) {
-				msdu_info->u.tso_info.curr_seg =
-					msdu_info->u.tso_info.curr_seg->next;
-
-				/*
-				 * If this is a jumbo nbuf, then increment the number of
-				 * nbuf users for each additional segment of the msdu.
-				 * This will ensure that the skb is freed only after
-				 * receiving tx completion for all segments of an nbuf
-				 */
-				qdf_nbuf_inc_users(nbuf);
-
-				/* Check with MCL if this is needed */
-				/* nbuf = msdu_info->u.tso_info.curr_seg->nbuf; */
-			}
-		}
 
 		/*
 		 * For Multicast-Unicast converted packets,
@@ -3432,48 +3590,6 @@ dp_send_completion_to_stack(struct dp_soc *soc,  struct dp_pdev *pdev,
 }
 #endif
 
-/**
- * dp_tx_comp_free_buf() - Free nbuf associated with the Tx Descriptor
- * @soc: Soc handle
- * @desc: software Tx descriptor to be processed
- *
- * Return: none
- */
-static inline void dp_tx_comp_free_buf(struct dp_soc *soc,
-				       struct dp_tx_desc_s *desc)
-{
-	qdf_nbuf_t nbuf = desc->nbuf;
-
-	/* nbuf already freed in vdev detach path */
-	if (!nbuf)
-		return;
-
-	/* If it is TDLS mgmt, don't unmap or free the frame */
-	if (desc->flags & DP_TX_DESC_FLAG_TDLS_FRAME)
-		return dp_non_std_tx_comp_free_buff(soc, desc);
-
-	/* 0 : MSDU buffer, 1 : MLE */
-	if (desc->msdu_ext_desc) {
-		/* TSO free */
-		if (hal_tx_ext_desc_get_tso_enable(
-					desc->msdu_ext_desc->vaddr)) {
-			/* unmap eash TSO seg before free the nbuf */
-			dp_tx_tso_unmap_segment(soc, desc->tso_desc,
-						desc->tso_num_desc);
-			qdf_nbuf_free(nbuf);
-			return;
-		}
-	}
-
-	qdf_nbuf_unmap_nbytes_single(soc->osdev, nbuf,
-				     QDF_DMA_TO_DEVICE, nbuf->len);
-
-	if (desc->flags & DP_TX_DESC_FLAG_MESH_MODE)
-		return dp_mesh_tx_comp_free_buff(soc, desc);
-
-	qdf_nbuf_free(nbuf);
-}
-
 #ifdef MESH_MODE_SUPPORT
 /**
  * dp_tx_comp_fill_tx_completion_stats() - Fill per packet Tx completion stats
@@ -3955,6 +4071,25 @@ static inline void dp_tx_sojourn_stats_process(struct dp_pdev *pdev,
 }
 #endif
 
+#ifdef WLAN_FEATURE_PKT_CAPTURE_V2
+/**
+ * dp_send_completion_to_pkt_capture() - send tx completion to packet capture
+ * @soc: dp_soc handle
+ * @desc: Tx Descriptor
+ * @ts: HAL Tx completion descriptor contents
+ *
+ * This function is used to send tx completion to packet capture
+ */
+void dp_send_completion_to_pkt_capture(struct dp_soc *soc,
+				       struct dp_tx_desc_s *desc,
+				       struct hal_tx_completion_status *ts)
+{
+	dp_wdi_event_handler(WDI_EVENT_PKT_CAPTURE_TX_DATA, soc,
+			     desc, ts->peer_id,
+			     WDI_NO_VAL, desc->pdev->pdev_id);
+}
+#endif
+
 /**
  * dp_tx_comp_process_desc() - Process tx descriptor and free associated nbuf
  * @soc: DP Soc handle
@@ -3978,6 +4113,9 @@ dp_tx_comp_process_desc(struct dp_soc *soc,
 		time_latency = (qdf_ktime_to_ms(qdf_ktime_real_get()) -
 				desc->timestamp);
 	}
+
+	dp_send_completion_to_pkt_capture(soc, desc, ts);
+
 	if (!(desc->msdu_ext_desc)) {
 		if (QDF_STATUS_SUCCESS ==
 		    dp_tx_add_to_comp_queue(soc, desc, ts, peer)) {
@@ -4122,7 +4260,7 @@ void dp_tx_comp_process_tx_status(struct dp_soc *soc,
 			(ts->status == HAL_TX_TQM_RR_REM_CMD_REM));
 
 	if (!peer) {
-		dp_err_rl("peer is null or deletion in progress");
+		dp_info_rl("peer is null or deletion in progress");
 		DP_STATS_INC_PKT(soc, tx.tx_invalid_peer, 1, length);
 		goto out;
 	}
@@ -4288,10 +4426,7 @@ void dp_tx_process_htt_completion(struct dp_tx_desc_s *tx_desc, uint8_t *status,
 	 * continue to next descriptor
 	 */
 	if ((tx_desc->vdev_id == DP_INVALID_VDEV_ID) && !tx_desc->flags) {
-		QDF_TRACE(QDF_MODULE_ID_DP,
-			  QDF_TRACE_LEVEL_INFO,
-			  "Descriptor freed in vdev_detach %d",
-			  tx_desc->id);
+		dp_info_rl("Descriptor freed in vdev_detach %d", tx_desc->id);
 		return;
 	}
 
@@ -4299,10 +4434,7 @@ void dp_tx_process_htt_completion(struct dp_tx_desc_s *tx_desc, uint8_t *status,
 	soc = pdev->soc;
 
 	if (qdf_unlikely(tx_desc->pdev->is_pdev_down)) {
-		QDF_TRACE(QDF_MODULE_ID_DP,
-			  QDF_TRACE_LEVEL_INFO,
-			  "pdev in down state %d",
-			  tx_desc->id);
+		dp_info_rl("pdev in down state %d", tx_desc->id);
 		dp_tx_comp_free_buf(soc, tx_desc);
 		dp_tx_desc_release(tx_desc, tx_desc->pool_id);
 		return;
@@ -4560,18 +4692,13 @@ more_data:
 			if (qdf_unlikely
 				((tx_desc->vdev_id == DP_INVALID_VDEV_ID) &&
 				 !tx_desc->flags)) {
-				QDF_TRACE(QDF_MODULE_ID_DP,
-					  QDF_TRACE_LEVEL_INFO,
-					  "Descriptor freed in vdev_detach %d",
-					  tx_desc_id);
+				dp_info_rl("Descriptor freed in vdev_detach %d",
+					   tx_desc_id);
 				continue;
 			}
 
 			if (qdf_unlikely(tx_desc->pdev->is_pdev_down)) {
-				QDF_TRACE(QDF_MODULE_ID_DP,
-					  QDF_TRACE_LEVEL_INFO,
-					  "pdev in down state %d",
-					  tx_desc_id);
+				dp_info_rl("pdev in down state %d", tx_desc_id);
 
 				dp_tx_comp_free_buf(soc, tx_desc);
 				dp_tx_desc_release(tx_desc, tx_desc->pool_id);

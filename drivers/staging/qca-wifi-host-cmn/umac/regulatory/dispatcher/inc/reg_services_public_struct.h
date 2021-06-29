@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -48,6 +48,7 @@
 #define CH_AVOID_MAX_RANGE   4
 #define REG_ALPHA2_LEN 2
 #define MAX_REG_RULES 10
+#define MAX_6G_REG_RULES 5
 
 #define REGULATORY_CHAN_DISABLED     BIT(0)
 #define REGULATORY_CHAN_NO_IR        BIT(1)
@@ -78,6 +79,8 @@
 #define BW_80_MHZ     80
 #define BW_160_MHZ    160
 #define BW_40_MHZ     40
+
+#define MAX_NUM_PWR_LEVEL 16
 
 /**
  * enum dfs_reg - DFS region
@@ -526,12 +529,19 @@ enum channel_state {
  * enum reg_6g_ap_type - Regulatory AP type for regulatory info subfield.
  * @REG_INDOOR_AP: Indoor AP
  * @REG_STANDARD_POWER_AP: Standard Power AP
+ * @REG_VERY_LOW_POWER_AP: Very low power AP
+ * @REG_CURRENT_MAX_AP_TYPE: current maximum, used to determine array size
+ * @REG_MAX_SUPP_AP_TYPE: Current maximum AP power typer supported in the IEEE
+ * standard.
  * @REG_MAX_AP_TYPE: Maximum value possible for (3 bits) regulatory info
  * sub-field in the 6G HE Operation IE
  */
 enum reg_6g_ap_type {
 	REG_INDOOR_AP = 0,
 	REG_STANDARD_POWER_AP = 1,
+	REG_VERY_LOW_POWER_AP = 2,
+	REG_CURRENT_MAX_AP_TYPE,
+	REG_MAX_SUPP_AP_TYPE = REG_VERY_LOW_POWER_AP,
 	REG_MAX_AP_TYPE = 7,
 };
 
@@ -545,7 +555,7 @@ enum reg_6g_ap_type {
 enum reg_6g_client_type {
 	REG_DEFAULT_CLIENT = 0,
 	REG_SUBORDINATE_CLIENT = 1,
-	REG_MAX_CLIENT_TYPE = 3,
+	REG_MAX_CLIENT_TYPE = 2,
 };
 
 /**
@@ -764,6 +774,9 @@ enum country_src {
  * @max_bw: max bandwidth
  * @nol_chan: whether channel is nol
  * @nol_history: Set NOL-History when STA vap detects RADAR.
+ * @is_chan_hop_blocked: Whether channel is blocked for ACS hopping.
+ * @psd_flag: is PSD channel or not
+ * @psd_eirp: PSD power level
  */
 struct regulatory_channel {
 	qdf_freq_t center_freq;
@@ -776,6 +789,13 @@ struct regulatory_channel {
 	uint8_t ant_gain;
 	bool nol_chan;
 	bool nol_history;
+#ifdef CONFIG_HOST_FIND_CHAN
+	bool is_chan_hop_blocked;
+#endif
+#ifdef CONFIG_BAND_6GHZ
+	bool psd_flag;
+	uint16_t psd_eirp;
+#endif
 };
 
 /**
@@ -871,6 +891,8 @@ enum cc_setting_code {
  * @reg_power: regulatory power
  * @ant_gain: antenna gain
  * @flags: regulatory flags
+ * @psd_flag: is PSD power used
+ * @psd_eirp: maximum PSD EIRP value
  */
 struct cur_reg_rule {
 	uint16_t start_freq;
@@ -879,6 +901,8 @@ struct cur_reg_rule {
 	uint8_t reg_power;
 	uint8_t ant_gain;
 	uint16_t flags;
+	bool psd_flag;
+	uint16_t psd_eirp;
 };
 
 /**
@@ -888,6 +912,7 @@ struct cur_reg_rule {
  * @num_phy: number of phy
  * @phy_id: phy id
  * @reg_dmn_pair: reg domain pair
+ * @reg_6g_superid: 6G super domain id
  * @ctry_code: country code
  * @alpha2: country alpha2
  * @offload_enabled: offload enabled
@@ -901,6 +926,20 @@ struct cur_reg_rule {
  * @num_5g_reg_rules: number 5G  and 6G reg rules
  * @reg_rules_2g_ptr: ptr to 2G reg rules
  * @reg_rules_5g_ptr: ptr to 5G reg rules
+ * @super_dmn_id: 6G super domain ID
+ * @client_type: type of client
+ * @rnr_tpe_usable: if RNR TPE octet is usable for country
+ * @unspecified_ap_usable: if not set, AP usable for country
+ * @domain_code_6g_ap: domain code for 6G AP
+ * @domain_code_6g_client: domain code for 6G client in SP mode
+ * @min_bw_6g_ap: minimum 6G bw for AP
+ * @max_bw_6g_ap: maximum 6G bw for AP
+ * @min_bw_6g_client: list of minimum 6G bw for clients
+ * @max_bw_6g_client: list of maximum 6G bw for clients
+ * @num_6g_reg_rules_ap: number of 6G reg rules for AP
+ * @num_6g_reg_rules_client: list of number of 6G reg rules for client
+ * @reg_rules_6g_ap_ptr: ptr to 6G AP reg rules
+ * @reg_rules_6g_client_ptr: list of ptr to 6G client reg rules
  */
 struct cur_regulatory_info {
 	struct wlan_objmgr_psoc *psoc;
@@ -908,6 +947,7 @@ struct cur_regulatory_info {
 	uint8_t num_phy;
 	uint8_t phy_id;
 	uint16_t reg_dmn_pair;
+	uint16_t reg_6g_superid;
 	uint16_t ctry_code;
 	uint8_t alpha2[REG_ALPHA2_LEN + 1];
 	bool offload_enabled;
@@ -921,6 +961,21 @@ struct cur_regulatory_info {
 	uint32_t num_5g_reg_rules;
 	struct cur_reg_rule *reg_rules_2g_ptr;
 	struct cur_reg_rule *reg_rules_5g_ptr;
+	uint16_t super_dmn_id;
+	enum reg_6g_client_type client_type;
+	bool rnr_tpe_usable;
+	bool unspecified_ap_usable;
+	uint8_t domain_code_6g_ap[REG_CURRENT_MAX_AP_TYPE];
+	uint8_t domain_code_6g_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE];
+	uint32_t domain_code_6g_super_id;
+	uint32_t min_bw_6g_ap[REG_CURRENT_MAX_AP_TYPE];
+	uint32_t max_bw_6g_ap[REG_CURRENT_MAX_AP_TYPE];
+	uint32_t min_bw_6g_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE];
+	uint32_t max_bw_6g_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE];
+	uint32_t num_6g_reg_rules_ap[REG_CURRENT_MAX_AP_TYPE];
+	uint32_t num_6g_reg_rules_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE];
+	struct cur_reg_rule *reg_rules_6g_ap_ptr[REG_CURRENT_MAX_AP_TYPE];
+	struct cur_reg_rule *reg_rules_6g_client_ptr[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE];
 };
 
 /**
@@ -929,12 +984,20 @@ struct cur_regulatory_info {
  * @dfs_region: dfs region
  * @num_of_reg_rules: number of reg rules
  * @reg_rules: regulatory rules array
+ * @num_of_6g_client_reg_rules: number of 6g reg rules
+ * @reg_rules_6g_client: reg rules for all 6g clients
  */
 struct reg_rule_info {
 	uint8_t alpha2[REG_ALPHA2_LEN + 1];
 	enum dfs_reg dfs_region;
 	uint8_t num_of_reg_rules;
 	struct cur_reg_rule reg_rules[MAX_REG_RULES];
+#ifdef CONFIG_BAND_6GHZ
+	uint8_t num_of_6g_ap_reg_rules[REG_CURRENT_MAX_AP_TYPE];
+	struct cur_reg_rule reg_rules_6g_ap[REG_CURRENT_MAX_AP_TYPE][MAX_6G_REG_RULES];
+	uint8_t num_of_6g_client_reg_rules[REG_CURRENT_MAX_AP_TYPE];
+	struct cur_reg_rule reg_rules_6g_client[REG_CURRENT_MAX_AP_TYPE][MAX_6G_REG_RULES];
+#endif
 };
 
 /**
@@ -1064,7 +1127,9 @@ enum direction {
  * struct mas_chan_params
  * @dfs_region: dfs region
  * @phybitmap: phybitmap
- * @mas_chan_list: master chan list
+ * @mas_chan_list: master chan list for 2GHz and 5GHz channels
+ * @mas_chan_list_6g_ap: master chan list for 6GHz AP channels
+ * @mas_chan_list_6g_client: master chan list for 6GHz client
  * @default_country: default country
  * @current_country: current country
  * @def_region_domain: default reg domain
@@ -1072,18 +1137,32 @@ enum direction {
  * @reg_dmn_pair: reg domain pair
  * @ctry_code: country code
  * @reg_rules: regulatory rules
+ * @client_type: type of client
+ * @rnr_tpe_usable: if RNR TPE octet is usable for country
+ * @unspecified_ap_usable: if not set, AP usable for country
  */
 struct mas_chan_params {
 	enum dfs_reg dfs_region;
 	uint32_t phybitmap;
 	struct regulatory_channel mas_chan_list[NUM_CHANNELS];
+#ifdef CONFIG_BAND_6GHZ
+	bool is_6g_channel_list_populated;
+	struct regulatory_channel mas_chan_list_6g_ap[REG_CURRENT_MAX_AP_TYPE][NUM_6GHZ_CHANNELS];
+	struct regulatory_channel mas_chan_list_6g_client[REG_CURRENT_MAX_AP_TYPE][REG_MAX_CLIENT_TYPE][NUM_6GHZ_CHANNELS];
+#endif
 	char default_country[REG_ALPHA2_LEN + 1];
 	char current_country[REG_ALPHA2_LEN + 1];
 	uint16_t def_region_domain;
 	uint16_t def_country_code;
-	uint16_t reg_dmn_pair;
+	uint32_t reg_dmn_pair;
 	uint16_t ctry_code;
 	struct reg_rule_info reg_rules;
+#ifdef CONFIG_BAND_6GHZ
+	enum reg_6g_ap_type ap_pwr_type;
+	enum reg_6g_client_type client_type;
+	bool rnr_tpe_usable;
+	bool unspecified_ap_usable;
+#endif
 };
 
 /**
@@ -1102,15 +1181,19 @@ enum cc_regdmn_flag {
 
 /**
  * struct cc_regdmn_s: User country code or regdomain
- * @country_code: Country code
- * @regdmn_id:    Regdomain pair ID
- * @alpha:        Country ISO
- * @flags:        Regdomain flags
+ * @country_code:     Country code
+ * @reg_2g_5g_pair_id:  Regdomain pair ID (2Ghz + 5Ghz domain pair)
+ * @sixg_superdmn_id: 6Ghz super domain id
+ * @alpha:            Country ISO
+ * @flags:            Regdomain flags
  */
 struct cc_regdmn_s {
 	union {
 		uint16_t country_code;
-		uint16_t regdmn_id;
+		struct {
+			uint16_t reg_2g_5g_pair_id;
+			uint16_t sixg_superdmn_id;
+		} regdmn;
 		uint8_t alpha[REG_ALPHA2_LEN + 1];
 	} cc;
 	uint8_t flags;
@@ -1218,6 +1301,40 @@ enum reg_phymode {
 	REG_PHYMODE_11AC,
 	REG_PHYMODE_11AX,
 	REG_PHYMODE_MAX,
+};
+
+/**
+ * struct chan_power_info - TPE containing power info per channel chunk
+ * @chan_cfreq: channel center freq (MHz)
+ * @tx_power: transmit power (dBm)
+ */
+struct chan_power_info {
+	qdf_freq_t chan_cfreq;
+	uint8_t tx_power;
+};
+
+/**
+ * struct reg_tpc_power_info - regulatory TPC power info
+ * @is_psd_power: is PSD power or not
+ * @eirp_power: Maximum EIRP power (dBm), valid only if power is PSD
+ * @power_type_6g: type of power (SP/LPI/VLP)
+ * @num_pwr_levels: number of power levels
+ * @reg_max: Array of maximum TX power (dBm) per PSD value
+ * @ap_constraint_power: AP constraint power (dBm)
+ * @frequency: Array of operating frequency
+ * @tpe: TPE values processed from TPE IE
+ * @chan_power_info: power info to send to FW
+ */
+struct reg_tpc_power_info {
+	bool is_psd_power;
+	uint8_t eirp_power;
+	uint8_t power_type_6g;
+	uint8_t num_pwr_levels;
+	uint8_t reg_max[MAX_NUM_PWR_LEVEL];
+	uint8_t ap_constraint_power;
+	qdf_freq_t frequency[MAX_NUM_PWR_LEVEL];
+	uint8_t tpe[MAX_NUM_PWR_LEVEL];
+	struct chan_power_info chan_power_info[MAX_NUM_PWR_LEVEL];
 };
 
 #endif

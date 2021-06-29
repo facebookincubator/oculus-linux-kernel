@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -307,6 +307,17 @@
 			      HWIO_REO_R0_MISC_CTL_ADDR( \
 			      SEQ_WCSS_UMAC_REO_REG_OFFSET), \
 			      (reg_val)); \
+		reg_val = \
+			HAL_REG_READ((soc), \
+				     HWIO_REO_R0_GENERAL_ENABLE_ADDR(	\
+				     SEQ_WCSS_UMAC_REO_REG_OFFSET)); \
+		reg_val &= \
+			(~HWIO_REO_R0_GENERAL_ENABLE_BAR_DEST_RING_BMSK |\
+				(REO_REMAP_TCL << HWIO_REO_R0_GENERAL_ENABLE_BAR_DEST_RING_SHFT)); \
+		HAL_REG_WRITE((soc), \
+			      HWIO_REO_R0_GENERAL_ENABLE_ADDR( \
+			      SEQ_WCSS_UMAC_REO_REG_OFFSET), \
+			      (reg_val)); \
 	} while (0)
 
 #define HAL_RX_MSDU_DESC_INFO_GET(msdu_details_ptr) \
@@ -324,6 +335,12 @@ RX_MSDU_DETAILS_2_RX_MSDU_DESC_INFO_DETAILS_RESERVED_0A_OFFSET))
 		RX_MSDU_END_12_FLOW_IDX_OFFSET)),  \
 		RX_MSDU_END_12_FLOW_IDX_MASK,    \
 		RX_MSDU_END_12_FLOW_IDX_LSB))
+
+#define HAL_RX_MSDU_END_REO_DEST_IND_GET(_rx_msdu_end)  \
+		(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,  \
+		RX_MSDU_END_12_REO_DESTINATION_INDICATION_OFFSET)),  \
+		RX_MSDU_END_12_REO_DESTINATION_INDICATION_MASK,    \
+		RX_MSDU_END_12_REO_DESTINATION_INDICATION_LSB))
 
 #define HAL_RX_MSDU_END_FLOW_IDX_INVALID_GET(_rx_msdu_end)  \
 		(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_msdu_end,  \

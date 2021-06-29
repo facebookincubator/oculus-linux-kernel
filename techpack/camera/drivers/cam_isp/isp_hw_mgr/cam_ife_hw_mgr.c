@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -38,6 +38,9 @@
 
 #define CAM_ISP_GENERIC_BLOB_TYPE_MAX               \
 	(CAM_ISP_GENERIC_BLOB_TYPE_CSID_QCFA_CONFIG + 1)
+
+static int cam_ife_hw_mgr_handle_hw_dump_bus_info(
+	void *ctx, void *evt_info);
 
 static uint32_t blob_type_hw_cmd_map[CAM_ISP_GENERIC_BLOB_TYPE_MAX] = {
 	CAM_ISP_HW_CMD_GET_HFR_UPDATE,
@@ -1123,6 +1126,8 @@ static int cam_ife_hw_mgr_acquire_res_ife_out_rdi(
 		vfe_acquire.vfe_out.split_id = CAM_ISP_HW_SPLIT_LEFT;
 		vfe_acquire.vfe_out.unique_id = ife_ctx->ctx_index;
 		vfe_acquire.vfe_out.is_dual = 0;
+		vfe_acquire.vfe_out.disable_ubwc_comp =
+			g_ife_hw_mgr.debug_cfg.disable_ubwc_comp;
 		vfe_acquire.event_cb = cam_ife_hw_mgr_event_handler;
 		hw_intf = ife_src_res->hw_res[0]->hw_intf;
 		rc = hw_intf->hw_ops.reserve(hw_intf->hw_priv,
@@ -1206,6 +1211,8 @@ static int cam_ife_hw_mgr_acquire_res_ife_out_pixel(
 		vfe_acquire.vfe_out.out_port_info =  out_port;
 		vfe_acquire.vfe_out.is_dual       = ife_src_res->is_dual_vfe;
 		vfe_acquire.vfe_out.unique_id     = ife_ctx->ctx_index;
+		vfe_acquire.vfe_out.disable_ubwc_comp =
+			g_ife_hw_mgr.debug_cfg.disable_ubwc_comp;
 		vfe_acquire.event_cb = cam_ife_hw_mgr_event_handler;
 
 		for (j = 0; j < CAM_ISP_HW_SPLIT_MAX; j++) {
@@ -6475,13 +6482,14 @@ static void cam_ife_mgr_print_io_bufs(struct cam_packet *packet,
 
 static int cam_ife_mgr_cmd(void *hw_mgr_priv, void *cmd_args)
 {
-	int rc = 0;
+	int i, rc = 0;
 	struct cam_hw_cmd_args *hw_cmd_args = cmd_args;
 	struct cam_ife_hw_mgr  *hw_mgr = hw_mgr_priv;
 	struct cam_ife_hw_mgr_ctx *ctx = (struct cam_ife_hw_mgr_ctx *)
 		hw_cmd_args->ctxt_to_hw_map;
-	struct cam_isp_hw_cmd_args *isp_hw_cmd_args = NULL;
-	struct cam_packet          *packet;
+	struct cam_isp_hw_cmd_args      *isp_hw_cmd_args = NULL;
+	struct cam_packet               *packet;
+	struct cam_isp_hw_event_info     event_info;
 	unsigned long rem_jiffies = 0;
 
 	if (!hw_mgr_priv || !cmd_args) {
@@ -6551,6 +6559,15 @@ static int cam_ife_mgr_cmd(void *hw_mgr_priv, void *cmd_args)
 			hw_mgr->mgr_common.img_iommu_hdl_secure,
 			hw_cmd_args->u.pf_args.buf_info,
 			hw_cmd_args->u.pf_args.mem_found);
+		event_info.err_type = CAM_ISP_HW_ERROR_BUSIF_OVERFLOW;
+		event_info.res_type = CAM_ISP_RESOURCE_VFE_OUT;
+		event_info.hw_idx = 0;
+		for (i = 0; i < CAM_IFE_HW_OUT_RES_MAX; i++) {
+			event_info.res_id =
+				CAM_ISP_IFE_OUT_RES_BASE + (i & 0xFF);
+			cam_ife_hw_mgr_handle_hw_dump_bus_info(ctx,
+				&event_info);
+		}
 		break;
 	case CAM_HW_MGR_CMD_REG_DUMP_ON_FLUSH:
 		if (ctx->last_dump_flush_req_id == ctx->applied_req_id)
@@ -7032,12 +7049,18 @@ static int  cam_ife_hw_mgr_find_affected_ctx(
 			affected_core, CAM_IFE_HW_NUM_MAX))
 			continue;
 
+		if (error_event_data->error_type ==
+			CAM_ISP_HW_ERROR_CSID_FATAL) {
+			CAM_DBG(CAM_ISP, "CSID recovery");
+			goto skip_overflow;
+		}
+
 		if (atomic_read(&ife_hwr_mgr_ctx->overflow_pending)) {
 			CAM_INFO(CAM_ISP, "CTX:%d already error reported",
 				ife_hwr_mgr_ctx->ctx_index);
 			continue;
 		}
-
+skip_overflow:
 		atomic_set(&ife_hwr_mgr_ctx->overflow_pending, 1);
 		notify_err_cb = ife_hwr_mgr_ctx->common.event_cb[event_type];
 
@@ -7097,6 +7120,38 @@ static int cam_ife_hw_mgr_handle_csid_event(
 		break;
 	}
 	return 0;
+}
+
+static int cam_ife_hw_mgr_handle_hw_dump_bus_info(
+	void                                 *ctx,
+	void                                 *evt_info)
+{
+	struct cam_ife_hw_mgr_ctx     *ife_hw_mgr_ctx =
+		(struct cam_ife_hw_mgr_ctx *)ctx;
+	struct cam_isp_hw_event_info  *event_info =
+		(struct cam_isp_hw_event_info *)evt_info;
+	struct cam_ife_hw_mgr_res     *hw_mgr_res = NULL;
+	struct cam_hw_intf            *hw_intf;
+	uint32_t i, out_port_id;
+	int rc = 0;
+
+	out_port_id = event_info->res_id & 0xFF;
+	hw_mgr_res =
+		&ife_hw_mgr_ctx->res_list_ife_out[out_port_id];
+	for (i = 0; i < CAM_ISP_HW_SPLIT_MAX; i++) {
+		if (!hw_mgr_res->hw_res[i])
+			continue;
+		hw_intf = hw_mgr_res->hw_res[i]->hw_intf;
+		if (hw_intf->hw_ops.process_cmd) {
+			rc = hw_intf->hw_ops.process_cmd(
+				hw_intf->hw_priv,
+				CAM_ISP_HW_CMD_DUMP_BUS_INFO,
+				(void *)event_info,
+				sizeof(struct cam_isp_hw_event_info));
+		}
+	}
+
+	return rc;
 }
 
 static int cam_ife_hw_mgr_handle_hw_dump_info(
@@ -7794,6 +7849,14 @@ static int cam_ife_hw_mgr_debug_register(void)
 		g_ife_hw_mgr.debug_cfg.dentry,
 		&g_ife_hw_mgr.debug_cfg.per_req_reg_dump)) {
 		CAM_ERR(CAM_ISP, "failed to create per_req_reg_dump entry");
+		goto err;
+	}
+
+	if (!debugfs_create_bool("disable_ubwc_comp",
+		0644,
+		g_ife_hw_mgr.debug_cfg.dentry,
+		&g_ife_hw_mgr.debug_cfg.disable_ubwc_comp)) {
+		CAM_ERR(CAM_ISP, "failed to create disable_ubwc_comp entry");
 		goto err;
 	}
 

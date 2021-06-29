@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  */
 #ifndef __KGSL_DEVICE_H
 #define __KGSL_DEVICE_H
@@ -451,13 +451,13 @@ struct kgsl_thread_private {
 #define pr_context(_d, _c, fmt, args...) \
 		dev_err((_d)->dev, "%s[%d]: " fmt, \
 		_context_comm((_c)), \
-		(_c)->proc_priv->pid, ##args)
+		pid_nr((_c)->proc_priv->pid), ##args)
 
 /**
  * struct kgsl_process_private -  Private structure for a KGSL process (across
  * all devices)
  * @priv: Internal flags, use KGSL_PROCESS_* values
- * @pid: ID for the task owner of the process
+ * @pid: Identification structure for the task owner of the process
  * @comm: task name of the process
  * @mem_lock: Spinlock to protect the process memory lists
  * @refcount: kref object for reference counting the process
@@ -467,7 +467,6 @@ struct kgsl_thread_private {
  * @kobj: Pointer to a kobj for the sysfs directory for this process
  * @debug_root: Pointer to the debugfs root for this process
  * @stats: Memory allocation statistics for this process
- * @gpumem_mapped: KGSL memory mapped in the process address space
  * @syncsource_idr: sync sources created by this process
  * @syncsource_lock: Spinlock to protect the syncsource idr
  * @fd_count: Counter for the number of FDs for this process
@@ -476,7 +475,7 @@ struct kgsl_thread_private {
  */
 struct kgsl_process_private {
 	unsigned long priv;
-	pid_t pid;
+	struct pid *pid;
 	char comm[TASK_COMM_LEN];
 	spinlock_t mem_lock;
 	struct kref refcount;
@@ -492,7 +491,6 @@ struct kgsl_process_private {
 		atomic_long_t cur;
 		uint64_t max;
 	} stats[KGSL_MEM_ENTRY_MAX];
-	atomic_long_t gpumem_mapped;
 	struct idr syncsource_idr;
 	spinlock_t syncsource_lock;
 	int fd_count;
@@ -617,7 +615,7 @@ static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
 	if (ret > priv->stats[type].max)
 		priv->stats[type].max = ret;
 
-	__kgsl_process_modify_unreclaimable(priv->pid, (size >> PAGE_SHIFT));
+	__kgsl_process_modify_unreclaimable(pid_nr(priv->pid), (size >> PAGE_SHIFT));
 }
 
 static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
@@ -625,7 +623,7 @@ static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
 {
 	atomic_long_sub(size, &priv->stats[type].cur);
 
-	__kgsl_process_modify_unreclaimable(priv->pid, -(size >> PAGE_SHIFT));
+	__kgsl_process_modify_unreclaimable(pid_nr(priv->pid), -(size >> PAGE_SHIFT));
 }
 
 static inline bool kgsl_is_register_offset(struct kgsl_device *device,

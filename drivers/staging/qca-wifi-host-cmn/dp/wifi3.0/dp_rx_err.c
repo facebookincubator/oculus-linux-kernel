@@ -460,8 +460,10 @@ dp_rx_pn_error_handle(struct dp_soc *soc, hal_ring_desc_t ring_desc,
  *
  * @soc: core txrx main context
  * @nbuf: pointer to msdu skb
- * @peer_id: dp peer ID
  * @rx_tlv_hdr: start of rx tlv header
+ * @mpdu_desc_info: pointer to mpdu level description info
+ * @peer_id: dp peer ID
+ * @tid: dp tid
  *
  * This function process the msdu delivered from REO2TCL
  * ring with error type OOR
@@ -471,17 +473,32 @@ dp_rx_pn_error_handle(struct dp_soc *soc, hal_ring_desc_t ring_desc,
 static void
 dp_rx_oor_handle(struct dp_soc *soc,
 		 qdf_nbuf_t nbuf,
+		 uint8_t *rx_tlv_hdr,
+		 struct hal_rx_mpdu_desc_info *mpdu_desc_info,
 		 uint16_t peer_id,
-		 uint8_t *rx_tlv_hdr)
+		 uint8_t tid)
 {
 	uint32_t frame_mask = FRAME_MASK_IPV4_ARP | FRAME_MASK_IPV4_DHCP |
 				FRAME_MASK_IPV4_EAPOL | FRAME_MASK_IPV6_DHCP;
 	struct dp_peer *peer = NULL;
 
 	peer = dp_peer_get_ref_by_id(soc, peer_id, DP_MOD_ID_RX_ERR);
-	if (!peer) {
-		dp_info_rl("peer not found");
+	if (!peer || tid >= DP_MAX_TIDS) {
+		dp_info_rl("peer or tid %d not valid", tid);
 		goto free_nbuf;
+	}
+
+	/*
+	 * For REO error 7 OOR, if it is retry frame under BA session,
+	 * then it is likely SN duplicated frame, do not deliver EAPOL
+	 * to stack in this case since the connection might fail due to
+	 * duplicated EAP response.
+	 */
+	if (mpdu_desc_info &&
+	    mpdu_desc_info->mpdu_flags & HAL_MPDU_F_RETRY_BIT &&
+	    peer->rx_tid[tid].ba_status == DP_RX_BA_ACTIVE) {
+		frame_mask &= ~FRAME_MASK_IPV4_EAPOL;
+		DP_STATS_INC(soc, rx.err.reo_err_oor_eapol_drop, 1);
 	}
 
 	if (dp_rx_deliver_special_frame(soc, peer, nbuf, frame_mask,
@@ -593,23 +610,24 @@ more_msdu_link_desc:
 			DP_STATS_INC(soc, rx.err.reo_err_oor_sg_count, 1);
 		}
 
+		/*
+		 * only first msdu, mpdu start description tlv valid?
+		 * and use it for following msdu.
+		 */
+		if (hal_rx_msdu_end_first_msdu_get(soc->hal_soc,
+						   rx_tlv_hdr_last))
+			tid = hal_rx_mpdu_start_tid_get(soc->hal_soc,
+							rx_tlv_hdr_first);
+
 		switch (err_code) {
 		case HAL_REO_ERR_REGULAR_FRAME_2K_JUMP:
-			/*
-			 * only first msdu, mpdu start description tlv valid?
-			 * and use it for following msdu.
-			 */
-			if (hal_rx_msdu_end_first_msdu_get(soc->hal_soc,
-							   rx_tlv_hdr_last))
-				tid = hal_rx_mpdu_start_tid_get(soc->hal_soc,
-							      rx_tlv_hdr_first);
-
 			dp_2k_jump_handle(soc, nbuf, rx_tlv_hdr_last,
 					  peer_id, tid);
 			break;
 
 		case HAL_REO_ERR_REGULAR_FRAME_OOR:
-			dp_rx_oor_handle(soc, nbuf, peer_id, rx_tlv_hdr_last);
+			dp_rx_oor_handle(soc, nbuf, rx_tlv_hdr_last,
+					 mpdu_desc_info, peer_id, tid);
 			break;
 		default:
 			dp_err_rl("Non-support error code %d", err_code);
@@ -761,9 +779,9 @@ dp_rx_chain_msdus(struct dp_soc *soc, qdf_nbuf_t nbuf,
 }
 
 static
-void dp_rx_wbm_err_handle_bar(struct dp_soc *soc,
-			      struct dp_peer *peer,
-			      qdf_nbuf_t nbuf)
+void dp_rx_err_handle_bar(struct dp_soc *soc,
+			  struct dp_peer *peer,
+			  qdf_nbuf_t nbuf)
 {
 	uint8_t *rx_tlv_hdr;
 	unsigned char type, subtype;
@@ -800,6 +818,77 @@ void dp_rx_wbm_err_handle_bar(struct dp_soc *soc,
 	dp_rx_tid_update_wifi3(peer, tid,
 			       peer->rx_tid[tid].ba_win_size,
 			       start_seq_num);
+}
+
+static void
+dp_rx_bar_frame_handle(struct dp_soc *soc,
+		       hal_ring_desc_t ring_desc,
+		       struct dp_rx_desc *rx_desc,
+		       struct hal_rx_mpdu_desc_info *mpdu_desc_info,
+		       uint8_t error)
+{
+	qdf_nbuf_t nbuf;
+	struct dp_pdev *pdev;
+	struct dp_peer *peer;
+	struct rx_desc_pool *rx_desc_pool;
+	uint16_t peer_id;
+	uint8_t *rx_tlv_hdr;
+	uint32_t tid;
+
+	nbuf = rx_desc->nbuf;
+	rx_desc_pool = &soc->rx_desc_buf[rx_desc->pool_id];
+	dp_ipa_handle_rx_buf_smmu_mapping(soc, nbuf,
+					  rx_desc_pool->buf_size,
+					  false);
+	qdf_nbuf_unmap_nbytes_single(soc->osdev, nbuf,
+				     QDF_DMA_FROM_DEVICE,
+				     rx_desc_pool->buf_size);
+	rx_desc->unmapped = 1;
+	rx_tlv_hdr = qdf_nbuf_data(nbuf);
+	peer_id =
+		hal_rx_mpdu_start_sw_peer_id_get(soc->hal_soc,
+						rx_tlv_hdr);
+	peer = dp_peer_get_ref_by_id(soc, peer_id,
+				     DP_MOD_ID_RX_ERR);
+	tid = hal_rx_mpdu_start_tid_get(soc->hal_soc,
+					rx_tlv_hdr);
+	pdev = dp_get_pdev_for_lmac_id(soc, rx_desc->pool_id);
+
+	if (!peer)
+		goto next;
+
+	dp_info("BAR frame: peer = "QDF_MAC_ADDR_FMT
+		" peer_id = %d"
+		" tid = %u"
+		" SSN = %d"
+		" error status = %d",
+		QDF_MAC_ADDR_REF(peer->mac_addr.raw),
+		peer->peer_id,
+		tid,
+		mpdu_desc_info->mpdu_seq,
+		error);
+
+	switch (error) {
+	case HAL_REO_ERR_BAR_FRAME_2K_JUMP:
+		DP_STATS_INC(soc,
+			     rx.err.reo_error[error], 1);
+	case HAL_REO_ERR_BAR_FRAME_OOR:
+		dp_rx_err_handle_bar(soc, peer, nbuf);
+		DP_STATS_INC(soc,
+			     rx.err.reo_error[error], 1);
+		break;
+	default:
+		DP_STATS_INC(soc, rx.bar_frame, 1);
+	}
+
+	dp_peer_unref_delete(peer, DP_MOD_ID_RX_ERR);
+next:
+	dp_rx_link_desc_return(soc, ring_desc,
+			       HAL_BM_ACTION_PUT_IN_IDLE_LIST);
+	dp_rx_add_to_free_desc_list(&pdev->free_list_head,
+				    &pdev->free_list_tail,
+				    rx_desc);
+	qdf_nbuf_free(nbuf);
 }
 
 /**
@@ -1599,9 +1688,14 @@ dp_rx_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 
 		error = HAL_RX_ERROR_STATUS_GET(ring_desc);
 
-		qdf_assert(error == HAL_REO_ERROR_DETECTED);
-
 		buf_type = HAL_RX_REO_BUF_TYPE_GET(ring_desc);
+
+		/* Get the MPDU DESC info */
+		hal_rx_mpdu_desc_info_get(ring_desc, &mpdu_desc_info);
+
+		if (mpdu_desc_info.msdu_count == 0)
+			goto next_entry;
+
 		/*
 		 * For REO error ring, expect only MSDU LINK DESC
 		 */
@@ -1658,8 +1752,20 @@ dp_rx_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 
 		mac_id = rx_desc->pool_id;
 
-		/* Get the MPDU DESC info */
-		hal_rx_mpdu_desc_info_get(ring_desc, &mpdu_desc_info);
+		if (mpdu_desc_info.bar_frame) {
+			qdf_assert_always(mpdu_desc_info.msdu_count == 1);
+
+			dp_rx_bar_frame_handle(soc,
+					       ring_desc,
+					       rx_desc,
+					       &mpdu_desc_info,
+					       error);
+
+			rx_bufs_reaped[mac_id] += 1;
+			goto next_entry;
+		}
+
+		dp_info_rl("Got pkt with REO ERROR: %d", error);
 
 		if (mpdu_desc_info.mpdu_flags & HAL_MPDU_F_FRAGMENT) {
 			/*
@@ -1709,6 +1815,11 @@ dp_rx_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 			DP_STATS_INC(soc, rx.rx_frags, 1);
 			goto next_entry;
 		}
+
+		/*
+		 * Expect REO errors to be handled after this point
+		 */
+		qdf_assert_always(error == HAL_REO_ERROR_DETECTED);
 
 		if (hal_rx_reo_is_pn_error(ring_desc)) {
 			/* TOD0 */
@@ -1771,6 +1882,8 @@ dp_rx_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 			rx_bufs_reaped[mac_id] += count;
 			goto next_entry;
 		}
+		/* Assert if unexpected error type */
+		qdf_assert_always(0);
 next_entry:
 		dp_rx_link_cookie_invalidate(ring_desc);
 		hal_srng_dst_get_next(hal_soc, hal_ring_hdl);
@@ -2134,12 +2247,30 @@ done:
 							  rx_tlv_hdr,
 							  peer_id, tid);
 					break;
+				case HAL_REO_ERR_REGULAR_FRAME_OOR:
+					if (hal_rx_msdu_end_first_msdu_get(soc->hal_soc,
+									   rx_tlv_hdr)) {
+						peer_id =
+							hal_rx_mpdu_start_sw_peer_id_get(soc->hal_soc,
+											 rx_tlv_hdr);
+						tid =
+							hal_rx_mpdu_start_tid_get(hal_soc, rx_tlv_hdr);
+					}
+					QDF_NBUF_CB_RX_PKT_LEN(nbuf) =
+						hal_rx_msdu_start_msdu_len_get(
+									       rx_tlv_hdr);
+					nbuf->next = NULL;
+					dp_rx_oor_handle(soc, nbuf,
+							 rx_tlv_hdr,
+							 NULL,
+							 peer_id, tid);
+					break;
 				case HAL_REO_ERR_BAR_FRAME_2K_JUMP:
 				case HAL_REO_ERR_BAR_FRAME_OOR:
 					if (peer)
-						dp_rx_wbm_err_handle_bar(soc,
-									 peer,
-									 nbuf);
+						dp_rx_err_handle_bar(soc,
+								     peer,
+								     nbuf);
 					qdf_nbuf_free(nbuf);
 					break;
 

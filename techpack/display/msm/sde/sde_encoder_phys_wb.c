@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
@@ -1107,7 +1107,7 @@ static void sde_encoder_phys_wb_irq_ctrl(
 		return;
 
 	pp = phys->hw_pp->idx - PINGPONG_0;
-	if ((pp + CRTC_DUAL_MIXERS) >= PINGPONG_MAX) {
+	if ((pp + CRTC_DUAL_MIXERS_ONLY) >= PINGPONG_MAX) {
 		SDE_ERROR("invalid pingpong index for WB or CWB\n");
 		return;
 	}
@@ -1119,7 +1119,7 @@ static void sde_encoder_phys_wb_irq_ctrl(
 		if (ret)
 			atomic_dec_return(&phys->wbirq_refcount);
 
-		for (index = 0; index < CRTC_DUAL_MIXERS; index++)
+		for (index = 0; index < CRTC_DUAL_MIXERS_ONLY; index++)
 			if (cwb_irq_tbl[index + pp] != SDE_NONE)
 				sde_encoder_helper_register_irq(phys,
 					cwb_irq_tbl[index + pp]);
@@ -1129,7 +1129,7 @@ static void sde_encoder_phys_wb_irq_ctrl(
 		if (ret)
 			atomic_inc_return(&phys->wbirq_refcount);
 
-		for (index = 0; index < CRTC_DUAL_MIXERS; index++)
+		for (index = 0; index < CRTC_DUAL_MIXERS_ONLY; index++)
 			if (cwb_irq_tbl[index + pp] != SDE_NONE)
 				sde_encoder_helper_unregister_irq(phys,
 					cwb_irq_tbl[index + pp]);

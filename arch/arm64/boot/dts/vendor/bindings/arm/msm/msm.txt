@@ -47,6 +47,9 @@ SoCs:
 - KONA
   compatible = "qcom,kona"
 
+- KONA-IOT
+  compatible = "qcom,kona-iot"
+
 - LITO
   compatible = "qcom,lito"
 
@@ -172,9 +175,11 @@ compatible = "qcom,sm8150p-mtp"
 compatible = "qcom,sm8150p-qrd"
 compatible = "qcom,kona-rumi"
 compatible = "qcom,kona-mtp"
+compatible = "qcom,kona-iot-mtp"
 compatible = "qcom,kona-cdp"
 compatible = "qcom,kona-qrd"
 compatible = "qcom,kona-hdk"
+compatible = "qcom,kona-iot-hdk"
 compatible = "qcom,lito-rumi"
 compatible = "qcom,lito-mtp"
 compatible = "qcom,lito-cdp"

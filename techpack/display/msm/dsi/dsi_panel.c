@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -903,6 +903,29 @@ static int dsi_panel_pwm_register(struct dsi_panel *panel)
 	}
 
 	return 0;
+}
+
+static int dsi_panel_parse_fsc_rgb_order(
+		struct dsi_panel *panel,
+		struct dsi_parser_utils *utils)
+{
+	int rc = 0;
+	const char *fsc_rgb_order;
+
+	fsc_rgb_order = utils->get_property(utils->data,
+			"qcom,dsi-panel-fsc-rgb-order", NULL);
+	if (fsc_rgb_order) {
+		if (DSI_IS_FSC_PANEL(fsc_rgb_order)) {
+			strlcpy(panel->fsc_rgb_order, fsc_rgb_order,
+					sizeof(panel->fsc_rgb_order));
+		} else {
+			DSI_ERR("Unrecognized fsc color order-%s\n",
+					fsc_rgb_order);
+			rc = -EINVAL;
+		}
+	}
+
+	return rc;
 }
 
 static int dsi_panel_bl_register(struct dsi_panel *panel)
@@ -3529,6 +3552,10 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (rc)
 		DSI_DEBUG("failed to parse esd config, rc=%d\n", rc);
 
+	rc = dsi_panel_parse_fsc_rgb_order(panel, utils);
+	if (rc)
+		DSI_DEBUG("failed to read fsc color order, rc=%d\n", rc);
+
 	panel->power_mode = SDE_MODE_DPMS_OFF;
 	drm_panel_init(&panel->drm_panel);
 	panel->drm_panel.dev = &panel->mipi_device.dev;
@@ -3939,6 +3966,7 @@ int dsi_panel_get_mode(struct dsi_panel *panel,
 			DSI_ERR("failed to parse panel timing, rc=%d\n", rc);
 			goto parse_fail;
 		}
+		mode->timing.fsc_mode = DSI_IS_FSC_PANEL(panel->fsc_rgb_order);
 
 		rc = dsi_panel_parse_dsc_params(mode, utils);
 		if (rc) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,6 +42,7 @@
 #include "lim_send_messages.h"
 #include "lim_process_fils.h"
 #include "wlan_blm_api.h"
+#include "wlan_mlme_twt_api.h"
 
 /**
  * lim_update_stads_htcap() - Updates station Descriptor HT capability
@@ -185,9 +186,8 @@ void lim_update_assoc_sta_datas(struct mac_context *mac_ctx,
 				vht_mcs_10_11_supp;
 	}
 
-	if (IS_DOT11_MODE_HE(session_entry->dot11mode))
-		lim_update_stads_he_caps(mac_ctx, sta_ds, assoc_rsp,
-					 session_entry, beacon);
+	lim_update_stads_he_caps(mac_ctx, sta_ds, assoc_rsp,
+				 session_entry, beacon);
 
 	if (lim_is_sta_he_capable(sta_ds))
 		he_cap = &assoc_rsp->he_cap;
@@ -205,7 +205,7 @@ void lim_update_assoc_sta_datas(struct mac_context *mac_ctx,
 		return;
 	}
 	sta_ds->vhtSupportedRxNss =
-		((sta_ds->supportedRates.vhtRxMCSMap & MCSMAPMASK2x2)
+		((sta_ds->supportedRates.vhtTxMCSMap & MCSMAPMASK2x2)
 		 == MCSMAPMASK2x2) ? 1 : 2;
 
 	/* If one of the rates is 11g rates, set the ERP mode. */
@@ -663,11 +663,11 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 		return;
 	}
 
-	pe_nofl_info("Assoc rsp RX: subtype %d vdev %d sys role %d lim state %d rssi %d from " QDF_MAC_ADDR_FMT,
-		     subtype, vdev_id,
-		     GET_LIM_SYSTEM_ROLE(session_entry),
-		     session_entry->limMlmState, rssi,
-		     QDF_MAC_ADDR_REF(hdr->sa));
+	pe_nofl_rl_info("Assoc rsp RX: subtype %d vdev %d sys role %d lim state %d rssi %d from " QDF_MAC_ADDR_FMT,
+			subtype, vdev_id,
+			GET_LIM_SYSTEM_ROLE(session_entry),
+			session_entry->limMlmState, rssi,
+			QDF_MAC_ADDR_REF(hdr->sa));
 	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 			   (uint8_t *)hdr, frame_len + SIR_MAC_HDR_LEN_3A);
 
@@ -914,6 +914,13 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 		lim_update_obss_scanparams(session_entry,
 				&assoc_rsp->obss_scanparams);
 
+	if (lim_is_session_he_capable(session_entry))
+		mlme_set_twt_peer_capabilities(
+				mac_ctx->psoc,
+				(struct qdf_mac_addr *)current_bssid,
+				&assoc_rsp->he_cap,
+				&assoc_rsp->he_op);
+
 	lim_diag_event_report(mac_ctx, WLAN_PE_DIAG_ROAM_ASSOC_COMP_EVENT,
 			      session_entry,
 			      (assoc_rsp->status_code ? QDF_STATUS_E_FAILURE :
@@ -1017,8 +1024,8 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 			session_entry->gUapsdPerAcDeliveryEnableMask = 0;
 			session_entry->gUapsdPerAcTriggerEnableMask = 0;
 
-			if (lim_cleanup_rx_path(mac_ctx, sta_ds, session_entry)
-				!= QDF_STATUS_SUCCESS) {
+			if (lim_cleanup_rx_path(mac_ctx, sta_ds, session_entry,
+						true) != QDF_STATUS_SUCCESS) {
 				pe_err("Could not cleanup the rx path");
 				goto assocReject;
 			}
@@ -1087,7 +1094,6 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 			session_entry->ap_mu_edca_params[QCA_WLAN_AC_VO] =
 				assoc_rsp->mu_edca.acvo;
 		}
-
 	}
 
 	if (beacon->VHTCaps.present)

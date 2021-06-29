@@ -282,21 +282,27 @@ static void read_prox_cal(struct syncboss_dev_data *devdata)
 		 devdata->prox_canc, devdata->prox_thdl, devdata->prox_thdh);
 }
 
-static void start_streaming_locked(struct syncboss_dev_data *devdata, bool force_reset);
+static int start_streaming_locked(struct syncboss_dev_data *devdata, bool force_reset);
 static void stop_streaming_locked(struct syncboss_dev_data *devdata);
 static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 					bool state);
 
 static void reset_syncboss(struct syncboss_dev_data *devdata)
 {
+	int status = 0;
+
 	/*
 	 * Start then stop the stream to pin-reset syncboss and tell it to
 	 * sleep
 	 */
 	mutex_lock(&devdata->state_mutex);
-	start_streaming_locked(devdata, true);
-	wait_for_syncboss_wake_state(devdata, true);
-	stop_streaming_locked(devdata);
+	status = start_streaming_locked(devdata, true);
+	if (!status) {
+		stop_streaming_locked(devdata);
+	} else {
+		dev_err(&devdata->spi->dev, "Failed to start streaming from reset_syncboss (%d)",
+			status);
+	}
 	mutex_unlock(&devdata->state_mutex);
 }
 
@@ -315,11 +321,17 @@ static void fw_update_cb(struct device *child, int status)
 		return;
 
 	devdata = dev_get_drvdata(child->parent);
-	reset_syncboss(devdata);
+
+	if (devdata->boots_to_shutdown_state)
+		syncboss_pin_reset(devdata);
+	else
+		reset_syncboss(devdata);
 }
 
 static int syncboss_inc_client_count_locked(struct syncboss_dev_data *devdata)
 {
+	int status = 0;
+
 	/* Note: Must be called under the state_mutex lock! */
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 	BUG_ON(devdata->client_count < 0);
@@ -335,13 +347,15 @@ static int syncboss_inc_client_count_locked(struct syncboss_dev_data *devdata)
 	if (devdata->has_prox)
 		read_prox_cal(devdata);
 
-	++devdata->client_count;
-
-	if (devdata->client_count == 1) {
+	if (devdata->client_count == 0) {
 		dev_info(&devdata->spi->dev, "Starting streaming thread work");
-		start_streaming_locked(devdata, true);
+		status = start_streaming_locked(devdata, true);
 	}
-	return 0;
+
+	if (!status)
+		++devdata->client_count;
+
+	return status;
 }
 
 static int syncboss_dec_client_count_locked(struct syncboss_dev_data *devdata)
@@ -392,7 +406,7 @@ static int syncboss_open(struct inode *inode, struct file *f)
 	if (status)
 		goto out;
 
-	syncboss_inc_client_count_locked(devdata);
+	status = syncboss_inc_client_count_locked(devdata);
 
 out:
 	mutex_unlock(&devdata->state_mutex);
@@ -667,7 +681,7 @@ static s64 ktime_get_ms(void)
 	return ktime_to_ms(ktime_get());
 }
 
-void syncboss_reset(struct syncboss_dev_data *devdata)
+void syncboss_pin_reset(struct syncboss_dev_data *devdata)
 {
 	if (devdata->gpio_reset < 0) {
 		dev_err(&devdata->spi->dev,
@@ -885,6 +899,11 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 	}
 	list_add_tail(&smsg->list, &devdata->msg_queue_list);
 	devdata->msg_queue_item_count++;
+
+	// Wake the kthread if one has been started. If streaming is stopped it may be asleep.
+	if (devdata->worker)
+		wake_up_process(devdata->worker);
+
 	mutex_unlock(&devdata->msg_queue_lock);
 
 	return count;
@@ -1096,6 +1115,17 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		}
 		smsg->finalized = true;
 		mutex_unlock(&devdata->msg_queue_lock);
+
+		/*
+		 * If streaming is stopped and there's no queued message to send,
+		 * go to sleep until something is queued or this thread is asked to
+		 * stop.
+		 */
+		if (!devdata->is_streaming && smsg == devdata->default_smsg) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule();
+			continue;
+		}
 
 		smsg->spi_xfer.speed_hz = spi_max_clk_rate;
 		smsg->spi_xfer.len = transaction_length;
@@ -1318,6 +1348,7 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 {
 	int x;
 
+	dev_info(&devdata->spi->dev, "Waiting for syncboss to be %s", awake ? "awake" : "asleep");
 	for (x = 10; x <= SYNCBOSS_SLEEP_TIMEOUT_MS; x += 10) {
 		msleep(10);
 		if (is_mcu_awake(devdata) == awake) {
@@ -1336,11 +1367,16 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	return -ETIMEDOUT;
 }
 
-static void start_streaming_locked(struct syncboss_dev_data *devdata,
+static int start_streaming_locked(struct syncboss_dev_data *devdata,
 				 bool force_reset)
 {
 	int status = 0;
 	bool mcu_awake;
+
+	if (devdata->is_streaming) {
+		dev_warn(&devdata->spi->dev, "streaming already started");
+		return 0;
+	}
 
 	/* Grab a wake lock so we'll reject device suspend requests
 	 * while in active-use
@@ -1447,7 +1483,10 @@ static void start_streaming_locked(struct syncboss_dev_data *devdata,
 			 !!force_reset,
 			 !!mcu_awake,
 			 !!devdata->force_reset_on_open);
-		syncboss_reset(devdata);
+		syncboss_pin_reset(devdata);
+		status = wait_for_syncboss_wake_state(devdata, true);
+		if (status)
+			goto error;
 		devdata->force_reset_on_open = false;
 	} else {
 		dev_info(&devdata->spi->dev,
@@ -1468,8 +1507,9 @@ static void start_streaming_locked(struct syncboss_dev_data *devdata,
 	devdata->worker = kthread_create(syncboss_spi_transfer_thread,
 					 devdata->spi, "syncboss:spi_thread");
 	if (IS_ERR(devdata->worker)) {
-		dev_err(&devdata->spi->dev, "Failed to start kernel thread. (%ld)",
-			PTR_ERR(devdata->worker));
+		status = PTR_ERR(devdata->worker);
+		dev_err(&devdata->spi->dev, "Failed to start kernel thread. (%d)",
+			status);
 		devdata->worker = NULL;
 		goto error;
 	}
@@ -1477,13 +1517,14 @@ static void start_streaming_locked(struct syncboss_dev_data *devdata,
 	dev_info(&devdata->spi->dev, "Setting SPI thread cpu affinity: %*pb",
 		cpumask_pr_args(&devdata->cpu_affinity));
 	kthread_bind_mask(devdata->worker, &devdata->cpu_affinity);
+
+	devdata->is_streaming = true;
 	wake_up_process(devdata->worker);
 
 	push_prox_cal_and_enable_wake(devdata, devdata->prox_wake_enabled);
 
-	devdata->is_streaming = true;
 error:
-	return;
+	return status;
 }
 
 static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
@@ -1532,6 +1573,14 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	int status;
 	struct syncboss_msg *smsg, *temp_smsg;
 
+	if (!devdata->is_streaming) {
+		dev_warn(&devdata->spi->dev, "streaming already stopped");
+		return;
+	}
+
+	dev_info(&devdata->spi->dev, "Stopping stream");
+	devdata->is_streaming = false;
+
 	/* Tell syncboss to go to sleep */
 	shutdown_syncboss_mcu_locked(devdata);
 
@@ -1541,20 +1590,12 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 		syncboss_on_camera_release(devdata);
 	}
 
-	devdata->is_streaming = false;
-
-	dev_info(&devdata->spi->dev, "Stopping stream");
-	if (devdata->worker) {
-		kthread_stop(devdata->worker);
-		devdata->worker = NULL;
-		/* Now that device comm is totally down, signal the SYSTEM_DOWN
-		 * event
-		 */
-		signal_prox_event_locked(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
-	} else {
-		dev_warn(&devdata->spi->dev,
-			"Not stopping worker since it appears to be be NULL");
-	}
+	kthread_stop(devdata->worker);
+	devdata->worker = NULL;
+	/* Now that device comm is totally down, signal the SYSTEM_DOWN
+	 * event
+	 */
+	signal_prox_event_locked(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
 
 	if (devdata->use_fastpath)
 		devdata->spi_prepare_ops.unprepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
@@ -1633,13 +1674,8 @@ static void prox_wake_set_locked(struct syncboss_dev_data *devdata, bool enable)
 		 */
 		devdata->silence_all_prox_events = true;
 
-		start_streaming_locked(devdata, true);
-
-		dev_info(&devdata->spi->dev, "Waiting for syncboss to be awake");
-		status = wait_for_syncboss_wake_state(devdata, /*awake*/true);
-		if (status == 0)
-			dev_info(&devdata->spi->dev, "SyncBoss awake");
-		else
+		status = start_streaming_locked(devdata, true);
+		if (status)
 			goto error;
 	}
 
@@ -1790,6 +1826,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->prox_last_evt = INVALID_PROX_CAL_VALUE;
 
 	devdata->use_fastpath = of_property_read_bool(node, "oculus,syncboss-use-fastpath");
+	devdata->boots_to_shutdown_state = of_property_read_bool(node, "oculus,syncboss-boots-to-shutdown-state");
 
 	cpumask_setall(&devdata->cpu_affinity);
 	dev_info(&devdata->spi->dev, "Initial SPI thread cpu affinity: %*pb\n",
@@ -2031,7 +2068,6 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_of_platform_populate;
 
 	devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
-	devdata->reset_requested = false;
 	devdata->enable_headers = true;
 
 	/* Init interrupts */
@@ -2087,10 +2123,13 @@ static int syncboss_probe(struct spi_device *spi)
 
 	wakeup_source_init(&devdata->syncboss_in_use_wake_lock, "syncboss");
 
-	/* This looks kinda hacky, but starting and then stopping the stream is
-	 * the simplest way to get the SyncBoss in an initial sleep state
-	 */
-	reset_syncboss(devdata);
+	if (!devdata->boots_to_shutdown_state) {
+		/*
+		 * This looks kinda hacky, but starting and then stopping the stream is
+		 * the simplest way to get the SyncBoss in an initial sleep state.
+		 */
+		reset_syncboss(devdata);
+	}
 	return 0;
 
 error_after_sysfs:

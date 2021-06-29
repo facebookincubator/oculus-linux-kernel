@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -172,6 +172,9 @@ static int __wlan_hdd_cfg80211_remain_on_channel(struct wiphy *wiphy,
 		hdd_err("Command not allowed in FTM mode");
 		return -EINVAL;
 	}
+
+	if (policy_mgr_is_sta_mon_concurrency(hdd_ctx->psoc))
+		return -EINVAL;
 
 	if (wlan_hdd_validate_vdev_id(adapter->vdev_id))
 		return -EINVAL;
@@ -711,7 +714,10 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 	if (ret)
 		return ERR_PTR(ret);
 
-	if (wlan_hdd_check_mon_concurrency())
+	if (policy_mgr_is_sta_mon_concurrency(hdd_ctx->psoc))
+		return ERR_PTR(-EINVAL);
+
+	if (wlan_hdd_is_mon_concurrency())
 		return ERR_PTR(-EINVAL);
 
 	qdf_mtrace(QDF_MODULE_ID_HDD, QDF_MODULE_ID_HDD,
@@ -727,6 +733,7 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 	case QDF_P2P_GO_MODE:
 	case QDF_P2P_CLIENT_MODE:
 	case QDF_STA_MODE:
+	case QDF_MONITOR_MODE:
 		break;
 	default:
 		mode = QDF_STA_MODE;
@@ -750,16 +757,23 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 	}
 
 	adapter = NULL;
-	if ((ucfg_pkt_capture_get_mode(hdd_ctx->psoc)) &&
-	    (type == NL80211_IFTYPE_MONITOR)) {
-		ret = wlan_hdd_add_monitor_check(hdd_ctx, &adapter, name,
-						 true, name_assign_type);
-		if (ret)
-			return ERR_PTR(-EINVAL);
+	if (type == NL80211_IFTYPE_MONITOR) {
+		if (ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) ||
+		    ucfg_pkt_capture_get_mode(hdd_ctx->psoc) !=
+						PACKET_CAPTURE_MODE_DISABLE) {
+			ret = wlan_hdd_add_monitor_check(hdd_ctx,
+							 &adapter, name, true,
+							 name_assign_type);
+			if (ret)
+				return ERR_PTR(-EINVAL);
 
-		if (adapter) {
-			hdd_exit();
-			return adapter->dev->ieee80211_ptr;
+			if (adapter) {
+				hdd_exit();
+				return adapter->dev->ieee80211_ptr;
+			}
+		} else {
+			hdd_err("Adding monitor interface not supported");
+			return ERR_PTR(-EINVAL);
 		}
 	}
 
@@ -795,6 +809,8 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 		hdd_err("hdd_open_adapter failed");
 		return ERR_PTR(-ENOSPC);
 	}
+
+	adapter->delete_in_progress = false;
 
 	/* ensure physcial soc is up */
 	ret = hdd_trigger_psoc_idle_restart(hdd_ctx);
@@ -883,6 +899,17 @@ struct wireless_dev *wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 }
 #endif
 
+void hdd_clean_up_interface(struct hdd_context *hdd_ctx,
+			    struct hdd_adapter *adapter)
+{
+	wlan_hdd_release_intf_addr(hdd_ctx,
+				   adapter->mac_addr.bytes);
+	hdd_stop_adapter(hdd_ctx, adapter);
+	hdd_deinit_adapter(hdd_ctx, adapter, true);
+	hdd_close_adapter(hdd_ctx, adapter, true);
+	hdd_send_twt_enable_cmd(hdd_ctx);
+}
+
 int __wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
 {
 	struct net_device *dev = wdev->netdev;
@@ -921,16 +948,15 @@ int __wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
 
 	if (adapter->device_mode == QDF_SAP_MODE &&
 	    wlan_sap_is_pre_cac_active(hdd_ctx->mac_handle)) {
+		hdd_clean_up_interface(hdd_ctx, adapter);
 		hdd_clean_up_pre_cac_interface(hdd_ctx);
 	} else if (wlan_hdd_is_session_type_monitor(
-					adapter->device_mode)) {
+					adapter->device_mode) &&
+		   ucfg_pkt_capture_get_mode(hdd_ctx->psoc) !=
+						PACKET_CAPTURE_MODE_DISABLE) {
 		wlan_hdd_del_monitor(hdd_ctx, adapter, TRUE);
 	} else {
-		wlan_hdd_release_intf_addr(hdd_ctx,
-					   adapter->mac_addr.bytes);
-		hdd_stop_adapter(hdd_ctx, adapter);
-		hdd_deinit_adapter(hdd_ctx, adapter, true);
-		hdd_close_adapter(hdd_ctx, adapter, true);
+		hdd_clean_up_interface(hdd_ctx, adapter);
 	}
 
 	if (!hdd_is_any_interface_open(hdd_ctx))
@@ -944,7 +970,9 @@ int wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
 {
 	int errno;
 	struct osif_vdev_sync *vdev_sync;
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
 
+	adapter->delete_in_progress = true;
 	errno = osif_vdev_sync_trans_start_wait(wdev->netdev, &vdev_sync);
 	if (errno)
 		return errno;
@@ -1177,6 +1205,12 @@ int wlan_hdd_set_power_save(struct hdd_adapter *adapter,
 
 	status = ucfg_p2p_set_ps(psoc, ps_config);
 	hdd_debug("p2p set power save, status:%d", status);
+
+	/* P2P-GO-NOA and TWT do not go hand in hand */
+	if (ps_config->duration)
+		hdd_send_twt_role_disable_cmd(hdd_ctx, TWT_RESPONDER);
+	else
+		hdd_send_twt_enable_cmd(hdd_ctx);
 
 	return qdf_status_to_os_return(status);
 }

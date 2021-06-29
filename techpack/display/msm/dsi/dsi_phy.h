@@ -98,6 +98,9 @@ struct msm_dsi_phy {
 	bool allow_phy_power_off;
 	u32 regulator_min_datarate_bps;
 	bool regulator_required;
+
+	u32 *phy_drive_strength;
+	int phy_drive_strength_length;
 };
 
 /**

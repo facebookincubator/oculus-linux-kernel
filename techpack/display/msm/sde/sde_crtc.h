@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -376,6 +376,7 @@ struct sde_crtc {
  * @num_connectors: Number of associated drm connectors
  * @rsc_client    : sde rsc client when mode is valid
  * @is_ppsplit    : Whether current topology requires PPSplit special handling
+ * @in_fsc_mode   : Whether current state is in fsc mode
  * @bw_control    : true if bw/clk controlled by core bw/clk properties
  * @bw_split_vote : true if bw controlled by llcc/dram bw properties
  * @crtc_roi      : Current CRTC ROI. Possibly sub-rectangle of mode.
@@ -409,6 +410,7 @@ struct sde_crtc_state {
 	bool bw_split_vote;
 
 	bool is_ppsplit;
+	bool in_fsc_mode;
 	struct sde_rect crtc_roi;
 	struct sde_rect lm_bounds[MAX_MIXERS_PER_CRTC];
 	struct sde_rect lm_roi[MAX_MIXERS_PER_CRTC];

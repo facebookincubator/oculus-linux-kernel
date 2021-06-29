@@ -1,6 +1,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/iio/qcom,spmi-vadc.h>
+#include <dt-bindings/thermal/qmi_thermal.h>
 #include "lagoon-thermal-overlay.dtsi"
 #include "lagoon-audio-overlay.dtsi"
 #include "lagoon-sde-display.dtsi"
@@ -244,6 +245,231 @@
 				7500000 7000000 6500000 6000000 5500000 5000000 4500000
 				4000000 3500000 3000000 2500000 2000000 1500000 1000000
 				500000>;
+};
+
+&thermal_zones {
+	pa-therm0-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&pm6150l_adc_tm ADC_AMUX_THM3_PU2>;
+		wake-capable-sensor;
+		trips {
+			pa_modem_trip0: pa-modem-trip0 {
+				temperature = <46000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+
+			pa_modem_trip1: pa-modem-trip1 {
+				temperature = <47000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+
+			pa_modem_trip2: pa-modem-trip2 {
+				temperature = <54000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			modem_cdev0 {
+				trip = <&pa_modem_trip0>;
+				cooling-device = <&modem_pa 1 1>;
+			};
+
+			modem_cdev1 {
+				trip = <&pa_modem_trip1>;
+				cooling-device = <&modem_pa 2 2>;
+			};
+
+			modem_cdev2 {
+				trip = <&pa_modem_trip2>;
+				cooling-device = <&modem_pa 3 3>;
+			};
+		};
+	};
+
+	pa-therm1-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&pm6150l_adc_tm ADC_AMUX_THM1_PU2>;
+		wake-capable-sensor;
+		trips {
+			pa_modem_fr1_trip0: pa-modem-fr1-trip0 {
+				temperature = <46000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+
+			pa_modem_fr1_trip1: pa-modem-fr1-trip1 {
+				temperature = <47000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+
+			pa_modem_fr1_trip2: pa-modem-fr1-trip2 {
+				temperature = <55000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			modem_fr1_cdev0 {
+				trip = <&pa_modem_fr1_trip0>;
+				cooling-device = <&modem_pa_fr1 1 1>;
+			};
+
+			modem_fr1_cdev1 {
+				trip = <&pa_modem_fr1_trip1>;
+				cooling-device = <&modem_pa_fr1 2 2>;
+			};
+
+			modem_fr1_cdev2 {
+				trip = <&pa_modem_fr1_trip2>;
+				cooling-device = <&modem_pa_fr1 3 3>;
+			};
+		};
+	};
+
+	modem-mmw-pa1-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&qmi_sensor
+				(QMI_MODEM_INST_ID+QMI_BEAMER_W_THERM)>;
+		wake-capable-sensor;
+		trips {
+			mmw_pa1_trip0: mmw-pa1-trip0 {
+				temperature = <45000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			mmw_pa1_trip1: mmw-pa1-trip1 {
+				temperature = <47000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			mmw_pa1_trip2: mmw-pa1-trip2 {
+				temperature = <56000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			skin_mmw_cdev0 {
+				trip = <&mmw_pa1_trip0>;
+				cooling-device = <&modem_mmw_skin0 1 1>;
+			};
+
+			skin_mmw_cdev1 {
+				trip = <&mmw_pa1_trip1>;
+				cooling-device = <&modem_mmw_skin0 2 2>;
+			};
+
+			skin_mmw_cdev2 {
+				trip = <&mmw_pa1_trip2>;
+				cooling-device = <&modem_mmw_skin0 3 3>;
+			};
+		};
+	};
+
+	modem-mmw-pa2-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&qmi_sensor
+				(QMI_MODEM_INST_ID+QMI_BEAMER_N_THERM)>;
+		wake-capable-sensor;
+		trips {
+			mmw_pa2_trip0: mmw-pa2-trip0 {
+				temperature = <47000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			mmw_pa2_trip1: mmw-pa2-trip1 {
+				temperature = <50000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			mmw_pa2_trip2: mmw-pa2-trip2 {
+				temperature = <56000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			skin_mmw_cdev0 {
+				trip = <&mmw_pa2_trip0>;
+				cooling-device = <&modem_mmw_skin1 1 1>;
+			};
+
+			skin_mmw_cdev1 {
+				trip = <&mmw_pa2_trip1>;
+				cooling-device = <&modem_mmw_skin1 2 2>;
+			};
+
+			skin_mmw_cdev2 {
+				trip = <&mmw_pa2_trip2>;
+				cooling-device = <&modem_mmw_skin1 3 3>;
+			};
+		};
+	};
+
+	modem-mmw-pa3-step {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&qmi_sensor
+				(QMI_MODEM_INST_ID+QMI_BEAMER_E_THERM)>;
+		wake-capable-sensor;
+		trips {
+			mmw_pa3_trip0: mmw-pa3-trip0 {
+				temperature = <45000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			mmw_pa3_trip1: mmw-pa3-trip1 {
+				temperature = <47000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			mmw_pa3_trip2: mmw-pa3-trip2 {
+				temperature = <56000>;
+				hysteresis = <4000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			skin_mmw_cdev0 {
+				trip = <&mmw_pa3_trip0>;
+				cooling-device = <&modem_mmw_skin2 1 1>;
+			};
+
+			skin_mmw_cdev1 {
+				trip = <&mmw_pa3_trip1>;
+				cooling-device = <&modem_mmw_skin2 2 2>;
+			};
+
+			skin_mmw_cdev2 {
+				trip = <&mmw_pa3_trip2>;
+				cooling-device = <&modem_mmw_skin2 3 3>;
+			};
+		};
+	};
 };
 
 &pm7250b_qg {

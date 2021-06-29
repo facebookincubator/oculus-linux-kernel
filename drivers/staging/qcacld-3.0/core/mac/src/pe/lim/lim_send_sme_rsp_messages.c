@@ -511,7 +511,7 @@ void lim_send_sme_start_bss_rsp(struct mac_context *mac,
 	uint16_t size = 0;
 	struct scheduler_msg mmhMsg = {0};
 	struct start_bss_rsp *pSirSmeRsp;
-	uint16_t ieLen;
+	uint16_t beacon_length, ieLen;
 	uint16_t ieOffset, curLen;
 
 	pe_debug("Sending message: %s with reasonCode: %s",
@@ -526,8 +526,13 @@ void lim_send_sme_start_bss_rsp(struct mac_context *mac,
 	} else {
 		/* subtract size of beaconLength + Mac Hdr + Fixed Fields before SSID */
 		ieOffset = sizeof(tAniBeaconStruct) + SIR_MAC_B_PR_SSID_OFFSET;
-		ieLen = pe_session->schBeaconOffsetBegin
-			+ pe_session->schBeaconOffsetEnd - ieOffset;
+		beacon_length = pe_session->schBeaconOffsetBegin +
+						pe_session->schBeaconOffsetEnd;
+		ieLen = beacon_length - ieOffset;
+
+		/* Invalidate for non-beaconing entities */
+		if (beacon_length <= ieOffset)
+			ieLen = ieOffset = 0;
 		/* calculate the memory size to allocate */
 		size += ieLen;
 
@@ -1748,8 +1753,9 @@ void lim_handle_csa_offload_msg(struct mac_context *mac_ctx,
 
 			ch_params.ch_width =
 				chnl_switch_info->newChanWidth;
-			wlan_reg_set_channel_params(mac_ctx->pdev,
-					csa_params->channel, 0, &ch_params);
+			wlan_reg_set_channel_params_for_freq(
+				mac_ctx->pdev, csa_params->csa_chan_freq, 0,
+				&ch_params);
 			chnl_switch_info->newCenterChanFreq0 =
 				ch_params.center_freq_seg0;
 			/*
@@ -2145,6 +2151,7 @@ lim_process_beacon_tx_success_ind(struct mac_context *mac_ctx, uint16_t msgType,
 				  void *event)
 {
 	struct pe_session *session;
+	bool csa_tx_offload;
 	tpSirFirstBeaconTxCompleteInd bcn_ind =
 		(tSirFirstBeaconTxCompleteInd *) event;
 
@@ -2162,10 +2169,12 @@ lim_process_beacon_tx_success_ind(struct mac_context *mac_ctx, uint16_t msgType,
 
 	if (!LIM_IS_AP_ROLE(session))
 		return;
-
+	csa_tx_offload = wlan_psoc_nif_fw_ext_cap_get(mac_ctx->psoc,
+						WLAN_SOC_CEXT_CSA_TX_OFFLOAD);
 	if (session->dfsIncludeChanSwIe &&
 	    (session->gLimChannelSwitch.switchCount ==
-	    mac_ctx->sap.SapDfsInfo.sap_ch_switch_beacon_cnt))
+	    mac_ctx->sap.SapDfsInfo.sap_ch_switch_beacon_cnt) &&
+	    !csa_tx_offload)
 		lim_process_ap_ecsa_timeout(session);
 
 

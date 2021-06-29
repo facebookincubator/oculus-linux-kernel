@@ -1038,7 +1038,7 @@ static const struct a6xx_protected_regs a620_protected_regs[] = {
 	{ A6XX_CP_PROTECT_REG + 25, 0x0ae02, 0x0ae02, 1 },
 	{ A6XX_CP_PROTECT_REG + 26, 0x0ae50, 0x0b17f, 1 },
 	{ A6XX_CP_PROTECT_REG + 27, 0x0b604, 0x0b604, 1 },
-	{ A6XX_CP_PROTECT_REG + 28, 0x0b608, 0x0b60f, 1 },
+	{ A6XX_CP_PROTECT_REG + 28, 0x0b60d, 0x0b60f, 1 },
 	{ A6XX_CP_PROTECT_REG + 29, 0x0be02, 0x0be03, 1 },
 	{ A6XX_CP_PROTECT_REG + 30, 0x0be20, 0x0d5ff, 1 },
 	{ A6XX_CP_PROTECT_REG + 31, 0x0f000, 0x0fbff, 1 },

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2002,2008-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2008-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -291,7 +291,7 @@ static int ctx_print(struct seq_file *s, void *unused)
 		   ctx_type_str(drawctxt->type),
 		   drawctxt->base.priority,
 		   drawctxt->base.proc_priv->comm,
-		   drawctxt->base.proc_priv->pid,
+		   pid_nr(drawctxt->base.proc_priv->pid),
 		   drawctxt->base.tid);
 
 	seq_puts(s, "flags: ");

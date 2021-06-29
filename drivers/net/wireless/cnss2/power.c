@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved. */
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -42,7 +42,7 @@ static struct cnss_clk_cfg cnss_clk_list[] = {
 #define BOOTSTRAP_GPIO			"qcom,enable-bootstrap-gpio"
 #define BOOTSTRAP_ACTIVE		"bootstrap_active"
 #define WLAN_EN_GPIO			"wlan-en-gpio"
-#define BT_EN_GPIO				"qcom,bt-en-gpio"
+#define BT_EN_GPIO			"qcom,bt-en-gpio"
 #define WLAN_EN_ACTIVE			"wlan_en_active"
 #define WLAN_EN_SLEEP			"wlan_en_sleep"
 
@@ -708,6 +708,8 @@ int cnss_get_pinctrl(struct cnss_plat_data *plat_priv)
 		pinctrl_info->bt_en_gpio = of_get_named_gpio(dev->of_node,
 							     BT_EN_GPIO, 0);
 		cnss_pr_dbg("BT GPIO: %d\n", pinctrl_info->bt_en_gpio);
+	} else {
+		pinctrl_info->bt_en_gpio = -EINVAL;
 	}
 
 	return 0;
@@ -782,9 +784,9 @@ out:
 static int cnss_select_pinctrl_enable(struct cnss_plat_data *plat_priv)
 {
 	int ret = 0, bt_en_gpio = plat_priv->pinctrl_info.bt_en_gpio;
-	bool wlan_en_state = 0;
+	u8 wlan_en_state = 0;
 
-	if (!gpio_is_valid(bt_en_gpio) || plat_priv->device_id != QCA6490_DEVICE_ID ||
+	if (bt_en_gpio < 0 || plat_priv->device_id != QCA6490_DEVICE_ID ||
 	    plat_priv->device_id != QCA6390_DEVICE_ID)
 		goto set_wlan_en;
 

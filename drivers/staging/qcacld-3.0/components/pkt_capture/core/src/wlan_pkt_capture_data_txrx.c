@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,6 +27,11 @@
 #include <wlan_reg_services_api.h>
 #include <cds_ieee80211_common.h>
 #include <ol_txrx_htt_api.h>
+#include "wlan_policy_mgr_ucfg.h"
+#ifdef WLAN_FEATURE_PKT_CAPTURE_V2
+#include "dp_internal.h"
+#include "cds_utils.h"
+#endif
 
 #define RESERVE_BYTES (100)
 
@@ -155,7 +160,7 @@ static void pkt_capture_tx_get_phy_info(
 	uint8_t preamble = 0;
 	uint8_t preamble_type = pktcapture_hdr->preamble;
 	uint8_t mcs = 0, bw = 0;
-	uint16_t vht_flags = 0, ht_flags = 0;
+	uint16_t vht_flags = 0, ht_flags = 0, he_flags = 0;
 
 	switch (preamble_type) {
 	case 0x0:
@@ -180,9 +185,17 @@ static void pkt_capture_tx_get_phy_info(
 		mcs = pktcapture_hdr->mcs;
 
 		/* fallthrough */
+		break;
+	case 0x4:
+		he_flags = 1;
 	default:
 		break;
 	}
+
+	if (preamble == 0)
+		tx_status->ofdm_flag = 1;
+	else if (preamble == 1)
+		tx_status->cck_flag = 1;
 
 	tx_status->mcs = mcs;
 	tx_status->bw = bw;
@@ -194,6 +207,7 @@ static void pkt_capture_tx_get_phy_info(
 	tx_status->vht_flag_values3[0] = mcs << 0x4 | (pktcapture_hdr->nss + 1);
 	tx_status->ht_flags = ht_flags;
 	tx_status->vht_flags = vht_flags;
+	tx_status->he_flags = he_flags;
 	tx_status->rtap_flags |= ((preamble == 1) ? BIT(1) : 0);
 	if (bw == 0)
 		tx_status->vht_flag_values2 = 0;
@@ -203,6 +217,7 @@ static void pkt_capture_tx_get_phy_info(
 		tx_status->vht_flag_values2 = 4;
 }
 
+#ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 /**
  * pkt_capture_update_tx_status() - tx status for tx packets, for
  * pkt capture mode(normal tx + offloaded tx) to prepare radiotap header
@@ -237,7 +252,50 @@ pkt_capture_update_tx_status(
 	tx_status->tx_retry_cnt = pktcapture_hdr->tx_retry_cnt;
 	tx_status->add_rtap_ext = true;
 }
+#else
+static void
+pkt_capture_update_tx_status(
+			void *context,
+			struct mon_rx_status *tx_status,
+			struct pkt_capture_tx_hdr_elem_t *pktcapture_hdr)
+{
+	struct connection_info info[MAX_NUMBER_OF_CONC_CONNECTIONS];
+	struct wlan_objmgr_vdev *vdev = context;
+	struct wlan_objmgr_psoc *psoc;
+	uint32_t conn_count;
+	uint8_t vdev_id;
+	int i;
 
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		pkt_capture_err("Failed to get psoc");
+		return;
+	}
+
+	vdev_id = wlan_vdev_get_id(vdev);
+
+	/* Update the connected channel info from policy manager */
+	conn_count = policy_mgr_get_connection_info(psoc, info);
+	for (i = 0; i < conn_count; i++) {
+		if (info[i].vdev_id == vdev_id) {
+			tx_status->chan_freq = info[0].ch_freq;
+			tx_status->chan_num = info[0].channel;
+			break;
+		}
+	}
+
+	pkt_capture_tx_get_phy_info(pktcapture_hdr, tx_status);
+
+	tx_status->tsft = (u_int64_t)(pktcapture_hdr->timestamp);
+	tx_status->ant_signal_db = pktcapture_hdr->rssi_comb;
+	tx_status->rssi_comb = pktcapture_hdr->rssi_comb;
+	tx_status->tx_status = pktcapture_hdr->status;
+	tx_status->tx_retry_cnt = pktcapture_hdr->tx_retry_cnt;
+	tx_status->add_rtap_ext = true;
+}
+#endif
+
+#ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 /**
  * pkt_capture_rx_convert8023to80211() - convert 802.3 packet to 802.11
  * format from rx desc
@@ -348,6 +406,82 @@ pkt_capture_rx_convert8023to80211(uint8_t *bssid, qdf_nbuf_t msdu, void *desc)
 	qdf_nbuf_push_head(msdu, new_hdsize);
 	qdf_mem_copy(qdf_nbuf_data(msdu), localbuf, new_hdsize);
 }
+#else
+static void
+pkt_capture_rx_convert8023to80211(hal_soc_handle_t hal_soc_hdl,
+				  qdf_nbuf_t msdu, void *desc)
+{
+	struct ethernet_hdr_t *eth_hdr;
+	struct llc_snap_hdr_t *llc_hdr;
+	struct ieee80211_frame *wh;
+	uint8_t *pwh;
+	uint8_t hdsize, new_hdsize;
+	struct ieee80211_qoscntl *qos_cntl;
+	uint8_t localbuf[sizeof(struct ieee80211_qosframe_htc_addr4) +
+			sizeof(struct llc_snap_hdr_t)];
+	const uint8_t ethernet_II_llc_snap_header_prefix[] = {
+					0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00 };
+	uint16_t ether_type;
+
+	uint32_t tid = 0;
+
+	eth_hdr = (struct ethernet_hdr_t *)qdf_nbuf_data(msdu);
+	hdsize = sizeof(struct ethernet_hdr_t);
+	pwh = HAL_RX_DESC_GET_80211_HDR(desc);
+
+	wh = (struct ieee80211_frame *)localbuf;
+
+	new_hdsize = sizeof(struct ieee80211_frame);
+
+	qdf_mem_copy(localbuf, pwh, new_hdsize);
+	wh->i_fc[1] &= ~IEEE80211_FC1_WEP;
+
+	if (wh->i_fc[0] & QDF_IEEE80211_FC0_SUBTYPE_QOS) {
+		qos_cntl =
+		(struct ieee80211_qoscntl *)(localbuf + new_hdsize);
+		tid = hal_rx_mpdu_start_tid_get(hal_soc_hdl, desc);
+		qos_cntl->i_qos[0] = (tid & IEEE80211_QOS_TID);
+		wh->i_fc[0] |= QDF_IEEE80211_FC0_SUBTYPE_QOS;
+
+		qos_cntl->i_qos[1] = 0;
+		new_hdsize += sizeof(struct ieee80211_qoscntl);
+	}
+
+	/*
+	 * Prepare llc Header
+	 */
+
+	llc_hdr = (struct llc_snap_hdr_t *)(localbuf + new_hdsize);
+	ether_type = (eth_hdr->ethertype[0] << 8) |
+			(eth_hdr->ethertype[1]);
+	if (ether_type >= ETH_P_802_3_MIN) {
+		qdf_mem_copy(llc_hdr,
+			     ethernet_II_llc_snap_header_prefix,
+			     sizeof
+			     (ethernet_II_llc_snap_header_prefix));
+		if (ether_type == ETHERTYPE_AARP ||
+		    ether_type == ETHERTYPE_IPX) {
+			llc_hdr->org_code[2] =
+				BTEP_SNAP_ORGCODE_2;
+			/* 0xf8; bridge tunnel header */
+		}
+		llc_hdr->ethertype[0] = eth_hdr->ethertype[0];
+		llc_hdr->ethertype[1] = eth_hdr->ethertype[1];
+		new_hdsize += sizeof(struct llc_snap_hdr_t);
+	}
+
+	/*
+	 * Remove 802.3 Header by adjusting the head
+	 */
+	qdf_nbuf_pull_head(msdu, hdsize);
+
+	/*
+	 * Adjust the head and prepare 802.11 Header
+	 */
+	qdf_nbuf_push_head(msdu, new_hdsize);
+	qdf_mem_copy(qdf_nbuf_data(msdu), localbuf, new_hdsize);
+}
+#endif
 
 void pkt_capture_rx_in_order_drop_offload_pkt(qdf_nbuf_t head_msdu)
 {
@@ -370,10 +504,11 @@ bool pkt_capture_rx_in_order_offloaded_pkt(qdf_nbuf_t rx_ind_msg)
 					(*(msg_word + 1));
 }
 
+#ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 void pkt_capture_msdu_process_pkts(
 				uint8_t *bssid,
-				qdf_nbuf_t head_msdu,
-				uint8_t vdev_id, htt_pdev_handle pdev)
+				qdf_nbuf_t head_msdu, uint8_t vdev_id,
+				htt_pdev_handle pdev, uint16_t status)
 {
 	qdf_nbuf_t loop_msdu, pktcapture_msdu;
 	qdf_nbuf_t msdu, prev = NULL;
@@ -408,7 +543,215 @@ void pkt_capture_msdu_process_pkts(
 			TXRX_PKTCAPTURE_PKT_FORMAT_8023,
 			bssid, pdev, 0);
 }
+#else
+#define RX_OFFLOAD_PKT 1
+void pkt_capture_msdu_process_pkts(
+				uint8_t *bssid, qdf_nbuf_t head_msdu,
+				uint8_t vdev_id, void *psoc, uint16_t status)
+{
+	qdf_nbuf_t loop_msdu, pktcapture_msdu, offload_msdu = NULL;
+	qdf_nbuf_t msdu, prev = NULL;
 
+	pktcapture_msdu = NULL;
+	loop_msdu = head_msdu;
+	while (loop_msdu) {
+		msdu = qdf_nbuf_copy(loop_msdu);
+
+		if (msdu) {
+			qdf_nbuf_set_next(msdu, NULL);
+
+			if (!(pktcapture_msdu)) {
+				pktcapture_msdu = msdu;
+				prev = msdu;
+			} else {
+				qdf_nbuf_set_next(prev, msdu);
+				prev = msdu;
+			}
+		}
+		if (status == RX_OFFLOAD_PKT)
+			offload_msdu = loop_msdu;
+		loop_msdu = qdf_nbuf_next(loop_msdu);
+
+		/* Free offload msdu as it is delivered only to pkt capture */
+		if (offload_msdu) {
+			qdf_nbuf_free(offload_msdu);
+			offload_msdu = NULL;
+		}
+	}
+
+	if (!pktcapture_msdu)
+		return;
+
+	pkt_capture_datapkt_process(
+			vdev_id, pktcapture_msdu,
+			TXRX_PROCESS_TYPE_DATA_RX, 0, 0,
+			TXRX_PKTCAPTURE_PKT_FORMAT_8023,
+			bssid, psoc, 0);
+}
+#endif
+
+#ifdef WLAN_FEATURE_PKT_CAPTURE_V2
+/**
+ * pkt_capture_dp_rx_skip_tlvs() - Skip TLVs len + L2 hdr_offset, save in nbuf
+ * @nbuf: nbuf to be updated
+ * @l3_padding: l3_padding
+ *
+ * Return: None
+ */
+static void pkt_capture_dp_rx_skip_tlvs(qdf_nbuf_t nbuf, uint32_t l3_padding)
+{
+	QDF_NBUF_CB_RX_PACKET_L3_HDR_PAD(nbuf) = l3_padding;
+	qdf_nbuf_pull_head(nbuf, l3_padding + RX_PKT_TLVS_LEN);
+}
+
+/**
+ * pkt_capture_rx_get_phy_info() - Get phy info
+ * @psoc: dp_soc handle
+ * @rx_tlv_hdr: Pointer to struct rx_pkt_tlvs
+ * @rx_status: Pointer to struct mon_rx_status
+ *
+ * Return: none
+ */
+static void pkt_capture_rx_get_phy_info(void *psoc,
+					uint8_t *rx_tlv_hdr,
+					struct mon_rx_status *rx_status)
+{
+	uint8_t preamble = 0;
+	uint8_t preamble_type;
+	uint8_t mcs = 0, nss = 0, sgi = 0, bw = 0;
+	uint8_t beamformed = 0;
+	uint16_t vht_flags = 0, ht_flags = 0, he_flags = 0;
+	bool is_stbc = 0, ldpc = 0;
+	struct dp_soc *soc = psoc;
+	hal_soc_handle_t hal_soc;
+
+	hal_soc = soc->hal_soc;
+	preamble_type = hal_rx_msdu_start_get_pkt_type(rx_tlv_hdr);
+	nss = hal_rx_msdu_start_nss_get(hal_soc, rx_tlv_hdr); /* NSS */
+	bw = hal_rx_msdu_start_bw_get(rx_tlv_hdr);
+	mcs = hal_rx_msdu_start_rate_mcs_get(rx_tlv_hdr);
+	sgi = hal_rx_msdu_start_sgi_get(rx_tlv_hdr);
+
+	switch (preamble_type) {
+	case HAL_RX_PKT_TYPE_11A:
+	case HAL_RX_PKT_TYPE_11B:
+	/* legacy */
+		rx_status->rate = pkt_capture_get_tx_rate(
+						preamble_type,
+						mcs,
+						&preamble);
+
+		break;
+	case HAL_RX_PKT_TYPE_11N:
+		ht_flags = 1;
+		if (nss == 2)
+			mcs = 8 + mcs;
+		break;
+	case HAL_RX_PKT_TYPE_11AC:
+		vht_flags = 1;
+		break;
+	case HAL_RX_PKT_TYPE_11AX:
+		he_flags = 1;
+	default:
+		break;
+	}
+
+	if (preamble == 0)
+		rx_status->ofdm_flag = 1;
+	else if (preamble == 1)
+		rx_status->cck_flag = 1;
+
+	rx_status->mcs = mcs;
+	rx_status->bw = bw;
+	rx_status->nr_ant = nss;
+	/* is_stbc not available */
+	rx_status->is_stbc = is_stbc;
+	rx_status->sgi = sgi;
+	/* ldpc not available */
+	rx_status->ldpc = ldpc;
+	/* beamformed not available */
+	rx_status->beamformed = beamformed;
+	rx_status->vht_flag_values3[0] = mcs << 0x4 | (nss + 1);
+	rx_status->ht_flags = ht_flags;
+	rx_status->vht_flags = vht_flags;
+	rx_status->he_flags = he_flags;
+	rx_status->rtap_flags |= ((preamble == SHORT_PREAMBLE) ? BIT(1) : 0);
+	if (bw == 0)
+		rx_status->vht_flag_values2 = 0;
+	else if (bw == 1)
+		rx_status->vht_flag_values2 = 1;
+	else if (bw == 2)
+		rx_status->vht_flag_values2 = 4;
+
+	if (ht_flags)
+		rx_status->ht_mcs = mcs;
+}
+
+/**
+ * pkt_capture_get_rx_rtap_flags() - Get radiotap flags
+ * @ptr_rx_tlv_hdr: Pointer to struct rx_pkt_tlvs
+ *
+ * Return: Bitmapped radiotap flags.
+ */
+static uint8_t pkt_capture_get_rx_rtap_flags(void *ptr_rx_tlv_hdr)
+{
+	struct rx_pkt_tlvs *rx_tlv_hdr = (struct rx_pkt_tlvs *)ptr_rx_tlv_hdr;
+	struct rx_attention *rx_attn = &rx_tlv_hdr->attn_tlv.rx_attn;
+	struct rx_mpdu_start *mpdu_start =
+				&rx_tlv_hdr->mpdu_start_tlv.rx_mpdu_start;
+	struct rx_mpdu_end *mpdu_end = &rx_tlv_hdr->mpdu_end_tlv.rx_mpdu_end;
+	uint8_t rtap_flags = 0;
+
+	/* WEP40 || WEP104 || WEP128 */
+	if (mpdu_start->rx_mpdu_info_details.encrypt_type == 0 ||
+	    mpdu_start->rx_mpdu_info_details.encrypt_type == 1 ||
+	    mpdu_start->rx_mpdu_info_details.encrypt_type == 3)
+		rtap_flags |= BIT(2);
+
+	/* IEEE80211_RADIOTAP_F_FRAG */
+	if (rx_attn->fragment_flag)
+		rtap_flags |= BIT(3);
+
+	/* IEEE80211_RADIOTAP_F_FCS */
+	rtap_flags |= BIT(4);
+
+	/* IEEE80211_RADIOTAP_F_BADFCS */
+	if (mpdu_end->fcs_err)
+		rtap_flags |= BIT(6);
+
+	return rtap_flags;
+}
+
+#define CHANNEL_FREQ_5150 5150
+/**
+ * pkt_capture_rx_mon_get_rx_status() - Get rx status
+ * @psoc: dp_soc handle
+ * @desc: Pointer to struct rx_pkt_tlvs
+ * @rx_status: Pointer to struct mon_rx_status
+ *
+ * Return: none
+ */
+static void pkt_capture_rx_mon_get_rx_status(void *psoc, void *desc,
+					     struct mon_rx_status *rx_status)
+{
+	uint8_t *rx_tlv_hdr = desc;
+
+	rx_status->rtap_flags |= pkt_capture_get_rx_rtap_flags(rx_tlv_hdr);
+	rx_status->chan_freq = hal_rx_msdu_start_get_freq(rx_tlv_hdr) >> 16;
+	rx_status->chan_num = cds_freq_to_chan(rx_status->chan_freq);
+	rx_status->ant_signal_db = hal_rx_msdu_start_get_rssi(rx_tlv_hdr);
+	rx_status->rssi_comb = hal_rx_msdu_start_get_rssi(rx_tlv_hdr);
+
+	if (rx_status->chan_freq > CHANNEL_FREQ_5150)
+		rx_status->ofdm_flag = 1;
+	else
+		rx_status->cck_flag = 1;
+
+	pkt_capture_rx_get_phy_info(psoc, desc, rx_status);
+}
+#endif
+
+#ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 /**
  * pkt_capture_rx_data_cb(): callback to process data rx packets
  * for pkt capture mode. (normal rx + offloaded rx)
@@ -531,7 +874,114 @@ pkt_capture_rx_data_cb(
 free_buf:
 	drop_count = pkt_capture_drop_nbuf_list(buf_list);
 }
+#else
+/**
+ * pkt_capture_rx_data_cb(): callback to process data rx packets
+ * for pkt capture mode. (normal rx + offloaded rx)
+ * @context: objmgr vdev
+ * @psoc: dp_soc handle
+ * @nbuf_list: netbuf list
+ * @vdev_id: vdev id for which packet is captured
+ * @tid:  tid number
+ * @status: Tx status
+ * @pkt_format: Frame format
+ * @bssid: bssid
+ * @tx_retry_cnt: tx retry count
+ *
+ * Return: none
+ */
+static void
+pkt_capture_rx_data_cb(
+		void *context, void *psoc, void *nbuf_list,
+		uint8_t vdev_id, uint8_t tid,
+		uint16_t status, bool pkt_format,
+		uint8_t *bssid, uint8_t tx_retry_cnt)
+{
+	struct pkt_capture_vdev_priv *vdev_priv;
+	qdf_nbuf_t buf_list = (qdf_nbuf_t)nbuf_list;
+	struct wlan_objmgr_vdev *vdev = context;
+	struct pkt_capture_cb_context *cb_ctx;
+	qdf_nbuf_t msdu, next_buf;
+	uint8_t drop_count;
+	struct mon_rx_status rx_status = {0};
+	uint32_t headroom;
+	uint8_t *rx_tlv_hdr = NULL;
+	struct dp_soc *soc = psoc;
+	hal_soc_handle_t hal_soc;
+	struct hal_rx_msdu_metadata msdu_metadata;
 
+	vdev_priv = pkt_capture_vdev_get_priv(vdev);
+	if (qdf_unlikely(!vdev))
+		goto free_buf;
+
+	cb_ctx = vdev_priv->cb_ctx;
+	if (!cb_ctx || !cb_ctx->mon_cb || !cb_ctx->mon_ctx)
+		goto free_buf;
+
+	hal_soc = soc->hal_soc;
+	msdu = buf_list;
+	while (msdu) {
+		struct ethernet_hdr_t *eth_hdr;
+
+		/* push the tlvs to get rx_tlv_hdr pointer */
+		qdf_nbuf_push_head(msdu, RX_PKT_TLVS_LEN +
+				QDF_NBUF_CB_RX_PACKET_L3_HDR_PAD(msdu));
+
+		rx_tlv_hdr = qdf_nbuf_data(msdu);
+		hal_rx_msdu_metadata_get(hal_soc, rx_tlv_hdr, &msdu_metadata);
+		/* Pull rx_tlv_hdr */
+		pkt_capture_dp_rx_skip_tlvs(msdu, msdu_metadata.l3_hdr_pad);
+
+		next_buf = qdf_nbuf_queue_next(msdu);
+		qdf_nbuf_set_next(msdu, NULL);   /* Add NULL terminator */
+
+		/*
+		 * Get the channel info and update the rx status
+		 */
+
+		/* need to update this to fill rx_status*/
+		pkt_capture_rx_mon_get_rx_status(psoc, rx_tlv_hdr, &rx_status);
+		/* timestamp not available */
+		rx_status.tsft = qdf_nbuf_get_timestamp(msdu);
+		rx_status.chan_noise_floor = NORMALIZED_TO_NOISE_FLOOR;
+		rx_status.tx_status = status;
+		rx_status.tx_retry_cnt = tx_retry_cnt;
+		rx_status.add_rtap_ext = true;
+
+		/* clear IEEE80211_RADIOTAP_F_FCS flag*/
+		rx_status.rtap_flags &= ~(BIT(4));
+		rx_status.rtap_flags &= ~(BIT(2));
+
+		/*
+		 * convert 802.3 header format into 802.11 format
+		 */
+		if (vdev_id == HTT_INVALID_VDEV) {
+			eth_hdr = (struct ethernet_hdr_t *)qdf_nbuf_data(msdu);
+			qdf_mem_copy(bssid, eth_hdr->src_addr,
+				     QDF_MAC_ADDR_SIZE);
+		}
+
+		pkt_capture_rx_convert8023to80211(hal_soc, msdu, rx_tlv_hdr);
+
+		/*
+		 * Calculate the headroom and adjust head
+		 * to prepare radiotap header.
+		 */
+		headroom = qdf_nbuf_headroom(msdu);
+		qdf_nbuf_update_radiotap(&rx_status, msdu, headroom);
+		pkt_capture_mon(cb_ctx, msdu, vdev, 0);
+		msdu = next_buf;
+	}
+
+	return;
+
+free_buf:
+	drop_count = pkt_capture_drop_nbuf_list(buf_list);
+}
+
+#endif
+
+#ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 /**
  * pkt_capture_tx_data_cb() - process data tx and rx packets
  * for pkt capture mode. (normal tx/rx + offloaded tx/rx)
@@ -703,13 +1153,211 @@ pkt_capture_tx_data_cb(
 free_buf:
 	drop_count = pkt_capture_drop_nbuf_list(nbuf_list);
 }
+#else
+/**
+ * pkt_capture_get_vdev_bss_peer_mac_addr() - API to get bss peer mac address
+ * @vdev: objmgr vdev
+ * @bss_peer_mac_address: bss peer mac address
+ *.
+ * Helper function to  get bss peer mac address
+ *
+ * Return: if success pmo vdev ctx else NULL
+ */
+static QDF_STATUS pkt_capture_get_vdev_bss_peer_mac_addr(
+				struct wlan_objmgr_vdev *vdev,
+				struct qdf_mac_addr *bss_peer_mac_address)
+{
+	struct wlan_objmgr_peer *peer;
+
+	if (!vdev) {
+		qdf_print("vdev is null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	peer = wlan_objmgr_vdev_try_get_bsspeer(vdev, WLAN_PKT_CAPTURE_ID);
+	if (!peer) {
+		qdf_print("peer is null");
+		return QDF_STATUS_E_INVAL;
+	}
+	wlan_peer_obj_lock(peer);
+	qdf_mem_copy(bss_peer_mac_address->bytes, wlan_peer_get_macaddr(peer),
+		     QDF_MAC_ADDR_SIZE);
+	wlan_peer_obj_unlock(peer);
+
+	wlan_objmgr_peer_release_ref(peer, WLAN_PKT_CAPTURE_ID);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static void
+pkt_capture_tx_data_cb(
+		void *context, void *ppdev, void *nbuf_list, uint8_t vdev_id,
+		uint8_t tid, uint16_t status, bool pkt_format,
+		uint8_t *bssid, uint8_t tx_retry_cnt)
+{
+	qdf_nbuf_t msdu, next_buf;
+	struct pkt_capture_vdev_priv *vdev_priv;
+	struct wlan_objmgr_vdev *vdev = context;
+	struct pkt_capture_cb_context *cb_ctx;
+	uint8_t drop_count;
+	struct htt_tx_data_hdr_information *cmpl_desc = NULL;
+	struct pkt_capture_tx_hdr_elem_t pktcapture_hdr = {0};
+	struct ethernet_hdr_t *eth_hdr;
+	struct llc_snap_hdr_t *llc_hdr;
+	struct ieee80211_frame *wh;
+	uint8_t hdsize, new_hdsize;
+	struct ieee80211_qoscntl *qos_cntl;
+	uint16_t ether_type;
+	uint32_t headroom;
+	uint16_t seq_no, fc_ctrl;
+	struct mon_rx_status tx_status = {0};
+	uint8_t localbuf[sizeof(struct ieee80211_qosframe_htc_addr4) +
+			sizeof(struct llc_snap_hdr_t)];
+	const uint8_t ethernet_II_llc_snap_header_prefix[] = {
+					0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00 };
+	struct qdf_mac_addr bss_peer_mac_address;
+
+	vdev_priv = pkt_capture_vdev_get_priv(vdev);
+	if (qdf_unlikely(!vdev))
+		goto free_buf;
+
+	cb_ctx = vdev_priv->cb_ctx;
+	if (!cb_ctx || !cb_ctx->mon_cb || !cb_ctx->mon_ctx)
+		goto free_buf;
+
+	msdu = nbuf_list;
+	while (msdu) {
+		next_buf = qdf_nbuf_queue_next(msdu);
+		qdf_nbuf_set_next(msdu, NULL);   /* Add NULL terminator */
+
+		cmpl_desc = (struct htt_tx_data_hdr_information *)
+					(qdf_nbuf_data(msdu));
+
+		pktcapture_hdr.timestamp = cmpl_desc->phy_timestamp_l32;
+		pktcapture_hdr.preamble = cmpl_desc->preamble;
+		pktcapture_hdr.mcs = cmpl_desc->mcs;
+		pktcapture_hdr.bw = cmpl_desc->bw;
+		pktcapture_hdr.nss = cmpl_desc->nss;
+		pktcapture_hdr.rssi_comb = cmpl_desc->rssi;
+		pktcapture_hdr.rate = cmpl_desc->rate;
+		pktcapture_hdr.stbc = cmpl_desc->stbc;
+		pktcapture_hdr.sgi = cmpl_desc->sgi;
+		pktcapture_hdr.ldpc = cmpl_desc->ldpc;
+		pktcapture_hdr.beamformed = cmpl_desc->beamformed;
+		pktcapture_hdr.status = status;
+		pktcapture_hdr.tx_retry_cnt = tx_retry_cnt;
+
+		qdf_nbuf_pull_head(
+			msdu,
+			sizeof(struct htt_tx_data_hdr_information));
+
+		if (pkt_format == TXRX_PKTCAPTURE_PKT_FORMAT_8023) {
+			eth_hdr = (struct ethernet_hdr_t *)qdf_nbuf_data(msdu);
+			hdsize = sizeof(struct ethernet_hdr_t);
+			wh = (struct ieee80211_frame *)localbuf;
+
+			*(uint16_t *)wh->i_dur = 0;
+
+			new_hdsize = 0;
+
+			pkt_capture_get_vdev_bss_peer_mac_addr(
+							vdev,
+							&bss_peer_mac_address);
+			qdf_mem_copy(bssid, bss_peer_mac_address.bytes,
+				     QDF_MAC_ADDR_SIZE);
+			if (vdev_id == HTT_INVALID_VDEV)
+				qdf_mem_copy(bssid, eth_hdr->dest_addr,
+					     QDF_MAC_ADDR_SIZE);
+
+			/* BSSID , SA , DA */
+			qdf_mem_copy(wh->i_addr1, bssid,
+				     QDF_MAC_ADDR_SIZE);
+			qdf_mem_copy(wh->i_addr2, eth_hdr->src_addr,
+				     QDF_MAC_ADDR_SIZE);
+			qdf_mem_copy(wh->i_addr3, eth_hdr->dest_addr,
+				     QDF_MAC_ADDR_SIZE);
+
+			seq_no = cmpl_desc->seqno;
+			seq_no = (seq_no << IEEE80211_SEQ_SEQ_SHIFT) &
+					IEEE80211_SEQ_SEQ_MASK;
+			fc_ctrl = cmpl_desc->framectrl;
+			qdf_mem_copy(wh->i_fc, &fc_ctrl, sizeof(fc_ctrl));
+			qdf_mem_copy(wh->i_seq, &seq_no, sizeof(seq_no));
+
+			wh->i_fc[1] &= ~IEEE80211_FC1_WEP;
+
+			new_hdsize = sizeof(struct ieee80211_frame);
+
+			if (wh->i_fc[0] & QDF_IEEE80211_FC0_SUBTYPE_QOS) {
+				qos_cntl = (struct ieee80211_qoscntl *)
+						(localbuf + new_hdsize);
+				qos_cntl->i_qos[0] =
+					(tid & IEEE80211_QOS_TID);
+				qos_cntl->i_qos[1] = 0;
+				new_hdsize += sizeof(struct ieee80211_qoscntl);
+			}
+			/*
+			 * Prepare llc Header
+			 */
+			llc_hdr = (struct llc_snap_hdr_t *)
+					(localbuf + new_hdsize);
+			ether_type = (eth_hdr->ethertype[0] << 8) |
+					(eth_hdr->ethertype[1]);
+			if (ether_type >= ETH_P_802_3_MIN) {
+				qdf_mem_copy(
+					llc_hdr,
+					ethernet_II_llc_snap_header_prefix,
+					sizeof
+					(ethernet_II_llc_snap_header_prefix));
+				if (ether_type == ETHERTYPE_AARP ||
+				    ether_type == ETHERTYPE_IPX) {
+					llc_hdr->org_code[2] =
+						BTEP_SNAP_ORGCODE_2;
+					/* 0xf8; bridge tunnel header */
+				}
+				llc_hdr->ethertype[0] = eth_hdr->ethertype[0];
+				llc_hdr->ethertype[1] = eth_hdr->ethertype[1];
+				new_hdsize += sizeof(struct llc_snap_hdr_t);
+			}
+
+			/*
+			 * Remove 802.3 Header by adjusting the head
+			 */
+			qdf_nbuf_pull_head(msdu, hdsize);
+
+			/*
+			 * Adjust the head and prepare 802.11 Header
+			 */
+			qdf_nbuf_push_head(msdu, new_hdsize);
+			qdf_mem_copy(qdf_nbuf_data(msdu), localbuf, new_hdsize);
+		}
+
+		pkt_capture_update_tx_status(
+				context,
+				&tx_status,
+				&pktcapture_hdr);
+		/*
+		 * Calculate the headroom and adjust head
+		 * to prepare radiotap header.
+		 */
+		headroom = qdf_nbuf_headroom(msdu);
+		qdf_nbuf_update_radiotap(&tx_status, msdu, headroom);
+		pkt_capture_mon(cb_ctx, msdu, vdev, 0);
+		msdu = next_buf;
+	}
+	return;
+
+free_buf:
+	drop_count = pkt_capture_drop_nbuf_list(nbuf_list);
+}
+#endif
 
 void pkt_capture_datapkt_process(
 		uint8_t vdev_id,
 		qdf_nbuf_t mon_buf_list,
 		enum pkt_capture_data_process_type type,
 		uint8_t tid, uint8_t status, bool pkt_format,
-		uint8_t *bssid, htt_pdev_handle pdev,
+		uint8_t *bssid, void *pdev,
 		uint8_t tx_retry_cnt)
 {
 	uint8_t drop_count;
@@ -810,6 +1458,7 @@ struct htt_tx_data_hdr_information *pkt_capture_tx_get_txcomplete_data_hdr(
 	return txcomplete_data_hrd_list;
 }
 
+#ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 void pkt_capture_offload_deliver_indication_handler(
 					void *msg, uint8_t vdev_id,
 					uint8_t *bssid, htt_pdev_handle pdev)
@@ -861,3 +1510,64 @@ void pkt_capture_offload_deliver_indication_handler(
 			tid, status, pkt_format, bssid, pdev,
 			offload_deliver_msg->tx_retry_cnt);
 }
+#else
+#define FRAME_CTRL_TYPE_DATA	0x0008
+void pkt_capture_offload_deliver_indication_handler(
+					void *msg, uint8_t vdev_id,
+					uint8_t *bssid, void *soc)
+{
+	int nbuf_len;
+	qdf_nbuf_t netbuf;
+	uint8_t status;
+	uint8_t tid = 0;
+	bool pkt_format;
+	u_int32_t *msg_word = (u_int32_t *)msg;
+	u_int8_t *buf = (u_int8_t *)msg;
+	struct htt_tx_data_hdr_information *txhdr;
+	struct htt_tx_offload_deliver_ind_hdr_t *offload_deliver_msg;
+	struct htt_tx_data_hdr_information *cmpl_desc = NULL;
+
+	offload_deliver_msg = (struct htt_tx_offload_deliver_ind_hdr_t *)msg;
+
+	txhdr = (struct htt_tx_data_hdr_information *)
+		(msg_word + 1);
+
+	nbuf_len = offload_deliver_msg->tx_mpdu_bytes;
+
+	netbuf = qdf_nbuf_alloc(NULL,
+				roundup(nbuf_len + RESERVE_BYTES, 4),
+				RESERVE_BYTES, 4, false);
+
+	if (!netbuf)
+		return;
+
+	qdf_nbuf_put_tail(netbuf, nbuf_len);
+
+	qdf_mem_copy(qdf_nbuf_data(netbuf),
+		     buf + sizeof(struct htt_tx_offload_deliver_ind_hdr_t),
+		     nbuf_len);
+
+	qdf_nbuf_push_head(
+			netbuf,
+			sizeof(struct htt_tx_data_hdr_information));
+
+	qdf_mem_copy(qdf_nbuf_data(netbuf), txhdr,
+		     sizeof(struct htt_tx_data_hdr_information));
+
+	status = offload_deliver_msg->status;
+	pkt_format = offload_deliver_msg->format;
+	tid = offload_deliver_msg->tid_num;
+
+	cmpl_desc = (struct htt_tx_data_hdr_information *)
+				(qdf_nbuf_data(netbuf));
+
+	/* filling packet type as data, as framectrl is not available */
+	cmpl_desc->framectrl = FRAME_CTRL_TYPE_DATA;
+
+	pkt_capture_datapkt_process(
+			vdev_id,
+			netbuf, TXRX_PROCESS_TYPE_DATA_TX,
+			tid, status, pkt_format, bssid, soc,
+			offload_deliver_msg->tx_retry_cnt);
+}
+#endif

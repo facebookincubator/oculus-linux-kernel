@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018, 2020-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -327,6 +327,39 @@ QDF_STATUS pmo_core_config_listen_interval(struct wlan_objmgr_vdev *vdev,
  */
 QDF_STATUS pmo_core_config_modulated_dtim(struct wlan_objmgr_vdev *vdev,
 					  uint32_t mod_dtim);
+/**
+ * pmo_core_txrx_suspend() - suspends TXRX
+ * @psoc: objmgr psoc handle
+ *
+ * This function disables the EXT grp irqs and drains the TX/RX pipes;
+ * this essentially suspends the TXRX activity
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS pmo_core_txrx_suspend(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * pmo_core_txrx_resume() - resumes TXRX
+ * @psoc: objmgr psoc handle
+ *
+ * This function enables the EXT grp irqs, which inturn resumes
+ * the TXRX activity
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS pmo_core_txrx_resume(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * pmo_core_config_forced_dtim() - function to configure forced dtim
+ * @vdev: objmgr vdev handle
+ * @dynamic_dtim: dynamic dtim value passed by user
+ *
+ * This function configures the forced modulated dtim in firmware
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS pmo_core_config_forced_dtim(struct wlan_objmgr_vdev *vdev,
+				       uint32_t dynamic_dtim);
 #endif /* WLAN_POWER_MANAGEMENT_OFFLOAD */
 
 #endif /* end  of _WLAN_PMO_SUSPEND_RESUME_H_ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -326,14 +326,16 @@ void ucfg_reg_cache_channel_state(struct wlan_objmgr_pdev *pdev,
 }
 #endif /* CONFIG_CHAN_NUM_API */
 
-/**
- * ucfg_reg_restore_cached_channels() - Cache the current state of the channles
- * @pdev: The physical dev to cache the channels for
- */
 void ucfg_reg_restore_cached_channels(struct wlan_objmgr_pdev *pdev)
 {
 	reg_restore_cached_channels(pdev);
 }
+
+void ucfg_reg_disable_cached_channels(struct wlan_objmgr_pdev *pdev)
+{
+	reg_disable_cached_channels(pdev);
+}
+
 #endif
 
 QDF_STATUS ucfg_set_ignore_fw_reg_offload_ind(struct wlan_objmgr_psoc *psoc)
@@ -346,5 +348,21 @@ QDF_STATUS
 ucfg_reg_get_unii_5g_bitmap(struct wlan_objmgr_pdev *pdev, uint8_t *bitmap)
 {
 	return reg_get_unii_5g_bitmap(pdev, bitmap);
+}
+#endif
+
+#if defined(CONFIG_BAND_6GHZ)
+QDF_STATUS
+ucfg_reg_set_cur_6g_ap_pwr_type(struct wlan_objmgr_pdev *pdev,
+				enum reg_6g_ap_type reg_cur_6g_ap_pwr_type)
+{
+	return reg_set_cur_6g_ap_pwr_type(pdev, reg_cur_6g_ap_pwr_type);
+}
+
+QDF_STATUS
+ucfg_reg_get_cur_6g_ap_pwr_type(struct wlan_objmgr_pdev *pdev,
+				enum reg_6g_ap_type *reg_cur_6g_ap_pwr_type)
+{
+	return reg_get_cur_6g_ap_pwr_type(pdev, reg_cur_6g_ap_pwr_type);
 }
 #endif

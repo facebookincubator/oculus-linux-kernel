@@ -31,6 +31,8 @@
 
 #define POLICY_MGR_SER_CMD_TIMEOUT 4000
 
+#define SAP_MANDATORY_5G_CH_FREQ 5745
+
 #ifdef QCA_WIFI_3_0_EMU
 #define CONNECTION_UPDATE_TIMEOUT (POLICY_MGR_SER_CMD_TIMEOUT + 3000)
 #else
@@ -40,8 +42,6 @@
 #define PM_24_GHZ_CH_FREQ_6   (2437)
 #define PM_5_GHZ_CH_FREQ_36   (5180)
 #define CHANNEL_SWITCH_COMPLETE_TIMEOUT   (2000)
-
-#define DUAL_MAC_CONFIG_TIMEOUT   (POLICY_MGR_SER_CMD_TIMEOUT + 1000)
 
 /**
  * Policy Mgr hardware mode list bit-mask definitions.
@@ -331,8 +331,6 @@ struct policy_mgr_cfg {
  * @cfg: Policy manager config data
  * @dynamic_mcc_adaptive_sched: disable/enable mcc adaptive scheduler feature
  * @dynamic_dfs_master_disabled: current state of dynamic dfs master
- * @dual_mac_configuration_complete_evt: qdf event to synchronize dual mac
- *					 configuration setting
  */
 struct policy_mgr_psoc_priv_obj {
 	struct wlan_objmgr_psoc *psoc;
@@ -374,7 +372,6 @@ struct policy_mgr_psoc_priv_obj {
 	uint32_t valid_ch_freq_list_count;
 	bool dynamic_mcc_adaptive_sched;
 	bool dynamic_dfs_master_disabled;
-	qdf_event_t dual_mac_configuration_complete_evt;
 };
 
 /**
@@ -570,15 +567,14 @@ QDF_STATUS policy_mgr_pdev_get_pcl(struct wlan_objmgr_psoc *psoc,
 void pm_dbs_opportunistic_timer_handler(void *data);
 enum policy_mgr_con_mode policy_mgr_get_mode(uint8_t type,
 		uint8_t subtype);
-enum hw_mode_bandwidth policy_mgr_get_bw(enum phy_ch_width chan_width);
 
 /**
- * policy_mgr_get_bw() - Convert hw_mode_bandwidth to phy_ch_width
- * @bw: Hardware mode band width used by WMI
+ * policy_mgr_get_bw() - Convert phy_ch_width to hw_mode_bandwidth.
+ * @chan_width: phy_ch_width
  *
- * Return: phy_ch_width
+ * Return: hw_mode_bandwidth
  */
-enum phy_ch_width policy_mgr_get_ch_width(enum hw_mode_bandwidth bw);
+enum hw_mode_bandwidth policy_mgr_get_bw(enum phy_ch_width chan_width);
 
 QDF_STATUS policy_mgr_get_channel_list(struct wlan_objmgr_psoc *psoc,
 			enum policy_mgr_pcl_type pcl,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -155,7 +155,6 @@ void wmi_rssi_monitor_attach_tlv(struct wmi_unified *wmi_handle)
 }
 #endif /* FEATURE_RSSI_MONITOR */
 
-#ifdef ROAM_OFFLOAD_V1
 /**
  * send_roam_scan_offload_rssi_thresh_cmd_tlv() - set scan offload
  *                                                rssi threashold
@@ -393,228 +392,6 @@ send_roam_scan_offload_scan_period_cmd_tlv(
 
 	return QDF_STATUS_SUCCESS;
 }
-#else
-static QDF_STATUS send_roam_scan_offload_rssi_thresh_cmd_tlv(
-		wmi_unified_t wmi_handle,
-		struct roam_offload_scan_rssi_params *roam_req)
-{
-	wmi_buf_t buf = NULL;
-	QDF_STATUS status;
-	int len;
-	uint8_t *buf_ptr;
-	wmi_roam_scan_rssi_threshold_fixed_param *rssi_threshold_fp;
-	wmi_roam_scan_extended_threshold_param *ext_thresholds = NULL;
-	wmi_roam_earlystop_rssi_thres_param *early_stop_thresholds = NULL;
-	wmi_roam_dense_thres_param *dense_thresholds = NULL;
-	wmi_roam_bg_scan_roaming_param *bg_scan_params = NULL;
-	wmi_roam_data_rssi_roaming_param *data_rssi_param = NULL;
-
-	len = sizeof(wmi_roam_scan_rssi_threshold_fixed_param);
-	len += WMI_TLV_HDR_SIZE; /* TLV for ext_thresholds*/
-	len += sizeof(wmi_roam_scan_extended_threshold_param);
-	len += WMI_TLV_HDR_SIZE;
-	len += sizeof(wmi_roam_earlystop_rssi_thres_param);
-	len += WMI_TLV_HDR_SIZE; /* TLV for dense thresholds*/
-	len += sizeof(wmi_roam_dense_thres_param);
-	len += WMI_TLV_HDR_SIZE; /* TLV for BG Scan*/
-	len += sizeof(wmi_roam_bg_scan_roaming_param);
-	buf = wmi_buf_alloc(wmi_handle, len);
-	if (!buf)
-		return QDF_STATUS_E_NOMEM;
-
-	buf_ptr = (uint8_t *)wmi_buf_data(buf);
-	rssi_threshold_fp =
-		(wmi_roam_scan_rssi_threshold_fixed_param *)buf_ptr;
-	WMITLV_SET_HDR(&rssi_threshold_fp->tlv_header,
-		      WMITLV_TAG_STRUC_wmi_roam_scan_rssi_threshold_fixed_param,
-		      WMITLV_GET_STRUCT_TLVLEN
-			       (wmi_roam_scan_rssi_threshold_fixed_param));
-	/* fill in threshold values */
-	rssi_threshold_fp->vdev_id = roam_req->vdev_id;
-	rssi_threshold_fp->roam_scan_rssi_thresh = roam_req->rssi_thresh;
-	rssi_threshold_fp->roam_rssi_thresh_diff = roam_req->rssi_thresh_diff;
-	rssi_threshold_fp->hirssi_scan_max_count =
-			roam_req->hi_rssi_scan_max_count;
-	rssi_threshold_fp->hirssi_scan_delta =
-			roam_req->hi_rssi_scan_rssi_delta;
-	rssi_threshold_fp->hirssi_upper_bound = roam_req->hi_rssi_scan_rssi_ub;
-	rssi_threshold_fp->rssi_thresh_offset_5g =
-		roam_req->rssi_thresh_offset_5g;
-
-	buf_ptr += sizeof(wmi_roam_scan_rssi_threshold_fixed_param);
-	WMITLV_SET_HDR(buf_ptr,
-		       WMITLV_TAG_ARRAY_STRUC,
-		       sizeof(wmi_roam_scan_extended_threshold_param));
-	buf_ptr += WMI_TLV_HDR_SIZE;
-	ext_thresholds = (wmi_roam_scan_extended_threshold_param *)buf_ptr;
-
-	ext_thresholds->penalty_threshold_5g = roam_req->penalty_threshold_5g;
-	if (roam_req->raise_rssi_thresh_5g >= WMI_NOISE_FLOOR_DBM_DEFAULT)
-		ext_thresholds->boost_threshold_5g =
-					roam_req->boost_threshold_5g;
-
-	ext_thresholds->boost_algorithm_5g =
-		WMI_ROAM_5G_BOOST_PENALIZE_ALGO_LINEAR;
-	ext_thresholds->boost_factor_5g = roam_req->raise_factor_5g;
-	ext_thresholds->penalty_algorithm_5g =
-		WMI_ROAM_5G_BOOST_PENALIZE_ALGO_LINEAR;
-	ext_thresholds->penalty_factor_5g = roam_req->drop_factor_5g;
-	ext_thresholds->max_boost_5g = roam_req->max_raise_rssi_5g;
-	ext_thresholds->max_penalty_5g = roam_req->max_drop_rssi_5g;
-	ext_thresholds->good_rssi_threshold = roam_req->good_rssi_threshold;
-
-	WMITLV_SET_HDR(&ext_thresholds->tlv_header,
-		WMITLV_TAG_STRUC_wmi_roam_scan_extended_threshold_param,
-		WMITLV_GET_STRUCT_TLVLEN
-			(wmi_roam_scan_extended_threshold_param));
-	buf_ptr += sizeof(wmi_roam_scan_extended_threshold_param);
-	WMITLV_SET_HDR(buf_ptr,
-		       WMITLV_TAG_ARRAY_STRUC,
-		       sizeof(wmi_roam_earlystop_rssi_thres_param));
-	buf_ptr += WMI_TLV_HDR_SIZE;
-	early_stop_thresholds = (wmi_roam_earlystop_rssi_thres_param *)buf_ptr;
-	early_stop_thresholds->roam_earlystop_thres_min =
-		roam_req->roam_earlystop_thres_min;
-	early_stop_thresholds->roam_earlystop_thres_max =
-		roam_req->roam_earlystop_thres_max;
-	WMITLV_SET_HDR(&early_stop_thresholds->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_earlystop_rssi_thres_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-				(wmi_roam_earlystop_rssi_thres_param));
-
-	buf_ptr += sizeof(wmi_roam_earlystop_rssi_thres_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		       sizeof(wmi_roam_dense_thres_param));
-	buf_ptr += WMI_TLV_HDR_SIZE;
-	dense_thresholds = (wmi_roam_dense_thres_param *)buf_ptr;
-	dense_thresholds->roam_dense_rssi_thres_offset =
-			roam_req->dense_rssi_thresh_offset;
-	dense_thresholds->roam_dense_min_aps = roam_req->dense_min_aps_cnt;
-	dense_thresholds->roam_dense_traffic_thres =
-			roam_req->traffic_threshold;
-	dense_thresholds->roam_dense_status = roam_req->initial_dense_status;
-	WMITLV_SET_HDR(&dense_thresholds->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_dense_thres_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_dense_thres_param));
-
-	buf_ptr += sizeof(wmi_roam_dense_thres_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		       sizeof(wmi_roam_bg_scan_roaming_param));
-	buf_ptr += WMI_TLV_HDR_SIZE;
-	bg_scan_params = (wmi_roam_bg_scan_roaming_param *)buf_ptr;
-	bg_scan_params->roam_bg_scan_bad_rssi_thresh =
-		roam_req->bg_scan_bad_rssi_thresh;
-	bg_scan_params->roam_bg_scan_client_bitmap =
-		roam_req->bg_scan_client_bitmap;
-	bg_scan_params->bad_rssi_thresh_offset_2g =
-		roam_req->roam_bad_rssi_thresh_offset_2g;
-	bg_scan_params->flags = roam_req->flags;
-	WMITLV_SET_HDR(&bg_scan_params->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_bg_scan_roaming_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-		       (wmi_roam_bg_scan_roaming_param));
-
-	buf_ptr += sizeof(wmi_roam_bg_scan_roaming_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		       sizeof(wmi_roam_data_rssi_roaming_param));
-	buf_ptr += WMI_TLV_HDR_SIZE;
-	data_rssi_param = (wmi_roam_data_rssi_roaming_param *)buf_ptr;
-	data_rssi_param->flags =
-		roam_req->roam_data_rssi_threshold_triggers;
-	data_rssi_param->roam_data_rssi_thres =
-		roam_req->roam_data_rssi_threshold;
-	data_rssi_param->rx_inactivity_ms =
-			roam_req->rx_data_inactivity_time;
-	WMITLV_SET_HDR(&data_rssi_param->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_data_rssi_roaming_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-		       (wmi_roam_data_rssi_roaming_param));
-	wmi_debug("Data rssi threshold: %d, triggers: 0x%x, rx time: %d",
-		  data_rssi_param->roam_data_rssi_thres,
-		  data_rssi_param->flags,
-		  data_rssi_param->rx_inactivity_ms);
-
-	wmi_mtrace(WMI_ROAM_SCAN_RSSI_THRESHOLD, NO_SESSION, 0);
-	status = wmi_unified_cmd_send(wmi_handle, buf,
-				      len, WMI_ROAM_SCAN_RSSI_THRESHOLD);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		wmi_err("cmd WMI_ROAM_SCAN_RSSI_THRESHOLD returned Error %d",
-			status);
-		wmi_buf_free(buf);
-	}
-
-	return status;
-}
-
-/**
- * send_roam_scan_offload_scan_period_cmd_tlv() - set roam offload scan period
- * @wmi_handle: wmi handle
- * @param: roam scan parameters to be sent to firmware
- *
- * Send WMI_ROAM_SCAN_PERIOD parameters to fw.
- *
- * Return: QDF status
- */
-static QDF_STATUS
-send_roam_scan_offload_scan_period_cmd_tlv(
-		wmi_unified_t wmi_handle,
-		struct roam_scan_period_params *param)
-{
-	QDF_STATUS status;
-	wmi_buf_t buf = NULL;
-	int len;
-	uint8_t *buf_ptr;
-	wmi_roam_scan_period_fixed_param *scan_period_fp;
-
-	/* Send scan period values */
-	len = sizeof(wmi_roam_scan_period_fixed_param);
-	buf = wmi_buf_alloc(wmi_handle, len);
-	if (!buf)
-		return QDF_STATUS_E_NOMEM;
-
-	buf_ptr = (uint8_t *)wmi_buf_data(buf);
-	scan_period_fp = (wmi_roam_scan_period_fixed_param *)buf_ptr;
-	WMITLV_SET_HDR(&scan_period_fp->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_scan_period_fixed_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-			       (wmi_roam_scan_period_fixed_param));
-	/* fill in scan period values */
-	scan_period_fp->vdev_id = param->vdev_id;
-	scan_period_fp->roam_scan_period = param->scan_period;
-	scan_period_fp->roam_scan_age = param->scan_age;
-	scan_period_fp->inactivity_time_period =
-			param->roam_scan_inactivity_time;
-	scan_period_fp->roam_inactive_count =
-			param->roam_inactive_data_packet_count;
-	scan_period_fp->roam_scan_period_after_inactivity =
-			param->roam_scan_period_after_inactivity;
-	/* Firmware expects the full scan preriod in msec whereas host
-	 * provides the same in seconds.
-	 * Convert it to msec and send to firmware
-	 */
-	scan_period_fp->roam_full_scan_period = param->full_scan_period * 1000;
-
-	wmi_debug("roam_scan_period=%d, roam_scan_age=%d, full_scan_period= %u",
-		  scan_period_fp->roam_scan_period,
-		  scan_period_fp->roam_scan_age,
-		  scan_period_fp->roam_full_scan_period);
-
-	wmi_debug("inactiviy time:%d inactive cnt:%d time after inactivity:%d",
-		  scan_period_fp->inactivity_time_period,
-		  scan_period_fp->roam_inactive_count,
-		  scan_period_fp->roam_scan_period_after_inactivity);
-
-	wmi_mtrace(WMI_ROAM_SCAN_PERIOD, NO_SESSION, 0);
-	status = wmi_unified_cmd_send(wmi_handle, buf, len,
-				      WMI_ROAM_SCAN_PERIOD);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		wmi_buf_free(buf);
-		return status;
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-#endif
 
 static QDF_STATUS send_roam_mawc_params_cmd_tlv(
 				wmi_unified_t wmi_handle,
@@ -990,6 +767,63 @@ void wmi_ese_attach_tlv(wmi_unified_t wmi_handle)
 }
 #endif /* FEATURE_WLAN_ESE */
 
+/**
+ * convert_roam_trigger_reason() - Function to convert unified Roam trigger
+ * enum to TLV specific WMI_ROAM_TRIGGER_REASON_ID
+ * @reason: Roam trigger reason
+ *
+ * Return: WMI roam trigger reason
+ */
+static uint32_t
+convert_roam_trigger_reason(enum roam_trigger_reason trigger_reason)
+{
+	switch (trigger_reason) {
+	case ROAM_TRIGGER_REASON_NONE:
+		return WMI_ROAM_TRIGGER_REASON_NONE;
+	case ROAM_TRIGGER_REASON_PER:
+		return WMI_ROAM_TRIGGER_REASON_PER;
+	case ROAM_TRIGGER_REASON_BMISS:
+		return WMI_ROAM_TRIGGER_REASON_BMISS;
+	case ROAM_TRIGGER_REASON_LOW_RSSI:
+		return WMI_ROAM_TRIGGER_REASON_LOW_RSSI;
+	case ROAM_TRIGGER_REASON_HIGH_RSSI:
+		return WMI_ROAM_TRIGGER_REASON_HIGH_RSSI;
+	case ROAM_TRIGGER_REASON_PERIODIC:
+		return WMI_ROAM_TRIGGER_REASON_PERIODIC;
+	case ROAM_TRIGGER_REASON_MAWC:
+		return WMI_ROAM_TRIGGER_REASON_MAWC;
+	case ROAM_TRIGGER_REASON_DENSE:
+		return WMI_ROAM_TRIGGER_REASON_DENSE;
+	case ROAM_TRIGGER_REASON_BACKGROUND:
+		return WMI_ROAM_TRIGGER_REASON_BACKGROUND;
+	case ROAM_TRIGGER_REASON_FORCED:
+		return WMI_ROAM_TRIGGER_REASON_FORCED;
+	case ROAM_TRIGGER_REASON_BTM:
+		return WMI_ROAM_TRIGGER_REASON_BTM;
+	case ROAM_TRIGGER_REASON_UNIT_TEST:
+		return WMI_ROAM_TRIGGER_REASON_UNIT_TEST;
+	case ROAM_TRIGGER_REASON_BSS_LOAD:
+		return WMI_ROAM_TRIGGER_REASON_BSS_LOAD;
+	case ROAM_TRIGGER_REASON_DEAUTH:
+		return WMI_ROAM_TRIGGER_REASON_DEAUTH;
+	case ROAM_TRIGGER_REASON_IDLE:
+		return WMI_ROAM_TRIGGER_REASON_IDLE;
+	case ROAM_TRIGGER_REASON_STA_KICKOUT:
+		return WMI_ROAM_TRIGGER_REASON_STA_KICKOUT;
+	case ROAM_TRIGGER_REASON_ESS_RSSI:
+		return WMI_ROAM_TRIGGER_REASON_ESS_RSSI;
+	case ROAM_TRIGGER_REASON_WTC_BTM:
+		return WMI_ROAM_TRIGGER_REASON_WTC_BTM;
+	case ROAM_TRIGGER_REASON_PMK_TIMEOUT:
+		return WMI_ROAM_TRIGGER_REASON_PMK_TIMEOUT;
+	case ROAM_TRIGGER_REASON_MAX:
+		return WMI_ROAM_TRIGGER_REASON_MAX;
+	default:
+		return WMI_ROAM_TRIGGER_REASON_NONE;
+	}
+}
+
+
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /* send_set_ric_req_cmd_tlv() - set ric request element
  * @wmi_handle: wmi handle
@@ -1318,6 +1152,9 @@ convert_control_roam_trigger_reason_bitmap(uint32_t trigger_reason_bitmap)
 	if (trigger_reason_bitmap & BIT(ROAM_TRIGGER_REASON_WTC_BTM))
 		fw_trigger_bitmap |= BIT(WMI_ROAM_TRIGGER_REASON_WTC_BTM);
 
+	if (trigger_reason_bitmap & BIT(ROAM_TRIGGER_REASON_PMK_TIMEOUT))
+		fw_trigger_bitmap |= BIT(WMI_ROAM_TRIGGER_REASON_PMK_TIMEOUT);
+
 	return fw_trigger_bitmap;
 }
 
@@ -1356,8 +1193,83 @@ convert_roam_trigger_scan_mode(enum roam_scan_freq_scheme scan_freq_scheme)
 }
 
 /**
- * send_set_roam_trigger_cmd_tlv() - send set roam triggers to fw
+ * wmi_fill_default_roam_trigger_parameters() - Fill the default parameters
+ * for wmi_configure_roam_trigger_parameters tlv.
+ * @roam_trigger_params: pointer to wmi_configure_roam_trigger_parameters tlv
+ * to be filled.
+ * @roam_trigger: Roam trigger reason
  *
+ * Return: None
+ */
+static void wmi_fill_default_roam_trigger_parameters(
+		wmi_configure_roam_trigger_parameters *roam_trigger_params,
+		uint32_t roam_trigger)
+{
+	WMITLV_SET_HDR(&roam_trigger_params->tlv_header,
+		       WMITLV_TAG_STRUC_wmi_configure_roam_trigger_parameters,
+		       WMITLV_GET_STRUCT_TLVLEN(wmi_configure_roam_trigger_parameters));
+
+	roam_trigger_params->trigger_reason = roam_trigger;
+	roam_trigger_params->enable = 1;
+	roam_trigger_params->scan_mode = ROAM_TRIGGER_SCAN_MODE_PARTIAL;
+	roam_trigger_params->trigger_rssi_threshold =
+			ROAM_MAX_CFG_VALUE;
+	roam_trigger_params->cand_ap_min_rssi_threshold =
+			ROAM_MAX_CFG_VALUE;
+	roam_trigger_params->roam_score_delta_percentage =
+			ROAM_MAX_CFG_VALUE;
+	roam_trigger_params->reason_code = ROAM_MAX_CFG_VALUE;
+}
+
+static void wmi_fill_score_delta_params(
+		wmi_configure_roam_trigger_parameters *roam_trigger_params,
+		struct wlan_roam_triggers *triggers,
+		uint8_t trig_index)
+{
+	enum roam_trigger_reason trig_reason;
+
+	if (trig_index >= NUM_OF_ROAM_TRIGGERS)
+		return;
+
+	trig_reason =
+		triggers->score_delta_param[trig_index].trigger_reason;
+	wmi_fill_default_roam_trigger_parameters(
+		roam_trigger_params,
+		convert_roam_trigger_reason(trig_reason));
+	roam_trigger_params->roam_score_delta_percentage =
+		triggers->score_delta_param[trig_index].roam_score_delta;
+
+	wmi_debug("RSO_CFG: Score delta per: %d converted trig_reason: %d",
+		  roam_trigger_params->roam_score_delta_percentage,
+		  convert_roam_trigger_reason(trig_reason));
+
+}
+
+static void wmi_fill_min_rssi_params(
+		wmi_configure_roam_trigger_parameters *roam_trigger_params,
+		struct wlan_roam_triggers *triggers,
+		uint8_t trig_index)
+{
+	enum roam_trigger_reason trig_reason;
+
+	if (trig_index >= NUM_OF_ROAM_MIN_RSSI)
+		return;
+
+	trig_reason =
+		triggers->min_rssi_params[trig_index].trigger_reason;
+	wmi_fill_default_roam_trigger_parameters(
+		roam_trigger_params,
+		convert_roam_trigger_reason(trig_reason));
+	roam_trigger_params->cand_ap_min_rssi_threshold =
+		triggers->min_rssi_params[trig_index].min_rssi;
+
+	wmi_debug("RSO_CFG: Min rssi thresh: %d converted trig_reason: %d",
+		  roam_trigger_params->cand_ap_min_rssi_threshold,
+		  convert_roam_trigger_reason(trig_reason));
+}
+
+/**
+ * send_set_roam_trigger_cmd_tlv() - send set roam triggers to fw
  * @wmi_handle: wmi handle
  * @vdev_id: vdev id
  * @trigger_bitmap: roam trigger bitmap to be enabled
@@ -1371,14 +1283,39 @@ static QDF_STATUS send_set_roam_trigger_cmd_tlv(wmi_unified_t wmi_handle,
 {
 	wmi_buf_t buf;
 	wmi_roam_enable_disable_trigger_reason_fixed_param *cmd;
-	uint16_t len = sizeof(*cmd);
+	uint32_t len = sizeof(*cmd);
 	int ret;
 	uint8_t *buf_ptr;
 	wmi_configure_roam_trigger_parameters
 					*roam_trigger_parameters;
+	uint32_t num_triggers_enabled = 0;
+	uint32_t roam_scan_scheme_bitmap = triggers->roam_scan_scheme_bitmap;
+	uint32_t total_tlv_len = 0;
 
-	len += WMI_TLV_HDR_SIZE +
-		sizeof(wmi_configure_roam_trigger_parameters);
+	if (BIT(ROAM_TRIGGER_REASON_PER) & roam_scan_scheme_bitmap)
+		num_triggers_enabled++;
+
+	if (BIT(ROAM_TRIGGER_REASON_BMISS) & roam_scan_scheme_bitmap)
+		num_triggers_enabled++;
+
+	if (BIT(ROAM_TRIGGER_REASON_LOW_RSSI) & roam_scan_scheme_bitmap)
+		num_triggers_enabled++;
+
+	if (BIT(ROAM_TRIGGER_REASON_BTM) & roam_scan_scheme_bitmap)
+		num_triggers_enabled++;
+
+	if (BIT(ROAM_TRIGGER_REASON_BSS_LOAD) & roam_scan_scheme_bitmap)
+		num_triggers_enabled++;
+
+	if (wmi_service_enabled(wmi_handle,
+			wmi_service_configure_roam_trigger_param_support))
+		total_tlv_len += (NUM_OF_ROAM_TRIGGERS + NUM_OF_ROAM_MIN_RSSI) *
+			sizeof(wmi_configure_roam_trigger_parameters);
+
+	total_tlv_len += 2 * sizeof(wmi_configure_roam_trigger_parameters) +
+			num_triggers_enabled *
+			sizeof(wmi_configure_roam_trigger_parameters);
+	len += WMI_TLV_HDR_SIZE + total_tlv_len;
 
 	buf = wmi_buf_alloc(wmi_handle, len);
 	if (!buf) {
@@ -1392,45 +1329,129 @@ static QDF_STATUS send_set_roam_trigger_cmd_tlv(wmi_unified_t wmi_handle,
 					wmi_buf_data(buf);
 	WMITLV_SET_HDR(&cmd->tlv_header,
 	WMITLV_TAG_STRUC_wmi_roam_enable_disable_trigger_reason_fixed_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-		      (wmi_roam_enable_disable_trigger_reason_fixed_param));
+	WMITLV_GET_STRUCT_TLVLEN(wmi_roam_enable_disable_trigger_reason_fixed_param));
+
 	cmd->vdev_id = triggers->vdev_id;
 	cmd->trigger_reason_bitmask =
 	   convert_control_roam_trigger_reason_bitmap(triggers->trigger_bitmap);
-	wmi_debug("Received trigger bitmap: 0x%x converted trigger_bitmap: 0x%x",
-		 triggers->trigger_bitmap, cmd->trigger_reason_bitmask);
+	wmi_debug("RSO_CFG: Received trigger bitmap: 0x%x converted trigger_bitmap: 0x%x",
+		  triggers->trigger_bitmap, cmd->trigger_reason_bitmask);
 	cmd->trigger_reason_bitmask |= get_internal_mandatory_roam_triggers();
-	wmi_debug("vdev id: %d final trigger_bitmap: 0x%x",
-		 cmd->vdev_id, cmd->trigger_reason_bitmask);
+	wmi_debug("RSO_CFG: vdev id: %d final trigger_bitmap: 0x%x roam_scan_scheme:0x%x num_triggers_enabled:%d",
+		  cmd->vdev_id, cmd->trigger_reason_bitmask,
+		  roam_scan_scheme_bitmap, num_triggers_enabled);
 
 	buf_ptr += sizeof(wmi_roam_enable_disable_trigger_reason_fixed_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		sizeof(wmi_configure_roam_trigger_parameters));
+	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC, total_tlv_len);
 	buf_ptr += WMI_TLV_HDR_SIZE;
 
 	roam_trigger_parameters =
 		(wmi_configure_roam_trigger_parameters *)buf_ptr;
+
 	WMITLV_SET_HDR(&roam_trigger_parameters->tlv_header,
 		WMITLV_TAG_STRUC_wmi_configure_roam_trigger_parameters,
 		WMITLV_GET_STRUCT_TLVLEN(
 			wmi_configure_roam_trigger_parameters));
-
 	roam_trigger_parameters->trigger_reason =
-				WMI_ROAM_TRIGGER_REASON_WTC_BTM;
+			WMI_ROAM_TRIGGER_REASON_WTC_BTM;
 	if (triggers->vendor_btm_param.user_roam_reason == 0)
 		roam_trigger_parameters->enable = 1;
-	roam_trigger_parameters->scan_mode =
-		convert_roam_trigger_scan_mode(triggers->vendor_btm_param.
-							scan_freq_scheme);
+	roam_trigger_parameters->scan_mode = convert_roam_trigger_scan_mode(
+				triggers->vendor_btm_param.scan_freq_scheme);
 	roam_trigger_parameters->trigger_rssi_threshold =
-			triggers->vendor_btm_param.connected_rssi_threshold;
+		triggers->vendor_btm_param.connected_rssi_threshold;
 	roam_trigger_parameters->cand_ap_min_rssi_threshold =
-			triggers->vendor_btm_param.candidate_rssi_threshold;
+		triggers->vendor_btm_param.candidate_rssi_threshold;
 	roam_trigger_parameters->roam_score_delta_percentage =
 			triggers->roam_score_delta;
 	roam_trigger_parameters->reason_code =
 			triggers->vendor_btm_param.user_roam_reason;
+	roam_trigger_parameters++;
 
+	if (wmi_service_enabled(wmi_handle,
+			wmi_service_configure_roam_trigger_param_support)) {
+		wmi_fill_score_delta_params(roam_trigger_parameters,
+					    triggers,
+					    IDLE_ROAM_TRIGGER);
+		roam_trigger_parameters++;
+
+		wmi_fill_score_delta_params(roam_trigger_parameters,
+					    triggers,
+					    BTM_ROAM_TRIGGER);
+		roam_trigger_parameters++;
+
+		wmi_fill_min_rssi_params(roam_trigger_parameters,
+					 triggers,
+					 DEAUTH_MIN_RSSI);
+		roam_trigger_parameters++;
+
+		wmi_fill_min_rssi_params(roam_trigger_parameters,
+					 triggers,
+					 BMISS_MIN_RSSI);
+		roam_trigger_parameters++;
+
+		wmi_fill_min_rssi_params(roam_trigger_parameters,
+					 triggers,
+					 MIN_RSSI_2G_TO_5G_ROAM);
+		roam_trigger_parameters++;
+	}
+
+	wmi_fill_default_roam_trigger_parameters(
+			roam_trigger_parameters,
+			WMI_ROAM_TRIGGER_REASON_PMK_TIMEOUT);
+
+	if (cmd->trigger_reason_bitmask & BIT(WMI_ROAM_TRIGGER_REASON_PMK_TIMEOUT))
+		roam_trigger_parameters->enable = 1;
+	else
+		roam_trigger_parameters->enable = 0;
+
+	roam_trigger_parameters->roam_score_delta_percentage = 0;
+	roam_trigger_parameters++;
+
+	if (num_triggers_enabled == 0)
+		goto send;
+
+	if (BIT(ROAM_TRIGGER_REASON_PER) & roam_scan_scheme_bitmap) {
+		wmi_fill_default_roam_trigger_parameters(
+				roam_trigger_parameters,
+				WMI_ROAM_TRIGGER_REASON_PER);
+
+		roam_trigger_parameters++;
+	}
+
+	if (BIT(ROAM_TRIGGER_REASON_BMISS) & roam_scan_scheme_bitmap) {
+		wmi_fill_default_roam_trigger_parameters(
+				roam_trigger_parameters,
+				WMI_ROAM_TRIGGER_REASON_BMISS);
+
+		roam_trigger_parameters++;
+	}
+
+	if (BIT(ROAM_TRIGGER_REASON_LOW_RSSI) & roam_scan_scheme_bitmap) {
+		wmi_fill_default_roam_trigger_parameters(
+				roam_trigger_parameters,
+				WMI_ROAM_TRIGGER_REASON_LOW_RSSI);
+
+		roam_trigger_parameters++;
+	}
+
+	if (BIT(ROAM_TRIGGER_REASON_BTM) & roam_scan_scheme_bitmap) {
+		wmi_fill_default_roam_trigger_parameters(
+				roam_trigger_parameters,
+				WMI_ROAM_TRIGGER_REASON_BTM);
+
+		roam_trigger_parameters++;
+	}
+
+	if (BIT(ROAM_TRIGGER_REASON_BSS_LOAD) & roam_scan_scheme_bitmap) {
+		wmi_fill_default_roam_trigger_parameters(
+				roam_trigger_parameters,
+				WMI_ROAM_TRIGGER_REASON_BSS_LOAD);
+
+		roam_trigger_parameters++;
+	}
+
+send:
 	wmi_mtrace(WMI_ROAM_ENABLE_DISABLE_TRIGGER_REASON_CMDID,
 		   triggers->vdev_id, 0);
 	ret = wmi_unified_cmd_send(wmi_handle, buf, len,
@@ -1582,6 +1603,41 @@ extract_roam_initial_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 	return QDF_STATUS_SUCCESS;
 }
 
+/**
+ * extract_roam_msg_info_tlv() - Extract the roam message info
+ * from the WMI_ROAM_STATS_EVENTID
+ * @wmi_handle: wmi handle
+ * @evt_buf:    Pointer to the event buffer
+ * @dst:        Pointer to destination structure to fill data
+ * @idx:        TLV id
+ */
+static QDF_STATUS
+extract_roam_msg_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
+			  struct roam_msg_info *dst, uint8_t idx)
+{
+	WMI_ROAM_STATS_EVENTID_param_tlvs *param_buf;
+	wmi_roam_msg_info *src_data = NULL;
+
+	param_buf = (WMI_ROAM_STATS_EVENTID_param_tlvs *)evt_buf;
+
+	if (!param_buf || !param_buf->roam_msg_info ||
+	    !param_buf->num_roam_msg_info ||
+	    idx >= param_buf->num_roam_msg_info) {
+		wmi_debug("Empty roam_msg_info param buf");
+		return QDF_STATUS_SUCCESS;
+	}
+
+	src_data = &param_buf->roam_msg_info[idx];
+
+	dst->present = true;
+	dst->timestamp = src_data->timestamp;
+	dst->msg_id = src_data->msg_id;
+	dst->msg_param1 = src_data->msg_param1;
+	dst->msg_param2 = src_data->msg_param2;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 void wmi_roam_offload_attach_tlv(wmi_unified_t wmi_handle)
 {
 	struct wmi_ops *ops = wmi_handle->ops;
@@ -1589,6 +1645,7 @@ void wmi_roam_offload_attach_tlv(wmi_unified_t wmi_handle)
 	ops->extract_roam_btm_response_stats =
 				extract_roam_btm_response_stats_tlv;
 	ops->extract_roam_initial_info = extract_roam_initial_info_tlv;
+	ops->extract_roam_msg_info = extract_roam_msg_info_tlv;
 
 	ops->send_set_ric_req_cmd = send_set_ric_req_cmd_tlv;
 	ops->send_process_roam_synch_complete_cmd =
@@ -1613,144 +1670,16 @@ extract_roam_initial_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
+static inline QDF_STATUS
+extract_roam_msg_info_tlv(wmi_unified_t wmi_handle, void *evt_buf,
+			  struct roam_msg_info *dst, uint8_t idx)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
 #endif /* WLAN_FEATURE_ROAM_OFFLOAD */
-
-#ifndef ROAM_OFFLOAD_V1
-#if defined(WLAN_FEATURE_FILS_SK) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
-/**
- * wmi_add_fils_tlv() - Add FILS TLV to roam scan offload command
- * @wmi_handle: wmi handle
- * @roam_req: Roam scan offload params
- * @buf_ptr: command buffer to send
- * @fils_tlv_len: fils tlv length
- *
- * Return: Updated buffer pointer
- */
-static uint8_t *wmi_add_fils_tlv(wmi_unified_t wmi_handle,
-			     struct roam_offload_scan_params *roam_req,
-			     uint8_t *buf_ptr, uint32_t fils_tlv_len)
-{
-	wmi_roam_fils_offload_tlv_param *fils_tlv;
-	wmi_erp_info *erp_info;
-	struct roam_fils_params *roam_fils_params;
-
-	if (!roam_req->add_fils_tlv)
-		return buf_ptr;
-
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		       sizeof(*fils_tlv));
-	buf_ptr += WMI_TLV_HDR_SIZE;
-
-	fils_tlv = (wmi_roam_fils_offload_tlv_param *)buf_ptr;
-	WMITLV_SET_HDR(&fils_tlv->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_fils_offload_tlv_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-				(wmi_roam_fils_offload_tlv_param));
-
-	roam_fils_params = &roam_req->roam_fils_params;
-	erp_info = (wmi_erp_info *)(&fils_tlv->vdev_erp_info);
-
-	erp_info->username_length = roam_fils_params->username_length;
-	qdf_mem_copy(erp_info->username, roam_fils_params->username,
-		     erp_info->username_length);
-
-	erp_info->next_erp_seq_num = roam_fils_params->next_erp_seq_num;
-
-	erp_info->rRk_length = roam_fils_params->rrk_length;
-	qdf_mem_copy(erp_info->rRk, roam_fils_params->rrk,
-		     erp_info->rRk_length);
-
-	erp_info->rIk_length = roam_fils_params->rik_length;
-	qdf_mem_copy(erp_info->rIk, roam_fils_params->rik,
-		     erp_info->rIk_length);
-
-	erp_info->realm_len = roam_fils_params->realm_len;
-	qdf_mem_copy(erp_info->realm, roam_fils_params->realm,
-		     erp_info->realm_len);
-
-	buf_ptr += sizeof(*fils_tlv);
-	return buf_ptr;
-}
-#else
-static inline uint8_t *wmi_add_fils_tlv(wmi_unified_t wmi_handle,
-				struct roam_offload_scan_params *roam_req,
-				uint8_t *buf_ptr, uint32_t fils_tlv_len)
-{
-	return buf_ptr;
-}
-#endif
-
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-/**
- * fill_roam_offload_11r_params() - Fill roam scan params to send it to fw
- * @akm: Authentication key management type
- * @roam_offload_11r: TLV to be filled with 11r params
- * @roam_req: roam request param
- */
-static void
-fill_roam_offload_11r_params(uint32_t akm,
-			     wmi_roam_11r_offload_tlv_param *roam_offload_11r,
-			     struct roam_offload_scan_params *roam_req)
-{
-	uint8_t *psk_msk, len;
-
-	if (akm == WMI_AUTH_FT_RSNA_FILS_SHA256 ||
-	    akm == WMI_AUTH_FT_RSNA_FILS_SHA384) {
-		psk_msk = roam_req->roam_fils_params.fils_ft;
-		len = roam_req->roam_fils_params.fils_ft_len;
-	} else {
-		psk_msk = roam_req->psk_pmk;
-		len = roam_req->pmk_len;
-	}
-
-	/*
-	 * For SHA384 based akm, the pmk length is 48 bytes. So fill
-	 * first 32 bytes in roam_offload_11r->psk_msk and the remaining
-	 * bytes in roam_offload_11r->psk_msk_ext buffer
-	 */
-	roam_offload_11r->psk_msk_len = len > ROAM_OFFLOAD_PSK_MSK_BYTES ?
-					ROAM_OFFLOAD_PSK_MSK_BYTES : len;
-	qdf_mem_copy(roam_offload_11r->psk_msk, psk_msk,
-		     roam_offload_11r->psk_msk_len);
-	roam_offload_11r->psk_msk_ext_len = 0;
-
-	if (len > ROAM_OFFLOAD_PSK_MSK_BYTES) {
-		roam_offload_11r->psk_msk_ext_len =
-					len - roam_offload_11r->psk_msk_len;
-		qdf_mem_copy(roam_offload_11r->psk_msk_ext,
-			     &psk_msk[roam_offload_11r->psk_msk_len],
-			     roam_offload_11r->psk_msk_ext_len);
-	}
-}
-
-/**
- * wmi_fill_sae_single_pmk_param() - Fill sae single pmk flag to indicate fw to
- * use same PMKID for WPA3 SAE roaming.
- * @params: roam request param
- * @roam_offload_11i: pointer to 11i params
- *
- * Return: None
- */
-static inline void
-wmi_fill_sae_single_pmk_param(struct roam_offload_scan_params *params,
-			      wmi_roam_11i_offload_tlv_param *roam_offload_11i)
-{
-	if (params->is_sae_same_pmk)
-		roam_offload_11i->flags |=
-				1 << WMI_ROAM_OFFLOAD_FLAG_SAE_SAME_PMKID;
-}
-#else
-static inline void
-wmi_fill_sae_single_pmk_param(struct roam_offload_scan_params *params,
-			      wmi_roam_11i_offload_tlv_param *roam_offload_11i)
-{
-}
-#endif
-#endif /* ROAM_OFFLOAD_V1 */
 
 #define ROAM_OFFLOAD_PMK_EXT_BYTES 16
 
-#ifdef ROAM_OFFLOAD_V1
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
  * wmi_fill_roam_offload_11r_params() - Fill roam scan params to send it to fw
@@ -1880,10 +1809,16 @@ wmi_get_rso_buf_len(struct wlan_roam_scan_offload_params *roam_req)
 	buf_len += (sizeof(*assoc_ies) + (2 * WMI_TLV_HDR_SIZE) +
 		    roundup(roam_req->assoc_ie_length, sizeof(uint32_t)));
 
+	/* Fils TLV */
+	buf_len += WMI_TLV_HDR_SIZE;
 	if (roam_req->add_fils_tlv) {
 		fils_tlv_len = sizeof(wmi_roam_fils_offload_tlv_param);
-		buf_len += WMI_TLV_HDR_SIZE + fils_tlv_len;
+		buf_len += fils_tlv_len;
 	}
+
+	if (roam_req->rso_11i_info.is_sae_same_pmk)
+		buf_len += WMI_TLV_HDR_SIZE +
+			   sizeof(wmi_roam_sae_offload_tlv_param);
 
 	roam_req->rso_mode_info.roam_scan_mode |=
 			WMI_ROAM_SCAN_MODE_ROAMOFFLOAD;
@@ -1909,8 +1844,11 @@ static uint8_t *wmi_add_fils_tlv(wmi_unified_t wmi_handle,
 	wmi_erp_info *erp_info;
 	struct wlan_roam_fils_params *roam_fils_params;
 
-	if (!roam_req->add_fils_tlv)
+	if (!roam_req->add_fils_tlv) {
+		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC, 0);
+		buf_ptr += WMI_TLV_HDR_SIZE;
 		return buf_ptr;
+	}
 
 	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
 		       sizeof(*fils_tlv));
@@ -1969,11 +1907,45 @@ wmi_fill_sae_single_pmk_param(struct wlan_rso_11i_params *src_11i,
 		roam_offload_11i->flags |=
 			1 << WMI_ROAM_OFFLOAD_FLAG_SAE_SAME_PMKID;
 }
+
+static uint8_t *wmi_fill_sae_single_pmk_tlv(
+	struct wlan_roam_scan_offload_params *roam_req, uint8_t *buf_ptr)
+{
+	wmi_roam_sae_offload_tlv_param *sae_offload_param;
+
+	if (!roam_req->rso_11i_info.is_sae_same_pmk)
+		return buf_ptr;
+
+	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
+		       sizeof(wmi_roam_sae_offload_tlv_param));
+	buf_ptr += WMI_TLV_HDR_SIZE;
+
+	sae_offload_param = (wmi_roam_sae_offload_tlv_param *)buf_ptr;
+	WMITLV_SET_HDR(&sae_offload_param->tlv_header,
+	WMITLV_TAG_STRUC_wmi_roam_sae_offload_tlv_param,
+	WMITLV_GET_STRUCT_TLVLEN(wmi_roam_sae_offload_tlv_param));
+
+	sae_offload_param->spmk_timeout =
+			roam_req->sae_offload_params.spmk_timeout;
+	wmi_debug("spmk_timeout:%d seconds", sae_offload_param->spmk_timeout);
+
+	buf_ptr += sizeof(*sae_offload_param);
+
+	return buf_ptr;
+}
 #else
 static inline void
 wmi_fill_sae_single_pmk_param(struct wlan_rso_11i_params *src_11i,
 			      wmi_roam_11i_offload_tlv_param *roam_offload_11i)
 {}
+
+static inline uint8_t *wmi_fill_sae_single_pmk_tlv(
+		struct wlan_roam_scan_offload_params *roam_req,
+		uint8_t *buf_ptr)
+{
+	return buf_ptr;
+}
+
 #endif
 
 static QDF_STATUS
@@ -2162,10 +2134,11 @@ wmi_fill_rso_tlvs(wmi_unified_t wmi_handle, uint8_t *buf,
 			WMITLV_SET_HDR(buf, WMITLV_TAG_ARRAY_STRUC, 0);
 			buf += WMI_TLV_HDR_SIZE;
 
-			wmi_debug("RSO_CFG: vdev[%d] 11r TLV psk_msk_len = %d psk_msk_ext:%d",
+			wmi_debug("RSO_CFG: vdev[%d] 11r TLV psk_msk_len = %d psk_msk_ext:%d md:0x%x",
 				  roam_req->vdev_id,
 				  roam_offload_11r->psk_msk_len,
-				  roam_offload_11r->psk_msk_ext_len);
+				  roam_offload_11r->psk_msk_ext_len,
+				  roam_offload_11r->mdid);
 		} else {
 			WMITLV_SET_HDR(buf, WMITLV_TAG_ARRAY_STRUC,
 				       sizeof(wmi_roam_11i_offload_tlv_param));
@@ -2272,6 +2245,8 @@ wmi_fill_rso_tlvs(wmi_unified_t wmi_handle, uint8_t *buf,
 
 	buf += qdf_roundup(assoc_ies->buf_len, sizeof(uint32_t));
 	buf = wmi_add_fils_tlv(wmi_handle, roam_req, buf, fils_tlv_len);
+
+	buf = wmi_fill_sae_single_pmk_tlv(roam_req, buf);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -2452,466 +2427,6 @@ send_roam_scan_mode_cmd:
 
 	return status;
 }
-#else
-/**
- * send_roam_scan_offload_mode_cmd_tlv() - send roam scan mode request to fw
- * @wmi_handle: wmi handle
- * @scan_cmd_fp: start scan command ptr
- * @roam_req: roam request param
- *
- * send WMI_ROAM_SCAN_MODE TLV to firmware. It has a piggyback
- * of WMI_ROAM_SCAN_MODE.
- *
- * Return: QDF status
- */
-static QDF_STATUS
-send_roam_scan_offload_mode_cmd_tlv(wmi_unified_t wmi_handle,
-				    wmi_start_scan_cmd_fixed_param *scan_cmd_fp,
-				    struct roam_offload_scan_params *roam_req)
-{
-	wmi_buf_t buf = NULL;
-	QDF_STATUS status;
-	int len;
-	uint8_t *buf_ptr;
-	wmi_roam_scan_mode_fixed_param *roam_scan_mode_fp;
-
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	int auth_mode = roam_req->auth_mode;
-	roam_offload_param *req_offload_params =
-		&roam_req->roam_offload_params;
-	wmi_roam_offload_tlv_param *roam_offload_params;
-	wmi_roam_11i_offload_tlv_param *roam_offload_11i;
-	wmi_roam_11r_offload_tlv_param *roam_offload_11r;
-	wmi_roam_ese_offload_tlv_param *roam_offload_ese;
-	wmi_tlv_buf_len_param *assoc_ies;
-	uint32_t fils_tlv_len = 0;
-#endif /* WLAN_FEATURE_ROAM_OFFLOAD */
-	/* Need to create a buf with roam_scan command at
-	 * front and piggyback with scan command */
-	len = sizeof(wmi_roam_scan_mode_fixed_param) +
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	      (2 * WMI_TLV_HDR_SIZE) +
-#endif /* WLAN_FEATURE_ROAM_OFFLOAD */
-	      sizeof(wmi_start_scan_cmd_fixed_param);
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	wmi_debug("auth_mode = %d", auth_mode);
-	if (roam_req->is_roam_req_valid &&
-	    roam_req->roam_offload_enabled) {
-		len += sizeof(wmi_roam_offload_tlv_param);
-		len += WMI_TLV_HDR_SIZE;
-		if ((auth_mode != WMI_AUTH_NONE) &&
-		    ((auth_mode != WMI_AUTH_OPEN) ||
-		     (auth_mode == WMI_AUTH_OPEN &&
-		      roam_req->mdid.mdie_present &&
-		      roam_req->is_11r_assoc) ||
-		     roam_req->is_ese_assoc)) {
-			len += WMI_TLV_HDR_SIZE;
-			if (roam_req->is_ese_assoc)
-				len += sizeof(wmi_roam_ese_offload_tlv_param);
-			else if ((auth_mode == WMI_AUTH_FT_RSNA) ||
-				 (auth_mode == WMI_AUTH_FT_RSNA_PSK) ||
-				 (auth_mode == WMI_AUTH_FT_RSNA_SAE) ||
-				 (auth_mode ==
-				  WMI_AUTH_FT_RSNA_SUITE_B_8021X_SHA384) ||
-				 (auth_mode ==
-				  WMI_AUTH_FT_RSNA_FILS_SHA256) ||
-				 (auth_mode ==
-				  WMI_AUTH_FT_RSNA_FILS_SHA384) ||
-				 (auth_mode == WMI_AUTH_OPEN &&
-				  roam_req->mdid.mdie_present &&
-				  roam_req->is_11r_assoc))
-				len += sizeof(wmi_roam_11r_offload_tlv_param);
-			else
-				len += sizeof(wmi_roam_11i_offload_tlv_param);
-		} else {
-			len += WMI_TLV_HDR_SIZE;
-		}
-
-		len += (sizeof(*assoc_ies) + (2*WMI_TLV_HDR_SIZE)
-			+ roundup(roam_req->assoc_ie_length, sizeof(uint32_t)));
-
-		if (roam_req->add_fils_tlv) {
-			fils_tlv_len = sizeof(wmi_roam_fils_offload_tlv_param);
-			len += WMI_TLV_HDR_SIZE + fils_tlv_len;
-		}
-	} else {
-		if (roam_req->is_roam_req_valid)
-			wmi_debug("roam offload = %d",
-				 roam_req->roam_offload_enabled);
-
-		len += (4 * WMI_TLV_HDR_SIZE);
-	}
-
-	if (roam_req->is_roam_req_valid && roam_req->roam_offload_enabled)
-		roam_req->mode |= WMI_ROAM_SCAN_MODE_ROAMOFFLOAD;
-#endif /* WLAN_FEATURE_ROAM_OFFLOAD */
-
-	if (roam_req->mode ==
-	    (WMI_ROAM_SCAN_MODE_NONE | WMI_ROAM_SCAN_MODE_ROAMOFFLOAD))
-		len = sizeof(wmi_roam_scan_mode_fixed_param);
-
-	buf = wmi_buf_alloc(wmi_handle, len);
-	if (!buf)
-		return QDF_STATUS_E_NOMEM;
-
-	buf_ptr = (uint8_t *)wmi_buf_data(buf);
-	roam_scan_mode_fp = (wmi_roam_scan_mode_fixed_param *)buf_ptr;
-	WMITLV_SET_HDR(&roam_scan_mode_fp->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_scan_mode_fixed_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_scan_mode_fixed_param));
-
-	roam_scan_mode_fp->min_delay_roam_trigger_reason_bitmask =
-			roam_req->roam_trigger_reason_bitmask;
-	roam_scan_mode_fp->min_delay_btw_scans =
-			WMI_SEC_TO_MSEC(roam_req->min_delay_btw_roam_scans);
-	roam_scan_mode_fp->roam_scan_mode = roam_req->mode;
-	roam_scan_mode_fp->vdev_id = roam_req->vdev_id;
-	wmi_debug("roam scan mode: %d", roam_req->mode);
-	if (roam_req->mode ==
-	    (WMI_ROAM_SCAN_MODE_NONE | WMI_ROAM_SCAN_MODE_ROAMOFFLOAD)) {
-		roam_scan_mode_fp->flags |=
-			WMI_ROAM_SCAN_MODE_FLAG_REPORT_STATUS;
-		goto send_roam_scan_mode_cmd;
-	}
-
-	/* Fill in scan parameters suitable for roaming scan */
-	buf_ptr += sizeof(wmi_roam_scan_mode_fixed_param);
-
-	qdf_mem_copy(buf_ptr, scan_cmd_fp,
-		     sizeof(wmi_start_scan_cmd_fixed_param));
-	/* Ensure there is no additional IEs */
-	scan_cmd_fp->ie_len = 0;
-	WMITLV_SET_HDR(buf_ptr,
-		       WMITLV_TAG_STRUC_wmi_start_scan_cmd_fixed_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_start_scan_cmd_fixed_param));
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	buf_ptr += sizeof(wmi_start_scan_cmd_fixed_param);
-	if (roam_req->is_roam_req_valid && roam_req->roam_offload_enabled) {
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       sizeof(wmi_roam_offload_tlv_param));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-		roam_offload_params = (wmi_roam_offload_tlv_param *)buf_ptr;
-		WMITLV_SET_HDR(buf_ptr,
-			       WMITLV_TAG_STRUC_wmi_roam_offload_tlv_param,
-			       WMITLV_GET_STRUCT_TLVLEN
-				       (wmi_roam_offload_tlv_param));
-		roam_offload_params->prefer_5g = roam_req->prefer_5ghz;
-		roam_offload_params->rssi_cat_gap = roam_req->roam_rssi_cat_gap;
-		roam_offload_params->select_5g_margin =
-			roam_req->select_5ghz_margin;
-		roam_offload_params->handoff_delay_for_rx =
-			req_offload_params->ho_delay_for_rx;
-		roam_offload_params->max_mlme_sw_retries =
-			req_offload_params->roam_preauth_retry_count;
-		roam_offload_params->no_ack_timeout =
-			req_offload_params->roam_preauth_no_ack_timeout;
-		roam_offload_params->reassoc_failure_timeout =
-			roam_req->reassoc_failure_timeout;
-		roam_offload_params->roam_candidate_validity_time =
-			roam_req->rct_validity_timer;
-		roam_offload_params->roam_to_current_bss_disable =
-					roam_req->disable_self_roam;
-		/* Fill the capabilities */
-		roam_offload_params->capability =
-				req_offload_params->capability;
-		roam_offload_params->ht_caps_info =
-				req_offload_params->ht_caps_info;
-		roam_offload_params->ampdu_param =
-				req_offload_params->ampdu_param;
-		roam_offload_params->ht_ext_cap =
-				req_offload_params->ht_ext_cap;
-		roam_offload_params->ht_txbf = req_offload_params->ht_txbf;
-		roam_offload_params->asel_cap = req_offload_params->asel_cap;
-		roam_offload_params->qos_caps = req_offload_params->qos_caps;
-		roam_offload_params->qos_enabled =
-				req_offload_params->qos_enabled;
-		roam_offload_params->wmm_caps = req_offload_params->wmm_caps;
-		qdf_mem_copy((uint8_t *)roam_offload_params->mcsset,
-			     (uint8_t *)req_offload_params->mcsset,
-			     ROAM_OFFLOAD_NUM_MCS_SET);
-
-		buf_ptr += sizeof(wmi_roam_offload_tlv_param);
-		/* The TLV's are in the order of 11i, 11R, ESE. Hence,
-		 * they are filled in the same order.Depending on the
-		 * authentication type, the other mode TLV's are nullified
-		 * and only headers are filled.*/
-		if (auth_mode != WMI_AUTH_NONE &&
-		    (auth_mode != WMI_AUTH_OPEN ||
-		     roam_req->is_ese_assoc ||
-		     (auth_mode == WMI_AUTH_OPEN &&
-		      roam_req->mdid.mdie_present && roam_req->is_11r_assoc))) {
-			if (roam_req->is_ese_assoc) {
-				/* Fill the length of 11i, 11r TLV as 0 */
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					       WMITLV_GET_STRUCT_TLVLEN(0));
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					       WMITLV_GET_STRUCT_TLVLEN(0));
-				buf_ptr += WMI_TLV_HDR_SIZE;
-
-				/* Start filling the ESE TLV */
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					sizeof(wmi_roam_ese_offload_tlv_param));
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				roam_offload_ese =
-				    (wmi_roam_ese_offload_tlv_param *)buf_ptr;
-				qdf_mem_copy(roam_offload_ese->krk,
-					     roam_req->krk,
-					     sizeof(roam_req->krk));
-				qdf_mem_copy(roam_offload_ese->btk,
-					     roam_req->btk,
-					     sizeof(roam_req->btk));
-				WMITLV_SET_HDR(&roam_offload_ese->tlv_header,
-				WMITLV_TAG_STRUC_wmi_roam_ese_offload_tlv_param,
-				WMITLV_GET_STRUCT_TLVLEN
-				(wmi_roam_ese_offload_tlv_param));
-				buf_ptr +=
-					sizeof(wmi_roam_ese_offload_tlv_param);
-			} else if (auth_mode == WMI_AUTH_FT_RSNA ||
-				   auth_mode == WMI_AUTH_FT_RSNA_PSK ||
-				   auth_mode == WMI_AUTH_FT_RSNA_SAE ||
-				   (auth_mode ==
-				    WMI_AUTH_FT_RSNA_SUITE_B_8021X_SHA384) ||
-				   (auth_mode ==
-				    WMI_AUTH_FT_RSNA_FILS_SHA256) ||
-				   (auth_mode ==
-				    WMI_AUTH_FT_RSNA_FILS_SHA384) ||
-				   (auth_mode == WMI_AUTH_OPEN &&
-				    roam_req->mdid.mdie_present &&
-				    roam_req->is_11r_assoc)) {
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					       0);
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					sizeof(wmi_roam_11r_offload_tlv_param));
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				roam_offload_11r =
-				    (wmi_roam_11r_offload_tlv_param *)buf_ptr;
-				roam_offload_11r->r0kh_id_len =
-					roam_req->rokh_id_length;
-				qdf_mem_copy(roam_offload_11r->r0kh_id,
-					     roam_req->rokh_id,
-					     roam_offload_11r->r0kh_id_len);
-				fill_roam_offload_11r_params(auth_mode,
-							     roam_offload_11r,
-							     roam_req);
-				roam_offload_11r->mdie_present =
-					roam_req->mdid.mdie_present;
-				roam_offload_11r->mdid =
-					roam_req->mdid.mobility_domain;
-				roam_offload_11r->adaptive_11r =
-					roam_req->is_adaptive_11r;
-				roam_offload_11r->ft_im_for_deauth =
-					roam_req->enable_ft_im_roaming;
-				roam_offload_11r->ft_im_for_deauth =
-					roam_req->enable_ft_im_roaming;
-
-				if (auth_mode == WMI_AUTH_OPEN) {
-					/*
-					 * If FT-Open ensure pmk length and
-					 * r0khid len are zero
-					 */
-					roam_offload_11r->r0kh_id_len = 0;
-					roam_offload_11r->psk_msk_len = 0;
-				}
-				WMITLV_SET_HDR(&roam_offload_11r->tlv_header,
-				WMITLV_TAG_STRUC_wmi_roam_11r_offload_tlv_param,
-				WMITLV_GET_STRUCT_TLVLEN
-					(wmi_roam_11r_offload_tlv_param));
-				buf_ptr +=
-					sizeof(wmi_roam_11r_offload_tlv_param);
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					       WMITLV_GET_STRUCT_TLVLEN(0));
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				wmi_debug("psk_msk_len = %d psk_msk_ext:%d",
-					 roam_offload_11r->psk_msk_len,
-					 roam_offload_11r->psk_msk_ext_len);
-				if (roam_offload_11r->psk_msk_len)
-					QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_WMI,
-						QDF_TRACE_LEVEL_DEBUG,
-						roam_offload_11r->psk_msk,
-						roam_offload_11r->psk_msk_len);
-			} else {
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					sizeof(wmi_roam_11i_offload_tlv_param));
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				roam_offload_11i =
-				     (wmi_roam_11i_offload_tlv_param *)buf_ptr;
-
-				if (roam_req->fw_okc) {
-					WMI_SET_ROAM_OFFLOAD_OKC_ENABLED
-						(roam_offload_11i->flags);
-					wmi_info("LFR3:OKC enabled");
-				} else {
-					WMI_SET_ROAM_OFFLOAD_OKC_DISABLED
-						(roam_offload_11i->flags);
-					wmi_info("LFR3:OKC disabled");
-				}
-
-				if (roam_req->fw_pmksa_cache) {
-					WMI_SET_ROAM_OFFLOAD_PMK_CACHE_ENABLED
-						(roam_offload_11i->flags);
-					wmi_info("LFR3:PMKSA caching enabled");
-				} else {
-					WMI_SET_ROAM_OFFLOAD_PMK_CACHE_DISABLED
-						(roam_offload_11i->flags);
-					wmi_info("LFR3:PMKSA caching disabled");
-				}
-
-				wmi_fill_sae_single_pmk_param(roam_req,
-							      roam_offload_11i);
-
-				roam_offload_11i->pmk_len = roam_req->pmk_len >
-					ROAM_OFFLOAD_PMK_BYTES ?
-					ROAM_OFFLOAD_PMK_BYTES :
-					roam_req->pmk_len;
-
-				qdf_mem_copy(roam_offload_11i->pmk,
-					     roam_req->psk_pmk,
-					     roam_offload_11i->pmk_len);
-
-				roam_offload_11i->pmk_ext_len =
-					((roam_req->pmk_len >
-					 ROAM_OFFLOAD_PMK_BYTES) &&
-					 (auth_mode ==
-					 WMI_AUTH_RSNA_SUITE_B_8021X_SHA384)) ?
-					ROAM_OFFLOAD_PMK_EXT_BYTES : 0;
-
-				qdf_mem_copy(roam_offload_11i->pmk_ext,
-					     &roam_req->psk_pmk[
-					     ROAM_OFFLOAD_PMK_BYTES],
-					     roam_offload_11i->pmk_ext_len);
-
-				WMITLV_SET_HDR(&roam_offload_11i->tlv_header,
-				WMITLV_TAG_STRUC_wmi_roam_11i_offload_tlv_param,
-				WMITLV_GET_STRUCT_TLVLEN
-				(wmi_roam_11i_offload_tlv_param));
-				buf_ptr +=
-					sizeof(wmi_roam_11i_offload_tlv_param);
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					       0);
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-					       0);
-				buf_ptr += WMI_TLV_HDR_SIZE;
-				wmi_debug("pmk_len:%d pmk_ext_len:%d",
-					 roam_offload_11i->pmk_len,
-					 roam_offload_11i->pmk_ext_len);
-			}
-		} else {
-			WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-				       WMITLV_GET_STRUCT_TLVLEN(0));
-			buf_ptr += WMI_TLV_HDR_SIZE;
-			WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-				       WMITLV_GET_STRUCT_TLVLEN(0));
-			buf_ptr += WMI_TLV_HDR_SIZE;
-			WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-				       WMITLV_GET_STRUCT_TLVLEN(0));
-			buf_ptr += WMI_TLV_HDR_SIZE;
-		}
-
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       sizeof(*assoc_ies));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-
-		assoc_ies = (wmi_tlv_buf_len_param *)buf_ptr;
-		WMITLV_SET_HDR(&assoc_ies->tlv_header,
-			WMITLV_TAG_STRUC_wmi_tlv_buf_len_param,
-			WMITLV_GET_STRUCT_TLVLEN(wmi_tlv_buf_len_param));
-		assoc_ies->buf_len = roam_req->assoc_ie_length;
-
-		buf_ptr += sizeof(*assoc_ies);
-
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_BYTE,
-				roundup(assoc_ies->buf_len, sizeof(uint32_t)));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-
-		if (assoc_ies->buf_len != 0)
-			qdf_mem_copy(buf_ptr, roam_req->assoc_ie,
-				     assoc_ies->buf_len);
-
-		buf_ptr += qdf_roundup(assoc_ies->buf_len, sizeof(uint32_t));
-		buf_ptr = wmi_add_fils_tlv(wmi_handle, roam_req,
-					   buf_ptr, fils_tlv_len);
-	} else {
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       WMITLV_GET_STRUCT_TLVLEN(0));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       WMITLV_GET_STRUCT_TLVLEN(0));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       WMITLV_GET_STRUCT_TLVLEN(0));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       WMITLV_GET_STRUCT_TLVLEN(0));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-			       WMITLV_GET_STRUCT_TLVLEN(0));
-		buf_ptr += WMI_TLV_HDR_SIZE;
-		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_BYTE,
-			       WMITLV_GET_STRUCT_TLVLEN(0));
-	}
-#endif /* WLAN_FEATURE_ROAM_OFFLOAD */
-
-send_roam_scan_mode_cmd:
-	wmi_mtrace(WMI_ROAM_SCAN_MODE, NO_SESSION, 0);
-	status = wmi_unified_cmd_send(wmi_handle, buf,
-				      len, WMI_ROAM_SCAN_MODE);
-	if (QDF_IS_STATUS_ERROR(status))
-		wmi_buf_free(buf);
-
-	return status;
-}
-#endif
-
-/**
- * convert_roam_trigger_reason() - Function to convert unified Roam trigger
- * enum to TLV specific WMI_ROAM_TRIGGER_REASON_ID
- * @reason: Roam trigger reason
- *
- * Return: WMI_ROAM_TRIGGER_REASON_ID
- */
-static WMI_ROAM_TRIGGER_REASON_ID
-convert_roam_trigger_reason(enum roam_trigger_reason trigger_reason)
-{
-	switch (trigger_reason) {
-	case ROAM_TRIGGER_REASON_NONE:
-		return WMI_ROAM_TRIGGER_REASON_NONE;
-	case ROAM_TRIGGER_REASON_PER:
-		return WMI_ROAM_TRIGGER_REASON_PER;
-	case ROAM_TRIGGER_REASON_BMISS:
-		return WMI_ROAM_TRIGGER_REASON_BMISS;
-	case ROAM_TRIGGER_REASON_LOW_RSSI:
-		return WMI_ROAM_TRIGGER_REASON_LOW_RSSI;
-	case ROAM_TRIGGER_REASON_HIGH_RSSI:
-		return WMI_ROAM_TRIGGER_REASON_HIGH_RSSI;
-	case ROAM_TRIGGER_REASON_PERIODIC:
-		return WMI_ROAM_TRIGGER_REASON_PERIODIC;
-	case ROAM_TRIGGER_REASON_MAWC:
-		return WMI_ROAM_TRIGGER_REASON_MAWC;
-	case ROAM_TRIGGER_REASON_DENSE:
-		return WMI_ROAM_TRIGGER_REASON_DENSE;
-	case ROAM_TRIGGER_REASON_BACKGROUND:
-		return WMI_ROAM_TRIGGER_REASON_BACKGROUND;
-	case ROAM_TRIGGER_REASON_FORCED:
-		return WMI_ROAM_TRIGGER_REASON_FORCED;
-	case ROAM_TRIGGER_REASON_BTM:
-		return WMI_ROAM_TRIGGER_REASON_BTM;
-	case ROAM_TRIGGER_REASON_UNIT_TEST:
-		return WMI_ROAM_TRIGGER_REASON_UNIT_TEST;
-	case ROAM_TRIGGER_REASON_BSS_LOAD:
-		return WMI_ROAM_TRIGGER_REASON_BSS_LOAD;
-	case ROAM_TRIGGER_REASON_DEAUTH:
-		return WMI_ROAM_TRIGGER_REASON_DEAUTH;
-	case ROAM_TRIGGER_REASON_IDLE:
-		return WMI_ROAM_TRIGGER_REASON_IDLE;
-	case ROAM_TRIGGER_REASON_MAX:
-		return WMI_ROAM_TRIGGER_REASON_MAX;
-	default:
-		return WMI_ROAM_TRIGGER_REASON_NONE;
-	}
-}
 
 /**
  * send_roam_scan_offload_ap_profile_cmd_tlv() - set roam ap profile in fw
@@ -2939,10 +2454,14 @@ send_roam_scan_offload_ap_profile_cmd_tlv(wmi_unified_t wmi_handle,
 
 	len = sizeof(wmi_roam_ap_profile_fixed_param) + sizeof(wmi_ap_profile);
 	len += sizeof(*score_param);
-	len += WMI_TLV_HDR_SIZE;
-	len += NUM_OF_ROAM_TRIGGERS * sizeof(*score_delta_param);
-	len += WMI_TLV_HDR_SIZE;
-	len += NUM_OF_ROAM_TRIGGERS * sizeof(*min_rssi_param);
+
+	if (!wmi_service_enabled(wmi_handle,
+			wmi_service_configure_roam_trigger_param_support)) {
+		len += WMI_TLV_HDR_SIZE;
+		len += NUM_OF_ROAM_TRIGGERS * sizeof(*score_delta_param);
+		len += WMI_TLV_HDR_SIZE;
+		len += NUM_OF_ROAM_MIN_RSSI * sizeof(*min_rssi_param);
+	}
 	buf = wmi_buf_alloc(wmi_handle, len);
 	if (!buf)
 		return QDF_STATUS_E_NOMEM;
@@ -3117,61 +2636,76 @@ send_roam_scan_offload_ap_profile_cmd_tlv(wmi_unified_t wmi_handle,
 		 score_param->candidate_min_roam_score_delta);
 
 	buf_ptr += sizeof(*score_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		       (NUM_OF_ROAM_TRIGGERS * sizeof(*score_delta_param)));
-	buf_ptr += WMI_TLV_HDR_SIZE;
 
-	score_delta_param = (wmi_roam_score_delta_param *)buf_ptr;
-	WMITLV_SET_HDR(&score_delta_param->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_score_delta_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_score_delta_param));
-	trig_reason =
-		ap_profile->score_delta_param[IDLE_ROAM_TRIGGER].trigger_reason;
-	score_delta_param->roam_trigger_reason =
-		convert_roam_trigger_reason(trig_reason);
-	score_delta_param->roam_score_delta =
-		ap_profile->score_delta_param[IDLE_ROAM_TRIGGER].roam_score_delta;
+	if (!wmi_service_enabled(wmi_handle,
+			wmi_service_configure_roam_trigger_param_support)) {
+		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
+			       (NUM_OF_ROAM_TRIGGERS * sizeof(*score_delta_param)));
+		buf_ptr += WMI_TLV_HDR_SIZE;
 
-	buf_ptr += sizeof(*score_delta_param);
-	score_delta_param = (wmi_roam_score_delta_param *)buf_ptr;
-	WMITLV_SET_HDR(&score_delta_param->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_score_delta_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_score_delta_param));
-	trig_reason =
-		ap_profile->score_delta_param[BTM_ROAM_TRIGGER].trigger_reason;
-	score_delta_param->roam_trigger_reason =
-		convert_roam_trigger_reason(trig_reason);
-	score_delta_param->roam_score_delta =
-		ap_profile->score_delta_param[BTM_ROAM_TRIGGER].roam_score_delta;
+		score_delta_param = (wmi_roam_score_delta_param *)buf_ptr;
+		WMITLV_SET_HDR(&score_delta_param->tlv_header,
+			       WMITLV_TAG_STRUC_wmi_roam_score_delta_param,
+			       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_score_delta_param));
+		trig_reason =
+			ap_profile->score_delta_param[IDLE_ROAM_TRIGGER].trigger_reason;
+		score_delta_param->roam_trigger_reason =
+			convert_roam_trigger_reason(trig_reason);
+		score_delta_param->roam_score_delta =
+			ap_profile->score_delta_param[IDLE_ROAM_TRIGGER].roam_score_delta;
 
-	buf_ptr += sizeof(*score_delta_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
-		       (NUM_OF_ROAM_TRIGGERS * sizeof(*min_rssi_param)));
-	buf_ptr += WMI_TLV_HDR_SIZE;
+		buf_ptr += sizeof(*score_delta_param);
+		score_delta_param = (wmi_roam_score_delta_param *)buf_ptr;
+		WMITLV_SET_HDR(&score_delta_param->tlv_header,
+			       WMITLV_TAG_STRUC_wmi_roam_score_delta_param,
+			       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_score_delta_param));
+		trig_reason =
+			ap_profile->score_delta_param[BTM_ROAM_TRIGGER].trigger_reason;
+		score_delta_param->roam_trigger_reason =
+			convert_roam_trigger_reason(trig_reason);
+		score_delta_param->roam_score_delta =
+			ap_profile->score_delta_param[BTM_ROAM_TRIGGER].roam_score_delta;
 
-	min_rssi_param = (wmi_roam_cnd_min_rssi_param *)buf_ptr;
-	WMITLV_SET_HDR(&min_rssi_param->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_cnd_min_rssi_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_cnd_min_rssi_param));
-	trig_reason =
-		ap_profile->min_rssi_params[DEAUTH_MIN_RSSI].trigger_reason;
-	min_rssi_param->roam_trigger_reason =
-		convert_roam_trigger_reason(trig_reason);
-	min_rssi_param->candidate_min_rssi =
-		ap_profile->min_rssi_params[DEAUTH_MIN_RSSI].min_rssi;
+		buf_ptr += sizeof(*score_delta_param);
+		WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
+			       (NUM_OF_ROAM_MIN_RSSI * sizeof(*min_rssi_param)));
+		buf_ptr += WMI_TLV_HDR_SIZE;
 
-	buf_ptr += sizeof(*min_rssi_param);
-	min_rssi_param = (wmi_roam_cnd_min_rssi_param *)buf_ptr;
-	WMITLV_SET_HDR(&min_rssi_param->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_cnd_min_rssi_param,
-		       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_cnd_min_rssi_param));
-	trig_reason =
-		ap_profile->min_rssi_params[BMISS_MIN_RSSI].trigger_reason;
-	min_rssi_param->roam_trigger_reason =
-		convert_roam_trigger_reason(trig_reason);
-	min_rssi_param->candidate_min_rssi =
-		ap_profile->min_rssi_params[BMISS_MIN_RSSI].min_rssi;
+		min_rssi_param = (wmi_roam_cnd_min_rssi_param *)buf_ptr;
+		WMITLV_SET_HDR(&min_rssi_param->tlv_header,
+			       WMITLV_TAG_STRUC_wmi_roam_cnd_min_rssi_param,
+			       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_cnd_min_rssi_param));
+		trig_reason =
+			ap_profile->min_rssi_params[DEAUTH_MIN_RSSI].trigger_reason;
+		min_rssi_param->roam_trigger_reason =
+			convert_roam_trigger_reason(trig_reason);
+		min_rssi_param->candidate_min_rssi =
+			ap_profile->min_rssi_params[DEAUTH_MIN_RSSI].min_rssi;
 
+		buf_ptr += sizeof(*min_rssi_param);
+		min_rssi_param = (wmi_roam_cnd_min_rssi_param *)buf_ptr;
+		WMITLV_SET_HDR(&min_rssi_param->tlv_header,
+			       WMITLV_TAG_STRUC_wmi_roam_cnd_min_rssi_param,
+			       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_cnd_min_rssi_param));
+		trig_reason =
+			ap_profile->min_rssi_params[BMISS_MIN_RSSI].trigger_reason;
+		min_rssi_param->roam_trigger_reason =
+			convert_roam_trigger_reason(trig_reason);
+		min_rssi_param->candidate_min_rssi =
+			ap_profile->min_rssi_params[BMISS_MIN_RSSI].min_rssi;
+
+		buf_ptr += sizeof(*min_rssi_param);
+		min_rssi_param = (wmi_roam_cnd_min_rssi_param *)buf_ptr;
+		WMITLV_SET_HDR(&min_rssi_param->tlv_header,
+			       WMITLV_TAG_STRUC_wmi_roam_cnd_min_rssi_param,
+			       WMITLV_GET_STRUCT_TLVLEN(wmi_roam_cnd_min_rssi_param));
+		trig_reason =
+		     ap_profile->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM].trigger_reason;
+		min_rssi_param->roam_trigger_reason =
+			convert_roam_trigger_reason(trig_reason);
+		min_rssi_param->candidate_min_rssi =
+			ap_profile->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM].min_rssi;
+	}
 	wmi_mtrace(WMI_ROAM_AP_PROFILE, NO_SESSION, 0);
 	status = wmi_unified_cmd_send(wmi_handle, buf,
 				      len, WMI_ROAM_AP_PROFILE);
@@ -3230,7 +2764,6 @@ error:
 	return status;
 }
 
-#ifdef ROAM_OFFLOAD_V1
 /**
  * send_roam_scan_offload_chan_list_cmd_tlv() - set roam offload channel list
  * @wmi_handle: wmi handle
@@ -3300,81 +2833,7 @@ error:
 
 	return status;
 }
-#else
-/**
- * send_roam_scan_offload_chan_list_cmd_tlv() - set roam offload channel list
- * @wmi_handle: wmi handle
- * @chan_count: channel count
- * @chan_list: channel list
- * @list_type: list type
- * @vdev_id: vdev id
- *
- * Set roam offload channel list.
- *
- * Return: QDF status
- */
-static QDF_STATUS
-send_roam_scan_offload_chan_list_cmd_tlv(wmi_unified_t wmi_handle,
-					 uint8_t chan_count,
-					 uint32_t *chan_list,
-					 uint8_t list_type, uint32_t vdev_id)
-{
-	wmi_buf_t buf = NULL;
-	QDF_STATUS status;
-	int len, list_tlv_len;
-	int i;
-	uint8_t *buf_ptr;
-	wmi_roam_chan_list_fixed_param *chan_list_fp;
-	uint32_t *roam_chan_list_array;
 
-	/* Channel list is a table of 2 TLV's */
-	list_tlv_len = WMI_TLV_HDR_SIZE + chan_count * sizeof(uint32_t);
-	len = sizeof(wmi_roam_chan_list_fixed_param) + list_tlv_len;
-	buf = wmi_buf_alloc(wmi_handle, len);
-	if (!buf)
-		return QDF_STATUS_E_NOMEM;
-
-	buf_ptr = (uint8_t *)wmi_buf_data(buf);
-	chan_list_fp = (wmi_roam_chan_list_fixed_param *)buf_ptr;
-	WMITLV_SET_HDR(&chan_list_fp->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_chan_list_fixed_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-			       (wmi_roam_chan_list_fixed_param));
-	chan_list_fp->vdev_id = vdev_id;
-	chan_list_fp->num_chan = chan_count;
-	if (list_type == WMI_CHANNEL_LIST_STATIC) {
-		/* external app is controlling channel list */
-		chan_list_fp->chan_list_type =
-			WMI_ROAM_SCAN_CHAN_LIST_TYPE_STATIC;
-	} else {
-		/* umac supplied occupied channel list in LFR */
-		chan_list_fp->chan_list_type =
-			WMI_ROAM_SCAN_CHAN_LIST_TYPE_DYNAMIC;
-	}
-
-	buf_ptr += sizeof(wmi_roam_chan_list_fixed_param);
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_UINT32,
-		       (chan_list_fp->num_chan * sizeof(uint32_t)));
-	roam_chan_list_array = (uint32_t *)(buf_ptr + WMI_TLV_HDR_SIZE);
-	for (i = 0; ((i < chan_list_fp->num_chan) &&
-		     (i < WMI_ROAM_MAX_CHANNELS)); i++)
-		roam_chan_list_array[i] = chan_list[i];
-
-	wmi_mtrace(WMI_ROAM_CHAN_LIST, NO_SESSION, 0);
-	status = wmi_unified_cmd_send(wmi_handle, buf,
-				      len, WMI_ROAM_CHAN_LIST);
-	if (QDF_IS_STATUS_ERROR(status))
-		goto error;
-
-	return QDF_STATUS_SUCCESS;
-error:
-	wmi_buf_free(buf);
-
-	return status;
-}
-#endif
-
-#ifdef ROAM_OFFLOAD_V1
 /**
  * send_roam_scan_offload_rssi_change_cmd_tlv() - set roam offload RSSI th
  * @wmi_handle: wmi handle
@@ -3435,63 +2894,6 @@ error:
 
 	return status;
 }
-#else
-/**
- * send_roam_scan_offload_rssi_change_cmd_tlv() - set roam offload RSSI th
- * @wmi_handle: wmi handle
- * @rssi_change_thresh: RSSI Change threshold
- * @vdev_id: vdev id
- *
- * Send WMI_ROAM_SCAN_RSSI_CHANGE_THRESHOLD parameters to fw.
- *
- * Return: CDF status
- */
-static QDF_STATUS
-send_roam_scan_offload_rssi_change_cmd_tlv(wmi_unified_t wmi_handle,
-					   uint32_t vdev_id,
-					   int32_t rssi_change_thresh,
-					   uint32_t hirssi_delay_btw_scans)
-{
-	wmi_buf_t buf = NULL;
-	QDF_STATUS status;
-	int len;
-	uint8_t *buf_ptr;
-	wmi_roam_scan_rssi_change_threshold_fixed_param *rssi_change_fp;
-
-	/* Send rssi change parameters */
-	len = sizeof(wmi_roam_scan_rssi_change_threshold_fixed_param);
-	buf = wmi_buf_alloc(wmi_handle, len);
-	if (!buf)
-		return QDF_STATUS_E_NOMEM;
-
-	buf_ptr = (uint8_t *)wmi_buf_data(buf);
-	rssi_change_fp =
-		(wmi_roam_scan_rssi_change_threshold_fixed_param *)buf_ptr;
-	WMITLV_SET_HDR(&rssi_change_fp->tlv_header,
-		       WMITLV_TAG_STRUC_wmi_roam_scan_rssi_change_threshold_fixed_param,
-		       WMITLV_GET_STRUCT_TLVLEN
-			       (wmi_roam_scan_rssi_change_threshold_fixed_param));
-	/* fill in rssi change threshold (hysteresis) values */
-	rssi_change_fp->vdev_id = vdev_id;
-	rssi_change_fp->roam_scan_rssi_change_thresh = rssi_change_thresh;
-	rssi_change_fp->hirssi_delay_btw_scans = hirssi_delay_btw_scans;
-
-	wmi_mtrace(WMI_ROAM_SCAN_RSSI_CHANGE_THRESHOLD, NO_SESSION, 0);
-	status = wmi_unified_cmd_send(wmi_handle, buf,
-				      len, WMI_ROAM_SCAN_RSSI_CHANGE_THRESHOLD);
-	if (QDF_IS_STATUS_ERROR(status))
-		goto error;
-
-	wmi_nofl_debug("roam_scan_rssi_change_thresh %d hirssi_delay_btw_scans %d",
-		       rssi_change_thresh, hirssi_delay_btw_scans);
-
-	return QDF_STATUS_SUCCESS;
-error:
-	wmi_buf_free(buf);
-
-	return status;
-}
-#endif
 
 /**
  * send_per_roam_config_cmd_tlv() - set per roaming config to FW

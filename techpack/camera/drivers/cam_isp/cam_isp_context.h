@@ -289,6 +289,7 @@ struct cam_isp_stream_image {
  *                             decide whether to apply request in offline ctx
  * @workq:                     Worker thread for offline ife
  * @trigger_id:                ID provided by CRM for each ctx on the link
+ * @last_sof_timestamp:        SOF timestamp of the last frame
  * @stream_image_free_list:    List of free image buffers
  * @stream_image_ready_list:   List of image buffers that are ready
  * @stream_image_umd_list:     List of image buffers sent to umd driver
@@ -337,6 +338,7 @@ struct cam_isp_context {
 	atomic_t                              rxd_epoch;
 	struct cam_req_mgr_core_workq        *workq;
 	int32_t                               trigger_id;
+	uint64_t                              last_sof_timestamp;
 
 	struct list_head                      stream_image_free_list;
 	struct list_head                      stream_image_ready_list;

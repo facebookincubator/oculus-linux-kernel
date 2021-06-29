@@ -81,9 +81,11 @@ typedef uint8_t tSirVersionString[SIR_VERSION_STRING_LEN];
 
 #ifdef FEATURE_RUNTIME_PM
 /* Add extra PMO_RESUME_TIMEOUT for runtime PM resume timeout */
+#define SIR_PEER_CREATE_RESPONSE_TIMEOUT (4000 + PMO_RESUME_TIMEOUT)
 #define SIR_DELETE_STA_TIMEOUT           (4000 + PMO_RESUME_TIMEOUT)
 #define SIR_VDEV_PLCY_MGR_TIMEOUT        (2000 + PMO_RESUME_TIMEOUT)
 #else
+#define SIR_PEER_CREATE_RESPONSE_TIMEOUT (4000)
 #define SIR_DELETE_STA_TIMEOUT           (4000) /* 4 seconds */
 #define SIR_VDEV_PLCY_MGR_TIMEOUT        (2000)
 #endif
@@ -139,6 +141,9 @@ typedef uint8_t tSirVersionString[SIR_VERSION_STRING_LEN];
 #define SIR_UAPSD_GET(ac, mask)      (((mask) & (SIR_UAPSD_FLAG_ ## ac)) >> SIR_UAPSD_BITOFFSET_ ## ac)
 
 #endif
+
+/* Maximum management packet data unit length */
+#define MAX_MGMT_MPDU_LEN 2304
 
 struct scheduler_msg;
 
@@ -698,9 +703,6 @@ struct start_bss_req {
 	tSirMacRateSet extendedRateSet; /* Has 11g rates */
 	struct ht_config ht_config;
 	struct sir_vht_config vht_config;
-#ifdef WLAN_FEATURE_11AX
-	tDot11fIEhe_cap he_config;
-#endif
 #ifdef WLAN_FEATURE_11W
 	bool pmfCapable;
 	bool pmfRequired;
@@ -2312,9 +2314,6 @@ struct roam_offload_scan_req {
 	struct scoring_param score_params;
 #ifdef WLAN_FEATURE_FILS_SK
 	bool is_fils_connection;
-#ifndef ROAM_OFFLOAD_V1
-	struct roam_fils_params roam_fils_params;
-#endif
 #endif
 	uint32_t btm_offload_config;
 	uint32_t btm_solicited_timeout;
@@ -2338,7 +2337,7 @@ struct roam_offload_scan_req {
 	uint32_t roam_inactive_data_packet_count;
 	uint32_t roam_scan_period_after_inactivity;
 	uint32_t btm_query_bitmask;
-	struct roam_trigger_min_rssi min_rssi_params[NUM_OF_ROAM_TRIGGERS];
+	struct roam_trigger_min_rssi min_rssi_params[NUM_OF_ROAM_MIN_RSSI];
 	struct roam_trigger_score_delta score_delta_param[NUM_OF_ROAM_TRIGGERS];
 	uint32_t full_roam_scan_period;
 };
@@ -5330,6 +5329,7 @@ struct ppet_hdr {
 #define HE_CH_WIDTH_COMBINE(b0, b1, b2, b3, b4, b5, b6)             \
 	((uint8_t)(b0) | ((b1) << 1) | ((b2) << 2) |  ((b3) << 3) | \
 	((b4) << 4) | ((b5) << 5) | ((b6) << 6))
+#define HE_CH_WIDTH_CLR_BIT(ch_wd, bit)      (((ch_wd) >> (bit)) & ~1)
 
 /*
  * MCS values are interpreted as in IEEE 11ax-D1.4 spec onwards

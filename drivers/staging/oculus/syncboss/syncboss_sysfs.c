@@ -22,7 +22,7 @@ static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
 				status);
 			return status;
 		}
-		syncboss_reset(devdata);
+		syncboss_pin_reset(devdata);
 		mutex_unlock(&devdata->state_mutex);
 
 		status = count;

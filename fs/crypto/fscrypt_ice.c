@@ -4,6 +4,7 @@
  */
 
 #include "fscrypt_ice.h"
+#include "../../security/pfe/pfk_kc.h"
 
 int fscrypt_using_hardware_encryption(const struct inode *inode)
 {
@@ -113,41 +114,98 @@ bool fscrypt_is_ice_encryption_info_equal(const struct inode *inode1,
 	return false;
 }
 
-void fscrypt_set_ice_dun(const struct inode *inode, struct bio *bio, u64 dun)
+bool fscrypt_force_iv_ino_lblk_32(void)
 {
-	if (fscrypt_should_be_processed_by_ice(inode))
-		bio->bi_iter.bi_dun = dun;
+	return strcmp("sdcc", pfk_kc_get_storage_type()) == 0;
 }
-EXPORT_SYMBOL(fscrypt_set_ice_dun);
 
-void fscrypt_set_ice_skip(struct bio *bio, int bi_crypt_skip)
+static u64 fscrypt_generate_dun(const struct inode *inode, u64 lblk_num)
 {
-#ifdef CONFIG_DM_DEFAULT_KEY
-	bio->bi_crypt_skip = bi_crypt_skip;
-#endif
-}
-EXPORT_SYMBOL(fscrypt_set_ice_skip);
+	BUG_ON(inode->i_ino > U32_MAX);
+	BUG_ON(inode->i_ino == 0);
+	BUG_ON(lblk_num > U32_MAX);
 
-/*
- * This function will be used for filesystem when deciding to merge bios.
- * Basic assumption is, if inline_encryption is set, single bio has to
- * guarantee consecutive LBAs as well as ino|pg->index.
+	/*
+	 * Standard DUN generation (like upstream IV_INO_LBLK_64): high 32 bits
+	 * are inode number, low 32 bits are file logical block number.
+	 *
+	 * IV_INO_LBLK_32 DUN generation: low 32 bits are hashed inode number +
+	 * file logical block number.  We still leave the inode number in the
+	 * high 32 bits since it doesn't hurt anything, and it maintains
+	 * compatibility with the quirks of this kernel's inline crypto
+	 * implementation such as DUN 0 being treated specially.
+	 */
+	if (inode->i_crypt_info->ci_flags & FS_POLICY_FLAG_IV_INO_LBLK_32)
+		lblk_num = (u32)(inode->i_crypt_info->ci_hashed_ino + lblk_num);
+
+	return ((u64)inode->i_ino << 32) | lblk_num;
+}
+
+/**
+ * fscrypt_set_bio_crypt_ctx - prepare a file contents bio for inline encryption
+ * @bio: a bio which will eventually be submitted to the file
+ * @inode: the file's inode
+ * @first_lblk: the first file logical block number in the I/O
+ * @gfp_mask: memory allocation flags - these must be a waiting mask so that
+ *					bio_crypt_set_ctx can't fail.
+ *
+ * If the contents of the file should be encrypted (or decrypted) with inline
+ * encryption, then assign the appropriate encryption context to the bio.
+ *
+ * Normally the bio should be newly allocated (i.e. no pages added yet), as
+ * otherwise fscrypt_mergeable_bio() won't work as intended.
+ *
+ * The encryption context will be freed automatically when the bio is freed.
+ *
+ * This function also handles setting bi_crypt_skip when needed.
  */
-bool fscrypt_mergeable_bio(struct bio *bio, u64 dun, bool bio_encrypted,
-						int bi_crypt_skip)
+void fscrypt_set_bio_crypt_ctx(struct bio *bio, const struct inode *inode,
+			       u64 first_lblk, gfp_t gfp_mask)
 {
-	if (!bio)
-		return true;
-
-#ifdef CONFIG_DM_DEFAULT_KEY
-	if (bi_crypt_skip != bio->bi_crypt_skip)
-		return false;
-#endif
-	/* if both of them are not encrypted, no further check is needed */
-	if (!bio_dun(bio) && !bio_encrypted)
-		return true;
-
-	/* ICE allows only consecutive iv_key stream. */
-	return bio_end_dun(bio) == dun;
+	if (fscrypt_inode_should_skip_dm_default_key(inode))
+		bio_set_skip_dm_default_key(bio);
+	if (fscrypt_using_hardware_encryption(inode))
+		bio->bi_iter.bi_dun = fscrypt_generate_dun(inode, first_lblk);
 }
-EXPORT_SYMBOL(fscrypt_mergeable_bio);
+EXPORT_SYMBOL_GPL(fscrypt_set_bio_crypt_ctx);
+
+/**
+ * fscrypt_mergeable_bio - test whether data can be added to a bio
+ * @bio: the bio being built up
+ * @inode: the inode for the next part of the I/O
+ * @next_lblk: the next file logical block number in the I/O
+ *
+ * When building a bio which may contain data which should undergo inline
+ * encryption (or decryption) via fscrypt, filesystems should call this function
+ * to ensure that the resulting bio contains only logically contiguous data.
+ * This will return false if the next part of the I/O cannot be merged with the
+ * bio because either the encryption key would be different or the encryption
+ * data unit numbers would be discontiguous.
+ *
+ * fscrypt_set_bio_crypt_ctx() must have already been called on the bio.
+ *
+ * This function also returns false if the next part of the I/O would need to
+ * have a different value for the bi_crypt_skip flag.
+ *
+ * Return: true iff the I/O is mergeable
+ */
+bool fscrypt_mergeable_bio(struct bio *bio, const struct inode *inode,
+			   u64 next_lblk)
+{
+	const bool enc1 = (bio_dun(bio) != 0);
+	const bool enc2 = fscrypt_using_hardware_encryption(inode);
+	u64 next_dun;
+
+	if (enc1 != enc2)
+		return false;
+	if (bio_should_skip_dm_default_key(bio) !=
+	    fscrypt_inode_should_skip_dm_default_key(inode))
+		return false;
+	if (!enc1)
+		return true;
+
+	next_dun = fscrypt_generate_dun(inode, next_lblk);
+	return fscrypt_enc_bio_mergeable(bio, bio_sectors(bio), next_dun);
+}
+EXPORT_SYMBOL_GPL(fscrypt_mergeable_bio);
+

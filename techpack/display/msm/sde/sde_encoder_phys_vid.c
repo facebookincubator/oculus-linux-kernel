@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s:%d] " fmt, __func__, __LINE__
@@ -52,6 +52,7 @@ static void drm_mode_to_intf_timing_params(
 	const struct sde_encoder_phys *phys_enc = &vid_enc->base;
 	enum msm_display_compression_ratio comp_ratio =
 				MSM_DISPLAY_COMPRESSION_RATIO_NONE;
+	bool fsc_mode = false;
 
 	memset(timing, 0, sizeof(*timing));
 
@@ -71,6 +72,7 @@ static void drm_mode_to_intf_timing_params(
 		return;
 	}
 
+	fsc_mode = mode->private_flags & MSM_MODE_FLAG_FSC_MODE;
 	/*
 	 * https://www.kernel.org/doc/htmldocs/drm/ch02s05.html
 	 *  Active Region      Front Porch   Sync   Back Porch
@@ -80,7 +82,9 @@ static void drm_mode_to_intf_timing_params(
 	 * <----------------- [hv]sync_end ------->
 	 * <---------------------------- [hv]total ------------->
 	 */
-	timing->width = mode->hdisplay;	/* active width */
+	/* active width & height - adjusted for fsc mode */
+	timing->width = fsc_mode ? mode->hdisplay / 3 : mode->hdisplay;
+	timing->height = fsc_mode ? mode->vdisplay * 3 : mode->vdisplay;
 
 	if (phys_enc->hw_intf->cap->type != INTF_DP &&
 		vid_enc->base.comp_type == MSM_DISPLAY_COMPRESSION_DSC) {
@@ -91,7 +95,6 @@ static void drm_mode_to_intf_timing_params(
 			timing->width = DIV_ROUND_UP(timing->width, 3);
 	}
 
-	timing->height = mode->vdisplay;	/* active height */
 	timing->xres = timing->width;
 	timing->yres = timing->height;
 	timing->h_back_porch = mode->htotal - mode->hsync_end;

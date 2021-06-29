@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"[drm:%s] " fmt, __func__
@@ -1945,6 +1945,84 @@ int sde_rm_update_topology(struct sde_rm *rm,
 			CONNECTOR_PROP_TOPOLOGY_NAME, top_name);
 
 	return ret;
+}
+
+bool sde_rm_topology_is_group(struct sde_rm *rm,
+		struct drm_crtc_state *state,
+		enum sde_rm_topology_group group)
+{
+	int i, ret = 0;
+	struct sde_crtc_state *cstate;
+	struct drm_connector *conn;
+	struct drm_connector_state *conn_state;
+	struct msm_display_topology topology;
+	enum sde_rm_topology_name name;
+
+	if ((!rm) || (!state) || (!state->state)) {
+		pr_err("invalid arguments: rm:%d state:%d atomic state:%d\n",
+				!rm, !state, state ? (!state->state) : 0);
+		return false;
+	}
+
+	cstate = to_sde_crtc_state(state);
+
+	for (i = 0; i < cstate->num_connectors; i++) {
+
+		conn = cstate->connectors[i];
+		if (!conn) {
+			SDE_DEBUG("invalid connector\n");
+			continue;
+		}
+
+		conn_state = drm_atomic_get_new_connector_state(state->state,
+				conn);
+		if (!conn_state) {
+			SDE_DEBUG("%s invalid connector state\n", conn->name);
+			continue;
+		}
+
+		ret = sde_connector_state_get_topology(conn_state, &topology);
+		if (ret) {
+			SDE_DEBUG("%s invalid topology\n", conn->name);
+			continue;
+		}
+
+		name = sde_rm_get_topology_name(rm, topology);
+		switch (group) {
+		case SDE_RM_TOPOLOGY_GROUP_SINGLEPIPE:
+			if (TOPOLOGY_SINGLEPIPE_MODE(name))
+				return true;
+			break;
+		case SDE_RM_TOPOLOGY_GROUP_DUALPIPE:
+			if (TOPOLOGY_DUALPIPE_MODE(name))
+				return true;
+			break;
+		case SDE_RM_TOPOLOGY_GROUP_QUADPIPE:
+			if (TOPOLOGY_QUADPIPE_MODE(name))
+				return true;
+			break;
+		case SDE_RM_TOPOLOGY_GROUP_3DMERGE:
+			if (topology.num_lm > topology.num_intf &&
+					!topology.num_enc)
+				return true;
+			break;
+		case SDE_RM_TOPOLOGY_GROUP_3DMERGE_DSC:
+			if (topology.num_lm > topology.num_enc &&
+					topology.num_enc)
+				return true;
+			break;
+		case SDE_RM_TOPOLOGY_GROUP_DSCMERGE:
+			if (topology.num_lm == topology.num_enc &&
+					topology.num_enc)
+				return true;
+			break;
+		default:
+			SDE_ERROR("invalid topology group\n");
+			return false;
+		}
+	}
+
+	return false;
 }
 
 /**

@@ -142,6 +142,10 @@
 #define WLAN_SOC_CEXT_EMA_AP           0x00400000
 	/* MBSS PARAM IN START REQ Support */
 #define WLAN_SOC_CEXT_MBSS_PARAM_IN_START   0x00800000
+/* Per channel scan config flags support */
+#define WLAN_SOC_CEXT_SCAN_PER_CH_CONFIG    0x01000000
+	/* CAPABILITY: csa offload in case of AP */
+#define WLAN_SOC_CEXT_CSA_TX_OFFLOAD      0x02000000
 
 /* feature_flags */
 	/* CONF: ATH FF enabled */
@@ -204,6 +208,8 @@
 #define WLAN_SOC_F_BCAST_TWT           0x04000000
        /* WDS Extended support */
 #define WLAN_SOC_F_WDS_EXTENDED        0x08000000
+/* Peer create response */
+#define WLAN_SOC_F_PEER_CREATE_RESP    0x10000000
 
 
 /* PSOC op flags */

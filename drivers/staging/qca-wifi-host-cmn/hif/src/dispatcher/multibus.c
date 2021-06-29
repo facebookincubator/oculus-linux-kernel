@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, 2020-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -60,6 +60,8 @@ static void hif_initialize_default_ops(struct hif_softc *hif_sc)
 	bus_ops->hif_grp_irq_configure = &hif_dummy_grp_irq_configure;
 	bus_ops->hif_config_irq_affinity =
 		&hif_dummy_config_irq_affinity;
+	bus_ops->hif_enable_grp_irqs = &hif_dummy_enable_grp_irqs;
+	bus_ops->hif_disable_grp_irqs = &hif_dummy_enable_grp_irqs;
 }
 
 #define NUM_OPS (sizeof(struct hif_bus_ops) / sizeof(void *))
@@ -554,6 +556,46 @@ int hif_apps_enable_irq_wake(struct hif_opaque_softc *hif_ctx)
 	return enable_irq_wake(scn->wake_irq);
 }
 
+int hif_apps_disable_irqs_except_wake_irq(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_softc *scn;
+	int i;
+
+	QDF_BUG(hif_ctx);
+	scn = HIF_GET_SOFTC(hif_ctx);
+	if (!scn)
+		return -EINVAL;
+
+	for (i = 0; i < scn->ce_count; ++i) {
+		int irq = scn->bus_ops.hif_map_ce_to_irq(scn, i);
+
+		if (irq != scn->wake_irq)
+			disable_irq(irq);
+	}
+
+	return 0;
+}
+
+int hif_apps_enable_irqs_except_wake_irq(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_softc *scn;
+	int i;
+
+	QDF_BUG(hif_ctx);
+	scn = HIF_GET_SOFTC(hif_ctx);
+	if (!scn)
+		return -EINVAL;
+
+	for (i = 0; i < scn->ce_count; ++i) {
+		int irq = scn->bus_ops.hif_map_ce_to_irq(scn, i);
+
+		if (irq != scn->wake_irq)
+			enable_irq(irq);
+	}
+
+	return 0;
+}
+
 #ifdef WLAN_FEATURE_BMI
 bool hif_needs_bmi(struct hif_opaque_softc *scn)
 {
@@ -567,4 +609,71 @@ qdf_export_symbol(hif_needs_bmi);
 void hif_config_irq_affinity(struct hif_softc *hif_sc)
 {
 	hif_sc->bus_ops.hif_config_irq_affinity(hif_sc);
+}
+
+#ifdef HIF_BUS_LOG_INFO
+void hif_log_bus_info(struct hif_softc *hif_sc, uint8_t *data,
+		      unsigned int *offset)
+{
+	if (hif_sc->bus_ops.hif_log_bus_info)
+		hif_sc->bus_ops.hif_log_bus_info(hif_sc, data, offset);
+}
+#endif
+
+int hif_apps_grp_irqs_enable(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_exec_context *hif_exec;
+	struct hif_softc *scn;
+	int i;
+
+	QDF_BUG(hif_ctx);
+	scn = HIF_GET_SOFTC(hif_ctx);
+	if (!scn)
+		return -EINVAL;
+
+	for (i = 0 ; i < HIF_MAX_GROUP; i++) {
+		hif_exec = hif_exec_get_ctx(hif_ctx, i);
+		if (!hif_exec)
+			continue;
+
+		hif_exec->irq_enable(hif_exec);
+	}
+
+	return 0;
+}
+
+int hif_apps_grp_irqs_disable(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_exec_context *hif_exec;
+	struct hif_softc *scn;
+	int i;
+
+	QDF_BUG(hif_ctx);
+	scn = HIF_GET_SOFTC(hif_ctx);
+	if (!scn)
+		return -EINVAL;
+
+	for (i = 0 ; i < HIF_MAX_GROUP; i++) {
+		hif_exec = hif_exec_get_ctx(hif_ctx, i);
+		if (!hif_exec)
+			continue;
+
+		hif_exec->irq_disable(hif_exec);
+	}
+
+	return 0;
+}
+
+int hif_disable_grp_irqs(struct hif_opaque_softc *scn)
+{
+	struct hif_softc *hif_sc = HIF_GET_SOFTC(scn);
+
+	return hif_sc->bus_ops.hif_disable_grp_irqs(hif_sc);
+}
+
+int hif_enable_grp_irqs(struct hif_opaque_softc *scn)
+{
+	struct hif_softc *hif_sc = HIF_GET_SOFTC(scn);
+
+	return hif_sc->bus_ops.hif_enable_grp_irqs(hif_sc);
 }

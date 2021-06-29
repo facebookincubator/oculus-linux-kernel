@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -743,6 +743,65 @@ void ucfg_scan_cfg_get_active_2g_dwelltime(struct wlan_objmgr_psoc *psoc,
 	return wlan_scan_cfg_get_active_2g_dwelltime(psoc, dwell_time);
 }
 
+#ifdef CONFIG_BAND_6GHZ
+/**
+ * ucfg_scan_cfg_set_active_6g_dwelltime() - API to set scan active 6g dwelltime
+ * @psoc: pointer to psoc object
+ * @dwell_time: scan active dwell time
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS ucfg_scan_cfg_set_active_6g_dwelltime(struct wlan_objmgr_psoc *psoc,
+						 uint32_t dwell_time)
+{
+	return wlan_scan_cfg_set_active_6g_dwelltime(psoc, dwell_time);
+}
+
+/**
+ * ucfg_scan_cfg_get_passive_6g_dwelltime() - API to get passive 6g dwelltime
+ * @psoc: pointer to psoc object
+ * @dwell_time: scan passive 6g dwelltime
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS ucfg_scan_cfg_get_passive_6g_dwelltime(struct wlan_objmgr_psoc *psoc,
+						  uint32_t *dwell_time)
+{
+	return wlan_scan_cfg_get_passive_6g_dwelltime(psoc, dwell_time);
+}
+
+/**
+ * ucfg_scan_cfg_set_passive_6g_dwelltime() - API to set scan passive 6g
+ *                                            dwelltime
+ * @psoc: pointer to psoc object
+ * @dwell_time: scan passive dwell time
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS ucfg_scan_cfg_set_passive_6g_dwelltime(struct wlan_objmgr_psoc *psoc,
+						  uint32_t dwell_time)
+{
+	return wlan_scan_cfg_set_passive_6g_dwelltime(psoc, dwell_time);
+}
+
+/**
+ * ucfg_scan_cfg_get_active_6g_dwelltime() - API to get active 6g dwelltime
+ * @psoc: pointer to psoc object
+ * @dwell_time: scan active 6g dwelltime
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS ucfg_scan_cfg_get_active_6g_dwelltime(struct wlan_objmgr_psoc *psoc,
+						 uint32_t *dwell_time)
+{
+	return wlan_scan_cfg_get_active_6g_dwelltime(psoc, dwell_time);
+}
+#endif
+
 /**
  * ucfg_scan_cfg_get_conc_active_dwelltime() - Get concurrent active dwelltime
  * @psoc: pointer to psoc object
@@ -959,6 +1018,16 @@ ucfg_scan_get_max_sched_scan_plan_interval(struct wlan_objmgr_psoc *psoc);
 uint32_t
 ucfg_scan_get_max_sched_scan_plan_iterations(struct wlan_objmgr_psoc *psoc);
 
+/**
+ * ucfg_scan_get_user_config_sched_scan_plan() - API to get user config sched
+ * scan plan configuration value
+ * @psoc: pointer to psoc object
+ *
+ * Return: value.
+ */
+bool
+ucfg_scan_get_user_config_sched_scan_plan(struct wlan_objmgr_psoc *psoc);
+
 #else
 static inline
 bool ucfg_scan_is_pno_offload_enabled(struct wlan_objmgr_psoc *psoc)
@@ -1011,6 +1080,12 @@ static inline uint32_t
 ucfg_scan_get_max_sched_scan_plan_iterations(struct wlan_objmgr_psoc *psoc)
 {
 	return 0;
+}
+
+static inline bool
+ucfg_scan_get_user_config_sched_scan_plan(struct wlan_objmgr_psoc *psoc)
+{
+	return true;
 }
 
 #endif /* FEATURE_WLAN_SCAN_PNO */

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
 #include "sde_hw_util.h"
@@ -153,6 +153,14 @@
 
 /* traffic shaper clock in Hz */
 #define TS_CLK			19200000
+
+#define SDE_UNPACK_FORMAT_SETUP(fmt) (                                        \
+		((SDE_FORMAT_IS_FSC(fmt) == true) ?                           \
+		((fmt->element[3] << 24) | (fmt->element[0] << 16) |          \
+		(fmt->element[2] << 8) | (fmt->element[1] << 0)) :            \
+		((fmt->element[3] << 24) | (fmt->element[2] << 16) |          \
+		(fmt->element[1] << 8) | (fmt->element[0] << 0)))             \
+	)
 
 static inline int _sspp_subblk_offset(struct sde_hw_pipe *ctx,
 		int s_id,
@@ -364,8 +372,8 @@ static void sde_hw_sspp_setup_format(struct sde_hw_pipe *ctx,
 	if (flags & SDE_SSPP_SOLID_FILL)
 		src_format |= BIT(22);
 
-	unpack = (fmt->element[3] << 24) | (fmt->element[2] << 16) |
-		(fmt->element[1] << 8) | (fmt->element[0] << 0);
+	unpack = SDE_UNPACK_FORMAT_SETUP(fmt);
+
 	src_format |= ((fmt->unpack_count - 1) << 12) |
 		(fmt->unpack_tight << 17) |
 		(fmt->unpack_align_msb << 18) |
@@ -399,7 +407,7 @@ static void sde_hw_sspp_setup_format(struct sde_hw_pipe *ctx,
 	}
 
 	if (fmt->fetch_mode != SDE_FETCH_LINEAR) {
-		if (SDE_FORMAT_IS_UBWC(fmt))
+		if (SDE_FORMAT_IS_UBWC(fmt) || SDE_FORMAT_IS_FSC(fmt))
 			opmode |= MDSS_MDP_OP_BWC_EN;
 		src_format |= (fmt->fetch_mode & 3) << 30; /*FRAME_FORMAT */
 		SDE_REG_WRITE(c, SSPP_FETCH_CONFIG,

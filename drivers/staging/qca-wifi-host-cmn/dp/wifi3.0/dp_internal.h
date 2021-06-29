@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1840,6 +1840,33 @@ int dp_tx_delete_flow_pool(struct dp_soc *soc, struct dp_tx_desc_pool_s *pool,
 	bool force);
 #endif /* QCA_LL_TX_FLOW_CONTROL_V2 */
 
+#ifdef QCA_OL_DP_SRNG_LOCK_LESS_ACCESS
+static inline int
+dp_hal_srng_access_start(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
+{
+	return hal_srng_access_start_unlocked(soc, hal_ring_hdl);
+}
+
+static inline void
+dp_hal_srng_access_end(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
+{
+	hal_srng_access_end_unlocked(soc, hal_ring_hdl);
+}
+
+#else
+static inline int
+dp_hal_srng_access_start(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
+{
+	return hal_srng_access_start(soc, hal_ring_hdl);
+}
+
+static inline void
+dp_hal_srng_access_end(hal_soc_handle_t soc, hal_ring_handle_t hal_ring_hdl)
+{
+	hal_srng_access_end(soc, hal_ring_hdl);
+}
+#endif
+
 #ifdef WLAN_FEATURE_DP_EVENT_HISTORY
 /**
  * dp_srng_access_start() - Wrapper function to log access start of a hal ring
@@ -1864,14 +1891,13 @@ void dp_srng_access_end(struct dp_intr *int_ctx, struct dp_soc *dp_soc,
 			hal_ring_handle_t hal_ring_hdl);
 
 #else
-
 static inline int dp_srng_access_start(struct dp_intr *int_ctx,
 				       struct dp_soc *dp_soc,
 				       hal_ring_handle_t hal_ring_hdl)
 {
 	hal_soc_handle_t hal_soc = dp_soc->hal_soc;
 
-	return hal_srng_access_start(hal_soc, hal_ring_hdl);
+	return dp_hal_srng_access_start(hal_soc, hal_ring_hdl);
 }
 
 static inline void dp_srng_access_end(struct dp_intr *int_ctx,
@@ -1880,7 +1906,7 @@ static inline void dp_srng_access_end(struct dp_intr *int_ctx,
 {
 	hal_soc_handle_t hal_soc = dp_soc->hal_soc;
 
-	return hal_srng_access_end(hal_soc, hal_ring_hdl);
+	return dp_hal_srng_access_end(hal_soc, hal_ring_hdl);
 }
 #endif /* WLAN_FEATURE_DP_EVENT_HISTORY */
 
@@ -2328,10 +2354,18 @@ void dp_rx_dump_fisa_table(struct dp_soc *soc);
  */
 void dp_rx_fst_update_cmem_params(struct dp_soc *soc, uint16_t num_entries,
 				  uint32_t cmem_ba_lo, uint32_t cmem_ba_hi);
+
+void
+dp_rx_fst_update_pm_suspend_status(struct dp_soc *soc, bool suspended);
 #else
 static inline void
 dp_rx_fst_update_cmem_params(struct dp_soc *soc, uint16_t num_entries,
 			     uint32_t cmem_ba_lo, uint32_t cmem_ba_hi)
+{
+}
+
+static inline void
+dp_rx_fst_update_pm_suspend_status(struct dp_soc *soc, bool suspended)
 {
 }
 #endif /* WLAN_SUPPORT_RX_FISA */
@@ -2517,6 +2551,29 @@ QDF_STATUS dp_wds_ext_set_peer_rx(ol_txrx_soc_handle soc,
 #endif /* QCA_SUPPORT_WDS_EXTENDED */
 
 #ifdef DP_MEM_PRE_ALLOC
+
+/**
+ * dp_context_alloc_mem() - allocate memory for DP context
+ * @soc: datapath soc handle
+ * @ctxt_type: DP context type
+ * @ctxt_size: DP context size
+ *
+ * Return: DP context address
+ */
+void *dp_context_alloc_mem(struct dp_soc *soc, enum dp_ctxt_type ctxt_type,
+			   size_t ctxt_size);
+
+/**
+ * dp_context_free_mem() - Free memory of DP context
+ * @soc: datapath soc handle
+ * @ctxt_type: DP context type
+ * @vaddr: Address of context memory
+ *
+ * Return: None
+ */
+void dp_context_free_mem(struct dp_soc *soc, enum dp_ctxt_type ctxt_type,
+			 void *vaddr);
+
 /**
  * dp_desc_multi_pages_mem_alloc() - alloc memory over multiple pages
  * @soc: datapath soc handle
@@ -2564,6 +2621,20 @@ void dp_desc_multi_pages_mem_free(struct dp_soc *soc,
 
 #else
 static inline
+void *dp_context_alloc_mem(struct dp_soc *soc, enum dp_ctxt_type ctxt_type,
+			   size_t ctxt_size)
+{
+	return qdf_mem_malloc(ctxt_size);
+}
+
+static inline
+void dp_context_free_mem(struct dp_soc *soc, enum dp_ctxt_type ctxt_type,
+			 void *vaddr)
+{
+	qdf_mem_free(vaddr);
+}
+
+static inline
 void dp_desc_multi_pages_mem_alloc(struct dp_soc *soc,
 				   enum dp_desc_type desc_type,
 				   struct qdf_mem_multi_page_t *pages,
@@ -2585,6 +2656,75 @@ void dp_desc_multi_pages_mem_free(struct dp_soc *soc,
 {
 	qdf_mem_multi_pages_free(soc->osdev, pages,
 				 memctxt, cacheable);
+}
+#endif
+
+#ifdef FEATURE_RUNTIME_PM
+/**
+ * dp_runtime_get() - Get dp runtime refcount
+ * @soc: Datapath soc handle
+ *
+ * Get dp runtime refcount by increment of an atomic variable, which can block
+ * dp runtime resume to wait to flush pending tx by runtime suspend.
+ *
+ * Return: Current refcount
+ */
+static inline int32_t dp_runtime_get(struct dp_soc *soc)
+{
+	return qdf_atomic_inc_return(&soc->dp_runtime_refcount);
+}
+
+/**
+ * dp_runtime_put() - Return dp runtime refcount
+ * @soc: Datapath soc handle
+ *
+ * Return dp runtime refcount by decrement of an atomic variable, allow dp
+ * runtime resume finish.
+ *
+ * Return: Current refcount
+ */
+static inline int32_t dp_runtime_put(struct dp_soc *soc)
+{
+	return qdf_atomic_dec_return(&soc->dp_runtime_refcount);
+}
+
+/**
+ * dp_runtime_get_refcount() - Get dp runtime refcount
+ * @soc: Datapath soc handle
+ *
+ * Get dp runtime refcount by returning an atomic variable
+ *
+ * Return: Current refcount
+ */
+static inline int32_t dp_runtime_get_refcount(struct dp_soc *soc)
+{
+	return qdf_atomic_read(&soc->dp_runtime_refcount);
+}
+
+/**
+ * dp_runtime_init() - Init dp runtime refcount when dp soc init
+ * @soc: Datapath soc handle
+ *
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS dp_runtime_init(struct dp_soc *soc)
+{
+	return qdf_atomic_init(&soc->dp_runtime_refcount);
+}
+#else
+static inline int32_t dp_runtime_get(struct dp_soc *soc)
+{
+	return 0;
+}
+
+static inline int32_t dp_runtime_put(struct dp_soc *soc)
+{
+	return 0;
+}
+
+static inline QDF_STATUS dp_runtime_init(struct dp_soc *soc)
+{
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 

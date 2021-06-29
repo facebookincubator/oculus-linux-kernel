@@ -319,6 +319,9 @@ static struct msm_soc_info cpu_of_id[] = {
 	/* kona ID */
 	[356] = {MSM_CPU_KONA, "KONA"},
 
+	/* kona-iot ID */
+	[481] = {MSM_CPU_KONA_IOT, "KONA-IOT"},
+
 	/* Lito ID */
 	[400] = {MSM_CPU_LITO, "LITO"},
 	[440] = {MSM_CPU_LITO, "LITO"},
@@ -1239,6 +1242,10 @@ static void * __init setup_dummy_socinfo(void)
 	} else if (early_machine_is_sdmmagpie()) {
 		dummy_socinfo.id = 365;
 		strlcpy(dummy_socinfo.build_id, "sdmmagpie - ",
+		sizeof(dummy_socinfo.build_id));
+	} else if (early_machine_is_kona_iot()) {
+		dummy_socinfo.id = 481;
+		strlcpy(dummy_socinfo.build_id, "kona-iot - ",
 		sizeof(dummy_socinfo.build_id));
 	} else
 		strlcat(dummy_socinfo.build_id, "Dummy socinfo",

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -498,6 +498,7 @@ QDF_STATUS fwol_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	struct wlan_fwol_psoc_obj *fwol_obj;
 	struct wlan_fwol_cfg *fwol_cfg;
 	qdf_size_t enable_fw_module_log_level_num;
+	qdf_size_t enable_fw_wow_mod_log_level_num;
 
 	fwol_obj = fwol_get_psoc_obj(psoc);
 	if (!fwol_obj) {
@@ -534,6 +535,12 @@ QDF_STATUS fwol_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 			      &enable_fw_module_log_level_num);
 	fwol_cfg->enable_fw_module_log_level_num =
 				(uint8_t)enable_fw_module_log_level_num;
+	qdf_uint8_array_parse(cfg_get(psoc, CFG_ENABLE_FW_WOW_MODULE_LOG_LEVEL),
+			      fwol_cfg->enable_fw_mod_wow_log_level,
+			      FW_MODULE_LOG_LEVEL_STRING_LENGTH,
+			      &enable_fw_wow_mod_log_level_num);
+	fwol_cfg->enable_fw_mod_wow_log_level_num =
+				(uint8_t)enable_fw_wow_mod_log_level_num;
 	ucfg_fwol_init_tsf_ptp_options(psoc, fwol_cfg);
 	ucfg_fwol_init_sae_cfg(psoc, fwol_cfg);
 	fwol_cfg->lprx_enable = cfg_get(psoc, CFG_LPRX);
@@ -548,8 +555,8 @@ QDF_STATUS fwol_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	ucfg_fwol_fetch_tsf_sync_host_gpio_pin(psoc, fwol_cfg);
 	ucfg_fwol_fetch_dhcp_server_settings(psoc, fwol_cfg);
 	fwol_cfg->sap_xlna_bypass = cfg_get(psoc, CFG_SET_SAP_XLNA_BYPASS);
-	fwol_cfg->ocl_cfg = cfg_get(psoc, CFG_SET_OCL_CFG);
 	fwol_cfg->enable_ilp = cfg_get(psoc, CFG_SET_ENABLE_ILP);
+	fwol_cfg->disable_hw_assist = cfg_get(psoc, CFG_DISABLE_HW_ASSIST);
 
 	return status;
 }
@@ -654,7 +661,8 @@ void fwol_release_rx_event(struct wlan_fwol_rx_event *event)
 	qdf_mem_free(event);
 }
 
-QDF_STATUS fwol_set_ilp_config(struct wlan_objmgr_pdev *pdev, bool enable_ilp)
+QDF_STATUS fwol_set_ilp_config(struct wlan_objmgr_pdev *pdev,
+			       uint32_t enable_ilp)
 {
 	QDF_STATUS status;
 	struct pdev_params pdev_param;
@@ -665,6 +673,22 @@ QDF_STATUS fwol_set_ilp_config(struct wlan_objmgr_pdev *pdev, bool enable_ilp)
 	status = tgt_fwol_pdev_param_send(pdev, pdev_param);
 	if (QDF_IS_STATUS_ERROR(status))
 		fwol_err("WMI_PDEV_PARAM_PCIE_HW_ILP failed %d", status);
+
+	return status;
+}
+
+QDF_STATUS fwol_configure_hw_assist(struct wlan_objmgr_pdev *pdev,
+				    bool disable_hw_assist)
+{
+	QDF_STATUS status;
+	struct pdev_params pdev_param;
+
+	pdev_param.param_id = WMI_PDEV_PARAM_DISABLE_HW_ASSIST;
+	pdev_param.param_value = disable_hw_assist;
+
+	status = tgt_fwol_pdev_param_send(pdev, pdev_param);
+	if (QDF_IS_STATUS_ERROR(status))
+		fwol_err("WMI_PDEV_PARAM_DISABLE_HW_ASSIST failed %d", status);
 
 	return status;
 }

@@ -77,6 +77,9 @@ Optional properties:
                              and off sequences.
   - qcom,converged-dt: Boolean property to decide whether it supports multiple
                        WLAN devices.
+  - qcom,bt-en-gpio: QCA6490 requires synchronization for BT and WLAN GPIO
+                     enable to resolve PMU power up issues. Provide BT GPIO
+                     using this config param.
 
 Example:
 

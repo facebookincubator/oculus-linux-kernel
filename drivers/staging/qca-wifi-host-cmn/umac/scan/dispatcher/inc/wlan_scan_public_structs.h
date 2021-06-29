@@ -58,6 +58,8 @@ typedef uint32_t wlan_scan_id;
 #define PROBE_REQ_BITMAP_LEN 8
 #define MAX_PROBE_REQ_OUIS 16
 
+#define TBTT_INFO_COUNT 16
+
 /* forward declaration */
 struct wlan_objmgr_vdev;
 struct wlan_objmgr_pdev;
@@ -692,13 +694,25 @@ struct probe_req_whitelist_attr {
 };
 
 /**
+ * enum scan_flags: scan flags
+ * @FLAG_SCAN_ONLY_IF_RNR_FOUND: Set this flag for a 6g channel to scan it only
+ *  if an RNR IE is found with that channel while scanning 2g/5g bands.
+ */
+enum scan_flags {
+	FLAG_SCAN_ONLY_IF_RNR_FOUND = 0x1,
+};
+
+/**
  * struct chan_info - channel information
  * @freq: frequency to scan
  * @phymode: phymode in which @frequency should be scanned
+ * @flags: Flags to define channel property as defined @enum scan_flags.
+ *  Firmware can use this info for different operations, e.g.: scan
  */
 struct chan_info {
 	qdf_freq_t freq;
-	uint32_t phymode;
+	enum scan_phy_mode phymode;
+	enum scan_flags flags;
 };
 
 /**
@@ -1375,9 +1389,14 @@ struct channel_list_db {
  * rnr_chan_weight - RNR channel weightage
  * @chan_freq: channel frequency
  * @weight: weightage of the channel
+ * @phymode: phymode in which @frequency should be scanned
+ * @flags: Flags to define channel property as defined @enum scan_flags.
+ *  Firmware can use this info for different operations, e.g.: scan
  */
 struct rnr_chan_weight {
 	uint32_t chan_freq;
 	uint32_t weight;
+	enum scan_phy_mode phymode;
+	enum scan_flags flags;
 };
 #endif

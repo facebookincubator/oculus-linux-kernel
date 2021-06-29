@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: ISC
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/etherdevice.h>
@@ -1202,6 +1202,26 @@ wil_get_next_tx_status_msg(struct wil_status_ring *sring, u8 *dr_bit,
 	*msg = *_msg;
 }
 
+static inline void wil_dump_tx_status(struct wil6210_priv *wil,
+				      struct wil_ring_tx_status *msg)
+{
+	wil_err(wil,
+		"Status Msg: num_desc: %d, ring_id: %d, status: %d, desc_ready: %d, timestamp: 0x%x, d2: 0x%x, seq_num: 0x%x, w7: 0x%x\n",
+		msg->num_descriptors, msg->ring_id, msg->status,
+		msg->desc_ready, msg->timestamp, msg->d2, msg->seq_number,
+		msg->w7);
+}
+
+static inline void
+wil_tx_latency_calc_edma(struct wil6210_priv *wil,
+			 struct sk_buff *skb,
+			 struct wil_sta_info *sta,
+			 struct wil_ring_tx_status *msg)
+{
+	if (wil_tx_latency_calc_common(wil, skb, sta))
+		wil_dump_tx_status(wil, msg);
+}
+
 /**
  * Clean up transmitted skb's from the Tx descriptor RING.
  * Return number of descriptors cleared.
@@ -1305,11 +1325,16 @@ int wil_tx_sring_handler(struct wil6210_priv *wil,
 					ndev->stats.tx_packets++;
 					ndev->stats.tx_bytes += skb->len;
 					if (stats) {
+						struct wil_sta_info *sta;
+
 						stats->tx_packets++;
 						stats->tx_bytes += skb->len;
+						sta = &wil->sta[cid];
 
-						wil_tx_latency_calc(wil, skb,
-							&wil->sta[cid]);
+						wil_tx_latency_calc_edma(wil,
+									 skb,
+									 sta,
+									 &msg);
 					}
 				} else {
 					ndev->stats.tx_errors++;

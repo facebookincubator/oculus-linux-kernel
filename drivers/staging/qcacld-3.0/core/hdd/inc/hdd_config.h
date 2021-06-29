@@ -772,6 +772,26 @@ struct dhcp_server {
 	"enable/disable MAC address provisioning feature")
 
 /*
+ * </ini>
+ * read_mac_addr_from_mac_file - Use/ignore MAC address from mac cfg file
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used whether to configure MAC address from the cfg file or not
+ *
+ * Supported Feature: STA/SAP/P2P
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_READ_MAC_ADDR_FROM_MAC_FILE CFG_INI_BOOL( \
+	"read_mac_addr_from_mac_file", \
+	0, \
+	"Use/ignore MAC address from cfg file")
+
+/*
  * <ini>
  * provisioned_intf_pool - It is bit mask value of Interfaces
  * @Min: 0
@@ -1309,6 +1329,43 @@ struct dhcp_server {
 	"00E04C 00 01", \
 	"Used to specify action OUIs to reconnect when assoc timeout")
 
+/*
+ * <ini>
+ * gActionOUIDisableTWT - Used to specify action OUIs to control TWT param
+ * while joining the candidate AP
+ *
+ * This ini is used to specify AP OUIs. Some APs advertise TWT but do not
+ * follow through when the STA reaches out to them. Thus, TWT will be
+ * disabled when we receive OUIs of those APs.
+ * Note: User should strictly add new action OUIs at the end of this
+ * default value.
+ *
+ * Default OUIs: (All values in Hex)
+ * OUI 1: 001018
+ *   OUI data Len: 00
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
+ * OUI 2: 000986
+ *   OUI data Len: 00
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
+ * Refer to gEnableActionOUI for more detail about the format.
+ *
+ * Related: gEnableActionOUI
+ *
+ * Supported Feature: Action OUIs
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ACTION_OUI_DISABLE_TWT CFG_INI_STRING( \
+	"gActionOUIDisableTWT", \
+	0, \
+	ACTION_OUI_MAX_STR_LEN, \
+	"001018 00 01 000986 00 01", \
+	"Used to specify action OUIs to control TWT configuration")
+
 /* End of action oui inis */
 
 #ifdef ENABLE_MTRACE_LOG
@@ -1723,6 +1780,7 @@ enum host_log_level {
 	CFG(CFG_ACTION_OUI_DISABLE_AGGRESSIVE_EDCA) \
 	CFG(CFG_ACTION_OUI_SWITCH_TO_11N_MODE) \
 	CFG(CFG_ACTION_OUI_RECONN_ASSOCTIMEOUT) \
+	CFG(CFG_ACTION_OUI_DISABLE_TWT) \
 	CFG(CFG_ADVERTISE_CONCURRENT_OPERATION) \
 	CFG(CFG_BUG_ON_REINIT_FAILURE) \
 	CFG(CFG_DBS_SCAN_SELECTION) \
@@ -1746,6 +1804,7 @@ enum host_log_level {
 	CFG(CFG_NB_COMMANDS_RATE_LIMIT) \
 	CFG(CFG_HDD_DOT11_MODE) \
 	CFG(CFG_ENABLE_DISABLE_CHANNEL) \
+	CFG(CFG_READ_MAC_ADDR_FROM_MAC_FILE) \
 	CFG(CFG_SAR_CONVERSION) \
 	CFG(CFG_WOW_DISABLE) \
 	CFG(CFG_ENABLE_HOST_MODULE_LOG_LEVEL) \

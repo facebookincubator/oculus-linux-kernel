@@ -26,7 +26,6 @@
 #include "wlan_policy_mgr_api.h"
 #include <wmi_unified_priv.h>
 
-#ifdef ROAM_OFFLOAD_V1
 #if defined(WLAN_FEATURE_HOST_ROAM) || defined(WLAN_FEATURE_ROAM_OFFLOAD)
 QDF_STATUS
 wlan_cm_enable_roaming_on_connected_sta(struct wlan_objmgr_pdev *pdev,
@@ -145,7 +144,7 @@ QDF_STATUS wlan_cm_enable_rso(struct wlan_objmgr_pdev *pdev, uint8_t vdev_id,
 	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
 	QDF_STATUS status;
 
-	if (reason == REASON_DRIVER_DISABLED && requestor)
+	if (reason == REASON_DRIVER_ENABLED && requestor)
 		mlme_set_operations_bitmap(psoc, vdev_id, requestor, true);
 
 	status = cm_roam_acquire_lock();
@@ -229,7 +228,6 @@ QDF_STATUS wlan_cm_roam_stop_req(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 {
 	return cm_roam_stop_req(psoc, vdev_id, reason);
 }
-#endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 QDF_STATUS
@@ -252,6 +250,16 @@ wlan_cm_roam_extract_roam_initial_info(wmi_unified_t wmi, void *evt_buf,
 	if (wmi->ops->extract_roam_initial_info)
 		return wmi->ops->extract_roam_initial_info(wmi, evt_buf,
 							   dst, idx);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wlan_cm_roam_extract_roam_msg_info(wmi_unified_t wmi, void *evt_buf,
+				   struct roam_msg_info *dst, uint8_t idx)
+{
+	if (wmi->ops->extract_roam_msg_info)
+		return wmi->ops->extract_roam_msg_info(wmi, evt_buf, dst, idx);
 
 	return QDF_STATUS_E_FAILURE;
 }
@@ -466,9 +474,42 @@ wlan_cm_roam_get_vendor_btm_params(struct wlan_objmgr_psoc *psoc,
 
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
 }
+
+void
+wlan_cm_roam_get_score_delta_params(struct wlan_objmgr_psoc *psoc,
+				    struct wlan_roam_triggers *params)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return;
+
+	params->score_delta_param[IDLE_ROAM_TRIGGER] =
+			mlme_obj->cfg.trig_score_delta[IDLE_ROAM_TRIGGER];
+	params->score_delta_param[BTM_ROAM_TRIGGER] =
+			mlme_obj->cfg.trig_score_delta[BTM_ROAM_TRIGGER];
+}
+
+void
+wlan_cm_roam_get_min_rssi_params(struct wlan_objmgr_psoc *psoc,
+				 struct wlan_roam_triggers *params)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return;
+
+	params->min_rssi_params[DEAUTH_MIN_RSSI] =
+			mlme_obj->cfg.trig_min_rssi[DEAUTH_MIN_RSSI];
+	params->min_rssi_params[BMISS_MIN_RSSI] =
+			mlme_obj->cfg.trig_min_rssi[BMISS_MIN_RSSI];
+	params->min_rssi_params[MIN_RSSI_2G_TO_5G_ROAM] =
+			mlme_obj->cfg.trig_min_rssi[MIN_RSSI_2G_TO_5G_ROAM];
+}
 #endif
 
-#ifdef ROAM_OFFLOAD_V1
 QDF_STATUS wlan_cm_roam_cfg_get_value(struct wlan_objmgr_psoc *psoc,
 				      uint8_t vdev_id,
 				      enum roam_cfg_param roam_cfg_type,
@@ -560,7 +601,6 @@ wlan_cm_roam_cfg_set_value(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 
 	return status;
 }
-#endif
 
 #ifdef WLAN_FEATURE_FILS_SK
 QDF_STATUS wlan_cm_update_mlme_fils_connection_info(
@@ -586,6 +626,7 @@ QDF_STATUS wlan_cm_update_mlme_fils_connection_info(
 	}
 
 	if (!src_fils_info) {
+		mlme_debug("FILS: vdev:%d Clear fils info", vdev_id);
 		qdf_mem_free(mlme_priv->fils_con_info);
 		mlme_priv->fils_con_info = NULL;
 		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
@@ -602,6 +643,7 @@ QDF_STATUS wlan_cm_update_mlme_fils_connection_info(
 		return QDF_STATUS_E_NOMEM;
 	}
 
+	mlme_debug("FILS: vdev:%d update fils info", vdev_id);
 	qdf_mem_copy(mlme_priv->fils_con_info, src_fils_info,
 		     sizeof(struct wlan_fils_connection_info));
 
@@ -616,6 +658,7 @@ struct wlan_fils_connection_info *wlan_cm_get_fils_connection_info(
 {
 	struct wlan_objmgr_vdev *vdev;
 	struct mlme_legacy_priv *mlme_priv;
+	struct wlan_fils_connection_info *fils_info;
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
 						    WLAN_MLME_NB_ID);
@@ -631,13 +674,10 @@ struct wlan_fils_connection_info *wlan_cm_get_fils_connection_info(
 		return NULL;
 	}
 
-	if (!mlme_priv->fils_con_info) {
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
-		return NULL;
-	}
+	fils_info = mlme_priv->fils_con_info;
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
 
-	return mlme_priv->fils_con_info;
+	return fils_info;
 }
 
 QDF_STATUS wlan_cm_update_fils_ft(struct wlan_objmgr_psoc *psoc,
@@ -672,5 +712,153 @@ QDF_STATUS wlan_cm_update_fils_ft(struct wlan_objmgr_psoc *psoc,
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
 
 	return QDF_STATUS_SUCCESS;
+}
+#endif
+
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+QDF_STATUS
+wlan_cm_update_roam_scan_scheme_bitmap(struct wlan_objmgr_psoc *psoc,
+				       uint8_t vdev_id,
+				       uint32_t roam_scan_scheme_bitmap)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct mlme_legacy_priv *mlme_priv;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_MLME_NB_ID);
+
+	if (!vdev) {
+		mlme_err("vdev%d: vdev object is NULL", vdev_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_err("vdev%d: vdev legacy private object is NULL", vdev_id);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	mlme_priv->cm_roam.vdev_rso_config.roam_scan_scheme_bitmap =
+						roam_scan_scheme_bitmap;
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+uint32_t wlan_cm_get_roam_scan_scheme_bitmap(struct wlan_objmgr_psoc *psoc,
+					     uint8_t vdev_id)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct mlme_legacy_priv *mlme_priv;
+	uint32_t roam_scan_scheme_bitmap;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_MLME_NB_ID);
+
+	if (!vdev) {
+		mlme_err("vdev%d: vdev object is NULL", vdev_id);
+		return 0;
+	}
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_err("vdev%d: vdev legacy private object is NULL", vdev_id);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+		return 0;
+	}
+
+	roam_scan_scheme_bitmap =
+		mlme_priv->cm_roam.vdev_rso_config.roam_scan_scheme_bitmap;
+
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+
+	return roam_scan_scheme_bitmap;
+}
+
+QDF_STATUS
+wlan_cm_update_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			   uint32_t value, enum roam_fail_params states)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct mlme_legacy_priv *mlme_priv;
+	struct wlan_cm_rso_configs *rso_config;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_MLME_NB_ID);
+
+	if (!vdev) {
+		mlme_err("vdev%d: vdev object is NULL", vdev_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_err("vdev%d: vdev legacy private object is NULL", vdev_id);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	rso_config = &mlme_priv->cm_roam.vdev_rso_config;
+	switch (states) {
+	case ROAM_TRIGGER_REASON:
+		rso_config->rescan_rssi_delta = value;
+		break;
+	case ROAM_INVOKE_FAIL_REASON:
+		rso_config->roam_invoke_fail_reason = value;
+		break;
+	case ROAM_FAIL_REASON:
+		rso_config->roam_fail_reason = value;
+		break;
+	default:
+		break;
+	}
+
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+uint32_t wlan_cm_get_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+				 enum roam_fail_params states)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct mlme_legacy_priv *mlme_priv;
+	uint32_t roam_states = 0;
+	struct wlan_cm_rso_configs *rso_config;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_MLME_NB_ID);
+
+	if (!vdev) {
+		mlme_err("vdev%d: vdev object is NULL", vdev_id);
+		return 0;
+	}
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_err("vdev%d: vdev legacy private object is NULL", vdev_id);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+		return 0;
+	}
+
+	rso_config = &mlme_priv->cm_roam.vdev_rso_config;
+	switch (states) {
+	case ROAM_TRIGGER_REASON:
+		roam_states = rso_config->roam_trigger_reason;
+		break;
+	case ROAM_INVOKE_FAIL_REASON:
+		roam_states = rso_config->roam_invoke_fail_reason;
+		break;
+	case ROAM_FAIL_REASON:
+		roam_states = rso_config->roam_fail_reason;
+		break;
+	default:
+		break;
+	}
+
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_NB_ID);
+
+	return roam_states;
 }
 #endif

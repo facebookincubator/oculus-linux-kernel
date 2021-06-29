@@ -483,6 +483,7 @@ void afe_register_wakeup_irq_callback(
 	void (*afe_cb_wakeup_irq)(void *handle));
 int afe_get_doa_tracking_mon(u16 port_id,
 	struct doa_tracking_mon_param *doa_tracking_data);
+void afe_set_lsm_afe_port_id(int idx, int lsm_port);
 
 enum {
 	AFE_LPASS_CORE_HW_BLOCK_ID_NONE,

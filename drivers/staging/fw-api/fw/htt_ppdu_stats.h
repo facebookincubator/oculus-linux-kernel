@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,6 +31,8 @@
 
 #define HTT_BA_64_BIT_MAP_SIZE_DWORDS 2
 #define HTT_BA_256_BIT_MAP_SIZE_DWORDS 8
+#define HTT_BA_1024_BIT_MAP_SIZE_DWORDS 32
+
 enum htt_ppdu_stats_tlv_tag {
     HTT_PPDU_STATS_COMMON_TLV,                    /* htt_ppdu_stats_common_tlv */
     HTT_PPDU_STATS_USR_COMMON_TLV,                /* htt_ppdu_stats_user_common_tlv */
@@ -38,8 +40,8 @@ enum htt_ppdu_stats_tlv_tag {
     HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_64_TLV,    /* htt_ppdu_stats_enq_mpdu_bitmap_64_tlv */
     HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_256_TLV,   /* htt_ppdu_stats_enq_mpdu_bitmap_256_tlv */
     HTT_PPDU_STATS_SCH_CMD_STATUS_TLV,            /* htt_ppdu_stats_sch_cmd_tlv_v */
-    HTT_PPDU_STATS_USR_COMPLTN_COMMON_TLV,        /* htt_ppdu_stats_user_cmpltn_common_tlv */
-    HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_64_TLV,  /* htt_ppdu_stats_user_cmpltn_ba_bitmap_64_tlv */
+    HTT_PPDU_STATS_USR_COMPLTN_COMMON_TLV,        /* htt_ppdu_stats_user_compltn_common_tlv */
+    HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_64_TLV,  /* htt_ppdu_stats_user_compltn_ba_bitmap_64_tlv */
     HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_256_TLV, /* htt_ppdu_stats_user_cmpltn_ba_bitmap_256_tlv */
     HTT_PPDU_STATS_USR_COMPLTN_ACK_BA_STATUS_TLV, /* htt_ppdu_stats_user_cmpltn_ack_ba_status_tlv */
     HTT_PPDU_STATS_USR_COMPLTN_FLUSH_TLV,         /* htt_ppdu_stats_flush_tlv */
@@ -47,6 +49,9 @@ enum htt_ppdu_stats_tlv_tag {
     HTT_PPDU_STATS_INFO_TLV,                      /* htt_ppdu_stats_info */
     HTT_PPDU_STATS_TX_MGMTCTRL_PAYLOAD_TLV,       /* htt_ppdu_stats_tx_mgmtctrl_payload_tlv */
     HTT_PPDU_STATS_USERS_INFO_TLV,                /* htt_ppdu_stats_users_info_tlv */
+    HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_1024_TLV,  /* htt_ppdu_stats_enq_mpdu_bitmap_1024_tlv */
+    HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_1024_TLV,/* htt_ppdu_stats_user_compltn_ba_bitmap_1024_tlv */
+    HTT_PPDU_STATS_RX_MGMTCTRL_PAYLOAD_TLV,       /* htt_ppdu_stats_rx_mgmtctrl_payload_tlv */
 
     /* New TLV's are added above to this line */
     HTT_PPDU_STATS_MAX_TAG,
@@ -845,6 +850,19 @@ typedef struct {
          ((_var) |= ((_val) << HTT_PPDU_STATS_USER_COMMON_TLV_DELAYED_BA_S)); \
      } while (0)
 
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_M     0x00008000
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_S             15
+
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_M) >> \
+    HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_S)
+
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER, _val); \
+         ((_var) |= ((_val) << HTT_PPDU_STATS_USER_COMMON_TLV_IS_SQNUM_VALID_IN_BUFFER_S)); \
+     } while (0)
+
 #define HTT_PPDU_STATS_USER_COMMON_TLV_NUM_FRAMES_M     0xffff0000
 #define HTT_PPDU_STATS_USER_COMMON_TLV_NUM_FRAMES_S             16
 
@@ -910,12 +928,12 @@ typedef struct {
     union {
         A_UINT32 bw__mpdus_tried__mcast;
         struct {
-            A_UINT32 mcast:              1,
-                     mpdus_tried:        9,
-                     bw:                 4,
-                     delayed_ba:         1,
-                     reserved0:          1,
-                     num_frames:        16;
+            A_UINT32 mcast:                    1,
+                     mpdus_tried:              9,
+                     bw:                       4,
+                     delayed_ba:               1,
+                     is_sqno_valid_in_buffer:  1,
+                     num_frames:              16;
         };
     };
 
@@ -965,6 +983,11 @@ typedef struct {
     A_UINT32 qdepth_bytes;
     A_UINT32 full_aid : 12,
              reserved : 20;
+
+    /* data_frm_ppdu_id:
+     * Note - this is valid in case delayed BA processing specifically for
+     * BAR frames*/
+    A_UINT32 data_frm_ppdu_id;
 } htt_ppdu_stats_user_common_tlv;
 
 #define HTT_PPDU_STATS_USER_RATE_TLV_TID_NUM_M     0x000000ff
@@ -1582,6 +1605,24 @@ typedef struct {
     A_UINT32 enq_bitmap[HTT_BA_256_BIT_MAP_SIZE_DWORDS];
 } htt_ppdu_stats_enq_mpdu_bitmap_256_tlv;
 
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+    /* BIT [ 7 :   0]   :- tid_num
+     * BIT [ 15:   8]   :- reserved0
+     * BIT [ 31:  16]   :- sw_peer_id
+     */
+    union {
+        A_UINT32 sw_peer_id__tid_num;
+        struct {
+            A_UINT32 tid_num:         8,
+                     reserved0:       8,
+                     sw_peer_id:     16;
+        };
+    };
+    A_UINT32 start_seq;
+    A_UINT32 enq_bitmap[HTT_BA_1024_BIT_MAP_SIZE_DWORDS];
+} htt_ppdu_stats_enq_mpdu_bitmap_1024_tlv;
+
 /* COMPLETION_STATUS defined in HTT_PPDU_STATS_USER_COMPLETION_STATUS */
 #define HTT_PPDU_STATS_USER_CMPLTN_COMMON_TLV_COMPLETION_STATUS_M     0x000000ff
 #define HTT_PPDU_STATS_USER_CMPLTN_COMMON_TLV_COMPLETION_STATUS_S              0
@@ -2007,6 +2048,24 @@ typedef struct {
     A_UINT32 ba_bitmap[HTT_BA_256_BIT_MAP_SIZE_DWORDS];
 } htt_ppdu_stats_user_compltn_ba_bitmap_256_tlv;
 
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+    /* BIT [ 7 :   0]   :- tid_num
+     * BIT [ 15:   8]   :- reserved0
+     * BIT [ 31:  16]   :- sw_peer_id
+     */
+    union {
+        A_UINT32 sw_peer_id__tid_num;
+        struct {
+            A_UINT32 tid_num:        8,
+                     reserved0:      8,
+                     sw_peer_id:    16;
+        };
+    };
+    A_UINT32 ba_seq_no;
+    A_UINT32 ba_bitmap[HTT_BA_1024_BIT_MAP_SIZE_DWORDS];
+} htt_ppdu_stats_user_compltn_ba_bitmap_1024_tlv;
+
 #define HTT_PPDU_STATS_USER_CMPLTN_ACK_BA_STATUS_TLV_SW_PEER_ID_M     0x0000ffff
 #define HTT_PPDU_STATS_USER_CMPLTN_ACK_BA_STATUS_TLV_SW_PEER_ID_S              0
 
@@ -2294,6 +2353,48 @@ typedef struct {
      */
     A_UINT32 payload[1];
 } htt_ppdu_stats_tx_mgmtctrl_payload_tlv;
+
+#define HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_M     0x0000ffff
+#define HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_S              0
+
+#define HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_M) >> \
+    HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_S)
+
+#define HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH, _val); \
+         ((_var) |= ((_val) << HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH_S)); \
+     } while (0)
+
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+
+    /*
+     * BIT [ 15 :   0]   :- frame_length (in bytes)
+     * BIT [ 31 :  16]   :- reserved1
+     */
+    union {
+        A_UINT32 rsvd__frame_length;
+        struct {
+            A_UINT32 frame_length: 16,
+                     reserved1:    16; /* set to 0x0 */
+        };
+    };
+
+    /* Future purpose */
+    A_UINT32 reserved2; /* set to 0x0 */
+    A_UINT32 reserved3; /* set to 0x0 */
+
+    /* mgmt/ctrl frame payload
+     * The size of the actual mgmt payload (in bytes) can be obtained from
+     * the frame_length field.
+     * The size of entire payload including the padding for alignment
+     * (in bytes) can be derived from the length in tlv parametes,
+     * minus the 12 bytes of the above fields.
+     */
+    A_UINT32 payload[1];
+} htt_ppdu_stats_rx_mgmtctrl_payload_tlv;
 
 #define HTT_PPDU_STATS_USERS_INFO_TLV_MAX_USERS_M   0x000000ff
 #define HTT_PPDU_STATS_USERS_INFO_TLV_MAX_USERS_S            0

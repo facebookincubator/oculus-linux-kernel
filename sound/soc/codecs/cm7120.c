@@ -3927,9 +3927,9 @@ static int cm7120_resume(struct snd_soc_component *component)
 	usleep_range(1000, 1100);
 
 	ret = pinctrl_select_state(cm7120_codec->pinctrl,
-				cm7120_codec->pin_default);
+				cm7120_codec->pin_active);
 	if (ret)
-		dev_err(cm7120_codec->dev, "pin_default error");
+		dev_err(cm7120_codec->dev, "pin_active error");
 
 	clk_prepare_enable(cm7120_codec->mclk);
 	usleep_range(2000, 2100);
@@ -4294,10 +4294,10 @@ static int get_pin_control(struct cm7120_priv *cm7120)
 		goto error;
 	}
 
-	cm7120->pin_default = pinctrl_lookup_state(cm7120->pinctrl, "default");
-	if (IS_ERR_OR_NULL(cm7120->pin_default)) {
-		rc = PTR_ERR(cm7120->pin_default);
-		dev_err(cm7120->dev, "failed to get pinctrl default state\n");
+	cm7120->pin_active = pinctrl_lookup_state(cm7120->pinctrl, "active");
+	if (IS_ERR_OR_NULL(cm7120->pin_active)) {
+		rc = PTR_ERR(cm7120->pin_active);
+		dev_err(cm7120->dev, "failed to get pinctrl active state\n");
 		goto free_pinctrl;
 	}
 
@@ -4310,7 +4310,7 @@ static int get_pin_control(struct cm7120_priv *cm7120)
 
 	cm7120->pin_spk_en = pinctrl_lookup_state(cm7120->pinctrl, "spk_en");
 	if (IS_ERR_OR_NULL(cm7120->pin_spk_en)) {
-		rc = PTR_ERR(cm7120->pin_default);
+		rc = PTR_ERR(cm7120->pin_spk_en);
 		dev_err(cm7120->dev, "failed to get spk_en pin state\n");
 		goto free_pinctrl;
 	}
@@ -4318,12 +4318,12 @@ static int get_pin_control(struct cm7120_priv *cm7120)
 	cm7120->pin_spk_suspend =
 		pinctrl_lookup_state(cm7120->pinctrl, "spk_suspend");
 	if (IS_ERR_OR_NULL(cm7120->pin_spk_suspend)) {
-		rc = PTR_ERR(cm7120->pin_default);
+		rc = PTR_ERR(cm7120->pin_spk_suspend);
 		dev_err(cm7120->dev, "failed to get spk_suspend pin state\n");
 		goto free_pinctrl;
 	}
 
-	rc = pinctrl_select_state(cm7120->pinctrl, cm7120->pin_default);
+	rc = pinctrl_select_state(cm7120->pinctrl, cm7120->pin_active);
 	if (rc) {
 		dev_err(cm7120->dev, "failed to set pinctrl active, %d\n", rc);
 		goto free_pinctrl;
@@ -4482,6 +4482,13 @@ void cm7120_i2c_shutdown(struct i2c_client *client)
 
 	if (component != NULL)
 		cm7120_set_bias_level(component, SND_SOC_BIAS_OFF);
+
+	clk_disable_unprepare(cm7120->mclk);
+	pinctrl_select_state(cm7120->pinctrl, cm7120->pin_suspend);
+	usleep_range(1000, 1100);
+	regulator_disable(cm7120->codec_3v3);
+	usleep_range(1000, 1100);
+	regulator_disable(cm7120->codec_1v8);
 }
 
 struct i2c_driver cm7120_i2c_driver = {

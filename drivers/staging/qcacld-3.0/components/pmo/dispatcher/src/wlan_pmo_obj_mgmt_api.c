@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -282,7 +282,7 @@ QDF_STATUS pmo_vdev_ready(struct wlan_objmgr_vdev *vdev)
 	/* Register default wow patterns with firmware */
 	pmo_register_wow_default_patterns(vdev);
 
-	pmo_vdev_put_ref(vdev);
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_PMO_ID);
 
 	/*
 	 * The above APIs should return a status but don't.
@@ -841,4 +841,26 @@ pmo_unregister_get_beacon_interval_callback(struct wlan_objmgr_psoc *psoc)
 	pmo_psoc_put_ref(psoc);
 
 	return QDF_STATUS_SUCCESS;
+}
+
+bool
+wlan_pmo_get_sap_mode_bus_suspend(struct wlan_objmgr_psoc *psoc)
+{
+	struct pmo_psoc_priv_obj *pmo_psoc_ctx = pmo_psoc_get_priv(psoc);
+
+	if (!pmo_psoc_ctx)
+		return false;
+
+	return pmo_psoc_ctx->psoc_cfg.is_bus_suspend_enabled_in_sap_mode;
+}
+
+bool
+wlan_pmo_get_go_mode_bus_suspend(struct wlan_objmgr_psoc *psoc)
+{
+	struct pmo_psoc_priv_obj *pmo_psoc_ctx = pmo_psoc_get_priv(psoc);
+
+	if (!pmo_psoc_ctx)
+		return false;
+
+	return pmo_psoc_ctx->psoc_cfg.is_bus_suspend_enabled_in_go_mode;
 }

@@ -1077,7 +1077,7 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 
 	sme_debug("intf_ch:%d sap_ch:%d cc_switch_mode:%d, dbs:%d",
 		  intf_ch_freq, sap_ch_freq, cc_switch_mode,
-		  policy_mgr_is_dbs_enable(mac_ctx->psoc));
+		  policy_mgr_is_hw_dbs_capable(mac_ctx->psoc));
 
 	if (intf_ch_freq && sap_ch_freq != intf_ch_freq &&
 	    !policy_mgr_is_force_scc(mac_ctx->psoc)) {
@@ -1102,24 +1102,27 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 		       sap_ch_freq <= wlan_reg_ch_to_freq(CHAN_ENUM_2484)) ||
 		     (intf_ch_freq > wlan_reg_ch_to_freq(CHAN_ENUM_2484) &&
 		      sap_ch_freq > wlan_reg_ch_to_freq(CHAN_ENUM_2484)))) {
-			if (policy_mgr_is_dbs_enable(mac_ctx->psoc) ||
+			if (policy_mgr_is_hw_dbs_capable(mac_ctx->psoc) ||
 			    cc_switch_mode ==
 			    QDF_MCC_TO_SCC_WITH_PREFERRED_BAND)
 				intf_ch_freq = 0;
 		} else if (cc_switch_mode ==
 			   QDF_MCC_TO_SCC_SWITCH_WITH_FAVORITE_CHANNEL) {
 			status = policy_mgr_get_sap_mandatory_channel(
-					mac_ctx->psoc,
+					mac_ctx->psoc, sap_ch_freq,
 					&intf_ch_freq);
 			if (QDF_IS_STATUS_ERROR(status))
-				sme_err("no mandatory channel");
+				sme_err("no mandatory channels (%d, %d)",
+					sap_ch_freq, intf_ch_freq);
 		}
 	} else if ((intf_ch_freq == sap_ch_freq) && (cc_switch_mode ==
 				QDF_MCC_TO_SCC_SWITCH_WITH_FAVORITE_CHANNEL)) {
-		if (WLAN_REG_IS_24GHZ_CH_FREQ(intf_ch_freq)) {
+		if (WLAN_REG_IS_24GHZ_CH_FREQ(intf_ch_freq) ||
+		    WLAN_REG_IS_6GHZ_CHAN_FREQ(sap_ch_freq)) {
 			status =
 				policy_mgr_get_sap_mandatory_channel(
-					mac_ctx->psoc, &intf_ch_freq);
+					mac_ctx->psoc, sap_ch_freq,
+					&intf_ch_freq);
 			if (QDF_IS_STATUS_ERROR(status))
 				sme_err("no mandatory channel");
 		}
@@ -1128,7 +1131,8 @@ uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac_ctx,
 	if (intf_ch_freq == sap_ch_freq)
 		intf_ch_freq = 0;
 
-	sme_debug("##Concurrent Channels %s Interfering",
+	sme_debug("##Concurrent Channels (%d, %d) %s Interfering", sap_ch_freq,
+		  intf_ch_freq,
 		  intf_ch_freq == 0 ? "Not" : "Are");
 
 	return intf_ch_freq;
@@ -1166,7 +1170,6 @@ uint8_t csr_get_connected_infra(struct mac_context *mac_ctx)
 
 	return connected_session;
 }
-
 
 bool csr_is_concurrent_session_running(struct mac_context *mac)
 {
@@ -1415,9 +1418,16 @@ QDF_STATUS csr_parse_bss_description_ies(struct mac_context *mac_ctx,
 					 tDot11fBeaconIEs *pIEStruct)
 {
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
-	int ieLen =
-		(int)(bss_desc->length + sizeof(bss_desc->length) -
-		      GET_FIELD_OFFSET(struct bss_description, ieFields));
+	uint16_t ieFields_offset;
+	int ieLen;
+
+	ieFields_offset = GET_FIELD_OFFSET(struct bss_description, ieFields);
+	if (!bss_desc->length ||
+	    (bss_desc->length - sizeof(bss_desc->length) <= ieFields_offset))
+		return status;
+
+	ieLen =	(int)(bss_desc->length + sizeof(bss_desc->length) -
+		ieFields_offset);
 
 	if (ieLen > 0 && pIEStruct) {
 		if (!DOT11F_FAILED(dot11f_unpack_beacon_i_es
@@ -2755,6 +2765,10 @@ bool csr_lookup_pmkid_using_bssid(struct mac_context *mac,
 	qdf_mem_copy(pmk_cache->PMKID, pmksa->pmkid, sizeof(pmk_cache->PMKID));
 	qdf_mem_copy(pmk_cache->pmk, pmksa->pmk, pmksa->pmk_len);
 	pmk_cache->pmk_len = pmksa->pmk_len;
+	pmk_cache->pmk_lifetime = pmksa->pmk_lifetime;
+	pmk_cache->pmk_lifetime_threshold = pmksa->pmk_lifetime_threshold;
+	pmk_cache->pmk_ts = pmksa->pmk_entry_ts;
+
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_SME_ID);
 
 	return true;
@@ -2885,6 +2899,8 @@ uint8_t csr_construct_rsn_ie(struct mac_context *mac, uint32_t sessionId,
 		self_rsn_cap |= WLAN_CRYPTO_RSN_CAP_MFP_ENABLED;
 		if (pProfile->MFPRequired)
 			self_rsn_cap |= WLAN_CRYPTO_RSN_CAP_MFP_REQUIRED;
+		if (!(rsn_cap & WLAN_CRYPTO_RSN_CAP_OCV_SUPPORTED))
+			self_rsn_cap &= ~WLAN_CRYPTO_RSN_CAP_OCV_SUPPORTED;
 	} else {
 		self_rsn_cap &= ~WLAN_CRYPTO_RSN_CAP_MFP_ENABLED;
 		self_rsn_cap &= ~WLAN_CRYPTO_RSN_CAP_MFP_REQUIRED;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -28,6 +28,8 @@
 /* Timeout in milliseconds to wait for CMEM FST HTT response */
 #define DP_RX_FST_CMEM_RESP_TIMEOUT 2000
 
+#define INVALID_NAPI 0Xff
+
 #ifdef WLAN_SUPPORT_RX_FISA
 void dp_fisa_rx_fst_update_work(void *arg);
 
@@ -45,7 +47,7 @@ void dp_rx_dump_fisa_table(struct dp_soc *soc)
 
 	if (hif_force_wake_request(((struct hal_soc *)hal_soc_hdl)->hif_handle)) {
 		dp_err("Wake up request failed");
-		qdf_check_state_before_panic();
+		qdf_check_state_before_panic(__func__, __LINE__);
 		return;
 	}
 
@@ -55,7 +57,7 @@ void dp_rx_dump_fisa_table(struct dp_soc *soc)
 
 	if (hif_force_wake_release(((struct hal_soc *)hal_soc_hdl)->hif_handle)) {
 		dp_err("Wake up release failed");
-		qdf_check_state_before_panic();
+		qdf_check_state_before_panic(__func__, __LINE__);
 		return;
 	}
 }
@@ -103,6 +105,14 @@ static void dp_fisa_fse_cache_flush_timer(void *arg)
 	struct fse_cache_flush_history *fse_cache_flush_rec;
 	QDF_STATUS status;
 
+	if (!fisa_hdl)
+		return;
+
+	if (fisa_hdl->pm_suspended) {
+		qdf_atomic_set(&fisa_hdl->fse_cache_flush_posted, 0);
+		return;
+	}
+
 	fse_cache_flush_rec = &fisa_hdl->cache_fl_rec[fse_cache_flush_rec_idx %
 							MAX_FSE_CACHE_FL_HST];
 	fse_cache_flush_rec->timestamp = qdf_get_log_timestamp();
@@ -112,7 +122,6 @@ static void dp_fisa_fse_cache_flush_timer(void *arg)
 	dp_info("FSE cache flush for %d flows",
 		fse_cache_flush_rec->flows_added);
 
-	qdf_atomic_set(&fisa_hdl->fse_cache_flush_posted, 0);
 	status =
 	 dp_rx_flow_send_htt_operation_cmd(soc->pdev_list[0],
 					   DP_HTT_FST_CACHE_INVALIDATE_FULL,
@@ -123,6 +132,8 @@ static void dp_fisa_fse_cache_flush_timer(void *arg)
 		 * Not big impact cache entry gets updated later
 		 */
 	}
+
+	qdf_atomic_set(&fisa_hdl->fse_cache_flush_posted, 0);
 }
 
 /**
@@ -133,13 +144,24 @@ static void dp_fisa_fse_cache_flush_timer(void *arg)
  */
 static void dp_rx_fst_cmem_deinit(struct dp_rx_fst *fst)
 {
+	struct dp_fisa_rx_fst_update_elem *elem;
+	qdf_list_node_t *node;
 	int i;
 
 	qdf_cancel_work(&fst->fst_update_work);
 	qdf_flush_work(&fst->fst_update_work);
 	qdf_flush_workqueue(0, fst->fst_update_wq);
-
 	qdf_destroy_workqueue(0, fst->fst_update_wq);
+
+	qdf_spin_lock_bh(&fst->dp_rx_fst_lock);
+	while (qdf_list_peek_front(&fst->fst_update_list, &node) ==
+	       QDF_STATUS_SUCCESS) {
+		elem = (struct dp_fisa_rx_fst_update_elem *)node;
+		qdf_list_remove_front(&fst->fst_update_list, &node);
+		qdf_mem_free(elem);
+	}
+	qdf_spin_unlock_bh(&fst->dp_rx_fst_lock);
+
 	qdf_list_destroy(&fst->fst_update_list);
 	qdf_event_destroy(&fst->cmem_resp_event);
 
@@ -185,8 +207,10 @@ static QDF_STATUS dp_rx_fst_cmem_init(struct dp_rx_fst *fst)
 QDF_STATUS dp_rx_fst_attach(struct dp_soc *soc, struct dp_pdev *pdev)
 {
 	struct dp_rx_fst *fst;
+	struct dp_fisa_rx_sw_ft *ft_entry;
 	uint8_t *hash_key;
 	struct wlan_cfg_dp_soc_ctxt *cfg = soc->wlan_cfg_ctx;
+	int i = 0;
 	QDF_STATUS status;
 
 	/* Check if it is enabled in the INI */
@@ -230,6 +254,10 @@ QDF_STATUS dp_rx_fst_attach(struct dp_soc *soc, struct dp_pdev *pdev)
 	if (!fst->base)
 		goto out2;
 
+	ft_entry = (struct dp_fisa_rx_sw_ft *)fst->base;
+	for (i = 0; i < fst->max_entries; i++)
+		ft_entry[i].napi_id = INVALID_NAPI;
+
 	fst->hal_rx_fst = hal_rx_fst_attach(soc->osdev,
 					    &fst->hal_rx_fst_base_paddr,
 					    fst->max_entries,
@@ -255,6 +283,7 @@ QDF_STATUS dp_rx_fst_attach(struct dp_soc *soc, struct dp_pdev *pdev)
 
 	qdf_atomic_init(&fst->fse_cache_flush_posted);
 
+	fst->fse_cache_flush_allow = true;
 	fst->soc_hdl = soc;
 	soc->rx_fst = fst;
 	soc->fisa_enable = true;
@@ -395,6 +424,15 @@ void dp_rx_fst_update_cmem_params(struct dp_soc *soc, uint16_t num_entries,
 	qdf_event_set(&fst->cmem_resp_event);
 }
 
+void dp_rx_fst_update_pm_suspend_status(struct dp_soc *soc, bool suspended)
+{
+	struct dp_rx_fst *fst = soc->rx_fst;
+
+	if (!fst)
+		return;
+
+	fst->pm_suspended = suspended;
+}
 #else /* WLAN_SUPPORT_RX_FISA */
 
 #endif /* !WLAN_SUPPORT_RX_FISA */

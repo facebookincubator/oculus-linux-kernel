@@ -617,12 +617,7 @@ static void csr_roam_restore_default_config(struct mac_context *mac_ctx,
 	triggers.vdev_id = vdev_id;
 	triggers.trigger_bitmap = wlan_mlme_get_roaming_triggers(mac_ctx->psoc);
 	sme_debug("Reset roam trigger bitmap to 0x%x", triggers.trigger_bitmap);
-#ifdef ROAM_OFFLOAD_V1
 	wlan_cm_rso_set_roam_trigger(mac_ctx->pdev, vdev_id, &triggers);
-#else
-	/* temp change, This will be removed with ROAM_OFFLOAD_V1 enabled */
-	sme_set_roam_triggers(MAC_HANDLE(mac_ctx), &triggers);
-#endif
 	sme_roam_control_restore_default_config(MAC_HANDLE(mac_ctx),
 						vdev_id);
 }
@@ -824,6 +819,10 @@ static void csr_neighbor_roam_info_ctx_init(struct mac_context *mac,
 	src_cfg.uint_value = mac->mlme_cfg->lfr.roam_scan_hi_rssi_delay;
 	wlan_cm_roam_cfg_set_value(mac->psoc, session_id,
 				   HI_RSSI_DELAY_BTW_SCANS, &src_cfg);
+
+	wlan_cm_update_roam_scan_scheme_bitmap(mac->psoc, session_id,
+					       DEFAULT_ROAM_SCAN_SCHEME_BITMAP);
+
 	/*
 	 * Now we can clear the preauthDone that
 	 * was saved as we are connected afresh
@@ -1269,7 +1268,6 @@ bool csr_neighbor_middle_of_roaming(struct mac_context *mac, uint8_t sessionId)
 	return val;
 }
 
-#ifdef ROAM_OFFLOAD_V1
 bool
 wlan_cm_neighbor_roam_in_progress(struct wlan_objmgr_psoc *psoc,
 				  uint8_t vdev_id)
@@ -1291,7 +1289,6 @@ wlan_cm_neighbor_roam_in_progress(struct wlan_objmgr_psoc *psoc,
 
 	return csr_neighbor_middle_of_roaming(mac_ctx, vdev_id);
 }
-#endif
 
 /**
  * csr_neighbor_roam_process_handoff_req - Processes handoff request

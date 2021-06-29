@@ -288,7 +288,7 @@ static int dsi_phy_parse_dt_per_lane_cfgs(struct platform_device *pdev,
 static int dsi_phy_settings_init(struct platform_device *pdev,
 				 struct msm_dsi_phy *phy)
 {
-	int rc = 0;
+	int rc = 0, size = 0;
 	struct dsi_phy_per_lane_cfgs *lane = &phy->cfg.lanecfg;
 	struct dsi_phy_per_lane_cfgs *strength = &phy->cfg.strength;
 	struct dsi_phy_per_lane_cfgs *timing = &phy->cfg.timing;
@@ -319,6 +319,25 @@ static int dsi_phy_settings_init(struct platform_device *pdev,
 					rc);
 			goto err;
 		}
+	}
+
+	phy->phy_drive_strength_length = 0;
+	of_get_property(pdev->dev.of_node, "qcom,platform-phy-drive-strength", &size);
+	if (size) {
+		if (size % sizeof(*phy->phy_drive_strength)) {
+			DSI_PHY_ERR(phy, "invalid size %d of input for drive-strength\n", size);
+			return -EINVAL;
+		}
+
+		phy->phy_drive_strength = devm_kzalloc(&pdev->dev, size, GFP_KERNEL);
+		if (!phy->phy_drive_strength)
+			return -ENOMEM;
+
+		phy->phy_drive_strength_length = (size / sizeof(*phy->phy_drive_strength));
+		of_property_read_u32_array(pdev->dev.of_node,
+				"qcom,platform-phy-drive-strength",
+				phy->phy_drive_strength,
+				phy->phy_drive_strength_length);
 	}
 
 	/* Actual timing values are dependent on panel */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DSI_DEFS_H_
@@ -417,6 +417,7 @@ struct dsi_panel_cmd_set {
  * @mdp_transfer_time_us:   Specifies the mdp transfer time for command mode
  *                    panels in microseconds.
  * @dsi_transfer_time_us:   Specifies dsi transfer time for command mode.
+ * @fsc_mode:         Panel FSC (Field sequential coloring) Mode status.
  * @dsc_enabled:      DSC compression enabled.
  * @dsc:              DSC compression configuration.
  * @roi_caps:         Panel ROI capabilities.
@@ -440,6 +441,7 @@ struct dsi_mode_info {
 	u64 min_dsi_clk_hz;
 	u32 mdp_transfer_time_us;
 	u32 dsi_transfer_time_us;
+	bool fsc_mode;
 	bool dsc_enabled;
 	struct msm_display_dsc_info *dsc;
 	struct msm_roi_caps roi_caps;

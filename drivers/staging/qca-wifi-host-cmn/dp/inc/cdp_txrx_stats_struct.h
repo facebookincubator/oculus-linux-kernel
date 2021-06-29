@@ -43,7 +43,7 @@
 #endif
 
 /* 1 additional MCS is for invalid values */
-#define MAX_MCS (12 + 1)
+#define MAX_MCS (14 + 1)
 #define MAX_MCS_11A 8
 #define MAX_MCS_11B 7
 #define MAX_MCS_11AC 12
@@ -313,6 +313,8 @@ static const struct cdp_rate_debug cdp_rate_string[DOT11_MAX][MAX_MCS] = {
 		{"HE MCS 9 (256-QAM 5/6)  ", MCS_VALID},
 		{"HE MCS 10 (1024-QAM 3/4)", MCS_VALID},
 		{"HE MCS 11 (1024-QAM 5/6)", MCS_VALID},
+		{"HE MCS 12 (4096-QAM 3/4)", MCS_VALID},
+		{"HE MCS 13 (4096-QAM 5/6)", MCS_VALID},
 		{"INVALID ", MCS_INVALID},
 	}
 };
@@ -361,6 +363,9 @@ enum WDI_EVENT {
 	WDI_EVENT_RX_MPDU,
 	WDI_EVENT_HMWDS_AST_ADD_STATUS,
 	WDI_EVENT_PEER_QOS_STATS,
+	WDI_EVENT_PKT_CAPTURE_TX_DATA,
+	WDI_EVENT_PKT_CAPTURE_RX_DATA,
+	WDI_EVENT_PKT_CAPTURE_OFFLOAD_TX_DATA,
 	/* End of new event items */
 	WDI_EVENT_LAST
 };
@@ -1954,6 +1959,11 @@ struct cdp_pdev_stats {
 		uint64_t num_pool_bufs_replenish;
 		uint64_t num_bufs_alloc_success;
 	} rx_buffer_pool;
+
+	struct {
+		uint64_t num_bufs_refilled;
+		uint64_t num_bufs_allocated;
+	} rx_refill_buff_pool;
 };
 
 /* struct cdp_peer_hmwds_ast_add_status - hmwds peer ast add status

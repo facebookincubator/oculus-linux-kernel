@@ -127,6 +127,7 @@ struct per_slot_score {
  * @band_weight_per_index: band weight per index
  * @is_bssid_hint_priority: True if bssid_hint is given priority
  * @check_assoc_disallowed: Should assoc be disallowed if MBO OCE IE indicate so
+ * @vendor_roam_score_algorithm: Preferred ETP vendor roam score algorithm
  */
 struct scoring_cfg {
 	struct weight_cfg weight_config;
@@ -138,6 +139,7 @@ struct scoring_cfg {
 	uint32_t band_weight_per_index;
 	bool is_bssid_hint_priority;
 	bool check_assoc_disallowed;
+	bool vendor_roam_score_algorithm;
 };
 
 /**
@@ -156,12 +158,33 @@ struct pcl_freq_weight_list {
  * enum cm_blacklist_action - action taken by blacklist manager for the bssid
  * @CM_BLM_NO_ACTION: No operation to be taken for the BSSID in the scan list.
  * @CM_BLM_REMOVE: Remove the BSSID from the scan list (AP is blacklisted)
+ * This param is a way to inform the caller that this BSSID is blacklisted
+ * but it is a driver blacklist and we can connect to them if required.
+ * @CM_BLM_FORCE_REMOVE: Forcefully remove the BSSID from scan list.
+ * This param is introduced as we want to differentiate between optional
+ * mandatory blacklisting. Driver blacklisting is optional and won't
+ * fail any CERT or protocol violations as it is internal implementation.
+ * hence FORCE_REMOVE will mean that driver cannot connect to this BSSID
+ * in any situation.
  * @CM_BLM_AVOID: Add the Ap at last of the scan list (AP to Avoid)
  */
 enum cm_blacklist_action {
 	CM_BLM_NO_ACTION,
 	CM_BLM_REMOVE,
+	CM_BLM_FORCE_REMOVE,
 	CM_BLM_AVOID,
+};
+
+/**
+ * struct etp_params - params for estimated throughput
+ * @airtime_fraction: Portion of airtime available for outbound transmissions
+ * @data_ppdu_dur_target_us: Expected duration of a single PPDU, in us
+ * @ba_window_size: Block ack window size of the transmitter
+ */
+struct etp_params {
+	uint32_t airtime_fraction;
+	uint32_t data_ppdu_dur_target_us;
+	uint32_t ba_window_size;
 };
 
 #ifdef FEATURE_BLACKLIST_MGR

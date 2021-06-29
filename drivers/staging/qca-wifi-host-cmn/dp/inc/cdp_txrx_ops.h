@@ -566,6 +566,7 @@ struct cdp_cmn_ops {
 					  ol_txrx_rx_fp rx,
 					  ol_osif_peer_handle osif_peer);
 #endif /* QCA_SUPPORT_WDS_EXTENDED */
+	void (*txrx_drain)(ol_txrx_soc_handle soc);
 };
 
 struct cdp_ctrl_ops {
@@ -1122,6 +1123,9 @@ struct ol_if_ops {
 				   uint8_t *peer_mac_addr);
 #endif
 #ifdef DP_MEM_PRE_ALLOC
+	void *(*dp_prealloc_get_context)(uint32_t ctxt_type);
+
+	QDF_STATUS(*dp_prealloc_put_context)(uint32_t ctxt_type, void *vaddr);
 	void *(*dp_prealloc_get_consistent)(uint32_t *size,
 					    void **base_vaddr_unaligned,
 					    qdf_dma_addr_t *paddr_unaligned,
@@ -1146,6 +1150,7 @@ struct ol_if_ops {
 	QDF_STATUS(*nss_stats_clr)(struct cdp_ctrl_objmgr_psoc *psoc,
 				   uint8_t vdev_id);
 	int (*dp_rx_get_pending)(ol_txrx_soc_handle soc);
+	void (*dp_rx_sched_refill_thread)(ol_txrx_soc_handle soc);
 	/* TODO: Add any other control path calls required to OL_IF/WMA layer */
 #ifdef QCA_SUPPORT_WDS_EXTENDED
 	void (*rx_wds_ext_peer_learn)(struct cdp_ctrl_objmgr_psoc *ctrl_psoc,
@@ -1190,6 +1195,7 @@ struct ol_if_ops {
  *			 for this particular vdev.
  * @set_swlm_enable: Enable or Disable Software Latency Manager.
  * @is_swlm_enabled: Check if Software latency manager is enabled or not.
+ * @display_txrx_hw_info: Dump the DP rings info
  *
  * Function pointers for miscellaneous soc/pdev/vdev related operations.
  */
@@ -1272,12 +1278,14 @@ struct cdp_misc_ops {
 					     struct cdp_txrx_ext_stats *req);
 	QDF_STATUS (*request_rx_hw_stats)(struct cdp_soc_t *soc_hdl,
 					  uint8_t vdev_id);
+	void (*reset_rx_hw_ext_stats)(struct cdp_soc_t *soc_hdl);
 	QDF_STATUS (*vdev_inform_ll_conn)(struct cdp_soc_t *soc_hdl,
 					  uint8_t vdev_id,
 					  enum vdev_ll_conn_actions action);
 	QDF_STATUS (*set_swlm_enable)(struct cdp_soc_t *soc_hdl,
 				      uint8_t val);
 	uint8_t (*is_swlm_enabled)(struct cdp_soc_t *soc_hdl);
+	void (*display_txrx_hw_info)(struct cdp_soc_t *soc_hdl);
 };
 
 /**
@@ -1555,6 +1563,8 @@ struct cdp_ipa_ops {
 					 void (*ipa_uc_op_cb_type)
 					 (uint8_t *op_msg, void *osif_ctxt),
 					 void *usr_ctxt);
+	void (*ipa_deregister_op_cb)(struct cdp_soc_t *soc_hdl,
+				     uint8_t pdev_id);
 	QDF_STATUS (*ipa_get_stat)(struct cdp_soc_t *soc_hdl, uint8_t pdev_id);
 	qdf_nbuf_t (*ipa_tx_data_frame)(struct cdp_soc_t *soc_hdl,
 					uint8_t vdev_id, qdf_nbuf_t skb);

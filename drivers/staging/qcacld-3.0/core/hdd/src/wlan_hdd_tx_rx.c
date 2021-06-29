@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -485,6 +485,8 @@ int hdd_set_udp_qos_upgrade_config(struct hdd_adapter *adapter,
 
 	adapter->upgrade_udp_qos_threshold = priority;
 
+	hdd_debug("UDP packets qos upgrade to: %d", priority);
+
 	return 0;
 }
 
@@ -958,6 +960,52 @@ static void wlan_hdd_fix_broadcast_eapol(struct hdd_adapter *adapter,
 }
 #endif /* HANDLE_BROADCAST_EAPOL_TX_FRAME */
 
+#ifdef WLAN_DP_FEATURE_MARK_ICMP_REQ_TO_FW
+/**
+ * hdd_mark_icmp_req_to_fw() - Mark the ICMP request at a certain time interval
+ *			       to be sent to the FW.
+ * @hdd_ctx: Global hdd context (Caller's responsibility to validate)
+ * @skb: packet to be transmitted
+ *
+ * This func sets the "to_fw" flag in the packet context block, if the
+ * current packet is an ICMP request packet. This marking is done at a
+ * specific time interval, unless the INI value indicates to disable/enable
+ * this for all frames.
+ *
+ * Return: none
+ */
+static void hdd_mark_icmp_req_to_fw(struct hdd_context *hdd_ctx,
+				    struct sk_buff *skb)
+{
+	uint64_t curr_time, time_delta;
+	int time_interval_ms = hdd_ctx->config->icmp_req_to_fw_mark_interval;
+	static uint64_t prev_marked_icmp_time;
+
+	if (!hdd_ctx->config->icmp_req_to_fw_mark_interval)
+		return;
+
+	if (qdf_nbuf_get_icmp_subtype(skb) != QDF_PROTO_ICMP_REQ)
+		return;
+
+	/* Mark all ICMP request to be sent to FW */
+	if (time_interval_ms == WLAN_CFG_ICMP_REQ_TO_FW_MARK_ALL)
+		QDF_NBUF_CB_TX_PACKET_TO_FW(skb) = 1;
+
+	curr_time = qdf_get_log_timestamp();
+	time_delta = curr_time - prev_marked_icmp_time;
+	if (time_delta >= (time_interval_ms *
+			   QDF_LOG_TIMESTAMP_CYCLES_PER_10_US * 100)) {
+		QDF_NBUF_CB_TX_PACKET_TO_FW(skb) = 1;
+		prev_marked_icmp_time = curr_time;
+	}
+}
+#else
+static void hdd_mark_icmp_req_to_fw(struct hdd_context *hdd_ctx,
+				    struct sk_buff *skb)
+{
+}
+#endif
+
 /**
  * __hdd_hard_start_xmit() - Transmit a frame
  * @skb: pointer to OS packet (sk_buff)
@@ -1013,6 +1061,11 @@ static void __hdd_hard_start_xmit(struct sk_buff *skb,
 	if (wlan_hdd_validate_context(hdd_ctx))
 		goto drop_pkt;
 
+	if (hdd_ctx->hdd_wlan_suspended) {
+		hdd_err_rl("Device is system suspended, drop pkt");
+		goto drop_pkt;
+	}
+
 	wlan_hdd_classify_pkt(skb);
 	if (QDF_NBUF_CB_GET_PACKET_TYPE(skb) == QDF_NBUF_CB_PACKET_TYPE_ARP) {
 		if (qdf_nbuf_data_is_arp_req(skb) &&
@@ -1048,7 +1101,11 @@ static void __hdd_hard_start_xmit(struct sk_buff *skb,
 			QDF_NBUF_CB_TX_EXTRA_FRAG_FLAGS_NOTIFY_COMP(skb) = 1;
 			is_dhcp = true;
 		}
+	} else if (QDF_NBUF_CB_GET_PACKET_TYPE(skb) ==
+		   QDF_NBUF_CB_PACKET_TYPE_ICMP) {
+		hdd_mark_icmp_req_to_fw(hdd_ctx, skb);
 	}
+
 	/* track connectivity stats */
 	if (adapter->pkt_type_bitmap)
 		hdd_tx_rx_collect_connectivity_stats_info(skb, adapter,
@@ -2060,6 +2117,9 @@ QDF_STATUS hdd_rx_thread_gro_flush_ind_cbk(void *adapter, int rx_ctx_id)
 		return QDF_STATUS_E_FAILURE;
 	}
 
+	if (hdd_adapter->runtime_disable_rx_thread)
+		return QDF_STATUS_SUCCESS;
+
 	if (hdd_is_low_tput_gro_enable(hdd_adapter->hdd_ctx)) {
 		hdd_adapter->hdd_stats.tx_rx_stats.rx_gro_flush_skip++;
 		gro_flush_code = DP_RX_GRO_LOW_TPUT_FLUSH;
@@ -2231,7 +2291,8 @@ QDF_STATUS hdd_rx_deliver_to_stack(struct hdd_adapter *adapter,
 
 	if (skb_receive_offload_ok && hdd_ctx->receive_offload_cb &&
 	    !hdd_ctx->dp_agg_param.gro_force_flush[rx_ctx_id] &&
-	    !adapter->gro_flushed[rx_ctx_id]) {
+	    !adapter->gro_flushed[rx_ctx_id] &&
+	    !adapter->runtime_disable_rx_thread) {
 		status = hdd_ctx->receive_offload_cb(adapter, skb);
 
 		if (QDF_IS_STATUS_SUCCESS(status)) {
@@ -2257,7 +2318,8 @@ QDF_STATUS hdd_rx_deliver_to_stack(struct hdd_adapter *adapter,
 	adapter->hdd_stats.tx_rx_stats.rx_non_aggregated++;
 
 	/* Account for GRO/LRO ineligible packets, mostly UDP */
-	hdd_ctx->no_rx_offload_pkt_cnt++;
+	if (qdf_nbuf_get_gso_segs(skb) == 0)
+		hdd_ctx->no_rx_offload_pkt_cnt++;
 
 	if (qdf_likely((hdd_ctx->enable_dp_rx_threads ||
 		        hdd_ctx->enable_rxthread) &&
@@ -2315,7 +2377,8 @@ QDF_STATUS hdd_rx_deliver_to_stack(struct hdd_adapter *adapter,
 	adapter->hdd_stats.tx_rx_stats.rx_non_aggregated++;
 
 	/* Account for GRO/LRO ineligible packets, mostly UDP */
-	hdd_ctx->no_rx_offload_pkt_cnt++;
+	if (qdf_nbuf_get_gso_segs(skb) == 0)
+		hdd_ctx->no_rx_offload_pkt_cnt++;
 
 	if (qdf_likely((hdd_ctx->enable_dp_rx_threads ||
 		        hdd_ctx->enable_rxthread) &&
@@ -2543,6 +2606,8 @@ QDF_STATUS hdd_rx_packet_cbk(void *adapter_context,
 		skb->protocol = eth_type_trans(skb, skb->dev);
 		++adapter->hdd_stats.tx_rx_stats.rx_packets[cpu_index];
 		++adapter->stats.rx_packets;
+		/* count aggregated RX frame into stats */
+		adapter->stats.rx_packets += qdf_nbuf_get_gso_segs(skb);
 		adapter->stats.rx_bytes += skb->len;
 
 		/* Incr GW Rx count for NUD tracking based on GW mac addr */
@@ -2616,11 +2681,6 @@ QDF_STATUS hdd_rx_packet_cbk(void *adapter_context,
 				hdd_tx_rx_collect_connectivity_stats_info(
 					skb, adapter,
 					PKT_TYPE_RX_REFUSED, &pkt_type);
-			DPTRACE(qdf_dp_log_proto_pkt_info(NULL, NULL, 0, 0,
-						      QDF_RX,
-						      QDF_TRACE_DEFAULT_MSDU_ID,
-						      QDF_TX_RX_STATUS_DROP));
-
 		}
 	}
 
@@ -3262,6 +3322,32 @@ void hdd_send_rps_disable_ind(struct hdd_adapter *adapter)
 	cds_cfg->rps_enabled = false;
 }
 
+#ifdef IPA_LAN_RX_NAPI_SUPPORT
+void hdd_adapter_set_rps(uint8_t vdev_id, bool enable)
+{
+	struct hdd_context *hdd_ctx;
+	struct hdd_adapter *adapter;
+
+	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	if (!hdd_ctx)
+		return;
+
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	if (!adapter) {
+		hdd_err_rl("Adapter not found for vdev_id: %d", vdev_id);
+		return;
+	}
+
+	hdd_debug("Set RPS to %d for vdev_id %d", enable, vdev_id);
+	if (!hdd_ctx->rps) {
+		if (enable)
+			hdd_send_rps_ind(adapter);
+		else
+			hdd_send_rps_disable_ind(adapter);
+	}
+}
+#endif
+
 void hdd_tx_queue_cb(hdd_handle_t hdd_handle, uint32_t vdev_id,
 		     enum netif_action_type action,
 		     enum netif_reason_type reason)
@@ -3330,7 +3416,6 @@ void hdd_reset_tcp_adv_win_scale(struct hdd_context *hdd_ctx)
  *
  * Return: True if vote level is high
  */
-#ifdef RX_PERFORMANCE
 bool hdd_is_current_high_throughput(struct hdd_context *hdd_ctx)
 {
 	if (hdd_ctx->cur_vote_level < PLD_BUS_WIDTH_MEDIUM)
@@ -3338,7 +3423,6 @@ bool hdd_is_current_high_throughput(struct hdd_context *hdd_ctx)
 	else
 		return true;
 }
-#endif
 #endif
 
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
@@ -3374,6 +3458,30 @@ static void hdd_ini_tx_flow_control(struct hdd_config *config,
 #else
 static void hdd_ini_tx_flow_control(struct hdd_config *config,
 				    struct wlan_objmgr_psoc *psoc)
+{
+}
+#endif
+
+#ifdef WLAN_FEATURE_MSCS
+/**
+ * hdd_ini_mscs_params() - Initialize INIs related to MSCS feature
+ * @config: pointer to hdd config
+ * @psoc: pointer to psoc obj
+ *
+ * Return: none
+ */
+static void hdd_ini_mscs_params(struct hdd_config *config,
+				struct wlan_objmgr_psoc *psoc)
+{
+	config->mscs_pkt_threshold =
+		cfg_get(psoc, CFG_VO_PKT_COUNT_THRESHOLD);
+	config->mscs_voice_interval =
+		cfg_get(psoc, CFG_MSCS_VOICE_INTERVAL);
+}
+
+#else
+static inline void hdd_ini_mscs_params(struct hdd_config *config,
+				       struct wlan_objmgr_psoc *psoc)
 {
 }
 #endif
@@ -3581,6 +3689,7 @@ void hdd_dp_cfg_update(struct wlan_objmgr_psoc *psoc,
 	hdd_ini_tx_flow_control(config, psoc);
 	hdd_ini_bus_bandwidth(config, psoc);
 	hdd_ini_tcp_settings(config, psoc);
+	hdd_ini_mscs_params(config, psoc);
 
 	hdd_ini_tcp_del_ack_settings(config, psoc);
 
@@ -3614,6 +3723,8 @@ void hdd_dp_cfg_update(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_DP_RX_WAKELOCK_TIMEOUT);
 	config->num_dp_rx_threads = cfg_get(psoc, CFG_DP_NUM_DP_RX_THREADS);
 	config->cfg_wmi_credit_cnt = cfg_get(psoc, CFG_DP_HTC_WMI_CREDIT_CNT);
+	config->icmp_req_to_fw_mark_interval =
+		cfg_get(psoc, CFG_DP_ICMP_REQ_TO_FW_MARK_INTERVAL);
 	hdd_dp_dp_trace_cfg_update(config, psoc);
 	hdd_dp_nud_tracking_cfg_update(config, psoc);
 }

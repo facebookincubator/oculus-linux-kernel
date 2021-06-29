@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (C) 2014-2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -920,8 +920,8 @@ static void _sde_plane_setup_scaler3(struct sde_plane *psde,
 	scale_cfg->uv_filter_cfg = SDE_SCALE_BIL;
 	scale_cfg->alpha_filter_cfg = SDE_SCALE_ALPHA_BIL;
 	scale_cfg->lut_flag = 0;
-	scale_cfg->blend_cfg = 1;
-	scale_cfg->enable = 1;
+	scale_cfg->blend_cfg = SDE_FORMAT_IS_FSC(fmt) ? 0 : 1;
+	scale_cfg->enable = SDE_FORMAT_IS_FSC(fmt) ? 0 : 1;
 	scale_cfg->dyn_exp_disabled = SDE_QSEED_DEFAULT_DYN_EXP;
 }
 
@@ -2579,6 +2579,13 @@ static int sde_plane_sspp_atomic_check(struct drm_plane *plane,
 	msm_fmt = msm_framebuffer_format(fb);
 	fmt = to_sde_format(msm_fmt);
 
+	if (SDE_FORMAT_IS_FSC(fmt) && (width % 3 != 0)) {
+		SDE_ERROR_PLANE(psde,
+				"fsc width must be multiple of 3, width %d\n",
+				width);
+		return -EINVAL;
+	}
+
 	min_src_size = SDE_FORMAT_IS_YUV(fmt) ? 2 : 1;
 
 	if (SDE_FORMAT_IS_YUV(fmt) &&
@@ -2941,6 +2948,12 @@ static void _sde_plane_update_roi_config(struct drm_plane *plane,
 	psde->pipe_cfg.src_rect = src;
 	psde->pipe_cfg.dst_rect = dst;
 
+	if (SDE_FORMAT_IS_FSC(fmt)) {
+		psde->pipe_cfg.src_rect.h *= 3;
+		psde->pipe_cfg.dst_rect.w /= 3;
+		psde->pipe_cfg.dst_rect.h *= 3;
+	}
+
 	_sde_plane_setup_scaler(psde, pstate, fmt, false);
 
 	/* check for color fill */
@@ -3016,9 +3029,9 @@ static void _sde_plane_update_format_and_rects(struct sde_plane *psde,
 		cdp_cfg->enable = psde->catalog->perf.cdp_cfg
 			   [SDE_PERF_CDP_USAGE_RT].rd_enable;
 		cdp_cfg->ubwc_meta_enable =
-			   SDE_FORMAT_IS_UBWC(fmt);
+			   SDE_FORMAT_IS_UBWC(fmt) || SDE_FORMAT_IS_FSC(fmt);
 		cdp_cfg->tile_amortize_enable =
-			   SDE_FORMAT_IS_UBWC(fmt) ||
+			   SDE_FORMAT_IS_UBWC(fmt) || SDE_FORMAT_IS_FSC(fmt) ||
 			   SDE_FORMAT_IS_TILE(fmt);
 		cdp_cfg->preload_ahead = SDE_WB_CDP_PRELOAD_AHEAD_64;
 
@@ -4196,8 +4209,7 @@ sde_plane_duplicate_state(struct drm_plane *plane)
 	if (pstate->layout_offset) {
 		if (pstate->layout_offset > 0)
 			pstate->base.crtc_x += pstate->layout_offset;
-		pstate->property_values[PLANE_PROP_LAYOUT].value =
-				SDE_LAYOUT_NONE;
+		pstate->layout = SDE_LAYOUT_NONE;
 		pstate->layout_offset = 0;
 	}
 

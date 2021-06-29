@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SDE_CONNECTOR_H_
@@ -905,6 +905,30 @@ int sde_connector_helper_reset_custom_properties(
  */
 int sde_connector_state_get_mode_info(struct drm_connector_state *conn_state,
 	struct msm_mode_info *mode_info);
+
+/**
+ * sde_connector_state_get_topology - get topology from given connector state
+ * conn_state: Pointer to the DRM connector state object
+ * topology: Pointer to store topology info of the display
+ * Returns: 0 on success, negative errno on failure
+ */
+static inline int sde_connector_state_get_topology(
+		struct drm_connector_state *conn_state,
+		struct msm_display_topology *topology)
+{
+	struct sde_connector_state *sde_conn_state = NULL;
+
+	if (!conn_state || !topology) {
+		SDE_ERROR("invalid arguments conn_state %d, topology %d\n",
+				!conn_state, !topology);
+		return -EINVAL;
+	}
+
+	sde_conn_state = to_sde_connector_state(conn_state);
+	memcpy(topology, &sde_conn_state->mode_info.topology,
+			sizeof(struct msm_display_topology));
+	return 0;
+}
 
 /**
 * sde_connector_get_mode_info - retrieve mode info for given mode

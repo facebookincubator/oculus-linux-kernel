@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -45,11 +45,12 @@ static int wlan_hdd_recovery_notifier_call(struct notifier_block *block,
 	struct hdd_context *hdd_ctx;
 	struct qdf_notifer_data *hdd_hang_data = data;
 	uint8_t *hdd_buf_ptr;
-	struct hdd_adapter *adapter;
+	struct hdd_adapter *adapter, *next_adapter = NULL;
 	uint32_t total_len;
 	struct wlan_objmgr_vdev *vdev;
 	struct hdd_hang_event_fixed_param *cmd;
 	struct hdd_scan_fixed_param *cmd_scan;
+	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_RECOVERY_NOTIFIER_CALL;
 
 	if (!data)
 		return NOTIFY_STOP_MASK;
@@ -58,12 +59,11 @@ static int wlan_hdd_recovery_notifier_call(struct notifier_block *block,
 	if (!hdd_ctx)
 		return NOTIFY_STOP_MASK;
 
-	if (hdd_hang_data->offset >= QDF_WLAN_MAX_HOST_OFFSET)
-		return NOTIFY_STOP_MASK;
-
 	if (state == QDF_SCAN_ATTEMPT_FAILURES) {
 		total_len = sizeof(*cmd_scan);
 		hdd_buf_ptr = hdd_hang_data->hang_data + hdd_hang_data->offset;
+		if (hdd_hang_data->offset + total_len > QDF_WLAN_HANG_FW_OFFSET)
+			return NOTIFY_STOP_MASK;
 		cmd_scan = (struct hdd_scan_fixed_param *)hdd_buf_ptr;
 		QDF_HANG_EVT_SET_HDR(&cmd_scan->tlv_header,
 				     HANG_EVT_TAG_OS_IF_SCAN,
@@ -77,14 +77,24 @@ static int wlan_hdd_recovery_notifier_call(struct notifier_block *block,
 		hdd_hang_data->offset += total_len;
 	}
 
-	hdd_for_each_adapter_dev_held(hdd_ctx, adapter) {
+	hdd_for_each_adapter_dev_held_safe(hdd_ctx, adapter, next_adapter,
+					   dbgid) {
 		vdev = hdd_objmgr_get_vdev(adapter);
 		if (!vdev) {
-			dev_put(adapter->dev);
+			hdd_adapter_dev_put_debug(adapter, dbgid);
 			continue;
 		}
 		total_len = sizeof(*cmd);
 		hdd_buf_ptr = hdd_hang_data->hang_data + hdd_hang_data->offset;
+		if (hdd_hang_data->offset + total_len >
+				QDF_WLAN_HANG_FW_OFFSET) {
+			hdd_objmgr_put_vdev(vdev);
+			hdd_adapter_dev_put_debug(adapter, dbgid);
+			if (next_adapter)
+				hdd_adapter_dev_put_debug(next_adapter,
+							  dbgid);
+			return NOTIFY_STOP_MASK;
+		}
 		cmd = (struct hdd_hang_event_fixed_param *)hdd_buf_ptr;
 		QDF_HANG_EVT_SET_HDR(&cmd->tlv_header,
 				     HANG_EVT_TAG_OS_IF,
@@ -95,7 +105,7 @@ static int wlan_hdd_recovery_notifier_call(struct notifier_block *block,
 		cmd->vdev_substate = wlan_vdev_mlme_get_substate(vdev);
 		hdd_hang_data->offset += total_len;
 		hdd_objmgr_put_vdev(vdev);
-		dev_put(adapter->dev);
+		hdd_adapter_dev_put_debug(adapter, dbgid);
 	}
 
 	return NOTIFY_OK;

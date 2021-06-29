@@ -116,3 +116,13 @@ Optional properties:
 					specified in Documentation/devicetree/bindings/graph.txt.
 					Video port 0 reg 0 is for the bridge output. The remote
 					endpoint phandle should be mipi_dsi_device device node.
+- qcom,dsi-panel-fsc-rgb-order:         Specifies rgb color order for fsc panel. This property
+                                        reads color order string value. If the property
+                                        is not specified then default value will be chosen 0.
+                                        values that can be set for the propert are given below:
+                                        -- "fsc_rgb"
+                                        -- "fsc_rbg"
+                                        -- "fsc_bgr"
+                                        -- "fsc_brg"
+                                        -- "fsc_gbr"
+                                        -- "fsc_grb"
