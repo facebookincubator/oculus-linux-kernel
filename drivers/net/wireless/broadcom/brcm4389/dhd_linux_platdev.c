@@ -37,10 +37,9 @@
 #if defined(OEM_ANDROID)
 #include <wl_android.h>
 #endif
+#include <dhd_plat.h>
 #if defined(CONFIG_WIFI_CONTROL_FUNC) || defined(CUSTOMER_HW4)
 #include <linux/wlan_plat.h>
-#else
-#include <dhd_plat.h>
 #endif /* CONFIG_WIFI_CONTROL_FUNC */
 #ifdef BCMDBUS
 #include <dbus.h>
@@ -624,7 +623,7 @@ static struct platform_driver dhd_wifi_platform_dev_driver = {
 	}
 };
 
-int __init dhd_wifi_platform_register_drv(void)
+int dhd_wifi_platform_register_drv(void)
 {
 	int err = 0;
 	struct device *dev;
@@ -948,4 +947,31 @@ end:
 #endif /* OEM_ANDROID */
 
 	return err;
+}
+
+/* Weak functions that can be overridden in Platform specific implementation */
+uint32 __attribute__ ((weak)) dhd_plat_get_info_size(void)
+{
+	return 0;
+}
+
+int __attribute__ ((weak)) dhd_plat_pcie_register_event(void *plat_info,
+		struct pci_dev *pdev, dhd_pcie_event_cb_t pfn)
+{
+	return 0;
+}
+
+void __attribute__ ((weak)) dhd_plat_pcie_deregister_event(void *plat_info)
+{
+	return;
+}
+
+void __attribute__ ((weak)) dhd_plat_l1ss_ctrl(bool ctrl)
+{
+	return;
+}
+
+void __attribute__ ((weak)) dhd_plat_report_bh_sched(void *plat_info, int resched)
+{
+	return;
 }

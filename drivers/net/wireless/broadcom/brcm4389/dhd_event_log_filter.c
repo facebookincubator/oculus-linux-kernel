@@ -88,7 +88,7 @@
 #define EWPF_SLICE_MAIN			0	/* SLICE ID for 5GHZ */
 #define EWPF_SLICE_AUX			1	/* SLICE ID for 2GHZ */
 
-#define EWPF_MAX_IFACE			2	/* MAX IFACE supported, 0: STA */
+#define EWPF_MAX_IFACE			3	/* MAX IFACE supported */
 #define EWPF_MAX_EVENT			1	/* MAX EVENT counter supported */
 #define EWPF_MAX_KEY_INFO			1	/* MAX KEY INFO counter supported */
 

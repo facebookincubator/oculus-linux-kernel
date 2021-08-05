@@ -232,10 +232,6 @@ typedef uint32 ratespec_t;
 #define WL_SCAN_THROTTLE_OTHER_FW_SCAN		(1U << 2)  /* for other scans like pno etc */
 #define WL_SCAN_THROTTLE_HOSTSCAN		(1U << 3)
 
-/* Mask bit for Assoc scan, Roam scan, Other FW scan, Host scan bit defines */
-#define WL_SCANFLAGS_CLIENT_MASK	0xF00u
-#define WL_SCANFLAGS_CLIENT_SHIFT	8
-
 /* Mask bit for LOW power scan, High accuracy scan, LOW span scan bit defines */
 #define WL_SCANFLAGS_SCAN_MODE_MASK	0x7000u
 #define WL_SCANFLAGS_SCAN_MODE_SHIFT	12u
@@ -260,10 +256,23 @@ typedef uint32 ratespec_t;
 					  */
 #define WL_SCANFLAGS_SISO	0x40U	/* Use 1 RX chain for scanning */
 #define WL_SCANFLAGS_MIMO	0x80U	/* Force MIMO scanning */
+
+#define WL_SCANFLAGS_NOUPREQ  0x100U   /* escan without sending unicast probe request */
+
+/*  This is to re purpose the definition to firmware internal use.
+ *  By repurposing these bit values can be used for host.
+ *  These are moved to higher bits and defined in firmware.
+ */
+#ifndef WL_SCANFLAGS_INT_SCANTYPE_HAS_ALIAS
+/* Mask bit for Assoc scan, Roam scan, Other FW scan, Host scan bit defines */
+#define WL_SCANFLAGS_CLIENT_MASK	0xF00u
+#define WL_SCANFLAGS_CLIENT_SHIFT	8
 #define WL_SCANFLAGS_ASSOCSCAN  0x100U   /* Assoc scan    */
 #define WL_SCANFLAGS_ROAMSCAN   0x200U   /* Roam scan     */
 #define WL_SCANFLAGS_FWSCAN     0x400U   /* Other FW scan */
 #define WL_SCANFLAGS_HOSTSCAN   0x800U   /* Host scan     */
+#endif /*  WL_SCANFLAGS_INT_SCANTYPE_HAS_ALIAS */
+
 #define WL_SCANFLAGS_LOW_POWER_SCAN     0x1000U /* LOW power scan, scheduled scan
 						* only on scancore
 						*/
@@ -277,9 +286,9 @@ typedef uint32 ratespec_t;
 						 * enable LISTEN along with PASSIVE flag
 						 */
 
-/* BIT MASK for SSID TYPE */
-#define WL_SCAN_SSIDFLAGS_SHORT_SSID		0x01U /* Use as Regular SSID */
-
+/* BIT MASK for 6G_SCAN_TYPE  */
+#define WL_SCAN_SSIDFLAGS_SHORT_SSID		0x01U /* include short ssid */
+#define WL_SCAN_INC_RNR				0x02U /* Include RNR channels for scan */
 /* Value to decide scan type based on scqs */
 #define WL_SC_RETRY_SCAN_MODE_NO_SCAN		0x0u	/* Do not reschedule scan */
 #define WL_SC_RETRY_SCAN_MODE_HIGH_ACC		0x1u	/* Reschedule scan as HighAccuracy */
@@ -433,6 +442,8 @@ typedef uint32 ratespec_t;
 /* bss_info_cap_t flags_2 */
 #define WL_BSS_FLAGS_THRU_LPSC		0x01	/* bss_info obtained thru' LPSC */
 #define WL_BSS_FLAGS_QBSS_LOAD		0x02	/* QBSS load value present */
+#define WL_BSS2_FLAGS_FROM_FILS		0x04	/* values are based on FILS frame */
+#define WL_BSS2_FLAGS_SHORT_SSID	0x08	/* values ssid is indicating as short ssid */
 
 /* bit definitions for bcnflags in wl_bss_info */
 #define WL_BSS_BCNFLAGS_INTERWORK_PRESENT	0x01 /* beacon had IE, accessnet valid */
@@ -649,7 +660,8 @@ typedef uint32 ratespec_t;
 #define WLC_IOCTL_MAXLEN            8192u   /* "max" length ioctl buffer */
 #endif /* MACOSX */
 
-#define WLC_IOCTL_MEDLEN            1912u   /* "med" length ioctl buffer */
+#define WLC_IOCTL_MEDLEN            1936u   /* "med" length ioctl buffer */
+
 #define WLC_IOCTL_SMLEN              256u   /* "small" length ioctl buffer */
 
 #define WLC_SAMPLECOLLECT_MAXLEN   10240u   /* Max Sample Collect buffer for two cores */
@@ -1455,11 +1467,10 @@ typedef uint32 ratespec_t;
 /* re-using WL_SRSCAN_VAL */
 #define WL_RANDMAC_VAL		0x02000000
 
-#define WL_UNUSED_VAL		0x10000000	/* Was a duplicate for WL_LPC_VAL. Removed */
 #define WL_NET_DETECT_VAL	0x20000000
-#define WL_OCE_VAL  0x20000000 /* reuse */
+#define WL_OCE_VAL		0x20000000 /* reuse */
 #define WL_PCIE_VAL		0x40000000
-#define WL_PMDUR_VAL	0x80000000
+#define WL_PMDUR_VAL		0x80000000
 /* use top-bit for WL_TIME_STAMP_VAL because this is a modifier
  * rather than a message-type of its own
  */

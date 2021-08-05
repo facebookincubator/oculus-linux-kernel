@@ -433,10 +433,6 @@ si_pmu_otp_pllcontrol(si_t *sih, osl_t *osh)
 	uint32 val;
 	uint8 pll_ctrlcnt = 0;
 
-	if (FWSIGN_ENAB()) {
-		return;
-	}
-
 	if (PMUREV(sih->pmurev) >= 5) {
 		pll_ctrlcnt = (sih->pmucaps & PCAP5_PC_MASK) >> PCAP5_PC_SHIFT;
 	} else {
@@ -466,10 +462,6 @@ si_pmu_otp_vreg_control(si_t *sih, osl_t *osh)
 	uint32 val;
 	uint8 vreg_ctrlcnt = 0;
 
-	if (FWSIGN_ENAB()) {
-		return;
-	}
-
 	if (PMUREV(sih->pmurev) >= 5) {
 		vreg_ctrlcnt = (sih->pmucaps & PCAP5_VC_MASK) >> PCAP5_VC_SHIFT;
 	} else {
@@ -497,9 +489,6 @@ si_pmu_otp_chipcontrol(si_t *sih, osl_t *osh)
 	char name[16];
 	const char *otp_val;
 
-	if (FWSIGN_ENAB()) {
-		return;
-	}
 	if (PMUREV(sih->pmurev) >= 5) {
 		cc_ctrlcnt = (sih->pmucaps & PCAP5_CC_MASK) >> PCAP5_CC_SHIFT;
 	} else {
@@ -1916,10 +1905,8 @@ si_pmu_res_masks(si_t *sih, uint32 *pmin, uint32 *pmax)
 		break;
 	}
 
-	if (!FWSIGN_ENAB()) {
-		/* nvram override */
-		si_nvram_res_masks(sih, &min_mask, &max_mask);
-	}
+	/* nvram override */
+	si_nvram_res_masks(sih, &min_mask, &max_mask);
 
 	*pmin = min_mask;
 	*pmax = max_mask;
@@ -2354,30 +2341,28 @@ si_pmu_res_init(si_t *sih, osl_t *osh)
 		      pmu_res_updown_table[pmu_res_updown_table_sz].updown);
 	}
 
-	if (!FWSIGN_ENAB()) {
-		/* # resources */
-		rsrcs = (sih->pmucaps & PCAP_RC_MASK) >> PCAP_RC_SHIFT;
+	/* # resources */
+	rsrcs = (sih->pmucaps & PCAP_RC_MASK) >> PCAP_RC_SHIFT;
 
-		/* Apply nvram overrides to up/down timers */
-		for (i = 0; i < rsrcs; i ++) {
-			uint32 r_val;
-			snprintf(name, sizeof(name), rstr_rDt, i);
-			if ((val = getvar(NULL, name)) == NULL)
-				continue;
-			r_val = (uint32)bcm_strtoul(val, NULL, 0);
-			/* PMUrev = 13, pmu resource updown times are 12 bits(0:11 DT, 16:27 UT) */
-			/* OLD values are 8 bits for UT/DT, handle the old nvram format */
-			if (PMUREV(sih->pmurev) >= 13) {
-				if (r_val < (1 << 16)) {
-					uint16 up_time = (r_val >> 8) & 0xFF;
-					r_val &= 0xFF;
-					r_val |= (up_time << 16);
-				}
+	/* Apply nvram overrides to up/down timers */
+	for (i = 0; i < rsrcs; i ++) {
+		uint32 r_val;
+		snprintf(name, sizeof(name), rstr_rDt, i);
+		if ((val = getvar(NULL, name)) == NULL)
+			continue;
+		r_val = (uint32)bcm_strtoul(val, NULL, 0);
+		/* PMUrev = 13, pmu resource updown times are 12 bits(0:11 DT, 16:27 UT) */
+		/* OLD values are 8 bits for UT/DT, handle the old nvram format */
+		if (PMUREV(sih->pmurev) >= 13) {
+			if (r_val < (1 << 16)) {
+				uint16 up_time = (r_val >> 8) & 0xFF;
+				r_val &= 0xFF;
+				r_val |= (up_time << 16);
 			}
-			PMU_MSG(("Applying %s=%s to rsrc %d res_updn_timer\n", name, val, i));
-			W_REG(osh, &pmu->res_table_sel, (uint32)i);
-			W_REG(osh, &pmu->res_updn_timer, r_val);
 		}
+		PMU_MSG(("Applying %s=%s to rsrc %d res_updn_timer\n", name, val, i));
+		W_REG(osh, &pmu->res_table_sel, (uint32)i);
+		W_REG(osh, &pmu->res_updn_timer, r_val);
 	}
 
 	/* Program Rsrc Substate Transition Timer */
@@ -2398,16 +2383,14 @@ si_pmu_res_init(si_t *sih, osl_t *osh)
 	/* Program resource dependencies table */
 	si_pmu_resdeptbl_upd(sih, osh, pmu, pmu_res_depend_table, pmu_res_depend_table_sz);
 
-	if (!FWSIGN_ENAB()) {
-		/* Apply nvram overrides to dependencies masks */
-		for (i = 0; i < rsrcs; i ++) {
-			snprintf(name, sizeof(name), rstr_rDd, i);
-			if ((val = getvar(NULL, name)) == NULL)
-				continue;
-			PMU_MSG(("Applying %s=%s to rsrc %d res_dep_mask\n", name, val, i));
-			W_REG(osh, &pmu->res_table_sel, (uint32)i);
-			W_REG(osh, &pmu->res_dep_mask, (uint32)bcm_strtoul(val, NULL, 0));
-		}
+	/* Apply nvram overrides to dependencies masks */
+	for (i = 0; i < rsrcs; i ++) {
+		snprintf(name, sizeof(name), rstr_rDd, i);
+		if ((val = getvar(NULL, name)) == NULL)
+			continue;
+		PMU_MSG(("Applying %s=%s to rsrc %d res_dep_mask\n", name, val, i));
+		W_REG(osh, &pmu->res_table_sel, (uint32)i);
+		W_REG(osh, &pmu->res_dep_mask, (uint32)bcm_strtoul(val, NULL, 0));
 	}
 
 #if !defined(BCM_BOOTLOADER)
@@ -3641,9 +3624,7 @@ si_pmu_update_pllcontrol(si_t *sih, osl_t *osh, uint32 xtal, bool update_require
 			W_REG(osh, &pmu->pmucontrol, tmp);
 		} else {
 			write_en = FALSE;
-			if (!FWSIGN_ENAB()) {
-				printf(rstr_Invalid_Unsupported_xtal_value_D, xtal);
-			}
+			printf(rstr_Invalid_Unsupported_xtal_value_D, xtal);
 		}
 
 		write_en = si_pmu_armpll_write_required(sih, xtal);
@@ -4288,25 +4269,23 @@ si_pmu1_pllinit1(si_t *sih, osl_t *osh, pmuregs_t *pmu, uint32 xtal)
 	uint32 otpval = 0, regval = 0;
 #endif /* defined(BTOVERPCIE) && !defined(BTOVERPCIE_DISABLED) */
 
-	if (!FWSIGN_ENAB()) {
-		if (PMUREV(sih->pmurev) >= 5) {
-			pll_ctrlcnt = (sih->pmucaps & PCAP5_PC_MASK) >> PCAP5_PC_SHIFT;
-		} else {
-			pll_ctrlcnt = (sih->pmucaps & PCAP_PC_MASK) >> PCAP_PC_SHIFT;
-		}
+	if (PMUREV(sih->pmurev) >= 5) {
+		pll_ctrlcnt = (sih->pmucaps & PCAP5_PC_MASK) >> PCAP5_PC_SHIFT;
+	} else {
+		pll_ctrlcnt = (sih->pmucaps & PCAP_PC_MASK) >> PCAP_PC_SHIFT;
+	}
 
-		/* Check if there is any otp enter for PLLcontrol registers */
-		for (i = 0; i < pll_ctrlcnt; i++) {
-			snprintf(name, sizeof(name), rstr_pllD, i);
-			if ((otp_val = getvar(NULL, name)) == NULL)
-				continue;
+	/* Check if there is any otp enter for PLLcontrol registers */
+	for (i = 0; i < pll_ctrlcnt; i++) {
+		snprintf(name, sizeof(name), rstr_pllD, i);
+		if ((otp_val = getvar(NULL, name)) == NULL)
+			continue;
 
-			/* If OTP entry is found for PLL register, then turn off the PLL
-			 * and set the status of the OTP entry accordingly.
-			 */
-			otp_entry_found = TRUE;
-			break;
-		}
+		/* If OTP entry is found for PLL register, then turn off the PLL
+		 * and set the status of the OTP entry accordingly.
+		 */
+		otp_entry_found = TRUE;
+		break;
 	}
 
 	/* If no OTP parameter is found and no chip-specific updates are needed, return. */
@@ -6076,6 +6055,7 @@ si_pmu_otp_power(si_t *sih, osl_t *osh, bool on, uint32* min_res_mask)
 		rsrcs = PMURES_BIT(rsc->otp_pu);
 		break;
 	case BCM4378_CHIP_GRPID:
+	case BCM4381_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:

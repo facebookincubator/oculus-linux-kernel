@@ -775,46 +775,48 @@ ssize_t print_pwrstats_cum(char *buf)
 {
 	ssize_t ret = 0;
 
-	ret += scnprintf(buf, PAGE_SIZE - 1, "AWAKE:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.awake_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.awake_dur);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_ts,
-			laststats.awake_last_entry_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "ASLEEP:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.pm_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.pm_dur);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_ts,
-			laststats.pm_last_entry_us);
+	ret += scnprintf(buf, PAGE_SIZE, "WIFI\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "AWAKE:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.awake_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.awake_dur);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_ts,
+		laststats.awake_last_entry_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "ASLEEP:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.pm_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.pm_dur);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_ts,
+		laststats.pm_last_entry_us);
 
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L0:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l0_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l0_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l1_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l1_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1_1:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l1_1_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l1_1_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L1_2:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l1_2_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l1_2_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "L2:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_cnt,
-			accumstats.l2_cnt);
-	ret += scnprintf(buf + ret, PAGE_SIZE - 1 - ret, "%s 0x%0llx\n", pwrstr_dur,
-			accumstats.l2_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\nWIFI-PCIE\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "L0:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.l0_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.l0_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "L1:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.l1_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.l1_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "L1_1:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.l1_1_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.l1_1_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "L1_2:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.l1_2_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.l1_2_dur_us);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "L2:\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_cnt,
+		accumstats.l2_cnt);
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
+		accumstats.l2_dur_us);
 
 	return ret;
 }
@@ -2036,6 +2038,95 @@ static struct dhd_attr dhd_attr_max_rx_pkt_pool=
 __ATTR(dhd_max_rx_pkt_pool, 0660, show_max_rx_pkt_pool, set_max_rx_pkt_pool);
 #endif /* RX_PKT_POOL */
 
+#ifdef PCIE_FULL_DONGLE
+static ssize_t
+dhd_set_aspm_enab(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	unsigned long aspm_enab;
+	dhd_pub_t *dhdp = &dhd->pub;
+
+	aspm_enab = bcm_strtoul(buf, NULL, 10);
+
+	sscanf(buf, "%lu", &aspm_enab);
+	if (aspm_enab != 0 && aspm_enab != 1) {
+		return -EINVAL;
+	}
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(dhdp, TRUE, __builtin_return_address(0));
+#endif /* DHD_PCIE_RUNTIMEPM */
+	dhd_bus_aspm_enable_rc_ep(dhdp->bus, aspm_enab);
+
+	return count;
+}
+
+static ssize_t
+show_aspm_enab(struct dhd_info *dhd, char *buf)
+{
+	ssize_t ret = 0;
+	bool aspm_enab;
+	dhd_pub_t *dhdp = &dhd->pub;
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return ret;
+	}
+
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(dhdp, TRUE, __builtin_return_address(0));
+#endif /* DHD_PCIE_RUNTIMEPM */
+
+	aspm_enab = dhd_bus_is_aspm_enab_rc_ep(dhdp->bus);
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", aspm_enab);
+
+	return ret;
+}
+
+static struct dhd_attr dhd_attr_aspm_enab =
+__ATTR(aspm_enab, 0660, show_aspm_enab, dhd_set_aspm_enab);
+
+static ssize_t
+dhd_set_l1ss_enab(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	unsigned long l1ss_enab;
+	dhd_pub_t *dhdp = &dhd->pub;
+
+	l1ss_enab = bcm_strtoul(buf, NULL, 10);
+
+	sscanf(buf, "%lu", &l1ss_enab);
+	if (l1ss_enab != 0 && l1ss_enab != 1) {
+		return -EINVAL;
+	}
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(dhdp, TRUE, __builtin_return_address(0));
+#endif /* DHD_PCIE_RUNTIMEPM */
+	dhd_bus_l1ss_enable_rc_ep(dhdp->bus, l1ss_enab);
+	return count;
+}
+
+static ssize_t
+show_l1ss_enab(struct dhd_info *dhd, char *buf)
+{
+	ssize_t ret = 0;
+	bool l1ss_enab;
+	dhd_pub_t *dhdp = &dhd->pub;
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return ret;
+	}
+
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(dhdp, TRUE, __builtin_return_address(0));
+#endif /* DHD_PCIE_RUNTIMEPM */
+
+	l1ss_enab = dhd_bus_is_l1ss_enab_rc_ep(dhdp->bus);
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", l1ss_enab);
+
+	return ret;
+}
+
+static struct dhd_attr dhd_attr_l1ss_enab =
+__ATTR(l1ss_enab, 0660, show_l1ss_enab, dhd_set_l1ss_enab);
+#endif /* PCIE_FULL_DONGLE */
+
 #if defined(CUSTOM_CONTROL_HE_ENAB)
 static ssize_t
 show_control_he_enab(struct dhd_info *dev, char *buf)
@@ -2353,12 +2444,17 @@ set_wl_debug_level(struct dhd_info *dhd, const char *buf, size_t count)
 				for (i = 0; i < ARRAYSIZE(sublogname_map); i++) {
 					if (!strncmp(sublog, sublogname_map[i].sublogname,
 						strlen(sublogname_map[i].sublogname))) {
-						if (log_on)
+						if (log_on) {
 							wl_dbg_level |=
 							(sublogname_map[i].log_level);
-						else
+							wl_log_level |=
+							(sublogname_map[i].log_level);
+						} else {
 							wl_dbg_level &=
 							~(sublogname_map[i].log_level);
+							wl_log_level &=
+							~(sublogname_map[i].log_level);
+						}
 					}
 				}
 		} else
@@ -2396,6 +2492,26 @@ static struct dhd_attr dhd_attr_dump_done =
 __ATTR(dump_done, 0660, show_dhd_dump_done, NULL);
 #endif /* DHD_FILE_DUMP_EVENT */
 #endif /* WL_CFG80211 */
+
+#ifdef DHD_DUMP_START_COMMAND
+static ssize_t
+trigger_dhd_dump_start_command(struct dhd_info *dhd, char *buf)
+{
+	ssize_t ret = 0;
+	dhd_pub_t *dhdp;
+
+	dhdp = &dhd->pub;
+
+	DHD_ERROR(("%s: dump_start command delivered.\n", __FUNCTION__));
+	dhd_log_dump_trigger(dhdp, CMD_DEFAULT);
+
+	ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", 0);
+	return ret;
+}
+
+static struct dhd_attr dhd_attr_dump_start_command =
+	__ATTR(dump_start, 0664, trigger_dhd_dump_start_command, NULL);
+#endif /* DHD_DUMP_START_COMMAND */
 
 /* Attribute object that gets registered with "wifi" kobject tree */
 static struct attribute *default_file_attrs[] = {
@@ -2495,6 +2611,9 @@ static struct attribute *default_file_attrs[] = {
 	&dhd_attr_dump_done.attr,
 #endif /* DHD_FILE_DUMP_EVENT */
 #endif /* WL_CFG80211 */
+#ifdef DHD_DUMP_START_COMMAND
+	&dhd_attr_dump_start_command.attr,
+#endif /* DHD_DUMP_START_COMMAND */
 	&dhd_attr_dhd_debug_data.attr,
 #if defined(AGG_H2D_DB)
 	&dhd_attr_agg_h2d_db_enab.attr,
@@ -2507,6 +2626,10 @@ static struct attribute *default_file_attrs[] = {
 #if defined(RX_PKT_POOL)
 	&dhd_attr_max_rx_pkt_pool.attr,
 #endif /* RX_PKT_POOL */
+#ifdef PCIE_FULL_DONGLE
+	&dhd_attr_aspm_enab.attr,
+	&dhd_attr_l1ss_enab.attr,
+#endif /* PCIE_FULL_DONGLE */
 	NULL
 };
 

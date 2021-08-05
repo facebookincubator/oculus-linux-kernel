@@ -462,6 +462,7 @@ struct kgsl_thread_private {
  * @mem_lock: Spinlock to protect the process memory lists
  * @refcount: kref object for reference counting the process
  * @idr: Iterator for assigning IDs to memory allocations
+ * @dentry_idr: Iterator for assigning debugfs nodes to memory allocations
  * @mem_tree: RB tree for tracking attached memory allocations
  * @pagetable: Pointer to the pagetable owned by this process
  * @kobj: Pointer to a kobj for the sysfs directory for this process
@@ -480,6 +481,7 @@ struct kgsl_process_private {
 	spinlock_t mem_lock;
 	struct kref refcount;
 	struct idr mem_idr;
+	struct idr dentry_idr;
 #if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
 	struct rb_root mem_tree;
 #endif

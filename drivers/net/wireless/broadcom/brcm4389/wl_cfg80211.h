@@ -39,6 +39,9 @@
 #if defined(BCMDONGLEHOST)
 #include <dngl_stats.h>
 #include <dhd.h>
+#ifdef DHD_LOG_DUMP
+#include <dhd_log_dump.h>
+#endif
 #endif /* BCMDONGLEHOST */
 
 #define WL_CFG_DRV_LOCK(lock, flags)	(flags) = osl_spin_lock(lock)
@@ -110,6 +113,11 @@ struct wl_ibss;
 /* mandatory for Android 11 */
 #define WL_ACT_FRAME_MAC_RAND
 #endif
+
+#if defined(WL_6G_BAND) && !defined(WL_DISABLE_SOFTAP_6G)
+/* Unless exlicitly disabled, enable softap 6G when 6G band support is present */
+#define WL_SOFTAP_6G
+#endif /* WL_6G_BAND && !WL_DISABLE_SOFTAP_6G */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0) && !defined(WL_NMI_IF))
 #define WL_NMI_IF
@@ -440,6 +448,13 @@ extern char *dhd_log_dump_get_timestamp(void);
 #define CFG80211_SCAN_TEXT		USER_PREFIX_CFG80211
 #define CFG80211_TRACE_TEXT		USER_PREFIX_CFG80211
 #define CFG80211_DEBUG_TEXT		USER_PREFIX_CFG80211
+
+#define WL_CONS_ONLY(args)	\
+do {	\
+	WL_DBG_PRINT_SYSTEM_TIME;	\
+	pr_cont(USER_PREFIX_CFG80211 "%s : ", __func__);	\
+	pr_cont args;			\
+} while (0)
 #else
 #define CFG80211_INFO_TEXT		"CFG80211-INFO) "
 /* Samsung want to print INFO2 instead of ERROR
@@ -454,6 +469,7 @@ extern char *dhd_log_dump_get_timestamp(void);
 #define CFG80211_SCAN_TEXT		"CFG80211-SCAN) "
 #define CFG80211_TRACE_TEXT		"CFG80211-TRACE) "
 #define CFG80211_DEBUG_TEXT		"CFG80211-DEBUG) "
+#define WL_CONS_ONLY(args) do { printf args; } while (0)
 #endif /* defined(CUSTOMER_DBG_PREFIX_ENABLE) */
 
 #ifdef DHD_DEBUG
@@ -776,12 +792,16 @@ do {									\
 #endif /* WLAN_AKM_SUITE_FILS_SHA256 */
 
 #define MIN_VENDOR_EXTN_IE_LEN		2
+
 #ifdef WL_OWE
 #ifndef WLAN_AKM_SUITE_OWE
 #define WLAN_AKM_SUITE_OWE                0X000FAC12
 #endif /* WPA_KEY_MGMT_OWE */
 #endif /* WL_OWE */
+
+#ifndef WLAN_AKM_SUITE_DPP
 #define WLAN_AKM_SUITE_DPP                0X506F9A02
+#endif /* WLAN_AKM_SUITE_DPP */
 
 /*
  * BRCM local.
@@ -827,6 +847,12 @@ do {									\
 
 #ifndef FILS_INDICATION_IE_TAG_FIXED_LEN
 #define FILS_INDICATION_IE_TAG_FIXED_LEN		2
+#endif
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))
+#define IS_RADAR_CHAN(flags) (flags & (IEEE80211_CHAN_RADAR | IEEE80211_CHAN_PASSIVE_SCAN))
+#else
+#define IS_RADAR_CHAN(flags) (flags & (IEEE80211_CHAN_RADAR | IEEE80211_CHAN_NO_IR))
 #endif
 
 #if defined(STRICT_GCC_WARNINGS) && defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == \
@@ -1689,6 +1715,16 @@ typedef enum
 	SAR_HOTSPOT = 32		/* bit 5 */
 } sar_advance_modes;
 
+typedef enum wl_sar_sub6_bandinfo {
+	SAR_NR_SUB6_BANDINFO_DISABLE = -1,
+	SAR_NR_SUB6_BANDINFO_BAND2 = 2,
+	SAR_NR_SUB6_BANDINFO_BAND25 = 25,
+	SAR_NR_SUB6_BANDINFO_BAND41 = 41,
+	SAR_NR_SUB6_BANDINFO_BAND48 = 48,
+	SAR_NR_SUB6_BANDINFO_BAND66 = 66,
+	SAR_NR_SUB6_BANDINFO_BAND77 = 77
+} wl_sar_sub6_bandinfo_t;
+
 /* Pre selected Power scenarios to be applied from BDF file */
 typedef enum {
 	WIFI_POWER_SCENARIO_INVALID = -2,
@@ -1759,6 +1795,25 @@ typedef struct {
 	u32 bw_cap;
 } wl_bw_cap_t;
 
+#ifdef WL_USABLE_CHAN
+#define USABLE_CHAN_MAX_SIZE 400
+typedef struct usable_channel {
+	wifi_channel freq;
+	wifi_channel_width_t width;
+	u32 iface_mode_mask;
+} usable_channel_t;
+
+typedef struct usable_channel_info {
+	u32 band_mask;
+	u32 iface_mode_mask;
+	u32 filter_mask;
+	u32 max_size;
+	u32 size;
+	usable_channel_t *channels;
+} usable_channel_info_t;
+#define USABLE_CHAN_SIZE sizeof(usable_channel_t)
+#endif /* WL_USABLE_CHAN */
+
 #ifdef TPUT_DEBUG_DUMP
 struct tput_debug_cmd_config {
 	char cmd[WLC_IOCTL_SMLEN];
@@ -1775,32 +1830,6 @@ typedef struct wl_roamoff_info {
 	uint roam_enable_rsn;
 } wl_roamoff_info_t;
 #endif /* DEBUG_SETROAMMODE */
-
-#ifdef CHANNEL_AVOIDANCE_SUPPORT
-#define CHAVOID_MAX_CH 128u
-
-typedef struct wl_chavoid_config {
-	struct list_head list;
-	u32 chanspec;
-	int band;	/* The band for the channel as param */
-	int channel;	/* The channel number as param */
-	int pwr_cap;	/* The pwrcap as param */
-	int center_freq;
-} wl_chavoid_config_t;
-
-typedef struct wl_chavoid_info {
-	struct list_head configs;
-	u8 config_cnt;
-	u32 mandatory;
-} wl_chavoid_info_t;
-
-typedef struct wl_chavoid_param {
-	wl_chavoid_config_t *configs;
-	u8 config_cnt;
-	u32 mandatory;
-} wl_chavoid_param_t;
-
-#endif /* CHANNEL_AVOIDANCE_SUPPORT */
 
 #ifdef CONFIG_COMPAT
 typedef struct compat_buf_data {
@@ -2050,7 +2079,7 @@ struct bcm_cfg80211 {
 	uint8 static_ndev_state;
 	bool hal_started;
 	wl_wlc_version_t wlc_ver;
-	bool scan_params_v2;
+	u8 scan_params_ver;
 #ifdef SUPPORT_AP_BWCTRL
 	u32 bw_cap_5g;
 #endif /* SUPPORT_AP_BWCTRL */
@@ -2091,9 +2120,10 @@ struct bcm_cfg80211 {
 	uint16 btmreq_len;
 	uint8 btmreq_token;
 #endif /* WL_MBO_HOST */
-#ifdef CHANNEL_AVOIDANCE_SUPPORT
-	wl_chavoid_info_t *chavoid_info;
-#endif /* CHANNEL_AVOIDANCE_SUPPORT */
+#ifdef WL_CELLULAR_CHAN_AVOID
+	void *cellavoid_info;
+	struct delayed_work csa_delayed_work;
+#endif /* WL_CELLULAR_CHAN_AVOID */
 #ifdef TPUT_DEBUG_DUMP
 	struct tput_debug_cmd_config tput_dbg_cmds[TPUT_DBG_CMD_CONFIG_MAX];
 	struct delayed_work tput_debug_work;
@@ -2110,9 +2140,14 @@ struct bcm_cfg80211 {
 #ifdef WL_SCHED_SCAN
 	struct delayed_work sched_scan_stop_work;
 #endif /* WL_SCHED_SCAN */
-	struct net_device *primary_sta_ndev;
+	struct net_device *inet_ndev;
 	struct wireless_dev *nmi_wdev;	/* representing cfg cfg80211 device for NAN NMI */
 	struct net_device *nmi_ndev;    /* reference to NAN NMI interface */
+
+#if defined(DHD_DSCP_POLICY)
+	void *dscp_policy_info;
+#endif /* defined(DHD_DSCP_POLICY) */
+
 };
 
 /* Max auth timeout allowed in case of EAP is 70sec, additional 5 sec for
@@ -2714,7 +2749,15 @@ wl_iftype_to_str(int wl_iftype)
 	(wdev->iftype == NL80211_IFTYPE_P2P_GO) || \
 	(wdev->iftype == NL80211_IFTYPE_P2P_CLIENT)))
 
+/* Initial registered ndev on driver load */
 #define IS_PRIMARY_NDEV(cfg, ndev)	(ndev == bcmcfg_to_prmry_ndev(cfg))
+
+/* Primary link interface: used for internet traffic */
+#ifdef WL_DUAL_STA
+#define IS_INET_LINK_NDEV(cfg, ndev)	(ndev == cfg->inet_ndev)
+#else
+#define IS_INET_LINK_NDEV(cfg, ndev)	(ndev == bcmcfg_to_prmry_ndev(cfg))
+#endif /* WL_DUAL_STA */
 #define IS_STA_IFACE(wdev) (wdev && \
 		(wdev->iftype == NL80211_IFTYPE_STATION))
 
@@ -2847,6 +2890,13 @@ wl_iftype_to_str(int wl_iftype)
 #else
 #define STA_INFO_BIT(info) (STATION_ ## info)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)) && defined(OEM_ANDROID) && \
+	defined(BCMSUP_4WAY_HANDSHAKE)
+/* Enable PSK key mgmt offload */
+#define WL_PSK_OFFLOAD
+#define WL_SUPP_PMK_LEN				32u
+#endif /* LINUX_VERSION_CODE >= 4, 13, 0 && OEM_ANDROID && BCMSUP_4WAY_HANDSHAKE */
 
 extern s32 wl_cfg80211_attach(struct net_device *ndev, void *context);
 extern void wl_cfg80211_detach(struct bcm_cfg80211 *cfg);
@@ -3147,7 +3197,7 @@ extern int wl_cfg80211_if_infra_enh_ifstats_counters(struct net_device *dev,
 extern s32 wl_cfg80211_set_dbg_verbose(struct net_device *ndev, u32 level);
 extern int wl_cfg80211_deinit_p2p_discovery(struct bcm_cfg80211 * cfg);
 extern int wl_cfg80211_set_frameburst(struct bcm_cfg80211 *cfg, bool enable);
-extern int wl_cfg80211_determine_p2p_rsdb_scc_mode(struct bcm_cfg80211 *cfg);
+extern int wl_cfg80211_determine_rsdb_scc_mode(struct bcm_cfg80211 *cfg);
 extern uint8 wl_cfg80211_get_bus_state(struct bcm_cfg80211 *cfg);
 #ifdef WL_WPS_SYNC
 void wl_handle_wps_states(struct net_device *ndev, u8 *dump_data, u16 len, bool direction);
@@ -3256,6 +3306,9 @@ extern s32 wl_handle_auth_event(struct bcm_cfg80211 *cfg, struct net_device *nde
 #ifdef WL_CFGVENDOR_SEND_ALERT_EVENT
 extern int wl_cfg80211_alert(struct net_device *dev);
 #endif /* WL_CFGVENDOR_SEND_ALERT_EVENT */
+extern void
+wl_cfg80211_set_okc_pmkinfo(struct bcm_cfg80211 *cfg, struct net_device *dev,
+	wsec_pmk_t pmk, bool validate_sec);
 
 #ifdef AUTH_ASSOC_STATUS_EXT
 typedef enum auth_assoc_status_ext {
@@ -3284,10 +3337,6 @@ s32 wl_cfg80211_set_netinfo_passphrase(struct bcm_cfg80211 *cfg,
 s32 wl_cfg80211_config_passphrase(struct bcm_cfg80211 *cfg,
 	struct net_device *ndev, wl_config_passphrase_t *pp_config);
 chanspec_t wl_cfg80211_get_sta_chanspec(struct bcm_cfg80211 *cfg);
-
-#ifdef CHANNEL_AVOIDANCE_SUPPORT
-extern void wl_chavoid_clean_unsafe_list(struct bcm_cfg80211 *cfg, struct list_head *configs);
-#endif /* CHANNEL_AVOIDANCE_SUPPORT */
 
 #ifdef WL_UWB_COEX
 #define UWB_COEX_CH_MAP_NUM	64
@@ -3334,4 +3383,10 @@ extern void wl_android_roamoff_dbg_dump(struct bcm_cfg80211 *cfg);
 extern s32 wl_cfgvendor_notify_twt_event(struct bcm_cfg80211 *cfg,
 	bcm_struct_cfgdev *cfgdev, const wl_event_msg_t *e, void *data);
 #endif /* !WL_TWT && WL_TWT_HAL_IF */
+extern int wl_get_all_sideband_chanspecs(uint center_channel, chanspec_band_t band,
+	chanspec_bw_t bw, chanspec_t *chspecs, int *cnt);
+
+#ifdef WL_USABLE_CHAN
+int wl_get_usable_channels(struct bcm_cfg80211 *cfg, usable_channel_info_t *u_info);
+#endif /* WL_USABLE_CHAN */
 #endif /* _wl_cfg80211_h_ */

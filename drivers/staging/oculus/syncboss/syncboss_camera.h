@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SYNCBOSS_CAMERA_H
 #define _SYNCBOSS_CAMERA_H
 

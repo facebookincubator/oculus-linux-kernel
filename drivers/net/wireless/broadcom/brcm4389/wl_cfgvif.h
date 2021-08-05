@@ -249,4 +249,5 @@ wl_get_configured_ap_bw(dhd_pub_t *dhdp);
 extern uint32
 wl_update_configured_bw(uint32 bw);
 #endif /* SUPPORT_AP_INIT_BWCONF */
+extern uint32 wl_cfgvif_get_iftype_count(struct bcm_cfg80211 *cfg, wl_iftype_t iftype);
 #endif /* _wl_cfgvif_h_ */

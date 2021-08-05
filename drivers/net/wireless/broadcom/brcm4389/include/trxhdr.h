@@ -52,14 +52,14 @@
  * is defined.
  */
 struct trx_header {
-	uint32 magic;		/* "HDR0" */
-	uint32 len;		/* Length of file including header */
-	uint32 crc32;		/* 32-bit CRC from flag_version to end of file */
-	uint32 flag_version;	/* 0:15 flags, 16:31 version */
+	uint32 magic;			/* "HDR0" */
+	uint32 len;			/* Length of file including header */
+	uint32 crc32;			/* 32-bit CRC from flag_version to end of file */
+	uint32 flag_version;		/* 0:15 flags, 16:31 version */
 #ifndef BCMTRXV2
 	uint32 offsets[TRX_MAX_OFFSET];	/* Offsets of partitions from start of header */
 #else
-	uint32 offsets[1];	/* Offsets of partitions from start of header */
+	uint32 offsets[BCM_FLEX_ARRAY];	/* Offsets of partitions from start of header */
 #endif
 };
 

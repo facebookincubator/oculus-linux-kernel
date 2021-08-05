@@ -309,17 +309,17 @@ typedef struct nan_ranging_inst {
 	bool role_concurrency_status;
 } nan_ranging_inst_t;
 
-#define DUMP_NAN_RTT_INST(inst) { printf("svc instance ID %d", (inst)->svc_inst_id); \
-	printf("Range ID %d", (inst)->range_id); \
-	printf("range_status %d", (inst)->range_status); \
-	printf("Range Type %d", (inst)->range_type); \
-	printf("Peer MAC "MACDBG"\n", MAC2STRDBG((inst)->peer_addr.octet)); \
+#define DUMP_NAN_RTT_INST(inst) { WL_CONS_ONLY(("svc instance ID %d", (inst)->svc_inst_id)); \
+	WL_CONS_ONLY(("Range ID %d", (inst)->range_id)); \
+	WL_CONS_ONLY(("range_status %d", (inst)->range_status)); \
+	WL_CONS_ONLY(("Range Type %d", (inst)->range_type)); \
+	WL_CONS_ONLY(("Peer MAC "MACDBG"\n", MAC2STRDBG((inst)->peer_addr.octet))); \
 	}
 
-#define DUMP_NAN_RTT_RPT(rpt) { printf("Range ID %d", (rpt)->rng_id); \
-	printf("Distance in MM %d", (rpt)->dist_mm); \
-	printf("range_indication %d", (rpt)->indication); \
-	printf("Peer MAC "MACDBG"\n", MAC2STRDBG((rpt)->peer_m_addr.octet)); \
+#define DUMP_NAN_RTT_RPT(rpt) { WL_CONS_ONLY("Range ID %d", (rpt)->rng_id); \
+	WL_CONS_ONLY(("Distance in MM %d", (rpt)->dist_mm)); \
+	WL_CONS_ONLY(("range_indication %d", (rpt)->indication)); \
+	WL_CONS_ONLY(("Peer MAC "MACDBG"\n", MAC2STRDBG((rpt)->peer_m_addr.octet))); \
 	}
 /*
  * Data request Initiator/Responder
@@ -647,6 +647,7 @@ typedef struct nan_hal_capabilities {
 	uint32 max_sdea_service_specific_info_len;
 	uint32 max_subscribe_address;
 	uint32 ndpe_attr_supported;
+	bool is_instant_mode_supported;
 } nan_hal_capabilities_t;
 
 typedef struct _nan_hal_resp {
@@ -832,6 +833,8 @@ bool wl_cfgnan_check_role_concurrency(struct bcm_cfg80211 *cfg,
 bool wl_cfgnan_update_geofence_target_idx(struct bcm_cfg80211 *cfg);
 bool wl_cfgnan_ranging_is_in_prog_for_peer(struct bcm_cfg80211 *cfg,
 	struct ether_addr *peer_addr);
+#else
+static INLINE bool wl_cfgnan_ranging_allowed(struct bcm_cfg80211 *cfg) { return FALSE; }
 #endif /* RTT_SUPPORT */
 
 typedef enum {

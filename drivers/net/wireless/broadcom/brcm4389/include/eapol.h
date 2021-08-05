@@ -41,11 +41,11 @@
 
 /* EAPOL for 802.3/Ethernet */
 typedef BWL_PRE_PACKED_STRUCT struct {
-	struct ether_header eth;	/* 802.3/Ethernet header */
-	unsigned char version;		/* EAPOL protocol version */
-	unsigned char type;		/* EAPOL type */
-	unsigned short length;		/* Length of body */
-	unsigned char body[1];		/* Body (optional) */
+	struct ether_header eth;		/* 802.3/Ethernet header */
+	unsigned char version;			/* EAPOL protocol version */
+	unsigned char type;			/* EAPOL type */
+	unsigned short length;			/* Length of body */
+	unsigned char body[BCM_FLEX_ARRAY];	/* Body (optional) */
 } BWL_POST_PACKED_STRUCT eapol_header_t;
 
 #define EAPOL_HEADER_LEN 18
@@ -83,13 +83,13 @@ typedef struct {
 
 /* RC4 EAPOL-Key */
 typedef BWL_PRE_PACKED_STRUCT struct {
-	unsigned char type;			/* Key Descriptor Type */
-	unsigned short length;			/* Key Length (unaligned) */
+	unsigned char type;				/* Key Descriptor Type */
+	unsigned short length;				/* Key Length (unaligned) */
 	unsigned char replay[EAPOL_KEY_REPLAY_LEN];	/* Replay Counter */
 	unsigned char iv[EAPOL_KEY_IV_LEN];		/* Key IV */
 	unsigned char index;				/* Key Flags & Index */
 	unsigned char signature[EAPOL_KEY_SIG_LEN];	/* Key Signature */
-	unsigned char key[1];				/* Key (optional) */
+	unsigned char key[BCM_FLEX_ARRAY];		/* Key (optional) */
 } BWL_POST_PACKED_STRUCT eapol_key_header_t;
 
 #define EAPOL_KEY_HEADER_LEN	44u
@@ -230,7 +230,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 	uint8 length;
 	uint8 oui[3];
 	uint8 subtype;
-	uint8 data[1];
+	uint8 data[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT eapol_wpa2_encap_data_t;
 
 #define EAPOL_WPA2_ENCAP_DATA_HDR_LEN 	6

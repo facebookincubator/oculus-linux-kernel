@@ -97,7 +97,11 @@ dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 	unsigned long flags = 0;
 
 	if (allocd_buf == NULL) {
-		return BCME_NOMEM;
+		/* DEBUG_DUMP RINGs need to be delayed allocation */
+		if (id != DEBUG_DUMP_RING1_ID && id != DEBUG_DUMP_RING2_ID) {
+			return BCME_NOMEM;
+		}
+		buf = NULL;
 	} else {
 		buf = allocd_buf;
 	}
@@ -120,6 +124,17 @@ dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 	return BCME_OK;
 }
 
+int
+dhd_dbg_ring_set_buf(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, void *buf)
+{
+	unsigned long flags = 0;
+
+	DHD_DBG_RING_LOCK(ring->lock, flags);
+	ring->ring_buf = buf;
+	DHD_DBG_RING_UNLOCK(ring->lock, flags);
+
+	return BCME_OK;
+}
 void
 dhd_dbg_ring_deinit(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring)
 {

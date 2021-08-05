@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SWD_REGISTERS_SAMD_H
 #define _SWD_REGISTERS_SAMD_H
 

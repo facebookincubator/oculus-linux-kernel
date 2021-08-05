@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/platform_device.h>
 #include <media/msm_cam_sensor.h>
 #include <soc/qcom/camera2.h>

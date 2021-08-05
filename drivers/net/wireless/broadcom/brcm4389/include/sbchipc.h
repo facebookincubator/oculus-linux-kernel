@@ -3050,6 +3050,7 @@ typedef volatile struct {
 #define CC4387_FNSEL_FUART		(3u)
 #define CC4387_FNSEL_DBG_UART		(6u)
 #define CC4387_FNSEL_SPI		(7u)
+#define CC4387_FNSEL_SFLASH		(8u)
 
 /* Indices of PMU voltage regulator registers */
 #define PMU_VREG_0	(0u)
@@ -3461,7 +3462,7 @@ typedef volatile struct {
 #define CST4378_CHIPMODE_BTOP(cs)	(((cs) & (1 << 6)) == 0)
 #define CST4378_SPROM_PRESENT		0x00000010
 
-#define CST4387_SFLASH_PRESENT		0x00000010U
+#define CST_SFLASH_PRESENT		0x00000010U
 
 #define CST4387_CHIPMODE_BTOU(cs)	(((cs) & (1 << 6)) != 0)
 #define CST4387_CHIPMODE_BTOP(cs)	(((cs) & (1 << 6)) == 0)

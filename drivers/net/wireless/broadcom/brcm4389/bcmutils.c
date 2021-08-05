@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <bcmutils.h>
+#include <stdlib.h>
 
 #if defined(BCMEXTSUP)
 #include <bcm_osl.h>
@@ -46,18 +47,6 @@
 #endif
 
 #endif /* !BCMDRIVER */
-
-#ifdef WL_UNITTEST
-/*
- * Definitions and includes needed during software unit test compilation and execution.
- */
-#include <stdio.h>
-#include <stdlib.h>
-#ifdef ASSERT
-#undef ASSERT
-#endif /* ASSERT */
-#define ASSERT(exp)
-#endif /* WL_UNITTEST */
 
 #if defined(_WIN32) || defined(NDIS)
 /* Debatable */
@@ -125,17 +114,25 @@ void (*const BCMPOST_TRAP_RODATA(print_btrace_int_fn))(int depth, uint32 pc, uin
 #endif
 
 #if !defined(BCMDONGLEHOST)
-/* Forward declarations */
-char * getvar_internal(char *vars, const char *name);
-int getintvar_internal(char *vars, const char *name);
-int getintvararray_internal(char *vars, const char *name, int index);
-int getintvararraysize_internal(char *vars, const char *name);
 
-#ifndef WL_FWSIGN
+#ifndef BCM_BOOTLOADER
+/* Forward declarations */
+static int getintvararray_internal(char *vars, const char *name, int index);
+static int getintvararraysize_internal(char *vars, const char *name);
+static
+#ifndef ATE_BUILD
+const
+#endif
+char * getvar_internal(char *vars, const char *name);
+static int getintvar_internal(char *vars, const char *name);
+
 /*
  * Search the name=value vars for a specific one and return its value.
  * Returns NULL if not found.
  */
+#ifndef ATE_BUILD
+const
+#endif
 char *
 getvar(char *vars, const char *name)
 {
@@ -143,6 +140,10 @@ getvar(char *vars, const char *name)
 	return getvar_internal(vars, name);
 }
 
+static
+#ifndef ATE_BUILD
+const
+#endif
 char *
 getvar_internal(char *vars, const char *name)
 {
@@ -181,15 +182,15 @@ getintvar(char *vars, const char *name)
 	return getintvar_internal(vars, name);
 }
 
-int
+static int
 getintvar_internal(char *vars, const char *name)
 {
-	char *val;
+	const char *val;
 
 	if ((val = getvar_internal(vars, name)) == NULL)
 		return (0);
 
-	return (bcm_strtoul(val, NULL, 0));
+	return (int)(bcm_strtoul(val, NULL, 0));
 }
 
 int
@@ -199,10 +200,11 @@ getintvararray(char *vars, const char *name, int index)
 	return getintvararray_internal(vars, name, index);
 }
 
-int
+static int
 getintvararray_internal(char *vars, const char *name, int index)
 {
-	char *buf, *endp;
+	const char *buf;
+	char *endp;
 	int i = 0;
 	int val = 0;
 
@@ -212,7 +214,7 @@ getintvararray_internal(char *vars, const char *name, int index)
 
 	/* table values are always separated by "," or " " */
 	while (*buf != '\0') {
-		val = bcm_strtoul(buf, &endp, 0);
+		val = (int)bcm_strtoul(buf, &endp, 0);
 		if (i == index) {
 			return val;
 		}
@@ -232,10 +234,11 @@ getintvararraysize(char *vars, const char *name)
 	return getintvararraysize_internal(vars, name);
 }
 
-int
+static int
 getintvararraysize_internal(char *vars, const char *name)
 {
-	char *buf, *endp;
+	const char *buf;
+	char *endp;
 	int count = 0;
 	int val = 0;
 
@@ -245,7 +248,7 @@ getintvararraysize_internal(char *vars, const char *name)
 
 	/* table values are always separated by "," or " " */
 	while (*buf != '\0') {
-		val = bcm_strtoul(buf, &endp, 0);
+		val = (int)bcm_strtoul(buf, &endp, 0);
 		buf = endp;
 		/* delimiter is ',' */
 		if (*buf == ',')
@@ -301,7 +304,7 @@ getintvararray_slicespecific(osl_t *osh, char *vars, char *vars_table_accessor,
 
 	/* load the destination array with the nvram array values */
 	for (i = 0; i < array_size; i++) {
-		val = getintvararray(vars, new_name, i);
+		val = getintvararray(vars, new_name, (int)i);
 		if (dest_array1) {
 			dest_array1[i] = (uint8)val;
 		} else if (dest_array2) {
@@ -367,7 +370,7 @@ end:
 	*name_out = name_with_prefix;
 	return sz;
 }
-#endif /* WL_FWSIGN */
+#endif /* BCM_BOOTLOADER */
 
 #if defined(BCMNVRAMR) || defined(BCMNVRAMW)
 /* Search for token in comma separated token-string */
@@ -403,7 +406,7 @@ uint
 getgpiopin(char *vars, char *pin_name, uint def_pin)
 {
 	char name[] = "gpioXXXX";
-	char *val;
+	const char *val;
 	uint pin;
 
 	/* Go thru all possibilities till a match in pin name */
@@ -1734,7 +1737,7 @@ bcm_mwbmap_init(osl_t *osh, uint32 items_max)
 		ASSERT(0);
 		goto error1;
 	}
-	memset(mwbmap_p, 0, size);
+	bzero(mwbmap_p, size);
 
 	/* Initialize runtime multiword bitmap state */
 	mwbmap_p->imaps = (uint16)words;
@@ -1838,7 +1841,7 @@ BCMFASTPATH(bcm_mwbmap_alloc)(struct bcm_mwbmap * mwbmap_hdl)
 			MWBMAP_ASSERT(count >= 0);
 
 			/* clear wd_bitmap bit if id_map count is 0 */
-			bitmap = (count == 0) << bitix;
+			bitmap = (uint32)(count == 0) << bitix;
 
 			MWBMAP_DBG((
 			    "Lvl1: bitix<%02u> wordix<%02u>: %08x ^ %08x = %08x wfree %d",
@@ -1924,7 +1927,7 @@ bcm_mwbmap_force(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix)
 #endif /* ! BCM_MWBMAP_USE_CNTSETBITS */
 	MWBMAP_ASSERT(count >= 0);
 
-	bitmap   = (count == 0) << BCM_MWBMAP_MODOP(bitix);
+	bitmap   = (uint32)(count == 0) << BCM_MWBMAP_MODOP(bitix);
 
 	MWBMAP_DBG(("Lvl1: bitix<%02lu> wordix<%02u>: %08x ^ %08x = %08x wfree %d",
 	            BCM_MWBMAP_MODOP(bitix), wordix, *bitmap_p, bitmap,
@@ -2008,7 +2011,7 @@ bcm_mwbmap_free_cnt(struct bcm_mwbmap * mwbmap_hdl)
 
 	ASSERT(mwbmap_p->ifree >= 0);
 
-	return mwbmap_p->ifree;
+	return (uint32)mwbmap_p->ifree;
 }
 
 /* Determine whether an index is inuse or free */
@@ -2076,7 +2079,7 @@ bcm_mwbmap_audit(struct bcm_mwbmap * mwbmap_hdl)
 		bitmap_p = &mwbmap_p->wd_bitmap[wordix];
 
 		for (bitix = 0U; bitix < BCM_MWBMAP_BITS_WORD; bitix++) {
-			if ((*bitmap_p) & (1 << bitix)) {
+			if ((*bitmap_p) & (1u << bitix)) {
 				idmap_ix = BCM_MWBMAP_MULOP(wordix) + bitix;
 #if defined(BCM_MWBMAP_USE_CNTSETBITS)
 				count = bcm_cntsetbits(mwbmap_p->id_bitmap[idmap_ix]);
@@ -2381,9 +2384,11 @@ dll_pool_detach(void * osh, dll_pool_t * pool, uint16 elems_max, uint16 elem_siz
 {
 	uint32 mem_size;
 	mem_size = (uint32)sizeof(dll_pool_t) + ((uint32)elems_max * (uint32)elem_size);
-	if (pool)
+	if (pool) {
 		MFREE(osh, pool, mem_size);
+	}
 }
+
 dll_pool_t *
 dll_pool_init(void * osh, uint16 elems_max, uint16 elem_size)
 {
@@ -2487,6 +2492,8 @@ BCMPOSTTRAPFN(bcm_binit)(struct bcmstrbuf *b, char *buf, uint size)
 	}
 }
 
+static const char BCMPOST_TRAP_RODATA(bcm_bprintf_ptstr_1)[] = "%s";
+
 /* Buffer sprintf wrapper to guard against buffer overflow */
 int
 BCMPOSTTRAPFN(bcm_bprintf)(struct bcmstrbuf *b, const char *fmt, ...)
@@ -2498,7 +2505,7 @@ BCMPOSTTRAPFN(bcm_bprintf)(struct bcmstrbuf *b, const char *fmt, ...)
 
 	r = vsnprintf(b->buf, b->size, fmt, ap);
 	if (bcm_bprintf_bypass == TRUE) {
-		printf("%s", b->buf);
+		printf(bcm_bprintf_ptstr_1, b->buf);
 		goto exit;
 	}
 
@@ -2512,7 +2519,7 @@ BCMPOSTTRAPFN(bcm_bprintf)(struct bcmstrbuf *b, const char *fmt, ...)
 	if ((r == -1) || (r >= (int)b->size)) {
 		b->size = 0;
 	} else {
-		b->size -= r;
+		b->size -= (uint)r;
 		b->buf += r;
 	}
 
@@ -2642,7 +2649,7 @@ bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui, uint8 *ty
 		{
 			/* compare optional type */
 			if (type_len == 0 ||
-			    !bcmp(&ie->data[DOT11_OUI_LEN], type, type_len)) {
+			    !bcmp(((const char *)ie->data) + DOT11_OUI_LEN, type, type_len)) {
 
 				COV_TAINTED_DATA_ARG(ie);
 
@@ -2677,7 +2684,7 @@ bcm_format_ssid(char* buf, const uchar ssid[], uint ssid_len)
 		} else if (bcm_isprint((uchar)c)) {
 			*p++ = (char)c;
 		} else {
-			p += snprintf(p, (endp - p), "\\x%02X", c);
+			p += snprintf(p, (size_t)(endp - p), "\\x%02X", c);
 		}
 	}
 	*p = '\0';
@@ -2932,7 +2939,7 @@ bcm_strtoull(const char *cp, char **endp, uint base)
 	result = 0;
 
 	while (bcm_isxdigit(*cp) &&
-	       (value = bcm_isdigit(*cp) ? *cp-'0' : bcm_toupper(*cp)-'A'+10) < base) {
+	       (value = (uint64)(bcm_isdigit(*cp) ? *cp-'0' : bcm_toupper(*cp)-'A'+10)) < base) {
 		result = result*base + value;
 		/* Detected overflow */
 		if (result < last_result && !minus) {
@@ -3069,7 +3076,7 @@ bcmstrtok(char **string, const char *delimiters, char *tokdelim)
 
 	/* Set bits in delimiter table */
 	do {
-		map[*delimiters >> 5] |= (1 << (*delimiters & 31));
+		map[*delimiters >> 5] |= (1UL << (*delimiters & 31));
 	}
 	while (*delimiters++);
 
@@ -3079,7 +3086,7 @@ bcmstrtok(char **string, const char *delimiters, char *tokdelim)
 	 * there is no token iff this loop sets str to point to the terminal
 	 * null (*str == '\0')
 	 */
-	while (((map[*str >> 5] & (1 << (*str & 31))) && *str) || (*str == ' ')) {
+	while (((map[*str >> 5] & (1UL << (*str & 31))) && *str) || (*str == ' ')) {
 		str++;
 	}
 
@@ -3089,7 +3096,7 @@ bcmstrtok(char **string, const char *delimiters, char *tokdelim)
 	 * put a null there.
 	 */
 	for (; *str; str++) {
-		if (map[*str >> 5] & (1 << (*str & 31))) {
+		if (map[*str >> 5] & (1UL << (*str & 31))) {
 			if (tokdelim != NULL) {
 				*tokdelim = *str;
 			}
@@ -3311,7 +3318,7 @@ bcm_object_trace_init(void)
 {
 	int i = 0;
 	BCM_OBJDBG_LOCK_INIT();
-	memset(&bcm_dbg_objs, 0x00, sizeof(struct bcm_dbgobj) * BCM_OBJDBG_COUNT);
+	bzero(&bcm_dbg_objs, sizeof(struct bcm_dbgobj) * BCM_OBJDBG_COUNT);
 	dbgobj_freehead = &bcm_dbg_objs[0];
 	dbgobj_freetail = &bcm_dbg_objs[BCM_OBJDBG_COUNT - 1];
 
@@ -4279,7 +4286,9 @@ bcm_parse_tlvs(const void *buf, uint buflen, uint key)
 			break;
 		}
 		/* did we find the ID? */
-		if ((elt->id == key)) {
+		if ((elt->id == key) ||
+		    (elt->id == DOT11_MNG_ID_EXT_ID && len > 0 &&
+		     elt->data[0] + (uint)DOT11_MNG_ID_EXT_ID == key)) {
 			COV_TAINTED_DATA_ARG(elt);
 
 			GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
@@ -4478,7 +4487,7 @@ bcm_format_field(const bcm_bit_desc_ex_t *bd, uint32 flags, char* buf, uint len)
 	for (i = 0;  (name = bd->bitfield[i].name) != NULL; i++) {
 		bit = bd->bitfield[i].bit;
 		if ((flags & mask) == bit) {
-			slen = (int)strlen(name);
+			slen = strlen(name);
 			if (memcpy_s(buf, len, name, slen + 1) != BCME_OK) {
 				slen = 0;
 			}
@@ -4518,7 +4527,7 @@ bcm_format_flags(const bcm_bit_desc_t *bd, uint32 flags, char* buf, uint len)
 		flags &= ~bit;
 
 		/* Print named bit. */
-		p += strlcpy(p, name, (end - p));
+		p += strlcpy(p, name, (size_t)(end - p));
 		if (p == end) {
 			/* Truncation error. */
 			err = TRUE;
@@ -4527,7 +4536,7 @@ bcm_format_flags(const bcm_bit_desc_t *bd, uint32 flags, char* buf, uint len)
 
 		/* Add space delimiter if there are more bits. */
 		if (flags != 0) {
-			p += strlcpy(p, " ", (end - p));
+			p += strlcpy(p, " ", (size_t)(end - p));
 			if (p == end) {
 				/* Truncation error. */
 				err = TRUE;
@@ -4568,7 +4577,7 @@ bcm_format_octets(const bcm_bit_desc_t *bd, uint bdsz,
 		bit = bd[i].bit;
 		name = bd[i].name;
 		if (isset(addr, bit)) {
-			nlen = (int)strlen(name);
+			nlen = strlen(name);
 			slen += nlen;
 			/* need SPACE - for simplicity */
 			slen += 1;
@@ -4670,12 +4679,12 @@ prhex(const char *msg, const uchar *buf, uint nbytes)
 		if (i % 16 == 0) {
 			nchar = snprintf(p, len, "  %04x: ", i);	/* line prefix */
 			p += nchar;
-			len -= nchar;
+			len -= (uint)nchar;
 		}
 		if (len > 0) {
 			nchar = snprintf(p, len, "%02x ", buf[i]);
 			p += nchar;
-			len -= nchar;
+			len -= (uint)nchar;
 		}
 
 		if (i % 16 == 15) {
@@ -4794,8 +4803,9 @@ uint
 bcmdumpfields(bcmutl_rdreg_rtn read_rtn, void *arg0, uint arg1, struct fielddesc *fielddesc_array,
 	char *buf, uint32 bufsize)
 {
-	uint  filled_len;
-	int len;
+	int ret;
+	uint filled_len;
+	uint len;
 	struct fielddesc *cur_ptr;
 
 	filled_len = 0;
@@ -4804,11 +4814,16 @@ bcmdumpfields(bcmutl_rdreg_rtn read_rtn, void *arg0, uint arg1, struct fielddesc
 	while (bufsize > 1) {
 		if (cur_ptr->nameandfmt == NULL)
 			break;
-		len = snprintf(buf, bufsize, cur_ptr->nameandfmt,
-		               read_rtn(arg0, arg1, cur_ptr->offset));
 		/* check for snprintf overflow or error */
-		if (len < 0 || (uint32)len >= bufsize)
-			len = bufsize - 1;
+		ret = snprintf(buf, bufsize, cur_ptr->nameandfmt,
+		               read_rtn(arg0, arg1, cur_ptr->offset));
+		if (ret < 0 || ret >= (int)bufsize) {
+			/* encoding error from snprintf */
+			len = bufsize - 1u;
+		} else {
+			len = (uint32)ret;
+		}
+
 		buf += len;
 		bufsize -= len;
 		filled_len += len;
@@ -4897,8 +4912,8 @@ bcm_mw_to_qdbm(uint16 mw)
 {
 	uint8 qdbm;
 	int offset;
-	uint mw_uint = mw;
-	uint boundary;
+	uint16 mw_uint = mw;
+	uint16 boundary;
 
 	/* handle boundary case */
 	if (mw_uint <= 1)
@@ -5196,13 +5211,13 @@ uint16
 bcm_ip_cksum(uint8 *buf, uint32 len, uint32 sum)
 {
 	while (len > 1) {
-		sum += (buf[0] << 8) | buf[1];
+		sum += ((uint32)buf[0] << 8) | buf[1];
 		buf += 2;
 		len -= 2;
 	}
 
 	if (len > 0) {
-		sum += (*buf) << 8;
+		sum += ((uint32)*buf) << 8;
 	}
 
 	while (sum >> 16) {
@@ -5376,7 +5391,7 @@ ipv4_tcp_hdr_cksum(uint8 *ip, uint8 *tcp, uint16 tcp_len)
 	ASSERT(tcp_len >= TCP_MIN_HEADER_LEN);
 
 	/* pseudo header cksum */
-	memset(&tcp_ps, 0, sizeof(tcp_ps));
+	bzero(&tcp_ps, sizeof(tcp_ps));
 	memcpy(&tcp_ps.dst_ip, ip_hdr->dst_ip, IPV4_ADDR_LEN);
 	memcpy(&tcp_ps.src_ip, ip_hdr->src_ip, IPV4_ADDR_LEN);
 	tcp_ps.zero = 0;
@@ -5412,7 +5427,7 @@ ipv6_tcp_hdr_cksum(uint8 *ipv6, uint8 *tcp, uint16 tcp_len)
 	ASSERT(tcp_len >= TCP_MIN_HEADER_LEN);
 
 	/* pseudo header cksum */
-	memset((char *)&ipv6_pseudo, 0, sizeof(ipv6_pseudo));
+	bzero((char *)&ipv6_pseudo, sizeof(ipv6_pseudo));
 	memcpy((char *)ipv6_pseudo.saddr, (char *)ipv6_hdr->saddr.addr,
 		sizeof(ipv6_pseudo.saddr));
 	memcpy((char *)ipv6_pseudo.daddr, (char *)ipv6_hdr->daddr.addr,
@@ -5438,9 +5453,9 @@ uint32 sqrt_int(uint32 value)
 
 	/* Compute integer nearest to square root of input integer value */
 	for (shift = 0; shift < 32; shift += 2) {
-		if (((0x40000000 >> shift) + root) <= value) {
-			value -= ((0x40000000 >> shift) + root);
-			root = (root >> 1) | (0x40000000 >> shift);
+		if (((0x40000000u >> shift) + root) <= value) {
+			value -= ((0x40000000u >> shift) + root);
+			root = (root >> 1) | (0x40000000u >> shift);
 		}
 		else {
 			root = root >> 1;
@@ -5516,12 +5531,12 @@ setbits(uint8 *addr, uint size, uint stbit, uint nbits, uint32 val)
 uint32
 getbits(const uint8 *addr, uint size, uint stbit, uint nbits)
 {
-	uint fbyte = stbit >> 3;		/* first byte */
-	uint lbyte = (stbit + nbits - 1) >> 3;	/* last byte */
-	uint fbit = stbit & 7;			/* first bit in the first byte */
-	uint rbits = (nbits > 8 - fbit ?
-	              nbits - (8 - fbit) :
-	              0) & 7;			/* remaining bits of the last byte when not 0 */
+	uint fbyte = stbit >> 3u;		/* first byte */
+	uint lbyte = (stbit + nbits - 1u) >> 3u;	/* last byte */
+	uint fbit = stbit & 7u;			/* first bit in the first byte */
+	uint rbits = (nbits > 8u - fbit ?
+	              nbits - (8u - fbit) :
+	              0) & 7u;			/* remaining bits of the last byte when not 0 */
 	uint32 val = 0;
 	uint bits = 0;				/* bits in first partial byte */
 	uint8 mask;
@@ -5531,33 +5546,33 @@ getbits(const uint8 *addr, uint size, uint stbit, uint nbits)
 
 	ASSERT(fbyte < size);
 	ASSERT(lbyte < size);
-	ASSERT(nbits <= (sizeof(val) << 3));
+	ASSERT(nbits <= (sizeof(val) << 3u));
 
 	/* all bits are in the same byte */
 	if (fbyte == lbyte) {
-		mask = ((1 << nbits) - 1) << fbit;
-		val = (addr[fbyte] & mask) >> fbit;
+		mask = ((1u << nbits) - 1u) << fbit;
+		val = ((uint32)addr[fbyte] & mask) >> fbit;
 		return val;
 	}
 
 	/* first partial byte */
 	if (fbit > 0) {
-		bits = 8 - fbit;
-		mask = (0xff << fbit);
-		val |= (addr[fbyte] & mask) >> fbit;
+		bits = 8u - fbit;
+		mask = (0xffu << fbit);
+		val |= ((uint32)addr[fbyte] & mask) >> fbit;
 		fbyte ++;	/* first full byte */
 	}
 
 	/* last partial byte */
 	if (rbits > 0) {
-		mask = (1 << rbits) - 1;
-		val |= (addr[lbyte] & mask) << (nbits - rbits);
+		mask = (1u << rbits) - 1u;
+		val |= ((uint32)addr[lbyte] & mask) << (nbits - rbits);
 		lbyte --;	/* last full byte */
 	}
 
 	/* remaining full byte(s) */
 	for (byte = fbyte; byte <= lbyte; byte ++) {
-		val |= (addr[byte] << (((byte - fbyte) << 3) + bits));
+		val |= ((uint32)addr[byte] << (((byte - fbyte) << 3u) + bits));
 	}
 
 	return val;
@@ -5883,20 +5898,21 @@ replace_nvram_variable(char *varbuf, unsigned int buflen, const char *variable,
 	unsigned int *datalen)
 {
 	char *p;
-	int variable_heading_len, record_len, variable_record_len = (int)strlen(variable) + 1;
+	uint variable_heading_len, record_len, variable_record_len = strlen(variable) + 1;
 	char *buf_end = varbuf + buflen;
 	p = strchr(variable, '=');
 	if (!p) {
 		return FALSE;
 	}
 	/* Length of given variable name, followed by '=' */
-	variable_heading_len = (int)((const char *)(p + 1) - variable);
+	variable_heading_len = (uint)((const char *)(p + 1) - variable);
 	/* Scanning NVRAM, record by record up to trailing 0 */
 	for (p = varbuf; *p; p += strlen(p) + 1) {
 		/* If given variable found - remove it */
 		if (!strncmp(p, variable, variable_heading_len)) {
-			record_len = (int)strlen(p) + 1;
-			memmove_s(p, buf_end - p, p + record_len, buf_end - (p + record_len));
+			record_len = strlen(p) + 1;
+			memmove_s(p, (size_t)(buf_end - p), p + record_len,
+				(size_t)(buf_end - (p + record_len)));
 		}
 	}
 	/* If buffer does not have space for given variable - return FALSE */
@@ -5904,7 +5920,7 @@ replace_nvram_variable(char *varbuf, unsigned int buflen, const char *variable,
 		return FALSE;
 	}
 	/* Copy given variable to end of buffer */
-	memmove_s(p, buf_end - p, variable, variable_record_len);
+	memmove_s(p, (size_t)(buf_end - p), variable, variable_record_len);
 	/* Adding trailing 0 */
 	p[variable_record_len] = 0;
 	/* Setting optional output parameter - length of data in buffer */
@@ -5980,7 +5996,7 @@ varbuf_append(varbuf_t *b, const char *fmt, ...)
 		for (s = b->base; s < b->buf;) {
 			if ((memcmp(s, b->buf, len) == 0) && s[len] == '=') {
 				len = strlen(s) + 1;
-				memmove(s, (s + len), ((b->buf + r + 1) - (s + len)));
+				memmove(s, (s + len), (size_t)((b->buf + r + 1) - (s + len)));
 				b->buf -= len;
 				b->size += (unsigned int)len;
 				break;
@@ -5993,7 +6009,7 @@ varbuf_append(varbuf_t *b, const char *fmt, ...)
 
 	/* skip over this string's null termination */
 	r++;
-	b->size -= r;
+	b->size -= (uint)r;
 	b->buf += r;
 
 	return r;
@@ -6008,7 +6024,7 @@ int
 initvars_table(osl_t *osh, char *start, char *end, char **vars,
 	uint *count)
 {
-	int c = (int)(end - start);
+	uint c = (uint)(end - start);
 
 	/* do it only when there is more than just the null string */
 	if (c > 1) {

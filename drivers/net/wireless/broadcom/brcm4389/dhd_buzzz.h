@@ -1,7 +1,7 @@
 #ifndef _DHD_BUZZZ_H_INCLUDED_
 #define _DHD_BUZZZ_H_INCLUDED_
 
-*/
+/*
  * Copyright (C) 2021, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license

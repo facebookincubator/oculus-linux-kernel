@@ -188,26 +188,34 @@ extern void osl_pkt_orphan_partial(struct sk_buff *skb);
 #define PKTCALLER(zskb)	UPDATE_CTRACE((struct sk_buff *)zskb, (char *)__FUNCTION__, __LINE__)
 #endif /* BCMDBG_CTRACE */
 
-#define	PKTSETFAST(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
-#define	PKTCLRFAST(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
-#define	PKTISFAST(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb); FALSE;})
-#define PKTLITIDX(skb)		({BCM_REFERENCE(skb); 0;})
-#define PKTSETLITIDX(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
-#define PKTRESETLITIDX(skb)	({BCM_REFERENCE(skb);})
-#define PKTRITIDX(skb)		({BCM_REFERENCE(skb); 0;})
-#define PKTSETRITIDX(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
-#define PKTRESETRITIDX(skb)	({BCM_REFERENCE(skb);})
+#define	PKTSETFAST(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTCLRFAST(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTISFAST(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb); FALSE;})
 
-#define	PKTSETSKIPCT(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
-#define	PKTCLRSKIPCT(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
-#define	PKTSKIPCT(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define PKTLITIDX(skb)			({BCM_REFERENCE(skb); 0;})
+#define PKTSETLITIDX(skb, idx)		({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
+#define PKTRESETLITIDX(skb)		({BCM_REFERENCE(skb);})
+#define PKTLITIDX_1(skb)		({BCM_REFERENCE(skb); 0;})
+#define PKTSETLITIDX_1(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
+#define PKTRESETLITIDX_1(skb)		({BCM_REFERENCE(skb);})
 
-#define PKTFRAGLEN(osh, lb, ix)			(0)
-#define PKTSETFRAGLEN(osh, lb, ix, len)		BCM_REFERENCE(osh)
+#define PKTRITIDX(skb)			({BCM_REFERENCE(skb); 0;})
+#define PKTSETRITIDX(skb, idx)		({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
+#define PKTRESETRITIDX(skb)		({BCM_REFERENCE(skb);})
+#define PKTRITIDX_1(skb)		({BCM_REFERENCE(skb); 0;})
+#define PKTSETRITIDX_1(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
+#define PKTRESETRITIDX_1(skb)		({BCM_REFERENCE(skb);})
 
-#define	PKTSETTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
-#define	PKTCLRTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
-#define	PKTISTOBR(skb)	({BCM_REFERENCE(skb); FALSE;})
+#define	PKTSETSKIPCT(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTCLRSKIPCT(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTSKIPCT(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+
+#define PKTFRAGLEN(osh, lb, ix)		(0)
+#define PKTSETFRAGLEN(osh, lb, ix, len)	BCM_REFERENCE(osh)
+
+#define	PKTSETTOBR(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTCLRTOBR(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTISTOBR(skb)			({BCM_REFERENCE(skb); FALSE;})
 
 #ifdef BCMFA
 #ifdef BCMFA_HW_HASH

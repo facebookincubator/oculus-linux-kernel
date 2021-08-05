@@ -134,7 +134,7 @@ typedef struct hnd_debug {
 #else
 	/* Note: The original uint32 version is split into two fields:
 	 * uint16 version and uint16 length to accomidate future expansion
-	 * of the strucutre.
+	 * of the structure.
 	 *
 	 * The length field is not populated for the version 1 of the structure.
 	 */

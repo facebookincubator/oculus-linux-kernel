@@ -16,7 +16,8 @@
 #define STATUS_FULLY_CHARGED BIT(5)
 #define STATUS_DISCHARGING BIT(6)
 
-/* Period in minutes Molokini firmware will use to send VDM traffic for
+/*
+ * Period in minutes Molokini firmware will use to send VDM traffic for
  * ON/OFF head mount status. 0 corresponds to the minimum period of 1 minute.
  * This parameter may be set in increments of 1 minute.
  */
@@ -52,7 +53,18 @@ enum battery_status_value {
 	UNKNOWN,
 };
 
+enum usb_charging_state {
+	CHARGING_RESUME = 0,
+	CHARGING_SUSPEND = 1,
+};
+
 static void molokini_mount_status_work(struct work_struct *work);
+static void molokini_psy_register_notifier(struct molokini_pd *mpd);
+static int molokini_psy_notifier_call(struct notifier_block *nb,
+		unsigned long ev, void *ptr);
+static void molokini_psy_unregister_notifier(struct molokini_pd *mpd);
+static void set_usb_charging_state(struct molokini_pd *mpd,
+		enum usb_charging_state state);
 
 static void convert_battery_status(struct molokini_pd *mpd, u16 status)
 {
@@ -72,7 +84,8 @@ static void vdm_connect(struct usbpd_svid_handler *hdlr,
 
 	dev_dbg(mpd->dev, "enter: usb-com=%d\n", supports_usb_comm);
 
-	/* Client notifications only occur during connect/disconnect
+	/*
+	 * Client notifications only occur during connect/disconnect
 	 * state transitions. This should not be called when Molokini
 	 * is already connected.
 	 */
@@ -84,6 +97,11 @@ static void vdm_connect(struct usbpd_svid_handler *hdlr,
 	mutex_unlock(&mpd->lock);
 
 	schedule_delayed_work(&mpd->dwork, 0);
+	molokini_psy_register_notifier(mpd);
+
+	/* Force re-evaluation */
+	molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,
+			mpd->battery_psy);
 }
 
 static void vdm_disconnect(struct usbpd_svid_handler *hdlr)
@@ -93,7 +111,8 @@ static void vdm_disconnect(struct usbpd_svid_handler *hdlr)
 
 	dev_dbg(mpd->dev, "enter\n");
 
-	/* Client notifications only occur during connect/disconnect
+	/*
+	 * Client notifications only occur during connect/disconnect
 	 * state transitions. This should not be called when Molokini
 	 * is already disconnected.
 	 */
@@ -105,6 +124,10 @@ static void vdm_disconnect(struct usbpd_svid_handler *hdlr)
 	mutex_unlock(&mpd->lock);
 
 	cancel_delayed_work_sync(&mpd->dwork);
+	molokini_psy_unregister_notifier(mpd);
+
+	/* Re-enable USB input charging path if disabled */
+	set_usb_charging_state(mpd, CHARGING_RESUME);
 }
 
 static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
@@ -291,6 +314,9 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 		break;
 	case MOLOKINI_FW_CHARGER_PLUGGED:
 		mpd->params.charger_plugged = vdos[0];
+		/* Force re-evaluation on charger status update */
+		molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,
+				mpd->battery_psy);
 		break;
 	}
 }
@@ -512,6 +538,9 @@ static ssize_t charger_plugged_store(struct device *dev,
 	mpd->params.charger_plugged = temp;
 	mutex_unlock(&mpd->lock);
 
+	/* Force re-evaluation */
+	molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,
+			mpd->battery_psy);
 	return count;
 }
 static DEVICE_ATTR_RW(charger_plugged);
@@ -611,6 +640,9 @@ static ssize_t mount_state_store(struct device *dev,
 	}
 	mutex_unlock(&mpd->lock);
 
+	/* Force re-evaluation */
+	molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,
+			mpd->battery_psy);
 	return count;
 }
 static DEVICE_ATTR_RW(mount_state);
@@ -702,12 +734,64 @@ static ssize_t status_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(status);
 
+static ssize_t charging_suspend_disable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+	int result;
+
+	result = mutex_lock_interruptible(&mpd->lock);
+	if (result != 0) {
+		dev_err(dev, "Failed to get mutex: %d", result);
+		return result;
+	}
+
+	result = scnprintf(buf, PAGE_SIZE, "%d\n", mpd->charging_suspend_disable);
+	mutex_unlock(&mpd->lock);
+
+	return result;
+}
+
+static ssize_t charging_suspend_disable_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+	int result;
+	bool temp;
+
+	result = kstrtobool(buf, &temp);
+	if (result < 0) {
+		dev_err(dev, "Illegal input for charging suspend disable: %s", buf);
+		return result;
+	}
+
+	result = mutex_lock_interruptible(&mpd->lock);
+	if (result != 0) {
+		dev_err(dev, "Failed to get mutex: %d", result);
+		return result;
+	}
+
+	mpd->charging_suspend_disable = temp;
+	mutex_unlock(&mpd->lock);
+
+	/* Force re-evaluation */
+	molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,
+			mpd->battery_psy);
+
+	return count;
+}
+static DEVICE_ATTR_RW(charging_suspend_disable);
+
 static struct attribute *molokini_attrs[] = {
 	&dev_attr_charger_plugged.attr,
 	&dev_attr_connected.attr,
 	&dev_attr_mount_state.attr,
 	&dev_attr_rsoc.attr,
 	&dev_attr_status.attr,
+	&dev_attr_charging_suspend_disable.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(molokini);
@@ -718,7 +802,7 @@ static void molokini_create_sysfs(struct molokini_pd *mpd)
 
 	/* Mount state node */
 	result = sysfs_create_groups(&mpd->dev->kobj, molokini_groups);
-	if (!result)
+	if (result != 0)
 		dev_err(mpd->dev, "Error creating sysfs entries: %d\n", result);
 }
 
@@ -767,12 +851,165 @@ static void molokini_mount_status_work(struct work_struct *work)
 				mount_state_header, mount_state_vdo);
 	}
 
-	/* Schedule periodically to ensure that molokini ACKs the
+	/*
+	 * Schedule periodically to ensure that molokini ACKs the
 	 * current mount state.
 	 */
 	schedule_delayed_work(&mpd->dwork, MOUNT_WORK_DELAY_SECONDS * HZ);
 
 	mutex_unlock(&mpd->lock);
+}
+
+static inline const char *usb_charging_state(enum usb_charging_state state)
+{
+	switch (state) {
+	case CHARGING_RESUME:
+		return "charging resumed";
+	case CHARGING_SUSPEND:
+		return "charging suspended";
+	default:
+		return "unknown";
+	}
+}
+
+static void set_usb_charging_state(struct molokini_pd *mpd,
+		enum usb_charging_state state)
+{
+	union power_supply_propval val = {0};
+	int result = 0;
+
+	if (IS_ERR_OR_NULL(mpd->usb_psy)) {
+		dev_err(mpd->dev, "USB power supply handle is invalid.\n");
+		return;
+	}
+
+	result = power_supply_get_property(mpd->usb_psy,
+					POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
+	if (result) {
+		dev_err(mpd->dev, "Unable to read charging state: %d\n", result);
+		return;
+	}
+
+	if (state == val.intval) {
+		dev_dbg(mpd->dev, "Current USB charging state is %s. No action needed.\n",
+				usb_charging_state(state));
+		return;
+	}
+
+	val.intval = state;
+
+	result = power_supply_set_property(mpd->usb_psy,
+				POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
+	if (result) {
+		dev_err(mpd->dev, "Unable to update USB charging state: %d\n", result);
+		return;
+	}
+
+	dev_dbg(mpd->dev,
+			"USB charging state updated successfully. New state: %s\n",
+			usb_charging_state(state));
+}
+
+static void handle_battery_capacity_change(struct molokini_pd *mpd,
+		u32 capacity)
+{
+	dev_dbg(mpd->dev,
+			"Battery capacity change event. Capacity = %d, connected = %d, mount state = %d, charger plugged = %d\n",
+			capacity, mpd->connected, mpd->mount_state,
+			mpd->params.charger_plugged);
+
+	if ((mpd->charging_suspend_disable) ||
+		(!mpd->connected) ||
+		(mpd->mount_state != 0) ||
+		(mpd->params.charger_plugged) ||
+		(capacity < mpd->charging_resume_threshold)) {
+		/* Attempt to resume charging if suspended previously */
+		set_usb_charging_state(mpd, CHARGING_RESUME);
+		return;
+	}
+
+	if (capacity >= mpd->charging_suspend_threshold) {
+		/* Attempt to suspend charging if not suspended previously */
+		set_usb_charging_state(mpd, CHARGING_SUSPEND);
+	}
+}
+
+static int molokini_psy_notifier_call(struct notifier_block *nb,
+		unsigned long ev, void *ptr)
+{
+	int result = 0;
+	struct power_supply *psy = ptr;
+	struct molokini_pd *mpd = NULL;
+	union power_supply_propval val;
+
+	if (IS_ERR_OR_NULL(nb))
+		return NOTIFY_BAD;
+
+	mpd = container_of(nb, struct molokini_pd, nb);
+	if (IS_ERR_OR_NULL(mpd) || IS_ERR_OR_NULL(mpd->battery_psy)) {
+		dev_err(mpd->dev, "PSY notifier provided object handle is invalid\n");
+		return NOTIFY_BAD;
+	}
+
+	if (psy != mpd->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
+		return NOTIFY_OK;
+
+	result = power_supply_get_property(mpd->battery_psy,
+			POWER_SUPPLY_PROP_CAPACITY, &val);
+	if (result) {
+		/*
+		 * Log failure and return okay for this call with the hope
+		 * that we can read battery capacity next time around.
+		 */
+		dev_err(mpd->dev, "Unable to read battery capacity: %d\n", result);
+		return NOTIFY_OK;
+	}
+
+	handle_battery_capacity_change(mpd, val.intval);
+
+	return NOTIFY_OK;
+}
+
+static void molokini_psy_register_notifier(struct molokini_pd *mpd)
+{
+	int result = 0;
+
+	if (mpd->nb.notifier_call == NULL) {
+		dev_err(mpd->dev, "Notifier block's notifier call is NULL\n");
+		return;
+	}
+
+	result = power_supply_reg_notifier(&mpd->nb);
+	if (result != 0) {
+		dev_err(mpd->dev, "Failed to register power supply notifier, result:%d\n",
+				result);
+	}
+}
+
+static void molokini_psy_unregister_notifier(struct molokini_pd *mpd)
+{
+	/*
+	 * Safe to call unreg notifier even if notifier block wasn't registered
+	 * with the kernel due to some prior failure.
+	 */
+	power_supply_unreg_notifier(&mpd->nb);
+}
+
+static void molokini_psy_init(struct molokini_pd *mpd)
+{
+	mpd->nb.notifier_call = NULL;
+	mpd->battery_psy = power_supply_get_by_name("battery");
+	if (IS_ERR_OR_NULL(mpd->battery_psy)) {
+		dev_err(mpd->dev, "Failed to get battery power supply\n");
+		return;
+	}
+
+	mpd->usb_psy = power_supply_get_by_name("usb");
+	if (IS_ERR_OR_NULL(mpd->usb_psy)) {
+		dev_err(mpd->dev, "Failed to get USB power supply\n");
+		return;
+	}
+	mpd->nb.notifier_call = molokini_psy_notifier_call;
 }
 
 static int molokini_probe(struct platform_device *pdev)
@@ -808,6 +1045,33 @@ static int molokini_probe(struct platform_device *pdev)
 	}
 	dev_dbg(&pdev->dev, "Property svid=%x", mpd->vdm_handler.svid);
 
+	result = of_property_read_u32(pdev->dev.of_node,
+		"charging-suspend-thresh", &mpd->charging_suspend_threshold);
+	if (result < 0) {
+		dev_err(&pdev->dev,
+			"Charging suspend threshold unavailable, failing probe, result:%d\n",
+				result);
+		return result;
+	}
+	dev_dbg(&pdev->dev, "Charging suspend threshold=%d\n",
+		mpd->charging_suspend_threshold);
+
+	result = of_property_read_u32(pdev->dev.of_node,
+		"charging-resume-thresh", &mpd->charging_resume_threshold);
+	if (result < 0) {
+		dev_err(&pdev->dev,
+			"Charging resume threshold unavailable, failing probe, result:%d\n",
+				result);
+		return result;
+	}
+	dev_dbg(&pdev->dev, "Charging resume threshold=%d\n",
+		mpd->charging_resume_threshold);
+
+	if (mpd->charging_resume_threshold >= mpd->charging_suspend_threshold) {
+		dev_err(&pdev->dev, "Invalid charging thresholds set, failing probe\n");
+		return -EINVAL;
+	}
+
 	mutex_init(&mpd->lock);
 
 	mpd->last_mount_ack = MOLOKINI_FW_UNKNOWN;
@@ -824,6 +1088,9 @@ static int molokini_probe(struct platform_device *pdev)
 
 	mpd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, mpd);
+
+	/* Query power supply and register for events */
+	molokini_psy_init(mpd);
 
 	/* Create nodes here. */
 	molokini_create_debugfs(mpd);
@@ -846,6 +1113,8 @@ static int molokini_remove(struct platform_device *pdev)
 	mpd->connected = false;
 	mutex_unlock(&mpd->lock);
 	cancel_delayed_work_sync(&mpd->dwork);
+	set_usb_charging_state(mpd, CHARGING_RESUME);
+	molokini_psy_unregister_notifier(mpd);
 	mutex_destroy(&mpd->lock);
 
 	sysfs_remove_groups(&mpd->dev->kobj, molokini_groups);
@@ -865,7 +1134,7 @@ static struct platform_driver molokini_driver = {
 		.of_match_table = molokini_match_table,
 		.owner = THIS_MODULE,
 	},
-	.probe	= molokini_probe,
+	.probe = molokini_probe,
 	.remove = molokini_remove,
 };
 

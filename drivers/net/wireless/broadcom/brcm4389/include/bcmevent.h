@@ -35,6 +35,7 @@
 #include <typedefs.h>
 /* #include <ethernet.h> -- TODO: req., excluded to overwhelming coupling (break up ethernet.h) */
 #include <bcmeth.h>
+#include <bcmwifi_channels.h>
 #if defined(HEALTH_CHECK) || defined(DNGL_EVENT_SUPPORT)
 #include <dnglevent.h>
 #endif /* HEALTH_CHECK || DNGL_EVENT_SUPPORT */
@@ -51,6 +52,7 @@
 #define WLC_EVENT_MSG_GROUP		0x04	/* group MIC error */
 #define WLC_EVENT_MSG_UNKBSS		0x08	/* unknown source bsscfg */
 #define WLC_EVENT_MSG_UNKIF		0x10	/* unknown source OS i/f */
+#define WLC_EVENT_MSG_MULTILINK		0x20	/* used to indicate that connection is multilink */
 
 /* these fields are stored in network order */
 
@@ -306,7 +308,7 @@ typedef union bcm_event_msg_u {
 #define WLC_E_AP_BCN_DRIFT		192	/* Beacon Drift event */
 #define WLC_E_PFN_SCAN_ALLGONE_EXT	193	/* last found PFN network gets lost. */
 #define WLC_E_AUTH_START		194	/* notify upper layer to start auth */
-#define WLC_E_TWT				195	/* TWT event */
+#define WLC_E_TWT			195	/* TWT event */
 #define WLC_E_AMT			196	/* Address Management Table (AMT) */
 #define WLC_E_ROAM_SCAN_RESULT		197	/* roam/reassoc scan result event */
 #if defined(XRAPI)
@@ -314,9 +316,9 @@ typedef union bcm_event_msg_u {
 						 * to request from STA
 						 */
 #endif /* XRAPI */
-#define WLC_E_LAST			199	/* highest val + 1 for range checking */
-#if (WLC_E_LAST > 199)
-#error "WLC_E_LAST: Invalid value for last event; must be <= 198."
+#define WLC_E_LAST			200	/* highest val + 1 for range checking */
+#if (WLC_E_LAST > 200)
+#error "WLC_E_LAST: Invalid value for last event; must be <= 199."
 #endif /* WLC_E_LAST */
 
 /* define an API for getting the string name of an event */
@@ -431,6 +433,7 @@ typedef enum wlc_roam_cache_update_reason {
 #define WLC_E_STATUS_RXBCN		19	/* Rx Beacon event for FAKEAP feature	*/
 #define WLC_E_STATUS_RXBCN_ABORT	20	/* Rx Beacon abort event for FAKEAP feature */
 #define WLC_E_STATUS_LOWPOWER_ON_LOWSPAN	21	/* LOWPOWER scan request during LOWSPAN */
+#define WLC_E_STATUS_WAIT_RXBCN_TIMEOUT	22	/* Time out happened waiting of beacon  */
 #define WLC_E_STATUS_INVALID 0xff  /* Invalid status code to init variables. */
 
 /* 4-way handshake event type */
@@ -737,6 +740,7 @@ typedef struct wl_event_wa_lqm {
 #define WLC_E_LINK_REASSOC_ROAM_FAIL	6	/* Link down due to reassoc roaming failed */
 #define WLC_E_LINK_LOWRSSI_ROAM_FAIL	7	/* Link down due to Low rssi roaming failed */
 #define WLC_E_LINK_NO_FIRST_BCN_RX	8	/* Link down due to 1st beacon rx failure */
+#define WLC_E_LINK_COUNTRY_CHANGE	9	/* Link down due to Country Code Change */
 
 /* WLC_E_NDIS_LINK event data */
 typedef BWL_PRE_PACKED_STRUCT struct ndis_link_parms {
@@ -795,12 +799,12 @@ typedef struct wlc_phy_cal_info {
 
 /* GAS event data */
 typedef BWL_PRE_PACKED_STRUCT struct wl_event_gas {
-	uint16	channel;	/* channel of GAS protocol */
-	uint8	dialog_token;	/* GAS dialog token */
-	uint8	fragment_id;	/* fragment id */
-	uint16	status_code;	/* status code on GAS completion */
-	uint16	data_len;	/* length of data to follow */
-	uint8	data[1];	/* variable length specified by data_len */
+	uint16	channel;		/* channel of GAS protocol */
+	uint8	dialog_token;		/* GAS dialog token */
+	uint8	fragment_id;		/* fragment id */
+	uint16	status_code;		/* status code on GAS completion */
+	uint16	data_len;		/* length of data to follow */
+	uint8	data[BCM_FLEX_ARRAY];	/* variable length specified by data_len */
 } BWL_POST_PACKED_STRUCT wl_event_gas_t;
 
 /* service discovery TLV */
@@ -814,9 +818,9 @@ typedef BWL_PRE_PACKED_STRUCT struct wl_sd_tlv {
 
 /* service discovery event data */
 typedef BWL_PRE_PACKED_STRUCT struct wl_event_sd {
-	uint16	channel;		/* channel */
-	uint8	count;			/* number of tlvs */
-	wl_sd_tlv_t	tlv[1];		/* service discovery TLV */
+	uint16	channel;			/* channel */
+	uint8	count;				/* number of tlvs */
+	wl_sd_tlv_t tlv[BCM_FLEX_ARRAY];	/* service discovery TLV */
 } BWL_POST_PACKED_STRUCT wl_event_sd_t;
 
 /* WLC_E_PKT_FILTER event sub-classification codes */
@@ -877,7 +881,7 @@ typedef BWL_PRE_PACKED_STRUCT struct proxd_event_data {
 					/* raw Fine Time Measurements (ftm) data */
 	uint16 ftm_unit;		/* ftm cnt resolution in picoseconds , 6250ps - default */
 	uint16 ftm_cnt;			/*  num of rtd measurments/length in the ftm buffer  */
-	ftm_sample_t ftm_buff[1];	/* 1 ... ftm_cnt  */
+	ftm_sample_t ftm_buff[BCM_FLEX_ARRAY];	/* 1 ... ftm_cnt  */
 } BWL_POST_PACKED_STRUCT wl_proxd_event_data_t;
 
 typedef BWL_PRE_PACKED_STRUCT struct proxd_event_ts_results {
@@ -887,7 +891,7 @@ typedef BWL_PRE_PACKED_STRUCT struct proxd_event_ts_results {
 	uint8  err_code;                /* error classification */
 	uint8  TOF_type;                /* one way or two way TOF */
 	uint16  ts_cnt;                 /* number of timestamp measurements */
-	ts_sample_t ts_buff[1];         /* Timestamps */
+	ts_sample_t ts_buff[BCM_FLEX_ARRAY]; /* Timestamps */
 } BWL_POST_PACKED_STRUCT wl_proxd_event_ts_results_t;
 
 /* Video Traffic Interference Monitor Event */
@@ -905,9 +909,9 @@ typedef struct wl_intfer_event {
 typedef struct wl_rrm_event {
 	int16 version;
 	int16 len;
-	int16 cat;		/* Category */
+	int16 cat;			/* Category */
 	int16 subevent;
-	char payload[1]; /* Measurement payload */
+	char payload[BCM_FLEX_ARRAY];	/* Measurement payload */
 } wl_rrm_event_t;
 
 /* WLC_E_PSTA_PRIMARY_INTF_IND event data */
@@ -1274,6 +1278,25 @@ typedef enum ie_error_code {
 
 /* reason of channel switch */
 typedef enum {
+/* The complete enum definition should be moved to here
+ * When adding new one, please add it here
+ */
+#define WL_CHANSW_REASONS_0TO13_INCLUDED
+#if defined(WL_CHANSW_REASONS_0TO13_INCLUDED)
+	CHANSW_UNKNOWN = 0,	/* channel switch due to unknown reason */
+	CHANSW_SCAN = 1,	/* channel switch due to scan */
+	CHANSW_PHYCAL = 2,	/* channel switch due to phy calibration */
+	CHANSW_INIT = 3,	/* channel set at WLC up time */
+	CHANSW_ASSOC = 4,	/* channel switch due to association */
+	CHANSW_ROAM = 5,	/* channel switch due to roam */
+	CHANSW_MCHAN = 6,	/* channel switch triggered by mchan module */
+	CHANSW_IOVAR = 7,	/* channel switch due to IOVAR */
+	CHANSW_CSA_DFS = 8,	/* channel switch due to chan switch  announcement from AP */
+	CHANSW_APCS = 9,	/* Channel switch from AP channel select module */
+	CHANSW_FBT = 11,	/* Channel switch from FBT module for action frame response */
+	CHANSW_UPDBW = 12,	/* channel switch at update bandwidth */
+	CHANSW_ULB = 13,	/* channel switch at ULB */
+#endif	/* WL_CHANSW_REASONS_0TO13_INCLUDED */
 	CHANSW_DFS = 10,	/* channel switch due to DFS module */
 	CHANSW_HOMECH_REQ = 14, /* channel switch due to HOME Channel Request */
 	CHANSW_STA = 15,	/* channel switch due to STA */
@@ -1288,7 +1311,8 @@ typedef enum {
 	CHANSW_SLOTTED_BSS = 28, /* channel switch due to slotted bss */
 	CHANSW_SLOTTED_CMN_SYNC = 29, /* channel switch due to Common Sync Layer */
 	CHANSW_SLOTTED_BSS_CAL = 30,	/* channel switch due to Cal request from slotted bss */
-	CHANSW_MAX_NUMBER = 31	/* max channel switch reason */
+	CHANSW_PASN = 31,	/* channel switch due to PASN authentication */
+	CHANSW_MAX_NUMBER = 32	/* max channel switch reason */
 } wl_chansw_reason_t;
 
 #define CHANSW_REASON(reason)	(1 << reason)
@@ -1566,5 +1590,21 @@ typedef struct wlc_bcn_drift_event_data_v1 {
 	int16	drift;		/* in ms */
 	int16	jitter;		/* in ms */
 } wlc_bcn_drift_event_data_v1_t;
+
+/** Channel Switch Announcement param */
+typedef struct wl_csa_switch_event {
+	uint8 mode;		/**< value 0 or 1 */
+	uint8 count;		/**< count # of beacons before switching */
+	chanspec_t chspec;	/**< chanspec */
+	uint8 reg;		/**< regulatory class */
+	uint8 frame_type;	/**< csa frame type, unicast or broadcast */
+	uint8 PAD[2];		/**> padding to 32-bit struct alignment */
+} wl_csa_switch_event_t;
+
+/** Channel Switch Announcement event data */
+typedef struct wl_csa_event {
+	wl_csa_switch_event_t csa;	/**< Channel Switch Announcement parameters */
+	uint32 switch_time;		/**< csa switch time: TSF + BI * count, msec */
+} wl_csa_event_t;
 
 #endif /* _BCMEVENT_H_ */

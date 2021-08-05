@@ -40,7 +40,7 @@
 #endif /* BCMDRIVER */
 #include <bcmwifi_channels.h>
 
-#if defined(WIN32) && (defined(BCMDLL) || defined(WLMDLL))
+#if defined(WIN32) && (defined(BCMDLL) || defined(WLMDLL) || defined(_CONSOLE))
 #include <bcmstdlib.h>	/* For wlexe/Makefile.wlm_dll */
 #endif
 
@@ -161,7 +161,7 @@ cca_analyze(cca_congest_channel_req_t *input[], int num_chans, uint flags, chans
 		return BCME_NOMEM;
 	}
 
-	memset(bitmap, 0, bitmap_sz);
+	bzero(bitmap, bitmap_sz);
 	/* Initially, all channels are up for consideration */
 	for (i = 0; i < num_chans; i++) {
 		if (input[i]->chanspec)
@@ -1251,7 +1251,7 @@ wl_cntbuf_to_xtlv_format(void *ctx, void *cntbuf, int buflen, uint32 corerev)
 	xtlv_desc[2].len = 0;
 	xtlv_desc[2].ptr = NULL;
 
-	memset(cntbuf, 0, buflen);
+	bzero(cntbuf, buflen);
 
 	res = bcm_pack_xtlv_buf_from_mem(&xtlvbuf_p, &xtlvbuflen,
 		xtlv_desc, BCM_XTLV_OPTION_ALIGN32);

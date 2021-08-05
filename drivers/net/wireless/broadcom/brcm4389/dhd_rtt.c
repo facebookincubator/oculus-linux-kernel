@@ -49,11 +49,24 @@
 #include <wl_cfgnan.h>
 #endif /* WL_NAN */
 
+#ifdef CUSTOM_PREFIX
+#define RTT_PRINT_PREFIX "[%s]"CUSTOM_PREFIX, OSL_GET_RTCTIME()
+#define RTT_PRINT_SYSTEM_TIME pr_cont(RTT_PRINT_PREFIX)
+#define RTT_CONS_ONLY(args)     \
+do {    \
+	RTT_PRINT_SYSTEM_TIME;  \
+	pr_cont args;           \
+} while (0)
+#else
+#define RTT_PRINT_SYSTEM_TIME
+#define RTT_CONS_ONLY(args) do { printf args;} while (0)
+#endif /* CUSTOM_PREFIX */
+
 static DEFINE_SPINLOCK(noti_list_lock);
 #define NULL_CHECK(p, s, err)  \
 	do { \
 		if (!(p)) { \
-			printf("NULL POINTER (%s) : %s\n", __FUNCTION__, (s)); \
+			RTT_CONS_ONLY(("NULL POINTER (%s) : %s\n", __FUNCTION__, (s))); \
 			err = BCME_ERROR; \
 			return err; \
 		} \
@@ -88,6 +101,7 @@ static DEFINE_SPINLOCK(noti_list_lock);
 #define	FTM_DEFAULT_CNT_20M		24u
 #define FTM_DEFAULT_CNT_40M		16u
 #define FTM_DEFAULT_CNT_80M		11u
+#define FTM_DEFAULT_CNT_160M		5u
 /* To handle congestion env, set max dur/timeout */
 #define FTM_MAX_BURST_DUR_TMO_MS	128u
 
@@ -1585,36 +1599,51 @@ dhd_rtt_get_version(dhd_pub_t *dhd, int *out_version)
 chanspec_t
 dhd_rtt_convert_to_chspec(wifi_channel_info channel)
 {
-	int bw;
-	chanspec_t chanspec = 0;
-	uint8 center_chan;
-	uint8 primary_chan;
-	/* set witdh to 20MHZ for 2.4G HZ */
-	if (channel.center_freq >= 2400 && channel.center_freq <= 2500) {
-		channel.width = WIFI_CHAN_WIDTH_20;
+	chanspec_bw_t bw = INVCHANSPEC;
+	chanspec_t chanspec = INVCHANSPEC;
+	int primary_chan;
+	chanspec_band_t band;
+	uint32 center_freq = channel.center_freq;
+
+	band = wf_mhz2chanspec_band(center_freq);
+	if (band == INVCHANSPEC) {
+		DHD_RTT_ERR(("Invalid centre frequency %x\n", center_freq));
+		goto done;
 	}
+
+	primary_chan = wf_mhz2channel(center_freq, 0);
+	if (primary_chan == -1) {
+		DHD_RTT_ERR(("Failed to get primary channel for frequency %x\n",
+				center_freq));
+		goto done;
+	}
+
 	switch (channel.width) {
 	case WIFI_CHAN_WIDTH_20:
 		bw = WL_CHANSPEC_BW_20;
-		primary_chan = wf_mhz2channel(channel.center_freq, 0);
-		chanspec = wf_channel2chspec(primary_chan, bw);
 		break;
 	case WIFI_CHAN_WIDTH_40:
 		bw = WL_CHANSPEC_BW_40;
-		primary_chan = wf_mhz2channel(channel.center_freq, 0);
-		chanspec = wf_channel2chspec(primary_chan, bw);
 		break;
 	case WIFI_CHAN_WIDTH_80:
 		bw = WL_CHANSPEC_BW_80;
-		primary_chan = wf_mhz2channel(channel.center_freq, 0);
-		center_chan = wf_mhz2channel(channel.center_freq0, 0);
-		chanspec = wf_chspec_80(center_chan, primary_chan);
 		break;
+#ifdef WL_RTT_BW160
+	case WIFI_CHAN_WIDTH_160:
+		bw = WL_CHANSPEC_BW_160;
+		break;
+#endif /* WL_RTT_BW160 */
 	default:
-		DHD_RTT_ERR(("doesn't support this bandwith : %d", channel.width));
-		bw = -1;
+		DHD_RTT_ERR(("doesn't support this bandwith : %d\n", channel.width));
+		bw = INVCHANSPEC;
 		break;
 	}
+
+	if ((bw != INVCHANSPEC)) {
+		chanspec = wf_create_chspec_from_primary(primary_chan, bw, band);
+	}
+
+done:
 	return chanspec;
 }
 
@@ -2782,6 +2811,7 @@ dhd_rtt_set_ftm_config_param(ftm_config_param_info_t *ftm_params,
 {
 	char eabuf[ETHER_ADDR_STR_LEN];
 	char chanbuf[CHANSPEC_STR_LEN];
+	uint32 num_ftm_pref = rtt_target->num_frames_per_burst;
 
 	switch (tlvid) {
 		case WL_PROXD_TLV_ID_CUR_ETHER_ADDR:
@@ -2826,16 +2856,8 @@ dhd_rtt_set_ftm_config_param(ftm_config_param_info_t *ftm_params,
 			break;
 		case WL_PROXD_TLV_ID_BURST_NUM_FTM:
 			/* number of frame per burst */
-			rtt_target->num_frames_per_burst = FTM_DEFAULT_CNT_80M;
-			if (CHSPEC_IS80(rtt_target->chanspec)) {
-				rtt_target->num_frames_per_burst = FTM_DEFAULT_CNT_80M;
-			} else if (CHSPEC_IS40(rtt_target->chanspec)) {
-				rtt_target->num_frames_per_burst = FTM_DEFAULT_CNT_40M;
-			} else if (CHSPEC_IS20(rtt_target->chanspec)) {
-				rtt_target->num_frames_per_burst = FTM_DEFAULT_CNT_20M;
-			}
-			ftm_params[*ftm_param_cnt].data16 =
-				htol16(rtt_target->num_frames_per_burst);
+			/* get pref num_ftm based on chanspec */
+			ftm_params[*ftm_param_cnt].data16 = htol16(num_ftm_pref);
 			ftm_params[*ftm_param_cnt].tlvid =
 				WL_PROXD_TLV_ID_BURST_NUM_FTM;
 			*ftm_param_cnt = *ftm_param_cnt + 1;
@@ -3048,6 +3070,7 @@ dhd_rtt_start(dhd_pub_t *dhd)
 			ftm_configs[ftm_cfg_cnt].flags |= WL_PROXD_SESSION_FLAG_REQ_CIV;
 		}
 #endif /* WL_RTT_LCI */
+		DHD_RTT(("RTT flags for the session %x\n", ftm_configs[ftm_cfg_cnt].flags));
 		ftm_cfg_cnt++;
 		dhd_rtt_ftm_config(dhd, FTM_DEFAULT_SESSION, FTM_CONFIG_CAT_OPTIONS,
 				ftm_configs, ftm_cfg_cnt);
@@ -4648,6 +4671,10 @@ dhd_rtt_enable_responder(dhd_pub_t *dhd, wifi_channel_info *channel_info)
 		chanspec =  dhd_rtt_convert_to_chspec(channel);
 		DHD_RTT(("chanspec/channel set as %s for rtt.\n",
 			wf_chspec_ntoa(chanspec, chanbuf)));
+		if (chanspec == INVCHANSPEC) {
+			DHD_RTT_ERR(("Channel is not valid \n"));
+			goto exit;
+		}
 		err = wldev_iovar_setint(dev, "chanspec", chanspec);
 		if (err) {
 			DHD_RTT_ERR(("Failed to set the chanspec \n"));
@@ -4912,6 +4939,9 @@ dhd_rtt_init(dhd_pub_t *dhd)
 		rtt_status->rtt_capa.bw |= RTT_BW_20;
 		rtt_status->rtt_capa.bw |= RTT_BW_40;
 		rtt_status->rtt_capa.bw |= RTT_BW_80;
+#ifdef WL_RTT_BW160
+		rtt_status->rtt_capa.bw |= RTT_BW_160;
+#endif /* WL_RTT_BW160 */
 	} else {
 		if ((ret != BCME_OK) || (version == 0)) {
 			DHD_RTT_ERR(("%s : FTM is not supported\n", __FUNCTION__));

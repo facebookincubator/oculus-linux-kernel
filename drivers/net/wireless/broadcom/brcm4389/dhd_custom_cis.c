@@ -304,6 +304,8 @@ naming_info_t bcm4389_naming_table[] = {
 	{ {"usi_es12"}, {"_ES12"}, {""} },
 	{ {"usi_es13"}, {"_ES13"}, {""} },
 	{ {"usi_es15"}, {"_ES15"}, {""} },
+	{ {"usi_es17"}, {"_ES17"}, {""} },
+	{ {"usi_es19"}, {"_ES19"}, {""} },
 };
 
 /* select the NVRAM/FW tag naming table */
@@ -1674,6 +1676,8 @@ vid_info_t vid_info[] = {
 	{ 3, { 0x12, 0x99, }, { "USI_WM_usi_es12" } },
 	{ 3, { 0x13, 0x99, }, { "USI_WM_usi_es13" } },
 	{ 3, { 0x15, 0x99, }, { "USI_WM_usi_es15" } },
+	{ 3, { 0x17, 0x99, }, { "USI_WM_usi_es17" } },
+	{ 3, { 0x19, 0x99, }, { "USI_WM_usi_es19" } },
 #endif /* SUPPORT_MIXED_MODULES */
 };
 #else

@@ -169,7 +169,7 @@ int bcm_mpm_deinit(bcm_mpm_mgr_h *mgrp);
  */
 int bcm_mpm_create_prealloc_pool(bcm_mpm_mgr_h mgr,
                                  unsigned int obj_sz,
-                                 int nobj,
+                                 uint nobj,
                                  void *memstart,
                                  unsigned int memsize,
                                  const char poolname[BCM_MP_NAMELEN],

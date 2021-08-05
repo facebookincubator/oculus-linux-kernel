@@ -342,7 +342,9 @@ int dhd_bus_perform_flr(struct dhd_bus *bus, bool force_fail);
 extern bool dhd_bus_get_flr_force_fail(struct dhd_bus *bus);
 
 extern bool dhd_bus_aspm_enable_rc_ep(struct dhd_bus *bus, bool enable);
+extern bool dhd_bus_is_aspm_enab_rc_ep(struct dhd_bus *bus);
 extern void dhd_bus_l1ss_enable_rc_ep(struct dhd_bus *bus, bool enable);
+extern bool dhd_bus_is_l1ss_enab_rc_ep(struct dhd_bus *bus);
 
 bool dhd_bus_is_multibp_capable(struct dhd_bus *bus);
 
@@ -408,7 +410,9 @@ extern int dhd_bus_get_sdtc_etb(dhd_pub_t *dhd, uint8 *sdtc_etb_mempool,
 	uint addr, uint read_bytes);
 #endif /* DHD_SDTC_ETB_DUMP */
 
+#ifndef BCMDBUS
 extern int dhd_socram_dump(struct dhd_bus *bus);
+#endif /* BCMDBUS */
 
 extern int dhdpcie_get_max_eventbufpost(struct dhd_bus *bus);
 
@@ -418,4 +422,6 @@ extern void dhd_bus_flow_ring_status_dpc_trace(dhd_pub_t *dhd);
 #endif /* DHD_FLOW_RING_STATUS_TRACE */
 
 extern bool dhd_bus_init_done(struct dhd_bus *bus);
+
+extern void dhdpcie_db7_trap(struct dhd_bus *bus);
 #endif /* _dhd_bus_h_ */

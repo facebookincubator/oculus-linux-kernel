@@ -689,6 +689,7 @@ extern uint32 si_gci_get_functionsel(si_t *sih, uint32 pin);
 extern void si_gci_clear_functionsel(si_t *sih, uint8 fnsel);
 extern uint8 si_gci_get_chipctrlreg_idx(uint32 pin, uint32 *regidx, uint32 *pos);
 extern uint32 si_gci_chipcontrol(si_t *sih, uint reg, uint32 mask, uint32 val);
+extern void sflash_gpio_config(si_t *sih);
 extern uint32 si_gci_chipstatus(si_t *sih, uint reg);
 extern uint8 si_enable_device_wake(si_t *sih, uint8 *wake_status, uint8 *cur_status);
 extern uint8 si_get_device_wake_opt(si_t *sih);

@@ -335,6 +335,19 @@ typedef struct ring_info {
 } ring_info_t;
 
 /**
+ * A structure to share information about aggregated work item between host and dongle
+ */
+typedef struct {
+	uint8	flags;		/* dongle supported aggregated work items */
+	uint8	hostcap;	/* host supported aggregated work items */
+	uint8	txpost_max;	/* max aggregated work items in txpost, filled by host */
+	uint8	rxpost_max;	/* max aggregated work items in rxpost, filled by host */
+	uint8	txcpl_max;	/* max aggregated work items in txcpl, filled by dongle */
+	uint8	rxcpl_max;	/* max aggregated work items in rxcpl, filled by dongle */
+	uint16	resvd;		/* reserved */
+} pcie_aggr_sh_t;
+
+/**
  * A structure located in TCM that is shared between host and device, primarily used during
  * initialization.
  */
@@ -408,6 +421,11 @@ typedef struct {
 	/* Device advertises the txpost extended tag capabilities */
 	uint32		device_txpost_ext_tags_bitmask;
 
+	/* Pointer to ewp_info_t data structure [ipc v9] */
+	uint32		PHYS_ADDR_N(ewp_info_addr);
+
+	/* aggregated work item shared information [ipc v9] */
+	pcie_aggr_sh_t	aggr_sh_info;
 } pciedev_shared_t;
 
 /* Device F/W provides the following access function:
@@ -565,4 +583,9 @@ typedef struct {
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_CSO		(1u << 1u) /* CSO */
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_MESH	(1u << 2u) /* MESH */
 
+/* Aggregated Work Item definitions */
+#define PCIE_AGGR_WI_TXPOST		(1u << 0u)
+#define PCIE_AGGR_WI_RXPOST		(1u << 1u)
+#define PCIE_AGGR_WI_TXCPL		(1u << 2u)
+#define PCIE_AGGR_WI_RXCPL		(1u << 3u)
 #endif	/* _bcmpcie_h_ */

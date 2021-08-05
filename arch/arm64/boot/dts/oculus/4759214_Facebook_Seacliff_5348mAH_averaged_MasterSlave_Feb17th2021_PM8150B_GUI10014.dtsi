@@ -3,14 +3,14 @@ qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 	qcom,profile-revision = <24>;
 	/* #4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021*/
 	qcom,max-voltage-uv = <4400000>;
-	qcom,fastchg-current-ma = <2674>;/* 0.5C */
+	qcom,fastchg-current-ma = <4813>;/* 0.9C */
 	qcom,jeita-fcc-ranges-0 = <10 100  1069000
 				101 200  2674000
-				201 450  2674000
+				201 450  4813000
 				451 550  2674000>;
 	qcom,jeita-fcc-ranges-1 = <10 100  1069000
 				101 200  2674000
-				201 450  2674000
+				201 450  4813000
 				451 550  2674000>;
 	qcom,jeita-fv-ranges-0 = <10  100  4400000
 				101 200  4400000
@@ -20,17 +20,13 @@ qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 				101 200  4100000
 				201 450  4100000
 				451 550  3900000>;
-	qcom,cycle-fcc-ranges-0 = <0  300  2674000
-				301 500  2674000
+	qcom,cycle-fcc-ranges-0 = <0  500  4813000
+				501 800  4813000>;
+	qcom,cycle-fcc-ranges-1 = <0  500  2674000
 				501 800  2674000>;
-	qcom,cycle-fcc-ranges-1 = <0  300  2674000
-				301 500  2674000
-				501 800  2674000>;
-	qcom,cycle-fv-ranges-0 = <0   300  4400000
-				301 500  4400000
+	qcom,cycle-fv-ranges-0 = <0   500  4400000
 				501 800  4300000>;
-	qcom,cycle-fv-ranges-1 = <0   300  4100000
-				301 500  4100000
+	qcom,cycle-fv-ranges-1 = <0   500  4100000
 				501 800  4000000>;
 	qcom,chg-disable-ranges-0 = <3600000 4100000 0
 				4101000 4400000 0>;
@@ -42,10 +38,10 @@ qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 				134900 145700 4400000
 				145800 179400 4200000>;
 	qcom,rblt-limited-check;
-	qcom,step-chg-ranges-0 = <3600000 4060000 2674000
-				4061000 4400000 2674000>;
-	qcom,step-chg-ranges-1 = <3600000 4060000 2674000
-				4061000 4400000 2674000>;
+	qcom,step-chg-ranges-0 = <3000000 4200000 4813000
+				4201000 4400000 2674000>;
+	qcom,step-chg-ranges-1 = <3000000 4000000 2674000
+				4001000 4400000 2674000>;
 	/* COLD = 0 DegC, HOT = 52 DegC */
 	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
 	/* COOL = 10 DegC, WARM = 45 DegC */
@@ -53,8 +49,9 @@ qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 	/* COLD hys = 12 DegC, WARM hys = 43 DegC */
 	qcom,jeita-soft-hys-thresholds = <0x4a2a 0x22b8>;
 	qcom,jeita-soft-fcc-ua = <1069000 1069000>;/* 0.2C */
-	qcom,jeita-soft-fv-uv = <4300000 4300000>;
-	qcom,ocv-based-step-chg;
+	qcom,jeita-soft-fv-uv = <4200000 4200000>;
+	qcom,vnow-based-step-chg;
+	qcom,taper-fcc;
 	qcom,fg-cc-cv-threshold-mv = <4390>;
 	qcom,nom-batt-capacity-mah = <5348>;
 	qcom,batt-id-kohm = <150>;

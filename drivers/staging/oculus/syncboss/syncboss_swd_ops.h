@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef SYNCBOSS_SWD_OPS_H
 #define SYNCBOSS_SWD_OPS_H
 

@@ -255,6 +255,11 @@ typedef struct dhd_info {
 	struct work_struct    tx_dispatcher_work;
 	struct work_struct    rx_compl_dispatcher_work;
 
+	/* Emergency queue to hold pkts when flow control is enabled and
+	 * same pkts will be posted back to the dongle till flow control is disabled.
+	*/
+	struct sk_buff_head   rx_emerge_queue	____cacheline_aligned;
+
 	/* Number of times DPC Tasklet ran */
 	uint32	dhd_dpc_cnt;
 	/* Number of times NAPI processing got scheduled */
@@ -523,6 +528,8 @@ void dhd_rx_pktpool_deinit(dhd_info_t *dhd);
 #if defined(SET_PCIE_IRQ_CPU_CORE) || defined(DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON)
 void dhd_irq_set_affinity(dhd_pub_t *dhdp, const struct cpumask *cpumask);
 #endif /* SET_PCIE_IRQ_CPU_CORE ||  DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
+
+void dhd_flush_logtrace_process(dhd_info_t *dhd);
 
 #ifdef DHD_SSSR_DUMP
 extern uint sssr_enab;

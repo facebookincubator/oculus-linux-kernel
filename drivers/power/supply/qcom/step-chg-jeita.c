@@ -75,6 +75,7 @@ struct step_chg_info {
 	bool			soc_based_step_chg;
 	bool			ocv_based_step_chg;
 	bool			vbat_avg_based_step_chg;
+	bool			vnow_based_step_chg;
 	bool			batt_missing;
 	bool			taper_fcc;
 	int			jeita_fcc_index;
@@ -377,6 +378,15 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 		chip->step_chg_config->param.prop_name = "VBAT_AVG";
 		chip->step_chg_config->param.hysteresis = 0;
 		chip->step_chg_config->param.use_bms = true;
+	}
+
+	chip->vnow_based_step_chg =
+		of_property_read_bool(profile_node, "qcom,vnow-based-step-chg");
+	if (chip->vnow_based_step_chg) {
+		chip->step_chg_config->param.psy_prop =
+				POWER_SUPPLY_PROP_VOLTAGE_NOW;
+		chip->step_chg_config->param.prop_name = "V_NOW";
+		chip->step_chg_config->param.hysteresis = 0;
 	}
 
 	chip->step_chg_cfg_valid = true;

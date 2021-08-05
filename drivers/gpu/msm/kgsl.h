@@ -253,6 +253,7 @@ struct kgsl_memdesc {
  * @id: idr index for this entry, can be used to find memory that does not have
  *  a valid GPU address.
  * @priv: back pointer to the process that owns this memory
+ * @dentry_id: debugfs entry idr index for this memory
  * @pending_free: if !0, userspace requested that his memory be freed, but there
  *  are still references to it.
  * @dev_priv: back pointer to the device file that created this entry.
@@ -267,6 +268,7 @@ struct kgsl_mem_entry {
 	void *priv_data;
 	struct rb_node node;
 	unsigned int id;
+	int dentry_id;
 	int pending_free;
 	struct kgsl_process_private *priv;
 	char *metadata;

@@ -340,6 +340,13 @@ typedef float64 float_t;
 #endif /* _MSC_VER */
 #endif /* INLINE */
 
+/* Force inlining. */
+#if defined(BWL_COMPILER_GNU)
+#define INLINE_ALWAYS	inline  __attribute__ ((always_inline))
+#else
+#define INLINE_ALWAYS	INLINE
+#endif
+
 #undef TYPEDEF_BOOL
 #undef TYPEDEF_UCHAR
 #undef TYPEDEF_USHORT

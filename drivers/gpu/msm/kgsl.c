@@ -429,6 +429,8 @@ static void kgsl_mem_entry_commit_process(struct kgsl_mem_entry *entry)
 	if (!entry)
 		return;
 
+	kgsl_process_init_mem_entry_debugfs(entry);
+
 	spin_lock(&entry->priv->mem_lock);
 	idr_replace(&entry->priv->mem_idr, entry, entry->id);
 	spin_unlock(&entry->priv->mem_lock);
@@ -537,6 +539,8 @@ static int kgsl_mem_entry_attach_process(struct kgsl_device *device,
 /* Detach a memory entry from a process and unmap it from the MMU */
 static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 {
+	struct dentry *dentry = NULL;
+
 	if (entry == NULL)
 		return;
 
@@ -560,7 +564,17 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 		idr_remove(&entry->priv->mem_idr, entry->id);
 	entry->id = 0;
 
+	if (entry->dentry_id != 0) {
+		dentry = idr_find(&entry->priv->dentry_idr, entry->dentry_id);
+		idr_remove(&entry->priv->dentry_idr, entry->dentry_id);
+	}
+	entry->dentry_id = 0;
+
 	spin_unlock(&entry->priv->mem_lock);
+
+	if (!IS_ERR_OR_NULL(entry->priv->debug_root) &&
+			!IS_ERR_OR_NULL(dentry))
+		debugfs_remove(dentry);
 
 	kgsl_mmu_put_gpuaddr(&entry->memdesc);
 
@@ -979,11 +993,15 @@ static void kgsl_destroy_process_private(struct kref *kref)
 
 	put_pid(private->pid);
 	idr_destroy(&private->mem_idr);
+	idr_destroy(&private->dentry_idr);
 	idr_destroy(&private->syncsource_idr);
 
 	/* When using global pagetables, do not detach global pagetable */
 	if (private->pagetable->name != KGSL_MMU_GLOBAL_PT)
 		kgsl_mmu_putpagetable(private->pagetable);
+
+	/* Clean up any remaining debugfs nodes. */
+	debugfs_remove_recursive(private->debug_root);
 
 	kfree(private);
 }
@@ -1064,6 +1082,7 @@ static struct kgsl_process_private *kgsl_process_private_new(
 	spin_lock_init(&private->ctxt_count_lock);
 
 	idr_init(&private->mem_idr);
+	idr_init(&private->dentry_idr);
 	idr_init(&private->syncsource_idr);
 
 	/* Allocate a pagetable for the new process object */
@@ -1073,6 +1092,7 @@ static struct kgsl_process_private *kgsl_process_private_new(
 		int err = PTR_ERR(private->pagetable);
 
 		idr_destroy(&private->mem_idr);
+		idr_destroy(&private->dentry_idr);
 		idr_destroy(&private->syncsource_idr);
 		put_pid(private->pid);
 
@@ -1100,6 +1120,18 @@ static void process_release_memory(struct kgsl_process_private *private)
 			spin_unlock(&private->mem_lock);
 			break;
 		}
+
+		/*
+		 * If there's a debugfs entry associated with this memory just
+		 * remove the idr index for it. debugfs_remove_recursive() for
+		 * the debug_root (which runs after this function returns) will
+		 * clear it out, and doing this here saves us from having to
+		 * worry about it getting double freed in _deferred_destroy.
+		 */
+		if (entry->dentry_id != 0)
+			idr_remove(&entry->priv->dentry_idr, entry->dentry_id);
+		entry->dentry_id = 0;
+
 		/*
 		 * If the free pending flag is not set it means that user space
 		 * did not free it's reference to this entry, in that case
@@ -1147,8 +1179,6 @@ static void kgsl_process_private_close(struct kgsl_device_private *dev_priv,
 	list_del(&private->list);
 	spin_unlock(&kgsl_driver.proclist_lock);
 
-	debugfs_remove_recursive(private->debug_root);
-
 	/*
 	 * Unlock the mutex before releasing the memory - this prevents a
 	 * deadlock with the IOMMU mutex if a page fault occurs.
@@ -1156,6 +1186,7 @@ static void kgsl_process_private_close(struct kgsl_device_private *dev_priv,
 	mutex_unlock(&kgsl_driver.process_mutex);
 
 	process_release_memory(private);
+
 	kgsl_process_private_put(private);
 }
 

@@ -24,10 +24,19 @@
 #ifndef	_bcmdefs_h_
 #define	_bcmdefs_h_
 
+#ifndef BCM_FLEX_ARRAY
+#define BCM_FLEX_ARRAY  (1)
+#endif /* BCM_FLEX_ARRAY */
+
 /*
  * One doesn't need to include this file explicitly, gets included automatically if
  * typedefs.h is included.
  */
+
+/* For all the corerevs of the chip being built */
+#ifdef VLSI_COREREVS
+#include <chip_defs.h>	/* auto-generated definitions from vlsi_data */
+#endif /* VLSI_COREREVS */
 
 /* Use BCM_REFERENCE to suppress warnings about intentionally-unused function
  * arguments or local variables.
@@ -36,9 +45,9 @@
 
 /* Allow for suppressing unused variable warnings. */
 #ifdef __GNUC__
-#define UNUSED_VAR     __attribute__ ((unused))
+#define BCM_UNUSED_VAR     __attribute__ ((unused))
 #else
-#define UNUSED_VAR
+#define BCM_UNUSED_VAR
 #endif
 
 /* GNU GCC 4.6+ supports selectively turning off a warning.
@@ -103,9 +112,9 @@
  */
 #define STATIC_ASSERT(expr) { \
 	/* Make sure the expression is constant. */ \
-	typedef enum { _STATIC_ASSERT_NOT_CONSTANT = (expr) } _static_assert_e UNUSED_VAR; \
+	typedef enum { _STATIC_ASSERT_NOT_CONSTANT = (expr) } _static_assert_e BCM_UNUSED_VAR; \
 	/* Make sure the expression is true. */ \
-	typedef char STATIC_ASSERT_FAIL[(expr) ? 1 : -1] UNUSED_VAR; \
+	typedef char STATIC_ASSERT_FAIL[(expr) ? 1 : -1] BCM_UNUSED_VAR; \
 }
 
 /* Reclaiming text and data :
@@ -141,6 +150,12 @@ extern bool bcm_postattach_part_reclaimed;
 /* Explicitly place data in .rodata section so it can be write-protected after attach */
 #define BCMRODATA(_data)	__attribute__ ((__section__ (".shrodata." #_data))) _data
 
+#ifdef _WIN32
+#define BCMSIZEOFDATA(_data)	_data
+#else
+#define BCMSIZEOFDATA(_data)	__attribute__ ((__section__ (".shrodata." #_data))) _data
+#endif
+
 #ifdef BCMDBG_SR
 /*
  * Don't reclaim so we can compare SR ASM
@@ -155,6 +170,19 @@ extern bool bcm_postattach_part_reclaimed;
 #define BCMATTACHDATASR(_data)		_data
 #define BCMATTACHFNSR(_fn)		_fn
 #endif
+
+/* In case of coex cpu reinit, we should not relcaim the functions that are needed for reinit */
+#ifdef COEX_CPU_REINIT
+#define BCMCOEXCPUATTACHDATA(_data)	_data
+#define BCMCOEXCPUATTACHFN(_fn)		_fn
+#define BCMCOEXCPUPREATTACHDATA(_data)	_data
+#define BCMCOEXCPUPREATTACHFN(_fn)	_fn
+#else
+#define BCMCOEXCPUATTACHDATA(_data)	_data
+#define BCMCOEXCPUATTACHFN(_fn)		_fn
+#define BCMCOEXCPUPREATTACHDATA(_data)	BCMPREATTACHDATA(_data)
+#define BCMCOEXCPUPREATTACHFN(_fn)	BCMPREATTACHFN(_fn)
+#endif /* COEX_CPU_REINIT */
 
 #define _data	_data
 #define _fn		_fn
@@ -210,6 +238,11 @@ extern bool bcm_postattach_part_reclaimed;
 #define BCM_SRM_ATTACH_FN(_fn)		_fn
 /* BCMRODATA data is written into at attach time so it cannot be in .rodata */
 #define BCMRODATA(_data)	__attribute__ ((__section__ (".data." #_data))) _data
+#ifdef _WIN32
+#define BCMSIZEOFDATA(_data)	_data
+#else
+#define BCMSIZEOFDATA(_data)	__attribute__ ((__section__ (".data." #_data))) _data
+#endif
 #define BCMPREATTACHDATA(_data)		_data
 #define BCMPREATTACHFN(_fn)		_fn
 #define BCMPOSTATTACHDATA(_data)	_data
@@ -364,6 +397,9 @@ extern bool bcm_postattach_part_reclaimed;
 
 #ifdef BCMPCIEREV
 #define PCIECOREREV(rev)	(BCMPCIEREV)
+#elif defined(BCMPCIEGEN2REV)
+#define BCMPCIEREV		(BCMPCIEGEN2REV)
+#define PCIECOREREV(rev)	(BCMPCIEGEN2REV)
 #else
 #define PCIECOREREV(rev)	(rev)
 #endif
@@ -376,6 +412,9 @@ extern bool bcm_postattach_part_reclaimed;
 
 #ifdef BCMCCREV
 #define CCREV(rev)	(BCMCCREV)
+#elif defined(BCMCHIPCOMMONREV)
+#define BCMCCREV	(BCMCHIPCOMMONREV)
+#define CCREV(rev)	(BCMCHIPCOMMONREV)
 #else
 #define CCREV(rev)	(rev)
 #endif
@@ -400,8 +439,15 @@ extern bool bcm_postattach_part_reclaimed;
 #define LHLREV(rev)	(rev)
 #endif
 
+#if defined(BCMHND_OOBRREV) && !defined(BCMHNDOOBRREV)
+#define BCMHNDOOBRREV	BCMHND_OOBRREV
+#endif
+
 #ifdef BCMSPMISREV
 #define SPMISREV(rev)	(BCMSPMISREV)
+#elif defined(BCMSPMI_SLAVEREV)
+#define BCMSPMISREV	(BCMSPMI_SLAVEREV)
+#define SPMISREV(rev)	(BCMSPMI_SLAVEREV)
 #else
 #define	SPMISREV(rev)	(rev)
 #endif
@@ -892,6 +938,27 @@ void* BCM_ASLR_CODE_FNPTR_RELOCATOR(void *func_ptr);
 #else
 	#define PHYS_ADDR_N(name) name
 #endif
+
+/* As we modify struct sizes during the natural course of development, existing
+ * ROM functions that malloc, memset, bzero or memcpy such structs using the
+ * sizeof operator are invalidated. Such functions are rarely patchable. Here we
+ * mitigate this. A struct's size, computed at compile time, is to be stored in
+ * a constant to which a macro then refers.
+ */
+#ifdef ROM_ENAB_RUNTIME_CHECK
+#define SIZEOF_MACRO_USE
+#endif /* ROM_ENAB_RUNTIME_CHECK */
+#ifdef SIZEOF_MACRO_USE
+#define VAR_SIZEOF(t)	static uint16 BCMSIZEOFDATA(sizeof_##t) = sizeof(t)
+#define VAR_SIZEOF_STRUCT(t)	static uint16 BCMSIZEOFDATA(sizeof_##t) = sizeof(struct t)
+#define SIZEOF_DYN(t)	(sizeof_##t)
+#define SIZEOF_STRUCT_DYN(t)	SIZEOF_DYN(t)
+#else /* SIZEOF_MACRO_USE */
+#define VAR_SIZEOF(t)
+#define VAR_SIZEOF_STRUCT(t)
+#define SIZEOF_DYN(t)	(sizeof(t))
+#define SIZEOF_STRUCT_DYN(t)	(sizeof(struct t))
+#endif /* SIZEOF_MACRO_USE */
 
 /*
  * A compact form for a list of valid register address offsets.

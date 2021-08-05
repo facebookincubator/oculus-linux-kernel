@@ -109,10 +109,11 @@
 			   "chg_temp",
 			   "rblt_res";
 	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,step-charging-enable;
 	qcom,sw-jeita-enable;
 	qcom,wd-bark-time-secs = <16>;
 	qcom,suspend-input-on-debug-batt;
-	qcom,fcc-max-ua = <2674000>;
+	qcom,fcc-max-ua = <4813000>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,dc-icl-ua = <3000000>;
 	qcom,typec-dam-enable;

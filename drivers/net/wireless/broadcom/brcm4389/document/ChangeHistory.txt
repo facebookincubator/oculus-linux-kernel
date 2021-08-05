@@ -1,4 +1,27 @@
-BCM4389 DHD 101.10.452.2  for FB Project R5 Release
+BCM4389 DHD 101.10.501.3  for FB Project R7 Release
+
+DHD 101.10.501.3 - 2021.04.30
+ - Enable external SAE for 6G WPA3 connection, CS00011968646
+
+ Others
+ - Fix Kernel panic due to ASSERT  in dhd_flow_queue_dequeue()
+ - Fix Big hammer happening during firmware mode change
+ - Support full desense information in CCA event
+ - Fix for code vulnerability
+ - Bug fix for ratestat in linkstats - src/dhd
+ - Ring H2D DB whenever RD DMA index is updated for all D2H rings
+ - Don't invoke netif wake/stop queue when the interface is fully not created.
+ - Fix a warning message related to unused-variable
+ - Stop Tx queue if DHD stayed in suspend state
+ - Split the rx functionality from dhd_linux.c
+ - Fix kernel panic from the dhd_log_dump_write
+ - Fix kernel panic from incorrect ring index
+ - Increase Max NVRAM size
+ - Add sysfs control for ASPM and L1SS
+ - Pkt fate extension
+
+DHD 101.10.452.3 - 2021.02.26
+- Murata 1WK ES6.0 module support, CS00011870800
 
 DHD 101.10.452.2 - 2021.02.01
 - Added to set bcn_li_dtim at disable MAX_DTIM_IN_SUSPEND if suspend mode
