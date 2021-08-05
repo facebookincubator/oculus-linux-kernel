@@ -65,7 +65,7 @@ si_lhl_setup(si_t *sih, osl_t *osh)
 		LHL_REG(sih, lhl_top_pwrdn2_ctl_adr, LHL_PWRDN2_CTL_MASK, LHL_PWRDN2_CTL);
 	}
 
-	if (!FWSIGN_ENAB() && si_hib_ext_wakeup_isenab(sih)) {
+	if (si_hib_ext_wakeup_isenab(sih)) {
 		/*
 		 * Enable wakeup on GPIO1, PCIE clkreq and perst signal,
 		 * GPIO[0] is mapped to GPIO1
@@ -253,16 +253,12 @@ si_lhl_set_lpoclk(si_t *sih, osl_t *osh, uint32 lpo_force)
 	uint32 lpo = 0;
 
 	/* Apply nvram override to lpo */
-	if (!FWSIGN_ENAB()) {
-		if ((lpo = (uint32)getintvar(NULL, "lpo_select")) == 0) {
-			if (lpo_force == LHL_LPO_AUTO) {
-				lpo = LHL_OSC_32k_ENAB;
-			} else {
-				lpo = lpo_force;
-			}
+	if ((lpo = (uint32)getintvar(NULL, "lpo_select")) == 0) {
+		if (lpo_force == LHL_LPO_AUTO) {
+			lpo = LHL_OSC_32k_ENAB;
+		} else {
+			lpo = lpo_force;
 		}
-	} else {
-		lpo = lpo_force;
 	}
 
 	lhl_wlclk_sel = si_lhl_get_lpo_sel(sih, lpo);

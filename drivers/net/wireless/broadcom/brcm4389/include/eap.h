@@ -36,7 +36,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 	unsigned char id;	/* Current request ID */
 	unsigned short length;	/* Length including header */
 	unsigned char type;	/* EAP type (optional) */
-	unsigned char data[1];	/* Type data (optional) */
+	unsigned char data[BCM_FLEX_ARRAY];	/* Type data (optional) */
 } BWL_POST_PACKED_STRUCT eap_header_t;
 
 #define EAP_HEADER_LEN			4u
@@ -96,7 +96,7 @@ typedef struct {
 	unsigned char reserved;		/* not used */
 	unsigned char chall_len;	/* always value of LEAP_CHALLENGE_LEN */
 	unsigned char challenge[LEAP_CHALLENGE_LEN]; /* random */
-	unsigned char username[1];
+	unsigned char username[BCM_FLEX_ARRAY];
 } leap_challenge_t;
 
 #define LEAP_CHALLENGE_HDR_LEN	12
@@ -108,7 +108,7 @@ typedef struct {
 	unsigned char resp_len;	/* always value of LEAP_RESPONSE_LEN */
 	/* MS-CHAP hash of challenge and user's password */
 	unsigned char response[LEAP_RESPONSE_LEN];
-	unsigned char username[1];
+	unsigned char username[BCM_FLEX_ARRAY];
 } leap_response_t;
 
 #define LEAP_RESPONSE_HDR_LEN	28

@@ -727,6 +727,55 @@ ssize_t mipi_dsi_dcs_write(struct mipi_dsi_device *dsi, u8 cmd,
 }
 EXPORT_SYMBOL(mipi_dsi_dcs_write);
 
+
+ssize_t mipi_dsi_dcs_write_queue(struct mipi_dsi_device *dsi,
+			   const void *data, size_t len, bool last)
+{
+	const struct mipi_dsi_host_ops *ops;
+	struct mipi_dsi_msg msg = {0};
+
+	if (!dsi || !dsi->host)
+		return -EINVAL;
+
+	ops = dsi->host->ops;
+	if (!ops || !ops->transfer)
+		return -ENOSYS;
+
+	msg.channel = dsi->channel;
+	msg.tx_buf = data;
+	msg.tx_len = len;
+
+	switch (len) {
+	case 0:
+		return -EINVAL;
+
+	case 1:
+		msg.type = MIPI_DSI_DCS_SHORT_WRITE;
+		break;
+
+	case 2:
+		msg.type = MIPI_DSI_DCS_SHORT_WRITE_PARAM;
+		break;
+
+	default:
+		msg.type = MIPI_DSI_DCS_LONG_WRITE;
+		break;
+	}
+
+
+	if (dsi->mode_flags & MIPI_DSI_MODE_LPM)
+		msg.flags |= MIPI_DSI_MSG_USE_LPM;
+
+	if (last)
+		msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
+
+	/* Required for sending queued commands */
+	msg.flags |= MIPI_DSI_MSG_UNICAST;
+
+	return ops->transfer(dsi->host, &msg);
+}
+EXPORT_SYMBOL(mipi_dsi_dcs_write_queue);
+
 /**
  * mipi_dsi_dcs_read() - send DCS read request command
  * @dsi: DSI peripheral device

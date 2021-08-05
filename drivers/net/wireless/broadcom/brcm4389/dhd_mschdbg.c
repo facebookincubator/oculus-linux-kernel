@@ -55,6 +55,14 @@ do {	\
 		DHD_LOG_DUMP_WRITE_FW args; \
 	}	\
 } while (0)
+#elif defined(CUSTOM_PREFIX)
+#define MSCH_EVENT(args) \
+do {	\
+	if (dhd_msg_level & DHD_EVENT_VAL) {	\
+		DBG_PRINT_SYSTEM_TIME;  \
+		pr_cont args;	\
+	}	\
+} while (0)
 #else
 #define MSCH_EVENT(args) do {if (dhd_msg_level & DHD_EVENT_VAL) printf args;} while (0)
 #endif /* DHD_EFI */

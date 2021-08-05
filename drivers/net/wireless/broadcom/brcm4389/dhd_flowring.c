@@ -214,7 +214,6 @@ BCMFASTPATH(dhd_flow_queue_dequeue)(dhd_pub_t *dhdp, flow_queue_t *queue)
 	pkt = queue->head; /* from head */
 
 	if (pkt == NULL) {
-		ASSERT((queue->len == 0) && (queue->tail == NULL));
 		goto done;
 	}
 
@@ -321,11 +320,11 @@ dhd_get_max_multi_client_flow_rings(dhd_pub_t *dhdp)
 int
 dhd_flowid_map_init(dhd_pub_t *dhdp, uint16 max_tx_flow_rings)
 {
-#if defined(DHD_HTPUT_TUNABLES)
-	uint16 max_normal_tx_flow_rings = max_tx_flow_rings - HTPUT_TOTAL_FLOW_RINGS;
-#else
 	uint16 max_normal_tx_flow_rings = max_tx_flow_rings;
-#endif /* DHD_HTPUT_TUNABLES */
+
+	if (dhdp->htput_support) {
+		max_normal_tx_flow_rings = max_tx_flow_rings - HTPUT_TOTAL_FLOW_RINGS;
+	}
 
 	/* Construct a normal flowid allocator from FLOWID_RESERVED to
 	 * (max_normal_tx_flow_rings - 1)
@@ -337,21 +336,24 @@ dhd_flowid_map_init(dhd_pub_t *dhdp, uint16 max_tx_flow_rings)
 		return BCME_NOMEM;
 	}
 
-#if defined(DHD_HTPUT_TUNABLES)
-	if (HTPUT_TOTAL_FLOW_RINGS > 0) {
-		dhdp->htput_flow_ring_start = max_normal_tx_flow_rings + FLOWID_RESERVED;
-		/* Construct a htput flowid allocator from htput_flow_ring_start to
-		 * (htput_flow_ring_start + HTPUT_TOTAL_FLOW_RINGS - 1)
-		 */
-		dhdp->htput_flowid_allocator = id16_map_init(dhdp->osh, HTPUT_TOTAL_FLOW_RINGS,
-			dhdp->htput_flow_ring_start);
-		if (dhdp->htput_flowid_allocator == NULL) {
-			DHD_ERROR(("%s: htput flowid allocator init failure\n", __FUNCTION__));
-			return BCME_NOMEM;
+	dhdp->htput_flowid_allocator = NULL;
+
+	if (dhdp->htput_support) {
+		if (HTPUT_TOTAL_FLOW_RINGS > 0) {
+			dhdp->htput_flow_ring_start = max_normal_tx_flow_rings + FLOWID_RESERVED;
+			/* Construct a htput flowid allocator from htput_flow_ring_start to
+			 * (htput_flow_ring_start + HTPUT_TOTAL_FLOW_RINGS - 1)
+			 */
+			dhdp->htput_flowid_allocator = id16_map_init(dhdp->osh,
+				HTPUT_TOTAL_FLOW_RINGS,	dhdp->htput_flow_ring_start);
+			if (dhdp->htput_flowid_allocator == NULL) {
+				DHD_ERROR(("%s: htput flowid allocator init failure\n",
+					__FUNCTION__));
+				return BCME_NOMEM;
+			}
+			dhdp->htput_client_flow_rings = 0u;
 		}
-		dhdp->htput_client_flow_rings = 0u;
 	}
-#endif /* !DHD_HTPUT_TUNABLES */
 
 	return BCME_OK;
 }
@@ -364,14 +366,13 @@ dhd_flowid_map_deinit(dhd_pub_t *dhdp)
 	}
 	ASSERT(dhdp->flowid_allocator == NULL);
 
-#if defined(DHD_HTPUT_TUNABLES)
 	if (dhdp->htput_flowid_allocator) {
 		dhdp->htput_flowid_allocator = id16_map_fini(dhdp->osh,
 			dhdp->htput_flowid_allocator);
 		ASSERT(dhdp->htput_flowid_allocator == NULL);
 	}
 	dhdp->htput_client_flow_rings = 0u;
-#endif /* !DHD_HTPUT_TUNABLES */
+
 	return;
 }
 
@@ -707,7 +708,6 @@ dhd_flowid_map_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *da)
 		return flowid;
 	}
 
-#if defined(DHD_HTPUT_TUNABLES)
 	if (dhdp->htput_flowid_allocator) {
 		if (prio == HTPUT_FLOW_RING_PRIO) {
 			if (DHD_IF_ROLE_GENERIC_STA(dhdp, ifindex)) {
@@ -731,7 +731,6 @@ dhd_flowid_map_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *da)
 			}
 		}
 	}
-#endif /* !DHD_HTPUT_TUNABLES */
 
 	BCM_REFERENCE(flowid);
 
@@ -1080,7 +1079,6 @@ BCMFASTPATH(dhd_flowid_update)(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, void 
 static void
 dhd_flowid_map_free(dhd_pub_t *dhdp, uint8 ifindex, uint16 flowid)
 {
-#if defined(DHD_HTPUT_TUNABLES)
 	if (dhdp->htput_flowid_allocator) {
 		if (DHD_IS_FLOWID_HTPUT(dhdp, flowid)) {
 			id16_map_free(dhdp->htput_flowid_allocator, flowid);
@@ -1091,7 +1089,6 @@ dhd_flowid_map_free(dhd_pub_t *dhdp, uint8 ifindex, uint16 flowid)
 			return;
 		}
 	}
-#endif /* !DHD_HTPUT_TUNABLES */
 
 	id16_map_free(dhdp->flowid_allocator, flowid);
 

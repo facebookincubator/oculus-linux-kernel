@@ -96,7 +96,7 @@ typedef BWL_PRE_PACKED_STRUCT struct
 		uint8 low;
 		uint8 high;
 	} BWL_POST_PACKED_STRUCT count;
-	wpa_suite_t list[1];
+	wpa_suite_t list[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT wpa_suite_ucast_t, wpa_suite_auth_key_mgmt_t;
 #define WPA_IE_SUITE_COUNT_LEN	2
 typedef BWL_PRE_PACKED_STRUCT struct
@@ -105,7 +105,7 @@ typedef BWL_PRE_PACKED_STRUCT struct
 		uint8 low;
 		uint8 high;
 	} BWL_POST_PACKED_STRUCT count;
-	wpa_pmkid_t list[1];
+	wpa_pmkid_t list[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT wpa_pmkid_list_t;
 
 /* WPA cipher suites */
@@ -185,12 +185,14 @@ typedef BWL_PRE_PACKED_STRUCT struct
 			(akm) == RSN_AKM_FILS_SHA384 || \
 			(akm) == RSN_AKM_OWE || \
 			(akm) == RSN_AKM_SUITEB_SHA256_1X || \
-			(akm) == RSN_AKM_SUITEB_SHA384_1X)
+			(akm) == RSN_AKM_SUITEB_SHA384_1X || \
+			(akm) == RSN_AKM_PASN)
 
 #define IS_VALID_BIP_CIPHER(cipher) ((cipher) == WPA_CIPHER_BIP || \
 					(cipher) == WPA_CIPHER_BIP_GMAC_128 || \
 					(cipher) == WPA_CIPHER_BIP_GMAC_256 || \
-					(cipher) == WPA_CIPHER_BIP_CMAC_256)
+					(cipher) == WPA_CIPHER_BIP_CMAC_256 || \
+					(cipher) == WPA_CIPHER_TPK)
 
 #define WPA_IS_FT_AKM(akm)	((akm) == RSN_AKM_FBT_SHA256 || \
 			(akm) == RSN_AKM_FBT_SHA384)

@@ -53,6 +53,12 @@
 #define wl_escan_set_sync_id(a, b) ((a) = htod16((b)->escan_sync_id_cntr++))
 #define wl_escan_set_type(a, b)
 #endif /* DUAL_ESCAN_RESULT_BUFFER */
+
+#define SCAN_PARAMS_VER_2    2u
+#define SCAN_PARAMS_VER_3    3u
+#define IS_SCAN_PARAMS_V3(cfg) ((cfg->scan_params_ver == SCAN_PARAMS_VER_3) ? \
+				TRUE : FALSE)
+
 extern s32 wl_escan_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	const wl_event_msg_t *e, void *data);
 extern s32 wl_do_escan(struct bcm_cfg80211 *cfg, struct wiphy *wiphy,

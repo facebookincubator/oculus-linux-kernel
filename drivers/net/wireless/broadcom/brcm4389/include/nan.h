@@ -287,7 +287,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_ibss_attr_s {
 	*/
 	uint8 map_ctrl;
 	/* avail. intervals bitmap, var len  */
-	uint8 avail_bmp[1];
+	uint8 avail_bmp[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT wifi_nan_ibss_attr_t;
 
 /* Country code attribute  */
@@ -309,7 +309,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_favail_attr_s {
 	/* MAP id: val [0..15], values[16-255] reserved */
 	uint8 map_id;
 	/*  availibility entry, var len */
-	uint8 avil_entry[1];
+	uint8 avil_entry[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT wifi_nan_favail_attr_t;
 
 /* Further Availability MAP attr  */
@@ -325,7 +325,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_avail_entry_s {
 	/* channel number */
 	uint8 chan;
 	/*  avail bmp, var len */
-	uint8 avail_bmp[1];
+	uint8 avail_bmp[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT wifi_nan_avail_entry_t;
 
 /* Map control Field */
@@ -342,10 +342,10 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_avail_entry_s {
 /* TODO remove */
 typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_vendor_attr_s {
 	uint8	id;			/* 0xDD */
-	uint16	len;		/* IE length */
-	uint8	oui[DOT11_OUI_LEN]; /* 00-90-4C */
-	uint8	type;		/* attribute type */
-	uint8	attr[1];	/* var len attributes */
+	uint16	len;			/* IE length */
+	uint8	oui[DOT11_OUI_LEN]; 	/* 00-90-4C */
+	uint8	type;			/* attribute type */
+	uint8	attr[BCM_FLEX_ARRAY];	/* var len attributes */
 } BWL_POST_PACKED_STRUCT wifi_nan_vendor_attr_t;
 
 #define NAN_VENDOR_HDR_SIZE	(OFFSETOF(wifi_nan_vendor_attr_t, attr))
@@ -377,7 +377,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_p2p_op_attr_s {
 	*/
 	uint8 map_ctrl;
 	/* avail. intervals bitmap */
-	uint8 avail_bmp[1];
+	uint8 avail_bmp[BCM_FLEX_ARRAY];
 } BWL_POST_PACKED_STRUCT wifi_nan_p2p_op_attr_t;
 
 /* ranging attribute */
@@ -557,7 +557,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_container_attr_s {
 	uint8 id;	/* id - 0x20 */
 	uint16 len;	/* Total length of following IEs */
 	uint8 map_id;	/* map id */
-	uint8 data[1];	/* Data pointing to one or more IEs */
+	uint8 data[BCM_FLEX_ARRAY];	/* Data pointing to one or more IEs */
 } BWL_POST_PACKED_STRUCT wifi_nan_container_attr_t;
 
 /* NAN 2.0 NAN avail attribute */
@@ -568,7 +568,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_avail_attr_s {
 	uint16 len;	/* total length */
 	uint8 seqid;	/* sequence id */
 	uint16 ctrl;	/* attribute control */
-	uint8 entry[1];	/* availability entry list */
+	uint8 entry[BCM_FLEX_ARRAY];	/* availability entry list */
 } BWL_POST_PACKED_STRUCT wifi_nan_avail_attr_t;
 
 /* for processing/building time bitmap info in nan_avail_entry */
@@ -669,7 +669,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_channel_entry_s {
 
 typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_channel_entry_list_s {
 	uint8 chan_info;
-	uint8 var[0];
+	uint8 var[];
 } BWL_POST_PACKED_STRUCT wifi_nan_channel_entry_list_t;
 
 /* define for chan_info */
@@ -1324,9 +1324,23 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_svc_desc_ext_attr_s {
 /*
  * Cipher suite information Attribute.
  * WFA Tech. Spec ver 1.0.r21 (section 10.7.24.2)
+ * Bit 0 is 0 for 4 PTKSA replay counters
+ * Bit 0 is 1 for 16 PTKSA replay counters
+ * Bit 1 and 2:
+ * 00: GTKSA, IGTKSA, BIGTKSA are not supported;
+ * 01: GTKSA and IGTKSA are supported, and BIGTKSA is not supported;
+ * 10: GTKSA, IGTKSA, and BIGTKSA are supported;
+ * 11: Reserved;
+ * Bit 3 is 0 for 4 GTKSA replay counters, if GTKSA is supported
+ * Bit 3 is 1 for 16 GTKSA replay counters, if GTKSA is supported
+ * Bit 4 is 0: BIP-CMAC-128 is selected for transmit, if IGTKSA or BIGTKSA is supported
+ * Bit 4 is 1: BIP-GMAC-256 is selected for transmit, if IGTKSA or BIGTKSA is supported
+ * Bit 5 is 0 if IRK is not supported
+ * Bit 5 is 1 if IRK is supported
+ * Bit 7 is reserved
  */
-#define NAN_SEC_CIPHER_SUITE_CAP_REPLAY_4     0
-#define NAN_SEC_CIPHER_SUITE_CAP_REPLAY_16    (1 << 0)
+#define NAN_SEC_CIPHER_SUITE_CAP_REPLAY_4	0u
+#define NAN_SEC_CIPHER_SUITE_CAP_REPLAY_16	(1u << 0u)
 
 /* enum security algo.
 */
@@ -1336,6 +1350,8 @@ enum nan_sec_csid {
 	NAN_SEC_ALGO_NCS_SK_GCM_256 = 2,     /* GCMP 256 */
 	NAN_SEC_ALGO_NCS_PK_CCM_128 = 3,     /* CCMP 128 */
 	NAN_SEC_ALGO_NCS_PK_GCM_256 = 4,     /* GCMP 256 */
+	NAN_SEC_ALGO_NCS_GK_CCM_128 = 5,     /* CCMP 128 */
+	NAN_SEC_ALGO_NCS_GK_GCM_256 = 6,     /* GCMP 256 */
 	NAN_SEC_ALGO_LAST
 };
 typedef int8 nan_sec_csid_e;
@@ -1353,6 +1369,13 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_sec_cipher_suite_info_attr_s {
 	uint8 capabilities;
 	uint8 var[];	/* cipher suite list */
 } BWL_POST_PACKED_STRUCT wifi_nan_sec_cipher_suite_info_attr_t;
+
+/* Currently cipher suite list supports maximum of 2 entries */
+#define NAN_SEC_CIPHER_SUITE_LIST_MAX_ENTRIES	2u
+#define NAN_SEC_CIPHER_SUITE_FIELD_LEN		2u
+#define NAN_SEC_CIPHER_SUITE_INFO_LEN_MIN	1u /* capabilities field only */
+#define NAN_SEC_CIPHER_SUITE_INFO_LEN_MAX	(NAN_SEC_CIPHER_SUITE_INFO_LEN_MIN + \
+		(NAN_SEC_CIPHER_SUITE_FIELD_LEN * NAN_SEC_CIPHER_SUITE_LIST_MAX_ENTRIES))
 
 /*
  * Security context identifier attribute
@@ -1381,8 +1404,10 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_sec_ctx_id_info_attr_s {
  * WFA Tech. Spec ver 23
  */
 
-#define NAN_SEC_NCSSK_DESC_REPLAY_CNT_LEN	8
-#define NAN_SEC_NCSSK_DESC_KEY_NONCE_LEN	32
+#define NAN_SEC_NCSSK_DESC_REPLAY_CNT_LEN	8u
+#define NAN_SEC_NCSSK_DESC_KEY_NONCE_LEN	32u
+#define NAN_SEC_NCSSK_DESC_KEY_IV_LEN		16u
+#define NAN_SEC_NCSSK_DESC_KEY_RSC_LEN		8u
 
 /* nan shared key descriptor attr field */
 typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_sec_ncssk_key_desc_attr_s {
@@ -1394,7 +1419,9 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_sec_ncssk_key_desc_attr_s {
 	uint16 key_len;
 	uint8 key_replay_cntr[NAN_SEC_NCSSK_DESC_REPLAY_CNT_LEN];
 	uint8 key_nonce[NAN_SEC_NCSSK_DESC_KEY_NONCE_LEN];
-	uint8 reserved[32];	/* EAPOL IV + Key RSC + Rsvd fields in EAPOL Key */
+	uint8 key_iv[NAN_SEC_NCSSK_DESC_KEY_IV_LEN];
+	uint8 key_rsc[NAN_SEC_NCSSK_DESC_KEY_RSC_LEN];
+	uint8 reserved[8];
 	uint8 mic[];  /* mic + key data len + key data */
 } BWL_POST_PACKED_STRUCT wifi_nan_sec_ncssk_key_desc_attr_t;
 

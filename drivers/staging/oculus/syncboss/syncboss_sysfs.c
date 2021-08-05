@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include "syncboss.h"
 #include "syncboss_camera.h"
 
@@ -5,7 +6,7 @@
 #define SYNCBOSS_MIN_SEQ_NUM 1
 #define SYNCBOSS_MAX_SEQ_NUM 254
 
-static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
 	bool should_reset = false;
@@ -33,7 +34,7 @@ static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
 	return status;
 }
 
-static ssize_t show_transaction_length(struct device *dev,
+static ssize_t transaction_length_show(struct device *dev,
 				       struct device_attribute *attr, char *buf)
 {
 	int status = 0;
@@ -55,7 +56,7 @@ static ssize_t show_transaction_length(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_transaction_length(struct device *dev,
+static ssize_t transaction_length_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t count)
 {
@@ -98,6 +99,7 @@ static ssize_t store_transaction_length(struct device *dev,
 static int next_seq_num(int current_seq)
 {
 	int next_seq = current_seq + 1;
+
 	BUG_ON((current_seq < SYNCBOSS_MIN_SEQ_NUM) ||
 	       (current_seq > SYNCBOSS_MAX_SEQ_NUM));
 
@@ -106,7 +108,7 @@ static int next_seq_num(int current_seq)
 	return next_seq;
 }
 
-static ssize_t show_next_avail_seq_num(struct device *dev,
+static ssize_t next_avail_seq_num_show(struct device *dev,
 				       struct device_attribute *attr,
 				       char *buf)
 {
@@ -132,7 +134,7 @@ static ssize_t show_next_avail_seq_num(struct device *dev,
 	return retval;
 }
 
-static ssize_t show_cpu_affinity(struct device *dev,
+static ssize_t cpu_affinity_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
 	int status = 0;
@@ -155,7 +157,7 @@ static ssize_t show_cpu_affinity(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_cpu_affinity(struct device *dev,
+static ssize_t cpu_affinity_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
@@ -191,7 +193,7 @@ static ssize_t store_cpu_affinity(struct device *dev,
 	return count;
 }
 
-static ssize_t show_transaction_period_us(struct device *dev,
+static ssize_t transaction_period_us_show(struct device *dev,
 					  struct device_attribute *attr,
 					  char *buf)
 {
@@ -215,7 +217,7 @@ static ssize_t show_transaction_period_us(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_transaction_period_us(struct device *dev,
+static ssize_t transaction_period_us_store(struct device *dev,
 					   struct device_attribute *attr,
 					   const char *buf, size_t count)
 {
@@ -252,7 +254,7 @@ static ssize_t store_transaction_period_us(struct device *dev,
 	return status;
 }
 
-static ssize_t show_minimum_time_between_transactions_us(struct device *dev,
+static ssize_t minimum_time_between_transactions_us_show(struct device *dev,
 						  struct device_attribute *attr,
 						  char *buf)
 {
@@ -277,7 +279,7 @@ static ssize_t show_minimum_time_between_transactions_us(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_minimum_time_between_transactions_us(struct device *dev,
+static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 						  struct device_attribute *attr,
 						  const char *buf, size_t count)
 {
@@ -316,7 +318,7 @@ static ssize_t store_minimum_time_between_transactions_us(struct device *dev,
 	return status;
 }
 
-static ssize_t show_power(struct device *dev,
+static ssize_t power_show(struct device *dev,
 			  struct device_attribute *attr,
 			  char *buf)
 {
@@ -340,7 +342,7 @@ static ssize_t show_power(struct device *dev,
 }
 
 
-static ssize_t show_stats(struct device *dev,
+static ssize_t stats_show(struct device *dev,
 			  struct device_attribute *attr,
 			  char *buf)
 {
@@ -357,20 +359,21 @@ static ssize_t show_stats(struct device *dev,
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE,
-			   "num_bad_magic_numbers\t"
-			   "num_bad_checksums\t"
-			   "num_rejected_transactions\n"
-			   "%u\t%u\t%u\n",
-			   devdata->stats.num_bad_magic_numbers,
-			   devdata->stats.num_bad_checksums,
-			   devdata->stats.num_rejected_transactions);
+	retval = scnprintf(
+		buf, PAGE_SIZE,
+		"num_bad_magic_numbers     : %u\n"
+		"num_bad_checksums         : %u\n"
+		"num_rejected_transactions : %u\n",
+		devdata->stats.num_bad_magic_numbers,
+		devdata->stats.num_bad_checksums,
+		devdata->stats.num_rejected_transactions
+	);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
 }
 
-static ssize_t show_spi_max_clk_rate(struct device *dev,
+static ssize_t spi_max_clk_rate_show(struct device *dev,
 				     struct device_attribute *attr, char *buf)
 {
 	int status = 0;
@@ -392,7 +395,7 @@ static ssize_t show_spi_max_clk_rate(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_spi_max_clk_rate(struct device *dev,
+static ssize_t spi_max_clk_rate_store(struct device *dev,
 				      struct device_attribute *attr,
 				      const char *buf, size_t count)
 {
@@ -440,7 +443,7 @@ static ssize_t store_spi_max_clk_rate(struct device *dev,
 	return status;
 }
 
-static ssize_t show_poll_priority(struct device *dev,
+static ssize_t poll_prio_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
 	int status = 0;
@@ -462,7 +465,7 @@ static ssize_t show_poll_priority(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_poll_priority(struct device *dev,
+static ssize_t poll_prio_store(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count)
 {
@@ -476,7 +479,7 @@ static ssize_t store_poll_priority(struct device *dev,
 		dev_err(dev, "Failed to parse integer out of %s", buf);
 		return -EINVAL;
 	} else if (temp_priority < 1 ||
-		   temp_priority > (MAX_USER_RT_PRIO -1)) {
+		   temp_priority > (MAX_USER_RT_PRIO - 1)) {
 		dev_err(dev, "Invalid real time priority");
 		return -EINVAL;
 	}
@@ -502,7 +505,7 @@ static ssize_t store_poll_priority(struct device *dev,
 	return count;
 }
 
-static ssize_t show_te_timestamp(struct device *dev,
+static ssize_t te_timestamp_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
 	struct syncboss_dev_data *devdata =
@@ -512,7 +515,7 @@ static ssize_t show_te_timestamp(struct device *dev,
 		atomic64_read(&devdata->last_te_timestamp_ns));
 }
 
-static ssize_t store_power(struct device *dev,
+static ssize_t power_store(struct device *dev,
 				   struct device_attribute *attr,
 				   const char *buf, size_t count)
 {
@@ -520,7 +523,7 @@ static ssize_t store_power(struct device *dev,
 	return 0;
 }
 
-static ssize_t show_num_cameras(struct device *dev,
+static ssize_t num_cameras_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	int num_cams = 0;
@@ -532,7 +535,7 @@ static ssize_t show_num_cameras(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", num_cams);
 }
 
-static ssize_t show_enable_fastpath(struct device *dev,
+static ssize_t enable_fastpath_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
 {
@@ -555,7 +558,7 @@ static ssize_t show_enable_fastpath(struct device *dev,
 	return retval;
 }
 
-static ssize_t store_enable_fastpath(struct device *dev,
+static ssize_t enable_fastpath_store(struct device *dev,
 				     struct device_attribute *attr,
 				     const char *buf, size_t count)
 {
@@ -586,7 +589,6 @@ static ssize_t store_enable_fastpath(struct device *dev,
 }
 
 
-
 /* Sysfs Attributes
  * ================
  * Note: If you add a new attribute, make sure you also set the
@@ -615,101 +617,19 @@ static ssize_t store_enable_fastpath(struct device *dev,
  * next_avail_seq_num - the next available sequence number for control calls
  * te_timestamp - timestamp of the last TE event
  */
-
-static ssize_t store_reset(struct device *dev, struct device_attribute *attr,
-			   const char *buf, size_t count);
-
-static ssize_t show_transaction_length(struct device *dev,
-				       struct device_attribute *attr,
-				       char *buf);
-static ssize_t store_transaction_length(struct device *dev,
-					struct device_attribute *attr,
-					const char *buf, size_t count);
-
-static ssize_t show_transaction_period_us(struct device *dev,
-					  struct device_attribute *attr,
-					  char *buf);
-static ssize_t store_transaction_period_us(struct device *dev,
-					   struct device_attribute *attr,
-					   const char *buf, size_t count);
-
-static ssize_t show_minimum_time_between_transactions_us(struct device *dev,
-						struct device_attribute *attr,
-						char *buf);
-static ssize_t store_minimum_time_between_transactions_us(struct device *dev,
-						 struct device_attribute *attr,
-						 const char *buf, size_t count);
-
-static ssize_t show_spi_max_clk_rate(struct device *dev,
-				     struct device_attribute *attr, char *buf);
-static ssize_t store_spi_max_clk_rate(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count);
-
-static ssize_t show_cpu_affinity(struct device *dev,
-				 struct device_attribute *attr, char *buf);
-static ssize_t store_cpu_affinity(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf, size_t count);
-
-static ssize_t show_stats(struct device *dev,
-			  struct device_attribute *attr,
-			  char *buf);
-
-static ssize_t show_poll_priority(struct device *dev,
-				  struct device_attribute *attr, char *buf);
-static ssize_t store_poll_priority(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count);
-
-static ssize_t show_next_avail_seq_num(struct device *dev,
-				       struct device_attribute *attr, char *buf);
-
-static ssize_t show_power(struct device *dev,
-			  struct device_attribute *attr,
-			  char *buf);
-
-static ssize_t store_power(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count);
-
-static ssize_t show_te_timestamp(struct device *dev,
-				struct device_attribute *attr, char *buf);
-
-static ssize_t show_num_cameras(struct device *dev,
-				struct device_attribute *attr, char *buf);
-
-static ssize_t show_enable_fastpath(struct device *dev,
-				    struct device_attribute *attr,
-				    char *buf);
-
-static ssize_t store_enable_fastpath(struct device *dev,
-				     struct device_attribute *attr,
-				     const char *buf, size_t count);
-
-
-static DEVICE_ATTR(reset, S_IWUSR, NULL, store_reset);
-static DEVICE_ATTR(spi_max_clk_rate, S_IWUSR | S_IRUGO, show_spi_max_clk_rate,
-		   store_spi_max_clk_rate);
-static DEVICE_ATTR(transaction_period_us, S_IWUSR | S_IRUGO,
-		   show_transaction_period_us, store_transaction_period_us);
-static DEVICE_ATTR(minimum_time_between_transactions_us, S_IWUSR | S_IRUGO,
-		   show_minimum_time_between_transactions_us,
-		   store_minimum_time_between_transactions_us);
-static DEVICE_ATTR(transaction_length, S_IWUSR | S_IRUGO,
-		   show_transaction_length, store_transaction_length);
-static DEVICE_ATTR(cpu_affinity, S_IWUSR | S_IRUGO,
-		   show_cpu_affinity, store_cpu_affinity);
-static DEVICE_ATTR(stats, S_IRUGO,
-		   show_stats, NULL);
-static DEVICE_ATTR(poll_prio, S_IWUSR | S_IRUGO,
-		   show_poll_priority, store_poll_priority);
-static DEVICE_ATTR(next_avail_seq_num, S_IRUGO,
-		   show_next_avail_seq_num, NULL);
-static DEVICE_ATTR(power, S_IWUSR | S_IRUGO, show_power, store_power);
-static DEVICE_ATTR(te_timestamp, S_IRUGO, show_te_timestamp, NULL);
-static DEVICE_ATTR(num_cameras, S_IRUGO, show_num_cameras, NULL);
-static DEVICE_ATTR(enable_fastpath, S_IWUSR | S_IRUGO, show_enable_fastpath, store_enable_fastpath);
+static DEVICE_ATTR_WO(reset);
+static DEVICE_ATTR_RW(spi_max_clk_rate);
+static DEVICE_ATTR_RW(transaction_period_us);
+static DEVICE_ATTR_RW(minimum_time_between_transactions_us);
+static DEVICE_ATTR_RW(transaction_length);
+static DEVICE_ATTR_RW(cpu_affinity);
+static DEVICE_ATTR_RO(stats);
+static DEVICE_ATTR_RW(poll_prio);
+static DEVICE_ATTR_RO(next_avail_seq_num);
+static DEVICE_ATTR_RW(power);
+static DEVICE_ATTR_RO(te_timestamp);
+static DEVICE_ATTR_RO(num_cameras);
+static DEVICE_ATTR_RW(enable_fastpath);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,

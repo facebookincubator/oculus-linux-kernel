@@ -135,6 +135,7 @@ void dhd_dbg_ring_dealloc_deinit(void **dbgring, dhd_pub_t *dhd);
 int dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 		uint32 ring_sz, void *allocd_buf, bool pull_inactive);
 void dhd_dbg_ring_deinit(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring);
+int dhd_dbg_ring_set_buf(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, void *buf);
 #ifdef DHD_PKT_LOGGING_DBGRING
 int dhd_dbg_ring_update(void *dbg_ring, uint32 w_len);
 #endif /* DHD_PKT_LOGGING_DBGRING */

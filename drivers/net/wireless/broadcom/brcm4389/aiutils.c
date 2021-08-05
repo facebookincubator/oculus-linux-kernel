@@ -620,8 +620,10 @@ BCMPOSTTRAPFN(_ai_setcoreidx)(si_t *sih, uint coreidx, uint use_wrapn)
 			sii->curwrap = (void *)((uintptr)regs + SI_CORE_SIZE);
 
 			/* point bar0 window */
-			ai_corereg(sih, sih->buscoreidx, PCIE_TER_BAR0_WIN, ~0, addr);
-			ai_corereg(sih, sih->buscoreidx, PCIE_TER_BAR0_WRAPPER, ~0, wrap);
+			ai_corereg(sih, sih->buscoreidx,
+			            PCIE_TER_BAR0_WIN_REG(sih->buscorerev), ~0, addr);
+			ai_corereg(sih, sih->buscoreidx,
+			            PCIE_TER_BAR0_WRAPPER_REG(sih->buscorerev), ~0, wrap);
 			break;
 
 		default: /* other slices */

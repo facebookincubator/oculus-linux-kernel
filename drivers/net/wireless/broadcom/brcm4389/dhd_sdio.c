@@ -951,6 +951,7 @@ dhdsdio_sr_cap(dhd_bus_t *bus)
 		(bus->sih->chip == BCM4347_CHIP_ID) ||
 		(bus->sih->chip == BCM4357_CHIP_ID) ||
 		(bus->sih->chip == BCM4361_CHIP_ID) ||
+		(bus->sih->chip == BCM4381_CHIP_ID) ||
 #endif
 		0) {
 			core_capext = FALSE;
@@ -8824,6 +8825,9 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 	                case BCM4357_CHIP_ID:
 	                case BCM4361_CHIP_ID:
 				bus->dongle_ram_base = CR4_4347_RAM_BASE;
+				break;
+			case BCM4381_CHIP_ID:
+				bus->dongle_ram_base = CR4_4381_RAM_BASE;
 				break;
 #endif
 			case BCM4362_CHIP_ID:

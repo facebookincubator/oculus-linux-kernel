@@ -120,11 +120,14 @@ enum {
 };
 
 #define MESSAGE_PAYLOAD(a) (a & MSG_TYPE_INTERNAL_USE_START) ? TRUE : FALSE
-#define PCIEDEV_FIRMWARE_TSINFO 0x1
-#define PCIEDEV_FIRMWARE_TSINFO_FIRST	0x1
-#define PCIEDEV_FIRMWARE_TSINFO_MIDDLE	0x2
-#define PCIEDEV_BTLOG_POST		0x3
-#define PCIEDEV_BT_SNAPSHOT_POST	0x4
+#define PCIEDEV_FIRMWARE_TSINFO		0x1u
+#define PCIEDEV_FIRMWARE_TSINFO_FIRST	0x1u
+#define PCIEDEV_FIRMWARE_TSINFO_MIDDLE	0x2u
+#define PCIEDEV_BTLOG_POST		0x3u
+#define PCIEDEV_BT_SNAPSHOT_POST	0x4u
+
+/* Asynchronous response types */
+#define BCMMSGBUF_SEND_CMD_RESP		0x1u
 
 #ifdef PCIE_API_REV1
 
@@ -421,14 +424,14 @@ typedef ioctl_resp_evt_buf_post_msg_t info_buf_post_msg_t;
  * is wrapped previously/also in a WLC_E_TRACE event.  See structure
  * msgrace_hdr_t in msgtrace.h.
 */
-#define PCIE_INFOBUF_V1_TYPE_MSGTRACE  1
+#define PCIE_INFOBUF_V1_TYPE_MSGTRACE		1u
 
 /* Infobuf v1 type LOGTRACE data is exactly the same as the LOGTRACE data that
  * is wrapped previously/also in a WLC_E_TRACE event.  See structure
  * msgrace_hdr_t in msgtrace.h.  (The only difference between a MSGTRACE
  * and a LOGTRACE is the "trace type" field.)
 */
-#define PCIE_INFOBUF_V1_TYPE_LOGTRACE  2
+#define PCIE_INFOBUF_V1_TYPE_LOGTRACE		2u
 
 /* An infobuf version 1 host buffer has a single TLV.  The information on the
  * version 1 types follow this structure definition. (int's LE)
@@ -1172,6 +1175,10 @@ typedef union txbuf_submit_item {
 	host_txbuf_post_t	txpost;
 	unsigned char		check[H2DRING_TXPOST_ITEMSIZE];
 } txbuf_submit_item_t;
+
+/* metadata_len */
+#define BCMPCIE_TX_PKT_LATENCY_MASK     0xFFFu
+#define BCMPCIE_TX_PKT_LATENCY_SHIFT        0u
 
 /* D2H Txcompletion ring work items - extended for IOC rev7 */
 typedef struct host_txbuf_cmpl {

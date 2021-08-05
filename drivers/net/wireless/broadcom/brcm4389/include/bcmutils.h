@@ -289,17 +289,13 @@ extern bool _nvram_reclaim_enb;
 #define NVRAM_RECLAIM_CHECK(name)
 #endif /* BCM_RECLAIM */
 
-#ifdef WL_FWSIGN
-#define getvar(vars, name)			(NULL)
-#define getintvar(vars, name)			(0)
-#define getintvararray(vars, name, index)	(0)
-#define getintvararraysize(vars, name)		(0)
-#else /* WL_FWSIGN */
-extern char *getvar(char *vars, const char *name);
-extern int getintvar(char *vars, const char *name);
-extern int getintvararray(char *vars, const char *name, int index);
-extern int getintvararraysize(char *vars, const char *name);
-#endif /* WL_FWSIGN */
+#ifndef ATE_BUILD
+const
+#endif /* ATE_BUILD */
+char *getvar(char *vars, const char *name);
+int getintvar(char *vars, const char *name);
+int getintvararray(char *vars, const char *name, int index);
+int getintvararraysize(char *vars, const char *name);
 
 /* Read an array of values from a possibly slice-specific nvram string */
 extern int get_uint8_vararray_slicespecific(osl_t *osh, char *vars, char *vars_table_accessor,
@@ -547,8 +543,9 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #define BCME_DNGL_DEVRESET		-72	/* dongle re-attach during DEVRESET */
 #define BCME_ROAM			-73	/* Roam related failures */
 #define BCME_NO_SIG_FILE		-74	/* Signature file is missing */
+#define BCME_RESP_PENDING		-75	/* Command response is pending */
 
-#define BCME_LAST			BCME_NO_SIG_FILE
+#define BCME_LAST			BCME_RESP_PENDING
 
 #define BCME_NOTENABLED BCME_DISABLED
 
@@ -639,6 +636,7 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 	"Dongle Devreset",		\
 	"Critical roam in progress",	\
 	"Signature file is missing",	\
+	"Command response pending",	\
 }
 #endif	/* BCMUTILS_ERR_CODES */
 
@@ -707,9 +705,13 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #endif /* CONTAINEROF */
 
 /* substruct size up to and including a member of the struct */
+/* use 0x10 offset to avoid undefined behavior error due to NULL access */
+#define SIZETHROUGHOF(type, member) (OFFSETOF(type, member) + sizeof(((type *)0x10)->member))
+
+/* The STRUCT_SIZE_THROUGH will be obsolete. Please use SIZETHROUGHOF macro above */
 #ifndef STRUCT_SIZE_THROUGH
 #define STRUCT_SIZE_THROUGH(sptr, fname) \
-	(((uint8*)&((sptr)->fname) - (uint8*)(sptr)) + sizeof((sptr)->fname))
+	(((uintptr)&((sptr)->fname) - (uintptr)(sptr)) + sizeof((sptr)->fname))
 #endif
 
 /* Extracting the size of element in a structure */
@@ -744,10 +746,10 @@ extern void clrbit(void *array, uint bit);
 extern bool isset(const void *array, uint bit);
 extern bool isclr(const void *array, uint bit);
 #else
-#define	setbit(a, i)	(((uint8 *)a)[(i) / NBBY] |= 1 << ((i) % NBBY))
-#define	clrbit(a, i)	(((uint8 *)a)[(i) / NBBY] &= ~(1 << ((i) % NBBY)))
-#define	isset(a, i)	(((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY)))
-#define	isclr(a, i)	((((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY))) == 0)
+#define	setbit(a, i)	((*((uint8 *)a + ((i) / NBBY))) |= 1 << ((i) % NBBY))
+#define	clrbit(a, i)	((*((uint8 *)a + ((i) / NBBY))) &= ~(1 << ((i) % NBBY)))
+#define	isset(a, i)	((*((const uint8 *)a + ((i) / NBBY))) & (1 << ((i) % NBBY)))
+#define	isclr(a, i)	(((*((const uint8 *)a + ((i) / NBBY))) & (1 << ((i) % NBBY))) == 0)
 #endif
 #endif /* setbit */
 
@@ -1016,6 +1018,7 @@ typedef uint32 mbool;
 #define mboolset(mb, bit)		((mb) |= (bit))		/* set one bool */
 #define mboolclr(mb, bit)		((mb) &= ~(bit))	/* clear one bool */
 #define mboolisset(mb, bit)		(((mb) & (bit)) != 0)	/* TRUE if one bool is set */
+#define mboolisclr(mb, bit)		(((mb) & (bit)) == 0)	/* TRUE if one bool is clear */
 #define	mboolmaskset(mb, mask, val)	((mb) = (((mb) & ~(mask)) | (val)))
 
 /* generic datastruct to help dump routines */
@@ -1160,14 +1163,14 @@ bcm_cntsetbits(const uint32 u32arg)
 	return ((uint32)_CSBTBL[p[0]] + _CSBTBL[p[1]] + _CSBTBL[p[2]] + _CSBTBL[p[3]]);
 }
 
-static INLINE int /* C equivalent count of leading 0's in a u32 */
+static INLINE uint /* C equivalent count of leading 0's in a u32 */
 C_bcm_count_leading_zeros(uint32 u32arg)
 {
-	int shifts = 0;
+	uint shifts = 0;
 	while (u32arg) {
 		shifts++; u32arg >>= 1;
 	}
-	return (32 - shifts);
+	return (32u - shifts);
 }
 
 typedef struct bcm_rand_metadata {
@@ -1193,11 +1196,11 @@ typedef struct bcm_rand_metadata {
 #endif /* __ARM_ARCH_7R__ */
 #endif /* __arm__ */
 
-static INLINE int
+static INLINE uint
 bcm_count_leading_zeros(uint32 u32arg)
 {
 #if defined(__USE_ASM_CLZ__)
-	int zeros;
+	uint zeros;
 	__asm__ volatile("clz    %0, %1 \n" : "=r" (zeros) : "r"  (u32arg));
 	return zeros;
 #else	/* C equivalent */
@@ -1210,9 +1213,9 @@ bcm_count_leading_zeros(uint32 u32arg)
  *
  */
 #if defined(__GNUC__)
-#define CLZ(x) __builtin_clzl(x)
+#define CLZ(x) ((uint)__builtin_clzl(x))
 #elif defined(__arm__)
-#define CLZ(x) __clz(x)
+#define CLZ(x) ((uint)__clz(x))
 #else
 #define CLZ(x) bcm_count_leading_zeros(x)
 #endif /* __GNUC__ */
@@ -1434,7 +1437,7 @@ typedef struct dll_pool {
 	uint16      free_count;
 	uint16      elems_max;
 	uint16      elem_size;
-	dll_t       elements[1];
+	dll_t       elements[BCM_FLEX_ARRAY];
 } dll_pool_t;
 
 dll_pool_t * dll_pool_init(void * osh, uint16 elems_max, uint16 elem_size);
@@ -1548,11 +1551,11 @@ typedef struct {
 } dump_dongle_in_t;
 
 typedef struct {
-	uint32 address;  /**< e.g. backplane address of register */
-	uint32 id;       /**< id, e.g. core id */
-	uint32 rev;      /**< rev, e.g. core rev */
-	uint32 n_bytes;  /**< nbytes in array val[] */
-	uint32 val[1];   /**< out: values that were read out of registers or memory */
+	uint32 address;              /**< e.g. backplane address of register */
+	uint32 id;                   /**< id, e.g. core id */
+	uint32 rev;                  /**< rev, e.g. core rev */
+	uint32 n_bytes;              /**< nbytes in array val[] */
+	uint32 val[BCM_FLEX_ARRAY];  /**< out: values that were read out of registers or memory */
 } dump_dongle_out_t;
 
 extern uint32 sqrt_int(uint32 value);
@@ -1598,13 +1601,6 @@ extern void (*const print_btrace_fn)(int depth);
 #define PRINT_BACKTRACE_INT(depth, pc, lr, sp) \
 	if (print_btrace_int_fn) print_btrace_int_fn(depth, pc, lr, sp)
 
-/* FW Signing - only in bootloader builds, never in dongle FW builds */
-#ifdef WL_FWSIGN
-	#define FWSIGN_ENAB()		(1)
-#else
-	#define FWSIGN_ENAB()		(0)
-#endif /* WL_FWSIGN */
-
 /* Utilities for reading SROM/SFlash vars */
 
 typedef struct varbuf {
@@ -1629,9 +1625,9 @@ static INLINE uint32
 count_trailing_zeros(uint32 val)
 {
 #ifdef BCMDRIVER
-	uint32 c = (uint32)CLZ(val & ((uint32)(-(int)val)));
+	uint32 c = CLZ(val & ((uint32)(-(int)val)));
 #else
-	uint32 c = (uint32)C_bcm_count_leading_zeros(val & ((uint32)(-(int)val)));
+	uint32 c = C_bcm_count_leading_zeros(val & ((uint32)(-(int)val)));
 #endif /* BCMDRIVER */
 	return val ? 31u - c : c;
 }

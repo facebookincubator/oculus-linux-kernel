@@ -179,6 +179,9 @@ dhd_os_attach_pktlog(dhd_pub_t *dhdp)
 	pktlog->dhdp = dhdp;
 
 	OSL_ATOMIC_INIT(dhdp->osh, &pktlog->pktlog_status);
+#ifdef DHD_PKT_LOGGING_DBGRING
+	OSL_ATOMIC_INIT(dhdp->osh, &pktlog->enable);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 	/* pktlog ring */
 	dhdp->pktlog->pktlog_ring = dhd_pktlog_ring_init(dhdp, MIN_PKTLOG_LEN);
@@ -224,6 +227,76 @@ dhd_os_detach_pktlog(dhd_pub_t *dhdp)
 	return BCME_OK;
 }
 
+#ifdef DHD_PKT_LOGGING_DBGRING
+int dhd_pktlog_is_enabled(dhd_pub_t *dhdp)
+{
+	struct dhd_pktlog_ring *pktlog_ring;
+
+	if (!dhdp || !dhdp->pktlog) {
+		DHD_ERROR(("%s(): dhdp=%p pktlog=%p\n",
+			__FUNCTION__, dhdp, (dhdp ? dhdp->pktlog : NULL)));
+		return BCME_ERROR;
+	}
+
+	if (!dhdp->pktlog->pktlog_ring) {
+		DHD_ERROR(("%s(): pktlog_ring=%p\n",
+			__FUNCTION__, dhdp->pktlog->pktlog_ring));
+		return BCME_ERROR;
+	}
+
+	pktlog_ring = dhdp->pktlog->pktlog_ring;
+	return OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->enable);
+}
+
+void dhd_pktlog_resume(dhd_pub_t *dhdp)
+{
+	struct dhd_pktlog_ring *pktlog_ring;
+
+	if (!dhdp || !dhdp->pktlog) {
+		DHD_ERROR(("%s(): dhdp=%p pktlog=%p\n",
+			__FUNCTION__, dhdp, (dhdp ? dhdp->pktlog : NULL)));
+		return;
+	}
+
+	if (!dhdp->pktlog->pktlog_ring) {
+		DHD_ERROR(("%s(): pktlog_ring=%p\n",
+			__FUNCTION__, dhdp->pktlog->pktlog_ring));
+		return;
+	}
+
+	pktlog_ring = dhdp->pktlog->pktlog_ring;
+	if (!OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->enable)) {
+		OSL_ATOMIC_SET(dhdp->osh, &dhdp->pktlog->enable, TRUE);
+		DHD_ERROR(("pktlog ring is resumed. pktcount(%d)\n",
+			pktlog_ring->pktcount));
+	}
+}
+
+void dhd_pktlog_suspend(dhd_pub_t *dhdp)
+{
+	struct dhd_pktlog_ring *pktlog_ring;
+
+	if (!dhdp || !dhdp->pktlog) {
+		DHD_ERROR(("%s(): dhdp=%p pktlog=%p\n",
+			__FUNCTION__, dhdp, (dhdp ? dhdp->pktlog : NULL)));
+		return;
+	}
+
+	if (!dhdp->pktlog->pktlog_ring) {
+		DHD_ERROR(("%s(): pktlog_ring=%p\n",
+			__FUNCTION__, dhdp->pktlog->pktlog_ring));
+		return;
+	}
+
+	pktlog_ring = dhdp->pktlog->pktlog_ring;
+	if (OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->enable)) {
+		OSL_ATOMIC_SET(dhdp->osh, &dhdp->pktlog->enable, FALSE);
+		DHD_ERROR(("pktlog ring is suspended. pktcount(%d)\n",
+			pktlog_ring->pktcount));
+	}
+}
+#endif /* DHD_PKT_LOGGING_DBGRING */
+
 dhd_pktlog_ring_t*
 dhd_pktlog_ring_init(dhd_pub_t *dhdp, int size)
 {
@@ -264,6 +337,9 @@ dhd_pktlog_ring_init(dhd_pub_t *dhdp, int size)
 	ring->pktcount = 0;
 	ring->dhdp = dhdp;
 	ring->pktlog_ring_lock = osl_spin_lock_init(dhdp->osh);
+#ifdef DHD_PKT_LOGGING_DBGRING
+	OSL_ATOMIC_SET(dhdp->osh, &dhdp->pktlog->enable, TRUE);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 	DHD_INFO(("%s(): pktlog ring init success\n", __FUNCTION__));
 
@@ -343,6 +419,79 @@ dhd_pktlog_ring_deinit(dhd_pub_t *dhdp, dhd_pktlog_ring_t *ring)
 
 	return ret;
 }
+
+#ifdef DHD_PKT_LOGGING_DBGRING
+int
+dhd_pktlog_ring_reinit(dhd_pub_t *dhdp)
+{
+	dhd_pktlog_ring_info_t *ring_info;
+	dhd_pktlog_ring_t *pktlog_ring;
+	dll_t *item, *next_p;
+	int waitcounts = 0;
+	dhd_dbg_ring_t *ring;
+
+	DHD_ERROR(("%s: ENTER\n", __FUNCTION__));
+
+	if (!dhdp) {
+		DHD_ERROR(("%s(): dhdp is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+	pktlog_ring = dhdp->pktlog->pktlog_ring;
+	ring = &dhdp->dbg->dbg_rings[PACKET_LOG_RING_ID];
+
+	if (!ring) {
+		DHD_ERROR(("%s(): ring is NULL\n", __FUNCTION__));
+		return -EINVAL;
+	}
+
+	/* stop pkt log */
+	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, FALSE);
+
+	/* waiting TX/RX/TXS context is done, max timeout 1 second */
+	while ((waitcounts++ < DHD_PKTLOG_WAIT_MAXCOUNT)) {
+		if (!OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->pktlog_status))
+			break;
+		OSL_SLEEP(1);
+	}
+
+	if (waitcounts >= DHD_PKTLOG_WAIT_MAXCOUNT) {
+		DHD_ERROR(("%s(): pktlog wait timeout pktlog_status : 0x%x \n",
+			__FUNCTION__,
+			OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->pktlog_status)));
+		ASSERT(0);
+		return -EINVAL;
+	}
+
+	/* free ring_info->info.pkt */
+	for (item = dll_head_p(&pktlog_ring->ring_info_head);
+		!dll_end(&pktlog_ring->ring_info_head, item);
+		item = next_p) {
+		next_p = dll_next_p(item);
+
+		ring_info = (dhd_pktlog_ring_info_t *)item;
+
+		dll_delete((dll_t *)item);
+		if (ring_info->info.pkt) {
+			PKTFREE(pktlog_ring->dhdp->osh, ring_info->info.pkt, TRUE);
+			DHD_PKT_LOG(("%s(): pkt free pos %p\n",
+				__FUNCTION__, ring_info->info.pkt));
+		}
+		dll_append(&pktlog_ring->ring_info_free, (dll_t *)item);
+	}
+
+	/* reset stats and pktcount */
+	pktlog_ring->pktcount = 0;
+	memset(&ring->stat, 0, sizeof(struct ring_statistics));
+	/* start pkt log */
+	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, TRUE);
+#ifdef DHD_PKT_LOGGING_DBGRING
+	OSL_ATOMIC_SET(dhdp->osh, &dhdp->pktlog->enable, TRUE);
+#endif /* DHD_PKT_LOGGING_DBGRING */
+	DHD_ERROR(("%s: EXIT\n", __FUNCTION__));
+
+	return BCME_OK;
+}
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 /*
  * dhd_pktlog_ring_add_pkts : add filtered packets into pktlog ring
@@ -430,6 +579,14 @@ dhd_pktlog_ring_add_pkts(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pktid
 #endif /* DHD_PKT_LOGGING_DBGRING */
 
 	pkts->info.pkt = PKTDUP(dhdp->osh, pkt);
+	/*
+	 * skb clone can be NULL, but pktlog feature assume it alway  can be cloned
+	 * The dummy pkt info will be added in the list to fit pktcount & list items
+	 * and handled in the dhd_pktlog_dump_write() with ignoring info.pkt
+	 */
+	if (pkts->info.pkt == NULL) {
+		DHD_ERROR(("%s : skb clone returns NULL \n", __FUNCTION__));
+	}
 	pkts->info.pkt_len = PKTLEN(dhdp->osh, pkt);
 	pkts->info.firmware_ts = 0U;
 	pkts->info.payload_type = FRAME_TYPE_ETHERNET_II;
@@ -1098,19 +1255,22 @@ dhd_pktlog_get_item_length(dhd_pktlog_ring_info_t *report_ptr)
 	}
 #ifdef DHD_PKT_LOGGING_DBGRING
 	frame_len = (uint32)min(frame_len, DHD_PKT_LOGGING_DBGRING_MAX_SIZE);
-#endif /* DHD_PKT_LOGGING_DBGRING */
+	bytes_user_data = snprintf(buf, sizeof(buf), "%s:%s:%02d\n",
+		DHD_PKTLOG_FATE_INFO_FORMAT,
+		(report_ptr->tx_fate ? "Failure" : "Succeed"), report_ptr->tx_fate);
+#else
 	bytes_user_data = snprintf(buf, sizeof(buf), "%s:%s:%02d:%s:%d.%d s\n",
 			DHD_PKTLOG_FATE_INFO_FORMAT,
 			(report_ptr->tx_fate ? "Failure" : "Succeed"), report_ptr->tx_fate,
 			(report_ptr->info.direction == PKT_TX) ? "TX" : "RX",
 			report_ptr->info.tx_status_ts_sec, report_ptr->info.tx_status_ts_usec);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	write_frame_len = frame_len + bytes_user_data;
 
 	/* pcap pkt head has incl_len and orig_len */
 	len += (uint32)sizeof(write_frame_len);
 	len += (uint32)sizeof(write_frame_len);
-	len += frame_len;
-	len += bytes_user_data;
+	len += write_frame_len;
 
 	return len;
 }
@@ -1178,6 +1338,7 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 	loff_t pos = 0;
 #else
 	uint32 size = 0;
+	unsigned long flags = 0;
 #endif /* !DHD_PKT_LOGGING_DBGRING */
 	uint32 write_frame_len;
 	uint32 frame_len;
@@ -1210,7 +1371,11 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 	if (file && !user_buf && (size == 0)) {
 		DHD_ERROR(("Local file pktlog dump requested\n"));
 	} else if (!file && user_buf && (size > 0)) {
+#ifdef DHD_PKT_LOGGING_DBGRING
+		DHD_INFO(("HAL file pktlog dump %d bytes requested\n", size));
+#else
 		DHD_ERROR(("HAL file pktlog dump %d bytes requested\n", size));
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	} else {
 		DHD_ERROR(("Wrong type pktlog dump requested\n"));
 		return -EINVAL;
@@ -1230,6 +1395,9 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 	ret = dhd_export_debug_data((char *)&pcap_h, file, user_buf, sizeof(pcap_h), &pos);
 	len = sizeof(pcap_h);
 #endif /* !DHD_PKT_LOGGING_DBGRING */
+#ifdef DHD_PKT_LOGGING_DBGRING
+	DHD_PKT_LOG_LOCK(dhd_os_get_pktlog_lock(dhdp), flags);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 	for (item_p = dll_head_p(&pktlog_ring->ring_info_head);
 			!dll_end(&pktlog_ring->ring_info_head, item_p);
 			item_p = next_p) {
@@ -1249,8 +1417,17 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 #endif /* DHD_PKT_LOGGING_DBGRING */
 		if ((file == NULL) &&
 			(len + dhd_pktlog_get_item_length(report_ptr) > size)) {
+#ifdef DHD_PKT_LOGGING_DBGRING
+			DHD_INFO(("overflowed pkt logs are dropped\n"));
+#else
 			DHD_ERROR(("overflowed pkt logs are dropped\n"));
+#endif /* DHD_PKT_LOGGING_DBGRING */
 			break;
+		}
+
+		if (report_ptr->info.pkt == NULL) {
+			DHD_ERROR(("%s : pkt isn't located skip it\n", __FUNCTION__));
+			continue;
 		}
 
 #ifdef DHD_PKT_LOGGING_DBGRING
@@ -1350,6 +1527,7 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 #endif /* DHD_PKT_LOGGING_DBGRING */
 	}
 #ifdef DHD_PKT_LOGGING_DBGRING
+	DHD_PKT_LOG_UNLOCK(dhd_os_get_pktlog_lock(dhdp), flags);
 	*written_bytes = len;
 #endif /* DHD_PKT_LOGGING_DBGRING */
 	OSL_ATOMIC_SET(dhdp->osh, &pktlog_ring->start, TRUE);

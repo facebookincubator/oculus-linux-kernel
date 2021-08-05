@@ -166,8 +166,8 @@ typedef enum {
 	ANDROID_NL80211_SUBCMD_CUSTOM_SETTING_END   =	0x20FF,
 
 	/* define all Channel Avoidance related commands between 0x2100 and 0x211F */
-	ANDROID_NL80211_SUBCMD_CHAVOID_RANGE_START =	0x2100,
-	ANDROID_NL80211_SUBCMD_CHAVOID_RANGE_END   =	0x211F,
+	ANDROID_NL80211_SUBCMD_CELL_AVOID_RANGE_START =	0x2100,
+	ANDROID_NL80211_SUBCMD_CELL_AVOID_RANGE_END   =	0x211F,
 
 	/* define all OTA Download related commands between 0x2120 and 0x212F */
 	ANDROID_NL80211_SUBCMD_OTA_DOWNLOAD_START	= 0x2120,
@@ -180,6 +180,10 @@ typedef enum {
 	/* define all TWT related commands between 0x2140 and 0x214F */
 	ANDROID_NL80211_SUBCMD_TWT_START	=	0x2140,
 	ANDROID_NL80211_SUBCMD_TWT_END		=	0x214F,
+
+	/* define all Usable Channel related commands between 0x2150 and 0x215F */
+	ANDROID_NL80211_SUBCMD_USABLE_CHAN_RANGE_START = 0x2150,
+	ANDROID_NL80211_SUBCMD_USABLE_CHAN_RANGE_END   = 0x215F,
 
 	/* This is reserved for future usage */
 
@@ -217,6 +221,7 @@ enum andr_vendor_subcmd {
 	WIFI_SUBCMD_SET_LATENCY_MODE,
 	WIFI_SUBCMD_SET_MULTISTA_PRIMARY_CONNECTION,
 	WIFI_SUBCMD_SET_MULTISTA_USE_CASE,
+	WIFI_SUBCMD_SET_DTIM_CONFIG,
 	ANDR_TWT_SUBCMD_GET_CAP = ANDROID_NL80211_SUBCMD_TWT_START,
 	ANDR_TWT_SUBCMD_SETUP,
 	ANDR_TWT_SUBCMD_TEARDOWN,
@@ -282,10 +287,11 @@ enum andr_vendor_subcmd {
 	WIFI_SUBCMD_THERMAL_MITIGATION = ANDROID_NL80211_SUBCMD_MITIGATION_RANGE_START,
 	WIFI_SUBCMD_CUSTOM_MAPPING_OF_DSCP = ANDROID_NL80211_SUBCMD_CUSTOM_SETTING_START,
 	WIFI_SUBCMD_CUSTOM_MAPPING_OF_DSCP_RESET,
-	WIFI_SUBCMD_CHAVOID_SUBCMD_SET_CONFIG = ANDROID_NL80211_SUBCMD_CHAVOID_RANGE_START,
+	WIFI_SUBCMD_CELL_AVOID_SUBCMD_SET_CONFIG = ANDROID_NL80211_SUBCMD_CELL_AVOID_RANGE_START,
 	WIFI_SUBCMD_CONFIG_VOIP_MODE = ANDROID_NL80211_SUBCMD_VIOP_MODE_START,
 	WIFI_SUBCMD_GET_OTA_CURRUNT_INFO = ANDROID_NL80211_SUBCMD_OTA_DOWNLOAD_START,
 	WIFI_SUBCMD_OTA_UPDATE,
+	WIFI_SUBCMD_USABLE_CHAN = ANDROID_NL80211_SUBCMD_USABLE_CHAN_RANGE_START,
 	/* Add more sub commands here */
 	VENDOR_SUBCMD_MAX
 };
@@ -594,23 +600,32 @@ enum custom_setting_attributes {
 	CUSTOM_SETTING_ATTRIBUTE_MAX
 };
 
-#ifdef CHANNEL_AVOIDANCE_SUPPORT
-enum wifi_chavoid_attributes {
-	CHAVOID_ATTRIBUTE_INVALID   = 0,
-	CHAVOID_ATTRIBUTE_CNT       = 1,
-	CHAVOID_ATTRIBUTE_CONFIG    = 2,
-	CHAVOID_ATTRIBUTE_BAND      = 3,
-	CHAVOID_ATTRIBUTE_CHANNEL   = 4,
-	CHAVOID_ATTRIBUTE_PWRCAP    = 5,
-	CHAVOID_ATTRIBUTE_MANDATORY = 6,
+#ifdef WL_CELLULAR_CHAN_AVOID
+enum wifi_cellavoid_attributes {
+	CELLAVOID_ATTRIBUTE_INVALID   = 0,
+	CELLAVOID_ATTRIBUTE_CNT       = 1,
+	CELLAVOID_ATTRIBUTE_CONFIG    = 2,
+	CELLAVOID_ATTRIBUTE_BAND      = 3,
+	CELLAVOID_ATTRIBUTE_CHANNEL   = 4,
+	CELLAVOID_ATTRIBUTE_PWRCAP    = 5,
+	CELLAVOID_ATTRIBUTE_MANDATORY = 6,
 	/* Add more attributes here */
-	CHAVOID_ATTRIBUTE_MAX
+	CELLAVOID_ATTRIBUTE_MAX
 };
+#endif /* WL_CELLULAR_CHAN_AVOID */
 
-#define CHAVOID_WIFI_DIRECT 0x0001
-#define CHAVOID_SOFTAP      0x0002
-#define CHAVOID_WIFI_AWARE  0x0004
-#endif /* CHANNEL_AVOIDANCE_SUPPORT */
+#ifdef WL_USABLE_CHAN
+enum wifi_usable_channel_attributes {
+	USABLECHAN_ATTRIBUTE_INVALID	= 0,
+	USABLECHAN_ATTRIBUTE_BAND	= 1,
+	USABLECHAN_ATTRIBUTE_IFACE	= 2,
+	USABLECHAN_ATTRIBUTE_FILTER	= 3,
+	USABLECHAN_ATTRIBUTE_MAX_SIZE	= 4,
+	USABLECHAN_ATTRIBUTE_SIZE	= 5,
+	USABLECHAN_ATTRIBUTE_CHANNELS	= 6,
+	USABLECHAN_ATTRIBUTE_MAX
+};
+#endif /* WL_USABLE_CHAN */
 
 #ifdef TPUT_DEBUG_DUMP
 enum tput_debug_attributes {
@@ -692,6 +707,7 @@ enum andr_wifi_attr {
 	ANDR_WIFI_ATTRIBUTE_THERMAL_MITIGATION		= 11,
 	ANDR_WIFI_ATTRIBUTE_THERMAL_COMPLETION_WINDOW	= 12,
 	ANDR_WIFI_ATTRIBUTE_VOIP_MODE			= 13,
+	ANDR_WIFI_ATTRIBUTE_DTIM_MULTIPLIER		= 14,
 	/* Any new ANDR_WIFI attribute add prior to the ANDR_WIFI_ATTRIBUTE_MAX */
 	ANDR_WIFI_ATTRIBUTE_MAX
 };
@@ -895,10 +911,10 @@ typedef enum {
 	*   the secondary connection (maybe 70/30 split).
 	* - Should pick the best BSSID for the secondary STA (disregard the chip mode)
 	*   independent of the primary STA:
-	* - Dont optimize for DBS vs MCC/SCC
+	* - Don't optimize for DBS vs MCC/SCC
 	* - Should not impact the primary connections bssid selection:
-	* - Dont downgrade chains of the existing primary connection.
-	* - Dont optimize for DBS vs MCC/SCC.
+	* - Don't downgrade chains of the existing primary connection.
+	* - Don't optimize for DBS vs MCC/SCC.
 	*/
 	WIFI_DUAL_STA_TRANSIENT_PREFER_PRIMARY = 0,
 	/**
@@ -1111,4 +1127,6 @@ void wl_cfgdbg_tput_debug_work(struct work_struct *work);
 int wl_cfgdbg_tput_debug_get_cmd(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void *data, int len);
 #endif /* TPUT_DEBUG_DUMP */
+extern int wl_cfgvendor_multista_set_primary_connection(struct wiphy *wiphy,
+	struct wireless_dev *wdev, const void  *data, int len);
 #endif /* _wl_cfgvendor_h_ */

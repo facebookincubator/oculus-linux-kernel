@@ -120,28 +120,35 @@ struct map_table event_tag_map[] = {
 	{TRACE_TAG_RATE_MBPS, WIFI_TAG_RATE_MBPS, "RATE"},
 };
 
+struct event_log_table {
+	int log_level;
+	uint16 tag;
+	uint8 set;
+	char *desc;
+};
+
 /* define log level per ring type */
-struct log_level_table fw_verbose_level_map[] = {
-	{1, EVENT_LOG_TAG_PCI_ERROR, "PCI_ERROR"},
-	{1, EVENT_LOG_TAG_PCI_WARN, "PCI_WARN"},
-	{2, EVENT_LOG_TAG_PCI_INFO, "PCI_INFO"},
-	{3, EVENT_LOG_TAG_PCI_DBG, "PCI_DEBUG"},
-	{3, EVENT_LOG_TAG_BEACON_LOG, "BEACON_LOG"},
-	{2, EVENT_LOG_TAG_WL_ASSOC_LOG, "ASSOC_LOG"},
-	{2, EVENT_LOG_TAG_WL_ROAM_LOG, "ROAM_LOG"},
-	{1, EVENT_LOG_TAG_TRACE_WL_INFO, "WL INFO"},
-	{1, EVENT_LOG_TAG_TRACE_BTCOEX_INFO, "BTCOEX INFO"},
+struct event_log_table fw_verbose_level_map[] = {
+	{1, EVENT_LOG_TAG_PCI_ERROR, EVENT_LOG_SET_BUS, "PCI_ERROR"},
+	{1, EVENT_LOG_TAG_PCI_WARN, EVENT_LOG_SET_PRSRV_BUS, "PCI_WARN"},
+	{1, EVENT_LOG_TAG_PCI_INFO, EVENT_LOG_SET_BUS, "PCI_INFO"},
+	{3, EVENT_LOG_TAG_PCI_DBG, EVENT_LOG_SET_BUS, "PCI_DEBUG"},
+	{2, EVENT_LOG_TAG_BEACON_LOG, EVENT_LOG_SET_PRSRV_CHATTY, "BEACON_LOG"},
+	{1, EVENT_LOG_TAG_WL_ASSOC_LOG, EVENT_LOG_SET_PRSRV, "ASSOC_LOG"},
+	{1, EVENT_LOG_TAG_WL_ROAM_LOG, EVENT_LOG_SET_PRSRV, "ROAM_LOG"},
+	{1, EVENT_LOG_TAG_TRACE_WL_INFO, EVENT_LOG_SET_WL, "WL INFO"},
+	{1, EVENT_LOG_TAG_TRACE_BTCOEX_INFO, EVENT_LOG_SET_WL, "BTCOEX INFO"},
 #ifdef DHD_RANDMAC_LOGGING
-	{1, EVENT_LOG_TAG_RANDMAC_ERR, "RANDMAC_ERR"},
+	{1, EVENT_LOG_TAG_RANDMAC_ERR, EVENT_LOG_SET_PRSRV, "RANDMAC_ERR"},
 #endif /* DHD_RANDMAC_LOGGING */
 #ifdef CUSTOMER_HW4_DEBUG
-	{3, EVENT_LOG_TAG_SCAN_WARN, "SCAN_WARN"},
+	{3, EVENT_LOG_TAG_SCAN_WARN, EVENT_LOG_SET_PRSRV_CHATTY, "SCAN_WARN"},
 #else
-	{1, EVENT_LOG_TAG_SCAN_WARN, "SCAN_WARN"},
+	{1, EVENT_LOG_TAG_SCAN_WARN, EVENT_LOG_SET_PRSRV_CHATTY, "SCAN_WARN"},
 #endif /* CUSTOMER_HW4_DEBUG */
-	{1, EVENT_LOG_TAG_SCAN_ERROR, "SCAN_ERROR"},
-	{2, EVENT_LOG_TAG_SCAN_TRACE_LOW, "SCAN_TRACE_LOW"},
-	{2, EVENT_LOG_TAG_SCAN_TRACE_HIGH, "SCAN_TRACE_HIGH"},
+	{2, EVENT_LOG_TAG_SCAN_ERROR, EVENT_LOG_SET_ERROR, "SCAN_ERROR"},
+	{1, EVENT_LOG_TAG_SCAN_TRACE_LOW, EVENT_LOG_SET_PRSRV, "SCAN_TRACE_LOW"},
+	{1, EVENT_LOG_TAG_SCAN_TRACE_HIGH, EVENT_LOG_SET_WL, "SCAN_TRACE_HIGH"},
 };
 
 /* reference tab table */
@@ -178,27 +185,72 @@ static uint32
 dhd_dbg_urgent_pull(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring)
 {
 	uint32 pending_len = 0;
-	unsigned long flags = 0;
+	struct dhd_pktlog_ring *pktlog_ring;
 
-	DHD_PKT_LOG_LOCK(dhd_os_get_pktlog_lock(dhdp), flags);
-	{
-		if (ring->stat.written_bytes > ring->stat.read_bytes) {
-			pending_len = ring->stat.written_bytes - ring->stat.read_bytes;
-		} else {
-			pending_len = 0;
-		}
+	if (ring->id != PACKET_LOG_RING_ID) {
+		return pending_len;
 	}
-	if (pending_len >= (ring->threshold * 6u / 5u)) {
-		/* Flow control is required */
-		dhd_txflowcontrol(dhdp, ALL_INTERFACES, ON);
+
+	if (ring->stat.written_bytes > ring->stat.read_bytes) {
+		pending_len = ring->stat.written_bytes - ring->stat.read_bytes;
+	} else {
+		pending_len = 0;
+	}
+
+	pktlog_ring = dhdp->pktlog->pktlog_ring;
+	if (pktlog_ring->pktcount >= DHD_PACKET_LOG_RING_SUSPEND_THRESHOLD) {
+		dhd_pktlog_suspend(dhdp);
+	}
+
+	if (pending_len > ring->threshold) {
+		DHD_INFO(("%s: pending_len(%d) is exceeded threshold(%d), pktcount(%d)\n",
+			__FUNCTION__, pending_len, ring->threshold, pktlog_ring->pktcount));
+	}
+
+	if (!dhd_pktlog_is_enabled(dhdp)) {
 		dhd_os_dbg_urgent_pullreq(dhdp->dbg->private, ring->id);
-		DHD_PKT_LOG_UNLOCK(dhd_os_get_pktlog_lock(dhdp), flags);
 		return 0;
 	}
-	DHD_PKT_LOG_UNLOCK(dhd_os_get_pktlog_lock(dhdp), flags);
+
 	return pending_len;
 }
 #endif /* DHD_PKT_LOGGING_DBGRING */
+
+#ifdef DHD_DEBUGABILITY_DEBUG_DUMP
+int
+dhd_debug_dump_ring_push(dhd_pub_t *dhdp, int ring_id, uint32 len, void *data)
+{
+	dhd_dbg_ring_t *ring;
+	int ret = 0;
+	uint32 remain_len = 0;
+	char *cur_buf;
+	dhd_dbg_ring_entry_t msg_hdr;
+
+	if (!dhdp || !dhdp->dbg) {
+		return BCME_BADADDR;
+	}
+
+	if (!VALID_RING(ring_id)) {
+		DHD_ERROR(("%s : invalid ring_id : %d\n", __FUNCTION__, ring_id));
+		return BCME_RANGE;
+	}
+
+	ring = &dhdp->dbg->dbg_rings[ring_id];
+
+	remain_len = len;
+	cur_buf = data;
+
+	memset(&msg_hdr, 0, sizeof(msg_hdr));
+	while (remain_len > 0) {
+		msg_hdr.type = DBG_RING_ENTRY_DATA_TYPE;
+		msg_hdr.len = MIN(remain_len, DHD_DEBUG_DUMP_NETLINK_MAX);
+		ret = dhd_dbg_ring_push(ring, &msg_hdr, cur_buf);
+		cur_buf += msg_hdr.len;
+		remain_len -= msg_hdr.len;
+	}
+	return ret;
+}
+#endif /* DHD_DEBUGABILITY_DEBUG_DUMP */
 
 int
 dhd_dbg_push_to_ring(dhd_pub_t *dhdp, int ring_id, dhd_dbg_ring_entry_t *hdr, void *data)
@@ -230,22 +282,11 @@ dhd_dbg_push_to_ring(dhd_pub_t *dhdp, int ring_id, dhd_dbg_ring_entry_t *hdr, vo
 		return ret;
 
 #ifdef DHD_PKT_LOGGING_DBGRING
-	if (ring_id == PACKET_LOG_RING_ID) {
-		pending_len = dhd_dbg_urgent_pull(dhdp, ring);
-	}
+	pending_len = dhd_dbg_urgent_pull(dhdp, ring);
 #endif /* DHD_PKT_LOGGING_DBGRING */
 	if (pending_len == 0) {
 		pending_len = dhd_dbg_ring_get_pending_len(ring);
 	}
-#ifdef DHD_PKT_LOGGING_DBGRING
-	else {
-		/* Entered here only PACKET_LOG_RING_ID */
-		if (pending_len <= (ring->threshold * 3u / 5u)) {
-			/* Flow control is required */
-			dhd_txflowcontrol(dhdp, ALL_INTERFACES, OFF);
-		}
-	}
-#endif /* DHD_PKT_LOGGING_DBGRING */
 	dhd_dbg_ring_sched_pull(ring, pending_len, dhdp->dbg->pullreq,
 		dhdp->dbg->private, ring->id);
 
@@ -791,7 +832,7 @@ dhd_dbg_verboselog_printf(dhd_pub_t *dhdp, prcd_event_log_hdr_t *plog_hdr,
 
 			/* ensure preserve fw logs go to debug_dump only in case of customer4 */
 			if (logset < dhdp->event_log_max_sets &&
-				((0x01u << logset) & dhdp->logset_prsrv_mask)) {
+				((0x01ULL << logset) & dhdp->logset_prsrv_mask)) {
 				DHD_PRSRV_MEM(("%s\n", b.origbuf));
 			} else {
 				DHD_FWLOG(("%s\n", b.origbuf));
@@ -909,7 +950,7 @@ dhd_dbg_verboselog_printf(dhd_pub_t *dhdp, prcd_event_log_hdr_t *plog_hdr,
 
 	/* ensure preserve fw logs go to debug_dump only in case of customer4 */
 	if (logset < dhdp->event_log_max_sets &&
-			((0x01u << logset) & dhdp->logset_prsrv_mask)) {
+			((0x01ULL << logset) & dhdp->logset_prsrv_mask)) {
 		DHD_PRSRV_MEM((fmtstr_loc_buf, arg[0], arg[1], arg[2], arg[3],
 			arg[4], arg[5], arg[6], arg[7], arg[8], arg[9], arg[10],
 			arg[11], arg[12], arg[13], arg[14], arg[15]));
@@ -1070,6 +1111,10 @@ dhd_dbg_msgtrace_log_parser(dhd_pub_t *dhdp, void *event_data,
 	memcpy(logbuf + sizeof(*logentry_header), data, datalen);
 	DHD_DBGIF(("%s: datalen %d %d\n", __FUNCTION__, msg_hdr.len, datalen));
 
+#if defined(DEBUGABILITY) && defined(CUSTOMER_HW6)
+	dhd_dbg_push_to_ring(dhdp, FW_VERBOSE_RING_ID, &msg_hdr, logbuf);
+#endif /* DEBUGABILITY && CUSTOMER_HW6 */
+
 	/* Print sequence number, originating set and length of received
 	 * event log buffer. Refer to event log buffer structure in
 	 * event_log.h
@@ -1084,7 +1129,7 @@ dhd_dbg_msgtrace_log_parser(dhd_pub_t *dhdp, void *event_data,
 		DHD_ERROR(("%s logset: %d max: %d out of range queried: %d\n",
 			__FUNCTION__, logset, event_log_max_sets, event_log_max_sets_queried));
 #ifdef DHD_FW_COREDUMP
-		if (event_log_max_sets_queried) {
+		if (event_log_max_sets_queried && !dhd_memdump_is_scheduled(dhdp)) {
 			DHD_ERROR(("%s: collect socram for DUMP_TYPE_LOGSET_BEYOND_RANGE\n",
 				__FUNCTION__));
 			dhdp->memdump_type = DUMP_TYPE_LOGSET_BEYOND_RANGE;
@@ -1310,7 +1355,7 @@ dhd_dbg_bt_log_handler(dhd_pub_t *dhdp, void *data, uint datalen)
  * dhd_dbg_set_event_log_tag : modify the state of an event log tag
  */
 void
-dhd_dbg_set_event_log_tag(dhd_pub_t *dhdp, uint16 tag, uint8 set)
+dhd_dbg_set_event_log_tag(dhd_pub_t *dhdp, uint16 tag, uint8 set_num, uint8 is_set)
 {
 	wl_el_tag_params_t pars;
 	char *cmd = "event_log_tag_control";
@@ -1319,8 +1364,8 @@ dhd_dbg_set_event_log_tag(dhd_pub_t *dhdp, uint16 tag, uint8 set)
 
 	memset(&pars, 0, sizeof(pars));
 	pars.tag = tag;
-	pars.set = set;
-	pars.flags = EVENT_LOG_TAG_FLAG_LOG;
+	pars.set = set_num;
+	pars.flags = (is_set) ? EVENT_LOG_TAG_FLAG_LOG : EVENT_LOG_TAG_FLAG_NONE;
 
 	if (!bcm_mkiovar(cmd, (char *)&pars, sizeof(pars), iovbuf, sizeof(iovbuf))) {
 		DHD_ERROR(("%s mkiovar failed\n", __FUNCTION__));
@@ -1339,7 +1384,7 @@ dhd_dbg_set_configuration(dhd_pub_t *dhdp, int ring_id, int log_level, int flags
 	dhd_dbg_ring_t *ring;
 	uint8 set = 1;
 	int i, array_len = 0;
-	struct log_level_table *log_level_tbl = NULL;
+	struct event_log_table *log_level_tbl = NULL;
 	if (!dhdp || !dhdp->dbg)
 		return BCME_BADADDR;
 
@@ -1370,7 +1415,8 @@ dhd_dbg_set_configuration(dhd_pub_t *dhdp, int ring_id, int log_level, int flags
 		set = (ref_tag_tbl[log_level_tbl[i].tag])? 1 : 0;
 		DHD_DBGIF(("%s TAG(%s) is %s for the ring(%s)\n", __FUNCTION__,
 			log_level_tbl[i].desc, (set)? "SET" : "CLEAR", ring->name));
-		dhd_dbg_set_event_log_tag(dhdp, log_level_tbl[i].tag, set);
+		dhd_dbg_set_event_log_tag(dhdp, log_level_tbl[i].tag,
+			log_level_tbl[i].set, set);
 	}
 	return BCME_OK;
 }
@@ -1578,11 +1624,18 @@ __dhd_dbg_map_tx_status_to_pkt_fate(uint16 status)
 		case WLFC_CTL_PKTFLAG_EXPIRED:
 			pkt_fate = TX_PKT_FATE_FW_DROP_EXPTIME;
 			break;
-#ifndef OEM_ANDROID
+		case WLFC_CTL_PKTFLAG_DROPPED:
+			pkt_fate = TX_PKT_FATE_DRV_DROP_OTHER;
+			break;
 		case WLFC_CTL_PKTFLAG_MKTFREE:
 			pkt_fate = TX_PKT_FATE_FW_PKT_FREE;
 			break;
-#endif /* !OEM_ANDROID */
+		case WLFC_CTL_PKTFLAG_MAX_SUP_RETR:
+			pkt_fate = TX_PKT_FATE_FW_MAX_SUP_RETR;
+			break;
+		case WLFC_CTL_PKTFLAG_FORCED_EXPIRED:
+			pkt_fate = TX_PKT_FATE_FW_FORCED_EXPIRED;
+			break;
 		default:
 			pkt_fate = TX_PKT_FATE_FW_DROP_OTHER;
 			break;
@@ -2189,6 +2242,19 @@ dhd_dbg_stop_pkt_monitor(dhd_pub_t *dhdp)
 		} \
 	} while (0);
 
+static wifi_tx_packet_fate
+__dhd_dbg_convert_fate(wifi_tx_packet_fate fate)
+{
+	wifi_tx_packet_fate new_fate = fate;
+
+	 /* To prevent SIG-ABORT, packet_fate > TX_PKT_FATE_DRV_DROP_OTHER */
+	if (fate > TX_PKT_FATE_DRV_DROP_OTHER) {
+		new_fate = TX_PKT_FATE_FW_DROP_OTHER;
+	}
+
+	return new_fate;
+}
+
 int
 dhd_dbg_monitor_get_tx_pkts(dhd_pub_t *dhdp, void __user *user_buf,
 		uint16 req_count, uint16 *resp_count)
@@ -2235,7 +2301,12 @@ dhd_dbg_monitor_get_tx_pkts(dhd_pub_t *dhdp, void __user *user_buf,
 			compat_wifi_tx_report_t *comp_ptr = compat_ptr((uintptr_t) cptr);
 			compat_dhd_dbg_pkt_info_t compat_tx_pkt;
 			__dhd_dbg_dump_tx_pkt_info(dhdp, tx_pkt, count);
-			__COPY_TO_USER(&comp_ptr->fate, &tx_pkt->fate, sizeof(tx_pkt->fate));
+			/* fate convert asscording to wifi_logger.h */
+			{
+				wifi_tx_packet_fate new_fate = tx_pkt->fate;
+				new_fate = __dhd_dbg_convert_fate(new_fate);
+				__COPY_TO_USER(&comp_ptr->fate, &new_fate, sizeof(new_fate));
+			}
 
 			compat_tx_pkt.payload_type = tx_pkt->info.payload_type;
 			compat_tx_pkt.pkt_len = tx_pkt->info.pkt_len;
@@ -2258,7 +2329,12 @@ dhd_dbg_monitor_get_tx_pkts(dhd_pub_t *dhdp, void __user *user_buf,
 		ptr = (wifi_tx_report_t *)user_buf;
 		while ((count < pkt_count) && tx_pkt && ptr) {
 			__dhd_dbg_dump_tx_pkt_info(dhdp, tx_pkt, count);
-			__COPY_TO_USER(&ptr->fate, &tx_pkt->fate, sizeof(tx_pkt->fate));
+			/* fate convert asscording to wifi_logger.h */
+			{
+				wifi_tx_packet_fate new_fate = tx_pkt->fate;
+				new_fate = __dhd_dbg_convert_fate(new_fate);
+				__COPY_TO_USER(&ptr->fate, &new_fate, sizeof(new_fate));
+			}
 			__COPY_TO_USER(&ptr->frame_inf.payload_type,
 				&tx_pkt->info.payload_type,
 				OFFSETOF(dhd_dbg_pkt_info_t, pkt_hash));
@@ -2347,7 +2423,6 @@ dhd_dbg_monitor_get_rx_pkts(dhd_pub_t *dhdp, void __user *user_buf,
 		ptr = (wifi_rx_report_t *)user_buf;
 		while ((count < pkt_count) && rx_pkt && ptr) {
 			__dhd_dbg_dump_rx_pkt_info(dhdp, rx_pkt, count);
-
 			__COPY_TO_USER(&ptr->fate, &rx_pkt->fate, sizeof(rx_pkt->fate));
 			__COPY_TO_USER(&ptr->frame_inf.payload_type,
 				&rx_pkt->info.payload_type,
@@ -2885,14 +2960,16 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 {
 	dhd_dbg_t *dbg = NULL;
 #if defined(DHD_DEBUGABILITY_LOG_DUMP_RING) || defined(BTLOG) || \
-	defined(DHD_DEBUGABILITY_EVENT_RING) || defined(DHD_PKT_LOGGING_DBGRING)
+	defined(DHD_DEBUGABILITY_EVENT_RING) || defined(DHD_PKT_LOGGING_DBGRING) || \
+	(defined(DEBUGABILITY) && defined(CUSTOMER_HW6))
 	dhd_dbg_ring_t *ring = NULL;
 	int ring_id = 0;
 	void *buf = NULL;
-#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING || BTLOG ||
-	* DHD_DEBUGABILITY_EVENT_RING || DHD_PKT_LOGGING_DBGRING
-	*/
 	int ret = BCME_ERROR;
+#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING || BTLOG ||
+	* DHD_DEBUGABILITY_EVENT_RING || DHD_PKT_LOGGING_DBGRING ||
+	* (DEBUGABILITY && CUSTOMER_HW6)
+	*/
 #ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
 	struct dhd_dbg_ring_buf *ring_buf;
 #endif /* DHD_DEBUGABILITY_LOG_DUMP_RING */
@@ -2914,7 +2991,8 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 		goto error;
 #endif /* DHD_DEBUGABILITY_EVENT_RING */
 
-#ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
+#if defined(DHD_DEBUGABILITY_LOG_DUMP_RING) || (defined(DEBUGABILITY) && \
+	defined(CUSTOMER_HW6))
 	buf = MALLOCZ(dhdp->osh, FW_VERBOSE_RING_SIZE);
 	if (!buf)
 		goto error;
@@ -2922,7 +3000,9 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 			(uint8 *)FW_VERBOSE_RING_NAME, FW_VERBOSE_RING_SIZE, buf, FALSE);
 	if (ret)
 		goto error;
+#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING || (DEBUGABILITY && CUSTOMER_HW6) */
 
+#ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
 	buf = MALLOCZ(dhdp->osh, DRIVER_LOG_RING_SIZE);
 	if (!buf)
 		goto error;
@@ -2939,6 +3019,27 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 	if (ret)
 		goto error;
 #endif /* DHD_DEBUGABILITY_LOG_DUMP_RING */
+
+#ifdef DHD_DEBUGABILITY_DEBUG_DUMP
+	/*
+	 * delayed memory allocation. memory will be allocated when debug_dump is invoked
+	 * To prepare the ringbuffer in legacy HAL, we should initialize ring at this time
+	 */
+	ret = dhd_dbg_ring_init(dhdp, &dbg->dbg_rings[DEBUG_DUMP_RING1_ID], DEBUG_DUMP_RING1_ID,
+		(uint8 *)DEBUG_DUMP_RING1_NAME, DEBUG_DUMP_RING1_SIZE, NULL, FALSE);
+	if (ret) {
+		DHD_ERROR(("%s: Failed to init debug ring1\n", __func__));
+		goto error;
+	}
+
+	ret = dhd_dbg_ring_init(dhdp, &dbg->dbg_rings[DEBUG_DUMP_RING2_ID], DEBUG_DUMP_RING2_ID,
+		(uint8 *)DEBUG_DUMP_RING2_NAME, DEBUG_DUMP_RING2_SIZE, NULL, FALSE);
+	if (ret) {
+		DHD_ERROR(("%s: Failed to init debug ring2\n", __func__));
+		goto error;
+	}
+#endif /* DHD_DEBUGABILITY_DEBUG_DUMP */
+
 #ifdef BTLOG
 	buf = MALLOCZ(dhdp->osh, BT_LOG_RING_SIZE);
 	if (!buf)
@@ -2981,7 +3082,8 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 	return BCME_OK;
 
 #if defined(DHD_DEBUGABILITY_LOG_DUMP_RING) || defined(BTLOG) || \
-	defined(DHD_DEBUGABILITY_EVENT_RING) || defined(DHD_PKT_LOGGING_DBGRING)
+	defined(DHD_DEBUGABILITY_EVENT_RING) || defined(DHD_PKT_LOGGING_DBGRING) || \
+	(defined(DEBUGABILITY) && defined(CUSTOMER_HW6))
 error:
 	for (ring_id = DEBUG_RING_ID_INVALID + 1; ring_id < DEBUG_RING_ID_MAX; ring_id++) {
 		if (VALID_RING(dbg->dbg_rings[ring_id].id)) {
@@ -3000,10 +3102,11 @@ error:
 		}
 	}
 	MFREE(dhdp->osh, dbg, sizeof(dhd_dbg_t));
-#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING || BTLOG ||
-	* DHD_DEBUGABILITY_EVENT_RING || DHD_PKT_LOGGING_DBGRING
-	*/
 	return ret;
+#endif /* DHD_DEBUGABILITY_LOG_DUMP_RING || BTLOG ||
+	* DHD_DEBUGABILITY_EVENT_RING || DHD_PKT_LOGGING_DBGRING ||
+	* (DEBUGABILITY && CUSTOMER_HW6)
+	*/
 }
 
 /*
@@ -3025,6 +3128,12 @@ dhd_dbg_detach(dhd_pub_t *dhdp)
 			ring = &dbg->dbg_rings[ring_id];
 			dhd_dbg_ring_deinit(dhdp, ring);
 			if (ring->ring_buf) {
+#ifdef DHD_DEBUGABILITY_DEBUG_DUMP
+				if (ring_id == DEBUG_DUMP_RING1_ID ||
+					ring_id == DEBUG_DUMP_RING2_ID) {
+					VMFREE(dhdp->osh, ring->ring_buf, ring->ring_size);
+				}
+#endif /* DHD_DEBUGABILITY_DEBUG_DUMP */
 #ifdef DHD_PKT_LOGGING_DBGRING
 				if (ring_id != PACKET_LOG_RING_ID)
 #endif /* DHD_PKT_LOGGING_DBGRING */
@@ -3061,7 +3170,6 @@ dhd_dbg_set_fwverbose(dhd_pub_t *dhdp, uint32 new_val)
 }
 
 #ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
-extern struct dhd_dbg_ring_buf g_ring_buf;
 void
 dhd_dbg_ring_write(int type, char *binary_data,
 		int binary_len, const char *fmt, ...)
@@ -3101,4 +3209,168 @@ dhd_dbg_ring_write(int type, char *binary_data,
 	}
 	return;
 }
+
+#ifdef DHD_DEBUGABILITY_DEBUG_DUMP
+void dhd_debug_dump_get_section_len(dhd_pub_t *dhdp, uint32 sec_len[])
+{
+	sec_len[LOG_DUMP_SECTION_TIMESTAMP] = dhd_get_time_str_len();
+#ifdef EWP_ECNTRS_LOGGING
+	sec_len[LOG_DUMP_SECTION_ECNTRS] = dhd_get_ecntrs_len(NULL, dhdp);
+#endif /* EWP_ECNTRS_LOGGING */
+	sec_len[LOG_DUMP_SECTION_DHD_DUMP] = dhd_get_dhd_dump_len(NULL, dhdp);
+#if defined(BCMPCIE)
+	sec_len[LOG_DUMP_SECTION_EXT_TRAP] = dhd_get_ext_trap_len(NULL, dhdp);
+#endif /* BCMPCIE */
+
+#if defined(DHD_FW_COREDUMP) && defined(DNGL_EVENT_SUPPORT)
+	sec_len[LOG_DUMP_SECTION_HEALTH_CHK] = dhd_get_health_chk_len(NULL, dhdp);
+#endif
+	sec_len[LOG_DUMP_SECTION_COOKIE] = dhd_get_cookie_log_len(NULL, dhdp);
+#ifdef DHD_DUMP_PCIE_RINGS
+	sec_len[LOG_DUMP_SECTION_RING] = dhd_get_flowring_len(NULL, dhdp);
+#endif
+#ifdef DHD_STATUS_LOGGING
+	sec_len[LOG_DUMP_SECTION_STATUS] = dhd_get_status_log_len(NULL, dhdp);
+#endif /* DHD_STATUS_LOGGING */
+#ifdef EWP_RTT_LOGGING
+	sec_len[LOG_DUMP_SECTION_RTT] = dhd_get_rtt_len(NULL, dhdp);
+#endif /* EWP_RTT_LOGGING */
+
+	DHD_ERROR(("%s: TS:%d ECNTRS:%d DHD_DUMP:%d ETRAP:%d"
+		" HCK:%d CKI:%d FLOW:%d STATUS:%d RTT:%d\n",
+		__func__, sec_len[LOG_DUMP_SECTION_TIMESTAMP], sec_len[LOG_DUMP_SECTION_ECNTRS],
+		sec_len[LOG_DUMP_SECTION_DHD_DUMP], sec_len[LOG_DUMP_SECTION_EXT_TRAP],
+		sec_len[LOG_DUMP_SECTION_HEALTH_CHK], sec_len[LOG_DUMP_SECTION_COOKIE],
+		sec_len[LOG_DUMP_SECTION_RING], sec_len[LOG_DUMP_SECTION_STATUS],
+		sec_len[LOG_DUMP_SECTION_RTT]));
+	return;
+}
+
+int dhd_debug_dump_buf_alloc(dhd_pub_t *dhdp, int id, char* name, int size)
+{
+	dhd_dbg_t *dbg = dhdp->dbg;
+	dhd_dbg_ring_t *ring = &dbg->dbg_rings[id];
+	char *buf = NULL;
+
+	if (!ring->ring_buf) {
+		buf = VMALLOCZ(dhdp->osh, size);
+		if (!buf) {
+			DHD_ERROR(("%s: Failed to alloc id:%d, size:%d\n", __func__, id, size));
+			return BCME_NOMEM;
+		}
+		dhd_dbg_ring_set_buf(dhdp, &dbg->dbg_rings[id], buf);
+		DHD_ERROR(("%s: success to allocate ring id:%d name:%s\n", __func__, id, name));
+	} else {
+		DHD_ERROR(("%s: already allocated id:%d name:%s\n", __func__, id, name));
+	}
+
+	return BCME_OK;
+}
+
+int dhd_debug_dump_to_ring(dhd_pub_t *dhdp)
+{
+	dhd_dbg_t *dbg = dhdp->dbg;
+	dhd_dbg_ring_t *dbg_ring;
+	int ret = BCME_OK;
+	int ring_num, id;
+	uint32 sec_len[LOG_DUMP_SECTION_MAX] = {0};
+	dhd_dbg_ring_status_t ring_status;
+	uint32 sync_retry;
+	unsigned long flags = 0;
+
+	ret = dhd_debug_dump_buf_alloc(dhdp, DEBUG_DUMP_RING1_ID,
+		DEBUG_DUMP_RING1_NAME, DEBUG_DUMP_RING1_SIZE);
+	if (ret) {
+		return ret;
+	}
+
+	ret = dhd_debug_dump_buf_alloc(dhdp, DEBUG_DUMP_RING2_ID,
+		DEBUG_DUMP_RING2_NAME, DEBUG_DUMP_RING2_SIZE);
+	if (ret) {
+		return ret;
+	}
+
+	dhd_debug_dump_get_section_len(dhdp, sec_len);
+
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_TIMESTAMP);
+	if (dhd_print_time_str(NULL, NULL, sec_len[LOG_DUMP_SECTION_TIMESTAMP], &ring_num)) {
+		DHD_ERROR(("Error section: dhd_print_time_str\n"));
+	}
+#ifdef EWP_ECNTRS_LOGGING
+	if (dhd_print_ecntrs_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_ECNTRS], NULL)) {
+		DHD_ERROR(("Error section: ECNTRS\n"));
+	}
+#endif /* EWP_ECNTRS_LOGGING */
+
+#ifdef DHD_STATUS_LOGGING
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_STATUS);
+	if (dhd_print_status_log_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_STATUS], &ring_num)) {
+		DHD_ERROR(("Error section: STATUS_LOG\n"));
+	}
+#endif /* DHD_STATUS_LOGGING */
+#ifdef EWP_RTT_LOGGING
+	if (dhd_print_rtt_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_RTT], NULL)) {
+		DHD_ERROR(("Error section: RTT_LOG\n"));
+	}
+#endif /* EWP_RTT_LOGGING */
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_DHD_DUMP);
+	if (dhd_print_dump_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_DHD_DUMP], &ring_num)) {
+		DHD_ERROR(("Error section: DHD_DUMP\n"));
+	}
+#if defined(BCMPCIE)
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_EXT_TRAP);
+	if (dhd_print_ext_trap_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_EXT_TRAP], &ring_num)) {
+		DHD_ERROR(("Error section: EXT TRAP\n"));
+	}
+#endif /* BCMPCIE */
+#if defined(DHD_FW_COREDUMP) && defined(DNGL_EVENT_SUPPORT)
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_HEALTH_CHK);
+	if (dhd_print_health_chk_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_HEALTH_CHK], &ring_num)) {
+		DHD_ERROR(("Error section: HEALTH CHECK\n"));
+	}
+#endif
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_COOKIE);
+	if (dhd_print_cookie_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_COOKIE], &ring_num)) {
+		DHD_ERROR(("Error section: COOKIE DATA\n"));
+	}
+#ifdef DHD_DUMP_PCIE_RINGS
+	ring_num = dhd_debug_dump_get_ring_num(LOG_DUMP_SECTION_RING);
+	if (dhd_print_flowring_data(NULL, dhdp, NULL, NULL,
+		sec_len[LOG_DUMP_SECTION_RING], &ring_num)) {
+		DHD_ERROR(("Error section: FLOWRING_DUMP\n"));
+	}
+#endif
+	for (id = DEBUG_RING_ID_INVALID + 1; id < DEBUG_RING_ID_MAX; id++) {
+		dbg_ring = &dbg->dbg_rings[id];
+		if (VALID_RING(dbg_ring->id)) {
+			/* To sync up with the ringbuffer in legacy HAL */
+			dhd_os_trigger_get_ring_data(dhdp, dbg_ring->name);
+
+			sync_retry = 0;
+			while (sync_retry < DHD_DEBUG_DUMP_MAX_SYNC_CNT) {
+				DHD_DBG_RING_LOCK(dbg_ring->lock, flags);
+				__dhd_dbg_get_ring_status(dbg_ring, &ring_status);
+				DHD_DBG_RING_UNLOCK(dbg_ring->lock, flags);
+				if (ring_status.written_bytes == ring_status.read_bytes) {
+					break;
+				} else {
+					OSL_SLEEP(50);
+				}
+				sync_retry++;
+			}
+			DHD_ERROR(("%s: ring sync up name:%s w/r bytes(%u/%u) retry:%d\n",
+				__func__, dbg_ring->name, ring_status.written_bytes,
+				ring_status.read_bytes, sync_retry));
+		}
+	}
+	return ret;
+}
+#endif /* DHD_DEBUGABILITY_DEBUG_DUMP */
 #endif /* DHD_DEBUGABILITY_LOG_DUMP_RING */

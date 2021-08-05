@@ -75,9 +75,9 @@ typedef struct enhanced_ts_message_v1 {
  * String is not null terminated, length is the XTLV len.
  */
 typedef struct xtlv_string {
-	uint16 id;              /* XTLV ID: EVENT_LOG_XTLV_ID_STR */
-	uint16 len;             /* XTLV Len (String length) */
-	char   str[1];          /* var len array characters */
+	uint16 id;                  /* XTLV ID: EVENT_LOG_XTLV_ID_STR */
+	uint16 len;                 /* XTLV Len (String length) */
+	char   str[BCM_FLEX_ARRAY]; /* var len array characters */
 } xtlv_string_t;
 
 #define XTLV_STRING_FULL_LEN(str_len)     (BCM_XTLV_HDR_SIZE + (str_len) * sizeof(char))
@@ -91,27 +91,27 @@ typedef struct xtlv_string {
  * The excursion queue will have no bsscfgs associated and is the first queue dumped.
  */
 typedef struct txq_summary {
-	uint16 id;              /* XTLV ID: EVENT_LOG_XTLV_ID_TXQ_SUM */
-	uint16 len;             /* XTLV Len */
-	uint32 bsscfg_map;      /* bitmap of bsscfg indexes associated with this queue */
-	uint32 stopped;         /* flow control bitmap */
-	uint8  prec_count;      /* count of precedences/fifos and len of following array */
+	uint16 id;                    /* XTLV ID: EVENT_LOG_XTLV_ID_TXQ_SUM */
+	uint16 len;                   /* XTLV Len */
+	uint32 bsscfg_map;            /* bitmap of bsscfg indexes associated with this queue */
+	uint32 stopped;               /* flow control bitmap */
+	uint8  prec_count;            /* count of precedences/fifos and len of following array */
 	uint8  pad;
-	uint16 plen[1];         /* var len array of lengths of each prec/fifo in the queue */
+	uint16 plen[BCM_FLEX_ARRAY];  /* array of lengths of each prec/fifo in the queue */
 } txq_summary_t;
 
 #define TXQ_SUMMARY_LEN                   (OFFSETOF(txq_summary_t, plen))
 #define TXQ_SUMMARY_FULL_LEN(num_q)       (TXQ_SUMMARY_LEN + (num_q) * sizeof(uint16))
 
 typedef struct txq_summary_v2 {
-	uint16 id;              /* XTLV ID: EVENT_LOG_XTLV_ID_TXQ_SUM_V2 */
-	uint16 len;             /* XTLV Len */
-	uint32 bsscfg_map;      /* bitmap of bsscfg indexes associated with this queue */
-	uint32 stopped;         /* flow control bitmap */
-	uint32 hw_stopped;      /* flow control bitmap */
-	uint8  prec_count;      /* count of precedences/fifos and len of following array */
+	uint16 id;                    /* XTLV ID: EVENT_LOG_XTLV_ID_TXQ_SUM_V2 */
+	uint16 len;                   /* XTLV Len */
+	uint32 bsscfg_map;            /* bitmap of bsscfg indexes associated with this queue */
+	uint32 stopped;               /* flow control bitmap */
+	uint32 hw_stopped;            /* flow control bitmap */
+	uint8  prec_count;            /* count of precedences/fifos and len of following array */
 	uint8  pad;
-	uint16 plen[1];         /* var len array of lengths of each prec/fifo in the queue */
+	uint16 plen[BCM_FLEX_ARRAY];  /* array of lengths of each prec/fifo in the queue */
 } txq_summary_v2_t;
 
 #define TXQ_SUMMARY_V2_LEN                (OFFSETOF(txq_summary_v2_t, plen))
@@ -123,14 +123,14 @@ typedef struct txq_summary_v2 {
  * a cubby ID and sub-ID to differentiate SCB cubby types and possible sub-queues.
  */
 typedef struct scb_subq_summary {
-	uint16 id;             /* XTLV ID: EVENT_LOG_XTLV_ID_SCBDATA_SUM */
-	uint16 len;            /* XTLV Len */
-	uint32 flags;          /* cubby specficic flags */
-	uint8  cubby_id;       /* ID registered for cubby */
-	uint8  sub_id;         /* sub ID if a cubby has more than one queue */
-	uint8  prec_count;     /* count of precedences/fifos and len of following array */
+	uint16 id;                    /* XTLV ID: EVENT_LOG_XTLV_ID_SCBDATA_SUM */
+	uint16 len;                   /* XTLV Len */
+	uint32 flags;                 /* cubby specficic flags */
+	uint8  cubby_id;              /* ID registered for cubby */
+	uint8  sub_id;                /* sub ID if a cubby has more than one queue */
+	uint8  prec_count;            /* count of precedences/fifos and len of following array */
 	uint8  pad;
-	uint16 plen[1];        /* var len array of lengths of each prec/fifo in the queue */
+	uint16 plen[BCM_FLEX_ARRAY];  /* array of lengths of each prec/fifo in the queue */
 } scb_subq_summary_t;
 
 #define SCB_SUBQ_SUMMARY_LEN              (OFFSETOF(scb_subq_summary_t, plen))
@@ -176,14 +176,14 @@ typedef struct scb_ampdu_tx_summary {
 
 /** XTLV stuct to summarize a BSSCFG's packet queue */
 typedef struct bsscfg_q_summary {
-	uint16 id;               /* XTLV ID: EVENT_LOG_XTLV_ID_BSSCFGDATA_SUM */
-	uint16 len;              /* XTLV Len */
-	struct ether_addr BSSID; /* BSSID */
-	uint8  bsscfg_idx;       /* bsscfg index */
-	uint8  type;             /* bsscfg type enumeration: BSSCFG_TYPE_XXX */
-	uint8  subtype;          /* bsscfg subtype enumeration: BSSCFG_SUBTYPE_XXX */
-	uint8  prec_count;       /* count of precedences/fifos and len of following array */
-	uint16 plen[1];          /* var len array of lengths of each prec/fifo in the queue */
+	uint16 id;                   /* XTLV ID: EVENT_LOG_XTLV_ID_BSSCFGDATA_SUM */
+	uint16 len;                  /* XTLV Len */
+	struct ether_addr BSSID;     /* BSSID */
+	uint8  bsscfg_idx;           /* bsscfg index */
+	uint8  type;                 /* bsscfg type enumeration: BSSCFG_TYPE_XXX */
+	uint8  subtype;              /* bsscfg subtype enumeration: BSSCFG_SUBTYPE_XXX */
+	uint8  prec_count;           /* count of precedences/fifos and len of following array */
+	uint16 plen[BCM_FLEX_ARRAY]; /* array of lengths of each prec/fifo in the queue */
 } bsscfg_q_summary_t;
 
 #define BSSCFG_Q_SUMMARY_LEN              (OFFSETOF(bsscfg_q_summary_t, plen))
@@ -196,11 +196,11 @@ typedef struct bsscfg_q_summary {
  * Array is uint32 words
  */
 typedef struct xtlv_uc_txs {
-	uint16 id;              /* XTLV ID: EVENT_LOG_XTLV_ID_UCTXSTATUS */
-	uint16 len;             /* XTLV Len */
-	uint8  entry_size;      /* num uint32 words per entry */
-	uint8  pad[3];          /* reserved, zero */
-	uint32 w[1];            /* var len array of words */
+	uint16 id;                  /* XTLV ID: EVENT_LOG_XTLV_ID_UCTXSTATUS */
+	uint16 len;                 /* XTLV Len */
+	uint8  entry_size;          /* num uint32 words per entry */
+	uint8  pad[3];              /* reserved, zero */
+	uint32 w[BCM_FLEX_ARRAY];   /* var len array of words */
 } xtlv_uc_txs_t;
 
 #define XTLV_UCTXSTATUS_LEN                (OFFSETOF(xtlv_uc_txs_t, w))
@@ -273,7 +273,7 @@ typedef struct wl_scan_summary_info {
 	uint32 total_chan_num;	/* Total number of channels scanned */
 	uint32 scan_start_time;	/* Scan start time in milliseconds */
 	uint32 scan_end_time;	/* Scan end time in milliseconds */
-	wl_scan_ssid_info_t ssid[1];	/* SSID being scanned in current
+	wl_scan_ssid_info_t ssid[BCM_FLEX_ARRAY];	/* SSID being scanned in current
 				* channel. For future use
 				*/
 } wl_scan_summary_info_t;
@@ -626,7 +626,7 @@ typedef enum {
 typedef struct msch_collect_tlv {
 	uint16	type;
 	uint16	size;
-	char	value[1];
+	char	value[BCM_FLEX_ARRAY];
 } msch_collect_tlv_t;
 
 typedef struct msch_profiler_event_data {
@@ -641,9 +641,9 @@ typedef struct msch_start_profiler_event_data {
 } msch_start_profiler_event_data_t;
 
 typedef struct msch_message_profiler_event_data {
-	uint32	time_lo;		/* Request time */
+	uint32	time_lo;			/* Request time */
 	uint32	time_hi;
-	char	message[1];		/* message */
+	char	message[BCM_FLEX_ARRAY];	/* message */
 } msch_message_profiler_event_data_t;
 
 typedef struct msch_event_log_profiler_event_data {
@@ -1129,6 +1129,275 @@ typedef struct phy_periodic_counters_v6 {
 	uint16	nav_cntr_h;
 } phy_periodic_counters_v6_t;
 
+typedef struct {
+	uint32	txallfrm;		/* total number of frames sent, incl. Data, ACK, RTS,
+					* CTS, Control Management
+					*  (includes retransmissions)
+					*/
+	uint32	rxrsptmout;		/* number of response timeouts for transmitted frames
+					* expecting a response
+					*/
+	uint32	rxstrt;			/* number of received frames with a good PLCP */
+	uint32	rxcrsglitch;		/* PHY was able to correlate the preamble but not
+					* the header
+					*/
+	uint32	bphy_badplcp;		/* number of bad PLCP reception on BPHY rate */
+	uint32	bphy_rxcrsglitch;	/* PHY count of bphy glitches */
+	uint32	rxbadfcs;		/* number of frames for which the CRC check failed
+					* in the MAC
+					*/
+	uint32	rxbeaconmbss;		/* beacons received from member of BSS */
+	uint32	rxdtucastmbss;		/* number of received DATA frames with good FCS and
+					* matching RA
+					*/
+	uint32	rxdtocast;		/* number of received DATA frames
+					* (good FCS and no matching RA)
+					*/
+	uint32	goodfcs;		/* Good fcs counters  */
+
+	uint32	txctl;
+	uint32	rxctl;
+	uint32	txbar;
+	uint32	rxbar;
+	uint32	rxbeaconobss;
+
+	uint32	txrts;
+	uint32	txucast;		/* number of unicast tx expecting response
+					* other than cts/cwcts
+					*/
+	uint32	rxackucast;		/* number of ucast ACKS received (good FCS) */
+	uint32	txackfrm;		/* number of ACK frames sent out */
+
+	uint32	txrtsfrm;		/* number of RTS sent out by the MAC */
+	uint32	txrtsfail;		/* number of rts transmission failure
+					* that reach retry limit
+					*/
+	uint32	rxctsucast;		/* number of unicast CTS addressed to the MAC (good FCS) */
+
+	uint32	rxrtsucast;		/* number of unicast RTS addressed to the MAC (good FCS) */
+	uint32	txctsfrm;		/* number of CTS sent out by the MAC */
+
+	uint32	rxback;			/* blockack rxcnt */
+	uint32	txback;			/* blockack txcnt */
+	uint32	rxctlucast;		/* number of received CNTRL frames
+					* with good FCS and matching RA
+					*/
+
+	uint32	last_bcn_seq_num;	/* L_TSF and Seq # from the last beacon received */
+	uint32	last_bcn_ltsf;		/* L_TSF and Seq # from the last beacon received */
+
+	uint32	desense_reason;		/* desense paraemters to indicate reasons
+					* for bphy and ofdm_desense
+					*/
+
+	/* RX error related */
+	uint32	rxdropped;		/* Frame dropped */
+	uint32	rxnobuf;		/* Rx error due to no buffer */
+	uint32	rxrunt;			/* Runt frame counter */
+
+	uint32	rxframe;		/* Number of received frames */
+
+	/* Misc general purpose debug counters (will be used for future debugging) */
+	uint32	debug_01;
+	uint32	debug_02;
+	uint32	debug_03;
+	uint32	debug_04;
+	uint32	debug_05;
+
+	uint32	rxanyerr;		/* Any RX error that is not counted by other counters. */
+
+	uint32	phyovfl_cnt;		/* RX PHY FIFO overflow */
+	uint32  rxf0ovfl;		/* Rx FIFO0 overflow counters information */
+	uint32  rxf1ovfl;		/* Rx FIFO1 overflow counters information */
+
+	uint32	lenfovfl_cnt;		/* RX LFIFO overflow */
+	uint32	weppeof_cnt;		/* WEP asserted premature end-of-frame */
+	uint32	rxbadplcp;		/* number of parity check of the PLCP header failed */
+	uint32	strmeof_cnt;		/* RX frame got aborted because PHY FIFO did not have
+					* sufficient bytes
+					*/
+	uint32	pfifo_drop;		/* PHY FIFO was not empty when a new frame arrived */
+	uint32	ctx_fifo_full;		/* Low Priority Context FIFO is full */
+	uint32	ctx_fifo2_full;		/* High Priority Context FIFO is full */
+	uint32	rxnodelim;		/* number of no valid delimiter detected by ampdu parser */
+	uint32	rx20s_cnt;		/* secondary 20 counter */
+	uint32	rxdrop20s;		/* RX was discarded as the CRS was not seen on
+					* primary channel
+					*/
+	uint32	new_rxin_plcp_wait_cnt;	/* A new reception started waiting for PLCP bytes
+						* from a previous receive
+						*/
+	uint32  rxtoolate;		/* receive too late */
+	uint32	laterx_cnt;		/* RX frame dropped as it was seen too (30us) late
+					* from the start of reception
+					*/
+	uint32	rxfrmtoolong;		/* Number of received frame that are too long */
+	uint32	rxfrmtooshrt;		/* RX frame was dropped as it did not meet minimum
+					* number of bytes to be a valid 802.11 frame
+					*/
+
+	uint32	rxlegacyfrminvalid;	/* Invalid BPHY or L-OFDM reception */
+	uint32	txsifserr;		/* A frame arrived in SIFS while we were about to
+					* transmit B/ACK
+					*/
+	uint32	ooseq_macsusp;		/* Ucode is out of sequence in processing reception
+					* (especially due to macsuspend).
+					* RX MEND is seen without RX STRT
+					*/
+
+	uint16	counter_noise_request;	/* counters of requesting noise samples for noisecal */
+	uint16	counter_noise_crsbit;	/* counters of noise mmt being interrupted
+					* due to PHYCRS>
+					*/
+	uint16	counter_noise_apply;	/* counts of applying noisecal result */
+
+	uint16	deaf_count;		/* Depth of stay_in_carrier_search function */
+
+	uint8	phylog_noise_mode;	/* noise cal mode */
+	uint8	total_desense_on;	/* total desense on flag */
+	uint8	initgain_desense;	/* initgain desense when total desense is on */
+	uint8	crsmin_init;		/* crsmin_init threshold when total desense is on */
+	uint8	lna1_gainlmt_desense;	/* lna1_gain limit desense when applying desense */
+	uint8	clipgain_desense0;	/* clipgain desense when applying desense */
+
+	uint8	lte_ofdm_desense;	/* ofdm desense dut to lte */
+	uint8	lte_bphy_desense;	/* bphy desense due to lte */
+
+	uint8	hw_aci_status;		/* HW ACI status flag */
+	uint8	aci_clipgain_desense0;	/* clipgain desense due to aci */
+	uint8	lna1_tbl_desense;	/* LNA1 table desense due to aci */
+
+	int8	crsmin_high;		/* crsmin high when applying desense */
+	int8	weakest_rssi;		/* weakest link RSSI */
+
+	uint8	max_fp;
+	uint8	crsminpwr_initgain;
+	uint8	crsminpwr_clip1_high;
+	uint8	crsminpwr_clip1_med;
+	uint8	crsminpwr_clip1_lo;
+	uint8	pad1;
+	uint8	pad2;
+} phy_periodic_counters_v7_t;
+
+typedef struct phy_periodic_counters_v8 {
+	/* RX error related */
+	uint32	rxrsptmout;		/* number of response timeouts for transmitted frames
+					* expecting a response
+					*/
+	uint32	rxcrsglitch;		/* PHY was able to correlate the preamble
+					* but not the header
+					*/
+	uint32	bphy_badplcp;		/* number of bad PLCP reception on BPHY rate */
+	uint32	bphy_rxcrsglitch;	/* PHY count of bphy glitches */
+	uint32	rxdropped;		/* Frame dropped */
+	uint32	rxnobuf;		/* Rx error due to no buffer */
+	uint32	rxrunt;			/* Runt frame counter */
+	uint32	rxbadfcs;		/* number of frames for which the CRC check failed
+					* in the MAC
+					*/
+
+	/* RX related */
+	uint32	rxstrt;			/* number of received frames with a good PLCP */
+	uint32	rxbeaconmbss;		/* beacons received from member of BSS */
+	uint32	rxdtucastmbss;		/* number of received DATA frames with good FCS
+					* and matching RA
+					*/
+	uint32	rxdtocast;		/* number of received DATA frames
+					* (good FCS and no matching RA)
+					*/
+	uint32  goodfcs;		/* Good fcs counters  */
+	uint32	rxctl;			/* Number of control frames */
+	uint32	rxaction;		/* Number of action frames */
+	uint32	rxback;			/* Number of block ack frames rcvd */
+	uint32	rxctlucast;		/* Number of received unicast ctl frames */
+	uint32	rxframe;		/* Number of received frames */
+
+	uint32	rxbar;			/* Number of block ack requests rcvd */
+	uint32	rxackucast;		/* number of ucast ACKS received (good FCS) */
+	uint32	rxbeaconobss;		/* number of OBSS beacons received */
+	uint32	rxctsucast;		/* number of unicast CTS addressed to the MAC (good FCS) */
+	uint32	rxrtsucast;		/* number of unicast RTS addressed to the MAC (good FCS) */
+
+	/* TX related */
+	uint32	txallfrm;		/* total number of frames sent, incl. Data, ACK, RTS, CTS,
+					* Control Management (includes retransmissions)
+					*/
+	uint32	txmpdu;			/* Numer of transmitted mpdus */
+	uint32	txackbackctsfrm;	/* Number of ACK + BACK + CTS */
+	uint32	txackfrm;		/* number of ACK frames sent out */
+	uint32	txrtsfrm;		/* number of RTS sent out by the MAC */
+	uint32	txctsfrm;		/* number of CTS sent out by the MAC */
+
+	uint32	txctl;			/* Number of control frames txd */
+	uint32	txbar;			/* Number of block ack requests txd */
+	uint32	txrts;			/* Number of RTS txd */
+	uint32	txback;			/* Number of block ack frames txd */
+	uint32	txucast;		/* number of unicast tx expecting response
+					* other than cts/cwcts
+					*/
+
+	/* TX error related */
+	uint32	txrtsfail;		/* RTS TX failure count */
+	uint32	txphyerr;		/* PHY TX error count */
+
+	uint32	last_bcn_seq_num;	/* last beacon seq no. */
+	uint32	last_bcn_ltsf;		/* last beacon ltsf */
+
+	/* Misc general purpose debug counters (will be used for future debugging) */
+	uint32	debug_01;
+	uint32  debug_02;
+	uint32  debug_03;
+	uint32  debug_04;
+	uint32  debug_05;
+
+	uint32	rxanyerr;		/* Any RX error that is not counted by other counters. */
+
+	uint32	phyovfl_cnt;		/* RX PHY FIFO overflow */
+	uint32  rxf0ovfl;		/* Rx FIFO0 overflow counters information */
+	uint32  rxf1ovfl;		/* Rx FIFO1 overflow counters information */
+
+	uint32	lenfovfl_cnt;		/* RX LFIFO overflow */
+	uint32	weppeof_cnt;		/* WEP asserted premature end-of-frame */
+	uint32	rxbadplcp;		/* number of parity check of the PLCP header failed */
+	uint32	strmeof_cnt;		/* RX frame got aborted because PHY FIFO did not have
+					* sufficient bytes
+					*/
+	uint32	pfifo_drop;		/* PHY FIFO was not empty when a new frame arrived */
+	uint32	ctx_fifo_full;		/* Low Priority Context FIFO is full */
+	uint32	ctx_fifo2_full;		/* High Priority Context FIFO is full */
+	uint32	rxnodelim;		/* number of no valid delimiter detected by ampdu parser */
+	uint32	rx20s_cnt;		/* secondary 20 counter */
+	uint32	rxdrop20s;		/* RX was discarded as the CRS was not seen on
+					* primary channel
+					*/
+	uint32	new_rxin_plcp_wait_cnt;	/* A new reception started waiting for PLCP bytes
+					* from a previous receive
+					*/
+	uint32  rxtoolate;		/* receive too late */
+	uint32	laterx_cnt;		/* RX frame dropped as it was seen too (30us) late
+					* from the start of reception
+					*/
+	uint32	rxfrmtoolong;		/* Number of received frame that are too long */
+	uint32	rxfrmtooshrt;		/* RX frame was dropped as it did not meet minimum
+					* number of bytes to be a valid 802.11 frame
+					*/
+
+	uint32	rxlegacyfrminvalid;	/* Invalid BPHY or L-OFDM reception */
+	uint32	txsifserr;		/* A frame arrived in SIFS while we were about to
+					* transmit B/ACK
+					*/
+	uint32	ooseq_macsusp;		/* Ucode is out of sequence in processing reception
+					* (especially due to macsuspend).
+					* RX MEND is seen without RX STRT
+					*/
+	uint32	desense_reason;		/* desense paraemters to indicate reasons
+					* for bphy and ofdm_desense
+					*/
+
+	uint16	nav_cntr_l;		/* The state of the NAV */
+	uint16	nav_cntr_h;
+} phy_periodic_counters_v8_t;
+
 typedef struct phycal_log_cmn {
 	uint16 chanspec; /* Current phy chanspec */
 	uint8  last_cal_reason;  /* Last Cal Reason */
@@ -1218,7 +1487,7 @@ typedef struct phycal_log_v1 {
 	uint16 length;  /* Length of the entire structure */
 	phycal_log_cmn_t phycal_log_cmn; /* Logging common structure */
 	/* This will be a variable length based on the numcores field defined above */
-	phycal_log_core_t phycal_log_core[1];
+	phycal_log_core_t phycal_log_core[BCM_FLEX_ARRAY];
 } phycal_log_v1_t;
 
 typedef struct phy_periodic_log_cmn {
@@ -1508,8 +1777,9 @@ typedef struct phy_periodic_log_cmn_v5 {
 
 	uint16 txpustatus;		/* txpu off definations */
 	uint16 tempinvalid_count;	/* Count no. of invalid temp. measurements */
+	uint16 log_event_id;		/* reuse debug_01, logging event id */
+
 	/* Misc general purpose debug counters (will be used for future debugging) */
-	uint16 debug_01;
 	uint16 debug_02;
 	uint16 debug_03;
 	uint16 debug_04;
@@ -1556,6 +1826,173 @@ typedef struct phy_periodic_log_cmn_v5 {
 	bool phycal_disable;		/* Set if calibration is disabled */
 	bool hwpwrctrlen;		/* tx hwpwrctrl enable */
 } phy_periodic_log_cmn_v5_t;
+
+typedef struct phy_periodic_log_cmn_v6 {
+	uint32	nrate;			/* Current Tx nrate */
+	uint32	duration;		/* millisecs spent sampling this channel */
+	uint32	congest_ibss;		/* millisecs in our bss (presumably this traffic will */
+					/* move if cur bss moves channels) */
+	uint32	congest_obss;		/* traffic not in our bss */
+	uint32	interference;		/* millisecs detecting a non 802.11 interferer. */
+
+	uint32	macsusp_dur;		/* mac suspend duration */
+
+	uint16	chanspec;		/* Current phy chanspec */
+	uint16	vbatmeas;		/* Measured VBAT sense value */
+	uint16	featureflag;		/* Currently active feature flags */
+
+	uint16	macsusp_cnt;		/* mac suspend counter */
+	uint16	log_event_id;		/* logging event id */
+
+	/* Misc general purpose debug counters (will be used for future debugging) */
+	uint16	debug_01;
+	uint16	debug_02;
+	uint16	debug_03;
+	uint16	debug_04;
+	uint16	debug_05;
+
+	int8	chiptemp;		/* Chip temparature */
+	int8	femtemp;		/* Fem temparature */
+
+	uint8	cal_phase_id;		/* Current Multi phase cal ID */
+	uint8	rxchain;		/* Rx Chain */
+
+	uint8	txchain;		/* Tx Chain */
+	uint8	ofdm_desense;		/* OFDM desense */
+
+	uint8	bphy_desense;		/* BPHY desense */
+	uint8	pll_lockstatus;		/* PLL Lock status */
+
+	uint8	amtbitmap;		/* AMT status bitamp */
+	uint8	pad1;			/* Padding byte to align with word */
+	uint8	pad2;			/* Padding byte to align with word */
+	uint8	pad3;			/* Padding byte to align with word */
+} phy_periodic_log_cmn_v6_t;
+
+typedef struct phy_periodic_log_cmn_v7 {
+
+	uint32	nrate;			/* Current Tx nrate */
+	uint32	duration;		/* millisecs spent sampling this channel */
+	uint32	congest_ibss;		/* millisecs in our bss (presumably this traffic will */
+					/*  move if cur bss moves channels) */
+	uint32	congest_obss;		/* traffic not in our bss */
+	uint32	interference;		/* millisecs detecting a non 802.11 interferer. */
+	uint32	last_cal_time;		/* Last cal execution time */
+
+	uint32	noise_cal_req_ts;	/* Time-stamp when noise cal was requested */
+	uint32	noise_cal_intr_ts;	/* Time-stamp when noise cal was completed */
+	uint32	phywdg_ts;		/* Time-stamp when wd was fired */
+	uint32	phywd_dur;		/* Duration of the watchdog */
+	uint32	chanspec_set_ts;	/* Time-stamp when chanspec was set */
+	uint32	vcopll_failure_cnt;	/* Number of VCO cal failures including */
+					/* failures detected in ucode */
+	uint32	log_ts;			/* Time-stamp when this log was collected */
+
+	/* glitch based desense input from cca */
+	uint32	cca_stats_total_glitch;
+	uint32	cca_stats_bphy_glitch;
+	uint32	cca_stats_total_badplcp;
+	uint32	cca_stats_bphy_badplcp;
+	uint32	cca_stats_mbsstime;
+
+	uint32	counter_noise_request;	/* count of noisecal request */
+	uint32	counter_noise_crsbit;	/* count of crs high during noisecal request */
+	uint32	counter_noise_apply;	/* count of applying noisecal result to crsmin */
+	uint32	fullphycalcntr;		/* count of performing single phase cal */
+	uint32	multiphasecalcntr;	/* count of performing multi-phase cal */
+
+	uint32	macsusp_dur;		/* mac suspend duration */
+
+	uint16	chanspec;		/* Current phy chanspec */
+	uint16	vbatmeas;		/* Measured VBAT sense value */
+
+	uint16	featureflag;		/* Currently active feature flags */
+
+	/* HP2P related params */
+	uint16	shm_mpif_cnt_val;
+	uint16	shm_thld_cnt_val;
+	uint16	shm_nav_cnt_val;
+	uint16	shm_cts_cnt_val;
+	uint16	shm_m_prewds_cnt;	/* Count of pre-wds fired in the ucode */
+
+	uint16	deaf_count;		/* Depth of stay_in_carrier_search function */
+
+	uint16	ed20_crs0;		/* ED-CRS status on core 0 */
+	uint16	ed20_crs1;		/* ED-CRS status on core 1 */
+
+	uint16	dcc_attempt_counter;	/* Number of DC cal attempts */
+	uint16	dcc_fail_counter;	/* Number of DC cal failures */
+
+	uint16	btcxovrd_dur;		/* Cumulative btcx overide between WDGs */
+	uint16	btcxovrd_err_cnt;	/* BTCX override flagged errors */
+
+	uint16	femtemp_read_fail_counter;	/* Fem temparature read fail counter */
+	uint16	phy_log_counter;
+	uint16	noise_mmt_overdue;	/* Count up if ucode noise mmt is overdue for 5 sec */
+	uint16	chan_switch_tm;		/* Channel switch time */
+
+	uint16	dcc_hcfail;		/* dcc health check failure count */
+	uint16	dcc_calfail;		/* dcc failure count */
+	uint16	crsmin_pwr_apply_cnt;	/* Count of desense power threshold update to phy */
+
+	uint16	txpustatus;		/* txpu off definations */
+	uint16	tempinvalid_count;	/* Count no. of invalid temp. measurements */
+	uint16	log_event_id;		/* logging event id */
+
+	/* Misc general purpose debug counters (will be used for future debugging) */
+	uint16	debug_01;
+	uint16	debug_02;
+	uint16	debug_03;
+	uint16	debug_04;
+	uint16	debug_05;
+
+	uint16	macsusp_cnt;		/* mac suspend counter */
+	uint8	amtbitmap;		/* AMT status bitamp */
+
+	int8	chiptemp;		/* Chip temparature */
+	int8	femtemp;		/* Fem temparature */
+
+	uint8	cal_phase_id;		/* Current Multi phase cal ID */
+	uint8	rxchain;		/* Rx Chain */
+	uint8	txchain;		/* Tx Chain */
+	uint8	ofdm_desense;		/* OFDM desense */
+
+	uint8	slice;
+	uint8	dbgfw_ver;		/* version of fw/ucode for debug purposes */
+	uint8	bphy_desense;		/* BPHY desense */
+	uint8	pll_lockstatus;		/* PLL Lock status */
+
+	/* dccal dcoe & idacc */
+	uint8	dcc_err;		/* dccal health check error status */
+	uint8	dcoe_num_tries;		/* number of retries on dcoe cal */
+	uint8	idacc_num_tries;	/* number of retries on idac cal */
+
+	uint8	dccal_phyrxchain;	/* phy rxchain during dc calibration */
+	uint8	dccal_type;		/* DC cal type: single/multi phase, chan change, etc. */
+
+	uint8	gbd_bphy_sleep_counter;	/* gbd sleep counter */
+	uint8	gbd_ofdm_sleep_counter;	/* gbd sleep counter */
+	uint8	curr_home_channel;	/* gbd input channel from cca */
+
+	/* desense data */
+	int8	btcx_mode;		/* btcoex desense mode */
+	int8	ltecx_mode;		/* lte coex desense mode */
+	uint8	gbd_ofdm_desense;	/* gbd ofdm desense level */
+	uint8	gbd_bphy_desense;	/* gbd bphy desense level */
+	uint8	current_elna_bypass;	/* init gain desense: elna bypass */
+	uint8	current_tia_idx;	/* init gain desense: tia index */
+	uint8	current_lpf_idx;	/* init gain desense: lpf index */
+	uint8	crs_auto_thresh;	/* crs auto threshold after desense */
+
+	int8	weakest_rssi;		/* weakest link RSSI */
+	uint8	noise_cal_mode;		/* noisecal mode */
+
+	bool	phycal_disable;		/* Set if calibration is disabled */
+	bool	hwpwrctrlen;		/* tx hwpwrctrl enable */
+	uint8	pad1;			/* Padding byte to align with word */
+	uint8	pad2;			/* Padding byte to align with word */
+	uint8	pad3;			/* Padding byte to align with word */
+} phy_periodic_log_cmn_v7_t;
 
 typedef struct phy_periodic_log_core {
 	uint8	baseindxval; /* TPC Base index */
@@ -1620,6 +2057,18 @@ typedef struct phy_periodic_log_core_v4 {
 	int8	estpwr;		/* tx powerDet value */
 } phy_periodic_log_core_v4_t;
 
+typedef struct phy_periodic_log_core_v5 {
+	uint8	baseindxval;			/* TPC Base index */
+	int8	tgt_pwr;			/* Programmed Target power */
+	int8	estpwradj;			/* Current Est Power Adjust value */
+	int8	crsmin_pwr;			/* CRS Min/Noise power */
+	int8	rssi_per_ant;			/* RSSI Per antenna */
+	int8	snr_per_ant;			/* SNR Per antenna */
+	uint8	fp;
+	int8	phylog_noise_pwr_array[8];	/* noise buffer array */
+	int8	noise_dbm_ant;			/* from uCode shm read, afer converting to dBm */
+} phy_periodic_log_core_v5_t;
+
 typedef struct phy_periodic_log_core_v2 {
 	int32 rxs; /* FDIQ Slope coeffecient */
 
@@ -1679,7 +2128,7 @@ typedef struct phy_periodic_log_v1 {
 	phy_periodic_log_cmn_t phy_perilog_cmn;
 	phy_periodic_counters_v1_t counters_peri_log;
 	/* This will be a variable length based on the numcores field defined above */
-	phy_periodic_log_core_t phy_perilog_core[1];
+	phy_periodic_log_core_t phy_perilog_core[BCM_FLEX_ARRAY];
 } phy_periodic_log_v1_t;
 
 #define PHYCAL_LOG_VER3		(3u)
@@ -1698,7 +2147,7 @@ typedef struct phy_periodic_log_v3 {
 	phy_periodic_counters_v3_t counters_peri_log;
 
 	/* Logs data pertaining to each core */
-	phy_periodic_log_core_t phy_perilog_core[1];
+	phy_periodic_log_core_t phy_perilog_core[BCM_FLEX_ARRAY];
 } phy_periodic_log_v3_t;
 
 #define PHY_PERIODIC_LOG_VER5	(5u)
@@ -1715,7 +2164,7 @@ typedef struct phy_periodic_log_v5 {
 	phy_periodic_counters_v3_t counters_peri_log;
 
 	/* Logs data pertaining to each core */
-	phy_periodic_log_core_v3_t phy_perilog_core[1];
+	phy_periodic_log_core_v3_t phy_perilog_core[BCM_FLEX_ARRAY];
 } phy_periodic_log_v5_t;
 
 #define PHY_PERIODIC_LOG_VER6	(6u)
@@ -1735,7 +2184,7 @@ typedef struct phy_periodic_log_v6 {
 	phy_periodic_btc_stats_v1_t phy_perilog_btc_stats;
 
 	/* Logs data pertaining to each core */
-	phy_periodic_log_core_v4_t phy_perilog_core[1];
+	phy_periodic_log_core_v4_t phy_perilog_core[BCM_FLEX_ARRAY];
 } phy_periodic_log_v6_t;
 
 typedef struct phycal_log_v3 {
@@ -1744,7 +2193,7 @@ typedef struct phycal_log_v3 {
 	uint16 length;  /* Length of the entire structure */
 	phycal_log_cmn_v2_t phycal_log_cmn; /* Logging common structure */
 	/* This will be a variable length based on the numcores field defined above */
-	phycal_log_core_v3_t phycal_log_core[1];
+	phycal_log_core_v3_t phycal_log_core[BCM_FLEX_ARRAY];
 } phycal_log_v3_t;
 
 /* Note: The version 2 is reserved for 4357 only. Future chips must not use this version. */
@@ -2131,7 +2580,7 @@ typedef struct phy_periodic_log_v7 {
 	phy_periodic_counters_v5_t counters_peri_log;
 	phy_periodic_btc_stats_v1_t btc_stats_peri_log;
 	/* This will be a variable length based on the numcores field defined above */
-	phy_periodic_log_core_t phy_perilog_core[1];
+	phy_periodic_log_core_t phy_perilog_core[BCM_FLEX_ARRAY];
 } phy_periodic_log_v7_t;
 
 /* Slotted BSS timer reference for RX deafness debug */
@@ -2145,7 +2594,32 @@ typedef struct wlc_slotted_bss_timeref_v1 {
 	uint32 aw_timeref;	/* aw counter value in AWDL case */
 } wlc_slotted_bss_timeref_v1_t;
 
-/* Bus device HTOD RX dump info */
+/* Slotted BSS timer reference for RX deafness debug */
+typedef struct wlc_slotted_bss_timeref_values_v1 {
+	uint32 nan_timeref_h;	/* NAN reference TSF high */
+	uint32 nan_timeref_l;	/* NAN reference TSF low */
+	uint32 aw_timeref;	/* aw counter value in AWDL case */
+} wlc_slotted_bss_timeref_values_v1_t;
+
+typedef struct wlc_slotted_bss_timeref_v2 {
+	uint16 length;  /* Length of the entire structure */
+	uint8 wlc_unit;	/* WLC unit that triggered generation of this timestamp */
+	uint8  pad;
+	wlc_slotted_bss_timeref_values_v1_t timerefs[];
+} wlc_slotted_bss_timeref_v2_t;
+
+#define	TRIG_LOG_EVENTS_XTLV_CONTAINER_VERSION_1	(1u)
+typedef struct trig_log_events_xtlv_container {
+	uint16	version;	/**< see definition of TRIG_LOG_EVENTS_XTLV_CONTAINER_VERSION */
+	uint16	len;		/**< length of data including all paddings. */
+	uint8   data [];	/**< variable length payload:
+				 * 1 or more bcm_xtlv_t type of tuples.
+				 * each tuple is padded to multiple of 4 bytes.
+				 * 'len' field of this structure includes all paddings.
+				 */
+} trig_log_events_xtlv_container_v1_t;
+
+/* Bus device HTOD RX dump info. Sent in triggered log events container above */
 #define PCIEDEV_HTOD_RX_INFO_VERSION_1		(1u)
 typedef struct pciedev_htod_rx_ring_info_v1 {
 	uint16 version;
@@ -2160,4 +2634,83 @@ typedef struct pciedev_htod_rx_ring_info_v1 {
 	uint16 htod_rx_buf_pool_availcnt;
 	uint16 htod_rx_buf_pool_pend_item_cnt;
 } pciedev_htod_rx_ring_info_v1_t;
+
+/* WL RX fifo overflow info. Sent in triggered log events container above */
+#define WLC_RX_FIFO_DMA_NUM				(3u)
+typedef struct wlc_rx_fifo_overflow_info_v1 {
+	uint8 unit;
+	uint8 rxfifo_bitmap;
+	uint8 d3_state;
+	uint8 pad;
+	uint32 macintstatus;
+
+	/* portions of DMA registers */
+	uint32 rx_dma_reg_status0;
+	uint32 rx_dma_reg_status1;
+	uint32 rx_dma_reg_addrlow;
+	uint32 rx_dma_reg_addrhigh;
+	uint32 rx_dma_reg_control;
+	uint32 rx_dma_reg_ptr;
+	uint16 pktpool_avail;
+	uint16 pktpool_n_pkts;
+
+	uint32 dma_stall_check_wd_time;
+	uint32 rxfifo0ovfl;
+	uint32 rxfifo1ovfl;
+	uint32 dma_stall_check_rxfifo0ovfl;
+	uint32 dma_stall_check_rxfifo1ovfl;
+
+	uint32 rxfill[WLC_RX_FIFO_DMA_NUM];
+	uint32 dma_stall_check_rxfill[WLC_RX_FIFO_DMA_NUM];
+	uint32 rx_dma_fill_success_time[WLC_RX_FIFO_DMA_NUM];
+	uint32 rx_dma_fill_fail_time[WLC_RX_FIFO_DMA_NUM];
+
+	uint32 rxposts[WLC_RX_FIFO_DMA_NUM];
+	uint32 dma_stall_check_rxposts[WLC_RX_FIFO_DMA_NUM];
+	uint32 rx_dma_posts_success_time[WLC_RX_FIFO_DMA_NUM];
+
+	uint32 rx_dma_desc_count[WLC_RX_FIFO_DMA_NUM];
+} wlc_rx_fifo_overflow_info_v1_t;
+
+#define PHY_PERIODIC_LOG_VER8		(8u)
+typedef struct phy_periodic_log_v8 {
+	uint8  version;		/* Logging structure version */
+	uint8  numcores;	/* Number of cores for which core specific data present */
+	uint16 length;		/* Length of the entire structure */
+
+	/* Logs general PHY parameters */
+	phy_periodic_log_cmn_v6_t phy_perilog_cmn;
+
+	/* Logs ucode counters and NAVs */
+	phy_periodic_counters_v7_t counters_peri_log;
+
+	/* log data for BTcoex */
+	phy_periodic_btc_stats_v1_t btc_stats_peri_log;
+
+	/* Logs data pertaining to each core */
+	phy_periodic_log_core_v5_t phy_perilog_core[BCM_FLEX_ARRAY];
+} phy_periodic_log_v8_t;
+
+#define PHY_PERIODIC_LOG_VER9	(9u)
+typedef struct phy_periodic_log_v9 {
+	uint8  version;		/* Logging structure version */
+	uint8  numcores;	/* Number of cores for which core specific data present */
+	uint16 length;		/* Length of the structure */
+
+	/* Logs general PHY parameters */
+	phy_periodic_log_cmn_v7_t phy_perilog_cmn;
+
+	/* Logs ucode counters and NAVs */
+	phy_periodic_counters_v8_t counters_peri_log;
+
+	/* log data for BTcoex */
+	phy_periodic_btc_stats_v1_t phy_perilog_btc_stats;
+
+	/* Logs data pertaining to each core */
+	phy_periodic_log_core_v4_t phy_perilog_core[BCM_FLEX_ARRAY];
+} phy_periodic_log_v9_t;
+
+#define AMT_MATCH_INFRA_BSSID	(1 << 0)
+#define AMT_MATCH_INFRA_MYMAC	(1 << 1)
+
 #endif /* _EVENT_LOG_PAYLOAD_H_ */

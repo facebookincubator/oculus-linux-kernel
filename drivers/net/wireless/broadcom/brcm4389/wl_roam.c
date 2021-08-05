@@ -75,6 +75,9 @@ void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 	char iobuf[WLC_IOCTL_SMLEN];
 	struct net_device *dev = bcmcfg_to_prmry_ndev(cfg);
 	wlc_ssid_t ssid;
+#ifdef WL_DUAL_STA
+	struct net_info *iter, *next;
+#endif /* WL_DUAL_STA */
 
 	if (!cfg->rcc_enabled) {
 		return;
@@ -86,6 +89,22 @@ void update_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver)
 		return;
 	}
 #endif /* WES_SUPPORT */
+
+#ifdef WL_DUAL_STA
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	for_each_ndev(cfg, iter, next) {
+		GCC_DIAGNOSTIC_POP();
+		if ((iter->wdev) && (iter->iftype == WL_IF_TYPE_STA)) {
+			struct net_device *ndev = iter->wdev->netdev;
+			if (IS_INET_LINK_NDEV(cfg, ndev)) {
+				/* Update the net device with primary interface */
+				dev = ndev;
+				WL_DBG(("ndev considered for RCC %s\n", dev->name));
+				break;
+			}
+		}
+	}
+#endif /* WL_DUAL_STA */
 
 	if (!wl_get_drv_status(cfg, CONNECTED, dev)) {
 		WL_DBG(("Not associated\n"));

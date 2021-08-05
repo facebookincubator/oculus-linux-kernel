@@ -501,10 +501,39 @@
 #endif	/* WLXRAPI */
 
 #define EVENT_LOG_TAG_PROXD_DBG			400
+#define EVENT_LOG_TAG_RXOVFL			401
 
-#define EVENT_LOG_TAG_SB_SCHED_TIMEREF		401
+/* MLO EVEVNT_LOG_TAG */
+#define EVENT_LOG_TAG_WL_MLO_INFO		402
+#define EVENT_LOG_TAG_WL_MLO_TRACE		403
+#define EVENT_LOG_TAG_WL_MLO_WARN		404
+#define EVENT_LOG_TAG_WL_MLO_ERROR		405
+#define EVENT_LOG_TAG_RX_DEAFNESS_DBG		406	/* Used with triggered log events */
+
+/* BCMSM event log tags */
+#define EVENT_LOG_TAG_BCMSM_ERROR		407
+#define EVENT_LOG_TAG_BCMSM_INFO		408
+#define EVENT_LOG_TAG_BCMSM_TRACE		409
+
+/* EWP HW event log tags */
+#define EVENT_LOG_TAG_EWP_HW			410
+
+#define EVENT_LOG_TAG_COEXCPU_ERROR		413
+
+/* QoS and SCS (Stream Classification Service) */
+#define EVENT_LOG_TAG_RAV_QOS_ERROR		418
+#define EVENT_LOG_TAG_RAV_QOS_INFO		419
+
+#define EVENT_LOG_TAG_RAV_SCS_ERROR		420
+#define EVENT_LOG_TAG_RAV_SCS_INFO		421
+
+#define EVENT_LOG_TAG_AMPDU_BARDBG              422
+
+#define EVENT_LOG_TAG_PASN_ERROR		423
+#define EVENT_LOG_TAG_PASN_INFO			424
+
 /* EVENT_LOG_TAG_MAX	= Set to the same value of last tag, not last tag + 1 */
-#define EVENT_LOG_TAG_MAX			401
+#define EVENT_LOG_TAG_MAX			424
 
 typedef enum wl_el_set_type_def {
 	EVENT_LOG_SET_TYPE_DEFAULT = 0, /* flush the log buffer when it is full - Default option */

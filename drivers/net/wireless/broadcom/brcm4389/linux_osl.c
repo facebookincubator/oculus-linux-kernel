@@ -158,12 +158,13 @@ static int16 linuxbcmerrormap[] =
 	-EINVAL,		/* BCME_DNGL_DEVRESET */
 	-EINVAL,		/* BCME_ROAM */
 	-EOPNOTSUPP,		/* BCME_NO_SIG_FILE */
+	-EOPNOTSUPP,		/* BCME_RESP_PENDING */
 
 /* When an new error code is added to bcmutils.h, add os
  * specific error translation here as well
  */
 /* check if BCME_LAST changed since the last time this function was updated */
-#if BCME_LAST != BCME_NO_SIG_FILE
+#if BCME_LAST != BCME_RESP_PENDING
 #error "You need to add a OS error translation in the linuxbcmerrormap \
 	for new error code defined in bcmutils.h"
 #endif
@@ -1421,13 +1422,11 @@ osl_get_rtctime(void)
 {
 	static char timebuf[RTC_TIME_BUF_LEN];
 	struct timespec64 ts;
-	uint64 local_time;
 	struct rtc_time tm;
 
 	memset_s(timebuf, RTC_TIME_BUF_LEN, 0, RTC_TIME_BUF_LEN);
 	ktime_get_real_ts64(&ts);
-	local_time = (uint64)(ts.tv_sec - (sys_tz.tz_minuteswest * 60u));
-	rtc_time_to_tm(local_time, &tm);
+	rtc_time_to_tm(ts.tv_sec - (sys_tz.tz_minuteswest * 60), &tm);
 	scnprintf(timebuf, RTC_TIME_BUF_LEN,
 			"%02d:%02d:%02d.%06lu",
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec/NSEC_PER_USEC);

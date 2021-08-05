@@ -45,6 +45,8 @@
 		compatible = "oculus,molokini";
 		svid = <0x28330000>;
 		battery-usbpd = <&pm8150b_pdphy>;
+		charging-suspend-thresh = <100>;
+		charging-resume-thresh = <95>;
 	};
 
 	kona_mtp_batterydata: qcom,battery-data {

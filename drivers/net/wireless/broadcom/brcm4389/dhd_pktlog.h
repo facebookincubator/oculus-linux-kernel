@@ -117,6 +117,9 @@ typedef struct dhd_pktlog
 #ifdef DHD_COMPACT_PKT_LOG
 	struct rb_root cpkt_log_tt_rbt;
 #endif  /* DHD_COMPACT_PKT_LOG */
+#ifdef DHD_PKT_LOGGING_DBGRING
+	osl_atomic_t enable; /* logging suspend/resume */
+#endif /* DHD_PKT_LOGGING_DBGRING */
 } dhd_pktlog_t;
 
 typedef struct dhd_pktlog_pcap_hdr
@@ -138,6 +141,12 @@ typedef struct dhd_pktlog_pcap_hdr
 
 extern int dhd_os_attach_pktlog(dhd_pub_t *dhdp);
 extern int dhd_os_detach_pktlog(dhd_pub_t *dhdp);
+#ifdef DHD_PKT_LOGGING_DBGRING
+extern int dhd_pktlog_is_enabled(dhd_pub_t *dhdp);
+extern void dhd_pktlog_suspend(dhd_pub_t *dhdp);
+extern void dhd_pktlog_resume(dhd_pub_t *dhdp);
+extern int dhd_pktlog_ring_reinit(dhd_pub_t *dhdp);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 extern dhd_pktlog_ring_t* dhd_pktlog_ring_init(dhd_pub_t *dhdp, int size);
 extern int dhd_pktlog_ring_deinit(dhd_pub_t *dhdp, dhd_pktlog_ring_t *ring);
 extern int dhd_pktlog_ring_set_nextpos(dhd_pktlog_ring_t *ringbuf);

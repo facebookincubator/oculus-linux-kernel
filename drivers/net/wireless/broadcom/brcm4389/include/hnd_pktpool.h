@@ -59,6 +59,13 @@ extern "C" {
 #define FREE_ALL_PKTS		0
 #define FREE_ALL_FRAG_PKTS	1
 
+/* PKTPOOL_ALLOC ISSUES */
+#define PKT_ALLOC_SUCCESS		0
+#define PKT_ALLOC_FAIL_GENERIC		-1
+#define PKT_ALLOC_FAIL_NOPKT		-2
+#define PKT_ALLOC_FAIL_NOCMPLID		-3
+#define PKT_ALLOC_FAIL_NOHOSTADDR	-4
+
 /* forward declaration */
 struct pktpool;
 
@@ -136,6 +143,10 @@ typedef struct pktpool {
 	bool is_heap_pool;	/* Whether this pool can be used as heap */
 	bool release_active;
 	uint8 mem_handle;
+
+	struct resv_info *resv_info; /* Resv frag pool info */
+	uint resv_pool_idx;
+
 #ifdef BCMDBG_POOL
 	uint8 dbg_cbcnt;
 	pktpool_cbinfo_t dbg_cbs[PKTPOOL_CB_MAX];
@@ -207,11 +218,19 @@ extern int pktpool_avail(pktpool_t *pktpool);
 #define PKTPOOL_ID2PTR(id)          (get_pktpools_registry(id))
 #define PKTPOOL_PTR2ID(pp)          (POOLID(pp))
 
+/* Registry size is one larger than max pools, as slot #0 is reserved */
+#define PKTPOOLREG_RSVD_ID				(0U)
+#define PKTPOOLREG_RSVD_PTR				(POOLPTR(0xdeaddead))
+#define PKTPOOLREG_FREE_PTR				(POOLPTR(NULL))
+
 #ifndef PKTID_POOL
 /* max pktids reserved for pktpool is updated properly in Makeconf */
 #define PKTID_POOL		    (PKT_MAXIMUM_ID - 32u)
 #endif /* PKTID_POOL */
 extern uint32 total_pool_pktid_count;
+
+extern int pktpool_get_last_err(pktpool_t *pktp);
+#define PKTPOOL_ERR_TYPE_SPLIT_SUPPORTED
 
 #ifdef BCMDBG_POOL
 extern int pktpool_dbg_register(pktpool_t *pktp, pktpool_cb_t cb, void *arg);
@@ -238,7 +257,15 @@ extern pktpool_t *pktpool_shared_alfrag_data;
 #endif
 
 #ifdef BCMRESVFRAGPOOL
+#ifdef APP
+#define RESV_FRAG_POOL		(NULL)
+#define RESV_ALFRAG_POOL	(pktpool_resv_alfrag)
+#define RESV_ALFRAG_DATA_POOL	(pktpool_resv_alfrag_data)
+#else
 #define RESV_FRAG_POOL		(pktpool_resv_lfrag)
+#define RESV_ALFRAG_POOL	(NULL)
+#define RESV_ALFRAG_DATA_POOL	(NULL)
+#endif /* APP */
 #define RESV_POOL_INFO		(resv_pool_info)
 #else
 #define RESV_FRAG_POOL		((struct pktpool *)NULL)
@@ -258,7 +285,12 @@ int hnd_pktpool_fill(pktpool_t *pktpool, bool minimal);
 void hnd_pktpool_refill(bool minimal);
 
 #ifdef BCMRESVFRAGPOOL
+#ifdef APP
+extern pktpool_t *pktpool_resv_alfrag;
+extern pktpool_t *pktpool_resv_alfrag_data;
+#else
 extern pktpool_t *pktpool_resv_lfrag;
+#endif /* APP */
 extern struct resv_info *resv_pool_info;
 #endif /* BCMRESVFRAGPOOL */
 

@@ -236,7 +236,7 @@ int dhd_prot_get_snapshot(dhd_pub_t *dhdp, uint8 snapshot_type, uint32 offset,
 
 #ifdef EWP_EDL
 int dhd_prot_init_edl_rings(dhd_pub_t *dhd);
-bool dhd_prot_process_msgbuf_edl(dhd_pub_t *dhd);
+bool dhd_prot_process_msgbuf_edl(dhd_pub_t *dhd, uint32 *edl_itmes);
 int dhd_prot_process_edl_complete(dhd_pub_t *dhd, void *evt_decode_data);
 #endif /* EWP_EDL  */
 
@@ -264,20 +264,8 @@ typedef struct host_page_location_info {
 	uint32 addr_lo;
 	uint32 addr_hi;
 	uint32 binary_size;
-	uint32 tlv_size;
-	uint32 tlv_signature;
 } host_page_location_info_t;
 #define BCM_HOST_PAGE_LOCATION_SIGNATURE	0xFEED10C5u
-
-#ifdef DHD_FWTRACE
-typedef struct host_fwtrace_buf_location_info {
-	fwtrace_hostaddr_info_t host_buf_info;
-	uint32 tlv_size;
-	uint32 tlv_signature;
-} host_fwtrace_buf_location_info_t;
-/* Host buffer info for pushing the trace info */
-#define BCM_HOST_FWTRACE_BUF_LOCATION_SIGNATURE	0xFEED10C6u
-#endif /* DHD_FWTRACE */
 #endif /* BCMINTERNAL */
 
 #ifdef DHD_HP2P
@@ -291,12 +279,5 @@ extern uint32 dhd_prot_pkt_expiry(dhd_pub_t *dhd, bool set, uint32 val);
 extern void dhd_prot_smmu_fault_dump(dhd_pub_t *dhdp);
 #endif /* DHD_MAP_LOGGING */
 
-extern uint16 dhd_prot_get_h2d_max_txpost(dhd_pub_t *dhd);
-extern void dhd_prot_set_h2d_max_txpost(dhd_pub_t *dhd, uint16 max_txpost);
-
-#if defined(DHD_HTPUT_TUNABLES)
-extern uint16 dhd_prot_get_h2d_htput_max_txpost(dhd_pub_t *dhd);
-extern void dhd_prot_set_h2d_htput_max_txpost(dhd_pub_t *dhd, uint16 max_txpost);
-#endif /* DHD_HTPUT_TUNABLES */
-
+void dhd_prot_set_ring_size_ver(dhd_pub_t *dhd, int version);
 #endif /* _dhd_proto_h_ */

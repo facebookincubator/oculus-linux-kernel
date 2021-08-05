@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef SAFETYBOSS_SWD_OPS_H
 #define SAFETYBOSS_SWD_OPS_H
 

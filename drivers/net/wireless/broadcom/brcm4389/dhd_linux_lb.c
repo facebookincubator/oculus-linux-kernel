@@ -226,6 +226,13 @@ void dhd_select_cpu_candidacy(dhd_info_t *dhd)
 	DHD_INFO(("%s After secondary CPU check napi_cpu %d tx_cpu %d nr cpu ids %d\n",
 		__FUNCTION__, napi_cpu, tx_cpu, nr_cpu_ids));
 
+	if (!cpu_online(napi_cpu)) {
+		napi_cpu = 0;
+	}
+	if (!cpu_online(tx_cpu)) {
+		tx_cpu = 0;
+	}
+
 	atomic_set(&dhd->rx_napi_cpu, napi_cpu);
 	atomic_set(&dhd->tx_cpu, tx_cpu);
 
@@ -674,7 +681,8 @@ uint64 dhd_lb_mem_usage(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	if (rxbufpost_sz == 0) {
 		rxbufpost_sz = DHD_FLOWRING_RX_BUFPOST_PKTSZ;
 	}
-	rx_path_memory_usage = rxbufpost_sz * (skb_queue_len(&dhd->rx_pend_queue) +
+	rx_path_memory_usage = rxbufpost_sz * (skb_queue_len(&dhd->rx_emerge_queue) +
+		skb_queue_len(&dhd->rx_pend_queue) +
 		skb_queue_len(&dhd->rx_napi_queue) +
 		skb_queue_len(&dhd->rx_process_queue));
 	rx_post_active = dhd_prot_get_h2d_rx_post_active(dhdp);
@@ -689,9 +697,10 @@ uint64 dhd_lb_mem_usage(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 
 	dhdp->rxpath_mem = rx_path_memory_usage;
 	bcm_bprintf(strbuf, "\nrxbufpost_sz: %d rx_post_active: %d rx_cmpl_active: %d "
-		"pend_queue_len: %d napi_queue_len: %d process_queue_len: %d\n",
+		"emerge_queue_len: %d pend_queue_len: %d napi_queue_len: %d"
+		" process_queue_len: %d\n",
 		rxbufpost_sz, rx_post_active, rx_cmpl_active,
-		skb_queue_len(&dhd->rx_pend_queue),
+		skb_queue_len(&dhd->rx_emerge_queue), skb_queue_len(&dhd->rx_pend_queue),
 		skb_queue_len(&dhd->rx_napi_queue), skb_queue_len(&dhd->rx_process_queue));
 	bcm_bprintf(strbuf, "DHD rx-path memory_usage: %llubytes %lluKB \n",
 		rx_path_memory_usage, (rx_path_memory_usage/ 1024));
@@ -1083,6 +1092,11 @@ dhd_napi_schedule(void *info)
 	DHD_INFO(("%s rx_napi_struct<%p> on cpu<%d>\n",
 		__FUNCTION__, &dhd->rx_napi_struct, atomic_read(&dhd->rx_napi_cpu)));
 
+	/* On Android platform, napi prevention during suspend in progress causes
+	 * rx performance drop of ~5Mbs(SWWLAN-349763).
+	 * So, excludes this prevention for Android platform.
+	 */
+#ifndef OEM_ANDROID
 	DHD_GENERAL_LOCK(&dhd->pub, flags);
 
 	if (DHD_BUS_BUSY_CHECK_SUSPEND_IN_PROGRESS(&dhd->pub)) {
@@ -1091,6 +1105,7 @@ dhd_napi_schedule(void *info)
 	}
 
 	DHD_GENERAL_UNLOCK(&dhd->pub, flags);
+#endif /* OEM_ANDROID */
 
 	/* add napi_struct to softnet data poll list and raise NET_RX_SOFTIRQ */
 	if (napi_schedule_prep(&dhd->rx_napi_struct)) {
@@ -1258,6 +1273,26 @@ dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp)
 	DHD_LB_STATS_INCR(dhd->napi_sched_cnt);
 
 	put_cpu();
+}
+
+/**
+ * dhd_rx_emerge_enqueue - Enqueue the packet into the ememrgency queue for repost
+ */
+void
+dhd_rx_emerge_enqueue(dhd_pub_t *dhdp, void *pkt)
+{
+	dhd_info_t *dhd = dhdp->info;
+	skb_queue_tail(&dhd->rx_emerge_queue, pkt);
+}
+
+/**
+ * dhd_rx_emerge_dequeue - Deueue the packet from the emergency queue for repost
+ */
+void *
+dhd_rx_emerge_dequeue(dhd_pub_t *dhdp)
+{
+	dhd_info_t *dhd = dhdp->info;
+	return skb_dequeue(&dhd->rx_emerge_queue);
 }
 
 /**

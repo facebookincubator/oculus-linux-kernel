@@ -891,6 +891,7 @@ static enum power_supply_property smb5_usb_props[] = {
 	POWER_SUPPLY_PROP_APSD_TIMEOUT,
 	POWER_SUPPLY_PROP_CHARGER_STATUS,
 	POWER_SUPPLY_PROP_INPUT_VOLTAGE_SETTLED,
+	POWER_SUPPLY_PROP_INPUT_SUSPEND,
 };
 
 static int smb5_usb_get_prop(struct power_supply *psy,
@@ -1059,6 +1060,9 @@ static int smb5_usb_get_prop(struct power_supply *psy,
 				val->intval = (buff[1] << 8 | buff[0]) * 1038;
 		}
 		break;
+	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+		rc = smblib_get_usb_suspend(chg, &val->intval);
+		break;
 	default:
 		pr_err("get prop %d is not supported in usb\n", psp);
 		rc = -EINVAL;
@@ -1152,6 +1156,9 @@ static int smb5_usb_set_prop(struct power_supply *psy,
 		del_timer_sync(&chg->apsd_timer);
 		chg->apsd_ext_timeout = false;
 		smblib_rerun_apsd(chg);
+		break;
+	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+		rc = smblib_set_usb_suspend(chg, (bool)val->intval);
 		break;
 	default:
 		pr_err("set prop %d is not supported\n", psp);

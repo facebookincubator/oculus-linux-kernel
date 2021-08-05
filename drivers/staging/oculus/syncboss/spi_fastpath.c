@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include "spi_fastpath.h"
 
 static int fastpath_transfer_one_message(struct spi_master *master,

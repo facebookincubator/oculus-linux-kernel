@@ -625,4 +625,8 @@ void optimize_submit_rx_request(const dbus_pub_t *pub, int epn, struct ehci_qtd 
 #endif /* EHCI_FASTPATH_TX || EHCI_FASTPATH_RX */
 
 void  dbus_flowctrl_tx(void *dbi, bool on);
+#ifdef LINUX
+struct device * dbus_get_dev(void);
+#endif /* LINUX */
+
 #endif /* __DBUS_H__ */

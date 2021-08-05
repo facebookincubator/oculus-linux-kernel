@@ -28,6 +28,7 @@
 #else /* BCMDRIVER */
 #include <stddef.h>
 #include <string.h>
+#include <stdlib.h>
 #endif /* else BCMDRIVER */
 
 #include <bcmstdlib_s.h>
@@ -88,13 +89,13 @@ BCMPOSTTRAPFN(memmove_s)(void *dest, size_t destsz, const void *src, size_t n)
 	}
 
 	if (destsz < n) {
-		memset(dest, 0, destsz);
+		bzero(dest, destsz);
 		err = BCME_BADLEN;
 		goto exit;
 	}
 
 	if ((!src) || (((const char *)src + n) < (const char *)src)) {
-		memset(dest, 0, destsz);
+		bzero(dest, destsz);
 		err = BCME_BADARG;
 		goto exit;
 	}
@@ -132,20 +133,20 @@ BCMPOSTTRAPFN(memcpy_s)(void *dest, size_t destsz, const void *src, size_t n)
 	}
 
 	if (destsz < n) {
-		memset(dest, 0, destsz);
+		bzero(dest, destsz);
 		err = BCME_BADLEN;
 		goto exit;
 	}
 
 	if ((!s) || ((s + n) < s)) {
-		memset(dest, 0, destsz);
+		bzero(dest, destsz);
 		err = BCME_BADARG;
 		goto exit;
 	}
 
 	/* overlap checking between dest and src */
 	if (!(((d + destsz) <= s) || (d >= (s + n)))) {
-		memset(dest, 0, destsz);
+		bzero(dest, destsz);
 		err = BCME_BADARG;
 		goto exit;
 	}

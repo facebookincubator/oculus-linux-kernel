@@ -81,14 +81,28 @@
 #define COMPLETION_WAIT_QUEUE_ACTIVE(wait_queue) waitqueue_active(wait_queue)
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0) */
 
+#ifdef CUSTOM_PREFIX
+#define PNO_PRINT_PREFIX "[%s]"CUSTOM_PREFIX, OSL_GET_RTCTIME()
+#define PNO_PRINT_SYSTEM_TIME pr_cont(PNO_PRINT_PREFIX)
+#define PNO_CONS_ONLY(args)     \
+do {    \
+	PNO_PRINT_SYSTEM_TIME;  \
+	pr_cont args;           \
+} while (0)
+#else
+#define PNO_PRINT_SYSTEM_TIME
+#define PNO_CONS_ONLY(args) do { printf args;} while (0)
+#endif /* CUSTOM_PREFIX */
+
 #define NULL_CHECK(p, s, err)  \
-			do { \
-				if (!(p)) { \
-					printf("NULL POINTER (%s) : %s\n", __FUNCTION__, (s)); \
-					err = BCME_ERROR; \
-					return err; \
-				} \
-			} while (0)
+do { \
+	if (!(p)) { \
+		PNO_CONS_ONLY(("NULL POINTER (%s) : %s\n", __FUNCTION__, (s))); \
+		err = BCME_ERROR; \
+		return err; \
+	} \
+} while (0)
+
 #define PNO_GET_PNOSTATE(dhd) ((dhd_pno_status_info_t *)dhd->pno_state)
 
 #define PNO_BESTNET_LEN		WLC_IOCTL_MEDLEN
@@ -3132,8 +3146,6 @@ _dhd_pno_get_for_batch(dhd_pub_t *dhd, char *buf, int bufsize, int reason)
 	STATIC_ASSERT(sizeof(wl_pfn_net_info_v1_t) == sizeof(wl_pfn_net_info_v2_t));
 	STATIC_ASSERT(sizeof(wl_pfn_lnet_info_v1_t) == sizeof(wl_pfn_lnet_info_v2_t));
 	STATIC_ASSERT(sizeof(wl_pfn_subnet_info_v1_t) == sizeof(wl_pfn_subnet_info_v2_t));
-	STATIC_ASSERT(OFFSETOF(wl_pfn_subnet_info_v1_t, SSID) ==
-	              OFFSETOF(wl_pfn_subnet_info_v2_t, u.SSID));
 
 	DHD_PNO(("%s enter\n", __FUNCTION__));
 	_pno_state = PNO_GET_PNOSTATE(dhd);

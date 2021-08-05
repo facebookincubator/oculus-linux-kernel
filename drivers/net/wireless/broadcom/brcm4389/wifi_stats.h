@@ -71,6 +71,17 @@ typedef enum {
 	WIFI_INTERFACE_MESH = 6
 } wifi_interface_mode;
 
+typedef enum {
+	/* WLAN MAC Operates in 2.4 GHz Band */
+	WLAN_MAC_2_4_BAND = 1 << 0,
+	/* WLAN MAC Operates in 5 GHz Band */
+	WLAN_MAC_5_0_BAND = 1 << 1,
+	/* WLAN MAC Operates in 6 GHz Band */
+	WLAN_MAC_6_0_BAND = 1 << 2,
+	/* WLAN MAC Operates in 60 GHz Band */
+	WLAN_MAC_60_0_BAND = 1 << 3
+} wlan_mac_band;
+
 #define WIFI_CAPABILITY_QOS          0x00000001     /* set for QOS association */
 #define WIFI_CAPABILITY_PROTECTED    0x00000002     /* set for protected association (802.11
 						     * beacon frame control protected bit set)
@@ -83,6 +94,9 @@ typedef enum {
 						     * element UTF-8 SSID bit is set
 						     */
 #define WIFI_CAPABILITY_COUNTRY      0x00000020     /* set is 802.11 Country Element is present */
+#define WIFI_RSDB_TIMESLICE_DUTY_CYCLE	100
+#define WIFI_VSDB_TIMESLICE_DUTY_CYCLE	50
+
 #if defined(__linux__)
 #define PACK_ATTRIBUTE __attribute__ ((packed))
 #else
@@ -103,7 +117,27 @@ typedef struct {
 	uint8 PAD[2];
 } wifi_interface_info;
 
+typedef struct {
+	wifi_interface_mode mode;     /* interface mode */
+	uint8 mac_addr[6];               /* interface mac address (self) */
+	uint8 PAD[2];
+	wifi_connection_state state;  /* connection state (valid for STA, CLI only) */
+	wifi_roam_state roaming;      /* roaming state */
+	uint32 capabilities;             /* WIFI_CAPABILITY_XXX (self) */
+	uint8 ssid[DOT11_MAX_SSID_LEN+1]; /* null terminated SSID */
+	uint8 bssid[ETHER_ADDR_LEN];     /* bssid */
+	uint8 ap_country_str[3];         /* country string advertised by AP */
+	uint8 country_str[3];            /* country string for this association */
+	uint8 time_slicing_duty_cycle_percent;	/* if this iface is being served using time slicing
+						* on a radio with one or more ifaces (i.e MCC),
+						* then the duty cycle assigned to this iface in %.
+						* If not using time slicing (i.e SCC or DBS),
+						* set to 100.
+						*/
+} wifi_interface_info_v1;
+
 typedef wifi_interface_info *wifi_interface_handle;
+typedef wifi_interface_info_v1 *wifi_interface_handle_v1;
 
 /* channel information */
 typedef struct {
@@ -297,8 +331,13 @@ typedef struct {
 
 /* interface statistics */
 typedef struct {
+#ifdef LINKSTAT_EXT_SUPPORT
+	wifi_interface_handle_v1 iface;          /* wifi interface */
+	wifi_interface_info_v1 info;             /* current state of the interface */
+#else
 	wifi_interface_handle iface;          /* wifi interface */
 	wifi_interface_info info;             /* current state of the interface */
+#endif /* LINKSTAT_EXT_SUPPORT */
 	uint32 beacon_rx;                     /* access point beacon received count from
 					       * connected AP
 					       */
@@ -348,7 +387,11 @@ typedef struct {
 /* interface statistics */
 typedef struct {
 	compat_uptr_t iface;          /* wifi interface */
+#ifdef LINKSTAT_EXT_SUPPORT
+	wifi_interface_info_v1 info;             /* current state of the interface */
+#else
 	wifi_interface_info info;             /* current state of the interface */
+#endif /* LINKSTAT_EXT_SUPPORT */
 	uint32 beacon_rx;                     /* access point beacon received count from
 					       * connected AP
 					       */

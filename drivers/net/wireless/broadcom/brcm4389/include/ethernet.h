@@ -253,7 +253,7 @@ do { \
 	*(struct ether_header *)(d) = t; \
 } while (0)
 
-#define  ETHER_ISUCAST(ea) ((((uint8 *)(ea))[0] & 0x01) == 0)
+#define  ETHER_ISUCAST(ea) ((((const uint8 *)(ea))[0] & 0x01) == 0)
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

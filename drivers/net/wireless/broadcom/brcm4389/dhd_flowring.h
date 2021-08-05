@@ -58,15 +58,17 @@
 #endif /* IDLE_TX_FLOW_MGMT */
 #define FLOW_RING_STATUS_STA_FREEING    7
 
-#if defined(DHD_HTPUT_TUNABLES)
 #define HTPUT_FLOW_RING_PRIO		PRIO_8021D_BE
 #define HTPUT_NUM_STA_FLOW_RINGS	1u
 #define HTPUT_NUM_CLIENT_FLOW_RINGS	3u
 #define HTPUT_TOTAL_FLOW_RINGS		(HTPUT_NUM_STA_FLOW_RINGS + HTPUT_NUM_CLIENT_FLOW_RINGS)
 #define DHD_IS_FLOWID_HTPUT(pub, flowid) \
-	((flowid >= (pub)->htput_flow_ring_start) && \
-	(flowid < ((pub)->htput_flow_ring_start + HTPUT_TOTAL_FLOW_RINGS)))
-#endif /* DHD_HTPUT_TUNABLES */
+	((pub)->htput_support && (flowid >= (pub)->htput_flow_ring_start) && \
+	((uint16)flowid < ((pub)->htput_flow_ring_start + HTPUT_TOTAL_FLOW_RINGS)))
+
+#if defined(FLOW_RING_PREALLOC)
+#define MAX_FLOW_RINGS 40
+#endif /* FLOW_RING_PREALLOC */
 
 #ifdef DHD_EFI
 /*

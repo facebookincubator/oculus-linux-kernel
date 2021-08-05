@@ -35,6 +35,9 @@
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <dngl_stats.h>
+#ifdef DHD_LOG_DUMP
+#include <dhd_log_dump.h>
+#endif
 #include <dhd.h>
 #ifdef DHD_WMF
 #include <dhd_wmf_linux.h>
@@ -79,6 +82,34 @@
 #define ALL_ADDR_VAL (PC_FOUND_BIT | LR_FOUND_BIT)
 #define READ_NUM_BYTES 1000
 #define DHD_FUNC_STR_LEN 80
+
+#define DHD_COREDUMP_MAGIC 0xDDCEDACF
+#define TLV_TYPE_LENGTH_SIZE	(8u)
+/* coredump is composed as following TLV format.
+ * Type(32bit) | Length(32bit) | Value(x bit)
+ * e.g) socram type | length | socram dump
+ *      sssr core1 type | length | sssr core1 dump
+ *      ...
+ */
+enum coredump_types {
+	DHD_COREDUMP_TYPE_SSSRDUMP_CORE0_BEFORE = 0,
+	DHD_COREDUMP_TYPE_SSSRDUMP_CORE0_AFTER,
+	DHD_COREDUMP_TYPE_SSSRDUMP_CORE1_BEFORE,
+	DHD_COREDUMP_TYPE_SSSRDUMP_CORE1_AFTER,
+	DHD_COREDUMP_TYPE_SSSRDUMP_CORE2_BEFORE,
+	DHD_COREDUMP_TYPE_SSSRDUMP_CORE2_AFTER,
+	DHD_COREDUMP_TYPE_SSSRDUMP_DIG_BEFORE,
+	DHD_COREDUMP_TYPE_SSSRDUMP_DIG_AFTER,
+	DHD_COREDUMP_TYPE_SOCRAMDUMP
+};
+
+#ifdef DHD_SSSR_DUMP
+typedef struct dhd_coredump {
+	uint32 type;
+	uint32 length;
+	void *bufptr;
+} dhd_coredump_t;
+#endif /* DHD_SSSR_DUMP */
 #endif /* DHD_COREDUMP */
 
 #ifdef BCMDBUS
@@ -100,6 +131,9 @@
 #endif /* SUPPORT_AP_POWERSAVE */
 
 #define DHD_REGISTRATION_TIMEOUT  12000  /* msec : allowed time to finished dhd registration */
+
+/* FW initialised value for ocl_rssi_threshold */
+#define FW_OCL_RSSI_THRESH_INITVAL -75
 
 #if defined(DHD_TRACE_WAKE_LOCK)
 typedef enum dhd_wklock_type {
@@ -199,7 +233,9 @@ struct wk_trace_record {
 #define AOE_IP_ALIAS_SUPPORT 1
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0) && defined(DHD_TCP_LIMIT_OUTPUT)
+#ifndef DHD_TCP_LIMIT_OUTPUT_BYTES
 #define DHD_TCP_LIMIT_OUTPUT_BYTES (4 * 1024 * 1024)
+#endif /* DHD_TCP_LIMIT_OUTPUT_BYTES */
 #ifndef TCP_DEFAULT_LIMIT_OUTPUT
 #define TCP_DEFAULT_LIMIT_OUTPUT (256 * 1024)
 #endif /* TSQ_DEFAULT_LIMIT_OUTPUT */
@@ -379,64 +415,6 @@ extern void dhd_bus_getidletime(dhd_pub_t *dhdp, int* idle_time);
 void traffic_mgmt_pkt_set_prio(dhd_pub_t *dhdp, void * pktbuf);
 #endif /* BCM_ROUTER_DHD */
 
-#ifdef DHD_LOG_DUMP
-/* 0: DLD_BUF_TYPE_GENERAL, 1: DLD_BUF_TYPE_PRESERVE
-* 2: DLD_BUF_TYPE_SPECIAL
-*/
-#define DLD_BUFFER_NUM 3
-
-#ifndef CUSTOM_LOG_DUMP_BUFSIZE_MB
-#define CUSTOM_LOG_DUMP_BUFSIZE_MB	4 /* DHD_LOG_DUMP_BUF_SIZE 4 MB static memory in kernel */
-#endif /* CUSTOM_LOG_DUMP_BUFSIZE_MB */
-
-#define LOG_DUMP_TOTAL_BUFSIZE (1024 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-
-/*
- * Below are different sections that use the prealloced buffer
- * and sum of the sizes of these should not cross LOG_DUMP_TOTAL_BUFSIZE
- */
-#ifdef EWP_BCM_TRACE
-#define LOG_DUMP_GENERAL_MAX_BUFSIZE (192 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-#define LOG_DUMP_BCM_TRACE_MAX_BUFSIZE (64 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-#else
-#define LOG_DUMP_GENERAL_MAX_BUFSIZE (256 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-#define LOG_DUMP_BCM_TRACE_MAX_BUFSIZE 0
-#endif /* EWP_BCM_TRACE */
-#define LOG_DUMP_PRESERVE_MAX_BUFSIZE (128 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-#define LOG_DUMP_ECNTRS_MAX_BUFSIZE (256 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-#define LOG_DUMP_RTT_MAX_BUFSIZE (256 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-#define LOG_DUMP_FILTER_MAX_BUFSIZE (128 * 1024 * CUSTOM_LOG_DUMP_BUFSIZE_MB)
-
-#if LOG_DUMP_TOTAL_BUFSIZE < (LOG_DUMP_GENERAL_MAX_BUFSIZE + \
-	LOG_DUMP_PRESERVE_MAX_BUFSIZE + LOG_DUMP_ECNTRS_MAX_BUFSIZE + LOG_DUMP_RTT_MAX_BUFSIZE \
-	+ LOG_DUMP_BCM_TRACE_MAX_BUFSIZE + LOG_DUMP_FILTER_MAX_BUFSIZE)
-#error "LOG_DUMP_TOTAL_BUFSIZE is lesser than sum of all rings"
-#endif
-
-/* Special buffer is allocated as separately in prealloc */
-#define LOG_DUMP_SPECIAL_MAX_BUFSIZE (8 * 1024)
-
-#define LOG_DUMP_MAX_FILESIZE (8 *1024 * 1024) /* 8 MB default */
-
-#ifdef CONFIG_LOG_BUF_SHIFT
-/* 15% of kernel log buf size, if for example klog buf size is 512KB
-* 15% of 512KB ~= 80KB
-*/
-#define LOG_DUMP_KERNEL_TAIL_FLUSH_SIZE \
-	(15 * ((1 << CONFIG_LOG_BUF_SHIFT)/100))
-#endif /* CONFIG_LOG_BUF_SHIFT */
-
-#define LOG_DUMP_COOKIE_BUFSIZE	1024u
-typedef struct {
-	char *hdr_str;
-	log_dump_section_type_t sec_type;
-} dld_hdr_t;
-
-#define DHD_PRINT_BUF_NAME_LEN 30
-void dhd_get_debug_dump_len(void *handle, struct sk_buff *skb, void *event_info, u8 event);
-void cfgvendor_log_dump_len(dhd_pub_t *dhdp, log_dump_type_t *type, struct sk_buff *skb);
-#endif /* DHD_LOG_DUMP */
-
 typedef struct dhd_if_event {
 	struct list_head	list;
 	wl_event_data_if_t	event;
@@ -553,7 +531,11 @@ struct dhd_rx_tx_work {
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
 #ifdef FILTER_IE
+#ifdef DHD_LINUX_STD_FW_API
+#define FILTER_IE_PATH "filter_ie"
+#else
 #define FILTER_IE_PATH "/vendor/etc/wifi/filter_ie"
+#endif /* DHD_LINUX_STD_FW_API */
 #define FILTER_IE_BUFSZ 1024 /* ioc buffsize for FILTER_IE */
 #define FILE_BLOCK_READ_SIZE 256
 #define WL_FILTER_IE_IOV_HDR_SIZE OFFSETOF(wl_filter_ie_iov_v1_t, tlvs)
@@ -620,4 +602,8 @@ extern void dhd_reset_tcpsync_info_by_dev(struct net_device *dev);
 extern void dhd_net_del_flowrings_sta(dhd_pub_t * dhd, struct net_device * ndev);
 #endif /* PCIE_FULL_DONGLE */
 int dhd_get_fw_capabilities(dhd_pub_t * dhd);
+#ifdef BCMDBUS
+int dhd_dbus_txdata(dhd_pub_t *dhdp, void *pktbuf);
+#endif
+void dhd_event_logtrace_enqueue(dhd_pub_t *dhdp, int ifidx, void *pktbuf);
 #endif /* __DHD_LINUX_H__ */

@@ -56,16 +56,16 @@
 #ifdef DHDTCPACK_SUPPRESS
 #include <dhd_ip.h>
 #endif /* DHDTCPACK_SUPPRESS */
+#ifdef USE_NEW_RSPEC_DEFS
 #include <bcmwifi_rspec.h>
+#endif /* USE_NEW_RSPEC_DEFS */
 #include <dhd_linux.h>
 #include <bcmiov.h>
 #ifdef DHD_PKT_LOGGING
 #include <dhd_pktlog.h>
 #endif /* DHD_PKT_LOGGING */
-#ifdef WL_BCNRECV
 #include <wl_cfgvendor.h>
 #include <brcm_nl80211.h>
-#endif /* WL_BCNRECV */
 #ifdef WL_MBO
 #include <mbo.h>
 #endif /* WL_MBO */
@@ -174,6 +174,7 @@
 #define CMD_TEST_GET_TX_POWER		"TEST_GET_TX_POWER"
 #endif /* TEST_TX_POWER_CONTROL */
 #define CMD_SARLIMIT_TX_CONTROL		"SET_TX_POWER_CALLING"
+#define CMD_SARLIMIT_NR_SUB6_BANDINFO	"SET_TX_POWER_NRSUB6_BAND"
 #ifdef SUPPORT_SET_TID
 #define CMD_SET_TID		"SET_TID"
 #define CMD_GET_TID		"GET_TID"
@@ -1107,6 +1108,10 @@ static int wl_android_uwbcx_get_enable(struct net_device *dev, char *command, in
 static int wl_android_uwbcx_set_prepare_time(struct net_device *dev, const char *command);
 static int wl_android_uwbcx_get_prepare_time(struct net_device *dev, char *command, int tot_len);
 #endif /* WL_UWB_COEX */
+
+#ifdef WL_DUAL_STA
+#define CMD_SET_PRIMARY_INET "SET_PRIMARY_INET"
+#endif /* WL_DUAL_STA */
 
 /**
  * Local (static) functions and variables
@@ -4989,11 +4994,11 @@ exit:
 	return ret;
 }
 
-int wl_android_wifi_off(struct net_device *dev, bool on_failure)
+int wl_android_wifi_off(struct net_device *dev, bool force_off)
 {
 	int ret = 0;
 
-	DHD_ERROR(("%s g_wifi_on=%d on_failure=%d\n", __FUNCTION__, g_wifi_on, on_failure));
+	DHD_ERROR(("%s g_wifi_on=%d force_off=%d\n", __FUNCTION__, g_wifi_on, force_off));
 	if (!dev) {
 		DHD_TRACE(("wl_android_wifi_off: dev is null\n"));
 		return -EINVAL;
@@ -5007,7 +5012,7 @@ int wl_android_wifi_off(struct net_device *dev, bool on_failure)
 	}
 #endif	/* BCMPCIE && DHD_DEBUG_UART */
 	dhd_net_if_lock(dev);
-	if (g_wifi_on || on_failure) {
+	if (g_wifi_on || force_off) {
 #if defined(BCMSDIO) || defined(BCMPCIE)
 		ret = dhd_net_bus_devreset(dev, TRUE);
 #ifdef BCMSDIO
@@ -7575,6 +7580,8 @@ wl_android_get_tx_power(struct net_device *dev, char *command, int total_len)
 }
 #endif /* TEST_TX_POWER_CONTROL */
 
+#define NRSUB6_SAR_ENABLE "6"
+
 static int
 wl_android_set_sarlimit_txctrl(struct net_device *dev, const char* string_num)
 {
@@ -7629,6 +7636,57 @@ wl_android_set_sarlimit_txctrl(struct net_device *dev, const char* string_num)
 	err = wldev_iovar_setint(dev, "sar_enable", setval);
 	if (unlikely(err)) {
 		DHD_ERROR(("%s: Failed to set sar_enable - error (%d)\n", __FUNCTION__, err));
+		goto error;
+	}
+	err = BCME_OK;
+error:
+	return err;
+}
+
+static int
+wl_android_set_tx_power_nrsub6_band(struct net_device *dev, const char* string_num)
+{
+	int err = BCME_ERROR;
+	s32 bandinfo = bcm_atoi(string_num);
+
+	/* As Samsung specific and their requirement,
+	 * the bandinfo set as the following form.
+	 * -1 : Disabled bandinfo control
+	 *  2 : NR Sub6 band2 tx power backoff
+	 *  25 : NR Sub6 band25 tx power backoff
+	 *  41 : NR Sub6 band41 tx power backoff
+	 *  44 : NR Sub6 band44 tx power backoff
+	 *  66 : NR Sub6 band66 tx power backoff
+	 *  77 : NR Sub6 band77 tx power backoff
+	 */
+
+	if ((bandinfo < SAR_NR_SUB6_BANDINFO_DISABLE) ||
+			(bandinfo > SAR_NR_SUB6_BANDINFO_BAND77)) {
+		DHD_ERROR(("%s: Request for Unsupported:%d\n",
+			__FUNCTION__, bcm_atoi(string_num)));
+		err = BCME_RANGE;
+		goto error;
+	}
+
+	//Set SAR_ENABLE as Sub6
+	err = wl_android_set_sarlimit_txctrl(dev, NRSUB6_SAR_ENABLE);
+	if (unlikely(err)) {
+		DHD_ERROR(("%s: Failed to set sar_enable as 6(NR_Sub6 enable) - error (%d)\n",
+			__FUNCTION__, err));
+		goto error;
+	}
+
+	if (bandinfo == SAR_NR_SUB6_BANDINFO_DISABLE) {
+		DHD_ERROR(("%s: SAR NR Sub6 bandinfo disable!\n", __FUNCTION__));
+	} else {
+		DHD_ERROR(("%s: SAR NR Sub6 bandinfo set band%d\n",
+			__FUNCTION__, bandinfo));
+	}
+
+	err = wldev_iovar_setint(dev, "sar_nrsub6_bandinfo", bandinfo);
+	if (unlikely(err)) {
+		DHD_ERROR(("%s: Failed to set sar_nrsub6_bandinfo - error (%d)\n",
+			__FUNCTION__, err));
 		goto error;
 	}
 	err = BCME_OK;
@@ -10370,8 +10428,17 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr)
 exit:
 #ifdef DHD_SEND_HANG_PRIVCMD_ERRORS
 	if (ret) {
-		/* Avoid incrementing priv_cmd_errors in case of unsupported feature */
-		if (ret != BCME_UNSUPPORTED) {
+		/* Avoid incrementing priv_cmd_errors in case of unsupported feature
+		* or BUSY state specific to TWT commands
+		*/
+		if (
+#ifdef WL_TWT
+			!(((ret == -EBUSY) || (ret == -EOPNOTSUPP)) &&
+			((strnicmp(command, CMD_TWT_SETUP, strlen(CMD_TWT_SETUP)) == 0) ||
+			(strnicmp(command, CMD_TWT_TEARDOWN, strlen(CMD_TWT_TEARDOWN)) == 0) ||
+			(strnicmp(command, CMD_TWT_INFO, strlen(CMD_TWT_INFO)) == 0))) &&
+#endif /* WL_TWT */
+			(ret != BCME_UNSUPPORTED)) {
 			wl_android_check_priv_cmd_errors(net);
 		}
 	} else {
@@ -10546,6 +10613,7 @@ _wl_android_bcnrecv_start(struct bcm_cfg80211 *cfg, struct net_device *ndev, boo
 {
 	s32 err = BCME_OK;
 	struct net_device *pdev = bcmcfg_to_prmry_ndev(cfg);
+	dhd_pub_t *dhd = cfg->pub;
 
 	/* check any scan is in progress before beacon recv scan trigger IOVAR */
 	if (wl_get_drv_status_all(cfg, SCANNING)) {
@@ -10586,6 +10654,17 @@ _wl_android_bcnrecv_start(struct bcm_cfg80211 *cfg, struct net_device *ndev, boo
 		goto exit;
 	}
 #endif /* WL_NAN */
+
+	if (dhd->early_suspended) {
+		/* Set BEACON_RECV in suspend mode */
+		WL_INFORM_MEM(("Already suspend mode, Aborting beacon recv start\n"));
+		cfg->bcnrecv_info.bcnrecv_state = BEACON_RECV_SUSPENDED;
+		if ((err = wl_android_bcnrecv_event(pdev, BCNRECV_ATTR_STATUS,
+			WL_BCNRECV_SUSPENDED, WL_BCNRECV_SUSPEND, NULL, 0)) != BCME_OK) {
+			WL_ERR(("failed to send bcnrecv event, error:%d\n", err));
+		}
+		goto exit;
+	}
 
 	/* Triggering an sendup_bcn iovar */
 	err = wldev_iovar_setint(pdev, "sendup_bcn", 1);
@@ -11329,6 +11408,71 @@ exit :
 
 #ifdef WL_TWT
 static int
+wl_android_twt_bcmerr_to_kernel_err(int bcm_err)
+{
+	int ret = 0;
+
+	switch (bcm_err) {
+		case BCME_OK:
+			ret = 0;
+			break;
+		case BCME_ERROR:
+			ret = -EAGAIN;
+			break;
+		case BCME_BADARG: /* Bad Argument */
+			ret = -EINVAL;
+			break;
+		case BCME_RANGE: /* TWT parameter value provided is not in allowed range */
+			ret = -ERANGE;
+			break;
+		case BCME_BUSY:
+			/* Busy
+			* 1. STA is in off-channel/Scan in progress
+			* 2. STA is in allTWT Suspend mode
+			* 3. Other TWT Action frame transmission is not completed yet
+			*/
+			ret = -EBUSY;
+			break;
+		case BCME_NOTASSOCIATED: /* STA Not Associated */
+			ret = -ENOTCONN;
+			break;
+		case BCME_EPERM: /* Not Permitted because of
+			* 1. More than one TWT
+			* 2. More than one concurrent connection is active.
+			* 3. BT is active
+			*/
+			ret = -EPERM;
+			break;
+		case BCME_NOTFOUND: /* Not Found. Peer not found for given mac address */
+		case BCME_NORESOURCE: /* Not Enough resources to establish new TWT session */
+			ret = -ENODEV;
+			break;
+		case BCME_NOMEM:
+			ret = -ENOMEM;
+			break;
+		case BCME_UNSUPPORTED: /* Unsupported.
+			* 1. No TWT support
+			* 2. TWT capabilities is not set by device or peer device
+			*/
+			ret = -EOPNOTSUPP;
+			break;
+		case BCME_VERSION:
+			ret = -ENOEXEC;
+			break;
+		case BCME_BUFTOOSHORT:
+			ret = -ENOBUFS;
+			break;
+		default:
+			ret = -EAGAIN;
+			break;
+	}
+
+	WL_DBG(("twt wifi_error ret:%d\n", ret));
+
+	return ret;
+}
+
+static int
 wl_android_twt_setup(struct net_device *ndev, char *command, int total_len)
 {
 	wl_twt_config_t val;
@@ -11515,7 +11659,7 @@ wl_android_twt_setup(struct net_device *ndev, char *command, int total_len)
 		WL_ERR(("twt config set failed. ret:%d\n", bw));
 	}
 exit:
-	return bw;
+	return wl_android_twt_bcmerr_to_kernel_err(bw);
 }
 
 static int
@@ -11642,79 +11786,74 @@ wl_android_twt_status_display_v1(wl_twt_status_v1_t *status, char *command, int 
 		!!(status->status_flags & WL_TWT_STATUS_FLAG_SPPS_ENAB),
 		!!(status->status_flags & WL_TWT_STATUS_FLAG_WAKE_STATE),
 		!!(status->status_flags & WL_TWT_STATUS_FLAG_WAKE_OVERRIDE)));
-	if (status->num_fid) {
-		WL_DBG(("\t---------------- Individual TWT list-------------------\n"));
+	WL_DBG(("\t---------------- Individual TWT list-------------------\n"));
 
-		for (i = 0; i < WL_TWT_MAX_ITWT; i ++) {
-			if ((status->itwt_status[i].state == WL_TWT_ACTIVE) ||
-				(status->itwt_status[i].state == WL_TWT_SUSPEND)) {
-				desc = &status->itwt_status[i].desc;
-				bytes_written = scnprintf(command, rem_len,
-					"%d %u %u\n",
-					status->itwt_status[i].state, desc->wake_dur,
-					desc->wake_int);
-				CHECK_SCNPRINTF_RET_VAL(bytes_written);
-				command += bytes_written;
-				rem_len -= bytes_written;
+	for (i = 0; i < WL_TWT_MAX_ITWT; i ++) {
+		WL_DBG(("Config ID %d\n", status->itwt_status[i].configID));
+		if (status->itwt_status[i].configID != WL_TWT_INV_CONFIG_ID) {
+			desc = &status->itwt_status[i].desc;
+			bytes_written = scnprintf(command, rem_len,
+				"%d %u %u\n",
+				status->itwt_status[i].state, desc->wake_dur,
+				desc->wake_int);
+			CHECK_SCNPRINTF_RET_VAL(bytes_written);
+			command += bytes_written;
+			rem_len -= bytes_written;
 
-				WL_DBG(("Config ID %d \tFlow ID %d \tState %d\t",
-					status->itwt_status[i].configID,
-					desc->flow_id,
-					status->itwt_status[i].state));
-				WL_DBG(("peer: "MACF"\n",
-					ETHER_TO_MACF(status->itwt_status[i].peer)));
-				WL_DBG(("Unannounced %d\tTriggered %d\tProtection %d\t"
-					"Info Frame Disabled %d\n",
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED)));
-				WL_DBG(("target wake time: %llu\t", wake_time));
-				WL_DBG(("wake duration: %u\t", desc->wake_dur));
-				WL_DBG(("wake interval: %u\t", desc->wake_int));
-				WL_DBG(("TWT channel: %u\n", desc->channel));
-				WL_DBG(("AvgPktNum: %u\tAvgPktSize: %u\n",
-					status->itwt_status[i].avg_pkt_num,
-					status->itwt_status[i].avg_pkt_size));
-			}
+			WL_DBG(("Config ID %d \tFlow ID %d \tState %d\t",
+				status->itwt_status[i].configID,
+				desc->flow_id,
+				status->itwt_status[i].state));
+			WL_DBG(("peer: "MACF"\n",
+				ETHER_TO_MACF(status->itwt_status[i].peer)));
+			WL_DBG(("Unannounced %d\tTriggered %d\tProtection %d\t"
+				"Info Frame Disabled %d\n",
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED)));
+			WL_DBG(("target wake time: %llu\t", wake_time));
+			WL_DBG(("wake duration: %u\t", desc->wake_dur));
+			WL_DBG(("wake interval: %u\t", desc->wake_int));
+			WL_DBG(("TWT channel: %u\n", desc->channel));
+			WL_DBG(("AvgPktNum: %u\tAvgPktSize: %u\n",
+				status->itwt_status[i].avg_pkt_num,
+				status->itwt_status[i].avg_pkt_size));
 		}
 	}
 
-	if (status->num_bid) {
-		WL_DBG(("\t---------------- Broadcast TWT list-------------------\n"));
-		for (i = 0; i < WL_TWT_MAX_BTWT; i ++) {
-			if ((status->btwt_status[i].state == WL_TWT_ACTIVE) ||
-				(status->btwt_status[i].state == WL_TWT_SUSPEND)) {
-				desc = &status->btwt_status[i].desc;
-				bytes_written = scnprintf(command, rem_len,
-					"%d %u %u\n",
-					status->btwt_status[i].state, desc->wake_dur,
-					desc->wake_int);
-				CHECK_SCNPRINTF_RET_VAL(bytes_written);
-				command += bytes_written;
-				rem_len -= bytes_written;
+	WL_DBG(("\t---------------- Broadcast TWT list-------------------\n"));
+	for (i = 0; i < WL_TWT_MAX_BTWT; i ++) {
+		if (status->btwt_status[i].configID != WL_TWT_INV_CONFIG_ID) {
+			desc = &status->btwt_status[i].desc;
+			bytes_written = scnprintf(command, rem_len,
+				"%d %u %u\n",
+				status->btwt_status[i].state, desc->wake_dur,
+				desc->wake_int);
+			CHECK_SCNPRINTF_RET_VAL(bytes_written);
+			command += bytes_written;
+			rem_len -= bytes_written;
 
-				WL_DBG(("Config ID %d \tBroadcast ID %d \tState %d\t",
-					status->btwt_status[i].configID,
-					desc->bid, status->btwt_status[i].state));
-				WL_DBG(("peer: "MACF"\n",
-					ETHER_TO_MACF(status->btwt_status[i].peer)));
-				WL_DBG(("Unannounced %d\tTriggered %d\tProtection %d\t"
-					"Info Frame Disabled %d\t",
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
-					!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED)));
-				WL_DBG(("Frame Recommendation %d\tBTWT Persistence %d\n",
-					desc->frame_recomm, desc->btwt_persistence));
-				WL_DBG(("target wake time: %llu\t", wake_time));
-				WL_DBG(("wake duration: %u\t", desc->wake_dur));
-				WL_DBG(("wake interval: %u\t", desc->wake_int));
-				WL_DBG(("TWT channel: %u\n", desc->channel));
-				WL_DBG(("AvgPktNum: %u\tAvgPktSize: %u\n",
-					status->btwt_status[i].avg_pkt_num,
-					status->btwt_status[i].avg_pkt_size));
-			}
+			WL_DBG(("Config ID %d \tBroadcast ID %d \tState %d\t",
+				status->btwt_status[i].configID,
+				desc->bid, status->btwt_status[i].state));
+			WL_DBG(("peer: "MACF"\n",
+				ETHER_TO_MACF(status->btwt_status[i].peer)));
+			WL_DBG(("Unannounced %d\tTriggered %d\tProtection %d\t"
+				"Info Frame Disabled %d\t",
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_UNANNOUNCED),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_TRIGGER),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_PROTECT),
+				!!(desc->flow_flags & WL_TWT_FLOW_FLAG_INFO_FRM_DISABLED)));
+			WL_DBG(("Frame Recommendation %d\tBTWT Persistence %d\n",
+				desc->frame_recomm, desc->btwt_persistence));
+			WL_DBG(("target wake time: %llu\t", wake_time));
+			WL_DBG(("wake duration: %u\t", desc->wake_dur));
+			WL_DBG(("wake interval: %u\t", desc->wake_int));
+			WL_DBG(("TWT channel: %u\n", desc->channel));
+			WL_DBG(("AvgPktNum: %u\tAvgPktSize: %u\n",
+				status->btwt_status[i].avg_pkt_num,
+				status->btwt_status[i].avg_pkt_size));
 		}
 	}
 
@@ -11864,10 +12003,10 @@ wl_android_twt_info(struct net_device *ndev, char *command, int total_len)
 	bw = wldev_iovar_setbuf(ndev, "twt",
 		mybuf, sizeof(mybuf) - rem_len, res_buf, WLC_IOCTL_SMLEN, NULL);
 	if (bw < 0) {
-		WL_ERR(("twt teardown failed. ret:%d\n", bw));
+		WL_ERR(("twt info failed. ret:%d\n", bw));
 	}
 exit:
-	return bw;
+	return wl_android_twt_bcmerr_to_kernel_err(bw);
 
 }
 
@@ -11930,7 +12069,7 @@ wl_android_twt_teardown(struct net_device *ndev, char *command, int total_len)
 		WL_ERR(("twt teardown failed. ret:%d\n", bw));
 	}
 exit:
-	return bw;
+	return wl_android_twt_bcmerr_to_kernel_err(bw);
 }
 
 /* wl twt stats result display version 2 */
@@ -12104,6 +12243,19 @@ exit:
 	}
 	return err;
 }
+
+#ifdef WL_DUAL_STA
+static int
+wl_android_set_primary_inet(struct net_device *ndev, char *command, int total_len)
+{
+	int err = BCME_OK;
+
+	err = wl_cfgvendor_multista_set_primary_connection(ndev->ieee80211_ptr->wiphy,
+		ndev_to_wdev(ndev), NULL, 0);
+
+	return err;
+}
+#endif /* WL_DUAL_STA */
 
 int
 wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
@@ -12575,6 +12727,11 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		strlen(CMD_SARLIMIT_TX_CONTROL)) == 0) {
 		int skip = strlen(CMD_SARLIMIT_TX_CONTROL) + 1;
 		bytes_written = wl_android_set_sarlimit_txctrl(net, (const char*)command+skip);
+	}
+	else if (strnicmp(command, CMD_SARLIMIT_NR_SUB6_BANDINFO,
+		strlen(CMD_SARLIMIT_NR_SUB6_BANDINFO)) == 0) {
+		int skip = strlen(CMD_SARLIMIT_NR_SUB6_BANDINFO) + 1;
+		bytes_written = wl_android_set_tx_power_nrsub6_band(net, (const char*)command+skip);
 	}
 #ifdef SUPPORT_SET_TID
 	else if (strnicmp(command, CMD_SET_TID, strlen(CMD_SET_TID)) == 0) {
@@ -13124,6 +13281,13 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 				command, priv_cmd.total_len);
 	}
 #endif /* WL_UWB_COEX */
+#ifdef WL_DUAL_STA
+	else if (strnicmp(command, CMD_SET_PRIMARY_INET,
+			strlen(CMD_SET_PRIMARY_INET)) == 0) {
+		bytes_written = wl_android_set_primary_inet(net,
+				command, priv_cmd.total_len);
+	}
+#endif /* WL_DUAL_STA */
 	else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 		bytes_written = scnprintf(command, sizeof("FAIL"), "FAIL");

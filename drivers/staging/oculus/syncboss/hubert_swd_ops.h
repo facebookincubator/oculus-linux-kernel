@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef HUBERT_SWD_OPS_H
 #define HUBERT_SWD_OPS_H
 

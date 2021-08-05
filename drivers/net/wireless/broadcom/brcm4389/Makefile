@@ -49,16 +49,10 @@ CONFIG_BCMDHD_PREALLOC_MEMDUMP=y
 CONFIG_BCMDHD_OOB_HOST_WAKE=y
 CONFIG_BCMDHD_GET_OOB_STATE=y
 
-# enable HTPUT for 4389
-ifneq ($(CONFIG_BCM4389),)
- CONFIG_BCMDHD_HTPUT=y
-endif
-
 DHDCFLAGS += -DCONFIG_BCMDHD=$(CONFIG_BCMDHD)
 DHDCFLAGS += -DCONFIG_BCMDHD_PCIE=$(CONFIG_BCMDHD_PCIE)
 DHDCFLAGS += -DCONFIG_BCM43752=$(CONFIG_BCM43752)
 DHDCFLAGS += -DCONFIG_BCM4389=$(CONFIG_BCM4389)
-DHDCFLAGS += -DCONFIG_BCMDHD_HTPUT=$(CONFIG_BCMDHD_HTPUT)
 DHDCFLAGS += -DCONFIG_DHD_OF_SUPPORT=$(CONFIG_DHD_OF_SUPPORT)
 DHDCFLAGS += -DCONFIG_BCMDHD_FW_PATH=$(CONFIG_BCMDHD_FW_PATH)
 DHDCFLAGS += -DCONFIG_BCMDHD_NVRAM_PATH=$(CONFIG_BCMDHD_NVRAM_PATH)
@@ -110,9 +104,6 @@ endif
 
 # Enable wakelock debug function
 DHDCFLAGS += -DDHD_TRACE_WAKE_LOCK
-
-# Support of channel stats in HAL V1.3
-DHDCFLAGS += -DCHAN_STATS_SUPPORT
 
 # Support of power stats in sysfs
 DHDCFLAGS += -DPWRSTATS_SYSFS
@@ -180,9 +171,6 @@ DHDCFLAGS += -DDHD_MMIO_TRACE
 # Enable log print rate limit
 DHDCFLAGS += -DDHD_LOG_PRINT_RATE_LIMIT
 
-# Block ARP during DHCP on STA/SoftAP concurrent mode
-DHDCFLAGS += -DAPSTA_BLOCK_ARP_DURING_DHCP
-
 ifneq ($(CONFIG_BCMDHD_PCIE),)
 	DHDCFLAGS += -DWLAN_ACCEL_BOOT
 # Use spin_lock_bh locks
@@ -224,12 +212,6 @@ DHDCFLAGS += -DDHD_MEM_STATS
 	DHDCFLAGS += -DDHD_FLOW_RING_STATUS_TRACE
 # Enable internal Rx packet pool
 	DHDCFLAGS += -DRX_PKT_POOL
-endif
-
-ifneq ($(CONFIG_BCMDHD_HTPUT),)
- $(warning : ** HTPUT build)
- DHDCFLAGS += -DDHD_HTPUT_TUNABLES
- DHDCFLAGS += -DHTPUT_RING_PREALLOC
 endif
 
 ifneq ($(CONFIG_BCMDHD_PCIE),)
@@ -280,6 +262,7 @@ DHDCFLAGS += -DAPF
 DHDCFLAGS += -DWL_APF_PROGRAM_MAX_SIZE=2048
 DHDCFLAGS += -DDHD_GET_VALID_CHANNELS
 DHDCFLAGS += -DLINKSTAT_SUPPORT
+DHDCFLAGS += -DLINKSTAT_EXT_SUPPORT
 DHDCFLAGS += -DPFN_SCANRESULT_2
 DHDCFLAGS += -DWL_IFACE_COMB_NUM_CHANNELS
 # Scheduled scan (PNO)
@@ -463,6 +446,9 @@ DHDCFLAGS += -DWL_CFG80211_GON_COLLISION
 
 # HANG send due to private command errors
 DHDCFLAGS += -DDHD_SEND_HANG_PRIVCMD_ERRORS
+
+# Required for scanning the non-continue channel
+DHDCFLAGS += -DWFC_NON_CONT_CHAN
 
 # HANG trigger support on escan syncid mismatch
 #DHDCFLAGS += -DDHD_SEND_HANG_ESCAN_SYNCID_MISMATCH
@@ -734,6 +720,7 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
         DHDCFLAGS += -DDHD_FW_NAME="\"fw_bcmdhd.bin\""
         DHDCFLAGS += -DDHD_NVRAM_NAME="\"bcmdhd.cal\""
         DHDCFLAGS += -DDHD_CLM_NAME="\"bcmdhd_clm.blob\""
+        DHDCFLAGS += -DDHD_MAP_NAME="\"fw_bcmdhd.map\""
 endif
 # Allow wl event forwarding as network packet
 	DHDCFLAGS += -DWL_EVENT_ENAB
@@ -753,7 +740,7 @@ DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o dhd_custom_cis.o 
     dhd_pno.o dhd_rtt.o dhd_linux_pktdump.o wl_cfg_btcoex.o hnd_pktq.o \
     hnd_pktpool.o wl_cfgvendor.o bcmxtlv.o bcm_app_utils.o dhd_debug.o frag.o \
     dhd_debug_linux.o wl_cfgnan.o dhd_mschdbg.o bcmbloom.o dhd_dbg_ring.o bcmstdlib_s.o \
-    dhd_linux_exportfs.o dhd_linux_tx.o
+    dhd_linux_exportfs.o dhd_linux_tx.o dhd_linux_rx.o dhd_log_dump.o
 
 # This file will be here only for internal builds and sets flags which may
 # affect subsequent behavior. See extended comment within it for details.

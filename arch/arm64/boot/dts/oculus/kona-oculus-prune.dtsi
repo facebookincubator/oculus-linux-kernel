@@ -5,6 +5,14 @@
 #include "kona-qupv3-prune.dtsi"
 #include "kona-thermal-prune.dtsi"
 
+/delete-node/ &cpu0_cpu_llcc_lat;
+/delete-node/ &cpu0_llcc_ddr_lat;
+/delete-node/ &cpu0_memlat_cpugrp;
+/delete-node/ &cpu4_cpu_ddr_latfloor;
+/delete-node/ &cpu4_cpu_ddr_qoslat;
+/delete-node/ &cpu4_cpu_llcc_lat;
+/delete-node/ &cpu4_llcc_ddr_lat;
+/delete-node/ &cpu4_memlat_cpugrp;
 /delete-node/ &dcc;
 /delete-node/ &disp_rdump_memory;
 /delete-node/ &dump_mem;

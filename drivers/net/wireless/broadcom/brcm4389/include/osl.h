@@ -63,6 +63,8 @@ typedef void  (*osl_wreg_fn_t)(void *ctx, volatile void *reg, unsigned int val, 
 #elif defined(_RTE_)
 #include <rte_osl.h>
 #include <hnd_pkt.h>
+#elif defined(COEX_OSL)
+#include <coex_osl.h>
 #elif defined(MACOSX)
 #include <macosx_osl.h>
 #else
@@ -127,6 +129,14 @@ typedef void  (*osl_wreg_fn_t)(void *ctx, volatile void *reg, unsigned int val, 
 #define OSL_CPU_COUNTS_PER_US() (0)
 #define OSL_CPU_COUNTS_PER_US_NOT_DEFINED 1
 #endif /* !defined(OSL_CPU_COUNTS_PER_US) */
+
+#if !defined(OSL_GET_PMU_ACCU_TICK_US)
+#define OSL_GET_PMU_ACCU_TICK_US(val) (0)
+#endif /* !OSL_GET_PMU_ACCU_TICK_US */
+
+#if !defined(OSL_GET_PMU_ACCU_TICK64_US)
+#define OSL_GET_PMU_ACCU_TICK64_US(val) (0)
+#endif /* !OSL_GET_PMU_ACCU_TICK64_US */
 
 #ifndef OSL_SYS_HALT
 #ifdef __COVERITY__

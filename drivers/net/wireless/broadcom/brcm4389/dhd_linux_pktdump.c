@@ -165,15 +165,17 @@ static const char pkt_cnt_msg[][20] = {
 };
 
 static const char tx_pktfate[][30] = {
-	"TX_PKT_FATE_ACKED",		/* 0: WLFC_CTL_PKTFLAG_DISCARD */
-	"TX_PKT_FATE_FW_QUEUED",	/* 1: WLFC_CTL_PKTFLAG_D11SUPPRESS */
-	"TX_PKT_FATE_FW_QUEUED",	/* 2: WLFC_CTL_PKTFLAG_WLSUPPRESS */
-	"TX_PKT_FATE_FW_DROP_INVALID",	/* 3: WLFC_CTL_PKTFLAG_TOSSED_BYWLC */
-	"TX_PKT_FATE_SENT",		/* 4: WLFC_CTL_PKTFLAG_DISCARD_NOACK */
-	"TX_PKT_FATE_FW_DROP_OTHER",	/* 5: WLFC_CTL_PKTFLAG_SUPPRESS_ACKED */
-	"TX_PKT_FATE_FW_DROP_EXPTIME",	/* 6: WLFC_CTL_PKTFLAG_EXPIRED */
-	"TX_PKT_FATE_FW_DROP_OTHER",	/* 7: WLFC_CTL_PKTFLAG_DROPPED */
-	"TX_PKT_FATE_FW_PKT_FREE",	/* 8: WLFC_CTL_PKTFLAG_MKTFREE */
+	"TX_PKT_FATE_ACKED",			/* 0: WLFC_CTL_PKTFLAG_DISCARD */
+	"TX_PKT_FATE_FW_D11SUPPRESS",		/* 1: WLFC_CTL_PKTFLAG_D11SUPPRESS */
+	"TX_PKT_FATE_FW_WLSUPPRESS",		/* 2: WLFC_CTL_PKTFLAG_WLSUPPRESS */
+	"TX_PKT_FATE_FW_TOSSED_BYWLC",		/* 3: WLFC_CTL_PKTFLAG_TOSSED_BYWLC */
+	"TX_PKT_FATE_SENT_NOACK",		/* 4: WLFC_CTL_PKTFLAG_DISCARD_NOACK */
+	"TX_PKT_FATE_FW_SUPPRESS_ACKED",	/* 5: WLFC_CTL_PKTFLAG_SUPPRESS_ACKED */
+	"TX_PKT_FATE_FW_DROP_EXPTIME",		/* 6: WLFC_CTL_PKTFLAG_EXPIRED */
+	"TX_PKT_FATE_FW_DROP_OTHER",		/* 7: WLFC_CTL_PKTFLAG_DROPPED */
+	"TX_PKT_FATE_FW_PKT_FREE",		/* 8: WLFC_CTL_PKTFLAG_MKTFREE */
+	"TX_PKT_FATE_FW_MAX_SUP_RETR",		/* 9: WLFC_CTL_PKTFLAG_MAX_SUP_RETR */
+	"TX_PKT_FATE_FW_FORCED_EXPIRED"		/* 10: WLFC_CTL_PKTFLAG_FORCED_EXPIRED */
 };
 
 #define DBGREPLAY		" Replay Counter: %02x%02x%02x%02x%02x%02x%02x%02x"
@@ -187,8 +189,8 @@ static const char tx_pktfate[][30] = {
 				((const eapol_key_hdr_t *)(key))->replay[7]
 #define TXFATE_FMT		" TX_PKTHASH:0x%X TX_PKT_FATE:%s"
 #define TX_PKTHASH(pkthash)		((pkthash) ? (*pkthash) : (0))
-#define TX_FATE_STR(fate)	(((*fate) <= (WLFC_CTL_PKTFLAG_MKTFREE)) ? \
-				(tx_pktfate[(*fate)]) : "TX_PKT_FATE_FW_DROP_OTHER")
+#define TX_FATE_STR(fate)	(((*fate) <= (WLFC_CTL_PKTFLAG_FORCED_EXPIRED)) ? \
+				(tx_pktfate[(*fate)]) : "TX_PKT_FATE_UNKNOWN")
 #define TX_FATE(fate)		((fate) ? (TX_FATE_STR(fate)) : "N/A")
 #define TX_FATE_ACKED(fate)	((fate) ? ((*fate) == (WLFC_CTL_PKTFLAG_DISCARD)) : (0))
 
@@ -992,6 +994,23 @@ dhd_check_icmp(uint8 *pktdata)
 
 	/* check header length */
 	if (ntohs(iph->tot_len) - IPV4_HLEN(iph) < sizeof(struct bcmicmp_hdr)) {
+		return FALSE;
+	}
+	return TRUE;
+}
+
+bool
+dhd_check_icmpv6(uint8 *pktdata, uint32 plen)
+{
+	uint8 *pkt = (uint8 *)&pktdata[ETHER_HDR_LEN];
+	struct ipv6_hdr *ip6h = (struct ipv6_hdr *)pkt;
+
+	if (IPV6_PROT(ip6h) != IP_PROT_ICMP6) {
+		return FALSE;
+	}
+
+	/* check header length */
+	if (plen <= IPV6_MIN_HLEN) {
 		return FALSE;
 	}
 	return TRUE;

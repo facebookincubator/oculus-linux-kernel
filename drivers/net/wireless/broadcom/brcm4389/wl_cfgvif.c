@@ -93,6 +93,10 @@
 #include <wl_bigdata.h>
 #endif /* BIGDATA_SOFTAP || DHD_ENABLE_BIGDATA_LOGGING */
 
+#ifdef WL_CELLULAR_CHAN_AVOID
+#include <wl_cfg_cellavoid.h>
+#endif /* WL_CELLULAR_CHAN_AVOID */
+
 #define	MAX_VIF_OFFSET	15
 #define MAX_WAIT_TIME 1500
 
@@ -874,6 +878,7 @@ wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, u8 *mac_addr, u16 wl_iftype)
 	WL_DBG(("%s:Mac addr" MACDBG "\n",
 			__FUNCTION__, MAC2STRDBG(mac_addr)));
 
+#if defined(SPECIFIC_MAC_GEN_SCHEME)
 	if ((wl_iftype == WL_IF_TYPE_P2P_DISC) || (wl_iftype == WL_IF_TYPE_AP) ||
 		(wl_iftype == WL_IF_TYPE_P2P_GO) || (wl_iftype == WL_IF_TYPE_P2P_GC)) {
 		/* Avoid invoking release mac addr code for interfaces using
@@ -881,6 +886,11 @@ wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, u8 *mac_addr, u16 wl_iftype)
 		 */
 		return BCME_OK;
 	}
+#else
+	if (wl_iftype == WL_IF_TYPE_P2P_DISC) {
+		return BCME_OK;
+	}
+#endif /* SPECIFIC_MAC_GEN_SCHEME */
 
 	/* Fetch last two bytes of mac address */
 	org_toggle_bytes = ntoh16(*((u16 *)&ndev->dev_addr[4]));
@@ -1056,6 +1066,14 @@ wl_cfg80211_del_virtual_iface(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev)
 		WL_ERR(("wdev null"));
 		return -ENODEV;
 	}
+
+#ifdef WL_STATIC_IF
+	/* interface delete is invalid for static interface */
+	if (IS_CFG80211_STATIC_IF(cfg, wdev_to_ndev(wdev))) {
+		WL_ERR(("Invalid request to delete static interface %s\n", wdev->netdev->name));
+		return -EINVAL;
+	}
+#endif /* WL_STATIC_IF */
 
 	WL_DBG(("Enter  wdev:%p iftype: %d\n", wdev, wdev->iftype));
 	if (cfg80211_to_wl_iftype(wdev->iftype, &wl_iftype, &wl_mode) < 0) {
@@ -1519,14 +1537,14 @@ wl_get_nl80211_band(u32 wl_band)
 			return IEEE80211_BAND_2GHZ;
 		case WL_CHANSPEC_BAND_5G:
 			return IEEE80211_BAND_5GHZ;
-#ifdef WL_BAND_6G
+#ifdef WL_6G_BAND
 		case WL_CHANSPEC_BAND_6G:
 			/* current kernels doesn't support seperate
 			 * band for 6GHz. so till patch is available
 			 * map it under 5GHz
 			 */
 			return IEEE80211_BAND_5GHZ;
-#endif /* WL_BAND_6G */
+#endif /* WL_6G_BAND */
 		default:
 			WL_ERR(("unsupported Band. %d\n", wl_band));
 	}
@@ -1581,7 +1599,6 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 #if defined(SUPPORT_AP_INIT_BWCONF)
 	u32 configured_bw;
 #endif /* SUPPORT_AP_INIT_BWCONF */
-
 	dev = ndev_to_wlc_ndev(dev, cfg);
 	chspec = wl_freq_to_chanspec(chan->center_freq);
 	WL_ERR(("netdev_ifidx(%d) chspec(%x) chan_type(%d) "
@@ -1593,6 +1610,13 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 			WL_ERR(("P2P GO not allowed on 6G\n"));
 			return -ENOTSUPP;
 		}
+
+#ifndef WL_SOFTAP_6G
+	if (IS_AP_IFACE(dev->ieee80211_ptr) && (CHSPEC_IS6G(chspec))) {
+		WL_ERR(("AP not allowed on 6G\n"));
+		return -ENOTSUPP;
+	}
+#endif /* WL_SOFTAP_6G */
 
 #ifdef NOT_YET
 	switch (channel_type) {
@@ -1673,6 +1697,24 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	if (CHSPEC_IS5G(chspec) && (bw == WL_CHANSPEC_BW_160)) {
 		bw = WL_CHANSPEC_BW_80;
 	}
+#ifdef WL_CELLULAR_CHAN_AVOID
+	if (!CHSPEC_IS6G(chspec)) {
+		wl_cellavoid_sync_lock(cfg);
+		cur_chspec = wl_cellavoid_find_widechspec_fromchspec(cfg->cellavoid_info, chspec);
+		if (cur_chspec == INVCHANSPEC) {
+			wl_cellavoid_sync_unlock(cfg);
+			return BCME_ERROR;
+		}
+		/* Limit the configured bw to the bw from the safe channel list */
+		if (bw > CHSPEC_BW(cur_chspec)) {
+			WL_INFORM_MEM(("cellular avoidance update org_bw %x to bw %x\n",
+				bw, CHSPEC_BW(cur_chspec)));
+			bw = CHSPEC_BW(cur_chspec);
+		}
+
+		wl_cellavoid_sync_unlock(cfg);
+	}
+#endif /* WL_CELLULAR_CHAN_AVOID */
 set_channel:
 	WL_DBG(("bw = %x, chspec =%x, chspec band = %x\n", bw, chspec, CHSPEC_BAND(chspec)));
 	cur_chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
@@ -3539,6 +3581,7 @@ wl_cfg80211_start_ap(
 	struct parsed_ies ies;
 	s32 bssidx = 0;
 	u32 dev_role = 0;
+	u32 hidden_ssid = 0;
 #ifdef BCMDONGLEHOST
 	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
 #endif /* BCMDONGLEHOST */
@@ -3673,10 +3716,10 @@ wl_cfg80211_start_ap(
 	}
 
 	/* Configure hidden SSID */
-	if (info->hidden_ssid != NL80211_HIDDEN_SSID_NOT_IN_USE) {
-		if ((err = wldev_iovar_setint(dev, "closednet", 1)) < 0)
-			WL_ERR(("failed to set hidden : %d\n", err));
-		WL_DBG(("hidden_ssid_enum_val: %d \n", info->hidden_ssid));
+	hidden_ssid = (info->hidden_ssid == NL80211_HIDDEN_SSID_NOT_IN_USE) ? 0 : 1;
+	WL_DBG(("hidden_ssid: %d \n", hidden_ssid));
+	if ((err = wldev_iovar_setint(dev, "closednet", hidden_ssid)) < 0) {
+		WL_ERR(("failed to set hidden : %d\n", err));
 	}
 
 #ifdef SUPPORT_AP_RADIO_PWRSAVE
@@ -3800,6 +3843,19 @@ wl_cfg80211_stop_ap(
 	}
 
 	if (dev_role == NL80211_IFTYPE_AP) {
+		/* Clear the security settings on the Interface */
+		err = wldev_iovar_setint(dev, "wsec", 0);
+		if (unlikely(err)) {
+			WL_ERR(("wsec clear failed (%d)\n", err));
+		}
+		err = wldev_iovar_setint(dev, "auth", 0);
+		if (unlikely(err)) {
+			WL_ERR(("auth clear failed (%d)\n", err));
+		}
+		err = wldev_iovar_setint(dev, "wpa_auth", 0);
+		if (unlikely(err)) {
+			WL_ERR(("set wpa_auth failed (%d)\n", err));
+		}
 #ifdef CUSTOMER_HW4
 #ifdef DHD_PCIE_RUNTIMEPM
 		if (!dhd_get_idletime(dhd)) {
@@ -3842,12 +3898,12 @@ wl_cfg80211_stop_ap(
 			}
 		}
 
-#ifdef WL_DISABLE_HE_SOFTAP
+#if defined(WL_DISABLE_HE_SOFTAP) || defined(WL_6G_BAND)
 		if (wl_cfg80211_set_he_mode(dev, cfg, bssidx, WL_HE_FEATURES_HE_AP,
 			TRUE) != BCME_OK) {
 			WL_ERR(("failed to set he features\n"));
 		}
-#endif /* WL_DISABLE_HE_SOFTAP */
+#endif /* defined(WL_DISABLE_HE_SOFTAP) || defined(WL_6G_BAND) */
 
 		wl_cfg80211_clear_per_bss_ies(cfg, dev->ieee80211_ptr);
 #ifdef SUPPORT_AP_RADIO_PWRSAVE
@@ -3857,6 +3913,12 @@ wl_cfg80211_stop_ap(
 			WL_ERR(("Set rpsnoa failed \n"));
 		}
 #endif /* SUPPORT_AP_RADIO_PWRSAVE */
+#ifdef WL_CELLULAR_CHAN_AVOID
+		wl_cellavoid_clear_requested_freq_bands(dev, cfg->cellavoid_info);
+		wl_cellavoid_sync_lock(cfg);
+		wl_cellavoid_free_csa_info(cfg->cellavoid_info, dev);
+		wl_cellavoid_sync_unlock(cfg);
+#endif /* WL_CELLULAR_CHAN_AVOID */
 	} else {
 		/* Do we need to do something here */
 		WL_DBG(("Stopping P2P GO \n"));
@@ -5191,6 +5253,13 @@ int wl_chspec_chandef(chanspec_t chanspec,
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0))
 	cfg80211_chandef_create(chandef, chan, chan_type);
+	/* Above kernel API doesn't support BW80 case */
+	if (CHSPEC_BW(chanspec) == WL_CHANSPEC_BW_80) {
+		freq = wl_channel_to_frequency(CHSPEC_CHANNEL(chanspec), CHSPEC_BAND(chanspec));
+		chandef->width = NL80211_CHAN_WIDTH_80;
+		chandef->center_freq1 = freq;
+	}
+
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 5, 0) && (LINUX_VERSION_CODE <= (3, 7, \
 	0)))
 	chaninfo->freq = freq;
@@ -5270,6 +5339,11 @@ wl_ap_channel_ind(struct bcm_cfg80211 *cfg,
 		wl_cfg80211_ch_switch_notify(ndev, chanspec, bcmcfg_to_wiphy(cfg));
 #endif /* LINUX_VERSION_CODE >= (3, 5, 0) */
 		cfg->ap_oper_channel = chanspec;
+
+#ifdef WL_CELLULAR_CHAN_AVOID
+		wl_cellavoid_set_csa_done(cfg->cellavoid_info);
+#endif /* WL_CELLULAR_CHAN_AVOID */
+
 	}
 }
 
@@ -6754,3 +6828,45 @@ wl_update_configured_bw(uint32 bw)
 	return configured_bw;
 }
 #endif /* SUPPORT_AP_INIT_BWCONF */
+
+uint32
+wl_cfgvif_get_iftype_count(struct bcm_cfg80211 *cfg, wl_iftype_t iftype)
+{
+	struct net_info *iter, *next;
+	u32 count = 0;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	for_each_ndev(cfg, iter, next) {
+		GCC_DIAGNOSTIC_POP();
+		/* Check against wl_iftype_t type */
+		if ((iter->wdev) && (iter->iftype == iftype)) {
+			struct net_device *ndev = iter->wdev->netdev;
+
+			switch (iftype) {
+				case WL_IF_TYPE_STA:
+				case WL_IF_TYPE_AP:
+					if (ndev && wl_get_drv_status(cfg, CONNECTED, ndev)) {
+						/* If interface is in connected state, mark it */
+						count++;
+					}
+					break;
+				/* P2P, NAN interfaces are dynamically created when required
+				 * and removed after use. so presence of interface indicates
+				 * that role is active.
+				 */
+				case WL_IF_TYPE_P2P_GO:
+				case WL_IF_TYPE_P2P_GC:
+				case WL_IF_TYPE_P2P_DISC:
+				case WL_IF_TYPE_NAN:
+				case WL_IF_TYPE_NAN_NMI:
+				case WL_IF_TYPE_MONITOR:
+				case WL_IF_TYPE_IBSS:
+					count++;
+					break;
+				default:
+					WL_DBG(("Ignore iftype:%d\n", iftype));
+			}
+		}
+	}
+	return count;
+}

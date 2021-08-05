@@ -450,7 +450,7 @@ typedef struct hnd_ext_trap_phydbg_v2 {
 	uint16 gpioSel;
 	uint16 pktprocdebug;
 	uint32 gpioOut[3];
-	uint32 additional_regs[1];
+	uint32 additional_regs[BCM_FLEX_ARRAY];
 } hnd_ext_trap_phydbg_v2_t;
 
 #define HND_EXT_TRAP_PHY_INFO_VER_3		(3)
@@ -487,7 +487,7 @@ typedef struct hnd_ext_trap_phydbg_v3 {
 	uint32 gpioOut[3];
 	uint16 HESigURateFlagStatus;
 	uint16 HESigUsRateFlagStatus;
-	uint32 additional_regs[1];
+	uint32 additional_regs[BCM_FLEX_ARRAY];
 } hnd_ext_trap_phydbg_v3_t;
 
 /* Phy TxErr Dump Structure */

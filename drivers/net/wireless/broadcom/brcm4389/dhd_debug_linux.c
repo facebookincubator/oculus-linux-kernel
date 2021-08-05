@@ -176,8 +176,10 @@ dbg_ring_poll_worker(struct work_struct *work)
 				DHD_DBGIF(("%s READ/WRITE counter mismatched!\n", __FUNCTION__));
 				ring->stat.read_bytes = ring->stat.written_bytes;
 			}
-			DHD_DBGIF(("%s RING%d[%s]read_bytes %d, wp=%d, rp=%d\n", __FUNCTION__,
-				ring->id, ring->name, ring->stat.read_bytes, ring->wp, ring->rp));
+			DHD_INFO(("%s RING%d[%s]read_bytes %d, written_bytes %d, "
+				"writen_records %d\n", __FUNCTION__, ring->id, ring->name,
+				ring->stat.read_bytes, ring->stat.written_bytes,
+				ring->stat.written_records));
 		} else
 #endif /* DHD_PKT_LOGGING_DBGRING */
 		{
@@ -201,11 +203,18 @@ dbg_ring_poll_worker(struct work_struct *work)
 exit:
 	if (sched) {
 		/* retrigger the work at same interval */
-		if ((ring_status.written_bytes == ring_status.read_bytes) &&
-				(ring_info->interval)) {
-			schedule_delayed_work(d_work, ring_info->interval);
+		if ((ring_info->interval)) {
+			if ((ring_status.written_bytes == ring_status.read_bytes) ||
+#ifdef DHD_PKT_LOGGING_DBGRING
+				(ringid == PACKET_LOG_RING_ID)) {
+#else
+				FALSE) {
+#endif /* DHD_PKT_LOGGING_DBGRING */
+				schedule_delayed_work(d_work, ring_info->interval);
+			}
 		}
 	}
+
 	return;
 }
 
@@ -241,7 +250,7 @@ dhd_os_start_logging(dhd_pub_t *dhdp, char *ring_name, int log_level,
 	if (!VALID_RING(ring_id))
 		return BCME_UNSUPPORTED;
 
-	DHD_INFO(("%s , log_level : %d, time_intval : %d, threshod %d Bytes\n",
+	DHD_LOG_MEM(("%s , log_level : %d, time_intval : %d, threshod %d Bytes\n",
 		__FUNCTION__, log_level, time_intval, threshold));
 
 	/* change the configuration */
@@ -507,7 +516,10 @@ dhd_os_dbg_urgent_pullreq(void *os_priv, int ring_id)
 
 	ring_info = &((linux_dbgring_info_t *)os_priv)[ring_id];
 	cancel_delayed_work(&ring_info->work);
-	return dbg_ring_poll_worker(&ring_info->work.work);
+	dbg_ring_poll_worker(&ring_info->work.work);
+	schedule_delayed_work(&ring_info->work, ring_info->interval);
+
+	return;
 }
 #endif /* DHD_PKT_LOGGING_DBGRING */
 

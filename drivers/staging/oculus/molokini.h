@@ -4,6 +4,7 @@
 #define _MOLOKINI_H__
 
 #include <linux/mutex.h>
+#include <linux/power_supply.h>
 #include <linux/usb/usbpd.h>
 #include <linux/workqueue.h>
 
@@ -120,6 +121,18 @@ struct molokini_pd {
 	enum molokini_fw_mount_state last_mount_ack;
 	/* work for periodically processing HMD mount state */
 	struct delayed_work dwork;
+	/* power supply object handle for internal HMD battery */
+	struct power_supply *battery_psy;
+	/* power supply object handle for USB power supply */
+	struct power_supply	*usb_psy;
+	/* notifier block for handling power supply change events */
+	struct notifier_block nb;
+	/* molokini on-demand charging suspend disable */
+	bool charging_suspend_disable;
+	/* battery capacity threshold for charging suspend */
+	u32 charging_suspend_threshold;
+	/* battery capacity threshold for charging resume */
+	u32 charging_resume_threshold;
 };
 
 #endif /* _MOLOKINI_H__ */

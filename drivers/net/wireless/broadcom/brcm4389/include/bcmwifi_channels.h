@@ -219,7 +219,13 @@ typedef struct {
 #ifndef CHSPEC_IS160
 #define CHSPEC_IS160(chspec)	(((chspec) & WL_CHANSPEC_BW_MASK) == WL_CHANSPEC_BW_160)
 #endif
+#ifndef CHSPEC_IS8080
+#ifdef WFC_NON_CONT_CHAN
+#define CHSPEC_IS8080(chspec)	(((chspec) & WL_CHANSPEC_BW_MASK) == WL_CHANSPEC_BW_8080)
+#else
 #define CHSPEC_IS8080(chspec)	(FALSE)
+#endif
+#endif /* CHSPEC_IS8080 */
 #ifndef CHSPEC_IS320
 #ifdef WL11BE
 #define CHSPEC_IS320(chspec)	(((chspec) & WL_CHANSPEC_BW_MASK) == WL_CHANSPEC_BW_320)
@@ -234,6 +240,13 @@ typedef struct {
 #define CHSPEC_IS240(chspec)	(FALSE)
 #endif
 #endif /* CHSPEC_IS240 */
+#ifndef CHSPEC_IS160160
+#ifdef WFC_NON_CONT_CHAN
+#define CHSPEC_IS160160(chspec)	(((chspec) & WL_CHANSPEC_BW_MASK) == WL_CHANSPEC_BW_160160)
+#else
+#define CHSPEC_IS160160(chspec)	(FALSE)
+#endif
+#endif /* CHSPEC_IS160160 */
 
 /* pass a center channel and get channel offset from it by 10MHz */
 #define CH_OFF_10MHZ_MULTIPLES(channel, offset)				\
@@ -255,6 +268,26 @@ uint wf_chspec_first_20_sb(chanspec_t chspec);
 #define ULU_20_SB_160(channel)  CH_OFF_10MHZ_MULTIPLES(channel,  3)
 #define UUL_20_SB_160(channel)  CH_OFF_10MHZ_MULTIPLES(channel,  5)
 #define UUU_20_SB_160(channel)  CH_OFF_10MHZ_MULTIPLES(channel,  7)
+
+/* given an 80p80 channel, return the lower 80MHz sideband */
+#define LOWER_80_SB(chspec)  (wf_chspec_primary80_channel(chspec) < \
+		wf_chspec_secondary80_channel(chspec) ? \
+		wf_chspec_primary80_channel(chspec) : wf_chspec_secondary80_channel(chspec))
+
+/* given an 80p80 channel, return the upper 80MHz sideband */
+#define UPPER_80_SB(chspec)  (wf_chspec_primary80_channel(chspec) > \
+		wf_chspec_secondary80_channel(chspec) ? \
+		wf_chspec_primary80_channel(chspec) : wf_chspec_secondary80_channel(chspec))
+
+/* pass an 80P80 chanspec (not channel) to get 20MHz subnand channel numbers */
+#define LLL_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(LOWER_80_SB(chspec), -3)
+#define LLU_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(LOWER_80_SB(chspec), -1)
+#define LUL_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(LOWER_80_SB(chspec),  1)
+#define LUU_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(LOWER_80_SB(chspec),  3)
+#define ULL_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(UPPER_80_SB(chspec), -3)
+#define ULU_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(UPPER_80_SB(chspec), -1)
+#define UUL_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(UPPER_80_SB(chspec),  1)
+#define UUU_20_SB_8080(chspec)  CH_OFF_10MHZ_MULTIPLES(UPPER_80_SB(chspec),  3)
 
 /* get lowest 20MHz sideband of a given chspec
  * (works with 20, 40, 80, 160)
@@ -292,6 +325,10 @@ uint wf_chspec_first_20_sb(chanspec_t chspec);
 #define ULU_20_SB_160(channel)  0
 #define UUL_20_SB_160(channel)  0
 #define UUU_20_SB_160(channel)  0
+
+#define LOWER_80_SB(chspec)	0
+
+#define UPPER_80_SB(chspec)	0
 
 /* get lowest 20MHz sideband of a given chspec
  * (works with 20, 40, 80)
@@ -394,11 +431,32 @@ extern bool wf_chspec_coexist(chanspec_t chspec1, chanspec_t chspec2);
 #define CHSPEC_IS_BW_160_WIDE(chspec) (CHSPEC_BW(chspec) == WL_CHANSPEC_BW_160 ||\
 	CHSPEC_BW(chspec) == WL_CHANSPEC_BW_8080)
 
-/* BW inequality comparisons, GE (>=), GT (>) */
+/* BW inequality comparisons, LE (<=), GE (>=), LT (<), GT (>), comparisons can be made
+* as simple numeric comparisons, with the exception that 160 is the same BW as 80+80,
+* but have different numeric values; (WL_CHANSPEC_BW_160 < WL_CHANSPEC_BW_8080).
+*
+* The LT/LE/GT/GE macros check first checks whether both chspec bandwidth and bw are 160 wide.
+* If both chspec bandwidth and bw is not 160 wide, then the comparison is made.
+*/
+#define CHSPEC_BW_GE(chspec, bw) \
+		((CHSPEC_IS_BW_160_WIDE(chspec) &&\
+		((bw) == WL_CHANSPEC_BW_160 || (bw) == WL_CHANSPEC_BW_8080)) ||\
+		(CHSPEC_BW(chspec) >= (bw)))
 
-#define CHSPEC_BW_GE(chspec, bw) (CHSPEC_BW(chspec) >= (bw))
+#define CHSPEC_BW_LE(chspec, bw) \
+		((CHSPEC_IS_BW_160_WIDE(chspec) &&\
+		((bw) == WL_CHANSPEC_BW_160 || (bw) == WL_CHANSPEC_BW_8080)) ||\
+		(CHSPEC_BW(chspec) <= (bw)))
 
-#define CHSPEC_BW_GT(chspec, bw) (CHSPEC_BW(chspec) > (bw))
+#define CHSPEC_BW_GT(chspec, bw) \
+		(!(CHSPEC_IS_BW_160_WIDE(chspec) &&\
+		((bw) == WL_CHANSPEC_BW_160 || (bw) == WL_CHANSPEC_BW_8080)) &&\
+		(CHSPEC_BW(chspec) > (bw)))
+
+#define CHSPEC_BW_LT(chspec, bw) \
+		(!(CHSPEC_IS_BW_160_WIDE(chspec) &&\
+		((bw) == WL_CHANSPEC_BW_160 || (bw) == WL_CHANSPEC_BW_8080)) &&\
+		(CHSPEC_BW(chspec) < (bw)))
 
 /* Legacy Chanspec defines
  * These are the defines for the previous format of the chanspec_t
@@ -604,7 +662,7 @@ chanspec_t wf_create_320MHz_chspec(uint primary_channel, uint center_channel,
  * the center channel numbers for each frequency segment, and the band.
  */
 chanspec_t wf_create_8080MHz_chspec(uint primary_channel, uint chan0, uint chan1,
-                                    chanspec_band_t band);
+	chanspec_band_t band);
 
 /**
  * Returns the chanspec for an 160+160MHz channel given the primary 20MHz channel number,
@@ -616,7 +674,8 @@ chanspec_t wf_create_160160MHz_chspec(uint primary_channel, uint chan0, uint cha
  * Returns the chanspec given the primary 20MHz channel number,
  * the center channel number, channel width, and the band.
  *
- * The channel width must be 20, 40, 80, or 160 MHz.
+ * The channel width must be 20, 40, 80, or 160 MHz. 80+80 MHz chanspec creation
+ * is not handled by this function, use  wf_create_8080MHz_chspec() instead.
  */
 chanspec_t wf_create_chspec(uint primary_channel, uint center_channel,
                             chanspec_bw_t bw, chanspec_band_t band);
@@ -632,10 +691,19 @@ chanspec_t wf_create_chspec_from_primary(uint primary_channel, chanspec_bw_t bw,
  * Returns the chanspec given the index of primary 20MHz channel within whole
  * channel, the center channel number, channel width, and the band.
  *
- * The channel width must be 20, 40, 80, or 160 MHz.
+ * The channel width must be 20, 40, 80, or 160 MHz. 80+80 MHz chanspec creation
+ * is not handled by this function, use  wf_create_8080MHz_chspec_prim_idx() instead.
  */
 chanspec_t wf_create_chspec_sb(uint sb, uint center_channel, chanspec_bw_t bw,
                                chanspec_band_t band);
+
+/**
+ * Returns the chanspec for an 80+80MHz channel given the index of primary 20MHz
+ * channel within whole channel pair (0-3 if within chan0, 4-7 if within chan1),
+ * the center channel numbers for each frequency segment, and the band.
+ */
+chanspec_t wf_create_8080MHz_chspec_sb(uint sb, uint chan0, uint chan1,
+                                       chanspec_band_t band);
 
 /**
  * Returns the chanspec for an 160+160MHz channel given the index of primary 20MHz
@@ -665,6 +733,11 @@ chanspec_t wf_chspec_primary20_chspec(chanspec_t chspec);
  * Return the primary 40MHz chanspec for a 40MHz or wider channel
  */
 chanspec_t wf_chspec_primary40_chspec(chanspec_t chspec);
+
+/**
+ * Return the chanspec band for a given frequency.
+ */
+chanspec_band_t wf_mhz2chanspec_band(uint freq);
 
 /**
  * Return the channel number for a given frequency and base frequency

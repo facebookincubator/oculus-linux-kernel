@@ -1596,7 +1596,7 @@ wl_cfgnan_get_iovars_status(void *ctx, const uint8 *data, uint16 type, uint16 le
 
 	/* If status is non zero */
 	if (status != BCME_OK) {
-		printf("cmd type %d failed, status: %04x\n", type, status);
+		WL_ERR(("cmd type %d failed, status: %04x\n", type, status));
 		goto exit;
 	}
 

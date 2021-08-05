@@ -46,6 +46,8 @@
 #endif
 
 #define EVENT_LOG_BLOCK_SIZE_1K		0x400u
+#define EVENT_LOG_BLOCK_SIZE_512B	0x200u
+#define EVENT_LOG_BLOCK_SIZE_256B	0x100u
 #define EVENT_LOG_WL_BLOCK_SIZE		0x200
 #define EVENT_LOG_PSM_BLOCK_SIZE	0x200
 #define EVENT_LOG_MEM_API_BLOCK_SIZE	0x200
@@ -54,8 +56,8 @@
 #define EVENT_LOG_MSCH_BLOCK_SIZE	0x400
 #define EVENT_LOG_WBUS_BLOCK_SIZE	0x100
 #define EVENT_LOG_PRSV_PERIODIC_BLOCK_SIZE (0x200u)
-
 #define EVENT_LOG_WL_BUF_SIZE		(EVENT_LOG_WL_BLOCK_SIZE * 3u)
+#define EVENT_LOG_SIB_BLOCK_SIZE	0x100
 
 #define EVENT_LOG_TOF_INLINE_BLOCK_SIZE	1300u
 #define EVENT_LOG_TOF_INLINE_BUF_SIZE (EVENT_LOG_TOF_INLINE_BLOCK_SIZE * 3u)
@@ -121,6 +123,7 @@ typedef struct event_log_block {
 	_EL_BLOCK_PTR next_block;
 	_EL_BLOCK_PTR prev_block;
 	_EL_TYPE_PTR end_ptr;
+	uint32 flags;			/* Block specific flags */
 
 	/* Start of packet sent for log tracing */
 	uint16 pktlen;			/* Size of rest of block */
@@ -129,6 +132,10 @@ typedef struct event_log_block {
 	uint32 event_logs;		/* Pointer to BEGINNING of event logs */
 	/* Event logs go here. Do not put extra fields below. */
 } event_log_block_t;
+
+/* Block specific data */
+#define EVENT_LOG_PRESERVE_BLOCK	(1u)
+#define EVENT_LOG_BLOCK_FLAG_MASK	0xFFu /* MSB 24 bits of flags field reserved */
 
 /* Relative offset of extra_hdr_info field frpm pktlen field in log block */
 #define EVENT_LOG_BUF_EXTRA_HDR_INFO_REL_PKTLEN_OFFSET		\
@@ -141,21 +148,17 @@ typedef struct event_log_block {
 					+ sizeof(((event_log_block_t *) 0)->extra_hdr_info))
 #define EVENT_LOG_BLOCK_LEN		(EVENT_LOG_BLOCK_HDRLEN	+ sizeof(event_log_hdr_t))
 
-#define EVENT_LOG_PRESERVE_BLOCK	(1 << 0)
-#define EVENT_LOG_BLOCK_FLAG_MASK	0xff000000u
-#define EVENT_LOG_BLOCK_FLAG_SHIFT	24u
+#define EVENT_LOG_BLOCK_GET_PREV_BLOCK(block)	((block)->prev_block)
 
-#define EVENT_LOG_BLOCK_GET_PREV_BLOCK(block)	((_EL_BLOCK_PTR)(((uint32)((block)->prev_block)) & \
-	~EVENT_LOG_BLOCK_FLAG_MASK))
-#define EVENT_LOG_BLOCK_SET_PREV_BLOCK(block, prev)	((block)->prev_block = \
-	((_EL_BLOCK_PTR)((((uint32)(block)->prev_block) & EVENT_LOG_BLOCK_FLAG_MASK) | \
-	(((uint32)(prev)) & ~EVENT_LOG_BLOCK_FLAG_MASK))))
-#define EVENT_LOG_BLOCK_GET_FLAG(block)	((((uint32)(block)->prev_block) &	\
-	EVENT_LOG_BLOCK_FLAG_MASK) >> EVENT_LOG_BLOCK_FLAG_SHIFT)
-#define EVENT_LOG_BLOCK_SET_FLAG(block, flag) ((block)->prev_block =	\
-		(_EL_BLOCK_PTR)(((uint32)EVENT_LOG_BLOCK_GET_PREV_BLOCK(block)) | flag))
+#define EVENT_LOG_BLOCK_SET_PREV_BLOCK(block, prev)	((block)->prev_block = (prev))
+
+#define EVENT_LOG_BLOCK_GET_FLAG(block)	(((uint32)(block)->flags) & EVENT_LOG_BLOCK_FLAG_MASK)
+
+#define EVENT_LOG_BLOCK_SET_FLAG(block, flag) ((block)->flags |=	\
+	((flag) & EVENT_LOG_BLOCK_FLAG_MASK))
+
 #define EVENT_LOG_BLOCK_OR_FLAG(block, flag)	EVENT_LOG_BLOCK_SET_FLAG(block,	\
-		(EVENT_LOG_BLOCK_GET_FLAG(block) | flag) << EVENT_LOG_BLOCK_FLAG_SHIFT)
+	(EVENT_LOG_BLOCK_GET_FLAG(block) | (flag)))
 
 typedef enum {
 	SET_DESTINATION_INVALID = -1,
@@ -555,10 +558,33 @@ extern bool prsv_periodic_enab;
 
 extern uint8 *event_log_tag_sets;
 
+/* Initialize event log top and tag_sets context on given buffers. */
+int event_log_init_context(event_log_top_t *top, uint8 *tag_sets, uint16 tag_sets_len,
+		uint8 *tag_sets_ext, uint16 tag_sets_ext_len);
+/* Initialize event log set context on a given buffer */
+void event_log_set_init_context(event_log_set_t *ts, int size);
+/* Add a newly allocated block to a specific set */
+void event_log_set_add_block(event_log_set_t *ts, event_log_block_t *tb);
+/* Rest a set after adding new blocks */
+void event_log_set_reset(event_log_set_t *ts);
 extern int event_log_init(osl_t *osh);
 extern int event_log_set_init(osl_t *osh, int set_num, int size);
 extern int event_log_set_expand(osl_t *osh, int set_num, int size);
 extern int event_log_set_shrink(osl_t *osh, int set_num, int size);
+
+/**
+ * @brief Event log host access state change notification callback function type
+ * @param[in] ctx   Context pointer provided when registering the callback
+ * @param[in] start New state, TRUE if access is allowed otherwise FALSE
+ */
+typedef void (*event_log_state_change_cb_t)(void* ctx, bool start);
+/* Register host access state change notification callback */
+void event_log_state_change_register_cb(event_log_state_change_cb_t fn, void *ctx);
+
+#ifdef BOOTMEM_ALLOCATOR
+int event_log_set_init_bootmem(osl_t *osh, int set_num, uint bootmem_id);
+void event_log_set_deinit_bootmem(osl_t *osh, int set_num, uint bootmem_id);
+#endif /* BOOTMEM_ALLOCATOR */
 
 extern int event_log_tag_start(int tag, int set_num, int flags);
 extern int event_log_tag_set_retrieve(int tag);
@@ -570,7 +596,7 @@ void event_log_set_logtrace_trigger_fn(event_log_logtrace_trigger_fn_t fn, void 
 
 event_log_top_t *event_log_get_top(void);
 
-extern int event_log_get(int set_num, int buflen, void *buf);
+extern int event_log_get(int set_num, uint buflen, void *buf);
 
 extern uint8 *event_log_next_logtrace(int set_num);
 extern uint32 event_log_logtrace_max_buf_count(int set_num);
@@ -585,7 +611,7 @@ extern void event_log4(int tag, int fmtNum, uint32 t1, uint32 t2, uint32 t3, uin
 extern void event_logn(int num_args, int tag, int fmtNum, ...);
 #ifdef ROM_COMPAT_MSCH_PROFILER
 /* For compatibility with ROM, for old msch event log function to pass parameters in stack */
-extern void event_logv(int num_args, int tag, int fmtNum, va_list ap);
+extern void event_logv(uint num_args, int tag, int fmtNum, va_list ap);
 #endif /* ROM_COMPAT_MSCH_PROFILER */
 
 extern void event_log_time_sync(uint32 ms);
@@ -618,8 +644,10 @@ extern void event_log_d3_preserve_active_set(osl_t* osh, int set, bool active);
 extern void event_log_d3_prsv_set_all(osl_t *osh, bool active);
 #endif /* EVENTLOG_D3_PRESERVE */
 
-#ifdef EVENTLOG_PRSV_PERIODIC
+#if defined(EVENTLOG_PRSV_PERIODIC) || defined(EVENTLOG_D3_PRESERVE)
 #define EVENT_LOG_SET_SIZE_INVALID	0xFFFFFFFFu
+#endif /* EVENTLOG_PRSV_PERIODIC || EVENTLOG_D3_PRESERVE */
+#ifdef EVENTLOG_PRSV_PERIODIC
 #define EVENT_LOG_DEFAULT_PERIOD	3000u
 extern void event_log_prsv_periodic_wd_trigger(osl_t *osh);
 #endif /* EVENTLOG_PRSV_PERIODIC */
