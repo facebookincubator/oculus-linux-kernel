@@ -110,20 +110,11 @@ int wlan_hdd_cfg80211_nan_request(struct wiphy *wiphy,
 	return ret;
 }
 
-void wlan_hdd_cfg80211_nan_callback(hdd_handle_t hdd_handle, tSirNanEvent *msg)
+static void
+wlan_hdd_cfg80211_send_nan_msg(struct hdd_context *hdd_ctx,
+			       tSirNanEvent *msg)
 {
-	struct hdd_context *hdd_ctx = hdd_handle_to_context(hdd_handle);
 	struct sk_buff *vendor_event;
-	int status;
-
-	if (!msg) {
-		hdd_err("msg received here is null");
-		return;
-	}
-
-	status = wlan_hdd_validate_context(hdd_ctx);
-	if (status)
-		return;
 
 	vendor_event =
 		cfg80211_vendor_event_alloc(hdd_ctx->wiphy,
@@ -143,4 +134,45 @@ void wlan_hdd_cfg80211_nan_callback(hdd_handle_t hdd_handle, tSirNanEvent *msg)
 		return;
 	}
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+}
+
+void wlan_hdd_cfg80211_nan_callback(hdd_handle_t hdd_handle, tSirNanEvent *msg)
+{
+	struct hdd_context *hdd_ctx = hdd_handle_to_context(hdd_handle);
+	int status;
+
+	if (!msg) {
+		hdd_err("msg received here is null");
+		return;
+	}
+
+	status = wlan_hdd_validate_context(hdd_ctx);
+	if (status)
+		return;
+
+	wlan_hdd_cfg80211_send_nan_msg(hdd_ctx, msg);
+}
+
+QDF_STATUS hdd_nan_disable_ind_to_userspace(struct hdd_context *hdd_ctx)
+{
+	tSirNanEvent *disable_ind;
+	struct nan_disable_ind_msg msg = {
+		.msg_hdr.msg_id = NAN_MSG_ID_DISABLE_INDICATION,
+		.reason = 0, /* success */ };
+
+	disable_ind = qdf_mem_malloc(sizeof(tSirNanEvent) +
+				     sizeof(msg));
+	if (!disable_ind) {
+		hdd_err("failed to alloc disable_ind");
+		return QDF_STATUS_E_NOMEM;
+	}
+	disable_ind->event_data_len = sizeof(msg);
+	qdf_mem_copy(disable_ind->event_data, &msg,
+		     disable_ind->event_data_len);
+
+	wlan_hdd_cfg80211_send_nan_msg(hdd_ctx, disable_ind);
+	hdd_err("NAN disable event sent");
+	qdf_mem_free(disable_ind);
+
+	return QDF_STATUS_SUCCESS;
 }

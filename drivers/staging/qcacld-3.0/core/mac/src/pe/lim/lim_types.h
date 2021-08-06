@@ -474,8 +474,21 @@ QDF_STATUS lim_process_auth_frame_no_session(tpAniSirGlobal mac,
 
 
 void lim_process_assoc_req_frame(tpAniSirGlobal, uint8_t *, uint8_t, tpPESession);
-void lim_send_mlm_assoc_ind(tpAniSirGlobal pMac, tpDphHashNode pStaDs,
-			    tpPESession psessionEntry);
+
+/**
+ * lim_send_mlm_assoc_ind() - Sends assoc indication to SME
+ * @mac_ctx: Global Mac context
+ * @sta_ds: Station DPH hash entry
+ * @session_entry: PE session entry
+ *
+ * This function sends either LIM_MLM_ASSOC_IND
+ * or LIM_MLM_REASSOC_IND to SME.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS lim_send_mlm_assoc_ind(tpAniSirGlobal mac_ctx,
+				  tpDphHashNode sta_ds,
+				  tpPESession session_entry);
 
 void lim_process_assoc_rsp_frame(tpAniSirGlobal, uint8_t *, uint8_t, tpPESession);
 void lim_process_disassoc_frame(tpAniSirGlobal, uint8_t *, tpPESession);

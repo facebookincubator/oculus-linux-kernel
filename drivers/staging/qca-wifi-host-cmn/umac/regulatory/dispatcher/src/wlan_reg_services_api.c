@@ -543,10 +543,11 @@ bool wlan_reg_is_etsi13_regdmn(struct wlan_objmgr_pdev *pdev)
 	return reg_is_etsi13_regdmn(pdev);
 }
 
-bool wlan_reg_is_etsi13_srd_chan_allowed_master_mode(struct wlan_objmgr_pdev
-						     *pdev)
+bool
+wlan_reg_is_etsi13_srd_chan_allowed_master_mode(struct wlan_objmgr_pdev *pdev,
+						enum QDF_OPMODE vdev_opmode)
 {
-	return reg_is_etsi13_srd_chan_allowed_master_mode(pdev);
+	return reg_is_etsi13_srd_chan_allowed_master_mode(pdev, vdev_opmode);
 }
 
 bool wlan_reg_get_fcc_constraint(struct wlan_objmgr_pdev *pdev, uint32_t freq)

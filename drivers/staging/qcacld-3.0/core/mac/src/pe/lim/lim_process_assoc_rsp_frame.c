@@ -476,46 +476,13 @@ static void lim_stop_reassoc_retry_timer(tpAniSirGlobal mac_ctx)
 	lim_deactivate_and_change_timer(mac_ctx, eLIM_REASSOC_FAIL_TIMER);
 }
 
-#ifdef WLAN_FEATURE_11W
-static void lim_handle_assoc_reject_status(tpAniSirGlobal mac_ctx,
-					   tpPESession session_entry,
-					   tpSirAssocRsp assoc_rsp,
-					   tSirMacAddr source_addr)
+static void clean_up_ft_sha384(tpSirAssocRsp assoc_rsp, bool sha384_akm)
 {
-	struct sir_rssi_disallow_lst ap_info = {{0}};
-	uint32_t timeout_value =
-		assoc_rsp->TimeoutInterval.timeoutValue;
-
-	if (!(session_entry->limRmfEnabled &&
-	    assoc_rsp->statusCode == eSIR_MAC_TRY_AGAIN_LATER &&
-	    (assoc_rsp->TimeoutInterval.present &&
-	    (assoc_rsp->TimeoutInterval.timeoutType ==
-	     SIR_MAC_TI_TYPE_ASSOC_COMEBACK))))
-		return;
-
-	/*
-	 * Add to rssi reject list, which takes care of retry
-	 * delay too. Fill the RSSI as 0, so the only param
-	 * which will allow the bssid to connect is retry delay.
-	 */
-	ap_info.retry_delay = timeout_value;
-	qdf_mem_copy(ap_info.bssid.bytes, source_addr,
-		     QDF_MAC_ADDR_SIZE);
-	ap_info.expected_rssi = LIM_MIN_RSSI;
-	lim_assoc_rej_add_to_rssi_based_reject_list(mac_ctx,
-						    &ap_info);
-
-	pe_debug("ASSOC res with eSIR_MAC_TRY_AGAIN_LATER recvd. Add to time reject list(rssi reject in mac_ctx %d",
-		 timeout_value);
+	if (sha384_akm) {
+		qdf_mem_free(assoc_rsp->sha384_ft_subelem.gtk);
+		qdf_mem_free(assoc_rsp->sha384_ft_subelem.igtk);
+	}
 }
-#else
-static void lim_handle_assoc_reject_status(tpAniSirGlobal mac_ctx,
-					   tpPESession session_entry,
-					   tpSirAssocRsp assoc_rsp,
-					   tSirMacAddr source_addr)
-{
-}
-#endif
 
 /**
  * lim_process_assoc_rsp_frame() - Processes assoc response
@@ -550,6 +517,8 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 #endif
 	tSirMacEdcaParamRecord mu_edca_set[MAX_NUM_AC];
 	int8_t rssi;
+	enum ani_akm_type auth_type;
+	bool sha384_akm;
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 	sme_sessionid = session_entry->smeSessionId;
@@ -729,6 +698,9 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 	lim_update_ese_tspec(mac_ctx, session_entry, assoc_rsp);
 #endif
 
+	auth_type = session_entry->connected_akm;
+	sha384_akm = lim_is_sha384_akm(auth_type);
+
 	if (assoc_rsp->capabilityInfo.ibss) {
 		/*
 		 * Received Re/Association Response from peer
@@ -737,6 +709,7 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 		 * failure timeout.
 		 */
 		pe_err("received Re/AssocRsp frame with IBSS capability");
+		clean_up_ft_sha384(assoc_rsp, sha384_akm);
 		qdf_mem_free(assoc_rsp);
 		qdf_mem_free(beacon);
 		return;
@@ -744,6 +717,7 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 
 	if (cfg_get_capability_info(mac_ctx, &caps, session_entry)
 		!= QDF_STATUS_SUCCESS) {
+		clean_up_ft_sha384(assoc_rsp, sha384_akm);
 		qdf_mem_free(assoc_rsp);
 		qdf_mem_free(beacon);
 		pe_err("could not retrieve Capabilities");
@@ -756,9 +730,6 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 		lim_deactivate_and_change_timer(mac_ctx, eLIM_ASSOC_FAIL_TIMER);
 	else
 		lim_stop_reassoc_retry_timer(mac_ctx);
-
-	lim_handle_assoc_reject_status(mac_ctx, session_entry, assoc_rsp,
-				       hdr->sa);
 
 	if (eSIR_MAC_XS_FRAME_LOSS_POOR_CHANNEL_RSSI_STATUS ==
 	   assoc_rsp->statusCode &&
@@ -837,6 +808,7 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 			NULL) != QDF_STATUS_SUCCESS) {
 			pe_err("Set link state to POSTASSOC failed");
 			qdf_mem_free(beacon);
+			clean_up_ft_sha384(assoc_rsp, sha384_akm);
 			qdf_mem_free(assoc_rsp);
 			return;
 		}
@@ -969,6 +941,7 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 		assoc_cnf.protStatusCode = eSIR_SME_SUCCESS;
 		lim_post_sme_message(mac_ctx, LIM_MLM_ASSOC_CNF,
 			(uint32_t *) &assoc_cnf);
+		clean_up_ft_sha384(assoc_rsp, sha384_akm);
 		qdf_mem_free(assoc_rsp);
 		qdf_mem_free(beacon);
 		return;
@@ -1034,6 +1007,7 @@ lim_process_assoc_rsp_frame(tpAniSirGlobal mac_ctx,
 			beacon,
 			&session_entry->pLimJoinReq->bssDescription, true,
 			 session_entry)) {
+		clean_up_ft_sha384(assoc_rsp, sha384_akm);
 		qdf_mem_free(assoc_rsp);
 		qdf_mem_free(beacon);
 		return;

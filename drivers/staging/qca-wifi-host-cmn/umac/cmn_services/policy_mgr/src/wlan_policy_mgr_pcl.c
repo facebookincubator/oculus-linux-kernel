@@ -460,21 +460,24 @@ static QDF_STATUS
 policy_mgr_modify_pcl_based_on_srd(struct wlan_objmgr_psoc *psoc,
 				   uint8_t *pcl_list_org,
 				   uint8_t *weight_list_org,
-				   uint32_t *pcl_len_org)
+				   uint32_t *pcl_len_org,
+				   enum QDF_OPMODE vdev_opmode)
 {
 	uint32_t i, pcl_len = 0;
 	uint8_t pcl_list[QDF_MAX_NUM_CHAN];
 	uint8_t weight_list[QDF_MAX_NUM_CHAN];
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
-	bool is_etsi13_srd_chan_allowed_in_mas_mode = true;
+	bool is_etsi13_srd_chan_allowed_in_mas_mode;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
 		policy_mgr_err("Invalid Context");
 		return QDF_STATUS_E_FAILURE;
 	}
+
 	is_etsi13_srd_chan_allowed_in_mas_mode =
-		wlan_reg_is_etsi13_srd_chan_allowed_master_mode(pm_ctx->pdev);
+		wlan_reg_is_etsi13_srd_chan_allowed_master_mode(pm_ctx->pdev,
+								vdev_opmode);
 
 	if (is_etsi13_srd_chan_allowed_in_mas_mode)
 		return QDF_STATUS_SUCCESS;
@@ -539,7 +542,8 @@ static QDF_STATUS policy_mgr_pcl_modification_for_sap(
 	dfs_modified_pcl = true;
 
 	status = policy_mgr_modify_pcl_based_on_srd
-			(psoc, pcl_channels, pcl_weight, len);
+			(psoc, pcl_channels, pcl_weight, len,
+			 QDF_SAP_MODE);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		policy_mgr_err("failed to get srd modified pcl for SAP");
 		return status;
@@ -576,7 +580,8 @@ static QDF_STATUS policy_mgr_pcl_modification_for_p2p_go(
 		return status;
 	}
 	status = policy_mgr_modify_pcl_based_on_srd
-			(psoc, pcl_channels, pcl_weight, len);
+			(psoc, pcl_channels, pcl_weight, len,
+			 QDF_P2P_GO_MODE);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		policy_mgr_err("failed to get modified pcl for SAP");
 		return status;

@@ -609,6 +609,7 @@ struct vdev_delete_params {
  * @allow_ht: HT allowed in chan
  * @allow_vht: VHT allowed on chan
  * @set_agile: is agile mode
+ * @nan_disabled: is NAN disabled on @mhz
  * @phy_mode: phymode (vht80 or ht40 or ...)
  * @cfreq1: centre frequency on primary
  * @cfreq2: centre frequency on secondary
@@ -630,7 +631,8 @@ struct channel_param {
 		is_chan_passive:1,
 		allow_ht:1,
 		allow_vht:1,
-		set_agile:1;
+		set_agile:1,
+		nan_disabled:1;
 	uint32_t phy_mode;
 	uint32_t cfreq1;
 	uint32_t cfreq2;
@@ -2080,6 +2082,10 @@ struct roam_offload_scan_params {
  * @bg_scan_bad_rssi_thresh: Bad RSSI threshold to perform bg scan
  * @roam_bad_rssi_thresh_offset_2g: Offset from Bad RSSI threshold for 2G to 5G Roam
  * @bg_scan_client_bitmap: Bitmap used to identify the client scans to snoop
+ * @roam_data_rssi_threshold_triggers: triggers of bad data RSSI threshold to
+ *                                     roam
+ * @roam_data_rssi_threshold: Bad data RSSI threshold to roam
+ * @rx_data_inactivity_time: Rx duration to check data RSSI
  * @flags: Flags for Background Roaming
  *	Bit 0 : BG roaming enabled when we connect to 2G AP only and roaming to 5G AP only.
  *	Bit 1-31: Reserved
@@ -2109,6 +2115,9 @@ struct roam_offload_scan_rssi_params {
 	int8_t bg_scan_bad_rssi_thresh;
 	uint8_t roam_bad_rssi_thresh_offset_2g;
 	uint32_t bg_scan_client_bitmap;
+	uint32_t roam_data_rssi_threshold_triggers;
+	int32_t roam_data_rssi_threshold;
+	uint32_t rx_data_inactivity_time;
 	uint32_t flags;
 };
 
@@ -3163,72 +3172,7 @@ struct fw_dump_req_param {
 	struct fw_dump_seg_req_param segment[WMI_MAX_NUM_FW_SEGMENTS];
 };
 
-#define WMI_TDLS_MAX_SUPP_CHANNELS       128
-#define WMI_TDLS_MAX_SUPP_OPER_CLASSES   32
 #define WMI_2_4_GHZ_MAX_FREQ  3000
-
-/**
- * struct tdls_update_ch_params - channel parameters
- * @chanId: ID of the channel
- * @pwr: power level
- * @dfsSet: is dfs supported or not
- * @half_rate: is the channel operating at 10MHz
- * @quarter_rate: is the channel operating at 5MHz
- */
-struct tdls_update_ch_params {
-	uint8_t chanId;
-	uint8_t pwr;
-	bool dfsSet;
-	bool half_rate;
-	bool quarter_rate;
-};
-
-/**
- * struct tdls_peer_cap_params - TDLS peer capablities parameters
- * @isPeerResponder: is peer responder or not
- * @peerUapsdQueue: peer uapsd queue
- * @peerMaxSp: peer max SP value
- * @peerBuffStaSupport: peer buffer sta supported or not
- * @peerOffChanSupport: peer offchannel support
- * @peerCurrOperClass: peer current operating class
- * @selfCurrOperClass: self current operating class
- * @peerChanLen: peer channel length
- * @peerChan: peer channel list
- * @peerOperClassLen: peer operating class length
- * @peerOperClass: peer operating class
- * @prefOffChanNum: peer offchannel number
- * @prefOffChanBandwidth: peer offchannel bandwidth
- * @opClassForPrefOffChan: operating class for offchannel
- */
-struct tdls_peer_cap_params {
-	uint8_t isPeerResponder;
-	uint8_t peerUapsdQueue;
-	uint8_t peerMaxSp;
-	uint8_t peerBuffStaSupport;
-	uint8_t peerOffChanSupport;
-	uint8_t peerCurrOperClass;
-	uint8_t selfCurrOperClass;
-	uint8_t peerChanLen;
-	struct tdls_update_ch_params peerChan[WMI_TDLS_MAX_SUPP_CHANNELS];
-	uint8_t peerOperClassLen;
-	uint8_t peerOperClass[WMI_TDLS_MAX_SUPP_OPER_CLASSES];
-	uint8_t prefOffChanNum;
-	uint8_t prefOffChanBandwidth;
-	uint8_t opClassForPrefOffChan;
-};
-
-/**
- * struct tdls_peer_state_params - TDLS peer state parameters
- * @vdevId: vdev id
- * @peerMacAddr: peer mac address
- * @peerCap: peer capabality
- */
-struct tdls_peer_state_params {
-	uint32_t vdevId;
-	uint8_t peerMacAddr[IEEE80211_ADDR_LEN];
-	uint32_t peerState;
-	struct tdls_peer_cap_params peerCap;
-};
 
 /**
  * struct wmi_tdls_params - TDLS parameters
@@ -6242,6 +6186,7 @@ typedef enum {
 	wmi_roam_scan_chan_list_to_host_support,
 	wmi_service_host_scan_stop_vdev_all,
 	wmi_service_suiteb_roam_support,
+	wmi_service_ll_stats_per_chan_rx_tx_time,
 	wmi_services_max,
 } wmi_conv_service_ids;
 #define WMI_SERVICE_UNAVAILABLE 0xFFFF

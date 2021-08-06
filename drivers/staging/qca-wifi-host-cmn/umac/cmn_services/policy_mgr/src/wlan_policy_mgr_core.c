@@ -1829,7 +1829,6 @@ QDF_STATUS policy_mgr_get_channel_list(struct wlan_objmgr_psoc *psoc,
 	uint8_t channel_list_5[QDF_MAX_NUM_CHAN] = {0};
 	uint8_t sbs_channel_list[QDF_MAX_NUM_CHAN] = {0};
 	bool skip_dfs_channel = false;
-	bool is_etsi13_srd_chan_allowed_in_mas_mode = true;
 	uint32_t i = 0, j = 0;
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
 	bool sta_sap_scc_on_dfs_chan;
@@ -1877,9 +1876,6 @@ QDF_STATUS policy_mgr_get_channel_list(struct wlan_objmgr_psoc *psoc,
 			policy_mgr_debug("skip DFS ch from pcl for SAP/Go");
 			skip_dfs_channel = true;
 		}
-		is_etsi13_srd_chan_allowed_in_mas_mode =
-			wlan_reg_is_etsi13_srd_chan_allowed_master_mode(pm_ctx->
-									pdev);
 	}
 
 	/* Let's divide the list in 2.4 & 5 Ghz lists */
@@ -1910,12 +1906,6 @@ QDF_STATUS policy_mgr_get_channel_list(struct wlan_objmgr_psoc *psoc,
 		if ((true == skip_dfs_channel) &&
 		    wlan_reg_is_dfs_ch(pm_ctx->pdev,
 				       channel_list[chan_index])) {
-			chan_index++;
-			continue;
-		}
-		if (!is_etsi13_srd_chan_allowed_in_mas_mode &&
-		    wlan_reg_is_etsi13_srd_chan(pm_ctx->pdev,
-						channel_list[chan_index])) {
 			chan_index++;
 			continue;
 		}

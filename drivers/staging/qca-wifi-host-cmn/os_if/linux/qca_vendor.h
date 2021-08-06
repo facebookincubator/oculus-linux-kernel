@@ -2143,6 +2143,12 @@ enum qca_wlan_vendor_attr_ll_stats_results_type {
  * @QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_RTS_FAIL_CNT: RTS fail count
  * @QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_PPDU_SUCC_CNT: PPDU successful count
  * @QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_PPDU_FAIL_CNT: PPDU fail count
+ * @QCA_WLAN_VENDOR_ATTR_LL_STATS_CHANNEL_TX_TIME:  Unsigned int 32bit
+ *      value representing total number of msecs the radio is transmitting on
+ *      this channel.
+ * @QCA_WLAN_VENDOR_ATTR_LL_STATS_CHANNEL_RX_TIME:  Unsigned int 32bit
+ *      value representing total number of msecs the radio is receiving all
+ *      802.11 frames intended for this device on this channel.
  * @QCA_WLAN_VENDOR_ATTR_LL_STATS_AFTER_LAST: After last
  * @QCA_WLAN_VENDOR_ATTR_FEATURE_SET_MAX: Max value
  */
@@ -2247,6 +2253,9 @@ enum qca_wlan_vendor_attr_ll_stats_results {
 	QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_RTS_FAIL_CNT = 80,
 	QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_PPDU_SUCC_CNT = 81,
 	QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_PPDU_FAIL_CNT = 82,
+
+	QCA_WLAN_VENDOR_ATTR_LL_STATS_CHANNEL_TX_TIME = 84,
+	QCA_WLAN_VENDOR_ATTR_LL_STATS_CHANNEL_RX_TIME = 85,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_LL_STATS_AFTER_LAST,
@@ -7362,18 +7371,37 @@ enum qca_wlan_vendor_attr_beacon_reporting_params {
  * enum qca_wlan_vendor_attr_oem_data_params - Used by the vendor command
  * QCA_NL80211_VENDOR_SUBCMD_OEM_DATA.
  *
- * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA: The binary blob for the vendor
- * command QCA_NL80211_VENDOR_SUBCMD_OEM_DATA are carried through this
- * attribute.
- * NLA_BINARY attribute, the max size is 1024 bytes.
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA: This NLA_BINARY attribute is
+ * used to set/query the data to/from the firmware. On query, the same
+ * attribute is used to carry the respective data in the reply sent by the
+ * driver to userspace. The request to set/query the data and the format of the
+ * respective data from the firmware are embedded in the attribute. The
+ * maximum size of the attribute payload is 1024 bytes.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO: The binary blob will be routed
+ * based on this field. This optional attribute is included to specify whether
+ * the device type is a virtual device or a physical device for the command.
+ * This attribute can be omitted for a virtual device (default) command.
+ * This u8 attribute is used to carry information for the device type using
+ * values defined by enum qca_vendor_oem_device_type.
+ *
+ * Userspace has to set the QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED
+ * attribute when the data is queried from the firmware.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED: This NLA_FLAG attribute
+ * is set when the userspace queries data from the firmware. This attribute
+ * should not be set when userspace sets the OEM data to the firmware.
  */
 enum qca_wlan_vendor_attr_oem_data_params {
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA = 1,
+	QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO = 2,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED = 3,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX =
 		QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST - 1
 };
+
 #endif

@@ -1076,6 +1076,12 @@ ucfg_scan_req_update_params(struct wlan_objmgr_vdev *vdev,
 }
 
 QDF_STATUS
+ucfg_scm_scan_free_scan_request_mem(struct scan_start_request *req)
+{
+	return scm_scan_free_scan_request_mem(req);
+}
+
+QDF_STATUS
 ucfg_scan_start(struct scan_start_request *req)
 {
 	struct scheduler_msg msg = {0};

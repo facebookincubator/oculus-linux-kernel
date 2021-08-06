@@ -2317,6 +2317,34 @@ enum hdd_dot11_mode {
 
 /*
  * <ini>
+ * roam_data_rssi_threshold_triggers - Triggers of data rssi threshold for roam
+ * @Min: 0
+ * @Max: 0xffff
+ * @Default: 0
+ *
+ * If the DUT is connected to an AP with weak signal, during latest
+ * rx_data_inactivity_time, if there is no activity or avg of data_rssi is
+ * better than roam_data_rssi_threshold(-70dbM), then suppress roaming
+ * triggered by roam_data_rssi_threshold_triggers: low RSSI or bg scan.
+ * Triggers bitmap definition:
+ * ROAM_DATA_RSSI_FLAG_LOW_RSSI   1<<0
+ * ROAM_DATA_RSSI_FLAG_BACKGROUND 1<<1
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_TRIGGERS_NAME  "roam_data_rssi_threshold_triggers"
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_TRIGGERS_MIN     (0)
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_TRIGGERS_MAX     (0xffff)
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_TRIGGERS_DEFAULT (0x3)
+
+/*
+ * <ini>
  * roam_bg_scan_client_bitmap - Bitmap used to identify the scan clients
  * @Min: 0
  * @Max: 0x3FF
@@ -2349,6 +2377,56 @@ enum hdd_dot11_mode {
 #define CFG_ROAM_BG_SCAN_CLIENT_BITMAP_MIN      (0)
 #define CFG_ROAM_BG_SCAN_CLIENT_BITMAP_MAX      (0x7FF)
 #define CFG_ROAM_BG_SCAN_CLIENT_BITMAP_DEFAULT  (0x424)
+
+/*
+ * <ini>
+ * roam_bg_scan_bad_rssi_thresh - Data RSSI threshold for background roam
+ * @Min: -96
+ * @Max: 0
+ * @Default: -70
+ *
+ * If the DUT is connected to an AP with weak signal, during latest
+ * rx_data_inactivity_time, if there is no activity or avg of data_rssi is
+ * better than roam_data_rssi_threshold(-70dbM), then suppress roaming
+ * triggered by roam_data_rssi_threshold_triggers: low RSSI or bg scan.
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_NAME  "roam_data_rssi_threshold"
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_MIN     (-96)
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_MAX     (0)
+#define CFG_ROAM_DATA_RSSI_THRESHOLD_DEFAULT (-70)
+
+/*
+ * <ini>
+ * rx_data_inactivity_time - Duration to check rx data rssi
+ * @Min: 0
+ * @Max: 100000 ms
+ * @Default: 0
+ *
+ * If the DUT is connected to an AP with weak signal, during latest
+ * rx_data_inactivity_time, if there is no activity or avg of data_rssi is
+ * better than roam_data_rssi_threshold(-70dbM), then suppress roaming
+ * triggered by roam_data_rssi_threshold_triggers: low RSSI or bg scan.
+ *
+ * Related: None
+ *
+ * Supported Feature: Roaming
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_RX_DATA_INACTIVITY_TIME_NAME  "rx_data_inactivity_time"
+#define CFG_RX_DATA_INACTIVITY_TIME_MIN     (0)
+#define CFG_RX_DATA_INACTIVITY_TIME_MAX     (100000)
+#define CFG_RX_DATA_INACTIVITY_TIME_DEFAULT (2000)
 
 /*
  * <ini>
@@ -6932,7 +7010,7 @@ enum hdd_link_speed_rpt_type {
  * <ini>
  * gTDLSExternalControl - Enable external TDLS control.
  * @Min: 0
- * @Max: 1
+ * @Max: 2
  * @Default: 1
  *
  * This ini is used to enable/disable external TDLS control.
@@ -6940,6 +7018,12 @@ enum hdd_link_speed_rpt_type {
  * control allows a user to add a MAC address of potential TDLS peers so
  * that the CLD driver can initiate implicit TDLS setup to only those peers
  * when criteria for TDLS setup (throughput and RSSI threshold) is met.
+ * There are two flavors of external control supported. If control default
+ * is set 1 it means strict external control where only for configured
+ * tdls peer mac address tdls link will be established. If control default
+ * is set 2 it means liberal tdls external control needed. It means
+ * tdls link will be established with configured peer mac address as well
+ * as any other peer which supports tdls.
  *
  * Related: gEnableTDLSSupport, gEnableTDLSImplicitTrigger.
  *
@@ -6951,7 +7035,7 @@ enum hdd_link_speed_rpt_type {
  */
 #define CFG_TDLS_EXTERNAL_CONTROL                   "gTDLSExternalControl"
 #define CFG_TDLS_EXTERNAL_CONTROL_MIN               (0)
-#define CFG_TDLS_EXTERNAL_CONTROL_MAX               (1)
+#define CFG_TDLS_EXTERNAL_CONTROL_MAX               (2)
 #define CFG_TDLS_EXTERNAL_CONTROL_DEFAULT           (1)
 
 /*
@@ -9624,11 +9708,17 @@ enum dot11p_mode {
  * etsi13_srd_chan_in_master_mode - Enable/disable ETSI SRD channels in
  * master mode PCL and ACS functionality
  * @Min: 0
- * @Max: 1
- * @Default: 0
+ * @Max: 0xFF
+ * @Default: 6
  *
- * etsi13_srd_chan_in_master_mode is to enable/disable ETSI SRD channels in
+ * etsi_srd_chan_in_master_mode is to enable/disable ETSI SRD channels in
  * master mode PCL and ACS functionality
+ * Bit map for enabling the SRD mode in various modes are as follows:-
+ * BIT 0:- Enable/Disable SRD channels for SAP.
+ * BIT 1:- Enable/Disable SRD channels for P2P-GO.
+ * BIT 2:- Enable/Disable SRD channels for NAN.
+ * Rest of the bits are currently reserved for future SRD channel support for
+ * other vdevs.
  *
  * Related: None
  *
@@ -9638,10 +9728,11 @@ enum dot11p_mode {
  *
  * </ini>
  */
+
 #define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE    "etsi13_srd_chan_in_master_mode"
-#define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE_DEF (0)
+#define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE_DEF (6)
 #define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE_MIN (0)
-#define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE_MAX (1)
+#define CFG_ETSI13_SRD_CHAN_IN_MASTER_MODE_MAX (0xFF)
 
 /*
  * <ini>
@@ -18190,7 +18281,7 @@ struct hdd_config {
 	uint32_t fTDLSRxFrameThreshold;
 	uint32_t fTDLSPuapsdPTIWindow;
 	uint32_t fTDLSPuapsdPTRTimeout;
-	bool fTDLSExternalControl;
+	uint8_t fTDLSExternalControl;
 	uint32_t fEnableTDLSOffChannel;
 	uint32_t fEnableTDLSWmmMode;
 	uint8_t fTDLSPrefOffChanNum;
@@ -18434,7 +18525,7 @@ struct hdd_config {
 	bool fastpath_enable;
 #endif
 	uint8_t dot11p_mode;
-	bool etsi13_srd_chan_in_master_mode;
+	uint8_t etsi13_srd_chan_in_master_mode;
 	uint8_t rx_mode;
 	uint32_t ce_service_max_yield_time;
 	uint8_t ce_service_max_rx_ind_flush;
@@ -18493,6 +18584,9 @@ struct hdd_config {
 	uint32_t roam_dense_min_aps;
 	int8_t roam_bg_scan_bad_rssi_thresh;
 	uint8_t roam_bad_rssi_thresh_offset_2g;
+	uint32_t roam_data_rssi_threshold_triggers;
+	int32_t roam_data_rssi_threshold;
+	uint32_t rx_data_inactivity_time;
 	uint32_t ho_delay_for_rx;
 	uint32_t min_delay_btw_roam_scans;
 	uint32_t roam_trigger_reason_bitmask;

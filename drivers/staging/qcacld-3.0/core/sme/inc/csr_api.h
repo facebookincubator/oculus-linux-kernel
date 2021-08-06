@@ -1260,6 +1260,9 @@ typedef struct tagCsrConfigParam {
 	int8_t roam_bg_scan_bad_rssi_thresh;
 	uint8_t roam_bad_rssi_thresh_offset_2g;
 	uint32_t roam_bg_scan_client_bitmap;
+	uint32_t roam_data_rssi_threshold_triggers;
+	int32_t roam_data_rssi_threshold;
+	uint32_t rx_data_inactivity_time;
 	uint32_t obss_width_interval;
 	uint32_t obss_active_dwelltime;
 	uint32_t obss_passive_dwelltime;

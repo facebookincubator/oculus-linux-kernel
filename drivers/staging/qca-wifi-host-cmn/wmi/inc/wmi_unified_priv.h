@@ -802,7 +802,7 @@ QDF_STATUS (*send_update_fw_tdls_state_cmd)(wmi_unified_t wmi_handle,
 					 void *tdls_param, uint8_t tdls_state);
 
 QDF_STATUS (*send_update_tdls_peer_state_cmd)(wmi_unified_t wmi_handle,
-			       struct tdls_peer_state_params *peerStateParams,
+				struct tdls_peer_update_state *peer_state,
 				   uint32_t *ch_mhz);
 
 
@@ -1958,6 +1958,7 @@ struct wmi_soc {
 	uint32_t pdev_param[wmi_pdev_param_max];
 	uint32_t vdev_param[wmi_vdev_param_max];
 #endif
+	uint32_t *wmi_ext2_service_bitmap;
 	uint32_t services[wmi_services_max];
 	uint16_t wmi_max_cmds;
 

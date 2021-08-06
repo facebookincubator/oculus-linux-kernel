@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -327,12 +327,18 @@ util_scan_parse_chan_switch_wrapper_ie(struct scan_cache_entry *scan_params,
 		}
 		switch (sub_ie->ie_id) {
 		case WLAN_ELEMID_COUNTRY:
+			if (sub_ie->ie_len < WLAN_COUNTRY_IE_MIN_LEN)
+				return QDF_STATUS_E_INVAL;
 			scan_params->ie_list.country = (uint8_t *)sub_ie;
 			break;
 		case WLAN_ELEMID_WIDE_BAND_CHAN_SWITCH:
+			if (sub_ie->ie_len != WLAN_WIDE_BW_CHAN_SWITCH_IE_LEN)
+				return QDF_STATUS_E_INVAL;
 			scan_params->ie_list.widebw = (uint8_t *)sub_ie;
 			break;
 		case WLAN_ELEMID_VHT_TX_PWR_ENVLP:
+			if (sub_ie->ie_len > WLAN_TPE_IE_MAX_LEN)
+				return QDF_STATUS_E_INVAL;
 			scan_params->ie_list.txpwrenvlp = (uint8_t *)sub_ie;
 			break;
 		}
@@ -478,7 +484,8 @@ util_scan_parse_vendor_ie(struct scan_cache_entry *scan_params,
 		 * Bandwidth-NSS map has sub-type & version.
 		 * hence copy data just after version byte
 		 */
-		scan_params->ie_list.bwnss_map = (((uint8_t *)ie) + 8);
+		if (ie->ie_len > WLAN_BWNSS_MAP_OFFSET)
+			scan_params->ie_list.bwnss_map = (((uint8_t *)ie) + 8);
 	} else if (is_mbo_oce_oui((uint8_t *)ie)) {
 		scan_params->ie_list.mbo_oce = (uint8_t *)ie;
 	} else if (is_adaptive_11r_oui((uint8_t *)ie)) {
@@ -739,7 +746,8 @@ static void util_scan_update_esp_data(struct wlan_esp_ie *esp_information,
 		return;
 	}
 
-	for (i = 0; i < total_elements; i++) {
+	for (i = 0; i < total_elements &&
+	     data < ((uint8_t *)esp_ie + esp_ie->esp_len + 3); i++) {
 		esp_info = (struct wlan_esp_info *)data;
 		if (esp_info->access_category == ESP_AC_BK) {
 			qdf_mem_copy(&esp_information->esp_info_AC_BK,

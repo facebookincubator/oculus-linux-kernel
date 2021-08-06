@@ -1332,7 +1332,6 @@
 		qcom,limit-temp = <80>;
 		qcom,core-limit-temp = <90>;
 		msm_thermal_freq: qcom,vdd-apps-rstr {
-			qcom,max-freq-level = <1209600>;
 			qcom,levels = <1056000 1516800 1516800>;
 		};
 		qcom,vdd-gfx-rstr{

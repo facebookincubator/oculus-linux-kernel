@@ -797,6 +797,7 @@ void pe_delete_session(tpAniSirGlobal mac_ctx, tpPESession session)
 	uint16_t i = 0;
 	uint16_t n;
 	TX_TIMER *timer_ptr;
+	tpSirAssocRsp assoc_rsp;
 
 	if (!session || (session && !session->valid)) {
 		pe_debug("session already deleted or not valid");
@@ -913,6 +914,9 @@ void pe_delete_session(tpAniSirGlobal mac_ctx, tpPESession session)
 		session->parsedAssocReq = NULL;
 	}
 	if (NULL != session->limAssocResponseData) {
+		assoc_rsp = (tpSirAssocRsp) session->limAssocResponseData;
+		qdf_mem_free(assoc_rsp->sha384_ft_subelem.gtk);
+		qdf_mem_free(assoc_rsp->sha384_ft_subelem.igtk);
 		qdf_mem_free(session->limAssocResponseData);
 		session->limAssocResponseData = NULL;
 	}

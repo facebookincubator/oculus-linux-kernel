@@ -2444,6 +2444,11 @@ void wmi_unified_detach(struct wmi_unified *wmi_handle)
 		soc->wmi_ext_service_bitmap = NULL;
 	}
 
+	if (soc->wmi_ext2_service_bitmap) {
+		qdf_mem_free(soc->wmi_ext2_service_bitmap);
+		soc->wmi_ext2_service_bitmap = NULL;
+	}
+
 	/* Decrease the ref count once refcount infra is present */
 	soc->wmi_psoc = NULL;
 	qdf_mem_free(soc);

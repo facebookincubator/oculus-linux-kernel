@@ -360,15 +360,15 @@ static const u32 hdd_sta_akm_suites[] = {
 	WLAN_AKM_SUITE_TDLS,
 	WLAN_AKM_SUITE_SAE,
 	WLAN_AKM_SUITE_FT_OVER_SAE,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0))
-	WLAN_AKM_SUITE_8021X_SUITE_B,
-	WLAN_AKM_SUITE_8021X_SUITE_B_192,
-#endif
+	WLAN_AKM_SUITE_EAP_SHA256,
+	WLAN_AKM_SUITE_EAP_SHA384,
 	WLAN_AKM_SUITE_FILS_SHA256,
 	WLAN_AKM_SUITE_FILS_SHA384,
 	WLAN_AKM_SUITE_FT_FILS_SHA256,
 	WLAN_AKM_SUITE_FT_FILS_SHA384,
 	WLAN_AKM_SUITE_OWE,
+	WLAN_AKM_SUITE_DPP_RSN,
+	WLAN_AKM_SUITE_FT_EAP_SHA_384,
 };
 
 /*akm suits supported by AP*/
@@ -2495,7 +2495,7 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 	tsap_config_t *sap_config;
 	struct sk_buff *temp_skbuff;
-	int ret, i, ch_cnt = 0;
+	int ret, i;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ACS_MAX + 1];
 	bool ht_enabled, ht40_enabled, vht_enabled;
 	uint8_t ch_width;
@@ -2503,7 +2503,6 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 	QDF_STATUS qdf_status;
 	uint8_t conc_channel;
 	mac_handle_t mac_handle;
-	bool skip_etsi13_srd_chan = false;
 
 	/* ***Note*** Donot set SME config related to ACS operation here because
 	 * ACS operation is not synchronouse and ACS for Second AP may come when
@@ -2686,23 +2685,6 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 		hdd_err("acs config chan count 0");
 		ret = -EINVAL;
 		goto out;
-	}
-
-	skip_etsi13_srd_chan =
-		!hdd_ctx->config->etsi13_srd_chan_in_master_mode &&
-		wlan_reg_is_etsi13_regdmn(hdd_ctx->pdev);
-
-	if (skip_etsi13_srd_chan) {
-		for (i = 0; i < sap_config->acs_cfg.ch_list_count; i++) {
-			if (wlan_reg_is_etsi13_srd_chan(hdd_ctx->pdev,
-							sap_config->acs_cfg.
-							ch_list[i]))
-				sap_config->acs_cfg.ch_list[i] = 0;
-			else
-				sap_config->acs_cfg.ch_list[ch_cnt++] =
-						sap_config->acs_cfg.ch_list[i];
-		}
-		sap_config->acs_cfg.ch_list_count = ch_cnt;
 	}
 
 	/* consult policy manager to get PCL */

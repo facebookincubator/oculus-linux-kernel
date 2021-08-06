@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -379,6 +379,11 @@ struct tx_frame {
 	qdf_timer_t tx_timer;
 };
 
+enum tdls_configured_external_control {
+	TDLS_STRICT_EXTERNAL_CONTROL = 1,
+	TDLS_LIBERAL_EXTERNAL_CONTROL = 2,
+};
+
 /**
  * enum tdls_feature_bit
  * @TDLS_FEATURE_OFF_CHANNEL: tdls off channel
@@ -388,7 +393,8 @@ struct tx_frame {
  * @TDLS_FEATURE_SCAN: tdls scan
  * @TDLS_FEATURE_ENABLE: tdls enabled
  * @TDLS_FEAUTRE_IMPLICIT_TRIGGER: tdls implicit trigger
- * @TDLS_FEATURE_EXTERNAL_CONTROL: tdls external control
+ * @TDLS_FEATURE_EXTERNAL_CONTROL: enforce strict tdls external control
+ * @TDLS_FEATURE_LIBERAL_EXTERNAL_CONTROL: liberal external tdls control
  */
 enum tdls_feature_bit {
 	TDLS_FEATURE_OFF_CHANNEL,
@@ -398,7 +404,8 @@ enum tdls_feature_bit {
 	TDLS_FEATURE_SCAN,
 	TDLS_FEATURE_ENABLE,
 	TDLS_FEAUTRE_IMPLICIT_TRIGGER,
-	TDLS_FEATURE_EXTERNAL_CONTROL
+	TDLS_FEATURE_EXTERNAL_CONTROL,
+	TDLS_FEATURE_LIBERAL_EXTERNAL_CONTROL,
 };
 
 #define TDLS_IS_OFF_CHANNEL_ENABLED(flags) \
@@ -417,6 +424,8 @@ enum tdls_feature_bit {
 	CHECK_BIT(flags, TDLS_FEAUTRE_IMPLICIT_TRIGGER)
 #define TDLS_IS_EXTERNAL_CONTROL_ENABLED(flags) \
 	CHECK_BIT(flags, TDLS_FEATURE_EXTERNAL_CONTROL)
+#define TDLS_IS_LIBERAL_EXTERNAL_CONTROL_ENABLED(flags) \
+	CHECK_BIT(flags, TDLS_FEATURE_LIBERAL_EXTERNAL_CONTROL)
 
 /**
  * struct tdls_user_config - TDLS user configuration

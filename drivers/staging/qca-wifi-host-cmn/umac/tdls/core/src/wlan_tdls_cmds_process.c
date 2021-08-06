@@ -1704,8 +1704,6 @@ static QDF_STATUS tdls_config_force_peer(
 	struct tdls_peer_update_state *peer_update_param;
 
 	macaddr = req->peer_addr;
-	tdls_debug("NL80211_TDLS_SETUP for " QDF_MAC_ADDR_STR,
-		   QDF_MAC_ADDR_ARRAY(macaddr));
 
 	vdev = req->vdev;
 	pdev = wlan_vdev_get_pdev(vdev);
@@ -1718,10 +1716,21 @@ static QDF_STATUS tdls_config_force_peer(
 	}
 
 	feature = soc_obj->tdls_configs.tdls_feature_flags;
-	if (!TDLS_IS_EXTERNAL_CONTROL_ENABLED(feature) ||
+	if (!(TDLS_IS_EXTERNAL_CONTROL_ENABLED(feature) ||
+	     TDLS_IS_LIBERAL_EXTERNAL_CONTROL_ENABLED(feature)) ||
 	    !TDLS_IS_IMPLICIT_TRIG_ENABLED(feature)) {
 		tdls_err("TDLS ext ctrl or Imp Trig not enabled, %x", feature);
 		return QDF_STATUS_E_NOSUPPORT;
+	}
+
+	/*
+	 * In case of liberal external mode, supplicant will provide peer mac
+	 * address but driver has to behave similar to implict mode ie.
+	 * establish tdls link with any peer that supports tdls and meets stats.
+	 */
+	if (TDLS_IS_LIBERAL_EXTERNAL_CONTROL_ENABLED(feature)) {
+		tdls_debug("liberal mode set");
+		return QDF_STATUS_SUCCESS;
 	}
 
 	peer_update_param = qdf_mem_malloc(sizeof(*peer_update_param));
@@ -1860,7 +1869,8 @@ QDF_STATUS tdls_process_remove_force_peer(struct tdls_oper_request *req)
 	}
 
 	feature = soc_obj->tdls_configs.tdls_feature_flags;
-	if (!TDLS_IS_EXTERNAL_CONTROL_ENABLED(feature) ||
+	if (!(TDLS_IS_EXTERNAL_CONTROL_ENABLED(feature) ||
+	     TDLS_IS_LIBERAL_EXTERNAL_CONTROL_ENABLED(feature)) ||
 	    !TDLS_IS_IMPLICIT_TRIG_ENABLED(feature)) {
 		tdls_err("TDLS ext ctrl or Imp Trig not enabled, %x", feature);
 		status = QDF_STATUS_E_NOSUPPORT;

@@ -6371,6 +6371,15 @@ static int msm8998_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 				slot_width, slots, tdm_interface);
 	pr_debug("%s: slot_mask :%x\n", __func__, slot_mask);
 
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+		/* over write slot-mask if configured for full slots */
+		if ((slots == 32) && (slot_width == 16))
+			slot_mask = 0xffffffff;
+		else if ((slots == 16) && (slot_width == 32))
+			slot_mask = 0xffff;
+		pr_debug("%s:slot_mask :%x slots %d slot_width %d\n", __func__,
+					slot_mask, slots, slot_width);
+	}
 	if (!slot_mask) {
 		pr_err("%s: invalid slot_mask 0x%x\n",
 			__func__, slot_mask);

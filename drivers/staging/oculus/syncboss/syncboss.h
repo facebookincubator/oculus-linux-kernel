@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SYNCBOSS_H
 #define _SYNCBOSS_H
 
@@ -212,9 +213,6 @@ struct syncboss_dev_data {
 
 	/* Current power state of the device */
 	int power_state;
-
-	/* Should we send headers with the data packets */
-	bool enable_headers;
 
 	/* True if the syncboss controlls a prox sensor */
 	bool has_prox;

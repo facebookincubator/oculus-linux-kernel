@@ -1993,7 +1993,15 @@ void lim_process_ap_mlm_add_sta_rsp(tpAniSirGlobal pMac,
 	 * 2) PE receives eWNI_SME_ASSOC_CNF from SME
 	 * 3) BTAMP-AP sends Re/Association Response to BTAMP-STA
 	 */
-	lim_send_mlm_assoc_ind(pMac, pStaDs, psessionEntry);
+	if (lim_send_mlm_assoc_ind(pMac, pStaDs, psessionEntry) !=
+							QDF_STATUS_SUCCESS) {
+		lim_reject_association(pMac, pStaDs->staAddr,
+				       pStaDs->mlmStaContext.subType,
+				       true, pStaDs->mlmStaContext.authType,
+				       pStaDs->assocId, true,
+				       eSIR_MAC_UNSPEC_FAILURE_STATUS,
+				       psessionEntry);
+	}
 	/* fall though to reclaim the original Add STA Response message */
 end:
 	if (0 != limMsgQ->bodyptr) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/gpio.h>
@@ -93,6 +94,7 @@ static const struct of_device_id oculus_swd_match_table[] = {
  * issuing it a command to do so.
  */
 #define SYNCBOSS_SLEEP_TIMEOUT_MS 2000
+#define SYNCBOSS_SLEEP_TIMEOUT_WITH_GRACE_MS 5000
 
 /* The amount of time we should hold the reset line low when doing a reset. */
 #define SYNCBOSS_RESET_TIME_MS 5
@@ -297,12 +299,10 @@ static void reset_syncboss(struct syncboss_dev_data *devdata)
 	 */
 	mutex_lock(&devdata->state_mutex);
 	status = start_streaming_locked(devdata, true);
-	if (!status) {
+	if (!status)
 		stop_streaming_locked(devdata);
-	} else {
-		dev_err(&devdata->spi->dev, "Failed to start streaming from reset_syncboss (%d)",
-			status);
-	}
+	else
+		dev_err(&devdata->spi->dev, "%s: failed to start streaming (%d)", __func__, status);
 	mutex_unlock(&devdata->state_mutex);
 }
 
@@ -382,7 +382,7 @@ static int fw_update_check_busy(struct device *dev, void *data)
 
 		if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
 			dev_err(dev, "Cannot open SyncBoss handle while firmware update is in progress");
-			 return -EBUSY;
+			return -EBUSY;
 		}
 	}
 	return 0;
@@ -398,7 +398,7 @@ static int syncboss_open(struct inode *inode, struct file *f)
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status)
-	        return status;
+		return status;
 
 	/* Ensure a FW update is not in progress */
 	status = device_for_each_child(&devdata->spi->dev, NULL,
@@ -421,12 +421,6 @@ static int signal_prox_event_locked(struct syncboss_dev_data *devdata, int evt)
 	struct syncboss_driver_data_header_driver_message_t msg_to_send;
 
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
-
-	if (!devdata->enable_headers) {
-		dev_warn(&devdata->spi->dev,
-			 "Prox events not supported without data headers");
-		return 0;
-	}
 
 	memcpy(&msg_to_send, &SYNCBOSS_DRIVER_PROX_STATE_HEADER,
 	       sizeof(msg_to_send));
@@ -464,9 +458,8 @@ static int signal_prox_event_locked(struct syncboss_dev_data *devdata, int evt)
 					     status);
 	}
 
-	if (should_update_last_evt) {
+	if (should_update_last_evt)
 		devdata->prox_last_evt = evt;
-	}
 
 	return status;
 }
@@ -496,6 +489,7 @@ static void do_signal_prox_event(struct work_struct *work)
 static void queue_prox_event(struct syncboss_dev_data *devdata, int evt)
 {
 	struct prox_work_data *wd = kmalloc(sizeof(*wd), GFP_KERNEL);
+
 	if (!wd)
 		return;
 
@@ -520,7 +514,7 @@ static int syncboss_prox_open(struct inode *inode, struct file *f)
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status)
-	        return status;
+		return status;
 
 	status = miscfifo_fop_open(f, &devdata->prox_fifo);
 	if (status)
@@ -772,9 +766,9 @@ static const struct file_operations nsync_fops = {
 
 static inline u8 calculate_checksum(const struct syncboss_transaction *trans, size_t len)
 {
-	const u8 *buf = (u8*)trans;
-
+	const u8 *buf = (u8 *)trans;
 	u8 x = 0, sum = 0;
+
 	for (x = 0; x < len; ++x)
 		sum += buf[x];
 	return 0 - sum;
@@ -794,17 +788,16 @@ static void syncboss_snoop_write(struct syncboss_dev_data *devdata,
 		if (packet->type == 0)
 			break;
 
-		switch (packet->type)
-		{
-			case SYNCBOSS_CAMERA_PROBE_MESSAGE_TYPE:
-				syncboss_on_camera_probe(devdata);
-				break;
-			case SYNCBOSS_CAMERA_RELEASE_MESSAGE_TYPE:
-				syncboss_on_camera_release(devdata);
-				break;
-			default:
-				/* Nothing to do for this message type */
-				break;
+		switch (packet->type) {
+		case SYNCBOSS_CAMERA_PROBE_MESSAGE_TYPE:
+			syncboss_on_camera_probe(devdata);
+			break;
+		case SYNCBOSS_CAMERA_RELEASE_MESSAGE_TYPE:
+			syncboss_on_camera_release(devdata);
+			break;
+		default:
+			/* Nothing to do for this message type */
+			break;
 		}
 		data += (sizeof(*packet) + packet->data_len);
 	}
@@ -812,16 +805,14 @@ static void syncboss_snoop_write(struct syncboss_dev_data *devdata,
 
 static unsigned long copy_buffer(void *dest, const void *src, size_t count, bool from_user)
 {
-	if (from_user) {
+	if (from_user)
 		return copy_from_user(dest, src, count);
-	} else {
-		memcpy(dest, src, count);
-		return 0;
-	}
+
+	memcpy(dest, src, count);
+	return 0;
 }
 
-static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *buf,
-                           size_t count, bool from_user)
+static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *buf, size_t count, bool from_user)
 {
 	int status = 0;
 	struct syncboss_msg *smsg = NULL;
@@ -865,7 +856,6 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 
 	smsg = kzalloc(sizeof(*smsg), GFP_KERNEL | GFP_DMA);
 	if (!smsg) {
-		dev_err(&devdata->spi->dev, "syncboss_msg allocation failed!\n");
 		status = -ENOMEM;
 		goto err;
 	}
@@ -943,31 +933,15 @@ static int distribute_packet(struct syncboss_dev_data *devdata,
 		fifo_to_use = &devdata->control_fifo;
 	}
 
-	if (devdata->enable_headers) {
-		status = miscfifo_send_header_payload(
-			fifo_to_use, (u8 *)&SYNCBOSS_MCU_DATA_HEADER,
-			sizeof(SYNCBOSS_MCU_DATA_HEADER), (u8 *)packet,
-			sizeof(*packet) + packet->data_len);
-	} else {
-		status = miscfifo_send_header_payload(
-			fifo_to_use, NULL, 0,
-			(u8 *)packet, sizeof(*packet) + packet->data_len);
-	}
+	status = miscfifo_send_header_payload(
+		fifo_to_use, (u8 *)&SYNCBOSS_MCU_DATA_HEADER,
+		sizeof(SYNCBOSS_MCU_DATA_HEADER), (u8 *)packet,
+		sizeof(*packet) + packet->data_len);
 
 	if (status != 0)
 		dev_warn_ratelimited(&devdata->spi->dev, "Fifo overflow (%d)",
 				     status);
 	return status;
-}
-
-static bool any_data_in_spi_trans(const char *buf)
-{
-	const struct syncboss_transaction *trans = (struct syncboss_transaction *)buf;
-	/*
-	 * return true if there's any data in the packet (other than the magic
-	 * number and checksum)
-	 */
-	return trans->data.type != 0;
 }
 
 static bool recent_reset_event(struct syncboss_dev_data *devdata)
@@ -1008,14 +982,32 @@ static bool spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata)
 	return true;
 }
 
-static void process_rx_data(struct syncboss_dev_data *devdata,
+static int process_rx_data(struct syncboss_dev_data *devdata,
 			    u64 prev_transaction_start_time_ns,
 			    u64 prev_transaction_end_time_ns)
 {
 	struct rx_history_elem *rx_elem = devdata->rx_elem;
-	const struct syncboss_transaction *trans = (struct syncboss_transaction *)rx_elem->buf;
-	const struct syncboss_data *current_packet = &trans->data.syncboss_data;
-	const uint8_t *trans_end = (uint8_t *)trans + devdata->transaction_length;
+	const struct syncboss_transaction *trans = (struct syncboss_transaction *) rx_elem->buf;
+	const struct syncboss_data *current_packet;
+	const uint8_t *trans_end;
+
+	if (!spi_nrf_sanity_check_trans(devdata)) {
+		/*
+		 * To avoid noise in the log, only log an error if we
+		 * haven't recently reset the mcu
+		 */
+		if (!recent_reset_event(devdata))
+			dev_warn_ratelimited(&devdata->spi->dev, "SPI transaction rejected by SyncBoss");
+		devdata->stats.num_rejected_transactions++;
+		return -EIO;
+	}
+
+	/*
+	 * bail if there's no data in the packet (other than the magic
+	 * number and checksum)
+	 */
+	if (trans->data.type == 0)
+		return 0;
 
 	/*
 	 * See "logging notes" section at the top of
@@ -1029,27 +1021,74 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 #endif
 
 	rx_elem->rx_ctr = ++devdata->transaction_ctr;
-	rx_elem->transaction_start_time_ns =
-		prev_transaction_start_time_ns;
-	rx_elem->transaction_end_time_ns =
-		prev_transaction_end_time_ns;
+	rx_elem->transaction_start_time_ns = prev_transaction_start_time_ns;
+	rx_elem->transaction_end_time_ns = prev_transaction_end_time_ns;
 	rx_elem->transaction_length = devdata->transaction_length;
 
 	/* Iterate over the packets and distribute them to either the
 	 * stream or control fifos
 	 */
+	current_packet = &trans->data.syncboss_data;
+	trans_end = (uint8_t *)trans + devdata->transaction_length;
 	while (current_packet->type != 0) {
 		/* Sanity check that the packet is entirely contained
 		 * within the rx buffer and doesn't overflow
 		 */
 		const uint8_t *pkt_end = current_packet->data + current_packet->data_len;
+
 		if (pkt_end > trans_end) {
 			dev_err_ratelimited(&devdata->spi->dev, "Data packet overflow");
-			return;
+			break;
 		}
 		distribute_packet(devdata, current_packet);
 		/* Next packet */
 		current_packet = (struct syncboss_data *)pkt_end;
+	}
+
+	return 0;
+}
+
+static void maybe_sleep(u64 prev_transaction_start_time_ns, u64 prev_transaction_end_time_ns,
+				 u64 transaction_period_ns, u64 min_time_between_transactions_ns)
+{
+	u64 time_to_wait_us;
+	u64 period_requirement_ns = 0;
+	u64 setup_requirement_ns = 0;
+	u64 now_ns;
+	u64 time_since_prev_transaction_start_ns;
+	u64 time_since_prev_transaction_end_ns;
+
+	if (prev_transaction_start_time_ns == 0)
+		return;
+
+	now_ns = ktime_get_ns();
+	time_since_prev_transaction_start_ns = now_ns - prev_transaction_start_time_ns;
+	time_since_prev_transaction_end_ns = now_ns - prev_transaction_end_time_ns;
+
+	if (time_since_prev_transaction_start_ns < transaction_period_ns)
+		period_requirement_ns = transaction_period_ns - time_since_prev_transaction_start_ns;
+
+	if (time_since_prev_transaction_end_ns < min_time_between_transactions_ns)
+		setup_requirement_ns = min_time_between_transactions_ns - time_since_prev_transaction_end_ns;
+
+	time_to_wait_us = max(period_requirement_ns, setup_requirement_ns) / NSEC_PER_USEC;
+
+	if (time_to_wait_us <= 0)
+		return;
+
+	if (time_to_wait_us < 10) {
+		/*
+		 * Delays of less than about 10us are not worth
+		 * a context switch.
+		 */
+		udelay(time_to_wait_us);
+	} else {
+		/*
+		 * For longer delays sleep. Use usleep_range() to
+		 * allow wake-ups to be coalesced.
+		 */
+		usleep_range(time_to_wait_us - SYNCBOSS_SCHEDULING_SLOP_US,
+			     time_to_wait_us + SYNCBOSS_SCHEDULING_SLOP_US);
 	}
 }
 
@@ -1066,7 +1105,6 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	u16 transaction_length = 0;
 	int transaction_period_ns = 0;
 	int min_time_between_transactions_ns = 0;
-	bool headers_enabled = false;
 	bool use_fastpath;
 	struct sched_param sched_settings = {
 		.sched_priority = devdata->poll_prio
@@ -1083,7 +1121,6 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	transaction_period_ns = devdata->transaction_period_ns;
 	min_time_between_transactions_ns =
 		devdata->min_time_between_transactions_ns;
-	headers_enabled = devdata->enable_headers;
 	use_fastpath = devdata->use_fastpath;
 
 	dev_info(&spi->dev, "Entering SPI transfer loop");
@@ -1095,15 +1132,12 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 transaction_period_ns / 1000);
 	dev_info(&spi->dev, "  Min time between trans. : %d us",
 		 min_time_between_transactions_ns / 1000);
-	dev_info(&spi->dev, "  Headers enabled         : %s",
-		 headers_enabled ? "yes" : "no");
 	dev_info(&spi->dev, "  Fastpath enabled        : %s",
 		use_fastpath ? "yes" : "no");
 
 	while (!kthread_should_stop()) {
 		struct syncboss_msg *smsg;
 		bool first_attempt;
-		u64 time_to_wait_us = 0;
 
 		mutex_lock(&devdata->msg_queue_lock);
 		smsg = list_first_entry_or_null(&devdata->msg_queue_list, struct syncboss_msg, list);
@@ -1152,49 +1186,8 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 * Check if we have to wait a bit before initiating the next SPI
 		 * transaction
 		 */
-		if (prev_transaction_start_time_ns != 0) {
-			u64 period_requirement_ns = 0;
-			u64 setup_requirement_ns = 0;
-			u64 now_ns = ktime_get_ns();
-
-			u64 time_since_prev_transaction_start_ns =
-				now_ns -
-				prev_transaction_start_time_ns;
-			u64 time_since_prev_transaction_end_ns =
-				now_ns -
-				prev_transaction_end_time_ns;
-
-			if (time_since_prev_transaction_start_ns < transaction_period_ns) {
-				period_requirement_ns =
-					transaction_period_ns -
-					time_since_prev_transaction_start_ns;
-			}
-
-			if (time_since_prev_transaction_end_ns < min_time_between_transactions_ns) {
-				setup_requirement_ns =
-					min_time_between_transactions_ns -
-					time_since_prev_transaction_end_ns;
-			}
-
-			time_to_wait_us = max(period_requirement_ns, setup_requirement_ns) / NSEC_PER_USEC;
-		}
-
-		if (time_to_wait_us > 0) {
-			if (time_to_wait_us < 10) {
-				/*
-				 * Delays of less than about 10us are not worth
-				 * a context switch.
-				 */
-				udelay(time_to_wait_us);
-			} else {
-				/*
-				 * For longer delays sleep. Use usleep_range() to
-				 * allow wake-ups to be coalesced.
-				 */
-				usleep_range(time_to_wait_us - SYNCBOSS_SCHEDULING_SLOP_US,
-					     time_to_wait_us + SYNCBOSS_SCHEDULING_SLOP_US);
-			}
-		}
+		maybe_sleep(prev_transaction_start_time_ns, prev_transaction_end_time_ns,
+			    transaction_period_ns, min_time_between_transactions_ns);
 
 #if defined(CONFIG_DYNAMIC_DEBUG)
 		if (smsg != devdata->default_smsg) {
@@ -1215,8 +1208,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		prev_transaction_end_time_ns = ktime_get_ns();
 
 		if (status != 0) {
-			dev_err(&spi->dev, "spi_sync failed with error %d",
-				status);
+			dev_err(&spi->dev, "spi_sync failed with error %d", status);
 
 			if (status == -ETIMEDOUT) {
 				/* Retry if needed and keep going */
@@ -1224,37 +1216,31 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			}
 
 			break;
-		} else if (spi_nrf_sanity_check_trans(devdata)) {
-			if (any_data_in_spi_trans(devdata->rx_elem->buf)) {
-				process_rx_data(devdata,
-						prev_transaction_start_time_ns,
-						prev_transaction_end_time_ns);
+		}
+
+		status = process_rx_data(devdata,
+					 prev_transaction_start_time_ns,
+					 prev_transaction_end_time_ns);
+		if (status < 0) {
+			/* retry the transaction */
+			continue;
+		}
+
+		// Remove the completed message from the queue.
+		if (smsg != devdata->default_smsg) {
+			mutex_lock(&devdata->msg_queue_lock);
+			list_del(&smsg->list);
+			devdata->msg_queue_item_count--;
+			mutex_unlock(&devdata->msg_queue_lock);
+
+			if (prepared_smsg) {
+				BUG_ON(smsg != prepared_smsg);
+				devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
+				spi->master->cur_msg = NULL;
+				prepared_smsg = NULL;
 			}
 
-			// Remove the completed message from the queue.
-			if (smsg != devdata->default_smsg) {
-				mutex_lock(&devdata->msg_queue_lock);
-				list_del(&smsg->list);
-				devdata->msg_queue_item_count--;
-				mutex_unlock(&devdata->msg_queue_lock);
-
-				if (prepared_smsg) {
-					BUG_ON(smsg != prepared_smsg);
-					devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
-					spi->master->cur_msg = NULL;
-					prepared_smsg = NULL;
-				}
-
-				kfree(smsg);
-			}
-		} else {
-			/* To avoid noise in the log, only log an error if we
-			 * haven't recently reset the mcu
-			 */
-			if (!recent_reset_event(devdata))
-				dev_warn_ratelimited(&spi->dev,
-					"SPI transaction rejected by SyncBoss");
-			devdata->stats.num_rejected_transactions++;
+			kfree(smsg);
 		}
 	}
 
@@ -1263,9 +1249,9 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		spi->master->cur_msg = NULL;
 	}
 
-	while (!kthread_should_stop()) {
+	while (!kthread_should_stop())
 		msleep_interruptible(1);
-	}
+
 	dev_info(&spi->dev, "Streaming thread stopped");
 	return status;
 }
@@ -1346,24 +1332,37 @@ static bool is_mcu_awake(const struct syncboss_dev_data *devdata)
 static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 					bool awake)
 {
-	int x;
+	const s64 starttime = ktime_get_ms();
+	const s64 deadline = starttime + SYNCBOSS_SLEEP_TIMEOUT_WITH_GRACE_MS;
+	s64 now;
+	s64 elapsed;
+	const char *awakestr = awake ? "awake" : "asleep";
 
-	dev_info(&devdata->spi->dev, "Waiting for syncboss to be %s", awake ? "awake" : "asleep");
-	for (x = 10; x <= SYNCBOSS_SLEEP_TIMEOUT_MS; x += 10) {
-		msleep(10);
+	dev_info(&devdata->spi->dev, "Waiting for syncboss to be %s", awakestr);
+	for (now = starttime; now < deadline; now = ktime_get_ms()) {
+		msleep(20);
 		if (is_mcu_awake(devdata) == awake) {
-			dev_info(&devdata->spi->dev,
-				 "SyncBoss is %s (after %d ms)",
-				 awake ? "awake" : "asleep", x);
+			elapsed = ktime_get_ms() - starttime;
+			if (elapsed > SYNCBOSS_SLEEP_TIMEOUT_MS) {
+				WARN(true, "SyncBoss %s took too long (after %lldms)",
+				     awakestr, elapsed);
+			} else {
+				dev_info(&devdata->spi->dev,
+					 "SyncBoss is %s (after %lldms)",
+					 awakestr, elapsed);
+
+			}
 			devdata->power_state =
 				awake ? SYNCBOSS_POWER_STATE_RUNNING :
 				SYNCBOSS_POWER_STATE_OFF;
 			return 0;
 		}
+
 	}
-	dev_err(&devdata->spi->dev,
-		"SyncBoss failed to %s within %dms.",
-		awake ? "wake" : "sleep", SYNCBOSS_SLEEP_TIMEOUT_MS);
+
+	elapsed = ktime_get_ms() - starttime;
+	WARN_ON(true);
+	dev_err(&devdata->spi->dev, "SyncBoss failed to %s within %lldms.", awakestr, elapsed);
 	return -ETIMEDOUT;
 }
 
@@ -1500,8 +1499,10 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata,
 	if (devdata->use_fastpath)
 		devdata->spi_prepare_ops.prepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
 
-	/* The worker thread should not be running yet, so the worker
-	 * should always be null here */
+	/*
+	 * The worker thread should not be running yet, so the worker
+	 * should always be null here
+	 */
 	BUG_ON(devdata->worker != NULL);
 
 	devdata->worker = kthread_create(syncboss_spi_transfer_thread,
@@ -1553,7 +1554,7 @@ static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
 	if (!is_asleep) {
 		dev_err(&devdata->spi->dev,
 			"SyncBoss failed to sleep within %dms. Forcing reset on next open.",
-			SYNCBOSS_SLEEP_TIMEOUT_MS);
+			SYNCBOSS_SLEEP_TIMEOUT_WITH_GRACE_MS);
 			devdata->force_reset_on_open = true;
 	}
 }
@@ -1745,12 +1746,10 @@ static irqreturn_t isr_thread_wakeup(int irq, void *p)
 	/* SyncBoss just woke up, so set the last_reset_time_ms */
 	devdata->last_reset_time_ms = ktime_get_ms();
 
-	if (devdata->enable_headers) {
-		/* Wake up any thread that might be waiting on power state
-		 *transitions
-		 */
-		signal_prox_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_UP);
-	}
+	/* Wake up any thread that might be waiting on power state
+	 *transitions
+	 */
+	signal_prox_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_UP);
 
 	/* Hold the wake-lock for a short period of time (which should
 	 * allow time for clients to open a handle to syncboss)
@@ -2068,7 +2067,6 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_of_platform_populate;
 
 	devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
-	devdata->enable_headers = true;
 
 	/* Init interrupts */
 	if (devdata->gpio_wakeup < 0) {

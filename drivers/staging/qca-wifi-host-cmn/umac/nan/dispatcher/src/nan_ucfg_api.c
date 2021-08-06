@@ -29,6 +29,7 @@
 #include "wlan_objmgr_vdev_obj.h"
 #include "wlan_nan_api.h"
 #include "wlan_osif_request_manager.h"
+#include "wlan_reg_services_api.h"
 
 struct wlan_objmgr_psoc;
 struct wlan_objmgr_vdev;
@@ -484,4 +485,14 @@ int ucfg_nan_register_lim_callbacks(struct wlan_objmgr_psoc *psoc,
 	psoc_obj->cb_obj.delete_peers_by_addr = cb_obj->delete_peers_by_addr;
 
 	return 0;
+}
+
+bool ucfg_is_nan_allowed_on_chan(struct wlan_objmgr_pdev *pdev, uint32_t chan)
+{
+	/* Check for SRD channels only */
+	if (!wlan_reg_is_etsi13_srd_chan(pdev, chan))
+		return true;
+
+	return wlan_reg_is_etsi13_srd_chan_allowed_master_mode(pdev,
+							QDF_NAN_DISC_MODE);
 }

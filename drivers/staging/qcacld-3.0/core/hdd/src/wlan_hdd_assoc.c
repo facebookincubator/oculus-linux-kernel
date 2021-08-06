@@ -3694,6 +3694,7 @@ void hdd_delete_peer(struct hdd_station_ctx *sta_ctx, uint8_t sta_id)
 	for (i = 0; i < MAX_PEERS; i++) {
 		if (sta_id == sta_ctx->conn_info.staId[i]) {
 			sta_ctx->conn_info.staId[i] = HDD_WLAN_INVALID_STA_ID;
+			qdf_zero_macaddr(&sta_ctx->conn_info.peerMacAddress[i]);
 			return;
 		}
 	}
@@ -3705,9 +3706,15 @@ bool hdd_any_valid_peer_present(struct hdd_adapter *adapter)
 	int idx;
 
 	for (idx = 0; idx < MAX_PEERS; idx++)
-		if (HDD_WLAN_INVALID_STA_ID != sta_ctx->conn_info.staId[idx])
+		if (!qdf_is_macaddr_zero(
+				&sta_ctx->conn_info.peerMacAddress[idx]) &&
+		    !qdf_is_macaddr_broadcast(
+				&sta_ctx->conn_info.peerMacAddress[idx])) {
+			hdd_debug("Peer idx: %u mac_addr: " MAC_ADDRESS_STR,
+				  idx, MAC_ADDR_ARRAY(
+				sta_ctx->conn_info.peerMacAddress[idx].bytes));
 			return true;
-
+		}
 	return false;
 }
 

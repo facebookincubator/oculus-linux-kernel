@@ -862,6 +862,14 @@ QDF_STATUS wma_set_smps_params(tp_wma_handle wma, uint8_t vdev_id,
 void wma_set_bss_rate_flags(tp_wma_handle wma, uint8_t vdev_id,
 			    tpAddBssParams add_bss);
 
+/**
+ * wma_get_vht_rate_flags() - Return the VHT rate flags corresponding to the BW
+ * @ch_width: BW for which rate flags is required
+ *
+ * Return: Rate flags corresponding to ch_width
+ */
+enum tx_rate_info wma_get_vht_rate_flags(enum phy_ch_width ch_width);
+
 int32_t wmi_unified_send_txbf(tp_wma_handle wma, tpAddStaParams params);
 
 /**
@@ -1246,7 +1254,7 @@ QDF_STATUS wma_process_ch_avoid_update_req(tp_wma_handle wma_handle,
 
 QDF_STATUS wma_update_fw_tdls_state(WMA_HANDLE handle, void *pwmaTdlsparams);
 int wma_update_tdls_peer_state(WMA_HANDLE handle,
-			       tTdlsPeerStateParams *peerStateParams);
+			       struct tdls_peer_update_state *peerStateParams);
 /**
  * wma_set_tdls_offchan_mode() - set tdls off channel mode
  * @handle: wma handle

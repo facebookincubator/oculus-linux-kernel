@@ -1542,6 +1542,11 @@ struct hdd_adapter {
 	qdf_mutex_t sta_periodic_stats_lock;
 #endif /* WLAN_FEATURE_PERIODIC_STA_STATS */
 	qdf_event_t peer_cleanup_done;
+#ifdef FEATURE_OEM_DATA
+	bool oem_data_in_progress;
+	void *cookie;
+	bool response_expected;
+#endif
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(adapter) (&(adapter)->session.station)
@@ -2134,6 +2139,7 @@ struct hdd_context {
 #ifdef CLD_PM_QOS
 	struct pm_qos_request pm_qos_req;
 #endif
+	bool ll_stats_per_chan_rx_tx_time;
 };
 
 /**
@@ -2760,6 +2766,7 @@ void hdd_deinit(void);
 int hdd_wlan_startup(struct device *dev);
 void __hdd_wlan_exit(void);
 int hdd_wlan_notify_modem_power_state(int state);
+void hdd_context_destroy(struct hdd_context *hdd_ctx);
 #ifdef QCA_HT_2040_COEX
 /**
  * hdd_wlan_set_ht2040_mode() - notify FW with HT20/HT40 mode

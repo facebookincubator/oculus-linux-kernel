@@ -107,7 +107,7 @@
 
 #define PMO_WOW_MAX_EVENT_BM_LEN 4
 
-#define PMO_WOW_FILTERS_ARP_NS		2
+#define PMO_WOW_FILTERS_ARP_NS		3
 #define PMO_WOW_FILTERS_PKT_OR_APF	5
 /* Default Listen Interval */
 #define PMO_DEFAULT_LISTEN_INTERVAL 1

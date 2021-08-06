@@ -133,6 +133,22 @@ config OCULUS_unknown1
 	---help---
 	  Enable support for the unknown1 device
 
+config INSTRUCTION_SAMPLER
+	tristate "Periodic instruction sampler"
+	depends on OCULUS && EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
+	help
+	  Provides support for periodic instruction sampling of processes
+	  running on the system.
+
+config TOP_PANEL_SENSOR
+	tristate "Top Panel Virtual Sensor Driver"
+	default n
+	depends on OCULUS
+	select VIRTUAL_SENSOR_UTILS
+	help
+	  This driver implements a virtual sensor driver representing the top
+	  panel skin temperature of a device.
+
 config unknown1_BLU
 	tristate "Oculus unknown1 SPI BLU Driver"
 	depends on OCULUS

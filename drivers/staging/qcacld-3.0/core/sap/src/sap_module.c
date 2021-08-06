@@ -702,15 +702,11 @@ QDF_STATUS wlansap_start_bss(struct sap_context *sap_ctx,
 	tHalHandle hHal;
 	tpAniSirGlobal pmac = NULL;
 
-	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		  "wlansap_start_bss: sapContext=%pK", sap_ctx);
-
-	if (NULL == sap_ctx) {
-		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-			  "%s: Invalid SAP pointer",
-			  __func__);
+	if (!sap_ctx) {
+		sap_info("Invalid SAP context");
 		return QDF_STATUS_E_FAULT;
 	}
+
 	sap_ctx->fsm_state = SAP_INIT;
 
 	/* Channel selection is auto or configured */
@@ -789,6 +785,11 @@ QDF_STATUS wlansap_start_bss(struct sap_context *sap_ctx,
 		pConfig->dfs_beacon_tx_enhanced;
 	pmac->sap.SapDfsInfo.reduced_beacon_interval =
 				pConfig->reduced_beacon_interval;
+	sap_debug("SAP: auth ch select weight:%d chswitch bcn cnt:%d chswitch mode:%d reduced bcn intv:%d",
+		  sap_ctx->auto_channel_select_weight,
+		  pConfig->sap_chanswitch_beacon_cnt,
+		  pmac->sap.SapDfsInfo.sap_ch_switch_mode,
+		  pmac->sap.SapDfsInfo.reduced_beacon_interval);
 
 	/* Copy MAC filtering settings to sap context */
 	sap_ctx->eSapMacAddrAclMode = pConfig->SapMacaddr_acl;
@@ -3120,7 +3121,7 @@ QDF_STATUS wlansap_update_owe_info(struct sap_context *sap_ctx,
 	struct owe_assoc_ind *owe_assoc_ind;
 	tSirSmeAssocInd *assoc_ind = NULL;
 	qdf_list_node_t *node = NULL, *next_node = NULL;
-	QDF_STATUS status;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	if (!wlansap_validate_owe_ies(ie, ie_len)) {
 		QDF_TRACE_ERROR(QDF_MODULE_ID_SAP, "Invalid OWE IE");

@@ -349,7 +349,9 @@ typedef struct tagSmeStruct {
 #endif
 #ifdef FEATURE_OEM_DATA
 	void (*oem_data_event_handler_cb)
-			(const struct oem_data *oem_event_data);
+			(const struct oem_data *oem_event_data,
+			 uint8_t vdev_id);
+	uint8_t oem_data_vdev_id;
 #endif
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 	sme_get_raom_scan_ch_Callback roam_scan_ch_callback;

@@ -48,6 +48,38 @@ struct wireless_dev;
 #define WLAN_HDD_IS_NDI_CONNECTED(adapter) (false)
 #endif /* WLAN_FEATURE_NAN_DATAPATH */
 
+#define NAN_MSG_ID_DISABLE_INDICATION 26
+/**
+ * struct nan_msg_hdr - NAN msg header to be sent to userspace
+ * @msg_version: NAN msg version
+ * @msg_id: NAN message id
+ * @reserved: Reserved for now to avoid padding
+ *
+ * 8-byte control message header used by NAN
+ *
+ */
+struct nan_msg_hdr {
+	uint16_t msg_version:4;
+	uint16_t msg_id:12;
+	uint16_t reserved[3];
+};
+
+#define NAN_STATUS_SUCCESS 0
+#define NAN_STATUS_UNSUPPORTED_CONCURRENCY_NAN_DISABLED 12
+
+/**
+ * struct nan_disable_ind_msg - NAN disable ind params
+ * @msg_hdr: NAN msg header
+ * @reason: NAN disable reason, below are valid reasons for NAN disable ind
+ *          NAN_STATUS_SUCCESS
+ *          NAN_STATUS_UNSUPPORTED_CONCURRENCY_NAN_DISABLED
+ * @reserved: Reserved for now to avoid padding
+ */
+struct nan_disable_ind_msg {
+	struct nan_msg_hdr msg_hdr;
+	uint16_t reason;
+	uint16_t reserved;
+};
 #ifdef WLAN_FEATURE_NAN_DATAPATH
 void hdd_ndp_print_ini_config(struct hdd_context *hdd_ctx);
 void hdd_nan_datapath_target_config(struct hdd_context *hdd_ctx,
@@ -73,6 +105,19 @@ void hdd_ndp_session_end_handler(struct hdd_adapter *adapter);
 
 void hdd_cleanup_ndi(struct hdd_context *hdd_ctx,
 		     struct hdd_adapter *adapter);
+
+/**
+ * hdd_ndi_start(): Start NDI adapter and create NDI vdev
+ * @iface_name: NDI interface name
+ * @transaction_id: Transaction id given by framework to start the NDI.
+ *                  Framework expects this in the immediate response when
+ *                  the NDI is created by it.
+ *
+ * Create NDI mode interface and vdev.
+ *
+ * Return: 0 upon success
+ */
+int hdd_ndi_start(char *iface_name, uint16_t transaction_id);
 #else
 static inline void hdd_ndp_print_ini_config(struct hdd_context *hdd_ctx)
 {
@@ -105,13 +150,17 @@ static inline void hdd_cleanup_ndi(struct hdd_context *hdd_ctx,
 				   struct hdd_adapter *adapter)
 {
 }
+
+static inline int hdd_ndi_start(char *iface_name, uint16_t transaction_id)
+{
+	return 0;
+}
 #endif /* WLAN_FEATURE_NAN_DATAPATH */
 
 enum nan_datapath_state;
 struct nan_datapath_inf_create_rsp;
 
 int hdd_ndi_open(char *iface_name);
-int hdd_ndi_start(char *iface_name, uint16_t transaction_id);
 int hdd_ndi_delete(uint8_t vdev_id, char *iface_name, uint16_t transaction_id);
 void hdd_ndi_close(uint8_t vdev_id);
 void hdd_ndi_drv_ndi_create_rsp_handler(uint8_t vdev_id,

@@ -490,6 +490,7 @@ QDF_INC :=	-I$(WLAN_COMMON_INC)/$(QDF_OS_INC_DIR) \
 QDF_OBJS := 	$(QDF_LINUX_OBJ_DIR)/qdf_defer.o \
 		$(QDF_LINUX_OBJ_DIR)/qdf_event.o \
 		$(QDF_LINUX_OBJ_DIR)/qdf_file.o \
+		$(QDF_LINUX_OBJ_DIR)/qdf_func_tracker.o \
 		$(QDF_LINUX_OBJ_DIR)/qdf_list.o \
 		$(QDF_LINUX_OBJ_DIR)/qdf_lock.o \
 		$(QDF_LINUX_OBJ_DIR)/qdf_mc_timer.o \
@@ -1708,6 +1709,8 @@ cppflags-$(CONFIG_WLAN_HANG_EVENT) += -DWLAN_HANG_EVENT
 
 cppflags-$(CONFIG_WLAN_FEATURE_PERIODIC_STA_STATS) += -DWLAN_FEATURE_PERIODIC_STA_STATS
 
+cppflags-$(CONFIG_RX_HASH_DEBUG) += -DRX_HASH_DEBUG
+
 ifeq ($(CONFIG_CNSS), y)
 ifeq ($(CONFIG_CNSS_SDIO), y)
 cppflags-y += -DCONFIG_PLD_SDIO_CNSS
@@ -2185,6 +2188,8 @@ cppflags-$(CONFIG_ENABLE_SMMU_S1_TRANSLATION) += -DENABLE_SMMU_S1_TRANSLATION
 
 #Flag to enable/disable MTRACE feature
 cppflags-$(CONFIG_ENABLE_MTRACE_LOG) += -DENABLE_MTRACE_LOG
+
+cppflags-$(CONFIG_FUNC_CALL_MAP) += -DFUNC_CALL_MAP
 
 #Flag to enable/disable Adaptive 11r feature
 cppflags-$(CONFIG_ADAPTIVE_11R) += -DWLAN_ADAPTIVE_11R

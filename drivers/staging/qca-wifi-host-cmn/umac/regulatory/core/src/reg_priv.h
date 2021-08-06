@@ -97,7 +97,7 @@ struct wlan_regulatory_psoc_priv_obj {
 	struct wlan_psoc_host_hal_reg_capabilities_ext
 			reg_cap[PSOC_MAX_PHY_REG_CAP];
 	bool force_ssc_disable_indoor_channel;
-	bool enable_srd_chan_in_master_mode;
+	uint8_t enable_srd_chan_in_master_mode;
 	bool enable_11d_in_world_mode;
 	int8_t def_pdev_id;
 	qdf_spinlock_t cbk_list_lock;

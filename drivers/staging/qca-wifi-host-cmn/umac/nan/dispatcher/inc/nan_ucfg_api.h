@@ -278,4 +278,16 @@ int ucfg_nan_register_lim_callbacks(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS ucfg_nan_get_callbacks(struct wlan_objmgr_psoc *psoc,
 				  struct nan_callbacks *cb_obj);
 
+/**
+ * ucfg_is_nan_allowed_on_chan() - Check if NAN is allowed on given chan
+ * @pdev: pdev context
+ * @chan: Channel to be checked
+ *
+ * Check if NAN/NDP can be enabled on given channel.
+ * Validate SRD channels based on the ini and reg domain. Assume rest of the
+ * channels support NAN/NDP for now.
+ *
+ * Return: True if NAN is allowed on the given channel
+ */
+bool ucfg_is_nan_allowed_on_chan(struct wlan_objmgr_pdev *pdev, uint32_t chan);
 #endif /* _NAN_UCFG_API_H_ */

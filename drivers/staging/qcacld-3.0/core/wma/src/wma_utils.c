@@ -1834,13 +1834,23 @@ static int wma_unified_link_radio_stats_event_handler(void *handle,
 		next_chan_offset = WMI_TLV_HDR_SIZE;
 		WMA_LOGD("Channel Stats Info");
 		for (count = 0; count < radio_stats->num_channels; count++) {
-			WMA_LOGD("freq %u width %u freq0 %u freq1 %u awake time %u cca busy time %u",
-				 channel_stats->center_freq,
-				 channel_stats->channel_width,
-				 channel_stats->center_freq0,
-				 channel_stats->center_freq1,
-				 channel_stats->radio_awake_time,
-				 channel_stats->cca_busy_time);
+			wma_nofl_debug("freq %u width %u freq0 %u freq1 %u awake time %u cca busy time %u",
+				       channel_stats->center_freq,
+				       channel_stats->channel_width,
+				       channel_stats->center_freq0,
+				       channel_stats->center_freq1,
+				       channel_stats->radio_awake_time,
+				       channel_stats->cca_busy_time);
+			if (wmi_service_enabled(
+			      wma_handle->wmi_handle,
+			      wmi_service_ll_stats_per_chan_rx_tx_time)) {
+				wma_nofl_debug(" tx time %u rx time %u",
+					       channel_stats->tx_time,
+					       channel_stats->rx_time);
+			} else {
+				wma_nofl_debug("LL Stats per channel tx time and rx time are not supported.");
+			}
+
 			channel_stats++;
 
 			qdf_mem_copy(chn_results,
@@ -2919,6 +2929,11 @@ int wma_link_status_event_handler(void *handle, uint8_t *cmd_param_info,
 	event = (wmi_vdev_rate_stats_event_fixed_param *)
 						param_buf->fixed_param;
 	ht_info = (wmi_vdev_rate_ht_info *) param_buf->ht_info;
+
+	if (!ht_info) {
+		wma_err("Invalid ht_info");
+		return -EINVAL;
+	}
 
 	WMA_LOGD("num_vdev_stats: %d", event->num_vdev_stats);
 
@@ -4712,7 +4727,8 @@ static void wma_update_roam_offload_flag(tp_wma_handle wma, uint8_t vdev_id,
 	}
 
 	for (id = 0; id < wma->max_bssid; id++) {
-		if (wma->interfaces[id].roam_offload_enabled)
+		if (wma_is_vdev_valid(id) &&
+		    wma->interfaces[id].roam_offload_enabled)
 			roam_offload_vdev_id = id;
 	}
 
@@ -5136,8 +5152,8 @@ int wma_oem_event_handler(void *wma_ctx, uint8_t *event_buff, uint32_t len)
 
 	oem_event_data.data_len = event->data_len;
 	oem_event_data.data = param_buf->data;
-
-	pmac->sme.oem_data_event_handler_cb(&oem_event_data);
+	pmac->sme.oem_data_event_handler_cb(&oem_event_data,
+					    pmac->sme.oem_data_vdev_id);
 
 	return QDF_STATUS_SUCCESS;
 }
