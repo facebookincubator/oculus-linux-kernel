@@ -65,7 +65,9 @@ CFLAGS_kobject_uevent.o += -DDEBUG
 endif
 
 obj-$(CONFIG_DEBUG_INFO_REDUCED) += debug_info.o
-CFLAGS_debug_info.o += $(call cc-option, -femit-struct-debug-detailed=any)
+CFLAGS_debug_info.o += \
+	$(call cc-option, -femit-struct-debug-detailed=any) \
+	-g
 
 obj-$(CONFIG_GENERIC_IOMAP) += iomap.o
 obj-$(CONFIG_GENERIC_PCI_IOMAP) += pci_iomap.o

@@ -1337,6 +1337,7 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	s64 now;
 	s64 elapsed;
 	const char *awakestr = awake ? "awake" : "asleep";
+	s32 *stat = awake ? &devdata->stats.last_awake_dur_ms : &devdata->stats.last_asleep_dur_ms;
 
 	dev_info(&devdata->spi->dev, "Waiting for syncboss to be %s", awakestr);
 	for (now = starttime; now < deadline; now = ktime_get_ms()) {
@@ -1352,6 +1353,8 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 					 awakestr, elapsed);
 
 			}
+
+			*stat = elapsed;
 			devdata->power_state =
 				awake ? SYNCBOSS_POWER_STATE_RUNNING :
 				SYNCBOSS_POWER_STATE_OFF;
@@ -1361,8 +1364,8 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	}
 
 	elapsed = ktime_get_ms() - starttime;
-	WARN_ON(true);
-	dev_err(&devdata->spi->dev, "SyncBoss failed to %s within %lldms.", awakestr, elapsed);
+	WARN(true, "SyncBoss failed to %s within %lldms.", awakestr, elapsed);
+	*stat = -1;
 	return -ETIMEDOUT;
 }
 

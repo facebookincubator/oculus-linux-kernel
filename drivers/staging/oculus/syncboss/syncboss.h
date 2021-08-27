@@ -20,6 +20,9 @@ struct syncboss_stats {
 	u32 num_bad_magic_numbers;
 	u32 num_bad_checksums;
 	u32 num_rejected_transactions;
+
+	s32 last_awake_dur_ms;
+	s32 last_asleep_dur_ms;
 };
 
 /* A message to be sent/received */
