@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,6 +26,10 @@
 #include "hif.h"
 #include "hif_io32.h"
 #include "qdf_platform.h"
+
+#ifdef DUMP_REO_QUEUE_INFO_IN_DDR
+#include "hal_hw_headers.h"
+#endif
 
 /* Ring index for WBM2SW2 release ring */
 #define HAL_IPA_TX_COMP_RING_IDX 2
@@ -1118,11 +1122,15 @@ void hal_reo_read_write_ctrl_ix(hal_soc_handle_t hal_soc_hdl, bool read,
 				uint32_t *ix2, uint32_t *ix3);
 
 /**
- * hal_srng_set_hp_paddr() - Set physical address to dest SRNG head pointer
+ * hal_srng_set_hp_paddr_confirm() - Set physical address to dest SRNG head
+ *  pointer and confirm that write went through by reading back the value
  * @sring: sring pointer
  * @paddr: physical address
+ *
+ * Return: None
  */
-extern void hal_srng_dst_set_hp_paddr(struct hal_srng *sring, uint64_t paddr);
+extern void hal_srng_dst_set_hp_paddr_confirm(struct hal_srng *sring,
+					      uint64_t paddr);
 
 /**
  * hal_srng_dst_init_hp() - Initilaize head pointer with cached head pointer
@@ -2371,6 +2379,78 @@ void hal_setup_link_idle_list(hal_soc_handle_t hal_soc_hdl,
 			num_entries);
 
 }
+
+#ifdef DUMP_REO_QUEUE_INFO_IN_DDR
+/**
+ * hal_dump_rx_reo_queue_desc() - Dump reo queue descriptor fields
+ * @hw_qdesc_vaddr_aligned: Pointer to hw reo queue desc virtual addr
+ *
+ * Use the virtual addr pointer to reo h/w queue desc to read
+ * the values from ddr and log them.
+ *
+ * Return: none
+ */
+static inline void hal_dump_rx_reo_queue_desc(
+	void *hw_qdesc_vaddr_aligned)
+{
+	struct rx_reo_queue *hw_qdesc =
+		(struct rx_reo_queue *)hw_qdesc_vaddr_aligned;
+
+	if (!hw_qdesc)
+		return;
+
+	hal_info("receive_queue_number %u vld %u window_jump_2k %u"
+		 " hole_count %u ba_window_size %u ignore_ampdu_flag %u"
+		 " svld %u ssn %u current_index %u"
+		 " disable_duplicate_detection %u soft_reorder_enable %u"
+		 " chk_2k_mode %u oor_mode %u mpdu_frames_processed_count %u"
+		 " msdu_frames_processed_count %u total_processed_byte_count %u"
+		 " late_receive_mpdu_count %u seq_2k_error_detected_flag %u"
+		 " pn_error_detected_flag %u current_mpdu_count %u"
+		 " current_msdu_count %u timeout_count %u"
+		 " forward_due_to_bar_count %u duplicate_count %u"
+		 " frames_in_order_count %u bar_received_count %u"
+		 " pn_check_needed %u pn_shall_be_even %u"
+		 " pn_shall_be_uneven %u pn_size %u",
+		 hw_qdesc->receive_queue_number,
+		 hw_qdesc->vld,
+		 hw_qdesc->window_jump_2k,
+		 hw_qdesc->hole_count,
+		 hw_qdesc->ba_window_size,
+		 hw_qdesc->ignore_ampdu_flag,
+		 hw_qdesc->svld,
+		 hw_qdesc->ssn,
+		 hw_qdesc->current_index,
+		 hw_qdesc->disable_duplicate_detection,
+		 hw_qdesc->soft_reorder_enable,
+		 hw_qdesc->chk_2k_mode,
+		 hw_qdesc->oor_mode,
+		 hw_qdesc->mpdu_frames_processed_count,
+		 hw_qdesc->msdu_frames_processed_count,
+		 hw_qdesc->total_processed_byte_count,
+		 hw_qdesc->late_receive_mpdu_count,
+		 hw_qdesc->seq_2k_error_detected_flag,
+		 hw_qdesc->pn_error_detected_flag,
+		 hw_qdesc->current_mpdu_count,
+		 hw_qdesc->current_msdu_count,
+		 hw_qdesc->timeout_count,
+		 hw_qdesc->forward_due_to_bar_count,
+		 hw_qdesc->duplicate_count,
+		 hw_qdesc->frames_in_order_count,
+		 hw_qdesc->bar_received_count,
+		 hw_qdesc->pn_check_needed,
+		 hw_qdesc->pn_shall_be_even,
+		 hw_qdesc->pn_shall_be_uneven,
+		 hw_qdesc->pn_size);
+}
+
+#else /* DUMP_REO_QUEUE_INFO_IN_DDR */
+
+static inline void hal_dump_rx_reo_queue_desc(
+	void *hw_qdesc_vaddr_aligned)
+{
+}
+#endif /* DUMP_REO_QUEUE_INFO_IN_DDR */
 
 /**
  * hal_srng_dump_ring_desc() - Dump ring descriptor info

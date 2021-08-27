@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -463,6 +463,7 @@ QDF_STATUS wlan_crypto_set_del_pmksa(struct wlan_objmgr_vdev *vdev,
 	QDF_STATUS status = QDF_STATUS_E_INVAL;
 	struct wlan_crypto_comp_priv *crypto_priv;
 	struct wlan_crypto_params *crypto_params;
+	struct wlan_crypto_pmksa *pmkid_cache = NULL;
 	enum QDF_OPMODE op_mode;
 
 	op_mode = wlan_vdev_mlme_get_opmode(vdev);
@@ -484,6 +485,19 @@ QDF_STATUS wlan_crypto_set_del_pmksa(struct wlan_objmgr_vdev *vdev,
 
 	crypto_params = &crypto_priv->crypto_params;
 	if (set) {
+		if (!pmksa->pmk_len || pmksa->pmk_len > MAX_PMK_LEN) {
+			crypto_err("Invalid PMK length");
+			return QDF_STATUS_E_FAILURE;
+		}
+
+		pmkid_cache = wlan_crypto_get_pmksa(vdev, &pmksa->bssid);
+		if (pmkid_cache && (!qdf_mem_cmp(pmkid_cache->pmk, pmksa->pmk,
+						 pmksa->pmk_len))) {
+			crypto_debug("PMKSA entry found with same PMK");
+			pmkid_cache = NULL;
+			return QDF_STATUS_E_EXISTS;
+		}
+
 		status = wlan_crypto_set_pmksa(crypto_params, pmksa);
 		/* Set pmksa */
 	} else {
@@ -640,6 +654,7 @@ wlan_crypto_get_pmksa(struct wlan_objmgr_vdev *vdev, struct qdf_mac_addr *bssid)
 			continue;
 		if (qdf_is_macaddr_equal(bssid,
 					 &crypto_params->pmksa[i]->bssid)) {
+			crypto_debug("PMKSA: Entry found at index %d", i);
 			return crypto_params->pmksa[i];
 		}
 	}
@@ -2612,6 +2627,10 @@ static int32_t wlan_crypto_rsn_suite_to_keymgmt(const uint8_t *sel)
 		return WLAN_CRYPTO_KEY_MGMT_DPP;
 	case RSN_AUTH_KEY_MGMT_FT_802_1X_SUITE_B_384:
 		return WLAN_CRYPTO_KEY_MGMT_FT_IEEE8021X_SHA384;
+	case RSN_AUTH_KEY_MGMT_FT_PSK_SHA384:
+		return WLAN_CRYPTO_KEY_MGMT_FT_PSK_SHA384;
+	case RSN_AUTH_KEY_MGMT_PSK_SHA384:
+		return WLAN_CRYPTO_KEY_MGMT_PSK_SHA384;
 	}
 
 	return status;
@@ -4347,11 +4366,11 @@ wlan_crypto_reset_prarams(struct wlan_crypto_params *params)
 	params->rsn_caps = 0;
 }
 
-uint8_t *
-wlan_crypto_parse_rsnxe_ie(uint8_t *rsnxe_ie, uint8_t *cap_len)
+const uint8_t *
+wlan_crypto_parse_rsnxe_ie(const uint8_t *rsnxe_ie, uint8_t *cap_len)
 {
 	uint8_t len;
-	uint8_t *ie;
+	const uint8_t *ie;
 
 	if (!rsnxe_ie)
 		return NULL;

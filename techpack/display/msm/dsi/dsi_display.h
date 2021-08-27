@@ -274,6 +274,10 @@ struct dsi_display {
 	u32 clk_gating_config;
 	bool queue_cmd_waits;
 	struct workqueue_struct *dma_cmd_workq;
+
+	/* Add dfps frame transition handler worker */
+	struct kthread_worker *dfps_transition_worker;
+	struct kthread_work dfps_transition_work;
 };
 
 int dsi_display_dev_probe(struct platform_device *pdev);

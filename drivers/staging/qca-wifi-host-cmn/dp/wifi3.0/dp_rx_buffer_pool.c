@@ -110,7 +110,8 @@ void dp_rx_buffer_pool_nbuf_free(struct dp_soc *soc, qdf_nbuf_t nbuf, u8 mac_id)
 	buff_pool = &soc->rx_buff_pool[mac_id];
 
 	if (qdf_likely(qdf_nbuf_queue_head_qlen(&buff_pool->emerg_nbuf_q) >=
-		       DP_RX_BUFFER_POOL_SIZE))
+		       DP_RX_BUFFER_POOL_SIZE) ||
+	    !buff_pool->is_initialized)
 		return qdf_nbuf_free(nbuf);
 
 	qdf_nbuf_reset(nbuf, RX_BUFFER_RESERVATION,
@@ -260,20 +261,11 @@ dp_rx_buffer_pool_nbuf_map(struct dp_soc *soc,
 {
 	QDF_STATUS ret = QDF_STATUS_SUCCESS;
 
-	if (!QDF_NBUF_CB_PADDR((nbuf_frag_info_t->virt_addr).nbuf)) {
+	if (!QDF_NBUF_CB_PADDR((nbuf_frag_info_t->virt_addr).nbuf))
 		ret = qdf_nbuf_map_nbytes_single(soc->osdev,
 						 (nbuf_frag_info_t->virt_addr).nbuf,
 						 QDF_DMA_FROM_DEVICE,
 						 rx_desc_pool->buf_size);
-
-		if (qdf_unlikely(QDF_IS_STATUS_ERROR(ret)))
-			return ret;
-	}
-
-	dp_ipa_handle_rx_buf_smmu_mapping(soc,
-					  (qdf_nbuf_t)((nbuf_frag_info_t->virt_addr).nbuf),
-					  rx_desc_pool->buf_size,
-					  true);
 
 	return ret;
 }

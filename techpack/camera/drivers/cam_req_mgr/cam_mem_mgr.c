@@ -271,17 +271,30 @@ int cam_mem_get_cpu_buf(int32_t buf_handle, uintptr_t *vaddr_ptr, size_t *len)
 		return -EINVAL;
 
 	idx = CAM_MEM_MGR_GET_HDL_IDX(buf_handle);
-	if (idx >= CAM_MEM_BUFQ_MAX || idx <= 0)
+	if (idx >= CAM_MEM_BUFQ_MAX || idx <= 0) {
+		CAM_ERR(CAM_MEM, "Invalid Index %d Max %d", idx,
+			CAM_MEM_BUFQ_MAX);
 		return -EINVAL;
+	}
 
-	if (!tbl.bufq[idx].active)
+	if (!tbl.bufq[idx].active) {
+		CAM_ERR(CAM_MEM, "Index %d is NOT Active", idx);
 		return -EPERM;
+	}
 
-	if (buf_handle != tbl.bufq[idx].buf_handle)
+	if (buf_handle != tbl.bufq[idx].buf_handle) {
+		CAM_ERR(CAM_MEM, "Invalid buf_handle 0x%x expected 0x%x Idx %d",
+				buf_handle, tbl.bufq[idx].buf_handle, idx);
 		return -EINVAL;
+	}
 
-	if (!(tbl.bufq[idx].flags & CAM_MEM_FLAG_KMD_ACCESS))
+	if (!(tbl.bufq[idx].flags & CAM_MEM_FLAG_KMD_ACCESS)) {
+		CAM_ERR(CAM_MEM, "Inv! Flags 0x%x buf_h 0x%x Exp 0x%x Idx %d",
+			tbl.bufq[idx].flags,
+			buf_handle, tbl.bufq[idx].buf_handle,
+			idx);
 		return -EINVAL;
+	}
 
 	if (tbl.bufq[idx].kmdvaddr) {
 		*vaddr_ptr = tbl.bufq[idx].kmdvaddr;

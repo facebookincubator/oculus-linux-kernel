@@ -311,6 +311,7 @@ Optional properties:
  - qcom,cdc-on-demand-supplies: List of supplies which can be enabled
 				dynamically.
 				Supplies in this list are off by default.
+ - qcom,dmic-rate: wcd DMIC rate setting.
 
 Example:
 wcd938x_codec: wcd938x-codec {
@@ -351,6 +352,8 @@ wcd938x_codec: wcd938x-codec {
 				   "cdc-vddio";
 	qcom,cdc-on-demand-supplies = "cdc-vdd-buck",
 				      "cdc-vdd-mic-bias";
+
+	qcom,dmic-rate = <2400>;
 };
 
 Bolero Clock Resource Manager

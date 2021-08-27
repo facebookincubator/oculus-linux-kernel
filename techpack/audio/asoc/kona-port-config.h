@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _KONA_PORT_CONFIG
@@ -67,6 +67,15 @@ static struct port_params tx_frame_params_wcd937x[SWR_MSTR_PORT_LEN] = {
 	{3,  0,  0,  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0},
 };
 
+/* TX UC1: TX1: 1ch, TX2: 2chs, TX3: 1ch(MBHC) */
+static struct port_params tx_frame_params_us[SWR_MSTR_PORT_LEN] = {
+	{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},/* PCM OUT */
+	{1,  1,  0,  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0},  /* TX1 */
+	{3,  1,  0,  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0},  /* TX2 */
+	{3,  2,  0,  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0},  /* TX3 */
+	{3,  0,  0,  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1},  /* TX4 */
+};
+
 static struct swr_mstr_port_map sm_port_map[] = {
 	{TX_MACRO, SWR_UC0, tx_frame_params_default},
 	{RX_MACRO, SWR_UC0, rx_frame_params_default},
@@ -83,6 +92,13 @@ static struct swr_mstr_port_map sm_port_map_v2[] = {
 
 static struct swr_mstr_port_map sm_port_map_wcd937x[] = {
 	{TX_MACRO, SWR_UC0, tx_frame_params_wcd937x},
+	{RX_MACRO, SWR_UC0, rx_frame_params_default},
+	{RX_MACRO, SWR_UC1, rx_frame_params_dsd},
+	{WSA_MACRO, SWR_UC0, wsa_frame_params_default},
+};
+
+static struct swr_mstr_port_map sm_port_map_us[] = {
+	{TX_MACRO, SWR_UC0, tx_frame_params_us},
 	{RX_MACRO, SWR_UC0, rx_frame_params_default},
 	{RX_MACRO, SWR_UC1, rx_frame_params_dsd},
 	{WSA_MACRO, SWR_UC0, wsa_frame_params_default},

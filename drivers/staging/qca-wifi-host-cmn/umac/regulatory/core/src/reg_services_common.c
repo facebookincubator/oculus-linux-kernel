@@ -191,7 +191,7 @@ const struct chan_map channel_map_us[NUM_CHANNELS] = {
 	[CHAN_ENUM_2467] = {2467, 12, 20, 40},
 	[CHAN_ENUM_2472] = {2472, 13, 20, 40},
 	[CHAN_ENUM_2484] = {2484, 14, 20, 20},
-
+#ifdef CONFIG_49GHZ_CHAN
 	[CHAN_ENUM_4912] = {4912, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4915] = {4915, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4917] = {4917, INVALID_CHANNEL_NUM, 2, 20},
@@ -234,7 +234,7 @@ const struct chan_map channel_map_us[NUM_CHANNELS] = {
 	[CHAN_ENUM_5057] = {5057, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5060] = {5060, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5080] = {5080, INVALID_CHANNEL_NUM, 2, 20},
-
+#endif /* CONFIG_49GHZ_CHAN */
 	[CHAN_ENUM_5180] = {5180, 36, 2, 160},
 	[CHAN_ENUM_5200] = {5200, 40, 2, 160},
 	[CHAN_ENUM_5220] = {5220, 44, 2, 160},
@@ -361,7 +361,7 @@ const struct chan_map channel_map_eu[NUM_CHANNELS] = {
 	[CHAN_ENUM_2467] = {2467, 12, 20, 40},
 	[CHAN_ENUM_2472] = {2472, 13, 20, 40},
 	[CHAN_ENUM_2484] = {2484, 14, 20, 20},
-
+#ifdef CONFIG_49GHZ_CHAN
 	[CHAN_ENUM_4912] = {4912, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4915] = {4915, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4917] = {4917, INVALID_CHANNEL_NUM, 2, 20},
@@ -404,7 +404,7 @@ const struct chan_map channel_map_eu[NUM_CHANNELS] = {
 	[CHAN_ENUM_5057] = {5057, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5060] = {5060, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5080] = {5080, INVALID_CHANNEL_NUM, 2, 20},
-
+#endif /* CONFIG_49GHZ_CHAN */
 	[CHAN_ENUM_5180] = {5180, 36, 2, 160},
 	[CHAN_ENUM_5200] = {5200, 40, 2, 160},
 	[CHAN_ENUM_5220] = {5220, 44, 2, 160},
@@ -531,7 +531,7 @@ const struct chan_map channel_map_jp[NUM_CHANNELS] = {
 	[CHAN_ENUM_2467] = {2467, 12, 20, 40},
 	[CHAN_ENUM_2472] = {2472, 13, 20, 40},
 	[CHAN_ENUM_2484] = {2484, 14, 20, 20},
-
+#ifdef CONFIG_49GHZ_CHAN
 	[CHAN_ENUM_4912] = {4912, 182, 5, 5},
 	[CHAN_ENUM_4915] = {4915, 183, 10, 10},
 	[CHAN_ENUM_4917] = {4917, 183, 5, 5},
@@ -574,7 +574,7 @@ const struct chan_map channel_map_jp[NUM_CHANNELS] = {
 	[CHAN_ENUM_5057] = {5057, 11, 5, 5},
 	[CHAN_ENUM_5060] = {5060, 12, 20, 20},
 	[CHAN_ENUM_5080] = {5080, 16, 20, 20},
-
+#endif /* CONFIG_49GHZ_CHAN */
 	[CHAN_ENUM_5180] = {5180, 36, 2, 160},
 	[CHAN_ENUM_5200] = {5200, 40, 2, 160},
 	[CHAN_ENUM_5220] = {5220, 44, 2, 160},
@@ -701,7 +701,7 @@ const struct chan_map channel_map_global[NUM_CHANNELS] = {
 	[CHAN_ENUM_2467] = {2467, 12, 20, 40},
 	[CHAN_ENUM_2472] = {2472, 13, 20, 40},
 	[CHAN_ENUM_2484] = {2484, 14, 20, 20},
-
+#ifdef CONFIG_49GHZ_CHAN
 	[CHAN_ENUM_4912] = {4912, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4915] = {4915, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4917] = {4917, INVALID_CHANNEL_NUM, 2, 20},
@@ -744,7 +744,7 @@ const struct chan_map channel_map_global[NUM_CHANNELS] = {
 	[CHAN_ENUM_5057] = {5057, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5060] = {5060, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5080] = {5080, INVALID_CHANNEL_NUM, 2, 20},
-
+#endif /* CONFIG_49GHZ_CHAN */
 	[CHAN_ENUM_5180] = {5180, 36, 2, 160},
 	[CHAN_ENUM_5200] = {5200, 40, 2, 160},
 	[CHAN_ENUM_5220] = {5220, 44, 2, 160},
@@ -871,7 +871,7 @@ const struct chan_map channel_map_china[NUM_CHANNELS] = {
 	[CHAN_ENUM_2467] = {2467, 12, 20, 40},
 	[CHAN_ENUM_2472] = {2472, 13, 20, 40},
 	[CHAN_ENUM_2484] = {2484, 14, 20, 20},
-
+#ifdef CONFIG_49GHZ_CHAN
 	[CHAN_ENUM_4912] = {4912, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4915] = {4915, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_4917] = {4917, INVALID_CHANNEL_NUM, 2, 20},
@@ -914,7 +914,7 @@ const struct chan_map channel_map_china[NUM_CHANNELS] = {
 	[CHAN_ENUM_5057] = {5057, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5060] = {5060, INVALID_CHANNEL_NUM, 2, 20},
 	[CHAN_ENUM_5080] = {5080, INVALID_CHANNEL_NUM, 2, 20},
-
+#endif /* CONFIG_49GHZ_CHAN */
 	[CHAN_ENUM_5180] = {5180, 36, 2, 160},
 	[CHAN_ENUM_5200] = {5200, 40, 2, 160},
 	[CHAN_ENUM_5220] = {5220, 44, 2, 160},
@@ -2515,6 +2515,35 @@ bool reg_is_freq_indoor(struct wlan_objmgr_pdev *pdev, qdf_freq_t freq)
 		REGULATORY_CHAN_INDOOR_ONLY);
 }
 
+#ifdef CONFIG_REG_CLIENT
+bool reg_is_freq_indoor_in_secondary_list(struct wlan_objmgr_pdev *pdev,
+					  qdf_freq_t freq)
+{
+	struct regulatory_channel *secondary_cur_chan_list;
+	struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj;
+	enum channel_enum chan_enum;
+
+	pdev_priv_obj = reg_get_pdev_obj(pdev);
+
+	if (!IS_VALID_PDEV_REG_OBJ(pdev_priv_obj)) {
+		reg_err("reg pdev priv obj is NULL");
+		return false;
+	}
+
+	chan_enum = reg_get_chan_enum_for_freq(freq);
+
+	if (chan_enum == INVALID_CHANNEL) {
+		reg_err_rl("Invalid chan enum %d", chan_enum);
+		return false;
+	}
+
+	secondary_cur_chan_list = pdev_priv_obj->secondary_cur_chan_list;
+
+	return (secondary_cur_chan_list[chan_enum].chan_flags &
+		REGULATORY_CHAN_INDOOR_ONLY);
+}
+#endif
+
 #ifdef CONFIG_BAND_6GHZ
 bool reg_is_6ghz_chan_freq(uint16_t freq)
 {
@@ -2718,7 +2747,7 @@ reg_get_band_channel_list(struct wlan_objmgr_pdev *pdev,
 		}
 	}
 	if (BAND_5G_PRESENT(band_mask)) {
-		for (i = MIN_49GHZ_CHANNEL; i <= MAX_5GHZ_CHANNEL; i++) {
+		for (i = BAND_5GHZ_START_CHANNEL; i <= MAX_5GHZ_CHANNEL; i++) {
 			if ((cur_chan_list[i].state != CHANNEL_STATE_DISABLE) &&
 			    !(cur_chan_list[i].chan_flags &
 			      REGULATORY_CHAN_DISABLED)) {
@@ -2789,7 +2818,7 @@ qdf_freq_t reg_chan_band_to_freq(struct wlan_objmgr_pdev *pdev,
 		}
 
 		if (BAND_5G_PRESENT(band_mask)) {
-			min_chan = MIN_49GHZ_CHANNEL;
+			min_chan = BAND_5GHZ_START_CHANNEL;
 			max_chan = MAX_5GHZ_CHANNEL;
 
 			return reg_compute_chan_to_freq(pdev, chan_num,
@@ -2802,10 +2831,12 @@ qdf_freq_t reg_chan_band_to_freq(struct wlan_objmgr_pdev *pdev,
 	}
 }
 
+#ifdef CONFIG_49GHZ_CHAN
 bool reg_is_49ghz_freq(qdf_freq_t freq)
 {
 	return REG_IS_49GHZ_FREQ(freq);
 }
+#endif /* CONFIG_49GHZ_CHAN */
 
 qdf_freq_t reg_ch_num(uint32_t ch_enum)
 {
@@ -3256,6 +3287,54 @@ static uint32_t reg_get_channel_flags_for_freq(struct wlan_objmgr_pdev *pdev,
 
 	return pdev_priv_obj->cur_chan_list[chan_enum].chan_flags;
 }
+
+#ifdef CONFIG_REG_CLIENT
+enum channel_state reg_get_channel_state_from_secondary_list_for_freq(
+						struct wlan_objmgr_pdev *pdev,
+						qdf_freq_t freq)
+{
+	enum channel_enum ch_idx;
+	struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj;
+
+	ch_idx = reg_get_chan_enum_for_freq(freq);
+
+	if (ch_idx == INVALID_CHANNEL)
+		return CHANNEL_STATE_INVALID;
+
+	pdev_priv_obj = reg_get_pdev_obj(pdev);
+
+	if (!IS_VALID_PDEV_REG_OBJ(pdev_priv_obj)) {
+		reg_err("pdev reg obj is NULL");
+		return CHANNEL_STATE_INVALID;
+	}
+
+	return pdev_priv_obj->secondary_cur_chan_list[ch_idx].state;
+}
+
+static uint32_t reg_get_channel_flags_from_secondary_list_for_freq(
+						struct wlan_objmgr_pdev *pdev,
+						qdf_freq_t freq)
+{
+	enum channel_enum chan_enum;
+	struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj;
+
+	chan_enum = reg_get_chan_enum_for_freq(freq);
+
+	if (chan_enum == INVALID_CHANNEL) {
+		reg_err("chan freq is not valid");
+		return REGULATORY_CHAN_INVALID;
+	}
+
+	pdev_priv_obj = reg_get_pdev_obj(pdev);
+
+	if (!IS_VALID_PDEV_REG_OBJ(pdev_priv_obj)) {
+		reg_err("pdev reg obj is NULL");
+		return REGULATORY_CHAN_INVALID;
+	}
+
+	return pdev_priv_obj->secondary_cur_chan_list[chan_enum].chan_flags;
+}
+#endif
 
 /**
  * reg_get_5g_bonded_chan_array_for_freq()- Return the channel state for a
@@ -3770,6 +3849,17 @@ bool reg_is_dfs_for_freq(struct wlan_objmgr_pdev *pdev, qdf_freq_t freq)
 }
 
 #ifdef CONFIG_REG_CLIENT
+bool reg_is_dfs_in_secondary_list_for_freq(struct wlan_objmgr_pdev *pdev,
+					   qdf_freq_t freq)
+{
+	uint32_t chan_flags;
+
+	chan_flags = reg_get_channel_flags_from_secondary_list_for_freq(pdev,
+								     freq);
+
+	return chan_flags & REGULATORY_CHAN_RADAR;
+}
+
 /**
  * reg_get_psoc_mas_chan_list () - Get psoc master channel list
  * @pdev: pointer to pdev object
@@ -3949,6 +4039,19 @@ bool reg_is_disable_for_freq(struct wlan_objmgr_pdev *pdev, qdf_freq_t freq)
 
 	return ch_state == CHANNEL_STATE_DISABLE;
 }
+
+#ifdef CONFIG_REG_CLIENT
+bool reg_is_disable_in_secondary_list_for_freq(struct wlan_objmgr_pdev *pdev,
+					       qdf_freq_t freq)
+{
+	enum channel_state ch_state;
+
+	ch_state = reg_get_channel_state_from_secondary_list_for_freq(pdev,
+								      freq);
+
+	return ch_state == CHANNEL_STATE_DISABLE;
+}
+#endif
 
 bool reg_is_passive_for_freq(struct wlan_objmgr_pdev *pdev, qdf_freq_t freq)
 {
@@ -4494,41 +4597,6 @@ QDF_STATUS reg_get_client_power_for_6ghz_ap(struct wlan_objmgr_pdev *pdev,
 	return status;
 }
 
-/**
- * reg_is_afc_available() - check if the automated frequency control system is
- * available, function will need to be updated once AFC is implemented
- * @pdev: Pointer to pdev structure
- *
- * Return: false since the AFC system is not yet available
- */
-static bool reg_is_afc_available(struct wlan_objmgr_pdev *pdev)
-{
-	return false;
-}
-
-enum reg_6g_ap_type reg_decide_6g_ap_pwr_type(struct wlan_objmgr_pdev *pdev)
-{
-	struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj;
-	enum reg_6g_ap_type ap_pwr_type = REG_INDOOR_AP;
-
-	pdev_priv_obj = reg_get_pdev_obj(pdev);
-	if (!IS_VALID_PDEV_REG_OBJ(pdev_priv_obj)) {
-		reg_err("pdev reg component is NULL");
-		return REG_VERY_LOW_POWER_AP;
-	}
-
-	if (reg_is_afc_available(pdev))
-		ap_pwr_type = REG_STANDARD_POWER_AP;
-	else if (pdev_priv_obj->indoor_chan_enabled)
-		ap_pwr_type = REG_INDOOR_AP;
-	else if (pdev_priv_obj->reg_6g_superid != FCC1_6G &&
-		 pdev_priv_obj->reg_6g_superid != FCC1_6G_CL)
-		ap_pwr_type = REG_VERY_LOW_POWER_AP;
-
-	reg_set_cur_6g_ap_pwr_type(pdev, ap_pwr_type);
-
-	return ap_pwr_type;
-}
 #endif
 
 QDF_STATUS

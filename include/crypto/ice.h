@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, 2021 The Linux Foundation. All rights reserved.
  */
 
 #ifndef _QCOM_INLINE_CRYPTO_ENGINE_H_
@@ -30,7 +30,7 @@ enum ice_crpto_key_mode {
 	ICE_CRYPTO_USE_LUT_SW_KEY  = 0x3
 };
 
-#define QCOM_ICE_TYPE_NAME_LEN 8
+#define QCOM_ICE_TYPE_NAME_LEN 12
 
 typedef void (*ice_error_cb)(void *, u32 error);
 

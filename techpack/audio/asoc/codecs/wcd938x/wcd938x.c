@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -1291,6 +1291,7 @@ static int wcd938x_codec_enable_dmic(struct snd_soc_dapm_widget *w,
 	u8 dmic_clk_shift = 0;
 	u8 dmic_clk_mask = 0;
 	u16 dmic2_left_en = 0;
+	u8 dmic_rate = 0;
 
 	dev_dbg(component->dev, "%s wname: %s event: %d\n", __func__,
 		w->name, event);
@@ -1341,6 +1342,33 @@ static int wcd938x_codec_enable_dmic(struct snd_soc_dapm_widget *w,
 	dev_dbg(component->dev, "%s: event %d DMIC%d dmic_clk_cnt %d\n",
 			__func__, event,  (w->shift +1), *dmic_clk_cnt);
 
+	switch (wcd938x->dmic_rate) {
+	case 600:
+		dmic_rate = 0x06;
+		break;
+	case 1200:
+		dmic_rate = 0x05;
+		break;
+	case 1600:
+		dmic_rate = 0x04;
+		break;
+	case 2400:
+		dmic_rate = 0x03;
+		break;
+	case 3200:
+		dmic_rate = 0x02;
+		break;
+	case 4800:
+		dmic_rate = 0x01;
+		break;
+	case 9600:
+		dmic_rate = 0x00;
+		break;
+	default:
+		dmic_rate = 0x03;
+		break;
+	}
+
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 		snd_soc_component_update_bits(component,
@@ -1354,7 +1382,7 @@ static int wcd938x_codec_enable_dmic(struct snd_soc_dapm_widget *w,
 		/* Setting DMIC clock rate to 2.4MHz */
 		snd_soc_component_update_bits(component,
 					      dmic_clk_reg, dmic_clk_mask,
-					      (0x03 << dmic_clk_shift));
+					      (dmic_rate << dmic_clk_shift));
 		snd_soc_component_update_bits(component,
 					      dmic_clk_en_reg, 0x08, 0x08);
 		/* enable clock scaling */
@@ -3865,6 +3893,11 @@ static int wcd938x_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	ret = of_property_read_u32(dev->of_node, "qcom,dmic-rate", &wcd938x->dmic_rate);
+	if (ret) {
+		dev_dbg(dev, "%s: fail to read dmic rate\n", __func__);
+		wcd938x->dmic_rate = 2400;
+	}
 	mutex_init(&wcd938x->micb_lock);
 	ret = wcd938x_add_slave_components(dev, &match);
 	if (ret)

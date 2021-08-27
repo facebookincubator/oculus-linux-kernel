@@ -32,6 +32,7 @@
 #include "cds_utils.h"
 #include "wlan_hdd_main.h"
 #include "wlan_hdd_stats.h"
+#include "wlan_mlme_twt_ucfg_api.h"
 
 /* max time in ms, caller may wait for stats request get serviced */
 #define CP_STATS_WAIT_TIME_STAT 800
@@ -852,6 +853,7 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 	void *cookie;
 	QDF_STATUS status;
 	struct infra_cp_stats_event *priv;
+	struct wlan_objmgr_psoc *psoc;
 	struct wlan_objmgr_peer *peer;
 	struct osif_request *request;
 	struct infra_cp_stats_cmd_info info = {0};
@@ -863,9 +865,18 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 
 	osif_debug("Enter");
 
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc)
+		return -EINVAL;
+
 	request = osif_request_alloc(&params);
 	if (!request)
 		return -ENOMEM;
+
+	ucfg_mlme_set_twt_command_in_progress(psoc,
+					(struct qdf_mac_addr *)twt_peer_mac,
+					dialog_id,
+					WLAN_TWT_CLEAR_STATISTICS);
 
 	cookie = osif_request_cookie(request);
 	priv = osif_request_priv(request);
@@ -899,8 +910,7 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 	}
 	wlan_objmgr_peer_release_ref(peer, WLAN_CP_STATS_ID);
 
-	status = ucfg_infra_cp_stats_register_resp_cb(wlan_vdev_get_psoc(vdev),
-						      &info);
+	status = ucfg_infra_cp_stats_register_resp_cb(psoc, &info);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		osif_err("Failed to register resp callback: %d", status);
 		ret = qdf_status_to_os_return(status);
@@ -920,6 +930,10 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 		osif_err("wait failed or timed out ret: %d", ret);
 
 clear_twt_stats_fail:
+	ucfg_mlme_set_twt_command_in_progress(psoc,
+					(struct qdf_mac_addr *)twt_peer_mac,
+					dialog_id,
+					WLAN_TWT_NONE);
 	osif_request_put(request);
 	osif_debug("Exit");
 

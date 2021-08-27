@@ -245,6 +245,8 @@ struct mscs_req_info {
  * @mscs_req_info: Information related to mscs request
  * @he_config: he config
  * @he_sta_obsspd: he_sta_obsspd
+ * @twt_wait_for_notify: TWT session teardown received, wait for
+ * notify event from firmware before next TWT setup is done.
  */
 struct mlme_legacy_priv {
 	bool chan_switch_in_progress;
@@ -272,6 +274,7 @@ struct mlme_legacy_priv {
 #endif
 	struct mlme_cfg_str opr_rate_set;
 	struct mlme_cfg_str ext_opr_rate_set;
+	bool twt_wait_for_notify;
 #ifdef WLAN_FEATURE_MSCS
 	struct mscs_req_info mscs_req_info;
 #endif
@@ -554,6 +557,16 @@ bool mlme_get_peer_pmf_status(struct wlan_objmgr_peer *peer);
 void mlme_set_discon_reason_n_from_ap(struct wlan_objmgr_psoc *psoc,
 				      uint8_t vdev_id, bool from_ap,
 				      uint32_t reason_code);
+
+/**
+ * wlan_get_opmode_from_vdev_id() - Get opmode from vdevid
+ * @psoc: PSOC pointer
+ * @vdev_id: vdev id
+ *
+ * Return: opmode
+ */
+enum QDF_OPMODE wlan_get_opmode_from_vdev_id(struct wlan_objmgr_pdev *pdev,
+					     uint8_t vdev_id);
 
 /**
  * mlme_get_discon_reason_n_from_ap() - Get disconnect reason and from ap flag

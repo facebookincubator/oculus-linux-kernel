@@ -445,8 +445,8 @@ scm_update_dbs_scan_ctrl_ext_flag(struct scan_start_request *req)
 								PM_NDI_MODE,
 								NULL);
 
-	if (ndi_present && !policy_mgr_is_hw_dbs_2x2_capable(psoc)) {
-		scm_debug("NDP present go for DBS scan");
+	if (ndi_present || policy_mgr_is_hw_dbs_2x2_capable(psoc)) {
+		scm_debug("NDP present or HW 2x2 capable, go for DBS scan");
 		goto end;
 	}
 
@@ -455,6 +455,7 @@ scm_update_dbs_scan_ctrl_ext_flag(struct scan_start_request *req)
 		scan_dbs_policy = SCAN_DBS_POLICY_FORCE_NONDBS;
 		goto end;
 	}
+
 	if ((req->scan_req.scan_policy_low_power) ||
 	    (req->scan_req.scan_policy_low_span)) {
 		scm_debug("low power/span scan received, going for dbs scan");
@@ -791,6 +792,13 @@ static void scm_req_update_concurrency_params(struct wlan_objmgr_vdev *vdev,
 			SCM_ACTIVE_DWELL_TIME_NAN);
 		scm_debug("NDP active modify dwell time 2ghz %d",
 			req->scan_req.dwell_time_active_2g);
+	}
+
+	if (sta_active) {
+		req->scan_req.dwell_time_active_6g =
+				scan_obj->scan_def.active_dwell_time_6g_conc;
+		req->scan_req.dwell_time_passive_6g =
+				scan_obj->scan_def.passive_dwell_time_6g_conc;
 	}
 }
 

@@ -12,3 +12,4 @@ header-y += cam_req_mgr.h
 header-y += cam_sensor.h
 header-y += cam_sync.h
 header-y += cam_lrme.h
+header-y += cam_fastpath_uapi.h

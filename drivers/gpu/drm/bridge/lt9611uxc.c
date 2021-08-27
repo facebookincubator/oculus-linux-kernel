@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
@@ -135,6 +135,8 @@ struct lt9611_timing_info {
 };
 
 static struct lt9611_timing_info lt9611_supp_timing_cfg[] = {
+	{3840, 2160, 24, 60, 4, 2}, /* 3840x2160 24bit 60Hz 4Lane 2ports */
+	{1920, 1080, 24, 60, 4, 2}, /* 1080P 24bit 60Hz 4lane 2port */
 	{3840, 2160, 24, 30, 4, 2}, /* 3840x2160 24bit 30Hz 4Lane 2ports */
 	{1920, 1080, 24, 60, 4, 1}, /* 1080P 24bit 60Hz 4lane 1port */
 	{1920, 1080, 24, 30, 3, 1}, /* 1080P 24bit 30Hz 3lane 1port */
@@ -835,6 +837,8 @@ static void lt9611_reset(struct lt9611 *pdata, bool on_off)
 	} else {
 		gpio_set_value(pdata->reset_gpio, 0);
 	}
+	/* Need longer time to wait LT9611UXC reset finished. */
+	msleep(100);
 }
 
 static void lt9611_assert_5v(struct lt9611 *pdata)

@@ -1465,6 +1465,8 @@ struct policy_mgr_sme_cbacks {
  * @wlan_hdd_set_sap_csa_reason: Set the sap csa reason in cases like NAN.
  * @hdd_get_ap_6ghz_capable: get ap vdev 6ghz capable info from hdd ap adapter.
  * @wlan_hdd_indicate_active_ndp_cnt: indicate active ndp cnt to hdd
+ * @wlan_get_ap_prefer_conc_ch_params: get prefer ap channel bw parameters
+ *  based on target channel frequency and concurrent connections.
  */
 struct policy_mgr_hdd_cbacks {
 	void (*sap_restart_chan_switch_cb)(struct wlan_objmgr_psoc *psoc,
@@ -1486,6 +1488,10 @@ struct policy_mgr_hdd_cbacks {
 					    uint8_t vdev_id);
 	void (*wlan_hdd_indicate_active_ndp_cnt)(struct wlan_objmgr_psoc *psoc,
 						 uint8_t vdev_id, uint8_t cnt);
+	QDF_STATUS (*wlan_get_ap_prefer_conc_ch_params)(
+			struct wlan_objmgr_psoc *psoc,
+			uint8_t vdev_id, uint32_t chan_freq,
+			struct ch_params *ch_params);
 };
 
 
@@ -1636,6 +1642,20 @@ void policy_mgr_set_dual_mac_scan_config(struct wlan_objmgr_psoc *psoc,
  */
 void policy_mgr_set_dual_mac_fw_mode_config(struct wlan_objmgr_psoc *psoc,
 		uint8_t dbs, uint8_t dfs);
+
+/**
+ * policy_mgr_is_scc_with_this_vdev_id() - Check if this vdev_id has SCC with
+ * other vdev_id's
+ * @psoc: PSOC object information
+ * @vdev_id: vdev_id
+ *
+ * This function checks if the given vdev_id has SCC with any other vdev's
+ * or not.
+ *
+ * Return: true if SCC exists, false otherwise
+ */
+bool policy_mgr_is_scc_with_this_vdev_id(struct wlan_objmgr_psoc *psoc,
+					 uint8_t vdev_id);
 
 /**
  * policy_mgr_soc_set_dual_mac_cfg_cb() - Callback for set dual mac config
@@ -3180,18 +3200,18 @@ void policy_mgr_set_weight_of_dfs_passive_channels_to_zero(
 		struct wlan_objmgr_psoc *psoc, uint32_t *pcl,
 		uint32_t *len, uint8_t *weight_list, uint32_t weight_len);
 /**
- * policy_mgr_is_sap_allowed_on_dfs_chan() - check if sap allowed on dfs channel
+ * policy_mgr_is_sap_allowed_on_dfs_freq() - check if sap allowed on dfs freq
  * @pdev: id of objmgr pdev
  * @vdev_id: vdev id
- * @channel: channel number
+ * @ch_freq: channel freq
  * This function is used to check if sta_sap_scc_on_dfs_chan ini is set,
  * DFS master capability is assumed disabled in the driver.
  *
- * Return: true if sap is allowed on dfs channel,
+ * Return: true if sap is allowed on dfs freq,
  * otherwise false
  */
-bool policy_mgr_is_sap_allowed_on_dfs_chan(struct wlan_objmgr_pdev *pdev,
-					   uint8_t vdev_id, uint8_t channel);
+bool policy_mgr_is_sap_allowed_on_dfs_freq(struct wlan_objmgr_pdev *pdev,
+					   uint8_t vdev_id, qdf_freq_t ch_freq);
 /**
  * policy_mgr_is_sta_sap_scc_allowed_on_dfs_chan() - check if sta+sap scc
  * allowed on dfs chan
@@ -3442,7 +3462,7 @@ QDF_STATUS policy_mgr_get_hw_mode_from_idx(
  * @psoc: Pointer to soc
  * @mode: new connection mode
  *
- * Current PORed 6ghz connection modes are STA, SAP.
+ * Current PORed 6ghz connection modes are STA, SAP, P2P.
  *
  * Return: true if supports else false.
  */

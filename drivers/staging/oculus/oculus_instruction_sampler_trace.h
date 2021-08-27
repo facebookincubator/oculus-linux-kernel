@@ -10,7 +10,7 @@
 #include <linux/tracepoint.h>
 #include "oculus_instruction_sampler.h"
 
-TRACE_EVENT(oculus_instruction_sampler_sample,
+TRACE_EVENT(cpu_instruction,
 
 	TP_PROTO(int cpu, ktime_t time, const struct sampler_cpu_trace *trace),
 

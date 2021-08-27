@@ -2955,6 +2955,7 @@ long kgsl_ioctl_gpuobj_import(struct kgsl_device_private *dev_priv,
 	kgsl_process_add_stats(private,
 		kgsl_memdesc_usermem_type(&entry->memdesc),
 		entry->memdesc.size);
+	atomic_long_set(&entry->memdesc.physsize, entry->memdesc.size);
 
 	trace_kgsl_mem_map(entry, fd);
 
@@ -4810,11 +4811,34 @@ static void
 kgsl_gpumem_vm_close(struct vm_area_struct *vma)
 {
 	struct kgsl_mem_entry *entry  = vma->vm_private_data;
+	uint64_t mapsize = 0;
 
 	if (!entry)
 		return;
 
-	atomic_dec(&entry->map_count);
+	/*
+	 * If this isn't the only userspace mapping of the entry we need to
+	 * recalculate its mapsize based off of what pages still have a positive
+	 * mapcount (meaning they're still mapped in another VMA).
+	 */
+	if (atomic_dec_return(&entry->map_count) > 0) {
+		struct kgsl_memdesc *memdesc = &entry->memdesc;
+		uint64_t offset = 0;
+		int i;
+
+		for (i = 0; i < memdesc->page_count; i++, offset += PAGE_SIZE) {
+			struct page *page = kgsl_mmu_find_mapped_page(memdesc,
+					offset);
+
+			if (IS_ERR_OR_NULL(page) || page == ZERO_PAGE(0))
+				continue;
+
+			if (page_mapcount(page) > 0)
+				mapsize += PAGE_SIZE;
+		}
+	}
+
+	atomic_long_set(&entry->memdesc.mapsize, mapsize);
 
 	kgsl_mem_entry_put_deferred(entry);
 }
@@ -5199,14 +5223,17 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 	if (cache == KGSL_CACHEMODE_WRITEBACK
 		|| cache == KGSL_CACHEMODE_WRITETHROUGH) {
 		int i;
-		unsigned long addr = vma->vm_start;
+		unsigned long offset = 0;
 		struct kgsl_memdesc *m = &entry->memdesc;
 
 		for (i = 0; i < m->page_count; i++) {
-			struct page *page = m->pages[i];
+			struct page *p = kgsl_mmu_find_mapped_page(m, offset);
 
-			vm_insert_page(vma, addr, page);
-			addr += PAGE_SIZE;
+			/* Pre-fault the page as long as it's valid. */
+			if (!IS_ERR_OR_NULL(p) && p != ZERO_PAGE(0))
+				vm_insert_page(vma, vma->vm_start + offset, p);
+
+			offset += PAGE_SIZE;
 		}
 	}
 

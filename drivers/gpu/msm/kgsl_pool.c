@@ -13,6 +13,7 @@
 #include "kgsl_pool.h"
 #include "kgsl_sharedmem.h"
 
+#ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 #define KGSL_MAX_POOLS 4
 #define KGSL_MAX_POOL_ORDER 8
 #define KGSL_MAX_RESERVED_PAGES 4096
@@ -206,6 +207,7 @@ kgsl_pool_reduce(unsigned int target_pages, bool exit)
 
 	return pcount;
 }
+#endif /* CONFIG_QCOM_KGSL_PAGE_POOLING */
 
 /**
  * kgsl_pool_free_sgt() - Free scatter-gather list
@@ -277,6 +279,8 @@ void kgsl_pool_free_pages(struct page **pages, unsigned int pcount)
 		kgsl_pool_free_page(p);
 	}
 }
+
+#ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 static int kgsl_pool_idx_lookup(unsigned int order)
 {
 	int i;
@@ -298,6 +302,7 @@ static int kgsl_pool_get_retry_order(unsigned int order)
 
 	return 0;
 }
+#endif /* CONFIG_QCOM_KGSL_PAGE_POOLING */
 
 static unsigned int kgsl_gfp_mask(unsigned int page_order)
 {
@@ -315,6 +320,7 @@ static unsigned int kgsl_gfp_mask(unsigned int page_order)
 	return gfp_mask;
 }
 
+#ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 /**
  * kgsl_pool_alloc_page() - Allocate a page of requested size
  * @page_size: Size of the page to be allocated
@@ -628,4 +634,55 @@ void kgsl_exit_page_pools(void)
 	/* Unregister shrinker */
 	unregister_shrinker(&kgsl_pool_shrinker);
 }
+#else /* CONFIG_QCOM_KGSL_PAGE_POOLING */
+int kgsl_pool_alloc_page(int *page_size, struct page **pages,
+			unsigned int pages_len, unsigned int *align)
+{
+	struct page *page = NULL;
+	void *addr;
+	gfp_t gfp_mask = kgsl_gfp_mask(0);
 
+	if (pages == NULL || pages_len == 0)
+		return -EINVAL;
+
+	page = alloc_pages(gfp_mask, 0);
+	if (page == NULL)
+		return -ENOMEM;
+
+	addr = kmap_atomic(page);
+	memset(addr, 0, PAGE_SIZE);
+	dmac_flush_range(addr, addr + PAGE_SIZE);
+	kunmap_atomic(addr);
+
+	*pages = page;
+	mod_node_page_state(page_pgdat(page), NR_UNRECLAIMABLE_PAGES, 1);
+
+	*page_size = PAGE_SIZE;
+	*align = PAGE_SHIFT;
+
+	return 1;
+}
+
+void kgsl_pool_free_page(struct page *page)
+{
+	int page_order;
+
+	if (page == NULL)
+		return;
+
+	page_order = compound_order(page);
+	mod_node_page_state(page_pgdat(page), NR_UNRECLAIMABLE_PAGES,
+					-(1 << page_order));
+
+	__free_pages(page, page_order);
+}
+
+bool kgsl_pool_avaialable(int size)
+{
+	return false;
+}
+
+void kgsl_init_page_pools(struct platform_device *pdev) {}
+
+void kgsl_exit_page_pools(void) {}
+#endif /* !CONFIG_QCOM_KGSL_PAGE_POOLING */

@@ -58,6 +58,7 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_DCS,
 	DSI_BACKLIGHT_EXTERNAL,
 	DSI_BACKLIGHT_JDI,
+	DSI_BACKLIGHT_LOCAL_DIMMING,
 	DSI_BACKLIGHT_UNKNOWN,
 	DSI_BACKLIGHT_MAX,
 };
@@ -141,6 +142,12 @@ struct dsi_backlight_config {
 	u32 jdi_scanline_max_offset;
 	u32 jdi_scanline_duration;
 	u32 jdi_scanline_offset[2];
+
+	/* Local dimming params */
+	struct backlight_device **ld_dev;
+	u32 num_ld_devices;
+	u32 dfps_intermediate_brightness;
+	bool tune_dfps_brightness;
 };
 
 struct dsi_reset_seq {
@@ -299,6 +306,10 @@ int dsi_panel_get_phy_props(struct dsi_panel *panel,
 			    struct dsi_panel_phy_props *phy_props);
 int dsi_panel_get_dfps_caps(struct dsi_panel *panel,
 			    struct dsi_dfps_capabilities *dfps_caps);
+
+void dsi_panel_update_dfps_intermediate_brightness(struct dsi_panel *panel,
+							int cur_refresh,
+							int target_refresh);
 
 int dsi_panel_pre_prepare(struct dsi_panel *panel);
 

@@ -40,6 +40,13 @@ enum dsi_dsc_ratio_type {
 	DSC_RATIO_TYPE_MAX
 };
 
+enum dsi_dfps_refresh_index {
+	RR_90HZ = 0,
+	RR_80HZ,
+	RR_72HZ,
+	RR_60HZ
+};
+
 static u32 dsi_dsc_rc_buf_thresh[] = {0x0e, 0x1c, 0x2a, 0x38, 0x46, 0x54,
 		0x62, 0x69, 0x70, 0x77, 0x79, 0x7b, 0x7d, 0x7e};
 
@@ -86,6 +93,14 @@ static char dsi_dsc_rc_range_max_qp_1_1_scr1[][15] = {
 	{12, 12, 13, 14, 15, 15, 15, 16, 17, 18, 18, 19, 19, 20, 23},
 	{7, 8, 9, 10, 11, 11, 11, 12, 13, 13, 14, 14, 15, 15, 16},
 	};
+
+static u32 default_dfps_intermediate_brightness[][4] = {
+/* Hz */	/* 90    80    72    60 */
+/* 90 */	 {1000, 1000, 1000, 980},
+/* 80 */	 {1000, 1000, 1000, 1000},
+/* 72 */	 {950,  1000, 1000, 980},
+/* 60 */	 {800,  1000, 957,  800},
+};
 
 /*
  * DSC 1.1 and DSC 1.1 SCR
@@ -820,6 +835,93 @@ error:
 	return rc;
 }
 
+static int dsi_panel_send_local_dimming_cmd(struct dsi_panel *panel,
+					enum dsi_dfps_refresh_index refresh_index,
+					bool last,
+					enum dsi_cmd_set_type type)
+{
+	int rc = 0;
+	struct dsi_cmd_desc *cmds;
+	u32 count;
+
+	const struct mipi_dsi_host_ops *ops = panel->host->ops;
+	/* Send PWM commands to handle the refresh rate change. */
+	cmds = panel->cur_mode->priv_info->cmd_sets[type].cmds;
+	count = panel->cur_mode->priv_info->cmd_sets[type].count;
+
+	if (count == 0) {
+		pr_err("[%s] No commands to be sent for state(%d)\n",
+				panel->name, type);
+		rc = -EINVAL;
+		goto error;
+	}
+
+	if (last)
+		cmds[refresh_index].msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
+	ops->transfer(panel->host, &cmds[refresh_index].msg);
+
+error:
+	return rc;
+}
+
+static enum dsi_dfps_refresh_index dsi_panel_get_refresh_index(int refresh_rate)
+{
+	enum dsi_dfps_refresh_index refresh_index = RR_90HZ;
+
+	switch (refresh_rate) {
+	case 90:
+		refresh_index = RR_90HZ;
+		break;
+	case 80:
+		refresh_index = RR_80HZ;
+		break;
+	case 72:
+		refresh_index = RR_72HZ;
+		break;
+	case 60:
+		refresh_index = RR_60HZ;
+		break;
+	default:
+		break;
+	}
+	return refresh_index;
+}
+
+int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl_level)
+{
+	enum dsi_dfps_refresh_index refresh_index;
+	int rc = 0;
+
+	if (!panel || !panel->cur_mode)
+		return -EINVAL;
+
+	/* Do not set refresh rate commands if called for changing backlight level request */
+	if (bl_level != panel->bl_config.bl_level)
+		return rc;
+
+	/* Select the index in cmd array based on the refresh rate. */
+	refresh_index = dsi_panel_get_refresh_index(panel->cur_mode->timing.refresh_rate);
+
+	/* Queue the pwm settings for the new refresh rate. */
+	rc = dsi_panel_send_local_dimming_cmd(panel, refresh_index, false,
+	 DSI_CMD_SET_LOCAL_DIMMING_PWM);
+	if (rc) {
+		pr_err("Failed to set local dimmming PWM, rc=%d\n", rc);
+		goto error;
+	}
+
+	/* Update the FIFO settings for the DDIC and send. */
+	rc = dsi_panel_send_local_dimming_cmd(panel, refresh_index, true,
+	 DSI_CMD_SET_LOCAL_DIMMING_FIFO);
+	if (rc) {
+		pr_err("Failed to set local dimmming FIFO, rc=%d\n", rc);
+		goto error;
+	}
+
+error:
+	return rc;
+}
+
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
@@ -837,6 +939,9 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 		rc = dsi_panel_update_backlight(panel, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
+		break;
+	case DSI_BACKLIGHT_LOCAL_DIMMING:
+		rc = dsi_panel_handle_dfps_pwm_fifo_local_dimming(panel, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_JDI:
 		rc = dsi_panel_jdi_update_backlight(panel, bl_lvl);
@@ -905,6 +1010,57 @@ static int dsi_panel_pwm_register(struct dsi_panel *panel)
 	return 0;
 }
 
+static int dsi_panel_local_dimming_register(struct dsi_panel *panel)
+{
+	struct dsi_backlight_config *bl = &panel->bl_config;
+	int i = 0, backlight_node_count = 0;
+	struct device_node *backlight_node;
+
+	backlight_node_count = of_count_phandle_with_args(panel->panel_of_node, "oculus,backlight", NULL);
+	if (backlight_node_count <= 0)
+		return -ENOENT;
+	bl->num_ld_devices = backlight_node_count;
+	bl->ld_dev = kcalloc(bl->num_ld_devices, sizeof(struct backlight_device *), GFP_KERNEL);
+
+	for (i = 0; i < bl->num_ld_devices; i++) {
+		backlight_node = of_parse_phandle(panel->panel_of_node, "oculus,backlight", i);
+		if (IS_ERR_OR_NULL(backlight_node))
+			goto error;
+		bl->ld_dev[i] = of_find_backlight_by_node(backlight_node);
+		of_node_put(backlight_node);
+	}
+	return 0;
+error:
+	for (i = 0; i < bl->num_ld_devices; i++) {
+		if (bl->ld_dev[i])
+			put_device(&bl->ld_dev[i]->dev);
+	}
+	kfree(bl->ld_dev);
+	return -ENODEV;
+}
+
+void dsi_panel_update_dfps_intermediate_brightness(struct dsi_panel *panel,
+							int cur_refresh,
+							int target_refresh)
+{
+	enum dsi_dfps_refresh_index source_refresh_index, target_refresh_index;
+
+	/* Currently applicable only for the local dimming backlight. */
+	if (panel->bl_config.type != DSI_BACKLIGHT_LOCAL_DIMMING)
+		return;
+
+	/* Return early if we are using sysfs tuned brightness values */
+	if (panel->bl_config.tune_dfps_brightness)
+		return;
+
+	/* Apply tuned default brightness value based on transition */
+	source_refresh_index = dsi_panel_get_refresh_index(cur_refresh);
+	target_refresh_index = dsi_panel_get_refresh_index(target_refresh);
+
+	panel->bl_config.dfps_intermediate_brightness =
+		 default_dfps_intermediate_brightness[source_refresh_index][target_refresh_index];
+}
+
 static int dsi_panel_parse_fsc_rgb_order(
 		struct dsi_panel *panel,
 		struct dsi_parser_utils *utils)
@@ -945,6 +1101,9 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
+	case DSI_BACKLIGHT_LOCAL_DIMMING:
+		rc = dsi_panel_local_dimming_register(panel);
+		break;
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_pwm_register(panel);
 		break;
@@ -965,6 +1124,18 @@ static void dsi_panel_pwm_unregister(struct dsi_panel *panel)
 	devm_pwm_put(panel->parent, bl->pwm_bl);
 }
 
+static void dsi_panel_local_dimming_unregister(struct dsi_panel *panel)
+{
+	int i;
+	struct dsi_backlight_config *bl = &panel->bl_config;
+
+	for (i = 0; i < bl->num_ld_devices; i++) {
+		if (bl->ld_dev[i])
+			put_device(&bl->ld_dev[i]->dev);
+	}
+	kfree(bl->ld_dev);
+}
+
 static int dsi_panel_bl_unregister(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -979,6 +1150,9 @@ static int dsi_panel_bl_unregister(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_DCS:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
+		break;
+	case DSI_BACKLIGHT_LOCAL_DIMMING:
+		dsi_panel_local_dimming_unregister(panel);
 		break;
 	case DSI_BACKLIGHT_PWM:
 		dsi_panel_pwm_unregister(panel);
@@ -1867,6 +2041,8 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
+	"qcom,mdss-dsi-local-dimming-pwm-commands",
+	"qcom,mdss-dsi-local-dimming-fifo-commands",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1893,6 +2069,8 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
+	"qcom,mdss-dsi-local-dimming-pwm-commands-state",
+	"qcom,mdss-dsi-local-dimming-fifo-commands-state",
 };
 
 static int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2426,6 +2604,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_EXTERNAL;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI;
+	} else if (!strcmp(bl_type, "bl_ctrl_local_dimming")) {
+		panel->bl_config.type = DSI_BACKLIGHT_LOCAL_DIMMING;
 	} else {
 		DSI_DEBUG("[%s] bl-pmic-control-type unknown-%s\n",
 			 panel->name, bl_type);

@@ -360,6 +360,40 @@ QDF_STATUS pmo_core_txrx_resume(struct wlan_objmgr_psoc *psoc);
  */
 QDF_STATUS pmo_core_config_forced_dtim(struct wlan_objmgr_vdev *vdev,
 				       uint32_t dynamic_dtim);
+
+#ifdef SYSTEM_PM_CHECK
+/**
+ * pmo_core_system_resume() - function to handle system resume notification
+ * @psoc: objmgr psoc handle
+ *
+ * Return: None
+ */
+void pmo_core_system_resume(struct wlan_objmgr_psoc *psoc);
+#else
+static inline void pmo_core_system_resume(struct wlan_objmgr_psoc *psoc)
+{}
+#endif
+#ifdef WLAN_FEATURE_IGMP_OFFLOAD
+/**
+ * pmo_core_enable_igmp_offload() - function to offload igmp
+ * @vdev: objmgr vdev handle
+ * @pmo_igmp_req: igmp req
+ *
+ * This function to offload igmp to fw
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+pmo_core_enable_igmp_offload(struct wlan_objmgr_vdev *vdev,
+			     struct pmo_igmp_offload_req *pmo_igmp_req);
+#else
+static inline QDF_STATUS
+pmo_core_enable_igmp_offload(struct wlan_objmgr_vdev *vdev,
+			     struct pmo_igmp_offload_req *pmo_igmp_req)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 #endif /* WLAN_POWER_MANAGEMENT_OFFLOAD */
 
 #endif /* end  of _WLAN_PMO_SUSPEND_RESUME_H_ */

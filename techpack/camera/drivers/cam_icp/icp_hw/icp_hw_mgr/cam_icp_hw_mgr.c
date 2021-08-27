@@ -4949,7 +4949,8 @@ static int cam_icp_mgr_prepare_hw_update(void *hw_mgr_priv,
 		return rc;
 	}
 
-	prepare_args->pf_data->packet = packet;
+	if (prepare_args->pf_data)
+		prepare_args->pf_data->packet = packet;
 
 	CAM_DBG(CAM_REQ, "req id = %lld for ctx = %u",
 		packet->header.request_id, ctx_data->ctx_id);

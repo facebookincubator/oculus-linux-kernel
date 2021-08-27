@@ -9626,7 +9626,13 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #ifdef DHD_COREDUMP
 	dhd->pub.memdump_enabled = DUMP_MEMFILE;
 #else
+#ifdef DUMP_DISABLE
+	dhd->pub.memdump_enabled = DUMP_DISABLED;
+#elif defined(DUMP_MEM)
+	dhd->pub.memdump_enabled = DUMP_MEMFILE;
+#else
 	dhd->pub.memdump_enabled = DUMP_MEMFILE_BUGON;
+#endif /* DDUMP_DISABLE */
 #endif /* DHD_COREDUMP */
 #else
 	dhd->pub.memdump_enabled = DUMP_MEMFILE;
@@ -15181,7 +15187,7 @@ _dhd_module_init(void)
 	return err;
 }
 
-static int
+static int __init
 dhd_module_init(void)
 {
 	int err;
@@ -19933,12 +19939,12 @@ dhd_mem_dump(void *handle, void *event_info, u8 event)
 	ret = dhd_wait_for_file_dump(dhdp);
 	if (ret) {
 		DHD_ERROR(("%s: file_dump failed.\n", __FUNCTION__));
-#ifdef BOARD_HIKEY
-		/* For Hikey do force kernel write of socram if HAL dump fails */
+#if defined(BOARD_HIKEY) || defined(DUMP_MEM)
+		/* Do force kernel write of socram if HAL dump fails */
 		if (write_dump_to_file(&dhd->pub, dump->buf, dump->bufsize, "mem_dump")) {
 			DHD_ERROR(("%s: writing SoC_RAM dump to the file failed\n", __FUNCTION__));
 		}
-#endif /* BOARD_HIKEY */
+#endif /* BOARD_HIKEY || DUMP_MEM */
 	}
 #elif defined(DHD_DEBUGABILITY_DEBUG_DUMP)
 	dhd_debug_dump_to_ring(dhdp);

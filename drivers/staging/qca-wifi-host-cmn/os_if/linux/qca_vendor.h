@@ -783,6 +783,8 @@ enum qca_wlan_vendor_hang_reason {
 	QCA_WLAN_HANG_REG_WRITE_FAILURE = 24,
 	/* No credit left to send the wow_wakeup_from_sleep to firmware */
 	QCA_WLAN_HANG_SUSPEND_NO_CREDIT = 25,
+	/* tasklet/credit latency found */
+	QCA_WLAN_HANG_TASKLET_CREDIT_LATENCY_DETECT = 27,
 };
 
 /**
@@ -8270,6 +8272,21 @@ enum qca_wlan_vendor_attr_wifi_test_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_PUNCTURED_PREAMBLE_RX = 49,
 
+	/* 8-bit unsigned value to configure the driver to ignore the SAE H2E
+	 * requirement mismatch for 6 GHz connection.
+	 * 0 - Default behavior, 1 - Ignore SAE H2E requirement mismatch.
+	 * This attribute is used to configure the testbed device.
+	 */
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_IGNORE_H2E_RSNXE = 50,
+
+	/* 8-bit unsigned value to configure the driver to allow 6 GHz
+	 * connection with all security modes.
+	 * 0 - Default behavior, 1 - Allow 6 GHz connection with all security
+	 * modes.
+	 * This attribute is used for testing purposes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_6GHZ_SECURITY_TEST_MODE = 51,
+
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_MAX =
@@ -8631,6 +8648,15 @@ enum qca_wlan_vendor_attr_twt_setup {
  * @QCA_WLAN_VENDOR_TWT_STATUS_ROAM_INITIATED_TERMINATE: FW terminated the TWT
  * session due to roaming. Used on the TWT_TERMINATE notification from the
  * firmware.
+ * @QCA_WLAN_VENDOR_TWT_STATUS_SCC_MCC_CONCURRENCY_TERMINATE: FW terminated the
+ * TWT session due to SCC (Single Channel Concurrency) and MCC (Multi Channel)
+ * Concurrency). Used on the TWT_TERMINATE notification from the firmware.
+ * @QCA_WLAN_VENDOR_TWT_STATUS_ROAMING_IN_PROGRESS: FW rejected the TWT setup
+ * request due to roaming in progress.
+ * @QCA_WLAN_VENDOR_TWT_STATUS_CHANNEL_SWITCH_IN_PROGRESS: FW rejected the TWT
+ * setup request due to channel switch in progress.
+ * @QCA_WLAN_VENDOR_TWT_STATUS_SCAN_IN_PROGRESS: FW rejected the TWT setup
+ * request due to scan in progress.
  */
 enum qca_wlan_vendor_twt_status {
 	QCA_WLAN_VENDOR_TWT_STATUS_OK = 0,
@@ -8651,6 +8677,10 @@ enum qca_wlan_vendor_twt_status {
 	QCA_WLAN_VENDOR_TWT_STATUS_PARAMS_NOT_IN_RANGE = 15,
 	QCA_WLAN_VENDOR_TWT_STATUS_PEER_INITIATED_TERMINATE = 16,
 	QCA_WLAN_VENDOR_TWT_STATUS_ROAM_INITIATED_TERMINATE = 17,
+	QCA_WLAN_VENDOR_TWT_STATUS_SCC_MCC_CONCURRENCY_TERMINATE = 18,
+	QCA_WLAN_VENDOR_TWT_STATUS_ROAMING_IN_PROGRESS = 19,
+	QCA_WLAN_VENDOR_TWT_STATUS_CHANNEL_SWITCH_IN_PROGRESS = 20,
+	QCA_WLAN_VENDOR_TWT_STATUS_SCAN_IN_PROGRESS = 21,
 };
 
 /**

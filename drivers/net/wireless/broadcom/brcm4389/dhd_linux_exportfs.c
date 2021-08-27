@@ -2513,6 +2513,29 @@ static struct dhd_attr dhd_attr_dump_start_command =
 	__ATTR(dump_start, 0664, trigger_dhd_dump_start_command, NULL);
 #endif /* DHD_DUMP_START_COMMAND */
 
+#ifdef SYSFS_EXPORT_COUNTRY
+static ssize_t
+show_country(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret;
+	wl_country_t cspec;
+
+	ret = wldev_iovar_getbuf(dev->rx_napi_netdev, "country", NULL, 0,
+				   &cspec, sizeof(cspec), NULL);
+	if (ret) {
+		DHD_ERROR(("%s: get country failed code %d\n", __func__,
+			   ret));
+		return ret;
+	}
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%c%c",
+			cspec.ccode[0], cspec.ccode[1]);
+	return ret;
+}
+
+static struct dhd_attr dhd_attr_country =
+__ATTR(country, 0444, show_country, NULL);
+#endif
+
 /* Attribute object that gets registered with "wifi" kobject tree */
 static struct attribute *default_file_attrs[] = {
 #ifdef DHD_MAC_ADDR_EXPORT
@@ -2630,6 +2653,9 @@ static struct attribute *default_file_attrs[] = {
 	&dhd_attr_aspm_enab.attr,
 	&dhd_attr_l1ss_enab.attr,
 #endif /* PCIE_FULL_DONGLE */
+#ifdef SYSFS_EXPORT_COUNTRY
+	&dhd_attr_country.attr,
+#endif
 	NULL
 };
 

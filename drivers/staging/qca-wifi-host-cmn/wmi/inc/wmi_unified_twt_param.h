@@ -302,23 +302,39 @@ struct wmi_twt_add_dialog_param {
 		b_twt_recommendation:3;
 };
 
+/* enum - status code of Get stats TWT dialog
+ * @WMI_HOST_GET_STATS_TWT_STATUS_OK: Get status TWT dialog successfully completed
+ * @WMI_HOST_GET_STATS_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID does not exist
+ * @WMI_HOST_GET_STATS_TWT_STATUS_INVALID_PARAM: Invalid parameters
+ * @WMI_HOST_GET_STATS_TWT_STATUS_UNKNOWN_ERROR: Unknown error
+ */
+enum WMI_HOST_GET_STATS_TWT_STATUS {
+	WMI_HOST_GET_STATS_TWT_STATUS_OK,
+	WMI_HOST_GET_STATS_TWT_STATUS_DIALOG_ID_NOT_EXIST,
+	WMI_HOST_GET_STATS_TWT_STATUS_INVALID_PARAM,
+	WMI_HOST_GET_STATS_TWT_STATUS_UNKNOWN_ERROR,
+};
+
 /* enum - status code of adding TWT dialog
- * WMI_HOST_ADD_TWT_STATUS_OK: adding TWT dialog successfully completed
- * WMI_HOST_ADD_TWT_STATUS_TWT_NOT_ENABLED: TWT not enabled
- * WMI_HOST_ADD_TWT_STATUS_USED_DIALOG_ID: TWT dialog ID is already used
- * WMI_HOST_ADD_TWT_STATUS_INVALID_PARAM: invalid parameters
- * WMI_HOST_ADD_TWT_STATUS_NOT_READY: FW not ready
- * WMI_HOST_ADD_TWT_STATUS_NO_RESOURCE: FW resource exhausted
- * WMI_HOST_ADD_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
- *                                 request/response frame
- * WMI_HOST_ADD_TWT_STATUS_NO_RESPONSE: peer AP did not send the response frame
- * WMI_HOST_ADD_TWT_STATUS_DENIED: AP did not accept the request
- * WMI_HOST_ADD_TWT_STATUS_UNKNOWN_ERROR: adding TWT dialog failed with
- *                                 an unknown reason
- * WMI_HOST_ADD_TWT_STATUS_AP_PARAMS_NOT_IN_RANGE: peer AP wake interval,
- *                                 duration not in range
- * WMI_HOST_ADD_TWT_STATUS_AP_IE_VALIDATION_FAILED:
- *                                 peer AP IE Validation Failed
+ * @WMI_HOST_ADD_TWT_STATUS_OK: adding TWT dialog successfully completed
+ * @WMI_HOST_ADD_TWT_STATUS_TWT_NOT_ENABLED: TWT not enabled
+ * @WMI_HOST_ADD_TWT_STATUS_USED_DIALOG_ID: TWT dialog ID is already used
+ * @WMI_HOST_ADD_TWT_STATUS_INVALID_PARAM: invalid parameters
+ * @WMI_HOST_ADD_TWT_STATUS_NOT_READY: FW not ready
+ * @WMI_HOST_ADD_TWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * @WMI_HOST_ADD_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ * request/response frame
+ * @WMI_HOST_ADD_TWT_STATUS_NO_RESPONSE: peer AP did not send the response frame
+ * @WMI_HOST_ADD_TWT_STATUS_DENIED: AP did not accept the request
+ * @WMI_HOST_ADD_TWT_STATUS_UNKNOWN_ERROR: adding TWT dialog failed with
+ * an unknown reason
+ * @WMI_HOST_ADD_TWT_STATUS_AP_PARAMS_NOT_IN_RANGE: peer AP wake interval,
+ * duration not in range
+ * @WMI_HOST_ADD_TWT_STATUS_AP_IE_VALIDATION_FAILED: peer AP IE Validation
+ * Failed
+ * @WMI_HOST_ADD_TWT_STATUS_ROAM_IN_PROGRESS: Roaming in progress
+ * @WMI_HOST_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
+ * @WMI_HOST_ADD_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
  */
 enum WMI_HOST_ADD_TWT_STATUS {
 	WMI_HOST_ADD_TWT_STATUS_OK,
@@ -332,7 +348,10 @@ enum WMI_HOST_ADD_TWT_STATUS {
 	WMI_HOST_ADD_TWT_STATUS_DENIED,
 	WMI_HOST_ADD_TWT_STATUS_UNKNOWN_ERROR,
 	WMI_HOST_ADD_TWT_STATUS_AP_PARAMS_NOT_IN_RANGE,
-	WMI_HOST_ADD_TWT_STATUS_AP_IE_VALIDATION_FAILED
+	WMI_HOST_ADD_TWT_STATUS_AP_IE_VALIDATION_FAILED,
+	WMI_HOST_ADD_TWT_STATUS_ROAM_IN_PROGRESS,
+	WMI_HOST_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS,
+	WMI_HOST_ADD_TWT_STATUS_SCAN_IN_PROGRESS,
 };
 
 /**
@@ -417,6 +436,10 @@ struct wmi_twt_del_dialog_param {
  * unknown reason
  * @WMI_HOST_DEL_TWT_STATUS_PEER_INIT_TEARDOWN: Peer initiated TWT teardown
  * @WMI_HOST_DEL_TWT_STATUS_ROAMING: TWT teardown due to roaming.
+ * @WMI_HOST_DEL_TWT_STATUS_CONCURRENCY: TWT session teardown due to
+ * concurrent session comming up.
+ * @WMI_HOST_DEL_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
+ * @DEL_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
  */
 enum WMI_HOST_DEL_TWT_STATUS {
 	WMI_HOST_DEL_TWT_STATUS_OK,
@@ -428,6 +451,9 @@ enum WMI_HOST_DEL_TWT_STATUS {
 	WMI_HOST_DEL_TWT_STATUS_UNKNOWN_ERROR,
 	WMI_HOST_DEL_TWT_STATUS_PEER_INIT_TEARDOWN,
 	WMI_HOST_DEL_TWT_STATUS_ROAMING,
+	WMI_HOST_DEL_TWT_STATUS_CONCURRENCY,
+	WMI_HOST_DEL_TWT_STATUS_CHAN_SW_IN_PROGRESS,
+	WMI_HOST_DEL_TWT_STATUS_SCAN_IN_PROGRESS,
 };
 
 /**
@@ -477,17 +503,20 @@ struct wmi_twt_nudge_dialog_cmd_param {
 };
 
 /* enum WMI_HOST_PAUSE_TWT_STATUS - status code of pausing TWT dialog
- * WMI_HOST_PAUSE_TWT_STATUS_OK: pausing TWT dialog successfully completed
- * WMI_HOST_PAUSE_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
- * WMI_HOST_PAUSE_TWT_STATUS_INVALID_PARAM: invalid parameters
- * WMI_HOST_PAUSE_TWT_STATUS_DIALOG_ID_BUSY: FW is in the process of handling
- *                          this dialog
- * WMI_HOST_PAUSE_TWT_STATUS_NO_RESOURCE: FW resource exhausted
- * WMI_HOST_PAUSE_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
- *                          request/response frame
- * WMI_HOST_PAUSE_TWT_STATUS_UNKNOWN_ERROR: pausing TWT dialog failed with an
- *                          unknown reason
- * WMI_HOST_PAUSE_TWT_STATUS_ALREADY_PAUSED: TWT dialog already in paused state
+ * @WMI_HOST_PAUSE_TWT_STATUS_OK: pausing TWT dialog successfully completed
+ * @WMI_HOST_PAUSE_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
+ * @WMI_HOST_PAUSE_TWT_STATUS_INVALID_PARAM: invalid parameters
+ * @WMI_HOST_PAUSE_TWT_STATUS_DIALOG_ID_BUSY: FW is in the process of handling
+ * this dialog
+ * @WMI_HOST_PAUSE_TWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * @WMI_HOST_PAUSE_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ * request/response frame
+ * @WMI_HOST_PAUSE_TWT_STATUS_UNKNOWN_ERROR: pausing TWT dialog failed with an
+ * unknown reason
+ * @WMI_HOST_PAUSE_TWT_STATUS_ALREADY_PAUSED: TWT dialog already in paused state
+ * @WMI_HOST_PAUSE_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
+ * @WMI_HOST_PAUSE_TWT_STATUS_ROAM_IN_PROGRESS: Roaming is in progress
+ * @WMI_HOST_PAUSE_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
  */
 enum WMI_HOST_PAUSE_TWT_STATUS {
 	WMI_HOST_PAUSE_TWT_STATUS_OK,
@@ -498,6 +527,9 @@ enum WMI_HOST_PAUSE_TWT_STATUS {
 	WMI_HOST_PAUSE_TWT_STATUS_NO_ACK,
 	WMI_HOST_PAUSE_TWT_STATUS_UNKNOWN_ERROR,
 	WMI_HOST_PAUSE_TWT_STATUS_ALREADY_PAUSED,
+	WMI_HOST_PAUSE_TWT_STATUS_CHAN_SW_IN_PROGRESS,
+	WMI_HOST_PAUSE_TWT_STATUS_ROAM_IN_PROGRESS,
+	WMI_HOST_PAUSE_TWT_STATUS_SCAN_IN_PROGRESS,
 };
 
 /**
@@ -515,16 +547,19 @@ struct wmi_twt_pause_dialog_complete_event_param {
 };
 
 /* enum WMI_HOST_NUDGE_TWT_STATUS - status code of nudge TWT dialog
- * WMI_HOST_NUDGE_TWT_STATUS_OK: nudge TWT dialog successfully completed
- * WMI_HOST_NUDGE_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
- * WMI_HOST_NUDGE_TWT_STATUS_INVALID_PARAM: invalid parameters
- * WMI_HOST_NUDGE_TWT_STATUS_DIALOG_ID_BUSY: FW is in the process of handling
- *                          this dialog
- * WMI_HOST_NUDGE_TWT_STATUS_NO_RESOURCE: FW resource exhausted
- * WMI_HOST_NUDGE_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
- *                          request/response frame
- * WMI_HOST_NUDGE_TWT_STATUS_UNKNOWN_ERROR: nudge TWT dialog failed with an
- *                          unknown reason
+ * @WMI_HOST_NUDGE_TWT_STATUS_OK: nudge TWT dialog successfully completed
+ * @WMI_HOST_NUDGE_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
+ * @WMI_HOST_NUDGE_TWT_STATUS_INVALID_PARAM: invalid parameters
+ * @WMI_HOST_NUDGE_TWT_STATUS_DIALOG_ID_BUSY: FW is in the process of handling
+ * this dialog
+ * @WMI_HOST_NUDGE_TWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * @WMI_HOST_NUDGE_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ * request/response frame
+ * @WMI_HOST_NUDGE_TWT_STATUS_UNKNOWN_ERROR: nudge TWT dialog failed with an
+ * unknown reason
+ * @WMI_HOST_NUDGE_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
+ * @WMI_HOST_NUDGE_TWT_STATUS_ROAM_IN_PROGRESS: Roaming in progress
+ * @WMI_HOST_NUDGE_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
  */
 enum WMI_HOST_NUDGE_TWT_STATUS {
 	WMI_HOST_NUDGE_TWT_STATUS_OK,
@@ -534,6 +569,9 @@ enum WMI_HOST_NUDGE_TWT_STATUS {
 	WMI_HOST_NUDGE_TWT_STATUS_NO_RESOURCE,
 	WMI_HOST_NUDGE_TWT_STATUS_NO_ACK,
 	WMI_HOST_NUDGE_TWT_STATUS_UNKNOWN_ERROR,
+	WMI_HOST_NUDGE_TWT_STATUS_CHAN_SW_IN_PROGRESS,
+	WMI_HOST_NUDGE_TWT_STATUS_ROAM_IN_PROGRESS,
+	WMI_HOST_NUDGE_TWT_STATUS_SCAN_IN_PROGRESS,
 };
 
 /**
@@ -572,17 +610,20 @@ struct wmi_twt_resume_dialog_cmd_param {
 };
 
 /* enum WMI_HOST_RESUME_TWT_STATUS - status code of resuming TWT dialog
- * WMI_HOST_RESUME_TWT_STATUS_OK: resuming TWT dialog successfully completed
- * WMI_HOST_RESUME_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
- * WMI_HOST_RESUME_TWT_STATUS_INVALID_PARAM: invalid parameters
- * WMI_HOST_RESUME_TWT_STATUS_DIALOG_ID_BUSY: FW is in the process of handling
- *                            this dialog
- * WMI_HOST_RESUME_TWT_STATUS_NOT_PAUSED: dialog not paused currently
- * WMI_HOST_RESUME_TWT_STATUS_NO_RESOURCE: FW resource exhausted
- * WMI_HOST_RESUME_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
- *                            request/response frame
- * WMI_HOST_RESUME_TWT_STATUS_UNKNOWN_ERROR: resuming TWT dialog failed with an
- *                            unknown reason
+ * @WMI_HOST_RESUME_TWT_STATUS_OK: resuming TWT dialog successfully completed
+ * @WMI_HOST_RESUME_TWT_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
+ * @WMI_HOST_RESUME_TWT_STATUS_INVALID_PARAM: invalid parameters
+ * @WMI_HOST_RESUME_TWT_STATUS_DIALOG_ID_BUSY: FW is in the process of handling
+ * this dialog
+ * @WMI_HOST_RESUME_TWT_STATUS_NOT_PAUSED: dialog not paused currently
+ * @WMI_HOST_RESUME_TWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * @WMI_HOST_RESUME_TWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ * request/response frame
+ * @WMI_HOST_RESUME_TWT_STATUS_UNKNOWN_ERROR: resuming TWT dialog failed with an
+ * unknown reason
+ * @WMI_HOST_RESUME_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
+ * @WMI_HOST_RESUME_TWT_STATUS_ROAM_IN_PROGRESS: Roaming in progress
+ * @WMI_HOST_RESUME_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
  */
 enum WMI_HOST_RESUME_TWT_STATUS {
 	WMI_HOST_RESUME_TWT_STATUS_OK,
@@ -593,6 +634,9 @@ enum WMI_HOST_RESUME_TWT_STATUS {
 	WMI_HOST_RESUME_TWT_STATUS_NO_RESOURCE,
 	WMI_HOST_RESUME_TWT_STATUS_NO_ACK,
 	WMI_HOST_RESUME_TWT_STATUS_UNKNOWN_ERROR,
+	WMI_HOST_RESUME_TWT_STATUS_CHAN_SW_IN_PROGRESS,
+	WMI_HOST_RESUME_TWT_STATUS_ROAM_IN_PROGRESS,
+	WMI_HOST_RESUME_TWT_STATUS_SCAN_IN_PROGRESS,
 };
 
 /**

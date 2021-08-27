@@ -216,6 +216,7 @@
 	qcom,model = "kona-mtp-snd-card";
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <1>, <1>;
 	qcom,wcn-bt = <1>;
+	qcom,wsa-bolero-codec = <1>;
 	qcom,ext-disp-audio-rx = <1>;
 	qcom,tdm-max-slots = <8>;
 	qcom,audio-routing =

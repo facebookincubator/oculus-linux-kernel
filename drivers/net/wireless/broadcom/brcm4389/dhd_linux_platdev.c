@@ -623,7 +623,7 @@ static struct platform_driver dhd_wifi_platform_dev_driver = {
 	}
 };
 
-int dhd_wifi_platform_register_drv(void)
+int __init dhd_wifi_platform_register_drv(void)
 {
 	int err = 0;
 	struct device *dev;

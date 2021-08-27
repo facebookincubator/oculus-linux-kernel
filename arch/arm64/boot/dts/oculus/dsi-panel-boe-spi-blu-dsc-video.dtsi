@@ -77,6 +77,20 @@
 					05 01 00 00 78 00 02 10 00
 				];
 
+				qcom,mdss-dsi-local-dimming-pwm-commands = [
+					29 01 00 00 00 00 03 B9 0E 8B /* 90Hz */
+					29 01 00 00 00 00 03 B9 0F A0 /* 80Hz */
+					29 01 00 00 00 00 03 B9 10 BC /* 72Hz */
+					29 01 00 00 00 00 03 B9 12 E2 /* 60Hz */
+				];
+
+				qcom,mdss-dsi-local-dimming-fifo-commands = [
+					29 01 00 00 00 00 03 EC 04 5D /* 90Hz */
+					29 01 00 00 00 00 03 EC 04 E9 /* 80Hz */
+					29 01 00 00 00 00 03 EC 05 75 /* 72Hz */
+					29 01 00 00 00 00 03 EC 06 8C /* 60Hz */
+				];
+
 				// before video is on, the DSI panels typically
 				// accept either hs or lp, but lp is prefered.
 				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";

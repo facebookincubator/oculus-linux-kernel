@@ -563,6 +563,17 @@ int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 }
 EXPORT_SYMBOL(kgsl_mmu_sparse_dummy_map);
 
+struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
+		uint64_t offset)
+{
+	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+
+	if (PT_OP_VALID(pagetable, mmu_find_mapped_page))
+		return pagetable->pt_ops->mmu_find_mapped_page(memdesc, offset);
+
+	return ERR_PTR(-EINVAL);
+}
+
 void kgsl_mmu_remove_global(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc)
 {

@@ -600,7 +600,7 @@ void lim_process_mlm_ft_reassoc_req(struct mac_context *mac,
 	else
 		val = mac->mlme_cfg->sap_cfg.listen_interval;
 
-	status = wma_add_bss_peer_sta(session->vdev_id, session->bssId);
+	status = wma_add_bss_peer_sta(session->vdev_id, session->bssId, false);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		qdf_mem_free(reassoc_req);
 		return;

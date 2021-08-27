@@ -599,6 +599,130 @@ static ssize_t backlight_timing_show(struct device *device,
 		bl_config->jdi_scanline_offset[1]);
 }
 
+static void update_dfps_intermediate_brightness(struct drm_connector *conn,
+		u32 dfps_intermediate_brightness)
+{
+	struct sde_connector *c_conn;
+	struct dsi_display *dsi_display;
+	struct dsi_backlight_config *bl_config;
+
+	c_conn = to_sde_connector(conn);
+	if (IS_ERR_OR_NULL(c_conn))
+		return;
+	dsi_display = c_conn->display;
+
+	if (c_conn->connector_type != DRM_MODE_CONNECTOR_DSI || !dsi_display ||
+			!dsi_display->panel)
+		return;
+
+	bl_config = &dsi_display->panel->bl_config;
+
+	/*
+	 * Skip over this connector if it isn't a local dimming
+	 * backlight.
+	 */
+	if (bl_config->type != DSI_BACKLIGHT_LOCAL_DIMMING)
+		return;
+
+	bl_config->dfps_intermediate_brightness = dfps_intermediate_brightness;
+	/* Tune the dfps brightness only if brightness is greatuer than 0 */
+	bl_config->tune_dfps_brightness = (dfps_intermediate_brightness > 0);
+}
+
+static ssize_t dfps_brightness_adjustment_store(struct device *device,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct drm_crtc *crtc;
+	struct drm_connector *conn;
+	struct sde_crtc_state *cstate;
+	struct drm_device *dev;
+	struct drm_connector_list_iter conn_iter;
+	u32 dfps_intermediate_brightness = 0;
+	int res;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EINVAL;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	res = kstrtou32(buf, 10, &dfps_intermediate_brightness);
+	if (res < 0)
+		return res;
+
+	dev = crtc->dev;
+	cstate = to_sde_crtc_state(crtc->state);
+
+	/* Iterate and update intermediate brightness for the connectors of this crtc */
+	drm_connector_list_iter_begin(dev, &conn_iter);
+	drm_for_each_connector_iter(conn, &conn_iter)
+		if (conn->state && conn->state->crtc == crtc &&
+				cstate->num_connectors < MAX_CONNECTORS)
+			update_dfps_intermediate_brightness(conn, dfps_intermediate_brightness);
+	drm_connector_list_iter_end(&conn_iter);
+
+	return count;
+}
+
+static ssize_t dfps_brightness_adjustment_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+	struct sde_crtc_state *cstate;
+	struct sde_crtc *sde_crtc;
+	struct drm_device *dev;
+	struct drm_connector *conn;
+	struct sde_connector *c_conn;
+	struct dsi_display *dsi_display;
+	struct drm_connector_list_iter conn_iter;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	dev = crtc->dev;
+	cstate = to_sde_crtc_state(crtc->state);
+
+	drm_connector_list_iter_begin(dev, &conn_iter);
+	drm_for_each_connector_iter(conn, &conn_iter)
+		if (conn->state && conn->state->crtc == crtc &&
+				cstate->num_connectors < MAX_CONNECTORS) {
+			c_conn = to_sde_connector(conn);
+			dsi_display = c_conn->display;
+
+			if (c_conn->connector_type != DRM_MODE_CONNECTOR_DSI || !dsi_display ||
+					!dsi_display->panel)
+				break;
+
+			bl_config = &dsi_display->panel->bl_config;
+
+			/*
+			 * Update the dfps intermediate brightness if
+			 * this connector supports local dimming.
+			 */
+			if (bl_config->type == DSI_BACKLIGHT_LOCAL_DIMMING)
+				return scnprintf(buf, PAGE_SIZE, "%u\n",
+					bl_config->dfps_intermediate_brightness);
+		}
+	drm_connector_list_iter_end(&conn_iter);
+
+	/* In case we cannot find a connector use blconfig cached*/
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		bl_config->dfps_intermediate_brightness);
+}
+
 static DEVICE_ATTR_RO(vsync_event);
 static DEVICE_ATTR_RO(vsync_timing);
 static DEVICE_ATTR_RO(lineptr_event);
@@ -608,6 +732,7 @@ static DEVICE_ATTR_RW(backlight_scanline_offset);
 static DEVICE_ATTR_RO(backlight_timing);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
+static DEVICE_ATTR_RW(dfps_brightness_adjustment);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
@@ -619,6 +744,7 @@ static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_backlight_timing.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_fps_periodicity_ms.attr,
+	&dev_attr_dfps_brightness_adjustment.attr,
 	NULL
 };
 

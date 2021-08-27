@@ -150,6 +150,23 @@ enum monitor_mode_concurrency {
 		"11d Enable Flag")
 
 /*
+ * rf_test_mode_enabled - Enable rf test mode support
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This cfg is used to set rf test mode support flag
+ *
+ * Related: None
+ *
+ * Supported Feature: STA
+ */
+#define CFG_RF_TEST_MODE_SUPP_ENABLED CFG_BOOL( \
+		"rf_test_mode_enabled", \
+		1, \
+		"rf test mode Enable Flag")
+
+/*
  * <ini>
  * BandCapability - Preferred band (0: 2.4G, 5G, and 6G,
  *				    1: 2.4G only,
@@ -855,6 +872,7 @@ enum monitor_mode_concurrency {
 	CFG(CFG_ENABLE_BEACON_RECEPTION_STATS) \
 	CFG(CFG_REMOVE_TIME_STAMP_SYNC_CMD) \
 	CFG(CFG_MGMT_RETRY_MAX) \
+	CFG(CFG_RF_TEST_MODE_SUPP_ENABLED) \
 	CFG(CFG_BMISS_SKIP_FULL_SCAN) \
 	CFG(CFG_ENABLE_RING_BUFFER) \
 	CFG(CFG_DFS_CHAN_AGEOUT_TIME) \

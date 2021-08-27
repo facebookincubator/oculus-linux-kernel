@@ -44,13 +44,14 @@ struct sampler_device {
 	struct kthread_work work;
 	struct kref kref;
 	ktime_t last_schedule;
-	struct sampler_cpu_trace *traces;
+	struct sampler_cpu_trace *traces[2];
 	struct sampler_info __percpu *sample_data;
 	struct cpumask sample_mask;
-	struct mutex trace_mutex;
+	struct mutex device_mutex;
 	spinlock_t lock;
 	atomic_t enabled;
 	atomic_t period;
+	atomic_t trace_count;
 	int latch_cpu;
 };
 
@@ -61,6 +62,8 @@ static struct kthread_worker *sampler_kworker;
 static const struct file_operations sampler_fops = {
 	.owner = THIS_MODULE,
 };
+
+#define trace_count_to_index(_cnt) ((_cnt) & 0x1)
 
 static inline bool sampler_is_enabled(struct sampler_device *sampler)
 {
@@ -74,8 +77,6 @@ static void sampler_destroy(struct kref *kref)
 
 	hrtimer_cancel(&sampler->timer);
 	kthread_cancel_work_sync(&sampler->work);
-	mutex_lock(&sampler->trace_mutex);
-	mutex_unlock(&sampler->trace_mutex);
 	for_each_possible_cpu(cpu) {
 		struct sampler_info *info = per_cpu_ptr(sampler->sample_data, cpu);
 
@@ -83,7 +84,8 @@ static void sampler_destroy(struct kref *kref)
 			put_task_struct(info->task);
 	}
 	free_percpu(sampler->sample_data);
-	kfree(sampler->traces);
+	kfree(sampler->traces[0]);
+	kfree(sampler->traces[1]);
 	kfree(sampler);
 }
 
@@ -113,6 +115,11 @@ static inline enum sampler_isa sampler_divine_isa(struct task_struct *task, stru
 static inline void latch_task(struct sampler_info *info, struct task_struct *task)
 {
 	if (info->task) {
+		 /*
+		  * must be set to NULL in non-interrupt context to avoid potential deadlock
+		  * if put_task_struct results in the task being destroyed, which is a
+		  * possible sleeping operation
+		  */
 		BUG_ON(task);
 		put_task_struct(info->task);
 		info->task = NULL;
@@ -156,20 +163,40 @@ static void sampler_barrier(void *data)
 static inline bool sampler_needs_latch(struct sampler_device *sampler)
 {
 	unsigned long flags;
-	int work_queued;
-	int already_latched;
+	bool work_queued;
+	bool already_latched;
 
-	/* peek into the work object to verify that it is on the list of queued work */
-	spin_lock_irqsave(&sampler->work.worker->lock, flags);
-	work_queued = !list_empty(&sampler->work.node);
-	spin_unlock_irqrestore(&sampler->work.worker->lock, flags);
-
-	/* and verify that data hasn't already been latched waiting for the queued work */
+	/* verify that data hasn't already been latched waiting for the queued work */
 	spin_lock_irqsave(&sampler->lock, flags);
 	already_latched = sampler->latch_cpu != -1 || !!cpumask_weight(&sampler->sample_mask);
 	spin_unlock_irqrestore(&sampler->lock, flags);
 
-	return !already_latched && work_queued;
+	if (already_latched)
+		return false;
+
+	/*
+	 * and peek into the work object to verify that it is on the list of queued work.
+	 * this would ideally be protected by acquiring the kworker_thread's list lock;
+	 * however, this can lead to a deadlock due to lock ordering: kthread_queue_work
+	 * calls wake_up_process while holding the worker lock, and various code paths
+	 * in the scheduler will lock the task's pi_lock and the target cpu's runqueue
+	 * lock (acquired in ttwu_queue, potentially elsewhere). sampler_needs_latch is called
+	 * from a sched_switch tracepoint probe, called with the current cpu's runqueue lock
+	 * held. try to avoid racy reads, but since this codepath is only called when kworker
+	 * is not currently executing (it's called when kworker is the next thread to execute),
+	 * the only potential race is with concurrent insertion / deletion of items on the
+	 * kworker's list
+	 */
+
+	if (!spin_trylock_irqsave(&sampler->work.worker->lock, flags)) {
+		smp_rmb();
+		return !list_empty(&sampler->work.node);
+	}
+
+	work_queued = !list_empty(&sampler->work.node);
+	spin_unlock_irqrestore(&sampler->work.worker->lock, flags);
+
+	return work_queued;
 }
 
 static void sampler_sched_switch_probe(void *data, bool preempt, struct task_struct *prev, struct task_struct *next)
@@ -243,48 +270,78 @@ static ssize_t last_trace_show(struct device *dev, struct device_attribute *attr
 {
 	struct miscdevice *miscdev = dev_get_drvdata(dev);
 	struct sampler_device *sampler = container_of(miscdev, struct sampler_device, miscdev);
+	struct sampler_cpu_trace *traces;
 	ssize_t bytes = 0;
-	int cpu;
+	int cpu, start_count;
+	int copy_attempts = 10;
 
-	if (mutex_lock_interruptible(&sampler->trace_mutex))
+	traces = kzalloc(sizeof(*traces) * num_possible_cpus(), GFP_KERNEL);
+	if (!traces)
+		return -ENOMEM;
+
+	do {
+		struct sampler_cpu_trace *to_copy;
+
+		/*
+		 * make sure that the trace data is internally consistent by verifying that
+		 * all writes from the worker thread are observable, and that the trace count
+		 * doesn't change during the course of the copy
+		 */
+		smp_rmb();
+		start_count = atomic_read_acquire(&sampler->trace_count);
+		to_copy = sampler->traces[trace_count_to_index(start_count)];
+		memcpy(traces, to_copy, sizeof(*traces) * num_possible_cpus());
+	} while (start_count != atomic_read_acquire(&sampler->trace_count) && --copy_attempts > 0);
+
+	if (!copy_attempts) {
+		kfree(traces);
 		return -EINTR;
+	}
 
 	for_each_possible_cpu(cpu) {
-		struct sampler_cpu_trace *t = &sampler->traces[cpu];
+		struct sampler_cpu_trace *t = &traces[cpu];
+		ssize_t written;
 
-		bytes += snprintf(buf + bytes, PAGE_SIZE - bytes, "cpu%d: ", cpu);
+		written = snprintf(buf + bytes, PAGE_SIZE - bytes, "cpu%d: ", cpu);
+		if (written < 0)
+			break;
+		bytes += written;
 
 		switch (t->isa) {
 		case ISA_CPU_OFFLINE:
-			bytes += snprintf(buf + bytes, PAGE_SIZE - bytes, "offline\n");
+			written = snprintf(buf + bytes, PAGE_SIZE - bytes, "offline\n");
 			break;
 		case ISA_CPU_IDLE:
-			bytes += snprintf(buf + bytes, PAGE_SIZE - bytes, "idle\n");
+			written = snprintf(buf + bytes, PAGE_SIZE - bytes, "idle\n");
 			break;
 		case ISA_THUMB:
-			bytes += snprintf(buf + bytes, PAGE_SIZE - bytes,
+			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
 					  "THUMB tid=%d pid=%d pc=%lx inst=%04x\n",
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		case ISA_THUMB2:
-			bytes += snprintf(buf + bytes, PAGE_SIZE - bytes,
+			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
 					  "THUMB2 tid=%d pid=%d pc=%lx inst=%08x\n",
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		case ISA_AARCH32:
-			bytes += snprintf(buf + bytes, PAGE_SIZE - bytes,
+			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
 					  "A32 tid=%d pid=%d pc=%lx inst=%08x\n",
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		case ISA_AARCH64:
-			bytes += snprintf(buf + bytes, PAGE_SIZE - bytes,
+			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
 					  "A64 tid=%d pid=%d pc=%lx inst=%08x\n",
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		}
-	}
-	mutex_unlock(&sampler->trace_mutex);
 
+		if (written < 0)
+			break;
+		bytes += written;
+	}
+
+	kfree(traces);
 	return bytes;
 }
 static DEVICE_ATTR_RO(last_trace);
@@ -301,7 +358,7 @@ static ssize_t enabled_store(struct device *dev, struct device_attribute *attr, 
 {
 	struct miscdevice *miscdev = dev_get_drvdata(dev);
 	struct sampler_device *sampler = container_of(miscdev, struct sampler_device, miscdev);
-	int enable = sampler_is_enabled(sampler);
+	int enable;
 	long res;
 	int err;
 
@@ -309,10 +366,14 @@ static ssize_t enabled_store(struct device *dev, struct device_attribute *attr, 
 	if (err < 0)
 		return err;
 
+	mutex_lock(&sampler->device_mutex);
+	enable = sampler_is_enabled(sampler);
+
 	if (res && !enable)
 		sampler_start_sampler(sampler);
 	else if (!res && enable)
 		sampler_stop_sampler(sampler);
+	mutex_unlock(&sampler->device_mutex);
 
 	return count;
 }
@@ -363,6 +424,11 @@ static enum hrtimer_restart sampler_fire(struct hrtimer *timer)
 	struct sampler_device *sampler = container_of(timer, struct sampler_device, timer);
 
 	kthread_queue_work(sampler_kworker, &sampler->work);
+	/*
+	 * make sure updates to the work list are observable in case sampler_needs_latch falls back to
+	 * the opportunistic (racy) path
+	 */
+	smp_wmb();
 	return HRTIMER_NORESTART;
 }
 
@@ -449,6 +515,7 @@ static void sampler_do_work(struct kthread_work *work)
 	struct sampler_device *sampler = container_of(work, struct sampler_device, work);
 	struct cpumask copy_mask;
 	unsigned long flags;
+	int next_trace;
 	int cpu;
 
 	spin_lock_irqsave(&sampler->lock, flags);
@@ -467,10 +534,11 @@ static void sampler_do_work(struct kthread_work *work)
 		preempt_enable();
 	}
 
-	mutex_lock(&sampler->trace_mutex);
+	next_trace = atomic_read_acquire(&sampler->trace_count) + 1;
+
 	for_each_possible_cpu(cpu) {
 		struct sampler_info *info = per_cpu_ptr(sampler->sample_data, cpu);
-		struct sampler_cpu_trace *trace = &sampler->traces[cpu];
+		struct sampler_cpu_trace *trace = &sampler->traces[trace_count_to_index(next_trace)][cpu];
 
 		if (cpumask_test_cpu(cpu, &copy_mask) || cpu == sampler->latch_cpu) {
 			sampler_create_trace_data(trace, info);
@@ -479,16 +547,18 @@ static void sampler_do_work(struct kthread_work *work)
 			trace->pid = 0;
 			trace->isa = ISA_CPU_OFFLINE;
 		}
-		trace_oculus_instruction_sampler_sample(cpu, sampler->last_schedule, trace);
+		trace_cpu_instruction(cpu, sampler->last_schedule, trace);
 		latch_task(info, NULL);
 	}
-	mutex_unlock(&sampler->trace_mutex);
+
+	/* ensure all writes to the trace buffer are observable before updating the trace_count */
+	smp_wmb();
+	atomic_set_release(&sampler->trace_count, next_trace);
 
 	spin_lock_irqsave(&sampler->lock, flags);
 	cpumask_clear(&sampler->sample_mask);
 	sampler->latch_cpu = -1;
 	spin_unlock_irqrestore(&sampler->lock, flags);
-
 
 	if (sampler_is_enabled(sampler)) {
 		int period = atomic_read_acquire(&sampler->period);
@@ -520,22 +590,28 @@ static struct sampler_device *sampler_create_sampler(const char *name)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	sampler->traces = kzalloc(sizeof(*sampler->traces) * num_possible_cpus(), GFP_KERNEL);
-	if (!sampler->traces) {
+	sampler->traces[0] = kzalloc(sizeof(*sampler->traces[0]) * num_possible_cpus(), GFP_KERNEL);
+	if (!sampler->traces[0]) {
 		pr_err("instruction_sampler: couldn't allocate trace structures\n");
 		err = -ENOMEM;
 		goto err_alloc;
+	}
+	sampler->traces[1] = kzalloc(sizeof(*sampler->traces[1]) * num_possible_cpus(), GFP_KERNEL);
+	if (!sampler->traces[0]) {
+		pr_err("instruction_sampler: couldn't allocate trace structures\n");
+		err = -ENOMEM;
+		goto err_alloc_trace1;
 	}
 
 	sampler->sample_data = alloc_percpu(struct sampler_info);
 	if (!sampler->sample_data) {
 		pr_err("instruction_sampler: couldn't allocate sample info structures\n");
 		err = -ENOMEM;
-		goto err_alloc_trace;
+		goto err_alloc_trace2;
 	}
 
 	kref_init(&sampler->kref);
-	mutex_init(&sampler->trace_mutex);
+	mutex_init(&sampler->device_mutex);
 	kthread_init_work(&sampler->work, sampler_do_work);
 	spin_lock_init(&sampler->lock);
 	sampler->miscdev.fops = &sampler_fops;
@@ -544,7 +620,7 @@ static struct sampler_device *sampler_create_sampler(const char *name)
 	sampler->miscdev.groups = sampler_groups;
 	sampler->latch_cpu = -1;
 	atomic_set_release(&sampler->period, DEFAULT_PERIOD);
-
+	atomic_set_release(&sampler->trace_count, 0);
 	hrtimer_init(&sampler->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	sampler->timer.function = sampler_fire;
 
@@ -558,8 +634,10 @@ static struct sampler_device *sampler_create_sampler(const char *name)
 
 err_register:
 	free_percpu(sampler->sample_data);
-err_alloc_trace:
-	kfree(sampler->traces);
+err_alloc_trace2:
+	kfree(sampler->traces[1]);
+err_alloc_trace1:
+	kfree(sampler->traces[0]);
 err_alloc:
 	kfree(sampler);
 	return ERR_PTR(err);
