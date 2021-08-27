@@ -185,6 +185,8 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_UCODE BIT(9)
 /* For global buffers, randomly assign an address from the region */
 #define KGSL_MEMDESC_RANDOM BIT(10)
+/* The kernel has write access to this memdesc's buffer */
+#define KGSL_MEMDESC_KERNEL_RW BIT(11)
 
 /**
  * struct kgsl_memdesc - GPU memory object descriptor
@@ -193,7 +195,9 @@ struct kgsl_memdesc_ops {
  * @hostptr_count: Number of threads using hostptr
  * @gpuaddr: GPU virtual address
  * @physaddr: Physical address of the memory object
- * @size: Size of the memory object
+ * @size: Internal size of the memory object
+ * @physsize: Total size of pages backing this object
+ * @mapsize: Total size of pages mapped to userspace
  * @priv: Internal flags and settings
  * @sgt: Scatter gather table for allocated pages
  * @ops: Function hooks for the memdesc memory type
@@ -211,6 +215,8 @@ struct kgsl_memdesc {
 	uint64_t gpuaddr;
 	phys_addr_t physaddr;
 	uint64_t size;
+	atomic_long_t physsize;
+	atomic_long_t mapsize;
 	unsigned int priv;
 	struct sg_table *sgt;
 	struct kgsl_memdesc_ops *ops;

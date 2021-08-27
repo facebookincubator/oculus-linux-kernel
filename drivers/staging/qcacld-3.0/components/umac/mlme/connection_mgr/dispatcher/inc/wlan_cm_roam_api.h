@@ -45,6 +45,17 @@ wlan_cm_enable_roaming_on_connected_sta(struct wlan_objmgr_pdev *pdev,
 					uint8_t vdev_id);
 
 /**
+ * cm_akm_roam_allowed() - check if roam allowed for some akm type
+ *
+ * @mac_ctx: mac
+ * @vdev_id: vdev id
+ *
+ * Return: QDF_STATUS: QDF_STATUS_SUCCESS is allowed
+ */
+QDF_STATUS
+cm_akm_roam_allowed(struct mac_context *mac_ctx, uint8_t vdev_id);
+
+/**
  * wlan_cm_roam_cmd_allowed() - check roam cmd is allowed or not
  * @psoc: pointer to psoc object
  * @vdev_id: vdev id
@@ -154,6 +165,12 @@ wlan_cm_enable_roaming_on_connected_sta(struct wlan_objmgr_pdev *pdev,
 					uint8_t vdev_id)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS
+cm_akm_roam_allowed(struct mac_context *mac_ctx, uint8_t vdev_id)
+{
+	return false;
 }
 #endif
 

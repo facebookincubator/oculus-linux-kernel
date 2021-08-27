@@ -5996,6 +5996,8 @@ void dp_txrx_path_stats(struct dp_soc *soc)
 			       pdev->stats.rx.intra_bss.fail.bytes);
 		DP_PRINT_STATS("intra-bss no mdns fwds %u msdus",
 			       pdev->stats.rx.intra_bss.mdns_no_fwd);
+		DP_PRINT_STATS("intra-bss EAPOL drops: %u",
+			       soc->stats.rx.err.intrabss_eapol_drop);
 
 		DP_PRINT_STATS("raw packets %u msdus ( %llu bytes),",
 			       pdev->stats.rx.raw.num,
@@ -6558,6 +6560,8 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 		       soc->stats.rx.err.defrag_peer_uninit);
 	DP_PRINT_STATS("Pkts delivered no peer = %d",
 		       soc->stats.rx.err.pkt_delivered_no_peer);
+	DP_PRINT_STATS("Pkts drop due to no peer auth :%d",
+		       soc->stats.rx.err.peer_unauth_rx_pkt_drop);
 	DP_PRINT_STATS("Invalid Pdev = %d",
 		       soc->stats.rx.err.invalid_pdev);
 	DP_PRINT_STATS("Invalid Peer = %d",
@@ -6626,6 +6630,12 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 
 	DP_PRINT_STATS("Rx nbuf sanity fail: %d",
 		       soc->stats.rx.err.nbuf_sanity_fail);
+
+	DP_PRINT_STATS("ssn update count: %d",
+		       soc->stats.rx.err.ssn_update_count);
+
+	DP_PRINT_STATS("bar handle update fail count: %d",
+		       soc->stats.rx.err.bar_handle_fail_count);
 
 	for (i = 0; i < HAL_RXDMA_ERR_MAX; i++) {
 		index += qdf_snprint(&rxdma_error[index],

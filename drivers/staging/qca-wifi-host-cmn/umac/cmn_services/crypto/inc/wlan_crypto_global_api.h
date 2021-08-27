@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -721,8 +721,8 @@ bool wlan_crypto_check_wpa_match(struct wlan_objmgr_psoc *psoc,
  *
  * Return: pointer to RSNXE capability or NULL
  */
-uint8_t *
-wlan_crypto_parse_rsnxe_ie(uint8_t *rsnxe_ie, uint8_t *cap_len);
+const uint8_t *
+wlan_crypto_parse_rsnxe_ie(const uint8_t *rsnxe_ie, uint8_t *cap_len);
 
 /**
  * wlan_get_crypto_params_from_wapi_ie - Function to get crypto params

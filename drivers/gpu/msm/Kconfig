@@ -30,3 +30,7 @@ config QCOM_KGSL_IOMMU
 config QCOM_KGSL_MEM_ENTRY_RBTREE
 	bool "Track memory entries with RB trees"
 	depends on QCOM_KGSL
+
+config QCOM_KGSL_PAGE_POOLING
+	bool "Enable support for KGSL page pools"
+	default y if QCOM_KGSL

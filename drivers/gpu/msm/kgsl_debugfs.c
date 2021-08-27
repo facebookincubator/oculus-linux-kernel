@@ -168,9 +168,9 @@ static int print_mem_entry(void *data, void *ptr)
 			 * Show zero for the useraddr - we can't reliably track
 			 * that value for multiple vmas anyway
 			 */
-			0, m->size, entry->id, flags,
-			memtype_str(usermem_type),
-			usage, (m->sgt ? m->sgt->nents : 0),
+			0, atomic_long_read(&m->physsize),
+			entry->id, flags, memtype_str(usermem_type), usage,
+			(m->sgt ? m->sgt->nents : 0),
 			atomic_read(&entry->map_count),
 			egl_surface_count, egl_image_count);
 
@@ -440,8 +440,9 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 static int print_mem_entry_page(struct seq_file *s, void *ptr)
 {
 	struct kgsl_mem_entry *entry = s->private;
-	unsigned int page = *(loff_t *)ptr - 1;
-	size_t page_offset = page << PAGE_SHIFT;
+	struct page *page;
+	const size_t page_index = *(loff_t *)ptr - 1;
+	const size_t offset = page_index << PAGE_SHIFT;
 	void *kptr, *buf;
 
 	const size_t rowsize = 32;
@@ -452,15 +453,15 @@ static int print_mem_entry_page(struct seq_file *s, void *ptr)
 	unsigned char linebuf[32 * 3 + 2 + 32 + 1];
 
 	/* Skip unallocated pages. */
-	if (entry->memdesc.pages[page] == NULL)
+	page = kgsl_mmu_find_mapped_page(&entry->memdesc, offset);
+	if (IS_ERR_OR_NULL(page) || page == ZERO_PAGE(0))
 		return 0;
 
 	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!buf)
 		return 0;
 
-	kptr = vm_map_ram(&entry->memdesc.pages[page], 1, -1,
-			pgprot_writecombine(PAGE_KERNEL));
+	kptr = vm_map_ram(&page, 1, -1, pgprot_writecombine(PAGE_KERNEL_RO));
 	if (!kptr)
 		goto no_mapping;
 
@@ -468,7 +469,7 @@ static int print_mem_entry_page(struct seq_file *s, void *ptr)
 	vm_unmap_ram(kptr, 1);
 
 	for (i = 0; i < PAGE_SIZE; i += rowsize) {
-		const size_t offset = page_offset + i + (kptr_restrict < 2 ?
+		const size_t page_offset = offset + i + (kptr_restrict < 2 ?
 				entry->memdesc.gpuaddr : 0);
 
 		linelen = min(remaining, rowsize);
@@ -477,7 +478,7 @@ static int print_mem_entry_page(struct seq_file *s, void *ptr)
 		hex_dump_to_buffer(buf + i, linelen, rowsize, 4,
 				linebuf, sizeof(linebuf), true);
 
-		seq_printf(s, "%016llx: %s\n", offset, linebuf);
+		seq_printf(s, "%016llx: %s\n", page_offset, linebuf);
 	}
 
 no_mapping:

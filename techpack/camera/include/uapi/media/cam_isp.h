@@ -13,6 +13,7 @@
 
 /* ISP driver name */
 #define CAM_ISP_DEV_NAME                        "cam-isp"
+#define CAM_ISP_DEV_FASTPATH_NAME               "cam-isp-fastpath"
 
 /* HW type */
 #define CAM_ISP_HW_BASE                         0

@@ -363,10 +363,17 @@ static ssize_t stats_show(struct device *dev,
 		buf, PAGE_SIZE,
 		"num_bad_magic_numbers     : %u\n"
 		"num_bad_checksums         : %u\n"
-		"num_rejected_transactions : %u\n",
+		"num_rejected_transactions : %u\n"
+		"\n"
+		"last_awake_dur_ms:        : %d\n"
+		"last_asleep_dur_ms:       : %d\n"
+		"",
 		devdata->stats.num_bad_magic_numbers,
 		devdata->stats.num_bad_checksums,
-		devdata->stats.num_rejected_transactions
+		devdata->stats.num_rejected_transactions,
+
+		devdata->stats.last_awake_dur_ms,
+		devdata->stats.last_asleep_dur_ms
 	);
 
 	mutex_unlock(&devdata->state_mutex);

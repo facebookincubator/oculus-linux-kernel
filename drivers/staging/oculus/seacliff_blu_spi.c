@@ -60,6 +60,11 @@ struct blu_device {
 
 	/* flag to control read/write to the temp buffer */
 	atomic_t buffer_dirty;
+
+	/* flag to control debug mode */
+	bool debug_blu;
+	/* frames dropped when SPI write fails */
+	u16 dropped_frames;
 };
 
 /* Blu irq handler, transfer the SPI commands according to blu state */
@@ -314,14 +319,13 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 	/* SPI commands to enter/exit soft reset mode*/
 	static const u8 blu_enter_reset_cmd[] = { 0x01, 0x00, 0x01, 0x00, 0x00, 0x00 };
 	static const u8 blu_exit_reset_cmd[] = { 0x01, 0x00, 0x01, 0x00, 0x00, 0x01 };
-	static const u8 blu_led_cmd[] = { 0x01, 0x00, 0x02, 0x00, 0x08, 0x06, 0xA0 };
+	static const u8 blu_led_timing[] = { 0x01, 0x00, 0x05, 0x00, 0x02, 0x23, 0x50, 0x7F, 0xFE, 0x11 };
+	static const u8 blu_led_current[] = { 0x01, 0x00, 0x02, 0x00, 0x08, 0x06, 0xA0 };
 
-#ifdef DEBUG
 	/* SPI check error flag is bit 0 of register 0x5BE */
 	static const u8 tx_buf[6] = { 0x01, 0x00, 0x01, 0x85, 0xBE, 0x00 };
 	static u8 rx_buf[] = { 0xFF };
 	int err_flag = 0;
-#endif
 
 	/* Global LED current setting command */
 	struct blu_device *blu = (struct blu_device *)blu_dev;
@@ -341,9 +345,13 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		if (ret)
 			dev_err(&spi->dev, "failed to enter soft reset mode, error %d\n", ret);
 
-		ret = spi_write(spi, blu_led_cmd, sizeof(blu_led_cmd));
+		ret = spi_write(spi, blu_led_timing, sizeof(blu_led_timing));
 		if (ret)
-			dev_err(&spi->dev, "failed to set LED current, errot %d\n", ret);
+			dev_err(&spi->dev, "failed to set LED timings, error %d\n", ret);
+
+		ret = spi_write(spi, blu_led_current, sizeof(blu_led_current));
+		if (ret)
+			dev_err(&spi->dev, "failed to set LED current, error %d\n", ret);
 	} else if (blu->frame_counts == STABLE_FRAME_COUNTS) {
 		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
 		if (ret)
@@ -363,18 +371,19 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		if (ret)
 			dev_err(&spi->dev, "failed to send backlight matrix, error %d\n", ret);
 
-#ifdef DEBUG
-		/* verify the SPI transfer */
-		ret = spi_write_then_read(spi, tx_buf, sizeof(tx_buf), rx_buf, sizeof(rx_buf));
-		if (ret)
-			dev_err(&spi->dev, "failed to read register 0x5BE, error %d\n", ret);
+		if (blu->debug_blu) {
+			/* verify the SPI transfer */
+			ret = spi_write_then_read(spi, tx_buf, sizeof(tx_buf), rx_buf, sizeof(rx_buf));
+			if (ret)
+				dev_err(&spi->dev, "failed to read register 0x5BE, error %d\n", ret);
 
-		/* check error flag at bit 0 */
-		err_flag = (rx_buf[0] & 1);
-		if (err_flag) {
-			dev_dbg(&spi->dev, "SPI transfer of the backlight matrix was not successful\n");
+			/* check error flag at bit 0 */
+			err_flag = (rx_buf[0] & 1);
+			if (err_flag) {
+				dev_dbg(&spi->dev, "SPI transfer of the backlight matrix was not successful\n");
+				blu->dropped_frames++;
+			}
 		}
-#endif
 
 		atomic_set(&blu->buffer_dirty, 0);
 	}
@@ -456,6 +465,56 @@ static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 	return 0;
 }
 
+static ssize_t debug_blu_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct blu_device *blu_dev =
+		(struct blu_device *)dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", blu_dev->debug_blu);
+}
+
+static ssize_t debug_blu_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct blu_device *blu_dev =
+		(struct blu_device *)dev_get_drvdata(dev);
+	int ret;
+	bool temp;
+
+	ret = kstrtobool(buf, &temp);
+	if (ret < 0) {
+		dev_err(dev, "Illegal input for debug_blu: %s", buf);
+		return ret;
+	}
+
+	blu_dev->debug_blu = temp;
+	return count;
+}
+static DEVICE_ATTR_RW(debug_blu);
+
+static ssize_t dropped_frames_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct blu_device *blu_dev =
+		(struct blu_device *)dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", blu_dev->dropped_frames);
+}
+static DEVICE_ATTR_RO(dropped_frames);
+
+static struct attribute *blu_spi_attrs[] = {
+	&dev_attr_debug_blu.attr,
+	&dev_attr_dropped_frames.attr,
+	NULL,
+};
+
+static const struct attribute_group blu_spi_group = {
+	.attrs = blu_spi_attrs,
+};
+__ATTRIBUTE_GROUPS(blu_spi);
+
 static struct file_operations blu_spi_fops = {
 	.owner = THIS_MODULE,
 	.read = NULL,
@@ -504,6 +563,7 @@ static int blu_spi_probe(struct spi_device *spi)
 	/* misc device info */
 	blu->misc.name = device_name;
 	blu->misc.minor = MISC_DYNAMIC_MINOR;
+	blu->misc.groups = blu_spi_groups;
 	blu->misc.fops = &blu_spi_fops;
 
 	/* register the misc device */

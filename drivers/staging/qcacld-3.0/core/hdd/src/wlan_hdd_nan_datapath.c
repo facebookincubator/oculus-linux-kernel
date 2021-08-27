@@ -255,7 +255,7 @@ static int hdd_ndi_start_bss(struct hdd_adapter *adapter,
 	roam_profile->SSIDs.numOfSSIDs = 1;
 	roam_profile->SSIDs.SSIDList->SSID.length = 0;
 
-	roam_profile->phyMode = eCSR_DOT11_MODE_11ac;
+	roam_profile->phyMode = eCSR_DOT11_MODE_AUTO;
 	roam_profile->BSSType = eCSR_BSS_TYPE_NDI;
 	roam_profile->BSSIDs.numOfBSSIDs = 1;
 	qdf_mem_copy((void *)(roam_profile->BSSIDs.bssid),
@@ -965,6 +965,12 @@ int hdd_ndp_new_peer_handler(uint8_t vdev_id, uint16_t sta_id,
 					adapter,
 					WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
 					WLAN_CONTROL_PATH);
+		/*
+		 * This is called only for first peer. So, no.of NDP sessions
+		 * are always 1
+		 */
+		if (!NDI_CONCURRENCY_SUPPORTED(hdd_ctx->psoc))
+			hdd_indicate_active_ndp_cnt(hdd_ctx->psoc, vdev_id, 1);
 	}
 	qdf_mem_free(roam_info);
 	return 0;
@@ -1039,5 +1045,11 @@ void hdd_ndp_peer_departed_handler(uint8_t vdev_id, uint16_t sta_id,
 		hdd_debug("No more ndp peers.");
 		hdd_cleanup_ndi(hdd_ctx, adapter);
 		qdf_event_set(&adapter->peer_cleanup_done);
+		/*
+		 * This is called only for last peer. So, no.of NDP sessions
+		 * are always 0
+		 */
+		if (!NDI_CONCURRENCY_SUPPORTED(hdd_ctx->psoc))
+			hdd_indicate_active_ndp_cnt(hdd_ctx->psoc, vdev_id, 0);
 	}
 }

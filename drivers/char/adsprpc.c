@@ -1998,9 +1998,12 @@ static int get_args(uint32_t kernel, struct smq_invoke_ctx *ctx)
 				}
 				offset = buf_page_start(buf) - vma->vm_start;
 				up_read(&current->mm->mmap_sem);
-				VERIFY(err, offset < (uintptr_t)map->size);
-				if (err)
+				VERIFY(err,
+					offset + len <= (uintptr_t)map->size);
+				if (err) {
+					err = -EFAULT;
 					goto bail;
+				}
 			}
 			pages[idx].addr = map->phys + offset;
 			pages[idx].size = num << PAGE_SHIFT;

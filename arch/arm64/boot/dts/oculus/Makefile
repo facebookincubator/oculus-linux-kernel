@@ -19,7 +19,9 @@ dtbo-$(CONFIG_OCULUS_SEACLIFF) += \
 	seacliff-p2-overlay.dtbo \
 	seacliff-p2dd-overlay.dtbo \
 	seacliff-dev2.5-overlay.dtbo \
-	seacliff-p2.5-overlay.dtbo
+	seacliff-p2.5-overlay.dtbo \
+	seacliff-dev3-overlay.dtbo \
+	seacliff-p3-overlay.dtbo
 
 hollywood-poc2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-p1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
@@ -38,6 +40,8 @@ seacliff-p2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oc
 seacliff-p2dd-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-dev2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-p2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+seacliff-dev3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+seacliff-p3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 endif
 endif
 

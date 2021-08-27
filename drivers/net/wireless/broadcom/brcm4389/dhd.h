@@ -919,10 +919,9 @@ enum {
 
 #define FW_LOGSET_MASK_ALL 0xFFFFu
 
-#if defined(CUSTOMER_HW4)
 #ifndef DHD_COMMON_DUMP_PATH
+#if defined(CUSTOMER_HW4)
 #define DHD_COMMON_DUMP_PATH	"/data/log/wifi/"
-#endif /* !DHD_COMMON_DUMP_PATH */
 #elif defined(CUSTOMER_HW2_DEBUG)
 #define DHD_COMMON_DUMP_PATH    PLATFORM_PATH
 #elif defined(BOARD_HIKEY)
@@ -934,6 +933,7 @@ enum {
 #else /* Default */
 #define DHD_COMMON_DUMP_PATH	"/root/"
 #endif /* CUSTOMER_HW4 */
+#endif /* !DHD_COMMON_DUMP_PATH */
 
 #define DHD_MEMDUMP_LONGSTR_LEN 180
 

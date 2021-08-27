@@ -2136,6 +2136,26 @@ QDF_STATUS
 wlan_mlme_set_11d_enabled(struct wlan_objmgr_psoc *psoc, bool value);
 
 /**
+ * wlan_mlme_is_rf_test_mode_enabled() - Get the rf test mode flag
+ * @psoc: psoc context
+ * @value: Enable/Disable value ptr.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_is_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool *value);
+
+/**
+ * wlan_mlme_set_rf_test_mode_enabled() - Set the rf test mode flag
+ * @psoc: psoc context
+ * @value: Enable/Disable value.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_set_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool value);
+
+/**
  * wlan_mlme_get_sta_miracast_mcc_rest_time() - Get STA/MIRACAST MCC rest time
  *
  * @psoc: pointer to psoc object
@@ -3077,4 +3097,13 @@ mlme_is_twt_enabled(struct wlan_objmgr_psoc *psoc)
  */
 bool wlan_mlme_is_local_tpe_pref(struct wlan_objmgr_psoc *psoc);
 
+/**
+ * wlan_mlme_skip_tpe() - Get preference to not consider TPE in 2G/5G case
+ *
+ * @psoc: pointer to psoc object
+ *
+ * Return: True if host should not consider TPE IE in TX power calculation when
+ * operating in 2G/5G bands, false if host should always consider TPE IE values
+ */
+bool wlan_mlme_skip_tpe(struct wlan_objmgr_psoc *psoc);
 #endif /* _WLAN_MLME_API_H_ */

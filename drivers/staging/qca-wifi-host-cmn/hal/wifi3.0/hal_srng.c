@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1277,6 +1277,43 @@ void hal_delayed_reg_write(struct hal_soc *hal_soc,
 
 #else
 #ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#ifdef QCA_WIFI_QCA6750
+void hal_delayed_reg_write(struct hal_soc *hal_soc,
+			   struct hal_srng *srng,
+			   void __iomem *addr,
+			   uint32_t value)
+{
+	switch (srng->ring_type) {
+	case CE_SRC:
+	case CE_DST:
+	case CE_DST_STATUS:
+		if (hif_get_ep_vote_access(hal_soc->hif_handle,
+					   HIF_EP_VOTE_NONDP_ACCESS) ==
+					   HIF_EP_VOTE_ACCESS_DISABLE) {
+			hal_write_address_32_mb(hal_soc, addr, value, false);
+			qdf_atomic_inc(&hal_soc->stats.wstats.direct);
+			srng->wstats.direct++;
+		} else {
+			hal_reg_write_enqueue(hal_soc, srng, addr, value);
+		}
+		break;
+	default:
+		if (hif_get_ep_vote_access(hal_soc->hif_handle,
+		    HIF_EP_VOTE_DP_ACCESS) ==
+		    HIF_EP_VOTE_ACCESS_DISABLE ||
+		    hal_is_reg_write_tput_level_high(hal_soc) ||
+		    PLD_MHI_STATE_L0 ==
+		    pld_get_mhi_state(hal_soc->qdf_dev->dev)) {
+			hal_write_address_32_mb(hal_soc, addr, value, false);
+			qdf_atomic_inc(&hal_soc->stats.wstats.direct);
+			srng->wstats.direct++;
+		} else {
+			hal_reg_write_enqueue(hal_soc, srng, addr, value);
+		}
+		break;
+	}
+}
+#else
 void hal_delayed_reg_write(struct hal_soc *hal_soc,
 			   struct hal_srng *srng,
 			   void __iomem *addr,
@@ -1291,6 +1328,7 @@ void hal_delayed_reg_write(struct hal_soc *hal_soc,
 		hal_reg_write_enqueue(hal_soc, srng, addr, value);
 	}
 }
+#endif
 #endif
 #endif
 
@@ -1548,17 +1586,17 @@ void hal_reo_read_write_ctrl_ix(hal_soc_handle_t hal_soc_hdl, bool read,
 }
 
 /**
- * hal_srng_dst_set_hp_paddr() - Set physical address to dest ring head pointer
+ * hal_srng_dst_set_hp_paddr_confirm() - Set physical address to dest ring head
+ *  pointer and confirm that write went through by reading back the value
  * @srng: sring pointer
  * @paddr: physical address
+ *
+ * Return: None
  */
-void hal_srng_dst_set_hp_paddr(struct hal_srng *srng,
-			       uint64_t paddr)
+void hal_srng_dst_set_hp_paddr_confirm(struct hal_srng *srng, uint64_t paddr)
 {
-	SRNG_DST_REG_WRITE(srng, HP_ADDR_LSB,
-			   paddr & 0xffffffff);
-	SRNG_DST_REG_WRITE(srng, HP_ADDR_MSB,
-			   paddr >> 32);
+	SRNG_DST_REG_WRITE_CONFIRM(srng, HP_ADDR_LSB, paddr & 0xffffffff);
+	SRNG_DST_REG_WRITE_CONFIRM(srng, HP_ADDR_MSB, paddr >> 32);
 }
 
 /**

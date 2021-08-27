@@ -333,7 +333,8 @@ static inline void kgsl_free_sgt(struct sg_table *sgt)
  *
  * Return supported pagesize
  */
-#ifndef CONFIG_ALLOC_BUFFERS_IN_4K_CHUNKS
+#if defined(CONFIG_QCOM_KGSL_PAGE_POOLING) && \
+		!defined(CONFIG_ALLOC_BUFFERS_IN_4K_CHUNKS)
 static inline int kgsl_get_page_size(size_t size, unsigned int align)
 {
 	if (align >= ilog2(SZ_1M) && size >= SZ_1M &&

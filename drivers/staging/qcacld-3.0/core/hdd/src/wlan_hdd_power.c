@@ -85,6 +85,8 @@
 #include "wlan_pkt_capture_ucfg_api.h"
 #include "wlan_hdd_thermal.h"
 #include "wlan_hdd_object_manager.h"
+#include <linux/igmp.h>
+#include "qdf_types.h"
 /* Preprocessor definitions and constants */
 #ifdef QCA_WIFI_NAPIER_EMULATION
 #define HDD_SSR_BRING_UP_TIME 3000000
@@ -191,6 +193,144 @@ static void hdd_enable_gtk_offload(struct hdd_adapter *adapter)
 		hdd_info("Failed to enable gtk offload");
 	hdd_objmgr_put_vdev(vdev);
 }
+
+#ifdef WLAN_FEATURE_IGMP_OFFLOAD
+/**
+ * hdd_send_igmp_offload_params() - enable igmp offload
+ * @adapter: pointer to the adapter
+ * @enable: enable/disable
+ *
+ * Return: nothing
+ */
+static QDF_STATUS
+hdd_send_igmp_offload_params(struct hdd_adapter *adapter,
+			     bool enable)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct in_device *in_dev = adapter->dev->ip_ptr;
+	struct ip_mc_list *ip_list;
+	struct pmo_igmp_offload_req *igmp_req = NULL;
+	int count = 0;
+	QDF_STATUS status;
+
+	if (!in_dev) {
+		hdd_err("in_dev is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	ip_list = in_dev->mc_list;
+	if (!ip_list) {
+		hdd_debug("ip list empty");
+		status = QDF_STATUS_E_FAILURE;
+		goto out;
+	}
+
+	igmp_req = qdf_mem_malloc(sizeof(*igmp_req));
+	if (!igmp_req) {
+		status = QDF_STATUS_E_FAILURE;
+		goto out;
+	}
+
+	while (ip_list && ip_list->multiaddr && enable &&
+	       count < MAX_MC_IP_ADDR) {
+		if (IGMP_QUERY_ADDRESS !=  ip_list->multiaddr) {
+			igmp_req->grp_ip_address[count] = ip_list->multiaddr;
+			count++;
+		}
+
+		ip_list = ip_list->next;
+	}
+	igmp_req->enable = enable;
+	igmp_req->num_grp_ip_address = count;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("vdev is NULL");
+		qdf_mem_free(igmp_req);
+		status = QDF_STATUS_E_FAILURE;
+		goto out;
+	}
+
+	status = ucfg_pmo_enable_igmp_offload(vdev, igmp_req);
+	if (status != QDF_STATUS_SUCCESS)
+		hdd_info("Failed to enable igmp offload");
+
+	hdd_objmgr_put_vdev(vdev);
+	qdf_mem_free(igmp_req);
+out:
+	return status;
+}
+
+/**
+ * hdd_enable_igmp_offload() - enable GTK offload
+ * @adapter: pointer to the adapter
+ *
+ * Enable IGMP offload in suspended case to save power
+ *
+ * Return: nothing
+ */
+static void hdd_enable_igmp_offload(struct hdd_adapter *adapter)
+{
+	QDF_STATUS status;
+	struct wlan_objmgr_vdev *vdev;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("vdev is NULL");
+		return;
+	}
+	status = hdd_send_igmp_offload_params(adapter, true);
+	if (status != QDF_STATUS_SUCCESS)
+		hdd_info("Failed to enable igmp offload");
+	hdd_objmgr_put_vdev(vdev);
+}
+
+/**
+ * hdd_disable_igmp_offload() - disable IGMP offload
+ * @adapter: pointer to the adapter
+ *
+ * Enable IGMP offload in suspended case to save power
+ *
+ * Return: nothing
+ */
+static void hdd_disable_igmp_offload(struct hdd_adapter *adapter)
+{
+	QDF_STATUS status;
+	struct wlan_objmgr_vdev *vdev;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		hdd_err("vdev is NULL");
+		return;
+	}
+	status = hdd_send_igmp_offload_params(adapter, false);
+	if (status != QDF_STATUS_SUCCESS)
+		hdd_info("Failed to enable igmp offload");
+	hdd_objmgr_put_vdev(vdev);
+}
+#else
+static inline void
+hdd_enable_igmp_offload(struct hdd_adapter *adapter)
+{}
+
+static inline QDF_STATUS
+hdd_send_igmp_offload_params(struct hdd_adapter *adapter,
+			     bool enable)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_hdd_send_igmp_offload_params(struct hdd_adapter *adapter, bool enable,
+				  uint32_t *mc_address, uint32_t count)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline void
+hdd_disable_igmp_offload(struct hdd_adapter *adapter)
+{}
+#endif
 
 /**
  * hdd_disable_gtk_offload() - disable GTK offload
@@ -720,6 +860,9 @@ void hdd_enable_host_offloads(struct hdd_adapter *adapter,
 	hdd_enable_arp_offload(adapter, trigger);
 	hdd_enable_ns_offload(adapter, trigger);
 	hdd_enable_mc_addr_filtering(adapter, trigger);
+	if (adapter->device_mode == QDF_STA_MODE)
+		hdd_enable_igmp_offload(adapter);
+
 	if (adapter->device_mode != QDF_NDI_MODE)
 		hdd_enable_hw_filter(adapter);
 	hdd_enable_action_frame_patterns(adapter);
@@ -759,6 +902,8 @@ void hdd_disable_host_offloads(struct hdd_adapter *adapter,
 	hdd_disable_arp_offload(adapter, trigger);
 	hdd_disable_ns_offload(adapter, trigger);
 	hdd_disable_mc_addr_filtering(adapter, trigger);
+	if (adapter->device_mode == QDF_STA_MODE)
+		hdd_disable_igmp_offload(adapter);
 	if (adapter->device_mode != QDF_NDI_MODE)
 		hdd_disable_hw_filter(adapter);
 	hdd_disable_action_frame_patterns(adapter);
@@ -1926,6 +2071,8 @@ static int __wlan_hdd_cfg80211_resume_wlan(struct wiphy *wiphy)
 		}
 	}
 
+	ucfg_pmo_notify_system_resume(hdd_ctx->psoc);
+
 	qdf_mtrace(QDF_MODULE_ID_HDD, QDF_MODULE_ID_HDD,
 		   TRACE_CODE_HDD_CFG80211_RESUME_WLAN,
 		   NO_SESSION, hdd_ctx->is_wiphy_suspended);
@@ -2044,9 +2191,6 @@ static int __wlan_hdd_cfg80211_suspend_wlan(struct wiphy *wiphy,
 	rc = wlan_hdd_validate_context(hdd_ctx);
 	if (0 != rc)
 		return rc;
-
-	/* Wait for the stop module if already in progress */
-	hdd_psoc_idle_timer_stop(hdd_ctx);
 
 	if (hdd_ctx->config->is_wow_disabled) {
 		hdd_info_rl("wow is disabled");
@@ -2284,6 +2428,18 @@ int wlan_hdd_cfg80211_suspend_wlan(struct wiphy *wiphy,
 {
 	struct osif_psoc_sync *psoc_sync;
 	int errno;
+	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+
+	errno = wlan_hdd_validate_context(hdd_ctx);
+	if (0 != errno)
+		return errno;
+
+	/*
+	 * Flush the idle shutdown before ops start.This is done here to avoid
+	 * the deadlock as idle shutdown waits for the dsc ops
+	 * to complete.
+	 */
+	hdd_psoc_idle_timer_stop(hdd_ctx);
 
 	errno = osif_psoc_sync_op_start(wiphy_dev(wiphy), &psoc_sync);
 	if (errno)

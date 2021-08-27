@@ -237,6 +237,10 @@
 			&tert_mi2s_sd0_sleep>;
 };
 
+&wcd938x_codec {
+	qcom,dmic-rate = <4800>;
+};
+
 &kona_snd {
 	qcom,model = "kona-xrfusionult-snd-card";
 	qcom,mi2s-audio-intf = <0>;

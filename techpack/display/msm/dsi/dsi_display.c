@@ -4360,6 +4360,10 @@ static int dsi_display_dfps_update(struct dsi_display *display,
 	}
 	timing = &dsi_mode->timing;
 
+	dsi_panel_update_dfps_intermediate_brightness(display->panel,
+						display->panel->cur_mode->timing.refresh_rate,
+						timing->refresh_rate);
+
 	dsi_panel_get_dfps_caps(display->panel, &dfps_caps);
 	dyn_clk_caps = &(display->panel->dyn_clk_caps);
 	if (!dfps_caps.dfps_support && !dyn_clk_caps->maintain_const_fps) {
@@ -4412,9 +4416,74 @@ static int dsi_display_dfps_update(struct dsi_display *display,
 	dsi_panel_set_backlight(display->panel,
 		display->panel->bl_config.bl_level);
 
+	if (display->panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING) {
+		/*
+		 * Submit a worker thread to handle the brightness
+		 * modification on the Nth and N+1th frame on refresh rate change.
+		 */
+		if (!kthread_queue_work(display->dfps_transition_worker, &display->dfps_transition_work))
+			DSI_ERR("Unable to queue the dfps transition thread\n");
+	}
+
 error:
 	SDE_EVT32(SDE_EVTLOG_FUNC_EXIT);
 	return rc;
+}
+
+static void dsi_display_dfps_transition_work(struct kthread_work *work)
+{
+	int i = 0;
+	int dfps_intermediate_brightness;
+	u64 current_brightness, new_brightness;
+	struct drm_crtc *crtc;
+	struct dsi_display *display = container_of(work, struct dsi_display, dfps_transition_work);
+
+	/*
+	 * 1. Update backlight brightness for Nth frame.
+	 * 2. Wait for 2 Vertical Blank pulses.
+	 * 3. Reset original backlight brightness value.
+	 */
+	drm_for_each_crtc(crtc, display->drm_dev) {
+		if (crtc->state->active) {
+			/* 1. Update backlight brightness for Nth frame. */
+			current_brightness = display->panel->bl_config.ld_dev[0]->props.brightness;
+			dfps_intermediate_brightness = display->panel->bl_config.dfps_intermediate_brightness;
+			new_brightness = (u64)(current_brightness * dfps_intermediate_brightness / 1000);
+			for (i = 0; i < display->panel->bl_config.num_ld_devices; i++)
+				backlight_device_set_brightness(display->panel->bl_config.ld_dev[i], new_brightness);
+			/*
+			 * 2. Wait for 2 Vertical Blank for the N+1th frame because the backlight matrix.
+			 * gets applied after vblank.
+			 */
+			drm_crtc_wait_one_vblank(crtc);
+			drm_crtc_wait_one_vblank(crtc);
+			/* 3. Reset original backlight brightness value. */
+			for (i = 0; i < display->panel->bl_config.num_ld_devices; i++)
+				backlight_device_set_brightness(display->panel->bl_config.ld_dev[i], current_brightness);
+		}
+	}
+}
+
+static void dsi_display_register_dfps_transition_worker(struct dsi_display *display)
+{
+	display->dfps_transition_worker = kthread_create_worker(WQ_HIGHPRI, "blu-dfps-panel-%s", display->panel->name);
+	if (IS_ERR_OR_NULL(display->dfps_transition_worker))
+		goto error;
+
+	/* Setup the function to do the DFPS transition work for brightness adjustment. */
+	kthread_init_work(&display->dfps_transition_work, dsi_display_dfps_transition_work);
+	return;
+
+error:
+	DSI_ERR("[%s] failed to create worker thread for backlight transitions\n", display->panel->name);
+	display->dfps_transition_worker = NULL;
+}
+
+static void dsi_display_unregister_dfps_transition_worker(struct dsi_display *display)
+{
+	if (display->dfps_transition_worker)
+		kthread_destroy_worker(display->dfps_transition_worker);
+	display->dfps_transition_worker = NULL;
 }
 
 static int dsi_display_dfps_calc_front_porch(
@@ -7138,6 +7207,10 @@ int dsi_display_prepare(struct dsi_display *display)
 	/* Set up DSI ERROR event callback */
 	dsi_display_register_error_handler(display);
 
+	/* Register the DFPS transition handler */
+	if (display->panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING)
+		dsi_display_register_dfps_transition_worker(display);
+
 	rc = dsi_display_ctrl_host_enable(display);
 	if (rc) {
 		DSI_ERR("[%s] failed to enable DSI host, rc=%d\n",
@@ -7806,6 +7879,9 @@ int dsi_display_unprepare(struct dsi_display *display)
 
 	/* Free up DSI ERROR event callback */
 	dsi_display_unregister_error_handler(display);
+
+	/* Unregister the DFPS transition handler */
+	dsi_display_unregister_dfps_transition_worker(display);
 
 	SDE_EVT32(SDE_EVTLOG_FUNC_EXIT);
 	return rc;

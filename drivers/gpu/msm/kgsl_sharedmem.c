@@ -52,6 +52,9 @@ int kgsl_allocate_global(struct kgsl_device *device,
 		ret = kgsl_sharedmem_alloc_contig(device, memdesc,
 						(size_t) size);
 	else {
+		/* Allow kernel write access to global buffers by default. */
+		memdesc->priv |= KGSL_MEMDESC_KERNEL_RW;
+
 		ret = kgsl_sharedmem_page_alloc_user(memdesc, (size_t) size);
 		if (ret == 0) {
 			if (kgsl_memdesc_map(memdesc) == NULL) {
@@ -202,31 +205,60 @@ static void gpumem_account(struct kgsl_process_private *priv, int type,
 	spin_lock(&priv->mem_lock);
 	idr_for_each_entry_continue(&priv->mem_idr, entry, id) {
 		struct kgsl_memdesc *m = &entry->memdesc;
-		int64_t entry_mapped = 0;
-		int64_t entry_unmapped = m->size;
+		int64_t entry_mapped;
+		int64_t entry_unmapped;
+		uint64_t offset;
+		int entry_mapcount;
 
-		if (kgsl_memdesc_usermem_type(m) != type)
+		if (entry->pending_free || kgsl_memdesc_usermem_type(m) != type)
 			continue;
 
-		if (atomic_read(&entry->map_count) <= 0 ||
-				kgsl_mem_entry_get(entry) == 0) {
+		entry_mapcount = atomic_read(&entry->map_count);
+		entry_mapped = atomic_long_read(&m->mapsize);
+		entry_unmapped = atomic_long_read(&m->physsize) - entry_mapped;
+
+		/*
+		 * If the entry is not mapped to userspace or only mapped once
+		 * then we can fastpath handling this entry's accounting without
+		 * needing to grab a reference.
+		 */
+		if (entry_mapcount <= 1) {
 			gpumem_unmapped += entry_unmapped;
+			gpumem_mapped += entry_mapped;
 			continue;
 		}
+
+		/* No such luck. Try and grab a reference to the entry. */
+		if (kgsl_mem_entry_get(entry) == 0)
+			continue;
+
+		/* Exit the spinlock since the code below can sleep. */
 		spin_unlock(&priv->mem_lock);
 
 		/*
-		 * Multiple VMAs may cover this entry. Walk the backing pages
-		 * for counting PSS to match proc/smaps behavior.
+		 * Multiple VMAs cover this entry. Walk the backing pages and
+		 * check their individual mapcount when counting PSS to match
+		 * proc/smaps behavior.
 		 */
-		for (i = 0; i < m->page_count; i++) {
-			const int mapcount = page_mapcount(m->pages[i]);
+		offset = 0;
+		for (i = 0; i < m->page_count; i++, offset += PAGE_SIZE) {
+			struct page *page;
+			int mapcount;
 
-			if (mapcount <= 0)
+			page = kgsl_mmu_find_mapped_page(m, offset);
+			if (IS_ERR_OR_NULL(page) || page == ZERO_PAGE(0))
 				continue;
 
-			entry_mapped += PAGE_SIZE / mapcount;
-			entry_unmapped -= PAGE_SIZE;
+			/*
+			 * We only need to worry about pages that have been
+			 * mapped into more than one VMA since mapsize already
+			 * accounts for the first userspace mapping.
+			 */
+			mapcount = page_mapcount(page);
+			if (mapcount <= 1)
+				continue;
+
+			entry_mapped += (PAGE_SIZE / mapcount) - PAGE_SIZE;
 		}
 
 		gpumem_mapped += entry_mapped;
@@ -550,26 +582,29 @@ static int kgsl_page_alloc_vmfault(struct kgsl_memdesc *memdesc,
 				struct vm_area_struct *vma,
 				struct vm_fault *vmf)
 {
-	int pgoff;
-	unsigned int offset;
-
-	offset = vmf->address - vma->vm_start;
+	struct page *page;
+	const unsigned long offset = vmf->address - vma->vm_start;
 
 	if (offset >= memdesc->size)
 		return VM_FAULT_SIGBUS;
 
-	pgoff = offset >> PAGE_SHIFT;
+	page = kgsl_mmu_find_mapped_page(memdesc, offset);
+	if (IS_ERR_OR_NULL(page))
+		return VM_FAULT_SIGBUS;
+	if (page == ZERO_PAGE(0))
+		return VM_FAULT_SIGSEGV;
 
-	if (pgoff < memdesc->page_count) {
-		struct page *page = memdesc->pages[pgoff];
+	/*
+	 * If this is the first time this page is being mapped into userspace
+	 * then bump the entry's mapsize.
+	 */
+	if (page_mapcount(page) == 0)
+		atomic_long_add(PAGE_SIZE, &memdesc->mapsize);
 
-		get_page(page);
-		vmf->page = page;
+	get_page(page);
+	vmf->page = page;
 
-		return 0;
-	}
-
-	return VM_FAULT_SIGBUS;
+	return 0;
 }
 
 /*
@@ -709,7 +744,9 @@ static int kgsl_page_alloc_map_kernel(struct kgsl_memdesc *memdesc)
 
 	mutex_lock(&kernel_map_global_lock);
 	if ((!memdesc->hostptr) && (memdesc->pages != NULL)) {
-		pgprot_t page_prot = pgprot_writecombine(PAGE_KERNEL);
+		pgprot_t page_prot = pgprot_writecombine(
+				(memdesc->priv & KGSL_MEMDESC_KERNEL_RW) ?
+				PAGE_KERNEL : PAGE_KERNEL_RO);
 
 		memdesc->hostptr = vmap(memdesc->pages, memdesc->page_count,
 					VM_IOREMAP, page_prot);
@@ -972,6 +1009,9 @@ void kgsl_memdesc_init(struct kgsl_device *device,
 		ilog2(PAGE_SIZE));
 	kgsl_memdesc_set_align(memdesc, align);
 	spin_lock_init(&memdesc->lock);
+
+	atomic_long_set(&memdesc->physsize, 0);
+	atomic_long_set(&memdesc->mapsize, 0);
 }
 
 int
@@ -1085,6 +1125,7 @@ kgsl_sharedmem_page_alloc_user(struct kgsl_memdesc *memdesc,
 		pcount += page_count;
 		len -= page_size;
 		memdesc->size += page_size;
+		atomic_long_add(page_size, &memdesc->physsize);
 		memdesc->page_count += page_count;
 
 		/* Get the needed page size for the next iteration */

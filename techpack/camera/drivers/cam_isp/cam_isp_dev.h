@@ -10,6 +10,7 @@
 #include "cam_hw_mgr_intf.h"
 #include "cam_context.h"
 #include "cam_isp_context.h"
+#include "cam_isp_context_fastpath.h"
 
 /**
  * struct cam_isp_dev - Camera ISP V4l2 device node
@@ -27,5 +28,22 @@ struct cam_isp_dev {
 	struct mutex               isp_mutex;
 	int32_t                    open_cnt;
 };
+
+
+/**
+ * struct cam_isp_fastpath_dev - Camera fastpath ISP V4l2 device node
+ *
+ * @sd:       Commone camera subdevice node
+ * @ctx:      Isp fastpath context
+ * @mutex:    ISP dev mutex
+ * @open_cnt: Open device count
+ */
+struct cam_isp_fastpath_dev {
+	struct cam_subdev  sd;
+	void               *ctx;
+	struct mutex       mutex;
+	int32_t            open_cnt;
+};
+
 
 #endif /* __CAM_ISP_DEV_H__ */

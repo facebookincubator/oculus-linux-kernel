@@ -324,6 +324,7 @@ struct wlan_ipa_priv;
  * @interface_lock: Interface lock
  * @ifa_address: Interface address
  * @stats: Interface stats
+ * @bssid: BSSID. valid only for sta iface ctx;
  */
 struct wlan_ipa_iface_context {
 	struct wlan_ipa_priv *ipa_ctx;
@@ -334,10 +335,14 @@ struct wlan_ipa_iface_context {
 	uint8_t iface_id;       /* This iface ID */
 	qdf_netdev_t dev;
 	enum QDF_OPMODE device_mode;
+	uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
+	qdf_atomic_t conn_count;
+	qdf_atomic_t disconn_count;
 	uint8_t session_id;
 	qdf_spinlock_t interface_lock;
 	uint32_t ifa_address;
 	struct wlan_ipa_iface_stats stats;
+	struct qdf_mac_addr bssid;
 };
 
 /**
@@ -681,6 +686,7 @@ struct wlan_ipa_priv {
 	qdf_mc_timer_t rt_debug_fill_timer;
 	qdf_mutex_t rt_debug_lock;
 	qdf_mutex_t ipa_lock;
+	qdf_mutex_t init_deinit_lock;
 
 	uint8_t vdev_to_iface[WLAN_IPA_MAX_SESSION];
 	bool vdev_offload_enabled[WLAN_IPA_MAX_SESSION];

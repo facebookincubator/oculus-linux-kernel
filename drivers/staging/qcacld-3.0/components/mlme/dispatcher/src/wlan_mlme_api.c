@@ -2713,6 +2713,34 @@ wlan_mlme_set_11d_enabled(struct wlan_objmgr_psoc *psoc, bool value)
 }
 
 QDF_STATUS
+wlan_mlme_is_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool *value)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	*value = mlme_obj->cfg.gen.enabled_rf_test_mode;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+wlan_mlme_set_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool value)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	mlme_obj->cfg.gen.enabled_rf_test_mode = value;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
 wlan_mlme_cfg_set_vht_chan_width(struct wlan_objmgr_psoc *psoc, uint8_t value)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
@@ -3258,7 +3286,8 @@ mlme_update_vht_cap(struct wlan_objmgr_psoc *psoc, struct wma_tgt_vht_cap *cfg)
 	 */
 	if (vht_cap_info->ampdu_len > cfg->vht_max_mpdu)
 		vht_cap_info->ampdu_len = cfg->vht_max_mpdu;
-
+	if (vht_cap_info->ampdu_len >= 1)
+		mlme_obj->cfg.ht_caps.ht_cap_info.maximal_amsdu_size = 1;
 	value = (CFG_VHT_BASIC_MCS_SET_STADEF & VHT_MCS_1x1) |
 		vht_cap_info->basic_mcs_set;
 	if (vht_cap_info->enable2x2)
@@ -4724,4 +4753,15 @@ bool wlan_mlme_is_local_tpe_pref(struct wlan_objmgr_psoc *psoc)
 		return false;
 
 	return mlme_obj->cfg.power.use_local_tpe;
+}
+
+bool wlan_mlme_skip_tpe(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return false;
+
+	return mlme_obj->cfg.power.skip_tpe;
 }

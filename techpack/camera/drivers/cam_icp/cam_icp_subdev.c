@@ -29,8 +29,12 @@
 #include "cam_icp_hw_mgr_intf.h"
 #include "cam_debug_util.h"
 #include "cam_smmu_api.h"
+#include "cam_icp_context_fastpath.h"
+#include "cam_node_fastpath.h"
+#include "cam_subdev_fastpath.h"
 
 #define CAM_ICP_DEV_NAME        "cam-icp"
+#define CAM_ICP_FP_DEV_NAME     "cam-icp-fastpath"
 
 struct cam_icp_subdev {
 	struct cam_subdev sd;
@@ -42,7 +46,15 @@ struct cam_icp_subdev {
 	int32_t reserved;
 };
 
+struct cam_icp_subdev_fastpath {
+	struct cam_subdev sd;
+	void *ctx;
+	struct mutex mutex;
+	int32_t open_cnt;
+};
+
 static struct cam_icp_subdev g_icp_dev;
+static struct cam_icp_subdev_fastpath g_icp_dev_fastpath;
 
 static const struct of_device_id cam_icp_dt_match[] = {
 	{.compatible = "qcom,cam-icp"},
@@ -143,11 +155,81 @@ const struct v4l2_subdev_internal_ops cam_icp_subdev_internal_ops = {
 	.close = cam_icp_subdev_close,
 };
 
+static int cam_icp_dev_fp_subdev_open(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
+{
+	struct cam_node_fastpath *fp_node =
+		(struct cam_node_fastpath *) v4l2_get_subdevdata(sd);
+
+	if (!fp_node) {
+		CAM_ERR(CAM_ISP, "Node ptr is NULL");
+		return -EINVAL;
+	}
+
+	mutex_lock(&g_icp_dev_fastpath.mutex);
+
+	g_icp_dev_fastpath.open_cnt++;
+	if (g_icp_dev_fastpath.open_cnt == 1)
+		cam_node_fastpath_poweron(fp_node);
+
+	mutex_unlock(&g_icp_dev_fastpath.mutex);
+
+	return 0;
+}
+
+static int cam_icp_dev_fp_subdev_close(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
+{
+	struct cam_node_fastpath *fp_node =
+		(struct cam_node_fastpath *) v4l2_get_subdevdata(sd);
+
+	if (!fp_node) {
+		CAM_ERR(CAM_ISP, "Node ptr is NULL");
+		return -EINVAL;
+	}
+
+	mutex_lock(&g_icp_dev_fastpath.mutex);
+	if (!g_icp_dev_fastpath.open_cnt) {
+		mutex_unlock(&g_icp_dev_fastpath.mutex);
+		return -EINVAL;
+	}
+
+	g_icp_dev_fastpath.open_cnt--;
+	if (!g_icp_dev_fastpath.open_cnt)
+		cam_node_fastpath_shutdown(fp_node);
+
+	mutex_unlock(&g_icp_dev_fastpath.mutex);
+
+	return 0;
+}
+
+const struct v4l2_subdev_internal_ops cam_icp_subdev_fastpath_ops = {
+	.open = cam_icp_dev_fp_subdev_open,
+	.close = cam_icp_dev_fp_subdev_close,
+};
+
+/* Fastpath ops */
+static const struct cam_node_fastpath_ops fastpath_ctx_ops = {
+	.set_power       = cam_icp_fastpath_set_power,
+	.query_cap       = cam_icp_fastpath_query_cap,
+	.acquire_hw      = cam_icp_fastpath_acquire_hw,
+	.release_hw      = cam_icp_fastpath_release_hw,
+	.flush_dev       = cam_icp_fastpath_flush_dev,
+	.config_dev      = cam_icp_fastpath_config_dev,
+	.start_dev       = cam_icp_fastpath_start_dev,
+	.stop_dev        = cam_icp_fastpath_stop_dev,
+	.acquire_dev     = cam_icp_fastpath_acquire_dev,
+	.release_dev     = cam_icp_fastpath_release_dev,
+	.set_stream_mode = cam_icp_fastpath_set_stream_mode,
+	.stream_mode_cmd = cam_isp_fastpath_stream_mode_cmd,
+};
+
 static int cam_icp_probe(struct platform_device *pdev)
 {
 	int rc = 0, i = 0;
 	struct cam_node *node;
 	struct cam_hw_mgr_intf *hw_mgr_intf;
+	struct cam_node_fastpath *fastpath_node;
 	int iommu_hdl = -1;
 
 	if (!pdev) {
@@ -202,10 +284,45 @@ static int cam_icp_probe(struct platform_device *pdev)
 	g_icp_dev.open_cnt = 0;
 	mutex_init(&g_icp_dev.icp_lock);
 
-	CAM_DBG(CAM_ICP, "ICP probe complete");
+	/* Init fastpath Context and node */
+	g_icp_dev_fastpath.sd.internal_ops = &cam_icp_subdev_fastpath_ops;
+
+	/* Initialize the v4l2 subdevice first. (create cam_node) */
+	rc = cam_subdev_fastpath_probe(&g_icp_dev_fastpath.sd, pdev,
+				       CAM_ICP_FP_DEV_NAME,
+				       CAM_ICP_FASTPATH_DEVICE_TYPE);
+	if (rc) {
+		CAM_ERR(CAM_ICP, "ICP cam_subdev_probe failed");
+		goto ctx_fail;
+	}
+	fastpath_node = (struct cam_node_fastpath *)
+		g_icp_dev_fastpath.sd.token;
+
+	g_icp_dev_fastpath.ctx = cam_icp_fastpath_context_create(hw_mgr_intf);
+	if (!g_icp_dev_fastpath.ctx) {
+		CAM_ERR(CAM_ISP, "ISP context fastpah init failed!");
+		rc = -ENOMEM;
+		goto remove_fp_subdevice;
+	}
+
+	rc = cam_node_fastpath_init(fastpath_node,
+				    g_icp_dev_fastpath.ctx,
+				    &fastpath_ctx_ops);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "ISP fastpath node init failed!");
+		goto destroy_fp_context;
+	}
+	mutex_init(&g_icp_dev_fastpath.mutex);
+
+	CAM_DBG(CAM_ICP, "ICP probe complete Fastpath");
 
 	return rc;
 
+destroy_fp_context:
+	cam_icp_fastpath_context_destroy(g_icp_dev_fastpath.ctx);
+	g_icp_dev_fastpath.ctx = NULL;
+remove_fp_subdevice:
+	cam_subdev_remove(&g_icp_dev_fastpath.sd);
 ctx_fail:
 	for (--i; i >= 0; i--)
 		cam_icp_context_deinit(&g_icp_dev.ctx_icp[i]);
@@ -245,6 +362,16 @@ static int cam_icp_remove(struct platform_device *pdev)
 	cam_node_deinit(g_icp_dev.node);
 	cam_subdev_remove(&g_icp_dev.sd);
 	mutex_destroy(&g_icp_dev.icp_lock);
+
+	/* Deinit fastpath resourcess */
+	cam_icp_fastpath_context_destroy(g_icp_dev_fastpath.ctx);
+	g_icp_dev_fastpath.ctx = NULL;
+
+	cam_subdev_remove(&g_icp_dev_fastpath.sd);
+
+	mutex_destroy(&g_icp_dev_fastpath.mutex);
+
+	memset(&g_icp_dev_fastpath, 0, sizeof(g_icp_dev_fastpath));
 
 	return 0;
 }

@@ -46,7 +46,8 @@
  * @is_roam_scan_ch_to_host: Get roam scan channels from fw supported
  * @ll_stats_per_chan_rx_tx_time: Per channel tx and rx time support in ll stats
  * @is_get_station_clubbed_in_ll_stats_req: Get station req support within ll
- *                                          stats req
+ * @is_fw_therm_throt_supp: Get thermal throttling threshold
+ * @igmp_offload_enable: Get igmp offload enable or disable
  */
 struct wma_tgt_services {
 	uint32_t sta_power_save;
@@ -83,6 +84,10 @@ struct wma_tgt_services {
 	bool ll_stats_per_chan_rx_tx_time;
 #ifdef FEATURE_CLUB_LL_STATS_AND_GET_STATION
 	bool is_get_station_clubbed_in_ll_stats_req;
+#endif
+	bool is_fw_therm_throt_supp;
+#ifdef WLAN_FEATURE_IGMP_OFFLOAD
+	bool igmp_offload_enable;
 #endif
 };
 

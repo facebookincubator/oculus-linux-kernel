@@ -544,15 +544,7 @@ static int _iommu_map_sg_sync_pc(struct kgsl_pagetable *pt,
  * GPU pre-fetch
  */
 
-static struct page *kgsl_guard_page;
 static struct page *kgsl_secure_guard_page;
-
-/*
- * The dummy page is a placeholder/extra page to be used for sparse mappings.
- * This page will be mapped to all virtual sparse bindings that are not
- * physically backed.
- */
-static struct page *kgsl_dummy_page;
 
 /* These functions help find the nearest allocated memory entries on either side
  * of a faulting address. If we know the nearby allocations memory we can
@@ -1466,16 +1458,6 @@ static void kgsl_iommu_close(struct kgsl_mmu *mmu)
 	kgsl_free_secure_page(kgsl_secure_guard_page);
 	kgsl_secure_guard_page = NULL;
 
-	if (kgsl_guard_page != NULL) {
-		__free_page(kgsl_guard_page);
-		kgsl_guard_page = NULL;
-	}
-
-	if (kgsl_dummy_page != NULL) {
-		__free_page(kgsl_dummy_page);
-		kgsl_dummy_page = NULL;
-	}
-
 	kgsl_iommu_remove_global(mmu, &iommu->setstate);
 	kgsl_sharedmem_free(&iommu->setstate);
 	kgsl_cleanup_qdss_desc(mmu);
@@ -1768,16 +1750,8 @@ static int _iommu_map_guard_page(struct kgsl_pagetable *pt,
 		}
 
 		physaddr = page_to_phys(kgsl_secure_guard_page);
-	} else {
-		if (kgsl_guard_page == NULL) {
-			kgsl_guard_page = alloc_page(GFP_KERNEL | __GFP_ZERO |
-					__GFP_NORETRY | __GFP_HIGHMEM);
-			if (kgsl_guard_page == NULL)
-				return -ENOMEM;
-		}
-
-		physaddr = page_to_phys(kgsl_guard_page);
-	}
+	} else
+		physaddr = page_to_phys(ZERO_PAGE(0));
 
 	protflags &= ~IOMMU_WRITE;
 
@@ -1871,13 +1845,6 @@ static int kgsl_iommu_sparse_dummy_map(struct kgsl_pagetable *pt,
 	if (size + offset > kgsl_memdesc_footprint(memdesc))
 		return -EINVAL;
 
-	if (kgsl_dummy_page == NULL) {
-		kgsl_dummy_page = alloc_page(GFP_KERNEL | __GFP_ZERO |
-				__GFP_HIGHMEM);
-		if (kgsl_dummy_page == NULL)
-			return -ENOMEM;
-	}
-
 	map_flags = IOMMU_READ | IOMMU_NOEXEC;
 
 	pages = kcalloc(count, sizeof(struct page *), GFP_KERNEL);
@@ -1885,7 +1852,7 @@ static int kgsl_iommu_sparse_dummy_map(struct kgsl_pagetable *pt,
 		return -ENOMEM;
 
 	for (i = 0; i < count; i++)
-		pages[i] = kgsl_dummy_page;
+		pages[i] = ZERO_PAGE(0);
 
 	ret = sg_alloc_table_from_pages(&sgt, pages, count,
 			0, size, GFP_KERNEL);
@@ -1898,6 +1865,18 @@ static int kgsl_iommu_sparse_dummy_map(struct kgsl_pagetable *pt,
 	kfree(pages);
 
 	return ret;
+}
+
+static struct page *kgsl_iommu_find_mapped_page(struct kgsl_memdesc *memdesc,
+		uint64_t offset)
+{
+	struct kgsl_iommu_pt *iommu_pt = memdesc->pagetable->priv;
+
+	if (IS_ERR_OR_NULL(iommu_pt))
+		return ERR_PTR(-ENODEV);
+
+	return phys_to_page(iommu_iova_to_phys(iommu_pt->domain,
+			memdesc->gpuaddr + offset));
 }
 
 static int _map_to_one_page(struct kgsl_pagetable *pt, uint64_t addr,
@@ -1914,7 +1893,7 @@ static int _map_to_one_page(struct kgsl_pagetable *pt, uint64_t addr,
 
 	/* Find our physaddr offset addr */
 	if (memdesc->pages != NULL)
-		page = memdesc->pages[physoffset >> PAGE_SHIFT];
+		page = kgsl_mmu_find_mapped_page(memdesc, physoffset);
 	else {
 		for_each_sg_page(memdesc->sgt->sgl, &sg_iter,
 				memdesc->sgt->nents, physoffset >> PAGE_SHIFT) {
@@ -1923,7 +1902,7 @@ static int _map_to_one_page(struct kgsl_pagetable *pt, uint64_t addr,
 		}
 	}
 
-	if (page == NULL)
+	if (IS_ERR_OR_NULL(page))
 		return -EINVAL;
 
 	pages = kcalloc(count, sizeof(struct page *), GFP_KERNEL);
@@ -2801,4 +2780,5 @@ static struct kgsl_mmu_pt_ops iommu_pt_ops = {
 	.mmu_map_offset = kgsl_iommu_map_offset,
 	.mmu_unmap_offset = kgsl_iommu_unmap_offset,
 	.mmu_sparse_dummy_map = kgsl_iommu_sparse_dummy_map,
+	.mmu_find_mapped_page = kgsl_iommu_find_mapped_page,
 };

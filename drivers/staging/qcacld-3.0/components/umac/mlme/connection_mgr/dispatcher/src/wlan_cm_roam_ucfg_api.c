@@ -24,6 +24,20 @@
 #include "wlan_cm_roam_ucfg_api.h"
 #include "../../core/src/wlan_cm_roam_offload.h"
 
+bool ucfg_is_roaming_enabled(struct wlan_objmgr_pdev *pdev, uint8_t vdev_id)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+	enum roam_offload_state cur_state;
+
+	cur_state = mlme_get_roam_state(psoc, vdev_id);
+	if (cur_state == WLAN_ROAM_RSO_ENABLED ||
+	    cur_state == WLAN_ROAMING_IN_PROG ||
+	    cur_state == WLAN_ROAM_SYNCH_IN_PROG)
+		return true;
+
+	return false;
+}
+
 QDF_STATUS
 ucfg_user_space_enable_disable_rso(struct wlan_objmgr_pdev *pdev,
 				   uint8_t vdev_id,

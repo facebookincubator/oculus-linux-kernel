@@ -1,6 +1,7 @@
 #include "dsi-panel-boe-lcd-dsc-video.dtsi"
 #include "dsi-panel-boe-lcd-video.dtsi"
 #include "dsi-panel-boe-spi-blu-dsc-video.dtsi"
+#include "dsi-panel-nt57950-uoled-dsc-video.dtsi"
 
 &dsi_dual_boe_lcd_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
@@ -54,7 +55,7 @@
 
 &dsi_dual_boe_spi_blu_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_local_dimming";
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <255>;
 	qcom,mdss-brightness-max-level = <255>;
@@ -70,6 +71,32 @@
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [
 				00 24 0A 0A 25 1A 0B
+				13 06 02 04 00 1E 1A
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_dual_nt57950_uoled_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <255>;
+	qcom,mdss-brightness-max-level = <255>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,dsi-select-clocks =
+		"mux_byte_clk0", "mux_pixel_clk0",
+		"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 24 0A 0A 26 1A 0D
 				13 06 02 04 00 1E 1A
 			];
 			qcom,display-topology = <4 4 2>;
@@ -97,6 +124,10 @@
 	qcom,pfm-peak-auto-adj-disabled;
 };
 
+&lcdb_bst_vreg {
+	qcom,bst-ilim-ma = <600>;
+};
+
 &lcdb_ldo_vreg {
 	regulator-min-microvolt = <6000000>;
 	regulator-max-microvolt = <6000000>;
@@ -119,6 +150,11 @@
 		qcom,supply-disable-load = <0>;
 		qcom,supply-post-on-sleep = <0>;
 	};
+};
+
+&mdss_mdp {
+	/* set mdp clk rate to max for TJ3 panels */
+	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
 };
 
 &sde_dsi {

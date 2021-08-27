@@ -1581,7 +1581,8 @@ void hdd_indicate_active_ndp_cnt(struct wlan_objmgr_psoc *psoc,
 
 	adapter = wlan_hdd_get_adapter_from_vdev(psoc, vdev_id);
 	if (adapter && cfg_nan_is_roam_config_disabled(psoc)) {
-		hdd_debug("vdev_id:%d ndp active sessions %d", vdev_id, cnt);
+		hdd_debug("vdev_id:%d%s active ndp sessions present", vdev_id,
+			  cnt ? "" : " no more");
 		if (!cnt)
 			wlan_hdd_enable_roaming(adapter, RSO_NDP_CON_ON_NDI);
 		else
@@ -1653,6 +1654,28 @@ hdd_init_get_sta_in_ll_stats_config(struct hdd_adapter *adapter)
 }
 #endif /* FEATURE_CLUB_LL_STATS_AND_GET_STATION */
 
+#ifdef WLAN_FEATURE_IGMP_OFFLOAD
+static void
+hdd_intersect_igmp_offload_setting(struct wlan_objmgr_psoc *psoc,
+				   struct wma_tgt_services *cfg)
+{
+	bool igmp_offload_enable;
+
+	igmp_offload_enable =
+		ucfg_pmo_is_igmp_offload_enabled(psoc);
+	ucfg_pmo_set_igmp_offload_enabled(psoc,
+					  igmp_offload_enable &
+					  cfg->igmp_offload_enable);
+	hdd_info("fw cap to handle igmp %d igmp_offload_enable ini %d",
+		 cfg->igmp_offload_enable, igmp_offload_enable);
+}
+#else
+static inline void
+hdd_intersect_igmp_offload_setting(struct wlan_objmgr_psoc *psoc,
+				   struct wma_tgt_services *cfg)
+{}
+#endif
+
 static void hdd_update_tgt_services(struct hdd_context *hdd_ctx,
 				    struct wma_tgt_services *cfg)
 {
@@ -1685,6 +1708,10 @@ static void hdd_update_tgt_services(struct hdd_context *hdd_ctx,
 			ucfg_pmo_is_arp_offload_enabled(hdd_ctx->psoc);
 	ucfg_pmo_set_arp_offload_enabled(hdd_ctx->psoc,
 					 arp_offload_enable & cfg->arp_offload);
+
+	/* Intersect igmp offload ini configuration and fw cap*/
+	hdd_intersect_igmp_offload_setting(hdd_ctx->psoc, cfg);
+
 #ifdef FEATURE_WLAN_SCAN_PNO
 	/* PNO offload */
 	hdd_debug("PNO Capability in f/w = %d", cfg->pno_offload);
@@ -3446,6 +3473,8 @@ static void hdd_register_policy_manager_callback(
 	hdd_cbacks.hdd_get_ap_6ghz_capable = hdd_get_ap_6ghz_capable;
 	hdd_cbacks.wlan_hdd_indicate_active_ndp_cnt =
 				hdd_indicate_active_ndp_cnt;
+	hdd_cbacks.wlan_get_ap_prefer_conc_ch_params =
+			wlan_get_ap_prefer_conc_ch_params;
 
 	if (QDF_STATUS_SUCCESS !=
 	    policy_mgr_register_hdd_cb(psoc, &hdd_cbacks)) {
@@ -3900,6 +3929,8 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 		return 0;
 	}
 
+	cds_set_driver_state_module_stop(false);
+
 	switch (hdd_ctx->driver_status) {
 	case DRIVER_MODULES_UNINITIALIZED:
 		hdd_nofl_debug("Wlan transitioning (UNINITIALIZED -> CLOSED)");
@@ -4091,6 +4122,7 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 		wlan_hdd_init_tx_rx_histogram(hdd_ctx);
 
 		hdd_set_hif_init_phase(hif_ctx, false);
+		hdd_hif_set_enable_detection(hif_ctx, true);
 
 		break;
 
@@ -4175,6 +4207,7 @@ release_lock:
 	cds_shutdown_notifier_purge();
 	hdd_check_for_leaks(hdd_ctx, reinit);
 	hdd_debug_domain_set(QDF_DEBUG_DOMAIN_INIT);
+	cds_set_driver_state_module_stop(true);
 
 	hdd_exit();
 
@@ -4516,7 +4549,6 @@ static void hdd_uninit(struct net_device *dev)
 	hdd_deinit_adapter(hdd_ctx, adapter, true);
 
 	/* after uninit our adapter structure will no longer be valid */
-	adapter->dev = NULL;
 	adapter->magic = 0;
 
 exit:
@@ -6472,7 +6504,10 @@ int hdd_set_fw_params(struct hdd_adapter *adapter)
 		goto error;
 	}
 
-	hdd_set_fw_log_params(hdd_ctx, adapter);
+	if (!hdd_ctx->is_fw_dbg_log_levels_configured) {
+		hdd_set_fw_log_params(hdd_ctx, adapter);
+		hdd_ctx->is_fw_dbg_log_levels_configured = true;
+	}
 
 	ret = hdd_send_coex_config_params(hdd_ctx, adapter);
 	if (ret) {
@@ -8560,7 +8595,12 @@ void hdd_adapter_dev_put_debug(struct hdd_adapter *adapter,
 		QDF_BUG(0);
 	}
 
-	dev_put(adapter->dev);
+	if (adapter->dev) {
+		dev_put(adapter->dev);
+	} else {
+		hdd_err("adapter->dev is NULL");
+		QDF_BUG(0);
+	}
 }
 
 QDF_STATUS hdd_get_front_adapter(struct hdd_context *hdd_ctx,
@@ -8727,7 +8767,7 @@ QDF_STATUS hdd_adapter_iterate(hdd_adapter_iterate_cb cb, void *context)
 	}
 	qdf_spin_unlock_bh(&hdd_ctx->hdd_adapter_lock);
 
-	for (i = 0; i < n_cache - 1; i++) {
+	for (i = 0; i < n_cache; i++) {
 		adapter = hdd_adapter_get_by_reference(hdd_ctx, cache[i]);
 		if (!adapter) {
 			/*
@@ -12234,11 +12274,21 @@ static void hdd_init_runtime_pm(struct hdd_config *config,
 {
 	config->runtime_pm = cfg_get(psoc, CFG_ENABLE_RUNTIME_PM);
 }
+
+bool hdd_is_runtime_pm_enabled(struct hdd_context *hdd_ctx)
+{
+	return hdd_ctx->config->runtime_pm != hdd_runtime_pm_disabled;
+}
 #else
 static void hdd_init_runtime_pm(struct hdd_config *config,
 				struct wlan_objmgr_psoc *psoc)
 
 {
+}
+
+bool hdd_is_runtime_pm_enabled(struct hdd_context *hdd_ctx)
+{
+	return false;
 }
 #endif
 
@@ -13773,6 +13823,7 @@ static int hdd_features_init(struct hdd_context *hdd_ctx)
 	int ret;
 	mac_handle_t mac_handle;
 	bool b_cts2self, is_imps_enabled;
+	bool rf_test_mode;
 
 	hdd_enter();
 
@@ -13859,6 +13910,18 @@ static int hdd_features_init(struct hdd_context *hdd_ctx)
 
 	wlan_hdd_init_chan_info(hdd_ctx);
 	wlan_hdd_twt_init(hdd_ctx);
+
+	status = ucfg_mlme_is_rf_test_mode_enabled(hdd_ctx->psoc,
+						   &rf_test_mode);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		hdd_err("Get rf test mode failed");
+		return QDF_STATUS_E_FAILURE;
+	}
+	if (!rf_test_mode) {
+		wlan_cm_set_check_6ghz_security(hdd_ctx->psoc, true);
+		wlan_cm_set_6ghz_key_mgmt_mask(hdd_ctx->psoc,
+					       ALLOWED_KEYMGMT_6G_MASK);
+	}
 
 	hdd_exit();
 	return 0;
@@ -14297,7 +14360,7 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 		return -EINVAL;
 	}
 
-	cds_set_module_stop_in_progress(true);
+	cds_set_driver_state_module_stop(true);
 
 	debugfs_threads = hdd_return_debugfs_threads_count();
 
@@ -14307,7 +14370,7 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 
 		if (IS_IDLE_STOP && !ftm_mode) {
 			hdd_psoc_idle_timer_start(hdd_ctx);
-			cds_set_module_stop_in_progress(false);
+			cds_set_driver_state_module_stop(false);
 
 			hdd_bus_bw_compute_timer_stop(hdd_ctx);
 			return -EAGAIN;
@@ -14473,11 +14536,10 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 	hdd_ctx->imps_enabled = false;
 	hdd_ctx->is_dual_mac_cfg_updated = false;
 	hdd_ctx->driver_status = DRIVER_MODULES_CLOSED;
+	hdd_ctx->is_fw_dbg_log_levels_configured = false;
 	hdd_debug("Wlan transitioned (now CLOSED)");
 
 done:
-	cds_set_module_stop_in_progress(false);
-
 	hdd_exit();
 
 	return ret;
@@ -17887,7 +17949,7 @@ static int hdd_update_dfs_config(struct hdd_context *hdd_ctx)
  *
  * Return: 0 if success else err
  */
-static int hdd_update_scan_config(struct hdd_context *hdd_ctx)
+int hdd_update_scan_config(struct hdd_context *hdd_ctx)
 {
 	struct wlan_objmgr_psoc *psoc = hdd_ctx->psoc;
 	struct scan_user_cfg scan_cfg;

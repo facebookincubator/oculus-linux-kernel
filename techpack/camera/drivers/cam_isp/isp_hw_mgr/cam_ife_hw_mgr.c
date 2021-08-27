@@ -2695,6 +2695,7 @@ void cam_ife_cam_cdm_callback(uint32_t handle, void *userdata,
 	if (status == CAM_CDM_CB_STATUS_BL_SUCCESS) {
 		complete_all(&ctx->config_done_complete);
 		atomic_set(&ctx->cdm_done, 1);
+		ctx->last_cdm_done_req = cookie;
 		if (g_ife_hw_mgr.debug_cfg.per_req_reg_dump)
 			cam_ife_mgr_handle_reg_dump(ctx,
 				hw_update_data->reg_dump_buf_desc,
@@ -3066,6 +3067,7 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	ife_ctx->cdm_handle = cdm_acquire.handle;
 	ife_ctx->cdm_ops = cdm_acquire.ops;
 	atomic_set(&ife_ctx->cdm_done, 1);
+	ife_ctx->last_cdm_done_req = 0;
 
 	for (i = 0; i < acquire_hw_info->num_inputs; i++) {
 		if (ife_ctx->is_offline)
@@ -3726,6 +3728,7 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 	struct cam_ife_hw_mgr_ctx *ctx;
 	struct cam_isp_prepare_hw_update_data *hw_update_data;
 	unsigned long rem_jiffies = 0;
+	bool cdm_hang_detect = false;
 
 	if (!hw_mgr_priv || !config_hw_args) {
 		CAM_ERR(CAM_ISP,
@@ -3760,6 +3763,31 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 
 	CAM_DBG(CAM_ISP, "Ctx[%pK][%d] : Applying Req %lld, init_packet=%d",
 		ctx, ctx->ctx_index, cfg->request_id, cfg->init_packet);
+
+	if (cfg->reapply && cfg->cdm_reset_before_apply) {
+		if (ctx->last_cdm_done_req < cfg->request_id) {
+			cdm_hang_detect =
+				cam_cdm_detect_hang_error(ctx->cdm_handle);
+			CAM_ERR_RATE_LIMIT(CAM_ISP,
+				"CDM callback not received for req: %lld, last_cdm_done_req: %lld, cdm_hang_detect: %d",
+				cfg->request_id, ctx->last_cdm_done_req,
+				cdm_hang_detect);
+			rc = cam_cdm_reset_hw(ctx->cdm_handle);
+			if (rc) {
+				CAM_ERR_RATE_LIMIT(CAM_ISP,
+					"CDM reset unsuccessful for req: %lld. ctx: %d, rc: %d",
+					cfg->request_id, ctx->ctx_index, rc);
+				ctx->last_cdm_done_req = 0;
+				return rc;
+			}
+		} else {
+			CAM_ERR_RATE_LIMIT(CAM_ISP,
+				"CDM callback received, should wait for buf done for req: %lld",
+				cfg->request_id);
+			return -EALREADY;
+		}
+		ctx->last_cdm_done_req = 0;
+	}
 
 	for (i = 0; i < CAM_IFE_HW_NUM_MAX; i++) {
 		if (hw_update_data->bw_config[i] != NULL) {
@@ -4607,6 +4635,7 @@ static int cam_ife_mgr_release_hw(void *hw_mgr_priv,
 	ctx->is_fe_enabled = false;
 	ctx->is_offline = false;
 	ctx->dual_ife_irq_mismatch_cnt = 0;
+	ctx->last_cdm_done_req = 0;
 	atomic_set(&ctx->overflow_pending, 0);
 	for (i = 0; i < CAM_IFE_HW_NUM_MAX; i++) {
 		ctx->sof_cnt[i] = 0;
@@ -6544,6 +6573,10 @@ static int cam_ife_mgr_cmd(void *hw_mgr_priv, void *cmd_args)
 			else
 				isp_hw_cmd_args->u.packet_op_code =
 				CAM_ISP_PACKET_UPDATE_DEV;
+			break;
+		case CAM_ISP_HW_MGR_GET_LAST_CDM_DONE:
+			isp_hw_cmd_args->u.last_cdm_done =
+				ctx->last_cdm_done_req;
 			break;
 		default:
 			CAM_ERR(CAM_ISP, "Invalid HW mgr command:0x%x",

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -5593,8 +5593,12 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		bolero_set_port_map(component, ARRAY_SIZE(sm_port_map_v2),
 				    sm_port_map_v2);
 	} else {
-		bolero_set_port_map(component, ARRAY_SIZE(sm_port_map),
-				    sm_port_map);
+		if ((strnstr(rtd->card->name, "xrfusionult", strlen(rtd->card->name))))
+			bolero_set_port_map(component, ARRAY_SIZE(sm_port_map_us),
+					sm_port_map_us);
+		else
+			bolero_set_port_map(component, ARRAY_SIZE(sm_port_map),
+					sm_port_map);
 	}
 #endif
 

@@ -558,6 +558,65 @@ const char *hif_ipci_get_irq_name(int irq_no)
 	return "pci-dummy";
 }
 
+#ifdef HIF_CPU_PERF_AFFINE_MASK
+static void hif_ipci_ce_irq_set_affinity_hint(struct hif_softc *scn)
+{
+	int ret;
+	unsigned int cpus;
+	struct HIF_CE_state *ce_sc = HIF_GET_CE_STATE(scn);
+	struct hif_ipci_softc *ipci_sc = HIF_GET_IPCI_SOFTC(scn);
+	struct CE_attr *host_ce_conf;
+	int ce_id;
+	qdf_cpu_mask ce_cpu_mask;
+
+	host_ce_conf = ce_sc->host_ce_config;
+	qdf_cpumask_clear(&ce_cpu_mask);
+
+	qdf_for_each_online_cpu(cpus) {
+		if (qdf_topology_physical_package_id(cpus) ==
+			CPU_CLUSTER_TYPE_PERF) {
+			qdf_cpumask_set_cpu(cpus,
+					    &ce_cpu_mask);
+		}
+	}
+	if (qdf_cpumask_empty(&ce_cpu_mask)) {
+		hif_err_rl("Empty cpu_mask, unable to set CE IRQ affinity");
+		return;
+	}
+	for (ce_id = 0; ce_id < scn->ce_count; ce_id++) {
+		if (host_ce_conf[ce_id].flags & CE_ATTR_DISABLE_INTR)
+			continue;
+		qdf_cpumask_clear(&ipci_sc->ce_irq_cpu_mask[ce_id]);
+		qdf_cpumask_copy(&ipci_sc->ce_irq_cpu_mask[ce_id],
+				 &ce_cpu_mask);
+		qdf_dev_modify_irq_status(ipci_sc->ce_msi_irq_num[ce_id],
+					  IRQ_NO_BALANCING, 0);
+		ret = qdf_dev_set_irq_affinity(
+		       ipci_sc->ce_msi_irq_num[ce_id],
+		       (struct qdf_cpu_mask *)&ipci_sc->ce_irq_cpu_mask[ce_id]);
+		qdf_dev_modify_irq_status(ipci_sc->ce_msi_irq_num[ce_id],
+					  0, IRQ_NO_BALANCING);
+		if (ret)
+			hif_err_rl("Set affinity %*pbl fails for CE IRQ %d",
+				   qdf_cpumask_pr_args(
+					&ipci_sc->ce_irq_cpu_mask[ce_id]),
+					ipci_sc->ce_msi_irq_num[ce_id]);
+		else
+			hif_debug_rl("Set affinity %*pbl for CE IRQ: %d",
+				     qdf_cpumask_pr_args(
+				     &ipci_sc->ce_irq_cpu_mask[ce_id]),
+				     ipci_sc->ce_msi_irq_num[ce_id]);
+	}
+}
+
+void hif_ipci_config_irq_affinity(struct hif_softc *scn)
+{
+	hif_core_ctl_set_boost(true);
+	/* Set IRQ affinity for CE interrupts*/
+	hif_ipci_ce_irq_set_affinity_hint(scn);
+}
+#endif /* #ifdef HIF_CPU_PERF_AFFINE_MASK */
+
 int hif_ipci_configure_grp_irq(struct hif_softc *scn,
 			       struct hif_exec_context *hif_ext_group)
 {
@@ -819,11 +878,54 @@ void hif_print_ipci_stats(struct hif_ipci_softc *ipci_handle)
 #ifdef FEATURE_HAL_DELAYED_REG_WRITE
 int hif_prevent_link_low_power_states(struct hif_opaque_softc *hif)
 {
+	struct hif_softc *scn = HIF_GET_SOFTC(hif);
+	struct hif_ipci_softc *ipci_scn = HIF_GET_IPCI_SOFTC(scn);
+	uint32_t timeout = 0;
+
+	while (pld_is_pci_ep_awake(scn->qdf_dev->dev) &&
+	       timeout <= EP_WAKE_RESET_DELAY_TIMEOUT_US) {
+		qdf_sleep_us(EP_WAKE_RESET_DELAY_US);
+		timeout += EP_WAKE_RESET_DELAY_US;
+	}
+
+	if (pld_is_pci_ep_awake(scn->qdf_dev->dev)) {
+		hif_err_rl(" EP state reset is not done to prevent l1");
+		ipci_scn->ep_awake_reset_fail++;
+		return 0;
+	}
+
+	if (pld_prevent_l1(scn->qdf_dev->dev)) {
+		hif_err_rl("pld prevent l1 failed");
+		ipci_scn->prevent_l1_fail++;
+		return 0;
+	}
+
+	ipci_scn->prevent_l1 = true;
+	timeout = 0;
+	while (!pld_is_pci_ep_awake(scn->qdf_dev->dev) &&
+	       timeout <= EP_WAKE_DELAY_TIMEOUT_US) {
+		qdf_sleep_us(EP_WAKE_DELAY_US);
+		timeout += EP_WAKE_DELAY_US;
+	}
+
+	if (pld_is_pci_ep_awake(scn->qdf_dev->dev) <= 0) {
+		hif_err_rl("Unable to wakeup pci ep");
+		ipci_scn->ep_awake_set_fail++;
+		return  0;
+	}
+
 	return 0;
 }
 
 void hif_allow_link_low_power_states(struct hif_opaque_softc *hif)
 {
+	struct hif_softc *scn = HIF_GET_SOFTC(hif);
+	struct hif_ipci_softc *ipci_scn = HIF_GET_IPCI_SOFTC(scn);
+
+	if (qdf_likely(ipci_scn->prevent_l1)) {
+		pld_allow_l1(scn->qdf_dev->dev);
+		ipci_scn->prevent_l1 = false;
+	}
 }
 #endif
 

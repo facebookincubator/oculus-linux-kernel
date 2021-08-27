@@ -89,10 +89,28 @@
 	qcom,panel-sec-reset-gpio = <&tlmm 57 0>;
 };
 
+&dsi_dual_boe_spi_blu_dsc_video {
+	oculus,backlight = <&blu_left &blu_right>;
+};
+
 &dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@0 {
+		qcom,supply-pre-off-sleep = <15>;
+	};
+
 	qcom,panel-supply-entry@3 {
 		qcom,supply-min-voltage = <3120000>;
 		qcom,supply-max-voltage = <3120000>;
+	};
+
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "blu-spi";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
 	};
 };
 
@@ -157,12 +175,6 @@
 &pm8150a_l11 {
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 	qcom,init-voltage = <3120000>;
-};
-
-&pm8150b_adc_tm {
-	pcb2_therm@53 {
-		label = "pogo_therm";
-	};
 };
 
 &pm8150b_charger {
@@ -240,8 +252,12 @@
 };
 
 &pm8150b_vadc {
-	pcb2_therm@53 {
+	pogo_therm@53 {
+		reg = <ADC_GPIO2_PU2>;
 		label = "pogo_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
 	};
 
 	psns_vol@15 {
@@ -251,19 +267,37 @@
 	};
 };
 
+&pm8150b_adc_tm {
+	pogo_therm@53 {
+		reg = <ADC_GPIO2_PU2>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+};
+
 &pm8150l_adc_tm {
-	soc_therm@4e {
-		label = "dram_therm";
+	dram_therm@4e {
+		reg = <ADC_AMUX_THM2_PU2>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
 	};
 };
 
 &pm8150l_vadc {
-	depth_therm@54 {
-		label = "usbc_therm";
+	dram_therm@4e {
+		reg = <ADC_AMUX_THM2_PU2>;
+		label = "dram_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
 	};
 
-	soc_therm@4e {
-		label = "dram_therm";
+	usbc_therm@54 {
+		reg = <ADC_GPIO3_PU2>;
+		label = "usbc_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
 	};
 };
 
@@ -317,7 +351,7 @@
 			oculus,swd-io = <&tlmm 120 0>;
 
 			oculus,swd-flavor = "nrf52832";
-			oculus,fw-path = "syncboss_P2_BOARD.bin";
+			oculus,fw-path = "syncboss.bin";
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;
@@ -334,7 +368,7 @@
 		status = "disabled";
 	};
 
-	blu_left {
+	blu_left: blu_left@0 {
 		compatible = "oculus,seacliff-blu-spi";
 		reg = <0x00>;
 		spi-max-frequency = <15000000>;
@@ -380,7 +414,7 @@
 	status = "ok";
 	qcom,rt;
 
-	blu_right {
+	blu_right: blu_right@0 {
 		compatible = "oculus,seacliff-blu-spi";
 		reg = <0x00>;
 		spi-max-frequency = <15000000>;
@@ -429,6 +463,7 @@
 };
 
 &sde_dsi {
+	blu-spi-supply = <&display_panel_blu_en>;
 	pinctrl-0 = <&seacliff_blu_en_active>;
 	pinctrl-1 = <&seacliff_blu_en_suspend>;
 	avdd-supply = <>;
@@ -438,6 +473,21 @@
 	pinctrl-0 = <>;
 	pinctrl-1 = <>;
 	avdd-supply = <>;
+};
+
+&soc {
+	display_panel_blu_en: blu_gpio_regulator@1 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_blu_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 91 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_blu_en_default>;
+	};
 };
 
 &syncboss_float_swd {
@@ -496,10 +546,6 @@
 		};
 	};
 
-	pcb2-usr {
-		status = "disabled";
-	};
-
 	pogo-usr {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
@@ -512,10 +558,6 @@
 				type = "passive";
 			};
 		};
-	};
-
-	soc-usr {
-		status = "disabled";
 	};
 };
 
@@ -546,14 +588,28 @@
 		};
 	};
 
-	seacliff_blu_en_active: seacliff_blu_en_active {
+	display_panel_blu_en_default: display_panel_blu_en_default {
 		mux {
-			pins = "gpio88", "gpio91";
+			pins = "gpio91";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio88", "gpio91";
+			pins = "gpio91";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	seacliff_blu_en_active: seacliff_blu_en_active {
+		mux {
+			pins = "gpio88";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio88";
 			drive-strength = <8>;
 			output-high;
 			bias-pull-up;
@@ -562,12 +618,12 @@
 
 	seacliff_blu_en_suspend: seacliff_blu_en_suspend {
 		mux {
-			pins = "gpio88", "gpio91";
+			pins = "gpio88";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio88", "gpio91";
+			pins = "gpio88";
 			drive-strength = <8>;
 			output-low;
 			bias-pull-down;

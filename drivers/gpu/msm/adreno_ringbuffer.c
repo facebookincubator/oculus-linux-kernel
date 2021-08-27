@@ -143,12 +143,23 @@ static void adreno_profile_submit_time(struct adreno_submit_time *time)
 
 	if (entry) {
 		struct kgsl_drawobj_profiling_buffer *profile_buffer;
+		struct page *page;
+		void *kptr;
+		unsigned long offset;
 
-		profile_buffer = kgsl_gpuaddr_to_vaddr(&entry->memdesc,
-					cmdobj->profiling_buffer_gpuaddr);
-
-		if (profile_buffer == NULL)
+		offset = cmdobj->profiling_buffer_gpuaddr -
+				entry->memdesc.gpuaddr;
+		page = kgsl_mmu_find_mapped_page(&entry->memdesc, offset);
+		if (IS_ERR_OR_NULL(page) || page == ZERO_PAGE(0))
 			return;
+
+		kptr = vm_map_ram(&page, 1, -1,
+				pgprot_writecombine(PAGE_KERNEL));
+		if (kptr == NULL)
+			return;
+
+		profile_buffer = (struct kgsl_drawobj_profiling_buffer *)(
+				(unsigned long)kptr + offset_in_page(offset));
 
 		/* Return kernel clock time to the the client if requested */
 		if (drawobj->flags & KGSL_DRAWOBJ_PROFILING_KTIME) {
@@ -164,7 +175,7 @@ static void adreno_profile_submit_time(struct adreno_submit_time *time)
 
 		profile_buffer->gpu_ticks_queued = time->ticks;
 
-		kgsl_memdesc_unmap(&entry->memdesc);
+		vm_unmap_ram(kptr, 1);
 	}
 }
 

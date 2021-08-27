@@ -1044,6 +1044,9 @@ struct join_req {
 	struct supported_channels supportedChannels;
 	bool enable_bcast_probe_rsp;
 	bool sae_pmk_cached;
+	bool same_ctry_code;  /* If AP Country IE has same country code as */
+	/* STA programmed country */
+	uint8_t ap_power_type_6g;  /* AP power type for 6G (LPI, SP, or VLP) */
 	/* Pls make this as last variable in struct */
 	bool force_24ghz_in_ht20;
 	bool force_rsne_override;
@@ -1890,15 +1893,6 @@ struct sir_delete_session {
 	uint16_t type;
 	uint16_t msg_len;
 	uint8_t vdev_id;
-};
-
-/* Beacon Interval */
-struct change_bi_params {
-	uint16_t messageType;
-	uint16_t length;
-	uint16_t beaconInterval;        /* Beacon Interval */
-	struct qdf_mac_addr bssid;
-	uint8_t sessionId;      /* Session ID */
 };
 
 #ifdef QCA_HT_2040_COEX
@@ -2937,6 +2931,7 @@ struct roam_offload_synch_ind {
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 struct handoff_failure_ind {
 	uint8_t vdev_id;
+	struct qdf_mac_addr bssid;
 };
 
 struct roam_offload_synch_fail {

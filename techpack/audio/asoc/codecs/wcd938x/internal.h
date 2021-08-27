@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _WCD938X_INTERNAL_H
@@ -103,6 +103,7 @@ struct wcd938x_priv {
 	int ear_rx_path;
 	bool dev_up;
 	bool usbc_hs_status;
+	u32 dmic_rate;
 };
 
 struct wcd938x_micbias_setting {

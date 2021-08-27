@@ -108,6 +108,8 @@ struct kgsl_mmu_pt_ops {
 	int (*mmu_sparse_dummy_map)(struct kgsl_pagetable *pt,
 			struct kgsl_memdesc *memdesc, uint64_t offset,
 			uint64_t size);
+	struct page* (*mmu_find_mapped_page)(struct kgsl_memdesc *memdesc,
+			uint64_t offset);
 };
 
 /*
@@ -240,6 +242,9 @@ struct kgsl_memdesc *kgsl_mmu_get_qtimer_global_entry(
 
 int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 		struct kgsl_memdesc *memdesc, uint64_t offset, uint64_t size);
+
+struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
+		uint64_t offset);
 
 /*
  * Static inline functions of MMU that simply call the SMMU specific

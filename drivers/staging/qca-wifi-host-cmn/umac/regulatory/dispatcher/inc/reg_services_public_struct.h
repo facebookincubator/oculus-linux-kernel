@@ -297,7 +297,7 @@ enum channel_enum {
 	CHAN_ENUM_2467,
 	CHAN_ENUM_2472,
 	CHAN_ENUM_2484,
-
+#ifdef CONFIG_49GHZ_CHAN
 	CHAN_ENUM_4912,
 	CHAN_ENUM_4915,
 	CHAN_ENUM_4917,
@@ -340,7 +340,7 @@ enum channel_enum {
 	CHAN_ENUM_5057,
 	CHAN_ENUM_5060,
 	CHAN_ENUM_5080,
-
+#endif /* CONFIG_49GHZ_CHAN */
 	CHAN_ENUM_5180,
 	CHAN_ENUM_5200,
 	CHAN_ENUM_5220,
@@ -460,9 +460,17 @@ enum channel_enum {
 	MAX_24GHZ_CHANNEL = CHAN_ENUM_2484,
 	NUM_24GHZ_CHANNELS = (MAX_24GHZ_CHANNEL - MIN_24GHZ_CHANNEL + 1),
 
+	INVALID_CHANNEL = 0xBAD,
+
+#ifdef CONFIG_49GHZ_CHAN
 	MIN_49GHZ_CHANNEL = CHAN_ENUM_4912,
 	MAX_49GHZ_CHANNEL = CHAN_ENUM_5080,
 	NUM_49GHZ_CHANNELS = (MAX_49GHZ_CHANNEL - MIN_49GHZ_CHANNEL + 1),
+#else
+	MIN_49GHZ_CHANNEL = INVALID_CHANNEL,
+	MAX_49GHZ_CHANNEL = INVALID_CHANNEL,
+	NUM_49GHZ_CHANNELS = 0,
+#endif /* CONFIG_49GHZ_CHAN */
 
 	MIN_5GHZ_CHANNEL = CHAN_ENUM_5180,
 	MAX_5GHZ_CHANNEL = CHAN_ENUM_5885,
@@ -482,7 +490,11 @@ enum channel_enum {
 	MAX_5DOT9_CHANNEL = CHAN_ENUM_5885,
 	NUM_5DOT9_CHANNELS = (MAX_5DOT9_CHANNEL - MIN_5DOT9_CHANNEL + 1),
 
-	INVALID_CHANNEL = 0xBAD,
+#ifdef CONFIG_49GHZ_CHAN
+#define BAND_5GHZ_START_CHANNEL MIN_49GHZ_CHANNEL
+#else
+#define BAND_5GHZ_START_CHANNEL MIN_5GHZ_CHANNEL
+#endif /* CONFIG_49GHZ_CHAN */
 
 #ifdef DISABLE_UNII_SHARED_BANDS
 	MIN_UNII_1_BAND_CHANNEL = CHAN_ENUM_5180,
@@ -912,7 +924,6 @@ struct cur_reg_rule {
  * @num_phy: number of phy
  * @phy_id: phy id
  * @reg_dmn_pair: reg domain pair
- * @reg_6g_superid: 6G super domain id
  * @ctry_code: country code
  * @alpha2: country alpha2
  * @offload_enabled: offload enabled
@@ -926,12 +937,12 @@ struct cur_reg_rule {
  * @num_5g_reg_rules: number 5G  and 6G reg rules
  * @reg_rules_2g_ptr: ptr to 2G reg rules
  * @reg_rules_5g_ptr: ptr to 5G reg rules
- * @super_dmn_id: 6G super domain ID
  * @client_type: type of client
  * @rnr_tpe_usable: if RNR TPE octet is usable for country
  * @unspecified_ap_usable: if not set, AP usable for country
  * @domain_code_6g_ap: domain code for 6G AP
  * @domain_code_6g_client: domain code for 6G client in SP mode
+ * @domain_code_6g_super_id: 6G super domain ID
  * @min_bw_6g_ap: minimum 6G bw for AP
  * @max_bw_6g_ap: maximum 6G bw for AP
  * @min_bw_6g_client: list of minimum 6G bw for clients
@@ -947,7 +958,6 @@ struct cur_regulatory_info {
 	uint8_t num_phy;
 	uint8_t phy_id;
 	uint16_t reg_dmn_pair;
-	uint16_t reg_6g_superid;
 	uint16_t ctry_code;
 	uint8_t alpha2[REG_ALPHA2_LEN + 1];
 	bool offload_enabled;
@@ -961,7 +971,6 @@ struct cur_regulatory_info {
 	uint32_t num_5g_reg_rules;
 	struct cur_reg_rule *reg_rules_2g_ptr;
 	struct cur_reg_rule *reg_rules_5g_ptr;
-	uint16_t super_dmn_id;
 	enum reg_6g_client_type client_type;
 	bool rnr_tpe_usable;
 	bool unspecified_ap_usable;
@@ -1135,6 +1144,7 @@ enum direction {
  * @def_region_domain: default reg domain
  * @def_country_code: default country code
  * @reg_dmn_pair: reg domain pair
+ * @reg_6g_superid: 6G super domain ID
  * @ctry_code: country code
  * @reg_rules: regulatory rules
  * @client_type: type of client
@@ -1155,6 +1165,7 @@ struct mas_chan_params {
 	uint16_t def_region_domain;
 	uint16_t def_country_code;
 	uint32_t reg_dmn_pair;
+	uint16_t reg_6g_superid;
 	uint16_t ctry_code;
 	struct reg_rule_info reg_rules;
 #ifdef CONFIG_BAND_6GHZ

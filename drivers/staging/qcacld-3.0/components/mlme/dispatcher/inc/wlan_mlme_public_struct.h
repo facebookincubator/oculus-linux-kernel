@@ -94,6 +94,9 @@
  */
 #define AP_OFF_RSSI_OFFSET 20
 
+/* Default beacon interval of 100 ms */
+#define CUSTOM_CONC_GO_BI 100
+
 /**
  * struct mlme_cfg_str - generic structure for all mlme CFG string items
  *
@@ -1228,6 +1231,7 @@ struct wlan_mlme_ratemask {
  * @dual_sta_roam_fw_support: Firmware support for dual sta roaming feature
  * @sae_connect_retries: sae connect retry bitmask
  * @wls_6ghz_capable: wifi location service(WLS) is 6ghz capable
+ * @enabled_rf_test_mode: Enable/disable the RF test mode config
  * @monitor_mode_concurrency: Monitor mode concurrency supported
  * @ocv_support: FW supports OCV or not
  */
@@ -1271,6 +1275,7 @@ struct wlan_mlme_generic {
 	bool dual_sta_roam_fw_support;
 	uint32_t sae_connect_retries;
 	bool wls_6ghz_capable;
+	bool enabled_rf_test_mode;
 	enum monitor_mode_concurrency monitor_mode_concurrency;
 	bool ocv_support;
 };
@@ -1358,6 +1363,8 @@ struct wlan_mlme_acs {
  * @is_all_twt_tgt_cap_enabled: support for all twt enable/disable
  * @is_twt_statistics_tgt_cap_enabled: support for twt statistics
  * @twt_congestion_timeout: congestion timeout value
+ * @enable_twt_24ghz: Enable/disable host TWT when STA is connected in
+ * 2.4Ghz
  */
 struct wlan_mlme_cfg_twt {
 	bool is_twt_enabled;
@@ -1370,6 +1377,7 @@ struct wlan_mlme_cfg_twt {
 	bool is_all_twt_tgt_cap_enabled;
 	bool is_twt_statistics_tgt_cap_enabled;
 	uint32_t twt_congestion_timeout;
+	bool enable_twt_24ghz;
 };
 
 /**
@@ -2084,6 +2092,7 @@ struct mlme_power_usage {
  * @current_tx_power_level: current tx power level
  * @local_power_constraint: local power constraint
  * @use_local_tpe: preference to use local or regulatory TPE
+ * @skip_tpe: option to not consider TPE values in 2.4G/5G bands
  */
 struct wlan_mlme_power {
 	struct mlme_max_tx_power_24 max_tx_power_24;
@@ -2096,6 +2105,7 @@ struct wlan_mlme_power {
 	uint8_t current_tx_power_level;
 	uint8_t local_power_constraint;
 	bool use_local_tpe;
+	bool skip_tpe;
 };
 
 /*
@@ -2480,4 +2490,21 @@ struct wlan_ies {
 	uint16_t len;
 	uint8_t *data;
 };
+
+/**
+ * struct wlan_change_bi - Message struct to update beacon interval
+ * @message_type: type of message
+ * @length: length of message
+ * @beacon_interval: beacon interval to update to (seconds)
+ * @bssid: BSSID of vdev
+ * @session_id: session ID of vdev
+ */
+struct wlan_change_bi {
+	uint16_t message_type;
+	uint16_t length;
+	uint16_t beacon_interval;
+	struct qdf_mac_addr bssid;
+	uint8_t session_id;
+};
+
 #endif

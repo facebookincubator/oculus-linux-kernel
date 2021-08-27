@@ -52,6 +52,9 @@
 #include "wlan_reg_ucfg_api.h"
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_dfs_utils_api.h>
+#include "wlan_crypto_global_def.h"
+#include "wlan_crypto_global_api.h"
+#include "wlan_cm_bss_score_param.h"
 
 #ifdef FEATURE_6G_SCAN_CHAN_SORT_ALGO
 
@@ -915,6 +918,7 @@ QDF_STATUS __scm_handle_bcn_probe(struct scan_bcn_probe_event *bcn)
 	qdf_list_node_t *next_node = NULL;
 	struct scan_cache_node *scan_node;
 	struct wlan_frame_hdr *hdr = NULL;
+	struct wlan_crypto_params sec_params;
 
 	if (!bcn) {
 		scm_err("bcn is NULL");
@@ -1009,6 +1013,60 @@ QDF_STATUS __scm_handle_bcn_probe(struct scan_bcn_probe_event *bcn)
 			util_scan_free_cache_entry(scan_entry);
 			qdf_mem_free(scan_node);
 			continue;
+		}
+		if (wlan_cm_get_check_6ghz_security(psoc) &&
+		    wlan_reg_is_6ghz_chan_freq(scan_entry->channel.chan_freq)) {
+			if (!util_scan_entry_rsn(scan_entry)) {
+				scm_info("Drop frame from "QDF_MAC_ADDR_FMT
+					 ": No RSN IE for 6GHz AP",
+					 QDF_MAC_ADDR_REF(
+						 scan_entry->bssid.bytes));
+				util_scan_free_cache_entry(scan_entry);
+				qdf_mem_free(scan_node);
+				continue;
+			}
+			status = wlan_crypto_rsnie_check(&sec_params,
+					util_scan_entry_rsn(scan_entry));
+			if (QDF_IS_STATUS_ERROR(status)) {
+				scm_info("Drop frame from 6GHz AP "
+					 QDF_MAC_ADDR_FMT
+					 ": RSN IE parse failed, status %d",
+					 QDF_MAC_ADDR_REF(
+						 scan_entry->bssid.bytes),
+					 status);
+				util_scan_free_cache_entry(scan_entry);
+				qdf_mem_free(scan_node);
+				continue;
+			}
+			if ((QDF_HAS_PARAM(sec_params.ucastcipherset,
+					   WLAN_CRYPTO_CIPHER_NONE)) ||
+			    (QDF_HAS_PARAM(sec_params.ucastcipherset,
+					   WLAN_CRYPTO_CIPHER_TKIP)) ||
+			    (QDF_HAS_PARAM(sec_params.ucastcipherset,
+					   WLAN_CRYPTO_CIPHER_WEP_40)) ||
+			    (QDF_HAS_PARAM(sec_params.ucastcipherset,
+					   WLAN_CRYPTO_CIPHER_WEP_104))) {
+				scm_info("Drop frame from "QDF_MAC_ADDR_FMT
+					 ": Invalid sec type %0X for 6GHz AP",
+					 QDF_MAC_ADDR_REF(
+						 scan_entry->bssid.bytes),
+					 sec_params.ucastcipherset);
+				continue;
+			}
+			if (!wlan_cm_6ghz_allowed_for_akm(psoc,
+					sec_params.key_mgmt,
+					sec_params.rsn_caps,
+					util_scan_entry_rsnxe(scan_entry),
+					0, false)) {
+				scm_info("Drop frame from "QDF_MAC_ADDR_FMT
+					 ": Invalid AKM suite %0X for 6GHz AP",
+					 QDF_MAC_ADDR_REF(
+						scan_entry->bssid.bytes),
+					 sec_params.key_mgmt);
+				util_scan_free_cache_entry(scan_entry);
+				qdf_mem_free(scan_node);
+				continue;
+			}
 		}
 		if (scan_obj->cb.update_beacon)
 			scan_obj->cb.update_beacon(pdev, scan_entry);

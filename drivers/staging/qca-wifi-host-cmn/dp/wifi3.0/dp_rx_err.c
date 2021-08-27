@@ -557,6 +557,7 @@ dp_rx_reo_err_entry_process(struct dp_soc *soc,
 	qdf_nbuf_t head_nbuf = NULL;
 	qdf_nbuf_t tail_nbuf = NULL;
 	uint16_t msdu_processed = 0;
+	bool ret;
 
 	peer_id = DP_PEER_METADATA_PEER_ID_GET(
 					mpdu_desc_info->peer_meta_data);
@@ -575,6 +576,14 @@ more_msdu_link_desc:
 		pdev = dp_get_pdev_for_lmac_id(soc, rx_desc->pool_id);
 
 		nbuf = rx_desc->nbuf;
+		ret = dp_rx_desc_paddr_sanity_check(rx_desc,
+						    msdu_list.paddr[i]);
+		if (!ret) {
+			DP_STATS_INC(soc, rx.err.nbuf_sanity_fail, 1);
+			rx_desc->in_err_state = 1;
+			continue;
+		}
+
 		rx_desc_pool = &soc->rx_desc_buf[rx_desc->pool_id];
 		dp_ipa_handle_rx_buf_smmu_mapping(soc, nbuf,
 						  rx_desc_pool->buf_size,
@@ -787,6 +796,7 @@ void dp_rx_err_handle_bar(struct dp_soc *soc,
 	unsigned char type, subtype;
 	uint16_t start_seq_num;
 	uint32_t tid;
+	QDF_STATUS status;
 	struct ieee80211_frame_bar *bar;
 
 	/*
@@ -815,17 +825,37 @@ void dp_rx_err_handle_bar(struct dp_soc *soc,
 	dp_info_rl("tid %u window_size %u start_seq_num %u",
 		   tid, peer->rx_tid[tid].ba_win_size, start_seq_num);
 
-	dp_rx_tid_update_wifi3(peer, tid,
-			       peer->rx_tid[tid].ba_win_size,
-			       start_seq_num);
+	status = dp_rx_tid_update_wifi3(peer, tid,
+					peer->rx_tid[tid].ba_win_size,
+					start_seq_num);
+	if (status != QDF_STATUS_SUCCESS) {
+		dp_err_rl("failed to handle bar frame update rx tid");
+		DP_STATS_INC(soc, rx.err.bar_handle_fail_count, 1);
+	} else {
+		DP_STATS_INC(soc, rx.err.ssn_update_count, 1);
+	}
 }
 
+/**
+ * dp_rx_bar_frame_handle() - Function to handle err BAR frames
+ * @soc: core DP main context
+ * @ring_desc: Hal ring desc
+ * @rx_desc: dp rx desc
+ * @mpdu_desc_info: mpdu desc info
+ *
+ * Handle the error BAR frames received. Ensure the SOC level
+ * stats are updated based on the REO error code. The BAR frames
+ * are further processed by updating the Rx tids with the start
+ * sequence number (SSN) and BA window size. Desc is returned
+ * to the free desc list
+ *
+ * Return: none
+ */
 static void
 dp_rx_bar_frame_handle(struct dp_soc *soc,
 		       hal_ring_desc_t ring_desc,
 		       struct dp_rx_desc *rx_desc,
-		       struct hal_rx_mpdu_desc_info *mpdu_desc_info,
-		       uint8_t error)
+		       struct hal_rx_mpdu_desc_info *mpdu_desc_info)
 {
 	qdf_nbuf_t nbuf;
 	struct dp_pdev *pdev;
@@ -834,6 +864,7 @@ dp_rx_bar_frame_handle(struct dp_soc *soc,
 	uint16_t peer_id;
 	uint8_t *rx_tlv_hdr;
 	uint32_t tid;
+	uint8_t reo_err_code;
 
 	nbuf = rx_desc->nbuf;
 	rx_desc_pool = &soc->rx_desc_buf[rx_desc->pool_id];
@@ -857,25 +888,25 @@ dp_rx_bar_frame_handle(struct dp_soc *soc,
 	if (!peer)
 		goto next;
 
+	reo_err_code = HAL_RX_REO_ERROR_GET(ring_desc);
 	dp_info("BAR frame: peer = "QDF_MAC_ADDR_FMT
 		" peer_id = %d"
 		" tid = %u"
 		" SSN = %d"
-		" error status = %d",
+		" error code = %d",
 		QDF_MAC_ADDR_REF(peer->mac_addr.raw),
 		peer->peer_id,
 		tid,
 		mpdu_desc_info->mpdu_seq,
-		error);
+		reo_err_code);
 
-	switch (error) {
+	switch (reo_err_code) {
 	case HAL_REO_ERR_BAR_FRAME_2K_JUMP:
-		DP_STATS_INC(soc,
-			     rx.err.reo_error[error], 1);
+		/* fallthrough */
 	case HAL_REO_ERR_BAR_FRAME_OOR:
 		dp_rx_err_handle_bar(soc, peer, nbuf);
 		DP_STATS_INC(soc,
-			     rx.err.reo_error[error], 1);
+			     rx.err.reo_error[reo_err_code], 1);
 		break;
 	default:
 		DP_STATS_INC(soc, rx.bar_frame, 1);
@@ -1365,8 +1396,7 @@ dp_rx_process_rxdma_err(struct dp_soc *soc, qdf_nbuf_t nbuf,
 
 	vdev = peer->vdev;
 	if (!vdev) {
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
-				FL("INVALID vdev %pK OR osif_rx"), vdev);
+		dp_info_rl("INVALID vdev %pK OR osif_rx", vdev);
 		/* Drop & free packet */
 		qdf_nbuf_free(nbuf);
 		DP_STATS_INC(soc, rx.err.invalid_vdev, 1);
@@ -1758,14 +1788,11 @@ dp_rx_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 			dp_rx_bar_frame_handle(soc,
 					       ring_desc,
 					       rx_desc,
-					       &mpdu_desc_info,
-					       error);
+					       &mpdu_desc_info);
 
 			rx_bufs_reaped[mac_id] += 1;
 			goto next_entry;
 		}
-
-		dp_info_rl("Got pkt with REO ERROR: %d", error);
 
 		if (mpdu_desc_info.mpdu_flags & HAL_MPDU_F_FRAGMENT) {
 			/*
