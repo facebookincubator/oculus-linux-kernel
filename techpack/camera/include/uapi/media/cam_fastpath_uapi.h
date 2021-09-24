@@ -76,6 +76,8 @@ struct cam_fp_buffer_set {
 	__u64 timestamp;
 
 	__u32 status;
+
+	__u32 sof_index;
 };
 
 /**

@@ -108,7 +108,7 @@
 	qcom,fcc-max-ua = <4813000>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,dc-icl-ua = <3000000>;
-	qcom,chg-term-current-ma = <300>;
+	qcom,chg-term-current-ma = <(-300)>;
 	qcom,typec-dam-enable;
 };
 

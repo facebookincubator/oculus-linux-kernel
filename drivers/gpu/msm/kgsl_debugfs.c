@@ -162,16 +162,12 @@ static int print_mem_entry(void *data, void *ptr)
 		kgsl_get_egl_counts(entry, &egl_surface_count,
 						&egl_image_count, &total_count);
 
-	seq_printf(s, "%pK %pK %16llu %5d %9s %10s %16s %5d %16d %6d %6d",
+	seq_printf(s, "%pK %16llu %16llu %5d %9s %10s %16s %5d %16d %6d %6d",
 			(uint64_t *)(uintptr_t) m->gpuaddr,
-			/*
-			 * Show zero for the useraddr - we can't reliably track
-			 * that value for multiple vmas anyway
-			 */
-			0, atomic_long_read(&m->physsize),
+			m->size, atomic_long_read(&m->physsize),
 			entry->id, flags, memtype_str(usermem_type), usage,
 			(m->sgt ? m->sgt->nents : 0),
-			atomic_read(&entry->map_count),
+			atomic_long_read(&m->mapsize),
 			egl_surface_count, egl_image_count);
 
 	if (entry->metadata)
@@ -241,8 +237,8 @@ static int process_mem_seq_show(struct seq_file *s, void *ptr)
 {
 	if (ptr == SEQ_START_TOKEN) {
 		seq_printf(s, "%16s %16s %16s %5s %9s %10s %16s %5s %16s %6s %6s\n",
-			"gpuaddr", "useraddr", "size", "id", "flags", "type",
-			"usage", "sglen", "mapcount", "eglsrf", "eglimg");
+			"gpuaddr", "virtsize", "physsize", "id", "flags", "type",
+			"usage", "sglen", "mapsize", "eglsrf", "eglimg");
 		return 0;
 	} else
 		return print_mem_entry(s, ptr);
@@ -461,7 +457,8 @@ static int print_mem_entry_page(struct seq_file *s, void *ptr)
 	if (!buf)
 		return 0;
 
-	kptr = vm_map_ram(&page, 1, -1, pgprot_writecombine(PAGE_KERNEL_RO));
+	kptr = vm_map_ram(&page, 1, -1, kgsl_pgprot_modify(&entry->memdesc,
+			PAGE_KERNEL_RO));
 	if (!kptr)
 		goto no_mapping;
 
@@ -506,8 +503,12 @@ static void *mem_entry_seq_start(struct seq_file *s, loff_t *pos)
 	if (!may_access)
 		return ERR_PTR(-EACCES);
 
-	/* If the entry is being freed or we fail to grab a ref bail out here. */
-	if (entry->pending_free || kgsl_mem_entry_get(entry) == 0)
+	/*
+	 * If the entry is being freed, has not been mapped yet, or we fail to
+	 * grab a ref bail out here.
+	 */
+	if (entry->pending_free ||
+			kgsl_mem_entry_get(entry) == 0)
 		return NULL;
 
 	if (*pos == 0)
@@ -580,7 +581,7 @@ void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry)
 
 	if (IS_ERR_OR_NULL(entry->priv->debug_root) ||
 			(entry->memdesc.flags & blocked_flags) ||
-			entry->memdesc.pages == NULL ||
+			IS_ERR_OR_NULL(entry->memdesc.pages) ||
 			entry->memdesc.page_count == 0)
 		return;
 

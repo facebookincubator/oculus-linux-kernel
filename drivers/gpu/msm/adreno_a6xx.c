@@ -92,11 +92,6 @@ static u32 a6xx_ifpc_pwrup_reglist[] = {
 static u32 a650_pwrup_reglist[] = {
 	A6XX_RBBM_GBIF_CLIENT_QOS_CNTL,
 	A6XX_CP_PROTECT_REG + 47,         /* Programmed for infinite span */
-	A6XX_TPL1_BICUBIC_WEIGHTS_TABLE_0,
-	A6XX_TPL1_BICUBIC_WEIGHTS_TABLE_1,
-	A6XX_TPL1_BICUBIC_WEIGHTS_TABLE_2,
-	A6XX_TPL1_BICUBIC_WEIGHTS_TABLE_3,
-	A6XX_TPL1_BICUBIC_WEIGHTS_TABLE_4,
 };
 
 /* Applicable to a640 and a680 */

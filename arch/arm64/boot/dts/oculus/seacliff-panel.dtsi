@@ -1,7 +1,6 @@
 #include "dsi-panel-boe-lcd-dsc-video.dtsi"
 #include "dsi-panel-boe-lcd-video.dtsi"
 #include "dsi-panel-boe-spi-blu-dsc-video.dtsi"
-#include "dsi-panel-nt57950-uoled-dsc-video.dtsi"
 
 &dsi_dual_boe_lcd_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
@@ -79,32 +78,6 @@
 	};
 };
 
-&dsi_dual_nt57950_uoled_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <255>;
-	qcom,mdss-brightness-max-level = <255>;
-	qcom,platform-en-gpio = <&tlmm 135 0>;
-	qcom,platform-reset-gpio = <&tlmm 6 0>;
-	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-sec-reset-off-delay = <30>;
-	qcom,dsi-select-clocks =
-		"mux_byte_clk0", "mux_pixel_clk0",
-		"cphy_byte_clk0", "cphy_pixel_clk0";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 24 0A 0A 26 1A 0D
-				13 06 02 04 00 1E 1A
-			];
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
 &pm8150a_amoled {
 	status = "disabled";
 };
@@ -155,6 +128,14 @@
 &mdss_mdp {
 	/* set mdp clk rate to max for TJ3 panels */
 	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
+	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
+	qcom,sde-has-dest-scaler;
+	qcom,sde-wb-rtprio = <99>;
+	qcom,sde-wb-cpumask = "80"; /* CPU7 */
+	qcom,sde-lineptr-scanline-advance = <1383>;
+	qcom,sde-wb-mild-tear-threshold = <700>;
+	qcom,sde-wb-severe-tear-threshold = <500>;
+	qcom,sde-wb-passes = <1>;
 };
 
 &sde_dsi {

@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "../vendor/qcom/kona-pmic-overlay.dtsi"
+#include "../vendor/qcom/kona-sde-display.dtsi"
+#include "../vendor/qcom/kona-thermal-overlay.dtsi"
+
+#include "kona-oculus.dtsi"
+#include "eureka865-adc.dtsi"
+#include "eureka865-ufs.dtsi"

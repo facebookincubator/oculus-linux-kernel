@@ -6,11 +6,14 @@
 #ifndef _CAM_ICP_FASTPATH_CONTEXT_H_
 #define _CAM_ICP_FASTPATH_CONTEXT_H_
 
+#include <linux/completion.h>
+#include <linux/mutex.h>
+
 #include "cam_hw_mgr_intf.h"
 #include "cam_fastpath_queue.h"
 
 /* Size of packet queue */
-#define CAM_ICP_PACKET_QUEUE_SIZE 5
+#define CAM_ICP_PACKET_QUEUE_SIZE 20
 
 /* Max number of resourcess */
 #define CAM_ICP_RES_MAX 20
@@ -32,6 +35,7 @@ struct cam_icp_fastpath_packet {
 	struct cam_packet *packet;
 	size_t remain_len;
 	struct cam_icp_fastpath_io_patch_map io_patch_map;
+	struct completion done;
 };
 
 struct cam_icp_fastpath_context {
@@ -50,7 +54,10 @@ struct cam_icp_fastpath_context {
 	struct list_head packet_pending_queue;
 	struct list_head packet_free_queue;
 	struct cam_icp_fastpath_packet *packets_mem;
+	/* Mutex protecting packet queue */
+	struct mutex packet_lock;
 
+	/* Mutex protecting fastpath context */
 	struct mutex ctx_lock;
 };
 

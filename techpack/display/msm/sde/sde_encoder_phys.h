@@ -446,6 +446,7 @@ struct sde_encoder_phys_cmd {
  * @cac_pending:	Non-zero if CAC writeback is in progress
  * @cac_kickoff_armed:	Non-zero if kickoff has been armed (but not yet fired)
  * @cac_kickoff_fired:	Completion signal for CAC kickoff
+ * @wb_passes:	Number of writeback passes
  */
 struct sde_encoder_phys_wb {
 	struct sde_encoder_phys base;
@@ -472,6 +473,7 @@ struct sde_encoder_phys_wb {
 	atomic_t cac_pending;
 	atomic_t cac_kickoff_armed;
 	struct completion cac_kickoff_fired;
+	u8 wb_passes;
 };
 
 /**

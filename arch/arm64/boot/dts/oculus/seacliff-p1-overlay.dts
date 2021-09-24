@@ -6,7 +6,7 @@
 #include <dt-bindings/clock/qcom,rpmh.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
-#include "seacliff.dtsi"
+#include "seacliff-pop.dtsi"
 #include "seacliff-bcmdhd.dtsi"
 
 / {
@@ -28,8 +28,6 @@
 };
 
 &oculusnrf {
-	oculus,syncboss-has-prox;
-
 	swd@0 {
 		oculus,fw-path = "syncboss_P1_BOARD.bin";
 	};

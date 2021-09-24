@@ -173,6 +173,7 @@
 
 		cm7120,codec_1v8-supply = <&pm8150a_l4>;
 		cm7120,codec_3v3-supply = <&pm8150_l16>;
+		cm7120,firmware-name = "CM7120.bin";
 
 		qcom,use-pinctrl = <1>;
 		pinctrl-names = "active", "suspend",

@@ -6536,6 +6536,12 @@ void perf_output_sample(struct perf_output_handle *handle,
 	if (sample_type & PERF_SAMPLE_PHYS_ADDR)
 		perf_output_put(handle, data->phys_addr);
 
+	if (sample_type & PERF_SAMPLE_INSTRUCTION_DATA) {
+		perf_output_put(handle, data->instruction_data_size);
+		if (data->instruction_data_size)
+			perf_output_copy(handle, data->instruction_data, data->instruction_data_size);
+	}
+
 	if (!event->attr.watermark) {
 		int wakeup_events = event->attr.wakeup_events;
 
@@ -6724,6 +6730,15 @@ void perf_prepare_sample(struct perf_event_header *header,
 
 	if (sample_type & PERF_SAMPLE_PHYS_ADDR)
 		data->phys_addr = perf_virt_to_phys(data->addr);
+
+	if (sample_type & PERF_SAMPLE_INSTRUCTION_DATA) {
+		u64 size;
+
+		size = perf_instruction_data(data->instruction_data,
+					     sizeof(data->instruction_data), regs);
+		data->instruction_data_size = size;
+		header->size += sizeof(u64) + size;
+	}
 }
 
 static __always_inline void

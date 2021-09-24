@@ -1,0 +1,18 @@
+#
+# Power sensors
+#
+# When adding new entries keep the list in alphabetical order
+
+menu "Power sensors"
+
+config PAC193X
+	tristate "Microchip PAC193x Energy Monitor"
+	depends on I2C
+	help
+	  If you say yes here you get support for the Microchip PAC193x
+	  Energy Monitor.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called pac193x.
+
+endmenu

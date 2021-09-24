@@ -916,6 +916,7 @@ int perf_event_read_local(struct perf_event *event, u64 *value,
 			  u64 *enabled, u64 *running);
 extern u64 perf_event_read_value(struct perf_event *event,
 				 u64 *enabled, u64 *running);
+extern size_t perf_instruction_data(u8 *buf, size_t len_buf, struct pt_regs *regs);
 
 
 struct perf_sample_data {
@@ -961,6 +962,8 @@ struct perf_sample_data {
 	u64				stack_user_size;
 
 	u64				phys_addr;
+	u64				instruction_data_size;
+	u8				instruction_data[16];
 } ____cacheline_aligned;
 
 /* default value for data source */

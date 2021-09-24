@@ -110,6 +110,11 @@ struct kgsl_mmu_pt_ops {
 			uint64_t size);
 	struct page* (*mmu_find_mapped_page)(struct kgsl_memdesc *memdesc,
 			uint64_t offset);
+	int (*mmu_remap_page_range)(struct kgsl_memdesc *memdesc,
+			uint64_t offset, struct page **pages,
+			unsigned int page_count);
+	int (*mmu_remap_page)(struct kgsl_memdesc *memdesc, uint64_t offset,
+			struct page *page);
 };
 
 /*
@@ -245,6 +250,13 @@ int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 
 struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 		uint64_t offset);
+struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc);
+
+int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,
+		struct page **pages, unsigned int page_count);
+
+int kgsl_mmu_remap_page(struct kgsl_memdesc *memdesc, uint64_t offset,
+		struct page *page);
 
 /*
  * Static inline functions of MMU that simply call the SMMU specific

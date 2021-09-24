@@ -1287,6 +1287,18 @@ static int dsi_panel_parse_timing(struct dsi_mode_info *mode,
 		mode->v_active, mode->v_front_porch, mode->v_back_porch,
 		mode->v_sync_width);
 
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-panel-padding",
+				  &priv_info->padding);
+	if (rc == -EINVAL) {
+		/* This is non-fatal if the field is missing entirely. */
+		priv_info->padding = 0;
+		rc = 0;
+	} else if (rc) {
+		DSI_ERR("failed to read qcom,mdss-dsi-panel-padding, rc=%d\n",
+		       rc);
+		goto error;
+	}
+
 error:
 	return rc;
 }

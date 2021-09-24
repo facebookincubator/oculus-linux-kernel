@@ -1,3 +1,5 @@
+#include <dt-bindings/clock/qcom,gcc-kona.h>
+
 &tlmm {
 	nautilus_clk_pin: projector_clk_pin {
 		mux {

@@ -3,12 +3,12 @@
 &tlmm {
 	eye_face_led_default: eye_face_led_default {
 		mux {
-			pins = "gpio12", "gpio13";
+			pins = "gpio73", "gpio13";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio12", "gpio13";
+			pins = "gpio73", "gpio13";
 			drive-strength = <2>;
 			input-enable;
 			bias-disable;

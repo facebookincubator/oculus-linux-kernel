@@ -143,23 +143,44 @@ static void adreno_profile_submit_time(struct adreno_submit_time *time)
 
 	if (entry) {
 		struct kgsl_drawobj_profiling_buffer *profile_buffer;
-		struct page *page;
+		struct page *pages[2];
 		void *kptr;
-		unsigned long offset;
+		unsigned long offset, pg_offset;
+		int num_pages;
+
+		if (entry->pending_free || kgsl_mem_entry_get(entry) == 0)
+			return;
 
 		offset = cmdobj->profiling_buffer_gpuaddr -
 				entry->memdesc.gpuaddr;
-		page = kgsl_mmu_find_mapped_page(&entry->memdesc, offset);
-		if (IS_ERR_OR_NULL(page) || page == ZERO_PAGE(0))
-			return;
 
-		kptr = vm_map_ram(&page, 1, -1,
-				pgprot_writecombine(PAGE_KERNEL));
+		/*
+		 * The profiling buffer timing structure can span two pages if
+		 * it's offset near the end of a page. If so we need to map
+		 * both pages to avoid a segfault.
+		 */
+		pg_offset = offset_in_page(offset);
+		num_pages = 1 + (int)(pg_offset +
+				sizeof(struct kgsl_drawobj_profiling_buffer)
+				> PAGE_SIZE);
+
+		pages[0] = kgsl_mmu_find_mapped_page(&entry->memdesc, offset);
+		if (IS_ERR_OR_NULL(pages[0]) || pages[0] == ZERO_PAGE(0))
+			goto put_entry;
+		if (num_pages == 2) {
+			pages[1] = kgsl_mmu_find_mapped_page(&entry->memdesc,
+					offset + PAGE_SIZE);
+			if (IS_ERR_OR_NULL(pages[1]) || pages[1] == ZERO_PAGE(0))
+				goto put_entry;
+		}
+
+		kptr = vm_map_ram(pages, num_pages, -1, kgsl_pgprot_modify(
+				&entry->memdesc, PAGE_KERNEL));
 		if (kptr == NULL)
-			return;
+			goto put_entry;
 
 		profile_buffer = (struct kgsl_drawobj_profiling_buffer *)(
-				(unsigned long)kptr + offset_in_page(offset));
+				(unsigned long)kptr + pg_offset);
 
 		/* Return kernel clock time to the the client if requested */
 		if (drawobj->flags & KGSL_DRAWOBJ_PROFILING_KTIME) {
@@ -175,7 +196,10 @@ static void adreno_profile_submit_time(struct adreno_submit_time *time)
 
 		profile_buffer->gpu_ticks_queued = time->ticks;
 
-		vm_unmap_ram(kptr, 1);
+		vm_unmap_ram(kptr, num_pages);
+
+put_entry:
+		kgsl_mem_entry_put_deferred(entry);
 	}
 }
 

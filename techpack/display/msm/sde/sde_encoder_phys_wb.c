@@ -1553,32 +1553,36 @@ bool sde_encoder_phys_wb_cac(struct sde_encoder_phys *phys_enc, bool disarm)
 		_sde_encoder_phys_wb_frame_done_helper(wb_enc, false);
 		goto end;
 	}
-
-	/*
-	 * Increment pending_retire_fence_cnt to wait for both wb passes to
-	 * complete, but only invoke the frame_done callback after the last
-	 * one (see _sde_encoder_phys_wb_frame_done_helper).
-	 */
-	atomic_inc(&phys_enc->pending_retire_fence_cnt);
 	atomic_inc(&wb_enc->cac_pending);
 
 	SDE_ATRACE_BEGIN("trigger_start_1");
 	sde_encoder_helper_trigger_start(phys_enc); /* first pass */
 	SDE_ATRACE_END("trigger_start_1");
 
-	/*
-	 * DPU registers are double buffered, so we can update the DPU
-	 * programming for the next pass as soon as the first one begins,
-	 * without waiting for it to complete; this avoids a brief delay
-	 * between the two passes.
-	 */
-	sde_encoder_phys_wb_adjust_cac_offsets(phys_enc);
-	sde_encoder_phys_wb_cac_dirty(phys_enc);
+	if (wb_enc->wb_passes == 2) {
+		/*
+		 * Portrait display, use two pass writeback
+		 *
+		 * Increment pending_retire_fence_cnt to wait for both wb passes to
+		 * complete, but only invoke the frame_done callback after the last
+		 * one (see _sde_encoder_phys_wb_frame_done_helper).
+		 */
+		atomic_inc(&phys_enc->pending_retire_fence_cnt);
 
-	/* posted start: queue the second pass ahead of time */
-	SDE_ATRACE_BEGIN("trigger_start_2");
-	sde_encoder_helper_trigger_start(phys_enc);
-	SDE_ATRACE_END("trigger_start_2");
+		/*
+		 * DPU registers are double buffered, so we can update the DPU
+		 * programming for the next pass as soon as the first one begins,
+		 * without waiting for it to complete; this avoids a brief delay
+		 * between the two passes.
+		 */
+
+		sde_encoder_phys_wb_adjust_cac_offsets(phys_enc);
+		sde_encoder_phys_wb_cac_dirty(phys_enc);
+		/* posted start: queue the second pass ahead of time */
+		SDE_ATRACE_BEGIN("trigger_start_2");
+		sde_encoder_helper_trigger_start(phys_enc);
+		SDE_ATRACE_END("trigger_start_2");
+	}
 
 	fired = true;
 
@@ -1992,11 +1996,28 @@ struct sde_encoder_phys *sde_encoder_phys_wb_init(
 	struct sde_encoder_phys_wb *wb_enc;
 	struct sde_hw_mdp *hw_mdp;
 	struct sde_encoder_irq *irq;
+	struct drm_device *drm_dev;
+	struct platform_device *pdev;
 	int ret = 0;
+	u32 tmp32;
 
 	SDE_DEBUG("\n");
 
-	if (!p || !p->parent) {
+	if (!p || !p->parent || !p->sde_kms) {
+		SDE_ERROR("invalid params\n");
+		ret = -EINVAL;
+		goto fail_alloc;
+	}
+
+	drm_dev = p->sde_kms->dev;
+	if (!drm_dev || !drm_dev->dev) {
+		SDE_ERROR("invalid params\n");
+		ret = -EINVAL;
+		goto fail_alloc;
+	}
+
+	pdev = to_platform_device(drm_dev->dev);
+	if (!pdev) {
 		SDE_ERROR("invalid params\n");
 		ret = -EINVAL;
 		goto fail_alloc;
@@ -2059,6 +2080,14 @@ struct sde_encoder_phys *sde_encoder_phys_wb_init(
 		SDE_ERROR("invalid wb_idx\n");
 		goto fail_wb_check;
 	}
+
+	ret = of_property_read_u32(pdev->dev.of_node, "qcom,sde-wb-passes", &tmp32);
+	if (ret) {
+		SDE_ERROR("Could not determine the number of writeback passes\n");
+		goto fail_wb_check;
+	}
+	wb_enc->wb_passes = (u8) tmp32;
+	SDE_DEBUG("Using %u passes for writeback", wb_enc->wb_passes);
 
 	sde_encoder_phys_wb_init_ops(&phys_enc->ops);
 	phys_enc->parent = p->parent;

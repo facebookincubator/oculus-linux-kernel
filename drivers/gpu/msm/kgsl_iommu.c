@@ -1871,12 +1871,101 @@ static struct page *kgsl_iommu_find_mapped_page(struct kgsl_memdesc *memdesc,
 		uint64_t offset)
 {
 	struct kgsl_iommu_pt *iommu_pt = memdesc->pagetable->priv;
+	phys_addr_t phys_addr;
 
 	if (IS_ERR_OR_NULL(iommu_pt))
 		return ERR_PTR(-ENODEV);
 
-	return phys_to_page(iommu_iova_to_phys(iommu_pt->domain,
-			memdesc->gpuaddr + offset));
+	phys_addr = iommu_iova_to_phys(iommu_pt->domain,
+			memdesc->gpuaddr + offset);
+	if (unlikely(!phys_addr) || IS_ERR_VALUE(phys_addr))
+		return ERR_PTR(phys_addr);
+
+	return phys_to_page(phys_addr);
+}
+
+static int kgsl_iommu_remap_page_range(struct kgsl_memdesc *memdesc,
+		uint64_t offset, struct page **pages, unsigned int page_count)
+{
+	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+	struct kgsl_iommu_pt *iommu_pt = pagetable->priv;
+	struct sg_table *sgt;
+	uint64_t addr = memdesc->gpuaddr + offset;
+	size_t unmapped, mapped;
+	size_t size = (size_t)page_count << PAGE_SHIFT;
+	unsigned int protflags = _get_protection_flags(pagetable, memdesc);
+	int ret;
+
+	if (size == 0 || (size + offset) > kgsl_memdesc_footprint(memdesc))
+		return -EINVAL;
+
+	sgt = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
+	if (sgt == NULL)
+		return -ENOMEM;
+
+	ret = sg_alloc_table_from_pages(sgt, pages, page_count, 0, size,
+			GFP_KERNEL);
+	if (ret)
+		goto fail_alloc;
+
+	_iommu_sync_mmu_pc(true);
+
+	unmapped = iommu_unmap(iommu_pt->domain, addr, size);
+	if (unmapped != size) {
+		dev_err(memdesc->dev, "unmap err: 0x%016llx, %zd/%zd\n",
+			addr, unmapped, size);
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	mapped = iommu_map_sg(iommu_pt->domain, addr, sgt->sgl, sgt->nents,
+			protflags);
+	if (mapped != size) {
+		dev_err(memdesc->dev, "map sg err: 0x%016llX, %d, %x, %zd/%zd\n",
+			addr, sgt->nents, protflags, mapped, size);
+		ret = -EINVAL;
+	}
+
+unlock:
+	_iommu_sync_mmu_pc(false);
+
+	sg_free_table(sgt);
+fail_alloc:
+	kfree(sgt);
+
+	return ret;
+}
+
+static int kgsl_iommu_remap_page(struct kgsl_memdesc *memdesc, uint64_t offset,
+		struct page *page)
+{
+	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+	struct kgsl_iommu_pt *iommu_pt = pagetable->priv;
+	uint64_t addr = memdesc->gpuaddr + offset;
+	size_t unmapped;
+	unsigned int protflags = _get_protection_flags(pagetable, memdesc);
+	int ret;
+
+	if ((PAGE_SIZE + offset) > kgsl_memdesc_footprint(memdesc))
+		return -EINVAL;
+
+	_iommu_sync_mmu_pc(true);
+
+	unmapped = iommu_unmap(iommu_pt->domain, addr, PAGE_SIZE);
+	if (unmapped != PAGE_SIZE) {
+		dev_err(memdesc->dev, "unmap err: 0x%016llx, %zd/%zd\n",
+			addr, unmapped, PAGE_SIZE);
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	ret = iommu_map(iommu_pt->domain, addr, page_to_phys(page), PAGE_SIZE,
+			protflags);
+
+unlock:
+	_iommu_sync_mmu_pc(false);
+
+	return ret;
 }
 
 static int _map_to_one_page(struct kgsl_pagetable *pt, uint64_t addr,
@@ -1892,7 +1981,7 @@ static int _map_to_one_page(struct kgsl_pagetable *pt, uint64_t addr,
 	struct sg_table sgt;
 
 	/* Find our physaddr offset addr */
-	if (memdesc->pages != NULL)
+	if (!IS_ERR_OR_NULL(memdesc->pages))
 		page = kgsl_mmu_find_mapped_page(memdesc, physoffset);
 	else {
 		for_each_sg_page(memdesc->sgt->sgl, &sg_iter,
@@ -2781,4 +2870,6 @@ static struct kgsl_mmu_pt_ops iommu_pt_ops = {
 	.mmu_unmap_offset = kgsl_iommu_unmap_offset,
 	.mmu_sparse_dummy_map = kgsl_iommu_sparse_dummy_map,
 	.mmu_find_mapped_page = kgsl_iommu_find_mapped_page,
+	.mmu_remap_page_range = kgsl_iommu_remap_page_range,
+	.mmu_remap_page = kgsl_iommu_remap_page,
 };

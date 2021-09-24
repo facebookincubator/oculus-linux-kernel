@@ -1,3 +1,5 @@
+#include <dt-bindings/clock/qcom,camcc-kona.h>
+
 &cam_sensor_mclk5_active {
 	config {
 		drive-strength = <6>; /* 6 MA */
@@ -20,7 +22,7 @@
 };
 
 &pm8150a_l3 {
-	/* Glacier power */
+	/* Glacier power, FPGA power */
 	regulator-always-on;
 	qcom,init-voltage = <1200000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
@@ -39,6 +41,15 @@
 	/* Esker power */
 	regulator-always-on;
 	qcom,init-voltage = <2960000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150_l13 {
+	/* FPGA power */
+	regulator-always-on;
+	regulator-min-microvolt = <2500000>;
+	regulator-max-microvolt = <2500000>;
+	qcom,init-voltage = <2500000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 

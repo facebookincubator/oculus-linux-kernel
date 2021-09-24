@@ -50,8 +50,7 @@ struct syncboss_nsync_event {
 	uint64_t count;
 } __attribute__((packed));
 
-#define SYNCBOSS_DRIVER_MESSAGE_WAKEUP 1
-#define SYNCBOSS_DRIVER_MESSAGE_PROX_MSG 2
+#define SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG 2
 
 #define SYNCBOSS_PROX_EVENT_SYSTEM_UP 0
 #define SYNCBOSS_PROX_EVENT_SYSTEM_DOWN 1

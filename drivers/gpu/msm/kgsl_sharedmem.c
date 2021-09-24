@@ -744,7 +744,7 @@ static int kgsl_page_alloc_map_kernel(struct kgsl_memdesc *memdesc)
 
 	mutex_lock(&kernel_map_global_lock);
 	if ((!memdesc->hostptr) && (memdesc->pages != NULL)) {
-		pgprot_t page_prot = pgprot_writecombine(
+		pgprot_t page_prot = kgsl_pgprot_modify(memdesc,
 				(memdesc->priv & KGSL_MEMDESC_KERNEL_RW) ?
 				PAGE_KERNEL : PAGE_KERNEL_RO);
 

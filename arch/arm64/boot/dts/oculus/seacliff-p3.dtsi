@@ -2,6 +2,16 @@
 
 #include "seacliff-non-pop.dtsi"
 
+&cm7120 {
+	cm7120,firmware-name = "CM7120_TDM.bin";
+};
+
+&cm7120_snd {
+	qcom,model = "kona-cm7120-tdm-snd-card";
+	qcom,tdm-audio-intf = <1>;
+	qcom,tdm-max-slots = <4>;
+};
+
 &pm8150_vadc {
 	usbc_therm@4d {
 		reg = <ADC_AMUX_THM1_PU2>;
@@ -20,10 +30,49 @@
 	};
 };
 
-&qupv3_se0_spi {
-	oculusnrf@0 {
-		oculus,syncboss-has-prox;
-	};
+&pm8150a_l4 {
+	status = "ok";
+};
+
+&pm8150a_l5 {
+	/* Nautilus, Safetyboss 1.9 */
+	status = "ok";
+	qcom,init-voltage = <1900000>;
+	qcom,init-mode = <4>;  /* RPMH_REGULATOR_MODE_HPM */
+	regulator-always-on;
+};
+
+&pm8150a_l7 {
+	status = "disabled";
+};
+
+&pm8150_l13 {
+	/delete-property/ regulator-always-on;
+};
+
+&pri_mi2s_gpios {
+	pinctrl-0 = <&pri_tdm_clk_active
+		&pri_tdm_din_active
+		&pri_tdm_dout_active
+		&pri_tdm_sync_active>;
+	pinctrl-1 = <&pri_tdm_clk_sleep
+		&pri_tdm_din_sleep
+		&pri_tdm_dout_sleep
+		&pri_tdm_sync_sleep>;
+};
+
+&tdm_pri_rx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <1>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+	qcom,msm-cpudai-tdm-data-delay = <0>;
+};
+
+&tdm_pri_tx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <2>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+	qcom,msm-cpudai-tdm-data-delay = <0>;
 };
 
 &thermal_zones {
@@ -39,5 +88,16 @@
 				type = "passive";
 			};
 		};
+	};
+};
+
+&vendor {
+	fpga_aggregator: oculus,fpga {
+		/* TODO(Txxx): Enable when hardware becomes available */
+		status = "disabled";
+		compatible = "oculus,fpga";
+		vcciox-supply = <&pm8150a_l4>;
+		vcc-supply = <&pm8150a_l4>;
+		vccaux-supply = <&pm8150_l13>;
 	};
 };

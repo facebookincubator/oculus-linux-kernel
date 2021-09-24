@@ -115,7 +115,7 @@ struct step_chg_info {
 
 static struct step_chg_info *the_chip;
 
-#define STEP_CHG_HYSTERISIS_DELAY_US		5000000 /* 5 secs */
+#define STEP_CHG_HYSTERISIS_DELAY_US		1000000 /* 1 secs */
 
 #define BATT_HOT_DECIDEGREE_MAX			600
 #define CYCLE_COUNT_THRESHOLD_MAX	800

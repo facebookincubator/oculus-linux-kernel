@@ -156,9 +156,7 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 			"Received mount status ack response code 0x%x",
 			vdos[0]);
 
-		mutex_lock(&mpd->lock);
 		mpd->last_mount_ack = VDO_MOUNT_STATE_ACK_STATUS(vdos[0]);
-		mutex_unlock(&mpd->lock);
 
 		return;
 	}
@@ -500,18 +498,8 @@ static ssize_t charger_plugged_show(struct device *dev,
 {
 	struct molokini_pd *mpd =
 		(struct molokini_pd *) dev_get_drvdata(dev);
-	int result;
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
-	result = scnprintf(buf, PAGE_SIZE, "%d\n", mpd->params.charger_plugged);
-	mutex_unlock(&mpd->lock);
-
-	return result;
+	return scnprintf(buf, PAGE_SIZE, "%d\n", mpd->params.charger_plugged);
 }
 
 static ssize_t charger_plugged_store(struct device *dev,
@@ -529,14 +517,7 @@ static ssize_t charger_plugged_store(struct device *dev,
 		return result;
 	}
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
 	mpd->params.charger_plugged = temp;
-	mutex_unlock(&mpd->lock);
 
 	/* Force re-evaluation */
 	molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,
@@ -550,18 +531,8 @@ static ssize_t connected_show(struct device *dev,
 {
 	struct molokini_pd *mpd =
 		(struct molokini_pd *) dev_get_drvdata(dev);
-	int result;
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
-	result = scnprintf(buf, PAGE_SIZE, "%d\n", mpd->connected);
-	mutex_unlock(&mpd->lock);
-
-	return result;
+	return scnprintf(buf, PAGE_SIZE, "%d\n", mpd->connected);
 }
 
 static ssize_t connected_store(struct device *dev,
@@ -579,14 +550,7 @@ static ssize_t connected_store(struct device *dev,
 		return result;
 	}
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
 	mpd->connected = temp;
-	mutex_unlock(&mpd->lock);
 
 	return count;
 }
@@ -597,18 +561,8 @@ static ssize_t mount_state_show(struct device *dev,
 {
 	struct molokini_pd *mpd =
 		(struct molokini_pd *) dev_get_drvdata(dev);
-	int result;
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
-	result = scnprintf(buf, PAGE_SIZE, "%u\n", mpd->mount_state);
-	mutex_unlock(&mpd->lock);
-
-	return result;
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->mount_state);
 }
 
 static ssize_t mount_state_store(struct device *dev,
@@ -652,18 +606,8 @@ static ssize_t rsoc_show(struct device *dev,
 {
 	struct molokini_pd *mpd =
 		(struct molokini_pd *) dev_get_drvdata(dev);
-	int result;
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
-	result = scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.rsoc);
-	mutex_unlock(&mpd->lock);
-
-	return result;
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.rsoc);
 }
 
 static ssize_t rsoc_store(struct device *dev,
@@ -681,14 +625,7 @@ static ssize_t rsoc_store(struct device *dev,
 		return result;
 	}
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
 	mpd->params.rsoc = temp;
-	mutex_unlock(&mpd->lock);
 
 	return count;
 }
@@ -739,18 +676,8 @@ static ssize_t charging_suspend_disable_show(struct device *dev,
 {
 	struct molokini_pd *mpd =
 		(struct molokini_pd *) dev_get_drvdata(dev);
-	int result;
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
-	result = scnprintf(buf, PAGE_SIZE, "%d\n", mpd->charging_suspend_disable);
-	mutex_unlock(&mpd->lock);
-
-	return result;
+	return scnprintf(buf, PAGE_SIZE, "%d\n", mpd->charging_suspend_disable);
 }
 
 static ssize_t charging_suspend_disable_store(struct device *dev,
@@ -768,14 +695,7 @@ static ssize_t charging_suspend_disable_store(struct device *dev,
 		return result;
 	}
 
-	result = mutex_lock_interruptible(&mpd->lock);
-	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
-		return result;
-	}
-
 	mpd->charging_suspend_disable = temp;
-	mutex_unlock(&mpd->lock);
 
 	/* Force re-evaluation */
 	molokini_psy_notifier_call(&mpd->nb, PSY_EVENT_PROP_CHANGED,

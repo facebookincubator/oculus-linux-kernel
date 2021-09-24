@@ -10,3 +10,40 @@
 	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
 	qcom,board-id = <8 67>;
 };
+
+&cam_cci0 {
+	qcom,cam-sensor0 {
+		/delete-property/ cam_vdig-supply;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		regulator-names = "cam_vana", "cam_vio",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor1 {
+		/delete-property/ cam_vdig-supply;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		regulator-names = "cam_vana", "cam_vio",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor4 {
+		/delete-property/ cam_vdig-supply;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		regulator-names = "cam_vana", "cam_vio",
+			"cam_clk";
+	};
+};
+
+&pm8150a_l2 {
+	status = "disabled";
+};
+
+&pm8150a_l3 {
+	status = "disabled";
+};

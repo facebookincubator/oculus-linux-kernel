@@ -1,0 +1,274 @@
+#include "../vendor/qcom/kona-pmic-overlay.dtsi"
+#include "../vendor/qcom/kona-sde-display.dtsi"
+#include "../vendor/qcom/kona-thermal-overlay.dtsi"
+
+#include "kona-oculus.dtsi"
+#include "seacliff-adc.dtsi"
+#include "seacliff-audio.dtsi"
+#include "seacliff-camera.dtsi"
+#include "seacliff-fan.dtsi"
+#include "seacliff-nautilus-clk.dtsi"
+#include "seacliff-panel.dtsi"
+#include "seacliff-projector.dtsi"
+#include "seacliff-thermal.dtsi"
+#include "seacliff-ufs.dtsi"
+
+&pm8150a_l1 {
+	/* IPD 1.8 */
+	regulator-always-on;
+};
+
+&pm8150a_l5 {
+	status = "disabled";
+};
+
+&pm8150a_l7 {
+	/* IMU 3.0 */
+	regulator-always-on;
+};
+
+&pm8150a_l8 {
+	/* nRF, IMU, Mag 1.8 */
+	regulator-always-on;
+};
+
+&pm8150b_fg {
+	status = "ok";
+	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,hold-soc-while-full;
+	qcom,linearize-soc;
+	qcom,five-pin-battery;
+	qcom,cl-wt-enable;
+	/* ESR fast calibration */
+	qcom,fg-esr-timer-chg-fast = <0 7>;
+	qcom,fg-esr-timer-dischg-fast = <0 7>;
+	qcom,fg-esr-timer-chg-slow = <0 96>;
+	qcom,fg-esr-timer-dischg-slow = <0 96>;
+	qcom,fg-esr-cal-soc-thresh = <26 230>;
+	qcom,fg-esr-cal-temp-thresh = <10 40>;
+
+	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
+	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
+	qcom,fg-cutoff-voltage = <3400>;
+	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
+};
+
+&pm8150b_pdphy {
+	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
+		<9000 3000>; /* 9V @ 3A */
+};
+
+&pm8150l_rgb_led {
+	red {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	green {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	blue {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+};
+
+&qupv3_se0_spi {
+	status = "ok";
+};
+
+&qupv3_se4_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	bq27z561: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		status = "okay";
+	};
+};
+
+&qupv3_se6_4uart {
+	status = "ok";
+};
+
+&qupv3_se8_i2c {
+	status = "ok";
+};
+
+&qupv3_se9_i2c {
+	status = "ok";
+};
+
+&qupv3_se12_2uart {
+	status = "ok";
+};
+
+&qupv3_se13_spi {
+	status = "ok";
+};
+
+&qupv3_se14_spi {
+	status = "ok";
+};
+
+&qupv3_se15_i2c {
+	#include "../vendor/qcom/smb1355.dtsi"
+};
+
+&qupv3_se17_4uart {
+	status = "ok";
+
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+};
+
+&qupv3_se19_spi {
+	status = "ok";
+	qcom,rt;
+
+	oculusnrf: oculusnrf@0 {
+		status = "okay";
+		compatible = "oculus,syncboss";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "syncboss_default";
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
+
+		oculus,swdflavor = "nrf52832";
+		oculus,syncboss-reset  = <&tlmm 5 0>;
+		oculus,syncboss-timesync = <&tlmm 68 0>;
+		oculus,syncboss-wakeup  = <&tlmm 4 0>;
+
+		oculus,syncboss-has-prox;
+		oculus,syncboss-use-fastpath;
+		oculus,transaction-length = <248>;
+
+		swd@0 {
+			compatible = "oculus,swd";
+
+			pinctrl-names = "swd_default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			oculus,swd-clk = <&tlmm 52 0>;
+			oculus,swd-io = <&tlmm 53 0>;
+
+			oculus,swd-flavor = "nrf52832";
+			oculus,fw-path = "syncboss.bin";
+			oculus,flash-block-size = <512>;
+			oculus,flash-page-size = <4096>;
+			oculus,flash-page-count = <128>;
+			oculus,flash-page-retained-count = <3>;
+		};
+	};
+};
+
+&smb1355 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&smb_stat_default>;
+	status = "ok";
+};
+
+&smb1355_charger {
+	status = "ok";
+};
+
+&tlmm {
+	syncboss_float_swd: syncboss_float_swd {
+		mux {
+			pins = "gpio52", "gpio53";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio52", "gpio53";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_wakeup: syncboss_wakeup {
+		mux {
+			pins = "gpio4";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio4";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	syncboss_reset_default: syncboss_reset_default {
+		mux {
+			pins = "gpio5";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio5";
+			drive-strength = <6>;
+			// Active-low logic to reset, so hold high by default
+			output-high;
+		};
+	};
+
+	syncboss_uart_active: syncboss_uart_active {
+		mux {
+			pins = "gpio54", "gpio55";
+			function = "qup17";
+		};
+
+		config {
+			pins = "gpio54", "gpio55";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
+		mux {
+			pins = "gpio54";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio54";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
+		mux {
+			pins = "gpio55";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio55";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&vendor {
+	kona_mtp_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "4081226_Goertek_Hollywood_15k_3636mAh_Aug26th2019.dtsi"
+		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
+		#include "4759214_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Feb17th2021_PM8150B_GUI10014.dtsi"
+		#include "5133886_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Apr23rd2021_PM8150B_GUI10014.dtsi"
+	};
+};
+
+&wlan {
+	vdd-wlan-dig-supply = <&pm8150_s6>;
+};

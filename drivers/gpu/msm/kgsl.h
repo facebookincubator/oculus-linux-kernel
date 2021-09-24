@@ -187,6 +187,8 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_RANDOM BIT(10)
 /* The kernel has write access to this memdesc's buffer */
 #define KGSL_MEMDESC_KERNEL_RW BIT(11)
+/* The page pointer array backing this memdesc was freed after mapping */
+#define KGSL_MEMDESC_PAGES_ARRAY_FREED BIT(12)
 
 /**
  * struct kgsl_memdesc - GPU memory object descriptor
@@ -470,6 +472,8 @@ void kgsl_mmu_remove_global(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc);
 
 /* Helper functions */
+pgprot_t kgsl_pgprot_modify(struct kgsl_memdesc *memdesc, pgprot_t pgprot);
+
 int kgsl_request_irq(struct platform_device *pdev, const  char *name,
 		irq_handler_t handler, void *data);
 
