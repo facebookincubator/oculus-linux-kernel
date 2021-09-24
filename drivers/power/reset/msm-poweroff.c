@@ -471,6 +471,7 @@ static void halt_spmi_pmic_arbiter(void)
 static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
+	bool in_thermal_restart;
 	/* Write download mode flags if we're panic'ing
 	 * Write download mode flags if restart_mode says so
 	 * Kill download mode if master-kill switch is set
@@ -490,8 +491,11 @@ static void msm_restart_prepare(const char *cmd)
 				(cmd != NULL && cmd[0] != '\0'));
 	}
 
+	in_thermal_restart = (cmd != NULL && cmd[0] != '\0') &&
+			!strcmp(cmd, "shutdown,thermal");
+
 #ifdef CONFIG_PSTORE_RAM
-	if (in_panic)
+	if (in_panic || in_thermal_restart)
 		need_warm_reset = true;
 #endif
 
@@ -538,6 +542,10 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 					PON_RESTART_REASON_SILENT_BOOT);
 			__raw_writel(0x6f656d00, restart_reason);
+		} else if (in_thermal_restart) {
+			qpnp_pon_set_restart_reason(
+					PON_RESTART_REASON_SHUTDOWN_THERMAL);
+			__raw_writel(0x7766550b, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			unsigned long reset_reason;

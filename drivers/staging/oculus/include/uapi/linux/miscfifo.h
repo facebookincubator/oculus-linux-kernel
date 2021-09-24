@@ -54,19 +54,23 @@ struct miscfifo_client {
 };
 
 /**
- * Initialize a miscfifo
- * @param  mf pointer to a miscfifo with the config portion filled out
- * @return    0 on success, -errno otherwise
+ * devm_miscfifo_register() - resource managed miscfifo registration
+ * @dev: device that is registering the miscfifo
+ * @mf: pointer to a miscfifo with the config portion filled out
+ *
+ * Return: 0 on success, -errno otherwise
  */
-int miscfifo_register(struct miscfifo *mf);
+int devm_miscfifo_register(struct device *dev, struct miscfifo *mf);
 
 /**
- * Free a miscfifo
- * Should be called only when clients have disconnected
+ * devm_miscfifo_unregister() - resource managed miscfifo unregistration
+ * @dev: device that registered the miscfifo
+ * @mf: miscfifo instance to unregisfter
  *
- * @param miscfifo miscfifo instance
+ * Normally this function will not need to be called and the resource
+ * managementcode will ensure that the resource is freed.
  */
-void miscfifo_destroy(struct miscfifo *mf);
+void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
 
 /**
  * Send buffer to all clients. This function assumes only one writer and

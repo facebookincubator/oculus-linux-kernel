@@ -1,3 +1,4 @@
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/miscfifo.h>
 #include <linux/module.h>
@@ -237,18 +238,18 @@ int miscfifo_send_header_payload(struct miscfifo *mf,
 }
 EXPORT_SYMBOL(miscfifo_send_header_payload);
 
-int miscfifo_register(struct miscfifo *mf)
+static int miscfifo_register(struct device *dev, struct miscfifo *mf)
 {
 	/* these min sizes are required to reliably put (max length) data
 	 * in to the fifo */
 	if (!mf->config.header_payload) {
 		if (mf->config.kfifo_size < MIN_FIFO_SIZE) {
-			pr_warn("expect min fifo size: %d", MIN_FIFO_SIZE);
+			dev_warn(dev, "expect min fifo size: %d", MIN_FIFO_SIZE);
 			mf->config.kfifo_size = MIN_FIFO_SIZE;
 		}
 	} else {
 		if (mf->config.kfifo_size < MIN_FIFO_SIZE * 2) {
-			pr_warn("expect min fifo size: %d", MIN_FIFO_SIZE * 2);
+			dev_warn(dev, "expect min fifo size: %d", MIN_FIFO_SIZE * 2);
 			mf->config.kfifo_size = MIN_FIFO_SIZE * 2;
 		}
 	}
@@ -261,14 +262,51 @@ int miscfifo_register(struct miscfifo *mf)
 	init_waitqueue_head(&mf->clients.wait);
 	return 0;
 }
-EXPORT_SYMBOL(miscfifo_register);
 
-void miscfifo_destroy(struct miscfifo *mf)
+static void devm_miscfifo_release(struct device *dev, void *res)
 {
+	struct miscfifo *mf = *(struct miscfifo **)res;
+
 	BUG_ON(!list_empty(&mf->clients.list));
 	module_put(THIS_MODULE);
 }
-EXPORT_SYMBOL(miscfifo_destroy);
+
+int devm_miscfifo_register(struct device *dev, struct miscfifo *mf)
+{
+	struct miscfifo **mfp;
+	int rc;
+
+	mfp = devres_alloc(devm_miscfifo_release, sizeof(*mfp), GFP_KERNEL);
+	if (!mfp)
+		return -ENOMEM;
+
+	rc = miscfifo_register(dev, mf);
+	if (!rc) {
+		*mfp = mf;
+		devres_add(dev, mfp);
+	} else {
+		devres_free(mfp);
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(devm_miscfifo_register);
+
+static int devm_miscfifo_match(struct device *dev, void *res, void *data)
+{
+	struct mf *mf = res;
+
+	if (WARN_ON(!mf))
+		return 0;
+
+	return mf == data;
+}
+
+void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf)
+{
+	WARN_ON(devres_release(dev, devm_miscfifo_release, devm_miscfifo_match, mf));
+}
+EXPORT_SYMBOL(devm_miscfifo_unregister);
 
 void miscfifo_fop_set_context(struct file *file, void *context)
 {
