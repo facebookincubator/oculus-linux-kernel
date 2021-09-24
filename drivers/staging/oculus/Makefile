@@ -13,6 +13,7 @@ obj-$(CONFIG_BLU_FW)			+= blu_fw_driver.o
 obj-$(CONFIG_DEPTH_PROJECTOR)		+= projector.o
 obj-$(CONFIG_DISPLAY_VIRTUAL_SENSOR)	+= display_virtual_sensor.o
 obj-$(CONFIG_EYE_FACE_LED)		+= eye_face_led.o
+obj-$(CONFIG_FPGA_AGGREGATOR)		+= fpga_aggregator.o
 obj-$(CONFIG_FRONT_PANEL_SENSOR)	+= front_panel_sensor.o
 obj-$(CONFIG_HYPERVISOR_GUEST)		+= hv_guest.o
 obj-$(CONFIG_INSTRUCTION_SAMPLER)	+= oculus_instruction_sampler.o

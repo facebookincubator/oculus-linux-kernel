@@ -465,6 +465,7 @@ struct msm_display_topology {
  * @wide_bus_en:	wide-bus mode cfg for interface module
  * @mdp_transfer_time_us   Specifies the mdp transfer time for command mode
  *                         panels in microseconds.
+ * @padding:         Padding required on the panel (in pixels)
  */
 struct msm_mode_info {
 	uint32_t frame_rate;
@@ -478,6 +479,7 @@ struct msm_mode_info {
 	struct msm_roi_caps roi_caps;
 	bool wide_bus_en;
 	u32 mdp_transfer_time_us;
+	u32 padding;
 };
 
 /**

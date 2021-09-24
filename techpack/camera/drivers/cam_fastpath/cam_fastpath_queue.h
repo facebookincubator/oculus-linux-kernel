@@ -54,7 +54,8 @@ struct cam_fp_queue {
 struct cam_fp_buffer_set *cam_fp_queue_get_buffer_set(struct cam_fp_queue *fpq);
 int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 				 u64 request_id, u64 timestamp,
-				 enum cam_fp_buffer_status status);
+				 enum cam_fp_buffer_status status,
+				 __u32 sof_index);
 
 int cam_fp_queue_init(struct cam_fp_queue *fpq,
 		      const char *name,

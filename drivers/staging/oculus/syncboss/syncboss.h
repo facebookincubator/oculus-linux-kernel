@@ -89,13 +89,13 @@ struct syncboss_dev_data {
 	 */
 	struct miscfifo control_fifo;
 
-	/* Special device just for prox events
+	/* Device to convey power state events and reasons
 	 */
-	struct miscdevice misc_prox;
-	/* FIFO to help push prox data from the SyncBoss to the
-	 * misc_prox device.
+	struct miscdevice misc_powerstate;
+	/* FIFO to help push state event data from the SyncBoss to the
+	 * misc_powerstate device.
 	 */
-	struct miscfifo prox_fifo;
+	struct miscfifo powerstate_fifo;
 
 	/* Misc device for NSYNC
 	 */
@@ -105,8 +105,8 @@ struct syncboss_dev_data {
 	/* Connected clients reference count */
 	int client_count;
 
-	/* Connected prox clients reference count */
-	int prox_client_count;
+	/* Connected state event clients reference count */
+	int powerstate_client_count;
 
 	/* The desired period of subsequent SPI transactions. */
 	u32 transaction_period_ns;
@@ -220,6 +220,12 @@ struct syncboss_dev_data {
 	/* True if the syncboss controlls a prox sensor */
 	bool has_prox;
 
+	/* True if prox calibration data is not required for prox to work */
+	bool has_no_prox_cal;
+
+	/* True if the MCU support querying wakeup reasons */
+	bool has_wake_reasons;
+
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	/* True if we must enable the camera temperature sensor
 	 * regulator (needed for syncboss to function properly on
@@ -236,8 +242,8 @@ struct syncboss_dev_data {
 	/* prox config version */
 	u8 prox_config_version;
 
-	/* The most recent prox event */
-	int prox_last_evt;
+	/* The most recent power state event */
+	int powerstate_last_evt;
 
 	/* True if the cameras are in-use */
 	bool cameras_enabled;
@@ -245,11 +251,11 @@ struct syncboss_dev_data {
 	/* True if we should refrain from sending the next system_up event. */
 	bool eat_next_system_up_event;
 
-	/* True if we should not send any prox events to the user */
-	bool silence_all_prox_events;
+	/* True if we should not send any power state events to the user */
+	bool silence_all_powerstate_events;
 
-	/* True if prox wake is enabled */
-	bool prox_wake_enabled;
+	/* True if power state events are enabled */
+	bool powerstate_events_enabled;
 
 	/* True if streaming is running */
 	bool is_streaming;

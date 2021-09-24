@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <linux/highmem.h>
 #include <linux/perf_event.h>
 #include <linux/uaccess.h>
 
@@ -195,4 +196,91 @@ unsigned long perf_misc_flags(struct pt_regs *regs)
 	}
 
 	return misc;
+}
+
+size_t perf_instruction_data(u8 *buf, size_t sz_buf, struct pt_regs *regs)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma;
+	unsigned long addr, offset;
+	long nr_pages;
+	size_t copied = 0;
+	int i, locked;
+
+	if (perf_guest_cbs && perf_guest_cbs->is_in_guest())
+		goto out;
+
+	if (sz_buf < 4)
+		goto out;
+
+	addr = instruction_pointer(regs);
+
+	if (compat_user_mode(regs)) {
+		/*
+		 * Thumb instructions will be either 16 or 32 bits, aligned to 16b addresses. 32-bit
+		 * instructions are structured as two 16-bit half-words, with a sentinel bit pattern
+		 * in the first half-word identifying the length of the instruction. so, read 4 bytes
+		 * regardless of thumb vs arm mode, since the thumb decoder will need all 32 bits to
+		 * determine the length of the instruction
+		 */
+		addr -= 4;
+		addr &= (compat_thumb_mode(regs) ? ~1 : ~3);
+	} else {
+		addr &= ~3;
+	}
+
+	if (addr < PAGE_SIZE)
+		goto out;
+
+	if (!user_mode(regs)) {
+		if (virt_addr_valid(addr) || is_vmalloc_addr((void *)addr) || (__module_address(addr) != NULL)) {
+			memcpy(buf, (void *)addr, 4);
+			copied = 4;
+		}
+		goto out;
+	}
+
+	/* executed in hrtimer irq context, so sleeping isn't allowed */
+	for (i = 0, locked = 0; i < 4 && !locked; i++) {
+		locked = down_read_trylock(&mm->mmap_sem);
+		if (!locked)
+			cpu_relax();
+	}
+
+	if (!locked)
+		goto out;
+
+	offset = offset_in_page(addr);
+	addr &= PAGE_MASK;
+
+	vma = find_vma(mm, addr);
+	if (!vma || vma->vm_end < addr + offset + 4)
+		goto out_locked;
+
+	/* 32-bit thumb instructions create an edge case where instructions may span 2 pages. */
+	nr_pages = 1 + !!(PAGE_SIZE - offset < 4);
+
+	for (i = 0; i < nr_pages; i++, offset = 0, addr += PAGE_SIZE) {
+		struct page *page = follow_page(vma, addr, FOLL_FORCE | FOLL_NOWAIT);
+		size_t bytes = min(4UL, PAGE_SIZE - offset) - copied;
+		void *maddr;
+
+		if (IS_ERR_OR_NULL(page))
+			break;
+		get_page(page);
+		maddr = kmap_atomic(page);
+		WARN_ON_ONCE(!maddr);
+		if (maddr) {
+			copy_from_user_page(NULL, page, addr + offset, buf + copied, maddr + offset, bytes);
+			copied += bytes;
+			kunmap_atomic(maddr);
+		}
+		put_page(page);
+		/* offset and addr updated in loop control statement */
+	}
+
+ out_locked:
+	up_read(&mm->mmap_sem);
+ out:
+	return copied;
 }

@@ -117,7 +117,7 @@ static int cam_isp_fpc_start_dev(struct cam_isp_fastpath_context *ctx,
 		rc = -EFAULT;
 		goto end;
 	}
-
+	ctx->sof_cnt = 0;
 	mutex_lock(&ctx->mutex_list);
 
 	if (list_empty(&ctx->pending_req_list)) {
@@ -406,9 +406,9 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 			      struct cam_hw_prepare_update_args *cfg,
 			      struct cam_isp_fastpath_ctx_req *req_isp)
 {
+	struct cam_fp_buffer_set *buffer_set = NULL;
 	struct cam_isp_hw_cmd_args isp_hw_cmd_args;
 	struct cam_isp_fastpath_packet *fp_packet;
-	struct cam_fp_buffer_set *buffer_set;
 	struct cam_hw_cmd_args hw_cmd_args;
 	bool reused_packet = false;
 	uint32_t packet_opcode = 0;
@@ -427,15 +427,15 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 		mutex_lock(&ctx->mutex_list);
 		if (list_empty(&ctx->active_packet_list)) {
 			CAM_ERR(CAM_ISP, "Active packet list empty!");
-			mutex_unlock(&ctx->mutex_list);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto error_unlock_and_release_buffer;
 		}
 		fp_packet = list_first_entry(&ctx->active_packet_list,
 				struct cam_isp_fastpath_packet, list);
 		if (!fp_packet) {
 			CAM_ERR(CAM_ISP, "Null Ptr!");
-			mutex_unlock(&ctx->mutex_list);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto error_unlock_and_release_buffer;
 		}
 		packet = fp_packet->packet;
 		*remain_len = fp_packet->remain_len;
@@ -454,8 +454,8 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 		}
 		if (!packet) {
 			CAM_ERR(CAM_ISP, "Null Ptr!");
-			mutex_unlock(&ctx->mutex_list);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto error_unlock_and_release_buffer;
 		}
 
 		fp_packet->use_cnt++;
@@ -482,7 +482,7 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 		&hw_cmd_args);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "HW command failed");
-		goto done;
+		goto error_release_buffer;
 	}
 
 	packet_opcode = isp_hw_cmd_args.u.packet_op_code;
@@ -497,13 +497,26 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 	if (rc != 0) {
 		CAM_ERR(CAM_ISP, "Prepare config packet failed in HW layer");
 		rc = -EFAULT;
-		goto done;
+		goto error_release_buffer;
 	}
 	if (req_isp) {
 		req_isp->request_id = packet->header.request_id;
 		req_isp->reused_packet = reused_packet;
 	}
-done:
+
+	return 0;
+
+error_unlock_and_release_buffer:
+	mutex_unlock(&ctx->mutex_list);
+error_release_buffer:
+	if (buffer_set) {
+		CAM_ERR(CAM_ISP, "HW config fail release buffer set %llu",
+			buffer_set->request_id);
+		cam_fp_queue_buffer_set_done(&ctx->fp_queue,
+					     buffer_set->request_id, 0,
+					     CAM_FP_BUFFER_STATUS_ERROR,
+					     req_isp->sof_index);
+	}
 	return rc;
 }
 
@@ -694,11 +707,14 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 
 	switch (payload->evt_id) {
 	case CAM_ISP_HW_EVENT_SOF:
+		ctx->sof_cnt++;
+		CAM_DBG(CAM_ISP, "FP SOF %d", ctx->sof_cnt);
 		mutex_lock(&ctx->mutex_list);
 		if (!list_empty(&ctx->active_req_list)) {
 			req_isp = list_first_entry(&ctx->active_req_list,
 				struct cam_isp_fastpath_ctx_req, list);
 			req_isp->timestamp = payload->data.sof.boot_time;
+			req_isp->sof_index = ctx->sof_cnt;
 			list_del(&req_isp->list);
 			list_add_tail(&req_isp->list, &ctx->process_req_list);
 		}
@@ -740,11 +756,12 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 
 			req_isp->num_acked++;
 			if (req_isp->num_acked == req_isp->num_fence_map_out) {
-				CAM_DBG(CAM_ISP, "Return buffer %d!",
-					req_isp->request_id);
+				CAM_DBG(CAM_ISP, "Return buffer %d SOF %d!",
+					req_isp->request_id, req_isp->sof_index);
 				cam_fp_queue_buffer_set_done(&ctx->fp_queue,
 					req_isp->request_id, req_isp->timestamp,
-					CAM_FP_BUFFER_STATUS_SUCCESS);
+					CAM_FP_BUFFER_STATUS_SUCCESS,
+					req_isp->sof_index);
 				list_del_init(&req_isp->list);
 				kmem_cache_free(ctx->request_cache, req_isp);
 			} else {

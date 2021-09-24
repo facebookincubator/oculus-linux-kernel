@@ -52,7 +52,7 @@ int fw_queue_work(struct workqueue_struct *workqueue, void *data,
 
 
 #define MAX_PROP_SIZE 40
-int fw_init_regulator(struct device *dev, struct regulator **reg,
+int devm_fw_init_regulator(struct device *dev, struct regulator **reg,
 		      const char *reg_name)
 {
 	int rc = 0;
@@ -61,7 +61,7 @@ int fw_init_regulator(struct device *dev, struct regulator **reg,
 	char prop_name[MAX_PROP_SIZE] = {0};
 
 	snprintf(prop_name, MAX_PROP_SIZE, "oculus,%s", reg_name);
-	*reg = regulator_get(dev, prop_name);
+	*reg = devm_regulator_get(dev, prop_name);
 	if (IS_ERR(*reg)) {
 		rc = PTR_ERR(*reg);
 		dev_warn(dev, "%s: Failed to get regulator: %d\n",
@@ -86,7 +86,7 @@ int fw_init_regulator(struct device *dev, struct regulator **reg,
 	return 0;
 
 err_reg_put:
-	regulator_put(*reg);
+	devm_regulator_put(*reg);
 	*reg = NULL;
 	return rc;
 }

@@ -202,7 +202,7 @@ done_unlock:
 static int
 cam_fp_queue_sched_next_chain(struct cam_fp_queue *fpq,
 			      struct cam_fp_process_chain *proc_chain,
-			      u64 timestamp)
+			      u64 timestamp, __u32 sof_index)
 {
 	int ret = -EINVAL;
 	int idx;
@@ -214,7 +214,9 @@ cam_fp_queue_sched_next_chain(struct cam_fp_queue *fpq,
 	if (idx < proc_chain->chain.num) {
 		/* Pass the timestamp on next process */
 		proc_chain->chain.buf_set[idx].timestamp = timestamp;
-
+		proc_chain->chain.buf_set[idx].sof_index = sof_index;
+		CAM_DBG(CAM_CORE, "%s schedule next chain %d SOF %d",
+						fpq->name, idx, sof_index);
 		ret = cam_fp_queue_enqueue_buffer_set(proc_chain->fpq[idx],
 			&proc_chain->chain.buf_set[idx],
 			proc_chain, false);
@@ -277,7 +279,7 @@ cam_fp_queue_enqueue_chain(struct file *file,
 		fdput(f);
 	}
 
-	ret = cam_fp_queue_sched_next_chain(fpq, proc_chain, 0);
+	ret = cam_fp_queue_sched_next_chain(fpq, proc_chain, 0, 0);
 	if (ret < 0) {
 		CAM_ERR(CAM_CORE, "Can not enqueue first chain! %s",
 			fpq->name);
@@ -394,10 +396,35 @@ error_unlock:
 static int cam_fp_queue_misc_release(struct inode *inode, struct file *file)
 {
 	struct cam_fp_queue *fpq = to_fpq(file);
+	struct cam_fp_buffer_list *buf_list;
+	struct list_head *pos;
 
 	cam_fpq_call_op(fpq, flush);
 
 	mutex_lock(&fpq->mutex);
+
+	/* Release chains which are in processing/pending queues */
+	list_for_each(pos, &fpq->pending_queue) {
+		buf_list = list_entry(pos, struct cam_fp_buffer_list, list);
+		if (buf_list->proc_chain) {
+			kmem_cache_free(fpq->chain_mem,
+					buf_list->proc_chain);
+			buf_list->proc_chain = NULL;
+			CAM_ERR(CAM_CORE, "%s Free chain in pending queue",
+				fpq->name);
+		}
+	}
+
+	list_for_each(pos, &fpq->processing_queue) {
+		buf_list = list_entry(pos, struct cam_fp_buffer_list, list);
+		if (buf_list->proc_chain) {
+			kmem_cache_free(fpq->chain_mem,
+					buf_list->proc_chain);
+			buf_list->proc_chain = NULL;
+			CAM_ERR(CAM_CORE, "%s Free chain in processing queue",
+				fpq->name);
+		}
+	}
 
 	/* Initialize queues to prevent the usage after free  */
 	INIT_LIST_HEAD(&fpq->processing_queue);
@@ -457,7 +484,8 @@ struct cam_fp_buffer_set *cam_fp_queue_get_buffer_set(struct cam_fp_queue *fpq)
 
 int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 				 u64 request_id, u64 timestamp,
-				 enum cam_fp_buffer_status status)
+				 enum cam_fp_buffer_status status,
+				 __u32 sof_index)
 {
 	struct cam_fp_buffer_list *buf_list = NULL;
 	struct list_head *next = NULL;
@@ -477,8 +505,10 @@ int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 		buf_list->buf_set.status = status;
 
 		/* Fill the timestamp if provided */
-		if (timestamp)
+		if (timestamp) {
 			buf_list->buf_set.timestamp = timestamp;
+			buf_list->buf_set.sof_index = sof_index;
+		}
 
 		/* Don't leave userspace with 0 timestamp */
 		if (!buf_list->buf_set.timestamp) {
@@ -488,7 +518,7 @@ int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 		}
 
 		if (!cam_fp_queue_sched_next_chain(fpq, buf_list->proc_chain,
-		     buf_list->buf_set.timestamp)) {
+				buf_list->buf_set.timestamp, buf_list->buf_set.sof_index)) {
 			/* In chain process do not notify userspace for
 			 * buffer done. The main reason is to reduce ioctl
 			 * calls. This is agreement between uapi and kernel.

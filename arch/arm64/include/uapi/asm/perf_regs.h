@@ -36,6 +36,7 @@ enum perf_event_arm_regs {
 	PERF_REG_ARM64_LR,
 	PERF_REG_ARM64_SP,
 	PERF_REG_ARM64_PC,
+	PERF_REG_ARM64_PSTATE,
 	PERF_REG_ARM64_MAX,
 };
 #endif /* _ASM_ARM64_PERF_REGS_H */

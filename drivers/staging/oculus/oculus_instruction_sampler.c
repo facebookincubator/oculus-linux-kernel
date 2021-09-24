@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/percpu.h>
 #include <linux/sched.h>
+#include <linux/sched/mm.h>
 #include <linux/sched/task.h>
 #include <linux/slab.h>
 #include <linux/smp.h>
@@ -316,22 +317,26 @@ static ssize_t last_trace_show(struct device *dev, struct device_attribute *attr
 			break;
 		case ISA_THUMB:
 			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
-					  "THUMB tid=%d pid=%d pc=%lx inst=%04x\n",
+					  "THUMB vma=%s#%s tid=%d pid=%d pc=%lx inst=%04x\n",
+					  t->task_comm, t->vma_name,
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		case ISA_THUMB2:
 			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
-					  "THUMB2 tid=%d pid=%d pc=%lx inst=%08x\n",
+					  "THUMB2 vma=%s#%s tid=%d pid=%d pc=%lx inst=%08x\n",
+					  t->task_comm, t->vma_name,
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		case ISA_AARCH32:
 			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
-					  "A32 tid=%d pid=%d pc=%lx inst=%08x\n",
+					  "A32 vma=%s#%s tid=%d pid=%d pc=%lx inst=%08x\n",
+					  t->task_comm, t->vma_name,
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		case ISA_AARCH64:
 			written = snprintf(buf + bytes, PAGE_SIZE - bytes,
-					  "A64 tid=%d pid=%d pc=%lx inst=%08x\n",
+					  "A64 vma=%s#%s tid=%d pid=%d pc=%lx inst=%08x\n",
+					  t->task_comm, t->vma_name,
 					  t->pid, t->tgid, t->pc, t->instruction);
 			break;
 		}
@@ -440,6 +445,64 @@ static inline bool is_thumb_32(u16 first_half)
 	return prefix == 0x1f || prefix == 0x1e || prefix == 0x1d;
 }
 
+static inline bool fetch_instruction_data(struct task_struct *task, unsigned long addr, void *buff, size_t sz_buff)
+{
+	if (access_process_vm(task, addr, buff, sz_buff, FOLL_FORCE) == sz_buff)
+		return true;
+
+	if ((task->flags & PF_KTHREAD) == PF_KTHREAD) {
+		preempt_disable();
+		if (virt_addr_valid(addr) || is_vmalloc_addr((void *)addr) || (__module_address(addr) != NULL)) {
+			memcpy(buff, (void *)addr, sz_buff);
+			preempt_enable();
+			return true;
+		}
+		preempt_enable();
+	}
+
+	return false;
+}
+
+static unsigned long get_task_vma_data(struct sampler_cpu_trace *trace, struct task_struct *tsk, unsigned long addr)
+{
+	struct mm_struct *mm = get_task_mm(tsk);
+	struct vm_area_struct *vma;
+
+	memcpy(trace->task_comm, tsk->comm, TASK_COMM_LEN);
+	trace->vma_name[0] = 0;
+
+	if (!mm)
+		return addr;
+
+	if (down_read_killable(&mm->mmap_sem))
+		goto out_mm;
+
+	vma = find_vma(mm, addr);
+	if (!vma)
+		goto out_sem;
+
+	addr -= vma->vm_start;
+
+	if (vma_is_anonymous(vma)) {
+		if (vma->anon_name)
+			strncpy_from_user(trace->vma_name, vma->anon_name, SAMPLER_VMA_NAME_LEN);
+	} else if (vma->vm_file) {
+		struct dentry *dentry = file_dentry(vma->vm_file);
+		struct name_snapshot name_snap;
+
+		addr += (vma->vm_pgoff << PAGE_SHIFT);
+		take_dentry_name_snapshot(&name_snap, dentry);
+		strncpy(trace->vma_name, name_snap.name, SAMPLER_VMA_NAME_LEN);
+		release_dentry_name_snapshot(&name_snap);
+	}
+
+out_sem:
+	up_read(&mm->mmap_sem);
+out_mm:
+	mmput(mm);
+	return addr;
+}
+
 /* generates trace data from the latched task sample information */
 static bool sampler_create_trace_data(struct sampler_cpu_trace *trace, const struct sampler_info *info)
 {
@@ -458,7 +521,7 @@ static bool sampler_create_trace_data(struct sampler_cpu_trace *trace, const str
 
 	trace->tgid = task_tgid_nr(info->task);
 	trace->pid = task_pid_nr(info->task);
-	trace->pc = info->pc;
+	trace->pc = get_task_vma_data(trace, info->task, info->pc);
 	trace->isa = info->isa;
 
 	/*
@@ -472,23 +535,28 @@ static bool sampler_create_trace_data(struct sampler_cpu_trace *trace, const str
 		/*
 		 * ensure address is correctly aligned, adjust the address to reflect the actual
 		 * instruction executed, because legacy ARM kept the PC pointing to one instruction
-		 * after any reasonable value for it
+		 * after any reasonable value for it. read 4 bytes preceding the PC to ensure that
+		 * 32-bit instructions are read in entirety. this is imperfect: a small number
+		 * of instructions (eg, blx) have encodings where the second half-word may pass
+		 * the is_thumb_32 check, resulting in invalid instructions where the second half-
+		 * word of the preceding instruction is treated as the first half-word of the
+		 * instruction reported to the trace point.
 		 */
-		addr -= sizeof(i.t[0]);
+		addr -= (sizeof(i.t[0]) + sizeof(i.t[1]));
 		addr &= ~(sizeof(i.t[0]) - 1);
-		if (access_process_vm(info->task, addr, &i.t[0], sizeof(i.t[0]), FOLL_FORCE) != sizeof(i.t[0]))
+		if (!fetch_instruction_data(info->task, addr, &i.t, sizeof(i.t)))
 			return false;
-		/*
-		 * read 32-bit instructions in 2 halves, to ensure that we never dereference an
-		 * invalid address if the address happens to be the last two bytes of the page
-		 * and the next page is unmapped
-		 */
+
 		if (is_thumb_32(i.t[0])) {
 			trace->isa = ISA_THUMB2;
-			addr += sizeof(i.t[0]);
-			if (access_process_vm(info->task, addr, &i.t[1], sizeof(i.t[1]), FOLL_FORCE) != sizeof(i.t[1]))
-				return false;
 		} else {
+			/*
+			 * if the first half-word doesn't have the 32-bit flag, then the second
+			 * half-word is a complete 16-bit instruction, and the most-recently-
+			 * executed instruction
+			 */
+			trace->isa = ISA_THUMB;
+			i.t[0] = i.t[1];
 			i.t[1] = 0;
 		}
 		trace->instruction = i.a;
@@ -498,7 +566,7 @@ static bool sampler_create_trace_data(struct sampler_cpu_trace *trace, const str
 		/* fallthrough */
 	case ISA_AARCH64:
 		addr &= ~(sizeof(i.a) - 1);
-		if (access_process_vm(info->task, addr, &i.a,  sizeof(i.a), FOLL_FORCE) != sizeof(i.a))
+		if (!fetch_instruction_data(info->task, addr, &i.a, sizeof(i.a)))
 			return false;
 		trace->instruction = i.a;
 		break;
@@ -539,15 +607,18 @@ static void sampler_do_work(struct kthread_work *work)
 	for_each_possible_cpu(cpu) {
 		struct sampler_info *info = per_cpu_ptr(sampler->sample_data, cpu);
 		struct sampler_cpu_trace *trace = &sampler->traces[trace_count_to_index(next_trace)][cpu];
+		bool ok;
 
 		if (cpumask_test_cpu(cpu, &copy_mask) || cpu == sampler->latch_cpu) {
-			sampler_create_trace_data(trace, info);
+			ok = sampler_create_trace_data(trace, info);
 		} else {
 			trace->tgid = 0;
 			trace->pid = 0;
 			trace->isa = ISA_CPU_OFFLINE;
+			ok = true;
 		}
-		trace_cpu_instruction(cpu, sampler->last_schedule, trace);
+		if (ok)
+			trace_cpu_instruction(cpu, sampler->last_schedule, trace);
 		latch_task(info, NULL);
 	}
 

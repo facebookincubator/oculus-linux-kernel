@@ -28,18 +28,6 @@
 #include "kgsl_threadstats.h"
 #include "kgsl_trace.h"
 
-#ifndef arch_mmap_check
-#define arch_mmap_check(addr, len, flags)	(0)
-#endif
-
-#ifndef pgprot_writebackcache
-#define pgprot_writebackcache(_prot)	(_prot)
-#endif
-
-#ifndef pgprot_writethroughcache
-#define pgprot_writethroughcache(_prot)	(_prot)
-#endif
-
 #ifdef CONFIG_ARM_LPAE
 #define KGSL_DMA_BIT_MASK	DMA_BIT_MASK(64)
 #else
@@ -3612,15 +3600,15 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_ARM64
 static uint64_t kgsl_filter_cachemode(uint64_t flags)
 {
 	/*
-	 * WRITETHROUGH is not supported in arm64, so we tell the user that we
-	 * use WRITEBACK which is the default caching policy.
+	 * WRITETHROUGH is not supported, so we tell the user that we
+	 * use WRITEBACK which is the default caching policy for the CPU.
 	 */
 	if ((flags & KGSL_CACHEMODE_MASK) >> KGSL_CACHEMODE_SHIFT ==
 					KGSL_CACHEMODE_WRITETHROUGH) {
+		WARN_ONCE(1, "WRITETHROUGH caching is deprecated");
 		flags &= ~((uint64_t) KGSL_CACHEMODE_MASK);
 		flags |= (uint64_t)((KGSL_CACHEMODE_WRITEBACK <<
 						KGSL_CACHEMODE_SHIFT) &
@@ -3628,12 +3616,6 @@ static uint64_t kgsl_filter_cachemode(uint64_t flags)
 	}
 	return flags;
 }
-#else
-static uint64_t kgsl_filter_cachemode(uint64_t flags)
-{
-	return flags;
-}
-#endif
 
 /* The largest allowable alignment for a GPU object is 32MB */
 #define KGSL_MAX_ALIGN (32 * SZ_1M)
@@ -4767,7 +4749,7 @@ kgsl_mmap_memstore(struct kgsl_device *device, struct vm_area_struct *vma)
 		return -EINVAL;
 	}
 
-	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+	vma->vm_page_prot = kgsl_pgprot_modify(memdesc, vma->vm_page_prot);
 
 	result = remap_pfn_range(vma, vma->vm_start,
 				device->memstore.physaddr >> PAGE_SHIFT,
@@ -5168,6 +5150,30 @@ put:
 	return val;
 }
 
+pgprot_t kgsl_pgprot_modify(struct kgsl_memdesc *memdesc, pgprot_t pgprot)
+{
+	pgprot_t modified_pgprot;
+
+	if (memdesc == NULL)
+		return pgprot_writecombine(pgprot);
+
+	switch (kgsl_memdesc_get_cachemode(memdesc)) {
+	case KGSL_CACHEMODE_UNCACHED:
+		return pgprot_noncached(pgprot);
+	case KGSL_CACHEMODE_WRITETHROUGH:
+		/* Intentional fallthrough to WB caching. */
+	case KGSL_CACHEMODE_WRITEBACK:
+		/*
+		 * Writeback caching is the default caching behavior for
+		 * ARM(64) so return `pgprot` without modification.
+		 */
+		return pgprot;
+	case KGSL_CACHEMODE_WRITECOMBINE:
+	default:
+		return pgprot_writecombine(pgprot);
+	}
+}
+
 static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	unsigned int ret, cache;
@@ -5199,24 +5205,8 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 
 	cache = kgsl_memdesc_get_cachemode(&entry->memdesc);
 
-	switch (cache) {
-	case KGSL_CACHEMODE_UNCACHED:
-		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-		break;
-	case KGSL_CACHEMODE_WRITETHROUGH:
-		vma->vm_page_prot = pgprot_writethroughcache(vma->vm_page_prot);
-		if (pgprot_val(vma->vm_page_prot) ==
-			pgprot_val(pgprot_writebackcache(vma->vm_page_prot)))
-			WARN_ONCE(1, "WRITETHROUGH is deprecated for arm64");
-		break;
-	case KGSL_CACHEMODE_WRITEBACK:
-		vma->vm_page_prot = pgprot_writebackcache(vma->vm_page_prot);
-		break;
-	case KGSL_CACHEMODE_WRITECOMBINE:
-	default:
-		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-		break;
-	}
+	vma->vm_page_prot = kgsl_pgprot_modify(&entry->memdesc,
+			vma->vm_page_prot);
 
 	vma->vm_ops = &kgsl_gpumem_vm_ops;
 

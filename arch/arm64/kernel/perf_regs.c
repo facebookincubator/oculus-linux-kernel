@@ -32,6 +32,9 @@ u64 perf_reg_value(struct pt_regs *regs, int idx)
 	if ((u32)idx == PERF_REG_ARM64_PC)
 		return regs->pc;
 
+	if ((u32)idx == PERF_REG_ARM64_PSTATE)
+		return regs->pstate;
+
 	return regs->regs[idx];
 }
 

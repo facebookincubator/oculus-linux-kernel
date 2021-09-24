@@ -53,6 +53,14 @@ config EYE_FACE_LED
 	  Eye Face LED Kernel Module to set default gpio values.
 	  This driver sets XERR and SAFETY_FLAG to input-enable & bias-disable
 
+config FPGA_AGGREGATOR
+	tristate "FPGA Aggregator Kernel Driver"
+	default n
+	depends on OCULUS
+	help
+	  FPGA aggregator kernel module that controls the regulators
+	  for the FPGA hardware.
+
 config FRONT_PANEL_SENSOR
 	tristate "Front Panel Virtual Sensor Driver"
 	default n

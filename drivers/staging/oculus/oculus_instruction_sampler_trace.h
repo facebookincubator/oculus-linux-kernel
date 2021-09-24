@@ -24,6 +24,8 @@ TRACE_EVENT(cpu_instruction,
 		__field(pid_t,		pid)
 		__field(unsigned long,	program_counter)
 		__field(unsigned int,	instruction)
+		__array(char,		vma_name, SAMPLER_VMA_NAME_LEN)
+		__array(char,		task_comm, TASK_COMM_LEN)
 	),
 
 	TP_fast_assign(
@@ -34,10 +36,13 @@ TRACE_EVENT(cpu_instruction,
 		__entry->pid = trace->pid;
 		__entry->program_counter = trace->pc;
 		__entry->instruction = trace->instruction;
+		memcpy(__entry->vma_name, trace->vma_name, SAMPLER_VMA_NAME_LEN);
+		memcpy(__entry->task_comm, trace->task_comm, TASK_COMM_LEN);
 	),
 
-	TP_printk("cpu=%d time=%lld pid=%d isa=%d instruction=%08x",
-		  __entry->cpu, __entry->time, __entry->pid, __entry->isa, __entry->instruction
+	TP_printk("cpu=%d vma=%s#%s+0x%lx time=%lld tid=%d isa=%d instruction=%08x",
+		  __entry->cpu, __entry->task_comm, __entry->vma_name, __entry->program_counter,
+		  __entry->time, __entry->pid, __entry->isa, __entry->instruction
 	)
 );
 

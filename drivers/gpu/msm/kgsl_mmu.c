@@ -574,6 +574,64 @@ struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 	return ERR_PTR(-EINVAL);
 }
 
+struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc)
+{
+	struct kgsl_pagetable *pagetable;
+	struct page **pages;
+	uint64_t offset;
+	int i;
+
+	/* If the page pointer array exists for this memdesc just return it. */
+	if (memdesc->pages != NULL)
+		return memdesc->pages;
+
+	pagetable = memdesc->pagetable;
+	if (pagetable == NULL)
+		return ERR_PTR(-ENODEV);
+	if (!PT_OP_VALID(pagetable, mmu_find_mapped_page) ||
+		!(KGSL_MEMDESC_MAPPED & memdesc->priv) ||
+		memdesc->page_count == 0)
+		return ERR_PTR(-EINVAL);
+
+	pages = kvcalloc(memdesc->page_count, sizeof(struct page *), GFP_KERNEL);
+	if (pages == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	offset = 0;
+	for (i = 0; i < memdesc->page_count; i++, offset += PAGE_SIZE) {
+		struct page *page = pagetable->pt_ops->mmu_find_mapped_page(
+				memdesc, offset);
+
+		if (!IS_ERR_OR_NULL(page) && pfn_valid(page_to_pfn(page)))
+			pages[i] = page;
+	}
+
+	return pages;
+}
+
+int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,
+		struct page **pages, unsigned int page_count)
+{
+	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+
+	if (PT_OP_VALID(pagetable, mmu_remap_page_range))
+		return pagetable->pt_ops->mmu_remap_page_range(memdesc, offset,
+				pages, page_count);
+
+	return -EINVAL;
+}
+
+int kgsl_mmu_remap_page(struct kgsl_memdesc *memdesc, uint64_t offset,
+		struct page *page)
+{
+	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+
+	if (PT_OP_VALID(pagetable, mmu_remap_page))
+		return pagetable->pt_ops->mmu_remap_page(memdesc, offset, page);
+
+	return -EINVAL;
+}
+
 void kgsl_mmu_remove_global(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc)
 {

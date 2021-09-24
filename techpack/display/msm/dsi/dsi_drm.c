@@ -502,6 +502,7 @@ int dsi_conn_get_mode_info(struct drm_connector *connector,
 	mode_info->clk_rate = dsi_drm_find_bit_clk_rate(display, drm_mode);
 	mode_info->mdp_transfer_time_us =
 		dsi_mode.priv_info->mdp_transfer_time_us;
+	mode_info->padding = dsi_mode.priv_info->padding;
 
 	memcpy(&mode_info->topology, &dsi_mode.priv_info->topology,
 			sizeof(struct msm_display_topology));

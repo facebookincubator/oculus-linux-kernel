@@ -16,6 +16,31 @@
 #include "cam_packet_util.h"
 #include "cam_icp_context_fastpath.h"
 
+/* Packet process timeout */
+#define CAM_ICP_FPC_PROCESS_TIMEOUT_MS 30
+
+static void cam_icp_fpc_packet_done(struct cam_icp_fastpath_context *ctx,
+				    u64 request_id)
+{
+
+	struct cam_icp_fastpath_packet *fp_pck;
+	struct list_head *pos;
+
+	mutex_lock(&ctx->packet_lock);
+
+	/* Try first to get latest updated patch in pending queue */
+	list_for_each_prev(pos, &ctx->packet_pending_queue) {
+		fp_pck = list_entry(pos, struct cam_icp_fastpath_packet, list);
+		if (fp_pck->packet->header.request_id == request_id) {
+			complete_all(&fp_pck->done);
+			CAM_DBG(CAM_ICP, "Complete packet %llu", request_id);
+			break;
+		}
+	}
+
+	mutex_unlock(&ctx->packet_lock);
+}
+
 /* Hw manager callback handling  */
 static int
 cam_icp_fpc_handle_buf_done(void *context, uint32_t evt_id, void *evt_data)
@@ -24,10 +49,18 @@ cam_icp_fpc_handle_buf_done(void *context, uint32_t evt_id, void *evt_data)
 		(struct cam_icp_fastpath_context *)context;
 	struct cam_hw_done_event_data *done =
 		(struct cam_hw_done_event_data *)evt_data;
+	enum cam_fp_buffer_status status = evt_id ?
+		CAM_FP_BUFFER_STATUS_ERROR : CAM_FP_BUFFER_STATUS_SUCCESS;
+
+	/*
+	 * First complete the packet. If packet is reused the next
+	 * processing should start as soon as posible.
+	 */
+	cam_icp_fpc_packet_done(ctx, done->request_id);
 
 	cam_fp_queue_buffer_set_done(&ctx->fp_queue,
-				     done->request_id, 0,
-				     CAM_FP_BUFFER_STATUS_SUCCESS);
+				done->request_id, 0,
+				status, 0);
 
 	CAM_DBG(CAM_ICP, "Buffer done request id %llu evt id %d",
 		done->request_id, evt_id);
@@ -207,24 +240,33 @@ cam_icp_fpc_apply_patch_map(struct cam_buf_io_cfg *io_cfg,
 static struct cam_icp_fastpath_io_patch_map *
 cam_icp_fpc_get_any_patch_map(struct cam_icp_fastpath_context *ctx)
 {
+	struct cam_icp_fastpath_io_patch_map *patch_map = NULL;
 	struct cam_icp_fastpath_packet *fp_pck;
 	struct list_head *pos;
+
+	mutex_lock(&ctx->packet_lock);
 
 	/* Try first to get latest updated patch in pending queue */
 	list_for_each_prev(pos, &ctx->packet_pending_queue) {
 		fp_pck = list_entry(pos, struct cam_icp_fastpath_packet, list);
-		if (fp_pck->io_patch_map.num_maps)
-			return &fp_pck->io_patch_map;
+		if (fp_pck->io_patch_map.num_maps) {
+			patch_map = &fp_pck->io_patch_map;
+			break;
+		}
 	}
 
 	/* If not found fallback and search in to the free queue */
 	list_for_each_prev(pos, &ctx->packet_free_queue) {
 		fp_pck = list_entry(pos, struct cam_icp_fastpath_packet, list);
-		if (fp_pck->io_patch_map.num_maps)
-			return &fp_pck->io_patch_map;
+		if (fp_pck->io_patch_map.num_maps) {
+			patch_map = &fp_pck->io_patch_map;
+			break;
+		}
 	}
 
-	return NULL;
+	mutex_unlock(&ctx->packet_lock);
+
+	return patch_map;
 }
 
 static int
@@ -319,7 +361,7 @@ static int cam_icp_fpc_alloc_packet_queue(struct cam_icp_fastpath_context *ctx,
 	if (!ctx->packets_mem)
 		return -ENOMEM;
 
-	mutex_lock(&ctx->ctx_lock);
+	mutex_lock(&ctx->packet_lock);
 
 	INIT_LIST_HEAD(&ctx->packet_free_queue);
 	INIT_LIST_HEAD(&ctx->packet_pending_queue);
@@ -327,18 +369,20 @@ static int cam_icp_fpc_alloc_packet_queue(struct cam_icp_fastpath_context *ctx,
 	/* Fill empty buffers queue */
 	for (i = 0; i < num_packets; i++) {
 		INIT_LIST_HEAD(&ctx->packets_mem[i].list);
+		init_completion(&ctx->packets_mem[i].done);
+
 		list_add_tail(&ctx->packets_mem[i].list,
 			      &ctx->packet_free_queue);
 	}
 
-	mutex_unlock(&ctx->ctx_lock);
+	mutex_unlock(&ctx->packet_lock);
 
 	return 0;
 }
 
 static int cam_icp_fpc_free_packet_queue(struct cam_icp_fastpath_context *ctx)
 {
-	mutex_lock(&ctx->ctx_lock);
+	mutex_lock(&ctx->packet_lock);
 
 	INIT_LIST_HEAD(&ctx->packet_free_queue);
 	INIT_LIST_HEAD(&ctx->packet_pending_queue);
@@ -348,7 +392,7 @@ static int cam_icp_fpc_free_packet_queue(struct cam_icp_fastpath_context *ctx)
 		ctx->packets_mem = NULL;
 	}
 
-	mutex_unlock(&ctx->ctx_lock);
+	mutex_unlock(&ctx->packet_lock);
 
 	return 0;
 }
@@ -359,7 +403,7 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 	struct list_head *next;
 	struct list_head *pos;
 
-	mutex_lock(&ctx->ctx_lock);
+	mutex_lock(&ctx->packet_lock);
 
 	/* Add list for each from pending to free queue */
 	list_for_each_safe(pos, next, &ctx->packet_pending_queue) {
@@ -367,9 +411,10 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 
 		list_del(&fp_pck->list);
 		list_add_tail(&fp_pck->list, &ctx->packet_free_queue);
+		complete_all(&fp_pck->done);
 	}
 
-	mutex_unlock(&ctx->ctx_lock);
+	mutex_unlock(&ctx->packet_lock);
 
 	return 0;
 }
@@ -380,7 +425,7 @@ static int cam_icp_fpc_enqueue_packet(struct cam_icp_fastpath_context *ctx,
 {
 	struct cam_icp_fastpath_packet *fp_pck;
 
-	lockdep_assert_held(&ctx->ctx_lock);
+	mutex_lock(&ctx->packet_lock);
 
 	/* If there is no available packet in empty list delete oldest packet */
 	if (list_empty(&ctx->packet_free_queue)) {
@@ -404,13 +449,26 @@ static int cam_icp_fpc_enqueue_packet(struct cam_icp_fastpath_context *ctx,
 	fp_pck->io_patch_map.num_maps = 0;
 	list_add_tail(&fp_pck->list, &ctx->packet_pending_queue);
 
+	/* New enqueued packets should be completed */
+	complete_all(&fp_pck->done);
+
+	mutex_unlock(&ctx->packet_lock);
+
 	return 0;
 }
 
 static inline bool
 cam_icp_fpc_is_packet_available(struct cam_icp_fastpath_context *ctx)
 {
-	return !list_empty(&ctx->packet_pending_queue);
+	bool available;
+
+	mutex_lock(&ctx->packet_lock);
+
+	available = !list_empty(&ctx->packet_pending_queue);
+
+	mutex_unlock(&ctx->packet_lock);
+
+	return available;
 }
 
 static struct cam_icp_fastpath_packet *
@@ -420,7 +478,7 @@ cam_icp_fpc_get_packet_and_discard_oldest(struct cam_icp_fastpath_context *ctx, 
 	struct cam_icp_fastpath_packet *fp_pck_next;
 	struct list_head *pos, *next;
 
-	lockdep_assert_held(&ctx->ctx_lock);
+	mutex_lock(&ctx->packet_lock);
 
 	list_for_each_safe(pos, next, &ctx->packet_pending_queue) {
 		fp_pck = list_entry(pos, struct cam_icp_fastpath_packet, list);
@@ -440,6 +498,8 @@ cam_icp_fpc_get_packet_and_discard_oldest(struct cam_icp_fastpath_context *ctx, 
 
 	CAM_DBG(CAM_ICP, "Found packet %llu for request id %llu!",
 		fp_pck->request_id, request_id);
+
+	mutex_unlock(&ctx->packet_lock);
 
 	return fp_pck;
 }
@@ -468,13 +528,26 @@ static int cam_icp_fpc_try_to_process(struct cam_icp_fastpath_context *ctx)
 	fp_packet = cam_icp_fpc_get_packet_and_discard_oldest(ctx, buffer_set->request_id);
 	if (WARN_ON(!fp_packet)) {
 		CAM_ERR(CAM_ICP, "Ouch! Packet received but not available!");
-		return -EINVAL;
+		rc = -EINVAL;
+		goto error_release_buffer_set;
+	}
+
+	/* If packet is reused wait to finish first */
+	if (buffer_set->request_id != fp_packet->request_id) {
+		long wait_rc = wait_for_completion_timeout(&fp_packet->done,
+			msecs_to_jiffies(CAM_ICP_FPC_PROCESS_TIMEOUT_MS));
+		if (wait_rc < 1) {
+			CAM_ERR(CAM_ICP, "Wait for completion timeout %d", rc);
+			return wait_rc ? wait_rc : -ETIMEDOUT;
+		}
+		CAM_DBG(CAM_ICP, "Packet process wait done %d request id %llu",
+			wait_rc, buffer_set->request_id);
 	}
 
 	rc = cam_icp_fpc_update_packet_bufs(ctx, buffer_set, fp_packet);
 	if (rc < 0) {
 		CAM_ERR(CAM_ICP, "Fail to update packet bufs");
-		return rc;
+		goto error_release_buffer_set;
 	}
 
 	/* preprocess the configuration */
@@ -497,7 +570,8 @@ static int cam_icp_fpc_try_to_process(struct cam_icp_fastpath_context *ctx)
 	rc = ctx->hw_intf.hw_prepare_update(ctx->hw_intf.hw_mgr_priv, &prep);
 	if (rc != 0) {
 		CAM_ERR(CAM_ICP, "Prepare config packet failed in HW layer");
-		return -EFAULT;
+		rc = -EFAULT;
+		goto error_release_buffer_set;
 	}
 
 	memset(&config, 0, sizeof(config));
@@ -507,15 +581,24 @@ static int cam_icp_fpc_try_to_process(struct cam_icp_fastpath_context *ctx)
 	config.num_hw_update_entries = prep.num_hw_update_entries;
 	config.priv = prep.priv;
 	config.init_packet = 0;
+
+	reinit_completion(&fp_packet->done);
 	rc = ctx->hw_intf.hw_config(ctx->hw_intf.hw_mgr_priv, &config);
 	if (rc) {
 		CAM_ERR(CAM_ICP, "Can not apply the configuration");
-		return rc;
+		complete_all(&fp_packet->done);
+		goto error_release_buffer_set;
 	}
 
 	CAM_DBG(CAM_ICP, "Process Buffer! %llu", buffer_set->request_id);
 
 	return 0;
+
+error_release_buffer_set:
+	cam_fp_queue_buffer_set_done(&ctx->fp_queue,
+				     buffer_set->request_id, 0,
+				     CAM_FP_BUFFER_STATUS_ERROR, 0);
+	return rc;
 }
 
 static int cam_icp_fpc_queue_buf_notify(void *priv)
@@ -930,6 +1013,7 @@ void *cam_icp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
 	memcpy(&ctx->hw_intf, hw_intf, sizeof(*hw_intf));
 
 	mutex_init(&ctx->ctx_lock);
+	mutex_init(&ctx->packet_lock);
 
 	return ctx;
 

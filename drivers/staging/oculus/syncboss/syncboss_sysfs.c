@@ -380,6 +380,26 @@ static ssize_t stats_show(struct device *dev,
 	return retval;
 }
 
+static ssize_t stats_store(struct device *dev,
+				      struct device_attribute *attr,
+				      const char *buf, size_t count)
+{
+	int status = 0;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	if (strncmp(buf, "reset", 5) != 0)
+		return -EINVAL;
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status == 0) {
+		memset(&devdata->stats, 0, sizeof(devdata->stats));
+		status = count;
+	}
+	mutex_unlock(&devdata->state_mutex);
+	return status;
+}
+
 static ssize_t spi_max_clk_rate_show(struct device *dev,
 				     struct device_attribute *attr, char *buf)
 {
@@ -618,11 +638,13 @@ static ssize_t enable_fastpath_store(struct device *dev,
 
  *     have been rejected by SyncBoss (deprecated, use the stats file instead)
  * reset - set to 1 to reset the syncboss (toggle reset pin)
- * stats - show various driver stats
+ * stats - show various driver stats, write "reset" to clear
  * update_firmware - write 1 to do a firmware update (firmware must be under
  *      /vendor/firmware/syncboss.bin)
  * next_avail_seq_num - the next available sequence number for control calls
  * te_timestamp - timestamp of the last TE event
+ * num_cameras - number of cameras configured via device tree
+ * enable_fastpath - enable or disable faspath
  */
 static DEVICE_ATTR_WO(reset);
 static DEVICE_ATTR_RW(spi_max_clk_rate);
@@ -630,7 +652,7 @@ static DEVICE_ATTR_RW(transaction_period_us);
 static DEVICE_ATTR_RW(minimum_time_between_transactions_us);
 static DEVICE_ATTR_RW(transaction_length);
 static DEVICE_ATTR_RW(cpu_affinity);
-static DEVICE_ATTR_RO(stats);
+static DEVICE_ATTR_RW(stats);
 static DEVICE_ATTR_RW(poll_prio);
 static DEVICE_ATTR_RO(next_avail_seq_num);
 static DEVICE_ATTR_RW(power);

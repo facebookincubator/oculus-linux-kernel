@@ -125,7 +125,7 @@ static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 	devdata->swd_provisioning = of_property_read_bool(node, "oculus,swd-provisioning");
 
 	/* Regulator is optional and will be initialized to NULL if not found */
-	fw_init_regulator(dev, &devdata->swd_core, "swd-core");
+	devm_fw_init_regulator(dev, &devdata->swd_core, "swd-core");
 
 	ret = fwupdate_init_swd_ops(dev, swdflavor);
 	if (ret < 0)
@@ -192,8 +192,6 @@ static int mod_remove(struct platform_device *pdev)
 	sysfs_remove_group(&dev->kobj, &m_swd_gr);
 
 	destroy_workqueue(devdata->workqueue);
-
-	regulator_put(devdata->swd_core);
 
 	kfree(devdata);
 

@@ -1,5 +1,9 @@
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 ifeq ($(CONFIG_ARCH_KONA),y)
+
+dtbo-$(CONFIG_OCULUS_EUREKA865) += \
+	eureka865-dev0-overlay.dtbo
+
 dtbo-$(CONFIG_OCULUS_HOLLYWOOD) += \
 	hollywood-poc2-overlay.dtbo \
 	hollywood-p1.1-overlay.dtbo \
@@ -23,6 +27,7 @@ dtbo-$(CONFIG_OCULUS_unknown1) += \
 	unknown1-dev3-overlay.dtbo \
 	unknown1-p3-overlay.dtbo
 
+eureka865-dev0-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-poc2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-p1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-evt1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb

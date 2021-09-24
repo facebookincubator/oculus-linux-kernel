@@ -5691,6 +5691,9 @@ static int cm710x_init(struct snd_soc_pcm_runtime *rtd)
 	}
 
 	msm_add_mi2s_snd_controls(component);
+#if IS_ENABLED(CONFIG_SND_SOC_CM7120)
+	msm_add_tdm_snd_controls(component);
+#endif
 
 	snd_soc_dapm_sync(dapm);
 	return 0;
@@ -6486,8 +6489,13 @@ static struct snd_soc_dai_link msm_tdm_be_dai_links[] = {
 		.stream_name = "Primary TDM0 Playback",
 		.cpu_dai_name = "msm-dai-q6-tdm.36864",
 		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_CM7120)
+		.codec_name = "cm7120",
+		.codec_dai_name = "cm7120-aif2",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
+#endif
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.id = MSM_BACKEND_DAI_PRI_TDM_RX_0,
@@ -6501,8 +6509,13 @@ static struct snd_soc_dai_link msm_tdm_be_dai_links[] = {
 		.stream_name = "Primary TDM0 Capture",
 		.cpu_dai_name = "msm-dai-q6-tdm.36865",
 		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_CM7120)
+		.codec_name = "cm7120",
+		.codec_dai_name = "cm7120-aif2",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
+#endif
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.id = MSM_BACKEND_DAI_PRI_TDM_TX_0,

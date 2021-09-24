@@ -49,6 +49,7 @@ struct cam_isp_fastpath_ctx_req {
 	struct cam_isp_prepare_hw_update_data hw_update_data;
 	uint64_t                              timestamp;
 	bool                                  reused_packet;
+	uint32_t                              sof_index;
 };
 
 struct cam_isp_fastpath_work_payload {
@@ -83,6 +84,8 @@ struct cam_isp_fastpath_context {
 	struct mutex                          mutex_list;
 
 	struct cam_fp_queue                   fp_queue;
+
+	uint32_t                              sof_cnt;
 
 };
 

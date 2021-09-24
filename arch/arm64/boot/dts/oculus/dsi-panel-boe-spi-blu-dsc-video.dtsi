@@ -58,6 +58,7 @@
 				qcom,mdss-dsi-v-pulse-width = <1>;
 				qcom,mdss-dsi-h-sync-pulse = <0>;
 				qcom,mdss-dsi-panel-framerate = <90>;
+				qcom,mdss-dsi-panel-padding = <24>;
 
 				qcom,mdss-dsi-bpp = <24>;
 
