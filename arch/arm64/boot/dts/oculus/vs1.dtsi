@@ -1064,6 +1064,8 @@
 		oculus,mag-core-supply = <&pm8998_l28>;
 		oculus,mag-core-voltage-level = <1808000 1808000>;
 
+		oculus,syncboss-use-streaming-wakelock;
+
 		swd@0 {
 			compatible = "oculus,swd";
 

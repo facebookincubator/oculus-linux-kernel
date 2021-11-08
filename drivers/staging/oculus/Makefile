@@ -4,12 +4,15 @@ USERINCLUDE	+= \
 	-I$(srctree)/drivers/staging/oculus/include/uapi
 
 LINUXINCLUDE	+= \
+	-I$(srctree)/drivers/staging/oculus/include/linux \
 	-I$(srctree)/drivers/staging/oculus/include/uapi \
 	-I$(srctree)/drivers/staging/oculus/include
 
 obj-$(CONFIG_AS5510)			+= as5510.o
 obj-$(CONFIG_BATTERY_VIRTUAL_SENSOR)	+= battery_virtual_sensor.o
 obj-$(CONFIG_BLU_FW)			+= blu_fw_driver.o
+obj-$(CONFIG_CHARGER_CYPD3177)	+= cypd3177.o
+obj-$(CONFIG_CYPD_POLICY_ENGINE)	+= cypd_policy_engine.o
 obj-$(CONFIG_DEPTH_PROJECTOR)		+= projector.o
 obj-$(CONFIG_DISPLAY_VIRTUAL_SENSOR)	+= display_virtual_sensor.o
 obj-$(CONFIG_EYE_FACE_LED)		+= eye_face_led.o
