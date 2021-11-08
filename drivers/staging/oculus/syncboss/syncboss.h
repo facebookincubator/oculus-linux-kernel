@@ -146,16 +146,6 @@ struct syncboss_dev_data {
 	/* Mutex that protects the state of this structure */
 	struct mutex state_mutex;
 
-	/* The workqueue serves 2 purposes:
-	 *   1) It allows us to kick off work (such as streaming
-	 *      start/stop) from execution contexts that couldn't do
-	 *      such things directly (such as during driver probe).
-	 *   2) Since this is a "singlethread" workqueue, it provides
-	 *      a mechanism for us to serialize operations without the
-	 *      need for crazy locking mechanisms.
-	 */
-	struct workqueue_struct *syncboss_workqueue;
-
 	/* GPIO line for pin reset */
 	int gpio_reset;
 	/* GPIO line for time sync */

@@ -271,6 +271,12 @@ void kgsl_pool_free_pages(struct page **pages, unsigned int pcount)
 		 */
 		struct page *p = pages[i];
 
+		/* Skip over unmapped/missing pages. */
+		if (IS_ERR_OR_NULL(p) || p == ZERO_PAGE(0)) {
+			i++;
+			continue;
+		}
+
 		if (WARN(!kern_addr_valid((unsigned long)p),
 			"Address of page=%pK is not valid\n", p))
 			return;

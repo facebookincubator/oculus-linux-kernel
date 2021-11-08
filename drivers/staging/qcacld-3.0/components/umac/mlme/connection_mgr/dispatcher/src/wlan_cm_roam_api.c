@@ -799,7 +799,7 @@ wlan_cm_update_roam_states(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 	rso_config = &mlme_priv->cm_roam.vdev_rso_config;
 	switch (states) {
 	case ROAM_TRIGGER_REASON:
-		rso_config->rescan_rssi_delta = value;
+		rso_config->roam_trigger_reason = value;
 		break;
 	case ROAM_INVOKE_FAIL_REASON:
 		rso_config->roam_invoke_fail_reason = value;

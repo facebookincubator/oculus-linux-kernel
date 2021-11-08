@@ -2,12 +2,17 @@
 #include "dsi-panel-boe-dsc-4k-80Hz-video.dtsi"
 #include "dsi-panel-boe-dsc-4k-90Hz-video.dtsi"
 #include "dsi-panel-boe-dsc-4k-120Hz-video.dtsi"
+#include "dsi-panel-jdi-dsc-4k-video.dtsi"
 #include "dsi-panel-jdi-dsc-4k-90Hz-video.dtsi"
+#include "dsi-panel-jdi-dsc-4k-80Hz-video.dtsi"
 #include "dsi-panel-jdi-dsc-4k-120Hz-video.dtsi"
+#include "dsi-panel-sharp-dsc-4k-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-90Hz-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-120Hz-video.dtsi"
+#include "dsi-panel-sharp-dsc-4k-evt2-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-90Hz-evt2-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-120Hz-evt2-video.dtsi"
+#include "dsi-panel-sharp-dsc-4k-dvt-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-90Hz-dvt-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-120Hz-dvt-video.dtsi"
 
@@ -115,6 +120,58 @@
 	};
 };
 
+&dsi_jdi_4k_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A
+				0A 0A 02 04 00 1F 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_jdi_4k_80Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A
+				0A 0A 02 04 00 1F 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
 &dsi_jdi_4k_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
@@ -146,6 +203,32 @@
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
 	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
 	qcom,mdss-dsi-jdi-default-max-scanline-offset = <1200>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A
+				0A 0A 02 04 00 1F 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_sharp_4k_72Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <108>; /* 10.8% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
 	qcom,platform-en-gpio = <&tlmm 135 0>;
@@ -271,6 +354,32 @@
 	};
 };
 
+&dsi_sharp_4k_72Hz_dsc_evt2_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <78>; /* 7.8% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A
+				0A 0A 02 04 00 1F 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
 &dsi_sharp_4k_90Hz_dsc_dvt_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
@@ -323,6 +432,32 @@
 	};
 };
 
+&dsi_sharp_4k_72Hz_dsc_dvt_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <80>; /* 8.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A
+				0A 0A 02 04 00 1F 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
 &ext_disp {
 	status = "disabled";
 };
@@ -332,12 +467,17 @@
 		&dsi_boe_4k_80Hz_dsc_video
 		&dsi_boe_4k_90Hz_dsc_video
 		&dsi_boe_4k_120Hz_dsc_video
+		&dsi_jdi_4k_dsc_video
+		&dsi_jdi_4k_80Hz_dsc_video
 		&dsi_jdi_4k_90Hz_dsc_video
 		&dsi_jdi_4k_120Hz_dsc_video
+		&dsi_sharp_4k_72Hz_dsc_video
 		&dsi_sharp_4k_90Hz_dsc_video
 		&dsi_sharp_4k_120Hz_dsc_video
+		&dsi_sharp_4k_72Hz_dsc_evt2_video
 		&dsi_sharp_4k_90Hz_dsc_evt2_video
 		&dsi_sharp_4k_120Hz_dsc_evt2_video
+		&dsi_sharp_4k_72Hz_dsc_dvt_video
 		&dsi_sharp_4k_90Hz_dsc_dvt_video
 		&dsi_sharp_4k_120Hz_dsc_dvt_video>;
 };
@@ -404,7 +544,7 @@
 	lab-supply = <&lcdb_ldo_vreg>;
 	ibb-supply = <&lcdb_ncp_vreg>;
 	blu-mcu-supply = <&pm8150a_l11>;
-	qcom,dsi-default-panel = <&dsi_jdi_4k_90Hz_dsc_video>;
+	qcom,dsi-default-panel = <&dsi_jdi_4k_120Hz_dsc_video>;
 };
 
 &sde_dp {

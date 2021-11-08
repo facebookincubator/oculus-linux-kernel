@@ -92,6 +92,13 @@
 					29 01 00 00 00 00 03 EC 06 8C /* 60Hz */
 				];
 
+				qcom,mdss-dsi-local-dimming-blu-timing =
+					/* BLU ON / OFF time in h lines after vsync */
+					<4430 5355>, /* 90 Hz */
+					<4675 5716>, /* 80 Hz */
+					<4921 6077>, /* 72 Hz */
+					<5703 7090>; /* 60 Hz */
+
 				// before video is on, the DSI panels typically
 				// accept either hs or lp, but lp is prefered.
 				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";

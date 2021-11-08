@@ -40,13 +40,6 @@ enum dsi_dsc_ratio_type {
 	DSC_RATIO_TYPE_MAX
 };
 
-enum dsi_dfps_refresh_index {
-	RR_90HZ = 0,
-	RR_80HZ,
-	RR_72HZ,
-	RR_60HZ
-};
-
 static u32 dsi_dsc_rc_buf_thresh[] = {0x0e, 0x1c, 0x2a, 0x38, 0x46, 0x54,
 		0x62, 0x69, 0x70, 0x77, 0x79, 0x7b, 0x7d, 0x7e};
 
@@ -891,6 +884,8 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 {
 	enum dsi_dfps_refresh_index refresh_index;
 	int rc = 0;
+	struct dsi_backlight_config *bl_config;
+	u32 blu_on, blu_off;
 
 	if (!panel || !panel->cur_mode)
 		return -EINVAL;
@@ -899,8 +894,12 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	if (bl_level != panel->bl_config.bl_level)
 		return rc;
 
+	bl_config = &panel->bl_config;
+
 	/* Select the index in cmd array based on the refresh rate. */
 	refresh_index = dsi_panel_get_refresh_index(panel->cur_mode->timing.refresh_rate);
+	blu_on = panel->cur_mode->priv_info->blu_timing[refresh_index].on;
+	blu_off = panel->cur_mode->priv_info->blu_timing[refresh_index].off;
 
 	/* Queue the pwm settings for the new refresh rate. */
 	rc = dsi_panel_send_local_dimming_cmd(panel, refresh_index, false,
@@ -918,6 +917,12 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 		goto error;
 	}
 
+	/* The backlight rolls from blu_on to blu_off, but for simplicity
+	 * we report it as two back to back pulses of half the total duration
+	 */
+	bl_config->jdi_scanline_duration = (blu_off - blu_on) / 2;
+	bl_config->jdi_scanline_offset[0] = blu_on;
+	bl_config->jdi_scanline_offset[1] = (blu_on + bl_config->jdi_scanline_duration);
 error:
 	return rc;
 }
@@ -1296,6 +1301,17 @@ static int dsi_panel_parse_timing(struct dsi_mode_info *mode,
 	} else if (rc) {
 		DSI_ERR("failed to read qcom,mdss-dsi-panel-padding, rc=%d\n",
 		       rc);
+		goto error;
+	}
+
+	rc = utils->read_u32_array(utils->data, "qcom,mdss-dsi-local-dimming-blu-timing",
+					(u32 *) priv_info->blu_timing, ARRAY_SIZE(priv_info->blu_timing) * 2);
+	if (rc == -EINVAL) {
+		/* This is non-fatal if the field is missing entirely. */
+		memset(priv_info->blu_timing, 0, sizeof(priv_info->blu_timing));
+		rc = 0;
+	} else if (rc) {
+		DSI_ERR("failed to read mdss-dsi-local-dimming-blu-timing, rc=%d\n", rc);
 		goto error;
 	}
 

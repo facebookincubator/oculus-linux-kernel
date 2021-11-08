@@ -214,7 +214,7 @@ struct arm_smmu_power_resources {
 	struct platform_device		*pdev;
 	struct device			*dev;
 
-	struct clk			**clocks;
+	struct clk_bulk_data		*clocks;
 	int				num_clocks;
 
 	struct regulator_bulk_data	*gdscs;
@@ -336,15 +336,12 @@ struct arm_smmu_cfg {
 	u32				cbar;
 	u32				procid;
 	enum arm_smmu_context_fmt	fmt;
+	u16				min_asid;
+	u16				max_asid;
 };
 #define INVALID_IRPTNDX			0xff
 #define INVALID_CBNDX			0xff
 #define INVALID_ASID			0xffff
-/*
- * In V7L and V8L with TTBCR2.AS == 0, ASID is 8 bits.
- * V8L 16 with TTBCR2.AS == 1 (16 bit ASID) isn't supported yet.
- */
-#define MAX_ASID			0xff
 
 #define ARM_SMMU_CB_ASID(smmu, cfg)		((cfg)->asid)
 #define ARM_SMMU_CB_VMID(smmu, cfg) ((u16)(smmu)->cavium_id_base + \
@@ -765,7 +762,7 @@ static void arm_smmu_arch_write_sync(struct arm_smmu_device *smmu)
 		return;
 
 	/* Read to complete prior write transcations */
-	id = readl_relaxed(ARM_SMMU_GR0(smmu) + ARM_SMMU_GR0_ID0);
+	id = readl_relaxed(ARM_SMMU_IMPL_DEF0(smmu));
 
 	/* Wait for read to complete before off */
 	rmb();
@@ -879,55 +876,6 @@ static void __arm_smmu_free_bitmap(unsigned long *map, int idx)
 	clear_bit(idx, map);
 }
 
-static int arm_smmu_prepare_clocks(struct arm_smmu_power_resources *pwr)
-{
-	int i, ret = 0;
-
-	for (i = 0; i < pwr->num_clocks; ++i) {
-		ret = clk_prepare(pwr->clocks[i]);
-		if (ret) {
-			dev_err(pwr->dev, "Couldn't prepare clock #%d\n", i);
-			while (i--)
-				clk_unprepare(pwr->clocks[i]);
-			break;
-		}
-	}
-	return ret;
-}
-
-static void arm_smmu_unprepare_clocks(struct arm_smmu_power_resources *pwr)
-{
-	int i;
-
-	for (i = pwr->num_clocks; i; --i)
-		clk_unprepare(pwr->clocks[i - 1]);
-}
-
-static int arm_smmu_enable_clocks(struct arm_smmu_power_resources *pwr)
-{
-	int i, ret = 0;
-
-	for (i = 0; i < pwr->num_clocks; ++i) {
-		ret = clk_enable(pwr->clocks[i]);
-		if (ret) {
-			dev_err(pwr->dev, "Couldn't enable clock #%d\n", i);
-			while (i--)
-				clk_disable(pwr->clocks[i]);
-			break;
-		}
-	}
-
-	return ret;
-}
-
-static void arm_smmu_disable_clocks(struct arm_smmu_power_resources *pwr)
-{
-	int i;
-
-	for (i = pwr->num_clocks; i; --i)
-		clk_disable(pwr->clocks[i - 1]);
-}
-
 static int arm_smmu_request_bus(struct arm_smmu_power_resources *pwr)
 {
 	if (!pwr->bus_client)
@@ -993,7 +941,7 @@ err:
 	return ret;
 }
 
-/* Clocks must be prepared before this (arm_smmu_prepare_clocks) */
+/* Clocks must be prepared before this. */
 static int arm_smmu_power_on_atomic(struct arm_smmu_power_resources *pwr)
 {
 	int ret = 0;
@@ -1006,7 +954,7 @@ static int arm_smmu_power_on_atomic(struct arm_smmu_power_resources *pwr)
 		return 0;
 	}
 
-	ret = arm_smmu_enable_clocks(pwr);
+	ret = clk_bulk_enable(pwr->num_clocks, pwr->clocks);
 	if (!ret)
 		pwr->clock_refs_count = 1;
 
@@ -1014,13 +962,11 @@ static int arm_smmu_power_on_atomic(struct arm_smmu_power_resources *pwr)
 	return ret;
 }
 
-/* Clocks should be unprepared after this (arm_smmu_unprepare_clocks) */
+/* Clocks may be unprepared after this. */
 static void arm_smmu_power_off_atomic(struct arm_smmu_power_resources *pwr)
 {
 	unsigned long flags;
 	struct arm_smmu_device *smmu = pwr->dev->driver_data;
-
-	arm_smmu_arch_write_sync(smmu);
 
 	spin_lock_irqsave(&pwr->clock_refs_lock, flags);
 	if (pwr->clock_refs_count == 0) {
@@ -1034,7 +980,8 @@ static void arm_smmu_power_off_atomic(struct arm_smmu_power_resources *pwr)
 		return;
 	}
 
-	arm_smmu_disable_clocks(pwr);
+	arm_smmu_arch_write_sync(smmu);
+	clk_bulk_disable(pwr->num_clocks, pwr->clocks);
 
 	pwr->clock_refs_count = 0;
 	spin_unlock_irqrestore(&pwr->clock_refs_lock, flags);
@@ -1059,7 +1006,7 @@ static int arm_smmu_power_on_slow(struct arm_smmu_power_resources *pwr)
 	if (ret)
 		goto out_disable_bus;
 
-	ret = arm_smmu_prepare_clocks(pwr);
+	ret = clk_bulk_prepare(pwr->num_clocks, pwr->clocks);
 	if (ret)
 		goto out_disable_regulators;
 
@@ -1090,7 +1037,7 @@ static void arm_smmu_power_off_slow(struct arm_smmu_power_resources *pwr)
 		return;
 	}
 
-	arm_smmu_unprepare_clocks(pwr);
+	clk_bulk_unprepare(pwr->num_clocks, pwr->clocks);
 	arm_smmu_disable_regulators(pwr);
 	arm_smmu_unrequest_bus(pwr);
 	pwr->power_count = 0;
@@ -1383,24 +1330,23 @@ static void arm_smmu_tlb_inv_context_s2(void *cookie)
 	arm_smmu_tlb_sync_global(smmu);
 }
 
-static void arm_smmu_tlb_inv_range_nosync(unsigned long iova, size_t size,
-					  size_t granule, bool leaf, void *cookie)
+static void arm_smmu_tlb_inv_range_s1(unsigned long iova, size_t size,
+				      size_t granule, bool leaf, void *cookie)
 {
 	struct arm_smmu_domain *smmu_domain = cookie;
-	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
 	struct arm_smmu_device *smmu = smmu_domain->smmu;
-	bool stage1 = cfg->cbar != CBAR_TYPE_S2_TRANS;
-	void __iomem *reg = ARM_SMMU_CB(smmu_domain->smmu, cfg->cbndx);
+	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
+	void __iomem *reg = ARM_SMMU_CB(smmu, cfg->cbndx);
 	bool use_tlbiall = smmu->options & ARM_SMMU_OPT_NO_ASID_RETENTION;
 
-	if (smmu_domain->smmu->features & ARM_SMMU_FEAT_COHERENT_WALK)
+	if (smmu->features & ARM_SMMU_FEAT_COHERENT_WALK)
 		wmb();
 
-	if (stage1 && !use_tlbiall) {
+	if (!use_tlbiall) {
 		reg += leaf ? ARM_SMMU_CB_S1_TLBIVAL : ARM_SMMU_CB_S1_TLBIVA;
 
 		if (cfg->fmt != ARM_SMMU_CTX_FMT_AARCH64) {
-			iova &= ~12UL;
+			iova = (iova >> 12) << 12;
 			iova |= cfg->asid;
 			do {
 				writel_relaxed(iova, reg);
@@ -1414,18 +1360,28 @@ static void arm_smmu_tlb_inv_range_nosync(unsigned long iova, size_t size,
 				iova += granule >> 12;
 			} while (size -= granule);
 		}
-	} else if (stage1 && use_tlbiall) {
+	} else {
 		reg += ARM_SMMU_CB_S1_TLBIALL;
 		writel_relaxed(0, reg);
-	} else {
-		reg += leaf ? ARM_SMMU_CB_S2_TLBIIPAS2L :
-			      ARM_SMMU_CB_S2_TLBIIPAS2;
-		iova >>= 12;
-		do {
-			smmu_write_atomic_lq(iova, reg);
-			iova += granule >> 12;
-		} while (size -= granule);
 	}
+}
+
+static void arm_smmu_tlb_inv_range_s2(unsigned long iova, size_t size,
+				      size_t granule, bool leaf, void *cookie)
+{
+	struct arm_smmu_domain *smmu_domain = cookie;
+	struct arm_smmu_device *smmu = smmu_domain->smmu;
+	void __iomem *reg = ARM_SMMU_CB(smmu, smmu_domain->cfg.cbndx);
+
+	if (smmu->features & ARM_SMMU_FEAT_COHERENT_WALK)
+		wmb();
+
+	reg += leaf ? ARM_SMMU_CB_S2_TLBIIPAS2L : ARM_SMMU_CB_S2_TLBIIPAS2;
+	iova >>= 12;
+	do {
+		smmu_write_atomic_lq(iova, reg);
+		iova += granule >> 12;
+	} while (size -= granule);
 }
 
 /*
@@ -1551,7 +1507,7 @@ static void arm_smmu_free_pages_exact(void *cookie, void *virt, size_t size)
 
 static const struct iommu_gather_ops arm_smmu_s1_tlb_ops = {
 	.tlb_flush_all	= arm_smmu_tlb_inv_context_s1,
-	.tlb_add_flush	= arm_smmu_tlb_inv_range_nosync,
+	.tlb_add_flush	= arm_smmu_tlb_inv_range_s1,
 	.tlb_sync	= arm_smmu_tlb_sync_context,
 	.alloc_pages_exact = arm_smmu_alloc_pages_exact,
 	.free_pages_exact = arm_smmu_free_pages_exact,
@@ -1559,7 +1515,7 @@ static const struct iommu_gather_ops arm_smmu_s1_tlb_ops = {
 
 static const struct iommu_gather_ops arm_smmu_s2_tlb_ops_v2 = {
 	.tlb_flush_all	= arm_smmu_tlb_inv_context_s2,
-	.tlb_add_flush	= arm_smmu_tlb_inv_range_nosync,
+	.tlb_add_flush	= arm_smmu_tlb_inv_range_s2,
 	.tlb_sync	= arm_smmu_tlb_sync_context,
 	.alloc_pages_exact = arm_smmu_alloc_pages_exact,
 	.free_pages_exact = arm_smmu_free_pages_exact,
@@ -2103,10 +2059,8 @@ static int arm_smmu_init_asid(struct iommu_domain *domain,
 		cfg->asid = cfg->cbndx + 1;
 	} else {
 		mutex_lock(&smmu->idr_mutex);
-		ret = idr_alloc_cyclic(&smmu->asid_idr, domain,
-				smmu->num_context_banks + 2,
-				MAX_ASID + 1, GFP_KERNEL);
-
+		ret = idr_alloc_cyclic(&smmu->asid_idr, domain, cfg->min_asid,
+				cfg->max_asid + 1, GFP_KERNEL);
 		mutex_unlock(&smmu->idr_mutex);
 		if (ret < 0) {
 			dev_err(smmu->dev, "dynamic ASID allocation failed: %d\n",
@@ -2125,7 +2079,8 @@ static void arm_smmu_free_asid(struct iommu_domain *domain)
 	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
 	bool dynamic = is_dynamic_domain(domain);
 
-	if (cfg->asid == INVALID_ASID || !dynamic)
+	if (cfg->asid == INVALID_ASID || !dynamic ||
+			(smmu->options & ARM_SMMU_OPT_NO_DYNAMIC_ASID))
 		return;
 
 	mutex_lock(&smmu->idr_mutex);
@@ -2338,6 +2293,22 @@ static int arm_smmu_init_domain_context(struct iommu_domain *domain,
 	domain->pgsize_bitmap = smmu_domain->pgtbl_cfg.pgsize_bitmap;
 	domain->geometry.aperture_end = (1UL << ias) - 1;
 	domain->geometry.force_aperture = true;
+
+	/*
+	 * Only go up to a max of 0xFFFE in 16-bit mode to reserve 0xFFFF for
+	 * INVALID_ASID, and start at 0x102 to avoid any possible collisions
+	 * with static ASIDs generated from context bank indices. CBn_TCR2.AS
+	 * which enables support for 16-bit ASIDs gets set in context bank
+	 * initialization.
+	 */
+	if (cfg->cbar != CBAR_TYPE_S2_TRANS &&
+	    cfg->fmt == ARM_SMMU_CTX_FMT_AARCH64) {
+		cfg->min_asid = (1 << 8) + 2;
+		cfg->max_asid = (1 << 16) - 2;
+	} else {
+		cfg->min_asid = smmu->num_context_banks + 2;
+		cfg->max_asid = (1 << 8) - 1;
+	}
 
 	/* Assign an asid */
 	ret = arm_smmu_init_asid(domain, smmu);
@@ -4663,44 +4634,38 @@ static int arm_smmu_init_clocks(struct arm_smmu_power_resources *pwr)
 {
 	const char *cname;
 	struct property *prop;
-	int i;
+	int i, ret;
 	struct device *dev = pwr->dev;
 
-	pwr->num_clocks =
-		of_property_count_strings(dev->of_node, "clock-names");
+	pwr->num_clocks = of_property_count_strings(dev->of_node, "clock-names");
 
 	if (pwr->num_clocks < 1) {
 		pwr->num_clocks = 0;
 		return 0;
 	}
 
-	pwr->clocks = devm_kzalloc(
-		dev, sizeof(*pwr->clocks) * pwr->num_clocks,
-		GFP_KERNEL);
+	pwr->clocks = devm_kcalloc(dev, pwr->num_clocks, sizeof(*pwr->clocks),
+			GFP_KERNEL);
 
 	if (!pwr->clocks)
 		return -ENOMEM;
 
 	i = 0;
-	of_property_for_each_string(dev->of_node, "clock-names",
-				prop, cname) {
-		struct clk *c = devm_clk_get(dev, cname);
+	of_property_for_each_string(dev->of_node, "clock-names", prop, cname)
+		pwr->clocks[i++].id = cname;
 
-		if (IS_ERR(c)) {
-			dev_err(dev, "Couldn't get clock: %s",
-				cname);
-			return PTR_ERR(c);
-		}
+	ret = devm_clk_bulk_get(dev, pwr->num_clocks, pwr->clocks);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < pwr->num_clocks; i++) {
+		struct clk *c = pwr->clocks[i].clk;
 
 		if (clk_get_rate(c) == 0) {
 			long rate = clk_round_rate(c, 1000);
 
 			clk_set_rate(c, rate);
 		}
-
-		pwr->clocks[i] = c;
-
-		++i;
 	}
 	return 0;
 }
@@ -5276,7 +5241,7 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev)
 			"found %d context interrupt(s) but have %d context banks. assuming %d context interrupts.\n",
 			smmu->num_context_irqs, smmu->num_context_banks,
 			smmu->num_context_banks);
-			return -ENODEV;	
+			return -ENODEV;
 		}
 		/* Ignore superfluous interrupts */
 		smmu->num_context_irqs = smmu->num_context_banks;

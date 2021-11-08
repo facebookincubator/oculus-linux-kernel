@@ -92,6 +92,14 @@
 #define RADIOTAP_CCK_CHANNEL 0x0020
 #define RADIOTAP_OFDM_CHANNEL 0x0040
 
+
+#ifdef NBUF_MEMORY_DEBUG
+/* SMMU crash indication*/
+static qdf_atomic_t smmu_crashed;
+/* Number of nbuf not added to history*/
+unsigned long g_histroy_add_drop;
+#endif
+
 #ifdef FEATURE_NBUFF_REPLENISH_TIMER
 #include <qdf_mc_timer.h>
 
@@ -699,6 +707,11 @@ qdf_nbuf_history_add(qdf_nbuf_t nbuf, const char *func, uint32_t line,
 						   QDF_NBUF_HISTORY_SIZE);
 	struct qdf_nbuf_event *event = &qdf_nbuf_history[idx];
 
+	if (qdf_atomic_read(&smmu_crashed)) {
+		pr_info("Not adding network buf to the list");
+		return;
+	}
+
 	event->nbuf = nbuf;
 	qdf_str_lcopy(event->func, func, QDF_MEM_FUNC_NAME_SIZE);
 	event->line = line;
@@ -709,6 +722,14 @@ qdf_nbuf_history_add(qdf_nbuf_t nbuf, const char *func, uint32_t line,
 	else
 		event->iova = 0;
 }
+
+void qdf_set_smmu_fault_state(bool smmu_fault_state)
+{
+	qdf_atomic_set(&smmu_crashed, smmu_fault_state);
+	if (!smmu_fault_state)
+		g_histroy_add_drop = 0;
+}
+qdf_export_symbol(qdf_set_smmu_fault_state);
 #endif /* NBUF_MEMORY_DEBUG */
 
 #ifdef NBUF_MAP_UNMAP_DEBUG
@@ -4971,3 +4992,4 @@ QDF_NBUF_TRACK *qdf_nbuf_get_track_tbl(uint32_t index)
 	return gp_qdf_net_buf_track_tbl[index];
 }
 #endif /* MEMORY_DEBUG */
+

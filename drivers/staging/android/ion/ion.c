@@ -138,6 +138,7 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
 	INIT_LIST_HEAD(&buffer->attachments);
 	INIT_LIST_HEAD(&buffer->vmas);
 	mutex_init(&buffer->lock);
+	kref_init(&buffer->kref);
 
 	if (IS_ENABLED(CONFIG_ION_FORCE_DMA_SYNC)) {
 		int i;
@@ -179,8 +180,9 @@ void ion_buffer_destroy(struct ion_buffer *buffer)
 	kfree(buffer);
 }
 
-static void _ion_buffer_destroy(struct ion_buffer *buffer)
+static void _ion_buffer_destroy(struct kref *kref)
 {
+	struct ion_buffer *buffer = container_of(kref, struct ion_buffer, kref);
 	struct ion_heap *heap = buffer->heap;
 	struct ion_device *dev = buffer->dev;
 
@@ -195,6 +197,16 @@ static void _ion_buffer_destroy(struct ion_buffer *buffer)
 		ion_heap_freelist_add(heap, buffer);
 	else
 		ion_buffer_destroy(buffer);
+}
+
+static void _ion_buffer_put(struct ion_buffer *buffer)
+{
+	kref_put(&buffer->kref, _ion_buffer_destroy);
+}
+
+static inline bool _ion_buffer_get(struct ion_buffer *buffer)
+{
+	return !!kref_get_unless_zero(&buffer->kref);
 }
 
 static void *ion_buffer_kmap_get(struct ion_buffer *buffer)
@@ -309,7 +321,7 @@ static void ion_dma_buf_detatch(struct dma_buf *dmabuf,
 	struct ion_buffer *buffer = dmabuf->priv;
 
 	mutex_lock(&buffer->lock);
-	list_del(&a->list);
+	list_del_init(&a->list);
 	mutex_unlock(&buffer->lock);
 	free_duped_table(a->table);
 
@@ -493,7 +505,11 @@ static void ion_dma_buf_release(struct dma_buf *dmabuf)
 {
 	struct ion_buffer *buffer = dmabuf->priv;
 
-	_ion_buffer_destroy(buffer);
+	mutex_lock(&buffer->lock);
+	buffer->dmabuf = NULL;
+	mutex_unlock(&buffer->lock);
+
+	_ion_buffer_put(buffer);
 	kfree(dmabuf->exp_name);
 }
 
@@ -1070,7 +1086,7 @@ struct dma_buf *ion_alloc_dmabuf(size_t len, unsigned int heap_id_mask,
 
 	dmabuf = dma_buf_export(&exp_info);
 	if (IS_ERR(dmabuf)) {
-		_ion_buffer_destroy(buffer);
+		_ion_buffer_put(buffer);
 		kfree(exp_info.exp_name);
 	} else {
 		buffer->dmabuf = dmabuf;
@@ -1217,8 +1233,13 @@ struct ion_orphan_proc {
 
 struct ion_orphan_proc_ref {
 	struct hlist_head *head;
-	struct ion_buffer *buf;
+	struct dma_buf *dmabuf;
 	pid_t tgid;
+};
+
+struct ion_orphan_buf_ref {
+	struct hlist_node node;
+	struct ion_buffer *buf;
 };
 
 extern int iterate_fd(struct files_struct *, unsigned,
@@ -1232,7 +1253,7 @@ static int fd_info(const void *data, struct file *file, unsigned int n)
 	if (!dma_buf_is_dma_buf_file(file))
 		return 0;
 
-	if (file->private_data != ref->buf->dmabuf)
+	if (file->private_data != ref->dmabuf)
 		return 0;
 
 	proc = kzalloc(sizeof(*proc), GFP_ATOMIC);
@@ -1253,10 +1274,10 @@ static int fd_info(const void *data, struct file *file, unsigned int n)
 	return 1;
 }
 
-static int ion_debug_orphan_procs(struct hlist_head *head, struct ion_buffer *b)
+static int ion_debug_orphan_procs(struct hlist_head *head, struct dma_buf *dmabuf)
 {
 	struct task_struct *task, *thr;
-	struct ion_orphan_proc_ref ref = { .head = head, .buf = b };
+	struct ion_orphan_proc_ref ref = { .head = head, .dmabuf = dmabuf };
 	int ret = 0;
 
 	rcu_read_lock();
@@ -1287,19 +1308,34 @@ static int ion_debug_orphan_show_one(struct seq_file *s, struct ion_buffer *b)
 	HLIST_HEAD(proclist);
 	struct ion_orphan_proc *proc;
 	struct hlist_node *hn;
+	struct dma_buf *dmabuf;
 	int first = 1;
-	int ret = 0;
+	int ret;
 
-	/* there is a small chance that this function will be called after
-	 * a buffer is added to the rb tree in ion_buffer_create, but before
-	 * the dma_buf is exported and assigned to dmabuf. ignore this
-	 * buffer if that happens */
-	if (!b->dmabuf)
+	ret = mutex_lock_interruptible(&b->lock);
+	if (ret)
+		return ret;
+
+	/*
+	 * there is a small chance that this function will be called between
+	 * the time the ion_buffer is added to the rb_tree but before the
+	 * dmabuf is exported, or between the time the dmabuf is released and
+	 * the ion_buffer is destroyed. alternately, the dmabuf may have been
+	 * attached to a driver between the time that the rb_tree was walked and
+	 * the time that this function is called, in which case the buffer is
+	 * no longer an orphan. check for all these cases with the per-buffer
+	 * lock held, and ignore all of them.
+	 */
+	if (!b->dmabuf || !list_empty(&b->attachments)) {
+		mutex_unlock(&b->lock);
 		return 0;
+	}
 
 	seq_printf(s, "%s %s %zu -", b->dmabuf->name, b->heap->name, b->size);
+	dmabuf = b->dmabuf;
+	mutex_unlock(&b->lock);
 
-	ret = ion_debug_orphan_procs(&proclist, b);
+	ret = ion_debug_orphan_procs(&proclist, dmabuf);
 	if (ret) {
 		pr_err("%s: error %d iterating process fds\n", __func__, ret);
 		goto out;
@@ -1314,7 +1350,8 @@ static int ion_debug_orphan_show_one(struct seq_file *s, struct ion_buffer *b)
 	}
 
 out:
-	/* in the unlikely event that the dmabuf is in the middle of being
+	/*
+	 * in the unlikely event that the dmabuf is in the middle of being
 	 * freed, report that no processes have any open fds referencing it
 	 */
 	seq_printf(s, "%s\n", first ? " 0" : "");
@@ -1328,6 +1365,9 @@ out:
 
 static int ion_debug_orphan_show(struct seq_file *s, void *unused)
 {
+	HLIST_HEAD(buflist);
+	struct ion_orphan_buf_ref *bufref;
+	struct hlist_node *hn;
 	struct ion_device *idev = s->private;
 	struct rb_node *rn;
 	int ret = 0;
@@ -1335,21 +1375,38 @@ static int ion_debug_orphan_show(struct seq_file *s, void *unused)
 	if ((ret = mutex_lock_interruptible(&idev->buffer_lock)) != 0)
 		return ret;
 
+	preempt_disable();
 	for (rn = rb_first(&idev->buffers); rn && !ret; rn = rb_next(rn)) {
 		struct ion_buffer *buf = rb_entry(rn, struct ion_buffer, node);
-		int is_orphan = 0;
 
-		if ((ret = mutex_lock_interruptible(&buf->lock)) != 0)
-			goto out_sem;
-		is_orphan = list_empty(&buf->attachments);
-		mutex_unlock(&buf->lock);
-
-		if (unlikely(is_orphan))
-			ret = ion_debug_orphan_show_one(s, buf);
+		if (unlikely(list_empty_careful(&buf->attachments)) &&
+		    _ion_buffer_get(buf)) {
+			bufref = kzalloc(sizeof(*bufref), GFP_ATOMIC);
+			if (bufref) {
+				bufref->buf = buf;
+				hlist_add_head(&bufref->node, &buflist);
+			} else {
+				ret = -ENOMEM;
+			}
+		}
 	}
 
-out_sem:
+	preempt_enable_no_resched();
 	mutex_unlock(&idev->buffer_lock);
+
+	hlist_for_each_entry_safe(bufref, hn, &buflist, node) {
+		/*
+		 * the ion buffers might be modified while this loop executes,
+		 * so ion_debug_orphan_show_one should verify that the buffer
+		 * is still orphaned before printing it to the file
+		 */
+		if (!ret)
+			ret = ion_debug_orphan_show_one(s, bufref->buf);
+		_ion_buffer_put(bufref->buf);
+		hlist_del(&bufref->node);
+		kfree(bufref);
+	}
+
 	return ret;
 }
 

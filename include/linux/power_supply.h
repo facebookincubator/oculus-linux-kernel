@@ -374,7 +374,9 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_BATTERY_TYPE,
 	POWER_SUPPLY_PROP_CYCLE_COUNTS,
 	/*[TI FG] Local extensions of TI fg read reg */
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_A,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_B,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_C,
 	/*
 	 * Add local extensions for properties with string values between
 	 * MODEL_NAME and SERIAL_NUMBER. Don't add below SERIAL_NUMBER.

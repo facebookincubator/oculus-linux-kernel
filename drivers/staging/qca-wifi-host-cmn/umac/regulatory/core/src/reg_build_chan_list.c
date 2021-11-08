@@ -1047,7 +1047,7 @@ reg_populate_secondary_cur_chan_list(struct wlan_regulatory_pdev_priv_obj
 				     *pdev_priv_obj)
 {
 	qdf_mem_copy(pdev_priv_obj->secondary_cur_chan_list,
-		     pdev_priv_obj->mas_chan_list,
+		     pdev_priv_obj->cur_chan_list,
 		     (NUM_CHANNELS - NUM_6GHZ_CHANNELS) *
 		     sizeof(struct regulatory_channel));
 	qdf_mem_copy(&pdev_priv_obj->
@@ -1125,8 +1125,6 @@ void reg_compute_pdev_current_chan_list(struct wlan_regulatory_pdev_priv_obj
 	qdf_mem_copy(pdev_priv_obj->cur_chan_list, pdev_priv_obj->mas_chan_list,
 		     NUM_CHANNELS * sizeof(struct regulatory_channel));
 
-	reg_populate_secondary_cur_chan_list(pdev_priv_obj);
-
 	reg_modify_chan_list_for_freq_range(pdev_priv_obj->cur_chan_list,
 					    pdev_priv_obj->range_2g_low,
 					    pdev_priv_obj->range_2g_high,
@@ -1163,6 +1161,8 @@ void reg_compute_pdev_current_chan_list(struct wlan_regulatory_pdev_priv_obj
 	reg_modify_chan_list_for_6g_edge_channels(pdev_priv_obj->pdev_ptr,
 						  pdev_priv_obj->
 						  cur_chan_list);
+
+	reg_populate_secondary_cur_chan_list(pdev_priv_obj);
 }
 
 void reg_reset_reg_rules(struct reg_rule_info *reg_rules)
@@ -1216,11 +1216,10 @@ static void reg_append_6g_reg_rules_in_pdev(
 			struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
 {
 	struct reg_rule_info *pdev_reg_rules;
-	enum reg_6g_ap_type cur_pwr_type;
+	enum reg_6g_ap_type cur_pwr_type = REG_INDOOR_AP;
 	uint8_t num_reg_rules;
 
 	pdev_reg_rules = &pdev_priv_obj->reg_rules;
-	cur_pwr_type = pdev_priv_obj->reg_cur_6g_ap_pwr_type;
 
 	num_reg_rules = pdev_reg_rules->num_of_reg_rules;
 	pdev_reg_rules->num_of_reg_rules +=

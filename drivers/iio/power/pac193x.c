@@ -41,6 +41,8 @@
 #include <linux/iio/buffer.h>
 #include <linux/iio/kfifo_buf.h>
 #include <linux/regulator/consumer.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 #define PAC193X_MAX_RFSH_LIMIT						3600000
 /* Overflow time = 248/(2n * SPS) secs
@@ -273,6 +275,7 @@ struct pac193x_chip_info {
 	struct i2c_client		*client;
 	struct mutex			lock;
 	struct regulator		*avdd_reg;
+	int				pwrdn_gpio;
 
 	struct timer_list		tmr_forced_update;
 	/* to be used to now when will be the chip read timeout */
@@ -936,6 +939,27 @@ static ssize_t shunt_value_store(struct device *dev,
 	return count;
 }
 
+static ssize_t device_id_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	int ret = 0;
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
+	struct pac193x_chip_info *chip_info = iio_priv(indio_dev);
+	u8 chip_rev_info[3];
+
+	ret = pac193x_i2c_read(chip_info->client, PAC193X_PID_REG_ADDR,
+				(u8 *) chip_rev_info, 3);
+	if (ret < 0) {
+		pr_err("cannot read device_id\n");
+		return -EINVAL;
+	}
+	return scnprintf(buf, PAGE_SIZE,
+			"Prd_id: 0x%02X\nManu_id: 0x%02X\nRev_id: 0x%02X\n",
+			chip_rev_info[0],
+			chip_rev_info[1],
+			chip_rev_info[2]);
+}
+
 static IIO_DEVICE_ATTR(rst_en_regs_wo_param, 0200,
 		       NULL, rst_en_regs_wo_param_store, 0);
 
@@ -966,6 +990,9 @@ static IIO_DEVICE_ATTR(shunt_value, 0644,
 static IIO_DEVICE_ATTR(energy_value, 0444,
 		       energy_value_show,
 		       NULL, 0);
+static IIO_DEVICE_ATTR(device_id, 0444,
+			device_id_show,
+			NULL, 0);
 
 
 #define PAC193x_DEV_ATTR(name) (&iio_dev_attr_##name.dev_attr.attr)
@@ -979,6 +1006,7 @@ static struct attribute *pac193x_custom_attributes[] = {
 	PAC193x_DEV_ATTR(sampling_rate),
 	PAC193x_DEV_ATTR(shunt_value),
 	PAC193x_DEV_ATTR(energy_value),
+	PAC193x_DEV_ATTR(device_id),
 	NULL
 };
 
@@ -1555,6 +1583,34 @@ static int pac193x_chip_identify(struct pac193x_chip_info *chip_info)
 
 		/* Spec defines time to first communcation as 14.25ms typical */
 		msleep(20);
+	}
+
+	/* Refer PAC1931-Family-Data-Sheet-DS20005850E.pdf
+	 * PWRDN:
+	 * Voltage range is set by VDD I/O pin. Active low puts the device
+	 * in power-down state (all circuitry is powered down including SMBus).
+	 */
+	chip_info->pwrdn_gpio = of_get_named_gpio(client->dev.of_node,
+						"pac193x,pwrdn_gpio", 0);
+	if (gpio_is_valid(chip_info->pwrdn_gpio)) {
+		ret = devm_gpio_request_one(&client->dev,
+			chip_info->pwrdn_gpio,
+			GPIOF_OUT_INIT_HIGH,
+			"pac193x_pwrdn");
+		if (ret) {
+			pr_err("Failed GPIO request for pwrdn: %d err %d\n",
+				chip_info->pwrdn_gpio, ret);
+		}
+
+		/* Spec defines time to first communcation as 14.25ms typical */
+		msleep(20);
+	} else {
+		/* We used same pwrdn gpio for two chip, if we return, the
+		 * 2nd pac1934 chip will probe failed. So only output error
+		 * message and do not return.
+		 */
+		chip_info->pwrdn_gpio = -EINVAL;
+		pr_info("failed to find pwrdn gpio\n");
 	}
 
 	/* Try to identify the chip variant.

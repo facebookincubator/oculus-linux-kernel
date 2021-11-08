@@ -210,7 +210,7 @@ int zcomp_compress(struct zcomp_strm *zstrm,
 
 #if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
 	out_len = ZSTD_compressCCtx(zstrm->cctx, zstrm->buffer, *dst_len, src,
-			PAGE_SIZE, zstrm->params);
+			PAGE_SIZE, &zstrm->params);
 	if (ZSTD_isError(out_len))
 		return -EINVAL;
 

@@ -426,6 +426,21 @@ static void hdd_init_6ghz(struct hdd_context *hdd_ctx)
 	struct ieee80211_channel *chlist = hdd_channels_6_ghz;
 	uint32_t num = ARRAY_SIZE(hdd_channels_6_ghz);
 	uint16_t base_freq;
+	QDF_STATUS status;
+	uint32_t band_capability;
+
+	hdd_enter();
+
+	status = ucfg_mlme_get_band_capability(hdd_ctx->psoc, &band_capability);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("Failed to get MLME Band Capability");
+		return;
+	}
+
+	if (!(band_capability & (BIT(REG_BAND_6G)))) {
+		hdd_debug("6ghz band not enabled");
+		return;
+	}
 
 	qdf_mem_zero(chlist, sizeof(*chlist) * num);
 	base_freq = wlan_reg_min_6ghz_chan_freq();
@@ -439,6 +454,8 @@ static void hdd_init_6ghz(struct hdd_context *hdd_ctx)
 	wiphy->bands[HDD_NL80211_BAND_6GHZ] = &wlan_hdd_band_6_ghz;
 	wiphy->bands[HDD_NL80211_BAND_6GHZ]->channels = chlist;
 	wiphy->bands[HDD_NL80211_BAND_6GHZ]->n_channels = num;
+
+	hdd_exit();
 }
 #else
 static void hdd_init_6ghz(struct hdd_context *hdd_ctx)
@@ -3010,6 +3027,7 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 	bool go_force_11n_for_11ac = 0;
 	bool go_11ac_override = 0;
 	bool sap_11ac_override = 0;
+	uint32_t channel_bonding_mode_2g;
 
 	/* ***Note*** Donot set SME config related to ACS operation here because
 	 * ACS operation is not synchronouse and ACS for Second AP may come when
@@ -3032,6 +3050,8 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 					     &sap_force_11n_for_11ac);
 	ucfg_mlme_get_go_force_11n_for_11ac(hdd_ctx->psoc,
 					    &go_force_11n_for_11ac);
+	ucfg_mlme_get_channel_bonding_24ghz(hdd_ctx->psoc,
+					    &channel_bonding_mode_2g);
 
 	if (!((adapter->device_mode == QDF_SAP_MODE) ||
 	      (adapter->device_mode == QDF_P2P_GO_MODE))) {
@@ -3257,6 +3277,17 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 		if (sap_config->acs_cfg.ch_list_count == 1) {
 			sap_config->acs_cfg.pri_ch_freq =
 					      sap_config->acs_cfg.freq_list[0];
+			if (sap_config->acs_cfg.pri_ch_freq <=
+			    WLAN_REG_CH_TO_FREQ(CHAN_ENUM_2484) &&
+			    sap_config->acs_cfg.ch_width >=
+						CH_WIDTH_40MHZ &&
+			    !channel_bonding_mode_2g) {
+				sap_config->acs_cfg.ch_width = CH_WIDTH_20MHZ;
+				hdd_debug("2.4ghz channel resetting BW to %d 2.4 cbmode %d",
+					  sap_config->acs_cfg.ch_width,
+					  channel_bonding_mode_2g);
+			}
+
 			wlan_sap_set_sap_ctx_acs_cfg(
 				WLAN_HDD_GET_SAP_CTX_PTR(adapter), sap_config);
 			sap_config_acs_result(hdd_ctx->mac_handle,
@@ -3324,15 +3355,13 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 	if (sap_config->acs_cfg.end_ch_freq <=
 	    WLAN_REG_CH_TO_FREQ(CHAN_ENUM_2484) &&
 	    sap_config->acs_cfg.ch_width >= eHT_CHANNEL_WIDTH_40MHZ) {
-		uint32_t channel_bonding_mode;
 
-		ucfg_mlme_get_channel_bonding_24ghz(hdd_ctx->psoc,
-						    &channel_bonding_mode);
-		sap_config->acs_cfg.ch_width = channel_bonding_mode ?
+		sap_config->acs_cfg.ch_width = channel_bonding_mode_2g ?
 			eHT_CHANNEL_WIDTH_40MHZ : eHT_CHANNEL_WIDTH_20MHZ;
 
 		hdd_debug("Only 2.4ghz channels, resetting BW to %d 2.4 cbmode %d",
-			  sap_config->acs_cfg.ch_width, channel_bonding_mode);
+			  sap_config->acs_cfg.ch_width,
+			  channel_bonding_mode_2g);
 	}
 
 	hdd_nofl_debug("ACS Config country %s ch_width %d hw_mode %d ACS_BW: %d HT: %d VHT: %d START_CH: %d END_CH: %d band %d",
@@ -17024,12 +17053,12 @@ QDF_STATUS wlan_hdd_validate_operation_channel(struct hdd_adapter *adapter,
 	uint32_t i;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	struct regulatory_channel *cur_chan_list;
-	QDF_STATUS status = QDF_STATUS_E_INVAL;
+	QDF_STATUS status;
 
 	status = ucfg_mlme_get_sap_allow_all_channels(hdd_ctx->psoc, &value);
 	if (status != QDF_STATUS_SUCCESS)
 		hdd_err("Unable to fetch sap allow all channels");
-
+	status = QDF_STATUS_E_INVAL;
 	if (value) {
 		/* Validate the channel */
 		for (i = CHAN_ENUM_2412; i < NUM_CHANNELS; i++) {
@@ -18807,7 +18836,7 @@ static int wlan_hdd_cfg80211_connect_start(struct hdd_adapter *adapter,
 				    enum nl80211_chan_width ch_width)
 {
 	int status = 0;
-	QDF_STATUS qdf_status;
+	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
 	struct hdd_context *hdd_ctx;
 	struct hdd_station_ctx *hdd_sta_ctx;
 	uint32_t roam_id = INVALID_ROAM_ID;
@@ -19123,14 +19152,17 @@ static int wlan_hdd_cfg80211_connect_start(struct hdd_adapter *adapter,
 		if ((QDF_STATUS_SUCCESS != qdf_status) &&
 		    (QDF_STA_MODE == adapter->device_mode ||
 		     QDF_P2P_CLIENT_MODE == adapter->device_mode)) {
-			hdd_err("Vdev %d connect failed with status %d",
+			hdd_err("Vdev %d connect failed with status %d to krnl",
 				adapter->vdev_id, qdf_status);
 			/* change back to NotAssociated */
 			hdd_conn_set_connection_state(adapter,
 						      eConnectionState_NotConnected);
-			qdf_runtime_pm_allow_suspend(
-					&hdd_ctx->runtime_context.connect);
-			hdd_allow_suspend(WIFI_POWER_EVENT_WAKELOCK_CONNECT);
+			hdd_connect_result(adapter->dev,
+					   NULL, NULL, NULL, 0, NULL, 0,
+					   WLAN_STATUS_UNSPECIFIED_FAILURE,
+					   GFP_KERNEL, false,
+					   eSIR_SME_INVALID_PARAMETERS);
+			status = 0;
 		}
 
 		/* Reset connect_in_progress */
@@ -19153,7 +19185,7 @@ ret_status:
 	 * Enable roaming on other STA adapter for failure case.
 	 * For success case, it is enabled in assoc completion handler
 	 */
-	if (status)
+	if (status || qdf_status != QDF_STATUS_SUCCESS)
 		wlan_hdd_enable_roaming(adapter, RSO_CONNECT_START);
 
 	return status;

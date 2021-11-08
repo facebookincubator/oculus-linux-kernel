@@ -162,7 +162,7 @@ static int __zstd_compress(const u8 *src, unsigned int slen,
 	struct zstd_ctx *zctx = ctx;
 	const ZSTD_parameters params = zstd_params();
 
-	out_len = ZSTD_compressCCtx(zctx->cctx, dst, *dlen, src, slen, params);
+	out_len = ZSTD_compressCCtx(zctx->cctx, dst, *dlen, src, slen, &params);
 	if (ZSTD_isError(out_len))
 		return -EINVAL;
 	*dlen = out_len;

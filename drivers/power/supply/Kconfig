@@ -645,13 +645,6 @@ config CHARGER_CROS_USBPD
 	  what is connected to USB PD ports from the EC and converts
 	  that into power_supply properties.
 
-config CHARGER_CYPD3177
-	tristate "CONFIG_CYPD3177 support"
-	default n
-	help
-	  Say Y here to enable support for batteries with CYPD3177 chips
-	  connected over an I2C bus.
-
 source "drivers/power/supply/qcom/Kconfig"
 
 endif # POWER_SUPPLY

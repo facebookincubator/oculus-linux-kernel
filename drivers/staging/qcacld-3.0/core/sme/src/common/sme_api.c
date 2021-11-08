@@ -623,6 +623,11 @@ QDF_STATUS sme_ser_cmd_callback(struct wlan_serialization_command *cmd,
 		csr_release_command_buffer(mac_ctx, sme_cmd);
 		break;
 	case WLAN_SER_CB_ACTIVE_CMD_TIMEOUT:
+		sme_cmd = cmd->umac_cmd;
+		if (sme_cmd && (sme_cmd->command == eSmeCommandRoam ||
+		    sme_cmd->command == eSmeCommandWmStatusChange))
+			qdf_trigger_self_recovery(mac_ctx->psoc,
+						  QDF_ACTIVE_LIST_TIMEOUT);
 		break;
 	default:
 		sme_debug("unknown reason code");
@@ -733,6 +738,59 @@ static void sme_register_debug_callback(void)
 }
 #endif /* WLAN_FEATURE_MEMDUMP_ENABLE */
 
+#ifdef WLAN_POWER_DEBUG
+static void sme_power_debug_stats_cb(struct mac_context *mac,
+				     struct power_stats_response *response)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	status = sme_acquire_global_lock(&mac->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		if (mac->sme.power_stats_resp_callback)
+			mac->sme.power_stats_resp_callback(
+					response,
+					mac->sme.power_debug_stats_context);
+		else
+			sme_err("Null hdd cb");
+		mac->sme.power_stats_resp_callback = NULL;
+		mac->sme.power_debug_stats_context = NULL;
+		sme_release_global_lock(&mac->sme);
+	}
+}
+
+static void sme_register_power_debug_stats_cb(struct mac_context *mac)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	status = sme_acquire_global_lock(&mac->sme);
+
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		mac->sme.sme_power_debug_stats_callback =
+						sme_power_debug_stats_cb;
+		sme_release_global_lock(&mac->sme);
+	}
+}
+
+static void sme_unregister_power_debug_stats_cb(struct mac_context *mac)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	status = sme_acquire_global_lock(&mac->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		mac->sme.sme_power_debug_stats_callback = NULL;
+		sme_release_global_lock(&mac->sme);
+	}
+}
+#else
+static inline void sme_register_power_debug_stats_cb(struct mac_context *mac)
+{
+}
+
+static inline void sme_unregister_power_debug_stats_cb(struct mac_context *mac)
+{
+}
+#endif
+
 /* Global APIs */
 
 /**
@@ -789,6 +847,7 @@ QDF_STATUS sme_open(mac_handle_t mac_handle)
 	}
 	sme_trace_init(mac);
 	sme_register_debug_callback();
+	sme_register_power_debug_stats_cb(mac);
 
 	return status;
 }
@@ -3006,6 +3065,8 @@ QDF_STATUS sme_close(mac_handle_t mac_handle)
 
 	if (!mac)
 		return QDF_STATUS_E_FAILURE;
+
+	sme_unregister_power_debug_stats_cb(mac);
 
 	status = csr_close(mac);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
@@ -14206,6 +14267,10 @@ QDF_STATUS sme_roam_invoke_nud_fail(mac_handle_t mac_handle, uint8_t vdev_id)
 	} else {
 		vdev_roam_params->roam_invoke_in_progress = true;
 		vdev_roam_params->source = CONNECTION_MGR_INITIATED;
+		session->roam_invoke_timer_info.mac = mac_ctx;
+		session->roam_invoke_timer_info.vdev_id = vdev_id;
+		qdf_mc_timer_start(&session->roam_invoke_timer,
+				   QDF_ROAM_INVOKE_TIMEOUT);
 	}
 
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_SME_ID);

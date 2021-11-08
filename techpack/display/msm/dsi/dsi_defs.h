@@ -375,6 +375,17 @@ enum dsi_video_traffic_mode {
 };
 
 /**
+ * enum dsi_dfps_refresh_index - refresh rate indexing
+ */
+enum dsi_dfps_refresh_index {
+	RR_90HZ = 0,
+	RR_80HZ,
+	RR_72HZ,
+	RR_60HZ,
+	RR_NUM
+};
+
+/**
  * struct dsi_cmd_desc - description of a dsi command
  * @msg:		dsi mipi msg packet
  * @last_command:   indicates whether the cmd is the last one to send
@@ -633,6 +644,10 @@ struct dsi_display_mode_priv_info {
 	struct msm_roi_caps roi_caps;
 
 	u32 padding;
+	struct {
+		u32 on;
+		u32 off;
+	} blu_timing[RR_NUM];
 };
 
 /**

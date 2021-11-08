@@ -342,7 +342,7 @@ static int syncboss_inc_client_count_locked(struct syncboss_dev_data *devdata)
 	/*
 	 * The first time a client opens a handle to the driver, read
 	 * the prox sensor calibration.  We do it here as opposed to
-	 * in the workqueue thread because request_firmware must be
+	 * in the SPI transfer thread because request_firmware must be
 	 * called in a user-context.  We read the calibration every
 	 * time to support the factory case where prox calibration is
 	 * being modified and we don't want to force a headset reboot
@@ -418,13 +418,11 @@ out:
 	return status;
 }
 
-static int signal_powerstate_event_locked(struct syncboss_dev_data *devdata, int evt)
+static int signal_powerstate_event(struct syncboss_dev_data *devdata, int evt)
 {
 	int status = 0;
 	bool should_update_last_evt = true;
 	struct syncboss_driver_data_header_driver_message_t msg_to_send;
-
-	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 
 	memcpy(&msg_to_send, &SYNCBOSS_DRIVER_POWERSTATE_HEADER,
 	       sizeof(msg_to_send));
@@ -465,42 +463,6 @@ static int signal_powerstate_event_locked(struct syncboss_dev_data *devdata, int
 	return status;
 }
 
-static void signal_powerstate_event(struct syncboss_dev_data *devdata, int evt)
-{
-	mutex_lock(&devdata->state_mutex);
-	signal_powerstate_event_locked(devdata, evt);
-	mutex_unlock(&devdata->state_mutex);
-}
-
-struct event_work_data {
-	struct work_struct work;
-	struct syncboss_dev_data *devdata;
-	int evt;
-};
-
-static void do_signal_powerstate_event(struct work_struct *work)
-{
-	struct event_work_data *wd = container_of(work, struct event_work_data, work);
-
-	signal_powerstate_event(wd->devdata, wd->evt);
-
-	kfree(wd);
-}
-
-static void queue_powerstate_event(struct syncboss_dev_data *devdata, int evt)
-{
-	struct event_work_data *wd = kmalloc(sizeof(*wd), GFP_KERNEL);
-
-	if (!wd)
-		return;
-
-	wd->devdata = devdata;
-	wd->evt = evt;
-
-	INIT_WORK(&wd->work, do_signal_powerstate_event);
-	queue_work(devdata->syncboss_workqueue, &wd->work);
-}
-
 static void powerstate_enable_locked(struct syncboss_dev_data *devdata);
 static void powerstate_disable_locked(struct syncboss_dev_data *devdata);
 
@@ -528,7 +490,7 @@ static int syncboss_powerstate_open(struct inode *inode, struct file *f)
 		dev_info(&devdata->spi->dev,
 			 "Signaling powerstate_last_evt (%d)",
 			 devdata->powerstate_last_evt);
-		signal_powerstate_event_locked(devdata, devdata->powerstate_last_evt);
+		signal_powerstate_event(devdata, devdata->powerstate_last_evt);
 	}
 
 	if (devdata->powerstate_client_count == 1) {
@@ -930,19 +892,15 @@ static int distribute_packet(struct syncboss_dev_data *devdata,
 	int status = 0;
 
 	if (packet->sequence_id == 0) {
-		/*
-		 * Prox state changes are treated specially and redirected to
-		 * the prox device fifo
-		 */
 		switch (packet->type) {
 		case SYNCBOSS_PROXSTATE_MESSAGE_TYPE:
-			queue_powerstate_event(devdata,
+			signal_powerstate_event(devdata,
 					  packet->data[0] ?
 					  SYNCBOSS_PROX_EVENT_PROX_ON :
 					  SYNCBOSS_PROX_EVENT_PROX_OFF);
 			return 0;
 		case SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE:
-			queue_powerstate_event(devdata, packet->data[0]);
+			signal_powerstate_event(devdata, packet->data[0]);
 			return 0;
 		default:
 			break;
@@ -1647,7 +1605,7 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	 * event
 	 */
 	if (devdata->has_prox)
-		signal_powerstate_event_locked(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
+		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
 
 	if (devdata->use_fastpath)
 		devdata->spi_prepare_ops.unprepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
@@ -1890,9 +1848,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	cpumask_setall(&devdata->cpu_affinity);
 	dev_info(&devdata->spi->dev, "Initial SPI thread cpu affinity: %*pb\n",
 		cpumask_pr_args(&devdata->cpu_affinity));
-
-	devdata->syncboss_workqueue = create_singlethread_workqueue(
-						"syncboss_workqueue");
 
 	devdata->gpio_reset = of_get_named_gpio(node,
 			"oculus,syncboss-reset", 0);
@@ -2209,8 +2164,6 @@ error_after_devdata_init:
 	}
 	spi->master->prepare_transfer_hardware = devdata->spi_prepare_ops.prepare_transfer_hardware;
 	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
-	flush_workqueue(devdata->syncboss_workqueue);
-	destroy_workqueue(devdata->syncboss_workqueue);
 error:
 	return status;
 }
@@ -2228,9 +2181,6 @@ static int syncboss_remove(struct spi_device *spi)
 	misc_deregister(&devdata->misc_control);
 	misc_deregister(&devdata->misc_powerstate);
 	misc_deregister(&devdata->misc);
-
-	flush_workqueue(devdata->syncboss_workqueue);
-	destroy_workqueue(devdata->syncboss_workqueue);
 
 	/* Return prepare/unprepare call ownership to the kernel SPI framework. */
 	if (devdata->use_fastpath) {

@@ -12,6 +12,7 @@
 
 #define FW_UPDATE_STATE_IDLE_STR      "idle"
 #define FW_UPDATE_STATE_WRITING_STR   "writing"
+#define FW_UPDATE_STATE_ERROR_STR     "error"
 
 /* SWD Operations for each supported architecture */
 static struct {
@@ -205,7 +206,7 @@ static int update_firmware(struct device *dev)
 		devdata->on_firmware_update_complete(dev, status);
 	atomic_set(&devdata->fw_chunks_written, 0);
 	atomic_set(&devdata->fw_chunks_to_write, 0);
-	devdata->fw_update_state = FW_UPDATE_STATE_IDLE;
+	devdata->fw_update_state = status ? FW_UPDATE_STATE_ERROR : FW_UPDATE_STATE_IDLE;
 
 	return status;
 }
@@ -225,15 +226,15 @@ ssize_t fwupdate_show_update_firmware(struct device *dev, char *buf)
 	}
 
 	if (devdata->fw_update_state == FW_UPDATE_STATE_IDLE) {
-		retval = scnprintf(buf, PAGE_SIZE,
-				   FW_UPDATE_STATE_IDLE_STR "\n");
+		retval = scnprintf(buf, PAGE_SIZE, FW_UPDATE_STATE_IDLE_STR "\n");
 	} else if (devdata->fw_update_state == FW_UPDATE_STATE_WRITING_TO_HW) {
-
 		retval = scnprintf(buf, PAGE_SIZE,
 				   FW_UPDATE_STATE_WRITING_STR
 				   " %i/%i\n",
 				   atomic_read(&devdata->fw_chunks_written),
 				   atomic_read(&devdata->fw_chunks_to_write));
+	} else if (devdata->fw_update_state == FW_UPDATE_STATE_ERROR) {
+		retval = scnprintf(buf, PAGE_SIZE, FW_UPDATE_STATE_ERROR_STR "\n");
 	} else {
 		/* In an unknown state */
 		BUG_ON(1);
@@ -310,9 +311,9 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 		status = -EINVAL;
 		goto error;
 	}
-	if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
+	if (devdata->fw_update_state == FW_UPDATE_STATE_WRITING_TO_HW) {
 		dev_err(dev,
-			"Cannot update firmware while firmware update is not in the idle state, is another fw update running?");
+			"Cannot update firmware while firmware update is not in an idle state, is another fw update running?");
 		status = -EINVAL;
 		goto error;
 	}

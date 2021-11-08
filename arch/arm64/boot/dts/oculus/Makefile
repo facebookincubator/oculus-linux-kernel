@@ -25,7 +25,8 @@ dtbo-$(CONFIG_OCULUS_unknown1) += \
 	unknown1-dev2.5-overlay.dtbo \
 	unknown1-p2.5-overlay.dtbo \
 	unknown1-dev3-overlay.dtbo \
-	unknown1-p3-overlay.dtbo
+	unknown1-p3-overlay.dtbo \
+	unknown1-p3dd-overlay.dtbo
 
 eureka865-dev0-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-poc2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
@@ -47,6 +48,7 @@ unknown1-dev2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.
 unknown1-p2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 unknown1-dev3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 unknown1-p3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+unknown1-p3dd-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 endif
 endif
 

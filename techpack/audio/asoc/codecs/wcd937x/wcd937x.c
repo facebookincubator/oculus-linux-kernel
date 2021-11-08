@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -142,6 +142,11 @@ static int wcd937x_init_reg(struct snd_soc_component *component)
 				0xFF, 0xFA);
 	snd_soc_component_update_bits(component, WCD937X_MICB3_TEST_CTL_1,
 				0xFF, 0xFA);
+	/* Set VBG Voltage to P0.5V for Tanggu second source */
+	if (snd_soc_component_read32(component, WCD937X_DIGITAL_EFUSE_REG_16)
+	    == 0x01)
+		snd_soc_component_update_bits(component,
+				WCD937X_BIAS_VBG_FINE_ADJ, 0xF0, 0xB0);
 	return 0;
 }
 

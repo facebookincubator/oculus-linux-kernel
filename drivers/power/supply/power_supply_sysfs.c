@@ -494,7 +494,9 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(battery_type),
 	POWER_SUPPLY_ATTR(cycle_counts),
 	/* [TI FG ] Local extensions of TI fg read reg*/
-	POWER_SUPPLY_ATTR(manufacturer_info),
+	POWER_SUPPLY_ATTR(manufacturer_info_a),
+	POWER_SUPPLY_ATTR(manufacturer_info_b),
+	POWER_SUPPLY_ATTR(manufacturer_info_c),
 	POWER_SUPPLY_ATTR(serial_number),
 };
 

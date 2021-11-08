@@ -84,6 +84,17 @@ QDF_STATUS wlan_reg_get_max_5g_bw_from_regdomain(uint16_t regdmn,
 	return reg_get_max_5g_bw_from_regdomain(regdmn, max_bw_5g);
 }
 
+#ifdef CONFIG_REG_CLIENT
+QDF_STATUS
+wlan_reg_get_6g_power_type_for_ctry(uint8_t *ap_ctry, uint8_t *sta_ctry,
+				    enum reg_6g_ap_type *pwr_type_6g,
+				    bool *ctry_code_match)
+{
+	return reg_get_6g_power_type_for_ctry(ap_ctry, sta_ctry, pwr_type_6g,
+					      ctry_code_match);
+}
+#endif
+
 #ifdef CONFIG_CHAN_NUM_API
 /**
  * wlan_reg_get_channel_state() - Get channel state from regulatory
@@ -922,6 +933,23 @@ wlan_reg_get_band_channel_list(struct wlan_objmgr_pdev *pdev,
 
 	return reg_get_band_channel_list(pdev, band_mask, channel_list);
 }
+
+#ifdef CONFIG_REG_CLIENT
+uint16_t
+wlan_reg_get_secondary_band_channel_list(struct wlan_objmgr_pdev *pdev,
+					 uint8_t band_mask,
+					 struct regulatory_channel
+					 *channel_list)
+{
+	if (!pdev) {
+		reg_err("pdev object is NULL");
+		return 0;
+	}
+
+	return reg_get_secondary_band_channel_list(pdev, band_mask,
+						   channel_list);
+}
+#endif
 
 qdf_freq_t wlan_reg_chan_band_to_freq(struct wlan_objmgr_pdev *pdev,
 				      uint8_t chan, uint8_t band_mask)

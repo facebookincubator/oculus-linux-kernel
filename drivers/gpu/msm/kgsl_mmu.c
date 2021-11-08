@@ -574,39 +574,48 @@ struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 	return ERR_PTR(-EINVAL);
 }
 
-struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc)
+struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
+		uint64_t offset, uint64_t size)
 {
 	struct kgsl_pagetable *pagetable;
 	struct page **pages;
-	uint64_t offset;
+	uint64_t start_page, end_page, page_idx;
 	int i;
-
-	/* If the page pointer array exists for this memdesc just return it. */
-	if (memdesc->pages != NULL)
-		return memdesc->pages;
 
 	pagetable = memdesc->pagetable;
 	if (pagetable == NULL)
 		return ERR_PTR(-ENODEV);
 	if (!PT_OP_VALID(pagetable, mmu_find_mapped_page) ||
 		!(KGSL_MEMDESC_MAPPED & memdesc->priv) ||
-		memdesc->page_count == 0)
+		memdesc->page_count == 0 || size == 0)
 		return ERR_PTR(-EINVAL);
 
-	pages = kvcalloc(memdesc->page_count, sizeof(struct page *), GFP_KERNEL);
+	start_page = offset >> PAGE_SHIFT;
+	end_page = (offset + size - 1) >> PAGE_SHIFT;
+
+	pages = kvcalloc(end_page - start_page + 1, sizeof(struct page *),
+			GFP_KERNEL);
 	if (pages == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	offset = 0;
-	for (i = 0; i < memdesc->page_count; i++, offset += PAGE_SIZE) {
+	for (page_idx = start_page, i = 0; page_idx <= end_page; page_idx++, i++) {
 		struct page *page = pagetable->pt_ops->mmu_find_mapped_page(
-				memdesc, offset);
+				memdesc, page_idx << PAGE_SHIFT);
 
 		if (!IS_ERR_OR_NULL(page) && pfn_valid(page_to_pfn(page)))
 			pages[i] = page;
 	}
 
 	return pages;
+}
+
+struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc)
+{
+	/* If this entry has no pages backing it just return NULL. */
+	if (memdesc->page_count == 0 || memdesc->size == 0)
+		return NULL;
+
+	return kgsl_mmu_find_mapped_page_range(memdesc, 0, memdesc->size);
 }
 
 int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,

@@ -237,7 +237,6 @@ static inline bool in_compat_syscall(void) { return is_compat_task(); }
  * @DEVICE_IFACE_OPENED: Adapter has been "opened" via the kernel
  * @SOFTAP_INIT_DONE: Software Access Point (SAP) is initialized
  * @VENDOR_ACS_RESPONSE_PENDING: Waiting for event for vendor acs
- * @DOWN_DURING_SSR: Mark interface is down during SSR
  */
 enum hdd_adapter_flags {
 	NET_DEVICE_REGISTERED,
@@ -248,7 +247,16 @@ enum hdd_adapter_flags {
 	DEVICE_IFACE_OPENED,
 	SOFTAP_INIT_DONE,
 	VENDOR_ACS_RESPONSE_PENDING,
-	DOWN_DURING_SSR,
+};
+
+/**
+ * enum hdd_nb_cmd_id - North bound command IDs received during SSR
+ * @NO_COMMAND - No NB command received during SSR
+ * @INTERFACE_DOWN - Received interface down during SSR
+ */
+enum hdd_nb_cmd_id {
+	NO_COMMAND,
+	INTERFACE_DOWN
 };
 
 #define WLAN_WAIT_DISCONNECT_ALREADY_IN_PROGRESS  1000
@@ -2865,8 +2873,7 @@ hdd_add_latency_critical_client(struct hdd_adapter *adapter,
 	switch (phymode) {
 	case QCA_WLAN_802_11_MODE_11A:
 	case QCA_WLAN_802_11_MODE_11G:
-		if (adapter->device_mode == QDF_STA_MODE)
-			qdf_atomic_inc(&hdd_ctx->num_latency_critical_clients);
+		qdf_atomic_inc(&hdd_ctx->num_latency_critical_clients);
 
 		hdd_debug("Adding latency critical connection for vdev %d",
 			  adapter->vdev_id);
@@ -2899,8 +2906,7 @@ hdd_del_latency_critical_client(struct hdd_adapter *adapter,
 	switch (phymode) {
 	case QCA_WLAN_802_11_MODE_11A:
 	case QCA_WLAN_802_11_MODE_11G:
-		if (adapter->device_mode == QDF_STA_MODE)
-			qdf_atomic_dec(&hdd_ctx->num_latency_critical_clients);
+		qdf_atomic_dec(&hdd_ctx->num_latency_critical_clients);
 
 		hdd_info("Removing latency critical connection for vdev %d",
 			 adapter->vdev_id);
@@ -4913,6 +4919,17 @@ bool hdd_is_runtime_pm_enabled(struct hdd_context *hdd_ctx);
  * Return: None
  */
 void hdd_netdev_update_features(struct hdd_adapter *adapter);
+
+/**
+ * hdd_stop_no_trans() - HDD stop function
+ * @dev:	Pointer to net_device structure
+ *
+ * This is called in response to ifconfig down. Vdev sync transaction
+ * should be started before calling this API.
+ *
+ * Return: 0 for success; non-zero for failure
+ */
+int hdd_stop_no_trans(struct net_device *dev);
 
 #if defined(CLD_PM_QOS)
 /**
