@@ -733,8 +733,11 @@ pmo_core_enable_wow_in_fw(struct wlan_objmgr_psoc *psoc,
 	struct pmo_wow_cmd_params param = {0};
 	struct pmo_psoc_cfg *psoc_cfg = &psoc_ctx->psoc_cfg;
 	QDF_STATUS status;
+	void *hif_ctx;
 
 	pmo_enter();
+
+	hif_ctx = pmo_core_psoc_get_hif_handle(psoc);
 	qdf_event_reset(&psoc_ctx->wow.target_suspend);
 	pmo_core_set_wow_nack(psoc_ctx, false);
 	host_credits = pmo_tgt_psoc_get_host_credits(psoc);
@@ -801,6 +804,8 @@ pmo_core_enable_wow_in_fw(struct wlan_objmgr_psoc *psoc,
 		}
 	} else {
 		pmo_info("Prevent link down, non-drv wow is enabled");
+		if (hif_ctx)
+			hif_print_runtime_pm_prevent_list(hif_ctx);
 	}
 
 	if (type == QDF_SYSTEM_SUSPEND) {
@@ -1343,7 +1348,7 @@ QDF_STATUS pmo_core_psoc_send_host_wakeup_ind_to_fw(
 	hif_ctx = pmo_core_psoc_get_hif_handle(psoc);
 	hif_set_ep_vote_access(hif_ctx,
 			       HIF_EP_VOTE_NONDP_ACCESS,
-			       HIF_EP_VOTE_ACCESS_ENABLE);
+			       HIF_EP_VOTE_INTERMEDIATE_ACCESS);
 
 	qdf_event_reset(&psoc_ctx->wow.target_resume);
 
@@ -1371,6 +1376,9 @@ QDF_STATUS pmo_core_psoc_send_host_wakeup_ind_to_fw(
 		pmo_debug("Host wakeup received");
 		pmo_tgt_update_target_suspend_flag(psoc, false);
 		pmo_tgt_update_target_suspend_acked_flag(psoc, false);
+		hif_set_ep_vote_access(hif_ctx,
+				       HIF_EP_VOTE_NONDP_ACCESS,
+				       HIF_EP_VOTE_ACCESS_ENABLE);
 		hif_set_ep_vote_access(hif_ctx,
 				       HIF_EP_VOTE_DP_ACCESS,
 				       HIF_EP_VOTE_ACCESS_ENABLE);

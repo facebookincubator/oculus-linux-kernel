@@ -28,6 +28,27 @@ config BLU_FW
 	---help---
 	  Allow automatic/OTA FW updates for the backlight MCU.
 
+config CHARGER_CYPD3177
+	tristate "CONFIG_CYPD3177 support"
+	default n
+	help
+	  Say Y here to enable support for batteries with CYPD3177 chips connected
+	  over an I2C bus. This driver registers with the power supply class and
+	  advertises itself as a wireless power supply. CYPD3177 controller takes
+	  care of PD contract negotiation and advertises state changes via GPIO
+	  interrupts.
+
+config CYPD_POLICY_ENGINE
+	tristate "Cypress Power Delivery Policy Engine"
+	default n
+	help
+	  Say Y here to enable CYPD policy engine. This driver implements policy
+	  for handling power delivery messages. This is based on the USB Power
+	  Delivery protocol with some CYPD3177 BCR specific behavior such as
+	  defaulting to sink only mode. This driver depends on a CYPD 3177
+	  controller device driver in order to transmit and receive PD messages
+	  on its behalf.
+
 config DEPTH_PROJECTOR
 	tristate "Depth Projector Kernel Driver"
 	default n
@@ -124,6 +145,14 @@ config OCULUS
 	default y
 	---help---
 	  Enable support for Oculus drivers and features
+
+config OCULUS_EUREKA865
+	bool "Enable support for eureka865 device"
+	default n
+	depends on OCULUS
+	select ARCH_KONA
+	---help---
+	  Enable support for the eureka865 device
 
 config OCULUS_HOLLYWOOD
 	bool "Enable support for hollywood device"

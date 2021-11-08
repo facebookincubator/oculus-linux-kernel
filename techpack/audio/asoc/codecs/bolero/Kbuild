@@ -27,8 +27,13 @@ ifeq ($(KERNEL_BUILD), 0)
 		INCS    +=  -include $(AUDIO_ROOT)/config/sm6150autoconf.h
 	endif
 	ifeq ($(CONFIG_ARCH_KONA), y)
-		include $(AUDIO_ROOT)/config/konaauto.conf
-		INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
+		ifeq ($(CONFIG_OCULUS_EUREKA865), y)
+			include $(AUDIO_ROOT)/config/eureka.conf
+			INCS    +=  -include $(AUDIO_ROOT)/config/eurekaconf.h
+		else
+			include $(AUDIO_ROOT)/config/konaauto.conf
+			INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
+		endif
 	endif
 	ifeq ($(CONFIG_ARCH_LITO), y)
 		include $(AUDIO_ROOT)/config/litoauto.conf

@@ -28,7 +28,7 @@
 &qupv3_se19_spi {
 	oculusnrf@0 {
 		swd@0 {
-			oculus,fw-path = "syncboss_DEV2_BOARD.bin";
+			oculus,fw-path = "syncboss-ipl-spl.bin";
 		};
 	};
 };

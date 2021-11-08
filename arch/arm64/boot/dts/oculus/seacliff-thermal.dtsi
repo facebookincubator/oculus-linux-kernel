@@ -29,7 +29,7 @@
 		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
 		io-channel-names = "soc_therm";
 
-		thermal-zones = "imu-usr";
+		thermal-zones = "pcb1-usr";
 
 		thermal-zone-coefficients = <1>;
 		thermal-zone-slope-coefficients = <1>;
@@ -49,7 +49,7 @@
 		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
 		io-channel-names = "soc_therm";
 
-		thermal-zones = "pcb1-usr", "imu-usr";
+		thermal-zones = "pcb1-usr";
 
 		thermal-zone-coefficients = <1 1>;
 		thermal-zone-slope-coefficients = <1 1>;

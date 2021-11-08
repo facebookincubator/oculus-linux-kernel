@@ -38,7 +38,7 @@
 #include <linux/fcntl.h>
 #include <linux/fs.h>
 #include <linux/of_gpio.h>
-#include <wlan_plat.h>
+#include <dhd_plat.h>
 #include <bcmdevs.h>
 
 #ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM

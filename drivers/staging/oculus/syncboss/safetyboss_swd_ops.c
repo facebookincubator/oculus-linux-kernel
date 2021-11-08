@@ -8,14 +8,20 @@
 
 // todo(spooksmus): Look into why fast mode programming errors out
 #define USE_FAST_MODE 0
+#define DEVID_STM32G071xx   0x460
 
-static int safetyboss_swd_is_flash_ready(struct device *dev)
+static bool safetyboss_swd_is_flash_ready(struct device *dev)
 {
 	return !(swd_memory_read(dev, SWD_STM32G0_FLASH_SR) & SWD_STM32G0_FLASH_SR_BUSY1);
 }
 
 static int safetyboss_swd_get_errors(struct device *dev)
 {
+	u32 devid = swd_memory_read(dev, SWD_STM32G0_DBG_IDCODE) & SWD_STM32G0_DBG_IDCODE_DEVID_MASK;
+	if (devid != DEVID_STM32G071xx) {
+		dev_err(dev, "(SafetyBoss SWD) Unrecognized devid: %u", devid);
+		return -EINVAL;
+	}
 	return (int) (swd_memory_read(dev, SWD_STM32G0_FLASH_SR) & SWD_STM32G0_FLASH_ERR_Mask);
 }
 

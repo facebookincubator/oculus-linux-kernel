@@ -70,8 +70,6 @@ DP Controller: Required properties:
 - qcom,mst-enable:		MST feature enable control node.
 - qcom,dsc-feature-enable:	DSC feature enable control node.
 - qcom,fec-feature-enable:	FEC feature enable control node.
-- qcom,max-dp-dsc-blks:		An integer specifying the max. DSC blocks available for Display port.
-- qcom,max-dp-dsc-input-width-pixs: An integer specifying the max. input width of pixels for each DSC block.
 - qcom,dsc-continuous-pps:	Control node for sending PPS every frame in hardware for DSC over DP.
 				This is needed by certain bridge chips where there is such a requirement to do so.
 - qcom,dp-usbpd-detection:	Phandle for the PMI regulator node for USB PHY PD detection.
@@ -186,8 +184,6 @@ Example:
 		qcom,mst-enable;
 		qcom,dsc-feature-enable;
 		qcom,fec-feature-enable;
-		qcom,max-dp-dsc-blks = <2>;
-		qcom,max-dp-dsc-input-width-pixs = <2048>;
 		qcom,dsc-continuous-pps;
 		pinctrl-names = "mdss_dp_active", "mdss_dp_sleep";
 		pinctrl-0 = <&sde_dp_aux_active &sde_dp_usbplug_cc_active>;

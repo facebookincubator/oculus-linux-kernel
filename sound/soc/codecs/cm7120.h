@@ -2209,6 +2209,8 @@
 #define CM7120_CSPK_L2_MUTE_SFT 25
 #define CM7120_CSPK_L1_MUTE_MASK (0x1 << 24)
 #define CM7120_CSPK_L1_MUTE_SFT 24
+#define CM7120_CSPK_2CH_TO_4CH_MASK (0x1 << 22)
+#define CM7120_CSPK_2CH_TO_4CH_SFT 22
 #define CM7120_UPDATE_FIR_COEFFICIENT_MASK (0x1 << 21)
 #define CM7120_UPDATE_FIR_COEFFICIENT_SFT 21
 #define CM7120_MIC_FIR_ON_OFF_MASK (0x1 << 20)
@@ -2275,6 +2277,7 @@ enum {
 	SPK_L2_MUTE,
 	SPK_R1_MUTE,
 	SPK_R2_MUTE,
+	SPK_2CH_TO_4CH,
 	MIC_TO_CHANNEL0,
 	MIC_TO_CHANNEL1,
 	MIC_TO_I2S10,
@@ -2376,6 +2379,7 @@ struct cm7120_priv {
 	const struct firmware *fw;
 	struct work_struct fw_download_work;
 	struct completion fw_download_complete;
+	const char *fw_name;
 
 	bool is_dsp_mode;
 	unsigned int sampleRate;
@@ -2392,6 +2396,7 @@ struct cm7120_priv {
 	unsigned char spkl2mute;
 	unsigned char spkr1mute;
 	unsigned char spkr2mute;
+	unsigned char spk2chto4ch;
 	unsigned char mictochannel0;
 	unsigned char mictochannel1;
 	unsigned char mictoi2s10;

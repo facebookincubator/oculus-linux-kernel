@@ -53,11 +53,10 @@
 
 struct pwm_fan_ctx {
 	/*
-	 * RPM lock must always be acquired before PWM lock, since setting the
-	 * RPM will involve a call to __set_pwm which takes the PWM lock.
+	 * lock must be acquired to call set_pwm_locked, set_rpm_locked, or to
+	 * modify any of the rpm/pwm state variables or values variables.
 	 */
-	struct mutex pwm_lock;
-	struct mutex rpm_lock;
+	struct mutex lock;
 	struct pwm_device *pwm;
 	struct hrtimer fan_timer;
 	struct thermal_cooling_device *cdev;
@@ -149,16 +148,14 @@ static void disable_fan(struct pwm_fan_ctx *ctx)
 	atomic64_set(&ctx->rpm, 0);
 }
 
-static int  __set_pwm(struct pwm_fan_ctx *ctx, unsigned long pwm)
+static int set_pwm_locked(struct pwm_fan_ctx *ctx, unsigned long pwm)
 {
 	unsigned long duty;
 	unsigned long period;
 	ssize_t ret = 0;
 
-	mutex_lock(&ctx->pwm_lock);
-
 	if (ctx->pwm_value == pwm)
-		goto set_pwm_unlock;
+		return ret;
 
 	if (pwm == 0) {
 		disable_fan(ctx);
@@ -170,45 +167,38 @@ static int  __set_pwm(struct pwm_fan_ctx *ctx, unsigned long pwm)
 
 	ret = pwm_config(ctx->pwm, duty, period);
 	if (ret)
-		goto set_pwm_unlock;
+		return ret;
 
 	if (ctx->pwm_value == 0) {
 		ret = enable_fan(ctx);
 		if (ret)
-			goto set_pwm_unlock;
+			return ret;
 	}
 
 set_pwm_success:
 	ctx->pwm_value = pwm;
-set_pwm_unlock:
-	mutex_unlock(&ctx->pwm_lock);
 	return ret;
 }
 
-static int __set_rpm(struct pwm_fan_ctx *ctx, unsigned long rpm)
+static int set_rpm_locked(struct pwm_fan_ctx *ctx, unsigned long rpm)
 {
 	ssize_t ret = 0;
 	int current_rpm_value = 0;
 
-	mutex_lock(&ctx->rpm_lock);
 	current_rpm_value = ctx->rpm_value;
 	ctx->rpm_value = rpm;
 
-	if (rpm == 0) {
+	if (rpm == 0)
 		/* Setting PWM to 0 always returns 0 */
-		ret = __set_pwm(ctx, 0);
-		goto set_rpm_unlock;
-	}
+		return set_pwm_locked(ctx, 0);
 
 	if (current_rpm_value == 0) {
 		/* Start fan at 1/3 speed so it can start */
-		ret = __set_pwm(ctx, 33 * MAX_PWM / 100);
+		ret = set_pwm_locked(ctx, 33 * MAX_PWM / 100);
 		if (ret)
 			ctx->rpm_value = current_rpm_value;
 	}
 
-set_rpm_unlock:
-	mutex_unlock(&ctx->rpm_lock);
 	return ret;
 }
 
@@ -244,9 +234,12 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 	if (kstrtoul(buf, 10, &pwm) || pwm > MAX_PWM)
 		return -EINVAL;
 
-	ret = __set_pwm(ctx, pwm);
+	mutex_lock(&ctx->lock);
+	ret = set_pwm_locked(ctx, pwm);
+	mutex_unlock(&ctx->lock);
 	if (ret)
 		return ret;
+
 	return count;
 }
 
@@ -255,7 +248,13 @@ static ssize_t show_pwm(struct device *dev,
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
 
-	return snprintf(buf, MAX_STR_LEN, "%u\n", ctx->pwm_value);
+	u32 pwm_value;
+
+	mutex_lock(&ctx->lock);
+	pwm_value = ctx->pwm_value;
+	mutex_unlock(&ctx->lock);
+
+	return snprintf(buf, MAX_STR_LEN, "%u\n", pwm_value);
 }
 
 static ssize_t set_rpm(struct device *dev, struct device_attribute *attr,
@@ -268,7 +267,9 @@ static ssize_t set_rpm(struct device *dev, struct device_attribute *attr,
 	if (kstrtoul(buf, 10, &rpm))
 		return -EINVAL;
 
-	ret = __set_rpm(ctx, rpm);
+	mutex_lock(&ctx->lock);
+	ret = set_rpm_locked(ctx, rpm);
+	mutex_unlock(&ctx->lock);
 	if (ret)
 		return ret;
 
@@ -314,15 +315,13 @@ static int pwm_fan_get_max_state(struct thermal_cooling_device *cdev,
 }
 
 /* Return true iff the fan is in a failure state. */
-static bool pwm_fan_has_failure(struct pwm_fan_ctx *ctx)
+static bool pwm_fan_has_failure_locked(struct pwm_fan_ctx *ctx)
 {
 	s64 elapsed_ms;
 	s64 pwm;
 
-	mutex_lock(&ctx->pwm_lock);
 	elapsed_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_tach_timestamp));
 	pwm = ctx->pwm_value;
-	mutex_unlock(&ctx->pwm_lock);
 
 	/* Wait for a few cycles to report a failure due to PWM not causing an
 	 * activity.  The fan might take some time to ramp up.
@@ -341,13 +340,15 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 	if (!ctx)
 		return -EINVAL;
 
+	mutex_lock(&ctx->lock);
 	if (!ctx->is_display_on)
 		*state = 0;
-	else if (pwm_fan_has_failure(ctx))
+	else if (pwm_fan_has_failure_locked(ctx))
 		/* Set a state that exceeds the maximum to signal userspace. */
 		*state = ctx->pwm_fan_max_state + 1;
 	else
 		*state = ctx->pwm_fan_state;
+	mutex_unlock(&ctx->lock);
 
 	return 0;
 }
@@ -361,14 +362,15 @@ pwm_fan_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 	if (!ctx || (state > ctx->pwm_fan_max_state))
 		return -EINVAL;
 
+	mutex_lock(&ctx->lock);
 	if (state == ctx->pwm_fan_state)
-		return 0;
+		goto end_set_cur_state;
 
 	if (ctx->is_display_on) {
-		ret = __set_rpm(ctx, ctx->pwm_fan_cooling_levels[state]);
+		ret = set_rpm_locked(ctx, ctx->pwm_fan_cooling_levels[state]);
 		if (ret) {
 			dev_err(&cdev->device, "Cannot set pwm!\n");
-			return ret;
+			goto end_set_cur_state;
 		}
 	} else {
 		/* Set RPM to expected level once display is on */
@@ -377,6 +379,8 @@ pwm_fan_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 
 	ctx->pwm_fan_state = state;
 
+end_set_cur_state:
+	mutex_unlock(&ctx->lock);
 	return ret;
 }
 
@@ -404,12 +408,13 @@ static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 
 	action = *(int *)evdata->data;
 
+	mutex_lock(&ctx->lock);
 	switch (action) {
 	case DRM_PANEL_BLANK_POWERDOWN:
 	case DRM_PANEL_BLANK_LP:
 		current_rpm_value = ctx->rpm_value;
 		if (current_rpm_value > 0) {
-			__set_rpm(ctx, 0);
+			set_rpm_locked(ctx, 0);
 		}
 		ctx->resume_rpm_value = current_rpm_value;
 		ctx->is_display_on = false;
@@ -417,10 +422,11 @@ static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 	case DRM_PANEL_BLANK_UNBLANK:
 		current_rpm_value = ctx->resume_rpm_value;
 		if (current_rpm_value > 0)
-			__set_rpm(ctx, current_rpm_value);
+			set_rpm_locked(ctx, current_rpm_value);
 		ctx->is_display_on = true;
 		break;
 	}
+	mutex_unlock(&ctx->lock);
 
 	return 0;
 }
@@ -463,11 +469,15 @@ static void fan_work_func(struct work_struct *work)
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
 			fan_work);
 	int rpm_mid = 0;
-	/* TODO(ethanc): potentially unsafe access */
-	int pwm = ctx->pwm_value;
-	int rpm_value = ctx->rpm_value;
+	int pwm;
+	int rpm_value;
 	int rpm_history_idx = ctx->timer_ticks;
 	int tolerance;
+
+	mutex_lock(&ctx->lock);
+
+	pwm = ctx->pwm_value;
+	rpm_value = ctx->rpm_value;
 
 	/*
 	 * Record current RPM value
@@ -479,7 +489,7 @@ static void fan_work_func(struct work_struct *work)
 
 	/* Require filled RPM history buffer to determine median */
 	if (ctx->timer_ticks < MAX_RPM_HISTORY)
-		return;
+		goto end_work_func;
 
 	/* Take median of last 3 historical RPM values */
 	/* TODO(ethanc): Take median across N samples */
@@ -497,8 +507,10 @@ static void fan_work_func(struct work_struct *work)
 		pwm = (rpm_mid > rpm_value) ? (pwm - 1) : (pwm + 1);
 		/* Restrict to MIN_PWM to MAX_PWM */
 		pwm = max(min(MAX_PWM, pwm), MIN_PWM);
-		__set_pwm(ctx, pwm);
+		set_pwm_locked(ctx, pwm);
 	}
+end_work_func:
+	mutex_unlock(&ctx->lock);
 }
 
 static enum hrtimer_restart fan_timer_func(struct hrtimer *timer)
@@ -611,8 +623,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "enter pwm fan probe\n");
 
 	INIT_WORK(&ctx->fan_work, fan_work_func);
-	mutex_init(&ctx->pwm_lock);
-	mutex_init(&ctx->rpm_lock);
+	mutex_init(&ctx->lock);
 	hrtimer_init(&ctx->fan_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	ctx->fan_timer.function = fan_timer_func;
 
@@ -730,8 +741,10 @@ static int pwm_fan_remove(struct platform_device *pdev)
 #endif
 
 	thermal_cooling_device_unregister(ctx->cdev);
+	mutex_lock(&ctx->lock);
 	if (ctx->pwm_value)
 		disable_fan(ctx);
+	mutex_unlock(&ctx->lock);
 
 	destroy_workqueue(ctx->wq);
 
@@ -742,18 +755,21 @@ static int pwm_fan_remove(struct platform_device *pdev)
 static int pwm_fan_suspend(struct device *dev)
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
-	int current_rpm_value = ctx->rpm_value;
+	int current_rpm_value;
 	int ret = 0;
 
 	if (active_panel)
 		/* On/off controlled by panel state instead */
 		return 0;
 
+	mutex_lock(&ctx->lock);
+	current_rpm_value = ctx->rpm_value;
 	if (current_rpm_value > 0) {
 		ctx->resume_rpm_value = current_rpm_value;
 
-		ret = __set_rpm(ctx, 0);
+		ret = set_rpm_locked(ctx, 0);
 	}
+	mutex_unlock(&ctx->lock);
 
 	return ret;
 }
@@ -761,16 +777,23 @@ static int pwm_fan_suspend(struct device *dev)
 static int pwm_fan_resume(struct device *dev)
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
-	int current_rpm_value = ctx->resume_rpm_value;
+	int current_rpm_value;
+	int ret = 0;
 
 	if (active_panel)
 		/* On/off controlled by panel state instead */
 		return 0;
 
+	mutex_lock(&ctx->lock);
+	current_rpm_value = ctx->resume_rpm_value;
 	if (current_rpm_value == 0)
-		return 0;
+		goto end_pwm_fan_resume;
 
-	return __set_rpm(ctx, current_rpm_value);
+	ret = set_rpm_locked(ctx, current_rpm_value);
+
+end_pwm_fan_resume:
+	mutex_unlock(&ctx->lock);
+	return ret;
 }
 #else
 #define pwm_fan_suspend NULL

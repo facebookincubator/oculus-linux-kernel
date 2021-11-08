@@ -91,7 +91,7 @@ typedef U32 HUF_DTable;
 #define HUF_CREATE_STATIC_DTABLEX4(DTable, maxTableLog) HUF_DTable DTable[HUF_DTABLE_SIZE(maxTableLog)] = {((U32)(maxTableLog)*0x01000001)}
 
 /* The workspace must have alignment at least 4 and be at least this large */
-#define HUF_COMPRESS_WORKSPACE_SIZE (6 << 10)
+#define HUF_COMPRESS_WORKSPACE_SIZE ((6 << 10) + 256)
 #define HUF_COMPRESS_WORKSPACE_SIZE_U32 (HUF_COMPRESS_WORKSPACE_SIZE / sizeof(U32))
 
 /* The workspace must have alignment at least 4 and be at least this large */

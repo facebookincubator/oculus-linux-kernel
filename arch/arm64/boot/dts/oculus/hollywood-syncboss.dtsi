@@ -125,6 +125,7 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
+		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
 
 		swd@0 {

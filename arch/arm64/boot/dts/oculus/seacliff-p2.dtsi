@@ -33,14 +33,18 @@
 	cm7120,codec_1v8-supply = <&pm8150_l7>;
 	cm7120,headphone-det-gpios = <&tlmm 121 0
 				   &tlmm 113 0>;
+	cm7120,firmware-name = "CM7120_TDM_I2S.bin";
 	pinctrl-0 = <&cm7120_codec_ldo_en_default
 		&cm7120_codec_reset_default
 		&cm7120_headphone_det_default>;
 };
 
 &cm7120_snd {
+	qcom,model = "kona-cm7120-tdm_i2s-snd-card";
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <0>, <1>;
 	qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
+	qcom,tdm-audio-intf = <1>;
+	qcom,tdm-max-slots = <4>;
 };
 
 &dsi_dual_boe_spi_blu_dsc_video {
@@ -276,6 +280,17 @@
 	};
 };
 
+&pri_mi2s_gpios {
+	pinctrl-0 = <&pri_tdm_clk_active
+		&pri_tdm_din_active
+		&pri_tdm_dout_active
+		&pri_tdm_sync_active>;
+	pinctrl-1 = <&pri_tdm_clk_sleep
+		&pri_tdm_din_sleep
+		&pri_tdm_dout_sleep
+		&pri_tdm_sync_sleep>;
+};
+
 &q6core {
 	quin_mi2s_gpios: quin_mi2s_gpios {
 		compatible = "qcom,msm-cdc-pinctrl";
@@ -471,6 +486,20 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&display_panel_blu_en_default>;
 	};
+};
+
+&tdm_pri_rx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <1>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+	qcom,msm-cpudai-tdm-data-delay = <0>;
+};
+
+&tdm_pri_tx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <2>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+	qcom,msm-cpudai-tdm-data-delay = <0>;
 };
 
 &thermal_zones {

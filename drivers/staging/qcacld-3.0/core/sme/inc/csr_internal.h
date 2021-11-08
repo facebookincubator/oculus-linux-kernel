@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -77,6 +77,7 @@
 /* Support for "Fast roaming" (i.e., ESE, LFR, or 802.11r.) */
 #define CSR_BG_SCAN_OCCUPIED_CHANNEL_LIST_LEN 15
 
+#define QDF_ROAM_INVOKE_TIMEOUT 10000 /* in msec */
 /* Used to determine what to set to the MLME_DOT11_MODE */
 enum csr_cfgdot11mode {
 	eCSR_CFG_DOT11_MODE_ABG,
@@ -287,6 +288,7 @@ struct roam_cmd {
 	tSirMacAddr peerMac;
 	enum wlan_reason_code reason;
 	enum wlan_reason_code disconnect_reason;
+	qdf_time_t connect_active_time;
 };
 
 struct setkey_cmd {
@@ -614,6 +616,10 @@ struct csr_roam_session {
 	bool is_adaptive_11r_connection;
 	struct csr_disconnect_stats disconnect_stats;
 	qdf_mc_timer_t join_retry_timer;
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+	qdf_mc_timer_t roam_invoke_timer;
+	struct csr_timer_info roam_invoke_timer_info;
+#endif
 };
 
 struct csr_roamstruct {

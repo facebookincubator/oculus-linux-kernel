@@ -142,6 +142,7 @@ struct ion_buffer {
 	struct mutex lock;
 	int kmap_cnt;
 	void *vaddr;
+	struct kref kref;
 	struct sg_table *sg_table;
 	struct list_head attachments;
 	struct list_head vmas;

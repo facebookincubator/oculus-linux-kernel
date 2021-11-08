@@ -77,14 +77,18 @@
 	cm7120,codec_1v8-supply = <&pm8150_l7>;
 	cm7120,headphone-det-gpios = <&tlmm 113 0
 				   &tlmm 89 0>;
+	cm7120,firmware-name = "CM7120_TDM_I2S.bin";
 	pinctrl-0 = <&cm7120_codec_ldo_en_default
 		&cm7120_codec_reset_default
 		&cm7120_headphone_det_default>;
 };
 
 &cm7120_snd {
+	qcom,model = "kona-cm7120-tdm_i2s-snd-card";
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <0>, <1>;
 	qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
+	qcom,tdm-audio-intf = <1>;
+	qcom,tdm-max-slots = <4>;
 };
 
 &display_panel_avdd {
@@ -174,8 +178,7 @@
 };
 
 &pm8150a_l7 {
-	/* IMU 3.0 */
-	regulator-always-on;
+	status = "disabled";
 };
 
 &pm8150a_l8 {
@@ -241,8 +244,8 @@
 	qcom,fg-esr-cal-temp-thresh = <10 40>;
 
 	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
-	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
-	qcom,fg-cutoff-voltage = <3400>;
+	qcom,fg-cutoff-current = <268>; // C/20 minimum discharge current at system cutoff for SOC estimation
+	qcom,fg-cutoff-voltage = <3300>;
 	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
 };
 
@@ -356,6 +359,17 @@
 	};
 };
 
+&pri_mi2s_gpios {
+	pinctrl-0 = <&pri_tdm_clk_active
+		&pri_tdm_din_active
+		&pri_tdm_dout_active
+		&pri_tdm_sync_active>;
+	pinctrl-1 = <&pri_tdm_clk_sleep
+		&pri_tdm_din_sleep
+		&pri_tdm_dout_sleep
+		&pri_tdm_sync_sleep>;
+};
+
 &q6core {
 	quin_mi2s_gpios: quin_mi2s_gpios {
 		compatible = "qcom,msm-cdc-pinctrl";
@@ -393,7 +407,9 @@
 		oculus,syncboss-timesync = <&tlmm 68 0>;
 		oculus,syncboss-wakeup  = <&tlmm 4 0>;
 
+		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
+		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
 
 		swd@0 {
@@ -406,7 +422,7 @@
 			oculus,swd-io = <&tlmm 120 0>;
 
 			oculus,swd-flavor = "nrf52832";
-			oculus,fw-path = "syncboss.bin";
+			oculus,fw-path = "syncboss-ipl-spl.bin";
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;
@@ -651,6 +667,20 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&display_panel_blu_en_default>;
 	};
+};
+
+&tdm_pri_rx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <1>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+	qcom,msm-cpudai-tdm-data-delay = <0>;
+};
+
+&tdm_pri_tx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <2>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+	qcom,msm-cpudai-tdm-data-delay = <0>;
 };
 
 &thermal_zones {

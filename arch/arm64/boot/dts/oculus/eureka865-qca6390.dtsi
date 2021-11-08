@@ -1,0 +1,64 @@
+&bt_en_sleep {
+	mux {
+		pins = "gpio131";
+	};
+
+	config {
+		pins = "gpio131";
+	};
+};
+
+&cnss_wlan_en_active {
+	mux {
+		pins = "gpio23";
+	};
+
+	config {
+		pins = "gpio23";
+	};
+};
+
+&cnss_wlan_en_sleep {
+	mux {
+		pins = "gpio23";
+	};
+
+	config {
+		pins = "gpio23";
+	};
+};
+
+&qupv3_se6_4uart {
+	status = "ok";
+};
+
+&vendor {
+	bluetooth: bt_qca6390 {
+		compatible = "qca,qca6390";
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_en_sleep>;
+		qca,bt-reset-gpio = <&tlmm 131 0>; /* BT_EN */
+		qca,bt-sw-ctrl-gpio = <&tlmm 84 0>; /* SW_CTRL */
+		qca,bt-vdd-aon-supply = <&pm8150_s6>;
+		qca,bt-vdd-dig-supply = <&pm8150_s6>;
+		qca,bt-vdd-rfa1-supply = <&pm8150_s5>;
+		qca,bt-vdd-rfa2-supply = <&pm8150a_s8>;
+		qca,bt-vdd-asd-supply = <&pm8150_l16>;
+
+		qca,bt-vdd-aon-voltage-level = <950000 950000>;
+		qca,bt-vdd-dig-voltage-level = <950000 952000>;
+		qca,bt-vdd-rfa1-voltage-level = <1900000 1900000>;
+		qca,bt-vdd-rfa2-voltage-level = <1350000 1350000>;
+		qca,bt-vdd-asd-voltage-level = <3024000 3304000>;
+
+		qca,bt-vdd-asd-current-level = <10000>;
+	};
+};
+
+&wlan {
+	wlan-en-gpio = <&tlmm 23 0>;
+	qcom,bt-en-gpio = <&tlmm 131 0>;
+	vdd-wlan-dig-supply = <&pm8150_s6>;
+	wlan-ant-switch-supply = <>;
+	qcom,wlan-ant-switch-config = <>;
+};

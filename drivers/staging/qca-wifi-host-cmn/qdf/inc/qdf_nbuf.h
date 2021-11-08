@@ -3968,6 +3968,20 @@ static inline void qdf_net_buf_debug_release_frag(qdf_nbuf_t buf,
 }
 #endif /* NBUF_FRAG_MEMORY_DEBUG */
 
+#ifdef NBUF_MEMORY_DEBUG
+/**
+ * qdf_set_smmu_fault_state() - Set smmu fault sate
+ * @smmu_fault_state: state of the wlan smmy
+ *
+ * Return: void
+ */
+void qdf_set_smmu_fault_state(bool smmu_fault_state);
+#else
+static inline void qdf_set_smmu_fault_state(bool smmu_fault_state)
+{
+}
+#endif
+
 #ifdef MEMORY_DEBUG
 /**
  * qdf_nbuf_acquire_track_lock - acquire the nbuf spinlock at the

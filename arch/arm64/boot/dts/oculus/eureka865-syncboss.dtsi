@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&tlmm {
+	syncboss_float_swd: syncboss_float_swd {
+		mux {
+			pins = "gpio85", "gpio86";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio85", "gpio86";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_wakeup: syncboss_wakeup {
+		mux {
+			pins = "gpio93";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio93";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	syncboss_reset_default: syncboss_reset_default {
+		mux {
+			pins = "gpio45";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio45";
+			drive-strength = <6>;
+			// Active-low logic to reset, so hold high by default
+			output-high;
+		};
+	};
+
+	syncboss_uart_active: syncboss_uart_active {
+		mux {
+			pins = "gpio14", "gpio15";
+			function = "qup5";
+		};
+
+		config {
+			pins = "gpio14", "gpio15";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
+		mux {
+			pins = "gpio14";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio14";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
+		mux {
+			pins = "gpio15";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio15";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&qupv3_se5_2uart {
+	status = "ok";
+
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+};
+
+&pm8150a_l8 {
+	/* nRF 1.8 */
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	regulator-always-on;
+};
+
+&qupv3_se0_spi {
+	status = "ok";
+	qcom,rt;
+
+	oculusnrf@0 {
+		status = "okay";
+		compatible = "oculus,syncboss";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "syncboss_default";
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
+
+		oculus,imu-core-supply = <&pm8150a_l8>;
+		oculus,imu-core-voltage-level = <1800000 1800000>;
+		oculus,mag-core-supply = <&pm8150a_l8>;
+		oculus,mag-core-voltage-level = <1800000 1800000>;
+
+		oculus,syncboss-reset  = <&tlmm 45 0>;
+		oculus,syncboss-timesync = <&tlmm 68 0>;
+		oculus,syncboss-wakeup  = <&tlmm 93 0>;
+
+		oculus,syncboss-has-prox;
+		oculus,syncboss-use-fastpath;
+		oculus,syncboss-use-streaming-wakelock;
+		oculus,transaction-length = <248>;
+
+		swd@0 {
+			compatible = "oculus,swd";
+
+			pinctrl-names = "swd_default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			oculus,swd-clk = <&tlmm 86 0>;
+			oculus,swd-io = <&tlmm 85 0>;
+
+			oculus,swd-flavor = "nrf52832";
+			oculus,fw-path = "syncboss.bin";
+			oculus,flash-block-size = <512>;
+			oculus,flash-page-size = <4096>;
+			oculus,flash-page-count = <128>;
+			oculus,flash-page-retained-count = <3>;
+		};
+	};
+};

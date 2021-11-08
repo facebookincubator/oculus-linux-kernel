@@ -13,6 +13,9 @@ struct fpga_data {
 	struct regulator *vcciox;
 	struct regulator *vcc;
 	struct regulator *vccaux;
+	int vcciox_voltage_mv;
+	int vcc_voltage_mv;
+	int vccaux_voltage_mv;
 };
 
 static int fpga_regulator_enable(struct fpga_data *ctx)
@@ -38,6 +41,19 @@ static int fpga_regulator_enable(struct fpga_data *ctx)
 	 * meet the requirements, since we cannot sense voltage to trigger
 	 * the next supply in the sequence.
 	 */
+	rc = regulator_set_voltage(ctx->vcciox, ctx->vcciox_voltage_mv,
+		ctx->vcciox_voltage_mv);
+	if (rc < 0) {
+		dev_err(ctx->dev, "Failed to configure VCCIOX voltage: %d", rc);
+		return rc;
+	}
+
+	rc = regulator_set_load(ctx->vcciox, 75000);
+	if (rc < 0) {
+		dev_err(ctx->dev, "Failed to configure VCCIOX load: %d", rc);
+		return rc;
+	}
+
 	rc = regulator_enable(ctx->vcciox);
 	if (rc < 0) {
 		dev_err(ctx->dev, "Failed to enable VCCIOX supply: %d", rc);
@@ -45,12 +61,38 @@ static int fpga_regulator_enable(struct fpga_data *ctx)
 	}
 	usleep_range(50000, 55000);
 
+	rc = regulator_set_voltage(ctx->vcc, ctx->vcc_voltage_mv,
+		ctx->vcc_voltage_mv);
+	if (rc < 0) {
+		dev_err(ctx->dev, "Failed to configure VCC voltage: %d", rc);
+		goto fail_vcc;
+	}
+
+	rc = regulator_set_load(ctx->vcc, 75000);
+	if (rc < 0) {
+		dev_err(ctx->dev, "Failed to configure VCC load: %d", rc);
+		goto fail_vcc;
+	}
+
 	rc = regulator_enable(ctx->vcc);
 	if (rc < 0) {
 		dev_err(ctx->dev, "Failed to enable VCC supply: %d", rc);
 		goto fail_vcc;
 	}
 	usleep_range(50000, 55000);
+
+	rc = regulator_set_voltage(ctx->vccaux, ctx->vccaux_voltage_mv,
+		ctx->vccaux_voltage_mv);
+	if (rc < 0) {
+		dev_err(ctx->dev, "Failed to configure VCCAUX voltage: %d", rc);
+		goto fail_vccaux;
+	}
+
+	rc = regulator_set_load(ctx->vccaux, 30000);
+	if (rc < 0) {
+		dev_err(ctx->dev, "Failed to configure VCCAUX load: %d", rc);
+		goto fail_vccaux;
+	}
 
 	rc = regulator_enable(ctx->vccaux);
 	if (rc < 0) {
@@ -126,6 +168,13 @@ static int fpga_probe(struct platform_device *pdev)
 
 	ctx->dev = dev;
 
+	rc = of_property_read_u32(dev->of_node, "vcciox-voltage-mv",
+			&ctx->vcciox_voltage_mv);
+	if (rc < 0) {
+		dev_err(dev, "Failed to get VCCIOX voltage: %d", rc);
+		return rc;
+	}
+
 	ctx->vcciox = devm_regulator_get(dev, "vcciox");
 	if (IS_ERR(ctx->vcciox)) {
 		rc = PTR_ERR(ctx->vcciox);
@@ -135,6 +184,13 @@ static int fpga_probe(struct platform_device *pdev)
 
 	dev_dbg(dev, "Probed VCCIOX supply");
 
+	rc = of_property_read_u32(dev->of_node, "vcc-voltage-mv",
+			&ctx->vcc_voltage_mv);
+	if (rc < 0) {
+		dev_err(dev, "Failed to get VCC voltage: %d", rc);
+		return rc;
+	}
+
 	ctx->vcc = devm_regulator_get(dev, "vcc");
 	if (IS_ERR(ctx->vcc)) {
 		rc = PTR_ERR(ctx->vcc);
@@ -143,6 +199,13 @@ static int fpga_probe(struct platform_device *pdev)
 	}
 
 	dev_dbg(dev, "Probed VCC supply");
+
+	rc = of_property_read_u32(dev->of_node, "vccaux-voltage-mv",
+			&ctx->vccaux_voltage_mv);
+	if (rc < 0) {
+		dev_err(dev, "Failed to get VCCAUX voltage: %d", rc);
+		return rc;
+	}
 
 	ctx->vccaux = devm_regulator_get(dev, "vccaux");
 	if (IS_ERR(ctx->vccaux)) {

@@ -97,6 +97,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_MAX98090 if I2C
 	select SND_SOC_MAX98095 if I2C
 	select SND_SOC_MAX98357A if GPIOLIB
+	select SND_SOC_MAX98360A
 	select SND_SOC_MAX98371 if I2C
 	select SND_SOC_MAX98504 if I2C
 	select SND_SOC_MAX9867 if I2C
@@ -666,6 +667,14 @@ config SND_SOC_MAX98095
 
 config SND_SOC_MAX98357A
        tristate
+
+config SND_SOC_MAX98360A
+	tristate "Maxim MAX98360A speaker amplifier"
+	help
+	  Enable support for Maxim Class-D
+	  MAX98360A speaker amplifier.
+	  Select this if your MAX98360A
+	  enable pin is connected to AP.
 
 config SND_SOC_MAX98371
        tristate

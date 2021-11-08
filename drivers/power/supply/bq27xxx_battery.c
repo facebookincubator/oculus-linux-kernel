@@ -705,7 +705,9 @@ static enum power_supply_property bq27541_props[] = {
 	POWER_SUPPLY_PROP_POWER_AVG,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_MANUFACTURER,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_A,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_B,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_C,
 };
 #define bq27542_props bq27541_props
 #define bq27546_props bq27541_props
@@ -748,6 +750,12 @@ static enum power_supply_property bq27421_props[] = {
 #define bq27441_props bq27421_props
 #define bq27621_props bq27421_props
 
+enum bq27xxx_manufacturer_info_type {
+	MANUFACTURER_INFO_A,
+	MANUFACTURER_INFO_B,
+	MANUFACTURER_INFO_C,
+};
+
 static enum power_supply_property bq27z561_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_PRESENT,
@@ -769,7 +777,9 @@ static enum power_supply_property bq27z561_props[] = {
 	POWER_SUPPLY_PROP_BQ27Z561_INTERTEMP,
 	POWER_SUPPLY_PROP_BQ27Z561_REMAININGCAPACITY,
 	POWER_SUPPLY_PROP_MANUFACTURER,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_A,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_B,
+	POWER_SUPPLY_PROP_MANUFACTURER_INFO_C,
 };
 
 struct bq27xxx_dm_reg {
@@ -2167,6 +2177,7 @@ static int bq27z561_get_remaining_capacity(struct bq27xxx_device_info *di,
 }
 
 static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
+				enum bq27xxx_manufacturer_info_type type,
 				union power_supply_propval *val)
 {
 	int ret;
@@ -2184,9 +2195,13 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 		return ret;
 	}
 
-	strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
-
-	if (strnstr(buf, ARC_BATTERY_HEAD, 6)) {
+	if (type == MANUFACTURER_INFO_A) {
+		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+		val->strval = di->mac_buf;
+		mutex_unlock(&bq27xxx_list_lock);
+		return ret;
+	} else if (type == MANUFACTURER_INFO_B &&
+		strnstr(buf, ARC_BATTERY_HEAD, 6)) {
 		ret = bq27z561_battery_read_mac_block(di,
 				BQ27Z561_MAC_CMD_MI_B, buf,
 				BQ27Z561_MAC_BLOCK_LEN + 1);
@@ -2209,6 +2224,11 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 			strlcat(di->mac_buf, buf + 3, BQ27Z561_MAC_LEN);
 		} else
 			strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+		val->strval = di->mac_buf;
+		mutex_unlock(&bq27xxx_list_lock);
+		return ret;
+	} else if (type == MANUFACTURER_INFO_C &&
+		strnstr(buf, ARC_BATTERY_HEAD, 6)) {
 		ret = bq27z561_battery_read_mac_block(di,
 				BQ27Z561_MAC_CMD_MI_C, buf,
 				BQ27Z561_MAC_BLOCK_LEN + 1);
@@ -2217,10 +2237,9 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 			mutex_unlock(&bq27xxx_list_lock);
 			return ret;
 		}
-
 		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
+		val->strval = di->mac_buf;
 	}
-	val->strval = di->mac_buf;
 	mutex_unlock(&bq27xxx_list_lock);
 	return 0;
 }
@@ -2318,8 +2337,14 @@ static int bq27xxx_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_MANUFACTURER:
 		val->strval = BQ27XXX_MANUFACTURER;
 		break;
-	case POWER_SUPPLY_PROP_MANUFACTURER_INFO:
-		ret = bq27z561_get_manufacturer_info(di, val);
+	case POWER_SUPPLY_PROP_MANUFACTURER_INFO_A:
+		ret = bq27z561_get_manufacturer_info(di, MANUFACTURER_INFO_A, val);
+		break;
+	case POWER_SUPPLY_PROP_MANUFACTURER_INFO_B:
+		ret = bq27z561_get_manufacturer_info(di, MANUFACTURER_INFO_B, val);
+		break;
+	case POWER_SUPPLY_PROP_MANUFACTURER_INFO_C:
+		ret = bq27z561_get_manufacturer_info(di, MANUFACTURER_INFO_C, val);
 		break;
 	default:
 		return -EINVAL;
@@ -2797,12 +2822,28 @@ static ssize_t lifetime_data_block_read_file(struct file *file,
 				BQ27Z561_MAC_CMD_LDB1);
 }
 
-static ssize_t manufacturer_info_read_file(struct file *file,
+static ssize_t manufacturer_info_a_read_file(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
 	return _debugfs_read_file(file, user_buf, count, ppos,
 				BQ27Z561_MAC_CMD_MI_A);
+}
+
+static ssize_t manufacturer_info_b_read_file(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	return _debugfs_read_file(file, user_buf, count, ppos,
+				BQ27Z561_MAC_CMD_MI_B);
+}
+
+static ssize_t manufacturer_info_c_read_file(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	return _debugfs_read_file(file, user_buf, count, ppos,
+				BQ27Z561_MAC_CMD_MI_C);
 }
 
 static const struct file_operations reg_data_fops = {
@@ -2939,9 +2980,19 @@ static const struct file_operations lifetime_data_block_fops = {
 	.read = lifetime_data_block_read_file,
 };
 
-static const struct file_operations manufacturer_info_fops = {
+static const struct file_operations manufacturer_info_a_fops = {
 	.open = simple_open,
-	.read = manufacturer_info_read_file,
+	.read = manufacturer_info_a_read_file,
+};
+
+static const struct file_operations manufacturer_info_b_fops = {
+	.open = simple_open,
+	.read = manufacturer_info_b_read_file,
+};
+
+static const struct file_operations manufacturer_info_c_fops = {
+	.open = simple_open,
+	.read = manufacturer_info_c_read_file,
 };
 
 static void bq27z561_create_debugfs(struct bq27xxx_device_info *di)
@@ -3011,8 +3062,12 @@ static void bq27z561_create_debugfs(struct bq27xxx_device_info *di)
 					di, &manufacturing_status_fops);
 	debugfs_create_file("lifetime_data_block", 0400, di->debugfs,
 					di, &lifetime_data_block_fops);
-	debugfs_create_file("manufacturer_info", 0400, di->debugfs,
-					di, &manufacturer_info_fops);
+	debugfs_create_file("manufacturer_info_a", 0400, di->debugfs,
+					di, &manufacturer_info_a_fops);
+	debugfs_create_file("manufacturer_info_b", 0400, di->debugfs,
+					di, &manufacturer_info_b_fops);
+	debugfs_create_file("manufacturer_info_c", 0400, di->debugfs,
+					di, &manufacturer_info_c_fops);
 
 	/* lifetime nodes */
 	debugfs_create_u16("cell_1_max_voltage", 0400, di->debugfs,

@@ -250,6 +250,8 @@ int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 
 struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 		uint64_t offset);
+struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
+		uint64_t offset, uint64_t size);
 struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc);
 
 int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,

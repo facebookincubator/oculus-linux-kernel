@@ -40,8 +40,7 @@
 
 //#define DSP_MODE_USE_SPI
 
-#define VERSION "1.0.1"
-#define CM7120_FIRMWARE "CM7120.bin"
+#define VERSION "1.0.2"
 #define FW_DOWNLOAD_TIMEOUT (1 * HZ)
 
 static u32 DspAddr = 0x5ffc001C;
@@ -1953,6 +1952,8 @@ static const struct snd_kcontrol_new cm7120_snd_controls[] = {
 			cm7120_get_vu, cm7120_put_vu),
 	SOC_SINGLE_EXT("SPK R2 TO MUTE", SPK_R2_MUTE, 0, 1, 0,
 			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("SPK 2CH TO 4CH", SPK_2CH_TO_4CH, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
 	SOC_SINGLE_EXT("MIC TO CHANNEL0", MIC_TO_CHANNEL0, 0, 4, 0,
 			cm7120_get_vu, cm7120_put_vu),
 	SOC_SINGLE_EXT("MIC TO CHANNEL1", MIC_TO_CHANNEL1, 0, 4, 0,
@@ -2071,6 +2072,7 @@ static int cm7120_set_config_register(struct cm7120_priv *cm7120_codec,
 	u8 recRMuteValue = 0;
 	u8 recI2s1LMuteValue = 0;
 	u8 recI2s1RMuteValue = 0;
+	u8 spk2CHTo4CHValue = 0;
 	u8 spkR2MuteValue = 0;
 	u8 spkR1MuteValue = 0;
 	u8 spkL2MuteValue = 0;
@@ -2262,6 +2264,14 @@ static int cm7120_set_config_register(struct cm7120_priv *cm7120_codec,
 		else
 			ret = -EINVAL;
 		break;
+	case 18:
+		if (mute == 0)
+			spk2CHTo4CHValue = 0x0;
+		else if (mute == 1)
+			spk2CHTo4CHValue = 0x1;
+		else
+			ret = -EINVAL;
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -2426,6 +2436,15 @@ static int cm7120_set_config_register(struct cm7120_priv *cm7120_codec,
 			dev_dbg(cm7120_codec->dev,
 				"%s: CRECI2s1RMute dspValue1 = 0x%08x\n",
 				__func__, dspValue);
+			break;
+		case 18:
+			/* Speaker 2CH to 4CH */
+			dspValue &= ~CM7120_CSPK_2CH_TO_4CH_MASK;
+			dspValue |= (spk2CHTo4CHValue <<
+					CM7120_CSPK_2CH_TO_4CH_SFT);
+			dev_dbg(cm7120_codec->dev,
+					"%s: CSPK2CHTo4CH dspValue1 = 0x%08x\n",
+					__func__, dspValue);
 			break;
 		}
 
@@ -2833,6 +2852,15 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 				cm7120_codec->updateFIR);
 		break;
 
+	case SPK_2CH_TO_4CH:
+		cm7120_codec->spk2chto4ch = ucontrol->value.integer.value[0];
+		dev_dbg(cm7120_codec->dev,
+				"%s: SPK_2CH_TO_4CH: %d\n", __func__,
+				cm7120_codec->spk2chto4ch);
+		cm7120_set_config_register(cm7120_codec, 18,
+				cm7120_codec->spk2chto4ch);
+		break;
+
 	case MIC_MUTE_STO2:
 		cm7120_codec->adcsto2 = ucontrol->value.integer.value[0];
 		dev_dbg(cm7120_codec->dev,
@@ -3011,6 +3039,11 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 		dev_dbg(cm7120_codec->dev, "%s: REC_I2S1R_MUTE\n", __func__);
 		break;
 
+	case SPK_2CH_TO_4CH:
+		ucontrol->value.integer.value[0] = cm7120_codec->spk2chto4ch;
+		dev_dbg(cm7120_codec->dev, "%s: SPK_2CH_TO_4CH\n", __func__);
+		break;
+
 	case MIC_MUTE_STO2:
 		ucontrol->value.integer.value[0] = cm7120_codec->adcsto2;
 		dev_dbg(cm7120_codec->dev, "%s: MIC_MUTE_STO2\n", __func__);
@@ -3074,8 +3107,6 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_component *component = dai->component;
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
 	unsigned int val_len = 0;
-	u16 i2s_len = 0;
-	u16 tdm_len = 0;
 	u32 resetvalue = 0x80000000;
 
 	cm7120->sampleRate = params_rate(params);
@@ -3099,17 +3130,10 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	regmap_update_bits(cm7120->virt_regmap, CM7120_I2S1_SDP,
-			CM7120_I2S_DL_MASK, i2s_len);
-	regmap_update_bits(cm7120->virt_regmap, CM7120_TDM1_CTRL1,
-			0x0300, tdm_len);
 	regmap_update_bits(cm7120->virt_regmap, CM7120_I2S2_SDP,
 			CM7120_I2S_DL_MASK, val_len);
-	regmap_update_bits(cm7120->virt_regmap, CM7120_TDM2_CTRL1,
-			0x0300, 0x300);
 
-	pr_info("%s: i2s_len: 0x%04x tdm_len: 0x%04x val_len: 0x%04x\n",
-		__func__, i2s_len, tdm_len, val_len);
+	pr_info("%s: val_len: 0x%04x\n", __func__, val_len);
 
 	/* clean inbound */
 	mutex_lock(&cm7120->dsp_lock);
@@ -3328,7 +3352,9 @@ static const struct snd_soc_dapm_route cm7120_dapm_routes[] = {
 	{ "OUTR", NULL, "OUTPUT MIX" },
 	{ "AIF2TX", NULL, "Microphone From Mux" },
 	{ "I2S1PWR", NULL, "Microphone From Mux" },
+	{ "I2S3PWR", NULL, "Microphone From Mux" },
 	{ "AIF1TX", NULL, "I2S1PWR" },
+	{ "AIF1TX", NULL, "I2S3PWR" },
 	{ "AIF1 Capture", NULL, "AIF1TX" },
 	{ "AIF2 Capture", NULL, "AIF2TX" },
 };
@@ -3797,6 +3823,7 @@ error:
 static int cm7120_probe(struct snd_soc_component *component)
 {
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
+	const char *firmware_name;
 	int ret = 0;
 
 	dev_info(cm7120->dev, "Codec driver version %s\n", VERSION);
@@ -3806,6 +3833,17 @@ static int cm7120_probe(struct snd_soc_component *component)
 	ret = cm7120_parse_dt_hp_det(cm7120);
 	if (ret < 0) {
 		dev_err(cm7120->dev, "cm7120_parse_dt_hp_det error\n");
+		return ret;
+	}
+
+	ret = of_property_read_string(cm7120->dev->of_node,
+			"cm7120,firmware-name", &firmware_name);
+	if (!ret) {
+		cm7120->fw_name = devm_kstrdup(cm7120->dev,
+				firmware_name, GFP_KERNEL);
+		dev_dbg(cm7120->dev, "CM7120 firmware: %s\n", firmware_name);
+	} else {
+		dev_err(cm7120->dev, "get CM7120 firmware name failed\n");
 		return ret;
 	}
 
@@ -4091,7 +4129,7 @@ static int cm7120_download_firmware(struct cm7120_priv *cm7120_codec)
 
 	dev_info(cm7120_codec->dev, "%s entry\n", __func__);
 
-	ret = request_firmware(&cm7120_codec->fw, CM7120_FIRMWARE,
+	ret = request_firmware(&cm7120_codec->fw, cm7120_codec->fw_name,
 			       cm7120_codec->dev);
 	if (ret) {
 		dev_err(cm7120_codec->dev, "%s: request_firmware failed: %d\n",

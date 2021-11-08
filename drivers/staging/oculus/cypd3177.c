@@ -12,6 +12,8 @@
 #include <linux/power_supply.h>
 #include <linux/of_gpio.h>
 
+#include "cypd.h"
+
 /* Status Registers */
 #define DEVICE_MODE	0x0000
 #define SILICON_ID	0x0002
@@ -35,15 +37,21 @@
 #define REQUEST		0x1050
 #define SET_GPIO_MODE	0x0080
 #define SET_GPIO_LEVEL	0x0081
+#define VDM_EC_CONTROL	0x102A
 
 /* Response Registers */
 #define DEV_RESPONSE	0x007E
 #define PD_RESPONSE	0x1400
 
+/* Data Region */
+#define READ_DATA_REGION 0x1404
+#define WRITE_DATA_REGION 0x1800
+
 /* PD RESPONSE EVENT */
 #define TYPEC_CONNECT		0x84
 #define TYPEC_DISCONNECT	0x85
 #define PD_CONTRACT_COMPLETE	0x86
+#define VDM_RECEIVED		0x90
 #define HARD_RESET		0x9A
 #define DEV_EVENT		1
 #define PD_EVENT		2
@@ -51,7 +59,7 @@
 #define OUT_EN_L_BIT		BIT(0)	/* Port Partner Connection status */
 #define CLEAR_DEV_INT		BIT(0)
 #define CLEAR_PD_INT		BIT(1)
-#define EVENT_MASK_OPEN		(BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(11))
+#define EVENT_MASK_OPEN		(BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(7) | BIT(11))
 #define CYPD3177_REG_8BIT	1
 #define CYPD3177_REG_16BIT	2
 #define CYPD3177_REG_32BIT	4
@@ -63,6 +71,14 @@
 #define INTERRUPT_MASK		0x03
 #define RESET_DEV		0x152
 #define VOLTAGE_9V		9000000
+#define VDM_ENABLE		0x1
+#define VDM_DISABLE		0
+#define PD_3_0_REQ		BIT(2)
+#define MAX_DATA_LENGTH	32
+#define DM_CTRL_MSG(sop, len) \
+	(sop | (len & 0x100) | ((len & 0xFF) << 8))
+#define VDM_DATA_LEN(msg) \
+	((msg & 0xFF00) >> 8)
 
 struct cypd3177 {
 	struct device		*dev;
@@ -75,7 +91,13 @@ struct cypd3177 {
 	unsigned int fault_irq;
 	bool typec_status;
 	int pd_attach;
+	struct cypd *cypd;
+	bool is_opened;
+	void (*msg_rx_cb)(struct cypd *pd, enum pd_sop_type sop,
+			  u8 *buf, size_t len);
 };
+
+static struct cypd3177 *__chip;
 
 static int cypd3177_i2c_read_reg(struct i2c_client *client, u16 data_length,
 			       u16 reg, u32 *val)
@@ -294,6 +316,182 @@ static int cypd3177_dev_reset(struct cypd3177 *chip)
 	return rc;
 }
 
+static int cypd3177_enable_vdm(struct cypd3177 *chip)
+{
+	int rc;
+
+	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT, VDM_EC_CONTROL,
+				VDM_ENABLE);
+	if (rc < 0)
+		dev_err(&chip->client->dev, "cypd3177 enable VDM failed: %d\n", rc);
+
+	return rc;
+}
+
+static int cypd3177_disable_vdm(struct cypd3177 *chip)
+{
+	int rc;
+
+	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT, VDM_EC_CONTROL,
+				VDM_DISABLE);
+	if (rc < 0)
+		dev_err(&chip->client->dev, "cypd3177 disable VDM failed: %d\n", rc);
+
+	return rc;
+}
+
+static int cypd3177_write_vdm_msg(struct cypd3177 *chip, const u8 *buf,
+				size_t data_len)
+{
+	int rc;
+	int count;
+
+	/* Write VDM bytes */
+	for (count = 0; count < data_len; count++) {
+		rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT,
+				WRITE_DATA_REGION + count, *buf);
+		if (rc < 0) {
+			dev_err(&chip->client->dev, "cypd3177 writing byte %d failed: %d\n",
+				count+1, rc);
+			return rc;
+		}
+		buf++;
+	}
+
+	return rc;
+}
+
+static int cypd3177_read_vdm_msg(struct cypd3177 *chip, enum pd_sop_type *sop,
+				 u8 *buf, size_t data_len)
+{
+	int rc;
+	int count;
+	int raw;
+
+	/* Read message header */
+	for (count = 0; count < sizeof(u16); count++) {
+		rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_8BIT,
+			READ_DATA_REGION + count, &raw);
+		if (rc < 0) {
+			dev_err(&chip->client->dev, "cypd3177 reading header failed: %d\n", rc);
+			return rc;
+		}
+		*buf = (u8) raw;
+		buf++;
+	}
+
+	/* Read sop type */
+	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_8BIT,
+			READ_DATA_REGION + count, &raw);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 reading sop failed: %d\n", rc);
+		return rc;
+	}
+	*sop = (u8) raw;
+
+	/* Account for sop and reserved bytes */
+	count += sizeof(u16);
+
+	/* Read VDM bytes */
+	for (; count < data_len; count++) {
+		rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_8BIT,
+				READ_DATA_REGION + count, &raw);
+		if (rc < 0) {
+			dev_err(&chip->client->dev, "cypd3177 reading byte %d failed: %d\n",
+				count+1, rc);
+			return rc;
+		}
+		*buf = (u8) raw;
+		buf++;
+	}
+
+	return rc;
+}
+
+int cypd_phy_open(struct cypd_phy_params *params)
+{
+	struct cypd3177 *chip = __chip;
+
+	if (!chip) {
+		pr_err("%s: Invalid handle\n", __func__);
+		return -ENODEV;
+	}
+
+	if (chip->is_opened) {
+		dev_err(&chip->client->dev, "cypd3177 already opened\n");
+		return -EBUSY;
+	}
+
+	cypd3177_enable_vdm(chip);
+
+	chip->msg_rx_cb = params->msg_rx_cb;
+
+	chip->is_opened = true;
+
+	return 0;
+}
+
+void cypd_phy_close(void)
+{
+	struct cypd3177 *chip = __chip;
+
+	if (!chip) {
+		pr_err("%s: Invalid handle\n", __func__);
+		return;
+	}
+
+	if (!chip->is_opened) {
+		dev_err(&chip->client->dev, "cypd3177 not opened\n");
+		return;
+	}
+
+	cypd3177_disable_vdm(chip);
+
+	chip->msg_rx_cb = NULL;
+
+	chip->is_opened = false;
+
+}
+
+int cypd_phy_write(u16 hdr, const u8 *data, size_t data_len, enum pd_sop_type sop)
+{
+	int rc;
+	u16 raw = 0;
+	struct cypd3177 *chip = __chip;
+
+	if (!chip) {
+		pr_err("%s: Invalid handle\n", __func__);
+		return -ENODEV;
+	}
+
+	if (!chip->is_opened) {
+		dev_err(&chip->client->dev, "cypd3177 not opened\n");
+		return -ENODEV;
+	}
+
+	if (data_len > MAX_DATA_LENGTH) {
+		dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
+			(int) data_len, MAX_DATA_LENGTH);
+		return -EINVAL;
+	}
+
+	rc = cypd3177_write_vdm_msg(chip, data, data_len);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 write to data mem failed: %d\n",
+			rc);
+		return rc;
+	}
+
+	raw = DM_CTRL_MSG(sop, data_len);
+	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_16BIT, DM_CONTROL,
+				raw);
+	if (rc < 0)
+		dev_err(&chip->client->dev, "cypd3177 write to DM_control failed: %d\n", rc);
+
+	return rc;
+
+}
+
 static int dev_handle_response(struct cypd3177 *chip)
 {
 	int raw;
@@ -306,6 +504,9 @@ static int dev_handle_response(struct cypd3177 *chip)
 			rc);
 		return rc;
 	}
+
+	dev_dbg(&chip->client->dev, "cypd3177 received dev response: %d\n", raw);
+
 	/* clear device corresponding bit */
 	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT, INTERRURT,
 				CLEAR_DEV_INT);
@@ -314,7 +515,7 @@ static int dev_handle_response(struct cypd3177 *chip)
 			rc);
 		return rc;
 	}
-	/* open event mask bit3 bit4 bit5 bit6 bit11 */
+	/* open event mask bit3 bit4 bit5 bit6 bit7 bit11 */
 	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_32BIT,
 				EVENT_MASK, EVENT_MASK_OPEN);
 	if (rc < 0)
@@ -328,7 +529,9 @@ static int pd_handle_response(struct cypd3177 *chip)
 {
 	int rc;
 	int pd_raw, pd_event;
-	int pdo_val;
+	int data_len;
+	u8 *buf = NULL;
+	enum pd_sop_type sop;
 
 	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
 				PD_RESPONSE, &pd_raw);
@@ -351,11 +554,8 @@ static int pd_handle_response(struct cypd3177 *chip)
 		if (rc < 0) {
 			dev_err(&chip->client->dev, "cypd3177 read pdo data failed: %d\n",
 			rc);
-			return rc;
 		}
-		pdo_val = ((pd_raw & PDO_BIT10_BIT19) >> 10) * PDO_VOLTAGE_UNIT;
-		if (pdo_val == VOLTAGE_9V)
-			power_supply_changed(chip->psy);
+		power_supply_changed(chip->psy);
 		break;
 	case TYPEC_DISCONNECT:
 		chip->typec_status = false;
@@ -365,7 +565,33 @@ static int pd_handle_response(struct cypd3177 *chip)
 	case HARD_RESET:
 		chip->typec_status = false;
 		chip->pd_attach = 0;
+		power_supply_changed(chip->psy);
 		break;
+	case VDM_RECEIVED:
+		data_len = VDM_DATA_LEN(pd_raw);
+		dev_err(&chip->client->dev, "VDM received: length:%d\n", data_len);
+		if (data_len > MAX_DATA_LENGTH) {
+			dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
+				data_len, MAX_DATA_LENGTH);
+			break;
+		}
+		buf = kzalloc(data_len, GFP_KERNEL);
+		rc = cypd3177_read_vdm_msg(chip, &sop, buf, data_len);
+		if (rc < 0)
+			break;
+
+		/* Account for the trimmed sop type and reserved byte */
+		data_len = data_len - sizeof(u16);
+
+		print_hex_dump_debug("VDM msg:", DUMP_PREFIX_NONE, 32, 4, buf, data_len,
+			false);
+
+		/* Report to cypd policy engine */
+		if (chip->msg_rx_cb)
+			chip->msg_rx_cb(chip->cypd, sop, buf, data_len);
+
+		break;
+
 	default:
 		break;
 	}
@@ -376,6 +602,7 @@ static int pd_handle_response(struct cypd3177 *chip)
 		dev_err(&chip->client->dev, "cypd3177 write clear pd interrupt failed: %d\n",
 			rc);
 
+	kfree(buf);
 	return rc;
 }
 
@@ -549,7 +776,7 @@ static int cypd3177_probe(struct i2c_client *i2c,
 	chip->psy = devm_power_supply_register(chip->dev, &cypd3177_psy_desc,
 			&cfg);
 	if (IS_ERR(chip->psy)) {
-		dev_err(&i2c->dev, "psy registration failed: %d\n",
+		dev_err(&i2c->dev, "psy registration failed: %ld\n",
 				PTR_ERR(chip->psy));
 		rc = PTR_ERR(chip->psy);
 
@@ -558,12 +785,25 @@ static int cypd3177_probe(struct i2c_client *i2c,
 
 	cypd3177_dev_reset(chip);
 
+	/* cypd could call back to us, so have reference ready */
+	__chip = chip;
+
+	chip->cypd = cypd_create(chip->dev);
+	if (IS_ERR(chip->cypd)) {
+		dev_err(&i2c->dev, "cypd_create failed: %ld\n",
+				PTR_ERR(chip->cypd));
+		return PTR_ERR(chip->cypd);
+	}
+
 	dev_dbg(&i2c->dev, "cypd3177 probe successful\n");
 	return 0;
 }
 
 static int cypd3177_remove(struct i2c_client *i2c)
 {
+	struct cypd3177 *chip = i2c_get_clientdata(i2c);
+
+	cypd_destroy(chip->cypd);
 	return 0;
 }
 

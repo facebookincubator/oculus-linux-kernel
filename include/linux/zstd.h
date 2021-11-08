@@ -254,7 +254,7 @@ ZSTD_CCtx *ZSTD_initCCtx(void *workspace, size_t workspaceSize);
  *               ZSTD_isError().
  */
 size_t ZSTD_compressCCtx(ZSTD_CCtx *ctx, void *dst, size_t dstCapacity,
-	const void *src, size_t srcSize, ZSTD_parameters params);
+	const void *src, size_t srcSize, const ZSTD_parameters *params);
 
 /**
  * ZSTD_DCtxWorkspaceBound() - amount of memory needed to initialize a ZSTD_DCtx

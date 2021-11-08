@@ -18,6 +18,16 @@
 	status = "ok";
 };
 
+&storage_cd {
+	mux {
+		pins = "gpio103";
+	};
+
+	config {
+		pins = "gpio103";
+	};
+};
+
 &ufshc_mem {
 	vdd-hba-supply = <&ufs_phy_gdsc>;
 	vdd-hba-fixed-regulator;

@@ -13,8 +13,28 @@
 #include "seacliff-thermal.dtsi"
 #include "seacliff-ufs.dtsi"
 
+&pm8150_l10 {
+	/* Esker power */
+	regulator-always-on;
+};
+
+&pm8150_l15 {
+	/* Canyon, Glacier, Teton, Esker power */
+	regulator-always-on;
+};
+
 &pm8150a_l1 {
 	/* IPD 1.8 */
+	regulator-always-on;
+};
+
+&pm8150a_l2 {
+	/* Teton power */
+	regulator-always-on;
+};
+
+&pm8150a_l3 {
+	/* Glacier power, FPGA power */
 	regulator-always-on;
 };
 
@@ -23,12 +43,16 @@
 };
 
 &pm8150a_l7 {
-	/* IMU 3.0 */
-	regulator-always-on;
+	status = "disabled";
 };
 
 &pm8150a_l8 {
 	/* nRF, IMU, Mag 1.8 */
+	regulator-always-on;
+};
+
+&pm8150a_l10 {
+	/* Canyon, Glacier, Teton power */
 	regulator-always-on;
 };
 
@@ -48,8 +72,8 @@
 	qcom,fg-esr-cal-temp-thresh = <10 40>;
 
 	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
-	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
-	qcom,fg-cutoff-voltage = <3400>;
+	qcom,fg-cutoff-current = <268>; // C/20 minimum discharge current at system cutoff for SOC estimation
+	qcom,fg-cutoff-voltage = <3300>;
 	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
 };
 
@@ -146,6 +170,7 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
+		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
 
 		swd@0 {
@@ -158,7 +183,7 @@
 			oculus,swd-io = <&tlmm 53 0>;
 
 			oculus,swd-flavor = "nrf52832";
-			oculus,fw-path = "syncboss.bin";
+			oculus,fw-path = "syncboss-ipl-spl.bin";
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;

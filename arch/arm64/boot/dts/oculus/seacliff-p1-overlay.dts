@@ -29,7 +29,7 @@
 
 &oculusnrf {
 	swd@0 {
-		oculus,fw-path = "syncboss_P1_BOARD.bin";
+		oculus,fw-path = "syncboss-ipl-spl.bin";
 	};
 };
 

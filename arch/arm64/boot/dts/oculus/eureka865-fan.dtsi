@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&pm8150l_gpios {
+	fan_pwm@0 {
+		fan_pwm_default_0: fan_pwm_default_0 {
+			pins = "gpio6";
+			function = "func1";
+			bias-disable;
+			power-source = <0>;
+			output-low;
+			qcom,drive-strength = <3>;
+			drive-push-pull;
+			status = "okay";
+		};
+	};
+
+	fan_pwm@1 {
+		fan_pwm_default_1: fan_pwm_default_1 {
+			pins = "gpio10";
+			function = "func1";
+			bias-disable;
+			power-source = <1>;
+			output-low;
+			qcom,drive-strength = <3>;
+			drive-push-pull;
+			status = "okay";
+		};
+	};
+};
+
+&pm8150l_pwm {
+	status = "okay";
+};
+
+&spmi_bus {
+	qcom,pm8150l@5 {
+		fan_0: pwm-tach-fan@0 {
+			reg = <0>;
+			compatible = "pwm-tach-fan";
+			fan,tach-gpio = <&tlmm 71 0x0>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <13 1>;
+			interrupt-names = "fan_irq";
+			panel = <&dsi_dual_sim_vid>;
+			/*25KHz -> 40000ns*/
+			pwms = <&pm8150l_pwm 0 40000>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&fan_pwm_default_0
+				&fan_tach_default_0>;
+			status = "okay";
+			max-rpm = <2400>;
+			#cooling-cells = <2>;
+			cooling-levels = <0 400 800 1200 1600 2000 2400>;
+		};
+
+		fan_1: pwm-tach-fan@1 {
+			reg = <1>;
+			compatible = "pwm-tach-fan";
+			fan,tach-gpio = <&tlmm 22 0x0>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <13 1>;
+			interrupt-names = "fan_irq";
+			panel = <&dsi_dual_sim_vid>;
+			/*25KHz -> 40000ns*/
+			pwms = <&pm8150l_pwm 1 40000>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&fan_pwm_default_1
+				&fan_tach_default_1>;
+			status = "okay";
+			max-rpm = <2400>;
+			#cooling-cells = <2>;
+			cooling-levels = <0 400 800 1200 1600 2000 2400>;
+		};
+	};
+};
+
+&tlmm {
+	fan_tach_default_0: fan_tach_default@0 {
+		mux {
+			pins = "gpio71";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio71";
+			drive-strength = <4>;
+			input-enable;
+		};
+	};
+
+	fan_tach_default_1: fan_tach_default@1 {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio22";
+			drive-strength = <4>;
+			input-enable;
+		};
+	};
+};

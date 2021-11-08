@@ -48,7 +48,8 @@ enum swd_direction {
 /* Firmware state */
 enum fw_update_state {
 	FW_UPDATE_STATE_IDLE,
-	FW_UPDATE_STATE_WRITING_TO_HW
+	FW_UPDATE_STATE_WRITING_TO_HW,
+	FW_UPDATE_STATE_ERROR
 };
 
 struct swd_ops_params {
