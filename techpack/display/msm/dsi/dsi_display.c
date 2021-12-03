@@ -4460,6 +4460,9 @@ static void dsi_display_dfps_transition_work(struct kthread_work *work)
 			/* 3. Reset original backlight brightness value. */
 			for (i = 0; i < display->panel->bl_config.num_ld_devices; i++)
 				backlight_device_set_brightness(display->panel->bl_config.ld_dev[i], current_brightness);
+
+			/* Exit here to avoid setting the backlight twice when there's more than one CRT active */
+			break;
 		}
 	}
 }
@@ -6103,6 +6106,9 @@ int dsi_display_get_info(struct drm_connector *connector,
 	host = &display->panel->host_config;
 	if (host->split_link.split_link_enabled)
 		info->capabilities |= MSM_DISPLAY_SPLIT_LINK;
+
+	info->dsc_count = display->panel->dsc_count;
+	info->lm_count = display->panel->lm_count;
 error:
 	mutex_unlock(&display->display_lock);
 	return rc;
@@ -7589,7 +7595,7 @@ int dsi_display_enable(struct dsi_display *display)
 	}
 
 	/* Block sending pps command if modeset is due to fps difference */
-	if ((mode->priv_info->dsc_enabled) &&
+	if ((mode->priv_info->dsc_enabled) && (mode->priv_info->use_default_pps) &&
 			!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS_FPS)) {
 		mode->priv_info->dsc.pic_width *= display->ctrl_count;
 		rc = dsi_panel_update_pps(display->panel);

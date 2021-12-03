@@ -186,6 +186,14 @@
 };
 
 &vendor {
+	charging_dock: oculus,charging_dock {
+		status = "ok";
+		compatible = "oculus,charging-dock";
+		svid = <0x28330000>;
+		charger-cypd = <&cypd3177>;
+		broadcast-period-min = <15>;
+	};
+
 	fpga_aggregator: oculus,fpga {
 		status = "ok";
 		compatible = "oculus,fpga";

@@ -382,13 +382,11 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 
 	if (!memdesc->gpuaddr)
 		return -EINVAL;
-	if (!(memdesc->flags & (KGSL_MEMFLAGS_SPARSE_VIRT |
-					KGSL_MEMFLAGS_SPARSE_PHYS))) {
-		/* Only global mappings should be mapped multiple times */
-		if (!kgsl_memdesc_is_global(memdesc) &&
-				(KGSL_MEMDESC_MAPPED & memdesc->priv))
-			return -EINVAL;
-	}
+
+	/* Only global mappings should be mapped multiple times */
+	if (!kgsl_memdesc_is_global(memdesc) &&
+			(KGSL_MEMDESC_MAPPED & memdesc->priv))
+		return -EINVAL;
 
 	size = kgsl_memdesc_footprint(memdesc);
 
@@ -403,7 +401,6 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 		KGSL_STATS_ADD(size, &pagetable->stats.mapped,
 				&pagetable->stats.max_mapped);
 
-		/* This is needed for non-sparse mappings */
 		memdesc->priv |= KGSL_MEMDESC_MAPPED;
 	}
 
@@ -477,12 +474,9 @@ kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 	if (memdesc->size == 0)
 		return -EINVAL;
 
-	if (!(memdesc->flags & (KGSL_MEMFLAGS_SPARSE_VIRT |
-					KGSL_MEMFLAGS_SPARSE_PHYS))) {
-		/* Only global mappings should be mapped multiple times */
-		if (!(KGSL_MEMDESC_MAPPED & memdesc->priv))
-			return -EINVAL;
-	}
+	/* Only global mappings should be mapped multiple times */
+	if (!(KGSL_MEMDESC_MAPPED & memdesc->priv))
+		return -EINVAL;
 
 	if (PT_OP_VALID(pagetable, mmu_unmap)) {
 		uint64_t size;
@@ -501,48 +495,6 @@ kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 	return ret;
 }
 EXPORT_SYMBOL(kgsl_mmu_unmap);
-
-int kgsl_mmu_map_offset(struct kgsl_pagetable *pagetable,
-			uint64_t virtaddr, uint64_t virtoffset,
-			struct kgsl_memdesc *memdesc, uint64_t physoffset,
-			uint64_t size, uint64_t flags)
-{
-	if (PT_OP_VALID(pagetable, mmu_map_offset)) {
-		int ret;
-
-		ret = pagetable->pt_ops->mmu_map_offset(pagetable, virtaddr,
-				virtoffset, memdesc, physoffset, size, flags);
-		if (ret)
-			return ret;
-
-		atomic_inc(&pagetable->stats.entries);
-		KGSL_STATS_ADD(size, &pagetable->stats.mapped,
-				&pagetable->stats.max_mapped);
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(kgsl_mmu_map_offset);
-
-int kgsl_mmu_unmap_offset(struct kgsl_pagetable *pagetable,
-		struct kgsl_memdesc *memdesc, uint64_t addr, uint64_t offset,
-		uint64_t size)
-{
-	if (PT_OP_VALID(pagetable, mmu_unmap_offset)) {
-		int ret;
-
-		ret = pagetable->pt_ops->mmu_unmap_offset(pagetable, memdesc,
-				addr, offset, size);
-		if (ret)
-			return ret;
-
-		atomic_dec(&pagetable->stats.entries);
-		atomic_long_sub(size, &pagetable->stats.mapped);
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(kgsl_mmu_unmap_offset);
 
 int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 		struct kgsl_memdesc *memdesc, uint64_t offset, uint64_t size)
@@ -568,6 +520,12 @@ struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 {
 	struct kgsl_pagetable *pagetable = memdesc->pagetable;
 
+	if (pagetable == NULL)
+		return ERR_PTR(-ENODEV);
+
+	if (offset > memdesc->size)
+		return ERR_PTR(-ERANGE);
+
 	if (PT_OP_VALID(pagetable, mmu_find_mapped_page))
 		return pagetable->pt_ops->mmu_find_mapped_page(memdesc, offset);
 
@@ -575,12 +533,12 @@ struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 }
 
 struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
-		uint64_t offset, uint64_t size)
+		uint64_t offset, uint64_t size, unsigned int *page_count)
 {
 	struct kgsl_pagetable *pagetable;
 	struct page **pages;
 	uint64_t start_page, end_page, page_idx;
-	int i;
+	unsigned int i;
 
 	pagetable = memdesc->pagetable;
 	if (pagetable == NULL)
@@ -590,20 +548,31 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 		memdesc->page_count == 0 || size == 0)
 		return ERR_PTR(-EINVAL);
 
+	if (offset + size > memdesc->size)
+		return ERR_PTR(-ERANGE);
+
 	start_page = offset >> PAGE_SHIFT;
 	end_page = (offset + size - 1) >> PAGE_SHIFT;
 
-	pages = kvcalloc(end_page - start_page + 1, sizeof(struct page *),
-			GFP_KERNEL);
+	*page_count = (unsigned int)(end_page - start_page) + 1;
+	pages = kcalloc(*page_count, sizeof(struct page *), GFP_ATOMIC);
 	if (pages == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	for (page_idx = start_page, i = 0; page_idx <= end_page; page_idx++, i++) {
+	for (page_idx = start_page, i = 0; page_idx <= end_page && i < *page_count;) {
 		struct page *page = pagetable->pt_ops->mmu_find_mapped_page(
 				memdesc, page_idx << PAGE_SHIFT);
+		unsigned long j, pfn = page_to_pfn(page);
 
-		if (!IS_ERR_OR_NULL(page) && pfn_valid(page_to_pfn(page)))
-			pages[i] = page;
+		if (IS_ERR_OR_NULL(page) || !pfn_valid(pfn)) {
+			page_idx++;
+			i++;
+			continue;
+		}
+
+		for (j = 0; j < (1 << compound_order(page)) && i < *page_count;
+				page_idx++, i++, j++)
+			pages[i] = pfn_to_page(pfn + j);
 	}
 
 	return pages;
@@ -611,11 +580,14 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 
 struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc)
 {
+	unsigned int page_count = 0;
+
 	/* If this entry has no pages backing it just return NULL. */
 	if (memdesc->page_count == 0 || memdesc->size == 0)
 		return NULL;
 
-	return kgsl_mmu_find_mapped_page_range(memdesc, 0, memdesc->size);
+	return kgsl_mmu_find_mapped_page_range(memdesc, 0, memdesc->size,
+			&page_count);
 }
 
 int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,

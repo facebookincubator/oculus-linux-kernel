@@ -63,7 +63,7 @@ struct pwm_fan_ctx {
 	struct workqueue_struct *wq;
 	struct work_struct fan_work;
 	struct notifier_block fb_notif;
-	unsigned char pwm_value;
+	unsigned int pwm_value;
 	unsigned int pwm_fan_state;
 	unsigned int pwm_fan_max_state;
 	unsigned int *pwm_fan_cooling_levels;
@@ -318,7 +318,7 @@ static int pwm_fan_get_max_state(struct thermal_cooling_device *cdev,
 static bool pwm_fan_has_failure_locked(struct pwm_fan_ctx *ctx)
 {
 	s64 elapsed_ms;
-	s64 pwm;
+	u32 pwm;
 
 	elapsed_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_tach_timestamp));
 	pwm = ctx->pwm_value;

@@ -3,23 +3,24 @@
 #include "../vendor/qcom/kona-pmic-overlay.dtsi"
 #include "../vendor/qcom/kona-sde-display.dtsi"
 #include "../vendor/qcom/kona-thermal-overlay.dtsi"
-/* TODO: T98154987 remove it after display bringup */
-#include "../vendor/qcom/dsi-panel-sim-dualmipi-video.dtsi"
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
 #include "kona-oculus.dtsi"
 #include "eureka865-adc.dtsi"
 #include "eureka865-audio.dtsi"
+#include "eureka865-blu.dtsi"
 #include "eureka865-camera.dtsi"
 #include "eureka865-fan.dtsi"
 #include "eureka865-nautilus-clk.dtsi"
+#include "eureka865-panel.dtsi"
 #include "eureka865-qca6390.dtsi"
 #include "eureka865-safetyboss.dtsi"
 #include "eureka865-syncboss.dtsi"
 #include "eureka865-ufs.dtsi"
 
 &aliases {
+	hsuart13 = "/soc/qcom,qup_uart@a94000";
 	hsuart14 = "/soc/qcom,qup_uart@994000";
 };
 
@@ -172,11 +173,11 @@
 	status = "ok";
 };
 
-&qupv3_se10_i2c {
+&qupv3_se11_spi {
 	status = "ok";
 };
 
-&qupv3_se11_spi {
+&qupv3_se13_2uart {
 	status = "ok";
 };
 

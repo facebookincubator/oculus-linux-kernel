@@ -120,6 +120,7 @@
 		oculus,syncboss-timesync = <&tlmm 68 0>;
 		oculus,syncboss-wakeup  = <&tlmm 93 0>;
 
+		oculus,syncboss-has-no-prox-cal;
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
 		oculus,syncboss-use-streaming-wakelock;

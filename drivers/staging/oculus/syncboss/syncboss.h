@@ -216,6 +216,9 @@ struct syncboss_dev_data {
 	/* True if the MCU support querying wakeup reasons */
 	bool has_wake_reasons;
 
+	/* True if a wakelock should be held while streaming */
+	bool use_streaming_wakelock;
+
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	/* True if we must enable the camera temperature sensor
 	 * regulator (needed for syncboss to function properly on

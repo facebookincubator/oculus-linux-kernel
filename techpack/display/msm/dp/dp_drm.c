@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <drm/drm_atomic_helper.h>
@@ -388,6 +388,7 @@ int dp_connector_get_mode_info(struct drm_connector *connector,
 	struct dp_display_mode dp_mode;
 	struct dp_display *dp_disp = display;
 	struct msm_drm_private *priv;
+	struct msm_resource_caps_info avail_dp_res;
 	int rc = 0;
 
 	if (!drm_mode || !mode_info || !avail_res ||
@@ -405,7 +406,14 @@ int dp_connector_get_mode_info(struct drm_connector *connector,
 
 	topology = &mode_info->topology;
 
-	rc = msm_get_mixer_count(priv, drm_mode, avail_res,
+	rc = dp_disp->get_available_dp_resources(dp_disp, avail_res,
+			&avail_dp_res);
+	if (rc) {
+		DP_ERR("error getting max dp resources. rc:%d\n", rc);
+		return rc;
+	}
+
+	rc = msm_get_mixer_count(priv, drm_mode, &avail_dp_res,
 			&topology->num_lm);
 	if (rc) {
 		DP_ERR("error getting mixer count. rc:%d\n", rc);
@@ -604,7 +612,8 @@ int dp_connnector_set_info_blob(struct drm_connector *connector,
 	return 0;
 }
 
-int dp_drm_bridge_init(void *data, struct drm_encoder *encoder)
+int dp_drm_bridge_init(void *data, struct drm_encoder *encoder,
+	u32 max_mixer_count, u32 max_dsc_count)
 {
 	int rc = 0;
 	struct dp_bridge *bridge;
@@ -640,6 +649,8 @@ int dp_drm_bridge_init(void *data, struct drm_encoder *encoder)
 	encoder->bridge = &bridge->base;
 	priv->bridges[priv->num_bridges++] = &bridge->base;
 	display->bridge = bridge;
+	display->max_mixer_count = max_mixer_count;
+	display->max_dsc_count = max_dsc_count;
 
 	return 0;
 error_free_bridge:
@@ -663,8 +674,10 @@ enum drm_mode_status dp_connector_mode_valid(struct drm_connector *connector,
 		struct drm_display_mode *mode, void *display,
 		const struct msm_resource_caps_info *avail_res)
 {
+	int rc = 0;
 	struct dp_display *dp_disp;
 	struct sde_connector *sde_conn;
+	struct msm_resource_caps_info avail_dp_res;
 
 	if (!mode || !display || !connector) {
 		DP_ERR("invalid params\n");
@@ -680,8 +693,15 @@ enum drm_mode_status dp_connector_mode_valid(struct drm_connector *connector,
 	dp_disp = display;
 	mode->vrefresh = drm_mode_vrefresh(mode);
 
+	rc = dp_disp->get_available_dp_resources(dp_disp, avail_res,
+			&avail_dp_res);
+	if (rc) {
+		DP_ERR("error getting max dp resources. rc:%d\n", rc);
+		return MODE_ERROR;
+	}
+
 	return dp_disp->validate_mode(dp_disp, sde_conn->drv_panel,
-			mode, avail_res);
+			mode, &avail_dp_res);
 }
 
 int dp_connector_update_pps(struct drm_connector *connector,

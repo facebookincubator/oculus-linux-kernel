@@ -6,8 +6,8 @@
 
 / {
 	model = "Seacliff (P2) DD";
-	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 98>;
+	compatible = "qcom,kona";
+	qcom,board-id = <66 98>;
 };
 
 &cypd3177 {

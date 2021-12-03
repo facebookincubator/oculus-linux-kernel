@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <dt-bindings/clock/qcom,audio-ext-clk.h>
+#include <dt-bindings/sound/qcom,bolero-clk-rsc.h>
 #include "vendor-base/qcom/kona-lpi.dtsi"
+
+&dai_dp {
+	status = "disabled";
+};
+
+&dai_dp1 {
+	status = "disabled";
+};
 
 &dai_mi2s0 {
 	qcom,msm-mi2s-rx-lines = <1>;
@@ -13,6 +22,14 @@
 	qcom,msm-mi2s-tx-lines = <2>;
 };
 
+&ext_disp_audio_codec {
+	status = "disabled";
+};
+
+&fsa4480 {
+	status = "disabled";
+};
+
 &pm8150_l7 {
 	qcom,init-voltage = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
@@ -21,9 +38,9 @@
 &q6core {
 	status = "ok";
 
-	bolero_tx: bolero-cdc-tx {
+	bolero: bolero-cdc {
 		compatible = "qcom,bolero-codec";
-		qcom,num-macros = <1>;
+		qcom,num-macros = <2>;
 		clock-names = "lpass_core_hw_vote",
 				"lpass_audio_hw_vote";
 		clocks = <&lpass_core_hw_vote 0>,
@@ -33,8 +50,11 @@
 			compatible = "qcom,bolero-clk-rsc-mngr";
 			qcom,fs-gen-sequence = <0x3000 0x1>,
 						<0x3004 0x1>, <0x3080 0x2>;
-			clock-names = "tx_core_clk", "tx_npl_clk";
-			clocks = <&clock_audio_tx_1 0>, <&clock_audio_tx_2 0>;
+			qcom,va_mclk_mode_muxsel = <0x033A0000>;
+			clock-names = "tx_core_clk", "tx_npl_clk",
+				"va_core_clk", "va_npl_clk";
+			clocks = <&clock_audio_tx_1 0>, <&clock_audio_tx_2 0>,
+				<&clock_audio_va_1 0>, <&clock_audio_va_2 0>;
 		};
 
 		tx_macro: tx-macro@3220000 {
@@ -43,7 +63,22 @@
 			clock-names = "tx_core_clk", "tx_npl_clk";
 			clocks = <&clock_audio_tx_1 0>,
 				 <&clock_audio_tx_2 0>;
+			qcom,is-used-swr-gpio = <0>;
 			qcom,tx-dmic-sample-rate = <2400000>;
+		};
+
+		va_macro: va-macro@3370000 {
+			compatible = "qcom,va-macro";
+			reg = <0x3370000 0x0>;
+			clock-names = "lpass_audio_hw_vote";
+			clocks = <&lpass_audio_hw_vote 0>;
+			va-vdd-micb-supply = <&S4A>;
+			qcom,va-vdd-micb-voltage = <1800000 1800000>;
+			qcom,va-vdd-micb-current = <11200>;
+			qcom,va-dmic-sample-rate = <600000>;
+			qcom,va-clk-mux-select = <1>;
+			qcom,va-island-mode-muxsel = <0x033A0000>;
+			qcom,default-clk-id = <TX_CORE_CLK>;
 		};
 	};
 
@@ -56,29 +91,22 @@
 
 		qcom,afe-rxtx-lb = <0>;
 		qcom,auxpcm-audio-intf = <1>;
-		qcom,ext-disp-audio-rx = <1>;
+		qcom,bolero-tx-only;
+		qcom,ext-disp-audio-rx = <0>;
 		qcom,mi2s-audio-intf = <1>;
 		qcom,wcn-bt = <0>;
 		qcom,msm_audio_ssr_devs = <&audio_apr>, <&q6core>,
-					<&lpi_tlmm>, <&bolero_tx>;
+					<&lpi_tlmm>, <&bolero>;
 		qcom,audio-routing =
-			"TX DMIC0", "TX MIC BIAS0",
-			"TX MIC BIAS0", "Digital Mic0",
-			"TX DMIC1", "TX MIC BIAS0",
-			"TX MIC BIAS0", "Digital Mic1",
-			"TX DMIC2", "TX MIC BIAS2",
-			"TX MIC BIAS2", "Digital Mic2",
-			"TX DMIC3", "TX MIC BIAS2",
-			"TX MIC BIAS2", "Digital Mic3",
-			"TX DMIC4", "TX MIC BIAS4",
-			"TX MIC BIAS4", "Digital Mic4",
-			"TX DMIC5", "TX MIC BIAS4",
-			"TX MIC BIAS4", "Digital Mic5";
+			"TX DMIC0", "Digital Mic0",
+			"TX DMIC1", "Digital Mic1",
+			"TX DMIC2", "Digital Mic2",
+			"TX DMIC3", "Digital Mic3";
 
-		asoc-codec = <&stub_codec>, <&bolero_tx>,
-			<&max98360a>, <&ext_disp_audio_codec>;
-		asoc-codec-names = "msm-stub-codec.1", "bolero_codec_tx",
-			"max98360a_codec", "msm-ext-disp-audio-codec-rx";
+		asoc-codec = <&stub_codec>, <&bolero>,
+			<&max98360a>;
+		asoc-codec-names = "msm-stub-codec.1", "bolero_codec",
+			"max98360a_codec";
 
 		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
@@ -91,8 +119,7 @@
 				"msm-pcm-afe", "msm-lsm-client",
 				"msm-pcm-routing", "msm-compr-dsp",
 				"msm-pcm-dsp-noirq";
-		asoc-cpu = <&dai_dp>, <&dai_dp1>,
-				<&dai_mi2s0>, <&dai_mi2s1>,
+		asoc-cpu = <&dai_mi2s0>, <&dai_mi2s1>,
 				<&dai_mi2s2>, <&dai_mi2s3>,
 				<&dai_mi2s4>, <&dai_mi2s5>, <&dai_pri_auxpcm>,
 				<&dai_sec_auxpcm>, <&dai_tert_auxpcm>,
@@ -110,12 +137,11 @@
 				<&dai_quat_tdm_rx_0>, <&dai_quat_tdm_tx_0>,
 				<&dai_quin_tdm_rx_0>, <&dai_quin_tdm_tx_0>,
 				<&dai_sen_tdm_rx_0>, <&dai_sen_tdm_tx_0>,
-				<&tx_cdc_dma_0_tx>, <&tx_cdc_dma_1_tx>,
-				<&tx_cdc_dma_2_tx>, <&tx_cdc_dma_3_tx>,
+				<&va_cdc_dma_0_tx>, <&va_cdc_dma_1_tx>,
+				<&va_cdc_dma_2_tx>, <&tx_cdc_dma_3_tx>,
 				<&tx_cdc_dma_4_tx>, <&tx_cdc_dma_5_tx>,
 				<&afe_loopback_tx>;
-		asoc-cpu-names = "msm-dai-q6-dp.0", "msm-dai-q6-dp.1",
-				"msm-dai-q6-mi2s.0", "msm-dai-q6-mi2s.1",
+		asoc-cpu-names = "msm-dai-q6-mi2s.0", "msm-dai-q6-mi2s.1",
 				"msm-dai-q6-mi2s.2", "msm-dai-q6-mi2s.3",
 				"msm-dai-q6-mi2s.4", "msm-dai-q6-mi2s.5",
 				"msm-dai-q6-auxpcm.1",
@@ -134,9 +160,9 @@
 				"msm-dai-q6-tdm.36912", "msm-dai-q6-tdm.36913",
 				"msm-dai-q6-tdm.36928", "msm-dai-q6-tdm.36929",
 				"msm-dai-q6-tdm.36944", "msm-dai-q6-tdm.36945",
-				"msm-dai-cdc-dma-dev.45105",
-				"msm-dai-cdc-dma-dev.45107",
-				"msm-dai-cdc-dma-dev.45109",
+				"msm-dai-cdc-dma-dev.45089",
+				"msm-dai-cdc-dma-dev.45091",
+				"msm-dai-cdc-dma-dev.45093",
 				"msm-dai-cdc-dma-dev.45111",
 				"msm-dai-cdc-dma-dev.45113",
 				"msm-dai-cdc-dma-dev.45115",
@@ -225,6 +251,22 @@
 		#clock-cells = <1>;
 	};
 
+	clock_audio_va_1: va_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x30B>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_va_2: va_npl_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_8>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x310>;
+		#clock-cells = <1>;
+	};
+
 	max98360a: max98360a {
 		status = "ok";
 		compatible = "maxim,max98360a";
@@ -236,6 +278,21 @@
 
 	msm_dai_cdc_dma_tx: qcom,msm-dai-cdc-dma-tx {
 		compatible = "qcom,msm-dai-cdc-dma";
+
+		va_cdc_dma_0_tx: qcom,msm-dai-va-cdc-dma-0-tx {
+			compatible = "qcom,msm-dai-cdc-dma-dev";
+			qcom,msm-dai-cdc-dma-dev-id = <45089>;
+		};
+
+		va_cdc_dma_1_tx: qcom,msm-dai-va-cdc-dma-1-tx {
+			compatible = "qcom,msm-dai-cdc-dma-dev";
+			qcom,msm-dai-cdc-dma-dev-id = <45091>;
+		};
+
+		va_cdc_dma_2_tx: qcom,msm-dai-va-cdc-dma-2-tx {
+			compatible = "qcom,msm-dai-cdc-dma-dev";
+			qcom,msm-dai-cdc-dma-dev-id = <45093>;
+		};
 
 		tx_cdc_dma_0_tx: qcom,msm-dai-tx-cdc-dma-0-tx {
 			compatible = "qcom,msm-dai-cdc-dma-dev";

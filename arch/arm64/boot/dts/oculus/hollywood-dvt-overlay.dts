@@ -11,6 +11,6 @@
 
 / {
 	model = "Hollywood (DVT)";
-	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 17>;
+	compatible = "qcom,kona";
+	qcom,board-id = <64 17>;
 };

@@ -451,71 +451,6 @@ static int _iommu_unmap_sync_pc(struct kgsl_pagetable *pt,
 	return 0;
 }
 
-static int _iommu_map_sg_offset_sync_pc(struct kgsl_pagetable *pt,
-		uint64_t addr, struct scatterlist *sg, int nents,
-		uint64_t offset, uint64_t size, unsigned int flags)
-{
-	struct kgsl_device *device = KGSL_MMU_DEVICE(pt->mmu);
-	struct kgsl_iommu_pt *iommu_pt = pt->priv;
-	uint64_t offset_tmp = offset;
-	uint64_t size_tmp = size;
-	size_t mapped = 0;
-	unsigned int i;
-	struct scatterlist *s;
-	phys_addr_t physaddr;
-	int ret;
-
-	_iommu_sync_mmu_pc(true);
-
-	for_each_sg(sg, s, nents, i) {
-		/* Iterate until we find the offset */
-		if (offset_tmp >= s->length) {
-			offset_tmp -= s->length;
-			continue;
-		}
-
-		/* How much mapping is needed in this sg? */
-		if (size < s->length - offset_tmp)
-			size_tmp = size;
-		else
-			size_tmp = s->length - offset_tmp;
-
-		/* Get the phys addr for the offset page */
-		if (offset_tmp != 0) {
-			physaddr = page_to_phys(nth_page(sg_page(s),
-					offset_tmp >> PAGE_SHIFT));
-			/* Reset offset_tmp */
-			offset_tmp = 0;
-		} else
-			physaddr = page_to_phys(sg_page(s));
-
-		/* Do the map for this sg */
-		ret = iommu_map(iommu_pt->domain, addr + mapped,
-				physaddr, size_tmp, flags);
-		if (ret)
-			break;
-
-		mapped += size_tmp;
-		size -= size_tmp;
-
-		if (size == 0)
-			break;
-	}
-
-	_iommu_sync_mmu_pc(false);
-
-	if (size != 0) {
-		/* Cleanup on error */
-		_iommu_unmap_sync_pc(pt, addr, mapped);
-		dev_err(device->dev,
-			"map sg offset err: 0x%016llX, %d, %x, %zd\n",
-			addr, nents, flags, mapped);
-		return  -ENODEV;
-	}
-
-	return 0;
-}
-
 static int _iommu_map_sg_sync_pc(struct kgsl_pagetable *pt,
 		uint64_t addr, struct scatterlist *sg, int nents,
 		unsigned int flags)
@@ -1683,32 +1618,12 @@ static int kgsl_iommu_start(struct kgsl_mmu *mmu)
 }
 
 static int
-kgsl_iommu_unmap_offset(struct kgsl_pagetable *pt,
-		struct kgsl_memdesc *memdesc, uint64_t addr,
-		uint64_t offset, uint64_t size)
-{
-	if (size == 0 || (size + offset) > kgsl_memdesc_footprint(memdesc))
-		return -EINVAL;
-	/*
-	 * All GPU addresses as assigned are page aligned, but some
-	 * functions perturb the gpuaddr with an offset, so apply the
-	 * mask here to make sure we have the right address.
-	 */
-
-	addr = PAGE_ALIGN(addr);
-	if (addr == 0)
-		return -EINVAL;
-
-	return _iommu_unmap_sync_pc(pt, addr + offset, size);
-}
-
-static int
 kgsl_iommu_unmap(struct kgsl_pagetable *pt, struct kgsl_memdesc *memdesc)
 {
 	if (memdesc->size == 0 || memdesc->gpuaddr == 0)
 		return -EINVAL;
 
-	return kgsl_iommu_unmap_offset(pt, memdesc, memdesc->gpuaddr, 0,
+	return _iommu_unmap_sync_pc(pt, memdesc->gpuaddr,
 			kgsl_memdesc_footprint(memdesc));
 }
 
@@ -1964,108 +1879,6 @@ static int kgsl_iommu_remap_page(struct kgsl_memdesc *memdesc, uint64_t offset,
 
 unlock:
 	_iommu_sync_mmu_pc(false);
-
-	return ret;
-}
-
-static int _map_to_one_page(struct kgsl_pagetable *pt, uint64_t addr,
-		struct kgsl_memdesc *memdesc, uint64_t physoffset,
-		uint64_t size, unsigned int map_flags)
-{
-	int ret = 0, i;
-	int pg_sz = kgsl_memdesc_get_pagesize(memdesc);
-	int count = size >> PAGE_SHIFT;
-	struct page *page = NULL;
-	struct page **pages = NULL;
-	struct sg_page_iter sg_iter;
-	struct sg_table sgt;
-
-	/* Find our physaddr offset addr */
-	if (!IS_ERR_OR_NULL(memdesc->pages))
-		page = kgsl_mmu_find_mapped_page(memdesc, physoffset);
-	else {
-		for_each_sg_page(memdesc->sgt->sgl, &sg_iter,
-				memdesc->sgt->nents, physoffset >> PAGE_SHIFT) {
-			page = sg_page_iter_page(&sg_iter);
-			break;
-		}
-	}
-
-	if (IS_ERR_OR_NULL(page))
-		return -EINVAL;
-
-	pages = kcalloc(count, sizeof(struct page *), GFP_KERNEL);
-	if (pages == NULL)
-		return -ENOMEM;
-
-	for (i = 0; i < count; i++) {
-		if (pg_sz != PAGE_SIZE) {
-			struct page *tmp_page = page;
-			int j;
-
-			for (j = 0; j < 16; j++, tmp_page += PAGE_SIZE)
-				pages[i++] = tmp_page;
-		} else
-			pages[i] = page;
-	}
-
-	ret = sg_alloc_table_from_pages(&sgt, pages, count,
-			0, size, GFP_KERNEL);
-	if (ret == 0) {
-		ret = _iommu_map_sg_sync_pc(pt, addr, sgt.sgl,
-				sgt.nents, map_flags);
-		sg_free_table(&sgt);
-	}
-
-	kfree(pages);
-
-	return ret;
-}
-
-static int kgsl_iommu_map_offset(struct kgsl_pagetable *pt,
-		uint64_t virtaddr, uint64_t virtoffset,
-		struct kgsl_memdesc *memdesc, uint64_t physoffset,
-		uint64_t size, uint64_t feature_flag)
-{
-	int pg_sz;
-	unsigned int protflags = _get_protection_flags(pt, memdesc);
-	int ret;
-	struct sg_table *sgt = NULL;
-
-	pg_sz = kgsl_memdesc_get_pagesize(memdesc);
-	if (!IS_ALIGNED(virtaddr | virtoffset | physoffset | size, pg_sz))
-		return -EINVAL;
-
-	if (size == 0)
-		return -EINVAL;
-
-	if (!(feature_flag & KGSL_SPARSE_BIND_MULTIPLE_TO_PHYS) &&
-			size + physoffset > kgsl_memdesc_footprint(memdesc))
-		return -EINVAL;
-
-	/*
-	 * For paged memory allocated through kgsl, memdesc->pages is not NULL.
-	 * Allocate sgt here just for its map operation. Contiguous memory
-	 * already has its sgt, so no need to allocate it here.
-	 */
-	if (memdesc->pages != NULL)
-		sgt = kgsl_alloc_sgt_from_pages(memdesc);
-	else
-		sgt = memdesc->sgt;
-
-	if (IS_ERR(sgt))
-		return PTR_ERR(sgt);
-
-	if (feature_flag & KGSL_SPARSE_BIND_MULTIPLE_TO_PHYS)
-		ret = _map_to_one_page(pt, virtaddr + virtoffset,
-				memdesc, physoffset, size, protflags);
-	else
-		ret = _iommu_map_sg_offset_sync_pc(pt, virtaddr + virtoffset,
-				sgt->sgl, sgt->nents,
-				physoffset, size, protflags);
-
-	if (memdesc->pages != NULL)
-		kgsl_free_sgt(sgt);
 
 	return ret;
 }
@@ -2866,8 +2679,6 @@ static struct kgsl_mmu_pt_ops iommu_pt_ops = {
 	.find_svm_region = kgsl_iommu_find_svm_region,
 	.svm_range = kgsl_iommu_svm_range,
 	.addr_in_range = kgsl_iommu_addr_in_range,
-	.mmu_map_offset = kgsl_iommu_map_offset,
-	.mmu_unmap_offset = kgsl_iommu_unmap_offset,
 	.mmu_sparse_dummy_map = kgsl_iommu_sparse_dummy_map,
 	.mmu_find_mapped_page = kgsl_iommu_find_mapped_page,
 	.mmu_remap_page_range = kgsl_iommu_remap_page_range,

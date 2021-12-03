@@ -41,16 +41,16 @@
 			interrupt-parent = <&tlmm>;
 			interrupts = <13 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_dual_sim_vid>;
+			panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&fan_pwm_default_0
 				&fan_tach_default_0>;
 			status = "okay";
-			max-rpm = <2400>;
+			max-rpm = <7000>;
 			#cooling-cells = <2>;
-			cooling-levels = <0 400 800 1200 1600 2000 2400>;
+			cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000>;
 		};
 
 		fan_1: pwm-tach-fan@1 {
@@ -60,16 +60,16 @@
 			interrupt-parent = <&tlmm>;
 			interrupts = <13 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_dual_sim_vid>;
+			panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 1 40000>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&fan_pwm_default_1
 				&fan_tach_default_1>;
 			status = "okay";
-			max-rpm = <2400>;
+			max-rpm = <7000>;
 			#cooling-cells = <2>;
-			cooling-levels = <0 400 800 1200 1600 2000 2400>;
+			cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000>;
 		};
 	};
 };

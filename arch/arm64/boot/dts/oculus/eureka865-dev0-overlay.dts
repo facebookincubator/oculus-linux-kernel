@@ -7,6 +7,18 @@
 
 / {
 	model = "Eureka865 (Dev0)";
-	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 144>;
+	compatible = "qcom,kona";
+	qcom,board-id = <68 144>;
+};
+
+&pm8150l_rgb_led {
+	green {
+		pwms = <&pm8150l_lpg 2 1000000>;
+		led-sources = <2>;
+	};
+
+	blue {
+		pwms = <&pm8150l_lpg 1 1000000>;
+		led-sources = <1>;
+	};
 };

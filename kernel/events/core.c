@@ -413,6 +413,7 @@ static atomic_t nr_namespaces_events __read_mostly;
 static atomic_t nr_task_events __read_mostly;
 static atomic_t nr_freq_events __read_mostly;
 static atomic_t nr_switch_events __read_mostly;
+static atomic_t nr_cpufreq_events __read_mostly;
 
 static LIST_HEAD(pmus);
 static DEFINE_MUTEX(pmus_lock);
@@ -4405,6 +4406,8 @@ static void unaccount_event(struct perf_event *event)
 		atomic_dec(&nr_namespaces_events);
 	if (event->attr.task)
 		atomic_dec(&nr_task_events);
+	if (event->attr.cpu_frequency_oculus)
+		atomic_dec(&nr_cpufreq_events);
 	if (event->attr.freq)
 		unaccount_freq_event();
 	if (event->attr.context_switch) {
@@ -6536,7 +6539,7 @@ void perf_output_sample(struct perf_output_handle *handle,
 	if (sample_type & PERF_SAMPLE_PHYS_ADDR)
 		perf_output_put(handle, data->phys_addr);
 
-	if (sample_type & PERF_SAMPLE_INSTRUCTION_DATA) {
+	if (sample_type & PERF_SAMPLE_INSTRUCTION_DATA_OCULUS) {
 		perf_output_put(handle, data->instruction_data_size);
 		if (data->instruction_data_size)
 			perf_output_copy(handle, data->instruction_data, data->instruction_data_size);
@@ -6731,7 +6734,7 @@ void perf_prepare_sample(struct perf_event_header *header,
 	if (sample_type & PERF_SAMPLE_PHYS_ADDR)
 		data->phys_addr = perf_virt_to_phys(data->addr);
 
-	if (sample_type & PERF_SAMPLE_INSTRUCTION_DATA) {
+	if (sample_type & PERF_SAMPLE_INSTRUCTION_DATA_OCULUS) {
 		u64 size;
 
 		size = perf_instruction_data(data->instruction_data,
@@ -7705,6 +7708,64 @@ void perf_event_mmap(struct vm_area_struct *vma)
 
 	perf_addr_filters_adjust(vma);
 	perf_event_mmap_event(&mmap_event);
+}
+
+/*
+ * cpu frequency tracking
+ */
+struct perf_cpu_frequency_event {
+	struct perf_event_header	header;
+	u32				frequency;
+	u32				cpu;
+};
+
+static int perf_event_cpu_frequency_match(struct perf_event *event)
+{
+	return !!event->attr.cpu_frequency_oculus;
+}
+
+static void perf_event_cpu_frequency_output(struct perf_event *event, void *data)
+{
+	struct perf_output_handle handle;
+	struct perf_cpu_frequency_event *freq_event = data;
+	struct perf_sample_data sample;
+
+	if (!perf_event_cpu_frequency_match(event))
+		return;
+
+	perf_event_header__init_id(&freq_event->header, &sample, event);
+	if (perf_output_begin(&handle, event, freq_event->header.size) != 0)
+		return;
+
+	perf_output_put(&handle, *freq_event);
+	perf_event__output_id_sample(event, &handle, &sample);
+	perf_output_end(&handle);
+}
+
+void perf_event_cpu_frequency(unsigned int frequency)
+{
+	struct perf_cpu_frequency_event cpufreq_event;
+
+	if (!atomic_read(&nr_cpufreq_events))
+		return;
+
+	cpufreq_event = (struct perf_cpu_frequency_event){
+		.header = {
+			.type = PERF_RECORD_CPU_FREQUENCY_OCULUS,
+			.size = sizeof(struct perf_cpu_frequency_event),
+			.misc = 0,
+		},
+		.frequency	= frequency,
+		.cpu		= raw_smp_processor_id(),
+	};
+	perf_iterate_sb(perf_event_cpu_frequency_output,
+		       &cpufreq_event,
+		       NULL);
+}
+
+bool perf_event_cpu_frequency_enabled(void)
+{
+	return !!atomic_read(&nr_cpufreq_events);
 }
 
 void perf_event_aux_event(struct perf_event *event, unsigned long head,
@@ -10127,6 +10188,8 @@ static void account_event(struct perf_event *event)
 		atomic_inc(&nr_namespaces_events);
 	if (event->attr.task)
 		atomic_inc(&nr_task_events);
+	if (event->attr.cpu_frequency_oculus)
+		atomic_inc(&nr_cpufreq_events);
 	if (event->attr.freq)
 		account_freq_event();
 	if (event->attr.context_switch) {
@@ -10545,7 +10608,7 @@ static int perf_copy_attr(struct perf_event_attr __user *uattr,
 	if (attr->__reserved_1)
 		return -EINVAL;
 
-	if (attr->sample_type & ~(PERF_SAMPLE_MAX-1))
+	if (attr->sample_type & ~((PERF_SAMPLE_MAX-1) | PERF_SAMPLE_INSTRUCTION_DATA_OCULUS))
 		return -EINVAL;
 
 	if (attr->read_format & ~(PERF_FORMAT_MAX-1))
