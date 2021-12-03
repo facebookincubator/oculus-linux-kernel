@@ -165,6 +165,7 @@ static atomic_t nr_comm_events __read_mostly;
 static atomic_t nr_task_events __read_mostly;
 static atomic_t nr_freq_events __read_mostly;
 static atomic_t nr_switch_events __read_mostly;
+static atomic_t nr_cpufreq_events __read_mostly;
 
 static LIST_HEAD(pmus);
 static DEFINE_MUTEX(pmus_lock);
@@ -3697,6 +3698,8 @@ static void unaccount_event(struct perf_event *event)
 		atomic_dec(&nr_comm_events);
 	if (event->attr.task)
 		atomic_dec(&nr_task_events);
+	if (event->attr.cpu_frequency_oculus)
+		atomic_dec(&nr_cpufreq_events);
 	if (event->attr.freq)
 		atomic_dec(&nr_freq_events);
 	if (event->attr.context_switch) {
@@ -6389,6 +6392,64 @@ void perf_event_mmap(struct vm_area_struct *vma)
 	perf_event_mmap_event(&mmap_event);
 }
 
+/*
+ * cpu frequency tracking
+ */
+struct perf_cpu_frequency_event {
+	struct perf_event_header	header;
+	u32				frequency;
+	u32				cpu;
+};
+
+static int perf_event_cpu_frequency_match(struct perf_event *event)
+{
+	return !!event->attr.cpu_frequency_oculus;
+}
+
+static void perf_event_cpu_frequency_output(struct perf_event *event, void *data)
+{
+	struct perf_output_handle handle;
+	struct perf_cpu_frequency_event *freq_event = data;
+	struct perf_sample_data sample;
+
+	if (!perf_event_cpu_frequency_match(event))
+		return;
+
+	perf_event_header__init_id(&freq_event->header, &sample, event);
+	if (perf_output_begin(&handle, event, freq_event->header.size) != 0)
+		return;
+
+	perf_output_put(&handle, *freq_event);
+	perf_event__output_id_sample(event, &handle, &sample);
+	perf_output_end(&handle);
+}
+
+void perf_event_cpu_frequency(unsigned int frequency)
+{
+	struct perf_cpu_frequency_event cpufreq_event;
+
+	if (!atomic_read(&nr_cpufreq_events))
+		return;
+
+	cpufreq_event = (struct perf_cpu_frequency_event){
+		.header = {
+			.type = PERF_RECORD_CPU_FREQUENCY_OCULUS,
+			.size = sizeof(struct perf_cpu_frequency_event),
+			.misc = 0,
+		},
+		.frequency	= frequency,
+		.cpu		= raw_smp_processor_id(),
+	};
+	perf_event_aux(perf_event_cpu_frequency_output,
+		       &cpufreq_event,
+		       NULL);
+}
+
+bool perf_event_cpu_frequency_enabled(void)
+{
+	return !!atomic_read(&nr_cpufreq_events);
+}
+
 void perf_event_aux_event(struct perf_event *event, unsigned long head,
 			  unsigned long size, u64 flags)
 {
@@ -8072,6 +8133,8 @@ static void account_event(struct perf_event *event)
 		atomic_inc(&nr_comm_events);
 	if (event->attr.task)
 		atomic_inc(&nr_task_events);
+	if (event->attr.cpu_frequency_oculus)
+		atomic_inc(&nr_cpufreq_events);
 	if (event->attr.freq) {
 		if (atomic_inc_return(&nr_freq_events) == 1)
 			tick_nohz_full_kick_all();

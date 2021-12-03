@@ -8,6 +8,7 @@
 #include <linux/of_platform.h>
 
 #include "molokini.h"
+#include "usbvdm.h"
 
 #define DEFAULT_MOLOKINI_VID 0x2833
 #define MOUNT_WORK_DELAY_SECONDS 30
@@ -23,23 +24,6 @@
  */
 #define MOLOKINI_FW_VDM_PERIOD_ON_HEAD 0
 #define MOLOKINI_FW_VDM_PERIOD_OFF_HEAD 14
-
-/* Vendor Defined Objects Macros */
-#define VDO_MOUNT_STATE_ACK_STATUS(v) (v & 0xFF)
-
-/* Vendor Defined Message Header Macros */
-#define VDMH_PARAMETER(h) (h & 0xFF)
-#define VDMH_SIZE(h) ((h & 0x700) >> 8)
-#define VDMH_HIGH(h) ((h & 0x800) >> 11)
-#define VDMH_PROTOCOL(h) ((h & 0x3000) >> 12)
-#define VDMH_ACK(h) ((h & 0x4000) >> 14)
-#define VDMH_CONSTRUCT(svid, ack, proto, high, size, param) \
-	((0xFFFF0000 & (svid << 16)) | \
-	(0X4000 & (ack << 14)) | (0X3000 & (proto << 12)) | \
-	(0X0800 & (high << 11)) | (0X0700 & (size << 8)) | \
-	(0xFF & param))
-
-static const size_t molokini_size_bytes[] = { 1, 2, 4, 8, 16, 32 };
 
 static const char * const battery_status_text[] = {
 	"Not charging",
@@ -144,7 +128,7 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 	protocol_type = VDMH_PROTOCOL(vdm_hdr);
 	parameter_type = VDMH_PARAMETER(vdm_hdr);
 
-	if (protocol_type == MOLOKINI_FW_RESPONSE) {
+	if (protocol_type == VDM_RESPONSE) {
 		acked = VDMH_ACK(vdm_hdr);
 		if (parameter_type != MOLOKINI_FW_HMD_MOUNTED || !acked) {
 			dev_warn(mpd->dev, "Unsupported response parameter 0x%x or NACK(ack=%d)",
@@ -161,7 +145,7 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 		return;
 	}
 
-	if (protocol_type != MOLOKINI_FW_BROADCAST) {
+	if (protocol_type != VDM_BROADCAST) {
 		dev_warn(mpd->dev, "Usupported Protocol=%d\n", protocol_type);
 		return;
 	}
@@ -172,7 +156,7 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 	}
 
 	sb = VDMH_SIZE(vdm_hdr);
-	if (sb >= ARRAY_SIZE(molokini_size_bytes)) {
+	if (sb >= ARRAY_SIZE(vdm_size_bytes)) {
 		dev_warn(mpd->dev, "Invalid size byte code, sb=%d", sb);
 		return;
 	}
@@ -216,12 +200,12 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 		break;
 	case MOLOKINI_FW_DEVICE_NAME:
 		if (mpd->params.device_name[0] == '\0' &&
-			molokini_size_bytes[sb] <=
+			vdm_size_bytes[sb] <=
 				sizeof(u32) * num_vdos &&
-			molokini_size_bytes[sb] <=
+			vdm_size_bytes[sb] <=
 				sizeof(mpd->params.device_name)) {
 			memcpy(mpd->params.device_name,
-				vdos, molokini_size_bytes[sb]);
+				vdos, vdm_size_bytes[sb]);
 		}
 		break;
 	case MOLOKINI_FW_LDB1:

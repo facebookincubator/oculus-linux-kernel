@@ -657,7 +657,7 @@ void msm_smem_free(void *clt, struct msm_smem *mem)
 void msm_smem_delete_client(void *clt)
 {
 	struct smem_client *client = clt;
-	if (!client) {
+	if (!client || !virt_addr_valid(client)) {
 		dprintk(VIDC_ERR, "Invalid  client passed\n");
 		return;
 	}

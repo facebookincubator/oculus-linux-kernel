@@ -297,9 +297,10 @@ struct fastrpc_mmap {
 	int refs;
 	uintptr_t raddr;
 	int uncached;
-	bool is_filemap; /*flag to indicate map used in process init*/
 	int secure;
 	uintptr_t attr;
+	bool is_filemap;
+	/*flag to indicate map used in process init*/
 };
 
 struct fastrpc_perf {
@@ -714,8 +715,8 @@ static int fastrpc_mmap_create(struct fastrpc_file *fl, int fd, unsigned attr,
 	map->refs = 1;
 	map->fl = fl;
 	map->fd = fd;
-	map->is_filemap = false;
 	map->attr = attr;
+	map->is_filemap = false;
 
 	if (map->attr && (map->attr & FASTRPC_ATTR_KEEP_MAP)) {
 		pr_debug("buffer mapped with persist attr %p\n", (void *)map->attr);
@@ -1931,7 +1932,7 @@ static int fastrpc_init_process(struct fastrpc_file *fl,
 		VERIFY(err, !init->mem);
 		if (err) {
 			err = -EINVAL;
-			pr_err("adsprpc: %s: %s: ERROR: donated memory allocated in userspace \n",
+			pr_err("adsprpc: %s: %s: ERROR: donated memory allocated in userspace\n",
 				current->comm, __func__);
 			goto bail;
 		}

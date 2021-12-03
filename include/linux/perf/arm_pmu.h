@@ -77,6 +77,12 @@ struct pmu_hw_events {
 	struct arm_pmu		*percpu_pmu;
 };
 
+enum armpmu_attr_groups {
+	ARMPMU_ATTR_GROUP_EVENTS,
+	ARMPMU_ATTR_GROUP_FORMATS,
+	ARMPMU_NR_ATTR_GROUPS
+};
+
 enum armpmu_pmu_states {
 	ARM_PMU_STATE_OFF,
 	ARM_PMU_STATE_RUNNING,
@@ -113,10 +119,14 @@ struct arm_pmu {
 	struct mutex	reserve_mutex;
 	u64		max_period;
 	bool		secure_access; /* 32-bit ARM only */
+#define ARMV8_PMUV3_MAX_COMMON_EVENTS 0x40
+	DECLARE_BITMAP(pmceid_bitmap, ARMV8_PMUV3_MAX_COMMON_EVENTS);
 	struct platform_device	*plat_device;
 	struct pmu_hw_events	__percpu *hw_events;
 	struct notifier_block	hotplug_nb;
 	struct notifier_block	cpu_pm_nb;
+	/* the attr_groups array must be NULL-terminated */
+	const struct attribute_group *attr_groups[ARMPMU_NR_ATTR_GROUPS + 1];
 };
 
 #define to_arm_pmu(p) (container_of(p, struct arm_pmu, pmu))

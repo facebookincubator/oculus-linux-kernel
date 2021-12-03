@@ -336,7 +336,8 @@ struct perf_event_attr {
 				context_switch :  1, /* context switch data */
 				constraint_duplicate : 1,
 
-				__reserved_1   : 36;
+				__reserved_1   : 35,
+				cpu_frequency_oculus     : 1; /* include cpu frequency data */
 
 	union {
 		__u32		wakeup_events;	  /* wakeup every n events */
@@ -854,6 +855,16 @@ enum perf_event_type {
 	PERF_RECORD_SWITCH_CPU_WIDE		= 15,
 
 	PERF_RECORD_MAX,			/* non-ABI */
+
+	/*
+	 * struct {
+	 *	struct perf_event_header	header;
+	 *	u32				cpu_frequency;
+	 *	u32				cpu;
+	 *	struct sample_id		sample_id;
+	 * };
+	 */
+	PERF_RECORD_CPU_FREQUENCY_OCULUS	= -1U,
 };
 
 #define PERF_MAX_STACK_DEPTH		127

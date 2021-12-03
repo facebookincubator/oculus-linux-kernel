@@ -54,6 +54,7 @@ enum armv8_pmuv3_perf_types {
 	ARMV8_PMUV3_PERFCTR_PC_PROC_RETURN			= 0x0E,
 	ARMV8_PMUV3_PERFCTR_MEM_UNALIGNED_ACCESS		= 0x0F,
 	ARMV8_PMUV3_PERFCTR_TTBR_WRITE				= 0x1C,
+	ARMV8_PMUV3_PERFCTR_BR_RETIRED				= 0x21,
 
 	/* Common microarchitectural events. */
 	ARMV8_PMUV3_PERFCTR_L1_ICACHE_REFILL			= 0x01,
@@ -68,6 +69,11 @@ enum armv8_pmuv3_perf_types {
 	ARMV8_PMUV3_PERFCTR_BUS_ACCESS				= 0x19,
 	ARMV8_PMUV3_PERFCTR_MEM_ERROR				= 0x1A,
 	ARMV8_PMUV3_PERFCTR_BUS_CYCLES				= 0x1D,
+	ARMV8_PMUV3_PERFCTR_L1_DCACHE_ALLOCATE			= 0x1F,
+	ARMV8_PMUV3_PERFCTR_L2_CACHE_ALLOCATE			= 0x20,
+	ARMV8_PMUV3_PERFCTR_BR_MIS_PRED_RETIRED			= 0x22,
+	ARMV8_PMUV3_PERFCTR_STALL_FRONTEND			= 0x23,
+	ARMV8_PMUV3_PERFCTR_STALL_BACKEND			= 0x24,
 };
 
 /* ARMv8 Cortex-A53 specific event types. */
@@ -93,6 +99,9 @@ const unsigned armv8_pmuv3_perf_map[PERF_COUNT_HW_MAX] = {
 	[PERF_COUNT_HW_CACHE_REFERENCES]	= ARMV8_PMUV3_PERFCTR_L1_DCACHE_ACCESS,
 	[PERF_COUNT_HW_CACHE_MISSES]		= ARMV8_PMUV3_PERFCTR_L1_DCACHE_REFILL,
 	[PERF_COUNT_HW_BRANCH_MISSES]		= ARMV8_PMUV3_PERFCTR_PC_BRANCH_MIS_PRED,
+	[PERF_COUNT_HW_BUS_CYCLES]		= ARMV8_PMUV3_PERFCTR_BUS_CYCLES,
+	[PERF_COUNT_HW_STALLED_CYCLES_FRONTEND]	= ARMV8_PMUV3_PERFCTR_STALL_FRONTEND,
+	[PERF_COUNT_HW_STALLED_CYCLES_BACKEND]	= ARMV8_PMUV3_PERFCTR_STALL_BACKEND,
 };
 
 /* ARM Cortex-A53 HW events mapping. */
@@ -179,6 +188,120 @@ static const unsigned armv8_a57_perf_cache_map[PERF_COUNT_HW_CACHE_MAX]
 	[C(BPU)][C(OP_WRITE)][C(RESULT_MISS)]	= ARMV8_PMUV3_PERFCTR_PC_BRANCH_MIS_PRED,
 };
 
+static ssize_t
+armv8pmu_events_sysfs_show(struct device *dev,
+			   struct device_attribute *attr, char *page)
+{
+	struct perf_pmu_events_attr *pmu_attr;
+
+	pmu_attr = container_of(attr, struct perf_pmu_events_attr, attr);
+
+	return sprintf(page, "event=0x%03llx\n", pmu_attr->id);
+}
+
+#define ARMV8_EVENT_ATTR(name, config) \
+	PMU_EVENT_ATTR(name, armv8_event_attr_##name, \
+		       ARMV8_PMUV3_PERFCTR_##config, armv8pmu_events_sysfs_show)
+
+ARMV8_EVENT_ATTR(sw_incr, PMNC_SW_INCR);
+ARMV8_EVENT_ATTR(l1i_cache_refill, L1_ICACHE_REFILL);
+ARMV8_EVENT_ATTR(l1i_tlb_refill, ITLB_REFILL);
+ARMV8_EVENT_ATTR(l1d_cache_refill, L1_DCACHE_REFILL);
+ARMV8_EVENT_ATTR(l1d_cache, L1_DCACHE_ACCESS);
+ARMV8_EVENT_ATTR(l1d_tlb_refill, DTLB_REFILL);
+ARMV8_EVENT_ATTR(ld_retired, MEM_READ);
+ARMV8_EVENT_ATTR(st_retired, MEM_WRITE);
+ARMV8_EVENT_ATTR(inst_retired, INSTR_EXECUTED);
+ARMV8_EVENT_ATTR(exc_taken, EXC_TAKEN);
+ARMV8_EVENT_ATTR(exc_return, EXC_EXECUTED);
+ARMV8_EVENT_ATTR(cid_write_retired, CID_WRITE);
+ARMV8_EVENT_ATTR(pc_write_retired, PC_WRITE);
+ARMV8_EVENT_ATTR(br_immed_retired, PC_IMM_BRANCH);
+ARMV8_EVENT_ATTR(br_return_retired, PC_PROC_RETURN);
+ARMV8_EVENT_ATTR(unaligned_ldst_retired, MEM_UNALIGNED_ACCESS);
+ARMV8_EVENT_ATTR(br_mis_pred, PC_BRANCH_MIS_PRED);
+ARMV8_EVENT_ATTR(cpu_cycles, CLOCK_CYCLES);
+ARMV8_EVENT_ATTR(br_pred, PC_BRANCH_PRED);
+ARMV8_EVENT_ATTR(mem_access, MEM_ACCESS);
+ARMV8_EVENT_ATTR(l1i_cache, L1_ICACHE_ACCESS);
+ARMV8_EVENT_ATTR(l1d_cache_wb, L1_DCACHE_WB);
+ARMV8_EVENT_ATTR(l2d_cache, L2_CACHE_ACCESS);
+ARMV8_EVENT_ATTR(l2d_cache_refill, L2_CACHE_REFILL);
+ARMV8_EVENT_ATTR(l2d_cache_wb, L2_CACHE_WB);
+ARMV8_EVENT_ATTR(bus_access, BUS_ACCESS);
+ARMV8_EVENT_ATTR(memory_error, MEM_ERROR);
+ARMV8_EVENT_ATTR(inst_spec, OP_SPEC);
+ARMV8_EVENT_ATTR(ttbr_write_retired, TTBR_WRITE);
+ARMV8_EVENT_ATTR(bus_cycles, BUS_CYCLES);
+ARMV8_EVENT_ATTR(l1d_cache_allocate, L1_DCACHE_ALLOCATE);
+ARMV8_EVENT_ATTR(l2d_cache_allocate, L2_CACHE_ALLOCATE);
+ARMV8_EVENT_ATTR(br_retired, BR_RETIRED);
+ARMV8_EVENT_ATTR(br_mis_pred_retired, BR_MIS_PRED_RETIRED);
+ARMV8_EVENT_ATTR(stall_frontend, STALL_FRONTEND);
+ARMV8_EVENT_ATTR(stall_backend, STALL_BACKEND);
+
+static struct attribute *armv8_pmuv3_event_attrs[] = {
+	&armv8_event_attr_sw_incr.attr.attr,
+	&armv8_event_attr_l1i_cache_refill.attr.attr,
+	&armv8_event_attr_l1i_tlb_refill.attr.attr,
+	&armv8_event_attr_l1d_cache_refill.attr.attr,
+	&armv8_event_attr_l1d_cache.attr.attr,
+	&armv8_event_attr_l1d_tlb_refill.attr.attr,
+	&armv8_event_attr_ld_retired.attr.attr,
+	&armv8_event_attr_st_retired.attr.attr,
+	&armv8_event_attr_inst_retired.attr.attr,
+	&armv8_event_attr_exc_taken.attr.attr,
+	&armv8_event_attr_exc_return.attr.attr,
+	&armv8_event_attr_cid_write_retired.attr.attr,
+	&armv8_event_attr_pc_write_retired.attr.attr,
+	&armv8_event_attr_br_immed_retired.attr.attr,
+	&armv8_event_attr_br_return_retired.attr.attr,
+	&armv8_event_attr_unaligned_ldst_retired.attr.attr,
+	&armv8_event_attr_br_mis_pred.attr.attr,
+	&armv8_event_attr_cpu_cycles.attr.attr,
+	&armv8_event_attr_br_pred.attr.attr,
+	&armv8_event_attr_mem_access.attr.attr,
+	&armv8_event_attr_l1i_cache.attr.attr,
+	&armv8_event_attr_l1d_cache_wb.attr.attr,
+	&armv8_event_attr_l2d_cache.attr.attr,
+	&armv8_event_attr_l2d_cache_refill.attr.attr,
+	&armv8_event_attr_l2d_cache_wb.attr.attr,
+	&armv8_event_attr_bus_access.attr.attr,
+	&armv8_event_attr_memory_error.attr.attr,
+	&armv8_event_attr_inst_spec.attr.attr,
+	&armv8_event_attr_ttbr_write_retired.attr.attr,
+	&armv8_event_attr_bus_cycles.attr.attr,
+	&armv8_event_attr_l1d_cache_allocate.attr.attr,
+	&armv8_event_attr_l2d_cache_allocate.attr.attr,
+	&armv8_event_attr_br_retired.attr.attr,
+	&armv8_event_attr_br_mis_pred_retired.attr.attr,
+	&armv8_event_attr_stall_frontend.attr.attr,
+	&armv8_event_attr_stall_backend.attr.attr,
+	NULL,
+};
+
+static umode_t
+armv8pmu_event_attr_is_visible(struct kobject *kobj,
+			       struct attribute *attr, int unused)
+{
+	struct device *dev = kobj_to_dev(kobj);
+	struct pmu *pmu = dev_get_drvdata(dev);
+	struct arm_pmu *cpu_pmu = container_of(pmu, struct arm_pmu, pmu);
+	struct perf_pmu_events_attr *pmu_attr;
+
+	pmu_attr = container_of(attr, struct perf_pmu_events_attr, attr.attr);
+
+	if (test_bit(pmu_attr->id, cpu_pmu->pmceid_bitmap))
+		return attr->mode;
+
+	return 0;
+}
+
+static struct attribute_group armv8_pmuv3_events_attr_group = {
+	.name = "events",
+	.attrs = armv8_pmuv3_event_attrs,
+	.is_visible = armv8pmu_event_attr_is_visible,
+};
 
 /*
  * Perf Events' indices
@@ -645,15 +768,23 @@ static int armv8_a57_map_event(struct perf_event *event)
 				ARMV8_EVTYPE_EVENT);
 }
 
-static void armv8pmu_read_num_pmnc_events(void *info)
+static void __armv8pmu_probe_pmu(void *info)
 {
-	int *nb_cnt = info;
+	struct arm_pmu *cpu_pmu = info;
+	u32 pmceid[2];
 
 	/* Read the nb of CNTx counters supported from PMNC */
-	*nb_cnt = (armv8pmu_pmcr_read() >> ARMV8_PMCR_N_SHIFT) & ARMV8_PMCR_N_MASK;
+	cpu_pmu->num_events = (armv8pmu_pmcr_read() >> ARMV8_PMCR_N_SHIFT)
+		& ARMV8_PMCR_N_MASK;
 
 	/* Add the CPU cycles counter */
-	*nb_cnt += 1;
+	cpu_pmu->num_events += 1;
+
+	pmceid[0] = read_sysreg(pmceid0_el0);
+	pmceid[1] = read_sysreg(pmceid1_el0);
+
+	cpu_pmu->pmceid_bitmap[0] = pmceid[0];
+	cpu_pmu->pmceid_bitmap[0] |= ((unsigned long) pmceid[1]) << 32;
 }
 
 static int perf_cpu_idle_notifier(struct notifier_block *nb,
@@ -683,8 +814,8 @@ int armv8pmu_probe_num_events(struct arm_pmu *arm_pmu)
 	idle_notifier_register(&pmu_idle_nb->perf_cpu_idle_nb);
 
 	ret = smp_call_function_any(&arm_pmu->supported_cpus,
-				    armv8pmu_read_num_pmnc_events,
-				    &arm_pmu->num_events, 1);
+				    __armv8pmu_probe_pmu,
+				    arm_pmu, 1);
 	if (ret)
 		idle_notifier_unregister(&pmu_idle_nb->perf_cpu_idle_nb);
 	return ret;
@@ -712,6 +843,8 @@ static int armv8_pmuv3_init(struct arm_pmu *cpu_pmu)
 	armv8_pmu_init(cpu_pmu);
 	cpu_pmu->name			= "armv8_pmuv3";
 	cpu_pmu->map_event		= armv8_pmuv3_map_event;
+	cpu_pmu->attr_groups[ARMPMU_ATTR_GROUP_EVENTS] =
+		&armv8_pmuv3_events_attr_group;
 	return armv8pmu_probe_num_events(cpu_pmu);
 }
 
