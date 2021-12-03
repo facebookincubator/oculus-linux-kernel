@@ -10,8 +10,8 @@
 
 / {
 	model = "Hollywood (POC2)";
-	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 10>;
+	compatible = "qcom,kona";
+	qcom,board-id = <64 10>;
 };
 
 &bluetooth {

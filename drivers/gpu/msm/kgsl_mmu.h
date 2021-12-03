@@ -98,13 +98,6 @@ struct kgsl_mmu_pt_ops {
 			uint64_t memflags);
 	bool (*addr_in_range)(struct kgsl_pagetable *pagetable,
 			uint64_t gpuaddr);
-	int (*mmu_map_offset)(struct kgsl_pagetable *pt,
-			uint64_t virtaddr, uint64_t virtoffset,
-			struct kgsl_memdesc *memdesc, uint64_t physoffset,
-			uint64_t size, uint64_t flags);
-	int (*mmu_unmap_offset)(struct kgsl_pagetable *pt,
-			struct kgsl_memdesc *memdesc, uint64_t addr,
-			uint64_t offset, uint64_t size);
 	int (*mmu_sparse_dummy_map)(struct kgsl_pagetable *pt,
 			struct kgsl_memdesc *memdesc, uint64_t offset,
 			uint64_t size);
@@ -232,14 +225,6 @@ struct kgsl_pagetable *kgsl_get_pagetable(unsigned long name);
 struct kgsl_pagetable *
 kgsl_mmu_createpagetableobject(struct kgsl_mmu *mmu, unsigned int name);
 
-int kgsl_mmu_map_offset(struct kgsl_pagetable *pagetable,
-		uint64_t virtaddr, uint64_t virtoffset,
-		struct kgsl_memdesc *memdesc, uint64_t physoffset,
-		uint64_t size, uint64_t flags);
-int kgsl_mmu_unmap_offset(struct kgsl_pagetable *pagetable,
-		struct kgsl_memdesc *memdesc, uint64_t addr, uint64_t offset,
-		uint64_t size);
-
 struct kgsl_memdesc *kgsl_mmu_get_qdss_global_entry(struct kgsl_device *device);
 
 struct kgsl_memdesc *kgsl_mmu_get_qtimer_global_entry(
@@ -251,7 +236,7 @@ int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 		uint64_t offset);
 struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
-		uint64_t offset, uint64_t size);
+		uint64_t offset, uint64_t size, unsigned int *page_count);
 struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc);
 
 int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,

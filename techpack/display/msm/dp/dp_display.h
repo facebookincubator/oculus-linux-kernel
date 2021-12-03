@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DP_DISPLAY_H_
@@ -73,6 +73,8 @@ struct dp_display {
 	u32 max_pclk_khz;
 	void *dp_mst_prv_info;
 	bool force_bond_mode;
+	u32 max_mixer_count;
+	u32 max_dsc_count;
 
 	int (*enable)(struct dp_display *dp_display, void *panel);
 	int (*post_enable)(struct dp_display *dp_display, void *panel);
@@ -132,6 +134,9 @@ struct dp_display {
 	int (*mst_get_fixed_topology_display_type)(
 			struct dp_display *dp_display, u32 strm_id,
 			const char **display_type);
+	int (*get_available_dp_resources)(struct dp_display *dp_display,
+			const struct msm_resource_caps_info *avail_res,
+			struct msm_resource_caps_info *max_dp_avail_res);
 };
 
 #ifdef CONFIG_DRM_MSM_DP

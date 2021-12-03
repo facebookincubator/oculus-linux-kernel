@@ -52,7 +52,6 @@ enum kgsl_event_results {
 };
 
 #define KGSL_FLAG_WAKE_ON_TOUCH BIT(0)
-#define KGSL_FLAG_SPARSE        BIT(1)
 
 /*
  * "list" of event types for ftrace symbolic magic
@@ -76,7 +75,6 @@ enum kgsl_event_results {
 	{ KGSL_CONTEXT_IFH_NOP, "IFH_NOP" }, \
 	{ KGSL_CONTEXT_SECURE, "SECURE" }, \
 	{ KGSL_CONTEXT_NO_SNAPSHOT, "NO_SNAPSHOT" }, \
-	{ KGSL_CONTEXT_SPARSE, "SPARSE" }, \
 	{ KGSL_CONTEXT_COMPAT_TASK, "COMPAT_TASK" }
 
 #define KGSL_CONTEXT_TYPES \
@@ -218,18 +216,6 @@ struct kgsl_memobj_node {
 	uint64_t size;
 	unsigned long flags;
 	unsigned long priv;
-};
-
-/**
- * struct kgsl_sparseobj_node - Sparse object descriptor
- * @node: Local list node for the sparse cmdbatch
- * @virt_id: Virtual ID to bind/unbind
- * @obj:  struct kgsl_sparse_binding_object
- */
-struct kgsl_sparseobj_node {
-	struct list_head node;
-	unsigned int virt_id;
-	struct kgsl_sparse_binding_object obj;
 };
 
 /**
@@ -759,9 +745,6 @@ long kgsl_ioctl_copy_in(unsigned int kernel_cmd, unsigned int user_cmd,
 
 long kgsl_ioctl_copy_out(unsigned int kernel_cmd, unsigned int user_cmd,
 		unsigned long arg, unsigned char *ptr);
-
-void kgsl_sparse_bind(struct kgsl_process_private *private,
-		struct kgsl_drawobj_sparse *sparse);
 
 /**
  * kgsl_context_put() - Release context reference count

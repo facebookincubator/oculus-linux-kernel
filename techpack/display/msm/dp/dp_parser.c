@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/of_gpio.h>
@@ -736,31 +736,16 @@ static int dp_parser_mst(struct dp_parser *parser)
 
 static void dp_parser_dsc(struct dp_parser *parser)
 {
-	int rc;
 	struct device *dev = &parser->pdev->dev;
 
 	parser->dsc_feature_enable = of_property_read_bool(dev->of_node,
 			"qcom,dsc-feature-enable");
 
-	rc = of_property_read_u32(dev->of_node,
-		"qcom,max-dp-dsc-blks", &parser->max_dp_dsc_blks);
-	if (rc || !parser->max_dp_dsc_blks)
-		parser->dsc_feature_enable = false;
-
-	rc = of_property_read_u32(dev->of_node,
-		"qcom,max-dp-dsc-input-width-pixs",
-		&parser->max_dp_dsc_input_width_pixs);
-	if (rc || !parser->max_dp_dsc_input_width_pixs)
-		parser->dsc_feature_enable = false;
-
 	parser->dsc_continuous_pps = of_property_read_bool(dev->of_node,
 			"qcom,dsc-continuous-pps");
 
-	DP_DEBUG("dsc parsing successful. dsc:%d, blks:%d\n",
+	DP_DEBUG("dsc parsing successful. dsc:%d, cont_pps:%d\n",
 			parser->dsc_feature_enable,
-			parser->max_dp_dsc_blks);
-	DP_DEBUG("width:%d cont_pps:%d\n",
-			parser->max_dp_dsc_input_width_pixs,
 			parser->dsc_continuous_pps);
 }
 

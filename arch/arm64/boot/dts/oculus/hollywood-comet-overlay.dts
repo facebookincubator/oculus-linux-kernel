@@ -13,6 +13,6 @@
 
 / {
 	model = "Hollywood (Comet PO)";
-	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
-	qcom,board-id = <8 33>;
+	compatible = "qcom,kona";
+	qcom,board-id = <65 33>;
 };

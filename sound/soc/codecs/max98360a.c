@@ -79,13 +79,11 @@ static const struct snd_soc_dapm_route max98360a_dapm_routes[] = {
 
 static int max98360a_component_probe(struct snd_soc_component *component)
 {
-	struct max98360a_priv *max98360a;
+	struct max98360a_priv *max98360a =
+		snd_soc_component_get_drvdata(component);
 	int ret = 0;
 
 	dev_dbg(max98360a->dev, "%s entry.\n", __func__);
-
-	if (!max98360a)
-		return -EINVAL;
 
 	max98360a->pinctrl = devm_pinctrl_get(max98360a->dev);
 	if (IS_ERR_OR_NULL(max98360a->pinctrl)) {
@@ -159,10 +157,25 @@ static struct snd_soc_dai_driver max98360a_dai_driver = {
 
 static int max98360a_platform_probe(struct platform_device *pdev)
 {
+	struct max98360a_priv *max98360a;
+	int ret;
+
+	max98360a = devm_kzalloc(&pdev->dev, sizeof(struct max98360a_priv),
+		GFP_KERNEL);
+	if (!max98360a)
+		return -ENOMEM;
+
+	max98360a->dev = &pdev->dev;
+	dev_set_drvdata(&pdev->dev, max98360a);
+
 	dev_set_name(&pdev->dev, "max98360a");
-	return devm_snd_soc_register_component(&pdev->dev,
+	ret = devm_snd_soc_register_component(&pdev->dev,
 			&max98360a_component_driver,
 			&max98360a_dai_driver, 1);
+	if (ret)
+		dev_err(&pdev->dev, "failed to register component: %d\n", ret);
+
+	return ret;
 }
 
 static int max98360a_platform_remove(struct platform_device *pdev)

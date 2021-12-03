@@ -28,35 +28,6 @@ config BLU_FW
 	---help---
 	  Allow automatic/OTA FW updates for the backlight MCU.
 
-config CHARGER_CYPD3177
-	tristate "CONFIG_CYPD3177 support"
-	default n
-	help
-	  Say Y here to enable support for batteries with CYPD3177 chips connected
-	  over an I2C bus. This driver registers with the power supply class and
-	  advertises itself as a wireless power supply. CYPD3177 controller takes
-	  care of PD contract negotiation and advertises state changes via GPIO
-	  interrupts.
-
-config CYPD_POLICY_ENGINE
-	tristate "Cypress Power Delivery Policy Engine"
-	default n
-	help
-	  Say Y here to enable CYPD policy engine. This driver implements policy
-	  for handling power delivery messages. This is based on the USB Power
-	  Delivery protocol with some CYPD3177 BCR specific behavior such as
-	  defaulting to sink only mode. This driver depends on a CYPD 3177
-	  controller device driver in order to transmit and receive PD messages
-	  on its behalf.
-
-config DEPTH_PROJECTOR
-	tristate "Depth Projector Kernel Driver"
-	default n
-	depends on OCULUS
-	help
-	  Depth Projector Kernel Module to set default gpio values.
-	  This driver sets SWD_IO and SWD_CLK to high impedance mode
-
 config DISPLAY_VIRTUAL_SENSOR
 	tristate "Display Virtual Sensor Driver"
 	default n
@@ -66,22 +37,6 @@ config DISPLAY_VIRTUAL_SENSOR
 	  This driver implements a virtual sensor driver representing the
 	  display temperature of a device.
 
-config EYE_FACE_LED
-	tristate "Eye Face Led Kernel Driver"
-	default n
-	depends on OCULUS
-	help
-	  Eye Face LED Kernel Module to set default gpio values.
-	  This driver sets XERR and SAFETY_FLAG to input-enable & bias-disable
-
-config FPGA_AGGREGATOR
-	tristate "FPGA Aggregator Kernel Driver"
-	default n
-	depends on OCULUS
-	help
-	  FPGA aggregator kernel module that controls the regulators
-	  for the FPGA hardware.
-
 config FRONT_PANEL_SENSOR
 	tristate "Front Panel Virtual Sensor Driver"
 	default n
@@ -90,20 +45,6 @@ config FRONT_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the front
 	  panel skin temperature of a device.
-
-config HYPERVISOR_GUEST
-	tristate "Hypervisor Guest Kernel Module"
-	default n
-	depends on OCULUS
-	help
-	  Hypervisor Guest Kernel Module responsible for mapping memory, issuing
-	  hypercalls, and exposing an IOCTL interface to user mode.
-	  During boot the driver claims ownership of device memory, as specified
-	  in the device tree. These regions provide intermediate physical address
-	  space that can in turn contain mappings for circular queues and other
-	  IPC structures.
-	  The driver also installs an interrupt handler to handle port wake-ups
-	  posted by the hypervisor.
 
 config MISCFIFO
 	tristate "miscfifo chardev driver"
@@ -133,26 +74,11 @@ config MOLOKINI
 	  Molokini.
 	  Also creates debugfs nodes to advertise Molokini battery parameters.
 
-config NAUTILUS_CLK
-	tristate "NAUTILUS CLK CONTROL Kernel Driver"
-	default n
-	depends on OCULUS
-	help
-	  Enable support for controlling the nautilus device clock
-
 config OCULUS
 	bool "Oculus feature support"
 	default y
 	---help---
 	  Enable support for Oculus drivers and features
-
-config OCULUS_EUREKA865
-	bool "Enable support for eureka865 device"
-	default n
-	depends on OCULUS
-	select ARCH_KONA
-	---help---
-	  Enable support for the eureka865 device
 
 config OCULUS_HOLLYWOOD
 	bool "Enable support for hollywood device"
@@ -161,14 +87,6 @@ config OCULUS_HOLLYWOOD
 	select ARCH_KONA
 	---help---
 	  Enable support for the hollywood device
-
-config OCULUS_unknown1
-	bool "Enable support for unknown1 device"
-	default n
-	depends on OCULUS
-	select ARCH_KONA
-	---help---
-	  Enable support for the unknown1 device
 
 config INSTRUCTION_SAMPLER
 	tristate "Periodic instruction sampler"
@@ -185,13 +103,6 @@ config TOP_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the top
 	  panel skin temperature of a device.
-
-config unknown1_BLU
-	tristate "Oculus unknown1 SPI BLU Driver"
-	depends on OCULUS
-	default n
-	---help---
-	  Oculus unknown1 SPI BLU Driver for the BOE panels
 
 config SYNCBOSS
 	tristate "Oculus SyncBoss Driver"
@@ -213,5 +124,7 @@ config VIRTUAL_SENSOR_UTILS
 	depends on OCULUS
 	---help---
 	  This driver implements virtual thermal sensor helper functionality.
+
+source "drivers/staging/oculus/internal/Kconfig"
 
 endmenu

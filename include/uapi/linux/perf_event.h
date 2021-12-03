@@ -141,10 +141,10 @@ enum perf_event_sample_format {
 	PERF_SAMPLE_TRANSACTION			= 1U << 17,
 	PERF_SAMPLE_REGS_INTR			= 1U << 18,
 	PERF_SAMPLE_PHYS_ADDR			= 1U << 19,
-	PERF_SAMPLE_INSTRUCTION_DATA		= 1U << 20,
 
-	PERF_SAMPLE_MAX = 1U << 21,		/* non-ABI */
+	PERF_SAMPLE_MAX = 1U << 20,		/* non-ABI */
 
+	PERF_SAMPLE_INSTRUCTION_DATA_OCULUS	= 1ULL << 62,
 	__PERF_SAMPLE_CALLCHAIN_EARLY		= 1ULL << 63, /* non-ABI; internal use */
 };
 
@@ -373,7 +373,8 @@ struct perf_event_attr {
 				context_switch :  1, /* context switch data */
 				write_backward :  1, /* Write ring buffer from end to beginning */
 				namespaces     :  1, /* include namespaces data */
-				__reserved_1   : 35;
+				__reserved_1   : 34,
+				cpu_frequency_oculus     : 1; /* include cpu frequency data */
 
 	union {
 		__u32		wakeup_events;	  /* wakeup every n events */
@@ -967,6 +968,16 @@ enum perf_event_type {
 	PERF_RECORD_NAMESPACES			= 16,
 
 	PERF_RECORD_MAX,			/* non-ABI */
+
+	/*
+	 * struct {
+	 *	struct perf_event_header	header;
+	 *	u32				cpu_frequency;
+	 *	u32				cpu;
+	 *	struct sample_id		sample_id;
+	 * };
+	 */
+	PERF_RECORD_CPU_FREQUENCY_OCULUS	= -1U,
 };
 
 #define PERF_MAX_STACK_DEPTH		127

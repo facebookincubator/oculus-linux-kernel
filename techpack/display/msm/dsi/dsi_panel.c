@@ -828,35 +828,6 @@ error:
 	return rc;
 }
 
-static int dsi_panel_send_local_dimming_cmd(struct dsi_panel *panel,
-					enum dsi_dfps_refresh_index refresh_index,
-					bool last,
-					enum dsi_cmd_set_type type)
-{
-	int rc = 0;
-	struct dsi_cmd_desc *cmds;
-	u32 count;
-
-	const struct mipi_dsi_host_ops *ops = panel->host->ops;
-	/* Send PWM commands to handle the refresh rate change. */
-	cmds = panel->cur_mode->priv_info->cmd_sets[type].cmds;
-	count = panel->cur_mode->priv_info->cmd_sets[type].count;
-
-	if (count == 0) {
-		pr_err("[%s] No commands to be sent for state(%d)\n",
-				panel->name, type);
-		rc = -EINVAL;
-		goto error;
-	}
-
-	if (last)
-		cmds[refresh_index].msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
-	ops->transfer(panel->host, &cmds[refresh_index].msg);
-
-error:
-	return rc;
-}
-
 static enum dsi_dfps_refresh_index dsi_panel_get_refresh_index(int refresh_rate)
 {
 	enum dsi_dfps_refresh_index refresh_index = RR_90HZ;
@@ -882,12 +853,29 @@ static enum dsi_dfps_refresh_index dsi_panel_get_refresh_index(int refresh_rate)
 
 int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl_level)
 {
-	enum dsi_dfps_refresh_index refresh_index;
 	int rc = 0;
 	struct dsi_backlight_config *bl_config;
-	u32 blu_on, blu_off;
+	struct dsi_mode_info *timing;
+	struct mipi_dsi_device *dsi;
 
-	if (!panel || !panel->cur_mode)
+	/* Calculations based on https://fburl.com/tj3_local_dimming "Frame Rate Changes"
+	 * There's two set of timings at play, the SOC timing (called external), and the internal
+	 * display timings which are based on a 2uS horizontal line time and 90Hz refresh rate baseline
+	 * The FIFO is configured to compensate for the difference in timing from external to internal,
+	 * while the PWM value is configured so the backlight finishes flashing before the internal vsync.
+	 */
+	const u32 internal_1h_us = 2; /* Internal (TFT) 1H time (2uS) */
+	const u32 blu_on_time_duration_us_ref = 2565 * 90; /* BLU ON time at 90Hz, baseline hardcoded value */
+	const u32 tdel_us_ref = 1000 * 90; /* TDEL (delay from PWM rising edge to BLU on) reference at 90Hz = 1ms */
+	const u32 blu_off_to_internal_vsync_us = 100;
+	const u8 pwm_reg = 0xB9; /* PWM register */
+	const u8 fifo_reg = 0xEC; /* FIFO line register */
+	u32 vtotal, refresh_rate, fifo_time_us, frame_period_us, external_1h_ns, blu_on_time_duration_us, blu_internal_off_time_us;
+	u32 fifo_time_90_us, internal_vsync_us, tdel_us, fifo_line, pwm_us, pwm_line;
+	u32 blu_on, blu_off, blu_on_us, blu_off_us;
+	u8 payload[3];
+
+	if (!panel || !panel->cur_mode || !panel->cur_mode->timing.refresh_rate)
 		return -EINVAL;
 
 	/* Do not set refresh rate commands if called for changing backlight level request */
@@ -895,27 +883,58 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 		return rc;
 
 	bl_config = &panel->bl_config;
+	dsi = &panel->mipi_device;
 
-	/* Select the index in cmd array based on the refresh rate. */
-	refresh_index = dsi_panel_get_refresh_index(panel->cur_mode->timing.refresh_rate);
-	blu_on = panel->cur_mode->priv_info->blu_timing[refresh_index].on;
-	blu_off = panel->cur_mode->priv_info->blu_timing[refresh_index].off;
+	/* Current mode timings */
+	timing = &panel->cur_mode->timing;
+	vtotal = (u32)DSI_V_TOTAL(timing);
+	refresh_rate = panel->cur_mode->timing.refresh_rate;
+	frame_period_us = 1000000 / refresh_rate;
+	external_1h_ns = (frame_period_us * 1000) / vtotal; /* 2.773 uS */
+
+	/* FIFO calculations */
+
+	/* FIFO time (VID_VS_DELAY) is the external frame period minus the internal frame period */
+	fifo_time_us = frame_period_us - (internal_1h_us * vtotal);
+	/* Scale linearly to obtain a reference value for 90 Hz */
+	fifo_time_90_us = (fifo_time_us * refresh_rate) / 90;
+	/* Convert the FIFO time to 1H external lines */
+	fifo_line = fifo_time_us * 1000 / external_1h_ns;
+
+	/* PWM calculations */
+
+	/* TDEL is scaled linearly based on a reference value @ 90Hz */
+	tdel_us = tdel_us_ref / refresh_rate;
+	/* BLU ON time is calculated taking a hardcoded ON time value @ 90Hz and scaling it linearly */
+	blu_on_time_duration_us = blu_on_time_duration_us_ref / refresh_rate;
+	/* Internal vsync */
+	internal_vsync_us = frame_period_us + fifo_time_90_us;
+	/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
+	blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
+	/* Calculate when the PWM signal should be sent to meet the BLU off time */
+	pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
+	/* Convert the PWM time to internal horizontal lines */
+	pwm_line = pwm_us / internal_1h_us;
+
+	/* Calculate the BLU on/off times based on the external vsync */
+	blu_on_us = pwm_us + fifo_time_us;
+	blu_off_us = blu_on_us + blu_on_time_duration_us;
+	blu_on = blu_on_us * 1000 / external_1h_ns;
+	blu_off = blu_off_us * 1000 / external_1h_ns;
+
+	DSI_DEBUG("%u HZ FIFO %u PWM %u", refresh_rate, fifo_line, pwm_line);
 
 	/* Queue the pwm settings for the new refresh rate. */
-	rc = dsi_panel_send_local_dimming_cmd(panel, refresh_index, false,
-	 DSI_CMD_SET_LOCAL_DIMMING_PWM);
-	if (rc) {
-		pr_err("Failed to set local dimmming PWM, rc=%d\n", rc);
-		goto error;
-	}
+	payload[0] = pwm_reg;
+	payload[1] = (pwm_line >> 8) & 0xFF;
+	payload[2] = pwm_line & 0xFF;
+	mipi_dsi_dcs_write_queue(dsi, payload, sizeof(payload), false);
 
-	/* Update the FIFO settings for the DDIC and send. */
-	rc = dsi_panel_send_local_dimming_cmd(panel, refresh_index, true,
-	 DSI_CMD_SET_LOCAL_DIMMING_FIFO);
-	if (rc) {
-		pr_err("Failed to set local dimmming FIFO, rc=%d\n", rc);
-		goto error;
-	}
+	/* Now send the FIFO line setting */
+	payload[0] = fifo_reg;
+	payload[1] = (fifo_line >> 8) & 0xFF;
+	payload[2] = fifo_line & 0xFF;
+	mipi_dsi_dcs_write_queue(dsi, payload, sizeof(payload), true);
 
 	/* The backlight rolls from blu_on to blu_off, but for simplicity
 	 * we report it as two back to back pulses of half the total duration
@@ -1301,17 +1320,6 @@ static int dsi_panel_parse_timing(struct dsi_mode_info *mode,
 	} else if (rc) {
 		DSI_ERR("failed to read qcom,mdss-dsi-panel-padding, rc=%d\n",
 		       rc);
-		goto error;
-	}
-
-	rc = utils->read_u32_array(utils->data, "qcom,mdss-dsi-local-dimming-blu-timing",
-					(u32 *) priv_info->blu_timing, ARRAY_SIZE(priv_info->blu_timing) * 2);
-	if (rc == -EINVAL) {
-		/* This is non-fatal if the field is missing entirely. */
-		memset(priv_info->blu_timing, 0, sizeof(priv_info->blu_timing));
-		rc = 0;
-	} else if (rc) {
-		DSI_ERR("failed to read mdss-dsi-local-dimming-blu-timing, rc=%d\n", rc);
 		goto error;
 	}
 
@@ -2069,8 +2077,6 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
-	"qcom,mdss-dsi-local-dimming-pwm-commands",
-	"qcom,mdss-dsi-local-dimming-fifo-commands",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -2097,8 +2103,6 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
-	"qcom,mdss-dsi-local-dimming-pwm-commands-state",
-	"qcom,mdss-dsi-local-dimming-fifo-commands-state",
 };
 
 static int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2996,6 +3000,9 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 		DSI_DEBUG("dsc compression is not enabled for the mode\n");
 		return 0;
 	}
+
+	priv_info->use_default_pps = !utils->read_bool(utils->data,
+		"qcom,disable-default-pps");
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsc-version", &data);
 	if (rc) {
@@ -3901,6 +3908,49 @@ int dsi_panel_validate_mode(struct dsi_panel *panel,
 	return 0;
 }
 
+static int dsi_panel_get_max_res_count(struct dsi_parser_utils *utils,
+	struct device_node *node, u32 *dsc_count, u32 *lm_count)
+{
+	const char *compression;
+	u32 *array = NULL, top_count, len, i;
+	int rc = -EINVAL;
+	bool dsc_enable = false;
+
+	*dsc_count = 0;
+	*lm_count = 0;
+	compression = utils->get_property(node, "qcom,compression-mode", NULL);
+	if (compression && !strcmp(compression, "dsc"))
+		dsc_enable = true;
+
+	len = utils->count_u32_elems(node, "qcom,display-topology");
+	if (len <= 0 || len % TOPOLOGY_SET_LEN ||
+			len > (TOPOLOGY_SET_LEN * MAX_TOPOLOGY))
+		return rc;
+
+	top_count = len / TOPOLOGY_SET_LEN;
+
+	array = kcalloc(len, sizeof(u32), GFP_KERNEL);
+	if (!array)
+		return -ENOMEM;
+
+	rc = utils->read_u32_array(node, "qcom,display-topology", array, len);
+	if (rc) {
+		DSI_ERR("unable to read the display topologies, rc = %d\n", rc);
+		goto read_fail;
+	}
+
+	for (i = 0; i < top_count; i++) {
+		*lm_count = max(*lm_count, array[i * TOPOLOGY_SET_LEN]);
+		if (dsc_enable)
+			*dsc_count = max(*dsc_count,
+					array[i * TOPOLOGY_SET_LEN + 1]);
+	}
+
+read_fail:
+	kfree(array);
+	return 0;
+}
+
 int dsi_panel_get_mode_count(struct dsi_panel *panel)
 {
 	const u32 SINGLE_MODE_SUPPORT = 1;
@@ -3910,6 +3960,7 @@ int dsi_panel_get_mode_count(struct dsi_panel *panel)
 	int num_video_modes = 0, num_cmd_modes = 0;
 	int count, rc = 0;
 	void *utils_data = NULL;
+	u32 dsc_count = 0, lm_count = 0;
 
 	if (!panel) {
 		DSI_ERR("invalid params\n");
@@ -3957,6 +4008,11 @@ int dsi_panel_get_mode_count(struct dsi_panel *panel)
 		else if (panel->panel_mode == DSI_OP_CMD_MODE)
 			num_cmd_modes++;
 	}
+
+	dsi_panel_get_max_res_count(utils, child_np,
+			&dsc_count, &lm_count);
+	panel->dsc_count = max(dsc_count, panel->dsc_count);
+	panel->lm_count = max(lm_count, panel->lm_count);
 
 	num_dfps_rates = !panel->dfps_caps.dfps_support ? 1 :
 					panel->dfps_caps.dfps_list_len;

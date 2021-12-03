@@ -15,13 +15,6 @@ enum molokini_fw_mount_state {
 	MOLOKINI_FW_UNKNOWN,
 };
 
-/* Protocol types */
-enum molokini_fw_protocol {
-	MOLOKINI_FW_BROADCAST = 0,
-	MOLOKINI_FW_REQUEST,
-	MOLOKINI_FW_RESPONSE,
-};
-
 /* Parameter types */
 #define MOLOKINI_FW_VERSION_NUMBER 0x01
 #define MOLOKINI_FW_SERIAL 0x02
@@ -55,8 +48,6 @@ enum molokini_fw_protocol {
 #define MOLOKINI_FW_CHARGER_PLUGGED 0x82
 
 /* Vendor Defined Object Section */
-#define VDOS_MAX_BYTES 16
-
 #define LIFETIME_1_LOWER_LEN 6
 #define LIFETIME_1_HIGHER_LEN 4
 #define LIFETIME_4_LEN 6

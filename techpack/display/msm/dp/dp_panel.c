@@ -1119,11 +1119,15 @@ static char dp_dsc_rc_range_max_qp_1_1_scr1[][15] = {
 	};
 
 /*
- * DSC 1.1 and DSC 1.1 SCR
- * Rate control - bpg offset values
+ * DSC 1.1
+ * Rate control - bpg offset values for each ratio type in dp_dsc_ratio_type
  */
-static char dp_dsc_rc_range_bpg_offset[] = {2, 0, 0, -2, -4, -6, -8, -8,
-		-8, -10, -10, -12, -12, -12, -12};
+static char dp_dsc_rc_range_bpg_offset[][15] = {
+	{2, 0, 0, -2, -4, -6, -8, -8, -8, -10, -10, -12, -12, -12, -12},
+	{2, 0, 0, -2, -4, -6, -8, -8, -8, -10, -10, -12, -12, -12, -12},
+	{2, 0, 0, -2, -4, -6, -8, -8, -8, -10, -10, -12, -12, -12, -12},
+	{2, 0, 0, -2, -4, -6, -8, -8, -8, -10, -10, -10, -12, -12, -12},
+};
 
 struct dp_dsc_dto_data {
 	enum msm_display_compression_ratio comp_ratio;
@@ -1500,7 +1504,7 @@ static void dp_panel_dsc_populate_static_params(
 		dsc->range_min_qp = dp_dsc_rc_range_min_qp_1_1[ratio_index];
 		dsc->range_max_qp = dp_dsc_rc_range_max_qp_1_1[ratio_index];
 	}
-	dsc->range_bpg_offset = dp_dsc_rc_range_bpg_offset;
+	dsc->range_bpg_offset = dp_dsc_rc_range_bpg_offset[ratio_index];
 
 	if (bpp == 8) {
 		dsc->initial_offset = 6144;
@@ -1776,7 +1780,9 @@ static int dp_panel_dsc_prepare_basic_params(
 	comp_info->dsc_info.pic_height = dp_mode->timing.v_active;
 	comp_info->dsc_info.slice_width = slice_width;
 
-	if (comp_info->dsc_info.pic_height % 16 == 0)
+	if (comp_info->dsc_info.pic_height % 108 == 0)
+		comp_info->dsc_info.slice_height = 108;
+	else if (comp_info->dsc_info.pic_height % 16 == 0)
 		comp_info->dsc_info.slice_height = 16;
 	else if (comp_info->dsc_info.pic_height % 12 == 0)
 		comp_info->dsc_info.slice_height = 12;
@@ -2188,12 +2194,12 @@ end:
 }
 
 static u32 dp_panel_get_supported_bpp(struct dp_panel *dp_panel,
-		u32 mode_edid_bpp, u32 mode_pclk_khz)
+		u32 mode_edid_bpp, u32 mode_pclk_khz, u32 mode_comp_ratio)
 {
 	struct drm_dp_link *link_info;
 	const u32 max_supported_bpp = 30;
 	u32 min_supported_bpp = 18;
-	u32 bpp = 0, data_rate_khz = 0, tmds_max_clock = 0;
+	u32 bpp = 0, data_rate_khz = 0, tmds_max_clock = 0, ratio = 1;
 
 	if (dp_panel->dsc_en)
 		min_supported_bpp = 24;
@@ -2203,6 +2209,19 @@ static u32 dp_panel_get_supported_bpp(struct dp_panel *dp_panel,
 	link_info = &dp_panel->link_info;
 	data_rate_khz = link_info->num_lanes * link_info->rate * 8;
 	tmds_max_clock = dp_panel->connector->display_info.max_tmds_clock;
+
+	if (dp_panel->dsc_en) {
+		switch (mode_comp_ratio) {
+		case MSM_DISPLAY_COMPRESSION_RATIO_2_TO_1:
+			ratio = 2;
+			break;
+		case MSM_DISPLAY_COMPRESSION_RATIO_3_TO_1:
+			ratio = 3;
+			break;
+		default:
+			ratio = 1;
+		}
+	}
 
 	for (; bpp > min_supported_bpp; bpp -= 6) {
 		if (dp_panel->dsc_en) {
@@ -2223,7 +2242,7 @@ static u32 dp_panel_get_supported_bpp(struct dp_panel *dp_panel,
 		    mult_frac(mode_pclk_khz, bpp, 24)  > tmds_max_clock)
 			continue;
 
-		if (mode_pclk_khz * bpp <= data_rate_khz)
+		if (DIV_ROUND_UP(mode_pclk_khz * bpp, ratio) <= data_rate_khz)
 			break;
 	}
 
@@ -2237,7 +2256,7 @@ static u32 dp_panel_get_supported_bpp(struct dp_panel *dp_panel,
 }
 
 static u32 dp_panel_get_mode_bpp(struct dp_panel *dp_panel,
-		u32 mode_edid_bpp, u32 mode_pclk_khz)
+		u32 mode_edid_bpp, u32 mode_pclk_khz, u32 mode_comp_ratio)
 {
 	struct dp_panel_private *panel;
 	u32 bpp = mode_edid_bpp;
@@ -2254,7 +2273,7 @@ static u32 dp_panel_get_mode_bpp(struct dp_panel *dp_panel,
 				panel->link->test_video.test_bit_depth);
 	else
 		bpp = dp_panel_get_supported_bpp(dp_panel, mode_edid_bpp,
-				mode_pclk_khz);
+				mode_pclk_khz, mode_comp_ratio);
 
 	return bpp;
 }
@@ -3056,8 +3075,8 @@ static void dp_panel_config_ctrl(struct dp_panel *dp_panel)
 	tbd = panel->link->get_test_bits_depth(panel->link,
 			dp_panel->pinfo.bpp);
 
-	if (tbd == DP_TEST_BIT_DEPTH_UNKNOWN)
-		tbd = DP_TEST_BIT_DEPTH_8;
+	if (tbd == DP_TEST_BIT_DEPTH_UNKNOWN || dp_panel->dsc_en)
+		tbd = (DP_TEST_BIT_DEPTH_8 >> DP_TEST_BIT_DEPTH_SHIFT);
 
 	config |= tbd << 8;
 
@@ -3300,9 +3319,6 @@ static void dp_panel_convert_to_dp_mode(struct dp_panel *dp_panel,
 	if (!dp_mode->timing.bpp)
 		dp_mode->timing.bpp = default_bpp;
 
-	dp_mode->timing.bpp = dp_panel_get_mode_bpp(dp_panel,
-			dp_mode->timing.bpp, dp_mode->timing.pixel_clk_khz);
-
 	dp_mode->timing.widebus_en = dp_panel->widebus_en;
 	dp_mode->timing.dsc_overhead_fp = 0;
 
@@ -3323,6 +3339,10 @@ static void dp_panel_convert_to_dp_mode(struct dp_panel *dp_panel,
 				dp_mode);
 	}
 	dp_mode->fec_overhead_fp = dp_panel->fec_overhead_fp;
+
+	dp_mode->timing.bpp = dp_panel_get_mode_bpp(dp_panel,
+			dp_mode->timing.bpp, dp_mode->timing.pixel_clk_khz,
+			dp_mode->timing.comp_info.comp_ratio);
 }
 
 static void dp_panel_update_pps(struct dp_panel *dp_panel, char *pps_cmd)

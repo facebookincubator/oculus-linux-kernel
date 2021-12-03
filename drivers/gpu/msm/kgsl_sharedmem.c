@@ -825,95 +825,37 @@ static struct kgsl_memdesc_ops kgsl_cma_ops = {
 	.vmfault = kgsl_contiguous_vmfault,
 };
 
-#ifdef CONFIG_ARM64
-/*
- * For security reasons, ARMv8 doesn't allow invalidate only on read-only
- * mapping. It would be performance prohibitive to read the permissions on
- * the buffer before the operation. Every use case that we have found does not
- * assume that an invalidate operation is invalidate only, so we feel
- * comfortable turning invalidates into flushes for these targets
- */
-static inline unsigned int _fixup_cache_range_op(unsigned int op)
+static void _dma_cache_op(struct device *dev, struct page *page,
+		unsigned int op)
 {
-	if (op == KGSL_CACHE_OP_INV)
-		return KGSL_CACHE_OP_FLUSH;
-	return op;
-}
-#else
-static inline unsigned int _fixup_cache_range_op(unsigned int op)
-{
-	return op;
-}
-#endif
+	struct scatterlist sgl;
 
-static inline void _cache_op(unsigned int op,
-			const void *start, const void *end)
-{
-	/*
-	 * The dmac_xxx_range functions handle addresses and sizes that
-	 * are not aligned to the cacheline size correctly.
-	 */
-	switch (_fixup_cache_range_op(op)) {
+	sg_init_table(&sgl, 1);
+	sg_set_page(&sgl, page, PAGE_SIZE, 0);
+	sg_dma_address(&sgl) = page_to_phys(page);
+
+	switch (op) {
 	case KGSL_CACHE_OP_FLUSH:
-		dmac_flush_range(start, end);
+		dma_sync_sg_for_device(dev, &sgl, 1, DMA_TO_DEVICE);
+		dma_sync_sg_for_device(dev, &sgl, 1, DMA_FROM_DEVICE);
 		break;
 	case KGSL_CACHE_OP_CLEAN:
-		dmac_clean_range(start, end);
+		dma_sync_sg_for_device(dev, &sgl, 1, DMA_TO_DEVICE);
 		break;
 	case KGSL_CACHE_OP_INV:
-		dmac_inv_range(start, end);
+		dma_sync_sg_for_device(dev, &sgl, 1, DMA_FROM_DEVICE);
 		break;
 	}
-}
-
-static int kgsl_do_cache_op(struct page *page, void *addr,
-		uint64_t offset, uint64_t size, unsigned int op)
-{
-	if (page != NULL) {
-		unsigned long pfn = page_to_pfn(page) + offset / PAGE_SIZE;
-		/*
-		 *  page_address() returns the kernel virtual address of page.
-		 *  For high memory kernel virtual address exists only if page
-		 *  has been mapped. So use a version of kmap rather than
-		 *  page_address() for high memory.
-		 */
-		if (PageHighMem(page)) {
-			offset &= ~PAGE_MASK;
-
-			do {
-				unsigned int len = size;
-
-				if (len + offset > PAGE_SIZE)
-					len = PAGE_SIZE - offset;
-
-				page = pfn_to_page(pfn++);
-				addr = kmap_atomic(page);
-				_cache_op(op, addr + offset,
-						addr + offset + len);
-				kunmap_atomic(addr);
-
-				size -= len;
-				offset = 0;
-			} while (size);
-
-			return 0;
-		}
-
-		addr = page_address(page);
-	}
-
-	_cache_op(op, addr + offset, addr + offset + (size_t) size);
-	return 0;
 }
 
 int kgsl_cache_range_op(struct kgsl_memdesc *memdesc, uint64_t offset,
 		uint64_t size, unsigned int op)
 {
-	void *addr = NULL;
 	struct sg_table *sgt = NULL;
-	struct scatterlist *sg;
-	unsigned int i, pos = 0;
-	int ret = 0;
+	struct sg_page_iter sg_iter;
+
+	if (memdesc->flags & KGSL_MEMFLAGS_IOCOHERENT)
+		return 0;
 
 	if (size == 0 || size > UINT_MAX)
 		return -EINVAL;
@@ -926,55 +868,32 @@ int kgsl_cache_range_op(struct kgsl_memdesc *memdesc, uint64_t offset,
 	if (offset + size > memdesc->size)
 		return -ERANGE;
 
-	if (memdesc->hostptr) {
-		addr = memdesc->hostptr;
-		/* Make sure the offset + size do not overflow the address */
-		if (addr + ((size_t) offset + (size_t) size) < addr)
-			return -ERANGE;
-
-		ret = kgsl_do_cache_op(NULL, addr, offset, size, op);
-		return ret;
-	}
-
-	/*
-	 * If the buffer is not to mapped to kernel, perform cache
-	 * operations after mapping to kernel.
-	 */
 	if (memdesc->sgt != NULL)
 		sgt = memdesc->sgt;
 	else {
 		if (memdesc->pages == NULL)
-			return ret;
+			return  0;
 
 		sgt = kgsl_alloc_sgt_from_pages(memdesc);
 		if (IS_ERR(sgt))
 			return PTR_ERR(sgt);
 	}
 
-	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
-		uint64_t sg_offset, sg_left;
+	/*
+	 * Account for potentially starting mid-page with the offset
+	 * when calculating how many pages need to get maintained.
+	 */
+	size += offset & ~PAGE_MASK;
 
-		if (offset >= (pos + sg->length)) {
-			pos += sg->length;
-			continue;
-		}
-		sg_offset = offset > pos ? offset - pos : 0;
-		sg_left = (sg->length - sg_offset > size) ? size :
-					sg->length - sg_offset;
-		ret = kgsl_do_cache_op(sg_page(sg), NULL, sg_offset,
-							sg_left, op);
-		size -= sg_left;
-		if (size == 0)
-			break;
-		pos += sg->length;
-	}
+	for_each_sg_page(sgt->sgl, &sg_iter, PAGE_ALIGN(size) >> PAGE_SHIFT,
+			offset >> PAGE_SHIFT)
+		_dma_cache_op(memdesc->dev, sg_page_iter_page(&sg_iter), op);
 
 	if (memdesc->sgt == NULL)
 		kgsl_free_sgt(sgt);
 
-	return ret;
+	return 0;
 }
-EXPORT_SYMBOL(kgsl_cache_range_op);
 
 void kgsl_memdesc_init(struct kgsl_device *device,
 			struct kgsl_memdesc *memdesc, uint64_t flags)

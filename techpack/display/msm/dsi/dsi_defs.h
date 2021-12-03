@@ -281,8 +281,6 @@ enum dsi_dyn_clk_feature_type {
  * @DSI_CMD_SET_POST_TIMING_SWITCH:        Post timing switch
  * @DSI_CMD_SET_QSYNC_ON                   Enable qsync mode
  * @DSI_CMD_SET_QSYNC_OFF                  Disable qsync mode
- * @DSI_CMD_SET_LOCAL_DIMMING_PWM          DDIC PWM setting
- * @DSI_CMD_SET_LOCAL_DIMMING_FIFO         DDIC FIFO size setting
  * @DSI_CMD_SET_MAX
  */
 enum dsi_cmd_set_type {
@@ -309,8 +307,6 @@ enum dsi_cmd_set_type {
 	DSI_CMD_SET_POST_TIMING_SWITCH,
 	DSI_CMD_SET_QSYNC_ON,
 	DSI_CMD_SET_QSYNC_OFF,
-	DSI_CMD_SET_LOCAL_DIMMING_PWM,
-	DSI_CMD_SET_LOCAL_DIMMING_FIFO,
 	DSI_CMD_SET_MAX
 };
 
@@ -620,6 +616,7 @@ struct dsi_host_config {
  * @topology:             Topology selected for the panel
  * @dsc:                  DSC compression info
  * @dsc_enabled:          DSC compression enabled
+ * @use_default_pps:      Use default PPS calculation.
  * @roi_caps:		  Panel ROI capabilities
  * @padding:              Padding required on the panel (in pixels)
 
@@ -641,13 +638,10 @@ struct dsi_display_mode_priv_info {
 	struct msm_display_topology topology;
 	struct msm_display_dsc_info dsc;
 	bool dsc_enabled;
+	bool use_default_pps;
 	struct msm_roi_caps roi_caps;
 
 	u32 padding;
-	struct {
-		u32 on;
-		u32 off;
-	} blu_timing[RR_NUM];
 };
 
 /**

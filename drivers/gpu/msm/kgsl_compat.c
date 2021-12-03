@@ -341,17 +341,17 @@ static const struct kgsl_ioctl kgsl_compat_ioctl_funcs[] = {
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUOBJ_SET_INFO,
 			kgsl_ioctl_gpuobj_set_info),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_PHYS_ALLOC,
-			kgsl_ioctl_sparse_phys_alloc),
+			NULL),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_PHYS_FREE,
-			kgsl_ioctl_sparse_phys_free),
+			NULL),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_VIRT_ALLOC,
-			kgsl_ioctl_sparse_virt_alloc),
+			NULL),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_VIRT_FREE,
-			kgsl_ioctl_sparse_virt_free),
+			NULL),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_BIND,
-			kgsl_ioctl_sparse_bind),
+			NULL),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPU_SPARSE_COMMAND,
-			kgsl_ioctl_gpu_sparse_command),
+			NULL),
 };
 
 long kgsl_compat_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)

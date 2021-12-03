@@ -1,20 +1,20 @@
-#include "dsi-panel-boe-dsc-4k-72Hz-video.dtsi"
-#include "dsi-panel-boe-dsc-4k-80Hz-video.dtsi"
-#include "dsi-panel-boe-dsc-4k-90Hz-video.dtsi"
-#include "dsi-panel-boe-dsc-4k-120Hz-video.dtsi"
-#include "dsi-panel-jdi-dsc-4k-video.dtsi"
-#include "dsi-panel-jdi-dsc-4k-90Hz-video.dtsi"
-#include "dsi-panel-jdi-dsc-4k-80Hz-video.dtsi"
-#include "dsi-panel-jdi-dsc-4k-120Hz-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-90Hz-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-120Hz-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-evt2-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-90Hz-evt2-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-120Hz-evt2-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-dvt-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-90Hz-dvt-video.dtsi"
-#include "dsi-panel-sharp-dsc-4k-120Hz-dvt-video.dtsi"
+#include "hollywood-dsi-panel-boe-dsc-4k-72Hz-video.dtsi"
+#include "hollywood-dsi-panel-boe-dsc-4k-80Hz-video.dtsi"
+#include "hollywood-dsi-panel-boe-dsc-4k-90Hz-video.dtsi"
+#include "hollywood-dsi-panel-boe-dsc-4k-120Hz-video.dtsi"
+#include "hollywood-dsi-panel-jdi-dsc-4k-video.dtsi"
+#include "hollywood-dsi-panel-jdi-dsc-4k-90Hz-video.dtsi"
+#include "hollywood-dsi-panel-jdi-dsc-4k-80Hz-video.dtsi"
+#include "hollywood-dsi-panel-jdi-dsc-4k-120Hz-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-90Hz-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-120Hz-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-evt2-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-90Hz-evt2-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-120Hz-evt2-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-dvt-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-90Hz-dvt-video.dtsi"
+#include "hollywood-dsi-panel-sharp-dsc-4k-120Hz-dvt-video.dtsi"
 
 &dsi_boe_4k_72Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
@@ -545,6 +545,13 @@
 	ibb-supply = <&lcdb_ncp_vreg>;
 	blu-mcu-supply = <&pm8150a_l11>;
 	qcom,dsi-default-panel = <&dsi_jdi_4k_120Hz_dsc_video>;
+	pinctrl-0 = <&sde_te_active>;
+	pinctrl-1 = <&sde_te_suspend>;
+};
+
+&sde_dsi1 {
+	pinctrl-0 = <&sde_te1_active>;
+	pinctrl-1 = <&sde_te1_suspend>;
 };
 
 &sde_dp {

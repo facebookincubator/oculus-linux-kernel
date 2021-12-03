@@ -10,6 +10,7 @@
 #include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/poll.h>
+#include <linux/pm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/time64.h>
@@ -1376,11 +1377,13 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata,
 		return 0;
 	}
 
-	/*
-	 * Grab a wake lock so we'll reject device suspend requests
-	 * while in active-use
-	 */
-	__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
+	if (devdata->use_streaming_wakelock) {
+		/*
+		 * Grab a wake lock so we'll reject device suspend requests
+		 * while in active-use
+		 */
+		__pm_stay_awake(&devdata->syncboss_in_use_wake_lock);
+	}
 
 	if (devdata->hall_sensor) {
 		status = regulator_enable(devdata->hall_sensor);
@@ -1665,11 +1668,13 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 		}
 	}
 
-	/*
-	 * Release the wakelock so we won't prevent the device from
-	 * going to sleep.
-	 */
-	__pm_relax(&devdata->syncboss_in_use_wake_lock);
+	if (devdata->use_streaming_wakelock) {
+		/*
+		 * Release the wakelock so we won't prevent the device from
+		 * going to sleep.
+		 */
+		__pm_relax(&devdata->syncboss_in_use_wake_lock);
+	}
 }
 
 static void powerstate_set_enable_locked(struct syncboss_dev_data *devdata, bool enable)
@@ -1861,6 +1866,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->has_prox = of_property_read_bool(node, "oculus,syncboss-has-prox");
 	devdata->has_no_prox_cal = of_property_read_bool(node, "oculus,syncboss-has-no-prox-cal");
 	devdata->has_wake_reasons = of_property_read_bool(node, "oculus,syncboss-has-wake-reasons");
+	devdata->use_streaming_wakelock = of_property_read_bool(node, "oculus,syncboss-use-streaming-wakelock");
 
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	if (of_find_property(node,
@@ -1881,6 +1887,8 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 		 devdata->has_prox ? "true" : "false");
 	dev_info(&devdata->spi->dev, "has-wake-reasons: %s",
 		 devdata->has_wake_reasons ? "true" : "false");
+	dev_info(&devdata->spi->dev, "use-streaming-wakelock: %s",
+		 devdata->use_streaming_wakelock ? "true" : "false");
 	if (devdata->gpio_reset < 0) {
 		dev_err(&devdata->spi->dev,
 			"The reset GPIO was not specificed in the device tree. We will be unable to reset or update firmware");
@@ -2134,7 +2142,8 @@ static int syncboss_probe(struct spi_device *spi)
 	 */
 	device_init_wakeup(dev, /*enable*/ true);
 
-	wakeup_source_init(&devdata->syncboss_in_use_wake_lock, "syncboss");
+	if (devdata->use_streaming_wakelock)
+		wakeup_source_init(&devdata->syncboss_in_use_wake_lock, "syncboss-streaming");
 
 	if (!devdata->boots_to_shutdown_state) {
 		/*
@@ -2213,6 +2222,53 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
 	return queue_tx_packet(devdata, buf, count, /* from_user */ true);
 }
 
+#ifdef CONFIG_PM
+static int syncboss_suspend(struct device *dev)
+{
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	mutex_lock(&devdata->state_mutex);
+	if (devdata->client_count > 0) {
+		dev_info(dev, "Stopping streaming for suspend");
+		stop_streaming_locked(devdata);
+	}
+	mutex_unlock(&devdata->state_mutex);
+	return 0;
+}
+
+static int syncboss_resume(struct device *dev)
+{
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+	int status = 0;
+
+	mutex_lock(&devdata->state_mutex);
+	if (devdata->client_count > 0) {
+		dev_info(dev, "Resuming streaming after suspend");
+		status = start_streaming_locked(devdata, false);
+		if (!status)
+			dev_err(dev, "%s: failed to resume streaming (%d)", __func__, status);
+	}
+	mutex_unlock(&devdata->state_mutex);
+	return status;
+}
+#else
+static int syncboss_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int syncboss_resume(struct device *dev)
+{
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops syncboss_pm_ops = {
+	.suspend = syncboss_suspend,
+	.resume  = syncboss_resume,
+};
 
 /* SPI Driver Info */
 struct spi_driver oculus_syncboss_driver = {
@@ -2220,6 +2276,7 @@ struct spi_driver oculus_syncboss_driver = {
 		.name = "oculus_syncboss",
 		.owner = THIS_MODULE,
 		.of_match_table = oculus_syncboss_table,
+		.pm = &syncboss_pm_ops,
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS
 	},
 	.probe	= syncboss_probe,
