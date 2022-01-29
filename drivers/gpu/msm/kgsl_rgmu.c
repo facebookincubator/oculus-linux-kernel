@@ -13,6 +13,7 @@
 #include "adreno.h"
 #include "kgsl_device.h"
 #include "kgsl_rgmu.h"
+#include "kgsl_util.h"
 
 #define RGMU_CLK_FREQ 200000000
 
@@ -108,18 +109,6 @@ static int rgmu_clocks_probe(struct rgmu_device *rgmu, struct device_node *node)
 	return 0;
 }
 
-static inline int rgmu_clk_set_rate(struct clk *grp_clk, unsigned int freq)
-{
-	int ret = clk_set_rate(grp_clk, freq);
-
-	if (ret)
-		pr_err("%s set freq %d failed:%d\n",
-				__clk_get_name(grp_clk), freq, ret);
-
-	return ret;
-}
-
-
 static void rgmu_disable_clks(struct kgsl_device *device)
 {
 	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
@@ -167,16 +156,18 @@ static int rgmu_enable_clks(struct kgsl_device *device)
 			IS_ERR_OR_NULL(rgmu->gpu_clk))
 		return -EINVAL;
 
-	/* Let us set rgmu clk */
-	ret = rgmu_clk_set_rate(rgmu->rgmu_clk, RGMU_CLK_FREQ);
-	if (ret)
+	ret = clk_set_rate(rgmu->rgmu_clk, RGMU_CLK_FREQ);
+	if (ret) {
+		dev_err(&rgmu->pdev->dev, "Couldn't set the RGMU clock\n");
 		return ret;
+	}
 
-	/* Let us set gpu clk to default power level */
-	ret = rgmu_clk_set_rate(rgmu->gpu_clk,
-			rgmu->gpu_freqs[pwr->default_pwrlevel]);
-	if (ret)
+	ret = clk_set_rate(rgmu->gpu_clk,
+		pwr->pwrlevels[pwr->default_pwrlevel].gpu_freq);
+	if (ret) {
+		dev_err(&rgmu->pdev->dev, "Couldn't set the GPU clock\n");
 		return ret;
+	}
 
 	for (j = 0; j < ARRAY_SIZE(rgmu->clks); j++) {
 		ret = clk_prepare_enable(rgmu->clks[j]);
@@ -192,39 +183,16 @@ static int rgmu_enable_clks(struct kgsl_device *device)
 	return 0;
 }
 
-#define CX_GDSC_TIMEOUT	5000	/* ms */
-static void rgmu_disable_gdsc(struct kgsl_device *device)
+static int rgmu_disable_gdsc(struct kgsl_device *device)
 {
 	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
-	int ret = 0;
-	unsigned long t;
 
-	if (IS_ERR_OR_NULL(rgmu->cx_gdsc))
-		return;
+	/* Wait up to 5 seconds for the regulator to go off */
+	if (kgsl_regulator_disable_wait(rgmu->cx_gdsc, 5000))
+		return 0;
 
-	ret = regulator_disable(rgmu->cx_gdsc);
-	if (ret) {
-		dev_err(&rgmu->pdev->dev,
-				"Failed to disable CX gdsc:%d\n", ret);
-		return;
-	}
-
-	/*
-	 * After GX GDSC is off, CX GDSC must be off.
-	 * Voting off alone from GPU driver cannot
-	 * guarantee CX GDSC off. Polling with 5sec
-	 * timeout to ensure CX GDSC is off.
-	 */
-	t = jiffies + msecs_to_jiffies(CX_GDSC_TIMEOUT);
-	do {
-		if (!regulator_is_enabled(rgmu->cx_gdsc))
-			return;
-		usleep_range(10, 100);
-
-	} while (!(time_after(jiffies, t)));
-
-	if (regulator_is_enabled(rgmu->cx_gdsc))
-		dev_err(&rgmu->pdev->dev, "RGMU CX gdsc off timeout\n");
+	dev_err(&rgmu->pdev->dev, "RGMU CX gdsc off timeout\n");
+	return -ETIMEDOUT;
 }
 
 static int rgmu_enable_gdsc(struct rgmu_device *rgmu)
@@ -308,9 +276,8 @@ static int rgmu_probe(struct kgsl_device *device, struct device_node *node)
 {
 	struct rgmu_device *rgmu;
 	struct platform_device *pdev = of_find_device_by_node(node);
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct resource *res;
-	int i, ret = -ENXIO;
+	int ret = -ENXIO;
 
 	rgmu = devm_kzalloc(&pdev->dev, sizeof(*rgmu), GFP_KERNEL);
 
@@ -368,12 +335,6 @@ static int rgmu_probe(struct kgsl_device *device, struct device_node *node)
 	/* We cannot use rgmu_irq_disable because it writes registers */
 	disable_irq(rgmu->rgmu_interrupt_num);
 	disable_irq(rgmu->oob_interrupt_num);
-
-	/* Retrieves GPU power level configurations */
-	for (i = 0; i < pwr->num_pwrlevels; i++)
-		rgmu->gpu_freqs[i] = pwr->pwrlevels[i].gpu_freq;
-
-	rgmu->num_gpupwrlevels = pwr->num_pwrlevels;
 
 	/* Set up RGMU idle states */
 	if (ADRENO_FEATURE(ADRENO_DEVICE(device), ADRENO_IFPC))
@@ -448,16 +409,22 @@ error_rgmu:
  * to index being used by GMU/RPMh.
  */
 static int rgmu_dcvs_set(struct kgsl_device *device,
-		unsigned int pwrlevel, unsigned int bus_level)
+		int pwrlevel, int bus_level)
 {
 	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
+	int ret;
+	unsigned long rate;
 
 	if (pwrlevel == INVALID_DCVS_IDX)
 		return -EINVAL;
 
-	return rgmu_clk_set_rate(rgmu->gpu_clk,
-			rgmu->gpu_freqs[pwrlevel]);
+	rate = device->pwrctrl.pwrlevels[pwrlevel].gpu_freq;
 
+	ret = clk_set_rate(rgmu->gpu_clk, rate);
+	if (ret)
+		dev_err(&rgmu->pdev->dev, "Couldn't set the GPU clock\n");
+
+	return ret;
 }
 
 static bool rgmu_regulator_isenabled(struct kgsl_device *device)

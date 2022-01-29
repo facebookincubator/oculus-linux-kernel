@@ -577,11 +577,11 @@ enum dhd_prealloc_index {
 	/* 10 */
 	DHD_PREALLOC_MEMDUMP_RAM		= 11,
 	DHD_PREALLOC_DHD_WLFC_HANGER		= 12,
-	DHD_PREALLOC_PKTID_MAP			= 13,
-	DHD_PREALLOC_PKTID_MAP_IOCTL		= 14,
+	DHD_PREALLOC_PKTID_MAP			= 13,	/* Deprecated */
+	DHD_PREALLOC_PKTID_MAP_IOCTL		= 14,	/* Deprecated */
 	DHD_PREALLOC_DHD_LOG_DUMP_BUF		= 15,
 	DHD_PREALLOC_DHD_LOG_DUMP_BUF_EX	= 16,
-	DHD_PREALLOC_DHD_PKTLOG_DUMP_BUF	= 17
+	DHD_PREALLOC_DHD_PKTLOG_DUMP_BUF	= 17	/* Deprecated */
 };
 
 enum dhd_dongledump_mode {
@@ -1170,6 +1170,21 @@ typedef struct tx_cpl_info {
 
 #define DHD_PTM_GET_CLKID(ts) (((ts) & DHD_PTM_CLK_ID_MASK) >> DHD_PTM_CLK_ID_SHIFT)
 #define DHD_PTM_CLKID(ts) (DHD_PTM_GET_CLKID(ts) == DHD_PTM_CLK_ID)
+
+#ifdef DHD_USE_STATIC_CTRLBUF
+#define PKTFREE_CTRLBUF(osh, p, flag) PKTFREE_STATIC(osh, p, flag);
+#else
+#define PKTFREE_CTRLBUF(osh, p, flag) PKTFREE(osh, p, flag);
+#endif /* DHD_USE_STATIC_CTRLBUF */
+
+#define RX_PKTFREE(osh, pkt_type, p, flag) \
+do { \
+	if (ntoh16(pkt_type) == ETHER_TYPE_BRCM) { \
+		PKTFREE_CTRLBUF(osh, p, flag); \
+	} else { \
+		PKTCFREE(osh, p, flag); \
+	} \
+} while (0);
 
 #if defined(SHOW_LOGTRACE) && defined(DHD_USE_KTHREAD_FOR_LOGTRACE)
 /* Timestamps to trace dhd_logtrace_thread() */
@@ -3722,8 +3737,9 @@ extern void dhd_os_general_spin_unlock(dhd_pub_t *pub, unsigned long flags);
 #define DHD_PKT_WAKE_LOCK(lock, flags)	(flags) = osl_spin_lock(lock)
 #define DHD_PKT_WAKE_UNLOCK(lock, flags)	osl_spin_unlock((lock), (flags))
 
-#define DHD_OOB_IRQ_LOCK(lock, flags)	(flags) = osl_spin_lock(lock)
-#define DHD_OOB_IRQ_UNLOCK(lock, flags)	osl_spin_unlock((lock), (flags))
+/* wlan_oob_irq is called in hard irq context */
+#define DHD_OOB_IRQ_LOCK(lock, flags)	(flags) = osl_spin_lock_irq(lock)
+#define DHD_OOB_IRQ_UNLOCK(lock, flags)	osl_spin_unlock_irq((lock), (flags))
 
 #define DHD_IF_STA_LIST_LOCK(lock, flags)	(flags) = osl_spin_lock(lock)
 #define DHD_IF_STA_LIST_UNLOCK(lock, flags)	osl_spin_unlock((lock), (flags))

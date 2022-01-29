@@ -3,11 +3,9 @@
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
-#include <linux/firmware.h>
+#include <linux/clk/qcom.h>
 #include <linux/of.h>
 #include <linux/of_fdt.h>
-#include <soc/qcom/subsystem_restart.h>
-#include <linux/clk/qcom.h>
 
 #include "adreno.h"
 #include "adreno_a6xx.h"
@@ -116,48 +114,29 @@ static u32 a612_pwrup_reglist[] = {
 	A6XX_RBBM_PERFCTR_CNTL,
 };
 
-static void _update_always_on_regs(struct adreno_device *adreno_dev)
+static int a6xx_get_cp_init_cmds(struct adreno_device *adreno_dev);
+
+static int a6xx_init(struct adreno_device *adreno_dev)
 {
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
-	unsigned int *const regs = gpudev->reg_offsets->offsets;
+	const struct adreno_a6xx_core *a6xx_core = to_a6xx_core(adreno_dev);
 
-	regs[ADRENO_REG_RBBM_ALWAYSON_COUNTER_LO] =
-		A6XX_CP_ALWAYS_ON_COUNTER_LO;
-	regs[ADRENO_REG_RBBM_ALWAYSON_COUNTER_HI] =
-		A6XX_CP_ALWAYS_ON_COUNTER_HI;
-}
+	adreno_dev->highest_bank_bit = a6xx_core->highest_bank_bit;
 
-static void a6xx_init(struct adreno_device *adreno_dev)
-{
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-
-	adreno_dev->highest_bank_bit = 13;
-	of_property_read_u32(device->pdev->dev.of_node,
-		"qcom,highest-bank-bit", &adreno_dev->highest_bank_bit);
-
-	if (WARN(adreno_dev->highest_bank_bit < 13 ||
-			adreno_dev->highest_bank_bit > 16,
-			"The highest-bank-bit property is invalid\n"))
-		adreno_dev->highest_bank_bit =
-			clamp_t(unsigned int, adreno_dev->highest_bank_bit,
-				13, 16);
-
-	/* LP DDR4 highest bank bit is different and needs to be overridden */
 	if (adreno_is_a650(adreno_dev) && of_fdt_get_ddrtype() == 0x7)
 		adreno_dev->highest_bank_bit = 15;
 
 	a6xx_crashdump_init(adreno_dev);
 
-	/*
-	 * If the GMU is not enabled, rewrite the offset for the always on
-	 * counters to point to the CP always on instead of GMU always on
-	 */
-	if (!gmu_core_isenabled(device))
-		_update_always_on_regs(adreno_dev);
+	if (IS_ERR_OR_NULL(adreno_dev->pwrup_reglist)) {
+		adreno_dev->pwrup_reglist =
+				kgsl_allocate_global(KGSL_DEVICE(adreno_dev),
+					PAGE_SIZE, 0, KGSL_MEMDESC_PRIVILEGED,
+					"powerup_register_list");
+		if (IS_ERR(adreno_dev->pwrup_reglist))
+			return PTR_ERR(adreno_dev->pwrup_reglist);
+	}
 
-	kgsl_allocate_global(device, &adreno_dev->pwrup_reglist,
-		PAGE_SIZE, 0, KGSL_MEMDESC_CONTIG | KGSL_MEMDESC_PRIVILEGED,
-		"powerup_register_list");
+	return a6xx_get_cp_init_cmds(adreno_dev);
 }
 
 static void a6xx_protect_init(struct adreno_device *adreno_dev)
@@ -332,10 +311,11 @@ struct a6xx_reglist_list {
 static void a6xx_patch_pwrup_reglist(struct adreno_device *adreno_dev)
 {
 	struct a6xx_reglist_list reglist[3];
-	void *ptr = adreno_dev->pwrup_reglist.hostptr;
-	struct cpu_gpu_lock *lock = ptr;
+	void *kptr;
+	struct cpu_gpu_lock *lock;
 	int items = 0, i, j;
-	u32 *dest = ptr + sizeof(*lock);
+	u32 *dest;
+	unsigned int page_count = 0;
 
 	/* Static IFPC-only registers */
 	reglist[items++] = REGLIST(a6xx_ifpc_pwrup_reglist);
@@ -354,6 +334,13 @@ static void a6xx_patch_pwrup_reglist(struct adreno_device *adreno_dev)
 		reglist[items++] = REGLIST(a640_pwrup_reglist);
 	else if (adreno_is_a650(adreno_dev) || adreno_is_a620(adreno_dev))
 		reglist[items++] = REGLIST(a650_pwrup_reglist);
+
+	kptr = kgsl_sharedmem_vm_map_readwrite(adreno_dev->pwrup_reglist, 0,
+			adreno_dev->pwrup_reglist->size, &page_count);
+	BUG_ON(IS_ERR_OR_NULL(kptr));
+
+	lock = kptr;
+	dest = kptr + sizeof(*lock);
 
 	/*
 	 * For each entry in each of the lists, write the offset and the current
@@ -382,7 +369,23 @@ static void a6xx_patch_pwrup_reglist(struct adreno_device *adreno_dev)
 	 * dwords of the first entry in the list.
 	 */
 	lock->list_offset = reglist[0].count * 2;
+
+	vm_unmap_ram(kptr, page_count);
 }
+
+/*
+ * Some targets support marking certain transactions as always privileged which
+ * allows us to mark more memory as privileged without having to explicitly set
+ * the APRIV bit.  For those targets, choose the following transactions to be
+ * privileged by default:
+ * CDWRITE     [6:6] - Crashdumper writes
+ * CDREAD      [5:5] - Crashdumper reads
+ * RBRPWB      [3:3] - RPTR shadow writes
+ * RBPRIVLEVEL [2:2] - Memory accesses from PM4 packets in the ringbuffer
+ * RBFETCH     [1:1] - Ringbuffer reads
+ */
+#define A6XX_APRIV_DEFAULT \
+	((1 << 6) | (1 << 5) | (1 << 3) | (1 << 2) | (1 << 1))
 
 /*
  * a6xx_start() - Device start
@@ -394,16 +397,12 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	const struct adreno_a6xx_core *a6xx_core = to_a6xx_core(adreno_dev);
-	unsigned int bit, lower_bit, mal, mode, upper_bit;
+	unsigned int mal, mode, hbb_hi = 0, hbb_lo = 0;
 	unsigned int uavflagprd_inv;
 	unsigned int amsbc = 0;
 	unsigned int rgb565_predicator = 0;
 	static bool patch_reglist;
 
-	/* runtime adjust callbacks based on feature sets */
-	if (!gmu_core_isenabled(device))
-		/* Legacy idle management if gmu is disabled */
-		ADRENO_GPU_DEVICE(adreno_dev)->hw_isidle = NULL;
 	/* enable hardware clockgating */
 	a6xx_hwcg_set(adreno_dev, true);
 
@@ -516,27 +515,26 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 		break;
 	}
 
-	bit = adreno_dev->highest_bank_bit ?
-		adreno_dev->highest_bank_bit - 13 : 0;
-	lower_bit = bit & 0x3;
-	upper_bit = (bit >> 0x2) & 1;
-	mal = (mal == 64) ? 1 : 0;
+	if (!WARN_ON(!adreno_dev->highest_bank_bit)) {
+		hbb_lo = (adreno_dev->highest_bank_bit - 13) & 3;
+		hbb_hi = ((adreno_dev->highest_bank_bit - 13) >> 2) & 1;
+	}
 
 	uavflagprd_inv = (adreno_is_a650_family(adreno_dev)) ? 2 : 0;
 
 	kgsl_regwrite(device, A6XX_RB_NC_MODE_CNTL, (rgb565_predicator << 11)|
-				(upper_bit << 10) | (amsbc << 4) | (mal << 3) |
-				(lower_bit << 1) | mode);
+				(hbb_hi << 10) | (amsbc << 4) | (mal << 3) |
+				(hbb_lo << 1) | mode);
 
-	kgsl_regwrite(device, A6XX_TPL1_NC_MODE_CNTL, (upper_bit << 4) |
-				(mal << 3) | (lower_bit << 1) | mode);
+	kgsl_regwrite(device, A6XX_TPL1_NC_MODE_CNTL, (hbb_hi << 4) |
+				(mal << 3) | (hbb_lo << 1) | mode);
 
-	kgsl_regwrite(device, A6XX_SP_NC_MODE_CNTL, (upper_bit << 10) |
+	kgsl_regwrite(device, A6XX_SP_NC_MODE_CNTL, (hbb_hi << 10) |
 				(mal << 3) | (uavflagprd_inv << 4) |
-				(lower_bit << 1) | mode);
+				(hbb_lo << 1) | mode);
 
 	kgsl_regwrite(device, A6XX_UCHE_MODE_CNTL, (mal << 23) |
-		(lower_bit << 21));
+		(hbb_lo << 21));
 
 	kgsl_regwrite(device, A6XX_RBBM_INTERFACE_HANG_INT_CNTL,
 				(1 << 30) | a6xx_core->hang_detect_cycles);
@@ -579,12 +577,10 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 
 	a6xx_protect_init(adreno_dev);
 
-	if (!patch_reglist && (adreno_dev->pwrup_reglist.gpuaddr != 0)) {
+	if (!patch_reglist && (adreno_dev->pwrup_reglist->gpuaddr != 0)) {
 		a6xx_patch_pwrup_reglist(adreno_dev);
 		patch_reglist = true;
 	}
-
-	a6xx_preemption_start(adreno_dev);
 
 	/*
 	 * We start LM here because we want all the following to be up
@@ -594,31 +590,20 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 	 * At this point, we are guaranteed all.
 	 */
 	gmu_core_dev_enable_lm(device);
+
+	if (ADRENO_FEATURE(adreno_dev, ADRENO_APRIV))
+		kgsl_regwrite(device, A6XX_CP_APRIV_CNTL, A6XX_APRIV_DEFAULT);
 }
 
 /*
- * a6xx_zap_load() - Load zap shader
+ * a6xx_microcode_load() - Load microcode
  * @adreno_dev: Pointer to adreno device
  */
-static int a6xx_zap_load(struct adreno_device *adreno_dev)
+static int a6xx_microcode_load(struct adreno_device *adreno_dev)
 {
 	const struct adreno_a6xx_core *a6xx_core = to_a6xx_core(adreno_dev);
-	void *zap;
-	int ret = 0;
 
-	/* Load the zap shader firmware through PIL if its available */
-	if (a6xx_core->zap_name && !adreno_dev->zap_loaded) {
-		zap = subsystem_get(a6xx_core->zap_name);
-
-		/* Return error if the zap shader cannot be loaded */
-		if (IS_ERR_OR_NULL(zap)) {
-			ret = (zap == NULL) ? -ENODEV : PTR_ERR(zap);
-			zap = NULL;
-		} else
-			adreno_dev->zap_loaded = 1;
-	}
-
-	return ret;
+	return adreno_zap_shader_load(adreno_dev, a6xx_core->zap_name);
 }
 
 
@@ -665,44 +650,54 @@ static int a6xx_zap_load(struct adreno_device *adreno_dev)
 		CP_INIT_OPERATION_MODE_MASK | \
 		CP_INIT_REGISTER_INIT_LIST_WITH_SPINLOCK)
 
-static void _set_ordinals(struct adreno_device *adreno_dev,
-		unsigned int *cmds, unsigned int count)
+static int a6xx_get_cp_init_cmds(struct adreno_device *adreno_dev)
 {
-	unsigned int *start = cmds;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	u32 *cmds, i = 0;
+
+	if (adreno_dev->cp_init_cmds)
+		return 0;
+
+	adreno_dev->cp_init_cmds = devm_kzalloc(&device->pdev->dev, 12 << 2,
+				GFP_KERNEL);
+	if (!adreno_dev->cp_init_cmds)
+		return -ENOMEM;
+
+	cmds = (u32 *)adreno_dev->cp_init_cmds;
+
+	cmds[i++] = cp_type7_packet(CP_ME_INIT, 11);
 
 	/* Enabled ordinal mask */
-	*cmds++ = CP_INIT_MASK;
+	cmds[i++] = CP_INIT_MASK;
 
 	if (CP_INIT_MASK & CP_INIT_MAX_CONTEXT)
-		*cmds++ = 0x00000003;
+		cmds[i++] = 0x00000003;
 
 	if (CP_INIT_MASK & CP_INIT_ERROR_DETECTION_CONTROL)
-		*cmds++ = 0x20000000;
+		cmds[i++] = 0x20000000;
 
 	if (CP_INIT_MASK & CP_INIT_HEADER_DUMP) {
 		/* Header dump address */
-		*cmds++ = 0x00000000;
+		cmds[i++] = 0x00000000;
 		/* Header dump enable and dump size */
-		*cmds++ = 0x00000000;
+		cmds[i++] = 0x00000000;
 	}
 
 	if (CP_INIT_MASK & CP_INIT_UCODE_WORKAROUND_MASK)
-		*cmds++ = 0x00000000;
+		cmds[i++] = 0x00000000;
 
 	if (CP_INIT_MASK & CP_INIT_OPERATION_MODE_MASK)
-		*cmds++ = 0x00000002;
+		cmds[i++] = 0x00000002;
 
 	if (CP_INIT_MASK & CP_INIT_REGISTER_INIT_LIST_WITH_SPINLOCK) {
-		uint64_t gpuaddr = adreno_dev->pwrup_reglist.gpuaddr;
+		uint64_t gpuaddr = adreno_dev->pwrup_reglist->gpuaddr;
 
-		*cmds++ = lower_32_bits(gpuaddr);
-		*cmds++ = upper_32_bits(gpuaddr);
-		*cmds++ =  0;
+		cmds[i++] = lower_32_bits(gpuaddr);
+		cmds[i++] = upper_32_bits(gpuaddr);
+		cmds[i++] =  0;
 	}
 
-	/* Pad rest of the cmds with 0's */
-	while ((unsigned int)(cmds - start) < count)
-		*cmds++ = 0x0;
+	return 0;
 }
 
 /*
@@ -723,18 +718,18 @@ static int a6xx_send_cp_init(struct adreno_device *adreno_dev,
 	if (IS_ERR(cmds))
 		return PTR_ERR(cmds);
 
-	*cmds++ = cp_type7_packet(CP_ME_INIT, 11);
-
-	_set_ordinals(adreno_dev, cmds, 11);
+	memcpy(cmds, adreno_dev->cp_init_cmds, 12 << 2);
 
 	ret = adreno_ringbuffer_submit_spin(rb, NULL, 2000);
 	if (ret) {
 		adreno_spin_idle_debug(adreno_dev,
 				"CP initialization failed to idle\n");
 
-		if (!adreno_is_a3xx(adreno_dev))
-			kgsl_sharedmem_writel(device, &device->scratch,
-					SCRATCH_RPTR_OFFSET(rb->id), 0);
+		*(uint32_t *)(device->scratch_kptr +
+				SCRATCH_RPTR_OFFSET(rb->id)) = 0;
+		/* Make sure the write to scratch has posted. */
+		smp_wmb();
+
 		rb->wptr = 0;
 		rb->_wptr = 0;
 	}
@@ -759,11 +754,11 @@ static int _preemption_init(struct adreno_device *adreno_dev,
 	*cmds++ = cp_type7_packet(CP_SET_PSEUDO_REGISTER, 6);
 	*cmds++ = 1;
 	cmds += cp_gpuaddr(adreno_dev, cmds,
-			rb->preemption_desc.gpuaddr);
+			rb->preemption_desc->gpuaddr);
 
 	*cmds++ = 2;
 	cmds += cp_gpuaddr(adreno_dev, cmds,
-			rb->secure_preemption_desc.gpuaddr);
+		rb->secure_preemption_desc->gpuaddr);
 
 	/* Turn CP protection back ON */
 	if (!ADRENO_FEATURE(adreno_dev, ADRENO_APRIV))
@@ -809,20 +804,6 @@ static int a6xx_post_start(struct adreno_device *adreno_dev)
 }
 
 /*
- * Some targets support marking certain transactions as always privileged which
- * allows us to mark more memory as privileged without having to explicitly set
- * the APRIV bit.  For those targets, choose the following transactions to be
- * privileged by default:
- * CDWRITE     [6:6] - Crashdumper writes
- * CDREAD      [5:5] - Crashdumper reads
- * RBRPWB      [3:3] - RPTR shadow writes
- * RBPRIVLEVEL [2:2] - Memory accesses from PM4 packets in the ringbuffer
- * RBFETCH     [1:1] - Ringbuffer reads
- */
-#define A6XX_APRIV_DEFAULT \
-	((1 << 6) | (1 << 5) | (1 << 3) | (1 << 2) | (1 << 1))
-
-/*
  * a6xx_rb_start() - Start the ringbuffer
  * @adreno_dev: Pointer to adreno device
  */
@@ -834,6 +815,8 @@ static int a6xx_rb_start(struct adreno_device *adreno_dev)
 	struct adreno_firmware *fw = ADRENO_FW(adreno_dev, ADRENO_FW_SQE);
 	uint64_t addr;
 	int ret;
+
+	a6xx_preemption_start(adreno_dev);
 
 	addr = SCRATCH_RPTR_GPU_ADDR(device, rb->id);
 
@@ -848,17 +831,14 @@ static int a6xx_rb_start(struct adreno_device *adreno_dev)
 					gpudev->cp_rb_cntl);
 
 	adreno_writereg64(adreno_dev, ADRENO_REG_CP_RB_BASE,
-			ADRENO_REG_CP_RB_BASE_HI, rb->buffer_desc.gpuaddr);
-
-	if (ADRENO_FEATURE(adreno_dev, ADRENO_APRIV))
-		kgsl_regwrite(device, A6XX_CP_APRIV_CNTL, A6XX_APRIV_DEFAULT);
+			ADRENO_REG_CP_RB_BASE_HI, rb->buffer_desc->gpuaddr);
 
 	/* Program the ucode base for CP */
 	kgsl_regwrite(device, A6XX_CP_SQE_INSTR_BASE_LO,
-			lower_32_bits(fw->memdesc.gpuaddr));
+			lower_32_bits(fw->memdesc->gpuaddr));
 
 	kgsl_regwrite(device, A6XX_CP_SQE_INSTR_BASE_HI,
-			upper_32_bits(fw->memdesc.gpuaddr));
+			upper_32_bits(fw->memdesc->gpuaddr));
 
 	/* Clear the SQE_HALT to start the CP engine */
 	kgsl_regwrite(device, A6XX_CP_SQE_CNTL, 1);
@@ -867,12 +847,19 @@ static int a6xx_rb_start(struct adreno_device *adreno_dev)
 	if (ret)
 		return ret;
 
-	ret = a6xx_zap_load(adreno_dev);
+	ret = a6xx_microcode_load(adreno_dev);
 	if (ret)
 		return ret;
 
-	/* GPU comes up in secured mode, make it unsecured by default */
-	ret = adreno_set_unsecured_mode(adreno_dev, rb);
+	/*
+	 * Take the GPU out of secure mode. Try the zap shader if it is loaded,
+	 * otherwise just try to write directly to the secure control register
+	 */
+	if (!adreno_dev->zap_loaded)
+		kgsl_regwrite(device, A6XX_RBBM_SECVID_TRUST_CNTL, 0);
+	else
+		ret = adreno_switch_to_unsecure_mode(adreno_dev, rb);
+
 	if (ret)
 		return ret;
 
@@ -943,40 +930,12 @@ unsigned int a6xx_set_marker(
 	return 2;
 }
 
-static int _load_firmware(struct kgsl_device *device, const char *fwfile,
-			  struct adreno_firmware *firmware)
-{
-	const struct firmware *fw = NULL;
-	int ret;
-
-	ret = request_firmware(&fw, fwfile, device->dev);
-
-	if (ret) {
-		dev_err(device->dev, "request_firmware(%s) failed: %d\n",
-				fwfile, ret);
-		return ret;
-	}
-
-	ret = kgsl_allocate_global(device, &firmware->memdesc, fw->size - 4,
-				KGSL_MEMFLAGS_GPUREADONLY, KGSL_MEMDESC_UCODE,
-				"ucode");
-
-	if (!ret) {
-		memcpy(firmware->memdesc.hostptr, &fw->data[4], fw->size - 4);
-		firmware->size = (fw->size - 4) / sizeof(uint32_t);
-		firmware->version = adreno_get_ucode_version((u32 *)fw->data);
-	}
-
-	release_firmware(fw);
-	return ret;
-}
-
 /*
  * a6xx_gpu_keepalive() - GMU reg write to request GPU stays on
  * @adreno_dev: Pointer to the adreno device that has the GMU
  * @state: State to set: true is ON, false is OFF
  */
-static inline void a6xx_gpu_keepalive(struct adreno_device *adreno_dev,
+static void a6xx_gpu_keepalive(struct adreno_device *adreno_dev,
 		bool state)
 {
 	if (!gmu_core_isenabled(KGSL_DEVICE(adreno_dev)))
@@ -986,17 +945,24 @@ static inline void a6xx_gpu_keepalive(struct adreno_device *adreno_dev,
 			ADRENO_REG_GMU_PWR_COL_KEEPALIVE, state);
 }
 
-/* Bitmask for GPU idle status check */
-#define GPUBUSYIGNAHB		BIT(23)
 static bool a6xx_hw_isidle(struct adreno_device *adreno_dev)
 {
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	unsigned int reg;
 
-	gmu_core_regread(KGSL_DEVICE(adreno_dev),
-		A6XX_GPU_GMU_AO_GPU_CX_BUSY_STATUS, &reg);
-	if (reg & GPUBUSYIGNAHB)
-		return false;
-	return true;
+	/* Non GMU devices monitor the RBBM status */
+	if (!gmu_core_isenabled(device)) {
+		kgsl_regread(device, A6XX_RBBM_STATUS, &reg);
+		if (reg & 0xfffffffe)
+			return false;
+
+		return adreno_irq_pending(adreno_dev) ? false : true;
+	}
+
+	gmu_core_regread(device, A6XX_GPU_GMU_AO_GPU_CX_BUSY_STATUS, &reg);
+
+	/* Bit 23 is GPUBUSYIGNAHB */
+	return (reg & BIT(23)) ? false : true;
 }
 
 /*
@@ -1005,18 +971,10 @@ static bool a6xx_hw_isidle(struct adreno_device *adreno_dev)
  */
 static int a6xx_microcode_read(struct adreno_device *adreno_dev)
 {
-	int ret;
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct adreno_firmware *sqe_fw = ADRENO_FW(adreno_dev, ADRENO_FW_SQE);
 	const struct adreno_a6xx_core *a6xx_core = to_a6xx_core(adreno_dev);
 
-	if (sqe_fw->memdesc.hostptr == NULL) {
-		ret = _load_firmware(device, a6xx_core->sqefw_name, sqe_fw);
-		if (ret)
-			return ret;
-	}
-
-	return 0;
+	return adreno_get_firmware(adreno_dev, a6xx_core->sqefw_name, sqe_fw);
 }
 
 static int a6xx_soft_reset(struct adreno_device *adreno_dev)
@@ -1443,6 +1401,7 @@ static struct adreno_irq a6xx_irq = {
 	.mask = A6XX_INT_MASK,
 };
 
+#ifdef CONFIG_QCOM_KGSL_CORESIGHT
 static struct adreno_coresight_register a6xx_coresight_regs[] = {
 	{ A6XX_DBGC_CFG_DBGBUS_SEL_A },
 	{ A6XX_DBGC_CFG_DBGBUS_SEL_B },
@@ -1856,6 +1815,7 @@ static struct adreno_coresight a6xx_coresight_cx = {
 	.count = ARRAY_SIZE(a6xx_coresight_regs_cx),
 	.groups = a6xx_coresight_groups_cx,
 };
+#endif
 
 static struct adreno_perfcount_register a6xx_perfcounters_cp[] = {
 	{ KGSL_PERFCOUNTER_NOT_USED, 0, 0, A6XX_RBBM_PERFCTR_CP_0_LO,
@@ -2260,7 +2220,7 @@ static void a6xx_efuse_speed_bin(struct adreno_device *adreno_dev)
 		"qcom,gpu-speed-bin", speed_bin, 3))
 		return;
 
-	adreno_efuse_read_u32(adreno_dev, speed_bin[0], &val);
+	adreno_efuse_read_u32(speed_bin[0], &val);
 
 	adreno_dev->speed_bin = (val & speed_bin[1]) >> speed_bin[2];
 }
@@ -2277,18 +2237,22 @@ static void a6xx_check_features(struct adreno_device *adreno_dev)
 {
 	unsigned int i;
 
-	if (adreno_efuse_map(adreno_dev))
+	if (adreno_efuse_map(KGSL_DEVICE(adreno_dev)->pdev))
 		return;
 	for (i = 0; i < ARRAY_SIZE(a6xx_efuse_funcs); i++) {
 		if (a6xx_efuse_funcs[i].check(adreno_dev))
 			a6xx_efuse_funcs[i].func(adreno_dev);
 	}
 
-	adreno_efuse_unmap(adreno_dev);
+	adreno_efuse_unmap();
 }
 static void a6xx_platform_setup(struct adreno_device *adreno_dev)
 {
 	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
+
+	adreno_dev->preempt.preempt_level = 1;
+	adreno_dev->preempt.skipsaverestore = true;
+	adreno_dev->preempt.usesgmem = true;
 
 	if (adreno_has_gbif(adreno_dev)) {
 		a6xx_perfcounter_groups[KGSL_PERFCOUNTER_GROUP_VBIF].regs =
@@ -2355,7 +2319,6 @@ static unsigned int a6xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_WPTR, A6XX_CP_RB_WPTR),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_RB_CNTL, A6XX_CP_RB_CNTL),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_ME_CNTL, A6XX_CP_SQE_CNTL),
-	ADRENO_REG_DEFINE(ADRENO_REG_CP_CNTL, A6XX_CP_MISC_CNTL),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_HW_FAULT, A6XX_CP_HW_FAULT),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_IB1_BASE, A6XX_CP_IB1_BASE),
 	ADRENO_REG_DEFINE(ADRENO_REG_CP_IB1_BASE_HI, A6XX_CP_IB1_BASE_HI),
@@ -2428,10 +2391,6 @@ static unsigned int a6xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
 				A6XX_RBBM_GBIF_HALT_ACK),
 	ADRENO_REG_DEFINE(ADRENO_REG_GBIF_HALT, A6XX_GBIF_HALT),
 	ADRENO_REG_DEFINE(ADRENO_REG_GBIF_HALT_ACK, A6XX_GBIF_HALT_ACK),
-	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_ALWAYSON_COUNTER_LO,
-				A6XX_GMU_ALWAYS_ON_COUNTER_L),
-	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_ALWAYSON_COUNTER_HI,
-				A6XX_GMU_ALWAYS_ON_COUNTER_H),
 	ADRENO_REG_DEFINE(ADRENO_REG_GMU_AO_AHB_FENCE_CTRL,
 				A6XX_GMU_AO_AHB_FENCE_CTRL),
 	ADRENO_REG_DEFINE(ADRENO_REG_GMU_AO_INTERRUPT_EN,
@@ -2472,8 +2431,6 @@ static unsigned int a6xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
 				A6XX_GMU_CM3_CFG),
 	ADRENO_REG_DEFINE(ADRENO_REG_GMU_RBBM_INT_UNMASKED_STATUS,
 				A6XX_GMU_RBBM_INT_UNMASKED_STATUS),
-	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_SECVID_TRUST_CONTROL,
-				A6XX_RBBM_SECVID_TRUST_CNTL),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE,
 				A6XX_RBBM_SECVID_TSB_TRUSTED_BASE_LO),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_SECVID_TSB_TRUSTED_BASE_HI,
@@ -2535,10 +2492,19 @@ static void cpu_gpu_unlock(struct cpu_gpu_lock *lock)
 static int a6xx_perfcounter_update(struct adreno_device *adreno_dev,
 	struct adreno_perfcount_register *reg, bool update_reg)
 {
-	void *ptr = adreno_dev->pwrup_reglist.hostptr;
-	struct cpu_gpu_lock *lock = ptr;
-	u32 *data = ptr + sizeof(*lock);
+	void *kptr;
+	struct cpu_gpu_lock *lock;
+	u32 *data;
 	int i, offset = 0;
+	unsigned int page_count = 0;
+
+	kptr = kgsl_sharedmem_vm_map_readwrite(adreno_dev->pwrup_reglist, 0,
+			adreno_dev->pwrup_reglist->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr))
+		return -EINVAL;
+
+	lock = kptr;
+	data = kptr + sizeof(*lock);
 
 	if (cpu_gpu_lock(lock)) {
 		cpu_gpu_unlock(lock);
@@ -2583,6 +2549,7 @@ update:
 			reg->countable);
 
 	cpu_gpu_unlock(lock);
+	vm_unmap_ram(kptr, page_count);
 	return 0;
 }
 
@@ -2609,13 +2576,38 @@ static void a6xx_clk_set_options(struct adreno_device *adreno_dev,
 	}
 }
 
+u64 a6xx_read_alwayson(struct adreno_device *adreno_dev)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	u32 lo = 0, hi = 0, tmp = 0;
+
+	if (!gmu_core_isenabled(device)) {
+		kgsl_regread(device, A6XX_CP_ALWAYS_ON_COUNTER_LO, &lo);
+		kgsl_regread(device, A6XX_CP_ALWAYS_ON_COUNTER_HI, &hi);
+	} else {
+		/* Always use the GMU AO counter when doing a AHB read */
+		gmu_core_regread(device, A6XX_GMU_ALWAYS_ON_COUNTER_H, &hi);
+		gmu_core_regread(device, A6XX_GMU_ALWAYS_ON_COUNTER_L, &lo);
+
+		/* Check for overflow */
+		gmu_core_regread(device, A6XX_GMU_ALWAYS_ON_COUNTER_H, &tmp);
+
+		if (hi != tmp) {
+			gmu_core_regread(device, A6XX_GMU_ALWAYS_ON_COUNTER_L,
+				&lo);
+			hi = tmp;
+		}
+	}
+
+	return (((u64) hi) << 32) | lo;
+}
+
 struct adreno_gpudev adreno_a6xx_gpudev = {
 	.reg_offsets = &a6xx_reg_offsets,
 	.start = a6xx_start,
 	.snapshot = a6xx_snapshot,
 	.irq = &a6xx_irq,
 	.irq_trace = trace_kgsl_a5xx_irq_status,
-	.num_prio_levels = KGSL_PRIORITY_MAX_RB_LEVELS,
 	.cp_rb_cntl = A6XX_CP_RB_CNTL_DEFAULT,
 	.platform_setup = a6xx_platform_setup,
 	.init = a6xx_init,
@@ -2630,14 +2622,13 @@ struct adreno_gpudev adreno_a6xx_gpudev = {
 	.llc_configure_gpuhtw_scid = a6xx_llc_configure_gpuhtw_scid,
 	.llc_enable_overrides = a6xx_llc_enable_overrides,
 	.gpu_keepalive = a6xx_gpu_keepalive,
-	.hw_isidle = a6xx_hw_isidle, /* Replaced by NULL if GMU is disabled */
+	.hw_isidle = a6xx_hw_isidle,
 	.iommu_fault_block = a6xx_iommu_fault_block,
 	.reset = a6xx_reset,
 	.soft_reset = a6xx_soft_reset,
 	.preemption_pre_ibsubmit = a6xx_preemption_pre_ibsubmit,
 	.preemption_post_ibsubmit = a6xx_preemption_post_ibsubmit,
 	.preemption_init = a6xx_preemption_init,
-	.preemption_close = a6xx_preemption_close,
 	.preemption_schedule = a6xx_preemption_schedule,
 	.set_marker = a6xx_set_marker,
 	.preemption_context_init = a6xx_preemption_context_init,
@@ -2645,6 +2636,9 @@ struct adreno_gpudev adreno_a6xx_gpudev = {
 	.sptprac_is_on = a6xx_sptprac_is_on,
 	.ccu_invalidate = a6xx_ccu_invalidate,
 	.perfcounter_update = a6xx_perfcounter_update,
+#ifdef CONFIG_QCOM_KGSL_CORESIGHT
 	.coresight = {&a6xx_coresight, &a6xx_coresight_cx},
+#endif
 	.clk_set_options = a6xx_clk_set_options,
+	.read_alwayson = a6xx_read_alwayson,
 };

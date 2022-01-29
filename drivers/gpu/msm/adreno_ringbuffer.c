@@ -17,11 +17,10 @@
 
 
 #define RB_HOSTPTR(_rb, _pos) \
-	((unsigned int *) ((_rb)->buffer_desc.hostptr + \
-		((_pos) * sizeof(unsigned int))))
+	((unsigned int *) ((_rb)->kptr + ((_pos) * sizeof(unsigned int))))
 
 #define RB_GPUADDR(_rb, _pos) \
-	((_rb)->buffer_desc.gpuaddr + ((_pos) * sizeof(unsigned int)))
+	((_rb)->buffer_desc->gpuaddr + ((_pos) * sizeof(unsigned int)))
 
 static inline bool is_internal_cmds(unsigned int flags)
 {
@@ -32,6 +31,7 @@ static void adreno_get_submit_time(struct adreno_device *adreno_dev,
 		struct adreno_ringbuffer *rb,
 		struct adreno_submit_time *time)
 {
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	ktime_t t;
 	unsigned long flags;
 	/*
@@ -47,18 +47,7 @@ static void adreno_get_submit_time(struct adreno_device *adreno_dev,
 	local_irq_save(flags);
 
 	/* Read always on registers */
-	if (!adreno_is_a3xx(adreno_dev)) {
-		adreno_readreg64(adreno_dev,
-			ADRENO_REG_RBBM_ALWAYSON_COUNTER_LO,
-			ADRENO_REG_RBBM_ALWAYSON_COUNTER_HI,
-			&time->ticks);
-
-		/* Mask hi bits as they may be incorrect on some targets */
-		if (ADRENO_GPUREV(adreno_dev) >= 400 &&
-				ADRENO_GPUREV(adreno_dev) <= ADRENO_REV_A530)
-			time->ticks &= 0xFFFFFFFF;
-	} else
-		time->ticks = 0;
+	time->ticks = gpudev->read_alwayson(adreno_dev);
 
 	/* Trace the GPU time to create a mapping to ftrace time */
 	trace_adreno_cmdbatch_sync(rb->drawctxt_active, time->ticks);
@@ -312,11 +301,14 @@ int adreno_ringbuffer_start(struct adreno_device *adreno_dev)
 
 	/* Setup the ringbuffers state before we start */
 	FOR_EACH_RINGBUFFER(adreno_dev, rb, i) {
-		kgsl_sharedmem_set(device, &(rb->buffer_desc),
-				0, 0xAA, KGSL_RB_SIZE);
-		if (!adreno_is_a3xx(adreno_dev))
-			kgsl_sharedmem_writel(device, &device->scratch,
-					SCRATCH_RPTR_OFFSET(rb->id), 0);
+		if (!IS_ERR_OR_NULL(rb->kptr))
+			memset(rb->kptr, 0xaa, KGSL_RB_SIZE);
+		if (!adreno_is_a3xx(adreno_dev)) {
+			*(uint32_t *)(device->scratch_kptr +
+					SCRATCH_RPTR_OFFSET(rb->id)) = 0;
+			/* Make sure the write to scratch has posted. */
+			smp_wmb();
+		}
 		rb->wptr = 0;
 		rb->_wptr = 0;
 		rb->wptr_preempt_end = 0xFFFFFFFF;
@@ -343,12 +335,62 @@ static int _rb_readtimestamp(struct kgsl_device *device,
 		timestamp);
 }
 
-static int _adreno_ringbuffer_probe(struct adreno_device *adreno_dev,
+static int _adreno_ringbuffer_init(struct adreno_device *adreno_dev,
 		int id)
 {
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct adreno_ringbuffer *rb = &adreno_dev->ringbuffers[id];
-	int ret;
 	unsigned int priv = 0;
+	unsigned int page_count = 0;
+
+	/*
+	 * Allocate mem for storing RB pagetables and commands to
+	 * switch pagetable
+	 */
+	if (IS_ERR_OR_NULL(rb->pagetable_desc)) {
+		rb->pagetable_desc = kgsl_allocate_global(device, PAGE_SIZE,
+			0, KGSL_MEMDESC_PRIVILEGED, "pagetable_desc");
+		if (IS_ERR_OR_NULL(rb->pagetable_desc))
+			return (!rb->pagetable_desc) ? -EINVAL :
+					PTR_ERR(rb->pagetable_desc);
+
+		rb->pagetable_kptr = kgsl_sharedmem_vm_map_readwrite(
+				rb->pagetable_desc, 0, PAGE_SIZE, &page_count);
+		if (IS_ERR_OR_NULL(rb->pagetable_kptr))
+			return (!rb->pagetable_kptr) ? -EINVAL :
+					PTR_ERR(rb->pagetable_kptr);
+		else if (WARN(page_count != 1,
+			 "pagetable info mapping size does not match buffer size\n"))
+			return -EINVAL;
+	}
+
+	/* allocate a chunk of memory to create user profiling IB1s */
+	if (IS_ERR_OR_NULL(rb->profile_desc))
+		rb->profile_desc = kgsl_allocate_global(device, PAGE_SIZE,
+			KGSL_MEMFLAGS_GPUREADONLY, 0, "profile_desc");
+
+	if (ADRENO_FEATURE(adreno_dev, ADRENO_APRIV))
+		priv |= KGSL_MEMDESC_PRIVILEGED;
+
+	if (IS_ERR_OR_NULL(rb->buffer_desc)) {
+		rb->buffer_desc = kgsl_allocate_global(device, KGSL_RB_SIZE,
+			KGSL_MEMFLAGS_GPUREADONLY, priv, "ringbuffer");
+		if (IS_ERR_OR_NULL(rb->buffer_desc))
+			return (!rb->buffer_desc) ? -EINVAL :
+					PTR_ERR(rb->buffer_desc);
+
+		rb->kptr = kgsl_sharedmem_vm_map_readwrite(rb->buffer_desc, 0,
+				rb->buffer_desc->size, &page_count);
+
+		if (IS_ERR_OR_NULL(rb->kptr))
+			return (!rb->kptr) ? -EINVAL : PTR_ERR(rb->kptr);
+		else if (WARN(page_count != (KGSL_RB_SIZE >> PAGE_SHIFT),
+				"ringbuffer mapping size does not match buffer size\n"))
+			return -EINVAL;
+	}
+
+	if (!list_empty(&rb->events.group))
+		return 0;
 
 	rb->id = id;
 	kgsl_add_event_group(&rb->events, NULL, _rb_readtimestamp, rb,
@@ -359,101 +401,147 @@ static int _adreno_ringbuffer_probe(struct adreno_device *adreno_dev,
 
 	spin_lock_init(&rb->preempt_lock);
 
-	/*
-	 * Allocate mem for storing RB pagetables and commands to
-	 * switch pagetable
-	 */
-	ret = kgsl_allocate_global(KGSL_DEVICE(adreno_dev), &rb->pagetable_desc,
-		PAGE_SIZE, 0, KGSL_MEMDESC_PRIVILEGED, "pagetable_desc");
-	if (ret)
-		return ret;
-
-	/* allocate a chunk of memory to create user profiling IB1s */
-	kgsl_allocate_global(KGSL_DEVICE(adreno_dev), &rb->profile_desc,
-		PAGE_SIZE, KGSL_MEMFLAGS_GPUREADONLY, 0, "profile_desc");
-
-	/* For targets that support it, make the ringbuffer privileged */
-	if (ADRENO_FEATURE(adreno_dev, ADRENO_APRIV))
-		priv |= KGSL_MEMDESC_PRIVILEGED;
-
-	return kgsl_allocate_global(KGSL_DEVICE(adreno_dev), &rb->buffer_desc,
-		KGSL_RB_SIZE, KGSL_MEMFLAGS_GPUREADONLY, priv, "ringbuffer");
+	return 0;
 }
 
-int adreno_ringbuffer_probe(struct adreno_device *adreno_dev)
+static void adreno_preemption_timer(struct timer_list *t)
+{
+	struct adreno_preemption *preempt = from_timer(preempt, t, timer);
+	struct adreno_device *adreno_dev = container_of(preempt,
+						struct adreno_device, preempt);
+
+	/* We should only be here from a triggered state */
+	if (!adreno_move_preempt_state(adreno_dev,
+		ADRENO_PREEMPT_TRIGGERED, ADRENO_PREEMPT_FAULTED))
+		return;
+
+	/* Schedule the worker to take care of the details */
+	queue_work(system_unbound_wq, &adreno_dev->preempt.work);
+}
+
+static void adreno_preemption_init(struct adreno_device *adreno_dev)
+{
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
+	struct adreno_preemption *preempt = &adreno_dev->preempt;
+	int ret;
+
+	if (!ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION))
+		return;
+
+	timer_setup(&preempt->timer, adreno_preemption_timer, 0);
+
+	ret = gpudev->preemption_init(adreno_dev);
+
+	WARN(ret, "adreno GPU preemption is disabled\n");
+}
+
+static void adreno_preemption_close(struct adreno_device *adreno_dev)
+{
+	struct adreno_preemption *preempt = &adreno_dev->preempt;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
+
+	if (!ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION))
+		return;
+
+	del_timer(&preempt->timer);
+
+	if (!IS_ERR_OR_NULL(iommu->kptr)) {
+		vm_unmap_ram(iommu->kptr, 1);
+		iommu->kptr = NULL;
+	}
+
+	if (!IS_ERR_OR_NULL(preempt->scratch_kptr)) {
+		vm_unmap_ram(preempt->scratch_kptr, preempt->scratch->size >>
+				PAGE_SHIFT);
+		preempt->scratch_kptr = NULL;
+	}
+}
+
+int adreno_ringbuffer_init(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	int i;
 	int status = -ENOMEM;
+	unsigned int page_count = 0;
 
 	if (!adreno_is_a3xx(adreno_dev)) {
-		unsigned int priv =
-			KGSL_MEMDESC_RANDOM | KGSL_MEMDESC_PRIVILEGED;
+		unsigned int priv = KGSL_MEMDESC_RANDOM;
 
-		status = kgsl_allocate_global(device, &device->scratch,
+		if (ADRENO_FEATURE(adreno_dev, ADRENO_APRIV))
+			priv |= KGSL_MEMDESC_PRIVILEGED;
+
+		if (IS_ERR_OR_NULL(device->scratch)) {
+			device->scratch = kgsl_allocate_global(device,
 				PAGE_SIZE, 0, priv, "scratch");
-		if (status != 0)
-			return status;
+			if (IS_ERR_OR_NULL(device->scratch))
+				return (!device->scratch) ? -EINVAL :
+						PTR_ERR(device->scratch);
+
+			device->scratch_kptr = kgsl_sharedmem_vm_map_readwrite(
+					device->scratch, 0, PAGE_SIZE,
+					&page_count);
+
+			if (IS_ERR_OR_NULL(device->scratch_kptr))
+				return (!device->scratch_kptr) ? -EINVAL :
+						PTR_ERR(device->scratch_kptr);
+			else if (WARN(page_count != 1,
+				"device scratch mapping size does not match buffer size\n"))
+				return -EINVAL;
+		}
 	}
 
 	if (ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION))
-		adreno_dev->num_ringbuffers = gpudev->num_prio_levels;
+		adreno_dev->num_ringbuffers =
+			ARRAY_SIZE(adreno_dev->ringbuffers);
 	else
 		adreno_dev->num_ringbuffers = 1;
 
 	for (i = 0; i < adreno_dev->num_ringbuffers; i++) {
-		status = _adreno_ringbuffer_probe(adreno_dev, i);
-		if (status != 0)
-			break;
+		status = _adreno_ringbuffer_init(adreno_dev, i);
+		if (status) {
+			adreno_ringbuffer_close(adreno_dev);
+			return status;
+		}
 	}
 
-	if (!status && ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION)) {
-		int r = 0;
+	adreno_preemption_init(adreno_dev);
 
-		if (gpudev->preemption_init)
-			r = gpudev->preemption_init(adreno_dev);
-
-		if (!WARN(r, "adreno: GPU preemption is disabled\n"))
-			set_bit(ADRENO_DEVICE_PREEMPTION, &adreno_dev->priv);
-	}
-
-	if (status)
-		adreno_ringbuffer_close(adreno_dev);
-	else
-		adreno_dev->cur_rb = &(adreno_dev->ringbuffers[0]);
-
-	return status;
-}
-
-static void _adreno_ringbuffer_close(struct adreno_device *adreno_dev,
-		struct adreno_ringbuffer *rb)
-{
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-
-	kgsl_free_global(device, &rb->pagetable_desc);
-	kgsl_free_global(device, &rb->profile_desc);
-	kgsl_free_global(device, &rb->buffer_desc);
-	kgsl_del_event_group(&rb->events);
-	memset(rb, 0, sizeof(struct adreno_ringbuffer));
+	adreno_dev->cur_rb = &(adreno_dev->ringbuffers[0]);
+	return 0;
 }
 
 void adreno_ringbuffer_close(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	struct adreno_ringbuffer *rb;
 	int i;
 
-	if (!adreno_is_a3xx(adreno_dev))
-		kgsl_free_global(device, &device->scratch);
+	FOR_EACH_RINGBUFFER(adreno_dev, rb, i) {
+		kgsl_del_event_group(&rb->events);
 
-	FOR_EACH_RINGBUFFER(adreno_dev, rb, i)
-		_adreno_ringbuffer_close(adreno_dev, rb);
+		if (!IS_ERR_OR_NULL(rb->preemption_kptr)) {
+			vm_unmap_ram(rb->preemption_kptr, 1);
+			rb->preemption_kptr = NULL;
+		}
 
-	if (ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION))
-		if (gpudev->preemption_close)
-			gpudev->preemption_close(adreno_dev);
+		if (!IS_ERR_OR_NULL(rb->kptr)) {
+			vm_unmap_ram(rb->kptr, KGSL_RB_SIZE >> PAGE_SHIFT);
+			rb->kptr = NULL;
+		}
+
+		if (!IS_ERR_OR_NULL(rb->pagetable_kptr)) {
+			vm_unmap_ram(rb->pagetable_kptr, 1);
+			rb->pagetable_kptr = NULL;
+		}
+	}
+
+	adreno_preemption_close(adreno_dev);
+
+	if (!IS_ERR_OR_NULL(device->scratch_kptr)) {
+		vm_unmap_ram(device->scratch_kptr, 1);
+		device->scratch_kptr = NULL;
+	}
 }
 
 /*
@@ -679,7 +767,7 @@ adreno_ringbuffer_addcmds(struct adreno_ringbuffer *rb,
 		*ringcmds++ = cp_mem_packet(adreno_dev,
 				CP_INDIRECT_BUFFER_PFE, 2, 1);
 		ringcmds += cp_gpuaddr(adreno_dev, ringcmds,
-				adreno_dev->pwron_fixup.gpuaddr);
+				adreno_dev->pwron_fixup->gpuaddr);
 		*ringcmds++ = adreno_dev->pwron_fixup_dwords;
 
 		/* Re-enable protected mode */
@@ -940,16 +1028,23 @@ static inline int _get_alwayson_counter(struct adreno_device *adreno_dev,
 static int set_user_profiling(struct adreno_device *adreno_dev,
 		struct adreno_ringbuffer *rb, u32 *cmds, u64 gpuaddr)
 {
+	void *kptr;
+	unsigned int page_count = 0;
 	int dwords, index = 0;
 	u64 ib_gpuaddr;
 	u32 *ib;
 
-	if (!rb->profile_desc.hostptr)
+	if (IS_ERR_OR_NULL(rb->profile_desc))
 		return 0;
 
-	ib = ((u32 *) rb->profile_desc.hostptr) +
+	kptr = kgsl_sharedmem_vm_map_readwrite(rb->profile_desc, 0,
+			rb->profile_desc->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr))
+		return (!kptr) ? -EINVAL : PTR_ERR(kptr);
+
+	ib = ((u32 *) kptr) +
 		(rb->profile_index * PROFILE_IB_DWORDS);
-	ib_gpuaddr = rb->profile_desc.gpuaddr +
+	ib_gpuaddr = rb->profile_desc->gpuaddr +
 		(rb->profile_index * (PROFILE_IB_DWORDS << 2));
 
 	dwords = _get_alwayson_counter(adreno_dev, ib, gpuaddr);
@@ -960,6 +1055,8 @@ static int set_user_profiling(struct adreno_device *adreno_dev,
 	cmds[index++] = dwords;
 
 	rb->profile_index = (rb->profile_index + 1) % PROFILE_IB_SLOTS;
+
+	vm_unmap_ram(kptr, page_count);
 
 	return index;
 }
@@ -1134,7 +1231,7 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 
 	if (kernel_profiling) {
 		cmds += _get_alwayson_counter(adreno_dev, cmds,
-			adreno_dev->profile_buffer.gpuaddr +
+			adreno_dev->profile_buffer->gpuaddr +
 			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
 				started));
 
@@ -1144,14 +1241,14 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 		 */
 		cmds += cp_mem_to_mem(adreno_dev, cmds,
 			CP_MEM_TO_MEM_64BIT_FLAG | CP_MEM_TO_MEM_WAIT_FLAG,
-			adreno_dev->profile_buffer.gpuaddr +
+			adreno_dev->profile_buffer->gpuaddr +
 			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
 				activated),
-			adreno_dev->profile_buffer.gpuaddr +
+			adreno_dev->profile_buffer->gpuaddr +
 			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
 				started));
 		cmds += cp_mem_write(adreno_dev, cmds,
-			adreno_dev->profile_buffer.gpuaddr +
+			adreno_dev->profile_buffer->gpuaddr +
 			RB_PROFILE_INDEX_OFFSET(rb),
 			cmdobj->profile_index);
 		*cmds++ = cp_packet(adreno_dev, CP_WAIT_MEM_WRITES, 0);
@@ -1221,13 +1318,13 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 
 	if (kernel_profiling) {
 		cmds += _get_alwayson_counter(adreno_dev, cmds,
-			adreno_dev->profile_buffer.gpuaddr +
+			adreno_dev->profile_buffer->gpuaddr +
 			ADRENO_DRAWOBJ_PROFILE_OFFSET(cmdobj->profile_index,
 				retired));
 
 		/* Mark the ringbuffer as inactive */
 		cmds += cp_mem_write(adreno_dev, cmds,
-			adreno_dev->profile_buffer.gpuaddr +
+			adreno_dev->profile_buffer->gpuaddr +
 			RB_PROFILE_INDEX_OFFSET(rb),
 			UINT_MAX);
 		*cmds++ = cp_packet(adreno_dev, CP_WAIT_MEM_WRITES, 0);

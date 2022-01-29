@@ -438,6 +438,10 @@ int dp_connector_get_mode_info(struct drm_connector *connector,
 		topology->num_enc = topology->num_lm;
 	}
 
+	if (topology->num_lm == 4 && topology->num_enc == 4
+				&& topology->num_intf == 1)
+		mode_info->dsc_4hs_merge_en = true;
+
 	return 0;
 }
 

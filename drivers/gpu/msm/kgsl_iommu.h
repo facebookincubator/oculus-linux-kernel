@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 #ifndef __KGSL_IOMMU_H
 #define __KGSL_IOMMU_H
@@ -15,8 +15,17 @@
 #define KGSL_IOMMU_GLOBAL_MEM_BASE32	0xf8000000
 #define KGSL_IOMMU_GLOBAL_MEM_BASE64	0xfc000000
 
+/*
+ * This is a dummy token address that we use to identify memstore when the user
+ * wants to map it. mmap() uses a unsigned long for the offset so we need a 32
+ * bit value that works with all sized apps. We chose a value that was purposely
+ * unmapped so if you increase the global memory size make sure it doesn't
+ * conflict
+ */
+#define KGSL_MEMSTORE_TOKEN_ADDRESS	0xfff00000
+
 #define KGSL_IOMMU_GLOBAL_MEM_BASE(__mmu)	\
-	(MMU_FEATURE(__mmu, KGSL_MMU_64BIT) ? \
+	(test_bit(KGSL_MMU_64BIT, &(__mmu)->features) ? \
 		KGSL_IOMMU_GLOBAL_MEM_BASE64 : KGSL_IOMMU_GLOBAL_MEM_BASE32)
 
 #define KGSL_IOMMU_SECURE_SIZE SZ_256M
@@ -27,18 +36,27 @@
 #define KGSL_IOMMU_SVM_BASE32		0x300000
 #define KGSL_IOMMU_SVM_END32		(0xC0000000 - SZ_16M)
 
-#define KGSL_IOMMU_VA_BASE64		0x500000000ULL
-#define KGSL_IOMMU_VA_END64		0x600000000ULL
-/*
- * Note: currently we only support 36 bit addresses,
- * but the CPU supports 39. Eventually this range
- * should change to high part of the 39 bit address
- * space just like the CPU.
- */
-#define KGSL_IOMMU_SVM_BASE64		0x700000000ULL
-#define KGSL_IOMMU_SVM_END64		0x800000000ULL
+/* The CPU supports 39 bit addresses */
+#define KGSL_IOMMU_SVM_BASE64		0x100000000ULL
+#define KGSL_IOMMU_SVM_END64		0x4000000000ULL
+#define KGSL_IOMMU_VA_BASE64		0x4000000000ULL
+#define KGSL_IOMMU_VA_END64		0x8000000000ULL
+
 #define CP_APERTURE_REG			0
 #define CP_SMMU_APERTURE_ID		0x1B
+
+/* Register offsets */
+#define KGSL_IOMMU_CTX_SCTLR		0x0000
+#define KGSL_IOMMU_CTX_TTBR0		0x0020
+#define KGSL_IOMMU_CTX_CONTEXTIDR	0x0034
+#define KGSL_IOMMU_CTX_FSR		0x0058
+#define KGSL_IOMMU_CTX_TLBIALL		0x0618
+#define KGSL_IOMMU_CTX_RESUME		0x0008
+#define KGSL_IOMMU_CTX_FSYNR0		0x0068
+#define KGSL_IOMMU_CTX_FSYNR1		0x006c
+#define KGSL_IOMMU_CTX_TLBSYNC		0x07f0
+#define KGSL_IOMMU_CTX_TLBSTATUS	0x07f4
+
 /* TLBSTATUS register fields */
 #define KGSL_IOMMU_CTX_TLBSTATUS_SACTIVE BIT(0)
 
@@ -50,37 +68,13 @@
 /* FSR fields */
 #define KGSL_IOMMU_FSR_SS_SHIFT		30
 
-enum kgsl_iommu_reg_map {
-	KGSL_IOMMU_CTX_SCTLR = 0,
-	KGSL_IOMMU_CTX_TTBR0,
-	KGSL_IOMMU_CTX_CONTEXTIDR,
-	KGSL_IOMMU_CTX_FSR,
-	KGSL_IOMMU_CTX_FAR,
-	KGSL_IOMMU_CTX_TLBIALL,
-	KGSL_IOMMU_CTX_RESUME,
-	KGSL_IOMMU_CTX_FSYNR0,
-	KGSL_IOMMU_CTX_FSYNR1,
-	KGSL_IOMMU_CTX_TLBSYNC,
-	KGSL_IOMMU_CTX_TLBSTATUS,
-	KGSL_IOMMU_REG_MAX
-};
-
 /* Max number of iommu clks per IOMMU unit */
 #define KGSL_IOMMU_MAX_CLKS 5
-
-enum kgsl_iommu_context_id {
-	KGSL_IOMMU_CONTEXT_USER = 0,
-	KGSL_IOMMU_CONTEXT_SECURE = 1,
-	KGSL_IOMMU_CONTEXT_MAX,
-};
-
-/* offset at which a nop command is placed in setstate */
-#define KGSL_IOMMU_SETSTATE_NOP_OFFSET	1024
 
 /*
  * struct kgsl_iommu_context - Structure holding data about an iommu context
  * bank
- * @dev: pointer to the iommu context's device
+ * @pdev: pointer to the iommu context's platform device
  * @name: context name
  * @id: The id of the context, used for deciding how it is used.
  * @cb_num: The hardware context bank number, used for calculating register
@@ -92,36 +86,50 @@ enum kgsl_iommu_context_id {
  *		it may be changed by self programming.
  */
 struct kgsl_iommu_context {
-	struct device *dev;
+	struct platform_device *pdev;
 	const char *name;
-	enum kgsl_iommu_context_id id;
-	unsigned int cb_num;
+	int cb_num;
 	struct kgsl_device *kgsldev;
 	bool stalled_on_fault;
-	void __iomem *regbase;
 	struct kgsl_pagetable *default_pt;
 };
 
 /*
  * struct kgsl_iommu - Structure holding iommu data for kgsl driver
- * @ctx: Array of kgsl_iommu_context structs
  * @regbase: Virtual address of the IOMMU register base
  * @regstart: Physical address of the iommu registers
  * @regsize: Length of the iommu register region.
  * @setstate: Scratch GPU memory for IOMMU operations
  * @clk_enable_count: The ref count of clock enable calls
  * @clks: Array of pointers to IOMMU clocks
- * @smmu_info: smmu info used in a5xx preemption
+ * @smmu_info: smmu info used in a5xx/a6xx preemption
+ * @kptr: Pointer to R/W kernel mapping of smmu_info buffer
  */
 struct kgsl_iommu {
-	struct kgsl_iommu_context ctx[KGSL_IOMMU_CONTEXT_MAX];
+	/** @user_context: Container for the user iommu context */
+	struct kgsl_iommu_context user_context;
+	/** @secure_context: Container for the secure iommu context */
+	struct kgsl_iommu_context secure_context;
+	/** @lpac_context: Container for the LPAC iommu context */
+	struct kgsl_iommu_context lpac_context;
 	void __iomem *regbase;
-	unsigned long regstart;
-	unsigned int regsize;
-	struct kgsl_memdesc setstate;
+	struct kgsl_memdesc *setstate;
 	atomic_t clk_enable_count;
 	struct clk *clks[KGSL_IOMMU_MAX_CLKS];
-	struct kgsl_memdesc smmu_info;
+	struct kgsl_memdesc *smmu_info;
+	void *kptr;
+	/** @pdev: Pointer to the platform device for the IOMMU device */
+	struct platform_device *pdev;
+	/**
+	 * @ppt_active: Set when the first per process pagetable is created.
+	 * This is used to warn when global buffers are created that might not
+	 * be mapped in all contexts
+	 */
+	bool ppt_active;
+	/** @cb0_offset: Offset of context bank 0 from iommu register base */
+	u32 cb0_offset;
+	/** @pagesize: Size of each context bank register space */
+	u32 pagesize;
 };
 
 /*
@@ -154,40 +162,5 @@ struct kgsl_iommu_pt {
 	uint64_t compat_va_start;
 	uint64_t compat_va_end;
 };
-
-/*
- * offset of context bank 0 from the start of the SMMU register space.
- */
-#define KGSL_IOMMU_CB0_OFFSET		0x8000
-/* size of each context bank's register space */
-#define KGSL_IOMMU_CB_SHIFT		12
-
-/* Macros to read/write IOMMU registers */
-extern const unsigned int kgsl_iommu_reg_list[KGSL_IOMMU_REG_MAX];
-
-/*
- * Don't use this function directly. Use the macros below to read/write
- * IOMMU registers.
- */
-static inline void __iomem *
-kgsl_iommu_reg(struct kgsl_iommu_context *ctx, enum kgsl_iommu_reg_map reg)
-{
-	return ctx->regbase + kgsl_iommu_reg_list[reg];
-}
-
-#define KGSL_IOMMU_SET_CTX_REG_Q(_ctx, REG, val) \
-		writeq_relaxed((val), \
-			kgsl_iommu_reg((_ctx), KGSL_IOMMU_CTX_##REG))
-
-#define KGSL_IOMMU_GET_CTX_REG_Q(_ctx, REG) \
-		readq_relaxed(kgsl_iommu_reg((_ctx), KGSL_IOMMU_CTX_##REG))
-
-#define KGSL_IOMMU_SET_CTX_REG(_ctx, REG, val) \
-		writel_relaxed((val), \
-			kgsl_iommu_reg((_ctx), KGSL_IOMMU_CTX_##REG))
-
-#define KGSL_IOMMU_GET_CTX_REG(_ctx, REG) \
-		readl_relaxed(kgsl_iommu_reg((_ctx), KGSL_IOMMU_CTX_##REG))
-
 
 #endif

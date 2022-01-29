@@ -363,6 +363,9 @@ struct msm_roi_caps {
  * @range_bpg_offset:        Bits per group adjustment.
  * @extra_width:             Extra width required in timing calculations.
  * @pps_delay_ms:            Post PPS command delay in milliseconds.
+ * @dsc_4hs_merge_en:         Using DSC 4HS merge topology
+ * @dsc_4hs_merge_padding     4HS merge DSC pair padding value in bytes
+ * @dsc_4hs_merge_alignment   4HS merge DSC alignment value in bytes
  */
 struct msm_display_dsc_info {
 	u8 version;
@@ -421,6 +424,9 @@ struct msm_display_dsc_info {
 
 	u32 extra_width;
 	u32 pps_delay_ms;
+	bool dsc_4hs_merge_en;
+	u32 dsc_4hs_merge_padding;
+	u32 dsc_4hs_merge_alignment;
 };
 
 /**
@@ -463,6 +469,7 @@ struct msm_display_topology {
  * @comp_info:       compression info supported
  * @roi_caps:        panel roi capabilities
  * @wide_bus_en:	wide-bus mode cfg for interface module
+ * @dsc_4hs_merge_en:   mode support DSC 4 hard slice merge topology
  * @mdp_transfer_time_us   Specifies the mdp transfer time for command mode
  *                         panels in microseconds.
  * @padding:         Padding required on the panel (in pixels)
@@ -478,6 +485,7 @@ struct msm_mode_info {
 	struct msm_compression_info comp_info;
 	struct msm_roi_caps roi_caps;
 	bool wide_bus_en;
+	bool dsc_4hs_merge_en;
 	u32 mdp_transfer_time_us;
 	u32 padding;
 };

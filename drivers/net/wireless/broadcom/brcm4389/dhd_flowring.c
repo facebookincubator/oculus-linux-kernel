@@ -853,7 +853,7 @@ dhd_flowid_lookup(dhd_pub_t *dhdp, uint8 ifindex,
 
 	id = dhd_flowid_find(dhdp, ifindex, prio, sa, da);
 
-	if (id == FLOWID_INVALID) {
+	if (id == FLOWID_INVALID || (id > dhdp->max_tx_flowid)) {
 		bool if_role_multi_client;
 		if_flow_lkup_t *if_flow_lkup;
 		if_flow_lkup = (if_flow_lkup_t *)dhdp->if_flow_lkup;

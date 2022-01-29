@@ -44,7 +44,7 @@ static const unsigned int a6xx_gmu_registers[] = {
 	0x1F980, 0x1F986, 0x1F990, 0x1F99E, 0x1F9C0, 0x1F9C0, 0x1F9C5, 0x1F9CC,
 	0x1F9E0, 0x1F9E2, 0x1F9F0, 0x1F9F0, 0x1FA00, 0x1FA01,
 	/* GMU AO */
-	0x23B00, 0x23B16, 0x23C00, 0x23C00,
+	0x23B00, 0x23B16,
 	/* GPU CC */
 	0x24000, 0x24012, 0x24040, 0x24052, 0x24400, 0x24404, 0x24407, 0x2440B,
 	0x24415, 0x2441C, 0x2441E, 0x2442D, 0x2443C, 0x2443D, 0x2443F, 0x24440,
@@ -367,10 +367,6 @@ static int a6xx_gmu_start(struct kgsl_device *device)
 	if (adreno_has_gbif(ADRENO_DEVICE(device)))
 		kgsl_regwrite(device, A6XX_GBIF_HALT, 0x0);
 
-	/* Set the log wptr index */
-	gmu_core_regwrite(device, A6XX_GPU_GMU_CX_GMU_PWR_COL_CP_RESP,
-			gmu->log_wptr_retention);
-
 	/* Bring GMU out of reset */
 	gmu_core_regwrite(device, A6XX_GMU_CM3_SYSRESET, 0);
 	/* Make sure the request completes before continuing */
@@ -627,7 +623,7 @@ static int a6xx_gmu_oob_set(struct kgsl_device *device,
  * @device: Pointer to the kgsl device that has the GMU
  * @req: Which of the OOB bits to clear
  */
-static inline void a6xx_gmu_oob_clear(struct kgsl_device *device,
+static void a6xx_gmu_oob_clear(struct kgsl_device *device,
 		enum oob_request req)
 {
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
@@ -863,7 +859,8 @@ static int a6xx_gmu_gfx_rail_on(struct kgsl_device *device)
 {
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
-	unsigned int perf_idx = pwr->num_pwrlevels - pwr->default_pwrlevel - 1;
+	unsigned int perf_idx = gmu->num_gpupwrlevels -
+		pwr->default_pwrlevel - 1;
 	uint32_t default_opp = gmu->rpmh_votes.gx_votes[perf_idx];
 
 	gmu_core_regwrite(device, A6XX_GMU_BOOT_SLUMBER_OPTION,
@@ -919,7 +916,7 @@ static int a6xx_gmu_wait_for_lowest_idle(struct kgsl_device *device)
 	unsigned long t;
 	uint64_t ts1, ts2, ts3;
 
-	ts1 = a6xx_gmu_read_ao_counter(device);
+	ts1 = a6xx_read_alwayson(ADRENO_DEVICE(device));
 
 	t = jiffies + msecs_to_jiffies(GMU_IDLE_TIMEOUT);
 	do {
@@ -934,7 +931,7 @@ static int a6xx_gmu_wait_for_lowest_idle(struct kgsl_device *device)
 		usleep_range(10, 100);
 	} while (!time_after(jiffies, t));
 
-	ts2 = a6xx_gmu_read_ao_counter(device);
+	ts2 = a6xx_read_alwayson(ADRENO_DEVICE(device));
 	/* Check one last time */
 
 	gmu_core_regread(device, A6XX_GPU_GMU_CX_GMU_RPMH_POWER_STATE, &reg);
@@ -943,7 +940,7 @@ static int a6xx_gmu_wait_for_lowest_idle(struct kgsl_device *device)
 	if (idle_trandition_complete(gmu->idle_level, reg, reg1))
 		return 0;
 
-	ts3 = a6xx_gmu_read_ao_counter(device);
+	ts3 = a6xx_read_alwayson(ADRENO_DEVICE(device));
 
 	/* Collect abort data to help with debugging */
 	gmu_core_regread(device, A6XX_GPU_GMU_AO_GPU_CX_BUSY_STATUS, &reg2);
@@ -993,14 +990,15 @@ static int a6xx_gmu_wait_for_idle(struct kgsl_device *device)
 	unsigned int status2;
 	uint64_t ts1;
 
-	ts1 = a6xx_gmu_read_ao_counter(device);
+	ts1 = a6xx_read_alwayson(ADRENO_DEVICE(device));
 	if (timed_poll_check(device, A6XX_GPU_GMU_AO_GPU_CX_BUSY_STATUS,
 			0, GMU_START_TIMEOUT, CXGXCPUBUSYIGNAHB)) {
 		gmu_core_regread(device,
 				A6XX_GPU_GMU_AO_GPU_CX_BUSY_STATUS2, &status2);
 		dev_err(&gmu->pdev->dev,
 				"GMU not idling: status2=0x%x %llx %llx\n",
-				status2, ts1, a6xx_gmu_read_ao_counter(device));
+				status2, ts1,
+				a6xx_read_alwayson(ADRENO_DEVICE(device)));
 		return -ETIMEDOUT;
 	}
 
@@ -1096,6 +1094,18 @@ static int a6xx_gmu_fw_start(struct kgsl_device *device,
 	 * in to NMI handler without executing __main code
 	 */
 	gmu_core_regwrite(device, A6XX_GMU_CM3_CFG, 0x4052);
+
+	/**
+	 * We may have asserted gbif halt as part of reset sequence which may
+	 * not get cleared if the gdsc was not reset. So clear it before
+	 * attempting GMU boot.
+	 */
+	if (!adreno_is_a630(ADRENO_DEVICE(device)))
+		kgsl_regwrite(device, A6XX_GBIF_HALT, 0x0);
+
+	/* Set the log wptr index */
+	gmu_core_regwrite(device, A6XX_GPU_GMU_CX_GMU_PWR_COL_CP_RESP,
+			gmu->log_wptr_retention);
 
 	/* Pass chipid to GMU FW, must happen before starting GMU */
 
@@ -1636,7 +1646,7 @@ static void a6xx_gmu_snapshot(struct kgsl_device *device,
 	unsigned int val;
 
 	dev_err(device->dev, "GMU snapshot started at 0x%llx ticks\n",
-			a6xx_gmu_read_ao_counter(device));
+			a6xx_read_alwayson(ADRENO_DEVICE(device)));
 	a6xx_gmu_snapshot_versions(device, snapshot);
 
 	a6xx_gmu_snapshot_memories(device, snapshot);
@@ -1724,29 +1734,11 @@ static int a6xx_gmu_wait_for_active_transition(
 	return -ETIMEDOUT;
 }
 
-/*
- * a6xx_gmu_read_ao_counter() - Returns the 64bit always on counter value
- *
- * @device: Pointer to KGSL device
- */
-u64 a6xx_gmu_read_ao_counter(struct kgsl_device *device)
+static bool a6xx_gmu_scales_bandwidth(struct kgsl_device *device)
 {
-	unsigned int l, h, h1;
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 
-	gmu_core_regread(device, A6XX_GMU_CX_GMU_ALWAYS_ON_COUNTER_H, &h);
-	gmu_core_regread(device, A6XX_GMU_CX_GMU_ALWAYS_ON_COUNTER_L, &l);
-	gmu_core_regread(device, A6XX_GMU_CX_GMU_ALWAYS_ON_COUNTER_H, &h1);
-
-	/*
-	 * If there's no change in COUNTER_H we have no overflow so return,
-	 * otherwise read COUNTER_L again
-	 */
-
-	if (h == h1)
-		return (uint64_t) l | ((uint64_t) h << 32);
-
-	gmu_core_regread(device, A6XX_GMU_CX_GMU_ALWAYS_ON_COUNTER_L, &l);
-	return (uint64_t) l | ((uint64_t) h1 << 32);
+	return (ADRENO_GPUREV(adreno_dev) >= ADRENO_REV_A640);
 }
 
 struct gmu_dev_ops adreno_a6xx_gmudev = {
@@ -1767,7 +1759,7 @@ struct gmu_dev_ops adreno_a6xx_gmudev = {
 	.snapshot = a6xx_gmu_snapshot,
 	.cooperative_reset = a6xx_gmu_cooperative_reset,
 	.wait_for_active_transition = a6xx_gmu_wait_for_active_transition,
-	.read_ao_counter = a6xx_gmu_read_ao_counter,
 	.gmu2host_intr_mask = HFI_IRQ_MASK,
 	.gmu_ao_intr_mask = GMU_AO_INT_MASK,
+	.scales_bandwidth = a6xx_gmu_scales_bandwidth,
 };

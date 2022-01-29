@@ -257,6 +257,7 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 {
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
 	struct kgsl_drawobj *list[ADRENO_CONTEXT_DRAWQUEUE_SIZE];
+	struct kgsl_devmemstore *ctx_memstore;
 	int i, count;
 
 	trace_adreno_drawctxt_invalidate(drawctxt);
@@ -268,13 +269,11 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 	 * set the timestamp to the last value since the context is invalidated
 	 * and we want the pending events for this context to go away
 	 */
-	kgsl_sharedmem_writel(device, &device->memstore,
-			KGSL_MEMSTORE_OFFSET(context->id, soptimestamp),
-			drawctxt->timestamp);
-
-	kgsl_sharedmem_writel(device, &device->memstore,
-			KGSL_MEMSTORE_OFFSET(context->id, eoptimestamp),
-			drawctxt->timestamp);
+	ctx_memstore = KGSL_ID_MEMSTORE(device, context->id);
+	ctx_memstore->soptimestamp = drawctxt->timestamp;
+	ctx_memstore->eoptimestamp = drawctxt->timestamp;
+	/* Make sure the writes are posted before continuing */
+	smp_wmb();
 
 	/* Get rid of commands still waiting in the queue */
 	count = drawctxt_detach_drawobjs(drawctxt, list);
@@ -293,25 +292,6 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 	wake_up_all(&drawctxt->waiting);
 	wake_up_all(&drawctxt->wq);
 	wake_up_all(&drawctxt->timeout);
-}
-
-/*
- * Set the priority of the context based on the flags passed into context
- * create.  If the priority is not set in the flags, then the kernel can
- * assign any priority it desires for the context.
- */
-static inline void _set_context_priority(struct adreno_context *drawctxt)
-{
-	/* If the priority is not set by user, set it for them */
-	if ((drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) ==
-			KGSL_CONTEXT_PRIORITY_UNDEF)
-		drawctxt->base.flags |= (KGSL_CONTEXT_PRIORITY_MED <<
-				KGSL_CONTEXT_PRIORITY_SHIFT);
-
-	/* Store the context priority */
-	drawctxt->base.priority =
-		(drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) >>
-		KGSL_CONTEXT_PRIORITY_SHIFT;
 }
 
 static inline bool _is_current_uid_privileged(struct kgsl_device *device)
@@ -349,6 +329,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	struct adreno_context *drawctxt;
 	struct kgsl_device *device = dev_priv->device;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	struct kgsl_devmemstore *ctx_memstore;
 	int ret;
 	unsigned int local;
 
@@ -415,8 +396,16 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	init_waitqueue_head(&drawctxt->waiting);
 	init_waitqueue_head(&drawctxt->timeout);
 
-	/* Set the context priority */
-	_set_context_priority(drawctxt);
+	/* If the priority is not set by user, set it for them */
+	if ((drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) ==
+			KGSL_CONTEXT_PRIORITY_UNDEF)
+		drawctxt->base.flags |= (KGSL_CONTEXT_PRIORITY_MED <<
+				KGSL_CONTEXT_PRIORITY_SHIFT);
+
+	/* Store the context priority */
+	drawctxt->base.priority =
+		(drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) >>
+		KGSL_CONTEXT_PRIORITY_SHIFT;
 
 	/*
 	 * If the TID of the caller matches privileged_tid and it's requesting
@@ -460,12 +449,11 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 		return ERR_PTR(ret);
 	}
 
-	kgsl_sharedmem_writel(device, &device->memstore,
-			KGSL_MEMSTORE_OFFSET(drawctxt->base.id, soptimestamp),
-			0);
-	kgsl_sharedmem_writel(device, &device->memstore,
-			KGSL_MEMSTORE_OFFSET(drawctxt->base.id, eoptimestamp),
-			0);
+	ctx_memstore = KGSL_ID_MEMSTORE(device, drawctxt->base.id);
+	ctx_memstore->soptimestamp = 0;
+	ctx_memstore->eoptimestamp = 0;
+	/* Make sure the writes are posted before continuing */
+	smp_wmb();
 
 	adreno_context_debugfs_init(ADRENO_DEVICE(device), drawctxt);
 
@@ -503,6 +491,7 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 	struct adreno_gpudev *gpudev;
 	struct adreno_context *drawctxt;
 	struct adreno_ringbuffer *rb;
+	struct kgsl_devmemstore *ctx_memstore;
 	int ret, count, i;
 	struct kgsl_drawobj *list[ADRENO_CONTEXT_DRAWQUEUE_SIZE];
 
@@ -581,13 +570,11 @@ void adreno_drawctxt_detach(struct kgsl_context *context)
 		return;
 	}
 
-	kgsl_sharedmem_writel(device, &device->memstore,
-			KGSL_MEMSTORE_OFFSET(context->id, soptimestamp),
-			drawctxt->timestamp);
-
-	kgsl_sharedmem_writel(device, &device->memstore,
-			KGSL_MEMSTORE_OFFSET(context->id, eoptimestamp),
-			drawctxt->timestamp);
+	ctx_memstore = KGSL_ID_MEMSTORE(device, context->id);
+	ctx_memstore->soptimestamp = drawctxt->timestamp;
+	ctx_memstore->eoptimestamp = drawctxt->timestamp;
+	/* Make sure the writes are posted before continuing */
+	smp_wmb();
 
 	adreno_profile_process_results(adreno_dev);
 

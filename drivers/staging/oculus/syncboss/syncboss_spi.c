@@ -1186,11 +1186,11 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		if (devdata->use_fastpath)
 			status = spi_fastpath_transfer(spi, &smsg->spi_msg);
 		else
-			status = spi_sync(spi, &smsg->spi_msg);
+			status = spi_sync_locked(spi, &smsg->spi_msg);
 		prev_transaction_end_time_ns = ktime_get_ns();
 
 		if (status != 0) {
-			dev_err(&spi->dev, "spi_sync failed with error %d", status);
+			dev_err(&spi->dev, "spi_sync_locked failed with error %d", status);
 
 			if (status == -ETIMEDOUT) {
 				/* Retry if needed and keep going */
@@ -1498,6 +1498,13 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata,
 	}
 
 	dev_info(&devdata->spi->dev, "Starting stream");
+
+	/*
+	 * Hold the SPI bus lock when streaming, so we can use spi_sync_locked() and
+	 * avoid per-transaction lock acquisition.
+	 */
+	spi_bus_lock(devdata->spi->master);
+
 	devdata->spi_prepare_ops.prepare_transfer_hardware(devdata->spi->master);
 	devdata->transaction_ctr = 0;
 
@@ -1517,6 +1524,7 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata,
 		dev_err(&devdata->spi->dev, "Failed to start kernel thread. (%d)",
 			status);
 		devdata->worker = NULL;
+		spi_bus_unlock(devdata->spi->master);
 		goto error;
 	}
 
@@ -1614,6 +1622,8 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 		devdata->spi_prepare_ops.unprepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
 
 	devdata->spi_prepare_ops.unprepare_transfer_hardware(devdata->spi->master);
+
+	spi_bus_unlock(devdata->spi->master);
 
 	/* Discard and free and pending messages that were to be sent */
 	mutex_lock(&devdata->msg_queue_lock);
@@ -1721,32 +1731,6 @@ static void powerstate_enable_locked(struct syncboss_dev_data *devdata)
 static void powerstate_disable_locked(struct syncboss_dev_data *devdata)
 {
 	powerstate_set_enable_locked(devdata, false);
-}
-
-static int syncboss_init_pins(struct device *dev)
-{
-	struct pinctrl *pinctrl = NULL;
-	struct pinctrl_state *pins_default = NULL;
-	int result = 0;
-
-	pinctrl = devm_pinctrl_get(dev);
-	if (IS_ERR_OR_NULL(pinctrl)) {
-		dev_err(dev, "Failed to get pin ctrl");
-		return -EINVAL;
-	}
-	pins_default = pinctrl_lookup_state(pinctrl, "syncboss_default");
-	if (IS_ERR_OR_NULL(pins_default)) {
-		dev_err(dev, "Failed to lookup pinctrl default state");
-		return -EINVAL;
-	}
-
-	dev_info(dev, "Setting pins to \"syncboss_default\" state");
-	result = pinctrl_select_state(pinctrl, pins_default);
-	if (result != 0) {
-		dev_err(dev, "Failed to set pin state");
-		return -EINVAL;
-	}
-	return 0;
 }
 
 static irqreturn_t isr_primary_wakeup(int irq, void *p)
@@ -1905,7 +1889,7 @@ static int syncboss_probe(struct spi_device *spi)
 	struct device *dev = &spi->dev;
 	struct spi_transfer *spi_xfer;
 	struct syncboss_msg *default_smsg;
-
+	struct pinctrl *pinctrl;
 	int status = 0;
 
 	dev_info(dev, "syncboss device initializing");
@@ -1983,7 +1967,16 @@ static int syncboss_probe(struct spi_device *spi)
 
 	dev_set_drvdata(dev, devdata);
 
-	syncboss_init_pins(dev);
+	/*
+	 * Transitions pins to their "default" state. This is a no-op
+	 * for devices that don't specify an "init" state in device-tree.
+	 */
+	pinctrl = pinctrl_get_select_default(dev);
+	if (IS_ERR(pinctrl)) {
+		dev_err(dev, "%s failed to set pinctrl default state, error %ld",
+			__func__, PTR_ERR(pinctrl));
+		goto error_after_devdata_init;
+	}
 
 	/* misc dev stuff */
 	devdata->misc.name = SYNCBOSS_DEVICE_NAME;
@@ -2228,12 +2221,17 @@ static int syncboss_suspend(struct device *dev)
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(dev);
 
-	mutex_lock(&devdata->state_mutex);
+	if (!mutex_trylock(&devdata->state_mutex)) {
+		dev_info(dev, "Aborting suspend due to in-progress syncboss state change.\n");
+		return -EBUSY;
+	}
+
 	if (devdata->client_count > 0) {
 		dev_info(dev, "Stopping streaming for suspend");
 		stop_streaming_locked(devdata);
 	}
 	mutex_unlock(&devdata->state_mutex);
+
 	return 0;
 }
 

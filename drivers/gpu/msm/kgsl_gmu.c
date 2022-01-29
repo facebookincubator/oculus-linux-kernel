@@ -8,7 +8,6 @@
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iommu.h>
-#include <linux/mailbox_client.h>
 #include <linux/msm-bus.h>
 #include <linux/of_platform.h>
 #include <linux/regulator/consumer.h>
@@ -18,6 +17,7 @@
 #include "adreno.h"
 #include "kgsl_device.h"
 #include "kgsl_gmu.h"
+#include "kgsl_util.h"
 
 #undef MODULE_PARAM_PREFIX
 #define MODULE_PARAM_PREFIX "kgsl."
@@ -498,7 +498,7 @@ static int gmu_memory_probe(struct kgsl_device *device)
  * to index being used by GMU/RPMh.
  */
 static int gmu_dcvs_set(struct kgsl_device *device,
-		unsigned int gpu_pwrlevel, unsigned int bus_level)
+		int gpu_pwrlevel, int bus_level)
 {
 	int ret = 0;
 	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
@@ -1103,7 +1103,7 @@ static void gmu_aop_send_acd_state(struct kgsl_device *device, bool flag)
 	char msg_buf[33];
 	int ret;
 
-	if (!gmu->mailbox.client)
+	if (IS_ERR_OR_NULL(gmu->mailbox.channel))
 		return;
 
 	msg.len = scnprintf(msg_buf, sizeof(msg_buf),
@@ -1116,45 +1116,20 @@ static void gmu_aop_send_acd_state(struct kgsl_device *device, bool flag)
 				"AOP mbox send message failed: %d\n", ret);
 }
 
-static void gmu_aop_mailbox_destroy(struct kgsl_device *device)
-{
-	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
-	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
-	struct kgsl_mailbox *mailbox = &gmu->mailbox;
-
-	if (!mailbox->client)
-		return;
-
-	mbox_free_channel(mailbox->channel);
-	mailbox->channel = NULL;
-
-	kfree(mailbox->client);
-	mailbox->client = NULL;
-
-	clear_bit(ADRENO_ACD_CTRL, &adreno_dev->pwrctrl_flag);
-}
-
 static int gmu_aop_mailbox_init(struct kgsl_device *device,
 		struct gmu_device *gmu)
 {
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct kgsl_mailbox *mailbox = &gmu->mailbox;
 
-	mailbox->client = kzalloc(sizeof(*mailbox->client), GFP_KERNEL);
-	if (!mailbox->client)
-		return -ENOMEM;
+	mailbox->client.dev = &gmu->pdev->dev;
+	mailbox->client.tx_block = true;
+	mailbox->client.tx_tout = 1000;
+	mailbox->client.knows_txdone = false;
 
-	mailbox->client->dev = &gmu->pdev->dev;
-	mailbox->client->tx_block = true;
-	mailbox->client->tx_tout = 1000;
-	mailbox->client->knows_txdone = false;
-
-	mailbox->channel = mbox_request_channel(mailbox->client, 0);
-	if (IS_ERR(mailbox->channel)) {
-		kfree(mailbox->client);
-		mailbox->client = NULL;
+	mailbox->channel = mbox_request_channel(&mailbox->client, 0);
+	if (IS_ERR(mailbox->channel))
 		return PTR_ERR(mailbox->channel);
-	}
 
 	set_bit(ADRENO_ACD_CTRL, &adreno_dev->pwrctrl_flag);
 	return 0;
@@ -1165,7 +1140,7 @@ static int gmu_acd_set(struct kgsl_device *device, unsigned int val)
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
 
-	if (!gmu->mailbox.client)
+	if (IS_ERR_OR_NULL(gmu->mailbox.channel))
 		return -EINVAL;
 
 	/* Don't do any unneeded work if ACD is already in the correct state */
@@ -1269,7 +1244,7 @@ static void gmu_acd_probe(struct kgsl_device *device, struct gmu_device *gmu,
 	cmd->enable_by_level = 0;
 
 	for (i = 0, cmd_idx = 0; i < numlvl; i++) {
-		acd_level = pwr->pwrlevels[numlvl - i - 1].acd_level;
+		acd_level = pwr->pwrlevels[numlvl - i].acd_level;
 		if (acd_level) {
 			cmd->enable_by_level |= (1 << i);
 			cmd->data[cmd_idx++] = acd_level;
@@ -1294,7 +1269,7 @@ static int gmu_probe(struct kgsl_device *device, struct device_node *node)
 	struct kgsl_hfi *hfi;
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
-	int i = 0, ret = -ENXIO;
+	int i = 0, ret = -ENXIO, index = 0;
 
 	gmu = kzalloc(sizeof(struct gmu_device), GFP_KERNEL);
 
@@ -1312,6 +1287,10 @@ static int gmu_probe(struct kgsl_device *device, struct device_node *node)
 	gmu->load_mode = TCM_BOOT;
 
 	of_dma_configure(&gmu->pdev->dev, node, true);
+
+	dma_set_coherent_mask(&gmu->pdev->dev, KGSL_DMA_BIT_MASK);
+	gmu->pdev->dev.dma_mask = &gmu->pdev->dev.coherent_dma_mask;
+	arch_setup_dma_ops(&gmu->pdev->dev, 0, 0, NULL, false);
 
 	/* Set up GMU regulators */
 	ret = gmu_regulators_probe(gmu, node);
@@ -1367,13 +1346,14 @@ static int gmu_probe(struct kgsl_device *device, struct device_node *node)
 	tasklet_init(&hfi->tasklet, hfi_receiver, (unsigned long) gmu);
 	hfi->kgsldev = device;
 
-	gmu->num_gpupwrlevels = pwr->num_pwrlevels;
+	/* Add a dummy level for "off" that the GMU expects */
+	gmu->gpu_freqs[index++] = 0;
 
-	for (i = 0; i < gmu->num_gpupwrlevels; i++) {
-		int j = gmu->num_gpupwrlevels - 1 - i;
+	/* GMU power levels are in ascending order */
+	for (i = pwr->num_pwrlevels - 1; i >= 0; i--)
+		gmu->gpu_freqs[index++] = pwr->pwrlevels[i].gpu_freq;
 
-		gmu->gpu_freqs[i] = pwr->pwrlevels[j].gpu_freq;
-	}
+	gmu->num_gpupwrlevels = pwr->num_pwrlevels + 1;
 
 	/* Initializes GPU b/w levels configuration */
 	ret = gmu_gpu_bw_probe(device, gmu);
@@ -1477,42 +1457,18 @@ static int gmu_enable_gdsc(struct gmu_device *gmu)
 	return ret;
 }
 
-#define CX_GDSC_TIMEOUT	5000	/* ms */
-static int gmu_disable_gdsc(struct kgsl_device *device)
+static void gmu_disable_gdsc(struct gmu_device *gmu)
 {
-	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
-	int ret;
-	unsigned long t;
-
-	if (IS_ERR_OR_NULL(gmu->cx_gdsc))
-		return 0;
-
-	ret = regulator_disable(gmu->cx_gdsc);
-	if (ret) {
-		dev_err(&gmu->pdev->dev,
-			"Failed to disable GMU CX gdsc, error %d\n", ret);
-		return ret;
-	}
-
 	/*
 	 * After GX GDSC is off, CX GDSC must be off
 	 * Voting off alone from GPU driver cannot
 	 * Guarantee CX GDSC off. Polling with 5s
 	 * timeout to ensure
 	 */
-	t = jiffies + msecs_to_jiffies(CX_GDSC_TIMEOUT);
-	do {
-		if (!gmu_core_dev_cx_is_on(device))
-			return 0;
-		usleep_range(10, 100);
-
-	} while (!(time_after(jiffies, t)));
-
-	if (!gmu_core_dev_cx_is_on(device))
-		return 0;
+	if (kgsl_regulator_disable_wait(gmu->cx_gdsc, 5000))
+		return;
 
 	dev_err(&gmu->pdev->dev, "GMU CX gdsc off timeout\n");
-	return -ETIMEDOUT;
 }
 
 static int gmu_suspend(struct kgsl_device *device)
@@ -1536,7 +1492,7 @@ static int gmu_suspend(struct kgsl_device *device)
 	if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_CX_GDSC))
 		regulator_set_mode(gmu->cx_gdsc, REGULATOR_MODE_IDLE);
 
-	gmu_disable_gdsc(device);
+	gmu_disable_gdsc(gmu);
 
 	if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_CX_GDSC))
 		regulator_set_mode(gmu->cx_gdsc, REGULATOR_MODE_NORMAL);
@@ -1724,7 +1680,7 @@ static void gmu_stop(struct kgsl_device *device)
 
 	gmu_dev_ops->rpmh_gpu_pwrctrl(device, GMU_FW_STOP, 0, 0);
 	gmu_disable_clks(device);
-	gmu_disable_gdsc(device);
+	gmu_disable_gdsc(gmu);
 
 	msm_bus_scale_client_update_request(gmu->pcl, 0);
 	return;
@@ -1741,6 +1697,7 @@ error:
 
 static void gmu_remove(struct kgsl_device *device)
 {
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
 	struct kgsl_hfi *hfi;
 	int i = 0;
@@ -1754,7 +1711,10 @@ static void gmu_remove(struct kgsl_device *device)
 
 	gmu_stop(device);
 
-	gmu_aop_mailbox_destroy(device);
+	if (!IS_ERR_OR_NULL(gmu->mailbox.channel))
+		mbox_free_channel(gmu->mailbox.channel);
+
+	clear_bit(ADRENO_ACD_CTRL, &adreno_dev->pwrctrl_flag);
 
 	while ((i < MAX_GMU_CLKS) && gmu->clks[i]) {
 		gmu->clks[i] = NULL;

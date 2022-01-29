@@ -101,13 +101,12 @@ bool gmu_core_gpmu_isenabled(struct kgsl_device *device)
 
 bool gmu_core_scales_bandwidth(struct kgsl_device *device)
 {
-	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	struct gmu_dev_ops *ops = GMU_DEVICE_OPS(device);
 
-	if (device->gmu_core.type == GMU_CORE_TYPE_PCC)
-		return false;
+	if (ops && ops->scales_bandwidth)
+		return ops->scales_bandwidth(device);
 
-	return gmu_core_gpmu_isenabled(device) &&
-		   (ADRENO_GPUREV(adreno_dev) >= ADRENO_REV_A640);
+	return false;
 }
 
 int gmu_core_init(struct kgsl_device *device)
@@ -156,8 +155,8 @@ void gmu_core_snapshot(struct kgsl_device *device)
 		gmu_core_ops->snapshot(device);
 }
 
-int gmu_core_dcvs_set(struct kgsl_device *device, unsigned int gpu_pwrlevel,
-		unsigned int bus_level)
+int gmu_core_dcvs_set(struct kgsl_device *device, int gpu_pwrlevel,
+		int bus_level)
 {
 	struct gmu_core_ops *gmu_core_ops = GMU_CORE_OPS(device);
 
@@ -387,16 +386,6 @@ int gmu_core_dev_wait_for_active_transition(struct kgsl_device *device)
 
 	if (ops && ops->wait_for_active_transition)
 		return ops->wait_for_active_transition(device);
-
-	return 0;
-}
-
-u64 gmu_core_dev_read_ao_counter(struct kgsl_device *device)
-{
-	struct gmu_dev_ops *ops = GMU_DEVICE_OPS(device);
-
-	if (ops && ops->read_ao_counter)
-		return ops->read_ao_counter(device);
 
 	return 0;
 }

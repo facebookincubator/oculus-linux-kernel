@@ -33,9 +33,9 @@
 #if defined(DHD_ADPS_BAM_EXPORT) && defined(WL_BAM)
 #include <wl_bam.h>
 #endif	/* DHD_ADPS_BAM_EXPORT && WL_BAM */
-#ifdef PWRSTATS_SYSFS
+#if defined(PWRSTATS_SYSFS) || defined(SYSFS_EXPORT_COUNTRY)
 #include <wldev_common.h>
-#endif /* PWRSTATS_SYSFS */
+#endif /* PWRSTATS_SYSFS || SYSFS_EXPORT_COUNTRY */
 #ifdef WL_CFG80211
 #include <wl_cfg80211.h>
 #endif /* WL_CFG80211 */

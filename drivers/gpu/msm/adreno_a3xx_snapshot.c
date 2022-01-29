@@ -243,6 +243,100 @@ static void _snapshot_hlsq_regs(struct kgsl_device *device,
 	SNAPSHOT_REGISTERS(device, snapshot, a3xx_hlsq_registers);
 }
 
+#define VPC_MEM_SIZE 512
+
+static size_t a3xx_snapshot_vpc_memory(struct kgsl_device *device, u8 *buf,
+		size_t remain, void *priv)
+{
+	struct kgsl_snapshot_debug *header = (struct kgsl_snapshot_debug *)buf;
+	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
+	size_t size = 4 * VPC_MEM_SIZE;
+	int bank, addr, i = 0;
+
+	if (remain < DEBUG_SECTION_SZ(size)) {
+		SNAPSHOT_ERR_NOMEM(device, "VPC MEMORY");
+		return 0;
+	}
+
+	header->type = SNAPSHOT_DEBUG_VPC_MEMORY;
+	header->size = size;
+
+	for (bank = 0; bank < 4; bank++) {
+		for (addr = 0; addr < VPC_MEM_SIZE; addr++) {
+			unsigned int val = bank | (addr << 4);
+
+			kgsl_regwrite(device, A3XX_VPC_VPC_DEBUG_RAM_SEL, val);
+			kgsl_regread(device, A3XX_VPC_VPC_DEBUG_RAM_READ,
+				&data[i++]);
+		}
+	}
+
+	return DEBUG_SECTION_SZ(size);
+}
+
+static size_t a3xx_snapshot_cp_pm4_ram(struct kgsl_device *device, u8 *buf,
+		size_t remain, void *priv)
+{
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	struct kgsl_snapshot_debug *header = (struct kgsl_snapshot_debug *)buf;
+	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
+	int i;
+	struct adreno_firmware *fw = ADRENO_FW(adreno_dev, ADRENO_FW_PM4);
+	size_t size = fw->size - 1;
+
+	if (remain < DEBUG_SECTION_SZ(size)) {
+		SNAPSHOT_ERR_NOMEM(device, "CP PM4 RAM DEBUG");
+		return 0;
+	}
+
+	header->type = SNAPSHOT_DEBUG_CP_PM4_RAM;
+	header->size = size;
+
+	/*
+	 * Read the firmware from the GPU rather than use our cache in order to
+	 * try to catch mis-programming or corruption in the hardware.  We do
+	 * use the cached version of the size, however, instead of trying to
+	 * maintain always changing hardcoded constants
+	 */
+
+	kgsl_regwrite(device, A3XX_CP_ME_RAM_RADDR, 0x0);
+	for (i = 0; i < size; i++)
+		kgsl_regread(device, A3XX_CP_ME_RAM_DATA, &data[i]);
+
+	return DEBUG_SECTION_SZ(size);
+}
+
+static size_t a3xx_snapshot_cp_pfp_ram(struct kgsl_device *device, u8 *buf,
+		size_t remain, void *priv)
+{
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	struct kgsl_snapshot_debug *header = (struct kgsl_snapshot_debug *)buf;
+	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
+	int i;
+	struct adreno_firmware *fw = ADRENO_FW(adreno_dev, ADRENO_FW_PFP);
+	int size = fw->size - 1;
+
+	if (remain < DEBUG_SECTION_SZ(size)) {
+		SNAPSHOT_ERR_NOMEM(device, "CP PFP RAM DEBUG");
+		return 0;
+	}
+
+	header->type = SNAPSHOT_DEBUG_CP_PFP_RAM;
+	header->size = size;
+
+	/*
+	 * Read the firmware from the GPU rather than use our cache in order to
+	 * try to catch mis-programming or corruption in the hardware.  We do
+	 * use the cached version of the size, however, instead of trying to
+	 * maintain always changing hardcoded constants
+	 */
+	kgsl_regwrite(device, A3XX_CP_PFP_UCODE_ADDR, 0x0);
+	for (i = 0; i < size; i++)
+		kgsl_regread(device, A3XX_CP_PFP_UCODE_DATA, &data[i]);
+
+	return DEBUG_SECTION_SZ(size);
+}
+
 /*
  * a3xx_snapshot() - A3XX GPU snapshot function
  * @adreno_dev: Device being snapshotted
@@ -277,7 +371,7 @@ void a3xx_snapshot(struct adreno_device *adreno_dev,
 
 	/* VPC memory */
 	kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_DEBUG,
-		snapshot, adreno_snapshot_vpc_memory,
+		snapshot, a3xx_snapshot_vpc_memory,
 		&snap_data->sect_sizes->vpc_mem);
 
 	/* CP MEQ */
@@ -307,10 +401,10 @@ void a3xx_snapshot(struct adreno_device *adreno_dev,
 	adreno_writereg(adreno_dev, ADRENO_REG_CP_ME_CNTL, reg);
 
 	kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_DEBUG,
-		snapshot, adreno_snapshot_cp_pfp_ram, NULL);
+		snapshot, a3xx_snapshot_cp_pfp_ram, NULL);
 
 	kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_DEBUG,
-		snapshot, adreno_snapshot_cp_pm4_ram, NULL);
+		snapshot, a3xx_snapshot_cp_pm4_ram, NULL);
 
 	/* CP ROQ */
 	kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_DEBUG,

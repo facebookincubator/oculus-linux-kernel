@@ -222,11 +222,6 @@ static int dhdpcie_pm_system_suspend_noirq(struct device * dev);
 static int dhdpcie_pm_system_resume_noirq(struct device * dev);
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
-#ifdef SUPPORT_EXYNOS7420
-void exynos_pcie_pm_suspend(int ch_num) {}
-int exynos_pcie_pm_resume(int ch_num) { return 0; }
-#endif /* SUPPORT_EXYNOS7420 */
-
 static void dhdpcie_config_save_restore_coherent(dhd_bus_t *bus, bool state);
 
 uint32
@@ -1306,10 +1301,6 @@ static int dhdpcie_resume_dev(struct pci_dev *dev)
 #else
 	DHD_RPM(("%s: Enter\n", __FUNCTION__));
 #endif /* CUSTOMER_HW4_DEBUG */
-#ifdef OEM_ANDROID
-	dev->state_saved = TRUE;
-#endif /* OEM_ANDROID */
-	pci_restore_state(dev);
 
 	/* Resture back current bar1 window */
 	OSL_PCI_WRITE_CONFIG(pch->bus->osh, PCI_BAR1_WIN, 4, pch->bus->curr_bar1_win);
@@ -1330,6 +1321,12 @@ static int dhdpcie_resume_dev(struct pci_dev *dev)
 		DHD_CONS_ONLY(("%s:pci_set_power_state error %d \n", __FUNCTION__, err));
 		goto out;
 	}
+
+#ifdef OEM_ANDROID
+	dev->state_saved = TRUE;
+#endif /* OEM_ANDROID */
+	pci_restore_state(dev);
+
 	BCM_REFERENCE(pch);
 	dhdpcie_suspend_dump_cfgregs(pch->bus, "AFTER_EP_RESUME");
 
@@ -1388,7 +1385,7 @@ static int dhdpcie_suspend_host_dev(dhd_bus_t *bus)
 		pci_save_state(bus->rc_dev);
 	} else {
 		DHD_ERROR(("%s: RC %x:%x handle is NULL\n",
-			__FUNCTION__, PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID));
+			__FUNCTION__, dhd_plat_get_rc_vendor_id(), dhd_plat_get_rc_device_id()));
 	}
 #endif /* CONFIG_ARCH_EXYNOS */
 	bcmerror = dhdpcie_stop_host_dev(bus);
@@ -1416,10 +1413,11 @@ dhdpcie_rc_config_read(dhd_bus_t *bus, uint offset)
 		OSL_DELAY(100);
 	} else {
 		DHD_ERROR(("%s: RC %x:%x handle is NULL\n",
-			__FUNCTION__, PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID));
+			__FUNCTION__, dhd_plat_get_rc_vendor_id(), dhd_plat_get_rc_device_id()));
 	}
 	DHD_ERROR(("%s: RC %x:%x offset 0x%x val 0x%x\n",
-		__FUNCTION__, PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID, offset, val));
+		__FUNCTION__, dhd_plat_get_rc_vendor_id(), dhd_plat_get_rc_device_id(),
+		offset, val));
 	return (val);
 }
 
@@ -1495,7 +1493,7 @@ dhdpcie_rc_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext, bool is
 {
 	if (!(bus->rc_dev)) {
 		DHD_ERROR(("%s: RC %x:%x handle is NULL\n",
-			__FUNCTION__, PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID));
+			__FUNCTION__, dhd_plat_get_rc_vendor_id(), dhd_plat_get_rc_device_id()));
 		return BCME_ERROR;
 	}
 
@@ -2206,9 +2204,11 @@ int dhdpcie_init(struct pci_dev *pdev)
 
 		/* if rc_dev is still NULL, try to get from vendor/device IDs */
 		if (bus->rc_dev == NULL) {
-			bus->rc_dev = pci_get_device(PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID, NULL);
+			bus->rc_dev = pci_get_device(dhd_plat_get_rc_vendor_id(),
+					dhd_plat_get_rc_device_id(), NULL);
 			DHD_ERROR(("%s: rc_dev from pci_get_device (%x:%x) is %p\n", __FUNCTION__,
-				PCIE_RC_VENDOR_ID, PCIE_RC_DEVICE_ID, bus->rc_dev));
+				dhd_plat_get_rc_vendor_id(), dhd_plat_get_rc_device_id(),
+				bus->rc_dev));
 		}
 
 		bus->rc_ep_aspm_cap = dhd_bus_is_rc_ep_aspm_capable(bus);
@@ -2456,10 +2456,6 @@ dhdpcie_irq_disabled(dhd_bus_t *bus)
 	return desc->depth;
 }
 
-#if defined(CONFIG_ARCH_EXYNOS)
-int pcie_ch_num = EXYNOS_PCIE_CH_NUM;
-#endif /* CONFIG_ARCH_EXYNOS */
-
 int
 dhdpcie_start_host_dev(dhd_bus_t *bus)
 {
@@ -2479,9 +2475,8 @@ dhdpcie_start_host_dev(dhd_bus_t *bus)
 		return BCME_ERROR;
 	}
 
-#ifdef CONFIG_ARCH_EXYNOS
-	ret = exynos_pcie_pm_resume(pcie_ch_num);
-#endif /* CONFIG_ARCH_EXYNOS */
+	ret = dhd_plat_pcie_resume(bus->dhd->plat_info);
+
 #ifdef CONFIG_ARCH_MSM
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->no_cfg_restore) {
@@ -2532,9 +2527,8 @@ dhdpcie_stop_host_dev(dhd_bus_t *bus)
 		return BCME_ERROR;
 	}
 
-#ifdef CONFIG_ARCH_EXYNOS
-	exynos_pcie_pm_suspend(pcie_ch_num);
-#endif /* CONFIG_ARCH_EXYNOS */
+	dhd_plat_pcie_suspend(bus->dhd->plat_info);
+
 #ifdef CONFIG_ARCH_MSM
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->no_cfg_restore) {
@@ -2919,6 +2913,7 @@ void dhdpcie_oob_intr_set(dhd_bus_t *bus, bool enable)
 static irqreturn_t wlan_oob_irq_isr(int irq, void *data)
 {
 	dhd_bus_t *bus = (dhd_bus_t *)data;
+	dhdpcie_oob_intr_set(bus, FALSE);
 	DHD_TRACE(("%s: IRQ ISR\n", __FUNCTION__));
 	bus->last_oob_irq_isr_time = OSL_LOCALTIME_NS();
 	return IRQ_WAKE_THREAD;
@@ -2929,11 +2924,11 @@ static irqreturn_t wlan_oob_irq(int irq, void *data)
 {
 	dhd_bus_t *bus;
 	bus = (dhd_bus_t *)data;
-	dhdpcie_oob_intr_set(bus, FALSE);
 #ifdef DHD_USE_PCIE_OOB_THREADED_IRQ
 	DHD_TRACE(("%s: IRQ Thread\n", __FUNCTION__));
 	bus->last_oob_irq_thr_time = OSL_LOCALTIME_NS();
 #else
+	dhdpcie_oob_intr_set(bus, FALSE);
 	DHD_TRACE(("%s: IRQ ISR\n", __FUNCTION__));
 	bus->last_oob_irq_isr_time = OSL_LOCALTIME_NS();
 #endif /* DHD_USE_PCIE_OOB_THREADED_IRQ */

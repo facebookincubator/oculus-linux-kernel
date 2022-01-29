@@ -59,6 +59,7 @@ config SPECTRA_CAMERA_LOG_INFO
 
 config SPECTRA_CAMERA_LOG_WARN
     bool "Spectra - Warning logs"
+    default y
     depends on SPECTRA_CAMERA
 
 config SPECTRA_CAMERA_LOG_ERROR

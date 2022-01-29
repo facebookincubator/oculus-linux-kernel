@@ -151,7 +151,6 @@ module_param(wl_reassoc_support, uint, 0660);
 
 static struct device *cfg80211_parent_dev = NULL;
 static struct bcm_cfg80211 *g_bcmcfg = NULL;
-
 /*
  * wl_dbg_level : a default level to print to dmesg buffer
  * wl_log_level : a default level to log to DLD or Ring
@@ -159,7 +158,7 @@ static struct bcm_cfg80211 *g_bcmcfg = NULL;
  * dhd_msg_level and dhd_log_level have the same level
  * IOVAR(loglevel) can adjust logging level dynamically
  */
-u32 wl_dbg_level = WL_DBG_ERR | WL_DBG_P2P_ACTION | WL_DBG_INFO;
+u32 wl_dbg_level = WL_DBG_ERR;
 u32 wl_log_level = WL_DBG_ERR | WL_DBG_P2P_ACTION | WL_DBG_INFO;
 
 #define MAX_WAIT_TIME 1500
@@ -462,6 +461,7 @@ static const uchar disco_bcnloss_vsie[] = {
 };
 #endif /* WL_ANALYTICS */
 
+static void wl_cfg80211_recovery_handler(struct work_struct *work);
 static int wl_vndr_ies_get_vendor_oui(struct bcm_cfg80211 *cfg,
 		struct net_device *ndev, char *vndr_oui, u32 vndr_oui_len);
 static void wl_vndr_ies_clear_vendor_oui_list(struct bcm_cfg80211 *cfg);
@@ -1984,7 +1984,7 @@ s32 wl_set_tx_power(struct net_device *dev,
 #ifdef SUPPORT_WL_TXPOWER
 	if (type == NL80211_TX_POWER_AUTOMATIC)
 		txpwrqdbm = 127;
-	else
+	else if (type == NL80211_TX_POWER_FIXED)
 		txpwrqdbm |= WL_TXPWR_OVERRIDE;
 #endif /* SUPPORT_WL_TXPOWER */
 	err = wldev_iovar_setbuf_bsscfg(dev, "qtxpower", (void *)&txpwrqdbm,
@@ -2851,6 +2851,13 @@ _wl_cfg80211_del_if(struct bcm_cfg80211 *cfg, struct net_device *primary_ndev,
 
 	WL_INFORM_MEM(("del vif. wdev cfg_iftype:%d\n", wdev->iftype));
 
+	/* If dhd_stop is called virtual interface cleanup will be done
+	 * from wl_cfg80211_cleanup_virtual_ifaces
+	 */
+	if (dhd->stop_in_progress) {
+		WL_INFORM_MEM(("Avoid _wl_cfg80211_del_if path, as dhd_stop is called\n"));
+		goto end;
+	}
 	wiphy = wdev->wiphy;
 #ifdef WL_CFG80211_P2P_DEV_IF
 	if (wdev->iftype == NL80211_IFTYPE_P2P_DEVICE) {
@@ -12947,6 +12954,7 @@ wl_handle_assoc_events(struct bcm_cfg80211 *cfg,
 	as.data = data;
 	as.data_len = ntoh32(e->datalen);
 	as.event_msg = e;
+	as.assoc_state = assoc_state;
 	(void)memcpy_s(as.addr, ETH_ALEN, e->addr.octet, ETH_ALEN);
 
 	WL_INFORM_MEM(("[%s] Mode BSS. assoc_state:%d event:%d "
@@ -16263,6 +16271,7 @@ s32 wl_cfg80211_attach(struct net_device *ndev, void *context)
 	INIT_DELAYED_WORK(&cfg->sched_scan_stop_work, wl_cfgscan_sched_scan_stop_work);
 #endif /* WL_SCHED_SCAN */
 	INIT_DELAYED_WORK(&cfg->pm_enable_work, wl_cfg80211_work_handler);
+	INIT_DELAYED_WORK(&cfg->recovery_work, wl_cfg80211_recovery_handler);
 	INIT_DELAYED_WORK(&cfg->loc.work, wl_cfgscan_listen_complete_work);
 	INIT_DELAYED_WORK(&cfg->ap_work, wl_cfg80211_ap_timeout_work);
 	mutex_init(&cfg->pm_sync);
@@ -17688,6 +17697,8 @@ static s32 __wl_cfg80211_up(struct bcm_cfg80211 *cfg)
 #endif /* WL_SAR_TX_POWER_CONFIG */
 #endif /* WL_SAR_TX_POWER */
 
+	cfg->scan_request = NULL;
+
 #if defined(OEM_ANDROID) && defined(DHCP_SCAN_SUPPRESS)
 	/* wlan scan_supp timer and work thread info */
 	init_timer_compat(&cfg->scan_supp_timer, wl_cfg80211_scan_supp_timerfunc, cfg);
@@ -17755,6 +17766,8 @@ static s32 __wl_cfg80211_down(struct bcm_cfg80211 *cfg)
 	if (delayed_work_pending(&cfg->ap_work)) {
 		cancel_delayed_work_sync(&cfg->ap_work);
 	}
+
+	cancel_delayed_work_sync(&cfg->recovery_work);
 
 	if (cfg->p2p_supported) {
 		wl_clr_p2p_status(cfg, GO_NEG_PHASE);
@@ -22573,6 +22586,32 @@ wl_cfg80211_wips_event(uint16 misdeauth, char* bssid)
 }
 #endif /* WL_WIPSEVT */
 
+static void
+wl_attempt_recovery(struct bcm_cfg80211 *cfg, u32 reason)
+{
+	if ((reason == WL_STATE_SCANNING) &&
+			(wl_get_drv_status_all(cfg, SCANNING))) {
+		wl_cfgscan_cancel_scan(cfg);
+		WL_ERR(("force clear scanning state\n"));
+		wl_clr_drv_status_all(cfg, SCANNING);
+	}
+}
+
+static void
+wl_cfg80211_recovery_handler(struct work_struct *work)
+{
+	struct bcm_cfg80211 *cfg = NULL;
+	BCM_SET_CONTAINER_OF(cfg, work, struct bcm_cfg80211, recovery_work.work);
+
+	if (cfg->recovery_state) {
+		wl_attempt_recovery(cfg, cfg->recovery_state);
+	}
+
+	WL_ERR(("**trigger hang event for recovery state:%d\n", cfg->recovery_state));
+	wl_cfg80211_handle_hang_event(bcmcfg_to_prmry_ndev(cfg),
+			HANG_REASON_UNKNOWN, DUMP_TYPE_CFG_VENDOR_TRIGGERED);
+}
+
 #define WL_DS(x)
 /*
  * This API checks whether its okay to enter DS.
@@ -22627,7 +22666,14 @@ bool wl_cfg80211_check_in_progress(struct net_device *dev)
 			WL_ERR(("DS skip threshold hit. reason:%d start_time:"
 					SEC_USEC_FMT" cur_time:"SEC_USEC_FMT"\n",
 					reason, GET_SEC_USEC(start_time), GET_SEC_USEC(curtime)));
-			ASSERT((0));
+			/* Force clear states and send a hang event */
+			cfg->recovery_state = reason;
+			if (!schedule_delayed_work(&cfg->recovery_work,
+				msecs_to_jiffies((const unsigned int)10))) {
+				/* Unexpected. If it happens, don't block suspend */
+				WL_ERR(("recovery work schedule failed!!\n"));
+				return false;
+			}
 		}
 		/* return true to skip suspend */
 		return true;

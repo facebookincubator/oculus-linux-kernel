@@ -84,6 +84,8 @@ static const char *iommu_debug_attr_to_string(enum iommu_attr attr)
 		return "DOMAIN_ATTR_FAULT_MODEL_NO_STALL";
 	case DOMAIN_ATTR_FAULT_MODEL_HUPCF:
 		return "DOMAIN_ATTR_FAULT_MODEL_HUPCF";
+	case DOMAIN_ATTR_SPLIT_TABLES:
+		return "DOMAIN_ATTR_SPLIT_TABLES";
 	default:
 		return "Unknown attr!";
 	}

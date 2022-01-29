@@ -407,7 +407,6 @@ bcm_pack_xtlv_entry(uint8 **tlv_buf, uint16 *buflen, uint16 type, uint16 len,
 	/* copy data from tlv buffer to dst provided by user */
 	if (size > *buflen) {
 		return BCME_BADLEN;
-//		return BCME_BUFTOOSHORT;
 	}
 
 	bcm_xtlv_pack_xtlv(ptlv, type, len, src_data, opts);

@@ -127,6 +127,7 @@ static void drm_mode_to_intf_timing_params(
 	}
 
 	timing->wide_bus_en = vid_enc->base.wide_bus_en;
+	timing->dsc_4hs_merge_en = vid_enc->base.dsc_4hs_merge_en;
 
 	/*
 	 * for DP, divide the horizonal parameters by 2 when
@@ -902,6 +903,10 @@ static void sde_encoder_phys_vid_enable(struct sde_encoder_phys *phys_enc)
 	if (!phys_enc->cont_splash_enabled)
 		sde_encoder_helper_split_config(phys_enc,
 				phys_enc->hw_intf->idx);
+
+	if (intf->ops.enable_dsc_4hs_merge)
+		intf->ops.enable_dsc_4hs_merge(intf,
+				phys_enc->dsc_4hs_merge_en);
 
 	sde_encoder_phys_vid_setup_timing_engine(phys_enc);
 

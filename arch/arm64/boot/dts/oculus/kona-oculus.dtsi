@@ -1,8 +1,32 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 
+&cpu_cpu_llcc_bw {
+	governor = "bw_hwmon";
+};
+
+&cpu_llcc_ddr_bw {
+	governor = "bw_hwmon";
+};
+
 &flash_led {
 	status = "disabled";
+};
+
+&kgsl_smmu {
+	qcom,split-tables;
+};
+
+&npu_llcc_ddr_bw {
+	governor = "bw_hwmon";
+};
+
+&npu_npu_llcc_bw {
+	governor = "bw_hwmon";
+};
+
+&npudsp_npu_ddr_bw {
+	governor = "bw_hwmon";
 };
 
 &pm8150b_haptics {

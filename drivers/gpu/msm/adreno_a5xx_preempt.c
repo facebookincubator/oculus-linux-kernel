@@ -11,9 +11,6 @@
 #define PREEMPT_RECORD(_field) \
 		offsetof(struct a5xx_cp_preemption_record, _field)
 
-#define PREEMPT_SMMU_RECORD(_field) \
-		offsetof(struct a5xx_cp_smmu_info, _field)
-
 static void _update_wptr(struct adreno_device *adreno_dev, bool reset_timer)
 {
 	struct adreno_ringbuffer *rb = adreno_dev->cur_rb;
@@ -39,12 +36,6 @@ static void _update_wptr(struct adreno_device *adreno_dev, bool reset_timer)
 			msecs_to_jiffies(adreno_drawobj_timeout);
 
 	spin_unlock_irqrestore(&rb->preempt_lock, flags);
-}
-
-static inline bool adreno_move_preempt_state(struct adreno_device *adreno_dev,
-	enum adreno_preempt_states old, enum adreno_preempt_states new)
-{
-	return (atomic_cmpxchg(&adreno_dev->preempt.state, old, new) == old);
 }
 
 static void _a5xx_preemption_done(struct adreno_device *adreno_dev)
@@ -150,21 +141,6 @@ static void _a5xx_preemption_worker(struct work_struct *work)
 	mutex_unlock(&device->mutex);
 }
 
-static void _a5xx_preemption_timer(struct timer_list *t)
-{
-	struct adreno_preemption *preempt = from_timer(preempt, t, timer);
-	struct adreno_device *adreno_dev = container_of(preempt,
-						struct adreno_device, preempt);
-
-	/* We should only be here from a triggered state */
-	if (!adreno_move_preempt_state(adreno_dev,
-		ADRENO_PREEMPT_TRIGGERED, ADRENO_PREEMPT_FAULTED))
-		return;
-
-	/* Schedule the worker to take care of the details */
-	queue_work(system_unbound_wq, &adreno_dev->preempt.work);
-}
-
 /* Find the highest priority active ringbuffer */
 static struct adreno_ringbuffer *a5xx_next_ringbuffer(
 		struct adreno_device *adreno_dev)
@@ -191,7 +167,11 @@ void a5xx_preemption_trigger(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
+	struct a5xx_cp_smmu_info *smmu_info =
+			(struct a5xx_cp_smmu_info *)iommu->kptr;
 	struct adreno_ringbuffer *next;
+	struct a5xx_cp_preemption_record *preempt_record;
+	struct adreno_ringbuffer_pagetable_info *pt_info;
 	uint64_t ttbr0;
 	unsigned int contextidr;
 	unsigned long flags;
@@ -241,26 +221,30 @@ void a5xx_preemption_trigger(struct adreno_device *adreno_dev)
 	 * preemption_desc at init time, so no need to check if
 	 * sharedmem accesses to these memdescs succeed.
 	 */
-	kgsl_sharedmem_readq(&next->pagetable_desc, &ttbr0,
-		PT_INFO_OFFSET(ttbr0));
-	kgsl_sharedmem_readl(&next->pagetable_desc, &contextidr,
-		PT_INFO_OFFSET(contextidr));
+	pt_info = (struct adreno_ringbuffer_pagetable_info *)next->pagetable_kptr;
+	/* Make sure any pending writes to the pagetable info complete first. */
+	smp_rmb();
+	ttbr0 = pt_info->ttbr0;
+	contextidr = pt_info->contextidr;
 
-	kgsl_sharedmem_writel(device, &next->preemption_desc,
-		PREEMPT_RECORD(wptr), next->wptr);
+	preempt_record = (struct a5xx_cp_preemption_record *)
+			next->preemption_kptr;
+	preempt_record->wptr = next->wptr;
+	/* Make sure the wptr write is posted before continuing */
+	smp_wmb();
 
 	spin_unlock_irqrestore(&next->preempt_lock, flags);
 
 	/* And write it to the smmu info */
-	kgsl_sharedmem_writeq(device, &iommu->smmu_info,
-		PREEMPT_SMMU_RECORD(ttbr0), ttbr0);
-	kgsl_sharedmem_writel(device, &iommu->smmu_info,
-		PREEMPT_SMMU_RECORD(context_idr), contextidr);
+	smmu_info->ttbr0 = ttbr0;
+	smmu_info->context_idr = contextidr;
+	/* Make sure the writes are posted before continuing */
+	smp_wmb();
 
 	kgsl_regwrite(device, A5XX_CP_CONTEXT_SWITCH_RESTORE_ADDR_LO,
-		lower_32_bits(next->preemption_desc.gpuaddr));
+		lower_32_bits(next->preemption_desc->gpuaddr));
 	kgsl_regwrite(device, A5XX_CP_CONTEXT_SWITCH_RESTORE_ADDR_HI,
-		upper_32_bits(next->preemption_desc.gpuaddr));
+		upper_32_bits(next->preemption_desc->gpuaddr));
 
 	adreno_dev->next_rb = next;
 
@@ -346,7 +330,7 @@ unsigned int a5xx_preemption_pre_ibsubmit(
 			unsigned int *cmds, struct kgsl_context *context)
 {
 	unsigned int *cmds_orig = cmds;
-	uint64_t gpuaddr = rb->preemption_desc.gpuaddr;
+	uint64_t gpuaddr = rb->preemption_desc->gpuaddr;
 	unsigned int preempt_style = 0;
 
 	if (context) {
@@ -454,6 +438,9 @@ void a5xx_preemption_start(struct adreno_device *adreno_dev)
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
 	struct adreno_ringbuffer *rb;
+	struct a5xx_cp_smmu_info *smmu_info =
+			(struct a5xx_cp_smmu_info *)iommu->kptr;
+	struct a5xx_cp_preemption_record *preempt_record;
 	unsigned int i;
 
 	if (!adreno_is_preemption_enabled(adreno_dev))
@@ -463,32 +450,31 @@ void a5xx_preemption_start(struct adreno_device *adreno_dev)
 	adreno_set_preempt_state(adreno_dev, ADRENO_PREEMPT_NONE);
 
 	/* smmu_info is allocated and mapped in a5xx_preemption_iommu_init */
-	kgsl_sharedmem_writel(device, &iommu->smmu_info,
-		PREEMPT_SMMU_RECORD(magic), A5XX_CP_SMMU_INFO_MAGIC_REF);
-	kgsl_sharedmem_writeq(device, &iommu->smmu_info,
-		PREEMPT_SMMU_RECORD(ttbr0), MMU_DEFAULT_TTBR0(device));
-
+	smmu_info->magic = A5XX_CP_SMMU_INFO_MAGIC_REF;
+	smmu_info->ttbr0 = MMU_DEFAULT_TTBR0(device);
 	/* The CP doesn't use the asid record, so poison it */
-	kgsl_sharedmem_writel(device, &iommu->smmu_info,
-		PREEMPT_SMMU_RECORD(asid), 0xDECAFBAD);
-	kgsl_sharedmem_writel(device, &iommu->smmu_info,
-		PREEMPT_SMMU_RECORD(context_idr),
-		MMU_DEFAULT_CONTEXTIDR(device));
+	smmu_info->asid = 0xDECAFBAD;
+	smmu_info->context_idr = MMU_DEFAULT_CONTEXTIDR(device);
+	/* Make sure the writes are posted before continuing */
+	smp_wmb();
 
 	adreno_writereg64(adreno_dev,
 			ADRENO_REG_CP_CONTEXT_SWITCH_SMMU_INFO_LO,
 			ADRENO_REG_CP_CONTEXT_SWITCH_SMMU_INFO_HI,
-			iommu->smmu_info.gpuaddr);
+			iommu->smmu_info->gpuaddr);
 
 	FOR_EACH_RINGBUFFER(adreno_dev, rb, i) {
 		/*
-		 * preemption_desc is allocated and mapped at init time,
-		 * so no need to check sharedmem_writel return value
+		 * preemption_kptr is mapped at ringbuffer init time, so no
+		 * need to check that it is valid: if ringbuffer creation or
+		 * mapping failed then we wouldn't get here in the first place.
 		 */
-		kgsl_sharedmem_writel(device, &rb->preemption_desc,
-			PREEMPT_RECORD(rptr), 0);
-		kgsl_sharedmem_writel(device, &rb->preemption_desc,
-			PREEMPT_RECORD(wptr), 0);
+		preempt_record = (struct a5xx_cp_preemption_record *)
+				rb->preemption_kptr;
+		preempt_record->rptr = 0;
+		preempt_record->wptr = 0;
+		/* Make sure the writes are posted before continuing */
+		smp_wmb();
 
 		adreno_ringbuffer_set_pagetable(rb,
 			device->mmu.defaultpagetable);
@@ -500,99 +486,62 @@ static int a5xx_preemption_ringbuffer_init(struct adreno_device *adreno_dev,
 		struct adreno_ringbuffer *rb, uint64_t counteraddr)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	int ret;
+	struct a5xx_cp_preemption_record *preempt_record;
+	unsigned int page_count = 0;
 
-	ret = kgsl_allocate_global(device, &rb->preemption_desc,
-		A5XX_CP_CTXRECORD_SIZE_IN_BYTES, 0, KGSL_MEMDESC_PRIVILEGED,
-		"preemption_desc");
-	if (ret)
-		return ret;
+	if (IS_ERR_OR_NULL(rb->preemption_desc)) {
+		rb->preemption_desc = kgsl_allocate_global(device,
+			A5XX_CP_CTXRECORD_SIZE_IN_BYTES, 0,
+			KGSL_MEMDESC_PRIVILEGED, "preemption_desc");
+		if (IS_ERR_OR_NULL(rb->preemption_desc))
+			return (!rb->preemption_desc) ? -EINVAL :
+					PTR_ERR(rb->preemption_desc);
 
-	kgsl_sharedmem_writel(device, &rb->preemption_desc,
-		PREEMPT_RECORD(magic), A5XX_CP_CTXRECORD_MAGIC_REF);
-	kgsl_sharedmem_writel(device, &rb->preemption_desc,
-		PREEMPT_RECORD(info), 0);
-	kgsl_sharedmem_writel(device, &rb->preemption_desc,
-		PREEMPT_RECORD(data), 0);
-	kgsl_sharedmem_writel(device, &rb->preemption_desc,
-		PREEMPT_RECORD(cntl), A5XX_CP_RB_CNTL_DEFAULT);
-	kgsl_sharedmem_writel(device, &rb->preemption_desc,
-		PREEMPT_RECORD(rptr), 0);
-	kgsl_sharedmem_writel(device, &rb->preemption_desc,
-		PREEMPT_RECORD(wptr), 0);
-	kgsl_sharedmem_writeq(device, &rb->preemption_desc,
-		PREEMPT_RECORD(rptr_addr), SCRATCH_RPTR_GPU_ADDR(device,
-			rb->id));
-	kgsl_sharedmem_writeq(device, &rb->preemption_desc,
-		PREEMPT_RECORD(rbase), rb->buffer_desc.gpuaddr);
-	kgsl_sharedmem_writeq(device, &rb->preemption_desc,
-		PREEMPT_RECORD(counter), counteraddr);
+		/*
+		 * We only need/want to map the first page of the preemption
+		 * buffer into the kernel since that's where we store shared
+		 * CPU/GPU state.
+		 */
+		rb->preemption_kptr = kgsl_sharedmem_vm_map_readwrite(
+				rb->preemption_desc, 0, PAGE_SIZE, &page_count);
+
+		if (IS_ERR_OR_NULL(rb->preemption_kptr))
+			return (!rb->preemption_kptr) ? -EINVAL :
+					PTR_ERR(rb->preemption_kptr);
+		else if (WARN(page_count != 1,
+			 "preemption record mapping size is incorrect\n"))
+			return -EINVAL;
+	}
+
+	/* Reset the state of the preemption record. */
+	if (!IS_ERR_OR_NULL(rb->preemption_kptr)) {
+		preempt_record = (struct a5xx_cp_preemption_record *)
+				rb->preemption_kptr;
+		preempt_record->magic = A5XX_CP_CTXRECORD_MAGIC_REF;
+		preempt_record->info = 0;
+		preempt_record->data = 0;
+		preempt_record->cntl = A5XX_CP_RB_CNTL_DEFAULT;
+		preempt_record->rptr = 0;
+		preempt_record->wptr = 0;
+		preempt_record->rptr_addr = SCRATCH_RPTR_GPU_ADDR(device, rb->id);
+		preempt_record->rbase = rb->buffer_desc->gpuaddr;
+		preempt_record->counter = counteraddr;
+		/* Make sure the writes are posted before continuing */
+		smp_wmb();
+	}
 
 	return 0;
-}
-
-#ifdef CONFIG_QCOM_KGSL_IOMMU
-static int a5xx_preemption_iommu_init(struct adreno_device *adreno_dev)
-{
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
-
-	/* Allocate mem for storing preemption smmu record */
-	return kgsl_allocate_global(device, &iommu->smmu_info, PAGE_SIZE,
-		KGSL_MEMFLAGS_GPUREADONLY, KGSL_MEMDESC_PRIVILEGED,
-		"smmu_info");
-}
-
-static void a5xx_preemption_iommu_close(struct adreno_device *adreno_dev)
-{
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
-
-	kgsl_free_global(device, &iommu->smmu_info);
-}
-
-#else
-static int a5xx_preemption_iommu_init(struct adreno_device *adreno_dev)
-{
-	return -ENODEV;
-}
-
-static void a5xx_preemption_iommu_close(struct adreno_device *adreno_dev)
-{
-}
-#endif
-
-static void _preemption_close(struct adreno_device *adreno_dev)
-{
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-	struct adreno_preemption *preempt = &adreno_dev->preempt;
-	struct adreno_ringbuffer *rb;
-	unsigned int i;
-
-	del_timer(&preempt->timer);
-	kgsl_free_global(device, &preempt->scratch);
-	a5xx_preemption_iommu_close(adreno_dev);
-
-	FOR_EACH_RINGBUFFER(adreno_dev, rb, i) {
-		kgsl_free_global(device, &rb->preemption_desc);
-	}
-}
-
-void a5xx_preemption_close(struct adreno_device *adreno_dev)
-{
-	if (!test_bit(ADRENO_DEVICE_PREEMPTION, &adreno_dev->priv))
-		return;
-
-	_preemption_close(adreno_dev);
 }
 
 int a5xx_preemption_init(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
 	struct adreno_preemption *preempt = &adreno_dev->preempt;
 	struct adreno_ringbuffer *rb;
 	int ret;
 	unsigned int i;
+	unsigned int page_count = 0;
 	uint64_t addr;
 
 	/* We are dependent on IOMMU to make preemption go on the CP side */
@@ -601,32 +550,58 @@ int a5xx_preemption_init(struct adreno_device *adreno_dev)
 
 	INIT_WORK(&preempt->work, _a5xx_preemption_worker);
 
-	timer_setup(&preempt->timer, _a5xx_preemption_timer, 0);
-
 	/* Allocate mem for storing preemption counters */
-	ret = kgsl_allocate_global(device, &preempt->scratch,
-		adreno_dev->num_ringbuffers *
-		A5XX_CP_CTXRECORD_PREEMPTION_COUNTER_SIZE, 0, 0,
-		"preemption_counters");
-	if (ret)
-		goto err;
+	if (IS_ERR_OR_NULL(preempt->scratch)) {
+		preempt->scratch = kgsl_allocate_global(device,
+			adreno_dev->num_ringbuffers *
+			A5XX_CP_CTXRECORD_PREEMPTION_COUNTER_SIZE, 0, 0,
+			"preemption_counters");
+		if (IS_ERR_OR_NULL(preempt->scratch))
+			return (!preempt->scratch) ? -EINVAL :
+					PTR_ERR(preempt->scratch);
 
-	addr = preempt->scratch.gpuaddr;
+		preempt->scratch_kptr = kgsl_sharedmem_vm_map_readonly(
+				preempt->scratch, 0, preempt->scratch->size,
+				&page_count);
+
+		if (IS_ERR_OR_NULL(preempt->scratch_kptr))
+			return (!preempt->scratch_kptr) ? -EINVAL :
+					PTR_ERR(preempt->scratch_kptr);
+		else if (WARN(page_count != (preempt->scratch->size >> PAGE_SHIFT),
+			 "preemption scratch mapping size does not match buffer size\n"))
+			return -EINVAL;
+	}
+
+	addr = preempt->scratch->gpuaddr;
 
 	/* Allocate mem for storing preemption switch record */
 	FOR_EACH_RINGBUFFER(adreno_dev, rb, i) {
 		ret = a5xx_preemption_ringbuffer_init(adreno_dev, rb, addr);
 		if (ret)
-			goto err;
+			return ret;
 
 		addr += A5XX_CP_CTXRECORD_PREEMPTION_COUNTER_SIZE;
 	}
 
-	ret = a5xx_preemption_iommu_init(adreno_dev);
+	/* Allocate mem for storing preemption smmu record */
+	if (IS_ERR_OR_NULL(iommu->smmu_info)) {
+		iommu->smmu_info = kgsl_allocate_global(device, PAGE_SIZE,
+			KGSL_MEMFLAGS_GPUREADONLY, KGSL_MEMDESC_PRIVILEGED,
+			"smmu_info");
+		if (IS_ERR_OR_NULL(iommu->smmu_info))
+			return (!iommu->smmu_info) ? -EINVAL :
+					PTR_ERR(iommu->smmu_info);
 
-err:
-	if (ret)
-		_preemption_close(adreno_dev);
+		iommu->kptr = kgsl_sharedmem_vm_map_readwrite(iommu->smmu_info,
+				0, iommu->smmu_info->size, &page_count);
 
-	return ret;
+		if (IS_ERR_OR_NULL(iommu->kptr))
+			return (!iommu->kptr) ? -EINVAL : PTR_ERR(iommu->kptr);
+		else if (WARN(page_count != 1,
+			 "smmu_info mapping size does not match buffer size\n"))
+			return -EINVAL;
+	}
+
+	set_bit(ADRENO_DEVICE_PREEMPTION, &adreno_dev->priv);
+	return 0;
 }

@@ -124,12 +124,6 @@
 #include <linux/compat.h>
 #endif
 
-#ifdef CONFIG_ARCH_EXYNOS
-#ifndef SUPPORT_EXYNOS7420
-#include <linux/exynos-pci-ctrl.h>
-#endif /* SUPPORT_EXYNOS7420 */
-#endif /* CONFIG_ARCH_EXYNOS */
-
 #ifdef DHD_WMF
 #include <dhd_wmf_linux.h>
 #endif /* DHD_WMF */
@@ -1998,8 +1992,10 @@ dhd_enable_packet_filter(int value, dhd_pub_t *dhd)
 	int i;
 
 	DHD_ERROR(("%s: enter, value = %d\n", __FUNCTION__, value));
-	if ((dhd->op_mode & DHD_FLAG_HOSTAP_MODE) && value) {
-		DHD_ERROR(("%s: DHD_FLAG_HOSTAP_MODE\n", __FUNCTION__));
+	if ((dhd->op_mode &
+		(DHD_FLAG_HOSTAP_MODE | DHD_FLAG_P2P_GO_MODE)) &&
+		value) {
+		DHD_ERROR(("%s: DHD_FLAG_HOSTAP_MODE or DHD_FLAG_P2P_GO_MODE\n", __FUNCTION__));
 		return;
 	}
 	/* 1 - Enable packet filter, only allow unicast packet to send up */
@@ -4103,11 +4099,7 @@ dhd_event_logtrace_process_items(dhd_info_t *dhd)
 			dhd_netif_rx_ni(skb);
 		} else	{
 			/* Don't send up. Free up the packet. */
-#ifdef DHD_USE_STATIC_CTRLBUF
-			PKTFREE_STATIC(dhdp->osh, skb, FALSE);
-#else
-			PKTFREE(dhdp->osh, skb, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+			PKTFREE_CTRLBUF(dhdp->osh, skb, FALSE);
 		}
 	}
 
@@ -4340,11 +4332,7 @@ dhd_event_logtrace_flush_queue(dhd_pub_t *dhdp)
 	struct sk_buff *skb;
 
 	while ((skb = skb_dequeue(&dhd->evt_trace_queue)) != NULL) {
-#ifdef DHD_USE_STATIC_CTRLBUF
-		PKTFREE_STATIC(dhdp->osh, skb, FALSE);
-#else
-		PKTFREE(dhdp->osh, skb, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+		PKTFREE_CTRLBUF(dhdp->osh, skb, FALSE);
 	}
 }
 
@@ -4415,11 +4403,7 @@ dhd_bt_log_process(struct work_struct *work)
 	/* Run while(1) loop till all skbs are dequeued */
 	while ((skb = skb_dequeue(&dhd->bt_log_queue)) != NULL) {
 		dhd_bt_log_pkt_process(dhdp, skb);
-#ifdef DHD_USE_STATIC_CTRLBUF
-		PKTFREE_STATIC(dhdp->osh, skb, FALSE);
-#else
-		PKTFREE(dhdp->osh, skb, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+		PKTFREE_CTRLBUF(dhdp->osh, skb, FALSE);
 	}
 }
 
@@ -6869,7 +6853,7 @@ dhd_force_collect_init_fail_dumps(dhd_pub_t *dhdp)
 {
 #ifdef OEM_ANDROID
 
-#ifdef CUSTOMER_HW4_DEBUG
+#if defined(CUSTOMER_HW4_DEBUG) || defined(CUSTOMER_HW2_DEBUG)
 #ifdef DEBUG_DNGL_INIT_FAIL
 	/* As HAL is not inited, do force crash and collect from host dram */
 	dhdp->memdump_enabled = DUMP_MEMONLY;
@@ -6878,7 +6862,7 @@ dhd_force_collect_init_fail_dumps(dhd_pub_t *dhdp)
 		" cannot collect dumps\n", __FUNCTION__));
 	return;
 #endif /* DEBUG_DNGL_INIT_FAIL */
-#endif /* CUSTOMER_HW4_DEBUG */
+#endif /* CUSTOMER_HW4_DEBUG || CUSTOMER_HW2_DEBUG */
 
 #ifdef DHD_FW_COREDUMP
 	/* save core dump or write to a file */
@@ -7441,8 +7425,11 @@ dhd_static_if_stop(struct net_device *net)
 
 	/* Ensure queue is disabled */
 	netif_tx_disable(net);
-
+	/* Set the interface del_in_progress flag */
+	dhd_set_del_in_progress(&dhd->pub, net);
 	ret = wl_cfg80211_static_if_close(net);
+	/* Clear the interface del_in_progress flag */
+	dhd_clear_del_in_progress(&dhd->pub, net);
 
 	if (dhd->pub.up == 0) {
 		/* If fw is down, return */
@@ -9623,17 +9610,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #ifdef CUSTOMER_HW4_DEBUG
 	dhd->pub.memdump_enabled = DUMP_DISABLED;
 #elif defined(OEM_ANDROID)
-#ifdef DHD_COREDUMP
-	dhd->pub.memdump_enabled = DUMP_MEMFILE;
-#else
-#ifdef DUMP_DISABLE
-	dhd->pub.memdump_enabled = DUMP_DISABLED;
-#elif defined(DUMP_MEM)
+#if defined(DHD_COREDUMP) || defined(XRAPI_COMMON)
 	dhd->pub.memdump_enabled = DUMP_MEMFILE;
 #else
 	dhd->pub.memdump_enabled = DUMP_MEMFILE_BUGON;
-#endif /* DDUMP_DISABLE */
-#endif /* DHD_COREDUMP */
+#endif /* DHD_COREDUMP || XRAPI_COMMON */
 #else
 	dhd->pub.memdump_enabled = DUMP_MEMFILE;
 #endif /* CUSTOMER_HW4_DEBUG */
@@ -25103,6 +25084,42 @@ static void dhd_set_bandlock(dhd_pub_t * dhd)
 		}
 	}
 #endif /* BANDLOCK */
+}
+
+void
+dhd_set_del_in_progress(dhd_pub_t *dhdp, struct net_device *ndev)
+{
+	dhd_if_t *ifp = NULL;
+	unsigned long flags;
+
+	DHD_ERROR(("%s\n", __FUNCTION__));
+	ifp = dhd_get_ifp_by_ndev(dhdp, ndev);
+	if (ifp == NULL) {
+		DHD_ERROR(("DHD Iface Info corresponding to %s not found\n", ndev->name));
+		return;
+	}
+
+	DHD_GENERAL_LOCK(dhdp, flags);
+	ifp->del_in_progress = TRUE;
+	DHD_GENERAL_UNLOCK(dhdp, flags);
+}
+
+void
+dhd_clear_del_in_progress(dhd_pub_t *dhdp, struct net_device *ndev)
+{
+	dhd_if_t *ifp = NULL;
+	unsigned long flags;
+
+	DHD_ERROR(("%s\n", __FUNCTION__));
+	ifp = dhd_get_ifp_by_ndev(dhdp, ndev);
+	if (ifp == NULL) {
+		DHD_ERROR(("DHD Iface Info corresponding to %s not found\n", ndev->name));
+		return;
+	}
+
+	DHD_GENERAL_LOCK(dhdp, flags);
+	ifp->del_in_progress = FALSE;
+	DHD_GENERAL_UNLOCK(dhdp, flags);
 }
 
 #ifdef PCIE_FULL_DONGLE

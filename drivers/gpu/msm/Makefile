@@ -17,7 +17,8 @@ msm_kgsl_core-y = \
 	kgsl_gmu.o \
 	kgsl_rgmu.o \
 	kgsl_hfi.o \
-	kgsl_threadstats.o
+	kgsl_threadstats.o \
+	kgsl_util.o
 
 msm_kgsl_core-$(CONFIG_QCOM_KGSL_IOMMU) += kgsl_iommu.o
 msm_kgsl_core-$(CONFIG_DEBUG_FS) += kgsl_debugfs.o
@@ -30,7 +31,6 @@ msm_adreno-y += \
 	adreno_drawctxt.o \
 	adreno_dispatch.o \
 	adreno_snapshot.o \
-	adreno_coresight.o \
 	adreno_trace.o \
 	adreno_a3xx.o \
 	adreno_a5xx.o \
@@ -47,6 +47,7 @@ msm_adreno-y += \
 	adreno_cp_parser.o \
 	adreno_perfcounter.o
 
+msm_adreno-$(CONFIG_QCOM_KGSL_CORESIGHT) += adreno_coresight.o
 msm_adreno-$(CONFIG_QCOM_KGSL_IOMMU) += adreno_iommu.o
 msm_adreno-$(CONFIG_DEBUG_FS) += adreno_debugfs.o adreno_profile.o
 msm_adreno-$(CONFIG_COMPAT) += adreno_compat.o
@@ -56,3 +57,7 @@ msm_adreno-objs = $(msm_adreno-y)
 
 obj-$(CONFIG_QCOM_KGSL) += msm_kgsl_core.o
 obj-$(CONFIG_QCOM_KGSL) += msm_adreno.o
+
+obj-$(CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ) += governor_msm_adreno_tz.o
+obj-$(CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON) += governor_bw_vbif.o
+obj-$(CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON) += governor_gpubw_mon.o

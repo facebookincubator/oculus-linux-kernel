@@ -5705,11 +5705,7 @@ BCMFASTPATH(dhd_prot_packet_free)(dhd_pub_t *dhd, void *pkt, uint8 pkttype, bool
 			pkttype == PKTTYPE_EVENT_RX ||
 			pkttype == PKTTYPE_INFO_RX ||
 			pkttype == PKTTYPE_TSBUF_RX) {
-#ifdef DHD_USE_STATIC_CTRLBUF
-			PKTFREE_STATIC(dhd->osh, pkt, send);
-#else
-			PKTFREE(dhd->osh, pkt, send);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+			PKTFREE_CTRLBUF(dhd->osh, pkt, send);
 		} else {
 			PKTFREE(dhd->osh, pkt, send);
 		}
@@ -6168,11 +6164,7 @@ dhd_prot_infobufpost(dhd_pub_t *dhd, msgbuf_ring_t *ring)
 		pa = DMA_MAP(dhd->osh, PKTDATA(dhd->osh, p), pktlen, DMA_RX, p, 0);
 		if (PHYSADDRISZERO(pa)) {
 			DMA_UNMAP(dhd->osh, pa, pktlen, DMA_RX, 0, DHD_DMAH_NULL);
-#ifdef DHD_USE_STATIC_CTRLBUF
-			PKTFREE_STATIC(dhd->osh, p, FALSE);
-#else
-			PKTFREE(dhd->osh, p, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+			PKTFREE_CTRLBUF(dhd->osh, p, FALSE);
 			DHD_ERROR(("Invalid phyaddr 0\n"));
 			ASSERT(0);
 			break;
@@ -6196,12 +6188,7 @@ dhd_prot_infobufpost(dhd_pub_t *dhd, msgbuf_ring_t *ring)
 #if defined(DHD_PCIE_PKTID)
 		if (pktid == DHD_PKTID_INVALID) {
 			DMA_UNMAP(dhd->osh, pa, pktlen, DMA_RX, 0, 0);
-
-#ifdef DHD_USE_STATIC_CTRLBUF
-			PKTFREE_STATIC(dhd->osh, p, FALSE);
-#else
-			PKTFREE(dhd->osh, p, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+			PKTFREE_CTRLBUF(dhd->osh, p, FALSE);
 			DHD_ERROR_RLMT(("%s: Pktid pool depleted.\n", __FUNCTION__));
 			break;
 		}
@@ -15620,11 +15607,7 @@ BCMFASTPATH(dhd_prot_process_fw_timestamp)(dhd_pub_t *dhd, void* buf)
 
 	PKTSETLEN(dhd->osh, pkt, buflen);
 	dhd_timesync_handle_fw_timestamp(dhd->ts, PKTDATA(dhd->osh, pkt), buflen, seqnum);
-#ifdef DHD_USE_STATIC_CTRLBUF
-	PKTFREE_STATIC(dhd->osh, pkt, TRUE);
-#else
-	PKTFREE(dhd->osh, pkt, TRUE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+	PKTFREE_CTRLBUF(dhd->osh, pkt, TRUE);
 #else /* DHD_TIMESYNC */
 	DHD_ERROR(("Timesunc feature not compiled in but GOT FW TS message\n"));
 #endif /* DHD_TIMESYNC */

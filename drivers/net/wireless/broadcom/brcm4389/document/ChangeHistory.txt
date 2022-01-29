@@ -1,4 +1,19 @@
-BCM4389 DHD 101.10.501.3  for FB Project R7 Release
+BCM4389 DHD 101.10.501.5  for FB Project R7 - Sep 1 Release
+
+DHD 101.10.501.5 - 2021.08.31
+- Fix AP+STA concurrency issue, CS00012191138
+- Driver performance tuning, CS00012201181
+- Murata 1WK ES6.1 module support, CS00012202051
+
+Others
+- Fix kernel panic with invalid pcie address access
+- Fix kernel panic due to handle memory pre-allocation failure
+- Fix scan timeout issue by enabling wakelock for legacy ESCAN
+- Fixed return value of dhd_plat_pcie_resume for pcie link up failure case
+- Fix kernel panic due to new flowid is not in range
+- Disable packet filter during P2P GO
+- Fix PNO scan failure
+- Fix race condition seen with PNO and regular scan
 
 DHD 101.10.501.3 - 2021.04.30
  - Enable external SAE for 6G WPA3 connection, CS00011968646

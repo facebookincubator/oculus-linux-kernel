@@ -26,6 +26,8 @@
 #ifndef __DHD_PLAT_H__
 #define __DHD_PLAT_H__
 
+#if defined(__linux__)
+
 #include <linuxver.h>
 
 #if !defined(CONFIG_WIFI_CONTROL_FUNC) && !defined(CUSTOMER_HW4)
@@ -52,13 +54,45 @@ struct wifi_platform_data {
 #endif /* CONFIG_WIFI_CONTROL_FUNC  || CUSTOMER_HW4 */
 
 #include <linux/pci.h>
-extern uint32 dhd_plat_get_info_size(void);
+
+/*
+ * Plat Layer defines the interfaces that the BSP specific file should override
+ * The default implementation of the interfaces are present in dhd_linux_platdev.c
+ * The data structure/handle to be passed by the DHD to BSP specific file is opaque
+ * called plat_info. The data structure is to be maintained purely inside the
+ * BSP specific file and hence its kept opaque.
+ *
+ * There are two types of interface functions
+ * 1) Functions that need the interface structure plat_info to be passed down
+ *    from DHD.
+ * 2) Functions that queries for certain information in BSP specific way and just
+ *    returns to DHD - These functions does not take the plat_info as argument.
+ *
+ * The declarations are grouped accordingly. While adding a new interface function
+ * declaration based on the group it belongs to add it in the appropriate section
+ */
 
 typedef void (*dhd_pcie_event_cb_t) (struct pci_dev *pdev);
 extern int dhd_plat_pcie_register_event(void *plat_info,
 		struct pci_dev *pdev, dhd_pcie_event_cb_t pfn);
 extern void dhd_plat_pcie_deregister_event(void *plat_info);
 extern void dhd_plat_report_bh_sched(void *plat_info, int resched);
+extern int dhd_plat_pcie_suspend(void *plat_info);
+extern int dhd_plat_pcie_resume(void *plat_info);
+extern void dhd_plat_pcie_register_dump(void *plat_info);
+extern void dhd_plat_pin_dbg_show(void *plat_info);
+
+extern uint32 dhd_plat_get_info_size(void);
 extern void dhd_plat_l1ss_ctrl(bool ctrl);
 
+/* To be called when we intend to exit L1 while performing wreg, rreg operations */
+extern void dhd_plat_l1_exit_io(void);
+
+/* To be called when we intend to exit L1 in non-io case */
+extern void dhd_plat_l1_exit(void);
+
+extern uint32 dhd_plat_get_rc_vendor_id(void);
+extern uint32 dhd_plat_get_rc_device_id(void);
+
+#endif /* __linux__ */
 #endif /* __DHD_PLAT_H__ */

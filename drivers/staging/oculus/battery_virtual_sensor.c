@@ -57,6 +57,7 @@ struct battery_virtual_sensor_data {
 	struct mutex lock;
 
 	bool was_connected;
+	bool use_pcm_therm_with_charger;
 };
 
 static int get_pcm_temp(struct battery_virtual_sensor_data *vs)
@@ -87,7 +88,8 @@ static int get_temp(void *data, int *temperature)
 		return pcm_temp;
 
 	/* Use PCM thermistor if charger is present */
-	if (is_charger_connected(vs->usb_psy)) {
+	if (vs->use_pcm_therm_with_charger &&
+	    is_charger_connected(vs->usb_psy)) {
 		vs->was_connected = true;
 
 		*temperature = pcm_temp;
@@ -459,13 +461,13 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	ret = virtual_sensor_parse_iio_channels_dt(&pdev->dev, vs->iios,
 			&vs->iio_count);
-	if (ret < 0)
+	if (ret < 0 && ret != -EINVAL)
 		return ret;
 
 	ret = of_property_read_u32_array(pdev->dev.of_node,
 			"io-scaling-factors", vs->iio_scaling_factors,
 			vs->iio_count);
-	if (ret < 0) {
+	if (ret < 0 && ret != -EINVAL) {
 		dev_err(&pdev->dev,
 			"Failed to parse io-scaling-factors: %d", ret);
 		return ret;
@@ -473,7 +475,7 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	ret = of_property_read_u32_array(pdev->dev.of_node, "io-coefficients",
 			vs->iio_coefficients, vs->iio_count);
-	if (ret < 0) {
+	if (ret < 0 && ret != -EINVAL) {
 		dev_err(&pdev->dev, "Failed to parse io-coefficients: %d", ret);
 		return ret;
 	}
@@ -481,7 +483,7 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 	ret = of_property_read_u32_array(
 			pdev->dev.of_node, "io-slope-coefficients",
 			vs->iio_slope_coefficients, vs->iio_count);
-	if (ret < 0) {
+	if (ret < 0 && ret != -EINVAL) {
 		dev_err(&pdev->dev, "Failed to parse io-slope-coefficients: %d",
 				ret);
 		return ret;
@@ -502,6 +504,10 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 				ret);
 		return ret;
 	}
+
+	vs->use_pcm_therm_with_charger =
+		!of_property_read_bool(pdev->dev.of_node,
+			"dont-use-pcm-with-charger");
 
 	vs->usb_psy = power_supply_get_by_name("usb");
 	if (!vs->usb_psy) {

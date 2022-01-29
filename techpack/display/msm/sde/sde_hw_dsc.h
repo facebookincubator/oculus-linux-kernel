@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SDE_HW_DSC_H
@@ -57,6 +57,18 @@ struct sde_hw_dsc_ops {
 	void (*bind_pingpong_blk)(struct sde_hw_dsc *hw_dsc,
 			bool enable,
 			const enum sde_pingpong pp);
+
+	/**
+	 * config_dsc_4hs_merge - configures dsc control
+	 * @hw_dsc: Pointer to dsc context
+	 * @enable: panel dsc parameters
+	 * @mode: dsc topology mode to be set
+	 */
+	void (*config_dsc_4hs_merge)(struct sde_hw_dsc *hw_dsc,
+			struct msm_display_dsc_info *dsc,
+			u32 mode);
+
+
 };
 
 struct sde_hw_dsc {

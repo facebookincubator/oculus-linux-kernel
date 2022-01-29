@@ -110,9 +110,9 @@ struct kgsl_functable {
 	void (*regwrite)(struct kgsl_device *device,
 		unsigned int offsetwords, unsigned int value);
 	int (*idle)(struct kgsl_device *device);
-	bool (*isidle)(struct kgsl_device *device);
 	int (*suspend_context)(struct kgsl_device *device);
-	int (*init)(struct kgsl_device *device);
+	int (*first_open)(struct kgsl_device *device);
+	int (*last_close)(struct kgsl_device *device);
 	int (*start)(struct kgsl_device *device, int priority);
 	int (*stop)(struct kgsl_device *device);
 	int (*getproperty)(struct kgsl_device *device,
@@ -172,8 +172,6 @@ struct kgsl_functable {
 	void (*gpu_model)(struct kgsl_device *device, char *str,
 		size_t bufsz);
 	void (*stop_fault_timer)(struct kgsl_device *device);
-	void (*dispatcher_halt)(struct kgsl_device *device);
-	void (*dispatcher_unhalt)(struct kgsl_device *device);
 	/**
 	 * @query_property_list: query the list of properties
 	 * supported by the device. If 'list' is NULL just return the total
@@ -249,8 +247,10 @@ struct kgsl_device {
 	/* Starting kernel virtual address for QDSS GFX DBG register block */
 	void __iomem *qdss_gfx_virt;
 
-	struct kgsl_memdesc memstore;
-	struct kgsl_memdesc scratch;
+	struct kgsl_memdesc *memstore;
+	void *memstore_kptr;
+	struct kgsl_memdesc *scratch;
+	void *scratch_kptr;
 	const char *iomemname;
 
 	struct kgsl_mmu mmu;
@@ -274,7 +274,6 @@ struct kgsl_device {
 
 	atomic_t active_cnt;
 
-	wait_queue_head_t wait_queue;
 	wait_queue_head_t active_cnt_wq;
 	struct platform_device *pdev;
 	struct dentry *d_debugfs;
@@ -308,8 +307,6 @@ struct kgsl_device {
 	int reset_counter; /* Track how many GPU core resets have occurred */
 	struct workqueue_struct *events_wq;
 
-	struct device *busmondev; /* pseudo dev for GPU BW voting governor */
-
 	/* Number of active contexts seen globally for this device */
 	int active_context_count;
 	struct kobject *gpu_sysfs_kobj;
@@ -318,6 +315,14 @@ struct kgsl_device {
 	unsigned int num_l3_pwrlevels;
 	/* store current L3 vote to determine if we should change our vote */
 	unsigned int cur_l3_pwrlevel;
+	/** @globals: List of global memory objects */
+	struct list_head globals;
+	/** @globlal_map: bitmap for global memory allocations */
+	unsigned long *global_map;
+	/* @qdss_desc: Memory descriptor for the QDSS region if applicable */
+	struct kgsl_memdesc *qdss_desc;
+	/* @qtimer_desc: Memory descriptor for the QDSS region if applicable */
+	struct kgsl_memdesc *qtimer_desc;
 
 	/* Allow restricting high and maximum priority contexts */
 	struct list_head privileged_uid_list;
@@ -326,18 +331,6 @@ struct kgsl_device {
 
 #define KGSL_MMU_DEVICE(_mmu) \
 	container_of((_mmu), struct kgsl_device, mmu)
-
-#define KGSL_DEVICE_COMMON_INIT(_dev) \
-	.hwaccess_gate = COMPLETION_INITIALIZER((_dev).hwaccess_gate),\
-	.halt_gate = COMPLETION_INITIALIZER((_dev).halt_gate),\
-	.idle_check_work = KTHREAD_WORK_INIT((_dev).idle_check_work,\
-			kgsl_idle_check),\
-	.context_idr = IDR_INIT((_dev).context_idr),\
-	.wait_queue = __WAIT_QUEUE_HEAD_INITIALIZER((_dev).wait_queue),\
-	.active_cnt_wq = __WAIT_QUEUE_HEAD_INITIALIZER((_dev).active_cnt_wq),\
-	.mutex = __MUTEX_INITIALIZER((_dev).mutex),\
-	.state = KGSL_STATE_NONE
-
 
 /**
  * enum bits for struct kgsl_context.priv
@@ -570,50 +563,6 @@ struct kgsl_snapshot_object {
 
 struct kgsl_device *kgsl_get_device(int dev_idx);
 
-static inline void __kgsl_process_modify_unreclaimable(pid_t pid, long size)
-{
-	/*
-	 * Fast path for when __kgsl_process_modify_unreclaimable is called from
-	 * the relevant process. Otherwise, search for it using find_get_task_by_vpid
-	 * and be sure to clean up after ourselves.
-	 */
-	if (task_tgid_nr(current) == pid && current->mm)
-		add_mm_counter(current->mm, MM_UNRECLAIMABLE, size);
-	else {
-		struct task_struct *task;
-		struct mm_struct *mm;
-
-		task = find_get_task_by_vpid(pid);
-		if (task) {
-			mm = get_task_mm(task);
-			if (mm) {
-				add_mm_counter(mm, MM_UNRECLAIMABLE, size);
-				mmput(mm);
-			}
-			put_task_struct(task);
-		}
-	}
-}
-
-static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
-	unsigned int type, uint64_t size)
-{
-	u64 ret = atomic_long_add_return(size, &priv->stats[type].cur);
-
-	if (ret > priv->stats[type].max)
-		priv->stats[type].max = ret;
-
-	__kgsl_process_modify_unreclaimable(pid_nr(priv->pid), (size >> PAGE_SHIFT));
-}
-
-static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
-	unsigned int type, uint64_t size)
-{
-	atomic_long_sub(size, &priv->stats[type].cur);
-
-	__kgsl_process_modify_unreclaimable(pid_nr(priv->pid), -(size >> PAGE_SHIFT));
-}
-
 static inline bool kgsl_is_register_offset(struct kgsl_device *device,
 				unsigned int offsetwords)
 {
@@ -694,7 +643,16 @@ void kgsl_device_platform_remove(struct kgsl_device *device);
 
 const char *kgsl_pwrstate_to_str(unsigned int state);
 
-int kgsl_device_snapshot_init(struct kgsl_device *device);
+/**
+ * kgsl_device_snapshot_probe - add resources for the device GPU snapshot
+ * @device: The device to initialize
+ * @size: The size of the static region to allocate
+ *
+ * Allocate memory for a GPU snapshot for the specified device,
+ * and create the sysfs files to manage it
+ */
+void kgsl_device_snapshot_probe(struct kgsl_device *device, u32 size);
+
 void kgsl_device_snapshot(struct kgsl_device *device,
 			struct kgsl_context *context, bool gmu_fault);
 void kgsl_device_snapshot_close(struct kgsl_device *device);
@@ -1007,6 +965,18 @@ int kgsl_query_property_list(struct kgsl_device *device, u32 *list, u32 count);
  */
 struct msm_bus_scale_pdata *kgsl_get_bus_scale_table(
 	struct kgsl_device *device);
+
+static inline bool kgsl_mmu_has_feature(struct kgsl_device *device,
+		enum kgsl_mmu_feature feature)
+{
+	return test_bit(feature, &device->mmu.features);
+}
+
+static inline void kgsl_mmu_set_feature(struct kgsl_device *device,
+	      enum kgsl_mmu_feature feature)
+{
+	set_bit(feature, &device->mmu.features);
+}
 
 /**
  * struct kgsl_pwr_limit - limit structure for each client

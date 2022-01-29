@@ -171,6 +171,17 @@ enum arm_smmu_s2cr_privcfg {
 #define ARM_SMMU_CB_TTBR0		0x20
 #define ARM_SMMU_CB_TTBR1		0x28
 #define ARM_SMMU_CB_TTBCR		0x30
+#define TCR_TCR1			GENMASK(31, 16)
+#define TCR1_TG1			GENMASK(31, 30)
+#define TCR1_TG1_16K			0x1
+#define TCR1_TG1_4K			0x2
+#define TCR1_TG1_64K			0x3
+#define TCR1_EPD1			BIT(23)
+#define TCR_TCR0			GENMASK(15, 0)
+#define TCR0_TG0			GENMASK(15, 14)
+#define TCR0_TG0_4K			0x0
+#define TCR0_TG0_64K			0x1
+#define TCR0_TG0_16K			0x2
 #define ARM_SMMU_CB_CONTEXTIDR		0x34
 #define ARM_SMMU_CB_S1_MAIR0		0x38
 #define ARM_SMMU_CB_S1_MAIR1		0x3c

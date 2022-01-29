@@ -66,6 +66,8 @@ struct adreno_a6xx_core {
 	const struct a6xx_protected_regs *protected_regs;
 	/** @disable_tseskip: True if TSESkip logic is disabled */
 	bool disable_tseskip;
+	/** @highest_bank_bit: The bit of the highest DDR bank */
+	u32 highest_bank_bit;
 };
 
 #define CP_CLUSTER_FE		0x0
@@ -245,7 +247,6 @@ void a6xx_preemption_trigger(struct adreno_device *adreno_dev);
 void a6xx_preemption_schedule(struct adreno_device *adreno_dev);
 void a6xx_preemption_start(struct adreno_device *adreno_dev);
 int a6xx_preemption_init(struct adreno_device *adreno_dev);
-void a6xx_preemption_close(struct adreno_device *adreno_dev);
 
 unsigned int a6xx_preemption_post_ibsubmit(struct adreno_device *adreno_dev,
 		unsigned int *cmds);
@@ -268,5 +269,12 @@ void a6xx_crashdump_init(struct adreno_device *adreno_dev);
 int a6xx_gmu_sptprac_enable(struct adreno_device *adreno_dev);
 void a6xx_gmu_sptprac_disable(struct adreno_device *adreno_dev);
 bool a6xx_gmu_sptprac_is_on(struct adreno_device *adreno_dev);
-u64 a6xx_gmu_read_ao_counter(struct kgsl_device *device);
+
+/**
+ * a6xx_read_alwayson: Read the current always on clock value
+ * @adreno_dev: An Adreno GPU handle
+ *
+ * Return: The current value of the GMU always on counter
+ */
+u64 a6xx_read_alwayson(struct adreno_device *adreno_dev);
 #endif

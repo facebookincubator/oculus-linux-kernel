@@ -229,7 +229,7 @@ const char *cam_get_module_name(unsigned int module_id);
 				__LINE__, ##args);                          \
 	})
 #else
-#define CAM_WARN_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
+#define CAM_INFO_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
 	__cam_log_noop(__module, fmt, ##args)
 #endif
 
@@ -256,7 +256,7 @@ const char *cam_get_module_name(unsigned int module_id);
 				__LINE__, ##args);                         \
 	})
 #else
-#define CAM_WARN_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
+#define CAM_ERR_RATE_LIMIT_CUSTOM(__module, interval, burst, fmt, args...) \
 	__cam_log_noop(__module, fmt, ##args)
 #endif
 

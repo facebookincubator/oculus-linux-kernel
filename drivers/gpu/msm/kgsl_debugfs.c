@@ -69,6 +69,52 @@ static int _isdb_get(void *data, u64 *val)
 
 DEFINE_DEBUGFS_ATTRIBUTE(_isdb_fops, _isdb_get, _isdb_set, "%llu\n");
 
+static int globals_print(struct seq_file *s, void *unused)
+{
+	struct kgsl_device *device = s->private;
+	struct kgsl_global_memdesc *md;
+
+	seq_printf(s, "%37s %16s %16s %5s %s\n",
+			"gpuaddr", "virtsize", "physsize", "flags", "name");
+
+	list_for_each_entry(md, &device->globals, node) {
+		struct kgsl_memdesc *memdesc = &md->memdesc;
+		char flags[6];
+
+		flags[0] = memdesc->priv & KGSL_MEMDESC_PRIVILEGED ?  'p' : '-';
+		flags[1] = !(memdesc->flags & KGSL_MEMFLAGS_GPUREADONLY) ? 'w' : '-';
+		flags[2] = kgsl_memdesc_is_secured(memdesc) ?  's' : '-';
+		flags[3] = memdesc->priv & KGSL_MEMDESC_RANDOM ?  'r' : '-';
+		flags[4] = memdesc->priv & KGSL_MEMDESC_UCODE ? 'u' : '-';
+		flags[5] = '\0';
+
+		seq_printf(s, "0x%pK-0x%pK %16llu %16llu %5s %s\n",
+			(u64 *)(uintptr_t) memdesc->gpuaddr,
+			(u64 *)(uintptr_t) (memdesc->gpuaddr +
+			memdesc->size - 1), memdesc->size,
+			atomic_long_read(&memdesc->physsize), flags, md->name);
+	}
+
+	return 0;
+}
+
+static int globals_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, globals_print, inode->i_private);
+}
+
+static int globals_release(struct inode *inode, struct file *file)
+{
+	return single_release(inode, file);
+}
+
+static const struct file_operations global_fops = {
+	.open = globals_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = globals_release,
+};
+
 void kgsl_device_debugfs_init(struct kgsl_device *device)
 {
 	struct dentry *snapshot_dir;
@@ -78,6 +124,10 @@ void kgsl_device_debugfs_init(struct kgsl_device *device)
 
 	device->d_debugfs = debugfs_create_dir(device->name,
 						       kgsl_debugfs_dir);
+
+	debugfs_create_file("globals", 0444, device->d_debugfs, device,
+		&global_fops);
+
 	snapshot_dir = debugfs_create_dir("snapshot", kgsl_debugfs_dir);
 	debugfs_create_file("break_isdb", 0644, snapshot_dir, device,
 		&_isdb_fops);
@@ -289,29 +339,6 @@ static const struct file_operations process_mem_fops = {
 	.release = process_mem_release,
 };
 
-static int globals_print(struct seq_file *s, void *unused)
-{
-	kgsl_print_global_pt_entries(s);
-	return 0;
-}
-
-static int globals_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, globals_print, NULL);
-}
-
-static int globals_release(struct inode *inode, struct file *file)
-{
-	return single_release(inode, file);
-}
-
-static const struct file_operations global_fops = {
-	.open = globals_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = globals_release,
-};
-
 /**
  * kgsl_process_init_debugfs() - Initialize debugfs for a process
  * @private: Pointer to process private structure created for the process
@@ -428,14 +455,14 @@ static void *mem_entry_seq_start(struct seq_file *s, loff_t *pos)
 	 * If the entry is being freed, has not been mapped yet, or we fail to
 	 * grab a ref bail out here.
 	 */
-	if (entry->pending_free ||
+	if (entry->pending_free || !(entry->memdesc.priv & KGSL_MEMDESC_MAPPED) ||
 			kgsl_mem_entry_get(entry) == 0)
 		return NULL;
 
 	if (*pos == 0)
 		return SEQ_START_TOKEN;
 	else
-		return (*pos <= entry->memdesc.page_count) ? pos : NULL;
+		return (*pos <= (entry->memdesc.size >> PAGE_SHIFT)) ? pos : NULL;
 }
 
 static void *mem_entry_seq_next(struct seq_file *s, void *ptr, loff_t *pos)
@@ -443,7 +470,7 @@ static void *mem_entry_seq_next(struct seq_file *s, void *ptr, loff_t *pos)
 	struct kgsl_mem_entry *entry = s->private;
 
 	++(*pos);
-	return (*pos <= entry->memdesc.page_count) ? pos : NULL;
+	return (*pos <= (entry->memdesc.size >> PAGE_SHIFT)) ? pos : NULL;
 }
 
 static int mem_entry_seq_show(struct seq_file *s, void *ptr)
@@ -501,9 +528,7 @@ void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry)
 			KGSL_MEMFLAGS_SECURE;
 
 	if (IS_ERR_OR_NULL(entry->priv->debug_root) ||
-			(entry->memdesc.flags & blocked_flags) ||
-			IS_ERR_OR_NULL(entry->memdesc.pages) ||
-			entry->memdesc.page_count == 0)
+			(entry->memdesc.flags & blocked_flags))
 		return;
 
 	snprintf(name, sizeof(name), "%d", entry->id);
@@ -513,7 +538,7 @@ void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry)
 	if (IS_ERR_OR_NULL(dentry)) {
 		WARN((dentry == NULL),
 			"Unable to create mem entry file for %d:%s\n",
-			entry->priv->pid, name);
+			pid_nr(entry->priv->pid), name);
 		entry->dentry_id = 0;
 		return;
 	}
@@ -526,6 +551,23 @@ void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry)
 	idr_preload_end();
 }
 
+void kgsl_process_destroy_mem_entry_debugfs(struct kgsl_mem_entry *entry)
+{
+	struct dentry *dentry;
+
+	if (IS_ERR_OR_NULL(entry->priv->debug_root) || entry->dentry_id == 0)
+		return;
+
+	spin_lock(&entry->priv->mem_lock);
+	dentry = idr_find(&entry->priv->dentry_idr, entry->dentry_id);
+	idr_remove(&entry->priv->dentry_idr, entry->dentry_id);
+	entry->dentry_id = 0;
+	spin_unlock(&entry->priv->mem_lock);
+
+	if (!IS_ERR_OR_NULL(dentry))
+		debugfs_remove(dentry);
+}
+
 void kgsl_core_debugfs_init(void)
 {
 	struct dentry *debug_dir;
@@ -533,9 +575,6 @@ void kgsl_core_debugfs_init(void)
 	kgsl_debugfs_dir = debugfs_create_dir("kgsl", NULL);
 	if (IS_ERR_OR_NULL(kgsl_debugfs_dir))
 		return;
-
-	debugfs_create_file("globals", 0444, kgsl_debugfs_dir, NULL,
-		&global_fops);
 
 	debug_dir = debugfs_create_dir("debug", kgsl_debugfs_dir);
 
