@@ -958,10 +958,11 @@ void kernfs_notify(struct kernfs_node *kn)
 
 	spin_unlock_irqrestore(&kernfs_open_node_lock, flags);
 
-	if (!in_interrupt() && mutex_trylock(&kernfs_mutex)) {
+	if (!(in_interrupt() || irqs_disabled() || in_atomic()) &&
+			mutex_trylock(&kernfs_mutex)) {
 		/*
 		 * notify the kernfs node directly if not in an interrupt
-		 * and the lock is successfully grabbed
+		 * or atomic context and the lock is successfully grabbed
 		 */
 		kernfs_get(kn);
 		__notify_kernfs_node(kn);

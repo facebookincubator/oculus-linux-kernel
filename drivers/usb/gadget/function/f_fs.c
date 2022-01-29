@@ -2035,11 +2035,13 @@ static void ffs_epfiles_destroy(struct ffs_epfile *epfiles, unsigned count)
 	ffs_log("enter: count %u", count);
 
 	for (; count; --count, ++epfile) {
+		struct dentry *dentry = epfile->dentry;
+
+		epfile->dentry = NULL;
 		BUG_ON(mutex_is_locked(&epfile->mutex));
-		if (epfile->dentry) {
-			d_delete(epfile->dentry);
-			dput(epfile->dentry);
-			epfile->dentry = NULL;
+		if (dentry && d_really_is_positive(dentry)) {
+			d_delete(dentry);
+			dput(dentry);
 		}
 	}
 

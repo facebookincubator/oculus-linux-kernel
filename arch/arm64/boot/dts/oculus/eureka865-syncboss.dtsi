@@ -108,7 +108,7 @@
 		spi-cpol;
 		spi-cpha;
 
-		pinctrl-names = "syncboss_default";
+		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
 		oculus,imu-core-supply = <&pm8150a_l8>;
@@ -129,7 +129,7 @@
 		swd@0 {
 			compatible = "oculus,swd";
 
-			pinctrl-names = "swd_default";
+			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
 			oculus,swd-clk = <&tlmm 86 0>;

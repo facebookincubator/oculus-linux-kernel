@@ -1065,7 +1065,9 @@ static bool _sde_crtc_setup_is_quad_pipe(struct drm_crtc_state *state)
 				(topology ==
 				SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE) ||
 				(topology ==
-				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC))
+				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC) ||
+				(topology ==
+				SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE))
 			return true;
 	}
 

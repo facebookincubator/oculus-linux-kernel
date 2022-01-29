@@ -1958,6 +1958,8 @@ struct bcm_cfg80211 {
 	struct mutex event_sync;	/* maily for up/down synchronization */
 	bool disable_roam_event;
 	struct delayed_work pm_enable_work;
+	struct delayed_work recovery_work;
+	u32 recovery_state;
 
 #ifdef OEM_ANDROID
 	struct workqueue_struct *event_workq;   /* workqueue for event */

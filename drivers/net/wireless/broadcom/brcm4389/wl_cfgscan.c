@@ -2207,27 +2207,162 @@ wl_cfgscan_handle_scanbusy(struct bcm_cfg80211 *cfg, struct net_device *ndev, s3
 	return scanbusy_err;
 }
 
+static bool
+is_p2p_ssid_present(struct cfg80211_scan_request *request)
+{
+	struct cfg80211_ssid *ssids;
+	int i;
+
+	ssids = request->ssids;
+	for (i = 0; i < request->n_ssids; i++) {
+			if (ssids[i].ssid_len &&
+				IS_P2P_SSID(ssids[i].ssid, ssids[i].ssid_len)) {
+				/* P2P Scan */
+				return TRUE;
+			}
+	}
+	return FALSE;
+}
+
+static void
+wl_set_p2p_scan_states(struct bcm_cfg80211 *cfg, struct net_device *ndev)
+{
+	if (cfg->p2p_supported) {
+		/* p2p scan trigger */
+		if (p2p_on(cfg) == false) {
+			/* p2p on at the first time */
+			p2p_on(cfg) = true;
+#if defined(P2P_IE_MISSING_FIX)
+			cfg->p2p_prb_noti = false;
+#endif
+		}
+		wl_clr_p2p_status(cfg, GO_NEG_PHASE);
+		WL_DBG(("P2P: GO_NEG_PHASE status cleared \n"));
+		p2p_scan(cfg) = true;
+	}
+}
+
+static void
+wl_set_legacy_scan_states(struct bcm_cfg80211 *cfg,
+		struct cfg80211_scan_request *request, struct net_device *ndev, s32 bssidx)
+{
+	s32 err = BCME_OK;
+#ifdef WL11U
+	bcm_tlv_t *interworking_ie;
+#endif
+
+	/* legacy scan trigger
+	 * So, we have to disable p2p discovery if p2p discovery is on
+	 */
+	if (cfg->p2p_supported) {
+		p2p_scan(cfg) = false;
+		if (wl_get_p2p_status(cfg, DISCOVERY_ON)) {
+			err = wl_cfgp2p_discover_enable_search(cfg, false);
+			if (unlikely(err)) {
+				WL_ERR(("disable discovery failed\n"));
+				/* non-fatal error. fall through */
+			}
+		}
+	}
+
+#ifdef WL11U
+	if (request && (interworking_ie = wl_cfg80211_find_interworking_ie(request->ie,
+			request->ie_len)) != NULL) {
+		if ((err = wl_cfg80211_add_iw_ie(cfg, ndev, bssidx,
+			VNDR_IE_CUSTOM_FLAG, interworking_ie->id, interworking_ie->data,
+			interworking_ie->len)) != BCME_OK) {
+			WL_ERR(("Failed to add interworking IE"));
+		}
+	} else if (cfg->wl11u) {
+		/* we have to clear IW IE and disable gratuitous APR */
+		wl_cfg80211_clear_iw_ie(cfg, ndev, bssidx);
+		err = wldev_iovar_setint_bsscfg(ndev, "grat_arp", 0, bssidx);
+		/* we don't care about error here
+		 * because the only failure case is unsupported,
+		 * which is fine
+		 */
+		if (unlikely(err)) {
+			WL_ERR(("Set grat_arp failed:(%d) Ignore!\n", err));
+		}
+		cfg->wl11u = FALSE;
+	}
+#endif /* WL11U */
+
+	if (request) {
+		err = wl_cfg80211_set_mgmt_vndr_ies(cfg, ndev_to_cfgdev(ndev), bssidx,
+				VNDR_IE_PRBREQ_FLAG, request->ie, request->ie_len);
+		if (unlikely(err)) {
+			WL_ERR(("vndr_ie set for probereq failed for bssidx:%d!\n", bssidx));
+		}
+	}
+}
+
+static bool
+is_scan_allowed(struct bcm_cfg80211 *cfg, struct net_device *ndev)
+{
+#ifdef WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST
+	struct net_device *remain_on_channel_ndev = NULL;
+#endif
+
+#ifdef WL_SCHED_SCAN
+	if (cfg->sched_scan_running) {
+		WL_ERR(("PNO SCAN in progress\n"));
+		return FALSE;
+	}
+#endif /* WL_SCHED_SCAN */
+
+	if (wl_get_drv_status_all(cfg, SCANNING)) {
+		if (cfg->scan_request == NULL) {
+			/* SCANNING bit is set, but scan_request NULL!! */
+			wl_clr_drv_status_all(cfg, SCANNING);
+			WL_DBG(("<<<<<<<<<<<Force Clear Scanning Status>>>>>>>>>>>\n"));
+		} else {
+			WL_ERR(("Scanning already\n"));
+			return FALSE;
+		}
+	}
+
+	if (wl_get_drv_status(cfg, SCAN_ABORTING, ndev)) {
+		WL_ERR(("Scanning being aborted. skip new scan\n"));
+		return FALSE;
+	}
+
+	if (cfg->loc.in_progress) {
+		WL_ERR(("loc in progress. skip new scan\n"));
+		/* Listen in progress, avoid new scan trigger */
+		return FALSE;
+	}
+
+	if (WL_DRV_STATUS_SENDING_AF_FRM_EXT(cfg)) {
+		WL_ERR(("Sending Action Frames. Try it again.\n"));
+		return FALSE;
+	}
+
+#ifdef WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST
+	remain_on_channel_ndev = wl_cfg80211_get_remain_on_channel_ndev(cfg);
+	if (remain_on_channel_ndev) {
+		/* scan listen and proceed */
+		WL_DBG(("Remain_on_channel bit is set, somehow it didn't get cleared\n"));
+		_wl_cfgscan_cancel_scan(cfg);
+	}
+#endif /* WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST */
+
+	return TRUE;
+}
+
 s32
 __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	struct cfg80211_scan_request *request,
 	struct cfg80211_ssid *this_ssid)
 {
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-	struct cfg80211_ssid *ssids;
-	bool p2p_ssid;
-#ifdef WL11U
-	bcm_tlv_t *interworking_ie;
-#endif
+	bool p2p_ssid = FALSE;
 	s32 err = 0;
-	s32 bssidx = -1;
-	s32 i;
 	bool escan_req_failed = false;
 	s32 scanbusy_err = 0;
-
 	unsigned long flags;
-#ifdef WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST
-	struct net_device *remain_on_channel_ndev = NULL;
-#endif
+	s32 bssidx = 0;
+
 	/*
 	 * Hostapd triggers scan before starting automatic channel selection
 	 * to collect channel characteristics. However firmware scan engine
@@ -2246,57 +2381,12 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	ndev = ndev_to_wlc_ndev(ndev, cfg);
 
-	if (WL_DRV_STATUS_SENDING_AF_FRM_EXT(cfg)) {
-		WL_ERR(("Sending Action Frames. Try it again.\n"));
-		return -EAGAIN;
-	}
-
-#ifdef WL_SCHED_SCAN
-	if (cfg->sched_scan_running) {
-		WL_ERR(("PNO SCAN in progress\n"));
-		return -EAGAIN;
-	}
-#endif /* WL_SCHED_SCAN */
-
-	WL_DBG(("Enter wiphy (%p)\n", wiphy));
-	mutex_lock(&cfg->scan_sync);
-	if (wl_get_drv_status_all(cfg, SCANNING)) {
-		if (cfg->scan_request == NULL) {
-			wl_clr_drv_status_all(cfg, SCANNING);
-			WL_DBG(("<<<<<<<<<<<Force Clear Scanning Status>>>>>>>>>>>\n"));
-		} else {
-			WL_ERR(("Scanning already\n"));
-			mutex_unlock(&cfg->scan_sync);
-			return -EAGAIN;
-		}
-	}
-	if (wl_get_drv_status(cfg, SCAN_ABORTING, ndev)) {
-		WL_ERR(("Scanning being aborted\n"));
-		mutex_unlock(&cfg->scan_sync);
-		return -EAGAIN;
-	}
-
-	if (cfg->loc.in_progress) {
-		/* Listen in progress, avoid new scan trigger */
-		mutex_unlock(&cfg->scan_sync);
-		return -EBUSY;
-	}
-	mutex_unlock(&cfg->scan_sync);
+	WL_DBG(("[%s] Enter\n", ndev->name));
 
 #ifdef WL_BCNRECV
 	/* check fakeapscan in progress then abort */
 	wl_android_bcnrecv_stop(ndev, WL_BCNRECV_SCANBUSY);
 #endif /* WL_BCNRECV */
-
-#ifdef WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST
-	mutex_lock(&cfg->scan_sync);
-	remain_on_channel_ndev = wl_cfg80211_get_remain_on_channel_ndev(cfg);
-	if (remain_on_channel_ndev) {
-		WL_DBG(("Remain_on_channel bit is set, somehow it didn't get cleared\n"));
-		_wl_cfgscan_cancel_scan(cfg);
-	}
-	mutex_unlock(&cfg->scan_sync);
-#endif /* WL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST */
 
 #ifdef P2P_LISTEN_OFFLOADING
 	wl_cfg80211_cancel_p2plo(cfg);
@@ -2308,105 +2398,22 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	}
 #endif
 
-	if (request) {		/* scan bss */
-		ssids = request->ssids;
-		p2p_ssid = false;
-		for (i = 0; i < request->n_ssids; i++) {
-			if (ssids[i].ssid_len &&
-				IS_P2P_SSID(ssids[i].ssid, ssids[i].ssid_len)) {
-				/* P2P Scan */
-				if (!(IS_P2P_IFACE(request->wdev))) {
-					/* P2P scan on non-p2p iface. Fail scan */
-					WL_ERR(("p2p_search on non p2p iface %d\n",
-						request->wdev->iftype));
-					break;
-				}
-				p2p_ssid = true;
-				break;
-			}
+	if (request) {
+		/* scan bss */
+		p2p_ssid = is_p2p_ssid_present(request);
+		if (p2p_ssid && !(IS_P2P_IFACE(request->wdev))) {
+			/* P2P scan on non-p2p iface. Fail scan */
+			WL_ERR(("p2p_search on non p2p iface %d\n",
+				request->wdev->iftype));
+			err = -EINVAL;
+			goto scan_out;
 		}
-		if (p2p_ssid) {
-			if (cfg->p2p_supported) {
-				/* p2p scan trigger */
-				if (p2p_on(cfg) == false) {
-					/* p2p on at the first time */
-					p2p_on(cfg) = true;
-					wl_cfgp2p_set_firm_p2p(cfg);
-#if defined(P2P_IE_MISSING_FIX)
-					cfg->p2p_prb_noti = false;
-#endif
-				}
-				wl_clr_p2p_status(cfg, GO_NEG_PHASE);
-				WL_DBG(("P2P: GO_NEG_PHASE status cleared \n"));
-				p2p_scan(cfg) = true;
-			}
-		} else {
-			/* legacy scan trigger
-			 * So, we have to disable p2p discovery if p2p discovery is on
-			 */
-			if (cfg->p2p_supported) {
-				p2p_scan(cfg) = false;
-				/* If Netdevice is not equals to primary and p2p is on
-				*  , we will do p2p scan using P2PAPI_BSSCFG_DEVICE.
-				*/
+	}
 
-				if (p2p_scan(cfg) == false) {
-					if (wl_get_p2p_status(cfg, DISCOVERY_ON)) {
-						err = wl_cfgp2p_discover_enable_search(cfg,
-						false);
-						if (unlikely(err)) {
-							goto scan_out;
-						}
-
-					}
-				}
-			}
-			if (!cfg->p2p_supported || !p2p_scan(cfg)) {
-				if ((bssidx = wl_get_bssidx_by_wdev(cfg,
-					ndev->ieee80211_ptr)) < 0) {
-					WL_ERR(("Find p2p index from ndev(%p) failed\n",
-						ndev));
-					err = BCME_ERROR;
-					goto scan_out;
-				}
-#ifdef WL11U
-				if (request && (interworking_ie = wl_cfg80211_find_interworking_ie(
-						request->ie, request->ie_len)) != NULL) {
-					if ((err = wl_cfg80211_add_iw_ie(cfg, ndev, bssidx,
-							VNDR_IE_CUSTOM_FLAG, interworking_ie->id,
-							interworking_ie->data,
-							interworking_ie->len)) != BCME_OK) {
-						WL_ERR(("Failed to add interworking IE"));
-					}
-				} else if (cfg->wl11u) {
-					/* we have to clear IW IE and disable gratuitous APR */
-					wl_cfg80211_clear_iw_ie(cfg, ndev, bssidx);
-					err = wldev_iovar_setint_bsscfg(ndev, "grat_arp",
-					                                0, bssidx);
-					/* we don't care about error here
-					 * because the only failure case is unsupported,
-					 * which is fine
-					 */
-					if (unlikely(err)) {
-						WL_ERR(("Set grat_arp failed:(%d) Ignore!\n", err));
-					}
-					cfg->wl11u = FALSE;
-				}
-#endif /* WL11U */
-				if (request) {
-					err = wl_cfg80211_set_mgmt_vndr_ies(cfg,
-						ndev_to_cfgdev(ndev), bssidx, VNDR_IE_PRBREQ_FLAG,
-						request->ie, request->ie_len);
-				}
-
-				if (unlikely(err)) {
-					goto scan_out;
-				}
-
-			}
-		}
-	} else {		/* scan in ibss */
-		ssids = this_ssid;
+	if ((bssidx = wl_get_bssidx_by_wdev(cfg, ndev->ieee80211_ptr)) < 0) {
+		WL_ERR(("Find bssidx from wdev failed!\n"));
+		err = -EINVAL;
+		goto scan_out;
 	}
 
 	WL_TRACE_HW4(("START SCAN\n"));
@@ -2417,34 +2424,46 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	DHD_DISABLE_RUNTIME_PM((dhd_pub_t *)(cfg->pub));
 #endif
 
-	if (cfg->p2p_supported) {
-		if (request && p2p_on(cfg) && p2p_scan(cfg)) {
-
+	if (cfg->p2p_supported && p2p_ssid) {
 #ifdef WL_SDO
-			if (wl_get_p2p_status(cfg, DISC_IN_PROGRESS)) {
-				/* We shouldn't be getting p2p_find while discovery
-				 * offload is in progress
-				 */
-				WL_SD(("P2P_FIND: Discovery offload is in progress."
-					" Do nothing\n"));
-				err = -EINVAL;
-				goto scan_out;
-			}
+		if (wl_get_p2p_status(cfg, DISC_IN_PROGRESS)) {
+			/* We shouldn't be getting p2p_find while discovery
+			 * offload is in progress
+			 */
+			WL_SD(("P2P_FIND: Discovery offload is in progress."
+				" Do nothing\n"));
+			err = -EINVAL;
+			goto scan_out;
+		}
 #endif
-			/* find my listen channel */
-			cfg->afx_hdl->my_listen_chan =
-				wl_find_listen_channel(cfg, request->ie,
-				request->ie_len);
-			err = wl_cfgp2p_enable_discovery(cfg, ndev,
-			request->ie, request->ie_len);
-
-			if (unlikely(err)) {
-				goto scan_out;
-			}
+		/* find my listen channel */
+		cfg->afx_hdl->my_listen_chan =
+			wl_find_listen_channel(cfg, request->ie, request->ie_len);
+		wl_cfgp2p_set_firm_p2p(cfg);
+		err = wl_cfgp2p_enable_discovery(cfg, ndev, request->ie, request->ie_len);
+		if (unlikely(err)) {
+			goto scan_out;
 		}
 	}
 
 	mutex_lock(&cfg->scan_sync);
+
+	if (is_scan_allowed(cfg, ndev) == FALSE) {
+		err = -EAGAIN;
+		WL_ERR(("scan not permitted!\n"));
+		escan_req_failed = true;
+		goto scan_out;
+	}
+
+	if (request) {
+		/* set scan related states that need mutex protection */
+		if (p2p_ssid) {
+			wl_set_p2p_scan_states(cfg, ndev);
+		} else {
+			wl_set_legacy_scan_states(cfg, request, ndev, bssidx);
+		}
+	}
+
 	err = wl_do_escan(cfg, wiphy, ndev, request);
 	if (likely(!err)) {
 		goto scan_success;
@@ -3788,7 +3807,7 @@ wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
 		if (cfg->sched_scan_running && wl_get_drv_status(cfg, SCANNING, dev)) {
 			/* If targetted escan for PNO is running, abort it */
 			WL_INFORM_MEM(("abort targetted escan\n"));
-			wl_cfgscan_scan_abort(cfg);
+			_wl_cfgscan_cancel_scan(cfg);
 			wl_clr_drv_status(cfg, SCANNING, dev);
 		} else {
 			WL_INFORM_MEM(("pno escan state:%d\n",
@@ -4123,9 +4142,16 @@ wl_cfgscan_init_pno_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	uint8 random_mask_46_bits[ETHER_ADDR_LEN] = {0xFC, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 #endif /* KERNEL_VER >= 3.19 && SUPPORT_RANDOM_MAC_SCAN */
 	mutex_lock(&cfg->scan_sync);
-	LOG_TS(cfg, scan_start);
+
+	/* No scans in progress */
+	if (!cfg->sched_scan_req) {
+		err = BCME_ERROR;
+		WL_ERR(("No sched scan is in progress, err:%d\n", err));
+		goto exit;
+	}
 
 	if (wl_get_drv_status_all(cfg, SCANNING)) {
+		WL_INFORM_MEM(("scan in progress. cancel and trigger PNO targetted scan\n"));
 		_wl_cfgscan_cancel_scan(cfg);
 	}
 
@@ -4138,19 +4164,21 @@ wl_cfgscan_init_pno_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	memcpy_s(&request->mac_addr, ETH_ALEN, random_addr, ETH_ALEN);
 	memcpy_s(&request->mac_addr_mask, ETH_ALEN, random_mask_46_bits, ETH_ALEN);
 #endif /*  KERNEL_VER >= 3.19 && SUPPORT_RANDOM_MAC_SCAN */
+	LOG_TS(cfg, scan_start);
 	err = wl_do_escan(cfg, wiphy, ndev, request);
 	if (err) {
 		wl_clr_drv_status(cfg, SCANNING, ndev);
-		mutex_unlock(&cfg->scan_sync);
 		WL_ERR(("targeted escan failed. err:%d\n", err));
-		return err;
+		CLR_TS(cfg, scan_start);
+		goto exit;
 	}
 
 	DBG_EVENT_LOG(dhdp, WIFI_EVENT_DRIVER_PNO_SCAN_REQUESTED);
 
 	cfg->sched_scan_running = TRUE;
-	mutex_unlock(&cfg->scan_sync);
 
+exit:
+	mutex_unlock(&cfg->scan_sync);
 	return err;
 }
 

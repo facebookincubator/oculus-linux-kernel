@@ -24,7 +24,6 @@
 #define KGSL_GPU_CFG_PATH_HIGH	2
 
 #define KGSL_MAX_CLKS 18
-#define KGSL_MAX_REGULATORS 2
 
 #define KGSL_MAX_PWRLEVELS 10
 
@@ -116,11 +115,6 @@ struct kgsl_pwrlevel {
 	unsigned int acd_level;
 };
 
-struct kgsl_regulator {
-	struct regulator *reg;
-	char name[8];
-};
-
 /**
  * struct gpu_cx_ipeak_client - Struct holding CX Ipeak client info.
  * @client:    Client handle used for CX Ipeak vote
@@ -149,10 +143,8 @@ struct gpu_cx_ipeak_client {
  * @throttle_mask - LM throttle mask
  * @interval_timeout - timeout in jiffies to be idle before a power event
  * @clock_times - Each GPU frequency's accumulated active time in us
- * @regulators - array of pointers to kgsl_regulator structs
  * @pcl - bus scale identifier
  * @gpu_cfg - CPU to GPU AHB path bus scale identifier
- * @irq_name - resource name for the IRQ
  * @clk_stats - structure of clock statistics
  * @l2pc_cpus_mask - mask to avoid L2PC on masked CPUs
  * @l2pc_update_queue - Boolean flag to avoid L2PC on masked CPUs at queue time
@@ -190,6 +182,10 @@ struct kgsl_pwrctrl {
 	int interrupt_num;
 	struct clk *grp_clks[KGSL_MAX_CLKS];
 	struct clk *gpu_bimc_int_clk;
+	/** @cx_gdsc: Pointer to the CX domain regulator if applicable */
+	struct regulator *cx_gdsc;
+	/** @gx_gdsc: Pointer to the GX domain regulator if applicable */
+	struct regulator *gx_gdsc;
 	int isense_clk_indx;
 	int isense_clk_on_level;
 	unsigned long power_flags;
@@ -208,10 +204,8 @@ struct kgsl_pwrctrl {
 	unsigned int throttle_mask;
 	unsigned long interval_timeout;
 	u64 clock_times[KGSL_MAX_PWRLEVELS];
-	struct kgsl_regulator regulators[KGSL_MAX_REGULATORS];
 	uint32_t pcl;
 	uint32_t gpu_cfg;
-	const char *irq_name;
 	struct kgsl_clk_stats clk_stats;
 	unsigned int l2pc_cpus_mask;
 	bool l2pc_update_queue;
@@ -248,7 +242,6 @@ struct kgsl_pwrctrl {
 int kgsl_pwrctrl_init(struct kgsl_device *device);
 void kgsl_pwrctrl_close(struct kgsl_device *device);
 void kgsl_timer(struct timer_list *t);
-void kgsl_idle_check(struct kthread_work *work);
 void kgsl_pre_hwaccess(struct kgsl_device *device);
 void kgsl_pwrctrl_pwrlevel_change(struct kgsl_device *device,
 	unsigned int level);

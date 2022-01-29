@@ -47,6 +47,9 @@ extern int dhd_init_wlan_mem(void);
 extern void *dhd_wlan_mem_prealloc(int section, unsigned long size);
 #endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 
+#define HIKEY_PCIE_VENDOR_ID 0x19e5
+#define HIKEY_PCIE_DEVICE_ID 0x3660
+
 #define WLAN_REG_ON_GPIO		491
 #define WLAN_HOST_WAKE_GPIO		493
 
@@ -292,6 +295,15 @@ dhd_wlan_init(void)
 	int ret;
 
 	DHD_INFO(("%s: START.......\n", __FUNCTION__));
+#ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
+	ret = dhd_init_wlan_mem();
+	if (ret < 0) {
+		DHD_ERROR(("%s: failed to alloc reserved memory,"
+				" ret=%d\n", __FUNCTION__, ret));
+		goto fail;
+	}
+#endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
+
 	ret = dhd_wifi_init_gpio();
 	if (ret < 0) {
 		DHD_ERROR(("%s: failed to initiate GPIO, ret=%d\n",
@@ -301,14 +313,6 @@ dhd_wlan_init(void)
 
 	dhd_wlan_resources.start = wlan_host_wake_irq;
 	dhd_wlan_resources.end = wlan_host_wake_irq;
-
-#ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
-	ret = dhd_init_wlan_mem();
-	if (ret < 0) {
-		DHD_ERROR(("%s: failed to alloc reserved memory,"
-				" ret=%d\n", __FUNCTION__, ret));
-	}
-#endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 
 fail:
 	DHD_INFO(("%s: FINISH.......\n", __FUNCTION__));
@@ -321,6 +325,17 @@ dhd_wlan_deinit(void)
 	dhd_wifi_deinit_gpio();
 	return 0;
 }
+
+uint32 dhd_plat_get_rc_vendor_id(void)
+{
+	return HIKEY_PCIE_VENDOR_ID;
+}
+
+uint32 dhd_plat_get_rc_device_id(void)
+{
+	return HIKEY_PCIE_DEVICE_ID;
+}
+
 #ifndef BCMDHD_MODULAR
 /* Required only for Built-in DHD */
 device_initcall(dhd_wlan_init);

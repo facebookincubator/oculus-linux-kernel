@@ -121,12 +121,6 @@
 #include <linux/compat.h>
 #endif
 
-#ifdef CONFIG_ARCH_EXYNOS
-#ifndef SUPPORT_EXYNOS7420
-#include <linux/exynos-pci-ctrl.h>
-#endif /* SUPPORT_EXYNOS7420 */
-#endif /* CONFIG_ARCH_EXYNOS */
-
 #ifdef DHD_WMF
 #include <dhd_wmf_linux.h>
 #endif /* DHD_WMF */
@@ -368,12 +362,6 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 	BCM_REFERENCE(dump_data);
 	BCM_REFERENCE(pkt_wake);
 
-	/* Check if dhd_stop is in progress */
-	if (dhdp->stop_in_progress) {
-		DHD_ERROR(("%s: dhd_stop in progress ignore received packet\n", __FUNCTION__));
-		return;
-	}
-
 #ifdef ENABLE_DHD_GRO
 	if (ifidx < DHD_MAX_IFS) {
 		ifp = dhd->iflist[ifidx];
@@ -434,17 +422,24 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 #ifdef SHOW_LOGTRACE
 			dhd_event_logtrace_enqueue(dhdp, ifidx, pktbuf);
 #else /* !SHOW_LOGTRACE */
-		/* If SHOW_LOGTRACE not defined and ifidx is DHD_DUMMY_INFO_IF,
-		 * free the PKT here itself
-		 */
-#ifdef DHD_USE_STATIC_CTRLBUF
-		PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-		PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+			/* If SHOW_LOGTRACE not defined and ifidx is DHD_DUMMY_INFO_IF,
+			 * free the PKT here itself
+			 */
+			PKTFREE_CTRLBUF(dhdp->osh, pktbuf, FALSE);
 #endif /* SHOW_LOGTRACE */
 			continue;
 		}
+
+		eh = (struct ether_header *)PKTDATA(dhdp->osh, pktbuf);
+
+		/* Check if dhd_stop is in progress */
+		if (dhdp->stop_in_progress) {
+			DHD_ERROR_RLMT(("%s: dhd_stop in progress ignore received packet\n",
+				__FUNCTION__));
+			RX_PKTFREE(dhdp->osh, eh->ether_type, pktbuf, FALSE);
+			continue;
+		}
+
 #ifdef DHD_WAKE_STATUS
 		pkt_wake = dhd_bus_get_bus_wake(dhdp);
 		wcp = dhd_bus_get_wakecount(dhdp);
@@ -453,8 +448,6 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			pkt_wake = 0;
 		}
 #endif /* DHD_WAKE_STATUS */
-
-		eh = (struct ether_header *)PKTDATA(dhdp->osh, pktbuf);
 
 		if (dhd->pub.tput_data.tput_test_running &&
 			dhd->pub.tput_data.direction == TPUT_DIR_RX &&
@@ -467,15 +460,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		if (ifidx >= DHD_MAX_IFS) {
 			DHD_ERROR(("%s: ifidx(%d) Out of bound. drop packet\n",
 				__FUNCTION__, ifidx));
-			if (ntoh16(eh->ether_type) == ETHER_TYPE_BRCM) {
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
-			} else {
-				PKTCFREE(dhdp->osh, pktbuf, FALSE);
-			}
+			RX_PKTFREE(dhdp->osh, eh->ether_type, pktbuf, FALSE);
 			continue;
 		}
 
@@ -483,15 +468,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		if (ifp == NULL) {
 			DHD_ERROR_RLMT(("%s: ifp is NULL. drop packet\n",
 				__FUNCTION__));
-			if (ntoh16(eh->ether_type) == ETHER_TYPE_BRCM) {
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
-			} else {
-				PKTCFREE(dhdp->osh, pktbuf, FALSE);
-			}
+			RX_PKTFREE(dhdp->osh, eh->ether_type, pktbuf, FALSE);
 			continue;
 		}
 
@@ -887,11 +864,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			if (ret_event != BCME_OK) {
 				DHD_ERROR(("%s: wl_host_event_get_data err = %d\n",
 					__FUNCTION__, ret_event));
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif
+				PKTFREE_CTRLBUF(dhdp->osh, pktbuf, FALSE);
 				continue;
 			}
 
@@ -919,11 +892,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			/* Process firmware NAN event by NANHO host module */
 			if (dhd_nho_evt_process(dhdp, ifidx, &event, pkt_data, len)) {
 				/* NANHO host module consumed NAN event. free pkt here. */
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif
+				PKTFREE_CTRLBUF(dhdp->osh, pktbuf, FALSE);
 				continue;
 			}
 #endif /* WL_NANHO */
@@ -976,11 +945,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			if ((event_type == WLC_E_IF) && (ret_event > 0)) {
 				DHD_ERROR(("%s: interface is deleted. Free event packet\n",
 				__FUNCTION__));
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif
+				PKTFREE_CTRLBUF(dhdp->osh, pktbuf, FALSE);
 				continue;
 			}
 
@@ -1000,11 +965,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			{
 				DHD_ERROR(("%s: net device is NOT registered. drop event packet\n",
 				__FUNCTION__));
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif
+				PKTFREE_CTRLBUF(dhdp->osh, pktbuf, FALSE);
 				continue;
 			}
 
@@ -1026,11 +987,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 #endif /* DHD_USE_STATIC_CTRLBUF */
 			} else {
 				/* If event enabled not explictly set, drop events */
-#ifdef DHD_USE_STATIC_CTRLBUF
-				PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
-#else
-				PKTFREE(dhdp->osh, pktbuf, FALSE);
-#endif /* DHD_USE_STATIC_CTRLBUF */
+				PKTFREE_CTRLBUF(dhdp->osh, pktbuf, FALSE);
 				continue;
 			}
 		} else {

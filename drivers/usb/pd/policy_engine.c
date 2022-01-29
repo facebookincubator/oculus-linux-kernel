@@ -1008,6 +1008,11 @@ static struct rx_msg *pd_ext_msg_received(struct usbpd *pd, u16 header, u8 *buf,
 	u16 ext_hdr = *(u16 *)buf;
 	u8 chunk_num;
 
+	if (len < sizeof(ext_hdr)) {
+		usbpd_warn(&pd->dev, "invalid extended message received, len=%zd\n", len);
+		return NULL;
+	}
+
 	if (!PD_MSG_EXT_HDR_IS_CHUNKED(ext_hdr)) {
 		usbpd_err(&pd->dev, "unchunked extended messages unsupported\n");
 		return NULL;

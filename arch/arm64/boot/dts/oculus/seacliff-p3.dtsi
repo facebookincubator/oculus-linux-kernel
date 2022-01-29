@@ -80,6 +80,14 @@
 	};
 };
 
+&pm8150a_l2 {
+	regulator-always-on;
+};
+
+&pm8150a_l3 {
+	regulator-always-on;
+};
+
 &pm8150a_l4 {
 	status = "ok";
 };
@@ -92,8 +100,16 @@
 	regulator-always-on;
 };
 
+&pm8150_l10 {
+	regulator-always-on;
+};
+
 &pm8150_l13 {
 	/delete-property/ regulator-always-on;
+};
+
+&pm8150_l15 {
+	regulator-always-on;
 };
 
 &qupv3_se11_i2c {

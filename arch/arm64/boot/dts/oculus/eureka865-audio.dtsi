@@ -63,6 +63,9 @@
 			clock-names = "tx_core_clk", "tx_npl_clk";
 			clocks = <&clock_audio_tx_1 0>,
 				 <&clock_audio_tx_2 0>;
+			tx-vdd-micb-supply = <&pm8150_l7>;
+			qcom,tx-vdd-micb-voltage = <1800000 1800000>;
+			qcom,tx-vdd-micb-current = <11200>;
 			qcom,is-used-swr-gpio = <0>;
 			qcom,tx-dmic-sample-rate = <2400000>;
 		};
@@ -98,10 +101,14 @@
 		qcom,msm_audio_ssr_devs = <&audio_apr>, <&q6core>,
 					<&lpi_tlmm>, <&bolero>;
 		qcom,audio-routing =
-			"TX DMIC0", "Digital Mic0",
-			"TX DMIC1", "Digital Mic1",
-			"TX DMIC2", "Digital Mic2",
-			"TX DMIC3", "Digital Mic3";
+			"TX DMIC0", "TX MIC BIAS1",
+			"TX MIC BIAS1", "Digital Mic0",
+			"TX DMIC1", "TX MIC BIAS1",
+			"TX MIC BIAS1", "Digital Mic1",
+			"TX DMIC2", "TX MIC BIAS1",
+			"TX MIC BIAS1", "Digital Mic2",
+			"TX DMIC3", "TX MIC BIAS1",
+			"TX MIC BIAS1", "Digital Mic3";
 
 		asoc-codec = <&stub_codec>, <&bolero>,
 			<&max98360a>;
@@ -227,6 +234,8 @@
 		reg = <0x10>;
 
 		ak4331,avdd-core-supply = <&pm8150_l7>;
+		ak4331,avdd-voltage = <1800000 1800000>;
+		ak4331,avdd-current = <300000>;
 		ak4331,pdn-gpio = <&tlmm 158 0>;
 		ak4331,headset-det-gpio = <&tlmm 113 0>;
 		pinctrl-names = "default";

@@ -32,12 +32,6 @@ static void kgsl_destroy_pagetable(struct kref *kref)
 	kgsl_schedule_work(&pagetable->destroy_ws);
 }
 
-static inline void kgsl_put_pagetable(struct kgsl_pagetable *pagetable)
-{
-	if (pagetable)
-		kref_put(&pagetable->refcount, kgsl_destroy_pagetable);
-}
-
 struct kgsl_pagetable *
 kgsl_get_pagetable(unsigned long name)
 {
@@ -84,9 +78,10 @@ sysfs_show_entries(struct kobject *kobj,
 		unsigned int val = atomic_read(&pt->stats.entries);
 
 		ret += scnprintf(buf, PAGE_SIZE, "%d\n", val);
+
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	}
 
-	kgsl_put_pagetable(pt);
 	return ret;
 }
 
@@ -104,9 +99,10 @@ sysfs_show_mapped(struct kobject *kobj,
 		uint64_t val = atomic_long_read(&pt->stats.mapped);
 
 		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	}
 
-	kgsl_put_pagetable(pt);
 	return ret;
 }
 
@@ -124,9 +120,10 @@ sysfs_show_max_mapped(struct kobject *kobj,
 		uint64_t val = atomic_long_read(&pt->stats.max_mapped);
 
 		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	}
 
-	kgsl_put_pagetable(pt);
 	return ret;
 }
 
@@ -226,7 +223,6 @@ struct kgsl_pagetable *kgsl_mmu_get_pt_from_ptname(struct kgsl_mmu *mmu,
 	return NULL;
 
 }
-EXPORT_SYMBOL(kgsl_mmu_get_pt_from_ptname);
 
 unsigned int
 kgsl_mmu_log_fault_addr(struct kgsl_mmu *mmu, u64 pt_base,
@@ -254,18 +250,6 @@ kgsl_mmu_log_fault_addr(struct kgsl_mmu *mmu, u64 pt_base,
 
 	return ret;
 }
-EXPORT_SYMBOL(kgsl_mmu_log_fault_addr);
-
-int kgsl_mmu_init(struct kgsl_device *device)
-{
-	struct kgsl_mmu *mmu = &device->mmu;
-
-	if (MMU_OP_VALID(mmu, mmu_init))
-		return mmu->mmu_ops->mmu_init(mmu);
-
-	return 0;
-}
-EXPORT_SYMBOL(kgsl_mmu_init);
 
 int kgsl_mmu_start(struct kgsl_device *device)
 {
@@ -276,7 +260,6 @@ int kgsl_mmu_start(struct kgsl_device *device)
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_mmu_start);
 
 struct kgsl_pagetable *
 kgsl_mmu_createpagetableobject(struct kgsl_mmu *mmu, unsigned int name)
@@ -321,9 +304,9 @@ kgsl_mmu_createpagetableobject(struct kgsl_mmu *mmu, unsigned int name)
 
 void kgsl_mmu_putpagetable(struct kgsl_pagetable *pagetable)
 {
-	kgsl_put_pagetable(pagetable);
+	if (!IS_ERR_OR_NULL(pagetable))
+		kref_put(&pagetable->refcount, kgsl_destroy_pagetable);
 }
-EXPORT_SYMBOL(kgsl_mmu_putpagetable);
 
 /**
  * kgsl_mmu_find_svm_region() - Find a empty spot in the SVM region
@@ -372,7 +355,6 @@ kgsl_mmu_get_gpuaddr(struct kgsl_pagetable *pagetable,
 
 	return -ENOMEM;
 }
-EXPORT_SYMBOL(kgsl_mmu_get_gpuaddr);
 
 int
 kgsl_mmu_map(struct kgsl_pagetable *pagetable,
@@ -406,7 +388,6 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_mmu_map);
 
 /**
  * kgsl_mmu_put_gpuaddr() - Remove a GPU address from a pagetable
@@ -445,7 +426,6 @@ void kgsl_mmu_put_gpuaddr(struct kgsl_memdesc *memdesc)
 		memdesc->gpuaddr = 0;
 
 }
-EXPORT_SYMBOL(kgsl_mmu_put_gpuaddr);
 
 /**
  * kgsl_mmu_svm_range() - Return the range for SVM (if applicable)
@@ -463,7 +443,6 @@ int kgsl_mmu_svm_range(struct kgsl_pagetable *pagetable,
 
 	return -ENODEV;
 }
-EXPORT_SYMBOL(kgsl_mmu_svm_range);
 
 int
 kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
@@ -494,7 +473,6 @@ kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 
 	return ret;
 }
-EXPORT_SYMBOL(kgsl_mmu_unmap);
 
 int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 		struct kgsl_memdesc *memdesc, uint64_t offset, uint64_t size)
@@ -507,13 +485,13 @@ int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
 		if (ret)
 			return ret;
 
-		atomic_dec(&pagetable->stats.entries);
-		atomic_long_sub(size, &pagetable->stats.mapped);
+		atomic_inc(&pagetable->stats.entries);
+		KGSL_STATS_ADD(size, &pagetable->stats.mapped,
+				&pagetable->stats.max_mapped);
 	}
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_mmu_sparse_dummy_map);
 
 struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 		uint64_t offset)
@@ -540,12 +518,14 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 	uint64_t start_page, end_page, page_idx;
 	unsigned int i;
 
+	if (IS_ERR_OR_NULL(memdesc) || page_count == NULL)
+		return ERR_PTR(-EINVAL);
+
 	pagetable = memdesc->pagetable;
 	if (pagetable == NULL)
 		return ERR_PTR(-ENODEV);
 	if (!PT_OP_VALID(pagetable, mmu_find_mapped_page) ||
-		!(KGSL_MEMDESC_MAPPED & memdesc->priv) ||
-		memdesc->page_count == 0 || size == 0)
+		!(KGSL_MEMDESC_MAPPED & memdesc->priv) || size == 0)
 		return ERR_PTR(-EINVAL);
 
 	if (offset + size > memdesc->size)
@@ -578,18 +558,6 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 	return pages;
 }
 
-struct page **kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc)
-{
-	unsigned int page_count = 0;
-
-	/* If this entry has no pages backing it just return NULL. */
-	if (memdesc->page_count == 0 || memdesc->size == 0)
-		return NULL;
-
-	return kgsl_mmu_find_mapped_page_range(memdesc, 0, memdesc->size,
-			&page_count);
-}
-
 int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,
 		struct page **pages, unsigned int page_count)
 {
@@ -613,25 +581,14 @@ int kgsl_mmu_remap_page(struct kgsl_memdesc *memdesc, uint64_t offset,
 	return -EINVAL;
 }
 
-void kgsl_mmu_remove_global(struct kgsl_device *device,
+void kgsl_mmu_map_global(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc)
 {
-	struct kgsl_mmu *mmu = &device->mmu;
+	struct kgsl_mmu *mmu = &(device->mmu);
 
-	if (MMU_OP_VALID(mmu, mmu_remove_global))
-		mmu->mmu_ops->mmu_remove_global(mmu, memdesc);
+	if (MMU_OP_VALID(mmu, mmu_map_global))
+		mmu->mmu_ops->mmu_map_global(mmu, memdesc);
 }
-EXPORT_SYMBOL(kgsl_mmu_remove_global);
-
-void kgsl_mmu_add_global(struct kgsl_device *device,
-		struct kgsl_memdesc *memdesc, const char *name)
-{
-	struct kgsl_mmu *mmu = &device->mmu;
-
-	if (MMU_OP_VALID(mmu, mmu_add_global))
-		mmu->mmu_ops->mmu_add_global(mmu, memdesc, name);
-}
-EXPORT_SYMBOL(kgsl_mmu_add_global);
 
 void kgsl_mmu_close(struct kgsl_device *device)
 {
@@ -640,13 +597,14 @@ void kgsl_mmu_close(struct kgsl_device *device)
 	if (MMU_OP_VALID(mmu, mmu_close))
 		mmu->mmu_ops->mmu_close(mmu);
 }
-EXPORT_SYMBOL(kgsl_mmu_close);
 
-enum kgsl_mmutype kgsl_mmu_get_mmutype(struct kgsl_device *device)
+int kgsl_mmu_pagetable_get_context_bank(struct kgsl_pagetable *pagetable)
 {
-	return device ? device->mmu.type : KGSL_MMU_TYPE_NONE;
+	if (PT_OP_VALID(pagetable, get_context_bank))
+		return pagetable->pt_ops->get_context_bank(pagetable);
+
+	return -ENOENT;
 }
-EXPORT_SYMBOL(kgsl_mmu_get_mmutype);
 
 bool kgsl_mmu_gpuaddr_in_range(struct kgsl_pagetable *pagetable,
 		uint64_t gpuaddr)
@@ -656,153 +614,17 @@ bool kgsl_mmu_gpuaddr_in_range(struct kgsl_pagetable *pagetable,
 
 	return false;
 }
-EXPORT_SYMBOL(kgsl_mmu_gpuaddr_in_range);
-
-struct kgsl_memdesc *kgsl_mmu_get_qdss_global_entry(struct kgsl_device *device)
-{
-	struct kgsl_mmu *mmu = &device->mmu;
-
-	if (MMU_OP_VALID(mmu, mmu_get_qdss_global_entry))
-		return mmu->mmu_ops->mmu_get_qdss_global_entry();
-
-	return NULL;
-}
-EXPORT_SYMBOL(kgsl_mmu_get_qdss_global_entry);
-
-struct kgsl_memdesc *kgsl_mmu_get_qtimer_global_entry(
-		struct kgsl_device *device)
-{
-	struct kgsl_mmu *mmu = &device->mmu;
-
-	if (MMU_OP_VALID(mmu, mmu_get_qtimer_global_entry))
-		return mmu->mmu_ops->mmu_get_qtimer_global_entry();
-
-	return NULL;
-}
-EXPORT_SYMBOL(kgsl_mmu_get_qtimer_global_entry);
-
-/*
- * NOMMU definitions - NOMMU really just means that the MMU is kept in pass
- * through and the GPU directly accesses physical memory. Used in debug mode
- * and when a real MMU isn't up and running yet.
- */
-
-static bool nommu_gpuaddr_in_range(struct kgsl_pagetable *pagetable,
-		uint64_t gpuaddr)
-{
-	return (gpuaddr != 0) ? true : false;
-}
-
-static int nommu_get_gpuaddr(struct kgsl_pagetable *pagetable,
-		struct kgsl_memdesc *memdesc)
-{
-	if (WARN_ONCE(memdesc->sgt->nents > 1,
-		"Attempt to map non-contiguous memory with NOMMU\n"))
-		return -EINVAL;
-
-	memdesc->gpuaddr = (uint64_t) sg_phys(memdesc->sgt->sgl);
-
-	if (memdesc->gpuaddr) {
-		memdesc->pagetable = pagetable;
-		return 0;
-	}
-
-	return -ENOMEM;
-}
-
-static struct kgsl_mmu_pt_ops nommu_pt_ops = {
-	.get_gpuaddr = nommu_get_gpuaddr,
-	.addr_in_range = nommu_gpuaddr_in_range,
-};
-
-static void nommu_add_global(struct kgsl_mmu *mmu,
-		struct kgsl_memdesc *memdesc, const char *name)
-{
-	memdesc->gpuaddr = (uint64_t) sg_phys(memdesc->sgt->sgl);
-}
-
-static void nommu_remove_global(struct kgsl_mmu *mmu,
-		struct kgsl_memdesc *memdesc)
-{
-	memdesc->gpuaddr = 0;
-}
-
-static int nommu_init_pt(struct kgsl_mmu *mmu, struct kgsl_pagetable *pt)
-{
-	if (pt == NULL)
-		return -EINVAL;
-
-	pt->pt_ops = &nommu_pt_ops;
-	return 0;
-}
-
-static struct kgsl_pagetable *nommu_getpagetable(struct kgsl_mmu *mmu,
-		unsigned long name)
-{
-	struct kgsl_pagetable *pagetable;
-
-	pagetable = kgsl_get_pagetable(KGSL_MMU_GLOBAL_PT);
-
-	if (pagetable == NULL)
-		pagetable = kgsl_mmu_createpagetableobject(mmu,
-			KGSL_MMU_GLOBAL_PT);
-
-	return pagetable;
-}
-
-static int nommu_init(struct kgsl_mmu *mmu)
-{
-	mmu->features |= KGSL_MMU_GLOBAL_PAGETABLE;
-	set_bit(KGSL_MMU_STARTED, &mmu->flags);
-	return 0;
-}
-
-static int nommu_probe(struct kgsl_device *device)
-{
-	/* NOMMU always exists */
-	return 0;
-}
-
-static struct kgsl_mmu_ops kgsl_nommu_ops = {
-	.mmu_init = nommu_init,
-	.mmu_add_global = nommu_add_global,
-	.mmu_remove_global = nommu_remove_global,
-	.mmu_init_pt = nommu_init_pt,
-	.mmu_getpagetable = nommu_getpagetable,
-	.probe = nommu_probe,
-};
-
-static struct {
-	const char *name;
-	unsigned int type;
-	struct kgsl_mmu_ops *ops;
-} kgsl_mmu_subtypes[] = {
-#ifdef CONFIG_QCOM_KGSL_IOMMU
-	{ "iommu", KGSL_MMU_TYPE_IOMMU, &kgsl_iommu_ops },
-#endif
-	{ "nommu", KGSL_MMU_TYPE_NONE, &kgsl_nommu_ops },
-};
 
 int kgsl_mmu_probe(struct kgsl_device *device)
 {
-	struct kgsl_mmu *mmu = &device->mmu;
-	int ret, i;
+	int ret;
 
-	for (i = 0; i < ARRAY_SIZE(kgsl_mmu_subtypes); i++) {
-		ret = kgsl_mmu_subtypes[i].ops->probe(device);
+	/*
+	 * Try to probe for the IOMMU and if it doesn't exist for some reason
+	 * then something has gone horribly wrong. Panic!
+	 */
+	ret = kgsl_iommu_probe(device);
+	BUG_ON(ret);
 
-		if (ret == 0) {
-			mmu->type = kgsl_mmu_subtypes[i].type;
-			mmu->mmu_ops = kgsl_mmu_subtypes[i].ops;
-
-			if (MMU_OP_VALID(mmu, mmu_init))
-				return mmu->mmu_ops->mmu_init(mmu);
-
-			return 0;
-		}
-	}
-
-	dev_err(device->dev, "mmu: couldn't detect any known MMU types\n");
-	return -ENODEV;
+	return 0;
 }
-EXPORT_SYMBOL(kgsl_mmu_probe);

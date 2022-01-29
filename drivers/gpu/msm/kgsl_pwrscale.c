@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/devfreq_cooling.h>
@@ -10,22 +10,11 @@
 #include "kgsl_pwrscale.h"
 #include "kgsl_trace.h"
 
-/*
- * "SLEEP" is generic counting both NAP & SLUMBER
- * PERIODS generally won't exceed 9 for the relavent 150msec
- * window, but can be significantly smaller and still POPP
- * pushable in cases where SLUMBER is involved.  Hence the
- * additional reliance on PERCENT to make sure a reasonable
- * amount of down-time actually exists.
- */
-#define MIN_SLEEP_PERIODS	3
-#define MIN_SLEEP_PERCENT	5
-
-static struct kgsl_popp popp_param[POPP_MAX] = {
-	{0, 0},
-	{-5, 20},
-	{-5, 0},
-	{0, 0},
+static struct devfreq_msm_adreno_tz_data adreno_tz_data = {
+	.bus = {
+		.max = 350,
+		.floating = true,
+	},
 };
 
 /**
@@ -59,20 +48,14 @@ static struct devfreq_dev_status last_status = { .private_data = &last_xstats };
  */
 void kgsl_pwrscale_sleep(struct kgsl_device *device)
 {
-	struct kgsl_pwrscale *psc = &device->pwrscale;
-
 	if (!device->pwrscale.enabled)
 		return;
 	device->pwrscale.on_time = 0;
-
-	psc->popp_level = 0;
-	clear_bit(POPP_PUSH, &device->pwrscale.popp_state);
 
 	/* to call devfreq_suspend_device() from a kernel thread */
 	queue_work(device->pwrscale.devfreq_wq,
 		&device->pwrscale.devfreq_suspend_ws);
 }
-EXPORT_SYMBOL(kgsl_pwrscale_sleep);
 
 /*
  * kgsl_pwrscale_wake - notify governor that device is going on
@@ -102,7 +85,6 @@ void kgsl_pwrscale_wake(struct kgsl_device *device)
 	/* to call devfreq_resume_device() from a kernel thread */
 	queue_work(psc->devfreq_wq, &psc->devfreq_resume_ws);
 }
-EXPORT_SYMBOL(kgsl_pwrscale_wake);
 
 /*
  * kgsl_pwrscale_busy - update pwrscale state for new work
@@ -118,7 +100,6 @@ void kgsl_pwrscale_busy(struct kgsl_device *device)
 	if (device->pwrscale.on_time == 0)
 		device->pwrscale.on_time = ktime_to_us(ktime_get());
 }
-EXPORT_SYMBOL(kgsl_pwrscale_busy);
 
 /**
  * kgsl_pwrscale_update_stats() - update device busy statistics
@@ -141,18 +122,6 @@ void kgsl_pwrscale_update_stats(struct kgsl_device *device)
 		struct kgsl_power_stats stats;
 
 		device->ftbl->power_stats(device, &stats);
-		if (psc->popp_level) {
-			u64 x = stats.busy_time;
-			u64 y = stats.ram_time;
-
-			do_div(x, 100);
-			do_div(y, 100);
-			x *= popp_param[psc->popp_level].gpu_x;
-			y *= popp_param[psc->popp_level].ddr_y;
-			trace_kgsl_popp_mod(device, x, y);
-			stats.busy_time += x;
-			stats.ram_time += y;
-		}
 		device->pwrscale.accum_stats.busy_time += stats.busy_time;
 		device->pwrscale.accum_stats.ram_time += stats.ram_time;
 		device->pwrscale.accum_stats.ram_wait += stats.ram_wait;
@@ -160,7 +129,6 @@ void kgsl_pwrscale_update_stats(struct kgsl_device *device)
 				stats.busy_time;
 	}
 }
-EXPORT_SYMBOL(kgsl_pwrscale_update_stats);
 
 /**
  * kgsl_pwrscale_update() - update device busy statistics
@@ -193,7 +161,6 @@ void kgsl_pwrscale_update(struct kgsl_device *device)
 
 	kgsl_pwrscale_midframe_timer_restart(device);
 }
-EXPORT_SYMBOL(kgsl_pwrscale_update);
 
 void kgsl_pwrscale_midframe_timer_restart(struct kgsl_device *device)
 {
@@ -210,7 +177,6 @@ void kgsl_pwrscale_midframe_timer_restart(struct kgsl_device *device)
 					* NSEC_PER_USEC), HRTIMER_MODE_REL);
 	}
 }
-EXPORT_SYMBOL(kgsl_pwrscale_midframe_timer_restart);
 
 void kgsl_pwrscale_midframe_timer_cancel(struct kgsl_device *device)
 {
@@ -219,7 +185,6 @@ void kgsl_pwrscale_midframe_timer_cancel(struct kgsl_device *device)
 		hrtimer_cancel(&kgsl_midframe->timer);
 	}
 }
-EXPORT_SYMBOL(kgsl_pwrscale_midframe_timer_cancel);
 
 static void kgsl_pwrscale_midframe_timer_check(struct work_struct *work)
 {
@@ -262,7 +227,6 @@ void kgsl_pwrscale_disable(struct kgsl_device *device, bool turbo)
 	if (turbo)
 		kgsl_pwrctrl_pwrlevel_change(device, KGSL_PWRLEVEL_TURBO);
 }
-EXPORT_SYMBOL(kgsl_pwrscale_disable);
 
 /*
  * kgsl_pwrscale_enable - re-enable the governor
@@ -289,210 +253,6 @@ void kgsl_pwrscale_enable(struct kgsl_device *device)
 					device->pwrctrl.default_pwrlevel);
 		device->pwrscale.enabled = false;
 	}
-}
-EXPORT_SYMBOL(kgsl_pwrscale_enable);
-
-static int _thermal_adjust(struct kgsl_pwrctrl *pwr, int level)
-{
-	if (level < pwr->active_pwrlevel)
-		return pwr->active_pwrlevel;
-
-	/*
-	 * A lower frequency has been recommended!  Stop thermal
-	 * cycling (but keep the upper thermal limit) and switch to
-	 * the lower frequency.
-	 */
-	pwr->thermal_cycle = CYCLE_ENABLE;
-	del_timer_sync(&pwr->thermal_timer);
-	return level;
-}
-
-/*
- * Use various metrics including level stability, NAP intervals, and
- * overall GPU freq / DDR freq combination to decide if POPP should
- * be activated.
- */
-static bool popp_stable(struct kgsl_device *device)
-{
-	s64 t;
-	s64 nap_time = 0;
-	s64 go_time = 0;
-	int i, index;
-	int nap = 0;
-	s64 percent_nap = 0;
-	struct kgsl_pwr_event *e;
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-	struct kgsl_pwrscale *psc = &device->pwrscale;
-
-	if (!test_bit(POPP_ON, &psc->popp_state))
-		return false;
-
-	/* If already pushed or running naturally at min don't push further */
-	if (test_bit(POPP_PUSH, &psc->popp_state))
-		return false;
-	if (!psc->popp_level &&
-			(pwr->active_pwrlevel == pwr->min_pwrlevel))
-		return false;
-	if (psc->history[KGSL_PWREVENT_STATE].events == NULL)
-		return false;
-
-	t = ktime_to_ms(ktime_get());
-	/* Check for recent NAP statistics: NAPping regularly and well? */
-	if (pwr->active_pwrlevel == 0) {
-		index = psc->history[KGSL_PWREVENT_STATE].index;
-		i = index > 0 ? (index - 1) :
-			(psc->history[KGSL_PWREVENT_STATE].size - 1);
-		while (i != index) {
-			e = &psc->history[KGSL_PWREVENT_STATE].events[i];
-			if (e->data == KGSL_STATE_NAP ||
-				e->data == KGSL_STATE_SLUMBER) {
-				if (ktime_to_ms(e->start) + STABLE_TIME > t) {
-					nap++;
-					nap_time += e->duration;
-				}
-			} else if (e->data == KGSL_STATE_ACTIVE) {
-				if (ktime_to_ms(e->start) + STABLE_TIME > t)
-					go_time += e->duration;
-			}
-			if (i == 0)
-				i = psc->history[KGSL_PWREVENT_STATE].size - 1;
-			else
-				i--;
-		}
-		if (nap_time && go_time) {
-			percent_nap = 100 * nap_time;
-			div64_s64(percent_nap, nap_time + go_time);
-		}
-		trace_kgsl_popp_nap(device, (int)nap_time / 1000, nap,
-				percent_nap);
-		/* If running high at turbo, don't push */
-		if (nap < MIN_SLEEP_PERIODS || percent_nap < MIN_SLEEP_PERCENT)
-			return false;
-	}
-
-	/* Finally check that there hasn't been a recent change */
-	if ((device->pwrscale.freq_change_time + STABLE_TIME) < t) {
-		device->pwrscale.freq_change_time = t;
-		return true;
-	}
-	return false;
-}
-
-bool kgsl_popp_check(struct kgsl_device *device)
-{
-	int i;
-	unsigned int index;
-	struct kgsl_pwrscale *psc = &device->pwrscale;
-	struct kgsl_pwr_event *e;
-
-	if (!test_bit(POPP_ON, &psc->popp_state))
-		return false;
-	if (!test_bit(POPP_PUSH, &psc->popp_state))
-		return false;
-	if (psc->history[KGSL_PWREVENT_STATE].events == NULL) {
-		clear_bit(POPP_PUSH, &psc->popp_state);
-		return false;
-	}
-	index = psc->history[KGSL_PWREVENT_STATE].index;
-
-	e = &psc->history[KGSL_PWREVENT_STATE].events[index];
-	if (e->data == KGSL_STATE_SLUMBER)
-		e->duration = ktime_us_delta(ktime_get(), e->start);
-
-	/* If there's been a long SLUMBER in recent history, clear the _PUSH */
-	for (i = 0; i < psc->history[KGSL_PWREVENT_STATE].size; i++) {
-		e = &psc->history[KGSL_PWREVENT_STATE].events[i];
-		if ((e->data == KGSL_STATE_SLUMBER) &&
-			 (e->duration > POPP_RESET_TIME)) {
-			clear_bit(POPP_PUSH, &psc->popp_state);
-			return false;
-		}
-	}
-	return true;
-}
-
-/*
- * The GPU has been running at the current frequency for a while.  Attempt
- * to lower the frequency for boarderline cases.
- */
-static void popp_trans1(struct kgsl_device *device)
-{
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-	struct kgsl_pwrlevel *pl = &pwr->pwrlevels[pwr->active_pwrlevel];
-	struct kgsl_pwrscale *psc = &device->pwrscale;
-	int old_level = psc->popp_level;
-
-	switch (old_level) {
-	case 0:
-		psc->popp_level = 2;
-		/* If the current level has a high default bus don't push it */
-		if (pl->bus_freq == pl->bus_max)
-			pwr->bus_mod = 1;
-		kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel + 1);
-		break;
-	case 1:
-	case 2:
-		psc->popp_level++;
-		break;
-	case 3:
-		set_bit(POPP_PUSH, &psc->popp_state);
-		psc->popp_level = 0;
-		break;
-	case POPP_MAX:
-	default:
-		psc->popp_level = 0;
-		break;
-	}
-
-	trace_kgsl_popp_level(device, old_level, psc->popp_level);
-}
-
-/*
- * The GPU DCVS algorithm recommends a level change.  Apply any
- * POPP restrictions and update the level accordingly
- */
-static int popp_trans2(struct kgsl_device *device, int level)
-{
-	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
-	struct kgsl_pwrscale *psc = &device->pwrscale;
-	int old_level = psc->popp_level;
-
-	if (!test_bit(POPP_ON, &psc->popp_state))
-		return level;
-
-	clear_bit(POPP_PUSH, &psc->popp_state);
-	/* If the governor recommends going down, do it! */
-	if (pwr->active_pwrlevel < level) {
-		psc->popp_level = 0;
-		trace_kgsl_popp_level(device, old_level, psc->popp_level);
-		return level;
-	}
-
-	switch (psc->popp_level) {
-	case 0:
-		/* If the feature isn't engaged, go up immediately */
-		break;
-	case 1:
-		/* Turn off mitigation, and go up a level */
-		psc->popp_level = 0;
-		break;
-	case 2:
-	case 3:
-		/* Try a more aggressive mitigation */
-		psc->popp_level--;
-		level++;
-		/* Update the stable timestamp */
-		device->pwrscale.freq_change_time = ktime_to_ms(ktime_get());
-		break;
-	case POPP_MAX:
-	default:
-		psc->popp_level = 0;
-		break;
-	}
-
-	trace_kgsl_popp_level(device, old_level, psc->popp_level);
-
-	return level;
 }
 
 #ifdef DEVFREQ_FLAG_WAKEUP_MAXFREQ
@@ -558,16 +318,11 @@ int kgsl_devfreq_target(struct device *dev, unsigned long *freq, u32 flags)
 		for (i = pwr->min_pwrlevel; (i >= pwr->max_pwrlevel
 					  && i <= pwr->min_pwrlevel); i--)
 			if (rec_freq <= pwr->pwrlevels[i].gpu_freq) {
-				if (pwr->thermal_cycle == CYCLE_ACTIVE)
-					level = _thermal_adjust(pwr, i);
-				else
-					level = popp_trans2(device, i);
+				level = i;
 				break;
 			}
 		if (level != pwr->active_pwrlevel)
 			kgsl_pwrctrl_pwrlevel_change(device, level);
-	} else if (popp_stable(device)) {
-		popp_trans1(device);
 	}
 
 	*freq = kgsl_pwrctrl_active_freq(pwr);
@@ -575,7 +330,6 @@ int kgsl_devfreq_target(struct device *dev, unsigned long *freq, u32 flags)
 	mutex_unlock(&device->mutex);
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_devfreq_target);
 
 /*
  * kgsl_devfreq_get_dev_status - devfreq_dev_profile.get_dev_status callback
@@ -648,7 +402,6 @@ int kgsl_devfreq_get_dev_status(struct device *dev,
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_devfreq_get_dev_status);
 
 /*
  * kgsl_devfreq_get_cur_freq - devfreq_dev_profile.get_cur_freq callback
@@ -673,7 +426,6 @@ int kgsl_devfreq_get_cur_freq(struct device *dev, unsigned long *freq)
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_devfreq_get_cur_freq);
 
 /*
  * kgsl_devfreq_add_notifier - add a fine grained notifier.
@@ -696,7 +448,6 @@ int kgsl_devfreq_add_notifier(struct device *dev,
 
 	return srcu_notifier_chain_register(&device->pwrscale.nh, nb);
 }
-EXPORT_SYMBOL(kgsl_devfreq_add_notifier);
 
 /*
  * kgsl_devfreq_del_notifier - remove a fine grained notifier.
@@ -717,8 +468,6 @@ int kgsl_devfreq_del_notifier(struct device *dev, struct notifier_block *nb)
 
 	return srcu_notifier_chain_unregister(&device->pwrscale.nh, nb);
 }
-EXPORT_SYMBOL(kgsl_devfreq_del_notifier);
-
 
 /*
  * kgsl_busmon_get_dev_status - devfreq_dev_profile.get_dev_status callback
@@ -736,6 +485,7 @@ int kgsl_busmon_get_dev_status(struct device *dev,
 	stat->total_time = last_status.total_time;
 	stat->busy_time = last_status.busy_time;
 	stat->current_frequency = last_status.current_frequency;
+
 	if (stat->private_data) {
 		struct xstats *last_b =
 			(struct xstats *)last_status.private_data;
@@ -893,7 +643,7 @@ static int opp_notify(struct notifier_block *nb,
 	min_level = pwr->thermal_pwrlevel_floor;
 
 	/* Thermal limit cannot be lower than lowest non-zero operating freq */
-	for (level = 0; level < (pwr->num_pwrlevels - 1); level++) {
+	for (level = 0; level < pwr->num_pwrlevels; level++) {
 		if (pwr->pwrlevels[level].gpu_freq == max_freq)
 			max_level = level;
 		if (pwr->pwrlevels[level].gpu_freq == min_freq)
@@ -910,78 +660,112 @@ static int opp_notify(struct notifier_block *nb,
 	return 0;
 }
 
-
-/*
- * kgsl_pwrscale_init - Initialize pwrscale.
- * @dev: The device
- * @governor: The initial governor to use.
- *
- * Initialize devfreq and any non-constant profile data.
- */
-int kgsl_pwrscale_init(struct device *dev, const char *governor)
+static void pwrscale_busmon_create(struct kgsl_device *device,
+		struct platform_device *pdev, unsigned long *table)
 {
-	struct kgsl_device *device;
-	struct kgsl_pwrscale *pwrscale;
-	struct kgsl_pwrctrl *pwr;
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	struct kgsl_pwrscale *pwrscale = &device->pwrscale;
+	struct device *dev = &pwrscale->busmondev;
+	struct msm_busmon_extended_profile *bus_profile;
+	struct devfreq *bus_devfreq;
+	int i;
+
+	bus_profile = &pwrscale->bus_profile;
+	bus_profile->private_data = &adreno_tz_data;
+
+	bus_profile->profile.target = kgsl_busmon_target;
+	bus_profile->profile.get_dev_status = kgsl_busmon_get_dev_status;
+	bus_profile->profile.get_cur_freq = kgsl_busmon_get_cur_freq;
+
+	bus_profile->profile.max_state = pwr->num_pwrlevels;
+	bus_profile->profile.freq_table = table;
+
+	dev->parent = &pdev->dev;
+
+	dev_set_name(dev, "kgsl-busmon");
+	dev_set_drvdata(dev, device);
+	if (device_register(dev))
+		return;
+
+	/* Build out the OPP table for the busmon device */
+	for (i = 0; i < pwr->num_pwrlevels; i++) {
+		if (!pwr->pwrlevels[i].gpu_freq)
+			continue;
+
+		dev_pm_opp_add(dev, pwr->pwrlevels[i].gpu_freq, 0);
+	}
+
+	bus_devfreq = devfreq_add_device(dev, &pwrscale->bus_profile.profile,
+		"gpubw_mon", NULL);
+
+	if (IS_ERR_OR_NULL(bus_devfreq)) {
+		dev_err(&pdev->dev, "Bus scaling not enabled\n");
+		put_device(dev);
+		return;
+	}
+
+	pwrscale->gpu_profile.bus_devfreq = bus_devfreq;
+}
+
+int kgsl_pwrscale_init(struct kgsl_device *device, struct platform_device *pdev,
+		const char *governor)
+{
+	struct kgsl_pwrscale *pwrscale = &device->pwrscale;
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct devfreq *devfreq;
-	struct devfreq *bus_devfreq = NULL;
 	struct msm_adreno_extended_profile *gpu_profile;
-	struct devfreq_dev_profile *profile;
-	struct devfreq_msm_adreno_tz_data *data;
 	int i, out = 0;
 	int ret;
 
-	device = dev_get_drvdata(dev);
-	if (device == NULL)
-		return -ENODEV;
+	pwrscale->enabled = true;
 
-	pwrscale = &device->pwrscale;
-	pwr = &device->pwrctrl;
 	gpu_profile = &pwrscale->gpu_profile;
-	profile = &pwrscale->gpu_profile.profile;
+	gpu_profile->private_data = &adreno_tz_data;
+
+	gpu_profile->profile.target = kgsl_devfreq_target;
+	gpu_profile->profile.get_dev_status = kgsl_devfreq_get_dev_status;
+	gpu_profile->profile.get_cur_freq = kgsl_devfreq_get_cur_freq;
+
+	gpu_profile->profile.initial_freq =
+		pwr->pwrlevels[pwr->default_pwrlevel].gpu_freq;
+
+	gpu_profile->profile.polling_ms = 10;
 
 	pwr->nb.notifier_call = opp_notify;
 
-	dev_pm_opp_register_notifier(dev, &pwr->nb);
+	dev_pm_opp_register_notifier(&pdev->dev, &pwr->nb);
 
 	srcu_init_notifier_head(&pwrscale->nh);
 
-	profile->initial_freq =
-		pwr->pwrlevels[pwr->default_pwrlevel].gpu_freq;
-	/* Let's start with 10 ms and tune in later */
-	profile->polling_ms = 10;
-
-	/* do not include the 'off' level or duplicate freq. levels */
-	for (i = 0; i < (pwr->num_pwrlevels - 1); i++)
-		pwrscale->freq_table[out++] = pwr->pwrlevels[i].gpu_freq;
+	for (i = 0; i < pwr->num_pwrlevels; i++)
+		pwrscale->freq_table[i] = pwr->pwrlevels[i].gpu_freq;
 
 	/*
 	 * Max_state is the number of valid power levels.
 	 * The valid power levels range from 0 - (max_state - 1)
 	 */
-	profile->max_state = pwr->num_pwrlevels - 1;
+	gpu_profile->profile.max_state = pwr->num_pwrlevels;
 	/* link storage array to the devfreq profile pointer */
-	profile->freq_table = pwrscale->freq_table;
+	gpu_profile->profile.freq_table = pwrscale->freq_table;
 
 	/* if there is only 1 freq, no point in running a governor */
-	if (profile->max_state == 1)
+	if (gpu_profile->profile.max_state == 1)
 		governor = "performance";
 
 	/* initialize msm-adreno-tz governor specific data here */
-	data = gpu_profile->private_data;
-
-	data->disable_busy_time_burst = of_property_read_bool(
-		device->pdev->dev.of_node, "qcom,disable-busy-time-burst");
+	adreno_tz_data.disable_busy_time_burst =
+		of_property_read_bool(pdev->dev.of_node,
+		"qcom,disable-busy-time-burst");
 
 	if (pwrscale->ctxt_aware_enable) {
-		data->ctxt_aware_enable = pwrscale->ctxt_aware_enable;
-		data->bin.ctxt_aware_target_pwrlevel =
+		adreno_tz_data.ctxt_aware_enable = pwrscale->ctxt_aware_enable;
+		adreno_tz_data.bin.ctxt_aware_target_pwrlevel =
 			pwrscale->ctxt_aware_target_pwrlevel;
-		data->bin.ctxt_aware_busy_penalty =
+		adreno_tz_data.bin.ctxt_aware_busy_penalty =
 			pwrscale->ctxt_aware_busy_penalty;
 	}
 
-	if (of_property_read_bool(device->pdev->dev.of_node,
+	if (of_property_read_bool(pdev->dev.of_node,
 			"qcom,enable-midframe-timer")) {
 		kgsl_midframe = kzalloc(
 				sizeof(struct kgsl_midframe_info), GFP_KERNEL);
@@ -1008,58 +792,32 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 				pwr->bus_ib[out] >> 20;
 			out++;
 		}
-		data->bus.num = out;
-		data->bus.ib = &pwr->bus_ib[0];
-		data->bus.index = &pwr->bus_index[0];
-		data->bus.width = pwr->bus_width;
-		if (!kgsl_of_property_read_ddrtype(device->pdev->dev.of_node,
-			"qcom,bus-accesses", &data->bus.max))
-			data->bus.floating = false;
-	} else
-		data->bus.num = 0;
+		adreno_tz_data.bus.num = out;
+		adreno_tz_data.bus.ib = &pwr->bus_ib[0];
+		adreno_tz_data.bus.index = &pwr->bus_index[0];
+		adreno_tz_data.bus.width = pwr->bus_width;
 
-	devfreq = devfreq_add_device(dev, &pwrscale->gpu_profile.profile,
-			governor, pwrscale->gpu_profile.private_data);
+		if (!kgsl_of_property_read_ddrtype(device->pdev->dev.of_node,
+			"qcom,bus-accesses", &adreno_tz_data.bus.max))
+			adreno_tz_data.bus.floating = false;
+	}
+
+	devfreq = devfreq_add_device(&pdev->dev, &gpu_profile->profile,
+			governor, &adreno_tz_data);
 	if (IS_ERR(devfreq)) {
 		device->pwrscale.enabled = false;
 		return PTR_ERR(devfreq);
 	}
 
 	pwrscale->devfreqptr = devfreq;
-	pwrscale->cooling_dev = of_devfreq_cooling_register(
-					device->pdev->dev.of_node, devfreq);
+	pwrscale->cooling_dev = of_devfreq_cooling_register(pdev->dev.of_node,
+		devfreq);
 	if (IS_ERR(pwrscale->cooling_dev))
 		pwrscale->cooling_dev = NULL;
 
 	pwrscale->gpu_profile.bus_devfreq = NULL;
-	if (data->bus.num) {
-		pwrscale->bus_profile.profile.max_state
-					= pwr->num_pwrlevels - 1;
-		pwrscale->bus_profile.profile.freq_table
-					= pwrscale->freq_table;
-
-		/*
-		 * This is needed because devfreq expects the device
-		 * to have an opp table handle to calculate the min/max
-		 * frequency.
-		 */
-		ret = dev_pm_opp_of_add_table(device->busmondev);
-		/*
-		 * Disable OPP which are not supported as per GPU freq plan.
-		 * This is need to ensure freq_table specified in bus_profile
-		 * above matches OPP table.
-		 */
-		kgsl_pwrctrl_disable_unused_opp(device, device->busmondev);
-		if (!ret)
-			bus_devfreq = devfreq_add_device(device->busmondev,
-				&pwrscale->bus_profile.profile, "gpubw_mon",
-				NULL);
-
-		if (IS_ERR_OR_NULL(bus_devfreq))
-			dev_err(device->dev, "Bus scaling not enabled\n");
-		else
-			pwrscale->gpu_profile.bus_devfreq = bus_devfreq;
-	}
+	if (adreno_tz_data.bus.num)
+		pwrscale_busmon_create(device, pdev, pwrscale->freq_table);
 
 	ret = sysfs_create_link(&device->dev->kobj,
 			&devfreq->dev.kobj, "devfreq");
@@ -1075,14 +833,6 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 	pwrscale->next_governor_call = ktime_add_us(ktime_get(),
 			KGSL_GOVERNOR_CALL_INTERVAL);
 
-	/* history tracking */
-	for (i = 0; i < KGSL_PWREVENT_MAX; i++) {
-		pwrscale->history[i].events = kcalloc(
-				pwrscale->history[i].size,
-				sizeof(struct kgsl_pwr_event), GFP_KERNEL);
-		pwrscale->history[i].type = i;
-	}
-
 	/* Add links to the devfreq sysfs nodes */
 	kgsl_gpu_sysfs_add_link(device->gpu_sysfs_kobj,
 			 &pwrscale->devfreqptr->dev.kobj, "governor",
@@ -1093,7 +843,6 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_pwrscale_init);
 
 /*
  * kgsl_pwrscale_close - clean up pwrscale
@@ -1103,12 +852,17 @@ EXPORT_SYMBOL(kgsl_pwrscale_init);
  */
 void kgsl_pwrscale_close(struct kgsl_device *device)
 {
-	int i;
 	struct kgsl_pwrscale *pwrscale;
 	struct kgsl_pwrctrl *pwr;
 
 	pwr = &device->pwrctrl;
 	pwrscale = &device->pwrscale;
+
+	if (pwrscale->gpu_profile.bus_devfreq) {
+		devfreq_remove_device(pwrscale->gpu_profile.bus_devfreq);
+		put_device(&pwrscale->busmondev);
+	}
+
 	if (!pwrscale->devfreqptr)
 		return;
 	if (pwrscale->cooling_dev)
@@ -1123,10 +877,7 @@ void kgsl_pwrscale_close(struct kgsl_device *device)
 	device->pwrscale.devfreqptr = NULL;
 	srcu_cleanup_notifier_head(&device->pwrscale.nh);
 	dev_pm_opp_unregister_notifier(&device->pdev->dev, &pwr->nb);
-	for (i = 0; i < KGSL_PWREVENT_MAX; i++)
-		kfree(pwrscale->history[i].events);
 }
-EXPORT_SYMBOL(kgsl_pwrscale_close);
 
 static void do_devfreq_suspend(struct work_struct *work)
 {

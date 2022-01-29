@@ -664,10 +664,12 @@ static struct a6xx_shader_block a615_shader_blocks[] = {
 	{A6XX_HLSQ_INDIRECT_META,         0x40,}
 };
 
-static struct kgsl_memdesc a6xx_capturescript;
-static struct kgsl_memdesc a6xx_crashdump_registers;
+static struct kgsl_memdesc *a6xx_capturescript;
+static struct kgsl_memdesc *a6xx_crashdump_registers;
 static bool crash_dump_valid;
-static u32 *a6xx_cd_reg_end;
+static uint64_t a6xx_cd_reg_end;
+
+#define A6XX_SNAPSHOT_INCOMPLETE 0xAAAAAAAA
 
 static struct reg_list {
 	const unsigned int *regs;
@@ -707,6 +709,8 @@ static size_t a6xx_snapshot_registers(struct kgsl_device *device, u8 *buf,
 	struct reg_list *regs = (struct reg_list *)priv;
 	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
 	unsigned int *src;
+	void *kptr;
+	unsigned int page_count = 0;
 	unsigned int j, k;
 	unsigned int count = 0;
 
@@ -719,7 +723,14 @@ static size_t a6xx_snapshot_registers(struct kgsl_device *device, u8 *buf,
 		return 0;
 	}
 
-	src = (unsigned int *)(a6xx_crashdump_registers.hostptr + regs->offset);
+	kptr = kgsl_sharedmem_vm_map_readonly(a6xx_crashdump_registers, 0,
+			a6xx_crashdump_registers->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
+		SNAPSHOT_ERR_NOMEM(device, "REGISTERS");
+		return 0;
+	}
+
+	src = kptr + regs->offset;
 	remain -= sizeof(*header);
 
 	for (j = 0; j < regs->count; j++) {
@@ -741,6 +752,8 @@ static size_t a6xx_snapshot_registers(struct kgsl_device *device, u8 *buf,
 
 out:
 	header->count = count;
+
+	vm_unmap_ram(kptr, page_count);
 
 	/* Return the size of the section */
 	return (count * 8) + sizeof(*header);
@@ -809,6 +822,8 @@ static size_t a6xx_snapshot_shader_memory(struct kgsl_device *device,
 		(struct a6xx_shader_block_info *) priv;
 	struct a6xx_shader_block *block = info->block;
 	unsigned int *data = (unsigned int *) (buf + sizeof(*header));
+	void *kptr;
+	unsigned int page_count = 0;
 
 	if (!crash_dump_valid)
 		return a6xx_legacy_snapshot_shader(device, buf, remain, priv);
@@ -818,12 +833,21 @@ static size_t a6xx_snapshot_shader_memory(struct kgsl_device *device,
 		return 0;
 	}
 
+	kptr = kgsl_sharedmem_vm_map_readonly(a6xx_crashdump_registers,
+			info->offset, block->sz * sizeof(uint32_t),
+			&page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
+		SNAPSHOT_ERR_NOMEM(device, "SHADER MEMORY");
+		return 0;
+	}
+
 	header->type = block->statetype;
 	header->index = info->bank;
 	header->size = block->sz;
 
-	memcpy(data, a6xx_crashdump_registers.hostptr + info->offset,
-		block->sz * sizeof(unsigned int));
+	memcpy(data, kptr + offset_in_page(info->offset),
+		block->sz * sizeof(uint32_t));
+	vm_unmap_ram(kptr, page_count);
 
 	return SHADER_SECTION_SZ(block->sz);
 }
@@ -961,6 +985,8 @@ static size_t a6xx_snapshot_cluster_dbgahb(struct kgsl_device *device, u8 *buf,
 	struct a6xx_cluster_dbgahb_registers *cluster = info->cluster;
 	unsigned int data_size = 0;
 	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
+	void *kptr;
+	unsigned int page_count = 0;
 	int i, j;
 	unsigned int *src;
 
@@ -974,13 +1000,19 @@ static size_t a6xx_snapshot_cluster_dbgahb(struct kgsl_device *device, u8 *buf,
 		return 0;
 	}
 
+	kptr = kgsl_sharedmem_vm_map_readonly(a6xx_crashdump_registers, 0,
+			a6xx_crashdump_registers->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
+		SNAPSHOT_ERR_NOMEM(device, "REGISTERS");
+		return 0;
+	}
+
 	remain -= sizeof(*header);
 
 	header->ctxt_id = info->ctxt_id;
 	header->cluster_id = cluster->id;
 
-	src = (unsigned int *)(a6xx_crashdump_registers.hostptr +
-		(header->ctxt_id ? cluster->offset1 : cluster->offset0));
+	src = kptr + (header->ctxt_id ? cluster->offset1 : cluster->offset0);
 
 	for (i = 0; i < cluster->num_sets; i++) {
 		unsigned int start;
@@ -1003,6 +1035,8 @@ static size_t a6xx_snapshot_cluster_dbgahb(struct kgsl_device *device, u8 *buf,
 			*data++ = *src++;
 	}
 out:
+	vm_unmap_ram(kptr, page_count);
+
 	return data_size + sizeof(*header);
 }
 
@@ -1064,6 +1098,8 @@ static size_t a6xx_snapshot_non_ctx_dbgahb(struct kgsl_device *device, u8 *buf,
 				(struct a6xx_non_ctx_dbgahb_registers *)priv;
 	unsigned int count = 0;
 	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
+	void *kptr;
+	unsigned int page_count = 0;
 	unsigned int i, k;
 	unsigned int *src;
 
@@ -1076,9 +1112,16 @@ static size_t a6xx_snapshot_non_ctx_dbgahb(struct kgsl_device *device, u8 *buf,
 		return 0;
 	}
 
+	kptr = kgsl_sharedmem_vm_map_readonly(a6xx_crashdump_registers, 0,
+			a6xx_crashdump_registers->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
+		SNAPSHOT_ERR_NOMEM(device, "REGISTERS");
+		return 0;
+	}
+
 	remain -= sizeof(*header);
 
-	src = (unsigned int *)(a6xx_crashdump_registers.hostptr + regs->offset);
+	src = kptr + regs->offset;
 
 	for (i = 0; i < regs->num_sets; i++) {
 		unsigned int start;
@@ -1101,6 +1144,8 @@ static size_t a6xx_snapshot_non_ctx_dbgahb(struct kgsl_device *device, u8 *buf,
 	}
 out:
 	header->count = count;
+
+	vm_unmap_ram(kptr, page_count);
 
 	/* Return the size of the section */
 	return (count * 8) + sizeof(*header);
@@ -1202,6 +1247,8 @@ static size_t a6xx_snapshot_mvc(struct kgsl_device *device, u8 *buf,
 	struct a6xx_cluster_registers *cluster = info->cluster;
 	unsigned int *data = (unsigned int *)(buf + sizeof(*header));
 	unsigned int *src;
+	void *kptr;
+	unsigned int page_count = 0;
 	int i, j;
 	unsigned int start, end;
 	size_t data_size = 0;
@@ -1214,13 +1261,19 @@ static size_t a6xx_snapshot_mvc(struct kgsl_device *device, u8 *buf,
 		return 0;
 	}
 
+	kptr = kgsl_sharedmem_vm_map_readonly(a6xx_crashdump_registers, 0,
+			a6xx_crashdump_registers->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
+		SNAPSHOT_ERR_NOMEM(device, "MVC REGISTERS");
+		return 0;
+	}
+
 	remain -= sizeof(*header);
 
 	header->ctxt_id = info->ctxt_id;
 	header->cluster_id = cluster->id;
 
-	src = (unsigned int *)(a6xx_crashdump_registers.hostptr +
-		(header->ctxt_id ? cluster->offset1 : cluster->offset0));
+	src = kptr + (header->ctxt_id ? cluster->offset1 : cluster->offset0);
 
 	for (i = 0; i < cluster->num_sets; i++) {
 		start = cluster->regs[2 * i];
@@ -1241,6 +1294,8 @@ static size_t a6xx_snapshot_mvc(struct kgsl_device *device, u8 *buf,
 	}
 
 out:
+	vm_unmap_ram(kptr, page_count);
+
 	return data_size + sizeof(*header);
 
 }
@@ -1636,6 +1691,9 @@ static size_t a6xx_snapshot_sqe(struct kgsl_device *device, u8 *buf,
 
 static void _a6xx_do_crashdump(struct kgsl_device *device)
 {
+	void *kptr;
+	u32 *completion_ptr;
+	unsigned int page_count = 0;
 	unsigned int reg = 0;
 	unsigned int val;
 	ktime_t timeout;
@@ -1644,8 +1702,8 @@ static void _a6xx_do_crashdump(struct kgsl_device *device)
 
 	if (!device->snapshot_crashdumper)
 		return;
-	if (a6xx_capturescript.gpuaddr == 0 ||
-		a6xx_crashdump_registers.gpuaddr == 0)
+	if (IS_ERR_OR_NULL(a6xx_capturescript) ||
+		IS_ERR_OR_NULL(a6xx_crashdump_registers))
 		return;
 	if (!test_bit(KGSL_MMU_STARTED, &device->mmu.flags))
 		return;
@@ -1660,19 +1718,27 @@ static void _a6xx_do_crashdump(struct kgsl_device *device)
 		kgsl_regwrite(device, A6XX_CP_MISC_CNTL, 1);
 
 	kgsl_regwrite(device, A6XX_CP_CRASH_SCRIPT_BASE_LO,
-			lower_32_bits(a6xx_capturescript.gpuaddr));
+			lower_32_bits(a6xx_capturescript->gpuaddr));
 	kgsl_regwrite(device, A6XX_CP_CRASH_SCRIPT_BASE_HI,
-			upper_32_bits(a6xx_capturescript.gpuaddr));
+			upper_32_bits(a6xx_capturescript->gpuaddr));
 	kgsl_regwrite(device, A6XX_CP_CRASH_DUMP_CNTL, 1);
 
 	timeout = ktime_add_ms(ktime_get(), CP_CRASH_DUMPER_TIMEOUT);
 
 	might_sleep();
 
+	kptr = kgsl_sharedmem_vm_map_readonly(a6xx_crashdump_registers,
+			a6xx_cd_reg_end, sizeof(u32), &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
+		dev_err(device->dev, "Crash dump failed, unable to map registers\n");
+		return;
+	}
+
+	completion_ptr = (u32 *)(kptr + offset_in_page(a6xx_cd_reg_end));
 	for (;;) {
 		/* make sure we're reading the latest value */
 		rmb();
-		if ((*a6xx_cd_reg_end) != 0xaaaaaaaa)
+		if (*completion_ptr != A6XX_SNAPSHOT_INCOMPLETE)
 			break;
 
 		if (ktime_compare(ktime_get(), timeout) > 0)
@@ -1681,6 +1747,8 @@ static void _a6xx_do_crashdump(struct kgsl_device *device)
 		/* Wait 1msec to avoid unnecessary looping */
 		usleep_range(100, 1000);
 	}
+
+	vm_unmap_ram(kptr, page_count);
 
 	kgsl_regread(device, A6XX_CP_CRASH_DUMP_STATUS, &reg);
 
@@ -1788,9 +1856,18 @@ static size_t snapshot_preemption_record(struct kgsl_device *device,
 	struct kgsl_snapshot_gpu_object_v2 *header =
 		(struct kgsl_snapshot_gpu_object_v2 *)buf;
 	u8 *ptr = buf + sizeof(*header);
+	void *kptr;
+	unsigned int page_count = 0;
 
 	if (remain < (A6XX_SNAPSHOT_CP_CTXRECORD_SIZE_IN_BYTES +
 						sizeof(*header))) {
+		SNAPSHOT_ERR_NOMEM(device, "PREEMPTION RECORD");
+		return 0;
+	}
+
+	kptr = kgsl_sharedmem_vm_map_readonly(memdesc, 0,
+			A6XX_SNAPSHOT_CP_CTXRECORD_SIZE_IN_BYTES, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
 		SNAPSHOT_ERR_NOMEM(device, "PREEMPTION RECORD");
 		return 0;
 	}
@@ -1801,9 +1878,37 @@ static size_t snapshot_preemption_record(struct kgsl_device *device,
 		kgsl_mmu_pagetable_get_ttbr0(device->mmu.defaultpagetable);
 	header->type = SNAPSHOT_GPU_OBJECT_GLOBAL;
 
-	memcpy(ptr, memdesc->hostptr, A6XX_SNAPSHOT_CP_CTXRECORD_SIZE_IN_BYTES);
+	memcpy(ptr, kptr, A6XX_SNAPSHOT_CP_CTXRECORD_SIZE_IN_BYTES);
+	vm_unmap_ram(kptr, page_count);
 
 	return A6XX_SNAPSHOT_CP_CTXRECORD_SIZE_IN_BYTES + sizeof(*header);
+}
+
+/*
+ * Reset the snapshot completion status at the end of the crashdump registers
+ * buffer. This is checked in _a6xx_do_crashdump to make sure that the crash
+ * dump itself hasn't hung.
+ */
+void _reset_crashdump_completion(void)
+{
+	void *kptr;
+	unsigned int page_count = 0;
+
+	/* Nothing to do if the snapshot buffer doesn't exist. */
+	if (IS_ERR_OR_NULL(a6xx_crashdump_registers))
+		return;
+
+	kptr = kgsl_sharedmem_vm_map_readwrite(a6xx_crashdump_registers,
+			a6xx_cd_reg_end, sizeof(u32), &page_count);
+	if (IS_ERR_OR_NULL(kptr))
+		return;
+
+	*(u32 *)(kptr + offset_in_page(a6xx_cd_reg_end)) =
+			A6XX_SNAPSHOT_INCOMPLETE;
+	/* Make sure the write completes. */
+	smp_wmb();
+
+	vm_unmap_ram(kptr, page_count);
 }
 
 /*
@@ -1940,8 +2045,7 @@ void a6xx_snapshot(struct adreno_device *adreno_dev,
 		/* if SMMU is stalled we don't run crash dump */
 		kgsl_regread(device, A6XX_RBBM_STATUS3, &val);
 		if (!(val & BIT(24)))
-			memset(a6xx_crashdump_registers.hostptr, 0xaa,
-					a6xx_crashdump_registers.size);
+			_reset_crashdump_completion();
 	}
 
 	/* Preemption record */
@@ -1950,7 +2054,7 @@ void a6xx_snapshot(struct adreno_device *adreno_dev,
 			kgsl_snapshot_add_section(device,
 				KGSL_SNAPSHOT_SECTION_GPU_OBJECT_V2,
 				snapshot, snapshot_preemption_record,
-				&rb->preemption_desc);
+				rb->preemption_desc);
 		}
 	}
 }
@@ -1990,7 +2094,7 @@ static int _a6xx_crashdump_init_mvc(struct adreno_device *adreno_dev,
 			for (k = 0; k < cluster->num_sets; k++) {
 				count = REG_PAIR_COUNT(cluster->regs, k);
 				ptr[qwords++] =
-				a6xx_crashdump_registers.gpuaddr + *offset;
+				a6xx_crashdump_registers->gpuaddr + *offset;
 				ptr[qwords++] =
 				(((uint64_t)cluster->regs[2 * k]) << 44) |
 						count;
@@ -2018,7 +2122,7 @@ static int _a6xx_crashdump_init_shader(struct a6xx_shader_block *block,
 			(1 << 21) | 1;
 
 		/* Read all the data in one chunk */
-		ptr[qwords++] = a6xx_crashdump_registers.gpuaddr + *offset;
+		ptr[qwords++] = a6xx_crashdump_registers->gpuaddr + *offset;
 		ptr[qwords++] =
 			(((uint64_t) A6XX_HLSQ_DBG_AHB_READ_APERTURE << 44)) |
 			block->sz;
@@ -2061,7 +2165,7 @@ static int _a6xx_crashdump_init_ctx_dbgahb(uint64_t *ptr, uint64_t *offset)
 
 				count = REG_PAIR_COUNT(cluster->regs, k);
 				ptr[qwords++] =
-				a6xx_crashdump_registers.gpuaddr + *offset;
+				a6xx_crashdump_registers->gpuaddr + *offset;
 				ptr[qwords++] =
 				(((uint64_t)(A6XX_HLSQ_DBG_AHB_READ_APERTURE +
 					start - cluster->regbase / 4) << 44)) |
@@ -2096,7 +2200,7 @@ static int _a6xx_crashdump_init_non_ctx_dbgahb(uint64_t *ptr, uint64_t *offset)
 
 			count = REG_PAIR_COUNT(regs->regs, k);
 			ptr[qwords++] =
-				a6xx_crashdump_registers.gpuaddr + *offset;
+				a6xx_crashdump_registers->gpuaddr + *offset;
 			ptr[qwords++] =
 				(((uint64_t)(A6XX_HLSQ_DBG_AHB_READ_APERTURE +
 					start - regs->regbase / 4) << 44)) |
@@ -2111,14 +2215,16 @@ static int _a6xx_crashdump_init_non_ctx_dbgahb(uint64_t *ptr, uint64_t *offset)
 void a6xx_crashdump_init(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	void *kptr;
+	unsigned int page_count = 0;
 	unsigned int script_size = 0;
 	unsigned int data_size = 0;
 	unsigned int i, j, k;
 	uint64_t *ptr;
 	uint64_t offset = 0;
 
-	if (a6xx_capturescript.gpuaddr != 0 &&
-		a6xx_crashdump_registers.gpuaddr != 0)
+	if (!IS_ERR_OR_NULL(a6xx_capturescript) &&
+		!IS_ERR_OR_NULL(a6xx_crashdump_registers))
 		return;
 
 	/*
@@ -2239,20 +2345,29 @@ void a6xx_crashdump_init(struct adreno_device *adreno_dev)
 	/* Now allocate the script and data buffers */
 
 	/* The script buffers needs 2 extra qwords on the end */
-	if (kgsl_allocate_global(device, &a6xx_capturescript,
-		script_size + 16, KGSL_MEMFLAGS_GPUREADONLY,
-		KGSL_MEMDESC_PRIVILEGED, "capturescript"))
+	if (IS_ERR_OR_NULL(a6xx_capturescript))
+		a6xx_capturescript = kgsl_allocate_global(device,
+			script_size + 16, KGSL_MEMFLAGS_GPUREADONLY,
+			KGSL_MEMDESC_PRIVILEGED, "capturescript");
+
+	if (IS_ERR(a6xx_capturescript))
 		return;
 
-	if (kgsl_allocate_global(device, &a6xx_crashdump_registers, data_size,
-		0, KGSL_MEMDESC_PRIVILEGED, "capturescript_regs")) {
-		kgsl_free_global(KGSL_DEVICE(adreno_dev), &a6xx_capturescript);
+	if (IS_ERR_OR_NULL(a6xx_crashdump_registers))
+		a6xx_crashdump_registers = kgsl_allocate_global(device,
+			data_size, 0, KGSL_MEMDESC_PRIVILEGED,
+			"capturescript_regs");
+
+	if (IS_ERR(a6xx_crashdump_registers))
 		return;
-	}
 
 	/* Build the crash script */
+	kptr = kgsl_sharedmem_vm_map_readwrite(a6xx_capturescript, 0,
+			a6xx_capturescript->size, &page_count);
+	if (IS_ERR_OR_NULL(kptr))
+		return;
 
-	ptr = (uint64_t *)a6xx_capturescript.hostptr;
+	ptr = (uint64_t *)kptr;
 
 	/* For the registers, program a read command for each pair */
 	for (i = 0; i < ARRAY_SIZE(a6xx_reg_list); i++) {
@@ -2269,7 +2384,7 @@ void a6xx_crashdump_init(struct adreno_device *adreno_dev)
 
 		for (j = 0; j < regs->count; j++) {
 			unsigned int r = REG_PAIR_COUNT(regs->regs, j);
-			*ptr++ = a6xx_crashdump_registers.gpuaddr + offset;
+			*ptr++ = a6xx_crashdump_registers->gpuaddr + offset;
 			*ptr++ = (((uint64_t) regs->regs[2 * j]) << 44) | r;
 			offset += r * sizeof(unsigned int);
 		}
@@ -2295,16 +2410,16 @@ void a6xx_crashdump_init(struct adreno_device *adreno_dev)
 
 	ptr += _a6xx_crashdump_init_non_ctx_dbgahb(ptr, &offset);
 
-	/* Save CD register end pointer to check CD status completion */
-	a6xx_cd_reg_end = a6xx_crashdump_registers.hostptr + offset;
-
-	memset(a6xx_crashdump_registers.hostptr, 0xaa,
-			a6xx_crashdump_registers.size);
+	/* Save CD register end offset to check CD status completion */
+	a6xx_cd_reg_end = offset;
+	_reset_crashdump_completion();
 
 	/* Program the capturescript to read the last register entry */
-	*ptr++ = a6xx_crashdump_registers.gpuaddr + offset;
+	*ptr++ = a6xx_crashdump_registers->gpuaddr + offset;
 	*ptr++ = (((uint64_t) A6XX_CP_CRASH_DUMP_STATUS) << 44) | (uint64_t) 1;
 
 	*ptr++ = 0;
 	*ptr++ = 0;
+
+	vm_unmap_ram(kptr, page_count);
 }

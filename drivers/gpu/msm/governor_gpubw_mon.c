@@ -9,8 +9,7 @@
 #include <linux/of_platform.h>
 #include <linux/slab.h>
 
-#include "devfreq_trace.h"
-#include "governor.h"
+#include "../../devfreq/governor.h"
 
 #define MIN_BUSY                1000
 #define LONG_FLOOR              50000
@@ -55,7 +54,7 @@ static int devfreq_gpubw_get_target(struct devfreq *df,
 					struct msm_busmon_extended_profile,
 					profile);
 	struct devfreq_dev_status *stats = &df->last_status;
-	struct xstats b;
+	struct xstats b = {0};
 	int result;
 	int level = 0;
 	int act_level;
@@ -209,14 +208,6 @@ static int devfreq_gpubw_event_handler(struct devfreq *devfreq,
 {
 	int result = 0;
 	unsigned long freq;
-	struct device_node *node = devfreq->dev.parent->of_node;
-
-	/*
-	 * We want to restrict this governor be set only for
-	 * gpu devfreq devices.
-	 */
-	if (!of_device_is_compatible(node, "qcom,kgsl-busmon"))
-		return -EINVAL;
 
 	mutex_lock(&devfreq->lock);
 	freq = devfreq->previous_freq;

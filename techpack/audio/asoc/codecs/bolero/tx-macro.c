@@ -8,6 +8,7 @@
 #include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -158,6 +159,10 @@ struct tx_macro_priv {
 	struct work_struct tx_macro_add_child_devices_work;
 	struct hpf_work tx_hpf_work[NUM_DECIMATORS];
 	struct tx_mute_work tx_mute_dwork[NUM_DECIMATORS];
+	struct regulator *micb_supply;
+	u32 micb_voltage;
+	u32 micb_current;
+	int micb_users;
 	u16 dmic_clk_div;
 	u32 version;
 	u32 is_used_tx_swr_gpio;
@@ -374,7 +379,6 @@ static int tx_macro_event_handler(struct snd_soc_component *component,
 
 	switch (event) {
 	case BOLERO_MACRO_EVT_SSR_DOWN:
-		trace_printk("%s, enter SSR down\n", __func__);
 		if (tx_priv->swr_ctrl_data) {
 			swrm_wcd_notify(
 				tx_priv->swr_ctrl_data[0].tx_swr_pdev,
@@ -391,7 +395,6 @@ static int tx_macro_event_handler(struct snd_soc_component *component,
 		}
 		break;
 	case BOLERO_MACRO_EVT_SSR_UP:
-		trace_printk("%s, enter SSR up\n", __func__);
 		/* reset swr after ssr/pdr */
 		tx_priv->reset_swr = true;
 		if (tx_priv->swr_ctrl_data)
@@ -1101,6 +1104,66 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 static int tx_macro_enable_micbias(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
+	struct snd_soc_component *component =
+				snd_soc_dapm_to_component(w->dapm);
+	struct device *tx_dev = NULL;
+	struct tx_macro_priv *tx_priv = NULL;
+	int ret = 0;
+
+	if (!tx_macro_get_data(component, &tx_dev, &tx_priv, __func__))
+		return -EINVAL;
+
+	if (!tx_priv->micb_supply) {
+		dev_err(tx_dev,
+			"%s:regulator not provided in dtsi\n", __func__);
+		return -EINVAL;
+	}
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		if (tx_priv->micb_users++ > 0)
+			return 0;
+		ret = regulator_set_voltage(tx_priv->micb_supply,
+				      tx_priv->micb_voltage,
+				      tx_priv->micb_voltage);
+		if (ret) {
+			dev_err(tx_dev, "%s: Setting voltage failed, err = %d\n",
+				__func__, ret);
+			return ret;
+		}
+		ret = regulator_set_load(tx_priv->micb_supply,
+					 tx_priv->micb_current);
+		if (ret) {
+			dev_err(tx_dev, "%s: Setting current failed, err = %d\n",
+				__func__, ret);
+			return ret;
+		}
+		ret = regulator_enable(tx_priv->micb_supply);
+		if (ret) {
+			dev_err(tx_dev, "%s: regulator enable failed, err = %d\n",
+				__func__, ret);
+			return ret;
+		}
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+		if (--tx_priv->micb_users > 0)
+			return 0;
+		if (tx_priv->micb_users < 0) {
+			tx_priv->micb_users = 0;
+			dev_dbg(tx_dev, "%s: regulator already disabled\n",
+				__func__);
+			return 0;
+		}
+		ret = regulator_disable(tx_priv->micb_supply);
+		if (ret) {
+			dev_err(tx_dev, "%s: regulator disable failed, err = %d\n",
+				__func__, ret);
+			return ret;
+		}
+		regulator_set_voltage(tx_priv->micb_supply, 0,
+				tx_priv->micb_voltage);
+		regulator_set_load(tx_priv->micb_supply, 0);
+		break;
+	}
 	return 0;
 }
 
@@ -2498,9 +2561,6 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 {
 	int ret = 0, clk_tx_ret = 0;
 
-	trace_printk("%s: clock type %s, enable: %s tx_mclk_users: %d\n",
-		__func__, (clk_type ? "VA_MCLK" : "TX_MCLK"),
-		(enable ? "enable" : "disable"), tx_priv->tx_mclk_users);
 	dev_dbg(tx_priv->dev,
 		"%s: clock type %s, enable: %s tx_mclk_users: %d\n",
 		__func__, (clk_type ? "VA_MCLK" : "TX_MCLK"),
@@ -2508,7 +2568,6 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 
 	if (enable) {
 		if (tx_priv->swr_clk_users == 0) {
-			trace_printk("%s: tx swr clk users 0\n", __func__);
 			ret = msm_cdc_pinctrl_select_active_state(
 						tx_priv->tx_swr_gpio_p);
 			if (ret < 0) {
@@ -2526,7 +2585,6 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 						   TX_CORE_CLK,
 						   true);
 		if (clk_type == TX_MCLK) {
-			trace_printk("%s: requesting TX_MCLK\n", __func__);
 			ret = tx_macro_mclk_enable(tx_priv, 1);
 			if (ret < 0) {
 				if (tx_priv->swr_clk_users == 0)
@@ -2539,7 +2597,6 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 			}
 		}
 		if (clk_type == VA_MCLK) {
-			trace_printk("%s: requesting VA_MCLK\n", __func__);
 			ret = bolero_clk_rsc_request_clock(tx_priv->dev,
 							   TX_CORE_CLK,
 							   VA_CORE_CLK,
@@ -2570,8 +2627,6 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 		}
 		if (tx_priv->swr_clk_users == 0) {
 			dev_dbg(tx_priv->dev, "%s: reset_swr: %d\n",
-				__func__, tx_priv->reset_swr);
-			trace_printk("%s: reset_swr: %d\n",
 				__func__, tx_priv->reset_swr);
 			if (tx_priv->reset_swr)
 				regmap_update_bits(regmap,
@@ -2667,7 +2722,6 @@ done:
 				TX_CORE_CLK,
 				false);
 exit:
-	trace_printk("%s: exit\n", __func__);
 	return ret;
 }
 
@@ -2744,10 +2798,6 @@ static int tx_macro_swrm_clock(void *handle, bool enable)
 	}
 
 	mutex_lock(&tx_priv->swr_clk_lock);
-	trace_printk("%s: swrm clock %s tx_swr_clk_cnt: %d va_swr_clk_cnt: %d\n",
-		__func__,
-		(enable ? "enable" : "disable"),
-		tx_priv->tx_swr_clk_cnt, tx_priv->va_swr_clk_cnt);
 	dev_dbg(tx_priv->dev,
 		"%s: swrm clock %s tx_swr_clk_cnt: %d va_swr_clk_cnt: %d\n",
 		__func__, (enable ? "enable" : "disable"),
@@ -2810,9 +2860,6 @@ static int tx_macro_swrm_clock(void *handle, bool enable)
 		}
 	}
 
-	trace_printk("%s: swrm clock users %d tx_clk_sts_cnt: %d va_clk_sts_cnt: %d\n",
-		__func__, tx_priv->swr_clk_users, tx_priv->tx_clk_status,
-                tx_priv->va_clk_status);
 	dev_dbg(tx_priv->dev,
 		"%s: swrm clock users %d tx_clk_sts_cnt: %d va_clk_sts_cnt: %d\n",
 		__func__, tx_priv->swr_clk_users, tx_priv->tx_clk_status,
@@ -3222,6 +3269,10 @@ static int tx_macro_probe(struct platform_device *pdev)
 	struct tx_macro_priv *tx_priv = NULL;
 	u32 tx_base_addr = 0, sample_rate = 0;
 	char __iomem *tx_io_base = NULL;
+	const char *micb_supply_str = "tx-vdd-micb-supply";
+	const char *micb_supply_str1 = "tx-vdd-micb";
+	const char *micb_voltage_str = "qcom,tx-vdd-micb-voltage";
+	const char *micb_current_str = "qcom,tx-vdd-micb-current";
 	int ret = 0;
 	const char *dmic_sample_rate = "qcom,tx-dmic-sample-rate";
 	u32 is_used_tx_swr_gpio = 1;
@@ -3292,6 +3343,39 @@ static int tx_macro_probe(struct platform_device *pdev)
 		sample_rate, tx_priv) == TX_MACRO_DMIC_SAMPLE_RATE_UNDEFINED)
 			return -EINVAL;
 	}
+
+	if (of_parse_phandle(pdev->dev.of_node, micb_supply_str, 0)) {
+		tx_priv->micb_supply = devm_regulator_get(&pdev->dev,
+						micb_supply_str1);
+		if (IS_ERR(tx_priv->micb_supply)) {
+			ret = PTR_ERR(tx_priv->micb_supply);
+			dev_err(&pdev->dev,
+				"%s:Failed to get micbias supply for TX Mic %d\n",
+				__func__, ret);
+			return ret;
+		}
+		ret = of_property_read_u32(pdev->dev.of_node,
+					micb_voltage_str,
+					&tx_priv->micb_voltage);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"%s:Looking up %s property in node %s failed\n",
+				__func__, micb_voltage_str,
+				pdev->dev.of_node->full_name);
+			return ret;
+		}
+		ret = of_property_read_u32(pdev->dev.of_node,
+					micb_current_str,
+					&tx_priv->micb_current);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"%s:Looking up %s property in node %s failed\n",
+				__func__, micb_current_str,
+				pdev->dev.of_node->full_name);
+			return ret;
+		}
+	}
+
 	if (is_used_tx_swr_gpio) {
 		tx_priv->reset_swr = true;
 		INIT_WORK(&tx_priv->tx_macro_add_child_devices_work,

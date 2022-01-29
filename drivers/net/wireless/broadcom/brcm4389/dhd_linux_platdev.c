@@ -111,6 +111,18 @@ static int lock_cookie_wifi = 'W' | 'i'<<8 | 'F'<<16 | 'i'<<24;	/* cookie is "Wi
 extern bool check_bcm4335_rev(void);
 #endif /* BCM4335_XTAL_WAR */
 
+#if defined(CONFIG_X86)
+#define PCIE_RC_VENDOR_ID 0x8086
+#define PCIE_RC_DEVICE_ID 0x9c1a
+#elif defined(CONFIG_ARCH_TEGRA)
+#define PCIE_RC_VENDOR_ID 0x14e4
+#define PCIE_RC_DEVICE_ID 0x4347
+#else /* CONFIG_ARCH_TEGRA */
+/* Dummy defn */
+#define PCIE_RC_VENDOR_ID 0xffff
+#define PCIE_RC_DEVICE_ID 0xffff
+#endif /* CONFIG_X86 */
+
 wifi_adapter_info_t* dhd_wifi_platform_get_adapter(uint32 bus_type, uint32 bus_num, uint32 slot_num)
 {
 	int i;
@@ -477,7 +489,10 @@ static int wifi_ctrlfunc_register_drv(void)
 	dev2 = bus_find_device(&platform_bus_type, NULL, WIFI_PLAT_NAME2, wifi_platdev_match);
 
 #ifdef BCMDHD_MODULAR
-	dhd_wlan_init();
+	if ((err = dhd_wlan_init())) {
+		DHD_ERROR(("%s: dhd_wlan_init() failed(%d)\n", __FUNCTION__, err));
+		return err;
+	}
 #ifdef WBRC
 	wbrc_init();
 #endif /* WBRC */
@@ -569,6 +584,11 @@ void wifi_ctrlfunc_unregister_drv(void)
 		platform_driver_unregister(&wifi_platform_dev_driver);
 	if (dev2)
 		platform_driver_unregister(&wifi_platform_dev_driver_legacy);
+
+	if (!dhd_wifi_platdata) {
+		goto done;
+	}
+
 	if (dts_enabled) {
 		wifi_adapter_info_t *adapter;
 		adapter = &dhd_wifi_platdata->adapters[0];
@@ -586,11 +606,16 @@ void wifi_ctrlfunc_unregister_drv(void)
 
 #endif /* !defined(CONFIG_DTS) */
 
-	kfree(dhd_wifi_platdata->adapters);
-	dhd_wifi_platdata->adapters = NULL;
-	dhd_wifi_platdata->num_adapters = 0;
-	kfree(dhd_wifi_platdata);
-	dhd_wifi_platdata = NULL;
+done:
+	if (dhd_wifi_platdata && dhd_wifi_platdata->adapters) {
+		kfree(dhd_wifi_platdata->adapters);
+		dhd_wifi_platdata->adapters = NULL;
+		dhd_wifi_platdata->num_adapters = 0;
+	}
+	if (dhd_wifi_platdata) {
+		kfree(dhd_wifi_platdata);
+		dhd_wifi_platdata = NULL;
+	}
 }
 
 static int bcmdhd_wifi_plat_dev_drv_probe(struct platform_device *pdev)
@@ -971,7 +996,47 @@ void __attribute__ ((weak)) dhd_plat_l1ss_ctrl(bool ctrl)
 	return;
 }
 
+void __attribute__ ((weak)) dhd_plat_l1_exit_io(void)
+{
+	return;
+}
+
+void __attribute__ ((weak)) dhd_plat_l1_exit(void)
+{
+	return;
+}
+
 void __attribute__ ((weak)) dhd_plat_report_bh_sched(void *plat_info, int resched)
 {
 	return;
+}
+
+int __attribute__ ((weak)) dhd_plat_pcie_suspend(void *plat_info)
+{
+	return 0;
+}
+
+int __attribute__ ((weak)) dhd_plat_pcie_resume(void *plat_info)
+{
+	return 0;
+}
+
+void __attribute__ ((weak)) dhd_plat_pcie_register_dump(void *plat_info)
+{
+	return;
+}
+
+void __attribute__ ((weak)) dhd_plat_pin_dbg_show(void *plat_info)
+{
+	return;
+}
+
+uint32 __attribute__ ((weak)) dhd_plat_get_rc_vendor_id(void)
+{
+	return PCIE_RC_VENDOR_ID;
+}
+
+uint32 __attribute__ ((weak)) dhd_plat_get_rc_device_id(void)
+{
+	return PCIE_RC_DEVICE_ID;
 }

@@ -220,17 +220,6 @@ static void drawobj_sync_func(struct kgsl_device *device,
 	kgsl_drawobj_put(&event->syncobj->base);
 }
 
-static inline void memobj_list_free(struct list_head *list)
-{
-	struct kgsl_memobj_node *mem, *tmpmem;
-
-	/* Free the cmd mem here */
-	list_for_each_entry_safe(mem, tmpmem, list, node) {
-		list_del_init(&mem->node);
-		kmem_cache_free(memobjs_cache, mem);
-	}
-}
-
 static void drawobj_destroy_sync(struct kgsl_drawobj *drawobj)
 {
 	struct kgsl_drawobj_sync *syncobj = SYNCOBJ(drawobj);
@@ -286,6 +275,7 @@ static void drawobj_destroy_sync(struct kgsl_drawobj *drawobj)
 static void drawobj_destroy_cmd(struct kgsl_drawobj *drawobj)
 {
 	struct kgsl_drawobj_cmd *cmdobj = CMDOBJ(drawobj);
+	struct kgsl_memobj_node *mem, *tmpmem;
 
 	/*
 	 * Release the refcount on the mem entry associated with the
@@ -294,11 +284,17 @@ static void drawobj_destroy_cmd(struct kgsl_drawobj *drawobj)
 	if (cmdobj->base.flags & KGSL_DRAWOBJ_PROFILING)
 		kgsl_mem_entry_put(cmdobj->profiling_buf_entry);
 
-	/* Destroy the cmdlist we created */
-	memobj_list_free(&cmdobj->cmdlist);
+	/* Destroy the command list */
+	list_for_each_entry_safe(mem, tmpmem, &cmdobj->cmdlist, node) {
+		list_del_init(&mem->node);
+		kmem_cache_free(memobjs_cache, mem);
+	}
 
-	/* Destroy the memlist we created */
-	memobj_list_free(&cmdobj->memlist);
+	/* Destroy the memory list */
+	list_for_each_entry_safe(mem, tmpmem, &cmdobj->memlist, node) {
+		list_del_init(&mem->node);
+		kmem_cache_free(memobjs_cache, mem);
+	}
 }
 
 /**
@@ -323,7 +319,6 @@ void kgsl_drawobj_destroy(struct kgsl_drawobj *drawobj)
 
 	kgsl_drawobj_put(drawobj);
 }
-EXPORT_SYMBOL(kgsl_drawobj_destroy);
 
 static bool drawobj_sync_fence_func(void *priv)
 {

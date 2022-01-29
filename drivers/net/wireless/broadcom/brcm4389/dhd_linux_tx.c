@@ -121,12 +121,6 @@
 #include <linux/compat.h>
 #endif
 
-#ifdef CONFIG_ARCH_EXYNOS
-#ifndef SUPPORT_EXYNOS7420
-#include <linux/exynos-pci-ctrl.h>
-#endif /* SUPPORT_EXYNOS7420 */
-#endif /* CONFIG_ARCH_EXYNOS */
-
 #ifdef DHD_WMF
 #include <dhd_wmf_linux.h>
 #endif /* DHD_WMF */
@@ -1098,27 +1092,28 @@ dhd_eap_txcomplete(dhd_pub_t *dhdp, void *txp, bool success, int ifidx)
 	struct ether_header *eh;
 	uint16 type;
 
-	if (!success) {
-		/* XXX where does this stuff belong to? */
-		dhd_prot_hdrpull(dhdp, NULL, txp, NULL, NULL);
+	/* XXX where does this stuff belong to? */
+	dhd_prot_hdrpull(dhdp, NULL, txp, NULL, NULL);
 
-		/* XXX Use packet tag when it is available to identify its type */
-		eh = (struct ether_header *)PKTDATA(dhdp->osh, txp);
-		type  = ntoh16(eh->ether_type);
-		if (type == ETHER_TYPE_802_1X) {
-			if (dhd_is_4way_msg((uint8 *)eh) == EAPOL_4WAY_M4) {
-				dhd_if_t *ifp = NULL;
-				ifp = dhd->iflist[ifidx];
-				if (!ifp || !ifp->net) {
-					return;
-				}
-
+	/* XXX Use packet tag when it is available to identify its type */
+	eh = (struct ether_header *)PKTDATA(dhdp->osh, txp);
+	type  = ntoh16(eh->ether_type);
+	if (type == ETHER_TYPE_802_1X) {
+		if (dhd_is_4way_msg((uint8 *)eh) == EAPOL_4WAY_M4) {
+			dhd_if_t *ifp = NULL;
+			ifp = dhd->iflist[ifidx];
+			if (!ifp || !ifp->net) {
+				return;
+			}
+			if (!success) {
 				DHD_INFO(("%s: M4 TX failed on %d.\n",
-					__FUNCTION__, ifidx));
+						__FUNCTION__, ifidx));
 
 				OSL_ATOMIC_SET(dhdp->osh, &ifp->m4state, M4_TXFAILED);
 				schedule_delayed_work(&ifp->m4state_work,
-					msecs_to_jiffies(MAX_4WAY_TIMEOUT_MS));
+						msecs_to_jiffies(MAX_4WAY_TIMEOUT_MS));
+			} else {
+				cancel_delayed_work(&ifp->m4state_work);
 			}
 		}
 	}

@@ -74,7 +74,7 @@
 	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
 	qcom,fg-cutoff-current = <268>; // C/20 minimum discharge current at system cutoff for SOC estimation
 	qcom,fg-cutoff-voltage = <3300>;
-	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
+	qcom,fg-empty-voltage = <3100>; // see section 4.4.6 (80-PF777-74. Rev C)
 };
 
 &pm8150b_pdphy {
@@ -160,7 +160,7 @@
 		spi-cpol;
 		spi-cpha;
 
-		pinctrl-names = "syncboss_default";
+		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
 		oculus,swdflavor = "nrf52832";
@@ -172,11 +172,12 @@
 		oculus,syncboss-use-fastpath;
 		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
+		oculus,syncboss-boots-to-shutdown-state;
 
 		swd@0 {
 			compatible = "oculus,swd";
 
-			pinctrl-names = "swd_default";
+			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
 			oculus,swd-clk = <&tlmm 52 0>;

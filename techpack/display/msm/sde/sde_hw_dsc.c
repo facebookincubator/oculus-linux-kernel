@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
 #include "sde_hw_mdss.h"
@@ -179,6 +179,36 @@ static void sde_hw_dsc_bind_pingpong_blk(
 		SDE_REG_WRITE(c, dsc_ctl_offset, mux_cfg);
 }
 
+static void sde_hw_dsc_config_dsc_4hs_merge(
+		struct sde_hw_dsc *hw_dsc,
+		struct msm_display_dsc_info *dsc,
+		u32 mode)
+{
+	struct sde_hw_blk_reg_map *c;
+	int data = 0;
+	u32 dsc_ctl_offset;
+
+	if (!hw_dsc)
+		return;
+
+	c = &hw_dsc->hw;
+	dsc_ctl_offset = DSC_CTL(hw_dsc->idx);
+
+	data = SDE_REG_READ(c, dsc_ctl_offset);
+	if (!(mode & DSC_MODE_VIDEO))
+		data |= BIT(5);
+	data |= dsc->dsc_4hs_merge_padding << 8;
+	data |= dsc->dsc_4hs_merge_alignment << 12;
+
+	if (dsc->dsc_4hs_merge_en)
+		data |= BIT(4);
+	else
+		data &= ~BIT(4);
+
+	if (dsc_ctl_offset)
+		SDE_REG_WRITE(c, dsc_ctl_offset, data);
+}
+
 
 static struct sde_dsc_cfg *_dsc_offset(enum sde_dsc dsc,
 		struct sde_mdss_cfg *m,
@@ -207,8 +237,10 @@ static void _setup_dsc_ops(struct sde_hw_dsc_ops *ops,
 	ops->dsc_disable = sde_hw_dsc_disable;
 	ops->dsc_config = sde_hw_dsc_config;
 	ops->dsc_config_thresh = sde_hw_dsc_config_thresh;
-	if (test_bit(SDE_DSC_OUTPUT_CTRL, &features))
+	if (test_bit(SDE_DSC_OUTPUT_CTRL, &features)) {
 		ops->bind_pingpong_blk = sde_hw_dsc_bind_pingpong_blk;
+		ops->config_dsc_4hs_merge = sde_hw_dsc_config_dsc_4hs_merge;
+	}
 };
 
 static struct sde_hw_blk_ops sde_hw_ops = {

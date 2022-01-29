@@ -303,6 +303,7 @@ struct sde_encoder_irq {
  * @lineptr_offset_cached:	Cached lineptr offset (lines relative to Vsync)
  * @frame_trigger_mode:		frame trigger mode indication for command
  *				mode display
+ * @dsc_4hs_merge_en:		enable dsc 4hs merge.
  * @avr_post_kickoff_enabled:	Indicates vsync will be triggered at the end of
  * 				the kickoff for video mode display
  */
@@ -349,6 +350,7 @@ struct sde_encoder_phys {
 	int vfp_cached;
 	int lineptr_offset_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
+	bool dsc_4hs_merge_en;
 	bool avr_post_kickoff_enabled;
 };
 
@@ -641,7 +643,8 @@ static inline enum sde_3d_blend_mode sde_encoder_helper_get_3d_blend_mode(
 	if (((phys_enc->split_role == ENC_ROLE_MASTER) ||
 			(phys_enc->split_role == ENC_ROLE_SLAVE)) &&
 			((topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE) ||
-			(topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC)))
+			(topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC) ||
+			(topology == SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE)))
 		return BLEND_3D_H_ROW_INT;
 
 	return BLEND_3D_NONE;

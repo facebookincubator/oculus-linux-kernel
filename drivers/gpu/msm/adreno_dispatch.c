@@ -174,8 +174,8 @@ static void fault_detect_read(struct adreno_device *adreno_dev)
  */
 static inline bool _isidle(struct adreno_device *adreno_dev)
 {
-	const struct adreno_gpu_core *gpucore = adreno_dev->gpucore;
 	unsigned int reg_rbbm_status;
+	u32 mask;
 
 	if (!kgsl_state_is_awake(KGSL_DEVICE(adreno_dev)))
 		goto ret;
@@ -186,7 +186,12 @@ static inline bool _isidle(struct adreno_device *adreno_dev)
 	/* only check rbbm status to determine if GPU is idle */
 	adreno_readreg(adreno_dev, ADRENO_REG_RBBM_STATUS, &reg_rbbm_status);
 
-	if (reg_rbbm_status & gpucore->busy_mask)
+	if (adreno_is_a3xx(adreno_dev))
+		mask = 0x7ffffffe;
+	else
+		mask = 0xfffffffe;
+
+	if (reg_rbbm_status & mask)
 		return false;
 
 ret:
@@ -265,19 +270,17 @@ static void _retire_timestamp(struct kgsl_drawobj *drawobj)
 	struct kgsl_context *context = drawobj->context;
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
 	struct kgsl_device *device = context->device;
+	struct kgsl_devmemstore *ctx_memstore;
 
 	/*
 	 * Write the start and end timestamp to the memstore to keep the
 	 * accounting sane
 	 */
-	kgsl_sharedmem_writel(device, &device->memstore,
-		KGSL_MEMSTORE_OFFSET(context->id, soptimestamp),
-		drawobj->timestamp);
-
-	kgsl_sharedmem_writel(device, &device->memstore,
-		KGSL_MEMSTORE_OFFSET(context->id, eoptimestamp),
-		drawobj->timestamp);
-
+	ctx_memstore = KGSL_ID_MEMSTORE(device, context->id);
+	ctx_memstore->soptimestamp = drawobj->timestamp;
+	ctx_memstore->eoptimestamp = drawobj->timestamp;
+	/* Make sure the writes are posted before continuing */
+	smp_wmb();
 
 	/* Retire pending GPU events for the object */
 	kgsl_process_event_group(device, &context->events);
@@ -572,9 +575,8 @@ static int sendcmd(struct adreno_device *adreno_dev,
 			ADRENO_DRAWOBJ_PROFILE_BASE;
 
 		/* Zero out the profile entry */
-		kgsl_sharedmem_set(device, &adreno_dev->profile_buffer,
-			profile_offset,	0,
-			sizeof(struct adreno_drawobj_profile_entry));
+		memset(adreno_dev->profile_kptr + profile_offset, 0,
+				sizeof(struct adreno_drawobj_profile_entry));
 
 		/*
 		 * We are writing to shared memory between CPU and GPU.
@@ -2129,7 +2131,7 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 		adreno_dispatch_retire_drawqueue(adreno_dev,
 			&(rb->dispatch_q));
 		/* Select the active dispatch_q */
-		if (base == rb->buffer_desc.gpuaddr) {
+		if (base == rb->buffer_desc->gpuaddr) {
 			dispatch_q = &(rb->dispatch_q);
 			hung_rb = rb;
 			if (adreno_dev->cur_rb != hung_rb) {
@@ -2189,13 +2191,13 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 	 */
 
 	if (hung_rb != NULL) {
-		kgsl_sharedmem_writel(device, &device->memstore,
-				MEMSTORE_RB_OFFSET(hung_rb, soptimestamp),
-				hung_rb->timestamp);
+		struct kgsl_devmemstore *rb_memstore = KGSL_RB_MEMSTORE(device,
+				hung_rb);
 
-		kgsl_sharedmem_writel(device, &device->memstore,
-				MEMSTORE_RB_OFFSET(hung_rb, eoptimestamp),
-				hung_rb->timestamp);
+		rb_memstore->soptimestamp = hung_rb->timestamp;
+		rb_memstore->eoptimestamp = hung_rb->timestamp;
+		/* Make sure the writes are posted before continuing */
+		smp_wmb();
 
 		/* Schedule any pending events to be run */
 		kgsl_process_event_group(device, &hung_rb->events);
@@ -2264,7 +2266,7 @@ static void cmdobj_profile_ticks(struct adreno_device *adreno_dev,
 		struct kgsl_drawobj_cmd *cmdobj, uint64_t *start,
 		uint64_t *active, uint64_t *retire)
 {
-	void *ptr = adreno_dev->profile_buffer.hostptr;
+	void *ptr = adreno_dev->profile_kptr;
 	struct adreno_drawobj_profile_entry *entry;
 
 	entry = (struct adreno_drawobj_profile_entry *)
@@ -2311,7 +2313,7 @@ static void consume_cmdobj(struct adreno_device *adreno_dev,
 		return;
 
 	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv)) {
-		void *ptr = adreno_dev->profile_buffer.hostptr;
+		void *ptr = adreno_dev->profile_kptr;
 		struct adreno_drawobj_profile_entry *entry;
 
 		entry = (struct adreno_drawobj_profile_entry *)
@@ -2917,7 +2919,15 @@ int adreno_dispatcher_init(struct adreno_device *adreno_dev)
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
 	int ret;
 
+	if (test_bit(ADRENO_DISPATCHER_INIT, &dispatcher->priv))
+		return 0;
+
 	memset(dispatcher, 0, sizeof(*dispatcher));
+
+	ret = kobject_init_and_add(&dispatcher->kobj, &ktype_dispatcher,
+		&device->dev->kobj, "dispatch");
+	if (ret)
+		return ret;
 
 	mutex_init(&dispatcher->mutex);
 
@@ -2933,10 +2943,9 @@ int adreno_dispatcher_init(struct adreno_device *adreno_dev)
 	plist_head_init(&dispatcher->pending);
 	spin_lock_init(&dispatcher->plist_lock);
 
-	ret = kobject_init_and_add(&dispatcher->kobj, &ktype_dispatcher,
-		&device->dev->kobj, "dispatch");
+	set_bit(ADRENO_DISPATCHER_INIT, &dispatcher->priv);
 
-	return ret;
+	return 0;
 }
 
 void adreno_dispatcher_halt(struct kgsl_device *device)

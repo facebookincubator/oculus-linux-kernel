@@ -709,7 +709,6 @@ dhd_get_flowring_len(void *ndev, dhd_pub_t *dhdp)
 	log_dump_section_hdr_t sec_hdr;
 	dhd_info_t *dhd_info;
 	uint16 h2d_flowrings_total;
-	int remain_len = 0;
 
 	if (ndev) {
 		dhd_info = *(dhd_info_t **)netdev_priv((struct net_device *)ndev);
@@ -718,17 +717,6 @@ dhd_get_flowring_len(void *ndev, dhd_pub_t *dhdp)
 
 	if (!dhdp)
 		return length;
-
-	if (dhdp->concise_dbg_buf) {
-		remain_len = dhd_dump(dhdp, (char *)dhdp->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
-		if (remain_len <= 0 || remain_len >= CONCISE_DUMP_BUFLEN) {
-			DHD_ERROR(("%s: error getting concise debug info ! remain_len: %d\n",
-				__FUNCTION__, remain_len));
-		   return length;
-		}
-
-		length += (uint32)(CONCISE_DUMP_BUFLEN - remain_len);
-	}
 
 	length += (uint32) strlen(RING_DUMP_HDR);
 	length += (uint32) sizeof(sec_hdr);
@@ -747,8 +735,8 @@ dhd_get_flowring_len(void *ndev, dhd_pub_t *dhdp)
 				+ (D2HRING_CTRL_CMPLT_ITEMSIZE * d2h_max_ctrlcpl)
 				+ (sizeof(uint16) * 2)
 #ifdef EWP_EDL
-				+ (D2HRING_EDL_HDR_SIZE * D2HRING_EDL_MAX_ITEM)
-				+ (sizeof(uint16) * 2));
+				/* EDL ring doesn't have max_item and item_size */
+				+ (D2HRING_EDL_HDR_SIZE * D2HRING_EDL_MAX_ITEM));
 #else
 				+ (H2DRING_INFO_BUFPOST_ITEMSIZE * H2DRING_DYNAMIC_INFO_MAX_ITEM)
 				+ (sizeof(uint16) * 2)
@@ -766,6 +754,7 @@ dhd_get_flowring_len(void *ndev, dhd_pub_t *dhdp)
 		length += (H2DRING_TXPOST_ITEMSIZE * h2d_max_txpost *
 			h2d_flowrings_total);
 	}
+	length += h2d_flowrings_total * (sizeof(uint16) * 2);
 
 	return length;
 }
@@ -1109,7 +1098,6 @@ dhd_print_flowring_data(void *dev, dhd_pub_t *dhdp, const void *user_buf,
 {
 	log_dump_section_hdr_t sec_hdr;
 	int ret = BCME_OK;
-	int remain_len = 0;
 	dhd_info_t *dhd_info;
 
 	if (dev) {
@@ -1122,22 +1110,15 @@ dhd_print_flowring_data(void *dev, dhd_pub_t *dhdp, const void *user_buf,
 
 	dhd_init_sec_hdr(&sec_hdr);
 
-	remain_len = dhd_dump(dhdp, (char *)dhdp->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
-	if (remain_len <= 0 || remain_len >= CONCISE_DUMP_BUFLEN) {
-		DHD_ERROR(("%s: error getting concise debug info !\n",
-			__FUNCTION__));
-	   return BCME_ERROR;
-	}
-	memset(dhdp->concise_dbg_buf, 0, CONCISE_DUMP_BUFLEN);
-
 	/* write the section header first */
 	ret = dhd_export_debug_data(RING_DUMP_HDR, fp, user_buf,
 		strlen(RING_DUMP_HDR), pos);
 	if (ret < 0)
 		goto exit;
+	len -= strlen(RING_DUMP_HDR);
 
 	sec_hdr.type = LOG_DUMP_SECTION_RING;
-	sec_hdr.length = len;
+	sec_hdr.length = len - sizeof(sec_hdr);
 	ret = dhd_export_debug_data((char *)&sec_hdr, fp, user_buf, sizeof(sec_hdr), pos);
 	if (ret < 0)
 		goto exit;
@@ -1146,7 +1127,6 @@ dhd_print_flowring_data(void *dev, dhd_pub_t *dhdp, const void *user_buf,
 	ret = dhd_d2h_h2d_ring_dump(dhdp, fp, user_buf, (unsigned long *)pos, TRUE);
 	if (ret < 0)
 		goto exit;
-
 exit:
 	return ret;
 }

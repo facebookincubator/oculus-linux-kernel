@@ -36,6 +36,7 @@ struct intf_timing_params {
 	bool wide_bus_en;	/* for DP only */
 	bool compression_en;	/* for DP only */
 	u32 extra_dto_cycles;	/* for DP only */
+	bool dsc_4hs_merge_en;	/* DSC 4HS merge */
 };
 
 struct intf_prog_fetch {
@@ -193,6 +194,13 @@ struct sde_hw_intf_ops {
 	 */
 	int (*check_and_reset_tearcheck)(struct sde_hw_intf *intf,
 			struct intf_tear_status *status);
+
+	/**
+	 * Enable/disable DSC 4 hard-slice merge
+	 */
+	void (*enable_dsc_4hs_merge)(struct sde_hw_intf *intf,
+			bool dsc_4hs_merge);
+
 };
 
 struct sde_hw_intf {

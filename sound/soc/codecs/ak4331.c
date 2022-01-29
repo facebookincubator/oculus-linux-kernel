@@ -77,6 +77,8 @@ struct ak4331_priv {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pin_default;
 	struct regulator *avdd_core;
+	u32 avdd_voltage;
+	u32 avdd_current;
 };
 
 /* AK4331 register cache & default register settings */
@@ -350,7 +352,7 @@ static const struct soc_enum ak4331_dac_enum[] = {
 };
 
 static const char * const bickfreq_on_select[] = {
-	"32fs", "48fs", "64fs"
+	"48fs", "32fs", "64fs"
 };
 
 static const char * const srcoutfs_on_select[] = {
@@ -430,15 +432,15 @@ static int ak4331_set_bickfs(struct snd_soc_component *component)
 	struct ak4331_priv *ak4331 = snd_soc_component_get_drvdata(component);
 
 	if (ak4331->bickFreq == 0) {
-		/* 32fs */
-		/* DL1-0=01(16bit, >= 32fs) */
-		snd_soc_component_update_bits(component,
-				AK4331_15_AUDIO_IF_FORMAT, 0x03, 0x01);
-	} else if (ak4331->bickFreq == 1) {
 		/* 48fs */
 		/* DL1-0=00(24bit, >= 48fs) */
 		snd_soc_component_update_bits(component,
 				AK4331_15_AUDIO_IF_FORMAT, 0x03, 0x00);
+	} else if (ak4331->bickFreq == 1) {
+		/* 32fs */
+		/* DL1-0=01(16bit, >= 32fs) */
+		snd_soc_component_update_bits(component,
+				AK4331_15_AUDIO_IF_FORMAT, 0x03, 0x01);
 	} else {
 		/* 64fs */
 		/* DL1-0=1x(32bit, >= 64fs) */
@@ -1116,11 +1118,11 @@ static int ak4331_set_pllblock(struct snd_soc_component *component, int fs)
 		/* BICK_PLL (Slave) */
 		pls = 1;
 		if (ak4331->bickFreq == 0) {
-			/* 32fs */
-			pllInFreq = 32 * fs;
-		} else if (ak4331->bickFreq == 1) {
 			/* 48fs */
 			pllInFreq = 48 * fs;
+		} else if (ak4331->bickFreq == 1) {
+			/* 32fs */
+			pllInFreq = 32 * fs;
 		} else {
 			pllInFreq = 64 * fs;
 		}
@@ -1802,6 +1804,24 @@ static int ak4331_probe(struct snd_soc_component *component)
 
 	ak4331->card = component->card;
 
+	if (ak4331->avdd_voltage != 0) {
+		ret = regulator_set_voltage(ak4331->avdd_core,
+			ak4331->avdd_voltage, ak4331->avdd_voltage);
+		if (ret < 0) {
+			dev_err(dev, "AVDD regulator_set_voltage failed\n");
+			return ret;
+		}
+	}
+
+	if (ak4331->avdd_current != 0) {
+		ret = regulator_set_load(ak4331->avdd_core,
+			ak4331->avdd_current);
+		if (ret < 0) {
+			dev_err(dev, "AVDD regulator_set_load failed\n");
+			return ret;
+		}
+	}
+
 	ret = regulator_enable(ak4331->avdd_core);
 	if (ret < 0) {
 		dev_err(dev, "AVDD regulator_enable failed\n");
@@ -1866,7 +1886,7 @@ parse_hp_detect:
 
 	/* 0:Bypass, 1:SRC (Dependent on a register bit) */
 	ak4331->selDain = 0;
-	/* 0:32fs, 1:48fs, 2:64fs */
+	/* 0:48fs, 1:32fs, 2:64fs */
 	ak4331->bickFreq = 0;
 	/* 0:48(44.1)kHz, 1:96(88.2)kHz, 2:192(176.4)kHz */
 	ak4331->SRCOutFs = 0;
@@ -1918,6 +1938,24 @@ static int ak4331_resume(struct snd_soc_component *component)
 	struct device *dev = &(ak4331->i2c->dev);
 	int ret;
 	akdbgprt("\t[AK4331] %s(%d)\n", __func__, __LINE__);
+
+	if (ak4331->avdd_voltage != 0) {
+		ret = regulator_set_voltage(ak4331->avdd_core,
+			ak4331->avdd_voltage, ak4331->avdd_voltage);
+		if (ret < 0) {
+			dev_err(dev, "AVDD regulator_set_voltage failed\n");
+			return ret;
+		}
+	}
+
+	if (ak4331->avdd_current != 0) {
+		ret = regulator_set_load(ak4331->avdd_core,
+			ak4331->avdd_current);
+		if (ret < 0) {
+			dev_err(dev, "AVDD regulator_set_load failed\n");
+			return ret;
+		}
+	}
 
 	ret = regulator_enable(ak4331->avdd_core);
 	if (ret < 0) {
@@ -1973,9 +2011,17 @@ static int ak4331_i2c_probe(struct i2c_client *i2c,
 		const struct i2c_device_id *id)
 {
 	struct ak4331_priv *ak4331;
+	struct device *dev;
+	struct device_node *np;
 	int ret = 0;
 
 	akdbgprt("\t[ak4331] %s(%d)\n", __func__, __LINE__);
+
+	dev = &i2c->dev;
+	np = dev->of_node;
+
+	if (!np)
+		return -EINVAL;
 
 	ak4331 = devm_kzalloc(&i2c->dev, sizeof(struct ak4331_priv),
 			GFP_KERNEL);
@@ -1987,6 +2033,23 @@ static int ak4331_i2c_probe(struct i2c_client *i2c,
 		ret = PTR_ERR(ak4331->avdd_core);
 		dev_err(&i2c->dev, "Unable to get avdd-core:%d\n", ret);
 		return ret;
+	}
+
+	ret = of_property_read_u32(np, "ak4331,avdd-voltage",
+				&ak4331->avdd_voltage);
+	if (ret) {
+		dev_err(&i2c->dev,
+			"%s:Looking up %s property in node %s failed\n",
+			__func__, "ak4331,avdd-voltage",
+			np->full_name);
+	}
+	ret = of_property_read_u32(np, "ak4331,avdd-current",
+				&ak4331->avdd_current);
+	if (ret) {
+		dev_err(&i2c->dev,
+			"%s:Looking up %s property in node %s failed\n",
+			__func__, "ak4331,avdd-current",
+			np->full_name);
 	}
 
 	ak4331->regmap = devm_regmap_init_i2c(i2c, &ak4331_regmap);

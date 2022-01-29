@@ -78,6 +78,7 @@ static size_t snapshot_os(struct kgsl_device *device,
 	struct kgsl_snapshot_linux_v2 *header =
 		(struct kgsl_snapshot_linux_v2 *)buf;
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	struct kgsl_devmemstore *global_memstore;
 	int ctxtcount = 0, id;
 	size_t size = sizeof(*header);
 	struct kgsl_context *context;
@@ -123,10 +124,12 @@ static size_t snapshot_os(struct kgsl_device *device,
 
 	/*
 	 * Save the last active context from global index since its more
-	 * reliable than currrent RB index
+	 * reliable than currrent RB index. Make sure any pending writes to
+	 * the global memstore are complete.
 	 */
-	kgsl_sharedmem_readl(&device->memstore, &header->current_context,
-		KGSL_MEMSTORE_OFFSET(KGSL_MEMSTORE_GLOBAL, current_context));
+	smp_rmb();
+	global_memstore = KGSL_ID_MEMSTORE(device, KGSL_MEMSTORE_GLOBAL);
+	header->current_context = global_memstore->current_context;
 
 	context = kgsl_context_get(device, header->current_context);
 
@@ -273,7 +276,6 @@ int kgsl_snapshot_have_object(struct kgsl_snapshot *snapshot,
 
 	return 0;
 }
-EXPORT_SYMBOL(kgsl_snapshot_have_object);
 
 /**
  * kgsl_snapshot_get_object() - Mark a GPU buffer to be frozen
@@ -397,7 +399,6 @@ err_put:
 	kgsl_mem_entry_put(entry);
 	return ret;
 }
-EXPORT_SYMBOL(kgsl_snapshot_get_object);
 
 /**
  * kgsl_snapshot_dump_registers - helper function to dump device registers
@@ -451,7 +452,6 @@ size_t kgsl_snapshot_dump_registers(struct kgsl_device *device, u8 *buf,
 	/* Return the size of the section */
 	return (count * 8) + sizeof(*header);
 }
-EXPORT_SYMBOL(kgsl_snapshot_dump_registers);
 
 struct kgsl_snapshot_indexed_registers {
 	unsigned int index;
@@ -515,7 +515,6 @@ void kgsl_snapshot_indexed_registers(struct kgsl_device *device,
 	kgsl_snapshot_add_section(device, KGSL_SNAPSHOT_SECTION_INDEXED_REGS,
 		snapshot, kgsl_snapshot_dump_indexed_regs, &iregs);
 }
-EXPORT_SYMBOL(kgsl_snapshot_indexed_registers);
 
 /**
  * kgsl_snapshot_add_section() - Add a new section to the GPU snapshot
@@ -760,7 +759,6 @@ void kgsl_device_snapshot(struct kgsl_device *device,
 	 */
 	kgsl_schedule_work(&snapshot->work);
 }
-EXPORT_SYMBOL(kgsl_device_snapshot);
 
 /* An attribute for showing snapshot details */
 struct kgsl_snapshot_attribute {
@@ -923,6 +921,17 @@ done:
 	return (ret < 0) ? ret : itr.write;
 }
 
+/* Trigger a device snapshot when "dump" is written to */
+static ssize_t trigger_dump_store(struct kgsl_device *device,
+		const char *buf, size_t count)
+{
+	mutex_lock(&device->mutex);
+	kgsl_device_snapshot(device, NULL, false);
+	mutex_unlock(&device->mutex);
+
+	return count;
+}
+
 /* Show the total number of hangs since device boot */
 static ssize_t faultcount_show(struct kgsl_device *device, char *buf)
 {
@@ -1043,6 +1052,7 @@ struct kgsl_snapshot_attribute attr_##_name = { \
 	.store = _store, \
 }
 
+static SNAPSHOT_ATTR(trigger_dump, 0200, NULL, trigger_dump_store);
 static SNAPSHOT_ATTR(timestamp, 0444, timestamp_show, NULL);
 static SNAPSHOT_ATTR(faultcount, 0644, faultcount_show, faultcount_store);
 static SNAPSHOT_ATTR(force_panic, 0644, force_panic_show, force_panic_store);
@@ -1093,6 +1103,7 @@ static struct kobj_type ktype_snapshot = {
 };
 
 static const struct attribute *snapshot_attrs[] = {
+	&attr_trigger_dump.attr,
 	&attr_timestamp.attr,
 	&attr_faultcount.attr,
 	&attr_force_panic.attr,
@@ -1103,44 +1114,15 @@ static const struct attribute *snapshot_attrs[] = {
 	NULL,
 };
 
-/**
- * kgsl_device_snapshot_init() - add resources for the device GPU snapshot
- * @device: The device to initialize
- *
- * Allocate memory for a GPU snapshot for the specified device,
- * and create the sysfs files to manage it
- */
-int kgsl_device_snapshot_init(struct kgsl_device *device)
+void kgsl_device_snapshot_probe(struct kgsl_device *device, u32 size)
 {
-	int ret;
-
-	device->snapshot_memory.size = KGSL_SNAPSHOT_MEMSIZE;
-
-	of_property_read_u32(device->pdev->dev.of_node,
-		"qcom,snapshot-size", &device->snapshot_memory.size);
-
-	/*
-	 * Choosing a memory size of 0 is essentially the same as disabling
-	 * snapshotting
-	 */
-	if (device->snapshot_memory.size == 0)
-		return 0;
-
-	/*
-	 * I'm not sure why anybody would choose to do so but make sure
-	 * that we can at least fit the snapshot header in the requested
-	 * region
-	 */
-
-	if (device->snapshot_memory.size < sizeof(struct kgsl_snapshot_header))
-		device->snapshot_memory.size =
-			sizeof(struct kgsl_snapshot_header);
+	device->snapshot_memory.size = size;
 
 	device->snapshot_memory.ptr = kzalloc(device->snapshot_memory.size,
 		GFP_KERNEL);
 
-	if (device->snapshot_memory.ptr == NULL)
-		return -ENOMEM;
+	if (!device->snapshot_memory.ptr)
+		return;
 
 	device->snapshot = NULL;
 	device->snapshot_faultcount = 0;
@@ -1155,20 +1137,13 @@ int kgsl_device_snapshot_init(struct kgsl_device *device)
 	 */
 	device->prioritize_unrecoverable = false;
 
-	ret = kobject_init_and_add(&device->snapshot_kobj, &ktype_snapshot,
-		&device->dev->kobj, "snapshot");
-	if (ret)
-		return ret;
+	if (kobject_init_and_add(&device->snapshot_kobj, &ktype_snapshot,
+		&device->dev->kobj, "snapshot"))
+		return;
 
-	ret = sysfs_create_bin_file(&device->snapshot_kobj, &snapshot_attr);
-	if (ret)
-		return ret;
-
-	ret = sysfs_create_files(&device->snapshot_kobj, snapshot_attrs);
-
-	return ret;
+	sysfs_create_bin_file(&device->snapshot_kobj, &snapshot_attr);
+	sysfs_create_files(&device->snapshot_kobj, snapshot_attrs);
 }
-EXPORT_SYMBOL(kgsl_device_snapshot_init);
 
 /**
  * kgsl_device_snapshot_close() - take down snapshot memory for a device
@@ -1192,7 +1167,6 @@ void kgsl_device_snapshot_close(struct kgsl_device *device)
 	device->force_panic = false;
 	device->snapshot_crashdumper = true;
 }
-EXPORT_SYMBOL(kgsl_device_snapshot_close);
 
 /**
  * kgsl_snapshot_add_ib_obj_list() - Add a IB object list to the snapshot
@@ -1225,12 +1199,17 @@ static size_t _mempool_add_object(struct kgsl_snapshot *snapshot, u8 *data,
 		(struct kgsl_snapshot_section_header *)data;
 	struct kgsl_snapshot_gpu_object_v2 *header =
 		(struct kgsl_snapshot_gpu_object_v2 *)(data + sizeof(*section));
+	void *kptr;
 	u8 *dest = data + sizeof(*section) + sizeof(*header);
-	uint64_t size;
+	uint64_t offset, size;
+	unsigned int page_count = 0;
 
+	offset = obj->gpuaddr - obj->entry->memdesc.gpuaddr;
 	size = obj->size;
 
-	if (!kgsl_memdesc_map(&obj->entry->memdesc)) {
+	kptr = kgsl_sharedmem_vm_map_readonly(&obj->entry->memdesc, offset,
+			size, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
 		dev_err(snapshot->device->dev,
 			"snapshot: failed to map GPU object\n");
 		return 0;
@@ -1254,8 +1233,8 @@ static size_t _mempool_add_object(struct kgsl_snapshot *snapshot, u8 *data,
 				snapshot->ib2base, snapshot->ib2size))
 		snapshot->ib2dumped = true;
 
-	memcpy(dest, obj->entry->memdesc.hostptr + obj->offset, size);
-	kgsl_memdesc_unmap(&obj->entry->memdesc);
+	memcpy(dest, kptr + offset_in_page(offset), size);
+	vm_unmap_ram(kptr, page_count);
 
 	return section->size;
 }

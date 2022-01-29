@@ -80,7 +80,9 @@
 };
 
 &pm8150_l14 {
+	regulator-max-microvolt = <1900000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	qcom,init-voltage = <1900000>;
 };
 
 &pm8150l_lcdb {

@@ -769,9 +769,6 @@ ssize_t mipi_dsi_dcs_write_queue(struct mipi_dsi_device *dsi,
 	if (last)
 		msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
 
-	/* Required for sending queued commands */
-	msg.flags |= MIPI_DSI_MSG_UNICAST;
-
 	return ops->transfer(dsi->host, &msg);
 }
 EXPORT_SYMBOL(mipi_dsi_dcs_write_queue);

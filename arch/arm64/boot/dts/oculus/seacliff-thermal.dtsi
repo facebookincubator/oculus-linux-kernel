@@ -1,24 +1,43 @@
 &vendor {
+	battery_virtual_sensor: battery_virtual_sensor {
+		compatible = "oculus,battery-virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		pcm-thermal-zone = "battery";
+		pcm-thermal-zone-scaling-factor = <1>;
+
+		thermal-zones = "battery";
+		thermal-zone-scaling-factors = <1>;
+		thermal-zone-coefficients = <5061>;
+		thermal-zone-slope-coefficients = <500>;
+
+		intercept-discharging = <14511>;
+		max-differential = <10000>;
+		dont-use-pcm-with-charger;
+	};
+
 	display_virtual_sensor: display_virtual_sensor {
 		compatible = "oculus,display-virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
-		io-channel-names = "soc_therm";
+		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+		io-channel-names = "pcb1_therm";
 
-		thermal-zones = "pcb1-usr";
+		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
+				"smb-usr", "imu-usr", "pogo-usr";
 
-		thermal-zone-coefficients = <1>;
-		thermal-zone-slope-coefficients = <1>;
+		thermal-zone-coefficients = <633 255 304 (-376) 537 2302>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
 
-		io-coefficients = <1>;
-		io-slope-coefficients = <1>;
+		io-coefficients = <775>;
+		io-slope-coefficients = <(-15500)>;
 
 		intercept-charging = <1>;
 		intercept-discharging = <1>;
 
-		intercept-constant = <1>;
+		intercept-constant = <19771>;
 	};
 
 	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
@@ -26,19 +45,20 @@
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
-		io-channel-names = "soc_therm";
+		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+		io-channel-names = "pcb1_therm";
 
-		thermal-zones = "pcb1-usr";
+		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
+				"smb-usr", "ddr-usr", "imu-usr", "pogo-usr";
 
-		thermal-zone-coefficients = <1>;
-		thermal-zone-slope-coefficients = <1>;
+		thermal-zone-coefficients = <935 633 760 (-566) 612 776 2527>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
 
-		io-coefficients = <1>;
-		io-slope-coefficients = <1>;
+		io-coefficients = <1077>;
+		io-slope-coefficients = <(-15500)>;
 
-		intercept-charging = <1>;
-		intercept-discharging = <1>;
+		intercept-charging = <8825>;
+		intercept-discharging = <8825>;
 	};
 
 	vrapi_top_panel_sensor: vrapi_top_panel_sensor {
@@ -46,24 +66,50 @@
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
-		io-channel-names = "soc_therm";
+		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+		io-channel-names = "pcb1_therm";
 
-		thermal-zones = "pcb1-usr";
+		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
+				"smb-usr", "ddr-usr", "imu-usr", "pogo-usr";
 
-		thermal-zone-coefficients = <1 1>;
-		thermal-zone-slope-coefficients = <1 1>;
+		thermal-zone-coefficients = <978 631 810 (-591) 628 830 2722>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
 
-		io-coefficients = <1>;
-		io-slope-coefficients = <1>;
+		io-coefficients = <1174>;
+		io-slope-coefficients = <(-15500)>;
 
-		intercept-charging = <1>;
-		intercept-discharging = <1>;
+		intercept-charging = <6211>;
+		intercept-discharging = <6211>;
 	};
 };
 
 
 &thermal_zones {
+	batt-virt {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&battery_virtual_sensor>;
+		wake-capable-sensor;
+		trips {
+			batt_virt_trip0: batt-virt-trip0 {
+				temperature = <58500>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			batt_virt_trip1: batt-virt-trip1 {
+				temperature = <60000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			batt_virt_trip2: batt-virt-trip2 {
+				temperature = <64000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
 	display-virt {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;

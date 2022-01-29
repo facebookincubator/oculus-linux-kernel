@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  */
 
 #include "adreno.h"
@@ -27,7 +27,7 @@ int adreno_getproperty_compat(struct kgsl_device *device,
 			devinfo.device_id = device->id + 1;
 			devinfo.chip_id = adreno_dev->chipid;
 			devinfo.mmu_enabled =
-				MMU_FEATURE(&device->mmu, KGSL_MMU_PAGED);
+				kgsl_mmu_has_feature(device, KGSL_MMU_PAGED);
 			devinfo.gmem_gpubaseaddr =
 					adreno_dev->gpucore->gmem_base;
 			devinfo.gmem_sizebytes =
@@ -50,25 +50,16 @@ int adreno_getproperty_compat(struct kgsl_device *device,
 				break;
 			}
 			memset(&shadowprop, 0, sizeof(shadowprop));
-			if (device->memstore.hostptr) {
-				/*
-				 * NOTE: with mmu enabled, gpuaddr doesn't mean
-				 * anything to mmap().
-				 * NOTE: shadowprop.gpuaddr is uint32
-				 * (because legacy) and the memstore gpuaddr is
-				 * 64 bit. Cast the memstore gpuaddr to uint32.
-				 */
-				shadowprop.gpuaddr =
-					(unsigned int) device->memstore.gpuaddr;
-				shadowprop.size =
-					(unsigned int) device->memstore.size;
-				/*
-				 * GSL needs this to be set, even if it
-				 * appears to be meaningless
-				 */
-				shadowprop.flags = KGSL_FLAGS_INITIALIZED |
-					KGSL_FLAGS_PER_CONTEXT_TIMESTAMPS;
-			}
+			/* Give a token address to identify memstore */
+			shadowprop.gpuaddr = (unsigned int)
+				KGSL_MEMSTORE_TOKEN_ADDRESS;
+			shadowprop.size = (unsigned int)KGSL_MEMSTORE_SIZE;
+			/*
+			 * GSL needs this to be set, even if it
+			 * appears to be meaningless
+			 */
+			shadowprop.flags = KGSL_FLAGS_INITIALIZED |
+				KGSL_FLAGS_PER_CONTEXT_TIMESTAMPS;
 			if (copy_to_user(param->value, &shadowprop,
 				sizeof(shadowprop))) {
 				status = -EFAULT;

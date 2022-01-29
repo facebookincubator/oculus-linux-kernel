@@ -171,7 +171,6 @@ static int ib_save_mip_addresses(unsigned int *pkt,
 	int ret = 0;
 	int num_levels = (pkt[1] >> 22) & 0x03FF;
 	int i;
-	unsigned int *hostptr;
 	struct kgsl_mem_entry *ent;
 	unsigned int block, type;
 	int unitsize = 0;
@@ -185,8 +184,12 @@ static int ib_save_mip_addresses(unsigned int *pkt,
 		unitsize = load_state_unit_sizes[block][1];
 
 	if (3 == block && 1 == type) {
+		void *kptr;
+		unsigned int *src;
 		uint64_t gpuaddr = pkt[2] & 0xFFFFFFFC;
 		uint64_t size = (num_levels * unitsize) << 2;
+		uint64_t offset;
+		unsigned int page_count = 0;
 
 		ent = kgsl_sharedmem_find(process, gpuaddr);
 		if (ent == NULL)
@@ -198,18 +201,23 @@ static int ib_save_mip_addresses(unsigned int *pkt,
 			return 0;
 		}
 
-		hostptr = kgsl_gpuaddr_to_vaddr(&ent->memdesc, gpuaddr);
-		if (hostptr != NULL) {
+		offset = gpuaddr - ent->memdesc.gpuaddr;
+		kptr = kgsl_sharedmem_vm_map_readonly(&ent->memdesc, offset,
+			size, &page_count);
+		if (!IS_ERR_OR_NULL(kptr)) {
+			src = (unsigned int *)(kptr + offset_in_page(offset));
+
 			for (i = 0; i < num_levels; i++) {
-				ret = adreno_ib_add(process, hostptr[i],
+				ret = adreno_ib_add(process, src[i],
 					SNAPSHOT_GPU_OBJECT_GENERIC,
 					ib_obj_list);
 				if (ret)
 					break;
 			}
+
+			vm_unmap_ram(kptr, page_count);
 		}
 
-		kgsl_memdesc_unmap(&ent->memdesc);
 		kgsl_mem_entry_put(ent);
 	}
 	return ret;
@@ -837,6 +845,9 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 	struct adreno_ib_object *ib_obj;
 	struct kgsl_mem_entry *entry;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	void *kptr;
+	uint64_t offset;
+	unsigned int page_count = 0;
 
 	/* check that this IB is not already on list */
 	for (i = 0; i < ib_obj_list->num_objs; i++) {
@@ -857,8 +868,10 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 		return -EINVAL;
 	}
 
-	src = kgsl_gpuaddr_to_vaddr(&entry->memdesc, gpuaddr);
-	if (!src) {
+	offset = gpuaddr - entry->memdesc.gpuaddr;
+	kptr = kgsl_sharedmem_vm_map_readonly(&entry->memdesc, offset,
+			dwords << 2, &page_count);
+	if (IS_ERR_OR_NULL(kptr)) {
 		kgsl_mem_entry_put(entry);
 		return -EINVAL;
 	}
@@ -868,6 +881,8 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 	ret = adreno_ib_add(process, gpuaddr, obj_type, ib_obj_list);
 	if (ret)
 		goto done;
+
+	src = (unsigned int *)(kptr + offset_in_page(offset));
 
 	for (i = 0; rem > 0; rem--, i++) {
 		int pktsize;
@@ -968,7 +983,7 @@ done:
 		ret = ib_add_type0_entries(device, process, ib_obj_list,
 			&ib_parse_vars);
 
-	kgsl_memdesc_unmap(&entry->memdesc);
+	vm_unmap_ram(kptr, page_count);
 	kgsl_mem_entry_put(entry);
 	return ret;
 }

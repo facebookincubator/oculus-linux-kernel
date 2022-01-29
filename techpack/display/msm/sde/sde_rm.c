@@ -65,8 +65,8 @@ static const struct sde_rm_topology_def g_ctl_ver_1_top_table[] = {
 	{   SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE,     4, 0, 2, 1, false },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC, 4, 3, 2, 1, false },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,    4, 4, 2, 1, false },
+	{   SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE, 4, 4, 1, 1, false },
 };
-
 
 /**
  * struct sde_rm_requirements - Reservation requirements parameter bundle

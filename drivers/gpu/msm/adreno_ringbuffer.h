@@ -69,7 +69,8 @@ struct adreno_ringbuffer_pagetable_info {
 /**
  * struct adreno_ringbuffer - Definition for an adreno ringbuffer object
  * @flags: Internal control flags for the ringbuffer
- * @buffer_desc: Pointer to the ringbuffer memory descripto
+ * @buffer_desc: Pointer to the ringbuffer memory descriptor
+ * @kptr: Pointer to the RW kernel mapping of the backing store
  * @_wptr: The next value of wptr to be written to the hardware on submit
  * @wptr: Local copy of the wptr offset last written to hardware
  * @last_wptr: offset of the last wptr that was written to CFF
@@ -82,12 +83,16 @@ struct adreno_ringbuffer_pagetable_info {
  * @drawctxt_active: The last pagetable that this ringbuffer is set to
  * @preemption_desc: The memory descriptor containing
  * preemption info written/read by CP
+ * @preemption_kptr: Pointer to the R/W kernel mapping of the first page of
+ * the preemption record.
  * @secure_preemption_desc: The memory descriptor containing
  * preemption info written/read by CP for secure contexts
  * @perfcounter_save_restore_desc: Used by CP to save/restore the perfcounter
  * values across preemption
  * @pagetable_desc: Memory to hold information about the pagetables being used
  * and the commands to switch pagetable on the RB
+ * @pagetable_kptr: Pointer to the R/W kernel mapping of the pagetable
+ * descriptor buffer.
  * @dispatch_q: The dispatcher side queue for this ringbuffer
  * @ts_expire_waitq: Wait queue to wait for rb timestamp to expire
  * @ts_expire_waitq: Wait q to wait for rb timestamp to expire
@@ -101,7 +106,8 @@ struct adreno_ringbuffer_pagetable_info {
  */
 struct adreno_ringbuffer {
 	uint32_t flags;
-	struct kgsl_memdesc buffer_desc;
+	struct kgsl_memdesc *buffer_desc;
+	void *kptr;
 	unsigned int _wptr;
 	unsigned int wptr;
 	unsigned int last_wptr;
@@ -110,10 +116,12 @@ struct adreno_ringbuffer {
 	unsigned int timestamp;
 	struct kgsl_event_group events;
 	struct adreno_context *drawctxt_active;
-	struct kgsl_memdesc preemption_desc;
-	struct kgsl_memdesc secure_preemption_desc;
-	struct kgsl_memdesc perfcounter_save_restore_desc;
-	struct kgsl_memdesc pagetable_desc;
+	struct kgsl_memdesc *preemption_desc;
+	void *preemption_kptr;
+	struct kgsl_memdesc *secure_preemption_desc;
+	struct kgsl_memdesc *perfcounter_save_restore_desc;
+	struct kgsl_memdesc *pagetable_desc;
+	void *pagetable_kptr;
 	struct adreno_dispatcher_drawqueue dispatch_q;
 	wait_queue_head_t ts_expire_waitq;
 	unsigned int wptr_preempt_end;
@@ -125,7 +133,7 @@ struct adreno_ringbuffer {
 	 * @profile_desc: global memory to construct IB1s to do user side
 	 * profiling
 	 */
-	struct kgsl_memdesc profile_desc;
+	struct kgsl_memdesc *profile_desc;
 	/**
 	 * @profile_index: Pointer to the next "slot" in profile_desc for a user
 	 * profiling IB1.  This allows for PAGE_SIZE / 16 = 256 simultaneous
@@ -149,7 +157,7 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 		struct kgsl_drawobj_cmd *cmdobj,
 		struct adreno_submit_time *time);
 
-int adreno_ringbuffer_probe(struct adreno_device *adreno_dev);
+int adreno_ringbuffer_init(struct adreno_device *adreno_dev);
 
 int adreno_ringbuffer_start(struct adreno_device *adreno_dev);
 

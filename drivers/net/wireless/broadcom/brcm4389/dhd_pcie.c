@@ -52,9 +52,10 @@
 #include <dhd_proto.h>
 #include <dhd_dbg.h>
 #include <dhd_debug.h>
-#if defined(LINUX) || defined(linux)
+#if defined(__linux__)
 #include <dhd_daemon.h>
-#endif /* LINUX || linux */
+#include <dhd_plat.h>
+#endif /* __linux__ */
 #include <dhdioctl.h>
 #include <sdiovar.h>
 #include <bcmmsgbuf.h>
@@ -314,12 +315,6 @@ static void  select_fd_image(
 int dbushost_initvars_flash(si_t *sih, osl_t *osh, char **base, uint len);
 #endif
 
-#ifdef EXYNOS_PCIE_DEBUG
-extern void exynos_pcie_register_dump(int ch_num);
-#endif /* EXYNOS_PCIE_DEBUG */
-#ifdef PRINT_WAKEUP_GPIO_STATUS
-extern void exynos_pin_dbg_show(unsigned int pin, const char* str);
-#endif /* PRINT_WAKEUP_GPIO_STATUS */
 #if defined(DHD_H2D_LOG_TIME_SYNC)
 static void dhdpci_bus_rte_log_time_sync_poll(dhd_bus_t *bus);
 #endif /* DHD_H2D_LOG_TIME_SYNC */
@@ -5745,9 +5740,10 @@ dhdpcie_mem_dump(dhd_bus_t *bus)
 			__FUNCTION__, dhd_console_ms_prev));
 		dhdp->dhd_console_ms = 0;
 	}
-#ifdef EXYNOS_PCIE_DEBUG
-	exynos_pcie_register_dump(1);
-#endif /* EXYNOS_PCIE_DEBUG */
+
+#if defined(__linux__)
+	dhd_plat_pcie_register_dump(dhdp->plat_info);
+#endif /* __linux__ */
 
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->is_linkdown) {
@@ -5949,7 +5945,7 @@ dhdpcie_bus_membytes(dhd_bus_t *bus, bool write, ulong address, uint8 *data, uin
 	int detect_endian_flag = 0x01;
 	bool little_endian;
 
-	if (write && bus->is_linkdown) {
+	if (bus->is_linkdown) {
 		DHD_ERROR(("%s: PCIe link was down\n", __FUNCTION__));
 		return BCME_ERROR;
 	}
@@ -16938,7 +16934,7 @@ dhdpcie_get_etd_preserve_logs(dhd_pub_t *dhd,
 
 		/* boundary check */
 		baseaddr = etd_evtlog->log_arr_addr;
-		if ((baseaddr < dhd->bus->dongle_ram_base) ||
+		if ((baseaddr < dhd->bus->dongle_ram_base) || (baseaddr > endaddr) ||
 			((baseaddr + arr_size) > endaddr)) {
 			DHD_ERROR(("%s: Error reading invalid address\n",
 				__FUNCTION__));
@@ -16963,7 +16959,7 @@ dhdpcie_get_etd_preserve_logs(dhd_pub_t *dhd,
 		for (i = 0; i < (etd_evtlog->num_elements); ++i) {
 			/* boundary check */
 			baseaddr = evtlog_buf_arr[i].buf_addr;
-			if ((baseaddr < dhd->bus->dongle_ram_base) ||
+			if ((baseaddr < dhd->bus->dongle_ram_base) || (baseaddr > endaddr) ||
 				((baseaddr + evtlog_buf_arr[i].len) > endaddr)) {
 				DHD_ERROR(("%s: Error reading invalid address\n",
 					__FUNCTION__));
@@ -18143,9 +18139,10 @@ dhd_pcie_intr_count_dump(dhd_pub_t *dhd)
 	DHD_ERROR(("oob_irq_enabled=%d oob_gpio_level=%d\n",
 		dhdpcie_get_oob_irq_status(bus),
 		dhdpcie_get_oob_irq_level()));
-#ifdef PRINT_WAKEUP_GPIO_STATUS
-	exynos_pin_dbg_show(dhdpcie_get_oob_gpio_number(), "gpa0");
-#endif /* PRINT_WAKEUP_GPIO_STATUS */
+
+#if defined(__linux__)
+	dhd_plat_pin_dbg_show(bus->dhd->plat_info);
+#endif /* __linux__ */
 #endif /* BCMPCIE_OOB_HOST_WAKE */
 	DHD_ERROR(("dpc_return_busdown_count=%lu non_ours_irq_count=%lu\n",
 		bus->dpc_return_busdown_count, bus->non_ours_irq_count));

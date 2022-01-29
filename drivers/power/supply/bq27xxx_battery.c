@@ -2184,6 +2184,7 @@ static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
 	char buf[BQ27Z561_MAC_BLOCK_LEN + 1];
 	char tmp_str[7];
 
+	val->strval = NULL;
 	memset(di->mac_buf, 0x00, BQ27Z561_MAC_LEN);
 	mutex_lock(&bq27xxx_list_lock);
 	ret = bq27z561_battery_read_mac_block(di,

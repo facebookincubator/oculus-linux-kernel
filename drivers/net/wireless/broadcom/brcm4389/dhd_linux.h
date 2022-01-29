@@ -598,6 +598,8 @@ int dhd_enable_adps(dhd_pub_t *dhd, uint8 on);
 extern void dhd_reset_tcpsync_info_by_ifp(dhd_if_t *ifp);
 extern void dhd_reset_tcpsync_info_by_dev(struct net_device *dev);
 #endif /* DHDTCPSYNC_FLOOD_BLK */
+extern void dhd_set_del_in_progress(dhd_pub_t * dhd, struct net_device * ndev);
+extern void dhd_clear_del_in_progress(dhd_pub_t * dhd, struct net_device * ndev);
 #ifdef PCIE_FULL_DONGLE
 extern void dhd_net_del_flowrings_sta(dhd_pub_t * dhd, struct net_device * ndev);
 #endif /* PCIE_FULL_DONGLE */

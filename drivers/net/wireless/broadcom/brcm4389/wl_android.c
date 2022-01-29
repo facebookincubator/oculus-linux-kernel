@@ -1504,7 +1504,7 @@ static int wl_android_set_csa(struct net_device *dev, char *command)
 {
 	int error = 0;
 	char smbuf[WLC_IOCTL_SMLEN];
-	wl_chan_switch_t csa_arg;
+	wl_chan_switch_t csa_arg = {0, };
 	u32 chnsp = 0;
 	int err = 0;
 

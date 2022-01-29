@@ -12,51 +12,10 @@
 /* devfreq governor call window in usec */
 #define KGSL_GOVERNOR_CALL_INTERVAL 10000
 
-/* Power events to be tracked with history */
-#define KGSL_PWREVENT_STATE	0
-#define KGSL_PWREVENT_GPU_FREQ	1
-#define KGSL_PWREVENT_BUS_FREQ	2
-#define KGSL_PWREVENT_POPP	3
-#define KGSL_PWREVENT_MAX	4
-
-/**
- * Amount of time running at a level to be considered
- * "stable" in msec
- */
-#define STABLE_TIME	150
-
-/* Amount of idle time needed to re-set stability in usec */
-#define POPP_RESET_TIME	1000000
-
-/* Number of POPP levels */
-#define POPP_MAX	4
-
-/* POPP state bits */
-#define POPP_ON		BIT(0)
-#define POPP_PUSH	BIT(1)
-
-struct kgsl_popp {
-	int gpu_x;
-	int ddr_y;
-};
-
 struct kgsl_power_stats {
 	u64 busy_time;
 	u64 ram_time;
 	u64 ram_wait;
-};
-
-struct kgsl_pwr_event {
-	unsigned int data;
-	ktime_t start;
-	s64 duration;
-};
-
-struct kgsl_pwr_history {
-	struct kgsl_pwr_event *events;
-	unsigned int type;
-	unsigned int index;
-	unsigned int size;
 };
 
 /**
@@ -78,9 +37,6 @@ struct kgsl_pwr_history {
  * @devfreq_notify_ws - Notify devfreq to update sampling
  * @next_governor_call - Timestamp after which the governor may be notified of
  * a new sample
- * @history - History of power events with timestamps and durations
- * @popp_level - Current level of POPP mitigation
- * @popp_state - Control state for POPP, on/off, recently pushed, etc
  * @cooling_dev - Thermal cooling device handle
  * @ctxt_aware_enable - Whether or not ctxt aware DCVS feature is enabled
  * @ctxt_aware_busy_penalty - The time in microseconds required to trigger
@@ -105,16 +61,16 @@ struct kgsl_pwrscale {
 	struct work_struct devfreq_resume_ws;
 	struct work_struct devfreq_notify_ws;
 	ktime_t next_governor_call;
-	struct kgsl_pwr_history history[KGSL_PWREVENT_MAX];
-	int popp_level;
-	unsigned long popp_state;
 	struct thermal_cooling_device *cooling_dev;
 	bool ctxt_aware_enable;
 	unsigned int ctxt_aware_target_pwrlevel;
 	unsigned int ctxt_aware_busy_penalty;
+	/** @busmondev: A child device for the busmon  governor */
+	struct device busmondev;
 };
 
-int kgsl_pwrscale_init(struct device *dev, const char *governor);
+int kgsl_pwrscale_init(struct kgsl_device *device, struct platform_device *pdev,
+		const char *governor);
 void kgsl_pwrscale_close(struct kgsl_device *device);
 
 void kgsl_pwrscale_update(struct kgsl_device *device);
@@ -139,28 +95,4 @@ int kgsl_busmon_get_dev_status(struct device *dev,
 			struct devfreq_dev_status *stat);
 int kgsl_busmon_get_cur_freq(struct device *dev, unsigned long *freq);
 
-bool kgsl_popp_check(struct kgsl_device *device);
-
-
-#define KGSL_PWRSCALE_INIT(_priv_data) { \
-	.enabled = true, \
-	.gpu_profile = { \
-		.private_data = _priv_data, \
-		.profile = { \
-			.target = kgsl_devfreq_target, \
-			.get_dev_status = kgsl_devfreq_get_dev_status, \
-			.get_cur_freq = kgsl_devfreq_get_cur_freq, \
-	} }, \
-	.bus_profile = { \
-		.private_data = _priv_data, \
-		.profile = { \
-			.target = kgsl_busmon_target, \
-			.get_dev_status = kgsl_busmon_get_dev_status, \
-			.get_cur_freq = kgsl_busmon_get_cur_freq, \
-	} }, \
-	.history[KGSL_PWREVENT_STATE].size = 20, \
-	.history[KGSL_PWREVENT_GPU_FREQ].size = 3, \
-	.history[KGSL_PWREVENT_BUS_FREQ].size = 5, \
-	.history[KGSL_PWREVENT_POPP].size = 5, \
-	}
 #endif

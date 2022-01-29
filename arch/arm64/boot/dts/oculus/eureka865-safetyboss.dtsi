@@ -2,7 +2,7 @@
 	oculus,safetyboss-swd {
 		compatible = "oculus,swd";
 
-		pinctrl-names = "swd_default";
+		pinctrl-names = "default";
 		pinctrl-0 = <&safetyboss_reset_default &safetyboss_float_swd>;
 
 		oculus,swd-flavor = "stm32g0";

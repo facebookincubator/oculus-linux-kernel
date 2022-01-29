@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "seacliff-p3.dtsi"
+
+/ {
+	model = "Seacliff (EVT1)";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 69>;
+};

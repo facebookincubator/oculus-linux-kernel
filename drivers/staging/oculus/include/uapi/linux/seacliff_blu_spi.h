@@ -11,6 +11,8 @@
 #define BLU_SPI_DEBUG_MSG_IOCTL \
 	_IOWR(MAGIC_NUM, 2, struct blu_spi_debug_message)
 
+#define BLU_SPI_SET_CALIBRATION _IOW(MAGIC_NUM, 3, int)
+
 /* struct passed to BLU_SPI_SET_BACKLIGHT_IOCTL which is
  * used to send the backlight matrix from the LD engine
  * in the compositor to the BLU driver

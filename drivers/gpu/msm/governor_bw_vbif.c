@@ -7,7 +7,7 @@
 #include <linux/module.h>
 #include <linux/msm_adreno_devfreq.h>
 
-#include "governor.h"
+#include "../../devfreq/governor.h"
 
 static getbw_func extern_get_bw;
 static void *extern_get_bw_data;

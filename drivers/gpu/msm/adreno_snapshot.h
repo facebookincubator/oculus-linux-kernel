@@ -29,13 +29,7 @@ size_t adreno_snapshot_cp_merciu(struct kgsl_device *device, u8 *buf,
 		size_t remain, void *priv);
 size_t adreno_snapshot_cp_roq(struct kgsl_device *device, u8 *buf,
 		size_t remain, void *priv);
-size_t adreno_snapshot_cp_pm4_ram(struct kgsl_device *device, u8 *buf,
-		size_t remain, void *priv);
-size_t adreno_snapshot_cp_pfp_ram(struct kgsl_device *device, u8 *buf,
-		size_t remain, void *priv);
 size_t adreno_snapshot_cp_meq(struct kgsl_device *device, u8 *buf,
-		size_t remain, void *priv);
-size_t adreno_snapshot_vpc_memory(struct kgsl_device *device, u8 *buf,
 		size_t remain, void *priv);
 
 void adreno_snapshot_registers(struct kgsl_device *device,
