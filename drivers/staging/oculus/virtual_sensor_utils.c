@@ -149,7 +149,7 @@ int virtual_sensor_parse_iio_channels_dt(struct device *dev,
 	count = of_property_count_strings(dev->of_node, "io-channel-names");
 	if (count < 0) {
 		dev_err(dev, "Empty or invalid io-channel-names property");
-		return -ENODATA;
+		return count;
 	}
 
 	*chan_count = count;

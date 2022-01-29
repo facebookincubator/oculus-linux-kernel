@@ -814,11 +814,11 @@ int fou_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 	bool csum = !!(e->flags & TUNNEL_ENCAP_FLAG_CSUM);
 	int type = csum ? SKB_GSO_UDP_TUNNEL_CSUM : SKB_GSO_UDP_TUNNEL;
 	__be16 sport;
+	int err;
 
-	skb = iptunnel_handle_offloads(skb, csum, type);
-
-	if (IS_ERR(skb))
-		return PTR_ERR(skb);
+	err = iptunnel_handle_offloads(skb, type);
+	if (err)
+		return err;
 
 	sport = e->sport ? : udp_flow_src_port(dev_net(skb->dev),
 					       skb, 0, 0, false);
@@ -838,6 +838,7 @@ int gue_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 	__be16 sport;
 	void *data;
 	bool need_priv = false;
+	int err;
 
 	if ((e->flags & TUNNEL_ENCAP_FLAG_REMCSUM) &&
 	    skb->ip_summed == CHECKSUM_PARTIAL) {
@@ -849,10 +850,9 @@ int gue_build_header(struct sk_buff *skb, struct ip_tunnel_encap *e,
 
 	optlen += need_priv ? GUE_LEN_PRIV : 0;
 
-	skb = iptunnel_handle_offloads(skb, csum, type);
-
-	if (IS_ERR(skb))
-		return PTR_ERR(skb);
+	err = iptunnel_handle_offloads(skb, type);
+	if (err)
+		return err;
 
 	/* Get source port (based on flow hash) before skb_push */
 	sport = e->sport ? : udp_flow_src_port(dev_net(skb->dev),

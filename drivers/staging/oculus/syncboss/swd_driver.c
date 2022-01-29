@@ -23,32 +23,6 @@ static ssize_t store_update_firmware(struct device *dev,
 	return fwupdate_store_update_firmware(dev, buf, count);
 }
 
-static int swd_init_pins(struct device *dev)
-{
-	struct pinctrl *pinctrl = NULL;
-	struct pinctrl_state *pins_default = NULL;
-	int result = 0;
-
-	pinctrl = devm_pinctrl_get(dev);
-	if (IS_ERR_OR_NULL(pinctrl)) {
-		dev_err(dev, "Failed to get pin ctrl");
-		return -EINVAL;
-	}
-	pins_default = pinctrl_lookup_state(pinctrl, "swd_default");
-	if (IS_ERR_OR_NULL(pins_default)) {
-		dev_err(dev, "Failed to lookup pinctrl default state");
-		return -EINVAL;
-	}
-
-	dev_info(dev, "Setting pins to \"swd_default\" state");
-	result = pinctrl_select_state(pinctrl, pins_default);
-	if (result != 0) {
-		dev_err(dev, "Failed to set pin state");
-		return -EINVAL;
-	}
-	return 0;
-}
-
 static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 {
 	int ret;
@@ -162,10 +136,6 @@ static int mod_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, devdata);
 
 	rc = init_swd_dev_data(devdata, dev);
-	if (rc < 0)
-		goto error_after_init_dev_data;
-
-	rc = swd_init_pins(dev);
 	if (rc < 0)
 		goto error_after_init_dev_data;
 

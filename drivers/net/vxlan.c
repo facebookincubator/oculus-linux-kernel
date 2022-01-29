@@ -1741,11 +1741,9 @@ static int vxlan6_xmit_skb(struct dst_entry *dst, struct sock *sk,
 		goto err;
 	}
 
-	skb = iptunnel_handle_offloads(skb, udp_sum, type);
-	if (IS_ERR(skb)) {
-		err = -EINVAL;
-		goto err;
-	}
+	err = iptunnel_handle_offloads(skb, type);
+	if (err)
+		goto out_free;
 
 	vxh = (struct vxlanhdr *) __skb_push(skb, sizeof(*vxh));
 	vxh->vx_flags = htonl(VXLAN_HF_VNI);

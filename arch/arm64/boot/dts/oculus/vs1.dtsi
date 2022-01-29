@@ -1052,7 +1052,7 @@
 		spi-cpol;
 		spi-cpha;
 
-		pinctrl-names = "syncboss_default";
+		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
 		oculus,syncboss-reset = <&tlmm 126 0>;
@@ -1069,7 +1069,7 @@
 		swd@0 {
 			compatible = "oculus,swd";
 
-			pinctrl-names = "swd_default";
+			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
 			oculus,swd-clk = <&tlmm 58 0>;
