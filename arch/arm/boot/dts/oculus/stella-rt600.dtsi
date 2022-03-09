@@ -1,0 +1,91 @@
+&tlmm {
+	rt600_boot0_high: rt600_boot0_high {
+		mux {
+			pins = "gpio25";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio25";
+			drive-strength = <2>;
+			output-high;
+		};
+	};
+
+	rt600_boot0_low: rt600_boot0_low {
+		mux {
+			pins = "gpio25";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio25";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	rt600_boot1_high: rt600_boot1_high {
+		mux {
+			pins = "gpio116";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio116";
+			drive-strength = <2>;
+			output-high;
+		};
+	};
+
+	rt600_boot1_low: rt600_boot1_low {
+		mux {
+			pins = "gpio116";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio116";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	rt600_boot2_high: rt600_boot2_high {
+		mux {
+			pins = "gpio72";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio72";
+			drive-strength = <8>;
+			output-high;
+		};
+	};
+
+	rt600_boot2_low: rt600_boot2_low {
+		mux {
+			pins = "gpio72";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio72";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+};
+
+&soc {
+	oculus,rt600_ctrl {
+		compatible = "oculus,rt600_ctrl";
+		pinctrl-names = "default", "flashing";
+		pinctrl-0 = <&rt600_boot0_low &rt600_boot2_low>;
+		pinctrl-1 = <&rt600_boot0_high &rt600_boot2_high>;
+		rstn-gpio = <&pm660_gpios 8 0>;
+		rt600-spare-gpio = <&tlmm 48 0>;
+		status = "ok";
+	};
+};

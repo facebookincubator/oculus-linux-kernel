@@ -1,0 +1,38 @@
+BACKPORT_CONFIG := stella_cypress
+BACKPORT_DIR := drivers/backports-wireless
+backport_srctree := $(srctree)/$(BACKPORT_DIR)
+NOSTDINC_FLAGS := \
+	-I$(backport_srctree)/backport-include/ \
+	-I$(backport_srctree)/backport-include/uapi \
+	-I$(backport_srctree)/include/ \
+	-I$(backport_srctree)/include/uapi \
+	-include $(backport_srctree)/backport-include/backport/backport.h \
+	-include $(backport_srctree)/defconfigs/$(BACKPORT_CONFIG)_conf.h \
+	$(KBUILD_CFLAGS)
+
+include $(backport_srctree)/defconfigs/$(BACKPORT_CONFIG).conf
+
+subdir-ccflags-y += $(call cc-option, -fno-pie) $(call cc-option, -no-pie)
+ifeq ($(CPTCFG_KERNEL_4_3),y)
+subdir-ccflags-y += -Wno-pointer-sign
+endif
+
+obj-y += compat/
+
+obj-$(CPTCFG_CFG80211) += net/wireless/
+#obj-$(CPTCFG_MAC80211) += net/mac80211/
+obj-$(CPTCFG_WLAN) += drivers/net/wireless/
+#obj-$(CPTCFG_BT) += net/bluetooth/
+#obj-$(CPTCFG_BT) += drivers/bluetooth/
+#obj-$(CPTCFG_SSB) += drivers/ssb/
+#obj-$(CPTCFG_BCMA) += drivers/bcma/
+#obj-$(CPTCFG_ETHERNET) += drivers/net/ethernet/
+#obj-$(CPTCFG_USB_NET_RNDIS_WLAN) += drivers/net/usb/
+#obj-$(CPTCFG_NFC) += net/nfc/
+#obj-$(CPTCFG_NFC) += drivers/nfc/
+#obj-$(CPTCFG_MEDIA_SUPPORT) += drivers/media/
+#
+#obj-$(CPTCFG_USB_WDM) += drivers/usb/class/
+#obj-$(CPTCFG_USB_USBNET) += drivers/net/usb/
+#
+#obj-$(CPTCFG_STAGING) += drivers/staging/

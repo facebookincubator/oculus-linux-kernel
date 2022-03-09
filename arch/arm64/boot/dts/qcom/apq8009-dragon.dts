@@ -1,0 +1,407 @@
+/*
+ * Copyright (c) 2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/dts-v1/;
+
+#include "msm8909-mtp.dtsi"
+#include "8909-pm8916.dtsi"
+#include "msm8909-pm8916-mtp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. APQ8009 Dragon Board";
+	compatible = "qcom,apq8009-mtp", "qcom,apq8009", "qcom,mtp";
+	qcom,msm-id = <265 2>;
+	qcom,board-id = <32 0x0>;
+};
+
+&soc {
+	cdc_dmic_gpios: cdc_dmic_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic0_clk_act &cdc_dmic0_data_act>;
+		pinctrl-1 = <&cdc_dmic0_clk_sus &cdc_dmic0_data_sus>;
+	};
+
+	cdc_prim_mi2s_gpios: msm_cdc_pinctrl_pri {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&pri_mi2s_sleep &pri_mi2s_ws_sleep
+			 &pri_mi2s_dout_sleep &pri_mi2s_din_sleep
+			 &ext_amp_ctrl_sleep &amp_mute_sleep>;
+		pinctrl-1 = <&pri_mi2s_active &pri_mi2s_ws_active
+			 &pri_mi2s_dout_active &pri_mi2s_din_active
+			 &ext_amp_ctrl_active &amp_mute_active>;
+
+	};
+
+	audio_codec_mtp: sound {
+		status = "ok";
+		qcom,msm-hs-micbias-type = "internal";
+		qcom,model = "msm8909-212-som-snd-card";
+		qcom,msm-mbhc-hphl-swh = <0>;
+
+		qcom,audio-routing =
+			"RX_BIAS", "MCLK",
+			"SPK_RX_BIAS", "MCLK",
+			"INT_LDO_H", "MCLK",
+			"RX_I2S_CLK", "MCLK",
+			"TX_I2S_CLK", "MCLK",
+			"MIC BIAS Internal1", "Handset Mic",
+			"MIC BIAS Internal2", "Headset Mic",
+			"MIC BIAS Internal1", "Secondary Mic",
+			"AMIC1", "MIC BIAS Internal1",
+			"AMIC2", "MIC BIAS Internal2",
+			"AMIC3", "MIC BIAS Internal1",
+			"DMIC1", "DIGITAL_REGULATOR",
+			"DIGITAL_REGULATOR", "Digital Mic1",
+			"DMIC2", "DIGITAL_REGULATOR",
+			"DIGITAL_REGULATOR", "Digital Mic2";
+
+		qcom,pri-mi2s-gpios = <&cdc_prim_mi2s_gpios>;
+		qcom,cdc-dmic-gpios = <&cdc_dmic_gpios>;
+
+		qcom,afe-rxtx-lb;
+		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
+				<&loopback>, <&compress>, <&hostless>,
+				<&afe>, <&lsm>, <&routing>, <&pcm_noirq>;
+		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
+			"msm-pcm-dsp.2", "msm-voip-dsp",
+			"msm-pcm-voice", "msm-pcm-loopback",
+			"msm-compress-dsp", "msm-pcm-hostless",
+			"msm-pcm-afe", "msm-lsm-client",
+			"msm-pcm-routing", "msm-pcm-dsp-noirq";
+		asoc-cpu = <&dai_pri_auxpcm>,
+			<&dai_mi2s0>, <&dai_mi2s1>,
+			<&dai_mi2s2>, <&dai_mi2s3>,
+			<&dai_mi2s4>, <&dai_mi2s5>,
+			<&sb_0_rx>, <&sb_0_tx>, <&sb_1_rx>, <&sb_1_tx>,
+			<&sb_3_rx>, <&sb_3_tx>, <&sb_4_rx>, <&sb_4_tx>,
+			<&bt_sco_rx>, <&bt_sco_tx>,
+			<&int_fm_rx>, <&int_fm_tx>,
+			<&afe_pcm_rx>, <&afe_pcm_tx>,
+			<&afe_proxy_rx>, <&afe_proxy_tx>,
+			<&incall_record_rx>, <&incall_record_tx>,
+			<&incall_music_rx>, <&incall_music_2_rx>,
+			<&bt_a2dp_rx>, <&afe_loopback_tx>;
+
+		asoc-cpu-names = "msm-dai-q6-auxpcm.1",
+			"msm-dai-q6-mi2s.0", "msm-dai-q6-mi2s.1",
+			"msm-dai-q6-mi2s.2", "msm-dai-q6-mi2s.3",
+			"msm-dai-q6-mi2s.4", "msm-dai-q6-mi2s.6",
+			"msm-dai-q6-dev.16384", "msmdai-q6-dev.16385",
+			"msm-dai-q6-dev.16386", "msm-dai-q6-dev.16387",
+			"msm-dai-q6-dev.16390", "msm-dai-q6-dev.16391",
+			"msm-dai-q6-dev.16392", "msm-dai-q6-dev.16393",
+			"msm-dai-q6-dev.12288", "msm-dai-q6-dev.12289",
+			"msm-dai-q6-dev.12292", "msm-dai-q6-dev.12293",
+			"msm-dai-q6-dev.224", "msm-dai-q6-dev.225",
+			"msm-dai-q6-dev.241", "msm-dai-q6-dev.240",
+			"msm-dai-q6-dev.32771", "msm-dai-q6-dev.32772",
+			"msm-dai-q6-dev.32773", "msm-dai-q6-dev.32770",
+			"msm-dai-q6-dev.12290", "msm-dai-q6-dev.24577";
+
+		asoc-codec = <&stub_codec>, <&msm_digital_codec>,
+				<&pmic_analog_codec>;
+		asoc-codec-names = "msm-stub-codec.1", "msm-dig-codec",
+				"analog-codec";
+	};
+
+	sound-9335 {
+		status = "disabled";
+	};
+
+	i2c@78b8000 {
+		wcd9xxx_codec@d {
+		  status = "disabled";
+		};
+	};
+
+	vph_pwr_vreg: vph_pwr_vreg {
+		compatible = "regulator-fixed";
+		status = "ok";
+		regulator-name = "vph_pwr";
+		regulator-always-on;
+	};
+
+	mdss_mdp: qcom,mdss_mdp@1a00000 {
+		status = "disabled";
+	};
+
+	bluetooth: bt_qca9379 {
+		compatible = "qca,qca9379";
+		qca,bt-reset-gpio = <&msm_gpio 47 0>; /* BT_EN */
+	};
+
+	cnss_sdio: qcom,cnss_sdio {
+		compatible = "qcom,cnss_sdio";
+		subsys-name = "AR6320";
+		/**
+		 * There is no vdd-wlan on board and this is not for DSRC.
+		 * IO and XTAL share the same vreg.
+		 **/
+		vdd-wlan-io-supply = <&pm8916_l5>;
+		qcom,cap-tsf-gpio = <&msm_gpio 42 1>;
+		qcom,wlan-ramdump-dynamic = <0x200000>;
+		qcom,msm-bus,name = "msm-cnss";
+		qcom,msm-bus,num-cases = <4>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<79 512 0 0>,             /* No vote */
+				<79 512 6250 200000>,     /* 50 Mbps */
+				<79 512 25000 200000>,    /* 200 Mbps */
+				<79 512 2048000 4096000>; /* MAX */
+	};
+};
+
+&wcnss {
+	status = "disabled";
+};
+
+&pm8916_1 {
+	pmic_analog_codec: analog-codec@f000 {
+		compatible = "qcom,pmic-analog-codec";
+		reg = <0xf000 0x200>;
+		#address-cells = <2>;
+		#size-cells = <0>;
+		interrupt-parent = <&spmi_bus>;
+		interrupts = <0x1 0xf0 0x0 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x1 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x2 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x3 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x4 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x5 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x6 IRQ_TYPE_NONE>,
+			     <0x1 0xf0 0x7 IRQ_TYPE_NONE>,
+			     <0x1 0xf1 0x0 IRQ_TYPE_NONE>,
+			     <0x1 0xf1 0x1 IRQ_TYPE_NONE>,
+			     <0x1 0xf1 0x2 IRQ_TYPE_NONE>,
+			     <0x1 0xf1 0x3 IRQ_TYPE_NONE>,
+			     <0x1 0xf1 0x4 IRQ_TYPE_NONE>,
+			     <0x1 0xf1 0x5 IRQ_TYPE_NONE>;
+		interrupt-names = "spk_cnp_int",
+				   "spk_clip_int",
+				   "spk_ocp_int",
+				   "ins_rem_det1",
+				   "but_rel_det",
+				   "but_press_det",
+				   "ins_rem_det",
+				   "mbhc_int",
+				   "ear_ocp_int",
+				   "hphr_ocp_int",
+				   "hphl_ocp_det",
+				   "ear_cnp_int",
+				   "hphr_cnp_int",
+				   "hphl_cnp_int";
+
+		cdc-vdda-cp-supply = <&pm8916_s4>;
+		qcom,cdc-vdda-cp-voltage = <1800000 2200000>;
+		qcom,cdc-vdda-cp-current = <770000>;
+
+		cdc-vdd-pa-supply = <&pm8916_l5>;
+		qcom,cdc-vdd-pa-voltage = <1800000 1800000>;
+		qcom,cdc-vdd-pa-current = <5000>;
+
+		cdc-vdd-mic-bias-supply = <&pm8916_l13>;
+		qcom,cdc-vdd-mic-bias-voltage = <3075000 3075000>;
+		qcom,cdc-vdd-mic-bias-current = <25000>;
+
+		qcom,cdc-mclk-clk-rate = <9600000>;
+
+		qcom,cdc-static-supplies = "cdc-vdda-cp",
+					   "cdc-vdd-pa";
+
+		qcom,cdc-on-demand-supplies = "cdc-vdd-mic-bias";
+
+		msm_digital_codec: msm-dig-codec {
+			compatible = "qcom,msm-digital-codec";
+			reg = <0x0771C000 0x0>;
+			cdc-vdd-digital-supply = <&pm8916_l5>;
+			qcom,cdc-vdd-digital-voltage = <1800000 1800000>;
+			qcom,cdc-vdd-digital-current = <5000>;
+			qcom,cdc-on-demand-supplies = "cdc-vdd-digital";
+		};
+	};
+};
+
+&msm_gpio {
+	sdc2_wlan_gpio_on: sdc2_wlan_gpio_on {
+		mux {
+			pins = "gpio43";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio43";
+			drive-strength = <10>;
+			bias-pull-up;
+			output-high;
+		};
+	};
+
+	sdc2_wlan_gpio_off: sdc2_wlan_gpio_off {
+		mux {
+			pins = "gpio43";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio43";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+};
+
+&sdhc_2 {
+	/delete-property/cd-gpios;
+	#address-cells = <0>;
+	interrupt-parent = <&sdhc_2>;
+	interrupts = <0 1 2>;
+	#interrupt-cells = <1>;
+	interrupt-map-mask = <0xffffffff>;
+	interrupt-map = <0 &intc 0 125 0
+			1 &intc 0 221 0
+			2 &msm_gpio 40 0x1>;
+	interrupt-names = "hc_irq", "pwr_irq", "sdiowakeup_irq";
+
+	qcom,vdd-voltage-level = <1800000 2950000>;
+	qcom,vdd-current-level = <15000 400000>;
+
+	qcom,vdd-io-voltage-level = <1800000 1800000>;
+	qcom,vdd-io-current-level = <200 50000>;
+	qcom,clk-rates = <400000 25000000 50000000 100000000 200000000>;
+	qcom,bus-speed-mode = "SDR12", "SDR25", "SDR50", "DDR50", "SDR104";
+
+	pinctrl-names = "active", "sleep";
+	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on
+			&sdc2_wlan_gpio_on>;
+	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off
+			&sdc2_wlan_gpio_off>;
+	qcom,nonremovable;
+	qcom,core_3_0v_support;
+	status = "ok";
+};
+
+&usb_otg {
+	interrupts = <0 134 0>,<0 140 0>;
+	interrupt-names = "core_irq", "async_irq";
+	qcom,hsusb-otg-mode = <3>;
+	qcom,switch-vbus-w-id;
+	vbus_otg-supply = <&vph_pwr_vreg>;
+	extcon = <&pm8916_chg>;
+};
+
+&external_image_mem {
+	reg = <0x0 0x87a00000 0x0 0x0600000>;
+};
+
+&modem_adsp_mem {
+	reg = <0x0 0x88000000 0x0 0x01e00000>;
+};
+
+&peripheral_mem {
+	reg = <0x0 0x89e00000 0x0 0x0700000>;
+};
+
+&i2c_4 {
+	smb1360_otg_supply: smb1360-chg-fg@14 {
+		compatible = "qcom,smb1360-chg-fg";
+		reg = <0x14>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <58 8>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&smb_int_default>;
+		qcom,charging-disabled;
+		qcom,empty-soc-disabled;
+		qcom,chg-inhibit-disabled;
+		qcom,float-voltage-mv = <4200>;
+		qcom,iterm-ma = <200>;
+		qcom,recharge-thresh-mv = <100>;
+		qcom,thermal-mitigation = <1500 700 600 0>;
+		regulator-name = "smb1360_otg_vreg";
+		status= "okay";
+	};
+};
+
+&firmware {
+	android {
+		compatible = "android,firmware";
+		fstab {
+			compatible = "android,fstab";
+			vendor_fstab: vendor {
+			fsmgr_flags = "wait,slotselect";
+			};
+			/delete-node/ system;
+		};
+	};
+};
+
+&pm8916_chg {
+	status = "ok";
+	qcom,use-default-batt-values;
+};
+
+&pm8916_bms {
+	status = "ok";
+};
+
+&blsp1_uart2_hs {
+	status = "ok";
+};
+
+&blsp1_uart1 {
+	status = "disabled";
+};
+
+&i2c_5 {
+	status = "okay";
+	goodix_ts@5d {
+		compatible = "goodix,gt9xx";
+		status = "okay";
+		reg = <0x5d>;
+		vdd_ana-supply = <&pm8916_l17>;
+		vcc_i2c-supply = <&pm8916_l6>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <13 0x2008>;
+		pinctrl-names = "gdix_ts_int_default", "gdix_ts_int_output_low",
+			"gdix_ts_int_output_high", "gdix_ts_int_input",
+			"gdix_ts_rst_default", "gdix_ts_rst_output_low",
+			"gdix_ts_rst_output_high", "gdix_ts_rst_input";
+		pinctrl-0 = <&ts_int_default>;
+		pinctrl-1 = <&ts_int_output_low>;
+		pinctrl-2 = <&ts_int_output_high>;
+		pinctrl-3 = <&ts_int_input>;
+		pinctrl-4 = <&ts_rst_default>;
+		pinctrl-5 = <&ts_rst_output_low>;
+		pinctrl-6 = <&ts_rst_output_high>;
+		pinctrl-7 = <&ts_rst_input>;
+		reset-gpios = <&msm_gpio 16 0x00>;
+		irq-gpios = <&msm_gpio 13 0x2008>;
+		irq-flags = <2>;
+		touchscreen-max-id = <5>;
+		touchscreen-size-x = <479>;
+		touchscreen-size-y = <853>;
+		touchscreen-max-w = <1024>;
+		touchscreen-max-p = <1024>;
+		goodix,type-a-report = <0>;
+		goodix,driver-send-cfg = <1>;
+		goodix,wakeup-with-reset = <0>;
+		goodix,resume-in-workqueue = <1>;
+		goodix,int-sync = <1>;
+		goodix,swap-x2y = <0>;
+		goodix,esd-protect = <1>;
+		goodix,pen-suppress-finger = <0>;
+		goodix,auto-update = <1>;
+		goodix,auto-update-cfg = <0>;
+		goodix,power-off-sleep = <0>;
+	};
+};

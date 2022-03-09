@@ -1,0 +1,44 @@
+/*
+ * Copyright (c) 2015-2016, 2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "msm8937-coresight.dtsi"
+
+&funnel_apss {
+	ports {
+		/delete-node/ port@1;
+		/delete-node/ port@2;
+		/delete-node/ port@3;
+		/delete-node/ port@4;
+	};
+};
+
+&funnel_mm {
+	ports {
+		/delete-node/ port@4;
+	};
+};
+
+&soc {
+	/delete-node/ etm@619c000;
+	/delete-node/ etm@619d000;
+	/delete-node/ etm@619e000;
+	/delete-node/ etm@619f000;
+	/delete-node/ cti@6198000;
+	/delete-node/ cti@6199000;
+	/delete-node/ cti@619a000;
+	/delete-node/ cti@619b000;
+};
+
+&dbgui {
+	qcom,dbgui-size = <32>;
+};

@@ -1,0 +1,7 @@
+config SPI_STP
+	tristate "STP SPI driver"
+	depends on SPI && OCULUS
+	default n
+	help
+	  Enable STP SPI driver for data transfer between SoC (master) and slave.
+

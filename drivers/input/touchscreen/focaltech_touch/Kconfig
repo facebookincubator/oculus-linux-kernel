@@ -1,0 +1,39 @@
+#
+# Focaltech Touchscreen driver configuration
+#
+
+config TOUCHSCREEN_FTS
+    bool "Focaltech Touchscreen"
+    default n
+    help
+      Say Y here if you have Focaltech touch panel.
+      If unsure, say N.
+      
+config TOUCHSCREEN_FTS_DIRECTORY
+    string "Focaltech ts directory name"
+    default "focaltech_touch"
+    depends on TOUCHSCREEN_FTS
+    
+config TOUCHSCREEN_FTS_BUS_SPI
+    bool "Focaltech ts bus type is SPI"
+    default n
+    depends on TOUCHSCREEN_FTS
+    help
+        Set Y here if bus type is SPI
+	If unsure, say N.
+	
+config TOUCHSCREEN_FTS_BUS_SPI_V2
+    bool "Focaltech spi protocol is V2 or not"
+    default n
+    depends on TOUCHSCREEN_FTS && TOUCHSCREEN_FTS_BUS_SPI
+    help
+        Set Y here if spi protocol is V2(new)
+	If unsure, say N.
+
+config TOUCHSCRREN_FTS_HAVE_FLASH
+	bool "Focaltech has flash stored firmware or not"
+    default n
+    depends on TOUCHSCREEN_FTS
+    help
+        Set Y here if having flash
+	If unsure, say N.

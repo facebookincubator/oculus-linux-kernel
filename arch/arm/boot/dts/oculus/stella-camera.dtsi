@@ -1,0 +1,241 @@
+/*
+ * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include <dt-bindings/clock/msm-clocks-8952.h>
+
+&cam_sensor_front_default {
+        /* RESET */
+        mux {
+                pins = "gpio38";
+                function = "gpio";
+        };
+
+        config {
+                pins = "gpio38";
+                bias-disable; /* No PULL */
+                drive-strength = <2>; /* 2 MA */
+        };
+};
+
+&cam_sensor_front_sleep {
+        mux {
+                pins = "gpio38";
+                function = "gpio";
+        };
+
+        config {
+                pins = "gpio38";
+                bias-disable; /* No PULL */
+                drive-strength = <2>; /* 2 MA */
+        };
+};
+
+&soc {
+	/delete-node/ qcom,cci@1b0c000;
+	cci: qcom,cci@1b0c000 {
+		status = "ok";
+		cell-index = <0>;
+		compatible = "qcom,cci";
+		reg = <0x1b0c000 0x4000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg-names = "cci";
+		interrupts = <0 50 0>;
+		interrupt-names = "cci";
+		clocks = <&clock_gcc clk_gcc_camss_ispif_ahb_clk>,
+			<&clock_gcc clk_cci_clk_src>,
+			<&clock_gcc clk_gcc_camss_cci_ahb_clk>,
+			<&clock_gcc clk_gcc_camss_cci_clk>,
+			<&clock_gcc clk_gcc_camss_ahb_clk>,
+			<&clock_gcc clk_gcc_camss_top_ahb_clk>;
+		clock-names = "ispif_ahb_clk", "cci_src_clk",
+			"cci_ahb_clk", "camss_cci_clk",
+			"camss_ahb_clk", "camss_top_ahb_clk";
+		qcom,clock-rates = <61540000 19200000 0 0 0 0>,
+				<61540000 37500000 0 0 0 0>;
+		pinctrl-names = "cci_default", "cci_suspend";
+		pinctrl-0 = <&cci0_active>;
+		pinctrl-1 = <&cci0_suspend>;
+		gpios = <&tlmm 29 0>,
+			<&tlmm 30 0>;
+		qcom,gpio-tbl-num = <0 1>;
+		qcom,gpio-tbl-flags = <1 1>;
+		qcom,gpio-tbl-label = "CCI_I2C_DATA0",
+					"CCI_I2C_CLK0";
+		i2c_freq_100Khz: qcom,i2c_standard_mode {
+			status = "disabled";
+		};
+		i2c_freq_400Khz: qcom,i2c_fast_mode {
+			status = "disabled";
+		};
+		i2c_freq_custom: qcom,i2c_custom_mode {
+			status = "disabled";
+		};
+
+		i2c_freq_1Mhz: qcom,i2c_fast_plus_mode {
+			status = "disabled";
+		};
+	};
+};
+
+&cci {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	eeprom_spyro0: qcom,eeprom@0 {
+		cell-index = <0>;
+		compatible = "qcom,eeprom";
+		qcom,cci-master = <0>;
+		reg = <0x0>;
+		cam_vio-supply = <&pm660_l14>;
+		cam_vdig-supply = <&pm660_l2>;
+		qcom,cam-vreg-name = "cam_vio", "cam_vdig";
+		qcom,cam-vreg-min-voltage = <1800000 1050000>;
+		qcom,cam-vreg-max-voltage = <1800000 1050000>;
+		qcom,cam-vreg-op-mode = <0 200000>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk0_default
+				&cam_sensor_rear_reset>;
+		pinctrl-1 = <&cam_sensor_mclk0_sleep
+				&cam_sensor_rear_reset_sleep>;
+		gpios = <&tlmm 26 0>, <&tlmm 36 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-req-tbl-num = <0 1>;
+		qcom,gpio-req-tbl-flags = <1 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK0", "CAM_RESET0";
+		status = "ok";
+		clocks = <&clock_gcc clk_mclk0_clk_src>,
+			<&clock_gcc clk_gcc_camss_mclk0_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <19200000 0>;
+	};
+
+	eeprom_spyro1: qcom,eeprom@1 {
+		cell-index = <1>;
+		reg = <0x1>;
+		compatible = "qcom,eeprom";
+		qcom,cci-master = <0>;
+		cam_vdig-supply = <&pm660_l3>;
+		cam_vio-supply = <&pm660_l14>;
+		qcom,cam-vreg-name = "cam_vdig", "cam_vio";
+		qcom,cam-vreg-min-voltage = <1200000 1800000>;
+		qcom,cam-vreg-max-voltage = <1200000 1800000>;
+		qcom,cam-vreg-op-mode = <200000 80000>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk1_default
+			&cam_sensor_front_default>;
+		pinctrl-1 = <&cam_sensor_mclk1_sleep
+			&cam_sensor_front_sleep>;
+		gpios = <&tlmm 27 0>,
+			<&tlmm 38 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-req-tbl-num = <0 1>;
+		qcom,gpio-req-tbl-flags = <1 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK1", "CAM_RESET1";
+		status = "ok";
+		clocks = <&clock_gcc clk_mclk1_clk_src>,
+					<&clock_gcc clk_gcc_camss_mclk1_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <24000000 0>;
+	};
+
+	qcom,camera@0 {
+		cell-index = <0>;
+		compatible = "qcom,camera";
+		reg = <0x0>;
+		qcom,csiphy-sd-index = <0>;
+		qcom,csid-sd-index = <0>;
+		qcom,mount-angle = <90>;
+		qcom,eeprom-src = <&eeprom_spyro0>;
+		cam_vio-supply = <&pm660_l14>;
+		cam_vdig-supply = <&pm660_l2>;
+		qcom,cam-vreg-name = "cam_vio", "cam_vdig";
+		qcom,cam-vreg-min-voltage = <1800000 1250000>;
+		qcom,cam-vreg-max-voltage = <1800000 1250000>;
+		qcom,cam-vreg-op-mode = <0 200000>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk0_default
+				&cam_sensor_rear_reset>;
+		pinctrl-1 = <&cam_sensor_mclk0_sleep
+				&cam_sensor_rear_reset_sleep>;
+		gpios = <&tlmm 26 0>, <&tlmm 36 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-req-tbl-num = <0 1>;
+		qcom,gpio-req-tbl-flags = <1 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK0", "CAM_RESET0";
+		qcom,sensor-position = <0>;
+		qcom,sensor-mode = <0>;
+		qcom,cci-master = <0>;
+		status = "ok";
+		clocks = <&clock_gcc clk_mclk0_clk_src>,
+					<&clock_gcc clk_gcc_camss_mclk0_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <24000000 0>;
+	};
+
+	qcom,camera@1 {
+		cell-index = <1>;
+		compatible = "qcom,camera";
+		reg = <0x1>;
+		qcom,csiphy-sd-index = <1>;
+		qcom,csid-sd-index = <1>;
+		qcom,mount-angle = <270>;
+		qcom,eeprom-src = <&eeprom_spyro1>;
+		cam_vdig-supply = <&pm660_l3>;
+		cam_vio-supply = <&pm660_l14>;
+		qcom,cam-vreg-name = "cam_vdig", "cam_vio";
+		qcom,cam-vreg-min-voltage = <1250000 1800000>;
+		qcom,cam-vreg-max-voltage = <1250000 1800000>;
+		qcom,cam-vreg-op-mode = <200000 80000>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk1_default
+				&cam_sensor_front_default>;
+		pinctrl-1 = <&cam_sensor_mclk1_sleep
+				&cam_sensor_front_sleep>;
+		gpios = <&tlmm 27 0>, <&tlmm 38 0>;
+		qcom,gpio-reset = <1>;
+		qcom,gpio-req-tbl-num = <0 1>;
+		qcom,gpio-req-tbl-flags = <1 0>;
+		qcom,gpio-req-tbl-label = "CAMIF_MCLK1", "CAM_RESET1";
+		qcom,sensor-position = <0x1>;
+		qcom,sensor-mode = <0>;
+		qcom,cci-master = <0>;
+		clocks = <&clock_gcc clk_mclk1_clk_src>,
+					<&clock_gcc clk_gcc_camss_mclk1_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		qcom,clock-rates = <24000000 0>;
+	};
+};
+
+&soc {
+	oculus,mclk0 {
+		compatible = "oculus,cam-mclk";
+		pinctrl-names = "active", "standby";
+		pinctrl-0 = <&cam_sensor_mclk0_default>;
+		pinctrl-1 = <&cam_sensor_mclk0_sleep>;
+		clocks = <&clock_gcc clk_mclk0_clk_src>,
+			<&clock_gcc clk_gcc_camss_mclk0_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		clock-rates = <24000000 0>;
+	};
+	oculus,mclk1 {
+		compatible = "oculus,cam-mclk";
+		pinctrl-names = "active", "standby";
+		pinctrl-0 = <&cam_sensor_mclk1_default>;
+		pinctrl-1 = <&cam_sensor_mclk1_sleep>;
+		clocks = <&clock_gcc clk_mclk1_clk_src>,
+			<&clock_gcc clk_gcc_camss_mclk1_clk>;
+		clock-names = "cam_src_clk", "cam_clk";
+		clock-rates = <24000000 0>;
+	};
+};

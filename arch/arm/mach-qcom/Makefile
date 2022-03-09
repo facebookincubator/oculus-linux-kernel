@@ -1,0 +1,17 @@
+obj-$(CONFIG_USE_OF) += board-dt.o
+obj-$(CONFIG_SMP)	+= platsmp.o
+obj-$(CONFIG_MSM_PM_LEGACY)	+=hotplug.o
+obj-$(CONFIG_ARCH_SDXPOORWILLS) += board-poorwills.o
+obj-$(CONFIG_ARCH_MSM8953) += board-msm8953.o
+obj-$(CONFIG_ARCH_MSM8937) += board-msm8937.o
+obj-$(CONFIG_ARCH_MSM8909) += board-msm8909.o
+obj-$(CONFIG_ARCH_MSM8917) += board-msm8917.o
+obj-$(CONFIG_ARCH_QM215) += board-qm215.o
+obj-$(CONFIG_ARCH_MSM8940) += board-msm8940.o
+obj-$(CONFIG_ARCH_SDM429) += board-sdm429.o
+obj-$(CONFIG_ARCH_SDM439) += board-sdm439.o
+obj-$(CONFIG_ARCH_SDM450) += board-sdm450.o
+obj-$(CONFIG_ARCH_MDM9650) += board-9650.o
+obj-$(CONFIG_ARCH_MDM9607) += board-9607.o
+obj-$(CONFIG_ARCH_SDM632) += board-sdm632.o
+obj-$(CONFIG_ARCH_SDM670) += board-sdm670.o

@@ -1,0 +1,125 @@
+config BRCMUTIL
+	tristate
+	depends on m
+
+config BRCMSMAC
+	depends on n
+	tristate "Broadcom IEEE802.11n PCIe SoftMAC WLAN driver"
+	depends on m
+	depends on MAC80211
+	depends on BCMA_POSSIBLE
+	depends on BCMA
+	select NEW_LEDS if BCMA_DRIVER_GPIO
+	select LEDS_CLASS if BCMA_DRIVER_GPIO
+	select BRCMUTIL
+	depends on FW_LOADER
+	select BPAUTO_CORDIC
+	---help---
+	  This module adds support for PCIe wireless adapters based on Broadcom
+	  IEEE802.11n SoftMAC chipsets. It also has WLAN led support, which will
+	  be available if you select BCMA_DRIVER_GPIO. If you choose to build a
+	  module, the driver will be called brcmsmac.ko.
+
+config BRCMFMAC
+	tristate "Broadcom FullMAC WLAN driver"
+	depends on m
+	depends on CFG80211
+	select BRCMUTIL
+	---help---
+	  This module adds support for wireless adapters based on Broadcom
+	  FullMAC chipsets. It has to work with at least one of the bus
+	  interface support. If you choose to build a module, it'll be called
+	  brcmfmac.ko.
+
+config BRCMFMAC_PROTO_BCDC
+	bool
+
+config BRCMFMAC_PROTO_MSGBUF
+	bool
+
+config BRCMFMAC_SDIO
+	bool "SDIO bus interface support for FullMAC driver"
+	depends on (MMC = y || MMC = BRCMFMAC)
+	depends on BRCMFMAC
+	select BRCMFMAC_PROTO_BCDC
+	depends on FW_LOADER
+	default y
+	---help---
+	  This option enables the SDIO bus interface support for Broadcom
+	  IEEE802.11n embedded FullMAC WLAN driver. Say Y if you want to
+	  use the driver for a SDIO wireless card.
+
+config BRCMFMAC_USB
+	bool "USB bus interface support for FullMAC driver"
+	depends on (USB = y || USB = BRCMFMAC)
+	depends on BRCMFMAC
+	select BRCMFMAC_PROTO_BCDC
+	depends on FW_LOADER
+	---help---
+	  This option enables the USB bus interface support for Broadcom
+	  IEEE802.11n embedded FullMAC WLAN driver. Say Y if you want to
+	  use the driver for an USB wireless card.
+
+config BRCMFMAC_PCIE
+	bool "PCIE bus interface support for FullMAC driver"
+	depends on BRCMFMAC
+	depends on PCI
+	depends on HAS_DMA
+	select BRCMFMAC_PROTO_MSGBUF
+	depends on FW_LOADER
+	---help---
+	  This option enables the PCIE bus interface support for Broadcom
+	  IEEE802.11ac embedded FullMAC WLAN driver. Say Y if you want to
+	  use the driver for an PCIE wireless card.
+
+config BRCM_TRACING
+	bool "Broadcom device tracing"
+	depends on BRCMSMAC || BRCMFMAC
+	---help---
+	  If you say Y here, the Broadcom wireless drivers will register
+	  with ftrace to dump event information into the trace ringbuffer.
+	  Tracing can be enabled at runtime to aid in debugging wireless
+	  issues. This option adds a small amount of overhead when tracing
+	  is disabled. If unsure, say Y to allow developers to better help
+	  you when wireless problems occur.
+
+config BRCMDBG
+	bool "Broadcom driver debug functions"
+	depends on BRCMSMAC || BRCMFMAC
+	select BPAUTO_WANT_DEV_COREDUMP
+	---help---
+	  Selecting this enables additional code for debug purposes.
+
+config BRCMFMAC_PCIE_BARWIN_SZ
+	bool "Custom PCIE BAR window size support for FullMAC driver"
+	depends on BRCMFMAC
+	depends on PCI
+	default n
+	---help---
+	  If you say Y here, the FMAC driver will use custom PCIE BAR
+	  window size. Say Y to allow developers to use custom PCIE
+	  BAR window size when HOST PCIE IP can support less then 4MB
+	  BAR window.
+
+config BRCMFMAC_ANDROID
+	bool "brcmfmac android support"
+	depends on BRCMFMAC
+	---help---
+	  If you say Y here, the FMAC driver will support Android mode
+
+config BRCM_INSMOD_NO_FW
+	bool "insmod module without loading firmware"
+	depends on BRCMFMAC_ANDROID
+	---help---
+	  If you say Y here, the FMAC driver will not load firmware when
+	  inserting the module, it only create wlan interface. Firmware
+	  will be loaded when wlan interface up.
+
+config BRCMFMAC_CARD_DETECT
+	bool "Enable specific platform's API with brcmfmac android"
+	depends on BRCMFMAC_ANDROID
+	depends on BRCMFMAC_SDIO
+	---help---
+	  If you say Y here, specific wifi_card_detect() API will
+	  enable when platform_driver or power cycle on/off call.
+	  This feature indicate for specific(e.g. I.MX) kernel.

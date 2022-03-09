@@ -1,0 +1,111 @@
+/*
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include "stella-common.dtsi"
+
+/ {
+	model = "Stella P0/P1";
+	compatible = "qcom,sdm429w-qrd", "qcom,sdm429w", "qcom,sda429w";
+	qcom,msm-id = <437 0x0>;
+	qcom,board-id = <0x00010b 0x41>;
+	qcom,pmic-id = <0x0002001b 0x0 0x0 0x0>;
+};
+
+&pm660_pon {
+	stella,force-shipmode-on = <1>;
+};
+
+&pm660_fg {
+/* TODO T65650264: set fg-cutoff-voltage to be 3000?*/
+	qcom,fg-cutoff-voltage = <3700>;
+	qcom,fg-empty-voltage = <3700>;
+};
+
+&i2c_2 {
+	fan49103-bob@0 {
+		status = "ok";
+	};
+
+	tps63811-bob@75 {
+		status = "disabled";
+	};
+};
+
+&soc {
+	oculus,rt600_ctrl {
+		pinctrl-names = "default", "flashing", "soc_active";
+		pinctrl-0 = <&rt600_boot0_low &rt600_boot2_low>;
+		pinctrl-1 = <&rt600_boot0_high &rt600_boot2_high>;
+		pinctrl-2 = <&rt600_boot0_low &rt600_boot2_high>;
+	};
+
+	oculus,hw-debug {
+		status = "disabled";
+	};
+};
+
+&pm660_l15 {
+	regulator-min-microvolt = <2200000>;
+	regulator-max-microvolt = <3400000>;
+	qcom,init-voltage = <2200000>;
+	regulator-always-on;
+	regulator-boot-on;
+	status = "ok";
+};
+
+&pm660_l9 {
+	regulator-always-on;
+	regulator-boot-on;
+};
+
+&cam_sensor_mclk0_default {
+	config {
+		drive-strength = <2>;
+	};
+};
+
+&cam_sensor_mclk0_sleep {
+	config {
+		drive-strength = <2>;
+	};
+};
+
+&cam_sensor_mclk1_default {
+	config {
+		drive-strength = <2>;
+	};
+};
+
+&cam_sensor_mclk1_sleep {
+	config {
+		drive-strength = <2>;
+	};
+};
+
+&cci {
+	pinctrl-0 = <&cci0_active &cci1_active>;
+	pinctrl-1 = <&cci0_suspend &cci1_suspend>;
+	gpios = <&tlmm 29 0>,
+	<&tlmm 30 0>,
+	<&tlmm 31 0>,
+	<&tlmm 32 0>;
+	qcom,gpio-tbl-num = <0 1 2 3>;
+	qcom,gpio-tbl-flags = <1 1 1 1>;
+	qcom,gpio-tbl-label = "CCI_I2C_DATA0",
+				"CCI_I2C_CLK0",
+				"CCI_I2C_DATA1",
+				"CCI_I2C_CLK1";
+};

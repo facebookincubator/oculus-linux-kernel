@@ -1,0 +1,34 @@
+#include <dt-bindings/interrupt-controller/irq.h>
+
+&sdhc_2 {
+	status = "ok";
+	wifi-host;
+	brcmf: brcmf@1 {
+		reg = <1>;
+		compatible = "brcm,bcm4329-fmac";
+		interrupt-parent = <&tlmm>;
+		interrupts = <28 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "host-wake";
+		firmware = "brcmfmac43012-sdio.bin";
+		nvram = "brcmfmac43012-sdio.txt";
+	};
+};
+
+&soc {
+	wlreg_on: fixedregulator@100 {
+		compatible = "regulator-fixed";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-name = "wlreg_on";
+		gpio = <&tlmm 40 0>;
+		startup-delay-us = <100>;
+		enable-active-high;
+		status = "ok";
+	};
+
+	brcmfmac: brcmfmac@0 {
+		compatible = "brcm,android-fmac";
+		wlreg_on-supply = <&wlreg_on>;
+		status = "ok";
+	};
+};

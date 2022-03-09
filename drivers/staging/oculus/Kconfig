@@ -1,0 +1,64 @@
+config OCULUS
+	tristate "Oculus hardware support"
+	help
+	   Support for Oculus hardware devices.
+
+config RT600_CTRL
+	bool "Oculus RT600 control driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable RT600 control driver
+
+config HW_DEBUG
+	bool "Oculus HW debug driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable Oculus HW debug driver
+
+config FAN49103_BOB
+	bool "Oculus FAN49103 BoB driver"
+	depends on OCULUS
+	default n
+	select REGMAP
+	help
+	    Enable FAN49103 BoB (Buck-or-Boost) driver
+
+config TPS63811_BOB
+	bool "Oculus TPS63811 BoB driver"
+	depends on OCULUS
+	default n
+	select REGMAP
+	help
+	    Enable TPS63811 BoB (Buck-or-Boost) driver
+
+config CAM_FSYNC
+	bool "Oculus Camera FSYNC Timestamp driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable Camera FSYNC Timestamp driver
+
+config CAM_MCLK_DEBUG
+	bool "Oculus Camera MCLK Debug driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable Camera MCLK Debug driver
+
+config TARGET_IMAGE_STELLA
+	bool "Build for Stella"
+	depends on OCULUS
+	default n
+	help
+	    Build kernel to run Stella images
+
+config TARGET_IMAGE_MOS
+	bool "Build for MOS"
+	depends on OCULUS
+	default n
+	help
+	    Build kernel to run MOS images
+
+source "drivers/staging/oculus/stp/Kconfig"

@@ -1,0 +1,12 @@
+on boot
+    setprop ro.boot.wificountrycode us
+
+    # start wifi drivers
+    exec u:r:modprobe:s0 -- /system/bin/modprobe -d /vendor/lib/modules brcmfmac.ko debug=0x0 alternative_fw_path="brcmfmac/mfg"
+
+    # FMAC Wifi firmware reload path
+    chown wifi wifi /sys/module/brcmfmac/parameters/alternative_fw_path
+
+    # If wificond loaded before we did, restart it to make sure it can connect
+    # to the driver. Otherwise it's fine to start it now anyway.
+    restart wificond

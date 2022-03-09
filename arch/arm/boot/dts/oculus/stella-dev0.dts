@@ -1,0 +1,54 @@
+/*
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/dts-v1/;
+
+#include "qcom-base/sdm429-spyro.dtsi"
+
+/ {
+	model = "Stella";
+	compatible = "qcom,sdm429w-qrd", "qcom,sdm429w", "qcom,qrd";
+	qcom,msm-id = <416 0x0>;
+	qcom,board-id = <0 0>;
+};
+
+&soc {
+	/delete-node/ qcom,pronto@a21b000;
+	/delete-node/ qcom,wcnss-wlan@0a000000;
+};
+
+&mtp_batterydata {
+	/delete-node/ qcom,ascent_3450mah;
+	/delete-node/ qcom,mlp356477_2800mah;
+	/delete-node/
+	qcom,3388014_i13z5p_680mah_averaged_masterslave_mar26th2018;
+};
+&int_codec {
+	/delete-property/ qcom,split-a2dp;
+	/delete-property/ asoc-wsa-codec-names;
+	/delete-property/ asoc-wsa-codec-prefixes;
+	/delete-property/ ext_pa_aw8896;
+	/delete-property/ qcom,cdc-dmic-gpios;
+	/delete-property/ qcom,cdc-us-euro-gpios;
+	/delete-property/ qcom,pri-mi2s-gpios;
+	/delete-property/ qcom,cdc-us-eu-gpios;
+};
+&reserved_memory {
+	ramoops_mem: ramoops_region@0 {
+		compatible = "ramoops";
+		reg = <0x0 0x87D00000 0x0 0x100000>;
+		record-size     = <0x00020000>;
+		console-size    = <0x00020000>;
+		ftrace-size     = <0x00020000>;
+	};
+};

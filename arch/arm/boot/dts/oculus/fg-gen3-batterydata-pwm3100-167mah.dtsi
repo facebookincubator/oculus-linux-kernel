@@ -1,0 +1,95 @@
+
+qcom,4698705_facebook_stella_desay_167mah_pmw3100_averaged_masterslave_aug10th2020 {
+	qcom, = <24>;
+	/* #4698705_Facebook_stella_Desay_167mAH_PMW3100_averaged_MasterSlave_Aug10th2020*/
+	qcom,max-voltage-uv = <4400000>;
+	qcom,fcc-max-ua = <225000>;
+	qcom,fastchg-current-ma = <225>;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+	qcom,nom-batt-capacity-mah = <167>;
+	qcom,batt-id-kohm = <100>;
+
+	oculus,num-multilevel-battery-lvls = <2>;
+	/* batt voltage range to fcc_range config index */
+	oculus,multilevel-battery-ranges = <
+				3000000 4200000 0
+				4200001 4400000 1>;
+
+	/* JEITA fcc range config for index 0 */
+	oculus,jeita-fcc-ranges-0 = <
+				0    100  25000
+				101  200  125000
+				201  450  225000>;
+
+	/* JEITA fcc range config for index 1 */
+	oculus,jeita-fcc-ranges-1 = <
+				0    100  25000
+				101  200  50000
+				201  450  75000>;
+
+	qcom,jeita-fv-ranges = <0   100  4400000
+				101 200  4400000
+				201 450  4400000>;
+	qcom,battery-beta = <3440>;
+	qcom,battery-type = "4698705_facebook_stella_desay_167mah_pmw3100_averaged_masterslave_aug10th2020";
+	qcom,checksum = <0x8DAC>;
+	qcom,gui-version = "PM660GUI - 0.0.0.45";
+	qcom,fg-profile-data = [
+		 27 21 06 04
+		 9A 0B 44 05
+		 E7 1C 43 FB
+		 55 05 0E 03
+		 FF 18 0F 22
+		 60 3D 53 4A
+		 91 00 00 00
+		 18 00 00 00
+		 00 00 5D C5
+		 E8 C4 4E C3
+		 69 00 08 00
+		 C2 F2 DB FD
+		 8F FA AE F5
+		 47 01 BA 01
+		 02 F3 3D 53
+		 0A 06 09 20
+		 27 00 14 00
+		 A1 1F BE 05
+		 75 0A 75 FC
+		 DA 1C 9C 02
+		 C5 0C 8D 0B
+		 A7 18 0C 23
+		 58 45 38 53
+		 6D 00 00 00
+		 11 00 00 00
+		 00 00 6E CC
+		 5B C3 FB BC
+		 77 00 00 00
+		 75 01 DB FD
+		 CD F3 B5 07
+		 8F FA CB 01
+		 A6 F4 57 12
+		 9E 33 CC FF
+		 07 10 00 00
+		 AE 00 66 46
+		 77 00 40 00
+		 65 05 0A FA
+		 FF 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+	];
+};

@@ -1,0 +1,17 @@
+# This is the world regulatory domain
+country 00:
+	(2402 - 2472 @ 40), (20)
+	# Channel 12 - 13.
+	(2457 - 2482 @ 20), (20), NO-IR, AUTO-BW
+	# Channel 14. Only JP enables this and for 802.11b only
+	(2474 - 2494 @ 20), (20), NO-IR, NO-OFDM
+	# Channel 36 - 48
+	(5170 - 5250 @ 80), (20), NO-IR, AUTO-BW
+	# Channel 52 - 64
+	(5250 - 5330 @ 80), (20), NO-IR, DFS, AUTO-BW
+	# Channel 100 - 144
+	(5490 - 5730 @ 160), (20), NO-IR, DFS
+	# Channel 149 - 165
+	(5735 - 5835 @ 80), (20), NO-IR
+	# IEEE 802.11ad (60GHz), channels 1..3
+	(57240 - 63720 @ 2160), (0)

@@ -1,0 +1,8 @@
+&soc {
+	oculus,hw-debug {
+		compatible = "oculus,hw-debug";
+		power-marker-gpio-0 = <&tlmm 10 0>;
+		power-marker-gpio-1 = <&tlmm 11 0>;
+		status = "ok";
+	};
+};
