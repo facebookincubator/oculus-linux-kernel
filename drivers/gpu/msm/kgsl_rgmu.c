@@ -186,13 +186,17 @@ static int rgmu_enable_clks(struct kgsl_device *device)
 static int rgmu_disable_gdsc(struct kgsl_device *device)
 {
 	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
+	int ret;
 
-	/* Wait up to 5 seconds for the regulator to go off */
-	if (kgsl_regulator_disable_wait(rgmu->cx_gdsc, 5000))
+	if (IS_ERR_OR_NULL(rgmu->cx_gdsc))
 		return 0;
 
-	dev_err(&rgmu->pdev->dev, "RGMU CX gdsc off timeout\n");
-	return -ETIMEDOUT;
+	ret = regulator_disable(rgmu->cx_gdsc);
+	if (ret)
+		dev_err(&rgmu->pdev->dev,
+			"Failed to disable RGMU CX gdsc, error %d\n", ret);
+
+	return ret;
 }
 
 static int rgmu_enable_gdsc(struct rgmu_device *rgmu)

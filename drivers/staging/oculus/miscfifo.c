@@ -7,74 +7,37 @@
 #define REC_MAX_LENGTH	0xff
 #define REC_SIZE	1
 #define MIN_FIFO_SIZE	(REC_MAX_LENGTH + REC_SIZE)
+#define CLIENT_NAME_SIZE 64
 
 ssize_t miscfifo_fop_read(struct file *file,
 	char __user *buf, size_t len, loff_t *off)
 {
 	ssize_t rc;
+	unsigned int copied;
 	struct miscfifo_client *client = file->private_data;
 
-	mutex_lock(&client->lock);
+	mutex_lock(&client->consumer_lock);
 	if (kfifo_is_empty(&client->fifo)) {
 		if (file->f_flags & O_NONBLOCK) {
 			rc = -EAGAIN;
 			goto exit_unlock;
 		}
 
-		mutex_unlock(&client->lock);
+		mutex_unlock(&client->consumer_lock);
 		rc = wait_event_interruptible(client->mf->clients.wait,
 					      !kfifo_is_empty(&client->fifo));
 		if (rc)
 			return rc;
-		mutex_lock(&client->lock);
+		mutex_lock(&client->consumer_lock);
 	}
 
-	if (client->mf->config.header_payload) {
-		/* read a |header| + |payload| record packed back to
-		 * back in the fifo and output in a single buffer */
-		unsigned int copied1;
-		unsigned int copied2;
-
-		if (kfifo_peek_len(&client->fifo) < len) {
-			rc = kfifo_to_user(&client->fifo, buf, len, &copied1);
-			if (rc != 0) {
-				rc = -EFAULT;
-				goto exit_unlock;
-			}
-		} else {
-			rc = -ENOBUFS;
-			goto exit_unlock;
-		}
-
-		buf += copied1;
-		len -= copied1;
-		if (kfifo_peek_len(&client->fifo) <= len) {
-			rc = kfifo_to_user(&client->fifo, buf, len, &copied2);
-			if (rc != 0) {
-				/* since the header was read, we have to drop the
-				 * payload part */
-				kfifo_skip(&client->fifo);
-				rc = -EFAULT;
-				goto exit_unlock;
-			}
-		} else {
-			rc = -ENOBUFS;
-			goto exit_unlock;
-		}
-
-		rc = copied1 + copied2;
-	} else {
-		unsigned int copied;
-
-		if (kfifo_peek_len(&client->fifo) <= len) {
-			rc = kfifo_to_user(&client->fifo, buf, len, &copied);
-			rc = (rc == 0) ? copied : -EFAULT;
-		} else
-			rc = -ENOBUFS;
-
-	}
+	if (kfifo_peek_len(&client->fifo) <= len) {
+		rc = kfifo_to_user(&client->fifo, buf, len, &copied);
+		rc = (rc == 0) ? copied : -EFAULT;
+	} else
+		rc = -ENOBUFS;
 exit_unlock:
-	mutex_unlock(&client->lock);
+	mutex_unlock(&client->consumer_lock);
 
 	return rc;
 }
@@ -86,17 +49,13 @@ unsigned int miscfifo_fop_poll(struct file *file,
 	unsigned int mask = 0;
 	struct miscfifo_client *client = file->private_data;
 
-	mutex_lock(&client->lock);
 	if (kfifo_len(&client->fifo))
 		mask |= POLLIN;
-	mutex_unlock(&client->lock);
 
 	if (!mask) {
 		poll_wait(file, &client->mf->clients.wait, pt);
-		mutex_lock(&client->lock);
 		if (kfifo_len(&client->fifo))
 			mask |= POLLIN;
-		mutex_unlock(&client->lock);
 	}
 
 	return mask;
@@ -112,13 +71,39 @@ int miscfifo_fop_release(struct inode *inode, struct file *file)
 	list_del(&client->node);
 	up_write(&mf->clients.rw_lock);
 
-	mutex_destroy(&client->lock);
+	mutex_destroy(&client->context_lock);
+	mutex_destroy(&client->producer_lock);
+	mutex_destroy(&client->consumer_lock);
+
 	kfifo_free(&client->fifo);
+	kfree(client->name);
 	kfree(client);
 
 	return 0;
 }
 EXPORT_SYMBOL(miscfifo_fop_release);
+
+static void get_current_client_name(char *buf, size_t size)
+{
+	struct mm_struct *mm;
+
+	mm = current->mm;
+	if (!mm)
+		goto error;
+
+	down_read(&mm->mmap_sem);
+	if (!mm->exe_file) {
+		up_read(&mm->mmap_sem);
+		goto error;
+	}
+	snprintf(buf, size, "%s (%d)", mm->exe_file->f_path.dentry->d_name.name, current->pid);
+	up_read(&mm->mmap_sem);
+
+	return;
+
+error:
+	snprintf(buf, size, "(unknown)");
+}
 
 int miscfifo_fop_open(struct file *file, struct miscfifo *mf)
 {
@@ -135,15 +120,28 @@ int miscfifo_fop_open(struct file *file, struct miscfifo *mf)
 	if (rc)
 		goto exit_free_client;
 
-	mutex_init(&client->lock);
+	mutex_init(&client->consumer_lock);
+	mutex_init(&client->producer_lock);
+	mutex_init(&client->context_lock);
 
 	down_write(&mf->clients.rw_lock);
 	list_add(&client->node, &mf->clients.list);
 	up_write(&mf->clients.rw_lock);
 
+	client->name = kmalloc(CLIENT_NAME_SIZE, GFP_KERNEL);
+	if (!client->name) {
+		rc = -ENOMEM;
+		goto exit_free_kfifo;
+	}
+	get_current_client_name(client->name, CLIENT_NAME_SIZE);
+
+	client->file = file;
 	file->private_data = client;
+
 	return 0;
 
+exit_free_kfifo:
+	kfree(&client->fifo);
 exit_free_client:
 	kfree(client);
 exit:
@@ -158,30 +156,36 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 	/* space needed in the fifo */
 	size_t needed = len + REC_SIZE;
 
-	if (WARN_ON(mf->config.header_payload))
-		return -EINVAL;
-
 	if (WARN_ON(len == 0 || len > REC_MAX_LENGTH))
 		return -EINVAL;
 
 	down_read(&mf->clients.rw_lock);
 	list_for_each_entry(client, &mf->clients.list, node) {
-		mutex_lock(&client->lock);
+		bool skip;
 
-		if (!mf->config.filter_fn ||
-		    mf->config.filter_fn(client->context,
-					 NULL, 0,
-					 buf, len)) {
+		mutex_lock(&client->context_lock);
+		skip = mf->config.filter_fn &&
+			!mf->config.filter_fn(client->context, NULL, 0, buf, len);
+		mutex_unlock(&client->context_lock);
 
-			while (kfifo_avail(&client->fifo) < needed) {
-				kfifo_skip(&client->fifo);
-				rc++;
-			}
+		if (skip)
+			continue;
 
+		mutex_lock(&client->producer_lock);
+		if (kfifo_avail(&client->fifo) >= needed) {
+			client->logged_fifo_full = false;
 			kfifo_in(&client->fifo, buf, len);
+		} else {
+			if (!client->logged_fifo_full) {
+				dev_info_ratelimited(mf->dev, "miscfifo %s opened by %s is full",
+						     client->file->f_path.dentry->d_name.name,
+						     client->name);
+				client->logged_fifo_full = true;
+			}
+			rc++;
 		}
 
-		mutex_unlock(&client->lock);
+		mutex_unlock(&client->producer_lock);
 	}
 	up_read(&mf->clients.rw_lock);
 
@@ -190,73 +194,20 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 }
 EXPORT_SYMBOL(miscfifo_send_buf);
 
-int miscfifo_send_header_payload(struct miscfifo *mf,
-				 const u8 *header, size_t header_len,
-				 const u8 *payload, size_t payload_len)
-{
-	struct miscfifo_client *client;
-	int rc = 0;
-	/* space needed in the fifo */
-	size_t needed = header_len + REC_SIZE + payload_len + REC_SIZE;
-
-	if (WARN_ON(!mf->config.header_payload))
-		return -EINVAL;
-
-	if (WARN_ON(header_len > REC_MAX_LENGTH))
-		return -EINVAL;
-
-	if (WARN_ON(payload_len == 0 || payload_len > REC_MAX_LENGTH))
-		return -EINVAL;
-
-	down_read(&mf->clients.rw_lock);
-	list_for_each_entry(client, &mf->clients.list, node) {
-		mutex_lock(&client->lock);
-
-		if (!mf->config.filter_fn ||
-		    mf->config.filter_fn(client->context,
-					 header, header_len,
-					 payload, payload_len)) {
-
-			/* pack a |header| + |payload| record back to back
-			 * in the fifo
-			 */
-			while (kfifo_avail(&client->fifo) < needed) {
-				kfifo_skip(&client->fifo);
-				kfifo_skip(&client->fifo);
-				rc++;
-			}
-
-			kfifo_in(&client->fifo, header, header_len);
-			kfifo_in(&client->fifo, payload, payload_len);
-		}
-		mutex_unlock(&client->lock);
-	}
-	up_read(&mf->clients.rw_lock);
-
-	wake_up_interruptible(&mf->clients.wait);
-	return rc;
-}
-EXPORT_SYMBOL(miscfifo_send_header_payload);
-
 static int miscfifo_register(struct device *dev, struct miscfifo *mf)
 {
 	/* these min sizes are required to reliably put (max length) data
 	 * in to the fifo */
-	if (!mf->config.header_payload) {
-		if (mf->config.kfifo_size < MIN_FIFO_SIZE) {
-			dev_warn(dev, "expect min fifo size: %d", MIN_FIFO_SIZE);
-			mf->config.kfifo_size = MIN_FIFO_SIZE;
-		}
-	} else {
-		if (mf->config.kfifo_size < MIN_FIFO_SIZE * 2) {
-			dev_warn(dev, "expect min fifo size: %d", MIN_FIFO_SIZE * 2);
-			mf->config.kfifo_size = MIN_FIFO_SIZE * 2;
-		}
+
+	if (mf->config.kfifo_size < MIN_FIFO_SIZE) {
+		dev_warn(dev, "expect min fifo size: %d", MIN_FIFO_SIZE);
+		mf->config.kfifo_size = MIN_FIFO_SIZE;
 	}
 
 	if (!try_module_get(THIS_MODULE))
 		return -ENODEV;
 
+	mf->dev = dev;
 	init_rwsem(&mf->clients.rw_lock);
 	INIT_LIST_HEAD(&mf->clients.list);
 	init_waitqueue_head(&mf->clients.wait);
@@ -308,23 +259,19 @@ void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf)
 }
 EXPORT_SYMBOL(devm_miscfifo_unregister);
 
-void miscfifo_fop_set_context(struct file *file, void *context)
+void *miscfifo_fop_xchg_context(struct file *file, void *context)
 {
 	struct miscfifo_client *client = file->private_data;
+	void *old = client->context;
 
-	mutex_lock(&client->lock);
+	mutex_lock(&client->context_lock);
 	client->context = context;
-	mutex_unlock(&client->lock);
-}
-EXPORT_SYMBOL(miscfifo_fop_set_context);
+	mutex_unlock(&client->context_lock);
 
-void *miscfifo_fop_get_context(struct file *file)
-{
-	struct miscfifo_client *client = file->private_data;
-
-	return client->context;
+	return old;
 }
-EXPORT_SYMBOL(miscfifo_fop_get_context);
+EXPORT_SYMBOL(miscfifo_fop_xchg_context);
+
 
 MODULE_AUTHOR("Khalid Zubair <kzubair@oculus.com>");
 MODULE_DESCRIPTION("General purpose chardev fifo implementation");

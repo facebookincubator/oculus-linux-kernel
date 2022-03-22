@@ -12,36 +12,6 @@
 };
 
 &tlmm {
-	pri_mi2s {
-		pri_mi2s_sleep: pri_mi2s_sleep {
-			mux {
-				pins = "gpio136";
-				function = "gpio";
-			};
-
-			config {
-				pins = "gpio136";
-				drive-strength = <2>;   /* 2 mA */
-				bias-pull-down;         /* PULL DOWN */
-				input-enable;
-			};
-		};
-
-		pri_mi2s_active: pri_mi2s_active {
-			mux {
-				pins = "gpio136";
-				function = "pri_mi2s";
-			};
-
-			config {
-				pins = "gpio136";
-				drive-strength = <2>;   /* 2 mA */
-				bias-disable;           /* NO PULL */
-				output-high;
-			};
-		};
-	};
-
 	cm7120_speaker_en_pins {
 		cm7120_speaker_en_default: cm7120_speaker_en_default {
 			mux {
@@ -139,8 +109,8 @@
 		qcom,codec-lpass-clk-id = <0x300>;
 		qcom,use-pinctrl = <1>;
 		pinctrl-names = "active", "sleep";
-		pinctrl-0 = <&pri_mi2s_active>;
-		pinctrl-1 = <&pri_mi2s_sleep>;
+		pinctrl-0 = <&pri_mi2s_mclk_active>;
+		pinctrl-1 = <&pri_mi2s_mclk_sleep>;
 		#clock-cells = <1>;
 	};
 

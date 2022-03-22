@@ -225,11 +225,11 @@ struct arm_smmu_power_resources {
 
 	/* Protects power_count */
 	struct mutex			power_lock;
-	int				power_count;
+	refcount_t			power_count;
 
 	/* Protects clock_refs_count */
 	spinlock_t			clock_refs_lock;
-	int				clock_refs_count;
+	refcount_t			clock_refs_count;
 	int				regulator_defer;
 };
 
@@ -267,6 +267,7 @@ struct arm_smmu_device {
 #define ARM_SMMU_OPT_DISABLE_ATOS	(1 << 7)
 #define ARM_SMMU_OPT_NO_DYNAMIC_ASID	(1 << 8)
 #define ARM_SMMU_OPT_SPLIT_TABLES	(1 << 9)
+#define ARM_SMMU_OPT_EXTERNAL_CF_IRQ	(1 << 10)
 	u32				options;
 	enum arm_smmu_arch_version	version;
 	enum arm_smmu_implementation	model;
@@ -450,6 +451,7 @@ static struct arm_smmu_option_prop arm_smmu_options[] = {
 	{ ARM_SMMU_OPT_DISABLE_ATOS, "qcom,disable-atos" },
 	{ ARM_SMMU_OPT_NO_DYNAMIC_ASID, "qcom,no-dynamic-asid" },
 	{ ARM_SMMU_OPT_SPLIT_TABLES, "qcom,split-tables" },
+	{ ARM_SMMU_OPT_EXTERNAL_CF_IRQ, "oculus,external-context-fault-irq" },
 	{ 0, NULL},
 };
 
@@ -949,16 +951,18 @@ static int arm_smmu_power_on_atomic(struct arm_smmu_power_resources *pwr)
 	int ret = 0;
 	unsigned long flags;
 
+	if (refcount_inc_not_zero(&pwr->clock_refs_count))
+		return 0;
+
 	spin_lock_irqsave(&pwr->clock_refs_lock, flags);
-	if (pwr->clock_refs_count > 0) {
-		pwr->clock_refs_count++;
+	if (refcount_inc_not_zero(&pwr->clock_refs_count)) {
 		spin_unlock_irqrestore(&pwr->clock_refs_lock, flags);
 		return 0;
 	}
 
 	ret = clk_bulk_enable(pwr->num_clocks, pwr->clocks);
 	if (!ret)
-		pwr->clock_refs_count = 1;
+		refcount_set(&pwr->clock_refs_count, 1);
 
 	spin_unlock_irqrestore(&pwr->clock_refs_lock, flags);
 	return ret;
@@ -970,22 +974,13 @@ static void arm_smmu_power_off_atomic(struct arm_smmu_power_resources *pwr)
 	unsigned long flags;
 	struct arm_smmu_device *smmu = pwr->dev->driver_data;
 
-	spin_lock_irqsave(&pwr->clock_refs_lock, flags);
-	if (pwr->clock_refs_count == 0) {
-		WARN(1, "%s: bad clock_ref_count\n", dev_name(pwr->dev));
-		spin_unlock_irqrestore(&pwr->clock_refs_lock, flags);
+	if (!refcount_dec_and_lock_irqsave(&pwr->clock_refs_count,
+			&pwr->clock_refs_lock, &flags))
 		return;
-
-	} else if (pwr->clock_refs_count > 1) {
-		pwr->clock_refs_count--;
-		spin_unlock_irqrestore(&pwr->clock_refs_lock, flags);
-		return;
-	}
 
 	arm_smmu_arch_write_sync(smmu);
 	clk_bulk_disable(pwr->num_clocks, pwr->clocks);
 
-	pwr->clock_refs_count = 0;
 	spin_unlock_irqrestore(&pwr->clock_refs_lock, flags);
 }
 
@@ -993,9 +988,11 @@ static int arm_smmu_power_on_slow(struct arm_smmu_power_resources *pwr)
 {
 	int ret;
 
+	if (refcount_inc_not_zero(&pwr->power_count))
+		return 0;
+
 	mutex_lock(&pwr->power_lock);
-	if (pwr->power_count > 0) {
-		pwr->power_count += 1;
+	if (refcount_inc_not_zero(&pwr->power_count)) {
 		mutex_unlock(&pwr->power_lock);
 		return 0;
 	}
@@ -1012,7 +1009,7 @@ static int arm_smmu_power_on_slow(struct arm_smmu_power_resources *pwr)
 	if (ret)
 		goto out_disable_regulators;
 
-	pwr->power_count = 1;
+	refcount_set(&pwr->power_count, 1);
 	mutex_unlock(&pwr->power_lock);
 	return 0;
 
@@ -1027,22 +1024,13 @@ out_unlock:
 
 static void arm_smmu_power_off_slow(struct arm_smmu_power_resources *pwr)
 {
-	mutex_lock(&pwr->power_lock);
-	if (pwr->power_count == 0) {
-		WARN(1, "%s: Bad power count\n", dev_name(pwr->dev));
-		mutex_unlock(&pwr->power_lock);
+	if (!refcount_dec_and_mutex_lock(&pwr->power_count, &pwr->power_lock))
 		return;
-
-	} else if (pwr->power_count > 1) {
-		pwr->power_count--;
-		mutex_unlock(&pwr->power_lock);
-		return;
-	}
 
 	clk_bulk_unprepare(pwr->num_clocks, pwr->clocks);
 	arm_smmu_disable_regulators(pwr);
 	arm_smmu_unrequest_bus(pwr);
-	pwr->power_count = 0;
+
 	mutex_unlock(&pwr->power_lock);
 }
 
@@ -1686,14 +1674,13 @@ EXPORT_SYMBOL(iommu_get_fault_ids);
 static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 {
 	int flags, ret, tmp;
-	u32 fsr, fsynr0, fsynr1, frsynra, resume;
+	u32 fsr, fsynr0, fsynr1, resume;
 	unsigned long iova;
 	struct iommu_domain *domain = dev;
 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
 	struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
 	struct arm_smmu_device *smmu = smmu_domain->smmu;
 	void __iomem *cb_base;
-	void __iomem *gr1_base;
 	bool fatal_asf = smmu->options & ARM_SMMU_OPT_FATAL_ASF;
 	phys_addr_t phys_soft;
 	uint64_t pte;
@@ -1709,7 +1696,6 @@ static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 	if (ret)
 		return IRQ_NONE;
 
-	gr1_base = ARM_SMMU_GR1(smmu);
 	cb_base = ARM_SMMU_CB(smmu, cfg->cbndx);
 	fsr = readl_relaxed(cb_base + ARM_SMMU_CB_FSR);
 
@@ -1725,7 +1711,6 @@ static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 	}
 
 	fsynr0 = readl_relaxed(cb_base + ARM_SMMU_CB_FSYNR0);
-	fsynr1 = readl_relaxed(cb_base + ARM_SMMU_CB_FSYNR1);
 	flags = fsynr0 & FSYNR0_WNR ? IOMMU_FAULT_WRITE : IOMMU_FAULT_READ;
 	if (fsr & FSR_TF)
 		flags |= IOMMU_FAULT_TRANSLATION;
@@ -1747,11 +1732,21 @@ static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 	    !!(smmu_domain->attributes & (1 << DOMAIN_ATTR_SPLIT_TABLES)))
 		iova |= GENMASK_ULL(63, ias + 1);
 
-	phys_soft = arm_smmu_iova_to_phys(domain, iova);
-	frsynra = readl_relaxed(gr1_base + ARM_SMMU_GR1_CBFRSYNRA(cfg->cbndx));
-	frsynra &= CBFRSYNRA_SID_MASK;
 	tmp = report_iommu_fault(domain, smmu->dev, iova, flags);
-	if (!tmp || (tmp == -EBUSY)) {
+	if (tmp == -EBUSY) {
+		/*
+		 * The client has returned -EBUSY which means they're handling
+		 * things from here on out. Assume they know what they're doing
+		 * and hand off the reins.
+		 */
+		ret = IRQ_HANDLED;
+		goto out_power_off;
+	}
+
+	/* If we've reached here then try and grab some diagnostics. */
+	phys_soft = arm_smmu_iova_to_phys(domain, iova);
+	fsynr1 = readl_relaxed(cb_base + ARM_SMMU_CB_FSYNR1);
+	if (!tmp) {
 		dev_dbg(smmu->dev,
 			"Context fault handled by client: iova=0x%08lx, cb=%d, fsr=0x%x, fsynr0=0x%x, fsynr1=0x%x\n",
 			iova, cfg->cbndx, fsr, fsynr0, fsynr1);
@@ -1767,6 +1762,13 @@ static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 	} else {
 		if (__ratelimit(&_rs)) {
 			phys_addr_t phys_atos;
+			void __iomem *gr1_base;
+			u32 frsynra;
+
+			gr1_base = ARM_SMMU_GR1(smmu);
+			frsynra = readl_relaxed(gr1_base +
+					ARM_SMMU_GR1_CBFRSYNRA(cfg->cbndx));
+			frsynra &= CBFRSYNRA_SID_MASK;
 
 			print_ctx_regs(smmu, cfg, fsr);
 			phys_atos = arm_smmu_verify_fault(domain, iova, fsr);
@@ -2435,18 +2437,21 @@ static int arm_smmu_init_domain_context(struct iommu_domain *domain,
 		}
 
 		/*
-		 * Request context fault interrupt. Do this last to avoid the
-		 * handler seeing a half-initialised domain state.
+		 * Request context fault interrupt unless the external fault IRQ
+		 * option has been set. Do this last to avoid the handler seeing
+		 * a half-initialised domain state.
 		 */
 		irq = smmu->irqs[smmu->num_global_irqs + cfg->irptndx];
-		ret = devm_request_threaded_irq(smmu->dev, irq, NULL,
-			arm_smmu_context_fault, IRQF_ONESHOT | IRQF_SHARED,
-			"arm-smmu-context-fault", domain);
-		if (ret < 0) {
-			dev_err(smmu->dev, "failed to request context IRQ %d (%u)\n",
-				cfg->irptndx, irq);
-			cfg->irptndx = INVALID_IRPTNDX;
-			goto out_clear_smmu;
+		if (!(smmu->options & ARM_SMMU_OPT_EXTERNAL_CF_IRQ)) {
+			ret = devm_request_threaded_irq(smmu->dev, irq, NULL,
+				arm_smmu_context_fault, IRQF_ONESHOT | IRQF_SHARED,
+				"arm-smmu-context-fault", domain);
+			if (ret < 0) {
+				dev_err(smmu->dev, "failed to request context IRQ %d (%u)\n",
+					cfg->irptndx, irq);
+				cfg->irptndx = INVALID_IRPTNDX;
+				goto out_clear_smmu;
+			}
 		}
 	} else {
 		cfg->irptndx = INVALID_IRPTNDX;
@@ -3346,6 +3351,110 @@ static int arm_smmu_map(struct iommu_domain *domain, unsigned long iova,
 	return ret;
 }
 
+static struct page **arm_smmu_find_mapped_page_range(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, int *page_count)
+{
+	struct page **pages = NULL;
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops;
+	size_t start_page, end_page;
+	unsigned long flags;
+	int ret = 0;
+
+	ops = arm_smmu_get_pgtable_ops(smmu_domain, iova);
+	if (IS_ERR_OR_NULL(ops) || !ops->find_mapped_page_range)
+		return ERR_PTR(-ENODEV);
+	iova = arm_smmu_mask_iova(smmu_domain, iova);
+
+	start_page = iova >> PAGE_SHIFT;
+	end_page = (iova + size - 1) >> PAGE_SHIFT;
+
+	*page_count = (int)(end_page - start_page) + 1;
+	pages = kcalloc(*page_count, sizeof(struct page *), GFP_ATOMIC);
+	if (pages == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	spin_lock_irqsave(&smmu_domain->cb_lock, flags);
+	ret = ops->find_mapped_page_range(ops, iova, pages, *page_count);
+	spin_unlock_irqrestore(&smmu_domain->cb_lock, flags);
+
+	if (ret) {
+		*page_count = 0;
+		kfree(pages);
+		return ERR_PTR(ret);
+	}
+
+	return pages;
+}
+
+static int arm_smmu_get_backing_pages(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, struct list_head *page_list)
+{
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops;
+	size_t start_page, end_page;
+	unsigned long flags;
+	int page_count, ret = 0;
+
+	ops = arm_smmu_get_pgtable_ops(smmu_domain, iova);
+	if (IS_ERR_OR_NULL(ops) || !ops->get_backing_pages)
+		return -ENODEV;
+	iova = arm_smmu_mask_iova(smmu_domain, iova);
+
+	start_page = iova >> PAGE_SHIFT;
+	end_page = (iova + size - 1) >> PAGE_SHIFT;
+	page_count = (int)(end_page - start_page) + 1;
+
+	spin_lock_irqsave(&smmu_domain->cb_lock, flags);
+	ret = ops->get_backing_pages(ops, iova, page_list, page_count);
+	spin_unlock_irqrestore(&smmu_domain->cb_lock, flags);
+
+	return ret;
+}
+
+static void *arm_smmu_fetch_iova_ptep(struct iommu_domain *domain,
+		dma_addr_t iova, void **pptepp)
+{
+	void *ret;
+	unsigned long flags;
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops;
+
+	ops = arm_smmu_get_pgtable_ops(smmu_domain, iova);
+	if (IS_ERR_OR_NULL(ops) || !ops->fetch_iova_ptep)
+		return ERR_PTR(-ENODEV);
+	iova = arm_smmu_mask_iova(smmu_domain, iova);
+
+	spin_lock_irqsave(&smmu_domain->cb_lock, flags);
+	ret = ops->fetch_iova_ptep(ops, iova, pptepp);
+	spin_unlock_irqrestore(&smmu_domain->cb_lock, flags);
+	return ret;
+}
+
+int arm_smmu_decode_ptep(struct iommu_domain *domain, void *ptep,
+		struct page **pagep, int *protp)
+{
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops = smmu_domain->pgtbl_ops[0];
+
+	if (IS_ERR_OR_NULL(ops) || !ops->decode_ptep)
+		return -ENODEV;
+
+	return ops->decode_ptep(ops, ptep, pagep, protp);
+}
+
+int arm_smmu_remap_ptep(struct iommu_domain *domain, void *ptep, void *pptep,
+		dma_addr_t iova, struct page *page, int prot)
+{
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops = smmu_domain->pgtbl_ops[0];
+
+	if (IS_ERR_OR_NULL(ops) || !ops->remap_ptep)
+		return -ENODEV;
+
+	return ops->remap_ptep(ops, ptep, pptep, iova, page, prot);
+}
+
 static uint64_t arm_smmu_iova_to_pte(struct iommu_domain *domain,
 	      dma_addr_t iova)
 {
@@ -3992,6 +4101,36 @@ static int arm_smmu_domain_get_attr(struct iommu_domain *domain,
 				& (1 << DOMAIN_ATTR_SPLIT_TABLES));
 		ret = 0;
 		break;
+	case DOMAIN_ATTR_CONTEXT_FAULT_IRQ: {
+		struct arm_smmu_device *smmu = smmu_domain->smmu;
+		struct arm_smmu_cfg *cfg = &smmu_domain->cfg;
+
+		/* Not valid until attached */
+		if (smmu == NULL) {
+			ret = -ENODEV;
+			break;
+		}
+
+		/*
+		 * Not valid for dynamic domains (which use the IRQ of their
+		 * parent context) or if irptndx is invalid due to failed
+		 * context initialization.
+		 */
+		if (is_dynamic_domain(domain) || cfg->irptndx == INVALID_IRPTNDX) {
+			ret = -EINVAL;
+			break;
+		}
+
+		/*
+		 * Returns the IRQ number as assigned by the GIC which are used
+		 * with the IRQ management functions like 'irq_to_desc'. Note
+		 * that this is *not* the same IRQ number as the one found in
+		 * the device tree!
+		 */
+		*((int *)data) = smmu->irqs[smmu->num_global_irqs + cfg->irptndx];
+		ret = 0;
+		break;
+	}
 	default:
 		ret = -ENODEV;
 		break;
@@ -4397,6 +4536,11 @@ static struct iommu_ops arm_smmu_ops = {
 	.enable_config_clocks	= arm_smmu_enable_config_clocks,
 	.disable_config_clocks	= arm_smmu_disable_config_clocks,
 	.is_iova_coherent	= arm_smmu_is_iova_coherent,
+	.find_mapped_page_range	= arm_smmu_find_mapped_page_range,
+	.get_backing_pages	= arm_smmu_get_backing_pages,
+	.fetch_iova_ptep	= arm_smmu_fetch_iova_ptep,
+	.decode_ptep		= arm_smmu_decode_ptep,
+	.remap_ptep		= arm_smmu_remap_ptep,
 	.iova_to_pte = arm_smmu_iova_to_pte,
 };
 
@@ -4935,7 +5079,9 @@ static struct arm_smmu_power_resources *arm_smmu_init_power_resources(
 
 	pwr->dev = &pdev->dev;
 	pwr->pdev = pdev;
+	refcount_set(&pwr->power_count, 0);
 	mutex_init(&pwr->power_lock);
+	refcount_set(&pwr->clock_refs_count, 0);
 	spin_lock_init(&pwr->clock_refs_lock);
 
 	ret = arm_smmu_init_clocks(pwr);

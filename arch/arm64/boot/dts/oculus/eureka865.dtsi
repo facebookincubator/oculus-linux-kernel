@@ -14,7 +14,7 @@
 #include "eureka865-fan.dtsi"
 #include "eureka865-nautilus-clk.dtsi"
 #include "eureka865-panel.dtsi"
-#include "eureka865-qca6390.dtsi"
+#include "eureka865-qca6490.dtsi"
 #include "eureka865-safetyboss.dtsi"
 #include "eureka865-syncboss.dtsi"
 #include "eureka865-ufs.dtsi"

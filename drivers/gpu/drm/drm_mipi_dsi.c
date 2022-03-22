@@ -729,7 +729,7 @@ EXPORT_SYMBOL(mipi_dsi_dcs_write);
 
 
 ssize_t mipi_dsi_dcs_write_queue(struct mipi_dsi_device *dsi,
-			   const void *data, size_t len, bool last)
+			   const void *data, size_t len, u16 flags, u32 ctrl)
 {
 	const struct mipi_dsi_host_ops *ops;
 	struct mipi_dsi_msg msg = {0};
@@ -762,12 +762,11 @@ ssize_t mipi_dsi_dcs_write_queue(struct mipi_dsi_device *dsi,
 		break;
 	}
 
-
+	msg.flags = flags;
 	if (dsi->mode_flags & MIPI_DSI_MODE_LPM)
 		msg.flags |= MIPI_DSI_MSG_USE_LPM;
 
-	if (last)
-		msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
+	msg.ctrl = ctrl;
 
 	return ops->transfer(dsi->host, &msg);
 }

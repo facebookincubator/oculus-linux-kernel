@@ -26,8 +26,8 @@ int kgsl_cache_range_op(struct kgsl_memdesc *memdesc,
 			uint64_t offset, uint64_t size,
 			unsigned int op);
 
-void kgsl_memdesc_init(struct kgsl_device *device,
-			struct kgsl_memdesc *memdesc, uint64_t flags);
+void kgsl_memdesc_init(struct kgsl_device *device, struct kgsl_memdesc *memdesc,
+		uint64_t flags, uint32_t priv);
 
 void kgsl_process_init_sysfs(struct kgsl_device *device,
 		struct kgsl_process_private *private);
@@ -41,6 +41,9 @@ void kgsl_get_memory_usage(char *str, size_t len, uint64_t memflags);
 void kgsl_free_secure_page(struct page *page);
 
 struct page *kgsl_alloc_secure_page(void);
+
+int kgsl_lock_page(struct page *page);
+int kgsl_unlock_page(struct page *page);
 
 /**
  * kgsl_allocate_user - Allocate user visible GPU memory
@@ -296,49 +299,6 @@ kgsl_memdesc_footprint(const struct kgsl_memdesc *memdesc)
 
 void kgsl_sharedmem_set_noretry(bool val);
 bool kgsl_sharedmem_get_noretry(void);
-
-/**
- * kgsl_alloc_sgt_from_pages() - Allocate a sg table
- *
- * @memdesc: memory descriptor of the allocation
- *
- * Allocate and return pointer to a sg table
- */
-static inline struct sg_table *kgsl_alloc_sgt_from_pages(
-				struct kgsl_memdesc *m)
-{
-	int ret;
-	struct sg_table *sgt;
-
-	sgt = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
-	if (sgt == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	ret = sg_alloc_table_from_pages(sgt, m->pages, m->page_count, 0,
-					m->size, GFP_KERNEL);
-	if (ret) {
-		kfree(sgt);
-		return ERR_PTR(ret);
-	}
-
-	return sgt;
-}
-
-/**
- * kgsl_free_sgt() - Free a sg table structure
- *
- * @sgt: sg table pointer to be freed
- *
- * Free the sg table allocated using sgt and free the
- * sgt structure itself
- */
-static inline void kgsl_free_sgt(struct sg_table *sgt)
-{
-	if (sgt != NULL) {
-		sg_free_table(sgt);
-		kfree(sgt);
-	}
-}
 
 /**
  * kgsl_cachemode_is_cached - Return true if the passed flags indicate a cached

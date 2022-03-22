@@ -6,6 +6,10 @@
 #include "hollywood-dsi-panel-jdi-dsc-4k-90Hz-video.dtsi"
 #include "hollywood-dsi-panel-jdi-dsc-4k-80Hz-video.dtsi"
 #include "hollywood-dsi-panel-jdi-dsc-4k-120Hz-video.dtsi"
+#include "hollywood-dsi-panel-jdi-nvt-dsc-4k-video.dtsi"
+#include "hollywood-dsi-panel-jdi-nvt-dsc-4k-80Hz-video.dtsi"
+#include "hollywood-dsi-panel-jdi-nvt-dsc-4k-90Hz-video.dtsi"
+#include "hollywood-dsi-panel-jdi-nvt-dsc-4k-120Hz-video.dtsi"
 #include "hollywood-dsi-panel-sharp-dsc-4k-video.dtsi"
 #include "hollywood-dsi-panel-sharp-dsc-4k-90Hz-video.dtsi"
 #include "hollywood-dsi-panel-sharp-dsc-4k-120Hz-video.dtsi"
@@ -217,6 +221,110 @@
 			qcom,mdss-dsi-panel-phy-timings = [
 				00 25 0A 0A 1B 25 0A
 				0A 0A 02 04 00 1F 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_jdi_nvt_4k_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi_nvt";//TODO
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x20>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A//TODO
+				0A 0A 02 04 00 20 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_jdi_nvt_4k_80Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi_nvt";//TODO
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x20>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A//TODO
+				0A 0A 02 04 00 20 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_jdi_nvt_4k_90Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi_nvt";//TODO
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x20>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A//TODO
+				0A 0A 02 04 00 20 0F
+			];
+			qcom,display-topology = <2 2 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_jdi_nvt_4k_120Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi_nvt";//TODO
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10.0% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 135 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x20>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 1B 25 0A//TODO
+				0A 0A 02 04 00 20 0F
 			];
 			qcom,display-topology = <2 2 2>;
 			qcom,default-topology-index = <0>;
@@ -467,6 +575,10 @@
 		&dsi_boe_4k_80Hz_dsc_video
 		&dsi_boe_4k_90Hz_dsc_video
 		&dsi_boe_4k_120Hz_dsc_video
+		&dsi_jdi_nvt_4k_dsc_video
+		&dsi_jdi_nvt_4k_80Hz_dsc_video
+		&dsi_jdi_nvt_4k_90Hz_dsc_video
+		&dsi_jdi_nvt_4k_120Hz_dsc_video
 		&dsi_jdi_4k_dsc_video
 		&dsi_jdi_4k_80Hz_dsc_video
 		&dsi_jdi_4k_90Hz_dsc_video

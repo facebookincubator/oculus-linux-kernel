@@ -18,6 +18,11 @@
 	regulator-always-on;
 };
 
+&pm8150_l13 {
+	/* FPGA power */
+	regulator-always-on;
+};
+
 &pm8150_l15 {
 	/* Canyon, Glacier, Teton, Esker power */
 	regulator-always-on;
@@ -170,7 +175,6 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
-		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
 		oculus,syncboss-boots-to-shutdown-state;
 
@@ -180,6 +184,7 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
+			oculus,pin-reset = <&tlmm 5 0>;
 			oculus,swd-clk = <&tlmm 52 0>;
 			oculus,swd-io = <&tlmm 53 0>;
 
@@ -240,8 +245,7 @@
 		config {
 			pins = "gpio5";
 			drive-strength = <6>;
-			// Active-low logic to reset, so hold high by default
-			output-high;
+			output-low;
 		};
 	};
 

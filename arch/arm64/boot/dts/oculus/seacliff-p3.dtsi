@@ -104,10 +104,6 @@
 	regulator-always-on;
 };
 
-&pm8150_l13 {
-	/delete-property/ regulator-always-on;
-};
-
 &pm8150_l15 {
 	regulator-always-on;
 };
@@ -122,29 +118,29 @@
 
 		rail1 {
 			rail-name = "rail1";
-			subsys-name = "S7S8S9A";
-			uohms-shunt-res = <100000>;
+			subsys-name = "VPH_S7S8S9A";
+			uohms-shunt-res = <10000>;
 			channel_enabled;
 		};
 
 		rail2 {
 			rail-name = "rail2";
-			subsys-name = "S10A";
-			uohms-shunt-res = <100000>;
+			subsys-name = "VPH_S10A";
+			uohms-shunt-res = <10000>;
 			channel_enabled;
 		};
 
 		rail3 {
 			rail-name = "rail3";
-			subsys-name = "S1S2S3A";
-			uohms-shunt-res = <100000>;
+			subsys-name = "VPH_S1S2S3A";
+			uohms-shunt-res = <10000>;
 			channel_enabled;
 		};
 
 		rail4 {
 			rail-name = "rail4";
 			subsys-name = "L3A";
-			uohms-shunt-res = <100000>;
+			uohms-shunt-res = <5000>;
 			channel_enabled;
 		};
 	};
@@ -157,29 +153,29 @@
 
 		rail1 {
 			rail-name = "rail1";
-			subsys-name = "S3C";
-			uohms-shunt-res = <100000>;
+			subsys-name = "VPH_S3C";
+			uohms-shunt-res = <10000>;
 			channel_enabled;
 		};
 
 		rail2 {
 			rail-name = "rail2";
-			subsys-name = "S7C";
-			uohms-shunt-res = <100000>;
+			subsys-name = "VPH_S7C";
+			uohms-shunt-res = <10000>;
 			channel_enabled;
 		};
 
 		rail3 {
 			rail-name = "rail3";
 			subsys-name = "S1H";
-			uohms-shunt-res = <100000>;
+			uohms-shunt-res = <5000>;
 			channel_enabled;
 		};
 
 		rail4 {
 			rail-name = "rail4";
-			subsys-name = "S1S2C";
-			uohms-shunt-res = <100000>;
+			subsys-name = "VPH_S1S2C";
+			uohms-shunt-res = <10000>;
 			channel_enabled;
 		};
 	};

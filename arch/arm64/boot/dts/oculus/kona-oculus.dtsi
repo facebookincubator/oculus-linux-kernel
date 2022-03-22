@@ -13,7 +13,14 @@
 	status = "disabled";
 };
 
+&kgsl_msm_iommu {
+	oculus,context-fault-irq-priority = <98>;
+	oculus,context-fault-irq-affinity = <&CPU4 &CPU5 &CPU6 &CPU7>;
+};
+
 &kgsl_smmu {
+	oculus,external-context-fault-irq;
+	oculus,external-map-lock;
 	qcom,split-tables;
 };
 

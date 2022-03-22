@@ -122,6 +122,7 @@ static struct cnss_pci_reg ce_cmn[] = {
 	{ NULL },
 };
 
+#ifdef CONFIG_CNSS2_DEBUG
 static struct cnss_pci_reg qdss_csr[] = {
 	{ "QDSSCSR_ETRIRQCTRL", QDSS_APB_DEC_CSR_ETRIRQCTRL_OFFSET },
 	{ "QDSSCSR_PRESERVEETF", QDSS_APB_DEC_CSR_PRESERVEETF_OFFSET },
@@ -129,6 +130,7 @@ static struct cnss_pci_reg qdss_csr[] = {
 	{ "QDSSCSR_PRESERVEETR1", QDSS_APB_DEC_CSR_PRESERVEETR1_OFFSET },
 	{ NULL },
 };
+#endif
 
 static struct cnss_misc_reg wcss_reg_access_seq[] = {
 	{0, QCA6390_GCC_DEBUG_CLK_CTL, 0},

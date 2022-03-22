@@ -7,7 +7,6 @@
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
-	qcom,platform-en-gpio = <&tlmm 135 0>;
 	qcom,platform-reset-gpio = <&tlmm 6 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
 	qcom,mdss-dsi-reset-off-delay = <30>;
@@ -32,7 +31,6 @@
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
-	qcom,platform-en-gpio = <&tlmm 135 0>;
 	qcom,platform-reset-gpio = <&tlmm 6 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
 	qcom,mdss-dsi-reset-off-delay = <30>;
@@ -58,7 +56,6 @@
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <255>;
 	qcom,mdss-brightness-max-level = <255>;
-	qcom,platform-en-gpio = <&tlmm 135 0>;
 	qcom,platform-reset-gpio = <&tlmm 6 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
 	qcom,mdss-dsi-reset-off-delay = <30>;

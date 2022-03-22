@@ -32,6 +32,11 @@
 	regulator-always-on;
 };
 
+&pm8150_l13 {
+	/* FPGA power */
+	regulator-always-on;
+};
+
 &pm8150_l15 {
 	/* Canyon, Glacier, Teton, Esker power */
 	regulator-always-on;

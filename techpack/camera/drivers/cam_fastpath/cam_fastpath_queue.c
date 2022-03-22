@@ -189,8 +189,8 @@ cam_fp_queue_dequeue_buffer_set(struct cam_fp_queue *fpq,
 
 	list_del(&buf_list->list);
 
-	CAM_DBG(CAM_CORE, "CAM_FP_DEQUEUE_BUFSET %s %lld", fpq->name,
-			buf_list->buf_set.request_id);
+	CAM_DBG(CAM_CORE, "CAM_FP_DEQUEUE_BUFSET %s %lld status %d", fpq->name,
+			buf_list->buf_set.request_id, buf_list->buf_set.status);
 	/* Put the buffer to free queue */
 	list_add_tail(&buf_list->list, &fpq->free_queue);
 
@@ -202,7 +202,7 @@ done_unlock:
 static int
 cam_fp_queue_sched_next_chain(struct cam_fp_queue *fpq,
 			      struct cam_fp_process_chain *proc_chain,
-			      u64 timestamp, __u32 sof_index)
+			      u64 timestamp, __u32 sof_index, __u32 status)
 {
 	int ret = -EINVAL;
 	int idx;
@@ -215,6 +215,7 @@ cam_fp_queue_sched_next_chain(struct cam_fp_queue *fpq,
 		/* Pass the timestamp on next process */
 		proc_chain->chain.buf_set[idx].timestamp = timestamp;
 		proc_chain->chain.buf_set[idx].sof_index = sof_index;
+		proc_chain->chain.buf_set[idx].status = status;
 		CAM_DBG(CAM_CORE, "%s schedule next chain %d SOF %d",
 						fpq->name, idx, sof_index);
 		ret = cam_fp_queue_enqueue_buffer_set(proc_chain->fpq[idx],
@@ -279,7 +280,7 @@ cam_fp_queue_enqueue_chain(struct file *file,
 		fdput(f);
 	}
 
-	ret = cam_fp_queue_sched_next_chain(fpq, proc_chain, 0, 0);
+	ret = cam_fp_queue_sched_next_chain(fpq, proc_chain, 0, 0, CAM_FP_BUFFER_STATUS_SUCCESS);
 	if (ret < 0) {
 		CAM_ERR(CAM_CORE, "Can not enqueue first chain! %s",
 			fpq->name);
@@ -494,6 +495,9 @@ int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 
 	mutex_lock(&fpq->mutex);
 
+	if (status)
+		CAM_ERR(CAM_CORE, "%s Err status %d for %lld", fpq->name, status, request_id);
+
 	list_for_each_safe(pos, next, &fpq->processing_queue) {
 		buf_list = list_entry(pos, struct cam_fp_buffer_list, list);
 		if (buf_list->buf_set.request_id != request_id)
@@ -501,8 +505,8 @@ int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 
 		list_del(&buf_list->list);
 
-		/* Put the buffer to done queue */
-		buf_list->buf_set.status = status;
+		if (buf_list->buf_set.status == CAM_FP_BUFFER_STATUS_SUCCESS)
+			buf_list->buf_set.status = status; // Do not cover existing error
 
 		/* Fill the timestamp if provided */
 		if (timestamp) {
@@ -518,7 +522,8 @@ int cam_fp_queue_buffer_set_done(struct cam_fp_queue *fpq,
 		}
 
 		if (!cam_fp_queue_sched_next_chain(fpq, buf_list->proc_chain,
-				buf_list->buf_set.timestamp, buf_list->buf_set.sof_index)) {
+				buf_list->buf_set.timestamp, buf_list->buf_set.sof_index,
+				buf_list->buf_set.status)) {
 			/* In chain process do not notify userspace for
 			 * buffer done. The main reason is to reduce ioctl
 			 * calls. This is agreement between uapi and kernel.

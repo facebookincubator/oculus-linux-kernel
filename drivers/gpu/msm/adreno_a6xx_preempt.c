@@ -877,7 +877,8 @@ int a6xx_preemption_context_init(struct kgsl_context *context)
 	 * destroying the context to keep the context record valid
 	 */
 	context->user_ctxt_record = gpumem_alloc_entry(context->dev_priv,
-			A6XX_CP_CTXRECORD_USER_RESTORE_SIZE, flags);
+			A6XX_CP_CTXRECORD_USER_RESTORE_SIZE, flags,
+			KGSL_MEMDESC_LAZY_ALLOCATION);
 	if (IS_ERR(context->user_ctxt_record)) {
 		int ret = PTR_ERR(context->user_ctxt_record);
 

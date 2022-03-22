@@ -952,19 +952,19 @@ enum kgsl_ft_policy_bits {
  * @KGSL_FT_PAGEFAULT_GPUHALT_ENABLE: enable GPU halt on pagefaults
  * @KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE: log one pagefault per page
  * @KGSL_FT_PAGEFAULT_LOG_ONE_PER_INT: log one pagefault per interrupt
+ * @KGSL_FT_PAGEFAULT_STALL_ENABLE: stall transactions on page faults
  */
 enum {
 	KGSL_FT_PAGEFAULT_INT_ENABLE = 0,
 	KGSL_FT_PAGEFAULT_GPUHALT_ENABLE = 1,
 	KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE = 2,
 	KGSL_FT_PAGEFAULT_LOG_ONE_PER_INT = 3,
+	KGSL_FT_PAGEFAULT_STALL_ENABLE = 4,
 	/* KGSL_FT_PAGEFAULT_MAX_BITS is used to calculate the mask */
 	KGSL_FT_PAGEFAULT_MAX_BITS,
 };
 
 #define KGSL_FT_PAGEFAULT_MASK GENMASK(KGSL_FT_PAGEFAULT_MAX_BITS - 1, 0)
-
-#define KGSL_FT_PAGEFAULT_DEFAULT_POLICY 0
 
 #define FOR_EACH_RINGBUFFER(_dev, _rb, _i)			\
 	for ((_i) = 0, (_rb) = &((_dev)->ringbuffers[0]);	\

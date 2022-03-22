@@ -64,10 +64,80 @@ config QCOM_KGSL_IOMMU
 	bool
 	default y if QCOM_KGSL && (MSM_IOMMU || ARM_SMMU)
 
-config QCOM_KGSL_MEM_ENTRY_RBTREE
-	bool "Track memory entries with RB trees"
-	depends on QCOM_KGSL
+config QCOM_KGSL_ENTRY_METADATA
+	bool "Enable metadata field for KGSL memory entries"
+	depends on QCOM_KGSL && DEBUG_FS
+	help
+	  Adds support for the metadata field for KGSL memory entries. This can
+	  be used by applications to specially mark entries in when dumping
+	  'mem' for a process in debugfs. This is never required for proper
+	  functioning of the driver. Say 'N' unless there is a specific need
+	  for this feature.
 
 config QCOM_KGSL_PAGE_POOLING
 	bool "Enable support for KGSL page pools"
 	default y if QCOM_KGSL
+
+config QCOM_KGSL_LAZY_ALLOCATION
+	bool "Enable support for lazily allocated memory entries"
+	depends on QCOM_KGSL
+	depends on QCOM_KGSL_IOMMU && ARM_SMMU
+	default y if QCOM_KGSL
+	help
+	  Allow lazy allocation of backing pages for GPU memory entries. This
+	  can reduce RAM usage substantially and it defers the CPU usage of
+	  memory allocation for entries from all-at-once at entry creation
+	  (legacy behavior) to the first time each page is written to. This is
+	  nominally identical to how memory allocation works for normal
+	  userspace allocations. Say 'Y'.
+
+config QCOM_KGSL_LAZY_POOL_SIZE
+	int "Number of pages to keep in the non-secure lazy allocation pool"
+	depends on QCOM_KGSL_LAZY_ALLOCATION
+	range 16 4096
+	default 512
+	help
+	  Size (in pages) of the non-secure lazy allocation pool for GPU memory
+	  entries. This should be tuned to keep allocations fed while minimizing
+	  the time spent in the slow path of directly allocating pages in the
+	  page fault handler.
+
+config QCOM_KGSL_SECURE_LAZY_ALLOCATION
+	bool "Allow lazy allocation for secure memory entries"
+	depends on QCOM_KGSL_LAZY_ALLOCATION
+	depends on QCOM_SECURE_BUFFER
+	help
+	  Allows lazy allocation for secure memory entries. Secure faults are
+	  somewhat more expensive to handle than non-secure page faults due to
+	  having to lock the allocated pages. Say 'Y' unless testing shows this
+	  performance hit to be unacceptable as the reduction in memory usage
+	  is substantial.
+
+config QCOM_KGSL_SECURE_LAZY_POOL_SIZE
+	int "Number of pages to keep in the secure lazy allocation pool"
+	depends on QCOM_KGSL_SECURE_LAZY_ALLOCATION
+	range 16 4096
+	default 128
+	help
+	  Size (in pages) of the secure lazy allocation pool for GPU memory
+	  entries. This should be tuned to keep allocations fed while avoiding
+	  allocation retries in the page fault handler.
+
+config QCOM_KGSL_LAZY_GLOBALS
+	bool "Lazily allocate memory for globals"
+	depends on QCOM_KGSL_LAZY_ALLOCATION
+	default y if QCOM_KGSL
+	help
+	  Enables lazy allocation for global memory entries. This reduces
+	  memory consumption at a small initial performance cost as pages are
+	  faulted in. If unsure, say 'Y'.
+
+config QCOM_KGSL_LAZY_GPUREADONLY
+	bool "Lazily allocate memory for GPU read-only entries"
+	depends on QCOM_KGSL_LAZY_ALLOCATION
+	default y if QCOM_KGSL
+	help
+	  Enables lazy allocation by default for entries that are marked GPU
+	  read-only, i.e. they are only write-allocated via CPU access. This
+	  reduces memory consumption at a small performance cost. If unsure,
+	  say 'Y'.

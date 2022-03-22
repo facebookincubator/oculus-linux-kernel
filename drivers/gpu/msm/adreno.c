@@ -25,6 +25,7 @@
 #include "adreno_iommu.h"
 #include "adreno_llc.h"
 #include "adreno_trace.h"
+#include "kgsl_lazy.h"
 #include "kgsl_trace.h"
 #include "kgsl_util.h"
 
@@ -1414,6 +1415,11 @@ static void adreno_setup_device(struct adreno_device *adreno_dev)
 	adreno_dev->ft_policy = BIT(KGSL_FT_REPLAY) |
 		BIT(KGSL_FT_SKIPCMD) | BIT(KGSL_FT_THROTTLE);
 
+#if IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_ALLOCATION)
+	/* Enable stall-on-fault as the default fault behavior */
+	adreno_dev->ft_pf_policy = BIT(KGSL_FT_PAGEFAULT_STALL_ENABLE);
+#endif
+
 	/* Enable command timeouts by default */
 	adreno_dev->long_ib_detect = true;
 
@@ -1706,6 +1712,7 @@ static int adreno_pm_resume(struct device *dev)
 
 	mutex_lock(&device->mutex);
 	if (device->state == KGSL_STATE_SUSPEND) {
+		kgsl_mmu_resume(device);
 		adreno_dispatcher_unhalt(device);
 		kgsl_pwrctrl_change_state(device, KGSL_STATE_SLUMBER);
 	} else if (device->state != KGSL_STATE_INIT) {
@@ -1719,6 +1726,8 @@ static int adreno_pm_resume(struct device *dev)
 		kgsl_pwrctrl_change_state(device, KGSL_STATE_SLUMBER);
 		dev_err(device->dev, "resume invoked without a suspend\n");
 	}
+	/* Restart the lazy allocation page pool refill. */
+	kgsl_lazy_page_pool_resume();
 	mutex_unlock(&device->mutex);
 	return 0;
 }
@@ -1729,9 +1738,13 @@ static int adreno_pm_suspend(struct device *dev)
 	int status;
 
 	mutex_lock(&device->mutex);
+	/* Suspend the lazy allocation page pool refill. */
+	kgsl_lazy_page_pool_suspend();
 	status = kgsl_pwrctrl_change_state(device, KGSL_STATE_SUSPEND);
-	if (!status && device->state == KGSL_STATE_SUSPEND)
+	if (!status && device->state == KGSL_STATE_SUSPEND) {
 		adreno_dispatcher_halt(device);
+		kgsl_mmu_suspend(device);
+	}
 	mutex_unlock(&device->mutex);
 
 	return status;
@@ -3989,8 +4002,11 @@ static void adreno_regulator_disable_poll(struct kgsl_device *device)
 	if (!kgsl_regulator_disable_wait(pwr->gx_gdsc, 200))
 		dev_err(device->dev, "Regulator vdd is stuck on\n");
 
-	if (!kgsl_regulator_disable_wait(pwr->cx_gdsc, 200))
-		dev_err(device->dev, "Regulator vddcx is stuck on\n");
+	/* Remove a vote from the CX GDSC but don't wait to see if it's off. */
+	if (IS_ERR_OR_NULL(pwr->cx_gdsc))
+		return;
+
+	regulator_disable(pwr->cx_gdsc);
 }
 
 static void adreno_gpu_model(struct kgsl_device *device, char *str,

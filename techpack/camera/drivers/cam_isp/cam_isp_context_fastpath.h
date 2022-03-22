@@ -50,6 +50,7 @@ struct cam_isp_fastpath_ctx_req {
 	uint64_t                              timestamp;
 	bool                                  reused_packet;
 	uint32_t                              sof_index;
+	uint32_t                              state;
 };
 
 struct cam_isp_fastpath_work_payload {
@@ -78,8 +79,10 @@ struct cam_isp_fastpath_context {
 	struct list_head                      pending_packet_list;
 
 	struct list_head                      active_req_list;
+	unsigned int                          num_in_active;
 	struct list_head                      pending_req_list;
 	struct list_head                      process_req_list;
+	unsigned int                          num_in_processing;
 
 	struct mutex                          mutex_list;
 

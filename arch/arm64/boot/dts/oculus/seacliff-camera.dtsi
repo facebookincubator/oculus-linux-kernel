@@ -37,12 +37,13 @@
 &pm8150_l10 {
 	/* Esker power */
 	qcom,init-voltage = <2960000>;
+	regulator-min-microvolt = <2960000>;
+	regulator-max-microvolt = <2960000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
 &pm8150_l13 {
 	/* FPGA power */
-	regulator-always-on;
 	regulator-min-microvolt = <2500000>;
 	regulator-max-microvolt = <2500000>;
 	qcom,init-voltage = <2500000>;

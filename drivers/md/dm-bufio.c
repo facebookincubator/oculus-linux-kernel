@@ -167,11 +167,6 @@ static void dm_bufio_lock(struct dm_bufio_client *c)
 	mutex_lock_nested(&c->lock, dm_bufio_in_request());
 }
 
-static int dm_bufio_trylock(struct dm_bufio_client *c)
-{
-	return mutex_trylock(&c->lock);
-}
-
 static void dm_bufio_unlock(struct dm_bufio_client *c)
 {
 	mutex_unlock(&c->lock);

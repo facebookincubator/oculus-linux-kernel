@@ -2523,7 +2523,7 @@ show_country(struct dhd_info *dev, char *buf)
 	ret = wldev_iovar_getbuf(dev->rx_napi_netdev, "country", NULL, 0,
 				   &cspec, sizeof(cspec), NULL);
 	if (ret) {
-		DHD_ERROR(("%s: get country failed code %d\n", __func__,
+		DHD_ERROR(("%s: get country failed code %zd\n", __func__,
 			   ret));
 		return ret;
 	}

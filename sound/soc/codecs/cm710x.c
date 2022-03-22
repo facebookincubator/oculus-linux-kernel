@@ -935,6 +935,20 @@ static int cm710x_write_chunk_SPI(struct cm710x_codec_priv *cm710x_codec,
 	return ret;
 }
 
+static int cm710x_firmware_checksum(void *FirmwareData, u8 checksum, size_t len)
+{
+	u8  *fwData = FirmwareData;
+	u8  uSum = 0;
+	int i;
+
+	for (i = 0; i < len; i++)
+		uSum += fwData[i];
+	checksum = checksum - 1 + uSum;
+	checksum = ~checksum;
+
+	return (checksum == 0);
+}
+
 static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 		void *FirmwareData, size_t len)
 {
@@ -947,6 +961,8 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	int lSize = 0;
 	int ret = 0;
 	u32 stardsp;
+	u8  cCheckSumCodec, cCheckSumDsp;
+	u8  *fwTmp;
 
 	if ('C' != fwData[0] || 'M' != fwData[1]) {
 		ret = -EINVAL;
@@ -957,8 +973,9 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	iI2cCmdCount = fwData[2];
 	iDspBlockCount = fwData[3];
 
-	uAddr = fwData[4] | (fwData[5] << 8) | (fwData[6] << 16) |
-		(fwData[7] << 24);
+	uAddr = fwData[4] | (fwData[5] << 8);
+	cCheckSumCodec = fwData[6];
+	cCheckSumDsp = fwData[7];
 	if (uAddr != 0x08) {
 		ret = -EINVAL;
 		pr_err("%s: firmware image corrupted\n", __func__);
@@ -973,6 +990,30 @@ static int cm710x_firmware_parsing(struct cm710x_codec_priv *cm710x_codec,
 	}
 
 	fwData += uAddr;
+	if (!cm710x_firmware_checksum(fwData, cCheckSumCodec, iI2cCmdCount*4)) {
+		ret = -EINVAL;
+		pr_err("%s: firmware image dsp setting checksum failed\n",
+				__func__);
+		goto __EXIT;
+	}
+
+	fwTmp = fwData + iI2cCmdCount * 4;
+	uAddr = 0;
+	for (idx = 0; idx < iDspBlockCount; idx++) {
+		lSize = fwTmp[4] | (fwTmp[5] << 8) | (fwTmp[6] << 16) |
+			(fwTmp[7] << 24);
+		uAddr += 8 + lSize;
+		fwTmp += 8 + lSize;
+	}
+
+	if (!cm710x_firmware_checksum(fwData + iI2cCmdCount * 4,
+				cCheckSumDsp, uAddr)) {
+		ret = -EINVAL;
+		pr_err("%s: firmware image dsp code checksum failed\n",
+				__func__);
+		goto __EXIT;
+	}
+
 	lSize = cm710x_write_firmware_Codec_CMD(cm710x_codec,
 			fwData, iI2cCmdCount);
 	if (lSize < 0) {

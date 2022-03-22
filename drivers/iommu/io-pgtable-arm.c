@@ -919,6 +919,290 @@ static size_t arm_lpae_unmap(struct io_pgtable_ops *ops, unsigned long iova,
 	return unmapped;
 }
 
+static arm_lpae_iopte *__arm_lpae_fetch_iova_ptep(
+		struct arm_lpae_io_pgtable *data, unsigned long iova,
+		int lvl, arm_lpae_iopte *ptep, arm_lpae_iopte **prev_ptepp)
+{
+	arm_lpae_iopte *cptep, pte;
+	size_t split_sz = ARM_LPAE_BLOCK_SIZE(lvl, data);
+	size_t tblsz = ARM_LPAE_GRANULE(data);
+	struct io_pgtable_cfg *cfg = &data->iop.cfg;
+	void *cookie = data->iop.cookie;
+
+	/* Find our entry at the current level */
+	ptep += ARM_LPAE_LVL_IDX(iova, lvl, data);
+
+	/* We've arrived at our desired PTE pointer */
+	if (lvl == ARM_LPAE_MAX_LEVELS - 1)
+		return ptep;
+
+	/* Grab a pointer to the next level */
+	pte = READ_ONCE(*ptep);
+	if (!pte) {
+		/*
+		 * We're not at the PTE level yet but there's no table
+		 * yet that would otherwise hold our requested entry. Build
+		 * that now.
+		 */
+		cptep = __arm_lpae_alloc_pages(tblsz, GFP_ATOMIC, cfg, cookie);
+		if (!cptep)
+			return ERR_PTR(-ENOMEM);
+
+		pte = arm_lpae_install_table(cptep, ptep, 0, cfg, 0);
+		if (pte) {
+			/*
+			 * We likely raced another call installing this table.
+			 * Clean up after ourselves and try to recover below.
+			 */
+			__arm_lpae_free_pages(cptep, tblsz, cfg, cookie);
+		}
+	} else if (iopte_type(pte, lvl) == ARM_LPAE_PTE_TYPE_BLOCK) {
+		/* We need to split up the block entry here. */
+		arm_lpae_iopte blk_pte = pte;
+		arm_lpae_iopte blk_prot = iopte_prot(pte);
+		phys_addr_t blk_paddr = iopte_to_pfn(pte, data) << data->pg_shift;
+		int i = 0;
+
+		cptep = __arm_lpae_alloc_pages(tblsz, GFP_ATOMIC, cfg, cookie);
+		if (!cptep)
+			return ERR_PTR(-ENOMEM);
+
+		for (i = 0; i < tblsz / sizeof(pte); i++, blk_paddr += split_sz)
+			__arm_lpae_init_pte(data, blk_paddr, blk_prot, lvl,
+					&cptep[i], true);
+
+		pte = arm_lpae_install_table(cptep, ptep, blk_pte, cfg, i);
+		if (pte != blk_pte) {
+			/*
+			 * We likely raced another call splitting this block.
+			 * Clean up after ourselves and try to recover below.
+			 */
+			__arm_lpae_free_pages(cptep, tblsz, cfg, cookie);
+		} else
+			pte = 0;
+	} else if (!(cfg->quirks & IO_PGTABLE_QUIRK_NO_DMA) &&
+		   !(pte & ARM_LPAE_PTE_SW_SYNC)) {
+		__arm_lpae_sync_pte(ptep, cfg);
+	}
+
+	if (pte && !iopte_leaf(pte, lvl)) {
+		/* We're not at a leaf node yet, keep going. */
+		cptep = iopte_deref(pte, data);
+	} else if (pte) {
+		/* We might have raced some other fetch here? */
+		WARN_ON(!selftest_running);
+		return ERR_PTR(-EEXIST);
+	}
+
+	/* Stash the parent PTE pointer. */
+	*prev_ptepp = ptep;
+
+	/* Rinse, repeat. */
+	return __arm_lpae_fetch_iova_ptep(data, iova, lvl + 1, cptep,
+			prev_ptepp);
+}
+
+static void *arm_lpae_fetch_iova_ptep(struct io_pgtable_ops *ops,
+		dma_addr_t iova, void **pptepp)
+{
+	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data(ops);
+	arm_lpae_iopte *ptep = data->pgd, *prev_ptep = NULL;
+	int lvl = ARM_LPAE_START_LVL(data);
+
+	ptep = __arm_lpae_fetch_iova_ptep(data, iova, lvl, ptep, &prev_ptep);
+
+	/* Synchronise any PTE updates that may have occured. */
+	wmb();
+
+	/* If we hit a race condition above then retry the lookup. */
+	if (IS_ERR(ptep) && PTR_ERR(ptep) == -EEXIST)
+		return arm_lpae_fetch_iova_ptep(ops, iova, pptepp);
+
+	/* Return a pointer to the parent PTE (if requested). */
+	if (!IS_ERR(ptep) && pptepp != NULL)
+		*pptepp = prev_ptep;
+
+	return ptep;
+}
+
+static int arm_lpae_decode_ptep(struct io_pgtable_ops *ops, void *ptep,
+		struct page **pagep, int *protp)
+{
+	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data(ops);
+	arm_lpae_iopte pte;
+	unsigned long pfn;
+
+	if (IS_ERR_OR_NULL(ptep) || !pagep)
+		return -EINVAL;
+
+	pte = READ_ONCE(*(arm_lpae_iopte *)ptep);
+
+	if (!(pte & ARM_LPAE_PTE_VALID)) {
+		/* This PTE hasn't been initialized yet. Let the caller know. */
+		*pagep = ERR_PTR(-ENOENT);
+		if (protp != NULL)
+			*protp = 0;
+		return 0;
+	}
+
+	/* Conditionally decode the page protection flags. */
+	if (protp != NULL) {
+		enum io_pgtable_fmt fmt = data->iop.fmt;
+		int prot = 0;
+
+		if ((pte & ARM_LPAE_PTE_XN) == ARM_LPAE_PTE_XN)
+			prot |= IOMMU_NOEXEC;
+
+		if (fmt == ARM_64_LPAE_S1 || fmt == ARM_32_LPAE_S1) {
+			/* R/W permissions & privileged state */
+			switch (pte & (0x3 << 6)) {
+			case ARM_LPAE_PTE_AP_RO:
+				prot |= IOMMU_READ;
+				break;
+			case ARM_LPAE_PTE_AP_PRIV_RO:
+				prot |= IOMMU_PRIV | IOMMU_READ;
+				break;
+			case ARM_LPAE_PTE_AP_UNPRIV:
+				prot |= IOMMU_READ | IOMMU_WRITE;
+				break;
+			case ARM_LPAE_PTE_AP_PRIV_RW:
+			default:
+				prot |= IOMMU_PRIV | IOMMU_READ | IOMMU_WRITE;
+				break;
+			}
+
+			/* Memory attributes */
+			switch ((pte >>	ARM_LPAE_PTE_ATTRINDX_SHIFT) &
+					ARM_LPAE_PTE_ATTRINDX_MASK) {
+			case ARM_LPAE_MAIR_ATTR_IDX_LLC_NWA:
+				prot |= IOMMU_USE_LLC_NWA;
+				break;
+			case ARM_LPAE_MAIR_ATTR_IDX_UPSTREAM:
+				prot |= IOMMU_USE_UPSTREAM_HINT;
+				break;
+			case ARM_LPAE_MAIR_ATTR_IDX_CACHE:
+				prot |= IOMMU_CACHE;
+				break;
+			case ARM_LPAE_MAIR_ATTR_IDX_DEV:
+				prot |= IOMMU_MMIO;
+				break;
+			default:
+				break;
+			}
+		} else {
+			/* R/W permissions */
+			switch (pte & (0x3 << 6)) {
+			case (ARM_LPAE_PTE_HAP_READ | ARM_LPAE_PTE_HAP_WRITE):
+				prot |= IOMMU_READ | IOMMU_WRITE;
+				break;
+			case ARM_LPAE_PTE_HAP_WRITE:
+				prot |= IOMMU_WRITE;
+				break;
+			case ARM_LPAE_PTE_HAP_READ:
+				prot |= IOMMU_READ;
+				break;
+			case ARM_LPAE_PTE_HAP_FAULT:
+			default:
+				break;
+			}
+
+			/* Memory attributes */
+			switch (pte & (0xf << 2)) {
+			case ARM_LPAE_PTE_MEMATTR_OIWB:
+				prot |= IOMMU_CACHE;
+				break;
+			case ARM_LPAE_PTE_MEMATTR_DEV:
+				prot |= IOMMU_MMIO;
+				break;
+			case ARM_LPAE_PTE_MEMATTR_NC:
+			default:
+				break;
+			}
+		}
+
+		*protp = prot;
+	}
+
+	pfn = iopte_to_pfn(pte, data);
+	*pagep = pfn_valid(pfn) ? pfn_to_page(pfn) : ERR_PTR(-EINVAL);
+
+	return 0;
+}
+
+static int arm_lpae_remap_ptep(struct io_pgtable_ops *ops, void *ptep,
+		void *pptep, dma_addr_t iova, struct page *page, int iommu_prot)
+{
+	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data(ops);
+	struct io_pgtable *iop = &data->iop;
+	phys_addr_t paddr = (!IS_ERR_OR_NULL(page)) ? page_to_phys(page) : 0;
+	arm_lpae_iopte pte, prot;
+	const int lvl = ARM_LPAE_MAX_LEVELS - 1;
+
+	if (IS_ERR_OR_NULL(ptep) || IS_ERR_OR_NULL(pptep))
+		return -EINVAL;
+
+	pte = READ_ONCE(*(arm_lpae_iopte *)ptep);
+	prot = arm_lpae_prot_to_pte(data, iommu_prot);
+
+	if (!(pte & ARM_LPAE_PTE_VALID)) {
+		/*
+		 * If the PTE is invalid then we need to initialize it unless
+		 * the page we're trying to map it to is also invalid, in which
+		 * case do nothing.
+		 */
+		if (!paddr)
+			return 0;
+		else
+			return arm_lpae_init_pte(data, iova, paddr, prot, lvl,
+					ptep, pptep, true);
+	} else {
+		size_t granule = ARM_LPAE_GRANULE(data);
+
+		/*
+		 * Otherwise, use break-before-make to ensure the order of
+		 * operations is followed and we don't end up with some weird
+		 * state somewhere.
+		 */
+		__arm_lpae_set_pte(ptep, 0, &iop->cfg);
+
+		/* Make sure the write to ptep posts. */
+		wmb();
+
+		/*
+		 * If the new page is invalid or no access is requested then
+		 * unmap this PTE, free the table if it's now empty, and return.
+		 */
+		if (!paddr || !(iommu_prot & (IOMMU_READ | IOMMU_WRITE))) {
+			arm_lpae_iopte ppte;
+
+			iopte_tblcnt_sub(pptep, 1);
+			ppte = READ_ONCE(*(arm_lpae_iopte *)pptep);
+			if (!iopte_tblcnt(ppte)) {
+				__arm_lpae_set_pte(pptep, 0, &iop->cfg);
+
+				/* Make sure unmapping the table is visible. */
+				io_pgtable_tlb_add_flush(iop, iova, granule,
+						granule, false);
+				io_pgtable_tlb_sync(iop);
+
+				__arm_lpae_free_pgtable(data, lvl,
+						iopte_deref(ppte, data));
+			}
+
+			return 0;
+		}
+
+		/* Make sure unmapping the old page is visible. */
+		io_pgtable_tlb_add_flush(iop, iova, granule, granule, true);
+		io_pgtable_tlb_sync(iop);
+
+		/* Finally, map the new page in. */
+		__arm_lpae_init_pte(data, paddr, prot, lvl, ptep, true);
+	}
+
+	return 0;
+}
+
 static int arm_lpae_iova_to_pte(struct arm_lpae_io_pgtable *data,
 				unsigned long iova, int *plvl_ret,
 				arm_lpae_iopte *ptep_ret)
@@ -966,6 +1250,348 @@ static uint64_t arm_lpae_iova_get_pte(struct io_pgtable_ops *ops,
 		return pte;
 
 	return 0;
+}
+
+static inline void __skip_pte(struct arm_lpae_io_pgtable *data, int lvl,
+		dma_addr_t *iovap, unsigned long *pgoffp, int page_count)
+{
+	unsigned long pages_per_entry, pfn_offset, pages_to_skip;
+
+	pages_per_entry = ARM_LPAE_BLOCK_SIZE(lvl, data) / sizeof(arm_lpae_iopte);
+	pfn_offset = ARM_LPAE_LVL_IDX(*iovap, lvl, data);
+
+	if (unlikely(data->pg_shift != PAGE_SHIFT)) {
+		unsigned long iova_mask = (1 << ARM_LPAE_LVL_SHIFT(lvl, data)) - 1;
+
+		pfn_offset <<= data->pg_shift - PAGE_SHIFT;
+		pfn_offset += (*iovap & iova_mask) >> PAGE_SHIFT;
+	}
+
+	pages_to_skip = min_t(dma_addr_t, pages_per_entry -
+			pfn_offset, page_count - *pgoffp);
+
+	*pgoffp += pages_to_skip;
+	*iovap += pages_to_skip << PAGE_SHIFT;
+}
+
+static inline void __scan_block_pte(struct arm_lpae_io_pgtable *data,
+		arm_lpae_iopte pte, int lvl, dma_addr_t *iovap,
+		unsigned long *pgoffp, struct page **pages, int page_count)
+{
+	unsigned long pages_per_entry, iova_mask, pfn_offset, pages_to_scan, i, j = 0;
+	unsigned long blk_pfn;
+	phys_addr_t blk_paddr;
+
+	pages_per_entry = ARM_LPAE_BLOCK_SIZE(lvl, data) / sizeof(pte);
+	iova_mask = (1 << ARM_LPAE_LVL_SHIFT(lvl, data)) - 1;
+	pfn_offset = (*iovap & iova_mask) >> PAGE_SHIFT;
+
+	pages_to_scan = min_t(dma_addr_t, pages_per_entry - pfn_offset,
+			page_count - *pgoffp);
+
+	blk_paddr = iopte_to_pfn(pte, data) << data->pg_shift;
+	blk_pfn = __phys_to_pfn(blk_paddr);
+
+	*iovap += pages_to_scan << PAGE_SHIFT;
+	for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan; i++, j++)
+		pages[(*pgoffp)++] = pfn_to_page(blk_pfn + i);
+}
+
+static inline int __scan_table_pte(struct arm_lpae_io_pgtable *data,
+		arm_lpae_iopte ppte, dma_addr_t *iovap, unsigned long *pgoffp,
+		struct page **pages, int page_count)
+{
+	unsigned long pages_per_entry, pfn_offset, pages_to_scan, i, j = 0;
+	arm_lpae_iopte pte, *ptep;
+	phys_addr_t phys;
+
+	ptep = iopte_deref(ppte, data);
+	if (!ptep)
+		return -EINVAL;
+
+	pages_per_entry = ARM_LPAE_GRANULE(data) / sizeof(pte);
+	pfn_offset = ARM_LPAE_LVL_IDX(*iovap, ARM_LPAE_MAX_LEVELS - 1, data);
+
+	if (likely(data->pg_shift == PAGE_SHIFT)) {
+		/*
+		 * Fast path for when IOMMU pages and kernel pages are the same
+		 * size, in which case we don't have to worry about checking the
+		 * PTE table index for each page.
+		 */
+		pages_to_scan = min_t(dma_addr_t, pages_per_entry - pfn_offset,
+			page_count - *pgoffp);
+
+		*iovap += pages_to_scan << PAGE_SHIFT;
+		for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;
+				i++, j++, (*pgoffp)++) {
+			pte = *(ptep + i);
+			if (!(pte & ARM_LPAE_PTE_VALID))
+				continue;
+
+			phys = (phys_addr_t)iopte_to_pfn(pte, data)
+					<< data->pg_shift;
+			pages[*pgoffp] = phys_to_page(phys);
+		}
+	} else {
+		/*
+		 * If IOMMU pages are not the same size as kernel pages then we
+		 * have to do some extra work to account for this discrepancy by
+		 * recalculating the PTE table index for each kernel page and
+		 * then add back in the IOVA offset from the PTE's base address.
+		 */
+		const unsigned long iova_mask = (1 << ARM_LPAE_GRANULE(data)) - 1;
+
+		pfn_offset <<= data->pg_shift - PAGE_SHIFT;
+		pfn_offset += (*iovap & iova_mask) >> PAGE_SHIFT;
+
+		pages_to_scan = min_t(dma_addr_t, pages_per_entry - pfn_offset,
+			page_count - *pgoffp);
+
+		for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;
+				i++, j++, (*pgoffp)++, *iovap += PAGE_SIZE) {
+			pte = *(ptep + ARM_LPAE_LVL_IDX(*iovap,
+					ARM_LPAE_MAX_LEVELS - 1, data));
+			if (!(pte & ARM_LPAE_PTE_VALID))
+				continue;
+
+			phys = ((phys_addr_t)iopte_to_pfn(pte, data)
+					<< data->pg_shift) | (*iovap & iova_mask);
+			pages[*pgoffp] = phys_to_page(phys);
+		}
+	}
+
+	return 0;
+}
+
+static int __arm_lpae_find_mapped_page_range(struct arm_lpae_io_pgtable *data,
+		arm_lpae_iopte *ptep, int lvl, dma_addr_t *iovap,
+		unsigned long *pgoffp, struct page **pages, int page_count)
+{
+	const unsigned long max_entries = ARM_LPAE_GRANULE(data) / sizeof(*ptep);
+	arm_lpae_iopte pte;
+	unsigned long i;
+
+	if (!ptep)
+		return -EINVAL;
+
+	for (i = ARM_LPAE_LVL_IDX(*iovap, lvl, data); i < max_entries &&
+			*pgoffp < page_count; i++) {
+		int ret = 0;
+
+		/* Grab the IOPTE we're interested in. */
+		pte = *(ptep + i);
+
+		if (!(pte & ARM_LPAE_PTE_VALID)) {
+			/*
+			 * If there's no valid PTE installed that covers this
+			 * address range then skip the pages that would have
+			 * been under it and move on.
+			 */
+			__skip_pte(data, lvl + 1, iovap, pgoffp, page_count);
+		} else if (iopte_type(pte, lvl) == ARM_LPAE_PTE_TYPE_BLOCK) {
+			/*
+			 * Block entries map to large, contiguous blocks of
+			 * pages, so this is the most straightforward case to
+			 * handle.
+			 */
+			__scan_block_pte(data, pte, lvl + 1, iovap, pgoffp,
+					pages, page_count);
+		} else if (lvl == ARM_LPAE_MAX_LEVELS - 2) {
+			/*
+			 * We've reached the last level of tables. Dereference
+			 * the PTE and scan out the pages we're looking for.
+			 */
+			ret = __scan_table_pte(data, pte, iovap, pgoffp, pages,
+					page_count);
+		} else {
+			/* We're not at leaf nodes yet, so keep going deeper. */
+			ret = __arm_lpae_find_mapped_page_range(data,
+					iopte_deref(pte, data), lvl + 1, iovap,
+					pgoffp, pages, page_count);
+		}
+
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int arm_lpae_find_mapped_page_range(struct io_pgtable_ops *ops,
+		dma_addr_t addr, struct page **pages, int page_count)
+{
+	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data(ops);
+	arm_lpae_iopte *ptep = data->pgd;
+	dma_addr_t iova = addr & PAGE_MASK;
+	unsigned long pgoff = 0;
+	int lvl = ARM_LPAE_START_LVL(data);
+
+	return __arm_lpae_find_mapped_page_range(data, ptep, lvl, &iova, &pgoff,
+			pages, page_count);
+}
+
+static inline void __list_block_pte(struct arm_lpae_io_pgtable *data,
+		arm_lpae_iopte pte, int lvl, dma_addr_t *iovap,
+		unsigned long *pgoffp, struct list_head *page_list,
+		int page_count)
+{
+	unsigned long pages_per_entry, iova_mask, pfn_offset, pages_to_scan, i, j = 0;
+	unsigned long blk_pfn;
+	phys_addr_t blk_paddr;
+
+	pages_per_entry = ARM_LPAE_BLOCK_SIZE(lvl, data) / sizeof(pte);
+	iova_mask = (1 << ARM_LPAE_LVL_SHIFT(lvl, data)) - 1;
+	pfn_offset = (*iovap & iova_mask) >> PAGE_SHIFT;
+
+	pages_to_scan = min_t(dma_addr_t, pages_per_entry - pfn_offset,
+			page_count - *pgoffp);
+
+	blk_paddr = iopte_to_pfn(pte, data) << data->pg_shift;
+	blk_pfn = __phys_to_pfn(blk_paddr);
+
+	for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;) {
+		struct page *page = pfn_to_page(blk_pfn + i);
+		const unsigned long order = compound_order(page);
+		const unsigned long compound_pages = 1 << order;
+
+		list_add_tail(&page->lru, page_list);
+		page->index = *pgoffp;
+
+		*iovap += PAGE_SIZE << order;
+		*pgoffp += compound_pages;
+		i += compound_pages;
+		j += compound_pages;
+	}
+}
+
+static inline int __list_table_pte(struct arm_lpae_io_pgtable *data,
+		arm_lpae_iopte ppte, dma_addr_t *iovap, unsigned long *pgoffp,
+		struct list_head *page_list, int page_count)
+{
+	unsigned long pages_per_entry, pfn_offset, pages_to_scan, i, j = 0;
+	arm_lpae_iopte pte, *ptep;
+	phys_addr_t phys;
+
+	ptep = iopte_deref(ppte, data);
+	if (!ptep)
+		return -EINVAL;
+
+	pages_per_entry = ARM_LPAE_GRANULE(data) / sizeof(pte);
+	pfn_offset = ARM_LPAE_LVL_IDX(*iovap, ARM_LPAE_MAX_LEVELS - 1, data);
+
+	/*
+	 * Fast path for when IOMMU pages and kernel pages are the same
+	 * size, in which case we don't have to worry about checking the
+	 * PTE table index for each page.
+	 */
+	pages_to_scan = min_t(dma_addr_t, pages_per_entry - pfn_offset,
+			page_count - *pgoffp);
+
+	for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;) {
+		struct page *page;
+		unsigned long order;
+		unsigned long compound_pages;
+
+		pte = *(ptep + i);
+		if (!(pte & ARM_LPAE_PTE_VALID)) {
+			*iovap += PAGE_SIZE;
+			(*pgoffp)++;
+			i++;
+			j++;
+			continue;
+		}
+
+		phys = (phys_addr_t)iopte_to_pfn(pte, data)
+				<< data->pg_shift;
+		page = phys_to_page(phys);
+		order = compound_order(page);
+		compound_pages = 1 << order;
+
+		list_add_tail(&page->lru, page_list);
+		page->index = *pgoffp;
+
+		*iovap += PAGE_SIZE << order;
+		*pgoffp += compound_pages;
+		i += compound_pages;
+		j += compound_pages;
+	}
+
+	return 0;
+}
+
+static int __arm_lpae_get_backing_pages(struct arm_lpae_io_pgtable *data,
+		arm_lpae_iopte *ptep, int lvl, dma_addr_t *iovap,
+		unsigned long *pgoffp, struct list_head *page_list,
+		int page_count)
+{
+	const unsigned long max_entries = ARM_LPAE_GRANULE(data) / sizeof(*ptep);
+	arm_lpae_iopte pte;
+	unsigned long i;
+
+	if (!ptep)
+		return -EINVAL;
+
+	for (i = ARM_LPAE_LVL_IDX(*iovap, lvl, data); i < max_entries &&
+			*pgoffp < page_count; i++) {
+		int ret = 0;
+
+		/* Grab the IOPTE we're interested in. */
+		pte = *(ptep + i);
+
+		if (!(pte & ARM_LPAE_PTE_VALID)) {
+			/*
+			 * If there's no valid PTE installed that covers this
+			 * address range then skip the pages that would have
+			 * been under it and move on.
+			 */
+			__skip_pte(data, lvl + 1, iovap, pgoffp, page_count);
+		} else if (iopte_type(pte, lvl) == ARM_LPAE_PTE_TYPE_BLOCK) {
+			/*
+			 * Block entries map to large, contiguous blocks of
+			 * pages, so this is the most straightforward case to
+			 * handle.
+			 */
+			__list_block_pte(data, pte, lvl + 1, iovap, pgoffp,
+					page_list, page_count);
+		} else if (lvl == ARM_LPAE_MAX_LEVELS - 2) {
+			/*
+			 * We've reached the last level of tables. Dereference
+			 * the PTE and scan out the pages we're looking for.
+			 */
+			ret = __list_table_pte(data, pte, iovap, pgoffp,
+					page_list, page_count);
+		} else {
+			/* We're not at leaf nodes yet, so keep going deeper. */
+			ret = __arm_lpae_get_backing_pages(data,
+					iopte_deref(pte, data), lvl + 1, iovap,
+					pgoffp, page_list, page_count);
+		}
+
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int arm_lpae_get_backing_pages(struct io_pgtable_ops *ops,
+		dma_addr_t addr, struct list_head *page_list, int page_count)
+{
+	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data(ops);
+	arm_lpae_iopte *ptep = data->pgd;
+	dma_addr_t iova = addr & PAGE_MASK;
+	unsigned long pgoff = 0;
+	int lvl = ARM_LPAE_START_LVL(data);
+
+	/*
+	 * Dealing with IOMMU pages being differently sized than CPU pages is
+	 * really messy when it comes to sticking them onto a list, so panic if
+	 * we hit this. Maybe we can revisit this later?
+	 */
+	BUG_ON(data->pg_shift != PAGE_SHIFT);
+
+	return __arm_lpae_get_backing_pages(data, ptep, lvl, &iova, &pgoff,
+			page_list, page_count);
 }
 
 static phys_addr_t arm_lpae_iova_to_phys(struct io_pgtable_ops *ops,
@@ -1098,7 +1724,12 @@ arm_lpae_alloc_pgtable(struct io_pgtable_cfg *cfg)
 		.unmap		= arm_lpae_unmap,
 		.iova_to_phys	= arm_lpae_iova_to_phys,
 		.is_iova_coherent = arm_lpae_is_iova_coherent,
+		.fetch_iova_ptep = arm_lpae_fetch_iova_ptep,
+		.decode_ptep	= arm_lpae_decode_ptep,
+		.remap_ptep	= arm_lpae_remap_ptep,
 		.iova_to_pte	= arm_lpae_iova_get_pte,
+		.find_mapped_page_range	= arm_lpae_find_mapped_page_range,
+		.get_backing_pages = arm_lpae_get_backing_pages,
 	};
 
 	return data;

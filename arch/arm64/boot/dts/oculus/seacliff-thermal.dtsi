@@ -26,10 +26,10 @@
 		io-channel-names = "pcb1_therm";
 
 		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "imu-usr", "pogo-usr";
+				"smb-usr", "pogo-usr";
 
-		thermal-zone-coefficients = <633 255 304 (-376) 537 2302>;
-		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
+		thermal-zone-coefficients = <633 255 304 (-376) 2302>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 1500>;
 
 		io-coefficients = <775>;
 		io-slope-coefficients = <(-15500)>;
@@ -49,10 +49,10 @@
 		io-channel-names = "pcb1_therm";
 
 		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "ddr-usr", "imu-usr", "pogo-usr";
+				"smb-usr", "ddr-usr", "pogo-usr";
 
-		thermal-zone-coefficients = <935 633 760 (-566) 612 776 2527>;
-		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
+		thermal-zone-coefficients = <935 633 760 (-566) 612 2527>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
 
 		io-coefficients = <1077>;
 		io-slope-coefficients = <(-15500)>;
@@ -70,9 +70,9 @@
 		io-channel-names = "pcb1_therm";
 
 		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "ddr-usr", "imu-usr", "pogo-usr";
+				"smb-usr", "ddr-usr", "pogo-usr";
 
-		thermal-zone-coefficients = <978 631 810 (-591) 628 830 2722>;
+		thermal-zone-coefficients = <978 631 810 (-591) 628 2722>;
 		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
 
 		io-coefficients = <1174>;

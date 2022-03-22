@@ -639,6 +639,9 @@ int dsi_conn_set_info_blob(struct drm_connector *connector,
 	case DSI_BACKLIGHT_JDI:
 		sde_kms_info_add_keystr(info, "backlight type", "jdi");
 		break;
+	case DSI_BACKLIGHT_JDI_NVT:
+		sde_kms_info_add_keystr(info, "backlight type", "jdi_nvt");
+		break;
 	case DSI_BACKLIGHT_DCS:
 		sde_kms_info_add_keystr(info, "backlight type", "dcs");
 		break;

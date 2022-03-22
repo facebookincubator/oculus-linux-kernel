@@ -13,7 +13,7 @@
 
 &cam_cci0 {
 	qcom,cam-sensor0 {
-		/delete-property/ cam_vdig-supply;
+		cam_vdig-supply = <>;
 		rgltr-min-voltage = <2960000 1800000 0>;
 		rgltr-max-voltage = <2960000 1800000 0>;
 		rgltr-load-current = <80000 120000 0>;
@@ -22,7 +22,7 @@
 	};
 
 	qcom,cam-sensor1 {
-		/delete-property/ cam_vdig-supply;
+		cam_vdig-supply = <>;
 		rgltr-min-voltage = <2960000 1800000 0>;
 		rgltr-max-voltage = <2960000 1800000 0>;
 		rgltr-load-current = <80000 120000 0>;
@@ -31,7 +31,7 @@
 	};
 
 	qcom,cam-sensor4 {
-		/delete-property/ cam_vdig-supply;
+		cam_vdig-supply = <>;
 		rgltr-min-voltage = <2960000 1800000 0>;
 		rgltr-max-voltage = <2960000 1800000 0>;
 		rgltr-load-current = <80000 120000 0>;

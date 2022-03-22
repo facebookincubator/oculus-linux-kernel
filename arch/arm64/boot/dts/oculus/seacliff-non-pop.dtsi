@@ -235,6 +235,8 @@
 	qcom,linearize-soc;
 	qcom,five-pin-battery;
 	qcom,cl-wt-enable;
+	qcom,soc-scale-mode-en;
+	qcom,soc-scale-vbatt-mv = <3500>;
 	/* ESR fast calibration */
 	qcom,fg-esr-timer-chg-fast = <0 7>;
 	qcom,fg-esr-timer-dischg-fast = <0 7>;
@@ -409,7 +411,6 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
-		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
 		oculus,syncboss-boots-to-shutdown-state;
 
@@ -419,6 +420,7 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
+			oculus,pin-reset = <&tlmm 5 0>;
 			oculus,swd-clk = <&tlmm 119 0>;
 			oculus,swd-io = <&tlmm 120 0>;
 
@@ -628,6 +630,14 @@
 		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
 		pinctrl-names = "default";
 		pinctrl-0 = <&cypd3177_irq_default>;
+
+		cypd3177,custom-sink-caps = <5000 2200>, /* 5V @ 2.2A */
+		<5000 2600>, /* 5V @ 2.6A */
+		<9000 1600>, /* 9V @ 1.6A */
+		<9000 1900>, /* 9V @ 1.9A */
+		<9000 2100>, /* 9V @ 2.1A */
+		<9000 2400>, /* 9V @ 2.4A */
+		<9000 2900>; /* 9V @ 2.9A */
 	};
 };
 
@@ -829,8 +839,7 @@
 		config {
 			pins = "gpio5";
 			drive-strength = <6>;
-			// Active-low logic to reset, so hold high by default
-			output-high;
+			output-low;
 		};
 	};
 

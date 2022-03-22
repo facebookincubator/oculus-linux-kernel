@@ -35,8 +35,7 @@
 		config {
 			pins = "gpio5";
 			drive-strength = <6>;
-			// Active-low logic to reset, so hold high by default
-			output-high;
+			output-low;
 		};
 	};
 
@@ -125,7 +124,6 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
-		oculus,syncboss-use-streaming-wakelock;
 		oculus,transaction-length = <248>;
 
 		swd@0 {
@@ -134,6 +132,7 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
+			oculus,pin-reset = <&tlmm 5 0>;
 			oculus,swd-clk = <&tlmm 52 0>;
 			oculus,swd-io = <&tlmm 53 0>;
 

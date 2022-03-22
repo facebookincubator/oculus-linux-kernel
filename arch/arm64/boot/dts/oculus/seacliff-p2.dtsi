@@ -467,6 +467,14 @@
 		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
 		pinctrl-names = "default";
 		pinctrl-0 = <&cypd3177_irq_default>;
+
+		cypd3177,custom-sink-caps = <5000 2200>, /* 5V @ 2.2A */
+		<5000 2600>, /* 5V @ 2.6A */
+		<9000 1600>, /* 9V @ 1.6A */
+		<9000 1900>, /* 9V @ 1.9A */
+		<9000 2100>, /* 9V @ 2.1A */
+		<9000 2400>, /* 9V @ 2.4A */
+		<9000 2900>; /* 9V @ 2.9A */
 	};
 };
 

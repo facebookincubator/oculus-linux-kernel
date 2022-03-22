@@ -9610,11 +9610,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #ifdef CUSTOMER_HW4_DEBUG
 	dhd->pub.memdump_enabled = DUMP_DISABLED;
 #elif defined(OEM_ANDROID)
-#if defined(DHD_COREDUMP) || defined(XRAPI_COMMON)
+#if defined(DHD_COREDUMP) || defined(DUMP_MEM)
 	dhd->pub.memdump_enabled = DUMP_MEMFILE;
 #else
 	dhd->pub.memdump_enabled = DUMP_MEMFILE_BUGON;
-#endif /* DHD_COREDUMP || XRAPI_COMMON */
+#endif /* DHD_COREDUMP || DUMP_MEM */
 #else
 	dhd->pub.memdump_enabled = DUMP_MEMFILE;
 #endif /* CUSTOMER_HW4_DEBUG */

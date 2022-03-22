@@ -217,8 +217,10 @@ static int print_mem_entry(void *data, void *ptr)
 			atomic_long_read(&m->mapsize),
 			egl_surface_count, egl_image_count);
 
+#if IS_ENABLED(CONFIG_QCOM_KGSL_ENTRY_METADATA)
 	if (entry->metadata)
 		seq_printf(s, " %s", entry->metadata);
+#endif
 
 	seq_putc(s, '\n');
 
@@ -339,6 +341,210 @@ static const struct file_operations process_mem_fops = {
 	.release = process_mem_release,
 };
 
+static int print_mem_entry_page(struct seq_file *s, void *ptr)
+{
+	struct kgsl_mem_entry *entry = s->private;
+	struct page *page;
+	const size_t page_index = *(loff_t *)ptr - 1;
+	const size_t offset = page_index << PAGE_SHIFT;
+	void *kptr, *buf;
+
+	const size_t rowsize = 32;
+	size_t linelen = rowsize;
+	size_t remaining = PAGE_SIZE;
+	size_t i;
+
+	unsigned char linebuf[32 * 3 + 2 + 32 + 1];
+
+	/* Skip unallocated pages. */
+	page = kgsl_mmu_find_mapped_page(&entry->memdesc, offset);
+	if (IS_ERR_OR_NULL(page))
+		return 0;
+
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
+		return 0;
+
+	kptr = vm_map_ram(&page, 1, -1, kgsl_pgprot_modify(&entry->memdesc,
+			PAGE_KERNEL_RO));
+	if (!kptr)
+		goto no_mapping;
+
+	memcpy(buf, kptr, PAGE_SIZE);
+	vm_unmap_ram(kptr, 1);
+
+	for (i = 0; i < PAGE_SIZE; i += rowsize) {
+		const size_t page_offset = offset + i + (kptr_restrict < 2 ?
+				entry->memdesc.gpuaddr : 0);
+
+		linelen = min(remaining, rowsize);
+		remaining -= rowsize;
+
+		hex_dump_to_buffer(buf + i, linelen, rowsize, 4,
+				linebuf, sizeof(linebuf), true);
+
+		seq_printf(s, "%016llx: %s\n", page_offset, linebuf);
+	}
+
+no_mapping:
+	kfree(buf);
+
+	return 0;
+}
+
+static void *mem_entry_seq_start(struct seq_file *s, loff_t *pos)
+{
+	struct kgsl_mem_entry *entry = s->private;
+
+	if (*pos == 0)
+		return SEQ_START_TOKEN;
+	else
+		return (*pos <= (entry->memdesc.size >> PAGE_SHIFT)) ? pos : NULL;
+}
+
+static void *mem_entry_seq_next(struct seq_file *s, void *ptr, loff_t *pos)
+{
+	struct kgsl_mem_entry *entry = s->private;
+
+	++(*pos);
+	return (*pos <= (entry->memdesc.size >> PAGE_SHIFT)) ? pos : NULL;
+}
+
+static int mem_entry_seq_show(struct seq_file *s, void *ptr)
+{
+	if (ptr == SEQ_START_TOKEN)
+		return print_mem_entry(s, s->private);
+	else
+		return print_mem_entry_page(s, ptr);
+}
+
+static void mem_entry_seq_stop(struct seq_file *s, void *ptr)
+{
+}
+
+static const struct seq_operations mem_entry_seq_ops = {
+	.start = mem_entry_seq_start,
+	.next = mem_entry_seq_next,
+	.show = mem_entry_seq_show,
+	.stop = mem_entry_seq_stop,
+};
+
+static int mem_entry_open(struct inode *inode, struct file *file)
+{
+	struct kgsl_process_private *private;
+	struct seq_file *s;
+	struct task_struct *task;
+	pid_t pid = (pid_t) (unsigned long) inode->i_private;
+	int ret = -ENODEV;
+	bool may_access;
+
+	private = kgsl_process_private_find(pid);
+	if (!private)
+		return ret;
+
+	/*
+	 * First check if the dump request is coming from the process itself
+	 * or from a privileged process (like root).
+	 */
+	task = get_pid_task(private->pid, PIDTYPE_PID);
+	if (!task) {
+		ret = -ENODEV;
+		goto err;
+	}
+
+	may_access = ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS);
+	put_task_struct(task);
+	if (!may_access) {
+		ret = -EACCES;
+		goto err;
+	}
+
+	if ((file->f_mode & (FMODE_READ | FMODE_WRITE)) ==
+			(FMODE_READ | FMODE_WRITE)) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	ret = seq_open(file, &mem_entry_seq_ops);
+	if (ret < 0)
+		goto err;
+
+	s = file->private_data;
+
+	if (file->f_mode & FMODE_WRITE)
+		s->private = private;
+	else if (file->f_mode & FMODE_READ) {
+		struct kgsl_mem_entry *entry;
+		const uint64_t blocked_flags = KGSL_MEMFLAGS_USERMEM_MASK |
+			KGSL_MEMFLAGS_SECURE;
+
+		entry = kgsl_sharedmem_find_id(private, private->dump_id);
+		if (IS_ERR_OR_NULL(entry)) {
+			ret = -ENOENT;
+			goto err;
+		}
+
+		if (!(entry->memdesc.priv & KGSL_MEMDESC_MAPPED) ||
+				(entry->memdesc.flags & blocked_flags)) {
+			kgsl_mem_entry_put(entry);
+			ret = -EINVAL;
+			goto err;
+		}
+
+		s->private = entry;
+	}
+
+	return ret;
+
+err:
+	kgsl_process_private_put(private);
+	return ret;
+}
+
+static ssize_t mem_entry_write(struct file *file, const char __user *ubuf,
+		size_t count, loff_t *ppos)
+{
+	struct seq_file *s = file->private_data;
+	struct kgsl_process_private *private = s->private;
+	long result, ret;
+
+	ret = kstrtol_from_user(ubuf, count, 10, &result);
+	if (ret)
+		return ret;
+
+	private->dump_id = result;
+
+	return count;
+}
+
+static int mem_entry_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *s = file->private_data;
+	struct kgsl_process_private *private = NULL;
+
+	if (file->f_mode & FMODE_WRITE)
+		private = s->private;
+	else if (file->f_mode & FMODE_READ) {
+		struct kgsl_mem_entry *entry = s->private;
+
+		private = entry->priv;
+		kgsl_mem_entry_put(entry);
+	}
+
+	if (private)
+		kgsl_process_private_put(private);
+
+	return seq_release(inode, file);
+}
+
+static const struct file_operations mem_entry_fops = {
+	.open = mem_entry_open,
+	.read = seq_read,
+	.write = mem_entry_write,
+	.llseek = seq_lseek,
+	.release = mem_entry_release,
+};
+
 /**
  * kgsl_process_init_debugfs() - Initialize debugfs for a process
  * @private: Pointer to process private structure created for the process
@@ -379,193 +585,14 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 	if (IS_ERR_OR_NULL(dentry))
 		WARN((dentry == NULL),
 			"Unable to create 'mem' file for %s\n", name);
-}
 
-static int print_mem_entry_page(struct seq_file *s, void *ptr)
-{
-	struct kgsl_mem_entry *entry = s->private;
-	struct page *page;
-	const size_t page_index = *(loff_t *)ptr - 1;
-	const size_t offset = page_index << PAGE_SHIFT;
-	void *kptr, *buf;
+	dentry = debugfs_create_file("dump", 0666, private->debug_root,
+		(void *) ((unsigned long) pid_nr(private->pid)),
+		&mem_entry_fops);
 
-	const size_t rowsize = 32;
-	size_t linelen = rowsize;
-	size_t remaining = PAGE_SIZE;
-	size_t i;
-
-	unsigned char linebuf[32 * 3 + 2 + 32 + 1];
-
-	/* Skip unallocated pages. */
-	page = kgsl_mmu_find_mapped_page(&entry->memdesc, offset);
-	if (IS_ERR_OR_NULL(page) || page == ZERO_PAGE(0))
-		return 0;
-
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf)
-		return 0;
-
-	kptr = vm_map_ram(&page, 1, -1, kgsl_pgprot_modify(&entry->memdesc,
-			PAGE_KERNEL_RO));
-	if (!kptr)
-		goto no_mapping;
-
-	memcpy(buf, kptr, PAGE_SIZE);
-	vm_unmap_ram(kptr, 1);
-
-	for (i = 0; i < PAGE_SIZE; i += rowsize) {
-		const size_t page_offset = offset + i + (kptr_restrict < 2 ?
-				entry->memdesc.gpuaddr : 0);
-
-		linelen = min(remaining, rowsize);
-		remaining -= rowsize;
-
-		hex_dump_to_buffer(buf + i, linelen, rowsize, 4,
-				linebuf, sizeof(linebuf), true);
-
-		seq_printf(s, "%016llx: %s\n", page_offset, linebuf);
-	}
-
-no_mapping:
-	kfree(buf);
-
-	return 0;
-}
-
-static void *mem_entry_seq_start(struct seq_file *s, loff_t *pos)
-{
-	struct kgsl_mem_entry *entry = s->private;
-	struct task_struct *task = get_pid_task(entry->priv->pid, PIDTYPE_PID);
-	bool may_access;
-
-	/*
-	 * First check if the dump request is coming from the process itself
-	 * or from a privileged process (like root).
-	 */
-	if (!task)
-		return NULL;
-
-	may_access = ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS);
-	put_task_struct(task);
-
-	if (!may_access)
-		return ERR_PTR(-EACCES);
-
-	/*
-	 * If the entry is being freed, has not been mapped yet, or we fail to
-	 * grab a ref bail out here.
-	 */
-	if (entry->pending_free || !(entry->memdesc.priv & KGSL_MEMDESC_MAPPED) ||
-			kgsl_mem_entry_get(entry) == 0)
-		return NULL;
-
-	if (*pos == 0)
-		return SEQ_START_TOKEN;
-	else
-		return (*pos <= (entry->memdesc.size >> PAGE_SHIFT)) ? pos : NULL;
-}
-
-static void *mem_entry_seq_next(struct seq_file *s, void *ptr, loff_t *pos)
-{
-	struct kgsl_mem_entry *entry = s->private;
-
-	++(*pos);
-	return (*pos <= (entry->memdesc.size >> PAGE_SHIFT)) ? pos : NULL;
-}
-
-static int mem_entry_seq_show(struct seq_file *s, void *ptr)
-{
-	if (ptr == SEQ_START_TOKEN)
-		return print_mem_entry(s, s->private);
-	else
-		return print_mem_entry_page(s, ptr);
-}
-
-static void mem_entry_seq_stop(struct seq_file *s, void *ptr)
-{
-	struct kgsl_mem_entry *entry = s->private;
-
-	kgsl_mem_entry_put_deferred(entry);
-}
-
-static const struct seq_operations mem_entry_seq_ops = {
-	.start = mem_entry_seq_start,
-	.next = mem_entry_seq_next,
-	.show = mem_entry_seq_show,
-	.stop = mem_entry_seq_stop,
-};
-
-static int mem_entry_open(struct inode *inode, struct file *file)
-{
-	const struct seq_operations *seq_ops = &mem_entry_seq_ops;
-	struct kgsl_mem_entry *entry = inode->i_private;
-	struct seq_file *m;
-	int ret;
-
-	ret = seq_open(file, seq_ops);
-	if (ret < 0)
-		return ret;
-	m = file->private_data;
-	m->private = entry;
-
-	return ret;
-}
-
-static const struct file_operations mem_entry_fops = {
-	.open = mem_entry_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = seq_release,
-};
-
-void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry)
-{
-	struct dentry *dentry;
-	unsigned char name[16];
-
-	/* Don't bother making debugfs entries for memory with these flags */
-	const uint64_t blocked_flags = KGSL_MEMFLAGS_USERMEM_MASK |
-			KGSL_MEMFLAGS_SECURE;
-
-	if (IS_ERR_OR_NULL(entry->priv->debug_root) ||
-			(entry->memdesc.flags & blocked_flags))
-		return;
-
-	snprintf(name, sizeof(name), "%d", entry->id);
-
-	dentry = debugfs_create_file(name, 0444, entry->priv->debug_root,
-						entry, &mem_entry_fops);
-	if (IS_ERR_OR_NULL(dentry)) {
+	if (IS_ERR_OR_NULL(dentry))
 		WARN((dentry == NULL),
-			"Unable to create mem entry file for %d:%s\n",
-			pid_nr(entry->priv->pid), name);
-		entry->dentry_id = 0;
-		return;
-	}
-
-	idr_preload(GFP_KERNEL);
-	spin_lock(&entry->priv->mem_lock);
-	entry->dentry_id = idr_alloc(&entry->priv->dentry_idr, dentry, 1, 0,
-			GFP_NOWAIT);
-	spin_unlock(&entry->priv->mem_lock);
-	idr_preload_end();
-}
-
-void kgsl_process_destroy_mem_entry_debugfs(struct kgsl_mem_entry *entry)
-{
-	struct dentry *dentry;
-
-	if (IS_ERR_OR_NULL(entry->priv->debug_root) || entry->dentry_id == 0)
-		return;
-
-	spin_lock(&entry->priv->mem_lock);
-	dentry = idr_find(&entry->priv->dentry_idr, entry->dentry_id);
-	idr_remove(&entry->priv->dentry_idr, entry->dentry_id);
-	entry->dentry_id = 0;
-	spin_unlock(&entry->priv->mem_lock);
-
-	if (!IS_ERR_OR_NULL(dentry))
-		debugfs_remove(dentry);
+			"Unable to create 'dump' file for %s\n", name);
 }
 
 void kgsl_core_debugfs_init(void)
