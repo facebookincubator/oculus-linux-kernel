@@ -984,8 +984,7 @@
 			config {
 				pins = "gpio126";
 				drive-strength = <6>;
-				// Active-low logic to reset, so hold high by default
-				output-high;
+				output-low;
 			};
 		};
 
@@ -1064,14 +1063,13 @@
 		oculus,mag-core-supply = <&pm8998_l28>;
 		oculus,mag-core-voltage-level = <1808000 1808000>;
 
-		oculus,syncboss-use-streaming-wakelock;
-
 		swd@0 {
 			compatible = "oculus,swd";
 
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
+			oculus,pin-reset = <&tlmm 126 0>;
 			oculus,swd-clk = <&tlmm 58 0>;
 			oculus,swd-io = <&tlmm 59 0>;
 

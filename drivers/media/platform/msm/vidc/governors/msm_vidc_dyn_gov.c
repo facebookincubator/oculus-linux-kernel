@@ -279,7 +279,7 @@ static unsigned long __calculate_vmem_plus_ab(struct vidc_bus_vote_data *d)
 {
 	unsigned long i = 0, vmem_plus = 0;
 
-	if (!d->imem_ab_tbl || !d->imem_ab_tbl_size) {
+	if (!virt_addr_valid(d->imem_ab_tbl) || !d->imem_ab_tbl_size) {
 		vmem_plus = 1; /* Vote for the min ab value */
 		goto exit;
 	}

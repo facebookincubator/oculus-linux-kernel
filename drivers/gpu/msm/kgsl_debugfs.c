@@ -163,13 +163,9 @@ static int print_mem_entry(void *data, void *ptr)
 		kgsl_get_egl_counts(entry, &egl_surface_count,
 						&egl_image_count, &total_count);
 
-	seq_printf(s, "%pK %d %16llu %5d %9s %10s %16s %5d %16d %6d %6d",
+	seq_printf(s, "%pK %16llu %16llu %5d %9s %10s %16s %5d %16d %6d %6d",
 			(uint64_t *)(uintptr_t) m->gpuaddr,
-			/*
-			 * Show zero for the useraddr - we can't reliably track
-			 * that value for multiple vmas anyway
-			 */
-			0, m->size, entry->id, flags,
+			m->size, m->size, entry->id, flags,
 			memtype_str(usermem_type),
 			usage, (m->sgt ? m->sgt->nents : 0),
 			atomic_read(&entry->map_count),
@@ -244,7 +240,7 @@ static int process_mem_seq_show(struct seq_file *s, void *ptr)
 {
 	if (ptr == SEQ_START_TOKEN) {
 		seq_printf(s, "%16s %16s %16s %5s %9s %10s %16s %5s %16s %6s %6s\n",
-			"gpuaddr", "useraddr", "size", "id", "flags", "type",
+			"gpuaddr", "virtsize", "physsize", "id", "flags", "type",
 			"usage", "sglen", "mapcount", "eglsrf", "eglimg");
 		return 0;
 	} else

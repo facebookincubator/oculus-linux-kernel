@@ -458,7 +458,7 @@ static int __init display_virtual_sensor_init(void)
 	pr_debug("%s: Initializing\n", __func__);
 	return platform_driver_register(&virtual_sensor_driver);
 }
-subsys_initcall(display_virtual_sensor_init);
+late_initcall(display_virtual_sensor_init);
 
 static void __exit display_virtual_sensor_deinit(void)
 {

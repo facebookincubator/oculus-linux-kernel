@@ -21,6 +21,7 @@
 #include <linux/cpufreq.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/perf_event.h>
 #include <linux/rwsem.h>
 #include <linux/sched.h>
 #include <linux/sched/rt.h>
@@ -34,6 +35,10 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_interactive.h>
+
+#if defined(CONFIG_SMP) && defined(CONFIG_PERF_EVENTS)
+#define INTGOV_SMP_CALL
+#endif
 
 struct cpufreq_interactive_policyinfo {
 	struct timer_list policy_timer;
@@ -58,6 +63,9 @@ struct cpufreq_interactive_policyinfo {
 	int governor_enabled;
 	struct cpufreq_interactive_tunables *cached_tunables;
 	struct sched_load *sl;
+#ifdef INTGOV_SMP_CALL
+	struct call_single_data *csd;
+#endif
 };
 
 /* Protected by per-policy load_lock */
@@ -698,6 +706,36 @@ exit:
 	return;
 }
 
+static void intgov_smp_perf_event_cpu_frequency(void *info)
+{
+	struct cpufreq_interactive_policyinfo *ppol = info;
+
+	perf_event_cpu_frequency(ppol->policy->cur);
+}
+
+static void intgov_perf_event_cpu_frequency(unsigned int cpu, struct cpufreq_interactive_policyinfo *policy)
+{
+#ifdef INTGOV_SMP_CALL
+	struct call_single_data *csd = policy->csd;
+	/* the lock flag is cleared atomically by the IPI */
+	smp_rmb();
+	/*
+	 * if a flood of frequency changes occur before the remote CPU
+	 * IPI can clear the lock flag, don't send another IPI. the
+	 * frequency value is stored in the shared policy object, so
+	 * the updated frequency will be read when the IPI executes
+	 */
+	if (csd->flags)
+		return;
+	csd->func = intgov_smp_perf_event_cpu_frequency;
+	csd->info = policy;
+	smp_call_function_single_async(cpu, csd);
+#else
+	(void) cpu;
+	intgov_smp_perf_event_cpu_frequency(policy);
+#endif
+}
+
 static int cpufreq_interactive_speedchange_task(void *data)
 {
 	unsigned int cpu;
@@ -738,6 +776,10 @@ static int cpufreq_interactive_speedchange_task(void *data)
 				__cpufreq_driver_target(ppol->policy,
 							ppol->target_freq,
 							CPUFREQ_RELATION_H);
+
+			if (perf_event_cpu_frequency_enabled())
+				intgov_perf_event_cpu_frequency(cpu, ppol);
+
 			trace_cpufreq_interactive_setspeed(cpu,
 						     ppol->target_freq,
 						     ppol->policy->cur);
@@ -1600,6 +1642,14 @@ static struct cpufreq_interactive_policyinfo *get_policyinfo(
 	if (!ppol)
 		return ERR_PTR(-ENOMEM);
 
+#ifdef INTGOV_SMP_CALL
+	ppol->csd = kzalloc(sizeof(struct call_single_data), GFP_KERNEL);
+	if (!ppol->csd) {
+		kfree(ppol);
+		return ERR_PTR(-ENOMEM);
+	}
+#endif
+
 	sl = kcalloc(cpumask_weight(policy->related_cpus), sizeof(*sl),
 		     GFP_KERNEL);
 	if (!sl) {
@@ -1637,6 +1687,9 @@ static void free_policyinfo(int cpu)
 			per_cpu(polinfo, cpu) = NULL;
 	kfree(ppol->cached_tunables);
 	kfree(ppol->sl);
+#ifdef INTGOV_SMP_CALL
+	kfree(ppol->csd);
+#endif
 	kfree(ppol);
 }
 
