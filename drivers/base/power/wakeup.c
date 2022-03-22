@@ -931,9 +931,6 @@ void pm_system_irq_wakeup(unsigned int irq_number)
 	const char *name = "null";
 
 	if (pm_wakeup_irq == 0) {
-		struct irq_desc *desc;
-		const char *name = "null";
-
 		desc = irq_to_desc(irq_number);
 		if (desc == NULL)
 			name = "stray irq";

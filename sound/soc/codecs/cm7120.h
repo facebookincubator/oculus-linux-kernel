@@ -2269,6 +2269,7 @@ enum {
 	MIC_EQ_AGC_ON_OFF,
 	MIC_DSP_PROCESS_ON_OFF,
 	MIC_DSP_AEC_ON_OFF,
+	MIC_DSP_ENC_ON_OFF,
 	MIC_MONITOR_ON_OFF,
 	MIC_ADC1_ON_OFF,
 	MIC_ADC2_ON_OFF,
@@ -2359,6 +2360,7 @@ struct cm7120_priv {
 	bool bEnableMicEQ;
 	bool bEnableMicDspProcess;
 	bool bEnableAEC;
+	bool bEnableENC;
 	bool bEnableMonitor;
 	bool bEnableAGC;
 	bool bEnableADC1;

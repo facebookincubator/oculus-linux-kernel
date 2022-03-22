@@ -1942,6 +1942,10 @@ static const struct snd_kcontrol_new cm7120_snd_controls[] = {
 			   cm7120_get_eq_gain, cm7120_put_eq_gain, eq_pre_tlv),
 	SOC_SINGLE_EXT("MIC EQ AGC Switch", MIC_EQ_AGC_ON_OFF, 0, 1, 0,
 			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("Mic DSP AEC", MIC_DSP_AEC_ON_OFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("Mic DSP ENC", MIC_DSP_ENC_ON_OFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
 
 	/* Config REG */
 	SOC_SINGLE_EXT("SPK L1 TO MUTE", SPK_L1_MUTE, 0, 1, 0,
@@ -2531,6 +2535,20 @@ static void cm7120_update_eq_pregain_enable(struct cm7120_priv *cm7120_codec)
 	mutex_unlock(&cm7120_codec->dsp_lock);
 }
 
+static void cm7120_aec_enc_enable(struct cm7120_priv *cm7120_codec)
+{
+	u32 DSPElement = 0;
+
+	DSPElement = cm7120_codec->bEnableAEC |
+			(cm7120_codec->bEnableENC << 1);
+	dev_info(cm7120_codec->dev, "%s DSPElement = 0x%08x\n", __func__,
+		 DSPElement);
+	mutex_lock(&cm7120_codec->dsp_lock);
+	cm7120_dsp_mode_i2c_write_mem(cm7120_codec->real_regmap, 0x5FFC0030,
+				      (u8 *)&DSPElement, 4);
+	mutex_unlock(&cm7120_codec->dsp_lock);
+}
+
 static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 			 struct snd_ctl_elem_value *ucontrol)
 {
@@ -2568,6 +2586,30 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 		cm7120_update_eq_pregain_enable(cm7120_codec);
 		dev_dbg(cm7120_codec->dev,
 			"%s MIC_EQ_AGC_ON_OFF set Value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
+	case MIC_DSP_AEC_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm7120_codec->bEnableAEC = false;
+		else
+			cm7120_codec->bEnableAEC = true;
+
+		cm7120_aec_enc_enable(cm7120_codec);
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_AEC_ON_OFF set Value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
+	case MIC_DSP_ENC_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm7120_codec->bEnableENC = false;
+		else
+			cm7120_codec->bEnableENC = true;
+
+		cm7120_aec_enc_enable(cm7120_codec);
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_ENC_ON_OFF set Value = %ld\n", __func__,
 			ucontrol->value.integer.value[0]);
 		break;
 
@@ -2912,6 +2954,28 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 			ucontrol->value.integer.value[0]);
 		break;
 
+	case MIC_DSP_AEC_ON_OFF:
+		if (cm7120_codec->bEnableAEC)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_AEC_ON_OFF get value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
+	case MIC_DSP_ENC_ON_OFF:
+		if (cm7120_codec->bEnableENC)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_ENC_ON_OFF get value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
 	case MIC_ADC1_ON_OFF:
 		if (cm7120_codec->bEnableADC1)
 			ucontrol->value.integer.value[0] = true;
@@ -3130,8 +3194,12 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	regmap_update_bits(cm7120->virt_regmap, CM7120_I2S2_SDP,
-			CM7120_I2S_DL_MASK, val_len);
+	if (dai->name && !strcmp(dai->name, "cm7120-aif1"))
+		regmap_update_bits(cm7120->virt_regmap, CM7120_I2S3_SDP,
+				CM7120_I2S_DL_MASK, val_len);
+	else if (dai->name && !strcmp(dai->name, "cm7120-aif2"))
+		regmap_update_bits(cm7120->virt_regmap, CM7120_I2S2_SDP,
+				CM7120_I2S_DL_MASK, val_len);
 
 	pr_info("%s: val_len: 0x%04x\n", __func__, val_len);
 
@@ -4254,6 +4322,20 @@ static int cm7120_write_firmware_codec_cmd(struct cm7120_priv *cm7120,
 	return 0;
 }
 
+static int cm7120_firmware_checksum(void *FirmwareData, u8 checksum, size_t len)
+{
+	u8  *fwData = FirmwareData;
+	u8  uSum = 0;
+	int i;
+
+	for (i = 0; i < len; i++)
+		uSum += fwData[i];
+	checksum = checksum - 1 + uSum;
+	checksum = ~checksum;
+
+	return (checksum == 0);
+}
+
 static int cm7120_firmware_parsing(struct cm7120_priv *cm7120,
 				   void *FirmwareData, size_t len)
 {
@@ -4262,6 +4344,8 @@ static int cm7120_firmware_parsing(struct cm7120_priv *cm7120,
 
 	int ret;
 	int count;
+	int i, lSize;
+	u8  *fwPtr;
 
 	/* check header of block */
 	/* offset [3:0] = 0x0a, 0x1c, 0x56, 0x79 */
@@ -4272,6 +4356,12 @@ static int cm7120_firmware_parsing(struct cm7120_priv *cm7120,
 	/* register number: 0x7A000 offset [5:4], little endian */
 	count = *(fwData + regAddr + 4) | *(fwData + regAddr + 5) << 8;
 	pr_info("register count = %d\n", count);
+
+	if (!cm7120_firmware_checksum(fwData + regAddr + 8,
+				*(fwData + regAddr + 6), count*5)) {
+		pr_err("%s: Register Setting checksum failed!\n", __func__);
+		return -EINVAL;
+	}
 
 	/* offset [4:5] = register number count */
 	/* offset [6:7] = checksum */
@@ -4291,6 +4381,21 @@ static int cm7120_firmware_parsing(struct cm7120_priv *cm7120,
 	/* block number: 0x1E000 offset [5:4], little endian */
 	count = *(fwData + regAddr + 4) | *(fwData + regAddr + 5) << 8;
 	pr_info("block number = %d\n", count);
+
+	lSize = 0;
+	fwPtr = fwData + regAddr + 8;
+	for (i = 0; i < count; i++) {
+		lSize += *(fwPtr + 4) | (*(fwPtr + 5) << 8) |
+			(*(fwPtr + 6) << 16) | (*(fwPtr + 7) << 24);
+		lSize += 8;
+		fwPtr += 8;
+	}
+
+	if (!cm7120_firmware_checksum(fwData + regAddr + 8,
+				*(fwData + regAddr + 6), lSize)) {
+		pr_err("%s: Hifi-3 dsp code checksum failed!\n", __func__);
+		return -EINVAL;
+	}
 
 	ret = cm7120_write_firmware_romcode(cm7120, fwData, count);
 

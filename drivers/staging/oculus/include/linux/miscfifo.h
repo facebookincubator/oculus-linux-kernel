@@ -10,6 +10,9 @@
 
 /* Function type that can be used with the config filter_fn to
  * implement per-client packet filtering.
+ *
+ * This function is expected to be fast/lockless, or it could cause
+ * the send() function to block
  */
 typedef bool (*miscfifo_filter_fn)(const void *context,
 				   const u8 *header, size_t header_len,
@@ -17,18 +20,6 @@ typedef bool (*miscfifo_filter_fn)(const void *context,
 
 struct miscfifo {
 	struct {
-		/**
-		 * If the data being reported has distinct header and payload
-		 * sections it's sometimes useful to supply these in different
-		 * buffers. Set this property to true and use
-		 * #miscfifo_send_header_payload(). The two buffers will be
-		 * combined when the event is read
-		 *
-		 * Otherwise use #miscfifo_send_buf() to send events in
-		 * a single buffer
-		 **/
-		bool header_payload;
-
 		size_t kfifo_size;
 
 		/* This filter function can be used to determine which
@@ -43,14 +34,26 @@ struct miscfifo {
 		struct list_head list;
 		struct rw_semaphore rw_lock;
 	} clients;
+
+	/* device that registered this miscfifo */
+	struct device *dev;
 };
 
 struct miscfifo_client {
 	struct miscfifo *mf;
-	struct mutex lock;
+	// Do not hold more than one of these locks at a time:
+	// hold this while reading from the fifo, in case of multiple consumers
+	struct mutex consumer_lock;
+	// hold this while writing from the fifo, in case of multiple producers
+	struct mutex producer_lock;
+	// hold this while accessing context
+	struct mutex context_lock;
 	struct kfifo_rec_ptr_1 fifo;
+	bool logged_fifo_full;
 	struct list_head node;
 	void *context;
+	struct file *file;
+	char *name;
 };
 
 /**
@@ -73,8 +76,8 @@ int devm_miscfifo_register(struct device *dev, struct miscfifo *mf);
 void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
 
 /**
- * Send buffer to all clients. This function assumes only one writer and
- * caller must serialize if there are multiple writers.
+ * Send a buffer to all clients.
+ *
  * Use with config.header_payload = false;
  *
  * @param  mf   miscfifo instance
@@ -85,22 +88,37 @@ void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
 int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len);
 
 /**
- * Send header + payload buffer to all clients. This function assumes only
- * one writer and the caller must serialize if there are multiple writers.
- * Use with config.header_payload = true;
+ * Call this function from the open() file_operation for the chardev hosting
+ * this interface.
  *
- * @param  mf   miscfifo instance
- * TODO
- * @return      0 on success, > 0 if dropped, -errno otherwise
+ * miscfifo will set the the file's private data with context specific
+ * to this client
+ *
+ * @param file         file pointer being opened
+ * @param  mf          miscfifo instance
+ * @return             0 on success or -errno
  */
-int miscfifo_send_header_payload(struct miscfifo *mf,
-				 const u8 *header, size_t header_len,
-				 const u8 *payload, size_t payload_len);
-
-/* call from file_operations->open() */
 int miscfifo_fop_open(struct file *, struct miscfifo *mf);
 
-/* assign functions below to file_operations */
+/**
+ * These miscfifo functions below implement the file_operations interface. They
+ * can be passed to vfs verbatim to handle these functions below.
+ *
+ * static const struct file_operations sample_fops = {
+ *     .owner = THIS_MODULE,
+ *     .open = sample_fop_open,
+ *     .release = miscfifo_fop_release,
+ *     .read = miscfifo_fop_read,
+ *     .poll = miscfifo_fop_poll,
+ * };
+ *
+ * int sample_fop_open(struct inode *inode, struct file *file)
+ * {
+ *     struct miscfifo *mf = ...;
+ *
+ *     return miscfifo_fop_open(file, mf);
+ * }
+ */
 ssize_t miscfifo_fop_read(struct file *file,
 	char __user *buf, size_t len, loff_t *off);
 unsigned int miscfifo_fop_poll(struct file *file,
@@ -109,20 +127,12 @@ int miscfifo_fop_release(struct inode *inode, struct file *file);
 
 /**
  * Set context pointer that will be passed to the packet filtering
- * function (if one was set by miscfifo_fop_set_filter_fn)
+ * function (if one was set by miscfifo_fop_set_filter_fn) and return the
+ * previous value (if there was one).
  *
  * @param  file   file handle
  * @param  context   context
  */
-void miscfifo_fop_set_context(struct file *file, void *context);
-
-/**
- * Get context pointer that was previously set with
- * miscfifo_fop_setcontext
- *
- * @param  file   file handle
- * @return   context pointer
- */
-void *miscfifo_fop_get_context(struct file *file);
+void *miscfifo_fop_xchg_context(struct file *file, void *context);
 
 #endif

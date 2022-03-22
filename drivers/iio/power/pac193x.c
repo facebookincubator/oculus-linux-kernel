@@ -275,7 +275,6 @@ struct pac193x_chip_info {
 	struct i2c_client		*client;
 	struct mutex			lock;
 	struct regulator		*avdd_reg;
-	int				pwrdn_gpio;
 
 	struct timer_list		tmr_forced_update;
 	/* to be used to now when will be the chip read timeout */
@@ -527,19 +526,25 @@ static int pac193x_i2c_write(struct i2c_client *client, u8 reg_addr,
 				int len, u8 *data)
 {
 	int ret;
-	u8 send[len + 1];
+	u8 *send;
 	struct i2c_msg msg = { .addr = client->addr,
 				.len = len + 1, .flags = 0 };
+
+	send = kzalloc(len + 1, GFP_KERNEL);
+	if (!send)
+		return -ENOMEM;
 
 	send[0] = reg_addr;
 	memcpy(&send[1], data, len * sizeof(u8));
 	msg.buf = send;
 
 	ret = i2c_transfer(client->adapter, &msg, 1);
+	kfree(send);
 	if (ret < 0) {
 		pr_err("failed writing data from register 0x%02X\n", reg_addr);
 		return ret;
 	}
+
 	return 0;
 }
 
@@ -1555,6 +1560,7 @@ static int pac193x_chip_identify(struct pac193x_chip_info *chip_info)
 	struct i2c_client *client = chip_info->client;
 	u8 chip_rev_info[3];
 	const char *reg_name;
+	int pwrdn_gpio;
 
 	/* If regulator has not been defined in the device tree,
 	 * print a debug warning, but assume that its always on,
@@ -1590,27 +1596,19 @@ static int pac193x_chip_identify(struct pac193x_chip_info *chip_info)
 	 * Voltage range is set by VDD I/O pin. Active low puts the device
 	 * in power-down state (all circuitry is powered down including SMBus).
 	 */
-	chip_info->pwrdn_gpio = of_get_named_gpio(client->dev.of_node,
+	pwrdn_gpio = of_get_named_gpio(client->dev.of_node,
 						"pac193x,pwrdn_gpio", 0);
-	if (gpio_is_valid(chip_info->pwrdn_gpio)) {
+	if (gpio_is_valid(pwrdn_gpio)) {
 		ret = devm_gpio_request_one(&client->dev,
-			chip_info->pwrdn_gpio,
+			pwrdn_gpio,
 			GPIOF_OUT_INIT_HIGH,
 			"pac193x_pwrdn");
-		if (ret) {
+		if (ret)
 			pr_err("Failed GPIO request for pwrdn: %d err %d\n",
-				chip_info->pwrdn_gpio, ret);
-		}
+				pwrdn_gpio, ret);
 
 		/* Spec defines time to first communcation as 14.25ms typical */
 		msleep(20);
-	} else {
-		/* We used same pwrdn gpio for two chip, if we return, the
-		 * 2nd pac1934 chip will probe failed. So only output error
-		 * message and do not return.
-		 */
-		chip_info->pwrdn_gpio = -EINVAL;
-		pr_info("failed to find pwrdn gpio\n");
 	}
 
 	/* Try to identify the chip variant.

@@ -317,8 +317,6 @@ struct kgsl_device {
 	unsigned int cur_l3_pwrlevel;
 	/** @globals: List of global memory objects */
 	struct list_head globals;
-	/** @globlal_map: bitmap for global memory allocations */
-	unsigned long *global_map;
 	/* @qdss_desc: Memory descriptor for the QDSS region if applicable */
 	struct kgsl_memdesc *qdss_desc;
 	/* @qtimer_desc: Memory descriptor for the QDSS region if applicable */
@@ -441,8 +439,6 @@ struct kgsl_thread_private {
  * @mem_lock: Spinlock to protect the process memory lists
  * @refcount: kref object for reference counting the process
  * @idr: Iterator for assigning IDs to memory allocations
- * @dentry_idr: Iterator for assigning debugfs nodes to memory allocations
- * @mem_tree: RB tree for tracking attached memory allocations
  * @pagetable: Pointer to the pagetable owned by this process
  * @kobj: Pointer to a kobj for the sysfs directory for this process
  * @debug_root: Pointer to the debugfs root for this process
@@ -452,6 +448,7 @@ struct kgsl_thread_private {
  * @fd_count: Counter for the number of FDs for this process
  * @ctxt_count: Count for the number of contexts for this process
  * @ctxt_count_lock: Spinlock to protect ctxt_count
+ * @dump_id: Entry ID to dump with the debugfs node
  */
 struct kgsl_process_private {
 	unsigned long priv;
@@ -460,10 +457,6 @@ struct kgsl_process_private {
 	spinlock_t mem_lock;
 	struct kref refcount;
 	struct idr mem_idr;
-	struct idr dentry_idr;
-#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
-	struct rb_root mem_tree;
-#endif
 	struct kgsl_pagetable *pagetable;
 	struct list_head list;
 	struct kobject kobj;
@@ -477,6 +470,7 @@ struct kgsl_process_private {
 	int fd_count;
 	atomic_t ctxt_count;
 	spinlock_t ctxt_count_lock;
+	int dump_id;
 };
 
 /**

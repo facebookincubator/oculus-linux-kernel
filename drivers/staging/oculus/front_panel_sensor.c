@@ -525,7 +525,7 @@ static int __init front_panel_sensor_init(void)
 	pr_info("%s: Initializing\n", __func__);
 	return platform_driver_register(&front_panel_sensor_driver);
 }
-subsys_initcall(front_panel_sensor_init);
+late_initcall(front_panel_sensor_init);
 
 static void __exit front_panel_sensor_deinit(void)
 {

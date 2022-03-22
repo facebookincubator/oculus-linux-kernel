@@ -24,8 +24,6 @@ static inline struct dentry *kgsl_get_debugfs_dir(void)
 }
 
 void kgsl_process_init_debugfs(struct kgsl_process_private *priv);
-void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry);
-void kgsl_process_destroy_mem_entry_debugfs(struct kgsl_mem_entry *entry);
 #else
 static inline void kgsl_core_debugfs_init(void) { }
 static inline void kgsl_device_debugfs_init(struct kgsl_device *device) { }
@@ -35,8 +33,6 @@ static inline struct dentry *kgsl_get_debugfs_dir(void) { return NULL; }
 static inline void kgsl_process_init_debugfs(struct kgsl_process_private *priv)
 {
 }
-void kgsl_process_init_mem_entry_debugfs(struct kgsl_mem_entry *entry) { }
-void kgsl_process_destroy_mem_entry_debugfs(struct kgsl_mem_entry *entry) { }
 #endif
 
 #endif

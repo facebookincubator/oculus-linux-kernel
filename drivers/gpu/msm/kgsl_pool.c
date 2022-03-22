@@ -13,8 +13,6 @@
 #include "kgsl_pool.h"
 #include "kgsl_sharedmem.h"
 
-static void kgsl_pool_free_page(struct page *page);
-
 #ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 /**
  * struct kgsl_page_pool - Structure to hold information for the pool
@@ -225,85 +223,7 @@ kgsl_pool_reduce(unsigned int target_pages, bool exit)
 
 	return pcount;
 }
-#endif /* CONFIG_QCOM_KGSL_PAGE_POOLING */
 
-/**
- * kgsl_pool_free_sgt() - Free scatter-gather list
- * @sgt: pointer of the sg list
- *
- * Free the sg list by collapsing any physical adjacent pages.
- * Pages are added back to the pool, if pool has sufficient space
- * otherwise they are given back to system.
- */
-void kgsl_pool_free_sgt(struct sg_table *sgt)
-{
-	int i;
-	struct scatterlist *sg;
-
-	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
-		/*
-		 * sg_alloc_table_from_pages() will collapse any physically
-		 * adjacent pages into a single scatterlist entry. We cannot
-		 * just call __free_pages() on the entire set since we cannot
-		 * ensure that the size is a whole order. Instead, free each
-		 * page or compound page group individually.
-		 */
-		struct page *p = sg_page(sg), *next;
-		unsigned int count;
-		unsigned int j = 0;
-
-		while (j < (sg->length/PAGE_SIZE)) {
-			count = 1 << compound_order(p);
-			next = nth_page(p, count);
-			kgsl_pool_free_page(p);
-
-			p = next;
-			j += count;
-		}
-	}
-}
-
-/**
- * kgsl_pool_free_pages() - Free pages in the pages array
- * @pages: pointer of the pages array
- *
- * Free the pages by collapsing any physical adjacent pages.
- * Pages are added back to the pool, if pool has sufficient space
- * otherwise they are given back to system.
- */
-void kgsl_pool_free_pages(struct page **pages, unsigned int pcount)
-{
-	int i;
-
-	if (!pages)
-		return;
-
-	if (WARN(!kern_addr_valid((unsigned long)pages),
-		"Address of pages=%pK is not valid\n", pages))
-		return;
-
-	for (i = 0; i < pcount;) {
-		/*
-		 * Free each page or compound page group individually.
-		 */
-		struct page *p = pages[i];
-
-		/* Skip over unmapped/missing pages. */
-		if (IS_ERR_OR_NULL(p) || p == ZERO_PAGE(0)) {
-			i++;
-			continue;
-		}
-
-		if (WARN(!kern_addr_valid((unsigned long)p),
-			"Address of page=%pK is not valid\n", p))
-			return;
-
-		i += 1 << compound_order(p);
-		kgsl_pool_free_page(p);
-	}
-}
-
-#ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 static int kgsl_pool_get_retry_order(unsigned int order)
 {
 	int i;
@@ -468,7 +388,7 @@ eagain:
 	return -EAGAIN;
 }
 
-static void kgsl_pool_free_page(struct page *page)
+void kgsl_pool_free_page(struct page *page)
 {
 	struct kgsl_page_pool *pool;
 	int page_order;

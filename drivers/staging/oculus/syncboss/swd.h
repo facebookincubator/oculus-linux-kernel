@@ -111,9 +111,6 @@ struct swd_ops_params {
 struct swd_ops {
 	/* Check if the device is busy */
 	bool (*is_busy)(struct device *dev);
-
-	/* Handler to call when a firmware update has completed */
-	void (*fw_update_cb)(struct device *dev, int status);
 };
 
 struct flash_info {
@@ -129,6 +126,9 @@ struct swd_dev_data {
 
 	/* workqueue associated with device */
 	struct workqueue_struct *workqueue;
+
+	/* GPIO line for MCU reset */
+	int gpio_reset;
 
 	/* GPIO line for swdclk */
 	int gpio_swdclk;
@@ -156,9 +156,6 @@ struct swd_dev_data {
 
 	/* Called prior to updating firmware to ensure peripherial is idle. */
 	bool (*is_busy)(struct device *dev);
-
-	/* Called after updating firmware. */
-	void (*on_firmware_update_complete)(struct device *dev, int status);
 
 	/* SWD operations implementation */
 	struct swd_ops_params swd_ops;

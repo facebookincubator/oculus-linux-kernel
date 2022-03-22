@@ -100,6 +100,19 @@ static int _ft_pagefault_policy_store(struct adreno_device *adreno_dev,
 	mutex_lock(&device->mutex);
 	val &= KGSL_FT_PAGEFAULT_MASK;
 
+#if IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_ALLOCATION)
+	/*
+	 * Stall-on-fault is *required* by lazy allocation, so make sure
+	 * it can't inadvertently be disabled or else allocations might
+	 * break in "fun" and hard-to-diagnose ways.
+	 */
+	val |= BIT(KGSL_FT_PAGEFAULT_STALL_ENABLE);
+#endif
+
+	/* Setting GPUHALT_ENABLE implies stall-on-fault (STALL_ENABLE). */
+	if (val & BIT(KGSL_FT_PAGEFAULT_GPUHALT_ENABLE))
+		val |= BIT(KGSL_FT_PAGEFAULT_STALL_ENABLE);
+
 	if (device->state == KGSL_STATE_ACTIVE)
 		ret = kgsl_mmu_set_pagefault_policy(&device->mmu,
 			(unsigned long) val);

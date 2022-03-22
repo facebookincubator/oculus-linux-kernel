@@ -14,12 +14,9 @@ static void pagetable_remove_sysfs_objects(struct kgsl_pagetable *pagetable);
 static void _deferred_destroy(struct work_struct *ws)
 {
 	struct kgsl_pagetable *pagetable = container_of(ws,
-					struct kgsl_pagetable, destroy_ws);
+			struct kgsl_pagetable, destroy_ws);
 
-	if (PT_OP_VALID(pagetable, mmu_destroy_pagetable))
-		pagetable->pt_ops->mmu_destroy_pagetable(pagetable);
-
-	kfree(pagetable);
+	pagetable->pt_ops->mmu_destroy_pagetable(pagetable);
 }
 
 static void kgsl_destroy_pagetable(struct kref *kref)
@@ -29,7 +26,11 @@ static void kgsl_destroy_pagetable(struct kref *kref)
 
 	kgsl_mmu_detach_pagetable(pagetable);
 
-	kgsl_schedule_work(&pagetable->destroy_ws);
+	if (PT_OP_VALID(pagetable, mmu_destroy_pagetable)) {
+		INIT_WORK(&pagetable->destroy_ws, _deferred_destroy);
+		kgsl_schedule_work(&pagetable->destroy_ws);
+	} else
+		kfree_rcu(pagetable, rcu);
 }
 
 struct kgsl_pagetable *
@@ -261,6 +262,22 @@ int kgsl_mmu_start(struct kgsl_device *device)
 	return 0;
 }
 
+void kgsl_mmu_resume(struct kgsl_device *device)
+{
+	struct kgsl_mmu *mmu = &device->mmu;
+
+	if (MMU_OP_VALID(mmu, mmu_resume))
+		mmu->mmu_ops->mmu_resume(mmu);
+}
+
+void kgsl_mmu_suspend(struct kgsl_device *device)
+{
+	struct kgsl_mmu *mmu = &device->mmu;
+
+	if (MMU_OP_VALID(mmu, mmu_suspend))
+		mmu->mmu_ops->mmu_suspend(mmu);
+}
+
 struct kgsl_pagetable *
 kgsl_mmu_createpagetableobject(struct kgsl_mmu *mmu, unsigned int name)
 {
@@ -275,7 +292,7 @@ kgsl_mmu_createpagetableobject(struct kgsl_mmu *mmu, unsigned int name)
 	kref_init(&pagetable->refcount);
 
 	spin_lock_init(&pagetable->lock);
-	INIT_WORK(&pagetable->destroy_ws, _deferred_destroy);
+	rt_mutex_init(&pagetable->map_mutex);
 
 	pagetable->mmu = mmu;
 	pagetable->name = name;
@@ -329,15 +346,15 @@ uint64_t kgsl_mmu_find_svm_region(struct kgsl_pagetable *pagetable,
 /**
  * kgsl_mmu_set_svm_region() - Check if a region is empty and reserve it if so
  * @pagetable: KGSL pagetable to search
+ * @memdesc: Memory descriptor of the entry to reserve memory for
  * @gpuaddr: GPU address to check/reserve
- * @size: Size of the region to check/reserve
  */
-int kgsl_mmu_set_svm_region(struct kgsl_pagetable *pagetable, uint64_t gpuaddr,
-		uint64_t size)
+int kgsl_mmu_set_svm_region(struct kgsl_pagetable *pagetable,
+		struct kgsl_memdesc *memdesc, uint64_t gpuaddr)
 {
 	if (PT_OP_VALID(pagetable, set_svm_region))
-		return pagetable->pt_ops->set_svm_region(pagetable, gpuaddr,
-			size);
+		return pagetable->pt_ops->set_svm_region(pagetable, memdesc,
+				gpuaddr);
 	return -ENOMEM;
 }
 
@@ -361,23 +378,50 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 				struct kgsl_memdesc *memdesc)
 {
 	int size;
+	bool global;
 
 	if (!memdesc->gpuaddr)
 		return -EINVAL;
 
 	/* Only global mappings should be mapped multiple times */
-	if (!kgsl_memdesc_is_global(memdesc) &&
-			(KGSL_MEMDESC_MAPPED & memdesc->priv))
+	global = kgsl_memdesc_is_global(memdesc);
+	if (!global && (KGSL_MEMDESC_MAPPED & memdesc->priv))
 		return -EINVAL;
 
 	size = kgsl_memdesc_footprint(memdesc);
 
 	if (PT_OP_VALID(pagetable, mmu_map)) {
 		int ret;
+		int refcounted = 0;
+
+		/*
+		 * Get an extra reference to the pagetable since that will be
+		 * needed when the memory is unmapped from the MMU and freed.
+		 */
+		if (!global && !kgsl_mmu_is_global_pt(pagetable)) {
+			refcounted = kref_get_unless_zero(&pagetable->refcount);
+
+			/*
+			 * If we weren't able to grab a ref to the page table
+			 * something has probably gone terribly wrong somewhere
+			 * and we should error out here.
+			 */
+			if (!refcounted)
+				return -EINVAL;
+		}
 
 		ret = pagetable->pt_ops->mmu_map(pagetable, memdesc);
-		if (ret)
+		if (ret) {
+			/*
+			 * Mapping errored out, so be sure to release the
+			 * reference we might have grabbed above to avoid
+			 * mismatched refcounts on the page table.
+			 */
+			if (refcounted)
+				kgsl_mmu_putpagetable(pagetable);
+
 			return ret;
+		}
 
 		atomic_inc(&pagetable->stats.entries);
 		KGSL_STATS_ADD(size, &pagetable->stats.mapped,
@@ -397,21 +441,11 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 void kgsl_mmu_put_gpuaddr(struct kgsl_memdesc *memdesc)
 {
 	struct kgsl_pagetable *pagetable = memdesc->pagetable;
-	int unmap_fail = 0;
 
 	if (memdesc->size == 0 || memdesc->gpuaddr == 0)
 		return;
 
-	if (!kgsl_memdesc_is_global(memdesc) &&
-			(KGSL_MEMDESC_MAPPED & memdesc->priv))
-		unmap_fail = kgsl_mmu_unmap(pagetable, memdesc);
-
-	/*
-	 * Do not free the gpuaddr/size if unmap fails. Because if we
-	 * try to map this range in future, the iommu driver will throw
-	 * a BUG_ON() because it feels we are overwriting a mapping.
-	 */
-	if (PT_OP_VALID(pagetable, put_gpuaddr) && (unmap_fail == 0))
+	if (PT_OP_VALID(pagetable, put_gpuaddr))
 		pagetable->pt_ops->put_gpuaddr(memdesc);
 
 	memdesc->pagetable = NULL;
@@ -445,8 +479,8 @@ int kgsl_mmu_svm_range(struct kgsl_pagetable *pagetable,
 }
 
 int
-kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
-		struct kgsl_memdesc *memdesc)
+kgsl_mmu_unmap(struct kgsl_pagetable *pagetable, struct kgsl_memdesc *memdesc,
+		struct list_head *page_list)
 {
 	int ret = 0;
 
@@ -462,35 +496,24 @@ kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 
 		size = kgsl_memdesc_footprint(memdesc);
 
-		ret = pagetable->pt_ops->mmu_unmap(pagetable, memdesc);
+		ret = pagetable->pt_ops->mmu_unmap(pagetable, memdesc, page_list);
 
 		atomic_dec(&pagetable->stats.entries);
 		atomic_long_sub(size, &pagetable->stats.mapped);
 
-		if (!kgsl_memdesc_is_global(memdesc))
+		if (!kgsl_memdesc_is_global(memdesc)) {
 			memdesc->priv &= ~KGSL_MEMDESC_MAPPED;
+
+			/*
+			 * Let go of the additional PT ref taken when attached
+			 * to a process.
+			 */
+			if (!kgsl_mmu_is_global_pt(pagetable))
+				kgsl_mmu_putpagetable(pagetable);
+		}
 	}
 
 	return ret;
-}
-
-int kgsl_mmu_sparse_dummy_map(struct kgsl_pagetable *pagetable,
-		struct kgsl_memdesc *memdesc, uint64_t offset, uint64_t size)
-{
-	if (PT_OP_VALID(pagetable, mmu_sparse_dummy_map)) {
-		int ret;
-
-		ret = pagetable->pt_ops->mmu_sparse_dummy_map(pagetable,
-				memdesc, offset, size);
-		if (ret)
-			return ret;
-
-		atomic_inc(&pagetable->stats.entries);
-		KGSL_STATS_ADD(size, &pagetable->stats.mapped,
-				&pagetable->stats.max_mapped);
-	}
-
-	return 0;
 }
 
 struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
@@ -514,9 +537,6 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 		uint64_t offset, uint64_t size, unsigned int *page_count)
 {
 	struct kgsl_pagetable *pagetable;
-	struct page **pages;
-	uint64_t start_page, end_page, page_idx;
-	unsigned int i;
 
 	if (IS_ERR_OR_NULL(memdesc) || page_count == NULL)
 		return ERR_PTR(-EINVAL);
@@ -524,61 +544,33 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 	pagetable = memdesc->pagetable;
 	if (pagetable == NULL)
 		return ERR_PTR(-ENODEV);
-	if (!PT_OP_VALID(pagetable, mmu_find_mapped_page) ||
+	if (!PT_OP_VALID(pagetable, mmu_find_mapped_page_range) ||
 		!(KGSL_MEMDESC_MAPPED & memdesc->priv) || size == 0)
 		return ERR_PTR(-EINVAL);
 
 	if (offset + size > memdesc->size)
 		return ERR_PTR(-ERANGE);
 
-	start_page = offset >> PAGE_SHIFT;
-	end_page = (offset + size - 1) >> PAGE_SHIFT;
-
-	*page_count = (unsigned int)(end_page - start_page) + 1;
-	pages = kcalloc(*page_count, sizeof(struct page *), GFP_ATOMIC);
-	if (pages == NULL)
-		return ERR_PTR(-ENOMEM);
-
-	for (page_idx = start_page, i = 0; page_idx <= end_page && i < *page_count;) {
-		struct page *page = pagetable->pt_ops->mmu_find_mapped_page(
-				memdesc, page_idx << PAGE_SHIFT);
-		unsigned long j, pfn = page_to_pfn(page);
-
-		if (IS_ERR_OR_NULL(page) || !pfn_valid(pfn)) {
-			page_idx++;
-			i++;
-			continue;
-		}
-
-		for (j = 0; j < (1 << compound_order(page)) && i < *page_count;
-				page_idx++, i++, j++)
-			pages[i] = pfn_to_page(pfn + j);
-	}
-
-	return pages;
+	return pagetable->pt_ops->mmu_find_mapped_page_range(memdesc, offset,
+			size, page_count);
 }
 
-int kgsl_mmu_remap_page_range(struct kgsl_memdesc *memdesc, uint64_t offset,
-		struct page **pages, unsigned int page_count)
+int kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc,
+		struct list_head *page_list)
 {
-	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+	struct kgsl_pagetable *pagetable;
 
-	if (PT_OP_VALID(pagetable, mmu_remap_page_range))
-		return pagetable->pt_ops->mmu_remap_page_range(memdesc, offset,
-				pages, page_count);
+	if (IS_ERR_OR_NULL(memdesc) || page_list == NULL)
+		return -EINVAL;
 
-	return -EINVAL;
-}
+	pagetable = memdesc->pagetable;
+	if (pagetable == NULL)
+		return -ENODEV;
+	if (!PT_OP_VALID(pagetable, mmu_get_backing_pages) ||
+		!(KGSL_MEMDESC_MAPPED & memdesc->priv))
+		return -EINVAL;
 
-int kgsl_mmu_remap_page(struct kgsl_memdesc *memdesc, uint64_t offset,
-		struct page *page)
-{
-	struct kgsl_pagetable *pagetable = memdesc->pagetable;
-
-	if (PT_OP_VALID(pagetable, mmu_remap_page))
-		return pagetable->pt_ops->mmu_remap_page(memdesc, offset, page);
-
-	return -EINVAL;
+	return pagetable->pt_ops->mmu_get_backing_pages(memdesc, page_list);
 }
 
 void kgsl_mmu_map_global(struct kgsl_device *device,

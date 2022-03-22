@@ -474,7 +474,8 @@ static void fan_work_func(struct work_struct *work)
 	int rpm_history_idx = ctx->timer_ticks;
 	int tolerance;
 
-	mutex_lock(&ctx->lock);
+	if (!mutex_trylock(&ctx->lock))
+		return;
 
 	pwm = ctx->pwm_value;
 	rpm_value = ctx->rpm_value;

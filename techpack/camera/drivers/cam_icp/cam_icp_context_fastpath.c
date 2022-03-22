@@ -524,7 +524,11 @@ static int cam_icp_fpc_try_to_process(struct cam_icp_fastpath_context *ctx)
 		CAM_DBG(CAM_ICP, "Buffer not available!");
 		return -EAGAIN;
 	}
-
+	if (buffer_set->status != CAM_FP_BUFFER_STATUS_SUCCESS) {
+		CAM_WARN(CAM_ICP, "Ouch! buffer_set %llu with error!", buffer_set->request_id);
+		rc = -EINVAL;
+		goto error_release_buffer_set;
+	}
 	fp_packet = cam_icp_fpc_get_packet_and_discard_oldest(ctx, buffer_set->request_id);
 	if (WARN_ON(!fp_packet)) {
 		CAM_ERR(CAM_ICP, "Ouch! Packet received but not available!");

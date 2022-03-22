@@ -82,6 +82,8 @@ DHDCFLAGS += -Wall -Wstrict-prototypes -Wno-parentheses-equality -Dlinux -DLINUX
 	-DWL_P2P_USE_RANDMAC
 
 DHDCFLAGS += -DOEM_ANDROID
+DHDCFLAGS += -DBCM_PRIV_CMD_SUPPORT
+DHDCFLAGS += -DWL_ANDROID_PRIV_CMD_OVER_NL80211
 
 #################
 # Common feature

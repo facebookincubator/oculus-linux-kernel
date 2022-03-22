@@ -828,6 +828,115 @@ error:
 	return rc;
 }
 
+static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
+			u32 bl_lvl)
+{
+	int rc = 0;
+	struct dsi_mode_info *timing;
+	struct mipi_dsi_device *dsi;
+	struct dsi_backlight_config *bl_config;
+	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	bool send_vfp = false;
+
+	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
+	u8 blu_right_start_msb[2] = {0xB8, 0x00}; /* BLU right PWM start adjust MSB*/
+	u8 blu_right_start_lsb[2] = {0xB9, 0x00}; /* BLU right PWM start adjust LSB*/
+	u8 blu_left_start_msb[2] = {0xC0, 0x00}; /* BLU left PWM start adjust MSB*/
+	u8 blu_left_start_lsb[2] = {0xC1, 0x00}; /* BLU left PWM start adjust LSB*/
+	u8 blu_right_level_msb[2] = {0xBA, 0x00}; /* BLU right level MSB */
+	u8 blu_right_level_lsb[2] = {0xBB, 0x00}; /* BLU right level LSB */
+	u8 blu_left_level_msb[2] = {0xC2, 0x00}; /* BLU left level MSB */
+	u8 blu_left_level_lsb[2] = {0xC3, 0x00}; /* BLU left level LSB */
+
+	u8 blu_set_vfp_page[2] = {0xFF, 0x25};
+	u8 blu_vfp_msb[2] = {0xBE, 0x00}; /* BLU vfp MSB */
+	u8 blu_vfp_lsb[2] = {0xBF, 0x00}; /* BLU vfp LSB */
+
+	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
+		return -EINVAL;
+
+	dsi = &panel->mipi_device;
+	bl_config = &panel->bl_config;
+
+	timing = &panel->cur_mode->timing;
+	vtotal = (u32)DSI_V_TOTAL(timing);
+
+	/* Transform backlight level into illumination period in scanlines */
+	bl_lvl = (bl_lvl * vtotal * bl_config->jdi_blu_default_duty) / 1000000;
+
+	/*
+	 * Calculate the last scanline to start on for each BLU without
+	 * overlapping the backlight illumination with the next refresh's
+	 * scanout to the active scanlines of the panel.
+	 */
+	target_scanline = vtotal - timing->v_front_porch + bl_config->jdi_scanline_max_offset;
+	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
+	left_scanline = right_scanline + timing->v_active / 2;
+
+	right_scanline = min(target_scanline, right_scanline);
+	if (right_scanline > vtotal)
+		right_scanline -= vtotal;
+	left_scanline = min(target_scanline, left_scanline);
+	if (left_scanline > vtotal)
+		left_scanline -= vtotal;
+
+	if (right_scanline == vtotal - bl_lvl)
+		right_scanline -= 1;
+	if (left_scanline == vtotal - bl_lvl)
+		left_scanline -= 1;
+
+	/* NVT DDIC multiples the start pulse by 4 and pwm width by 2 by default */
+	right_scanline /= 4;
+	left_scanline /= 4;
+	bl_lvl /= 2;
+
+	send_vfp = bl_config->jdi_scanline_offset[0] != right_scanline
+							|| bl_config->jdi_scanline_offset[1] != left_scanline;
+
+	blu_right_start_msb[1] = right_scanline >> 8;
+	blu_right_start_lsb[1] = right_scanline & 0xff;
+	blu_left_start_msb[1] = left_scanline >> 8;
+	blu_left_start_lsb[1] = left_scanline & 0xff;
+	blu_right_level_msb[1] = bl_lvl >> 8;
+	blu_right_level_lsb[1] = bl_lvl & 0xff;
+	blu_left_level_msb[1] = bl_lvl >> 8;
+	blu_left_level_lsb[1] = bl_lvl & 0xff;
+
+	blu_vfp_msb[1] = timing->v_front_porch >> 8;
+	blu_vfp_lsb[1] = timing->v_front_porch & 0xff;
+
+	/* Queue the DCS writes so they can be batched together in one frame. */
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_right_start_msb, sizeof(blu_right_start_msb), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_right_start_lsb, sizeof(blu_right_start_lsb), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_right_level_msb, sizeof(blu_right_level_msb), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_right_level_lsb, sizeof(blu_right_level_lsb), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_start_msb, sizeof(blu_left_start_msb), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_start_lsb, sizeof(blu_left_start_lsb), MIPI_DSI_MSG_UNICAST, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_msb, sizeof(blu_left_level_msb), MIPI_DSI_MSG_UNICAST, 0);
+	if (send_vfp) {
+		/* We need to update the VFP, send last blu level without last command flag and then send VFP */
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_lsb, sizeof(blu_left_level_lsb), MIPI_DSI_MSG_UNICAST, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_set_vfp_page, sizeof(blu_set_vfp_page), MIPI_DSI_MSG_UNICAST, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_vfp_msb, sizeof(blu_vfp_msb), MIPI_DSI_MSG_UNICAST, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_vfp_lsb, sizeof(blu_vfp_lsb), MIPI_DSI_MSG_UNICAST | MIPI_DSI_MSG_LASTCOMMAND, 0);
+	} else {
+		/* Send with last command flag */
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_lsb, sizeof(blu_left_level_lsb), MIPI_DSI_MSG_UNICAST | MIPI_DSI_MSG_LASTCOMMAND, 0);
+	}
+
+	if (rc) {
+		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
+		goto error;
+	}
+	bl_config->jdi_scanline_duration = bl_lvl;
+	bl_config->jdi_scanline_offset[0] = right_scanline;
+	bl_config->jdi_scanline_offset[1] = left_scanline;
+
+error:
+	return rc;
+}
+
 static enum dsi_dfps_refresh_index dsi_panel_get_refresh_index(int refresh_rate)
 {
 	enum dsi_dfps_refresh_index refresh_index = RR_90HZ;
@@ -928,13 +1037,13 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	payload[0] = pwm_reg;
 	payload[1] = (pwm_line >> 8) & 0xFF;
 	payload[2] = pwm_line & 0xFF;
-	mipi_dsi_dcs_write_queue(dsi, payload, sizeof(payload), false);
+	mipi_dsi_dcs_write_queue(dsi, payload, sizeof(payload), 0, 0);
 
 	/* Now send the FIFO line setting */
 	payload[0] = fifo_reg;
 	payload[1] = (fifo_line >> 8) & 0xFF;
 	payload[2] = fifo_line & 0xFF;
-	mipi_dsi_dcs_write_queue(dsi, payload, sizeof(payload), true);
+	mipi_dsi_dcs_write_queue(dsi, payload, sizeof(payload), MIPI_DSI_MSG_LASTCOMMAND, 0);
 
 	/* The backlight rolls from blu_on to blu_off, but for simplicity
 	 * we report it as two back to back pulses of half the total duration
@@ -942,7 +1051,7 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	bl_config->jdi_scanline_duration = (blu_off - blu_on) / 2;
 	bl_config->jdi_scanline_offset[0] = blu_on;
 	bl_config->jdi_scanline_offset[1] = (blu_on + bl_config->jdi_scanline_duration);
-error:
+
 	return rc;
 }
 
@@ -969,6 +1078,9 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 		break;
 	case DSI_BACKLIGHT_JDI:
 		rc = dsi_panel_jdi_update_backlight(panel, bl_lvl);
+		break;
+	case DSI_BACKLIGHT_JDI_NVT:
+		rc = dsi_panel_jdi_nvt_update_backlight(panel, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_update_pwm_backlight(panel, bl_lvl);
@@ -997,6 +1109,7 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 		break;
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
+	case DSI_BACKLIGHT_JDI_NVT:
 	case DSI_BACKLIGHT_EXTERNAL:
 	case DSI_BACKLIGHT_PWM:
 	default:
@@ -1122,6 +1235,7 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 		break;
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
+	case DSI_BACKLIGHT_JDI_NVT:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
@@ -2636,6 +2750,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_EXTERNAL;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI;
+	} else if (!strcmp(bl_type, "bl_ctrl_jdi_nvt")) {
+		panel->bl_config.type = DSI_BACKLIGHT_JDI_NVT;
 	} else if (!strcmp(bl_type, "bl_ctrl_local_dimming")) {
 		panel->bl_config.type = DSI_BACKLIGHT_LOCAL_DIMMING;
 	} else {
@@ -2686,13 +2802,14 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.brightness_max_level = val;
 	}
 
-	if (panel->bl_config.type == DSI_BACKLIGHT_JDI) {
+	if (panel->bl_config.type == DSI_BACKLIGHT_JDI
+		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
 		rc = utils->read_u32(utils->data,
 			"qcom,mdss-dsi-jdi-default-duty-cycle", &val);
 		if (rc) {
-			DSI_DEBUG("[%s] jdi-default-duty-cycle unspecified, defaulting to 10.0%%\n",
-				panel->name);
-			panel->bl_config.jdi_blu_default_duty = 100;
+			DSI_DEBUG("[%s] jdi-default-duty-cycle unspecified, rc=%d\n",
+				panel->name, rc);
+			goto error;
 		} else {
 			panel->bl_config.jdi_blu_default_duty = val;
 		}
@@ -2700,14 +2817,12 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		rc = utils->read_u32(utils->data,
 			"qcom,mdss-dsi-jdi-default-max-scanline-offset", &val);
 		if (rc) {
-			DSI_DEBUG("[%s] jdi-default-max-scanline-offset unspecified, defaulting to 2000 lines\n",
-				panel->name);
-			panel->bl_config.jdi_scanline_max_offset = 2000;
+			DSI_DEBUG("[%s] jdi-default-max-scanline-offset unspecified, rc=%d\n",
+				panel->name, rc);
+			goto error;
 		} else {
 			panel->bl_config.jdi_scanline_max_offset = val;
 		}
-
-		rc = 0;
 	} else if (panel->bl_config.type == DSI_BACKLIGHT_PWM) {
 		rc = dsi_panel_parse_bl_pwm_config(panel);
 		if (rc) {
@@ -4864,6 +4979,8 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 	mutex_lock(&panel->panel_lock);
 	if (panel->bl_config.type == DSI_BACKLIGHT_JDI)
 		dsi_panel_jdi_update_backlight(panel, 0);
+	else if (panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
+		dsi_panel_jdi_nvt_update_backlight(panel, 0);
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_PRE_OFF);
 	if (rc) {

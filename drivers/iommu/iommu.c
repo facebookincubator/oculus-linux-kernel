@@ -1517,6 +1517,77 @@ phys_addr_t iommu_iova_to_phys_hard(struct iommu_domain *domain,
 	return domain->ops->iova_to_phys_hard(domain, iova);
 }
 
+/**
+ * iommu_fetch_iova_ptep - Fetches a pointer to the requested PTE
+ *
+ * Fetches a pointer to the requested PTE, allocating tables and splitting
+ * blocks as necessary so that it will *always* return a terminal PTE pointer.
+ * Optionally returns a pointer to the parent PTE of the fetched entry if
+ * `pptepp` is valid.
+ */
+void *iommu_fetch_iova_ptep(struct iommu_domain *domain, dma_addr_t iova,
+		void **pptepp)
+{
+	if (unlikely(domain->ops->fetch_iova_ptep == NULL))
+		return ERR_PTR(-ENODEV);
+
+	return domain->ops->fetch_iova_ptep(domain, iova, pptepp);
+}
+
+/**
+ * iommu_decode_ptep - Decodes the page and protection flags from a PTE pointer
+ *
+ * Extracts the page pointer and mapping attributes from a PTE pointer. Returns
+ * 0 on success or an error when the PTE pointer is invalid. If the PTE is
+ * invalid (for instance if it hasn't been mapped yet) then ERR_PTR(-ENOENT)
+ * will be returned in the `pagep` argument. If the PFN associated with the PTE
+ * is invalid then ERR_PTR(-EINVAL) will be returned in `pagep`. Decodes and
+ * stores the IOMMU page protection flags in `protp` if the pointer is valid.
+ */
+int iommu_decode_ptep(struct iommu_domain *domain, void *ptep,
+		struct page **pagep, int *protp)
+{
+	if (unlikely(domain->ops->decode_ptep == NULL))
+		return -ENODEV;
+
+	return domain->ops->decode_ptep(domain, ptep, pagep, protp);
+}
+
+/**
+ * iommu_remap_ptep - Remap the entry at the PTE pointer
+ *
+ * Remaps the entry pointed to by `*ptep` with the provided page and protection
+ * flags. If the PTE is currently valid then it will first be unmapped and
+ * synced before being mapped to the new page as break-before-make is required
+ * by SMMU spec.
+ */
+int iommu_remap_ptep(struct iommu_domain *domain, void *ptep, void *pptep,
+		dma_addr_t iova, struct page *page, int prot)
+{
+	if (unlikely(domain->ops->remap_ptep == NULL))
+		return -ENODEV;
+
+	return domain->ops->remap_ptep(domain, ptep, pptep, iova, page, prot);
+}
+
+struct page **iommu_find_mapped_page_range(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, int *page_count)
+{
+	if (unlikely(domain->ops->find_mapped_page_range == NULL))
+		return ERR_PTR(-ENODEV);
+
+	return domain->ops->find_mapped_page_range(domain, iova, size, page_count);
+}
+
+int iommu_get_backing_pages(struct iommu_domain *domain, dma_addr_t iova,
+		size_t size, struct list_head *page_list)
+{
+	if (unlikely(domain->ops->get_backing_pages == NULL))
+		return -ENODEV;
+
+	return domain->ops->get_backing_pages(domain, iova, size, page_list);
+}
+
 uint64_t iommu_iova_to_pte(struct iommu_domain *domain,
 				    dma_addr_t iova)
 {

@@ -122,6 +122,7 @@ struct kgsl_context;
  * @workqueue: Pointer to a single threaded workqueue
  * @mem_workqueue: Pointer to a workqueue for deferring memory entries
  * @mem_work: Work struct to schedule mem_workqueue flush
+ * @destroy_work: Work struct to handle deferred destruction of memory entries
  */
 struct kgsl_driver {
 	struct cdev cdev;
@@ -140,8 +141,6 @@ struct kgsl_driver {
 	spinlock_t proclist_lock;
 	struct mutex devlock;
 	struct {
-		atomic_long_t vmalloc;
-		atomic_long_t vmalloc_max;
 		atomic_long_t page_alloc;
 		atomic_long_t page_alloc_max;
 		atomic_long_t secure;
@@ -153,6 +152,7 @@ struct kgsl_driver {
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *mem_workqueue;
 	struct work_struct mem_work;
+	struct work_struct destroy_work;
 	struct kthread_worker worker;
 	struct task_struct *worker_thread;
 };
@@ -166,7 +166,7 @@ struct kgsl_memdesc_ops {
 	unsigned int vmflags;
 	int (*vmfault)(struct kgsl_memdesc *memdesc, struct vm_area_struct *vma,
 		       struct vm_fault *vmf);
-	void (*free)(struct page **pages, unsigned int page_count);
+	void (*free)(struct kgsl_memdesc *memdesc, struct list_head *page_list);
 };
 
 /* Internal definitions for memdesc->priv */
@@ -191,6 +191,8 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_KERNEL_RW BIT(10)
 /* This entry is backed by fixed physical resources that cannot be freed */
 #define KGSL_MEMDESC_FIXED BIT(11)
+/* Lazily allocate memory for this entry */
+#define KGSL_MEMDESC_LAZY_ALLOCATION BIT(12)
 
 /**
  * struct kgsl_memdesc - GPU memory object descriptor
@@ -203,9 +205,6 @@ struct kgsl_memdesc_ops {
  * @sgt: Scatter gather table for allocated pages
  * @ops: Function hooks for the memdesc memory type
  * @flags: Flags set from userspace
- * @dev: Pointer to the struct device that owns this memory
- * @pages: An array of pointers to allocated pages
- * @page_count: Total number of pages allocated
  */
 struct kgsl_memdesc {
 	struct kgsl_pagetable *pagetable;
@@ -217,9 +216,6 @@ struct kgsl_memdesc {
 	struct sg_table *sgt;
 	struct kgsl_memdesc_ops *ops;
 	uint64_t flags;
-	struct device *dev;
-	struct page **pages;
-	unsigned int page_count;
 	/*
 	 * @lock: Spinlock to protect the gpuaddr from being accessed by
 	 * multiple entities trying to map the same SVM region at once
@@ -260,29 +256,27 @@ struct kgsl_global_memdesc {
  * @refcount: reference count. Currently userspace can only
  *  hold a single reference count, but the kernel may hold more.
  * @memdesc: description of the memory
+ * @destroy_node: Lockless list node for deferred destruction of this entry.
  * @priv_data: type-specific data, such as the dma-buf attachment pointer.
- * @node: rb_node for the gpu address lookup rb tree
+ * @priv: back pointer to the process that owns this memory
+ * @metadata: String containing user specified metadata for the entry
  * @id: idr index for this entry, can be used to find memory that does not have
  *  a valid GPU address.
- * @priv: back pointer to the process that owns this memory
- * @dentry_id: debugfs entry idr index for this memory
  * @pending_free: if !0, userspace requested that his memory be freed, but there
  *  are still references to it.
  * @dev_priv: back pointer to the device file that created this entry.
- * @metadata: String containing user specified metadata for the entry
- * @work: Work struct used to schedule a kgsl_mem_entry_put in atomic contexts
  */
 struct kgsl_mem_entry {
 	struct kref refcount;
 	struct kgsl_memdesc memdesc;
+	struct llist_node destroy_node;
 	void *priv_data;
-	struct rb_node node;
-	unsigned int id;
-	int dentry_id;
-	int pending_free;
 	struct kgsl_process_private *priv;
+#if IS_ENABLED(CONFIG_QCOM_KGSL_ENTRY_METADATA)
 	char *metadata;
-	struct work_struct work;
+#endif
+	unsigned int id;
+	atomic_t pending_free;
 	/**
 	 * @map_count: Count how many vmas this object is mapped in - used for
 	 * debugfs accounting
@@ -411,7 +405,8 @@ long kgsl_ioctl_allow_tid_maximum_priority(struct kgsl_device_private *dev_priv,
 void kgsl_mem_entry_destroy(struct kref *kref);
 void kgsl_mem_entry_destroy_deferred(struct kref *kref);
 
-struct kgsl_process_private *kgsl_get_allocator(struct kgsl_mem_entry *entry);
+struct kgsl_process_private *kgsl_find_dmabuf_allocator(
+		struct kgsl_mem_entry *entry);
 
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
 			int *egl_surface_count, int *egl_image_count,
@@ -424,7 +419,7 @@ struct kgsl_mem_entry * __must_check
 kgsl_sharedmem_find_id(struct kgsl_process_private *process, unsigned int id);
 
 struct kgsl_mem_entry *gpumem_alloc_entry(struct kgsl_device_private *dev_priv,
-				uint64_t size, uint64_t flags);
+				uint64_t size, uint64_t flags, uint32_t priv);
 long gpumem_free_entry(struct kgsl_mem_entry *entry);
 
 void kgsl_mmu_add_global(struct kgsl_device *device,

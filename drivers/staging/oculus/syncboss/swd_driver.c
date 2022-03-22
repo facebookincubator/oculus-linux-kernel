@@ -33,17 +33,11 @@ static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 	devdata->workqueue = create_singlethread_workqueue(
 		"fwupdate_workqueue");
 
-	/*
-	 * If this SWD device is associated with syncboss, then we must make
-	 * sure reset syncboss following an SWD firmware update. Set up a
-	 * callback into the syncboss device to accomplish this.
-	 */
 	if (parent_node &&
 	    of_device_is_compatible(parent_node, "oculus,syncboss")) {
 		struct swd_ops *ops = dev_get_drvdata(dev->parent);
 
 		devdata->is_busy = ops->is_busy;
-		devdata->on_firmware_update_complete = ops->fw_update_cb;
 	}
 
 	mutex_init(&devdata->state_mutex);
@@ -54,6 +48,8 @@ static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 		dev_err(dev, "Failed to get fw-path: %d\n", ret);
 		return ret;
 	}
+
+	devdata->gpio_reset = of_get_named_gpio(node, "oculus,pin-reset", 0);
 
 	devdata->gpio_swdclk = of_get_named_gpio(node, "oculus,swd-clk", 0);
 	devdata->gpio_swdio = of_get_named_gpio(node, "oculus,swd-io", 0);

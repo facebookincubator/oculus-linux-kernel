@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/delay.h>
 #include <linux/firmware.h>
+#include <linux/gpio.h>
 #include <linux/slab.h>
 #include <linux/regulator/consumer.h>
 #include <linux/uaccess.h>
@@ -13,6 +15,8 @@
 #define FW_UPDATE_STATE_IDLE_STR      "idle"
 #define FW_UPDATE_STATE_WRITING_STR   "writing"
 #define FW_UPDATE_STATE_ERROR_STR     "error"
+
+#define RESET_GPIO_TIME_MS 5
 
 /* SWD Operations for each supported architecture */
 static struct {
@@ -142,6 +146,11 @@ static int update_firmware(struct device *dev)
 		}
 	}
 
+	if (gpio_is_valid(devdata->gpio_reset)) {
+		gpio_direction_output(devdata->gpio_reset, 1);
+		msleep(RESET_GPIO_TIME_MS);
+	}
+
 	dev_info(dev, "Updating firmware: Image size: %zd bytes...", fw->size);
 #if defined(CONFIG_DYNAMIC_DEBUG)
 	print_hex_dump_bytes("Firmware binary to write: ", DUMP_PREFIX_OFFSET,
@@ -194,16 +203,24 @@ static int update_firmware(struct device *dev)
 	swd_flush(dev);
 	swd_deinit(dev);
 
+	if (gpio_is_valid(devdata->gpio_reset)) {
+		dev_info(dev, "Re-applying MCU reset");
+		gpio_set_value(devdata->gpio_reset, 0);
+
+		/*
+		 * Delay since we don't know when the driver that owns this
+		 * MCU will want to wake it again.
+		 */
+		msleep(RESET_GPIO_TIME_MS);
+	}
+
 	dev_info(dev, "Done updating firmware. ");
-	dev_info(dev, "Issuing sleep request");
 
  error:
 	kfree(devdata->provisioning);
 	devdata->provisioning = NULL;
 	if (devdata->swd_core && regulator_disable(devdata->swd_core))
 		dev_err(dev, "Regulator failed to disable");
-	if (devdata->on_firmware_update_complete)
-		devdata->on_firmware_update_complete(dev, status);
 	atomic_set(&devdata->fw_chunks_written, 0);
 	atomic_set(&devdata->fw_chunks_to_write, 0);
 	devdata->fw_update_state = status ? FW_UPDATE_STATE_ERROR : FW_UPDATE_STATE_IDLE;

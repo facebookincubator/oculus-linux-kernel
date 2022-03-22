@@ -92,13 +92,14 @@ static int cam_isp_fpc_clear_queues(struct cam_isp_fastpath_context *ctx)
 		list_del(&req_isp->list);
 		kmem_cache_free(ctx->request_cache, req_isp);
 	}
-
+	ctx->num_in_active = 0;
 	list_for_each_safe(pos, next, &ctx->process_req_list) {
 		req_isp = list_entry(pos, struct cam_isp_fastpath_ctx_req,
 				     list);
 		list_del(&req_isp->list);
 		kmem_cache_free(ctx->request_cache, req_isp);
 	}
+	ctx->num_in_processing = 0;
 
 	mutex_unlock(&ctx->mutex_list);
 	return 0;
@@ -149,9 +150,10 @@ static int cam_isp_fpc_start_dev(struct cam_isp_fastpath_context *ctx,
 	 * back to pending list if hw_start fails.
 	 */
 	CAM_DBG(CAM_ISP, "start device success ctx %u", ctx->ctx_id);
-
+	req_isp->state = CAM_ISP_HW_EVENT_SOF;
 	list_del(&req_isp->list);
 	list_add_tail(&req_isp->list, &ctx->active_req_list);
+	ctx->num_in_active++;
 	CAM_DBG(CAM_REQ,
 		"Move pending req: %lld to active list(cnt: %d) ctx %u",
 		req_isp->request_id, ctx->ctx_id);
@@ -614,6 +616,8 @@ static int cam_isp_fpc_apply_req(struct cam_isp_fastpath_context *ctx)
 		goto end;
 	}
 
+	req_isp->state = CAM_ISP_HW_EVENT_SOF; // next state should be DONE
+
 	CAM_DBG(CAM_REQ, "Apply request %lld num_cfg %d reused packet %d",
 		req_isp->request_id, req_isp->num_cfg, req_isp->reused_packet);
 
@@ -633,6 +637,7 @@ static int cam_isp_fpc_apply_req(struct cam_isp_fastpath_context *ctx)
 		mutex_lock(&ctx->mutex_list);
 		list_del(&req_isp->list);
 		list_add_tail(&req_isp->list, &ctx->active_req_list);
+		ctx->num_in_active++;
 		mutex_unlock(&ctx->mutex_list);
 	}
 end:
@@ -691,6 +696,97 @@ static int cam_isp_fpc_release_dev(struct cam_isp_fastpath_context *ctx)
 	return 0;
 }
 
+// Assumes ctx->mutex_list is locked
+static struct cam_isp_fastpath_ctx_req *cam_isp_fpc_get_latest_processing_request(
+			struct cam_isp_fastpath_context *ctx)
+{
+	struct cam_isp_fastpath_ctx_req *req_isp;
+
+	while (ctx->num_in_processing > 1) {
+		CAM_ERR(CAM_ISP, "ctx->num_in_processing %u", ctx->num_in_processing);
+		if (list_empty(&ctx->process_req_list)) {
+			CAM_ERR(CAM_ISP,
+						"CRITICAL ERR: Process list is empty! num_in_processing %d",
+						ctx->num_in_processing);
+			ctx->num_in_processing = 0;
+			return NULL;
+		}
+
+		req_isp = list_first_entry(&ctx->process_req_list,
+				struct cam_isp_fastpath_ctx_req, list);
+
+		CAM_ERR(CAM_ISP,
+				"Recycling req %llu, sof_idx %u ts %llu WAIT %u from %u",
+				req_isp->request_id,
+				req_isp->sof_index,
+				req_isp->timestamp,
+				req_isp->num_acked,
+				req_isp->num_fence_map_out);
+
+		cam_fp_queue_buffer_set_done(&ctx->fp_queue,
+			req_isp->request_id, req_isp->timestamp,
+			CAM_FP_BUFFER_STATUS_ERROR,
+			req_isp->sof_index);
+		list_del_init(&req_isp->list);
+		kmem_cache_free(ctx->request_cache, req_isp);
+		ctx->num_in_processing--;
+	}
+
+	if (list_empty(&ctx->process_req_list)) {
+		CAM_ERR(CAM_ISP, "Process list is empty!");
+		return NULL;
+	}
+	req_isp = list_first_entry(&ctx->process_req_list,
+			struct cam_isp_fastpath_ctx_req, list);
+
+	return req_isp;
+}
+
+
+// Assumes ctx->mutex_list is locked
+static struct cam_isp_fastpath_ctx_req *cam_isp_fpc_get_latest_active_request(
+			struct cam_isp_fastpath_context *ctx)
+{
+	struct cam_isp_fastpath_ctx_req *req_isp;
+
+	while (ctx->num_in_active > 1) {
+		CAM_ERR(CAM_ISP, "ctx->active_req_list %u", ctx->active_req_list);
+		if (list_empty(&ctx->active_req_list)) {
+			CAM_ERR(CAM_ISP,
+						"CRITICAL ERR: Process list is empty! num_in_active %d",
+						ctx->num_in_active);
+			ctx->num_in_active = 0;
+			return NULL;
+		}
+		req_isp = list_first_entry(&ctx->active_req_list,
+			struct cam_isp_fastpath_ctx_req, list);
+
+		CAM_ERR(CAM_ISP,
+				"Recycling Active req %llu, sof_idx %u ts %llu WAIT %u from %u",
+				req_isp->request_id,
+				req_isp->sof_index,
+				req_isp->timestamp,
+				req_isp->num_acked,
+				req_isp->num_fence_map_out);
+		cam_fp_queue_buffer_set_done(&ctx->fp_queue,
+			req_isp->request_id, req_isp->timestamp,
+			CAM_FP_BUFFER_STATUS_ERROR,
+			req_isp->sof_index);
+		list_del_init(&req_isp->list);
+		kmem_cache_free(ctx->request_cache, req_isp);
+		ctx->num_in_active--;
+	}
+
+	if (list_empty(&ctx->active_req_list)) {
+		CAM_ERR(CAM_ISP, "Active list is empty!");
+		return NULL;
+	}
+	req_isp = list_first_entry(&ctx->active_req_list,
+			struct cam_isp_fastpath_ctx_req, list);
+
+	return req_isp;
+}
+
 static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 {
 	struct cam_isp_fastpath_work_payload *payload;
@@ -701,7 +797,7 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 	int i, j;
 
 	payload = container_of(work, struct cam_isp_fastpath_work_payload,
-			       work);
+					work);
 
 	ctx = payload->ctx;
 
@@ -710,13 +806,24 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 		ctx->sof_cnt++;
 		CAM_DBG(CAM_ISP, "FP SOF %d", ctx->sof_cnt);
 		mutex_lock(&ctx->mutex_list);
-		if (!list_empty(&ctx->active_req_list)) {
-			req_isp = list_first_entry(&ctx->active_req_list,
-				struct cam_isp_fastpath_ctx_req, list);
+		req_isp = cam_isp_fpc_get_latest_active_request(ctx);
+		if (req_isp) {
 			req_isp->timestamp = payload->data.sof.boot_time;
 			req_isp->sof_index = ctx->sof_cnt;
+			if (req_isp->state != CAM_ISP_HW_EVENT_SOF)
+				CAM_ERR(CAM_ISP, "invalid state %u in process %u", req_isp->state, ctx->num_in_processing);
+
+
+			CAM_DBG(CAM_ISP, "SOF %lld act %u process %u",
+					req_isp->request_id,
+					ctx->num_in_active,
+					ctx->num_in_processing);
+
+			req_isp->state = CAM_ISP_HW_EVENT_DONE;
 			list_del(&req_isp->list);
 			list_add_tail(&req_isp->list, &ctx->process_req_list);
+			ctx->num_in_active--;
+			ctx->num_in_processing++;
 		}
 		mutex_unlock(&ctx->mutex_list);
 		break;
@@ -726,19 +833,21 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 
 		cam_isp_fpc_config_dev(ctx, &cmd);
 		cam_isp_fpc_apply_req(ctx);
+
 		break;
 	case CAM_ISP_HW_EVENT_DONE:
 		done = &payload->data.done;
 
 		mutex_lock(&ctx->mutex_list);
 
-		if (list_empty(&ctx->process_req_list)) {
+		req_isp = cam_isp_fpc_get_latest_processing_request(ctx);
+		if (!req_isp) {
 			mutex_unlock(&ctx->mutex_list);
-			CAM_ERR(CAM_ISP, "Process list is empty!");
+			kmem_cache_free(ctx->payload_cache, payload);
 			return;
 		}
-		req_isp = list_first_entry(&ctx->process_req_list,
-				struct cam_isp_fastpath_ctx_req, list);
+		if (req_isp->state != CAM_ISP_HW_EVENT_DONE)
+			CAM_ERR(CAM_ISP, "invalid state %u in process %u", req_isp->state, ctx->num_in_processing);
 
 		for (i = 0; i < done->num_handles; i++) {
 			for (j = 0; j < req_isp->num_fence_map_out; j++) {
@@ -751,6 +860,7 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 				CAM_ERR(CAM_ISP, "resource not found");
 				mutex_unlock(&ctx->mutex_list);
 				kmem_cache_free(ctx->request_cache, req_isp);
+				kmem_cache_free(ctx->payload_cache, payload);
 				return;
 			}
 
@@ -762,8 +872,14 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 					req_isp->request_id, req_isp->timestamp,
 					CAM_FP_BUFFER_STATUS_SUCCESS,
 					req_isp->sof_index);
+				req_isp->state = CAM_ISP_HW_EVENT_MAX; // set invalid state
 				list_del_init(&req_isp->list);
 				kmem_cache_free(ctx->request_cache, req_isp);
+				if (ctx->num_in_processing)
+					ctx->num_in_processing--;
+				else
+					CAM_ERR(CAM_ISP,
+						"Detected mismatch in ctx->num_in_processing");
 			} else {
 				CAM_DBG(CAM_ISP, "Ret %lld WAIT %u from %u",
 					req_isp->request_id,
@@ -805,8 +921,10 @@ static int cam_isp_fpc_handle_irq(void *context, uint32_t evt_id,
 	}
 
 	payload = kmem_cache_zalloc(ctx->payload_cache, GFP_ATOMIC);
-	if (!payload)
+	if (!payload) {
+		CAM_ERR(CAM_ISP, "Failed to allocate payload for evt %d", evt_id);
 		return -ENOMEM;
+	}
 
 	payload->evt_id = evt_id;
 	payload->ctx = ctx;
@@ -1229,22 +1347,22 @@ void *cam_isp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
 	INIT_LIST_HEAD(&ctx->active_packet_list);
 	INIT_LIST_HEAD(&ctx->pending_packet_list);
 	INIT_LIST_HEAD(&ctx->active_req_list);
+	ctx->num_in_active = 0;
 	INIT_LIST_HEAD(&ctx->pending_req_list);
 	INIT_LIST_HEAD(&ctx->process_req_list);
+	ctx->num_in_processing = 0;
 
 	ctx->payload_cache = KMEM_CACHE(cam_isp_fastpath_work_payload, 0);
 	if (!ctx->payload_cache)
 		goto error_free_context;
 
 	ctx->request_cache = KMEM_CACHE(cam_isp_fastpath_ctx_req, 0);
-	if (!ctx->request_cache) {
+	if (!ctx->request_cache)
 		goto error_release_payload_cache;
-	}
 
 	ctx->packet_cache = KMEM_CACHE(cam_isp_fastpath_packet, 0);
-	if (!ctx->packet_cache) {
+	if (!ctx->packet_cache)
 		goto error_release_request_cache;
-	}
 
 	/* Initialize fastpath queue with max of 16 buffers */
 	rc = cam_fp_queue_init(&ctx->fp_queue, "cam_fp_ife_q", 16,

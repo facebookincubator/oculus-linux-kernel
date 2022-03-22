@@ -6759,6 +6759,13 @@ wl_cfg80211_set_tx_power(struct wiphy *wiphy,
 	dbm = MBM_TO_DBM(dbm);
 #endif /* WL_CFG80211_P2P_DEV_IF */
 
+#if defined(WL_CFG80211_P2P_DEV_IF)
+	if (wdev) {
+		cfg = wiphy_priv(wdev->wiphy);
+		ndev = wdev->netdev;
+	}
+#endif
+
 	RETURN_EIO_IF_NOT_UP(cfg);
 	switch (type) {
 	case NL80211_TX_POWER_AUTOMATIC:
@@ -11208,6 +11215,11 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 	wiphy_ext_feature_set(wdev->wiphy, NL80211_EXT_FEATURE_OCE_PROBE_REQ_DEFERRAL_SUPPRESSION);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0) */
 #endif /* WL_OCE && WL_CAP_OCE_STA */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+	/* Enable per-vif TX power settings */
+	wdev->wiphy->features |= NL80211_FEATURE_VIF_TXPOWER;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0) */
 
 	/* Now we can register wiphy with cfg80211 module */
 	err = wiphy_register(wdev->wiphy);

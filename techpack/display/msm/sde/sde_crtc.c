@@ -502,7 +502,7 @@ static void update_scanline_offset(struct drm_connector *conn,
 	 * Skip over this connector if it doesn't support variable
 	 * scanline offset.
 	 */
-	if (bl_config->type != DSI_BACKLIGHT_JDI)
+	if ((bl_config->type != DSI_BACKLIGHT_JDI) && (bl_config->type != DSI_BACKLIGHT_JDI_NVT))
 		return;
 
 	if (!c_conn->allow_bl_update)

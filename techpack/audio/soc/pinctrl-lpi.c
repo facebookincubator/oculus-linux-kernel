@@ -557,7 +557,7 @@ static const struct snd_event_ops lpi_pinctrl_ssr_ops = {
 	.disable = lpi_pinctrl_ssr_disable,
 };
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_PINCTRL_LPI_DEBUG
 #include <linux/seq_file.h>
 
 static unsigned int lpi_regval_to_drive(u32 val)

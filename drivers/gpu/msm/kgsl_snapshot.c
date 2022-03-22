@@ -646,6 +646,13 @@ void kgsl_device_snapshot(struct kgsl_device *device,
 	struct timespec boot;
 	phys_addr_t pa;
 
+	/*
+	 * Finish up any pending memory entry destruction work to try and free
+	 * some headroom for processing the snapshot.
+	 */
+	queue_work(kgsl_driver.mem_workqueue, &kgsl_driver.destroy_work);
+	flush_workqueue(kgsl_driver.mem_workqueue);
+
 	set_isdb_breakpoint_registers(device);
 
 	if (device->snapshot_memory.ptr == NULL) {

@@ -174,6 +174,7 @@ enum iommu_attr {
 	DOMAIN_ATTR_FAULT_MODEL_NO_STALL,
 	DOMAIN_ATTR_FAULT_MODEL_HUPCF,
 	DOMAIN_ATTR_SPLIT_TABLES,
+	DOMAIN_ATTR_CONTEXT_FAULT_IRQ,
 	DOMAIN_ATTR_MAX,
 };
 
@@ -244,6 +245,11 @@ extern struct dentry *iommu_debugfs_top;
  * @tlbi_domain: Invalidate all TLBs covering an iommu domain
  * @enable_config_clocks: Enable all config clocks for this domain's IOMMU
  * @disable_config_clocks: Disable all config clocks for this domain's IOMMU
+ * @fetch_iova_ptep: Translates an iova to a PTE pointer from the final page
+ *                   table level, splitting block entries if necessary.
+ *                   Optionally returns a pointer to the parent PTE.
+ * @decode_ptep: Extracts the page pointer and mapping attributes from a PTE
+ *               pointer.
  */
 struct iommu_ops {
 	bool (*capable)(enum iommu_cap);
@@ -267,6 +273,10 @@ struct iommu_ops {
 	phys_addr_t (*iova_to_phys)(struct iommu_domain *domain, dma_addr_t iova);
 	phys_addr_t (*iova_to_phys_hard)(struct iommu_domain *domain,
 					 dma_addr_t iova);
+	struct page **(*find_mapped_page_range)(struct iommu_domain *domain,
+			dma_addr_t iova, size_t size, int *page_count);
+	int (*get_backing_pages)(struct iommu_domain *domain, dma_addr_t iova,
+			size_t size, struct list_head *page_list);
 	int (*add_device)(struct device *dev);
 	void (*remove_device)(struct device *dev);
 	struct iommu_group *(*device_group)(struct device *dev);
@@ -294,6 +304,12 @@ struct iommu_ops {
 	void (*tlbi_domain)(struct iommu_domain *domain);
 	int (*enable_config_clocks)(struct iommu_domain *domain);
 	void (*disable_config_clocks)(struct iommu_domain *domain);
+	void *(*fetch_iova_ptep)(struct iommu_domain *domain, dma_addr_t iova,
+			void **pptepp);
+	int (*decode_ptep)(struct iommu_domain *domain, void *ptep,
+			struct page **pagep, int *protp);
+	int (*remap_ptep)(struct iommu_domain *domain, void *ptep, void *pptep,
+			dma_addr_t iova, struct page *page, int prot);
 	uint64_t (*iova_to_pte)(struct iommu_domain *domain,
 			 dma_addr_t iova);
 
@@ -379,6 +395,10 @@ extern size_t default_iommu_map_sg(struct iommu_domain *domain, unsigned long io
 extern phys_addr_t iommu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova);
 extern phys_addr_t iommu_iova_to_phys_hard(struct iommu_domain *domain,
 					   dma_addr_t iova);
+extern struct page **iommu_find_mapped_page_range(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, int *page_count);
+extern int iommu_get_backing_pages(struct iommu_domain *domain, dma_addr_t iova,
+		size_t size, struct list_head *page_list);
 extern bool iommu_is_iova_coherent(struct iommu_domain *domain,
 				dma_addr_t iova);
 extern void iommu_set_fault_handler(struct iommu_domain *domain,
@@ -430,7 +450,12 @@ extern int iommu_domain_window_enable(struct iommu_domain *domain, u32 wnd_nr,
 				      phys_addr_t offset, u64 size,
 				      int prot);
 extern void iommu_domain_window_disable(struct iommu_domain *domain, u32 wnd_nr);
-
+extern void *iommu_fetch_iova_ptep(struct iommu_domain *domain, dma_addr_t iova,
+		void **pptepp);
+extern int iommu_decode_ptep(struct iommu_domain *domain, void *ptep,
+		struct page **pagep, int *protp);
+extern int iommu_remap_ptep(struct iommu_domain *domain, void *ptep,
+		void *pptep, dma_addr_t iova, struct page *page, int prot);
 extern uint64_t iommu_iova_to_pte(struct iommu_domain *domain,
 	    dma_addr_t iova);
 
@@ -607,6 +632,24 @@ static inline int iommu_domain_window_enable(struct iommu_domain *domain,
 static inline void iommu_domain_window_disable(struct iommu_domain *domain,
 					       u32 wnd_nr)
 {
+}
+
+static inline void *iommu_fetch_iova_ptep(struct iommu_domain *domain,
+		dma_addr_t iova, void **pptepp)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+static inline int iommu_decode_ptep(struct iommu_domain *domain, void *ptep,
+		struct page **pagep, int *protp)
+{
+	return -ENODEV;
+}
+
+static inline int iommu_remap_ptep(struct iommu_domain *domain, void *ptep,
+		void *pptep, dma_addr_t iova, struct page *page, int prot)
+{
+	return -ENODEV;
 }
 
 static inline phys_addr_t iommu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)

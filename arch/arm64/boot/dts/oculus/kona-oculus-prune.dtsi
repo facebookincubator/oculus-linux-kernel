@@ -48,6 +48,10 @@
 	};
 };
 
+&kgsl_smmu {
+	/delete-property/ qcom,no-dynamic-asid;
+};
+
 &soc {
 	/delete-node/ jtagmm@7040000;
 	/delete-node/ jtagmm@7140000;

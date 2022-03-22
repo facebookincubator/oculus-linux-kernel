@@ -30,7 +30,6 @@ struct syncboss_msg {
 	struct list_head list;
 	struct spi_message spi_msg;
 	struct spi_transfer spi_xfer;
-	bool finalized;
 	size_t transaction_bytes;
 	struct syncboss_transaction tx;
 };
@@ -102,10 +101,13 @@ struct syncboss_dev_data {
 	struct miscdevice misc_nsync;
 	struct miscfifo nsync_fifo;
 
-	/* Connected clients reference count */
-	int client_count;
+	/* MCU power reference count */
+	int mcu_client_count;
 
-	/* Connected state event clients reference count */
+	/* Streaming client reference count */
+	int streaming_client_count;
+
+	/* Powertate event client reference count */
 	int powerstate_client_count;
 
 	/* The desired period of subsequent SPI transactions. */
@@ -216,9 +218,6 @@ struct syncboss_dev_data {
 	/* True if the MCU support querying wakeup reasons */
 	bool has_wake_reasons;
 
-	/* True if a wakelock should be held while streaming */
-	bool use_streaming_wakelock;
-
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	/* True if we must enable the camera temperature sensor
 	 * regulator (needed for syncboss to function properly on
@@ -244,6 +243,9 @@ struct syncboss_dev_data {
 	/* True if we should refrain from sending the next system_up event. */
 	bool eat_next_system_up_event;
 
+	/* True if we should refrain from sending the prox_on events. */
+	bool eat_prox_on_events;
+
 	/* True if we should not send any power state events to the user */
 	bool silence_all_powerstate_events;
 
@@ -259,14 +261,8 @@ struct syncboss_dev_data {
 	/* True if we should force pin reset on next open. */
 	bool force_reset_on_open;
 
-	/* Wakelock to prevent suspend while syncboss in use */
-	struct wakeup_source syncboss_in_use_wake_lock;
-
 	/* True if we should enable the fastpath spi code path */
 	bool use_fastpath;
-
-	/* True if the MCU enter its shutdown/sleep state upon reset */
-	bool boots_to_shutdown_state;
 };
 
 int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata);

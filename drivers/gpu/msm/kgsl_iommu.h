@@ -37,6 +37,7 @@
 #define KGSL_IOMMU_SVM_END32		(0xC0000000 - SZ_16M)
 
 /* The CPU supports 39 bit addresses */
+#define KGSL_IOMMU_IAS			39
 #define KGSL_IOMMU_SVM_BASE64		0x100000000ULL
 #define KGSL_IOMMU_SVM_END64		0x4000000000ULL
 #define KGSL_IOMMU_VA_BASE64		0x4000000000ULL
@@ -50,6 +51,7 @@
 #define KGSL_IOMMU_CTX_TTBR0		0x0020
 #define KGSL_IOMMU_CTX_CONTEXTIDR	0x0034
 #define KGSL_IOMMU_CTX_FSR		0x0058
+#define KGSL_IOMMU_CTX_FAR		0x0060
 #define KGSL_IOMMU_CTX_TLBIALL		0x0618
 #define KGSL_IOMMU_CTX_RESUME		0x0008
 #define KGSL_IOMMU_CTX_FSYNR0		0x0068
@@ -71,6 +73,12 @@
 /* Max number of iommu clks per IOMMU unit */
 #define KGSL_IOMMU_MAX_CLKS 5
 
+struct kgsl_iommu_fault_regs {
+	u64 addr;
+	u32 contextidr;
+	u32 flags;
+};
+
 /*
  * struct kgsl_iommu_context - Structure holding data about an iommu context
  * bank
@@ -89,16 +97,21 @@ struct kgsl_iommu_context {
 	struct platform_device *pdev;
 	const char *name;
 	int cb_num;
+	int irq;
 	struct kgsl_device *kgsldev;
 	bool stalled_on_fault;
 	struct kgsl_pagetable *default_pt;
+	void __iomem *regbase;
+	spinlock_t fault_lock;
+	int outstanding_fault_count;
+	struct kgsl_iommu_fault_regs fault_regs;
 };
 
 /*
  * struct kgsl_iommu - Structure holding iommu data for kgsl driver
+ * @pt_lock: Spinlock to protect PT IDR modification.
+ * @pt_idr: IDR for attached pagetables
  * @regbase: Virtual address of the IOMMU register base
- * @regstart: Physical address of the iommu registers
- * @regsize: Length of the iommu register region.
  * @setstate: Scratch GPU memory for IOMMU operations
  * @clk_enable_count: The ref count of clock enable calls
  * @clks: Array of pointers to IOMMU clocks
@@ -112,6 +125,8 @@ struct kgsl_iommu {
 	struct kgsl_iommu_context secure_context;
 	/** @lpac_context: Container for the LPAC iommu context */
 	struct kgsl_iommu_context lpac_context;
+	spinlock_t pt_lock;
+	struct idr pt_idr;
 	void __iomem *regbase;
 	struct kgsl_memdesc *setstate;
 	atomic_t clk_enable_count;
@@ -138,6 +153,7 @@ struct kgsl_iommu {
  * @ttbr0: register value to set when using this pagetable
  * @contextidr: register value to set when using this pagetable
  * @attached: is the pagetable attached?
+ * @prot_flags: Additional protection flags to pass to IOMMU map ops.
  * @rbtree: all buffers mapped into the pagetable, indexed by gpuaddr
  * @va_start: Start of virtual range used in this pagetable.
  * @va_end: End of virtual range.
@@ -152,6 +168,7 @@ struct kgsl_iommu_pt {
 	u64 ttbr0;
 	u32 contextidr;
 	bool attached;
+	int prot_flags;
 
 	struct rb_root rbtree;
 
@@ -162,5 +179,29 @@ struct kgsl_iommu_pt {
 	uint64_t compat_va_start;
 	uint64_t compat_va_end;
 };
+
+/*
+ * struct kgsl_iommu_addr_entry - entry in the kgsl_iommu_pt rbtree.
+ * @memdesc: Memory descriptor for this entry
+ * @footprint: The total footprint of the entry
+ * @node: the rbtree node
+ */
+struct kgsl_iommu_addr_entry {
+	struct kgsl_memdesc *memdesc;
+	uint64_t footprint;
+	struct rb_node node;
+};
+
+#define KGSL_IOMMU_SET_CTX_REG_Q(ctx, offset, val) \
+		writeq_relaxed((val), (ctx)->regbase + (offset))
+
+#define KGSL_IOMMU_GET_CTX_REG_Q(ctx, offset) \
+		readq_relaxed((ctx)->regbase + (offset))
+
+#define KGSL_IOMMU_SET_CTX_REG(ctx, offset, val) \
+		writel_relaxed((val), (ctx)->regbase + (offset))
+
+#define KGSL_IOMMU_GET_CTX_REG(ctx, offset) \
+		readl_relaxed((ctx)->regbase + (offset))
 
 #endif
