@@ -17,7 +17,7 @@ jobs:
     
       
     - name: Install dependencies
-      run: make
+      run: make -i
       
     - name: Run check
       run: make check
