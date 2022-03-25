@@ -1,0 +1,28 @@
+name: Makefile CI
+
+on:
+  push:
+    branches: [ oculus-go-kernel-master ]
+  pull_request:
+    branches: [ oculus-go-kernel-master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    
+      
+    - name: Install dependencies
+      run: make -i
+      
+    - name: Run bootimage
+      run: make bootimage
+        
+    - name: Run check
+      run: make check
+      
+    - name: Run distcheck
+      run: make distcheck
