@@ -95,6 +95,16 @@ config INSTRUCTION_SAMPLER
 	  Provides support for periodic instruction sampling of processes
 	  running on the system.
 
+config RT600_CTRL
+	tristate "Oculus RT600 control driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable RT600 control driver. This driver controls RT600 state
+		for flashing and reset. RT600 state needs to be modified via
+		sysfs to enable testing of different state transitions and also
+		to ensure RT600 is in the correct state for flashing.
+
 config TOP_PANEL_SENSOR
 	tristate "Top Panel Virtual Sensor Driver"
 	default n
@@ -103,6 +113,29 @@ config TOP_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the top
 	  panel skin temperature of a device.
+
+config SENSORS_PWM_TACH_FAN
+	tristate "PWM&TACH fan"
+	depends on (PWM && OF) || COMPILE_TEST
+	help
+	  If you say yes here you get support for fans connected to PWM lines.
+	  Tach connected to SoC gpio to read fan rpm.
+	  The driver uses the generic PWM interface, thus it will work on a
+	  variety of SoCs.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called pwm-tach-fan.
+
+config SPI_STP
+	tristate "STP SPI driver"
+	depends on OCULUS && SPI
+	default n
+	help
+	  Enable STP SPI driver for data transfer between SoC (master) and slave.
+	  This driver implements the STP protocol on top of the SPI bus,
+	  to facilitate communication between MCU and SoC. Driver supports up to 32
+	  pre-configured STP channels. Each STP channel is exposed as a dedicated
+	  character device, interfaceable through syscalls
 
 config SYNCBOSS
 	tristate "Oculus SyncBoss Driver"

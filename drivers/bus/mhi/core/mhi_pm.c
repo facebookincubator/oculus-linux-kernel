@@ -1676,7 +1676,7 @@ int mhi_device_get_sync_atomic(struct mhi_device *mhi_dev, int timeout_us,
 	struct mhi_controller *mhi_cntrl = mhi_dev->mhi_cntrl;
 
 	read_lock_bh(&mhi_cntrl->pm_lock);
-	if (MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state)) {
+	if (MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state) || !mhi_cntrl->wake_get) {
 		read_unlock_bh(&mhi_cntrl->pm_lock);
 		return -EIO;
 	}

@@ -117,6 +117,14 @@
 	pins = "gpio1", "gpio11", "gpio12";
 };
 
+&qupv3_se10_i2c {
+	as5510-driver {
+		reg = <0x56>;
+		compatible = "ams,as5510";
+		power-supply = <&pm8150a_l11>;
+	};
+};
+
 &thermal_zones {
 	cam5-usr {
 		/* RGB camera R */

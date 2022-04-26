@@ -107,7 +107,7 @@
 
 &dsi_panel_pwr_supply_lab_ibb {
 	qcom,panel-supply-entry@0 {
-		qcom,supply-pre-off-sleep = <15>;
+		qcom,supply-pre-off-sleep = <35>;
 	};
 
 	qcom,panel-supply-entry@3 {
@@ -445,7 +445,7 @@
 	blu_left: blu_left@0 {
 		compatible = "oculus,seacliff-blu-spi";
 		reg = <0x00>;
-		spi-max-frequency = <15000000>;
+		spi-max-frequency = <8000000>;
 		oculus,blu-corner-zones = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 56 57
 			60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 76 136 140 141 142
 			433 434 435 439 499 501 502 503 504 505 506 507 508 509 510 511
@@ -553,7 +553,7 @@
 	blu_right: blu_right@0 {
 		compatible = "oculus,seacliff-blu-spi";
 		reg = <0x00>;
-		spi-max-frequency = <15000000>;
+		spi-max-frequency = <8000000>;
 		oculus,blu-corner-zones = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 56 57
 			60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 76 136 140 141 142
 			433 434 435 439 499 501 502 503 504 505 506 507 508 509 510 511

@@ -100,6 +100,11 @@
 	regulator-always-on;
 };
 
+&pm8150a_l10 {
+	/* Canyon, Glacier, Teton power */
+	regulator-always-on;
+};
+
 &pm8150_l10 {
 	regulator-always-on;
 };

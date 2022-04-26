@@ -30,8 +30,7 @@ int kgsl_lazy_vmfault(struct kgsl_memdesc *memdesc, struct vm_area_struct *vma,
 		struct vm_fault *vmf);
 
 int kgsl_lazy_gpu_fault_handler(struct kgsl_iommu_context *ctx,
-		struct kgsl_pagetable *fault_pt, unsigned long addr,
-		int fault_flags);
+		struct kgsl_pagetable *fault_pt, unsigned long addr);
 #else
 static void kgsl_memdesc_set_lazy_configuration(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc, uint64_t *flags, uint32_t *priv)
@@ -75,8 +74,7 @@ static int kgsl_lazy_vmfault(struct kgsl_memdesc *memdesc,
 }
 
 static int kgsl_lazy_gpu_fault_handler(struct kgsl_iommu_context *ctx,
-		struct kgsl_pagetable *fault_pt, unsigned long addr,
-		int fault_flags)
+		struct kgsl_pagetable *fault_pt, unsigned long addr)
 {
 	return -ENOENT;
 }

@@ -1320,18 +1320,6 @@ config SENSORS_PWM_FAN
 	  This driver can also be built as a module.  If so, the module
 	  will be called pwm-fan.
 
-config SENSORS_PWM_TACH_FAN
-	tristate "PWM&TACH fan"
-	depends on (PWM && OF) || COMPILE_TEST
-	help
-	  If you say yes here you get support for fans connected to PWM lines.
-	  Tach connected to SoC gpio to read fan rpm.
-	  The driver uses the generic PWM interface, thus it will work on a
-	  variety of SoCs.
-
-	  This driver can also be built as a module.  If so, the module
-	  will be called pwm-tach-fan.
-
 config SENSORS_RASPBERRYPI_HWMON
 	tristate "Raspberry Pi voltage monitor"
 	depends on RASPBERRYPI_FIRMWARE || (COMPILE_TEST && !RASPBERRYPI_FIRMWARE)

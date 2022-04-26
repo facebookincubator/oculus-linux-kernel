@@ -4,11 +4,11 @@ qcom,5133886_facebook_sealiff_5348mah_averaged_masterslave_apr23rd2021 {
 	/* #5133886_Facebook_Sealiff_5348mAH_averaged_MasterSlave_Apr23rd2021*/
 	qcom,max-voltage-uv = <4400000>;
 	qcom,fastchg-current-ma = <4813>;/* 0.9C */
-	qcom,jeita-fcc-ranges-0 = <10 100  1069000
+	qcom,jeita-fcc-ranges-0 = <10 100  534000
 				101 200  2674000
 				201 450  4813000
 				451 550  1069000>;
-	qcom,jeita-fcc-ranges-1 = <10 100  1069000
+	qcom,jeita-fcc-ranges-1 = <10 100  534000
 				101 200  2674000
 				201 450  4813000
 				451 550  1069000>;

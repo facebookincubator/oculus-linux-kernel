@@ -135,6 +135,8 @@ config DRM_LONTIUM_LT9611UXC
 	select DRM_KMS_HELPER
 	select REGMAP_I2C
 	select DRM_MIPI_DSI
+	select CEC_CORE
+	select CEC_NOTIFIER
 	help
 	  Say Y here if you want support for the HDMI interface.
 	  It is Lontium Semiconductor DSI/HDMI Transmitter driver.

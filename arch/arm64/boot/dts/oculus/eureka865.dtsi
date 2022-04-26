@@ -216,8 +216,8 @@
 	status = "ok";
 	compatible = "qcom,msm-geni-console";
 	interrupts = <GIC_SPI 586 IRQ_TYPE_LEVEL_HIGH>;
-	/delete-node/ interrupts-extended;
-	/delete-node/ qcom,wakeup-byte;
+	interrupts-extended = <>;
+	qcom,wakeup-byte = <>;
 };
 
 &smb1355 {

@@ -357,7 +357,7 @@ static int
 pwm_fan_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 {
 	struct pwm_fan_ctx *ctx = cdev->devdata;
-	int ret;
+	int ret = 0;
 
 	if (!ctx || (state > ctx->pwm_fan_max_state))
 		return -EINVAL;

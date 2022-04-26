@@ -841,16 +841,29 @@ static void kgsl_destroy_process_private(struct kref *kref)
 	struct kgsl_process_private *private = container_of(kref,
 			struct kgsl_process_private, refcount);
 
+	mutex_lock(&kgsl_driver.process_mutex);
+
+	debugfs_remove_recursive(private->debug_root);
+	kgsl_process_uninit_sysfs(private);
+
+	/* When using global pagetables, do not detach global pagetable */
+	if (private->pagetable->name != KGSL_MMU_GLOBAL_PT)
+		kgsl_mmu_detach_pagetable(private->pagetable);
+
+	/* Remove the process struct from the master list */
+	spin_lock(&kgsl_driver.proclist_lock);
+	list_del(&private->list);
+	spin_unlock(&kgsl_driver.proclist_lock);
+
+	mutex_unlock(&kgsl_driver.process_mutex);
+
 	put_pid(private->pid);
 	idr_destroy(&private->mem_idr);
 	idr_destroy(&private->syncsource_idr);
 
-	/* When using global pagetables, do not detach global pagetable */
+	/* When using global pagetables, do not put global pagetable */
 	if (private->pagetable->name != KGSL_MMU_GLOBAL_PT)
 		kgsl_mmu_putpagetable(private->pagetable);
-
-	/* Clean up any remaining debugfs nodes. */
-	debugfs_remove_recursive(private->debug_root);
 
 	kfree(private);
 }
@@ -890,13 +903,6 @@ static struct kgsl_process_private *kgsl_process_private_new(
 {
 	struct kgsl_process_private *private;
 	struct pid *cur_pid = get_task_pid(current->group_leader, PIDTYPE_PID);
-
-	/*
-	 * Flush mem_workqueue to make sure that any lingering
-	 * structs (process pagetable etc) are released before
-	 * starting over again.
-	 */
-	flush_workqueue(kgsl_driver.mem_workqueue);
 
 	/* Search in the process list */
 	list_for_each_entry(private, &kgsl_driver.process_list, list) {
@@ -944,10 +950,23 @@ static struct kgsl_process_private *kgsl_process_private_new(
 		put_pid(private->pid);
 
 		kfree(private);
-		private = ERR_PTR(err);
+		return ERR_PTR(err);
 	} else if (!kgsl_mmu_is_global_pt(private->pagetable) &&
 			private->pagetable->name != KGSL_MMU_SECURE_PT)
 		private->pagetable->proc_priv = private;
+
+#if defined(CONFIG_QCOM_KGSL_MEM_ENTRY_RBTREE)
+	/* Initialize the memory entry RB tree. */
+	private->mem_tree = RB_ROOT;
+#endif
+
+	/* create the debug directories and add it to the process list */
+	kgsl_process_init_sysfs(device, private);
+	kgsl_process_init_debugfs(private);
+
+	spin_lock(&kgsl_driver.proclist_lock);
+	list_add(&private->list, &kgsl_driver.process_list);
+	spin_unlock(&kgsl_driver.proclist_lock);
 
 	return private;
 }
@@ -1009,17 +1028,6 @@ static void kgsl_process_private_close(struct kgsl_device_private *dev_priv,
 	/* Release all syncsource objects from process private */
 	kgsl_syncsource_process_release_syncsources(private);
 
-	kgsl_process_uninit_sysfs(private);
-
-	/* When using global pagetables, do not detach global pagetable */
-	if (private->pagetable->name != KGSL_MMU_GLOBAL_PT)
-		kgsl_mmu_detach_pagetable(private->pagetable);
-
-	/* Remove the process struct from the master list */
-	spin_lock(&kgsl_driver.proclist_lock);
-	list_del(&private->list);
-	spin_unlock(&kgsl_driver.proclist_lock);
-
 	mutex_unlock(&kgsl_driver.process_mutex);
 
 	kgsl_process_private_put(private);
@@ -1031,25 +1039,20 @@ static struct kgsl_process_private *kgsl_process_private_open(
 {
 	struct kgsl_process_private *private;
 
+	/*
+	 * Flush mem_workqueue to make sure that any lingering
+	 * structs (process pagetable etc) are released before
+	 * starting over again.
+	 */
+	flush_workqueue(kgsl_driver.mem_workqueue);
+
 	mutex_lock(&kgsl_driver.process_mutex);
 	private = kgsl_process_private_new(device);
 
 	if (IS_ERR(private))
 		goto done;
 
-	/*
-	 * If this is a new process create the debug directories and add it to
-	 * the process list
-	 */
-
-	if (private->fd_count++ == 0) {
-		kgsl_process_init_sysfs(device, private);
-		kgsl_process_init_debugfs(private);
-
-		spin_lock(&kgsl_driver.proclist_lock);
-		list_add(&private->list, &kgsl_driver.process_list);
-		spin_unlock(&kgsl_driver.proclist_lock);
-	}
+	private->fd_count++;
 
 done:
 	mutex_unlock(&kgsl_driver.process_mutex);

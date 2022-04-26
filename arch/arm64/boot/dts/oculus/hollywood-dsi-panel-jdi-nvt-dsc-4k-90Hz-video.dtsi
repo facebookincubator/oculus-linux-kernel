@@ -39,6 +39,7 @@
 		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 		qcom,mdss-dsi-min-refresh-rate = <60>;
 		qcom,mdss-dsi-max-refresh-rate = <90>;
+		qcom,mdss-dsi-dma-schedule-line = <5>;
 		qcom,mdss-dsi-force-clock-lane-hs;
 		qcom,mdss-dsi-display-timings {
 			timing@0{

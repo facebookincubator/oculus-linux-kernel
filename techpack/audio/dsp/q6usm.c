@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019, 2021 The Linux Foundation. All rights reserved.
  */
 #include <linux/mutex.h>
 #include <linux/wait.h>
@@ -490,7 +490,7 @@ static int32_t q6usm_mmapcallback(struct apr_client_data *data, void *priv)
 	uint32_t token;
 	uint32_t *payload = data->payload;
 
-	if (data->payload_size < (2 * sizeof(uint32_t))) {
+	if (data->payload_size < (sizeof(uint32_t))) {
 		pr_err("%s: payload has invalid size[%d]\n", __func__,
 		       data->payload_size);
 		return -EINVAL;
