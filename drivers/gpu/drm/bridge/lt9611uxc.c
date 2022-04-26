@@ -17,6 +17,7 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/component.h>
+#include <linux/workqueue.h>
 #include <linux/of_gpio.h>
 #include <linux/of_graph.h>
 #include <linux/of_irq.h>
@@ -31,14 +32,17 @@
 #include <drm/drm_crtc_helper.h>
 #include <linux/string.h>
 
+// CEC Support form lt9611uxc
+#include <media/cec.h>
+
 #define CFG_HPD_INTERRUPTS BIT(0)
 #define CFG_EDID_INTERRUPTS BIT(1)
 #define CFG_CEC_INTERRUPTS BIT(2)
 #define CFG_VID_CHK_INTERRUPTS BIT(3)
 
 #define EDID_SEG_SIZE 256
-#define READ_BUF_MAX_SIZE 64
-#define WRITE_BUF_MAX_SIZE 64
+#define READ_BUF_MAX_SIZE 128
+#define WRITE_BUF_MAX_SIZE 128
 #define HPD_UEVENT_BUFFER_SIZE 30
 
 struct lt9611_reg_cfg {
@@ -91,7 +95,20 @@ struct lt9611 {
 
 	struct device_node *host_node;
 	struct mipi_dsi_device *dsi;
+	struct edid *edid;
+	struct mutex lock;
 	struct drm_connector connector;
+
+	// LT9611UXC CEC support
+	struct cec_adapter *cec_adapter;
+	u8 cec_log_addr;
+	bool cec_en;
+	bool cec_support;
+	struct work_struct cec_work;
+	bool cec_status;
+	struct cec_notifier *cec_notifier;
+	struct work_struct cec_transmit_work;
+	bool is_cec_polling_msg_sent;
 
 	u8 i2c_addr;
 	int irq;
@@ -116,12 +133,20 @@ struct lt9611 {
 	struct list_head mode_list;
 
 	struct drm_display_mode curr_mode;
+	struct workqueue_struct *wq;
+	struct work_struct edid_work;
+	struct workqueue_struct *cec_wq;
+	wait_queue_head_t edid_wq;
 	struct lt9611_video_cfg video_cfg;
 
 	u8 edid_buf[EDID_SEG_SIZE];
 	u8 i2c_wbuf[WRITE_BUF_MAX_SIZE];
 	u8 i2c_rbuf[READ_BUF_MAX_SIZE];
+	bool edid_with_ext_blk;
+
 	bool hdmi_mode;
+	bool edid_status;
+	bool hpd_status;
 	enum lt9611_fw_upgrade_status fw_status;
 };
 
@@ -146,6 +171,75 @@ static struct lt9611_timing_info lt9611_supp_timing_cfg[] = {
 	{640, 480, 24, 60, 2, 1},
 	{0xffff, 0xffff, 0xff, 0xff, 0xff},
 };
+
+static int lt9611_read_edid(struct lt9611 *pdata);
+static int lt9611_get_edid_block(void *data, u8 *buf, unsigned int block,
+				  size_t len);
+static void lt9611_change_to_dvi(struct lt9611 *pdata);
+static void lt9611_change_to_hdmi(struct lt9611 *pdata);
+static void lt9611_ctl_en(struct lt9611 *pdata);
+static void lt9611_ctl_disable(struct lt9611 *pdata);
+static void lt9611_read_cec_msg(struct lt9611 *pdata, struct cec_msg *msg);
+
+void lt9611_edid_work(struct work_struct *work)
+{
+	struct lt9611 *pdata = container_of(work, struct lt9611, edid_work);
+	struct cec_notifier *notify = pdata->cec_notifier;
+
+	pr_info("Reading edid.\n");
+
+	lt9611_read_edid(pdata);
+	pdata->edid = drm_do_get_edid(&pdata->connector,
+			lt9611_get_edid_block, pdata);
+
+	// Change interface after we get new edid.
+	// DVI interface don't have extension block
+	if (!pdata->edid_with_ext_blk)
+		lt9611_change_to_dvi(pdata);
+	else
+		lt9611_change_to_hdmi(pdata);
+
+	// Get new CEC physical address after EDID changed.
+	if (pdata->cec_support)
+		cec_notifier_set_phys_addr_from_edid(notify, pdata->edid);
+}
+
+void lt9611_cec_transmit_work(struct work_struct *work)
+{
+	// CEC framework need call cec_transmit_attempt_done() when transmitted,
+	// usually it called in irq, but LT9611 have no interrupt when
+	// transmitted, so replace with workqueue.
+	struct lt9611 *pdata = container_of(work, struct lt9611,
+					cec_transmit_work);
+
+	// Due to LT9611UXC currently won't tell us message transmit
+	// result, sleep 150 ms to make sure message is transmitted.
+	msleep(150);
+	// TODO:
+	// Workaround solution for polling message.
+	// Don't tell CEC_TX_STATUS_OK to cec_transmit_msg_fh when polling,
+	// or logical address will never configured.
+	if (pdata->is_cec_polling_msg_sent) {
+		cec_transmit_attempt_done(pdata->cec_adapter,
+					CEC_TX_STATUS_NACK);
+		pdata->is_cec_polling_msg_sent = false;
+	} else {
+		cec_transmit_attempt_done(pdata->cec_adapter, CEC_TX_STATUS_OK);
+	}
+}
+
+void lt9611_cec_work(struct work_struct *work)
+{
+	struct cec_msg cec_msg = {};
+	struct lt9611 *pdata = container_of(work, struct lt9611, cec_work);
+
+	if (!pdata->cec_status) {
+		pr_info("CEC message is receiving.\n");
+		return;
+	}
+	lt9611_read_cec_msg(pdata, &cec_msg);
+	cec_received_msg(pdata->cec_adapter, &cec_msg);
+}
 
 static struct lt9611 *bridge_to_lt9611(struct drm_bridge *bridge)
 {
@@ -247,6 +341,11 @@ static int lt9611_read(struct lt9611 *pdata, u8 reg, char *buf, u32 size)
 		}
 	};
 
+	if (size > READ_BUF_MAX_SIZE) {
+		pr_err("invalid read buff size %d\n", size);
+		return -EINVAL;
+	}
+
 	memset(pdata->i2c_wbuf, 0x0, WRITE_BUF_MAX_SIZE);
 	memset(pdata->i2c_rbuf, 0x0, READ_BUF_MAX_SIZE);
 	pdata->i2c_wbuf[0] = reg;
@@ -279,6 +378,7 @@ void lt9611_config(struct lt9611 *pdata)
 u8 lt9611_get_version(struct lt9611 *pdata)
 {
 	u8 revison = 0;
+	u8 subversion = 0;
 
 	lt9611_write_byte(pdata, 0xFF, 0x80);
 	lt9611_write_byte(pdata, 0xEE, 0x01);
@@ -289,6 +389,10 @@ u8 lt9611_get_version(struct lt9611 *pdata)
 	else
 		pr_err("LT9611 get revison failed\n");
 
+	if (!lt9611_read(pdata, 0x20, &subversion, 1))
+		pr_info("LT9611 subversion: 0x%x\n", subversion);
+	else
+		pr_err("LT9611 get subversion failed\n");
 	lt9611_write_byte(pdata, 0xFF, 0x80);
 	lt9611_write_byte(pdata, 0xEE, 0x00);
 
@@ -795,6 +899,46 @@ error:
 	return ret;
 }
 
+static void lt9611_ctl_en(struct lt9611 *pdata)
+{
+	lt9611_write_byte(pdata, 0xFF, 0x80);
+	lt9611_write_byte(pdata, 0xEE, 0x01);
+}
+
+static void lt9611_ctl_disable(struct lt9611 *pdata)
+{
+	lt9611_write_byte(pdata, 0xFF, 0x80);
+	lt9611_write_byte(pdata, 0xEE, 0x00);
+}
+
+void lt9611_edid_en(struct lt9611 *pdata)
+{
+	lt9611_write_byte(pdata, 0xFF, 0xB0);
+	lt9611_write_byte(pdata, 0x0B, 0x10);
+}
+
+void lt9611_read_cec_msg(struct lt9611 *pdata, struct cec_msg *msg)
+{
+	u8 cec_val, cec_len, i;
+	u8 reg_cec_flag;
+
+	mutex_lock(&pdata->lock);
+	lt9611_ctl_en(pdata);
+	lt9611_write_byte(pdata, 0xFF, 0xB0);
+	lt9611_read(pdata, 0x24, &reg_cec_flag, 1);
+	lt9611_read(pdata, 0x30, &cec_len, 1);
+	msg->len = (cec_len > 16) ? 16 : cec_len;
+	for (i = 0; i < msg->len; i++) {
+		lt9611_read(pdata, 0x31 + i, &cec_val, 1);
+		msg->msg[i] = cec_val;
+	}
+	// Set bit7 = 0 to tell LT9611UXC message received.
+	reg_cec_flag &= ~0x80;
+	lt9611_write_byte(pdata, 0x24, reg_cec_flag);
+	lt9611_ctl_disable(pdata);
+	mutex_unlock(&pdata->lock);
+}
+
 static int lt9611_read_device_id(struct lt9611 *pdata)
 {
 	u8 rev0 = 0, rev1 = 0;
@@ -818,9 +962,77 @@ static int lt9611_read_device_id(struct lt9611 *pdata)
 	return ret;
 }
 
+static void lt9611_change_to_dvi(struct lt9611 *pdata)
+{
+	mutex_lock(&pdata->lock);
+	lt9611_ctl_en(pdata);
+	lt9611_write_byte(pdata, 0xFF, 0xC0);
+	lt9611_write_byte(pdata, 0x01, 0x00);
+	lt9611_ctl_disable(pdata);
+	pdata->cec_support = false;
+	mutex_unlock(&pdata->lock);
+}
+
+static void lt9611_change_to_hdmi(struct lt9611 *pdata)
+{
+	mutex_lock(&pdata->lock);
+	lt9611_ctl_en(pdata);
+	lt9611_write_byte(pdata, 0xFF, 0xC0);
+	lt9611_write_byte(pdata, 0x01, 0x08);
+	lt9611_ctl_disable(pdata);
+	pdata->cec_support = true;
+	mutex_unlock(&pdata->lock);
+}
+
 static irqreturn_t lt9611_irq_thread_handler(int irq, void *dev_id)
 {
-	pr_debug("irq_thread_handler\n");
+	u8 irq_type = 0, irq_status = 0, cec_status = 0;
+	struct lt9611 *pdata = (struct lt9611 *)dev_id;
+
+	mutex_lock(&pdata->lock);
+	lt9611_ctl_en(pdata);
+	// Switch to bank 0xB0 for reading IRQ type.
+	lt9611_write_byte(pdata, 0xFF, 0xB0);
+	// Get LT9611 interrupt flags from address 0x22.
+	if (!lt9611_read(pdata, 0x22, &irq_type, 1)) {
+		if (irq_type) {
+			// Clear LT9611 interrupt flags.
+			lt9611_write_byte(pdata, 0x22, 0);
+			// Read edid and hpd status.
+			lt9611_read(pdata, 0x23, &irq_status, 1);
+			lt9611_read(pdata, 0x24, &cec_status, 1);
+			pdata->hpd_status = irq_status & BIT(1);
+			pdata->edid_status = irq_status & BIT(0);
+			pdata->cec_status = cec_status & BIT(7);
+		} else {
+			pr_err("invalid irq\n");
+		}
+	} else {
+		pr_err("get irq status failed\n");
+	}
+	lt9611_ctl_disable(pdata);
+
+	if (!pdata->hpd_status && (irq_type & BIT(1))) {
+		// HDMI removed, delete stored edid information.
+		kfree(pdata->edid);
+		pdata->edid = NULL;
+		// Unconfigure existing cec physical address
+		// cec_s_log_addrs(pdata->cec_adapter, NULL, false);
+		cec_notifier_phys_addr_invalidate(pdata->cec_notifier);
+		cec_queue_pin_hpd_event(pdata->cec_adapter, false, 0);
+	}
+	mutex_unlock(&pdata->lock);
+	if (pdata->hpd_status && (irq_type & BIT(1)))
+		cec_queue_pin_hpd_event(pdata->cec_adapter, true, 0);
+
+	// If edid interrupted and edid ready,
+	// then call edid workqueue to get edid from LT9611.
+	if ((irq_type & BIT(0)) && pdata->edid_status)
+		queue_work(pdata->wq, &pdata->edid_work);
+	// If cec interrupted and cec ready,
+	// then call cec workqueue to process cec message.
+	if (irq_type & BIT(3) && pdata->cec_status)
+		queue_work(pdata->wq, &pdata->cec_work);
 	return IRQ_HANDLED;
 }
 
@@ -838,7 +1050,7 @@ static void lt9611_reset(struct lt9611 *pdata, bool on_off)
 		gpio_set_value(pdata->reset_gpio, 0);
 	}
 	/* Need longer time to wait LT9611UXC reset finished. */
-	msleep(100);
+	msleep(300);
 }
 
 static void lt9611_assert_5v(struct lt9611 *pdata)
@@ -1249,6 +1461,33 @@ lt9611_connector_detect(struct drm_connector *connector, bool force)
 
 static int lt9611_read_edid(struct lt9611 *pdata)
 {
+	u8 *buf = pdata->edid_buf;
+	int num = 0, num_of_edid_ext_blk = 0;
+
+	mutex_lock(&pdata->lock);
+	lt9611_ctl_en(pdata);
+	lt9611_edid_en(pdata);
+
+	memset(buf, 0, EDID_SEG_SIZE);
+	// Switch to bank 0xB0 for reading edid.
+	lt9611_write_byte(pdata, 0xFF, 0xB0);
+	// Set the start address for read edid
+	lt9611_write_byte(pdata, 0x0A, num * 128);
+	lt9611_read(pdata, 0xB0, buf + num * 128, 128);
+	// Get no. of extension edid blocks from edid
+	//block[0][0x7e]
+	num_of_edid_ext_blk = buf[0x7e];
+	pdata->edid_with_ext_blk = true;
+	pdata->cec_support = true;
+	// If no extension blocks exist, stop reading edid.
+	if (num_of_edid_ext_blk == 0) {
+		pdata->edid_with_ext_blk = false;
+		pdata->cec_support = false;
+	}
+
+	lt9611_ctl_disable(pdata);
+	mutex_unlock(&pdata->lock);
+
 	return 0;
 }
 
@@ -1256,8 +1495,15 @@ static int lt9611_read_edid(struct lt9611 *pdata)
 static int lt9611_get_edid_block(void *data, u8 *buf, unsigned int block,
 				  size_t len)
 {
+	struct lt9611 *pdata = data;
+
+	if ((!pdata->edid_with_ext_blk) && (block != 0)) {
+		pr_info("No extension block, maybe connector is DVI interface.\n");
+		return 0;
+	}
 
 	pr_info("get edid block: block=%d, len=%d\n", block, (int)len);
+	memcpy(buf, pdata->edid_buf + block * 128, len);
 
 	return 0;
 }
@@ -1299,6 +1545,12 @@ static int lt9611_connector_get_modes(struct drm_connector *connector)
 		struct edid *edid;
 
 		edid = drm_do_get_edid(connector, lt9611_get_edid_block, pdata);
+
+		if (pdata->cec_support) {
+			cec_s_log_addrs(pdata->cec_adapter, NULL, false);
+			cec_notifier_set_phys_addr_from_edid(
+					pdata->cec_notifier, edid);
+		}
 
 		drm_connector_update_edid_property(connector, edid);
 		count = drm_add_edid_modes(connector, edid);
@@ -1547,15 +1799,25 @@ static ssize_t firmware_upgrade_show(struct device *dev,
 {
 	struct lt9611 *pdata = dev_get_drvdata(dev);
 
-	return snprintf(buf, 4, "%d\n", pdata->fw_status);
+	return scnprintf(buf, 4, "%d\n", pdata->fw_status);
+}
+
+static ssize_t get_hpd_stat_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct lt9611 *pdata = dev_get_drvdata(dev);
+
+	return scnprintf(buf, 2, "%d\n", (pdata->hpd_status)?1:0);
 }
 
 static DEVICE_ATTR_WO(dump_info);
 static DEVICE_ATTR_RW(firmware_upgrade);
+static DEVICE_ATTR_RO(get_hpd_stat);
 
 static struct attribute *lt9611_sysfs_attrs[] = {
 	&dev_attr_dump_info.attr,
 	&dev_attr_firmware_upgrade.attr,
+	&dev_attr_get_hpd_stat.attr,
 	NULL,
 };
 
@@ -1587,6 +1849,110 @@ static void lt9611_sysfs_remove(struct device *dev)
 	}
 
 	sysfs_remove_group(&dev->kobj, &lt9611_sysfs_attr_grp);
+}
+
+static int lt9611_cec_enable(struct cec_adapter *adap, bool enable)
+{
+	struct lt9611 *pdata = cec_get_drvdata(adap);
+
+	pdata->cec_en = enable;
+	return 0;
+}
+
+static int lt9611_cec_log_addr(struct cec_adapter *adap, u8 logical_addr)
+{
+	struct lt9611 *pdata = cec_get_drvdata(adap);
+
+	pdata->cec_log_addr = logical_addr;
+	return 0;
+}
+
+static int lt9611_cec_transmit(struct cec_adapter *adap, u8 attempts,
+		u32 signal_free_time, struct cec_msg *msg)
+{
+	int i;
+	u8 reg_cec_flag;
+	struct lt9611 *pdata = cec_get_drvdata(adap);
+	u32 len = (msg->len > CEC_MAX_MSG_SIZE) ? 16 : msg->len;
+
+	mutex_lock(&pdata->lock);
+	lt9611_ctl_en(pdata);
+	lt9611_write_byte(pdata, 0xFF, 0xB0);
+	lt9611_read(pdata, 0x24, &reg_cec_flag, 1);
+	lt9611_write_byte(pdata, 0x41, len);
+	for (i = 0; i < len; i++)
+		lt9611_write_byte(pdata, 0x42 + i, msg->msg[i]);
+	// TODO:
+	// Workaround solution for polling message.
+	// Don't tell CEC_TX_STATUS_OK to cec_transmit_msg_fh when polling,
+	// or logical address will never configured.
+	if (len == 1 && msg->msg[0] == ((CEC_LOG_ADDR_PLAYBACK_1 << 4)
+		| CEC_LOG_ADDR_PLAYBACK_1)) {
+		pdata->is_cec_polling_msg_sent = true;
+	}
+	// Set bit 6 = 1 to tell LT9611UXC sending CEC message.
+	reg_cec_flag |= 0x40;
+	lt9611_write_byte(pdata, 0x24, reg_cec_flag);
+	lt9611_ctl_disable(pdata);
+	mutex_unlock(&pdata->lock);
+	// LT9611 have no interrupt when transmitted,
+	// so replace with workqueue.
+	queue_work(pdata->cec_wq, &pdata->cec_transmit_work);
+	return 0;
+}
+
+struct cec_adap_ops lt9611_cec_ops = {
+	.adap_enable = lt9611_cec_enable,
+	.adap_log_addr = lt9611_cec_log_addr,
+	.adap_transmit = lt9611_cec_transmit,
+};
+
+static int lt9611_cec_adap_init(struct lt9611 *pdata)
+{
+	int ret = 0;
+	struct cec_adapter *adap = NULL;
+	unsigned int cec_flags = CEC_CAP_DEFAULTS;
+
+	if (!pdata) {
+		pr_err("invalid input\n");
+		return -EINVAL;
+	}
+	adap = cec_allocate_adapter(&lt9611_cec_ops, pdata,
+			"lt9611_cec", cec_flags, 1);
+	if (!adap) {
+		pr_err("cec adapter allocate failed\n");
+		return -ENOMEM;
+	}
+
+	pdata->cec_notifier = cec_notifier_get(pdata->dev);
+	if (!pdata->cec_notifier) {
+		pr_err("Get CEC notifier failed!\n");
+		cec_delete_adapter(adap);
+		pdata->cec_adapter = NULL;
+		pdata->cec_support = false;
+		pdata->cec_en = false;
+		return -ENOMEM;
+	}
+
+	ret = cec_register_adapter(adap, pdata->dev);
+	if (ret != 0) {
+		pr_err("Can't register cec adapter, cec function won't support.\n");
+		cec_delete_adapter(adap);
+		pdata->cec_adapter = NULL;
+		pdata->cec_support = false;
+		pdata->cec_en = false;
+	} else {
+		pr_info("CEC adapter registered successfully.\n");
+		pdata->cec_en = true;
+		pdata->cec_support = true;
+		pdata->cec_log_addr = CEC_LOG_ADDR_PLAYBACK_1;
+
+		pdata->cec_adapter = adap;
+		cec_register_cec_notifier(pdata->cec_adapter,
+					pdata->cec_notifier);
+		cec_s_log_addrs(pdata->cec_adapter, NULL, false);
+	}
+	return ret;
 }
 
 static int lt9611_probe(struct i2c_client *client,
@@ -1641,18 +2007,10 @@ static int lt9611_probe(struct i2c_client *client,
 
 	lt9611_reset(pdata, true);
 
-	pdata->irq = gpio_to_irq(pdata->irq_gpio);
-	ret = request_threaded_irq(pdata->irq, NULL, lt9611_irq_thread_handler,
-		IRQF_TRIGGER_FALLING | IRQF_ONESHOT, "lt9611", pdata);
-	if (ret) {
-		pr_err("failed to request irq\n");
-		goto err_i2c_prog;
-	}
-
 	ret = lt9611_read_device_id(pdata);
 	if (ret) {
 		pr_err("failed to read chip rev\n");
-		goto err_sysfs_init;
+		goto err_i2c_prog;
 	}
 
 	msleep(200);
@@ -1663,11 +2021,18 @@ static int lt9611_probe(struct i2c_client *client,
 	ret = lt9611_sysfs_init(&client->dev);
 	if (ret) {
 		pr_err("sysfs init failed\n");
-		goto err_sysfs_init;
+		goto err_i2c_prog;
 	}
 
 	if (lt9611_get_version(pdata)) {
+		// AmTran LT9611 CEC support,
+		ret = lt9611_cec_adap_init(pdata);
 		pr_info("LT9611 works, no need to upgrade FW\n");
+		if (ret != 0) {
+			pr_err("LT9611 CEC initialize failed.\n");
+		} else {
+			pr_info("LT9611 CEC initialize success.\n");
+		}
 	} else {
 		ret = request_firmware_nowait(THIS_MODULE, true,
 			"lt9611_fw.bin", &client->dev, GFP_KERNEL, pdata,
@@ -1675,10 +2040,12 @@ static int lt9611_probe(struct i2c_client *client,
 		if (ret) {
 			dev_err(&client->dev,
 				"Failed to invoke firmware loader: %d\n", ret);
-			goto err_sysfs_init;
+			goto err_i2c_prog;
 		} else
 			return 0;
 	}
+	mutex_init(&pdata->lock);
+	init_waitqueue_head(&pdata->edid_wq);
 
 #if IS_ENABLED(CONFIG_OF)
 	pdata->bridge.of_node = client->dev.of_node;
@@ -1687,9 +2054,38 @@ static int lt9611_probe(struct i2c_client *client,
 	pdata->bridge.funcs = &lt9611_bridge_funcs;
 	drm_bridge_add(&pdata->bridge);
 
+	pdata->wq = create_singlethread_workqueue("lt9611_workqueue");
+	if (!pdata->wq) {
+		pr_err("Error creating lt9611 workqueue\n");
+		goto err_i2c_prog;
+	}
+	pdata->cec_wq = create_singlethread_workqueue("lt9611_cec_workqueue");
+	if (!pdata->cec_wq) {
+		pr_err("Error creating lt9611 cec workqueue\n");
+		goto err_i2c_prog;
+	}
+
+	INIT_WORK(&pdata->edid_work, lt9611_edid_work);
+	INIT_WORK(&pdata->cec_work, lt9611_cec_work);
+	INIT_WORK(&pdata->cec_transmit_work, lt9611_cec_transmit_work);
+	// TODO:
+	// Workaround solution for polling message.
+	// Don't tell CEC_TX_STATUS_OK to cec_transmit_msg_fh when polling,
+	// or logical address will never configured.
+	pdata->is_cec_polling_msg_sent = false;
+
+	// Make sure LT9611 initialized, then enable irq.
+	pdata->irq = gpio_to_irq(pdata->irq_gpio);
+	ret = request_threaded_irq(pdata->irq, NULL, lt9611_irq_thread_handler,
+		IRQF_TRIGGER_FALLING | IRQF_ONESHOT, "lt9611_irq", pdata);
+	if (ret) {
+		pr_err("failed to request irq\n");
+		goto err_request_irq;
+	}
+
 	return 0;
 
-err_sysfs_init:
+err_request_irq:
 	disable_irq(pdata->irq);
 	free_irq(pdata->irq, pdata);
 err_i2c_prog:
@@ -1732,6 +2128,14 @@ static int lt9611_remove(struct i2c_client *client)
 	}
 
 	devm_kfree(&client->dev, pdata);
+	if (pdata->wq)
+		destroy_workqueue(pdata->wq);
+	if (pdata->cec_wq)
+		destroy_workqueue(pdata->cec_wq);
+	if (pdata->cec_adapter)
+		cec_unregister_adapter(pdata->cec_adapter);
+	if (pdata->cec_notifier)
+		cec_notifier_put(pdata->cec_notifier);
 
 end:
 	return ret;

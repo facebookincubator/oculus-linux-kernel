@@ -849,6 +849,7 @@ static struct kgsl_memdesc *_find_lazy_memdesc_at_addr(
 	struct rb_node *node;
 	unsigned long flags;
 	int ret;
+	const u32 addr = (u32)(gpuaddr >> PAGE_SHIFT);
 
 	spin_lock_irqsave(&pagetable->lock, flags);
 	pt = pagetable->priv;
@@ -857,9 +858,9 @@ static struct kgsl_memdesc *_find_lazy_memdesc_at_addr(
 		struct kgsl_iommu_addr_entry *entry = rb_entry(node,
 			struct kgsl_iommu_addr_entry, node);
 
-		if (gpuaddr < entry->memdesc->gpuaddr)
+		if (addr < entry->gpuaddr)
 			node = node->rb_left;
-		else if (gpuaddr >= entry->memdesc->gpuaddr + entry->footprint)
+		else if (addr >= entry->gpuaddr + entry->footprint)
 			node = node->rb_right;
 		else {
 			memdesc = entry->memdesc;
@@ -883,8 +884,7 @@ static struct kgsl_memdesc *_find_lazy_memdesc_at_addr(
 }
 
 int kgsl_lazy_gpu_fault_handler(struct kgsl_iommu_context *ctx,
-		struct kgsl_pagetable *fault_pt, unsigned long addr,
-		int fault_flags)
+		struct kgsl_pagetable *fault_pt, unsigned long addr)
 {
 	struct kgsl_memdesc *memdesc = NULL;
 	struct page *page = NULL, *new_secure_page = NULL;
@@ -1005,15 +1005,22 @@ retry:
 				goto retry;
 			}
 		}
-	} else if (unlikely(fault_flags & IOMMU_FAULT_PERMISSION)) {
+	} else {
 		/*
-		 * There's a page mapped in at this IOVA but we're hitting a
-		 * permission fault? Bail out here and log the fault. This
-		 * *should* only happen if the GPU is trying to write to a GPU
-		 * read-only entry.
+		 * There's a page mapped in at this IOVA but we're still hitting
+		 * a fault? Read the fault status register to check.
 		 */
-		status = -EPERM;
-		goto err;
+		const u32 fsr = KGSL_IOMMU_GET_CTX_REG(ctx, KGSL_IOMMU_CTX_FSR);
+
+		if (unlikely(fsr & FSR_PF)) {
+			/*
+			 * We're hitting a permission fault. Bail out here and
+			 * log the fault. This *should* only happen if the GPU
+			 * is trying to write to a GPU read-only entry.
+			 */
+			status = -EPERM;
+			goto err;
+		}
 	}
 
 	/*

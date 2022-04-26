@@ -538,6 +538,25 @@ typedef  enum  {
     WMI_SERVICE_HALPHY_CAL_STATUS = 293, /* Indicates FW supports sending online HALPHY Calibration status to host */
     WMI_SERVICE_HALPHY_CAL_ENABLE_DISABLE_SUPPORT = 294, /* Indicates Calibraton enable/disable support by FW */
     WMI_SERVICE_AFC_SUPPORT = 295, /* Indicates FW supports AFC_CMD,AFC_EVENT */
+    WMI_SERVICE_RTT_AP_INITIATOR_STAGGERED_MODE_SUPPORTED = 296, /* FW supports RTT in AP Initiator for Staggered beacon mode */
+    WMI_SERVICE_RTT_AP_INITIATOR_BURSTED_MODE_SUPPORTED = 297, /* FW supports RTT in AP Initiator for BURSTED beacon mode */
+    WMI_SERVICE_P2P_P2P_CONCURRENCY_SUPPORT = 298, /* Indicates FW supports P2P + P2P conncurency both in SCC, MCC, SBS and DBS */
+    WMI_SERVICE_MGMT_RX_REO_SUPPORTED = 299, /* Indicates FW supports Management RX Reorder */
+    WMI_SERVICE_EMA_MULTIPLE_GROUP_SUPPORT = 300, /* FW support for EMA multi group support */
+    WMI_SERVICE_LARGE_BEACON_SUPPORT = 301, /* FW support for Large beacon support greater then 1.5K */
+    WMI_SERVICE_AOA_FOR_RCC_SUPPORTED = 302,
+    WMI_SERVICE_DYN_NSS_MASK_SUPPORT = 303, /* Indicates FW support for DYN NSS feature */
+    WMI_SERVICE_HW_MODE_POLICY_OFFLOAD_SUPPORT = 304, /* FW supports HW mode selection offload */
+    WMI_SERVICE_THERMAL_THROT_STATS_TEMP_RANGE_SUPPORT = 305, /* FW supports thermal throttling temperature range stats based on wmi_thermal_stats_action */
+    /*
+     * Indicates FW support for spatial reuse enhancements.
+     * Below commands are added for the enhancements:
+     *     WMI_PDEV_PARAM_OBSS_MIN_DURATION_CHECK_FOR_SR,
+     *     WMI_PDEV_PARAM_TRUNCATE_SR,
+     *     WMI_PDEV_PARAM_CTRL_FRAME_OBSS_PD_THRESHOLD
+     */
+    WMI_SERVICE_SPATIAL_REUSE_ENHANCEMENT_SUPPORT = 306,
+    WMI_SERVICE_MU_SNIF = 307, /* FW support MU sniffer */
 
 
     WMI_MAX_EXT2_SERVICE

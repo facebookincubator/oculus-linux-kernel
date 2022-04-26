@@ -34,6 +34,7 @@
 		qcom,mdss-dsi-mdp-trigger = "none";
 		qcom,mdss-dsi-reset-sequence = <0 5>, <1 25>;
 		qcom,adjust-timer-wakeup-ms = <1>;
+		qcom,mdss-dsi-dma-schedule-line = <5>;
 		qcom,mdss-dsi-force-clock-lane-hs;
 		qcom,mdss-dsi-display-timings {
 			timing@0{

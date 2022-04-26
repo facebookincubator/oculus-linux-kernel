@@ -282,6 +282,7 @@
 &lagoon_snd {
 	qcom,model = "lito-lagoonmtp-snd-card";
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <1>, <1>;
+	qcom,wsa-bolero-codec = <1>;
 	qcom,wcn-btfm = <1>;
 	qcom,ext-disp-audio-rx = <1>;
 	qcom,audio-routing =

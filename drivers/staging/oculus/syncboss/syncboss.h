@@ -107,6 +107,9 @@ struct syncboss_dev_data {
 	/* Streaming client reference count */
 	int streaming_client_count;
 
+	/* nsync event client reference count */
+	int nsync_client_count;
+
 	/* Powertate event client reference count */
 	int powerstate_client_count;
 

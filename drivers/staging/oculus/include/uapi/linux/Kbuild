@@ -1,3 +1,2 @@
-header-y += miscfifo.h
 header-y += unknown1_blu_spi.h
 header-y += syncboss.h

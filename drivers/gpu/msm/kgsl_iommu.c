@@ -48,25 +48,6 @@
  */
 #define MAX_PROCID (1 << 24)
 
-/* Snagged from arm-smmu-regs.h */
-#define FSR_MULTI			(1 << 31)
-#define FSR_SS				(1 << 30)
-#define FSR_UUT				(1 << 8)
-#define FSR_ASF				(1 << 7)
-#define FSR_TLBLKF			(1 << 6)
-#define FSR_TLBMCF			(1 << 5)
-#define FSR_EF				(1 << 4)
-#define FSR_PF				(1 << 3)
-#define FSR_AFF				(1 << 2)
-#define FSR_TF				(1 << 1)
-
-#define FSR_IGN				(FSR_AFF | FSR_ASF | \
-					 FSR_TLBMCF | FSR_TLBLKF)
-#define FSR_FAULT			(FSR_MULTI | FSR_SS | FSR_UUT | \
-					 FSR_EF | FSR_PF | FSR_TF | FSR_IGN)
-
-#define FSYNR0_WNR			(1 << 4)
-
 static struct kgsl_mmu_pt_ops iommu_pt_ops;
 
 static struct kmem_cache *addr_entry_cache;
@@ -208,21 +189,27 @@ static void kgsl_iommu_map_secure_global(struct kgsl_mmu *mmu,
 static int _insert_gpuaddr(struct kgsl_pagetable *pagetable,
 		struct kgsl_memdesc *memdesc, uint64_t gpuaddr);
 
-static uint64_t _get_unmapped_area(struct kgsl_pagetable *pagetable,
-		uint64_t bottom, uint64_t top, uint64_t size,
-		uint64_t align);
+static u32 _get_unmapped_area(struct kgsl_pagetable *pagetable,
+		u64 bottom, u64 top, u64 size, u64 align);
 
-static u64 _get_random_global_gpuaddr(struct kgsl_pagetable *pagetable,
+static u32 _get_random_global_gpuaddr(struct kgsl_pagetable *pagetable,
 		u64 bottom, u64 top, u64 size, u64 align)
 {
 	struct kgsl_iommu_pt *pt = pagetable->priv;
 	struct rb_node *node = rb_first(&pt->rbtree);
-	u64 start, max_gap, gap_start, gap_end;
-	const u64 align_shift = ilog2(align);
-	u64 num_locs;
+	u32 bottom32, top32;
+	u32 start, max_gap, gap_start, gap_end;
+	u32 align_shift;
+	u32 num_locs;
 
-	bottom = ALIGN(bottom, align);
-	start = bottom;
+	bottom32 = (u32)((s64)bottom >> PAGE_SHIFT);
+	top32 = (u32)((s64)top >> PAGE_SHIFT);
+	size >>= PAGE_SHIFT;
+	align >>= PAGE_SHIFT;
+
+	align_shift = ilog2(align);
+	bottom32 = ALIGN(bottom32, align);
+	start = bottom32;
 	max_gap = 0;
 
 	/* Walk through the nodes to find the largest gap */
@@ -234,52 +221,52 @@ static u64 _get_random_global_gpuaddr(struct kgsl_pagetable *pagetable,
 		 * Skip any entries that are outside of the range, but make sure
 		 * to account for some that might straddle the lower bound
 		 */
-		if (entry->memdesc->gpuaddr < bottom) {
-			if (entry->memdesc->gpuaddr + entry->footprint > bottom)
-				start = ALIGN(entry->memdesc->gpuaddr +
-						entry->footprint, align);
+		if (entry->gpuaddr < bottom32) {
+			if (entry->gpuaddr + entry->footprint > bottom32)
+				start = ALIGN(entry->gpuaddr + entry->footprint,
+						align);
 			node = rb_next(node);
 			continue;
 		}
 
 		/* Stop if we went over the top */
-		if (entry->memdesc->gpuaddr >= top)
+		if (entry->gpuaddr >= top32)
 			break;
 
 		/* Make sure there is a gap to consider */
-		if (start < entry->memdesc->gpuaddr) {
-			u64 gap = entry->memdesc->gpuaddr - start;
+		if (start < entry->gpuaddr) {
+			u32 gap = entry->gpuaddr - start;
 
 			if (gap > max_gap) {
 				max_gap = gap;
 				gap_start = start;
-				gap_end = entry->memdesc->gpuaddr;
+				gap_end = entry->gpuaddr;
 			}
 		}
 
 		/* Stop if there is no more room in the region */
-		if (entry->memdesc->gpuaddr + entry->footprint >= top)
+		if (entry->gpuaddr + entry->footprint >= top32)
 			break;
 
 		/* Start the next cycle at the end of the current entry */
-		start = ALIGN(entry->memdesc->gpuaddr + entry->footprint, align);
+		start = ALIGN(entry->gpuaddr + entry->footprint, align);
 		node = rb_next(node);
 	}
 
 	/* Check the space after the last entry in the tree. */
-	if (start < top) {
-		const u64 gap = top - start;
+	if (start < top32) {
+		const u32 gap = top32 - start;
 
 		if (gap > max_gap) {
 			max_gap = gap;
 			gap_start = start;
-			gap_end = top;
+			gap_end = top32;
 		}
 	}
 
 	/* Make sure the requested size will fit in the range */
 	if (size > max_gap)
-		return -ENOMEM;
+		return (u32)-ENOMEM;
 
 	/*
 	 * If there's no wiggle room due to alignment just return the start of
@@ -308,10 +295,11 @@ static void kgsl_iommu_map_global(struct kgsl_mmu *mmu,
 
 	if (!memdesc->gpuaddr) {
 		u64 base;
-		u64 addr;
+		u64 gpuaddr;
 		u64 size = kgsl_memdesc_footprint(memdesc);
 		u64 align = max_t(u64, 1 << kgsl_memdesc_get_align(memdesc),
 				PAGE_SIZE);
+		u32 addr;
 
 		if (split_tables_enabled)
 			base = KGSL_IOMMU_SPLIT_TABLE_BASE;
@@ -331,12 +319,14 @@ static void kgsl_iommu_map_global(struct kgsl_mmu *mmu,
 			addr = _get_unmapped_area(mmu->defaultpagetable,
 					base, base + KGSL_IOMMU_GLOBAL_MEM_SIZE,
 					size, align);
-		if (addr == (u64)-ENOMEM) {
+		if (addr == (u32)-ENOMEM) {
 			spin_unlock(&mmu->defaultpagetable->lock);
 			return;
 		}
 
-		_insert_gpuaddr(mmu->defaultpagetable, memdesc, addr);
+		gpuaddr = (u64)sign_extend64((u64)addr << PAGE_SHIFT,
+				31 + PAGE_SHIFT);
+		_insert_gpuaddr(mmu->defaultpagetable, memdesc, gpuaddr);
 		spin_unlock(&mmu->defaultpagetable->lock);
 	}
 
@@ -822,13 +812,21 @@ static int kgsl_iommu_fault_handler(struct kgsl_iommu_context *ctx,
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct kgsl_mmu *mmu = &device->mmu;
 	u64 ptbase = 0;
-	pid_t ptname;
-	unsigned int no_page_fault_log = 0;
 	struct kgsl_process_private *private = NULL;
+	u32 fsr;
+	bool gpuhalt_enabled;
+	bool rate_limited;
 #if IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_ALLOCATION)
 	struct kgsl_pagetable *fault_pt;
 	int status = -ENOENT;
 #endif
+
+	/*
+	 * Rate limiter for the non-lazy fault path: once per second allow a fault
+	 * to get logged to help diagnose issues while (hopefully) not timing out
+	 * the process causing it.
+	 */
+	static DEFINE_RATELIMIT_STATE(_rs, HZ, 1);
 
 	if (mmu == NULL)
 		return ret;
@@ -869,8 +867,7 @@ static int kgsl_iommu_fault_handler(struct kgsl_iommu_context *ctx,
 	 * Check if the faulting entry is lazily allocated check and if so if
 	 * we can resolve this fault by mapping in a new page.
 	 */
-	status = kgsl_lazy_gpu_fault_handler(ctx, fault_pt, fault_regs->addr,
-			fault_regs->flags);
+	status = kgsl_lazy_gpu_fault_handler(ctx, fault_pt, fault_regs->addr);
 	if (!status) {
 		/*
 		 * We've successfully handled this page fault with lazy
@@ -885,9 +882,29 @@ static int kgsl_iommu_fault_handler(struct kgsl_iommu_context *ctx,
 no_pt:
 #endif
 
-	if (test_bit(KGSL_FT_PAGEFAULT_GPUHALT_ENABLE,
-		&adreno_dev->ft_pf_policy) &&
-		(fault_regs->flags & IOMMU_FAULT_TRANSACTION_STALLED)) {
+	/*
+	 * Rate limit non-lazy page faults since generally if we're hitting this
+	 * code path we're likely to hit it over and over, and the fault logging
+	 * code is very expensive (particularly reading the IOMMU registers). Just
+	 * skip straight to cancelling the transaction if we're rate limited and
+	 * halting the GPU on faults is not enabled.
+	 */
+	rate_limited = !__ratelimit(&_rs);
+	gpuhalt_enabled = test_bit(KGSL_FT_PAGEFAULT_GPUHALT_ENABLE,
+			&adreno_dev->ft_pf_policy);
+
+	if (rate_limited && !gpuhalt_enabled)
+		goto no_log;
+
+	/*
+	 * If we've reached this point we're in the slow path for the fault
+	 * handler. Read the fault status register.
+	 */
+	fsr = KGSL_IOMMU_GET_CTX_REG(ctx, KGSL_IOMMU_CTX_FSR);
+
+	if (gpuhalt_enabled && (fsr & FSR_SS)) {
+		uint32_t sctlr_val;
+
 		/*
 		 * Turn off GPU IRQ so we don't get faults from it too.
 		 * The device mutex must be held to change power state
@@ -895,35 +912,14 @@ no_pt:
 		mutex_lock(&device->mutex);
 		kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
 		mutex_unlock(&device->mutex);
-	}
 
-	ptname = test_bit(KGSL_MMU_GLOBAL_PAGETABLE, &mmu->features) ?
-		KGSL_MMU_GLOBAL_PT : (private ? pid_nr(private->pid) : 0);
-	/*
-	 * Trace needs to be logged before searching the faulting
-	 * address in free list as it takes quite long time in
-	 * search and delays the trace unnecessarily.
-	 */
-	trace_kgsl_mmu_pagefault(ctx->kgsldev, fault_regs->addr, ptname,
-			private ? private->comm : "unknown",
-			!!(fault_regs->flags & IOMMU_FAULT_WRITE) ? "write" : "read");
-
-	if (test_bit(KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE,
-		&adreno_dev->ft_pf_policy))
-		no_page_fault_log = kgsl_mmu_log_fault_addr(mmu, ptbase,
-				fault_regs->addr);
-
-	/*
-	 * We do not want the h/w to resume fetching data from an iommu
-	 * that has faulted, this is better for debugging as it will stall
-	 * the GPU and trigger a snapshot. Return EBUSY error.
-	 */
-	if (test_bit(KGSL_FT_PAGEFAULT_GPUHALT_ENABLE,
-		&adreno_dev->ft_pf_policy) &&
-		(fault_regs->flags & IOMMU_FAULT_TRANSACTION_STALLED)) {
-		uint32_t sctlr_val;
-
+		/*
+		 * We do not want the h/w to resume fetching data from an iommu
+		 * that has faulted, this is better for debugging as it will stall
+		 * the GPU and trigger a snapshot. Return EBUSY error.
+		 */
 		ret = -EBUSY;
+
 		/*
 		 * Disable context fault interrupts
 		 * as we do not clear FSR in the ISR.
@@ -941,18 +937,57 @@ no_pt:
 		adreno_dispatcher_schedule(device);
 	}
 
-	if (!no_page_fault_log) {
+	if (!rate_limited) {
 		struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 		struct kgsl_pagefault_log *log;
+		pid_t ptname;
+		u32 fsynr0, flags;
+
+		/*
+		 * If we're only logging one fault per page check that we haven't hit
+		 * this one already. Don't log the fault if we have.
+		 */
+		if (test_bit(KGSL_FT_PAGEFAULT_LOG_ONE_PER_PAGE,
+				&adreno_dev->ft_pf_policy) && kgsl_mmu_log_fault_addr(mmu,
+				ptbase, fault_regs->addr))
+			goto no_log;
+
+		/*
+		 * Read the fault syndrome register and assemble the IOMMU fault flag
+		 * set for the log.
+		 */
+		fsynr0 = KGSL_IOMMU_GET_CTX_REG(ctx, KGSL_IOMMU_CTX_FSYNR0);
+
+		flags = fsynr0 & FSYNR0_WNR ? IOMMU_FAULT_WRITE : IOMMU_FAULT_READ;
+		if (fsr & FSR_TF)
+			flags |= IOMMU_FAULT_TRANSLATION;
+		if (fsr & FSR_PF)
+			flags |= IOMMU_FAULT_PERMISSION;
+		if (fsr & FSR_EF)
+			flags |= IOMMU_FAULT_EXTERNAL;
+		if (fsr & FSR_SS)
+			flags |= IOMMU_FAULT_TRANSACTION_STALLED;
+
+		ptname = test_bit(KGSL_MMU_GLOBAL_PAGETABLE, &mmu->features) ?
+				KGSL_MMU_GLOBAL_PT : (private ? pid_nr(private->pid) : 0);
+
+		/*
+		 * Trace needs to be logged before searching the faulting
+		 * address in free list as it takes quite long time in
+		 * search and delays the trace unnecessarily.
+		 */
+		trace_kgsl_mmu_pagefault(ctx->kgsldev, fault_regs->addr, ptname,
+				private ? private->comm : "unknown",
+				!!(flags & IOMMU_FAULT_WRITE) ? "write" : "read");
 
 		log = kzalloc(sizeof(*log), GFP_KERNEL);
 		if (log == NULL)
-			goto log_failed;
+			goto no_log;
 
 		log->mmu = mmu;
 		log->ctx = ctx;
 		log->addr = fault_regs->addr;
-		log->flags = fault_regs->flags;
+		log->flags = flags;
 		log->ptname = ptname;
 		log->ptbase = ptbase;
 		log->contextidr = fault_regs->contextidr;
@@ -975,7 +1010,7 @@ no_pt:
 		queue_work(system_unbound_wq, &log->work);
 	}
 
-log_failed:
+no_log:
 	kgsl_mmu_putpagetable(pt);
 	kgsl_process_private_put(private);
 
@@ -985,18 +1020,13 @@ log_failed:
 static irqreturn_t kgsl_iommu_context_fault_isr(int irq, void *data)
 {
 	struct kgsl_iommu_context *ctx = data;
-	const struct kgsl_mmu *mmu = &ctx->kgsldev->mmu;
+	const struct kgsl_device *device = ctx->kgsldev;
+	const struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	const struct kgsl_mmu *mmu = &device->mmu;
 	unsigned long flags;
 	u64 iova;
-	u32 fsr, fsynr0;
-
-	/*
-	 * First, read the fault status register and check that there's an
-	 * active fault. If not, what are we even doing here?
-	 */
-	fsr = KGSL_IOMMU_GET_CTX_REG(ctx, KGSL_IOMMU_CTX_FSR);
-	if (!(fsr & FSR_FAULT))
-		return IRQ_NONE;
+	const bool stall_on_fault = test_bit(KGSL_FT_PAGEFAULT_STALL_ENABLE,
+			&adreno_dev->ft_pf_policy);
 
 	spin_lock_irqsave(&ctx->fault_lock, flags);
 	ctx->outstanding_fault_count++;
@@ -1022,28 +1052,10 @@ static irqreturn_t kgsl_iommu_context_fault_isr(int irq, void *data)
 			KGSL_IOMMU_CTX_CONTEXTIDR);
 
 	/*
-	 * Rather irritatingly we have to read the fault syndrome register just
-	 * to see if this is a write fault, burning a few hundred nanoseconds.
+	 * If stall-on-fault is not enabled, disable the IRQ and re-enable it at
+	 * the end of the IRQ thread to mimic the behavior of IRQF_ONESHOT.
 	 */
-	fsynr0 = KGSL_IOMMU_GET_CTX_REG(ctx, KGSL_IOMMU_CTX_FSYNR0);
-	ctx->fault_regs.flags = fsynr0 & FSYNR0_WNR ? IOMMU_FAULT_WRITE :
-			IOMMU_FAULT_READ;
-	if (fsr & FSR_TF)
-		ctx->fault_regs.flags |= IOMMU_FAULT_TRANSLATION;
-	if (fsr & FSR_PF)
-		ctx->fault_regs.flags |= IOMMU_FAULT_PERMISSION;
-	if (fsr & FSR_EF)
-		ctx->fault_regs.flags |= IOMMU_FAULT_EXTERNAL;
-
-	/*
-	 * Check if the transaction has stalled, which it should have if lazy
-	 * allocation is enabled. If it hasn't stalled for some reason, disable
-	 * the IRQ and re-enable it at the end of the IRQ thread to mimic the
-	 * behavior of IRQF_ONESHOT.
-	 */
-	if (fsr & FSR_SS)
-		ctx->fault_regs.flags |= IOMMU_FAULT_TRANSACTION_STALLED;
-	else
+	if (!stall_on_fault)
 		disable_irq_nosync(ctx->irq);
 
 	spin_unlock_irqrestore(&ctx->fault_lock, flags);
@@ -1060,6 +1072,8 @@ static irqreturn_t kgsl_iommu_context_fault_thread(int irq, void *data)
 	struct kgsl_iommu_fault_regs fault_regs;
 	unsigned long wait_start, flags;
 	int ret;
+	const bool stall_on_fault = test_bit(KGSL_FT_PAGEFAULT_STALL_ENABLE,
+			&ADRENO_DEVICE(ctx->kgsldev)->ft_pf_policy);
 
 	spin_lock_irqsave(&ctx->fault_lock, flags);
 	memcpy(&fault_regs, &ctx->fault_regs, sizeof(fault_regs));
@@ -1078,12 +1092,12 @@ static irqreturn_t kgsl_iommu_context_fault_thread(int irq, void *data)
 		wmb();
 
 		/* Terminate any stalled transactions. */
-		if (fault_regs.flags & IOMMU_FAULT_TRANSACTION_STALLED)
+		if (stall_on_fault)
 			KGSL_IOMMU_SET_CTX_REG(ctx, KGSL_IOMMU_CTX_RESUME, 1);
 	}
 
 	/* Re-enable the IRQ if we disabled it in the ISR. */
-	if (!(fault_regs.flags & IOMMU_FAULT_TRANSACTION_STALLED))
+	if (!stall_on_fault)
 		enable_irq(ctx->irq);
 
 	wait_start = ktime_get_ns();
@@ -2582,14 +2596,15 @@ static struct kgsl_iommu_addr_entry *_find_gpuaddr(
 {
 	struct kgsl_iommu_pt *pt = pagetable->priv;
 	struct rb_node *node = pt->rbtree.rb_node;
+	const u32 addr = (u32)(gpuaddr >> PAGE_SHIFT);
 
 	while (node != NULL) {
 		struct kgsl_iommu_addr_entry *entry = rb_entry(node,
 			struct kgsl_iommu_addr_entry, node);
 
-		if (gpuaddr < entry->memdesc->gpuaddr)
+		if (addr < entry->gpuaddr)
 			node = node->rb_left;
-		else if (gpuaddr > entry->memdesc->gpuaddr)
+		else if (addr > entry->gpuaddr)
 			node = node->rb_right;
 		else
 			return entry;
@@ -2621,12 +2636,14 @@ static int _insert_gpuaddr(struct kgsl_pagetable *pagetable,
 	struct rb_node **node, *parent = NULL;
 	struct kgsl_iommu_addr_entry *new =
 		kmem_cache_alloc(addr_entry_cache, GFP_ATOMIC);
+	const u32 addr = (u32)(gpuaddr >> PAGE_SHIFT);
 
 	if (new == NULL)
 		return -ENOMEM;
 
 	new->memdesc = memdesc;
-	new->footprint = kgsl_memdesc_footprint(memdesc);
+	new->gpuaddr = addr;
+	new->footprint = (u32)(kgsl_memdesc_footprint(memdesc) >> PAGE_SHIFT);
 
 	node = &pt->rbtree.rb_node;
 
@@ -2636,9 +2653,9 @@ static int _insert_gpuaddr(struct kgsl_pagetable *pagetable,
 		parent = *node;
 		this = rb_entry(parent, struct kgsl_iommu_addr_entry, node);
 
-		if (gpuaddr < this->memdesc->gpuaddr)
+		if (addr < this->gpuaddr)
 			node = &parent->rb_left;
-		else if (gpuaddr > this->memdesc->gpuaddr)
+		else if (addr > this->gpuaddr)
 			node = &parent->rb_right;
 		else {
 			/* Duplicate entry */
@@ -2657,19 +2674,22 @@ static int _insert_gpuaddr(struct kgsl_pagetable *pagetable,
 	return 0;
 }
 
-static uint64_t _get_unmapped_area(struct kgsl_pagetable *pagetable,
-		uint64_t bottom, uint64_t top, uint64_t size,
-		uint64_t align)
+static u32 _get_unmapped_area(struct kgsl_pagetable *pagetable,
+		u64 bottom, u64 top, u64 size, u64 align)
 {
 	struct kgsl_iommu_pt *pt = pagetable->priv;
 	struct rb_node *node = rb_first(&pt->rbtree);
-	uint64_t start;
+	u32 bottom32, top32, start;
 
-	bottom = ALIGN(bottom, align);
-	start = bottom;
+	bottom32 = (u32)((s64)bottom >> PAGE_SHIFT);
+	top32 = (u32)((s64)top >> PAGE_SHIFT);
+	size >>= PAGE_SHIFT;
+	align >>= PAGE_SHIFT;
+
+	bottom32 = ALIGN(bottom32, align);
+	start = bottom32;
 
 	while (node != NULL) {
-		uint64_t gap;
 		struct kgsl_iommu_addr_entry *entry = rb_entry(node,
 			struct kgsl_iommu_addr_entry, node);
 
@@ -2677,76 +2697,82 @@ static uint64_t _get_unmapped_area(struct kgsl_pagetable *pagetable,
 		 * Skip any entries that are outside of the range, but make sure
 		 * to account for some that might straddle the lower bound
 		 */
-		if (entry->memdesc->gpuaddr < bottom) {
-			if (entry->memdesc->gpuaddr + entry->footprint > bottom)
-				start = ALIGN(entry->memdesc->gpuaddr +
-						entry->footprint, align);
+		if (entry->gpuaddr < bottom32) {
+			if (entry->gpuaddr + entry->footprint > bottom32)
+				start = ALIGN(entry->gpuaddr + entry->footprint,
+						align);
 			node = rb_next(node);
 			continue;
 		}
 
 		/* Stop if we went over the top */
-		if (entry->memdesc->gpuaddr >= top)
+		if (entry->gpuaddr >= top32)
 			break;
 
 		/* Make sure there is a gap to consider */
-		if (start < entry->memdesc->gpuaddr) {
-			gap = entry->memdesc->gpuaddr - start;
+		if (start < entry->gpuaddr) {
+			u32 gap = entry->gpuaddr - start;
 
 			if (gap >= size)
 				return start;
 		}
 
 		/* Stop if there is no more room in the region */
-		if (entry->memdesc->gpuaddr + entry->footprint >= top)
-			return (uint64_t) -ENOMEM;
+		if (entry->gpuaddr + entry->footprint >= top32)
+			return (u32)-ENOMEM;
 
 		/* Start the next cycle at the end of the current entry */
-		start = ALIGN(entry->memdesc->gpuaddr + entry->footprint, align);
+		start = ALIGN(entry->gpuaddr + entry->footprint, align);
 		node = rb_next(node);
 	}
 
-	if (start + size <= top)
+	if (start + size <= top32)
 		return start;
 
-	return (uint64_t) -ENOMEM;
+	return (u32)-ENOMEM;
 }
 
-static uint64_t _get_unmapped_area_topdown(struct kgsl_pagetable *pagetable,
-		uint64_t bottom, uint64_t top, uint64_t size,
-		uint64_t align)
+static u32 _get_unmapped_area_topdown(struct kgsl_pagetable *pagetable,
+		u64 bottom, u64 top, u64 size, u64 align)
 {
 	struct kgsl_iommu_pt *pt = pagetable->priv;
 	struct rb_node *node = rb_last(&pt->rbtree);
-	uint64_t end = top;
-	uint64_t mask = ~(align - 1);
 	struct kgsl_iommu_addr_entry *entry;
+	u32 bottom32, top32, end, mask;
+
+	bottom32 = (u32)((s64)bottom >> PAGE_SHIFT);
+	top32 = (u32)((s64)top >> PAGE_SHIFT);
+	size >>= PAGE_SHIFT;
+	align >>= PAGE_SHIFT;
+
+	end = top32;
+	mask = ~(align - 1);
 
 	/* Make sure that the bottom is correctly aligned */
-	bottom = ALIGN(bottom, align);
+	bottom32 = ALIGN(bottom32, align);
 
 	/* Make sure the requested size will fit in the range */
-	if (size > (top - bottom))
-		return -ENOMEM;
+	if (size > (top32 - bottom32))
+		return (u32)-ENOMEM;
 
 	/* Walk back through the list to find the highest entry in the range */
 	for (node = rb_last(&pt->rbtree); node != NULL; node = rb_prev(node)) {
 		entry = rb_entry(node, struct kgsl_iommu_addr_entry, node);
-		if (entry->memdesc->gpuaddr < top)
+		if (entry->gpuaddr < top32)
 			break;
 	}
 
 	while (node != NULL) {
-		uint64_t offset;
+		u32 offset;
 
 		entry = rb_entry(node, struct kgsl_iommu_addr_entry, node);
 
 		/* If the entire entry is below the range the search is over */
-		if (entry->memdesc->gpuaddr + entry->footprint < bottom)
+		if (entry->gpuaddr + entry->footprint < bottom32)
 			break;
 
 		/* Get the top of the entry properly aligned */
-		offset = ALIGN(entry->memdesc->gpuaddr + entry->footprint, align);
+		offset = ALIGN(entry->gpuaddr + entry->footprint, align);
 
 		/*
 		 * Try to allocate the memory from the top of the gap,
@@ -2755,7 +2781,7 @@ static uint64_t _get_unmapped_area_topdown(struct kgsl_pagetable *pagetable,
 		 */
 
 		if ((end > size) && (offset < end)) {
-			uint64_t chunk = (end - size) & mask;
+			u32 chunk = (end - size) & mask;
 
 			if (chunk >= offset)
 				return chunk;
@@ -2766,38 +2792,37 @@ static uint64_t _get_unmapped_area_topdown(struct kgsl_pagetable *pagetable,
 		 * then we are officially out of room
 		 */
 
-		if (entry->memdesc->gpuaddr < bottom)
-			return (uint64_t) -ENOMEM;
+		if (entry->gpuaddr < bottom32)
+			return (u32)-ENOMEM;
 
 		/* Set the top of the gap to the current entry->base */
-		end = entry->memdesc->gpuaddr;
+		end = entry->gpuaddr;
 
 		/* And move on to the next lower entry */
 		node = rb_prev(node);
 	}
 
 	/* If we get here then there are no more entries in the region */
-	if ((end > size) && (((end - size) & mask) >= bottom))
+	if ((end > size) && (((end - size) & mask) >= bottom32))
 		return (end - size) & mask;
 
-	return (uint64_t) -ENOMEM;
+	return (u32)-ENOMEM;
 }
 
-static uint64_t kgsl_iommu_find_svm_region(struct kgsl_pagetable *pagetable,
-		uint64_t start, uint64_t end, uint64_t size,
-		uint64_t alignment)
+static u64 kgsl_iommu_find_svm_region(struct kgsl_pagetable *pagetable,
+		u64 start, u64 end, u64 size, u64 alignment)
 {
-	uint64_t addr;
+	u32 addr;
 
 	/* Avoid black holes */
 	if (WARN(end <= start, "Bad search range: 0x%llx-0x%llx", start, end))
 		return (uint64_t) -EINVAL;
 
 	spin_lock(&pagetable->lock);
-	addr = _get_unmapped_area_topdown(pagetable,
-			start, end, size, alignment);
+	addr = _get_unmapped_area_topdown(pagetable, start, end, size, alignment);
 	spin_unlock(&pagetable->lock);
-	return addr;
+
+	return (u64)sign_extend64((u64)addr << PAGE_SHIFT, 31 + PAGE_SHIFT);
 }
 
 static bool iommu_addr_in_svm_ranges(struct kgsl_iommu_pt *pt,
@@ -2821,8 +2846,9 @@ static int kgsl_iommu_set_svm_region(struct kgsl_pagetable *pagetable,
 {
 	int ret = -ENOMEM;
 	struct kgsl_iommu_pt *pt = pagetable->priv;
-	const uint64_t size = kgsl_memdesc_footprint(memdesc);
+	uint64_t size = kgsl_memdesc_footprint(memdesc);
 	struct rb_node *node;
+	const u32 addr = (u32)(gpuaddr >> PAGE_SHIFT);
 
 	/* Make sure the requested address doesn't fall out of SVM range */
 	if (!iommu_addr_in_svm_ranges(pt, gpuaddr, size))
@@ -2831,17 +2857,19 @@ static int kgsl_iommu_set_svm_region(struct kgsl_pagetable *pagetable,
 	spin_lock(&pagetable->lock);
 	node = pt->rbtree.rb_node;
 
+	size >>= PAGE_SHIFT;
+
 	while (node != NULL) {
 		uint64_t start, end;
 		struct kgsl_iommu_addr_entry *entry = rb_entry(node,
 			struct kgsl_iommu_addr_entry, node);
 
-		start = entry->memdesc->gpuaddr;
-		end = entry->memdesc->gpuaddr + entry->footprint;
+		start = entry->gpuaddr;
+		end = entry->gpuaddr + entry->footprint;
 
-		if (gpuaddr + size <= start)
+		if (addr + size <= start)
 			node = node->rb_left;
-		else if (end <= gpuaddr)
+		else if (end <= addr)
 			node = node->rb_right;
 		else
 			goto out;
@@ -2857,12 +2885,13 @@ static int get_gpuaddr(struct kgsl_pagetable *pagetable,
 		struct kgsl_memdesc *memdesc, u64 start, u64 end,
 		u64 size, unsigned int align)
 {
-	u64 addr;
+	u64 gpuaddr;
+	u32 addr;
 	int ret;
 
 	spin_lock(&pagetable->lock);
 	addr = _get_unmapped_area(pagetable, start, end, size, align);
-	if (addr == (u64) -ENOMEM) {
+	if (addr == (u32)-ENOMEM) {
 		spin_unlock(&pagetable->lock);
 		return -ENOMEM;
 	}
@@ -2872,7 +2901,8 @@ static int get_gpuaddr(struct kgsl_pagetable *pagetable,
 	 * sure we aren't racing with anybody so we don't need to worry about
 	 * taking the lock
 	 */
-	ret = _insert_gpuaddr(pagetable, memdesc, addr);
+	gpuaddr = (u64)sign_extend64((u64)addr << PAGE_SHIFT, 31 + PAGE_SHIFT);
+	ret = _insert_gpuaddr(pagetable, memdesc, gpuaddr);
 	spin_unlock(&pagetable->lock);
 
 	return ret;

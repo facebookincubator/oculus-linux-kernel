@@ -674,14 +674,102 @@ static int syncboss_release(struct inode *inode, struct file *f)
 	return 0;
 }
 
+static irqreturn_t isr_primary_nsync(int irq, void *p)
+{
+	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
+
+	atomic_long_set(&devdata->nsync_irq_timestamp, ktime_get_ns());
+
+	return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t isr_thread_nsync(int irq, void *p)
+{
+	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
+	struct syncboss_nsync_event event = {
+		.timestamp = atomic_long_read(&devdata->nsync_irq_timestamp),
+		.count = ++(devdata->nsync_irq_count),
+	};
+
+	int status = miscfifo_send_buf(
+			&devdata->nsync_fifo,
+			(void *)&event,
+			sizeof(event));
+	if (status < 0)
+		dev_warn_ratelimited(
+			&devdata->spi->dev,
+			"NSYNC fifo send failure: %d\n", status);
+
+	return IRQ_HANDLED;
+}
+
 static int syncboss_nsync_open(struct inode *inode, struct file *f)
 {
+	int status;
 	struct syncboss_dev_data *devdata =
 		container_of(f->private_data, struct syncboss_dev_data,
 			     misc_nsync);
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status)
+		return status;
+
+	++devdata->nsync_client_count;
+	if (devdata->nsync_client_count == 1) {
+		devdata->nsync_irq_count = 0;
+		devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
+		irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
+		status = devm_request_threaded_irq(
+			&devdata->spi->dev, devdata->nsync_irq, isr_primary_nsync,
+			isr_thread_nsync, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+			devdata->misc_nsync.name, devdata);
+
+		if (status < 0) {
+			dev_err(&devdata->spi->dev, "SyncBoss nsync IRQ request failed (%d)",
+				status);
+			goto out;
+		}
+	}
+
+	status = miscfifo_fop_open(f, &devdata->nsync_fifo);
+	if (status < 0)
+		goto out;
+
 	dev_info(&devdata->spi->dev, "SyncBoss nsync handle opened (%s)",
 		 current->comm);
-	return miscfifo_fop_open(f, &devdata->nsync_fifo);
+out:
+	if (status < 0)
+		--devdata->nsync_client_count;
+
+	mutex_unlock(&devdata->state_mutex);
+	return status;
+}
+
+static int syncboss_nsync_release(struct inode *inode, struct file *file)
+{
+	int status;
+	struct miscfifo_client *client = file->private_data;
+	struct syncboss_dev_data *devdata =
+		container_of(client->mf, struct syncboss_dev_data, nsync_fifo);
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status)
+		return status;
+
+	status = miscfifo_fop_release(inode, file);
+	if (status)
+		goto out;
+
+	--devdata->nsync_client_count;
+	if (devdata->nsync_client_count == 0)
+		devm_free_irq(&devdata->spi->dev, devdata->nsync_irq, devdata);
+
+	dev_info(&devdata->spi->dev, "SyncBoss nsync handle closed (%s)",
+		 current->comm);
+
+out:
+	mutex_unlock(&devdata->state_mutex);
+	return status;
 }
 
 static const struct file_operations fops = {
@@ -717,7 +805,7 @@ static const struct file_operations powerstate_fops = {
 
 static const struct file_operations nsync_fops = {
 	.open = syncboss_nsync_open,
-	.release = miscfifo_fop_release,
+	.release = syncboss_nsync_release,
 	.read = miscfifo_fop_read,
 	.write = NULL,
 	.poll = miscfifo_fop_poll
@@ -1660,8 +1748,10 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	mutex_lock(&devdata->msg_queue_lock);
 	list_for_each_entry_safe(smsg, temp_smsg, &devdata->msg_queue_list, list) {
 		list_del(&smsg->list);
+		--devdata->msg_queue_item_count;
 		kfree(smsg);
 	}
+	BUG_ON(devdata->msg_queue_item_count != 0);
 	mutex_unlock(&devdata->msg_queue_lock);
 
 	if (devdata->rf_amp) {
@@ -1785,35 +1875,6 @@ static irqreturn_t isr_thread_wakeup(int irq, void *p)
 	 * allow time for clients to open a handle to syncboss)
 	 */
 	pm_wakeup_event(&devdata->spi->dev, SYNCBOSS_WAKEUP_EVENT_DURATION_MS);
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t isr_primary_nsync(int irq, void *p)
-{
-	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
-
-	atomic_long_set(&devdata->nsync_irq_timestamp, ktime_get_ns());
-
-	return IRQ_WAKE_THREAD;
-}
-
-static irqreturn_t isr_thread_nsync(int irq, void *p)
-{
-	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
-	struct syncboss_nsync_event event = {
-		.timestamp = atomic_long_read(&devdata->nsync_irq_timestamp),
-		.count = ++(devdata->nsync_irq_count),
-	};
-
-	int status = miscfifo_send_buf(
-			&devdata->nsync_fifo,
-			(void *)&event,
-			sizeof(event));
-	if (status < 0)
-		dev_warn_ratelimited(
-			&devdata->spi->dev,
-			"NSYNC fifo send failure: %d\n", status);
-
 	return IRQ_HANDLED;
 }
 
@@ -2065,7 +2126,7 @@ static int syncboss_probe(struct spi_device *spi)
 	/* Set up TE timestamp before sysfs nodes get enabled */
 	atomic64_set(&devdata->last_te_timestamp_ns, ktime_to_ns(ktime_get()));
 
-	if (devdata->gpio_nsync >= 0) {
+	if (gpio_is_valid(devdata->gpio_nsync)) {
 		devdata->nsync_fifo.config.kfifo_size = SYNCBOSS_NSYNC_MISCFIFO_SIZE;
 		status = devm_miscfifo_register(dev, &devdata->nsync_fifo);
 
@@ -2126,16 +2187,6 @@ static int syncboss_probe(struct spi_device *spi)
 				__func__, status);
 			goto error_after_sysfs;
 		}
-	}
-
-	if (devdata->gpio_nsync >= 0) {
-		devdata->nsync_irq_count = 0;
-		devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
-		irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
-		status = devm_request_threaded_irq(
-			&spi->dev, devdata->nsync_irq, isr_primary_nsync,
-			isr_thread_nsync, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
-			devdata->misc_nsync.name, devdata);
 	}
 
 	/*

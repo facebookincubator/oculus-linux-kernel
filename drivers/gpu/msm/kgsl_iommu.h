@@ -73,10 +73,28 @@
 /* Max number of iommu clks per IOMMU unit */
 #define KGSL_IOMMU_MAX_CLKS 5
 
+/* Snagged from arm-smmu-regs.h */
+#define FSR_MULTI			(1 << 31)
+#define FSR_SS				(1 << 30)
+#define FSR_UUT				(1 << 8)
+#define FSR_ASF				(1 << 7)
+#define FSR_TLBLKF			(1 << 6)
+#define FSR_TLBMCF			(1 << 5)
+#define FSR_EF				(1 << 4)
+#define FSR_PF				(1 << 3)
+#define FSR_AFF				(1 << 2)
+#define FSR_TF				(1 << 1)
+
+#define FSR_IGN				(FSR_AFF | FSR_ASF | \
+					 FSR_TLBMCF | FSR_TLBLKF)
+#define FSR_FAULT			(FSR_MULTI | FSR_SS | FSR_UUT | \
+					 FSR_EF | FSR_PF | FSR_TF | FSR_IGN)
+
+#define FSYNR0_WNR			(1 << 4)
+
 struct kgsl_iommu_fault_regs {
 	u64 addr;
 	u32 contextidr;
-	u32 flags;
 };
 
 /*
@@ -182,14 +200,16 @@ struct kgsl_iommu_pt {
 
 /*
  * struct kgsl_iommu_addr_entry - entry in the kgsl_iommu_pt rbtree.
- * @memdesc: Memory descriptor for this entry
- * @footprint: The total footprint of the entry
  * @node: the rbtree node
+ * @gpuaddr: GPU virtual address of this entry (>> PAGE_SHIFT)
+ * @footprint: The total footprint of the entry (>> PAGE_SHIFT)
+ * @memdesc: Memory descriptor for this entry
  */
 struct kgsl_iommu_addr_entry {
-	struct kgsl_memdesc *memdesc;
-	uint64_t footprint;
 	struct rb_node node;
+	u32 gpuaddr;
+	u32 footprint;
+	struct kgsl_memdesc *memdesc;
 };
 
 #define KGSL_IOMMU_SET_CTX_REG_Q(ctx, offset, val) \

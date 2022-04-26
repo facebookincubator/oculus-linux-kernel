@@ -142,7 +142,7 @@ static int wcd937x_init_reg(struct snd_soc_component *component)
 				0xFF, 0xFA);
 	snd_soc_component_update_bits(component, WCD937X_MICB3_TEST_CTL_1,
 				0xFF, 0xFA);
-	/* Set VBG Voltage to P0.5V for Tanggu second source */
+	/* Set Bandgap Fine Adjustment to +5mV for Tanggu SMIC part */
 	if (snd_soc_component_read32(component, WCD937X_DIGITAL_EFUSE_REG_16)
 	    == 0x01)
 		snd_soc_component_update_bits(component,
