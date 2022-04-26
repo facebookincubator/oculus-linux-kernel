@@ -3771,6 +3771,8 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	}
 	msm_uport->wakeup.freed = true;
 
+	del_timer_sync(&msm_uport->tx.tx_timeout_timer);
+
 	/* make sure tx lh finishes */
 	flush_kthread_worker(&msm_uport->tx.kworker);
 	ret = wait_event_timeout(msm_uport->tx.wait,

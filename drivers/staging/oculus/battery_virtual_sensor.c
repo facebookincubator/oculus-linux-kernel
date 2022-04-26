@@ -22,360 +22,96 @@
 
 struct battery_virtual_sensor_data {
 	struct device *dev;
+	struct thermal_zone_device *tzd;
+	struct virtual_sensor_common_data data;
 
 	struct power_supply *usb_psy;
-
-	struct thermal_zone_device *tzd;
 
 	struct thermal_zone_device *pcm_tz;
 	int pcm_tz_scaling_factor;
 
-	struct thermal_zone_device *tzs[THERMAL_MAX_VIRT_SENSORS];
-	struct iio_channel *iios[THERMAL_MAX_VIRT_SENSORS];
-
-	/* store last temperatures as part of the formula */
-	int tz_last_temperatures[THERMAL_MAX_VIRT_SENSORS];
-	int iio_last_temperatures[THERMAL_MAX_VIRT_SENSORS];
-
-	/* Scaling factor scales to millidegrees */
-	int tz_scaling_factors[THERMAL_MAX_VIRT_SENSORS];
-	int iio_scaling_factors[THERMAL_MAX_VIRT_SENSORS];
-
-	/* scaled by COEFFICIENT_SCALAR */
-	int tz_coefficients[THERMAL_MAX_VIRT_SENSORS];
-	int tz_slope_coefficients[THERMAL_MAX_VIRT_SENSORS];
-	int iio_coefficients[THERMAL_MAX_VIRT_SENSORS];
-	int iio_slope_coefficients[THERMAL_MAX_VIRT_SENSORS];
-
-	int tz_count;
-	int iio_count;
-
-	int intercept_constant_discharging;
-
 	int max_differential;
-
-	struct mutex lock;
 
 	bool was_connected;
 	bool use_pcm_therm_with_charger;
 };
 
-static int get_pcm_temp(struct battery_virtual_sensor_data *vs)
+static int get_pcm_temp(struct battery_virtual_sensor_data *vs, s64 *tz_temp)
 {
-	int tz_temp;
 	int ret;
+	int temp;
 
-	ret = thermal_zone_get_temp(vs->pcm_tz, &tz_temp);
-	if (ret < 0) {
+	ret = thermal_zone_get_temp(vs->pcm_tz, &temp);
+	if (ret != 0) {
 		dev_warn(vs->dev,
 				"Error getting temperature: %s (%d)",
 				vs->pcm_tz->type, ret);
 		return ret;
 	}
 
-	return tz_temp * vs->pcm_tz_scaling_factor;
+	*tz_temp = (s64)temp * (s64)vs->pcm_tz_scaling_factor;
+	return 0;
 }
 
 static int get_temp(void *data, int *temperature)
 {
-	int ret, pcm_temp = 0, tz_temp = 0, iio_temp = 0;
 	struct battery_virtual_sensor_data *vs = data;
+	s64 tz_temp = 0, iio_temp = 0, temp, pcm_temp = 0;
+	int ret;
 
 	*temperature = 0;
 
-	pcm_temp = get_pcm_temp(vs);
-	if (pcm_temp < 0)
-		return pcm_temp;
+	ret = get_pcm_temp(vs, &pcm_temp);
+	if (ret != 0)
+		return ret;
+
+	mutex_lock(&vs->data.lock);
 
 	/* Use PCM thermistor if charger is present */
-	if (vs->use_pcm_therm_with_charger &&
-	    is_charger_connected(vs->usb_psy)) {
+	if (vs->use_pcm_therm_with_charger && is_charger_connected(vs->usb_psy)) {
 		vs->was_connected = true;
 
-		*temperature = pcm_temp;
-
-		return 0;
+		*temperature = (int)pcm_temp;
+		ret = 0;
+		goto get_temp_unlock;
 	}
 
 	if (vs->was_connected) {
 		/* Zero out history upon disconnection to avoid sudden jumps */
-		memset(vs->tz_last_temperatures, 0,
-				sizeof(vs->tz_last_temperatures));
-		memset(vs->iio_last_temperatures, 0,
-				sizeof(vs->iio_last_temperatures));
+		virtual_sensor_reset_history(&vs->data);
+
 		vs->was_connected = false;
 	}
 
-	mutex_lock(&vs->lock);
-
-	ret = virtual_sensor_calculate_tz_temp(vs->dev, vs->tzs,
-			vs->tz_coefficients, vs->tz_slope_coefficients,
-			vs->tz_scaling_factors, vs->tz_count,
-			vs->tz_last_temperatures, &tz_temp);
+	ret = virtual_sensor_calculate_tz_temp(vs->dev, &vs->data, &tz_temp);
 	if (ret)
 		goto get_temp_unlock;
 
-	ret = virtual_sensor_calculate_iio_temp(vs->dev, vs->iios,
-			vs->iio_coefficients, vs->iio_slope_coefficients,
-			vs->iio_scaling_factors, vs->iio_count,
-			vs->iio_last_temperatures, &iio_temp);
+	ret = virtual_sensor_calculate_iio_temp(vs->dev, &vs->data, &iio_temp);
 	if (ret)
 		goto get_temp_unlock;
 
-	*temperature += tz_temp;
-	*temperature += iio_temp;
-
-	*temperature /= COEFFICIENT_SCALAR;
+	temp = div64_s64(tz_temp + iio_temp, COEFFICIENT_SCALAR);
 
 	/* Account for charging */
-	*temperature += vs->intercept_constant_discharging;
+	temp += (s64)vs->data.intercept_constant_discharging;
 
 	/* If virtual sensor temp greatly differs from PCM, use PCM */
-	if (abs(*temperature - pcm_temp) > vs->max_differential)
-		*temperature = pcm_temp;
+	if (abs(temp - pcm_temp) > vs->max_differential)
+		*temperature = (int)pcm_temp;
+	else
+		*temperature = (int)temp;
 
 	ret = 0;
 
 get_temp_unlock:
-	mutex_unlock(&vs->lock);
+	mutex_unlock(&vs->data.lock);
 	return ret;
 }
 
 static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
 	.get_temp = get_temp,
 };
-
-static ssize_t show_coefficients(int *coefficients, int num_coefficients,
-		char *buf)
-{
-	int i, len = 0;
-
-	for (i = 0; i < num_coefficients; i++) {
-		len += scnprintf(buf + len, PAGE_SIZE - len, "%d",
-				coefficients[i]);
-		if (i == (num_coefficients - 1))
-			len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
-		else
-			len += scnprintf(buf + len, PAGE_SIZE - len, " ");
-	}
-
-	return len;
-}
-
-static int store_coefficients(int *coefficients, int num_coefficients, const char *buf)
-{
-	int coeffs[THERMAL_MAX_VIRT_SENSORS];
-	int ret;
-
-	/* THERMAL_MAX_VIRT_SENSORS is 10, so allow up to 10 inputs */
-	ret = sscanf(buf, "%d %d %d %d %d %d %d %d %d %d",
-			&coeffs[0], &coeffs[1], &coeffs[2], &coeffs[3],
-			&coeffs[4], &coeffs[5], &coeffs[6], &coeffs[7],
-			&coeffs[8], &coeffs[9]);
-	if (ret != num_coefficients)
-		return -EINVAL;
-
-	memcpy(coefficients, coeffs, sizeof(int) * num_coefficients);
-
-	return 0;
-}
-
-static ssize_t tz_coefficients_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	ssize_t ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
-		return ret;
-	}
-	ret = show_coefficients(vs->tz_coefficients, vs->tz_count, buf);
-	mutex_unlock(&vs->lock);
-
-	return ret;
-}
-
-static ssize_t tz_coefficients_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	int ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
-		return ret;
-	}
-	ret = store_coefficients(vs->tz_coefficients, vs->tz_count, buf);
-	mutex_unlock(&vs->lock);
-	if (ret < 0)
-		return ret;
-
-	return count;
-}
-static DEVICE_ATTR_RW(tz_coefficients);
-
-static ssize_t tz_slope_coefficients_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	ssize_t ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
-		return ret;
-	}
-	ret = show_coefficients(vs->tz_slope_coefficients, vs->tz_count, buf);
-	mutex_unlock(&vs->lock);
-
-	return ret;
-}
-
-static ssize_t tz_slope_coefficients_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	int ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
-		return ret;
-	}
-	ret = store_coefficients(vs->tz_slope_coefficients, vs->tz_count, buf);
-	mutex_unlock(&vs->lock);
-	if (ret < 0)
-		return ret;
-
-	return count;
-}
-static DEVICE_ATTR_RW(tz_slope_coefficients);
-
-static ssize_t iio_coefficients_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	ssize_t ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
-		return ret;
-	}
-	ret = show_coefficients(vs->iio_coefficients, vs->iio_count, buf);
-	mutex_unlock(&vs->lock);
-
-	return ret;
-}
-
-static ssize_t iio_coefficients_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	int ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
-		return ret;
-	}
-	ret = store_coefficients(vs->iio_slope_coefficients, vs->iio_count, buf);
-	mutex_unlock(&vs->lock);
-	if (ret < 0)
-		return ret;
-
-	return count;
-}
-static DEVICE_ATTR_RW(iio_coefficients);
-
-static ssize_t iio_slope_coefficients_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	ssize_t ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
-		return ret;
-	}
-	ret = show_coefficients(vs->iio_coefficients, vs->iio_count, buf);
-	mutex_unlock(&vs->lock);
-
-	return ret;
-}
-
-static ssize_t iio_slope_coefficients_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	int ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
-		return ret;
-	}
-	ret = store_coefficients(vs->iio_slope_coefficients, vs->iio_count, buf);
-	mutex_unlock(&vs->lock);
-	if (ret < 0)
-		return ret;
-
-	return count;
-}
-static DEVICE_ATTR_RW(iio_slope_coefficients);
-
-static ssize_t discharging_constant_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	ssize_t ret;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
-		return ret;
-	}
-	ret = sprintf(buf, "%d\n", vs->intercept_constant_discharging);
-	mutex_unlock(&vs->lock);
-
-	return ret;
-}
-
-static ssize_t discharging_constant_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct battery_virtual_sensor_data *vs =
-		(struct battery_virtual_sensor_data *) dev_get_drvdata(dev);
-	int ret, constant;
-
-	ret = kstrtoint_from_user(buf, count, 10, &constant);
-	if (ret < 0)
-		return -EINVAL;
-
-	ret = mutex_lock_interruptible(&vs->lock);
-	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
-		return ret;
-	}
-	vs->intercept_constant_discharging = constant;
-	mutex_unlock(&vs->lock);
-
-	return count;
-}
-static DEVICE_ATTR_RW(discharging_constant);
 
 static struct attribute *battery_virtual_sensor_attrs[] = {
 	&dev_attr_tz_coefficients.attr,
@@ -402,7 +138,7 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	vs->dev = &pdev->dev;
 
-	mutex_init(&vs->lock);
+	mutex_init(&vs->data.lock);
 
 	ret = of_property_read_string(pdev->dev.of_node, "pcm-thermal-zone",
 			&pcm_tz_name);
@@ -429,71 +165,9 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
-	ret = virtual_sensor_parse_thermal_zones_dt(&pdev->dev, vs->tzs,
-			&vs->tz_count);
-	if (ret < 0)
-		return ret;
-
-	ret = of_property_read_u32_array(pdev->dev.of_node,
-			"thermal-zone-scaling-factors", vs->tz_scaling_factors,
-			vs->tz_count);
+	ret = virtual_sensor_parse_common_dt(vs->dev, &vs->data);
 	if (ret < 0) {
-		dev_err(&pdev->dev,
-			"Failed to parse thermal-zone-scaling-factors: %d", ret);
-		return ret;
-	}
-
-	ret = of_property_read_u32_array(pdev->dev.of_node, "thermal-zone-coefficients",
-			vs->tz_coefficients, vs->tz_count);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to parse thermal-zone-coefficients: %d", ret);
-		return ret;
-	}
-
-	ret = of_property_read_u32_array(
-			pdev->dev.of_node, "thermal-zone-slope-coefficients",
-			vs->tz_slope_coefficients, vs->tz_count);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to parse thermal-zone-slope-coefficients: %d",
-				ret);
-		return ret;
-	}
-
-	ret = virtual_sensor_parse_iio_channels_dt(&pdev->dev, vs->iios,
-			&vs->iio_count);
-	if (ret < 0 && ret != -EINVAL)
-		return ret;
-
-	ret = of_property_read_u32_array(pdev->dev.of_node,
-			"io-scaling-factors", vs->iio_scaling_factors,
-			vs->iio_count);
-	if (ret < 0 && ret != -EINVAL) {
-		dev_err(&pdev->dev,
-			"Failed to parse io-scaling-factors: %d", ret);
-		return ret;
-	}
-
-	ret = of_property_read_u32_array(pdev->dev.of_node, "io-coefficients",
-			vs->iio_coefficients, vs->iio_count);
-	if (ret < 0 && ret != -EINVAL) {
-		dev_err(&pdev->dev, "Failed to parse io-coefficients: %d", ret);
-		return ret;
-	}
-
-	ret = of_property_read_u32_array(
-			pdev->dev.of_node, "io-slope-coefficients",
-			vs->iio_slope_coefficients, vs->iio_count);
-	if (ret < 0 && ret != -EINVAL) {
-		dev_err(&pdev->dev, "Failed to parse io-slope-coefficients: %d",
-				ret);
-		return ret;
-	}
-
-	ret = of_property_read_u32(pdev->dev.of_node, "intercept-discharging",
-			&vs->intercept_constant_discharging);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to parse intercept-discharging: %d",
-				ret);
+		dev_err(&pdev->dev, "Failed to parse common data: %d", ret);
 		return ret;
 	}
 
@@ -515,6 +189,8 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
+	virtual_sensor_reset_history(&vs->data);
+
 	tzd = thermal_zone_of_sensor_register(&pdev->dev, 0, vs,
 			&virtual_sensor_thermal_ops);
 	if (IS_ERR(tzd)) {
@@ -525,7 +201,7 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 	}
 	vs->tzd = tzd;
 
-	dev_set_drvdata(&pdev->dev, vs);
+	dev_set_drvdata(&pdev->dev, &vs->data);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, battery_virtual_sensor_groups);
 	if (ret < 0)
@@ -536,13 +212,16 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 static int virtual_sensor_remove(struct platform_device *pdev)
 {
-	struct battery_virtual_sensor_data *vs = platform_get_drvdata(pdev);
+	struct virtual_sensor_common_data *data =
+			(struct virtual_sensor_common_data *) platform_get_drvdata(pdev);
+	struct battery_virtual_sensor_data *vs =
+			(struct battery_virtual_sensor_data *) data->parent;
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 
 	sysfs_remove_groups(&pdev->dev.kobj, battery_virtual_sensor_groups);
 
-	mutex_destroy(&vs->lock);
+	mutex_destroy(&data->lock);
 
 	return 0;
 }

@@ -1,1 +1,3 @@
 header-y += cypd.h
+header-y += miscfifo.h
+header-y += rt600-ctrl.h
