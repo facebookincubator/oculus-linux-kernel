@@ -1324,6 +1324,11 @@ static void expire_timers(struct timer_base *base, struct hlist_head *head)
 		timer = hlist_entry(head->first, struct timer_list, entry);
 
 		base->running_timer = timer;
+		/* TODO: find root cause of corrupted timer, see T105811407 */
+		if (WARN(timer->entry.next == LIST_POISON2,
+			"corrupted timer: %pF\n", timer->function)) {
+			timer->entry.next = NULL;
+		}
 		detach_timer(timer, true);
 
 		fn = timer->function;

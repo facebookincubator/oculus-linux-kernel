@@ -7,6 +7,9 @@ on boot
     # FMAC Wifi firmware reload path
     chown wifi wifi /sys/module/brcmfmac/parameters/alternative_fw_path
 
+    # Needed by the Stella WiFi service
+    chown system system /sys/module/brcmfmac/parameters/early_scan_finish
+
     # If wificond loaded before we did, restart it to make sure it can connect
     # to the driver. Otherwise it's fine to start it now anyway.
     restart wificond
