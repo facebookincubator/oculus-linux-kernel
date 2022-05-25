@@ -23,4 +23,26 @@
 #define SWD_NRF_UICR_SIZE            528
 #define SWD_NRF_UICR_CUSTOMER_OFFSET 0x080
 
+/* DP APSEL values to choose the Access Port */
+#define SWD_NRF_APSEL_MEMAP             0x00
+#define SWD_NRF_APSEL_CTRLAP            0x01
+
+/* CTRL-AP registers */
+#define SWD_NRF_APREG_RESET                     0x000
+#define SWD_NRF_APREG_RESET_Reset               (1)
+#define SWD_NRF_APREG_RESET_NoReset             (0)
+#define SWD_NRF_APREG_ERASEALL                  0x004
+#define SWD_NRF_APREG_ERASEALL_Start            (1)
+#define SWD_NRF_APREG_ERASEALL_NoOperation      (0)
+#define SWD_NRF_APREG_ERASEALLSTATUS            0x008
+#define SWD_NRF_APREG_ERASEALLSTATUS_Ready      (0)
+#define SWD_NRF_APREG_APPROTECTSTATUS           0x00C
+#define SWD_NRF_APREG_APPROTECTSTATUS_Disabled  (1)
+
+/* APPROTECT Disable for new nRF */
+#define SWD_NRF_UICR_APPROTECT          0x10001208
+#define SWD_NRF_UICR_APPROTECT_Disable  (0x5a)
+
+#define SWD_NRF_FICR_PART    0x10000100
+#define SWD_NRF_FICR_VARIANT 0x10000104
 #endif

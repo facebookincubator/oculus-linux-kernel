@@ -70,7 +70,6 @@ struct step_chg_info {
 	bool			sw_jeita_cfg_valid;
 	bool			cycle_cfg_valid;
 	bool			rblt_cfg_valid;
-	bool			rblt_limited_check;
 	bool			chg_disable_cfg_valid;
 	bool			soc_based_step_chg;
 	bool			ocv_based_step_chg;
@@ -119,7 +118,8 @@ static struct step_chg_info *the_chip;
 
 #define BATT_HOT_DECIDEGREE_MAX			600
 #define CYCLE_COUNT_THRESHOLD_MAX	800
-#define RBLT_THRESHOLD_MAX		1000000
+/* Keep RBLT_THRESHOLD_MAX in sync with rblt_states enum in smb5-lib.h */
+#define RBLT_THRESHOLD_MAX		4
 #define GET_CONFIG_DELAY_MS		2000
 #define GET_CONFIG_RETRY_COUNT		50
 #define WAIT_BATT_ID_READY_MS		200
@@ -457,9 +457,6 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 		chip->cycle_cfg_valid = false;
 	}
 
-	chip->rblt_limited_check =
-		of_property_read_bool(profile_node, "qcom,rblt-limited-check");
-
 	chip->rblt_cfg_valid = true;
 	rc = read_range_data_from_node(profile_node,
 			"qcom,rblt-ranges",
@@ -541,7 +538,7 @@ static void get_config_work(struct work_struct *work)
 			chip->chg_disable_config->fv_cfg[i].high_threshold,
 			chip->chg_disable_config->fv_cfg[i].value);
 	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++)
-		pr_debug("rblt-fv-cfg: %dOhm ~ %dOhm, %duV\n",
+		pr_debug("rblt-fv-cfg: state: %d ~ state:%d, %duV\n",
 			chip->rblt_fv_config->rblt_cfg[i].low_threshold,
 			chip->rblt_fv_config->rblt_cfg[i].high_threshold,
 			chip->rblt_fv_config->rblt_cfg[i].value);
@@ -766,8 +763,6 @@ static int handle_jeita(struct step_chg_info *chip)
 	int rc = 0, fcc_ua = 0, jeita_fcc_ua = 0, cycle_fcc_ua = 0;
 	u32 fv_uv = 0, jeita_fv_uv = 0, cycle_fv_uv = 0, rblt_fv_uv = 0;
 	int chg_disable = false;
-	int charge_type = POWER_SUPPLY_CHARGE_TYPE_UNKNOWN;
-	int charge_profile = 0;
 	u64 elapsed_us;
 
 	rc = power_supply_get_property(chip->batt_psy,
@@ -874,14 +869,14 @@ find_fv_votable:
 		goto find_chg_disable_votable;
 
 	/*
-	 * If battery pack rblt is between swelling thresholds then
-	 * reduce max charging voltage.
+	 * If battery pack RBLT state shows warning/critical we will reduce
+	 * the max charging voltage.
 	 */
 	rc = power_supply_get_property(chip->batt_psy,
-		POWER_SUPPLY_PROP_RBLT, &pval);
+		POWER_SUPPLY_PROP_RBLT_STATE, &pval);
 	if (rc < 0) {
 		pr_err("Get rblt value failed, rc=%d\n", rc);
-		goto find_usb_icl;
+		goto find_chg_disable_votable;
 	}
 	rc = get_val(chip->rblt_fv_config->rblt_cfg,
 			chip->rblt_fv_config->param.hysteresis,
@@ -892,27 +887,7 @@ find_fv_votable:
 	if (rc < 0)
 		rblt_fv_uv = fv_uv;
 
-	rc = power_supply_get_property(chip->bms_psy,
-		POWER_SUPPLY_PROP_CHARGE_PROFILE, &pval);
-	if (rc < 0) {
-		pr_err("Get charge profile failed, rc=%d\n", rc);
-		goto check_rblt_limit;
-	}
-	charge_profile = pval.intval;
-	rc = power_supply_get_property(chip->batt_psy,
-		POWER_SUPPLY_PROP_CHARGE_TYPE, &pval);
-	if (rc < 0) {
-		pr_err("Get status failed, rc=%d\n", rc);
-		goto check_rblt_limit;
-	}
-	charge_type = pval.intval;
-check_rblt_limit:
-	if (!chip->rblt_limited_check)
-		fv_uv = min(fv_uv, rblt_fv_uv);
-	else if (chip->rblt_limited_check &&
-			charge_type == POWER_SUPPLY_CHARGE_TYPE_NONE &&
-			charge_profile == 0)
-		fv_uv = min(fv_uv, rblt_fv_uv);
+	fv_uv = min(fv_uv, rblt_fv_uv);
 
 find_chg_disable_votable:
 	if (!chip->chg_disable_votable)

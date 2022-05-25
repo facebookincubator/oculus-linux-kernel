@@ -202,7 +202,7 @@ static bool swd_wire_header(struct device *dev, bool read,
 		}
 
 		if (ack == SWD_VAL_FAULT) {
-			dev_err(dev, "Bus fault condition in %s\n", __func__);
+			dev_err_ratelimited(dev, "Bus fault condition in %s\n", __func__);
 		}
 
 		return false;
@@ -232,7 +232,7 @@ static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
 	bool parity;
 
 	if (!swd_wire_header(dev, SWD_VAL_WRITE, apndp, reg)) {
-		dev_err(dev, "SWD response is invalid/unknown in %s\n",
+		dev_err_ratelimited(dev, "SWD response is invalid/unknown in %s\n",
 			__func__);
 		return;
 	}
@@ -257,7 +257,7 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	bool parity, check;
 
 	if (!swd_wire_header(dev, SWD_VAL_READ, apndp, reg)) {
-		dev_err(dev, "SWD response is invalid/unknown in %s\n",
+		dev_err_ratelimited(dev, "SWD response is invalid/unknown in %s\n",
 			__func__);
 		return 0;
 	}
@@ -270,7 +270,7 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	parity = bitcount & 1;
 	check = swd_wire_read(devdata);
 	if (check != parity) {
-		dev_err(dev, "SWD Parity error in %s\n", __func__);
+		dev_err_ratelimited(dev, "SWD Parity error in %s\n", __func__);
 		return 0;
 	}
 	swd_wire_turnaround(devdata);
@@ -278,12 +278,12 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	return le32_to_cpu(data);
 }
 
-static void swd_ap_write(struct device *dev, u8 reg, u32 data)
+void swd_ap_write(struct device *dev, u8 reg, u32 data)
 {
 	swd_dpap_write(dev, SWD_VAL_AP, reg, data);
 }
 
-static u32 swd_ap_read(struct device *dev, u8 reg)
+u32 swd_ap_read(struct device *dev, u8 reg)
 {
 	return swd_dpap_read(dev, SWD_VAL_AP, reg);
 }
@@ -296,6 +296,12 @@ static void swd_dp_write(struct device *dev, u8 reg, u32 data)
 static u32 swd_dp_read(struct device *dev, u8 reg)
 {
 	return swd_dpap_read(dev, SWD_VAL_DP, reg);
+}
+
+void swd_select_ap(struct device *dev, u8 apsel)
+{
+	swd_dp_write(dev, SWD_DP_REG_WO_SELECT, ((u32)apsel) << 24);
+	swd_ap_write(dev, SWD_MEMAP_REG_RW_CSW, SWD_VAL_DHCSR_INC_32);
 }
 
 void swd_memory_write(struct device *dev, u32 address, u32 data)

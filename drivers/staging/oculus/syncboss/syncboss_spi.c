@@ -1241,9 +1241,9 @@ static int syncboss_spi_transfer_thread(void *ptr)
 
 	spi_max_clk_rate = devdata->spi_max_clk_rate;
 	transaction_length = devdata->transaction_length;
-	transaction_period_ns = devdata->transaction_period_ns;
+	transaction_period_ns = devdata->next_stream_settings.transaction_period_ns;
 	min_time_between_transactions_ns =
-		devdata->min_time_between_transactions_ns;
+		devdata->next_stream_settings.min_time_between_transactions_ns;
 	use_fastpath = devdata->use_fastpath;
 
 	dev_info(&spi->dev, "Entering SPI transfer loop");
@@ -1497,6 +1497,39 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	return -ETIMEDOUT;
 }
 
+static int create_default_smsg_locked(struct syncboss_dev_data *devdata)
+{
+	struct syncboss_msg *default_smsg;
+	struct spi_transfer *spi_xfer;
+
+	default_smsg = kzalloc(sizeof(*devdata->default_smsg), GFP_KERNEL | GFP_DMA);
+	if (!default_smsg)
+		return -ENOMEM;
+
+	default_smsg->tx.header.magic_num = SPI_DATA_MAGIC_NUM;
+	default_smsg->tx.header.checksum = calculate_checksum(&default_smsg->tx,
+						devdata->transaction_length);
+
+	spi_xfer = &default_smsg->spi_xfer;
+	spi_xfer->tx_buf = &default_smsg->tx;
+	spi_xfer->rx_buf = devdata->rx_elem->buf;
+	spi_xfer->len = devdata->transaction_length;
+	spi_xfer->bits_per_word = 8;
+	spi_message_init(&default_smsg->spi_msg);
+	spi_message_add_tail(spi_xfer, &default_smsg->spi_msg);
+	default_smsg->spi_msg.spi = devdata->spi;
+
+	devdata->default_smsg = default_smsg;
+
+	return 0;
+}
+
+static void destroy_default_smsg_locked(struct syncboss_dev_data *devdata)
+{
+	kfree(devdata->default_smsg);
+	devdata->default_smsg = NULL;
+}
+
 static void query_wake_reason(struct syncboss_dev_data *devdata)
 {
 	u8 message_buf[sizeof(struct syncboss_data) + 1] = {};
@@ -1614,6 +1647,12 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 			goto error;
 	}
 
+	devdata->transaction_length = devdata->next_stream_settings.transaction_length;
+	devdata->spi_max_clk_rate = devdata->next_stream_settings.spi_max_clk_rate;
+	status = create_default_smsg_locked(devdata);
+	if (status)
+		goto error;
+
 	devdata->force_reset_on_open = false;
 
 	dev_info(&devdata->spi->dev, "Starting stream");
@@ -1643,8 +1682,7 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		dev_err(&devdata->spi->dev, "Failed to start kernel thread. (%d)",
 			status);
 		devdata->worker = NULL;
-		spi_bus_unlock(devdata->spi->master);
-		goto error;
+		goto error_after_create_smsg;
 	}
 
 	dev_info(&devdata->spi->dev, "Setting SPI thread cpu affinity: %*pb",
@@ -1660,6 +1698,11 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	if (devdata->has_wake_reasons)
 		query_wake_reason(devdata);
 
+	return 0;
+
+error_after_create_smsg:
+	destroy_default_smsg_locked(devdata);
+	spi_bus_unlock(devdata->spi->master);
 error:
 	return status;
 }
@@ -1753,6 +1796,8 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	}
 	BUG_ON(devdata->msg_queue_item_count != 0);
 	mutex_unlock(&devdata->msg_queue_lock);
+
+	destroy_default_smsg_locked(devdata);
 
 	if (devdata->rf_amp) {
 		status = regulator_disable(devdata->rf_amp);
@@ -1897,15 +1942,15 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 
 	devdata->streaming_client_count = 0;
 	devdata->next_avail_seq_num = 1;
-	devdata->transaction_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
-	devdata->min_time_between_transactions_ns =
+	devdata->next_stream_settings.transaction_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
+	devdata->next_stream_settings.min_time_between_transactions_ns =
 		SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
 	if (!of_property_read_u32(node, "oculus,transaction-length", &temp_transaction_length) &&
 	    (temp_transaction_length <= SYNCBOSS_MAX_TRANSACTION_LENGTH))
-		devdata->transaction_length = (u16)temp_transaction_length;
+		devdata->next_stream_settings.transaction_length = (u16)temp_transaction_length;
 	else
-		devdata->transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
-	devdata->spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
+		devdata->next_stream_settings.transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
+	devdata->next_stream_settings.spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
 	devdata->transaction_ctr = 0;
 	devdata->poll_prio = SYNCBOSS_DEFAULT_POLL_PRIO;
 
@@ -1967,8 +2012,6 @@ static int syncboss_probe(struct spi_device *spi)
 {
 	struct syncboss_dev_data *devdata;
 	struct device *dev = &spi->dev;
-	struct spi_transfer *spi_xfer;
-	struct syncboss_msg *default_smsg;
 
 	int status = 0;
 
@@ -2013,27 +2056,6 @@ static int syncboss_probe(struct spi_device *spi)
 		status = -ENOMEM;
 		goto error_after_devdata_init;
 	}
-
-	default_smsg = devm_kzalloc(dev, sizeof(*devdata->default_smsg),
-				    GFP_KERNEL | GFP_DMA);
-	if (!default_smsg) {
-		status = -ENOMEM;
-		goto error_after_devdata_init;
-	}
-	devdata->default_smsg = default_smsg;
-
-	default_smsg->tx.header.magic_num = SPI_DATA_MAGIC_NUM;
-	default_smsg->tx.header.checksum = calculate_checksum(&default_smsg->tx,
-				     devdata->transaction_length);
-
-	spi_xfer = &default_smsg->spi_xfer;
-	spi_xfer->tx_buf = &default_smsg->tx;
-	spi_xfer->rx_buf = devdata->rx_elem->buf;
-	spi_xfer->len = devdata->transaction_length;
-	spi_xfer->bits_per_word = 8;
-	spi_message_init(&default_smsg->spi_msg);
-	spi_message_add_tail(spi_xfer, &default_smsg->spi_msg);
-	default_smsg->spi_msg.spi = spi;
 
 	mutex_init(&devdata->msg_queue_lock);
 	INIT_LIST_HEAD(&devdata->msg_queue_list);

@@ -42,9 +42,9 @@ config BCM4375
 	default n
 
 config BCM4389
-    bool "BCM4389 support"
-    depends on BCMDHD
-    default n
+	bool "BCM4389 support"
+	depends on BCMDHD
+	default n
 
 config DHD_OF_SUPPORT
 	bool "Use in-drive platform device"
@@ -119,14 +119,14 @@ config WLAN_REGION_CODE
 	depends on BCMDHD
 	default 100
 	---help---
-		This is a region code for Broadcom Wi-Fi featured functions.
-		- 100 : EUR OPEN
-		- 101 : EUR ORG
-		- 200 : KOR OPEN
-		- 201 : KOR SKT
-		- 202 : KOR KTT
-		- 203 : KOR LGT
-		- 300 : CHN OPEN
+	  This is a region code for Broadcom Wi-Fi featured functions.
+	  - 100 : EUR OPEN
+	  - 101 : EUR ORG
+	  - 200 : KOR OPEN
+	  - 201 : KOR SKT
+	  - 202 : KOR KTT
+	  - 203 : KOR LGT
+	  - 300 : CHN OPEN
 
 config WL_NAN
 	bool "NAN Feature"
@@ -149,17 +149,17 @@ config BCMDHD_PREALLOC_MEMDUMP
 	  Preallocated memory support for dongle memory dump
 
 config BCMDHD_OOB_HOST_WAKE
-        bool "Use the external WLAN_HOST_WAKE pin"
-        depends on BCMDHD
-        ---help---
-          Use the external GPIO pin to wake up host
+	bool "Use the external WLAN_HOST_WAKE pin"
+	depends on BCMDHD
+	---help---
+	  Use the external GPIO pin to wake up host
 
 config BCMDHD_GET_OOB_STATE
-        bool "Support WLAN_HOST_WAKE pin level information"
-        depends on BCMDHD_OOB_HOST_WAKE
-        default y
-        ---help---
-          Support WLAN_HOST_WAKE pin level information
+	bool "Support WLAN_HOST_WAKE pin level information"
+	depends on BCMDHD_OOB_HOST_WAKE
+	default y
+	---help---
+	  Support WLAN_HOST_WAKE pin level information
 
 config BCMDHD_HTPUT
 	bool "Enable High wlan tput tunables"
@@ -167,3 +167,11 @@ config BCMDHD_HTPUT
 	default n
 	---help---
 	  Use wlan high tput tunables
+
+config BCMDHD_DEFAULT_LOG_MASK
+	int "Default logging level"
+	default 54528001
+	---help---
+	  Debug log mask. See dhdioctl.h for log mask values.
+	  Defaults to DHD_ERROR_VAL | DHD_FWLOG_VAL | DHD_EVENT_VAL |
+	  DHD_RPM_VAL | DHD_PKT_MON_VAL.

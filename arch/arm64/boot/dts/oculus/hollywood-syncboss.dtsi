@@ -141,6 +141,7 @@
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;
+			oculus,flash-page-bootloader-protected-count = <0>;
 			oculus,flash-page-retained-count = <3>;
 		};
 	};

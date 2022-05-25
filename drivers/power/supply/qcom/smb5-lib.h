@@ -238,6 +238,18 @@ enum comp_clamp_levels {
 	MAX_CLAMP_LEVEL,
 };
 
+enum rblt_states {
+	/*
+	 * RBLT states start at 1 since 0 is considered unusable by
+	 * step-chg-jeita ranges
+	 */
+	RBLT_OK = 1,
+	RBLT_WARN,
+	RBLT_CRIT,
+	RBLT_MISSING,
+	RBLT_UNKNOWN,
+};
+
 struct clamp_config {
 	u16 reg[3];
 	u16 val[3];
@@ -452,6 +464,7 @@ struct smb_charger {
 	struct work_struct	dcin_aicl_work;
 	struct work_struct	cp_status_change_work;
 	struct work_struct	dc_detect_work;
+	struct work_struct	rblt_check_work;
 	struct delayed_work	ps_change_timeout_work;
 	struct delayed_work	clear_hdc_work;
 	struct delayed_work	icl_change_work;
@@ -471,6 +484,7 @@ struct smb_charger {
 	struct alarm		dcin_aicl_alarm;
 
 	struct timer_list	apsd_timer;
+	struct timer_list	rblt_timer;
 
 	struct charger_param	chg_param;
 	/* secondary charger config */
@@ -575,6 +589,16 @@ struct smb_charger {
 	bool			apsd_ext_timeout;
 	bool			qc3p5_detected;
 	bool			dam_enabled;
+
+	/* rblt */
+	bool			rblt_support;
+	bool			rblt_limited_check;
+	int			fake_rblt_state;
+	int			rblt_state;
+	u32			rblt_missing_range[2];
+	u32			rblt_ok_range[2];
+	u32			rblt_warn_range[2];
+	u32			rblt_crit_range[2];
 
 	/* workaround flag */
 	u32			wa_flags;
@@ -779,6 +803,8 @@ int smblib_get_pe_start(struct smb_charger *chg,
 int smblib_get_prop_charger_temp(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_rblt(struct smb_charger *chg,
+				union power_supply_propval *val);
+int smblib_get_prop_rblt_state(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_die_health(struct smb_charger *chg);
 int smblib_get_die_health(struct smb_charger *chg,

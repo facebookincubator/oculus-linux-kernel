@@ -124,10 +124,6 @@ int miscfifo_fop_open(struct file *file, struct miscfifo *mf)
 	mutex_init(&client->producer_lock);
 	mutex_init(&client->context_lock);
 
-	down_write(&mf->clients.rw_lock);
-	list_add(&client->node, &mf->clients.list);
-	up_write(&mf->clients.rw_lock);
-
 	client->name = kmalloc(CLIENT_NAME_SIZE, GFP_KERNEL);
 	if (!client->name) {
 		rc = -ENOMEM;
@@ -137,6 +133,10 @@ int miscfifo_fop_open(struct file *file, struct miscfifo *mf)
 
 	client->file = file;
 	file->private_data = client;
+
+	down_write(&mf->clients.rw_lock);
+	list_add(&client->node, &mf->clients.list);
+	up_write(&mf->clients.rw_lock);
 
 	return 0;
 
