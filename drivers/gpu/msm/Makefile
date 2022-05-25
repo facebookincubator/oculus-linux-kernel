@@ -17,6 +17,7 @@ msm_kgsl_core-y = \
 	kgsl_gmu.o \
 	kgsl_rgmu.o \
 	kgsl_hfi.o \
+	kgsl_timeline.o \
 	kgsl_threadstats.o \
 	kgsl_util.o
 

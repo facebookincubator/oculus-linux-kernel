@@ -24,6 +24,15 @@ void swd_halt(struct device *dev);
  */
 void swd_flush(struct device *dev);
 
+/* Select the Access Port */
+void swd_select_ap(struct device *dev, u8 apsel);
+
+/* Write a word to the selected SWD Access Port */
+void swd_ap_write(struct device *dev, u8 reg, u32 data);
+
+/* Read a word from the selected SWD Access Port */
+u32 swd_ap_read(struct device *dev, u8 reg);
+
 /* Read 4 bytes of memory from a given address */
 u32 swd_memory_read(struct device *dev, u32 address);
 
@@ -84,6 +93,12 @@ struct swd_ops_params {
 	int (*target_erase)(struct device *dev);
 
 	/*
+	 * Perform a chip erase, which erases everything including provisioning region.
+	 * return: 0 on success
+	 */
+	int (*target_chip_erase)(struct device *dev);
+
+	/*
 	 * Write a single chunk to target flash
 	 * return: 0 success
 	 */
@@ -106,6 +121,12 @@ struct swd_ops_params {
 				   int start_addr,
 				   u8 *dest,
 				   size_t len);
+
+	/*
+	 * Check whether a flash page is already erased
+	 * return: true if erased, false otherwise or on error.
+	 */
+	bool (*target_page_is_erased)(struct device *dev, u32 page);
 };
 
 struct swd_ops {
@@ -117,7 +138,12 @@ struct flash_info {
 	u32 block_size;
 	u32 page_size;
 	u32 num_pages;
+	/* Retained pages at end of flash */
 	u32 num_retained_pages;
+	/* Retained pages at beginning of flash */
+	u32 num_protected_bootloader_pages;
+	/* Perform a full chip erase before writing firmware */
+	bool erase_all;
 };
 
 struct swd_dev_data {

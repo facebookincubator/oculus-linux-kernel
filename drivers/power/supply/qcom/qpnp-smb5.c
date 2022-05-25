@@ -1759,6 +1759,7 @@ static enum power_supply_property smb5_batt_props[] = {
 	POWER_SUPPLY_PROP_FORCE_RECHARGE,
 	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
 	POWER_SUPPLY_PROP_RBLT,
+	POWER_SUPPLY_PROP_RBLT_STATE,
 };
 
 #define DEBUG_ACCESSORY_TEMP_DECIDEGC	250
@@ -1906,6 +1907,12 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_RBLT:
 		rc = smblib_get_prop_rblt(chg, val);
 		break;
+	case POWER_SUPPLY_PROP_RBLT_STATE:
+		if (chg->fake_rblt_state < 0)
+			rc = smblib_get_prop_rblt_state(chg, val);
+		else
+			val->intval = chg->fake_rblt_state;
+		break;
 	default:
 		pr_err("batt power supply prop %d not supported\n", psp);
 		return -EINVAL;
@@ -2013,6 +2020,9 @@ static int smb5_batt_set_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE:
 		chg->fcc_stepper_enable = val->intval;
 		break;
+	case POWER_SUPPLY_PROP_RBLT_STATE:
+		chg->fake_rblt_state = val->intval;
+		break;
 	default:
 		rc = -EINVAL;
 	}
@@ -2034,6 +2044,7 @@ static int smb5_batt_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED:
 	case POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED:
 	case POWER_SUPPLY_PROP_DIE_HEALTH:
+	case POWER_SUPPLY_PROP_RBLT_STATE:
 		return 1;
 	default:
 		break;
@@ -3597,6 +3608,7 @@ static int smb5_probe(struct platform_device *pdev)
 	chg->connector_health = -EINVAL;
 	chg->otg_present = false;
 	chg->main_fcc_max = -EINVAL;
+	chg->fake_rblt_state = -EINVAL;
 	mutex_init(&chg->adc_lock);
 
 	chg->regmap = dev_get_regmap(chg->dev->parent, NULL);

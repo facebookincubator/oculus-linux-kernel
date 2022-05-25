@@ -80,14 +80,6 @@
 	};
 };
 
-&pm8150a_l2 {
-	regulator-always-on;
-};
-
-&pm8150a_l3 {
-	regulator-always-on;
-};
-
 &pm8150a_l4 {
 	status = "ok";
 };
@@ -97,19 +89,6 @@
 	status = "ok";
 	qcom,init-voltage = <1900000>;
 	qcom,init-mode = <4>;  /* RPMH_REGULATOR_MODE_HPM */
-	regulator-always-on;
-};
-
-&pm8150a_l10 {
-	/* Canyon, Glacier, Teton power */
-	regulator-always-on;
-};
-
-&pm8150_l10 {
-	regulator-always-on;
-};
-
-&pm8150_l15 {
 	regulator-always-on;
 };
 

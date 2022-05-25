@@ -32,12 +32,18 @@ qcom,4759214_facebook_seacliff_5348mah_averaged_masterslave_feb17th2021 {
 				4101000 4400000 0>;
 	qcom,chg-disable-ranges-1 = <3600000 4100000 0
 				4101000 4400000 1>;
-	/* rblt-low, rblt-high, max-voltage-throttle */
-	qcom,rblt-ranges = <0 72200 3900000
-				72300 134800 4200000
-				134900 145700 4400000
-				145800 179400 4200000>;
+	qcom,rblt-support;
 	qcom,rblt-limited-check;
+	qcom,rblt-missing-range = <145800 179400>;
+	qcom,rblt-ok-range = <134900 145800>;
+	qcom,rblt-warn-range = <72300 134900>;
+	qcom,rblt-crit-range = <0 72300>;
+	/* 1 - OK, 2 - warn, 3 - crit, 4 - missing, 5 - unknown */
+	qcom,rblt-ranges = <1 1 4400000
+				2 2 4200000
+				3 3 3900000
+				4 4 4200000
+				5 5 4200000>;
 	qcom,step-chg-ranges-0 = <3000000 4200000 4813000
 				4201000 4400000 2674000>;
 	qcom,step-chg-ranges-1 = <3000000 4000000 2674000

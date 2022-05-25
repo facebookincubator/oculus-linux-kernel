@@ -26,6 +26,7 @@
 #include "governor_bw_hwmon.h"
 
 #define NUM_MBPS_ZONES		10
+#define NUM_MBPS_SAMPLES	20
 struct hwmon_node {
 	unsigned int guard_band_mbps;
 	unsigned int decay_rate;
@@ -43,6 +44,7 @@ struct hwmon_node {
 	unsigned int use_ab;
 	unsigned int mbps_zones[NUM_MBPS_ZONES];
 
+	unsigned long hist_mbps_samples[NUM_MBPS_SAMPLES];
 	unsigned long prev_ab;
 	unsigned long *dev_ab;
 	unsigned long resume_freq;
@@ -58,6 +60,7 @@ struct hwmon_node {
 	unsigned long prev_req;
 	unsigned int wake;
 	unsigned int down_cnt;
+	unsigned int hist_mbps_cnt;
 	ktime_t prev_ts;
 	ktime_t hist_max_ts;
 	bool sampled;
@@ -313,7 +316,7 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 	struct bw_hwmon *hw = node->hw;
 	unsigned int new_bw, io_percent = node->io_percent;
 	ktime_t ts;
-	unsigned int ms = 0;
+	unsigned int hist_mbps_cnt, ms = 0;
 
 	spin_lock_irqsave(&irq_lock, flags);
 
@@ -327,6 +330,11 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 
 	req_mbps = meas_mbps = node->max_mbps;
 	node->max_mbps = 0;
+	hist_mbps_cnt = node->hist_mbps_cnt;
+	node->hist_mbps_samples[hist_mbps_cnt++] = meas_mbps;
+	if (hist_mbps_cnt == NUM_MBPS_SAMPLES)
+		hist_mbps_cnt = 0;
+	WRITE_ONCE(node->hist_mbps_cnt, hist_mbps_cnt);
 
 	hist_lo_tol = (node->hist_max_mbps * HIST_PEAK_TOL) / 100;
 	/* Remember historic peak in the past hist_mem decision windows. */
@@ -798,7 +806,49 @@ static ssize_t sample_ms_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%u\n", node->sample_ms);
 }
 
+static ssize_t hist_mbps_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct devfreq *df = to_devfreq(dev);
+	struct hwmon_node *node = df->data;
+	unsigned long samples[NUM_MBPS_SAMPLES];
+	ssize_t count = 0, rv;
+	unsigned int last, i;
+
+	count = snprintf(buf, PAGE_SIZE, "max=%lu\npeak=%lu\ntrig_win=%lu\nlast=",
+			 READ_ONCE(node->hist_max_mbps), READ_ONCE(node->hyst_peak),
+			 READ_ONCE(node->hyst_trig_win));
+	if (count < 0)
+		return count;
+
+	for (i = 0; i < 10; i++) {
+		last = READ_ONCE(node->hist_mbps_cnt);
+		memcpy(samples, node->hist_mbps_samples, sizeof(node->hist_mbps_samples));
+		if (last == READ_ONCE(node->hist_mbps_cnt))
+			break;
+		cpu_relax();
+	}
+
+	for (i = 0; i < NUM_MBPS_SAMPLES; i++) {
+		unsigned int index = last + 1 + i;
+
+		if (index >= NUM_MBPS_SAMPLES)
+			index -= NUM_MBPS_SAMPLES;
+		rv = snprintf(
+			buf + count,
+			PAGE_SIZE - count,
+			"%c%lu",
+			i ? ',' : '[', samples[index]);
+		if (rv < 0)
+			return rv;
+		count += rv;
+	}
+	rv = snprintf(buf + count, PAGE_SIZE - count, "]\n");
+	return rv < 0 ? rv : rv + count;
+}
+
 static DEVICE_ATTR_RW(sample_ms);
+static DEVICE_ATTR_RO(hist_mbps);
 
 gov_attr(guard_band_mbps, 0U, 2000U);
 gov_attr(decay_rate, 0U, 100U);
@@ -832,6 +882,7 @@ static struct attribute *dev_attr[] = {
 	&dev_attr_use_ab.attr,
 	&dev_attr_mbps_zones.attr,
 	&dev_attr_throttle_adj.attr,
+	&dev_attr_hist_mbps.attr,
 	NULL,
 };
 

@@ -309,6 +309,8 @@ struct sde_encoder_virt {
 	bool elevated_ahb_vote;
 	struct pm_qos_request pm_qos_cpu_req;
 	struct msm_mode_info mode_info;
+
+	u64 late_cac_irq_count;
 };
 
 #define to_sde_encoder_virt(x) container_of(x, struct sde_encoder_virt, base)
@@ -4246,6 +4248,9 @@ static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 		}
 	}
 
+	if (wb_tear || wb_disarm)
+		sde_enc->late_cac_irq_count++;
+
 	sde_encoder_trigger_wb_cac(drm_enc->dev, wb_disarm);
 
 	/* if a deferred writeback CAC commit is pending, trigger it now */
@@ -5952,6 +5957,9 @@ static int _sde_encoder_init_debugfs(struct drm_encoder *drm_enc)
 
 	debugfs_create_u32("frame_trigger_mode", 0400, sde_enc->debugfs_root,
 			&sde_enc->frame_trigger_mode);
+
+	debugfs_create_u64("late_cac_irq_count", 0400, sde_enc->debugfs_root,
+			&sde_enc->late_cac_irq_count);
 
 	for (i = 0; i < sde_enc->num_phys_encs; i++)
 		if (sde_enc->phys_encs[i] &&

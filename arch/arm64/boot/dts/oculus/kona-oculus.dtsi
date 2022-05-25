@@ -84,6 +84,24 @@
 			linux,can-disable;
 		};
 	};
+
+	qcom,cam_smmu {
+		msm_cam_smmu_icp {
+			qcom,iommu-faults = "non-fatal";
+		};
+
+		msm_cam_smmu_ife {
+			qcom,iommu-faults = "non-fatal";
+		};
+
+		msm_cam_smmu_jpeg {
+			qcom,iommu-faults = "non-fatal";
+		};
+
+		msm_cam_smmu_cpas_cdm {
+			qcom,iommu-faults = "non-fatal";
+		};
+	};
 };
 
 &wlan {

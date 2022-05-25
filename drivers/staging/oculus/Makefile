@@ -13,6 +13,7 @@ obj-$(CONFIG_BATTERY_VIRTUAL_SENSOR)	+= battery_virtual_sensor.o
 obj-$(CONFIG_BLU_FW)			+= blu_fw_driver.o
 obj-$(CONFIG_DISPLAY_VIRTUAL_SENSOR)	+= display_virtual_sensor.o
 obj-$(CONFIG_FRONT_PANEL_SENSOR)	+= front_panel_sensor.o
+obj-$(CONFIG_IIO_CHANNEL_SENSOR)	+= iio_channel_sensor.o
 obj-$(CONFIG_INSTRUCTION_SAMPLER)	+= oculus_instruction_sampler.o
 obj-$(CONFIG_MISCFIFO)			+= miscfifo.o
 obj-$(CONFIG_MISCFIFO_SAMPLE)		+= miscfifo-sample.o

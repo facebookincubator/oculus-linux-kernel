@@ -396,6 +396,20 @@ long kgsl_ioctl_gpu_command(struct kgsl_device_private *dev_priv,
 				unsigned int cmd, void *data);
 long kgsl_ioctl_gpuobj_set_info(struct kgsl_device_private *dev_priv,
 				unsigned int cmd, void *data);
+long kgsl_ioctl_gpu_aux_command(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
+long kgsl_ioctl_timeline_create(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
+long kgsl_ioctl_timeline_wait(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
+long kgsl_ioctl_timeline_query(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
+long kgsl_ioctl_timeline_fence_get(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
+long kgsl_ioctl_timeline_signal(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
+long kgsl_ioctl_timeline_destroy(struct kgsl_device_private *dev_priv,
+		unsigned int cmd, void *data);
 
 long kgsl_ioctl_allow_uid_high_priority(struct kgsl_device_private *dev_priv,
 					unsigned int cmd, void *data);

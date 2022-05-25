@@ -42,6 +42,8 @@
 
 static void update_sw_icl_max(struct smb_charger *chg, int pst);
 static int smblib_get_prop_typec_mode(struct smb_charger *chg);
+static int smblib_rblt_init(struct smb_charger *chg,
+		struct device_node *profile_node);
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val)
 {
@@ -3849,6 +3851,17 @@ int smblib_get_prop_rblt(struct smb_charger *chg,
 	return rc;
 }
 
+int smblib_get_prop_rblt_state(struct smb_charger *chg,
+		union power_supply_propval *val)
+{
+	if (!chg->rblt_support)
+		val->intval = RBLT_UNKNOWN;
+	else
+		val->intval = chg->rblt_state;
+
+	return 0;
+}
+
 int smblib_get_prop_psns(struct smb_charger *chg,
 				 union power_supply_propval *val)
 {
@@ -7637,6 +7650,18 @@ static void apsd_timer_cb(struct timer_list *tm)
 	chg->apsd_ext_timeout = true;
 }
 
+#define RBLT_CHECK_INTERVAL_MS (30 * 1000)
+static void rblt_timer_cb(struct timer_list *tm)
+{
+	struct smb_charger *chg = container_of(tm, struct smb_charger,
+			rblt_timer);
+
+	schedule_work(&chg->rblt_check_work);
+
+	mod_timer(&chg->rblt_timer,
+			msecs_to_jiffies(RBLT_CHECK_INTERVAL_MS) + jiffies);
+}
+
 #define SOFT_JEITA_HYSTERESIS_OFFSET	0x200
 static void jeita_update_work(struct work_struct *work)
 {
@@ -7789,6 +7814,13 @@ static void jeita_update_work(struct work_struct *work)
 	rc = smblib_soft_jeita_arb_wa(chg);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't fix soft jeita arb rc=%d\n",
+				rc);
+		goto out;
+	}
+
+	rc = smblib_rblt_init(chg, pnode);
+	if (rc < 0) {
+		smblib_err(chg, "Invalid RBLT configuration, rc=%d\n",
 				rc);
 		goto out;
 	}
@@ -7979,6 +8011,169 @@ static void smblib_dc_detect_work(struct work_struct *work)
 		smblib_set_prop_dc_hw_current_max(chg, &val);
 }
 
+static void smblib_rblt_check_work(struct work_struct *work)
+{
+	int rblt_raw, rc, state;
+	int charge_profile = 0;
+	int charge_type = POWER_SUPPLY_CHARGE_TYPE_UNKNOWN;
+	union power_supply_propval pval = {0, };
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+						rblt_check_work);
+	struct device_node *node = chg->dev->of_node;
+	struct device_node *batt_node, *pnode;
+
+	/* Don't check RBLT until the battery profile is available */
+	batt_node = of_find_node_by_name(node, "qcom,battery-data");
+	if (!batt_node) {
+		smblib_err(chg, "Batterydata not available\n");
+		return;
+	}
+
+	/* if BMS is not ready, defer the work */
+	if (!chg->bms_psy)
+		return;
+
+	rc = smblib_get_prop_from_bms(chg,
+			POWER_SUPPLY_PROP_RESISTANCE_ID, &pval);
+	if (rc < 0) {
+		smblib_err(chg, "Failed to get batt-id rc=%d\n", rc);
+		return;
+	}
+
+	/* if BMS hasn't read out the batt_id yet, defer the work */
+	if (pval.intval <= 0)
+		return;
+
+	pnode = of_batterydata_get_best_profile(batt_node,
+					pval.intval / 1000, NULL);
+	if (IS_ERR(pnode)) {
+		rc = PTR_ERR(pnode);
+		smblib_err(chg, "Failed to detect valid battery profile %d\n",
+				rc);
+		return;
+	}
+
+	/* If RBLT channel is not present, do nothing */
+	if (!chg->iio.rblt_chan)
+		return;
+
+	/*
+	 * Limited check devices only read ADC when not charging and charge
+	 * profile is set to 0 due to hardware issues.
+	 */
+	if (chg->rblt_limited_check) {
+		rc = power_supply_get_property(chg->bms_psy,
+				POWER_SUPPLY_PROP_CHARGE_PROFILE, &pval);
+		if (rc == 0)
+			charge_profile = pval.intval;
+
+		rc = power_supply_get_property(chg->batt_psy,
+				POWER_SUPPLY_PROP_CHARGE_TYPE, &pval);
+		if (rc == 0)
+			charge_type = pval.intval;
+
+		if (!(charge_profile == 0 &&
+				charge_type == POWER_SUPPLY_CHARGE_TYPE_NONE)) {
+			smblib_dbg(chg, PR_MISC,
+				"skipping RBLT check for limited check device");
+			return;
+		}
+	}
+
+	rc = iio_read_channel_processed(chg->iio.rblt_chan,
+			&rblt_raw);
+	if (rc < 0) {
+		smblib_err(chg, "Error in reading temp channel, rc=%d\n", rc);
+		return;
+	}
+
+	if (rblt_raw >= chg->rblt_ok_range[0] &&
+			rblt_raw < chg->rblt_ok_range[1])
+		state = RBLT_OK;
+	else if (rblt_raw >= chg->rblt_warn_range[0] &&
+			rblt_raw < chg->rblt_warn_range[1])
+		state = RBLT_WARN;
+	else if (rblt_raw >= chg->rblt_crit_range[0] &&
+			rblt_raw < chg->rblt_crit_range[1])
+		state = RBLT_CRIT;
+	else if (rblt_raw >= chg->rblt_missing_range[0] &&
+			rblt_raw < chg->rblt_missing_range[1])
+		state = RBLT_MISSING;
+	else
+		state = RBLT_UNKNOWN;
+
+	smblib_dbg(chg, PR_MISC, "RBLT check, rblt_raw: %d, state: %d",
+			rblt_raw, state);
+
+	/*
+	 * Once tripped, do not allow RBLT to untrip itself
+	 */
+	if (chg->rblt_state != RBLT_OK && state == RBLT_OK) {
+		smblib_err(chg, "Invalid RBLT state transition, from=%d, to=%d\n",
+				chg->rblt_state, state);
+		return;
+	}
+
+	chg->rblt_state = state;
+}
+
+#define RBLT_MAX_RANGE_ENTRIES (2)
+static int smblib_rblt_init(struct smb_charger *chg,
+		struct device_node *profile_node)
+{
+	int rc;
+
+	chg->rblt_support = of_property_read_bool(profile_node,
+			"qcom,rblt-support");
+
+	if (!chg->rblt_support)
+		return 0;
+
+	chg->rblt_limited_check = of_property_read_bool(profile_node,
+			"qcom,rblt-limited-check");
+
+	rc = of_property_read_u32_array(profile_node,
+			"qcom,rblt-missing-range",
+			chg->rblt_missing_range,
+			RBLT_MAX_RANGE_ENTRIES);
+	if (rc) {
+		dev_err(chg->dev, "rblt-missing-range not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node,
+			"qcom,rblt-ok-range",
+			chg->rblt_ok_range,
+			RBLT_MAX_RANGE_ENTRIES);
+	if (rc) {
+		dev_err(chg->dev, "rblt-ok-range not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node,
+			"qcom,rblt-warn-range",
+			chg->rblt_warn_range,
+			RBLT_MAX_RANGE_ENTRIES);
+	if (rc) {
+		dev_err(chg->dev, "rblt-warn-range not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node,
+			"qcom,rblt-crit-range",
+			chg->rblt_crit_range,
+			RBLT_MAX_RANGE_ENTRIES);
+	if (rc) {
+		dev_err(chg->dev, "rblt-crit-range not present");
+		return -EINVAL;
+	}
+
+	/* Start checking RBLT periodically */
+	mod_timer(&chg->rblt_timer, jiffies + 1);
+
+	return 0;
+}
+
 static int smblib_create_votables(struct smb_charger *chg)
 {
 	int rc = 0;
@@ -8158,6 +8353,7 @@ int smblib_init(struct smb_charger *chg)
 	INIT_WORK(&chg->dcin_aicl_work, dcin_aicl_work);
 	INIT_WORK(&chg->cp_status_change_work, smblib_cp_status_change_work);
 	INIT_WORK(&chg->dc_detect_work, smblib_dc_detect_work);
+	INIT_WORK(&chg->rblt_check_work, smblib_rblt_check_work);
 	INIT_DELAYED_WORK(&chg->clear_hdc_work, clear_hdc_work);
 	INIT_DELAYED_WORK(&chg->icl_change_work, smblib_icl_change_work);
 	INIT_DELAYED_WORK(&chg->pl_enable_work, smblib_pl_enable_work);
@@ -8173,6 +8369,7 @@ int smblib_init(struct smb_charger *chg)
 	INIT_DELAYED_WORK(&chg->pr_lock_clear_work,
 					smblib_pr_lock_clear_work);
 	timer_setup(&chg->apsd_timer, apsd_timer_cb, 0);
+	timer_setup(&chg->rblt_timer, rblt_timer_cb, 0);
 
 	if (chg->wa_flags & CHG_TERMINATION_WA) {
 		INIT_WORK(&chg->chg_termination_work,
@@ -8218,6 +8415,7 @@ int smblib_init(struct smb_charger *chg)
 	chg->thermal_status = TEMP_BELOW_RANGE;
 	chg->typec_irq_en = true;
 	chg->cp_topo = -EINVAL;
+	chg->rblt_state = RBLT_OK;
 
 	switch (chg->mode) {
 	case PARALLEL_MASTER:
@@ -8311,11 +8509,13 @@ int smblib_deinit(struct smb_charger *chg)
 			cancel_work_sync(&chg->chg_termination_work);
 		}
 		del_timer_sync(&chg->apsd_timer);
+		del_timer_sync(&chg->rblt_timer);
 		cancel_work_sync(&chg->bms_update_work);
 		cancel_work_sync(&chg->jeita_update_work);
 		cancel_work_sync(&chg->pl_update_work);
 		cancel_work_sync(&chg->dcin_aicl_work);
 		cancel_work_sync(&chg->cp_status_change_work);
+		cancel_work_sync(&chg->rblt_check_work);
 		cancel_delayed_work_sync(&chg->clear_hdc_work);
 		cancel_delayed_work_sync(&chg->icl_change_work);
 		cancel_delayed_work_sync(&chg->pl_enable_work);

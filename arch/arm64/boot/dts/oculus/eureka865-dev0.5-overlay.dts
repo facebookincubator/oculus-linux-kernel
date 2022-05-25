@@ -114,7 +114,7 @@
 };
 
 &pmb_gpio_adc_default {
-	pins = "gpio1", "gpio11", "gpio12";
+	pins = "gpio1", "gpio7", "gpio11", "gpio12";
 };
 
 &qupv3_se10_i2c {

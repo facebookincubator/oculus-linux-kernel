@@ -172,7 +172,7 @@
 	lab-supply = <&lcdb_ldo_vreg>;
 	ibb-supply = <&lcdb_ncp_vreg>;
 	blu-mcu-supply = <&pm8150a_l11>;
-	qcom,dsi-default-panel = <&dsi_dual_boe_lcd_dsc_video>;
+	qcom,dsi-default-panel = <&dsi_dual_boe_spi_blu_dsc_video>;
 	pinctrl-0 = <&te0_active>;
 	pinctrl-1 = <&te0_suspend>;
 };

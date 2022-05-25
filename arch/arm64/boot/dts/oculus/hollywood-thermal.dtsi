@@ -16,12 +16,11 @@
 
 		thermal-zone-coefficients = <10799 5790 (-2178) (-4030) (-6841)
 				6364>;
-		thermal-zone-slope-coefficients = <(-5585) (-7464) (-3741)
-				(-1216) 647 (-8546)>;
+		thermal-zone-slope-coefficients = <0 0 0 0 0 0>;
 
 		io-scaling-factors = <1>;
 		io-coefficients = <(-899)>;
-		io-slope-coefficients = <(-635)>;
+		io-slope-coefficients = <0>;
 
 		intercept-discharging = <4261>;
 		max-differential = <8000>;
@@ -69,6 +68,15 @@
 
 		intercept-charging = <4440>;
 		intercept-discharging = <2940>;
+	};
+
+	iio_channel_soc_sensor: iio_channel_soc_sensor {
+		compatible = "oculus,iio-channel-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
+		io-channel-names = "soc_temp";
 	};
 };
 
@@ -180,5 +188,13 @@
 				type = "passive";
 			};
 		};
+	};
+
+	soc-iio-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&iio_channel_soc_sensor>;
+		wake-capable-sensor;
 	};
 };

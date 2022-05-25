@@ -151,6 +151,11 @@
 				hysteresis = <1000>;
 				type = "passive";
 			};
+			virt_trip3: virt-trip3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
 		};
 	};
 

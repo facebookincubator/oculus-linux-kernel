@@ -850,3 +850,9 @@ config PROCESS_RECLAIM
 	 (addr, addr + size-bytes) of the process.
 
 	 Any other value is ignored.
+
+config SYSCTL_ADMIN_RESERVE_KBYTES
+	int "Admin reserve kbytes"
+	default 8192
+	help
+	  Provide enough memory for the admin to log in and kill a process.

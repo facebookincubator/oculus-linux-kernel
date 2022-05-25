@@ -871,6 +871,14 @@ void adreno_snapshot(struct kgsl_device *device, struct kgsl_snapshot *snapshot,
 				ADRENO_REG_CP_IB2_BASE_HI, &snapshot->ib2base);
 		adreno_readreg(adreno_dev, ADRENO_REG_CP_IB2_BUFSZ,
 				&snapshot->ib2size);
+
+		/* Sign extend non-secure global addresses in TTBR1 */
+		if (kgsl_iommu_split_tables_enabled(&device->mmu)) {
+			if (snapshot->ib1base & (1ULL << 48))
+				snapshot->ib1base |= 0xffff000000000000;
+			if (snapshot->ib2base & (1ULL << 48))
+				snapshot->ib2base |= 0xffff000000000000;
+		}
 	}
 
 	snapshot->ib1dumped = false;

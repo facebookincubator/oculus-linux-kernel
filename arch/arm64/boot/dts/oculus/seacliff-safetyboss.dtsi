@@ -10,9 +10,10 @@
 		oculus,swd-clk = <&tlmm 15 0>;
 		oculus,swd-io  = <&tlmm 14 0>;
 		oculus,swd-core-voltage-level = <1808000 1808000>;
-		oculus,flash-block-size = <8>;
+		oculus,flash-block-size = <256>;
 		oculus,flash-page-size = <2048>;
 		oculus,flash-page-count = <64>;
+		oculus,flash-page-bootloader-protected-count = <0>;
 		oculus,flash-page-retained-count = <6>;
 	};
 };
