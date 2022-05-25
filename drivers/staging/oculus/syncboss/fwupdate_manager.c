@@ -29,9 +29,11 @@ static struct {
 			.provisioning_read = syncboss_swd_provisioning_read,
 			.provisioning_write = syncboss_swd_provisioning_write,
 			.target_erase = syncboss_swd_erase_app,
+			.target_chip_erase = syncboss_swd_chip_erase,
 			.target_program_write_chunk = syncboss_swd_write_chunk,
 			.target_get_write_chunk_size = syncboss_get_write_chunk_size,
 			.target_program_read = syncboss_swd_read,
+			.target_page_is_erased = syncboss_swd_page_is_erased,
 		}
 	},
 	{
@@ -59,6 +61,8 @@ static struct {
 
 static int check_swd_ops(struct device *dev, struct swd_ops_params *ops)
 {
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
 	if (!ops->target_erase){
 		dev_err(dev, "target_erase is NULL!");
 		return -ENOSYS;
@@ -71,6 +75,16 @@ static int check_swd_ops(struct device *dev, struct swd_ops_params *ops)
 
 	if (!ops->target_get_write_chunk_size) {
 		dev_err(dev, "target_get_write_chunk_size is NULL!");
+		return -ENOSYS;
+	}
+
+	if (devdata->flash_info.num_protected_bootloader_pages && !ops->target_page_is_erased) {
+		dev_err(dev, "target_page_is_erased is NULL!");
+		return -ENOSYS;
+	}
+
+	if (devdata->flash_info.erase_all && !ops->target_chip_erase) {
+		dev_err(dev, "target_chip_erase is NULL!");
 		return -ENOSYS;
 	}
 
@@ -127,6 +141,7 @@ static int update_firmware(struct device *dev)
 	int status;
 	int iteration_ctr = 0;
 	size_t bytes_to_write = 0;
+	size_t pages_to_skip = 0;
 	size_t bytes_written = 0;
 	size_t bytes_left = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
@@ -166,10 +181,28 @@ static int update_firmware(struct device *dev)
 			goto error;
 	}
 
-	dev_info(dev, "Erasing firmware app");
-	status = devdata->swd_ops.target_erase(dev);
-	if (status)
-		goto error;
+	if (devdata->flash_info.erase_all) {
+		dev_warn(dev, "Erasing all of flash!");
+		status = devdata->swd_ops.target_chip_erase(dev);
+		if (status)
+			goto error;
+	} else {
+		dev_info(dev, "Erasing firmware app");
+		status = devdata->swd_ops.target_erase(dev);
+		if (status)
+			goto error;
+
+		while (pages_to_skip < devdata->flash_info.num_protected_bootloader_pages) {
+			if (!devdata->swd_ops.target_page_is_erased(dev, pages_to_skip))
+				pages_to_skip++;
+			else
+				break;
+		}
+		if (pages_to_skip > 0) {
+			dev_warn(dev, "Bootloader pages are protected! Writes to them will be skipped.");
+			bytes_written = pages_to_skip * devdata->flash_info.page_size;
+		}
+	}
 
 	chunk_size = devdata->swd_ops.target_get_write_chunk_size(dev);
 	atomic_set(&devdata->fw_chunks_to_write, DIV_ROUND_UP(fw->size, chunk_size));
@@ -313,8 +346,7 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 	int status = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	struct flash_info *flash = &devdata->flash_info;
-	size_t max_fw_size = (flash->num_pages - flash->num_retained_pages)
-		* flash->page_size;
+	size_t max_fw_size = (flash->num_pages - flash->num_retained_pages) * flash->page_size;
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {

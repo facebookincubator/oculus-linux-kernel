@@ -50,7 +50,7 @@ static ssize_t transaction_length_show(struct device *dev,
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->transaction_length);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->next_stream_settings.transaction_length);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -83,7 +83,7 @@ static ssize_t transaction_length_store(struct device *dev,
 		return status;
 	}
 
-	devdata->transaction_length = (u16)temp_transaction_length;
+	devdata->next_stream_settings.transaction_length = (u16)temp_transaction_length;
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
@@ -211,7 +211,7 @@ static ssize_t transaction_period_us_show(struct device *dev,
 	}
 
 	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
-			   devdata->transaction_period_ns / 1000);
+			   devdata->next_stream_settings.transaction_period_ns / 1000);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -240,7 +240,7 @@ static ssize_t transaction_period_us_store(struct device *dev,
 		return status;
 	}
 
-	devdata->transaction_period_ns = temp_transaction_period_us * 1000;
+	devdata->next_stream_settings.transaction_period_ns = temp_transaction_period_us * 1000;
 	status = count;
 
 	if (devdata->is_streaming) {
@@ -273,7 +273,7 @@ static ssize_t minimum_time_between_transactions_us_show(struct device *dev,
 
 	retval = scnprintf(
 	    buf, PAGE_SIZE, "%ld\n",
-	    (devdata->min_time_between_transactions_ns / NSEC_PER_USEC));
+	    (devdata->next_stream_settings.min_time_between_transactions_ns / NSEC_PER_USEC));
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -303,7 +303,7 @@ static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 		return status;
 	}
 
-	devdata->min_time_between_transactions_ns =
+	devdata->next_stream_settings.min_time_between_transactions_ns =
 	    temp_minimum_time_between_transactions_us * NSEC_PER_USEC;
 	status = count;
 
@@ -416,7 +416,7 @@ static ssize_t spi_max_clk_rate_show(struct device *dev,
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->spi_max_clk_rate);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->next_stream_settings.spi_max_clk_rate);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -453,9 +453,9 @@ static ssize_t spi_max_clk_rate_store(struct device *dev,
 
 	/* 0 is shorthand for the max rate */
 	if (temp_spi_max_clk_rate == 0)
-		devdata->spi_max_clk_rate = devdata->spi->max_speed_hz;
+		devdata->next_stream_settings.spi_max_clk_rate = devdata->spi->max_speed_hz;
 	else
-		devdata->spi_max_clk_rate = temp_spi_max_clk_rate;
+		devdata->next_stream_settings.spi_max_clk_rate = temp_spi_max_clk_rate;
 
 	status = count;
 

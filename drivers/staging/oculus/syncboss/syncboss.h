@@ -48,6 +48,21 @@ struct spi_prepare_ops {
 				 struct spi_message *message);
 };
 
+struct syncboss_stream_settings {
+	/* The desired period of subsequent SPI transactions. */
+	u32 transaction_period_ns;
+
+	/* The minimum time to wait between the end of a SPI */
+	/* transaction and the start of the next SPI transaction. */
+	u32 min_time_between_transactions_ns;
+
+	/* Length of the fixed-size SPI transaction */
+	u16 transaction_length;
+
+	/* The rate to run the spi clock at (in Hz) */
+	u32 spi_max_clk_rate;
+};
+
 /* Device state */
 struct syncboss_dev_data {
 	/*
@@ -113,17 +128,13 @@ struct syncboss_dev_data {
 	/* Powertate event client reference count */
 	int powerstate_client_count;
 
-	/* The desired period of subsequent SPI transactions. */
-	u32 transaction_period_ns;
+	/* Settings to use for next streaming session */
+	struct syncboss_stream_settings next_stream_settings;
 
-	/* The minimum time to wait between the end of a SPI */
-	/* transaction and the start of the next SPI transaction. */
-	u32 min_time_between_transactions_ns;
-
-	/* Length of the fixed-size SPI transaction */
+	/* Length of the SPI transactions. Not to be updated while streaming is active. */
 	u16 transaction_length;
 
-	/* The rate to run the spi clock at (in Hz) */
+	/* The rate to run the spi clock at (in Hz). Not to be updated while streaming is active. */
 	u32 spi_max_clk_rate;
 
 	/* Handle to the task that is performing the periodic SPI

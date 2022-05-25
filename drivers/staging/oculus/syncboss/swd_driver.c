@@ -92,6 +92,15 @@ static int init_swd_dev_data(struct swd_dev_data *devdata, struct device *dev)
 		return ret;
 	}
 
+	ret = of_property_read_u32(node, "oculus,flash-page-bootloader-protected-count",
+					&devdata->flash_info.num_protected_bootloader_pages);
+	if (ret < 0) {
+		dev_err(dev, "Failed to get flash-page-bootloader-protected-count: %d\n", ret);
+		return ret;
+	}
+
+	devdata->flash_info.erase_all = of_property_read_bool(node,	"oculus,flash-erase-all");
+
 	devdata->swd_provisioning = of_property_read_bool(node, "oculus,swd-provisioning");
 
 	/* Regulator is optional and will be initialized to NULL if not found */

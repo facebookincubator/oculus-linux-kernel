@@ -1601,20 +1601,25 @@ static int wma_unified_radio_tx_power_level_stats_event_handler(void *handle,
 		return -EINVAL;
 	}
 
-	if (!rs_results->tx_time_per_power_level) {
-		rs_results->tx_time_per_power_level = qdf_mem_malloc(
-				sizeof(uint32_t) *
-				rs_results->total_num_tx_power_levels);
-		if (!rs_results->tx_time_per_power_level) {
-			WMA_LOGA("%s: Mem alloc fail for tx power level stats",
-				 __func__);
-			/* In error case, atleast send the radio stats without
-			 * tx_power_level stats */
-			rs_results->total_num_tx_power_levels = 0;
-			link_stats_results->nr_received++;
-			goto post_stats;
-		}
+	if (rs_results->tx_time_per_power_level) {
+		qdf_mem_free(rs_results->tx_time_per_power_level);
+		rs_results->tx_time_per_power_level = NULL;
 	}
+
+	rs_results->tx_time_per_power_level =
+		qdf_mem_malloc(sizeof(uint32_t) *
+			       rs_results->total_num_tx_power_levels);
+	if (!rs_results->tx_time_per_power_level) {
+		WMA_LOGA("%s: Mem alloc fail for tx power level stats",
+			 __func__);
+		/* In error case, atleast send the radio stats without
+		 * tx_power_level stats
+		 */
+		rs_results->total_num_tx_power_levels = 0;
+		link_stats_results->nr_received++;
+		goto post_stats;
+	}
+
 	qdf_mem_copy(&rs_results->tx_time_per_power_level[
 					fixed_param->power_level_offset],
 		tx_power_level_values,

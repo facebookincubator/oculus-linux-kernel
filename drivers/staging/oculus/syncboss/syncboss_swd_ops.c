@@ -43,6 +43,118 @@ static int syncboss_swd_wait_for_nvmc_ready(struct device *dev)
 	return -ETIMEDOUT;
 }
 
+bool syncboss_swd_page_is_erased(struct device *dev, u32 page)
+{
+	const u32 FLASH_ERASED_VALUE = 0xffffffff;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct flash_info *flash = &devdata->flash_info;
+	int page_addr = page * flash->page_size;
+	int w;
+	u32 rd;
+
+	for (w = 0; w < flash->page_size; w += sizeof(u32)) {
+		rd = w == 0 ? swd_memory_read(dev, page_addr) : swd_memory_read_next(dev);
+		if (rd != FLASH_ERASED_VALUE)
+			return false;
+	}
+	return true;
+}
+
+static bool ctrlap_try_eraseall(struct device *dev)
+{
+	static const u32 POLLING_INTERVAL_MS = 100;
+	static const u32 TIMEOUT_MS = 15000;
+	int elapsed_ms;
+
+	swd_ap_write(dev, SWD_NRF_APREG_ERASEALL, SWD_NRF_APREG_ERASEALL_Start);
+	swd_ap_read(dev, SWD_NRF_APREG_ERASEALLSTATUS);
+	for (elapsed_ms = 0; elapsed_ms < TIMEOUT_MS; elapsed_ms += POLLING_INTERVAL_MS) {
+		if (swd_ap_read(dev, SWD_NRF_APREG_ERASEALLSTATUS) == SWD_NRF_APREG_ERASEALLSTATUS_Ready)
+			break;
+		msleep(POLLING_INTERVAL_MS);
+	}
+
+	swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS);
+	return
+		swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS) == SWD_NRF_APREG_APPROTECTSTATUS_Disabled;
+}
+
+static int disable_hw_approtect(struct device *dev)
+{
+	u32 part;
+	u32 variant;
+	char chip_rev;
+	bool is_new_approtect;
+
+	part = swd_memory_read(dev, SWD_NRF_FICR_PART);
+	dev_info(dev, "part = %x", part);
+
+	variant = swd_memory_read(dev, SWD_NRF_FICR_VARIANT);
+	chip_rev = (char)(variant >> 8);
+	dev_info(dev, "chip_rev = %c", chip_rev);
+
+	switch (part) {
+	case 0x52832:
+		is_new_approtect = chip_rev >= 'G';
+		break;
+	case 0x52840:
+		is_new_approtect = chip_rev >= 'F';
+		break;
+	case 0x52833:
+		is_new_approtect = chip_rev >= 'B';
+		break;
+	default:
+		dev_err(dev, "Unsupported Part!");
+		return -EINVAL;
+	}
+
+	if (is_new_approtect) {
+		dev_info(dev, "Disabling APPROTECT in UICR");
+		swd_memory_write(dev, SWD_NRF_UICR_APPROTECT, SWD_NRF_UICR_APPROTECT_Disable);
+		usleep_range(340, 380);
+	}
+	return 0;
+}
+
+int syncboss_swd_chip_erase(struct device *dev)
+{
+	/*
+	 * https://infocenter.nordicsemi.com/topic/nwp_027/WP/nwp_027/nWP_027_erasing.html
+	 *  Erasing all through CTRL-AP
+	 *  Use the standard SWD Arm® CoreSight™ DAP protocol to erase all while the CTRL-AP is
+	 *  still selected by the DP.
+	 *  1. Write the value 0x00000001 to the ERASEALL register (0x004) of the CTRL-AP.
+	 *     This will start the ERASEALL operation which erases all flash and RAM on the device.
+	 *  2. Read the ERASEALLSTATUS register (0x008) of the CTRL-AP until the value read is 0x00
+	 *     or 15 seconds from ERASEALL write has expired.
+	 *  3. Write the value 0x1 to RESET register (0x000) of the CTRL-AP to issue a “soft reset”
+	 *     to the device and complete the erase and unlocking of the chip.
+	 *  4. Write the value 0x0 to RESET register (0x000).
+	 *  5. Write the value 0x0 to the ERASEALL register (0x004) of the CTRL-AP.
+	 *     This is necessary after the erase sequence is completed
+	 *
+	 * https://infocenter.nordicsemi.com/topic/ps_nrf52840/dif.html?cp=4_0_0_3_7_1
+	 *  Access port protection is disabled by issuing an ERASEALL command via CTRL-AP. Read
+	 *  CTRL-AP.APPROTECTSTATUS to ensure that access port protection is disabled, and repeat
+	 *  the ERASEALL command if needed.
+	 */
+	swd_select_ap(dev, SWD_NRF_APSEL_CTRLAP);
+	if (!ctrlap_try_eraseall(dev) && !ctrlap_try_eraseall(dev)) {
+		dev_err(dev, "ERASEALL + APPROTECT disable failed!");
+		return -EINVAL;
+	}
+	swd_ap_write(dev, SWD_NRF_APREG_RESET, SWD_NRF_APREG_RESET_Reset);
+	swd_ap_write(dev, SWD_NRF_APREG_RESET, SWD_NRF_APREG_RESET_NoReset);
+	swd_ap_write(dev, SWD_NRF_APREG_ERASEALL, SWD_NRF_APREG_ERASEALL_NoOperation);
+	swd_select_ap(dev, SWD_NRF_APSEL_MEMAP);
+
+	// Flash has been wiped. Leave writing enabled until the next reset
+	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG, SWD_NRF_NVMC_CONFIG_WEN);
+
+	// Allow firmware to disable APPROTECT on devices supporting the new scheme.
+	return disable_hw_approtect(dev);
+}
+
 int syncboss_swd_erase_app(struct device *dev)
 {
 	int status = 0;
@@ -56,11 +168,10 @@ int syncboss_swd_erase_app(struct device *dev)
 			 SWD_NRF_NVMC_CONFIG_EEN);
 
 	/* Note: Instead of issuing an ERASEALL command, we erase each page
-	 * separately.  This is to preserve the values in the UICR where we
-	 * store some data that shouldn't be touched by firmware update.
+	 * separately. This is to preserve the UICR, bootloader, and end of flash
+	 * where we store some data that shouldn't be touched by firmware update.
 	 */
-
-	for (x = 0; x < flash_pages_to_erase; ++x) {
+	for (x = flash->num_protected_bootloader_pages; x < flash_pages_to_erase; ++x) {
 		swd_memory_write(dev, SWD_NRF_NVMC_ERASEPAGE,
 			x * flash->page_size);
 		status = syncboss_swd_wait_for_nvmc_ready(dev);

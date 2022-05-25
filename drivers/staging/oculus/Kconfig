@@ -46,6 +46,15 @@ config FRONT_PANEL_SENSOR
 	  This driver implements a virtual sensor driver representing the front
 	  panel skin temperature of a device.
 
+config IIO_CHANNEL_SENSOR
+	tristate "IIO Channel Virtual Sensor Driver"
+	default n
+	depends on OCULUS
+	select VIRTUAL_SENSOR_UTILS
+	help
+	  This driver implements a virtual sensor driver representing the iio channel
+	  value of a device.
+
 config MISCFIFO
 	tristate "miscfifo chardev driver"
 	default n
