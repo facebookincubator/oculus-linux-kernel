@@ -750,10 +750,11 @@ error:
 int stp_raw_dev_remove(void)
 {
 	struct stp_raw_data	*stp_raw;
+	struct stp_raw_data	*temp;
 
 	mutex_lock(&device_list_lock);
 
-	list_for_each_entry(stp_raw, &device_list, device_entry) {
+	list_for_each_entry_safe(stp_raw, temp, &device_list, device_entry) {
 		/* make sure ops on existing fds can abort cleanly */
 		spin_lock_irq(&stp_raw->spi_lock);
 		stp_raw->spi = NULL;
@@ -766,6 +767,8 @@ int stp_raw_dev_remove(void)
 			kfree(stp_raw);
 	}
 
+	unregister_chrdev(STP_RAW_DEV_MAJOR, STP_RAW_DEVICE_NAME);
+	class_destroy(stp_raw_class);
 	mutex_unlock(&device_list_lock);
 	return 0;
 }

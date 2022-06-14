@@ -51,6 +51,11 @@ const u8 ALLFFMAC[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 #define BRCMF_DEFAULT_TXGLOM_SIZE	32  /* max tx frames in glom chain */
 
+/* Standard CLM file suffix */
+#define BRCMF_CLM_STANDARD_SUFFIX	".clm_blob"
+/* High-power CLM file suffix */
+#define BRCMF_CLM_HIGH_SUFFIX		"-high.clm_blob"
+
 static int brcmf_sdiod_txglomsz = BRCMF_DEFAULT_TXGLOM_SIZE;
 module_param_named(txglomsz, brcmf_sdiod_txglomsz, int, 0);
 MODULE_PARM_DESC(txglomsz, "Maximum tx packet chain size [SDIO]");
@@ -101,6 +106,15 @@ MODULE_PARM_DESC(frameburst, "Enable firmware frameburst feature");
 static int brcmf_max_pm;
 module_param_named(max_pm, brcmf_max_pm, int, 0);
 MODULE_PARM_DESC(max_pm, "Use max power management mode by default");
+
+enum {
+	BRCMF_CLM_STANDARD = 0,
+	BRCMF_CLM_HIGH = 1,
+};
+
+static int brcmf_clm_type = BRCMF_CLM_STANDARD;
+module_param_named(clm_type, brcmf_clm_type, int, S_IRUSR | S_IWUSR);
+MODULE_PARM_DESC(clm_type, "clm_blob to use (0 = standard, 1 = high-power)");
 
 static int brcmf_early_scan_finish = 1;
 module_param_named(early_scan_finish, brcmf_early_scan_finish, int,
@@ -167,6 +181,7 @@ static int brcmf_c_get_clm_name(struct brcmf_if *ifp, u8 *clm_name)
 	u8 *ptr;
 	size_t len;
 	s32 err;
+	const u8 *clm_suffix;
 
 	memset(fw_name, 0, BRCMF_FW_NAME_LEN);
 	err = brcmf_bus_get_fwname(bus, ri->chipnum, ri->chiprev, fw_name);
@@ -182,12 +197,25 @@ static int brcmf_c_get_clm_name(struct brcmf_if *ifp, u8 *clm_name)
 		goto done;
 	}
 
+	switch (brcmf_clm_type) {
+	case BRCMF_CLM_STANDARD:
+		clm_suffix = BRCMF_CLM_STANDARD_SUFFIX;
+		break;
+	case BRCMF_CLM_HIGH:
+		clm_suffix = BRCMF_CLM_HIGH_SUFFIX;
+		break;
+	default:
+		brcmf_err("invalid clm_type: %d", brcmf_clm_type);
+		clm_suffix = BRCMF_CLM_STANDARD_SUFFIX;
+		break;
+	}
+
 	len = ptr - fw_name + 1;
-	if (len + strlen(".clm_blob") > BRCMF_FW_NAME_LEN) {
+	if (len + strlen(clm_suffix) > BRCMF_FW_NAME_LEN) {
 		err = -E2BIG;
 	} else {
 		strlcpy(clm_name, fw_name, len);
-		strlcat(clm_name, ".clm_blob", BRCMF_FW_NAME_LEN);
+		strlcat(clm_name, clm_suffix, BRCMF_FW_NAME_LEN);
 	}
 done:
 	return err;

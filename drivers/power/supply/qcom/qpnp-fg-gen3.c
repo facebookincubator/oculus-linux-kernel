@@ -4293,6 +4293,9 @@ static int fg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_REAL_CAPACITY:
 		rc = fg_get_prop_real_capacity(chip, &pval->intval);
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_PROFILE:
+		pval->intval = chip->charge_profile;
+		break;
 	default:
 		pr_err("unsupported property %d\n", psp);
 		rc = -EINVAL;
@@ -4384,6 +4387,11 @@ static int fg_psy_set_property(struct power_supply *psy,
 			return rc;
 		}
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_PROFILE:
+		chip->charge_profile = pval->intval;
+		if (chip->fg_psy)
+			power_supply_changed(chip->fg_psy);
+		break;
 	default:
 		break;
 	}
@@ -4403,6 +4411,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_COOL_TEMP:
 	case POWER_SUPPLY_PROP_WARM_TEMP:
 	case POWER_SUPPLY_PROP_HOT_TEMP:
+	case POWER_SUPPLY_PROP_CHARGE_PROFILE:
 		return 1;
 	default:
 		break;
@@ -4497,6 +4506,7 @@ static enum power_supply_property fg_psy_props[] = {
 	POWER_SUPPLY_PROP_CC_STEP,
 	POWER_SUPPLY_PROP_CC_STEP_SEL,
 	POWER_SUPPLY_PROP_REAL_CAPACITY,
+	POWER_SUPPLY_PROP_CHARGE_PROFILE,
 };
 
 static const struct power_supply_desc fg_psy_desc = {
@@ -5912,6 +5922,7 @@ static int fg_gen3_probe(struct platform_device *pdev)
 	chip->ki_coeff_full_soc = -EINVAL;
 	chip->online_status = -EINVAL;
 	chip->batt_id_ohms = -EINVAL;
+	chip->charge_profile = 0;
 	chip->regmap = dev_get_regmap(chip->dev->parent, NULL);
 	if (!chip->regmap) {
 		dev_err(chip->dev, "Parent regmap is unavailable\n");

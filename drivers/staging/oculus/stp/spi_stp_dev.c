@@ -85,6 +85,7 @@ struct stp_dev {
 
 	struct device *stp_dev;
 	dev_t	devt;
+	dev_t	devt2;
 
 	/*
 	 * TODO: allocate user_data dinamically on open().
@@ -782,8 +783,9 @@ static int stp_dev_create_device(
 	/* create the second stp device */
 	minor = find_first_zero_bit(minors, N_STP_DEV_MINORS);
 	snprintf(stp_dev_name, sizeof(stp_dev_name), "stp%lul", minor);
+	_stp_dev->devt2 = MKDEV(dynamic_major, minor);
 	dev = device_create(_stp_dev->dev_class, _stp_dev->dev,
-		MKDEV(dynamic_major, minor), NULL, stp_dev_name);
+		_stp_dev->devt2, NULL, stp_dev_name);
 	if (!IS_ERR(dev)) {
 		pr_info("%s: created device /dev/%s\n", __func__,
 			stp_dev_name);
@@ -803,6 +805,8 @@ error:
 static int stp_dev_remove_device(void)
 {
 	int ret = STP_SUCCESS;
+
+	device_destroy(_stp_dev->dev_class, _stp_dev->devt2);
 
 	device_remove_file(_stp_dev->stp_dev,
 		&dev_attr_stprouter_debug);

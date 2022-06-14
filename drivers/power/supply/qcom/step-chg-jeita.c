@@ -79,6 +79,7 @@ struct step_chg_info {
 	int			jeita_fv_index;
 	int			step_index;
 	int			get_config_retry_count;
+	int			chg_profile;
 
 	struct step_chg_cfg	*step_chg_config;
 	struct jeita_fcc_cfg	*jeita_fcc_config;
@@ -142,6 +143,21 @@ static bool is_usb_available(struct step_chg_info *chip)
 		return false;
 
 	return true;
+}
+
+static int get_active_charge_profile(struct step_chg_info *chip)
+{
+	int rc;
+	union power_supply_propval pval = {0, };
+
+	rc = power_supply_get_property(chip->bms_psy,
+			POWER_SUPPLY_PROP_CHARGE_PROFILE, &pval);
+	if (rc < 0)
+		pr_err("Get charge profile failed, rc=%d\n", rc);
+	else
+		rc = pval.intval;
+
+	return rc;
 }
 
 static int read_range_data_from_node(struct device_node *node,
@@ -237,6 +253,14 @@ static int get_multilvl_step_chg_jeita_setting(
 		return -EINVAL;
 	}
 
+	/* Free data from old profile */
+	devm_kfree(chip->dev, chip->multi_jeita_fcc_config.jeita_cfgs);
+	chip->multi_jeita_fcc_config.jeita_cfgs = NULL;
+	memset(chip->multi_jeita_fcc_config.batt_lvl_cfg, 0,
+	       sizeof(chip->multi_jeita_fcc_config.batt_lvl_cfg));
+	chip->multi_jeita_fcc_config.batt_lvl_index = -EINVAL;
+
+	/* Read new profile data */
 	chip->multi_jeita_fcc_config.num_batt_lvls = num_lvls;
 
 	ranges = chip->multi_jeita_fcc_config.batt_lvl_cfg;
@@ -257,8 +281,6 @@ static int get_multilvl_step_chg_jeita_setting(
 			return -EINVAL;
 		}
 	}
-
-	chip->multi_jeita_fcc_config.batt_lvl_index = -EINVAL;
 
 	/* ok so far. Allocate memory to hold fcc range data */
 	chip->multi_jeita_fcc_config.jeita_cfgs = devm_kcalloc(
@@ -300,12 +322,13 @@ static int get_multilvl_step_chg_jeita_setting(
 
 static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 {
-	struct device_node *batt_node, *profile_node;
+	struct device_node *batt_node, *profile_node, *step_data_np;
 	u32 max_fv_uv, max_fcc_ma;
 	const char *batt_type_str;
 	const __be32 *handle;
 	int batt_id_ohms, rc;
 	union power_supply_propval prop = {0, };
+	char profile_name[sizeof("oculus,charging-profile-") + 12];
 
 	handle = of_get_property(chip->dev->of_node,
 			"qcom,battery-data", NULL);
@@ -372,8 +395,35 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 		chip->step_chg_config->hysteresis = 0;
 	}
 
-	chip->step_chg_cfg_valid = true;
-	rc = read_range_data_from_node(profile_node,
+	/* Clear valid status from last profile load attempt */
+	chip->step_chg_cfg_valid = false;
+	chip->sw_jeita_cfg_valid = false;
+
+	/* Provide changed: no cashed indexes */
+	chip->step_index = -EINVAL;
+	chip->jeita_fcc_index = -EINVAL;
+	chip->jeita_fv_index = -EINVAL;
+
+	/*
+	 * Look for a selected profile charging profile and load it from thes
+	 * corresponding sub-node. Special case the profile 0 and load values
+	 * directry from the battery profile itself, for backward compatibility.
+	 */
+	snprintf(profile_name, sizeof(profile_name),
+		 "oculus,charging-profile-%d", chip->chg_profile);
+	profile_name[sizeof(profile_name) - 1] = '\0';
+
+	step_data_np = of_get_child_by_name(profile_node, profile_name);
+	if (!step_data_np) {
+		if (chip->chg_profile != 0) {
+			dev_err(chip->dev, "Unable to read charging profile %s\n",
+				profile_name);
+			return -ENODATA;
+		}
+		step_data_np = profile_node;
+	}
+
+	rc = read_range_data_from_node(step_data_np,
 			"qcom,step-chg-ranges",
 			chip->step_chg_config->fcc_cfg,
 			chip->soc_based_step_chg ? 100 : max_fv_uv,
@@ -387,11 +437,11 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 	chip->sw_jeita_cfg_valid = true;
 	/* Check multi-level JEITA step charging config first. */
 	if (!get_multilvl_step_chg_jeita_setting(
-		    chip, profile_node, max_fv_uv, max_fcc_ma)) {
+		    chip, step_data_np, max_fv_uv, max_fcc_ma)) {
 		pr_info("Multi-level JEITA Step Charging enabled\n");
 		goto skip_single_lvel_jeita_fcc;
 	}
-	rc = read_range_data_from_node(profile_node,
+	rc = read_range_data_from_node(step_data_np,
 			"qcom,jeita-fcc-ranges",
 			chip->jeita_fcc_config->fcc_cfg,
 			BATT_HOT_DECIDEGREE_MAX, max_fcc_ma * 1000);
@@ -402,7 +452,7 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 	}
 
 skip_single_lvel_jeita_fcc:
-	rc = read_range_data_from_node(profile_node,
+	rc = read_range_data_from_node(step_data_np,
 			"qcom,jeita-fv-ranges",
 			chip->jeita_fv_config->fv_cfg,
 			BATT_HOT_DECIDEGREE_MAX, max_fv_uv);
@@ -452,6 +502,23 @@ static void get_config_work(struct work_struct *work)
 			chip->jeita_fv_config->fv_cfg[i].low_threshold,
 			chip->jeita_fv_config->fv_cfg[i].high_threshold,
 			chip->jeita_fv_config->fv_cfg[i].value);
+	for (i = 0; i < chip->multi_jeita_fcc_config.num_batt_lvls; i++) {
+		struct range_data *batt_lvl_cfg =
+			&chip->multi_jeita_fcc_config.batt_lvl_cfg[i];
+		struct jeita_fcc_cfg *jeita_cfg =
+			&chip->multi_jeita_fcc_config.jeita_cfgs[i];
+		int j;
+
+		pr_debug("[%d]battery-range: %duV ~ %duV  idx:%d\n", i,
+			batt_lvl_cfg->low_threshold,
+			batt_lvl_cfg->high_threshold,
+			batt_lvl_cfg->value);
+		for (j = 0; j < MAX_STEP_CHG_ENTRIES; j++)
+			pr_debug("[%d]jeita-fcc-cfg: %ddecidegree ~ %ddecidegre, %duA\n",
+				i, jeita_cfg->fcc_cfg[j].low_threshold,
+				jeita_cfg->fcc_cfg[j].high_threshold,
+				jeita_cfg->fcc_cfg[j].value);
+	}
 
 	return;
 
@@ -874,6 +941,7 @@ static int step_chg_notifier_call(struct notifier_block *nb,
 {
 	struct power_supply *psy = v;
 	struct step_chg_info *chip = container_of(nb, struct step_chg_info, nb);
+	int chg_profile;
 
 	if (ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
@@ -887,8 +955,17 @@ static int step_chg_notifier_call(struct notifier_block *nb,
 	if ((strcmp(psy->desc->name, "bms") == 0)) {
 		if (chip->bms_psy == NULL)
 			chip->bms_psy = psy;
-		if (!chip->config_is_read)
+		if (!chip->config_is_read) {
 			schedule_delayed_work(&chip->get_config_work, 0);
+		} else {
+			chg_profile = get_active_charge_profile(chip);
+			if (chg_profile >= 0 &&
+			    chg_profile != chip->chg_profile) {
+				chip->chg_profile = chg_profile;
+				schedule_delayed_work(&chip->get_config_work,
+				    0);
+			}
+		}
 	}
 
 	return NOTIFY_OK;
@@ -933,6 +1010,7 @@ int qcom_step_chg_init(struct device *dev,
 	chip->step_index = -EINVAL;
 	chip->jeita_fcc_index = -EINVAL;
 	chip->jeita_fv_index = -EINVAL;
+	chip->chg_profile = 0;
 
 	chip->step_chg_config = devm_kzalloc(dev,
 			sizeof(struct step_chg_cfg), GFP_KERNEL);

@@ -9,27 +9,6 @@ qcom,4698705_facebook_stella_desay_167mah_pmw3100_averaged_masterslave_aug10th20
 	qcom,nom-batt-capacity-mah = <167>;
 	qcom,batt-id-kohm = <100>;
 
-	oculus,num-multilevel-battery-lvls = <2>;
-	/* batt voltage range to fcc_range config index */
-	oculus,multilevel-battery-ranges = <
-				3000000 4200000 0
-				4200001 4400000 1>;
-
-	/* JEITA fcc range config for index 0 */
-	oculus,jeita-fcc-ranges-0 = <
-				0    100  25000
-				101  200  125000
-				201  450  225000>;
-
-	/* JEITA fcc range config for index 1 */
-	oculus,jeita-fcc-ranges-1 = <
-				0    100  25000
-				101  200  50000
-				201  450  75000>;
-
-	qcom,jeita-fv-ranges = <0   100  4400000
-				101 200  4400000
-				201 450  4400000>;
 	qcom,battery-beta = <3440>;
 	qcom,battery-type = "4698705_facebook_stella_desay_167mah_pmw3100_averaged_masterslave_aug10th2020";
 	qcom,checksum = <0x8DAC>;
@@ -92,4 +71,44 @@ qcom,4698705_facebook_stella_desay_167mah_pmw3100_averaged_masterslave_aug10th20
 		 00 00 00 00
 		 00 00 00 00
 	];
+
+	/* Default charging profile */
+	oculus,charging-profile-0 {
+		oculus,num-multilevel-battery-lvls = <2>;
+		/* batt voltage range to fcc_range config index */
+		oculus,multilevel-battery-ranges = <
+					3000000 4200000 0
+					4200001 4400000 1>;
+		/* JEITA fcc range config for index 0 */
+		oculus,jeita-fcc-ranges-0 = <
+					0    100  25000
+					101  200  125000
+					201  450  225000>;
+		/* JEITA fcc range config for index 1 */
+		oculus,jeita-fcc-ranges-1 = <
+					0    100  25000
+					101  200  50000
+					201  450  75000>;
+		qcom,jeita-fv-ranges = <
+					0   100  4400000
+					101 200  4400000
+					201 450  4400000>;
+	};
+
+	/* Retail mode charging profile */
+	oculus,charging-profile-1 {
+		oculus,num-multilevel-battery-lvls = <1>;
+		/* batt voltage range to fcc_range config index */
+		oculus,multilevel-battery-ranges = <
+					3000000 4400000 0>;
+		/* JEITA fcc range config for index 0 */
+		oculus,jeita-fcc-ranges-0 = <
+					0    100  25000
+					101  200  125000
+					201  450  225000>;
+		qcom,jeita-fv-ranges = <
+					0   100  4100000
+					101 200  4100000
+					201 450  4100000>;
+	};
 };

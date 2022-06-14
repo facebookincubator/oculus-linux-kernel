@@ -480,6 +480,7 @@ struct fg_chip {
 	int			prev_charge_status;
 	int			charge_done;
 	int			charge_type;
+	int			charge_profile;
 	int			online_status;
 	int			last_soc;
 	int			last_batt_temp;
