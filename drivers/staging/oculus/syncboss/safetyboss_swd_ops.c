@@ -58,8 +58,20 @@ static void safetyboss_swd_clear_errors(struct device *dev)
 
 int safetyboss_swd_prepare(struct device *dev)
 {
-	int status = safetyboss_swd_wait_for_flash_ready(dev);
+	int status;
 
+	// When firmware is naughty and tries to write to addr 0 (NULL), this begins a flash write
+	// that blocks all FLASH_CR operations. The only way to unblock is by writing another word.
+	if (swd_memory_read(dev, SWD_STM32G0_FLASH_SR) & SWD_STM32G0_FLASH_SR_CFGBSY)
+		swd_memory_write(dev, 0, 0);
+
+	// When device is already unlocked, attempting to unlock it again will cause a hardfault.
+	status = swd_memory_read(dev, SWD_STM32G0_FLASH_CR);
+	dev_info(dev, "FLASH_CR = 0x%x", status);
+	if ((status & SWD_STM32G0_FLASH_CR_LOCK) == 0)
+		return 0;
+
+	status = safetyboss_swd_wait_for_flash_ready(dev);
 	if (status != 0)
 		return status;
 
@@ -72,7 +84,7 @@ int safetyboss_swd_prepare(struct device *dev)
 	if (status != 0)
 		dev_err(dev, "(SafetyBoss SWD) Unable to unlock flash");
 
-	return 0;
+	return status;
 }
 
 int safetyboss_swd_erase_app(struct device *dev)

@@ -34,6 +34,7 @@ static struct {
 			.target_get_write_chunk_size = syncboss_get_write_chunk_size,
 			.target_program_read = syncboss_swd_read,
 			.target_page_is_erased = syncboss_swd_page_is_erased,
+			.target_finalize = syncboss_swd_finalize,
 		}
 	},
 	{
@@ -230,6 +231,12 @@ static int update_firmware(struct device *dev)
 	if (status) {
 		dev_err(dev, "Provisioning failed!\n");
 		goto error;
+	}
+
+	if (devdata->swd_ops.target_finalize) {
+		status = devdata->swd_ops.target_finalize(dev);
+		if (status)
+			goto error;
 	}
 
 	swd_reset(dev);

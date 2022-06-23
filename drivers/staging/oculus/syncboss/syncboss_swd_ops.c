@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/delay.h>
+#include <linux/gpio.h>
 #include <linux/slab.h>
 
 #include "swd.h"
@@ -60,6 +61,12 @@ bool syncboss_swd_page_is_erased(struct device *dev, u32 page)
 	return true;
 }
 
+static bool ctrlap_approtect_is_disabled(struct device *dev)
+{
+	swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS);
+	return swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS) == SWD_NRF_APREG_APPROTECTSTATUS_Disabled;
+}
+
 static bool ctrlap_try_eraseall(struct device *dev)
 {
 	static const u32 POLLING_INTERVAL_MS = 100;
@@ -74,9 +81,7 @@ static bool ctrlap_try_eraseall(struct device *dev)
 		msleep(POLLING_INTERVAL_MS);
 	}
 
-	swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS);
-	return
-		swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS) == SWD_NRF_APREG_APPROTECTSTATUS_Disabled;
+	return ctrlap_approtect_is_disabled(dev);
 }
 
 static int disable_hw_approtect(struct device *dev)
@@ -328,4 +333,53 @@ int syncboss_swd_provisioning_write(struct device *dev, int addr, u8 *data, size
 error:
 	kfree(uicr_data);
 	return status;
+}
+
+int syncboss_swd_finalize(struct device *dev)
+{
+	static const int RESET_GPIO_TIME_MS = 5;
+	static const int BOOT_TIME_MS = 100;
+	bool approtect_is_disabled = false;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	// In GTK OS, ensure that firmware will be updateable even without ERASEALL.
+	// In Meta OS, we've just completed an update without ERASEALL, so skip this check because it's
+	// unnecessary and because failing here would be needlessly catastrophic for a customer's unit.
+	if (!devdata->flash_info.erase_all)
+		return 0;
+
+	if (!gpio_is_valid(devdata->gpio_reset))
+		return -EINVAL;
+
+	// Soft reset so that firmware can configure the RESET pin on first boot.
+	swd_reset(dev);
+	swd_flush(dev);
+	swd_deinit(dev);
+	msleep(BOOT_TIME_MS);
+
+	dev_info(dev, "Pin resetting MCU and then verifying APPROTECT is still disabled");
+	gpio_set_value(devdata->gpio_reset, 0);
+	msleep(RESET_GPIO_TIME_MS);
+	gpio_set_value(devdata->gpio_reset, 1);
+	msleep(BOOT_TIME_MS);
+	swd_init(dev);
+	swd_halt(dev);
+
+	// Check the APPROTECT status directly from the CTRL-AP.
+	swd_select_ap(dev, SWD_NRF_APSEL_CTRLAP);
+	approtect_is_disabled = ctrlap_approtect_is_disabled(dev);
+	swd_select_ap(dev, SWD_NRF_APSEL_MEMAP);
+	if (!approtect_is_disabled)
+		goto error;
+
+	// Read an arbitrary value from MEM-AP as a sanity check.
+	approtect_is_disabled = (syncboss_swd_wait_for_nvmc_ready(dev) == 0);
+	if (!approtect_is_disabled)
+		goto error;
+
+	return 0;
+
+error:
+	WARN(true, "APPROTECT is enabled! Don't ship like this!");
+	return -EIO;
 }

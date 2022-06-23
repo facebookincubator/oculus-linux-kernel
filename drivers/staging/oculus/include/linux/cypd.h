@@ -21,10 +21,10 @@ struct device;
 
 /* Structured VDM Command Type */
 enum cypd_svdm_cmd_type {
-	SVDM_CMD_TYPE_INITIATOR,
-	SVDM_CMD_TYPE_RESP_ACK,
-	SVDM_CMD_TYPE_RESP_NAK,
-	SVDM_CMD_TYPE_RESP_BUSY,
+	CYPD_SVDM_CMD_TYPE_INITIATOR,
+	CYPD_SVDM_CMD_TYPE_RESP_ACK,
+	CYPD_SVDM_CMD_TYPE_RESP_NAK,
+	CYPD_SVDM_CMD_TYPE_RESP_BUSY,
 };
 
 /*
@@ -79,12 +79,6 @@ static struct cypd *devm_cypd_get_by_phandle(struct device *dev,
 }
 static int cypd_send_vdm(struct cypd *pd, u32 vdm_hdr, const u32 *vdos,
 		int num_vdos)
-{
-	return -EINVAL;
-}
-static int cypd_send_svdm(struct cypd *pd, u16 svid, u8 cmd,
-		enum cypd_svdm_cmd_type cmd_type, int obj_pos,
-		const u32 *vdos, int num_vdos)
 {
 	return -EINVAL;
 }
