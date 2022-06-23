@@ -3,7 +3,6 @@
 /dts-v1/;
 /plugin/;
 
-#include "seacliff-p3.dtsi"
 #include "seacliff-evt.dtsi"
 
 / {
@@ -12,3 +11,79 @@
 	qcom,board-id = <66 72>;
 };
 
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	aw37504_right: aw37504@3e {
+		compatible = "aw,aw37504";
+		reg = <0x3e>;
+		status = "ok";
+
+		regulator-name = "aw37504-right-regulator";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-boot-on;
+		enp-en-gpio = <&tlmm 23 0>;
+		enn-en-gpio = <&tlmm 22 0>;
+	};
+};
+
+&qupv3_se11_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	aw37504_left: aw37504@3e {
+		compatible = "aw,aw37504";
+		reg = <0x3e>;
+		status = "ok";
+
+		regulator-name = "aw37504-left-regulator";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-boot-on;
+		enp-en-gpio = <&tlmm 23 0>;
+		enn-en-gpio = <&tlmm 22 0>;
+	};
+};
+
+&soc {
+	gpio_capacitor {
+		compatible = "gpio-capacitor";
+		pinctrl-names = "active", "suspend";
+		pinctrl-0 = <&gpio_capacitor_active>;
+		pinctrl-1 = <&gpio_capacitor_suspend>;
+	};
+};
+
+&tlmm {
+	gpio_capacitor_pins {
+		gpio_capacitor_active: gpio_capacitor_active {
+			mux {
+				pins = "gpio52";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio52";
+				drive-strength = <2>;
+				output-high;
+				bias-pull-up;
+			};
+		};
+
+		gpio_capacitor_suspend: gpio_capacitor_suspend {
+			mux {
+				pins = "gpio52";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio52";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
+			};
+		};
+	};
+};

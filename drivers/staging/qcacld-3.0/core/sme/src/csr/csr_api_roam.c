@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -15610,7 +15611,7 @@ QDF_STATUS csr_send_join_req_msg(struct mac_context *mac, uint32_t sessionId,
 				sme_debug("Channel is 6G but country IE not present");
 			wlan_reg_read_current_country(mac->psoc,
 						      programmed_country);
-			status = wlan_reg_get_6g_power_type_for_ctry(
+			status = wlan_reg_get_6g_power_type_for_ctry(mac->psoc,
 					pIes->Country.country,
 					programmed_country, &power_type_6g,
 					&ctry_code_match);

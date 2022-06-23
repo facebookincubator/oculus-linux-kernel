@@ -14,7 +14,7 @@
 
 
 &mdss_mdp {
-	dsi_dual_boe_spi_blu_dsc_video: qcom,mdss_dsi_dual_boe_spi_blu_dsc_video {
+	dsi_dual_boe_90hz_dsc: qcom,mdss_dsi_dual_boe_spi_blu_90Hz_dsc_video {
 		qcom,mdss-dsi-panel-name = "BOE with spi blu dual video mode dsi panel with dsc";
 		qcom,mdss-dsi-panel-type = "dsi_video_mode";
 		qcom,dsi-ctrl-num = <0 1>;
@@ -40,7 +40,6 @@
 
 		qcom,panel-cphy-mode;
 
-		qcom,dsi-supported-dfps-list = <90 80 72 60>;
 		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 		qcom,mdss-dsi-min-refresh-rate = <60>;

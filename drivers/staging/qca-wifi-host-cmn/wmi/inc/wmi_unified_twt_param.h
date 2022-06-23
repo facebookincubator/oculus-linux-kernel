@@ -193,6 +193,8 @@ enum host_twt_session_stats_type {
  * @announ: If the flow type is announced/unannounced
  * @protection: If the TWT protection field is set
  * @info_frame_disabled: If the TWT Information frame is disabled
+ * @pm_responder_bit_valid: pm responder bit is valid or not
+ * @pm_responder_bit: pm responder value
  * @dialog_id: Dialog_id of current session
  * @wake_dura_us: wake duration in us
  * @wake_intvl_us: wake time interval in us
@@ -209,7 +211,9 @@ struct wmi_host_twt_session_stats_info {
 		 trig:1,
 		 announ:1,
 		 protection:1,
-		 info_frame_disabled:1;
+		 info_frame_disabled:1,
+		 pm_responder_bit_valid:1,
+		 pm_responder_bit:1;
 	uint32_t dialog_id;
 	uint32_t wake_dura_us;
 	uint32_t wake_intvl_us;
@@ -277,6 +281,7 @@ enum WMI_HOST_TWT_COMMAND {
  * @flag_reserved: unused bits
  * @b_twt_recommendation: defines types of frames tx during bTWT SP
  * @b_twt_persistence: Countdown VAL frames to param update/teardown
+ * @wake_time_tsf: Absolute TSF value to start first TWT service period
  */
 struct wmi_twt_add_dialog_param {
 	uint32_t vdev_id;
@@ -300,6 +305,7 @@ struct wmi_twt_add_dialog_param {
 		flag_reserved:11,
 		b_twt_persistence:8,
 		b_twt_recommendation:3;
+	uint64_t wake_time_tsf;
 };
 
 /* enum - status code of Get stats TWT dialog
@@ -369,6 +375,10 @@ enum WMI_HOST_ADD_TWT_STATUS {
  *             1 means B-TWT ID 0
  * @info_frame_disabled: 0 means TWT Information frame is enabled
  *                       1 means TWT Information frame is disabled
+ * @pm_responder_bit_valid: 1 means responder pm mode field is valid
+ *                          0 means responder pm mode field is not valid
+ * @pm_responder_bit: 1 means that responder set responder pm mode to 1
+ *                    0 means that responder set responder pm mode to 0
  * @wake_dura_us: wake duration in us
  * @wake_intvl_us: wake time interval in us
  * @sp_offset_us: Time until initial TWT SP occurs
@@ -382,7 +392,9 @@ struct wmi_twt_add_dialog_additional_params {
 		 announce:1,
 		 protection:1,
 		 b_twt_id0:1,
-		 info_frame_disabled:1;
+		 info_frame_disabled:1,
+		 pm_responder_bit_valid:1,
+		 pm_responder_bit:1;
 	uint32_t wake_dur_us;
 	uint32_t wake_intvl_us;
 	uint32_t sp_offset_us;

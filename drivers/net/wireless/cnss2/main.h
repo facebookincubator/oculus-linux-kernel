@@ -402,6 +402,7 @@ struct cnss_plat_data {
 	u8 set_wlaon_pwr_ctrl;
 	u8 fw_pcie_gen_switch;
 	u8 pcie_gen_speed;
+	u64 feature_list;
 };
 
 #ifdef CONFIG_ARCH_QCOM
@@ -461,4 +462,8 @@ int cnss_minidump_remove_region(struct cnss_plat_data *plat_priv,
 				void *va, phys_addr_t pa, size_t size);
 int cnss_pci_update_qtime_sync_period(struct device *dev,
 				      unsigned int qtime_sync_period);
+int cnss_set_feature_list(struct cnss_plat_data *plat_priv,
+			  enum cnss_feature_v01 feature);
+int cnss_get_feature_list(struct cnss_plat_data *plat_priv,
+			  u64 *feature_list);
 #endif /* _CNSS_MAIN_H */

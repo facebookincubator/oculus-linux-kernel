@@ -1,12 +1,14 @@
 #include <dt-bindings/clock/qcom,audio-ext-clk.h>
 #include "vendor-base/qcom/kona-lpi.dtsi"
 
-&pm8150a_l4 {
+&pm8150_l7 {
+	/* CM7120 1.8 */
 	qcom,init-voltage = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
 &pm8150_l16 {
+	/* CM7120 3.1 */
 	qcom,init-voltage = <3100000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
@@ -120,6 +122,7 @@
 };
 
 &qupv3_se2_spi {
+	/* For pop variants */
 	status = "okay";
 
 	cm7120-spi@0 {
@@ -141,7 +144,7 @@
 		clock-names = "cm7120_mclk";
 		clocks = <&clock_audio_va_1 0>;
 
-		cm7120,codec_1v8-supply = <&pm8150a_l4>;
+		cm7120,codec_1v8-supply = <&pm8150_l7>;
 		cm7120,codec_3v3-supply = <&pm8150_l16>;
 		cm7120,firmware-name = "CM7120.bin";
 
@@ -154,6 +157,18 @@
 			&cm7120_codec_reset_suspend>;
 		pinctrl-2 = <&cm7120_speaker_en_default>;
 		pinctrl-3 = <&cm7120_speaker_en_suspend>;
+	};
+};
+
+&qupv3_se16_spi {
+	/* For non-pop variants */
+	status = "okay";
+
+	cm7120-spi@0 {
+		status = "okay";
+		compatible = "C-Media,cm7120-spi";
+		reg = <0>;
+		spi-max-frequency = <24000000>;
 	};
 };
 

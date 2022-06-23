@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "eureka865.dtsi"
+#include "eureka865-dev.dtsi"
+
+/ {
+	model = "Eureka865 (Dev0.6)";
+	compatible = "qcom,kona";
+	qcom,board-id = <68 146>;
+};
+

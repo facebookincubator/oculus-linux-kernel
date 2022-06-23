@@ -58,6 +58,8 @@ struct uvc_format {
 static struct uvc_format uvc_formats[] = {
 	{ 16, V4L2_PIX_FMT_YUYV  },
 	{ 0,  V4L2_PIX_FMT_MJPEG },
+	{ 8,  V4L2_PIX_FMT_GREY },
+	{ 12,  V4L2_PIX_FMT_YUV420 },
 };
 
 static int
@@ -229,10 +231,17 @@ static int
 uvc_v4l2_subscribe_event(struct v4l2_fh *fh,
 			 const struct v4l2_event_subscription *sub)
 {
+	struct uvc_device *uvc = video_get_drvdata(fh->vdev);
+	int ret;
+
 	if (sub->type < UVC_EVENT_FIRST || sub->type > UVC_EVENT_LAST)
 		return -EINVAL;
 
-	return v4l2_event_subscribe(fh, sub, 2, NULL);
+	ret = v4l2_event_subscribe(fh, sub, 2, NULL);
+	if (!ret && sub->type == UVC_EVENT_UNBIND)
+		uvc->wait_for_close = true;
+
+	return ret;
 }
 
 static int

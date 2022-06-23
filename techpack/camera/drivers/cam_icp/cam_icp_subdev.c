@@ -33,6 +33,8 @@
 #include "cam_node_fastpath.h"
 #include "cam_subdev_fastpath.h"
 
+#define FP_CAM_ICP_CTX_MAX 6
+
 #define CAM_ICP_DEV_NAME        "cam-icp"
 #define CAM_ICP_FP_DEV_NAME     "cam-icp-fastpath"
 
@@ -47,9 +49,9 @@ struct cam_icp_subdev {
 };
 
 struct cam_icp_subdev_fastpath {
-	struct cam_subdev sd;
-	void *ctx;
-	struct mutex mutex;
+	struct  cam_subdev sd;
+	void    *ctx[FP_CAM_ICP_CTX_MAX];
+	struct  mutex mutex;
 	int32_t open_cnt;
 };
 
@@ -298,15 +300,20 @@ static int cam_icp_probe(struct platform_device *pdev)
 	fastpath_node = (struct cam_node_fastpath *)
 		g_icp_dev_fastpath.sd.token;
 
-	g_icp_dev_fastpath.ctx = cam_icp_fastpath_context_create(hw_mgr_intf);
-	if (!g_icp_dev_fastpath.ctx) {
-		CAM_ERR(CAM_ISP, "ISP context fastpah init failed!");
-		rc = -ENOMEM;
-		goto remove_fp_subdevice;
+	for (i = 0; i < FP_CAM_ICP_CTX_MAX; i++) {
+
+		g_icp_dev_fastpath.ctx[i] = cam_icp_fastpath_context_create(
+				hw_mgr_intf, i);
+
+		if (!g_icp_dev_fastpath.ctx[i]) {
+			CAM_ERR(CAM_ISP, "ISP context fastpah init failed!");
+			rc = -ENOMEM;
+			goto remove_fp_subdevice;
+		}
 	}
 
-	rc = cam_node_fastpath_init(fastpath_node,
-				    g_icp_dev_fastpath.ctx,
+	rc = cam_node_fastpath_init(fastpath_node, "ICP Node",
+				    &g_icp_dev_fastpath.ctx, FP_CAM_ICP_CTX_MAX,
 				    &fastpath_ctx_ops);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "ISP fastpath node init failed!");
@@ -319,8 +326,13 @@ static int cam_icp_probe(struct platform_device *pdev)
 	return rc;
 
 destroy_fp_context:
-	cam_icp_fastpath_context_destroy(g_icp_dev_fastpath.ctx);
-	g_icp_dev_fastpath.ctx = NULL;
+	for (i = 0; i < FP_CAM_ICP_CTX_MAX; i++) {
+		if (g_icp_dev_fastpath.ctx[i])
+			cam_icp_fastpath_context_destroy(
+						g_icp_dev_fastpath.ctx[i]);
+
+		g_icp_dev_fastpath.ctx[i] = NULL;
+	}
 remove_fp_subdevice:
 	cam_subdev_remove(&g_icp_dev_fastpath.sd);
 ctx_fail:
@@ -364,8 +376,14 @@ static int cam_icp_remove(struct platform_device *pdev)
 	mutex_destroy(&g_icp_dev.icp_lock);
 
 	/* Deinit fastpath resourcess */
-	cam_icp_fastpath_context_destroy(g_icp_dev_fastpath.ctx);
-	g_icp_dev_fastpath.ctx = NULL;
+	for (i = 0; i < FP_CAM_ICP_CTX_MAX; i++) {
+
+		if (g_icp_dev_fastpath.ctx[i])
+			cam_icp_fastpath_context_destroy(
+				g_icp_dev_fastpath.ctx[i]);
+
+		g_icp_dev_fastpath.ctx[i] = NULL;
+	}
 
 	cam_subdev_remove(&g_icp_dev_fastpath.sd);
 

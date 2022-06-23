@@ -3,7 +3,8 @@
 /dts-v1/;
 /plugin/;
 
-#include "seacliff-p3.dtsi"
+#include "seacliff-non-pop.dtsi"
+#include "seacliff-adc-usbc.dtsi"
 
 / {
 	model = "Seacliff (Dev3)";
@@ -46,4 +47,12 @@
 
 &pm8150a_l3 {
 	status = "disabled";
+};
+
+&qupv3_se0_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss-ipl-spl.bin";
+		};
+	};
 };

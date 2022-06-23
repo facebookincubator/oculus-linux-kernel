@@ -1407,10 +1407,8 @@ static int tmc_enable_etr_sink_sysfs(struct coresight_device *csdev)
 	 * sink is already enabled no memory is needed and the HW need not be
 	 * touched, even if the buffer size has changed.
 	 */
-	if (drvdata->mode == CS_MODE_SYSFS) {
-		atomic_inc(csdev->refcnt);
+	if (drvdata->mode == CS_MODE_SYSFS)
 		goto unlock_out;
-	}
 
 	/*
 	 * If we don't have a buffer or it doesn't match the requested size,
@@ -1451,7 +1449,6 @@ static int tmc_enable_etr_sink_sysfs(struct coresight_device *csdev)
 		}
 	}
 
-	atomic_inc(csdev->refcnt);
 	goto out;
 
 unlock_out:

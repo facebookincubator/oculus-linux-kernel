@@ -67,7 +67,7 @@
 			interrupt-names = "fan_irq";
 			panel = <&dsi_dual_boe_lcd_video
 				&dsi_dual_boe_lcd_dsc_video
-				&dsi_dual_boe_spi_blu_dsc_video>;
+				&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			pinctrl-names = "default";
@@ -88,7 +88,7 @@
 			interrupt-names = "fan_irq";
 			panel = <&dsi_dual_boe_lcd_video
 				&dsi_dual_boe_lcd_dsc_video
-				&dsi_dual_boe_spi_blu_dsc_video>;
+				&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 1 40000>;
 			pinctrl-names = "default";
@@ -111,14 +111,14 @@
 		wake-capable-sensor;
 		trips {
 			batt_fan_trip0: batt_fan_trip0 {
-				temperature = <400>;
-				hysteresis = <20>;
+				temperature = <40000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			batt_fan_trip1: batt_fan_trip1 {
-				temperature = <480>;
-				hysteresis = <20>;
+				temperature = <48000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 		};

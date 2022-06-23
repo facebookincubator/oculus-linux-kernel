@@ -1,6 +1,5 @@
 #include "../vendor/qcom/kona-pmic-overlay.dtsi"
 #include "../vendor/qcom/kona-sde-display.dtsi"
-#include "../vendor/qcom/kona-thermal-overlay.dtsi"
 
 #include "kona-oculus.dtsi"
 #include "seacliff-adc.dtsi"
@@ -10,6 +9,7 @@
 #include "seacliff-eye-face-led.dtsi"
 #include "seacliff-fan.dtsi"
 #include "seacliff-nautilus-clk.dtsi"
+#include "seacliff-pac1934.dtsi"
 #include "seacliff-panel.dtsi"
 #include "seacliff-projector.dtsi"
 #include "seacliff-safetyboss.dtsi"
@@ -52,39 +52,19 @@
 	gpio-req-tbl-flags = <1 1>;
 	gpio-req-tbl-label = "CCI_I2C_DATA1",
 			     "CCI_I2C_CLK1";
-
-	qcom,cam-sensor0 {
-		csiphy-sd-index = <2>;
-	};
-	qcom,cam-sensor1 {
-		csiphy-sd-index = <4>;
-	};
-	qcom,cam-sensor2 {
-		csiphy-sd-index = <1>;
-	};
-	qcom,cam-sensor3 {
-		csiphy-sd-index = <5>;
-	};
-	qcom,cam-sensor4 {
-		csiphy-sd-index = <0>;
-	};
-	qcom,cam-sensor5 {
-		csiphy-sd-index = <3>;
-	};
 };
 
 &cm7120 {
-	cm7120,codec_1v8-supply = <&pm8150_l7>;
 	cm7120,headphone-det-gpios = <&tlmm 113 0
 				   &tlmm 89 0>;
-	cm7120,firmware-name = "CM7120_TDM_I2S.bin";
+	cm7120,firmware-name = "CM7120_TDM.bin";
 	pinctrl-0 = <&cm7120_codec_ldo_en_default
 		&cm7120_codec_reset_default
 		&cm7120_headphone_det_default>;
 };
 
 &cm7120_snd {
-	qcom,model = "kona-cm7120-tdm_i2s-snd-card";
+	qcom,model = "kona-cm7120-tdm-snd-card";
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <0>, <1>;
 	qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
 	qcom,tdm-audio-intf = <1>;
@@ -95,13 +75,13 @@
 	status = "disabled";
 };
 
-&dsi_dual_boe_spi_blu_dsc_video {
+&dsi_dual_boe_90hz_dsc {
 	qcom,platform-en-gpio = <&tlmm 23 0>;
 	qcom,platform-reset-gpio = <&tlmm 101 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 57 0>;
 };
 
-&dsi_dual_boe_spi_blu_dsc_video {
+&dsi_dual_boe_90hz_dsc {
 	oculus,backlight = <&blu_left &blu_right>;
 };
 
@@ -155,22 +135,24 @@
 		0x110 0x55>;
 };
 
-&pm8150_l7 {
-	qcom,init-voltage = <1800000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-};
-
 &pm8150a_l1 {
 	/* IPD 1.8 */
 	regulator-always-on;
 };
 
 &pm8150a_l4 {
-	status = "disabled";
+	/* FPGA aggregator 1.8 */
+	status = "ok";
+	qcom,init-voltage = <1800000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
 &pm8150a_l5 {
-	status = "disabled";
+	/* Nautilus, Safetyboss 1.9 */
+	status = "ok";
+	qcom,init-voltage = <1900000>;
+	qcom,init-mode = <4>;  /* RPMH_REGULATOR_MODE_HPM */
+	regulator-always-on;
 };
 
 &pm8150a_l6 {
@@ -294,6 +276,7 @@
 	otg_boost-supply = <&smb5_otg_boost>;
 	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
 		<9000 3000>; /* 9V @ 3A */
+	qcom,discovery-svids-request;
 };
 
 &pm8150b_vadc {
@@ -392,6 +375,11 @@
 	status = "ok";
 	qcom,rt;
 
+	// nRF requires >2us after clock stop, before raising CS.
+	// By default the delay is about 800us. Add 10 cycles at
+	// 8MHz (1.25us) to get us the rest of the way.
+	qcom,set-cs-clk-delay = <10>;
+
 	oculusnrf@0 {
 		status = "okay";
 		compatible = "oculus,syncboss";
@@ -413,6 +401,7 @@
 		oculus,syncboss-use-fastpath;
 		oculus,transaction-length = <248>;
 		oculus,syncboss-boots-to-shutdown-state;
+		oculus,syncboss-has-wake-reasons;
 
 		swd@0 {
 			compatible = "oculus,swd";
@@ -425,7 +414,7 @@
 			oculus,swd-io = <&tlmm 120 0>;
 
 			oculus,swd-flavor = "nrf52832";
-			oculus,fw-path = "syncboss-ipl-spl.bin";
+			oculus,fw-path = "syncboss-ipl-spl-prod.bin";
 			oculus,flash-block-size = <512>;
 			oculus,flash-page-size = <4096>;
 			oculus,flash-page-count = <128>;
@@ -694,17 +683,6 @@
 	};
 };
 
-&qupv3_se16_spi {
-	status = "okay";
-
-	cm7120-spi@0 {
-		status = "okay";
-		compatible = "C-Media,cm7120-spi";
-		reg = <0>;
-		spi-max-frequency = <24000000>;
-	};
-};
-
 &sde_dsi {
 	blu-spi-supply = <&display_panel_blu_en>;
 	pinctrl-0 = <&seacliff_blu_en_active>;
@@ -937,6 +915,27 @@
 };
 
 &vendor {
+	charging_dock: oculus,charging_dock {
+		status = "ok";
+		compatible = "oculus,charging-dock";
+		svid-cypd = <0x28330000>;
+		charger-cypd = <&cypd3177>;
+		svid-usbpd = <0x2ec60000>;
+		charger-usbpd = <&pm8150b_pdphy>;
+		broadcast-period-min = <15>;
+	};
+
+	fpga_aggregator: oculus,fpga {
+		status = "ok";
+		compatible = "oculus,fpga";
+		vcciox-voltage-mv = <1800000>;
+		vcciox-supply = <&pm8150a_l4>;
+		vcc-voltage-mv = <1800000>;
+		vcc-supply = <&pm8150a_l4>;
+		vccaux-voltage-mv = <2500000>;
+		vccaux-supply = <&pm8150_l13>;
+	};
+
 	kona_mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
 		#include "4081226_Goertek_Hollywood_15k_3636mAh_Aug26th2019.dtsi"

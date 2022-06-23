@@ -68,6 +68,7 @@ enum print_reason {
 #define AICL_THRESHOLD_VOTER		"AICL_THRESHOLD_VOTER"
 #define USBOV_DBC_VOTER			"USBOV_DBC_VOTER"
 #define CHG_TERMINATION_VOTER		"CHG_TERMINATION_VOTER"
+#define CHG_CAPACITY_LIMIT_VOTER    "CHG_CAPACITY_LIMIT_VOTER"
 #define THERMAL_THROTTLE_VOTER		"THERMAL_THROTTLE_VOTER"
 #define VOUT_VOTER			"VOUT_VOTER"
 #define USB_SUSPEND_VOTER		"USB_SUSPEND_VOTER"
@@ -465,6 +466,7 @@ struct smb_charger {
 	struct work_struct	cp_status_change_work;
 	struct work_struct	dc_detect_work;
 	struct work_struct	rblt_check_work;
+	struct work_struct	chg_capacity_limit_work;
 	struct delayed_work	ps_change_timeout_work;
 	struct delayed_work	clear_hdc_work;
 	struct delayed_work	icl_change_work;
@@ -481,6 +483,7 @@ struct smb_charger {
 	struct alarm		lpd_recheck_timer;
 	struct alarm		moisture_protection_alarm;
 	struct alarm		chg_termination_alarm;
+	struct alarm		chg_capacity_limit_alarm;
 	struct alarm		dcin_aicl_alarm;
 
 	struct timer_list	apsd_timer;
@@ -589,6 +592,7 @@ struct smb_charger {
 	bool			apsd_ext_timeout;
 	bool			qc3p5_detected;
 	bool			dam_enabled;
+	int			charge_capacity_limit;
 
 	/* rblt */
 	bool			rblt_support;
@@ -847,6 +851,7 @@ int smblib_get_thermal_threshold(struct smb_charger *chg, u16 addr, int *val);
 int smblib_dp_dm(struct smb_charger *chg, int val);
 int smblib_disable_hw_jeita(struct smb_charger *chg, bool disable);
 int smblib_run_aicl(struct smb_charger *chg, int type);
+int smblib_execute_charge_capacity_limit(struct smb_charger *chg, int limit);
 int smblib_set_icl_current(struct smb_charger *chg, int icl_ua);
 int smblib_get_icl_current(struct smb_charger *chg, int *icl_ua);
 int smblib_get_charge_current(struct smb_charger *chg, int *total_current_ua);

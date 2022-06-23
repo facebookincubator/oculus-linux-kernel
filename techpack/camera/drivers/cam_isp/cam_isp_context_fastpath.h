@@ -105,7 +105,9 @@ int cam_isp_fastpath_set_stream_mode(void *hnd,
 				     struct cam_set_stream_mode *cmd);
 int cam_isp_fastpath_stream_mode_cmd(void *hnd,
 				     struct cam_stream_mode_cmd *cmd);
-void *cam_isp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf);
-void cam_isp_fastpath_context_destroy(void *hnd);
+void *cam_isp_fastpath_context_create(
+			struct cam_hw_mgr_intf *hw_intf, int ctx_id);
+
+void cam_isp_fastpath_context_destroy(struct cam_isp_fastpath_context *ctx);
 
 #endif  /* _CAM_ISP_CONTEXT_FASTPATH_H_ */

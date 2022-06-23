@@ -127,6 +127,11 @@ struct swd_ops_params {
 	 * return: true if erased, false otherwise or on error.
 	 */
 	bool (*target_page_is_erased)(struct device *dev, u32 page);
+
+	/*
+	 * Final steps after SWD update is completed. E.g., verify success.
+	 */
+	int (*target_finalize)(struct device *dev);
 };
 
 struct swd_ops {

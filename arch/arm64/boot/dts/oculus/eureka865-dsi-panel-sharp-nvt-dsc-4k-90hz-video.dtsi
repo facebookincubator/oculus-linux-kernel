@@ -32,7 +32,7 @@
 		qcom,mdss-dsi-lane-2-state;
 		qcom,mdss-dsi-dma-trigger = "trigger_sw";
 		qcom,mdss-dsi-mdp-trigger = "none";
-		qcom,mdss-dsi-reset-sequence = <1 20>, <0 20>, <1 20>;
+		qcom,mdss-dsi-reset-sequence = <0 20>, <1 20>;
 		qcom,adjust-timer-wakeup-ms = <1>;
 		qcom,mdss-dsi-lp11-init;
 		qcom,mdss-dsi-tx-eot-append;
@@ -63,7 +63,6 @@
 					29 01 00 00 00 00 02 BD 6c
 					29 01 00 00 00 00 02 BE 01
 					29 01 00 00 00 00 02 BF 34
-					//29 01 00 00 00 00 02 FB 01
 					29 01 00 00 00 00 02 FF 10
 					29 01 00 00 00 00 02 FB 01
 					39 01 00 00 00 00 02 03 01

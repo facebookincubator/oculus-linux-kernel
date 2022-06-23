@@ -70,18 +70,17 @@
 	qcom,cam-sensor0 {
 		/* CAMERA ID = 0
 		 * name: CAM_OG_LEFT
-		 * QCOM CSI PHY = 1
+		 * QCOM CSI PHY = 2
 		 * QCOM MCLK = 1
 		 */
 		cell-index = <0>;
 		compatible = "qcom,cam-sensor";
-		csiphy-sd-index = <1>;
-		/* T97436334: Regulators are intentionally misnamed */
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l3>;
+		csiphy-sd-index = <2>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l3>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -108,18 +107,17 @@
 	qcom,cam-sensor1 {
 		/* CAMERA ID = 1
 		 * name: CAM_OG_RIGHT
-		 * QCOM CSI PHY = 2
+		 * QCOM CSI PHY = 4
 		 * QCOM MCLK = 2
 		 */
 		cell-index = <1>;
 		compatible = "qcom,cam-sensor";
-		csiphy-sd-index = <2>;
-		/* T97436334: Regulators are intentionally misnamed */
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l3>;
+		csiphy-sd-index = <4>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l3>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -146,17 +144,16 @@
 	qcom,cam-sensor2 {
 		/* CAMERA ID = 2
 		 * name: CAM_OV7251_LEFT
-		 * QCOM CSI PHY = 3
+		 * QCOM CSI PHY = 1
 		 * QCOM MCLK = 3
 		 */
 		cell-index = <2>;
 		compatible = "qcom,cam-sensor";
-		csiphy-sd-index = <3>;
-		/* T97436334: Regulators are intentionally misnamed */
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
+		csiphy-sd-index = <1>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd",
+		regulator-names = "cam_vana", "cam_vio",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -183,17 +180,16 @@
 	qcom,cam-sensor3 {
 		/* CAMERA ID = 3
 		 * name: CAM_OV7251_RIGHT
-		 * QCOM CSI PHY = 4
+		 * QCOM CSI PHY = 5
 		 * QCOM MCLK = 5
 		 */
 		cell-index = <3>;
 		compatible = "qcom,cam-sensor";
-		csiphy-sd-index = <4>;
-		/* T97436334: Regulators are intentionally misnamed */
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
+		csiphy-sd-index = <5>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd",
+		regulator-names = "cam_vana", "cam_vio",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -226,12 +222,11 @@
 		cell-index = <4>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <0>;
-		/* T97436334: Regulators are intentionally misnamed */
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l2>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
@@ -258,17 +253,16 @@
 	qcom,cam-sensor5 {
 		/* CAMERA ID = 5
 		 * name: CAM_ET-FT
-		 * QCOM CSI PHY = 5
+		 * QCOM CSI PHY = 3
 		 * QCOM MCLK = 6
 		 */
 		cell-index = <5>;
 		compatible = "qcom,cam-sensor";
-		csiphy-sd-index = <5>;
-		/* T97436334: Regulators are intentionally misnamed */
-		cam_avdd-supply = <&pm8150_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
+		csiphy-sd-index = <3>;
+		cam_vana-supply = <&pm8150_l10>;
+		cam_vio-supply = <&pm8150_l15>;
 		cam_clk-supply = <&titan_top_gdsc>;
-		regulator-names = "cam_avdd", "cam_dovdd", "cam_clk";
+		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;
 		pwm-switch;
 		rgltr-min-voltage = <2960000 1800000 0>;

@@ -2270,6 +2270,7 @@ enum {
 	MIC_DSP_PROCESS_ON_OFF,
 	MIC_DSP_AEC_ON_OFF,
 	MIC_DSP_ENC_ON_OFF,
+	MIC_DSP_WW_AEC_ON_OFF,
 	MIC_MONITOR_ON_OFF,
 	MIC_ADC1_ON_OFF,
 	MIC_ADC2_ON_OFF,
@@ -2330,10 +2331,17 @@ enum {
 	MIC_EQ_BAND_08_Q,
 	MIC_EQ_BAND_09_Q,
 	MIC_EQ_BAND_10_Q,
-	MIC_DSP_MAXNR,
-	MIC_DSP_NOISEGATE,
-	MIC_DSP_TBRRLOW,
 	MIC_MUTE_STO2,
+};
+
+enum {
+	MIC_DSP_AEC_MAXNR = 0,
+	MIC_DSP_ENC_MAXNR,
+	MIC_DSP_ENC_MODE,
+	MIC_DSP_AEC_TBRR_STATE,
+	MIC_DSP_NOISE_GATE,
+	MIC_DSP_REF_DELAY,
+	MIC_DSP_WW_AEC_MAXNR,
 };
 
 struct EQSpkParam {
@@ -2361,6 +2369,7 @@ struct cm7120_priv {
 	bool bEnableMicDspProcess;
 	bool bEnableAEC;
 	bool bEnableENC;
+	bool bEnableWWAEC;
 	bool bEnableMonitor;
 	bool bEnableAGC;
 	bool bEnableADC1;

@@ -1063,6 +1063,9 @@ static int smb5_usb_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
 		rc = smblib_get_usb_suspend(chg, &val->intval);
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_CAPACITY_LIMIT:
+		val->intval = chg->charge_capacity_limit;
+		break;
 	default:
 		pr_err("get prop %d is not supported in usb\n", psp);
 		rc = -EINVAL;
@@ -1760,6 +1763,7 @@ static enum power_supply_property smb5_batt_props[] = {
 	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
 	POWER_SUPPLY_PROP_RBLT,
 	POWER_SUPPLY_PROP_RBLT_STATE,
+	POWER_SUPPLY_PROP_CHARGE_CAPACITY_LIMIT,
 };
 
 #define DEBUG_ACCESSORY_TEMP_DECIDEGC	250
@@ -1913,6 +1917,9 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 		else
 			val->intval = chg->fake_rblt_state;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_CAPACITY_LIMIT:
+		val->intval = chg->charge_capacity_limit;
+		break;
 	default:
 		pr_err("batt power supply prop %d not supported\n", psp);
 		return -EINVAL;
@@ -2023,6 +2030,9 @@ static int smb5_batt_set_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_RBLT_STATE:
 		chg->fake_rblt_state = val->intval;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_CAPACITY_LIMIT:
+		chg->charge_capacity_limit = val->intval;
+		rc = smblib_execute_charge_capacity_limit(chg, chg->charge_capacity_limit);
 	default:
 		rc = -EINVAL;
 	}
@@ -2045,6 +2055,7 @@ static int smb5_batt_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED:
 	case POWER_SUPPLY_PROP_DIE_HEALTH:
 	case POWER_SUPPLY_PROP_RBLT_STATE:
+	case POWER_SUPPLY_PROP_CHARGE_CAPACITY_LIMIT:
 		return 1;
 	default:
 		break;

@@ -1,9 +1,9 @@
 #include "../vendor/qcom/kona-pmic-overlay.dtsi"
 #include "../vendor/qcom/kona-sde-display.dtsi"
-#include "../vendor/qcom/kona-thermal-overlay.dtsi"
 
 #include "kona-oculus.dtsi"
 #include "seacliff-adc.dtsi"
+#include "seacliff-adc-imu.dtsi"
 #include "seacliff-audio.dtsi"
 #include "seacliff-camera.dtsi"
 #include "seacliff-fan.dtsi"
@@ -12,6 +12,72 @@
 #include "seacliff-projector.dtsi"
 #include "seacliff-thermal.dtsi"
 #include "seacliff-ufs.dtsi"
+
+&cam_cci0 {
+	qcom,cam-sensor0 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor1 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor2 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor3 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor4 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor5 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_clk";
+	};
+};
+
+&cm7120 {
+	cm7120,codec_1v8-supply = <&pm8150a_l4>;
+};
+
+&pm8150_l7 {
+	status = "disabled";
+};
 
 &pm8150_l10 {
 	/* Esker power */
@@ -41,6 +107,12 @@
 &pm8150a_l3 {
 	/* Glacier power, FPGA power */
 	regulator-always-on;
+};
+
+&pm8150a_l4 {
+	/* CM7120 1.8 */
+	qcom,init-voltage = <1800000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
 &pm8150a_l5 {
@@ -145,6 +217,10 @@
 	#include "../vendor/qcom/smb1355.dtsi"
 };
 
+&qupv3_se16_spi {
+	status = "disabled";
+};
+
 &qupv3_se17_4uart {
 	status = "ok";
 
@@ -155,6 +231,11 @@
 &qupv3_se19_spi {
 	status = "ok";
 	qcom,rt;
+
+	// nRF requires >2us after clock stop, before raising CS.
+	// By default the delay is about 800us. Add 10 cycles at
+	// 8MHz (1.25us) to get us the rest of the way.
+	qcom,set-cs-clk-delay = <10>;
 
 	oculusnrf: oculusnrf@0 {
 		status = "okay";
@@ -177,6 +258,7 @@
 		oculus,syncboss-use-fastpath;
 		oculus,transaction-length = <248>;
 		oculus,syncboss-boots-to-shutdown-state;
+		oculus,syncboss-has-wake-reasons;
 
 		swd@0 {
 			compatible = "oculus,swd";

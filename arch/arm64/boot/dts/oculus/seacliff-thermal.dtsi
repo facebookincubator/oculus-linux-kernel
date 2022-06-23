@@ -1,3 +1,7 @@
+&mdss_mdp {
+	#cooling-cells = <2>;
+};
+
 &vendor {
 	battery_virtual_sensor: battery_virtual_sensor {
 		compatible = "oculus,battery-virtual-sensor";
@@ -125,6 +129,48 @@
 		};
 	};
 
+	pm8150b-bcl-lvl0 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-ibat-lvl0 {
+			trips {
+			ibat-lvl0 {
+				/* this is actually current in mA */
+				temperature = <6500>;
+				hysteresis = <200>;
+			};
+		};
+	};
+
+	pm8150b-bcl-lvl1 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-ibat-lvl1 {
+		trips {
+			ibat-lvl1 {
+				/* this is actually current in mA */
+				temperature = <7000>;
+				hysteresis = <200>;
+			};
+		};
+	};
+
+	pm8150b-bcl-lvl2 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-ibat-lvl2 {
+		trips {
+			ibat-lvl2 {
+				/* this is actually current in mA */
+				temperature = <7500>;
+				hysteresis = <200>;
+			};
+		};
+	};
+
 	soc {
 		status = "disabled";
 	};
@@ -136,22 +182,22 @@
 		thermal-sensors = <&vrapi_front_panel_sensor>;
 		wake-capable-sensor;
 		trips {
-			virt_top_trip0: virt-top-trip0 {
+			virt_front_trip0: virt-front-trip0 {
 				temperature = <85000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};
-			virt_top_trip1: virt-top-trip1 {
+			virt_front_trip1: virt-front-trip1 {
 				temperature = <95000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};
-			virt_top_trip2: virt-top-trip2 {
+			virt_front_trip2: virt-front-trip2 {
 				temperature = <115000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};
-			virt_trip3: virt-trip3 {
+			virt_front_trip3: virt-front-trip3 {
 				temperature = <125000>;
 				hysteresis = <1000>;
 				type = "passive";
@@ -166,17 +212,17 @@
 		thermal-sensors = <&vrapi_top_panel_sensor>;
 		wake-capable-sensor;
 		trips {
-			virt_front_trip0: virt-front-trip0 {
+			virt_top_trip0: virt-top-trip0 {
 				temperature = <85000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};
-			virt_front_trip1: virt-front-trip1 {
+			virt_top_trip1: virt-top-trip1 {
 				temperature = <95000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};
-			virt_front_trip2: virt-front-trip2 {
+			virt_top_trip2: virt-top-trip2 {
 				temperature = <115000>;
 				hysteresis = <1000>;
 				type = "passive";

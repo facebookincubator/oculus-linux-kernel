@@ -125,9 +125,9 @@
 };
 
 &vendor {
-	kona_xrfusion_batterydata: qcom,battery-data {
+	kona_arglass_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
-		#include "fg-gen4-batterydata-goertek-6100mah.dtsi"
+		#include "fg-gen4-batterydata-goertek-650mah.dtsi"
 	};
 };
 
@@ -387,22 +387,24 @@
 			   "sbux_res",
 			   "vph_voltage",
 			   "chg_temp";
-	qcom,battery-data = <&kona_xrfusion_batterydata>;
+	qcom,battery-data = <&kona_arglass_batterydata>;
 	qcom,sw-jeita-enable;
 	qcom,wd-bark-time-secs = <16>;
 	qcom,suspend-input-on-debug-batt;
+	qcom,hvdcp-disable;
 	qcom,thermal-mitigation = <5325000 4500000 4000000 3500000 3000000
 				2500000 2000000 1500000 1000000 500000>;
 };
 
 &pm8150b_fg {
 	status = "ok";
-	qcom,battery-data = <&kona_xrfusion_batterydata>;
+	qcom,battery-data = <&kona_arglass_batterydata>;
 	qcom,hold-soc-while-full;
 	qcom,linearize-soc;
 	qcom,five-pin-battery;
 	qcom,cl-wt-enable;
 	qcom,soc-scale-mode-en;
+	qcom,fg-force-load-profile;
 	/* ESR fast calibration */
 	qcom,fg-esr-timer-chg-fast = <0 7>;
 	qcom,fg-esr-timer-dischg-fast = <0 7>;
@@ -980,3 +982,9 @@
 	qcom,strobe-sel = <1>;
 	status = "okay";
 };
+
+&pm8150b_pdphy {
+	/* Restricting only to 5V@3A */
+	qcom,default-sink-caps = <5000 3000>; /* 5V @ 3A */
+};
+

@@ -471,6 +471,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(rblt),
 	POWER_SUPPLY_ATTR(rblt_state),
 	POWER_SUPPLY_ATTR(charge_profile),
+	POWER_SUPPLY_ATTR(charge_capacity_limit),
 	/* Charge pump properties */
 	POWER_SUPPLY_ATTR(cp_status1),
 	POWER_SUPPLY_ATTR(cp_status2),
