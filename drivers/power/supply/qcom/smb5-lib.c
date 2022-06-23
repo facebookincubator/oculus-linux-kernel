@@ -3,6 +3,7 @@
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  */
 
+#include <asm-generic/errno-base.h>
 #include <linux/device.h>
 #include <linux/regmap.h>
 #include <linux/delay.h>
@@ -2589,6 +2590,26 @@ int smblib_run_aicl(struct smb_charger *chg, int type)
 	if (rc < 0)
 		smblib_err(chg, "Couldn't write to AICL_CMD_REG rc=%d\n",
 				rc);
+	return 0;
+}
+
+int smblib_execute_charge_capacity_limit(struct smb_charger *chg, int limit)
+{
+	if (limit < 0 || limit > 100)
+		return -EINVAL;
+
+	alarm_cancel(&chg->chg_capacity_limit_alarm);
+	if (limit == 100) {
+		vote(chg->usb_icl_votable, CHG_CAPACITY_LIMIT_VOTER, false, 0);
+		vote(chg->dc_suspend_votable, CHG_CAPACITY_LIMIT_VOTER, false, 0);
+		return 0;
+	}
+
+	if (alarmtimer_get_rtcdev())
+		schedule_work(&chg->chg_capacity_limit_work);
+	else
+		return -ENODEV;
+
 	return 0;
 }
 
@@ -7662,6 +7683,72 @@ static void rblt_timer_cb(struct timer_list *tm)
 			msecs_to_jiffies(RBLT_CHECK_INTERVAL_MS) + jiffies);
 }
 
+/* One Minute */
+#define CHG_CAPACITY_LIMIT_DUTY_CYCLE_MS 60000
+static void smblib_chg_capacity_limit_work(struct work_struct *work)
+{
+	union power_supply_propval pval;
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+						chg_capacity_limit_work);
+	int rc, input_present;
+	int cc_soc;
+
+	/*
+	 * Hold awake votable to prevent pm_relax being called prior to
+	 * completion of this work.
+	 */
+	vote(chg->awake_votable, CHG_CAPACITY_LIMIT_VOTER, true, 0);
+
+	rc = smblib_is_input_present(chg, &input_present);
+	if (rc < 0 || !input_present)
+		goto out;
+
+	rc = smblib_get_prop_from_bms(chg, POWER_SUPPLY_PROP_CC_SOC,
+				&pval);
+	if (rc < 0)
+		goto out;
+
+	cc_soc = pval.intval;
+
+	/*
+	 * Suspend/Unsuspend USB input to keep cc_soc within a 1%
+	 * range of the charge limit
+	 */
+	if (cc_soc > chg->charge_capacity_limit * 100) {
+		if (input_present & INPUT_PRESENT_USB)
+			vote(chg->usb_icl_votable, CHG_CAPACITY_LIMIT_VOTER,
+					true, 0);
+		if (input_present & INPUT_PRESENT_DC)
+			vote(chg->dc_suspend_votable, CHG_CAPACITY_LIMIT_VOTER,
+					true, 0);
+	} else if (cc_soc < (chg->charge_capacity_limit - 1) * 100) {
+		vote(chg->usb_icl_votable, CHG_CAPACITY_LIMIT_VOTER, false, 0);
+		vote(chg->dc_suspend_votable, CHG_CAPACITY_LIMIT_VOTER, false, 0);
+	}
+
+	smblib_dbg(chg, PR_MISC, "Chg Limit: cc_soc: %d, charge_capacity_limit: %d\n",
+			cc_soc, chg->charge_capacity_limit);
+out:
+	alarm_start_relative(&chg->chg_capacity_limit_alarm, ms_to_ktime(CHG_CAPACITY_LIMIT_DUTY_CYCLE_MS));
+	vote(chg->awake_votable, CHG_CAPACITY_LIMIT_VOTER, false, 0);
+}
+
+static enum alarmtimer_restart chg_capacity_limit_alarm_cb(struct alarm *alarm,
+								ktime_t now)
+{
+	struct smb_charger *chg = container_of(alarm, struct smb_charger,
+							chg_capacity_limit_alarm);
+
+	smblib_dbg(chg, PR_MISC, "Charge capacity limit alarm triggered %lld\n",
+			ktime_to_ms(now));
+
+	/* Atomic context, cannot use voter */
+	pm_stay_awake(chg->dev);
+	schedule_work(&chg->chg_capacity_limit_work);
+
+	return ALARMTIMER_NORESTART;
+}
+
 #define SOFT_JEITA_HYSTERESIS_OFFSET	0x200
 static void jeita_update_work(struct work_struct *work)
 {
@@ -8337,6 +8424,7 @@ static void smblib_iio_deinit(struct smb_charger *chg)
 		iio_channel_release(chg->iio.smb_temp_chan);
 }
 
+#define CHG_CAPACITY_LIMIT_DEFAULT_PCT 100
 int smblib_init(struct smb_charger *chg)
 {
 	union power_supply_propval prop_val;
@@ -8397,6 +8485,16 @@ int smblib_init(struct smb_charger *chg)
 		}
 	}
 
+	INIT_WORK(&chg->chg_capacity_limit_work,
+				smblib_chg_capacity_limit_work);
+	if (alarmtimer_get_rtcdev()) {
+		alarm_init(&chg->chg_capacity_limit_alarm, ALARM_BOOTTIME,
+					chg_capacity_limit_alarm_cb);
+	} else {
+		smblib_err(chg, "Couldn't get rtc device\n");
+		return -ENODEV;
+	}
+
 	if (alarmtimer_get_rtcdev()) {
 		alarm_init(&chg->dcin_aicl_alarm, ALARM_REALTIME,
 				dcin_aicl_alarm_cb);
@@ -8416,9 +8514,12 @@ int smblib_init(struct smb_charger *chg)
 	chg->typec_irq_en = true;
 	chg->cp_topo = -EINVAL;
 	chg->rblt_state = RBLT_OK;
+	chg->charge_capacity_limit = CHG_CAPACITY_LIMIT_DEFAULT_PCT;
 
 	switch (chg->mode) {
 	case PARALLEL_MASTER:
+		alarm_cancel(&chg->chg_capacity_limit_alarm);
+		cancel_work_sync(&chg->chg_capacity_limit_work);
 		rc = qcom_batt_init(&chg->chg_param);
 		if (rc < 0) {
 			smblib_err(chg, "Couldn't init qcom_batt_init rc=%d\n",

@@ -40,7 +40,7 @@
 			timing@0{
 				qcom,mdss-dsi-panel-width = <960>;
 				qcom,mdss-dsi-panel-height = <3664>;
-				qcom,mdss-dsi-h-front-porch = <56>;
+				qcom,mdss-dsi-h-front-porch = <55>;
 				qcom,mdss-dsi-h-back-porch = <44>;
 				qcom,mdss-dsi-h-pulse-width = <12>;
 				qcom,mdss-dsi-h-sync-skew = <0>;
@@ -123,7 +123,7 @@
 					39 01 00 00 00 00 02 51 FF
 					15 01 00 00 20 00 02 53 24 //enable backlight
 					15 01 00 00 20 00 02 FB 01
-					05 01 00 00 0A 00 01 29
+					05 01 00 00 00 00 01 29
 					05 01 00 00 00 00 01 11
 				];
 				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";

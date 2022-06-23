@@ -1,3 +1,7 @@
+&mdss_mdp {
+	#cooling-cells = <2>;
+};
+
 &vendor {
 	battery_virtual_sensor: battery_virtual_sensor {
 		compatible = "oculus,battery-virtual-sensor";
@@ -139,6 +143,18 @@
 	gpuss-max-step {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
+	};
+
+	pm8150b-bcl-lvl0 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-bcl-lvl1 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-bcl-lvl2 {
+		thermal-governor = "user_space";
 	};
 
 	soc {

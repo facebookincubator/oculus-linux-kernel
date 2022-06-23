@@ -385,9 +385,9 @@ struct device_node *of_batterydata_get_best_profile(
 	rc = of_property_read_string(best_node, "qcom,battery-type",
 							&battery_type);
 	if (!rc)
-		pr_info("%s found\n", battery_type);
+		pr_debug("%s found\n", battery_type);
 	else
-		pr_info("%s found\n", best_node->name);
+		pr_debug("%s found\n", best_node->name);
 
 	return best_node;
 }

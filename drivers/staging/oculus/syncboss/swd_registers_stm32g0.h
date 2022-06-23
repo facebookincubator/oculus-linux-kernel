@@ -38,6 +38,7 @@
          SWD_STM32G0_FLASH_ERR_OPTV)
 
 #define SWD_STM32G0_FLASH_SR_BUSY1        (1<<16)
+#define SWD_STM32G0_FLASH_SR_CFGBSY       (1<<18)
 
 #define SWD_STM32G0_FLASH_CR_PG           (1<<0)
 #define SWD_STM32G0_FLASH_CR_PER          (1<<1)

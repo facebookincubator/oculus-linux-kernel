@@ -1869,9 +1869,59 @@ static int dsi_panel_parse_dyn_clk_caps(struct dsi_panel *panel)
 	return 0;
 }
 
+static int dsi_panel_parse_dfps_range(struct dsi_panel *panel)
+{
+	int rc = 0;
+	struct dsi_dfps_capabilities *dfps_caps = &panel->dfps_caps;
+	struct dsi_parser_utils *utils = &panel->utils;
+	u32 i;
+
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-min-refresh-rate",
+				  &dfps_caps->min_refresh_rate);
+	if (rc) {
+		DSI_ERR("failed to read qcom,mdss-dsi-min-refresh-rate, rc=%d\n",
+				rc);
+		return rc;
+	}
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-max-refresh-rate",
+				  &dfps_caps->max_refresh_rate);
+	if (rc) {
+		DSI_ERR("failed to read qcom,mdss-dsi-max-refresh-rate, rc=%d\n",
+				rc);
+		return rc;
+	}
+
+	dfps_caps->dfps_list_len = dfps_caps->max_refresh_rate -
+		dfps_caps->min_refresh_rate + 1;
+	if (dfps_caps->dfps_list_len < 1) {
+		DSI_ERR("dfps invalid refresh rate range %d - %d\n",
+			dfps_caps->max_refresh_rate,
+			dfps_caps->min_refresh_rate);
+		return -EINVAL;
+	}
+
+	DSI_INFO("using full refresh rate range %d - %d\n",
+		dfps_caps->max_refresh_rate,
+		dfps_caps->min_refresh_rate);
+
+	dfps_caps->dfps_list = kcalloc(dfps_caps->dfps_list_len, sizeof(u32),
+			GFP_KERNEL);
+	if (!dfps_caps->dfps_list)
+		return -ENOMEM;
+
+	dfps_caps->dfps_support = true;
+	for (i = 0; i < dfps_caps->dfps_list_len; i++)
+		dfps_caps->dfps_list[i] = dfps_caps->max_refresh_rate - i;
+
+	if (dfps_caps->panel_refresh_rate == 0)
+		dfps_caps->panel_refresh_rate = dfps_caps->max_refresh_rate;
+	return 0;
+}
+
 static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 {
 	int rc = 0;
+	int list_size;
 	bool supported = false;
 	struct dsi_dfps_capabilities *dfps_caps = &panel->dfps_caps;
 	struct dsi_parser_utils *utils = &panel->utils;
@@ -1908,13 +1958,26 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 		goto error;
 	}
 
-	dfps_caps->dfps_list_len = utils->count_u32_elems(utils->data,
+	rc = utils->read_u32(utils->data,
+							"qcom,mdss-dsi-panel-framerate",
+							&dfps_caps->panel_refresh_rate);
+	if (rc)
+		dfps_caps->panel_refresh_rate = 0;
+
+	list_size = utils->count_u32_elems(utils->data,
 				  "qcom,dsi-supported-dfps-list");
-	if (dfps_caps->dfps_list_len < 1) {
-		DSI_ERR("[%s] dfps refresh list not present\n", name);
-		rc = -EINVAL;
+	if (list_size < 1) {
+		DSI_WARN("[%s] dfps refresh list not present\n", name);
+
+		// try to auto generate a list of refresh rates
+		rc = dsi_panel_parse_dfps_range(panel);
+		if (!rc)
+			return 0;
+
+		DSI_ERR("Failed to find or build list of refresh rates");
 		goto error;
 	}
+	dfps_caps->dfps_list_len = list_size;
 
 	dfps_caps->dfps_list = kcalloc(dfps_caps->dfps_list_len, sizeof(u32),
 			GFP_KERNEL);
@@ -1945,6 +2008,9 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 			dfps_caps->max_refresh_rate = dfps_caps->dfps_list[i];
 	}
 
+	// if no default is specified, use the first one in the list
+	if (dfps_caps->panel_refresh_rate == 0)
+		dfps_caps->panel_refresh_rate = dfps_caps->dfps_list[0];
 error:
 	return rc;
 }

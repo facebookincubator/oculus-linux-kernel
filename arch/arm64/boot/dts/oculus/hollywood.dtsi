@@ -1,6 +1,5 @@
 #include "../vendor/qcom/kona-pmic-overlay.dtsi"
 #include "../vendor/qcom/kona-sde-display.dtsi"
-#include "../vendor/qcom/kona-thermal-overlay.dtsi"
 
 #include "kona-oculus.dtsi"
 #include "hollywood-adc.dtsi"
@@ -58,6 +57,14 @@
 		battery-usbpd = <&pm8150b_pdphy>;
 		charging-suspend-thresh = <100>;
 		charging-resume-thresh = <95>;
+	};
+
+	charging_dock: oculus,charging_dock {
+		status = "ok";
+		compatible = "oculus,charging-dock";
+		svid-usbpd = <0x2ec60000>;
+		charger-usbpd = <&pm8150b_pdphy>;
+		broadcast-period-min = <15>;
 	};
 
 	kona_mtp_batterydata: qcom,battery-data {

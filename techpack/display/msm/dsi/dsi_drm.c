@@ -875,8 +875,8 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 		}
 		m->width_mm = connector->display_info.width_mm;
 		m->height_mm = connector->display_info.height_mm;
-		/* set the first mode in list as preferred */
-		if (i == 0)
+		/* set the default mode based on preferred_refresh flag */
+		if (modes[i].timing.preferred_refresh)
 			m->type |= DRM_MODE_TYPE_PREFERRED;
 		drm_mode_probed_add(connector, m);
 	}

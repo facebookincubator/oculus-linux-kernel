@@ -9,6 +9,8 @@
 #include <linux/mutex.h>
 #include <media/cam_defs.h>
 
+#define FP_NODE_NAME_SIZE 20
+
 enum cam_node_fastpath_state {
 	CAM_NODE_FP_STATE_INIT,
 	CAM_NODE_FP_STATE_ACQUIRED_DEV,
@@ -19,9 +21,11 @@ enum cam_node_fastpath_state {
 
 struct cam_node_fastpath {
 	struct mutex mutex;
-	enum cam_node_fastpath_state state;
-
-	void *priv;
+	enum cam_node_fastpath_state (*ctx_states)[];
+	char node_name[FP_NODE_NAME_SIZE];
+	unsigned long ctx_bitmap; // context bitmap for resource management
+	int num_ctx;     // number of contexts
+	void* (*priv)[]; // contexts
 	const struct cam_node_fastpath_ops *ops;
 };
 
@@ -48,7 +52,10 @@ void cam_node_fastpath_shutdown(struct cam_node_fastpath *node);
 
 int cam_node_fastpath_deinit(struct cam_node_fastpath *node);
 
-int cam_node_fastpath_init(struct cam_node_fastpath *node, void *priv,
-			   const struct cam_node_fastpath_ops *ops);
+int cam_node_fastpath_init(struct cam_node_fastpath *node,
+		const char *node_name,
+		void  *(*priv)[],
+		int   num_ctx,
+		const struct cam_node_fastpath_ops *ops);
 
 #endif /* _CAM_NODE_FASTPATH_H_ */

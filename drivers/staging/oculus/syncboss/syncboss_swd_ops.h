@@ -18,5 +18,6 @@ size_t syncboss_get_write_chunk_size(struct device *dev);
 int syncboss_swd_read(struct device *dev, int addr, u8 *dest,
 			    size_t len);
 bool syncboss_swd_page_is_erased(struct device *dev, u32 page);
+int syncboss_swd_finalize(struct device *dev);
 
 #endif

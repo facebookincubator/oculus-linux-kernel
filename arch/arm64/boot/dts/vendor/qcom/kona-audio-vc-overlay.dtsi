@@ -347,6 +347,7 @@
 	};
 
 	wcd938x_rst_gpio: msm_cdc_pinctrl@32 {
+		status = "disabled";
 		compatible = "qcom,msm-cdc-pinctrl";
 		pinctrl-names = "aud_active", "aud_sleep";
 		pinctrl-0 = <&wcd938x_reset_active>;
@@ -424,5 +425,21 @@
 				 qcom,init-enable = <1>;
 				 regulator-always-on;
 		};
+	};
+};
+
+&qupv3_se13_i2c {
+	status = "ok";
+	tas5805m@2d {
+		compatible = "ti,tas5805m";
+		reg = <0x2d>;
+		gpio,pdn = <&tlmm 127 0>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <32 0>;
+		gpio,hpd = <&tlmm 32 0>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&spkr_2_sd_n_sleep &line_out_hpd_default>;
 	};
 };

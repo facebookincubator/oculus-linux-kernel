@@ -77,6 +77,26 @@ struct cnss_plat_data *cnss_get_plat_priv(struct platform_device *plat_dev)
 	return plat_env;
 }
 
+int cnss_set_feature_list(struct cnss_plat_data *plat_priv,
+			  enum cnss_feature_v01 feature)
+{
+	if (unlikely(!plat_priv || feature >= CNSS_MAX_FEATURE_V01))
+		return -EINVAL;
+
+	plat_priv->feature_list |= 1 << feature;
+	return 0;
+}
+
+int cnss_get_feature_list(struct cnss_plat_data *plat_priv,
+			  u64 *feature_list)
+{
+	if (unlikely(!plat_priv))
+		return -EINVAL;
+
+	*feature_list = plat_priv->feature_list;
+	return 0;
+}
+
 static int cnss_pm_notify(struct notifier_block *b,
 			  unsigned long event, void *p)
 {

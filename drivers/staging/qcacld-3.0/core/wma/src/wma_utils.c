@@ -1962,12 +1962,13 @@ static int wma_unified_radio_tx_power_level_stats_event_handler(void *handle,
 	}
 
 	if (!rs_results->tx_time_per_power_level) {
-		rs_results->tx_time_per_power_level = qdf_mem_malloc(
-				sizeof(uint32_t) *
-				rs_results->total_num_tx_power_levels);
+		rs_results->tx_time_per_power_level =
+			qdf_mem_malloc(sizeof(uint32_t) *
+				       rs_results->total_num_tx_power_levels);
 		if (!rs_results->tx_time_per_power_level) {
 			/* In error case, atleast send the radio stats without
-			 * tx_power_level stats */
+			 * tx_power_level stats
+			 */
 			rs_results->total_num_tx_power_levels = 0;
 			link_stats_results->nr_received++;
 			goto post_stats;

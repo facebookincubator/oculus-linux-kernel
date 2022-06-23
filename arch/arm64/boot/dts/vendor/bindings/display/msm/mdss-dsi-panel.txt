@@ -586,6 +586,8 @@ Optional properties:
 					to show proper display.
 - qcom,mdss-dsi-video-mode:		A boolean to indicates current timing can only work in video mode.
 - qcom,mdss-dsi-cmd-mode:		A boolean to indicates current timing can only work in command mode.
+- qcom,mdss-dsi-ext-bridge-hpd: 	A boolean value indicates an external bridge can support hotplug.
+- qcom,mdss-dsi-ext-bridge-dynamic-mode-set:	A boolean value indicates external bridge can support dynamic mode set.
 
 Additional properties added to the second level nodes that represent timings properties:
 - qcom,mdss-dsi-timing-default:		Property that specifies the current child as the default

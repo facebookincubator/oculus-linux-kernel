@@ -145,6 +145,15 @@
 			bias-pull-up;
 		};
 	};
+
+	line_out_hpd {
+		line_out_hpd_default: line_out_hpd_default {
+			pins = "gpio32";
+			function = "gpio";
+			input-enable;
+			bias-pull-up;
+		};
+	};
 };
 
 &soc {

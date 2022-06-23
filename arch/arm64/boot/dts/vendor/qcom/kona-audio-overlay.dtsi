@@ -218,7 +218,7 @@
 	qcom,wcn-bt = <1>;
 	qcom,wsa-bolero-codec = <1>;
 	qcom,ext-disp-audio-rx = <1>;
-	qcom,tdm-max-slots = <8>;
+	qcom,tdm-max-slots = <16>;
 	qcom,audio-routing =
 		"AMIC1", "MIC BIAS1",
 		"MIC BIAS1", "Analog Mic1",
@@ -465,4 +465,12 @@
 		qcom,codec-lpass-clk-id = <0x310>;
 		#clock-cells = <1>;
 	};
+};
+
+&tdm_tert_rx {
+	qcom,msm-cpudai-tdm-clk-rate = <24576000>;
+};
+
+&tdm_tert_tx {
+	qcom,msm-cpudai-tdm-clk-rate = <24576000>;
 };

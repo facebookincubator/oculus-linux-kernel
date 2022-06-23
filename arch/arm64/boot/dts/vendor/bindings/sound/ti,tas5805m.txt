@@ -1,0 +1,34 @@
+Texas Instruments TAS5805M audio amplifier
+
+The TAS5805M serial control bus communicates through I2C protocols.
+
+Required properties:
+	- compatible: "ti,tas5805m".
+	- reg: 7-bit I2C address.
+	- gpio,pdn: A GPIO spec to define which pin is connected to the
+			chip's active-low power down pin.
+
+Optional properties:
+	- gpio,hpd: GPIO used to detect external interrupt event. If specified,
+			the driver will mute tas5805m if this GPIO is high.
+			Unmute if this GPIO is low.
+
+
+Example:
+
+tas5805m@2d {
+	compatible = "ti,tas5805m";
+	reg = <0x2d>;
+	gpio,pdn = <&tlmm 127 0>;
+
+	interrupt-parent = <&tlmm>;
+	interrupts = <32 0>;
+	gpio,hpd = <&tlmm 32 0>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&spkr_2_sd_n_sleep &line_out_hpd_default>;
+};
+
+
+For more product information please see the link below:
+https://www.ti.com/product/TAS5805M

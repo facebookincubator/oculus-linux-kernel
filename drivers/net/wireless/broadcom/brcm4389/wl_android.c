@@ -9190,7 +9190,7 @@ wl_android_get_rssi_per_ant(struct net_device *dev, char *command, int total_len
 		bytes_written = snprintf(command, total_len, "%s PER_ANT ", CMD_GET_RSSI_PER_ANT);
 		for (cnt = 0; cnt < rssi_ant_mimo.count; cnt++) {
 			WL_DBG(("RSSI[%d]: %d\n", cnt, rssi_ant_mimo.rssi_ant[cnt]));
-			bytes_written = snprintf(command, total_len, "%d ",
+			bytes_written += snprintf(command + bytes_written, total_len - bytes_written, "%d ",
 				rssi_ant_mimo.rssi_ant[cnt]);
 		}
 	}

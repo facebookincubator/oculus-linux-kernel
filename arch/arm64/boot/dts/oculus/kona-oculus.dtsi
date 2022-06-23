@@ -1,6 +1,10 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 
+&bcl_soc {
+	status = "disabled";
+};
+
 &cpu_cpu_llcc_bw {
 	governor = "bw_hwmon";
 };

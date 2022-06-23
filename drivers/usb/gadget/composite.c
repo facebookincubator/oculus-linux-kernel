@@ -2005,6 +2005,9 @@ unknown:
 				if (w_index != 0x5 || (w_value >> 8))
 					break;
 				interface = w_value & 0xFF;
+				if (interface >= MAX_CONFIG_INTERFACES ||
+				    !os_desc_cfg->interface[interface])
+					break;
 				buf[6] = w_index;
 				count = count_ext_prop(os_desc_cfg,
 					interface);
@@ -2268,6 +2271,11 @@ int composite_dev_prepare(struct usb_composite_driver *composite,
 	 * drivers will zero ep->driver_data.
 	 */
 	usb_ep_autoconfig_reset(gadget);
+	/*
+	 * Reset deactivations as it is not possible to synchronize
+	 * between bind/unbind and open/close by user space application.
+	 */
+	cdev->deactivations = 0;
 	return 0;
 fail_dev:
 	kfree(cdev->req->buf);
