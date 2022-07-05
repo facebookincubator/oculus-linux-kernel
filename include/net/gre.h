@@ -39,6 +39,8 @@ void gre_build_header(struct sk_buff *skb, const struct tnl_ptk_info *tpi,
 static inline struct sk_buff *gre_handle_offloads(struct sk_buff *skb,
 						  bool csum)
 {
+	if (csum && (skb->head + skb->csum_start) < skb->data)
+		return ERR_PTR(-EINVAL);
 	return iptunnel_handle_offloads(skb, csum,
 					csum ? SKB_GSO_GRE_CSUM : SKB_GSO_GRE);
 }

@@ -5,6 +5,7 @@
  */
 #include <linux/init.h>
 #include <linux/export.h>
+#include <linux/poll.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/wait.h>
@@ -154,6 +155,13 @@ void __wake_up_sync(wait_queue_head_t *q, unsigned int mode, int nr_exclusive)
 	__wake_up_sync_key(q, mode, nr_exclusive, NULL);
 }
 EXPORT_SYMBOL_GPL(__wake_up_sync);	/* For internal use only */
+
+void __wake_up_pollfree(wait_queue_head_t *wq_head)
+{
+	__wake_up(wq_head, TASK_NORMAL, 0, (void *)(POLLHUP | POLLFREE));
+	/* POLLFREE must have cleared the queue. */
+	WARN_ON_ONCE(waitqueue_active(wq_head));
+}
 
 /*
  * Note: we use "set_current_state()" _after_ the wait-queue add,
