@@ -5257,7 +5257,7 @@ static int kona_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		/*2 slot config - bits 0 and 1 set for the first two slots */
-		slot_mask = 0xFFFFFFFF >> (32-channels);
+		slot_mask = 0xFFFFFFFF >> (32 - slots);
 
 		pr_debug("%s: tdm rx slot_width %d slots %d slot_mask %x\n",
 			__func__, slot_width, slots, slot_mask);
@@ -5281,7 +5281,7 @@ static int kona_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 		}
 	} else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		/*2 slot config - bits 0 and 1 set for the first two slots */
-		slot_mask = 0xFFFFFFFF >> (32-channels);
+		slot_mask = 0xFFFFFFFF >> (32 - slots);
 
 		pr_debug("%s: tdm tx slot_width %d slots %d slot_mask %x\n",
 			__func__, slot_width, slots, slot_mask);
@@ -7575,6 +7575,10 @@ static struct snd_soc_dai_link msm_pri_quin_mi2s_be_dai_links[] = {
 #if IS_ENABLED(CONFIG_SND_SOC_AK4331)
 		.codec_name = "ak4331.1-0010",
 		.codec_dai_name = "ak4331-AIF1",
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
+#elif IS_ENABLED(CONFIG_SND_SOC_AK4333)
+		.codec_name = "ak4333",
+		.codec_dai_name = "ak4333-aif",
 		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
 #else
 		.codec_name = "msm-stub-codec.1",

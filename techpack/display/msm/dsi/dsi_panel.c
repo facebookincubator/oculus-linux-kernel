@@ -850,6 +850,61 @@ error:
 	return rc;
 }
 
+static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
+			u32 bl_lvl)
+{
+	int rc = 0;
+	int i;
+	struct dsi_mode_info *timing;
+	struct mipi_dsi_device *dsi;
+	struct dsi_backlight_config *bl_config;
+	u32 vtotal, target_scanline, left_scanline, right_scanline;
+
+	u8 reg = 0x51; /* BLU adjust command */
+	u8 payload[2] = {0}; /* BLU adjust payload */
+	u8 page_select_reg = 0xFF;
+	u16 bl_reg_max_value = 0xFFF;
+
+	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
+		return -EINVAL;
+
+	dsi = &panel->mipi_device;
+	bl_config = &panel->bl_config;
+
+	timing = &panel->cur_mode->timing;
+	vtotal = (u32)DSI_V_TOTAL(timing);
+
+	/* Transform backlight level into illumination period in scanlines */
+	bl_lvl = (bl_lvl * bl_reg_max_value) / bl_config->bl_max_level;
+
+	/*
+	 * Calculate the last scanline to start on for each BLU without
+	 * overlapping the backlight illumination with the next refresh's
+	 * scanout to the active scanlines of the panel.
+	 */
+	target_scanline = vtotal - timing->v_front_porch + bl_config->jdi_scanline_max_offset;
+	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
+	left_scanline = right_scanline + timing->v_active / 2;
+
+	right_scanline = min(target_scanline, right_scanline);
+	if (right_scanline > vtotal)
+		right_scanline -= vtotal;
+	left_scanline = min(target_scanline, left_scanline);
+	if (left_scanline > vtotal)
+		left_scanline -= vtotal;
+
+	payload[0] = bl_lvl >> 8;
+	payload[1] = bl_lvl & 0xff;
+	rc = mipi_dsi_dcs_write(dsi, reg, payload, sizeof(payload));
+
+	bl_config->jdi_scanline_duration = bl_lvl;
+	bl_config->jdi_scanline_offset[0] = right_scanline;
+	bl_config->jdi_scanline_offset[1] = left_scanline;
+
+error:
+	return rc;
+}
+
 static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
 			u32 bl_lvl)
 {
@@ -996,13 +1051,15 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	 * while the PWM value is configured so the backlight finishes flashing before the internal vsync.
 	 */
 	const u32 internal_1h_us = 2; /* Internal (TFT) 1H time (2uS) */
+	const u32 internal_1h_error_tolerance = 97; /* Error tolerance of the internal display clock */
 	const u32 blu_on_time_duration_us_ref = 2565 * 90; /* BLU ON time at 90Hz, baseline hardcoded value */
 	const u32 tdel_us_ref = 1000 * 90; /* TDEL (delay from PWM rising edge to BLU on) reference at 90Hz = 1ms */
 	const u32 blu_off_to_internal_vsync_us = 100;
 	const u8 pwm_reg = 0xB9; /* PWM register */
 	const u8 fifo_reg = 0xEC; /* FIFO line register */
-	u32 vtotal, refresh_rate, fifo_time_us, frame_period_us, external_1h_ns, blu_on_time_duration_us, blu_internal_off_time_us;
-	u32 fifo_time_90_us, internal_vsync_us, tdel_us, fifo_line, pwm_us, pwm_line;
+	u32 vtotal, vactive, refresh_rate, fifo_time_us, frame_period_us, external_1h_ns;
+	u32 blu_on_time_duration_us, blu_internal_off_time_us;
+	u32 internal_vsync_us, tdel_us, fifo_line, pwm_us, pwm_line;
 	u32 blu_on, blu_off, blu_on_us, blu_off_us;
 	u8 payload[3];
 
@@ -1019,6 +1076,7 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	/* Current mode timings */
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
+	vactive = (u32)timing->v_active;
 	refresh_rate = panel->cur_mode->timing.refresh_rate;
 	frame_period_us = 1000000 / refresh_rate;
 	external_1h_ns = (frame_period_us * 1000) / vtotal; /* 2.773 uS */
@@ -1026,9 +1084,7 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	/* FIFO calculations */
 
 	/* FIFO time (VID_VS_DELAY) is the external frame period minus the internal frame period */
-	fifo_time_us = frame_period_us - (internal_1h_us * vtotal);
-	/* Scale linearly to obtain a reference value for 90 Hz */
-	fifo_time_90_us = (fifo_time_us * refresh_rate) / 90;
+	fifo_time_us =  ((external_1h_ns - internal_1h_us * internal_1h_error_tolerance * 1000 / 100) * vactive) / 1000;
 	/* Convert the FIFO time to 1H external lines */
 	fifo_line = fifo_time_us * 1000 / external_1h_ns;
 
@@ -1038,22 +1094,43 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	tdel_us = tdel_us_ref / refresh_rate;
 	/* BLU ON time is calculated taking a hardcoded ON time value @ 90Hz and scaling it linearly */
 	blu_on_time_duration_us = blu_on_time_duration_us_ref / refresh_rate;
-	/* Internal vsync */
-	internal_vsync_us = frame_period_us + fifo_time_90_us;
-	/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
-	blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
-	/* Calculate when the PWM signal should be sent to meet the BLU off time */
-	pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
-	/* Convert the PWM time to internal horizontal lines */
-	pwm_line = pwm_us / internal_1h_us;
+
+	/* For refresh rates >= 90Hz we dynamically shift the BLU ON pwm signal to start sooner to prevent leaking into
+	 * the next frame boundary. For refresh rates < 90Hz we start the backlight at the same time as 90Hz
+	 * since the LC has already settled and we can save latency by starting earlier rather than waiting
+	 * for later in the frame.
+	 */
+	if (refresh_rate >= 90)	{
+		/* Internal vsync: for refresh rates greater than 90Hz we calculate this to not go out of frame boundary */
+		internal_vsync_us = frame_period_us + fifo_time_us;
+
+		/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
+		blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
+		/* Calculate when the PWM signal should be sent to meet the BLU off time */
+		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
+		/* Convert the PWM time to internal horizontal lines */
+		pwm_line = pwm_us / internal_1h_us;
+	} else {
+		/* Internal vsync: for refresh rates lower than 90 we use the 90Hz frame period to reduce latency */
+		internal_vsync_us = 1000000/90 + fifo_time_us;
+
+		/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
+		blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
+
+		/* Calculate when the PWM signal should be sent to meet the 90Hz latency*/
+		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us_ref / 90 - tdel_us - fifo_time_us;
+		/* Convert the PWM time to internal horizontal lines */
+		pwm_line = pwm_us / internal_1h_us;
+	}
 
 	/* Calculate the BLU on/off times based on the external vsync */
-	blu_on_us = pwm_us + fifo_time_us;
+	blu_on_us = pwm_us + fifo_time_us + tdel_us;
 	blu_off_us = blu_on_us + blu_on_time_duration_us;
 	blu_on = blu_on_us * 1000 / external_1h_ns;
 	blu_off = blu_off_us * 1000 / external_1h_ns;
 
 	DSI_DEBUG("%u HZ FIFO %u PWM %u", refresh_rate, fifo_line, pwm_line);
+	DSI_DEBUG("%u HZ FIFO %ums PWM %ums VACTIVE %u", refresh_rate, fifo_time_us, pwm_us, vactive);
 
 	/* Queue the pwm settings for the new refresh rate. */
 	payload[0] = pwm_reg;
@@ -1077,6 +1154,23 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	return rc;
 }
 
+int dsi_panel_handle_update_backlight_local_dimming(struct dsi_panel *panel, u32 bl_lvl)
+{
+	int i;
+	int rc = 0;
+
+	for (i = 0; i < panel->bl_config.num_ld_devices; i++) {
+		rc = backlight_device_set_brightness(panel->bl_config.ld_dev[i], bl_lvl);
+		if (rc) {
+			DSI_ERR("[%s] error setting backlight brightnes for local dimming, rc=%d\n",
+					panel->name, rc);
+			return rc;
+		}
+	}
+	rc = dsi_panel_handle_dfps_pwm_fifo_local_dimming(panel, bl_lvl);
+	return rc;
+}
+
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
@@ -1096,13 +1190,16 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
 	case DSI_BACKLIGHT_LOCAL_DIMMING:
-		rc = dsi_panel_handle_dfps_pwm_fifo_local_dimming(panel, bl_lvl);
+		rc = dsi_panel_handle_update_backlight_local_dimming(panel, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_JDI:
 		rc = dsi_panel_jdi_update_backlight(panel, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_JDI_NVT:
 		rc = dsi_panel_jdi_nvt_update_backlight(panel, bl_lvl);
+		break;
+	case DSI_BACKLIGHT_NVT:
+		rc = dsi_panel_nvt_update_backlight(panel, bl_lvl);//TODO
 		break;
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_update_pwm_backlight(panel, bl_lvl);
@@ -1132,6 +1229,7 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
 	case DSI_BACKLIGHT_JDI_NVT:
+	case DSI_BACKLIGHT_NVT:
 	case DSI_BACKLIGHT_EXTERNAL:
 	case DSI_BACKLIGHT_PWM:
 	default:
@@ -1258,6 +1356,7 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
 	case DSI_BACKLIGHT_JDI_NVT:
+	case DSI_BACKLIGHT_NVT:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
@@ -2840,6 +2939,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_JDI;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi_nvt")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI_NVT;
+	} else if (!strcmp(bl_type, "bl_ctrl_nvt")) {
+		panel->bl_config.type = DSI_BACKLIGHT_NVT;
 	} else if (!strcmp(bl_type, "bl_ctrl_local_dimming")) {
 		panel->bl_config.type = DSI_BACKLIGHT_LOCAL_DIMMING;
 	} else {
@@ -2901,7 +3002,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	}
 
 	if (panel->bl_config.type == DSI_BACKLIGHT_JDI
-		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
+		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT
+		|| panel->bl_config.type == DSI_BACKLIGHT_NVT) {
 		rc = utils->read_u32(utils->data,
 			"qcom,mdss-dsi-jdi-default-duty-cycle", &val);
 		if (rc) {
@@ -5079,6 +5181,8 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 		dsi_panel_jdi_update_backlight(panel, 0);
 	else if (panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
 		dsi_panel_jdi_nvt_update_backlight(panel, 0);
+	else if (panel->bl_config.type == DSI_BACKLIGHT_NVT)
+		dsi_panel_nvt_update_backlight(panel, 0);
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_PRE_OFF);
 	if (rc) {

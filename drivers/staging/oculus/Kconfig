@@ -25,8 +25,18 @@ config BLU_FW
 	tristate "Support BLU FW Updates"
 	default n
 	depends on OCULUS
-	---help---
+	help
 	  Allow automatic/OTA FW updates for the backlight MCU.
+
+config CHARGING_THERMAL_CONTROLLER
+	tristate "Charging Thermal Controller Driver"
+	default n
+	depends on OCULUS
+	help
+		This driver votes on a device tree defined pmic votable when trip points
+		associated with a cooling device are passed. There are three states:
+		0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
+		these levels are also device tree defined.
 
 config DISPLAY_VIRTUAL_SENSOR
 	tristate "Display Virtual Sensor Driver"
@@ -55,11 +65,18 @@ config IIO_CHANNEL_SENSOR
 	  This driver implements a virtual sensor driver representing the iio channel
 	  value of a device.
 
+config INSTRUCTION_SAMPLER
+	tristate "Periodic instruction sampler"
+	depends on OCULUS && EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
+	help
+	  Provides support for periodic instruction sampling of processes
+	  running on the system.
+
 config MISCFIFO
 	tristate "miscfifo chardev driver"
 	default n
 	depends on OCULUS
-	---help---
+	help
 	  Like seqfile, this driver provides file operations to
 	  easily implement a chardev backed by a kfifo.
 
@@ -70,7 +87,7 @@ config MISCFIFO_SAMPLE
 	tristate "miscfifo chardev driver example"
 	default n
 	depends on OCULUS
-	---help---
+	help
 	  Example usage of miscfifo chardev driver
 
 config MOLOKINI
@@ -86,7 +103,7 @@ config MOLOKINI
 config OCULUS
 	bool "Oculus feature support"
 	default y
-	---help---
+	help
 	  Enable support for Oculus drivers and features
 
 config OCULUS_HOLLYWOOD
@@ -94,15 +111,18 @@ config OCULUS_HOLLYWOOD
 	default n
 	depends on OCULUS
 	select ARCH_KONA
-	---help---
+	help
 	  Enable support for the hollywood device
 
-config INSTRUCTION_SAMPLER
-	tristate "Periodic instruction sampler"
-	depends on OCULUS && EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
+config QCOM_DT_OUTPUT_DISABLE
+	bool "Disable building of device trees for Qualcomm's test platforms"
+	default y
+	depends on OCULUS
 	help
-	  Provides support for periodic instruction sampling of processes
-	  running on the system.
+	  Building Qualcomm kernels with default flags causes serveral unrelated
+	  device-trees to be built by default. Don't build them when
+	  QCOM_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
+	  platforms.
 
 config RT600_CTRL
 	tristate "Oculus RT600 control driver"
@@ -113,15 +133,6 @@ config RT600_CTRL
 		for flashing and reset. RT600 state needs to be modified via
 		sysfs to enable testing of different state transitions and also
 		to ensure RT600 is in the correct state for flashing.
-
-config TOP_PANEL_SENSOR
-	tristate "Top Panel Virtual Sensor Driver"
-	default n
-	depends on OCULUS
-	select VIRTUAL_SENSOR_UTILS
-	help
-	  This driver implements a virtual sensor driver representing the top
-	  panel skin temperature of a device.
 
 config SENSORS_PWM_TACH_FAN
 	tristate "PWM&TACH fan"
@@ -150,21 +161,30 @@ config SYNCBOSS
 	tristate "Oculus SyncBoss Driver"
 	depends on OCULUS && MISCFIFO && SPI
 	default y
-	---help---
+	help
 	  Oculus SyncBoss Driver
 
 config SYNCBOSS_CAMERA_CONTROL
 	bool "Support Syncboss camera control"
 	depends on OCULUS && SYNCBOSS
 	default y
-	---help---
+	help
 	  Allow Syncboss driver to control camera hardware
+
+config TOP_PANEL_SENSOR
+	tristate "Top Panel Virtual Sensor Driver"
+	default n
+	depends on OCULUS
+	select VIRTUAL_SENSOR_UTILS
+	help
+	  This driver implements a virtual sensor driver representing the top
+	  panel skin temperature of a device.
 
 config VIRTUAL_SENSOR_UTILS
 	tristate "Virtual Sensor Utilities"
 	default n
 	depends on OCULUS
-	---help---
+	help
 	  This driver implements virtual thermal sensor helper functionality.
 
 source "drivers/staging/oculus/internal/Kconfig"

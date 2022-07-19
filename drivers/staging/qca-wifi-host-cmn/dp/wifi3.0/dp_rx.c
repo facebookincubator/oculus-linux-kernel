@@ -1213,12 +1213,12 @@ static inline bool dp_rx_adjust_nbuf_len(qdf_nbuf_t nbuf, uint16_t *mpdu_len)
 	if (*mpdu_len > (RX_DATA_BUFFER_SIZE - RX_PKT_TLVS_LEN)) {
 		qdf_nbuf_set_pktlen(nbuf, RX_DATA_BUFFER_SIZE);
 		last_nbuf = false;
+		*mpdu_len -= (RX_DATA_BUFFER_SIZE - RX_PKT_TLVS_LEN);
 	} else {
 		qdf_nbuf_set_pktlen(nbuf, (*mpdu_len + RX_PKT_TLVS_LEN));
 		last_nbuf = true;
+		*mpdu_len = 0;
 	}
-
-	*mpdu_len -= (RX_DATA_BUFFER_SIZE - RX_PKT_TLVS_LEN);
 
 	return last_nbuf;
 }

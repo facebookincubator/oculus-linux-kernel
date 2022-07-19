@@ -1,0 +1,62 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*******************************************************************************
+ * @file arfirmware.h
+ *
+ * @brief Interface definiton for linux kernel arfirmware character devices.
+ *
+ * @details
+ *
+ *******************************************************************************/
+
+#pragma once
+
+#include <linux/arfirmware_types.h>
+
+#ifndef __KERNEL__
+#include <sys/ioctl.h>
+#else
+#include <linux/ioctl.h>
+#endif
+
+/**
+ * Structure used to pass queue creation parameters
+ */
+/// A structure describing the queue being created
+struct __packed ar_queue_create_req {
+	/// Direction that this queue transfers data in.
+	enum ar_queue_direction queue_direction;
+	/// The buffer size of queue elements
+	uint32_t element_size;
+	/// The count of elements in the queue
+	uint16_t depth;
+	/// The hlos id of the queue for firmware IPC
+	ar_endpoint_id_t hlos_endpoint_id;
+	/// The fw id of the queue for firmware IPC
+	ar_endpoint_id_t fw_endpoint_id;
+	/// Where the queue resides.
+	struct ar_mem_segment queue_segment;
+};
+
+/// Structure to store device information
+struct __packed ar_device_information_req {
+	uint16_t transport_header_size;
+	uint16_t inline_data_offset;
+	bool require_contiguous_memory_for_queues;
+};
+
+struct __packed ar_region_register_req {
+	struct ar_mem_region region;
+};
+
+struct __packed ar_pend_payload_req {
+	struct ar_payload payload;
+};
+
+/// Magic number for ARFW device ioctls
+#define ARFW_CHDEV_MAGIC 0xc5
+#define ARFW_QUEUE_CREATE _IOR(ARFW_CHDEV_MAGIC, 0, struct ar_queue_create_req*)
+#define ARFW_REGISTER_REGION _IOR(ARFW_CHDEV_MAGIC, 1, struct ar_region_register_req*)
+#define ARFW_UNREGISTER_REGION _IO(ARFW_CHDEV_MAGIC, 2, long)
+#define ARFW_PEND_PAYLOAD _IOR(ARFW_CHDEV_MAGIC, 3, struct ar_pend_payload_req*)
+#define ARFW_CONSUMED_INDEX _IO(ARFW_CHDEV_MAGIC, 4, long)
+#define ARFW_DEV_INFO _IOW(ARFW_CHDEV_MAGIC, 5, struct ar_device_information_req*)

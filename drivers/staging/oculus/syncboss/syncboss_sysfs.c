@@ -318,30 +318,6 @@ static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 	return status;
 }
 
-static ssize_t power_show(struct device *dev,
-			  struct device_attribute *attr,
-			  char *buf)
-{
-	int status = 0;
-	int retval = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
-		return status;
-	}
-
-	retval = scnprintf(buf, PAGE_SIZE, "%u\n", devdata->power_state);
-
-	mutex_unlock(&devdata->state_mutex);
-	return retval;
-}
-
-
 static ssize_t stats_show(struct device *dev,
 			  struct device_attribute *attr,
 			  char *buf)
@@ -542,14 +518,6 @@ static ssize_t te_timestamp_show(struct device *dev,
 		atomic64_read(&devdata->last_te_timestamp_ns));
 }
 
-static ssize_t power_store(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count)
-{
-	dev_err(dev, "Power file writing deprecated.  This is a no-op");
-	return 0;
-}
-
 static ssize_t num_cameras_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -655,7 +623,6 @@ static DEVICE_ATTR_RW(cpu_affinity);
 static DEVICE_ATTR_RW(stats);
 static DEVICE_ATTR_RW(poll_prio);
 static DEVICE_ATTR_RO(next_avail_seq_num);
-static DEVICE_ATTR_RW(power);
 static DEVICE_ATTR_RO(te_timestamp);
 static DEVICE_ATTR_RO(num_cameras);
 static DEVICE_ATTR_RW(enable_fastpath);
@@ -670,7 +637,6 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_stats.attr,
 	&dev_attr_poll_prio.attr,
 	&dev_attr_next_avail_seq_num.attr,
-	&dev_attr_power.attr,
 	&dev_attr_te_timestamp.attr,
 	&dev_attr_num_cameras.attr,
 	&dev_attr_enable_fastpath.attr,
