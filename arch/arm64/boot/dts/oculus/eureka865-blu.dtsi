@@ -34,3 +34,12 @@
 		};
 	};
 };
+
+&vendor {
+	blu: oculus,blu {
+		status = "ok";
+		compatible = "oculus,blu";
+		boot-gpios = <&tlmm 124 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 123 GPIO_ACTIVE_HIGH>;
+	};
+};

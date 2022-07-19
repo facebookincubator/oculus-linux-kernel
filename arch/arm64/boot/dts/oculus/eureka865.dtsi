@@ -26,6 +26,10 @@
 	hsuart14 = "/soc/qcom,qup_uart@994000";
 };
 
+&mdss_mdp {
+	qcom,swap-mixers;
+};
+
 &pm8150_l16 {
 	status = "disabled";
 };

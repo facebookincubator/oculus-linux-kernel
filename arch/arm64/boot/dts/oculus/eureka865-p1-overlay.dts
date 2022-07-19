@@ -1,0 +1,284 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "eureka865.dtsi"
+#include "eureka865-dev.dtsi"
+#include "eureka865-panel-tps65132.dtsi"
+
+/ {
+	model = "Eureka865 (P1)";
+	compatible = "qcom,kona";
+	qcom,board-id = <68 147>;
+};
+
+&ak4331 {
+	status = "disabled";
+};
+
+&ak4331_intr_default {
+	status = "disabled";
+};
+
+&ak4331_pdn_default {
+	status = "disabled";
+};
+
+&as5510 {
+	power-supply = <&pm8150a_l7>;
+};
+
+&cam_cci0 {
+	qcom,cam-sensor2 {
+		/*
+		 * QCOM CSI PHY = 4
+		 */
+		csiphy-sd-index = <4>;
+	};
+
+	qcom,cam-sensor3 {
+		/*
+		 * QCOM CSI PHY = 5
+		 */
+		csiphy-sd-index = <5>;
+	};
+
+	qcom,cam-sensor5 {
+		/*
+		 * QCOM CSI PHY = 1
+		 */
+		csiphy-sd-index = <1>;
+	};
+};
+
+&cnss_wlan_en_active {
+	mux {
+		pins = "gpio26";
+	};
+
+	config {
+		pins = "gpio26";
+	};
+};
+
+&cnss_wlan_en_sleep {
+	mux {
+		pins = "gpio26";
+	};
+
+	config {
+		pins = "gpio26";
+	};
+};
+
+/delete-node/ &bq27z561;
+
+&disp_vsp {
+	enable = <&tlmm 85 0>;
+};
+
+&disp_vsn {
+	enable = <&tlmm 86 0>;
+};
+
+&wlan_hsp {
+	wlan-en-gpio = <&tlmm 26 0>;
+};
+
+&bluetooth {
+	qca,bt-sw-ctrl-gpio = <&tlmm 87 0>; /* SW_CTRL */
+	qca,wl-reset-gpio = <&tlmm 26 0>; /* WL_EN */
+};
+
+&pm8150a_l5 {
+	qcom,init-voltage = <1800000>;
+};
+
+&pm8150a_l7 {
+	qcom,init-voltage = <3000000>;
+	status = "ok";
+};
+
+&pm8150b_charger {
+	qcom,sec-charger-config = <0>;
+};
+
+&qm35_uart_active {
+	mux {
+		pins = "gpio14", "gpio15";
+		function = "qup5";
+	};
+	config {
+		pins = "gpio14", "gpio15";
+	};
+};
+
+&qm35_uart_sleep_tx {
+	mux {
+		pins = "gpio14";
+	};
+	config {
+		pins = "gpio14";
+	};
+};
+
+&qm35_uart_sleep_rx {
+	mux {
+		pins = "gpio15";
+	};
+	config {
+		pins = "gpio15";
+	};
+};
+
+&qupv3_se0_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,swd-clk = <&tlmm 78 0>;
+			oculus,swd-io = <&tlmm 77 0>;
+		};
+	};
+};
+
+&qupv3_se3_2uart {
+	status = "ok";
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+};
+
+&qupv3_se5_2uart {
+	status = "okay";
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&qm35_uart_active>;
+	pinctrl-1 = <&qm35_uart_sleep_tx &qm35_uart_sleep_rx>;
+};
+
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	bq27z561: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		status = "okay";
+	};
+};
+
+&qupv3_se9_i2c {
+	status = "ok";
+
+	ak4333: ak4333@10 {
+		status = "ok";
+		compatible = "akm,ak4333";
+		reg = <0x10>;
+
+		ak4333,avdd-core-supply = <&pm8150_l7>;
+		ak4333,avdd-voltage = <1800000 1800000>;
+		ak4333,avdd-current = <300000>;
+		ak4333,pdn-gpio = <&tlmm 102 0>;
+		ak4333,headset-det-gpio = <&tlmm 113 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ak4333_intr_default &ak4333_pdn_default>;
+	};
+};
+
+&qupv3_se14_i2c {
+	status = "disabled";
+};
+
+&safetyboss_float_swd {
+	mux {
+		pins = "gpio83", "gpio84";
+	};
+	config {
+		pins = "gpio83", "gpio84";
+	};
+};
+
+&smb1355 {
+	status = "disabled";
+};
+
+&smb1355_charger {
+	status = "disabled";
+};
+
+&soc {
+	oculus,safetyboss-swd {
+		pinctrl-0 = <&safetyboss_float_swd>;
+		oculus,swd-clk = <&tlmm 84 0>;
+		oculus,swd-io  = <&tlmm 83 0>;
+	};
+};
+
+&syncboss_float_swd {
+	mux {
+		pins = "gpio77", "gpio78";
+	};
+	config {
+		pins = "gpio77", "gpio78";
+	};
+};
+
+&syncboss_uart_active {
+	mux {
+		pins = "gpio121", "gpio122";
+		function = "qup3";
+	};
+	config {
+		pins = "gpio121", "gpio122";
+	};
+};
+
+&syncboss_uart_sleep_tx {
+	mux {
+		pins = "gpio121";
+	};
+	config {
+		pins = "gpio121";
+	};
+};
+
+&syncboss_uart_sleep_rx {
+	mux {
+		pins = "gpio122";
+	};
+	config {
+		pins = "gpio122";
+	};
+};
+
+&tlmm {
+	ak4333_intr {
+		ak4333_intr_default: ak4333_intr_default {
+			 mux {
+				pins = "gpio113";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio113";
+				drive-strength = <2>; /* 2 mA */
+				bias-pull-up; /* pull up */
+				input-enable;
+			};
+		};
+	};
+
+	ak4333_pdn {
+		ak4333_pdn_default: ak4333_pdn_default {
+			 mux {
+				pins = "gpio102";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio102";
+				drive-strength = <16>; /* 16 mA */
+				bias-disable; /* no pull */
+				output-low;
+			};
+		};
+	};
+};

@@ -12,3 +12,21 @@
 	qcom,board-id = <68 146>;
 };
 
+&pm8150a_l4 {
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	regulator-always-on;
+	status = "ok";
+};
+
+&qupv3_se11_spi {
+	spi_flash@0 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+		mode = <0>;
+		status = "ok";
+	};
+};
+

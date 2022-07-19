@@ -419,9 +419,9 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 	if (!packet || packet->header.request_id == 1) {
 		buffer_set = cam_fp_queue_get_buffer_set(&ctx->fp_queue);
 		if (!buffer_set) {
-			CAM_ERR(CAM_ISP, "Null Ptr! packet %p requestId %lld",
+			CAM_ERR(CAM_ISP, "Null Ptr! packet: %p, requestId %lld... ctx: id %d, dev_hdl %d, hw_acquired %d",
 				 packet, (packet == NULL) ?
-				 -1 : packet->header.request_id);
+				 -1 : packet->header.request_id, ctx->ctx_id, ctx->dev_hdl, ctx->hw_acquired);
 			return -EINVAL;
 		}
 		req_isp->out_mask = buffer_set->out_buffer_set_mask;
@@ -599,7 +599,8 @@ static int cam_isp_fpc_apply_req(struct cam_isp_fastpath_context *ctx)
 
 	mutex_lock(&ctx->mutex_list);
 	if (list_empty(&ctx->pending_req_list)) {
-		CAM_ERR(CAM_ISP, "No available request to apply");
+		CAM_ERR(CAM_ISP, "No available request to apply. ctx: id %d, dev_hdl %d, hw_acquired %d",
+			ctx->ctx_id, ctx->dev_hdl, ctx->hw_acquired);
 		rc = -EFAULT;
 		goto end;
 	}
@@ -774,7 +775,8 @@ static struct cam_isp_fastpath_ctx_req *cam_isp_fpc_get_latest_active_request(
 	}
 
 	if (list_empty(&ctx->active_req_list)) {
-		CAM_ERR(CAM_ISP, "Active list is empty!");
+		CAM_ERR(CAM_ISP, "Active list is empty! ctx: id %d, dev_hdl %d, hw_acquired %d",
+			ctx->ctx_id, ctx->dev_hdl, ctx->hw_acquired);
 		return NULL;
 	}
 	req_isp = list_first_entry(&ctx->active_req_list,

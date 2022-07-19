@@ -1,0 +1,237 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "seacliff-non-pop.dtsi"
+#include "seacliff-adc-usbc.dtsi"
+
+&cm7120_snd {
+	qcom,model = "kona-cm7120-tdm_evt2_doe2-snd-card";
+};
+
+&dsi_dual_boe_90hz_dsc {
+	qcom,platform-en-gpio = <>;
+};
+
+&dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@0 {
+		reg = <0>;
+		qcom,supply-name = "vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <80>;
+		qcom,supply-pre-on-sleep = <20>;
+	};
+
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "right_panel_bias";
+		qcom,supply-min-voltage = <6000000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <220000>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "left_panel_bias";
+		qcom,supply-min-voltage = <6000000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <220000>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "vsp";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+		qcom,supply-pre-off-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "vsn";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "blu-mcu";
+		qcom,supply-min-voltage = <3120000>;
+		qcom,supply-max-voltage = <3120000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@6 {
+		reg = <6>;
+		qcom,supply-name = "blu-spi";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+};
+
+&kona_mtp_batterydata {
+	qcom,5133886_facebook_sealiff_5348mah_averaged_masterslave_apr23rd2021 {
+		qcom,batt-id-kohm = <300>;
+		qcom,rblt-missing-range = <138400 171800>;
+		qcom,rblt-ok-range = <127300 138400>;
+		qcom,rblt-warn-range = <65000 127300>;
+		qcom,rblt-crit-range = <0 65000>;
+	};
+};
+
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	aw37504_right: aw37504@3e {
+		compatible = "aw,aw37504";
+		reg = <0x3e>;
+		status = "ok";
+
+		regulator-name = "aw37504-right-regulator";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-boot-on;
+	};
+};
+
+&qupv3_se11_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	aw37504_left: aw37504@3e {
+		compatible = "aw,aw37504";
+		reg = <0x3e>;
+		status = "ok";
+
+		regulator-name = "aw37504-left-regulator";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-boot-on;
+	};
+};
+
+&sde_dsi {
+	vsp-supply = <&display_panel_vsp_en>;
+	vsn-supply = <&display_panel_vsn_en>;
+
+	right_panel_bias-supply = <&aw37504_right>;
+	left_panel_bias-supply = <&aw37504_left>;
+};
+
+&soc {
+	display_panel_vsp_en: vsp_gpio_regulator@2 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_vsp_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 23 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_vsp_en_default>;
+	};
+
+	display_panel_vsn_en: vsn_gpio_regulator@3 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_vsn_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 22 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_vsn_en_default>;
+	};
+
+	gpio_capacitor {
+		compatible = "gpio-capacitor";
+		pinctrl-names = "active", "suspend";
+		pinctrl-0 = <&gpio_capacitor_active>;
+		pinctrl-1 = <&gpio_capacitor_suspend>;
+	};
+};
+
+&tdm_pri_rx {
+	qcom,msm-cpudai-tdm-data-delay = <1>;
+};
+
+&tdm_pri_tx {
+	qcom,msm-cpudai-tdm-data-delay = <1>;
+};
+
+&tlmm {
+	display_panel_vsp_en_default: display_panel_vsp_en_default {
+		mux {
+			pins = "gpio23";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio23";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	display_panel_vsn_en_default: display_panel_vsn_en_default {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	gpio_capacitor_active: gpio_capacitor_active {
+		mux {
+			pins = "gpio52";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio52";
+			drive-strength = <2>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+
+	gpio_capacitor_suspend: gpio_capacitor_suspend {
+		mux {
+			pins = "gpio52";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio52";
+			drive-strength = <2>;
+			output-low;
+			bias-pull-down;
+		};
+	};
+};
+
+&ufshc_mem {
+	qcom,vddp-ref-clk-min-uV = <1200000>;
+	qcom,vddp-ref-clk-max-uV = <1240000>;
+};

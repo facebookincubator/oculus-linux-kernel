@@ -106,11 +106,6 @@
 				hysteresis = <1000>;
 				type = "passive";
 			};
-			batt_virt_trip2: batt-virt-trip2 {
-				temperature = <64000>;
-				hysteresis = <1000>;
-				type = "passive";
-			};
 		};
 	};
 
@@ -124,6 +119,31 @@
 			active-config0 {
 				temperature = <125000>;
 				hysteresis = <1000>;
+				type = "passive";
+			};
+			active-config1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	pm8150_tz-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pm8150_tz>;
+		wake-capable-sensor;
+		trips {
+			pm8150_tz_usr_trip0: trip0 {
+				temperature = <85000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			pm8150_tz_usr_trip1: trip1 {
+				temperature = <120000>;
+				hysteresis = <5000>;
 				type = "passive";
 			};
 		};
@@ -224,6 +244,11 @@
 			};
 			virt_top_trip2: virt-top-trip2 {
 				temperature = <115000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_top_trip3: virt-top-trip3 {
+				temperature = <125000>;
 				hysteresis = <1000>;
 				type = "passive";
 			};

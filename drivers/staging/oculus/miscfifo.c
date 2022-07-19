@@ -194,6 +194,25 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 }
 EXPORT_SYMBOL(miscfifo_send_buf);
 
+void miscfifo_clear(struct miscfifo *mf)
+{
+	struct miscfifo_client *client;
+
+	down_read(&mf->clients.rw_lock);
+	list_for_each_entry(client, &mf->clients.list, node) {
+		mutex_lock(&client->consumer_lock);
+		mutex_lock(&client->producer_lock);
+
+		kfifo_reset(&client->fifo);
+		client->logged_fifo_full = false;
+
+		mutex_unlock(&client->producer_lock);
+		mutex_unlock(&client->consumer_lock);
+	}
+	up_read(&mf->clients.rw_lock);
+}
+EXPORT_SYMBOL(miscfifo_clear);
+
 static int miscfifo_register(struct device *dev, struct miscfifo *mf)
 {
 	/* these min sizes are required to reliably put (max length) data

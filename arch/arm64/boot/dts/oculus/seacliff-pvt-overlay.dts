@@ -3,11 +3,11 @@
 /dts-v1/;
 /plugin/;
 
-#include "seacliff-evt.dtsi"
+#include "seacliff-dvt.dtsi"
 
 / {
 	model = "Seacliff (PVT)";
 	compatible = "qcom,kona";
-	qcom,board-id = <66 74>;
+	qcom,board-id = <66 75>;
 };
 

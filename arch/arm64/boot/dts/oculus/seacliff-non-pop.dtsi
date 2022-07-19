@@ -753,13 +753,20 @@
 	pogo-usr {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
-		thermal-governor = "user_space";
+		thermal-governor = "step_wise";
 		thermal-sensors = <&pm8150b_adc_tm ADC_GPIO2_PU2>;
+		wake-capable-sensor;
 		trips {
-			active-config0 {
-				temperature = <125000>;
+			pogo_trip_suspend_charging: pogo_trip_suspend_charging {
+				temperature = <65000>;
 				hysteresis = <1000>;
 				type = "passive";
+			};
+		};
+		cooling-maps {
+			pogo_map_suspend_charging: pogo_map_suspend_charging {
+				trip = <&pogo_trip_suspend_charging>;
+				cooling-device = <&charging_thermal_controller_pogo 2 2>;
 			};
 		};
 	};
@@ -923,6 +930,25 @@
 		svid-usbpd = <0x2ec60000>;
 		charger-usbpd = <&pm8150b_pdphy>;
 		broadcast-period-min = <15>;
+	};
+
+	charging_thermal_controller_pogo: oculus,charging_thermal_controller_pogo {
+		status = "ok";
+		compatible = "oculus,charging-thermal-controller";
+		votable = "DC_SUSPEND";
+		suspend-vote = <0>;
+		cdev-name = "pogo-cdev";
+		#cooling-cells = <2>;
+	};
+
+	charging_thermal_controller_usbc: oculus,charging_thermal_controller_usbc {
+		status = "ok";
+		compatible = "oculus,charging-thermal-controller";
+		votable = "USB_ICL";
+		reduce-vote = <1604000>;
+		suspend-vote = <0>;
+		cdev-name = "usbc-cdev";
+		#cooling-cells = <2>;
 	};
 
 	fpga_aggregator: oculus,fpga {

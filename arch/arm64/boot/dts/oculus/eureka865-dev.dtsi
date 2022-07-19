@@ -107,7 +107,7 @@
 };
 
 &qupv3_se10_i2c {
-	as5510-driver {
+	as5510: as5510-driver {
 		reg = <0x56>;
 		compatible = "ams,as5510";
 		power-supply = <&pm8150a_l11>;

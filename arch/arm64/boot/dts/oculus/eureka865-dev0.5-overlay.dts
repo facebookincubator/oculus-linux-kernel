@@ -5,6 +5,7 @@
 
 #include "eureka865.dtsi"
 #include "eureka865-dev.dtsi"
+#include "eureka865-panel-tps65132.dtsi"
 
 / {
 	model = "Eureka865 (Dev0.5)";

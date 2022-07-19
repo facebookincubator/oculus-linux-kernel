@@ -403,6 +403,7 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 	struct list_head *next;
 	struct list_head *pos;
 
+	mutex_lock(&ctx->ctx_lock);
 	mutex_lock(&ctx->packet_lock);
 
 	/* Add list for each from pending to free queue */
@@ -415,6 +416,7 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 	}
 
 	mutex_unlock(&ctx->packet_lock);
+	mutex_unlock(&ctx->ctx_lock);
 
 	return 0;
 }
@@ -849,7 +851,7 @@ int cam_icp_fastpath_stop_dev(void *hnd, struct cam_start_stop_dev_cmd *cmd)
 	rc = ctx->hw_intf.hw_stop(ctx->hw_intf.hw_mgr_priv, &stop);
 	if (rc) {
 		/* HW failure. user need to clean up the resource */
-		CAM_ERR(CAM_ICP, "Start HW failed");
+		CAM_ERR(CAM_ICP, "Stop HW failed");
 		return rc;
 	}
 
