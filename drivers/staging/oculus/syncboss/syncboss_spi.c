@@ -85,15 +85,13 @@ static const struct of_device_id oculus_swd_match_table[] = {
 
 #define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
 #define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
-#define SYNCBOSS_DEFAULT_TRANSACTION_LENGTH 128
 #define SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE 8000000
 #define SYNCBOSS_SCHEDULING_SLOP_US 5
 /*
- * The max amount of time we give SyncBoss to go into a sleep state after
- * issuing it a command to do so.
+ * The max amount of time we give SyncBoss to wake or enter its sleep state.
  */
-#define SYNCBOSS_SLEEP_TIMEOUT_MS 2000
-#define SYNCBOSS_SLEEP_TIMEOUT_WITH_GRACE_MS 5000
+#define SYNCBOSS_SLEEP_WAKE_TIMEOUT_MS 2000
+#define SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS 5000
 
 /* The amount of time we should hold the reset line low when doing a reset. */
 #define SYNCBOSS_RESET_TIME_MS 5
@@ -150,14 +148,6 @@ static const struct of_device_id oculus_swd_match_table[] = {
  * Maximum pending messages enqueued by syncboss_write()
  */
 #define MAX_MSG_QUEUE_ITEMS 100
-
-/*
- * Power states the SyncBoss MCU can be in.  Note that these were
- * taken from the firmware's syncboss_registers.h and must match those
- * values.
- */
-#define SYNCBOSS_POWER_STATE_RUNNING 0
-#define SYNCBOSS_POWER_STATE_OFF 2
 
 /* The version of the header the driver is currently using */
 #define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION SYNCBOSS_DRIVER_HEADER_VERSION_V1
@@ -429,11 +419,6 @@ static int signal_powerstate_event(struct syncboss_dev_data *devdata, int evt)
 		.driver_message_type = SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG,
 		.driver_message_data = evt,
 	};
-
-	if (evt == SYNCBOSS_PROX_EVENT_SYSTEM_UP)
-		devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
-	else if (evt == SYNCBOSS_PROX_EVENT_SYSTEM_DOWN)
-		devdata->power_state = SYNCBOSS_POWER_STATE_OFF;
 
 	if ((evt == SYNCBOSS_PROX_EVENT_SYSTEM_UP) &&
 	    devdata->eat_next_system_up_event) {
@@ -1462,7 +1447,7 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 					bool awake)
 {
 	const s64 starttime = ktime_get_ms();
-	const s64 deadline = starttime + SYNCBOSS_SLEEP_TIMEOUT_WITH_GRACE_MS;
+	const s64 deadline = starttime + SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS;
 	s64 now;
 	s64 elapsed;
 	const char *awakestr = awake ? "awake" : "asleep";
@@ -1472,7 +1457,7 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	for (now = starttime; now < deadline; now = ktime_get_ms()) {
 		if (is_mcu_awake(devdata) == awake) {
 			elapsed = ktime_get_ms() - starttime;
-			if (elapsed > SYNCBOSS_SLEEP_TIMEOUT_MS) {
+			if (elapsed > SYNCBOSS_SLEEP_WAKE_TIMEOUT_MS) {
 				WARN(true, "SyncBoss %s took too long (after %lldms)",
 				     awakestr, elapsed);
 			} else {
@@ -1483,9 +1468,6 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 			}
 
 			*stat = elapsed;
-			devdata->power_state =
-				awake ? SYNCBOSS_POWER_STATE_RUNNING :
-				SYNCBOSS_POWER_STATE_OFF;
 			return 0;
 		}
 		msleep(20);
@@ -1647,6 +1629,13 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 			goto error;
 	}
 
+	if (devdata->next_stream_settings.transaction_length == 0) {
+		dev_err(&devdata->spi->dev,
+				"Transaction length has not yet been set");
+		status = -EINVAL;
+		goto error;
+	}
+
 	devdata->transaction_length = devdata->next_stream_settings.transaction_length;
 	devdata->spi_max_clk_rate = devdata->next_stream_settings.spi_max_clk_rate;
 	status = create_default_smsg_locked(devdata);
@@ -1734,7 +1723,7 @@ static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
 	if (!is_asleep) {
 		dev_err(&devdata->spi->dev,
 			"SyncBoss failed to sleep within %dms. Forcing reset on next open.",
-			SYNCBOSS_SLEEP_TIMEOUT_WITH_GRACE_MS);
+			SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS);
 			devdata->force_reset_on_open = true;
 	}
 }
@@ -1798,6 +1787,14 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	mutex_unlock(&devdata->msg_queue_lock);
 
 	destroy_default_smsg_locked(devdata);
+
+	/*
+	 * Clear any unread fifo events that userspace has not yet read, so these
+	 * don't get confused for messages from the new streaming session once
+	 * streaming is resumed.
+	 */
+	miscfifo_clear(&devdata->stream_fifo);
+	miscfifo_clear(&devdata->control_fifo);
 
 	if (devdata->rf_amp) {
 		status = regulator_disable(devdata->rf_amp);
@@ -1936,7 +1933,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
 	struct device_node *node = spi->dev.of_node;
-	u32 temp_transaction_length = 0;
 
 	devdata->spi = spi;
 
@@ -1945,11 +1941,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->next_stream_settings.transaction_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
 	devdata->next_stream_settings.min_time_between_transactions_ns =
 		SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
-	if (!of_property_read_u32(node, "oculus,transaction-length", &temp_transaction_length) &&
-	    (temp_transaction_length <= SYNCBOSS_MAX_TRANSACTION_LENGTH))
-		devdata->next_stream_settings.transaction_length = (u16)temp_transaction_length;
-	else
-		devdata->next_stream_settings.transaction_length = SYNCBOSS_DEFAULT_TRANSACTION_LENGTH;
 	devdata->next_stream_settings.spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
 	devdata->transaction_ctr = 0;
 	devdata->poll_prio = SYNCBOSS_DEFAULT_POLL_PRIO;
@@ -1965,6 +1956,11 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	cpumask_setall(&devdata->cpu_affinity);
 	dev_info(&devdata->spi->dev, "Initial SPI thread cpu affinity: %*pb\n",
 		cpumask_pr_args(&devdata->cpu_affinity));
+
+	init_completion(&devdata->pm_resume_completion);
+	complete_all(&devdata->pm_resume_completion);
+
+	devdata->syncboss_pm_workqueue = create_singlethread_workqueue("syncboss_pm_workqueue");
 
 	devdata->gpio_reset = of_get_named_gpio(node,
 			"oculus,syncboss-reset", 0);
@@ -2175,8 +2171,6 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		goto error_after_of_platform_populate;
 
-	devdata->power_state = SYNCBOSS_POWER_STATE_RUNNING;
-
 	/* Init interrupts */
 	if (devdata->gpio_wakeup < 0) {
 		dev_err(dev, "Missing 'oculus,syncboss-wakeup' GPIO");
@@ -2238,6 +2232,7 @@ error_after_devdata_init:
 	}
 	spi->master->prepare_transfer_hardware = devdata->spi_prepare_ops.prepare_transfer_hardware;
 	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
+	destroy_workqueue(devdata->syncboss_pm_workqueue);
 error:
 	return status;
 }
@@ -2247,6 +2242,9 @@ static int syncboss_remove(struct spi_device *spi)
 	struct syncboss_dev_data *devdata = NULL;
 
 	devdata = (struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
+
+	flush_workqueue(devdata->syncboss_pm_workqueue);
+	destroy_workqueue(devdata->syncboss_pm_workqueue);
 
 	of_platform_depopulate(&spi->dev);
 	syncboss_deinit_sysfs_attrs(devdata);
@@ -2288,10 +2286,27 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
 }
 
 #ifdef CONFIG_PM
+struct syncboss_resume_work_data {
+	struct work_struct work;
+	struct syncboss_dev_data *devdata;
+};
+
 static int syncboss_suspend(struct device *dev)
 {
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	if (!completion_done(&devdata->pm_resume_completion)) {
+		int ret;
+
+		dev_warn(dev, "Trying to suspend before previous syncboss resume has completed. Waiting for that to finish.\n");
+		ret = wait_for_completion_timeout(&devdata->pm_resume_completion,
+			msecs_to_jiffies(SYNCBOSS_SLEEP_WAKE_TIMEOUT_MS));
+		if (ret <= 0) {
+			dev_err(dev, "Aborting suspend due unexpectedly-long in-progress resume.\n");
+			return -EBUSY;
+		}
+	}
 
 	if (!mutex_trylock(&devdata->state_mutex)) {
 		dev_info(dev, "Aborting suspend due to in-progress syncboss state change.\n");
@@ -2327,22 +2342,53 @@ static int syncboss_suspend(struct device *dev)
 	return 0;
 }
 
-static int syncboss_resume(struct device *dev)
+static void do_syncboss_resume_work(struct work_struct *work)
 {
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-	int status = 0;
+	struct syncboss_resume_work_data *wd = container_of(work, struct syncboss_resume_work_data, work);
+	struct syncboss_dev_data *devdata = wd->devdata;
+	struct device *dev = &devdata->spi->dev;
+	int status;
 
-	mutex_lock(&devdata->state_mutex);
+	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 	if (devdata->streaming_client_count > 0) {
 		dev_info(dev, "Resuming streaming after suspend");
 		status = start_streaming_locked(devdata);
 		if (status)
 			dev_err(dev, "%s: failed to resume streaming (%d)", __func__, status);
 	}
+
+	// Release mutex acquired by syncboss_resume()
 	mutex_unlock(&devdata->state_mutex);
-	return status;
+
+	complete_all(&devdata->pm_resume_completion);
+
+	devm_kfree(dev, wd);
 }
+
+static int syncboss_resume(struct device *dev)
+{
+	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)dev_get_drvdata(dev);
+	struct syncboss_resume_work_data *wd;
+
+	wd = devm_kmalloc(dev, sizeof(*wd), GFP_KERNEL);
+	if (!wd)
+		return -ENOMEM;
+
+	reinit_completion(&devdata->pm_resume_completion);
+
+	wd->devdata = devdata;
+	INIT_WORK(&wd->work, do_syncboss_resume_work);
+
+	/*
+	 * Hold mutex until do_syncboss_resume_work completes to prevent userspace
+	 * from changing state before then.
+	 */
+	mutex_lock(&devdata->state_mutex);
+	queue_work(devdata->syncboss_pm_workqueue, &wd->work);
+
+	return 0;
+}
+
 #else
 static int syncboss_suspend(struct device *dev)
 {

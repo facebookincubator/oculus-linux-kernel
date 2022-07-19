@@ -137,6 +137,16 @@ struct syncboss_dev_data {
 	/* The rate to run the spi clock at (in Hz). Not to be updated while streaming is active. */
 	u32 spi_max_clk_rate;
 
+	/*
+	 * For long work items we don't want to monopolize the system shared workqueue with.
+	 * state_mutex must be held while enqueueing work due to syncboss_resume's locking
+	 * pattern.
+	 */
+	struct workqueue_struct *syncboss_pm_workqueue;
+
+	/* Used to wait for events on resume to complete before allowing suspend */
+	struct completion pm_resume_completion;
+
 	/* Handle to the task that is performing the periodic SPI
 	 * transactions
 	 */
@@ -219,9 +229,6 @@ struct syncboss_dev_data {
 
 	/* The next sequence number available for a control call */
 	int next_avail_seq_num;
-
-	/* Current power state of the device */
-	int power_state;
 
 	/* True if the syncboss controlls a prox sensor */
 	bool has_prox;

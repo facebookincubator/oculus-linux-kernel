@@ -398,13 +398,13 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 			"Firmware binary size too large, provided size: %zd, max size: %zd",
 			devdata->fw->size, max_fw_size);
 		status = -ENOMEM;
-		goto error;
+		goto error_after_request_fw;
 	}
 
 	if (devdata->swd_provisioning) {
 		status = populate_provisioning_data(dev, buf, count);
 		if (status)
-			goto error;
+			goto error_after_request_fw;
 	}
 
 	devdata->fw_update_state = FW_UPDATE_STATE_WRITING_TO_HW;
@@ -415,12 +415,10 @@ ssize_t fwupdate_store_update_firmware(struct device *dev, const char *buf,
 
 	return count;
 
+error_after_request_fw:
+	release_firmware(devdata->fw);
+	devdata->fw = NULL;
 error:
-	if (devdata->fw) {
-		release_firmware(devdata->fw);
-		devdata->fw = NULL;
-	}
-
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }

@@ -29,8 +29,8 @@ OPENSSL_PREFIX := $(shell brew --prefix openssl)
 HOSTLOADLIBES_sign-file = -L$(OPENSSL_PREFIX)/lib -lcrypto
 HOSTLOADLIBES_extract-cert = -L$(OPENSSL_PREFIX)/lib -lcrypto
 else
-HOSTLOADLIBES_sign-file = -lcrypto
-HOSTLOADLIBES_extract-cert = -lcrypto
+HOSTLOADLIBES_sign-file = $(HOSTLDFLAGS) -lcrypto
+HOSTLOADLIBES_extract-cert = $(HOSTLDFLAGS) -lcrypto
 endif
 
 always		:= $(hostprogs-y) $(hostprogs-m)

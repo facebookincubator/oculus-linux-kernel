@@ -41,13 +41,11 @@ struct miscfifo {
 
 struct miscfifo_client {
 	struct miscfifo *mf;
-	// Do not hold more than one of these locks at a time:
-	// hold this while reading from the fifo, in case of multiple consumers
-	struct mutex consumer_lock;
-	// hold this while writing from the fifo, in case of multiple producers
-	struct mutex producer_lock;
-	// hold this while accessing context
-	struct mutex context_lock;
+	// If you must hold both the consumer and producter locks, the consumer lock
+	// must be acquired first and released last!
+	struct mutex consumer_lock; // hold while reading from the fifo, in case of multiple consumers
+	struct mutex producer_lock; // hold while writing to the fifo, in case of multiple producers
+	struct mutex context_lock;  // hold while accessing 'context'
 	struct kfifo_rec_ptr_1 fifo;
 	bool logged_fifo_full;
 	struct list_head node;
@@ -86,6 +84,16 @@ void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
  * @return      0 on success, > 0 if dropped, -errno otherwise
  */
 int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len);
+
+/**
+ * Clear any unread data from the fifo.
+ * Use care when calling this. This call will block all readers and writers,
+ * and may result in poor performance if called at times when readers or
+ * writers are active.
+ *
+ * @param  mf   miscfifo instance
+ */
+void miscfifo_clear(struct miscfifo *mf);
 
 /**
  * Call this function from the open() file_operation for the chardev hosting

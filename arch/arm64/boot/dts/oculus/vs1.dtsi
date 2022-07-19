@@ -1057,7 +1057,6 @@
 		oculus,syncboss-reset = <&tlmm 126 0>;
 		oculus,syncboss-timesync = <&tlmm 10 0>;
 		oculus,syncboss-wakeup = <&tlmm 119 0>;
-		oculus,transaction-length = <248>;
 		oculus,imu-core-supply = <&pm8998_l28>;
 		oculus,imu-core-voltage-level = <1808000 1808000>;
 		oculus,mag-core-supply = <&pm8998_l28>;
