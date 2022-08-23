@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "kona-7230-iot-v2.1.dtsi"
+#include "kona-iot-hdk.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. kona-7230-iot v2.1 HDK";
+	compatible = "qcom,kona-iot-hdk", "qcom,kona-iot", "qcom,hdk";
+	qcom,board-id = <0x01001F 0x01>;
+};

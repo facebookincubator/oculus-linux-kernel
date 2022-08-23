@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "kona.dtsi"
+#include "kona-rb5.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Robotics RB5 Platform ";
+	compatible = "qcom,kona-mtp", "qcom,kona", "qcom,mtp";
+	qcom,board-id = <0x4010008 0x0>;
+};

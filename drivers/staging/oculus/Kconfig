@@ -114,14 +114,14 @@ config OCULUS_HOLLYWOOD
 	help
 	  Enable support for the hollywood device
 
-config QCOM_DT_OUTPUT_DISABLE
-	bool "Disable building of device trees for Qualcomm's test platforms"
+config VENDOR_DT_OUTPUT_DISABLE
+	bool "Disable building of device trees for test platforms"
 	default y
 	depends on OCULUS
 	help
 	  Building Qualcomm kernels with default flags causes serveral unrelated
 	  device-trees to be built by default. Don't build them when
-	  QCOM_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
+	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
 	  platforms.
 
 config RT600_CTRL

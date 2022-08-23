@@ -10,6 +10,7 @@
 
 #include "hollywood.dtsi"
 #include "hollywood-evt.dtsi"
+#include "crimson-audio.dtsi"
 
 
 &cam_cci0 {

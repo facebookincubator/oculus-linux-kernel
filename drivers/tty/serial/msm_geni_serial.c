@@ -3402,11 +3402,13 @@ static int msm_geni_serial_runtime_suspend(struct device *dev)
 
 	disable_irq(port->uport.irq);
 
+#ifndef CONFIG_SERIAL_MSM_GENI_DISALLOW_SUSPEND_RFR_PULL
 	/*
 	 * Above stop_rx disabled the flow so we need to enable it here
 	 * Make sure wake up interrupt is enabled before RFR is made low
 	 */
 	msm_geni_serial_allow_rx(port);
+#endif
 
 	ret = se_geni_resources_off(&port->serial_rsc);
 	if (ret) {

@@ -1361,36 +1361,11 @@ error:
 static int ak4333_probe(struct snd_soc_component *component)
 {
 	struct ak4333_priv *ak4333 = snd_soc_component_get_drvdata(component);
-	struct device *dev = &(ak4333->i2c->dev);
 	int ret = 0;
 
 	akdbgprt("\t[AK4333] %s(%d)\n", __func__, __LINE__);
 
 	ak4333->card = component->card;
-
-	if (ak4333->avdd_voltage != 0) {
-		ret = regulator_set_voltage(ak4333->avdd_core,
-			ak4333->avdd_voltage, ak4333->avdd_voltage);
-		if (ret < 0) {
-			dev_err(dev, "AVDD regulator_set_voltage failed\n");
-			return ret;
-		}
-	}
-
-	if (ak4333->avdd_current != 0) {
-		ret = regulator_set_load(ak4333->avdd_core,
-			ak4333->avdd_current);
-		if (ret < 0) {
-			dev_err(dev, "AVDD regulator_set_load failed\n");
-			return ret;
-		}
-	}
-
-	ret = regulator_enable(ak4333->avdd_core);
-	if (ret < 0) {
-		dev_err(dev, "AVDD regulator_enable failed\n");
-		return ret;
-	}
 
 	ret = ak4333_parse_dt(ak4333);
 
@@ -1604,6 +1579,30 @@ static int ak4333_i2c_probe(
 			"%s:Looking up %s property in node %s failed\n",
 			__func__, "ak4333,avdd-current",
 			np->full_name);
+	}
+
+	if (ak4333->avdd_voltage != 0) {
+		ret = regulator_set_voltage(ak4333->avdd_core,
+			ak4333->avdd_voltage, ak4333->avdd_voltage);
+		if (ret < 0) {
+			dev_err(&i2c->dev, "AVDD regulator_set_voltage failed\n");
+			return ret;
+		}
+	}
+
+	if (ak4333->avdd_current != 0) {
+		ret = regulator_set_load(ak4333->avdd_core,
+			ak4333->avdd_current);
+		if (ret < 0) {
+			dev_err(&i2c->dev, "AVDD regulator_set_load failed\n");
+			return ret;
+		}
+	}
+
+	ret = regulator_enable(ak4333->avdd_core);
+	if (ret < 0) {
+		dev_err(&i2c->dev, "AVDD regulator_enable failed\n");
+		return ret;
 	}
 
 	ak4333->regmap = devm_regmap_init_i2c(i2c, &ak4333_regmap);

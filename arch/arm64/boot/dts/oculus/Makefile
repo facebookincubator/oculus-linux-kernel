@@ -36,6 +36,7 @@ dtbo-$(CONFIG_OCULUS_unknown1) += \
 	unknown1-evt2-mlbdoe1.1-overlay.dtbo \
 	unknown1-evt2-mlbdoe1.2-overlay.dtbo \
 	unknown1-dvt-overlay.dtbo \
+	unknown1-dvt-mlb2-overlay.dtbo \
 	unknown1-pvt-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_SEABRIGHT) += \
@@ -79,6 +80,7 @@ unknown1-evt2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-
 unknown1-evt2-mlbdoe1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 unknown1-evt2-mlbdoe1.2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 unknown1-dvt-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+unknown1-dvt-mlb2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 unknown1-pvt-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 endif
 endif

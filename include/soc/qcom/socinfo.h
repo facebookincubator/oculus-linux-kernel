@@ -56,6 +56,8 @@
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,kona")
 #define early_machine_is_kona_iot()	\
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,kona-iot")
+#define early_machine_is_kona_7230_iot()	\
+	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,kona-7230-iot")
 #define early_machine_is_lito()	\
 	of_flat_dt_is_compatible(of_get_flat_dt_root(), "qcom,lito")
 #define early_machine_is_bengal()	\
