@@ -171,10 +171,6 @@
 	status = "ok";
 };
 
-&qupv3_se8_i2c {
-	status = "ok";
-};
-
 &qupv3_se11_spi {
 	status = "ok";
 };

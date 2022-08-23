@@ -74,7 +74,6 @@
 		#include "4284132_Goertek_Hollywood_25k_3710mAh_Jan13th2020.dtsi"
 		#include "4284132_Goertek_Hollywood_50k_3710mAh_Jun9th2020.dtsi"
 		#include "4414705_Goertek_Hollywood_124k_3710mAh_Mar2nd2020.dtsi"
-		#include "3783416_Oculus_MontereyScud_3750mAh_averaged_MasterSlave_Aug2nd2019_PM8150BGUI10013.dtsi"
 	};
 };
 

@@ -5,6 +5,7 @@
 
 #include "eureka865.dtsi"
 #include "eureka865-dev.dtsi"
+#include "eureka865-d4xx-panel.dtsi"
 
 / {
 	model = "Eureka865 (Dev0.6)";
@@ -12,9 +13,12 @@
 	qcom,board-id = <68 146>;
 };
 
+&pm8150_l10 {
+	qcom,init-voltage = <2500000>;
+};
+
 &pm8150a_l4 {
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-	regulator-always-on;
 	status = "ok";
 };
 
@@ -30,3 +34,49 @@
 	};
 };
 
+&soc {
+	fpga_1p2_regulator: fpga_1p2_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "fpga_1p2";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 87 0>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fpga_1p2_en_default>;
+	};
+};
+
+&sdhc_2 {
+	status = "disabled";
+};
+
+&tlmm {
+	fpga_1p2_en_default: fpga_1p2_en_default {
+		mux {
+			pins = "gpio87";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio87";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+};
+
+&vendor {
+	fpga_aggregator: oculus,fpga {
+		status = "ok";
+		compatible = "oculus,fpga";
+		vcciox-voltage-mv = <2500000>;
+		vcciox-supply = <&pm8150_l10>;
+		vcc-voltage-mv = <1200000>;
+		vcc-supply = <&fpga_1p2_regulator>;
+		vccaux-voltage-mv = <1800000>;
+		vccaux-supply = <&pm8150a_l4>;
+	};
+};

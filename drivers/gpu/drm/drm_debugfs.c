@@ -166,10 +166,12 @@ int drm_debugfs_init(struct drm_minor *minor, int minor_id,
 			return ret;
 		}
 
-		ret = drm_client_debugfs_init(minor);
-		if (ret) {
-			DRM_ERROR("Failed to create client debugfs file\n");
-			return ret;
+		if (drm_core_check_feature(dev, DRIVER_MODESET)) {
+			ret = drm_client_debugfs_init(minor);
+			if (ret) {
+				DRM_ERROR("Failed to create client debugfs file\n");
+				return ret;
+			}
 		}
 	}
 

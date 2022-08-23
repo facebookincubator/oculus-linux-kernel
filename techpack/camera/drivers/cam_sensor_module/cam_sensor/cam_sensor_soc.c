@@ -12,8 +12,6 @@
 #include "cam_sensor_soc.h"
 #include "cam_soc_util.h"
 
-static struct dentry *cam_sensor_debugfs;
-
 int32_t cam_sensor_get_sub_module_index(struct device_node *of_node,
 	struct cam_sensor_board_info *s_info)
 {
@@ -208,32 +206,6 @@ static int32_t cam_sensor_driver_get_dt_data(struct cam_sensor_ctrl_t *s_ctrl)
 	/* Oculus additions: */
 	if (of_find_property(of_node, "oculus,cam-i2c-ap-controlled", NULL))
 		sensordata->oculus_is_ap_controlled = true;
-
-	if (!cam_sensor_debugfs)
-		cam_sensor_debugfs = debugfs_create_dir("camera_sensor", NULL);
-	if (cam_sensor_debugfs) {
-		char str[128];
-
-		snprintf(str, 128, "%d", s_ctrl->id);
-		sensordata->debugfs.dentry = debugfs_create_dir(str,
-			cam_sensor_debugfs);
-		if (!sensordata->debugfs.dentry)
-			CAM_ERR(CAM_SENSOR,
-				"Failed to create sensor %u debugfs dir",
-				s_ctrl->id);
-		else if (!debugfs_create_u32("oculus_mclk_no_power_down",
-			0644,
-			sensordata->debugfs.dentry,
-			&sensordata->debugfs.oculus_mclk_no_power_down))
-			CAM_ERR(CAM_SENSOR,
-				"Failed to create sensor %u debugfs u32 entry",
-				s_ctrl->id);
-
-	} else
-		CAM_ERR(CAM_SENSOR, "Failed to create sensor debugfs dir");
-
-	if (of_find_property(of_node, "oculus,cam-mclk-no-power-down", NULL))
-		sensordata->debugfs.oculus_mclk_no_power_down = 1;
 
 	return rc;
 

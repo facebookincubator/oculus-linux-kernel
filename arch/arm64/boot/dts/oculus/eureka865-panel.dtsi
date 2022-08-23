@@ -4,6 +4,7 @@
 #include "eureka865-dsi-panel-sharp-nvt-dsc-4k-80hz-video.dtsi"
 #include "eureka865-dsi-panel-sharp-nvt-dsc-4k-90hz-video.dtsi"
 #include "eureka865-dsi-panel-sharp-nvt-dsc-4k-120hz-video.dtsi"
+#include "eureka865-dsi-panel-jdi-nvt-dsc-4k-90hz-video.dtsi"
 
 &display_panel_avdd {
 	status = "disabled";
@@ -22,6 +23,35 @@
 		qcom,supply-enable-load = <857000>;
 		qcom,supply-disable-load = <0>;
 		qcom,supply-post-on-sleep = <0>;
+	};
+};
+
+&dsi_jdi_nvt_4k_90Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 83 0>;
+	qcom,platform-reset-gpio = <&tlmm 91 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 49 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0",
+				"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 25 25 08
+				19 09 02 04 00 1F 0F
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
 	};
 };
 

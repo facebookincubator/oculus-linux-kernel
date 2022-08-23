@@ -10,7 +10,7 @@
 / {
 	model = "Eureka865 (P1)";
 	compatible = "qcom,kona";
-	qcom,board-id = <68 147>;
+	qcom,board-id = <68 147>, <68 148>;
 };
 
 &ak4331 {
@@ -23,6 +23,11 @@
 
 &ak4331_pdn_default {
 	status = "disabled";
+};
+
+&aliases {
+	hsuart12 = "/soc/qcom,qup_uart@994000";
+	hsuart14 = "/soc/qcom,qup_uart@98c000";
 };
 
 &as5510 {
@@ -73,13 +78,14 @@
 };
 
 /delete-node/ &bq27z561;
+/delete-node/ &kona_mtp_batterydata;
 
 &disp_vsp {
-	enable = <&tlmm 85 0>;
+	enable-gpios = <&tlmm 85 0>;
 };
 
 &disp_vsn {
-	enable = <&tlmm 86 0>;
+	enable-gpios = <&tlmm 86 0>;
 };
 
 &wlan_hsp {
@@ -89,6 +95,25 @@
 &bluetooth {
 	qca,bt-sw-ctrl-gpio = <&tlmm 87 0>; /* SW_CTRL */
 	qca,wl-reset-gpio = <&tlmm 26 0>; /* WL_EN */
+};
+
+&max98360a {
+	status = "disabled";
+};
+
+&max98360a_active {
+	status = "disabled";
+};
+
+&max98360a_sleep {
+	status = "disabled";
+};
+
+&max983xx_snd {
+	asoc-codec = <&stub_codec>, <&max98388_left>, <&max98388_right>,
+		<&bolero>;
+	asoc-codec-names = "msm-stub-codec.1", "max98388_left_codec",
+		"max98388_right_codec", "bolero_codec";
 };
 
 &pm8150a_l5 {
@@ -102,6 +127,12 @@
 
 &pm8150b_charger {
 	qcom,sec-charger-config = <0>;
+	qcom,fcc-max-ua = <3542000>;
+};
+
+&pm8150b_fg {
+	qcom,fg-cutoff-current = <248>; // battery capacity 5060 mah termination current = c/20
+	qcom,fg-empty-voltage = <3000>; // see section 4.4.6 (80-PF777-74. Rev C)
 };
 
 &qm35_uart_active {
@@ -180,6 +211,22 @@
 		ak4333,headset-det-gpio = <&tlmm 113 0>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&ak4333_intr_default &ak4333_pdn_default>;
+	};
+
+	max98388_left: max98388@39 {
+		status = "ok";
+		compatible = "adi,max98388";
+		reg = <0x39>;
+
+		reset-gpio = <&tlmm 64 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&max98388_reset_default>;
+	};
+
+	max98388_right: max98388@38 {
+		status = "ok";
+		compatible = "adi,max98388";
+		reg = <0x38>;
 	};
 };
 
@@ -280,5 +327,27 @@
 				output-low;
 			};
 		};
+	};
+
+	max98388_reset_default: max98388_reset_default {
+		mux {
+			pins = "gpio64";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio64";
+			drive-strength = <16>; /* 16 mA */
+			bias-disable; /* no pull */
+			output-low;
+		};
+	};
+};
+
+&vendor {
+	kona_mtp_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "55685485_Facebook_Eureka_100k_5060mAH_averaged_MasterSlave_Mar13th2022.dtsi"
+		#include "5685483_Facebook_Eureka_200k_5060mAH_averaged_MasterSlave_Mar16th2022.dtsi"
 	};
 };

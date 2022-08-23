@@ -101,7 +101,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
-		oculus,cam-mclk-no-power-down;
 	};
 
 	qcom,cam-sensor1 {
@@ -138,7 +137,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
-		oculus,cam-mclk-no-power-down;
 	};
 
 	qcom,cam-sensor2 {
@@ -174,7 +172,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
-		oculus,cam-mclk-no-power-down;
 	};
 
 	qcom,cam-sensor3 {
@@ -210,7 +207,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
-		oculus,cam-mclk-no-power-down;
 	};
 
 	qcom,cam-sensor4 {
@@ -247,7 +243,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
-		oculus,cam-mclk-no-power-down;
 	};
 
 	qcom,cam-sensor5 {
@@ -282,6 +277,5 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
-		oculus,cam-mclk-no-power-down;
 	};
 };

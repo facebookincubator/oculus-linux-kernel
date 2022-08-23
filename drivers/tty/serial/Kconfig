@@ -1013,6 +1013,14 @@ config SERIAL_MSM_GENI_HALF_SAMPLING
 	  As earlycon can't have HW version awareness, decision is taken
 	  based on the configuration.
 
+config SERIAL_MSM_GENI_DISALLOW_SUSPEND_RFR_PULL
+	bool "Temporary solution for BT UART problem"
+	depends on SERIAL_MSM_GENI
+	help
+	  Temporary solution for problem communicating with Broadcom BT chip
+	  where serial driver fails to receive data after resume, causing
+	  Bluetooth services to crash.
+
 config SERIAL_VT8500
 	bool "VIA VT8500 on-chip serial port support"
 	depends on ARCH_VT8500

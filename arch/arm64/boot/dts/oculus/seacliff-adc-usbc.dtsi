@@ -19,7 +19,7 @@
 };
 
 &thermal_zones {
-	usbc-usr {
+	usbc-charger {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "step_wise";

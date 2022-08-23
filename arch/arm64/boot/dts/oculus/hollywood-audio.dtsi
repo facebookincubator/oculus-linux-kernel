@@ -325,7 +325,7 @@
 };
 
 &q6core {
-	cm710x_snd {
+	cm710x_snd: cm710x_snd {
 		compatible = "qcom,kona-asoc-snd";
 		qcom,model = "kona-cm710x-snd-card";
 

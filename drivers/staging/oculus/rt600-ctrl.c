@@ -22,7 +22,8 @@ struct rt600_ctrl_ctx {
 	struct work_struct boot_work;
 	struct work_struct reset_work;
 	unsigned int rstn_gpio;
-	unsigned int spare_gpio;
+	unsigned int spare_gpio1;
+	unsigned int spare_gpio2;
 	enum rt600_boot_state boot_state;
 	char *state_show;
 };
@@ -33,7 +34,8 @@ struct rt600_ctrl_ctx {
 #define RT600_BOOT_STATE_FLASHING    "flashing"
 #define RT600_BOOT_STATE_SOC_ACTIVE  "soc_active"
 
-#define RT600_SPARE_GPIO_NAME        "rt600-spare-gpio"
+#define RT600_SPARE_GPIO1_NAME        "rt600-spare-gpio1"
+#define RT600_SPARE_GPIO2_NAME        "rt600-spare-gpio2"
 
 static BLOCKING_NOTIFIER_HEAD(state_subscribers);
 
@@ -219,21 +221,39 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 		gpio_direction_output(ctx->rstn_gpio, 0);
 	}
 
-	ctx->spare_gpio = of_get_named_gpio(dev->of_node,
-					    RT600_SPARE_GPIO_NAME, 0);
-	if (gpio_is_valid(ctx->spare_gpio)) {
-		if (devm_gpio_request(dev, ctx->spare_gpio, "spare_gpio")) {
-			dev_err(dev, "failed to request spare gpio");
+	ctx->spare_gpio1 = of_get_named_gpio(dev->of_node,
+					    RT600_SPARE_GPIO1_NAME, 0);
+	if (gpio_is_valid(ctx->spare_gpio1)) {
+		if (devm_gpio_request(dev, ctx->spare_gpio1, "spare_gpio1")) {
+			dev_err(dev, "failed to request spare gpio1");
 			goto free_pinctrl;
 		}
-		if (gpio_export(ctx->spare_gpio, true)) {
-			dev_err(dev, "failed to export spare gpio");
-			goto free_pinctrl;
+		if (gpio_export(ctx->spare_gpio1, true)) {
+			dev_err(dev, "failed to export spare gpio1");
+			goto free_gpio1;
 		}
-		if (gpio_export_link(dev, RT600_SPARE_GPIO_NAME,
-				     ctx->spare_gpio)) {
-			dev_err(dev, "failed to export spare gpio link");
-			goto free_pinctrl;
+		if (gpio_export_link(dev, RT600_SPARE_GPIO1_NAME,
+				     ctx->spare_gpio1)) {
+			dev_err(dev, "failed to export spare gpio1 link");
+			goto unexport_gpio1;
+		}
+	}
+
+	ctx->spare_gpio2 = of_get_named_gpio(dev->of_node,
+					    RT600_SPARE_GPIO2_NAME, 0);
+	if (gpio_is_valid(ctx->spare_gpio2)) {
+		if (devm_gpio_request(dev, ctx->spare_gpio2, "spare_gpio2")) {
+			dev_err(dev, "failed to request spare gpio2");
+			goto unexport_gpio1;
+		}
+		if (gpio_export(ctx->spare_gpio2, true)) {
+			dev_err(dev, "failed to export spare gpio2");
+			goto free_gpio2;
+		}
+		if (gpio_export_link(dev, RT600_SPARE_GPIO2_NAME,
+				     ctx->spare_gpio2)) {
+			dev_err(dev, "failed to export spare gpio2 link");
+			goto unexport_gpio2;
 		}
 	}
 
@@ -251,6 +271,14 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 
 	return rc;
 
+unexport_gpio2:
+	gpio_unexport(ctx->spare_gpio2);
+free_gpio2:
+	gpio_free(ctx->spare_gpio2);
+unexport_gpio1:
+	gpio_unexport(ctx->spare_gpio1);
+free_gpio1:
+	gpio_free(ctx->spare_gpio1);
 free_pinctrl:
 	devm_pinctrl_put(ctx->pinctrl);
 fail_pinctrl:
@@ -270,14 +298,14 @@ static int rt600_ctrl_remove(struct platform_device *pdev)
 
 static const struct of_device_id rt600_ctrl_of_match[] = {
 	{
-		.compatible = "oculus,rt600_ctrl",
+		.compatible = "meta,rt600_ctrl",
 	},
 	{},
 };
 
 static struct platform_driver rt600_ctrl_driver = {
 	.driver = {
-		.name = "oculus,rt600_ctrl",
+		.name = "meta,rt600_ctrl",
 		.of_match_table = rt600_ctrl_of_match,
 	},
 	.probe = rt600_ctrl_probe,

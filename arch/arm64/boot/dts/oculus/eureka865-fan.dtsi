@@ -31,7 +31,8 @@
 			panel = <&dsi_sharp_nvt_4k_72Hz_dsc_video
 					&dsi_sharp_nvt_4k_80Hz_dsc_video
 					&dsi_sharp_nvt_4k_90Hz_dsc_video
-					&dsi_sharp_nvt_4k_120Hz_dsc_video>;
+					&dsi_sharp_nvt_4k_120Hz_dsc_video
+					&dsi_jdi_nvt_4k_90Hz_dsc_video>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			pinctrl-names = "default";

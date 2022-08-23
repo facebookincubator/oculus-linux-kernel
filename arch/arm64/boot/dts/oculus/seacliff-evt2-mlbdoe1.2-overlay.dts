@@ -11,8 +11,8 @@
 	qcom,board-id = <66 73>;
 };
 
-&cm7120_snd {
-	qcom,model = "kona-cm7120-tdm_evt2_doe2-snd-card";
+&cm7120 {
+	cm7120,firmware-name = "CM7120_TDM_DOE2.bin";
 };
 
 &dsi_panel_pwr_supply_lab_ibb {
@@ -89,14 +89,6 @@
 	left_panel_bias-supply = <&aw37504_left>;
 };
 
-&tdm_pri_rx {
-	qcom,msm-cpudai-tdm-data-delay = <1>;
-};
-
-&tdm_pri_tx {
-	qcom,msm-cpudai-tdm-data-delay = <1>;
-};
-
 &qupv3_se8_i2c {
 	status = "ok";
 	qcom,clk-freq-out = <100000>;
@@ -130,17 +122,28 @@
 };
 
 &soc {
+	gpio_capacitor_en: gpio_capacitor_regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "gpio_capacitor_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <350>;
+		gpio = <&tlmm 52 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_capacitor_default>;
+	};
+
 	gpio_capacitor {
 		compatible = "gpio-capacitor";
-		pinctrl-names = "active", "suspend";
-		pinctrl-0 = <&gpio_capacitor_active>;
-		pinctrl-1 = <&gpio_capacitor_suspend>;
+		gpio-capacitor-supply = <&gpio_capacitor_en>;
 	};
 };
 
 &tlmm {
 	gpio_capacitor_pins {
-		gpio_capacitor_active: gpio_capacitor_active {
+		gpio_capacitor_default: gpio_capacitor_default {
 			mux {
 				pins = "gpio52";
 				function = "gpio";
@@ -149,22 +152,8 @@
 			config {
 				pins = "gpio52";
 				drive-strength = <2>;
+				bias-disable = <0>;
 				output-high;
-				bias-pull-up;
-			};
-		};
-
-		gpio_capacitor_suspend: gpio_capacitor_suspend {
-			mux {
-				pins = "gpio52";
-				function = "gpio";
-			};
-
-			config {
-				pins = "gpio52";
-				drive-strength = <2>;
-				output-low;
-				bias-pull-down;
 			};
 		};
 	};

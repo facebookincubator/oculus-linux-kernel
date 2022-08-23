@@ -3351,9 +3351,13 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 	if (dai->name && !strcmp(dai->name, "cm7120-aif1"))
 		regmap_update_bits(cm7120->virt_regmap, CM7120_I2S3_SDP,
 				CM7120_I2S_DL_MASK, val_len);
-	else if (dai->name && !strcmp(dai->name, "cm7120-aif2"))
+	else if (dai->name && !strcmp(dai->name, "cm7120-aif2")) {
 		regmap_update_bits(cm7120->virt_regmap, CM7120_I2S2_SDP,
 				CM7120_I2S_DL_MASK, val_len);
+		/* PCM Mode A data format */
+		regmap_update_bits(cm7120->virt_regmap, CM7120_I2S2_SDP,
+				CM7120_I2S_DF_MASK, 0x2);
+	}
 
 	pr_info("%s: val_len: 0x%04x\n", __func__, val_len);
 

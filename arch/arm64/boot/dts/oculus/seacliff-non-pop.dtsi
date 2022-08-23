@@ -399,7 +399,6 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
-		oculus,transaction-length = <248>;
 		oculus,syncboss-boots-to-shutdown-state;
 		oculus,syncboss-has-wake-reasons;
 
@@ -725,14 +724,12 @@
 	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <1>;
 	qcom,msm-cpudai-tdm-sync-mode = <0>;
 	qcom,msm-cpudai-tdm-invert-sync = <0>;
-	qcom,msm-cpudai-tdm-data-delay = <0>;
 };
 
 &tdm_pri_tx {
 	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <2>;
 	qcom,msm-cpudai-tdm-sync-mode = <0>;
 	qcom,msm-cpudai-tdm-invert-sync = <0>;
-	qcom,msm-cpudai-tdm-data-delay = <0>;
 };
 
 &thermal_zones {
@@ -750,7 +747,7 @@
 		};
 	};
 
-	pogo-usr {
+	pogo-charger {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "step_wise";

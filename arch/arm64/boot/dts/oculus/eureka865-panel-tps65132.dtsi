@@ -31,14 +31,14 @@
 		disp_vsp: outp {
 			regulator-name = "outp";
 			regulator-boot-on;
-			enable = <&tlmm 20 0>;
+			enable-gpios = <&tlmm 20 0>;
 			ti,active-discharge-time-us = <0>;
 		};
 
 		disp_vsn: outn {
 			regulator-name = "outn";
 			regulator-boot-on;
-			enable = <&tlmm 21 0>;
+			enable-gpios = <&tlmm 21 0>;
 			ti,active-discharge-time-us = <0>;
 		};
 	};

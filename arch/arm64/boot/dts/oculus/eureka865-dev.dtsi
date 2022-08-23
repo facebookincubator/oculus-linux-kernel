@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 
 &cam_cci0 {
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+	gpios = <>;
+	gpio-req-tbl-num = <>;
+	gpio-req-tbl-flags = <>;
+
 	qcom,cam-sensor5 {
 		/* CAMERA ID = 5
 		 * name: CAM_RGB2

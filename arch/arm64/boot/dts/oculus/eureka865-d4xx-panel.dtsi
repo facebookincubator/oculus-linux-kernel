@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&display_panel_avdd {
+	status = "disabled";
+};
+
+&mdss_mdp {
+	dsi_d4xx_panel_dsc_video: qcom,mdss_dsi_d4xx_panel_dsc_video {
+		qcom,mdss-dsi-panel-name = "d4xx panel";
+		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+		qcom,mdss-dsi-video-mode;
+		qcom,dsi-ctrl-num = <0>;
+		qcom,dsi-phy-num = <0>;
+		qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0",
+				"src_byte_clk0", "src_pixel_clk0",
+				"shadow_byte_clk0", "shadow_pixel_clk0";
+		qcom,mdss-dsi-stream = <0>;
+		qcom,mdss-dsi-bpp = <24>;
+		qcom,mdss-dsi-traffic-mode = "burst_mode";
+		qcom,mdss-dsi-bllp-eof-power-mode;
+		qcom,mdss-dsi-bllp-power-mode;
+		qcom,mdss-dsi-lane-0-state;
+		qcom,mdss-dsi-lane-1-state;
+		qcom,mdss-dsi-t-clk-post = <0x17>;
+		qcom,mdss-dsi-t-clk-pre = <0x18>;
+		qcom,mdss-dsi-dma-trigger = "trigger_sw";
+		qcom,mdss-dsi-mdp-trigger = "none";
+		qcom,mdss-dsi-reset-sequence = <1 0>, <0 0>, <1 0>;
+		qcom,panel-ack-disabled;
+		qcom,mdss-dsi-ext-bridge-mode;
+		qcom,mdss-dsi-force-clock-lane-hs;
+	qcom,mdss-dsi-display-timings {
+			timing@0 {
+				qcom,mdss-dsi-panel-width = <176>;
+				qcom,mdss-dsi-panel-height = <320>;
+				qcom,mdss-dsi-h-front-porch = <56>;
+				qcom,mdss-dsi-h-back-porch = <44>;
+				qcom,mdss-dsi-h-pulse-width = <12>;
+				qcom,mdss-dsi-h-sync-skew = <0>;
+				qcom,mdss-dsi-v-back-porch = <2>;
+				qcom,mdss-dsi-v-front-porch = <3520>;
+				qcom,mdss-dsi-v-pulse-width = <2>;
+				qcom,mdss-dsi-h-left-border = <0>;
+				qcom,mdss-dsi-h-right-border = <0>;
+				qcom,mdss-dsi-v-top-border = <0>;
+				qcom,mdss-dsi-v-bottom-border = <0>;
+				qcom,mdss-dsi-panel-framerate = <60>;
+				qcom,mdss-dsi-panel-phy-timings = [
+					00 1B 07 06 22 21 07
+					07 07 02 04 00 18 17
+				];
+				qcom,display-topology = <1 0 1>;
+				qcom,default-topology-index = <0>;
+			};
+		};
+	};
+};
+
+&sde_dsi {
+	qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>;
+	qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>;
+	qcom,dsi-default-panel = <&dsi_d4xx_panel_dsc_video>;
+};
+
+&mdss_mdp {
+	clock-rate = <0 0 0 0 300000000 19200000 300000000 19200000>;
+};

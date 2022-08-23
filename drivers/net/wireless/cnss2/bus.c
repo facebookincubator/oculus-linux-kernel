@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include "bus.h"
 #include "debug.h"
@@ -462,6 +463,21 @@ int cnss_bus_check_link_status(struct cnss_plat_data *plat_priv)
 		cnss_pr_dbg("Unsupported bus type: %d\n",
 			    plat_priv->bus_type);
 		return 0;
+	}
+}
+
+int cnss_bus_recover_link_down(struct cnss_plat_data *plat_priv)
+{
+	if (!plat_priv)
+		return -ENODEV;
+
+	switch (plat_priv->bus_type) {
+	case CNSS_BUS_PCI:
+		return cnss_pci_recover_link_down(plat_priv->bus_priv);
+	default:
+		cnss_pr_dbg("Unsupported bus type: %d\n",
+			    plat_priv->bus_type);
+		return -EINVAL;
 	}
 }
 

@@ -256,7 +256,6 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
-		oculus,transaction-length = <248>;
 		oculus,syncboss-boots-to-shutdown-state;
 		oculus,syncboss-has-wake-reasons;
 
