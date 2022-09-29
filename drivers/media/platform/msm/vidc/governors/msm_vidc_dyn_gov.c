@@ -278,16 +278,18 @@ static int __bpp(enum hal_uncompressed_format f)
 static unsigned long __calculate_vmem_plus_ab(struct vidc_bus_vote_data *d)
 {
 	unsigned long i = 0, vmem_plus = 0;
+	struct imem_ab_table *imem_ab_tbl = d->imem_ab_tbl;
+	u32 imem_ab_tbl_size = d->imem_ab_tbl_size;
 
-	if (!virt_addr_valid(d->imem_ab_tbl) || !d->imem_ab_tbl_size) {
+	if (!virt_addr_valid(imem_ab_tbl) || !imem_ab_tbl_size) {
 		vmem_plus = 1; /* Vote for the min ab value */
 		goto exit;
 	}
 
 	/* Pick up vmem frequency based on venus core frequency */
-	for (i = 0; i < d->imem_ab_tbl_size; i++) {
-		if (d->imem_ab_tbl[i].core_freq == d->core_freq) {
-			vmem_plus = d->imem_ab_tbl[i].imem_ab;
+	for (i = 0; i < imem_ab_tbl_size; i++) {
+		if (imem_ab_tbl[i].core_freq == d->core_freq) {
+			vmem_plus = imem_ab_tbl[i].imem_ab;
 			break;
 		}
 	}

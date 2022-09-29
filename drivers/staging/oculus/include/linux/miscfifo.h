@@ -134,6 +134,18 @@ unsigned int miscfifo_fop_poll(struct file *file,
 int miscfifo_fop_release(struct inode *inode, struct file *file);
 
 /**
+ * Allow to extract as many entries from the fifo as available that completely
+ * fit into the provided buffer.
+ *
+ * @param file file handle
+ * @param buf User buffer into which data will be copied.
+ * @param len Length of user buffer.
+ * @param off Unused.
+ */
+ssize_t miscfifo_fop_read_many(struct file *file,
+	char __user *buf, size_t len, loff_t *off);
+
+/**
  * Set context pointer that will be passed to the packet filtering
  * function (if one was set by miscfifo_fop_set_filter_fn) and return the
  * previous value (if there was one).
