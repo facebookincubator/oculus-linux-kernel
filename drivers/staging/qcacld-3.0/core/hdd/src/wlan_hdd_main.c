@@ -13826,6 +13826,7 @@ static int hdd_features_init(struct hdd_context *hdd_ctx)
 	mac_handle_t mac_handle;
 	bool b_cts2self, is_imps_enabled;
 	bool rf_test_mode;
+	bool conn_policy;
 
 	hdd_enter();
 
@@ -13924,6 +13925,15 @@ static int hdd_features_init(struct hdd_context *hdd_ctx)
 		wlan_cm_set_6ghz_key_mgmt_mask(hdd_ctx->psoc,
 					       ALLOWED_KEYMGMT_6G_MASK);
 	}
+
+	status = ucfg_mlme_is_relaxed_6ghz_conn_policy_enabled(hdd_ctx->psoc,
+							       &conn_policy);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		hdd_err("Get 6ghz relaxed connection policy failed");
+		return QDF_STATUS_E_FAILURE;
+	}
+	if (conn_policy)
+		wlan_cm_set_relaxed_6ghz_conn_policy(hdd_ctx->psoc, true);
 
 	hdd_exit();
 	return 0;

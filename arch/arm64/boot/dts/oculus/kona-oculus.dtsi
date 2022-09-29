@@ -28,6 +28,20 @@
 	qcom,split-tables;
 };
 
+&msm_cvp {
+	cvp_non_secure_cb {
+		qcom,iommu-faults = "non-fatal";
+	};
+
+	cvp_secure_nonpixel_cb {
+		qcom,iommu-faults = "non-fatal";
+	};
+
+	cvp_secure_pixel_cb {
+		qcom,iommu-faults = "non-fatal";
+	};
+};
+
 &npu_llcc_ddr_bw {
 	governor = "bw_hwmon";
 };

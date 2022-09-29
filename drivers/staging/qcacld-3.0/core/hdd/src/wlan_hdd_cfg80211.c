@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -7769,8 +7770,8 @@ hdd_set_dynamic_antenna_mode(struct hdd_adapter *adapter,
 	qdf_mem_zero(&user_cfg, sizeof(user_cfg));
 	for (band = NSS_CHAINS_BAND_2GHZ; band < NSS_CHAINS_BAND_MAX; band++) {
 		status = hdd_populate_vdev_chains(&user_cfg,
-						  num_rx_chains,
-						  num_tx_chains, band, vdev);
+						  num_tx_chains,
+						  num_rx_chains, band, vdev);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			hdd_objmgr_put_vdev(vdev);
 			return -EINVAL;
@@ -14818,6 +14819,117 @@ void hdd_bt_activity_cb(hdd_handle_t hdd_handle, uint32_t bt_activity)
 		 hdd_ctx->bt_vo_active);
 }
 
+/**
+ * hdd_post_chain_rssi_rsp - send rsp to user space
+ * @adapter: Pointer to adapter
+ * @result: chain rssi result
+ * @update_chain_rssi: update rssi, if this flag is set
+ * @update_chain_evm: update evm, if this flag is set
+ * @update_ant_id: update antenna id, if this flag is set
+ *
+ * Return: 0 for success, non-zero for failure
+ */
+static int hdd_post_chain_rssi_rsp(struct hdd_adapter *adapter,
+				   struct chain_rssi_result *result,
+				   bool update_chain_rssi,
+				   bool update_chain_evm,
+				   bool update_ant_id)
+{
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	struct sk_buff *skb;
+	int len = NLMSG_HDRLEN;
+
+	len += update_chain_rssi ?
+		nla_total_size(sizeof(result->chain_rssi)) : 0;
+	len += update_chain_evm ?
+		nla_total_size(sizeof(result->chain_evm)) : 0;
+	len += update_ant_id ?
+		nla_total_size(sizeof(result->ant_id)) : 0;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(hdd_ctx->wiphy, len);
+	if (!skb) {
+		hdd_err("cfg80211_vendor_cmd_alloc_reply_skb failed");
+		return -ENOMEM;
+	}
+
+	if (update_chain_rssi &&
+	    nla_put(skb, QCA_WLAN_VENDOR_ATTR_CHAIN_RSSI,
+		    sizeof(result->chain_rssi),
+		    result->chain_rssi)) {
+		goto nla_put_failure;
+	}
+
+	if (update_chain_evm &&
+	    nla_put(skb, QCA_WLAN_VENDOR_ATTR_CHAIN_EVM,
+		    sizeof(result->chain_evm),
+		    result->chain_evm)) {
+		goto nla_put_failure;
+	}
+
+	if (update_ant_id &&
+	    nla_put(skb, QCA_WLAN_VENDOR_ATTR_ANTENNA_INFO,
+		    sizeof(result->ant_id),
+		    result->ant_id)) {
+		goto nla_put_failure;
+	}
+
+	cfg80211_vendor_cmd_reply(skb);
+	return 0;
+
+nla_put_failure:
+	hdd_err("nla put fail");
+	kfree_skb(skb);
+	return -EINVAL;
+}
+
+#ifdef QCA_SUPPORT_CP_STATS
+/**
+ * hdd_process_peer_chain_rssi_req() - fetch per chain rssi of a connected peer
+ * @adapter: Pointer to adapter
+ * @peer_macaddr: mac address of desired peer or AP
+ *
+ * Return: 0 on success; error number otherwise.
+ */
+static int hdd_process_peer_chain_rssi_req(struct hdd_adapter *adapter,
+					   struct qdf_mac_addr *peer_macaddr)
+{
+	struct stats_event *stats;
+	struct wlan_objmgr_vdev *vdev;
+	struct chain_rssi_result chain_rssi;
+	int retval, index;
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev)
+		return -EINVAL;
+
+	stats = wlan_cfg80211_mc_cp_stats_get_peer_stats(vdev,
+							 peer_macaddr->bytes,
+							 &retval);
+	hdd_objmgr_put_vdev(vdev);
+
+	if (retval) {
+		if (stats)
+			wlan_cfg80211_mc_cp_stats_free_stats_event(stats);
+		hdd_err("Unable to get chain rssi");
+		retval = qdf_status_to_os_return(retval);
+		return retval;
+	}
+
+	for (index = 0; index < WMI_MAX_CHAINS; index++)
+		chain_rssi.chain_rssi[index] =
+		stats->peer_stats_info_ext->peer_rssi_per_chain[index];
+
+	wlan_cfg80211_mc_cp_stats_free_stats_event(stats);
+
+	retval = hdd_post_chain_rssi_rsp(adapter, &chain_rssi,
+					 true, false, false);
+	if (retval)
+		hdd_err("Failed to post chain rssi");
+
+	return retval;
+}
+
+#else
 struct chain_rssi_priv {
 	struct chain_rssi_result chain_rssi;
 };
@@ -14854,57 +14966,58 @@ static void hdd_get_chain_rssi_cb(void *context,
 	osif_request_put(request);
 }
 
-/**
- * hdd_post_get_chain_rssi_rsp - send rsp to user space
- * @hdd_ctx: pointer to hdd context
- * @result: chain rssi result
- *
- * Return: 0 for success, non-zero for failure
- */
-static int hdd_post_get_chain_rssi_rsp(struct hdd_context *hdd_ctx,
-				       struct chain_rssi_result *result)
+static int hdd_process_peer_chain_rssi_req(struct hdd_adapter *adapter,
+					   struct qdf_mac_addr *peer_macaddr)
 {
-	struct sk_buff *skb;
+	mac_handle_t mac_handle;
+	struct get_chain_rssi_req_params req_msg;
+	QDF_STATUS status;
+	int retval;
+	void *cookie;
+	struct osif_request *request;
+	struct chain_rssi_priv *priv;
+	static const struct osif_request_params params = {
+		.priv_size = sizeof(*priv),
+		.timeout_ms = WLAN_WAIT_TIME_STATS,
+	};
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 
-	skb = cfg80211_vendor_cmd_alloc_reply_skb(hdd_ctx->wiphy,
-		(sizeof(result->chain_rssi) + NLA_HDRLEN) +
-		(sizeof(result->chain_evm) + NLA_HDRLEN) +
-		(sizeof(result->ant_id) + NLA_HDRLEN) +
-		NLMSG_HDRLEN);
+	qdf_copy_macaddr(&req_msg.peer_macaddr, peer_macaddr->bytes);
+	req_msg.session_id = adapter->vdev_id;
 
-	if (!skb) {
-		hdd_err("cfg80211_vendor_event_alloc failed");
+	request = osif_request_alloc(&params);
+	if (!request) {
+		hdd_err("Request allocation failure");
 		return -ENOMEM;
 	}
 
-	if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_CHAIN_RSSI,
-		    sizeof(result->chain_rssi),
-		    result->chain_rssi)) {
-		hdd_err("put fail");
-		goto nla_put_failure;
+	cookie = osif_request_cookie(request);
+	mac_handle = hdd_ctx->mac_handle;
+	status = sme_get_chain_rssi(mac_handle,
+				    &req_msg,
+				    hdd_get_chain_rssi_cb,
+				    cookie);
+
+	if (status != QDF_STATUS_SUCCESS) {
+		hdd_err("Unable to get chain rssi");
+		retval = qdf_status_to_os_return(status);
+	} else {
+		retval = osif_request_wait_for_response(request);
+		if (retval) {
+			hdd_err("Target response timed out");
+		} else {
+			priv = osif_request_priv(request);
+			retval = hdd_post_chain_rssi_rsp(adapter,
+							 &priv->chain_rssi,
+							 true, true, true);
+			if (retval)
+				hdd_err("Failed to post chain rssi");
+		}
 	}
-
-	if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_CHAIN_EVM,
-		    sizeof(result->chain_evm),
-		    result->chain_evm)) {
-		hdd_err("put fail");
-		goto nla_put_failure;
-	}
-
-	if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_ANTENNA_INFO,
-		    sizeof(result->ant_id),
-		    result->ant_id)) {
-		hdd_err("put fail");
-		goto nla_put_failure;
-	}
-
-	cfg80211_vendor_cmd_reply(skb);
-	return 0;
-
-nla_put_failure:
-	kfree_skb(skb);
-	return -EINVAL;
+	osif_request_put(request);
+	return retval;
 }
+#endif
 
 static const struct
 nla_policy get_chain_rssi_policy[QCA_WLAN_VENDOR_ATTR_MAX + 1] = {
@@ -14928,18 +15041,9 @@ static int __wlan_hdd_cfg80211_get_chain_rssi(struct wiphy *wiphy,
 {
 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
-	mac_handle_t mac_handle;
-	struct get_chain_rssi_req_params req_msg;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_MAX + 1];
-	QDF_STATUS status;
+	struct qdf_mac_addr peer_macaddr;
 	int retval;
-	void *cookie;
-	struct osif_request *request;
-	struct chain_rssi_priv *priv;
-	static const struct osif_request_params params = {
-		.priv_size = sizeof(*priv),
-		.timeout_ms = WLAN_WAIT_TIME_STATS,
-	};
 
 	hdd_enter();
 
@@ -14957,44 +15061,14 @@ static int __wlan_hdd_cfg80211_get_chain_rssi(struct wiphy *wiphy,
 		hdd_err("attr mac addr failed");
 		return -EINVAL;
 	}
-	if (nla_len(tb[QCA_WLAN_VENDOR_ATTR_MAC_ADDR]) !=
-		QDF_MAC_ADDR_SIZE) {
+	if (nla_len(tb[QCA_WLAN_VENDOR_ATTR_MAC_ADDR]) != QDF_MAC_ADDR_SIZE) {
 		hdd_err("incorrect mac size");
 		return -EINVAL;
 	}
-	memcpy(&req_msg.peer_macaddr,
-		nla_data(tb[QCA_WLAN_VENDOR_ATTR_MAC_ADDR]),
-		QDF_MAC_ADDR_SIZE);
-	req_msg.session_id = adapter->vdev_id;
+	qdf_copy_macaddr(&peer_macaddr,
+			 nla_data(tb[QCA_WLAN_VENDOR_ATTR_MAC_ADDR]));
 
-	request = osif_request_alloc(&params);
-	if (!request) {
-		hdd_err("Request allocation failure");
-		return -ENOMEM;
-	}
-	cookie = osif_request_cookie(request);
-
-	mac_handle = hdd_ctx->mac_handle;
-	status = sme_get_chain_rssi(mac_handle,
-				    &req_msg,
-				    hdd_get_chain_rssi_cb,
-				    cookie);
-	if (QDF_STATUS_SUCCESS != status) {
-		hdd_err("Unable to get chain rssi");
-		retval = qdf_status_to_os_return(status);
-	} else {
-		retval = osif_request_wait_for_response(request);
-		if (retval) {
-			hdd_err("Target response timed out");
-		} else {
-			priv = osif_request_priv(request);
-			retval = hdd_post_get_chain_rssi_rsp(hdd_ctx,
-					&priv->chain_rssi);
-			if (retval)
-				hdd_err("Failed to post chain rssi");
-		}
-	}
-	osif_request_put(request);
+	hdd_process_peer_chain_rssi_req(adapter, &peer_macaddr);
 
 	hdd_exit();
 	return retval;
@@ -21346,7 +21420,7 @@ int wlan_hdd_disconnect(struct hdd_adapter *adapter, u16 reason,
 
 	/* Disable STA power-save mode */
 	if ((adapter->device_mode == QDF_STA_MODE) &&
-	    wlan_hdd_set_powersave(adapter, false, 0))
+	    wlan_hdd_set_powersave(adapter, false, 0, false))
 		hdd_debug("Not disable PS for STA");
 
 	wlan_rec_conn_info(adapter->vdev_id, DEBUG_CONN_DISCONNECT,

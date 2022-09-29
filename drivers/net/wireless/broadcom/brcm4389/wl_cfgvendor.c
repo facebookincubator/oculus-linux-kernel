@@ -96,6 +96,10 @@
 #include <wl_cfg_cellavoid.h>
 #endif /* WL_CELLULAR_CHAN_AVOID */
 
+#ifdef WL_VENDOR_META
+#include <wl_cfgvendor_meta.h>
+#endif /* WL_VENDOR_META */
+
 char*
 wl_get_kernel_timestamp(void)
 {
@@ -12472,7 +12476,21 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 #endif /* LINUX_VERSION >= 5.3 */
 	},
 #endif /* WL_USABLE_CHAN */
-
+#ifdef WL_VENDOR_META
+	{
+		{
+			.vendor_id = OUI_META,
+			.subcmd = META_SUBCMD_SET_WIFI_CONFIG,
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV |
+					WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = wl_cfgvendor_meta_set_wifi_config,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
+		.policy = meta_atrribute_set_wifi_config_policy,
+		.maxattr = META_VENDOR_ATTR_CONFIG_MAX
+#endif /* LINUX_VERSION >= 5.3 */
+	},
+#endif /* WL_VENDOR_META */
 };
 
 static const struct  nl80211_vendor_cmd_info wl_vendor_events [] = {

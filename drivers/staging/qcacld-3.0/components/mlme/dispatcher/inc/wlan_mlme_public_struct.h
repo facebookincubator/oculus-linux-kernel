@@ -1234,6 +1234,7 @@ struct wlan_mlme_ratemask {
  * @enabled_rf_test_mode: Enable/disable the RF test mode config
  * @monitor_mode_concurrency: Monitor mode concurrency supported
  * @ocv_support: FW supports OCV or not
+ * @relaxed_6ghz_conn_policy: 6GHz relaxed connection policy
  */
 struct wlan_mlme_generic {
 	uint32_t band_capability;
@@ -1278,6 +1279,9 @@ struct wlan_mlme_generic {
 	bool enabled_rf_test_mode;
 	enum monitor_mode_concurrency monitor_mode_concurrency;
 	bool ocv_support;
+#ifdef CONFIG_BAND_6GHZ
+	bool relaxed_6ghz_conn_policy;
+#endif
 };
 
 /*
@@ -1463,6 +1467,19 @@ enum station_keepalive_method {
 };
 
 /**
+ * enum station_prefer_bw - Station preferred bandwidth to connect AP
+ * @STA_PREFER_BW_DEFAULT: Station connects AP with its max bw capability.
+ * @STA_PREFER_BW_VHT80MHZ: Station connects in VHT 80MHz 2x2 when AP is in
+				160MHz 2x2
+ * @STA_PREFER_BW_80MHZ: Station connects in 80MHz when AP is in 160MHz
+ */
+enum station_prefer_bw {
+	STA_PREFER_BW_DEFAULT,
+	STA_PREFER_BW_VHT80MHZ,
+	STA_PREFER_BW_80MHZ
+};
+
+/**
  * struct wlan_mlme_sta_cfg - MLME STA configuration items
  * @sta_keep_alive_period:          Sends NULL frame to AP period
  * @tgt_gtx_usr_cfg:                Target gtx user config
@@ -1473,8 +1490,8 @@ enum station_keepalive_method {
  * @fils_max_chan_guard_time:       Set maximum channel guard time
  * @current_rssi:                   Current rssi
  * @deauth_retry_cnt:               Deauth retry count
- * @ignore_peer_erp_info:           Ignore peer infrormation
  * @sta_prefer_80mhz_over_160mhz:   Set Sta preference to connect in 80HZ/160HZ
+ * @ignore_peer_erp_info:           Ignore peer infrormation
  * @enable_5g_ebt:                  Set default 5G early beacon termination
  * @deauth_before_connection:       Send deauth before connection or not
  * @enable_go_cts2self_for_sta:     Stop NOA and start using cts2self
@@ -1494,8 +1511,8 @@ struct wlan_mlme_sta_cfg {
 	uint8_t fils_max_chan_guard_time;
 	uint8_t current_rssi;
 	uint8_t deauth_retry_cnt;
+	uint8_t sta_prefer_80mhz_over_160mhz;
 	bool ignore_peer_erp_info;
-	bool sta_prefer_80mhz_over_160mhz;
 	bool enable_5g_ebt;
 	bool deauth_before_connection;
 	bool enable_go_cts2self_for_sta;

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -829,6 +830,105 @@ static void wlansap_update_vendor_acs_chan(struct mac_context *mac_ctx,
 	}
 }
 
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+/**
+ * sap_check_and_process_forcescc_for_go_plus_go() - find if other p2p
+ * go is there and needs to be moved to current p2p go's channel.
+ *
+ * @cur_sap_ctx: current sap context
+ *
+ * Return: None
+ */
+static void
+sap_check_and_process_forcescc_for_go_plus_go(
+					struct sap_context *cur_sap_ctx)
+{
+	struct sap_context *sap_ctx;
+	struct mac_context *mac_ctx;
+	uint8_t i;
+
+	mac_ctx = sap_get_mac_context();
+	if (!mac_ctx) {
+		sap_err("Invalid MAC context");
+		return;
+	}
+
+	for (i = 0; i < SAP_MAX_NUM_SESSION; i++) {
+		sap_ctx = mac_ctx->sap.sapCtxList[i].sap_context;
+		if (sap_ctx &&
+		    QDF_P2P_GO_MODE == mac_ctx->sap.sapCtxList[i].sapPersona &&
+		    sap_ctx->is_forcescc_restart_required &&
+		    cur_sap_ctx->sessionId != sap_ctx->sessionId) {
+			sap_debug("update chan_freq %d of sessionId %d with chan_freq %d",
+				  sap_ctx->chan_freq, sap_ctx->sessionId,
+				  cur_sap_ctx->chan_freq);
+			policy_mgr_process_forcescc_for_go(
+				mac_ctx->psoc, sap_ctx->sessionId,
+				cur_sap_ctx->chan_freq,
+				cur_sap_ctx->ch_params.ch_width,
+				PM_P2P_GO_MODE);
+			sap_ctx->is_forcescc_restart_required = false;
+			break;
+		}
+	}
+}
+
+/**
+ * sap_check_and_process_go_force_scc() - find if other p2p
+ * go/cli/sta is there and needs force scc.
+ *
+ * @cur_sap_ctx: current sap context
+ *
+ * Return: None
+ */
+static void
+sap_check_and_process_go_force_ssc(struct sap_context *sap_ctx)
+{
+	struct mac_context *mac_ctx;
+	uint32_t con_freq;
+	enum phy_ch_width ch_width;
+	enum policy_mgr_con_mode existing_vdev_mode = PM_MAX_NUM_OF_MODE;
+
+	mac_ctx = sap_get_mac_context();
+	if (!mac_ctx) {
+		sap_err("Invalid MAC context");
+		return;
+	}
+	if (sap_ctx->vdev->vdev_mlme.vdev_opmode ==
+	    QDF_P2P_GO_MODE &&
+	    wlan_vdev_get_peer_count(sap_ctx->vdev) == 2 &&
+	    policy_mgr_mode_specific_connection_count(
+		    mac_ctx->psoc, PM_P2P_GO_MODE, NULL) > 1) {
+		sap_check_and_process_forcescc_for_go_plus_go(sap_ctx);
+		return;
+	}
+	policy_mgr_fetch_existing_con_info(mac_ctx->psoc, sap_ctx->sessionId,
+					   sap_ctx->chan_freq,
+					   &existing_vdev_mode,
+					   &con_freq, &ch_width);
+
+	if (sap_ctx->vdev->vdev_mlme.vdev_opmode == QDF_P2P_GO_MODE &&
+	    policy_mgr_go_scc_enforced(mac_ctx->psoc) &&
+	    !policy_mgr_is_go_scc_strict(mac_ctx->psoc) &&
+	    wlan_vdev_get_peer_count(sap_ctx->vdev) == 2 &&
+	    (existing_vdev_mode == PM_P2P_CLIENT_MODE ||
+	    existing_vdev_mode == PM_STA_MODE)){
+		policy_mgr_process_forcescc_for_go(mac_ctx->psoc,
+						   sap_ctx->sessionId,
+						   con_freq, ch_width,
+						   existing_vdev_mode);
+	}
+}
+#else
+static inline void
+sap_check_and_process_forcescc_for_go_plus_go(
+					struct sap_context *cur_sap_ctx)
+{}
+static inline void
+sap_check_and_process_go_force_ssc(struct sap_context *cur_sap_ctx)
+{}
+#endif
+
 QDF_STATUS wlansap_roam_callback(void *ctx,
 				 struct csr_roam_info *csr_roam_info,
 				 uint32_t roam_id,
@@ -1157,10 +1257,17 @@ QDF_STATUS wlansap_roam_callback(void *ctx,
 		 * disassoc event
 		 * Fill in the event structure
 		 */
-		if (roam_status == eCSR_ROAM_SET_KEY_COMPLETE)
+		if (roam_status == eCSR_ROAM_SET_KEY_COMPLETE) {
 			sap_signal_hdd_event(sap_ctx, csr_roam_info,
 					     eSAP_STA_SET_KEY_EVENT,
 					     (void *) eSAP_STATUS_SUCCESS);
+		/*
+		 * After set key if this is the first peer connecting to new GO
+		 * then check for peer count (which is self peer + peer count)
+		 * and take decision for GO+GO, STA+GO and CLI+GO force SCC
+		 */
+			sap_check_and_process_go_force_ssc(sap_ctx);
+		}
 		break;
 	case eCSR_ROAM_RESULT_MAX_ASSOC_EXCEEDED:
 		/* Fill in the event structure */

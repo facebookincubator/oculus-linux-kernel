@@ -79,3 +79,13 @@ struct ar_payload {
 	/// size of the payload
 	uint32_t size;
 };
+
+/**
+ * The different types of events that can happen on a queue.
+ */
+enum ar_queue_event_type {
+	AR_QUEUE_READ_COMPLETE,
+	AR_QUEUE_PEND_REQUIRED,
+	AR_QUEUE_PAYLOAD_CONSUMED,
+	AR_QUEUE_SHUTDOWN,
+};

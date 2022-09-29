@@ -1,10 +1,14 @@
-comment "Collection of Oculus Driver"
-menu "Oculus Drivers"
+menuconfig OCULUS
+	bool "Oculus feature support"
+	default y
+	help
+	  Enable support for Oculus drivers and features
+
+if OCULUS
 
 config AS5510
 	tristate "AS5510 Hall Effect Sensor i2c driver"
 	default n
-	depends on OCULUS
 	help
 	  This driver sets up a regmap to read sensor values.
 
@@ -15,7 +19,6 @@ config AS5510
 config BATTERY_VIRTUAL_SENSOR
 	tristate "Battery Virtual Sensor Driver"
 	default n
-	depends on OCULUS
 	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing the
@@ -24,14 +27,12 @@ config BATTERY_VIRTUAL_SENSOR
 config BLU_FW
 	tristate "Support BLU FW Updates"
 	default n
-	depends on OCULUS
 	help
 	  Allow automatic/OTA FW updates for the backlight MCU.
 
 config CHARGING_THERMAL_CONTROLLER
 	tristate "Charging Thermal Controller Driver"
 	default n
-	depends on OCULUS
 	help
 		This driver votes on a device tree defined pmic votable when trip points
 		associated with a cooling device are passed. There are three states:
@@ -41,7 +42,6 @@ config CHARGING_THERMAL_CONTROLLER
 config DISPLAY_VIRTUAL_SENSOR
 	tristate "Display Virtual Sensor Driver"
 	default n
-	depends on OCULUS
 	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing the
@@ -50,7 +50,6 @@ config DISPLAY_VIRTUAL_SENSOR
 config FRONT_PANEL_SENSOR
 	tristate "Front Panel Virtual Sensor Driver"
 	default n
-	depends on OCULUS
 	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing the front
@@ -59,7 +58,6 @@ config FRONT_PANEL_SENSOR
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
 	default n
-	depends on OCULUS
 	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing the iio channel
@@ -67,7 +65,7 @@ config IIO_CHANNEL_SENSOR
 
 config INSTRUCTION_SAMPLER
 	tristate "Periodic instruction sampler"
-	depends on OCULUS && EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
+	depends on EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
 	help
 	  Provides support for periodic instruction sampling of processes
 	  running on the system.
@@ -75,7 +73,6 @@ config INSTRUCTION_SAMPLER
 config MISCFIFO
 	tristate "miscfifo chardev driver"
 	default n
-	depends on OCULUS
 	help
 	  Like seqfile, this driver provides file operations to
 	  easily implement a chardev backed by a kfifo.
@@ -86,38 +83,36 @@ config MISCFIFO
 config MISCFIFO_SAMPLE
 	tristate "miscfifo chardev driver example"
 	default n
-	depends on OCULUS
 	help
 	  Example usage of miscfifo chardev driver
 
 config MOLOKINI
 	tristate "Molokini usbpd driver"
 	default n
-	depends on OCULUS
 	help
 	  Molokini usbpd kernel module for registering unstructured vdm messages.
 	  Messages will be sent with host device acting as a source and a sink to
 	  Molokini.
 	  Also creates debugfs nodes to advertise Molokini battery parameters.
 
-config OCULUS
-	bool "Oculus feature support"
-	default y
-	help
-	  Enable support for Oculus drivers and features
-
 config OCULUS_HOLLYWOOD
 	bool "Enable support for hollywood device"
 	default n
-	depends on OCULUS
 	select ARCH_KONA
 	help
 	  Enable support for the hollywood device
 
+config OCULUS_unknown2
+	bool "Enable support for unknown2 device"
+	default n
+	depends on OCULUS
+	select ARCH_BENGAL
+	help
+	  Enable support for the unknown2 device
+
 config VENDOR_DT_OUTPUT_DISABLE
 	bool "Disable building of device trees for test platforms"
 	default y
-	depends on OCULUS
 	help
 	  Building Qualcomm kernels with default flags causes serveral unrelated
 	  device-trees to be built by default. Don't build them when
@@ -126,7 +121,6 @@ config VENDOR_DT_OUTPUT_DISABLE
 
 config RT600_CTRL
 	tristate "Oculus RT600 control driver"
-	depends on OCULUS
 	default n
 	help
 	    Enable RT600 control driver. This driver controls RT600 state
@@ -148,7 +142,7 @@ config SENSORS_PWM_TACH_FAN
 
 config SPI_STP
 	tristate "STP SPI driver"
-	depends on OCULUS && SPI
+	depends on SPI
 	default n
 	help
 	  Enable STP SPI driver for data transfer between SoC (master) and slave.
@@ -157,24 +151,9 @@ config SPI_STP
 	  pre-configured STP channels. Each STP channel is exposed as a dedicated
 	  character device, interfaceable through syscalls
 
-config SYNCBOSS
-	tristate "Oculus SyncBoss Driver"
-	depends on OCULUS && MISCFIFO && SPI
-	default y
-	help
-	  Oculus SyncBoss Driver
-
-config SYNCBOSS_CAMERA_CONTROL
-	bool "Support Syncboss camera control"
-	depends on OCULUS && SYNCBOSS
-	default y
-	help
-	  Allow Syncboss driver to control camera hardware
-
 config TOP_PANEL_SENSOR
 	tristate "Top Panel Virtual Sensor Driver"
 	default n
-	depends on OCULUS
 	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing the top
@@ -183,10 +162,10 @@ config TOP_PANEL_SENSOR
 config VIRTUAL_SENSOR_UTILS
 	tristate "Virtual Sensor Utilities"
 	default n
-	depends on OCULUS
 	help
 	  This driver implements virtual thermal sensor helper functionality.
 
 source "drivers/staging/oculus/internal/Kconfig"
+source "drivers/staging/oculus/mcu/Kconfig"
 
-endmenu
+endif # OCULUS

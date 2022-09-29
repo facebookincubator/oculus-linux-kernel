@@ -854,16 +854,18 @@ static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
 			u32 bl_lvl)
 {
 	int rc = 0;
-	int i;
 	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
-	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	u32 vtotal, target_scanline, scanline;
 
-	u8 reg = 0x51; /* BLU adjust command */
-	u8 payload[2] = {0}; /* BLU adjust payload */
-	u8 page_select_reg = 0xFF;
-	u16 bl_reg_max_value = 0xFFF;
+	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
+	u8 blu_set_mode[2] = {0xD0, 0x02}; /* BLU mode select */
+	u8 blu_set_en[2] = {0xD1, 0x01}; /* BLU channel select */
+	u8 blu_level_msb[2] = {0x8F, 0x00}; /* BLU level MSB */
+	u8 blu_level_lsb[2] = {0x90, 0x00}; /* BLU level LSB */
+	u8 blu_start_msb[2] = {0xD2, 0x00}; /* BLU PWM start adjust MSB */
+	u8 blu_start_lsb[2] = {0xD3, 0x00}; /* BLU PWM start adjust LSB */
 
 	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
 		return -EINVAL;
@@ -875,7 +877,7 @@ static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
 	vtotal = (u32)DSI_V_TOTAL(timing);
 
 	/* Transform backlight level into illumination period in scanlines */
-	bl_lvl = (bl_lvl * bl_reg_max_value) / bl_config->bl_max_level;
+	bl_lvl = (bl_lvl * vtotal * bl_config->jdi_blu_default_duty) / 1000000;
 
 	/*
 	 * Calculate the last scanline to start on for each BLU without
@@ -883,23 +885,40 @@ static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
 	 * scanout to the active scanlines of the panel.
 	 */
 	target_scanline = vtotal - timing->v_front_porch + bl_config->jdi_scanline_max_offset;
-	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
-	left_scanline = right_scanline + timing->v_active / 2;
+	scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
 
-	right_scanline = min(target_scanline, right_scanline);
-	if (right_scanline > vtotal)
-		right_scanline -= vtotal;
-	left_scanline = min(target_scanline, left_scanline);
-	if (left_scanline > vtotal)
-		left_scanline -= vtotal;
+	scanline = min(target_scanline, scanline);
+	if (scanline > vtotal)
+		scanline -= vtotal;
 
-	payload[0] = bl_lvl >> 8;
-	payload[1] = bl_lvl & 0xff;
-	rc = mipi_dsi_dcs_write(dsi, reg, payload, sizeof(payload));
+	if (scanline == vtotal - bl_lvl)
+		scanline -= 1;
 
+	/* NVT DDIC multiples the start pulse by 4 and pwm width by 2 by default */
+	scanline /= 4;
+	bl_lvl /= 2;
+
+	blu_start_msb[1] = scanline >> 8;
+	blu_start_lsb[1] = scanline & 0xff;
+	blu_level_msb[1] = bl_lvl >> 8;
+	blu_level_lsb[1] = bl_lvl & 0xff;
+
+	/* Queue the DCS writes so they can be batched together in one frame. */
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), 0, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_msb, sizeof(blu_level_msb), 0, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_lsb, sizeof(blu_level_lsb), 0, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_mode, sizeof(blu_set_mode), 0, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_en, sizeof(blu_set_en), 0, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_start_msb, sizeof(blu_start_msb), 0, 0);
+	/* Send with last command flag */
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_start_lsb, sizeof(blu_start_lsb), MIPI_DSI_MSG_LASTCOMMAND, 0);
+
+	if (rc) {
+		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
+		goto error;
+	}
 	bl_config->jdi_scanline_duration = bl_lvl;
-	bl_config->jdi_scanline_offset[0] = right_scanline;
-	bl_config->jdi_scanline_offset[1] = left_scanline;
+	bl_config->jdi_scanline_offset[0] = scanline;
 
 error:
 	return rc;

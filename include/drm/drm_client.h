@@ -106,10 +106,25 @@ void drm_client_release(struct drm_client_dev *client);
 void drm_client_register(struct drm_client_dev *client);
 void drm_client_release(struct drm_client_dev *client);
 
+#if CONFIG_DRM_KMS_HELPER
 void drm_client_dev_register(struct drm_device *dev);
 void drm_client_dev_unregister(struct drm_device *dev);
 void drm_client_dev_hotplug(struct drm_device *dev);
 void drm_client_dev_restore(struct drm_device *dev);
+#else
+void drm_client_dev_register(struct drm_device *dev)
+{
+}
+void drm_client_dev_unregister(struct drm_device *dev)
+{
+}
+void drm_client_dev_hotplug(struct drm_device *dev)
+{
+}
+void drm_client_dev_restore(struct drm_device *dev)
+{
+}
+#endif
 
 /**
  * struct drm_client_buffer - DRM client buffer

@@ -2,14 +2,16 @@
 # Makefile for kernel SPI STP LAYER driver.
 #
 
-obj-$(CONFIG_SPI_STP)		+= spi_stp_driver.o
-obj-$(CONFIG_SPI_STP)		+= spi_stp_dev.o
-obj-$(CONFIG_SPI_STP)		+= stp.o
-obj-$(CONFIG_SPI_STP)		+= stp_master.o
-obj-$(CONFIG_SPI_STP)		+= stp_pipeline.o
-obj-$(CONFIG_SPI_STP)		+= stp_master_io.o
-obj-$(CONFIG_SPI_STP)		+= stp_ie.o
-obj-$(CONFIG_SPI_STP)		+= stp_notification.o
-obj-$(CONFIG_SPI_STP)		+= stp_router.o
-obj-$(CONFIG_SPI_STP)		+= stp_raw_dev.o
+ccflags-y += -Idrivers/staging/oculus/stp
+ccflags-y += -std=gnu99
+ccflags-y += -Wno-declaration-after-statement
 
+obj-$(CONFIG_SPI_STP) += stp/common/stp_common.o
+obj-$(CONFIG_SPI_STP) += stp/common/stp_pipeline.o
+obj-$(CONFIG_SPI_STP) += stp/controller/stp_controller_io.o
+obj-$(CONFIG_SPI_STP) += stp/controller/stp_controller.o
+obj-$(CONFIG_SPI_STP) += stp/controller/stp_notification.o
+obj-$(CONFIG_SPI_STP) += common/stp_error_mapping.o
+obj-$(CONFIG_SPI_STP) += device/stp_device.o
+obj-$(CONFIG_SPI_STP) += driver/stp_driver.o
+obj-$(CONFIG_SPI_STP) += driver/stp_gpio.o

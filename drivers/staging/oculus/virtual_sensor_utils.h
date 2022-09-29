@@ -47,6 +47,11 @@ struct virtual_sensor_common_data {
 
 	int intercept_constant_charging;
 	int intercept_constant_discharging;
+
+	/* virtual thermal sensor info to run workqueue */
+	int internal_polling_delay;
+	struct thermal_zone_device *tzd;
+	struct delayed_work poll_queue;
 };
 
 int is_charger_connected(struct power_supply *usb_psy);
@@ -98,4 +103,6 @@ ssize_t discharging_constant_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
 static DEVICE_ATTR_RW(discharging_constant);
 
+void virtual_sensor_workqueue_register(struct virtual_sensor_common_data *data);
+void virtual_sensor_workqueue_unregister(struct virtual_sensor_common_data *data);
 #endif /* _VIRTUAL_SENSOR_UTILS_H_ */

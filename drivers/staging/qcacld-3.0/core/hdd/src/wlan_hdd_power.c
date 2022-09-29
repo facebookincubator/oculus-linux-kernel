@@ -1884,7 +1884,7 @@ err_ctx_null:
 }
 
 int wlan_hdd_set_powersave(struct hdd_adapter *adapter,
-	bool allow_power_save, uint32_t timeout)
+	bool allow_power_save, uint32_t timeout, bool usr_ps_cfg_update)
 {
 	mac_handle_t mac_handle;
 	struct hdd_context *hdd_ctx;
@@ -1955,7 +1955,10 @@ int wlan_hdd_set_powersave(struct hdd_adapter *adapter,
 	} else {
 		hdd_debug("Wlan driver Entering Full Power");
 
-		sme_save_usr_ps_cfg(mac_handle, false);
+		if (usr_ps_cfg_update)
+			sme_save_usr_ps_cfg(mac_handle, false);
+		else
+			hdd_debug("usr_ps_cfg update not required");
 		/*
 		 * Enter Full power command received from GUI
 		 * this means we are disconnected
@@ -2566,7 +2569,7 @@ static int __wlan_hdd_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 		return 0;
 	}
 
-	status = wlan_hdd_set_powersave(adapter, allow_power_save, timeout);
+	status = wlan_hdd_set_powersave(adapter, allow_power_save, timeout, true);
 
 	if (hdd_adapter_is_connected_sta(adapter)) {
 		hdd_debug("vdev mode %d enable dhcp protection",

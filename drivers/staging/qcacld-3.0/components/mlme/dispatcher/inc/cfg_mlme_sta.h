@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -124,13 +125,14 @@
  * <ini>
  * gStaPrefer80MHzOver160MHz - set sta preference to connect in 80HZ/160HZ
  * @Min: 0
- * @Max: 1
+ * @Max: 2
  * @Default: 0
  *
  * This ini is used to set sta preference to connect in 80HZ/160HZ
  *
  * 0 - Connects in 160MHz 1x1 when AP is 160MHz 2x2
  * 1 - Connects in 80MHz 2x2 when AP is 160MHz 2x2
+ * 2 - Always Connects in 80MHz when AP is 160MHz
  *
  * Related: NA
  *
@@ -140,9 +142,12 @@
  *
  * </ini>
  */
-#define CFG_STA_PREFER_80MHZ_OVER_160MHZ CFG_INI_BOOL( \
+#define CFG_STA_PREFER_80MHZ_OVER_160MHZ CFG_INI_UINT( \
 	"gStaPrefer80MHzOver160MHz", \
 	0, \
+	2, \
+	0, \
+	CFG_VALUE_OR_DEFAULT, \
 	"Sta preference to connect in 80HZ/160HZ")
 
 /*
