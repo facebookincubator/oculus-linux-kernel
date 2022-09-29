@@ -23,6 +23,10 @@
 		qcom,mdss-dsi-mdp-trigger = "none";
 		qcom,mdss-dsi-reset-sequence = <0 20>, <1 20>;
 		qcom,adjust-timer-wakeup-ms = <1>;
+		qcom,mdss-dsi-pan-enable-dynamic-fps;
+		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+		qcom,mdss-dsi-min-refresh-rate = <60>;
+		qcom,mdss-dsi-max-refresh-rate = <90>;
 		qcom,mdss-dsi-lp11-init;
 		qcom,mdss-dsi-tx-eot-append;
 		qcom,cmd-sync-wait-broadcast;

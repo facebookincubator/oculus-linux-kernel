@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -165,6 +166,30 @@ enum monitor_mode_concurrency {
 		"rf_test_mode_enabled", \
 		1, \
 		"rf test mode Enable Flag")
+
+#ifdef CONFIG_BAND_6GHZ
+/**
+ * relaxed_6ghz_conn_policy - Enable 6ghz relaxed connection policy
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This cfg is used to set 6Ghz relaxed connection policies where STA
+ * will be allowed to operate in VLP mode and scan/connect to 6 GHz BSS
+ * with unmatching country code.
+ *
+ * Related: None
+ *
+ * Supported Feature: STA
+ */
+#define CFG_RELAXED_6GHZ_CONN_POLICY CFG_BOOL( \
+		"relaxed_6ghz_conn_policy", \
+		0, \
+		"6ghz relaxed connection policy")
+#define CFG_RELAX_6GHZ_CONN_POLICY	CFG(CFG_RELAXED_6GHZ_CONN_POLICY)
+#else
+#define CFG_RELAX_6GHZ_CONN_POLICY
+#endif
 
 /*
  * <ini>
@@ -878,5 +903,6 @@ enum monitor_mode_concurrency {
 	CFG(CFG_DFS_CHAN_AGEOUT_TIME) \
 	CFG(CFG_SAE_CONNECION_RETRIES) \
 	CFG(CFG_WLS_6GHZ_CAPABLE) \
-	CFG(CFG_MONITOR_MODE_CONCURRENCY)
+	CFG(CFG_MONITOR_MODE_CONCURRENCY) \
+	CFG_RELAX_6GHZ_CONN_POLICY
 #endif /* __CFG_MLME_GENERIC_H */

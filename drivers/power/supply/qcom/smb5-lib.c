@@ -8080,9 +8080,6 @@ static void smblib_dc_detect_work(struct work_struct *work)
 			smblib_set_prop_dc_reset(chg);
 	}
 
-	/* Wait 500ms to get CYPD3177 ready */
-	msleep(500);
-
 	rc = smblib_get_prop_dc_hw_current_max(chg, &val);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't get dc hw current max rc = %d\n", rc);
@@ -8091,11 +8088,13 @@ static void smblib_dc_detect_work(struct work_struct *work)
 	val.intval = val.intval * 1000;
 
 	/*
-	 * If the maximum charging current is 3.0A, change
-	 * the maximum DC current to 3.0A
+	 * Update the maximum DC current according to the selected dock PDO
 	 */
-	if (val.intval == DC_HW_CURRENT_MAX)
+	if ((val.intval > 0) && (val.intval <= DC_HW_CURRENT_MAX))
 		smblib_set_prop_dc_hw_current_max(chg, &val);
+
+	if (val.intval == 0)
+		smblib_set_charge_param(chg, &chg->param.dc_icl, DCIN_ICL_MIN_UA);
 }
 
 static void smblib_rblt_check_work(struct work_struct *work)

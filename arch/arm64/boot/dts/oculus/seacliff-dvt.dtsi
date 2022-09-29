@@ -71,6 +71,16 @@
 
 	qcom,panel-supply-entry@6 {
 		reg = <6>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@7 {
+		reg = <7>;
 		qcom,supply-name = "blu-spi";
 		qcom,supply-min-voltage = <1800000>;
 		qcom,supply-max-voltage = <1800000>;
@@ -81,13 +91,8 @@
 };
 
 &kona_mtp_batterydata {
-	qcom,5133886_facebook_sealiff_5348mah_averaged_masterslave_apr23rd2021 {
-		qcom,batt-id-kohm = <300>;
-		qcom,rblt-missing-range = <138400 171800>;
-		qcom,rblt-ok-range = <127300 138400>;
-		qcom,rblt-warn-range = <65000 127300>;
-		qcom,rblt-crit-range = <0 65000>;
-	};
+	qcom,batt-id-range-pct = <15>;
+	#include "5854977_Meta_Seacliff_5514mAH_averaged_MasterSlave_Jun30th2022.dtsi"
 };
 
 &qupv3_se8_i2c {

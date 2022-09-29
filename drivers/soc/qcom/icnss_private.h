@@ -358,6 +358,7 @@ struct icnss_priv {
 	void *hang_event_data;
 	bool is_chain1_supported;
 	bool chain_reg_info_updated;
+	unsigned long device_config;
 };
 
 struct icnss_reg_info {

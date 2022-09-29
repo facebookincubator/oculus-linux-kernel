@@ -19,7 +19,8 @@
 		qcom,supply-max-voltage = <1800000>;
 		qcom,supply-enable-load = <62000>;
 		qcom,supply-disable-load = <0>;
-		qcom,supply-post-on-sleep = <0>;
+		/* 100(+20)ms for capacitor to stabilize */
+		qcom,supply-post-on-sleep = <120>;
 	};
 
 	qcom,panel-supply-entry@6 {
@@ -34,6 +35,16 @@
 
 	qcom,panel-supply-entry@7 {
 		reg = <7>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@8 {
+		reg = <8>;
 		qcom,supply-name = "blu-spi";
 		qcom,supply-min-voltage = <1800000>;
 		qcom,supply-max-voltage = <1800000>;

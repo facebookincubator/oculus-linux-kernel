@@ -43,6 +43,65 @@ exit_unlock:
 }
 EXPORT_SYMBOL(miscfifo_fop_read);
 
+ssize_t miscfifo_fop_read_many(struct file *file,
+	char __user *buf, size_t len, loff_t *off)
+{
+	ssize_t rc;
+	unsigned int total_copied = 0;
+	struct miscfifo_client *client = file->private_data;
+
+	mutex_lock(&client->consumer_lock);
+	if (kfifo_is_empty(&client->fifo)) {
+		if (file->f_flags & O_NONBLOCK) {
+			rc = -EAGAIN;
+			goto exit_unlock;
+		}
+
+		mutex_unlock(&client->consumer_lock);
+		rc = wait_event_interruptible(client->mf->clients.wait,
+					      !kfifo_is_empty(&client->fifo));
+		if (rc)
+			return rc;
+		mutex_lock(&client->consumer_lock);
+	}
+
+	if (kfifo_peek_len(&client->fifo) > len) {
+		rc = -ENOBUFS;
+		goto exit_unlock;
+	}
+
+	while (true) {
+		unsigned int copied;
+
+		/*
+		 * Check whether there is data in the queue, or whether the
+		 * next record might not fit into the user buffer. If either
+		 * condition is true, we will exit the loop and return the
+		 * data we have copied out so far.
+		 *
+		 * Note: kfifo_peek_len might return a garbage value if
+		 * the fifo is empty, hence we need the explicit check whether
+		 * the fifo is empty, so that we don't copy out zero bytes
+		 * in kfifo_to_user.
+		 */
+		if (kfifo_is_empty(&client->fifo) || kfifo_peek_len(&client->fifo) > len)
+			break;
+		rc = kfifo_to_user(&client->fifo, buf, len, &copied);
+		if (rc != 0)
+			break;
+
+		total_copied += copied;
+		buf += copied;
+		len -= copied;
+	}
+	rc = total_copied;
+exit_unlock:
+	mutex_unlock(&client->consumer_lock);
+
+	return rc;
+}
+EXPORT_SYMBOL(miscfifo_fop_read_many);
+
 unsigned int miscfifo_fop_poll(struct file *file,
 	struct poll_table_struct *pt)
 {

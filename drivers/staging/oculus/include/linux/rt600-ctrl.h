@@ -8,8 +8,7 @@
 
 enum rt600_boot_state {
 	normal = 0,
-	flashing,
-	soc_active
+	flashing
 };
 
 int rt600_event_register(struct notifier_block *nb);

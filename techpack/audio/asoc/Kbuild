@@ -45,9 +45,6 @@ ifeq ($(KERNEL_BUILD), 0)
 		ifeq ($(CONFIG_OCULUS_EUREKA865), y)
 			include $(AUDIO_ROOT)/config/eureka.conf
 			INCS    +=  -include $(AUDIO_ROOT)/config/eurekaconf.h
-		else ifeq ($(CONFIG_OCULUS_CRIMSON), y)
-			include $(AUDIO_ROOT)/config/crimson.conf
-			INCS    +=  -include $(AUDIO_ROOT)/config/crimsonconf.h
 		else
 			include $(AUDIO_ROOT)/config/konaauto.conf
 			INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h

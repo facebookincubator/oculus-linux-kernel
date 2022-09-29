@@ -6306,7 +6306,7 @@ static int cm710x_init(struct snd_soc_pcm_runtime *rtd)
 	}
 
 	msm_add_mi2s_snd_controls(component);
-#if IS_ENABLED(CONFIG_SND_SOC_CM7120)
+#if IS_ENABLED(CONFIG_SND_SOC_CM7120) || !defined(CONFIG_TDM_DISABLE)
 	msm_add_tdm_snd_controls(component);
 #endif
 

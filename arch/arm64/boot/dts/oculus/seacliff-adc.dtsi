@@ -104,7 +104,7 @@
 	qcom,battery-data = <&kona_mtp_batterydata>;
 	qcom,step-charging-enable;
 	qcom,sw-jeita-enable;
-	qcom,wd-bark-time-secs = <16>;
+	qcom,wd-bark-time-secs = <128>;
 	qcom,suspend-input-on-debug-batt;
 	qcom,fcc-max-ua = <4813000>;
 	qcom,usb-icl-ua = <3000000>;

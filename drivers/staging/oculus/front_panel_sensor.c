@@ -121,6 +121,10 @@ static int front_panel_sensor_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, &fp->data);
 
+	fp->data.tzd = fp->tzd;
+	virtual_sensor_workqueue_register(&fp->data);
+
+
 	ret = sysfs_create_groups(&pdev->dev.kobj, front_panel_sensor_groups);
 	if (ret < 0)
 		dev_err(&pdev->dev, "Failed to create sysfs files\n");
@@ -134,6 +138,8 @@ static int front_panel_sensor_remove(struct platform_device *pdev)
 			(struct virtual_sensor_common_data *) platform_get_drvdata(pdev);
 	struct front_panel_sensor_data *vs =
 			(struct front_panel_sensor_data *) data->parent;
+
+	virtual_sensor_workqueue_unregister(&vs->data);
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 

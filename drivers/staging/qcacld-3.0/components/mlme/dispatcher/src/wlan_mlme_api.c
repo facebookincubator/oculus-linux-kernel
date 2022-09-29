@@ -2774,6 +2774,23 @@ wlan_mlme_set_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool value)
 	return QDF_STATUS_SUCCESS;
 }
 
+#ifdef CONFIG_BAND_6GHZ
+QDF_STATUS
+wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
+					      bool *value)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	*value = mlme_obj->cfg.gen.relaxed_6ghz_conn_policy;
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 QDF_STATUS
 wlan_mlme_cfg_set_vht_chan_width(struct wlan_objmgr_psoc *psoc, uint8_t value)
 {
@@ -4802,3 +4819,12 @@ bool wlan_mlme_skip_tpe(struct wlan_objmgr_psoc *psoc)
 
 	return mlme_obj->cfg.power.skip_tpe;
 }
+
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+bool
+wlan_mlme_get_p2p_p2p_conc_support(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_psoc_nif_fw_ext_cap_get(psoc,
+					    WLAN_SOC_EXT_P2P_P2P_CONC_SUPPORT);
+}
+#endif

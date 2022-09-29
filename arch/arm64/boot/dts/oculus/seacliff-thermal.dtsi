@@ -18,6 +18,7 @@
 
 		intercept-discharging = <14511>;
 		max-differential = <10000>;
+		internal-polling-delay = <1000>;
 		dont-use-pcm-with-charger;
 	};
 
@@ -42,6 +43,7 @@
 		intercept-discharging = <1>;
 
 		intercept-constant = <19771>;
+		internal-polling-delay = <1000>;
 	};
 
 	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
@@ -63,6 +65,8 @@
 
 		intercept-charging = <8825>;
 		intercept-discharging = <8825>;
+
+		internal-polling-delay = <1000>;
 	};
 
 	vrapi_top_panel_sensor: vrapi_top_panel_sensor {
@@ -84,14 +88,16 @@
 
 		intercept-charging = <6211>;
 		intercept-discharging = <6211>;
+
+		internal-polling-delay = <1000>;
 	};
 };
 
 
 &thermal_zones {
 	batt-virt {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&battery_virtual_sensor>;
 		wake-capable-sensor;
@@ -110,8 +116,8 @@
 	};
 
 	display-virt {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&display_virtual_sensor>;
 		wake-capable-sensor;
@@ -196,8 +202,8 @@
 	};
 
 	vrapi-front-panel {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&vrapi_front_panel_sensor>;
 		wake-capable-sensor;
@@ -226,8 +232,8 @@
 	};
 
 	vrapi-top-panel {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&vrapi_top_panel_sensor>;
 		wake-capable-sensor;

@@ -208,6 +208,7 @@ struct msm_geni_serial_port {
 	struct completion m_cmd_timeout;
 	struct completion s_cmd_timeout;
 	bool bypass_flowc;
+	bool allow_suspend;
 };
 
 static const struct uart_ops msm_geni_serial_pops;
@@ -3167,6 +3168,8 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 		goto exit_geni_serial_probe;
 
 	dev_port->serial_rsc.ctrl_dev = &pdev->dev;
+	dev_port->allow_suspend = of_property_read_bool(pdev->dev.of_node,
+						    "qcom,allow-suspend");
 
 	/* RUMI specific */
 	dev_port->rumi_platform = of_property_read_bool(pdev->dev.of_node,
@@ -3418,7 +3421,8 @@ static int msm_geni_serial_runtime_suspend(struct device *dev)
 
 	if (port->wakeup_irq > 0) {
 		port->edge_count = 0;
-		enable_irq(port->wakeup_irq);
+		if (!port->allow_suspend)
+			enable_irq(port->wakeup_irq);
 	}
 	IPC_LOG_MSG(port->ipc_log_pwr, "%s:\n", __func__);
 	__pm_relax(&port->geni_wake);
@@ -3437,8 +3441,12 @@ static int msm_geni_serial_runtime_resume(struct device *dev)
 	 * wake source is activated by the wakeup isr.
 	 */
 	__pm_relax(&port->geni_wake);
-	__pm_stay_awake(&port->geni_wake);
-	if (port->wakeup_irq > 0)
+	if (port->allow_suspend)
+		__pm_wakeup_event(&port->geni_wake, WAKEBYTE_TIMEOUT_MSEC);
+	else
+		__pm_stay_awake(&port->geni_wake);
+
+	if (port->wakeup_irq > 0 && !port->allow_suspend)
 		disable_irq(port->wakeup_irq);
 	/*
 	 * Resources On.
@@ -3461,6 +3469,28 @@ static int msm_geni_serial_runtime_resume(struct device *dev)
 	IPC_LOG_MSG(port->ipc_log_pwr, "%s:\n", __func__);
 exit_runtime_resume:
 	return ret;
+}
+
+static int msm_geni_serial_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
+
+	if (port->allow_suspend)
+		pm_runtime_force_suspend(dev);
+
+	return 0;
+}
+
+static int msm_geni_serial_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
+
+	if (port->allow_suspend)
+		pm_runtime_force_resume(dev);
+
+	return 0;
 }
 
 static int msm_geni_serial_sys_suspend_noirq(struct device *dev)
@@ -3516,6 +3546,16 @@ static int msm_geni_serial_runtime_resume(struct device *dev)
 	return 0;
 }
 
+static int msm_geni_serial_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int msm_geni_serial_resume(struct device *dev)
+{
+	return 0;
+}
+
 static int msm_geni_serial_sys_suspend_noirq(struct device *dev)
 {
 	return 0;
@@ -3561,6 +3601,8 @@ EXPORT_SYMBOL(msm_geni_serial_get_uart_port);
 static const struct dev_pm_ops msm_geni_serial_pm_ops = {
 	.runtime_suspend = msm_geni_serial_runtime_suspend,
 	.runtime_resume = msm_geni_serial_runtime_resume,
+	.suspend = msm_geni_serial_suspend,
+	.resume = msm_geni_serial_resume,
 	.suspend_noirq = msm_geni_serial_sys_suspend_noirq,
 	.resume_noirq = msm_geni_serial_sys_resume_noirq,
 };

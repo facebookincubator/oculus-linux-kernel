@@ -32,21 +32,21 @@
 	qcom,mdss-dsi-display-timings {
 			timing@0 {
 				qcom,mdss-dsi-panel-width = <176>;
-				qcom,mdss-dsi-panel-height = <320>;
-				qcom,mdss-dsi-h-front-porch = <56>;
-				qcom,mdss-dsi-h-back-porch = <44>;
-				qcom,mdss-dsi-h-pulse-width = <12>;
+				qcom,mdss-dsi-panel-height = <321>;
+				qcom,mdss-dsi-h-front-porch = <414>;
+				qcom,mdss-dsi-h-back-porch = <80>;
+				qcom,mdss-dsi-h-pulse-width = <38>;
 				qcom,mdss-dsi-h-sync-skew = <0>;
-				qcom,mdss-dsi-v-back-porch = <2>;
-				qcom,mdss-dsi-v-front-porch = <3520>;
-				qcom,mdss-dsi-v-pulse-width = <2>;
+				qcom,mdss-dsi-v-back-porch = <22>;
+				qcom,mdss-dsi-v-front-porch = <2589>;
+				qcom,mdss-dsi-v-pulse-width = <10>;
 				qcom,mdss-dsi-h-left-border = <0>;
 				qcom,mdss-dsi-h-right-border = <0>;
 				qcom,mdss-dsi-v-top-border = <0>;
 				qcom,mdss-dsi-v-bottom-border = <0>;
-				qcom,mdss-dsi-panel-framerate = <60>;
+				qcom,mdss-dsi-panel-framerate = <30>;
 				qcom,mdss-dsi-panel-phy-timings = [
-					00 1B 07 06 22 21 07
+					00 1B 06 06 22 20 07
 					07 07 02 04 00 18 17
 				];
 				qcom,display-topology = <1 0 1>;
@@ -57,8 +57,8 @@
 };
 
 &sde_dsi {
-	qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>;
-	qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>;
+	qcom,dsi-ctrl = <&mdss_dsi0>;
+	qcom,dsi-phy = <&mdss_dsi_phy0>;
 	qcom,dsi-default-panel = <&dsi_d4xx_panel_dsc_video>;
 };
 

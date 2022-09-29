@@ -14,8 +14,6 @@ endif
 ifeq ($(CONFIG_ARCH_KONA), y)
 ifeq ($(CONFIG_OCULUS_EUREKA865), y)
 include $(srctree)/techpack/audio/config/eureka.conf
-else ifeq ($(CONFIG_OCULUS_CRIMSON), y)
-include $(srctree)/techpack/audio/config/crimson.conf
 else
 include $(srctree)/techpack/audio/config/konaauto.conf
 endif
@@ -48,9 +46,6 @@ ifeq ($(CONFIG_ARCH_KONA), y)
 ifeq ($(CONFIG_OCULUS_EUREKA865), y)
 LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/eurekaconf.h
-else ifeq ($(CONFIG_OCULUS_CRIMSON), y)
-LINUXINCLUDE    += \
-                -include $(srctree)/techpack/audio/config/crimsonconf.h
 else
 LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/konaautoconf.h

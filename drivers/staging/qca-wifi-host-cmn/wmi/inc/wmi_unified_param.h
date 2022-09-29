@@ -5246,6 +5246,9 @@ typedef enum {
 #ifdef WLAN_FEATURE_IGMP_OFFLOAD
 	wmi_service_igmp_offload_support,
 #endif
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+	wmi_service_p2p_p2p_cc_support,
+#endif
 	wmi_services_max,
 } wmi_conv_service_ids;
 #define WMI_SERVICE_UNAVAILABLE 0xFFFF

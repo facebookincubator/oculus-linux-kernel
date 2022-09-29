@@ -2155,6 +2155,28 @@ wlan_mlme_is_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool *value);
 QDF_STATUS
 wlan_mlme_set_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool value);
 
+#ifdef CONFIG_BAND_6GHZ
+/**
+ * wlan_mlme_is_relaxed_6ghz_conn_policy_enabled() - Get the 6ghz relaxed
+ *                                                   connection policy flag
+ * @psoc: psoc context
+ * @value: Enable/Disable value ptr.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
+					      bool *value);
+#else
+static inline QDF_STATUS
+wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
+					      bool *value)
+{
+	*value = false;
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 /**
  * wlan_mlme_get_sta_miracast_mcc_rest_time() - Get STA/MIRACAST MCC rest time
  *
@@ -3106,4 +3128,23 @@ bool wlan_mlme_is_local_tpe_pref(struct wlan_objmgr_psoc *psoc);
  * operating in 2G/5G bands, false if host should always consider TPE IE values
  */
 bool wlan_mlme_skip_tpe(struct wlan_objmgr_psoc *psoc);
+
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+/**
+ * wlan_mlme_get_p2p_p2p_conc_support() - Get p2p+p2p conc support
+ *
+ * @psoc: pointer to psoc object
+ * @val : value
+ *
+ * Return: Success/failure
+ */
+bool
+wlan_mlme_get_p2p_p2p_conc_support(struct wlan_objmgr_psoc *psoc);
+#else
+static inline bool
+wlan_mlme_get_p2p_p2p_conc_support(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+#endif
 #endif /* _WLAN_MLME_API_H_ */

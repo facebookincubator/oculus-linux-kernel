@@ -23,6 +23,6 @@ obj-$(CONFIG_SENSORS_PWM_TACH_FAN)	+= pwm-tach-fan.o
 obj-$(CONFIG_RT600_CTRL) 		+= rt600-ctrl.o
 obj-$(CONFIG_TOP_PANEL_SENSOR)		+= top_panel_sensor.o
 obj-$(CONFIG_SPI_STP)			+= stp/
-obj-$(CONFIG_SYNCBOSS)			+= syncboss/
 obj-$(CONFIG_VIRTUAL_SENSOR_UTILS)	+= virtual_sensor_utils.o
 obj-y					+= internal/
+obj-y					+= mcu/

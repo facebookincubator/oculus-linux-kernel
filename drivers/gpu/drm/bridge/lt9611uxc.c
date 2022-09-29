@@ -91,7 +91,6 @@ struct lt9611 {
 	struct work_struct cec_work;
 	bool cec_status;
 	struct cec_notifier *cec_notifier;
-	bool is_wait_cec_response;
 
 	u8 i2c_addr;
 	int irq;
@@ -120,7 +119,6 @@ struct lt9611 {
 	struct work_struct edid_work;
 	struct work_struct work;
 	struct workqueue_struct *cec_wq;
-	struct workqueue_struct *cec_transmit_timeout_wq;
 	struct delayed_work cec_transmit_timeout_work;
 	wait_queue_head_t edid_wq;
 	struct drm_display_mode debug_mode;
@@ -171,21 +169,6 @@ void lt9611_edid_work(struct work_struct *work)
 	// Get new CEC physical address after EDID changed.
 	if (pdata->cec_support)
 		cec_notifier_set_phys_addr_from_edid(notify, pdata->edid);
-}
-
-void lt9611_cec_transmit_timeout_work(struct work_struct *work)
-{
-	struct delayed_work *delay_work = container_of(work,
-				struct delayed_work, work);
-	struct lt9611 *pdata = container_of(delay_work, struct lt9611,
-					cec_transmit_timeout_work);
-	if (pdata->is_wait_cec_response) {
-		pr_alert("CEC message no response,compulsorily set nack.\n");
-		cec_transmit_attempt_done(pdata->cec_adapter,
-					CEC_TX_STATUS_NACK);
-		pr_alert("CEC_TX_STATUS_NACK\n");
-		pdata->is_wait_cec_response = false;
-	}
 }
 
 void lt9611_cec_work(struct work_struct *work)
@@ -1062,13 +1045,9 @@ static irqreturn_t lt9611_irq_thread_handler(int irq, void *dev_id)
 	msleep(50);
 
 	if (cec_msg_status & BIT(0)) {
-		pdata->is_wait_cec_response = false;
-		cancel_delayed_work(&pdata->cec_transmit_timeout_work);
 		cec_transmit_attempt_done(pdata->cec_adapter, CEC_TX_STATUS_OK);
 		pr_debug("CEC_TX_STATUS_OK\n");
 	} else if (cec_msg_status & BIT(2)) {
-		pdata->is_wait_cec_response = false;
-		cancel_delayed_work(&pdata->cec_transmit_timeout_work);
 		cec_transmit_attempt_done(pdata->cec_adapter,
 					CEC_TX_STATUS_NACK);
 		pr_debug("CEC_TX_STATUS_NACK\n");
@@ -2050,14 +2029,6 @@ static int lt9611_cec_transmit(struct cec_adapter *adap, u8 attempts,
 	lt9611_ctl_disable(pdata);
 	mutex_unlock(&pdata->lock);
 
-	/*
-	 * cec transmit timeout function.
-	 * if over 3 secs no respose,then mandatory set to NACK
-	 */
-	pdata->is_wait_cec_response = true;
-	queue_delayed_work(pdata->cec_transmit_timeout_wq,
-	&pdata->cec_transmit_timeout_work, msecs_to_jiffies(3000));
-
 	/* To check what message sent from Android HAL. */
 	for (i = 0; i < len; i++)
 		pr_alert("transmitting msg[%d] = %x\n", i, msg->msg[i]);
@@ -2228,19 +2199,8 @@ static int lt9611_probe(struct i2c_client *client,
 		goto err_i2c_prog;
 	}
 
-	pdata->cec_transmit_timeout_wq = create_singlethread_workqueue(
-				"lt9611_cec_transmit_timeout_workqueue");
-	if (!pdata->cec_transmit_timeout_wq) {
-		pr_err("Error creating lt9611 cec transmit timeout workqueue\n");
-		goto err_i2c_prog;
-	}
-
 	INIT_WORK(&pdata->edid_work, lt9611_edid_work);
 	INIT_WORK(&pdata->cec_work, lt9611_cec_work);
-	INIT_DELAYED_WORK(&pdata->cec_transmit_timeout_work,
-				lt9611_cec_transmit_timeout_work);
-
-	pdata->is_wait_cec_response = false;
 
 	pdata->wq = create_singlethread_workqueue("lt9611_wk");
 	if (!pdata->wq) {

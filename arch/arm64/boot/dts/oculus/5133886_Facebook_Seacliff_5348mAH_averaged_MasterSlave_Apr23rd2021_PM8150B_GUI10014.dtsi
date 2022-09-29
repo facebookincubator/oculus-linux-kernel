@@ -5,12 +5,16 @@ qcom,5133886_facebook_sealiff_5348mah_averaged_masterslave_apr23rd2021 {
 	qcom,max-voltage-uv = <4400000>;
 	qcom,fastchg-current-ma = <4813>;/* 0.9C */
 	qcom,jeita-fcc-ranges-0 = <10 100  534000
-				101 200  2674000
-				201 450  4813000
+				101 150  1069000
+				151 200  2139000
+				201 250  3208000
+				251 450  4813000
 				451 550  1069000>;
 	qcom,jeita-fcc-ranges-1 = <10 100  534000
-				101 200  2674000
-				201 450  4813000
+				101 150  1069000
+				151 200  2139000
+				201 250  3208000
+				251 450  4813000
 				451 550  1069000>;
 	qcom,jeita-fv-ranges-0 = <10  100  4400000
 				101 200  4400000
@@ -22,8 +26,8 @@ qcom,5133886_facebook_sealiff_5348mah_averaged_masterslave_apr23rd2021 {
 				451 550  3900000>;
 	qcom,cycle-fcc-ranges-0 = <0  500  4813000
 				501 800  4813000>;
-	qcom,cycle-fcc-ranges-1 = <0  500  2674000
-				501 800  2674000>;
+	qcom,cycle-fcc-ranges-1 = <0  500  1604000
+				501 800  1604000>;
 	qcom,cycle-fv-ranges-0 = <0   500  4400000
 				501 800  4300000>;
 	qcom,cycle-fv-ranges-1 = <0   500  4100000
@@ -45,9 +49,9 @@ qcom,5133886_facebook_sealiff_5348mah_averaged_masterslave_apr23rd2021 {
 				4 4 4200000
 				5 5 4200000>;
 	qcom,step-chg-ranges-0 = <3000000 4200000 4813000
-				4201000 4400000 2674000>;
-	qcom,step-chg-ranges-1 = <3000000 4000000 2674000
-				4001000 4400000 2674000>;
+				4201000 4400000 1604000>;
+	qcom,step-chg-ranges-1 = <3000000 4000000 1604000
+				4001000 4400000 1604000>;
 	/* COLD = 0 DegC, HOT = 52 DegC */
 	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
 	/* COOL = 10 DegC, WARM = 45 DegC */

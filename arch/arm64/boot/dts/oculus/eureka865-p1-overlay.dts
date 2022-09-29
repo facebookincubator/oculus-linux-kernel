@@ -110,6 +110,7 @@
 };
 
 &max983xx_snd {
+	qcom,model = "kona-max98388-snd-card";
 	asoc-codec = <&stub_codec>, <&max98388_left>, <&max98388_right>,
 		<&bolero>;
 	asoc-codec-names = "msm-stub-codec.1", "max98388_left_codec",

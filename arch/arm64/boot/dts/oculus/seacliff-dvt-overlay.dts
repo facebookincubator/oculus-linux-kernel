@@ -8,6 +8,6 @@
 / {
 	model = "Seacliff (DVT)";
 	compatible = "qcom,kona";
-	qcom,board-id = <66 74>, <66 76>;
+	qcom,board-id = <66 74>;
 };
 

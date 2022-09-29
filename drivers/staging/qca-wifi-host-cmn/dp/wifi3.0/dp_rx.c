@@ -1341,8 +1341,10 @@ void dp_rx_compute_delay(struct dp_vdev *vdev, qdf_nbuf_t nbuf)
 	uint8_t tid = qdf_nbuf_get_tid_val(nbuf);
 	uint32_t interframe_delay =
 		(uint32_t)(current_ts - vdev->prev_rx_deliver_tstamp);
+	struct cdp_tid_rx_stats *rstats =
+		&vdev->pdev->stats.tid_stats.tid_rx_stats[ring_id][tid];
 
-	dp_update_delay_stats(vdev->pdev, to_stack, tid,
+	dp_update_delay_stats(NULL, rstats, to_stack, tid,
 			      CDP_DELAY_STATS_REAP_STACK, ring_id);
 	/*
 	 * Update interframe delay stats calculated at deliver_data_ol point.
@@ -1351,7 +1353,7 @@ void dp_rx_compute_delay(struct dp_vdev *vdev, qdf_nbuf_t nbuf)
 	 * On the other side, this will help in avoiding extra per packet check
 	 * of vdev->prev_rx_deliver_tstamp.
 	 */
-	dp_update_delay_stats(vdev->pdev, interframe_delay, tid,
+	dp_update_delay_stats(NULL, rstats, interframe_delay, tid,
 			      CDP_DELAY_STATS_RX_INTERFRAME, ring_id);
 	vdev->prev_rx_deliver_tstamp = current_ts;
 }
@@ -2388,6 +2390,7 @@ uint32_t dp_rx_process(struct dp_intr *int_ctx, hal_ring_handle_t hal_ring_hdl,
 	qdf_nbuf_t ebuf_head;
 	qdf_nbuf_t ebuf_tail;
 	uint8_t pkt_capture_offload = 0;
+	uint64_t current_time = 0;
 
 	DP_HIST_INIT();
 
@@ -2417,6 +2420,8 @@ more_data:
 	qdf_mem_zero(&msdu_desc_info, sizeof(msdu_desc_info));
 	qdf_mem_zero(head, sizeof(head));
 	qdf_mem_zero(tail, sizeof(tail));
+
+	dp_pkt_get_timestamp(&current_time);
 
 	if (qdf_unlikely(dp_rx_srng_access_start(int_ctx, soc, hal_ring_hdl))) {
 
@@ -3002,6 +3007,10 @@ done:
 		dp_rx_fill_gro_info(soc, rx_tlv_hdr, nbuf, &rx_ol_pkt_cnt);
 
 		dp_rx_update_stats(soc, nbuf);
+
+		dp_pkt_add_timestamp(peer->vdev, QDF_PKT_RX_DRIVER_ENTRY,
+				     current_time, nbuf);
+
 		DP_RX_LIST_APPEND(deliver_list_head,
 				  deliver_list_tail,
 				  nbuf);

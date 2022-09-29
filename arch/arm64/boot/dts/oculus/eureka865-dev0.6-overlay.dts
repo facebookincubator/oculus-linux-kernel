@@ -22,6 +22,22 @@
 	status = "ok";
 };
 
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	d4m: d4m@10 {
+		status = "ok";
+		reg = <0x10>;
+		compatible = "intel,d4xx";
+		vdd_3p3-supply = <&d4xx_3p3_regulator>;
+		vdd_0p9-supply = <&d4xx_0p9_regulator>;
+		vcc-supply = <&pm8150a_l4>;
+		prstn-gpio = <&tlmm 88 0>;
+		cam-type = "IMU";
+	};
+};
+
 &qupv3_se11_spi {
 	spi_flash@0 {
 		#address-cells = <1>;
@@ -35,6 +51,30 @@
 };
 
 &soc {
+	d4xx_3p3_regulator: d4xx_3p3_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "d4xx_3p3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 89 0>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&d4xx_3p3_en_default>;
+	};
+
+	d4xx_0p9_regulator: d4xx_0p9_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "d4xx_0p9";
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 82 0>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&d4xx_0p9_en_default>;
+	};
+
 	fpga_1p2_regulator: fpga_1p2_regulator@0 {
 		compatible = "regulator-fixed";
 		regulator-name = "fpga_1p2";
@@ -53,6 +93,34 @@
 };
 
 &tlmm {
+	d4xx_3p3_en_default: d4xx_3p3_en_default {
+		mux {
+			pins = "gpio89";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio89";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	d4xx_0p9_en_default: d4xx_0p9_en_default {
+		mux {
+			pins = "gpio82";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio82";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
 	fpga_1p2_en_default: fpga_1p2_en_default {
 		mux {
 			pins = "gpio87";

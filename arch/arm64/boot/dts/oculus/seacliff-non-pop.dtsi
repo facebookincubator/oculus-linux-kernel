@@ -1,3 +1,5 @@
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
 #include "../vendor/qcom/kona-pmic-overlay.dtsi"
 #include "../vendor/qcom/kona-sde-display.dtsi"
 
@@ -97,6 +99,16 @@
 
 	qcom,panel-supply-entry@4 {
 		reg = <4>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
 		qcom,supply-name = "blu-spi";
 		qcom,supply-min-voltage = <1800000>;
 		qcom,supply-max-voltage = <1800000>;
@@ -509,12 +521,12 @@
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 1F FE 00 00 00 00 00 00
-			00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			1F FE 1F FE 00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 			01
 		];
 		oculus,blu-irq-gpio = <&tlmm 111 0>;
@@ -528,6 +540,8 @@
 
 	pinctrl-0 = <&syncboss_uart_active>;
 	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+	interrupts-extended = <&intc GIC_SPI 604 IRQ_TYPE_LEVEL_HIGH>;
+	qcom,allow-suspend;
 };
 
 &qupv3_se5_2uart {
@@ -643,12 +657,12 @@
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 1F FE 00 00 00 00 00 00
-			00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			1F FE 1F FE 00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 			01
 		];
 		oculus,blu-irq-gpio = <&tlmm 59 0>;
@@ -684,8 +698,9 @@
 
 &sde_dsi {
 	blu-spi-supply = <&display_panel_blu_en>;
-	pinctrl-0 = <&seacliff_blu_en_active>;
-	pinctrl-1 = <&seacliff_blu_en_suspend>;
+	blu-pvdd-supply = <&display_panel_blu_pvdd_en>;
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
 	avdd-supply = <>;
 };
 
@@ -706,6 +721,19 @@
 };
 
 &soc {
+	display_panel_blu_pvdd_en: blu_gpio_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_blu_pvdd_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 88 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&seacliff_blu_pvdd_en_default>;
+	};
+
 	display_panel_blu_en: blu_gpio_regulator@1 {
 		compatible = "regulator-fixed";
 		regulator-name = "display_panel_blu_en";
@@ -810,7 +838,7 @@
 		};
 	};
 
-	seacliff_blu_en_active: seacliff_blu_en_active {
+	seacliff_blu_pvdd_en_default: seacliff_blu_pvdd_en_default {
 		mux {
 			pins = "gpio88";
 			function = "gpio";
@@ -819,22 +847,8 @@
 		config {
 			pins = "gpio88";
 			drive-strength = <8>;
+			bias-disable = <0>;
 			output-high;
-			bias-pull-up;
-		};
-	};
-
-	seacliff_blu_en_suspend: seacliff_blu_en_suspend {
-		mux {
-			pins = "gpio88";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio88";
-			drive-strength = <8>;
-			output-low;
-			bias-pull-down;
 		};
 	};
 
