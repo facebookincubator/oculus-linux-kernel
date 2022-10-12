@@ -64,7 +64,8 @@
 	qcom,sw-jeita-enable;
 	qcom,wd-bark-time-secs = <16>;
 	qcom,suspend-input-on-debug-batt;
-	qcom,fcc-max-ua = <4813000>;
+	qcom,fcc-max-ua = <3470000>;
+	qcom,fv-max-uv = <4450000>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,dc-icl-ua = <3000000>;
 	qcom,chg-term-current-ma = <(-300)>;
@@ -97,10 +98,13 @@
 	qcom,fg-esr-cal-soc-thresh = <26 230>;
 	qcom,fg-esr-cal-temp-thresh = <10 40>;
 
-	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
-	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
-	qcom,fg-cutoff-voltage = <3400>;
-	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
+	qcom,fg-sys-term-current = <(-275)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
+	qcom,fg-cutoff-current = <250>; // battery capacity 3636 mah termination current = c/20
+	qcom,fg-cutoff-voltage = <3200>;
+	qcom,fg-empty-voltage = <3000>; // see section 4.4.6 (80-PF777-74. Rev C)
+	qcom,fg-force-load-profile;
+	qcom,soc-scale-mode-en;
+	qcom,soc-scale-vbatt-mv;
 };
 
 &pm8150b_gpios {
@@ -206,7 +210,7 @@
 		cy,hpi-gpio = <&tlmm 70 0x0>;
 		cy,fault-gpio = <&tlmm 72 0x1>;
 		interrupt-parent = <&tlmm>;
-		interrupts = <13 2>, <14 1>;
+		interrupts = <70 2>, <72 1>;
 		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
 		pinctrl-names = "default";
 		pinctrl-0 = <&cypd3177_irq_default>;

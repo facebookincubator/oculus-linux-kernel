@@ -14,3 +14,26 @@
 	qcom,board-id = <68 145>;
 };
 
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	vd6281: vd6281@20 {
+		compatible = "st,vd6281_adapter";
+		reg = <0x20>;
+		sid = <0x40>;
+		status = "ok";
+	};
+};
+
+&qupv3_se4_spi {
+	status = "ok";
+	vd6281@0 {
+		compatible = "st,vd6281_spi";
+		reg = <0>;
+		spi-cpha;
+		spi-max-frequency = <5000000>;
+		chunk-size = <32768>;
+		status = "ok";
+	};
+};

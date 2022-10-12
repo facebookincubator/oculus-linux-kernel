@@ -4,14 +4,6 @@
 #include <dt-bindings/sound/qcom,bolero-clk-rsc.h>
 #include "vendor-base/qcom/kona-lpi.dtsi"
 
-&dai_dp {
-	status = "disabled";
-};
-
-&dai_dp1 {
-	status = "disabled";
-};
-
 &dai_mi2s0 {
 	qcom,msm-mi2s-rx-lines = <1>;
 	qcom,msm-mi2s-tx-lines = <2>;
@@ -20,14 +12,6 @@
 &dai_mi2s3 {
 	qcom,msm-mi2s-rx-lines = <1>;
 	qcom,msm-mi2s-tx-lines = <2>;
-};
-
-&ext_disp_audio_codec {
-	status = "disabled";
-};
-
-&fsa4480 {
-	status = "disabled";
 };
 
 &pm8150_l7 {

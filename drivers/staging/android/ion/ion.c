@@ -1498,14 +1498,16 @@ static int ion_debug_unattached_mapped_show_one(struct seq_file *s,
 		}
 	}
 
-	mutex_unlock(&b->lock);
 
 	/* If there's nothing to print then dump out now. */
-	if (unlikely(hlist_empty(&reflist)))
+	if (unlikely(hlist_empty(&reflist))) {
+		mutex_unlock(&b->lock);
 		return 0;
+	}
 
 	seq_printf(s, "%s %s %zu - %d", b->dmabuf->name, b->heap->name, b->size,
 			count);
+	mutex_unlock(&b->lock);
 
 	hlist_for_each_entry_safe(ref, hn, &reflist, node) {
 		seq_printf(s, " %d", ref->tgid);

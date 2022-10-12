@@ -20,6 +20,7 @@ struct rt600_ctrl_ctx {
 	struct pinctrl_state *pin_boot_flashing;
 	struct work_struct boot_work;
 	struct work_struct reset_work;
+	struct work_struct reset_work_spl;
 	unsigned int rstn_gpio;
 	unsigned int nirq_gpio;
 	// port << 8 | pin
@@ -81,6 +82,15 @@ static void toggle_reset(struct rt600_ctrl_ctx *ctx)
 	gpio_set_value(ctx->rstn_gpio, 0);
 }
 
+static void toggle_reset_spl(struct rt600_ctrl_ctx *ctx)
+{
+	gpio_direction_output(ctx->nirq_gpio, 0);
+	gpio_set_value(ctx->nirq_gpio, 0);
+	toggle_reset(ctx);
+	msleep(RT600_RESET_DELAY);
+	gpio_direction_input(ctx->nirq_gpio);
+}
+
 static ssize_t reset_store(struct device *dev,
 			   struct device_attribute *attr,
 			   const char *buf, size_t count)
@@ -93,7 +103,24 @@ static ssize_t reset_store(struct device *dev,
 
 	return count;
 }
+
+static ssize_t reset_spl_store(struct device *dev,
+			   struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct rt600_ctrl_ctx *ctx = dev_get_drvdata(dev);
+	long res;
+
+	if (!kstrtol(buf, 0, &res) && res)
+		schedule_work(&ctx->reset_work_spl);
+
+	return count;
+}
+
+
 static DEVICE_ATTR_WO(reset);
+static DEVICE_ATTR_WO(reset_spl);
+
 
 static ssize_t nirq_pinmap_show(struct device *dev,
 			       struct device_attribute *attr,
@@ -167,6 +194,16 @@ static void reset_work(struct work_struct *work)
 	toggle_reset(ctx);
 }
 
+static void reset_work_spl(struct work_struct *work)
+{
+	struct rt600_ctrl_ctx *ctx =
+		container_of(work, struct rt600_ctrl_ctx, reset_work_spl);
+
+	dev_info(ctx->dev, "Resetting to SPL...");
+	toggle_reset_spl(ctx);
+}
+
+
 #define NIRQ_PINMAP_COUNT 2
 static int rt600_ctrl_probe(struct platform_device *pdev)
 {
@@ -228,11 +265,13 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 
 	INIT_WORK(&ctx->boot_work, boot_work);
 	INIT_WORK(&ctx->reset_work, reset_work);
+	INIT_WORK(&ctx->reset_work_spl, reset_work_spl);
 
 	device_create_file(dev, &dev_attr_boot_state);
 	device_create_file(dev, &dev_attr_nirq_value);
 	device_create_file(dev, &dev_attr_nirq_pinmap);
 	device_create_file(dev, &dev_attr_reset);
+	device_create_file(dev, &dev_attr_reset_spl);
 	platform_set_drvdata(pdev, ctx);
 
 	dev_info(dev, "rt600-ctrl probe success.\n");
@@ -248,6 +287,8 @@ static int rt600_ctrl_remove(struct platform_device *pdev)
 	device_remove_file(ctx->dev, &dev_attr_nirq_value);
 	device_remove_file(ctx->dev, &dev_attr_nirq_pinmap);
 	device_remove_file(ctx->dev, &dev_attr_reset);
+	device_remove_file(ctx->dev, &dev_attr_reset_spl);
+
 	devm_kfree(ctx->dev, ctx);
 
 	return 0;

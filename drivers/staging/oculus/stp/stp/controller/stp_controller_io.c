@@ -108,18 +108,30 @@ error:
     return ret;
 }
 
-/* Read data in blocking mode */
+/* Read data, blocking until buffer_size bytes become available. */
 int32_t stp_controller_read(uint8_t channel,
                             uint8_t *buffer,
                             uint32_t buffer_size,
                             uint32_t *data_size)
 {
-    int32_t ret             = STP_SUCCESS;
-    uint32_t remaining_data = buffer_size;
-    uint32_t data_read      = 0;
-    uint8_t *p              = buffer;
+    return stp_controller_read_minimum(channel, buffer, buffer_size, data_size, buffer_size);
+}
 
-    if (!buffer || !data_size)
+/* Read a minimum number of bytes, up to the specified buffer size. Blocks until the minimum becomes
+ * available. */
+int32_t stp_controller_read_minimum(uint8_t channel,
+                                    uint8_t *buffer,
+                                    uint32_t buffer_size,
+                                    uint32_t *data_size,
+                                    uint32_t minimum)
+{
+    int32_t ret              = STP_SUCCESS;
+    uint32_t data_read       = 0;
+    uint32_t remaining_data  = buffer_size;
+    uint32_t data_read_total = 0;
+    uint8_t *p               = buffer;
+
+    if (!buffer || !data_size || (minimum > buffer_size))
     {
         STP_LOG_ERROR("STP read error: invalid parameters!");
         return STP_ERROR;
@@ -141,21 +153,31 @@ int32_t stp_controller_read(uint8_t channel,
         {
             p += data_read;
             remaining_data -= data_read;
+            data_read_total += data_read;
+
+            STP_LOG_DEBUG(
+                "Controller read_minimum: minimum: %zu, read:%zu, total:%zu, remaining:%zu",
+                (size_t)minimum,
+                (size_t)data_read,
+                (size_t)data_read_total,
+                (size_t)remaining_data);
         }
 
-        if (remaining_data == 0)
+        if (data_read_total >= minimum)
+        {
             break;
+        }
 
         ret = _stp_controller_data->wait_signal->wait_read(channel);
         if (ret < 0)
         {
             STP_LOG_ERROR("stp_read intrerupted!");
-            ret = STP_ERROR_IO_INTRERRUPT;
+            ret = STP_ERROR_IO_INTERRUPT;
             break;
         }
     }
 
-    *data_size = buffer_size;
+    *data_size = data_read_total;
 
 error:
     return ret;
@@ -221,7 +243,7 @@ int32_t stp_controller_write(uint8_t channel,
             ret = stp_controller_check_for_rw_errors(channel);
 
             if (ret == STP_SUCCESS)
-                ret = STP_ERROR_IO_INTRERRUPT;
+                ret = STP_ERROR_IO_INTERRUPT;
             goto error;
         }
     }
@@ -352,8 +374,41 @@ int32_t stp_controller_get_channel_attribute(uint8_t channel, uint32_t attribute
             p_value  = (uint32_t *)param;
             *p_value = (uint32_t)_stp_controller_data->channels[channel].controller_connected;
             break;
+        case STP_CONTROLLER_ATTRIB_SET_LOG_TX_DATA:
+            p_value  = (uint32_t *)param;
+            *p_value = (uint32_t)_stp_controller_data->channels[channel].log_tx_data;
+            break;
+        case STP_CONTROLLER_ATTRIB_SET_LOG_RX_DATA:
+            p_value  = (uint32_t *)param;
+            *p_value = (uint32_t)_stp_controller_data->channels[channel].log_rx_data;
+            break;
         default:
             STP_LOG_ERROR("STP get error: invalid attribute!");
+            ret = STP_ERROR;
+            break;
+    }
+
+    return ret;
+}
+
+/* Set attributes */
+int32_t stp_controller_set_channel_attribute32(uint8_t channel, uint32_t attribute, uint32_t value)
+{
+    int32_t ret = STP_SUCCESS;
+
+    if (!stp_controller_is_channel_valid(channel))
+        return STP_ERROR_INVALID_PARAMETERS;
+
+    switch (attribute)
+    {
+        case STP_CONTROLLER_ATTRIB_SET_LOG_TX_DATA:
+            _stp_controller_data->channels[channel].log_tx_data = value;
+            break;
+        case STP_CONTROLLER_ATTRIB_SET_LOG_RX_DATA:
+            _stp_controller_data->channels[channel].log_rx_data = value;
+            break;
+        default:
+            STP_LOG_ERROR("STP set error: invalid attribute!");
             ret = STP_ERROR;
             break;
     }
@@ -483,7 +538,7 @@ int32_t stp_controller_open_blocking(uint8_t channel,
         ret = _stp_controller_data->wait_signal->wait_open(channel);
         if (ret < 0)
         {
-            return STP_ERROR_IO_INTRERRUPT;
+            return STP_ERROR_IO_INTERRUPT;
         }
     }
 
@@ -526,7 +581,7 @@ int32_t stp_controller_fsync(uint8_t channel)
     ret = _stp_controller_data->wait_signal->wait_fsync(channel);
     if (ret < 0)
     {
-        ret = STP_ERROR_IO_INTRERRUPT;
+        ret = STP_ERROR_IO_INTERRUPT;
     }
 
     return ret;

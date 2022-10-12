@@ -3,27 +3,34 @@ qcom,5685483_facebook_eureka_5060mah_averaged_masterslave_mar16th2022 {
 	qcom,profile-revision = <24>;
 	/* #5685483_Facebook_Eureka_5060mAH_averaged_MasterSlave_Mar16th2022*/
 	qcom,max-voltage-uv = <4450000>;
-	qcom,fastchg-current-ma = <3542>;/* 0.7C */
-	qcom,jeita-fcc-ranges-0 = <10 100  1012000
-				101 200  2530000
-				201 450  3542000
-				451 550  2530000>;
-	qcom,jeita-fcc-ranges-1 = <10 100  1012000
-				101 200  2530000
-				201 450  3542000
-				451 550  2530000>;
-	qcom,jeita-fv-ranges-0 = <10  100  4450000
-				101 200  4450000
-				201 450  4450000
+	qcom,fastchg-current-ma = <3470>;
+	qcom,jeita-fcc-ranges-0 = <0 100 992000
+				101 200  2480000
+				201 450  3470000
+				451 550  248000>;
+	qcom,jeita-fcc-ranges-1 = <0 100 992000
+				101 200  2480000
+				201 450  3470000
+				451 550  248000>;
+	qcom,jeita-fv-ranges-0 = <0   450  4450000
 				451 550  4180000>;
-	qcom,jeita-fv-ranges-1 = <10  100  4200000
-				101 200  4200000
-				201 450  4200000
-				451 550  4000000>;
+	qcom,jeita-fv-ranges-1 = <0   450  4450000
+				451 550  4180000>;
 	qcom,chg-disable-ranges-0 = <3600000 4100000 0
 				4101000 4450000 0>;
 	qcom,chg-disable-ranges-1 = <3600000 4100000 0
 				4101000 4450000 1>;
+	qcom,rblt-support;
+	qcom,rblt-missing-range = <51500 250000>;
+	qcom,rblt-ok-range = <49000 51000>;
+	qcom,rblt-warn-range = <1001 49000>;
+	qcom,rblt-crit-range = <0 1000>;
+	/* 1 - OK, 2 - warn, 3 - crit, 4 - missing, 5 - unknown */
+	qcom,rblt-ranges = <1 1 4450000
+				2 2 4200000
+				3 3 3900000
+				4 4 4200000
+				5 5 4200000>;
 	/* COLD = 0 DegC, HOT = 52 DegC */
 	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
 	/* COOL = 10 DegC, WARM = 45 DegC */
@@ -34,7 +41,7 @@ qcom,5685483_facebook_eureka_5060mah_averaged_masterslave_mar16th2022 {
 	qcom,jeita-soft-fv-uv = <4180000 4180000>;
 	qcom,vnow-based-step-chg;
 	qcom,taper-fcc;
-	qcom,fg-cc-cv-threshold-mv = <4390>;
+	qcom,fg-cc-cv-threshold-mv = <4440>;
 	qcom,nom-batt-capacity-mah = <5060>;
 	qcom,batt-id-kohm = <200>;
 	qcom,battery-beta = <4250>;

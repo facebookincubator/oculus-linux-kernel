@@ -151,7 +151,9 @@ void stp_pl_add_data(PL_TYPE *pl, const uint8_t *buffer, uint32_t buffer_size)
 {
     uint32_t av_space;
 
-    STP_ASSERT(pl && buffer && buffer_size, "Invalid parameter(s)");
+    STP_ASSERT(pl, "Invalid pl");
+    STP_ASSERT(buffer, "Invalid buffer");
+    STP_ASSERT(buffer_size, "Invalid buffer_size");
 
     stp_pl_get_available_space(pl, &av_space);
     STP_ASSERT(av_space >= buffer_size, "Not enough space");

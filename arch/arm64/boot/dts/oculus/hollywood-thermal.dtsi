@@ -89,18 +89,10 @@
 
 &thermal_zones {
 	batt-usr {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150b_adc_tm ADC_BAT_THERM_PU2>;
-		wake-capable-sensor;
-		trips {
-			batt_trip: batt-trip {
-				temperature = <600>;
-				hysteresis = <10>;
-				type = "passive";
-			};
-		};
 	};
 
 	batt-virt {

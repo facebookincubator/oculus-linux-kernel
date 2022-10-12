@@ -54,11 +54,19 @@ struct __packed ar_region_register_req {
 	struct ar_mem_region region;
 };
 
+/// Maximum number of chunks in a pend req
+#define AR_PEND_MAX_CHUNKS 4
+
 /**
  * Structure for pending a payload
  */
 struct __packed ar_pend_payload_req {
-	struct ar_payload payload;
+	/// External mem region id associated with this address range
+	uint32_t mem_region_id;
+	/// payload chunk count
+	uint16_t chunk_count;
+	/// payload chunks
+	struct ar_payload_chunk payload_chunks[AR_PEND_MAX_CHUNKS];
 };
 
 /**
@@ -68,7 +76,7 @@ struct __packed ar_queue_event {
 	enum ar_queue_event_type type;
 	union {
 		uint32_t pend_size;
-		uint32_t payload_id;
+		void *payload_context;
 	};
 };
 
@@ -76,7 +84,7 @@ struct __packed ar_queue_event {
 #define ARFW_CHDEV_MAGIC 0xc5
 #define ARFW_QUEUE_CREATE _IOR(ARFW_CHDEV_MAGIC, 0, struct ar_queue_create_req*)
 #define ARFW_REGISTER_REGION _IOR(ARFW_CHDEV_MAGIC, 1, struct ar_region_register_req*)
-#define ARFW_UNREGISTER_REGION _IO(ARFW_CHDEV_MAGIC, 2, long)
+#define ARFW_UNREGISTER_REGION _IOR(ARFW_CHDEV_MAGIC, 2, long)
 #define ARFW_PEND_PAYLOAD _IOR(ARFW_CHDEV_MAGIC, 3, struct ar_pend_payload_req*)
 #define ARFW_CONSUMED_INDEX _IO(ARFW_CHDEV_MAGIC, 4)
 #define ARFW_DEV_INFO _IOW(ARFW_CHDEV_MAGIC, 5, struct ar_device_information_req*)

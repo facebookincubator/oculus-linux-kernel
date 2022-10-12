@@ -3572,6 +3572,14 @@ struct kgsl_mem_entry *gpumem_alloc_entry(
 		goto err;
 	}
 
+	if (!(entry->memdesc.priv & KGSL_MEMDESC_LAZY_ALLOCATION)) {
+		struct kgsl_pagetable *pagetable = entry->memdesc.pagetable;
+		uint64_t pages = atomic_long_read(&entry->memdesc.physsize) >>
+				PAGE_SHIFT;
+
+		atomic_long_add(pages, &pagetable->stats.immediate_pages);
+	}
+
 	kgsl_process_add_stats(private,
 			kgsl_memdesc_usermem_type(&entry->memdesc),
 			entry->memdesc.size);

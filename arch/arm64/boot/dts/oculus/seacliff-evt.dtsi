@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include "seacliff-non-pop.dtsi"
+#include "seacliff.dtsi"
 #include "seacliff-adc-usbc.dtsi"
 
 &dsi_dual_boe_90hz_dsc {

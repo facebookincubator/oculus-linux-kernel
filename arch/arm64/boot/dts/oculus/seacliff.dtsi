@@ -1,29 +1,83 @@
-#include <dt-bindings/clock/qcom,gcc-kona.h>
-#include <dt-bindings/clock/qcom,camcc-kona.h>
-#include <dt-bindings/clock/qcom,rpmh.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
-#include "seacliff-pop.dtsi"
+#include "../vendor/qcom/kona-pmic-overlay.dtsi"
+#include "../vendor/qcom/kona-sde-display.dtsi"
+
+#include "kona-oculus.dtsi"
+#include "seacliff-adc.dtsi"
+#include "seacliff-audio.dtsi"
 #include "seacliff-bcmdhd.dtsi"
+#include "seacliff-camera.dtsi"
 #include "seacliff-eye-face-led.dtsi"
-#include "seacliff-safetyboss.dtsi"
+#include "seacliff-fan.dtsi"
+#include "seacliff-pac1934.dtsi"
+#include "seacliff-panel.dtsi"
+#include "seacliff-thermal.dtsi"
+#include "seacliff-ufs.dtsi"
+
+&aliases {
+	hsuart14 = "/soc/qcom,qup_uart@98c000";
+};
+
+&bcm_bt_hostwake_default {
+	mux {
+		pins = "gpio66";
+	};
+	config {
+		pins = "gpio66";
+	};
+};
+
+&bcm_bt_wake_default {
+	mux {
+		pins = "gpio10";
+	};
+	config {
+		pins = "gpio10";
+	};
+};
+
+&bt_bluesleep {
+	brcm,bt-wake-gpio = <&tlmm 10 0>;
+	brcm,bt-host-wake-gpio = <&tlmm 66 0>;
+};
+
+&cam_cci0 {
+	pinctrl-0 = <&cci1_active>;
+	pinctrl-1 = <&cci1_suspend>;
+	gpios = <&tlmm 103 0>,
+		<&tlmm 104 0>;
+	gpio-req-tbl-num = <0 1>;
+	gpio-req-tbl-flags = <1 1>;
+	gpio-req-tbl-label = "CCI_I2C_DATA1",
+			     "CCI_I2C_CLK1";
+};
 
 &cm7120 {
-	cm7120,codec_1v8-supply = <&pm8150_l7>;
-	cm7120,headphone-det-gpios = <&tlmm 121 0
-				   &tlmm 113 0>;
-	cm7120,firmware-name = "CM7120_TDM_I2S.bin";
+	cm7120,headphone-det-gpios = <&tlmm 113 0
+				   &tlmm 89 0>;
+	cm7120,firmware-name = "CM7120_TDM.bin";
 	pinctrl-0 = <&cm7120_codec_ldo_en_default
 		&cm7120_codec_reset_default
 		&cm7120_headphone_det_default>;
 };
 
 &cm7120_snd {
-	qcom,model = "kona-cm7120-tdm_i2s-snd-card";
+	qcom,model = "kona-cm7120-tdm-snd-card";
 	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <0>, <1>;
 	qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
 	qcom,tdm-audio-intf = <1>;
 	qcom,tdm-max-slots = <4>;
+};
+
+&display_panel_avdd {
+	status = "disabled";
+};
+
+&dsi_dual_boe_90hz_dsc {
+	qcom,platform-en-gpio = <&tlmm 23 0>;
+	qcom,platform-reset-gpio = <&tlmm 101 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 57 0>;
 };
 
 &dsi_dual_boe_90hz_dsc {
@@ -42,6 +96,16 @@
 
 	qcom,panel-supply-entry@4 {
 		reg = <4>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
 		qcom,supply-name = "blu-spi";
 		qcom,supply-min-voltage = <1800000>;
 		qcom,supply-max-voltage = <1800000>;
@@ -51,13 +115,16 @@
 	};
 };
 
-&eye_face_led_default {
-	mux {
-		pins = "gpio12", "gpio13";
-	};
+&fan_1 {
+	fan,tach-gpio = <&tlmm 83 0x0>;
+};
 
+&fan_tach_default_1 {
+	mux {
+		pins = "gpio83";
+	};
 	config {
-		pins = "gpio12", "gpio13";
+		pins = "gpio83";
 	};
 };
 
@@ -77,18 +144,19 @@
 		0x110 0x55>;
 };
 
-&oculusnrf {
-	oculus,syncboss-has-no-prox-cal;
+&pm8150a_l1 {
+	/* IPD 1.8 */
+	regulator-always-on;
 };
 
-&pm8150_l7 {
-	/* CM7120 1.8 */
+&pm8150a_l4 {
+	/* FPGA aggregator 1.8 */
 	status = "ok";
 	qcom,init-voltage = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150a_l4 {
+&pm8150a_l5 {
 	status = "disabled";
 };
 
@@ -96,10 +164,17 @@
 	status = "disabled";
 };
 
+&pm8150a_l7 {
+	status = "disabled";
+};
+
+&pm8150a_l8 {
+	/* nRF, IMU, Mag 1.8 */
+	regulator-always-on;
+};
+
 &pm8150a_l9 {
-	regulator-max-microvolt = <3000000>;
-	qcom,init-voltage = <3000000>;
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	status = "disabled";
 };
 
 &pm8150a_l11 {
@@ -136,6 +211,29 @@
 	smb5_otg_boost: qcom,smb5-otg_boost {
 		regulator-name = "smb5-otg_boost";
 	};
+};
+
+&pm8150b_fg {
+	status = "ok";
+	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,hold-soc-while-full;
+	qcom,linearize-soc;
+	qcom,five-pin-battery;
+	qcom,cl-wt-enable;
+	qcom,soc-scale-mode-en;
+	qcom,soc-scale-vbatt-mv = <3500>;
+	/* ESR fast calibration */
+	qcom,fg-esr-timer-chg-fast = <0 7>;
+	qcom,fg-esr-timer-dischg-fast = <0 7>;
+	qcom,fg-esr-timer-chg-slow = <0 96>;
+	qcom,fg-esr-timer-dischg-slow = <0 96>;
+	qcom,fg-esr-cal-soc-thresh = <26 230>;
+	qcom,fg-esr-cal-temp-thresh = <10 40>;
+
+	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
+	qcom,fg-cutoff-current = <268>; // C/20 minimum discharge current at system cutoff for SOC estimation
+	qcom,fg-cutoff-voltage = <3300>;
+	qcom,fg-empty-voltage = <3100>; // see section 4.4.6 (80-PF777-74. Rev C)
 };
 
 &pm8150b_gpios {
@@ -179,6 +277,8 @@
 
 &pm8150b_pdphy {
 	otg_boost-supply = <&smb5_otg_boost>;
+	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
+		<9000 3000>; /* 9V @ 3A */
 	qcom,discovery-svids-request;
 };
 
@@ -206,22 +306,33 @@
 	};
 };
 
-&pm8150l_rgb_led {
-	green {
-		pwms = <&pm8150l_lpg 2 1000000>;
-		led-sources = <2>;
+&pm8150l_adc_tm {
+	dram_therm@4e {
+		reg = <ADC_AMUX_THM2_PU2>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
 	};
+};
 
+&pm8150l_rgb_led {
+	red {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	green {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
 	blue {
-		pwms = <&pm8150l_lpg 1 1000000>;
-		led-sources = <1>;
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
 	};
 };
 
 &pm8150l_vadc {
-	soc_therm@4e {
+	dram_therm@4e {
 		reg = <ADC_AMUX_THM2_PU2>;
-		label = "soc_therm";
+		label = "dram_therm";
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
@@ -233,14 +344,6 @@
 		qcom,ratiometric;
 		qcom,hw-settle-time = <200>;
 		qcom,pre-scaling = <1 1>;
-	};
-};
-
-&pm8150l_adc_tm {
-	soc_therm@4e {
-		reg = <ADC_AMUX_THM2_PU2>;
-		qcom,ratiometric;
-		qcom,hw-settle-time = <200>;
 	};
 };
 
@@ -272,16 +375,64 @@
 };
 
 &qupv3_se0_spi {
-	status = "disabled";
-};
-
-&qupv3_se5_2uart {
-	status = "disabled";
-};
-
-&qupv3_se13_spi {
 	status = "ok";
 	qcom,rt;
+
+	// nRF requires >2us after clock stop, before raising CS.
+	// By default the delay is about 800us. Add 10 cycles at
+	// 8MHz (1.25us) to get us the rest of the way.
+	qcom,set-cs-clk-delay = <10>;
+
+	oculusnrf@0 {
+		status = "okay";
+		compatible = "oculus,syncboss";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
+
+		oculus,swdflavor = "nrf52832";
+		oculus,syncboss-reset  = <&tlmm 5 0>;
+		oculus,syncboss-timesync = <&tlmm 68 0>;
+		oculus,syncboss-wakeup  = <&tlmm 4 0>;
+
+		oculus,syncboss-has-prox;
+		oculus,syncboss-use-fastpath;
+		oculus,syncboss-boots-to-shutdown-state;
+		oculus,syncboss-has-wake-reasons;
+
+		swd@0 {
+			compatible = "oculus,swd";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			oculus,pin-reset = <&tlmm 5 0>;
+			oculus,swd-clk = <&tlmm 119 0>;
+			oculus,swd-io = <&tlmm 120 0>;
+
+			oculus,swd-flavor = "nrf52832";
+			oculus,fw-path = "syncboss-ipl-spl-prod.bin";
+			oculus,flash-block-size = <512>;
+			oculus,flash-page-size = <4096>;
+			oculus,flash-page-count = <128>;
+			oculus,flash-page-bootloader-protected-count = <1>;
+			oculus,flash-page-retained-count = <3>;
+		};
+	};
+};
+
+&qupv3_se2_spi {
+	status = "ok";
+	qcom,rt;
+
+	cm7120-spi@0 {
+		status = "disabled";
+	};
 
 	blu_left: blu_left@0 {
 		compatible = "oculus,seacliff-blu-spi";
@@ -361,18 +512,58 @@
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 1F FE 00 00 00 00 00 00
-			00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			1F FE 1F FE 00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 			01
 		];
 		oculus,blu-irq-gpio = <&tlmm 111 0>;
 		oculus,blu-name = "seacliff-left-blu";
 		oculus,continuous-splash;
 	};
+};
+
+&qupv3_se3_2uart {
+	status = "ok";
+
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+	interrupts-extended = <&intc GIC_SPI 604 IRQ_TYPE_LEVEL_HIGH>;
+	qcom,allow-suspend;
+};
+
+&qupv3_se5_2uart {
+	status = "disabled";
+};
+
+&qupv3_se6_4uart {
+	status = "ok";
+};
+
+&qupv3_se8_i2c {
+	status = "ok";
+};
+
+&qupv3_se9_i2c {
+	status = "ok";
+};
+
+&qupv3_se11_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	bq27z561: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		status = "okay";
+	};
+};
+
+&qupv3_se12_2uart {
+	status = "ok";
 };
 
 &qupv3_se14_spi {
@@ -457,33 +648,37 @@
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 1F FE 00 00 00 00 00 00
-			00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			1F FE 1F FE 00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
 			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
-			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 			01
 		];
-		oculus,blu-irq-gpio = <&tlmm 112 0>;
+		oculus,blu-irq-gpio = <&tlmm 59 0>;
 		oculus,blu-name = "seacliff-right-blu";
 		oculus,continuous-splash;
 	};
 };
 
 &qupv3_se15_i2c {
+	#include "../vendor/qcom/smb1355.dtsi"
+
 	cypd3177: cypd3177@08 {
 		compatible = "cy,cypd3177";
 		reg = <0x08>;
 		status = "ok";
-		cy,hpi-gpio = <&tlmm 22 0x0>;
-		cy,fault-gpio = <&tlmm 23 0x1>;
+		cy,hpi-gpio = <&tlmm 70 0x0>;
+		cy,fault-gpio = <&tlmm 69 0x1>;
 		interrupt-parent = <&tlmm>;
-		interrupts = <13 2>, <14 1>;
+		interrupts = <70 2>, <69 1>;
 		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
 		pinctrl-names = "default";
 		pinctrl-0 = <&cypd3177_irq_default>;
+		cypd3177,initial-connection-debounce-ms = <3000>;
 
+		cypd3177,num-5v-sink-caps = <2>;
 		cypd3177,custom-sink-caps = <5000 2200>, /* 5V @ 2.2A */
 		<5000 2600>, /* 5V @ 2.6A */
 		<9000 1600>, /* 9V @ 1.6A */
@@ -496,8 +691,9 @@
 
 &sde_dsi {
 	blu-spi-supply = <&display_panel_blu_en>;
-	pinctrl-0 = <&seacliff_blu_en_active>;
-	pinctrl-1 = <&seacliff_blu_en_suspend>;
+	blu-pvdd-supply = <&display_panel_blu_pvdd_en>;
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
 	avdd-supply = <>;
 };
 
@@ -507,14 +703,37 @@
 	avdd-supply = <>;
 };
 
+&smb1355 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&smb_stat_default>;
+	status = "ok";
+};
+
+&smb1355_charger {
+	status = "ok";
+};
+
 &soc {
+	display_panel_blu_pvdd_en: blu_gpio_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_blu_pvdd_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 88 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&seacliff_blu_pvdd_en_default>;
+	};
+
 	display_panel_blu_en: blu_gpio_regulator@1 {
 		compatible = "regulator-fixed";
 		regulator-name = "display_panel_blu_en";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
 		regulator-enable-ramp-delay = <233>;
-		gpio = <&tlmm 89 0>;
+		gpio = <&tlmm 91 0>;
 		enable-active-high;
 		regulator-boot-on;
 		pinctrl-names = "default";
@@ -535,21 +754,7 @@
 };
 
 &thermal_zones {
-	pogo-usr {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
-		thermal-governor = "user_space";
-		thermal-sensors = <&pm8150b_adc_tm ADC_GPIO2_PU2>;
-		trips {
-			active-config0 {
-				temperature = <125000>;
-				hysteresis = <1000>;
-				type = "passive";
-			};
-		};
-	};
-
-	soc-usr {
+	dram-usr {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-governor = "user_space";
@@ -562,17 +767,38 @@
 			};
 		};
 	};
+
+	pogo-charger {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&pm8150b_adc_tm ADC_GPIO2_PU2>;
+		wake-capable-sensor;
+		trips {
+			pogo_trip_suspend_charging: pogo_trip_suspend_charging {
+				temperature = <65000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			pogo_map_suspend_charging: pogo_map_suspend_charging {
+				trip = <&pogo_trip_suspend_charging>;
+				cooling-device = <&charging_thermal_controller_pogo 2 2>;
+			};
+		};
+	};
 };
 
 &tlmm {
 	cm7120_headphone_det_default: cm7120_headphone_det_default {
 		mux {
-			pins = "gpio113", "gpio121";
+			pins = "gpio89", "gpio113";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio113", "gpio121";
+			pins = "gpio89", "gpio113";
 			drive-strength = <2>;
 			input-enable;
 			bias-disable;
@@ -581,11 +807,11 @@
 
 	cypd3177_irq_default: cypd3177_irq_default {
 		mux {
-			pins = "gpio22", "gpio23";
+			pins = "gpio70", "gpio69";
 			function = "gpio";
 		};
 		config {
-			pins = "gpio22", "gpio23";
+			pins = "gpio70", "gpio69";
 			drive-strength = <2>;
 			input-enable;
 		};
@@ -593,19 +819,19 @@
 
 	display_panel_blu_en_default: display_panel_blu_en_default {
 		mux {
-			pins = "gpio89";
+			pins = "gpio91";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio89";
+			pins = "gpio91";
 			drive-strength = <8>;
 			bias-disable = <0>;
 			output-high;
 		};
 	};
 
-	seacliff_blu_en_active: seacliff_blu_en_active {
+	seacliff_blu_pvdd_en_default: seacliff_blu_pvdd_en_default {
 		mux {
 			pins = "gpio88";
 			function = "gpio";
@@ -614,22 +840,87 @@
 		config {
 			pins = "gpio88";
 			drive-strength = <8>;
+			bias-disable = <0>;
 			output-high;
+		};
+	};
+
+	syncboss_float_swd: syncboss_float_swd {
+		mux {
+			pins = "gpio119", "gpio120";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio119", "gpio120";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_wakeup: syncboss_wakeup {
+		mux {
+			pins = "gpio4";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio4";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	syncboss_reset_default: syncboss_reset_default {
+		mux {
+			pins = "gpio5";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio5";
+			drive-strength = <6>;
+			output-low;
+		};
+	};
+
+	syncboss_uart_active: syncboss_uart_active {
+		mux {
+			pins = "gpio121", "gpio122";
+			function = "qup3";
+		};
+
+		config {
+			pins = "gpio121", "gpio122";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
+		mux {
+			pins = "gpio121";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio121";
+			drive-strength = <2>;
 			bias-pull-up;
 		};
 	};
 
-	seacliff_blu_en_suspend: seacliff_blu_en_suspend {
+	syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
 		mux {
-			pins = "gpio88";
+			pins = "gpio122";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio88";
-			drive-strength = <8>;
-			output-low;
-			bias-pull-down;
+			pins = "gpio122";
+			drive-strength = <2>;
+			bias-disable;
 		};
 	};
 };
@@ -644,4 +935,50 @@
 		charger-usbpd = <&pm8150b_pdphy>;
 		broadcast-period-min = <15>;
 	};
+
+	charging_thermal_controller_pogo: oculus,charging_thermal_controller_pogo {
+		status = "ok";
+		compatible = "oculus,charging-thermal-controller";
+		votable = "DC_SUSPEND";
+		suspend-vote = <0>;
+		cdev-name = "pogo-cdev";
+		#cooling-cells = <2>;
+	};
+
+	charging_thermal_controller_usbc: oculus,charging_thermal_controller_usbc {
+		status = "ok";
+		compatible = "oculus,charging-thermal-controller";
+		votable = "USB_ICL";
+		reduce-vote = <1604000>;
+		suspend-vote = <0>;
+		cdev-name = "usbc-cdev";
+		#cooling-cells = <2>;
+	};
+
+	fpga_aggregator: oculus,fpga {
+		status = "ok";
+		compatible = "oculus,fpga";
+		vcciox-voltage-mv = <1800000>;
+		vcciox-supply = <&pm8150a_l4>;
+		vcc-voltage-mv = <1800000>;
+		vcc-supply = <&pm8150a_l4>;
+		vccaux-voltage-mv = <2500000>;
+		vccaux-supply = <&pm8150_l13>;
+	};
+
+	kona_mtp_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "4081226_Goertek_Hollywood_15k_3636mAh_Aug26th2019.dtsi"
+		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
+		#include "4759214_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Feb17th2021_PM8150B_GUI10014.dtsi"
+		#include "5133886_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Apr23rd2021_PM8150B_GUI10014.dtsi"
+	};
+};
+
+&wlan {
+	vdd-wlan-dig-supply = <&pm8150_s6>;
+};
+
+&dwc0 {
+	maximum-speed = "super-speed";
 };

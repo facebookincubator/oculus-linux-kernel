@@ -854,71 +854,37 @@ static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
 			u32 bl_lvl)
 {
 	int rc = 0;
-	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
-	struct dsi_backlight_config *bl_config;
-	u32 vtotal, target_scanline, scanline;
 
-	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
-	u8 blu_set_mode[2] = {0xD0, 0x02}; /* BLU mode select */
-	u8 blu_set_en[2] = {0xD1, 0x01}; /* BLU channel select */
-	u8 blu_level_msb[2] = {0x8F, 0x00}; /* BLU level MSB */
-	u8 blu_level_lsb[2] = {0x90, 0x00}; /* BLU level LSB */
-	u8 blu_start_msb[2] = {0xD2, 0x00}; /* BLU PWM start adjust MSB */
-	u8 blu_start_lsb[2] = {0xD3, 0x00}; /* BLU PWM start adjust LSB */
+	u8 blu_set_pwm_page[2] = {0xFF, 0x10};
+	u8 blu_level[2] = {0x51, 0x00};
 
 	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
 		return -EINVAL;
 
 	dsi = &panel->mipi_device;
-	bl_config = &panel->bl_config;
-
-	timing = &panel->cur_mode->timing;
-	vtotal = (u32)DSI_V_TOTAL(timing);
-
-	/* Transform backlight level into illumination period in scanlines */
-	bl_lvl = (bl_lvl * vtotal * bl_config->jdi_blu_default_duty) / 1000000;
 
 	/*
-	 * Calculate the last scanline to start on for each BLU without
-	 * overlapping the backlight illumination with the next refresh's
-	 * scanout to the active scanlines of the panel.
+	 * This scaling makes the following assumptions:
+	 * * input bl_lvl = 2000 and register value 0xFF both represent 200%
+	 *   backlight brightness,
+	 * * input bl_lvl = 0 and register value 0x00 both represent 0% backlight
+	 *   brightness, and
+	 * * linear scaling between the two.
 	 */
-	target_scanline = vtotal - timing->v_front_porch + bl_config->jdi_scanline_max_offset;
-	scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
+	bl_lvl = (bl_lvl * 0xFF) / 2000;
 
-	scanline = min(target_scanline, scanline);
-	if (scanline > vtotal)
-		scanline -= vtotal;
-
-	if (scanline == vtotal - bl_lvl)
-		scanline -= 1;
-
-	/* NVT DDIC multiples the start pulse by 4 and pwm width by 2 by default */
-	scanline /= 4;
-	bl_lvl /= 2;
-
-	blu_start_msb[1] = scanline >> 8;
-	blu_start_lsb[1] = scanline & 0xff;
-	blu_level_msb[1] = bl_lvl >> 8;
-	blu_level_lsb[1] = bl_lvl & 0xff;
+	blu_level[1] = bl_lvl;
 
 	/* Queue the DCS writes so they can be batched together in one frame. */
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), 0, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_msb, sizeof(blu_level_msb), 0, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_lsb, sizeof(blu_level_lsb), 0, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_mode, sizeof(blu_set_mode), 0, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_en, sizeof(blu_set_en), 0, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_start_msb, sizeof(blu_start_msb), 0, 0);
 	/* Send with last command flag */
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_start_lsb, sizeof(blu_start_lsb), MIPI_DSI_MSG_LASTCOMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_level, sizeof(blu_level), MIPI_DSI_MSG_LASTCOMMAND, 0);
 
 	if (rc) {
 		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
 		goto error;
 	}
-	bl_config->jdi_scanline_duration = bl_lvl;
-	bl_config->jdi_scanline_offset[0] = scanline;
 
 error:
 	return rc;
@@ -1127,8 +1093,6 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 		blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
 		/* Calculate when the PWM signal should be sent to meet the BLU off time */
 		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
-		/* Convert the PWM time to internal horizontal lines */
-		pwm_line = pwm_us / internal_1h_us;
 	} else {
 		/* Internal vsync: for refresh rates lower than 90 we use the 90Hz frame period to reduce latency */
 		internal_vsync_us = 1000000/90 + fifo_time_us;
@@ -1138,9 +1102,14 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 
 		/* Calculate when the PWM signal should be sent to meet the 90Hz latency*/
 		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us_ref / 90 - tdel_us - fifo_time_us;
-		/* Convert the PWM time to internal horizontal lines */
-		pwm_line = pwm_us / internal_1h_us;
 	}
+
+	/* Adjust backlight timing relative to vsync (if set) */
+	if (panel->bl_config.jdi_scanline_max_offset)
+		pwm_us -= (panel->bl_config.jdi_scanline_max_offset * external_1h_ns / 1000);
+
+	/* Convert the PWM time to internal horizontal lines */
+	pwm_line = pwm_us / internal_1h_us;
 
 	/* Calculate the BLU on/off times based on the external vsync */
 	blu_on_us = pwm_us + fifo_time_us + tdel_us;
@@ -3048,6 +3017,16 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 			DSI_ERR("[%s] failed to parse pwm config, rc=%d\n",
 			       panel->name, rc);
 			goto error;
+		}
+	} else if (panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING) {
+		rc = utils->read_u32(utils->data,
+			"qcom,mdss-dsi-default-max-scanline-offset", &val);
+		if (rc) {
+			DSI_DEBUG("[%s] default-max-scanline-offset unspecified, rc=%d\n",
+				panel->name, rc);
+			panel->bl_config.jdi_scanline_max_offset = 0;
+		} else {
+			panel->bl_config.jdi_scanline_max_offset = val;
 		}
 	}
 

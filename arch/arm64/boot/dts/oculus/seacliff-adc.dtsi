@@ -111,6 +111,7 @@
 	qcom,dc-icl-ua = <3000000>;
 	qcom,chg-term-current-ma = <(-300)>;
 	qcom,typec-dam-enable;
+	qcom,disable-dc-online-prop;
 };
 
 &pm8150_vadc {

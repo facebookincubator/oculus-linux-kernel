@@ -3,7 +3,7 @@
 /dts-v1/;
 /plugin/;
 
-#include "seacliff-non-pop.dtsi"
+#include "seacliff.dtsi"
 #include "seacliff-adc-usbc.dtsi"
 
 / {

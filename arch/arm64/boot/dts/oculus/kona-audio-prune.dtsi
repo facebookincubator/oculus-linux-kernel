@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 
 /delete-node/ &bolero;
+/delete-node/ &dai_dp;
+/delete-node/ &dai_dp1;
 /delete-node/ &dai_hdmi;
 /delete-node/ &dai_pri_spdif_rx;
 /delete-node/ &dai_pri_spdif_tx;

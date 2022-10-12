@@ -57,6 +57,10 @@
 	};
 };
 
+&cam_cci1 {
+	status = "disabled";
+};
+
 &cnss_wlan_en_active {
 	mux {
 		pins = "gpio26";

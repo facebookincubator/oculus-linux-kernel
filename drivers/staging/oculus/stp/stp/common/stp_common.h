@@ -27,14 +27,10 @@
 #define STP_OPCODE_DATA ((uint8_t)0x06)
 #define STP_OPCODE_NOTIFICATION ((uint8_t)0x03)
 
-#define CRC_MASK ((uint16_t)0x7FFF)
-// Bit 15 is used for bad_crc value
-#define BAD_CRC_MASK (~CRC_MASK)
+#define STP_CHANNEL_MASK ((uint8_t)0xF8)
+#define STP_CHANNEL_NUM_BITS_SHIFT 3
 
-#define CHANNEL_MASK ((uint8_t)0xF8)
-#define CHANNEL_NUM_BITS_SHIFT 3
-
-#define OPCODE_MASK ((uint8_t)0x7)
+#define STP_OPCODE_MASK ((uint8_t)0x7)
 
 // values of the possible states
 // State machine flow:
@@ -119,6 +115,12 @@ struct stp_channel
     // the limit for tx_available_space when STP_NOTIFICATION_TX_SPACE_AVAILABLE is sent to the
     // client
     uint32_t tx_available_space_limit_notification;
+
+    // log RX data when this flag is TRUE
+    _Atomic bool log_rx_data;
+
+    // log TX data when this flag is TRUE
+    _Atomic bool log_tx_data;
 };
 
 // Packet metadata for the data transaction
@@ -126,7 +128,6 @@ struct stp_channel
 struct stp_data_header_type
 {
     // CRC of data sent
-    // [15] bad_crc [14:0] crc
     uint16_t crc;
     // [7:3] channel [2:0] opcode
     uint8_t channel_opcode;
@@ -152,17 +153,7 @@ struct stp_pipelines_config
 extern "C" {
 #endif
 
-uint16_t stp_calculate_checksum(const uint8_t *buffer, uint32_t buffer_size);
-
 uint16_t stp_calculate_crc_for_transaction_packet(const uint8_t *buffer);
-
-void stp_set_crc(uint16_t *full_crc_field, uint16_t new_crc_value);
-
-uint16_t stp_get_crc(uint16_t full_crc_field);
-
-bool stp_get_bad_crc_value(uint16_t full_crc_field);
-
-uint16_t stp_set_bad_crc_value(uint16_t full_crc_field, bool bad_crc);
 
 uint8_t stp_get_channel_value(uint8_t channel_opcode);
 
@@ -185,9 +176,9 @@ uint8_t stp_get_channel_with_data(struct stp_channel *channels,
                                   uint32_t channels_status,
                                   struct stp_pending *pending);
 
-void stp_prepare_tx_packet_data(uint8_t channel, PL_TYPE *tx_pl, uint8_t *buffer);
+void stp_prepare_tx_packet_data(uint8_t channel, PL_TYPE *tx_pl, uint8_t *buffer, bool log);
 
-bool stp_process_rx_packet(struct stp_channel *channel, const uint8_t *buffer);
+bool stp_process_rx_packet(struct stp_channel *channel, const uint8_t *buffer, bool log);
 
 void stp_prepare_tx_notification_packet(uint8_t channel, uint8_t *buffer, uint32_t notification);
 
@@ -198,11 +189,24 @@ bool stp_process_rx_notification(const uint8_t *buffer, uint8_t *channel, uint32
 uint32_t stp_get_channels_status(struct stp_channel *channels);
 
 // define metadata type
-#define DATA_HEADER_TYPE struct stp_data_header_type
+#define STP_DATA_HEADER_TYPE struct stp_data_header_type
 // size of metadata data packet
-#define HEADER_DATA_SIZE (sizeof(struct stp_data_header_type))
+#define STP_HEADER_DATA_SIZE (sizeof(struct stp_data_header_type))
 // actual data size of a data packet
-#define ACTUAL_DATA_SIZE (STP_TOTAL_DATA_SIZE - HEADER_DATA_SIZE)
+#define STP_ACTUAL_DATA_SIZE (STP_TOTAL_DATA_SIZE - STP_HEADER_DATA_SIZE)
+
+// Errors detected in incoming transaction packets
+enum packet_error_t
+{
+    STP_PACKET_ERROR_BAD_CRC = 0,
+    STP_PACKET_ERROR_INVALID_CHANNEL,
+    STP_PACKET_ERROR_PROCESS_RX_DATA,
+    STP_PACKET_ERROR_PROCESS_RX_NOTIFICATION,
+    STP_PACKET_ERROR_UNKNOWN_OPCODE,
+    STP_PACKET_ERROR_NUM_ERRORS
+};
+
+void packet_error(const char *ctx_str, enum packet_error_t error, _Atomic(uint32_t) *state);
 
 #ifdef __cplusplus
 }

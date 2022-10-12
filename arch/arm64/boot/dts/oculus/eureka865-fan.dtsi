@@ -26,7 +26,7 @@
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 71 0x0>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <13 1>;
+			interrupts = <71 1>;
 			interrupt-names = "fan_irq";
 			panel = <&dsi_sharp_nvt_4k_72Hz_dsc_video
 					&dsi_sharp_nvt_4k_80Hz_dsc_video
@@ -41,7 +41,8 @@
 			status = "okay";
 			max-rpm = <7000>;
 			#cooling-cells = <2>;
-			cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000>;
+			/* TODO(D37872176): revert D37872176 when we setup the fan control */
+			cooling-levels = <3000 4000 5000 6000 7000>;
 		};
 	};
 };

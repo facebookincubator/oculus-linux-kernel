@@ -1744,7 +1744,8 @@ static int adreno_pm_suspend(struct device *dev)
 	/* Suspend the lazy allocation page pool refill. */
 	kgsl_lazy_page_pool_suspend();
 	status = kgsl_pwrctrl_change_state(device, KGSL_STATE_SUSPEND);
-	if (!status && device->state == KGSL_STATE_SUSPEND) {
+	if (!status && (device->state == KGSL_STATE_SUSPEND ||
+			device->state == KGSL_STATE_NONE)) {
 		adreno_dispatcher_halt(device);
 		kgsl_mmu_suspend(device);
 	}

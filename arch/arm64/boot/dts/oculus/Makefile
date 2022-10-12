@@ -5,7 +5,8 @@ dtbo-$(CONFIG_OCULUS_EUREKA865) += \
 	eureka865-dev0-overlay.dtbo \
 	eureka865-dev0.5-overlay.dtbo \
 	eureka865-dev0.6-overlay.dtbo \
-	eureka865-p1-overlay.dtbo
+	eureka865-p1-overlay.dtbo \
+	eureka865-dolly1.1-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_HOLLYWOOD) += \
 	hollywood-poc2-overlay.dtbo \
@@ -17,14 +18,6 @@ dtbo-$(CONFIG_OCULUS_HOLLYWOOD) += \
 	hollywood-crimson-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_SEACLIFF) += \
-	seacliff-dev0-overlay.dtbo \
-	seacliff-p0dd-r0-overlay.dtbo \
-	seacliff-p0dd-r1.5-overlay.dtbo \
-	seacliff-p0-overlay.dtbo \
-	seacliff-p1-overlay.dtbo \
-	seacliff-dev2-overlay.dtbo \
-	seacliff-p2-overlay.dtbo \
-	seacliff-p2dd-overlay.dtbo \
 	seacliff-dev2.5-overlay.dtbo \
 	seacliff-p2.5-overlay.dtbo \
 	seacliff-dev3-overlay.dtbo \
@@ -38,7 +31,9 @@ dtbo-$(CONFIG_OCULUS_SEACLIFF) += \
 	seacliff-dvt-overlay.dtbo \
 	seacliff-dvt-mlb2-overlay.dtbo \
 	seacliff-pvt-overlay.dtbo \
-	seacliff-pvt-mlb2-overlay.dtbo
+	seacliff-pvt-mlb2-overlay.dtbo \
+	seacliff-pvt-b-overlay.dtbo \
+	seacliff-pvt-b-mlb2-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_SEABRIGHT) += \
 	seabright-rev0-overlay.dtbo \
@@ -50,6 +45,7 @@ eureka865-dev0-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1
 eureka865-dev0.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 eureka865-dev0.6-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 eureka865-p1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+eureka865-dolly1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-poc2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-p1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-evt1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
@@ -62,14 +58,6 @@ seabright-rev1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1
 seabright-rev2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seabright-rev3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-crimson-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-dev0-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-p0dd-r0-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-p0dd-r1.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-p0-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-p1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-dev2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-p2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-seacliff-p2dd-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-dev2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-p2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-dev3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
@@ -84,6 +72,8 @@ seacliff-dvt-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-o
 seacliff-dvt-mlb2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-pvt-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-pvt-mlb2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+seacliff-pvt-b-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+seacliff-pvt-b-mlb2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 endif
 endif
 

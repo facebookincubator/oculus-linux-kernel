@@ -190,7 +190,6 @@
 
 &mdss_mdp {
 	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
-	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
 	qcom,sde-has-dest-scaler;
 	qcom,sde-wb-rtprio = <99>;
 	qcom,sde-wb-cpumask = "80"; /* CPU7 */
@@ -273,10 +272,6 @@
 	avdd-supply = <>;
 	pinctrl-0 = <&te1_active>;
 	pinctrl-1 = <&te1_suspend>;
-};
-
-&sde_dp {
-	status = "disabled";
 };
 
 &tlmm {

@@ -47,7 +47,8 @@ static void stp_controller_prepare_tx_data_transaction(bool *do_transaction,
     {
         stp_prepare_tx_packet_data(channel,
                                    &_stp_controller_data->channels[channel].tx_pl,
-                                   _stp_controller_data->tx_buffer);
+                                   _stp_controller_data->tx_buffer,
+                                   _stp_controller_data->channels[channel].log_tx_data);
 
         tx->sent    = true;
         tx->channel = channel;
@@ -121,8 +122,8 @@ int32_t stp_controller_init(struct stp_controller_init_t *init)
     }
 
     stp_controller_init_internal(init->transport);
-    _stp_controller_data->rx_buffer = init->rx_buffer;
-    _stp_controller_data->tx_buffer = init->tx_buffer;
+    _stp_controller_data->rx_buffer   = init->rx_buffer;
+    _stp_controller_data->tx_buffer   = init->tx_buffer;
     _stp_controller_data->handshake   = init->handshake;
     _stp_controller_data->wait_signal = init->wait_signal;
 
@@ -379,11 +380,7 @@ void stp_controller_prepare_common_tx_transaction(void)
     header->channels_status = stp_get_channels_status(_stp_controller_data->channels);
     _stp_controller_data->prev_channels_status = header->channels_status;
 
-    header->crc = stp_set_bad_crc_value(header->crc, _stp_controller_data->pending_bad_crc);
-
-    uint16_t calculated_crc = stp_calculate_crc_for_transaction_packet(buffer);
-
-    stp_set_crc(&header->crc, calculated_crc);
+    header->crc = stp_calculate_crc_for_transaction_packet(buffer);
 }
 
 /* Initialize the STP controller/device internal data */
@@ -396,8 +393,6 @@ void stp_controller_init_internal(struct stp_controller_transport_table *transpo
     _stp_controller_data->transport = transport;
 
     _stp_controller_data->state = STP_STATE_INIT;
-
-    _stp_controller_data->pending_bad_crc = false;
 
     _stp_controller_data->device_channels_status = 0xFFFFFFFF;
     _stp_controller_data->prev_channels_status   = 0xFFFFFFFF;
@@ -428,21 +423,22 @@ void stp_controller_init_transaction(void)
 }
 
 #define STP_BAD_CRC_BACKOFF_DELAY_MS 10
+#define STP_MAX_BAD_CRCS_IN_A_ROW_BEFORE_BACKOFF 3
 void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
 {
-    DATA_HEADER_TYPE *header;
+    STP_DATA_HEADER_TYPE *header;
 
-    header = (DATA_HEADER_TYPE *)_stp_controller_data->rx_buffer;
+    header = (STP_DATA_HEADER_TYPE *)_stp_controller_data->rx_buffer;
 
     bool check_crc = stp_check_crc(_stp_controller_data->rx_buffer);
     if (!check_crc)
     {
-        _stp_controller_data->bad_crcs_in_a_row++;
-        _stp_controller_data->pending_bad_crc = true;
-        _stp_controller_data->state           = STP_STATE_INIT;
-        STP_LOG_ERROR("STP controller: Bad CRC!");
+        packet_error("Controller", STP_PACKET_ERROR_BAD_CRC, &_stp_controller_data->state);
 
-        if (_stp_controller_data->bad_crcs_in_a_row++ > 3){
+        _stp_controller_data->bad_crcs_in_a_row++;
+
+        if (_stp_controller_data->bad_crcs_in_a_row++ > STP_MAX_BAD_CRCS_IN_A_ROW_BEFORE_BACKOFF)
+        {
             STP_MSLEEP(STP_BAD_CRC_BACKOFF_DELAY_MS);
         }
         return;
@@ -457,14 +453,15 @@ void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
 
     if (opcode == STP_OPCODE_EMPTY)
     {
-        _stp_controller_data->state = STP_STATE_DATA;
+        // Do nothing, stay in DATA state
     }
     else if (opcode == STP_OPCODE_DATA)
     {
         uint8_t channel = stp_get_channel_value(header->channel_opcode);
         if (channel >= STP_TOTAL_NUM_CHANNELS)
         {
-            STP_LOG_ERROR("STP Controller: Invalid channel %zu", (size_t)channel);
+            packet_error(
+                "Controller", STP_PACKET_ERROR_INVALID_CHANNEL, &_stp_controller_data->state);
             return;
         }
         else if (!_stp_controller_data->channels[channel].controller_connected)
@@ -474,12 +471,17 @@ void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
             return;
         }
 
-        _stp_controller_data->pending_bad_crc = !stp_process_rx_packet(
-            &_stp_controller_data->channels[channel], _stp_controller_data->rx_buffer);
-        if (!_stp_controller_data->pending_bad_crc)
+        if (!stp_process_rx_packet(
+                &_stp_controller_data->channels[channel],
+                _stp_controller_data->rx_buffer,
+                _stp_controller_data->channels[channel].log_rx_data))
         {
-            _stp_controller_data->wait_signal->signal_read(channel);
+            packet_error(
+                "Controller", STP_PACKET_ERROR_PROCESS_RX_DATA, &_stp_controller_data->state);
+            return;
         }
+
+        _stp_controller_data->wait_signal->signal_read(channel);
         _stp_controller_data->state = STP_STATE_DATA;
     }
     else if (opcode == STP_OPCODE_NOTIFICATION)
@@ -487,29 +489,19 @@ void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
         uint32_t notification;
         uint8_t channel;
 
-        _stp_controller_data->pending_bad_crc =
-            !stp_process_rx_notification(_stp_controller_data->rx_buffer, &channel, &notification);
-        if (!_stp_controller_data->pending_bad_crc)
+        if (!stp_process_rx_notification(_stp_controller_data->rx_buffer, &channel, &notification))
         {
-            stp_controller_rx_notification(channel, notification);
+            packet_error("Controller",
+                         STP_PACKET_ERROR_PROCESS_RX_NOTIFICATION,
+                         &_stp_controller_data->state);
+            return;
         }
 
-        _stp_controller_data->state = STP_STATE_DATA;
+        stp_controller_rx_notification(channel, notification);
     }
     else
     {
-        _stp_controller_data->pending_bad_crc = true;
-        _stp_controller_data->state           = STP_STATE_INIT;
-    }
-
-    if ((opcode == STP_OPCODE_EMPTY) || (opcode == STP_OPCODE_DATA) ||
-        (opcode == STP_OPCODE_NOTIFICATION))
-    {
-        if (stp_get_bad_crc_value(header->crc))
-        {
-            tx->sent = false;
-            // TBD: invalidate session and inform clients
-        }
+        packet_error("Controller", STP_PACKET_ERROR_UNKNOWN_OPCODE, &_stp_controller_data->state);
     }
 
     _stp_controller_data->pending.tx = *tx;

@@ -277,6 +277,8 @@ struct iommu_ops {
 			dma_addr_t iova, size_t size, int *page_count);
 	int (*get_backing_pages)(struct iommu_domain *domain, dma_addr_t iova,
 			size_t size, struct list_head *page_list);
+	int (*set_page_range_access_flag)(struct iommu_domain *domain,
+			dma_addr_t iova, size_t size, bool access_flag);
 	int (*add_device)(struct device *dev);
 	void (*remove_device)(struct device *dev);
 	struct iommu_group *(*device_group)(struct device *dev);
@@ -399,6 +401,8 @@ extern struct page **iommu_find_mapped_page_range(struct iommu_domain *domain,
 		dma_addr_t iova, size_t size, int *page_count);
 extern int iommu_get_backing_pages(struct iommu_domain *domain, dma_addr_t iova,
 		size_t size, struct list_head *page_list);
+extern int iommu_set_page_range_access_flag(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, bool access_flag);
 extern bool iommu_is_iova_coherent(struct iommu_domain *domain,
 				dma_addr_t iova);
 extern void iommu_set_fault_handler(struct iommu_domain *domain,
