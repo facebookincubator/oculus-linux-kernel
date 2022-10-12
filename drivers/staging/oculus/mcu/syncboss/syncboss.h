@@ -239,6 +239,9 @@ struct syncboss_dev_data {
 	/* True if the MCU support querying wakeup reasons */
 	bool has_wake_reasons;
 
+	/* True if the MCU can be woken from shutdown via a SPI transaction (CS toggle) */
+	bool has_wake_on_spi;
+
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	/* True if we must enable the camera temperature sensor
 	 * regulator (needed for syncboss to function properly on

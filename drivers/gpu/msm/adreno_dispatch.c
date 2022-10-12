@@ -1,4 +1,5 @@
 /* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1159,7 +1160,8 @@ static inline bool _verify_ib(struct kgsl_device_private *dev_priv,
 	}
 
 	/* Make sure that the address is mapped */
-	if (!kgsl_mmu_gpuaddr_in_range(private->pagetable, ib->gpuaddr)) {
+	if (!kgsl_mmu_gpuaddr_in_range(private->pagetable, ib->gpuaddr,
+		ib->size)) {
 		pr_context(device, context, "ctxt %d invalid ib gpuaddr %llX\n",
 			context->id, ib->gpuaddr);
 		return false;

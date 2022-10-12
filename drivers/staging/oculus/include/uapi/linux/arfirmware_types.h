@@ -69,11 +69,10 @@ struct ar_mem_region {
 };
 
 /**
- * Describes an external payload.
+ * Describes an external payload chunk. In a send queue, this data is in the
+ * inline data portion.
  */
-struct ar_payload {
-	/// External mem region id associated with this address range
-	uint32_t mem_region_id;
+struct ar_payload_chunk {
 	/// offset into region where the payload starts
 	uint32_t offset;
 	/// size of the payload

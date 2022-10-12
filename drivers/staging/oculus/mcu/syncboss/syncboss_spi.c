@@ -1289,12 +1289,20 @@ static int syncboss_spi_transfer_thread(void *ptr)
 
 		if (use_fastpath && smsg != devdata->default_smsg) {
 			if (prepared_smsg && smsg != prepared_smsg) {
-				devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
+				status = devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
+				if (status) {
+					dev_err(&spi->dev, "failed to unprepare msg: %d", status);
+					break;
+				}
 				prepared_smsg = NULL;
 			}
 
 			if (!prepared_smsg) {
-				devdata->spi_prepare_ops.prepare_message(spi->master, &smsg->spi_msg);
+				status = devdata->spi_prepare_ops.prepare_message(spi->master, &smsg->spi_msg);
+				if (status) {
+					dev_err(&spi->dev, "failed to prepare msg: %d", status);
+					break;
+				}
 				prepared_smsg = smsg;
 			}
 			spi->master->cur_msg = &smsg->spi_msg;
@@ -1527,10 +1535,101 @@ static void query_wake_reason(struct syncboss_dev_data *devdata)
 	queue_tx_packet(devdata, message, data_len, /* from_user */ false);
 }
 
+static int send_dummy_smsg(struct syncboss_dev_data *devdata)
+{
+	int status;
+	struct spi_transfer *spi_xfer;
+	struct syncboss_msg *dummy_smsg;
+
+	dummy_smsg = kzalloc(sizeof(*dummy_smsg), GFP_KERNEL | GFP_DMA);
+	if (!dummy_smsg)
+		return -ENOMEM;
+
+	spi_xfer = &dummy_smsg->spi_xfer;
+	spi_xfer->tx_buf = &dummy_smsg->tx;
+	spi_xfer->len = devdata->transaction_length;
+	spi_xfer->bits_per_word = 8;
+	spi_xfer->speed_hz = devdata->spi_max_clk_rate;
+	spi_message_init(&dummy_smsg->spi_msg);
+	spi_message_add_tail(spi_xfer, &dummy_smsg->spi_msg);
+	dummy_smsg->spi_msg.spi = devdata->spi;
+
+	spi_bus_lock(devdata->spi->master);
+	status = devdata->spi_prepare_ops.prepare_transfer_hardware(devdata->spi->master);
+	if (status)
+		goto error;
+
+	if (devdata->use_fastpath) {
+		status = devdata->spi_prepare_ops.prepare_message(devdata->spi->master, &dummy_smsg->spi_msg);
+		if (status)
+			goto error_after_prepare_hw;
+
+		devdata->spi->master->cur_msg = &dummy_smsg->spi_msg;
+		status = spi_fastpath_transfer(devdata->spi, &dummy_smsg->spi_msg);
+
+		devdata->spi_prepare_ops.unprepare_message(devdata->spi->master, &dummy_smsg->spi_msg);
+		devdata->spi->master->cur_msg = NULL;
+	} else {
+		status = spi_sync_locked(devdata->spi, &dummy_smsg->spi_msg);
+	}
+
+error_after_prepare_hw:
+	devdata->spi_prepare_ops.unprepare_transfer_hardware(devdata->spi->master);
+error:
+	spi_bus_unlock(devdata->spi->master);
+	kfree(dummy_smsg);
+	return status;
+}
+
+static int wake_mcu_if_asleep(struct syncboss_dev_data *devdata)
+{
+	int status = 0;
+	bool mcu_awake = is_mcu_awake(devdata);
+
+	if (mcu_awake)
+		return 0;
+
+	/*
+	 * If supported, attempt to wake the MCU by sending it a dummy SPI
+	 * transaction. The MCU will wake on CS toggle.
+	 */
+	if (devdata->has_wake_on_spi && !devdata->force_reset_on_open) {
+		dev_info(&devdata->spi->dev,
+			 "Attemping to wake MCU by sending a dummy SPI transaction (mcu awake: %d)",
+			 !!mcu_awake);
+
+		status = send_dummy_smsg(devdata);
+		if (status)
+			dev_err(&devdata->spi->dev, "Failed to send dummy SPI transaction: %d", status);
+		else
+			status = wait_for_syncboss_wake_state(devdata, true);
+
+		if (status)
+			dev_warn(&devdata->spi->dev, "MCU failed to wake on SPI. Falling back to pin reset.");
+		else
+			mcu_awake = true;
+	}
+
+	/*
+	 * Wake on SPI is either not supported or failed, or a force reset was requested.
+	 * Try a pin reset.
+	 */
+	if (!mcu_awake || devdata->force_reset_on_open) {
+		dev_info(&devdata->spi->dev,
+			 "Force-resetting MCU (mcu awake: %d, force on open: %d)",
+			 !!mcu_awake,
+			 !!devdata->force_reset_on_open);
+		syncboss_pin_reset(devdata);
+
+		status = wait_for_syncboss_wake_state(devdata, true);
+	}
+
+	return status;
+}
+
 static int start_streaming_locked(struct syncboss_dev_data *devdata)
 {
 	int status = 0;
-	bool mcu_awake;
 
 	if (devdata->is_streaming) {
 		dev_warn(&devdata->spi->dev, "streaming already started");
@@ -1615,19 +1714,9 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		}
 	}
 #endif
-	mcu_awake = is_mcu_awake(devdata);
-
-	if (!mcu_awake || devdata->force_reset_on_open) {
-		dev_info(&devdata->spi->dev,
-			 "Force-resetting MCU (mcu awake: %d, force on open: %d)",
-			 !!mcu_awake,
-			 !!devdata->force_reset_on_open);
-		syncboss_pin_reset(devdata);
-
-		status = wait_for_syncboss_wake_state(devdata, true);
-		if (status)
-			goto error;
-	}
+	status = wake_mcu_if_asleep(devdata);
+	if (status)
+		goto error;
 
 	if (devdata->next_stream_settings.transaction_length == 0) {
 		dev_err(&devdata->spi->dev,
@@ -1652,11 +1741,17 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	 */
 	spi_bus_lock(devdata->spi->master);
 
-	devdata->spi_prepare_ops.prepare_transfer_hardware(devdata->spi->master);
+	status = devdata->spi_prepare_ops.prepare_transfer_hardware(devdata->spi->master);
+	if (status)
+		goto error_after_spi_bus_lock;
+
 	devdata->transaction_ctr = 0;
 
-	if (devdata->use_fastpath)
-		devdata->spi_prepare_ops.prepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
+	if (devdata->use_fastpath) {
+		status = devdata->spi_prepare_ops.prepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
+		if (status)
+			goto error_after_prepare_transfer_hardware;
+	}
 
 	/*
 	 * The worker thread should not be running yet, so the worker
@@ -1671,7 +1766,7 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		dev_err(&devdata->spi->dev, "Failed to start kernel thread. (%d)",
 			status);
 		devdata->worker = NULL;
-		goto error_after_create_smsg;
+		goto error_after_prepare_msg;
 	}
 
 	dev_info(&devdata->spi->dev, "Setting SPI thread cpu affinity: %*pb",
@@ -1689,9 +1784,14 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 
 	return 0;
 
-error_after_create_smsg:
-	destroy_default_smsg_locked(devdata);
+error_after_prepare_msg:
+	if (devdata->use_fastpath)
+		devdata->spi_prepare_ops.unprepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
+error_after_prepare_transfer_hardware:
+	devdata->spi_prepare_ops.unprepare_transfer_hardware(devdata->spi->master);
+error_after_spi_bus_lock:
 	spi_bus_unlock(devdata->spi->master);
+	destroy_default_smsg_locked(devdata);
 error:
 	return status;
 }
@@ -1973,6 +2073,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 
 	devdata->has_prox = of_property_read_bool(node, "oculus,syncboss-has-prox");
 	devdata->has_no_prox_cal = of_property_read_bool(node, "oculus,syncboss-has-no-prox-cal");
+	devdata->has_wake_on_spi = of_property_read_bool(node, "oculus,syncboss-has-wake-on-spi");
 	devdata->has_wake_reasons = of_property_read_bool(node, "oculus,syncboss-has-wake-reasons");
 
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL

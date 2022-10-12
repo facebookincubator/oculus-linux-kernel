@@ -31,7 +31,7 @@ int spi_stp_dev_map_errors(int stp_error)
 	case STP_ERROR_SOC_SUSPENDED:
 		ret = -EBADF;
 		break;
-	case STP_ERROR_IO_INTRERRUPT:
+	case STP_ERROR_IO_INTERRUPT:
 		ret = -EPIPE;
 		break;
 	case STP_ERROR_NEXT_ERROR:

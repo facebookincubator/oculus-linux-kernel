@@ -7,7 +7,6 @@
 #include <linux/printk.h>
 #include <linux/string.h>
 #include <linux/crc-ccitt.h>
-#include <linux/time.h>
 
 /**
  * Mutex.

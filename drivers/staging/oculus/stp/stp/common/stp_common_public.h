@@ -47,7 +47,7 @@ enum stp_error_type
     // SoC suspended
     STP_ERROR_SOC_SUSPENDED = 11,
 
-    STP_ERROR_IO_INTRERRUPT = 12,
+    STP_ERROR_IO_INTERRUPT = 12,
 
     // STP next error
     STP_ERROR_NEXT_ERROR = 13,
@@ -75,6 +75,9 @@ enum stp_get_attribute_type
     STP_WAIT_FOR_DATA,
     // channels status
     STP_ATTRIB_CHANNELS_STATUS,
+
+    STP_ATTRIB_TX_PIPELINE_SIZE,
+    STP_ATTRIB_RX_PIPELINE_SIZE,
 
     STP_NUM_GET_ATTRIBUTES
 };

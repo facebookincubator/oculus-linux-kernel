@@ -61,6 +61,122 @@ static ssize_t stp_driver_stats_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(stp_driver_stats);
 
+static ssize_t stp_connection_state_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	ssize_t rval = 0;
+	ssize_t char_count = 0;
+	uint32_t synced = 0;
+
+	stp_controller_get_attribute(STP_ATTRIB_SYNCED, &synced);
+
+	char_count = scnprintf(
+		buf + rval, PAGE_SIZE - rval,
+		"SYNCED: state:%u\n",
+		synced);
+	rval += char_count;
+
+	for (uint8_t i = 0; i < STP_TOTAL_NUM_CHANNELS; i++) {
+		uint32_t valid = 0;
+		uint32_t controller_connected = 0;
+		uint32_t device_connected = 0;
+		uint32_t rx_data = 0;
+
+		stp_controller_get_channel_attribute(i, STP_ATTRIB_VALID_SESSION, &valid);
+		stp_controller_get_channel_attribute(i, STP_ATTRIB_CONTROLLER_CONNECTED, &controller_connected);
+		stp_controller_get_channel_attribute(i, STP_ATTRIB_DEVICE_CONNECTED, &device_connected);
+		stp_controller_get_channel_attribute(i, STP_RX_FILLED, &rx_data);
+
+		char_count = scnprintf(
+			buf + rval, PAGE_SIZE - rval,
+			"CHANNEL:%u\n"
+			"valid_session:%u\n"
+			"controller:%u device:%u\n"
+			"rx_pipe_filled:%u\n",
+			i,
+			valid,
+			controller_connected,
+			device_connected,
+			rx_data);
+		rval += char_count;
+	}
+	STP_DRV_LOG_INFO("stp_connection_state char count: %zu", rval);
+	return rval;
+}
+static DEVICE_ATTR_RO(stp_connection_state);
+
+static ssize_t stp_log_channel_data_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	ssize_t rval = 0;
+
+	ssize_t char_count = 0;
+	uint32_t log_tx_value = 0;
+	uint32_t log_rx_value = 0;
+
+	char_count = scnprintf(
+			buf + rval, PAGE_SIZE - rval,
+			"Channels with log enabled:\n"
+			);
+	rval += char_count;
+
+	for (uint8_t i = 0; i < STP_TOTAL_NUM_CHANNELS; i++) {
+		stp_controller_get_channel_attribute(i, STP_CONTROLLER_ATTRIB_SET_LOG_TX_DATA, &log_tx_value);
+		stp_controller_get_channel_attribute(i, STP_CONTROLLER_ATTRIB_SET_LOG_RX_DATA, &log_rx_value);
+
+		if (log_tx_value || log_rx_value) {
+			char_count = scnprintf(
+				buf + rval, PAGE_SIZE - rval,
+				"CHANNEL:%u\n"
+				"  LOG_TX VALUE:%u\n"
+				"  LOG_RX VALUE:%u\n",
+				i,
+				log_tx_value,
+				log_rx_value
+				);
+		}
+		rval += char_count;
+	}
+
+	return rval;
+}
+
+static ssize_t stp_log_channel_data_store(
+				struct device *dev,
+				struct device_attribute *attr,
+				 const char *buf, size_t len)
+{
+	uint32_t channel	= 0;
+	uint32_t attribute	= 0;
+	uint32_t value		= 0;
+	char direction[3]	= "";
+
+	if (sscanf(buf, "stp setchannel %2s %u %u",
+				direction, &channel, &value) != 3) {
+		STP_DRV_LOG_ERR("stp_log_channel_data: Usage: stp setchannel {tx | rx} <channel ID> {0 | 1}");
+		return len;
+	}
+
+	if (channel < 0 || channel >= STP_TOTAL_NUM_CHANNELS) {
+		STP_DRV_LOG_ERR("stp_log_channel_data: Incorrect channel ID");
+		return len;
+	}
+
+	if (!strncmp(direction, "tx", 2)) {
+		attribute = STP_CONTROLLER_ATTRIB_SET_LOG_TX_DATA;
+	} else if (!strncmp(direction, "rx", 2)) {
+		attribute = STP_CONTROLLER_ATTRIB_SET_LOG_RX_DATA;
+	} else {
+		STP_DRV_LOG_ERR("stp_log_channel_data: Usage: stp setchannel {tx | rx} <channelId> {0 | 1}");
+		return len;
+	}
+
+	stp_controller_set_channel_attribute32((uint8_t) channel, attribute, value);
+
+	return len;
+}
+static DEVICE_ATTR_RW(stp_log_channel_data);
+
 static bool stp_is_mcu_data_available(void)
 {
 	int value;
@@ -325,6 +441,8 @@ static int spi_stp_probe(struct spi_device *spi)
 	}
 
 	device_create_file(&spi->dev, &dev_attr_stp_driver_stats);
+	device_create_file(&spi->dev, &dev_attr_stp_connection_state);
+	device_create_file(&spi->dev, &dev_attr_stp_log_channel_data);
 
 	_stp_driver_data->spi = spi;
 	init_waitqueue_head(&_stp_driver_data->device_ready_q);
@@ -413,6 +531,8 @@ static int spi_stp_remove(struct spi_device *spi)
 
 	stp_remove_device(&spi->dev);
 	device_remove_file(&spi->dev, &dev_attr_stp_driver_stats);
+	device_remove_file(&spi->dev, &dev_attr_stp_connection_state);
+	device_remove_file(&spi->dev, &dev_attr_stp_log_channel_data);
 
 	devm_kfree(&spi->dev, _stp_driver_data->controller_rx_buffer);
 	devm_kfree(&spi->dev, _stp_driver_data->controller_tx_buffer);

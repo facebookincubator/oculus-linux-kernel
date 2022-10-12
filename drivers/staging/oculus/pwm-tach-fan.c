@@ -35,15 +35,11 @@
 
 #include <drm/drm_panel.h>
 
-/*
- * Number of msec in a failure state before reporting the failure. The fan spec
- * recommends to wait for 2000ms+100ms before reading or interprating the fan
- * speed.
- */
-#define FAN_FAILURE_TIME_MS 3000
-
+#define CLOSE_LOOP_FAN_FAILURE_TIME_MS 800
+#define MAX_FAN_RESET_TRY_COUNT 5
 #define FAN_STARTUP_TIME_MS 800
 #define MIN_PWM 15
+#define COLD_BOOT_PWM 84
 #define MAX_PWM 255
 #define MAX_STR_LEN 10
 #define MAX_RPM_HISTORY 3
@@ -62,6 +58,7 @@ struct pwm_fan_ctx {
 	struct thermal_cooling_device *cdev;
 	struct workqueue_struct *wq;
 	struct work_struct fan_work;
+	struct work_struct fan_recovery_work;
 	struct notifier_block fb_notif;
 	unsigned int pwm_value;
 	unsigned int pwm_fan_state;
@@ -79,6 +76,7 @@ struct pwm_fan_ctx {
 	bool is_display_on;
 	u64 timer_ticks;
 	bool force_failure;
+	int reset_count;
 };
 
 static struct drm_panel *active_panel;
@@ -148,6 +146,12 @@ static void disable_fan(struct pwm_fan_ctx *ctx)
 	atomic64_set(&ctx->rpm, 0);
 }
 
+static void reset_fan(struct pwm_fan_ctx *ctx)
+{
+	disable_fan(ctx);
+	enable_fan(ctx);
+}
+
 static int set_pwm_locked(struct pwm_fan_ctx *ctx, unsigned long pwm)
 {
 	unsigned long duty;
@@ -211,7 +215,9 @@ static ssize_t set_force_failure(struct device *dev, struct device_attribute *at
 	if (kstrtoul(buf, 10, &force_failure))
 		return -EINVAL;
 
+	mutex_lock(&ctx->lock);
 	ctx->force_failure = (force_failure != 0);
+	mutex_unlock(&ctx->lock);
 
 	return count;
 }
@@ -220,8 +226,12 @@ static ssize_t show_force_failure(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
+	int ret;
 
-	return snprintf(buf, MAX_STR_LEN, "%u\n", ctx->force_failure);
+	mutex_lock(&ctx->lock);
+	ret = snprintf(buf, MAX_STR_LEN, "%u\n", ctx->force_failure);
+	mutex_unlock(&ctx->lock);
+	return ret;
 }
 
 static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
@@ -326,7 +336,7 @@ static bool pwm_fan_has_failure_locked(struct pwm_fan_ctx *ctx)
 	/* Wait for a few cycles to report a failure due to PWM not causing an
 	 * activity.  The fan might take some time to ramp up.
 	 */
-	if ((pwm != 0) && (elapsed_ms > FAN_FAILURE_TIME_MS))
+	if ((pwm != 0) && (elapsed_ms > CLOSE_LOOP_FAN_FAILURE_TIME_MS))
 		return true;
 
 	return false;
@@ -343,8 +353,11 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 	mutex_lock(&ctx->lock);
 	if (!ctx->is_display_on)
 		*state = 0;
-	else if (pwm_fan_has_failure_locked(ctx))
-		/* Set a state that exceeds the maximum to signal userspace. */
+	else if (ctx->force_failure || ctx->reset_count >= MAX_FAN_RESET_TRY_COUNT)
+		/* If fan is in force_failure mode or if fan recovery failed,
+		 * set a state that exceeds the maximum to signal userspace of
+		 * fan mal-function.
+		 */
 		*state = ctx->pwm_fan_max_state + 1;
 	else
 		*state = ctx->pwm_fan_state;
@@ -464,6 +477,38 @@ static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static void fan_recovery_work_func(struct work_struct *work)
+{
+	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
+			fan_recovery_work);
+	int pwm;
+
+	mutex_lock(&ctx->lock);
+
+	pwm = ctx->pwm_value;
+
+	dev_dbg(&ctx->cdev->device, "%s: reset_count %d, pwm %d rpm_value %d\n",
+		__func__, ctx->reset_count, pwm, ctx->rpm_value);
+
+	if (ctx->reset_count == 0) {
+		reset_fan(ctx);
+		ctx->reset_count++;
+	} else if (ctx->reset_count < MAX_FAN_RESET_TRY_COUNT) {
+		/* try increasing PWM */
+		pwm += 10;
+		if (pwm > MAX_PWM)
+			pwm = MAX_PWM;
+
+		if (pwm < COLD_BOOT_PWM)
+			pwm = COLD_BOOT_PWM;
+
+		set_pwm_locked(ctx, pwm);
+		ctx->reset_count++;
+	}
+
+	mutex_unlock(&ctx->lock);
+}
+
 static void fan_work_func(struct work_struct *work)
 {
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
@@ -473,12 +518,34 @@ static void fan_work_func(struct work_struct *work)
 	int rpm_value;
 	int rpm_history_idx = ctx->timer_ticks;
 	int tolerance;
+	bool fan_failed;
 
 	if (!mutex_trylock(&ctx->lock))
 		return;
 
 	pwm = ctx->pwm_value;
 	rpm_value = ctx->rpm_value;
+
+	fan_failed = pwm_fan_has_failure_locked(ctx);
+
+	dev_dbg(&ctx->cdev->device, "%s: force_failure %d, fan_failed %d\n",
+		__func__, ctx->force_failure, fan_failed);
+
+	if (ctx->force_failure) {
+		/* Forced fan failure, do nothing */
+		goto end_work_func;
+	}
+
+	if (fan_failed) {
+		queue_work(ctx->wq, &ctx->fan_recovery_work);
+		goto end_work_func;
+	}
+
+	if (ctx->reset_count != 0) {
+		dev_dbg(&ctx->cdev->device, "Fan recovered after %d attempts\n",
+			ctx->reset_count);
+		ctx->reset_count = 0;
+	}
 
 	/*
 	 * Record current RPM value
@@ -624,6 +691,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "enter pwm fan probe\n");
 
 	INIT_WORK(&ctx->fan_work, fan_work_func);
+	INIT_WORK(&ctx->fan_recovery_work, fan_recovery_work_func);
 	mutex_init(&ctx->lock);
 	hrtimer_init(&ctx->fan_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	ctx->fan_timer.function = fan_timer_func;
@@ -681,6 +749,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	}
 
 	ctx->is_display_on = true;
+	ctx->reset_count = 0;
 #ifdef CONFIG_DRM
 	ctx->fb_notif.notifier_call = pwm_fan_fb_notifier_cb;
 	if (active_panel) {
