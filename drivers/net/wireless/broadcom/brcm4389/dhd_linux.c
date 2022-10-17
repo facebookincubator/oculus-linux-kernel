@@ -7664,6 +7664,11 @@ dhd_get_ifp_by_ndev(dhd_pub_t *dhdp, struct net_device *ndev)
 	u32 ifidx = (DHD_MAX_IFS - 1);
 #endif /* WL_STATIC_IF */
 
+	if (dhdp == NULL) {
+		DHD_ERROR(("no dhd_pub_t found for %s\n", ndev->name));
+		return NULL;
+	}
+
 	dhd_info_t *dhdinfo = (dhd_info_t *)dhdp->info;
 	do {
 		ifp = dhdinfo->iflist[ifidx];
@@ -9765,19 +9770,17 @@ bool dhd_update_fw_nv_path(dhd_info_t *dhdinfo)
 	 */
 
 	/* set default firmware and nvram path for built-in type driver */
-	if (!dhd_download_fw_on_driverload) {
 #ifdef DHD_LINUX_STD_FW_API
-		fw = DHD_FW_NAME;
-		nv = DHD_NVRAM_NAME;
+	fw = DHD_FW_NAME;
+	nv = DHD_NVRAM_NAME;
 #else
 #ifdef CONFIG_BCMDHD_FW_PATH
-		fw = VENDOR_PATH CONFIG_BCMDHD_FW_PATH;
+	fw = VENDOR_PATH CONFIG_BCMDHD_FW_PATH;
 #endif /* CONFIG_BCMDHD_FW_PATH */
 #ifdef CONFIG_BCMDHD_NVRAM_PATH
-		nv = VENDOR_PATH CONFIG_BCMDHD_NVRAM_PATH;
+	nv = VENDOR_PATH CONFIG_BCMDHD_NVRAM_PATH;
 #endif /* CONFIG_BCMDHD_NVRAM_PATH */
 #endif /* DHD_LINUX_STD_FW_API */
-	}
 
 	/* check if we need to initialize the path */
 	if (dhdinfo->fw_path[0] == '\0') {

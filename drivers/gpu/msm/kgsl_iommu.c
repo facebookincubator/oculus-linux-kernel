@@ -2413,6 +2413,31 @@ static int kgsl_iommu_get_backing_pages(struct kgsl_memdesc *memdesc,
 	return ret;
 }
 
+static int kgsl_iommu_set_access_flag(struct kgsl_memdesc *memdesc,
+		bool access_flag)
+{
+	struct kgsl_pagetable *pagetable = memdesc->pagetable;
+	struct kgsl_iommu_pt *iommu_pt = pagetable->priv;
+	dma_addr_t iova;
+	int ret;
+
+	if (IS_ERR_OR_NULL(iommu_pt))
+		return -ENODEV;
+
+	iova = memdesc->gpuaddr;
+
+	/* Sign extend TTBR1 addresses all the way to avoid warning */
+	if (iova & (1ULL << 48))
+		iova |= 0xffff000000000000;
+
+	rt_mutex_lock(&pagetable->map_mutex);
+	ret = iommu_set_page_range_access_flag(iommu_pt->domain, iova,
+			memdesc->size, access_flag);
+	rt_mutex_unlock(&pagetable->map_mutex);
+
+	return ret;
+}
+
 /* This function must be called with context bank attached */
 static void kgsl_iommu_clear_fsr(struct kgsl_mmu *mmu)
 {
@@ -3269,4 +3294,5 @@ static struct kgsl_mmu_pt_ops iommu_pt_ops = {
 	.mmu_find_mapped_page = kgsl_iommu_find_mapped_page,
 	.mmu_find_mapped_page_range = kgsl_iommu_find_mapped_page_range,
 	.mmu_get_backing_pages = kgsl_iommu_get_backing_pages,
+	.mmu_set_access_flag = kgsl_iommu_set_access_flag,
 };

@@ -2765,7 +2765,7 @@
 /* enum: The function can perform privileged operations */
 #define          MC_CMD_DRV_ATTACH_EXT_OUT_FLAG_TRUSTED 0x2
 /* enum: The function does not have an active port associated with it. The port
- * refers to the Sorrento external FPGA port.
+ * refers to the unknown5 external FPGA port.
  */
 #define          MC_CMD_DRV_ATTACH_EXT_OUT_FLAG_NO_ACTIVE_PORT 0x3
 /* enum: If set, indicates that VI spreading is currently enabled. Will always
@@ -4715,7 +4715,7 @@
 #define       MC_CMD_NVRAM_INFO_V2_OUT_PHYSDEV_LEN 4
 #define       MC_CMD_NVRAM_INFO_V2_OUT_PHYSADDR_OFST 20
 #define       MC_CMD_NVRAM_INFO_V2_OUT_PHYSADDR_LEN 4
-/* Writes must be multiples of this size. Added to support the MUM on Sorrento.
+/* Writes must be multiples of this size. Added to support the MUM on unknown5.
  */
 #define       MC_CMD_NVRAM_INFO_V2_OUT_WRITESIZE_OFST 24
 #define       MC_CMD_NVRAM_INFO_V2_OUT_WRITESIZE_LEN 4
@@ -6081,9 +6081,9 @@
 /* ID of (device connected to MUM) to read from registers of */
 #define       MC_CMD_MUM_IN_READ_DEVICE_OFST 4
 #define       MC_CMD_MUM_IN_READ_DEVICE_LEN 4
-/* enum: Hittite HMC1035 clock generator on Sorrento board */
+/* enum: Hittite HMC1035 clock generator on unknown5 board */
 #define          MC_CMD_MUM_DEV_HITTITE 0x1
-/* enum: Hittite HMC1035 clock generator for NIC-side on Sorrento board */
+/* enum: Hittite HMC1035 clock generator for NIC-side on unknown5 board */
 #define          MC_CMD_MUM_DEV_HITTITE_NIC 0x2
 /* 32-bit address to read from */
 #define       MC_CMD_MUM_IN_READ_ADDR_OFST 8
@@ -6102,7 +6102,7 @@
 /* ID of (device connected to MUM) to write to registers of */
 #define       MC_CMD_MUM_IN_WRITE_DEVICE_OFST 4
 #define       MC_CMD_MUM_IN_WRITE_DEVICE_LEN 4
-/* enum: Hittite HMC1035 clock generator on Sorrento board */
+/* enum: Hittite HMC1035 clock generator on unknown5 board */
 /*               MC_CMD_MUM_DEV_HITTITE 0x1 */
 /* 32-bit address to write to */
 #define       MC_CMD_MUM_IN_WRITE_ADDR_OFST 8
@@ -6584,9 +6584,9 @@
 #define       MC_CMD_MUM_OUT_READ_DDR_INFO_SODIMM_INFO_RECORD_MAXNUM 30
 #define        MC_CMD_MUM_OUT_READ_DDR_INFO_BANK_ID_LBN 0
 #define        MC_CMD_MUM_OUT_READ_DDR_INFO_BANK_ID_WIDTH 8
-/* enum: SODIMM bank 1 (Top SODIMM for Sorrento) */
+/* enum: SODIMM bank 1 (Top SODIMM for unknown5) */
 #define          MC_CMD_MUM_OUT_READ_DDR_INFO_BANK1 0x0
-/* enum: SODIMM bank 2 (Bottom SODDIMM for Sorrento) */
+/* enum: SODIMM bank 2 (Bottom SODDIMM for unknown5) */
 #define          MC_CMD_MUM_OUT_READ_DDR_INFO_BANK2 0x1
 /* enum: Total number of SODIMM banks */
 #define          MC_CMD_MUM_OUT_READ_DDR_INFO_NUM_BANKS 0x2

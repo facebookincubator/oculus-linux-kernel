@@ -13,7 +13,19 @@
 	governor = "bw_hwmon";
 };
 
+&ext_disp {
+	status = "disabled";
+};
+
+&ext_disp_audio_codec {
+	status = "disabled";
+};
+
 &flash_led {
+	status = "disabled";
+};
+
+&fsa4480 {
 	status = "disabled";
 };
 
@@ -26,6 +38,14 @@
 	oculus,external-context-fault-irq;
 	oculus,external-map-lock;
 	qcom,split-tables;
+};
+
+&mdss_dp_pll {
+	status = "disabled";
+};
+
+&mdss_mdp {
+	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
 };
 
 &msm_cvp {
@@ -81,6 +101,14 @@
 		console-size = <131072>;
 		pmsg-size = <131072>;
 	};
+};
+
+&sde_dp {
+	status = "disabled";
+
+	qcom,dp-usbpd-detection = <>;
+	qcom,ext-disp = <>;
+	qcom,dp-aux-switch = <>;
 };
 
 &sde_dsi {

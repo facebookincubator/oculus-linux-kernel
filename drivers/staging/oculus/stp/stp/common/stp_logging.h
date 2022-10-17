@@ -15,4 +15,7 @@
 #define STP_LOG_DEBUG STP_DONT_LOG
 #endif
 
+#define STP_LOG_RX_DATA(buffer) pr_info("[STP] RX_DATA: %s\n", buffer)
+#define STP_LOG_TX_DATA(buffer) pr_info("[STP] TX_DATA: %s\n", buffer)
+
 #endif

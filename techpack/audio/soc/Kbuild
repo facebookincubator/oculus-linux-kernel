@@ -26,9 +26,9 @@ ifeq ($(KERNEL_BUILD), 0)
 		endif
 	endif
 	ifeq ($(CONFIG_ARCH_KONA), y)
-		ifeq ($(CONFIG_OCULUS_EUREKA865), y)
-			include $(AUDIO_ROOT)/config/eureka.conf
-			INCS    +=  -include $(AUDIO_ROOT)/config/eurekaconf.h
+		ifeq ($(CONFIG_OCULUS_unknown3865), y)
+			include $(AUDIO_ROOT)/config/unknown3.conf
+			INCS    +=  -include $(AUDIO_ROOT)/config/unknown3conf.h
 		else
 			include $(AUDIO_ROOT)/config/konaauto.conf
 			INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h

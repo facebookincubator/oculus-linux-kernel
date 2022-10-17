@@ -20,6 +20,7 @@
 
 #include <stp/common/stp_os.h>
 #include <stp/common/stp_common.h>
+#include <stp/common/stp_common_public.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,17 @@ enum stp_controller_callback_event_type
 
     STP_CONTROLLER_NUM_EVENTS
 };
+
+/**
+ * Set attributes
+ */
+enum stp_controller_set_attribute_type
+{
+    STP_CONTROLLER_ATTRIB_SET_LOG_RX_DATA = STP_NUM_GET_ATTRIBUTES,
+
+    STP_CONTROLLER_ATTRIB_SET_LOG_TX_DATA
+};
+
 
 /* Transport callbacks. Defined by the controller/device clients*/
 struct stp_controller_transport_table
@@ -74,9 +86,9 @@ struct stp_controller_init_t
     struct stp_controller_handshake_table *handshake;
     struct stp_controller_wait_signal_table *wait_signal;
     // Buffer used to interact with the spi send. Must be STP_TOTAL_DATA_SIZE
-    uint8_t* rx_buffer;
+    uint8_t *rx_buffer;
     // Buffer used to interact with the spi send. Must be STP_TOTAL_DATA_SIZE
-    uint8_t* tx_buffer;
+    uint8_t *tx_buffer;
 };
 
 /* controller/device write data in blocking mode*/
@@ -103,6 +115,13 @@ int32_t stp_controller_read(uint8_t channel,
                             uint32_t buffer_size,
                             uint32_t *data_size);
 
+/* Read a minimum number of bytes, blocking if necessary */
+int32_t stp_controller_read_minimum(uint8_t channel,
+                                    uint8_t *buffer,
+                                    uint32_t buffer_size,
+                                    uint32_t *data_size,
+                                    uint32_t minimum);
+
 /* controller transaction function */
 int32_t stp_controller_transaction_thread(void);
 
@@ -117,6 +136,9 @@ int32_t stp_controller_get_attribute(uint32_t attribute, void *p);
 
 /* Get channel attributes */
 int32_t stp_controller_get_channel_attribute(uint8_t channel, uint32_t attribute, void *p);
+
+/* Set channel attributes */
+int32_t stp_controller_set_channel_attribute32(uint8_t channel, uint32_t attribute, uint32_t value);
 
 /* Set attributes */
 int32_t stp_controller_set(uint32_t attribute, void *p);

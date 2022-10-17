@@ -171,6 +171,8 @@ struct io_pgtable_cfg {
  * @find_mapped_page_range:	Translate a range of IOVAs to their backing
  *				pages. The pages parameter should be
  *				preallocated with page_count entries.
+ * @set_page_range_access_flag:	Sets whether or not the PTEs in the given IOVA
+ *				range are marked as having been accessed.
  *
  * These functions map directly onto the iommu_ops member functions with
  * the same names.
@@ -199,6 +201,8 @@ struct io_pgtable_ops {
 			dma_addr_t iova, struct page **pages, int page_count);
 	int (*get_backing_pages)(struct io_pgtable_ops *ops, dma_addr_t iova,
 			struct list_head *page_list, int page_count);
+	int (*set_page_range_access_flag)(struct io_pgtable_ops *ops,
+		dma_addr_t addr, int page_count, bool access_flag);
 };
 
 /**

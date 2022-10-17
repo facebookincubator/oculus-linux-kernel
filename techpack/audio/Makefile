@@ -12,8 +12,8 @@ include $(srctree)/techpack/audio/config/sm8150auto.conf
 export
 endif
 ifeq ($(CONFIG_ARCH_KONA), y)
-ifeq ($(CONFIG_OCULUS_EUREKA865), y)
-include $(srctree)/techpack/audio/config/eureka.conf
+ifeq ($(CONFIG_OCULUS_unknown3865), y)
+include $(srctree)/techpack/audio/config/unknown3.conf
 else
 include $(srctree)/techpack/audio/config/konaauto.conf
 endif
@@ -43,9 +43,9 @@ LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/sm8150autoconf.h
 endif
 ifeq ($(CONFIG_ARCH_KONA), y)
-ifeq ($(CONFIG_OCULUS_EUREKA865), y)
+ifeq ($(CONFIG_OCULUS_unknown3865), y)
 LINUXINCLUDE    += \
-                -include $(srctree)/techpack/audio/config/eurekaconf.h
+                -include $(srctree)/techpack/audio/config/unknown3conf.h
 else
 LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/konaautoconf.h

@@ -647,7 +647,7 @@ static const struct usb_device_id	products[] = {
 	.driver_info		= 0,
 },
 
-/* Olympus has some models with a Zaurus-compatible option.
+/* unknown2 has some models with a Zaurus-compatible option.
  * R-1000 uses a FreeScale i.MXL cpu (ARMv4T)
  */
 {

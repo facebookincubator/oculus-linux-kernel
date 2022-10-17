@@ -3947,13 +3947,17 @@ static int cm7120_pm_notify(struct notifier_block *nb,
 {
 	struct cm7120_priv *cm7120_codec =
 			container_of(nb, struct cm7120_priv, pm_nb);
+	u32 version = 0;
+
+	cm7120_dsp_mode_i2c_read_addr(cm7120_codec, 0x5FFC001C, &version);
 
 	switch (mode) {
 	case PM_SUSPEND_PREPARE:
 		cancel_work_sync(&cm7120_codec->fw_download_work);
 		break;
 	case PM_POST_SUSPEND:
-		schedule_work(&cm7120_codec->fw_download_work);
+		if (version == 0)
+			schedule_work(&cm7120_codec->fw_download_work);
 		break;
 	default:
 		break;

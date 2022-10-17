@@ -642,7 +642,6 @@
 &mdss_mdp {
 	/* set mdp clk rate to max for Olivia panels */
 	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
-	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
 	qcom,sde-has-dest-scaler;
 	qcom,sde-wb-rtprio = <99>;
 	qcom,sde-wb-cpumask = "80"; /* CPU7 */
@@ -664,8 +663,4 @@
 &sde_dsi1 {
 	pinctrl-0 = <&sde_te1_active>;
 	pinctrl-1 = <&sde_te1_suspend>;
-};
-
-&sde_dp {
-	status = "disabled";
 };

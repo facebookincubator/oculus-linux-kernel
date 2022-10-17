@@ -30,7 +30,7 @@ extern "C" {
 /* STP internal data */
 struct stp_type
 {
-    // transaport interface (from upper layer)
+    // transport interface (from upper layer)
     struct stp_controller_transport_table *transport;
     // handshake table
     struct stp_controller_handshake_table *handshake;
@@ -55,7 +55,6 @@ struct stp_type
     // set by processing data transaction
     // used for following control transaction
     struct stp_pending pending;
-    bool pending_bad_crc;
 
     // info about lost comms
     size_t bad_crcs_in_a_row;

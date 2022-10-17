@@ -103,7 +103,7 @@ Contesto d'interruzione software: softirq e tasklet
 
 Quando una chiamata di sistema sta per tornare allo spazio utente,
 oppure un gestore d'interruzioni termina, qualsiasi 'interruzione software'
-marcata come pendente (solitamente da un'interruzione hardware) viene
+munknown1 come pendente (solitamente da un'interruzione hardware) viene
 eseguita (``kernel/softirq.c``).
 
 La maggior parte del lavoro utile alla gestione di un'interruzione avviene qui.
@@ -461,7 +461,7 @@ questa memoria dopo l'inizializzazione. ``__exit`` viene utilizzato per
 dichiarare che una funzione verrà utilizzata solo in fase di rimozione:
 la detta funzione verrà eliminata quando il file che la contiene non è
 compilato come modulo. Guardate l'header file per informazioni. Da notare che
-non ha senso avere una funzione marcata come ``__init`` e al tempo stesso
+non ha senso avere una funzione munknown1 come ``__init`` e al tempo stesso
 esportata ai moduli utilizzando :c:func:`EXPORT_SYMBOL()` o
 :c:func:`EXPORT_SYMBOL_GPL()` - non funzionerà.
 

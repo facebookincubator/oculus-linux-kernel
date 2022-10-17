@@ -1523,8 +1523,8 @@ static void handle_vdm_resp_ack(struct usbpd *pd, u32 *vdos, u8 num_vdos,
 			svid = pd->discovered_svids[i];
 			if (svid) {
 				handler = find_svid_handler(pd, svid);
-				if (handler) {
-					usbpd_dbg(&pd->dev, "Notify SVID: 0x%04x disconnect\n",
+				if (handler && !handler->discovered) {
+					usbpd_dbg(&pd->dev, "Notify SVID: 0x%04x connect\n",
 							handler->svid);
 					handler->connect(handler,
 							pd->peer_usb_comm);
@@ -2871,7 +2871,7 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 
 		usbpd_set_state(pd, PE_SNK_READY);
 
-		if (pd->request_svids)
+		if (pd->request_svids && pd->vdm_state < DISCOVERED_SVIDS)
 			usbpd_send_svdm(pd, USBPD_SID,
 				USBPD_SVDM_DISCOVER_SVIDS,
 				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
@@ -2960,7 +2960,8 @@ static bool handle_ctrl_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 		 * continue, for these adapters, we need avoid sending resets
 		 * to them if SVID discovery fails.
 		 */
-		if (VDM_IS_SVDM(pd->vdm_tx_retry->data[0])
+		if (pd->vdm_tx_retry
+			&& VDM_IS_SVDM(pd->vdm_tx_retry->data[0])
 			&& SVDM_HDR_CMD_TYPE(pd->vdm_tx_retry->data[0])
 			== SVDM_CMD_TYPE_INITIATOR
 			&& SVDM_HDR_CMD(pd->vdm_tx_retry->data[0])
