@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&tlmm {
+	eye_face_led_default: eye_face_led_default {
+		mux {
+			pins = "gpio73", "gpio13";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio73", "gpio13";
+			drive-strength = <2>;
+			input-enable;
+			bias-disable;
+		};
+	};
+};
+
+&vendor {
+	eye_face_led: oculus,eye_face_led {
+		status = "ok";
+		compatible = "oculus,eye_face_led";
+		pinctrl-names = "default";
+		pinctrl-0 = <&eye_face_led_default>;
+	};
+};

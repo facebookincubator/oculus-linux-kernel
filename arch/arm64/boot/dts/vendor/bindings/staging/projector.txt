@@ -1,0 +1,27 @@
+Depth Projector
+
+A driver module to set default gpio states
+for Depth SWDIO and SWDCLK.
+
+Required properties:
+- compatible: must be "oculus,projector"
+- pinctrl-names: default
+- pinctrl-0: gpio pin control configuration
+
+Example:
+
+&tlmm {
+  depth_swd_default_0: depth_swdio_default@0 {
+    pins = "gpio152", "gpio153";
+    function = "gpio";
+    input-enable;
+  };
+};
+
+&vendor {
+  projector: oculus,projector {
+      compatible = "oculus,projector";
+      pinctrl-names = "default";
+      pinctrl-0 = <&depth_swd_default_0>;
+  };
+};

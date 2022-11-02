@@ -1,0 +1,211 @@
+&vendor {
+	battery_virtual_sensor: battery_virtual_sensor {
+		compatible = "oculus,battery-virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		pcm-thermal-zone = "battery";
+		pcm-thermal-zone-scaling-factor = <1>;
+
+		thermal-zones = "battery";
+		thermal-zone-scaling-factors = <1>;
+		thermal-zone-coefficients = <5061>;
+		thermal-zone-slope-coefficients = <500>;
+
+		intercept-discharging = <14511>;
+		max-differential = <10000>;
+		dont-use-pcm-with-charger;
+	};
+
+	display_virtual_sensor: display_virtual_sensor {
+		compatible = "oculus,display-virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+		io-channel-names = "pcb1_therm";
+
+		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
+				"smb-usr", "pogo-usr";
+
+		thermal-zone-coefficients = <633 255 304 (-376) 2302>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 1500>;
+
+		io-coefficients = <775>;
+		io-slope-coefficients = <(-15500)>;
+
+		intercept-charging = <1>;
+		intercept-discharging = <1>;
+
+		intercept-constant = <19771>;
+	};
+
+	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
+		compatible = "oculus,front-panel-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+		io-channel-names = "pcb1_therm";
+
+		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
+				"smb-usr", "ddr-usr", "pogo-usr";
+
+		thermal-zone-coefficients = <935 633 760 (-566) 612 2527>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
+
+		io-coefficients = <1077>;
+		io-slope-coefficients = <(-15500)>;
+
+		intercept-charging = <8825>;
+		intercept-discharging = <8825>;
+	};
+
+	vrapi_top_panel_sensor: vrapi_top_panel_sensor {
+		compatible = "oculus,top-panel-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+		io-channel-names = "pcb1_therm";
+
+		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
+				"smb-usr", "ddr-usr", "pogo-usr";
+
+		thermal-zone-coefficients = <978 631 810 (-591) 628 2722>;
+		thermal-zone-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
+
+		io-coefficients = <1174>;
+		io-slope-coefficients = <(-15500)>;
+
+		intercept-charging = <6211>;
+		intercept-discharging = <6211>;
+	};
+};
+
+
+&thermal_zones {
+	batt-virt {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&battery_virtual_sensor>;
+		wake-capable-sensor;
+		trips {
+			batt_virt_trip0: batt-virt-trip0 {
+				temperature = <58500>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			batt_virt_trip1: batt-virt-trip1 {
+				temperature = <60000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	display-virt {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&display_virtual_sensor>;
+		wake-capable-sensor;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			active-config1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	pm8150_tz-usr {
+		polling-delay-passive = <100>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pm8150_tz>;
+		wake-capable-sensor;
+		trips {
+			pm8150_tz_usr_trip0: trip0 {
+				temperature = <85000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			pm8150_tz_usr_trip1: trip1 {
+				temperature = <120000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+	};
+
+	soc {
+		status = "disabled";
+	};
+
+	vrapi-front-panel {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&vrapi_front_panel_sensor>;
+		wake-capable-sensor;
+		trips {
+			virt_top_trip0: virt-top-trip0 {
+				temperature = <85000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_top_trip1: virt-top-trip1 {
+				temperature = <95000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_top_trip2: virt-top-trip2 {
+				temperature = <115000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_trip3: virt-trip3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	vrapi-top-panel {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&vrapi_top_panel_sensor>;
+		wake-capable-sensor;
+		trips {
+			virt_front_trip0: virt-front-trip0 {
+				temperature = <85000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_front_trip1: virt-front-trip1 {
+				temperature = <95000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_front_trip2: virt-front-trip2 {
+				temperature = <115000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			virt_top_trip3: virt-top-trip3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+};

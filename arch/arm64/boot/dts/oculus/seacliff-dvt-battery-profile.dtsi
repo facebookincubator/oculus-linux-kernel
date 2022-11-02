@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&kona_mtp_batterydata {
+	qcom,batt-id-range-pct = <15>;
+	#include "5854977_Meta_Seacliff_5514mAH_averaged_MasterSlave_Jun30th2022.dtsi"
+};

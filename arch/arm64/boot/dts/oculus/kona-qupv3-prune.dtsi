@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/delete-node/ &i3c0;
+/delete-node/ &i3c1;
+/delete-node/ &qupv3_se0_i3c_pins;
+/delete-node/ &qupv3_se1_i3c_pins;

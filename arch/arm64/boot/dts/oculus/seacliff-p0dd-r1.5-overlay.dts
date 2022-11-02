@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "seacliff-p0.dtsi"
+#include "seacliff-dd.dtsi"
+
+/ {
+	model = "Seacliff (P0) DD Rev 1.5";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 97>;
+};

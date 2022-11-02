@@ -1,0 +1,293 @@
+#include <dt-bindings/clock/qcom,camcc-kona.h>
+
+&cam_sensor_mclk5_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk5_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&pm8150a_l2 {
+	/* Teton power */
+	regulator-min-microvolt = <1050000>;
+	regulator-max-microvolt = <1050000>;
+	qcom,init-voltage = <1050000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150a_l3 {
+	/* Glacier power, FPGA power */
+	qcom,init-voltage = <1200000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150a_l10 {
+	/* Canyon, Glacier, Teton power */
+	regulator-min-microvolt = <2960000>;
+	regulator-max-microvolt = <2960000>;
+	qcom,init-voltage = <2960000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150_l10 {
+	/* Esker power */
+	qcom,init-voltage = <2960000>;
+	regulator-min-microvolt = <2960000>;
+	regulator-max-microvolt = <2960000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150_l13 {
+	/* FPGA power */
+	regulator-min-microvolt = <2500000>;
+	regulator-max-microvolt = <2500000>;
+	qcom,init-voltage = <2500000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&pm8150_l15 {
+	/* Canyon, Glacier, Teton, Esker power */
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+};
+
+&soc {
+	qcom,cam-cdm-intf {
+		cdm-client-names = "vfe", "vife", "jpegdma", "jpegenc";
+	};
+
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		status = "ok";
+	};
+};
+
+&cam_cci0 {
+	qcom,cam-sensor0 {
+		/* CAMERA ID = 0
+		 * name: CAM_OG_LEFT
+		 * QCOM CSI PHY = 1
+		 * QCOM MCLK = 1
+		 */
+		cell-index = <0>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <1>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 1200000 0>;
+		rgltr-max-voltage = <2960000 1800000 1200000 0>;
+		rgltr-load-current = <80000 120000 1200000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk1_active>;
+		pinctrl-1 = <&cam_sensor_mclk1_suspend>;
+		gpios = <&tlmm 95 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK1";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK1_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+
+	qcom,cam-sensor1 {
+		/* CAMERA ID = 1
+		 * name: CAM_OG_RIGHT
+		 * QCOM CSI PHY = 2
+		 * QCOM MCLK = 2
+		 */
+		cell-index = <1>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <2>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 1200000 0>;
+		rgltr-max-voltage = <2960000 1800000 1200000 0>;
+		rgltr-load-current = <80000 120000 1200000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk2_active>;
+		pinctrl-1 = <&cam_sensor_mclk2_suspend>;
+		gpios = <&tlmm 96 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK2";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK2_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+
+	qcom,cam-sensor2 {
+		/* CAMERA ID = 2
+		 * name: CAM_OV7251_LEFT
+		 * QCOM CSI PHY = 3
+		 * QCOM MCLK = 3
+		 */
+		cell-index = <2>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <3>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk3_active>;
+		pinctrl-1 = <&cam_sensor_mclk3_suspend>;
+		gpios = <&tlmm 97 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK3";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK3_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+
+	qcom,cam-sensor3 {
+		/* CAMERA ID = 3
+		 * name: CAM_OV7251_RIGHT
+		 * QCOM CSI PHY = 4
+		 * QCOM MCLK = 5
+		 */
+		cell-index = <3>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <4>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk5_active>;
+		pinctrl-1 = <&cam_sensor_mclk5_suspend>;
+		gpios = <&tlmm 99 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK5";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK5_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+
+	qcom,cam-sensor4 {
+		/* CAMERA ID = 4
+		 * name: CAM_RGB
+		 * QCOM CSI PHY = 0
+		 * QCOM MCLK = 0
+		 */
+		cell-index = <4>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <0>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 1050000 0>;
+		rgltr-max-voltage = <2960000 1800000 1050000 0>;
+		rgltr-load-current = <80000 120000 1050000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk0_active>;
+		pinctrl-1 = <&cam_sensor_mclk0_suspend>;
+		gpios = <&tlmm 94 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK0";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+
+	qcom,cam-sensor5 {
+		/* CAMERA ID = 5
+		 * name: CAM_ET-FT
+		 * QCOM CSI PHY = 5
+		 * QCOM MCLK = 6
+		 */
+		cell-index = <5>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <5>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk6_active>;
+		pinctrl-1 = <&cam_sensor_mclk6_suspend>;
+		gpios = <&tlmm 100 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK6";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK6_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+};

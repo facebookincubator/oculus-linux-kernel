@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "kona-audio-prune.dtsi"
+#include "kona-camera-prune.dtsi"
+#include "kona-qupv3-prune.dtsi"
+#include "kona-thermal-prune.dtsi"
+
+/delete-node/ &cpu0_cpu_llcc_lat;
+/delete-node/ &cpu0_llcc_ddr_lat;
+/delete-node/ &cpu0_memlat_cpugrp;
+/delete-node/ &cpu4_cpu_ddr_latfloor;
+/delete-node/ &cpu4_cpu_ddr_qoslat;
+/delete-node/ &cpu4_cpu_llcc_lat;
+/delete-node/ &cpu4_llcc_ddr_lat;
+/delete-node/ &cpu4_memlat_cpugrp;
+/delete-node/ &dcc;
+/delete-node/ &disp_rdump_memory;
+/delete-node/ &dump_mem;
+/delete-node/ &dwc1;
+/delete-node/ &ipa_hw;
+/delete-node/ &mdm0;
+/delete-node/ &mdss_rotator;
+/delete-node/ &mem_offline;
+/delete-node/ &mhi_0;
+/delete-node/ &pcie1;
+/delete-node/ &pcie1_msi;
+/delete-node/ &pcie2;
+/delete-node/ &pcie2_msi;
+/delete-node/ &pil_ipa_fw_mem;
+/delete-node/ &pil_ipa_gsi_mem;
+/delete-node/ &pil_slpi_mem;
+/delete-node/ &pil_wlan_fw_mem;
+/delete-node/ &spmi_debug_bus;
+/delete-node/ &ssc_sensors;
+/delete-node/ &tsif0_signals_active;
+/delete-node/ &tsif0_sync_active;
+/delete-node/ &tsif1_signals_active;
+/delete-node/ &tsif1_sync_active;
+/delete-node/ &tspp;
+/delete-node/ &usb1;
+/delete-node/ &wil6210;
+
+/ {
+	aliases {
+		/delete-property/ mhi-netdev0;
+		/delete-property/ pci-domain1;
+		/delete-property/ pci-domain2;
+	};
+};
+
+&kgsl_smmu {
+	/delete-property/ qcom,no-dynamic-asid;
+};
+
+&soc {
+	/delete-node/ jtagmm@7040000;
+	/delete-node/ jtagmm@7140000;
+	/delete-node/ jtagmm@7240000;
+	/delete-node/ jtagmm@7340000;
+	/delete-node/ jtagmm@7440000;
+	/delete-node/ jtagmm@7540000;
+	/delete-node/ jtagmm@7640000;
+	/delete-node/ jtagmm@7740000;
+	/delete-node/ mem_dump;
+	/delete-node/ qcom,ipa_fws;
+	/delete-node/ qcom,ipa-mpm;
+	/delete-node/ qcom,ipa_uc;
+	/delete-node/ qcom,msm_gsi;
+	/delete-node/ qcom,rmnet-ipa;
+	/delete-node/ qcom,ssc@5c00000;
+	/delete-node/ usb_emu_phy@a720000;
+	/delete-node/ usb_nop_phy;
+};
+
+&tlmm {
+	/delete-node/ ap2mdm;
+	/delete-node/ mdm2ap;
+	/delete-node/ pcie1;
+	/delete-node/ pcie2;
+	/delete-node/ wil6210_refclk_en_pin;
+};
+
+&vendor {
+	/delete-node/ extcon_usb1;
+};
