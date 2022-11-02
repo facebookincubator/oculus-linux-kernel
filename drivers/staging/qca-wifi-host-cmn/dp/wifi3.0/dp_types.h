@@ -2628,6 +2628,8 @@ struct dp_vdev {
 	/* completion function used by this vdev*/
 	ol_txrx_completion_fp tx_comp;
 
+	ol_txrx_get_tsf_time get_tsf_time;
+
 	/* deferred vdev deletion state */
 	struct {
 		/* VDEV delete pending */
@@ -2749,6 +2751,10 @@ struct dp_vdev {
 	qdf_atomic_t ref_cnt;
 	qdf_atomic_t mod_refs[DP_MOD_ID_MAX];
 	uint8_t num_latency_critical_conn;
+#ifdef HW_TX_DELAY_STATS_ENABLE
+	/* hw tx delay stats enable */
+	uint8_t hw_tx_delay_stats_enabled;
+#endif
 };
 
 

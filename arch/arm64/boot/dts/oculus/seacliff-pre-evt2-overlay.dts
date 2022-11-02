@@ -3,7 +3,6 @@
 /dts-v1/;
 /plugin/;
 
-#include "seacliff-p3.dtsi"
 #include "seacliff-evt.dtsi"
 
 / {

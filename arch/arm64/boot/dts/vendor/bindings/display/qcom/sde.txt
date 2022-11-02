@@ -307,6 +307,13 @@ Optional properties:
 				control register. Number of offsets defined should
 				match the number of offsets defined in
 				property: qcom,sde-wb-off
+- qcom,sde-wb-clk-status:	Array of 2 cell property describing clk status
+				offsets for clock active state. 1st value
+				in the array represents offset of the status
+				register. 2nd value represents bit offset within
+				status register. Number of offsets defined should
+				match the number of offsets defined in
+				property: qcom,sde-wb-off
 - qcom,sde-reg-dma-off:         Offset of the register dma hardware block from
 				"regdma_phys" defined in reg property.
 - qcom,sde-reg-dma-version:	Version of the reg dma hardware block.
@@ -668,6 +675,7 @@ Example:
 
     qcom,sde-wb-id = <2>;
     qcom,sde-wb-clk-ctrl = <0x2bc 16>;
+    qcom,sde-wb-clk-status = <0x3bc 20>;
 
     qcom,sde-danger-lut = <0x0000000f 0x0000ffff 0x00000000
             0x00000000 0x0000ffff>;

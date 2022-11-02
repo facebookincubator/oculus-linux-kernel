@@ -3,7 +3,8 @@
 /dts-v1/;
 /plugin/;
 
-#include "seacliff-p3.dtsi"
+#include "seacliff.dtsi"
+#include "seacliff-adc-usbc.dtsi"
 
 / {
 	model = "Seacliff (Dev3)";

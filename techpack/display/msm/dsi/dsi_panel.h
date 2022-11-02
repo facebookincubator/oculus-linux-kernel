@@ -59,6 +59,7 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_EXTERNAL,
 	DSI_BACKLIGHT_JDI,
 	DSI_BACKLIGHT_JDI_NVT,
+	DSI_BACKLIGHT_NVT,
 	DSI_BACKLIGHT_LOCAL_DIMMING,
 	DSI_BACKLIGHT_UNKNOWN,
 	DSI_BACKLIGHT_MAX,
@@ -90,6 +91,7 @@ enum dsi_panel_physical_type {
 
 struct dsi_dfps_capabilities {
 	enum dsi_dfps_type type;
+	u32 panel_refresh_rate;
 	u32 min_refresh_rate;
 	u32 max_refresh_rate;
 	u32 *dfps_list;

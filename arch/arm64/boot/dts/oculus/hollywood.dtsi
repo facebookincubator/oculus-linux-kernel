@@ -1,6 +1,5 @@
 #include "../vendor/qcom/kona-pmic-overlay.dtsi"
 #include "../vendor/qcom/kona-sde-display.dtsi"
-#include "../vendor/qcom/kona-thermal-overlay.dtsi"
 
 #include "kona-oculus.dtsi"
 #include "hollywood-adc.dtsi"
@@ -60,6 +59,14 @@
 		charging-resume-thresh = <95>;
 	};
 
+	charging_dock: oculus,charging_dock {
+		status = "ok";
+		compatible = "oculus,charging-dock";
+		svid-usbpd = <0x2ec60000>;
+		charger-usbpd = <&pm8150b_pdphy>;
+		broadcast-period-min = <15>;
+	};
+
 	kona_mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
 		#include "4081226_Goertek_Hollywood_15k_3636mAh_Aug26th2019.dtsi"
@@ -67,7 +74,6 @@
 		#include "4284132_Goertek_Hollywood_25k_3710mAh_Jan13th2020.dtsi"
 		#include "4284132_Goertek_Hollywood_50k_3710mAh_Jun9th2020.dtsi"
 		#include "4414705_Goertek_Hollywood_124k_3710mAh_Mar2nd2020.dtsi"
-		#include "3783416_Oculus_MontereyScud_3750mAh_averaged_MasterSlave_Aug2nd2019_PM8150BGUI10013.dtsi"
 	};
 };
 

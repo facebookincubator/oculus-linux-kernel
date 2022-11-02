@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,7 +43,7 @@ char *sta_info_string_from_dbgid(wlan_sta_info_dbgid id)
 				"STA_INFO_SOFTAP_REGISTER_STA",
 				"STA_INFO_GET_CACHED_STATION_REMOTE",
 				"STA_INFO_HDD_GET_STATION_REMOTE",
-				"STA_INFO_WLAN_HDD_GET_STATION_REMOTE",
+				"STA_INFO_WLAN_HDD_CFG80211_GET_STATION",
 				"STA_INFO_SOFTAP_DEAUTH_CURRENT_STA",
 				"STA_INFO_SOFTAP_DEAUTH_ALL_STA",
 				"STA_INFO_CFG80211_DEL_STATION",
@@ -61,6 +62,8 @@ char *sta_info_string_from_dbgid(wlan_sta_info_dbgid id)
 				"STA_INFO_CLEAR_CACHED_STA_INFO",
 				"STA_INFO_ATTACH_DETACH",
 				"STA_INFO_SHOW",
+				"STA_INFO_SOFTAP_IPA_RX_PKT_CALLBACK",
+				"STA_INFO_WLAN_HDD_CFG80211_DUMP_STATION",
 				"STA_INFO_ID_MAX"};
 	int32_t num_dbg_strings = QDF_ARRAY_SIZE(strings);
 
@@ -145,6 +148,38 @@ void hdd_sta_info_detach(struct hdd_sta_info_obj *sta_info_container,
 	}
 
 	qdf_spin_unlock_bh(&sta_info_container->sta_obj_lock);
+}
+
+struct hdd_station_info *hdd_get_sta_info_by_id(
+				struct hdd_sta_info_obj *sta_info_container,
+				const int idx,
+				wlan_sta_info_dbgid sta_info_dbgid)
+{
+	struct hdd_station_info *sta_info = NULL;
+	int i = 0;
+
+	if (!sta_info_container) {
+		hdd_err("Parameter(s) null");
+		return NULL;
+	}
+
+	qdf_spin_lock_bh(&sta_info_container->sta_obj_lock);
+
+	qdf_list_for_each(&sta_info_container->sta_obj, sta_info, sta_node) {
+		if (qdf_is_macaddr_broadcast(&sta_info->sta_mac))
+			continue;
+		if (i == idx) {
+			hdd_take_sta_info_ref(sta_info_container,
+					      sta_info, false, sta_info_dbgid);
+			qdf_spin_unlock_bh(&sta_info_container->sta_obj_lock);
+			return sta_info;
+		}
+		i++;
+	}
+
+	qdf_spin_unlock_bh(&sta_info_container->sta_obj_lock);
+
+	return NULL;
 }
 
 struct hdd_station_info *hdd_get_sta_info_by_mac(

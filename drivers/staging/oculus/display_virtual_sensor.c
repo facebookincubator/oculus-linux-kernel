@@ -162,6 +162,9 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, &vs->data);
 
+	vs->data.tzd = vs->tzd;
+	virtual_sensor_workqueue_register(&vs->data);
+
 	ret = sysfs_create_groups(&pdev->dev.kobj, display_virtual_sensor_groups);
 	if (ret < 0)
 		dev_err(&pdev->dev, "Failed to create sysfs files\n");
@@ -175,6 +178,8 @@ static int virtual_sensor_remove(struct platform_device *pdev)
 			(struct virtual_sensor_common_data *) platform_get_drvdata(pdev);
 	struct display_virtual_sensor_data *vs =
 			(struct display_virtual_sensor_data *) data->parent;
+
+	virtual_sensor_workqueue_unregister(&vs->data);
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 

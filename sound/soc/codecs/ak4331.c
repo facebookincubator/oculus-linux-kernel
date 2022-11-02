@@ -2072,8 +2072,16 @@ static int ak4331_i2c_probe(struct i2c_client *i2c,
 	ak4331->pdn2 = 0;
 	ak4331->priv_pdn_en = 0;
 
-	ret = snd_soc_register_component(&i2c->dev, &soc_component_dev_ak4331,
-			&ak4331_dai[0], ARRAY_SIZE(ak4331_dai));
+	/* Fix device name. This name should be consistent with the
+	 * codec name specified in the DAI link of machine driver.
+	 * In this way, the codec name no longer depends on the dynamic
+	 * I2C bus-addr like "ak4331.1-0010".
+	 */
+	dev_set_name(&i2c->dev, "ak4331");
+
+	ret = devm_snd_soc_register_component(&i2c->dev,
+			&soc_component_dev_ak4331, &ak4331_dai[0],
+			ARRAY_SIZE(ak4331_dai));
 	if (ret < 0) {
 		devm_kfree(&i2c->dev, ak4331);
 		akdbgprt("\t[ak4331 Error!] %s(%d)\n", __func__, __LINE__);

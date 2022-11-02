@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -272,6 +273,7 @@ int hdd_tx_timestamp(qdf_nbuf_t netbuf, uint64_t target_time);
  * Return: Describe the execute result of this routine
  */
 int hdd_rx_timestamp(qdf_nbuf_t netbuf, uint64_t target_time);
+
 /**
  * hdd_capture_req_timer_expired_handler() - capture req timer handler
  * @arg: pointer to a adapter
@@ -292,6 +294,18 @@ void hdd_capture_req_timer_expired_handler(void *arg);
  * Return: true on enable, false on disable
  */
 bool hdd_tsf_is_tsf64_tx_set(struct hdd_context *hdd);
+
+/**
+ * hdd_get_tsf_time() - get tsf time for system time
+ *
+ * @adapter_ctx: adapter context
+ * @input_time: input system time
+ * @tsf_time: tsf time for system time
+ *
+ * Return: qdf status
+ */
+QDF_STATUS hdd_get_tsf_time(void *adapter_ctx, uint64_t input_time,
+			    uint64_t *tsf_time);
 #else
 static inline int hdd_start_tsf_sync(struct hdd_adapter *adapter)
 {
@@ -332,6 +346,14 @@ static inline
 bool hdd_tsf_is_tsf64_tx_set(struct hdd_context *hdd)
 {
 	return FALSE;
+}
+
+static inline
+QDF_STATUS hdd_get_tsf_time(void *adapter_ctx, uint64_t input_time,
+			    uint64_t *tsf_time)
+{
+	*tsf_time = 0;
+	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
 

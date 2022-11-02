@@ -52,6 +52,9 @@ struct kgsl_pagetable {
 		atomic_t entries;
 		atomic_long_t mapped;
 		atomic_long_t max_mapped;
+		atomic_long_t immediate_pages;
+		atomic_long_t cpu_faults;
+		atomic_long_t gpu_faults;
 	} stats;
 	const struct kgsl_mmu_pt_ops *pt_ops;
 	uint64_t fault_addr;
@@ -119,6 +122,7 @@ struct kgsl_mmu_pt_ops {
 			uint64_t offset, uint64_t size, unsigned int *page_count);
 	int (*mmu_get_backing_pages)(struct kgsl_memdesc *memdesc,
 			struct list_head *page_list);
+	int (*mmu_set_access_flag)(struct kgsl_memdesc *memdesc, bool access_flag);
 };
 
 enum kgsl_mmu_feature {
@@ -247,6 +251,7 @@ struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 		uint64_t offset, uint64_t size, unsigned int *page_count);
 int kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc,
 		struct list_head *page_list);
+int kgsl_mmu_set_access_flag(struct kgsl_memdesc *memdesc, bool access_flag);
 
 /*
  * Static inline functions of MMU that simply call the SMMU specific

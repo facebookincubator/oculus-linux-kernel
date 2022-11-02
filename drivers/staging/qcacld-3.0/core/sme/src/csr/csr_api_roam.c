@@ -15614,7 +15614,8 @@ QDF_STATUS csr_send_join_req_msg(struct mac_context *mac, uint32_t sessionId,
 			status = wlan_reg_get_6g_power_type_for_ctry(mac->psoc,
 					pIes->Country.country,
 					programmed_country, &power_type_6g,
-					&ctry_code_match);
+					&ctry_code_match,
+					pIes->he_op.oper_info_6g.info.reg_info);
 			if (QDF_IS_STATUS_ERROR(status))
 				break;
 			csr_join_req->ap_power_type_6g = power_type_6g;

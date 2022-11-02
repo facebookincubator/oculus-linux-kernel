@@ -1442,8 +1442,9 @@ static int gmu_disable_clks(struct kgsl_device *device)
 
 }
 
-static int gmu_enable_gdsc(struct gmu_device *gmu)
+static int gmu_enable_gdsc(struct kgsl_device *device)
 {
+	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
 	int ret;
 
 	if (IS_ERR_OR_NULL(gmu->cx_gdsc))
@@ -1454,20 +1455,31 @@ static int gmu_enable_gdsc(struct gmu_device *gmu)
 		dev_err(&gmu->pdev->dev,
 			"Failed to enable GMU CX gdsc, error %d\n", ret);
 
+	kgsl_mmu_resume(device);
+
 	return ret;
 }
 
-static void gmu_disable_gdsc(struct gmu_device *gmu)
+static void gmu_disable_gdsc(struct kgsl_device *device)
 {
-	int ret;
+	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
 
-	if (IS_ERR_OR_NULL(gmu->cx_gdsc))
+	/*
+	 * If we are holding an extra vote for the MMU clocks we need to
+	 * release it here or else the CX GDSC won't disable properly.
+	 */
+	kgsl_mmu_suspend(device);
+
+	/*
+	 * After GX GDSC is off, CX GDSC must be off
+	 * Voting off alone from GPU driver cannot
+	 * Guarantee CX GDSC off. Polling with 5s
+	 * timeout to ensure
+	 */
+	if (kgsl_regulator_disable_wait(gmu->cx_gdsc, 5000))
 		return;
 
-	ret = regulator_disable(gmu->cx_gdsc);
-	if (ret)
-		dev_err(&gmu->pdev->dev,
-			"Failed to disable GMU CX gdsc, error %d\n", ret);
+	dev_err(&gmu->pdev->dev, "GMU CX gdsc off timeout\n");
 }
 
 static int gmu_suspend(struct kgsl_device *device)
@@ -1491,7 +1503,7 @@ static int gmu_suspend(struct kgsl_device *device)
 	if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_CX_GDSC))
 		regulator_set_mode(gmu->cx_gdsc, REGULATOR_MODE_IDLE);
 
-	gmu_disable_gdsc(gmu);
+	gmu_disable_gdsc(device);
 
 	if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_CX_GDSC))
 		regulator_set_mode(gmu->cx_gdsc, REGULATOR_MODE_NORMAL);
@@ -1561,7 +1573,7 @@ static int gmu_start(struct kgsl_device *device)
 	case KGSL_STATE_SUSPEND:
 		WARN_ON(test_bit(GMU_CLK_ON, &device->gmu_core.flags));
 
-		gmu_enable_gdsc(gmu);
+		gmu_enable_gdsc(device);
 		gmu_enable_clks(device);
 		gmu_dev_ops->irq_enable(device);
 
@@ -1592,7 +1604,7 @@ static int gmu_start(struct kgsl_device *device)
 	case KGSL_STATE_SLUMBER:
 		WARN_ON(test_bit(GMU_CLK_ON, &device->gmu_core.flags));
 
-		gmu_enable_gdsc(gmu);
+		gmu_enable_gdsc(device);
 		gmu_enable_clks(device);
 		gmu_dev_ops->irq_enable(device);
 
@@ -1613,7 +1625,7 @@ static int gmu_start(struct kgsl_device *device)
 	case KGSL_STATE_RESET:
 		gmu_suspend(device);
 
-		gmu_enable_gdsc(gmu);
+		gmu_enable_gdsc(device);
 		gmu_enable_clks(device);
 		gmu_dev_ops->irq_enable(device);
 
@@ -1679,7 +1691,7 @@ static void gmu_stop(struct kgsl_device *device)
 
 	gmu_dev_ops->rpmh_gpu_pwrctrl(device, GMU_FW_STOP, 0, 0);
 	gmu_disable_clks(device);
-	gmu_disable_gdsc(gmu);
+	gmu_disable_gdsc(device);
 
 	msm_bus_scale_client_update_request(gmu->pcl, 0);
 	return;

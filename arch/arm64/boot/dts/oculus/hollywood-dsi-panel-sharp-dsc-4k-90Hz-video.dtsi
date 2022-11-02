@@ -34,7 +34,6 @@
 		qcom,mdss-dsi-mdp-trigger = "none";
 		qcom,mdss-dsi-reset-sequence = <0 5>, <1 25>;
 		qcom,adjust-timer-wakeup-ms = <1>;
-		qcom,dsi-supported-dfps-list = <90 80 72 60>;
 		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
 		qcom,mdss-dsi-min-refresh-rate = <60>;

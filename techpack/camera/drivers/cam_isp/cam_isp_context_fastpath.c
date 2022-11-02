@@ -419,9 +419,9 @@ cam_isp_fpc_prepare_hw_config(struct cam_isp_fastpath_context *ctx,
 	if (!packet || packet->header.request_id == 1) {
 		buffer_set = cam_fp_queue_get_buffer_set(&ctx->fp_queue);
 		if (!buffer_set) {
-			CAM_ERR(CAM_ISP, "Null Ptr! packet %p requestId %lld",
+			CAM_ERR(CAM_ISP, "Null Ptr! packet: %p, requestId %lld... ctx: id %d, dev_hdl %d, hw_acquired %d",
 				 packet, (packet == NULL) ?
-				 -1 : packet->header.request_id);
+				 -1 : packet->header.request_id, ctx->ctx_id, ctx->dev_hdl, ctx->hw_acquired);
 			return -EINVAL;
 		}
 		req_isp->out_mask = buffer_set->out_buffer_set_mask;
@@ -599,16 +599,14 @@ static int cam_isp_fpc_apply_req(struct cam_isp_fastpath_context *ctx)
 
 	mutex_lock(&ctx->mutex_list);
 	if (list_empty(&ctx->pending_req_list)) {
-		mutex_unlock(&ctx->mutex_list);
-		CAM_ERR(CAM_ISP, "No available request to apply");
+		CAM_ERR(CAM_ISP, "No available request to apply. ctx: id %d, dev_hdl %d, hw_acquired %d",
+			ctx->ctx_id, ctx->dev_hdl, ctx->hw_acquired);
 		rc = -EFAULT;
 		goto end;
 	}
 
 	req_isp = list_first_entry(&ctx->pending_req_list,
 		struct cam_isp_fastpath_ctx_req, list);
-	mutex_unlock(&ctx->mutex_list);
-
 
 	if (!req_isp) {
 		CAM_ERR(CAM_ISP, "invalid request");
@@ -634,13 +632,12 @@ static int cam_isp_fpc_apply_req(struct cam_isp_fastpath_context *ctx)
 	if (rc) {
 		CAM_ERR_RATE_LIMIT(CAM_ISP, "Can not apply the configuration");
 	} else {
-		mutex_lock(&ctx->mutex_list);
 		list_del(&req_isp->list);
 		list_add_tail(&req_isp->list, &ctx->active_req_list);
 		ctx->num_in_active++;
-		mutex_unlock(&ctx->mutex_list);
 	}
 end:
+	mutex_unlock(&ctx->mutex_list);
 	return rc;
 }
 
@@ -778,7 +775,8 @@ static struct cam_isp_fastpath_ctx_req *cam_isp_fpc_get_latest_active_request(
 	}
 
 	if (list_empty(&ctx->active_req_list)) {
-		CAM_ERR(CAM_ISP, "Active list is empty!");
+		CAM_ERR(CAM_ISP, "Active list is empty! ctx: id %d, dev_hdl %d, hw_acquired %d",
+			ctx->ctx_id, ctx->dev_hdl, ctx->hw_acquired);
 		return NULL;
 	}
 	req_isp = list_first_entry(&ctx->active_req_list,
@@ -1041,6 +1039,7 @@ static int cam_isp_fpc_acquire_dev(struct cam_isp_fastpath_context *ctx,
 	isp_res = NULL;
 
 get_dev_handle:
+
 	memset(&req_hdl_param, 0, sizeof(req_hdl_param));
 	req_hdl_param.session_hdl = cmd->session_handle;
 	/* bridge is not ready for these flags. so false for now */
@@ -1050,11 +1049,21 @@ get_dev_handle:
 
 	CAM_DBG(CAM_ISP, "get device handle form bridge");
 	ctx->dev_hdl = cam_create_device_hdl(&req_hdl_param);
+
 	if (ctx->dev_hdl <= 0) {
 		rc = -EFAULT;
 		CAM_ERR(CAM_ISP, "Can not create device handle");
 		goto free_hw;
 	}
+
+	// insert context index to device handle - bits [31:24]
+	// device handle - bits [31:24] must be zero. Otherwise we will modify it!!!
+	if (FP_DEV_GET_HDL_IDX(ctx->dev_hdl))
+		CAM_ERR(CAM_ISP, "FP DEVICE INDEX IS NOT ZERO 0x%08x", ctx->dev_hdl);
+
+	// insert context index to device handle - bits [31:24]
+	FP_INSERT_IDX(ctx);
+
 	cmd->dev_handle = ctx->dev_hdl;
 
 	CAM_DBG(CAM_ISP,
@@ -1330,10 +1339,12 @@ int cam_isp_fastpath_stream_mode_cmd(void *hnd,
 	return 0;
 }
 
-void *cam_isp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
+void *cam_isp_fastpath_context_create(
+			struct cam_hw_mgr_intf *hw_intf, int ctx_id)
 
 {
-	struct cam_isp_fastpath_context *ctx;
+	struct cam_isp_fastpath_context *ctx = NULL;
+	char fp_q_name[CAM_FP_MAX_NAME_SIZE];
 	int rc;
 
 	if (!hw_intf)
@@ -1342,6 +1353,7 @@ void *cam_isp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return NULL;
+	ctx->ctx_id = ctx_id;
 
 	/* Initialize the stream mode parameters */
 	INIT_LIST_HEAD(&ctx->active_packet_list);
@@ -1364,17 +1376,20 @@ void *cam_isp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
 	if (!ctx->packet_cache)
 		goto error_release_request_cache;
 
+	snprintf(fp_q_name, sizeof(fp_q_name), "cam_fp_ife%d_q", ctx_id);
 	/* Initialize fastpath queue with max of 16 buffers */
-	rc = cam_fp_queue_init(&ctx->fp_queue, "cam_fp_ife_q", 16,
+	rc = cam_fp_queue_init(&ctx->fp_queue, fp_q_name, 16,
 			       NULL, NULL);
 	if (rc < 0)
 		goto error_release_packet_cache;
 
-	ctx->work_queue = alloc_ordered_workqueue("cam_fp_ife_wq", WQ_HIGHPRI);
+	snprintf(fp_q_name, sizeof(fp_q_name), "cam_fp_ife%d_wq", ctx_id);
+	ctx->work_queue = alloc_ordered_workqueue(fp_q_name, WQ_HIGHPRI);
 	if (!ctx->work_queue) {
 		CAM_ERR(CAM_CORE, "Can not create workqueue!");
 		goto error_fp_queue_deinit;
 	}
+
 	/* HW interface should be stored localy */
 	memcpy(&ctx->hw_intf, hw_intf, sizeof(*hw_intf));
 
@@ -1395,10 +1410,8 @@ error_free_context:
 	return NULL;
 }
 
-void cam_isp_fastpath_context_destroy(void *hnd)
+void cam_isp_fastpath_context_destroy(struct cam_isp_fastpath_context *ctx)
 {
-	struct cam_isp_fastpath_context *ctx = hnd;
-
 	if (!ctx)
 		return;
 

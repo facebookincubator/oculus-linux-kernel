@@ -36,6 +36,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_ADS117X
 	select SND_SOC_AK4104 if SPI_MASTER
 	select SND_SOC_AK4331 if I2C
+	select SND_SOC_AK4333 if I2C
 	select SND_SOC_AK4458 if I2C
 	select SND_SOC_AK4535 if I2C
 	select SND_SOC_AK4554
@@ -99,6 +100,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_MAX98357A if GPIOLIB
 	select SND_SOC_MAX98360A
 	select SND_SOC_MAX98371 if I2C
+	select SND_SOC_MAX98388 if I2C
 	select SND_SOC_MAX98504 if I2C
 	select SND_SOC_MAX9867 if I2C
 	select SND_SOC_MAX98925 if I2C
@@ -398,6 +400,10 @@ config SND_SOC_AK4331
 	tristate "AKM AK4331 CODEC"
 	depends on I2C
 
+config SND_SOC_AK4333
+	tristate "AKM AK4333 CODEC"
+	depends on I2C
+
 config SND_SOC_AK4458
 	tristate "AKM AK4458 CODEC"
 	depends on I2C
@@ -678,6 +684,16 @@ config SND_SOC_MAX98360A
 
 config SND_SOC_MAX98371
        tristate
+
+config SND_SOC_MAX98388
+	tristate "Analog Devices MAX98388 Speaker Amplifier"
+	depends on I2C
+	help
+	  Enable support for MAX98388 Class-D Amplifier with IV feedback.
+	  The device provides a PCM interface for audio playback and
+	  IV feedback data and pairs this with a standard I2C interface
+	  for device control and status readback.
+	  Select this if MAX98388 is connected via I2C.
 
 config SND_SOC_MAX98504
 	tristate "Maxim MAX98504 speaker amplifier"

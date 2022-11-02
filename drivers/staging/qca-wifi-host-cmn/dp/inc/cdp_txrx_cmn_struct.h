@@ -85,6 +85,7 @@
 #define CDP_DISCONNECT_STATS       25
 #define CDP_DP_RX_FISA_STATS	   26
 #define CDP_DP_SWLM_STATS	   27
+#define CDP_DP_TX_HW_LATENCY_STATS 28
 
 #define WME_AC_TO_TID(_ac) (       \
 		((_ac) == WME_AC_VO) ? 6 : \
@@ -872,6 +873,12 @@ typedef void (*ol_txrx_pktdump_cb)(ol_txrx_soc_handle soc,
 				   uint8_t type);
 
 /**
+ * ol_txrx_get_tsf_time - callback to get tsf time
+ */
+typedef QDF_STATUS(*ol_txrx_get_tsf_time)(void *osif_dev, uint64_t input_time,
+					  uint64_t *tsf_time);
+
+/**
  * ol_txrx_ops - (pointers to) the functions used for tx and rx
  * data xfer
  *
@@ -954,6 +961,7 @@ struct ol_txrx_ops {
 	ol_txrx_mcast_me_fp          me_convert;
 
 	ol_txrx_get_key_fp  get_key;
+	ol_txrx_get_tsf_time get_tsf_time;
 };
 
 /**

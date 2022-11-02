@@ -39,7 +39,7 @@
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 64 0x0>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <13 1>;
+			interrupts = <64 1>;
 			interrupt-names = "fan_irq";
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 1 40000>;

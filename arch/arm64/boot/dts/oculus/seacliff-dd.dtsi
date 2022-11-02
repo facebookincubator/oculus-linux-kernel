@@ -1,7 +1,27 @@
 &cam_cci0 {
+	qcom,cam-sensor0 {
+		csiphy-sd-index = <1>;
+	};
+
+	qcom,cam-sensor1 {
+		csiphy-sd-index = <2>;
+	};
+
+	qcom,cam-sensor2 {
+		csiphy-sd-index = <3>;
+	};
+
+	qcom,cam-sensor3 {
+		csiphy-sd-index = <4>;
+	};
+
 	/* No RGB */
 	qcom,cam-sensor4 {
 		status = "disabled";
+	};
+
+	qcom,cam-sensor5 {
+		csiphy-sd-index = <5>;
 	};
 
 /* Instead, we have an extra FPGA with Esker Cameras */
@@ -40,13 +60,5 @@
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
 		oculus,cam-mclk-no-power-down;
-	};
-};
-
-&qupv3_se19_spi {
-	oculusnrf@0 {
-		swd@0 {
-			oculus,fw-path = "syncboss-ipl-spl.bin";
-		};
 	};
 };

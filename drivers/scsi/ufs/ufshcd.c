@@ -10123,7 +10123,7 @@ static int ufshcd_set_dev_pwr_mode(struct ufs_hba *hba,
 	 * already suspended childs.
 	 */
 	ret = scsi_execute(sdp, cmd, DMA_NONE, NULL, 0, NULL, &sshdr,
-			START_STOP_TIMEOUT, 0, 0, RQF_PM, NULL);
+			msecs_to_jiffies(10000), 0, 0, RQF_PM, NULL);
 	if (ret) {
 		sdev_printk(KERN_WARNING, sdp,
 			    "START_STOP failed for power mode: %d, result %x\n",

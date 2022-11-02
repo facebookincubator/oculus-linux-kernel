@@ -7,6 +7,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/interrupt.h>
+#include <linux/jiffies.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/power_supply.h>
@@ -97,6 +98,10 @@ struct cypd3177 {
 	struct device		*dev;
 	struct i2c_client	*client;
 	struct power_supply	*psy;
+	struct power_supply	*batt_psy;
+	struct notifier_block	 psy_nb;
+	struct delayed_work	 sink_cap_work;
+	struct wakeup_source	*cypd_ws;
 	struct dentry		*dfs_root;
 	int cypd3177_hpi_gpio;
 	int cypd3177_fault_gpio;
@@ -110,7 +115,12 @@ struct cypd3177 {
 			  u8 *buf, size_t len);
 	bool pdo_update_flag;
 	int num_sink_caps;
+	unsigned long last_conn_time_jiffies;
+	u32 last_conn_debounce_ms;
 	u32 sink_caps[TOTAL_CAPS];
+	u32 num_5v_sink_caps;
+	bool sink_cap_5v;
+	int charge_status;
 };
 
 static struct cypd3177 *__chip;
@@ -119,7 +129,8 @@ static int cypd3177_i2c_read_reg(struct i2c_client *client, u16 data_length,
 			       u16 reg, u32 *val)
 {
 	int r;
-	struct i2c_msg msg;
+	struct i2c_msg msg[2];
+	u8 addr[2];
 	u8 data[4];
 
 	if (!client->adapter)
@@ -129,22 +140,21 @@ static int cypd3177_i2c_read_reg(struct i2c_client *client, u16 data_length,
 		data_length != CYPD3177_REG_32BIT)
 		return -EINVAL;
 
-	msg.addr = client->addr;
-	msg.flags = 0;
-	msg.len = 2;
-	msg.buf = data;
+	msg[0].addr = client->addr;
+	msg[0].flags = 0;
+	msg[0].len = 2;
+	msg[0].buf = addr;
 
 	/* low byte goes out first */
-	data[0] = (u8) (reg & 0xff);
-	data[1] = (u8) (reg >> 8);
+	addr[0] = (u8) (reg & 0xff);
+	addr[1] = (u8) (reg >> 8);
 
-	r = i2c_transfer(client->adapter, &msg, 1);
-	if (r < 0)
-		goto err;
+	msg[1].addr = client->addr;
+	msg[1].flags = I2C_M_RD;
+	msg[1].len = data_length;
+	msg[1].buf = data;
 
-	msg.len = data_length;
-	msg.flags = I2C_M_RD;
-	r = i2c_transfer(client->adapter, &msg, 1);
+	r = i2c_transfer(client->adapter, msg, 2);
 	if (r < 0)
 		goto err;
 
@@ -275,12 +285,26 @@ static int cypd3177_i2c_write_pdo_package(struct cypd3177 *chip, u16 reg)
 	return r;
 }
 
+static bool waiting_for_debounce(struct cypd3177 *chip)
+{
+	const u32 time_since_conn = jiffies_to_msecs(jiffies - chip->last_conn_time_jiffies);
+	const bool ret = (chip->last_conn_time_jiffies != 0) &&
+		(time_since_conn < chip->last_conn_debounce_ms);
+
+	dev_dbg(&chip->client->dev, "%s: ret=%d time_since_conn=%u",
+		__func__, ret, time_since_conn);
+
+	return ret;
+}
+
 static int cypd3177_get_online(struct cypd3177 *chip, int *val)
 {
 	int rc = 0;
 	int stat;
 
-	if (chip->typec_status) {
+	if (waiting_for_debounce(chip)) {
+		*val = 1;
+	} else if (chip->typec_status) {
 		rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_8BIT,
 			TYPE_C_STATUS, &stat);
 		if (rc < 0) {
@@ -591,15 +615,125 @@ static int dev_handle_response(struct cypd3177 *chip)
 	return rc;
 }
 
+static int cypd3177_set_sink_caps(struct cypd3177 *chip, int num_sink_caps) {
+	int rc;
+	u8 pdo_mask;
+
+	rc = cypd3177_i2c_write_pdo_package(chip,
+		WRITE_DATA_REGION);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "failed to write cypd3177 pdo package: %d\n",
+			rc);
+		return rc;
+	}
+	pdo_mask = PDO_MASK_MAX >> (TOTAL_CAPS - num_sink_caps);
+
+	/* Enable PDOs */
+	rc = cypd3177_i2c_write_reg(chip->client,
+		CYPD3177_REG_8BIT, SELECT_SINK_PDO, pdo_mask);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "failed to enable cypd3177 sink pdo: %d\n",
+			rc);
+		return rc;
+	}
+
+	return rc;
+}
+
+static int cypd3177_set_5v_sink_caps(struct cypd3177 *chip) {
+	int ret = 0;
+
+	if (!chip->pd_attach)
+		return -ENODEV;
+
+	dev_dbg(&chip->client->dev, "%s: setting 5v sink caps num=%d",
+		__func__, chip->num_5v_sink_caps);
+	ret = cypd3177_set_sink_caps(chip, (int) chip->num_5v_sink_caps);
+
+	if (!ret)
+		chip->sink_cap_5v = true;
+	else
+		dev_err(&chip->client->dev, "%s: error(%d) setting 5V sink caps\n",
+			__func__, ret);
+
+	return ret;
+}
+
+static void cypd3177_sink_cap_work(struct work_struct *work) {
+	struct cypd3177 *chip = container_of(work, struct cypd3177, sink_cap_work.work);
+	union power_supply_propval val = {0};
+	int ret;
+
+	if (!chip->pd_attach) {
+		dev_dbg(&chip->client->dev, "%s: no PD attached", __func__);
+		goto relax_ws;
+	}
+
+	ret = power_supply_get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS, &val);
+	if (ret) {
+		dev_err(&chip->client->dev,
+			"%s: power_supply_get_property returned error %d\n",
+			__func__, ret);
+		goto relax_ws;
+	}
+
+	dev_dbg(&chip->client->dev,
+		"%s: current charge_status %d, new charge_status %d, sink_cap_5v %d\n",
+		__func__, chip->charge_status, val.intval, chip->sink_cap_5v);
+
+	if (val.intval == POWER_SUPPLY_STATUS_FULL && !chip->sink_cap_5v) {
+		cypd3177_set_5v_sink_caps(chip);
+	}
+
+relax_ws:
+	__pm_relax(chip->cypd_ws);
+}
+
+#define SINK_CAPS_DELAY_MS 200
+static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr) {
+	struct cypd3177 *chip = container_of(nb, struct cypd3177, psy_nb);
+	union power_supply_propval val = {0};
+	struct power_supply *psy = ptr;
+	int ret;
+
+	if (!chip->pd_attach || !chip->batt_psy ||
+	    strcmp(psy->desc->name, "battery") != 0 ||
+	    evt != PSY_EVENT_PROP_CHANGED) {
+		return 0;
+	}
+
+	ret = power_supply_get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS, &val);
+
+	if (ret) {
+		dev_err(&chip->client->dev,
+			"%s: power_supply_get_property returned error %d\n",
+			__func__, ret);
+		return ret;
+	}
+
+	dev_dbg(&chip->client->dev,
+		"%s: current charge_status %d, new charge_status %d, sink_cap_5v %d\n",
+		__func__, chip->charge_status, val.intval, chip->sink_cap_5v);
+
+	if (val.intval == POWER_SUPPLY_STATUS_FULL && !chip->sink_cap_5v) {
+		__pm_stay_awake(chip->cypd_ws);
+		schedule_delayed_work(&chip->sink_cap_work, msecs_to_jiffies(SINK_CAPS_DELAY_MS));
+	} else if (val.intval != POWER_SUPPLY_STATUS_FULL && chip->sink_cap_5v) {
+		chip->sink_cap_5v = false;
+	}
+
+	chip->charge_status = val.intval;
+
+	return 0;
+}
+
 static int pd_handle_response(struct cypd3177 *chip)
 {
 	int rc;
 	int pd_raw, pd_event;
-	int pdo_val;
 	int data_len;
 	u8 *buf = NULL;
 	enum pd_sop_type sop;
-	u8 pdo_mask;
 
 	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
 				PD_RESPONSE, &pd_raw);
@@ -615,6 +749,13 @@ static int pd_handle_response(struct cypd3177 *chip)
 	case TYPEC_CONNECT:
 		chip->typec_status = true;
 		chip->pdo_update_flag = false;
+		chip->sink_cap_5v = false;
+		power_supply_reg_notifier(&chip->psy_nb);
+
+		if (!waiting_for_debounce(chip)) {
+			chip->last_conn_time_jiffies = jiffies;
+			power_supply_changed(chip->psy);
+		}
 		break;
 	case PD_CONTRACT_COMPLETE:
 		chip->pd_attach = 1;
@@ -625,47 +766,28 @@ static int pd_handle_response(struct cypd3177 *chip)
 		 * PDOs need to be updated and enabled.
 		 */
 		if ((chip->num_sink_caps > 0) && (!chip->pdo_update_flag)) {
-			rc = cypd3177_i2c_write_pdo_package(chip,
-				WRITE_DATA_REGION);
-			if (rc < 0) {
-				dev_err(&chip->client->dev, "failed to write cypd3177 pdo package: %d\n",
-					rc);
-				return rc;
-			}
-			pdo_mask = PDO_MASK_MAX >> (TOTAL_CAPS -
-						chip->num_sink_caps);
-
-			/* Enable PDOs */
-			rc = cypd3177_i2c_write_reg(chip->client,
-				CYPD3177_REG_8BIT, SELECT_SINK_PDO, pdo_mask);
-			if (rc < 0) {
-				dev_err(&chip->client->dev, "failed to enable cypd3177 sink pdo: %d\n",
-					rc);
-				return rc;
-			}
+			dev_dbg(&chip->client->dev, "setting all custom sink caps");
 
 			chip->pdo_update_flag = true;
-		}
-
-		rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
-				CURRENT_PDO, &pd_raw);
-		if (rc < 0) {
-			dev_err(&chip->client->dev, "cypd3177 read pdo data failed: %d\n",
-			rc);
-			return rc;
-		}
-		pdo_val = ((pd_raw & PDO_BIT10_BIT19) >> 10) * PDO_VOLTAGE_UNIT;
-		if (pdo_val == VOLTAGE_9V)
+			rc = cypd3177_set_sink_caps(chip, chip->num_sink_caps);
+		} else {
+			/*
+			 * cypd3177 is powered by dock. Everytime we reconnect, we need to
+			 * update it with our custom PDOs. It initially negotations PDOs with
+			 * it's default values. We then update it with our custom PDOs and it
+			 * renegotates a new PDO. We only want to notify power_supply_updated
+			 * after this second negotation.
+			 */
+			dev_dbg(&chip->client->dev, "final PD negotiation");
 			power_supply_changed(chip->psy);
+		}
 		break;
 	case TYPEC_DISCONNECT:
-		chip->typec_status = false;
-		chip->pd_attach = 0;
-		power_supply_changed(chip->psy);
-		break;
 	case HARD_RESET:
 		chip->typec_status = false;
 		chip->pd_attach = 0;
+		chip->sink_cap_5v = false;
+		power_supply_unreg_notifier(&chip->psy_nb);
 		power_supply_changed(chip->psy);
 		break;
 	case VDM_RECEIVED:
@@ -745,6 +867,10 @@ static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
 
 	chip->typec_status = false;
 	chip->pd_attach = 0;
+	chip->sink_cap_5v = false;
+	power_supply_unreg_notifier(&chip->psy_nb);
+	if (chip->psy)
+		power_supply_changed(chip->psy);
 
 	dev_err(&chip->client->dev, "cypd3177 fault interrupt event ...\n");
 
@@ -829,6 +955,27 @@ static int cypd3177_probe(struct i2c_client *i2c,
 	chip->dev = &i2c->dev;
 	i2c_set_clientdata(i2c, chip);
 
+	chip->batt_psy = power_supply_get_by_name("battery");
+	if (!chip->batt_psy) {
+		dev_err(&i2c->dev, "cypd3177 failed to get batt_psy, defer probe\n");
+		i2c_set_clientdata(i2c, NULL);
+		return -EPROBE_DEFER;
+	}
+
+	/* Create PSY */
+	cfg.drv_data = chip;
+	cfg.of_node = chip->dev->of_node;
+
+	chip->psy = devm_power_supply_register(chip->dev, &cypd3177_psy_desc,
+			&cfg);
+	if (IS_ERR(chip->psy)) {
+		dev_err(&i2c->dev, "psy registration failed: %ld\n",
+				PTR_ERR(chip->psy));
+		rc = PTR_ERR(chip->psy);
+
+		return rc;
+	}
+
 	/* Get the cypd3177 hpi gpio and config it */
 	chip->cypd3177_hpi_gpio = of_get_named_gpio(chip->dev->of_node,
 						"cy,hpi-gpio", 0);
@@ -900,17 +1047,19 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		}
 	}
 
-	/* Create PSY */
-	cfg.drv_data = chip;
-	cfg.of_node = chip->dev->of_node;
+	rc = of_property_read_u32(chip->dev->of_node, "cypd3177,num-5v-sink-caps",
+		&chip->num_5v_sink_caps);
+	if (rc < 0) {
+		dev_err(&i2c->dev,
+			"cypd3177 failed reading cypd3177,num-5v-sink-caps, rc = %d\n", rc);
+		return rc;
+	}
 
-	chip->psy = devm_power_supply_register(chip->dev, &cypd3177_psy_desc,
-			&cfg);
-	if (IS_ERR(chip->psy)) {
-		dev_err(&i2c->dev, "psy registration failed: %ld\n",
-				PTR_ERR(chip->psy));
-		rc = PTR_ERR(chip->psy);
-
+	rc = of_property_read_u32(chip->dev->of_node, "cypd3177,initial-connection-debounce-ms",
+		&chip->last_conn_debounce_ms);
+	if (rc < 0) {
+		dev_err(&i2c->dev,
+			"cypd3177 failed reading initial-connection-debounce-ms, rc = %d\n", rc);
 		return rc;
 	}
 
@@ -926,6 +1075,9 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		return PTR_ERR(chip->cypd);
 	}
 
+	INIT_DELAYED_WORK(&chip->sink_cap_work, cypd3177_sink_cap_work);
+	chip->psy_nb.notifier_call = psy_changed;
+	chip->cypd_ws = wakeup_source_register("cypd-ws");
 	dev_dbg(&i2c->dev, "cypd3177 probe successful\n");
 	return 0;
 }
@@ -934,6 +1086,8 @@ static int cypd3177_remove(struct i2c_client *i2c)
 {
 	struct cypd3177 *chip = i2c_get_clientdata(i2c);
 
+	wakeup_source_unregister(chip->cypd_ws);
+	power_supply_unreg_notifier(&chip->psy_nb);
 	cypd_destroy(chip->cypd);
 	return 0;
 }

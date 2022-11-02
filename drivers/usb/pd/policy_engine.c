@@ -1523,8 +1523,8 @@ static void handle_vdm_resp_ack(struct usbpd *pd, u32 *vdos, u8 num_vdos,
 			svid = pd->discovered_svids[i];
 			if (svid) {
 				handler = find_svid_handler(pd, svid);
-				if (handler) {
-					usbpd_dbg(&pd->dev, "Notify SVID: 0x%04x disconnect\n",
+				if (handler && !handler->discovered) {
+					usbpd_dbg(&pd->dev, "Notify SVID: 0x%04x connect\n",
 							handler->svid);
 					handler->connect(handler,
 							pd->peer_usb_comm);
@@ -2871,7 +2871,7 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 
 		usbpd_set_state(pd, PE_SNK_READY);
 
-		if (pd->request_svids)
+		if (pd->request_svids && pd->vdm_state < DISCOVERED_SVIDS)
 			usbpd_send_svdm(pd, USBPD_SID,
 				USBPD_SVDM_DISCOVER_SVIDS,
 				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
@@ -2951,8 +2951,25 @@ static bool handle_ctrl_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 	case MSG_GET_SOURCE_CAP_EXTENDED:
 		handle_get_src_cap_extended(pd);
 		break;
-	case MSG_ACCEPT:
 	case MSG_REJECT:
+		/*
+		 * Some PD adapters(UGREEN CD212) do not support SVID
+		 * discovery message, when receiving SVID message, they will
+		 * return reject, due to receiving reject, usbpd driver keeps
+		 * sending Hard reset to the adapter and charging does not
+		 * continue, for these adapters, we need avoid sending resets
+		 * to them if SVID discovery fails.
+		 */
+		if (pd->vdm_tx_retry
+			&& VDM_IS_SVDM(pd->vdm_tx_retry->data[0])
+			&& SVDM_HDR_CMD_TYPE(pd->vdm_tx_retry->data[0])
+			== SVDM_CMD_TYPE_INITIATOR
+			&& SVDM_HDR_CMD(pd->vdm_tx_retry->data[0])
+			== USBPD_SVDM_DISCOVER_SVIDS) {
+			usbpd_warn(&pd->dev, "Unexpected reject message\n");
+			break;
+		}
+	case MSG_ACCEPT:
 	case MSG_WAIT:
 		usbpd_warn(&pd->dev, "Unexpected message\n");
 		usbpd_set_state(pd, PE_SEND_SOFT_RESET);

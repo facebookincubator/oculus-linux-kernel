@@ -938,6 +938,14 @@ struct cdp_host_stats_ops {
 				  uint8_t *peer_mac, void *stats,
 				  uint32_t last_tx_rate_mcs,
 				  uint32_t stats_id);
+#ifdef HW_TX_DELAY_STATS_ENABLE
+	void
+	(*enable_disable_vdev_tx_delay_stats)(struct cdp_soc_t *soc,
+					      uint8_t vdev_id,
+					      uint8_t value);
+	uint8_t (*is_tx_delay_stats_enabled)(struct cdp_soc_t *soc_hdl,
+					     uint8_t vdev_id);
+#endif
 };
 
 struct cdp_wds_ops {

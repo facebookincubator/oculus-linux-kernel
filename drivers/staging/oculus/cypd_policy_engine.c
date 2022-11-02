@@ -196,11 +196,11 @@ static void enter_state_snk_ready(struct cypd *pd)
 	else if (pd->current_dr == DR_DFP && pd->vdm_state == VDM_NONE)
 		cypd_send_svdm(pd, CYPD_SID,
 				CYPD_SVDM_DISCOVER_IDENTITY,
-				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
+				CYPD_SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
 	else if (pd->current_dr == DR_UFP && pd->vdm_state == VDM_NONE)
 		cypd_send_svdm(pd, CYPD_SID,
 				CYPD_SVDM_DISCOVER_SVIDS,
-				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
+				CYPD_SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
 
 }
 
@@ -284,7 +284,10 @@ static void reset_vdm_state(struct cypd *pd)
 {
 	struct cypd_svid_handler *handler;
 
-	mutex_lock(&pd->svid_handler_lock);
+	/* in_interrupt() == true when handling VDM RX during suspend */
+	if (!in_interrupt())
+		mutex_lock(&pd->svid_handler_lock);
+
 	list_for_each_entry(handler, &pd->svid_handlers, entry) {
 		if (handler->discovered) {
 			dev_dbg(&pd->dev, "Notify SVID: 0x%04x disconnect\n",
@@ -293,11 +296,13 @@ static void reset_vdm_state(struct cypd *pd)
 			handler->discovered = false;
 		}
 	}
-	mutex_unlock(&pd->svid_handler_lock);
 
-	pd->discovered_svids = NULL;
+	if (!in_interrupt())
+		mutex_unlock(&pd->svid_handler_lock);
+
 	pd->num_svids = 0;
 	kfree(pd->discovered_svids);
+	pd->discovered_svids = NULL;
 	pd->vdm_state = VDM_NONE;
 	kfree(pd->vdm_tx_retry);
 	pd->vdm_tx_retry = NULL;
@@ -384,7 +389,7 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 		pd->vdm_state = DISCOVERED_ID;
 		cypd_send_svdm(pd, CYPD_SID,
 				CYPD_SVDM_DISCOVER_SVIDS,
-				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
+				CYPD_SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
 		break;
 
 	case CYPD_SVDM_DISCOVER_SVIDS:
@@ -450,7 +455,7 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 		if (num_vdos == 6 && vdos[5] != 0) {
 			cypd_send_svdm(pd, CYPD_SID,
 					CYPD_SVDM_DISCOVER_SVIDS,
-					SVDM_CMD_TYPE_INITIATOR, 0,
+					CYPD_SVDM_CMD_TYPE_INITIATOR, 0,
 					NULL, 0);
 			break;
 		}
@@ -521,17 +526,17 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 
 	/* Standard Discovery or unhandled messages go here */
 	switch (cmd_type) {
-	case SVDM_CMD_TYPE_INITIATOR:
+	case CYPD_SVDM_CMD_TYPE_INITIATOR:
 		if (cmd != CYPD_SVDM_ATTENTION) {
 			/* TODO: Handle pd->spec_rev == PD_REV_30 */
 			cypd_send_svdm(pd, svid, cmd,
-					SVDM_CMD_TYPE_RESP_NAK,
+					CYPD_SVDM_CMD_TYPE_RESP_NAK,
 					SVDM_HDR_OBJ_POS(vdm_hdr),
 					NULL, 0);
 		}
 		break;
 
-	case SVDM_CMD_TYPE_RESP_ACK:
+	case CYPD_SVDM_CMD_TYPE_RESP_ACK:
 		if (svid != CYPD_SID) {
 			dev_err(&pd->dev, "unhandled ACK for SVID:0x%x\n",
 					svid);
@@ -548,12 +553,12 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 		handle_vdm_resp_ack(pd, vdos, num_vdos, vdm_hdr);
 		break;
 
-	case SVDM_CMD_TYPE_RESP_NAK:
+	case CYPD_SVDM_CMD_TYPE_RESP_NAK:
 		dev_info(&pd->dev, "VDM NAK received for SVID:0x%04x command:0x%x\n",
 				svid, cmd);
 		break;
 
-	case SVDM_CMD_TYPE_RESP_BUSY:
+	case CYPD_SVDM_CMD_TYPE_RESP_BUSY:
 		switch (cmd) {
 		case CYPD_SVDM_DISCOVER_IDENTITY:
 		case CYPD_SVDM_DISCOVER_SVIDS:
@@ -742,7 +747,7 @@ static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 
 	/* start tVDMSenderResponse timer */
 	if (VDM_IS_SVDM(vdm_hdr) &&
-		SVDM_HDR_CMD_TYPE(vdm_hdr) == SVDM_CMD_TYPE_INITIATOR) {
+		SVDM_HDR_CMD_TYPE(vdm_hdr) == CYPD_SVDM_CMD_TYPE_INITIATOR) {
 		pd->svdm_start_time = ktime_get();
 	}
 
@@ -751,7 +756,7 @@ static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 	 * around in case we need to re-try when receiving BUSY
 	 */
 	if (VDM_IS_SVDM(vdm_hdr) &&
-		SVDM_HDR_CMD_TYPE(vdm_hdr) == SVDM_CMD_TYPE_INITIATOR &&
+		SVDM_HDR_CMD_TYPE(vdm_hdr) == CYPD_SVDM_CMD_TYPE_INITIATOR &&
 		SVDM_HDR_CMD(vdm_hdr) <= CYPD_SVDM_DISCOVER_SVIDS) {
 		if (pd->vdm_tx_retry) {
 			dev_dbg(&pd->dev, "Previous Discover VDM command %d not ACKed/NAKed\n",

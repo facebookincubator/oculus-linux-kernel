@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&pm8150_vadc {
+	usbc_therm@4d {
+		reg = <ADC_AMUX_THM1_PU2>;
+		label = "usbc_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+};
+
+&pm8150_adc_tm {
+	usbc_therm@4d {
+		reg = <ADC_AMUX_THM1_PU2>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+};
+
+&thermal_zones {
+	usbc-charger {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&pm8150_adc_tm ADC_AMUX_THM1_PU2>;
+		trips {
+			usbc_trip_reduce_charging: usbc_trip_reduce_charging {
+				temperature = <53000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			usbc_trip_suspend_charging: usbc_trip_suspend_charging {
+				temperature = <55000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			usbc_map_reduce_charging: usbc_map_reduce_charging {
+				trip = <&usbc_trip_reduce_charging>;
+				cooling-device = <&charging_thermal_controller_usbc 1 1>;
+			};
+			usbc_map_suspend_charging: usbc_map_suspend_charging {
+				trip = <&usbc_trip_suspend_charging>;
+				cooling-device = <&charging_thermal_controller_usbc 2 2>;
+			};
+		};
+	};
+};

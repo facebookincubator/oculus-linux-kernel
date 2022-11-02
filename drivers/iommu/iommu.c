@@ -1588,6 +1588,16 @@ int iommu_get_backing_pages(struct iommu_domain *domain, dma_addr_t iova,
 	return domain->ops->get_backing_pages(domain, iova, size, page_list);
 }
 
+int iommu_set_page_range_access_flag(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, bool access_flag)
+{
+	if (unlikely(domain->ops->set_page_range_access_flag == NULL))
+		return -ENODEV;
+
+	return domain->ops->set_page_range_access_flag(domain, iova, size,
+			access_flag);
+}
+
 uint64_t iommu_iova_to_pte(struct iommu_domain *domain,
 				    dma_addr_t iova)
 {

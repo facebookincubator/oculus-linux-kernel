@@ -1,6 +1,10 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 
+&bcl_soc {
+	status = "disabled";
+};
+
 &cpu_cpu_llcc_bw {
 	governor = "bw_hwmon";
 };
@@ -9,7 +13,19 @@
 	governor = "bw_hwmon";
 };
 
+&ext_disp {
+	status = "disabled";
+};
+
+&ext_disp_audio_codec {
+	status = "disabled";
+};
+
 &flash_led {
+	status = "disabled";
+};
+
+&fsa4480 {
 	status = "disabled";
 };
 
@@ -22,6 +38,28 @@
 	oculus,external-context-fault-irq;
 	oculus,external-map-lock;
 	qcom,split-tables;
+};
+
+&mdss_dp_pll {
+	status = "disabled";
+};
+
+&mdss_mdp {
+	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
+};
+
+&msm_cvp {
+	cvp_non_secure_cb {
+		qcom,iommu-faults = "non-fatal";
+	};
+
+	cvp_secure_nonpixel_cb {
+		qcom,iommu-faults = "non-fatal";
+	};
+
+	cvp_secure_pixel_cb {
+		qcom,iommu-faults = "non-fatal";
+	};
 };
 
 &npu_llcc_ddr_bw {
@@ -44,6 +82,13 @@
 	reg = <0x82400000 0x1C00000>;
 };
 
+&qfprom {
+	hw_rev: hw_rev@198 {
+		reg = <0x198 0x4>;
+		bits = <0 28>;
+	};
+};
+
 &removed_mem {
 	reg = <0x0 0x80b00000 0x0 0x3500000>;
 };
@@ -56,6 +101,14 @@
 		console-size = <131072>;
 		pmsg-size = <131072>;
 	};
+};
+
+&sde_dp {
+	status = "disabled";
+
+	qcom,dp-usbpd-detection = <>;
+	qcom,ext-disp = <>;
+	qcom,dp-aux-switch = <>;
 };
 
 &sde_dsi {

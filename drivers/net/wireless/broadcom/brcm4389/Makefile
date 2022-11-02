@@ -84,6 +84,8 @@ DHDCFLAGS += -Wall -Wstrict-prototypes -Wno-parentheses-equality -Dlinux -DLINUX
 DHDCFLAGS += -DOEM_ANDROID
 DHDCFLAGS += -DBCM_PRIV_CMD_SUPPORT
 DHDCFLAGS += -DWL_ANDROID_PRIV_CMD_OVER_NL80211
+# Meta NL80211 vendor commands
+DHDCFLAGS += -DWL_VENDOR_META
 
 #################
 # Common feature
@@ -649,8 +651,6 @@ endif
 
 #EXTRA_LDFLAGS += --strip-debug
 
-DHDCFLAGS += -DENABLE_INSMOD_NO_FW_LOAD
-
 ifeq ($(DRIVER_TYPE),y)
   DHDCFLAGS += -DWAKEUP_KSOFTIRQD_POST_NAPI_SCHEDULE
   DHDCFLAGS += -DUSE_LATE_INITCALL_SYNC
@@ -757,6 +757,10 @@ endif
 
 ifneq ($(filter -DXRAPI, $(DHDCFLAGS)),)
 DHDOFILES += dhd_xrapi.o
+endif
+
+ifneq ($(filter -DWL_VENDOR_META, $(DHDCFLAGS)),)
+DHDOFILES += wl_cfgvendor_meta.o
 endif
 
 bcmdhd$(BCM_WLAN_CHIP_SUFFIX)-objs := $(DHDOFILES)

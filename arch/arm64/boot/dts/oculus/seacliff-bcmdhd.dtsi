@@ -1,3 +1,7 @@
+&cnss_wlan_mem {
+	status = "disabled";
+};
+
 &tlmm {
 	bcm_bt_en_default: bcm_bt_en_default {
 		mux {

@@ -2553,6 +2553,17 @@ wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		}
 	}
 
+	/*
+	 * Low latency mode is set by the apps while running high performance
+	 * traffic. Don't allow background scan since the device will go
+	 * off-channel and increase latency.
+	 */
+	if (cfg->latency_mode && wl_is_sta_connected(cfg)) {
+		WL_ERR(("Reject background scan while connected in low latency mode\n"));
+		return -EBUSY;
+	}
+
+
 	err = __wl_cfg80211_scan(wiphy, ndev, request, NULL);
 	if (unlikely(err)) {
 		WL_ERR(("scan error (%d)\n", err));

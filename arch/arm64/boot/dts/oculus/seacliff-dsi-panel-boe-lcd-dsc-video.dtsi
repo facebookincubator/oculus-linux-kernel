@@ -40,10 +40,9 @@
 
 		qcom,panel-cphy-mode;
 
-		qcom,dsi-supported-dfps-list = <90 89 88 87 86 85 84 83 82 81 80 79 78 77 76 75 74 73 72 71 70 69 68 67 66 65 64 63 62 61 60>;
 		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
-		qcom,mdss-dsi-min-refresh-rate = <60>;
+		qcom,mdss-dsi-min-refresh-rate = <72>;
 		qcom,mdss-dsi-max-refresh-rate = <90>;
 		qcom,mdss-dsi-display-timings {
 			timing@0{

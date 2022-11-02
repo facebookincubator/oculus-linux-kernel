@@ -40,7 +40,7 @@ struct cam_isp_dev {
  */
 struct cam_isp_fastpath_dev {
 	struct cam_subdev  sd;
-	void               *ctx;
+	void              *ctx[CAM_CTX_MAX];
 	struct mutex       mutex;
 	int32_t            open_cnt;
 };

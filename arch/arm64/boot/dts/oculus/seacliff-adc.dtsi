@@ -104,13 +104,14 @@
 	qcom,battery-data = <&kona_mtp_batterydata>;
 	qcom,step-charging-enable;
 	qcom,sw-jeita-enable;
-	qcom,wd-bark-time-secs = <16>;
+	qcom,wd-bark-time-secs = <128>;
 	qcom,suspend-input-on-debug-batt;
 	qcom,fcc-max-ua = <4813000>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,dc-icl-ua = <3000000>;
 	qcom,chg-term-current-ma = <(-300)>;
 	qcom,typec-dam-enable;
+	qcom,disable-dc-online-prop;
 };
 
 &pm8150_vadc {
@@ -344,21 +345,6 @@
 			active-config0 {
 				temperature = <125000>;
 				hysteresis = <1000>;
-				type = "passive";
-			};
-		};
-	};
-
-	batt-usr {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
-		thermal-governor = "user_space";
-		thermal-sensors = <&pm8150b_adc_tm ADC_BAT_THERM_PU2>;
-		wake-capable-sensor;
-		trips {
-			batt_trip: batt-trip {
-				temperature = <600>;
-				hysteresis = <10>;
 				type = "passive";
 			};
 		};

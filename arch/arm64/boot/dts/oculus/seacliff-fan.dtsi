@@ -63,11 +63,11 @@
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 71 0x0>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <13 1>;
+			interrupts = <71 1>;
 			interrupt-names = "fan_irq";
 			panel = <&dsi_dual_boe_lcd_video
 				&dsi_dual_boe_lcd_dsc_video
-				&dsi_dual_boe_spi_blu_dsc_video>;
+				&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			pinctrl-names = "default";
@@ -84,11 +84,11 @@
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 72 0x0>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <13 1>;
+			interrupts = <72 1>;
 			interrupt-names = "fan_irq";
 			panel = <&dsi_dual_boe_lcd_video
 				&dsi_dual_boe_lcd_dsc_video
-				&dsi_dual_boe_spi_blu_dsc_video>;
+				&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 1 40000>;
 			pinctrl-names = "default";
@@ -112,25 +112,25 @@
 		trips {
 			cam0_usr_fan_trip0: cam0_usr_fan_trip0 {
 				temperature = <40000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			cam0_usr_fan_trip1: cam0_usr_fan_trip1 {
-				temperature = <58000>;
-				hysteresis = <1000>;
+				temperature = <55000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			cam0_usr_fan_trip2: cam0_usr_fan_trip2 {
-				temperature = <62000>;
-				hysteresis = <1000>;
+				temperature = <60000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			cam0_usr_fan_trip3: cam0_usr_fan_trip3 {
-				temperature = <65000>;
-				hysteresis = <1000>;
+				temperature = <63000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 		};
@@ -186,6 +186,90 @@
 		};
 	};
 
+	cam1-usr-fan {
+		polling-delay-passive = <100>;
+		polling-delay = <1000>;
+		thermal-sensors = <&pm8150l_adc_tm ADC_AMUX_THM3_PU2>;
+		thermal-governor = "step_wise";
+		wake-capable-sensor;
+		trips {
+			cam1_usr_fan_trip0: cam1_usr_fan_trip0 {
+				temperature = <40000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+
+			cam1_usr_fan_trip1: cam1_usr_fan_trip1 {
+				temperature = <55000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+
+			cam1_usr_fan_trip2: cam1_usr_fan_trip2 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+
+			cam1_usr_fan_trip3: cam1_usr_fan_trip3 {
+				temperature = <63000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cam1_usr_fan_map0: cam1_usr_fan_map0 {
+				trip = <&cam1_usr_fan_trip0>;
+				/* RPM: 0 - 1800 */
+				cooling-device = <&fan_0 0 2>;
+			};
+
+			cam1_usr_fan_map1: cam1_usr_fan_map1 {
+				trip = <&cam1_usr_fan_trip1>;
+				/* RPM: 1800 - 2200 */
+				cooling-device = <&fan_0 2 4>;
+			};
+
+			cam1_usr_fan_map2: cam1_usr_fan_map2 {
+				trip = <&cam1_usr_fan_trip2>;
+				/* RPM: 2200 - 2400 */
+				cooling-device = <&fan_0 4 5>;
+			};
+
+			cam1_usr_fan_map3: cam1_usr_fan_map3 {
+				trip = <&cam1_usr_fan_trip3>;
+				/* RPM: 2400 - 2600 */
+				cooling-device = <&fan_0 5 6>;
+			};
+
+			cam1_usr_fan_1_map0: cam1_usr_fan_1_map0 {
+				trip = <&cam1_usr_fan_trip0>;
+				/* RPM: 0 - 1800 */
+				cooling-device = <&fan_1 0 2>;
+			};
+
+			cam1_usr_fan_1_map1: cam1_usr_fan_1_map1 {
+				trip = <&cam1_usr_fan_trip1>;
+				/* RPM: 1800 - 2200 */
+				cooling-device = <&fan_1 2 4>;
+			};
+
+			cam1_usr_fan_1_map2: cam1_usr_fan_1_map2 {
+				trip = <&cam1_usr_fan_trip2>;
+				/* RPM: 2200 - 2400 */
+				cooling-device = <&fan_1 4 5>;
+			};
+
+			cam1_usr_fan_1_map3: cam1_usr_fan_1_map3 {
+				trip = <&cam1_usr_fan_trip3>;
+				/* RPM: 2400 - 2600 */
+				cooling-device = <&fan_1 5 6>;
+			};
+		};
+	};
+
+
 	cpu-0-0-fan {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
@@ -195,25 +279,25 @@
 		trips {
 			cpu_0_0_fan_trip0: cpu_0_0_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_0_fan_trip1: cpu_0_0_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_0_fan_trip2: cpu_0_0_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_0_fan_trip3: cpu_0_0_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -278,25 +362,25 @@
 		trips {
 			cpu_0_1_fan_trip0: cpu_0_1_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_1_fan_trip1: cpu_0_1_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_1_fan_trip2: cpu_0_1_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_1_fan_trip3: cpu_0_1_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -361,25 +445,25 @@
 		trips {
 			cpu_0_2_fan_trip0: cpu_0_2_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_2_fan_trip1: cpu_0_2_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_2_fan_trip2: cpu_0_2_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_2_fan_trip3: cpu_0_2_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -444,25 +528,25 @@
 		trips {
 			cpu_0_3_fan_trip0: cpu_0_3_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_3_fan_trip1: cpu_0_3_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_3_fan_trip2: cpu_0_3_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_0_3_fan_trip3: cpu_0_3_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -527,25 +611,25 @@
 		trips {
 			cpu_1_0_fan_trip0: cpu_1_0_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_0_fan_trip1: cpu_1_0_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_0_fan_trip2: cpu_1_0_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_0_fan_trip3: cpu_1_0_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -610,25 +694,25 @@
 		trips {
 			cpu_1_1_fan_trip0: cpu_1_1_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_1_fan_trip1: cpu_1_1_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_1_fan_trip2: cpu_1_1_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_1_fan_trip3: cpu_1_1_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -693,25 +777,25 @@
 		trips {
 			cpu_1_2_fan_trip0: cpu_1_2_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_2_fan_trip1: cpu_1_2_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_2_fan_trip2: cpu_1_2_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_2_fan_trip3: cpu_1_2_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -776,25 +860,25 @@
 		trips {
 			cpu_1_3_fan_trip0: cpu_1_3_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_3_fan_trip1: cpu_1_3_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_3_fan_trip2: cpu_1_3_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_3_fan_trip3: cpu_1_3_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -859,25 +943,25 @@
 		trips {
 			cpu_1_4_fan_trip0: cpu_1_4_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_4_fan_trip1: cpu_1_4_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_4_fan_trip2: cpu_1_4_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_4_fan_trip3: cpu_1_4_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -942,25 +1026,25 @@
 		trips {
 			cpu_1_5_fan_trip0: cpu_1_5_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_5_fan_trip1: cpu_1_5_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_5_fan_trip2: cpu_1_5_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_5_fan_trip3: cpu_1_5_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1025,25 +1109,25 @@
 		trips {
 			cpu_1_6_fan_trip0: cpu_1_6_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_6_fan_trip1: cpu_1_6_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_6_fan_trip2: cpu_1_6_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_6_fan_trip3: cpu_1_6_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1108,25 +1192,25 @@
 		trips {
 			cpu_1_7_fan_trip0: cpu_1_7_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_7_fan_trip1: cpu_1_7_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_7_fan_trip2: cpu_1_7_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpu_1_7_fan_trip3: cpu_1_7_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1191,25 +1275,25 @@
 		trips {
 			cpuss_0_fan_trip0: cpuss_0_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpuss_0_fan_trip1: cpuss_0_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpuss_0_fan_trip2: cpuss_0_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpuss_0_fan_trip3: cpuss_0_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1274,25 +1358,25 @@
 		trips {
 			cpuss_1_fan_trip0: cpuss_1_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpuss_1_fan_trip1: cpuss_1_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpuss_1_fan_trip2: cpuss_1_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			cpuss_1_fan_trip3: cpuss_1_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1357,25 +1441,25 @@
 		trips {
 			display_virt_fan_trip0: display_virt_fan_trip0 {
 				temperature = <35000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			display_virt_fan_trip1: display_virt_fan_trip1 {
 				temperature = <45000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			display_virt_fan_trip2: display_virt_fan_trip2 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			display_virt_fan_trip3: display_virt_fan_trip3 {
 				temperature = <60000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 		};
@@ -1440,25 +1524,25 @@
 		trips {
 			gpuss_0_fan_trip0: gpuss_0_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			gpuss_0_fan_trip1: gpuss_0_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			gpuss_0_fan_trip2: gpuss_0_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			gpuss_0_fan_trip3: gpuss_0_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1523,25 +1607,25 @@
 		trips {
 			gpuss_1_fan_trip0: gpuss_1_fan_trip0 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			gpuss_1_fan_trip1: gpuss_1_fan_trip1 {
 				temperature = <75000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			gpuss_1_fan_trip2: gpuss_1_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 
 			gpuss_1_fan_trip3: gpuss_1_fan_trip3 {
 				temperature = <90000>;
-				hysteresis = <1000>;
+				hysteresis = <5000>;
 				type = "active";
 			};
 		};
@@ -1605,26 +1689,26 @@
 		wake-capable-sensor;
 		trips {
 			pm8150_fan_trip0: pm8150_fan_trip0 {
-				temperature = <50000>;
-				hysteresis = <1000>;
+				temperature = <55000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			pm8150_fan_trip1: pm8150_fan_trip1 {
 				temperature = <70000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			pm8150_fan_trip2: pm8150_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			pm8150_fan_trip3: pm8150_fan_trip3 {
 				temperature = <92000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 		};
@@ -1689,25 +1773,25 @@
 		trips {
 			smb_usr_fan_trip0: smb_usr_fan_trip0 {
 				temperature = <50000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			smb_usr_fan_trip1: smb_usr_fan_trip1 {
 				temperature = <70000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			smb_usr_fan_trip2: smb_usr_fan_trip2 {
 				temperature = <85000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 
 			smb_usr_fan_trip3: smb_usr_fan_trip3 {
 				temperature = <92000>;
-				hysteresis = <1000>;
+				hysteresis = <3000>;
 				type = "active";
 			};
 		};
@@ -1771,26 +1855,26 @@
 		wake-capable-sensor;
 		trips {
 			usbc_usr_fan_trip0: usbc_usr_fan_trip0 {
-				temperature = <35000>;
-				hysteresis = <1000>;
+				temperature = <30000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			usbc_usr_fan_trip1: usbc_usr_fan_trip1 {
 				temperature = <45000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			usbc_usr_fan_trip2: usbc_usr_fan_trip2 {
 				temperature = <55000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			usbc_usr_fan_trip3: usbc_usr_fan_trip3 {
 				temperature = <65000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 		};
@@ -1799,49 +1883,49 @@
 			usbc_usr_fan_map0: usbc_usr_fan_map0 {
 				trip = <&usbc_usr_fan_trip0>;
 				/* RPM: 0 - 1800 */
-				cooling-device = <&fan_0 0 1>;
+				cooling-device = <&fan_0 0 2>;
 			};
 
 			usbc_usr_fan_map1: usbc_usr_fan_map1 {
 				trip = <&usbc_usr_fan_trip1>;
 				/* RPM: 1800 - 2200 */
-				cooling-device = <&fan_0 1 2>;
+				cooling-device = <&fan_0 2 4>;
 			};
 
 			usbc_usr_fan_map2: usbc_usr_fan_map2 {
 				trip = <&usbc_usr_fan_trip2>;
 				/* RPM: 2200 - 2400 */
-				cooling-device = <&fan_0 2 4>;
+				cooling-device = <&fan_0 4 5>;
 			};
 
 			usbc_usr_fan_map3: usbc_usr_fan_map3 {
 				trip = <&usbc_usr_fan_trip3>;
 				/* RPM: 2400 - 2600 */
-				cooling-device = <&fan_0 4 5>;
+				cooling-device = <&fan_0 5 6>;
 			};
 
 			usbc_usr_fan_1_map0: usbc_usr_fan_1_map0 {
 				trip = <&usbc_usr_fan_trip0>;
 				/* RPM: 0 - 1800 */
-				cooling-device = <&fan_1 0 1>;
+				cooling-device = <&fan_1 0 2>;
 			};
 
 			usbc_usr_fan_1_map1: usbc_usr_fan_1_map1 {
 				trip = <&usbc_usr_fan_trip1>;
 				/* RPM: 1800 - 2200 */
-				cooling-device = <&fan_1 1 2>;
+				cooling-device = <&fan_1 2 4>;
 			};
 
 			usbc_usr_fan_1_map2: usbc_usr_fan_1_map2 {
 				trip = <&usbc_usr_fan_trip2>;
 				/* RPM: 2200 - 2400 */
-				cooling-device = <&fan_1 2 4>;
+				cooling-device = <&fan_1 4 5>;
 			};
 
 			usbc_usr_fan_1_map3: usbc_usr_fan_1_map3 {
 				trip = <&usbc_usr_fan_trip3>;
 				/* RPM: 2400 - 2600 */
-				cooling-device = <&fan_1 4 5>;
+				cooling-device = <&fan_1 5 6>;
 			};
 		};
 	};
@@ -1855,25 +1939,25 @@
 		trips {
 			fp_fan_trip0: fp_fan_trip0 {
 				temperature = <35000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			fp_fan_trip1: fp_fan_trip1 {
 				temperature = <43000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			fp_fan_trip2: fp_fan_trip2 {
 				temperature = <50000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			fp_fan_trip3: fp_fan_trip3 {
 				temperature = <51000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 		};
@@ -1938,25 +2022,25 @@
 		trips {
 			tp_fan_trip0: tp_fan_trip0 {
 				temperature = <35000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			tp_fan_trip1: tp_fan_trip1 {
 				temperature = <43000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			tp_fan_trip2: tp_fan_trip2 {
 				temperature = <50000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 
 			tp_fan_trip3: tp_fan_trip3 {
 				temperature = <51000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "active";
 			};
 		};

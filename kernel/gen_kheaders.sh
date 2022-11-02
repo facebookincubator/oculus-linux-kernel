@@ -10,6 +10,8 @@ outdir="$(pwd)"
 tarfile=$1
 cpio_dir=$outdir/$tarfile.tmp
 
+CPIO=${CPIO:-cpio}
+
 # Script filename relative to the kernel source root
 # We add it to the archive because it is small and any changes
 # to this script will also cause a rebuild of the archive.
@@ -74,18 +76,18 @@ mkdir $cpio_dir
 pushd $kroot > /dev/null
 for f in $src_file_list;
 	do find "$f" ! -name "*.cmd" ! -name ".*";
-done | cpio --quiet -pd $cpio_dir
+done | ${CPIO} --quiet -pd $cpio_dir
 popd > /dev/null
 
 # The second CPIO can complain if files already exist which can
 # happen with out of tree builds. Just silence CPIO for now.
 for f in $obj_file_list;
 	do find "$f" ! -name "*.cmd" ! -name ".*";
-done | cpio --quiet -pd $cpio_dir >/dev/null 2>&1
+done | ${CPIO} --quiet -pd $cpio_dir >/dev/null 2>&1
 
 # Remove comments except SDPX lines
 find $cpio_dir -type f -print0 |
-	xargs -0 -P8 -n1 perl -pi -e 'BEGIN {undef $/;}; s/\/\*((?!SPDX).)*?\*\///smg;'
+	xargs -0 -n1 perl -pi -e 'BEGIN {undef $/;}; s/\/\*((?!SPDX).)*?\*\///smg;'
 
 tar -Jcf $tarfile -C $cpio_dir/ . > /dev/null
 

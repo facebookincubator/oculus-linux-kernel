@@ -368,11 +368,6 @@ struct cam_sensor_power_setting {
 	void *data[10];
 };
 
-struct cam_sensor_debug {
-	struct dentry  *dentry;
-	uint32_t oculus_mclk_no_power_down;
-};
-
 struct cam_sensor_board_info {
 	struct cam_camera_slave_info slave_info;
 	int32_t sensor_mount_angle;
@@ -386,8 +381,6 @@ struct cam_sensor_board_info {
 	const char *misc_regulator;
 	struct cam_sensor_power_ctrl_t power_info;
 	bool oculus_is_ap_controlled;
-	bool mclk_on;
-	struct cam_sensor_debug debugfs;
 };
 
 enum msm_camera_vreg_name_t {

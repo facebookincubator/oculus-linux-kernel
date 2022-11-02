@@ -1,0 +1,56 @@
+menuconfig OCULUS_MCU
+	bool "Oculus MCU drivers"
+	default y
+	help
+	  Enable support for Oculus MCU drivers and features
+
+if OCULUS_MCU
+
+config OCULUS_SWD
+	bool "Oculus MCU SWD Driver"
+	help
+	  Oculus SWD Driver
+
+config OCULUS_SWD_HUBERT
+	bool "Hubert SWD Driver"
+	select OCULUS_SWD
+	default n
+	help
+	  Oculus Hubert SWD Support
+
+config OCULUS_SWD_QM35
+	bool "QM35 SWD Driver"
+	select OCULUS_SWD
+	default y
+	help
+	  Oculus QM35 SWD Support
+
+config OCULUS_SWD_SAFETYBOSS
+	bool "Safetyboss SWD Driver"
+	select OCULUS_SWD
+	default n
+	help
+	  Oculus Safetyboss SWD Support
+
+config OCULUS_SWD_SYNCBOSS
+	bool "Syncboss SWD Driver"
+	select OCULUS_SWD
+	default y
+	help
+	  Oculus Syncboss SWD Support
+
+config SYNCBOSS
+	bool "Syncboss SPI Driver"
+	depends on MISCFIFO && SPI
+	default y
+	help
+	  Oculus Syncboss Driver
+
+config SYNCBOSS_CAMERA_CONTROL
+	bool "Support Syncboss camera control"
+	depends on SYNCBOSS
+	default y
+	help
+	  Allow Syncboss driver to control camera hardware
+
+endif # OCULUS_MCU

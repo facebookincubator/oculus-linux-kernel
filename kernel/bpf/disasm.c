@@ -18,6 +18,8 @@
 #define __BPF_FUNC_STR_FN(x) [BPF_FUNC_ ## x] = __stringify(bpf_ ## x)
 static const char * const func_id_str[] = {
 	__BPF_FUNC_MAPPER(__BPF_FUNC_STR_FN)
+	// hardcode this id to match upstream
+	[BPF_FUNC_ktime_get_boot_ns] = "bpf_ktime_get_boot_ns",
 };
 #undef __BPF_FUNC_STR_FN
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <uapi/linux/sched/types.h>
@@ -2486,6 +2487,15 @@ static int memdesc_sg_virt(struct kgsl_memdesc *memdesc, unsigned long useraddr)
 
 	ret = sg_alloc_table_from_pages(memdesc->sgt, pages, npages,
 					0, memdesc->size, GFP_KERNEL);
+
+	if (ret)
+		goto out;
+
+	ret = kgsl_cache_range_op(memdesc, 0, memdesc->size,
+			KGSL_CACHE_OP_FLUSH);
+
+	if (ret)
+		sg_free_table(memdesc->sgt);
 out:
 	if (ret) {
 		for (i = 0; i < npages; i++)
@@ -3560,6 +3570,14 @@ struct kgsl_mem_entry *gpumem_alloc_entry(
 	if (ret != 0) {
 		kgsl_sharedmem_free(&entry->memdesc);
 		goto err;
+	}
+
+	if (!(entry->memdesc.priv & KGSL_MEMDESC_LAZY_ALLOCATION)) {
+		struct kgsl_pagetable *pagetable = entry->memdesc.pagetable;
+		uint64_t pages = atomic_long_read(&entry->memdesc.physsize) >>
+				PAGE_SHIFT;
+
+		atomic_long_add(pages, &pagetable->stats.immediate_pages);
 	}
 
 	kgsl_process_add_stats(private,
