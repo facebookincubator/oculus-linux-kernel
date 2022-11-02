@@ -1,0 +1,2 @@
+header-y += seacliff_blu_spi.h
+header-y += syncboss.h

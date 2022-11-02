@@ -1,0 +1,373 @@
+CONFIG_BUS_AUTO_SUSPEND := y
+CONFIG_DIRECT_BUF_RX_ENABLE := y
+CONFIG_WMI_DBR_SUPPORT := y
+CONFIG_ENABLE_SIZE_OPTIMIZE := y
+
+CONFIG_LITHIUM := y
+CONFIG_WLAN_FEATURE_11AX := y
+CONFIG_WLAN_FEATURE_DFS_OFFLOAD := y
+CONFIG_SCALE_INCLUDES := y
+CONFIG_MORE_TX_DESC := y
+CONFIG_HASTINGS_BT_WAR := y
+
+ifeq (m,$(findstring m,$(CONFIG_CNSS) $(CONFIG_CNSS2)))
+ifndef CONFIG_ROME_IF
+	#use pci as default interface
+	CONFIG_ROME_IF = pci
+endif
+endif
+
+# Make WLAN as open-source driver by default
+WLAN_OPEN_SOURCE := y
+
+#Flag to enable interface manager
+CONFIG_INTERFACE_MGR := y
+
+CONFIG_WLAN_FEATURE_MBSSID := y
+
+#Flag to enable Legacy Fast Roaming3(LFR3)
+CONFIG_QCACLD_WLAN_LFR3 := y
+
+#Flag to enable TDLS feature
+CONFIG_QCOM_TDLS := y
+
+CONFIG_WLAN_SYSFS := y
+
+CONFIG_QCACLD_FEATURE_GREEN_AP := y
+#Flag to enable Android Packet Filtering
+CONFIG_QCACLD_FEATURE_APF := y
+
+#Flag to enable get firmware state
+CONFIG_QCACLD_FEATURE_FW_STATE := y
+
+CONFIG_QCACLD_FEATURE_METERING := y
+CONFIG_WDI3_STATS_UPDATE := y
+
+#Flag to enable Fast Transition (11r) feature
+CONFIG_QCOM_VOWIFI_11R := y
+
+#Flag to enable disable ACTION OUI feature
+CONFIG_WLAN_FEATURE_ACTION_OUI := y
+
+#Flag to enable Adaptive 11r feature
+CONFIG_ADAPTIVE_11R := y
+
+#Flag to enable sae single pmk feature
+CONFIG_SAE_SINGLE_PMK := y
+
+#Flag to enable FILS Feature (11ai)
+CONFIG_WLAN_FEATURE_FILS := y
+
+#Flag to enable Protected Management Frames (11w) feature
+CONFIG_WLAN_FEATURE_11W := y
+
+#Flag to enable LTE CoEx feature
+CONFIG_QCOM_LTE_COEX := y
+
+#Flag to enable NAN
+CONFIG_QCACLD_FEATURE_NAN := y
+CONFIG_NDP_SAP_CONCURRENCY_ENABLE := y
+
+CONFIG_FEATURE_EPPING := y
+
+#Flag to enable offload packets feature
+CONFIG_WLAN_OFFLOAD_PACKETS := y
+
+#enable TSF get feature
+CONFIG_WLAN_SYNC_TSF := y
+
+#Flag to enable SAE
+CONFIG_WLAN_FEATURE_SAE := y
+
+#Flag to enable DISA
+CONFIG_WLAN_FEATURE_DISA := y
+
+#Flag to enable FIPS
+CONFIG_WLAN_FEATURE_FIPS := y
+
+# Flag to enable NAPI
+CONFIG_WLAN_NAPI := y
+
+# Flag to enable FW based TX Flow control
+CONFIG_WLAN_TX_FLOW_CONTROL_V2 := y
+
+CONFIG_POWER_MANAGEMENT_OFFLOAD := y
+
+# Flag to enable LFR Subnet Detection
+CONFIG_LFR_SUBNET_DETECTION := y
+
+# Flag to enable MCC to SCC switch feature
+CONFIG_MCC_TO_SCC_SWITCH := y
+
+CONFIG_LL_DP_SUPPORT := y
+
+#Whether have QMI support
+CONFIG_QMI_SUPPORT := y
+
+# Enable fw stats version 2
+CONFIG_AR900B := y
+
+#
+# Enable Shadow V2 for all lithium platform
+#
+CONFIG_SHADOW_V2 := y
+
+CONFIG_QCA6390_HEADERS_DEF := y
+CONFIG_QCA_WIFI_QCA6390 := y
+
+CONFIG_FEATURE_HAL_DELAYED_REG_WRITE := y
+CONFIG_QCA_WIFI_QCA8074 := y
+CONFIG_QCA_WIFI_QCA8074_VP := y
+CONFIG_DP_INTR_POLL_BASED := y
+CONFIG_TX_PER_PDEV_DESC_POOL := y
+CONFIG_FEATURE_TSO := y
+CONFIG_DP_LFR := y
+CONFIG_DUP_RX_DESC_WAR := y
+CONFIG_HTT_PADDR64 := y
+CONFIG_RX_OL := y
+CONFIG_TX_TID_OVERRIDE := y
+CONFIG_DP_TXRX_SOC_ATTACH := y
+CONFIG_WLAN_CLD_PM_QOS := y
+CONFIG_REO_DESC_DEFER_FREE := y
+
+#Enable WLAN/Power debugfs feature
+CONFIG_WLAN_DEBUGFS := y
+CONFIG_WLAN_POWER_DEBUGFS := y
+
+# Feature flags which are not (currently) configurable via Kconfig
+
+#Whether to build debug version
+BUILD_DEBUG_VERSION := y
+
+PANIC_ON_BUG := n
+WLAN_WARN_ON_ASSERT := n
+
+# Only show fatal messages by default
+CONFIG_WLAN_LOG_FATAL := y
+CONFIG_WLAN_LOG_ERROR := n
+CONFIG_WLAN_LOG_WARN := n
+CONFIG_WLAN_LOG_INFO := n
+CONFIG_WLAN_LOG_DEBUG := n
+CONFIG_WLAN_LOG_ENTER := n
+CONFIG_WLAN_LOG_EXIT := n
+
+#Enable OL debug and wmi unified functions
+CONFIG_ATH_PERF_PWR_OFFLOAD := y
+
+#Disable packet log
+CONFIG_REMOVE_PKT_LOG := n
+
+#Enable WDI Event support (requires packet log)
+CONFIG_WDI_EVENT_ENABLE := y
+
+#Enable the type_specific_data in the ath_pktlog_arg (requires packet log)
+CONFIG_PKTLOG_HAS_SPECIFIC_DATA := y
+
+#Enable 11AC TX
+CONFIG_ATH_11AC_TXCOMPACT := y
+
+#Enable PCI specific APIS (dma, etc)
+CONFIG_HIF_PCI := y
+
+CONFIG_QCOM_ESE := y
+CONFIG_WLAN_OPEN_P2P_INTERFACE := y
+CONFIG_WLAN_ENABLE_SOCIAL_CHANNELS_5G_ONLY := y
+
+#Enable power management suspend/resume functionality to PCI
+CONFIG_ATH_BUS_PM := y
+
+#Customize DSCP_to-UP map based on RFC8325
+CONFIG_WLAN_CUSTOM_DSCP_UP_MAP := y
+
+CONFIG_PKTLOG_LEGACY := y
+
+#Endianness selection
+CONFIG_LITTLE_ENDIAN := y
+
+#Enable FTM support
+CONFIG_QCA_WIFI_FTM := y
+QCA_WIFI_FTM_NL80211 := y
+CONFIG_LINUX_QCMBR := y
+
+#Enable Checksum Offload
+CONFIG_CHECKSUM_OFFLOAD := y
+
+#Enable GTK offload
+CONFIG_GTK_OFFLOAD := y
+
+#Enable EXT WOW
+CONFIG_EXT_WOW := y
+
+#Enable collecting target RAM dump after kernel panic
+CONFIG_TARGET_RAMDUMP_AFTER_KERNEL_PANIC := y
+
+#Flag to enable Stats Ext implementation
+CONFIG_FEATURE_STATS_EXT := y
+
+#Flag to allocate memory dynamically for different buffers
+CONFIG_WLAN_LOGGING_BUFFERS_DYNAMICALLY := n
+CONFIG_WLAN_DFS_STATIC_MEM_ALLOC := y
+
+#Flag to enable HTC credit history feature
+CONFIG_FEATURE_HTC_CREDIT_HISTORY := y
+
+#Flag to enable DFS Master feature
+CONFIG_WLAN_DFS_MASTER_ENABLE := y
+
+#Flag to enable WEXT support for STA/AP/P2P interfaces
+ifeq ($(CONFIG_WIRELESS_EXT), y)
+CONFIG_WLAN_WEXT_SUPPORT_ENABLE := y
+endif
+
+#Flag to enable nud tracking feature
+CONFIG_WLAN_NUD_TRACKING := y
+
+#Flag to enable wbuff feature
+CONFIG_WLAN_WBUFF := y
+
+#Flag to enable set and get disable channel list feature
+CONFIG_DISABLE_CHANNEL_LIST :=y
+
+#Flag to enable beacon receive feature
+CONFIG_WLAN_BCN_RECV_FEATURE := y
+
+#Flag to enable/disable TARGET 11d scan
+CONFIG_TARGET_11D_SCAN := y
+
+#Flag to enable/disable Avoid acs freq feature
+CONFIG_SAP_AVOID_ACS_FREQ_LIST := y
+
+#Flag to enable Dynamic Voltage WDCVS (Config Voltage Mode)
+CONFIG_WLAN_DYNAMIC_CVM := y
+
+CONFIG_WIFI_POS_CONVERGED := y
+
+CONFIG_CP_STATS := y
+CONFIG_FEATURE_INTEROP_ISSUES_AP := y
+
+#Flag to enable compilation of DCS module
+CONFIG_DCS := y
+
+CONFIG_FEATURE_WLAN_WAPI := y
+
+CONFIG_AGEIE_ON_SCAN_RESULTS := y
+
+CONFIG_PTT_SOCK_SVC_ENABLE := y
+CONFIG_SOFTAP_CHANNEL_RANGE := y
+CONFIG_FEATURE_WLAN_SCAN_PNO := y
+CONFIG_WLAN_FEATURE_PACKET_FILTERING := y
+CONFIG_WLAN_NS_OFFLOAD := y
+CONFIG_FEATURE_WLAN_RA_FILTERING:= y
+CONFIG_FEATURE_WLAN_LPHB := y
+CONFIG_QCA_SUPPORT_TX_THROTTLE := y
+CONFIG_WLAN_FEATURE_LINK_LAYER_STATS := y
+CONFIG_WLAN_FEATURE_MIB_STATS := y
+CONFIG_FEATURE_WLAN_EXTSCAN := n
+CONFIG_WMI_BCN_OFFLOAD := y
+CONFIG_160MHZ_SUPPORT := y
+CONFIG_MCL := y
+CONFIG_REG_CLIENT := y
+CONFIG_WLAN_PMO_ENABLE := y
+CONFIG_CONVERGED_P2P_ENABLE := y
+CONFIG_WLAN_POLICY_MGR_ENABLE := y
+CONFIG_FEATURE_BLACKLIST_MGR := y
+CONFIG_SUPPORT_11AX := y
+CONFIG_HDD_INIT_WITH_RTNL_LOCK := y
+CONFIG_WLAN_CONV_SPECTRAL_ENABLE := y
+CONFIG_WLAN_SPECTRAL_ENABLE := y
+CONFIG_WMI_CMD_STRINGS := y
+CONFIG_FEATURE_MONITOR_MODE_SUPPORT := y
+CONFIG_WLAN_ALLOCATE_GLOBAL_BUFFERS_DYNAMICALLY := n
+CONFIG_WLAN_FEATURE_TWT := y
+CONFIG_WLAN_FEATURE_BMI := n
+
+#Flags to enable/disable vendor commands
+CONFIG_FEATURE_RSSI_MONITOR := y
+CONFIG_FEATURE_BSS_TRANSITION := y
+CONFIG_FEATURE_STATION_INFO := y
+CONFIG_FEATURE_TX_POWER := y
+CONFIG_FEATURE_OTA_TEST := y
+CONFIG_FEATURE_ACTIVE_TOS := y
+CONFIG_FEATURE_SAR_LIMITS := y
+CONFIG_FEATURE_CONCURRENCY_MATRIX := y
+CONFIG_FEATURE_SAP_COND_CHAN_SWITCH := y
+CONFIG_FEATURE_P2P_LISTEN_OFFLOAD := y
+
+#Flags to enable/disable WMI APIs
+CONFIG_WMI_ROAM_SUPPORT := y
+CONFIG_WMI_CONCURRENCY_SUPPORT := y
+CONFIG_WMI_STA_SUPPORT := y
+
+CONFIG_WLAN_SUPPORT_DATA_STALL := y
+CONFIG_WLAN_DP_PER_RING_TYPE_CONFIG := y
+#Enable WMI TX/RX over QMI
+CONFIG_WMI_SEND_RECV_QMI := y
+CONFIG_WLAN_DP_PENDING_MEM_FLUSH := y
+
+#Flag to enable LTE COEX feature
+CONFIG_LTE_COEX := y
+
+#Flag to enable/disable TARGET 11d scan
+CONFIG_TARGET_11D_SCAN := y
+
+#Flag to enable HOST OPCLASS feature
+CONFIG_HOST_OPCLASS := y
+
+# enable unit-test suspend for napier builds
+CONFIG_FEATURE_UNIT_TEST_SUSPEND := y
+
+#Flag to enable hdd memory dump feature
+CONFIG_FEATURE_MEMDUMP_ENABLE := y
+
+#Flag to enable/disable WLAN D0-WOW
+CONFIG_FEATURE_WLAN_D0WOW := y
+
+CONFIG_PLD_PCIE_CNSS_FLAG := y
+
+ifeq ($(CONFIG_WLAN_SYSFS), y)
+#Enable Beacon Reception Stats
+CONFIG_FEATURE_BECN_STATS := y
+endif
+
+CONFIG_WLAN_FEATURE_DP_BUS_BANDWIDTH := y
+
+CONFIG_FOURTH_CONNECTION := y
+CONFIG_FOURTH_CONNECTION_AUTO := y
+CONFIG_SAP_DHCP_FW_IND := y
+
+#Enable OEM DATA feature
+CONFIG_FEATURE_OEM_DATA := y
+
+#Enable FW Offload
+CONFIG_WLAN_FW_OFFLOAD := y
+
+#Enable eLNA bypass feature
+CONFIG_WLAN_FEATURE_ELNA := y
+
+# Conditionally enable/disable features if the kernel is for production or if
+# it is an "eng" build (which includes many more debug features)
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+	#Enable this flag to build driver in diag version
+	BUILD_DIAG_VERSION := y
+
+	CONFIG_DEBUG_RX_RING_BUFFER := y
+	CONFIG_DESC_DUP_DETECT_DEBUG := y
+	CONFIG_DP_TRACE := y
+	CONFIG_ENABLE_MTRACE_LOG := y
+	CONFIG_FEATURE_FW_LOG_PARSING := y
+	CONFIG_FEATURE_ROAM_DEBUG := y
+	CONFIG_TRACE_RECORD_FEATURE := y
+	CONFIG_TSO_DEBUG_LOG_ENABLE := y
+	CONFIG_WLAN_DEBUG_CRASH_INJECT := y
+	CONFIG_WLAN_FEATURE_P2P_DEBUG := y
+	CONFIG_WLAN_LOGGING_SOCK_SVC := y
+	CONFIG_WMI_INTERFACE_EVENT_LOGGING := y
+
+	# Enable non-fatal log messages on eng kernels
+	CONFIG_WLAN_LOG_ERROR := y
+	CONFIG_WLAN_LOG_WARN := y
+	CONFIG_WLAN_LOG_INFO := y
+	CONFIG_WLAN_LOG_DEBUG := y
+	CONFIG_WLAN_LOG_ENTER := y
+	CONFIG_WLAN_LOG_EXIT := y
+endif

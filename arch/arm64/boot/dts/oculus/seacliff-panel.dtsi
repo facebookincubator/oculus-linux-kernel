@@ -1,0 +1,254 @@
+#include "seacliff-dsi-panel-boe-lcd-dsc-video.dtsi"
+#include "seacliff-dsi-panel-boe-lcd-video.dtsi"
+#include "seacliff-dsi-panel-boe-spi-blu-dsc-video.dtsi"
+
+&dsi_dual_boe_lcd_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,dsi-select-clocks =
+		"mux_byte_clk0", "mux_pixel_clk0",
+		"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 24 0A 0A 22 1A 08
+				13 04 02 04 00 1E 1A
+			];
+			qcom,display-topology = <2 0 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_dual_boe_lcd_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,dsi-select-clocks =
+		"mux_byte_clk0", "mux_pixel_clk0",
+		"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 24 0A 0A 23 1A 0A
+				13 05 02 04 00 1E 1A
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_dual_boe_spi_blu_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_local_dimming";
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <255>;
+	qcom,mdss-brightness-max-level = <255>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,dsi-select-clocks =
+		"mux_byte_clk0", "mux_pixel_clk0",
+		"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 24 0A 0A 25 1A 0B
+				13 06 02 04 00 1E 1A
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&pm8150a_amoled {
+	status = "disabled";
+};
+
+&pm8150a_l11 {
+	qcom,init-voltage = <3300000>;
+};
+
+&pm8150_l14 {
+	regulator-max-microvolt = <1900000>;
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	qcom,init-voltage = <1900000>;
+};
+
+&pm8150l_lcdb {
+	status = "ok";
+	qcom,pwrdn-delay-ms = <8>;
+	qcom,pwrup-delay-ms = <4>;
+	qcom,pfm-peak-auto-adj-disabled;
+};
+
+&lcdb_bst_vreg {
+	qcom,bst-ilim-ma = <600>;
+};
+
+&lcdb_ldo_vreg {
+	regulator-min-microvolt = <6000000>;
+	regulator-max-microvolt = <6000000>;
+	qcom,ldo-ilim-ma = <460>;
+};
+
+&lcdb_ncp_vreg {
+	regulator-min-microvolt = <6000000>;
+	regulator-max-microvolt = <6000000>;
+	qcom,ncp-ilim-ma = <810>;
+};
+
+&dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@0 {
+		qcom,supply-min-voltage = <1900000>;
+		qcom,supply-max-voltage = <1900000>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "blu-mcu";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <0>;
+	};
+};
+
+&mdss_mdp {
+	/* set mdp clk rate to max for TJ3 panels */
+	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
+	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
+	qcom,sde-has-dest-scaler;
+	qcom,sde-wb-rtprio = <99>;
+	qcom,sde-wb-cpumask = "80"; /* CPU7 */
+	qcom,sde-lineptr-scanline-advance = <1383>;
+	qcom,sde-wb-mild-tear-threshold = <700>;
+	qcom,sde-wb-severe-tear-threshold = <500>;
+	qcom,sde-wb-passes = <1>;
+};
+
+&sde_dsi {
+	clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+		 <&mdss_dsi0_pll PCLK_MUX_0_CLK>,
+		 <&mdss_dsi0_pll BYTECLK_SRC_0_CLK>,
+		 <&mdss_dsi0_pll PCLK_SRC_0_CLK>,
+		 <&mdss_dsi0_pll CPHY_BYTECLK_SRC_0_CLK>,
+		 <&mdss_dsi0_pll CPHY_PCLK_SRC_0_CLK>,
+		 <&mdss_dsi0_pll SHADOW_BYTECLK_SRC_0_CLK>,
+		 <&mdss_dsi0_pll SHADOW_PCLK_SRC_0_CLK>,
+		 <&mdss_dsi1_pll BYTECLK_MUX_1_CLK>,
+		 <&mdss_dsi1_pll PCLK_MUX_1_CLK>,
+		 <&mdss_dsi1_pll BYTECLK_SRC_1_CLK>,
+		 <&mdss_dsi1_pll PCLK_SRC_1_CLK>,
+		 <&mdss_dsi1_pll CPHY_BYTECLK_SRC_1_CLK>,
+		 <&mdss_dsi1_pll CPHY_PCLK_SRC_1_CLK>,
+		 <&mdss_dsi1_pll SHADOW_BYTECLK_SRC_1_CLK>,
+		 <&mdss_dsi1_pll SHADOW_PCLK_SRC_1_CLK>;
+
+	clock-names = "mux_byte_clk0", "mux_pixel_clk0",
+			"src_byte_clk0", "src_pixel_clk0",
+			"cphy_byte_clk0", "cphy_pixel_clk0",
+			"shadow_byte_clk0", "shadow_pixel_clk0",
+			"mux_byte_clk1", "mux_pixel_clk1",
+			"src_byte_clk1", "src_pixel_clk1",
+			"cphy_byte_clk1", "cphy_pixel_clk1",
+			"shadow_byte_clk1", "shadow_pixel_clk1";
+
+	lab-supply = <&lcdb_ldo_vreg>;
+	ibb-supply = <&lcdb_ncp_vreg>;
+	blu-mcu-supply = <&pm8150a_l11>;
+	qcom,dsi-default-panel = <&dsi_dual_boe_spi_blu_dsc_video>;
+	pinctrl-0 = <&te0_active>;
+	pinctrl-1 = <&te0_suspend>;
+};
+
+&sde_dsi1 {
+	clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+		 <&mdss_dsi0_pll PCLK_MUX_0_CLK>,
+		 <&mdss_dsi0_pll CPHY_BYTECLK_SRC_0_CLK>,
+		 <&mdss_dsi0_pll CPHY_PCLK_SRC_0_CLK>,
+		 <&mdss_dsi1_pll BYTECLK_MUX_1_CLK>,
+		 <&mdss_dsi1_pll PCLK_MUX_1_CLK>,
+		 <&mdss_dsi1_pll CPHY_BYTECLK_SRC_1_CLK>,
+		 <&mdss_dsi1_pll CPHY_PCLK_SRC_1_CLK>;
+	clock-names = "mux_byte_clk0", "mux_pixel_clk0",
+		      "cphy_byte_clk0", "cphy_pixel_clk0",
+		      "mux_byte_clk1", "mux_pixel_clk1",
+		      "cphy_byte_clk1", "cphy_pixel_clk1";
+
+	pinctrl-0 = <&te1_active>;
+	pinctrl-1 = <&te1_suspend>;
+};
+
+&sde_dp {
+	qcom,uart-mux-en-gpio = <&tlmm 33 1>;
+};
+
+&tlmm {
+	te0_active: te0_active {
+		mux {
+			pins = "gpio67";
+			function = "mdp_vsync";
+		};
+
+		config {
+			pins = "gpio67";
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+		};
+	};
+
+	te0_suspend: te0_suspend {
+		mux {
+			pins = "gpio67";
+			function = "mdp_vsync";
+		};
+
+		config {
+			pins = "gpio67";
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+		};
+	};
+
+	te1_active: te1_active {
+		mux {
+			pins = "gpio68";
+			function = "mdp_vsync";
+		};
+
+		config {
+			pins = "gpio68";
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+		};
+	};
+
+	te1_suspend: te1_suspend {
+		mux {
+			pins = "gpio68";
+			function = "mdp_vsync";
+		};
+
+		config {
+			pins = "gpio68";
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+		};
+	};
+};

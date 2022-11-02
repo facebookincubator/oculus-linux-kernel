@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-kona.h>
+#include <dt-bindings/clock/qcom,camcc-kona.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "hollywood.dtsi"
+#include "hollywood-evt.dtsi"
+
+/ {
+	model = "Hollywood (DVT)";
+	compatible = "qcom,kona";
+	qcom,board-id = <64 17>;
+};

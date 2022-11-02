@@ -1,0 +1,8 @@
+ #include "kona-v2.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. kona-iot v2";
+	compatible = "qcom,kona-iot";
+	qcom,msm-id = <481 0x20000>;
+};
+

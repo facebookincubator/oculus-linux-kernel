@@ -1,0 +1,144 @@
+
+qcom,3783416_oculus_montereyscud_3750mah_averaged_masterslave_aug2nd2019 {
+	qcom,profile-revision = <24>;
+	/* #3783416_Oculus_MontereyScud_3750mAh_averaged_MasterSlave_Jan9th2019*/
+	qcom,max-voltage-uv = <4300000>;
+	qcom,fastchg-current-ma = <1900>;
+	qcom,jeita-fcc-ranges-0 = <0  100  800000
+				110 400  1900000
+				410 450  1900000>;
+	qcom,jeita-fv-ranges-0 = <0   100  4250000
+				110 400  4300000
+				410 450  4060000>;
+	qcom,step-chg-ranges-0 = <3600000  4060000  1900000
+				4061000  4250000  1900000
+				4251000  4300000  1000000>;
+	/* COLD = 0 DegC, HOT = 80 DegC */
+	qcom,jeita-hard-thresholds = <0x3732 0x5ed>;
+	/* COOL = 10 DegC, WARM = 75 DegC */
+	qcom,jeita-soft-thresholds = <0x2aee 0x6c3>;
+	/* COLD hys = 13 DegC, WARM hys = 65 DegC */
+	qcom,jeita-soft-hys-thresholds = <0x27c2 0x8df>;
+	qcom,jeita-soft-fcc-ua = <1000000 1000000>;
+	qcom,jeita-soft-fv-uv = <4060000 4060000>;
+	qcom,ocv-based-step-chg;
+	qcom,batt-id-kohm = <30>;
+	qcom,nom-batt-capacity-mah = <3750>;
+	qcom,battery-beta = <3435>;
+	qcom,therm-room-temp = <10000>;
+	qcom,fg-cc-cv-threshold-mv = <4290>;
+	qcom,battery-type = "3783416_oculus_montereyscud_3750mah_averaged_masterslave_aug2nd2019";
+	qcom,therm-coefficients = <0x2307 0x1575 0xf2 0xdd8c 0x9272>;
+	qcom,therm-center-offset = <0x38>;
+	qcom,therm-pull-up = <30>;
+	qcom,rslow-normal-coeffs = <0xa3 0x0d 0x88 0x05>;
+	qcom,rslow-low-coeffs = <0xd2 0x0d 0x16 0x03>;
+	qcom,checksum = <0xC8C1>;
+	qcom,gui-version = "PM855GUI - 1.0.0.13";
+	qcom,fg-profile-data = [
+		 09 00 6B EA
+		 2C E4 49 EB
+		 74 E4 00 00
+		 5D C5 FD 93
+		 E4 87 DB BA
+		 D0 B4 72 85
+		 1F 00 A3 0D
+		 88 05 E0 04
+		 72 F3 CE 07
+		 32 00 7D 00
+		 7B EC E6 DD
+		 C3 FB 68 E4
+		 C5 C4 D5 0B
+		 13 01 57 D3
+		 60 00 59 00
+		 51 00 55 00
+		 52 00 4B 00
+		 46 00 45 00
+		 53 00 48 00
+		 3F 00 60 00
+		 34 00 40 00
+		 4E 00 4F 00
+		 41 00 42 00
+		 67 64 52 00
+		 43 00 34 08
+		 60 F8 FF 00
+		 FF 00 FF 08
+		 FF 08 FF 00
+		 FF 20 FF 40
+		 FF 50 FF 13
+		 FF 00 D8 00
+		 49 20 E7 0C
+		 AE FA 83 04
+		 19 1C 22 0B
+		 7F 0C 38 23
+		 16 18 AB 3A
+		 F3 4D 39 02
+		 81 15 07 20
+		 53 05 69 0A
+		 DD 04 8B 1C
+		 35 FA D8 05
+		 0F 02 ED 17
+		 B7 22 22 3C
+		 D1 4B 89 17
+		 7F 20 EA E4
+		 AA CA 34 D6
+		 99 1C 95 CB
+		 31 05 BA BA
+		 F1 17 8B 8A
+		 99 84 25 93
+		 99 90 09 80
+		 5D FB 7F 04
+		 45 02 3B FD
+		 00 00 E9 E5
+		 ED EA F5 07
+		 BF ED E1 C4
+		 61 F8 19 00
+		 07 D4 71 03
+		 37 05 F5 02
+		 CE 07 32 00
+		 A9 01 61 03
+		 6B 05 CA 02
+		 C6 03 D4 04
+		 6F 03 E0 06
+		 F7 04 57 00
+		 35 00 42 00
+		 41 64 47 00
+		 47 00 43 00
+		 45 F8 45 00
+		 48 08 3F 10
+		 4B 10 38 00
+		 44 20 43 48
+		 4A 58 51 0D
+		 50 00 40 00
+		 4B 08 56 00
+		 42 00 51 00
+		 3C 08 4C 08
+		 55 00 54 20
+		 6D 40 6C 50
+		 4D 13 60 00
+		 68 00 54 08
+		 D8 F8 B2 1F
+		 FD 05 DE 0B
+		 87 0D 1A 1C
+		 44 22 01 3D
+		 E7 4A 0A 18
+		 E5 03 D7 05
+		 64 03 69 16
+		 3F 0A FD 1F
+		 6D 05 6E 02
+		 4D 06 79 1C
+		 1A 03 53 04
+		 87 03 6B 18
+		 B1 02 ED 05
+		 40 02 77 00
+		 F2 1F 6B 05
+		 78 02 7F 04
+		 98 1C 68 02
+		 85 05 66 02
+		 84 18 60 02
+		 BA 04 26 03
+		 81 00 2E 01
+		 C0 00 FA 00
+		 13 0F 00 00
+	];
+};

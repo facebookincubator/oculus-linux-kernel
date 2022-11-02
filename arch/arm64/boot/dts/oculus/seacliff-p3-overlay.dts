@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "seacliff-p3.dtsi"
+
+/ {
+	model = "Seacliff (P3)";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 68>;
+};
+
+&qupv3_se0_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss-ipl-spl.bin";
+		};
+	};
+};

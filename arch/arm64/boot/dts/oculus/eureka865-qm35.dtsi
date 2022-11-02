@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/* QM35 HS UART QUP3 */
+&qupv3_se3_2uart {
+	status = "okay";
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&qm35_uart_active>;
+	pinctrl-1 = <&qm35_uart_sleep_tx &qm35_uart_sleep_rx>;
+};
+
+&tlmm {
+	qm35_uart_active: qm35_uart_active {
+		mux {
+			pins = "gpio121", "gpio122";
+			function = "qup3";
+		};
+		config {
+			pins = "gpio121", "gpio122";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	qm35_uart_sleep_tx: qm35_uart_sleep_tx {
+		mux {
+			pins = "gpio121";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio121";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	qm35_uart_sleep_rx: qm35_uart_sleep_rx {
+		mux {
+			pins = "gpio122";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio122";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};

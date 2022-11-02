@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "seacliff-p3.dtsi"
+#include "seacliff-evt.dtsi"
+#include "seacliff-evt2-mlbdoe.dtsi"
+
+/ {
+	model = "Seacliff (EVT2-MLBDOE1.2)";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 73>;
+};
+
+&cm7120 {
+	cm7120,firmware-name = "CM7120_TDM_DOE2.bin";
+};

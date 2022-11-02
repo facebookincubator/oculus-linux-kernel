@@ -1,0 +1,52 @@
+&soc {
+	oculus,safetyboss-swd {
+		compatible = "oculus,swd";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&safetyboss_reset_default &safetyboss_float_swd>;
+
+		oculus,swd-flavor = "stm32g0";
+		oculus,fw-path = "safetyboss.bin";
+		oculus,swd-clk = <&tlmm 117 0>;
+		oculus,swd-io  = <&tlmm 116 0>;
+		oculus,swd-core-voltage-level = <1900000 1900000>;
+		oculus,flash-block-size = <256>;
+		oculus,flash-page-size = <2048>;
+		oculus,flash-page-count = <64>;
+		oculus,flash-page-bootloader-protected-count = <0>;
+		oculus,flash-page-retained-count = <6>;
+	};
+};
+
+&tlmm {
+	// 115 = NRESET
+	// 116 = SWDIO
+	// 117 = SWDCLK
+	safetyboss_float_swd: safetyboss_float_swd {
+		mux {
+			pins = "gpio116", "gpio117";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio116", "gpio117";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	safetyboss_reset_default: safetyboss_reset_default {
+		mux {
+			pins = "gpio115";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio115";
+			// Reset is active-low - pull up to avoid
+			// keeping it in reset
+			bias-pull-up;
+		};
+	};
+};

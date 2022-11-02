@@ -1,0 +1,254 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "../vendor/qcom/kona-pmic-overlay.dtsi"
+#include "../vendor/qcom/kona-sde-display.dtsi"
+#include "../vendor/qcom/kona-thermal-overlay.dtsi"
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+#include "kona-oculus.dtsi"
+#include "eureka865-adc.dtsi"
+#include "eureka865-audio.dtsi"
+#include "eureka865-blu.dtsi"
+#include "eureka865-camera.dtsi"
+#include "eureka865-fan.dtsi"
+#include "eureka865-nautilus-clk.dtsi"
+#include "eureka865-panel.dtsi"
+#include "eureka865-qca6490.dtsi"
+#include "eureka865-qm35.dtsi"
+#include "eureka865-safetyboss.dtsi"
+#include "eureka865-syncboss.dtsi"
+#include "eureka865-ufs.dtsi"
+
+&aliases {
+	hsuart12 = "/soc/qcom,qup_uart@98c000";
+	hsuart13 = "/soc/qcom,qup_uart@a94000";
+	hsuart14 = "/soc/qcom,qup_uart@994000";
+};
+
+&pm8150_l16 {
+	status = "disabled";
+};
+
+&pm8150a_l1 {
+	/* IPD 1.8 */
+	regulator-always-on;
+};
+
+&pm8150a_l4 {
+	status = "disabled";
+};
+
+&pm8150a_l5 {
+	status = "ok";
+	qcom,init-voltage = <1900000>;
+	qcom,init-mode = <4>;  /* RPMH_REGULATOR_MODE_HPM */
+	regulator-always-on;
+};
+
+&pm8150a_l7 {
+	status = "disabled";
+};
+
+&pm8150b_charger {
+	status = "ok";
+	dcin-icl-uv = <40000>;
+	qcom,sec-charger-config = <2>;
+	qcom,auto-recharge-soc = <98>;
+	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,step-charging-enable;
+	qcom,sw-jeita-enable;
+	qcom,wd-bark-time-secs = <16>;
+	qcom,suspend-input-on-debug-batt;
+	qcom,fcc-max-ua = <4813000>;
+	qcom,usb-icl-ua = <3000000>;
+	qcom,dc-icl-ua = <3000000>;
+	qcom,chg-term-current-ma = <(-300)>;
+	qcom,typec-dam-enable;
+
+	pinctrl-names = "default", "boost_5v_active",
+			"vdd_vconn_suspend", "vdd_vconn_active";
+	pinctrl-0 = <&pmb_boost_5v_ext_default>;
+	pinctrl-1 = <&pmb_boost_5v_ext_active>;
+	pinctrl-2 = <&pmb_vdd_vconn_suspend>;
+	pinctrl-3 = <&pmb_vdd_vconn_active>;
+
+	smb5_otg_boost: qcom,smb5-otg_boost {
+		regulator-name = "smb5-otg_boost";
+	};
+};
+
+&pm8150b_fg {
+	status = "ok";
+	qcom,battery-data = <&kona_mtp_batterydata>;
+	qcom,hold-soc-while-full;
+	qcom,linearize-soc;
+	qcom,five-pin-battery;
+	qcom,cl-wt-enable;
+	/* ESR fast calibration */
+	qcom,fg-esr-timer-chg-fast = <0 7>;
+	qcom,fg-esr-timer-dischg-fast = <0 7>;
+	qcom,fg-esr-timer-chg-slow = <0 96>;
+	qcom,fg-esr-timer-dischg-slow = <0 96>;
+	qcom,fg-esr-cal-soc-thresh = <26 230>;
+	qcom,fg-esr-cal-temp-thresh = <10 40>;
+
+	qcom,fg-sys-term-current = <(-350)>; // charger termination < fg termination see section 1.6.3 (80-PD996-14. Rev B)
+	qcom,fg-cutoff-current = <180>; // battery capacity 3636 mah termination current = c/20
+	qcom,fg-cutoff-voltage = <3400>;
+	qcom,fg-empty-voltage = <2900>; // see section 4.4.6 (80-PF777-74. Rev C)
+};
+
+&pm8150b_gpios {
+	pm8150b_boost_5v_ext {
+		pmb_boost_5v_ext_default: pmb_boost_5v_ext_default {
+			pins = "gpio2", "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-low;
+			power-source = <0>;
+		};
+		pmb_boost_5v_ext_active: pmb_boost_5v_ext_active {
+			pins = "gpio2", "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-high;
+			power-source = <0>;
+		};
+
+		pmb_vdd_vconn_suspend: pmb_vdd_vconn_suspend {
+			pins = "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-low;
+			power-source = <0>;
+		};
+
+		pmb_vdd_vconn_active: pmb_vdd_vconn_active {
+			pins = "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			output-high;
+			power-source = <0>;
+		};
+	};
+};
+
+&pm8150b_pdphy {
+	otg_boost-supply = <&smb5_otg_boost>;
+	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
+		<9000 3000>; /* 9V @ 3A */
+};
+
+&pm8150l_rgb_led {
+	red {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	green {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+	blue {
+		qcom,continuous-mode;
+		qcom,default-brightness = <10>;
+	};
+};
+
+&qupv3_se3_2uart {
+	status = "ok";
+};
+
+&qupv3_se4_spi {
+	status = "ok";
+};
+
+&qupv3_se8_i2c {
+	status = "ok";
+};
+
+&qupv3_se11_spi {
+	status = "ok";
+};
+
+&qupv3_se13_2uart {
+	status = "ok";
+};
+
+&qupv3_se14_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	bq27z561: fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		status = "okay";
+	};
+};
+
+&qupv3_se15_i2c {
+	status = "disabled";
+};
+
+&qupv3_se17_i2c {
+	status = "ok";
+
+	#include "../vendor/qcom/smb1355.dtsi"
+
+	cypd3177: cypd3177@08 {
+		compatible = "cy,cypd3177";
+		reg = <0x08>;
+		status = "ok";
+		cy,hpi-gpio = <&tlmm 70 0x0>;
+		cy,fault-gpio = <&tlmm 72 0x1>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <13 2>, <14 1>;
+		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cypd3177_irq_default>;
+	};
+};
+
+&qupv3_se18_2uart {
+	status = "ok";
+	compatible = "qcom,msm-geni-console";
+	interrupts = <GIC_SPI 586 IRQ_TYPE_LEVEL_HIGH>;
+	interrupts-extended = <>;
+	qcom,wakeup-byte = <>;
+};
+
+&smb1355 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&smb_stat_default>;
+	status = "ok";
+};
+
+&smb1355_charger {
+	status = "ok";
+};
+
+&tlmm {
+	cypd3177_irq_default: cypd3177_irq_default {
+		mux {
+			pins = "gpio70", "gpio72";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio70", "gpio72";
+			drive-strength = <2>;
+			input-enable;
+		};
+	};
+};
+
+&vendor {
+	kona_mtp_batterydata: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
+		#include "4414705_Goertek_Hollywood_124k_3710mAh_Mar2nd2020.dtsi"
+	};
+};

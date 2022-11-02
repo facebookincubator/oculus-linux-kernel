@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+menuconfig SPECTRA_CAMERA
+    bool "Qualcomm Technologies, Inc. Spectra camera and video capture support"
+    depends on ARCH_QCOM && VIDEO_V4L2 && I2C
+    help
+      Say Y here to enable selecting the video adapters for
+      Qualcomm Technologies, Inc. Spectra camera and video capture.
+      Enabling this adds support for the camera driver stack including sensor,
+      IFE and postprocessing drivers.
+
+config NUM_ATTACHED_CAMERAS
+    int "Number of attached cameras"
+    default 8
+
+config SPECTRA_CAMERA_CUSTOM
+    bool "Spectra - Custom camera support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_FACE_DETECTION
+    bool "Spectra - Face detection support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_ICP
+    bool "Spectra - ICP support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_JPEG
+    bool "Spectra - JPEG support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LRME
+    bool "Spectra - LRME support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_ACTUATOR
+    bool "Spectra - Actuator support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_EEPROM
+    bool "Spectra - EEPROM support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_FLASH
+    bool "Spectra - Flash support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_OIS
+    bool "Spectra - Image stabilization support"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_DEBUG
+    bool "Spectra - Debug logs"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_INFO
+    bool "Spectra - Info logs"
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_WARN
+    bool "Spectra - Warning logs"
+    default y
+    depends on SPECTRA_CAMERA
+
+config SPECTRA_CAMERA_LOG_ERROR
+    bool "Spectra - Error logs"
+    default y
+    depends on SPECTRA_CAMERA
+
+source "drivers/media/platform/msm/cvp/Kconfig"
+source "drivers/media/platform/msm/npu/Kconfig"
+source "drivers/media/platform/msm/synx/Kconfig"
+source "drivers/media/platform/msm/dvb/Kconfig"
+source "drivers/media/platform/msm/broadcast/Kconfig"

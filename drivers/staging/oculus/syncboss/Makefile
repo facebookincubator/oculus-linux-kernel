@@ -1,0 +1,11 @@
+obj-$(CONFIG_SYNCBOSS)			+= fw_helpers.o
+obj-$(CONFIG_SYNCBOSS)			+= fwupdate_manager.o
+obj-$(CONFIG_SYNCBOSS)			+= hubert_swd_ops.o
+obj-$(CONFIG_SYNCBOSS)			+= safetyboss_swd_ops.o
+obj-$(CONFIG_SYNCBOSS)			+= spi_fastpath.o
+obj-$(CONFIG_SYNCBOSS)			+= swd.o
+obj-$(CONFIG_SYNCBOSS)			+= swd_driver.o
+obj-$(CONFIG_SYNCBOSS)			+= syncboss_spi.o
+obj-$(CONFIG_SYNCBOSS)			+= syncboss_swd_ops.o
+obj-$(CONFIG_SYNCBOSS)			+= syncboss_sysfs.o
+obj-$(CONFIG_SYNCBOSS_CAMERA_CONTROL)	+= syncboss_camera.o

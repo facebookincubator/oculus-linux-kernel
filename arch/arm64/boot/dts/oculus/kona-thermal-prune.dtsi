@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/delete-node/ &qmi_sensor;
+
+&soc {
+	/delete-node/ qmi-tmd-devices;
+};
+
+&thermal_zones {
+	/delete-node/ modem-0-usr;
+	/delete-node/ modem-1-usr;
+	/delete-node/ modem-ambient-usr;
+	/delete-node/ modem-lte-sub6-pa1;
+	/delete-node/ modem-lte-sub6-pa2;
+	/delete-node/ modem-mmw0-usr;
+	/delete-node/ modem-mmw0-mod-usr;
+	/delete-node/ modem-mmw1-usr;
+	/delete-node/ modem-mmw1-mod-usr;
+	/delete-node/ modem-mmw2-usr;
+	/delete-node/ modem-mmw2-mod-usr;
+	/delete-node/ modem-mmw3-usr;
+	/delete-node/ modem-mmw3-mod-usr;
+	/delete-node/ modem-skin-usr;
+	/delete-node/ modem-streamer-usr;
+	/delete-node/ modem-wifi-usr;
+
+	camera-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+
+	cmpss-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+
+	cwlan-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+
+	ddr-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+
+	npu-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+
+	q6-hvx-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+
+	video-step {
+		cooling-maps {
+			/delete-node/ modem-pa-cdev;
+			/delete-node/ modem-tj-cdev;
+		};
+	};
+};

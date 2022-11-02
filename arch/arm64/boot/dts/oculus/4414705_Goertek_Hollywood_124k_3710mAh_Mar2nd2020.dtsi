@@ -1,0 +1,182 @@
+
+qcom,4414705_goertek_hollywood_124k_3710mah_mar2nd2020 {
+	qcom,profile-revision = <24>;
+	/* #4414705_Goertek_RongyaoXR2sun_3710mAh_averaged_MasterSlave_Mar2nd2020*/
+	qcom,max-voltage-uv = <4400000>;
+	qcom,fastchg-current-ma = <2000>;/* 0.5C */
+	qcom,jeita-fcc-ranges-0 = <50 100  720000
+				100 200  1820000
+				201 450  2000000
+				451 550  720000>;
+	qcom,jeita-fcc-ranges-1 = <50 100  720000
+				101 200  1820000
+				201 450  2000000
+				451 550  720000>;
+	qcom,jeita-fv-ranges-0 = <50  100  4400000
+				101 200  4400000
+				201 450  4400000
+				451 550  4200000>;
+	qcom,jeita-fv-ranges-1 = <50  100  4100000
+				101 200  4100000
+				201 450  4100000
+				451 550  3900000>;
+	qcom,cycle-fcc-ranges-0 = <0  300  2000000
+				301 500  2000000
+				501 800  2000000>;
+	qcom,cycle-fcc-ranges-1 = <0  300  2000000
+				301 500  2000000
+				501 800  2000000>;
+	qcom,cycle-fv-ranges-0 = <0   300  4400000
+				301 500  4400000
+				501 800  4300000>;
+	qcom,cycle-fv-ranges-1 = <0   300  4100000
+				301 500  4100000
+				501 800  4000000>;
+	qcom,chg-disable-ranges-0 = <3600000 4100000 0
+				4101000 4400000 0>;
+	qcom,chg-disable-ranges-1 = <3600000 4100000 0
+				4101000 4400000 1>;
+	qcom,rblt-support;
+	qcom,rblt-missing-range = <200000 250000>;
+	qcom,rblt-ok-range = <119000 200000>;
+	qcom,rblt-warn-range = <59000 119000>;
+	qcom,rblt-crit-range = <0 59000>;
+	/* 1 - OK, 2 - warn, 3 - crit, 4 - missing, 5 - unknown */
+	qcom,rblt-ranges = <1 1 4400000
+				2 2 4200000
+				3 3 3900000
+				4 4 4200000
+				5 5 4200000>;
+	qcom,step-chg-ranges-0 = <3600000 4060000 2000000
+				4061000 4400000 2000000>;
+	qcom,step-chg-ranges-1 = <3600000 4060000 2000000
+				4061000 4400000 2000000>;
+	/* COLD = 0 DegC, HOT = 52 DegC */
+	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
+	/* COOL = 10 DegC, WARM = 45 DegC */
+	qcom,jeita-soft-thresholds = <0x4ccc 0x20b8>;
+	/* COLD hys = 12 DegC, WARM hys = 43 DegC */
+	qcom,jeita-soft-hys-thresholds = <0x4a2a 0x22b8>;
+	qcom,jeita-soft-fcc-ua = <720000 720000>;/* 0.2C */
+	qcom,jeita-soft-fv-uv = <4300000 4300000>;
+	qcom,ocv-based-step-chg;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+	qcom,nom-batt-capacity-mah = <3710>;
+	qcom,batt-id-kohm = <124>;
+	qcom,battery-beta = <4250>;
+	qcom,therm-room-temp = <100000>;
+	qcom,battery-type = "4414705_goertek_hollywood_124k_3710mah_mar2nd2020";
+	qcom,therm-coefficients = <0x2318 0xd0c 0xdaf7 0xc556 0x848d>;
+	qcom,therm-center-offset = <0x70>;
+	qcom,therm-pull-up = <100>;
+	qcom,rslow-normal-coeffs = <0x5b 0xf2 0x23 0x1a>;
+	qcom,rslow-low-coeffs = <0x0b 0x15 0xb1 0x03>;
+	qcom,checksum = <0xF600>;
+	qcom,gui-version = "PM855GUI - 1.0.0.13";
+	qcom,fg-profile-data = [
+		 09 00 5F EA
+		 5E DC 32 E3
+		 83 DC 00 00
+		 B6 BC 9C 8A
+		 FE 87 30 9A
+		 EB 94 0E 80
+		 1D 00 5B F2
+		 23 1A 87 05
+		 3D FA CE 07
+		 32 00 3E EB
+		 B7 ED FD BD
+		 44 0B 51 DD
+		 93 C5 6E 13
+		 3B 03 74 D3
+		 60 00 49 00
+		 4A 00 48 00
+		 35 00 2B 00
+		 34 00 38 00
+		 41 00 44 00
+		 3E 00 60 00
+		 38 00 3F 00
+		 3F 00 3E 00
+		 3A 00 7D 00
+		 55 64 45 00
+		 42 00 4A 00
+		 60 F8 55 00
+		 51 00 7A 08
+		 63 08 5E 00
+		 AA 20 78 40
+		 65 58 5D 10
+		 67 00 D8 00
+		 37 1F 35 06
+		 E9 F3 B9 05
+		 DB 1C 4F 02
+		 35 0D 1A 2B
+		 98 18 58 4B
+		 C8 5C 23 02
+		 6E 0F 33 1F
+		 35 FE AE 03
+		 4E 04 F0 1C
+		 D0 F9 05 04
+		 40 02 37 17
+		 59 22 8E 45
+		 7A 53 78 11
+		 08 1F C5 EC
+		 85 D3 18 C7
+		 E8 1C F3 CA
+		 87 05 F8 BA
+		 AF 17 AD 93
+		 B8 84 FF A3
+		 84 A8 09 80
+		 2E F2 AE 05
+		 2F 03 76 02
+		 00 F8 91 DC
+		 08 EA F3 07
+		 7A DB DE BD
+		 5E 18 16 00
+		 11 DC 55 03
+		 3E 05 BE 01
+		 CE 07 32 00
+		 23 03 C7 02
+		 66 05 6C 02
+		 51 04 15 02
+		 28 03 D1 02
+		 77 04 50 00
+		 41 00 42 00
+		 44 64 46 00
+		 45 F8 47 00
+		 4D E8 49 00
+		 4C 00 4B 08
+		 43 08 3B 00
+		 49 20 4C 48
+		 52 58 5E 0E
+		 3F 00 4B 00
+		 53 08 58 F8
+		 46 00 4C 00
+		 51 10 68 10
+		 65 00 79 28
+		 93 48 5F 60
+		 6E 0C 6D 00
+		 5F 00 3B 00
+		 D8 F8 58 1F
+		 71 05 67 0A
+		 D6 0D FB 1C
+		 D9 22 67 44
+		 97 5B 8C 18
+		 FB 03 D1 05
+		 51 03 6E 10
+		 3F 0A 7A 1F
+		 FE 05 0F 02
+		 99 05 A7 1C
+		 80 03 74 05
+		 CD 02 56 18
+		 2F 02 54 05
+		 45 02 62 00
+		 37 1F 35 06
+		 E9 03 B9 05
+		 DB 1C 4F 02
+		 35 05 1A 03
+		 98 18 58 03
+		 C8 04 23 02
+		 6E 00 51 01
+		 C0 00 FA 00
+		 C2 0E 00 00
+	];
+};

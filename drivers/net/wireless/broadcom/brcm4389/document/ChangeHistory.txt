@@ -1,0 +1,104 @@
+BCM4389 DHD 101.10.501.5  for FB Project R7 - Sep 1 Release
+
+DHD 101.10.501.5 - 2021.08.31
+- Fix AP+STA concurrency issue, CS00012191138
+- Driver performance tuning, CS00012201181
+- Murata 1WK ES6.1 module support, CS00012202051
+
+Others
+- Fix kernel panic with invalid pcie address access
+- Fix kernel panic due to handle memory pre-allocation failure
+- Fix scan timeout issue by enabling wakelock for legacy ESCAN
+- Fixed return value of dhd_plat_pcie_resume for pcie link up failure case
+- Fix kernel panic due to new flowid is not in range
+- Disable packet filter during P2P GO
+- Fix PNO scan failure
+- Fix race condition seen with PNO and regular scan
+
+DHD 101.10.501.3 - 2021.04.30
+ - Enable external SAE for 6G WPA3 connection, CS00011968646
+
+ Others
+ - Fix Kernel panic due to ASSERT  in dhd_flow_queue_dequeue()
+ - Fix Big hammer happening during firmware mode change
+ - Support full desense information in CCA event
+ - Fix for code vulnerability
+ - Bug fix for ratestat in linkstats - src/dhd
+ - Ring H2D DB whenever RD DMA index is updated for all D2H rings
+ - Don't invoke netif wake/stop queue when the interface is fully not created.
+ - Fix a warning message related to unused-variable
+ - Stop Tx queue if DHD stayed in suspend state
+ - Split the rx functionality from dhd_linux.c
+ - Fix kernel panic from the dhd_log_dump_write
+ - Fix kernel panic from incorrect ring index
+ - Increase Max NVRAM size
+ - Add sysfs control for ASPM and L1SS
+ - Pkt fate extension
+
+DHD 101.10.452.3 - 2021.02.26
+- Murata 1WK ES6.0 module support, CS00011870800
+
+DHD 101.10.452.2 - 2021.02.01
+- Added to set bcn_li_dtim at disable MAX_DTIM_IN_SUSPEND if suspend mode
+- Update filter pattern in case cur_etheraddr is changed by random mac 
+
+DHD 101.10.452.1 - 2020.12.30
+- Fixed a kernel crash during rmmod - patch2, CS1436509
+- Extend XRAPI GPIO timesync to include latest beacon time - DHD part
+
+Others
+ - Fixed kernel panic when scheduled scan triggered
+ - Fixed kernel panic due to accessing a common ring before the ring is initialized
+ - Improved debuggability of wifi turn on failure case
+ - Fixed kernel panic in dhd_update_sta_chanspec_info
+ - Fixed kernel panic while accessing si_scan_core_present
+ - Fixed potential stack size build error issue according to compiler option
+ - Fixed to allocate the packet(skb) for Rx buffer when pktget fails
+ - Fixed to collect SSSR dump properly even though Wi-Fi on failure
+ - Fixed to return the error value properly at the dhd_preinit_ioctls/dhd_net_bus_devreset context
+ - Fixed to validate pcie link state by checking different registers
+
+
+DHD 101.10.418.4 - 2020.12.21
+
+New features
+- Install magic packet filter, turn on/off during a host suspend/resume
+Other Fixes
+- CSP#11436509 Fixed a kernel crash during rmmod
+
+DHD 101.10.418.3 - 2020.11.30
+
+New features
+ - Added SOFTAP_PSMODE MAC event
+ - Softap Bandwidth Configuration
+ - Disable firmware roaming offload by default
+ - Queue flush Update
+
+DHD 101.10.418.2 - 2020.10.27
+
+New features
+ - GPIO TimeSync
+ - EOT frame in rx path
+
+Other Fixes
+ - Kernel panic from snprintf while handling wifiver info
+ - Added debugging info for AXI slave error
+ - Legacy scan fail due to P2P wildcard SSID
+ - Filled the HE capabilities for 6GHz SoftAP properly
+ - SAE password min length issue
+ - Added delay during sysmem calculation to avoid invalid ramsize
+ - Added rx_icmp count of the wake-up reason to the debug dump
+ - Buffer overrun if passphrase length is 255
+ - EAPOL packet drop in supplicant with SAE-FT
+ - Host IRQ disable/enable mismatches during suspend/resume
+ - Internal MBO issue caused by uninitialized variable
+ - Missing scan status bit clear when scan abort by PNO stop
+ - P2P connection failure due to mac randomization after Android framework reset
+ - PNO scan enable failure due to invalid channel band for 6Ghz channels
+ - SoftAP interface creation failure in an aging test
+ - Compile error with kernel 5.9.x
+ - Wrong print of ifidx/bssidx in the event path
+
+
+DHD 101.10.371.2 - 2020.09.15
+ - Initial Release

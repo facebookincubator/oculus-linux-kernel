@@ -1,0 +1,27 @@
+&mdss_mdp {
+	dsi_ext_bridge_4k60p: qcom,mdss_dsi_ext_bridge_4k60p {
+		qcom,mdss-dsi-panel-name = "ext video mode dsi bridge";
+		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+
+		qcom,dsi-ctrl-num = <0 1>;
+		qcom,dsi-phy-num = <0 1>;
+		qcom,dsi-select-clocks = "src_byte_clk0", "src_pixel_clk0";
+
+		qcom,mdss-dsi-virtual-channel-id = <0>;
+		qcom,mdss-dsi-stream = <0>;
+		qcom,mdss-dsi-bpp = <24>;
+		qcom,mdss-dsi-border-color = <0>;
+		qcom,mdss-dsi-traffic-mode = "non_burst_sync_pulse";
+		qcom,mdss-dsi-bllp-eof-power-mode;
+		qcom,mdss-dsi-bllp-power-mode;
+		qcom,mdss-dsi-lane-0-state;
+		qcom,mdss-dsi-lane-1-state;
+		qcom,mdss-dsi-lane-2-state;
+		qcom,mdss-dsi-lane-3-state;
+		qcom,mdss-dsi-dma-trigger = "trigger_sw";
+		qcom,mdss-dsi-mdp-trigger = "none";
+
+		qcom,mdss-dsi-force-clock-lane-hs;
+		qcom,mdss-dsi-ext-bridge-mode;
+	};
+};
