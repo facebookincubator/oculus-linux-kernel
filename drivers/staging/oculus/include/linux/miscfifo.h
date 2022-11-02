@@ -41,13 +41,11 @@ struct miscfifo {
 
 struct miscfifo_client {
 	struct miscfifo *mf;
-	// Do not hold more than one of these locks at a time:
-	// hold this while reading from the fifo, in case of multiple consumers
-	struct mutex consumer_lock;
-	// hold this while writing from the fifo, in case of multiple producers
-	struct mutex producer_lock;
-	// hold this while accessing context
-	struct mutex context_lock;
+	// If you must hold both the consumer and producter locks, the consumer lock
+	// must be acquired first and released last!
+	struct mutex consumer_lock; // hold while reading from the fifo, in case of multiple consumers
+	struct mutex producer_lock; // hold while writing to the fifo, in case of multiple producers
+	struct mutex context_lock;  // hold while accessing 'context'
 	struct kfifo_rec_ptr_1 fifo;
 	bool logged_fifo_full;
 	struct list_head node;
@@ -88,6 +86,16 @@ void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
 int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len);
 
 /**
+ * Clear any unread data from the fifo.
+ * Use care when calling this. This call will block all readers and writers,
+ * and may result in poor performance if called at times when readers or
+ * writers are active.
+ *
+ * @param  mf   miscfifo instance
+ */
+void miscfifo_clear(struct miscfifo *mf);
+
+/**
  * Call this function from the open() file_operation for the chardev hosting
  * this interface.
  *
@@ -124,6 +132,18 @@ ssize_t miscfifo_fop_read(struct file *file,
 unsigned int miscfifo_fop_poll(struct file *file,
 	struct poll_table_struct *pt);
 int miscfifo_fop_release(struct inode *inode, struct file *file);
+
+/**
+ * Allow to extract as many entries from the fifo as available that completely
+ * fit into the provided buffer.
+ *
+ * @param file file handle
+ * @param buf User buffer into which data will be copied.
+ * @param len Length of user buffer.
+ * @param off Unused.
+ */
+ssize_t miscfifo_fop_read_many(struct file *file,
+	char __user *buf, size_t len, loff_t *off);
 
 /**
  * Set context pointer that will be passed to the packet filtering

@@ -5,6 +5,7 @@ ifneq ($(CONFIG_OCULUS),y)
                 kona-cdp-lcd-overlay.dtbo \
                 kona-cdp-lcd-tron-overlay.dtbo \
                 kona-mtp-overlay.dtbo \
+                kona-rb5-overlay.dtbo \
                 kona-mtp-ws-overlay.dtbo \
 		kona-sa-mtp-overlay.dtbo \
                 kona-xr-overlay.dtbo \
@@ -13,6 +14,7 @@ ifneq ($(CONFIG_OCULUS),y)
 		kona-xrfusion-overlay.dtbo \
 		kona-xrfusion-ult-overlay.dtbo \
 		kona-arglass-overlay.dtbo \
+		kona-xrsku4-overlay.dtbo \
                 kona-hdk-overlay.dtbo \
                 kona-iot-mtp-overlay.dtbo \
                 kona-iot-hdk-overlay.dtbo \
@@ -22,6 +24,7 @@ kona-cdp-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-cdp-lcd-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-cdp-lcd-tron-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-mtp-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
+kona-rb5-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-mtp-ws-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-sa-mtp-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-xr-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
@@ -30,20 +33,23 @@ kona-qrd-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-xrfusion-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-xrfusion-ult-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-arglass-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
+kona-xrsku4-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-hdk-overlay.dtbo-base := kona.dtb kona-v2.dtb kona-v2.1.dtb
 kona-iot-mtp-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb
-kona-iot-hdk-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb
-kona-iot-v2.1-vc-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb
+kona-iot-hdk-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb kona-7230-iot-v2.1.dtb
+kona-iot-v2.1-vc-overlay.dtbo-base := kona-iot.dtb kona-iot-v2.dtb kona-iot-v2.1.dtb kona-7230-iot-v2.1.dtb
 endif
 else
 dtb-$(CONFIG_ARCH_KONA) += kona-rumi.dtb \
         kona-mtp.dtb \
+        kona-rb5.dtb \
         kona-mtp-ws.dtb \
         kona-mtp-sa.dtb \
         kona-xr.dtb \
 	kona-xrfusion.dtb \
 	kona-xrfusion-ult.dtb \
 	kona-arglass.dtb \
+	kona-xrsku4.dtb \
         kona-cdp.dtb \
         kona-cdp-lcd.dtb \
         kona-cdp-lcd-tron.dtb \
@@ -57,6 +63,7 @@ dtb-$(CONFIG_ARCH_KONA) += kona-rumi.dtb \
 	kona-v2-xrfusion.dtb \
 	kona-v2-xrfusion-ult.dtb \
 	kona-v2-arglass.dtb \
+	kona-v2-xrsku4.dtb \
         kona-hdk.dtb \
         kona-v2.1-mtp.dtb \
         kona-v2.1-mtp-ws.dtb \
@@ -67,12 +74,15 @@ dtb-$(CONFIG_ARCH_KONA) += kona-rumi.dtb \
 	kona-v2.1-xrfusion.dtb \
 	kona-v2.1-xrfusion-ult.dtb \
 	kona-v2.1-arglass.dtb \
+	kona-v2.1-xrsku4.dtb \
         kona-iot-mtp.dtb \
         kona-iot-v2-mtp.dtb \
         kona-iot-hdk.dtb \
         kona-iot-v2.1-mtp.dtb \
         kona-iot-v2.1-hdk.dtb \
-        kona-iot-v2.1-vc.dtb
+        kona-iot-v2.1-vc.dtb \
+	kona-7230-iot-v2.1-hdk.dtb \
+	kona-7230-iot-v2.1-vc.dtb
 endif
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)

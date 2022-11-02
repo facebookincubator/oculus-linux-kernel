@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 
-&dsi_dual_boe_spi_blu_dsc_video {
+#include "seacliff.dtsi"
+#include "seacliff-adc-usbc.dtsi"
+
+&dsi_dual_boe_90hz_dsc {
 	qcom,platform-en-gpio = <>;
 };
 

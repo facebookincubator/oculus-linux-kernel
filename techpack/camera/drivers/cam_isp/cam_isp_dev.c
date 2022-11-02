@@ -24,7 +24,7 @@
 static struct cam_isp_dev g_isp_dev;
 
 /* fastpath isp device */
-static struct cam_isp_fastpath_dev g_isp_dev_fastpath;
+static struct cam_isp_fastpath_dev g_isp_dev_fastpath = {};
 
 static void cam_isp_dev_iommu_fault_handler(
 	struct iommu_domain *domain, struct device *dev, unsigned long iova,
@@ -55,9 +55,13 @@ static const struct of_device_id cam_isp_dt_match[] = {
 static int cam_isp_subdev_open(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
+	cam_req_mgr_rwsem_read_op(CAM_SUBDEV_LOCK);
+
 	mutex_lock(&g_isp_dev.isp_mutex);
 	g_isp_dev.open_cnt++;
 	mutex_unlock(&g_isp_dev.isp_mutex);
+
+	cam_req_mgr_rwsem_read_op(CAM_SUBDEV_UNLOCK);
 
 	return 0;
 }
@@ -150,6 +154,7 @@ static const struct v4l2_subdev_internal_ops cam_isp_subdev_fastpath_ops = {
 
 /* Fastpath ops */
 static const struct cam_node_fastpath_ops fastpath_ctx_ops = {
+	.set_power       = NULL,
 	.query_cap       = cam_isp_fastpath_query_cap,
 	.acquire_hw      = cam_isp_fastpath_acquire_hw,
 	.release_hw      = cam_isp_fastpath_release_hw,
@@ -184,8 +189,14 @@ static int cam_isp_dev_remove(struct platform_device *pdev)
 
 	memset(&g_isp_dev, 0, sizeof(g_isp_dev));
 
-	/* Destroy fastpath resourcess */
-	cam_isp_fastpath_context_destroy(g_isp_dev_fastpath.ctx);
+	for (i = 0; i < CAM_CTX_MAX; i++) {
+		/* Destroy fastpath resourcess */
+		if (g_isp_dev_fastpath.ctx[i])
+			cam_isp_fastpath_context_destroy(
+						g_isp_dev_fastpath.ctx[i]);
+
+		g_isp_dev_fastpath.ctx[i] = NULL;
+	}
 
 	rc = cam_subdev_fastpath_remove(&g_isp_dev_fastpath.sd);
 	if (rc)
@@ -264,15 +275,20 @@ static int cam_isp_dev_probe(struct platform_device *pdev)
 	fastpath_node =
 		(struct cam_node_fastpath *) g_isp_dev_fastpath.sd.token;
 
-	g_isp_dev_fastpath.ctx = cam_isp_fastpath_context_create(&hw_mgr_intf);
-	if (!g_isp_dev_fastpath.ctx) {
-		CAM_ERR(CAM_ISP, "ISP context fastpah init failed!");
-		rc = -ENOMEM;
-		goto error_fastpath_subdev_remove;
+	for (i = 0; i < CAM_CTX_MAX; i++) {
+
+		g_isp_dev_fastpath.ctx[i] =
+			cam_isp_fastpath_context_create(&hw_mgr_intf, i);
+
+		if (!g_isp_dev_fastpath.ctx[i]) {
+			CAM_ERR(CAM_ISP, "ISP context fastpah init failed!");
+			rc = -ENOMEM;
+			goto error_fastpath_subdev_remove;
+		}
 	}
 
-	rc = cam_node_fastpath_init(fastpath_node,
-				    g_isp_dev_fastpath.ctx,
+	rc = cam_node_fastpath_init(fastpath_node, "ISP Node",
+				    &g_isp_dev_fastpath.ctx, CAM_CTX_MAX,
 				    &fastpath_ctx_ops);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "ISP fastpath node init failed!");
@@ -285,8 +301,14 @@ static int cam_isp_dev_probe(struct platform_device *pdev)
 	return 0;
 
 error_fp_context_destroy:
-	cam_isp_fastpath_context_destroy(g_isp_dev_fastpath.ctx);
-	g_isp_dev_fastpath.ctx = NULL;
+	for (i = 0; i < CAM_CTX_MAX; i++) {
+
+		if (g_isp_dev_fastpath.ctx[i])
+			cam_isp_fastpath_context_destroy(
+						g_isp_dev_fastpath.ctx[i]);
+
+		g_isp_dev_fastpath.ctx[i] = NULL;
+	}
 error_fastpath_subdev_remove:
 	cam_subdev_remove(&g_isp_dev_fastpath.sd);
 	mutex_destroy(&g_isp_dev.isp_mutex);

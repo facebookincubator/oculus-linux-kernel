@@ -15,6 +15,7 @@
 #include <linux/workqueue.h>
 
 #include "linux/seacliff_blu_spi.h"
+#include "seacliff_bro_profiles.h"
 
 /* Compatible table name of the blu */
 #define BLU_SPI_NODE_TABLE "oculus,seacliff-blu-spi"
@@ -27,6 +28,10 @@
 #define STABLE_FRAME_COUNTS 10
 
 #define BL_NODE_NAME_SIZE 32
+
+/* Delay required between SPI messages for 8 MHz clock */
+#define MIN_SPI_DELAY_US 1000
+#define MAX_SPI_DELAY_US 1500
 
 /* Parameters for SPI debug messages */
 #define MAX_TRANSACTION_LENGTH 512
@@ -70,6 +75,10 @@ struct blu_device {
 	u8 *backlight_matrix;
 	u32 matrix_size;
 
+	/* backlight rolloff compensation values */
+	u8 *bro_profile_default;
+	u32 rolloff_size;
+
 	/* indices of the BLU that do not contain LEDs */
 	u32 *corner_zone_indices;
 	u32 zone_size;
@@ -77,6 +86,7 @@ struct blu_device {
 	/* backlight matrix intermediate buffer */
 	u8 *back_buffer;
 	u8 *brightness_buffer;
+	u8 *bro_profile_buffer;
 
 	/* flag to control read/write to the temp buffer */
 	atomic_t buffer_dirty;
@@ -85,6 +95,10 @@ struct blu_device {
 	bool debug_blu;
 	/* frames dropped when SPI write fails */
 	u16 dropped_frames;
+	/* flag to toggle backlight rolloff */
+	bool rolloff_en;
+	/* flag to control cross-eye brightness adjustment */
+	bool ceb_en;
 
 	/* spi debug mesage */
 	struct spi_message msg;
@@ -95,7 +109,7 @@ struct blu_device {
 static irqreturn_t blu_isr(int isr, void *spi_dev);
 
 /*
- * Init the backlight matrix back buffer and the brightness buffer
+ * Init the backlight matrix back buffer, brightness buffer, and BRO buffer
  * with messages to be transferred in SPI to BLU devices.
  */
 static void init_buffers(struct blu_device *blu);
@@ -178,10 +192,12 @@ static void init_buffers(struct blu_device *blu)
 {
 	blu->back_buffer = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
 	blu->brightness_buffer = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
+	blu->bro_profile_buffer = devm_kzalloc(&blu->spi->dev, blu->rolloff_size, GFP_KERNEL | GFP_DMA);
 
 	/* ensure the correct SPI values are also in the intermediate buffers */
 	memcpy(blu->back_buffer, blu->backlight_matrix, blu->matrix_size);
 	memcpy(blu->brightness_buffer, blu->backlight_matrix, blu->matrix_size);
+	memcpy(blu->bro_profile_buffer, blu->bro_profile_default, blu->rolloff_size);
 }
 
 static void swap_buffers(u8 **buffer1, u8 **buffer2)
@@ -211,7 +227,9 @@ static void apply_blu_brightness(struct blu_device *blu)
 	u32 scaled_brightness = 0;
 	u32 brightness = 0;
 	u8 checksum = 0;
-	int backlight_level = (blu->backlight_level * blu->brightness_scaler / BRIGHTNESS_SCALE_CONVERT);
+	int backlight_level = blu->ceb_en ?
+			(blu->backlight_level * blu->brightness_scaler / BRIGHTNESS_SCALE_CONVERT) :
+			blu->backlight_level;
 
 	// Scale the payload with the appropriate brightness value
 	for (i = MATRIX_START_INDEX; i < (blu->matrix_size - 1); i = i + 2)	{
@@ -248,7 +266,8 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 
 	/*
 	 * BLU init requirement of hardware:
-	 * frame [0]: enter soft reset mode and set up global LED current.
+	 * frame [0]: enter soft reset mode, set up global LED current and
+	 * set backlight rolloff compentation values.
 	 * frame [1, STABLE_FRAME_COUNTS1): wait of PLL signal to be stable.
 	 * frame [STABLE_FRAME_COUNTS]: exit soft reset mode.
 	 * frame (STABLE_FRAME_COUNTS, ): input backlight matrix.
@@ -257,14 +276,32 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		ret = spi_write(spi, blu_enter_reset_cmd, sizeof(blu_enter_reset_cmd));
 		if (ret)
 			dev_err(&spi->dev, "failed to enter soft reset mode, error %d\n", ret);
-
+		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
 		ret = spi_write(spi, blu_led_timing, sizeof(blu_led_timing));
 		if (ret)
 			dev_err(&spi->dev, "failed to set LED timings, error %d\n", ret);
 
+		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
 		ret = spi_write(spi, blu_led_current, sizeof(blu_led_current));
 		if (ret)
 			dev_err(&spi->dev, "failed to set LED current, error %d\n", ret);
+
+		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
+		if (blu->rolloff_size != 0 && blu->rolloff_en) {
+			memcpy(blu->bro_profile_buffer, bro_profiles[SELECTED_BRO_PROFILE], blu->rolloff_size);
+			ret = spi_write(spi, blu->bro_profile_buffer, blu->rolloff_size);
+		} else {
+			/* send in default no-op rolloff values */
+			ret = spi_write(spi, blu->bro_profile_default, blu->rolloff_size);
+		}
+		if (ret)
+			dev_err(&spi->dev, "failed to set rolloff values, error %d\n", ret);
+
+		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
+		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
+		if (ret)
+			dev_err(&spi->dev, "failed to exit soft reset mode, error %d\n", ret);
+
 	} else if (blu->frame_counts == STABLE_FRAME_COUNTS) {
 		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
 		if (ret)
@@ -290,6 +327,8 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		}
 
 		if (blu->debug_blu) {
+			usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
+
 			/* verify the SPI transfer */
 			ret = spi_write_then_read(spi, tx_buf, sizeof(tx_buf), rx_buf, sizeof(rx_buf));
 			if (ret)
@@ -496,9 +535,17 @@ static int get_backlight_matrix(struct blu_device *blu,
 		struct blu_spi_backlight_matrix __user *blm_dump)
 {
 	int ret;
+	uint8_t *matrix_addr;
+
+	/* copy the backlight matrix address we want to write to from user space */
+	ret = copy_from_user(&matrix_addr, blm_dump, sizeof(blu->backlight_matrix));
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from user space\n", ret);
+		return -EFAULT;
+	}
 
 	/* copy the current backlight matrix back to user space */
-	ret = copy_to_user(blm_dump, &(blu->backlight_matrix), sizeof(blu->backlight_matrix));
+	ret = copy_to_user(matrix_addr, &(blu->backlight_matrix[0]), blu->matrix_size);
 	if (ret) {
 		dev_err(&blu->spi->dev, "Failed to copy %d bytes to user space\n", ret);
 		return -EFAULT;
@@ -532,6 +579,37 @@ static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 
 	return 0;
 }
+
+static ssize_t cross_eye_brightness_en_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct miscdevice *miscdev = dev_get_drvdata(dev);
+	struct blu_device *blu_dev =
+		container_of(miscdev, struct blu_device, misc);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", blu_dev->ceb_en);
+}
+
+static ssize_t cross_eye_brightness_en_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct miscdevice *miscdev = dev_get_drvdata(dev);
+	struct blu_device *blu_dev =
+		container_of(miscdev, struct blu_device, misc);
+	int ret;
+	bool temp;
+
+	ret = kstrtobool(buf, &temp);
+	if (ret < 0) {
+		dev_err(dev, "Illegal input for cross_eye_brightness_en: %s", buf);
+		return ret;
+	}
+
+	blu_dev->ceb_en = temp;
+	return count;
+}
+static DEVICE_ATTR_RW(cross_eye_brightness_en);
 
 static ssize_t debug_blu_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -575,9 +653,42 @@ static ssize_t dropped_frames_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(dropped_frames);
 
+static ssize_t rolloff_en_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct miscdevice *miscdev = dev_get_drvdata(dev);
+	struct blu_device *blu_dev =
+		container_of(miscdev, struct blu_device, misc);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", blu_dev->rolloff_en);
+}
+
+static ssize_t rolloff_en_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct miscdevice *miscdev = dev_get_drvdata(dev);
+	struct blu_device *blu_dev =
+		container_of(miscdev, struct blu_device, misc);
+	int ret;
+	bool temp;
+
+	ret = kstrtobool(buf, &temp);
+	if (ret < 0) {
+		dev_err(dev, "Illegal input for rolloff_en: %s", buf);
+		return ret;
+	}
+
+	blu_dev->rolloff_en = temp;
+	return count;
+}
+static DEVICE_ATTR_RW(rolloff_en);
+
 static struct attribute *blu_spi_attrs[] = {
+	&dev_attr_cross_eye_brightness_en.attr,
 	&dev_attr_debug_blu.attr,
 	&dev_attr_dropped_frames.attr,
+	&dev_attr_rolloff_en.attr,
 	NULL,
 };
 
@@ -668,6 +779,26 @@ static int blu_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
+	blu->rolloff_size = of_property_count_u8_elems(spi->dev.of_node, "oculus,blu-rolloff-comp");
+	if (blu->rolloff_size < 0) {
+		ret = blu->rolloff_size;
+		dev_err(&spi->dev, "%s: could not get oculus,blu-rolloff-comp size, ret=%d\n",
+			__func__, ret);
+		/* default to 0 if the entry could not be found */
+		blu->rolloff_size = 0;
+	}
+
+	blu->bro_profile_default = devm_kzalloc(&blu->spi->dev, blu->rolloff_size,
+		GFP_KERNEL | GFP_DMA);
+
+	ret = of_property_read_u8_array(spi->dev.of_node, "oculus,blu-rolloff-comp",
+		blu->bro_profile_default, blu->rolloff_size);
+	if (ret) {
+		dev_err(&spi->dev, "%s: could not find oculus,blu-rolloff-comp property, ret=%d\n",
+			__func__, ret);
+		return ret;
+	}
+
 	blu->zone_size = of_property_count_u32_elems(spi->dev.of_node, "oculus,blu-corner-zones");
 	if (blu->zone_size < 0) {
 		ret = blu->zone_size;
@@ -688,12 +819,17 @@ static int blu_spi_probe(struct spi_device *spi)
 	}
 
 	if (of_property_read_bool(spi->dev.of_node, "oculus,continuous-splash"))
-		blu->frame_counts = 0;
-	else
 		blu->frame_counts = STABLE_FRAME_COUNTS + 1;
+	else
+		blu->frame_counts = 0;
 
 	blu->backlight_level = blu->max_brightness;
 	blu->brightness_scaler = 1 * BRIGHTNESS_SCALE_CONVERT;
+
+	/* enable cross eye brightness by default */
+	blu->ceb_en = 1;
+
+	init_buffers(blu);
 
 	ret = devm_request_threaded_irq(&spi->dev,
 			blu->irq, NULL, blu_isr,
@@ -705,8 +841,6 @@ static int blu_spi_probe(struct spi_device *spi)
 				__func__, blu->name, ret);
 		return ret;
 	}
-
-	init_buffers(blu);
 
 	snprintf(device_name, sizeof(device_name), "blu%d", number_of_devices++);
 

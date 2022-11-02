@@ -15,7 +15,7 @@
 
 /* ioctl used to get the backlight matrix */
 #define BLU_SPI_GET_BACKLIGHT_IOCTL \
-	_IOR(MAGIC_NUM, 4, struct blu_spi_backlight_matrix)
+	_IOWR(MAGIC_NUM, 4, struct blu_spi_backlight_matrix)
 
 /* struct passed to BLU_SPI_SET_BACKLIGHT_IOCTL which is
  * used to send the backlight matrix from the LD engine

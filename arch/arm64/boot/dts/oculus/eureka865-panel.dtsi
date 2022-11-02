@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include "eureka865-dsi-panel-sharp-nvt-dsc-4k-72hz-video.dtsi"
+#include "eureka865-dsi-panel-sharp-nvt-dsc-4k-80hz-video.dtsi"
 #include "eureka865-dsi-panel-sharp-nvt-dsc-4k-90hz-video.dtsi"
+#include "eureka865-dsi-panel-sharp-nvt-dsc-4k-120hz-video.dtsi"
+#include "eureka865-dsi-panel-jdi-nvt-dsc-4k-90hz-video.dtsi"
+
+&display_panel_avdd {
+	status = "disabled";
+};
 
 &dsi_panel_pwr_supply_lab_ibb {
 	qcom,panel-supply-entry@0 {
@@ -18,10 +26,10 @@
 	};
 };
 
-&dsi_sharp_nvt_4k_90Hz_dsc_video {
+&dsi_jdi_nvt_4k_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";//TODO
-	qcom,mdss-dsi-jdi-default-duty-cycle = <80>; /* 10% duty */
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10% duty */
 	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
 	qcom,mdss-dsi-bl-min-level = <800>;
 	qcom,mdss-dsi-bl-max-level = <1200>;
@@ -37,7 +45,124 @@
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 25 25 08//TODO
+				00 25 0A 0A 25 25 08
+				19 09 02 04 00 1F 0F
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&dsi_sharp_nvt_4k_72Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_nvt";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 83 0>;
+	qcom,platform-reset-gpio = <&tlmm 91 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 49 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0",
+				"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 25 25 08
+				19 09 02 04 00 1F 0F
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+
+&dsi_sharp_nvt_4k_80Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_nvt";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 83 0>;
+	qcom,platform-reset-gpio = <&tlmm 91 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 49 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0",
+				"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 25 25 08
+				19 09 02 04 00 1F 0F
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&dsi_sharp_nvt_4k_90Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_nvt";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 83 0>;
+	qcom,platform-reset-gpio = <&tlmm 91 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 49 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0",
+				"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 25 25 08
+				19 09 02 04 00 1F 0F
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&dsi_sharp_nvt_4k_120Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_nvt";
+	qcom,mdss-dsi-jdi-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-jdi-default-max-scanline-offset = <2036>;
+	qcom,mdss-dsi-bl-min-level = <800>;
+	qcom,mdss-dsi-bl-max-level = <1200>;
+	qcom,platform-en-gpio = <&tlmm 83 0>;
+	qcom,platform-reset-gpio = <&tlmm 91 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 49 0>;
+	qcom,mdss-dsi-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+	qcom,dsi-select-clocks = "mux_byte_clk0", "mux_pixel_clk0",
+				"cphy_byte_clk0", "cphy_pixel_clk0";
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 25 0A 0A 25 25 08
 				19 09 02 04 00 1F 0F
 			];
 			qcom,display-topology = <4 4 2>;
@@ -65,7 +190,6 @@
 
 &mdss_mdp {
 	clock-rate = <0 0 0 0 460000000 19200000 460000000 19200000>;
-	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
 	qcom,sde-has-dest-scaler;
 	qcom,sde-wb-rtprio = <99>;
 	qcom,sde-wb-cpumask = "80"; /* CPU7 */
@@ -80,9 +204,9 @@
 };
 
 &pm8150_l14 {
-	regulator-max-microvolt = <1900000>;
+	regulator-max-microvolt = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-	qcom,init-voltage = <1900000>;
+	qcom,init-voltage = <1800000>;
 };
 
 &pm8150l_lcdb {
@@ -123,6 +247,7 @@
 			"cphy_byte_clk1", "cphy_pixel_clk1",
 			"shadow_byte_clk1", "shadow_pixel_clk1";
 
+	avdd-supply = <>;
 	lab-supply = <&lcdb_ldo_vreg>;
 	ibb-supply = <&lcdb_ncp_vreg>;
 	blu-mcu-supply = <&pm8150a_l11>;
@@ -144,12 +269,9 @@
 		      "cphy_byte_clk0", "cphy_pixel_clk0",
 		      "mux_byte_clk1", "mux_pixel_clk1",
 		      "cphy_byte_clk1", "cphy_pixel_clk1";
+	avdd-supply = <>;
 	pinctrl-0 = <&te1_active>;
 	pinctrl-1 = <&te1_suspend>;
-};
-
-&sde_dp {
-	status = "disabled";
 };
 
 &tlmm {

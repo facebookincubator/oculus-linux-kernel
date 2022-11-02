@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -40,6 +41,7 @@
 #include <dt-bindings/sound/audio-codec-port-types.h>
 #include "codecs/bolero/wsa-macro.h"
 #include "kona-port-config.h"
+#include "msm-common.h"
 
 #define DRV_NAME "kona-asoc-snd"
 #define __CHIPSET__ "KONA "
@@ -133,16 +135,6 @@ enum {
 };
 
 enum {
-	PRIM_MI2S = 0,
-	SEC_MI2S,
-	TERT_MI2S,
-	QUAT_MI2S,
-	QUIN_MI2S,
-	SEN_MI2S,
-	MI2S_MAX,
-};
-
-enum {
 	WSA_CDC_DMA_RX_0 = 0,
 	WSA_CDC_DMA_RX_1,
 	RX_CDC_DMA_RX_0,
@@ -180,26 +172,6 @@ enum {
 	AFE_LOOPBACK_TX_IDX = 0,
 	AFE_LOOPBACK_TX_IDX_MAX,
 };
-struct msm_asoc_mach_data {
-	struct snd_info_entry *codec_root;
-	int usbc_en2_gpio; /* used by gpio driver API */
-	int lito_v2_enabled;
-	struct device_node *dmic01_gpio_p; /* used by pinctrl API */
-	struct device_node *dmic23_gpio_p; /* used by pinctrl API */
-	struct device_node *dmic45_gpio_p; /* used by pinctrl API */
-	struct device_node *mi2s_gpio_p[MI2S_MAX]; /* used by pinctrl API */
-	atomic_t mi2s_gpio_ref_count[MI2S_MAX]; /* used by pinctrl API */
-	struct device_node *us_euro_gpio_p; /* used by pinctrl API */
-	struct pinctrl *usbc_en2_gpio_p; /* used by pinctrl API */
-	struct device_node *hph_en1_gpio_p; /* used by pinctrl API */
-	struct device_node *hph_en0_gpio_p; /* used by pinctrl API */
-	bool is_afe_config_done;
-	struct device_node *fsa_handle;
-	struct clk *lpass_audio_hw_vote;
-	int core_audio_vote_count;
-	u32 tdm_max_slots; /* Max TDM slots used */
-};
-
 struct tdm_port {
 	u32 mode;
 	u32 channel;
@@ -5615,6 +5587,49 @@ static int msm_fe_qos_prepare(struct snd_pcm_substream *substream)
 	return 0;
 }
 
+int msm_lpass_audio_hw_vote_req(struct snd_pcm_substream *substream, bool enable)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+	struct msm_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
+	int rc = 0;
+
+	if (enable) {
+		if (pdata->lpass_audio_hw_vote == NULL) {
+			dev_err(rtd->card->dev, "%s: Invalid lpass audio hw node\n",
+				__func__);
+			rc = -EINVAL;
+			goto rtn;
+		}
+		if (pdata->core_audio_vote_count == 0) {
+			rc = clk_prepare_enable(pdata->lpass_audio_hw_vote);
+			if (rc < 0) {
+				dev_err(rtd->card->dev, "%s: audio vote error\n",
+						__func__);
+				goto rtn;
+			}
+		}
+
+		pdata->core_audio_vote_count++;
+	} else {
+		if (pdata->lpass_audio_hw_vote != NULL) {
+			if (--pdata->core_audio_vote_count == 0) {
+				clk_disable_unprepare(
+					pdata->lpass_audio_hw_vote);
+			} else if (pdata->core_audio_vote_count < 0) {
+				pr_err("%s: audio vote mismatch\n", __func__);
+				pdata->core_audio_vote_count = 0;
+			}
+		} else {
+			pr_err("%s: Invalid lpass audio hw node\n", __func__);
+		}
+	}
+
+rtn:
+  return rc;
+}
+EXPORT_SYMBOL(msm_lpass_audio_hw_vote_req);
+
 void mi2s_disable_audio_vote(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
@@ -6291,7 +6306,7 @@ static int cm710x_init(struct snd_soc_pcm_runtime *rtd)
 	}
 
 	msm_add_mi2s_snd_controls(component);
-#if IS_ENABLED(CONFIG_SND_SOC_CM7120)
+#if IS_ENABLED(CONFIG_SND_SOC_CM7120) || !defined(CONFIG_TDM_DISABLE)
 	msm_add_tdm_snd_controls(component);
 #endif
 
@@ -7403,14 +7418,14 @@ static struct snd_soc_dai_link_component cm710x_ak4331_codecs[] = {
 #endif
 #if IS_ENABLED(CONFIG_SND_SOC_AK4331)
 	{
-		.name = "ak4331.1-0010",
+		.name = "ak4331",
 		.dai_name = "ak4331-AIF1",
 	},
 #endif
 };
 #endif
 
-static struct snd_soc_dai_link cm710x_pri_quin_mi2s_be_dai_links[] = {
+static struct snd_soc_dai_link cm710x_pri_quat_quin_mi2s_be_dai_links[] = {
 	{
 		.name = LPASS_BE_PRI_MI2S_RX,
 		.stream_name = "Primary MI2S Playback",
@@ -7453,6 +7468,35 @@ static struct snd_soc_dai_link cm710x_pri_quin_mi2s_be_dai_links[] = {
 		.ignore_suspend = 1,
 	},
 	{
+		.name = LPASS_BE_QUAT_MI2S_RX,
+		.stream_name = "Quaternary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_TX,
+		.stream_name = "Quaternary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = LPASS_BE_QUIN_MI2S_RX,
 		.stream_name = "Quinary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.4",
@@ -7483,7 +7527,7 @@ static struct snd_soc_dai_link cm710x_pri_quin_mi2s_be_dai_links[] = {
 	},
 };
 
-static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
+static struct snd_soc_dai_link cm7120_pri_quat_quin_mi2s_be_dai_links[] = {
 	{
 		.name = LPASS_BE_PRI_MI2S_RX,
 		.stream_name = "Primary MI2S Playback",
@@ -7526,6 +7570,35 @@ static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
 		.ignore_suspend = 1,
 	},
 	{
+		.name = LPASS_BE_QUAT_MI2S_RX,
+		.stream_name = "Quaternary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_TX,
+		.stream_name = "Quaternary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = LPASS_BE_QUIN_MI2S_RX,
 		.stream_name = "Quinary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.4",
@@ -7566,14 +7639,14 @@ static struct snd_soc_dai_link cm7120_pri_quin_mi2s_be_dai_links[] = {
 	},
 };
 
-static struct snd_soc_dai_link msm_pri_quin_mi2s_be_dai_links[] = {
+static struct snd_soc_dai_link max98360a_pri_quat_quin_mi2s_be_dai_links[] = {
 	{
 		.name = LPASS_BE_PRI_MI2S_RX,
 		.stream_name = "Primary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.0",
 		.platform_name = "msm-pcm-routing",
 #if IS_ENABLED(CONFIG_SND_SOC_AK4331)
-		.codec_name = "ak4331.1-0010",
+		.codec_name = "ak4331",
 		.codec_dai_name = "ak4331-AIF1",
 		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
 #else
@@ -7598,6 +7671,252 @@ static struct snd_soc_dai_link msm_pri_quin_mi2s_be_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.id = MSM_BACKEND_DAI_PRI_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_RX,
+		.stream_name = "Quaternary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_MAX98360A)
+		.codec_name = "max98360a",
+		.codec_dai_name = "max98360a-hifi",
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
+#else
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+#endif
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_TX,
+		.stream_name = "Quaternary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUIN_MI2S_RX,
+		.stream_name = "Quinary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.4",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUINARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUIN_MI2S_TX,
+		.stream_name = "Quinary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.4",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUINARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+};
+
+#if IS_ENABLED(CONFIG_SND_SOC_MAX98388)
+struct snd_soc_dai_link_component max98388_spk[] = {
+	{
+		.name = "max98388.1-0039",
+		.dai_name = "max98388-aif1",
+	},
+	{
+		.name = "max98388.1-0038",
+		.dai_name = "max98388-aif1",
+	},
+};
+#endif
+
+static struct snd_soc_dai_link max98388_pri_quat_quin_mi2s_be_dai_links[] = {
+	{
+		.name = LPASS_BE_PRI_MI2S_RX,
+		.stream_name = "Primary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.0",
+		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_AK4333)
+		.codec_name = "ak4333",
+		.codec_dai_name = "ak4333-aif",
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
+#else
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+#endif
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_PRI_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_PRI_MI2S_TX,
+		.stream_name = "Primary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.0",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_PRI_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_RX,
+		.stream_name = "Quaternary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_MAX98388)
+		.codecs = max98388_spk,
+		.num_codecs = ARRAY_SIZE(max98388_spk),
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
+#else
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+#endif
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_TX,
+		.stream_name = "Quaternary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+#if IS_ENABLED(CONFIG_SND_SOC_MAX98388)
+		.codecs = max98388_spk,
+		.num_codecs = ARRAY_SIZE(max98388_spk),
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
+#else
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+#endif
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUIN_MI2S_RX,
+		.stream_name = "Quinary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.4",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUINARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUIN_MI2S_TX,
+		.stream_name = "Quinary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.4",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUINARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+};
+
+static struct snd_soc_dai_link msm_pri_quat_quin_mi2s_be_dai_links[] = {
+	{
+		.name = LPASS_BE_PRI_MI2S_RX,
+		.stream_name = "Primary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.0",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_PRI_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_PRI_MI2S_TX,
+		.stream_name = "Primary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.0",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_PRI_MI2S_TX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_RX,
+		.stream_name = "Quaternary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_QUAT_MI2S_TX,
+		.stream_name = "Quaternary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.3",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
@@ -7637,14 +7956,18 @@ static struct snd_soc_dai_link msm_pri_quin_mi2s_be_dai_links[] = {
 static char const *mi2s_codec_names[] = {
 	"cm710x_codec",
 	"cm7120_codec",
-	"bolero_codec"
+	"max98360a_codec",
+	"max98388_right_codec",
+	"bolero_codec",
 };
 
 /* All of the underlying arrays must be the same size */
 static struct snd_soc_dai_link *mi2s_codec_dai_links[] = {
-	cm710x_pri_quin_mi2s_be_dai_links,
-	cm7120_pri_quin_mi2s_be_dai_links,
-	msm_pri_quin_mi2s_be_dai_links,
+	cm710x_pri_quat_quin_mi2s_be_dai_links,
+	cm7120_pri_quat_quin_mi2s_be_dai_links,
+	max98360a_pri_quat_quin_mi2s_be_dai_links,
+	max98388_pri_quat_quin_mi2s_be_dai_links,
+	msm_pri_quat_quin_mi2s_be_dai_links,
 };
 
 static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
@@ -7702,41 +8025,6 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.no_pcm = 1,
 		.dpcm_capture = 1,
 		.id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ops = &msm_mi2s_be_ops,
-		.ignore_suspend = 1,
-	},
-	{
-		.name = LPASS_BE_QUAT_MI2S_RX,
-		.stream_name = "Quaternary MI2S Playback",
-		.cpu_dai_name = "msm-dai-q6-mi2s.3",
-		.platform_name = "msm-pcm-routing",
-#if IS_ENABLED(CONFIG_SND_SOC_MAX98360A)
-		.codec_name = "max98360a",
-		.codec_dai_name = "max98360a-hifi",
-		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
-#else
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-#endif
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ops = &msm_mi2s_be_ops,
-		.ignore_suspend = 1,
-		.ignore_pmdown_time = 1,
-	},
-	{
-		.name = LPASS_BE_QUAT_MI2S_TX,
-		.stream_name = "Quaternary MI2S Capture",
-		.cpu_dai_name = "msm-dai-q6-mi2s.3",
-		.platform_name = "msm-pcm-routing",
-		.codec_name = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-tx",
-		.no_pcm = 1,
-		.dpcm_capture = 1,
-		.id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
@@ -8194,7 +8482,7 @@ static struct snd_soc_dai_link msm_kona_dai_links[
 			ARRAY_SIZE(msm_bolero_fe_dai_links) +
 			ARRAY_SIZE(msm_common_misc_fe_dai_links) +
 			ARRAY_SIZE(msm_common_be_dai_links) +
-			ARRAY_SIZE(msm_pri_quin_mi2s_be_dai_links) +
+			ARRAY_SIZE(msm_pri_quat_quin_mi2s_be_dai_links) +
 			ARRAY_SIZE(msm_mi2s_be_dai_links) +
 			ARRAY_SIZE(msm_auxpcm_be_dai_links) +
 			ARRAY_SIZE(msm_wsa_cdc_dma_be_dai_links) +
@@ -8413,8 +8701,8 @@ static int add_mi2s_intf_links(struct device *dev, int total_links)
 
 		memcpy(msm_kona_dai_links + total_links + links_added,
 		       mi2s_codec_dai_links[i],
-		       sizeof(msm_pri_quin_mi2s_be_dai_links));
-		links_added += ARRAY_SIZE(msm_pri_quin_mi2s_be_dai_links);
+		       sizeof(msm_pri_quat_quin_mi2s_be_dai_links));
+		links_added += ARRAY_SIZE(msm_pri_quat_quin_mi2s_be_dai_links);
 		break;
 	}
 
@@ -9210,6 +9498,19 @@ static int msm_audio_ssr_register(struct device *dev)
 	return ret;
 }
 
+#if IS_ENABLED(CONFIG_SND_SOC_MAX98388)
+struct snd_soc_codec_conf max98388_codec_conf[] = {
+	{
+		.dev_name = "max98388.1-0039",
+		.name_prefix = "Left",
+	},
+	{
+		.dev_name = "max98388.1-0038",
+		.name_prefix = "Right",
+	},
+};
+#endif
+
 static int msm_asoc_machine_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = NULL;
@@ -9281,6 +9582,15 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	ret = msm_init_aux_dev(pdev, card);
 	if (ret)
 		goto err;
+
+#if IS_ENABLED(CONFIG_SND_SOC_MAX98388)
+	/* HACK: only do this if we are probing the max98388 codec */
+	if (of_property_match_string(pdev->dev.of_node,
+				"asoc-codec-names", "max98388_right_codec") >= 0) {
+		card->codec_conf = max98388_codec_conf;
+		card->num_configs = ARRAY_SIZE(max98388_codec_conf);
+	}
+#endif
 
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret == -EPROBE_DEFER) {

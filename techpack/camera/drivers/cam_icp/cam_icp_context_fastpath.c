@@ -403,6 +403,7 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 	struct list_head *next;
 	struct list_head *pos;
 
+	mutex_lock(&ctx->ctx_lock);
 	mutex_lock(&ctx->packet_lock);
 
 	/* Add list for each from pending to free queue */
@@ -415,6 +416,7 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 	}
 
 	mutex_unlock(&ctx->packet_lock);
+	mutex_unlock(&ctx->ctx_lock);
 
 	return 0;
 }
@@ -849,7 +851,7 @@ int cam_icp_fastpath_stop_dev(void *hnd, struct cam_start_stop_dev_cmd *cmd)
 	rc = ctx->hw_intf.hw_stop(ctx->hw_intf.hw_mgr_priv, &stop);
 	if (rc) {
 		/* HW failure. user need to clean up the resource */
-		CAM_ERR(CAM_ICP, "Start HW failed");
+		CAM_ERR(CAM_ICP, "Stop HW failed");
 		return rc;
 	}
 
@@ -914,6 +916,15 @@ int cam_icp_fastpath_acquire_dev(void *hnd, struct cam_acquire_dev_cmd *cmd)
 		CAM_ERR(CAM_ICP, "Can not create device handle");
 		goto error_release_hw;
 	}
+
+	// device handle - bits [31:24] must be zero. Otherwise we will modify it!!!
+	if (FP_DEV_GET_HDL_IDX(ctx->dev_hdl))
+		CAM_ERR(CAM_ISP, "FP DEVICE INDEX IS NOT ZERO 0x%08x", ctx->dev_hdl);
+
+	// insert context index to device handle - bits [31:24]
+	FP_INSERT_IDX(ctx);
+
+
 	cmd->dev_handle = ctx->dev_hdl;
 
 	rc = cam_icp_fpc_alloc_packet_queue(ctx, CAM_ICP_PACKET_QUEUE_SIZE);
@@ -994,10 +1005,12 @@ int cam_icp_fastpath_stream_mode_cmd(void *hnd,
 	return 0;
 }
 
-void *cam_icp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
+void *cam_icp_fastpath_context_create(
+			struct cam_hw_mgr_intf *hw_intf, int ctx_id)
 
 {
 	struct cam_icp_fastpath_context *ctx;
+	char fp_q_name[CAM_FP_MAX_NAME_SIZE];
 	int rc;
 
 	if (!hw_intf)
@@ -1007,8 +1020,12 @@ void *cam_icp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf)
 	if (!ctx)
 		return NULL;
 
+	ctx->ctx_id = ctx_id;
+
+	snprintf(fp_q_name, sizeof(fp_q_name), "cam_fp_ipe%d_q", ctx_id);
+
 	/* Initialize fastpath queue with max of 16 buffers */
-	rc = cam_fp_queue_init(&ctx->fp_queue, "cam_fp_ipe_q", 16,
+	rc = cam_fp_queue_init(&ctx->fp_queue, fp_q_name, 16,
 			       &cam_fastpath_queue_ops, ctx);
 	if (rc < 0)
 		goto error_free_context;

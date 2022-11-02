@@ -3394,7 +3394,7 @@ int smblib_set_prop_voltage_wls_output(struct smb_charger *chg,
 	return rc;
 }
 
-int smblib_set_prop_dc_reset(struct smb_charger *chg)
+static int smblib_disable_dcin_en(struct smb_charger *chg)
 {
 	int rc;
 
@@ -3410,6 +3410,41 @@ int smblib_set_prop_dc_reset(struct smb_charger *chg)
 		smblib_err(chg, "Couldn't set DCIN_EN_OVERRIDE_BIT rc=%d\n",
 			rc);
 		return rc;
+	}
+
+	return 0;
+}
+
+static int smblib_enable_dcin_en(struct smb_charger *chg)
+{
+	int rc = smblib_masked_write(chg, DCIN_CMD_IL_REG, DCIN_EN_MASK, 0);
+
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't clear DCIN_EN_OVERRIDE_BIT rc=%d\n",
+			rc);
+		return rc;
+	}
+
+	rc = vote(chg->dc_suspend_votable, VOUT_VOTER, false, 0);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't unsuspend  DC rc=%d\n", rc);
+		return rc;
+	}
+	return 0;
+}
+
+int smblib_set_prop_dc_reset(struct smb_charger *chg)
+{
+	int rc;
+	bool currently_enabled;
+
+	currently_enabled = (get_client_vote_locked(chg->dc_suspend_votable, VOUT_VOTER) == 1);
+
+	if (currently_enabled) {
+		rc = smblib_disable_dcin_en(chg);
+
+		if (rc < 0)
+			return rc;
 	}
 
 	rc = smblib_write(chg, DCIN_CMD_PON_REG, DCIN_PON_BIT | MID_CHG_BIT);
@@ -3428,17 +3463,11 @@ int smblib_set_prop_dc_reset(struct smb_charger *chg)
 		return rc;
 	}
 
-	rc = smblib_masked_write(chg, DCIN_CMD_IL_REG, DCIN_EN_MASK, 0);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't clear DCIN_EN_OVERRIDE_BIT rc=%d\n",
-			rc);
-		return rc;
-	}
+	if (currently_enabled) {
+		rc = smblib_enable_dcin_en(chg);
 
-	rc = vote(chg->dc_suspend_votable, VOUT_VOTER, false, 0);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't unsuspend  DC rc=%d\n", rc);
-		return rc;
+		if (rc < 0)
+			return rc;
 	}
 
 	smblib_dbg(chg, PR_MISC, "Wireless charger removal detection successful\n");
@@ -6087,7 +6116,11 @@ irqreturn_t usb_source_change_irq_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 	if (dcval.intval) {
-		smblib_get_prop_dc_voltage_max(chg, &dcval);
+		rc = smblib_get_prop_dc_voltage_max(chg, &dcval);
+		if (rc < 0) {
+			smblib_err(chg, "Couldn't read dc voltage max rc=%d\n", rc);
+			return IRQ_HANDLED;
+		}
 		if (dcval.intval == DC_VOLTAGE_9V)
 			smblib_set_usb_suspend(chg, true);
 	}
@@ -8080,9 +8113,6 @@ static void smblib_dc_detect_work(struct work_struct *work)
 			smblib_set_prop_dc_reset(chg);
 	}
 
-	/* Wait 500ms to get CYPD3177 ready */
-	msleep(500);
-
 	rc = smblib_get_prop_dc_hw_current_max(chg, &val);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't get dc hw current max rc = %d\n", rc);
@@ -8091,11 +8121,17 @@ static void smblib_dc_detect_work(struct work_struct *work)
 	val.intval = val.intval * 1000;
 
 	/*
-	 * If the maximum charging current is 3.0A, change
-	 * the maximum DC current to 3.0A
+	 * Update the maximum DC current according to the selected dock PDO
 	 */
-	if (val.intval == DC_HW_CURRENT_MAX)
+	if ((val.intval > 0) && (val.intval <= DC_HW_CURRENT_MAX)) {
 		smblib_set_prop_dc_hw_current_max(chg, &val);
+		smblib_enable_dcin_en(chg);
+	}
+
+	if (val.intval == 0) {
+		smblib_set_charge_param(chg, &chg->param.dc_icl, DCIN_ICL_MIN_UA);
+		smblib_disable_dcin_en(chg);
+	}
 }
 
 static void smblib_rblt_check_work(struct work_struct *work)
@@ -8541,6 +8577,10 @@ int smblib_init(struct smb_charger *chg)
 				rc);
 			return rc;
 		}
+
+		rc = smblib_disable_dcin_en(chg);
+		if (rc < 0)
+			return rc;
 
 		chg->bms_psy = power_supply_get_by_name("bms");
 

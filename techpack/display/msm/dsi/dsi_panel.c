@@ -850,6 +850,46 @@ error:
 	return rc;
 }
 
+static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
+			u32 bl_lvl)
+{
+	int rc = 0;
+	struct mipi_dsi_device *dsi;
+
+	u8 blu_set_pwm_page[2] = {0xFF, 0x10};
+	u8 blu_level[2] = {0x51, 0x00};
+
+	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
+		return -EINVAL;
+
+	dsi = &panel->mipi_device;
+
+	/*
+	 * This scaling makes the following assumptions:
+	 * * input bl_lvl = 2000 and register value 0xFF both represent 200%
+	 *   backlight brightness,
+	 * * input bl_lvl = 0 and register value 0x00 both represent 0% backlight
+	 *   brightness, and
+	 * * linear scaling between the two.
+	 */
+	bl_lvl = (bl_lvl * 0xFF) / 2000;
+
+	blu_level[1] = bl_lvl;
+
+	/* Queue the DCS writes so they can be batched together in one frame. */
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), 0, 0);
+	/* Send with last command flag */
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_level, sizeof(blu_level), MIPI_DSI_MSG_LASTCOMMAND, 0);
+
+	if (rc) {
+		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
+		goto error;
+	}
+
+error:
+	return rc;
+}
+
 static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
 			u32 bl_lvl)
 {
@@ -996,13 +1036,15 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	 * while the PWM value is configured so the backlight finishes flashing before the internal vsync.
 	 */
 	const u32 internal_1h_us = 2; /* Internal (TFT) 1H time (2uS) */
+	const u32 internal_1h_error_tolerance = 97; /* Error tolerance of the internal display clock */
 	const u32 blu_on_time_duration_us_ref = 2565 * 90; /* BLU ON time at 90Hz, baseline hardcoded value */
 	const u32 tdel_us_ref = 1000 * 90; /* TDEL (delay from PWM rising edge to BLU on) reference at 90Hz = 1ms */
 	const u32 blu_off_to_internal_vsync_us = 100;
 	const u8 pwm_reg = 0xB9; /* PWM register */
 	const u8 fifo_reg = 0xEC; /* FIFO line register */
-	u32 vtotal, refresh_rate, fifo_time_us, frame_period_us, external_1h_ns, blu_on_time_duration_us, blu_internal_off_time_us;
-	u32 fifo_time_90_us, internal_vsync_us, tdel_us, fifo_line, pwm_us, pwm_line;
+	u32 vtotal, vactive, refresh_rate, fifo_time_us, frame_period_us, external_1h_ns;
+	u32 blu_on_time_duration_us, blu_internal_off_time_us;
+	u32 internal_vsync_us, tdel_us, fifo_line, pwm_us, pwm_line;
 	u32 blu_on, blu_off, blu_on_us, blu_off_us;
 	u8 payload[3];
 
@@ -1019,6 +1061,7 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	/* Current mode timings */
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
+	vactive = (u32)timing->v_active;
 	refresh_rate = panel->cur_mode->timing.refresh_rate;
 	frame_period_us = 1000000 / refresh_rate;
 	external_1h_ns = (frame_period_us * 1000) / vtotal; /* 2.773 uS */
@@ -1026,9 +1069,7 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	/* FIFO calculations */
 
 	/* FIFO time (VID_VS_DELAY) is the external frame period minus the internal frame period */
-	fifo_time_us = frame_period_us - (internal_1h_us * vtotal);
-	/* Scale linearly to obtain a reference value for 90 Hz */
-	fifo_time_90_us = (fifo_time_us * refresh_rate) / 90;
+	fifo_time_us =  ((external_1h_ns - internal_1h_us * internal_1h_error_tolerance * 1000 / 100) * vactive) / 1000;
 	/* Convert the FIFO time to 1H external lines */
 	fifo_line = fifo_time_us * 1000 / external_1h_ns;
 
@@ -1038,22 +1079,46 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	tdel_us = tdel_us_ref / refresh_rate;
 	/* BLU ON time is calculated taking a hardcoded ON time value @ 90Hz and scaling it linearly */
 	blu_on_time_duration_us = blu_on_time_duration_us_ref / refresh_rate;
-	/* Internal vsync */
-	internal_vsync_us = frame_period_us + fifo_time_90_us;
-	/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
-	blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
-	/* Calculate when the PWM signal should be sent to meet the BLU off time */
-	pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
+
+	/* For refresh rates >= 90Hz we dynamically shift the BLU ON pwm signal to start sooner to prevent leaking into
+	 * the next frame boundary. For refresh rates < 90Hz we start the backlight at the same time as 90Hz
+	 * since the LC has already settled and we can save latency by starting earlier rather than waiting
+	 * for later in the frame.
+	 */
+	if (refresh_rate >= 90)	{
+		/* Internal vsync: for refresh rates greater than 90Hz we calculate this to not go out of frame boundary */
+		internal_vsync_us = frame_period_us + fifo_time_us;
+
+		/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
+		blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
+		/* Calculate when the PWM signal should be sent to meet the BLU off time */
+		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
+	} else {
+		/* Internal vsync: for refresh rates lower than 90 we use the 90Hz frame period to reduce latency */
+		internal_vsync_us = 1000000/90 + fifo_time_us;
+
+		/* Calculate the BLU off time to happen just (100uS) before the internal vsync */
+		blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
+
+		/* Calculate when the PWM signal should be sent to meet the 90Hz latency*/
+		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us_ref / 90 - tdel_us - fifo_time_us;
+	}
+
+	/* Adjust backlight timing relative to vsync (if set) */
+	if (panel->bl_config.jdi_scanline_max_offset)
+		pwm_us -= (panel->bl_config.jdi_scanline_max_offset * external_1h_ns / 1000);
+
 	/* Convert the PWM time to internal horizontal lines */
 	pwm_line = pwm_us / internal_1h_us;
 
 	/* Calculate the BLU on/off times based on the external vsync */
-	blu_on_us = pwm_us + fifo_time_us;
+	blu_on_us = pwm_us + fifo_time_us + tdel_us;
 	blu_off_us = blu_on_us + blu_on_time_duration_us;
 	blu_on = blu_on_us * 1000 / external_1h_ns;
 	blu_off = blu_off_us * 1000 / external_1h_ns;
 
 	DSI_DEBUG("%u HZ FIFO %u PWM %u", refresh_rate, fifo_line, pwm_line);
+	DSI_DEBUG("%u HZ FIFO %ums PWM %ums VACTIVE %u", refresh_rate, fifo_time_us, pwm_us, vactive);
 
 	/* Queue the pwm settings for the new refresh rate. */
 	payload[0] = pwm_reg;
@@ -1121,6 +1186,9 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	case DSI_BACKLIGHT_JDI_NVT:
 		rc = dsi_panel_jdi_nvt_update_backlight(panel, bl_lvl);
 		break;
+	case DSI_BACKLIGHT_NVT:
+		rc = dsi_panel_nvt_update_backlight(panel, bl_lvl);//TODO
+		break;
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_update_pwm_backlight(panel, bl_lvl);
 		break;
@@ -1149,6 +1217,7 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
 	case DSI_BACKLIGHT_JDI_NVT:
+	case DSI_BACKLIGHT_NVT:
 	case DSI_BACKLIGHT_EXTERNAL:
 	case DSI_BACKLIGHT_PWM:
 	default:
@@ -1275,6 +1344,7 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
 	case DSI_BACKLIGHT_JDI_NVT:
+	case DSI_BACKLIGHT_NVT:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
@@ -1886,9 +1956,59 @@ static int dsi_panel_parse_dyn_clk_caps(struct dsi_panel *panel)
 	return 0;
 }
 
+static int dsi_panel_parse_dfps_range(struct dsi_panel *panel)
+{
+	int rc = 0;
+	struct dsi_dfps_capabilities *dfps_caps = &panel->dfps_caps;
+	struct dsi_parser_utils *utils = &panel->utils;
+	u32 i;
+
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-min-refresh-rate",
+				  &dfps_caps->min_refresh_rate);
+	if (rc) {
+		DSI_ERR("failed to read qcom,mdss-dsi-min-refresh-rate, rc=%d\n",
+				rc);
+		return rc;
+	}
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-max-refresh-rate",
+				  &dfps_caps->max_refresh_rate);
+	if (rc) {
+		DSI_ERR("failed to read qcom,mdss-dsi-max-refresh-rate, rc=%d\n",
+				rc);
+		return rc;
+	}
+
+	dfps_caps->dfps_list_len = dfps_caps->max_refresh_rate -
+		dfps_caps->min_refresh_rate + 1;
+	if (dfps_caps->dfps_list_len < 1) {
+		DSI_ERR("dfps invalid refresh rate range %d - %d\n",
+			dfps_caps->max_refresh_rate,
+			dfps_caps->min_refresh_rate);
+		return -EINVAL;
+	}
+
+	DSI_INFO("using full refresh rate range %d - %d\n",
+		dfps_caps->max_refresh_rate,
+		dfps_caps->min_refresh_rate);
+
+	dfps_caps->dfps_list = kcalloc(dfps_caps->dfps_list_len, sizeof(u32),
+			GFP_KERNEL);
+	if (!dfps_caps->dfps_list)
+		return -ENOMEM;
+
+	dfps_caps->dfps_support = true;
+	for (i = 0; i < dfps_caps->dfps_list_len; i++)
+		dfps_caps->dfps_list[i] = dfps_caps->max_refresh_rate - i;
+
+	if (dfps_caps->panel_refresh_rate == 0)
+		dfps_caps->panel_refresh_rate = dfps_caps->max_refresh_rate;
+	return 0;
+}
+
 static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 {
 	int rc = 0;
+	int list_size;
 	bool supported = false;
 	struct dsi_dfps_capabilities *dfps_caps = &panel->dfps_caps;
 	struct dsi_parser_utils *utils = &panel->utils;
@@ -1925,13 +2045,26 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 		goto error;
 	}
 
-	dfps_caps->dfps_list_len = utils->count_u32_elems(utils->data,
+	rc = utils->read_u32(utils->data,
+							"qcom,mdss-dsi-panel-framerate",
+							&dfps_caps->panel_refresh_rate);
+	if (rc)
+		dfps_caps->panel_refresh_rate = 0;
+
+	list_size = utils->count_u32_elems(utils->data,
 				  "qcom,dsi-supported-dfps-list");
-	if (dfps_caps->dfps_list_len < 1) {
-		DSI_ERR("[%s] dfps refresh list not present\n", name);
-		rc = -EINVAL;
+	if (list_size < 1) {
+		DSI_WARN("[%s] dfps refresh list not present\n", name);
+
+		// try to auto generate a list of refresh rates
+		rc = dsi_panel_parse_dfps_range(panel);
+		if (!rc)
+			return 0;
+
+		DSI_ERR("Failed to find or build list of refresh rates");
 		goto error;
 	}
+	dfps_caps->dfps_list_len = list_size;
 
 	dfps_caps->dfps_list = kcalloc(dfps_caps->dfps_list_len, sizeof(u32),
 			GFP_KERNEL);
@@ -1962,6 +2095,9 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 			dfps_caps->max_refresh_rate = dfps_caps->dfps_list[i];
 	}
 
+	// if no default is specified, use the first one in the list
+	if (dfps_caps->panel_refresh_rate == 0)
+		dfps_caps->panel_refresh_rate = dfps_caps->dfps_list[0];
 error:
 	return rc;
 }
@@ -2791,6 +2927,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_JDI;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi_nvt")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI_NVT;
+	} else if (!strcmp(bl_type, "bl_ctrl_nvt")) {
+		panel->bl_config.type = DSI_BACKLIGHT_NVT;
 	} else if (!strcmp(bl_type, "bl_ctrl_local_dimming")) {
 		panel->bl_config.type = DSI_BACKLIGHT_LOCAL_DIMMING;
 	} else {
@@ -2852,7 +2990,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	}
 
 	if (panel->bl_config.type == DSI_BACKLIGHT_JDI
-		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
+		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT
+		|| panel->bl_config.type == DSI_BACKLIGHT_NVT) {
 		rc = utils->read_u32(utils->data,
 			"qcom,mdss-dsi-jdi-default-duty-cycle", &val);
 		if (rc) {
@@ -2878,6 +3017,16 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 			DSI_ERR("[%s] failed to parse pwm config, rc=%d\n",
 			       panel->name, rc);
 			goto error;
+		}
+	} else if (panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING) {
+		rc = utils->read_u32(utils->data,
+			"qcom,mdss-dsi-default-max-scanline-offset", &val);
+		if (rc) {
+			DSI_DEBUG("[%s] default-max-scanline-offset unspecified, rc=%d\n",
+				panel->name, rc);
+			panel->bl_config.jdi_scanline_max_offset = 0;
+		} else {
+			panel->bl_config.jdi_scanline_max_offset = val;
 		}
 	}
 
@@ -5030,6 +5179,8 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 		dsi_panel_jdi_update_backlight(panel, 0);
 	else if (panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
 		dsi_panel_jdi_nvt_update_backlight(panel, 0);
+	else if (panel->bl_config.type == DSI_BACKLIGHT_NVT)
+		dsi_panel_nvt_update_backlight(panel, 0);
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_PRE_OFF);
 	if (rc) {

@@ -483,11 +483,13 @@ void hdd_wlan_suspend_resume_event(uint8_t state) {}
  * @adapter: adapter upon which the request was received
  * @allow_power_save: is wlan allowed to go into power save mode
  * @timeout: timeout period in ms
+ * @usr_ps_cfg_update: User PS config update required or not
  *
  * Return: 0 on success, non-zero on any error
  */
 int wlan_hdd_set_powersave(struct hdd_adapter *adapter,
-			   bool allow_power_save, uint32_t timeout);
+			   bool allow_power_save, uint32_t timeout,
+			   bool usr_ps_cfg_update);
 
 /**
  * wlan_hdd_inc_suspend_stats() - Prints, then increments, then prints suspend

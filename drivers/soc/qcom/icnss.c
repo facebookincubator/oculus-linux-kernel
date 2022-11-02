@@ -521,6 +521,15 @@ bool icnss_is_fw_ready(void)
 }
 EXPORT_SYMBOL(icnss_is_fw_ready);
 
+unsigned long icnss_get_device_config(void)
+{
+	if (!penv)
+		return 0;
+
+	return penv->device_config;
+}
+EXPORT_SYMBOL(icnss_get_device_config);
+
 void icnss_block_shutdown(bool status)
 {
 	if (!penv)
@@ -3448,6 +3457,14 @@ static int icnss_smmu_dt_parse(struct icnss_priv *priv)
 	return 0;
 }
 
+static void icnss_read_device_configs(struct icnss_priv *priv)
+{
+	if (of_property_read_bool(priv->pdev->dev.of_node,
+				  "wlan-ipa-disabled")) {
+		set_bit(ICNSS_IPA_DISABLED, &priv->device_config);
+	}
+}
+
 static int icnss_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -3474,6 +3491,8 @@ static int icnss_probe(struct platform_device *pdev)
 	priv->is_chain1_supported = true;
 
 	icnss_allow_recursive_recovery(dev);
+
+	icnss_read_device_configs(priv);
 
 	ret = icnss_resource_parse(priv);
 	if (ret)

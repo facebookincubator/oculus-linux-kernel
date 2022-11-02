@@ -384,6 +384,9 @@ static int smb5_chg_config_init(struct smb5 *chip)
 	if (of_property_read_bool(node, "qcom,disable-fcc-restriction"))
 		chg->main_fcc_max = -EINVAL;
 
+	chg->disable_dc_online_prop =
+		of_property_read_bool(node, "qcom,disable-dc-online-prop");
+
 out:
 	of_node_put(revid_dev_node);
 	return rc;
@@ -1606,7 +1609,10 @@ static int smb5_dc_get_prop(struct power_supply *psy,
 		rc = smblib_get_prop_dc_present(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
-		rc = smblib_get_prop_dc_online(chg, val);
+		if (chg->disable_dc_online_prop)
+			val->intval = 0;
+		else
+			rc = smblib_get_prop_dc_online(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		rc = smblib_get_prop_dc_voltage_now(chg, val);

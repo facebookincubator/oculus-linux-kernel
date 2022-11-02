@@ -4,14 +4,6 @@
 #include <dt-bindings/sound/qcom,bolero-clk-rsc.h>
 #include "vendor-base/qcom/kona-lpi.dtsi"
 
-&dai_dp {
-	status = "disabled";
-};
-
-&dai_dp1 {
-	status = "disabled";
-};
-
 &dai_mi2s0 {
 	qcom,msm-mi2s-rx-lines = <1>;
 	qcom,msm-mi2s-tx-lines = <2>;
@@ -20,14 +12,6 @@
 &dai_mi2s3 {
 	qcom,msm-mi2s-rx-lines = <1>;
 	qcom,msm-mi2s-tx-lines = <2>;
-};
-
-&ext_disp_audio_codec {
-	status = "disabled";
-};
-
-&fsa4480 {
-	status = "disabled";
 };
 
 &pm8150_l7 {
@@ -85,10 +69,10 @@
 		};
 	};
 
-	max98360a_snd: max98360a_snd {
+	max983xx_snd: max983xx_snd {
 		status = "ok";
 		compatible = "qcom,kona-asoc-snd";
-		qcom,model = "kona-max98360a-snd-card";
+		qcom,model = "kona-max983xx-snd-card";
 
 		qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <1>, <1>;
 
@@ -110,10 +94,9 @@
 			"TX DMIC3", "TX MIC BIAS1",
 			"TX MIC BIAS1", "Digital Mic3";
 
-		asoc-codec = <&stub_codec>, <&bolero>,
-			<&max98360a>;
-		asoc-codec-names = "msm-stub-codec.1", "bolero_codec",
-			"max98360a_codec";
+		asoc-codec = <&stub_codec>, <&max98360a>, <&bolero>;
+		asoc-codec-names = "msm-stub-codec.1", "max98360a_codec",
+			"bolero_codec";
 
 		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
@@ -369,7 +352,7 @@
 	};
 
 	max98360a_enable_pins {
-		max98360a_active: max98360a_active{
+		max98360a_active: max98360a_active {
 			mux {
 				pins = "gpio64";
 				function = "gpio";
@@ -382,7 +365,7 @@
 				bias-disable; /* no pull */
 			};
 		};
-		max98360a_sleep: max98360a_sleep{
+		max98360a_sleep: max98360a_sleep {
 			mux {
 				pins = "gpio64";
 				function = "gpio";

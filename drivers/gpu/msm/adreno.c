@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -1598,6 +1599,8 @@ static int adreno_probe(struct platform_device *pdev)
 	adreno_debugfs_init(adreno_dev);
 	adreno_profile_init(adreno_dev);
 
+	adreno_dev->perfcounter = false;
+
 	adreno_sysfs_init(adreno_dev);
 
 	kgsl_pwrscale_init(device, pdev, CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR);
@@ -1741,7 +1744,8 @@ static int adreno_pm_suspend(struct device *dev)
 	/* Suspend the lazy allocation page pool refill. */
 	kgsl_lazy_page_pool_suspend();
 	status = kgsl_pwrctrl_change_state(device, KGSL_STATE_SUSPEND);
-	if (!status && device->state == KGSL_STATE_SUSPEND) {
+	if (!status && (device->state == KGSL_STATE_SUSPEND ||
+			device->state == KGSL_STATE_NONE)) {
 		adreno_dispatcher_halt(device);
 		kgsl_mmu_suspend(device);
 	}
@@ -4002,11 +4006,8 @@ static void adreno_regulator_disable_poll(struct kgsl_device *device)
 	if (!kgsl_regulator_disable_wait(pwr->gx_gdsc, 200))
 		dev_err(device->dev, "Regulator vdd is stuck on\n");
 
-	/* Remove a vote from the CX GDSC but don't wait to see if it's off. */
-	if (IS_ERR_OR_NULL(pwr->cx_gdsc))
-		return;
-
-	regulator_disable(pwr->cx_gdsc);
+	if (!kgsl_regulator_disable_wait(pwr->cx_gdsc, 200))
+		dev_err(device->dev, "Regulator vddcx is stuck on\n");
 }
 
 static void adreno_gpu_model(struct kgsl_device *device, char *str,

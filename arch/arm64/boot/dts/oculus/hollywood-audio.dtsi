@@ -1,22 +1,6 @@
 #include <dt-bindings/clock/qcom,audio-ext-clk.h>
 
-&dai_dp {
-	status = "disabled";
-};
-
-&dai_dp1 {
-	status = "disabled";
-};
-
-&ext_disp_audio_codec {
-	status = "disabled";
-};
-
 &lpass_core_hw_vote {
-	status = "disabled";
-};
-
-&fsa4480 {
 	status = "disabled";
 };
 
@@ -325,7 +309,7 @@
 };
 
 &q6core {
-	cm710x_snd {
+	cm710x_snd: cm710x_snd {
 		compatible = "qcom,kona-asoc-snd";
 		qcom,model = "kona-cm710x-snd-card";
 

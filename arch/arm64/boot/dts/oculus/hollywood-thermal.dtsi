@@ -1,3 +1,7 @@
+&mdss_mdp {
+	#cooling-cells = <2>;
+};
+
 &vendor {
 	battery_virtual_sensor: battery_virtual_sensor {
 		compatible = "oculus,battery-virtual-sensor";
@@ -24,6 +28,7 @@
 
 		intercept-discharging = <4261>;
 		max-differential = <8000>;
+		internal-polling-delay = <1000>;
 	};
 
 	display_virtual_sensor: display_virtual_sensor {
@@ -45,6 +50,7 @@
 		io-slope-coefficients = <31148>;
 
 		intercept-constant = <(-3354)>;
+		internal-polling-delay = <1000>;
 	};
 
 	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
@@ -68,6 +74,7 @@
 
 		intercept-charging = <4440>;
 		intercept-discharging = <2940>;
+		internal-polling-delay = <1000>;
 	};
 
 	iio_channel_soc_sensor: iio_channel_soc_sensor {
@@ -82,23 +89,15 @@
 
 &thermal_zones {
 	batt-usr {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&pm8150b_adc_tm ADC_BAT_THERM_PU2>;
-		wake-capable-sensor;
-		trips {
-			batt_trip: batt-trip {
-				temperature = <600>;
-				hysteresis = <10>;
-				type = "passive";
-			};
-		};
 	};
 
 	batt-virt {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&battery_virtual_sensor>;
 		wake-capable-sensor;
@@ -122,8 +121,8 @@
 	};
 
 	display-virt {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&display_virtual_sensor>;
 		wake-capable-sensor;
@@ -141,13 +140,25 @@
 		polling-delay = <0>;
 	};
 
+	pm8150b-bcl-lvl0 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-bcl-lvl1 {
+		thermal-governor = "user_space";
+	};
+
+	pm8150b-bcl-lvl2 {
+		thermal-governor = "user_space";
+	};
+
 	soc {
 		status = "disabled";
 	};
 
 	vrapi-front-panel {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&vrapi_front_panel_sensor>;
 		wake-capable-sensor;

@@ -2,12 +2,21 @@
 
 #include "virtual_sensor_utils.h"
 
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/iio/iio.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
+
+/*
+ * drivers/thermal/of-thermal.c has actual of_thermal_handle_trip_temp.
+ * This is to tell the compiler that linkage is extern.
+ */
+extern void of_thermal_handle_trip_temp(struct thermal_zone_device *tz,
+					int trip_temp);
 
 int is_charger_connected(struct power_supply *usb_psy)
 {
@@ -86,7 +95,7 @@ int virtual_sensor_calculate_tz_temp(struct device *dev,
 		if (!restart_sampling) {
 			const s64 delta_temp = div64_s64((avg_temp -
 					data->tz_last_temperatures[i]) *
-					delta_jiffies, HZ);
+					HZ, delta_jiffies);
 
 			data->tz_temperature +=
 					(s64)data->tz_slope_coefficients[i] *
@@ -369,6 +378,11 @@ int virtual_sensor_parse_common_dt(struct device *dev,
 	if (ret < 0)
 		data->intercept_constant_discharging = 0;
 
+	ret = of_property_read_u32(dev->of_node, "internal-polling-delay",
+			&data->internal_polling_delay);
+	if (ret < 0)
+		data->internal_polling_delay = 0;
+
 	return 0;
 }
 
@@ -637,4 +651,47 @@ ssize_t discharging_constant_store(struct device *dev,
 	mutex_unlock(&data->lock);
 
 	return count;
+}
+
+static void virtual_sensor_workqueue_set_polling(struct workqueue_struct *queue, struct virtual_sensor_common_data *data)
+{
+	if (data->internal_polling_delay > 1000)
+		mod_delayed_work(queue, &data->poll_queue,
+				 round_jiffies(msecs_to_jiffies(data->internal_polling_delay)));
+	else if (data->internal_polling_delay)
+		mod_delayed_work(queue, &data->poll_queue,
+				 msecs_to_jiffies(data->internal_polling_delay));
+	else
+		cancel_delayed_work(&data->poll_queue);
+}
+
+static void virtual_sensor_check(struct work_struct *work)
+{
+	int ret = 0;
+	int temp;
+	struct virtual_sensor_common_data *data = container_of(work, struct virtual_sensor_common_data, poll_queue.work);
+	struct thermal_zone_device *tzd = data->tzd;
+
+	ret = thermal_zone_get_temp(tzd, &temp);
+	if (ret) {
+		if (ret != -EAGAIN)
+			dev_warn(&tzd->device,
+				 "failed to read out thermal zone (%d)\n",
+				 ret);
+		return;
+	}
+	of_thermal_handle_trip_temp(tzd, temp);
+
+	virtual_sensor_workqueue_set_polling(system_freezable_power_efficient_wq, data);
+}
+
+void virtual_sensor_workqueue_register(struct virtual_sensor_common_data *data)
+{
+	INIT_DEFERRABLE_WORK(&data->poll_queue, virtual_sensor_check);
+	virtual_sensor_workqueue_set_polling(system_freezable_power_efficient_wq, data);
+}
+
+void virtual_sensor_workqueue_unregister(struct virtual_sensor_common_data *data)
+{
+	cancel_delayed_work_sync(&data->poll_queue);
 }

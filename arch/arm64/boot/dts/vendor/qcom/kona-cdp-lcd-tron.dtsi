@@ -1,5 +1,9 @@
 #include "kona-cdp.dtsi"
 
+&qupv3_se1_i2c {
+	status = "disabled";
+};
+
 &pm8150a_amoled {
 	status = "disabled";
 };

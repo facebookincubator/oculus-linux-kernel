@@ -5,8 +5,27 @@
 
 #ifndef CAM_FASTPATH_UAPI_H_
 #define CAM_FASTPATH_UAPI_H_
-
 #include <linux/types.h>
+
+#define FP_DEV_HDL_IDX_SIZE        8
+#define FP_DEV_HDL_IDX_POS         32
+
+/* see cam_req_mgr hdl info */
+#define FP_DEV_HDL_IDX_MASK          ((1 << FP_DEV_HDL_IDX_SIZE) - 1)
+#define FP_DEV_HDL_IDX_SHIFT         (FP_DEV_HDL_IDX_POS - FP_DEV_HDL_IDX_SIZE)
+
+#define FP_INSERT_IDX(CTX) \
+	do { \
+		((CTX)->dev_hdl &= \
+			~((FP_DEV_HDL_IDX_MASK) << FP_DEV_HDL_IDX_SHIFT)); \
+		((CTX)->dev_hdl |= \
+			(((CTX)->ctx_id & FP_DEV_HDL_IDX_MASK) << FP_DEV_HDL_IDX_SHIFT)); \
+	} while (0)
+
+#define FP_DEV_GET_HDL_IDX(HNDL) \
+	(((HNDL)>>FP_DEV_HDL_IDX_SHIFT) & FP_DEV_HDL_IDX_MASK)
+
+/////////////////////////////////////////////////////////////////////////////
 
 #define CAM_FP_MAX_NUM_PLANES 3
 #define CAM_FP_MAX_BUFS 64
@@ -61,6 +80,7 @@ struct cam_fp_buffer {
  *             Valid only on CAM_FP_DEQUEUE_BUFSET ioctl.
  * @status: Buffer set status. Status is of enum cam_fp_buffer_status type.
  *          Filled by the driver. Valid only on CAM_FP_DEQUEUE_BUFSET ioctl.
+ * @sof_index: Counts sensor frames (SOF enents) received from CSI interface.
  */
 struct cam_fp_buffer_set {
 	__u64 user_data;

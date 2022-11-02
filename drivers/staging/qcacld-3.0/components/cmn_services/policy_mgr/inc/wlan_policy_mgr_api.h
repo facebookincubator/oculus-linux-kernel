@@ -610,6 +610,140 @@ static inline void policy_mgr_change_sap_channel_with_csa(
 }
 #endif
 
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+/**
+ * policy_mgr_is_p2p_p2p_conc_supported() - p2p concurrency support
+ * @psoc: pointer to psoc
+ *
+ * This API is used to check whether firmware supports p2p concurrency
+ *
+ * Return: QDF_STATUS_SUCCESS up on success and any other status for failure.
+ */
+bool
+policy_mgr_is_p2p_p2p_conc_supported(struct wlan_objmgr_psoc *psoc);
+#else
+static inline bool
+policy_mgr_is_p2p_p2p_conc_supported(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+#endif
+
+#define GO_FORCE_SCC_DISABLE 0
+#define GO_FORCE_SCC_STRICT 1
+#define GO_FORCE_SCC_LIBERAL 2
+#ifdef WLAN_FEATURE_P2P_P2P_STA
+/**
+ * Stay in MCC for 1 second, in case of first p2p go channel
+ * needs to be moved to curr go channel
+ */
+#define WAIT_BEFORE_GO_FORCESCC_RESTART (1000)
+
+/**
+ * policy_mgr_is_go_scc_strict() - Get GO force SCC enabled or not
+ * @psoc: psoc object
+ *
+ * This function checks if force SCC logic should be used on GO interface
+ * as a strict mode.
+ *
+ * Return: True if p2p needs o be start on provided channel only.
+ */
+bool policy_mgr_is_go_scc_strict(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * policy_mgr_fetch_existing_con_info() - check if another vdev
+ * is present and find mode, freq , vdev id and chan width
+ *
+ * @psoc: psoc object
+ * @vdev: vdev id
+ * @freq: frequency
+ * @mode: existing vdev mode
+ * @con_freq: existing connection freq
+ * @ch_width: ch_width of existing connection
+ *
+ * This function checks if another vdev is there and fetch connection
+ * info for that vdev.This is mainly for force SCC implementation of GO+GO ,
+ * GO+SAP or GO+STA where we fetch other existing GO, STA, SAP on the same
+ * band with MCC.
+ *
+ * Return: vdev_id
+ */
+uint8_t
+policy_mgr_fetch_existing_con_info(struct wlan_objmgr_psoc *psoc,
+				   uint8_t vdev_id, uint32_t curr_go_freq,
+				   enum policy_mgr_con_mode *mode,
+				   uint32_t *con_freq,
+				   enum phy_ch_width *ch_width);
+
+/**
+ * policy_mgr_process_forcescc_for_go () - start work queue to move first p2p go
+ * to new p2p go's channel
+ *
+ * @psoc: PSOC object information
+ * @vdev_id: Vdev id
+ * @ch_freq: Channel frequency to change
+ * @ch_width: channel width to change
+ * @mode: existing vdev mode
+ *
+ * starts delayed work queue of 1 second to move first p2p go to new
+ * p2p go's channel.
+ *
+ * Return: None
+ */
+void policy_mgr_process_forcescc_for_go(
+		struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+		uint32_t ch_freq, uint32_t ch_width,
+		enum policy_mgr_con_mode mode);
+
+/**
+ * policy_mgr_do_go_plus_go_force_scc() - First p2p go
+ * to new p2p go's channel
+ *
+ * @psoc: PSOC object information
+ * @vdev_id: Vdev id
+ * @ch_freq: Channel frequency to change
+ * @ch_width: channel width to change
+ *
+ * Move first p2p go to new
+ * p2p go's channel.
+ *
+ * Return: None
+ */
+void policy_mgr_do_go_plus_go_force_scc(
+		struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+		uint32_t ch_freq, uint32_t ch_width);
+#else
+static inline
+bool policy_mgr_is_go_scc_strict(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline
+uint8_t policy_mgr_fetch_existing_con_info(struct wlan_objmgr_psoc *psoc,
+					   uint8_t vdev_id,
+					   uint32_t curr_go_freq,
+					   enum policy_mgr_con_mode *mode,
+					   uint32_t *con_freq,
+					   enum phy_ch_width *ch_width)
+{
+	return WLAN_UMAC_VDEV_ID_MAX;
+}
+
+static inline
+void policy_mgr_process_forcescc_for_go(
+		struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+		uint32_t ch_freq, uint32_t ch_width,
+		enum policy_mgr_con_mode mode)
+{}
+
+static inline
+void policy_mgr_do_go_plus_go_force_scc(
+		struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+		uint32_t ch_freq, uint32_t ch_width)
+{}
+#endif
+
 /**
  * policy_mgr_set_pcl_for_existing_combo() - SET PCL for existing combo
  * @psoc: PSOC object information
@@ -3676,4 +3810,19 @@ bool policy_mgr_is_sta_mon_concurrency(struct wlan_objmgr_psoc *psoc);
  *
  */
 QDF_STATUS policy_mgr_check_mon_concurrency(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * policy_mgr_is_3rd_conn_on_same_band_allowed() - Check the third connection
+ * on same band allowed or not
+ * list for third connection
+ * @psoc: PSOC object information
+ * @mode: Device mode
+ *
+ * This function checks whether to allow third connection on same band or not
+ * based on pcl table
+ *
+ * Return: TRUE/FALSE
+ */
+bool policy_mgr_is_3rd_conn_on_same_band_allowed(struct wlan_objmgr_psoc *psoc,
+						 enum policy_mgr_con_mode mode);
 #endif /* __WLAN_POLICY_MGR_API_H */

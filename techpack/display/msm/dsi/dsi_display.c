@@ -6380,6 +6380,8 @@ int dsi_display_get_modes(struct dsi_display *display,
 
 			curr_refresh_rate = sub_mode->timing.refresh_rate;
 			sub_mode->timing.refresh_rate = dfps_caps.dfps_list[i];
+			sub_mode->timing.preferred_refresh =
+				(dfps_caps.panel_refresh_rate == sub_mode->timing.refresh_rate);
 
 			dsi_display_get_dfps_timing(display, sub_mode,
 					curr_refresh_rate);

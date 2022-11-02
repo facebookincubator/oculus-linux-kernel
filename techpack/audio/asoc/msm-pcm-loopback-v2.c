@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -873,7 +873,7 @@ static int msm_pcm_channel_mixer_cfg_ctl_put(struct snd_kcontrol *kcontrol,
 			chmixer_pspd);
 
 	mutex_lock(&loopback_session_lock);
-	if (substream->ref_count <= 0) {
+	if (substream->runtime && substream->ref_count <= 0) {
 		pr_err_ratelimited("%s: substream ref_count:%d invalid\n",
 				__func__, substream->ref_count);
 		mutex_unlock(&loopback_session_lock);

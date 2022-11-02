@@ -3,6 +3,7 @@
  * QTI Secure Execution Environment Communicator (QSEECOM) driver
  *
  * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "QSEECOM: %s: " fmt, __func__
@@ -1852,14 +1853,14 @@ static int qseecom_scale_bus_bandwidth_timer(uint32_t mode)
 		request_mode = mode;
 	}
 
-	ret = __qseecom_set_msm_bus_request(request_mode);
-	if (ret) {
-		pr_err("set msm bus request failed (%d),request_mode (%d)\n",
-			ret, request_mode);
-		goto err_scale_timer;
-	}
-
 	if (qseecom.timer_running) {
+		ret = __qseecom_set_msm_bus_request(request_mode);
+		if (ret) {
+			pr_err("set msm bus request failed (%d),request_mode (%d)\n",
+				ret, request_mode);
+			goto err_scale_timer;
+		}
+
 		ret = __qseecom_decrease_clk_ref_count(CLK_QSEE);
 		if (ret) {
 			pr_err("Failed to decrease clk ref count.\n");

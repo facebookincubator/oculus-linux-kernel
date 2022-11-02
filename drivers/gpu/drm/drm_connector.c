@@ -135,8 +135,9 @@ static void drm_connector_get_cmdline_mode(struct drm_connector *connector)
 		connector->force = mode->force;
 	}
 
-	DRM_DEBUG_KMS("cmdline mode for connector %s %dx%d@%dHz%s%s%s\n",
+	DRM_DEBUG_KMS("cmdline mode for connector %s %s %dx%d@%dHz%s%s%s\n",
 		      connector->name,
+			  mode->name,
 		      mode->xres, mode->yres,
 		      mode->refresh_specified ? mode->refresh : 60,
 		      mode->rb ? " reduced blanking" : "",
@@ -321,7 +322,7 @@ int drm_connector_attach_encoder(struct drm_connector *connector,
 	if (WARN_ON(connector->encoder))
 		return -EINVAL;
 
-	for (i = 0; i < ARRAY_SIZE(connector->encoder_ids); i++) {
+	for (i = 0; i < DRM_CONNECTOR_MAX_ENCODER; i++) {
 		if (connector->encoder_ids[i] == 0) {
 			connector->encoder_ids[i] = encoder->base.id;
 			return 0;

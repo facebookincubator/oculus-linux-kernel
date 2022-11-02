@@ -1,0 +1,163 @@
+
+qcom,55685485_facebook_eureka_5060mah_averaged_masterslave_mar13th2022 {
+	qcom,profile-revision = <24>;
+	/* #55685485_Facebook_Eureka_5060mAH_averaged_MasterSlave_Mar13th2022*/
+	qcom,max-voltage-uv = <4450000>;
+	qcom,fastchg-current-ma = <3470>;
+	qcom,jeita-fcc-ranges-0 = <0 100 992000
+				101 200  2480000
+				201 450  3470000
+				451 550  248000>;
+	qcom,jeita-fcc-ranges-1 = <0 100 992000
+				101 200  2480000
+				201 450  3470000
+				451 550  248000>;
+	qcom,jeita-fv-ranges-0 = <0   450  4450000
+				451 550  4180000>;
+	qcom,jeita-fv-ranges-1 = <0   450  4450000
+				451 550  4180000>;
+	qcom,chg-disable-ranges-0 = <3600000 4100000 0
+				4101000 4450000 0>;
+	qcom,chg-disable-ranges-1 = <3600000 4100000 0
+				4101000 4450000 1>;
+	qcom,rblt-support;
+	qcom,rblt-missing-range = <51500 250000>;
+	qcom,rblt-ok-range = <49000 51000>;
+	qcom,rblt-warn-range = <1001 49000>;
+	qcom,rblt-crit-range = <0 1000>;
+	/* 1 - OK, 2 - warn, 3 - crit, 4 - missing, 5 - unknown */
+	qcom,rblt-ranges = <1 1 4450000
+					2 2 4200000
+					3 3 3900000
+					4 4 4200000
+					5 5 4200000>;
+	/* COLD = 0 DegC, HOT = 52 DegC */
+	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
+	/* COOL = 10 DegC, WARM = 45 DegC */
+	qcom,jeita-soft-thresholds = <0x4ccc 0x20b8>;
+	/* COLD hys = 12 DegC, WARM hys = 43 DegC */
+	qcom,jeita-soft-hys-thresholds = <0x4a2a 0x22b8>;
+	qcom,jeita-soft-fcc-ua = <1012000 1012000>;/* 0.2C */
+	qcom,jeita-soft-fv-uv = <4180000 4180000>;
+	qcom,vnow-based-step-chg;
+	qcom,taper-fcc;
+	qcom,fg-cc-cv-threshold-mv = <4440>;
+	qcom,nom-batt-capacity-mah = <5060>;
+	qcom,batt-id-kohm = <100>;
+	qcom,battery-beta = <4250>;
+	qcom,therm-room-temp = <100000>;
+	qcom,battery-type = "55685485_facebook_eureka_5060mah_averaged_masterslave_mar13th2022";
+	qcom,therm-coefficients = <0x2318 0xd0c 0xdaf7 0xc556 0x848d>;
+	qcom,therm-center-offset = <0x70>;
+	qcom,therm-pull-up = <100>;
+	qcom,rslow-normal-coeffs = <0x8b 0x06 0x0c 0x12>;
+	qcom,rslow-low-coeffs = <0xcd 0xfc 0x29 0x12>;
+	qcom,checksum = <0xFE6C>;
+	qcom,gui-version = "PM855GUI - 1.0.0.14";
+	qcom,fg-profile-data = [
+		 09 00 F7 E3
+		 09 DC A4 E3
+		 07 DC 00 00
+		 E9 BD F6 83
+		 FC 87 65 8A
+		 66 94 3C 80
+		 15 00 8B 06
+		 0C 12 63 05
+		 98 01 CE 07
+		 32 00 87 EA
+		 F2 ED 68 DB
+		 F4 02 AE D4
+		 BA A4 43 23
+		 46 03 14 D5
+		 60 00 41 00
+		 42 00 3E 00
+		 31 00 32 00
+		 38 00 41 00
+		 3F 00 42 00
+		 3B 00 60 00
+		 3A 00 3D 00
+		 4A 00 40 00
+		 3C 00 77 00
+		 56 64 48 00
+		 44 00 46 08
+		 60 00 4C 00
+		 55 00 7D 10
+		 63 10 58 00
+		 9D 20 75 40
+		 5F 58 54 0E
+		 54 00 D8 00
+		 B0 1F 3F 0D
+		 EC 02 DD FD
+		 77 1C 2B 03
+		 D6 0D 6E 22
+		 83 18 97 43
+		 18 5C F6 02
+		 68 0F F3 1F
+		 22 05 00 0B
+		 C0 05 E9 1C
+		 BF 03 21 04
+		 4C 0A F0 17
+		 F8 23 03 44
+		 BD 5A 7B 10
+		 0A 1F 3A E6
+		 32 D2 7A D6
+		 D9 1C E3 B9
+		 3E 04 43 B2
+		 1C 18 91 8B
+		 A6 84 2A 9A
+		 73 A0 09 80
+		 96 F3 A8 05
+		 68 02 C9 FC
+		 00 00 21 CC
+		 58 E2 F8 07
+		 F3 E3 0E BC
+		 7E 18 11 E0
+		 6E BC 5E 03
+		 87 05 83 03
+		 CE 07 32 00
+		 79 01 D3 02
+		 79 04 7C 02
+		 18 02 E9 04
+		 04 02 94 02
+		 1A 02 5E 00
+		 3D 00 43 00
+		 45 64 49 00
+		 49 00 45 08
+		 48 00 47 00
+		 48 00 46 08
+		 3C 10 3C 00
+		 4C 28 4E 48
+		 57 60 66 0C
+		 47 00 4F 00
+		 56 08 59 00
+		 48 00 42 00
+		 49 10 58 10
+		 55 00 6D 28
+		 82 48 54 58
+		 61 0D 5E 00
+		 59 00 41 08
+		 D8 00 75 20
+		 FF FC EE 0A
+		 DA 0D EA 1C
+		 FE 22 2B 44
+		 02 5A 72 18
+		 54 02 02 05
+		 A7 02 71 10
+		 3F 0A D6 1F
+		 73 05 C4 02
+		 EE 05 CB 1C
+		 1F 03 DC 05
+		 67 02 84 18
+		 00 02 BB 05
+		 91 03 67 00
+		 73 20 BD 04
+		 4D 03 6D 05
+		 FC 1C FD 03
+		 FC 05 4D 02
+		 A7 18 61 03
+		 BC 04 2C 02
+		 7E 00 4A 01
+		 C0 00 FA 00
+		 98 13 00 00
+	];
+};

@@ -128,6 +128,69 @@ sysfs_show_max_mapped(struct kobject *kobj,
 	return ret;
 }
 
+static ssize_t
+sysfs_show_immediate_pages(struct kobject *kobj,
+		  struct kobj_attribute *attr,
+		  char *buf)
+{
+	struct kgsl_pagetable *pt;
+	int ret = 0;
+
+	pt = _get_pt_from_kobj(kobj);
+
+	if (pt) {
+		uint64_t val = atomic_long_read(&pt->stats.immediate_pages);
+
+		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
+	}
+
+	return ret;
+}
+
+static ssize_t
+sysfs_show_cpu_faults(struct kobject *kobj,
+		  struct kobj_attribute *attr,
+		  char *buf)
+{
+	struct kgsl_pagetable *pt;
+	int ret = 0;
+
+	pt = _get_pt_from_kobj(kobj);
+
+	if (pt) {
+		uint64_t val = atomic_long_read(&pt->stats.cpu_faults);
+
+		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
+	}
+
+	return ret;
+}
+
+static ssize_t
+sysfs_show_gpu_faults(struct kobject *kobj,
+		  struct kobj_attribute *attr,
+		  char *buf)
+{
+	struct kgsl_pagetable *pt;
+	int ret = 0;
+
+	pt = _get_pt_from_kobj(kobj);
+
+	if (pt) {
+		uint64_t val = atomic_long_read(&pt->stats.gpu_faults);
+
+		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
+	}
+
+	return ret;
+}
+
 static struct kobj_attribute attr_entries = {
 	.attr = { .name = "entries", .mode = 0444 },
 	.show = sysfs_show_entries,
@@ -146,10 +209,31 @@ static struct kobj_attribute attr_max_mapped = {
 	.store = NULL,
 };
 
+static struct kobj_attribute attr_immediate_pages = {
+	.attr = { .name = "immediate_pages", .mode = 0444 },
+	.show = sysfs_show_immediate_pages,
+	.store = NULL,
+};
+
+static struct kobj_attribute attr_cpu_faults = {
+	.attr = { .name = "cpu_faults", .mode = 0444 },
+	.show = sysfs_show_cpu_faults,
+	.store = NULL,
+};
+
+static struct kobj_attribute attr_gpu_faults = {
+	.attr = { .name = "gpu_faults", .mode = 0444 },
+	.show = sysfs_show_gpu_faults,
+	.store = NULL,
+};
+
 static struct attribute *pagetable_attrs[] = {
 	&attr_entries.attr,
 	&attr_mapped.attr,
 	&attr_max_mapped.attr,
+	&attr_immediate_pages.attr,
+	&attr_cpu_faults.attr,
+	&attr_gpu_faults.attr,
 	NULL,
 };
 
@@ -300,6 +384,9 @@ kgsl_mmu_createpagetableobject(struct kgsl_mmu *mmu, unsigned int name)
 	atomic_set(&pagetable->stats.entries, 0);
 	atomic_long_set(&pagetable->stats.mapped, 0);
 	atomic_long_set(&pagetable->stats.max_mapped, 0);
+	atomic_long_set(&pagetable->stats.immediate_pages, 0);
+	atomic_long_set(&pagetable->stats.cpu_faults, 0);
+	atomic_long_set(&pagetable->stats.gpu_faults, 0);
 
 	if (MMU_OP_VALID(mmu, mmu_init_pt)) {
 		status = mmu->mmu_ops->mmu_init_pt(mmu, pagetable);
@@ -571,6 +658,23 @@ int kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc,
 		return -EINVAL;
 
 	return pagetable->pt_ops->mmu_get_backing_pages(memdesc, page_list);
+}
+
+int kgsl_mmu_set_access_flag(struct kgsl_memdesc *memdesc, bool access_flag)
+{
+	struct kgsl_pagetable *pagetable;
+
+	if (IS_ERR_OR_NULL(memdesc))
+		return -EINVAL;
+
+	pagetable = memdesc->pagetable;
+	if (pagetable == NULL)
+		return -ENODEV;
+	if (!PT_OP_VALID(pagetable, mmu_set_access_flag) ||
+		!(KGSL_MEMDESC_MAPPED & memdesc->priv))
+		return -EINVAL;
+
+	return pagetable->pt_ops->mmu_set_access_flag(memdesc, access_flag);
 }
 
 void kgsl_mmu_map_global(struct kgsl_device *device,

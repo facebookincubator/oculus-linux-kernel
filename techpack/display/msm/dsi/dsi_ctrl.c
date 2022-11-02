@@ -1230,8 +1230,7 @@ static void dsi_kickoff_msg_tx(struct dsi_ctrl *dsi_ctrl,
 
 	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY, flags);
 	/* check if custom dma scheduling line needed */
-	if ((dsi_ctrl->host_config.panel_mode == DSI_OP_VIDEO_MODE) &&
-		(flags & DSI_CTRL_CMD_CUSTOM_DMA_SCHED))
+	if (dsi_ctrl->host_config.panel_mode == DSI_OP_VIDEO_MODE)
 		line_no = dsi_ctrl->host_config.u.video_engine.dma_sched_line;
 
 	timing = &(dsi_ctrl->host_config.video_timing);
@@ -2489,7 +2488,7 @@ static bool dsi_ctrl_check_for_spurious_error_interrupts(
 
 	if ((jiffies_now - dsi_ctrl->jiffies_start) < intr_check_interval) {
 		if (dsi_ctrl->error_interrupt_count > interrupt_threshold) {
-			DSI_CTRL_WARN(dsi_ctrl, "Detected spurious interrupts on dsi ctrl\n");
+			pr_warn_ratelimited("%s: Detected spurious interrupts on dsi ctrl\n", dsi_ctrl->name);
 			return true;
 		}
 	} else {
@@ -2553,8 +2552,8 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 						cb_info.event_idx,
 						dsi_ctrl->cell_index,
 						0, 0, 0, 0);
-			DSI_CTRL_ERR(dsi_ctrl, "dsi FIFO OVERFLOW error: 0x%lx\n",
-					error);
+			pr_err_ratelimited("%s: dsi FIFO OVERFLOW error: 0x%lx\n",
+					dsi_ctrl->name, error);
 		}
 	}
 
@@ -2567,8 +2566,8 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 						dsi_ctrl->cell_index,
 						0, 0, 0, 0);
 		}
-		DSI_CTRL_ERR(dsi_ctrl, "dsi FIFO UNDERFLOW error: 0x%lx\n",
-				error);
+		pr_err_ratelimited("%s: dsi FIFO UNDERFLOW error: 0x%lx\n",
+				 dsi_ctrl->name, error);
 	}
 
 	/* DSI PLL UNLOCK error */

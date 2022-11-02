@@ -3,6 +3,10 @@
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  */
 
+/*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ */
+
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/types.h>
@@ -87,8 +91,6 @@ struct lt9611 {
 	struct work_struct cec_work;
 	bool cec_status;
 	struct cec_notifier *cec_notifier;
-	struct work_struct cec_transmit_work;
-	bool is_cec_polling_msg_sent;
 
 	u8 i2c_addr;
 	int irq;
@@ -117,6 +119,7 @@ struct lt9611 {
 	struct work_struct edid_work;
 	struct work_struct work;
 	struct workqueue_struct *cec_wq;
+	struct delayed_work cec_transmit_timeout_work;
 	wait_queue_head_t edid_wq;
 	struct drm_display_mode debug_mode;
 
@@ -143,7 +146,7 @@ static void lt9611_change_to_dvi(struct lt9611 *pdata);
 static void lt9611_change_to_hdmi(struct lt9611 *pdata);
 static void lt9611_ctl_en(struct lt9611 *pdata);
 static void lt9611_ctl_disable(struct lt9611 *pdata);
-static void lt9611_read_cec_msg(struct lt9611 *pdata, struct cec_msg *msg);
+static int lt9611_read_cec_msg(struct lt9611 *pdata, struct cec_msg *msg);
 
 void lt9611_edid_work(struct work_struct *work)
 {
@@ -168,30 +171,6 @@ void lt9611_edid_work(struct work_struct *work)
 		cec_notifier_set_phys_addr_from_edid(notify, pdata->edid);
 }
 
-void lt9611_cec_transmit_work(struct work_struct *work)
-{
-	// CEC framework need call cec_transmit_attempt_done() when transmitted,
-	// usually it called in irq, but LT9611 have no interrupt when
-	// transmitted, so replace with workqueue.
-	struct lt9611 *pdata = container_of(work, struct lt9611,
-					cec_transmit_work);
-
-	// Due to LT9611UXC currently won't tell us message transmit
-	// result, sleep 150 ms to make sure message is transmitted.
-	msleep(150);
-	// TODO:
-	// Workaround solution for polling message.
-	// Don't tell CEC_TX_STATUS_OK to cec_transmit_msg_fh when polling,
-	// or logical address will never configured.
-	if (pdata->is_cec_polling_msg_sent) {
-		cec_transmit_attempt_done(pdata->cec_adapter,
-					CEC_TX_STATUS_NACK);
-		pdata->is_cec_polling_msg_sent = false;
-	} else {
-		cec_transmit_attempt_done(pdata->cec_adapter, CEC_TX_STATUS_OK);
-	}
-}
-
 void lt9611_cec_work(struct work_struct *work)
 {
 	struct cec_msg cec_msg = {};
@@ -201,8 +180,8 @@ void lt9611_cec_work(struct work_struct *work)
 		pr_info("CEC message is receiving.\n");
 		return;
 	}
-	lt9611_read_cec_msg(pdata, &cec_msg);
-	cec_received_msg(pdata->cec_adapter, &cec_msg);
+	if (lt9611_read_cec_msg(pdata, &cec_msg) == 0)
+		cec_received_msg(pdata->cec_adapter, &cec_msg);
 };
 
 void lt9611_hpd_work(struct work_struct *work)
@@ -925,26 +904,61 @@ void lt9611_edid_disable(struct lt9611 *pdata)
 	lt9611_write_byte(pdata, 0x0B, 0x00);
 }
 
-void lt9611_read_cec_msg(struct lt9611 *pdata, struct cec_msg *msg)
+int lt9611_read_cec_msg(struct lt9611 *pdata, struct cec_msg *msg)
 {
-	u8 cec_val, cec_len, i;
+	u8 cec_len, i;
 	u8 reg_cec_flag;
+	int ret = 0;
+	struct i2c_client *client = pdata->i2c_client;
+	struct i2c_msg i2c_msg[CEC_MAX_MSG_SIZE * 2];
 
 	mutex_lock(&pdata->lock);
 	lt9611_ctl_en(pdata);
 	lt9611_write_byte(pdata, 0xFF, 0xB0);
 	lt9611_read(pdata, 0x24, &reg_cec_flag, 1);
 	lt9611_read(pdata, 0x30, &cec_len, 1);
-	msg->len = (cec_len > 16) ? 16 : cec_len;
-	for (i = 0; i < msg->len; i++) {
-		lt9611_read(pdata, 0x31 + i, &cec_val, 1);
-		msg->msg[i] = cec_val;
+	if (cec_len > CEC_MAX_MSG_SIZE) {
+		pr_err("ERROR: CEC message length = %u, will limit to %d\n",
+				cec_len, CEC_MAX_MSG_SIZE);
+		cec_len = CEC_MAX_MSG_SIZE;
 	}
+	if (cec_len == 0) {
+		pr_err("ERROR: CEC message length = %u, skip read CEC message.\n",
+				cec_len);
+		ret = -EINVAL;
+		goto end;
+	}
+	msg->len = cec_len;
+
+	for (i = 0; i < msg->len; i++) {
+		pdata->i2c_wbuf[i] = 0x31 + i;
+		i2c_msg[i * 2].addr = client->addr;
+		i2c_msg[i * 2].flags = 0;
+		i2c_msg[i * 2].len = 1;
+		i2c_msg[i * 2].buf = &(pdata->i2c_wbuf[i]);
+		i2c_msg[i * 2 + 1].addr = client->addr;
+		i2c_msg[i * 2 + 1].flags = I2C_M_RD;
+		i2c_msg[i * 2 + 1].len = 1;
+		i2c_msg[i * 2 + 1].buf = &(msg->msg[i]);
+	}
+
+	if (i2c_transfer(client->adapter, i2c_msg, msg->len*2) != msg->len*2) {
+		pr_err("i2c read failed\n");
+		ret = -EIO;
+		goto end;
+	}
+
 	// Set bit7 = 0 to tell LT9611UXC message received.
 	reg_cec_flag &= ~0x80;
 	lt9611_write_byte(pdata, 0x24, reg_cec_flag);
+end:
 	lt9611_ctl_disable(pdata);
 	mutex_unlock(&pdata->lock);
+
+	/* To check what message received from HDMI Sink */
+	for (i = 0; i < msg->len; i++)
+		pr_alert("received msg[%d] = %x", i, msg->msg[i]);
+	return ret;
 }
 
 static int lt9611_read_device_id(struct lt9611 *pdata)
@@ -994,6 +1008,7 @@ static void lt9611_change_to_hdmi(struct lt9611 *pdata)
 static irqreturn_t lt9611_irq_thread_handler(int irq, void *dev_id)
 {
 	u8 irq_type = 0, irq_status = 0, cec_status = 0;
+	u8 cec_msg_status = 0;
 	bool edid_old_status = false;
 	struct lt9611 *pdata = (struct lt9611 *)dev_id;
 
@@ -1010,6 +1025,8 @@ static irqreturn_t lt9611_irq_thread_handler(int irq, void *dev_id)
 			// Read edid and hpd status.
 			lt9611_read(pdata, 0x23, &irq_status, 1);
 			lt9611_read(pdata, 0x24, &cec_status, 1);
+			lt9611_read(pdata, 0x27, &cec_msg_status, 1);
+			lt9611_write_byte(pdata, 0x27, 0);
 			pdata->hpd_status = irq_status & BIT(1);
 			pdata->edid_status = irq_status & BIT(0);
 			pdata->cec_status = cec_status & BIT(7);
@@ -1026,6 +1043,16 @@ static irqreturn_t lt9611_irq_thread_handler(int irq, void *dev_id)
 	lt9611_ctl_disable(pdata);
 
 	msleep(50);
+
+	if (cec_msg_status & BIT(0)) {
+		cec_transmit_attempt_done(pdata->cec_adapter, CEC_TX_STATUS_OK);
+		pr_debug("CEC_TX_STATUS_OK\n");
+	} else if (cec_msg_status & BIT(2)) {
+		cec_transmit_attempt_done(pdata->cec_adapter,
+					CEC_TX_STATUS_NACK);
+		pr_debug("CEC_TX_STATUS_NACK\n");
+	}
+
 	if (!pdata->bridge_attach) {
 		if (pdata->edid_status)
 			pdata->pending_edid = true;
@@ -1046,11 +1073,9 @@ static irqreturn_t lt9611_irq_thread_handler(int irq, void *dev_id)
 		kfree(pdata->edid);
 		pdata->edid = NULL;
 		// Unconfigure existing cec physical address
-		// cec_s_log_addrs(pdata->cec_adapter, NULL, false);
 		cec_notifier_phys_addr_invalidate(pdata->cec_notifier);
 		cec_queue_pin_hpd_event(pdata->cec_adapter, false, 0);
 	}
-	mutex_unlock(&pdata->lock);
 	if (pdata->hpd_status && (irq_type & BIT(1)))
 		cec_queue_pin_hpd_event(pdata->cec_adapter, true, 0);
 
@@ -1586,7 +1611,6 @@ read_edid:
 skip_read_edid:
 	if (pdata->edid) {
 		if (pdata->cec_support) {
-			cec_s_log_addrs(pdata->cec_adapter, NULL, false);
 			cec_notifier_set_phys_addr_from_edid(
 					pdata->cec_notifier, pdata->edid);
 		}
@@ -1972,6 +1996,14 @@ static int lt9611_cec_log_addr(struct cec_adapter *adap, u8 logical_addr)
 	struct lt9611 *pdata = cec_get_drvdata(adap);
 
 	pdata->cec_log_addr = logical_addr;
+	if (logical_addr != CEC_LOG_ADDR_INVALID) {
+		mutex_lock(&pdata->lock);
+		lt9611_ctl_en(pdata);
+		lt9611_write_byte(pdata, 0xFF, 0xB0);
+		lt9611_write_byte(pdata, 0x26, logical_addr & 0xf);
+		lt9611_ctl_disable(pdata);
+		mutex_unlock(&pdata->lock);
+	}
 	return 0;
 }
 
@@ -1990,22 +2022,17 @@ static int lt9611_cec_transmit(struct cec_adapter *adap, u8 attempts,
 	lt9611_write_byte(pdata, 0x41, len);
 	for (i = 0; i < len; i++)
 		lt9611_write_byte(pdata, 0x42 + i, msg->msg[i]);
-	// TODO:
-	// Workaround solution for polling message.
-	// Don't tell CEC_TX_STATUS_OK to cec_transmit_msg_fh when polling,
-	// or logical address will never configured.
-	if (len == 1 && msg->msg[0] == ((CEC_LOG_ADDR_PLAYBACK_1 << 4)
-		| CEC_LOG_ADDR_PLAYBACK_1)) {
-		pdata->is_cec_polling_msg_sent = true;
-	}
+
 	// Set bit 6 = 1 to tell LT9611UXC sending CEC message.
 	reg_cec_flag |= 0x40;
 	lt9611_write_byte(pdata, 0x24, reg_cec_flag);
 	lt9611_ctl_disable(pdata);
 	mutex_unlock(&pdata->lock);
-	// LT9611 have no interrupt when transmitted,
-	// so replace with workqueue.
-	queue_work(pdata->cec_wq, &pdata->cec_transmit_work);
+
+	/* To check what message sent from Android HAL. */
+	for (i = 0; i < len; i++)
+		pr_alert("transmitting msg[%d] = %x\n", i, msg->msg[i]);
+
 	return 0;
 }
 
@@ -2058,7 +2085,6 @@ static int lt9611_cec_adap_init(struct lt9611 *pdata)
 		pdata->cec_adapter = adap;
 		cec_register_cec_notifier(pdata->cec_adapter,
 					pdata->cec_notifier);
-		cec_s_log_addrs(pdata->cec_adapter, NULL, false);
 	}
 	return ret;
 }
@@ -2175,12 +2201,6 @@ static int lt9611_probe(struct i2c_client *client,
 
 	INIT_WORK(&pdata->edid_work, lt9611_edid_work);
 	INIT_WORK(&pdata->cec_work, lt9611_cec_work);
-	INIT_WORK(&pdata->cec_transmit_work, lt9611_cec_transmit_work);
-	// TODO:
-	// Workaround solution for polling message.
-	// Don't tell CEC_TX_STATUS_OK to cec_transmit_msg_fh when polling,
-	// or logical address will never configured.
-	pdata->is_cec_polling_msg_sent = false;
 
 	pdata->wq = create_singlethread_workqueue("lt9611_wk");
 	if (!pdata->wq) {

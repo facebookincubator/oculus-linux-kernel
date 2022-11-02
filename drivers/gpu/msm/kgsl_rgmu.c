@@ -186,21 +186,24 @@ static int rgmu_enable_clks(struct kgsl_device *device)
 static int rgmu_disable_gdsc(struct kgsl_device *device)
 {
 	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
-	int ret;
 
-	if (IS_ERR_OR_NULL(rgmu->cx_gdsc))
+	/*
+	 * If we are holding an extra vote for the MMU clocks we need to
+	 * release it here or else the CX GDSC won't disable properly.
+	 */
+	kgsl_mmu_suspend(device);
+
+	/* Wait up to 5 seconds for the regulator to go off */
+	if (kgsl_regulator_disable_wait(rgmu->cx_gdsc, 5000))
 		return 0;
 
-	ret = regulator_disable(rgmu->cx_gdsc);
-	if (ret)
-		dev_err(&rgmu->pdev->dev,
-			"Failed to disable RGMU CX gdsc, error %d\n", ret);
-
-	return ret;
+	dev_err(&rgmu->pdev->dev, "RGMU CX gdsc off timeout\n");
+	return -ETIMEDOUT;
 }
 
-static int rgmu_enable_gdsc(struct rgmu_device *rgmu)
+static int rgmu_enable_gdsc(struct kgsl_device *device)
 {
+	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
 	int ret;
 
 	if (IS_ERR_OR_NULL(rgmu->cx_gdsc))
@@ -210,6 +213,8 @@ static int rgmu_enable_gdsc(struct rgmu_device *rgmu)
 	if (ret)
 		dev_err(&rgmu->pdev->dev,
 			"Fail to enable CX gdsc:%d\n", ret);
+
+	kgsl_mmu_resume(device);
 
 	return ret;
 }
@@ -374,7 +379,6 @@ static int rgmu_start(struct kgsl_device *device)
 {
 	int ret = 0;
 	struct gmu_dev_ops *gmu_dev_ops = GMU_DEVICE_OPS(device);
-	struct rgmu_device *rgmu = KGSL_RGMU_DEVICE(device);
 
 	switch (device->state) {
 	case KGSL_STATE_RESET:
@@ -384,7 +388,7 @@ static int rgmu_start(struct kgsl_device *device)
 	case KGSL_STATE_INIT:
 	case KGSL_STATE_SUSPEND:
 	case KGSL_STATE_SLUMBER:
-		rgmu_enable_gdsc(rgmu);
+		rgmu_enable_gdsc(device);
 		rgmu_enable_clks(device);
 		gmu_dev_ops->irq_enable(device);
 		ret = gmu_dev_ops->rpmh_gpu_pwrctrl(device,

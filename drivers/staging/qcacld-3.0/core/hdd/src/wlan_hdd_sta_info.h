@@ -85,8 +85,8 @@ enum dhcp_nego_status {
  * @STA_INFO_SOFTAP_REGISTER_STA:       Register a SoftAP STA
  * @STA_INFO_GET_CACHED_STATION_REMOTE: Get cached peer's info
  * @STA_INFO_HDD_GET_STATION_REMOTE:    Get remote peer's info
- * @STA_INFO_WLAN_HDD_GET_STATION_REMOTE: NL80211_CMD_GET_STATION handler for
- *                                        SoftAP
+ * @STA_INFO_WLAN_HDD_CFG80211_GET_STATION: NL80211_CMD_GET_STATION handler for
+ *                                          SoftAP
  * @STA_INFO_SOFTAP_DEAUTH_CURRENT_STA: Deauth current sta
  * @STA_INFO_SOFTAP_DEAUTH_ALL_STA:     Deauth all sta in the sta list
  * @STA_INFO_CFG80211_DEL_STATION:      CFG80211 del station handler
@@ -108,6 +108,8 @@ enum dhcp_nego_status {
  * @STA_INFO_ATTACH_DETACH:             Station info attach/detach
  * @STA_INFO_SHOW:     Station info show
  * @STA_INFO_SOFTAP_IPA_RX_PKT_CALLBACK: Update rx mcbc stats for IPA case
+ * @STA_INFO_WLAN_HDD_CFG80211_DUMP_STATION: NL80211_CMD_GET_STATION dumpit
+ *                                           handler for SoftAP
  *
  */
 /*
@@ -126,7 +128,7 @@ typedef enum {
 	STA_INFO_SOFTAP_REGISTER_STA = 8,
 	STA_INFO_GET_CACHED_STATION_REMOTE = 9,
 	STA_INFO_HDD_GET_STATION_REMOTE = 10,
-	STA_INFO_WLAN_HDD_GET_STATION_REMOTE = 11,
+	STA_INFO_WLAN_HDD_CFG80211_GET_STATION = 11,
 	STA_INFO_SOFTAP_DEAUTH_CURRENT_STA = 12,
 	STA_INFO_SOFTAP_DEAUTH_ALL_STA = 13,
 	STA_INFO_CFG80211_DEL_STATION = 14,
@@ -146,6 +148,7 @@ typedef enum {
 	STA_INFO_ATTACH_DETACH = 28,
 	STA_INFO_SHOW = 29,
 	STA_INFO_SOFTAP_IPA_RX_PKT_CALLBACK = 30,
+	STA_INFO_WLAN_HDD_CFG80211_DUMP_STATION = 31,
 
 	STA_INFO_ID_MAX,
 } wlan_sta_info_dbgid;
@@ -557,6 +560,21 @@ void hdd_sta_info_detach(struct hdd_sta_info_obj *sta_info_container,
  */
 QDF_STATUS hdd_sta_info_attach(struct hdd_sta_info_obj *sta_info_container,
 			       struct hdd_station_info *sta_info);
+
+/**
+ * hdd_get_sta_info_by_id() - Find the sta_info structure by index
+ * @sta_info_container: The station info container obj that stores and maintains
+ *                      the sta_info obj.
+ * @idx: The index which the sta_info has to be fetched.
+ * @sta_info_dbgid: Debug ID of the caller API
+ *
+ * Return: Reference-counted Pointer to the hdd_station_info structure which
+ *         contains the mac address passed
+ */
+struct hdd_station_info *hdd_get_sta_info_by_id(
+				struct hdd_sta_info_obj *sta_info_container,
+				const int idx,
+				wlan_sta_info_dbgid sta_info_dbgid);
 
 /**
  * hdd_get_sta_info_by_mac() - Find the sta_info structure by mac addr

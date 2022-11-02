@@ -263,7 +263,7 @@ config SERIAL_SAMSUNG_UARTS
 	help
 	  Select the number of available UART ports for the Samsung S3C
 	  serial driver
-	
+
 config SERIAL_SAMSUNG_DEBUG
 	bool "Samsung SoC serial debug"
 	depends on SERIAL_SAMSUNG && DEBUG_LL
@@ -619,8 +619,8 @@ config PDC_CONSOLE
 	depends on PARISC && !SERIAL_MUX && VT
 	default n
 	help
-	  Saying Y here will enable the software based PDC console to be 
-	  used as the system console.  This is useful for machines in 
+	  Saying Y here will enable the software based PDC console to be
+	  used as the system console.  This is useful for machines in
 	  which the hardware based console has not been written yet.  The
 	  following steps must be completed to use the PDC console:
 
@@ -815,7 +815,7 @@ config SERIAL_CPM
 	depends on CPM2 || CPM1
 	select SERIAL_CORE
 	help
-	  This driver supports the SCC and SMC serial ports on Motorola 
+	  This driver supports the SCC and SMC serial ports on Motorola
 	  embedded PowerPC that contain a CPM1 (8xx) or CPM2 (8xxx)
 
 config SERIAL_CPM_CONSOLE
@@ -998,6 +998,18 @@ config SERIAL_MSM_GENI
 	    hardware.
 	    The driver supports console and High speed UART functions.
 
+
+config SERIAL_MSM_GENI_IOS_DELAY_MONITOR
+	bool "Monitoring geni_ios register value"
+	depends on OCULUS && SERIAL_MSM_GENI
+	default n
+	help
+	  For diagnosis of bluetooth timeout crash.
+	  Observation shows bluetooth uart is unable to receive until geni_ios register is 0x01
+	  On good devices, geni_ios is always 0x01, but on bad devices geni_ios is 0x06 on startup
+	  and becomes 0x01 after a while (beteen 0.xxxs to 40s)
+	  if this delay is more than 3 seconds, it would have resulted in a timeout crash
+
 config SERIAL_MSM_GENI_CONSOLE
 	tristate "MSM on-chip GENI HW based console support"
 	depends on SERIAL_MSM_GENI=y
@@ -1012,6 +1024,14 @@ config SERIAL_MSM_GENI_HALF_SAMPLING
 	  greater than 2.5.0.
 	  As earlycon can't have HW version awareness, decision is taken
 	  based on the configuration.
+
+config SERIAL_MSM_GENI_DISALLOW_SUSPEND_RFR_PULL
+	bool "Temporary solution for BT UART problem"
+	depends on SERIAL_MSM_GENI
+	help
+	  Temporary solution for problem communicating with Broadcom BT chip
+	  where serial driver fails to receive data after resume, causing
+	  Bluetooth services to crash.
 
 config SERIAL_VT8500
 	bool "VIA VT8500 on-chip serial port support"

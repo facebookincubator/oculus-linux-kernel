@@ -66,6 +66,10 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
 static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
+static int cm710x_get_dsp_param(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol);
+static int cm710x_put_dsp_param(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol);
 static int cm7120_get_eq_gain(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol);
 static int cm7120_put_eq_gain(struct snd_kcontrol *kcontrol,
@@ -1946,6 +1950,22 @@ static const struct snd_kcontrol_new cm7120_snd_controls[] = {
 			cm7120_get_vu, cm7120_put_vu),
 	SOC_SINGLE_EXT("Mic DSP ENC", MIC_DSP_ENC_ON_OFF, 0, 1, 0,
 			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("Mic DSP WW AEC", MIC_DSP_WW_AEC_ON_OFF, 0, 1, 0,
+			cm7120_get_vu, cm7120_put_vu),
+	SOC_SINGLE_EXT("MIC DSP AEC MaxNR", MIC_DSP_AEC_MAXNR, 0, 32768, 0,
+			cm710x_get_dsp_param, cm710x_put_dsp_param),
+	SOC_SINGLE_EXT("MIC DSP ENC MaxNR", MIC_DSP_ENC_MAXNR, 0, 32768, 0,
+			cm710x_get_dsp_param, cm710x_put_dsp_param),
+	SOC_SINGLE_EXT("MIC DSP ENC Mode", MIC_DSP_ENC_MODE, 0, 2, 0,
+			cm710x_get_dsp_param, cm710x_put_dsp_param),
+	SOC_SINGLE_EXT("MIC DSP AEC TBrr State", MIC_DSP_AEC_TBRR_STATE,
+			0, 12, 0, cm710x_get_dsp_param, cm710x_put_dsp_param),
+	SOC_SINGLE_EXT("MIC DSP Noise Gate", MIC_DSP_NOISE_GATE, 0, 1048575, 0,
+			cm710x_get_dsp_param, cm710x_put_dsp_param),
+	SOC_SINGLE_EXT("MIC DSP Ref Delay", MIC_DSP_REF_DELAY, 0, 24, 0,
+			cm710x_get_dsp_param, cm710x_put_dsp_param),
+	SOC_SINGLE_EXT("MIC DSP WW AEC MaxNR", MIC_DSP_WW_AEC_MAXNR, 0, 32768,
+			0, cm710x_get_dsp_param, cm710x_put_dsp_param),
 
 	/* Config REG */
 	SOC_SINGLE_EXT("SPK L1 TO MUTE", SPK_L1_MUTE, 0, 1, 0,
@@ -2540,7 +2560,8 @@ static void cm7120_aec_enc_enable(struct cm7120_priv *cm7120_codec)
 	u32 DSPElement = 0;
 
 	DSPElement = cm7120_codec->bEnableAEC |
-			(cm7120_codec->bEnableENC << 1);
+			(cm7120_codec->bEnableENC << 1) |
+			(cm7120_codec->bEnableWWAEC << 2);
 	dev_info(cm7120_codec->dev, "%s DSPElement = 0x%08x\n", __func__,
 		 DSPElement);
 	mutex_lock(&cm7120_codec->dsp_lock);
@@ -2560,9 +2581,15 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 		snd_soc_component_get_drvdata(component);
 	unsigned int reg = mc->reg;
 	int adcstr = 0;
+	int rc = 0;
 
-	wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
+	rc = wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
 				    FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		pr_err("%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
+
 
 	switch (reg) {
 	case MIC_EQ_ON_OFF:
@@ -2610,6 +2637,18 @@ static int cm7120_put_vu(struct snd_kcontrol *kcontrol,
 		cm7120_aec_enc_enable(cm7120_codec);
 		dev_dbg(cm7120_codec->dev,
 			"%s MIC_ENC_ON_OFF set Value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
+	case MIC_DSP_WW_AEC_ON_OFF:
+		if (ucontrol->value.integer.value[0] == 0)
+			cm7120_codec->bEnableWWAEC = false;
+		else
+			cm7120_codec->bEnableWWAEC = true;
+
+		cm7120_aec_enc_enable(cm7120_codec);
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_WW_AEC_ON_OFF set Value = %ld\n", __func__,
 			ucontrol->value.integer.value[0]);
 		break;
 
@@ -2976,6 +3015,17 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 			ucontrol->value.integer.value[0]);
 		break;
 
+	case MIC_DSP_WW_AEC_ON_OFF:
+		if (cm7120_codec->bEnableWWAEC)
+			ucontrol->value.integer.value[0] = true;
+		else
+			ucontrol->value.integer.value[0] = false;
+
+		dev_dbg(cm7120_codec->dev,
+			"%s MIC_WW_AEC_ON_OFF get value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+		break;
+
 	case MIC_ADC1_ON_OFF:
 		if (cm7120_codec->bEnableADC1)
 			ucontrol->value.integer.value[0] = true;
@@ -3123,10 +3173,125 @@ static int cm7120_get_vu(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static void cm710x_update_dsp_param(
+		struct cm7120_priv *cm7120_codec, char type, long value)
+{
+	u32 DSPElement = 0;
+
+	DSPElement = cm7120_codec->bEnableAEC |
+			cm7120_codec->bEnableENC << 1 |
+			cm7120_codec->bEnableWWAEC << 2 |
+			0x10 | (type & 0x7) << 5 | (value & 0xFFFFF) << 8;
+	dev_dbg(cm7120_codec->dev, "%s DSPElement = 0x%08x\n", __func__,
+		 DSPElement);
+	mutex_lock(&cm7120_codec->dsp_lock);
+	cm7120_dsp_mode_i2c_write_mem(cm7120_codec->real_regmap, 0x5FFC0030,
+				      (u8 *)&DSPElement, 4);
+	mutex_unlock(&cm7120_codec->dsp_lock);
+}
+
+static int cm710x_put_dsp_param(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_component *component =
+		snd_soc_kcontrol_component(kcontrol);
+	struct cm7120_priv *cm7120_codec =
+		snd_soc_component_get_drvdata(component);
+	int rc = 0;
+	unsigned int reg = mc->reg;
+	u32 q;
+
+	q = ucontrol->value.integer.value[0];
+	dev_dbg(cm7120_codec->dev, "%s value = 0x%08x\n", __func__, q);
+
+	rc = wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
+			FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		dev_err(cm7120_codec->dev,
+			"%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
+
+	switch (reg) {
+	case MIC_DSP_AEC_MAXNR:
+		q = q & 0xFFFF;
+		cm710x_update_dsp_param(cm7120_codec, MIC_DSP_AEC_MAXNR, q);
+		break;
+	case MIC_DSP_ENC_MAXNR:
+		q = q & 0xFFFF;
+		cm710x_update_dsp_param(cm7120_codec, MIC_DSP_ENC_MAXNR, q);
+		break;
+	case MIC_DSP_ENC_MODE:
+		cm710x_update_dsp_param(cm7120_codec, MIC_DSP_ENC_MODE, q);
+		break;
+	case MIC_DSP_AEC_TBRR_STATE:
+		cm710x_update_dsp_param(cm7120_codec,
+				MIC_DSP_AEC_TBRR_STATE, q);
+		break;
+	case MIC_DSP_NOISE_GATE:
+		q = q & 0xFFFFF;
+		cm710x_update_dsp_param(cm7120_codec, MIC_DSP_NOISE_GATE, q);
+		break;
+	case MIC_DSP_REF_DELAY:
+		cm710x_update_dsp_param(cm7120_codec, MIC_DSP_REF_DELAY, q);
+		break;
+	case MIC_DSP_WW_AEC_MAXNR:
+		q = q & 0xFFFF;
+		cm710x_update_dsp_param(cm7120_codec, MIC_DSP_WW_AEC_MAXNR, q);
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static int cm710x_get_dsp_param(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_component *component =
+		snd_soc_kcontrol_component(kcontrol);
+	struct cm7120_priv *cm7120_codec =
+		snd_soc_component_get_drvdata(component);
+	unsigned int reg = mc->reg;
+	u32 DSPElement = 0;
+	u32 dwValue = 0;
+
+	DSPElement = cm7120_codec->bEnableAEC |
+			cm7120_codec->bEnableENC << 1 |
+			cm7120_codec->bEnableWWAEC << 2 |
+			0x10 | (reg & 0x7) << 5 | 0x1 << 31;
+	dev_dbg(cm7120_codec->dev, "%s DSPElement = 0x%08x\n", __func__,
+		 DSPElement);
+	mutex_lock(&cm7120_codec->dsp_lock);
+	cm7120_dsp_mode_i2c_write_mem(cm7120_codec->real_regmap, 0x5FFC0030,
+				      (u8 *)&DSPElement, 4);
+	mutex_unlock(&cm7120_codec->dsp_lock);
+	usleep_range(100000, 150000);
+	mutex_lock(&cm7120_codec->dsp_lock);
+	cm7120_dsp_mode_i2c_read_mem(cm7120_codec->real_regmap, 0x5FFC0030,
+					     &dwValue);
+	mutex_unlock(&cm7120_codec->dsp_lock);
+	dwValue = (dwValue & 0x0FFFFF00) >> 8;
+	ucontrol->value.integer.value[0] = dwValue;
+
+	return 0;
+}
+
+
 
 static int cm7120_get_hp_impedance(struct cm7120_priv *cm7120_codec)
 {
 	u32 dwValue = 0;
+	u32 backupValue = 0;
+
+	/*backup 0x0085 value*/
+	regmap_read(cm7120_codec->virt_regmap, 0x0085, &backupValue);
+	backupValue &= 0xffff;
 
 	regmap_write(cm7120_codec->virt_regmap, 0x0085, 0x0022);
 	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0x1682);
@@ -3149,7 +3314,7 @@ static int cm7120_get_hp_impedance(struct cm7120_priv *cm7120_codec)
 		__func__, dwValue);
 
 	/*restore*/
-	regmap_write(cm7120_codec->virt_regmap, 0x0085, 0x2022);
+	regmap_write(cm7120_codec->virt_regmap, 0x0085, backupValue);
 	regmap_write(cm7120_codec->virt_regmap, 0x0066, 0xDF82);
 	regmap_write(cm7120_codec->virt_regmap, 0x0053, 0x1E00);
 	regmap_write(cm7120_codec->virt_regmap, 0x00D4, 0xB300);
@@ -3172,6 +3337,15 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
 	unsigned int val_len = 0;
 	u32 resetvalue = 0x80000000;
+	int rc = 0;
+
+	rc = wait_for_completion_timeout(&cm7120->fw_download_complete,
+					 FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		dev_err(component->dev,
+			"%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	cm7120->sampleRate = params_rate(params);
 
@@ -3223,6 +3397,15 @@ cm7120_microphone_in_enum_ext_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_component *component =
 		snd_soc_dapm_kcontrol_component(kcontrol);
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
+	int rc = 0;
+
+	rc = wait_for_completion_timeout(&cm7120->fw_download_complete,
+					 FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		dev_err(component->dev,
+			"%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	ucontrol->value.integer.value[0] = cm7120->microphoneSrc;
 	dev_dbg(cm7120->dev, "%s microphoneSrc = %d\n", __func__,
@@ -3239,6 +3422,14 @@ cm7120_microphone_in_enum_ext_put(struct snd_kcontrol *kcontrol,
 		snd_soc_dapm_kcontrol_component(kcontrol);
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
 	int ret = 0;
+
+	ret = wait_for_completion_timeout(&cm7120->fw_download_complete,
+					FW_DOWNLOAD_TIMEOUT);
+	if (ret == 0) {
+		dev_err(component->dev,
+			"%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	cm7120->microphoneSrc = ucontrol->value.integer.value[0];
 	dev_dbg(cm7120->dev, "%s microphone Src select %d\n", __func__,
@@ -3277,6 +3468,14 @@ static int HP_dapm_power_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_component *component =
 		snd_soc_dapm_to_component(w->dapm);
 	struct cm7120_priv *cm7120 = snd_soc_component_get_drvdata(component);
+	int rc = 0;
+
+	rc = wait_for_completion_timeout(&cm7120->fw_download_complete,
+					 FW_DOWNLOAD_TIMEOUT);
+	if (rc == 0) {
+		dev_err(component->dev, "%s: Firmware download timed out!\n", __func__);
+		return -ETIMEDOUT;
+	}
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
@@ -3310,7 +3509,7 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 			snd_soc_component_get_drvdata(component);
 	int rc;
 
-	dev_dbg(component->dev, "SPK wait for cm7120 FW download complete\n");
+	dev_info(component->dev, "SPK wait for cm7120 FW download complete\n");
 	rc = wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
 						 FW_DOWNLOAD_TIMEOUT);
 	if (rc == 0) {
@@ -3320,7 +3519,7 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		dev_dbg(component->dev, "SPK gpio to high\n");
+		dev_info(component->dev, "SPK gpio to high\n");
 		rc = pinctrl_select_state(cm7120_codec->pinctrl,
 				cm7120_codec->pin_spk_en);
 		if (rc)
@@ -3328,7 +3527,7 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 				"pinctrl_select_state error");
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		dev_dbg(component->dev, "SPK gpio to low\n");
+		dev_info(component->dev, "SPK gpio to low\n");
 		rc = pinctrl_select_state(cm7120_codec->pinctrl,
 				cm7120_codec->pin_spk_suspend);
 		if (rc)
@@ -3748,11 +3947,17 @@ static int cm7120_pm_notify(struct notifier_block *nb,
 {
 	struct cm7120_priv *cm7120_codec =
 			container_of(nb, struct cm7120_priv, pm_nb);
+	u32 version = 0;
+
+	cm7120_dsp_mode_i2c_read_addr(cm7120_codec, 0x5FFC001C, &version);
 
 	switch (mode) {
+	case PM_SUSPEND_PREPARE:
+		cancel_work_sync(&cm7120_codec->fw_download_work);
+		break;
 	case PM_POST_SUSPEND:
-		reinit_completion(&cm7120_codec->fw_download_complete);
-		schedule_work(&cm7120_codec->fw_download_work);
+		if (version == 0)
+			schedule_work(&cm7120_codec->fw_download_work);
 		break;
 	default:
 		break;
@@ -3976,10 +4181,6 @@ static int cm7120_probe(struct snd_soc_component *component)
 
 	pr_info("%s: finished.\n", __func__);
 
-	/*disable 2 ASRC*/
-	regmap_update_bits(cm7120->virt_regmap, CM7120_ASRC2, 0xffff, 0x7003);
-	regmap_update_bits(cm7120->virt_regmap, CM7120_ASRC5, 0xffff, 0x0000);
-
 	return ret;
 }
 
@@ -3999,7 +4200,6 @@ static int cm7120_suspend(struct snd_soc_component *component)
 		snd_soc_component_get_drvdata(component);
 	int ret;
 
-	cancel_work_sync(&cm7120_codec->fw_download_work);
 	regmap_write(cm7120_codec->virt_regmap, CM7120_RESET, 0x10ec);
 
 	clk_disable_unprepare(cm7120_codec->mclk);
@@ -4024,6 +4224,12 @@ static int cm7120_suspend(struct snd_soc_component *component)
 		dev_err(cm7120_codec->dev, "codec_1v8 disable failed\n");
 
 	cm7120_codec->is_dsp_mode = false;
+
+	/*
+	* Reinitialize completion since powering off regulators requires
+	* a firmware reload before any audio playback function will work.
+	*/
+	reinit_completion(&cm7120_codec->fw_download_complete);
 
 	return 0;
 }
@@ -4426,12 +4632,6 @@ static void cm7120_firmware_download_work(struct work_struct *work)
 	dev_info(cm7120_codec->dev, "%s entry\n", __func__);
 
 	ret = cm7120_download_firmware(cm7120_codec);
-
-	/*disable 2 ASRC*/
-	regmap_update_bits(cm7120_codec->virt_regmap,
-			CM7120_ASRC2, 0xffff, 0x7003);
-	regmap_update_bits(cm7120_codec->virt_regmap,
-			CM7120_ASRC5, 0xffff, 0x0000);
 
 	complete_all(&cm7120_codec->fw_download_complete);
 }

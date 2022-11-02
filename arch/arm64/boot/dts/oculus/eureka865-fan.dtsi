@@ -13,19 +13,6 @@
 			status = "okay";
 		};
 	};
-
-	fan_pwm@1 {
-		fan_pwm_default_1: fan_pwm_default_1 {
-			pins = "gpio10";
-			function = "func1";
-			bias-disable;
-			power-source = <1>;
-			output-low;
-			qcom,drive-strength = <3>;
-			drive-push-pull;
-			status = "okay";
-		};
-	};
 };
 
 &pm8150l_pwm {
@@ -39,9 +26,13 @@
 			compatible = "pwm-tach-fan";
 			fan,tach-gpio = <&tlmm 71 0x0>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <13 1>;
+			interrupts = <71 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video>;
+			panel = <&dsi_sharp_nvt_4k_72Hz_dsc_video
+					&dsi_sharp_nvt_4k_80Hz_dsc_video
+					&dsi_sharp_nvt_4k_90Hz_dsc_video
+					&dsi_sharp_nvt_4k_120Hz_dsc_video
+					&dsi_jdi_nvt_4k_90Hz_dsc_video>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			pinctrl-names = "default";
@@ -50,26 +41,8 @@
 			status = "okay";
 			max-rpm = <7000>;
 			#cooling-cells = <2>;
-			cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000>;
-		};
-
-		fan_1: pwm-tach-fan@1 {
-			reg = <1>;
-			compatible = "pwm-tach-fan";
-			fan,tach-gpio = <&tlmm 22 0x0>;
-			interrupt-parent = <&tlmm>;
-			interrupts = <13 1>;
-			interrupt-names = "fan_irq";
-			panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video>;
-			/*25KHz -> 40000ns*/
-			pwms = <&pm8150l_pwm 1 40000>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&fan_pwm_default_1
-				&fan_tach_default_1>;
-			status = "okay";
-			max-rpm = <7000>;
-			#cooling-cells = <2>;
-			cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000>;
+			/* TODO(D37872176): revert D37872176 when we setup the fan control */
+			cooling-levels = <3000 4000 5000 6000 7000>;
 		};
 	};
 };
@@ -82,18 +55,6 @@
 		};
 		config {
 			pins = "gpio71";
-			drive-strength = <4>;
-			input-enable;
-		};
-	};
-
-	fan_tach_default_1: fan_tach_default@1 {
-		mux {
-			pins = "gpio22";
-			function = "gpio";
-		};
-		config {
-			pins = "gpio22";
 			drive-strength = <4>;
 			input-enable;
 		};

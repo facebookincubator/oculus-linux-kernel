@@ -3412,6 +3412,33 @@ static int arm_smmu_get_backing_pages(struct iommu_domain *domain,
 	return ret;
 }
 
+static int arm_smmu_set_page_range_access_flag(struct iommu_domain *domain,
+		dma_addr_t iova, size_t size, bool access_flag)
+{
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct io_pgtable_ops *ops;
+	size_t start_page, end_page;
+	unsigned long flags;
+	int page_count, ret = 0;
+
+	ops = arm_smmu_get_pgtable_ops(smmu_domain, iova);
+	if (IS_ERR_OR_NULL(ops) || !ops->set_page_range_access_flag)
+		return -ENODEV;
+	iova = arm_smmu_mask_iova(smmu_domain, iova);
+
+	start_page = iova >> PAGE_SHIFT;
+	end_page = (iova + size - 1) >> PAGE_SHIFT;
+	page_count = (int)(end_page - start_page) + 1;
+
+	spin_lock_irqsave(&smmu_domain->cb_lock, flags);
+	ret = ops->set_page_range_access_flag(ops, iova, page_count, access_flag);
+	if (!access_flag)
+		arm_smmu_tlb_inv_context_s1(smmu_domain);
+	spin_unlock_irqrestore(&smmu_domain->cb_lock, flags);
+
+	return ret;
+}
+
 static void *arm_smmu_fetch_iova_ptep(struct iommu_domain *domain,
 		dma_addr_t iova, void **pptepp)
 {
@@ -4538,6 +4565,7 @@ static struct iommu_ops arm_smmu_ops = {
 	.is_iova_coherent	= arm_smmu_is_iova_coherent,
 	.find_mapped_page_range	= arm_smmu_find_mapped_page_range,
 	.get_backing_pages	= arm_smmu_get_backing_pages,
+	.set_page_range_access_flag = arm_smmu_set_page_range_access_flag,
 	.fetch_iova_ptep	= arm_smmu_fetch_iova_ptep,
 	.decode_ptep		= arm_smmu_decode_ptep,
 	.remap_ptep		= arm_smmu_remap_ptep,

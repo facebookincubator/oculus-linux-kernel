@@ -638,6 +638,7 @@ struct smb_charger {
 	int			last_wls_vout;
 	int			dcin_icl_voltage;
 	bool			dcin_icl_state;
+	bool			disable_dc_online_prop;
 
 	/* boost 5v ext */
 	bool			boost_5v_ext_status;

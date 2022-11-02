@@ -729,9 +729,12 @@ retry:
 	if (trace_enabled && !search_time)
 		search_time = ktime_get_ns();
 
-	if (IS_ERR_OR_NULL(*pagep))
+	if (IS_ERR_OR_NULL(*pagep)) {
 		status = _get_lazy_page(memdesc, offset, prot, ptep, pptep,
 				pagep, lazy_pools_initialized);
+		if (!status && !IS_ERR_OR_NULL(*pagep))
+			atomic_long_inc(&memdesc->pagetable->stats.cpu_faults);
+	}
 
 err:
 	rt_mutex_unlock(&memdesc->pagetable->map_mutex);
@@ -973,6 +976,7 @@ retry:
 				new_secure_page = NULL;
 
 				atomic_long_add(PAGE_SIZE, &memdesc->physsize);
+				atomic_long_inc(&fault_pt->stats.gpu_faults);
 			}
 		} else {
 			/*
@@ -1003,7 +1007,8 @@ retry:
 				 */
 				new_secure_page = page;
 				goto retry;
-			}
+			} else
+				atomic_long_inc(&fault_pt->stats.gpu_faults);
 		}
 	} else {
 		/*

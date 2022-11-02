@@ -14,6 +14,7 @@
 #define VALIDATE_VOLTAGE(min, max, config_val) ((config_val) && \
 	(config_val >= min) && (config_val <= max))
 
+
 static struct i2c_settings_list*
 	cam_sensor_get_i2c_ptr(struct i2c_settings_array *i2c_reg_settings,
 		uint32_t size)
@@ -1762,161 +1763,61 @@ int msm_cam_sensor_handle_reg_gpio(int seq_type,
 }
 
 static int cam_config_mclk_reg(struct cam_sensor_power_ctrl_t *ctrl,
-	struct cam_hw_soc_info *soc_info,
-	struct cam_sensor_power_setting *pd)
+	struct cam_hw_soc_info *soc_info, int32_t index)
 {
-	int32_t num_vreg = 0, j = 0, rc = 0;
+	int32_t num_vreg = 0, j = 0, rc = 0, idx = 0;
 	struct cam_sensor_power_setting *ps = NULL;
-
-	/* make sure there is a power setting with seq_type of pd */
-	for (j = 0; j < ctrl->power_setting_size; j++) {
-		if (ctrl->power_setting[j].seq_type == pd->seq_type) {
-			ps = &ctrl->power_setting[j];
-			break;
-		}
-	}
-	if (j == ctrl->power_setting_size)
-		return -EINVAL;
+	struct cam_sensor_power_setting *pd = NULL;
 
 	num_vreg = soc_info->num_rgltr;
 
+	pd = &ctrl->power_down_setting[index];
+
 	for (j = 0; j < num_vreg; j++) {
 		if (!strcmp(soc_info->rgltr_name[j], "cam_clk")) {
-			CAM_DBG(CAM_SENSOR, "Disable MCLK Regulator");
-			rc = cam_soc_util_regulator_disable(
-				soc_info->rgltr[j],
-				soc_info->rgltr_name[j],
-				soc_info->rgltr_min_volt[j],
-				soc_info->rgltr_max_volt[j],
-				soc_info->rgltr_op_mode[j],
-				soc_info->rgltr_delay[j]);
-
-			if (rc) {
-				CAM_ERR(CAM_SENSOR,
-					"MCLK REG DISALBE FAILED: %d",
-					rc);
-				return rc;
+			ps = NULL;
+			for (idx = 0; idx < ctrl->power_setting_size; idx++) {
+				if (ctrl->power_setting[idx].seq_type ==
+					pd->seq_type) {
+					ps = &ctrl->power_setting[idx];
+					break;
+				}
 			}
-			ps->data[0] = soc_info->rgltr[j];
-			regulator_put(
-				soc_info->rgltr[j]);
-			soc_info->rgltr[j] = NULL;
-		}
-	}
 
-	return rc;
-}
+			if (ps != NULL) {
+				CAM_DBG(CAM_SENSOR, "Disable MCLK Regulator");
+				rc = cam_soc_util_regulator_disable(
+					soc_info->rgltr[j],
+					soc_info->rgltr_name[j],
+					soc_info->rgltr_min_volt[j],
+					soc_info->rgltr_max_volt[j],
+					soc_info->rgltr_op_mode[j],
+					soc_info->rgltr_delay[j]);
 
-static int __cam_sensor_mclk_on(struct cam_sensor_power_ctrl_t *ctrl,
-	struct cam_hw_soc_info *soc_info,
-	struct cam_sensor_power_setting *power_setting)
-{
-	struct cam_sensor_board_info *board_info = container_of(ctrl,
-					struct cam_sensor_board_info,
-					power_info);
-	int num_vreg = soc_info->num_rgltr;
-	int j;
-	int rc;
+				if (rc) {
+					CAM_ERR(CAM_SENSOR,
+						"MCLK REG DISALBE FAILED: %d",
+						rc);
+					return rc;
+				}
 
-	/* skip if power already on */
-	if (board_info->mclk_on)
-		return 0;
+				ps->data[0] =
+					soc_info->rgltr[j];
 
-	if (power_setting->seq_val >= soc_info->num_clk) {
-		CAM_ERR(CAM_SENSOR, "clk index %d >= max %u",
-			power_setting->seq_val,
-			soc_info->num_clk);
-		return -EINVAL;
-	}
-	for (j = 0; j < num_vreg; j++) {
-		if (!strcmp(soc_info->rgltr_name[j],
-			"cam_clk")) {
-			CAM_DBG(CAM_SENSOR, "Enable cam_clk: %d", j);
-
-			soc_info->rgltr[j] = regulator_get(soc_info->dev,
-				soc_info->rgltr_name[j]);
-
-			if (IS_ERR_OR_NULL(soc_info->rgltr[j])) {
-				rc = PTR_ERR(
+				regulator_put(
 					soc_info->rgltr[j]);
-				rc = rc ? rc : -EINVAL;
-				CAM_ERR(CAM_SENSOR, "vreg %s %d",
-					soc_info->rgltr_name[j], rc);
 				soc_info->rgltr[j] = NULL;
-				return -EINVAL;
 			}
-
-			rc =  cam_soc_util_regulator_enable(
-				soc_info->rgltr[j],
-				soc_info->rgltr_name[j],
-				soc_info->rgltr_min_volt[j],
-				soc_info->rgltr_max_volt[j],
-				soc_info->rgltr_op_mode[j],
-				soc_info->rgltr_delay[j]);
-			if (rc) {
-				CAM_ERR(CAM_SENSOR, "Reg enable failed");
-				goto regulator_fail;
-			}
-			power_setting->data[0] =
-				soc_info->rgltr[j];
-			break;
 		}
 	}
-	if (power_setting->config_val)
-		soc_info->clk_rate[0][power_setting->seq_val] =
-			power_setting->config_val;
-
-	for (j = 0; j < soc_info->num_clk; j++) {
-		rc = cam_soc_util_clk_enable(soc_info->clk[j],
-			soc_info->clk_name[j],
-			soc_info->clk_rate[0][j]);
-		if (rc) {
-			CAM_ERR(CAM_SENSOR, "sensor clk enable failed");
-			goto clock_fail;
-		}
-	}
-
-	board_info->mclk_on = true;
-	return 0;
-
-clock_fail:
-	for (j--; j >= 0; j--)
-		cam_soc_util_clk_disable(soc_info->clk[j],
-					soc_info->clk_name[j]);
-regulator_fail:
-	regulator_put(soc_info->rgltr[j]);
-	soc_info->rgltr[j] = NULL;
 
 	return rc;
-}
-
-static void __cam_sensor_mclk_off(struct cam_sensor_power_ctrl_t *ctrl,
-	struct cam_hw_soc_info *soc_info,
-	struct cam_sensor_power_setting *power_setting)
-{
-	int i;
-	struct cam_sensor_board_info *board_info = container_of(ctrl,
-					struct cam_sensor_board_info,
-					power_info);
-
-	if (!board_info->mclk_on ||
-		board_info->debugfs.oculus_mclk_no_power_down)
-		return;
-
-	for (i = soc_info->num_clk - 1; i >= 0; i--) {
-		cam_soc_util_clk_disable(soc_info->clk[i],
-			soc_info->clk_name[i]);
-	}
-	if (cam_config_mclk_reg(ctrl, soc_info, power_setting) < 0)
-		CAM_ERR(CAM_SENSOR, "config clk reg failed");
-
-	board_info->mclk_on = false;
 }
 
 int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 		struct cam_hw_soc_info *soc_info)
 {
-	int rc = 0, index = 0, no_gpio = 0, ret = 0, num_vreg;
+	int rc = 0, index = 0, no_gpio = 0, ret = 0, num_vreg, j = 0, i = 0;
 	int32_t vreg_idx = -1;
 	struct cam_sensor_power_setting *power_setting = NULL;
 	struct msm_camera_gpio_num_info *gpio_num_info = NULL;
@@ -1986,8 +1887,64 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 
 		switch (power_setting->seq_type) {
 		case SENSOR_MCLK:
-			rc = __cam_sensor_mclk_on(ctrl, soc_info,
-				power_setting);
+			if (power_setting->seq_val >= soc_info->num_clk) {
+				CAM_ERR(CAM_SENSOR, "clk index %d >= max %u",
+					power_setting->seq_val,
+					soc_info->num_clk);
+				goto power_up_failed;
+			}
+			for (j = 0; j < num_vreg; j++) {
+				if (!strcmp(soc_info->rgltr_name[j],
+					"cam_clk")) {
+					CAM_DBG(CAM_SENSOR,
+						"Enable cam_clk: %d", j);
+
+					soc_info->rgltr[j] =
+					regulator_get(
+						soc_info->dev,
+						soc_info->rgltr_name[j]);
+
+					if (IS_ERR_OR_NULL(
+						soc_info->rgltr[j])) {
+						rc = PTR_ERR(
+							soc_info->rgltr[j]);
+						rc = rc ? rc : -EINVAL;
+						CAM_ERR(CAM_SENSOR,
+							"vreg %s %d",
+							soc_info->rgltr_name[j],
+							rc);
+						soc_info->rgltr[j] = NULL;
+						goto power_up_failed;
+					}
+
+					rc =  cam_soc_util_regulator_enable(
+					soc_info->rgltr[j],
+					soc_info->rgltr_name[j],
+					soc_info->rgltr_min_volt[j],
+					soc_info->rgltr_max_volt[j],
+					soc_info->rgltr_op_mode[j],
+					soc_info->rgltr_delay[j]);
+					if (rc) {
+						CAM_ERR(CAM_SENSOR,
+							"Reg enable failed");
+						goto power_up_failed;
+					}
+					power_setting->data[0] =
+						soc_info->rgltr[j];
+				}
+			}
+			if (power_setting->config_val)
+				soc_info->clk_rate[0][power_setting->seq_val] =
+					power_setting->config_val;
+
+			for (j = 0; j < soc_info->num_clk; j++) {
+				rc = cam_soc_util_clk_enable(soc_info->clk[j],
+					soc_info->clk_name[j],
+					soc_info->clk_rate[0][j]);
+				if (rc)
+					break;
+			}
+
 			if (rc < 0) {
 				CAM_ERR(CAM_SENSOR, "clk enable failed");
 				goto power_up_failed;
@@ -2111,7 +2068,16 @@ power_up_failed:
 			power_setting->seq_type);
 		switch (power_setting->seq_type) {
 		case SENSOR_MCLK:
-			__cam_sensor_mclk_off(ctrl, soc_info, power_setting);
+			for (i = soc_info->num_clk - 1; i >= 0; i--) {
+				cam_soc_util_clk_disable(soc_info->clk[i],
+					soc_info->clk_name[i]);
+			}
+			ret = cam_config_mclk_reg(ctrl, soc_info, index);
+			if (ret < 0) {
+				CAM_ERR(CAM_SENSOR,
+					"config clk reg failed rc: %d", ret);
+				continue;
+			}
 			break;
 		case SENSOR_RESET:
 		case SENSOR_STANDBY:
@@ -2229,7 +2195,7 @@ msm_camera_get_power_settings(struct cam_sensor_power_ctrl_t *ctrl,
 int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		struct cam_hw_soc_info *soc_info)
 {
-	int index = 0, ret = 0, num_vreg = 0;
+	int index = 0, ret = 0, num_vreg = 0, i;
 	struct cam_sensor_power_setting *pd = NULL;
 	struct cam_sensor_power_setting *ps = NULL;
 	struct msm_camera_gpio_num_info *gpio_num_info = NULL;
@@ -2268,7 +2234,17 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		CAM_DBG(CAM_SENSOR, "seq_type %d",  pd->seq_type);
 		switch (pd->seq_type) {
 		case SENSOR_MCLK:
-			__cam_sensor_mclk_off(ctrl, soc_info, pd);
+			for (i = soc_info->num_clk - 1; i >= 0; i--) {
+				cam_soc_util_clk_disable(soc_info->clk[i],
+					soc_info->clk_name[i]);
+			}
+
+			ret = cam_config_mclk_reg(ctrl, soc_info, index);
+			if (ret < 0) {
+				CAM_ERR(CAM_SENSOR,
+					"config clk reg failed rc: %d", ret);
+				continue;
+			}
 			break;
 		case SENSOR_RESET:
 		case SENSOR_STANDBY:

@@ -84,6 +84,8 @@
 
 	pinctrl-0 = <&syncboss_uart_active>;
 	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+	interrupts-extended = <&intc GIC_SPI 585 IRQ_TYPE_LEVEL_HIGH>;
+	qcom,allow-suspend;
 };
 
 &pm8150a_l7 {
@@ -124,7 +126,6 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
-		oculus,transaction-length = <248>;
 
 		swd@0 {
 			compatible = "oculus,swd";

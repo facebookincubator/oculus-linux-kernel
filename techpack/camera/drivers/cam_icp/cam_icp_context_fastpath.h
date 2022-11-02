@@ -39,6 +39,7 @@ struct cam_icp_fastpath_packet {
 };
 
 struct cam_icp_fastpath_context {
+	uint32_t                 ctx_id;
 	struct cam_hw_mgr_intf   hw_intf;
 	int32_t                  dev_hdl;
 	void                     *hw_ctx;
@@ -71,11 +72,16 @@ int cam_icp_fastpath_start_dev(void *hnd, struct cam_start_stop_dev_cmd *cmd);
 int cam_icp_fastpath_stop_dev(void *hnd, struct cam_start_stop_dev_cmd *cmd);
 int cam_icp_fastpath_acquire_dev(void *hnd, struct cam_acquire_dev_cmd *cmd);
 int cam_icp_fastpath_release_dev(void *hnd, struct cam_release_dev_cmd *cmd);
+
 int cam_icp_fastpath_set_stream_mode(void *hnd,
 				     struct cam_set_stream_mode *cmd);
+
 int cam_isp_fastpath_stream_mode_cmd(void *hnd,
 				     struct cam_stream_mode_cmd *cmd);
-void *cam_icp_fastpath_context_create(struct cam_hw_mgr_intf *hw_intf);
+
+void *cam_icp_fastpath_context_create(
+			struct cam_hw_mgr_intf *hw_intf, int ctx_id);
+
 void cam_icp_fastpath_context_destroy(void *hnd);
 
 #endif /* _CAM_ICP_FASTPATH_CONTEXT_H_ */
