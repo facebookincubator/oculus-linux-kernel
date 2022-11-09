@@ -637,6 +637,9 @@ static int check_vaddr_bounds(unsigned long start, unsigned long end)
 	struct vm_area_struct *vma;
 	int ret = 1;
 
+	if (!start)
+		goto out;
+
 	if (end < start)
 		goto out;
 
@@ -834,20 +837,28 @@ long msm_ion_custom_ioctl(struct ion_client *client,
 
 		down_read(&mm->mmap_sem);
 
-		start = (unsigned long)data.flush_data.vaddr +
-			data.flush_data.offset;
-		end = start + data.flush_data.length;
-
-		if (start && check_vaddr_bounds(start, end)) {
-			pr_err("%s: virtual address %pK is out of bounds\n",
+		if ((unsigned long)data.flush_data.vaddr >
+				(ULONG_MAX - data.flush_data.offset)) {
+			pr_err("%s: Integer overflow detected for %pK\n",
 			       __func__, data.flush_data.vaddr);
 			ret = -EINVAL;
 		} else {
-			ret = ion_do_cache_op(
-				client, handle, data.flush_data.vaddr,
-				data.flush_data.offset,
-				data.flush_data.length, cmd);
+			start = (unsigned long)data.flush_data.vaddr +
+				data.flush_data.offset;
+			end = start + data.flush_data.length;
+
+			if (check_vaddr_bounds(start, end)) {
+				pr_err("%s: virtual address %pK is out of bounds\n",
+				       __func__, data.flush_data.vaddr);
+				ret = -EINVAL;
+			} else {
+				ret = ion_do_cache_op(
+					client, handle, data.flush_data.vaddr,
+					data.flush_data.offset,
+					data.flush_data.length, cmd);
+			}
 		}
+
 		up_read(&mm->mmap_sem);
 
 		ion_free_nolock(client, handle);

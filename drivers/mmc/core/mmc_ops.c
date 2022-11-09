@@ -192,11 +192,7 @@ int mmc_send_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 		if (err)
 			break;
 
-		/* if we're just probing, do a single pass */
-		if (ocr == 0)
-			break;
-
-		/* otherwise wait until reset completes */
+		/* wait until reset completes */
 		if (mmc_host_is_spi(host)) {
 			if (!(cmd.resp[0] & R1_SPI_IDLE))
 				break;
@@ -208,6 +204,19 @@ int mmc_send_op_cond(struct mmc_host *host, u32 ocr, u32 *rocr)
 		err = -ETIMEDOUT;
 
 		mmc_delay(10);
+
+		/*
+		 * According to eMMC specification, we should issue CMD1
+		 * repeatidly in the idle state until the eMMC is ready even if
+		 * the mmc_attach_mmc() calls this function with ocr = 0.
+		 * Otherwise some eMMC devices seem to enter the inactive mode
+		 * after mmc_init_card() issued CMD0 when the eMMC device is
+		 * busy.
+		 */
+		if (!ocr && !mmc_host_is_spi(host)) {
+			pr_err("mmc: retry CMD1");
+			cmd.arg = cmd.resp[0] | BIT(30);
+		}
 	}
 
 	if (rocr && !mmc_host_is_spi(host))

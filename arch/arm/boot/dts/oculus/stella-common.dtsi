@@ -714,7 +714,7 @@
 		linux,code = <0>;
 		qcom,s1-timer = <10256>;
 		qcom,s2-timer = <2000>;
-		qcom,s2-type = <8>;
+		qcom,s2-type = <7>;
 	};
 };
 
