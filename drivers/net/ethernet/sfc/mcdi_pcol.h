@@ -4625,9 +4625,9 @@
 /*            MC_CMD_MUM_IN_CMD_OFST 0 */
 /* ID of (device connected to MUM) to read from registers of */
 #define       MC_CMD_MUM_IN_READ_DEVICE_OFST 4
-/* enum: Hittite HMC1035 clock generator on Sorrento board */
+/* enum: Hittite HMC1035 clock generator on unknown5 board */
 #define          MC_CMD_MUM_DEV_HITTITE 0x1
-/* enum: Hittite HMC1035 clock generator for NIC-side on Sorrento board */
+/* enum: Hittite HMC1035 clock generator for NIC-side on unknown5 board */
 #define          MC_CMD_MUM_DEV_HITTITE_NIC 0x2
 /* 32-bit address to read from */
 #define       MC_CMD_MUM_IN_READ_ADDR_OFST 8
@@ -4642,7 +4642,7 @@
 /*            MC_CMD_MUM_IN_CMD_OFST 0 */
 /* ID of (device connected to MUM) to write to registers of */
 #define       MC_CMD_MUM_IN_WRITE_DEVICE_OFST 4
-/* enum: Hittite HMC1035 clock generator on Sorrento board */
+/* enum: Hittite HMC1035 clock generator on unknown5 board */
 /*               MC_CMD_MUM_DEV_HITTITE 0x1 */
 /* 32-bit address to write to */
 #define       MC_CMD_MUM_IN_WRITE_ADDR_OFST 8
