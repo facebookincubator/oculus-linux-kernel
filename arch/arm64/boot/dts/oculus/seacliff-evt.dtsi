@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "seacliff.dtsi"
+#include "seacliff-adc-usbc.dtsi"
+
+&dsi_dual_boe_90hz_dsc {
+	qcom,platform-en-gpio = <>;
+};
+
+&dsi_panel_pwr_supply_lab_ibb {
+
+	qcom,panel-supply-entry@0 {
+		reg = <0>;
+		qcom,supply-name = "vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <80>;
+		qcom,supply-pre-on-sleep = <20>;
+	};
+
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "vsp";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+		qcom,supply-pre-off-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "vsn";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "blu-mcu";
+		qcom,supply-min-voltage = <3120000>;
+		qcom,supply-max-voltage = <3120000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <0>;
+	};
+};
+
+&sde_dsi {
+	vsp-supply = <&display_panel_vsp_en>;
+	vsn-supply = <&display_panel_vsn_en>;
+};
+
+&soc {
+	display_panel_vsp_en: vsp_gpio_regulator@2 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_vsp_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 23 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_vsp_en_default>;
+	};
+
+	display_panel_vsn_en: vsn_gpio_regulator@3 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_vsn_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 22 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_vsn_en_default>;
+	};
+};
+
+&tlmm {
+	display_panel_vsp_en_default: display_panel_vsp_en_default {
+		mux {
+			pins = "gpio23";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio23";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	display_panel_vsn_en_default: display_panel_vsn_en_default {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+};
+
+&ufshc_mem {
+	qcom,vddp-ref-clk-min-uV = <1200000>;
+	qcom,vddp-ref-clk-max-uV = <1240000>;
+};

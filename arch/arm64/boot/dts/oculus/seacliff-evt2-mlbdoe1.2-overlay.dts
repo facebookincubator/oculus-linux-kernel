@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "seacliff-evt.dtsi"
+
+/ {
+	model = "Seacliff (EVT2-MLBDOE1.2)";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 73>;
+};
+
+&cm7120 {
+	cm7120,firmware-name = "CM7120_TDM_DOE2.bin";
+};
+
+&dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@0 {
+		reg = <0>;
+		qcom,supply-name = "vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <80>;
+		qcom,supply-pre-on-sleep = <20>;
+	};
+
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "right_panel_bias";
+		qcom,supply-min-voltage = <6000000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <220000>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "left_panel_bias";
+		qcom,supply-min-voltage = <6000000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <220000>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "vsp";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+		qcom,supply-pre-off-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "vsn";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "blu-mcu";
+		qcom,supply-min-voltage = <3120000>;
+		qcom,supply-max-voltage = <3120000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@6 {
+		reg = <6>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@7 {
+		reg = <7>;
+		qcom,supply-name = "blu-spi";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+};
+
+&sde_dsi {
+	right_panel_bias-supply = <&aw37504_right>;
+	left_panel_bias-supply = <&aw37504_left>;
+};
+
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	aw37504_right: aw37504@3e {
+		compatible = "aw,aw37504";
+		reg = <0x3e>;
+		status = "ok";
+
+		regulator-name = "aw37504-right-regulator";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-boot-on;
+	};
+};
+
+&qupv3_se11_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	aw37504_left: aw37504@3e {
+		compatible = "aw,aw37504";
+		reg = <0x3e>;
+		status = "ok";
+
+		regulator-name = "aw37504-left-regulator";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-boot-on;
+	};
+};
+
+&soc {
+	gpio_capacitor_en: gpio_capacitor_regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "gpio_capacitor_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <350>;
+		gpio = <&tlmm 52 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_capacitor_default>;
+	};
+
+	gpio_capacitor {
+		compatible = "gpio-capacitor";
+		gpio-capacitor-supply = <&gpio_capacitor_en>;
+	};
+};
+
+&tlmm {
+	gpio_capacitor_pins {
+		gpio_capacitor_default: gpio_capacitor_default {
+			mux {
+				pins = "gpio52";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio52";
+				drive-strength = <2>;
+				bias-disable = <0>;
+				output-high;
+			};
+		};
+	};
+};
