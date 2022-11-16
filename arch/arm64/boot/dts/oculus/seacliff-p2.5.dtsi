@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "seacliff.dtsi"
+#include "seacliff-adc-imu.dtsi"
+
+&cam_cci0 {
+	qcom,cam-sensor0 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor1 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l3>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor2 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor3 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor4 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150a_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
+			"cam_clk";
+	};
+
+	qcom,cam-sensor5 {
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_avdd-supply = <&pm8150_l10>;
+		cam_dovdd-supply = <&pm8150_l15>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_avdd", "cam_dovdd", "cam_clk";
+	};
+};
+
+&cm7120 {
+	cm7120,firmware-name = "CM7120_TDM_I2S.bin";
+};
+
+&cm7120_snd {
+	qcom,model = "kona-cm7120-tdm_i2s-snd-card";
+};
+
+&fpga_aggregator {
+	status = "disabled";
+};
+
+&pac1934_0 {
+	status = "disabled";
+};
+
+&pac1934_1 {
+	status = "disabled";
+};
+
+&pm8150_l10 {
+	/* Esker power */
+	regulator-always-on;
+};
+
+&pm8150_l13 {
+	/* FPGA power */
+	regulator-always-on;
+};
+
+&pm8150_l15 {
+	/* Canyon, Glacier, Teton, Esker power */
+	regulator-always-on;
+};
+
+&pm8150a_l1 {
+	/* IPD 1.8 */
+	regulator-always-on;
+};
+
+&pm8150a_l2 {
+	/* Teton power */
+	regulator-always-on;
+};
+
+&pm8150a_l3 {
+	/* Glacier power, FPGA power */
+	regulator-always-on;
+};
+
+&pm8150a_l4 {
+	status = "disabled";
+};
+
+&pm8150a_l5 {
+	status = "disabled";
+};
+
+&pm8150a_l10 {
+	/* Canyon, Glacier, Teton power */
+	regulator-always-on;
+};
+
+&qupv3_se0_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss-ipl-spl.bin";
+		};
+	};
+};

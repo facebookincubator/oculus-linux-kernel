@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include "seacliff.dtsi"
+#include "seacliff-adc-usbc.dtsi"
+#include "seacliff-dd.dtsi"
+
+/ {
+	model = "Seacliff (P3) DD";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 99>;
+};
+
+&cypd3177 {
+	status = "disabled";
+};

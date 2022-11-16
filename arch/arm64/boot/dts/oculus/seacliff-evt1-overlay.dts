@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "seacliff-evt.dtsi"
+
+/ {
+	model = "Seacliff (EVT1)";
+	compatible = "qcom,kona";
+	qcom,board-id = <66 69>;
+};
+
+&pm8150_l6 {
+	regulator-min-microvolt = <1240000>;
+	regulator-max-microvolt = <1240000>;
+	qcom,init-voltage = <1240000>;
+};
+
+&qupv3_se0_spi {
+	oculusnrf@0 {
+		swd@0 {
+			oculus,fw-path = "syncboss-ipl-spl.bin";
+		};
+	};
+};
