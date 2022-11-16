@@ -130,7 +130,7 @@ Nintendo Wii device tree
 1.j) The Inter-Processor Communication (IPC) node
 
   Represent the Inter-Processor Communication interface. This interface
-  enables communications between the Broadway and the unknown2 processors.
+  enables communications between the Broadway and the Starlet processors.
 
    - compatible : should be "nintendo,hollywood-ipc"
    - reg : should contain the IPC registers location and length
