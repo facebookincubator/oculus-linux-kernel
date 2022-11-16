@@ -30,6 +30,16 @@ config BLU_FW
 	help
 	  Allow automatic/OTA FW updates for the backlight MCU.
 
+config CHARGER_CYPD3177
+	tristate "CONFIG_CYPD3177 support"
+	default n
+	help
+	  Say Y here to enable support for batteries with CYPD3177 chips connected
+	  over an I2C bus. This driver registers with the power supply class and
+	  advertises itself as a wireless power supply. CYPD3177 controller takes
+	  care of PD contract negotiation and advertises state changes via GPIO
+	  interrupts.
+
 config CHARGING_THERMAL_CONTROLLER
 	tristate "Charging Thermal Controller Driver"
 	default n
@@ -39,6 +49,24 @@ config CHARGING_THERMAL_CONTROLLER
 		0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
 		these levels are also device tree defined.
 
+config CYPD_POLICY_ENGINE
+	tristate "Cypress Power Delivery Policy Engine"
+	default n
+	help
+	  Say Y here to enable CYPD policy engine. This driver implements policy
+	  for handling power delivery messages. This is based on the USB Power
+	  Delivery protocol with some CYPD3177 BCR specific behavior such as
+	  defaulting to sink only mode. This driver depends on a CYPD 3177
+	  controller device driver in order to transmit and receive PD messages
+	  on its behalf.
+
+config DEPTH_PROJECTOR
+	tristate "Depth Projector Kernel Driver"
+	default n
+	help
+	  Depth Projector Kernel Module to set default gpio values.
+	  This driver sets SWD_IO and SWD_CLK to high impedance mode
+
 config DISPLAY_VIRTUAL_SENSOR
 	tristate "Display Virtual Sensor Driver"
 	default n
@@ -47,6 +75,20 @@ config DISPLAY_VIRTUAL_SENSOR
 	  This driver implements a virtual sensor driver representing the
 	  display temperature of a device.
 
+config EYE_FACE_LED
+	tristate "Eye Face Led Kernel Driver"
+	default n
+	help
+	  Eye Face LED Kernel Module to set default gpio values.
+	  This driver sets XERR and SAFETY_FLAG to input-enable & bias-disable
+
+config FPGA_AGGREGATOR
+	tristate "FPGA Aggregator Kernel Driver"
+	default n
+	help
+	  FPGA aggregator kernel module that controls the regulators
+	  for the FPGA hardware.
+
 config FRONT_PANEL_SENSOR
 	tristate "Front Panel Virtual Sensor Driver"
 	default n
@@ -54,6 +96,15 @@ config FRONT_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the front
 	  panel skin temperature of a device.
+
+config GPIO_CAPACITOR
+	tristate "Cap Hold Up Circuit controlled by GPIO"
+	default n
+	help
+		Cap Hold-Up circuit along with AP suspend so that this circuit is active
+		when the system is active (busy and capable of high power peaks) to avoid
+		sudden high current. And disabled when not in use (EG: Standby) since the
+		circuit has some leakage to prevent excessive power drain.
 
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
@@ -95,6 +146,23 @@ config MOLOKINI
 	  Molokini.
 	  Also creates debugfs nodes to advertise Molokini battery parameters.
 
+config NAUTILUS_CLK
+	tristate "NAUTILUS CLK CONTROL Kernel Driver"
+	default n
+	help
+	  Enable support for controlling the nautilus device clock
+
+config OCULUS_CHARGING_DOCK
+	tristate "Oculus charging dock driver"
+	default n
+	help
+	  Oculus charging dock driver handling unstructured vdm messages between
+	  host device and a dock that acts as a USB PD source.
+	  The custom VDM protocol allows messages to be sent both the source and
+	  the sink with acknowledgement built in to the protocol itself.
+	  This driver also creates sysfs nodes to advertise dock parameters which
+	  can be queried from user-space for gathering required dock telemetry.
+
 config OCULUS_HOLLYWOOD
 	bool "Enable support for hollywood device"
 	default n
@@ -102,13 +170,20 @@ config OCULUS_HOLLYWOOD
 	help
 	  Enable support for the hollywood device
 
-config OCULUS_unknown2
-	bool "Enable support for unknown2 device"
+config OCULUS_SEACLIFF
+	bool "Enable support for seacliff device"
+	default n
+	select ARCH_KONA
+	help
+	  Enable support for the seacliff device
+
+config OCULUS_STARLET
+	bool "Enable support for starlet device"
 	default n
 	depends on OCULUS
 	select ARCH_BENGAL
 	help
-	  Enable support for the unknown2 device
+	  Enable support for the starlet device
 
 config VENDOR_DT_OUTPUT_DISABLE
 	bool "Disable building of device trees for test platforms"
@@ -119,6 +194,15 @@ config VENDOR_DT_OUTPUT_DISABLE
 	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
 	  platforms.
 
+config REGULATOR_AW37504
+	tristate "AW37504 Kernel Driver"
+	default n
+	depends on I2C
+	help
+	  AW37504 Kernel Driver to control the Seacliff BOE panels.
+	  This driver sets the positive and negative voltage and the current
+	  for the panels.
+
 config RT600_CTRL
 	tristate "Oculus RT600 control driver"
 	default n
@@ -127,6 +211,12 @@ config RT600_CTRL
 		for flashing and reset. RT600 state needs to be modified via
 		sysfs to enable testing of different state transitions and also
 		to ensure RT600 is in the correct state for flashing.
+
+config SEACLIFF_BLU
+	tristate "Oculus Seacliff SPI BLU Driver"
+	default n
+	help
+	  Oculus Seacliff SPI BLU Driver for the BOE panels
 
 config SENSORS_PWM_TACH_FAN
 	tristate "PWM&TACH fan"

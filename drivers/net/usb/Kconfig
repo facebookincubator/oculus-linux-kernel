@@ -485,7 +485,7 @@ config USB_NET_ZAURUS
 	  Choose this option to support the usb networking links used by
 	  Zaurus models like the SL-5000D, SL-5500, SL-5600, A-300, B-500.
 	  This also supports some related device firmware, as used in some
-	  PDAs from Olympus and some cell phones from Motorola.
+	  PDAs from unknown2 and some cell phones from Motorola.
 
 	  If you install an alternate image, such as the Linux 2.6 based
 	  versions of OpenZaurus, you should no longer need to support this
