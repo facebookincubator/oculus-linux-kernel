@@ -66,6 +66,7 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry);
 
 static const struct file_operations kgsl_fops;
 
+#if defined(CONFIG_QCOM_KGSL_TRACK_MEMFREE)
 /*
  * The memfree list contains the last N blocks of memory that have been freed.
  * On a GPU fault we walk the list to see if the faulting address had been
@@ -196,6 +197,17 @@ static void kgsl_memfree_add(pid_t pid, pid_t ptname, uint64_t gpuaddr,
 
 	spin_unlock(&memfree_lock);
 }
+#else /* CONFIG_QCOM_KGSL_TRACK_MEMFREE */
+static void kgsl_memfree_purge(struct kgsl_pagetable *pagetable,
+		uint64_t gpuaddr, uint64_t size)
+{
+}
+
+static void kgsl_memfree_add(pid_t pid, pid_t ptname, uint64_t gpuaddr,
+		uint64_t size, uint64_t flags)
+{
+}
+#endif /* !CONFIG_QCOM_KGSL_TRACK_MEMFREE */
 
 int kgsl_readtimestamp(struct kgsl_device *device, void *priv,
 		enum kgsl_timestamp_type type, unsigned int *timestamp)
@@ -1234,9 +1246,9 @@ kgsl_sharedmem_find(struct kgsl_process_private *private, uint64_t gpuaddr)
 	if (!private)
 		return NULL;
 
-	if (!kgsl_mmu_gpuaddr_in_range(private->pagetable, gpuaddr) &&
+	if (!kgsl_mmu_gpuaddr_in_range(private->pagetable, gpuaddr, 0) &&
 		!kgsl_mmu_gpuaddr_in_range(
-			private->pagetable->mmu->securepagetable, gpuaddr))
+			private->pagetable->mmu->securepagetable, gpuaddr, 0))
 		return NULL;
 
 	spin_lock(&private->mem_lock);
@@ -2543,15 +2555,6 @@ static int kgsl_setup_anon_useraddr(struct kgsl_pagetable *pagetable,
 }
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
-static int match_file(const void *p, struct file *file, unsigned int fd)
-{
-	/*
-	 * We must return fd + 1 because iterate_fd stops searching on
-	 * non-zero return, but 0 is a valid fd.
-	 */
-	return (p == file) ? (fd + 1) : 0;
-}
-
 static void _setup_cache_mode(struct kgsl_mem_entry *entry,
 		struct vm_area_struct *vma)
 {
@@ -2587,11 +2590,10 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 	down_read(&current->mm->mmap_sem);
 	vma = find_vma(current->mm, hostptr);
 
-	if (vma && vma->vm_file) {
-		int fd;
-
+	if (vma && vma->vm_file && get_file(vma->vm_file)) {
 		ret = check_vma_flags(vma, entry->memdesc.flags);
 		if (ret) {
+			fput(vma->vm_file);
 			up_read(&current->mm->mmap_sem);
 			return ret;
 		}
@@ -2601,14 +2603,20 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 		 * already mapped
 		 */
 		if (vma->vm_file->f_op == &kgsl_fops) {
+			fput(vma->vm_file);
 			up_read(&current->mm->mmap_sem);
 			return -EFAULT;
 		}
 
-		/* Look for the fd that matches this the vma file */
-		fd = iterate_fd(current->files, 0, match_file, vma->vm_file);
-		if (fd != 0)
-			dmabuf = dma_buf_get(fd - 1);
+		/* Check that this file is actually a valid dma-buf. */
+		if (dma_buf_is_dma_buf_file(vma->vm_file)) {
+			dmabuf = vma->vm_file->private_data;
+			if (!IS_ERR_OR_NULL(dmabuf))
+				get_dma_buf(dmabuf);
+		} else
+			dmabuf = ERR_PTR(-EINVAL);
+
+		fput(vma->vm_file);
 	}
 
 	if (IS_ERR_OR_NULL(dmabuf)) {
@@ -4491,6 +4499,13 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 	int status = -EINVAL;
 	int cpu;
 
+	/*
+	 * Initialize the privileged UID list and TID to -1 so that contexts are
+	 * not unintentionally elevated/restricted by default.
+	 */
+	INIT_LIST_HEAD(&device->privileged_uid_list);
+	device->privileged_tid = -1;
+
 	status = _register_device(device);
 	if (status)
 		return status;
@@ -4500,13 +4515,6 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 	status = kgsl_pwrctrl_init(device);
 	if (status)
 		goto error;
-
-	/*
-	 * Initialize the privileged UID list and TID to -1 so that contexts are
-	 * not unintentionally elevated/restricted by default.
-	 */
-	INIT_LIST_HEAD(&device->privileged_uid_list);
-	device->privileged_tid = -1;
 
 	if (!devm_request_mem_region(device->dev, device->reg_phys,
 				device->reg_len, device->name)) {
@@ -4661,8 +4669,10 @@ void kgsl_core_exit(void)
 
 	kgsl_drawobjs_cache_exit();
 
+#if defined(CONFIG_QCOM_KGSL_TRACK_MEMFREE)
 	kfree(memfree.list);
 	memset(&memfree, 0, sizeof(memfree));
+#endif
 
 	kmem_cache_destroy(kgsl_mem_entry_cache);
 
@@ -4772,8 +4782,10 @@ int __init kgsl_core_init(void)
 	if (result)
 		goto err;
 
+#if defined(CONFIG_QCOM_KGSL_TRACK_MEMFREE)
 	memfree.list = kcalloc(MEMFREE_ENTRIES, sizeof(struct memfree_entry),
 		GFP_KERNEL);
+#endif
 
 	return 0;
 

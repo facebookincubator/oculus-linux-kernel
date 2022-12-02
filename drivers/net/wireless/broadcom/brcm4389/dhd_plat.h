@@ -1,7 +1,7 @@
 /*
  * DHD Linux platform header file
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -94,5 +94,6 @@ extern void dhd_plat_l1_exit(void);
 extern uint32 dhd_plat_get_rc_vendor_id(void);
 extern uint32 dhd_plat_get_rc_device_id(void);
 
+extern uint16 dhd_plat_align_rxbuf_size(uint16 rxbufpost_sz);
 #endif /* __linux__ */
 #endif /* __DHD_PLAT_H__ */

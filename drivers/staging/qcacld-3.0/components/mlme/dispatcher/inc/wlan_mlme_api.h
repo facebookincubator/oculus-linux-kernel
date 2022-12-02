@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -739,7 +740,6 @@ QDF_STATUS wlan_mlme_get_sap_chan_switch_rate_enabled(struct wlan_objmgr_psoc
 
 /**
  * wlan_mlme_get_sap_force_11n_for_11ac() - get the sap 11n for 11ac
- *
  * @psoc: pointer to psoc object
  * @value: Value that needs to be set from the caller
  *
@@ -750,7 +750,6 @@ QDF_STATUS wlan_mlme_get_sap_force_11n_for_11ac(struct wlan_objmgr_psoc
 
 /**
  * wlan_mlme_get_go_force_11n_for_11ac() - get the go 11n for 11ac
- *
  * @psoc: pointer to psoc object
  * @value: Value that needs to be set from the caller
  *
@@ -761,7 +760,6 @@ QDF_STATUS wlan_mlme_get_go_force_11n_for_11ac(struct wlan_objmgr_psoc
 
 /**
  * wlan_mlme_is_go_11ac_override() - Override 11ac bandwdith for P2P GO
- *
  * @psoc: pointer to psoc object
  * @value: pointer to the value which will be filled for the caller
  *
@@ -772,7 +770,6 @@ QDF_STATUS wlan_mlme_is_go_11ac_override(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wlan_mlme_is_sap_11ac_override() - Override 11ac bandwdith for SAP
- *
  * @psoc: pointer to psoc object
  * @value: pointer to the value which will be filled for the caller
  *
@@ -783,7 +780,6 @@ QDF_STATUS wlan_mlme_is_sap_11ac_override(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wlan_mlme_set_go_11ac_override() - set override 11ac bandwdith for P2P GO
- *
  * @psoc: pointer to psoc object
  * @value: pointer to the value which will be filled for the caller
  *
@@ -794,7 +790,6 @@ QDF_STATUS wlan_mlme_set_go_11ac_override(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wlan_mlme_set_sap_11ac_override() - set override 11ac bandwdith for SAP
- *
  * @psoc: pointer to psoc object
  * @value: pointer to the value which will be filled for the caller
  *
@@ -924,7 +919,6 @@ QDF_STATUS wlan_mlme_cfg_get_enable_ul_ofdm(struct wlan_objmgr_psoc *psoc,
 
 /**
  * mlme_update_tgt_he_caps_in_cfg() - Update tgt he cap in mlme component
- *
  * @psoc: pointer to psoc object
  * @cfg: pointer to config params from target
  *
@@ -2167,6 +2161,18 @@ wlan_mlme_set_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool value);
 QDF_STATUS
 wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 					      bool *value);
+
+/**
+ * wlan_mlme_set_relaxed_6ghz_conn_policy_enabled() - Set the 6ghz relaxed
+ *                                                    connection policy flag
+ * @psoc: psoc context
+ * @value: True/False
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_set_relaxed_6ghz_conn_policy(struct wlan_objmgr_psoc *psoc,
+				       bool value);
 #else
 static inline QDF_STATUS
 wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
@@ -2175,11 +2181,17 @@ wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 	*value = false;
 	return QDF_STATUS_SUCCESS;
 }
+
+static inline QDF_STATUS
+wlan_mlme_set_relaxed_6ghz_conn_policy(struct wlan_objmgr_psoc *psoc,
+				       bool value)
+{
+	return QDF_STATUS_SUCCESS;
+}
 #endif
 
 /**
  * wlan_mlme_get_sta_miracast_mcc_rest_time() - Get STA/MIRACAST MCC rest time
- *
  * @psoc: pointer to psoc object
  * @value: value which needs to filled by API
  *
@@ -2190,9 +2202,9 @@ wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 wlan_mlme_get_sta_miracast_mcc_rest_time(struct wlan_objmgr_psoc *psoc,
 					 uint32_t *value);
+
 /**
  * wlan_mlme_get_sap_mcc_chnl_avoid() - Check if SAP MCC needs to be avoided
- *
  * @psoc: pointer to psoc object
  * @value: value which needs to filled by API
  *
@@ -2206,7 +2218,6 @@ wlan_mlme_get_sap_mcc_chnl_avoid(struct wlan_objmgr_psoc *psoc,
 				 uint8_t *value);
 /**
  * wlan_mlme_get_mcc_bcast_prob_resp() - Get broadcast probe rsp in MCC
- *
  * @psoc: pointer to psoc object
  * @value: value which needs to filled by API
  *
@@ -2221,7 +2232,6 @@ wlan_mlme_get_mcc_bcast_prob_resp(struct wlan_objmgr_psoc *psoc,
 				  uint8_t *value);
 /**
  * wlan_mlme_get_mcc_rts_cts_prot() - To get RTS-CTS protection in MCC.
- *
  * @psoc: pointer to psoc object
  * @value: value which needs to filled by API
  *
@@ -2236,7 +2246,6 @@ wlan_mlme_get_mcc_rts_cts_prot(struct wlan_objmgr_psoc *psoc,
 			       uint8_t *value);
 /**
  * wlan_mlme_get_mcc_feature() - To find out to enable/disable MCC feature
- *
  * @psoc: pointer to psoc object
  * @value: value which needs to filled by API
  *
@@ -3132,7 +3141,6 @@ bool wlan_mlme_skip_tpe(struct wlan_objmgr_psoc *psoc);
 #ifdef WLAN_FEATURE_P2P_P2P_STA
 /**
  * wlan_mlme_get_p2p_p2p_conc_support() - Get p2p+p2p conc support
- *
  * @psoc: pointer to psoc object
  * @val : value
  *
@@ -3145,6 +3153,57 @@ static inline bool
 wlan_mlme_get_p2p_p2p_conc_support(struct wlan_objmgr_psoc *psoc)
 {
 	return false;
+}
+#endif
+
+#ifdef WLAN_FEATURE_MCC_QUOTA
+/**
+ * wlan_mlme_set_user_mcc_quota() - Store the user mcc quota in mlme
+ * @psoc: pointer to psoc object
+ * @quota: pointer to user set mcc quota object
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS wlan_mlme_set_user_mcc_quota(struct wlan_objmgr_psoc *psoc,
+					struct wlan_user_mcc_quota *quota);
+
+/**
+ * wlan_mlme_get_user_mcc_quota() - Get the user mcc quota from mlme
+ * @psoc: pointer to psoc object
+ * @quota: pointer to user set mcc quota object
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS wlan_mlme_get_user_mcc_quota(struct wlan_objmgr_psoc *psoc,
+					struct wlan_user_mcc_quota *quota);
+
+/**
+ * wlan_mlme_get_user_mcc_duty_cycle_percentage() - Get user mcc duty cycle
+ * @psoc: pointer to psoc object
+ *
+ * Return: MCC duty cycle if MCC exists for the user MCC quota, else 0
+ */
+uint32_t
+wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc);
+#else
+static inline QDF_STATUS
+wlan_mlme_set_user_mcc_quota(struct wlan_objmgr_psoc *psoc,
+			     struct wlan_user_mcc_quota *quota)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_mlme_get_user_mcc_quota(struct wlan_objmgr_psoc *psoc,
+			     struct wlan_user_mcc_quota *quota)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline uint32_t
+wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc)
+{
+	return 0;
 }
 #endif
 #endif /* _WLAN_MLME_API_H_ */

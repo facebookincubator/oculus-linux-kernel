@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -22,6 +23,7 @@
 enum {
 	DP_CONTROLLER0 = 0,
 	DP_CONTROLLER1,
+	HDMI_CONTROLLER,
 	DP_CONTROLLER_MAX,
 };
 

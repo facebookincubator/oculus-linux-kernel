@@ -113,6 +113,17 @@ static inline int64_t __qdf_ktime_to_ns(ktime_t ktime)
 }
 
 /**
+ * __qdf_ktime_to_us() - convert ktime to microseconds
+ * @ktime: time as ktime object
+ *
+ * Return: ktime in microseconds
+ */
+static inline int64_t __qdf_ktime_to_us(ktime_t ktime)
+{
+	return ktime_to_us(ktime);
+}
+
+/**
  * __qdf_ktime_to_ms() - convert ktime to milliseconds
  * @ktime: time as ktime object
  *

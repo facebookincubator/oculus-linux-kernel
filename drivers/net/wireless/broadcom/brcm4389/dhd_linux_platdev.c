@@ -1,7 +1,7 @@
 /*
  * Linux platform device for DHD WLAN adapter
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -51,6 +51,11 @@
 #define WIFI_PLAT_NAME		"bcmdhd_wlan"
 #define WIFI_PLAT_NAME2		"bcm4329_wlan"
 #define WIFI_PLAT_EXT		"bcmdhd_wifi_platform"
+
+#if defined(SUPPORT_MULTIPLE_BOARD_REVISION)
+#include <linux/of.h>
+extern char* dhd_get_device_dt_name(void);
+#endif /* SUPPORT_MULTIPLE_BOARD_REVISION */
 
 #ifdef DHD_WIFI_SHUTDOWN
 extern void wifi_plat_dev_drv_shutdown(struct platform_device *pdev);
@@ -599,6 +604,7 @@ void wifi_ctrlfunc_unregister_drv(void)
 	}
 #ifdef BCMDHD_MODULAR
 	dhd_wlan_deinit();
+	osl_static_mem_deinit(NULL, NULL);
 #ifdef WBRC
 	wbrc_exit();
 #endif /* WBRC */
@@ -688,17 +694,22 @@ int __init dhd_wifi_platform_register_drv(void)
 #ifdef BCMPCIE
 static int dhd_wifi_platform_load_pcie(void)
 {
-	int err = 0;
 	int i;
+	int err;
+	int retry;
 	wifi_adapter_info_t *adapter;
 
-	BCM_REFERENCE(i);
-	BCM_REFERENCE(adapter);
-
-	if (dhd_wifi_platdata == NULL) {
-		/* XXX For x86 Bringup PC or BRIX */
-		err = dhd_bus_register();
-	} else {
+	if (dhd_wifi_platdata) {
+		/* enumerate PCIe RC */
+		for (i = 0; i < dhd_wifi_platdata->num_adapters; i++) {
+			adapter = &dhd_wifi_platdata->adapters[i];
+			err = wifi_platform_bus_enumerate(adapter, TRUE);
+			if (err) {
+				DHD_ERROR(("failed to enumerate bus %s err=%d",
+					adapter->name, err));
+				return err;
+			}
+		}
 #ifdef DHD_SUPPORT_HDM
 		if (dhd_download_fw_on_driverload || hdm_trigger_init) {
 #else
@@ -706,7 +717,7 @@ static int dhd_wifi_platform_load_pcie(void)
 #endif /* DHD_SUPPORT_HDM */
 			/* power up all adapters */
 			for (i = 0; i < dhd_wifi_platdata->num_adapters; i++) {
-				int retry = POWERUP_MAX_RETRY;
+				retry = POWERUP_MAX_RETRY;
 				adapter = &dhd_wifi_platdata->adapters[i];
 
 				DHD_ERROR(("Power-up adapter '%s'\n", adapter->name));
@@ -727,17 +738,17 @@ static int dhd_wifi_platform_load_pcie(void)
 						wifi_platform_set_power(adapter,
 							FALSE, WIFI_TURNOFF_DELAY);
 						continue;
+					}
+
+					err = wifi_platform_bus_enumerate(adapter, TRUE);
+					if (err) {
+						DHD_ERROR(("failed to enumerate bus %s, "
+							"%d retry left\n",
+							adapter->name, retry));
+						wifi_platform_set_power(adapter, FALSE,
+							WIFI_TURNOFF_DELAY);
 					} else {
-						err = wifi_platform_bus_enumerate(adapter, TRUE);
-						if (err) {
-							DHD_ERROR(("failed to enumerate bus %s, "
-								"%d retry left\n",
-								adapter->name, retry));
-							wifi_platform_set_power(adapter, FALSE,
-								WIFI_TURNOFF_DELAY);
-						} else {
-							break;
-						}
+						break;
 					}
 				} while (retry--);
 
@@ -748,19 +759,18 @@ static int dhd_wifi_platform_load_pcie(void)
 				}
 			}
 		}
+	}
 
-		err = dhd_bus_register();
-
-		if (err) {
-			DHD_ERROR(("%s: pcie_register_driver failed\n", __FUNCTION__));
-			if (dhd_download_fw_on_driverload) {
-				/* power down all adapters */
-				for (i = 0; i < dhd_wifi_platdata->num_adapters; i++) {
-					adapter = &dhd_wifi_platdata->adapters[i];
-					wifi_platform_bus_enumerate(adapter, FALSE);
-					wifi_platform_set_power(adapter,
-						FALSE, WIFI_TURNOFF_DELAY);
-				}
+	err = dhd_bus_register();
+	if (err) {
+		DHD_ERROR(("%s: dhd_bus_register failed err=%d\n", __FUNCTION__, err));
+		if (dhd_wifi_platdata && dhd_download_fw_on_driverload) {
+			/* power down all adapters */
+			for (i = 0; i < dhd_wifi_platdata->num_adapters; i++) {
+				adapter = &dhd_wifi_platdata->adapters[i];
+				wifi_platform_bus_enumerate(adapter, FALSE);
+				wifi_platform_set_power(adapter,
+					FALSE, WIFI_TURNOFF_DELAY);
 			}
 		}
 	}
@@ -974,7 +984,52 @@ end:
 	return err;
 }
 
+#if defined(SUPPORT_MULTIPLE_BOARD_REVISION)
+void
+concate_custom_board_revision(char *nv_path)
+{
+	uint32 board_revision = 0;
+	struct device_node *root_node = NULL;
+	char* wlan_node = NULL;
+
+	if (!nv_path) {
+		DHD_ERROR(("nv_path is null\n"));
+		return;
+	}
+
+	wlan_node = dhd_get_device_dt_name();
+	if (!wlan_node) {
+		DHD_ERROR(("Failed to dt name\n"));
+		return;
+	}
+
+	root_node = of_find_compatible_node(NULL, NULL, wlan_node);
+	if (!root_node) {
+		DHD_ERROR(("Failed to get device node\n"));
+		return;
+	}
+
+	if (of_property_read_u32(root_node, "nvram-ES", &board_revision)) {
+		DHD_ERROR(("No board revision property in dtsi\n"));
+		return;
+	}
+
+	DHD_INFO(("Board revision:%d\n", board_revision));
+
+	if (board_revision == 1) {
+		strcat(nv_path, "_ES10");
+		DHD_INFO(("Mached Board revision ES10: nvram name:%s\n", nv_path));
+	}
+
+}
+#endif /* SUPPORT_MULTIPLE_BOARD_REVISION */
+
 /* Weak functions that can be overridden in Platform specific implementation */
+char* __attribute__ ((weak)) dhd_get_device_dt_name(void)
+{
+	return NULL;
+}
+
 uint32 __attribute__ ((weak)) dhd_plat_get_info_size(void)
 {
 	return 0;
@@ -1039,4 +1094,16 @@ uint32 __attribute__ ((weak)) dhd_plat_get_rc_vendor_id(void)
 uint32 __attribute__ ((weak)) dhd_plat_get_rc_device_id(void)
 {
 	return PCIE_RC_DEVICE_ID;
+}
+
+uint16 __attribute__ ((weak)) dhd_plat_align_rxbuf_size(uint16 rxbufpost_sz)
+{
+	return rxbufpost_sz;
+}
+
+int
+__attribute__ ((weak)) dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component,
+	char *file_name)
+{
+	return BCME_ERROR;
 }

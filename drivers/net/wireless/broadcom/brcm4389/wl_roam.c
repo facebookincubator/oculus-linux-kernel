@@ -1,7 +1,7 @@
 /*
  * Linux roam cache
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -206,7 +206,7 @@ add_roam_cache_list(uint8 *SSID, uint32 SSID_len, chanspec_t chanspec)
 }
 
 void
-add_roam_cache(struct bcm_cfg80211 *cfg, wl_bss_info_t *bi)
+add_roam_cache(struct bcm_cfg80211 *cfg, wl_bss_info_v109_t *bi)
 {
 	if (!cfg->rcc_enabled) {
 		return;
@@ -353,29 +353,59 @@ get_roamscan_chanspec_list(struct net_device *dev, chanspec_t *chanspecs)
 	return i;
 }
 
+bool
+check_prune_roam_band(uint8 allowed_band, chanspec_t chanspec)
+{
+	int ret = FALSE;
+
+	if ((allowed_band == WLC_ROAM_ALLOW_BAND_AUTO) ||
+		(allowed_band == WLC_ROAM_ALLOW_BAND_MAX)) {
+		return ret;
+	}
+
+	/* Pruned BSS via ROAM Band mode */
+	if ((CHSPEC_IS2G(chanspec) && !(allowed_band & WLC_ROAM_ALLOW_BAND_2G)))  {
+		ret = TRUE;
+	} else if (CHSPEC_IS5G(chanspec) && !(allowed_band & WLC_ROAM_ALLOW_BAND_5G)) {
+		ret = TRUE;
+#ifdef WL_6G_BAND
+	} else if (CHSPEC_IS6G(chanspec) && !(allowed_band & WLC_ROAM_ALLOW_BAND_6G)) {
+		ret = TRUE;
+#endif /* WL_6G_BAND */
+	}
+
+	return ret;
+}
+
 int
 set_roamscan_chanspec_list(struct net_device *dev, uint nchan, chanspec_t *chanspecs)
 {
-	int i;
+	int i, j;
 	int error;
 	wl_roam_channel_list_t channel_list;
-	char iobuf[WLC_IOCTL_SMLEN];
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
-	cfg->roamscan_mode = ROAMSCAN_MODE_WES;
+	char iobuf[WLC_IOCTL_SMLEN];
 
 	if (nchan > MAX_ROAM_CHANNEL) {
 		nchan = MAX_ROAM_CHANNEL;
 	}
 
-	for (i = 0; i < nchan; i++) {
-		roam_cache[i].chanspec = chanspecs[i];
-		channel_list.channels[i] = chanspecs[i];
-
+	for (i = 0, j = 0; i < nchan; i++) {
+		if (!wf_chspec_valid(chanspecs[i])) {
+			WL_ERR(("%02d/%d: invalid chan: 0x%04x\n", i, nchan, chanspecs[i]));
+			continue;
+		}
+		if (check_prune_roam_band(cfg->roam_allowed_band, chanspecs[i])) {
+			WL_ERR(("%02d/%d: Pruned ROAM band(%d) 0x%04x\n", i, nchan,
+				cfg->roam_allowed_band, chanspecs[i]));
+			continue;
+		}
+		channel_list.channels[j] = roam_cache[j].chanspec = chanspecs[i];
 		WL_DBG(("%02d/%d: chan: 0x%04x\n", i, nchan, chanspecs[i]));
+		j++;
 	}
 
-	n_roam_cache = nchan;
-	channel_list.n = nchan;
+	channel_list.n = n_roam_cache = j;
 
 	/* need to set ROAMSCAN_MODE_NORMAL to update roamscan_channels,
 	 * otherwise, it won't be updated
@@ -391,11 +421,6 @@ set_roamscan_chanspec_list(struct net_device *dev, uint nchan, chanspec_t *chans
 	if (error) {
 		WL_ERR(("Failed to set roamscan channels, error = %d\n", error));
 		return error;
-	}
-	error = wldev_iovar_setint(dev, "roamscan_mode", ROAMSCAN_MODE_WES);
-	if (error) {
-		WL_ERR(("Failed to set roamscan mode to %d, error = %d\n",
-			ROAMSCAN_MODE_WES, error));
 	}
 
 	return error;
@@ -432,7 +457,12 @@ add_roamscan_chanspec_list(struct net_device *dev, uint nchan, chanspec_t *chans
 	WL_DBG(("Add Roam scan channel count %d\n", nchan));
 
 	for (i = 0; i < nchan; i++) {
-		if (chanspecs[i] == 0) {
+		if (!wf_chspec_valid(chanspecs[i])) {
+			continue;
+		}
+		if (check_prune_roam_band(cfg->roam_allowed_band, chanspecs[i])) {
+			WL_ERR(("%02d/%d: Pruned ROAM band(%d) 0x%04x\n", i, nchan,
+				cfg->roam_allowed_band, chanspecs[i]));
 			continue;
 		}
 		add_roam_cache_list(ssid.SSID, ssid.SSID_len, chanspecs[i]);

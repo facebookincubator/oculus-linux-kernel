@@ -561,7 +561,7 @@
 	/delete-property/ avdd-supply;
 	lab-supply = <&lcdb_ldo_vreg>;
 	ibb-supply = <&lcdb_ncp_vreg>;
-	qcom,dsi-default-panel = <&dsi_dual_arglass_seeya_90hz_video>;
+	qcom,dsi-default-panel = <&dsi_dual_arglass_seeya_video>;
 };
 
 &display_panel_avdd {

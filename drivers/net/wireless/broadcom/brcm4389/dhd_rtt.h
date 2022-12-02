@@ -1,7 +1,7 @@
 /*
  * Broadcom Dongle Host Driver (DHD), RTT
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -241,8 +241,9 @@ typedef struct rtt_target_info {
 	*/
 	uint32 burst_duration;
 	uint32 burst_timeout;
-	uint8  preamble; /* 1 - Legacy, 2 - HT, 4 - VHT */
-	uint8  bw;  /* 5, 10, 20, 40, 80, 160 */
+	uint8  preamble;	/* 1 - Legacy, 2 - HT, 4 - VHT */
+	uint8  bw;		/* 5, 10, 20, 40, 80, 160 */
+	uint16 sid;		/* session ID for the target */
 } rtt_target_info_t;
 
 typedef struct rtt_goefence_target_info {
@@ -553,6 +554,9 @@ void dhd_rtt_set_geofence_setup_status(dhd_pub_t *dhd, bool inprog,
 	struct ether_addr *peer_addr);
 
 int dhd_rtt_get_max_nan_rtt_sessions_supported(dhd_pub_t *dhd);
+
+bool dhd_rtt_is_taget_list_mode_nan(dhd_pub_t *dhd);
+
 #endif /* WL_NAN */
 #endif /* WL_CFG80211 */
 

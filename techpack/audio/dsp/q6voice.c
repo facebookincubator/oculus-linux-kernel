@@ -1304,7 +1304,8 @@ static int voice_destroy_mvm_cvs_session(struct voice_data *v)
 
 	if (!apr_mvm || !apr_cvs) {
 		pr_err("%s: apr_mvm or apr_cvs is NULL\n", __func__);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto fail;
 	}
 	mvm_handle = voice_get_mvm_handle(v);
 	cvs_handle = voice_get_cvs_handle(v);
@@ -3827,14 +3828,6 @@ static int voice_unmap_cal_memory(int32_t cal_type,
 			else
 				pr_err("%s: Invalid cal type %d!\n",
 					__func__, cal_type);
-
-			result2 = voice_send_start_voice_cmd(v);
-			if (result2) {
-				pr_err("%s: Voice_send_start_voice_cmd failed for session 0x%x, err %d!\n",
-					__func__, v->session_id, result2);
-
-				result = result2;
-			}
 		}
 
 		if ((cal_block->map_data.q6map_handle != 0) &&
@@ -5249,7 +5242,9 @@ static int voice_destroy_vocproc(struct voice_data *v)
 	}
 
 	voice_send_cvp_deregister_vol_cal_cmd(v);
+	mutex_lock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 	voice_send_cvp_deregister_cal_cmd(v);
+	mutex_unlock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 	voice_send_cvp_deregister_dev_cfg_cmd(v);
 	voice_send_cvs_deregister_cal_cmd(v);
 
@@ -7091,11 +7086,13 @@ int voc_disable_device(uint32_t session_id)
 		if (ret < 0) {
 			pr_err("%s: Pause Voice Call failed for session 0x%x, err %d!\n",
 			       __func__, v->session_id, ret);
-			goto done;
+			goto fail;
 		}
 		rtac_remove_voice(voice_get_cvs_handle(v));
 		voice_send_cvp_deregister_vol_cal_cmd(v);
+		mutex_lock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 		voice_send_cvp_deregister_cal_cmd(v);
+		mutex_unlock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 		voice_send_cvp_deregister_dev_cfg_cmd(v);
 
 		/* Unload topology modules */
@@ -7106,8 +7103,7 @@ int voc_disable_device(uint32_t session_id)
 		pr_debug("%s: called in voc state=%d, No_OP\n",
 			 __func__, v->voc_state);
 	}
-
-done:
+fail:
 	mutex_unlock(&v->lock);
 
 	return ret;

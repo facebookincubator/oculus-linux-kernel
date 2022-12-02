@@ -60,13 +60,6 @@ config CYPD_POLICY_ENGINE
 	  controller device driver in order to transmit and receive PD messages
 	  on its behalf.
 
-config DEPTH_PROJECTOR
-	tristate "Depth Projector Kernel Driver"
-	default n
-	help
-	  Depth Projector Kernel Module to set default gpio values.
-	  This driver sets SWD_IO and SWD_CLK to high impedance mode
-
 config DISPLAY_VIRTUAL_SENSOR
 	tristate "Display Virtual Sensor Driver"
 	default n
@@ -74,13 +67,6 @@ config DISPLAY_VIRTUAL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the
 	  display temperature of a device.
-
-config EYE_FACE_LED
-	tristate "Eye Face Led Kernel Driver"
-	default n
-	help
-	  Eye Face LED Kernel Module to set default gpio values.
-	  This driver sets XERR and SAFETY_FLAG to input-enable & bias-disable
 
 config FPGA_AGGREGATOR
 	tristate "FPGA Aggregator Kernel Driver"

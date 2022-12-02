@@ -2,7 +2,7 @@
  * IE/TLV fragmentation/defragmentation support for
  * Broadcom 802.11bang Networking Device Driver
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 Vendor Extension Code
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -45,7 +45,8 @@ enum brcm_vendor_attr {
 	BRCM_ATTR_DRIVER_FEATURE_FLAGS	= 2,
 	BRCM_ATTR_DRIVER_RAND_MAC	= 3,
 	BRCM_ATTR_SAE_PWE		= 4,
-	BRCM_ATTR_DRIVER_MAX		= 5
+	BRCM_ATTR_TD_POLICY		= 5,
+	BRCM_ATTR_DRIVER_MAX		= 6
 };
 
 enum brcm_wlan_vendor_features {
@@ -181,6 +182,10 @@ typedef enum {
 	ANDROID_NL80211_SUBCMD_USABLE_CHAN_RANGE_START = 0x2150,
 	ANDROID_NL80211_SUBCMD_USABLE_CHAN_RANGE_END   = 0x215F,
 
+	/* define all init/deinit related commands between 0x2160 and 0x216F */
+	ANDROID_NL80211_SUBCMD_INIT_DEINIT_RANGE_START = 0x2160,
+	ANDROID_NL80211_SUBCMD_INIT_DEINIT_RANGE_END   = 0x216F,
+
 	/* define all Oculus commands between 0x3000 and 0x30FF */
 	META_NL80211_SUBCMD_RANGE_START = 0x3000,
 	META_NL80211_SUBCMD_RANGE_END   = 0x300F,
@@ -256,6 +261,7 @@ enum andr_vendor_subcmd {
 	DEBUG_SET_HAL_STOP,
 	DEBUG_SET_HAL_PID,
 	DEBUG_SET_TPUT_DEBUG_DUMP_CMD,
+	DEBUG_GET_BUF_RING_MAP,
 
 	WIFI_OFFLOAD_SUBCMD_START_MKEEP_ALIVE = ANDROID_NL80211_SUBCMD_WIFI_OFFLOAD_RANGE_START,
 	WIFI_OFFLOAD_SUBCMD_STOP_MKEEP_ALIVE,
@@ -290,6 +296,9 @@ enum andr_vendor_subcmd {
 	WIFI_SUBCMD_GET_OTA_CURRUNT_INFO = ANDROID_NL80211_SUBCMD_OTA_DOWNLOAD_START,
 	WIFI_SUBCMD_OTA_UPDATE,
 	WIFI_SUBCMD_USABLE_CHAN = ANDROID_NL80211_SUBCMD_USABLE_CHAN_RANGE_START,
+	WIFI_SUBCMD_TRIGGER_SSR = ANDROID_NL80211_SUBCMD_INIT_DEINIT_RANGE_START,
+	WIFI_SUBCMD_GET_RADIO_COMBO_MATRIX,
+	WIFI_SUBCMD_SET_TX_POWER_LIMITS,
 	/* Add more sub commands here */
 	VENDOR_SUBCMD_MAX
 };
@@ -537,6 +546,9 @@ typedef enum {
 	DUMP_FILENAME_ATTR_SDTC_ETB_DUMP = 39,
 	DUMP_LEN_ATTR_PKTID_MAP_LOG = 40,
 	DUMP_LEN_ATTR_PKTID_UNMAP_LOG = 41,
+	DUMP_LEN_ATTR_EWP_HW_INIT_LOG = 42,
+	DUMP_LEN_ATTR_EWP_HW_MOD_DUMP = 43,
+	DUMP_LEN_ATTR_EWP_HW_REG_DUMP = 44,
 	/* Please add new attributes from here to sync up old HAL */
 	DUMP_TYPE_ATTR_MAX
 } EWP_DUMP_EVENT_ATTRIBUTE;
@@ -571,9 +583,37 @@ typedef enum {
 	DUMP_BUF_ATTR_SDTC_ETB_DUMP = 25,
 	DUMP_BUF_ATTR_PKTID_MAP_LOG = 26,
 	DUMP_BUF_ATTR_PKTID_UNMAP_LOG = 27,
+	DUMP_BUF_ATTR_EWP_HW_INIT_LOG = 28,
+	DUMP_BUF_ATTR_EWP_HW_MOD_DUMP = 29,
+	DUMP_BUF_ATTR_EWP_HW_REG_DUMP = 30,
 	/* Please add new attributes from here to sync up old HAL */
 	DUMP_BUF_ATTR_MAX
 } EWP_DUMP_CMD_ATTRIBUTE;
+
+#ifdef DHD_HAL_RING_DUMP
+typedef struct dhd_buf_ring_map_entry {
+	uint32 type;
+	uint32 ring_id;
+	char ring_name[DBGRING_NAME_MAX];
+} dhd_buf_ring_map_entry_t;
+
+static dhd_buf_ring_map_entry_t dhd_buf_ring_map[] = {
+	{DUMP_BUF_ATTR_TIMESTAMP, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+	{DUMP_BUF_ATTR_ECNTRS, DEBUG_DUMP_RING2_ID, DEBUG_DUMP_RING2_NAME},
+	{DUMP_BUF_ATTR_STATUS_LOG, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+	{DUMP_BUF_ATTR_RTT_LOG, DEBUG_DUMP_RING2_ID, DEBUG_DUMP_RING2_NAME},
+	{DUMP_BUF_ATTR_PKTID_MAP_LOG, DEBUG_DUMP_RING2_ID, DEBUG_DUMP_RING2_NAME},
+	{DUMP_BUF_ATTR_PKTID_UNMAP_LOG, DEBUG_DUMP_RING2_ID, DEBUG_DUMP_RING2_NAME},
+	{DUMP_BUF_ATTR_DHD_DUMP, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+	{DUMP_BUF_ATTR_EXT_TRAP, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+	{DUMP_BUF_ATTR_HEALTH_CHK, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+	{DUMP_BUF_ATTR_COOKIE, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+	{DUMP_BUF_ATTR_FLOWRING_DUMP, DEBUG_DUMP_RING1_ID, DEBUG_DUMP_RING1_NAME},
+#ifdef DHD_HAL_RING_DUMP_MEMDUMP
+	{DUMP_BUF_ATTR_MEMDUMP, MEM_DUMP_RING_ID, MEM_DUMP_RING_NAME},
+#endif /* DHD_HAL_RING_DUMP_MEMDUMP */
+};
+#endif /* DHD_HAL_RING_DUMP */
 
 enum mkeep_alive_attributes {
 	MKEEP_ALIVE_ATTRIBUTE_ID,
@@ -682,6 +722,8 @@ typedef enum wl_vendor_event {
 	BRCM_VENDOR_EVENT_TWT			= 43,
 	BRCM_VENDOR_EVENT_TPUT_DUMP		= 44,
 	GOOGLE_NAN_EVENT_MATCH_EXPIRY		= 45,
+	BRCM_VENDOR_EVENT_RCC_FREQ_INFO		= 46,
+	BRCM_VENDOR_EVENT_CONNECTIVITY_LOG	= 47,
 	BRCM_VENDOR_EVENT_LAST
 } wl_vendor_event_t;
 
@@ -997,6 +1039,72 @@ typedef enum {
 } andr_twt_sub_event;
 #endif /* WL_TWT_HAL_IF */
 
+typedef enum {
+	ANDR_LSTAT_ATTRIBUTE_INVALID	= 0,
+	ANDR_LSTAT_ATTRIBUTE_NUM_RADIO	= 1,
+	ANDR_LSTAT_ATTRIBUTE_STATS_INFO	= 2,
+	ANDR_LSTAT_ATTRIBUTE_STATS_MAX	= 3
+} LINK_STAT_ATTRIBUTE;
+
+typedef enum {
+	/* WLAN MAC Operates in 2.4 GHz Band */
+	WLAN_MAC_2_4_BAND = 1 << 0,
+	/* WLAN MAC Operates in 5 GHz Band */
+	WLAN_MAC_5_0_BAND = 1 << 1,
+	/* WLAN MAC Operates in 6 GHz Band */
+	WLAN_MAC_6_0_BAND = 1 << 2,
+	/* WLAN MAC Operates in 60 GHz Band */
+	WLAN_MAC_60_0_BAND = 1 << 3
+} wlan_mac_band;
+
+typedef enum {
+	TX_POWER_CAP_ATTRIBUTE_INVALID    = 0,
+	TX_POWER_CAP_ENABLE_ATTRIBUTE	  = 1,
+	/* Add more attributes here */
+	TX_POWER_ATTRIBUTE_MAX
+} wifi_tx_power_limits;
+
+typedef enum {
+	ANDR_WIFI_ATTRIBUTE_RADIO_COMBO_INVALID     = 0,
+	ANDR_WIFI_ATTRIBUTE_RADIO_COMBO_MATRIX      = 1,
+	ANDR_WIFI_ATTRIBUTE_RADIO_COMBO_MAX
+} wifi_radio_combo_attributes;
+
+/* Antenna configuration */
+typedef enum {
+	WIFI_ANTENNA_INVALID    = 0,
+	WIFI_ANTENNA_1X1        = 1,
+	WIFI_ANTENNA_2X2        = 2,
+	WIFI_ANTENNA_3X3        = 3,
+	WIFI_ANTENNA_4X4        = 4
+} wifi_antenna_configuration;
+
+/* Wifi Radio configuration */
+typedef struct {
+	/* Operating band */
+	wlan_mac_band band;
+	/* Antenna configuration */
+	wifi_antenna_configuration antenna_cfg;
+} wifi_radio_configuration;
+
+/* WiFi Radio Combination  */
+typedef struct {
+	uint32 num_radio_combinations;
+	wifi_radio_configuration radio_configurations[];
+} wifi_radio_combination;
+
+/* WiFi Radio combinations matrix */
+typedef struct {
+	uint32 num_combinations;
+	/* Each row represents possible radio combinations */
+	wifi_radio_combination radio_combinations[];
+} wifi_radio_combination_matrix;
+
+#define MAX_RADIO_COMBO		5u
+#define MAX_RADIO_CONFIGS	2u
+#define MAX_RADIO_MATRIX_SIZE	(MAX_RADIO_COMBO * (sizeof(wifi_radio_combination) +\
+				(MAX_RADIO_CONFIGS * sizeof(wifi_radio_configuration))))
+
 /* Capture the BRCM_VENDOR_SUBCMD_PRIV_STRINGS* here */
 #define BRCM_VENDOR_SCMD_CAPA	"cap"
 #define MEMDUMP_PATH_LEN	128
@@ -1031,6 +1139,15 @@ int wl_cfgvendor_notify_supp_event_str(const char *evt_name, const char *fmt, ..
 #define SUPP_EVT_LOG(evt_name, fmt, ...) \
     wl_cfgvendor_notify_supp_event_str(evt_name, fmt, ##__VA_ARGS__);
 #define SUPP_EVENT(args) SUPP_EVT_LOG args
+
+#ifdef WL_CFGVENDOR_CUST_ADVLOG
+extern int wl_cfgvendor_send_supp_advlog(const char *fmt, ...);
+#define PRINT_SUPP_ADVLOG(fmt, ...) \
+	 wl_cfgvendor_send_supp_advlog(fmt, ##__VA_ARGS__);
+#define SUPP_ADVLOG(args) PRINT_SUPP_ADVLOG args;
+#else
+#define SUPP_ADVLOG(x)
+#endif /* WL_CFGVENDOR_CUST_ADVLOG */
 #else
 #define SUPP_LOG(x)
 #define SUPP_EVENT(x)
@@ -1119,4 +1236,8 @@ int wl_cfgdbg_tput_debug_get_cmd(struct wiphy *wiphy,
 #endif /* TPUT_DEBUG_DUMP */
 extern int wl_cfgvendor_multista_set_primary_connection(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void  *data, int len);
+
+#ifdef WL_CFGVENDOR_CUST_ADVLOG
+void wl_cfgvendor_custom_advlog_roam_log(void *plog, uint32 armcycle);
+#endif /* WL_CFGVENDOR_CUST_ADVLOG */
 #endif /* _wl_cfgvendor_h_ */

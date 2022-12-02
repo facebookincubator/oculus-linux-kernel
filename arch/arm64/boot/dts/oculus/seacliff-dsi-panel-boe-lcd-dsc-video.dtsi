@@ -21,7 +21,7 @@
 		qcom,dsi-phy-num = <0 1>;
 		qcom,mdss-dsi-bpp = <24>;
 
-		com,mdss-dsi-virtual-channel-id = <0>; //TODO
+		qcom,mdss-dsi-virtual-channel-id = <0>; //TODO
 		qcom,mdss-dsi-stream = <0>; //TODO
 		qcom,mdss-dsi-border-color = <0>; //TODO
 		qcom,mdss-dsi-traffic-mode = "burst_mode";

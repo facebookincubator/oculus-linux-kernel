@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD),
  * Linux-specific network interface for receive(rx) path
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -441,7 +441,12 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		}
 
 #ifdef DHD_WAKE_STATUS
-		pkt_wake = dhd_bus_get_bus_wake(dhdp);
+		/* Get pkt_wake and clear it */
+#if defined(BCMPCIE)
+		pkt_wake = dhd_bus_set_get_bus_wake_pkt_dump(dhdp, 0);
+#else /* SDIO */
+		pkt_wake = dhd_bus_set_get_bus_wake(dhdp, 0);
+#endif /* BCMPCIE */
 		wcp = dhd_bus_get_wakecount(dhdp);
 		if (wcp == NULL) {
 			/* If wakeinfo count buffer is null do not  update wake count values */
@@ -751,7 +756,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		}
 		dhd_rx_pkt_dump(dhdp, ifidx, dump_data, len);
 		dhd_handle_pktdata(dhdp, ifidx, skb, dump_data, FALSE,
-			len, NULL, NULL, FALSE, pkt_wake, TRUE);
+			len, NULL, NULL, NULL, FALSE, pkt_wake, TRUE);
 #if defined(DHD_WAKE_STATUS) && defined(DHD_WAKEPKT_DUMP)
 		if (pkt_wake) {
 			DHD_ERROR(("##### dhdpcie_host_wake caused by packets\n"));
@@ -760,9 +765,9 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 #ifdef ARP_OFFLOAD_SUPPORT
 			DHD_ERROR(("arp hmac_update:%d \n", dhdp->hmac_updated));
 #endif /* ARP_OFFLOAD_SUPPORT */
-#if defined(DHD_WAKEPKT_SET_MARK)
+#if defined(DHD_WAKEPKT_SET_MARK) && defined(CONFIG_NF_CONNTRACK_MARK)
 			PKTMARK(skb) |= 0x80000000;
-#endif /* DHD_WAKEPKT_SET_MARK */
+#endif /* DHD_WAKEPKT_SET_MARK && CONFIG_NF_CONNTRACK_MARK */
 		}
 #endif /* DHD_WAKE_STATUS && DHD_WAKEPKT_DUMP */
 
@@ -1063,6 +1068,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 
 		if (ntoh16(skb->protocol) != ETHER_TYPE_BRCM) {
 			dhdp->dstats.rx_bytes += skb->len;
+			dhdp->rx_bytes += skb->len;
 			dhdp->rx_packets++; /* Local count */
 			ifp->stats.rx_bytes += skb->len;
 			ifp->stats.rx_packets++;
@@ -1670,11 +1676,13 @@ void
 dhd_rx_pktpool_deinit(dhd_info_t *dhd)
 {
 	pkt_pool_t *rx_pool = &dhd->rx_pkt_pool;
-	if (dhd->rx_pktpool_thread.thr_pid >= 0) {
-		PROC_STOP_USING_BINARY_SEMA(&dhd->rx_pktpool_thread);
+	tsk_ctl_t *tsk = &dhd->rx_pktpool_thread;
+
+	if (tsk->parent && tsk->thr_pid >= 0) {
+		PROC_STOP_USING_BINARY_SEMA(tsk);
 	} else {
-		DHD_ERROR(("%s: rx_pktpool_thread(%ld) not inited\n", __FUNCTION__,
-			dhd->rx_pktpool_thread.thr_pid));
+		DHD_ERROR(("%s: rx_pktpool_thread(%ld) not inited\n",
+			__FUNCTION__, tsk->thr_pid));
 	}
 	/* skb list manipulation functions use internal
 	 * spin lock, so no need to take separate lock

@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD), Linux-specific network interface
  * Basically selected code segments from usb-cdc.c and usb-rndis.c
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -30,9 +30,10 @@
 #include <dhd.h>
 #include <dhd_dbg.h>
 #include <dhd_linux_priv.h>
-#if defined(DHD_ADPS_BAM_EXPORT) && defined(WL_BAM)
+#include <dhd_proto.h>
+#if defined(WL_BAM)
 #include <wl_bam.h>
-#endif	/* DHD_ADPS_BAM_EXPORT && WL_BAM */
+#endif	/* WL_BAM */
 #if defined(PWRSTATS_SYSFS) || defined(SYSFS_EXPORT_COUNTRY)
 #include <wldev_common.h>
 #endif /* PWRSTATS_SYSFS || SYSFS_EXPORT_COUNTRY */
@@ -743,6 +744,32 @@ store_nvram_path(struct dhd_info *dev, const char *buf, size_t count)
 	return count;
 }
 
+extern char signature_path[];
+
+static ssize_t
+show_signature_path(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%s\n", signature_path);
+
+	return ret;
+}
+
+static ssize_t
+store_signature_path(struct dhd_info *dev, const char *buf, size_t count)
+{
+	char fmt_spec[FMT_BUFSZ] = "";
+
+	if ((int)strlen(buf) >= MOD_PARAM_PATHLEN) {
+		return -EINVAL;
+	}
+
+	snprintf(fmt_spec, FMT_BUFSZ, "%%%ds", MOD_PARAM_PATHLEN - 1);
+	sscanf(buf, fmt_spec, signature_path);
+
+	return count;
+}
+
 #ifdef PWRSTATS_SYSFS
 typedef struct wl_pwrstats_sysfs {
 	uint64	current_ts;
@@ -1082,6 +1109,40 @@ done:
 }
 #endif /* PWRSTATS_SYSFS */
 
+static ssize_t
+show_tcm_test_mode(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+	unsigned long mode;
+
+	mode = dhd_tcm_test_mode;
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%lu \n",
+		mode);
+	return ret;
+}
+
+static ssize_t
+set_tcm_test_mode(struct dhd_info *dev, const char *buf, size_t count)
+{
+	unsigned long mode;
+
+	mode = bcm_strtoul(buf, NULL, 10);
+
+	sscanf(buf, "%lu", &mode);
+	if (mode > TCM_TEST_MODE_ALWAYS) {
+		return -EINVAL;
+	}
+
+	/* reset with the mode change */
+	if (dhd_tcm_test_mode != mode) {
+		dhd_tcm_test_status = TCM_TEST_NOT_RUN;
+	}
+
+	dhd_tcm_test_mode = (uint)mode;
+
+	return count;
+}
+
 /*
  * Generic Attribute Structure for DHD.
  * If we have to add a new sysfs entry under /sys/bcm-dhd/, we have
@@ -1166,10 +1227,16 @@ static struct dhd_attr dhd_attr_firmware_path =
 static struct dhd_attr dhd_attr_nvram_path =
 	__ATTR(nvram_path, 0660, show_nvram_path, store_nvram_path);
 
+static struct dhd_attr dhd_attr_sig_path =
+	__ATTR(signature_path, 0660, show_signature_path, store_signature_path);
+
 #ifdef PWRSTATS_SYSFS
 static struct dhd_attr dhd_attr_pwrstats_path =
 	__ATTR(power_stats, 0664, show_pwrstats_path, NULL);
 #endif /* PWRSTATS_SYSFS */
+
+static struct dhd_attr dhd_attr_tcm_test_mode =
+	__ATTR(tcm_test_mode, 0660, show_tcm_test_mode, set_tcm_test_mode);
 
 #define to_dhd(k) container_of(k, struct dhd_info, dhd_kobj)
 #define to_attr(a) container_of(a, struct dhd_attr, attr)
@@ -1861,7 +1928,7 @@ static struct dhd_attr dhd_attr_proptx =
 #endif /* USE_WFA_CERT_CONF */
 #endif /* DHD_EXPORT_CNTL_FILE */
 
-#if defined(DHD_ADPS_BAM_EXPORT) && defined(WL_BAM)
+#if defined(WL_BAM)
 #define BAD_AP_MAC_ADDR_ELEMENT_NUM	6
 #define MACF_READ	"%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx"
 wl_bad_ap_mngr_t *g_bad_ap_mngr = NULL;
@@ -1940,7 +2007,7 @@ store_adps_bam_list(struct dhd_info *dev, const char *buf, size_t count)
 
 static struct dhd_attr dhd_attr_adps_bam =
 	__ATTR(bad_ap_list, 0660, show_adps_bam_list, store_adps_bam_list);
-#endif	/* DHD_ADPS_BAM_EXPORT && WL_BAM */
+#endif	/* WL_BAM */
 
 #ifdef DHD_SEND_HANG_PRIVCMD_ERRORS
 uint32 report_hang_privcmd_err = 1;
@@ -2126,6 +2193,37 @@ show_l1ss_enab(struct dhd_info *dhd, char *buf)
 static struct dhd_attr dhd_attr_l1ss_enab =
 __ATTR(l1ss_enab, 0660, show_l1ss_enab, dhd_set_l1ss_enab);
 #endif /* PCIE_FULL_DONGLE */
+
+#ifdef RPM_FAST_TRIGGER
+static ssize_t
+dhd_show_fast_rpm_thresh(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+	unsigned long val;
+
+	val = dhd_fast_runtimepm_ms;
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%lu \n", val);
+	return ret;
+}
+
+static ssize_t
+dhd_set_fast_rpm_thresh(struct dhd_info *dev, const char *buf, size_t count)
+{
+	unsigned long val;
+
+	val = bcm_strtoul(buf, NULL, 10);
+
+	sscanf(buf, "%lu", &val);
+	/* Ensure fast RPM threashold is lesser than regular RPM threshold */
+	if (val == 0 || val >= dhd_runtimepm_ms) {
+		 return -EINVAL;
+	}
+	dhd_fast_runtimepm_ms = val;
+	return count;
+}
+static struct dhd_attr dhd_attr_fast_rpm_thresh =
+__ATTR(fast_rpm_thresh, 0660, dhd_show_fast_rpm_thresh, dhd_set_fast_rpm_thresh);
+#endif /* RPM_FAST_TRIGGER */
 
 #if defined(CUSTOM_CONTROL_HE_ENAB)
 static ssize_t
@@ -2469,29 +2567,63 @@ set_wl_debug_level(struct dhd_info *dhd, const char *buf, size_t count)
 
 static struct dhd_attr dhd_attr_wl_dbg_level =
 __ATTR(wl_dbg_level, 0660, show_wl_debug_level, set_wl_debug_level);
+#endif /* WL_CFG80211 */
 
-#ifdef DHD_FILE_DUMP_EVENT
+#if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
+#define DUMP_TRIGGER	1
+
 static ssize_t
-show_dhd_dump_done(struct dhd_info *dhd, char *buf)
+show_dhd_dump_in_progress(struct dhd_info *dhd, char *buf)
 {
-	ssize_t ret = 0;
-	bool dump_done;
+	size_t ret = 0;
+	dhd_dongledump_status_t dump_status;
 
 	if (!dhd) {
 		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
-		return ret;
+		return BCME_ERROR;
 	}
 
-	dump_done = DHD_BUS_BUSY_CHECK_IN_HALDUMP(&dhd->pub) ? TRUE : FALSE;
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%d \n", dump_done);
+	dump_status = dhd_get_dump_status(&dhd->pub);
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d \n", dump_status);
 
 	return ret;
 }
 
-static struct dhd_attr dhd_attr_dump_done =
-__ATTR(dump_done, 0660, show_dhd_dump_done, NULL);
-#endif /* DHD_FILE_DUMP_EVENT */
-#endif /* WL_CFG80211 */
+static ssize_t
+set_dhd_dump_in_progress(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	uint32 input;
+	dhd_dongledump_status_t dump_status;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return count;
+	}
+
+	dump_status = dhd_get_dump_status(&dhd->pub);
+	if (dump_status == DUMP_NOT_READY || dump_status == DUMP_IN_PROGRESS) {
+		DHD_ERROR(("%s: Could not start dongle dump: %d\n",
+			__FUNCTION__, dump_status));
+		goto exit;
+	}
+
+	input = bcm_atoi(buf);
+	if (input == DUMP_TRIGGER) {
+		DHD_INFO(("%s: Trigger dongle dump\n", __FUNCTION__));
+		dhd_set_dump_status(&dhd->pub, DUMP_IN_PROGRESS);
+		schedule_work(&dhd->dhd_dump_proc_work);
+	}
+	else {
+		DHD_ERROR(("%s: Invalid value %d\n", __FUNCTION__, input));
+	}
+
+exit:
+	return count;
+}
+
+static struct dhd_attr dhd_attr_dump_in_progress =
+__ATTR(dump_in_progress, 0660, show_dhd_dump_in_progress, set_dhd_dump_in_progress);
+#endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 
 #ifdef DHD_DUMP_START_COMMAND
 static ssize_t
@@ -2499,11 +2631,21 @@ trigger_dhd_dump_start_command(struct dhd_info *dhd, char *buf)
 {
 	ssize_t ret = 0;
 	dhd_pub_t *dhdp;
+	unsigned long flags = 0;
 
 	dhdp = &dhd->pub;
 
 	DHD_ERROR(("%s: dump_start command delivered.\n", __FUNCTION__));
+	DHD_GENERAL_LOCK(dhdp, flags);
+	DHD_BUS_BUSY_SET_IN_DUMP_DONGLE_MEM(&dhd->pub);
+	DHD_GENERAL_UNLOCK(dhdp, flags);
+
 	dhd_log_dump_trigger(dhdp, CMD_DEFAULT);
+
+	DHD_GENERAL_LOCK(dhdp, flags);
+	DHD_BUS_BUSY_CLEAR_IN_DUMP_DONGLE_MEM(&dhd->pub);
+	dhd_os_busbusy_wake(dhdp);
+	DHD_GENERAL_UNLOCK(dhdp, flags);
 
 	ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", 0);
 	return ret;
@@ -2582,9 +2724,9 @@ static struct attribute *default_file_attrs[] = {
 #endif /* PROP_TXSTATUS */
 #endif /* USE_WFA_CERT_CONF */
 #endif /* DHD_EXPORT_CNTL_FILE */
-#if defined(DHD_ADPS_BAM_EXPORT) && defined(WL_BAM)
+#if defined(WL_BAM)
 	&dhd_attr_adps_bam.attr,
-#endif	/* DHD_ADPS_BAM_EXPORT && WL_BAM */
+#endif	/* WL_BAM */
 #ifdef DHD_SEND_HANG_PRIVCMD_ERRORS
 	&dhd_attr_hang_privcmd_err.attr,
 #endif /* DHD_SEND_HANG_PRIVCMD_ERRORS */
@@ -2630,10 +2772,10 @@ static struct attribute *default_file_attrs[] = {
 #endif /* PWRSTATS_SYSFS */
 #if defined(WL_CFG80211)
 	&dhd_attr_wl_dbg_level.attr,
-#if defined(DHD_FILE_DUMP_EVENT)
-	&dhd_attr_dump_done.attr,
-#endif /* DHD_FILE_DUMP_EVENT */
 #endif /* WL_CFG80211 */
+#if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
+	&dhd_attr_dump_in_progress.attr,
+#endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 #ifdef DHD_DUMP_START_COMMAND
 	&dhd_attr_dump_start_command.attr,
 #endif /* DHD_DUMP_START_COMMAND */
@@ -2653,6 +2795,11 @@ static struct attribute *default_file_attrs[] = {
 	&dhd_attr_aspm_enab.attr,
 	&dhd_attr_l1ss_enab.attr,
 #endif /* PCIE_FULL_DONGLE */
+#ifdef RPM_FAST_TRIGGER
+	&dhd_attr_fast_rpm_thresh.attr,
+#endif /* RPM_FAST_TRIGGER */
+	&dhd_attr_sig_path.attr,
+	&dhd_attr_tcm_test_mode.attr,
 #ifdef SYSFS_EXPORT_COUNTRY
 	&dhd_attr_country.attr,
 #endif
@@ -3177,6 +3324,197 @@ static struct kobj_type dhd_lb_ktype = {
 };
 #endif /* DHD_LB */
 
+/*
+ * ************ DPC BOUNDS *************
+ */
+
+static ssize_t
+show_ctrl_cpl_post_bound(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n",
+		dhd_prot_get_ctrl_cpl_post_bound(&dev->pub));
+	return ret;
+}
+
+static ssize_t
+set_ctrl_cpl_post_bound(struct dhd_info *dev, const char *buf, size_t count)
+{
+	int val;
+
+	val = (uint32)bcm_atoi(buf);
+	if (val <= 0)
+	{
+		DHD_ERROR(("%s : invalid ctrl_cpl_post_bound %u\n",
+			__FUNCTION__, val));
+		return count;
+	}
+
+	dhd_prot_set_ctrl_cpl_post_bound(&dev->pub, val);
+	return count;
+}
+
+static ssize_t
+show_tx_post_bound(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", dhd_prot_get_tx_post_bound(&dev->pub));
+	return ret;
+}
+
+static ssize_t
+set_tx_post_bound(struct dhd_info *dev, const char *buf, size_t count)
+{
+	int val;
+
+	val = (uint32)bcm_atoi(buf);
+	if (val <= 0)
+	{
+		DHD_ERROR(("%s : invalid tx_post_bound %u\n",
+			__FUNCTION__, val));
+		return count;
+	}
+
+	dhd_prot_set_tx_post_bound(&dev->pub, val);
+	return count;
+}
+
+static ssize_t
+show_rx_cpl_post_bound(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n",
+		dhd_prot_get_rx_cpl_post_bound(&dev->pub));
+	return ret;
+}
+
+static ssize_t
+set_rx_cpl_post_bound(struct dhd_info *dev, const char *buf, size_t count)
+{
+	int val;
+
+	val = (uint32)bcm_atoi(buf);
+	if (val <= 0)
+	{
+		DHD_ERROR(("%s : invalid rx_cpl_post_bound %u\n",
+			__FUNCTION__, val));
+		return count;
+	}
+
+	dhd_prot_set_rx_cpl_post_bound(&dev->pub, val);
+	return count;
+}
+
+static ssize_t
+show_tx_cpl_bound(struct dhd_info *dev, char *buf)
+{
+	ssize_t ret = 0;
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", dhd_prot_get_tx_cpl_bound(&dev->pub));
+	return ret;
+}
+
+static ssize_t
+set_tx_cpl_bound(struct dhd_info *dev, const char *buf, size_t count)
+{
+	int val;
+
+	val = (uint32)bcm_atoi(buf);
+	if (val <= 0)
+	{
+		DHD_ERROR(("%s : invalid tx_cpl_bound %u\n",
+			__FUNCTION__, val));
+		return count;
+	}
+
+	dhd_prot_set_tx_cpl_bound(&dev->pub, val);
+	return count;
+}
+
+static struct dhd_attr dhd_attr_ctrl_cpl_post_bound =
+__ATTR(ctrl_cpl_post_bound, 0660, show_ctrl_cpl_post_bound, set_ctrl_cpl_post_bound);
+static struct dhd_attr dhd_attr_tx_post_bound =
+__ATTR(tx_post_bound, 0660, show_tx_post_bound, set_tx_post_bound);
+static struct dhd_attr dhd_attr_rx_cpl_post_bound =
+__ATTR(rx_cpl_post_bound, 0660, show_rx_cpl_post_bound, set_rx_cpl_post_bound);
+static struct dhd_attr dhd_attr_tx_cpl_bound =
+__ATTR(tx_cpl_bound, 0660, show_tx_cpl_bound, set_tx_cpl_bound);
+
+static struct attribute *debug_dpc_bounds_attrs[] = {
+	&dhd_attr_tx_cpl_bound.attr,
+	&dhd_attr_rx_cpl_post_bound.attr,
+	&dhd_attr_tx_post_bound.attr,
+	&dhd_attr_ctrl_cpl_post_bound.attr,
+	NULL
+};
+
+#define to_dhd_dpc_bounds(k) container_of(k, struct dhd_info, dhd_dpc_bounds_kobj)
+
+/*
+ * wifi/dpc_bounds kobject show function, the "attr" attribute specifices to which
+ * node under "sys/wifi/dpc_bounds" the show function is called.
+ */
+static ssize_t dhd_dpc_bounds_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	dhd_info_t *dhd;
+	struct dhd_attr *d_attr;
+	int ret;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	dhd = to_dhd_dpc_bounds(kobj);
+	d_attr = to_attr(attr);
+	GCC_DIAGNOSTIC_POP();
+
+	if (d_attr->show)
+		ret = d_attr->show(dhd, buf);
+	else
+		ret = -EIO;
+
+	return ret;
+}
+
+/*
+ * wifi/dpc_bounds kobject store function, the "attr" attribute specifices to which
+ * node under "sys/wifi/dpc_bounds" the store function is called.
+ */
+static ssize_t dhd_dpc_bounds_store(struct kobject *kobj, struct attribute *attr,
+		const char *buf, size_t count)
+{
+	dhd_info_t *dhd;
+	struct dhd_attr *d_attr;
+	int ret;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	dhd = to_dhd_dpc_bounds(kobj);
+	d_attr = to_attr(attr);
+	GCC_DIAGNOSTIC_POP();
+
+	if (d_attr->store)
+		ret = d_attr->store(dhd, buf, count);
+	else
+		ret = -EIO;
+
+	return ret;
+
+}
+
+static struct sysfs_ops dhd_sysfs_dpc_bounds_ops = {
+	.show = dhd_dpc_bounds_show,
+	.store = dhd_dpc_bounds_store,
+};
+
+static struct kobj_type dhd_dpc_bounds_ktype = {
+	.sysfs_ops = &dhd_sysfs_dpc_bounds_ops,
+	.default_attrs = debug_dpc_bounds_attrs,
+};
+
+/*
+ * *************************************
+ */
+
 /* Create a kobject and attach to sysfs interface */
 int dhd_sysfs_init(dhd_info_t *dhd)
 {
@@ -3206,13 +3544,22 @@ int dhd_sysfs_init(dhd_info_t *dhd)
 			&dhd_lb_ktype, &dhd->dhd_kobj, "lb");
 	if (ret) {
 		kobject_put(&dhd->dhd_lb_kobj);
-		DHD_ERROR(("%s(): Unable to allocate kobject \r\n", __FUNCTION__));
+		DHD_ERROR(("%s(): Unable to allocate kobject for 'lb'\r\n", __FUNCTION__));
 		return ret;
 	}
 
 	kobject_uevent(&dhd->dhd_lb_kobj, KOBJ_ADD);
 #endif /* DHD_LB */
 
+	/* DPC bounds */
+	ret  = kobject_init_and_add(&dhd->dhd_dpc_bounds_kobj,
+			&dhd_dpc_bounds_ktype, &dhd->dhd_kobj, "dpc_bounds");
+	if (ret) {
+		kobject_put(&dhd->dhd_dpc_bounds_kobj);
+		DHD_ERROR(("%s(): Unable to allocate kobject for 'dpc_bounds'\r\n", __FUNCTION__));
+		return ret;
+	}
+	kobject_uevent(&dhd->dhd_dpc_bounds_kobj, KOBJ_ADD);
 	return ret;
 }
 
@@ -3228,7 +3575,10 @@ void dhd_sysfs_exit(dhd_info_t *dhd)
 	kobject_put(&dhd->dhd_lb_kobj);
 #endif /* DHD_LB */
 
-	/* Releae the kobject */
+	/* DPC bounds */
+	kobject_put(&dhd->dhd_dpc_bounds_kobj);
+
+	/* Release the kobject */
 	kobject_put(&dhd->dhd_kobj);
 }
 

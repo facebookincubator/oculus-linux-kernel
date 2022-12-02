@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -35,6 +35,10 @@
 #include <eapol.h>
 #endif /* WL_WPS_SYNC */
 #include <802.11.h>
+#ifdef BCMWAPI_WPI
+#include <802.11wapi.h>
+#endif
+#include <802.11wfa.h>
 #include <bcmiov.h>
 #include <linux/if_arp.h>
 #include <asm/uaccess.h>
@@ -120,7 +124,6 @@
 #define DNGL_FUNC(func, parameters)
 #else
 #define DNGL_FUNC(func, parameters) func parameters
-#define COEX_DHCP
 
 #endif /* defined(BCMDONGLEHOST) */
 
@@ -131,7 +134,7 @@ _Pragma("GCC diagnostic pop")
 
 /* SoftAP related parameters */
 #define DEFAULT_2G_SOFTAP_CHANNEL	1
-#define DEFAULT_2G_SOFTAP_CHANSPEC	0x1006
+#define DEFAULT_2G_SOFTAP_CHANSPEC	0x1001
 #define DEFAULT_5G_SOFTAP_CHANNEL	149
 
 #define MAX_VNDR_OUI_STR_LEN	256u
@@ -388,6 +391,7 @@ wl_cfg80211_is_policy_config_allowed(struct bcm_cfg80211 *cfg)
 	return ret;
 }
 #endif /* WL_IFACE_MGMT */
+
 #ifdef WL_NANP2P
 int
 wl_cfg80211_set_iface_conc_disc(struct net_device *ndev,
@@ -423,6 +427,7 @@ wl_cfg80211_get_iface_conc_disc(struct net_device *ndev)
 	return cfg->conc_disc;
 }
 #endif /* WL_NANP2P */
+
 #ifdef WL_IFACE_MGMT
 int
 wl_cfg80211_set_iface_policy(struct net_device *ndev,
@@ -490,25 +495,15 @@ wl_cfg80211_get_iface_policy(struct net_device *ndev)
 wl_iftype_t
 wl_cfg80211_get_sec_iface(struct bcm_cfg80211 *cfg)
 {
-#ifndef WL_STATIC_IF
 	dhd_pub_t *dhd = (dhd_pub_t *)(cfg->pub);
-#endif /* !WL_STATIC_IF */
 	struct net_device *p2p_ndev = NULL;
 
 	p2p_ndev = wl_to_p2p_bss_ndev(cfg,
 		P2PAPI_BSSCFG_CONNECTION1);
 
-#ifdef WL_STATIC_IF
-	if (IS_CFG80211_STATIC_IF_ACTIVE(cfg)) {
-		if (IS_AP_IFACE(cfg->static_ndev->ieee80211_ptr)) {
-			return WL_IF_TYPE_AP;
-		}
-	}
-#else
 	if (dhd->op_mode & DHD_FLAG_HOSTAP_MODE) {
 		return WL_IF_TYPE_AP;
 	}
-#endif /* WL_STATIC_IF */
 
 	if (p2p_ndev && p2p_ndev->ieee80211_ptr) {
 		if (p2p_ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_P2P_GO) {
@@ -564,6 +559,16 @@ wl_cfg80211_data_if_mgmt(struct bcm_cfg80211 *cfg,
 		*/
 		return BCME_OK;
 	}
+
+#ifdef WL_DUAL_APSTA
+	if (sec_wl_if_type == WL_IF_TYPE_AP &&
+		(new_wl_iftype == WL_IF_TYPE_AP || new_wl_iftype == WL_IF_TYPE_STA)) {
+		/* For Dual APSTA configuration allow starting new AP/STA even though
+		 * secondary interface is AP
+		 */
+		return BCME_OK;
+	}
+#endif /* WL_DUAL_APSTA */
 
 	/* Handle secondary data link case */
 	switch (cfg->iface_data.policy) {
@@ -649,6 +654,7 @@ wl_cfg80211_disc_if_mgmt(struct bcm_cfg80211 *cfg,
 				* as for AP and associated ifaces, both are same
 				*/
 			}
+			/* falls through */
 			case WL_IF_POLICY_DEFAULT: {
 				 if (sec_wl_if_type == WL_IF_TYPE_AP) {
 					WL_INFORM_MEM(("AP is active, cant support new iface\n"));
@@ -661,10 +667,11 @@ wl_cfg80211_disc_if_mgmt(struct bcm_cfg80211 *cfg,
 						* Fall through
 						*/
 					} else {
-						/* Active iface is present, returning error */
-						WL_INFORM_MEM(("P2P group is active,"
-							" cant support new iface\n"));
-						ret = BCME_ERROR;
+						/* clear associated group interfaces */
+						WL_INFORM_MEM(("remove P2P group,"
+							" to support new iface\n"));
+						ret = wl_cfg80211_delete_iface(cfg,
+							sec_wl_if_type);
 					}
 				} else if (sec_wl_if_type == WL_IF_TYPE_NAN) {
 					ret = wl_cfg80211_delete_iface(cfg, sec_wl_if_type);
@@ -879,7 +886,7 @@ wl_release_vif_macaddr(struct bcm_cfg80211 *cfg, u8 *mac_addr, u16 wl_iftype)
 			__FUNCTION__, MAC2STRDBG(mac_addr)));
 
 #if defined(SPECIFIC_MAC_GEN_SCHEME)
-	if ((wl_iftype == WL_IF_TYPE_P2P_DISC) || (wl_iftype == WL_IF_TYPE_AP) ||
+	if ((wl_iftype == WL_IF_TYPE_P2P_DISC) ||
 		(wl_iftype == WL_IF_TYPE_P2P_GO) || (wl_iftype == WL_IF_TYPE_P2P_GC)) {
 		/* Avoid invoking release mac addr code for interfaces using
 		 * fixed mac addr.
@@ -948,7 +955,7 @@ wl_get_vif_macaddr(struct bcm_cfg80211 *cfg, u16 wl_iftype, u8 *mac_addr)
  * the mac address.
  */
 #if defined(SPECIFIC_MAC_GEN_SCHEME)
-	if (wl_iftype == WL_IF_TYPE_P2P_DISC ||	wl_iftype == WL_IF_TYPE_AP) {
+	if (wl_iftype == WL_IF_TYPE_P2P_DISC) {
 		mac_addr[0] |= 0x02;
 	} else if ((wl_iftype == WL_IF_TYPE_P2P_GO) || (wl_iftype == WL_IF_TYPE_P2P_GC)) {
 		mac_addr[0] |= 0x02;
@@ -1522,6 +1529,16 @@ wl_get_bandwidth_cap(struct net_device *ndev, uint32 band, uint32 *bandwidth)
 		bw = WL_CHANSPEC_BW_20;
 	}
 
+#if defined(LIMIT_AP_BW)
+	if (band == WL_CHANSPEC_BAND_6G) {
+		struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
+		if (cfg->ap_bw_chspec != INVCHANSPEC &&
+			(wf_bw_chspec_to_mhz(cfg->ap_bw_chspec) < wf_bw_chspec_to_mhz(bw))) {
+			bw = cfg->ap_bw_chspec;
+		}
+	}
+#endif /* LIMIT_AP_BW */
+
 	*bandwidth = bw;
 
 	return err;
@@ -1592,19 +1609,28 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	u32 bw = WL_CHANSPEC_BW_20;
 	s32 err = BCME_OK;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-#if defined(CUSTOM_SET_CPUCORE) || defined(APSTA_RESTRICTED_CHANNEL) || \
-	defined(SUPPORT_AP_INIT_BWCONF)
+	wl_ap_oper_data_t ap_oper_data = {0};
 	dhd_pub_t *dhd =  (dhd_pub_t *)(cfg->pub);
-#endif /* CUSTOM_SET_CPUCORE || APSTA_RESTRICTED_CHANNEL */
 #if defined(SUPPORT_AP_INIT_BWCONF)
 	u32 configured_bw;
 #endif /* SUPPORT_AP_INIT_BWCONF */
+
+	BCM_REFERENCE(dhd);
+
 	dev = ndev_to_wlc_ndev(dev, cfg);
 	chspec = wl_freq_to_chanspec(chan->center_freq);
 	WL_ERR(("netdev_ifidx(%d) chspec(%x) chan_type(%d) "
 		" target channel(%d) chan->center_freq (%d)\n",
 		dev->ifindex, chspec, channel_type,
 		CHSPEC_CHANNEL(chspec), chan->center_freq));
+
+#ifdef WL_DUAL_STA
+	/* In case of Dual STA if both STAs are connected, do not allow softAP bringup */
+	if (wl_cfgvif_get_iftype_count(cfg, WL_IF_TYPE_STA) >= 2) {
+		WL_ERR(("Dual STA case, softAP bringup not supported\n"));
+		return -ENOTSUPP;
+	}
+#endif /* WL_DUAL_STA */
 
 		if (IS_P2P_GO(dev->ieee80211_ptr) && (CHSPEC_IS6G(chspec))) {
 			WL_ERR(("P2P GO not allowed on 6G\n"));
@@ -1617,6 +1643,54 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOTSUPP;
 	}
 #endif /* WL_SOFTAP_6G */
+
+#ifdef WL_UNII4_CHAN
+	if (CHSPEC_IS5G(chspec) &&
+		IS_UNII4_CHANNEL(wf_chspec_primary20_chan(chspec))) {
+		WL_ERR(("AP not allowed on UNII-4 chanspec 0x%x\n", chspec));
+		return -ENOTSUPP;
+	}
+#endif /* WL_UNII4_CHAN */
+	/* Check whether AP is already operational */
+	wl_get_ap_chanspecs(cfg, &ap_oper_data);
+	if (ap_oper_data.count >= MAX_AP_IFACES) {
+		WL_ERR(("ACS request in multi AP case!! count:%d\n",
+			ap_oper_data.count));
+		return -EINVAL;
+	}
+
+	if (ap_oper_data.count == 1) {
+		chanspec_t sta_chspec;
+		chanspec_t ch = ap_oper_data.iface[0].chspec;
+		u16 ap_band, incoming_band;
+
+		/* Single AP case. Bring up the AP in the other band */
+		ap_band = CHSPEC_TO_WLC_BAND(ch);
+		incoming_band = CHSPEC_TO_WLC_BAND(chspec);
+		WL_INFORM_MEM(("AP operational in band:%d and incoming band:%d\n",
+			ap_band, incoming_band));
+		/* if incoming and operational AP band is same, it is invalid case */
+		if (ap_band == incoming_band) {
+			WL_ERR(("DUAL AP not allowed on same band\n"));
+			return -ENOTSUPP;
+		}
+		sta_chspec = wl_cfg80211_get_sta_chanspec(cfg);
+		if (sta_chspec && wf_chspec_valid(sta_chspec)) {
+			/* 5G cant be upgraded to 6G since dual band clients
+			 * wont be able able to scan 6G
+			 */
+			if (CHSPEC_IS6G(sta_chspec) && (incoming_band == WLC_BAND_5G)) {
+				WL_ERR(("DUAL AP not allowed for"
+					" 5G band as sta in 6G chspec 0x%x\n",
+					chspec));
+				return -ENOTSUPP;
+			}
+			if (incoming_band == CHSPEC_TO_WLC_BAND(sta_chspec)) {
+				/* use sta chanspec for SCC */
+				chspec = sta_chspec;
+			}
+		}
+	}
 
 #ifdef NOT_YET
 	switch (channel_type) {
@@ -1634,34 +1708,47 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	}
 #endif /* NOT_YET */
 
-#if defined(APSTA_RESTRICTED_CHANNEL)
-	/* Some customer platform used limited number of channels
-	 * for SoftAP interface on STA/SoftAP concurrent mode.
-	 * - 2.4GHz Channel: CH1 - CH13
-	 * - 5GHz Channel: CH149 (it depends on the country code)
-	 * If the Android framework sent invaild channel configuration
-	 * to DHD, driver should change the channel which is sutible for
-	 * STA/SoftAP concurrent mode.
-	 * - Set operating channel to CH1 (default 2.4GHz channel for
-	 *   restricted APSTA mode) if STA interface was associated to
-	 *   5GHz APs except for CH149.
-	 * - Otherwise, set the channel to the same channel as existing AP.
-	 */
 	if (wl_get_mode_by_netdev(cfg, dev) == WL_MODE_AP &&
 		DHD_OPMODE_STA_SOFTAP_CONCURR(dhd) &&
 		wl_get_drv_status(cfg, CONNECTED, bcmcfg_to_prmry_ndev(cfg))) {
-		u32 *sta_chanspec = (u32 *)wl_read_prof(cfg,
+		chanspec_t *sta_chanspec = (chanspec_t *)wl_read_prof(cfg,
 			bcmcfg_to_prmry_ndev(cfg), WL_PROF_CHAN);
 		if (chan->band == wl_get_nl80211_band(CHSPEC_BAND(*sta_chanspec))) {
-			/* Do not try SCC in 5GHz if channel is not CH149 */
 			chspec = (
 #ifdef WL_6G_BAND
-				CHSPEC_IS6G(*sta_chanspec) ||
+				(CHSPEC_IS6G(*sta_chanspec) &&
+				 (!CHSPEC_IS_6G_PSC(*sta_chanspec) ||
+				  (wf_chspec_primary20_chspec(*sta_chanspec) !=
+				   wf_chspec_primary20_chspec(chspec)))) ||
 #endif /* WL_6G_BAND */
+				(
+#if defined(APSTA_RESTRICTED_CHANNEL)
+				 /* Do not try SCC in 5GHz if channel is not CH149, 153, 157, 161 */
+
+				 /* Some customer platform used limited number of channels
+				  * for SoftAP interface on STA/SoftAP concurrent mode.
+				  * - 2.4GHz Channel: CH1 - CH13
+				  * - 5GHz Channel: CH 149, 153, 157, 161
+				  * (it depends on the country code)
+				  * If the Android framework sent invaild channel configuration
+				  * to DHD, driver should change the channel which is suitable for
+				  * STA/SoftAP concurrent mode.
+				  * - Set operating channel to CH1 (default 2.4GHz channel for
+				  *   restricted APSTA mode) if STA interface was associated to
+				  *   5GHz APs except for CH149, 153, 157, 161.
+				  * - Otherwise, set the channel to the same channel as existing AP.
+				  */
+				((CHSPEC_IS5G(*sta_chanspec)) &&
+				(!IS_5G_APCS_CHANNEL(wf_chspec_primary20_chan(*sta_chanspec)))) ||
+#else
+				(is_chanspec_dfs(cfg, *sta_chanspec) ||
+#ifdef WL_UNII4_CHAN
 				(CHSPEC_IS5G(*sta_chanspec) &&
-				wf_chspec_primary20_chan(*sta_chanspec) !=
-				DEFAULT_5G_SOFTAP_CHANNEL)) ?
-				DEFAULT_2G_SOFTAP_CHANSPEC: *sta_chanspec;
+				IS_UNII4_CHANNEL(wf_chspec_primary20_chan(*sta_chanspec))) ||
+#endif /* WL_UNII4_CHAN */
+				FALSE) ||
+#endif /* APSTA_RESTRICTED_CHANNEL */
+				FALSE)) ? DEFAULT_2G_SOFTAP_CHANSPEC : *sta_chanspec;
 			WL_ERR(("target chanspec will be changed to %x\n", chspec));
 			if (CHSPEC_IS2G(chspec)) {
 				bw = WL_CHANSPEC_BW_20;
@@ -1669,7 +1756,6 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 			}
 		}
 	}
-#endif /* APSTA_RESTRICTED_CHANNEL */
 
 	err = wl_get_bandwidth_cap(dev, CHSPEC_BAND(chspec), &bw);
 	if (err < 0) {
@@ -1678,14 +1764,14 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 #if defined(SUPPORT_AP_INIT_BWCONF)
-#if defined(XRAPI)
+#if defined(XRAPI) && !defined(DFSPROXY_P2P)
 	if (CHSPEC_IS2G(chspec)) {
 		/* SoftAP in 2G is not allowed */
 		err = BCME_EPERM;
 		WL_ERR(("Bring up softAP in 2G is not allowed! \n"));
 		return err;
 	}
-#endif /* XRAPI */
+#endif /* XRAPI && !DFSPROXY_P2P */
 	/* Update BW for 5G and 6G SoftAP if BW is configured */
 	configured_bw = wl_update_configured_bw(wl_get_configured_ap_bw(dhd));
 	if (configured_bw != INVCHANSPEC) {
@@ -1697,8 +1783,17 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	if (CHSPEC_IS5G(chspec) && (bw == WL_CHANSPEC_BW_160)) {
 		bw = WL_CHANSPEC_BW_80;
 	}
+
+#ifdef WL_UNII4_CHAN
+	/* Handle 165/20 channel as special case to not upgrade the bw */
+	if (IS_5G_UNII4_165_CHANNEL(chspec)) {
+		bw = WL_CHANSPEC_BW_20;
+	}
+#endif /* WL_UNII4_CHAN */
+
 #ifdef WL_CELLULAR_CHAN_AVOID
 	if (!CHSPEC_IS6G(chspec)) {
+		wl_cellavoid_sanity_check_chan_info_list(cfg->cellavoid_info);
 		wl_cellavoid_sync_lock(cfg);
 		cur_chspec = wl_cellavoid_find_widechspec_fromchspec(cfg->cellavoid_info, chspec);
 		if (cur_chspec == INVCHANSPEC) {
@@ -1717,8 +1812,13 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 #endif /* WL_CELLULAR_CHAN_AVOID */
 set_channel:
 	WL_DBG(("bw = %x, chspec =%x, chspec band = %x\n", bw, chspec, CHSPEC_BAND(chspec)));
+#ifdef WL_6G_320_SUPPORT
+	cur_chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
+		bw, CHSPEC_BAND(chspec), 0);
+#else
 	cur_chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
 		bw, CHSPEC_BAND(chspec));
+#endif /* WL_6G_320_SUPPORT */
 #ifdef WL_6G_BAND
 	if (cfg->acs_chspec &&
 		CHSPEC_IS6G(cfg->acs_chspec) &&
@@ -1750,13 +1850,17 @@ set_channel:
 #ifdef DISABLE_WL_FRAMEBURST_SOFTAP
 			else {
 				/* Disable Frameburst only for stand-alone 2GHz SoftAP */
-				if (wl_get_mode_by_netdev(cfg, dev) == WL_MODE_AP &&
-					DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_HOSTAP_MODE) &&
-					(CHSPEC_IS2G(chspec)) &&
-					!wl_is_sta_connected(cfg)) {
-					WL_DBG(("Disabling frameburst on "
-						"stand-alone 2GHz SoftAP\n"));
-					wl_cfg80211_set_frameburst(cfg, FALSE);
+				if ((wl_get_mode_by_netdev(cfg, dev) == WL_MODE_AP) &&
+					DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_HOSTAP_MODE)) {
+					if (CHSPEC_IS2G(chspec) && !wl_is_sta_connected(cfg)) {
+						WL_DBG(("Disabling frameburst on "
+							"stand-alone 2GHz SoftAP\n"));
+						wl_cfg80211_set_frameburst(cfg, FALSE);
+					} else if (!CHSPEC_IS2G(chspec) &&
+						cfg->frameburst_disabled) {
+						WL_INFORM(("Enable back frameburst\n"));
+						wl_cfg80211_set_frameburst(cfg, TRUE);
+					}
 				}
 			}
 #endif /* DISABLE_WL_FRAMEBURST_SOFTAP */
@@ -1880,7 +1984,7 @@ wl_validate_fils_ind_ie(struct net_device *dev, const bcm_tlv_t *filsindie, s32 
 		err = BCME_NOMEM;
 		goto exit;
 	}
-	iov_buf->version = WL_FILS_IOV_VERSION;
+	iov_buf->version = WL_FILS_IOV_VERSION_1_1;
 	iov_buf->id = WL_FILS_CMD_ADD_IND_IE;
 	iov_buf->len = sizeof(bcm_xtlv_t) + filsindie->len - 1;
 	pxtlv = (bcm_xtlv_t*)&iov_buf->data[0];
@@ -2329,38 +2433,8 @@ exit:
 	return 0;
 }
 
-#if defined(SUPPORT_SOFTAP_WPAWPA2_MIXED)
-static u32 wl_get_cipher_type(uint8 type)
-{
-	u32 ret = 0;
-	switch (type) {
-		case WPA_CIPHER_NONE:
-			ret = 0;
-			break;
-		case WPA_CIPHER_WEP_40:
-		case WPA_CIPHER_WEP_104:
-			ret = WEP_ENABLED;
-			break;
-		case WPA_CIPHER_TKIP:
-			ret = TKIP_ENABLED;
-			break;
-		case WPA_CIPHER_AES_CCM:
-			ret = AES_ENABLED;
-			break;
-
-#ifdef BCMWAPI_WPI
-		case WAPI_CIPHER_SMS4:
-			ret = SMS4_ENABLED;
-			break;
-#endif
-
-		default:
-			WL_ERR(("No Security Info\n"));
-	}
-	return ret;
-}
-
-static u32 wl_get_suite_auth_key_mgmt_type(uint8 type, const wpa_suite_mcast_t *mcast)
+static u32
+wl_get_suite_auth_key_mgmt_type(uint8 type, const wpa_suite_mcast_t *mcast)
 {
 	u32 ret = 0;
 	u32 is_wpa2 = 0;
@@ -2406,6 +2480,82 @@ static u32 wl_get_suite_auth_key_mgmt_type(uint8 type, const wpa_suite_mcast_t *
 		default:
 			WL_ERR(("No Key Mgmt Info\n"));
 		}
+	}
+	return ret;
+}
+
+s32
+wl_update_akm_from_assoc_ie(struct bcm_cfg80211 *cfg, struct net_device *ndev,
+	u8 *assoc_ies, u32 assoc_ie_len)
+{
+	const wpa_suite_mcast_t *mcast;
+	const wpa_suite_ucast_t *ucast;
+	const wpa_suite_auth_key_mgmt_t *mgmt;
+	struct parsed_ies parsed_assoc_ies;
+	const bcm_tlv_t *wpa2ie;
+	u16 suite_count;
+	struct wl_security *sec = wl_read_prof(cfg, ndev, WL_PROF_SEC);
+
+	WL_DBG(("Enter \n"));
+
+	/* Parse assoc IEs */
+	if (wl_cfg80211_parse_ies(assoc_ies, assoc_ie_len, &parsed_assoc_ies) < 0) {
+		WL_ERR(("Get Assoc IEs failed\n"));
+		return 0;
+	}
+
+	if (parsed_assoc_ies.wpa2_ie == NULL) {
+		WL_ERR(("wpa2_ie\n"));
+		return -EINVAL;
+	} else {
+		wpa2ie = parsed_assoc_ies.wpa2_ie;
+	}
+
+	/* Get the mcast cipher */
+	mcast = (const wpa_suite_mcast_t *)&wpa2ie->data[WPA2_VERSION_LEN];
+
+	/* Get the unicast cipher */
+	ucast = (const wpa_suite_ucast_t *)&mcast[1];
+	suite_count = ltoh16_ua(&ucast->count);
+
+	/* check and update the AKM and FW auth in DHD security profile */
+	mgmt = (const wpa_suite_auth_key_mgmt_t *)&ucast->list[suite_count];
+	sec->wpa_auth = ntoh32_ua(&mgmt->list[0]);
+	sec->fw_wpa_auth = wl_get_suite_auth_key_mgmt_type(mgmt->list[0].type, mcast);
+
+	WL_INFORM(("AKM updated from assoc ie in DHD Security profile = 0x%X 0x%X\n",
+		sec->wpa_auth, sec->fw_wpa_auth));
+
+	return 0;
+}
+
+#if defined(SUPPORT_SOFTAP_WPAWPA2_MIXED)
+static u32 wl_get_cipher_type(uint8 type)
+{
+	u32 ret = 0;
+	switch (type) {
+		case WPA_CIPHER_NONE:
+			ret = 0;
+			break;
+		case WPA_CIPHER_WEP_40:
+		case WPA_CIPHER_WEP_104:
+			ret = WEP_ENABLED;
+			break;
+		case WPA_CIPHER_TKIP:
+			ret = TKIP_ENABLED;
+			break;
+		case WPA_CIPHER_AES_CCM:
+			ret = AES_ENABLED;
+			break;
+
+#ifdef BCMWAPI_WPI
+		case WAPI_CIPHER_SMS4:
+			ret = SMS4_ENABLED;
+			break;
+#endif
+
+		default:
+			WL_ERR(("No Security Info\n"));
 	}
 	return ret;
 }
@@ -2834,6 +2984,16 @@ wl_cfg80211_parse_ies(const u8 *ptr, u32 len, struct parsed_ies *ies)
 	} else {
 		WL_ERR(("No WPSIE in beacon \n"));
 	}
+	/* find rates IEs */
+	if ((ies->rate_ie = bcm_parse_tlvs(ptr, len,
+		DOT11_MNG_RATES_ID)) != NULL) {
+		ies->rate_ie_len = ies->rate_ie->len;
+	}
+
+	if ((ies->ext_rate_ie = bcm_parse_tlvs(ptr, len,
+		DOT11_MNG_EXT_RATES_ID)) != NULL) {
+		ies->ext_rate_ie_len = ies->ext_rate_ie->len;
+	}
 
 	/* find the RSN_IE */
 	if ((ies->wpa2_ie = bcm_parse_tlvs(ptr, len,
@@ -3149,20 +3309,27 @@ wl_cfg80211_bcn_bringup_ap(
 		}
 
 #ifdef MFP
-		if (cfg->mfp_mode) {
-			/* This needs to go after wsec otherwise the wsec command will
-			 * overwrite the values set by MFP
-			 */
-			err = wldev_iovar_setint_bsscfg(dev, "mfp", cfg->mfp_mode, bssidx);
-			if (err < 0) {
-				WL_ERR(("MFP Setting failed. ret = %d \n", err));
-				/* If fw doesn't support mfp, Ignore the error */
-				if (err != BCME_UNSUPPORTED) {
-					goto exit;
-				}
+		/* This needs to go after wsec otherwise the wsec command will
+		 * overwrite the values set by MFP
+		 */
+		err = wldev_iovar_setint_bsscfg(dev, "mfp", cfg->mfp_mode, bssidx);
+		if (err < 0) {
+			WL_ERR(("MFP Setting failed. ret = %d \n", err));
+			/* If fw doesn't support mfp, Ignore the error */
+			if (err != BCME_UNSUPPORTED) {
+				goto exit;
 			}
 		}
 #endif /* MFP */
+
+		/* sync up host macaddr */
+		err = wldev_iovar_setbuf(dev, "cur_etheraddr",
+			dev->dev_addr, ETH_ALEN, cfg->ioctl_buf, WLC_IOCTL_SMLEN,
+			&cfg->ioctl_buf_sync);
+		if (err) {
+			WL_ERR(("sync macaddr for softap error\n"));
+			goto exit;
+		}
 
 		bzero(&join_params, sizeof(join_params));
 		/* join parameters starts with ssid */
@@ -3203,9 +3370,7 @@ exit:
 	}
 
 #ifdef MFP
-	if (cfg->mfp_mode) {
-		cfg->mfp_mode = 0;
-	}
+	cfg->mfp_mode = 0;
 
 	if (cfg->bip_pos) {
 		cfg->bip_pos = NULL;
@@ -3220,6 +3385,43 @@ exit:
 			WL_DBG(("cancelled ap_work\n"));
 		}
 	}
+	return err;
+}
+
+static s32
+wl_cfg80211_config_bss_selector(
+	struct net_device *dev,
+	struct parsed_ies *ies,
+	u32 dev_role, s32 bssidx)
+{
+	int err = BCME_OK;
+	bool sae_h2e_required = FALSE;
+	int i, j;
+	const bcm_tlv_t *rates[2] = {ies->rate_ie, ies->ext_rate_ie};
+
+	/* check and config h2e config */
+	for (i = 0; i < 2; i++) {
+		if (rates[i]) {
+			for (j = 0; j < rates[i]->len; j++) {
+				if (rates[i]->data[j] == DOT11_BSS_SAE_HASH_TO_ELEMENT) {
+					sae_h2e_required = TRUE;
+				}
+			}
+		}
+	}
+
+	if (sae_h2e_required) {
+		u32 sae_pwe = SAE_PWE_H2E;
+		err = wl_cfg80211_set_wsec_info(dev, &sae_pwe,
+				sizeof(sae_pwe), WL_WSEC_INFO_BSS_SAE_PWE);
+		if (unlikely(err)) {
+			WL_ERR(("set wsec_info_sae_pwe failed \n"));
+		}
+	}
+
+	WL_INFORM_MEM(("Config BSS Selector Done err %d, h2e_req %d\n",
+		err, sae_h2e_required));
+
 	return err;
 }
 
@@ -3604,6 +3806,7 @@ wl_cfg80211_start_ap(
 				WL_ERR(("set ap role failed!\n"));
 				return BCME_ERROR;
 			}
+
 		}
 		dev_role = NL80211_IFTYPE_AP;
 #ifdef BCMDONGLEHOST
@@ -3657,7 +3860,7 @@ wl_cfg80211_start_ap(
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)) && !defined(WL_COMPAT_WIRELESS))
 	if ((err = wl_cfg80211_set_channel(wiphy, dev,
 		dev->ieee80211_ptr->preset_chandef.chan,
-		NL80211_CHAN_HT20) < 0)) {
+		NL80211_CHAN_HT20)) < 0) {
 		WL_ERR(("Set channel failed \n"));
 		goto fail;
 	}
@@ -3686,6 +3889,11 @@ wl_cfg80211_start_ap(
 		dev_role, bssidx)) < 0) {
 		WL_ERR(("Beacon bring up AP/GO failed \n"));
 		goto fail;
+	}
+
+	if ((err = wl_cfg80211_config_bss_selector(dev, &ies,
+		dev_role, bssidx)) < 0) {
+		WL_ERR(("Config BSS selector failed \n"));
 	}
 
 	/* Set GC/STA SCB expiry timings. */
@@ -3741,7 +3949,10 @@ fail:
 		wl_cfg80211_stop_ap(wiphy, dev);
 		if (dev_role == NL80211_IFTYPE_AP) {
 #ifdef BCMDONGLEHOST
-			dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
+			/* If there are no other APs active, clear the AP mode */
+			if (wl_cfgvif_get_iftype_count(cfg, WL_IF_TYPE_AP) == 0) {
+				dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
+			}
 #ifdef DISABLE_WL_FRAMEBURST_SOFTAP
 			wl_cfg80211_set_frameburst(cfg, TRUE);
 #endif /* DISABLE_WL_FRAMEBURST_SOFTAP */
@@ -3791,6 +4002,8 @@ wl_cfg80211_stop_ap(
 	int idletime = MAX_IDLE_COUNT;
 #endif /* DHD_PCIE_RUNTIMEPM */
 #endif /* CUSTOMER_HW4 */
+	u8 null_mac[ETH_ALEN];
+
 	WL_DBG(("Enter \n"));
 
 	 /* wl_cfg80211_start_ap() schedules cfg->ap_work
@@ -3799,14 +4012,8 @@ wl_cfg80211_stop_ap(
 	  * immediately after wl_cfg80211_start_ap().
 	  * In this case we should cancel the work.
 	  */
-
 	cancel_delayed_work_sync(&cfg->ap_work);
 
-	if (wl_cfg80211_get_bus_state(cfg)) {
-		/* since bus is down, iovar will fail. recovery path will bringup the bus. */
-		WL_ERR(("bus is not ready\n"));
-		return BCME_OK;
-	}
 #if defined(BCMDONGLEHOST)
 	is_rsdb_supported = DHD_OPMODE_SUPPORTED(cfg->pub, DHD_FLAG_RSDB_MODE);
 	if (is_rsdb_supported < 0)
@@ -3820,6 +4027,17 @@ wl_cfg80211_stop_ap(
 	if (dev->ieee80211_ptr->iftype == NL80211_IFTYPE_AP) {
 		dev_role = NL80211_IFTYPE_AP;
 		WL_DBG(("stopping AP operation\n"));
+
+		/* Clear macaddress to prevent any macaddress conflict with interface
+		 * like p2p discovery which can run as soon as softap is brought down
+		 */
+		(void)memset_s(null_mac, sizeof(null_mac),  0, sizeof(null_mac));
+		err = wldev_iovar_setbuf(dev, "cur_etheraddr",
+			null_mac, ETH_ALEN, cfg->ioctl_buf, WLC_IOCTL_SMLEN,
+			&cfg->ioctl_buf_sync);
+		if (err) {
+			WL_ERR(("softap mac_addr set failed\n"));
+		}
 	} else if (dev->ieee80211_ptr->iftype == NL80211_IFTYPE_P2P_GO) {
 		dev_role = NL80211_IFTYPE_P2P_GO;
 		WL_DBG(("stopping P2P GO operation\n"));
@@ -3844,6 +4062,13 @@ wl_cfg80211_stop_ap(
 
 	/* Clear AP/GO connected status */
 	wl_clr_drv_status(cfg, CONNECTED, dev);
+
+	if (wl_cfg80211_get_bus_state(cfg)) {
+		/* since bus is down, iovar will fail. recovery path will bringup the bus. */
+		WL_ERR(("bus is not ready\n"));
+		return BCME_OK;
+	}
+
 	if ((err = wl_cfg80211_bss_up(cfg, dev, bssidx, 0)) < 0) {
 		WL_ERR(("bss down error %d\n", err));
 	}
@@ -3923,7 +4148,6 @@ wl_cfg80211_stop_ap(
 		}
 #endif /* SUPPORT_AP_RADIO_PWRSAVE */
 #ifdef WL_CELLULAR_CHAN_AVOID
-		wl_cellavoid_clear_requested_freq_bands(dev, cfg->cellavoid_info);
 		wl_cellavoid_sync_lock(cfg);
 		wl_cellavoid_free_csa_info(cfg->cellavoid_info, dev);
 		wl_cellavoid_sync_unlock(cfg);
@@ -3956,8 +4180,11 @@ exit:
 
 #ifdef BCMDONGLEHOST
 	if (dev_role == NL80211_IFTYPE_AP) {
-		/* clear the AP mode */
-		dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
+		/* If there are no other APs active, clear the AP mode */
+		if (wl_cfgvif_get_iftype_count(cfg, WL_IF_TYPE_AP) == 0) {
+			dhd->op_mode &= ~DHD_FLAG_HOSTAP_MODE;
+		}
+
 	}
 #endif /* BCMDONGLEHOST */
 	return err;
@@ -5162,8 +5389,13 @@ wl_cfg80211_set_monitor_channel(struct wiphy *wiphy, struct cfg80211_chan_def *c
 
 	WL_DBG(("%s: chandef->width(%u), bw(%u)\n",
 		__FUNCTION__, chandef->width, bw));
+#ifdef WL_6G_320_SUPPORT
+	chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
+		bw, CHSPEC_BAND(chspec), 0);
+#else
 	chspec = wf_create_chspec_from_primary(wf_chspec_primary20_chan(chspec),
 		bw, CHSPEC_BAND(chspec));
+#endif /* WL_6G_320_SUPPORT */
 
 	if (!wf_chspec_valid(chspec)) {
 		WL_ERR(("Invalid chanspec 0x%x\n", chspec));
@@ -5596,7 +5828,7 @@ int wl_set_ap_beacon_rate(struct net_device *dev, int val, char *ifname)
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	dhd_pub_t *dhdp;
-	wl_rateset_args_t rs;
+	wl_rateset_args_v1_t rs;
 	int error = BCME_ERROR, i;
 	struct net_device *ndev = NULL;
 
@@ -5614,9 +5846,9 @@ int wl_set_ap_beacon_rate(struct net_device *dev, int val, char *ifname)
 		return BCME_NOTAP;
 	}
 
-	bzero(&rs, sizeof(wl_rateset_args_t));
+	bzero(&rs, sizeof(wl_rateset_args_v1_t));
 	error = wldev_iovar_getbuf(ndev, "rateset", NULL, 0,
-		&rs, sizeof(wl_rateset_args_t), NULL);
+		&rs, sizeof(wl_rateset_args_v1_t), NULL);
 	if (error < 0) {
 		WL_ERR(("get rateset failed = %d\n", error));
 		return error;
@@ -5654,7 +5886,7 @@ wl_get_ap_basic_rate(struct net_device *dev, char* command, char *ifname, int to
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	dhd_pub_t *dhdp;
-	wl_rateset_args_t rs;
+	wl_rateset_args_v1_t rs;
 	int error = BCME_ERROR;
 	int i, bytes_written = 0;
 	struct net_device *ndev = NULL;
@@ -5673,9 +5905,9 @@ wl_get_ap_basic_rate(struct net_device *dev, char* command, char *ifname, int to
 		return BCME_NOTAP;
 	}
 
-	bzero(&rs, sizeof(wl_rateset_args_t));
+	bzero(&rs, sizeof(wl_rateset_args_v1_t));
 	error = wldev_iovar_getbuf(ndev, "rateset", NULL, 0,
-		&rs, sizeof(wl_rateset_args_t), NULL);
+		&rs, sizeof(wl_rateset_args_v1_t), NULL);
 	if (error < 0) {
 		WL_ERR(("get rateset failed = %d\n", error));
 		return error;
@@ -6105,7 +6337,7 @@ wl_cfg80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	if (chspec == cfg->ap_oper_channel) {
 		WL_ERR(("Channel %d is same as current operating channel,"
 			" so skip\n", CHSPEC_CHANNEL(chspec)));
-		return BCME_OK;
+		return -EINVAL;
 	}
 
 	if (
@@ -6347,6 +6579,7 @@ int wl_set_softap_elna_bypass(struct net_device *dev, char *ifname, int enable)
 fail:
 	return err;
 }
+
 int wl_get_softap_elna_bypass(struct net_device *dev, char *ifname, void *param)
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
@@ -6737,7 +6970,50 @@ wl_restore_ap_bw(struct bcm_cfg80211 *cfg)
 }
 #endif /* SUPPORT_AP_BWCTRL */
 
+static s32
+wl_roam_off_config(struct net_device *dev, bool val)
+{
+	s32 err;
+
+	err = wldev_iovar_setint(dev, "roam_off", val);
+	if (err) {
+		WL_ERR(("roam config (%d) failed for (%s) err=%d\n",
+			val, dev->name, err));
+	} else {
+		WL_INFORM_MEM(("roam %s for %s\n",
+			(val ? "disabled" : "enabled"), dev->name));
+	}
+
+	return err;
+}
+
 #ifdef WL_DUAL_APSTA
+static void
+wl_roam_enable_on_connected(struct bcm_cfg80211 *cfg,
+		bool enable)
+{
+	struct net_info *iter, *next;
+	bool roam_val = false;
+
+	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
+	for_each_ndev(cfg, iter, next) {
+		GCC_DIAGNOSTIC_POP();
+		if ((iter->ndev) &&
+				(iter->ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)) {
+
+			if (wl_get_drv_status(cfg, CONNECTED, iter->ndev)) {
+				roam_val = enable ? FALSE : TRUE;
+				wl_roam_off_config(iter->ndev, roam_val);
+			}
+		}
+	}
+}
+
+/*
+ * Roam config API for dual STA
+ * Disable: Disable for all interfaces
+ * Enable: Enable roam only for primary STA
+ */
 static void
 wl_dualsta_enable_roam(struct bcm_cfg80211 *cfg,
 		struct net_device *dev, bool enable)
@@ -6750,56 +7026,134 @@ wl_dualsta_enable_roam(struct bcm_cfg80211 *cfg,
 		GCC_DIAGNOSTIC_POP();
 		if ((iter->ndev) &&
 				(iter->ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)) {
-			if (iter->ndev == dev) {
-				/* We are interested in state of other interface */
-				continue;
-			}
-
-			if (!enable && !(wl_get_drv_status(cfg, CONNECTED, iter->ndev))) {
-				/* For roam disable, need to look only for STA connected case */
-				continue;
-			}
 
 			roam_val = enable ? FALSE : TRUE;
-			wldev_iovar_setint(iter->ndev, "roam_off", roam_val);
-			wldev_iovar_setint(dev, "roam_off", roam_val);
-			WL_INFORM_MEM(("[DUALSTA] roam %s for %s, %s\n",
-				enable ? "enabled" : "disabled",
-				iter->ndev->name, dev->name));
-			return;
-		}
-	}
-}
-
-void
-wl_cfgvif_dualsta_roam_config(struct bcm_cfg80211 *cfg, struct net_device *dev,
-		wl_assoc_state_t state)
-{
-	u32 connected_ifaces = wl_get_drv_status_all(cfg, CONNECTED);
-
-	if (!IS_STA_IFACE(dev->ieee80211_ptr)) {
-		WL_DBG(("non-sta iface. ignore.\n"));
-		return;
-	}
-
-	if ((state == WL_STATE_ASSOCIATING) &&
-			(connected_ifaces >= 1))  {
-		/* If we already have another STA connected, disable ROAM
-		 * on both STA interfaces. Enable it back from linkdown or
-		 * setPrimarySta context.
-		 */
-		wl_dualsta_enable_roam(cfg, dev, FALSE);
-
-	} else if (state == WL_STATE_LINKDOWN) {
-		/* If link down came for STA interface and there are no two active STA
-		 * connections, enable back the roam
-		 */
-		if (connected_ifaces <= 1) {
-			wl_dualsta_enable_roam(cfg, dev, TRUE);
+			if (enable && iter->ndev != cfg->inet_ndev) {
+				/* For enable case, the roam is supposed to enabled only
+				 * on primary. For other interfaces, disable it
+				 */
+				wl_roam_off_config(iter->ndev, TRUE);
+				WL_DBG_MEM(("non-primary ndev. skip roam enable\n"));
+				continue;
+			}
+			wl_roam_off_config(iter->ndev, roam_val);
 		}
 	}
 }
 #endif /* WL_DUAL_APSTA */
+
+void
+wl_cfgvif_roam_config(struct bcm_cfg80211 *cfg, struct net_device *dev,
+		wl_roam_conf_t state)
+{
+	if (!cfg || !dev) {
+		WL_ERR(("invalid args\n"));
+		return;
+	}
+
+	WL_DBG_MEM(("Enter. state:%d stas:%d\n", state, cfg->stas_associated));
+
+	if (!IS_STA_IFACE(dev->ieee80211_ptr)) {
+		WL_ERR(("non-sta iface. ignore.\n"));
+		return;
+	}
+
+	/*
+	 * We support roam only on one STA interface at a time (meant for internet
+	 * traffic. For ROAM enable cases, if more than one STA interface is in
+	 * connected state, the primary interface is expected to be set (inet_ndev)
+	 */
+
+	if (state == ROAM_CONF_ROAM_DISAB_REQ) {
+		cfg->disable_fw_roam = TRUE;
+#ifdef WL_DUAL_APSTA
+		wl_android_rcroam_turn_on(dev, FALSE);
+#endif /* WL_DUAL_APSTA */
+		/* roam off for incoming ndev interface */
+		wl_roam_off_config(dev, TRUE);
+		return;
+	} else if (state == ROAM_CONF_ROAM_ENAB_REQ) {
+		cfg->disable_fw_roam = FALSE;
+#ifdef WL_DUAL_APSTA
+		if ((cfg->stas_associated >= 1)) {
+			WL_DBG_MEM(("Roam enable with more than one interface connected.\n"));
+			/* If roam enable comes with > 1 iface connected, enable it on primary */
+			if (!cfg->inet_ndev) {
+				WL_ERR(("primary_sta (inet_ndev) not set! skip roam enable\n"));
+				return;
+			}
+			/* Enable roam on primary, disable on others */
+			wl_dualsta_enable_roam(cfg, cfg->inet_ndev, TRUE);
+			wl_android_rcroam_turn_on(cfg->inet_ndev, TRUE);
+			return;
+		}
+#endif /* WL_DUAL_APSTA */
+
+		/* ROAM enable */
+		wl_roam_off_config(dev, FALSE);
+		/* Single Interface. Enable back rcroam */
+#ifdef WL_DUAL_APSTA
+		wl_android_rcroam_turn_on(dev, TRUE);
+#endif /* WL_DUAL_APSTA */
+		return;
+	}
+
+	if (cfg->disable_fw_roam) {
+		/* Framework has disabled roam, don't change roam states within the DHD */
+		WL_INFORM_MEM(("fwk roam disable active. don't handle state:%d\n", state));
+		return;
+	}
+
+#ifdef WL_DUAL_APSTA
+	if (state == ROAM_CONF_LINKUP) {
+		if (cfg->stas_associated == 2) {
+			/* Apply  ROAM_CONF_PRIMARY_STA configuration */
+			state = ROAM_CONF_PRIMARY_STA;
+		} else if (cfg->stas_associated == 1) {
+			/* Single sta case. Enable ROAM */
+			wl_roam_off_config(dev, FALSE);
+			wl_android_rcroam_turn_on(dev, TRUE);
+		} else {
+			WL_ERR(("roam_config unexpected state. stas:%d\n",
+				cfg->stas_associated));
+			return;
+		}
+
+	}
+
+	if (state == ROAM_CONF_PRIMARY_STA) {
+		/* Enable roam on primary STA */
+		if (!cfg->inet_ndev) {
+			WL_ERR(("primary_sta (inet_ndev) not configured! skip roam enable\n"));
+			return;
+		}
+
+		/* Enable roam on primary, disable on others */
+		wl_dualsta_enable_roam(cfg, cfg->inet_ndev, TRUE);
+		wl_android_rcroam_turn_on(dev, TRUE);
+		return;
+	}
+
+	if ((state == ROAM_CONF_ASSOC_REQ) &&
+			(cfg->stas_associated >= 1))  {
+		/* If we already have another STA connected, disable ROAM
+		 * on both STA interfaces. Enable it back from linkdown or
+		 * setPrimarySta context.
+		 */
+		wl_android_rcroam_turn_on(dev, FALSE);
+		wl_dualsta_enable_roam(cfg, dev, FALSE);
+
+	} else if (state == ROAM_CONF_LINKDOWN) {
+		/* If link down came for STA interface and there are no two active STA
+		 * connections, enable back the roam
+		 */
+		if (cfg->stas_associated == 1) {
+			wl_roam_enable_on_connected(cfg, TRUE);
+			wl_android_rcroam_turn_on(dev, TRUE);
+		}
+	}
+#endif /* WL_DUAL_APSTA */
+}
 
 #ifdef SUPPORT_AP_INIT_BWCONF
 uint32
@@ -6879,3 +7233,180 @@ wl_cfgvif_get_iftype_count(struct bcm_cfg80211 *cfg, wl_iftype_t iftype)
 	}
 	return count;
 }
+
+#ifdef CUSTOM_SOFTAP_SET_ANT
+int
+wl_set_softap_antenna(struct net_device *dev, char *ifname, int set_chain)
+{
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	struct net_device *ifdev = NULL;
+	char iobuf[WLC_IOCTL_SMLEN];
+	int err = BCME_OK;
+	int iftype = 0;
+	s32 val = 1;
+
+	memset(iobuf, 0, WLC_IOCTL_SMLEN);
+
+	/* Check the interface type */
+	ifdev = wl_get_netdev_by_name(cfg, ifname);
+	if (ifdev == NULL) {
+		WL_ERR(("%s: Could not find net_device for ifname:%s\n",
+			__FUNCTION__, ifname));
+		err = BCME_BADARG;
+		goto fail;
+	}
+
+	iftype = ifdev->ieee80211_ptr->iftype;
+	if (iftype == NL80211_IFTYPE_AP) {
+		err = wldev_ioctl_set(dev, WLC_DOWN, &val, sizeof(s32));
+		if (err) {
+			WL_ERR(("WLC_DOWN error %d\n", err));
+			goto fail;
+		} else {
+			err = wldev_iovar_setint(ifdev, "txchain", set_chain);
+			if (unlikely(err)) {
+				WL_ERR(("%s: Failed to set txchain[%d], err=%d\n",
+					__FUNCTION__, set_chain, err));
+			}
+			err = wldev_iovar_setint(ifdev, "rxchain", set_chain);
+			if (unlikely(err)) {
+				WL_ERR(("%s: Failed to set rxchain[%d], err=%d\n",
+					__FUNCTION__, set_chain, err));
+			}
+			err = wldev_ioctl_set(dev, WLC_UP, &val, sizeof(s32));
+			if (err < 0) {
+				WL_ERR(("WLC_UP error %d\n", err));
+			}
+		}
+	} else {
+		WL_ERR(("%s: Chain set should control in SoftAP mode only\n",
+			__FUNCTION__));
+		err = BCME_BADARG;
+	}
+fail:
+	return err;
+}
+
+int
+wl_get_softap_antenna(struct net_device *dev, char *ifname, void *param)
+{
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+	uint32 *cur_rxchain = (uint32*)param;
+	struct net_device *ifdev = NULL;
+	char iobuf[WLC_IOCTL_SMLEN];
+	int err = BCME_OK;
+	int iftype = 0;
+
+	memset(iobuf, 0, WLC_IOCTL_SMLEN);
+
+	/* Check the interface type */
+	ifdev = wl_get_netdev_by_name(cfg, ifname);
+	if (ifdev == NULL) {
+		WL_ERR(("%s: Could not find net_device for ifname:%s\n", __FUNCTION__, ifname));
+		err = BCME_BADARG;
+		goto fail;
+	}
+
+	iftype = ifdev->ieee80211_ptr->iftype;
+	if (iftype == NL80211_IFTYPE_AP) {
+		err = wldev_iovar_getint(ifdev, "rxchain", cur_rxchain);
+		if (unlikely(err)) {
+			WL_ERR(("%s: Failed to get rxchain, err=%d\n",
+				__FUNCTION__, err));
+		}
+	} else {
+		WL_ERR(("%s: rxchain should control in SoftAP mode only\n",
+			__FUNCTION__));
+		err = BCME_BADARG;
+	}
+fail:
+	return err;
+}
+#endif /* CUSTOM_SOFTAP_SET_ANT */
+
+#if defined(LIMIT_AP_BW)
+uint32
+wl_cfg80211_get_ap_bw_limit_bit(struct bcm_cfg80211 *cfg, uint32 band)
+{
+
+	if (band != WL_CHANSPEC_BAND_6G) {
+		WL_ERR(("AP BW LIMIT supportted for 6G band only requested = %d\n", band));
+		return 0;
+	}
+
+	return cfg->ap_bw_limit;
+}
+
+#ifdef WL_6G_320_SUPPORT
+#define BAND_PARAM(a) a, 0
+#else
+#define BAND_PARAM(a) a
+#endif /* WL_6G_320_SUPPORT */
+
+chanspec_t
+wl_cfg80211_get_ap_bw_limited_chspec(struct bcm_cfg80211 *cfg, uint32 band, chanspec_t candidate)
+{
+
+	chanspec_t updated_chspec;
+	if (band != WL_CHANSPEC_BAND_6G) {
+		WL_ERR(("AP BW LIMIT supported for 6G band only requested = %d\n", band));
+		return candidate;
+	}
+
+	if (!cfg->ap_bw_limit ||
+		(wf_bw_chspec_to_mhz(candidate) <= wf_bw_chspec_to_mhz(cfg->ap_bw_chspec))) {
+		/* LIMIT is not set or narrower bandwidth is required */
+		return candidate;
+	}
+	updated_chspec = wf_create_chspec_from_primary(
+		wf_chspec_primary20_chan(candidate),
+		cfg->ap_bw_chspec,
+		BAND_PARAM(WL_CHANSPEC_BAND_6G));
+
+	return updated_chspec;
+}
+
+/* configure BW limit for AP
+ * support 6G band only
+ */
+int
+wl_cfg80211_set_softap_bw(struct bcm_cfg80211 *cfg, uint32 band, uint32 limit)
+{
+	int i, found = FALSE, f_idx = 0;
+	uint32 support_bw[][2] = {
+		{WLC_BW_20MHZ_BIT, WL_CHANSPEC_BW_20},
+		{WLC_BW_40MHZ_BIT, WL_CHANSPEC_BW_40},
+		{WLC_BW_80MHZ_BIT, WL_CHANSPEC_BW_80},
+#if defined(CHSPEC_IS160)
+		{WLC_BW_160MHZ_BIT, WL_CHANSPEC_BW_160},
+#endif /* CHSPEC_IS160 */
+	};
+
+	if (band != WL_CHANSPEC_BAND_6G) {
+		WL_ERR(("AP BW LIMIT supportted for 6G band only requested = %d\n", band));
+		return FALSE;
+	}
+
+	for (i = 0; i < ARRAYSIZE(support_bw); i++) {
+		if (support_bw[i][0] == limit) {
+			found = TRUE;
+			f_idx = i;
+			break;
+		}
+	}
+
+	if (limit && !found) {
+		WL_ERR(("AP BW LIMIT not supported bandwidth :%d\n", limit));
+		return BCME_ERROR;
+	}
+
+	cfg->ap_bw_limit = limit;
+	if (found) {
+		cfg->ap_bw_chspec = support_bw[f_idx][1];
+	} else {
+		cfg->ap_bw_chspec = INVCHANSPEC;
+	}
+
+	return BCME_OK;
+}
+#endif /* LIMIT_AP_BW */

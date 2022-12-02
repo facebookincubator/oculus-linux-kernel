@@ -16,12 +16,11 @@ struct stp_driver_stats {
 struct spi_stp_driver_data {
 	struct spi_device *spi;
 	struct stp_gpio_data gpio_data;
-	wait_queue_head_t device_ready_q;
+	struct completion device_ready;
 	struct completion data_ready;
 	struct completion stp_thread_complete;
 	struct task_struct *stp_thread;
 	atomic_t stop_thread;
-	atomic_t device_ready_flag;
 	struct stp_driver_stats stats;
 	uint8_t *controller_tx_buffer;
 	uint8_t *controller_rx_buffer;

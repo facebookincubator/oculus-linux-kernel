@@ -8,7 +8,6 @@
 };
 
 &dsi_panel_pwr_supply_lab_ibb {
-
 	qcom,panel-supply-entry@0 {
 		reg = <0>;
 		qcom,supply-name = "vddio";
@@ -16,6 +15,8 @@
 		qcom,supply-max-voltage = <1800000>;
 		qcom,supply-enable-load = <62000>;
 		qcom,supply-disable-load = <80>;
+		qcom,supply-post-on-sleep = <20>;
+		qcom,supply-pre-off-sleep = <35>;
 		qcom,supply-pre-on-sleep = <20>;
 	};
 
@@ -37,6 +38,7 @@
 		qcom,supply-max-voltage = <1800000>;
 		qcom,supply-enable-load = <62000>;
 		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <20>;
 		qcom,supply-pre-on-sleep = <10>;
 	};
 
@@ -48,6 +50,26 @@
 		qcom,supply-enable-load = <857000>;
 		qcom,supply-disable-load = <0>;
 		qcom,supply-post-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "blu-spi";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
 	};
 };
 

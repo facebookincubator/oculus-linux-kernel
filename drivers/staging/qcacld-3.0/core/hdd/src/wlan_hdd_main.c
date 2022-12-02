@@ -8898,6 +8898,27 @@ struct hdd_adapter *hdd_get_adapter_by_iface_name(struct hdd_context *hdd_ctx,
 	return NULL;
 }
 
+struct hdd_adapter *hdd_get_adapter_by_ifindex(struct hdd_context *hdd_ctx,
+					       uint32_t if_index)
+{
+	struct hdd_adapter *adapter, *next_adapter = NULL;
+	wlan_net_dev_ref_dbgid dbgid = NET_DEV_HOLD_GET_ADAPTER;
+
+	hdd_for_each_adapter_dev_held_safe(hdd_ctx, adapter, next_adapter,
+					   dbgid) {
+		if (adapter->dev->ifindex == if_index) {
+			hdd_adapter_dev_put_debug(adapter, dbgid);
+			if (next_adapter)
+				hdd_adapter_dev_put_debug(next_adapter,
+							  dbgid);
+			return adapter;
+		}
+		hdd_adapter_dev_put_debug(adapter, dbgid);
+	}
+
+	return NULL;
+}
+
 /**
  * hdd_get_adapter() - to get adapter matching the mode
  * @hdd_ctx: hdd context
@@ -18469,6 +18490,19 @@ bool hdd_set_connection_in_progress(bool value)
 		hdd_ctx->connection_in_progress = value;
 	qdf_spin_unlock(&hdd_ctx->connection_status_lock);
 	return status;
+}
+
+int wlan_hdd_send_mcc_vdev_quota(struct hdd_adapter *adapter, int set_value)
+{
+	if (!adapter) {
+		hdd_err("Invalid adapter");
+		return -EINVAL;
+	}
+	hdd_info("send mcc vdev quota to fw: %d", set_value);
+	sme_cli_set_command(adapter->vdev_id,
+			    WMA_VDEV_MCC_SET_TIME_QUOTA,
+			    set_value, VDEV_CMD);
+	return 0;
 }
 
 int wlan_hdd_send_p2p_quota(struct hdd_adapter *adapter, int set_value)

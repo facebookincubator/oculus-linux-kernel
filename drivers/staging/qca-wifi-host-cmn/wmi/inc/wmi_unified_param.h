@@ -54,8 +54,13 @@
 #define WMI_SIZE_UTC_TIME (10)
 /* The size of the utc time error in bytes. */
 #define WMI_SIZE_UTC_TIME_ERROR (5)
+#ifdef WLAN_MCC_MIN_CHANNEL_QUOTA
+#define WMI_MCC_MIN_CHANNEL_QUOTA             WLAN_MCC_MIN_CHANNEL_QUOTA
+#define WMI_MCC_MAX_CHANNEL_QUOTA             (100 - WLAN_MCC_MIN_CHANNEL_QUOTA)
+#else
 #define WMI_MCC_MIN_CHANNEL_QUOTA             20
 #define WMI_MCC_MAX_CHANNEL_QUOTA             80
+#endif
 #define WMI_MCC_MIN_NON_ZERO_CHANNEL_LATENCY  30
 
 #ifdef WMI_AP_SUPPORT

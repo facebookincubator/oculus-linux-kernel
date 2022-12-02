@@ -1,7 +1,7 @@
 /*
  * DHD debug ring header file - interface
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -113,7 +113,6 @@ typedef struct dhd_dbg_ring {
 #define DBG_RING_ENTRY_SIZE (sizeof(dhd_dbg_ring_entry_t))
 #define ENTRY_LENGTH(hdr) ((hdr)->len + DBG_RING_ENTRY_SIZE)
 #define PAYLOAD_MAX_LEN 65535
-#define PAYLOAD_ECNTR_MAX_LEN 1648u
 #define PAYLOAD_RTT_MAX_LEN 1648u
 #define PAYLOAD_BCM_TRACE_MAX_LEN 1648u
 #define PENDING_LEN_MAX 0xFFFFFFFF

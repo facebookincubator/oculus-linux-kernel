@@ -731,7 +731,9 @@
 };
 
 &usb1 {
-	extcon = <&extcon_usb1>;
+	dwc1: dwc3@a800000 {
+		dr_mode = "host";
+	};
 };
 
 &wil6210 {
@@ -767,6 +769,9 @@
 		pinctrl-0 = <&lt9611_pins &lt9611_rst_default>;
 
 		lt,preferred-mode = "1920x1080";
+
+		lt,audio-support;
+		lt,ext-disp = <&ext_disp>;
 
 		lt,customize-modes {
 			lt,customize-mode-id@0 {

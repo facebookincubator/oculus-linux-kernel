@@ -269,29 +269,15 @@ static void stp_signal_open(uint8_t channel)
 	stp_channel_signal_open(channel);
 }
 
-static void stp_set_ready_for_transaction(bool busy)
+static void stp_wait_for_device_ready(void)
 {
-	if (busy)
-		atomic_set(&_stp_driver_data->device_ready_flag, 1);
-	else
-		atomic_set(&_stp_driver_data->device_ready_flag, 0);
-}
-
-#define STP_MCU_READY_TIMEOUT_MS 1000
-static int32_t stp_wait_for_device_ready(void)
-{
-	if (!!atomic_read(&_stp_driver_data->stop_thread))
-		return -ERESTARTSYS;
-
-	return wait_event_interruptible_timeout(
-		_stp_driver_data->device_ready_q,
-		!!atomic_read(&_stp_driver_data->device_ready_flag),
-		msecs_to_jiffies(STP_MCU_READY_TIMEOUT_MS));
+	wait_for_completion_interruptible(&_stp_driver_data->device_ready);
+	reinit_completion(&_stp_driver_data->device_ready);
 }
 
 static void stp_signal_device_ready(void)
 {
-	wake_up_interruptible(&_stp_driver_data->device_ready_q);
+	complete(&_stp_driver_data->device_ready);
 }
 
 static void stp_wait_for_data(void)
@@ -313,7 +299,6 @@ static struct stp_controller_wait_signal_table stp_wait_signal_table = {
 	.signal_read = &stp_signal_read,
 	.wait_for_device_ready = &stp_wait_for_device_ready,
 	.signal_device_ready = &stp_signal_device_ready,
-	.set_ready_for_transaction = &stp_set_ready_for_transaction,
 	.wait_for_data = &stp_wait_for_data,
 	.signal_data = &stp_signal_data,
 	.wait_fsync = &stp_wait_fsync,
@@ -410,16 +395,20 @@ static int spi_stp_probe(struct spi_device *spi)
 
 	_stp_driver_data =
 		devm_kzalloc(&spi->dev, sizeof(*_stp_driver_data), GFP_KERNEL);
-	if (IS_ERR(_stp_driver_data))
+	if (IS_ERR(_stp_driver_data)) {
+		STP_DRV_LOG_ERR("Failed to allocate driver data");
 		return -ENOMEM;
+	}
 
 	if (stp_init_gpio(spi->dev.of_node, &_stp_driver_data->gpio_data) !=
 	    0) {
+		STP_DRV_LOG_ERR("Failed to initialize gpio");
 		rval = -ENODEV;
 		goto exit_device_error;
 	}
 
 	if (stp_create_device(&spi->dev) != 0) {
+		STP_DRV_LOG_ERR("Failed to create device");
 		rval = -ENODEV;
 		goto exit_device_error;
 	}
@@ -445,7 +434,7 @@ static int spi_stp_probe(struct spi_device *spi)
 	device_create_file(&spi->dev, &dev_attr_stp_log_channel_data);
 
 	_stp_driver_data->spi = spi;
-	init_waitqueue_head(&_stp_driver_data->device_ready_q);
+	init_completion(&_stp_driver_data->device_ready);
 	init_completion(&_stp_driver_data->data_ready);
 	init_completion(&_stp_driver_data->stp_thread_complete);
 
@@ -454,12 +443,14 @@ static int spi_stp_probe(struct spi_device *spi)
 
 	_stp_driver_data->controller_rx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
 	if (IS_ERR(_stp_driver_data->controller_rx_buffer)) {
+		STP_DRV_LOG_ERR("Failed to allocate controller rx buffer");
 		rval = -ENOMEM;
 		goto exit_error;
 	}
 
 	_stp_driver_data->controller_tx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
 	if (IS_ERR(_stp_driver_data->controller_tx_buffer)) {
+		STP_DRV_LOG_ERR("Failed to allocate controller tx buffer");
 		rval = -ENOMEM;
 		goto exit_error;
 	}
@@ -497,6 +488,11 @@ static int spi_stp_probe(struct spi_device *spi)
 		STP_DRV_LOG_ERR("gpio irq config failure");
 		goto exit_error;
 	}
+
+	// If the mcu_ready signal is high, we have missed the first gpio interrupt so
+	// manually signal
+	if (stp_is_mcu_ready_to_receive())
+		stp_signal_device_ready();
 
 	return 0;
 
