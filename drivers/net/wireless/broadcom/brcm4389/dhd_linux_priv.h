@@ -1,7 +1,7 @@
 /*
  * DHD Linux header file - contains private structure definition of the Linux specific layer
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -80,6 +80,7 @@ typedef struct dhd_info {
 	void *adapter;			/* adapter information, interrupt, fw path etc. */
 	char fw_path[PATH_MAX];		/* path to firmware image */
 	char nv_path[PATH_MAX];		/* path to nvram vars file */
+	char sig_path[PATH_MAX];	/* path to rtecdc.sig file */
 #ifdef DHD_UCODE_DOWNLOAD
 	char uc_path[PATH_MAX];	/* path to ucode image */
 #endif /* DHD_UCODE_DOWNLOAD */
@@ -359,6 +360,10 @@ typedef struct dhd_info {
 	struct kobject dhd_lb_kobj;
 	bool dhd_lb_candidacy_override;
 #endif /* DHD_LB */
+
+	/* DPC bounds sysfs */
+	struct kobject dhd_dpc_bounds_kobj;
+
 #if defined(DNGL_AXI_ERROR_LOGGING) && defined(DHD_USE_WQ_FOR_DNGL_AXI_ERROR)
 	struct work_struct	  axi_error_dispatcher_work;
 #endif /* DNGL_AXI_ERROR_LOGGING && DHD_USE_WQ_FOR_DNGL_AXI_ERROR */
@@ -457,6 +462,10 @@ typedef struct dhd_info {
 	pkt_pool_t rx_pkt_pool;
 	tsk_ctl_t rx_pktpool_thread;
 #endif
+#if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
+	osl_atomic_t dump_status;
+	struct work_struct dhd_dump_proc_work;
+#endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 } dhd_info_t;
 
 /** priv_link is the link between netdev and the dhdif and dhd_info structs. */

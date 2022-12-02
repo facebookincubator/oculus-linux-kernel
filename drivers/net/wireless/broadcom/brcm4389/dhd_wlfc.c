@@ -1,7 +1,7 @@
 /*
  * DHD PROP_TXSTATUS Module.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -4952,7 +4952,7 @@ int dhd_txpkt_log_and_dump(dhd_pub_t *dhdp, void* pkt, uint16 *pktfate_status)
 	pktdata = pktdata + bdc_len;
 #endif /* BDC */
 	dhd_handle_pktdata(dhdp, ifidx, pkt, pktdata, pktid, pktlen,
-		pktfate_status, NULL, TRUE, FALSE, TRUE);
+		pktfate_status, NULL, NULL, TRUE, FALSE, TRUE);
 	return BCME_OK;
 }
 #endif /* PROP_TXSTATUS */

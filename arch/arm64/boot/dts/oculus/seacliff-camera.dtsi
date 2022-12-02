@@ -127,6 +127,15 @@
 };
 
 &cam_cci0 {
+	pinctrl-0 = <&cci1_active>;
+	pinctrl-1 = <&cci1_suspend>;
+	gpios = <&tlmm 103 0>,
+		<&tlmm 104 0>;
+	gpio-req-tbl-num = <0 1>;
+	gpio-req-tbl-flags = <1 1>;
+	gpio-req-tbl-label = "CCI_I2C_DATA1",
+			     "CCI_I2C_CLK1";
+
 	qcom,cam-sensor0 {
 		/* CAMERA ID = 0
 		 * name: CAM_OG_LEFT

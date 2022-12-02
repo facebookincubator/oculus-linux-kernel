@@ -76,7 +76,7 @@ int cam_icp_fastpath_release_dev(void *hnd, struct cam_release_dev_cmd *cmd);
 int cam_icp_fastpath_set_stream_mode(void *hnd,
 				     struct cam_set_stream_mode *cmd);
 
-int cam_isp_fastpath_stream_mode_cmd(void *hnd,
+int cam_icp_fastpath_stream_mode_cmd(void *hnd,
 				     struct cam_stream_mode_cmd *cmd);
 
 void *cam_icp_fastpath_context_create(

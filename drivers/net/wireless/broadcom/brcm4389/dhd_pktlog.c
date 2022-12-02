@@ -1,7 +1,7 @@
 /*
  * DHD debugability packet logging support
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -42,6 +42,7 @@
 #include <bcmicmp.h>
 #include <bcmtlv.h>
 #include <802.11.h>
+#include <802.11u.h>
 #include <eap.h>
 #include <eapol.h>
 #include <bcmendian.h>
@@ -168,7 +169,7 @@ dhd_os_attach_pktlog(dhd_pub_t *dhdp)
 		return -EINVAL;
 	}
 
-	pktlog = (dhd_pktlog_t *)MALLOCZ(dhdp->osh, sizeof(dhd_pktlog_t));
+	pktlog = (dhd_pktlog_t *)VMALLOCZ(dhdp->osh, sizeof(dhd_pktlog_t));
 	if (unlikely(!pktlog)) {
 		DHD_ERROR(("%s(): could not allocate memory for - "
 					"dhd_pktlog_t\n", __FUNCTION__));
@@ -222,7 +223,7 @@ dhd_os_detach_pktlog(dhd_pub_t *dhdp)
 
 	DHD_INFO(("%s(): dhd_os_attach_pktlog detach\n", __FUNCTION__));
 
-	MFREE(dhdp->osh, dhdp->pktlog, sizeof(dhd_pktlog_t));
+	VMFREE(dhdp->osh, dhdp->pktlog, sizeof(dhd_pktlog_t));
 
 	return BCME_OK;
 }
@@ -230,8 +231,6 @@ dhd_os_detach_pktlog(dhd_pub_t *dhdp)
 #ifdef DHD_PKT_LOGGING_DBGRING
 int dhd_pktlog_is_enabled(dhd_pub_t *dhdp)
 {
-	struct dhd_pktlog_ring *pktlog_ring;
-
 	if (!dhdp || !dhdp->pktlog) {
 		DHD_ERROR(("%s(): dhdp=%p pktlog=%p\n",
 			__FUNCTION__, dhdp, (dhdp ? dhdp->pktlog : NULL)));
@@ -244,7 +243,6 @@ int dhd_pktlog_is_enabled(dhd_pub_t *dhdp)
 		return BCME_ERROR;
 	}
 
-	pktlog_ring = dhdp->pktlog->pktlog_ring;
 	return OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->enable);
 }
 
@@ -267,7 +265,7 @@ void dhd_pktlog_resume(dhd_pub_t *dhdp)
 	pktlog_ring = dhdp->pktlog->pktlog_ring;
 	if (!OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->enable)) {
 		OSL_ATOMIC_SET(dhdp->osh, &dhdp->pktlog->enable, TRUE);
-		DHD_ERROR(("pktlog ring is resumed. pktcount(%d)\n",
+		DHD_INFO(("pktlog ring is resumed. pktcount(%d)\n",
 			pktlog_ring->pktcount));
 	}
 }
@@ -291,7 +289,7 @@ void dhd_pktlog_suspend(dhd_pub_t *dhdp)
 	pktlog_ring = dhdp->pktlog->pktlog_ring;
 	if (OSL_ATOMIC_READ(dhdp->osh, &dhdp->pktlog->enable)) {
 		OSL_ATOMIC_SET(dhdp->osh, &dhdp->pktlog->enable, FALSE);
-		DHD_ERROR(("pktlog ring is suspended. pktcount(%d)\n",
+		DHD_INFO(("pktlog ring is suspended. pktcount(%d)\n",
 			pktlog_ring->pktcount));
 	}
 }
@@ -308,7 +306,7 @@ dhd_pktlog_ring_init(dhd_pub_t *dhdp, int size)
 		return NULL;
 	}
 
-	ring = (dhd_pktlog_ring_t *)MALLOCZ(dhdp->osh, sizeof(dhd_pktlog_ring_t));
+	ring = (dhd_pktlog_ring_t *)VMALLOCZ(dhdp->osh, sizeof(dhd_pktlog_ring_t));
 	if (unlikely(!ring)) {
 		DHD_ERROR(("%s(): could not allocate memory for - "
 					"dhd_pktlog_ring_t\n", __FUNCTION__));
@@ -318,7 +316,7 @@ dhd_pktlog_ring_init(dhd_pub_t *dhdp, int size)
 	dll_init(&ring->ring_info_head);
 	dll_init(&ring->ring_info_free);
 
-	ring->ring_info_mem = (dhd_pktlog_ring_info_t *)MALLOCZ(dhdp->osh,
+	ring->ring_info_mem = (dhd_pktlog_ring_info_t *)VMALLOCZ(dhdp->osh,
 		sizeof(dhd_pktlog_ring_info_t) * size);
 	if (unlikely(!ring->ring_info_mem)) {
 		DHD_ERROR(("%s(): could not allocate memory for - "
@@ -346,7 +344,7 @@ dhd_pktlog_ring_init(dhd_pub_t *dhdp, int size)
 	return ring;
 fail:
 	if (ring) {
-		MFREE(dhdp->osh, ring, sizeof(dhd_pktlog_ring_t));
+		VMFREE(dhdp->osh, ring, sizeof(dhd_pktlog_ring_t));
 	}
 
 	return NULL;
@@ -405,7 +403,7 @@ dhd_pktlog_ring_deinit(dhd_pub_t *dhdp, dhd_pktlog_ring_t *ring)
 	}
 
 	if (ring->ring_info_mem) {
-		MFREE(ring->dhdp->osh, ring->ring_info_mem,
+		VMFREE(ring->dhdp->osh, ring->ring_info_mem,
 			sizeof(dhd_pktlog_ring_info_t) * ring->pktlog_len);
 	}
 
@@ -413,7 +411,7 @@ dhd_pktlog_ring_deinit(dhd_pub_t *dhdp, dhd_pktlog_ring_t *ring)
 		osl_spin_lock_deinit(ring->dhdp->osh, ring->pktlog_ring_lock);
 	}
 
-	MFREE(dhdp->osh, ring, sizeof(dhd_pktlog_ring_t));
+	VMFREE(dhdp->osh, ring, sizeof(dhd_pktlog_ring_t));
 
 	DHD_INFO(("%s(): pktlog ring deinit\n", __FUNCTION__));
 
@@ -1072,6 +1070,7 @@ dhd_pktlog_filter_matched(dhd_pktlog_filter_t *filter, char *data, uint32 pktlog
 /* Ethernet Type MAC Header 12 bytes + Frame payload 10 bytes */
 #define PKTLOG_MINIMIZE_REPORT_LEN 22
 
+#ifndef DHD_PKT_LOGGING_DBGRING
 static char pktlog_minmize_mask_table[] = {
 	0xff, 0x00, 0x00, 0x00, 0xff, 0x0f, /* Ethernet Type MAC Header - Destination MAC Address */
 	0xff, 0x00, 0x00, 0x00, 0xff, 0x0f, /* Ethernet Type MAC Header - Source MAC Address */
@@ -1125,6 +1124,7 @@ dhd_pktlog_minimize_report(char *pkt, uint32 frame_len,
 	}
 	vfree(mem_buf);
 }
+#endif /* !DHD_PKT_LOGGING_DBGRING */
 
 dhd_pktlog_ring_t*
 dhd_pktlog_ring_change_size(dhd_pktlog_ring_t *ringbuf, int size)
@@ -1275,7 +1275,7 @@ dhd_pktlog_get_item_length(dhd_pktlog_ring_info_t *report_ptr)
 	return len;
 }
 
-uint32
+int
 dhd_pktlog_get_dump_length(dhd_pub_t *dhdp)
 {
 	dhd_pktlog_ring_info_t *report_ptr;

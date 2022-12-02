@@ -1,7 +1,7 @@
 /*
  * Linux cfgp2p driver
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -352,10 +352,10 @@ wl_cfgp2p_action_tx_complete(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev
 
 extern s32
 wl_cfgp2p_tx_action_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
-	struct net_device *dev, wl_af_params_t *af_params, s32 bssidx, const u8 *sa);
+	struct net_device *dev, wl_af_params_v1_t *af_params, s32 bssidx, const u8 *sa);
 
 extern void
-wl_cfgp2p_generate_bss_mac(struct bcm_cfg80211 *cfg, struct ether_addr *primary_addr);
+wl_cfgp2p_generate_bss_mac(struct bcm_cfg80211 *cfg);
 
 extern void
 wl_cfg80211_change_ifaddr(u8* buf, struct ether_addr *p2p_int_addr, u8 element_id);
@@ -388,7 +388,7 @@ extern const u8*
 wl_cfgp2p_find_attrib_in_all_p2p_Ies(const u8 *parse, u32 len, u32 attrib);
 
 extern const u8 *
-wl_cfgp2p_retreive_p2p_dev_addr(wl_bss_info_t *bi, u32 bi_length);
+wl_cfgp2p_retreive_p2p_dev_addr(wl_bss_info_v109_t *bi, u32 bi_length);
 
 extern s32
 wl_cfgp2p_register_ndev(struct bcm_cfg80211 *cfg);
@@ -431,6 +431,9 @@ wl_cfgp2p_need_wait_actfrmae(struct bcm_cfg80211 *cfg, void *frame, u32 frame_le
 
 extern int
 wl_cfgp2p_is_p2p_specific_scan(struct cfg80211_scan_request *request);
+
+extern s32
+wl_cfg80211_abort_action_frame(struct bcm_cfg80211 *cfg, struct net_device *dev, s32 bssidx);
 
 /* WiFi Direct */
 #define SOCIAL_CHAN_1 1

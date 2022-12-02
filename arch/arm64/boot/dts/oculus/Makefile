@@ -6,7 +6,8 @@ dtbo-$(CONFIG_OCULUS_EUREKA865) += \
 	eureka865-dev0.5-overlay.dtbo \
 	eureka865-dev0.6-overlay.dtbo \
 	eureka865-p1-overlay.dtbo \
-	eureka865-dolly1.1-overlay.dtbo
+	eureka865-dolly1.1-overlay.dtbo \
+	eureka865-p1.1-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_HOLLYWOOD) += \
 	hollywood-poc2-overlay.dtbo \
@@ -46,6 +47,7 @@ eureka865-dev0.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2
 eureka865-dev0.6-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 eureka865-p1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 eureka865-dolly1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
+eureka865-p1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-poc2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-p1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-evt1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb

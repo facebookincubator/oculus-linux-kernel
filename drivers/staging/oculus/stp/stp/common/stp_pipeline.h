@@ -4,18 +4,17 @@
 #include <stp/common/stp_os.h>
 
 /* TX/RX pipeline */
-struct pipeline_type
-{
-    // pipeline buffer
-    uint8_t *buffer;
-    // buffer size
-    _Atomic uint32_t size;
-    // head of pipeline (consumer)
-    _Atomic unsigned int head;
-    // tail of pipeline (producer)
-    _Atomic unsigned int tail;
+struct pipeline_type {
+	// pipeline buffer
+	uint8_t *buffer;
+	// buffer size
+	_Atomic uint32_t size;
+	// head of pipeline (consumer)
+	_Atomic unsigned int head;
+	// tail of pipeline (producer)
+	_Atomic unsigned int tail;
 
-    STP_LOCK_TYPE lock;
+	STP_LOCK_TYPE lock;
 };
 
 #define PL_TYPE struct pipeline_type
@@ -54,6 +53,7 @@ void stp_pl_reset(PL_TYPE *pl);
 void stp_pl_get_percentage_filled(PL_TYPE *pl, uint32_t *percentage);
 
 /* Get data from pipeline */
-int32_t stp_pl_get_data_nb(PL_TYPE *pl, uint8_t *buffer, uint32_t buffer_size, uint32_t *data_size);
+int32_t stp_pl_get_data_nb(PL_TYPE *pl, uint8_t *buffer, uint32_t buffer_size,
+			   uint32_t *data_size);
 
 #endif

@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Android related functions
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -28,12 +28,17 @@
 /* If any feature uses the Generic Netlink Interface, put it here to enable WL_GENL
  * automatically
  */
-#if defined(WL_SDO) || defined(BT_WIFI_HANDOVER)
+#if defined(WL_SDO)
 #define WL_GENL
 #endif
 
 #ifdef WL_GENL
 #include <net/genetlink.h>
+#endif
+
+#if !defined(WL_MBO_IOV_VERSION)
+/* MBO IOV API version */
+#define WL_MBO_IOV_VERSION WL_MBO_IOV_VERSION_1_1
 #endif
 
 typedef struct _android_wifi_priv_cmd {
@@ -108,9 +113,6 @@ enum {
 	BCM_E_SVC_FOUND,
 	BCM_E_DEV_FOUND,
 	BCM_E_DEV_LOST,
-#ifdef BT_WIFI_HANDOVER
-	BCM_E_DEV_BT_WIFI_HO_REQ,
-#endif
 	BCM_E_MAX
 };
 
@@ -198,3 +200,4 @@ extern int wl_android_bcnrecv_event(struct net_device *ndev,
 #if defined(CUSTOM_CONTROL_HE_6G_FEATURES)
 extern int wl_android_set_he_6g_band(struct net_device *dev, bool enable);
 #endif /* CUSTOM_CONTROL_HE_6G_FEATURES */
+extern int wl_android_rcroam_turn_on(struct net_device *dev, int rcroam_enab);

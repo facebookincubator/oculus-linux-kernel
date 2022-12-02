@@ -1,7 +1,7 @@
 /*
  * From FreeBSD 2.2.7: Fundamental constants relating to ethernet.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -88,7 +88,9 @@
 
 #define ETHER_TYPE_IAPP_L2_UPDATE	0x6	/* IAPP L2 update frame */
 
+#ifdef XRAPI
 #define ETHER_TYPE_XRAPI	0x89FBu		/* Special ether type for EOT frame */
+#endif	/* XRAPI */
 
 /* Broadcom subtype follows ethertype;  First 2 bytes are reserved; Next 2 are subtype; */
 #define	ETHER_BRCM_SUBTYPE_LEN	4	/* Broadcom 4 byte subtype */

@@ -2,6 +2,10 @@
 #include "seacliff-dsi-panel-boe-lcd-video.dtsi"
 #include "seacliff-dsi-panel-boe-spi-blu-dsc-90Hz-video.dtsi"
 
+&display_panel_avdd {
+	status = "disabled";
+};
+
 &dsi_dual_boe_lcd_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lab_ibb>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi";
@@ -16,10 +20,6 @@
 		"cphy_byte_clk0", "cphy_pixel_clk0";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 24 0A 0A 22 1A 08
-				13 04 02 04 00 1E 1A
-			];
 			qcom,display-topology = <2 0 2>;
 			qcom,default-topology-index = <0>;
 		};
@@ -40,10 +40,6 @@
 		"cphy_byte_clk0", "cphy_pixel_clk0";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 24 0A 0A 23 1A 0A
-				13 05 02 04 00 1E 1A
-			];
 			qcom,display-topology = <4 4 2>;
 			qcom,default-topology-index = <0>;
 		};
@@ -56,23 +52,88 @@
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <255>;
 	qcom,mdss-brightness-max-level = <255>;
-	qcom,mdss-dsi-default-max-scanline-offset = <540>;
-	qcom,platform-reset-gpio = <&tlmm 6 0>;
-	qcom,panel-sec-reset-gpio = <&tlmm 7 0>;
+	qcom,platform-en-gpio = <&tlmm 23 0>;
+	qcom,platform-reset-gpio = <&tlmm 101 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 57 0>;
 	qcom,mdss-dsi-reset-off-delay = <30>;
 	qcom,mdss-dsi-sec-reset-off-delay = <30>;
 	qcom,dsi-select-clocks =
 		"mux_byte_clk0", "mux_pixel_clk0",
 		"cphy_byte_clk0", "cphy_pixel_clk0";
+	oculus,backlight = <&blu_left &blu_right>;
+
+	oculus,temperature-dependent-backlight;
+	oculus,response-time-curve =
+		<10000 8600>, <25000 5500>, <45000 4000>, <55000 3500>;
+	io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
+
 	qcom,mdss-dsi-display-timings {
 		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 24 0A 0A 25 1A 0B
-				13 06 02 04 00 1E 1A
-			];
 			qcom,display-topology = <4 4 2>;
 			qcom,default-topology-index = <0>;
 		};
+	};
+};
+
+&dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@0 {
+		reg = <0>;
+		qcom,supply-name = "vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <80>;
+		qcom,supply-post-on-sleep = <20>;
+		qcom,supply-pre-off-sleep = <35>;
+	};
+
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "lab";
+		qcom,supply-min-voltage = <5600000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <100000>;
+		qcom,supply-disable-load = <100>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "ibb";
+		qcom,supply-min-voltage = <5600000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <100000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <20>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "blu-mcu";
+		qcom,supply-min-voltage = <3120000>;
+		qcom,supply-max-voltage = <3120000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "blu-pvdd";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <0>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "blu-spi";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
 	};
 };
 
@@ -113,21 +174,20 @@
 	qcom,ncp-ilim-ma = <810>;
 };
 
-&dsi_panel_pwr_supply_lab_ibb {
-	qcom,panel-supply-entry@0 {
-		qcom,supply-min-voltage = <1900000>;
-		qcom,supply-max-voltage = <1900000>;
-	};
+&mdss_dsi_phy0 {
+	qcom,platform-phy-drive-strength = <0x0F4 0x1F
+		0x0F8 0x1F
+		0x0FC 0x1F
+		0x020 0x50
+		0x110 0x55>;
+};
 
-	qcom,panel-supply-entry@3 {
-		reg = <3>;
-		qcom,supply-name = "blu-mcu";
-		qcom,supply-min-voltage = <3300000>;
-		qcom,supply-max-voltage = <3300000>;
-		qcom,supply-enable-load = <857000>;
-		qcom,supply-disable-load = <0>;
-		qcom,supply-post-on-sleep = <0>;
-	};
+&mdss_dsi_phy1 {
+	qcom,platform-phy-drive-strength = <0x0F4 0x1F
+		0x0F8 0x1F
+		0x0FC 0x1F
+		0x020 0x50
+		0x110 0x55>;
 };
 
 &mdss_mdp {
@@ -140,6 +200,198 @@
 	qcom,sde-wb-mild-tear-threshold = <948>;
 	qcom,sde-wb-severe-tear-threshold = <692>;
 	qcom,sde-wb-passes = <1>;
+};
+
+&qupv3_se2_spi {
+	status = "ok";
+	qcom,rt;
+
+	blu_left: blu_left@0 {
+		compatible = "oculus,seacliff-blu-spi";
+		reg = <0x00>;
+		spi-max-frequency = <8000000>;
+		oculus,blu-corner-zones = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 56 57
+			60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 76 136 140 141 142
+			433 434 435 439 499 501 502 503 504 505 506 507 508 509 510 511
+			512 513 514 515 518 519 562 563 564 565 566 567 568 569 570 571
+			572 573 574 575>;
+		oculus,blu-rolloff-comp = [01 02 40 00 C2
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+		];
+		oculus,blu-init-matrix = [21 04 80 07 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00 1F FE 1F FE
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			00 00 00 00 00 00 1F FE 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 00 00 1F FE 1F FE 1F FE 00 00 00 00 00 00 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FF 1F FE 1F FE 1F FE
+			1F FE 00 00 00 00 00 00 1F FE 1F FE 1F FE 00 00 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 1F FE 00 00 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			1F FE 1F FE 00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			01
+		];
+		oculus,blu-irq-gpio = <&tlmm 111 0>;
+		oculus,blu-name = "seacliff-left-blu";
+		oculus,continuous-splash;
+	};
+};
+
+&qupv3_se14_spi {
+	status = "ok";
+	qcom,rt;
+
+	blu_right: blu_right@0 {
+		compatible = "oculus,seacliff-blu-spi";
+		reg = <0x00>;
+		spi-max-frequency = <8000000>;
+		oculus,blu-corner-zones = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 56 57
+			60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 76 136 140 141 142
+			433 434 435 439 499 501 502 503 504 505 506 507 508 509 510 511
+			512 513 514 515 518 519 562 563 564 565 566 567 568 569 570 571
+			572 573 574 575>;
+		oculus,blu-rolloff-comp = [01 02 40 00 C2
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+			80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+		];
+		oculus,blu-init-matrix = [21 04 80 07 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00 1F FE 1F FE
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			00 00 00 00 00 00 1F FE 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 00 00 1F FE 1F FE 1F FE 00 00 00 00 00 00 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FF 1F FE 1F FE 1F FE
+			1F FE 00 00 00 00 00 00 1F FE 1F FE 1F FE 00 00 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 1F FE 00 00 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			1F FE 1F FE 00 00 00 00 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE
+			1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 1F FE 00 00 00 00
+			00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+			01
+		];
+		oculus,blu-irq-gpio = <&tlmm 59 0>;
+		oculus,blu-name = "seacliff-right-blu";
+		oculus,continuous-splash;
+	};
 };
 
 &sde_dsi {
@@ -171,10 +423,13 @@
 
 	lab-supply = <&lcdb_ldo_vreg>;
 	ibb-supply = <&lcdb_ncp_vreg>;
+	avdd-supply = <>;
 	blu-mcu-supply = <&pm8150a_l11>;
+	blu-pvdd-supply = <&display_panel_blu_pvdd_en>;
+	blu-spi-supply = <&display_panel_blu_en>;
 	qcom,dsi-default-panel = <&dsi_dual_boe_90hz_dsc>;
-	pinctrl-0 = <&te0_active>;
-	pinctrl-1 = <&te0_suspend>;
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
 };
 
 &sde_dsi1 {
@@ -191,60 +446,65 @@
 		      "mux_byte_clk1", "mux_pixel_clk1",
 		      "cphy_byte_clk1", "cphy_pixel_clk1";
 
-	pinctrl-0 = <&te1_active>;
-	pinctrl-1 = <&te1_suspend>;
+	avdd-supply = <>;
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+};
+
+&soc {
+	display_panel_blu_pvdd_en: blu_gpio_regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_blu_pvdd_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 88 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&seacliff_blu_pvdd_en_default>;
+	};
+
+	display_panel_blu_en: blu_gpio_regulator@1 {
+		compatible = "regulator-fixed";
+		regulator-name = "display_panel_blu_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 91 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_blu_en_default>;
+	};
 };
 
 &tlmm {
-	te0_active: te0_active {
+	display_panel_blu_en_default: display_panel_blu_en_default {
 		mux {
-			pins = "gpio67";
-			function = "mdp_vsync";
+			pins = "gpio91";
+			function = "gpio";
 		};
 
 		config {
-			pins = "gpio67";
-			drive-strength = <2>;   /* 2 mA */
-			bias-pull-down;         /* PULL DOWN */
+			pins = "gpio91";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
 		};
 	};
 
-	te0_suspend: te0_suspend {
+	seacliff_blu_pvdd_en_default: seacliff_blu_pvdd_en_default {
 		mux {
-			pins = "gpio67";
-			function = "mdp_vsync";
+			pins = "gpio88";
+			function = "gpio";
 		};
 
 		config {
-			pins = "gpio67";
-			drive-strength = <2>;   /* 2 mA */
-			bias-pull-down;         /* PULL DOWN */
-		};
-	};
-
-	te1_active: te1_active {
-		mux {
-			pins = "gpio68";
-			function = "mdp_vsync";
-		};
-
-		config {
-			pins = "gpio68";
-			drive-strength = <2>;   /* 2 mA */
-			bias-pull-down;         /* PULL DOWN */
-		};
-	};
-
-	te1_suspend: te1_suspend {
-		mux {
-			pins = "gpio68";
-			function = "mdp_vsync";
-		};
-
-		config {
-			pins = "gpio68";
-			drive-strength = <2>;   /* 2 mA */
-			bias-pull-down;         /* PULL DOWN */
+			pins = "gpio88";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
 		};
 	};
 };

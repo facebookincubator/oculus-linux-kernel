@@ -1,7 +1,7 @@
 /*
  * Linux Packet (skb) interface
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -198,6 +198,9 @@ extern void osl_pkt_orphan_partial(struct sk_buff *skb);
 #define PKTLITIDX_1(skb)		({BCM_REFERENCE(skb); 0;})
 #define PKTSETLITIDX_1(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
 #define PKTRESETLITIDX_1(skb)		({BCM_REFERENCE(skb);})
+#define PKTLITIDX_2(skb)		({BCM_REFERENCE(skb); 0;})
+#define PKTSETLITIDX_2(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
+#define PKTRESETLITIDX_2(skb)		({BCM_REFERENCE(skb);})
 
 #define PKTRITIDX(skb)			({BCM_REFERENCE(skb); 0;})
 #define PKTSETRITIDX(skb, idx)		({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
@@ -205,6 +208,9 @@ extern void osl_pkt_orphan_partial(struct sk_buff *skb);
 #define PKTRITIDX_1(skb)		({BCM_REFERENCE(skb); 0;})
 #define PKTSETRITIDX_1(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
 #define PKTRESETRITIDX_1(skb)		({BCM_REFERENCE(skb);})
+#define PKTRITIDX_2(skb)		({BCM_REFERENCE(skb); 0;})
+#define PKTSETRITIDX_2(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx);})
+#define PKTRESETRITIDX_2(skb)		({BCM_REFERENCE(skb);})
 
 #define	PKTSETSKIPCT(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
 #define	PKTCLRSKIPCT(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})

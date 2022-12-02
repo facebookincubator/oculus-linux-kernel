@@ -15,7 +15,6 @@
 #include "eureka865-nautilus-clk.dtsi"
 #include "eureka865-panel.dtsi"
 #include "eureka865-qca6490.dtsi"
-#include "eureka865-qm35.dtsi"
 #include "eureka865-safetyboss.dtsi"
 #include "eureka865-syncboss.dtsi"
 #include "eureka865-ufs.dtsi"
@@ -169,10 +168,21 @@
 
 &qupv3_se3_2uart {
 	status = "ok";
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&qm35_uart_active>;
+	pinctrl-1 = <&qm35_uart_sleep_tx &qm35_uart_sleep_rx>;
 };
 
 &qupv3_se4_spi {
 	status = "ok";
+};
+
+&qupv3_se10_i2c {
+	as5510: as5510-driver {
+		reg = <0x56>;
+		compatible = "ams,as5510";
+		power-supply = <&pm8150a_l11>;
+	};
 };
 
 &qupv3_se11_spi {
@@ -247,9 +257,55 @@
 			input-enable;
 		};
 	};
+
+	qm35_uart_active: qm35_uart_active {
+		mux {
+			pins = "gpio121", "gpio122";
+			function = "qup3";
+		};
+		config {
+			pins = "gpio121", "gpio122";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	qm35_uart_sleep_tx: qm35_uart_sleep_tx {
+		mux {
+			pins = "gpio121";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio121";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	qm35_uart_sleep_rx: qm35_uart_sleep_rx {
+		mux {
+			pins = "gpio122";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio122";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
 };
 
 &vendor {
+	charging_dock: oculus,charging_dock {
+		status = "ok";
+		compatible = "oculus,charging-dock";
+		svid-cypd = <0x28330000>;
+		charger-cypd = <&cypd3177>;
+		svid-usbpd = <0x2ec60000>;
+		charger-usbpd = <&pm8150b_pdphy>;
+		broadcast-period-min = <15>;
+	};
+
 	kona_mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
 		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"

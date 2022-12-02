@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&soc {
+	oculus,privacymgr-swd {
+		compatible = "oculus,swd";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&privacymgr_reset_default &privacymgr_float_swd>;
+
+		oculus,swd-flavor = "stm32g0";
+		oculus,fw-path = "privacymgr.bin";
+		oculus,swd-io  = <&tlmm 106 0>;
+		oculus,swd-clk = <&tlmm 107 0>;
+		oculus,swd-core-voltage-level = <1900000 1900000>;
+		oculus,flash-block-size = <256>;
+		oculus,flash-page-size = <2048>;
+		oculus,flash-page-count = <64>;
+		oculus,flash-page-bootloader-protected-count = <0>;
+		oculus,flash-page-retained-count = <0>;
+	};
+};
+
+&tlmm {
+	// 105 = NRESET
+	// 106 = SWDIO
+	// 107 = SWDCLK
+	privacymgr_float_swd: privacymgr_float_swd {
+		mux {
+			pins = "gpio106", "gpio107";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio106", "gpio107";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	privacymgr_reset_default: privacymgr_reset_default {
+		mux {
+			pins = "gpio105";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio105";
+			// Reset is active-low - pull up to avoid
+			// keeping it in reset
+			bias-pull-up;
+		};
+	};
+};

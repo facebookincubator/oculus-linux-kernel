@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2789,6 +2790,21 @@ wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 
 	return QDF_STATUS_SUCCESS;
 }
+
+QDF_STATUS
+wlan_mlme_set_relaxed_6ghz_conn_policy(struct wlan_objmgr_psoc *psoc,
+				       bool value)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	mlme_obj->cfg.gen.relaxed_6ghz_conn_policy = value;
+
+	return QDF_STATUS_SUCCESS;
+}
 #endif
 
 QDF_STATUS
@@ -4828,3 +4844,128 @@ wlan_mlme_get_p2p_p2p_conc_support(struct wlan_objmgr_psoc *psoc)
 					    WLAN_SOC_EXT_P2P_P2P_CONC_SUPPORT);
 }
 #endif
+
+#ifdef WLAN_FEATURE_MCC_QUOTA
+#define WLAN_MCC_MIN_QUOTA 10 /* in %age */
+#define WLAN_MCC_MAX_QUOTA 90 /* in %age */
+QDF_STATUS wlan_mlme_set_user_mcc_quota(struct wlan_objmgr_psoc *psoc,
+					struct wlan_user_mcc_quota *quota)
+
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	if (!quota)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	if (quota->quota < WLAN_MCC_MIN_QUOTA)
+		quota->quota = WLAN_MCC_MIN_QUOTA;
+	else if (quota->quota > WLAN_MCC_MAX_QUOTA)
+		quota->quota = WLAN_MCC_MAX_QUOTA;
+
+	mlme_obj->cfg.gen.user_mcc_quota.quota = quota->quota;
+	mlme_obj->cfg.gen.user_mcc_quota.op_mode = quota->op_mode;
+	mlme_obj->cfg.gen.user_mcc_quota.vdev_id = quota->vdev_id;
+
+	mlme_debug("quota : %u, op_mode : %d, vdev_id : %u", quota->quota,
+		   quota->op_mode, quota->vdev_id);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS wlan_mlme_get_user_mcc_quota(struct wlan_objmgr_psoc *psoc,
+					struct wlan_user_mcc_quota *quota)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	if (!quota)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	quota->quota = mlme_obj->cfg.gen.user_mcc_quota.quota;
+	quota->op_mode = mlme_obj->cfg.gen.user_mcc_quota.op_mode;
+	quota->vdev_id = mlme_obj->cfg.gen.user_mcc_quota.vdev_id;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+uint32_t
+wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc)
+{
+	uint32_t mcc_freq, ch_freq, quota_value;
+	struct wlan_user_mcc_quota quota;
+	uint8_t operating_channel;
+	int status;
+
+	wlan_mlme_get_user_mcc_quota(psoc, &quota);
+
+	if (quota.vdev_id == WLAN_UMAC_VDEV_ID_MAX || quota.quota == 0) {
+		mlme_debug("Invalid quota : vdev %u, quota %u",
+			   quota.vdev_id, quota.quota);
+		return 0;
+	}
+	status = policy_mgr_get_chan_by_session_id(psoc, quota.vdev_id,
+						   &ch_freq);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		mlme_debug("Could not get vdev %u chan", quota.vdev_id);
+		return 0;
+	}
+	mcc_freq = policy_mgr_get_mcc_operating_channel(psoc, quota.vdev_id);
+	if (mcc_freq == INVALID_CHANNEL_ID)
+		return 0;
+
+	operating_channel = wlan_freq_to_chan(ch_freq);
+	if (!operating_channel) {
+		mlme_debug("Primary op channel is invalid");
+		return 0;
+	}
+	/*
+	 * The channel numbers for both adapters and the time
+	 * quota for the 1st adapter, i.e., one specified in cmd
+	 * are formatted as a bit vector
+	 * ******************************************************
+	 * |bit 31-24  | bit 23-16 |  bits 15-8  |bits 7-0   |
+	 * |  Unused   | Quota for | chan. # for |chan. # for|
+	 * |           |  1st chan | 1st chan.   |2nd chan.  |
+	 * ******************************************************
+	 */
+	mlme_debug("Opmode (%d) vdev (%u) channel %u and quota %u",
+		   quota.op_mode, quota.vdev_id,
+		   operating_channel, quota.quota);
+	quota_value = quota.quota;
+	/* Move the time quota for first channel to bits 15-8 */
+	quota_value = quota_value << 8;
+	/*
+	 * Store the channel number of 1st channel at bits 7-0
+	 * of the bit vector
+	 */
+	quota_value |= operating_channel;
+
+	operating_channel = wlan_freq_to_chan(mcc_freq);
+	if (!operating_channel) {
+		mlme_debug("Secondary op channel is invalid");
+		return 0;
+	}
+
+	/*
+	 * Now move the time quota and channel number of the
+	 * 1st adapter to bits 23-16 and bits 15-8 of the bit
+	 * vector, respectively.
+	 */
+	quota_value = quota_value << 8;
+	/*
+	 * Set the channel number for 2nd MCC vdev at bits
+	 * 7-0 of set_value
+	 */
+	quota_value |= operating_channel;
+	mlme_debug("quota value:%x", quota_value);
+
+	return quota_value;
+}
+#endif /* WLAN_FEATURE_MCC_QUOTA */

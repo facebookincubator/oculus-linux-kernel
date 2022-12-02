@@ -12,6 +12,59 @@
 };
 
 &dsi_panel_pwr_supply_lab_ibb {
+	qcom,panel-supply-entry@0 {
+		reg = <0>;
+		qcom,supply-name = "vddio";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <80>;
+		qcom,supply-post-on-sleep = <20>;
+		qcom,supply-pre-on-sleep = <20>;
+		qcom,supply-pre-off-sleep = <35>;
+	};
+
+	qcom,panel-supply-entry@1 {
+		reg = <1>;
+		qcom,supply-name = "right_panel_bias";
+		qcom,supply-min-voltage = <6000000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <220000>;
+		qcom,supply-disable-load = <100>;
+	};
+
+	qcom,panel-supply-entry@2 {
+		reg = <2>;
+		qcom,supply-name = "left_panel_bias";
+		qcom,supply-min-voltage = <6000000>;
+		qcom,supply-max-voltage = <6000000>;
+		qcom,supply-enable-load = <220000>;
+		qcom,supply-disable-load = <100>;
+		qcom,supply-post-on-sleep = <20>;
+	};
+
+	qcom,panel-supply-entry@3 {
+		reg = <3>;
+		qcom,supply-name = "vsp";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+		qcom,supply-pre-off-sleep = <10>;
+	};
+
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "vsn";
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
+		qcom,supply-enable-load = <62000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-pre-on-sleep = <10>;
+	};
+
 	qcom,panel-supply-entry@5 {
 		reg = <5>;
 		qcom,supply-name = "gpio-capacitor";
@@ -21,6 +74,7 @@
 		qcom,supply-disable-load = <0>;
 		/* 100(+20)ms for capacitor to stabilize */
 		qcom,supply-post-on-sleep = <120>;
+		qcom,supply-pre-on-sleep = <10>;
 	};
 
 	qcom,panel-supply-entry@6 {
@@ -31,6 +85,7 @@
 		qcom,supply-enable-load = <857000>;
 		qcom,supply-disable-load = <0>;
 		qcom,supply-post-on-sleep = <0>;
+		qcom,supply-pre-on-sleep = <0>;
 	};
 
 	qcom,panel-supply-entry@7 {

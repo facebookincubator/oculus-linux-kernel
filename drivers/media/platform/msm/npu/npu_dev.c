@@ -2587,14 +2587,18 @@ static int npu_probe(struct platform_device *pdev)
 		goto error_res_init;
 	}
 
+#ifdef CONFIG_DEBUG_FS
 	rc = npu_debugfs_init(npu_dev);
-	if (rc)
-		goto error_driver_init;
+	if (rc) {
+		NPU_ERR("unable to init npu debugfs\n");
+		goto error_sysfs_create_group;
+	}
+#endif
 
 	rc = npu_host_init(npu_dev);
 	if (rc) {
 		NPU_ERR("unable to init host\n");
-		goto error_driver_init;
+		goto error_npu_debugfs_init;
 	}
 
 	if (IS_ENABLED(CONFIG_THERMAL)) {
@@ -2605,7 +2609,7 @@ static int npu_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev,
 				"npu: failed to register npu as cooling device\n");
 			rc = PTR_ERR(tcdev);
-			goto error_driver_init;
+			goto error_npu_host_init;
 		}
 		npu_dev->tcdev = tcdev;
 		thermal_cdev_update(tcdev);
@@ -2613,15 +2617,20 @@ static int npu_probe(struct platform_device *pdev)
 
 	rc = npu_cdsprm_cxlimit_init(npu_dev);
 	if (rc)
-		goto error_driver_init;
+		goto error_cooling_device_register;
 
 	g_npu_dev = npu_dev;
 
 	return rc;
-error_driver_init:
-	npu_cdsprm_cxlimit_deinit(npu_dev);
-	if (npu_dev->tcdev)
-		thermal_cooling_device_unregister(npu_dev->tcdev);
+error_cooling_device_register:
+	thermal_cooling_device_unregister(npu_dev->tcdev);
+error_npu_host_init:
+	npu_host_deinit(npu_dev);
+error_npu_debugfs_init:
+#ifdef CONFIG_DEBUG_FS
+	npu_debugfs_deinit(npu_dev);
+#endif
+error_sysfs_create_group:
 	sysfs_remove_group(&npu_dev->device->kobj, &npu_fs_attr_group);
 error_res_init:
 	cdev_del(&npu_dev->cdev);
@@ -2643,7 +2652,9 @@ static int npu_remove(struct platform_device *pdev)
 
 	npu_dev = platform_get_drvdata(pdev);
 	npu_host_deinit(npu_dev);
+#ifdef CONFIG_DEBUG_FS
 	npu_debugfs_deinit(npu_dev);
+#endif
 	npu_cdsprm_cxlimit_deinit(npu_dev);
 	if (npu_dev->tcdev)
 		thermal_cooling_device_unregister(npu_dev->tcdev);

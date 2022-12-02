@@ -42,7 +42,7 @@
 			max-rpm = <7000>;
 			#cooling-cells = <2>;
 			/* TODO(D37872176): revert D37872176 when we setup the fan control */
-			cooling-levels = <3000 4000 5000 6000 7000>;
+			cooling-levels = <4500 4600 5000 6000 7000>;
 		};
 	};
 };

@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Dongle Host Driver (DHD) related
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -46,6 +46,13 @@ typedef enum wl_cfg_btcx_timer_trig_type {
 	BT_DHCP_TIMER_TRIGGER_SCO
 } wl_cfg_btcx_timer_trig_type_t;
 
+typedef enum wl_cfg_btcx_dhcp_state {
+	BT_DHCP_IDLE,
+	BT_DHCP_START,
+	BT_DHCP_OPPR_WIN,
+	BT_DHCP_FLAG_FORCE_TIMEOUT
+} wl_cfg_btcx_dhcp_state_t;
+
 struct btcoex_info {
 	timer_list_compat_t timer;
 	u32 timer_ms;
@@ -55,7 +62,7 @@ struct btcoex_info {
 	bool dhcp_done;					/* flag, indicates that host done with
 							 * dhcp before t1/t2 expiration
 							 */
-	s32 bt_state;
+	wl_cfg_btcx_dhcp_state_t bt_state;
 	wl_cfg_btcx_timer_trig_type_t timer_trig_type;	/* timer trigger type */
 	struct work_struct work;
 	struct net_device *dev;
@@ -77,13 +84,6 @@ static struct btcoex_info *btcoex_info_loc = NULL;
 
 #define	BTCOEXMODE	"BTCOEXMODE"
 #define	POWERMODE	"POWERMODE"
-
-enum wl_cfg80211_btcoex_status {
-	BT_DHCP_IDLE,
-	BT_DHCP_START,
-	BT_DHCP_OPPR_WIN,
-	BT_DHCP_FLAG_FORCE_TIMEOUT
-};
 
 /*
  * get named driver variable to uint register value and return error indication
@@ -281,6 +281,16 @@ static int set_btc_esco_params(struct net_device *dev, bool trump_sco)
 #endif /* BT_DHCP_eSCO_FIX */
 
 static void
+wl_cfg80211_btcoex_init_handler_status(void)
+{
+	if (!btcoex_info_loc)
+		return;
+
+	btcoex_info_loc->timer_trig_type = BT_DHCP_TIMER_IDLE;
+	btcoex_info_loc->bt_state = BT_DHCP_IDLE;
+}
+
+static void
 wl_cfg80211_bt_setflag(struct net_device *dev, bool set)
 {
 #if defined(BT_DHCP_USE_FLAGS)
@@ -377,24 +387,23 @@ static void wl_cfg80211_bt_handler(struct work_struct *work)
 				WL_TRACE(("DHCP wait interval T2:%d msec expired\n",
 					BT_DHCP_FLAG_FORCE_TIME));
 			}
+			/* Pass through */
+		default:
+			if (btcx_inf->bt_state != BT_DHCP_FLAG_FORCE_TIMEOUT) {
+				WL_ERR(("Error BT DHCP status=%d!!!\n", btcx_inf->bt_state));
+			}
 
 			/* Restoring default bt priority */
-			if (btcx_inf->dev)
+			if (btcx_inf->dev &&
+				btcx_inf->timer_trig_type == BT_DHCP_TIMER_TRIGGER_SCO) {
 				wl_cfg80211_bt_setflag(btcx_inf->dev, FALSE);
+			}
 btc_coex_idle:
 			/* Restore BLE Scan Grant */
-			wldev_iovar_setint(btcx_inf->dev, "btc_ble_grants", 1);
-
-			btcx_inf->timer_trig_type = BT_DHCP_TIMER_IDLE;
-			btcx_inf->bt_state = BT_DHCP_IDLE;
-			btcx_inf->timer_on = 0;
-			break;
-
-		default:
-			WL_ERR(("error g_status=%d !!!\n",	btcx_inf->bt_state));
-			if (btcx_inf->dev)
-				wl_cfg80211_bt_setflag(btcx_inf->dev, FALSE);
-			btcx_inf->bt_state = BT_DHCP_IDLE;
+			if (btcx_inf->dev) {
+				wldev_iovar_setint(btcx_inf->dev, "btc_ble_grants", 1);
+			}
+			wl_cfg80211_btcoex_init_handler_status();
 			btcx_inf->timer_on = 0;
 			break;
 	}
@@ -411,13 +420,12 @@ void* wl_cfg80211_btcoex_init(struct net_device *ndev)
 	if (!btco_inf)
 		return NULL;
 
-	btco_inf->bt_state = BT_DHCP_IDLE;
 	btco_inf->ts_dhcp_start = 0;
 	btco_inf->ts_dhcp_ok = 0;
 	/* Set up timer for BT  */
 	btco_inf->timer_ms = 10;
 	init_timer_compat(&btco_inf->timer, wl_cfg80211_bt_timerfunc, btco_inf);
-	btco_inf->timer_trig_type = BT_DHCP_TIMER_IDLE;
+	wl_cfg80211_btcoex_init_handler_status();
 
 	btco_inf->dev = ndev;
 
@@ -427,7 +435,7 @@ void* wl_cfg80211_btcoex_init(struct net_device *ndev)
 	return btco_inf;
 }
 
-void wl_cfg80211_btcoex_deinit()
+void wl_cfg80211_btcoex_kill_handler()
 {
 	if (!btcoex_info_loc)
 		return;
@@ -436,9 +444,16 @@ void wl_cfg80211_btcoex_deinit()
 		btcoex_info_loc->timer_on = 0;
 		del_timer_sync(&btcoex_info_loc->timer);
 	}
-
 	cancel_work_sync(&btcoex_info_loc->work);
+	wl_cfg80211_btcoex_init_handler_status();
+}
 
+void wl_cfg80211_btcoex_deinit()
+{
+	if (!btcoex_info_loc)
+		return;
+
+	wl_cfg80211_btcoex_kill_handler();
 	kfree(btcoex_info_loc);
 }
 
@@ -616,7 +631,7 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 
 			/* Enable BLE Scan Grant */
 			wldev_iovar_setint(dev, "btc_ble_grants", 1);
-			btco_inf->timer_trig_type = BT_DHCP_TIMER_IDLE;
+			wl_cfg80211_btcoex_init_handler_status();
 		}
 
 		saved_status = FALSE;
@@ -693,7 +708,7 @@ wl_cfg_uwb_coex_proc_resp_buf(bcm_iov_batch_buf_t *resp, uint16 max_len, uint8 i
 	uint16 tlvs_len;
 
 	version = dtoh16(*(uint16 *)resp);
-	if (version & (BCM_IOV_XTLV_VERSION | BCM_IOV_BATCH_MASK)) {
+	if (version & (BCM_IOV_XTLV_VERSION_0 | BCM_IOV_BATCH_MASK)) {
 		if (!resp->count) {
 			return BCME_RANGE;
 		} else {
@@ -755,7 +770,7 @@ wl_cfg_uwb_coex_fill_ioctl_data(bcm_iov_batch_buf_t *b_buf, const uint8 is_set,
 	bcm_iov_batch_subcmd_t *sub_cmd;
 
 	/* Fill the header */
-	b_buf->version = htol16(BCM_IOV_XTLV_VERSION | BCM_IOV_BATCH_MASK);
+	b_buf->version = htol16(BCM_IOV_XTLV_VERSION_0 | BCM_IOV_BATCH_MASK);
 	b_buf->count = 1;
 	b_buf->is_set = is_set;
 	len = OFFSETOF(bcm_iov_batch_buf_t, cmds[0]);
@@ -797,9 +812,10 @@ wl_cfg_uwb_coex_get_ch_idx(const int ch)
 
 static void
 wl_cfg_uwb_coex_make_coex_bitmap(int start_ch_idx, int end_ch_idx,
-	uwbcx_coex_bitmap_t *coex_bitmap)
+	uwbcx_coex_bitmap_v2_t *coex_bitmap_cfg)
 {
 	int i;
+	uwbcx_coex_bitmap_t *coex_bitmap = (uwbcx_coex_bitmap_t *) (&coex_bitmap_cfg->coex_bitmap);
 
 	for (i = start_ch_idx; i <= end_ch_idx; i++) {
 		if (i < 16u) {
@@ -872,7 +888,7 @@ wl_cfg_uwb_coex_enable(struct net_device *dev, int enable, int start_ch, int end
 
 	uint8 *resp_buf = NULL;
 
-	uwbcx_coex_bitmap_t coex_bitmap;
+	uwbcx_coex_bitmap_v2_t coex_bitmap_cfg;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 
 	resp_buf = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
@@ -882,7 +898,10 @@ wl_cfg_uwb_coex_enable(struct net_device *dev, int enable, int start_ch, int end
 		goto exit;
 	}
 
-	bzero(&coex_bitmap, sizeof(uwbcx_coex_bitmap_t));
+	bzero(&coex_bitmap_cfg, sizeof(uwbcx_coex_bitmap_v2_t));
+	coex_bitmap_cfg.version = UWBCX_COEX_BITMAP_VERSION_V2;
+	coex_bitmap_cfg.len = sizeof(coex_bitmap_cfg);
+	coex_bitmap_cfg.band = UWBCX_BAND_6G;
 
 	/* Validate UWB Coex channel in case of turnning on */
 	if (enable && (((start_ch_idx = wl_cfg_uwb_coex_get_ch_idx(start_ch)) < 0) ||
@@ -893,11 +912,11 @@ wl_cfg_uwb_coex_enable(struct net_device *dev, int enable, int start_ch, int end
 	}
 
 	if (enable) {
-		wl_cfg_uwb_coex_make_coex_bitmap(start_ch_idx, end_ch_idx, &coex_bitmap);
+		wl_cfg_uwb_coex_make_coex_bitmap(start_ch_idx, end_ch_idx, &coex_bitmap_cfg);
 	}
 
 	ret = wl_cfg_uwb_coex_execute_ioctl(dev, cfg, TRUE, WL_UWBCX_CMD_COEX_BITMAP,
-		&coex_bitmap, (uint16)sizeof(coex_bitmap),
+		&coex_bitmap_cfg, (uint16)sizeof(coex_bitmap_cfg),
 		resp_buf, WLC_IOCTL_SMLEN);
 	WL_ERR(("%s - UWB Coex %s %s - Ch. [%d/%d] (ret = %d)\n", __FUNCTION__,
 	       enable ? "On" : "Off", !ret ? "Success" : "Fail",

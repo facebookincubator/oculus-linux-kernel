@@ -18,11 +18,11 @@
 
 	bcm_bt_wake_default: bcm_bt_wake_default {
 		mux {
-			pins = "gpio30";
+			pins = "gpio10";
 			function = "gpio";
 		};
 		config {
-			pins = "gpio30";
+			pins = "gpio10";
 			drive-strength = <2>;
 			bias-pull-down;
 		};
@@ -30,11 +30,11 @@
 
 	bcm_bt_hostwake_default: bcm_bt_hostwake_default {
 		mux {
-			pins = "gpio31";
+			pins = "gpio66";
 			function = "gpio";
 		};
 		config {
-			pins = "gpio31";
+			pins = "gpio66";
 			drive-strength = <2>;
 			bias-pull-down;
 			};
@@ -99,8 +99,8 @@
 
 	bt_bluesleep: bt_bluesleep {
 		compatible = "brcm,bluesleep";
-		brcm,bt-wake-gpio = <&tlmm 30 0>;
-		brcm,bt-host-wake-gpio = <&tlmm 31 0>;
+		brcm,bt-wake-gpio = <&tlmm 10 0>;
+		brcm,bt-host-wake-gpio = <&tlmm 66 0>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&bcm_bt_wake_default &bcm_bt_hostwake_default>;
 		status = "ok";

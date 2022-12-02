@@ -1,7 +1,7 @@
 /*
  * HND Run Time Environment ioctl.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -92,7 +92,8 @@ enum hnd_ioctl_cmd {
 	BUS_GET_MAXITEMS = 16,
 	BUS_SET_BUS_CSO_CAP = 17,	/* Update the CSO cap from wl layer to bus layer */
 	BUS_DUMP_RX_DMA_STALL_RELATED_INFO = 18,
-	BUS_UPDATE_RESVPOOL_STATE = 19	/* Update resvpool state */
+	BUS_UPDATE_RESVPOOL_STATE = 19,	/* Update resvpool state */
+	BUS_GET_MAX_RING_NUM = 20 /* Get the Max num of the Tx rings */
 };
 
 #define SDPCMDEV_SET_MAXTXPKTGLOM	1
@@ -115,6 +116,65 @@ typedef struct memuse_info {
 	uint32 free_lwm;        /* Least free size since reclaim */
 	uint32 mf_count;        /* Malloc failure count */
 } memuse_info_t;
+
+#define RTE_POOLUSEINFO_VER 0x01
+typedef struct pooluse_info {
+	uint16 ver;				/* version of this struct */
+	uint16 len;				/* length in bytes of this structure */
+
+	uint32 shared_count;			/* pktpool_shared pkt count */
+	uint32 shared_available;		/* pktpool_shared pkt left */
+	uint32 shared_max_pkt_bytes;		/* pktpool_shared max pkt size */
+	uint32 shared_overhead;			/* pktpool_shared with overhead */
+
+	uint32 lfrag_count;			/* pktpool_shared_lfrag pkt count */
+	uint32 lfrag_available;			/* pktpool_shared_lfrag pkt left */
+	uint32 lfrag_max_pkt_bytes;		/* pktpool_shared_lfrag max pkt size */
+	uint32 lfrag_overhead;			/* pktpool_shared_lfrag with overhead */
+
+	uint32 resvlfrag_count;			/* pktpool_resv_lfrag pkt count */
+	uint32 resvlfrag_available;		/* pktpool_resv_lfrag pkt left */
+	uint32 resvlfrag_max_pkt_bytes;		/* pktpool_resv_lfrag max pkt size */
+	uint32 resvlfrag_overhead;		/* pktpool_resv_lfrag with overhead */
+
+	uint32 rxlfrag_count;			/* pktpool_shared_rxlfrag pkt count */
+	uint32 rxlfrag_available;		/* pktpool_shared_rxlfrag pkt left */
+	uint32 rxlfrag_max_pkt_bytes;		/* pktpool_shared_rxlfrag max pkt size */
+	uint32 rxlfrag_overhead;		/* pktpool_shared_rxlfrag with overhead */
+
+	uint32 rxdata_count;			/* pktpool_shared_rxdata pkt count */
+	uint32 rxdata_available;		/* pktpool_shared_rxdata pkt left */
+	uint32 rxdata_max_pkt_bytes;		/* pktpool_shared_rxdata max pkt size */
+	uint32 rxdata_overhead;			/* pktpool_shared_rxdata with overhead */
+
+	uint32 alfrag_count;			/* pktpool_shared_alfrag pkt count */
+	uint32 alfrag_available;		/* pktpool_shared_alfrag pkt left */
+	uint32 alfrag_max_pkt_bytes;		/* pktpool_shared_alfrag max pkt size */
+	uint32 alfrag_overhead;			/* pktpool_shared_alfrag with overhead */
+
+	uint32 alfragdata_count;		/* pktpool_shared_alfrag_data pkt count */
+	uint32 alfragdata_available;		/* pktpool_shared_alfrag_data pkt left */
+	uint32 alfragdata_max_pkt_bytes;	/* pktpool_shared_alfrag_data max pkt size */
+	uint32 alfragdata_overhead;		/* pktpool_shared_alfrag_data with overhead */
+
+	uint32 resvalfrag_count;		/* pktpool_resv_alfrag pkt count */
+	uint32 resvalfrag_available;		/* pktpool_resv_alfrag pkt left */
+	uint32 resvalfrag_max_pkt_bytes;	/* pktpool_resv_alfrag max pkt size */
+	uint32 resvalfrag_overhead;		/* pktpool_resv_alfrag with overhead */
+
+	uint32 resvalfragdata_count;		/* pktpool_resv_alfrag_data pkt count */
+	uint32 resvalfragdata_available;	/* pktpool_resv_alfrag_data pkt left */
+	uint32 resvalfragdata_max_pkt_bytes;	/* pktpool_resv_alfrag_data max pkt size */
+	uint32 resvalfragdata_overhead;		/* pktpool_resv_alfrag_data with overhead */
+
+	uint32 total_size;			/* pktpool total size in bytes */
+	uint32 total_overhead;			/* pktpool total with overhead */
+} pooluse_info_t;
+
+typedef struct memuse_ext_info {
+	memuse_info_t hu;	/* heap usage */
+	pooluse_info_t pu;	/* pktpool usage */
+} memuse_ext_info_t;
 
 /* Different DMA loopback modes */
 #define M2M_DMA_LOOPBACK	0	/* PCIE M2M mode */
@@ -267,5 +327,105 @@ enum dsec_sboot_xtlv_id {
 	DSEC_OTP_XTLV_SBOOT_PRODUCTION_CHIP	= 27u,	/* Production chip bit */
 	DSEC_OTP_XTLV_SBOOT_ENCRYPTION_KEY	= 28u,	/* AES wrapped fw encryption key 320 bits */
 	DSEC_OTP_XTLV_SBOOT_LOT_NUM_MS		= 29u,	/* Chip lot num high bits [17:47] 31 bits */
+};
+
+#define CAPEXT_INFO_VERSION_1	(1u)
+#define CAPEXT_INFO_VERSION	CAPEXT_INFO_VERSION_1
+
+/* Top structure of capext reporting. For reporting, feature ids are used as types in XTLVs */
+typedef struct {
+	uint16	version;	/**< see definition of CAPEXT_INFO_VERSION */
+	uint16	datalen;	/**< length of data including all paddings. */
+	uint8   data [];	/**< variable length payload:
+				 * 1 or more bcm_xtlv_t type of tuples.
+				 * each tuple is padded to multiple of 4 bytes.
+				 * 'datalen' field of this structure includes all paddings.
+				 */
+} capext_info_t;
+
+/* Each feature reported in capext has a feature id. Feature id is a 16-bit value.
+ * The feature id namespace is split into 3 partitions. One for BUS, the second for RTE,
+ * and the third for WL. All partitions are contiguous and fixed in size
+ */
+#define CAPEXT_FEATURE_ID_NUM_PARTITIONS	(3u)
+#define CAPEXT_FEATURE_ID_PARTITION_SIZE	(1024u)
+/* Feature IDs from 3072 for capext are reserved */
+#define CAPEXT_RSVD_FEATURE_ID_BASE		(3072u)
+
+/* Bus partition */
+/* The features listed in the enumeration below have subfeatures.
+ * If a new feature is added/updated and that feature has sub-features that need to be reported,
+ * add that feature here
+ */
+#define CAPEXT_BUS_FEATURE_ID_BASE		(0)
+enum capext_bus_feature_ids {
+	CAPEXT_BUS_FEATURE_RSVD		= (CAPEXT_BUS_FEATURE_ID_BASE + 0),
+	/* BUS top level feature id to hold and report bitmaps of features with and
+	 * without sub-features.
+	 */
+	CAPEXT_BUS_FEATURE_BUS_FEATURES	= (CAPEXT_BUS_FEATURE_ID_BASE + 1),
+	/* BUS feature ids below hold and report sub-feature bitmaps of some features
+	 * mentioned in top level feature id bitmap
+	 */
+	CAPEXT_BUS_FEATURE_PKTLAT	= (CAPEXT_BUS_FEATURE_ID_BASE + 2),
+	CAPEXT_BUS_FEATURE_MAX
+};
+
+/* BUS features bit positions in top level rte feature id. Features mentioned below are reported */
+enum capext_bus_feature_bitpos {
+	CAPEXT_BUS_FEATURE_BITPOS_HP2P		= 0,
+	CAPEXT_BUS_FEATURE_BITPOS_PTM		= 1,
+	CAPEXT_BUS_FEATURE_BITPOS_PKTLAT	= 2,	/* feature with sub-features */
+	CAPEXT_BUS_FEATURE_BITPOS_MAX
+};
+
+/* Packet latency sub-feature bit positions. These sub-features need to be reported */
+enum capext_pktlat_subfeature_bitpos {
+	CAPEXT_PKTLAT_BITPOS_META	= 0,
+	CAPEXT_PKTLAT_BITPOS_IPC	= 1,
+	CAPEXT_PKTLAT_BITPOS_MAX
+};
+
+/* RTE partition */
+/* The features listed in the enumeration below have subfeatures.
+ * If a new feature is added and that feature has sub-features that need to be reported,
+ * add that feature here
+ */
+#define CAPEXT_RTE_FEATURE_ID_BASE		(1024u)
+enum capext_rte_feature_ids {
+	CAPEXT_RTE_FEATURE_RSVD		= (CAPEXT_RTE_FEATURE_ID_BASE + 0),
+	/* RTE top level feature id to hold and report bitmaps of features with and
+	 * without sub-features.
+	 */
+	CAPEXT_RTE_FEATURE_RTE_FEATURES	= (CAPEXT_RTE_FEATURE_ID_BASE + 1),
+	/* RTE feature ids below hold and report sub-feature bitmaps of some features
+	 * mentioned in top level feature id bitmap
+	 */
+	CAPEXT_RTE_FEATURE_ECOUNTERS	= (CAPEXT_RTE_FEATURE_ID_BASE + 2),
+	CAPEXT_RTE_FEATURE_MAX
+};
+
+/* Ecounters sub-feature bit positions. These sub-features need to be reported */
+enum capext_ecounters_subfeature_bitpos {
+	CAPEXT_ECOUNTERS_BITPOS_TXHIST	= 0,
+	CAPEXT_ECOUNTERS_BITPOS_ADV	= 1,
+	CAPEXT_ECOUNTERS_BITPOS_PHY	= 2,
+	CAPEXT_ECOUNTERS_BITPOS_PHY_CAL	= 3,
+	CAPEXT_ECOUNTERS_BITPOS_MAX
+};
+
+/* RTE features bit positions in top level rte feature id. Features mentioned below are reported */
+enum capext_rte_feature_bitpos {
+	CAPEXT_RTE_FEATURE_BITPOS_H2D_LOG_TIME_SYNC	= 0,
+	CAPEXT_RTE_FEATURE_BITPOS_HWRNG			= 1,
+	CAPEXT_RTE_FEATURE_BITPOS_SPMI			= 2,
+	CAPEXT_RTE_FEATURE_BITPOS_ECOUNTERS		= 3,	/* feature with sub-features */
+	CAPEXT_RTE_FEATURE_BITPOS_EVENT_LOG		= 4,
+
+	CAPEXT_RTE_FEATURE_BITPOS_LOGTRACE		= 5,
+	CAPEXT_RTE_FEATURE_BITPOS_HCHK			= 6,
+	CAPEXT_RTE_FEATURE_BITPOS_SMD			= 7,
+	CAPEXT_RTE_FEATURE_BITPOS_ETD			= 8,
+	CAPEXT_RTE_FEATURE_BITPOS_MAX
 };
 #endif /* _dngl_ioctl_h_ */

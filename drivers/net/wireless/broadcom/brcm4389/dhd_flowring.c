@@ -4,7 +4,7 @@
  * Flow rings are transmit traffic (=propagating towards antenna) related entities
  *
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1152,8 +1152,8 @@ dhd_flowid_free(dhd_pub_t *dhdp, uint8 ifindex, uint16 flowid)
 				dhd_del_flowid(dhdp, ifindex, flowid);
 
 				dhd_flowid_map_free(dhdp, ifindex, flowid);
-				DHD_FLOWID_UNLOCK(dhdp->flowid_lock, flags);
 				MFREE(dhdp->osh, cur, sizeof(flow_hash_info_t));
+				DHD_FLOWID_UNLOCK(dhdp->flowid_lock, flags);
 
 				return;
 			}

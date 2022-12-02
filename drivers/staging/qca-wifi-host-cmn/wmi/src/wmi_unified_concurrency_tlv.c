@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -181,8 +182,9 @@ static QDF_STATUS send_set_mcc_channel_time_quota_cmd_tlv(
 	 */
 	if (quota_chan1 < WMI_MCC_MIN_CHANNEL_QUOTA ||
 	    quota_chan1 > WMI_MCC_MAX_CHANNEL_QUOTA) {
-		wmi_err("Invalid time quota for Channel #1=%dms. Minimum "
-			 "is 20ms & maximum is 80ms", quota_chan1);
+		wmi_err("Invalid time quota for Chan #1=%dms. Min: %dms, Max: %dms",
+			quota_chan1, WMI_MCC_MIN_CHANNEL_QUOTA,
+			WMI_MCC_MAX_CHANNEL_QUOTA);
 		return QDF_STATUS_E_INVAL;
 	}
 	/* Set WMI CMD for channel time quota here */

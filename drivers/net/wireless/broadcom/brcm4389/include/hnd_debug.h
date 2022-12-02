@@ -1,7 +1,7 @@
 /*
  * HND Run Time Environment debug info area
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -231,6 +231,8 @@ typedef struct prstatus {
 #define DUMP_INFO_PTR_PTR_3   0xf8
 #define DUMP_INFO_PTR_PTR_4   0x874
 #define DUMP_INFO_PTR_PTR_5   0x878
+#define DUMP_INFO_PTR_PTR_6   0x4f0
+#define DUMP_INFO_PTR_PTR_7   0x4f8
 #define DUMP_INFO_PTR_PTR_END 0xffffffff
 #define DUMP_INFO_PTR_PTR_LIST	DUMP_INFO_PTR_PTR_0, \
 		DUMP_INFO_PTR_PTR_1,					\
@@ -238,6 +240,8 @@ typedef struct prstatus {
 		DUMP_INFO_PTR_PTR_3,					\
 		DUMP_INFO_PTR_PTR_4,					\
 		DUMP_INFO_PTR_PTR_5,					\
+		DUMP_INFO_PTR_PTR_6,					\
+		DUMP_INFO_PTR_PTR_7,					\
 		DUMP_INFO_PTR_PTR_END
 
 extern bool hnd_debug_info_in_trap_context(void);

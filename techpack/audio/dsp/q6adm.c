@@ -2312,9 +2312,11 @@ static void send_adm_cal(int port_id, int copp_idx, int path, int perf_mode,
 	if (passthr_mode != LISTEN) {
 		send_adm_cal_type(ADM_AUDPROC_CAL, path, port_id, copp_idx,
 				perf_mode, app_type, acdb_id, sample_rate);
-		send_adm_cal_type(ADM_AUDPROC_PERSISTENT_CAL, path,
-				  port_id, copp_idx, perf_mode, app_type,
-				  acdb_id, sample_rate);
+		/* send persistent cal only in case of record */
+		if (path == TX_DEVICE)
+			send_adm_cal_type(ADM_AUDPROC_PERSISTENT_CAL, path,
+					  port_id, copp_idx, perf_mode, app_type,
+					  acdb_id, sample_rate);
 	} else {
 		send_adm_cal_type(ADM_LSM_AUDPROC_CAL, path, port_id, copp_idx,
 				  perf_mode, app_type, acdb_id, sample_rate);
@@ -3051,7 +3053,10 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	}
 
 	if ((topology == VPM_TX_SM_ECNS_V2_COPP_TOPOLOGY) ||
-	    (topology == VPM_TX_DM_FLUENCE_EF_COPP_TOPOLOGY)) {
+	    (topology == VPM_TX_QMIC_FLUENCE_PRO_VC_COPP_TOPOLOGY) ||
+	    (topology == VPM_TX_DM_FLUENCE_EF_COPP_TOPOLOGY) ||
+	    (topology == VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY) ||
+            (topology == VPM_TX_VOICE_FLUENCE_PROVC_NN_COPP_TOPOLOGY)) {
 		if ((rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_8K) &&
 		    (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_16K) &&
 		    (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_32K) &&
@@ -3073,7 +3078,8 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	}
 
 	if (topology == VPM_TX_VOICE_SMECNS_V2_COPP_TOPOLOGY ||
-	    topology == VPM_TX_VOICE_FLUENCE_SM_COPP_TOPOLOGY)
+	    topology == VPM_TX_VOICE_FLUENCE_SM_COPP_TOPOLOGY ||
+            topology == VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY)
 		channel_mode = 1;
 
 	/*

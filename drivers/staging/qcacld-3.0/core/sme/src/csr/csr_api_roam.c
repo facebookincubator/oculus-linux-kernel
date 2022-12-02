@@ -12268,6 +12268,7 @@ rel:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_SME_ID);
 }
 
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
 static void csr_roam_invoke_timeout_handler(void *data)
 {
 	struct csr_timer_info *info = data;
@@ -12299,6 +12300,7 @@ static void csr_roam_invoke_timeout_handler(void *data)
 rel:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_SME_ID);
 }
+#endif
 
 QDF_STATUS csr_roam_start_roaming_timer(struct mac_context *mac,
 					uint32_t vdev_id,

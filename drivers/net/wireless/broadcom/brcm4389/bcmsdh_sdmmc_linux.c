@@ -1,7 +1,7 @@
 /*
  * BCMSDH Function Driver for the native SDIO/MMC driver in the Linux Kernel
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -194,6 +194,7 @@ static const struct sdio_device_id bcmsdh_sdmmc_ids[] = {
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM43013_D11N_ID) },
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM43013_D11N2G_ID) },
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM43013_D11N5G_ID) },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM4381_CHIP_ID) },
 	{ 0, 0, 0, 0 /* end: all zeroes */
 	},
 };

@@ -2,7 +2,7 @@
  * Linux-specific abstractions to gain some independence from linux kernel versions.
  * Pave over some 2.2 versus 2.4 versus 2.6 kernel differences.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -349,11 +349,13 @@ static inline void *pci_alloc_consistent(struct pci_dev *hwdev, size_t size,
 	}
 	return ret;
 }
+
 static inline void pci_free_consistent(struct pci_dev *hwdev, size_t size,
                                        void *vaddr, dma_addr_t dma_handle)
 {
 	free_pages((unsigned long)vaddr, get_order(size));
 }
+
 #ifdef ILSIM
 extern uint pci_map_single(void *dev, void *va, uint size, int direction);
 extern void pci_unmap_single(void *dev, uint pa, uint size, int direction);
@@ -467,6 +469,7 @@ static inline void tasklet_init(struct tasklet_struct *tasklet,
 	tasklet->routine = (void (*)(void *))func;
 	tasklet->data = (void *)data;
 }
+
 #define tasklet_kill(tasklet)	{ do {} while (0); }
 
 /* 2.4.x introduced del_timer_sync() */
@@ -955,5 +958,19 @@ static inline void do_gettimeofday(struct timeval *tv)
 	tv->tv_usec = now.tv_nsec/1000;
 }
 #endif /* LINUX_VER >= 5.0 */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
+#define GETFS_AND_SETFS_TO_KERNEL_DS(fs) \
+{ \
+	fs = get_fs(); \
+	set_fs(KERNEL_DS); \
+}
+
+#define SETFS(fs) set_fs(fs)
+#else
+/* From 5.10 kernel get/set_fs are obsolete and direct kernel_read/write operations can be used */
+#define GETFS_AND_SETFS_TO_KERNEL_DS(fs) BCM_REFERENCE(fs)
+#define SETFS(fs) BCM_REFERENCE(fs)
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0) */
 
 #endif /* _linuxver_h_ */

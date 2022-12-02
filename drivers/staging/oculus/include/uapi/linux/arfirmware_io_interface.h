@@ -45,6 +45,7 @@ struct __packed ar_device_information_req {
 	uint16_t send_ring_max;
 	uint16_t rcv_ring_max;
 	bool require_contiguous_memory_for_queues;
+	uint16_t rcv_ring_pend_buff_count_max;
 };
 
 /**

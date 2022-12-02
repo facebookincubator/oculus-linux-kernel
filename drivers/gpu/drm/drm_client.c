@@ -166,6 +166,7 @@ void drm_client_dev_register(struct drm_device *dev)
 	drm_bootsplash_client_register(dev);
 #endif
 }
+EXPORT_SYMBOL(drm_client_dev_register);
 
 void drm_client_dev_unregister(struct drm_device *dev)
 {

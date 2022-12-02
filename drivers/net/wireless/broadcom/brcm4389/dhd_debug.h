@@ -1,7 +1,7 @@
 /*
  * DHD debugability header file
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -85,6 +85,9 @@ enum {
 
 #define DEBUG_DUMP_RING2_NAME		"debug_dump2_"
 #define DEBUG_DUMP_RING2_SIZE		(2 * 1024 * 1024)
+
+#define MEM_DUMP_RING_NAME		"mem_dump"
+#define MEM_DUMP_RING_SIZE		(3 * 1024 * 1024)
 
 #define DHD_DEBUG_DUMP_NETLINK_MAX	(1024 * 8)
 #define DHD_DEBUG_DUMP_MAX_SYNC_CNT	5u
@@ -667,13 +670,16 @@ typedef struct dhd_dbg_rx_info
 typedef struct dhd_dbg_tx_report
 {
 	dhd_dbg_tx_info_t *tx_pkts;
+	/* Indicates how many packets queued to send over the air */
 	uint16 pkt_pos;
+	/* Indicates how many packets sent over the air and received txstatus */
 	uint16 status_pos;
 } dhd_dbg_tx_report_t;
 
 typedef struct dhd_dbg_rx_report
 {
 	dhd_dbg_rx_info_t *rx_pkts;
+	/* Indicates how many packets sent over the air and received txstatus */
 	uint16 pkt_pos;
 } dhd_dbg_rx_report_t;
 
@@ -783,6 +789,8 @@ typedef struct {
 
 #define DHD_EVENT_LOG_FMT_NUM_OFFSET 2
 #define DHD_EVENT_LOG_FMT_NUM_MASK 0x3FFF
+
+#define DHD_EXT_FMTNUM_MASK 0xF /* bits[3..0] used */
 /**
  * OW:- one word
  * TW:- two word
@@ -846,6 +854,7 @@ int dhd_dbg_pull_single_from_ring(dhd_pub_t *dhdp, int ring_id, void *data, uint
 #ifdef DHD_PKT_LOGGING_DBGRING
 int dhd_dbg_update_to_ring(dhd_pub_t *dhdp, void *ring, uint32 w_len);
 int dhd_dbg_pull_from_pktlog(dhd_pub_t *dhdp, int ring_id, void *data, uint32 buf_len);
+void dhd_os_dbg_urgent_pullreq(void *os_priv, int ring_id);
 #endif /* DHD_PKT_LOGGING_DBGRING */
 #ifdef DHD_DEBUGABILITY_DEBUG_DUMP
 int dhd_debug_dump_ring_push(dhd_pub_t *dhdp, int ring_id, uint32 len, void *data);

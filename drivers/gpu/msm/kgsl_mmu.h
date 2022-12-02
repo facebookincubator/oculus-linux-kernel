@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __KGSL_MMU_H
 #define __KGSL_MMU_H
@@ -115,7 +116,7 @@ struct kgsl_mmu_pt_ops {
 	int (*svm_range)(struct kgsl_pagetable *pt, uint64_t *lo, uint64_t *hi,
 			uint64_t memflags);
 	bool (*addr_in_range)(struct kgsl_pagetable *pagetable,
-			uint64_t gpuaddr);
+			uint64_t gpuaddr, uint64_t size);
 	struct page* (*mmu_find_mapped_page)(struct kgsl_memdesc *memdesc,
 			uint64_t offset);
 	struct page **(*mmu_find_mapped_page_range)(struct kgsl_memdesc *memdesc,
@@ -215,7 +216,8 @@ int kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 void kgsl_mmu_put_gpuaddr(struct kgsl_memdesc *memdesc);
 unsigned int kgsl_mmu_log_fault_addr(struct kgsl_mmu *mmu,
 		u64 ttbr0, uint64_t addr);
-bool kgsl_mmu_gpuaddr_in_range(struct kgsl_pagetable *pt, uint64_t gpuaddr);
+bool kgsl_mmu_gpuaddr_in_range(struct kgsl_pagetable *pt, uint64_t gpuaddr,
+		uint64_t size);
 
 int kgsl_mmu_get_region(struct kgsl_pagetable *pagetable,
 		uint64_t gpuaddr, uint64_t size);

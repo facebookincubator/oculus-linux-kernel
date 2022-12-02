@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -385,6 +385,8 @@ typedef enum {
 #define WLFC_CTL_PKTFLAG_DROPPED	7
 /* Firmware free this packet  */
 #define WLFC_CTL_PKTFLAG_MKTFREE	8
+/* Firmware drop this packet due to AMPDU cleanup  */
+#define WLFC_CTL_PKTFLAG_AMPDU_CLEANUP	8
 /* Firmware dropped the frame after suppress retries reached max */
 #define WLFC_CTL_PKTFLAG_MAX_SUP_RETR   9
 
@@ -444,12 +446,12 @@ typedef enum {
 	(((val) & 1u) << WLFC_MODE_REUSESEQ_SHIFT))
 
 /** returns TRUE if 'd11 sequence reuse' has been agreed upon between host and dongle */
-#if defined(BCMPCIEDEV_ENABLED) && !defined(ROM_ENAB_RUNTIME_CHECK)
+#if defined(BCMPCIEDEV_ENABLED)
 /* GET_REUSESEQ is always TRUE in pciedev */
 #define WLFC_GET_REUSESEQ(x)	(TRUE)
 #else
 #define WLFC_GET_REUSESEQ(x)	(((x) >> WLFC_MODE_REUSESEQ_SHIFT) & 1)
-#endif /* defined(BCMPCIEDEV_ENABLED) && !defined(ROM_ENAB_RUNTIME_CHECK) */
+#endif /* defined(BCMPCIEDEV_ENABLED) */
 
 #define WLFC_MODE_REORDERSUPP_SHIFT	4u	/* host reorder suppress pkt bit */
 #define WLFC_SET_REORDERSUPP(x, val)	((x) = \
@@ -475,6 +477,7 @@ typedef enum {
 #define FLOW_RING_GET_BUFFERED_TIME  15u
 #define FLOW_RING_HP2P_TXQ_STRT      16u
 #define FLOW_RING_HP2P_TXQ_STOP      17u
+#define FLOW_RING_GET_TXPARAMS       18u
 
 /* bit 7, indicating if is TID(1) or AC(0) mapped info in tid field) */
 #define PCIEDEV_IS_AC_TID_MAP_MASK	0x80
@@ -491,7 +494,8 @@ typedef enum {
 	APP_STS_FLOWRING_CLOSED		= 1u,	/* Disable APP as flowring is closed */
 	APP_STS_CRYPTO_UNSUPPORTED	= 2u,	/* Secuirity type doesn't support APP */
 	APP_STS_80211_FRAGMENTATION	= 3u,   /* 802.11 fragmentation enabled */
-	APP_STS_MAX			= 4u	/* MAX */
+	APP_STS_DISABLE_FOR_BTCX	= 4u,	/* BTCX requested APP disable */
+	APP_STS_MAX			= 5u	/* MAX */
 } app_disable_reason_s;
 
 /* shared structure between wlc and pciedev layer to set/reset a reason code */

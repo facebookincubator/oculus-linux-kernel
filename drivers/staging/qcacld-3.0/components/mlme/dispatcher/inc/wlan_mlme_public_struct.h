@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1187,6 +1188,18 @@ struct wlan_mlme_ratemask {
 	uint32_t higher32_2;
 };
 
+/**
+ * struct wlan_user_mcc_quota - User MCC quota configuration
+ * @op_mode: Mode for which MCC quota needs to be applied
+ * @quota: User MCC quota value
+ * @vdev_id: Intended VDEV id for the quota
+ */
+struct wlan_user_mcc_quota {
+	enum QDF_OPMODE op_mode;
+	uint8_t quota;
+	uint8_t vdev_id;
+};
+
 /* struct wlan_mlme_generic - Generic CFG config items
  *
  * @band_capability: HW Band Capability - Both or 2.4G only or 5G only
@@ -1281,6 +1294,9 @@ struct wlan_mlme_generic {
 	bool ocv_support;
 #ifdef CONFIG_BAND_6GHZ
 	bool relaxed_6ghz_conn_policy;
+#endif
+#ifdef WLAN_FEATURE_MCC_QUOTA
+	struct wlan_user_mcc_quota user_mcc_quota;
 #endif
 };
 

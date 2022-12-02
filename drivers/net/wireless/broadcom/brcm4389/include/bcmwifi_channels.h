@@ -3,7 +3,7 @@
  * This header file housing the define and function prototype use by
  * both the wl driver, tools & Apps.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -957,5 +957,9 @@ extern uint8 channel_bw_to_width(chanspec_t chspec);
 uint8 wf_chspec_320_id2cch(chanspec_t chanspec);
 
 uint8 wf_chspec_240_id2cch(chanspec_t chanspec);
+
+#ifndef WL_BW320MHZ
+#define wf_chspec_center_channel(chspec) CHSPEC_CHANNEL(chspec)
+#endif /* !WL_BW320MHZ */
 
 #endif	/* _bcmwifi_channels_h_ */

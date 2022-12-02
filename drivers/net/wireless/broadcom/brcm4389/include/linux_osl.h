@@ -1,7 +1,7 @@
 /*
  * Linux OS Independent Layer
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -128,6 +128,12 @@ extern uint osl_pcie_domain(osl_t *osh);
 extern uint osl_pcie_bus(osl_t *osh);
 extern struct pci_dev *osl_pci_device(osl_t *osh);
 
+#if defined(BCMINTERNAL)
+/* Flags that can be used to handle OSL specifcs */
+/* Needed for dhd driver but not FW */
+#define OSL_PHYS_MEM_LESS_THAN_16MB	(1<<0L)
+#endif /* BCMINTERNAL */
+
 #define OSL_ACP_COHERENCE		(1<<1L)
 #define OSL_FWDERBUF			(1<<2L)
 
@@ -183,7 +189,15 @@ extern bool osl_is_flag_set(osl_t *osh, uint32 mask);
 	({osl_debug_mfree((osh), ((void *)addr), (size), __LINE__, __FILE__);(addr) = NULL;})
 	#define VMALLOC(osh, size)	osl_debug_vmalloc((osh), (size), __LINE__, __FILE__)
 	#define VMALLOCZ(osh, size)	osl_debug_vmallocz((osh), (size), __LINE__, __FILE__)
-	#define VMFREE(osh, addr, size)	osl_debug_vmfree((osh), (addr), (size), __LINE__, __FILE__)
+	#define VMFREE(osh, addr, size)	\
+	({osl_debug_vmfree((osh), ((void *)addr), (size), __LINE__, __FILE__);(addr) = NULL;})
+	/* From the linux kernel 4.12, kvmalloc introduced which tries basically to
+	 * allocate even large blocks with kmalloc and falls back to vmalloc if fail.
+	 */
+	#define KVMALLOC(osh, size)	osl_debug_kvmalloc((osh), (size), __LINE__, __FILE__)
+	#define KVMALLOCZ(osh, size)	osl_debug_kvmallocz((osh), (size), __LINE__, __FILE__)
+	#define KVMFREE(osh, addr, size)	\
+	({osl_debug_kvmfree((osh), ((void *)addr), (size), __LINE__, __FILE__);(addr) = NULL;})
 	#define MALLOCED(osh)		osl_malloced((osh))
 	#define MEMORY_LEFTOVER(osh) osl_check_memleak(osh)
 	#define MALLOC_DUMP(osh, b)	osl_debug_memdump((osh), (b))
@@ -193,6 +207,10 @@ extern bool osl_is_flag_set(osl_t *osh, uint32 mask);
 	extern void *osl_debug_vmalloc(osl_t *osh, uint size, int line, const char* file);
 	extern void *osl_debug_vmallocz(osl_t *osh, uint size, int line, const char* file);
 	extern void osl_debug_vmfree(osl_t *osh, void *addr, uint size, int line, const char* file);
+	extern void *osl_debug_kvmalloc(osl_t *osh, uint size, int line, const char* file);
+	extern void *osl_debug_kvmallocz(osl_t *osh, uint size, int line, const char* file);
+	extern void osl_debug_kvmfree(osl_t *osh, void *addr, uint size, int line,
+		const char* file);
 	extern uint osl_malloced(osl_t *osh);
 	struct bcmstrbuf;
 	extern int osl_debug_memdump(osl_t *osh, struct bcmstrbuf *b);
@@ -201,21 +219,42 @@ extern bool osl_is_flag_set(osl_t *osh, uint32 mask);
 	#define MALLOC(osh, size)	osl_malloc((osh), (size))
 	#define MALLOCZ(osh, size)	osl_mallocz((osh), (size))
 	#define MALLOC_RA(osh, size, callsite)	osl_mallocz((osh), (size))
-	#define MFREE(osh, addr, size) ({osl_mfree((osh), ((void *)addr), (size));(addr) = NULL;})
+	#define MFREE(osh, addr, size)	\
+	({osl_mfree((osh), ((void *)addr), (size));(addr) = NULL;})
 	#define VMALLOC(osh, size)	osl_vmalloc((osh), (size))
 	#define VMALLOCZ(osh, size)	osl_vmallocz((osh), (size))
-	#define VMFREE(osh, addr, size)	osl_vmfree((osh), (addr), (size))
+	#define VMFREE(osh, addr, size)	\
+	({osl_vmfree((osh), ((void *)addr), (size));(addr) = NULL;})
+	/* From the linux kernel 4.12, kvmalloc introduced which tries basically to
+	 * allocate even large blocks with kmalloc and falls back to vmalloc if fail.
+	 */
+	#define KVMALLOC(osh, size)	osl_kvmalloc((osh), (size))
+	#define KVMALLOCZ(osh, size)	osl_kvmallocz((osh), (size))
+	#define KVMFREE(osh, addr, size)	\
+	({osl_kvmfree((osh), ((void *)addr), (size));(addr) = NULL;})
 	#define MALLOCED(osh)		osl_malloced((osh))
 	#define MEMORY_LEFTOVER(osh) osl_check_memleak(osh)
-	extern void *osl_malloc(osl_t *osh, uint size);
-	extern void *osl_mallocz(osl_t *osh, uint size);
-	extern void osl_mfree(osl_t *osh, void *addr, uint size);
 	extern void *osl_vmalloc(osl_t *osh, uint size);
 	extern void *osl_vmallocz(osl_t *osh, uint size);
 	extern void osl_vmfree(osl_t *osh, void *addr, uint size);
+	extern void *osl_kvmalloc(osl_t *osh, uint size);
+	extern void *osl_kvmallocz(osl_t *osh, uint size);
+	extern void osl_kvmfree(osl_t *osh, void *addr, uint size);
 	extern uint osl_malloced(osl_t *osh);
 	extern uint osl_check_memleak(osl_t *osh);
 #endif /* BCMDBG_MEM && !BINCMP */
+
+#define DMA_MALLOCZ(osh, size, dmable_size, dmah) osl_dma_mallocz((osh), (size), (dmable_size))
+#define DMA_MFREE(osh, addr, size, dmah) osl_dma_mfree((osh), (addr), (size))
+
+extern void *osl_malloc(osl_t *osh, uint size);
+extern void *osl_mallocz(osl_t *osh, uint size);
+extern void *osl_dma_mallocz(osl_t *osh, uint size, uint *dmable_size);
+extern void osl_mfree(osl_t *osh, void *addr, uint size);
+extern void osl_dma_mfree(osl_t *osh, void *addr, uint size);
+#define MALLOC_NODBG(osh, size)		osl_malloc((osh), (size))
+#define MALLOCZ_NODBG(osh, size)	osl_mallocz((osh), (size))
+#define MFREE_NODBG(osh, addr, size)	({osl_mfree((osh), ((void *)addr), (size));(addr) = NULL;})
 
 extern int memcpy_s(void *dest, size_t destsz, const void *src, size_t n);
 extern int memset_s(void *dest, size_t destsz, int c, size_t n);
@@ -239,10 +278,12 @@ extern void *osl_dma_alloc_consistent(osl_t *osh, uint size, uint16 align,
 	uint *tot, dmaaddr_t *pap);
 extern void osl_dma_free_consistent(osl_t *osh, void *va, uint size, dmaaddr_t pa);
 
-/* map/unmap direction */
-#define DMA_NO	0	/* Used to skip cache op */
-#define	DMA_TX	1	/* TX direction for DMA */
-#define	DMA_RX	2	/* RX direction for DMA */
+/* map/unmap direction, refer enum dma_data_direction */
+#include <linux/dma-direction.h>
+#define DMA_RXTX	DMA_BIDIRECTIONAL	/* 0, Bidirectional DMA */
+#define DMA_TX		DMA_TO_DEVICE		/* 1, TX direction for DMA */
+#define DMA_RX		DMA_FROM_DEVICE		/* 2, RX direction for DMA */
+#define DMA_NO		DMA_NONE		/* 3, Used to skip cache op */
 
 /* map/unmap shared (dma-able) memory */
 #define	DMA_UNMAP(osh, pa, size, direction, p, dmah) \
@@ -267,6 +308,12 @@ extern void * osl_virt_to_phys(void * va);
 
 #define OSL_SMP_WMB()	smp_wmb()
 
+#if defined(__aarch64__)
+#define OSL_ISB()	isb()
+#else
+#define OSL_ISB()	do { /* noop */ } while (0)
+#endif /* __aarch64__ */
+
 /* API for CPU relax */
 extern void osl_cpu_relax(void);
 #define OSL_CPU_RELAX() osl_cpu_relax()
@@ -290,11 +337,6 @@ extern void osl_preempt_enable(osl_t *osh);
 	#define OSL_PREFETCH(ptr)		BCM_REFERENCE(ptr)
 #endif /* !__ARM_ARCH_7A__ */
 
-#ifdef AXI_TIMEOUTS_NIC
-extern void osl_set_bpt_cb(osl_t *osh, void *bpt_cb, void *bpt_ctx);
-extern void osl_bpt_rreg(osl_t *osh, ulong addr, volatile void *v, uint size);
-#endif /* AXI_TIMEOUTS_NIC */
-
 /* register access macros */
 #if defined(BCMSDIO)
 	#include <bcmsdh.h>
@@ -302,29 +344,15 @@ extern void osl_bpt_rreg(osl_t *osh, ulong addr, volatile void *v, uint size);
 		(uintptr)(r), sizeof(*(r)), (v)))
 	#define OSL_READ_REG(osh, r) (bcmsdh_reg_read(osl_get_bus_handle(osh), \
 		(uintptr)(r), sizeof(*(r))))
-#elif defined(AXI_TIMEOUTS_NIC)
-#define OSL_READ_REG(osh, r) \
-	({\
-		__typeof(*(r)) __osl_v; \
-		osl_bpt_rreg(osh, (uintptr)(r), &__osl_v, sizeof(*(r))); \
-		__osl_v; \
-	})
-#endif
 
-#if defined(AXI_TIMEOUTS_NIC)
-	#define SELECT_BUS_WRITE(osh, mmap_op, bus_op) ({BCM_REFERENCE(osh); mmap_op;})
-	#define SELECT_BUS_READ(osh, mmap_op, bus_op) ({BCM_REFERENCE(osh); bus_op;})
-#else /* !AXI_TIMEOUTS_NIC */
-#if defined(BCMSDIO)
-	#define SELECT_BUS_WRITE(osh, mmap_op, bus_op) if (((osl_pubinfo_t*)(osh))->mmbus) \
-		mmap_op else bus_op
+	#define SELECT_BUS_WRITE(osh, mmap_op, bus_op) (((osl_pubinfo_t*)(osh))->mmbus) ? \
+		mmap_op : bus_op
 	#define SELECT_BUS_READ(osh, mmap_op, bus_op) (((osl_pubinfo_t*)(osh))->mmbus) ? \
 		mmap_op : bus_op
 #else
 	#define SELECT_BUS_WRITE(osh, mmap_op, bus_op) ({BCM_REFERENCE(osh); mmap_op;})
 	#define SELECT_BUS_READ(osh, mmap_op, bus_op) ({BCM_REFERENCE(osh); mmap_op;})
 #endif /* defined(BCMSDIO) */
-#endif /* AXI_TIMEOUTS_NIC */
 
 #define OSL_ERROR(bcmerror)	osl_error(bcmerror)
 extern int osl_error(int bcmerror);
@@ -356,6 +384,7 @@ extern char* osl_get_rtctime(void);
 /* RTC format %02d:%02d:%02d.%06lu, LEN including the trailing null space */
 #define RTC_TIME_BUF_LEN	16u
 #define	printf(fmt, args...)	printk(fmt , ## args)
+#define	vprintf(fmt, ap)	vprintk(fmt, ap)
 #include <linux/kernel.h>	/* for vsn/printf's */
 #include <linux/string.h>	/* for mem*, str* */
 /* bcopy's: Linux kernel doesn't provide these (anymore) */
@@ -365,22 +394,6 @@ extern char* osl_get_rtctime(void);
 #define	bcopy(src, dst, len)	memcpy((dst), (src), (len))
 #define	bcmp(b1, b2, len)	memcmp((b1), (b2), (len))
 #define	bzero(b, len)		memset((b), '\0', (len))
-
-#if defined(CONFIG_SOC_EXYNOS9810) || defined(CONFIG_SOC_EXYNOS9820) || \
-	defined(CONFIG_SOC_EXYNOS9830)
-#define DHD_PCIE_L1_EXIT_DURING_IO
-#endif /* CONFIG_SOC_EXYNOS9810 || CONFIG_SOC_EXYNOS9820
-	* CONFIG_SOC_EXYNOS9830
-	*/
-
-#if defined(CONFIG_SOC_GS101)
-#define DHD_PCIE_L1_EXIT_DURING_IO
-#endif /* CONFIG_SOC_GS101 */
-
-#if defined(DHD_PCIE_L1_EXIT_DURING_IO)
-extern int pcie_ch_num;
-extern int exynos_pcie_l1_exit(int ch_num);
-#endif /* DHD_PCIE_L1_EXIT */
 
 /* register access macros */
 #if defined(OSLREGOPS)
@@ -430,15 +443,16 @@ extern uint64 regs_addr;
 #define DUMP_W_REG_OFFSET(r, v)
 #endif /* DHD_DEBUG_REG_DUMP */
 
+extern void dhd_plat_l1_exit_io(void);
+
 #ifndef IL_BIGENDIAN
 #ifdef CONFIG_64BIT
 /* readq is defined only for 64 bit platform */
-#if defined(DHD_PCIE_L1_EXIT_DURING_IO)
 #define R_REG(osh, r) (\
 	SELECT_BUS_READ(osh, \
 		({ \
 			__typeof(*(r)) __osl_v = 0; \
-			exynos_pcie_l1_exit(pcie_ch_num); \
+			dhd_plat_l1_exit_io(); \
 			BCM_REFERENCE(osh);	\
 			switch (sizeof(*(r))) { \
 				case sizeof(uint8):	__osl_v = \
@@ -454,28 +468,6 @@ extern uint64 regs_addr;
 		}), \
 		OSL_READ_REG(osh, r)) \
 )
-#else
-#define R_REG(osh, r) (\
-	SELECT_BUS_READ(osh, \
-		({ \
-			__typeof(*(r)) __osl_v = 0; \
-			DUMP_R_REG_OFFSET(r); \
-			BCM_REFERENCE(osh);	\
-			switch (sizeof(*(r))) { \
-				case sizeof(uint8):	__osl_v = \
-					readb((volatile uint8*)(r)); break; \
-				case sizeof(uint16):	__osl_v = \
-					readw((volatile uint16*)(r)); break; \
-				case sizeof(uint32):	__osl_v = \
-					readl((volatile uint32*)(r)); break; \
-				case sizeof(uint64):	__osl_v = \
-					readq((volatile uint64*)(r)); break; \
-			} \
-			__osl_v; \
-		}), \
-		OSL_READ_REG(osh, r)) \
-)
-#endif /* DHD_PCIE_L1_EXIT_DURING_IO */
 #else /* !CONFIG_64BIT */
 #define R_REG(osh, r) (\
 	SELECT_BUS_READ(osh, \
@@ -497,11 +489,10 @@ extern uint64 regs_addr;
 
 #ifdef CONFIG_64BIT
 /* writeq is defined only for 64 bit platform */
-#if defined(DHD_PCIE_L1_EXIT_DURING_IO)
 #define W_REG(osh, r, v) do { \
 	SELECT_BUS_WRITE(osh, \
 		({ \
-			exynos_pcie_l1_exit(pcie_ch_num); \
+			dhd_plat_l1_exit_io(); \
 			switch (sizeof(*(r))) { \
 				case sizeof(uint8):	writeb((uint8)(v), \
 						(volatile uint8*)(r)); break; \
@@ -515,19 +506,6 @@ extern uint64 regs_addr;
 		 }), \
 		(OSL_WRITE_REG(osh, r, v))); \
 	} while (0)
-#else
-#define W_REG(osh, r, v) do { \
-	DUMP_W_REG_OFFSET(r, v); \
-	SELECT_BUS_WRITE(osh, \
-		switch (sizeof(*(r))) { \
-			case sizeof(uint8):	writeb((uint8)(v), (volatile uint8*)(r)); break; \
-			case sizeof(uint16):	writew((uint16)(v), (volatile uint16*)(r)); break; \
-			case sizeof(uint32):	writel((uint32)(v), (volatile uint32*)(r)); break; \
-			case sizeof(uint64):	writeq((uint64)(v), (volatile uint64*)(r)); break; \
-		}, \
-		(OSL_WRITE_REG(osh, r, v))); \
-	} while (0)
-#endif /* DHD_PCIE_L1_EXIT_DURING_IO */
 #else /* !CONFIG_64BIT */
 #define W_REG(osh, r, v) do { \
 	SELECT_BUS_WRITE(osh, \
@@ -690,6 +668,7 @@ extern uint64 regs_addr;
  * a GNU binutil such as objcopy via a symbol rename (i.e. memcpy to osl_memcpy).
  */
 	#define	printf(fmt, args...)	printk(fmt , ## args)
+	#define	vprintf(fmt, ap)	vprintk(fmt, ap)
 	#include <linux/kernel.h>	/* for vsn/printf's */
 	#include <linux/string.h>	/* for mem*, str* */
 	/* bcopy's: Linux kernel doesn't provide these (anymore) */
@@ -858,6 +837,7 @@ typedef atomic_t osl_atomic_t;
 #define OSL_ATOMIC_INIT(osh, v)		atomic_set(v, 0)
 #define OSL_ATOMIC_INC(osh, v)		atomic_inc(v)
 #define OSL_ATOMIC_INC_RETURN(osh, v)	atomic_inc_return(v)
+#define OSL_ATOMIC_INC_AND_TEST(osh, v)	atomic_inc_and_test(v)
 #define OSL_ATOMIC_DEC(osh, v)		atomic_dec(v)
 #define OSL_ATOMIC_DEC_RETURN(osh, v)	atomic_dec_return(v)
 #define OSL_ATOMIC_READ(osh, v)		atomic_read(v)
