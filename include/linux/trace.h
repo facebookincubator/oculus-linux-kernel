@@ -26,4 +26,23 @@ int unregister_ftrace_export(struct trace_export *export);
 
 #endif	/* CONFIG_TRACING */
 
+/* Functions mimicking the behavior of Android's "atrace". */
+#ifdef CONFIG_KERNEL_ATRACE
+struct task_struct;
+extern bool __atrace_is_enabled(void);
+extern int __atrace_begin(const struct task_struct *task, const char *name);
+extern int __atrace_end(const struct task_struct *task);
+extern int __atrace_int(const struct task_struct *task, const char *name,
+		int value);
+#else
+#define __atrace_is_enabled() (false)
+#define __atrace_begin(task, name) (0)
+#define __atrace_end(task) (0)
+#define __atrace_int(task, name, value) (0)
+#endif  /* !CONFIG_KERNEL_ATRACE */
+
+#define ATRACE_BEGIN(name) __atrace_begin(current, name)
+#define ATRACE_END() __atrace_end(current)
+#define ATRACE_INT(name, value) __atrace_int(current, name, value)
+
 #endif	/* _LINUX_TRACE_H */

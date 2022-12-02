@@ -74,9 +74,9 @@ struct ar_mem_region {
  */
 struct ar_payload_chunk {
 	/// offset into region where the payload starts
-	uint32_t offset;
+	uint64_t offset;
 	/// size of the payload
-	uint32_t size;
+	uint64_t size;
 };
 
 /**

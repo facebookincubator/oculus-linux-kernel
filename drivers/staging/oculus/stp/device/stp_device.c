@@ -336,7 +336,7 @@ static int stp_device_open(struct inode *inode, struct file *filp)
 		channel->rx_buffer_len, channel->tx_buffer,
 		channel->tx_buffer_len));
 	if (STP_IS_ERR(rval)) {
-		STP_DRV_LOG_ERR("c%d controller open error", minor);
+		STP_DRV_LOG_ERR_RATE_LIMIT("c%d controller open error", minor);
 		goto exit_error;
 	}
 

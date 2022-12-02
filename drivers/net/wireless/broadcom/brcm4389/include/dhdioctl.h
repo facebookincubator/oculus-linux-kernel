@@ -5,7 +5,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -298,6 +298,17 @@ typedef struct dhd_pktgen {
 #define DHD_PKTGEN_RXBURST	3 /* Request dongle send N packets */
 #define DHD_PKTGEN_RECV		4 /* Continuous rx from continuous tx dongle */
 #endif /* SDTEST */
+
+/* For membytes iovar - flags param bit definitions and accessor macros */
+#define DHD_MEMBYTES_FLAGS_MAGIC		0x5DA60900 /* indicates flags presence */
+#define DHD_MEMBYTES_FLAGS_MAGIC_MASK		0xFFFFFF00 /* magic bytes mask */
+#define DHD_MEMBYTES_FLAGS_BAR_MASK		0x00000007 /* bar region mask */
+#define DHD_MEMBYTES_FLAGS_BAR_MIN		0 /* Min valid value for BAR region */
+#define DHD_MEMBYTES_FLAGS_BAR_MAX		5 /* Max valid value for BAR region */
+#define DHD_MEMBYTES_FLAGS_INIT(x)		((x) = ((uint32)DHD_MEMBYTES_FLAGS_MAGIC))
+#define DHD_MEMBYTES_FLAGS_GET_MAGIC(x)		((x) & DHD_MEMBYTES_FLAGS_MAGIC_MASK)
+#define DHD_MEMBYTES_FLAGS_GET_BAR(x)		((x) & DHD_MEMBYTES_FLAGS_BAR_MASK)
+#define DHD_MEMBYTES_FLAGS_SET_BAR(x, b)	((x) |= ((b) & DHD_MEMBYTES_FLAGS_BAR_MASK))
 
 /* Enter idle immediately (no timeout) */
 #define DHD_IDLE_IMMEDIATE	(-1)

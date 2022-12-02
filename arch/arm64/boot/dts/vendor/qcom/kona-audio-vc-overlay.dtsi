@@ -260,6 +260,7 @@
 	qcom,codec-max-aux-devs = <0>;
 	qcom,msm_audio_ssr_devs = <&audio_apr>, <&q6core>, <&lpi_tlmm>,
 				  <&bolero>;
+	qcom,pri-mi2s-gpios = <&cdc_pri_mi2s_gpios>;
 	qcom,quat-mi2s-gpios = <&cdc_quat_mi2s_gpios>;
 	qcom,tert-mi2s-gpios = <&cdc_tert_mi2s_gpios>;
 	qcom,wsa-bolero-codec = <0>;
@@ -318,6 +319,16 @@
 			    &tx_swr_data2_sleep>;
 		qcom,lpi-gpios;
 		qcom,tlmm-gpio = <147>;
+	};
+
+	cdc_pri_mi2s_gpios: msm_cdc_pinctrl_pri {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&pri_mi2s_sck_active &pri_mi2s_ws_active
+				&pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+		pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep
+				&pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
+		qcom,lpi-gpios;
 	};
 
 	cdc_quat_mi2s_gpios: msm_cdc_pinctrl_quat {

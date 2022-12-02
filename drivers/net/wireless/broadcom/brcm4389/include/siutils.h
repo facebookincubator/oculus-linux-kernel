@@ -2,7 +2,7 @@
  * Misc utility routines for accessing the SOC Interconnects
  * of Broadcom HNBU chips.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -960,8 +960,9 @@ bool si_srpwr_cap(si_t *sih);
  *      ARM, TCM, Main, Aux
  *      Host needs to power up
  */
-#define MULTIBP_CAP(sih)	(BCM4378_CHIP(sih->chip) || \
-				BCM4381_CHIP(sih->chip) || \
+#define MULTIBP_CAP(sih)	(BCM4378_CHIP(sih->chip) || BCM4381_CHIP(sih->chip) || \
+				BCM4383_CHIP(sih->chip) || \
+				BCM43852_CHIP(sih->chip) || BCM4382_CHIP(sih->chip) || \
 				BCM4387_CHIP(sih->chip) || BCM4388_CHIP(sih->chip) || \
 				BCM4389_CHIP(sih->chip) || BCM4385_CHIP(sih->chip) || \
 				BCM4376_CHIP(sih->chip) || BCM4397_CHIP(sih->chip))

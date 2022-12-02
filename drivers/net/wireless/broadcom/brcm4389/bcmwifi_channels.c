@@ -3,7 +3,7 @@
  * Contents are wifi-specific, used by any kernel or app-level
  * software that might want wifi things as it grows.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -47,6 +47,7 @@
 #endif
 
 #include <802.11.h>
+#include <802.11ac.h>
 
 /* Definitions for D11AC capable (80MHz+) Chanspec type */
 

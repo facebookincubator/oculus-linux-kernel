@@ -1,7 +1,7 @@
 /*
  * DHD debug ring API and structures - implementation
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -30,6 +30,7 @@
 #include <dhd.h>
 #include <dhd_dbg.h>
 #include <dhd_dbg_ring.h>
+#include <dhd_debug.h>
 
 dhd_dbg_ring_t *
 dhd_dbg_ring_alloc_init(dhd_pub_t *dhd, uint16 ring_id,
@@ -97,8 +98,11 @@ dhd_dbg_ring_init(dhd_pub_t *dhdp, dhd_dbg_ring_t *ring, uint16 id, uint8 *name,
 	unsigned long flags = 0;
 
 	if (allocd_buf == NULL) {
-		/* DEBUG_DUMP RINGs need to be delayed allocation */
-		if (id != DEBUG_DUMP_RING1_ID && id != DEBUG_DUMP_RING2_ID) {
+		/* for DEBUG_DUMP and MEM_DUMP, buffer can be NULL
+		 * since act as delayed allocation or fake rings
+		 */
+		if (id != DEBUG_DUMP_RING1_ID && id != DEBUG_DUMP_RING2_ID &&
+				id != MEM_DUMP_RING_ID) {
 			return BCME_NOMEM;
 		}
 		buf = NULL;
@@ -236,6 +240,7 @@ dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 	uint32 w_len;
 	uint32 avail_size;
 	dhd_dbg_ring_entry_t *w_entry, *r_entry;
+	int ret;
 
 	if (!ring || !hdr || !data) {
 		return BCME_BADARG;
@@ -353,10 +358,22 @@ dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data)
 
 	w_entry = (dhd_dbg_ring_entry_t *)((uint8 *)ring->ring_buf + ring->wp);
 	/* header */
-	memcpy(w_entry, hdr, DBG_RING_ENTRY_SIZE);
+	ret = memcpy_s(w_entry, avail_size, hdr, DBG_RING_ENTRY_SIZE);
+	if (ret) {
+		DHD_ERROR((" memcpy_s() error : %d, destsz: %d, n: %d\n",
+			ret, avail_size, (int)DBG_RING_ENTRY_SIZE));
+		return BCME_ERROR;
+	}
 	w_entry->len = hdr->len;
 	/* payload */
-	memcpy((char *)w_entry + DBG_RING_ENTRY_SIZE, data, w_entry->len);
+	avail_size -= DBG_RING_ENTRY_SIZE;
+	ret = memcpy_s((char *)w_entry + DBG_RING_ENTRY_SIZE,
+		avail_size, data, w_entry->len);
+	if (ret) {
+		DHD_ERROR((" memcpy_s() error : %d, destsz: %d, n: %d\n",
+			ret, avail_size, w_entry->len));
+		return BCME_ERROR;
+	}
 	/* update write pointer */
 	ring->wp += w_len;
 

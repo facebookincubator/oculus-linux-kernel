@@ -1327,11 +1327,14 @@ bool dp_check_pdev_exists(struct dp_soc *soc, struct dp_pdev *data);
  * @tid: tid value
  * @mode: type of tx delay mode
  * @ring id: ring number
+ * @delay_in_us: flag to indicate whether the delay is in ms or us
+ *
  * Return: none
  */
 void dp_update_delay_stats(struct cdp_tid_tx_stats *tstats,
 			   struct cdp_tid_rx_stats *rstats, uint32_t delay,
-			   uint8_t tid, uint8_t mode, uint8_t ring_id);
+			   uint8_t tid, uint8_t mode, uint8_t ring_id,
+			   bool delay_in_us);
 
 /**
  * dp_print_ring_stats(): Print tail and head pointer

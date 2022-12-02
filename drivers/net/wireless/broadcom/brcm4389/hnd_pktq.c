@@ -1,7 +1,7 @@
 /*
  * HND generic pktq operation primitives
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1051,7 +1051,7 @@ pktq_init(struct pktq *pq, uint num_prec, uint max_pkts)
 {
 	uint prec;
 
-	ASSERT(num_prec > 0 && num_prec <= PKTQ_MAX_PREC);
+	ASSERT_FP(num_prec > 0 && num_prec <= PKTQ_MAX_PREC);
 
 	/* pq is variable size; only zero out what's requested */
 	bzero(pq, OFFSETOF(struct pktq, q) + (sizeof(struct pktq_prec) * num_prec));
@@ -1083,12 +1083,13 @@ spktq_init(struct spktq *spq, uint max_pkts)
 }
 
 bool
-spktq_init_list(struct spktq *spq, uint max_pkts, void *head, void *tail, uint16 n_pkts)
+BCMFASTPATH(spktq_init_list)(struct spktq *spq, uint max_pkts, void *head,
+	void *tail, uint16 n_pkts)
 {
 	if (HND_PKTQ_MUTEX_CREATE("spktq", &spq->mutex) != OSL_EXT_SUCCESS)
 		return FALSE;
 
-	ASSERT(PKTLINK(tail) == NULL);
+	ASSERT_FP(PKTLINK(tail) == NULL);
 	PKTSETLINK(tail, NULL);
 	spq->q.head = head;
 	spq->q.tail = tail;
@@ -1474,6 +1475,7 @@ done:
 
 	return p;
 }
+
 /* Priority dequeue from a specific set of precedences */
 void *
 BCMPOSTTRAPFASTPATH(pktq_mdeq)(struct pktq *pq, uint prec_bmp, int *prec_out)

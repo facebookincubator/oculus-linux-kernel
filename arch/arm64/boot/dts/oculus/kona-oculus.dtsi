@@ -157,6 +157,12 @@
 	};
 };
 
+&spmi_bus {
+	qcom,pm8009@a {
+		status = "disabled";
+	};
+};
+
 &wlan {
 	reg = <0xb0000000 0x0>;
 	reg-names = "";

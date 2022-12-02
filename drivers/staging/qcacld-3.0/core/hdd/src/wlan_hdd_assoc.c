@@ -82,6 +82,7 @@
 #include "wlan_if_mgr_ucfg_api.h"
 #include "wlan_if_mgr_public_struct.h"
 #include "wlan_roam_debug.h"
+#include "wlan_hdd_mcc_quota.h"
 
 /* These are needed to recognize WPA and RSN suite types */
 #define HDD_WPA_OUI_SIZE 4
@@ -2999,13 +3000,15 @@ hdd_association_completion_handler(struct hdd_adapter *adapter,
 
 		/* Indicate 'connect' status to user space */
 		hdd_send_association_event(dev, roam_info);
-
+#ifdef WLAN_FEATURE_MCC_QUOTA
+		wlan_hdd_apply_user_mcc_quota(adapter);
+#else
 		if (policy_mgr_is_mcc_in_24G(hdd_ctx->psoc)) {
 			if (hdd_ctx->miracast_value)
 				wlan_hdd_set_mas(adapter,
 					hdd_ctx->miracast_value);
 		}
-
+#endif
 		/* Initialize the Linkup event completion variable */
 		INIT_COMPLETION(adapter->linkup_event_var);
 

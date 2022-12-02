@@ -1,7 +1,7 @@
 /*
  * EVENT_LOG system definitions
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -231,12 +231,12 @@
 #define EVENT_LOG_TAG_FILS_DBG			219
 #define EVENT_LOG_TAG_FILS_INFO			220
 #define EVENT_LOG_TAG_FILS_ERROR		221
-#define EVENT_LOG_TAG_UNUSED1			222
-#define EVENT_LOG_TAG_UNUSED2			223
+#define EVENT_LOG_TAG_BTCX_STATS_AUX		222
+#define EVENT_LOG_TAG_ROAM_TGT_EVAL		223
 #define EVENT_LOG_TAG_PPR_ERROR			224
 
 /* Arbitrator callback log tags */
-#define EVENT_LOG_TAG_STF_ARB_CB_TRACE		224
+#define EVENT_LOG_TAG_STF_ARB_CB_TRACE		225	/* Intentional duplicated value as ERROR */
 #define EVENT_LOG_TAG_STF_ARB_CB_ERROR		225
 #define EVENT_LOG_TAG_PHY_PERIODIC_SEC		226
 #define EVENT_LOG_TAG_RTE_ERROR			227
@@ -532,8 +532,49 @@
 #define EVENT_LOG_TAG_PASN_ERROR		423
 #define EVENT_LOG_TAG_PASN_INFO			424
 
+#define EVENT_LOG_TAG_IGMP_DBG			425
+#define EVENT_LOG_TAG_IGMP_INFO			426
+#define EVENT_LOG_TAG_IGMP_ERR			427
+
+#define EVENT_LOG_TAG_DNGL_CAPEXT_ERROR		428
+#define EVENT_LOG_TAG_DVFS_INFO			429
+#define EVENT_LOG_TAG_DVFS_ERROR		430
+
+#define EVENT_LOG_TAG_BTCX_ERR			431
+#define EVENT_LOG_TAG_BTCX_INFO			432
+#define EVENT_LOG_TAG_BTCX_TRACE		433
+
+#define EVENT_LOG_TAG_BCMHAL_SOCI_NCI_ERROR	434
+#define EVENT_LOG_TAG_BCMHAL_SOCI_NCI_TRACE	435
+#define EVENT_LOG_TAG_BCMHAL_SOCI_NCI_INFO	436
+#define EVENT_LOG_TAG_WL_TOSS			437
+
+/* 6GHz Client-to-Client (C2C) logging */
+#define EVENT_LOG_TAG_C2C_ERROR			438
+#define EVENT_LOG_TAG_C2C_DBG			439
+
+#define EVENT_LOG_TAG_OCT_INFO			440
+
+#define EVENT_LOG_TAG_PHY_AZ_INFO		441
+#define EVENT_LOG_TAG_PHY_AZ_INFO_DBG		442
+#define EVENT_LOG_TAG_PHY_AZ_INFO_CSI		443
+
+#define EVENT_LOG_TAG_WL_RATE_ERR		444
+
+#define EVENT_LOG_TAG_6GCHANPROF_ERROR		445
+#define EVENT_LOG_TAG_6GCHANPROF_INFO		446
+#define EVENT_LOG_TAG_6GCHANPROF_TRACE		447
+
+/* OWE STUFF */
+#define EVENT_LOG_TAG_OWE_DBG			448
+#define EVENT_LOG_TAG_OWE_INFO			449
+#define EVENT_LOG_TAG_OWE_ERR			450
+
+/* Additional RRM event log (for Beacon report specifically) */
+#define EVENT_LOG_TAG_RRM_BCN_RPT		451
+
 /* EVENT_LOG_TAG_MAX	= Set to the same value of last tag, not last tag + 1 */
-#define EVENT_LOG_TAG_MAX			424
+#define EVENT_LOG_TAG_MAX			451
 
 typedef enum wl_el_set_type_def {
 	EVENT_LOG_SET_TYPE_DEFAULT = 0, /* flush the log buffer when it is full - Default option */
@@ -606,7 +647,8 @@ typedef union event_log_extended_hdr {
 	struct {
 		uint8 extended_tag; /* Extended tag, bits[7..4] are reserved */
 		uint8 extended_count; /* Extended count. Reserved for now. */
-		uint16 rsvd;	/* Reserved */
+		uint8 extended_fmtnum;	/* bits[3..0] used. Rest reserved */
+		uint8 rsvd;	/* Reserved */
 	};
 
 	uint32 t;	/* Type cheat */

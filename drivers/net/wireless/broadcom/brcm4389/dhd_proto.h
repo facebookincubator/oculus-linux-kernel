@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -133,6 +133,8 @@ extern int dhd_prot_iovar_op(dhd_pub_t *dhdp, const char *name,
 
 /* Add prot dump output to a buffer */
 extern void dhd_prot_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
+extern void dhd_prot_counters(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf,
+	bool print_ringinfo, bool print_pktidinfo);
 
 /* Dump extended trap data */
 extern int dhd_prot_dump_extended_trap(dhd_pub_t *dhdp, struct bcmstrbuf *b, bool raw);
@@ -148,13 +150,22 @@ extern int dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf,
 	uint reorder_info_len, void **pkt, uint32 *free_buf_count);
 
 #ifdef BCMPCIE
-extern bool dhd_prot_process_msgbuf_txcpl(dhd_pub_t *dhd, uint bound, int ringtype);
-extern bool dhd_prot_process_msgbuf_rxcpl(dhd_pub_t *dhd, uint bound, int ringtype);
-extern bool dhd_prot_process_msgbuf_infocpl(dhd_pub_t *dhd, uint bound);
+extern bool dhd_prot_process_msgbuf_txcpl(dhd_pub_t *dhd, int ringtype, uint32 *txcpl_items);
+extern bool dhd_prot_process_msgbuf_rxcpl(dhd_pub_t *dhd, int ringtype,	uint32 *rxcpl_items);
+extern bool dhd_prot_process_msgbuf_infocpl(dhd_pub_t *dhd, uint bound,
+	uint32 *evtlog_items);
+uint32 dhd_prot_get_tx_post_bound(dhd_pub_t *dhd);
+uint32 dhd_prot_get_ctrl_cpl_post_bound(dhd_pub_t *dhd);
+uint32 dhd_prot_get_tx_cpl_bound(dhd_pub_t *dhd);
+uint32 dhd_prot_get_rx_cpl_post_bound(dhd_pub_t *dhd);
+void dhd_prot_set_tx_cpl_bound(dhd_pub_t *dhd, uint32 val);
+void dhd_prot_set_rx_cpl_post_bound(dhd_pub_t *dhd, uint32 val);
+void dhd_prot_set_tx_post_bound(dhd_pub_t *dhd, uint32 val);
+void dhd_prot_set_ctrl_cpl_post_bound(dhd_pub_t *dhd, uint32 val);
 #ifdef BTLOG
 extern bool dhd_prot_process_msgbuf_btlogcpl(dhd_pub_t *dhd, uint bound);
 #endif	/* BTLOG */
-extern int dhd_prot_process_ctrlbuf(dhd_pub_t * dhd);
+extern bool dhd_prot_process_ctrlbuf(dhd_pub_t * dhd, uint32 *ctrlcpl_items);
 extern int dhd_prot_process_trapbuf(dhd_pub_t * dhd);
 extern bool dhd_prot_dtohsplit(dhd_pub_t * dhd);
 extern int dhd_post_dummy_msg(dhd_pub_t *dhd);
@@ -183,7 +194,7 @@ extern uint32 dhd_prot_metadatalen_get(dhd_pub_t *dhd, bool rx);
 extern void dhd_prot_print_flow_ring(dhd_pub_t *dhd, void *msgbuf_flow_info, bool h2d,
 	struct bcmstrbuf *strbuf, const char * fmt);
 extern void dhd_prot_print_info(dhd_pub_t *dhd, struct bcmstrbuf *strbuf);
-extern void dhd_prot_update_txflowring(dhd_pub_t *dhdp, uint16 flow_id, void *msgring_info);
+extern bool dhd_prot_update_txflowring(dhd_pub_t *dhdp, uint16 flow_id, void *msgring_info);
 extern void dhd_prot_txdata_write_flush(dhd_pub_t *dhd, uint16 flow_id);
 extern uint32 dhd_prot_txp_threshold(dhd_pub_t *dhd, bool set, uint32 val);
 extern void dhd_prot_reset(dhd_pub_t *dhd);
@@ -200,7 +211,17 @@ extern int dhd_prot_init_btlog_rings(dhd_pub_t *dhd);
 #ifdef DHD_HP2P
 extern int dhd_prot_init_hp2p_rings(dhd_pub_t *dhd);
 #endif /* DHD_HP2P */
+extern int dhd_prot_init_md_rings(dhd_pub_t *dhd);
 extern int dhd_prot_check_tx_resource(dhd_pub_t *dhd);
+#else /* BCMPCIE */
+static INLINE uint32 dhd_prot_get_tx_post_bound(dhd_pub_t *dhd) { return 0; }
+static INLINE uint32 dhd_prot_get_ctrl_cpl_post_bound(dhd_pub_t *dhd) { return 0; }
+static INLINE uint32 dhd_prot_get_tx_cpl_bound(dhd_pub_t *dhd) { return 0; }
+static INLINE uint32 dhd_prot_get_rx_cpl_post_bound(dhd_pub_t *dhd) { return 0; }
+static INLINE void dhd_prot_set_tx_cpl_bound(dhd_pub_t *dhd, uint32 val) { }
+static INLINE void dhd_prot_set_rx_cpl_post_bound(dhd_pub_t *dhd, uint32 val) { }
+static INLINE void dhd_prot_set_tx_post_bound(dhd_pub_t *dhd, uint32 val) { }
+static INLINE void dhd_prot_set_ctrl_cpl_post_bound(dhd_pub_t *dhd, uint32 val) { }
 #endif /* BCMPCIE */
 
 #ifdef DHD_LB
@@ -236,7 +257,7 @@ int dhd_prot_get_snapshot(dhd_pub_t *dhdp, uint8 snapshot_type, uint32 offset,
 
 #ifdef EWP_EDL
 int dhd_prot_init_edl_rings(dhd_pub_t *dhd);
-bool dhd_prot_process_msgbuf_edl(dhd_pub_t *dhd, uint32 *edl_itmes);
+bool dhd_prot_process_msgbuf_edl(dhd_pub_t *dhd, uint32 *evtlog_items);
 int dhd_prot_process_edl_complete(dhd_pub_t *dhd, void *evt_decode_data);
 #endif /* EWP_EDL  */
 
@@ -274,6 +295,8 @@ extern uint32 dhd_prot_pkt_threshold(dhd_pub_t *dhd, bool set, uint32 val);
 extern uint32 dhd_prot_time_threshold(dhd_pub_t *dhd, bool set, uint32 val);
 extern uint32 dhd_prot_pkt_expiry(dhd_pub_t *dhd, bool set, uint32 val);
 #endif
+extern int dhd_prot_mdring_link_unlink(dhd_pub_t *dhd, int idx, bool link);
+extern int dhd_prot_mdring_linked_ring(dhd_pub_t *dhd);
 
 #ifdef DHD_MAP_LOGGING
 extern void dhd_prot_smmu_fault_dump(dhd_pub_t *dhdp);

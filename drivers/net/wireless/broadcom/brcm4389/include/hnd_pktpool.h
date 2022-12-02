@@ -1,7 +1,7 @@
 /*
  * HND generic packet pool operation primitives
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -76,6 +76,12 @@ typedef struct {
 	uint8 refcnt;
 } pktpool_cbinfo_t;
 
+typedef void (*pktpool_rxurb_cb_t)(struct pktpool *pool, void *arg, uint8 *addr, uint16 len);
+typedef struct {
+	pktpool_rxurb_cb_t cb;
+	void *arg;
+} pktpool_rxurb_cbinfo_t;
+
 /** PCIe SPLITRX related: call back fn extension to populate host address in pool pkt */
 typedef int (*pktpool_cb_extn_t)(struct pktpool *pool, void *arg1, void* pkt, int arg2,
 	uint *pktcnt);
@@ -146,6 +152,11 @@ typedef struct pktpool {
 
 	struct resv_info *resv_info; /* Resv frag pool info */
 	uint resv_pool_idx;
+	pktpool_cbextn_info_t cb_haddr;	/**< PCIe SPLITRX related */
+	pktpool_rxurb_cbinfo_t dmarxurb;	/**< dma rx urb related */
+
+	uint32 pktpool_flags; /* different packet pool flags */
+	void *freelist_tail; /* free list tail, used only in specific rxlfrag pools */
 
 #ifdef BCMDBG_POOL
 	uint8 dbg_cbcnt;
@@ -154,6 +165,8 @@ typedef struct pktpool {
 	pktpool_dbg_t dbg_q[PKTPOOL_LEN_MAX + 1];
 #endif
 } pktpool_t;
+
+#define PKTPOOL_RXLFRAG_SORTED_INSERT	0x00000001u
 
 pktpool_t *get_pktpools_registry(int id);
 #define pktpool_get(pktp)	(pktpool_get_ext((pktp), (pktp)->type, NULL))
@@ -183,9 +196,11 @@ extern int pktpool_setmaxlen_strict(osl_t *osh, pktpool_t *pktp, uint16 max_pkts
 extern void pktpool_emptycb_disable(pktpool_t *pktp, bool disable);
 extern bool pktpool_emptycb_disabled(pktpool_t *pktp);
 extern int pktpool_hostaddr_fill_register(pktpool_t *pktp, pktpool_cb_extn_t cb, void *arg1);
+extern int pktpool_hostaddr_ext_fill_register(pktpool_t *pktp, pktpool_cb_extn_t cb, void *arg1);
 extern int pktpool_rxcplid_fill_register(pktpool_t *pktp, pktpool_cb_extn_t cb, void *arg);
 extern void pktpool_invoke_dmarxfill(pktpool_t *pktp);
 extern int pkpool_haddr_avail_register_cb(pktpool_t *pktp, pktpool_cb_t cb, void *arg);
+extern int pkpool_rxurb_register_cb(pktpool_t *pktp, pktpool_rxurb_cb_t cb, void *arg);
 extern int pktpool_avail(pktpool_t *pktpool);
 
 #define POOLPTR(pp)         ((pktpool_t *)(pp))
@@ -246,26 +261,16 @@ extern pktpool_t *pktpool_shared;
 #ifdef BCMFRAGPOOL
 #define SHARED_FRAG_POOL	(pktpool_shared_lfrag)
 extern pktpool_t *pktpool_shared_lfrag;
-#endif
-
-#ifdef BCMALFRAGPOOL
 #define SHARED_ALFRAG_POOL	(pktpool_shared_alfrag)
 extern pktpool_t *pktpool_shared_alfrag;
-
 #define SHARED_ALFRAG_DATA_POOL	(pktpool_shared_alfrag_data)
 extern pktpool_t *pktpool_shared_alfrag_data;
-#endif
+#endif /* BCMFRAGPOOL */
 
 #ifdef BCMRESVFRAGPOOL
-#ifdef APP
 #define RESV_FRAG_POOL		(NULL)
 #define RESV_ALFRAG_POOL	(pktpool_resv_alfrag)
 #define RESV_ALFRAG_DATA_POOL	(pktpool_resv_alfrag_data)
-#else
-#define RESV_FRAG_POOL		(pktpool_resv_lfrag)
-#define RESV_ALFRAG_POOL	(NULL)
-#define RESV_ALFRAG_DATA_POOL	(NULL)
-#endif /* APP */
 #define RESV_POOL_INFO		(resv_pool_info)
 #else
 #define RESV_FRAG_POOL		((struct pktpool *)NULL)
@@ -285,12 +290,8 @@ int hnd_pktpool_fill(pktpool_t *pktpool, bool minimal);
 void hnd_pktpool_refill(bool minimal);
 
 #ifdef BCMRESVFRAGPOOL
-#ifdef APP
 extern pktpool_t *pktpool_resv_alfrag;
 extern pktpool_t *pktpool_resv_alfrag_data;
-#else
-extern pktpool_t *pktpool_resv_lfrag;
-#endif /* APP */
 extern struct resv_info *resv_pool_info;
 #endif /* BCMRESVFRAGPOOL */
 

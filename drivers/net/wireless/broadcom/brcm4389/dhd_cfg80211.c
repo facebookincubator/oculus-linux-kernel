@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Dongle Host Driver (DHD) related
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -619,3 +619,12 @@ dhd_set_wsec_info(dhd_pub_t *dhd, uint32 data, int tag)
 
 	return ret;
 }
+
+#ifdef RPM_FAST_TRIGGER
+void
+dhd_trigger_rpm_fast(struct bcm_cfg80211 *cfg)
+{
+	dhd_pub_t *dhd = (dhd_pub_t *)cfg->pub;
+	dhdpcie_trigger_rpm_fast(dhd);
+}
+#endif /* RPM_FAST_TRIGGER */

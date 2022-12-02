@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -3520,6 +3521,20 @@ void hdd_indicate_mgmt_frame(tSirSmeMgmtFrameInd *frame_ind);
  */
 struct hdd_adapter *hdd_get_adapter_by_iface_name(struct hdd_context *hdd_ctx,
 					     const char *iface_name);
+/**
+ * hdd_get_adapter_by_ifindex() - Return adapter associated with an ifndex
+ * @hdd_ctx: hdd context
+ * @if_index: netdev interface index
+ *
+ * This function is used to get the adapter associated with a netdev with the
+ * given interface index.
+ *
+ * Return: adapter pointer if found, NULL otherwise
+ *
+ */
+struct hdd_adapter *hdd_get_adapter_by_ifindex(struct hdd_context *hdd_ctx,
+					       uint32_t if_index);
+
 enum phy_ch_width hdd_map_nl_chan_width(enum nl80211_chan_width ch_width);
 
 /**
@@ -4105,6 +4120,17 @@ static inline void hdd_send_peer_status_ind_to_app(
 			peer_timing_meas_cap, vdev_id, chan_info, dev_mode);
 }
 #endif /* WIFI_POS_CONVERGENCE */
+
+/**
+ * wlan_hdd_send_mcc_vdev_quota()- Send mcc vdev quota value to FW
+ * @adapter: Adapter data
+ * @sval:    mcc vdev quota value
+ *
+ * Send mcc vdev quota value to FW
+ *
+ * Return: 0 success else failure
+ */
+int wlan_hdd_send_mcc_vdev_quota(struct hdd_adapter *adapter, int sval);
 
 /**
  * wlan_hdd_send_p2p_quota()- Send P2P Quota value to FW

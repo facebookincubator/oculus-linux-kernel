@@ -143,6 +143,13 @@ config TRACING
 	select EVENT_TRACING
 	select TRACE_CLOCK
 
+config KERNEL_ATRACE
+	bool "Kernel atrace-like trace events"
+	depends on TRACING
+	default y if DEBUG_KERNEL
+	help
+	  Adds tracing functions similar to Android's "atrace" calls.
+
 config GENERIC_TRACER
 	bool
 	select TRACING

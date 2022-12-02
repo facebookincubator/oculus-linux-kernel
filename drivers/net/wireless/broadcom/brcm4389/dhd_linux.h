@@ -1,7 +1,7 @@
 /*
  * DHD Linux header file (dhd_linux exports for cfg80211 and other components)
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -598,8 +598,8 @@ int dhd_enable_adps(dhd_pub_t *dhd, uint8 on);
 extern void dhd_reset_tcpsync_info_by_ifp(dhd_if_t *ifp);
 extern void dhd_reset_tcpsync_info_by_dev(struct net_device *dev);
 #endif /* DHDTCPSYNC_FLOOD_BLK */
-extern void dhd_set_del_in_progress(dhd_pub_t * dhd, struct net_device * ndev);
-extern void dhd_clear_del_in_progress(dhd_pub_t * dhd, struct net_device * ndev);
+extern void dhd_set_del_in_progress(dhd_pub_t *dhdp, struct net_device * ndev);
+extern void dhd_clear_del_in_progress(dhd_pub_t *dhdp, struct net_device * ndev);
 #ifdef PCIE_FULL_DONGLE
 extern void dhd_net_del_flowrings_sta(dhd_pub_t * dhd, struct net_device * ndev);
 #endif /* PCIE_FULL_DONGLE */
@@ -608,4 +608,10 @@ int dhd_get_fw_capabilities(dhd_pub_t * dhd);
 int dhd_dbus_txdata(dhd_pub_t *dhdp, void *pktbuf);
 #endif
 void dhd_event_logtrace_enqueue(dhd_pub_t *dhdp, int ifidx, void *pktbuf);
+#if defined(SUPPORT_MULTIPLE_NVRAM) || defined(SUPPORT_MULTIPLE_CLMBLOB)
+int dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component, char* file_name);
+#ifdef USE_CID_CHECK
+void dhd_set_platform_ext_name_for_chip_version(char* chip_version);
+#endif /* USE_CID_CHECK */
+#endif /* SUPPORT_MULTIPLE_NVRAM || SUPPORT_MULTIPLE_CLMBLOB */
 #endif /* __DHD_LINUX_H__ */

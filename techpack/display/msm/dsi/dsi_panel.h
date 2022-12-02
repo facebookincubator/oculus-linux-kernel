@@ -6,6 +6,7 @@
 #ifndef _DSI_PANEL_H_
 #define _DSI_PANEL_H_
 
+#include <linux/iio/consumer.h>
 #include <linux/of_device.h>
 #include <linux/types.h>
 #include <linux/bitops.h>
@@ -152,6 +153,14 @@ struct dsi_backlight_config {
 	u32 num_ld_devices;
 	u32 dfps_intermediate_brightness;
 	bool tune_dfps_brightness;
+
+	/* Temperature-dependent timing */
+	bool temperature_dependent_timing;
+	struct iio_channel *bl_temp_iio;
+	struct delayed_work bl_temp_dwork;
+	u32 *response_time;
+	int num_response_time_entries;
+	u32 settling_time_target_us;
 };
 
 struct dsi_reset_seq {

@@ -1,7 +1,7 @@
 /*
  * Common header file for all error codes.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -37,11 +37,6 @@
  * BCME_.. error codes are extended by various features - e.g. FTM, NAN, SAE etc.
  * The current process is to allocate a range of 1024 negative 32 bit integers to
  * each module that extends the error codes to indicate a module specific status.
- *
- * The next range to use is below. If that range is used for a new feature, please
- * update the range to be used by the next feature.
- *
- * Next available (inclusive) range: [-8*1024 + 1, -7*1024]
  *
  * Common error codes use BCME_ prefix. Firmware (wl) components should use the
  * convention to prefix the error code name with WL_<Component>_E_ (e.g. WL_NAN_E_?).
@@ -137,8 +132,11 @@ typedef int bcmerror_t;
 #define BCME_ROAM			-73	/* Roam related failures */
 #define BCME_NO_SIG_FILE		-74	/* Signature file is missing */
 #define BCME_RESP_PENDING		-75	/* Command response is pending */
+#define BCME_ACTIVE			-76	/* Command/context is already active */
+#define BCME_IN_PROGRESS		-77	/* Command/context is in progress */
+#define BCME_NOP			-78	/* No action taken i.e. NOP */
 
-#define BCME_LAST			BCME_RESP_PENDING
+#define BCME_LAST			BCME_NOP
 
 #define BCME_NOTENABLED BCME_DISABLED
 
@@ -230,11 +228,25 @@ typedef int bcmerror_t;
 	"Critical roam in progress",	\
 	"Signature file is missing",	\
 	"Command response pending",	\
+	"Command/context already active", \
+	"Command/context is in progress", \
+	"No action taken i.e. NOP",	\
 }
 
 /* FTM error codes [-1024, -2047] */
 enum {
-	WL_FTM_E_LAST			= -1068,
+	WL_FTM_E_LAST			= -1079,
+	WL_FTM_E_OUTSIDE_RSTA_AW	= -1079,
+	WL_FTM_E_NO_STA_INFO		= -1078,
+	WL_FTM_E_SAC_MISMATCH		= -1077,
+	WL_FTM_E_TOKEN_MISMATCH		= -1076,
+	WL_FTM_E_IE_NOTFOUND		= -1075,
+	WL_FTM_E_IE_BADLEN		= -1074,
+	WL_FTM_E_INVALID_BW		= -1073,
+	WL_FTM_E_INVALID_ST_CH		= -1072,
+	WL_FTM_E_RSTA_AND_ISTA		= -1071,
+	WL_FTM_E_NO_SLTF		= -1070,
+	WL_FTM_E_INVALID_NBURST		= -1069,
 	WL_FTM_E_FATAL			= -1068,
 	WL_FTM_E_PASN			= -1067,
 	WL_FTM_E_PERM			= -1066,
@@ -286,7 +298,8 @@ typedef int32 wl_ftm_status_t;
 
 /* begin proxd codes compatible w/ ftm above - obsolete  DO NOT extend */
 enum {
-	WL_PROXD_E_LAST			= -1057,
+	WL_PROXD_E_LAST			= -1058,
+	WL_PROXD_E_PKTFREED		= -1058,
 	WL_PROXD_E_ASSOC_INPROG		= -1057,
 	WL_PROXD_E_NOAVAIL		= -1056,
 	WL_PROXD_E_EXT_SCHED		= -1055,
@@ -657,6 +670,9 @@ enum {
 	/* signature patch invalid length */
 	BL_E_PATCH_INVALID_LENGTH	= -4150,
 
+	/* bmpu configuration error */
+	BL_E_BUS_MPU_CONFIG_FAIL	= -4151,
+
 	/* last error */
 	BL_E_LAST			= -5119
 };
@@ -789,7 +805,15 @@ enum {
 	/* The session is in progress */
 	WL_PASN_E_SESSION_IN_PROGRESS		= -8227,
 	/* cached PMK used in the session is expired */
-	WL_PASN_E_AUTH_PMKSA_EXPIRED		= -8228
+	WL_PASN_E_AUTH_PMKSA_EXPIRED		= -8228,
+	/* PTKSA installed is deleted by keymgmt */
+	WL_PASN_E_AUTH_PTKSA_DELETED		= -8229,
+	/* SA query timeout notification */
+	WL_PASN_E_SA_QUERY_TIMEOUT		= -8230,
+	/* PTKSA lifetime expired */
+	WL_PASN_E_AUTH_PTKSA_EXPIRED		= -8231,
+	/* Local to deauth peer. */
+	WL_PASN_E_DEAUTH_PEER			= -8232
 };
 
 /* bcm fsm status codes. [-9216, -10239] */
@@ -812,11 +836,63 @@ enum {
 	BCM_FSM_E_ASYNC_REQUIRED	= -9231,
 	BCM_FSM_E_INVALID_FSM		= -9232,
 	BCM_FSM_E_CHILD_EXISTS		= -9233,
+	BCM_FSM_E_BAD_POST_OPTIONS	= -9234,
+	BCM_FSM_E_NO_OSH		= -9235,
 
 	/* add additional errors above this line */
 	BCM_FSM_E_MAX			= -10239
 };
 
+/* QoS Mgmt status codes. [-10240 ... -11263] (1K)
+ */
+typedef enum wl_mscs_status {
+	/* MSCS is already active */
+	WL_MSCS_E_ACTIVE		= -10240,
+
+	/* MSCS activation is in progress */
+	WL_MSCS_E_IN_PROGRESS		= -10241
+} wl_mscs_status_e;
+
+/* bcmsm error code [-11264 ... -12287] */
+typedef enum {
+	BCMSM_IN_RTC			= -11264,	/**< In Run to completion loop */
+	BCMSM_TRANS_NOT_FOUND		= -11265,	/**< Transition was not found */
+	BCMSM_TRANS_GUARD_FAILED	= -11266,	/**< guard for a transition failed */
+	BCMSM_TRANS_EFFECT_FAILED	= -11267,	/**< transition effect returned err */
+	BCMSM_TRANS_ERROR		= -11268,	/**< Error while taking transition */
+	BCMSM_STATE_ENTRY_FAILED	= -11269,	/**< Entry to state failed */
+	BCMSM_STATE_EXIT_FAILED		= -11270,	/**< Failure while executing a state */
+	BCMSM_STATE_ID_EXISTS		= -11271,	/**< Same ID exists */
+	BCMSM_STATE_CONFIG_ERROR	= -11272,	/**< SM configuration has error */
+	BCMSM_Q_FULL			= -11273,	/**< Event queue is full */
+	BCMSM_Q_EMPTY			= -11274,	/**< Event queue is empty */
+	BCMSM_Q_NO_DEQUEUE		= -11275,	/**< Dequeue attempted was unsuccessful */
+	BCMSM_CHOICE_STATE_NO_TRANS	= -11276,	/**< Choice has no valid out transition */
+	BCMSM_EVENT_ALLOC_FAILED	= -11277,	/**< Event allocation failed */
+	BCMSM_EVENT_EXPIRED		= -11278,	/**< Event expired */
+	BCMSM_EVENT_NOT_POSTED		= -11279,	/**< Event was not posted */
+	BCMSM_HALTED			= -11280,	/**< State machine is in final state */
+	BCMSM_TMR_NOT_STOPPED		= -11281,	/**< Error in stopping a timer */
+	BCMSM_TMR_NOT_STARTED		= -11282,	/**< Error in starting a timer */
+	BCMSM_TMR_NOT_FOUND		= -11283,	/**< No timer available to be scheduled */
+	BCMSM_TMR_ERROR			= -11284,	/**< Error in starting a timer */
+
+	BCMSM_MAX			= -12287
+} bcmsm_status_t;
+
 #endif	/* BCMUTILS_ERR_CODES */
 
+/*
+* 6G scan error code [-12288 .. -13311] (1K)
+*/
+enum {
+	/* TPE cache does not exit for the given 6G channel */
+	BCME_6G_SCAN_NO_TPE_CACHE	= -12288,
+	/* TPE cache in the FW has expired */
+	BCME_6G_SCAN_TPE_CACHE_EXPIRED	= -12289,
+	/* Wild card directed scan requested */
+	BCME_6G_SCAN_DIRECTED_WILDCARD	= -12290,
+	/* TPE cache in the FW is invalid */
+	BCME_6G_SCAN_TPE_CACHE_INVALID  = -12291
+};
 #endif	/* _bcmerror_h_ */

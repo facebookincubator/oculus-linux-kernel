@@ -1,7 +1,7 @@
 /*
  * Driver O/S-independent utility routines
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -45,10 +45,13 @@
 #ifndef ASSERT
 #define ASSERT(exp)
 #endif
+#ifndef ASSERT_FP
+#define ASSERT_FP(exp)
+#endif
 
 #endif /* !BCMDRIVER */
 
-#if defined(_WIN32) || defined(NDIS)
+#if defined(_WIN32) || defined(NDIS) || defined(DONGLEBUILD)
 /* Debatable */
 #include <bcmstdlib.h>
 #endif
@@ -67,7 +70,19 @@
 #include <bcmperf.h>
 #endif
 
+#include <event_log_payload.h>
+
 #define NUMBER_OF_BITS_BYTE	8u
+
+/* TX_HISTOGRAM enable/disable state flag
+ * Updated in histogram.c
+ */
+#if defined(TX_HISTOGRAM) && !defined(TX_HISTOGRAM_DISABLED)
+/* initialized to TRUE in tx_histogram_init() */
+bool _tx_histogram_enabled = FALSE;
+#else
+bool _tx_histogram_enabled = FALSE;
+#endif /* TX_HISTOGRAM && !TX_HISTOGRAM_DISABLED */
 
 #ifdef CUSTOM_DSCP_TO_PRIO_MAPPING
 #define CUST_IPV4_TOS_PREC_MASK 0x3F
@@ -1123,6 +1138,15 @@ BCMFASTPATH(pktsetprio)(void *pkt, bool update_vtag)
 		priority = PRIO_8021D_NC;
 		rc = PKTPRIO_DSCP;
 #endif /* EAPOL_PKT_PRIO || DHD_LOSSLESS_ROAMING */
+#if defined(PRIORITIZE_ARP)
+	} else if (eh->ether_type == hton16(ETHER_TYPE_ARP)) {
+		/* Certain Host stacks attempt disconnection on continous ARP timeouts. In
+		 * congested scenarios with traffic, ARP packets may not get chance
+		 * for transmission leading to disconnection. so prioritize it.
+		 */
+		priority = PRIO_8021D_NC;
+		rc = PKTPRIO_DSCP;
+#endif /* PRIORITIZE_ARP */
 #if defined(WLTDLS)
 	} else if (eh->ether_type == hton16(ETHER_TYPE_89_0D)) {
 		/* Bump up the priority for TDLS frames */
@@ -1156,7 +1180,9 @@ BCMFASTPATH(pktsetprio)(void *pkt, bool update_vtag)
 		case DSCP_CS2:
 			priority = PRIO_8021D_BE;
 			break;
+#ifdef RFC8325_DSCP_CS6_TO_UP7
 		case DSCP_CS6:
+#endif /* RFC8325_DSCP_CS6_TO_UP7 */
 		case DSCP_CS7:
 			priority = PRIO_8021D_NC;
 			break;
@@ -1463,6 +1489,7 @@ _pktlist_trace(pktlist_info_t *pktlist, void *pkt, uint16 bit)
 	pktlist->list[(*idx)].pkt_trace[bit/NBBY] |= (1 << ((bit)%NBBY));
 
 }
+
 void
 pktlist_trace(pktlist_info_t *pktlist, void *pkt, uint16 bit)
 {
@@ -2009,7 +2036,7 @@ bcm_mwbmap_free_cnt(struct bcm_mwbmap * mwbmap_hdl)
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
 	mwbmap_p = BCM_MWBMAP_PTR(mwbmap_hdl);
 
-	ASSERT(mwbmap_p->ifree >= 0);
+	ASSERT_FP(mwbmap_p->ifree >= 0);
 
 	return (uint32)mwbmap_p->ifree;
 }
@@ -2095,6 +2122,7 @@ bcm_mwbmap_audit(struct bcm_mwbmap * mwbmap_hdl)
 
 	ASSERT((int)free_cnt == mwbmap_p->ifree);
 }
+
 /* END : Multiword bitmap based 64bit to Unique 32bit Id allocator. */
 
 /* Simple 16bit Id allocator using a stack implementation. */
@@ -2377,6 +2405,7 @@ done:
 	/* invoke any other system audits */
 	return (!!insane);
 }
+
 /* END: Simple id16 allocator */
 
 void
@@ -2478,21 +2507,33 @@ dll_pool_dump(dll_pool_t * dll_pool_p, dll_elem_dump elem_dump)
 
 #if defined(BCMDRIVER) || defined(WL_UNITTEST)
 
+#ifndef DONGLEBUILD
 /* triggers bcm_bprintf to print to kernel log */
 bool bcm_bprintf_bypass = FALSE;
+#endif /* !DONGLEBUILD */
+
+#if !(defined(_WIN32) || defined(NDIS))
+/* TODO: add vprintf to ndis OSL and remove this conditional */
+#define BCM_BPRINTF_ALLOW_NULL_B
+#endif
 
 /* Initialization of bcmstrbuf structure */
 void
 BCMPOSTTRAPFN(bcm_binit)(struct bcmstrbuf *b, char *buf, uint size)
 {
+#ifdef BCM_BPRINTF_ALLOW_NULL_B
+	/* pass NULL to struct bcmstrbuf *b to indicate the output is console */
+	if (b == NULL) {
+		return;
+	}
+#endif /* BCM_BPRINTF_ALLOW_NULL_B */
+
 	b->origsize = b->size = size;
 	b->origbuf = b->buf = buf;
 	if (size > 0) {
 		buf[0] = '\0';
 	}
 }
-
-static const char BCMPOST_TRAP_RODATA(bcm_bprintf_ptstr_1)[] = "%s";
 
 /* Buffer sprintf wrapper to guard against buffer overflow */
 int
@@ -2503,11 +2544,22 @@ BCMPOSTTRAPFN(bcm_bprintf)(struct bcmstrbuf *b, const char *fmt, ...)
 
 	va_start(ap, fmt);
 
-	r = vsnprintf(b->buf, b->size, fmt, ap);
-	if (bcm_bprintf_bypass == TRUE) {
-		printf(bcm_bprintf_ptstr_1, b->buf);
+#ifdef BCM_BPRINTF_ALLOW_NULL_B
+	/* pass NULL to struct bcmstrbuf *b to indicate the output is console */
+	if (b == NULL) {
+		r = vprintf(fmt, ap);
 		goto exit;
 	}
+#endif /* BCM_BPRINTF_ALLOW_NULL_B */
+
+	r = vsnprintf(b->buf, b->size, fmt, ap);
+
+#ifndef DONGLEBUILD
+	if (bcm_bprintf_bypass == TRUE) {
+		printf("%s", b->buf);
+		goto exit;
+	}
+#endif /* !DONGLEBUILD */
 
 	/* Non Ansi C99 compliant returns -1,
 	 * Ansi compliant return r >= b->size,
@@ -2540,6 +2592,24 @@ bcm_bprhex(struct bcmstrbuf *b, const char *msg, bool newline, const uint8 *buf,
 		bcm_bprintf(b, "%02X", buf[i]);
 	if (newline)
 		bcm_bprintf(b, "\n");
+}
+
+/* print the buffer in hex string format with the most significant byte first */
+void
+bcm_bprhex_msb(struct bcmstrbuf *b, const char *msg, bool newline,
+	const uint8 *buf, uint len)
+{
+	int i;
+
+	if (msg != NULL && msg[0] != '\0') {
+		bcm_bprintf(b, "%s", msg);
+	}
+	for (i = (int)len - 1; i >= 0; i --) {
+		bcm_bprintf(b, "%02X", buf[i]);
+	}
+	if (newline) {
+		bcm_bprintf(b, "\n");
+	}
 }
 
 void
@@ -4470,6 +4540,48 @@ bcm_parse_ordered_tlvs(const  void *buf, uint buflen, uint key)
 	}
 	return NULL;
 }
+
+/**
+ * Return a const tlv buffer pointer and length representing the sub-buffer contained
+ * inside the given 'elt' starting at the given 'body_offset'.
+ * The function assumes that elt is a valid tlv; the elt pointer and data
+ * are all in the range of its parent buffer/length.
+ *
+ * @param elt         pointer to a valid bcm_tlv_t
+ * @param body_offset offset into the data body of elt
+ * @param buffer      on return, pointer to an offset in elt
+ * @param buflen      on return, length of the buffer to the end of elt
+ *
+ * On return, if body_offset is not less than the elt's body length, the *buffer parameter
+ * will be set to NULL and *buflen parameter will be set to zero.  Otherwise,
+ * *buffer will point to the sub-buffer at the body_offset, and *buflen be the remaining
+ * bytes in the body.
+ * E.g. Given a TLV with elt->len == 10, the call
+ * bcm_tlv_sub_buffer(elt, 4, &buffer, &buflen)
+ * will result with buffer = elt->data + 4, and buflen = 6.
+ */
+void
+bcm_tlv_sub_buffer(const bcm_tlv_t *elt, uint body_offset, const uint8 **buffer, uint8 *buflen)
+{
+	if (elt->len > body_offset) {
+		uint8 body_len = elt->len;
+
+#if defined(__COVERITY__)
+		/* The 'body_len' value is tainted in Coverity because it is read from
+		 * the tainted data pointed to by 'elt'. However, bcm_parse_tlvs() verifies
+		 * that the elt pointer is a valid element, so its body length is in the bounds
+		 * of the buffer.
+		 * Clearing the tainted attribute of 'body_len' for Coverity.
+		 */
+		__coverity_tainted_data_sanitize__(body_len);
+#endif /* __COVERITY__ */
+		*buflen = body_len - body_offset;
+		*buffer = elt->data + body_offset;
+	} else {
+		*buflen = 0u;
+		*buffer = NULL;
+	}
+}
 #endif	/* !BCMROMOFFLOAD_EXCLUDE_BCMUTILS_FUNCS */
 
 uint
@@ -4951,6 +5063,61 @@ BCMPOSTTRAPFN(bcm_bitcount)(const uint8 *bitmap, uint length)
 		}
 	}
 	return bitcount;
+}
+
+/* Count 0s or 1s in an octets list from 'from_bit' to 'to_bit' inclusively */
+uint
+bcm_count_bits(const uint8 *buf, uint buf_len, uint from_bit, uint to_bit, bool val_1)
+{
+	uint from;
+	uint to;
+	uint len;
+	uint8 tmp;
+	uint bits;
+
+	/* sanity check */
+	if (to_bit < from_bit) {
+		return 0u;
+	}
+
+	/* byte offset */
+	from = from_bit >> 3u;
+	to = to_bit >> 3u;
+	if (from >= buf_len || to >= buf_len) {
+		return 0u;
+	}
+
+	/* count 1s always */
+	len = to - from + 1u;
+	if (len == 1u) {
+		/* the only octet */
+		ASSERT(from == to);
+		tmp = buf[from];
+		tmp &= (0xffu << (from_bit & 7u));
+		tmp &= ~(0xffu << ((to_bit & 7u) + 1u));
+		bits = bcm_bitcount(&tmp, 1u);
+	} else {
+		ASSERT(len >= 2u);
+		/* the first octet */
+		tmp = buf[from];
+		tmp &= (0xffu << (from_bit & 7u));
+		bits = bcm_bitcount(&tmp, 1u);
+		/* the middle octet(s) */
+		if (len > 2u) {
+			bits += bcm_bitcount(&buf[from + 1u], len - 2u);
+		}
+		/* the last octet */
+		tmp = buf[to];
+		tmp &= ~(0xffu << ((to_bit & 7u) + 1u));
+		bits += bcm_bitcount(&tmp, 1u);
+	}
+
+	/* calc 0s if requested */
+	if (!val_1) {
+		bits = to_bit - from_bit + 1u - bits;
+	}
+
+	return bits;
 }
 
 /*
@@ -5467,6 +5634,7 @@ uint32 sqrt_int(uint32 value)
 
 	return root;
 }
+
 /* GROUP 1 --- end */
 
 /* read/write field in a consecutive bits in an octet array.
@@ -5544,9 +5712,9 @@ getbits(const uint8 *addr, uint size, uint stbit, uint nbits)
 
 	BCM_REFERENCE(size);
 
-	ASSERT(fbyte < size);
-	ASSERT(lbyte < size);
-	ASSERT(nbits <= (sizeof(val) << 3u));
+	ASSERT_FP(fbyte < size);
+	ASSERT_FP(lbyte < size);
+	ASSERT_FP(nbits <= (sizeof(val) << 3u));
 
 	/* all bits are in the same byte */
 	if (fbyte == lbyte) {
@@ -6081,4 +6249,194 @@ prhexstr(const char *prefix, const uint8 *buf, uint len, bool newline)
 			printf("\n");
 		}
 	}
+}
+
+/* print the buffer in hex string format with the most significant byte first */
+void
+prhexstr_msb(const char *prefix, const uint8 *buf, uint len, bool newline)
+{
+	if (len > 0) {
+		int i;
+
+		if (prefix != NULL) {
+			printf("%s", prefix);
+		}
+		for (i = (int)len - 1; i >= 0; i --) {
+			printf("%02X", buf[i]);
+		}
+		if (newline) {
+			printf("\n");
+		}
+	}
+}
+
+#ifdef DONGLEBUILD
+static const char BCMPOST_TRAP_RODATA(bcm_print_string)[] = "%s";
+
+int
+BCMPOSTTRAPFN(print_string)(const char *str)
+{
+	return printf(bcm_print_string, str);
+}
+#endif /* DONGLEBUILD */
+
+#ifdef DBG_SEQ_LOG
+#define DBG_SEQ_SEQ_LOG_MAX 10000u
+
+#define DBG_SEQ_SEQ_START (1u << 12u)
+#define DBG_SEQ_SEQ_END   (1u << 13u)
+#define DBG_SEQ_SEQ_MASK   0xFFFu
+
+#define DBG_SEQ_SEQ_INC_UPDATE(id, seq, flags) \
+	do { \
+		g_dbg_seq_seq_idx[id]++; \
+		g_dbg_seq_seq_idx[id] %= DBG_SEQ_SEQ_LOG_MAX; \
+		g_dbg_seq_seq[id][g_dbg_seq_seq_idx[id]] = (seq & DBG_SEQ_SEQ_MASK) | flags; \
+	} while (0)
+
+uint16 g_dbg_seq_last_seq[DBG_SEQ_LOG_ID_MAX] = {0};
+uint16 g_dbg_seq_seq_exp[DBG_SEQ_LOG_ID_MAX] = {0};
+uint16 g_dbg_seq_seq_idx[DBG_SEQ_LOG_ID_MAX] = {0};
+uint16 g_dbg_seq_seq[DBG_SEQ_LOG_ID_MAX][DBG_SEQ_SEQ_LOG_MAX] = {0};
+uint32 g_dbg_seq_pkt[DBG_SEQ_SEQ_LOG_MAX] = {0};
+uint32 g_dbg_seq_pkt_prev_free[DBG_SEQ_SEQ_LOG_MAX] = {0};
+
+/**
+ * @brief Function to log the sequence numbers in a compreesed or uncompressed format.
+ *
+ * @param[in] id    Debug module ID. Refer to dbg_seq_log_id_t for possible values.
+ * @param[in] seq   Sequence number to log
+ * @param[in] arg1  User specific argument 1 to log
+ * @param[in] arg2  User specific argument 2 to log
+ */
+void dbg_seq_log_seq(dbg_seq_log_id_t id, uint16 seq, void *arg1, void *arg2)
+{
+#if DBG_SEQ_LOG_COMPRESSED
+	/* Storing the sequence numbers in compressed format */
+	if ((g_dbg_seq_seq[id][g_dbg_seq_seq_idx[id]] & DBG_SEQ_SEQ_START) &&
+			!(g_dbg_seq_seq[id][g_dbg_seq_seq_idx[id]] & DBG_SEQ_SEQ_END)) {
+		/* Continuation of the previous contigous logging */
+		if ((seq != g_dbg_seq_seq_exp[id]) || (seq == 0)) {
+			/* If we have received a dicontigous seq number or seq number restart then
+			 * close the logging and start new logging. If the seq numbers are
+			 * contigous, then we don't come here.
+			 */
+			if ((g_dbg_seq_seq[id][g_dbg_seq_seq_idx[id]] & DBG_SEQ_SEQ_MASK) ==
+					g_dbg_seq_last_seq[id]) {
+				/* If the contigous seq number count is just 1, then close the
+				 * current logging in the same index and start a new one.
+				 */
+				g_dbg_seq_seq[id][g_dbg_seq_seq_idx[id]] |= DBG_SEQ_SEQ_END;
+			} else {
+				/* If the contigous seq number count is > 1, then close the
+				 * current logging in the next index and start a new one.
+				 */
+				DBG_SEQ_SEQ_INC_UPDATE(id, g_dbg_seq_last_seq[id], DBG_SEQ_SEQ_END);
+			}
+			DBG_SEQ_SEQ_INC_UPDATE(id, seq, DBG_SEQ_SEQ_START);
+		}
+	} else {
+		/* Starting a fresh logging */
+		DBG_SEQ_SEQ_INC_UPDATE(id, seq, DBG_SEQ_SEQ_START);
+	}
+
+	g_dbg_seq_last_seq[id] = seq;
+	g_dbg_seq_seq_exp[id] = MODINC_POW2(seq, SEQNUM_MAX);
+#else
+	/* Storing the sequence numbers in un-compressed format */
+	DBG_SEQ_SEQ_INC_UPDATE(id, seq, (DBG_SEQ_SEQ_START | DBG_SEQ_SEQ_END));
+	g_dbg_seq_last_seq[id] = seq;
+
+	if (id == DBG_SEQ_LOG_ID_RX) {
+		g_dbg_seq_pkt[g_dbg_seq_seq_idx[id]] = (uint32)arg1;
+		g_dbg_seq_pkt_prev_free[g_dbg_seq_seq_idx[id]] = (uint32)arg2;
+	}
+#endif /* DBG_SEQ_LOG_COMPRESSED */
+}
+#endif /* DBG_SEQ_LOG */
+
+/* To be used in computing timestamps on log records. Applicable to dumps carrying
+ * enhanced timestamp records
+ * inputs:
+ * The latest Enhanced timestamp versioned message
+ * Log record time as a 64-bit value
+ * output:
+ * FW time of log record in ns
+ */
+
+#define BCMUTILS_EVENT_LOG_TS_CPU_FREQUENCY_MULTIPLE 1000u
+
+/* Adapted from version 1 timestamp computation in logprint.c:process_event_log_data() */
+static uint64
+bcmutils_event_log_compute_current_time_v1(ets_msg_t *ets_msg, uint32 log_record_time)
+{
+	uint32 base_cycles;
+	uint32 cpu_freq;
+	uint64 base_time;
+	int64 cycle_count_offset;
+
+	ets_msg_v1_t *ets_msg_v1 = (ets_msg_v1_t *)ets_msg;
+
+	/* ets_msg_v1->cyclecount is the ARM cycle count */
+	base_cycles = ets_msg_v1->cyclecount;
+	cpu_freq = ets_msg_v1->cpu_freq * BCMUTILS_EVENT_LOG_TS_CPU_FREQUENCY_MULTIPLE;
+
+	/* ets_msg_v1->timestamp is in ms and holds sys up time */
+	base_time = ets_msg_v1->timestamp;
+
+	cycle_count_offset = log_record_time - base_cycles;
+	if (cycle_count_offset >= 0) {
+		base_time += (log_record_time - base_cycles)/cpu_freq;
+	} else {
+		/* Negative cycle_count_offset == counter wrapped */
+		base_time += (log_record_time +
+				(0xffffffff - base_cycles))/cpu_freq;
+	}
+
+	/* basetime is in ms. convert to uint64 and return */
+	return base_time;
+}
+
+static uint64
+bcmutils_event_log_compute_current_time_v2(ets_msg_t *ets_msg, uint64 q4_log_record_time)
+{
+	ets_msg_v2_t *ets_msg_v2 = (ets_msg_v2_t *)ets_msg->data;
+	uint64 ets_msg_40bit_ptm_time = ets_msg_v2->ets_write_ptm_time & 0xFFFFFFFFFFULL;
+	uint64 el_40bit_log_record_time = q4_log_record_time << 8;
+
+	uint64 delta_time;
+
+	/* Corner case. The top 40 bits match indicating logging happened in the same time unit
+	 * as recorded RAW PTM time in the ETS message.
+	 */
+	if (q4_log_record_time == (ets_msg_40bit_ptm_time >> 8)) {
+		delta_time = 0;
+	} else {
+		delta_time = (el_40bit_log_record_time - ets_msg_40bit_ptm_time) &
+			0xFFFFFFFFFFULL;
+	}
+	return ets_msg_v2->sysuptime_ns + delta_time;
+}
+
+int
+bcmutils_event_log_compute_current_time(void *ets_msg, uint64 log_record_time, uint64 *current_time)
+{
+	ets_msg_t *ets_msg_ptr = (ets_msg_t *)ets_msg;
+
+	if (ets_msg_ptr == NULL) {
+		return BCME_ERROR;
+	}
+
+	if (ets_msg_ptr->version == ENHANCED_TS_MSG_VERSION_1) {
+		/* log record time is a 32-bit ARM cycle count */
+		*current_time = bcmutils_event_log_compute_current_time_v1(ets_msg_ptr,
+			(uint32) log_record_time);
+	} else if (ets_msg_ptr->version == ENHANCED_TS_MSG_VERSION_2) {
+		*current_time = bcmutils_event_log_compute_current_time_v2(ets_msg_ptr,
+			log_record_time);
+	} else {
+		return BCME_VERSION;
+	}
+
+	return BCME_OK;
 }

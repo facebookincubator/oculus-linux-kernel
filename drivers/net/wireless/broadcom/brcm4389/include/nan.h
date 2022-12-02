@@ -2,7 +2,7 @@
  * Fundamental types and constants relating to WFA NAN
  * (Neighbor Awareness Networking)
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -159,39 +159,44 @@ enum {
 	NAN_ATTR_COUNTRY_CODE	= 11,
 	NAN_ATTR_RANGING	= 12,
 	NAN_ATTR_CLUSTER_DISC	= 13,
+
 	/* nan 2.0 */
-	NAN_ATTR_SVC_DESC_EXTENSION = 14,
-	NAN_ATTR_NAN_DEV_CAP = 15,
-	NAN_ATTR_NAN_NDP = 16,
-	NAN_ATTR_NAN_NMSG = 17,
-	NAN_ATTR_NAN_AVAIL = 18,
-	NAN_ATTR_NAN_NDC = 19,
-	NAN_ATTR_NAN_NDL = 20,
-	NAN_ATTR_NAN_NDL_QOS = 21,
-	NAN_ATTR_MCAST_SCHED = 22,
-	NAN_ATTR_UNALIGN_SCHED = 23,
-	NAN_ATTR_PAGING_UCAST = 24,
-	NAN_ATTR_PAGING_MCAST = 25,
-	NAN_ATTR_RANGING_INFO = 26,
-	NAN_ATTR_RANGING_SETUP = 27,
-	NAN_ATTR_FTM_RANGE_REPORT = 28,
-	NAN_ATTR_ELEMENT_CONTAINER = 29,
-	NAN_ATTR_WLAN_INFRA_EXT = 30,
-	NAN_ATTR_EXT_P2P_OPER = 31,
-	NAN_ATTR_EXT_IBSS = 32,
-	NAN_ATTR_EXT_MESH = 33,
-	NAN_ATTR_CIPHER_SUITE_INFO = 34,
-	NAN_ATTR_SEC_CTX_ID_INFO = 35,
-	NAN_ATTR_SHARED_KEY_DESC = 36,
-	NAN_ATTR_MCAST_SCHED_CHANGE = 37,
-	NAN_ATTR_MCAST_SCHED_OWNER_CHANGE = 38,
-	NAN_ATTR_PUBLIC_AVAILABILITY = 39,
-	NAN_ATTR_SUB_SVC_ID_LIST = 40,
-	NAN_ATTR_NDPE = 41,
+	NAN_ATTR_SVC_DESC_EXTENSION		= 14,
+	NAN_ATTR_NAN_DEV_CAP			= 15,
+	NAN_ATTR_NAN_NDP			= 16,
+	NAN_ATTR_NAN_NMSG			= 17,
+	NAN_ATTR_NAN_AVAIL			= 18,
+	NAN_ATTR_NAN_NDC			= 19,
+	NAN_ATTR_NAN_NDL			= 20,
+	NAN_ATTR_NAN_NDL_QOS			= 21,
+	NAN_ATTR_MCAST_SCHED			= 22,
+	NAN_ATTR_UNALIGN_SCHED			= 23,
+	NAN_ATTR_PAGING_UCAST			= 24,
+	NAN_ATTR_PAGING_MCAST			= 25,
+	NAN_ATTR_RANGING_INFO			= 26,
+	NAN_ATTR_RANGING_SETUP			= 27,
+	NAN_ATTR_FTM_RANGE_REPORT		= 28,
+	NAN_ATTR_ELEMENT_CONTAINER		= 29,
+	NAN_ATTR_WLAN_INFRA_EXT			= 30,
+	NAN_ATTR_EXT_P2P_OPER			= 31,
+	NAN_ATTR_EXT_IBSS			= 32,
+	NAN_ATTR_EXT_MESH			= 33,
+	NAN_ATTR_CIPHER_SUITE_INFO		= 34,
+	NAN_ATTR_SEC_CTX_ID_INFO		= 35,
+	NAN_ATTR_SHARED_KEY_DESC		= 36,
+	NAN_ATTR_MCAST_SCHED_CHANGE		= 37,
+	NAN_ATTR_MCAST_SCHED_OWNER_CHANGE	= 38,
+	NAN_ATTR_PUBLIC_AVAILABILITY		= 39,
+	NAN_ATTR_SUB_SVC_ID_LIST		= 40,
+	NAN_ATTR_NDPE				= 41,
+	NAN_ATTR_DEV_CAP_EXT			= 42, /* NAN R4, Device Capability Extension */
+	NAN_ATTR_NIRA				= 43, /* NAN R4, Identity Resolution Attribute */
+	NAN_ATTR_NPBA				= 44, /* NAN R4, Pairing Bootstrapping Attribute */
+
 	/* change NAN_ATTR_MAX_ID to max ids + 1, excluding NAN_ATTR_VENDOR_SPECIFIC.
 	 * This is used in nan_parse.c
 	 */
-	NAN_ATTR_MAX_ID		= NAN_ATTR_NDPE + 1,
+	NAN_ATTR_MAX_ID		= NAN_ATTR_NPBA + 1,
 
 	NAN_ATTR_VENDOR_SPECIFIC = 221
 };
@@ -786,6 +791,16 @@ enum
 #define NAN_CHAN_ENTRY_BW_LT_80MHZ	0
 #define NAN_CHAN_ENTRY_BW_EQ_160MHZ	1
 
+/* Channel bitmap field for when opclass >=131 */
+#define NAN_CHAN_BITMAP_EXT_START_CHANNEL_MASK	0x00FF
+#define NAN_CHAN_BITMAP_EXT_START_CHANNEL_SHIFT	0
+#define NAN_CHAN_BITMAP_EXT_NUM_CHANNEL_MASK	0xFF00
+#define NAN_CHAN_BITMAP_EXT_NUM_CHANNEL_SHIFT	8
+#define NAN_CHAN_BITMAP_EXT_NUM_CHANNEL(bmap)	(((bmap) & NAN_CHAN_BITMAP_EXT_NUM_CHANNEL_MASK) \
+		>> NAN_CHAN_BITMAP_EXT_NUM_CHANNEL_SHIFT)
+#define NAN_CHAN_BITMAP_EXT_START_CHANNEL(bmap)	(((bmap) & NAN_CHAN_BITMAP_EXT_START_CHANNEL_MASK) \
+		>> NAN_CHAN_BITMAP_EXT_START_CHANNEL_SHIFT)
+
 /*
  * NDL Attribute WFA Tech. Spec ver 1.0.r12 (section 10.7.19.2)
  */
@@ -899,6 +914,51 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_dev_cap_s {
 	uint8 capabilities;	/* DFS Master, Extended key id etc */
 } BWL_POST_PACKED_STRUCT wifi_nan_dev_cap_t;
 
+/* Regulatory info - operation types in 6G band, Table 126, NAN R4 spec.
+ * Also, see Table E-12, REVme_D1.0
+ */
+typedef enum nan_mac_6g_op_type {
+	/* Indoor AP, i.e., LPI(Low Power Indoor) AP.
+	 * AFC is not required but with some regulations to be indoor opeation.
+	 */
+	NAN_MAC_6G_OP_INDOOR_AP		= 0,
+
+	/* Standard Power AP, needs AFC coordination */
+	NAN_MAC_6G_OP_SP_AP		= 1,
+
+	/* Very Low Power AP - VLP AP
+	 * AFC is not required. Resticted with very low transmit power
+	 * This is the default mode of all P2P devices.
+	 */
+	NAN_MAC_6G_OP_VLP_AP		= 2,
+
+	/* Indoor Enabled AP.
+	 * Devices capable of receiving the "enabling signal" and configures itself to use
+	 * C2C power level which is 10dB Higher than VLP AP.
+	 */
+	NAN_MAC_6G_OP_INDOOR_ENABLED_AP	= 3,
+
+	/* This is kind of hybrid mode (AFC in indoors).
+	 * Devices opering in indoors and standard power mode with AFC.
+	 */
+	NAN_MAC_6G_OP_INDOOR_SP_AP	= 4
+} nan_mac_6g_op_type_e;
+
+/* First byte of the extended capabilities is the regulatory info */
+typedef struct nan_mac_dev_cap_ext_reg_info_s {
+	uint8 reg_info_6g_present:1;	/* bit0 */
+	uint8 reg_info_6g:3;		/* bits 1-3, see nan_mac_6g_op_type_e */
+	uint8 reserved:4;		/* bits 4-7 */
+} nan_mac_dev_cap_ext_reg_info_t;
+
+/* NAN R4 - Device Capability Extension Attribute */
+typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_dev_cap_ext_s {
+	uint8 id;		/* 0x2A */
+	uint16 len;		/* Length */
+	/* Bit field with variable length in octets as indicated in the len field */
+	uint8 data[];
+} BWL_POST_PACKED_STRUCT wifi_nan_dev_cap_ext_t;
+
 /* map id related */
 
 /* all maps */
@@ -937,12 +997,15 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_dev_cap_s {
 #define NAN_DEV_CAP_COMMIT_DW_5G_SHIFT	3
 #define NAN_DEV_CAP_COMMIT_DW_2G_OVERWRITE_SHIFT	6
 #define NAN_DEV_CAP_COMMIT_DW_5G_OVERWRITE_SHIFT	10
+
 /* Operation Mode */
 #define NAN_DEV_CAP_OP_PHY_MODE_HT_ONLY		0x00
 #define NAN_DEV_CAP_OP_PHY_MODE_VHT		0x01
 #define NAN_DEV_CAP_OP_PHY_MODE_VHT_8080	0x02
 #define NAN_DEV_CAP_OP_PHY_MODE_VHT_160		0x04
+#define NAN_DEV_CAP_OP_PHY_MODE_HE_160		0x04
 #define NAN_DEV_CAP_OP_PAGING_NDL		0x08
+#define NAN_DEV_CAP_OP_PHY_MODE_HE		0x10
 
 #define NAN_DEV_CAP_OP_MODE_VHT_MASK		0x01
 #define NAN_DEV_CAP_OP_MODE_VHT_SHIFT		0
@@ -952,6 +1015,8 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_dev_cap_s {
 #define NAN_DEV_CAP_OP_MODE_VHT160_SHIFT	2
 #define NAN_DEV_CAP_OP_MODE_PAGING_NDL_MASK	0x08
 #define NAN_DEV_CAP_OP_MODE_PAGING_NDL_SHIFT	3
+#define NAN_DEV_CAP_OP_MODE_HE_MASK		0x10
+#define NAN_DEV_CAP_OP_MODE_HE_SHIFT		4
 
 #define NAN_DEV_CAP_RX_ANT_SHIFT		4
 #define NAN_DEV_CAP_TX_ANT_MASK			0x0F
@@ -964,12 +1029,16 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_dev_cap_s {
 
 /* DFS master capability */
 #define NAN_DEV_CAP_DFS_MASTER_MASK		0x01
-#define NAN_DEV_CAP_DFS_MASTER_SHIFT	0
+#define NAN_DEV_CAP_DFS_MASTER_SHIFT		0u
 /* extended iv cap */
 #define NAN_DEV_CAP_EXT_KEYID_MASK		0x02
-#define NAN_DEV_CAP_EXT_KEYID_SHIFT		1
+#define NAN_DEV_CAP_EXT_KEYID_SHIFT		1u
+/* Simultaneous NDP data reception capability */
+#define NAN_DEV_CAP_SIMULTANEOUS_DATA_RECV_MASK		0x04
+#define NAN_DEV_CAP_SIMULTANEOUS_DATA_RECV_SHIFT	2u
 /* NDPE attribute support */
 #define	NAN_DEV_CAP_NDPE_ATTR_SUPPORT_MASK	0x08
+#define	NAN_DEV_CAP_NDPE_ATTR_SUPPORT_SHIFT	3u
 #define NAN_DEV_CAP_NDPE_ATTR_SUPPORT(_cap)	((_cap) & NAN_DEV_CAP_NDPE_ATTR_SUPPORT_MASK)
 
 /* Band IDs */
@@ -980,14 +1049,28 @@ enum {
 	NAN_BAND_ID_3G			= 3,	/* 3.6 GHz */
 	NAN_BAND_ID_5G			= 4,	/* 4.9 & 5 GHz */
 	NAN_BAND_ID_60G			= 5,	/* 60 GHz */
-	NAN_BAND_ID_6G			= 6	/* 6 GHz (proprietary) */
+	NAN_BAND_ID_6G			= 6	/* 6 GHz */
 };
 typedef uint8 nan_band_id_t;
 
 /* NAN supported band in device capability */
 #define NAN_DEV_CAP_SUPPORTED_BANDS_2G	(1 << NAN_BAND_ID_2G)
 #define NAN_DEV_CAP_SUPPORTED_BANDS_5G	(1 << NAN_BAND_ID_5G)
+#define NAN_DEV_CAP_SUPPORTED_BANDS_6G	(1 << NAN_BAND_ID_6G)
 
+/* NAN Supported Band ID bitmap, Table 72 in NAN R4 spec,
+ * bitmap of supported bands in the device capability attribute.
+ */
+typedef enum nan_mac_supp_band_flags {
+	NAN_MAC_SUPP_BAND_TV_WHITE_SPACES	= (1u << 0u),	 /* bit0 */
+	NAN_MAC_SUPP_BAND_SUB_1GHZ		= (1u << 1u),
+	NAN_MAC_SUPP_BAND_2G			= (1u << 2u),
+	NAN_MAC_SUPP_BAND_3G			= (1u << 3u),
+	NAN_MAC_SUPP_BAND_5G			= (1u << 4u),
+	NAN_MAC_SUPP_BAND_60G			= (1u << 5u),
+	NAN_MAC_SUPP_BAND_45G			= (1u << 6u),
+	NAN_MAC_SUPP_BAND_6G			= (1u << 7u)	/* bit7 */
+} nan_mac_supp_band_flags_e;
 /*
  * Unaligned schedule attribute section 10.7.19.6 spec. ver r15
  */
@@ -1105,6 +1188,7 @@ typedef BWL_PRE_PACKED_STRUCT struct nan2_pub_act_frame_s {
 #define NAN_REASON_QOS_UNACCEPT			0x9
 #define NAN_REASON_NDP_REJECT			0xa
 #define NAN_REASON_NDL_UNACCEPTABLE		0xb
+#define NAN_REASON_RNG_SCHED_UNACCEPTALE	0xc
 
 /* nan 2.0 qos (not attribute) */
 typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_ndp_qos_s {

@@ -523,7 +523,7 @@ struct dp_tx_desc_s {
 	void *me_buffer;
 	void *tso_desc;
 	void *tso_num_desc;
-	uint64_t timestamp;
+	qdf_ktime_t timestamp;
 	struct hal_tx_desc_comp_s comp;
 };
 

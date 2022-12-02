@@ -104,6 +104,18 @@ static inline int64_t qdf_ktime_to_ms(qdf_ktime_t ktime)
 }
 
 /**
+ * qdf_ktime_to_us - Convert the qdf_ktime_t object into microseconds
+ * @ktime: time as qdf_ktime_t object
+ *
+ * Return: qdf_ktime_t in microseconds
+ */
+
+static inline int64_t qdf_ktime_to_us(qdf_ktime_t ktime)
+{
+	return __qdf_ktime_to_us(ktime);
+}
+
+/**
  * qdf_ktime_to_ns - Convert the qdf_ktime_t object into nanoseconds
  * @ktime: time as qdf_ktime_t object
  *

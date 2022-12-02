@@ -1,7 +1,7 @@
 /*
  * Misc system wide definitions
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -35,7 +35,7 @@
 
 /* For all the corerevs of the chip being built */
 #ifdef VLSI_COREREVS
-#include <chip_defs.h>	/* auto-generated definitions from vlsi_data */
+#include <vlsi_chip_defs.h>	/* auto-generated definitions from vlsi_data */
 #endif /* VLSI_COREREVS */
 
 /* Use BCM_REFERENCE to suppress warnings about intentionally-unused function
@@ -172,7 +172,7 @@ extern bool bcm_postattach_part_reclaimed;
 #endif
 
 /* In case of coex cpu reinit, we should not relcaim the functions that are needed for reinit */
-#ifdef COEX_CPU_REINIT
+#if defined(COEX_CPU_REINIT) && !defined(COEX_CPU_REINIT_DISABLED)
 #define BCMCOEXCPUATTACHDATA(_data)	_data
 #define BCMCOEXCPUATTACHFN(_fn)		_fn
 #define BCMCOEXCPUPREATTACHDATA(_data)	_data
@@ -182,7 +182,7 @@ extern bool bcm_postattach_part_reclaimed;
 #define BCMCOEXCPUATTACHFN(_fn)		_fn
 #define BCMCOEXCPUPREATTACHDATA(_data)	BCMPREATTACHDATA(_data)
 #define BCMCOEXCPUPREATTACHFN(_fn)	BCMPREATTACHFN(_fn)
-#endif /* COEX_CPU_REINIT */
+#endif /* COEX_CPU_REINIT && !COEX_CPU_REINIT_DISABLED */
 
 #define _data	_data
 #define _fn		_fn
@@ -410,6 +410,12 @@ extern bool bcm_postattach_part_reclaimed;
 #define PMUREV(rev)	(rev)
 #endif
 
+#ifdef BCMSDTCREV
+#define SDTCREV(rev)	(BCMSDTCREV)
+#else
+#define SDTCREV(rev)	(rev)
+#endif
+
 #ifdef BCMCCREV
 #define CCREV(rev)	(BCMCCREV)
 #elif defined(BCMCHIPCOMMONREV)
@@ -431,6 +437,14 @@ extern bool bcm_postattach_part_reclaimed;
 #else
 #define CR4REV(rev)	(rev)
 #define CR4REV_GE(rev, val)	((rev) >= (val))
+#endif
+
+#ifdef BCMARMCA7REV
+#define CA7REV(rev)		(BCMARMCA7REV)
+#define CA7REV_GE(rev, val)	((BCMARMCA7REV) >= (val))
+#else
+#define CA7REV(rev)		(rev)
+#define CA7REV_GE(rev, val)	((rev) >= (val))
 #endif
 
 #ifdef BCMLHLREV
@@ -807,6 +821,45 @@ extern uint32 gFWID;
 	#define BCMPOOLRECLAIM_ENAB()		(0)
 #endif /* BCMPOOLRECLAIM */
 
+#ifdef BCMRXDATAPOOL /* BCMRXDATAPOOL support enab macros  */
+	extern bool _bcmrxdatapool;
+#if defined(ROM_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
+	#define BCMRXDATAPOOL_ENAB() (_bcmrxdatapool)
+#elif defined(BCMRXDATAPOOL_DISABLED)
+	#define BCMRXDATAPOOL_ENAB()	(0)
+#else
+	#define BCMRXDATAPOOL_ENAB()	(1)
+#endif
+#else
+	#define BCMRXDATAPOOL_ENAB()	(0)
+#endif /* BCMRXDATAPOOL */
+
+#ifdef URB /* URB support enab macros  */
+	extern bool _urb_enab;
+#if defined(ROM_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
+	#define URB_ENAB() (_urb_enab)
+#elif defined(URB_DISABLED)
+	#define URB_ENAB()	(0)
+#else
+	#define URB_ENAB()	(1)
+#endif
+#else
+	#define URB_ENAB()	(0)
+#endif /* URB */
+
+#ifdef TX_HISTOGRAM
+extern bool _tx_histogram_enabled;
+#if defined(ROM_ENAB_RUNTIME_CHECK)
+	#define TX_HISTOGRAM_ENAB() (_tx_histogram_enabled)
+#elif defined(TX_HISTOGRAM_DISABLED)
+	#define TX_HISTOGRAM_ENAB() (0)
+#else
+	#define TX_HISTOGRAM_ENAB() (1)
+#endif
+#else
+	#define TX_HISTOGRAM_ENAB() (0)
+#endif /* TX_HISTOGRAM */
+
 /* Chip related low power flags (lpflags) */
 
 #ifndef PAD
@@ -877,14 +930,21 @@ extern uint32 gFWID;
 #else
 #if defined(DONGLEBUILD)
 #define BCMPOSTTRAPFN(_fn)	__attribute__ ((__section__ (".text_posttrap." #_fn))) _fn
+#define BCMPOSTTRAPFASTPATH(_fn)	__attribute__ ((__section__ (".text_posttrapfp." #_fn))) _fn
 #else
 #define BCMPOSTTRAPFN(_fn)		_fn
+#define BCMPOSTTRAPFASTPATH(_fn)	_fn
 #endif /* DONGLEBUILD */
 #define BCMPOSTTRAPRAMFN(fn)	BCMPOSTTRAPFN(fn)
-#define BCMPOSTTRAPFASTPATH(fn)	BCMPOSTTRAPFN(fn)
 #endif /* ROMBUILD */
 
 typedef struct bcm_rng * bcm_rng_handle_t;
+
+/* Explicitly locate initialized data and uninitialized data (bss) in memory regions that
+ * are NOT write-protected by the BUS-MPU.
+ */
+#define BCM_BMPU_RW_DATA(_data)	__attribute__ ((__section__ (".data_bmpu_rw." #_data))) _data
+#define BCM_BMPU_RW_BSS(_data)	__attribute__ ((__section__ (".bss_bmpu_rw." #_data))) _data
 
 /* Use BCM_FUNC_PTR() to tag function pointers for ASLR code implementation. It will perform
  * run-time relocation of a function pointer by translating it from a physical to virtual address.
@@ -960,6 +1020,12 @@ void* BCM_ASLR_CODE_FNPTR_RELOCATOR(void *func_ptr);
 #define SIZEOF_STRUCT_DYN(t)	(sizeof(struct t))
 #endif /* SIZEOF_MACRO_USE */
 
+/* Disable function inlining. */
+#define BCM_NOINLINE	__attribute__ ((noinline))
+
+/* Disable compiler optimizations for a function. */
+#define BCM_NO_OPTIMIZE	__attribute__ ((optimize(0)))
+
 /*
  * A compact form for a list of valid register address offsets.
  * Used for when dumping the contents of the register set for the user.
@@ -974,5 +1040,9 @@ typedef struct _regs_bmp_list {
 	uint16 addr;		/* start address offset */
 	uint8 bmp_cnt[4];	/* bit[31]=1, bit[30:0] is count else it is a bitmap */
 } regs_list_t;
+
+#ifndef WL_UNITTEST
+typedef union d11rxhdr d11rxhdr_t;
+#endif /* WL_UNITTEST */
 
 #endif /* _bcmdefs_h_ */

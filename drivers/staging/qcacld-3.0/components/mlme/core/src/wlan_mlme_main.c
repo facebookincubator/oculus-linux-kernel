@@ -2380,6 +2380,27 @@ mlme_init_dot11_mode_cfg(struct wlan_objmgr_psoc *psoc,
 	dot11_mode->vdev_type_dot11_mode = cfg_get(psoc, CFG_VDEV_DOT11_MODE);
 }
 
+#ifdef WLAN_FEATURE_MCC_QUOTA
+/**
+ * mlme_init_user_mcc_quota_config - Initialize mcc quota
+ * @gen: Generic CFG config items
+ *
+ * Return: None
+ */
+static void
+mlme_init_user_mcc_quota_config(struct wlan_mlme_generic *gen)
+{
+	gen->user_mcc_quota.quota = 0;
+	gen->user_mcc_quota.op_mode = QDF_MAX_NO_OF_MODE;
+	gen->user_mcc_quota.vdev_id = WLAN_UMAC_VDEV_ID_MAX;
+}
+#else
+static void
+mlme_init_user_mcc_quota_config(struct wlan_mlme_generic *gen)
+{
+}
+#endif
+
 QDF_STATUS mlme_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
@@ -2432,6 +2453,7 @@ QDF_STATUS mlme_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	mlme_init_btm_cfg(psoc, &mlme_cfg->btm);
 	mlme_init_roam_score_config(psoc, mlme_cfg);
 	mlme_init_ratemask_cfg(psoc, &mlme_cfg->ratemask_cfg);
+	mlme_init_user_mcc_quota_config(&mlme_cfg->gen);
 
 	return status;
 }

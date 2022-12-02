@@ -211,6 +211,8 @@ struct msm_geni_serial_port {
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 	struct work_struct geni_ios_work;
 	struct hrtimer timer_geni_ios; /* to monitor geni_ios change */
+	spinlock_t timer_geni_ios_lock;
+	struct thermal_zone_device *thermal_zone; /* nearest thermal sensor */
 	ktime_t timer_geni_ios_interval;
 	ktime_t timer_geni_ios_expire;
 	ktime_t timer_geni_ios_start; /* monotonic time of first startup if geni_ios is not expected value */
@@ -518,10 +520,8 @@ static void msm_geni_ios_handle_work(struct work_struct *work)
 {
 	struct msm_geni_serial_port *port = container_of(work, struct msm_geni_serial_port, geni_ios_work);
 
-	if (strcmp(port->uport.name, "ttyHS0") == 0) {
-		struct thermal_zone_device *tz = thermal_zone_get_zone_by_name("pcb3-usr");
-
-		thermal_zone_get_temp(tz, &port->temp_end);
+	if (strcmp(port->uport.name, "ttyHS0") == 0 && port->thermal_zone) {
+		thermal_zone_get_temp(port->thermal_zone, &port->temp_end);
 		IPC_LOG_MSG(port->ipc_log_pwr, "%s: temperature=%d\n",
 			__func__, port->temp_end);
 	}
@@ -541,9 +541,13 @@ static enum hrtimer_restart msm_geni_ios_timer_callback(struct hrtimer *hrtimer)
 		dev_info(port->uport.dev, "%s:RX_DATA_IN delay %d ms\n", port->uport.name, port->geni_ios_delay_ms);
 		schedule_work(&port->geni_ios_work);
 	} else {
-		hrtimer_forward(hrtimer, port->timer_geni_ios_expire, port->timer_geni_ios_interval);
-		port->timer_geni_ios_expire = ktime_add(port->timer_geni_ios_expire, port->timer_geni_ios_interval);
-		ret = HRTIMER_RESTART;
+		spin_lock(&port->timer_geni_ios_lock);
+		if (hrtimer_active(hrtimer)) {
+			hrtimer_forward(hrtimer, port->timer_geni_ios_expire, port->timer_geni_ios_interval);
+			port->timer_geni_ios_expire = ktime_add(port->timer_geni_ios_expire, port->timer_geni_ios_interval);
+			ret = HRTIMER_RESTART;
+		}
+		spin_unlock(&port->timer_geni_ios_lock);
 	}
 	return ret;
 }
@@ -596,7 +600,13 @@ int vote_clock_off(struct uart_port *uport)
 	IPC_LOG_MSG(port->ipc_log_pwr, "%s:%s ioctl:%d usage_count:%d\n",
 		__func__, current->comm, port->ioctl_count, usage_count);
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
-	hrtimer_cancel(&port->timer_geni_ios);
+	{
+		unsigned long irq_flags;
+
+		spin_lock_irqsave(&port->timer_geni_ios_lock, irq_flags);
+		hrtimer_cancel(&port->timer_geni_ios);
+		spin_unlock_irqrestore(&port->timer_geni_ios_lock, irq_flags);
+	}
 #endif
 	return 0;
 };
@@ -2373,27 +2383,35 @@ exit_startup:
 	geni_ios = geni_read_reg_nolog(uport->membase, SE_GENI_IOS);
 	IPC_LOG_MSG(msm_port->ipc_log_misc, "%s: ret:%d geni_ios=0x%x\n", __func__, ret, geni_ios);
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
-	hrtimer_init(&msm_port->timer_geni_ios, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	if (strcmp(msm_port->uport.name, "ttyHS0") == 0) {
-		struct thermal_zone_device *tz = thermal_zone_get_zone_by_name("pcb3-usr");
+		unsigned long irq_flags;
+
+		// cancel previous timer if not already
+		if (msm_port->timer_geni_ios_start) {
+			spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
+			hrtimer_cancel(&msm_port->timer_geni_ios);
+			spin_unlock_irqrestore(&msm_port->timer_geni_ios_lock, irq_flags);
+		}
 
 		/* if geni_ios is not expected value at first startup, use a timer to monitor its change */
 		if (msm_port->timer_geni_ios_start == 0 && (geni_ios & 0x1)) {
 			msm_port->geni_ios_delay_ms = 0;
-			if (tz) {
-				thermal_zone_get_temp(tz, &msm_port->temp_start);
+			if (msm_port->thermal_zone) {
+				thermal_zone_get_temp(msm_port->thermal_zone, &msm_port->temp_start);
 				msm_port->temp_end = msm_port->temp_start;
 			}
-		} else {
+		} else if (msm_port->geni_ios_delay_ms == -1) {
+			spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
 			msm_port->timer_geni_ios_interval = ns_to_ktime(1000000000UL / 1000); /* 1ms interval */
 			msm_port->timer_geni_ios_expire = ktime_add(msm_port->timer_geni_ios.base->get_time(), msm_port->timer_geni_ios_interval);
 			msm_port->timer_geni_ios.function = msm_geni_ios_timer_callback;
 			hrtimer_start(&msm_port->timer_geni_ios, msm_port->timer_geni_ios_expire, HRTIMER_MODE_ABS_PINNED);
 			if (!msm_port->timer_geni_ios_start)
 				msm_port->timer_geni_ios_start = ktime_get_boottime();
+			spin_unlock_irqrestore(&msm_port->timer_geni_ios_lock, irq_flags);
 			if (!msm_port->temp_start) {
-				if (tz)
-					thermal_zone_get_temp(tz, &msm_port->temp_start);
+				if (msm_port->thermal_zone)
+					thermal_zone_get_temp(msm_port->thermal_zone, &msm_port->temp_start);
 			}
 		}
 		IPC_LOG_MSG(msm_port->ipc_log_pwr, "%s: %s at first startup temp=%d\n",
@@ -3445,8 +3463,18 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 	device_create_file(uport->dev, &dev_attr_geni_ios_delay);
 	device_create_file(uport->dev, &dev_attr_geni_ios_temp);
+	hrtimer_init(&dev_port->timer_geni_ios, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+	spin_lock_init(&dev_port->timer_geni_ios_lock);
 	dev_port->geni_ios_delay_ms = -1;
 	INIT_WORK(&dev_port->geni_ios_work, msm_geni_ios_handle_work);
+	{
+		const char *thermal_zone_name = NULL;
+
+		if (!of_property_read_string(pdev->dev.of_node,
+						"nearest-thermal-sensor", &thermal_zone_name)) {
+			dev_port->thermal_zone = thermal_zone_get_zone_by_name(thermal_zone_name);
+		}
+	}
 #endif
 	msm_geni_serial_debug_init(uport, is_console);
 	dev_port->port_setup = false;

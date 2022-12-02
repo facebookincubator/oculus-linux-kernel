@@ -2,7 +2,7 @@
  * Process CIS information from OTP for customer platform
  * (Handle the MAC address and module information)
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -307,6 +307,8 @@ naming_info_t bcm4389_naming_table[] = {
 	{ {"usi_es15"}, {"_ES15"}, {""} },
 	{ {"usi_es17"}, {"_ES17"}, {""} },
 	{ {"usi_es19"}, {"_ES19"}, {""} },
+	{ {"usi_es21"}, {"_ES21"}, {""} },
+	{ {"usi_es31"}, {"_ES31"}, {""} },
 };
 
 /* select the NVRAM/FW tag naming table */
@@ -690,7 +692,7 @@ dhd_otp_process_iov_resp_buf(void *ctx, void *iov_resp, uint16 cmd_id,
 
 	/* check for version */
 	version = dtoh16(*(uint16 *)iov_resp);
-	if (version != WL_OTP_IOV_VERSION) {
+	if (version != WL_OTP_IOV_VERSION_1_1) {
 		return BCME_VERSION;
 	}
 
@@ -736,7 +738,7 @@ dhd_otp_get_iov_resp(dhd_pub_t *dhdp, const uint16 cmd_id, void *ctx,
 	}
 
 	/* fill header portion */
-	iov_buf->version = WL_OTP_IOV_VERSION;
+	iov_buf->version = WL_OTP_IOV_VERSION_1_1;
 	iov_buf->len = (buflen_start - buflen);
 	iov_buf->id = cmd_id;
 
@@ -1680,6 +1682,8 @@ vid_info_t vid_info[] = {
 	{ 3, { 0x15, 0x99, }, { "USI_WM_usi_es15" } },
 	{ 3, { 0x17, 0x99, }, { "USI_WM_usi_es17" } },
 	{ 3, { 0x19, 0x99, }, { "USI_WM_usi_es19" } },
+	{ 3, { 0x21, 0x99, }, { "USI_WM_usi_es21" } },
+	{ 3, { 0x31, 0x99, }, { "USI_WM_usi_es31" } },
 #endif /* SUPPORT_MIXED_MODULES */
 };
 #else

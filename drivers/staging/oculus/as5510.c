@@ -8,6 +8,7 @@
 #include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/delay.h>
+#include <linux/version.h>
 
 #include <linux/regulator/consumer.h>
 
@@ -52,7 +53,12 @@ static const struct regmap_config as5510_regmap = {
 	.num_reg_defaults = ARRAY_SIZE(as5510_reg),
 
 	.cache_type = REGCACHE_FLAT,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0))
+	.use_single_read = true,
+	.use_single_write = true,
+#else
 	.use_single_rw = true,
+#endif
 };
 
 /******************************************
