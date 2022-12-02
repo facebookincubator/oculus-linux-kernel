@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes to call into
  * DHD's QOS on Socket Flow module.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

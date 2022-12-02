@@ -21,8 +21,9 @@ qcom,55685485_facebook_eureka_5060mah_averaged_masterslave_mar13th2022 {
 	qcom,chg-disable-ranges-1 = <3600000 4100000 0
 				4101000 4450000 1>;
 	qcom,rblt-support;
+	qcom,rblt-limited-check;
 	qcom,rblt-missing-range = <51500 250000>;
-	qcom,rblt-ok-range = <49000 51000>;
+	qcom,rblt-ok-range = <49000 51500>;
 	qcom,rblt-warn-range = <1001 49000>;
 	qcom,rblt-crit-range = <0 1000>;
 	/* 1 - OK, 2 - warn, 3 - crit, 4 - missing, 5 - unknown */

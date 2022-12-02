@@ -2,7 +2,7 @@
  * Misc utility routines for accessing PMU corerev specific features
  * of the SiliconBackplane-based Broadcom chips.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1825,6 +1825,7 @@ si_pmu_res_masks(si_t *sih, uint32 *pmin, uint32 *pmax)
 		max_mask = 0x7FFFFFFF;
 		break;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 		min_mask = 0x64fffff;
@@ -1984,6 +1985,7 @@ si_pmu_dep_table_fll_pu_fixup(si_t *sih, osl_t *osh,
 
 	switch (CHIPID(sih->chip)) {
 	case BCM4381_CHIP_GRPID: /* TBD */
+	case BCM4383_CHIP_GRPID: /* TBD */
 	case BCM4387_CHIP_GRPID:
 		for (i = 0; i < pmu_res_depend_table_sz; i ++) {
 			if (pmu_res_depend_table[i].res_mask ==
@@ -2907,6 +2909,7 @@ BCMPOSTTRAPFN(si_pmu1_xtaltab0)(si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -2948,6 +2951,7 @@ BCMPOSTTRAPFN(si_pmu1_xtaldef0)(si_t *sih)
 	case BCM4378_CHIP_GRPID:
 		return &pmu1_xtaltab0_960[PMU1_XTALTAB0_960_37400K];
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -3134,6 +3138,7 @@ BCMPOSTTRAPFN(si_pmu1_pllfvco0)(si_t *sih)
 	case BCM4378_CHIP_GRPID:
 		return FVCO_960p1;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -3169,6 +3174,7 @@ BCMPOSTTRAPFN(si_pmu1_pllfvco0_pll2)(si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 		return FVCO_400;
@@ -3205,6 +3211,7 @@ BCMPOSTTRAPFN(si_pmu1_alpclk0)(si_t *sih, osl_t *osh, pmuregs_t *pmu)
 	switch (CHIPID(sih->chip))
 	{
 		case BCM4381_CHIP_GRPID:
+		case BCM4383_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:
@@ -3246,6 +3253,7 @@ si_pmu_htclk_mask(si_t *sih)
 		case BCM4376_CHIP_GRPID:
 		case BCM4378_CHIP_GRPID:
 		case BCM4381_CHIP_GRPID:
+		case BCM4383_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:
@@ -3278,6 +3286,7 @@ si_pmu_def_alp_clock(si_t *sih, osl_t *osh)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -3563,6 +3572,7 @@ si_pmu_update_pllcontrol(si_t *sih, osl_t *osh, uint32 xtal, bool update_require
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 		/* TBD : bypass PLL programming, So use chip default values */
@@ -4108,6 +4118,7 @@ si_pmu_pll_off(si_t *sih, osl_t *osh, pmuregs_t *pmu, uint32 *min_mask,
 		(BCM4376_CHIP(sih->chip)) ||
 		(BCM4378_CHIP(sih->chip)) ||
 		(BCM4381_CHIP(sih->chip)) ||
+		(BCM4383_CHIP(sih->chip)) ||
 		(BCM4385_CHIP(sih->chip)) ||
 		(BCM4387_CHIP(sih->chip)) ||
 		(BCM4388_CHIP(sih->chip)) ||
@@ -4186,6 +4197,7 @@ uint32 *max_mask, uint32 *clk_ctl_st)
 		(BCM4376_CHIP(sih->chip)) ||
 		(BCM4378_CHIP(sih->chip)) ||
 		(BCM4381_CHIP(sih->chip)) ||
+		(BCM4383_CHIP(sih->chip)) ||
 		(BCM4385_CHIP(sih->chip)) ||
 		(BCM4387_CHIP(sih->chip)) ||
 		(BCM4388_CHIP(sih->chip)) ||
@@ -4416,6 +4428,7 @@ uint32 si_pmu_get_backplaneclkspeed(si_t *sih)
 
 	switch (CHIPID(sih->chip)) {
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -4782,6 +4795,7 @@ si_pmu_fvco_macdiv(si_t *sih, uint32 *fvco, uint32 *div)
 		}
 		break;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -5171,6 +5185,7 @@ si_pmu_pll_init(si_t *sih, osl_t *osh, uint xtalfreq)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -5241,6 +5256,7 @@ BCMPOSTTRAPFN(si_pmu_alp_clock)(si_t *sih, osl_t *osh)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -5370,6 +5386,7 @@ BCMPOSTTRAPFN(si_pmu_si_clock)(si_t *sih, osl_t *osh)
 		break;
 
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -5419,6 +5436,7 @@ BCMPOSTTRAPFN(si_pmu_cpu_clock)(si_t *sih, osl_t *osh)
 		BCM4376_CHIP(sih->chip) ||
 		BCM4378_CHIP(sih->chip) ||
 		BCM4381_CHIP(sih->chip) ||
+		BCM4383_CHIP(sih->chip) ||
 		BCM4385_CHIP(sih->chip) ||
 		BCM4387_CHIP(sih->chip) ||
 		BCM4388_CHIP(sih->chip) ||
@@ -5537,6 +5555,7 @@ si_pmu_mem_clock(si_t *sih, osl_t *osh)
 		BCM4376_CHIP(sih->chip) ||
 		BCM4378_CHIP(sih->chip) ||
 		BCM4381_CHIP(sih->chip) ||
+		BCM4383_CHIP(sih->chip) ||
 		BCM4387_CHIP(sih->chip) ||
 		BCM4388_CHIP(sih->chip) ||
 		BCM4389_CHIP(sih->chip) ||
@@ -6056,6 +6075,7 @@ si_pmu_otp_power(si_t *sih, osl_t *osh, bool on, uint32* min_res_mask)
 		break;
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -6230,6 +6250,7 @@ si_pmu_is_otp_powered(si_t *sih, osl_t *osh)
 		break;
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -6412,6 +6433,7 @@ si_pmu_fast_lpo_locked(si_t *sih, osl_t *osh)
 		lock = si_gci_chipstatus(sih, GCI_CHIPSTATUS_13) & GCI_CS_4369_FLL1MHZ_LOCK_MASK;
 		break;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -6461,6 +6483,7 @@ si_pmu_fast_lpo_enable(si_t *sih, osl_t *osh)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -6515,6 +6538,7 @@ si_pmu_fast_lpo_enable_pcie(si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -6552,6 +6576,7 @@ si_pmu_fast_lpo_enable_pmu(si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -6695,7 +6720,7 @@ si_set_lv_sleep_mode_pmu(si_t *sih, osl_t *osh)
 	 * and bypass when in sleep mode
 	 */
 	if (!(BCM4389_CHIP(sih->chip) || BCM4388_CHIP(sih->chip) || BCM4397_CHIP(sih->chip) ||
-		BCM4387_CHIP(sih->chip) || BCM4381_CHIP(sih->chip))) {
+		BCM4387_CHIP(sih->chip) || BCM4381_CHIP(sih->chip) || BCM4383_CHIP(sih->chip))) {
 		si_pmu_vreg_control(sih, PMU_VREG_5, PMU_4369_VREG_5_MISCLDO_POWER_UP_MASK,
 			((CHIPREV(sih->chiprev) == 0) ? 1 : 0) <<
 			  PMU_4369_VREG_5_MISCLDO_POWER_UP_SHIFT);
@@ -7581,6 +7606,7 @@ si_pmu_chip_init(si_t *sih, osl_t *osh)
 		break;
 
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	{
@@ -8164,6 +8190,7 @@ si_pmu_swreg_init(si_t *sih, osl_t *osh)
 		/* fall through */
 	case BCM4376_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 #ifdef BCM_AVS
@@ -8304,6 +8331,7 @@ si_pmu_res_minmax_update(si_t *sih, osl_t *osh)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -9796,6 +9824,7 @@ BCMPOSTTRAPFN(si_pmu_disable_intr_pwrreq)(si_t *sih)
 		case BCM4376_CHIP_GRPID:
 		case BCM4378_CHIP_GRPID:
 		case BCM4381_CHIP_GRPID:
+		case BCM4383_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:

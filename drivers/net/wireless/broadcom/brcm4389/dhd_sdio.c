@@ -1,7 +1,7 @@
 /*
  * DHD Bus Module for SDIO
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -947,12 +947,6 @@ dhdsdio_sr_cap(dhd_bus_t *bus)
 		return cap;
 	}
 	if (
-#ifdef UNRELEASEDCHIP
-		(bus->sih->chip == BCM4347_CHIP_ID) ||
-		(bus->sih->chip == BCM4357_CHIP_ID) ||
-		(bus->sih->chip == BCM4361_CHIP_ID) ||
-		(bus->sih->chip == BCM4381_CHIP_ID) ||
-#endif
 		0) {
 			core_capext = FALSE;
 	} else if ((bus->sih->chip == BCM4335_CHIP_ID) ||
@@ -963,6 +957,7 @@ dhdsdio_sr_cap(dhd_bus_t *bus)
 		(BCM4349_CHIP(bus->sih->chip))		||
 		(bus->sih->chip == BCM4350_CHIP_ID) ||
 		(bus->sih->chip == BCM4362_CHIP_ID) ||
+		(bus->sih->chip == BCM4381_CHIP_ID) ||
 		(bus->sih->chip == BCM43012_CHIP_ID) ||
 		(bus->sih->chip == BCM43013_CHIP_ID) ||
 		(bus->sih->chip == BCM43014_CHIP_ID) ||
@@ -1052,6 +1047,7 @@ dhdsdio_sr_init(dhd_bus_t *bus)
 		CHIPID(bus->sih->chip) == BCM43018_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM4339_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM4362_CHIP_ID ||
+		CHIPID(bus->sih->chip) == BCM4381_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM43012_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM43013_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM43014_CHIP_ID ||
@@ -1104,6 +1100,20 @@ dhdsdio_clk_kso_init(dhd_bus_t *bus)
 	return 0;
 }
 
+static void
+dhdsdio_set_wakeupctrl(dhd_bus_t *bus)
+{
+	uint8 val;
+	int err = 0;
+
+	/* programme the wakeup wait */
+	val = bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_1, SBSDIO_FUNC1_WAKEUPCTRL, NULL);
+	val |= 1 << SBSDIO_FUNC1_WCTRL_HTWAIT_SHIFT;
+	bcmsdh_cfg_write(bus->sdh, SDIO_FUNC_1, SBSDIO_FUNC1_WAKEUPCTRL,
+			1 << SBSDIO_FUNC1_WCTRL_HTWAIT_SHIFT, &err);
+	val = bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_1, SBSDIO_FUNC1_WAKEUPCTRL, NULL);
+}
+
 #define KSO_DBG(x)
 /* XXX KSO set typically takes depending on resource up & number of
 * resources which were down. Max value is PMU_MAX_TRANSITION_DLY usec.
@@ -1142,6 +1152,7 @@ dhdsdio_clk_kso_enab(dhd_bus_t *bus, bool on)
 	 * after clearing KSO bit, to avoid polling of KSO bit.
 	 */
 	if ((!on) && (bus->sih->chip == BCM43012_CHIP_ID ||
+		(bus->sih->chip == BCM4381_CHIP_ID) ||
 		bus->sih->chip == BCM43013_CHIP_ID ||
 		bus->sih->chip == BCM43014_CHIP_ID)) {
 		return err;
@@ -3955,18 +3966,29 @@ dhdsdio_get_mem_dump(dhd_bus_t *bus)
 	uint32 start = bus->dongle_ram_base;	/* Start address */
 	uint read_size = 0;			/* Read size of each iteration */
 	uint8 *p_buf = NULL, *databuf = NULL;
+#if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
+	dhd_dongledump_status_t dump_status;
+#endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 
 	/* Get full mem size */
 	p_buf = dhd_get_fwdump_buf(bus->dhd, size);
 	if (!p_buf) {
 		DHD_ERROR(("%s: Out of memory (%d bytes)\n",
 			__FUNCTION__, size));
-		return BCME_ERROR;
+		ret = BCME_ERROR;
+		goto exit;
 	}
 
 	dhd_os_sdlock(bus->dhd);
 	BUS_WAKE(bus);
 	dhdsdio_clkctl(bus, CLK_AVAIL, FALSE);
+
+#if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
+	dump_status = dhd_get_dump_status(bus->dhd);
+	if (dump_status != DUMP_IN_PROGRESS) {
+		dhd_set_dump_status(bus->dhd, DUMP_IN_PROGRESS);
+	}
+#endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 
 	/* Read mem content */
 	DHD_ERROR(("Dump dongle memory\n"));
@@ -3990,6 +4012,13 @@ dhdsdio_get_mem_dump(dhd_bus_t *bus)
 		bus->activity = FALSE;
 		dhdsdio_clkctl(bus, CLK_NONE, TRUE);
 	}
+
+exit:
+#if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
+	if (ret != BCME_OK) {
+		dhd_set_dump_status(bus->dhd, DUMP_FAILURE);
+	}
+#endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 
 	dhd_os_sdunlock(bus->dhd);
 
@@ -8373,14 +8402,12 @@ dhdsdio_chipmatch(uint16 chipid)
 		return TRUE;
 	if (BCM4349_CHIP(chipid))
 		return TRUE;
-#ifdef UNRELEASEDCHIP
-	if ((chipid == BCM4347_CHIP_ID) ||
-		(chipid == BCM4357_CHIP_ID) ||
-		(chipid == BCM4361_CHIP_ID))
-		return TRUE;
-#endif
 	if (chipid == BCM4364_CHIP_ID)
 			return TRUE;
+
+	if (chipid == BCM4381_CHIP_ID) {
+		return TRUE;
+	}
 
 	if (chipid == BCM43012_CHIP_ID)
 		return TRUE;
@@ -8757,10 +8784,14 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 		goto fail;
 	}
 
-	if (bus->sih->buscorerev >= 12)
+	if (bus->sih->buscorerev >= 12) {
 		dhdsdio_clk_kso_init(bus);
-	else
+	} else {
 		bus->kso = TRUE;
+	}
+
+	/* to wake up completely incase sleep is triggered before bus start */
+	dhdsdio_set_wakeupctrl(bus);
 
 	si_sdiod_drive_strength_init(bus->sih, osh, dhd_sdiod_drive_strength);
 
@@ -8820,16 +8851,9 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 			case BCM4364_CHIP_ID:
 				bus->dongle_ram_base = CR4_4364_RAM_BASE;
 				break;
-#ifdef UNRELEASEDCHIP
-	                case BCM4347_CHIP_ID:
-	                case BCM4357_CHIP_ID:
-	                case BCM4361_CHIP_ID:
-				bus->dongle_ram_base = CR4_4347_RAM_BASE;
-				break;
 			case BCM4381_CHIP_ID:
 				bus->dongle_ram_base = CR4_4381_RAM_BASE;
 				break;
-#endif
 			case BCM4362_CHIP_ID:
 				bus->dongle_ram_base = CR4_4362_RAM_BASE;
 				break;
@@ -10935,6 +10959,18 @@ dhd_bus_get_wakecount(dhd_pub_t *dhd)
 int
 dhd_bus_get_bus_wake(dhd_pub_t *dhd)
 {
-	return bcmsdh_set_get_wake(dhd->bus->sdh, 0);
+	return bcmsdh_get_wake(dhd->bus->sdh);
+}
+int
+dhd_bus_set_get_bus_wake(dhd_pub_t *dhd, int set)
+{
+	return bcmsdh_set_get_wake(dhd->bus, set);
 }
 #endif /* DHD_WAKE_STATUS */
+
+void
+dhd_bus_set_signature_path(struct dhd_bus *bus, char *sig_path)
+{
+	UNUSED_PARAMETER(bus);
+	UNUSED_PARAMETER(sig_path);
+}

@@ -1,7 +1,7 @@
 /*
  * SDIO access interface for drivers - linux specific (pci only)
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -274,6 +274,19 @@ int bcmsdh_set_get_wake(bcmsdh_info_t *bcmsdh, int flag)
 	ret = bcmsdh->pkt_wake;
 	bcmsdh->total_wake_count += flag;
 	bcmsdh->pkt_wake = flag;
+
+	spin_unlock_irqrestore(&bcmsdh_osinfo->oob_irq_spinlock, flags);
+	return ret;
+}
+int bcmsdh_get_wake(bcmsdh_info_t *bcmsdh, int flag)
+{
+	bcmsdh_os_info_t *bcmsdh_osinfo = bcmsdh->os_cxt;
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&bcmsdh_osinfo->oob_irq_spinlock, flags);
+
+	ret = bcmsdh->pkt_wake;
 
 	spin_unlock_irqrestore(&bcmsdh_osinfo->oob_irq_spinlock, flags);
 	return ret;

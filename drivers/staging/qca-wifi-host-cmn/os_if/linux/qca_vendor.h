@@ -460,6 +460,27 @@
  *	The host driver selects Tx VDEV, and notifies user. The attributes
  *	used with this event are defined in enum
  *	qca_wlan_vendor_attr_mbssid_tx_vdev_status.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_MCC_QUOTA: Multi-channel Concurrency (MCC) occurs
+ *	when two interfaces are active on the same band, using two different
+ *	home channels, and only supported by a single radio. In this scenario
+ *	the device must split the use of the radio between the two interfaces.
+ *	The percentage of time allocated to a given interface is the quota.
+ *	Depending on the configuration, the quota can either be fixed or
+ *	dynamic.
+ *
+ *	When used as an event, the device will report the quota type, and for
+ *	all interfaces operating in MCC it will report the current quota.
+ *	When used as a command, the device can be configured for a specific
+ *	quota type, and in the case of a fixed quota, the quota to apply to one
+ *	of the interfaces.
+ *
+ *	Applications can use the event to do TX bitrate control based on the
+ *	information, and can use the command to explicitly set the quota to
+ *	enhance performance in specific scenarios.
+ *
+ *	The attributes used with this command are defined in
+ *	enum qca_wlan_vendor_attr_mcc_quota.
  */
 
 enum qca_nl80211_vendor_subcmds {
@@ -691,7 +712,82 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UPDATE_SSID = 194,
 	QCA_NL80211_VENDOR_SUBCMD_WIFI_FW_STATS = 195,
 	QCA_NL80211_VENDOR_SUBCMD_MBSSID_TX_VDEV_STATUS = 196,
+	QCA_NL80211_VENDOR_SUBCMD_CONCURRENT_MULTI_STA_POLICY = 197,
+	QCA_NL80211_VENDOR_SUBCMD_USABLE_CHANNELS = 198,
+	QCA_NL80211_VENDOR_SUBCMD_GET_RADAR_HISTORY = 199,
+	QCA_NL80211_VENDOR_SUBCMD_MDNS_OFFLOAD = 200,
+	QCA_NL80211_VENDOR_SUBCMD_DIAG_DATA = 201,
+	QCA_NL80211_VENDOR_SUBCMD_SET_MONITOR_MODE = 202,
+	QCA_NL80211_VENDOR_SUBCMD_ROAM_EVENTS = 203,
+	QCA_NL80211_VENDOR_SUBCMD_MCC_QUOTA = 205,
 };
+
+/**
+ * enum qca_wlan_vendor_mcc_quota_type: MCC channel time quota type
+ *
+ * @QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_CLEAR: In the event, it indicates that the
+ *      target exited MCC state and cleared the quota information. In the
+ *      command it clears MCC quota setting and restores adaptive scheduling.
+ * @QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_FIXED: Channel time quota is fixed and
+ *      will not be changed.
+ * @QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_DYNAMIC: Channel time quota is dynamic
+ *      and the target may change the quota based on the data activity.
+ */
+enum qca_wlan_vendor_mcc_quota_type {
+	QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_CLEAR = 0,
+	QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_FIXED = 1,
+	QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_DYNAMIC = 2,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_mcc_quota: Used by the vendor event
+ * QCA_NL80211_VENDOR_SUBCMD_MCC_QUOTA to indicate MCC channel
+ * quota information or as a command to set the required MCC quota for an
+ * interface.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_TYPE: u32 attribute.
+ * The type is defined in enum qca_wlan_vendor_mcc_quota_type.
+ * In a command this specifies the MCC quota type to be set for the interface.
+ * In an event this provides the current quota type in force.
+ * This is required in a command and an event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_ENTRIES: Nested attribute to carry
+ * the list of channel quota entries.
+ * In an event each entry contains the frequency and respective time quota for
+ * all the MCC interfaces.
+ * In a command it specifies the interface index and respective time quota.
+ * In a command only one entry (ifindex, quota pair) may be specified.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_CHAN_FREQ: u32 attribute.
+ * Channel frequency in MHz. This is present only in an event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_CHAN_TIME_PERCENTAGE: u32 attribute.
+ * Channel time quota expressed as percentage.
+ * This is present in an event and a command.
+ * In an command, the user shall specify the quota to be allocated for the
+ * interface represented by %QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_IFINDEX.
+ * In an event this provides the existing quota for the channel.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_IFINDEX: u32 attribute.
+ * Specifies the interface index (netdev) for which the corresponding
+ * configurations are applied. This is required in a command only. Only one
+ * interface index may be specified. If not specified, the configuration is
+ * rejected.
+ */
+enum qca_wlan_vendor_attr_mcc_quota {
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_TYPE = 1,
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_ENTRIES = 2,
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_CHAN_FREQ = 3,
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_CHAN_TIME_PERCENTAGE = 4,
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_IFINDEX = 5,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_LAST,
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX =
+	QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_LAST - 1,
+};
+
 
 enum qca_wlan_vendor_tos {
 	QCA_WLAN_VENDOR_TOS_BK = 0,

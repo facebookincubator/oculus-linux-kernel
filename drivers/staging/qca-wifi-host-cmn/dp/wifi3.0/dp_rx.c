@@ -341,7 +341,14 @@ QDF_STATUS __dp_rx_buffers_replenish(struct dp_soc *dp_soc, uint32_t mac_id,
 
 	rxdma_srng = dp_rxdma_srng->hal_srng;
 
-	if (!rxdma_srng) {
+	if (qdf_unlikely(!dp_pdev)) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_DEBUG,
+				"%pK: pdev is null for mac_id = %d",
+				dp_soc, mac_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (qdf_unlikely(!rxdma_srng)) {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_DEBUG,
 				  "rxdma srng not initialized");
 		DP_STATS_INC(dp_pdev, replenish.rxdma_err, num_req_buffers);
@@ -1345,7 +1352,7 @@ void dp_rx_compute_delay(struct dp_vdev *vdev, qdf_nbuf_t nbuf)
 		&vdev->pdev->stats.tid_stats.tid_rx_stats[ring_id][tid];
 
 	dp_update_delay_stats(NULL, rstats, to_stack, tid,
-			      CDP_DELAY_STATS_REAP_STACK, ring_id);
+			      CDP_DELAY_STATS_REAP_STACK, ring_id, false);
 	/*
 	 * Update interframe delay stats calculated at deliver_data_ol point.
 	 * Value of vdev->prev_rx_deliver_tstamp will be 0 for 1st frame, so
@@ -1354,7 +1361,7 @@ void dp_rx_compute_delay(struct dp_vdev *vdev, qdf_nbuf_t nbuf)
 	 * of vdev->prev_rx_deliver_tstamp.
 	 */
 	dp_update_delay_stats(NULL, rstats, interframe_delay, tid,
-			      CDP_DELAY_STATS_RX_INTERFRAME, ring_id);
+			      CDP_DELAY_STATS_RX_INTERFRAME, ring_id, false);
 	vdev->prev_rx_deliver_tstamp = current_ts;
 }
 
@@ -3170,6 +3177,12 @@ dp_pdev_rx_buffers_attach(struct dp_soc *dp_soc, uint32_t mac_id,
 	union dp_rx_desc_list_elem_t *tail = NULL;
 	int sync_hw_ptr = 1;
 	uint32_t num_entries_avail;
+
+	if (qdf_unlikely(!dp_pdev)) {
+		dp_err("%pK: pdev is null for mac_id = %d",
+		       dp_soc, mac_id);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	if (qdf_unlikely(!rxdma_srng)) {
 		DP_STATS_INC(dp_pdev, replenish.rxdma_err, num_req_buffers);

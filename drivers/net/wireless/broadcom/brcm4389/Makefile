@@ -1,6 +1,6 @@
 # bcmdhd
 #
-# Copyright (C) 2021, Broadcom.
+# Copyright (C) 2022, Broadcom.
 #
 #      Unless you and Broadcom execute a separate written software license
 # agreement governing use of this software, this software is licensed to you
@@ -216,7 +216,7 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
 	DHDCFLAGS += -DDHD_LB_HOST_CTRL
 # PCIe interrupt affinity control interface
 	DHDCFLAGS += -DSET_PCIE_IRQ_CPU_CORE
-  DHDCFLAGS += -DDHD_RECOVER_TIMEOUT
+	DHDCFLAGS += -DDHD_RECOVER_TIMEOUT
 # GRO (Generic Receive Offload) feature
 	DHDCFLAGS += -DENABLE_DHD_GRO
 # Support Monitor Mode
@@ -391,7 +391,8 @@ DHDCFLAGS += -DCUSTOM_BLOCK_DEAUTH_AT_EAP_FAILURE
 DHDCFLAGS += -DTDLS_MSG_ONLY_WFD
 # Custom tuning value
 DHDCFLAGS += -DCUSTOM_ROAM_TIME_THRESH_IN_SUSPEND=6000
-DHDCFLAGS += -DCUSTOM_EVENT_PM_WAKE=20
+DHDCFLAGS += -DCUSTOM_EVENT_PM_WAKE=30
+DHDCFLAGS += -DCUSTOM_EVENT_PM_PERCENT=70
 DHDCFLAGS += -DCUSTOM_KEEP_ALIVE_SETTING=30000
 DHDCFLAGS += -DCUSTOM_PNO_EVENT_LOCK_xTIME=10
 DHDCFLAGS += -DSPECIFIC_MAC_GEN_SCHEME
@@ -566,8 +567,26 @@ DHDCFLAGS += -DPLATFORM_PATH="\"/vendor/etc/wifi/\""
 DHDCFLAGS += -DDUMP_MEM
 DHDCFLAGS += -DDHD_COMMON_DUMP_PATH="\"/data/misc/wifi/\""
 
+# AR/VR Commom Feature
+DHDCFLAGS += -DXRAPI_COMMON
+
 #PKT_FILTER_SUPPORT and DHD_MAGIC_PKT_FILTER is exclusive
 DHDCFLAGS += -DPKT_FILTER_SUPPORT #Disable for magic filter
+
+#Allow DFS on P2P when STA is connected on DFS channel
+DHDCFLAGS += -DDFSPROXY_P2P
+
+ifneq ($(filter -DDFSPROXY_P2P, $(DHDCFLAGS)),)
+DHDCFLAGS := $(filter-out -DP2P_SKIP_DFS ,$(DHDCFLAGS))
+DHDCFLAGS := $(filter-out -DDHD_MAGIC_PKT_FILTER ,$(DHDCFLAGS))
+DHDCFLAGS += -DPKT_FILTER_SUPPORT
+endif
+
+#Temporary filter out WL_P2P_RAND for DFS_GO test,
+#Need to be removed for production build
+ifneq ($(filter -DDFSPROXY_P2P, $(DHDCFLAGS)),)
+DHDCFLAGS := $(filter-out -DWL_P2P_RAND ,$(DHDCFLAGS))
+endif
 
 ##########################
 # driver type
@@ -701,7 +720,7 @@ DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o dhd_custom_cis.o 
     dhd_pno.o dhd_rtt.o dhd_linux_pktdump.o wl_cfg_btcoex.o hnd_pktq.o \
     hnd_pktpool.o wl_cfgvendor.o bcmxtlv.o bcm_app_utils.o dhd_debug.o frag.o \
     dhd_debug_linux.o wl_cfgnan.o dhd_mschdbg.o bcmbloom.o dhd_dbg_ring.o bcmstdlib_s.o \
-    dhd_linux_exportfs.o dhd_linux_tx.o dhd_linux_rx.o dhd_log_dump.o
+    dhd_linux_exportfs.o dhd_linux_tx.o dhd_linux_rx.o dhd_log_dump.o fwpkg_utils.o
 
 # This file will be here only for internal builds and sets flags which may
 # affect subsequent behavior. See extended comment within it for details.

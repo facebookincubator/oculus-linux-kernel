@@ -65,10 +65,6 @@
 	cm7120,firmware-name = "CM7120_TDM_I2S.bin";
 };
 
-&cm7120_snd {
-	qcom,model = "kona-cm7120-tdm_i2s-snd-card";
-};
-
 &fpga_aggregator {
 	status = "disabled";
 };

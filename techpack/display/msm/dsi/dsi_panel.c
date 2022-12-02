@@ -854,37 +854,38 @@ static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
 			u32 bl_lvl)
 {
 	int rc = 0;
+	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
+	struct dsi_backlight_config *bl_config;
 
-	u8 blu_set_pwm_page[2] = {0xFF, 0x10};
-	u8 blu_level[2] = {0x51, 0x00};
+	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
+	u8 blu_level_msb[2] = {0x8F, 0x00}; /* BLU level MSB */
+	u8 blu_level_lsb[2] = {0x90, 0x00}; /* BLU level LSB */
 
-	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
+	if (!panel || !panel->cur_mode || (bl_lvl > 0xFFFF))
 		return -EINVAL;
 
 	dsi = &panel->mipi_device;
+	bl_config = &panel->bl_config;
+	timing = &panel->cur_mode->timing;
 
-	/*
-	 * This scaling makes the following assumptions:
-	 * * input bl_lvl = 2000 and register value 0xFF both represent 200%
-	 *   backlight brightness,
-	 * * input bl_lvl = 0 and register value 0x00 both represent 0% backlight
-	 *   brightness, and
-	 * * linear scaling between the two.
-	 */
-	bl_lvl = (bl_lvl * 0xFF) / 2000;
+	/* Transform backlight level into illumination period in scanlines */
+	bl_lvl = (bl_lvl * bl_config->jdi_blu_default_duty * 1000) / (timing->refresh_rate * 1800 /* Internal TFT 1H Time */);
 
-	blu_level[1] = bl_lvl;
+	blu_level_msb[1] = bl_lvl >> 8;
+	blu_level_lsb[1] = bl_lvl & 0xFF;
 
 	/* Queue the DCS writes so they can be batched together in one frame. */
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), 0, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_msb, sizeof(blu_level_msb), 0, 0);
 	/* Send with last command flag */
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_level, sizeof(blu_level), MIPI_DSI_MSG_LASTCOMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_lsb, sizeof(blu_level_lsb), MIPI_DSI_MSG_LASTCOMMAND, 0);
 
 	if (rc) {
 		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
 		goto error;
 	}
+	bl_config->jdi_scanline_duration = bl_lvl;
 
 error:
 	return rc;
@@ -1104,9 +1105,20 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us_ref / 90 - tdel_us - fifo_time_us;
 	}
 
-	/* Adjust backlight timing relative to vsync (if set) */
-	if (panel->bl_config.jdi_scanline_max_offset)
-		pwm_us -= (panel->bl_config.jdi_scanline_max_offset * external_1h_ns / 1000);
+	/* Adjust backlight timing to match target settling time (if enabled). */
+	if (bl_config->temperature_dependent_timing) {
+		u32 target_pwm_us = bl_config->settling_time_target_us;
+
+		/* Calculate from the last scanline. */
+		target_pwm_us += vactive * internal_1h_us;
+
+		/* Target the last BLU segment (8 total). */
+		target_pwm_us += blu_on_time_duration_us / 8;
+		target_pwm_us -= blu_on_time_duration_us;
+
+		/* Only replace the current value of 'pwm_us' if the new one is lower. */
+		pwm_us = min_t(u32, pwm_us, target_pwm_us);
+	}
 
 	/* Convert the PWM time to internal horizontal lines */
 	pwm_line = pwm_us / internal_1h_us;
@@ -1142,6 +1154,47 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 	return rc;
 }
 
+static u32 dsi_panel_calculate_settling_time(
+		struct dsi_backlight_config *bl_config, int temp)
+{
+	const int *response_time = (int *)bl_config->response_time;
+	int i, temp_delta;
+
+	if (temp <= response_time[0])
+		return (u32)response_time[1];
+
+	for (i = 0; i < (bl_config->num_response_time_entries - 1) * 2; i += 2) {
+		if (temp > response_time[i + 2])
+			continue;
+
+		temp_delta = temp - response_time[i];
+		return (u32)(response_time[i + 1] + temp_delta *
+				(response_time[i + 3] - response_time[i + 1]) /
+				(response_time[i + 2] - response_time[i]));
+	}
+
+	return (u32)response_time[i + 1];
+}
+
+static void dsi_panel_temp_dependent_bl_task(struct work_struct *work)
+{
+	struct dsi_backlight_config *bl_config = container_of(work,
+			struct dsi_backlight_config, bl_temp_dwork.work);
+	struct dsi_panel *panel = container_of(bl_config, struct dsi_panel,
+			bl_config);
+	int ret, temp = 0;
+
+	/* Read the thermistor and calculate the desired settling time. */
+	ret = iio_read_channel_processed(bl_config->bl_temp_iio, &temp);
+	bl_config->settling_time_target_us = dsi_panel_calculate_settling_time(
+			bl_config, (ret < 0) ? INT_MIN : temp);
+
+	/* Unconditionally update the backlight timing. */
+	dsi_panel_handle_dfps_pwm_fifo_local_dimming(panel, bl_config->bl_level);
+
+	mod_delayed_work(system_wq, &bl_config->bl_temp_dwork, HZ);
+}
+
 int dsi_panel_handle_update_backlight_local_dimming(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int i;
@@ -1155,7 +1208,12 @@ int dsi_panel_handle_update_backlight_local_dimming(struct dsi_panel *panel, u32
 			return rc;
 		}
 	}
-	rc = dsi_panel_handle_dfps_pwm_fifo_local_dimming(panel, bl_lvl);
+
+	if (panel->bl_config.temperature_dependent_timing)
+		dsi_panel_temp_dependent_bl_task(&panel->bl_config.bl_temp_dwork.work);
+	else
+		rc = dsi_panel_handle_dfps_pwm_fifo_local_dimming(panel, bl_lvl);
+
 	return rc;
 }
 
@@ -2898,6 +2956,53 @@ error:
 	return rc;
 }
 
+static bool dsi_panel_parse_temp_dependent_bl_config(struct dsi_panel *panel)
+{
+	struct dsi_parser_utils *utils = &panel->utils;
+	struct dsi_backlight_config *config = &panel->bl_config;
+	struct device dummy_dev = {.of_node = utils->node};
+	int len, rc;
+
+	if (!utils->read_bool(utils->data, "oculus,temperature-dependent-backlight"))
+		return false;
+
+	len = utils->count_u32_elems(utils->data, "oculus,response-time-curve");
+	if (len <= 0 || len & 1) {
+		DSI_ERR("missing/malformed response time curve, len = %d\n", len);
+		return false;
+	}
+
+	config->response_time = kcalloc(len, sizeof(u32), GFP_KERNEL);
+	if (!config->response_time)
+		return false;
+
+	rc = utils->read_u32_array(utils->data, "oculus,response-time-curve",
+			config->response_time, len);
+	if (rc) {
+		DSI_ERR("unable to read the response times, rc = %d\n", rc);
+		goto error;
+	}
+
+	config->bl_temp_iio = iio_channel_get(&dummy_dev, NULL);
+	if (IS_ERR_OR_NULL(config->bl_temp_iio)) {
+		DSI_ERR("panel temperature iio_channel_get error: %ld\n",
+				PTR_ERR(config->bl_temp_iio));
+		goto error;
+	}
+
+	config->num_response_time_entries = len / 2;
+	config->settling_time_target_us = config->response_time[1];
+
+	INIT_DELAYED_WORK(&config->bl_temp_dwork,
+		dsi_panel_temp_dependent_bl_task);
+
+	return true;
+
+error:
+	kfree(config->response_time);
+	return false;
+}
+
 static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -3019,15 +3124,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 			goto error;
 		}
 	} else if (panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING) {
-		rc = utils->read_u32(utils->data,
-			"qcom,mdss-dsi-default-max-scanline-offset", &val);
-		if (rc) {
-			DSI_DEBUG("[%s] default-max-scanline-offset unspecified, rc=%d\n",
-				panel->name, rc);
-			panel->bl_config.jdi_scanline_max_offset = 0;
-		} else {
-			panel->bl_config.jdi_scanline_max_offset = val;
-		}
+		panel->bl_config.temperature_dependent_timing =
+				dsi_panel_parse_temp_dependent_bl_config(panel);
 	}
 
 	panel->bl_config.en_gpio = utils->get_named_gpio(utils->data,
@@ -4097,6 +4195,8 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 
 	return panel;
 error:
+	iio_channel_release(panel->bl_config.bl_temp_iio);
+	kfree(panel->bl_config.response_time);
 	kfree(panel);
 	return ERR_PTR(rc);
 }
@@ -4107,6 +4207,10 @@ void dsi_panel_put(struct dsi_panel *panel)
 
 	/* free resources allocated for ESD check */
 	dsi_panel_esd_config_deinit(&panel->esd_config);
+
+	/* Free resources from temperature-dependent backlight controls. */
+	iio_channel_release(panel->bl_config.bl_temp_iio);
+	kfree(panel->bl_config.response_time);
 
 	kfree(panel);
 }
@@ -5181,6 +5285,9 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 		dsi_panel_jdi_nvt_update_backlight(panel, 0);
 	else if (panel->bl_config.type == DSI_BACKLIGHT_NVT)
 		dsi_panel_nvt_update_backlight(panel, 0);
+	else if (panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING &&
+			panel->bl_config.temperature_dependent_timing)
+		cancel_delayed_work_sync(&panel->bl_config.bl_temp_dwork);
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_PRE_OFF);
 	if (rc) {

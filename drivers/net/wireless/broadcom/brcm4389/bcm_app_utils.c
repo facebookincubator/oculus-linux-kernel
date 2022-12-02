@@ -3,7 +3,7 @@
  * Contents are wifi-specific, used by any kernel or app-level
  * software that might want wifi things as it grows.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -109,33 +109,7 @@ cca_info(uint8 *bitmap, int num_bits, int *left, int *bit_pos)
 static uint8
 spec_to_chan(chanspec_t chspec)
 {
-	uint8 center_ch, edge, primary, sb;
-
-	center_ch = CHSPEC_CHANNEL(chspec);
-
-	if (CHSPEC_IS20(chspec)) {
-		return center_ch;
-	} else {
-		/* the lower edge of the wide channel is half the bw from
-		 * the center channel.
-		 */
-		if (CHSPEC_IS40(chspec)) {
-			edge = center_ch - CH_20MHZ_APART;
-		} else {
-			/* must be 80MHz (until we support more) */
-			ASSERT(CHSPEC_IS80(chspec));
-			edge = center_ch - CH_40MHZ_APART;
-		}
-
-		/* find the channel number of the lowest 20MHz primary channel */
-		primary = edge + CH_10MHZ_APART;
-
-		/* select the actual subband */
-		sb = (chspec & WL_CHANSPEC_CTL_SB_MASK) >> WL_CHANSPEC_CTL_SB_SHIFT;
-		primary = primary + sb * CH_20MHZ_APART;
-
-		return primary;
-	}
+	return wf_chspec_primary20_chan(chspec);
 }
 
 /*

@@ -43,7 +43,7 @@ int spi_stp_dev_map_errors(int stp_error)
 
 #if defined(STP_DEBUG_ALL_ERR_CODES) && (STP_DEBUG_ALL_ERR_CODES == 1)
 	if (ret != 0)
-		STP_DRV_LOG_ERR("Error found: `%d` converted to `%d`",
+		STP_DRV_LOG_ERR_RATE_LIMIT("Error found: `%d` converted to `%d`",
 				stp_error, ret);
 #endif
 

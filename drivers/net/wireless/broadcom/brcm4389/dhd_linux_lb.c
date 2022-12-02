@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD), Linux-specific network interface
  * Basically selected code segments from usb-cdc.c and usb-rndis.c
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -251,6 +251,12 @@ int dhd_cpu_startup_callback(unsigned int cpu)
 {
 	dhd_info_t *dhd = g_dhd_pub->info;
 
+	if (!dhd || !(dhd->dhd_state & DHD_ATTACH_STATE_LB_ATTACH_DONE)) {
+		DHD_ERROR(("%s(): LB data is not initialized yet.\n",
+			__FUNCTION__));
+		return 0;
+	}
+
 	DHD_INFO(("%s(): \r\n cpu:%d", __FUNCTION__, cpu));
 	DHD_LB_STATS_INCR(dhd->cpu_online_cnt[cpu]);
 	cpumask_set_cpu(cpu, dhd->cpumask_curr_avail);
@@ -262,6 +268,12 @@ int dhd_cpu_startup_callback(unsigned int cpu)
 int dhd_cpu_teardown_callback(unsigned int cpu)
 {
 	dhd_info_t *dhd = g_dhd_pub->info;
+
+	if (!dhd || !(dhd->dhd_state & DHD_ATTACH_STATE_LB_ATTACH_DONE)) {
+		DHD_ERROR(("%s(): LB data is not initialized yet.\n",
+			__FUNCTION__));
+		return 0;
+	}
 
 	DHD_INFO(("%s(): \r\n cpu:%d", __FUNCTION__, cpu));
 	DHD_LB_STATS_INCR(dhd->cpu_offline_cnt[cpu]);
@@ -661,7 +673,7 @@ void dhd_lb_stats_dump_cpu_array(struct bcmstrbuf *strbuf, uint32 *p)
 uint64 dhd_lb_mem_usage(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 {
 	dhd_info_t *dhd;
-	uint16 rxbufpost_sz;
+	uint16 rxbufpost_alloc_sz;
 	uint16 rx_post_active = 0;
 	uint16 rx_cmpl_active = 0;
 	uint64 rx_path_memory_usage = 0;
@@ -677,29 +689,29 @@ uint64 dhd_lb_mem_usage(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 		DHD_ERROR(("%s(): DHD pointer is NULL \n", __FUNCTION__));
 		return 0;
 	}
-	rxbufpost_sz = dhd_prot_get_rxbufpost_sz(dhdp);
-	if (rxbufpost_sz == 0) {
-		rxbufpost_sz = DHD_FLOWRING_RX_BUFPOST_PKTSZ;
+	rxbufpost_alloc_sz = dhd_prot_get_rxbufpost_alloc_sz(dhdp);
+	if (rxbufpost_alloc_sz == 0) {
+		rxbufpost_alloc_sz = DHD_FLOWRING_RX_BUFPOST_PKTSZ;
 	}
-	rx_path_memory_usage = rxbufpost_sz * (skb_queue_len(&dhd->rx_emerge_queue) +
+	rx_path_memory_usage = rxbufpost_alloc_sz * (skb_queue_len(&dhd->rx_emerge_queue) +
 		skb_queue_len(&dhd->rx_pend_queue) +
 		skb_queue_len(&dhd->rx_napi_queue) +
 		skb_queue_len(&dhd->rx_process_queue));
 	rx_post_active = dhd_prot_get_h2d_rx_post_active(dhdp);
 	if (rx_post_active != 0) {
-		rx_path_memory_usage += (rxbufpost_sz * rx_post_active);
+		rx_path_memory_usage += (rxbufpost_alloc_sz * rx_post_active);
 	}
 
 	rx_cmpl_active = dhd_prot_get_d2h_rx_cpln_active(dhdp);
 	if (rx_cmpl_active != 0) {
-		rx_path_memory_usage += (rxbufpost_sz * rx_cmpl_active);
+		rx_path_memory_usage += (rxbufpost_alloc_sz * rx_cmpl_active);
 	}
 
 	dhdp->rxpath_mem = rx_path_memory_usage;
-	bcm_bprintf(strbuf, "\nrxbufpost_sz: %d rx_post_active: %d rx_cmpl_active: %d "
+	bcm_bprintf(strbuf, "\nrxbufpost_alloc_sz: %d rx_post_active: %d rx_cmpl_active: %d "
 		"emerge_queue_len: %d pend_queue_len: %d napi_queue_len: %d"
 		" process_queue_len: %d\n",
-		rxbufpost_sz, rx_post_active, rx_cmpl_active,
+		rxbufpost_alloc_sz, rx_post_active, rx_cmpl_active,
 		skb_queue_len(&dhd->rx_emerge_queue), skb_queue_len(&dhd->rx_pend_queue),
 		skb_queue_len(&dhd->rx_napi_queue), skb_queue_len(&dhd->rx_process_queue));
 	bcm_bprintf(strbuf, "DHD rx-path memory_usage: %llubytes %lluKB \n",
@@ -724,6 +736,7 @@ void dhd_lb_stats_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 		return;
 	}
 
+	bcm_bprintf(strbuf, "\nLoad Balancing/NAPI stats:\n==========================\n");
 	bcm_bprintf(strbuf, "\ncpu_online_cnt:\n");
 	dhd_lb_stats_dump_cpu_array(strbuf, dhd->cpu_online_cnt);
 
@@ -747,6 +760,13 @@ void dhd_lb_stats_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	dhd_lb_stats_dump_histo(dhdp, strbuf, dhd->napi_rx_hist);
 	bcm_bprintf(strbuf, "\nNAPI poll latency stats ie from napi schedule to napi execution\n");
 	dhd_lb_stats_dump_napi_latency(dhdp, strbuf, dhd->napi_latency);
+
+	bcm_bprintf(strbuf, "\nlb_rxp_stop_thr_hitcnt: %llu lb_rxp_strt_thr_hitcnt: %llu"
+		" rx_dma_stall_hc_ignore_cnt: %llu\n",
+		dhdp->lb_rxp_stop_thr_hitcnt, dhdp->lb_rxp_strt_thr_hitcnt,
+		dhdp->rx_dma_stall_hc_ignore_cnt);
+	bcm_bprintf(strbuf, "\nlb_rxp_napi_sched_cnt: %llu lb_rxp_napi_omplete_cnt: %llu\n",
+		dhdp->lb_rxp_napi_sched_cnt, dhdp->lb_rxp_napi_complete_cnt);
 #endif /* DHD_LB_RXP */
 
 #ifdef DHD_LB_TXP
@@ -756,6 +776,7 @@ void dhd_lb_stats_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	bcm_bprintf(strbuf, "\ntx_start_percpu_run_cnt:\n");
 	dhd_lb_stats_dump_cpu_array(strbuf, dhd->tx_start_percpu_run_cnt);
 #endif /* DHD_LB_TXP */
+	bcm_bprintf(strbuf, "\n");
 }
 
 void dhd_lb_stats_update_napi_latency(uint64 *bin, uint32 latency)
@@ -1133,31 +1154,6 @@ dhd_napi_schedule(void *info)
 	 * processing all its packets. The rx_napi_struct may only run on one
 	 * core at a time, to avoid out-of-order handling.
 	 */
-}
-
-/**
- * dhd_napi_schedule_on - API to schedule on a desired CPU core a NET_RX_SOFTIRQ
- * action after placing the dhd's rx_process napi object in the the remote CPU's
- * softnet data's poll_list.
- *
- * @dhd: dhd_info which has the rx_process napi object
- * @on_cpu: desired remote CPU id
- */
-static INLINE int
-dhd_napi_schedule_on(dhd_info_t *dhd, int on_cpu)
-{
-	int wait = 0; /* asynchronous IPI */
-	DHD_INFO(("%s dhd<%p> napi<%p> on_cpu<%d>\n",
-		__FUNCTION__, dhd, &dhd->rx_napi_struct, on_cpu));
-
-	if (smp_call_function_single(on_cpu, dhd_napi_schedule, dhd, wait)) {
-		DHD_ERROR(("%s smp_call_function_single on_cpu<%d> failed\n",
-			__FUNCTION__, on_cpu));
-	}
-
-	DHD_LB_STATS_INCR(dhd->napi_sched_cnt);
-
-	return 0;
 }
 
 /*

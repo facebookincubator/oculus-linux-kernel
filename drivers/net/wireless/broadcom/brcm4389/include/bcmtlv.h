@@ -1,7 +1,7 @@
 /*
  * TLV and XTLV support
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -131,6 +131,10 @@ bcm_tlv_t *bcm_parse_tlvs_dot11(const  void *buf, uint buflen, uint key, bool id
 
 /* same as parse_tlvs, but stops when found id > key */
 const  bcm_tlv_t *bcm_parse_ordered_tlvs(const  void *buf, uint buflen, uint key);
+
+/* sub-buffer ptr/len contained inside the elt starting at the given body_offset */
+void bcm_tlv_sub_buffer(const bcm_tlv_t *elt, uint body_offset,
+	const uint8 **buffer, uint8 *buflen);
 
 /* find a tlv with DOT11_MNG_PROPR_ID as id, and the given oui and type */
 	bcm_tlv_t *bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui,

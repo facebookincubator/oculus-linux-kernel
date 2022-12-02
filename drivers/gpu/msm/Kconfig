@@ -74,6 +74,14 @@ config QCOM_KGSL_ENTRY_METADATA
 	  functioning of the driver. Say 'N' unless there is a specific need
 	  for this feature.
 
+config QCOM_KGSL_TRACK_MEMFREE
+	bool "Track freed memory entries"
+	depends on QCOM_KGSL && QCOM_KGSL_IOMMU
+	help
+	  Adds tracking of freed memory entries to provide extra information
+	  about premature frees to page fault logs. This adds substantial cost
+	  to memory entry creation/destruction. Say 'N'.
+
 config QCOM_KGSL_PAGE_POOLING
 	bool "Enable support for KGSL page pools"
 	default y if QCOM_KGSL

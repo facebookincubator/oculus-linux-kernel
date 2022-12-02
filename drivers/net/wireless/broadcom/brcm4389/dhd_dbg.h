@@ -1,7 +1,7 @@
 /*
  * Debug/trace/assert driver definitions for Dongle Host Driver.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -722,6 +722,25 @@ extern int dhd_log_level;
 #ifdef DHD_LOG_PRINT_RATE_LIMIT
 extern int log_print_threshold;
 #endif /* DHD_LOG_PRINT_RATE_LIMIT */
+
+#ifdef DHD_IOVAR_LOG_FILTER_DUMP
+#define DHD_IOVAR_LOG_CHECK(dhd_pub, ioc_cmd, ioc_msg) \
+	dhd_iovar_log_dump_check(dhd_pub, ioc_cmd, ioc_msg)
+#else
+#define DHD_IOVAR_LOG_CHECK(dhd_pub, ioc_cmd, ioc_msg) TRUE
+#endif /* DHD_IOVAR_LOG_FILTER_DUMP */
+
+#define DHD_IOVAR_LOG(dhd_pub, ioc_cmd, ioc_msg, fmt) \
+	do { \
+		if (DHD_IOVAR_LOG_CHECK(dhd_pub, ioc_cmd, ioc_msg)) { \
+			DHD_IOVAR_MEM(fmt); \
+		} else { \
+			DHD_TRACE(fmt); \
+		} \
+	} while (0)
+
+/* DHD_PRINT - informational non-error messages which need to be always printed */
+#define DHD_PRINT	DHD_ERROR
 
 /* Defines msg bits */
 #include <dhdioctl.h>

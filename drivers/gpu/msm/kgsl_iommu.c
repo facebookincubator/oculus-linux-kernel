@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2011-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/bitfield.h>
@@ -632,6 +633,7 @@ static void _print_entry(struct kgsl_device *device, struct _mem_entry *entry)
 		      entry->pid, entry->name);
 }
 
+#if defined(CONFIG_QCOM_KGSL_TRACK_MEMFREE)
 static void _check_if_freed(struct kgsl_iommu_context *ctx,
 	uint64_t addr, pid_t ptname)
 {
@@ -652,6 +654,12 @@ static void _check_if_freed(struct kgsl_iommu_context *ctx,
 			      gpuaddr, gpuaddr + size, name, pid);
 	}
 }
+#else
+static void _check_if_freed(struct kgsl_iommu_context *ctx,
+	uint64_t addr, pid_t ptname)
+{
+}
+#endif
 
 static struct kgsl_iommu_context *
 iommu_context_by_name(struct kgsl_iommu *iommu, u32 name)
@@ -2998,20 +3006,21 @@ static int kgsl_iommu_svm_range(struct kgsl_pagetable *pagetable,
 }
 
 static bool kgsl_iommu_addr_in_range(struct kgsl_pagetable *pagetable,
-		uint64_t gpuaddr)
+		uint64_t gpuaddr, uint64_t size)
 {
 	struct kgsl_iommu_pt *pt = pagetable->priv;
 
 	if (gpuaddr == 0)
 		return false;
 
-	if (gpuaddr >= pt->va_start && gpuaddr < pt->va_end)
+	if (gpuaddr >= pt->va_start && (gpuaddr + size) <= pt->va_end)
 		return true;
 
-	if (gpuaddr >= pt->compat_va_start && gpuaddr < pt->compat_va_end)
+	if (gpuaddr >= pt->compat_va_start &&
+			(gpuaddr + size) <= pt->compat_va_end)
 		return true;
 
-	if (gpuaddr >= pt->svm_start && gpuaddr < pt->svm_end)
+	if (gpuaddr >= pt->svm_start && (gpuaddr + size) <= pt->svm_end)
 		return true;
 
 	return false;

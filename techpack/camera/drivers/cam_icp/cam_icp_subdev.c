@@ -226,7 +226,7 @@ static const struct cam_node_fastpath_ops fastpath_ctx_ops = {
 	.acquire_dev     = cam_icp_fastpath_acquire_dev,
 	.release_dev     = cam_icp_fastpath_release_dev,
 	.set_stream_mode = cam_icp_fastpath_set_stream_mode,
-	.stream_mode_cmd = cam_isp_fastpath_stream_mode_cmd,
+	.stream_mode_cmd = cam_icp_fastpath_stream_mode_cmd,
 };
 
 static int cam_icp_probe(struct platform_device *pdev)

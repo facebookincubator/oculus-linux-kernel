@@ -100,6 +100,21 @@
 			};
 		};
 	};
+
+	cm7120_headphone_det_default: cm7120_headphone_det_default {
+		mux {
+			pins = "gpio89", "gpio113";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio89", "gpio113";
+			drive-strength = <2>;
+			input-enable;
+			bias-disable;
+		};
+	};
+
 };
 
 &soc {
@@ -134,13 +149,15 @@
 
 		cm7120,codec_1v8-supply = <&pm8150_l7>;
 		cm7120,codec_3v3-supply = <&pm8150_l16>;
-		cm7120,firmware-name = "CM7120.bin";
+		cm7120,firmware-name = "CM7120_TDM.bin";
 
+		cm7120,headphone-det-gpios = <&tlmm 113 0 &tlmm 89 0>;
 		qcom,use-pinctrl = <1>;
 		pinctrl-names = "active", "suspend",
 			"spk_en", "spk_suspend";
 		pinctrl-0 = <&cm7120_codec_ldo_en_default
-			&cm7120_codec_reset_default>;
+			&cm7120_codec_reset_default
+			&cm7120_headphone_det_default>;
 		pinctrl-1 = <&cm7120_codec_ldo_en_suspend
 			&cm7120_codec_reset_suspend>;
 		pinctrl-2 = <&cm7120_speaker_en_default>;
@@ -169,14 +186,16 @@
 	cm7120_snd: cm7120_snd {
 		status = "ok";
 		compatible = "qcom,kona-asoc-snd";
-		qcom,model = "kona-cm7120-snd-card";
+		qcom,model = "kona-cm7120-tdm-snd-card";
 
-		qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <1>, <1>;
+		qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <0>, <1>;
+		qcom,tdm-max-slots = <4>;
 
 		qcom,afe-rxtx-lb = <0>;
-		qcom,auxpcm-audio-intf = <1>;
+		qcom,auxpcm-audio-intf = <0>;
 		qcom,ext-disp-audio-rx = <0>;
 		qcom,mi2s-audio-intf = <1>;
+		qcom,tdm-audio-intf = <1>;
 		qcom,wcn-bt = <0>;
 		qcom,msm_audio_ssr_devs = <&audio_apr>, <&q6core>;
 		qcom,audio-routing =
@@ -200,10 +219,7 @@
 				"msm-pcm-dsp-noirq";
 		asoc-cpu = <&dai_mi2s0>, <&dai_mi2s1>,
 				<&dai_mi2s2>, <&dai_mi2s3>,
-				<&dai_mi2s4>, <&dai_mi2s5>, <&dai_pri_auxpcm>,
-				<&dai_sec_auxpcm>, <&dai_tert_auxpcm>,
-				<&dai_quat_auxpcm>, <&dai_quin_auxpcm>,
-				<&dai_sen_auxpcm>,
+				<&dai_mi2s4>, <&dai_mi2s5>,
 				<&afe_pcm_rx>, <&afe_pcm_tx>, <&afe_proxy_rx>,
 				<&afe_proxy_tx>, <&incall_record_rx>,
 				<&incall_record_tx>, <&incall_music_rx>,
@@ -220,10 +236,7 @@
 		asoc-cpu-names = "msm-dai-q6-mi2s.0", "msm-dai-q6-mi2s.1",
 				"msm-dai-q6-mi2s.2", "msm-dai-q6-mi2s.3",
 				"msm-dai-q6-mi2s.4", "msm-dai-q6-mi2s.5",
-				"msm-dai-q6-auxpcm.1",
-				"msm-dai-q6-auxpcm.2", "msm-dai-q6-auxpcm.3",
-				"msm-dai-q6-auxpcm.4", "msm-dai-q6-auxpcm.5",
-				"msm-dai-q6-auxpcm.6", "msm-dai-q6-dev.224",
+				"msm-dai-q6-dev.224",
 				"msm-dai-q6-dev.225", "msm-dai-q6-dev.241",
 				"msm-dai-q6-dev.240", "msm-dai-q6-dev.32771",
 				"msm-dai-q6-dev.32772", "msm-dai-q6-dev.32773",
@@ -239,18 +252,45 @@
 				"msm-dai-q6-dev.24577";
 
 		qcom,pri-mi2s-gpios = <&pri_mi2s_gpios>;
+		qcom,quin-mi2s-gpios = <&quin_mi2s_gpios>;
 	};
 
 	pri_mi2s_gpios: pri_mi2s_gpios {
 		compatible = "qcom,msm-cdc-pinctrl";
 		pinctrl-names = "aud_active", "aud_sleep";
-		pinctrl-0 = <&pri_mi2s_sck_active
-			&pri_mi2s_sd0_active
-			&pri_mi2s_sd1_active
-			&pri_mi2s_ws_active>;
-		pinctrl-1 = <&pri_mi2s_sck_sleep
-			&pri_mi2s_sd0_sleep
-			&pri_mi2s_sd1_sleep
-			&pri_mi2s_ws_sleep>;
+		pinctrl-0 = <&pri_tdm_clk_active
+			&pri_tdm_din_active
+			&pri_tdm_dout_active
+			&pri_tdm_sync_active>;
+		pinctrl-1 = <&pri_tdm_clk_sleep
+			&pri_tdm_din_sleep
+			&pri_tdm_dout_sleep
+			&pri_tdm_sync_sleep>;
 	};
+
+	quin_mi2s_gpios: quin_mi2s_gpios {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&lpi_i2s1_sck_active
+			&lpi_i2s1_sd0_active
+			&lpi_i2s1_sd1_active
+			&lpi_i2s1_ws_active>;
+		pinctrl-1 = <&lpi_i2s1_sck_sleep
+			&lpi_i2s1_sd0_sleep
+			&lpi_i2s1_sd1_sleep
+			&lpi_i2s1_ws_sleep>;
+		qcom,lpi-gpios;
+	};
+};
+
+&tdm_pri_rx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <1>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
+};
+
+&tdm_pri_tx {
+	qcom,msm-cpudai-tdm-lane-mask = /bits/ 16 <2>;
+	qcom,msm-cpudai-tdm-sync-mode = <0>;
+	qcom,msm-cpudai-tdm-invert-sync = <0>;
 };

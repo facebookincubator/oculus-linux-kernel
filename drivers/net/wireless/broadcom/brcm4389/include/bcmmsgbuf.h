@@ -4,7 +4,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -62,6 +62,8 @@
 #define D2HRING_TXCMPLT_ITEMSIZE	24
 #define D2HRING_RXCMPLT_ITEMSIZE	40
 
+#define D2HRING_MDCMPLT_ITEMSIZE	80
+
 #define D2HRING_TXCMPLT_ITEMSIZE_PREREV7	16
 #define D2HRING_RXCMPLT_ITEMSIZE_PREREV7	32
 
@@ -75,6 +77,7 @@
 #define D2HRING_DYNAMIC_INFO_MAX_ITEM          32
 
 #define H2DRING_TXPOST_MAX_ITEM			512
+#define D2HRING_MDRING_MAX_ITEM			2048
 
 #if defined(DHD_HTPUT_TUNABLES)
 #define H2DRING_RXPOST_MAX_ITEM			2048
@@ -269,6 +272,7 @@ typedef enum bcmpcie_msgtype {
 	MSG_TYPE_TX_STATUS_AGGR		= 0x30,
 	MSG_TYPE_RXBUF_POST_AGGR	= 0x31,
 	MSG_TYPE_RX_CMPLT_AGGR		= 0x32,
+	MSG_TYPE_MDATA_CPL		= 0x33,
 	MSG_TYPE_API_MAX_RSVD		= 0x3F
 } bcmpcie_msg_type_t;
 
@@ -289,7 +293,8 @@ typedef enum bcmpcie_msgtype_int {
 	MSG_TYPE_HMAPTEST_PYLD		= 0x4C,
 	MSG_TYPE_PVT_BT_SNAPSHOT_CMPLT  = 0x4D,
 	MSG_TYPE_BT_SNAPSHOT_PYLD       = 0x4E,
-	MSG_TYPE_LPBK_DMAXFER_PYLD_ADDR	= 0x4F	/* loopback from addr pkt */
+	MSG_TYPE_LPBK_DMAXFER_PYLD_ADDR	= 0x4F,	/* loopback from addr pkt */
+	MSG_TYPE_PCIE_BUS_TPUT		= 0x50	/* payload for pcie bus tput measurements */
 } bcmpcie_msgtype_int_t;
 
 typedef enum bcmpcie_msgtype_u {
@@ -352,6 +357,10 @@ typedef struct bcmpcie_msi_offset_config {
 	bcmpcie_msi_offset_t	bcmpcie_msi_offset[MSI_INTR_IDX_MAX];
 } bcmpcie_msi_offset_config_t;
 
+typedef struct bcmpcie_mdata_config {
+	uint16  ringid;
+} bcmpcie_mdata_config_t;
+
 #define BCMPCIE_D2H_MSI_OFFSET_DEFAULT	BCMPCIE_D2H_MSI_OFFSET_DB1
 
 #define BCMPCIE_D2H_MSI_SINGLE		0xFFFE
@@ -371,8 +380,11 @@ typedef struct bcmpcie_msi_offset_config {
 #define BCMPCIE_CMNHDR_FLAGS_DMA_R_IDX_INTR	0x2
 #define BCMPCIE_CMNHDR_FLAGS_TS_SEQNUM_INIT	0x4
 #define BCMPCIE_CMNHDR_FLAGS_WAKE_PACKET	0x8
+#define BCMPCIE_CMNHDR_FLAGS_MDATA_PRESENT	0x10
 #define BCMPCIE_CMNHDR_FLAGS_PHASE_BIT		0x80
 #define BCMPCIE_CMNHDR_PHASE_BIT_INIT		0x80
+#define BCMPCIE_FLOWRING_PHASE_NIBBLE_INIT	0xA0
+#define BCMPCIE_FLOWRING_PHASE_NIBBLE_WRAP	0x50
 
 /* IOCTL request message */
 typedef struct ioctl_req_msg {
@@ -548,7 +560,9 @@ typedef struct tx_flowring_flush_request {
 typedef enum ring_config_subtype {
 	/** Default D2H PCIE doorbell override using ring_config_req msg */
 	D2H_RING_CONFIG_SUBTYPE_SOFT_DOORBELL = 1, /* Software doorbell */
-	D2H_RING_CONFIG_SUBTYPE_MSI_DOORBELL = 2   /* MSI configuration */
+	D2H_RING_CONFIG_SUBTYPE_MSI_DOORBELL  = 2, /* MSI configuration */
+	D2H_RING_CONFIG_SUBTYPE_MDATA_LINK    = 3, /* Metadata ring link */
+	D2H_RING_CONFIG_SUBTYPE_MDATA_UNLINK  = 4  /* Metadata ring unlink */
 } ring_config_subtype_t;
 
 typedef struct ring_config_req { /* pulled from upcoming rev6 ... */
@@ -562,6 +576,7 @@ typedef struct ring_config_req { /* pulled from upcoming rev6 ... */
 		bcmpcie_soft_doorbell_t soft_doorbell;
 		/** D2H_RING_CONFIG_SUBTYPE_MSI_DOORBELL */
 		bcmpcie_msi_offset_config_t msi_offset;
+		bcmpcie_mdata_config_t mdata_assoc;
 	};
 } ring_config_req_t;
 
@@ -1000,7 +1015,7 @@ typedef union rxbuf_submit_item {
 #define BCMPCIE_RX_PKT_RSSI_SHIFT		0u
 #define BCMPCIE_RX_PKT_DUR0_MASK		0xFFFF00u
 #define BCMPCIE_RX_PKT_DUR0_SHIFT		8u
-#define BCMPCIE_RX_PKT_BAND_MASK		0x1000000u
+#define BCMPCIE_RX_PKT_BAND_MASK		0x3000000u
 #define BCMPCIE_RX_PKT_BAND_SHIFT		24u
 
 /* D2H Rxcompletion ring work items for IPC rev7 */
@@ -1147,6 +1162,10 @@ typedef host_txbuf_post_v1_t host_txbuf_post_t;
 #define BCMPCIE_PKT_FLAGS_EPOCH_SHIFT           3u
 #define BCMPCIE_PKT_FLAGS_EPOCH_MASK            (1u << BCMPCIE_PKT_FLAGS_EPOCH_SHIFT)
 
+#define BCMPCIE_PKT_FLAGS_IGMP                 0x10
+#define BCMPCIE_PKT_FLAGS_IGMP_SHIFT           4u
+#define BCMPCIE_PKT_FLAGS_IGMP_MASK            (1u << BCMPCIE_PKT_FLAGS_IGMP_SHIFT)
+
 #define BCMPCIE_PKT_FLAGS_PRIO_SHIFT		5
 #define BCMPCIE_PKT_FLAGS_PRIO_MASK		(7 << BCMPCIE_PKT_FLAGS_PRIO_SHIFT)
 #define BCMPCIE_PKT_FLAGS_MONITOR_NO_AMSDU	0x00
@@ -1159,6 +1178,7 @@ typedef host_txbuf_post_v1_t host_txbuf_post_t;
 #define BCMPCIE_PKT_FLAGS_FRAME_MESH		0x400u
 /* Indicate RX checksum verified and passed */
 #define BCMPCIE_PKT_FLAGS_RCSUM_VALID		0x800u
+#define BCMPCIE_PKT_FLAGS_RCSUM_VALID_AGGR	0x01u
 
 /* These are added to fix up compile issues */
 #define BCMPCIE_TXPOST_FLAGS_FRAME_802_3	BCMPCIE_PKT_FLAGS_FRAME_802_3
@@ -1602,7 +1622,9 @@ typedef struct host_rxbuf_post_aggr {
 /* each rx buffer work item */
 typedef struct host_rxbuf_cmpl_pkt {
 	/** offset in the host rx buffer where the data starts */
-	uint16		data_offset;
+	uint8		data_offset;
+	/** d2h flags */
+	uint8		flags;
 	/** filled up buffer len to receive data */
 	uint16		data_len;
 	/** packet Identifier for the associated host buffer */
@@ -1644,6 +1666,14 @@ enum {
 	TXPOST_EXT_TAG_LEN_CSO		= 4u,
 	TXPOST_EXT_TAG_LEN_MESH		= 20u
 };
+
+/* CSO specific information for the cso enabled txpost workitem */
+typedef struct txpost_wi_cso_info_s {
+	txpost_ext_tag_type_t ext_tag; /* extended tag (TXPOST_EXT_TAG_TYPE_CSO) */
+	uint8 pkt_csum_type;	       /* ipv4|ipv6|tcp|udp|nwk_csum|trans_csum|ph_csum */
+	uint8 nwk_hdr_len;	       /* IP header length */
+	uint8 trans_hdr_len;	       /* TCP header length */
+} txpost_wi_cso_info_t;
 
 /*
  * Note: The only requirement is that the overall size of the workitem be multiple of 8.

@@ -15,6 +15,10 @@ Required properties:
 						power the bridge. There can be more than one instance
 						of this binding, in which case the entry would be
 						appended with the supply entry index.
+
+	- lt,audio-support:			I2S to HDMI Audio support
+	- lt,ext-disp:				External display interface handle
+
 	e.g. lt,supply-entry@0
 	-- lt,supply-name: name of the supply (vdd/vcc)
 	-- lt,supply-min-voltage: minimum voltage level (uV)

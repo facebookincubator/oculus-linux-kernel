@@ -1,7 +1,7 @@
 /*
  * DHD Protocol Module for CDC and BDC.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -168,6 +168,26 @@ dhdcdc_cmplt(dhd_pub_t *dhd, uint32 id, uint32 len)
 	dhd_prot_t *prot = dhd->prot;
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
+	/*
+	 * prot->msg is the buffer used to send the ioctl msg in dhdcdc_msg and the same is
+	 * used for receiving the ioctl response.
+	 * As this buffer is not cleared after sending message and before re-using for receive
+	 * operation, problems are seen when bus errors occur.
+	 * Example:- An error is seen on the bus where a 0 byte pkt is received.
+	 * the bus-controller "layer below cdc" does not update the buffer in this 0 byte pkt case.
+	 * bus-controller layer calls the completion callback without any error and with the
+	 * same buffer.(no change)
+	 * This issue is seen on DBUS/USB + FPGA platforms
+	 * In this function if there is no update to the buffer, the stale id field of sent msg
+	 * matches to expected ID and further processing is done thinking that
+	 * proper response is received.
+	 * This is a generic problem and its a good idea to clear the buffer or atleast
+	 * the buffer's key value (ioctl ID within flags field in this case) before re-using it.
+	 *
+	 * To ensure that a new content is indeed received from the bus making flags = 0.
+	 * Note that ID=0 is invalid value.
+	 */
+	prot->msg.flags = 0;
 
 	do {
 #ifdef BCMDBUS
@@ -512,6 +532,19 @@ dhd_prot_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 #ifdef PROP_TXSTATUS
 	dhd_wlfc_dump(dhdp, strbuf);
 #endif
+}
+
+void
+dhd_prot_counters(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf,
+	bool print_ringinfo, bool print_pktidinfo)
+{
+	return;
+}
+
+void
+dhd_bus_counters(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
+{
+	return;
 }
 
 /*	The FreeBSD PKTPUSH could change the packet buf pinter

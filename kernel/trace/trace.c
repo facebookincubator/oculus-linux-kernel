@@ -6187,6 +6187,59 @@ tracing_mark_write(struct file *filp, const char __user *ubuf,
 	return written;
 }
 
+#ifdef CONFIG_KERNEL_ATRACE
+bool __atrace_is_enabled(void)
+{
+	return tracing_is_enabled() && (global_trace.trace_flags &
+			TRACE_ITER_MARKERS) != 0;
+}
+EXPORT_SYMBOL_GPL(__atrace_is_enabled);
+
+int __atrace_begin(const struct task_struct *task, const char *name)
+{
+	char buf[64];
+	int len;
+
+	if (!__atrace_is_enabled())
+		return -EINVAL;
+
+	len = scnprintf(buf, sizeof(buf), "B|%d|%s", task ? task->tgid : 0,
+			name);
+
+	return __trace_puts((unsigned long)&tracing_mark_write, buf, len);
+}
+EXPORT_SYMBOL_GPL(__atrace_begin);
+
+int __atrace_end(const struct task_struct *task)
+{
+	char buf[64];
+	int len;
+
+	if (!__atrace_is_enabled())
+		return -EINVAL;
+
+	len = scnprintf(buf, sizeof(buf), "E|%d", task ? task->tgid : 0);
+
+	return __trace_puts((unsigned long)&tracing_mark_write, buf, len);
+}
+EXPORT_SYMBOL_GPL(__atrace_end);
+
+int __atrace_int(const struct task_struct *task, const char *name, int value)
+{
+	char buf[64];
+	int len;
+
+	if (!__atrace_is_enabled())
+		return -EINVAL;
+
+	len = scnprintf(buf, sizeof(buf), "C|%d|%s|%d", task ? task->tgid : 0,
+			name, value);
+
+	return __trace_puts((unsigned long)&tracing_mark_write, buf, len);
+}
+EXPORT_SYMBOL_GPL(__atrace_int);
+#endif /* CONFIG_KERNEL_ATRACE */
+
 /* Limit it for now to 3K (including tag) */
 #define RAW_DATA_MAX_SIZE (1024*3)
 
@@ -8563,7 +8616,7 @@ __init static int tracer_alloc_buffers(void)
 		goto out_free_savedcmd;
 	}
 
-	if (global_trace.buffer_disabled)
+	if (!default_bootup_tracer || global_trace.buffer_disabled)
 		tracing_off();
 
 	if (trace_boot_clock) {

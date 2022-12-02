@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -88,7 +88,7 @@ typedef unsigned long long int uintptr;
 #endif
 #endif /* TYPEDEF_UINTPTR */
 
-#if defined(_RTE_)
+#if defined(_RTE_) || defined(COEX_CPU_BUILD)
 #define _NEED_SIZE_T_
 #endif
 
@@ -96,9 +96,9 @@ typedef unsigned long long int uintptr;
 ** math.h header file. Don't re-typedef them here.
 */
 
-#if defined(MACOSX)
+#if defined(MACOSX) || defined(__linux__)
 #define TYPEDEF_FLOAT_T
-#endif /* MACOSX */
+#endif /* MACOSX || Linux */
 
 #if defined(_NEED_SIZE_T_)
 typedef long unsigned int size_t;
@@ -144,13 +144,13 @@ typedef unsigned __int64 uint64;
 #endif	/* linux && !EFI */
 
 #if !defined(__linux__) && !defined(_WIN32) && !defined(_RTE_) && !defined(__DJGPP__) \
-	&& !defined(__BOB__) && !defined(EFI)
+	&& !defined(__BOB__) && !defined(EFI) && !defined(COEX_CPU_BUILD)
 #define TYPEDEF_UINT
 #define TYPEDEF_USHORT
 #endif
 
 /* Do not support the (u)int64 types with strict ansi for GNU C */
-#if defined(__GNUC__) && defined(__STRICT_ANSI__)
+#if defined(__GNUC__) && defined(__STRICT_ANSI__) && (__STDC_VERSION__ < 199901L)
 #define TYPEDEF_INT64
 #define TYPEDEF_UINT64
 #endif /* defined(__GNUC__) && defined(__STRICT_ANSI__) */
@@ -162,14 +162,14 @@ typedef unsigned __int64 uint64;
 
 #define TYPEDEF_INT64
 
-#if defined(__STDC__)
+#if defined(__STDC__) && (__STDC_VERSION__ < 199901L)
 #define TYPEDEF_UINT64
 #endif
 
 #endif /* __ICL */
 
-#if !defined(_WIN32) && !defined(_RTE_) && !defined(__DJGPP__) && !defined(__BOB__) && \
-	!defined(EFI)
+#if !defined(_WIN32) && !defined(_RTE_) && !defined(COEX_CPU_BUILD) && \
+	!defined(__DJGPP__) && !defined(__BOB__) && !defined(EFI)
 
 /* pick up ushort & uint from standard types.h */
 #if defined(__linux__) && defined(__KERNEL__)
@@ -400,6 +400,7 @@ typedef UINTN         uintptr;
 #define UNUSED_PARAMETER(x) (void)(x)
 #define DISCARD_QUAL(ptr, type) ((type *)(uintptr)(ptr))
 #define INLINE
+#define INLINE_ALWAYS	INLINE
 #define	AUTO	(-1) /* Auto = -1 */
 #define	ON	1  /* ON = 1 */
 #define	OFF	0

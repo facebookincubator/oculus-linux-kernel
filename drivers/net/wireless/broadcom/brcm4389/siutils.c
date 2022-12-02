@@ -2,7 +2,7 @@
  * Misc utility routines for accessing chip-specific features
  * of the SiliconBackplane-based Broadcom chips.
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -952,6 +952,7 @@ si_muxenab(si_t *sih, uint32 w)
 		break;
 
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 		if (w & MUXENAB_DEF_UART_MASK) {
@@ -1227,6 +1228,7 @@ si_gpio_enable(si_t *sih, uint32 mask)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
 		fnsel = CC_FNSEL_SAMEASPIN;
@@ -1275,6 +1277,7 @@ BCMPOSTTRAPFN(si_gci_host_wake_gpio_enable)(si_t *sih, uint8 gpio, bool state)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -1299,6 +1302,7 @@ si_gci_time_sync_gpio_enable(si_t *sih, uint8 gpio, bool state)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -1332,6 +1336,7 @@ si_gci_time_sync_gpio_init(si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -1509,6 +1514,7 @@ si_enable_device_wake(si_t *sih, uint8 *wake_mask, uint8 *cur_status)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
@@ -4551,6 +4557,7 @@ si_chip_hostif(const si_t *sih)
 		}
 		break;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 		if (CST4381_CHIPMODE_PCIE(sih->chipst)) {
 			hosti = CHIP_HOSTIF_PCIEMODE;
 		} else if (CST4381_CHIPMODE_SDIO(sih->chipst)) {
@@ -8279,6 +8286,7 @@ si_is_sprom_available(si_t *sih)
 	case BCM4387_CHIP_GRPID:
 		return (sih->chipst & CST4387_SPROM_PRESENT) != 0;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
 	case BCM4397_CHIP_GRPID:
@@ -8316,6 +8324,7 @@ si_is_otp_disabled(const si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -8391,6 +8400,7 @@ si_cis_source(const si_t *sih)
 			return CIS_SROM;
 		return CIS_OTP;
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
 	case BCM4389_CHIP_GRPID:
 	case BCM4397_CHIP_GRPID:
@@ -8416,6 +8426,7 @@ uint16 si_fabid(si_t *sih)
 		case BCM4376_CHIP_GRPID:
 		case BCM4378_CHIP_GRPID:
 		case BCM4381_CHIP_GRPID:
+		case BCM4383_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:
@@ -8534,6 +8545,7 @@ si_update_masks(si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:
@@ -9091,6 +9103,7 @@ si_pll_closeloop(si_t *sih)
 		case BCM4376_CHIP_GRPID:
 		case BCM4378_CHIP_GRPID:
 		case BCM4381_CHIP_GRPID:
+		case BCM4383_CHIP_GRPID:
 		case BCM4385_CHIP_GRPID:
 		case BCM4387_CHIP_GRPID:
 		case BCM4388_CHIP_GRPID:
@@ -9953,6 +9966,7 @@ si_chipcap_sdio_ate_only(const si_t *sih)
 	case BCM4376_CHIP_GRPID:
 	case BCM4378_CHIP_GRPID:
 	case BCM4381_CHIP_GRPID:
+	case BCM4383_CHIP_GRPID:
 	case BCM4385_CHIP_GRPID:
 	case BCM4387_CHIP_GRPID:
 	case BCM4388_CHIP_GRPID:

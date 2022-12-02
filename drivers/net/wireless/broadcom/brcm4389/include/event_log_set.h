@@ -1,7 +1,7 @@
 /*
  * EVENT_LOG system definitions
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -129,6 +129,9 @@
 /* For EWP HW Init logging */
 #define EVENT_LOG_SET_EWP_HW_INIT_LOG	(32u)
 
+//For all BCM HAL logging.
+#define EVENT_LOG_SET_BCMHAL		(38u)
+
 #ifndef NUM_EVENT_LOG_SETS
 /* Set a maximum number of sets here.  It is not dynamic for
  * efficiency of the EVENT_LOG calls. Old branches could define
@@ -137,9 +140,9 @@
  */
 #ifdef NUM_EVENT_LOG_SETS_V2
 /* for v2, everything has became unsigned */
-#define NUM_EVENT_LOG_SETS (35u)
+#define NUM_EVENT_LOG_SETS (39u)
 #else /* NUM_EVENT_LOG_SETS_V2 */
-#define NUM_EVENT_LOG_SETS (35)
+#define NUM_EVENT_LOG_SETS (39)
 #endif /* NUM_EVENT_LOG_SETS_V2 */
 #endif /* NUM_EVENT_LOG_SETS */
 

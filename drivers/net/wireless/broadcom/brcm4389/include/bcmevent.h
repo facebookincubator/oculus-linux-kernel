@@ -3,7 +3,7 @@
  *
  * Dependencies: bcmeth.h
  *
- * Copyright (C) 2021, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -244,7 +244,8 @@ typedef union bcm_event_msg_u {
 #define WLC_E_TX_STAT_ERROR		126	/* tx error indication */
 #define WLC_E_BCMC_CREDIT_SUPPORT	127	/* credit check for BCMC supported */
 #define WLC_E_PEER_TIMEOUT	128 /* silently drop a STA because of inactivity */
-#define WLC_E_BT_WIFI_HANDOVER_REQ	130	/* Handover Request Initiated */
+// 129 unused
+// 130 unused
 #define WLC_E_SPW_TXINHIBIT		131     /* Southpaw TxInhibit notification */
 #define WLC_E_FBT_AUTH_REQ_IND		132	/* FBT Authentication Request Indication */
 #define WLC_E_RSSI_LQM			133	/* Enhancement addition for WLC_E_RSSI */
@@ -316,10 +317,15 @@ typedef union bcm_event_msg_u {
 						 * to request from STA
 						 */
 #endif /* XRAPI */
-#define WLC_E_LAST			200	/* highest val + 1 for range checking */
-#if (WLC_E_LAST > 200)
-#error "WLC_E_LAST: Invalid value for last event; must be <= 199."
-#endif /* WLC_E_LAST */
+
+#define WLC_E_MSCS			200	/* MSCS success/failure events */
+#define WLC_E_RXDMA_RECOVERY_ATMPT	201	/* RXDMA Recovery Attempted Event */
+#define WLC_E_PFN_PARTIAL_RESULT	202
+#define WLC_E_MLO_LINK_INFO		203	/* 11be MLO link information */
+#define WLC_E_C2C			204	/* Client to client (C2C) for 6GHz TX */
+#define WLC_E_BCN_TSF			205	/* Report Beacon TSF */
+#define WLC_E_OWE_INFO                  206     /* OWE Information */
+#define WLC_E_LAST			207	/* highest val + 1 for range checking */
 
 /* define an API for getting the string name of an event */
 extern const char *bcmevent_get_name(uint event_type);
@@ -371,7 +377,10 @@ typedef struct wlc_roam_prep_event {
 	uint16 version;		/* version */
 	uint16 length;		/* total length */
 	int16 rssi;		/* target bss rssi */
-	int8 pad[2];		/* padding */
+	union {
+		int8 pad[2];            /* padding */
+		chanspec_t chanspec;	/**< Channel num, bw, ctrl_sb and band */
+	};
 	uint8 xtlvs[];		/* optional xtlvs */
 } wlc_roam_prep_event_t;
 
@@ -452,18 +461,26 @@ typedef enum wlc_roam_cache_update_reason {
 #define WLC_E_STATUS_PSK_AUTH_GTK_REKEY_FAIL	6	/* GTK event status code */
 
 /* SDB transition status code */
-#define WLC_E_STATUS_SDB_START			1
-#define WLC_E_STATUS_SDB_COMPLETE		2
+#define WLC_E_STATUS_SDB_START			1u
+#define WLC_E_STATUS_SDB_COMPLETE		2u
 /* Slice-swap status code */
-#define WLC_E_STATUS_SLICE_SWAP_START		3
-#define WLC_E_STATUS_SLICE_SWAP_COMPLETE	4
+#define WLC_E_STATUS_SLICE_SWAP_START		3u
+#define WLC_E_STATUS_SLICE_SWAP_COMPLETE	4u
+#define WLC_E_STATUS_SDB_FAILED                 5u
 
 /* SDB transition reason code */
-#define WLC_E_REASON_HOST_DIRECT	0
-#define WLC_E_REASON_INFRA_ASSOC	1
-#define WLC_E_REASON_INFRA_ROAM		2
-#define WLC_E_REASON_INFRA_DISASSOC	3
-#define WLC_E_REASON_NO_MODE_CHANGE_NEEDED	4
+#define WLC_E_REASON_HOST_DIRECT			0u
+#define WLC_E_REASON_INFRA_ASSOC			1u
+#define WLC_E_REASON_INFRA_ROAM				2u
+#define WLC_E_REASON_INFRA_DISASSOC			3u
+#define WLC_E_REASON_NO_MODE_CHANGE_NEEDED		4u
+
+#define WLC_E_REASON_SDB_MODESW_SLICE_CHANGE		7u
+#define WLC_E_REASON_SDB_MODESW_CHAIN_CHANGE		8u
+#define WLC_E_REASON_SDB_MODESW_SLICE_AND_CHAIN_CHANGE	9u
+#define WLC_E_REASON_SDB_MODESW_UNKNOWN			10u
+#define WLC_E_REASON_SDB_MODESW_TIMEOUT			11u
+#define WLC_E_REASON_SDB_MODESW_FAILED			12u
 
 #if defined(XRAPI)
 #define WLC_E_XR_SOFTAP_PSMODE_SLEEP	0
@@ -517,43 +534,58 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_REASON_ESTM_LOW		15	/* roamed due to ESTM low tput */
 #define WLC_E_REASON_SILENT_ROAM	16	/* roamed due to Silent roam */
 #define WLC_E_REASON_INACTIVITY		17	/* full roam scan due to inactivity */
-#define WLC_E_REASON_ROAM_SCAN_TIMEOUT		18	/* roam scan timer timeout */
+#define WLC_E_REASON_ROAM_SCAN_TIMEOUT	18	/* roam scan timer timeout */
 #define WLC_E_REASON_REASSOC		19	/* roamed due to reassoc iovar */
-#define WLC_E_REASON_LAST		20	/* NOTE: increment this as you add reasons above */
+#define WLC_E_REASON_CCA		20	/* roamed due to better AP from cca measurement */
+#define WLC_E_REASON_BTCX_ROAM		21	/* roamed due to Btcx roam */
+#define WLC_E_REASON_LAST		22	/* NOTE: increment this as you add reasons above */
 
 /* prune reason codes */
-#define WLC_E_PRUNE_ENCR_MISMATCH	1	/* encryption mismatch */
-#define WLC_E_PRUNE_BCAST_BSSID		2	/* AP uses a broadcast BSSID */
-#define WLC_E_PRUNE_MAC_DENY		3	/* STA's MAC addr is in AP's MAC deny list */
-#define WLC_E_PRUNE_MAC_NA		4	/* STA's MAC addr is not in AP's MAC allow list */
-#define WLC_E_PRUNE_REG_PASSV		5	/* AP not allowed due to regulatory restriction */
-#define WLC_E_PRUNE_SPCT_MGMT		6	/* AP does not support STA locale spectrum mgmt */
-#define WLC_E_PRUNE_RADAR		7	/* AP is on a radar channel of STA locale */
-#define WLC_E_RSN_MISMATCH		8	/* STA does not support AP's RSN */
-#define WLC_E_PRUNE_NO_COMMON_RATES	9	/* No rates in common with AP */
-#define WLC_E_PRUNE_BASIC_RATES		10	/* STA does not support all basic rates of BSS */
+#define WLC_E_PRUNE_ENCR_MISMATCH	1u	/* encryption mismatch */
+#define WLC_E_PRUNE_BCAST_BSSID		2u	/* AP uses a broadcast BSSID */
+#define WLC_E_PRUNE_MAC_DENY		3u	/* STA's MAC addr is in AP's MAC deny list */
+#define WLC_E_PRUNE_MAC_NA		4u	/* STA's MAC addr is not in AP's MAC allow list */
+#define WLC_E_PRUNE_REG_PASSV		5u	/* AP not allowed due to regulatory restriction */
+#define WLC_E_PRUNE_SPCT_MGMT		6u	/* AP does not support STA locale spectrum mgmt */
+#define WLC_E_PRUNE_RADAR		7u	/* AP is on a radar channel of STA locale */
+#define WLC_E_RSN_MISMATCH		8u	/* STA does not support AP's RSN */
+#define WLC_E_PRUNE_NO_COMMON_RATES	9u	/* No rates in common with AP */
+#define WLC_E_PRUNE_BASIC_RATES		10u	/* STA does not support all basic rates of BSS */
 #ifdef BCMCCX
-#define WLC_E_PRUNE_CCXFAST_PREVAP	11	/* CCX FAST ROAM: prune previous AP */
+#define WLC_E_PRUNE_CCXFAST_PREVAP	11u	/* CCX FAST ROAM: prune previous AP */
 #endif /* def BCMCCX */
-#define WLC_E_PRUNE_CIPHER_NA		12	/* BSS's cipher not supported */
-#define WLC_E_PRUNE_KNOWN_STA		13	/* AP is already known to us as a STA */
+#define WLC_E_PRUNE_CIPHER_NA		12u	/* BSS's cipher not supported */
+#define WLC_E_PRUNE_KNOWN_STA		13u	/* AP is already known to us as a STA */
 #ifdef BCMCCX
-#define WLC_E_PRUNE_CCXFAST_DROAM	14	/* CCX FAST ROAM: prune unqualified AP */
+#define WLC_E_PRUNE_CCXFAST_DROAM	14u	/* CCX FAST ROAM: prune unqualified AP */
 #endif /* def BCMCCX */
-#define WLC_E_PRUNE_WDS_PEER		15	/* AP is already known to us as a WDS peer */
-#define WLC_E_PRUNE_QBSS_LOAD		16	/* QBSS LOAD - AAC is too low */
-#define WLC_E_PRUNE_HOME_AP		17	/* prune home AP */
+#define WLC_E_PRUNE_WDS_PEER		15u	/* AP is already known to us as a WDS peer */
+#define WLC_E_PRUNE_QBSS_LOAD		16u	/* QBSS LOAD - AAC is too low */
+#define WLC_E_PRUNE_HOME_AP		17u	/* prune home AP */
 #ifdef BCMCCX
-#define WLC_E_PRUNE_AP_BLOCKED		18	/* prune blocked AP */
-#define WLC_E_PRUNE_NO_DIAG_SUPPORT	19	/* prune due to diagnostic mode not supported */
+#define WLC_E_PRUNE_AP_BLOCKED		18u	/* prune blocked AP */
+#define WLC_E_PRUNE_NO_DIAG_SUPPORT	19u	/* prune due to diagnostic mode not supported */
 #endif /* BCMCCX */
-#define WLC_E_PRUNE_AUTH_RESP_MAC	20	/* suppress auth resp by MAC filter */
-#define WLC_E_PRUNE_ASSOC_RETRY_DELAY	21	/* MBO assoc retry delay */
-#define WLC_E_PRUNE_RSSI_ASSOC_REJ	22	/* OCE RSSI-based assoc rejection */
-#define WLC_E_PRUNE_MAC_AVOID		23	/* AP's MAC addr is in STA's MAC avoid list */
-#define WLC_E_PRUNE_TRANSITION_DISABLE	24	/* AP's Transition Disable Policy */
-#define WLC_E_PRUNE_WRONG_COUNTRY_CODE	25	/* Prune AP due to Wrong Country Code */
-#define WLC_E_PRUNE_CHANNEL_NOT_IN_VLP	26	/* Prune AP  due to Chanspec not in VLP cat */
+#define WLC_E_PRUNE_AUTH_RESP_MAC	20u	/* suppress auth resp by MAC filter */
+#define WLC_E_PRUNE_ASSOC_RETRY_DELAY	21u	/* MBO assoc retry delay */
+#define WLC_E_PRUNE_RSSI_ASSOC_REJ	22u	/* OCE RSSI-based assoc rejection */
+#define WLC_E_PRUNE_MAC_AVOID		23u	/* AP's MAC addr is in STA's MAC avoid list */
+#define WLC_E_PRUNE_TRANSITION_DISABLE	24u	/* AP's Transition Disable Policy */
+#define WLC_E_PRUNE_WRONG_COUNTRY_CODE	25u	/* Prune AP due to Wrong Country Code */
+#define WLC_E_PRUNE_CHANNEL_NOT_IN_VLP	26u	/* Prune AP due to Chanspec not in VLP cat */
+#define WLC_E_PRUNE_MFP_COMPAT_MISMATCH	27u	/* Prune AP due to MFP compatibility mismatch */
+#define WLC_E_PRUNE_CHAN_MISMATCH	28u	/* Prune AP due to channel mismatch */
+#define WLC_E_PRUNE_MSTA		29u	/* mSTA: Prune join to AP from multiple bsscfgs */
+#define WLC_E_PRUNE_BLIST_BTM		30u	/* Prune AP due to BTM Black listing */
+#define WLC_E_PRUNE_BCN_MUTE_LOW_RSSI	31u	/* Prune low rssi beacon muted AP */
+#define WLC_E_PRUNE_6G_RSN_MISMATCH	32u	/* Prune AP due to RSN mismatch in 6G */
+#define WLC_E_PRUNE_INVALID_CHAN	33u	/* Prune AP due to invalid channel */
+#define WLC_E_PRUNE_MESH_CFG_MISMATCH	34u	/* Prune due to Mesh AP config mismatch */
+#define WLC_E_PRUNE_6G_RNR_INVALID_CHAN 35u	/* Prune RNR due to invalid channel reporting */
+#define WLC_E_PRUNE_BY_OWE		36u	/* Pruned by OWE */
+#define WLC_E_PRUNE_AP_RESTRICT_POLICY		37u	/* Prune by AP restrict policy */
+#define WLC_E_PRUNE_SAE_PWE_PWDID		38u	/* Prune by SAE PWE/PWD ID restriction */
+#define WLC_E_PRUNE_SAE_TRANSITION_DISABLE	39u	/* Prune by  SAE transition disable */
 
 /* WPA failure reason codes carried in the WLC_E_PSK_SUP event */
 #define WLC_E_SUP_OTHER			0	/* Other reason */
@@ -580,6 +612,8 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_SUP_PTK_UPDATE		21	/* PTK update */
 #define WLC_E_SUP_MSG1_PMKID_MISMATCH	22	/* MSG1 PMKID not matched to PMKSA cache list */
 #define WLC_E_SUP_GTK_UPDATE		23	/* GTK update */
+#define WLC_E_SUP_KDK_UPDATE_FAIL	24	/* KDK update failure */
+#define WLC_E_SUP_MSG3_NO_MLO_GTK	25	/* encapsulated MLO GTK missing from msg 3 */
 
 /* event msg for WLC_E_SUP_PTK_UPDATE */
 typedef struct wlc_sup_ptk_update {
@@ -931,7 +965,7 @@ typedef struct wl_dpsta_intf_event {
 
 /*  **********  NAN protocol events/subevents  ********** */
 #ifndef NAN_EVENT_BUFFER_SIZE
-#define NAN_EVENT_BUFFER_SIZE 512 /* max size */
+#define NAN_EVENT_BUFFER_SIZE 1600 /* max size */
 #endif /* NAN_EVENT_BUFFER_SIZE */
 /* NAN Events sent by firmware */
 
@@ -989,6 +1023,7 @@ typedef enum wl_nan_events {
 	WL_NAN_EVENT_OOB_AF_TXS			= 47,	/* OOB AF transmit status */
 	WL_NAN_EVENT_OOB_AF_RX			= 48,   /* OOB AF receive event */
 	WL_NAN_EVENT_NMI_ADDR			= 49,	/* NMI address change event */
+	WL_NAN_EVENT_SCHED_CHANGE		= 50,	/* Sched change event */
 
 	/* keep WL_NAN_EVENT_INVALID as the last element */
 	WL_NAN_EVENT_INVALID				/* delimiter for max value */
@@ -1013,7 +1048,8 @@ typedef enum wl_nan_events {
 
 typedef enum wl_scan_events {
 	WL_SCAN_START = 1,
-	WL_SCAN_END = 2
+	WL_SCAN_END = 2,
+	WL_SCAN_ADD = 3
 } wl_scan_events;
 
 /* WLC_E_ULP event data */
@@ -1169,6 +1205,7 @@ typedef enum wl_twt_setup_rc {
 	WL_TWT_SETUP_RC_TIMEOUT	= 2u,	/* TWT Setup Time-out */
 	WL_TWT_SETUP_RC_IE	= 3u,	/* TWT Setup IE Validation failed */
 	WL_TWT_SETUP_RC_PARAMS	= 4u,	/* TWT Setup IE Params invalid */
+	WL_TWT_SETUP_RC_INF_UNAVAIL	= 5u,	/* TWT Info Frame Disabled Peer device */
 	/* Any new reason code add before this */
 	WL_TWT_SETUP_RC_ERROR	= 255u,	/* Generic Error cases */
 } wl_twt_setup_rc_t;
@@ -1197,6 +1234,8 @@ typedef enum wl_twt_td_rc {
 	WL_TWT_TD_RC_BTCX	= 5u,	/* Teardown due to BTCX */
 	WL_TWT_TD_RC_SETUP_FAIL	= 6u, /* Setup fail midway. Teardown all connections */
 	WL_TWT_TD_RC_SCHED	= 7u,	/* Teardown by TWT Scheduler */
+	WL_TWT_TD_RC_TIMEOUT	= 8u,	/* NoAck/Ack timeout for Teardown */
+	WL_TWT_TD_RC_PM_OFF	= 9u,	/* Teardown due to PM Mode 0 */
 	/* Any new reason code add before this */
 	WL_TWT_TD_RC_ERROR	= 255u,	/* Generic Error cases */
 } wl_twt_td_rc_t;
@@ -1218,6 +1257,7 @@ typedef struct wl_twt_teardown_cplt {
 typedef enum wl_twt_info_rc {
 	WL_TWT_INFO_RC_HOST	= 0u,	/* Host initiated Info complete */
 	WL_TWT_INFO_RC_PEER	= 1u,	/* Peer initiated TWT Info */
+	WL_TWT_INFO_RC_TIMEOUT	= 2u,	/* NoAck/Ack Timeout for TWT info Frame */
 	/* Any new reason code add before this */
 	WL_TWT_INFO_RC_ERROR	= 255u,	/* generic error conditions */
 } wl_twt_info_rc_t;
@@ -1248,6 +1288,17 @@ typedef struct wl_twt_notify {
 	uint8 notification;
 	uint8 PAD[3];
 } wl_twt_notify_t;
+
+/* Beacon TSF Event */
+typedef struct wl_bcn_tsf {
+	uint16 version;
+	uint16 length;	/* the byte count of fields from 'reason_code' onwards */
+	uint32 bcn_tsf_h;
+	uint32 bcn_tsf_l;
+} wl_bcn_tsf_t;
+
+#define WL_BCN_TSF_VER_0	0u
+#define WL_BCN_TSF_LEN	sizeof(wl_bcn_tsf_t)
 
 #define WL_INVALID_IE_EVENT_VERSION	0
 
@@ -1552,17 +1603,32 @@ typedef struct wl_event_dynsar {
 					 */
 #define BCN_MUTE_MITI_END	2u	/* Sent when beacon is received */
 #define BCN_MUTE_MITI_TIMEOUT	3u	/* Mitigation period is reached */
+#define BCN_MUTE_MITI_FAILED	4u	/* Mitigation attempt failed */
 
 /* Status code for sending event */
-#define BCN_MUTE_MITI_UNKNOWN		0u	/* Mitigation status unknown */
-#define BCN_MUTE_MITI_ASSOC_COMP	1u	/* Mitigation during Assoc phase */
-#define BCN_MUTE_MITI_BCN_LOST		2u	/* Mitigation due to beacon lost */
-#define BCN_MUTE_MITI_BCN_RECV		3u	/* Mitigation end due to bcn reception */
-#define BCN_MUTE_MITI_ROAM		4u	/* Mitigation end due to Roam */
-#define BCN_MUTE_MITI_LINK_DOWN		5u	/* Mitigation end due to link down */
-#define BCN_MUTE_MITI_RX_DEAUTH		6u	/* Mitigation end due to AP deauth */
-#define BCN_MUTE_MITI_RX_DISASSOC	7u	/* Mitigation end due to AP disassoc */
-#define BCN_MUTE_MITI_LOW_RSSI		8u	/* Mitigation end due to Low RSSI */
+#define BCN_MUTE_MITI_UNKNOWN			0u /* Mitigation status unknown */
+#define BCN_MUTE_MITI_ASSOC_COMP		1u /* Mitigation during Assoc phase */
+#define BCN_MUTE_MITI_BCN_LOST			2u /* Mitigation due to beacon lost */
+#define BCN_MUTE_MITI_BCN_RECV			3u /* Mitigation end due to bcn reception */
+#define BCN_MUTE_MITI_ROAM			4u /* Mitigation end due to Roam */
+#define BCN_MUTE_MITI_LINK_DOWN			5u /* Mitigation end due to link down */
+#define BCN_MUTE_MITI_RX_DEAUTH			6u /* Mitigation end due to AP deauth */
+#define BCN_MUTE_MITI_RX_DISASSOC		7u /* Mitigation end due to AP disassoc */
+#define BCN_MUTE_MITI_LOW_RSSI			8u /* Mitigation end due to Low RSSI */
+#define BCN_MUTE_MITI_ASSOC_COMP_RX_UPR		9u /* Assoc succeeded using UPR reception */
+#define BCN_MUTE_MITI_BCN_LOST_RX_UPR		10u /* Beacon lost and Mitigation success with
+						     * recent UPR Reception
+						     */
+#define BCN_MUTE_MITI_ASSOC_COMP_RX_FILS	11u /* Assoc succeeded using FILS reception */
+#define BCN_MUTE_MITI_BCN_LOST_RX_FILS		12u /* Beacon lost and Mitigation success with
+						     * recent FILS Reception
+						     */
+#define BCN_MUTE_MITI_NO_PRB_RESP		13u /* Beacon lost and mitigation failed due to
+						     * no Rx probe response.
+						     */
+#define BCN_MUTE_MITI_PRB_RESP_LOW_RSSI		14u /* Beacon lost and mitigation failed due Rx
+						     * Probe response with Low RSSI.
+						     */
 
 /* bcn_mute_miti event data */
 #define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_1	1u
@@ -1606,5 +1672,74 @@ typedef struct wl_csa_event {
 	wl_csa_switch_event_t csa;	/**< Channel Switch Announcement parameters */
 	uint32 switch_time;		/**< csa switch time: TSF + BI * count, msec */
 } wl_csa_event_t;
+
+/* SIB sub events */
+
+/* Event structure for WLC_E_MSCS */
+typedef struct wl_event_mscs {
+	uint16 version;		/* structure version */
+	uint16 length;		/* length of this structure */
+	uint8  data[];		/* MSCS event data */
+	/* The data is of type wl_qos_rav_mscs_config_t -- defined in wlioctl.h */
+} wl_event_mscs_t;
+
+/* WLC_E_MSCS event structure version */
+#define WL_MSCS_EVENT_VERSION	1u
+
+/* MLO link information (WLC_E_MLO_LINK_INFO) event data */
+#define WL_MLO_LINK_INFO_EVENT_VERSION_1	(1u)
+
+typedef enum wl_mlo_link_info_opcode {
+	WL_MLO_LINK_INFO_OPCODE_ADD	= 1,	/* MLO links addition */
+	WL_MLO_LINK_INFO_OPCODE_DEL	= 2	/* MLO links deletion */
+} wl_mlo_link_info_opcode_t;
+
+typedef enum wl_mlo_link_info_role {
+	WL_MLO_LINK_INFO_ROLE_STA	= 1,	/* infrastructure mode station */
+	WL_MLO_LINK_INFO_ROLE_AP	= 2	/* access point */
+} wl_mlo_link_info_role_t;
+
+/* MLO per link information structure */
+typedef struct wl_mlo_per_link_info_v1 {
+	uint8			if_idx;		/* RTE virtual device index (for dongle) */
+	uint8			cfg_idx;	/* bsscfg index */
+	uint8			link_id;	/* link identifier - AP managed unique identifier */
+	uint8			link_idx;	/* link index - local link config index */
+	struct ether_addr	link_addr;	/* link specific address */
+	uint8			PAD[2];
+} wl_mlo_per_link_info_v1_t;
+
+/* MLO link information event structure */
+typedef struct wl_mlo_link_info_event_v1 {
+	uint16				version;	/* structure version */
+	uint16				length;		/* length of this structure */
+	uint8				opcode;		/* link opcode - wl_mlo_link_info_opcode */
+	uint8				role;		/* link role - wl_mlo_link_info_role */
+	struct ether_addr		mld_addr;	/* mld addres */
+	uint8				num_links;	/* number of operative links */
+	uint8				PAD[3];
+	wl_mlo_per_link_info_v1_t	link_info[];	/* per link information */
+} wl_mlo_link_info_event_v1_t;
+
+/* ===== C2C event definitions ===== */
+#define C2C_EVENT_BUFFER_SIZE		1024u
+#define IS_C2C_EVT_ON(param, evt)	((param) & (1u << (evt)))
+#define C2C_ALLOWED_EVENT_MASK		(1u << WL_EVT_C2C_START | \
+		(1u << WL_EVT_C2C_END) | (1u << WL_EVT_C2C_PRE_EXPIRY) | \
+		(1u << WL_EVT_C2C_EXTN) | \
+		(1u << WL_EVT_C2C_CACHE_ADD) | (1u << WL_EVT_C2C_CACHE_DEL) | \
+		(1u << WL_EVT_C2C_MUTE_ON) | (1u << WL_EVT_C2C_MUTE_OFF))
+
+/* WLC_E_C2C subevent ID */
+typedef enum wl_c2c_events {
+	WL_EVT_C2C_START,		/* first enabling signal, c2c starts */
+	WL_EVT_C2C_END,			/* enabling signal expired, c2c ends */
+	WL_EVT_C2C_PRE_EXPIRY,		/* esig expiring soon; do scan or let expire */
+	WL_EVT_C2C_EXTN,		/* received new esig, c2c continues */
+	WL_EVT_C2C_CACHE_ADD,		/* added new LPI AP to cache */
+	WL_EVT_C2C_CACHE_DEL,		/* removed LPI AP from cache */
+	WL_EVT_C2C_MUTE_ON,		/* p2p tx is muted for 6GHz channels */
+	WL_EVT_C2C_MUTE_OFF		/* p2p tx unmuted for 6GHz channels */
+} wl_c2c_events_e;
 
 #endif /* _BCMEVENT_H_ */

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -98,6 +99,7 @@
 #include "wlan_if_mgr_ucfg_api.h"
 #include "wlan_if_mgr_public_struct.h"
 #include "wlan_hdd_scan.h"
+#include "wlan_hdd_mcc_quota.h"
 
 #define ACS_SCAN_EXPIRY_TIMEOUT_S 4
 
@@ -2004,6 +2006,8 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
 			hdd_err("qdf_event_set failed! status: %d", qdf_status);
 			goto stopbss;
 		}
+
+		wlan_hdd_apply_user_mcc_quota(adapter);
 		break;          /* Event will be sent after Switch-Case stmt */
 
 	case eSAP_STOP_BSS_EVENT:

@@ -57,14 +57,11 @@
 };
 
 &cam_cci0 {
-	pinctrl-0 = <&cci0_active>;
-	pinctrl-1 = <&cci0_suspend>;
-	gpios = <&tlmm 101 0>,
-		<&tlmm 102 0>;
-	gpio-req-tbl-num = <0 1>;
-	gpio-req-tbl-flags = <1 1>;
-	gpio-req-tbl-label = "CCI_I2C_DATA0",
-		"CCI_I2C_CLK0";
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+	gpios = <>;
+	gpio-req-tbl-num = <>;
+	gpio-req-tbl-flags = <>;
 
 	qcom,cam-sensor0 {
 		/* CAMERA ID = 0
@@ -248,6 +245,44 @@
 		sensor-mode = <0>;
 		cci-master = <1>;
 		clocks = <&clock_camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <19200000>;
+		oculus,cam-mclk-no-power-down;
+	};
+
+	qcom,cam-sensor5 {
+		/* CAMERA ID = 5
+		 * name: CAM_RGB2
+		 * QCOM CSI PHY = 5
+		 * QCOM MCLK = 6
+		 */
+		cell-index = <5>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <5>;
+		/* T97436334: Regulators are intentionally misnamed */
+		cam_vana-supply = <&pm8150a_l10>;
+		cam_vio-supply = <&pm8150_l15>;
+		cam_vdig-supply = <&pm8150a_l2>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
+			"cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <2960000 1800000 1050000 0>;
+		rgltr-max-voltage = <2960000 1800000 1050000 0>;
+		rgltr-load-current = <80000 120000 1050000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk6_active>;
+		pinctrl-1 = <&cam_sensor_mclk6_suspend>;
+		gpios = <&tlmm 100 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK6";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		clocks = <&clock_camcc CAM_CC_MCLK6_CLK>;
 		clock-names = "cam_clk";
 		clock-cntl-level = "turbo";
 		clock-rates = <19200000>;
