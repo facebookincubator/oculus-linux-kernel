@@ -28,55 +28,53 @@ extern "C" {
 #endif
 
 /* STP internal data */
-struct stp_type
-{
-    // transport interface (from upper layer)
-    struct stp_controller_transport_table *transport;
-    // handshake table
-    struct stp_controller_handshake_table *handshake;
-    // wait-signal table
-    struct stp_controller_wait_signal_table *wait_signal;
+struct stp_type {
+	// transport interface (from upper layer)
+	struct stp_controller_transport_table *transport;
+	// handshake table
+	struct stp_controller_handshake_table *handshake;
+	// wait-signal table
+	struct stp_controller_wait_signal_table *wait_signal;
 
-    struct stp_channel channels[STP_TOTAL_NUM_CHANNELS];
+	struct stp_channel channels[STP_TOTAL_NUM_CHANNELS];
 
-    // TX buffer used for current packet
-    uint8_t *tx_buffer;
-    // RX buffer used for current packet
-    uint8_t *rx_buffer;
+	// TX buffer used for current packet
+	uint8_t *tx_buffer;
+	// RX buffer used for current packet
+	uint8_t *rx_buffer;
 
-    // current state of STP
-    _Atomic uint32_t state;
+	// current state of STP
+	_Atomic uint32_t state;
 
-    void (*callback_client)(int);
+	void (*callback_client)(int event);
 
-    STP_LOCK_TYPE lock_notification;
+	STP_LOCK_TYPE lock_notification;
 
-    // info about the pending transactions
-    // set by processing data transaction
-    // used for following control transaction
-    struct stp_pending pending;
+	// info about the pending transactions
+	// set by processing data transaction
+	// used for following control transaction
+	struct stp_pending pending;
 
-    // info about lost comms
-    size_t bad_crcs_in_a_row;
+	// info about lost comms
+	size_t bad_crcs_in_a_row;
 
-    _Atomic uint32_t device_channels_status;
+	_Atomic uint32_t device_channels_status;
 
-    // the last status sent
-    // if the current status is different, we need to start a transaction
-    _Atomic uint32_t prev_channels_status;
+	// the last status sent
+	// if the current status is different, we need to start a transaction
+	_Atomic uint32_t prev_channels_status;
 
-    bool wait_for_data;
+	uint32_t last_tx_notification;
 
-    uint32_t last_tx_notification;
-
-    bool pending_device_ready_signal;
+	bool pending_device_ready_signal;
 };
 
 extern struct stp_type *_stp_controller_data;
 // extern struct stp_debug_type _stp_debug;
 
 /* Initialize the STP controller/device internal data */
-void stp_controller_init_internal(struct stp_controller_transport_table *_transport);
+void stp_controller_init_internal(
+	struct stp_controller_transport_table *_transport);
 
 void stp_controller_init_transaction(void);
 
@@ -84,9 +82,8 @@ void stp_controller_process_control_transaction(bool *valid_packet);
 
 void stp_controller_init_pending(void);
 
-void stp_controller_prepare_tx_packet_data(uint8_t channel,
-                                           uint8_t *buffer,
-                                           struct stp_pending_tx *tx);
+void stp_controller_prepare_tx_packet_data(uint8_t channel, uint8_t *buffer,
+					   struct stp_pending_tx *tx);
 
 void stp_controller_process_data_transaction(struct stp_pending_tx *tx);
 

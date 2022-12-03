@@ -2,6 +2,7 @@
 #define _STP_DEVICE_LOGGING_H_
 
 #include <linux/kernel.h>
+#include <linux/printk.h>
 
 // Enables all opt-in STP Device logs
 #define STP_DRV_VERBOSE_LOGS 0
@@ -29,6 +30,12 @@
 
 #define STP_DEV_LOG_ERR(d, m, ...)                                             \
 	dev_err(d, "[STP] (%s:%d) " m "\n", __func__, __LINE__, ##__VA_ARGS__)
+
+#define STP_DRV_LOG_ERR_RATE_LIMIT(m, ...)                                                \
+	printk_ratelimited(KERN_ERR pr_fmt("[STP] (%s:%d) " m "\n"), __func__, __LINE__, ##__VA_ARGS__)
+
+#define STP_DRV_LOG_INFO_RATE_LIMIT(m, ...)                                               \
+	printk_ratelimited(KERN_INFO pr_fmt("[STP] (%s:%d) " m "\n"), __func__, __LINE__, ##__VA_ARGS__)
 
 #define STP_DEBUG_BUFFER_LEN 256
 
