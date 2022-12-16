@@ -1,4 +1,5 @@
 /* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -150,6 +151,11 @@ static void sde_rot_fence_release(struct fence *fence)
 {
 	struct sde_rot_fence *f = to_sde_rot_fence(fence);
 	unsigned long flags;
+
+	if (fence->ops->get_driver_name != &sde_rot_fence_get_driver_name) {
+		pr_debug("invalid parameters\n");
+		return;
+	}
 
 	spin_lock_irqsave(fence->lock, flags);
 	if (!list_empty(&f->fence_list))

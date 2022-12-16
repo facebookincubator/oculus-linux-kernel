@@ -1565,13 +1565,20 @@ static u8 brcmf_sdio_rxglom(struct brcmf_sdio *bus, u8 rxseq)
 	/* If there's a descriptor, generate the packet chain */
 	if (bus->glomd) {
 		pfirst = pnext = NULL;
-		dlen = (u16) (bus->glomd->len);
-		dptr = bus->glomd->data;
-		if (!dlen || (dlen & 1)) {
-			brcmf_err("bad glomd len(%d), ignore descriptor\n",
+		/* it is a u32 len to u16 dlen, should have a sanity check here. */
+		if (bus->glomd->len <= 0xFFFF) {
+			dlen = (u16)(bus->glomd->len);
+			if (!dlen || (dlen & 1)) {
+				brcmf_err("bad glomd len(%d), ignore descriptor\n",
+					  dlen);
+				dlen = 0;
+			}
+		} else {
+			brcmf_err("overflowed glomd len(%d), ignore descriptor\n",
 				  dlen);
 			dlen = 0;
 		}
+		dptr = bus->glomd->data;
 
 		for (totlen = num = 0; dlen; num++) {
 			/* Get (and move past) next length */
@@ -1637,6 +1644,7 @@ static u8 brcmf_sdio_rxglom(struct brcmf_sdio *bus, u8 rxseq)
 	/* Ok -- either we just generated a packet chain,
 		 or had one from before */
 	if (!skb_queue_empty(&bus->glom)) {
+		u32 len_glom = 0;
 		if (BRCMF_GLOM_ON()) {
 			brcmf_dbg(GLOM, "try superframe read, packet chain:\n");
 			skb_queue_walk(&bus->glom, pnext) {
@@ -1647,7 +1655,14 @@ static u8 brcmf_sdio_rxglom(struct brcmf_sdio *bus, u8 rxseq)
 		}
 
 		pfirst = skb_peek(&bus->glom);
-		dlen = (u16) brcmf_sdio_glom_len(bus);
+		len_glom = brcmf_sdio_glom_len(bus);
+		if (len_glom > 0xFFFF) {
+			brcmf_err("glom_len is %d bytes, overflowed\n",
+				  len_glom);
+			goto free_super_frame;
+		} else {
+			dlen = (u16)len_glom;
+		}
 
 		/* Do an SDIO read for the superframe.  Configurable iovar to
 		 * read directly into the chained packet, or allocate a large
@@ -1663,6 +1678,7 @@ static u8 brcmf_sdio_rxglom(struct brcmf_sdio *bus, u8 rxseq)
 		if (errcode < 0) {
 			brcmf_err("glom read of %d bytes failed: %d\n",
 				  dlen, errcode);
+free_super_frame:
 
 			sdio_claim_host(bus->sdiodev->func[1]);
 			brcmf_sdio_rxfail(bus, true, false);
