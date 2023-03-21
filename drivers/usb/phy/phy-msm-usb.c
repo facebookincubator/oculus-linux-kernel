@@ -890,6 +890,7 @@ static int msm_otg_reset(struct usb_phy *phy)
 	u32 val = 0;
 	u32 ulpi_val = 0;
 
+	mutex_lock(&motg->lock);
 	msm_otg_dbg_log_event(&motg->phy, "USB RESET", phy->otg->state,
 			get_pm_runtime_counter(phy->dev));
 	/*
@@ -900,8 +901,10 @@ static int msm_otg_reset(struct usb_phy *phy)
 	 */
 	if (motg->err_event_seen)
 		dev_info(phy->dev, "performing USB h/w reset for recovery\n");
-	else if (pdata->disable_reset_on_disconnect && motg->reset_counter)
+	else if (pdata->disable_reset_on_disconnect && motg->reset_counter) {
+		mutex_unlock(&motg->lock);
 		return 0;
+	}
 
 	motg->reset_counter++;
 
@@ -916,6 +919,7 @@ static int msm_otg_reset(struct usb_phy *phy)
 			enable_irq(motg->phy_irq);
 
 		enable_irq(motg->irq);
+		mutex_unlock(&motg->lock);
 		return ret;
 	}
 
@@ -926,6 +930,7 @@ static int msm_otg_reset(struct usb_phy *phy)
 	ret = msm_otg_link_reset(motg);
 	if (ret) {
 		dev_err(phy->dev, "link reset failed\n");
+		mutex_unlock(&motg->lock);
 		return ret;
 	}
 
@@ -983,6 +988,7 @@ static int msm_otg_reset(struct usb_phy *phy)
 	if (phy->otg->state == OTG_STATE_UNDEFINED && motg->rm_pulldown)
 		msm_chg_block_on(motg);
 
+	mutex_unlock(&motg->lock);
 	return 0;
 }
 
@@ -4171,6 +4177,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	motg->pdev = pdev;
 	motg->dbg_idx = 0;
 	motg->dbg_lock = __RW_LOCK_UNLOCKED(lck);
+	mutex_init(&motg->lock);
 
 	if (motg->pdata->bus_scale_table) {
 		motg->bus_perf_client =

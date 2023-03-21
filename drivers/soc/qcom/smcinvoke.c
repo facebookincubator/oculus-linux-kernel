@@ -2,6 +2,7 @@
  * SMC Invoke driver
  *
  * Copyright (c) 2016-2017,2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -173,9 +174,9 @@ static int get_fd_from_tzhandle(uint32_t tzhandle, int64_t *fd)
 		goto out;
 
 	*fd = unused_fd;
-	fd_install(*fd, f);
 	((struct smcinvoke_tzobj_context *)
 			(f->private_data))->tzhandle = tzhandle;
+	fd_install(*fd, f);
 	return 0;
 out:
 	if (unused_fd >= 0)
