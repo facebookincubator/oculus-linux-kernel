@@ -12,12 +12,24 @@ void stp_pl_init(PL_TYPE *pl, uint8_t *buffer, uint32_t size)
 	// The inital state when there is no data
 	pl->head = 0;
 	pl->tail = 0;
+}
+
+/* Initialize a STP pipeline lock*/
+void stp_pl_init_lock(PL_TYPE *pl)
+{
+	STP_ASSERT(pl, "Invalid parameter(s)");
 
 	STP_LOCK_INIT(pl->lock);
 }
 
 /* De-Initialize a STP pipeline */
 void stp_pl_deinit(PL_TYPE *pl)
+{
+	STP_ASSERT(pl, "Invalid parameter(s)");
+}
+
+/* De-Initialize a STP pipeline lock */
+void stp_pl_deinit_lock(PL_TYPE *pl)
 {
 	STP_ASSERT(pl, "Invalid parameter(s)");
 

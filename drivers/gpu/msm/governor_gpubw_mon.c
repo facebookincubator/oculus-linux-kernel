@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/devfreq.h>
@@ -44,15 +45,70 @@ static inline int devfreq_get_freq_level(struct devfreq *devfreq,
 	return -EINVAL;
 }
 
-static int devfreq_gpubw_get_target(struct devfreq *df,
-				unsigned long *freq)
+static ssize_t cur_ab_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
 {
-
-	struct devfreq_msm_adreno_tz_data *priv = df->data;
+	struct devfreq *df = to_devfreq(dev);
 	struct msm_busmon_extended_profile *bus_profile = container_of(
 					(df->profile),
 					struct msm_busmon_extended_profile,
 					profile);
+
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", bus_profile->ab_mbytes);
+}
+
+static ssize_t sampling_interval_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct devfreq *df = to_devfreq(dev);
+	struct msm_busmon_extended_profile *bus_profile = container_of(
+					(df->profile),
+					struct msm_busmon_extended_profile,
+					profile);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bus_profile->sampling_ms);
+}
+
+static ssize_t sampling_interval_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct devfreq *df = to_devfreq(dev);
+	struct msm_busmon_extended_profile *bus_profile = container_of(
+					(df->profile),
+					struct msm_busmon_extended_profile,
+					profile);
+	u32 value;
+	int ret;
+
+	ret = kstrtou32(buf, 0, &value);
+	if (ret)
+		return ret;
+
+	bus_profile->sampling_ms = value;
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(sampling_interval);
+static DEVICE_ATTR_RO(cur_ab);
+
+static const struct device_attribute *gpubw_attr_list[] = {
+	&dev_attr_sampling_interval,
+	&dev_attr_cur_ab,
+	NULL
+};
+
+static int devfreq_gpubw_get_target(struct devfreq *df,
+		unsigned long *freq)
+{
+
+	struct devfreq_msm_adreno_tz_data *priv = df->data;
+	struct msm_busmon_extended_profile *bus_profile = container_of(
+			(df->profile),
+			struct msm_busmon_extended_profile,
+			profile);
 	struct devfreq_dev_status *stats = &df->last_status;
 	struct xstats b = {0};
 	int result;
@@ -86,15 +142,22 @@ static int devfreq_gpubw_get_target(struct devfreq *df,
 
 	level = devfreq_get_freq_level(df, stats->current_frequency);
 
-	if (priv->bus.total_time < LONG_FLOOR)
+	if (priv->bus.total_time < bus_profile->sampling_ms)
 		return result;
 
 	norm_max_cycles = (unsigned int)(priv->bus.ram_time) /
 			(unsigned int) priv->bus.total_time;
 	norm_cycles = (unsigned int)(priv->bus.ram_time + priv->bus.ram_wait) /
 			(unsigned int) priv->bus.total_time;
-	wait_active_percent = (100 * (unsigned int)priv->bus.ram_wait) /
-			(unsigned int) priv->bus.ram_time;
+
+	if (priv->bus.ram_wait == 0)
+		wait_active_percent = 0;
+	else if (priv->bus.ram_time == 0)
+		wait_active_percent = 100;
+	else
+		wait_active_percent = (100 * (unsigned int)priv->bus.ram_wait) /
+				(unsigned int) priv->bus.ram_time;
+
 	gpu_percent = (100 * (unsigned int)priv->bus.gpu_time) /
 			(unsigned int) priv->bus.total_time;
 
@@ -186,12 +249,21 @@ static int gpubw_start(struct devfreq *devfreq)
 		priv->bus.p_up[priv->bus.num - 1] = 100;
 	_update_cutoff(priv, priv->bus.max);
 
+	bus_profile->sampling_ms = LONG_FLOOR;
+
+	for (i = 0; gpubw_attr_list[i] != NULL; i++)
+		device_create_file(&devfreq->dev, gpubw_attr_list[i]);
+
 	return 0;
 }
 
 static int gpubw_stop(struct devfreq *devfreq)
 {
 	struct devfreq_msm_adreno_tz_data *priv = devfreq->data;
+	int i;
+
+	for (i = 0; gpubw_attr_list[i] != NULL; i++)
+		device_remove_file(&devfreq->dev, gpubw_attr_list[i]);
 
 	if (priv) {
 		kfree(priv->bus.up);

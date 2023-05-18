@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2019,2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /*
@@ -44,8 +45,7 @@ static void syncobj_destroy_object(struct kgsl_drawobj *drawobj)
 		struct kgsl_drawobj_sync_event *event = &syncobj->synclist[i];
 
 		if (event->type == KGSL_CMD_SYNCPOINT_TYPE_FENCE) {
-			struct event_fence_info *priv = event ?
-					event->priv : NULL;
+			struct event_fence_info *priv = event->priv;
 
 			if (priv) {
 				kfree(priv->fences);
@@ -107,8 +107,7 @@ void kgsl_dump_syncpoints(struct kgsl_device *device,
 		}
 		case KGSL_CMD_SYNCPOINT_TYPE_FENCE: {
 			int j;
-			struct event_fence_info *info = event ?
-					event->priv : NULL;
+			struct event_fence_info *info = event->priv;
 
 			for (j = 0; info && j < info->num_fences; j++)
 				dev_err(device->dev, "[%d]  fence: %s\n",
@@ -174,8 +173,7 @@ static void syncobj_timer(struct timer_list *t)
 			break;
 		case KGSL_CMD_SYNCPOINT_TYPE_FENCE: {
 			int j;
-			struct event_fence_info *info = event ?
-					event->priv : NULL;
+			struct event_fence_info *info = event->priv;
 
 			for (j = 0; info && j < info->num_fences; j++)
 				dev_err(device->dev, "       [%u] FENCE %s\n",
@@ -372,6 +370,9 @@ static void cmdobj_destroy(struct kgsl_drawobj *drawobj)
 		list_del_init(&mem->node);
 		kmem_cache_free(memobjs_cache, mem);
 	}
+
+	if (drawobj->type & CMDOBJ_TYPE)
+		atomic_dec(&drawobj->context->proc_priv->cmd_count);
 }
 
 /**
@@ -395,7 +396,7 @@ void kgsl_drawobj_destroy(struct kgsl_drawobj *drawobj)
 static bool drawobj_sync_fence_func(void *priv)
 {
 	struct kgsl_drawobj_sync_event *event = priv;
-	struct event_fence_info *info = event ? event->priv : NULL;
+	struct event_fence_info *info = event->priv;
 	int i;
 
 	for (i = 0; info && i < info->num_fences; i++)
@@ -430,7 +431,7 @@ drawobj_get_sync_timeline_priv(void __user *uptr, u64 usize, u32 count)
 	for (i = 0; i < count; i++, uptr += usize) {
 		struct kgsl_timeline_val val;
 
-		if (kgsl_copy_struct_from_user(&val, sizeof(val), uptr, usize))
+		if (copy_struct_from_user(&val, sizeof(val), uptr, usize))
 			continue;
 
 		priv[i].timeline = val.timeline;
@@ -453,7 +454,7 @@ static int drawobj_add_sync_timeline(struct kgsl_device *device,
 	unsigned int id;
 	int ret;
 
-	if (kgsl_copy_struct_from_user(&sync, sizeof(sync), uptr, usize))
+	if (copy_struct_from_user(&sync, sizeof(sync), uptr, usize))
 		return -EFAULT;
 
 	fence = kgsl_timelines_to_fence_array(device, sync.timelines,
@@ -512,7 +513,7 @@ static int drawobj_add_sync_fence(struct kgsl_device *device,
 	struct event_fence_info *priv;
 	unsigned int id, i;
 
-	if (kgsl_copy_struct_from_user(&sync, sizeof(sync), data, datasize))
+	if (copy_struct_from_user(&sync, sizeof(sync), data, datasize))
 		return -EFAULT;
 
 	kref_get(&drawobj->refcount);
@@ -642,7 +643,7 @@ static int drawobj_add_sync_timestamp_from_user(struct kgsl_device *device,
 {
 	struct kgsl_cmd_syncpoint_timestamp timestamp;
 
-	if (kgsl_copy_struct_from_user(&timestamp, sizeof(timestamp),
+	if (copy_struct_from_user(&timestamp, sizeof(timestamp),
 			data, datasize))
 		return -EFAULT;
 
@@ -667,13 +668,13 @@ int kgsl_drawobj_sync_add_sync(struct kgsl_device *device,
 
 	if (sync->type == KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP)
 		return drawobj_add_sync_timestamp_from_user(device,
-				syncobj, sync->priv, sync->size);
+			syncobj, sync->priv, sync->size);
 	else if (sync->type == KGSL_CMD_SYNCPOINT_TYPE_FENCE)
 		return drawobj_add_sync_fence(device,
-				syncobj, sync->priv, sync->size);
+			syncobj, sync->priv, sync->size);
 	else if (sync->type == KGSL_CMD_SYNCPOINT_TYPE_TIMELINE)
 		return drawobj_add_sync_timeline(device,
-				syncobj, sync->priv, sync->size);
+			syncobj, sync->priv, sync->size);
 
 	dev_err(device->dev, "bad syncpoint type %d for ctxt %d\n",
 		sync->type, drawobj->context->id);
@@ -841,7 +842,7 @@ int kgsl_drawobj_add_timeline(struct kgsl_device_private *dev_priv,
 	struct kgsl_gpu_aux_command_timeline cmd;
 	int i, ret;
 
-	if (kgsl_copy_struct_from_user(&cmd, sizeof(cmd), src, cmdsize))
+	if (copy_struct_from_user(&cmd, sizeof(cmd), src, cmdsize))
 		return -EFAULT;
 
 	if (!cmd.count)
@@ -858,7 +859,7 @@ int kgsl_drawobj_add_timeline(struct kgsl_device_private *dev_priv,
 	for (i = 0; i < cmd.count; i++) {
 		struct kgsl_timeline_val val;
 
-		if (kgsl_copy_struct_from_user(&val, sizeof(val), src,
+		if (copy_struct_from_user(&val, sizeof(val), src,
 			cmd.timelines_size)) {
 			ret = -EFAULT;
 			goto err;
@@ -968,6 +969,9 @@ struct kgsl_drawobj_cmd *kgsl_drawobj_cmd_create(struct kgsl_device *device,
 
 	INIT_LIST_HEAD(&cmdobj->cmdlist);
 	INIT_LIST_HEAD(&cmdobj->memlist);
+
+	if (type & CMDOBJ_TYPE)
+		atomic_inc(&context->proc_priv->cmd_count);
 
 	return cmdobj;
 }

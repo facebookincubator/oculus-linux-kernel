@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/stddef.h>
 #include <linux/spinlock.h>
+#include <linux/sched/debug.h>
 
 #include <asm/current.h>
 #include <uapi/linux/wait.h>
@@ -203,6 +204,7 @@ void __wake_up_pollfree(struct wait_queue_head *wq_head);
 #define wake_up_interruptible_nr(x, nr)	__wake_up(x, TASK_INTERRUPTIBLE, nr, NULL)
 #define wake_up_interruptible_all(x)	__wake_up(x, TASK_INTERRUPTIBLE, 0, NULL)
 #define wake_up_interruptible_sync(x)	__wake_up_sync((x), TASK_INTERRUPTIBLE, 1)
+#define wake_up_sync(x)			__wake_up_sync(x, TASK_NORMAL, 1)
 
 /*
  * Wakeup macros to be used to report events to the targets.
@@ -1137,9 +1139,12 @@ void prepare_to_wait(struct wait_queue_head *wq_head, struct wait_queue_entry *w
 void prepare_to_wait_exclusive(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state);
 long prepare_to_wait_event(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state);
 void finish_wait(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry);
-long wait_woken(struct wait_queue_entry *wq_entry, unsigned mode, long timeout);
-int woken_wake_function(struct wait_queue_entry *wq_entry, unsigned mode, int sync, void *key);
-int autoremove_wake_function(struct wait_queue_entry *wq_entry, unsigned mode, int sync, void *key);
+long __sched wait_woken(struct wait_queue_entry *wq_entry, unsigned int mode,
+			long timeout);
+int __sched woken_wake_function(struct wait_queue_entry *wq_entry,
+				unsigned int mode, int sync, void *key);
+int __sched autoremove_wake_function(struct wait_queue_entry *wq_entry,
+				     unsigned int mode, int sync, void *key);
 
 #define DEFINE_WAIT_FUNC(name, function)					\
 	struct wait_queue_entry name = {					\

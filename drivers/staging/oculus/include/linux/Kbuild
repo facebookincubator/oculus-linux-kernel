@@ -1,3 +1,6 @@
 header-y += cypd.h
+header-y += d4xx.h
+header-y += lkm_utils.h
+header-y += jtag_bitbang.h
 header-y += miscfifo.h
 header-y += rt600-ctrl.h

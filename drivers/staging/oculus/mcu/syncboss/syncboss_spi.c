@@ -40,6 +40,10 @@ static const struct of_device_id oculus_swd_match_table[] = {
 	#define oculus_swd_match_table NULL
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
+#define ktime_get_boottime_ns ktime_get_boot_ns
+#endif
+
 /*
  * Fastpath Notes
  * ==============
@@ -370,6 +374,11 @@ static int fw_update_check_busy(struct device *dev, void *data)
 
 	if (of_device_is_compatible(node, "oculus,swd")) {
 		struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+		if (!devdata) {
+			dev_err(dev, "SWD Driver not yet available: %s", node->name);
+			return -ENODEV;
+		}
 
 		if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
 			dev_err(dev, "Cannot open SyncBoss handle while firmware update is in progress");
@@ -1111,7 +1120,11 @@ static int process_rx_data(struct syncboss_dev_data *devdata,
 	 */
 	current_packet = &trans->data.syncboss_data;
 	trans_end = (uint8_t *)trans + devdata->transaction_length;
-	while (current_packet->type != 0) {
+	/*
+	 * Assumes data is after the last element of current_packet that needs to be
+	 * present for parsing the packet.
+	 */
+	while (((const uint8_t *)current_packet->data <= trans_end) && (current_packet->type != 0)) {
 		/*
 		 * Sanity check that the packet is entirely contained
 		 * within the rx buffer and doesn't overflow
@@ -1143,7 +1156,7 @@ static void maybe_sleep(u64 prev_transaction_start_time_ns, u64 prev_transaction
 	if (prev_transaction_start_time_ns == 0)
 		return;
 
-	now_ns = ktime_get_boot_ns();
+	now_ns = ktime_get_boottime_ns();
 	time_since_prev_transaction_start_ns = now_ns - prev_transaction_start_time_ns;
 	time_since_prev_transaction_end_ns = now_ns - prev_transaction_end_time_ns;
 
@@ -1327,12 +1340,12 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		}
 #endif
 
-		prev_transaction_start_time_ns = ktime_get_boot_ns();
+		prev_transaction_start_time_ns = ktime_get_boottime_ns();
 		if (devdata->use_fastpath)
 			status = spi_fastpath_transfer(spi, &smsg->spi_msg);
 		else
 			status = spi_sync_locked(spi, &smsg->spi_msg);
-		prev_transaction_end_time_ns = ktime_get_boot_ns();
+		prev_transaction_end_time_ns = ktime_get_boottime_ns();
 
 		if (status != 0) {
 			dev_err(&spi->dev, "spi_sync_locked failed with error %d", status);
@@ -1581,6 +1594,34 @@ error:
 	return status;
 }
 
+static void override_spi_prepare_ops(struct syncboss_dev_data *devdata)
+{
+	struct spi_device *spi = devdata->spi;
+
+	if (devdata->use_fastpath) {
+		devdata->spi_prepare_ops.prepare_message = spi->master->prepare_message;
+		devdata->spi_prepare_ops.unprepare_message = spi->master->unprepare_message;
+		spi->master->prepare_message = NULL;
+		spi->master->unprepare_message = NULL;
+	}
+	devdata->spi_prepare_ops.prepare_transfer_hardware = spi->master->prepare_transfer_hardware;
+	devdata->spi_prepare_ops.unprepare_transfer_hardware = spi->master->unprepare_transfer_hardware;
+	spi->master->prepare_transfer_hardware = NULL;
+	spi->master->unprepare_transfer_hardware = NULL;
+}
+
+static void restore_spi_prepare_ops(struct syncboss_dev_data *devdata)
+{
+	struct spi_device *spi = devdata->spi;
+
+	if (devdata->use_fastpath) {
+		spi->master->prepare_message = devdata->spi_prepare_ops.prepare_message;
+		spi->master->unprepare_message = devdata->spi_prepare_ops.unprepare_message;
+	}
+	spi->master->prepare_transfer_hardware = devdata->spi_prepare_ops.prepare_transfer_hardware;
+	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
+}
+
 static int wake_mcu_if_asleep(struct syncboss_dev_data *devdata)
 {
 	int status = 0;
@@ -1686,6 +1727,12 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		}
 	}
 
+	/*
+	 * Take ownership of calling prepare/unprepare away from the SPI
+	 * framework, so can manage calls more efficiently for our usecase.
+	 */
+	override_spi_prepare_ops(devdata);
+
 #ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
 	if (devdata->must_enable_camera_temp_sensor_power) {
 		int camera_temp_power_status = 0;
@@ -1716,20 +1763,20 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 #endif
 	status = wake_mcu_if_asleep(devdata);
 	if (status)
-		goto error;
+		goto error_after_spi_ops_update;
 
 	if (devdata->next_stream_settings.transaction_length == 0) {
 		dev_err(&devdata->spi->dev,
 				"Transaction length has not yet been set");
 		status = -EINVAL;
-		goto error;
+		goto error_after_spi_ops_update;
 	}
 
 	devdata->transaction_length = devdata->next_stream_settings.transaction_length;
 	devdata->spi_max_clk_rate = devdata->next_stream_settings.spi_max_clk_rate;
 	status = create_default_smsg_locked(devdata);
 	if (status)
-		goto error;
+		goto error_after_spi_ops_update;
 
 	devdata->force_reset_on_open = false;
 
@@ -1792,6 +1839,8 @@ error_after_prepare_transfer_hardware:
 error_after_spi_bus_lock:
 	spi_bus_unlock(devdata->spi->master);
 	destroy_default_smsg_locked(devdata);
+error_after_spi_ops_update:
+	restore_spi_prepare_ops(devdata);
 error:
 	return status;
 }
@@ -1895,6 +1944,9 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	 */
 	miscfifo_clear(&devdata->stream_fifo);
 	miscfifo_clear(&devdata->control_fifo);
+
+	/* Return prepare/unprepare call ownership to the kernel SPI framework. */
+	restore_spi_prepare_ops(devdata);
 
 	if (devdata->rf_amp) {
 		status = regulator_disable(devdata->rf_amp);
@@ -2132,21 +2184,6 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		goto error;
 
-	/*
-	 * Take ownership of calling prepare/unprepare away from the SPI
-	 * framework, so can manage calls more efficiently for our usecase.
-	 */
-	if (devdata->use_fastpath) {
-		devdata->spi_prepare_ops.prepare_message = spi->master->prepare_message;
-		devdata->spi_prepare_ops.unprepare_message = spi->master->unprepare_message;
-		spi->master->prepare_message = NULL;
-		spi->master->unprepare_message = NULL;
-	}
-	devdata->spi_prepare_ops.prepare_transfer_hardware = spi->master->prepare_transfer_hardware;
-	devdata->spi_prepare_ops.unprepare_transfer_hardware = spi->master->unprepare_transfer_hardware;
-	spi->master->prepare_transfer_hardware = NULL;
-	spi->master->unprepare_transfer_hardware = NULL;
-
 	devdata->rx_elem = devm_kzalloc(dev, sizeof(*devdata->rx_elem),
 					GFP_KERNEL | GFP_DMA);
 	if (!devdata->rx_elem) {
@@ -2157,7 +2194,12 @@ static int syncboss_probe(struct spi_device *spi)
 	mutex_init(&devdata->msg_queue_lock);
 	INIT_LIST_HEAD(&devdata->msg_queue_list);
 
+#ifdef CONFIG_SYNCBOSS_HALL_SENSOR_REGULATOR_CONTROL
 	devm_fw_init_regulator(dev, &devdata->hall_sensor, "hall-sensor");
+#else
+	devdata->hall_sensor = NULL;
+#endif
+
 	devm_fw_init_regulator(dev, &devdata->mcu_core, "mcu-core");
 	devm_fw_init_regulator(dev, &devdata->imu_core, "imu-core");
 	devm_fw_init_regulator(dev, &devdata->mag_core, "mag-core");
@@ -2327,12 +2369,6 @@ error_after_stream_register:
 error_after_misc_register:
 	misc_deregister(&devdata->misc);
 error_after_devdata_init:
-	if (devdata->use_fastpath) {
-		spi->master->prepare_message = devdata->spi_prepare_ops.prepare_message;
-		spi->master->unprepare_message = devdata->spi_prepare_ops.unprepare_message;
-	}
-	spi->master->prepare_transfer_hardware = devdata->spi_prepare_ops.prepare_transfer_hardware;
-	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
 	destroy_workqueue(devdata->syncboss_pm_workqueue);
 error:
 	return status;
@@ -2354,14 +2390,6 @@ static int syncboss_remove(struct spi_device *spi)
 	misc_deregister(&devdata->misc_control);
 	misc_deregister(&devdata->misc_powerstate);
 	misc_deregister(&devdata->misc);
-
-	/* Return prepare/unprepare call ownership to the kernel SPI framework. */
-	if (devdata->use_fastpath) {
-		spi->master->prepare_message = devdata->spi_prepare_ops.prepare_message;
-		spi->master->unprepare_message = devdata->spi_prepare_ops.unprepare_message;
-	}
-	spi->master->prepare_transfer_hardware = devdata->spi_prepare_ops.prepare_transfer_hardware;
-	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
 
 	return 0;
 }

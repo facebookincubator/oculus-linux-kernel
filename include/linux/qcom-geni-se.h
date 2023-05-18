@@ -368,6 +368,7 @@ if (print) { \
 } \
 } while (0)
 
+#ifdef CONFIG_QCOM_GENI_SE_DEBUG
 #define GENI_SE_DBG(log_ctx, print, dev, x...) do { \
 if (log_ctx) \
 	ipc_log_string(log_ctx, x); \
@@ -378,6 +379,9 @@ if (print) { \
 		pr_debug(x); \
 } \
 } while (0)
+#else
+#define GENI_SE_DBG(log_ctx, print, dev, x...) do {} while (0)
+#endif /* CONFIG_QCOM_GENI_SE_DEBUG */
 
 
 #ifdef CONFIG_QCOM_GENI_SE

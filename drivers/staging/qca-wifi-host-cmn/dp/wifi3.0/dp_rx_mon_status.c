@@ -1515,7 +1515,6 @@ dp_rx_handle_ppdu_stats(struct dp_soc *soc, struct dp_pdev *pdev,
 }
 #endif
 
-#ifndef REMOVE_PKT_LOG
 /**
 * dp_rx_process_peer_based_pktlog() - Process Rx pktlog if peer based
 * filtering enabled
@@ -1556,7 +1555,6 @@ dp_rx_process_peer_based_pktlog(struct dp_soc *soc,
 		}
 	}
 }
-#endif
 
 #if defined(HTT_UL_OFDMA_USER_INFO_V0_W0_VALID_M)
 static inline void
@@ -1677,9 +1675,7 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 	QDF_STATUS enh_log_status = QDF_STATUS_SUCCESS;
 	struct cdp_pdev_mon_stats *rx_mon_stats;
 	int smart_mesh_status;
-#ifndef REMOVE_PKT_LOG
 	enum WDI_EVENT pktlog_mode = WDI_NO_VAL;
-#endif
 	bool nbuf_used;
 	uint32_t rx_enh_capture_mode;
 
@@ -1735,7 +1731,6 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 				 (tlv_status == HAL_TLV_STATUS_MPDU_END) ||
 				 (tlv_status == HAL_TLV_STATUS_MSDU_END));
 		}
-#ifndef REMOVE_PKT_LOG
 		if (pdev->dp_peer_based_pktlog) {
 			dp_rx_process_peer_based_pktlog(soc, ppdu_info,
 							status_nbuf,
@@ -1752,7 +1747,6 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 						     HTT_INVALID_PEER,
 						     WDI_NO_VAL, pdev->pdev_id);
 		}
-#endif
 
 		/* smart monitor vap and m_copy cannot co-exist */
 		if (ppdu_info->rx_status.monitor_direct_used && pdev->neighbour_peers_added

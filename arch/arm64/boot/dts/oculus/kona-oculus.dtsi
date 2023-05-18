@@ -36,7 +36,6 @@
 
 &kgsl_smmu {
 	oculus,external-context-fault-irq;
-	oculus,external-map-lock;
 	qcom,split-tables;
 };
 
@@ -160,6 +159,76 @@
 &spmi_bus {
 	qcom,pm8009@a {
 		status = "disabled";
+	};
+};
+
+&thermal_zones {
+	cpu-1-0-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpu-1-1-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpu-1-2-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpu-1-3-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpu-1-4-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpu-1-5-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+};
+
+&usb0 {
+	qcom,iommu-faults = "non-fatal";
+
+	dwc3@a600000 {
+		maximum-speed = "super-speed";
 	};
 };
 

@@ -9,7 +9,7 @@ endif
 ifeq ($(KERNEL_BUILD), 1)
 	# These are configurable via Kconfig for kernel-based builds
 	# Need to explicitly configure for Android-based builds
-	AUDIO_BLD_DIR := $(shell pwd)/kernel/msm-4.19
+	AUDIO_BLD_DIR := $(shell pwd)/kernel/qcom/kona
 	AUDIO_ROOT := $(AUDIO_BLD_DIR)/techpack/audio
 endif
 
@@ -102,6 +102,3 @@ endif
 # Module information used by KBuild framework
 obj-$(CONFIG_SND_SOC_WSA883X) += wsa883x_dlkm.o
 wsa883x_dlkm-y := $(WSA883X_OBJS)
-
-# inject some build related information
-DEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"

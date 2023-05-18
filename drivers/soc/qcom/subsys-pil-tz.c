@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -39,6 +39,13 @@
 
 #define desc_to_data(d) container_of(d, struct pil_tz_data, desc)
 #define subsys_to_data(d) container_of(d, struct pil_tz_data, subsys_desc)
+
+struct pil_map_fw_info {
+	void *region;
+	unsigned long attrs;
+	phys_addr_t base_addr;
+	struct device *dev;
+};
 
 /**
  * struct reg_info - regulator info
@@ -600,12 +607,12 @@ static void pil_remove_proxy_vote(struct pil_desc *pil)
 }
 
 static int pil_init_image_trusted(struct pil_desc *pil,
-		const u8 *metadata, size_t size)
+		const u8 *metadata, size_t size, phys_addr_t mdata_phys,
+		void *region)
 {
 	struct pil_tz_data *d = desc_to_data(pil);
 	u32 scm_ret = 0;
 	void *mdata_buf;
-	dma_addr_t mdata_phys;
 	int ret;
 	unsigned long attrs = 0;
 	struct device *dev;
@@ -627,7 +634,7 @@ static int pil_init_image_trusted(struct pil_desc *pil,
 	mdata_buf = dma_alloc_attrs(dev, size, &mdata_phys, GFP_KERNEL,
 					attrs);
 	if (!mdata_buf) {
-		pr_err("scm-pas: Allocation for metadata failed.\n");
+		dev_err(pil->dev, "Failed to map memory for metadata.\n");
 		scm_pas_disable_bw();
 		kfree(dev);
 		return -ENOMEM;
@@ -1242,6 +1249,9 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 			goto err_ramdump;
 		}
 	}
+
+	d->desc.sequential_loading = of_property_read_bool(pdev->dev.of_node,
+						"qcom,sequential-fw-load");
 
 	d->ramdump_dev = create_ramdump_device(d->subsys_desc.name,
 								&pdev->dev);

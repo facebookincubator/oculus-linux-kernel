@@ -14,6 +14,7 @@
 #include <linux/uprobes.h>
 #include <linux/page-flags-layout.h>
 #include <linux/workqueue.h>
+#include <linux/android_kabi.h>
 
 #include <asm/mmu.h>
 
@@ -226,6 +227,11 @@ struct page_frag_cache {
 
 typedef unsigned long vm_flags_t;
 
+static inline atomic_t *compound_mapcount_ptr(struct page *page)
+{
+	return &page[1].compound_mapcount;
+}
+
 /*
  * A region containing a mapping of a non-memory backed file under NOMMU
  * conditions.  These are held in a global tree and are pinned by the VMAs that
@@ -331,9 +337,14 @@ struct vm_area_struct {
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
 #ifdef CONFIG_SPECULATIVE_PAGE_FAULT
-	seqcount_t vm_sequence;
+	seqcount_t vm_sequence;		/* Speculative page fault field */
 	atomic_t vm_ref_count;		/* see vma_get(), vma_put() */
 #endif
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 } __randomize_layout;
 
 struct core_thread {
@@ -354,7 +365,7 @@ struct mm_struct {
 		struct rb_root mm_rb;
 		u64 vmacache_seqnum;                   /* per-thread vmacache */
 #ifdef CONFIG_SPECULATIVE_PAGE_FAULT
-		rwlock_t mm_rb_lock;
+		rwlock_t mm_rb_lock;	/* Speculative page fault field */
 #endif
 #ifdef CONFIG_MMU
 		unsigned long (*get_unmapped_area) (struct file *filp,

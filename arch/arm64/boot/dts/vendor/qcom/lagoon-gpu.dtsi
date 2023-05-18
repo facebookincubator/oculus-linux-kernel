@@ -103,12 +103,12 @@
 		qcom,gpu-qdss-stm = <0x161c0000 0x40000>;
 
 		#cooling-cells = <2>;
+		qcom,tzone-names = "gpuss-0-usr", "gpuss-1-usr";
 
 		/* Bus Scale Settings */
 		qcom,gpubw-dev = <&gpubw>;
 		qcom,bus-control;
 		qcom,msm-bus,name = "grp3d";
-		qcom,bus-width = <32>;
 		qcom,msm-bus,num-cases = <13>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =

@@ -980,6 +980,7 @@ static unsigned int msm_get_mctrl(struct uart_port *port)
 static void msm_reset(struct uart_port *port)
 {
 	struct msm_port *msm_port = UART_TO_MSM(port);
+	unsigned int mr;
 
 	/* reset everything */
 	msm_write(port, UART_CR_CMD_RESET_RX, UART_CR);
@@ -987,7 +988,10 @@ static void msm_reset(struct uart_port *port)
 	msm_write(port, UART_CR_CMD_RESET_ERR, UART_CR);
 	msm_write(port, UART_CR_CMD_RESET_BREAK_INT, UART_CR);
 	msm_write(port, UART_CR_CMD_RESET_CTS, UART_CR);
-	msm_write(port, UART_CR_CMD_SET_RFR, UART_CR);
+	msm_write(port, UART_CR_CMD_RESET_RFR, UART_CR);
+	mr = msm_read(port, UART_MR1);
+	mr &= ~UART_MR1_RX_RDY_CTL;
+	msm_write(port, mr, UART_MR1);
 
 	/* Disable DM modes */
 	if (msm_port->is_uartdm)
@@ -1156,15 +1160,6 @@ static int msm_set_baud_rate(struct uart_port *port, unsigned int baud,
 	return baud;
 }
 
-static void msm_init_clock(struct uart_port *port)
-{
-	struct msm_port *msm_port = UART_TO_MSM(port);
-
-	clk_prepare_enable(msm_port->clk);
-	clk_prepare_enable(msm_port->pclk);
-	msm_serial_set_mnd_regs(port);
-}
-
 static int msm_startup(struct uart_port *port)
 {
 	struct msm_port *msm_port = UART_TO_MSM(port);
@@ -1174,7 +1169,19 @@ static int msm_startup(struct uart_port *port)
 	snprintf(msm_port->name, sizeof(msm_port->name),
 		 "msm_serial%d", port->line);
 
-	msm_init_clock(port);
+	/*
+	 * UART clk must be kept enabled to
+	 * avoid losing received character
+	 */
+	ret = clk_prepare_enable(msm_port->clk);
+	if (ret)
+		return ret;
+
+	ret = clk_prepare_enable(msm_port->pclk);
+	if (ret)
+		goto err_pclk;
+
+	msm_serial_set_mnd_regs(port);
 
 	if (likely(port->fifosize > 12))
 		rfr_level = port->fifosize - 12;
@@ -1213,6 +1220,8 @@ err_irq:
 
 	clk_disable_unprepare(msm_port->pclk);
 	clk_disable_unprepare(msm_port->clk);
+err_pclk:
+	clk_disable_unprepare(msm_port->clk);
 
 	return ret;
 }
@@ -1227,6 +1236,7 @@ static void msm_shutdown(struct uart_port *port)
 	if (msm_port->is_uartdm)
 		msm_release_dma(msm_port);
 
+	clk_disable_unprepare(msm_port->pclk);
 	clk_disable_unprepare(msm_port->clk);
 
 	free_irq(port->irq, port);
@@ -1393,8 +1403,16 @@ static void msm_power(struct uart_port *port, unsigned int state,
 
 	switch (state) {
 	case 0:
-		clk_prepare_enable(msm_port->clk);
-		clk_prepare_enable(msm_port->pclk);
+		/*
+		 * UART clk must be kept enabled to
+		 * avoid losing received character
+		 */
+		if (clk_prepare_enable(msm_port->clk))
+			return;
+		if (clk_prepare_enable(msm_port->pclk)) {
+			clk_disable_unprepare(msm_port->clk);
+			return;
+		}
 		break;
 	case 3:
 		clk_disable_unprepare(msm_port->clk);
@@ -1576,6 +1594,7 @@ static void __msm_console_write(struct uart_port *port, const char *s,
 	int num_newlines = 0;
 	bool replaced = false;
 	void __iomem *tf;
+	int locked = 1;
 
 	if (is_uartdm)
 		tf = port->membase + UARTDM_TF;
@@ -1588,7 +1607,13 @@ static void __msm_console_write(struct uart_port *port, const char *s,
 			num_newlines++;
 	count += num_newlines;
 
-	spin_lock(&port->lock);
+	if (port->sysrq)
+		locked = 0;
+	else if (oops_in_progress)
+		locked = spin_trylock(&port->lock);
+	else
+		spin_lock(&port->lock);
+
 	if (is_uartdm)
 		msm_reset_dm_count(port, count);
 
@@ -1624,7 +1649,9 @@ static void __msm_console_write(struct uart_port *port, const char *s,
 		iowrite32_rep(tf, buf, 1);
 		i += num_chars;
 	}
-	spin_unlock(&port->lock);
+
+	if (locked)
+		spin_unlock(&port->lock);
 }
 
 static void msm_console_write(struct console *co, const char *s,
@@ -1657,7 +1684,7 @@ static int __init msm_console_setup(struct console *co, char *options)
 	if (unlikely(!port->membase))
 		return -ENXIO;
 
-	msm_init_clock(port);
+	msm_serial_set_mnd_regs(port);
 
 	if (options)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);

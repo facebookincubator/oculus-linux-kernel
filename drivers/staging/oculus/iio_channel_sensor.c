@@ -139,7 +139,7 @@ static int iio_channel_sensor_remove(struct platform_device *pdev)
 
 	sysfs_remove_groups(&pdev->dev.kobj, iio_channel_sensor_groups);
 
-	mutex_destroy(&data->lock);
+	mutex_destroy(&vs->lock);
 
 	return 0;
 }

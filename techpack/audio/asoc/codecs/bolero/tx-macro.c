@@ -8,7 +8,6 @@
 #include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
-#include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
@@ -159,10 +158,6 @@ struct tx_macro_priv {
 	struct work_struct tx_macro_add_child_devices_work;
 	struct hpf_work tx_hpf_work[NUM_DECIMATORS];
 	struct tx_mute_work tx_mute_dwork[NUM_DECIMATORS];
-	struct regulator *micb_supply;
-	u32 micb_voltage;
-	u32 micb_current;
-	int micb_users;
 	u16 dmic_clk_div;
 	u32 version;
 	u32 is_used_tx_swr_gpio;
@@ -1018,22 +1013,22 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 				   &tx_priv->tx_mute_dwork[decimator].dwork,
 				   msecs_to_jiffies(tx_unmute_delay));
 		if (tx_priv->tx_hpf_work[decimator].hpf_cut_off_freq !=
-							CF_MIN_3DB_150HZ)
+							CF_MIN_3DB_150HZ) {
 			queue_delayed_work(system_freezable_wq,
 				&tx_priv->tx_hpf_work[decimator].dwork,
 				msecs_to_jiffies(hpf_delay));
-
-		snd_soc_component_update_bits(component,
-				hpf_gate_reg, 0x03, 0x02);
-		if (!is_amic_enabled(component, decimator))
 			snd_soc_component_update_bits(component,
+					hpf_gate_reg, 0x03, 0x02);
+			if (!is_amic_enabled(component, decimator))
+				snd_soc_component_update_bits(component,
 					hpf_gate_reg, 0x03, 0x00);
-		snd_soc_component_update_bits(component,
-				hpf_gate_reg, 0x03, 0x01);
-		/*
-		 * 6ms delay is required as per HW spec
-		 */
-		usleep_range(6000, 6010);
+			snd_soc_component_update_bits(component,
+					hpf_gate_reg, 0x03, 0x01);
+			/*
+			 * 6ms delay is required as per HW spec
+			 */
+			usleep_range(6000, 6010);
+		}
 		/* apply gain after decimator is enabled */
 		snd_soc_component_write(component, tx_gain_ctl_reg,
 			      snd_soc_component_read32(component,
@@ -1104,90 +1099,8 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 static int tx_macro_enable_micbias(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_component *component =
-				snd_soc_dapm_to_component(w->dapm);
-	struct device *tx_dev = NULL;
-	struct tx_macro_priv *tx_priv = NULL;
-	int ret = 0;
-
-	if (!tx_macro_get_data(component, &tx_dev, &tx_priv, __func__))
-		return -EINVAL;
-
-	if (!tx_priv->micb_supply) {
-		dev_err(tx_dev,
-			"%s:regulator not provided in dtsi\n", __func__);
-		return -EINVAL;
-	}
-	switch (event) {
-	case SND_SOC_DAPM_PRE_PMU:
-		if (tx_priv->micb_users++ > 0)
-			return 0;
-		ret = regulator_set_voltage(tx_priv->micb_supply,
-				      tx_priv->micb_voltage,
-				      tx_priv->micb_voltage);
-		if (ret) {
-			dev_err(tx_dev, "%s: Setting voltage failed, err = %d\n",
-				__func__, ret);
-			return ret;
-		}
-		ret = regulator_set_load(tx_priv->micb_supply,
-					 tx_priv->micb_current);
-		if (ret) {
-			dev_err(tx_dev, "%s: Setting current failed, err = %d\n",
-				__func__, ret);
-			return ret;
-		}
-		ret = regulator_enable(tx_priv->micb_supply);
-		if (ret) {
-			dev_err(tx_dev, "%s: regulator enable failed, err = %d\n",
-				__func__, ret);
-			return ret;
-		}
-		break;
-	case SND_SOC_DAPM_POST_PMD:
-		if (--tx_priv->micb_users > 0)
-			return 0;
-		if (tx_priv->micb_users < 0) {
-			tx_priv->micb_users = 0;
-			dev_dbg(tx_dev, "%s: regulator already disabled\n",
-				__func__);
-			return 0;
-		}
-		ret = regulator_disable(tx_priv->micb_supply);
-		if (ret) {
-			dev_err(tx_dev, "%s: regulator disable failed, err = %d\n",
-				__func__, ret);
-			return ret;
-		}
-		regulator_set_voltage(tx_priv->micb_supply, 0,
-				tx_priv->micb_voltage);
-		regulator_set_load(tx_priv->micb_supply, 0);
-		break;
-	}
 	return 0;
 }
-
-/* Cutoff frequency for high pass filter */
-static const char * const cf_text[] = {
-	"CF_NEG_3DB_4HZ", "CF_NEG_3DB_75HZ", "CF_NEG_3DB_150HZ"
-};
-
-static SOC_ENUM_SINGLE_DECL(cf_dec0_enum, BOLERO_CDC_TX0_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec1_enum, BOLERO_CDC_TX1_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec2_enum, BOLERO_CDC_TX2_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec3_enum, BOLERO_CDC_TX3_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec4_enum, BOLERO_CDC_TX4_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec5_enum, BOLERO_CDC_TX5_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec6_enum, BOLERO_CDC_TX6_TX_PATH_CFG0, 5,
-							cf_text);
-static SOC_ENUM_SINGLE_DECL(cf_dec7_enum, BOLERO_CDC_TX7_TX_PATH_CFG0, 5,
-							cf_text);
 
 static int tx_macro_hw_params(struct snd_pcm_substream *substream,
 			   struct snd_pcm_hw_params *params,
@@ -2497,21 +2410,6 @@ static const struct snd_kcontrol_new tx_macro_snd_controls[] = {
 
 	SOC_ENUM_EXT("DEC7 MODE", dec_mode_mux_enum,
 			tx_macro_dec_mode_get, tx_macro_dec_mode_put),
-	SOC_ENUM("TX0 HPF cut off", cf_dec0_enum),
-
-	SOC_ENUM("TX1 HPF cut off", cf_dec1_enum),
-
-	SOC_ENUM("TX2 HPF cut off", cf_dec2_enum),
-
-	SOC_ENUM("TX3 HPF cut off", cf_dec3_enum),
-
-	SOC_ENUM("TX4 HPF cut off", cf_dec4_enum),
-
-	SOC_ENUM("TX5 HPF cut off", cf_dec5_enum),
-
-	SOC_ENUM("TX6 HPF cut off", cf_dec6_enum),
-
-	SOC_ENUM("TX7 HPF cut off", cf_dec7_enum),
 
 	SOC_SINGLE_EXT("DEC0_BCS Switch", SND_SOC_NOPM, 0, 1, 0,
 		       tx_macro_get_bcs, tx_macro_set_bcs),
@@ -2670,7 +2568,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 				dev_err(tx_priv->dev, "%s: clock already disabled\n",
 						__func__);
 				tx_priv->tx_mclk_users = 0;
-				return 0;
+				goto tx_clk;
 			}
 			tx_priv->tx_mclk_users--;
 			if (tx_priv->tx_mclk_users == 0) {
@@ -2695,6 +2593,7 @@ static int tx_macro_tx_va_mclk_enable(struct tx_macro_priv *tx_priv,
 				goto done;
 			}
 		}
+tx_clk:
 		if (!clk_tx_ret)
 			ret = bolero_clk_rsc_request_clock(tx_priv->dev,
 						   TX_CORE_CLK,
@@ -2768,22 +2667,25 @@ static int tx_macro_clk_switch(struct snd_soc_component *component, int clk_src)
 
 static int tx_macro_core_vote(void *handle, bool enable)
 {
+	int rc = 0;
 	struct tx_macro_priv *tx_priv = (struct tx_macro_priv *) handle;
 
 	if (tx_priv == NULL) {
 		pr_err("%s: tx priv data is NULL\n", __func__);
 		return -EINVAL;
 	}
+
 	if (enable) {
 		pm_runtime_get_sync(tx_priv->dev);
+		if (bolero_check_core_votes(tx_priv->dev))
+			rc = 0;
+		else
+			rc = -ENOTSYNC;
+	} else {
 		pm_runtime_put_autosuspend(tx_priv->dev);
 		pm_runtime_mark_last_busy(tx_priv->dev);
 	}
-
-	if (bolero_check_core_votes(tx_priv->dev))
-		return 0;
-	else
-		return -EINVAL;
+	return rc;
 }
 
 static int tx_macro_swrm_clock(void *handle, bool enable)
@@ -3269,10 +3171,6 @@ static int tx_macro_probe(struct platform_device *pdev)
 	struct tx_macro_priv *tx_priv = NULL;
 	u32 tx_base_addr = 0, sample_rate = 0;
 	char __iomem *tx_io_base = NULL;
-	const char *micb_supply_str = "tx-vdd-micb-supply";
-	const char *micb_supply_str1 = "tx-vdd-micb";
-	const char *micb_voltage_str = "qcom,tx-vdd-micb-voltage";
-	const char *micb_current_str = "qcom,tx-vdd-micb-current";
 	int ret = 0;
 	const char *dmic_sample_rate = "qcom,tx-dmic-sample-rate";
 	u32 is_used_tx_swr_gpio = 1;
@@ -3343,39 +3241,6 @@ static int tx_macro_probe(struct platform_device *pdev)
 		sample_rate, tx_priv) == TX_MACRO_DMIC_SAMPLE_RATE_UNDEFINED)
 			return -EINVAL;
 	}
-
-	if (of_parse_phandle(pdev->dev.of_node, micb_supply_str, 0)) {
-		tx_priv->micb_supply = devm_regulator_get(&pdev->dev,
-						micb_supply_str1);
-		if (IS_ERR(tx_priv->micb_supply)) {
-			ret = PTR_ERR(tx_priv->micb_supply);
-			dev_err(&pdev->dev,
-				"%s:Failed to get micbias supply for TX Mic %d\n",
-				__func__, ret);
-			return ret;
-		}
-		ret = of_property_read_u32(pdev->dev.of_node,
-					micb_voltage_str,
-					&tx_priv->micb_voltage);
-		if (ret) {
-			dev_err(&pdev->dev,
-				"%s:Looking up %s property in node %s failed\n",
-				__func__, micb_voltage_str,
-				pdev->dev.of_node->full_name);
-			return ret;
-		}
-		ret = of_property_read_u32(pdev->dev.of_node,
-					micb_current_str,
-					&tx_priv->micb_current);
-		if (ret) {
-			dev_err(&pdev->dev,
-				"%s:Looking up %s property in node %s failed\n",
-				__func__, micb_current_str,
-				pdev->dev.of_node->full_name);
-			return ret;
-		}
-	}
-
 	if (is_used_tx_swr_gpio) {
 		tx_priv->reset_swr = true;
 		INIT_WORK(&tx_priv->tx_macro_add_child_devices_work,
@@ -3400,13 +3265,13 @@ static int tx_macro_probe(struct platform_device *pdev)
 			"%s: register macro failed\n", __func__);
 		goto err_reg_macro;
 	}
-	if (is_used_tx_swr_gpio)
-		schedule_work(&tx_priv->tx_macro_add_child_devices_work);
 	pm_runtime_set_autosuspend_delay(&pdev->dev, AUTO_SUSPEND_DELAY);
 	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_suspend_ignore_children(&pdev->dev, true);
 	pm_runtime_enable(&pdev->dev);
+	if (is_used_tx_swr_gpio)
+		schedule_work(&tx_priv->tx_macro_add_child_devices_work);
 
 	return 0;
 err_reg_macro:

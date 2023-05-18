@@ -11,6 +11,7 @@
 #include "adreno_trace.h"
 #include "kgsl_device.h"
 #include "kgsl_gmu_core.h"
+#include "kgsl_lazy.h"
 #include "kgsl_timeline.h"
 
 #define DRAWQUEUE_NEXT(_i, _s) (((_i) + 1) % (_s))
@@ -281,10 +282,9 @@ static void _retire_timestamp(struct kgsl_drawobj *drawobj)
 	ctx_memstore = KGSL_ID_MEMSTORE(device, context->id);
 	ctx_memstore->soptimestamp = drawobj->timestamp;
 	ctx_memstore->eoptimestamp = drawobj->timestamp;
+	drawctxt->submitted_timestamp = drawobj->timestamp;
 	/* Make sure the writes are posted before continuing */
 	smp_wmb();
-
-	drawctxt->submitted_timestamp = drawobj->timestamp;
 
 	/* Retire pending GPU events for the object */
 	kgsl_process_event_group(device, &context->events);
@@ -1178,7 +1178,7 @@ static inline int _wait_for_room_in_context_queue(
 		 * while we were sleeping
 		 */
 
-		if (ret > 0) {
+		if (ret >= 1) {
 			ret = _check_context_state(&drawctxt->base);
 			if (ret)
 				return ret;
@@ -2099,6 +2099,7 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 	int fault;
 	int halt;
 	bool gx_on, split_tables_enabled, smmu_stalled = false;
+	bool extra_mmu_power_vote;
 
 	fault = atomic_xchg(&dispatcher->fault, 0);
 	if (fault == 0)
@@ -2154,6 +2155,15 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 		dev_err(device->dev, "SMMU is stalled without a pagefault\n");
 		return -EBUSY;
 	}
+
+	/*
+	 * Check if we took an extra power vote for the MMU clocks and release
+	 * it if necessary. We'll take it back after we handle this fault.
+	 */
+	extra_mmu_power_vote = test_bit(KGSL_MMU_EXTRA_POWER_VOTE,
+			&device->mmu.flags);
+	if (extra_mmu_power_vote)
+		kgsl_mmu_suspend(device);
 
 	/* Turn off all the timers */
 	del_timer_sync(&dispatcher->timer);
@@ -2274,6 +2284,14 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 		ret = gpudev->reset(device, fault);
 	else
 		ret = adreno_reset(device, fault);
+
+	/*
+	 * If the GPU was successfully reset then grab the extra MMU clock
+	 * power vote again if we released it above. Don't bother if it didn't
+	 * reset correctly because we're just going to panic below.
+	 */
+	if (!ret && extra_mmu_power_vote)
+		kgsl_mmu_resume(device);
 
 	mutex_unlock(&device->mutex);
 
@@ -2698,6 +2716,9 @@ static void adreno_dispatcher_work(struct kthread_work *work)
 		_dispatcher_power_down(adreno_dev);
 
 	mutex_unlock(&dispatcher->mutex);
+
+	/* Clear out any stale processes on the lazy process list. */
+	kgsl_lazy_process_list_purge(device);
 }
 
 void adreno_dispatcher_schedule(struct kgsl_device *device)

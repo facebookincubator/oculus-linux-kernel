@@ -1254,7 +1254,7 @@ static struct ieee80211_sband_iftype_data __wl_he_cap = {
 			.tx_mcs_160 = cpu_to_le16((0xfffa)),
 			}
 	},
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0))
+#if defined(CONFIG_6GHZ_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0))
 	.he_6ghz_capa = {.capa = cpu_to_le16(0x3038)},
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) */
 };
@@ -13086,12 +13086,15 @@ void wl_cfg80211_disassoc(struct net_device *ndev, uint32 reason)
 
 #ifdef BCMDONGLEHOST
 	struct bcm_cfg80211 *cfg = wl_get_cfg(ndev);
-	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 
-	BCM_REFERENCE(cfg);
-	BCM_REFERENCE(dhdp);
-	DHD_STATLOG_CTRL(dhdp, ST(DISASSOC_INT_START),
-		dhd_net2idx(dhdp->info, ndev), WLAN_REASON_DEAUTH_LEAVING);
+	if (cfg) {
+		dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+
+		BCM_REFERENCE(cfg);
+		BCM_REFERENCE(dhdp);
+		DHD_STATLOG_CTRL(dhdp, ST(DISASSOC_INT_START),
+			dhd_net2idx(dhdp->info, ndev), WLAN_REASON_DEAUTH_LEAVING);
+	}
 #endif /* BCMDONGLEHOST */
 
 #ifdef WL_CFGVENDOR_CUST_ADVLOG
@@ -16435,7 +16438,7 @@ wl_cfg80211_ccode_evt_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgde
 	struct wiphy *wiphy = bcmcfg_to_wiphy(cfg);
 	char country_str[WLC_CNTRY_BUF_SZ] = { 0 };
 
-	if (strlcpy(country_str, data, WL_CCODE_LEN) >= WLC_CNTRY_BUF_SZ) {
+	if (strlcpy(country_str, data, WL_CCODE_LEN + 1) >= WLC_CNTRY_BUF_SZ) {
 		return -EINVAL;
 	}
 
@@ -16462,7 +16465,10 @@ wl_cfg80211_ccode_evt_handler(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgde
 			WL_ERR(("%s: update country change failed\n", __FUNCTION__));
 			return err;
 		}
-		WL_DBG_MEM(("regulatory hint notified for ccode change\n"));
+		WL_INFORM_MEM(("regulatory hint notified for ccode change\n"));
+	} else {
+		wl_notify_regd(wiphy, country_str);
+		WL_INFORM_MEM(("regulatory notified for ccode change\n"));
 	}
 
 	return err;
@@ -18591,6 +18597,7 @@ static void wl_is_6g_supported(struct bcm_cfg80211 *cfg, u32 *bandlist, u8 nband
 	for (i = 1; i <= nbands; i++) {
 		if (bandlist[i] == WLC_BAND_6G) {
 			cfg->band_6g_supported = true;
+			break;
 		}
 	}
 }

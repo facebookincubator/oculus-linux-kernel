@@ -61,6 +61,8 @@ int cnss_wlfw_antenna_grant_send_sync(struct cnss_plat_data *plat_priv);
 int cnss_wlfw_dynamic_feature_mask_send_sync(struct cnss_plat_data *plat_priv);
 int cnss_wlfw_get_info_send_sync(struct cnss_plat_data *plat_priv, int type,
 				 void *cmd, int cmd_len);
+int cnss_wlfw_wfc_call_status_send_sync(struct cnss_plat_data *plat_priv,
+					u32 data_len, const void *data);
 int cnss_register_coex_service(struct cnss_plat_data *plat_priv);
 void cnss_unregister_coex_service(struct cnss_plat_data *plat_priv);
 int coex_antenna_switch_to_wlan_send_sync_msg(struct cnss_plat_data *plat_priv);
@@ -68,6 +70,7 @@ int coex_antenna_switch_to_mdm_send_sync_msg(struct cnss_plat_data *plat_priv);
 int cnss_wlfw_qdss_trace_mem_info_send_sync(struct cnss_plat_data *plat_priv);
 int cnss_register_ims_service(struct cnss_plat_data *plat_priv);
 void cnss_unregister_ims_service(struct cnss_plat_data *plat_priv);
+void cnss_ignore_qmi_failure(bool ignore);
 int cnss_wlfw_send_pcie_gen_speed_sync(struct cnss_plat_data *plat_priv);
 #else
 #define QMI_WLFW_TIMEOUT_MS		10000
@@ -177,6 +180,20 @@ int cnss_wlfw_dynamic_feature_mask_send_sync(struct cnss_plat_data *plat_priv)
 }
 
 static inline
+int cnss_wlfw_get_info_send_sync(struct cnss_plat_data *plat_priv, int type,
+				 void *cmd, int cmd_len)
+{
+	return 0;
+}
+
+static inline
+int cnss_wlfw_wfc_call_status_send_sync(struct cnss_plat_data *plat_priv,
+					u32 data_len, const void *data);
+{
+	return 0;
+}
+
+static inline
 int cnss_register_coex_service(struct cnss_plat_data *plat_priv)
 {
 	return 0;
@@ -209,6 +226,7 @@ int cnss_register_ims_service(struct cnss_plat_data *plat_priv)
 static inline
 void cnss_unregister_ims_service(struct cnss_plat_data *plat_priv) {}
 
+void cnss_ignore_qmi_failure(bool ignore) {};
 static inline
 int cnss_wlfw_send_pcie_gen_speed_sync(struct cnss_plat_data *plat_priv) {}
 

@@ -3018,8 +3018,8 @@ static void _sde_plane_update_format_and_rects(struct sde_plane *psde,
 
 	/* update format */
 	psde->pipe_hw->ops.setup_format(psde->pipe_hw, fmt,
-		pstate->const_alpha_en, src_flags,
-		pstate->multirect_index, color_filter);
+	   pstate->const_alpha_en, src_flags,
+	   pstate->multirect_index, color_filter);
 
 	if (psde->pipe_hw->ops.setup_cdp) {
 		struct sde_hw_pipe_cdp_cfg *cdp_cfg = &pstate->cdp_cfg;
@@ -3481,16 +3481,16 @@ static void _sde_plane_install_properties(struct drm_plane *plane,
 		{SDE_SSPP_MULTIRECT_PARALLEL, "parallel"},
 		{SDE_SSPP_MULTIRECT_TIME_MX,  "serial"},
 	};
+	static const struct drm_prop_enum_list e_layout_index[] = {
+		{SDE_LAYOUT_NONE, "none"},
+		{SDE_LAYOUT_LEFT, "left"},
+		{SDE_LAYOUT_RIGHT, "right"},
+	};
 	static const struct drm_prop_enum_list e_color_filter[] = {
 		{SDE_SSPP_COLOR_FILTER_NONE, "none"},
 		{SDE_SSPP_COLOR_FILTER_R, "red"},
 		{SDE_SSPP_COLOR_FILTER_G, "green"},
 		{SDE_SSPP_COLOR_FILTER_B, "blue"}
-	};
-	static const struct drm_prop_enum_list e_layout_index[] = {
-		{SDE_LAYOUT_NONE, "none"},
-		{SDE_LAYOUT_LEFT, "left"},
-		{SDE_LAYOUT_RIGHT, "right"},
 	};
 	const struct sde_format_extended *format_list;
 	struct sde_kms_info *info;

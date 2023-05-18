@@ -399,13 +399,26 @@ static phys_addr_t pgd_pgtable_alloc(void)
 	return __pa(ptr);
 }
 
+/**
+ * create_pgtable_mapping - create a pagetable mapping for given
+ * physical start and end addresses.
+ * @start: physical start address.
+ * @end: physical end address.
+ */
 void create_pgtable_mapping(phys_addr_t start, phys_addr_t end)
 {
 	unsigned long virt = (unsigned long)phys_to_virt(start);
 
+	if (virt < VMALLOC_START) {
+		pr_warn("BUG: not creating mapping for %pa at 0x%016lx - outside kernel range\n",
+			&start, virt);
+		return;
+	}
+
 	__create_pgd_mapping(init_mm.pgd, start, virt, end - start,
 				PAGE_KERNEL, NULL, 0);
 }
+EXPORT_SYMBOL_GPL(create_pgtable_mapping);
 
 /*
  * This function can only be used to modify existing table entries,
@@ -587,6 +600,7 @@ early_param("rodata", parse_rodata);
 #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
 static int __init map_entry_trampoline(void)
 {
+	int i;
 	pgprot_t prot = rodata_enabled ? PAGE_KERNEL_ROX : PAGE_KERNEL_EXEC;
 	phys_addr_t pa_start = __pa_symbol(__entry_tramp_text_start);
 
@@ -595,11 +609,15 @@ static int __init map_entry_trampoline(void)
 
 	/* Map only the text into the trampoline page table */
 	memset(tramp_pg_dir, 0, PGD_SIZE);
-	__create_pgd_mapping(tramp_pg_dir, pa_start, TRAMP_VALIAS, PAGE_SIZE,
-			     prot, pgd_pgtable_alloc, 0);
+	__create_pgd_mapping(tramp_pg_dir, pa_start, TRAMP_VALIAS,
+				entry_tramp_text_size(), prot, pgd_pgtable_alloc,
+				0);
 
 	/* Map both the text and data into the kernel page table */
-	__set_fixmap(FIX_ENTRY_TRAMP_TEXT, pa_start, prot);
+	for (i = 0; i < DIV_ROUND_UP(entry_tramp_text_size(), PAGE_SIZE); i++)
+		__set_fixmap(FIX_ENTRY_TRAMP_TEXT1 - i,
+				pa_start + i * PAGE_SIZE, prot);
+
 	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE)) {
 		extern char __entry_tramp_data_start[];
 
@@ -1137,6 +1155,7 @@ int kern_addr_valid(unsigned long addr)
 
 	return pfn_valid(pte_pfn(pte));
 }
+EXPORT_SYMBOL_GPL(kern_addr_valid);
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
 #if !ARM64_SWAPPER_USES_SECTION_MAPS
 int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node,
@@ -1303,7 +1322,7 @@ void __set_fixmap(enum fixed_addresses idx,
 	}
 }
 
-void *__init __fixmap_remap_fdt(phys_addr_t dt_phys, int *size, pgprot_t prot)
+void *__init fixmap_remap_fdt(phys_addr_t dt_phys, int *size, pgprot_t prot)
 {
 	const u64 dt_virt_base = __fix_to_virt(FIX_FDT);
 	int offset;
@@ -1356,17 +1375,9 @@ void *__init __fixmap_remap_fdt(phys_addr_t dt_phys, int *size, pgprot_t prot)
 	return dt_virt;
 }
 
-void *__init fixmap_remap_fdt(phys_addr_t dt_phys)
+int __init arch_ioremap_p4d_supported(void)
 {
-	void *dt_virt;
-	int size;
-
-	dt_virt = __fixmap_remap_fdt(dt_phys, &size, PAGE_KERNEL_RO);
-	if (!dt_virt)
-		return NULL;
-
-	memblock_reserve(dt_phys, size);
-	return dt_virt;
+	return 0;
 }
 
 int __init arch_ioremap_pud_supported(void)

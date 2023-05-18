@@ -16,7 +16,8 @@ snd-usb-audio-objs := 	card.o \
 			power.o \
 			proc.o \
 			quirks.o \
-			stream.o
+			stream.o \
+			validate.o
 
 ifeq ($(CONFIG_SND_USB_AUDIO_QMI),y)
 snd-usb-audio-objs +=	usb_audio_qmi_v01.o \

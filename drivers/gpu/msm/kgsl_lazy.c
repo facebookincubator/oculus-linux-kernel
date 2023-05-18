@@ -52,60 +52,266 @@ static int force_lazy_gpumem_set(const char *val, const struct kernel_param *kp)
 module_param_call(force_lazy_gpumem, force_lazy_gpumem_set, param_get_uint,
 			&force_lazy_gpumem, 0644);
 
+/**
+ * struct kgsl_lazy_process_node - Descriptor for processes using lazy gpumem
+ * @node: Local list node for the object
+ * @last_access: Last time this node was accessed (in jiffies)
+ * @uid: UID of process
+ * @pid: PID of process
+ * @enabled: Process is actively using lazy allocation
+ */
+struct kgsl_lazy_process_node {
+	struct list_head node;
+	unsigned long last_access;
+	kuid_t uid;
+	pid_t pid;
+	bool enabled;
+};
+
+bool kgsl_lazy_procfs_is_process_lazy(struct kgsl_device *device)
+{
+	struct kgsl_lazy_process_node *entry;
+	unsigned long flags;
+	kuid_t uid;
+	pid_t pid;
+	bool enabled = false;
+
+	/* Get the UID and PID of the calling process. */
+	uid = current_uid();
+	pid = current->group_leader->pid;
+
+	/* UIDs in the range [1000,2000) belong to system processes. */
+	if (IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_SYSTEM_PROCESSES) &&
+			uid.val >= 1000 && uid.val < 2000)
+		return true;
+
+	/* Ignore calls from system processes/shell. */
+	if (uid.val < 10000)
+		return false;
+
+	spin_lock_irqsave(&device->lazy_process_list_lock, flags);
+	list_for_each_entry(entry, &device->lazy_process_list, node)
+		if (uid_eq(entry->uid, uid) && entry->pid == pid) {
+			enabled = true;
+			break;
+		}
+	spin_unlock_irqrestore(&device->lazy_process_list_lock, flags);
+
+	return enabled;
+}
+
+static inline struct kgsl_lazy_process_node *_is_current_process_lazy(
+		struct kgsl_device *device, kuid_t uid, pid_t pid)
+{
+	struct kgsl_lazy_process_node *entry;
+
+	if (list_empty(&device->lazy_process_list))
+		return NULL;
+
+	list_for_each_entry(entry, &device->lazy_process_list, node)
+		if (uid_eq(entry->uid, uid) && entry->pid == pid) {
+			/* Bump the entry to the front of the list. */
+			list_move(&entry->node, &device->lazy_process_list);
+			return entry;
+		}
+
+	return NULL;
+}
+
+int kgsl_lazy_procfs_process_enable(struct kgsl_device *device, bool enable)
+{
+	struct kgsl_lazy_process_node *entry;
+	struct kgsl_process_private *private;
+	unsigned long flags;
+	kuid_t uid;
+	pid_t pid;
+	int ret = 0;
+
+	/* Get the UID and PID of the calling process. */
+	uid = current_uid();
+	pid = current->group_leader->pid;
+
+	/* Ignore calls from system processes/shell. */
+	if (uid.val < 10000)
+		return -EINVAL;
+
+	spin_lock_irqsave(&device->lazy_process_list_lock, flags);
+
+	entry = _is_current_process_lazy(device, uid, pid);
+	if (entry) {
+		if (!enable) {
+			list_del_init(&entry->node);
+			kfree(entry);
+		}
+	} else if (enable) {
+		entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+		if (!entry) {
+			ret = -ENOMEM;
+			goto error;
+		}
+
+		entry->uid = uid;
+		entry->pid = pid;
+
+		/* Check if we already have a matching process. */
+		spin_lock(&kgsl_driver.proclist_lock);
+		list_for_each_entry(private, &kgsl_driver.process_list, list)
+			if (uid_eq(uid, private->uid) &&
+					pid == pid_nr(private->pid)) {
+				entry->enabled = true;
+				break;
+			}
+		spin_unlock(&kgsl_driver.proclist_lock);
+
+		entry->last_access = jiffies;
+		list_add(&entry->node, &device->lazy_process_list);
+	}
+
+error:
+	spin_unlock_irqrestore(&device->lazy_process_list_lock, flags);
+
+	/* Clear out any stale entries in the process list. */
+	kgsl_lazy_process_list_purge(device);
+
+	return ret;
+}
+
+void kgsl_lazy_process_disable(struct kgsl_process_private *private)
+{
+	struct kgsl_device *device = KGSL_MMU_DEVICE(private->pagetable->mmu);
+	struct kgsl_lazy_process_node *entry;
+	unsigned long flags;
+
+	spin_lock_irqsave(&device->lazy_process_list_lock, flags);
+
+	list_for_each_entry(entry, &device->lazy_process_list, node)
+		if (uid_eq(entry->uid, private->uid) &&
+				entry->pid == pid_nr(private->pid)) {
+			/* Move the entry to the end of the list. */
+			list_move_tail(&entry->node, &device->lazy_process_list);
+			entry->last_access = jiffies;
+			entry->enabled = false;
+			break;
+		}
+
+	spin_unlock_irqrestore(&device->lazy_process_list_lock, flags);
+}
+
+void kgsl_lazy_process_list_purge(struct kgsl_device *device)
+{
+	struct kgsl_lazy_process_node *entry, *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&device->lazy_process_list_lock, flags);
+
+	/*
+	 * Purge any entries in the lazy process list that haven't been enabled
+	 * after a minute has passed since they were last accessed.
+	 */
+	list_for_each_entry_safe(entry, tmp, &device->lazy_process_list, node)
+		if (!entry->enabled && (jiffies - entry->last_access) >
+				60 * HZ) {
+			list_del_init(&entry->node);
+			kfree(entry);
+		}
+
+	spin_unlock_irqrestore(&device->lazy_process_list_lock, flags);
+}
+
+void kgsl_lazy_process_list_free(struct kgsl_device *device)
+{
+	struct kgsl_lazy_process_node *entry, *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&device->lazy_process_list_lock, flags);
+
+	list_for_each_entry_safe(entry, tmp, &device->lazy_process_list, node) {
+		list_del_init(&entry->node);
+		kfree(entry);
+	}
+
+	spin_unlock_irqrestore(&device->lazy_process_list_lock, flags);
+}
+
 void kgsl_memdesc_set_lazy_configuration(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc, uint64_t *flags, uint32_t *priv)
 {
 	struct kgsl_mmu *mmu = &device->mmu;
-	const unsigned int memtype = MEMFLAGS(*flags, KGSL_MEMTYPE_MASK,
-			KGSL_MEMTYPE_SHIFT);
+	const bool is_global = (*priv & KGSL_MEMDESC_GLOBAL) != 0;
 
 	/*
 	 * If we've forced lazy allocation on via the kernel parameter, enable
 	 * it globally. If it is not supported for this entry for some reason
 	 * it will be masked back off in the other checks here.
 	 */
-	if (force_lazy_gpumem == FORCE_LAZY_ALLOCATION)
+	if (force_lazy_gpumem == FORCE_LAZY_ALLOCATION) {
 		*priv |= KGSL_MEMDESC_LAZY_ALLOCATION;
+		goto enabled;
+	}
 
 	/*
 	 * If lazy allocation is enabled for global memory entries then enable
 	 * that here so conditions that might later disable this setting are
 	 * handled appropriately.
 	 */
-	if (IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_GLOBALS) &&
-			(*priv & KGSL_MEMDESC_GLOBAL))
+	if (IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_GLOBALS) && is_global) {
 		*priv |= KGSL_MEMDESC_LAZY_ALLOCATION;
+		goto enabled;
+	}
 
 	/*
-	 * TODO (T107891327): Some apps are creating large (multi-MiB)
-	 * single-use Vulkan command buffers that they free shortly after,
-	 * leading to stutter from GPU page fault churn. Disable lazy allocation
-	 * for these entries for now until we can resolve this issue.
+	 * Enable lazy allocation for processes that have specifically
+	 * requested it (or system processes if enabled globally).
 	 */
-	if (memtype == KGSL_MEMTYPE_VK_CMDBUFFER)
-		*priv &= ~KGSL_MEMDESC_LAZY_ALLOCATION;
+	if (!is_global && current) {
+		struct kgsl_lazy_process_node *entry;
+		unsigned long lock_flags;
+		kuid_t uid;
+		pid_t pid;
+
+		/* Get the UID and PID of the calling process. */
+		uid = current_uid();
+		pid = current->group_leader->pid;
+
+		/* UIDs in the range [1000,2000) belong to system processes. */
+		if (IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_SYSTEM_PROCESSES) &&
+				uid.val >= 1000 && uid.val < 2000) {
+			*priv |= KGSL_MEMDESC_LAZY_ALLOCATION;
+			goto enabled;
+		}
+
+		spin_lock_irqsave(&device->lazy_process_list_lock, lock_flags);
+		entry = _is_current_process_lazy(device, uid, pid);
+		if (entry) {
+			entry->last_access = jiffies;
+			entry->enabled = true;
+			*priv |= KGSL_MEMDESC_LAZY_ALLOCATION;
+		}
+		spin_unlock_irqrestore(&device->lazy_process_list_lock,
+				lock_flags);
+
+		if (entry)
+			goto enabled;
+	}
 
 	/*
 	 * Enable lazy allocation by default for GPU read-only entries when
 	 * the kernel is configured to do so. Pages for these entries are
 	 * typically only faulted in via the CPU's VM fault routine, and GPU
 	 * read page faults on them are rare.
-	 *
-	 * NOTE: This explicitly overrides the block on lazy allocation of
-	 * command buffers above since that stutter stems from GPU page faults.
 	 */
 	if (IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_GPUREADONLY) &&
 			(*flags & KGSL_MEMFLAGS_GPUREADONLY))
 		*priv |= KGSL_MEMDESC_LAZY_ALLOCATION;
 
+enabled:
 	/*
 	 * Lazily allocating globals without having split tables enabled is
 	 * a nightmare because we then have to go and remap the associated
 	 * PTEs in every page table. Too messy to be worth it.
 	 * TODO (T106345538): Handle mapping into both global and LPAC PTs.
 	 */
-	if ((*priv & KGSL_MEMDESC_GLOBAL) != 0 &&
-			(!kgsl_iommu_split_tables_enabled(mmu) ||
+	if (is_global && (!kgsl_iommu_split_tables_enabled(mmu) ||
 			 !IS_ERR_OR_NULL(mmu->lpac_pagetable)))
 		*priv &= ~KGSL_MEMDESC_LAZY_ALLOCATION;
 
@@ -127,6 +333,31 @@ void kgsl_memdesc_set_lazy_configuration(struct kgsl_device *device,
 	 */
 	if (force_lazy_gpumem == FORCE_UNLAZY_ALLOCATION)
 		*priv &= ~KGSL_MEMDESC_LAZY_ALLOCATION;
+
+	/* TODO (T136257003): Add shmem support to lazy allocation. */
+	if (*priv & KGSL_MEMDESC_LAZY_ALLOCATION)
+		*priv &= ~KGSL_MEMDESC_USE_SHMEM;
+}
+
+void kgsl_memdesc_set_lazy_align(struct kgsl_memdesc *memdesc, u64 size)
+{
+	unsigned int align;
+
+	if (!(memdesc->priv & KGSL_MEMDESC_LAZY_ALLOCATION) ||
+			kgsl_memdesc_is_global(memdesc))
+		return;
+
+	align = kgsl_memdesc_get_align(memdesc);
+
+	/* Force a minimum alignment on lazy entries based on size. */
+	if (size >= SZ_2M)
+		align = max_t(unsigned int, align, ilog2(SZ_2M));
+	else if (size >= SZ_1M)
+		align = max_t(unsigned int, align, ilog2(SZ_1M));
+	else if (size >= SZ_64K)
+		align = max_t(unsigned int, align, ilog2(SZ_64K));
+
+	kgsl_memdesc_set_align(memdesc, align);
 }
 
 /* Keep a small pool of pages ready to fulfill lazy allocation requests. */
@@ -150,6 +381,7 @@ struct lazy_pool_refill_ws {
 	struct kgsl_device *device;
 	bool secure;
 	int pool_size;
+	atomic_t refill_requested;
 
 	spinlock_t *lock;
 	atomic_t waiter_count;
@@ -159,6 +391,9 @@ struct lazy_pool_refill_ws {
 };
 static struct lazy_pool_refill_ws lazy_pool_refill_work;
 static struct lazy_pool_refill_ws lazy_secure_pool_refill_work;
+
+static struct page *_get_lazy_pool_page(struct lazy_pool_refill_ws *refill_work,
+		const bool refill_pool);
 
 static bool _check_page_available(atomic_t *pool_count)
 {
@@ -360,7 +595,7 @@ restart_refill:
 	}
 
 	if (!(atomic_read(&lazy_pool_status) & INITIALIZED))
-		return;
+		goto done;
 
 	wake_count += atomic_read(&refill_work->waiter_count);
 	if (!IS_ERR_OR_NULL(page) && (new_pages > 0 || wake_count > 0)) {
@@ -377,7 +612,93 @@ restart_refill:
 		queue_delayed_work(lazymem_workqueue, &refill_work->dwork,
 				msecs_to_jiffies(10));
 	}
+
+done:
+	/* We're done refilling, so clear out any pending request. */
+	atomic_set(&refill_work->refill_requested, 0);
 }
+
+static unsigned long kgsl_lazy_shrink_count_objects(struct shrinker *shrinker,
+		struct shrink_control *sc)
+{
+	unsigned long page_count;
+
+	/* If the pools haven't been initialized yet, bail here. */
+	if (!(atomic_read(&lazy_pool_status) & INITIALIZED))
+		return 0;
+
+	/* All of the pages in the lazy pools can be freed. */
+	page_count = atomic_read(&lazy_pool_refill_work.pool_count);
+#if IS_ENABLED(CONFIG_QCOM_KGSL_SECURE_LAZY_ALLOCATION)
+	page_count += atomic_read(&lazy_secure_pool_refill_work.pool_count);
+#endif
+
+	return page_count;
+}
+
+static unsigned long kgsl_lazy_shrink_scan_objects(struct shrinker *shrinker,
+		struct shrink_control *sc)
+{
+	struct lazy_pool_refill_ws *refill_work;
+	struct page *page;
+	const unsigned long nr_to_remove = sc->nr_to_scan;
+	unsigned long nr_removed = 0;
+
+	/* Cancel the pool refill work if it's scheduled. */
+	cancel_delayed_work(&lazy_pool_refill_work.dwork);
+#if IS_ENABLED(CONFIG_QCOM_KGSL_SECURE_LAZY_ALLOCATION)
+	cancel_delayed_work(&lazy_secure_pool_refill_work.dwork);
+#endif
+
+	refill_work = &lazy_pool_refill_work;
+	while (nr_removed < nr_to_remove && _check_page_available(
+			&refill_work->pool_count)) {
+		page = _get_lazy_pool_page(refill_work, false);
+		if (!page)
+			break;
+
+		__free_page(page);
+		atomic_long_sub(PAGE_SIZE, &kgsl_driver.stats.page_alloc);
+		nr_removed++;
+	}
+
+#if IS_ENABLED(CONFIG_QCOM_KGSL_SECURE_LAZY_ALLOCATION)
+	refill_work = &lazy_secure_pool_refill_work;
+	while (nr_removed < nr_to_remove && _check_page_available(
+			&refill_work->pool_count)) {
+		int lock_status;
+
+		page = _get_lazy_pool_page(refill_work, false);
+		if (!page)
+			break;
+
+		lock_status = kgsl_unlock_page(page);
+		if (lock_status) {
+			/*
+			 * Uh oh. We were unable to unlock the page? Nothing we
+			 * can do except print an error. This page will be stuck
+			 * in limbo until reboot. :(
+			 */
+			pr_err("%s:%d secure page unlock failed: %d\n",
+					__func__, __LINE__, lock_status);
+			break;
+		}
+
+		__free_page(page);
+		atomic_long_sub(PAGE_SIZE, &kgsl_driver.stats.secure);
+		nr_removed++;
+	}
+#endif
+
+	return nr_removed;
+}
+
+static struct shrinker kgsl_lazy_pool_shrinker = {
+	.count_objects = kgsl_lazy_shrink_count_objects,
+	.scan_objects = kgsl_lazy_shrink_scan_objects,
+	.seeks = DEFAULT_SEEKS,
+	.batch = 0,
+};
 
 int kgsl_lazy_page_pool_init(struct kgsl_device *device)
 {
@@ -419,6 +740,12 @@ int kgsl_lazy_page_pool_init(struct kgsl_device *device)
 #endif
 	flush_workqueue(lazymem_workqueue);
 
+	/*
+	 * Register the lazy page pool shrinker to trim the pools on heavy
+	 * memory pressure.
+	 */
+	register_shrinker(&kgsl_lazy_pool_shrinker);
+
 	return 0;
 }
 
@@ -429,6 +756,9 @@ void kgsl_lazy_page_pool_exit(void)
 	/* If the lazy pools never initialized then there's nothing to do. */
 	if (!(atomic_xchg(&lazy_pool_status, 0) & INITIALIZED))
 		return;
+
+	/* Unregister the pool shrinker before shutting down. */
+	unregister_shrinker(&kgsl_lazy_pool_shrinker);
 
 	wake_up_interruptible_all(&lazy_pool_refill_work.waitq);
 	cancel_delayed_work(&lazy_pool_refill_work.dwork);
@@ -473,16 +803,19 @@ void kgsl_lazy_page_pool_suspend(void)
 
 	atomic_andnot(AUTO_REFILL, &lazy_pool_status);
 
+	atomic_set(&lazy_pool_refill_work.refill_requested, 0);
 	wake_up_interruptible_all(&lazy_pool_refill_work.waitq);
 	cancel_delayed_work(&lazy_pool_refill_work.dwork);
 #if IS_ENABLED(CONFIG_QCOM_KGSL_SECURE_LAZY_ALLOCATION)
+	atomic_set(&lazy_secure_pool_refill_work.refill_requested, 0);
 	wake_up_interruptible_all(&lazy_secure_pool_refill_work.waitq);
 	cancel_delayed_work(&lazy_secure_pool_refill_work.dwork);
 #endif
 	flush_workqueue(lazymem_workqueue);
 }
 
-static struct page *_get_lazy_pool_page(struct lazy_pool_refill_ws *refill_work)
+static struct page *_get_lazy_pool_page(struct lazy_pool_refill_ws *refill_work,
+		const bool refill_pool)
 {
 	struct page *page = NULL;
 	unsigned long flags;
@@ -498,10 +831,11 @@ static struct page *_get_lazy_pool_page(struct lazy_pool_refill_ws *refill_work)
 	spin_unlock_irqrestore(refill_work->lock, flags);
 
 	/*
-	 * If the pool is at or below 1/8 capacity queue refilling if it's not
-	 * refilling already.
+	 * If the pool is at or below 1/8 capacity queue refilling if requested
+	 * (and it's not refilling already).
 	 */
-	if (pool_count <= (refill_work->pool_size >> 3)) {
+	if (refill_pool && pool_count <= (refill_work->pool_size >> 3) &&
+			!atomic_xchg(&refill_work->refill_requested, 1)) {
 		cancel_delayed_work(&refill_work->dwork);
 		queue_delayed_work(lazymem_workqueue, &refill_work->dwork, 0);
 	}
@@ -630,7 +964,8 @@ static int _get_lazy_page(struct kgsl_memdesc *memdesc, unsigned long offset,
 		start_time = ktime_get_ns();
 
 	*pagep = !lazy_pools_initialized ? NULL : _get_lazy_pool_page(secure ?
-			&lazy_secure_pool_refill_work :	&lazy_pool_refill_work);
+			&lazy_secure_pool_refill_work :	&lazy_pool_refill_work,
+			true /* refill_pool */);
 	if (IS_ERR_OR_NULL(*pagep)) {
 		/*
 		 * Locking/unlocking secure pages takes a *long* time, so let
@@ -729,12 +1064,9 @@ retry:
 	if (trace_enabled && !search_time)
 		search_time = ktime_get_ns();
 
-	if (IS_ERR_OR_NULL(*pagep)) {
+	if (IS_ERR_OR_NULL(*pagep))
 		status = _get_lazy_page(memdesc, offset, prot, ptep, pptep,
 				pagep, lazy_pools_initialized);
-		if (!status && !IS_ERR_OR_NULL(*pagep))
-			atomic_long_inc(&memdesc->pagetable->stats.cpu_faults);
-	}
 
 err:
 	rt_mutex_unlock(&memdesc->pagetable->map_mutex);
@@ -778,6 +1110,7 @@ int kgsl_lazy_vmfault(struct kgsl_memdesc *memdesc, struct vm_area_struct *vma,
 	struct page *page = NULL;
 	const uint64_t offset = vmf->address - vma->vm_start;
 	int status = 0;
+	const bool shmem = !!(memdesc->priv & KGSL_MEMDESC_USE_SHMEM);
 
 	if (offset >= memdesc->size)
 		return VM_FAULT_SIGBUS;
@@ -792,7 +1125,7 @@ int kgsl_lazy_vmfault(struct kgsl_memdesc *memdesc, struct vm_area_struct *vma,
 	 * If this is the first time this page is being mapped into userspace
 	 * then bump the entry's mapsize.
 	 */
-	if (page_mapcount(page) == 0)
+	if (!shmem && page_mapcount(page) == 0)
 		atomic_long_add(PAGE_SIZE, &memdesc->mapsize);
 
 	get_page(page);
@@ -813,16 +1146,22 @@ static int _get_memdesc_ref(struct kgsl_memdesc *memdesc)
 
 	/*
 	 * If this memdesc is backed by a kgsl_mem_entry then try to grab a ref
-	 * to keep it from being freed from under us. If it has been marked for
-	 * deletion or we fail to get a reference then return -ENOENT and we'll
-	 * fall back on logging the fault.
+	 * to keep it from being freed from under us. If we fail to get a
+	 * reference then return -ENOENT and we'll fall back on logging the
+	 * fault.
+	 *
+	 * NOTE (T132142875): Explicitly ignore the `pending_free` flag here to
+	 * avoid cases where a short-lived entry is being used as a scratch pad.
+	 * In this case it is likely being deleted immediately after the command
+	 * buffer retires. Grabbing the reference should be enough to ensure
+	 * it's still live, and if it actually isn't then it'll get deleted
+	 * after the `_put_memdesc_ref` call below.
 	 */
 	if (!kgsl_memdesc_is_global(memdesc)) {
 		struct kgsl_mem_entry *entry = container_of(memdesc,
 				struct kgsl_mem_entry, memdesc);
 
-		if (atomic_read(&entry->pending_free) ||
-				kgsl_mem_entry_get(entry) == 0)
+		if (kgsl_mem_entry_get(entry) == 0)
 			return -ENOENT;
 	}
 
@@ -976,7 +1315,6 @@ retry:
 				new_secure_page = NULL;
 
 				atomic_long_add(PAGE_SIZE, &memdesc->physsize);
-				atomic_long_inc(&fault_pt->stats.gpu_faults);
 			}
 		} else {
 			/*
@@ -1007,8 +1345,7 @@ retry:
 				 */
 				new_secure_page = page;
 				goto retry;
-			} else
-				atomic_long_inc(&fault_pt->stats.gpu_faults);
+			}
 		}
 	} else {
 		/*
@@ -1035,7 +1372,7 @@ retry:
 	KGSL_IOMMU_SET_CTX_REG(ctx, KGSL_IOMMU_CTX_FSR, 0xffffffff);
 
 	/* Make sure the call to clear the FSR posts before resuming. */
-	wmb();
+	mmiowb();
 
 	/*
 	 * Write 0 to the RESUME register to tell the SMMU to *retry* the

@@ -922,6 +922,7 @@ static struct platform_driver rpmh_driver = {
 	.driver = {
 		  .name = "rpmh",
 		  .of_match_table = rpmh_drv_match,
+		  .suppress_bind_attrs = true,
 	},
 };
 
@@ -930,3 +931,6 @@ static int __init rpmh_driver_init(void)
 	return platform_driver_register(&rpmh_driver);
 }
 arch_initcall(rpmh_driver_init);
+
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("Qualcomm RPM-Hardened (RPMH) Communication driver");

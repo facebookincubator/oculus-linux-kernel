@@ -2261,8 +2261,6 @@ void __scsi_init_queue(struct Scsi_Host *shost, struct request_queue *q)
 	if (!shost->use_clustering)
 		q->limits.cluster = 0;
 
-	if (shost->inlinecrypt_support)
-		queue_flag_set_unlocked(QUEUE_FLAG_INLINECRYPT, q);
 	/*
 	 * Set a reasonable default alignment:  The larger of 32-byte (dword),
 	 * which is a common minimum for HBAs, and the minimum DMA alignment,
@@ -2377,7 +2375,8 @@ int scsi_mq_setup_tags(struct Scsi_Host *shost)
 {
 	unsigned int cmd_size, sgl_size;
 
-	sgl_size = scsi_mq_sgl_size(shost);
+	sgl_size = max_t(unsigned int, sizeof(struct scatterlist),
+			scsi_mq_sgl_size(shost));
 	cmd_size = sizeof(struct scsi_cmnd) + shost->hostt->cmd_size + sgl_size;
 	if (scsi_host_get_prot(shost))
 		cmd_size += sizeof(struct scsi_data_buffer) + sgl_size;

@@ -1,11 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <linux/device.h> // create_class
 #include <linux/err.h>
 #include <linux/fs.h> // file_operations
 #include <linux/mutex.h>
+#include <linux/poll.h>
 #include <linux/slab.h> // kzalloc
 #include <linux/timekeeping.h> // ktime
 #include <linux/uaccess.h> // copy_to_user
+#include <linux/wait.h> // wait queue
 
 #include <common/stp_device_logging.h>
 #include <common/stp_error_mapping.h>
@@ -15,6 +18,7 @@
 #define STP_DEVICE_NAME "stp"
 #define STP_DEV_CHANNEL_COUNT 32
 #define STP_XFER_BUFFER_SIZE_BYTES (1024 * 5)
+#define STP_WAIT_CHANNEL_TIMEOUT_MS	2000
 
 struct stp_device_stats {
 	uint64_t total_bytes;
@@ -29,6 +33,9 @@ struct stp_device_channel {
 	struct completion read_done;
 	struct completion fsync_done;
 	struct completion open_done;
+
+	wait_queue_head_t poll_event_q;
+	wait_queue_head_t inuse_q;
 
 	uint8_t channel;
 	uint8_t priority;
@@ -52,7 +59,7 @@ struct stp_device_channel {
 	struct mutex rx_lock;
 	struct mutex tx_lock;
 
-	atomic_t inuse;
+	bool inuse;
 
 	struct stp_device_stats read_stats;
 	struct stp_device_stats write_stats;
@@ -60,9 +67,12 @@ struct stp_device_channel {
 
 /* STP Device internal data cache */
 struct stp_device {
+	bool device_ready;
 	int major;
 	struct device *parent_dev;
 	struct class *device_class;
+
+	struct mutex device_ready_lock;
 
 	// Since there can only be 32 channels, just allocate
 	// a static array of them for easy access.
@@ -73,9 +83,35 @@ struct stp_device {
 // and each character device.
 static struct stp_device *_stp_device;
 
+static bool stp_get_device_ready(void)
+{
+	bool device_ready;
+
+	if (!_stp_device) {
+		STP_DRV_LOG_ERR("NULL stp device pointer");
+		return false;
+	}
+
+	mutex_lock(&_stp_device->device_ready_lock);
+	device_ready = _stp_device->device_ready;
+	mutex_unlock(&_stp_device->device_ready_lock);
+
+	return device_ready;
+}
+
+static void stp_set_device_ready(bool ready)
+{
+	if (!_stp_device)
+		return;
+
+	mutex_lock(&_stp_device->device_ready_lock);
+	_stp_device->device_ready = ready;
+	mutex_unlock(&_stp_device->device_ready_lock);
+}
+
 static bool validate_channel(uint8_t channel)
 {
-	if (!_stp_device) {
+	if (!stp_get_device_ready()) {
 		STP_DRV_LOG_ERR("c%d not initialized", channel);
 		return false;
 	}
@@ -93,8 +129,10 @@ static bool validate_channel(uint8_t channel)
 
 void stp_channel_signal_write(uint8_t channel)
 {
-	if (validate_channel(channel))
+	if (validate_channel(channel)) {
+		wake_up_interruptible(&_stp_device->channels[channel]->poll_event_q);
 		complete(&_stp_device->channels[channel]->write_done);
+	}
 }
 
 int stp_channel_wait_write(uint8_t channel)
@@ -108,8 +146,10 @@ int stp_channel_wait_write(uint8_t channel)
 
 void stp_channel_signal_read(uint8_t channel)
 {
-	if (validate_channel(channel))
+	if (validate_channel(channel)) {
+		wake_up_interruptible(&_stp_device->channels[channel]->poll_event_q);
 		complete(&_stp_device->channels[channel]->read_done);
+	}
 }
 
 int stp_channel_wait_read(uint8_t channel)
@@ -153,41 +193,57 @@ int stp_channel_wait_open(uint8_t channel)
 
 void stp_channel_signal_open(uint8_t channel)
 {
-	if (validate_channel(channel))
+	if (validate_channel(channel)) {
 		complete(&_stp_device->channels[channel]->open_done);
+		wake_up_interruptible(&_stp_device->channels[channel]->poll_event_q);
+	}
 }
 
 // returns true if lock accquired
 static bool stp_set_channel_inuse(struct stp_device_channel *const channel)
 {
+	bool got_lock = false;
+
 	mutex_lock(&channel->inuse_lock);
-	if (atomic_read(&channel->inuse) != 0) {
-		mutex_unlock(&channel->inuse_lock);
-
-		return false;
+	if (!channel->inuse) {
+		got_lock = true;
+		channel->inuse = true;
 	}
-
-	atomic_set(&channel->inuse, 1);
 	mutex_unlock(&channel->inuse_lock);
 
-	return true;
+	return got_lock;
 }
 
 static bool stp_check_channel_inuse(struct stp_device_channel *const channel)
 {
-	bool rval = false;
+	bool inuse = false;
 
-	if (atomic_read(&channel->inuse) != 0)
-		rval = true;
+	mutex_lock(&channel->inuse_lock);
+	inuse = channel->inuse;
+	mutex_unlock(&channel->inuse_lock);
 
-	return rval;
+	return inuse;
 }
 
 static void stp_unset_channel_inuse(struct stp_device_channel *const channel)
 {
 	mutex_lock(&channel->inuse_lock);
-	atomic_set(&channel->inuse, 0);
+	channel->inuse = false;
 	mutex_unlock(&channel->inuse_lock);
+	wake_up_interruptible(&channel->inuse_q);
+}
+
+static void stp_wait_and_set_channel_inuse(struct stp_device_channel *const channel)
+{
+	int ret;
+
+	while (!stp_set_channel_inuse(channel)) {
+		ret = wait_event_interruptible_timeout(channel->inuse_q, channel->inuse == false, msecs_to_jiffies(STP_WAIT_CHANNEL_TIMEOUT_MS));
+		if (ret == 0) {
+			STP_DRV_LOG_ERR("Long idle time while setting c%d to be in use, perhaps client did not close FD", channel->channel);
+			return;
+		}
+	}
 }
 
 static ssize_t stp_stats_show(struct device *dev, struct device_attribute *attr,
@@ -201,13 +257,14 @@ static ssize_t stp_stats_show(struct device *dev, struct device_attribute *attr,
 	c = _stp_device->channels[channel];
 	rval = scnprintf(buf, PAGE_SIZE,
 			 "channel: %d\n"
+			 "inuse: %d\n"
 			 "read transactions: %llu\n"
 			 "read bytes: %llu\n"
 			 "read usecs: %lld\n"
 			 "write transactions: %llu\n"
 			 "write bytes: %llu\n"
 			 "write usecs: %lld\n",
-			 channel, c->read_stats.transactions,
+			 channel, c->inuse, c->read_stats.transactions,
 			 c->read_stats.total_bytes, ktime_to_ns(c->read_stats.total_usecs),
 			 c->write_stats.transactions,
 			 c->write_stats.total_bytes,
@@ -271,13 +328,13 @@ static int stp_device_open(struct inode *inode, struct file *filp)
 	int rval;
 	struct stp_device_channel *channel;
 
-	if (!_stp_device) {
-		STP_DRV_LOG_ERR("internal data not initialized");
+	if (!filp || !inode) {
+		STP_DRV_LOG_ERR("invalid parameters");
 		return -EINVAL;
 	}
 
-	if (!filp || !inode) {
-		STP_DRV_LOG_ERR("invalid parameters");
+	if (!stp_get_device_ready()) {
+		STP_DRV_LOG_ERR("internal data not initialized");
 		return -EINVAL;
 	}
 
@@ -290,12 +347,14 @@ static int stp_device_open(struct inode *inode, struct file *filp)
 	channel = _stp_device->channels[minor];
 	if (!channel) {
 		STP_DRV_LOG_ERR("c%d not initialized", minor);
-		return -ENODEV;
+		rval = -ENODEV;
+		goto exit_error;
 	}
 
 	if (!stp_set_channel_inuse(channel)) {
 		STP_DRV_LOG_ERR("c%d already in use", minor);
-		return -EPERM;
+		rval = -EPERM;
+		goto exit_error;
 	}
 
 	reinit_completion(&channel->write_done);
@@ -331,10 +390,17 @@ static int stp_device_open(struct inode *inode, struct file *filp)
 		goto exit_error;
 	}
 
-	rval = STP_ERR_VAL(stp_controller_open_blocking(
-		minor, channel->priority, channel->rx_buffer,
-		channel->rx_buffer_len, channel->tx_buffer,
-		channel->tx_buffer_len));
+	if (filp->f_flags & O_NONBLOCK) {
+		rval = STP_ERR_VAL(stp_controller_open(
+			minor, channel->priority, channel->rx_buffer,
+			channel->rx_buffer_len, channel->tx_buffer,
+			channel->tx_buffer_len));
+	} else {
+		rval = STP_ERR_VAL(stp_controller_open_blocking(
+			minor, channel->priority, channel->rx_buffer,
+			channel->rx_buffer_len, channel->tx_buffer,
+			channel->tx_buffer_len));
+	}
 	if (STP_IS_ERR(rval)) {
 		STP_DRV_LOG_ERR_RATE_LIMIT("c%d controller open error", minor);
 		goto exit_error;
@@ -350,6 +416,20 @@ exit_error:
 	return rval;
 }
 
+static bool is_staled_channel(struct stp_device_channel *channel)
+{
+	int i;
+
+	if (channel == NULL)
+		return true;
+
+	for (i = 0; i < STP_DEV_CHANNEL_COUNT; i++)
+		if (channel == _stp_device->channels[i])
+			return false;
+
+	return true;
+}
+
 static ssize_t stp_device_read(struct file *filp, char __user *buf,
 			       size_t count, loff_t *f_pos)
 {
@@ -363,17 +443,22 @@ static ssize_t stp_device_read(struct file *filp, char __user *buf,
 	ktime_t after;
 	ktime_t before;
 
-	if (!_stp_device) {
-		STP_DRV_LOG_ERR("internal data not initialized");
-		return -ENODEV;
-	}
-
 	if (!filp || !buf || !filp->private_data) {
 		STP_DRV_LOG_ERR("bad input");
 		return -EINVAL;
 	}
 
+	if (!stp_get_device_ready()) {
+		STP_DRV_LOG_ERR("internal data not initialized");
+		return -EINVAL;
+	}
+
 	channel = filp->private_data;
+	if (is_staled_channel(channel)) {
+		STP_DRV_LOG_ERR(">>>>>>>> Staled channel %p *******", channel);
+		return -EINVAL;
+	}
+
 	mutex_lock(&channel->rx_lock);
 
 	if (count == 0) {
@@ -394,38 +479,65 @@ static ssize_t stp_device_read(struct file *filp, char __user *buf,
 
 	before = ktime_get();
 
-	while (pending_count > 0) {
-		len = STP_XFER_BUFFER_SIZE_BYTES;
-		if (len > (unsigned int)pending_count)
-			len = pending_count;
-
-		rval = STP_ERR_VAL(stp_controller_read(channel->channel,
-						       channel->read_buffer,
-						       len, &read_count));
+	if (filp->f_flags & O_NONBLOCK) {
+		rval = STP_ERR_VAL(stp_controller_read_nb(channel->channel,
+								channel->read_buffer,
+								pending_count, &read_count));
 		if (STP_IS_ERR(rval)) {
-			STP_DRV_LOG_ERR("c%d controller error `%d`",
-					channel->channel, rval);
+			if (rval != -ERESTARTSYS)
+				STP_DRV_LOG_ERR("c%d controller error `%d` in non-blocking call",
+						channel->channel, rval);
 			goto exit_error;
 		}
 
-		if (read_count != len) {
-			STP_DRV_LOG_ERR(
-				"c%d len error: expected `%d` received `%d`",
-				channel->channel, len, read_count);
-			rval = -EFAULT;
-			goto exit_error;
+		if (read_count != 0)
+		{
+			missing = copy_to_user(p_buf, channel->read_buffer, read_count);
+			if (missing != 0) {
+				STP_DRV_LOG_ERR("c%d failed to copy `%d` bytes",
+						channel->channel, missing);
+				rval = -EFAULT;
+				goto exit_error;
+			}
 		}
 
-		missing = copy_to_user(p_buf, channel->read_buffer, len);
-		if (missing != 0) {
-			STP_DRV_LOG_ERR("c%d failed to copy `%d` bytes",
-					channel->channel, missing);
-			rval = -EFAULT;
-			goto exit_error;
-		}
+		pending_count -= read_count;
+	}
+	else {
+		while (pending_count > 0) {
+			len = STP_XFER_BUFFER_SIZE_BYTES;
+			if (len > (unsigned int)pending_count)
+				len = pending_count;
 
-		p_buf += len;
-		pending_count -= len;
+			rval = STP_ERR_VAL(stp_controller_read(channel->channel,
+								channel->read_buffer,
+								len, &read_count));
+			if (STP_IS_ERR(rval)) {
+				if(rval != -ERESTARTSYS)
+					STP_DRV_LOG_ERR("c%d controller error `%d`",
+							channel->channel, rval);
+				goto exit_error;
+			}
+
+			if (read_count != len) {
+				STP_DRV_LOG_ERR(
+					"c%d len error: expected `%d` received `%d`",
+					channel->channel, len, read_count);
+				rval = -EFAULT;
+				goto exit_error;
+			}
+
+			missing = copy_to_user(p_buf, channel->read_buffer, len);
+			if (missing != 0) {
+				STP_DRV_LOG_ERR("c%d failed to copy `%d` bytes",
+						channel->channel, missing);
+				rval = -EFAULT;
+				goto exit_error;
+			}
+
+			p_buf += len;
+			pending_count -= len;
+		}
 	}
 
 	rval = count - pending_count;
@@ -454,12 +566,23 @@ static ssize_t stp_device_write(struct file *filp, const char __user *buf,
 	ktime_t after;
 	ktime_t before;
 
-	if (!_stp_device || !filp || !buf || !filp->private_data) {
+	if (!filp || !buf || !filp->private_data) {
+		STP_DRV_LOG_ERR("internal data not initialized");
+		return -EINVAL;
+	}
+
+	if (!stp_get_device_ready()) {
 		STP_DRV_LOG_ERR("internal data not initialized");
 		return -EINVAL;
 	}
 
 	channel = filp->private_data;
+
+	if (is_staled_channel(channel)) {
+		STP_DRV_LOG_ERR(">>>>>>>> Staled channel %p *******", channel);
+		return -EINVAL;
+	}
+
 	mutex_lock(&channel->tx_lock);
 
 	if (count == 0) {
@@ -480,14 +603,13 @@ static ssize_t stp_device_write(struct file *filp, const char __user *buf,
 
 	before = ktime_get();
 
-	while (pending_count > 0) {
+	if (filp->f_flags & O_NONBLOCK) {
 		len = STP_XFER_BUFFER_SIZE_BYTES;
 
 		if (len > pending_count)
 			len = (unsigned int)pending_count;
 
 		missing = copy_from_user(channel->write_buffer, p_buf, len);
-
 		if (missing != 0) {
 			STP_DRV_LOG_ERR("c%d failed to copy `%d` bytes",
 					channel->channel, missing);
@@ -495,26 +617,55 @@ static ssize_t stp_device_write(struct file *filp, const char __user *buf,
 			goto exit_error;
 		}
 
-		rval = STP_ERR_VAL(stp_controller_write(channel->channel,
+		rval = STP_ERR_VAL(stp_controller_write_nb(channel->channel,
 							channel->write_buffer,
 							len, &send_count));
 
 		if (STP_IS_ERR(rval)) {
-			STP_DRV_LOG_ERR("c%d failed to write all data",
-					channel->channel);
-			goto exit_error;
+				STP_DRV_LOG_ERR("c%d failed to write all data",
+						channel->channel);
+				goto exit_error;
 		}
 
-		if (send_count != len) {
-			STP_DRV_LOG_ERR(
-				"c%d write byte count error: expected `%d` sent `%d`\n",
-				channel->channel, len, send_count);
-			rval = -EFAULT;
-			goto exit_error;
-		}
+		pending_count -= send_count;
+	}
+	else {
+		while (pending_count > 0) {
+			len = STP_XFER_BUFFER_SIZE_BYTES;
 
-		p_buf += len;
-		pending_count -= len;
+			if (len > pending_count)
+				len = (unsigned int)pending_count;
+
+			missing = copy_from_user(channel->write_buffer, p_buf, len);
+
+			if (missing != 0) {
+				STP_DRV_LOG_ERR("c%d failed to copy `%d` bytes",
+						channel->channel, missing);
+				rval = -EFAULT;
+				goto exit_error;
+			}
+
+			rval = STP_ERR_VAL(stp_controller_write(channel->channel,
+								channel->write_buffer,
+								len, &send_count));
+
+			if (STP_IS_ERR(rval)) {
+				STP_DRV_LOG_ERR("c%d failed to write all data",
+						channel->channel);
+				goto exit_error;
+			}
+
+			if (send_count != len) {
+				STP_DRV_LOG_ERR(
+					"c%d write byte count error: expected `%d` sent `%d`\n",
+					channel->channel, len, send_count);
+				rval = -EFAULT;
+				goto exit_error;
+			}
+
+			p_buf += len;
+			pending_count -= len;
+		}
 	}
 
 	rval = count - pending_count;
@@ -537,7 +688,12 @@ static int stp_device_fsync(struct file *filp, loff_t start, loff_t end,
 	int rval = 0;
 	struct stp_device_channel *channel;
 
-	if (!_stp_device || !filp || !filp->private_data) {
+	if (!filp || !filp->private_data) {
+		STP_DRV_LOG_ERR("internal data not initialized");
+		return -EINVAL;
+	}
+
+	if (!stp_get_device_ready()) {
 		STP_DRV_LOG_ERR("internal data not initialized");
 		return -EINVAL;
 	}
@@ -560,6 +716,61 @@ exit_error:
 	return rval;
 }
 
+static __poll_t stp_get_poll_events(uint32_t channel, __poll_t requested_events)
+{
+	__poll_t events = 0;
+	uint32_t device_connected = 0;
+	uint32_t tx_pipeline_has_space = 0;
+	uint32_t rx_data_available = 0;
+
+	if (requested_events & POLLOUT) {
+		stp_controller_get_channel_attribute(channel, STP_ATTRIB_DEVICE_CONNECTED, &device_connected);
+		stp_controller_get_channel_attribute(channel, STP_TX_AVAILABLE, &tx_pipeline_has_space);
+	}
+
+	if (tx_pipeline_has_space && device_connected)
+		events |= (POLLOUT | POLLWRNORM);
+
+	if (requested_events & POLLIN)
+		stp_controller_get_channel_attribute(channel, STP_RX_FILLED, &rx_data_available);
+
+	if (rx_data_available)
+		events |= (POLLIN | POLLRDNORM);
+
+	if (!_stp_device->device_ready)
+		events |= POLLERR;
+
+	return events;
+}
+
+unsigned int stp_device_poll(struct file *filp, struct poll_table_struct *wait)
+{
+	__poll_t events;
+	__poll_t requested_events;
+	struct stp_device_channel *channel;
+
+	if (!filp || !filp->private_data) {
+		STP_DRV_LOG_ERR("internal data not initialized");
+		return POLLERR;
+	}
+
+	if (!stp_get_device_ready()) {
+		STP_DRV_LOG_ERR("internal data not initialized");
+		return POLLERR;
+	}
+
+	channel = filp->private_data;
+	requested_events = poll_requested_events(wait);
+	events = stp_get_poll_events(channel->channel, requested_events);
+
+	if (!events) {
+		poll_wait(filp, &channel->poll_event_q, wait);
+		events = stp_get_poll_events(channel->channel, requested_events);
+	}
+
+	return events;
+}
+
 static const struct file_operations stp_device_fops = {
 	.owner = THIS_MODULE,
 	.open = stp_device_open,
@@ -567,6 +778,7 @@ static const struct file_operations stp_device_fops = {
 	.read = stp_device_read,
 	.write = stp_device_write,
 	.fsync = stp_device_fsync,
+	.poll = stp_device_poll,
 	.llseek = no_llseek,
 };
 
@@ -604,7 +816,6 @@ int stp_create_channel(struct stp_channel_data *const data)
 
 	if (IS_ERR(working_channel->dev)) {
 		STP_DRV_LOG_ERR("c%d class create error", data->channel);
-		devm_kfree(_stp_device->parent_dev, working_channel);
 		return PTR_ERR(working_channel->dev);
 	}
 
@@ -612,6 +823,9 @@ int stp_create_channel(struct stp_channel_data *const data)
 	init_completion(&working_channel->read_done);
 	init_completion(&working_channel->fsync_done);
 	init_completion(&working_channel->open_done);
+
+	init_waitqueue_head(&working_channel->poll_event_q);
+	init_waitqueue_head(&working_channel->inuse_q);
 
 	_stp_device->channels[data->channel] = working_channel;
 	working_channel->rx_buffer_len = data->rx_len_bytes;
@@ -623,9 +837,36 @@ int stp_create_channel(struct stp_channel_data *const data)
 	mutex_init(&working_channel->rx_lock);
 	mutex_init(&working_channel->tx_lock);
 
-	atomic_set(&working_channel->inuse, 0);
+	working_channel->inuse = false;
 
 	device_create_file(working_channel->dev, &dev_attr_stp_stats);
+
+	return 0;
+}
+
+int stp_release_channel(uint8_t channel)
+{
+	struct stp_device_channel *working_channel;
+
+	if (channel > STP_DEV_CHANNEL_COUNT) {
+		STP_DRV_LOG_ERR("c%d index out of bounds", channel);
+		return -EINVAL;
+	}
+
+	if (!_stp_device->channels[channel]) {
+		STP_DRV_LOG_ERR("c%d does not exist", channel);
+		return -ENODEV;
+	}
+
+	working_channel = _stp_device->channels[channel];
+	wake_up_interruptible(&working_channel->poll_event_q);
+
+	complete_all(&working_channel->write_done);
+	complete_all(&working_channel->read_done);
+	complete_all(&working_channel->fsync_done);
+	complete_all(&working_channel->open_done);
+
+	stp_wait_and_set_channel_inuse(working_channel);
 
 	return 0;
 }
@@ -645,11 +886,6 @@ int stp_remove_channel(uint8_t channel)
 	}
 
 	working_channel = _stp_device->channels[channel];
-
-	complete_all(&working_channel->write_done);
-	complete_all(&working_channel->read_done);
-	complete_all(&working_channel->fsync_done);
-	complete_all(&working_channel->open_done);
 
 	device_destroy(_stp_device->device_class, working_channel->devt);
 
@@ -694,6 +930,10 @@ int stp_create_device(struct device *dev)
 
 	_stp_device->parent_dev = dev;
 
+	mutex_init(&_stp_device->device_ready_lock);
+	stp_set_device_ready(true);
+
+	STP_DRV_LOG_ERR("device created");
 	return 0;
 
 exit_class_error:
@@ -711,7 +951,13 @@ int stp_remove_device(struct device *dev)
 {
 	unsigned int i;
 
-	STP_DRV_LOG_INFO("removing stp channels");
+	stp_set_device_ready(false);
+
+	for (i = 0; i < STP_DEV_CHANNEL_COUNT; i++) {
+		if (_stp_device->channels[i])
+			stp_release_channel(i);
+	}
+
 	for (i = 0; i < STP_DEV_CHANNEL_COUNT; i++) {
 		if (_stp_device->channels[i])
 			stp_remove_channel(i);
@@ -719,6 +965,7 @@ int stp_remove_device(struct device *dev)
 
 	class_destroy(_stp_device->device_class);
 	unregister_chrdev(_stp_device->major, STP_DEVICE_NAME);
+
 	devm_kfree(dev, _stp_device);
 	_stp_device = NULL;
 

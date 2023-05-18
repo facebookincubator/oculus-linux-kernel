@@ -5,10 +5,13 @@
 		compatible = "qcom,sde-kms";
 		reg = <0x5e00000 0x8f030>,
 		      <0x5eb0000 0x2008>,
-		      <0x5e8f000 0x02c>;
+		      <0x5e8f000 0x02c>,
+		      <0xc125ba4 0x20>;
+
 		reg-names = "mdp_phys",
 			   "vbif_phys",
-			   "sid_phys";
+			   "sid_phys",
+			   "sde_imem_phys";
 
 		clocks =
 			<&gcc GCC_DISP_AHB_CLK>,
@@ -80,6 +83,8 @@
 		qcom,sde-mixer-blend-op-off = <0x20 0x38 0x50 0x68 0x80 0x98
 						0xb0 0xc8 0xe0 0xf8 0x110>;
 
+		qcom,sde-mixer-stage-base-layer;
+
 		qcom,sde-max-per-pipe-bw-kbps = <2600000 2600000>;
 
 		qcom,sde-max-per-pipe-bw-high-kbps = <2600000 2600000>;
@@ -93,7 +98,7 @@
 		qcom,sde-sspp-qseed-off = <0xa00>;
 		qcom,sde-mixer-linewidth = <2048>;
 		qcom,sde-sspp-linewidth = <2160>;
-		qcom,sde-mixer-blendstages = <0x3>;
+		qcom,sde-mixer-blendstages = <0x4>;
 		qcom,sde-highest-bank-bit = <0x1>;
 		qcom,sde-ubwc-version = <0x100>;
 		qcom,sde-ubwc-swizzle = <0x7>;
@@ -324,6 +329,7 @@
 		compatible = "qcom,dsi-ctrl-hw-v2.4";
 		label = "dsi-ctrl-0";
 		cell-index = <0>;
+		frame-threshold-time-us = <1000>;
 		reg =   <0x5e94000 0x400>,
 			<0x5f08000 0x4>;
 		reg-names = "dsi_ctrl", "disp_cc_base";

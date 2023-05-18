@@ -22,8 +22,14 @@ struct pipeline_type {
 /* Initialize a STP pipeline */
 void stp_pl_init(PL_TYPE *pl, uint8_t *buffer, uint32_t size);
 
+/* Initialize a STP pipeline lock */
+void stp_pl_init_lock(PL_TYPE *pl);
+
 /* De-Initialize a STP pipeline */
 void stp_pl_deinit(PL_TYPE *pl);
+
+/* De-Initialize a STP pipeline lock */
+void stp_pl_deinit_lock(PL_TYPE *pl);
 
 /* Get the size of data available in the pipeline */
 void stp_pl_get_data_size(PL_TYPE *pl, uint32_t *len);

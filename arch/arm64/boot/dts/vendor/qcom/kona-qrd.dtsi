@@ -34,9 +34,9 @@
 		compatible = "qcom,msm-cdc-pinctrl";
 		pinctrl-names = "aud_active", "aud_sleep";
 		pinctrl-0 = <&tert_mi2s_sck_active &tert_mi2s_ws_active
-				&tert_mi2s_sd0_active &tert_mi2s_sd1_active>;
+				&tert_mi2s_sd0_active>;
 		pinctrl-1 = <&tert_mi2s_sck_sleep &tert_mi2s_ws_sleep
-				&tert_mi2s_sd0_sleep &tert_mi2s_sd1_sleep>;
+				&tert_mi2s_sd0_sleep>;
 	};
 };
 
@@ -615,24 +615,6 @@
 	qcom,platform-reset-gpio = <&tlmm 75 0>;
 };
 
-&dsi_dual_sim_cmd {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
-	qcom,platform-reset-gpio = <&tlmm 75 0>;
-};
-
-&dsi_dual_sim_vid {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
-	qcom,platform-reset-gpio = <&tlmm 75 0>;
-};
-
-&dsi_dual_sim_dsc_375_cmd {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
-	qcom,platform-reset-gpio = <&tlmm 75 0>;
-};
-
 &sde_dsi {
 	qcom,dsi-default-panel = <&dsi_sw43404_amoled_cmd>;
 };
@@ -721,6 +703,12 @@
 		wake-capable-sensor;
 		trips {
 			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+
+			active-config1 {
 				temperature = <125000>;
 				hysteresis = <1000>;
 				type = "passive";

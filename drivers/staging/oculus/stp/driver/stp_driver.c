@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <asm-generic/errno-base.h>
 #include <linux/kernel.h>
 #include <linux/spi/spi.h>
@@ -7,7 +8,7 @@
 #include <linux/of.h>
 #include <linux/kthread.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#if KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE
 #include <uapi/linux/sched/types.h>
 #endif
 
@@ -19,8 +20,12 @@
 #include <stp/controller/stp_controller.h>
 #include <stp/controller/stp_controller_common.h>
 
+#define DEVICE_WAKE_TIME_MS 1000
+
 // Handle that stores the persistent driver information
 static struct spi_stp_driver_data *_stp_driver_data;
+
+static DEFINE_MUTEX(stp_suspend_resume_lock);
 
 #define STP_PRIORITY_THREAD 50
 static int stp_thread(void *data)
@@ -32,9 +37,9 @@ static int stp_thread(void *data)
 	if (sched_setscheduler(current, SCHED_FIFO, &param) == -1)
 		STP_DRV_LOG_ERR("error setting priority");
 
-	while (atomic_read(&_stp_driver_data->stop_thread) == 0) {
+	while (!stp_controller_get_stop_thread()) {
 		rval = STP_ERR_VAL(stp_controller_transaction_thread());
-		if (STP_ERR_VAL(rval)) {
+		if (STP_ERR_VAL(rval) && STP_ERR_VAL(rval) != -ERESTARTSYS) {
 			STP_DRV_LOG_ERR("transaction error `%d`, exiting",
 					rval);
 			break;
@@ -210,7 +215,15 @@ static struct stp_controller_handshake_table stp_handshake_table = {
 
 static irqreturn_t stp_irq_mcu_has_data(int irq, void *dev_id)
 {
-	stp_controller_signal_data();
+	pm_wakeup_event(&_stp_driver_data->spi->dev, DEVICE_WAKE_TIME_MS);
+
+	if (_stp_driver_data->suspended) {
+		STP_DRV_LOG_INFO("IRQ (%d) in suspend state", irq);
+		atomic_set(&_stp_driver_data->has_data_in_suspend, 1);
+	} else {
+		stp_controller_signal_has_data();
+	}
+
 	atomic_inc(&_stp_driver_data->stats.data_irq_count);
 
 	return IRQ_HANDLED;
@@ -269,27 +282,28 @@ static void stp_signal_open(uint8_t channel)
 	stp_channel_signal_open(channel);
 }
 
-static void stp_wait_for_device_ready(void)
+static void stp_signal_event()
 {
-	wait_for_completion_interruptible(&_stp_driver_data->device_ready);
-	reinit_completion(&_stp_driver_data->device_ready);
+	wake_up_interruptible(&_stp_driver_data->thread_event_queue);
 }
 
-static void stp_signal_device_ready(void)
+static int32_t stp_wait_event(void)
 {
-	complete(&_stp_driver_data->device_ready);
+	return wait_event_interruptible(_stp_driver_data->thread_event_queue,
+				  					stp_controller_pending_event());
 }
 
-static void stp_wait_for_data(void)
+static int32_t stp_pause_thread(void)
 {
-	if (!!atomic_read(&_stp_driver_data->stop_thread))
-		return;
-	wait_for_completion_interruptible(&_stp_driver_data->data_ready);
+	kthread_parkme();
+
+	return 0;
 }
 
-static void stp_signal_data(void)
+// No use on linux because we do park and unpark thread together
+static int32_t stp_resume_thread(void)
 {
-	complete(&_stp_driver_data->data_ready);
+	return 0;
 }
 
 static struct stp_controller_wait_signal_table stp_wait_signal_table = {
@@ -297,15 +311,15 @@ static struct stp_controller_wait_signal_table stp_wait_signal_table = {
 	.signal_write = &stp_signal_write,
 	.wait_read = &stp_wait_for_read,
 	.signal_read = &stp_signal_read,
-	.wait_for_device_ready = &stp_wait_for_device_ready,
-	.signal_device_ready = &stp_signal_device_ready,
-	.wait_for_data = &stp_wait_for_data,
-	.signal_data = &stp_signal_data,
 	.wait_fsync = &stp_wait_fsync,
 	.signal_fsync = &stp_signal_fsync,
 	.reset_fsync = &stp_reset_fsync,
 	.wait_open = &stp_wait_open,
 	.signal_open = &stp_signal_open,
+	.signal_stp_event = &stp_signal_event,
+	.wait_stp_event = &stp_wait_event,
+	.pause_thread = &stp_pause_thread,
+	.resume_thread = &stp_resume_thread,
 };
 
 #define STP_TRANSACTION_COUNT 1
@@ -331,8 +345,8 @@ static int stp_send_receive_data(uint8_t *send_buffer, uint8_t *receive_buffer,
 
 	for (int i = 0; i < STP_DEBUG_HEADER_LEN; i++)
 		pos += snprintf(&debug_buffer[pos], STP_DEBUG_BUFFER_LEN - pos,
-				"%d ", send_buffer[i]);
-	STP_DRV_LOG_INFO("%s", debug_buffer);
+				"0x%x ", send_buffer[i]);
+	STP_DRV_LOG_ERR("%s", debug_buffer);
 #endif
 
 	rval = spi_sync_transfer(_stp_driver_data->spi, &xfer,
@@ -342,8 +356,8 @@ static int stp_send_receive_data(uint8_t *send_buffer, uint8_t *receive_buffer,
 	pos = snprintf(debug_buffer, STP_DEBUG_BUFFER_LEN, "%s ", "recv");
 	for (int i = 0; i < STP_DEBUG_HEADER_LEN; i++)
 		pos += snprintf(&debug_buffer[pos], STP_DEBUG_BUFFER_LEN - pos,
-				"%d ", receive_buffer[i]);
-	STP_DRV_LOG_INFO("%s", debug_buffer);
+				"0x%x ", receive_buffer[i]);
+	STP_DRV_LOG_ERR("%s", debug_buffer);
 #endif
 
 	return rval;
@@ -385,6 +399,9 @@ static int spi_stp_probe(struct spi_device *spi)
 	struct device_node *np;
 	int rval;
 
+	// To be removed: Temporary debug logs
+	STP_DRV_LOG_ERR("probe");
+
 	if (_stp_driver_data) {
 		STP_DRV_LOG_ERR("already initialized");
 		return -EEXIST;
@@ -412,6 +429,19 @@ static int spi_stp_probe(struct spi_device *spi)
 		rval = -ENODEV;
 		goto exit_device_error;
 	}
+
+	if (device_init_wakeup(&spi->dev, true) != 0) {
+		STP_DRV_LOG_ERR("Failed to init wakesource\n");
+		rval = -ENODEV;
+		goto exit_device_error;
+	}
+
+	init_completion(&_stp_driver_data->stp_thread_complete);
+
+	atomic_set(&_stp_driver_data->stats.data_irq_count, 0);
+	atomic_set(&_stp_driver_data->stats.device_ready_irq_count, 0);
+	atomic_set(&_stp_driver_data->has_data_in_suspend, 0);
+
 	np = spi->dev.of_node;
 	for_each_node_by_name(np, "channel") {
 		rval = stp_get_channel_data(np, &channel_data);
@@ -434,12 +464,7 @@ static int spi_stp_probe(struct spi_device *spi)
 	device_create_file(&spi->dev, &dev_attr_stp_log_channel_data);
 
 	_stp_driver_data->spi = spi;
-	init_completion(&_stp_driver_data->device_ready);
-	init_completion(&_stp_driver_data->data_ready);
-	init_completion(&_stp_driver_data->stp_thread_complete);
-
-	atomic_set(&_stp_driver_data->stats.data_irq_count, 0);
-	atomic_set(&_stp_driver_data->stats.device_ready_irq_count, 0);
+	_stp_driver_data->suspended = false;
 
 	_stp_driver_data->controller_rx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
 	if (IS_ERR(_stp_driver_data->controller_rx_buffer)) {
@@ -469,7 +494,8 @@ static int spi_stp_probe(struct spi_device *spi)
 		goto exit_error;
 	}
 
-	atomic_set(&_stp_driver_data->stop_thread, 0);
+	init_waitqueue_head (&_stp_driver_data->thread_event_queue);
+
 	_stp_driver_data->stp_thread =
 		kthread_run(stp_thread, NULL, "STP thread");
 
@@ -492,7 +518,7 @@ static int spi_stp_probe(struct spi_device *spi)
 	// If the mcu_ready signal is high, we have missed the first gpio interrupt so
 	// manually signal
 	if (stp_is_mcu_ready_to_receive())
-		stp_signal_device_ready();
+		stp_controller_signal_device_ready();
 
 	return 0;
 
@@ -501,8 +527,6 @@ exit_error:
 
 // fallthrough
 exit_device_error:
-	devm_kfree(&spi->dev, _stp_driver_data->controller_rx_buffer);
-	devm_kfree(&spi->dev, _stp_driver_data->controller_tx_buffer);
 	devm_kfree(&spi->dev, _stp_driver_data);
 	_stp_driver_data = NULL;
 	return rval;
@@ -510,31 +534,33 @@ exit_device_error:
 
 static int spi_stp_remove(struct spi_device *spi)
 {
+	// To be removed: Temporary debug logs
+	STP_DRV_LOG_ERR("remove");
+
 	// Release the GPIO first to prevent IRQs from coming in during
 	// teardown
 	stp_release_gpio_irq(&spi->dev, &_stp_driver_data->gpio_data);
 
-	// Flag the thread stop and signal the device
-	// wait notification to exit the transaction thread
-	atomic_set(&_stp_driver_data->stop_thread, 1);
-	stp_signal_device_ready();
-	stp_controller_signal_data();
+	// Flag the thread stop and unblock the thread
+	// to exit the transaction thread
+	stp_controller_signal_stop_thread();
 
 	wait_for_completion(&_stp_driver_data->stp_thread_complete);
 
 	if (STP_IS_ERR(stp_controller_deinit()))
 		STP_DRV_LOG_ERR("failed controller deinit, continuing");
 
+	if (device_init_wakeup(&spi->dev, false) != 0)
+		STP_DRV_LOG_ERR("Failed to deinit wakesource\n");
+
 	stp_remove_device(&spi->dev);
 	device_remove_file(&spi->dev, &dev_attr_stp_driver_stats);
 	device_remove_file(&spi->dev, &dev_attr_stp_connection_state);
 	device_remove_file(&spi->dev, &dev_attr_stp_log_channel_data);
 
-	devm_kfree(&spi->dev, _stp_driver_data->controller_rx_buffer);
-	devm_kfree(&spi->dev, _stp_driver_data->controller_tx_buffer);
 	devm_kfree(&spi->dev, _stp_driver_data);
 	_stp_driver_data = NULL;
-	STP_DRV_LOG_INFO("Device removed");
+	STP_DRV_LOG_ERR("Device removed");
 
 	return 0;
 }
@@ -542,11 +568,56 @@ static int spi_stp_remove(struct spi_device *spi)
 #ifdef CONFIG_PM_SLEEP
 static int spi_stp_suspend(struct device *dev)
 {
+	int ret;
+	mutex_lock(&stp_suspend_resume_lock);
+
+	if (!stp_is_mcu_ready_to_receive()) {
+		STP_DRV_LOG_ERR("mcu not ready to receive data, abort suspend");
+		goto exit_error;
+	}
+
+	if (stp_controller_has_data_to_send()) {
+		STP_DRV_LOG_ERR("STP has data to send, abort suspend");
+		goto exit_error;
+	}
+
+	stp_controller_signal_suspend();
+
+	//Block and wait for stp thread to park
+	ret = kthread_park(_stp_driver_data->stp_thread);
+	if (ret) {
+		STP_DRV_LOG_ERR("Failed to park STP thread, abort suspend. ret %d", ret);
+		goto exit_error;
+	}
+
+	_stp_driver_data->suspended = true;
+
+	mutex_unlock(&stp_suspend_resume_lock);
+
 	return 0;
+
+exit_error:
+	mutex_unlock(&stp_suspend_resume_lock);
+	return -EBUSY;
 }
 
 static int spi_stp_resume(struct device *dev)
 {
+	mutex_lock(&stp_suspend_resume_lock);
+
+	// As we return from stp_irq_mcu_has_data in suspend mode,
+	// this is required to unblock the stp thread immediately
+	// after resume
+	if (atomic_read(&_stp_driver_data->has_data_in_suspend)) {
+		stp_controller_signal_has_data();
+		atomic_set(&_stp_driver_data->has_data_in_suspend, 0);
+	}
+
+	kthread_unpark(_stp_driver_data->stp_thread);
+	_stp_driver_data->suspended = false;
+
+	mutex_unlock(&stp_suspend_resume_lock);
+
 	return 0;
 }
 #else

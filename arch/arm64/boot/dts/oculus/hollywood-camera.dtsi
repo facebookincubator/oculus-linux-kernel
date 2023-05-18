@@ -53,7 +53,7 @@
 	};
 };
 
-&pm8150a_l10 {
+&L10C {
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
@@ -65,8 +65,8 @@
 		sensor-position-roll = <90>;
 		sensor-position-pitch = <0>;
 		sensor-position-yaw = <180>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_s4>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&S4A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;
@@ -98,8 +98,8 @@
 		sensor-position-roll = <90>;
 		sensor-position-pitch = <0>;
 		sensor-position-yaw = <180>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_s4>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&S4A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;
@@ -133,8 +133,8 @@
 		sensor-position-roll = <270>;
 		sensor-position-pitch = <0>;
 		sensor-position-yaw = <0>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_s4>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&S4A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;
@@ -166,8 +166,8 @@
 		sensor-position-roll = <270>;
 		sensor-position-pitch = <0>;
 		sensor-position-yaw = <0>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_s4>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&S4A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;

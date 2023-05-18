@@ -168,3 +168,17 @@ config BCMDHD_DEFAULT_LOG_MASK
 	  Debug log mask. See dhdioctl.h for log mask values.
 	  Defaults to DHD_ERROR_VAL | DHD_FWLOG_VAL | DHD_EVENT_VAL |
 	  DHD_RPM_VAL | DHD_PKT_MON_VAL.
+
+config WL_LOAD_SWITCH
+	bool "Needs to support load switch during power up"
+	depends on BCMDHD
+	default n
+	---help---
+	  Whether there's a load switch in the power up sequence.
+
+config 6GHZ_BKPORT
+	bool "Enable 6Ghz band support for backported kernels."
+	depends on BCMDHD
+	default n
+	---help---
+	  For Backported kernels, use the config to enable 6GHz band support.

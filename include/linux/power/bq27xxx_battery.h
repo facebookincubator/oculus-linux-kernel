@@ -71,6 +71,10 @@ struct bq27xxx_reg_lifetime_blocks {
 	u32 temp_zones[BQ27XXX_NUM_TEMP_ZONE][BQ27XXX_TEMP_ZONE_LEN];
 };
 
+
+#define BQ27XXX_MAX_FCT_TIME 2
+#define BQ27XXX_MAX_FCT_STATE 6
+#define BQ27XXX_MAX_FCT_WEIGHT 7
 struct bq27xxx_device_info {
 	struct device *dev;
 	int id;
@@ -93,6 +97,19 @@ struct bq27xxx_device_info {
 	u8 reg_addr;
 	u16 reg_data;
 	char *mac_buf;
+	s64 fct; /*fct time in hours*/
+	int fct_state; /*fct state defined in bq driver*/
+	struct power_supply *bms_psy; /*fct profile node read */
+	bool fct_config_valid; /* enable fct */
+	u32 fct_missing_range[BQ27XXX_MAX_FCT_TIME];
+	u32 fct_ok_range[BQ27XXX_MAX_FCT_TIME];
+	u32 fct_warn_range_1[BQ27XXX_MAX_FCT_TIME];
+	u32 fct_warn_range_2[BQ27XXX_MAX_FCT_TIME];
+	u32 fct_warn_range_3[BQ27XXX_MAX_FCT_TIME];
+	u32 fct_crit_range[BQ27XXX_MAX_FCT_TIME];
+	u32 fct_ranges[BQ27XXX_MAX_FCT_STATE];
+	u32 fct_weights[BQ27XXX_MAX_FCT_WEIGHT];
+	u32 fct_weights_div[BQ27XXX_MAX_FCT_WEIGHT];
 };
 
 void bq27xxx_battery_update(struct bq27xxx_device_info *di);

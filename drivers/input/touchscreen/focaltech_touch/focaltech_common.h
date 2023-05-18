@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *
  * FocalTech fts TouchScreen driver.
@@ -39,24 +38,23 @@
 *****************************************************************************/
 #define FTS_DRIVER_VERSION      "Focaltech V3.1 20190807"
 
-#define BYTE_OFF_0(x)      (u8)((x) & 0xFF)
-#define BYTE_OFF_8(x)      (u8)(((x) >> 8) & 0xFF)
-#define BYTE_OFF_16(x)     (u8)(((x) >> 16) & 0xFF)
-#define BYTE_OFF_24(x)     (u8)(((x) >> 24) & 0xFF)
-#define FLAGBIT(x)         (0x00000001 << (x))
-#define FLAGBITS(x, y)    ((0xFFFFFFFF >> (32 - (y) - 1)) & (0xFFFFFFFF << (x)))
+#define BYTE_OFF_0(x)           (u8)((x) & 0xFF)
+#define BYTE_OFF_8(x)           (u8)(((x) >> 8) & 0xFF)
+#define BYTE_OFF_16(x)          (u8)(((x) >> 16) & 0xFF)
+#define BYTE_OFF_24(x)          (u8)(((x) >> 24) & 0xFF)
+#define FLAGBIT(x)              (0x00000001 << (x))
+#define FLAGBITS(x, y)          ((0xFFFFFFFF >> (32 - (y) - 1)) & (0xFFFFFFFF << (x)))
 
-#define FLAG_ICSERIALS_LEN 8
-#define FLAG_HID_BIT       10
-#define FLAG_IDC_BIT       11
+#define FLAG_ICSERIALS_LEN      8
+#define FLAG_HID_BIT            10
+#define FLAG_IDC_BIT            11
 
-#define IC_SERIALS         (FTS_CHIP_TYPE & FLAGBITS(0, FLAG_ICSERIALS_LEN-1))
-#define IC_TO_SERIALS(x)   ((x) & FLAGBITS(0, FLAG_ICSERIALS_LEN-1))
-#define FTS_CHIP_IDC   \
-	((FTS_CHIP_TYPE & FLAGBIT(FLAG_IDC_BIT)) == FLAGBIT(FLAG_IDC_BIT))
-#define FTS_HID_SUPPORTTED \
-	((FTS_CHIP_TYPE & FLAGBIT(FLAG_HID_BIT)) == FLAGBIT(FLAG_HID_BIT))
+#define IC_SERIALS              (FTS_CHIP_TYPE & FLAGBITS(0, FLAG_ICSERIALS_LEN-1))
+#define IC_TO_SERIALS(x)        ((x) & FLAGBITS(0, FLAG_ICSERIALS_LEN-1))
+#define FTS_CHIP_IDC            ((FTS_CHIP_TYPE & FLAGBIT(FLAG_IDC_BIT)) == FLAGBIT(FLAG_IDC_BIT))
+#define FTS_HID_SUPPORTTED      ((FTS_CHIP_TYPE & FLAGBIT(FLAG_HID_BIT)) == FLAGBIT(FLAG_HID_BIT))
 
+#define FTS_CHIP_TYPE_MAPPING {{0x81, 0x54, 0x52, 0x54, 0x52, 0x00, 0x00, 0x54, 0x5C}}
 
 #define FILE_NAME_LENGTH                    128
 #define ENABLE                              1

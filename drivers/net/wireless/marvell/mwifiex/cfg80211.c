@@ -376,11 +376,20 @@ mwifiex_cfg80211_set_tx_power(struct wiphy *wiphy,
 	struct mwifiex_power_cfg power_cfg;
 	int dbm = MBM_TO_DBM(mbm);
 
-	if (type == NL80211_TX_POWER_FIXED) {
+	switch (type) {
+	case NL80211_TX_POWER_FIXED:
 		power_cfg.is_power_auto = 0;
+		power_cfg.is_power_fixed = 1;
 		power_cfg.power_level = dbm;
-	} else {
+		break;
+	case NL80211_TX_POWER_LIMITED:
+		power_cfg.is_power_auto = 0;
+		power_cfg.is_power_fixed = 0;
+		power_cfg.power_level = dbm;
+		break;
+	case NL80211_TX_POWER_AUTOMATIC:
 		power_cfg.is_power_auto = 1;
+		break;
 	}
 
 	priv = mwifiex_get_priv(adapter, MWIFIEX_BSS_ROLE_ANY);
@@ -1459,7 +1468,8 @@ mwifiex_cfg80211_dump_station(struct wiphy *wiphy, struct net_device *dev,
 			      int idx, u8 *mac, struct station_info *sinfo)
 {
 	struct mwifiex_private *priv = mwifiex_netdev_get_priv(dev);
-	static struct mwifiex_sta_node *node;
+	struct mwifiex_sta_node *node;
+	int i;
 
 	if ((GET_BSS_ROLE(priv) == MWIFIEX_BSS_ROLE_STA) &&
 	    priv->media_connected && idx == 0) {
@@ -1469,13 +1479,10 @@ mwifiex_cfg80211_dump_station(struct wiphy *wiphy, struct net_device *dev,
 		mwifiex_send_cmd(priv, HOST_CMD_APCMD_STA_LIST,
 				 HostCmd_ACT_GEN_GET, 0, NULL, true);
 
-		if (node && (&node->list == &priv->sta_list)) {
-			node = NULL;
-			return -ENOENT;
-		}
-
-		node = list_prepare_entry(node, &priv->sta_list, list);
-		list_for_each_entry_continue(node, &priv->sta_list, list) {
+		i = 0;
+		list_for_each_entry(node, &priv->sta_list, list) {
+			if (i++ != idx)
+				continue;
 			ether_addr_copy(mac, node->mac_addr);
 			return mwifiex_dump_station_info(priv, node, sinfo);
 		}

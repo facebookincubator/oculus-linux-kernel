@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 #ifndef __Q6_ADM_V2_H__
 #define __Q6_ADM_V2_H__
@@ -119,7 +119,8 @@ int adm_pack_and_set_one_pp_param(int port_id, int copp_idx,
 
 int adm_open(int port, int path, int rate, int mode, int topology,
 			   int perf_mode, uint16_t bits_per_sample,
-			   int app_type, int acdbdev_id, int session_type);
+			   int app_type, int acdbdev_id, int session_type,
+			   uint32_t pass_thr);
 
 int adm_map_rtac_block(struct rtac_cal_block_data *cal_block);
 
@@ -228,4 +229,6 @@ void msm_dts_srs_acquire_lock(void);
 void msm_dts_srs_release_lock(void);
 void adm_set_native_mode(int mode);
 int adm_set_ffecns_freeze_event(bool ffecns_freeze_event);
+int adm_apr_send_pkt(void *data, wait_queue_head_t *wait,
+			int port_idx, int copp_idx, int opcode);
 #endif /* __Q6_ADM_V2_H__ */

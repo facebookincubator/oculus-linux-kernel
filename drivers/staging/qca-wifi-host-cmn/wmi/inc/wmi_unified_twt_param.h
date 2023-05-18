@@ -23,18 +23,6 @@
 #ifndef _WMI_UNIFIED_TWT_PARAM_H_
 #define _WMI_UNIFIED_TWT_PARAM_H_
 
-/* Max TWT sessions per peer (supported by fw) */
-#define TWT_PEER_MAX_SESSIONS 1
-
-/* Max TWT sessions supported */
-#define TWT_PSOC_MAX_SESSIONS TWT_PEER_MAX_SESSIONS
-
-/* Valid dialog_id 0 to (0xFF - 1) */
-#define TWT_MAX_DIALOG_ID (0xFF - 1)
-
-/* dialog_id used to get all peer's twt session parameters */
-#define TWT_GET_ALL_PEER_PARAMS_DIALOG_ID (0xFF)
-
 /* enum WMI_TWT_ROLE - role specified in ext conf in wmi_twt_enable/disable_cmd
  * WMI_TWT_ROLE_REQUESTOR: TWT role is requestor
  * WMI_TWT_ROLE_RESPONDER: TWT role is responder

@@ -148,8 +148,34 @@ struct flash_info {
 	u32 num_retained_pages;
 	/* Retained pages at beginning of flash */
 	u32 num_protected_bootloader_pages;
-	/* Perform a full chip erase before writing firmware */
-	bool erase_all;
+	/* For devices that have multple banks of flash, i.e. stm32l */
+	u32 bank_count;
+};
+
+struct swd_mcu_data {
+	/* Path to firmware e.g. "syncboss.bin" */
+	const char *fw_path;
+
+	/* Target flavor e.g. "nrf5340" */
+	const char *target_flavor;
+
+	/* Firmware to flash during update */
+	const struct firmware *fw;
+
+	/* Address of MEM-AP. Defaults to using the first AP (address 0). */
+	u32 mem_ap;
+
+	/* Number of firwmare chunks written (if any) */
+	atomic_t fw_chunks_written;
+
+	/* Number of firwmare chunks to be written (if any) */
+	atomic_t fw_chunks_to_write;
+
+	/* SWD operations implementation */
+	struct swd_ops_params swd_ops;
+
+	/* Flash memory organization */
+	struct flash_info flash_info;
 };
 
 struct swd_dev_data {
@@ -171,35 +197,14 @@ struct swd_dev_data {
 	/* Regulator associated with swd interface */
 	struct regulator *swd_core;
 
-	/* Number of firwmare chunks written (if any) */
-	atomic_t fw_chunks_written;
-
-	/* Number of firwmare chunks to be written (if any) */
-	atomic_t fw_chunks_to_write;
-
-	/* Path to firmware e.g. "syncboss.bin" */
-	const char *fw_path;
-
-	/* Firmware to flash during update */
-	const struct firmware *fw;
-
 	/* State of firmware update */
 	enum fw_update_state fw_update_state;
 
 	/* Called prior to updating firmware to ensure peripherial is idle. */
 	bool (*is_busy)(struct device *dev);
 
-	/* SWD operations implementation */
-	struct swd_ops_params swd_ops;
-
-	/* Flash memory organization */
-	struct flash_info flash_info;
-
 	/* Direction of current SWD transfer */
 	enum swd_direction direction;
-
-	/* Address of MEM-AP. Defaults to using the first AP (address 0). */
-	u32 mem_ap;
 
 	/*
 	 * Whether provisioning data should be programmed via SWD (ex. board_id,
@@ -208,14 +213,25 @@ struct swd_dev_data {
 	bool swd_provisioning;
 
 	/* Provisioning data, when swd_provisioning is true. */
-	struct provisioning *provisioning;
+	struct fwupdate_provisioning *provisioning;
+
+	struct swd_mcu_data mcu_data;
+
+	/* Perform a full chip erase before writing firmware */
+	bool erase_all;
+
+	/* swd_dev_data for any system that has multiple MCUs or cores sharing an SWD */
+	struct swd_mcu_data *child_mcu_data;
+	int num_children;
+
+	struct dentry *debug_entry;
 };
 
-ssize_t fwupdate_show_update_firmware(struct device *dev, char *buf);
+ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf);
 
-ssize_t fwupdate_store_update_firmware(struct device *dev,
+ssize_t fwupdate_update_firmware_store(struct device *dev,
 				       const char *buf, size_t count);
 
-int fwupdate_init_swd_ops(struct device *dev, const char *swdflavor);
+int fwupdate_init_swd_ops(struct device *dev, struct swd_mcu_data *mcudata);
 
 #endif

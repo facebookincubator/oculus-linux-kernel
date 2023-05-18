@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -85,6 +85,7 @@
 
 #define TOPOLOGY_QUADPIPE_MERGE_MODE(x) \
 		(((x) == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE) || \
+		((x) == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL) || \
 		((x) == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE) || \
 		((x) == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC) || \
 		((x) == SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE))
@@ -192,6 +193,7 @@ enum sde_enc_rc_states {
  @qdss_status:		indicate if qdss is modified since last update
  * @crtc_vblank_cb:	Callback into the upper layer / CRTC for
  *			notification of the VBLANK
+* @crtc_vblank2_cb :    Callback to notify secondary vblank to upper layers
  * @crtc_vblank_cb_data:	Data from upper layer for VBLANK notification
  * @crtc_lineptr_cb:		Callback into the upper layer / CRTC for
  *				notification of the lineptr
@@ -266,6 +268,7 @@ struct sde_encoder_virt {
 	bool qdss_status;
 
 	void (*crtc_vblank_cb)(void *data);
+	void (*crtc_vblank2_cb)(void *data);
 	void *crtc_vblank_cb_data;
 
 	void (*crtc_lineptr_cb)(void *data, u64 sample_time, int vtotal,
@@ -459,7 +462,8 @@ bool sde_encoder_is_dsc_merge(struct drm_encoder *drm_enc)
 
 	topology = sde_connector_get_topology_name(drm_conn);
 	if (topology == SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE ||
-			topology == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE)
+			topology == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE ||
+			topology == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL)
 		return true;
 
 	return false;
@@ -701,6 +705,25 @@ int sde_encoder_helper_unregister_irq(struct sde_encoder_phys *phys_enc,
 	return 0;
 }
 
+bool sde_encoder_helper_get_skewed_vsync_status(struct drm_encoder *drm_enc)
+{
+	struct msm_display_info *disp_info;
+	struct sde_encoder_virt *sde_enc;
+
+	if (!drm_enc) {
+		SDE_ERROR("invalid drm encoder\n");
+		return false;
+	}
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+	disp_info = &sde_enc->disp_info;
+
+	if (disp_info->skewed_vsync_master)
+		return true;
+
+	return false;
+}
+
 void sde_encoder_get_hw_resources(struct drm_encoder *drm_enc,
 		struct sde_encoder_hw_resources *hw_res,
 		struct drm_connector_state *conn_state)
@@ -794,14 +817,21 @@ void sde_encoder_helper_update_intf_cfg(
 	struct sde_encoder_virt *sde_enc;
 	struct sde_hw_intf_cfg_v1 *intf_cfg;
 	enum sde_3d_blend_mode mode_3d;
+	bool vsync_skew_en = false;
+	int i = 0;
 
 	if (!phys_enc || !phys_enc->hw_pp) {
 		SDE_ERROR("invalid args, encoder %d\n", !phys_enc);
 		return;
 	}
 
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(phys_enc->parent);
 	sde_enc = to_sde_encoder_virt(phys_enc->parent);
-	intf_cfg = &sde_enc->cur_master->intf_cfg_v1;
+	if (vsync_skew_en && phys_enc->split_role == ENC_ROLE_SLAVE)
+		intf_cfg = &phys_enc->intf_cfg_v1;
+	else
+		intf_cfg = &sde_enc->cur_master->intf_cfg_v1;
 
 	SDE_DEBUG_ENC(sde_enc,
 			"intf_cfg updated for %d at idx %d\n",
@@ -826,6 +856,15 @@ void sde_encoder_helper_update_intf_cfg(
 	if (phys_enc->split_role == ENC_ROLE_MASTER)
 		intf_cfg->intf_master = phys_enc->hw_intf->idx;
 
+	if (vsync_skew_en && phys_enc->split_role == ENC_ROLE_SLAVE) {
+		for (i = 0; i < sde_enc->num_phys_encs; i++) {
+			struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
+
+			if (phys && phys->split_role == ENC_ROLE_MASTER)
+				intf_cfg->intf_master = phys->hw_intf->idx;
+		}
+	}
+
 	/* setup which pp blk will connect to this intf */
 	if (phys_enc->hw_intf->ops.bind_pingpong_blk)
 		phys_enc->hw_intf->ops.bind_pingpong_blk(
@@ -847,6 +886,36 @@ void sde_encoder_helper_update_intf_cfg(
 				mode_3d);
 }
 
+void sde_encoder_helper_skewed_vsync_config(
+		struct sde_encoder_phys *phys_enc,
+		struct sde_intf_offset_cfg *cfg)
+{
+	struct sde_encoder_virt *sde_enc;
+	struct sde_hw_mdp *hw_mdptop;
+	struct msm_display_info *disp_info;
+
+	if (!phys_enc || !phys_enc->hw_mdptop || !phys_enc->parent) {
+		SDE_ERROR("invalid arg(s), encoder %d\n", !!phys_enc);
+		return;
+	}
+
+	sde_enc = to_sde_encoder_virt(phys_enc->parent);
+	hw_mdptop = phys_enc->hw_mdptop;
+	disp_info = &sde_enc->disp_info;
+
+	if (!disp_info->skewed_vsync_master) {
+		SDE_DEBUG_ENC(sde_enc, "Skewed_vsync not enabled\n");
+		return;
+	}
+
+	cfg->intf_offset_en = true;
+	cfg->set_master_intf = disp_info->skewed_vsync_master;
+
+	if (phys_enc->split_role == ENC_ROLE_MASTER &&
+			hw_mdptop->ops.setup_skewed_vsync)
+		hw_mdptop->ops.setup_skewed_vsync(hw_mdptop, cfg);
+}
+
 void sde_encoder_helper_split_config(
 		struct sde_encoder_phys *phys_enc,
 		enum sde_intf interface)
@@ -856,6 +925,7 @@ void sde_encoder_helper_split_config(
 	struct sde_hw_mdp *hw_mdptop;
 	enum sde_rm_topology_name topology;
 	struct msm_display_info *disp_info;
+	bool vsync_skew_en = false;
 
 	if (!phys_enc || !phys_enc->hw_mdptop || !phys_enc->parent) {
 		SDE_ERROR("invalid arg(s), encoder %d\n", !phys_enc);
@@ -867,6 +937,8 @@ void sde_encoder_helper_split_config(
 	disp_info = &sde_enc->disp_info;
 	cfg = &phys_enc->hw_intf->cfg;
 	memset(cfg, 0, sizeof(*cfg));
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(phys_enc->parent);
 
 	if (disp_info->intf_type != DRM_MODE_CONNECTOR_DSI)
 		return;
@@ -880,7 +952,7 @@ void sde_encoder_helper_split_config(
 	 * single DSI, or for this frame in the case of left/right only partial
 	 * update.
 	 */
-	if (phys_enc->split_role == ENC_ROLE_SOLO) {
+	if (vsync_skew_en || phys_enc->split_role == ENC_ROLE_SOLO) {
 		if (hw_mdptop->ops.setup_split_pipe)
 			hw_mdptop->ops.setup_split_pipe(hw_mdptop, cfg);
 		if (hw_mdptop->ops.setup_pp_split)
@@ -1551,8 +1623,11 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 	struct sde_hw_pingpong *hw_dsc_pp[MAX_CHANNELS_PER_ENC];
 	struct msm_display_dsc_info *dsc = NULL;
 	struct sde_hw_ctl *hw_ctl = NULL;
+	struct sde_hw_ctl *hw_ctl_slave = NULL;
 	struct sde_ctl_dsc_cfg cfg;
-	int i, dsc_pic_width;
+	struct sde_ctl_dsc_cfg cfg_slave;
+	int i, dsc_pic_width, num_of_ctl_blocks;
+	bool vsync_skew_en = false;
 
 	if (!enc_master) {
 		SDE_ERROR_ENC(sde_enc, "invalid encoder master for DSC\n");
@@ -1560,6 +1635,9 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 	}
 
 	memset(&cfg, 0, sizeof(cfg));
+	memset(&cfg_slave, 0, sizeof(cfg_slave));
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(&sde_enc->base);
 
 	for (i = 0; i < params->num_channels; i++) {
 		hw_pp[i] = sde_enc->hw_pp[i];
@@ -1573,6 +1651,16 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 	}
 
 	hw_ctl = enc_master->hw_ctl;
+
+	if (vsync_skew_en) {
+		num_of_ctl_blocks = DUAL_CTL;
+		for (i = 0; i < sde_enc->num_phys_encs; i++) {
+			struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
+
+			if (phys && (phys->split_role == ENC_ROLE_SLAVE))
+				hw_ctl_slave = phys->hw_ctl;
+		}
+	}
 
 	dsc = &sde_enc->mode_info.comp_info.dsc_info;
 	dsc->dsc_4hs_merge_en = false;
@@ -1611,8 +1699,19 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 				dsc_common_mode, ich_res, true, hw_dsc_pp[i],
 				false);
 
+		if (vsync_skew_en && (i >= num_of_ctl_blocks)) {
+			cfg_slave.dsc[i] = hw_dsc[i]->idx;
+			cfg_slave.dsc_count++;
+
+			if (hw_ctl_slave->ops.update_bitmask_dsc)
+				hw_ctl_slave->ops.update_bitmask_dsc
+					(hw_ctl_slave, cfg_slave.dsc[i], 1);
+			continue;
+		}
 		cfg.dsc[i] = hw_dsc[i]->idx;
 		cfg.dsc_count++;
+		if (vsync_skew_en)
+			cfg_slave.dsc_count++;
 
 		if (hw_ctl->ops.update_bitmask_dsc)
 			hw_ctl->ops.update_bitmask_dsc(hw_ctl, cfg.dsc[i], 1);
@@ -1622,9 +1721,16 @@ static int _sde_encoder_dsc_4_lm_4_enc_2_intf(struct sde_encoder_virt *sde_enc,
 	if (hw_ctl->ops.setup_dsc_cfg) {
 		hw_ctl->ops.setup_dsc_cfg(hw_ctl, &cfg);
 		SDE_DEBUG_ENC(sde_enc,
-				"setup_dsc_cfg hw_ctl[%d], count:%d, dsc[0]:%d, dsc[1]:%d, dsc[2]:%d, dsc[3]:%d\n",
-				hw_ctl->idx, cfg.dsc_count, cfg.dsc[0],
-				cfg.dsc[1], cfg.dsc[2], cfg.dsc[3]);
+			"setup_dsc_cfg hw_ctl[%d],count:%d,dsc[0]:%d,dsc[1]:%d\n",
+			hw_ctl->idx, cfg.dsc_count, cfg.dsc[0], cfg.dsc[1]);
+	}
+
+	if (vsync_skew_en && hw_ctl_slave->ops.setup_dsc_cfg) {
+		hw_ctl_slave->ops.setup_dsc_cfg(hw_ctl_slave, &cfg_slave);
+		SDE_DEBUG_ENC(sde_enc,
+			"setup_dsc_cfg hw_ctl[%d],count:%d,dsc[2]:%d,dsc[3]:%d\n",
+			hw_ctl->idx, cfg_slave.dsc_count,
+					cfg_slave.dsc[2], cfg_slave.dsc[3]);
 	}
 
 	return 0;
@@ -2057,6 +2163,9 @@ static int _sde_encoder_dsc_setup(struct sde_encoder_virt *sde_enc,
 	case SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE:
 		ret = _sde_encoder_dsc_4_lm_4_enc_2_intf(sde_enc, params);
 		break;
+	case SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL:
+		ret = _sde_encoder_dsc_4_lm_4_enc_2_intf(sde_enc, params);
+		break;
 	case SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC:
 		ret = _sde_encoder_dsc_4_lm_3_enc_2_intf(sde_enc, params);
 		break;
@@ -2172,6 +2281,7 @@ static void _sde_encoder_dsc_disable(struct sde_encoder_virt *sde_enc)
 	struct sde_hw_dsc *hw_dsc = NULL;
 	struct sde_hw_ctl *hw_ctl = NULL;
 	struct sde_ctl_dsc_cfg cfg;
+	bool vsync_skew_en = false;
 
 	if (!_sde_encoder_is_dsc_enabled(&sde_enc->base))
 		return;
@@ -2189,6 +2299,9 @@ static void _sde_encoder_dsc_disable(struct sde_encoder_virt *sde_enc)
 	if (!sde_enc->phys_encs[0]->connector)
 		return;
 
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(&sde_enc->base);
+
 	if (sde_enc->cur_master)
 		hw_ctl = sde_enc->cur_master->hw_ctl;
 
@@ -2205,10 +2318,22 @@ static void _sde_encoder_dsc_disable(struct sde_encoder_virt *sde_enc)
 			sde_enc->dirty_dsc_ids[i] = hw_dsc->idx;
 	}
 
-	/* Clear the DSC ACTIVE config for this CTL */
-	if (hw_ctl && hw_ctl->ops.setup_dsc_cfg) {
-		memset(&cfg, 0, sizeof(cfg));
-		hw_ctl->ops.setup_dsc_cfg(hw_ctl, &cfg);
+	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+		struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
+
+		if (!phys)
+			continue;
+
+		if ((phys->split_role == ENC_ROLE_SLAVE) && phys->hw_ctl &&
+				vsync_skew_en &&
+				phys->hw_ctl->ops.setup_dsc_cfg) {
+			memset(&cfg, 0, sizeof(cfg));
+			phys->hw_ctl->ops.setup_dsc_cfg(phys->hw_ctl, &cfg);
+		} else if (hw_ctl && hw_ctl->ops.setup_dsc_cfg) {
+			/* Clear the DSC ACTIVE config for this CTL */
+			memset(&cfg, 0, sizeof(cfg));
+			hw_ctl->ops.setup_dsc_cfg(hw_ctl, &cfg);
+		}
 	}
 
 	/**
@@ -2691,12 +2816,7 @@ static void _sde_encoder_rc_cancel_delayed(struct sde_encoder_virt *sde_enc,
 static int _sde_encoder_rc_kickoff(struct drm_encoder *drm_enc,
 	u32 sw_event, struct sde_encoder_virt *sde_enc, bool is_vid_mode)
 {
-	struct msm_drm_private *priv;
-	struct sde_kms *sde_kms;
 	int ret = 0;
-
-	priv = drm_enc->dev->dev_private;
-	sde_kms = to_sde_kms(priv->kms);
 
 	/* cancel delayed off work, if any */
 	_sde_encoder_rc_cancel_delayed(sde_enc, sw_event);
@@ -2721,7 +2841,6 @@ static int _sde_encoder_rc_kickoff(struct drm_encoder *drm_enc,
 
 	if (is_vid_mode && sde_enc->rc_state == SDE_ENC_RC_STATE_IDLE) {
 		_sde_encoder_irq_control(drm_enc, true);
-		sde_kms_update_pm_qos_irq_request(sde_kms, true, false);
 	} else {
 		/* enable all the clks and resources */
 		ret = _sde_encoder_resource_control_helper(drm_enc,
@@ -3035,7 +3154,6 @@ static int _sde_encoder_rc_idle(struct drm_encoder *drm_enc,
 
 	if (is_vid_mode) {
 		_sde_encoder_irq_control(drm_enc, false);
-		sde_kms_update_pm_qos_irq_request(sde_kms, false, false);
 	} else {
 		/* disable all the clks and resources */
 		_sde_encoder_update_rsc_client(drm_enc, false);
@@ -3596,6 +3714,8 @@ static void _sde_encoder_virt_enable_helper(struct drm_encoder *drm_enc)
 	struct sde_encoder_virt *sde_enc = NULL;
 	struct msm_drm_private *priv;
 	struct sde_kms *sde_kms;
+	int ret, i;
+	bool vsync_skew_en = false;
 
 	if (!drm_enc || !drm_enc->dev || !drm_enc->dev->dev_private) {
 		SDE_ERROR("invalid parameters\n");
@@ -3615,6 +3735,9 @@ static void _sde_encoder_virt_enable_helper(struct drm_encoder *drm_enc)
 		return;
 	}
 
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(drm_enc);
+
 	if (sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DisplayPort &&
 	    sde_enc->cur_master->hw_mdptop &&
 	    sde_enc->cur_master->hw_mdptop->ops.intf_audio_select)
@@ -3627,12 +3750,27 @@ static void _sde_encoder_virt_enable_helper(struct drm_encoder *drm_enc)
 				sde_enc->cur_master->hw_mdptop,
 				sde_kms->catalog);
 
-	if (sde_enc->cur_master->hw_ctl &&
+	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+		struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
+
+		if (!phys)
+			continue;
+
+		if ((phys->split_role == ENC_ROLE_SLAVE) && phys->hw_ctl &&
+				phys->hw_ctl->ops.setup_intf_cfg_v1 &&
+				vsync_skew_en &&
+				!sde_enc->cur_master->cont_splash_enabled) {
+			phys->hw_ctl->ops.setup_intf_cfg_v1(
+				phys->hw_ctl,
+				&phys->intf_cfg_v1);
+		} else if (sde_enc->cur_master->hw_ctl &&
 			sde_enc->cur_master->hw_ctl->ops.setup_intf_cfg_v1 &&
-			!sde_enc->cur_master->cont_splash_enabled)
-		sde_enc->cur_master->hw_ctl->ops.setup_intf_cfg_v1(
-				sde_enc->cur_master->hw_ctl,
-				&sde_enc->cur_master->intf_cfg_v1);
+				!sde_enc->cur_master->cont_splash_enabled) {
+			sde_enc->cur_master->hw_ctl->ops.setup_intf_cfg_v1
+					(sde_enc->cur_master->hw_ctl,
+					&sde_enc->cur_master->intf_cfg_v1);
+		}
+	}
 
 	_sde_encoder_update_vsync_source(sde_enc, &sde_enc->disp_info, false);
 	sde_encoder_control_te(drm_enc, true);
@@ -3667,6 +3805,8 @@ void sde_encoder_virt_restore(struct drm_encoder *drm_enc)
 
 		if (!phys)
 			continue;
+
+		memset(&phys->intf_cfg_v1, 0, sizeof(phys->intf_cfg_v1));
 
 		if (phys->hw_ctl && phys->hw_ctl->ops.clear_pending_flush)
 			phys->hw_ctl->ops.clear_pending_flush(phys->hw_ctl);
@@ -3805,6 +3945,8 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 
 		if (!phys)
 			continue;
+
+		memset(&phys->intf_cfg_v1, 0, sizeof(phys->intf_cfg_v1));
 
 		phys->comp_type = comp_info->comp_type;
 		phys->comp_ratio = comp_info->comp_ratio;
@@ -3949,6 +4091,7 @@ void sde_encoder_helper_phys_disable(struct sde_encoder_phys *phys_enc,
 		struct sde_encoder_phys_wb *wb_enc)
 {
 	struct sde_encoder_virt *sde_enc;
+	bool vsync_skew_en = false;
 
 	phys_enc->hw_ctl->ops.reset(phys_enc->hw_ctl);
 	sde_encoder_helper_reset_mixers(phys_enc, NULL);
@@ -3998,8 +4141,11 @@ void sde_encoder_helper_phys_disable(struct sde_encoder_phys *phys_enc,
 	}
 
 	sde_enc = to_sde_encoder_virt(phys_enc->parent);
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(phys_enc->parent);
 
-	if (phys_enc == sde_enc->cur_master && phys_enc->hw_pp &&
+	if ((phys_enc == sde_enc->cur_master || vsync_skew_en) &&
+			phys_enc->hw_pp &&
 			phys_enc->hw_ctl->ops.reset_post_disable)
 		phys_enc->hw_ctl->ops.reset_post_disable(
 				phys_enc->hw_ctl, &phys_enc->intf_cfg_v1,
@@ -4101,6 +4247,18 @@ static void sde_encoder_vblank_callback(struct drm_encoder *drm_enc,
 	SDE_ATRACE_BEGIN("encoder_vblank_callback");
 	sde_enc = to_sde_encoder_virt(drm_enc);
 
+	/**
+	 * For SLAVE encoder when vsync_skew is enabled, avoid irq-handling
+	 * by returning early and only report the irq to framework using
+	 * the slave/secondary callback function
+	 */
+	if (phy_enc->split_role == ENC_ROLE_SLAVE) {
+		spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
+		if (sde_enc->crtc_vblank2_cb)
+			sde_enc->crtc_vblank2_cb(sde_enc->crtc_vblank_cb_data);
+		spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
+		goto end;
+	}
 	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	if (sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI &&
 			sde_enc->cur_master && sde_enc->crtc_vblank_cb_data) {
@@ -4128,6 +4286,7 @@ static void sde_encoder_vblank_callback(struct drm_encoder *drm_enc,
 			phy_enc->sde_kms->catalog->uidle_cfg.debugfs_perf)
 		sde_encoder_perf_uidle_status(phy_enc->sde_kms, sde_enc->crtc);
 
+end:
 	atomic_inc(&phy_enc->vsync_cnt);
 	SDE_ATRACE_END("encoder_vblank_callback");
 }
@@ -4267,7 +4426,7 @@ static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 }
 
 void sde_encoder_register_vblank_callback(struct drm_encoder *drm_enc,
-		void (*vbl_cb)(void *), void *vbl_data)
+		void (*vbl_cb)(void *), void (*vbl2_cb)(void *), void *vbl_data)
 {
 	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
 	unsigned long lock_flags;
@@ -4285,6 +4444,7 @@ void sde_encoder_register_vblank_callback(struct drm_encoder *drm_enc,
 
 	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	sde_enc->crtc_vblank_cb = vbl_cb;
+	sde_enc->crtc_vblank2_cb = vbl2_cb;
 	sde_enc->crtc_vblank_cb_data = vbl_data;
 	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
 
@@ -6374,7 +6534,6 @@ int sde_encoder_wait_for_event(struct drm_encoder *drm_enc,
 	int (*fn_wait)(struct sde_encoder_phys *phys_enc) = NULL;
 	struct sde_encoder_virt *sde_enc = NULL;
 	int i, ret = 0;
-	char atrace_buf[32];
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
@@ -6406,11 +6565,7 @@ int sde_encoder_wait_for_event(struct drm_encoder *drm_enc,
 		}
 
 		if (phys && fn_wait) {
-			snprintf(atrace_buf, sizeof(atrace_buf),
-				"wait_completion_event_%d", event);
-			SDE_ATRACE_BEGIN(atrace_buf);
 			ret = fn_wait(phys);
-			SDE_ATRACE_END(atrace_buf);
 			if (ret)
 				return ret;
 		}
@@ -6454,19 +6609,6 @@ u32 sde_encoder_get_fps(struct drm_encoder *drm_enc)
 	sde_enc = to_sde_encoder_virt(drm_enc);
 
 	return sde_enc->mode_info.frame_rate;
-}
-
-int sde_encoder_get_qsync_min_fps(struct drm_encoder *encoder, u32 *min_fps)
-{
-	struct sde_encoder_virt *sde_enc;
-
-	if (!encoder || !min_fps)
-		return -EINVAL;
-
-	sde_enc = to_sde_encoder_virt(encoder);
-	*min_fps = sde_enc->disp_info.qsync_min_fps;
-
-	return 0;
 }
 
 enum sde_intf_mode sde_encoder_get_intf_mode(struct drm_encoder *encoder)
@@ -6835,26 +6977,4 @@ void sde_encoder_recovery_events_handler(struct drm_encoder *encoder,
 
 	sde_enc = to_sde_encoder_virt(encoder);
 	sde_enc->recovery_events_enabled = enabled;
-}
-
-int sde_encoder_vsync_trigger(struct drm_encoder *encoder)
-{
-	struct sde_encoder_virt *sde_enc;
-	struct sde_encoder_phys *phys;
-	int i;
-
-	if (!encoder) {
-		SDE_ERROR("invalid drm enc\n");
-		return -EINVAL;
-	}
-
-	sde_enc = to_sde_encoder_virt(encoder);
-
-	for (i = 0; i < sde_enc->num_phys_encs; ++i) {
-		phys = sde_enc->phys_encs[i];
-		if (phys && phys->ops.vsync_trigger)
-			phys->ops.vsync_trigger(phys);
-	}
-
-	return 0;
 }

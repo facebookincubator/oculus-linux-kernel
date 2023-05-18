@@ -25,6 +25,7 @@ config ARM
 	select ARCH_USE_BUILTIN_BSWAP
 	select ARCH_USE_CMPXCHG_LOCKREF
 	select ARCH_WANT_IPC_PARSE_VERSION
+	select ARM_PSCI_FW if PM
 	select BUILDTIME_EXTABLE_SORT if MMU
 	select CLONE_BACKWARDS
 	select CPU_PM if (SUSPEND || CPU_IDLE)
@@ -61,7 +62,7 @@ config ARM
 	select HAVE_EBPF_JIT if !CPU_ENDIAN_BE32
 	select HAVE_CONTEXT_TRACKING
 	select HAVE_C_RECORDMCOUNT
-	select HAVE_DEBUG_KMEMLEAK
+	select HAVE_DEBUG_KMEMLEAK if !XIP_KERNEL
 	select HAVE_DMA_CONTIGUOUS if MMU
 	select HAVE_DYNAMIC_FTRACE if (!XIP_KERNEL) && !CPU_ENDIAN_BE32 && MMU
 	select HAVE_DYNAMIC_FTRACE_WITH_REGS if HAVE_DYNAMIC_FTRACE
@@ -69,7 +70,7 @@ config ARM
 	select HAVE_EXIT_THREAD
 	select HAVE_FTRACE_MCOUNT_RECORD if (!XIP_KERNEL)
 	select HAVE_FUNCTION_GRAPH_TRACER if (!THUMB2_KERNEL)
-	select HAVE_FUNCTION_TRACER if (!XIP_KERNEL)
+	select HAVE_FUNCTION_TRACER if (!XIP_KERNEL) && (CC_IS_GCC || CLANG_VERSION >= 100000)
 	select HAVE_GCC_PLUGINS
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_HW_BREAKPOINT if (PERF_EVENTS && (CPU_V6 || CPU_V6K || CPU_V7))
@@ -540,6 +541,34 @@ config ARCH_PXA
 	help
 	  Support for Intel/Marvell's PXA2xx/PXA3xx processor line.
 
+config ARCH_QCOM
+       bool "Qualcomm MSM (non-multiplatform)"
+       select ARCH_REQUIRE_GPIOLIB
+       select CPU_V7
+       select AUTO_ZRELADDR
+       select HAVE_SMP
+       select CLKDEV_LOOKUP
+       select GENERIC_CLOCKEVENTS
+       select GENERIC_ALLOCATOR
+       select ARM_PATCH_PHYS_VIRT
+       select ARM_HAS_SG_CHAIN
+       select ARCH_HAS_OPP
+       select SOC_BUS
+       select MULTI_IRQ_HANDLER
+       select PM_OPP
+       select SPARSE_IRQ
+       select USE_OF
+       select PINCTRL
+       select MFD_CORE
+       select SND_SOC_COMPRESS
+       select SND_HWDEP
+       help
+         Support for Qualcomm MSM/QSD based systems.  This runs on the
+         apps processor of the MSM/QSD and depends on a shared memory
+         interface to the modem processor which runs the baseband
+         stack and controls some vital subsystems
+         (clock and power control, etc).
+
 config ARCH_RPC
 	bool "RiscPC"
 	depends on MMU
@@ -593,8 +622,10 @@ config ARCH_S3C24XX
 	select HAVE_S3C2410_WATCHDOG if WATCHDOG
 	select HAVE_S3C_RTC if RTC_CLASS
 	select NEED_MACH_IO_H
+	select S3C2410_WATCHDOG
 	select SAMSUNG_ATAGS
 	select USE_OF
+	select WATCHDOG
 	help
 	  Samsung S3C2410, S3C2412, S3C2413, S3C2416, S3C2440, S3C2442, S3C2443
 	  and S3C2450 SoCs based systems, such as the Simtec Electronics BAST
@@ -1469,7 +1500,7 @@ config ARCH_NR_GPIO
 	int
 	default 2048 if ARCH_SOCFPGA
 	default 1024 if ARCH_BRCMSTB || ARCH_RENESAS || ARCH_TEGRA || \
-		ARCH_ZYNQ
+		ARCH_ZYNQ || ARCH_QCOM
 	default 512 if ARCH_EXYNOS || ARCH_KEYSTONE || SOC_OMAP5 || \
 		SOC_DRA7XX || ARCH_S3C24XX || ARCH_S3C64XX || ARCH_S5PV210
 	default 416 if ARCH_SUNXI
@@ -2053,7 +2084,7 @@ config XIP_DEFLATED_DATA
 config KEXEC
 	bool "Kexec system call (EXPERIMENTAL)"
 	depends on (!SMP || PM_SLEEP_SMP)
-	depends on !CPU_V7M
+	depends on MMU
 	select KEXEC_CORE
 	help
 	  kexec is a system call that implements the ability to shutdown your
@@ -2096,6 +2127,17 @@ config AUTO_ZRELADDR
 
 config EFI_STUB
 	bool
+
+config ARM_DECOMPRESSOR_LIMIT
+        hex "Limit the decompressor memory area"
+        default 0x3200000
+        help
+          Allows overriding of the memory size that decompressor maps with
+          read, write and execute permissions to avoid speculative prefetch.
+
+          By default ARM_DECOMPRESSOR_LIMIT maps first 1GB of memory
+          with read, write and execute permissions and reset of the memory
+          as strongly ordered.
 
 config EFI
 	bool "UEFI runtime support"

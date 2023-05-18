@@ -924,7 +924,7 @@ static int bluesleep_probe(struct platform_device *pdev)
 	}
 	bsi->irq_polarity = POLARITY_HIGH;/*anything else*/
 
-	wake_lock_init(&bsi->wake_lock, WAKE_LOCK_SUSPEND, "bluesleep");
+	wake_lock_init(&pdev->dev, &bsi->wake_lock, WAKE_LOCK_SUSPEND, "bluesleep");
 	clear_bit(BT_SUSPEND, &flags);
 
 		ret = request_irq(bsi->host_wake_irq, bluesleep_hostwake_isr,

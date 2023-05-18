@@ -385,7 +385,24 @@ static ssize_t vsync_event_show(struct device *device,
 	crtc = dev_get_drvdata(device);
 	sde_crtc = to_sde_crtc(crtc);
 	return scnprintf(buf, PAGE_SIZE, "VSYNC=%llu\n",
-			ktime_to_ns(sde_crtc->vblank_last_cb_time));
+			ktime_to_ns(sde_crtc->vblank_last_cb_time[VBLANK_0]));
+}
+
+static ssize_t vsync2_event_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	return scnprintf(buf, PAGE_SIZE, "VSYNC2=%llu\n",
+			ktime_to_ns(sde_crtc->vblank_last_cb_time[VBLANK_1]));
 }
 
 static ssize_t vsync_timing_show(struct device *device,
@@ -504,9 +521,7 @@ static void update_scanline_offset(struct drm_connector *conn,
 	 * Skip over this connector if it doesn't support variable
 	 * scanline offset.
 	 */
-	if ((bl_config->type != DSI_BACKLIGHT_JDI) && (bl_config->type != DSI_BACKLIGHT_JDI_NVT)
-		&& (bl_config->type != DSI_BACKLIGHT_NVT)
-		&& (bl_config->type != DSI_BACKLIGHT_LOCAL_DIMMING))
+	if ((bl_config->type != DSI_BACKLIGHT_JDI) && (bl_config->type != DSI_BACKLIGHT_JDI_NVT))
 		return;
 
 	if (!c_conn->allow_bl_update)
@@ -734,6 +749,7 @@ static DEVICE_ATTR_WO(lineptr_offset);
 static DEVICE_ATTR_RO(wb_num_tears);
 static DEVICE_ATTR_RW(backlight_scanline_offset);
 static DEVICE_ATTR_RO(backlight_timing);
+static DEVICE_ATTR_RO(vsync2_event);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
 static DEVICE_ATTR_RW(dfps_brightness_adjustment);
@@ -746,6 +762,7 @@ static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_wb_num_tears.attr,
 	&dev_attr_backlight_scanline_offset.attr,
 	&dev_attr_backlight_timing.attr,
+	&dev_attr_vsync2_event.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_fps_periodicity_ms.attr,
 	&dev_attr_dfps_brightness_adjustment.attr,
@@ -770,10 +787,15 @@ static void sde_crtc_destroy(struct drm_crtc *crtc)
 	if (!crtc)
 		return;
 
-	if (sde_crtc->vsync_event_sf)
-		sysfs_put(sde_crtc->vsync_event_sf);
+	if (sde_crtc->vsync_event_sf[VBLANK_0])
+		sysfs_put(sde_crtc->vsync_event_sf[VBLANK_0]);
+
+	if (sde_crtc->vsync_event_sf[VBLANK_1])
+		sysfs_put(sde_crtc->vsync_event_sf[VBLANK_1]);
+
 	if (sde_crtc->lineptr_event_sf)
 		sysfs_put(sde_crtc->lineptr_event_sf);
+
 	if (sde_crtc->sysfs_dev)
 		device_unregister(sde_crtc->sysfs_dev);
 
@@ -1068,6 +1090,8 @@ static bool _sde_crtc_setup_is_quad_pipe(struct drm_crtc_state *state)
 		if ((topology == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE) ||
 				(topology ==
 				SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE) ||
+				(topology ==
+				SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL) ||
 				(topology ==
 				SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC) ||
 				(topology ==
@@ -1768,6 +1792,34 @@ static void _sde_crtc_set_src_split_order(struct drm_crtc *crtc,
 			cur_pstate->sde_pstate->pipe_order_flags);
 	}
 }
+
+static int _sde_crtc_get_ctl_count_for_enc(struct drm_crtc *crtc,
+		struct sde_crtc *sde_crtc)
+{
+	struct sde_kms *sde_kms = _sde_crtc_get_kms(crtc);
+	struct sde_rm *rm = &sde_kms->rm;
+	struct drm_encoder *enc = NULL;
+
+	mutex_lock(&sde_crtc->crtc_lock);
+	/* Check for mixers on all encoders attached to this crtc */
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if ((enc->crtc != crtc) ||
+				sde_encoder_in_clone_mode(enc))
+			continue;
+
+		if (sde_encoder_is_dsi_display(enc) &&
+				sde_encoder_check_curr_mode(
+				enc, MSM_DISPLAY_VIDEO_MODE)) {
+			break;
+		}
+	}
+	mutex_unlock(&sde_crtc->crtc_lock);
+	if (enc == NULL)
+		return 1; /* Default single ctl block */
+
+	return sde_rm_get_hw_count(rm, enc->base.id, SDE_HW_BLK_CTL);
+}
+
 static void _sde_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 		struct drm_crtc_state *old_state, struct sde_crtc *sde_crtc,
 		struct sde_crtc_mixer *mixer)
@@ -1787,14 +1839,32 @@ static void _sde_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 	int zpos_cnt[SDE_STAGE_MAX + 1] = { 0 };
 	int i, cnt = 0;
 	bool bg_alpha_enable = false;
+	struct sde_hw_ctl *right_ctl = NULL;
+	struct sde_crtc_mixer *mixer_list;
+	int mixers_per_ctl = 0, ctl_count = 0;
 
 	if (!sde_crtc || !crtc->state || !mixer) {
 		SDE_ERROR("invalid sde_crtc or mixer\n");
 		return;
 	}
 
+	ctl_count = _sde_crtc_get_ctl_count_for_enc(crtc, sde_crtc);
+	if (ctl_count > 0)
+		mixers_per_ctl = sde_crtc->num_mixers / ctl_count;
+
 	ctl = mixer->hw_ctl;
 	lm = mixer->hw_lm;
+
+	if (ctl_count == DUAL_CTL) {
+		mixer_list = mixer;
+		for (i = 0; i < sde_crtc->num_mixers; i++) {
+			if (i >= mixers_per_ctl) {
+				right_ctl = mixer_list->hw_ctl;
+				break;
+			}
+			mixer_list++;
+		}
+	}
 	stage_cfg = &sde_crtc->stage_cfg;
 	cstate = to_sde_crtc_state(crtc->state);
 	pstates = kcalloc(SDE_PSTATES_MAX,
@@ -1814,8 +1884,10 @@ static void _sde_crtc_blend_setup_mixer(struct drm_crtc *crtc,
 
 		pstate = to_sde_plane_state(state);
 		fb = state->fb;
-
-		sde_plane_ctl_flush(plane, ctl, true);
+		if (right_ctl && pstate->layout == SDE_LAYOUT_RIGHT)
+			sde_plane_ctl_flush(plane, right_ctl, true);
+		else
+			sde_plane_ctl_flush(plane, ctl, true);
 
 		SDE_DEBUG("crtc %d stage:%d - plane %d sspp %d fb %d\n",
 				crtc->base.id,
@@ -2746,16 +2818,40 @@ static void sde_crtc_vblank_cb(void *data)
 	struct drm_crtc *crtc = (struct drm_crtc *)data;
 	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
 
+	SDE_ATRACE_BEGIN("vblank_0_callback");
 	/* keep statistics on vblank callback - with auto reset via debugfs */
-	if (ktime_compare(sde_crtc->vblank_cb_time, ktime_set(0, 0)) == 0)
-		sde_crtc->vblank_cb_time = ktime_get();
+	if (ktime_compare(sde_crtc->vblank_cb_time[VBLANK_0],
+			ktime_set(0, 0)) == 0)
+		sde_crtc->vblank_cb_time[VBLANK_0] = ktime_get();
 	else
-		sde_crtc->vblank_cb_count++;
+		sde_crtc->vblank_cb_count[VBLANK_0]++;
 
-	sde_crtc->vblank_last_cb_time = ktime_get();
-	sysfs_notify_dirent(sde_crtc->vsync_event_sf);
-
+	sde_crtc->vblank_last_cb_time[VBLANK_0] = ktime_get();
+	sysfs_notify_dirent(sde_crtc->vsync_event_sf[VBLANK_0]);
 	drm_crtc_handle_vblank(crtc);
+
+	SDE_ATRACE_END("vblank_0_callback");
+	DRM_DEBUG_VBL("crtc%d\n", crtc->base.id);
+	SDE_EVT32_VERBOSE(DRMID(crtc));
+}
+
+static void sde_crtc_vblank2_cb(void *data)
+{
+	struct drm_crtc *crtc = (struct drm_crtc *)data;
+	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
+
+	SDE_ATRACE_BEGIN("vblank_1_callback");
+	/* keep statistics on vblank callback - with auto reset via debugfs */
+	if (ktime_compare(sde_crtc->vblank_cb_time[VBLANK_1],
+			ktime_set(0, 0)) == 0)
+		sde_crtc->vblank_cb_time[VBLANK_1] = ktime_get();
+	else
+		sde_crtc->vblank_cb_count[VBLANK_1]++;
+
+	sde_crtc->vblank_last_cb_time[VBLANK_1] = ktime_get();
+	sysfs_notify_dirent(sde_crtc->vsync_event_sf[VBLANK_1]);
+
+	SDE_ATRACE_END("vblank_1_callback");
 	DRM_DEBUG_VBL("crtc%d\n", crtc->base.id);
 	SDE_EVT32_VERBOSE(DRMID(crtc));
 }
@@ -3467,12 +3563,18 @@ static void _sde_crtc_setup_mixer_for_encoder(
 	struct sde_hw_ctl *last_valid_ctl = NULL;
 	int i;
 	struct sde_rm_hw_iter lm_iter, ctl_iter, dspp_iter, ds_iter;
+	u32 reuse_ctl = 0, lm_count, lms_per_ctl;
 
 	sde_rm_init_hw_iter(&lm_iter, enc->base.id, SDE_HW_BLK_LM);
 	sde_rm_init_hw_iter(&ctl_iter, enc->base.id, SDE_HW_BLK_CTL);
 	sde_rm_init_hw_iter(&dspp_iter, enc->base.id, SDE_HW_BLK_DSPP);
 	sde_rm_init_hw_iter(&ds_iter, enc->base.id, SDE_HW_BLK_DS);
 
+	reuse_ctl = sde_rm_get_hw_count(rm, enc->base.id, SDE_HW_BLK_CTL);
+	lm_count = sde_rm_get_hw_count(rm, enc->base.id, SDE_HW_BLK_LM);
+	lms_per_ctl = lm_count / reuse_ctl;
+
+	reuse_ctl = 0;
 	/* Set up all the mixers and ctls reserved by this encoder */
 	for (i = sde_crtc->num_mixers; i < ARRAY_SIZE(sde_crtc->mixers); i++) {
 		mixer = &sde_crtc->mixers[i];
@@ -3481,15 +3583,19 @@ static void _sde_crtc_setup_mixer_for_encoder(
 			break;
 		mixer->hw_lm = (struct sde_hw_mixer *)lm_iter.hw;
 
-		if (!sde_rm_get_hw(rm, &ctl_iter)) {
-			SDE_DEBUG("no ctl assigned to lm, %d using previous\n",
+		/* CTL may be <= LMs, if <, multiple LMs controlled by 1 CTL */
+		if (reuse_ctl || !sde_rm_get_hw(rm, &ctl_iter)) {
+			SDE_DEBUG("no ctl assigned to lm %d, using previous\n",
 					mixer->hw_lm->idx - LM_0);
 			mixer->hw_ctl = last_valid_ctl;
 		} else {
 			mixer->hw_ctl = (struct sde_hw_ctl *)ctl_iter.hw;
 			last_valid_ctl = mixer->hw_ctl;
 			sde_crtc->num_ctls++;
+			reuse_ctl = lms_per_ctl;
 		}
+		if (reuse_ctl)
+			reuse_ctl--;
 
 		/* Shouldn't happen, mixers are always >= ctls */
 		if (!mixer->hw_ctl) {
@@ -3499,7 +3605,8 @@ static void _sde_crtc_setup_mixer_for_encoder(
 		}
 
 		if (_sde_crtc_setup_is_quad_pipe(sde_crtc->base.state))
-			_sde_crtc_setup_quad_lm_layout(sde_crtc, mixer,
+			_sde_crtc_setup_quad_lm_layout(sde_crtc,
+					mixer,
 					sde_crtc->num_mixers,
 					sde_kms->catalog->swap_mixers);
 
@@ -4199,7 +4306,8 @@ static int _sde_crtc_vblank_enable_no_lock(
 
 			sde_crtc->wb_num_tears = 0;
 			sde_encoder_register_vblank_callback(enc,
-					sde_crtc_vblank_cb, (void *)crtc);
+				sde_crtc_vblank_cb, sde_crtc_vblank2_cb,
+						(void *)crtc);
 			sde_encoder_register_lineptr_callback(enc,
 					sde_crtc_lineptr_cb, (void *)crtc);
 		}
@@ -4209,7 +4317,8 @@ static int _sde_crtc_vblank_enable_no_lock(
 			SDE_EVT32(DRMID(&sde_crtc->base), DRMID(enc), enable,
 					sde_crtc->enabled);
 
-			sde_encoder_register_vblank_callback(enc, NULL, NULL);
+			sde_encoder_register_vblank_callback
+						(enc, NULL, NULL, NULL);
 			sde_encoder_register_lineptr_callback(enc, NULL, NULL);
 		}
 
@@ -4657,29 +4766,6 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 	/* Enable ESD thread */
 	for (i = 0; i < cstate->num_connectors; i++)
 		sde_connector_schedule_status_work(cstate->connectors[i], true);
-
-	/* Cache qsync min refresh-rate */
-	sde_crtc->qsync_min_fps = 0;
-	list_for_each_entry(encoder, &crtc->dev->mode_config.encoder_list, head) {
-		u32 val;
-
-		if (encoder->crtc != crtc)
-			continue;
-
-		if (sde_encoder_get_qsync_min_fps(encoder, &val)) {
-			SDE_ERROR("could not get qsync min refresh-rate\n");
-			sde_crtc->qsync_min_fps = 0;
-			break;
-		}
-
-		if ((sde_crtc->qsync_min_fps != 0) && (sde_crtc->qsync_min_fps != val)) {
-			SDE_ERROR("mismatch qsync_min_fps in encoders");
-			sde_crtc->qsync_min_fps = 0;
-			break;
-		}
-
-		sde_crtc->qsync_min_fps = val;
-	}
 }
 
 /* no input validation - caller API has all the checks */
@@ -5821,8 +5907,7 @@ static int _sde_crtc_get_output_fence(struct drm_crtc *crtc,
 	cstate = to_sde_crtc_state(state);
 
 	drm_for_each_encoder_mask(encoder, crtc->dev, state->encoder_mask) {
-		if (sde_encoder_check_curr_mode(encoder,
-						MSM_DISPLAY_VIDEO_MODE))
+		if (sde_encoder_get_intf_mode(encoder) == INTF_MODE_VIDEO)
 			is_vid = true;
 		if (is_vid)
 			break;
@@ -6250,20 +6335,24 @@ static int _sde_debugfs_status_show(struct seq_file *s, void *data)
 		seq_puts(s, "\n");
 	}
 
-	if (sde_crtc->vblank_cb_count) {
-		ktime_t diff = ktime_sub(ktime_get(), sde_crtc->vblank_cb_time);
-		u32 diff_ms = ktime_to_ms(diff);
-		u64 fps = diff_ms ? DIV_ROUND_CLOSEST(
-				sde_crtc->vblank_cb_count * 1000, diff_ms) : 0;
+	for (i = 0; i < SDE_CRTC_MAX_VBLANKS; i++) {
+		if (sde_crtc->vblank_cb_count[i]) {
+			ktime_t diff = ktime_sub(ktime_get(),
+				sde_crtc->vblank_cb_time[i]);
+			u32 diff_ms = ktime_to_ms(diff);
+			u64 fps = diff_ms ? DIV_ROUND_CLOSEST(
+				sde_crtc->vblank_cb_count[i] * 1000,
+							diff_ms) : 0;
 
-		seq_printf(s,
+			seq_printf(s,
 			"vblank fps:%lld count:%u total:%llums total_framecount:%llu\n",
-				fps, sde_crtc->vblank_cb_count,
+				fps, sde_crtc->vblank_cb_count[i],
 				ktime_to_ms(diff), sde_crtc->play_count);
 
-		/* reset time & count for next measurement */
-		sde_crtc->vblank_cb_count = 0;
-		sde_crtc->vblank_cb_time = ktime_set(0, 0);
+			/* reset time & count for next measurement */
+			sde_crtc->vblank_cb_count[i] = 0;
+			sde_crtc->vblank_cb_time[i] = ktime_set(0, 0);
+		}
 	}
 
 	mutex_unlock(&sde_crtc->crtc_lock);
@@ -6873,10 +6962,16 @@ int sde_crtc_post_init(struct drm_device *dev, struct drm_crtc *crtc)
 		goto end;
 	}
 
-	sde_crtc->vsync_event_sf = sysfs_get_dirent(
+	sde_crtc->vsync_event_sf[VBLANK_0] = sysfs_get_dirent(
 		sde_crtc->sysfs_dev->kobj.sd, "vsync_event");
-	if (!sde_crtc->vsync_event_sf)
+	if (!sde_crtc->vsync_event_sf[VBLANK_0])
 		SDE_ERROR("crtc:%d vsync_event sysfs create failed\n",
+						crtc->base.id);
+
+	sde_crtc->vsync_event_sf[VBLANK_1] = sysfs_get_dirent(
+		sde_crtc->sysfs_dev->kobj.sd, "vsync2_event");
+	if (!sde_crtc->vsync_event_sf[VBLANK_1])
+		SDE_ERROR("crtc:%d vsync2_event sysfs create failed\n",
 						crtc->base.id);
 
 	sde_crtc->lineptr_last_cb_offset = 0;
@@ -7104,35 +7199,3 @@ void sde_crtc_update_cont_splash_settings(struct drm_crtc *crtc)
 					rate : kms->perf.max_core_clk_rate;
 	sde_crtc->cur_perf.core_clk_rate = kms->perf.max_core_clk_rate;
 }
-
-int sde_crtc_vsync_trigger(struct drm_crtc *crtc)
-{
-	struct sde_crtc *sde_crtc;
-	struct drm_encoder *encoder;
-	struct drm_device *dev;
-	int ret;
-
-	if (!crtc) {
-		SDE_ERROR("invalid crtc\n");
-		return -EINVAL;
-	}
-
-	if (!sde_kms_power_resource_is_enabled(crtc->dev)) {
-		SDE_ERROR("power resource is not enabled\n");
-		return -EBUSY;
-	}
-
-	sde_crtc = to_sde_crtc(crtc);
-	dev = crtc->dev;
-
-	list_for_each_entry(encoder, &dev->mode_config.encoder_list, head) {
-		if (encoder->crtc != crtc)
-			continue;
-		ret = sde_encoder_vsync_trigger(encoder);
-		if (ret)
-			return ret;
-	}
-
-	return 0;
-}
-

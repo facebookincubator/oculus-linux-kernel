@@ -136,11 +136,6 @@ static inline void bolero_unregister_res_clk(struct device *dev)
 {
 }
 
-static inline bool bolero_is_va_macro_registered(struct device *dev)
-{
-	return false;
-}
-
 static inline int bolero_register_macro(struct device *dev,
 					u16 macro_id,
 					struct macro_ops *ops)

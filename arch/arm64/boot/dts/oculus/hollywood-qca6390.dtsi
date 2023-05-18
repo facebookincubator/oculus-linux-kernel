@@ -5,7 +5,7 @@
 
 &soc {
 	qcom,cnss-qca6390@b0000000 {
-		vdd-wlan-dig-supply = <&pm8150_s6>;
+		vdd-wlan-dig-supply = <&S6A>;
 		wlan-ant-switch-supply = <>;
 		qcom,wlan-ant-switch-config = <>;
 	};
@@ -19,10 +19,10 @@
 		qca,bt-reset-gpio = <&tlmm 21 0>; /* BT_EN */
 		qca,bt-sw-ctrl-gpio = <&tlmm 124 0>; /* SW_CTRL */
 		qca,wl-reset-gpio = <&tlmm 20 0>; /* WL_EN */
-		qca,bt-vdd-aon-supply = <&pm8150_s6>;
-		qca,bt-vdd-dig-supply = <&pm8150_s6>;
-		qca,bt-vdd-rfa1-supply = <&pm8150_s5>;
-		qca,bt-vdd-rfa2-supply = <&pm8150a_s8>;
+		qca,bt-vdd-aon-supply = <&S6A>;
+		qca,bt-vdd-dig-supply = <&S6A>;
+		qca,bt-vdd-rfa1-supply = <&S5A>;
+		qca,bt-vdd-rfa2-supply = <&S8C>;
 
 		qca,bt-vdd-aon-voltage-level = <950000 950000>;
 		qca,bt-vdd-dig-voltage-level = <950000 952000>;

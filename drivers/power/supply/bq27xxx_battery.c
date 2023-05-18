@@ -46,6 +46,7 @@
  */
 
 #include <linux/device.h>
+#include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/param.h>
@@ -56,12 +57,16 @@
 #include <linux/power_supply.h>
 #include <linux/slab.h>
 #include <linux/of.h>
-#include <linux/debugfs.h>
 #include <linux/uaccess.h>
 
 #include <linux/power/bq27xxx_battery.h>
 
 #define BQ27XXX_MANUFACTURER	"Texas Instruments"
+
+#include <linux/pmic-voter.h>
+
+#include <power_supply.h>
+#include <linux/of_batterydata.h>
 
 /* BQ27XXX Flags */
 #define BQ27XXX_FLAG_DSC	BIT(0)
@@ -756,6 +761,15 @@ enum bq27xxx_manufacturer_info_type {
 	MANUFACTURER_INFO_C,
 };
 
+enum fct_state {
+	FCT_OK = 0,
+	FCT_WARN_1 = 1,
+	FCT_WARN_2 = 2,
+	FCT_WARN_3 = 3,
+	FCT_CRIT = 4,
+	FCT_UNKNOWN = 5,
+};
+
 static enum power_supply_property bq27z561_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_PRESENT,
@@ -980,6 +994,80 @@ MODULE_PARM_DESC(dt_monitored_battery_updates_nvm,
 	"\nSetting this affects future kernel updates, not the current configuration."
 #endif
 );
+
+/*
+ * id - file identifier
+ *
+ * These are ids to identify which file is requested
+ */
+enum {
+	ADDRESS = 0,
+	DATA,
+	MAC_CMD,
+	MAC_DATA,
+	AT_RATE,
+	AT_RATE_TIME_TO_EMPTY,
+	DEVICE_TYPE,
+	FIRMWARE_VERSION,
+	HARDWARE_VERSION,
+	INSTRUCTION_FLASH_SIGNATURE,
+	STATIC_DF_SIGNATURE,
+	CHEMICAL_ID,
+	STATIC_CHEM_DF_SIGNATURE,
+	ALL_DF_SIGNATURE,
+	DEVICE_RESET,
+	LIFETIME_DATA_COLLECTION,
+	LIFETIME_DATA_RESET,
+	SEAL_DEVICE,
+	DEVICE_NAME,
+	DEVICE_CHEM,
+	MANUFACTURER_NAME,
+	MANUFACTURER_DATE,
+	SERIAL_NUMBER,
+	OPERATION_STATUS,
+	CHARGING_STATUS,
+	GAUGING_STATUS,
+	MANUFACTURING_STATUS,
+	LIFETIME_DATA_BLOCK,
+	LIFETIME1_LOWER,
+	LIFETIME1_HIGHER,
+	LIFETIME3,
+	LIFETIME4,
+	TEMP_ZONES,
+	FCT, /* float charge raw */
+	FCT_STATE, /* float charge state */
+};
+
+/**
+ * struct bq27xxx_attribute - sysfs attribute
+ * @dattr: device attribute
+ * @id: file id
+ * @val1: data value depending on id
+ * @val2: data value depending on id
+ */
+struct bq27xxx_attribute {
+	struct device_attribute dattr;
+	u32 id;
+	u32 val1;
+	u32 val2;
+};
+
+#define BQ27XXX_ATTR(_field, _mode, _show, _store, _id, _val1, _val2)	\
+	struct bq27xxx_attribute bq27xxx_attr_##_field = {		\
+		.dattr = __ATTR(_field, _mode,				\
+				_show, _store),				\
+		.id = _id,						\
+		.val1 = _val1,						\
+		.val2 = _val2,						\
+	}
+
+static bool is_bms_available(struct bq27xxx_device_info *di)
+{
+	if (!di->bms_psy)
+		di->bms_psy = power_supply_get_by_name("bms");
+
+	return di->bms_psy != NULL;
+}
 
 static int poll_interval_param_set(const char *val, const struct kernel_param *kp)
 {
@@ -1290,6 +1378,151 @@ static void bq27xxx_update_lifetime(struct bq27xxx_device_info *di)
 
 		dm_buf.class++;
 	}
+}
+
+static int bq27xxx_get_fct_settings_from_profile(struct bq27xxx_device_info *di)
+{
+	struct device_node *batt_node, *profile_node;
+	int batt_id_ohms, rc;
+	union power_supply_propval prop = {0, };
+
+	batt_node = of_find_node_by_name(di->dev->of_node, "qcom,battery-data");
+	if (!batt_node) {
+		pr_err("Ti BatteryData not available\n");
+		return -EINVAL;
+	}
+
+	if (!is_bms_available(di))
+		return -ENODEV;
+
+	power_supply_get_property(di->bms_psy,
+		POWER_SUPPLY_PROP_RESISTANCE_ID, &prop);
+	batt_id_ohms = prop.intval;
+
+	/* bms_psy has not yet read the batt_id */
+	if (batt_id_ohms < 0) {
+		pr_err("Get batt_id failed\n");
+		return -EBUSY;
+	}
+
+	profile_node = of_batterydata_get_best_profile(batt_node,
+					batt_id_ohms / 1000, NULL);
+	if (IS_ERR(profile_node)) {
+		pr_err("Get profile node ptr failed\n");
+		return PTR_ERR(profile_node);
+	}
+
+	rc = of_property_read_bool(profile_node,
+			"qcom,fct-support");
+	if (rc < 0)
+		pr_debug("fct-support not available, rc=%d\n", rc);
+
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-ok-range",
+				di->fct_ok_range, BQ27XXX_MAX_FCT_TIME);
+	if (rc) {
+		dev_err(di->dev, "fct-ok-range not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-warn-range-1",
+				di->fct_warn_range_1, BQ27XXX_MAX_FCT_TIME);
+	if (rc) {
+		dev_err(di->dev, "fct-warn-range-1 not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-warn-range-2",
+				di->fct_warn_range_2, BQ27XXX_MAX_FCT_TIME);
+	if (rc) {
+		dev_err(di->dev, "fct-warn-range-2 not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-warn-range-3",
+				di->fct_warn_range_3, BQ27XXX_MAX_FCT_TIME);
+	if (rc) {
+		dev_err(di->dev, "fct-warn-range-3 not present");
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-crit-range",
+				di->fct_crit_range, BQ27XXX_MAX_FCT_TIME);
+	if (rc) {
+		dev_err(di->dev, "fct-crit-range not present");
+		return -EINVAL;
+	}
+
+	/* read FCT voltages */
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-ranges",
+				di->fct_ranges, BQ27XXX_MAX_FCT_STATE);
+	if (rc) {
+		pr_err("Read  %s failed, rc=%d\n", "qcom,fct-ranges", rc);
+		return rc;
+	}
+
+	/*  read fct weights numerator */
+	rc = of_property_read_u32_array(profile_node, "qcom,fct-weights",
+				di->fct_weights, BQ27XXX_MAX_FCT_WEIGHT);
+	if (rc) {
+		dev_err(di->dev, "qcom,fct-weights not present");
+		return -EINVAL;
+	}
+
+	/*  read fct weights denominator */
+	rc = of_property_read_u32_array(profile_node,
+			"qcom,fct-weights-div",
+			di->fct_weights_div, BQ27XXX_MAX_FCT_WEIGHT);
+	if (rc) {
+		dev_err(di->dev, "qcom,fct-weights-div not present");
+		return -EINVAL;
+	}
+
+	di->fct_config_valid = true;
+	return 0;
+}
+
+static int bq27xxx_update_fct(struct bq27xxx_device_info *di)
+{
+	u64 val;
+	struct votable *fv_votable;
+	int i;
+
+	val = NULL;
+
+	/* calculate FCT */
+	for (i = 0; i < ARRAY_SIZE(di->fct_weights); i++) {
+		val = val + (u64) di->lifetime_blocks.temp_zones[i][0]
+			* di->fct_weights[i] / di->fct_weights_div[i];
+	}
+
+	val = val / 3600; /* convert to hours */
+
+	/* set fct_state and vote for trimmed voltage */
+	if (val) {
+		di->fct = val;
+		if (di->fct >= di->fct_ok_range[0] &&
+				di->fct < di->fct_ok_range[1]) {
+			di->fct_state = FCT_OK;
+		} else if (di->fct >= di->fct_warn_range_1[0] &&
+				di->fct < di->fct_warn_range_1[1]) {
+			di->fct_state = FCT_WARN_1;
+		} else if (di->fct >= di->fct_warn_range_2[0] &&
+				di->fct < di->fct_warn_range_2[1]) {
+			di->fct_state = FCT_WARN_2;
+		} else if (di->fct >= di->fct_warn_range_3[0] &&
+				di->fct < di->fct_warn_range_3[1]) {
+			di->fct_state = FCT_WARN_3;
+		} else if (di->fct >= di->fct_crit_range[0] &&
+				di->fct < di->fct_crit_range[1]) {
+			di->fct_state = FCT_CRIT;
+		} else {
+			di->fct_state = FCT_UNKNOWN;
+		}
+	}
+
+	fv_votable = find_votable("FV");
+	vote(fv_votable, "BQ_VOTER", true, di->fct_ranges[di->fct_state]);
+	return 0;
 }
 
 static void bq27xxx_battery_update_dm_block(struct bq27xxx_device_info *di,
@@ -1808,6 +2041,8 @@ void bq27xxx_battery_update(struct bq27xxx_device_info *di)
 	bool has_ci_flag = di->opts & BQ27XXX_O_ZERO;
 	bool has_singe_flag = di->opts & BQ27XXX_O_ZERO;
 
+	int rc;
+
 	cache.flags = bq27xxx_read(di, BQ27XXX_REG_FLAGS, has_singe_flag);
 	if ((cache.flags & 0xff) == 0xff)
 		cache.flags = -1; /* read error */
@@ -1845,9 +2080,20 @@ void bq27xxx_battery_update(struct bq27xxx_device_info *di)
 			di->charge_design_full = bq27xxx_battery_read_dcap(di);
 	}
 
-	/* Lifetime data table read */
-	if (di->opts & BQ27XXX_O_Z)
+	/* Lifetime data table read and FCT */
+	if (di->opts & BQ27XXX_O_Z) {
 		bq27xxx_update_lifetime(di);
+
+		if (!di->fct_config_valid) {
+			rc = bq27xxx_get_fct_settings_from_profile(di);
+			if (rc < 0)
+				pr_err("Ti couldn't get FCT settings, rc=%d\n", rc);
+		} else {
+			rc = bq27xxx_update_fct(di);
+			if (rc < 0)
+				pr_err("Ti Couldn't update FCT, rc=%d\n", rc);
+		}
+	}
 
 	if (di->cache.capacity != cache.capacity)
 		power_supply_changed(di->bat);
@@ -1914,8 +2160,6 @@ static int bq27xxx_battery_status(struct bq27xxx_device_info *di,
 			status = POWER_SUPPLY_STATUS_FULL;
 		else if (di->cache.flags & BQ27000_FLAG_CHGS)
 			status = POWER_SUPPLY_STATUS_CHARGING;
-		else if (power_supply_am_i_supplied(di->bat) > 0)
-			status = POWER_SUPPLY_STATUS_NOT_CHARGING;
 		else
 			status = POWER_SUPPLY_STATUS_DISCHARGING;
 	} else if (di->opts & BQ27XXX_O_Z) {
@@ -1933,6 +2177,10 @@ static int bq27xxx_battery_status(struct bq27xxx_device_info *di,
 		else
 			status = POWER_SUPPLY_STATUS_CHARGING;
 	}
+
+	if ((status == POWER_SUPPLY_STATUS_DISCHARGING) &&
+	    (power_supply_am_i_supplied(di->bat) > 0))
+		status = POWER_SUPPLY_STATUS_NOT_CHARGING;
 
 	val->intval = status;
 
@@ -2362,53 +2610,16 @@ static void bq27xxx_external_power_changed(struct power_supply *psy)
 	schedule_delayed_work(&di->work, 0);
 }
 
-#ifdef CONFIG_DEBUG_FS
-static ssize_t reg_data_read_file(struct file *file, char __user *user_buf,
-					size_t count, loff_t *ppos)
+static ssize_t default_reg_data_read_file(struct bq27xxx_device_info *di,
+		const char *format, u32 addr, char *buf, int buf_len)
 {
-	struct bq27xxx_device_info *di = file->private_data;
 	int reg_data;
-	char val[10];
 
-	reg_data = bq27z561_battery_read_reg(di, di->reg_addr);
-
-	snprintf(val, sizeof(val) - 1, "0x:%02X\n", reg_data);
-
-	return simple_read_from_buffer(user_buf, count, ppos,
-		val, strlen(val));
+	reg_data = bq27z561_battery_read_reg(di, addr);
+	return scnprintf(buf, buf_len, format, reg_data);
 }
 
-static ssize_t reg_data_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	char buf[32];
-	size_t buf_size;
-	char *start = buf;
-	unsigned long value;
-	struct bq27xxx_device_info *di = file->private_data;
-	int ret;
-
-	buf_size = min(count, (sizeof(buf)-1));
-	if (copy_from_user(buf, user_buf, buf_size))
-		return -EFAULT;
-	buf[buf_size] = 0;
-
-	while (*start == ' ')
-		start++;
-	if (kstrtoul(start, 16, &value))
-		return -EINVAL;
-
-	/* Userspace has been fiddling around behind the kernel's back */
-	add_taint(TAINT_USER, LOCKDEP_STILL_OK);
-
-	ret = bq27z561_battery_write_reg(di, di->reg_addr, value);
-	if (ret < 0)
-		return ret;
-	return buf_size;
-}
-
-static ssize_t read_block_to_str(struct bq27xxx_device_info *di,
+static ssize_t default_read_block_to_str(struct bq27xxx_device_info *di,
 					 u16 mac_cmd, char *buf, int buf_len)
 {
 	int ret;
@@ -2426,294 +2637,11 @@ static ssize_t read_block_to_str(struct bq27xxx_device_info *di,
 	return ret;
 }
 
-static ssize_t _debugfs_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos, u16 mac_cmd)
+static ssize_t seal_device_read_block_to_str(struct bq27xxx_device_info *di,
+					char *buf, int buf_len)
 {
-	struct bq27xxx_device_info *di = file->private_data;
-	int ret;
-	char val[80];
-
-	ret = read_block_to_str(di, mac_cmd, val, sizeof(val));
-	if (ret < 0)
-		return ret;
-
-	return simple_read_from_buffer(user_buf, count, ppos,
-		val, strlen(val));
-}
-
-static ssize_t _debugfs_write_file(struct file *file,
-					const char __user *user_buf,
-					size_t count, loff_t *ppos, u16 mac_cmd)
-{
-	char buf[32];
-	size_t buf_size;
-	char *start = buf;
-	unsigned long value;
-	struct bq27xxx_device_info *di = file->private_data;
-	int ret;
-	u8 command[2];
-
-	command[0] = mac_cmd & 0x00FF;
-	command[1] = (mac_cmd & 0xFF00) >> 8;
-
-	buf_size = min(count, (sizeof(buf) - 1));
-
-	if (copy_from_user(buf, user_buf, buf_size))
-		return -EFAULT;
-	buf[buf_size] = '\0';
-
-	while (*start == ' ')
-		start++;
-	if (*start == '\0')
-		return -EINVAL;
-	if (kstrtoul(start, 10, &value))
-		return -EINVAL;
-	if (value != 1)
-		return -EINVAL;
-	/* Userspace has been fiddling around behind the kernel's back */
-	add_taint(TAINT_USER, LOCKDEP_STILL_OK);
-
-	ret = bq27z561_write_block(di, BQ27Z561_MAC_CMD_ADDR, command, 2);
-	if (ret < 0)
-		return ret;
-	return buf_size;
-}
-
-static ssize_t mac_data_read_file(struct file *file, char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	struct bq27xxx_device_info *di = file->private_data;
-	int ret;
-	char val[80];
-
-	if (di->reg_addr != BQ27Z561_MAC_CMD_ADDR)
-		return -EINVAL;
-
-	ret = read_block_to_str(di, di->reg_data, val, sizeof(val));
-	if (ret < 0)
-		return ret;
-	dev_dbg(di->dev, "manufacturer data string lens : %s\n", val);
-
-	return simple_read_from_buffer(user_buf, count, ppos,
-		val, strlen(val));
-}
-
-static ssize_t mac_data_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	return 0;
-}
-
-static ssize_t at_rate_read_file(struct file *file, char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	struct bq27xxx_device_info *di = file->private_data;
-	int reg_data;
-	char val[10];
-
-	reg_data = bq27z561_battery_read_reg(di, BQ27Z561_ATRATE_ADDR);
-
-	snprintf(val, sizeof(val) - 1, "%d\n", reg_data);
-
-	return simple_read_from_buffer(user_buf, count, ppos,
-		val, strlen(val));
-}
-
-static ssize_t at_rate_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	char buf[32];
-	size_t buf_size;
-	char *start = buf;
-	unsigned long value;
-	struct bq27xxx_device_info *di = file->private_data;
-	int ret;
-	bool negative;
-
-	buf_size = min(count, (sizeof(buf)-1));
-
-	if (copy_from_user(buf, user_buf, buf_size))
-		return -EFAULT;
-	buf[buf_size] = '\0';
-
-	while (*start == ' ')
-		start++;
-	if (*start == '-') {
-		negative = true;
-		start++;
-	} else
-		negative = false;
-	if (*start == '\0')
-		return -EINVAL;
-	if (kstrtoul(start, 10, &value))
-		return -EINVAL;
-	if (negative)
-		value = -1 * value;
-	/* Userspace has been fiddling around behind the kernel's back */
-	add_taint(TAINT_USER, LOCKDEP_STILL_OK);
-
-	ret = bq27z561_battery_write_reg(di, BQ27Z561_ATRATE_ADDR, value);
-	if (ret < 0)
-		return ret;
-	return buf_size;
-}
-
-static ssize_t at_rate_time_to_empty_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	struct bq27xxx_device_info *di = file->private_data;
-	int reg_data;
-	char val[10];
-
-	reg_data = bq27z561_battery_read_reg(di, BQ27Z561_ATRATETTE_ADDR);
-
-	snprintf(val, sizeof(val) - 1, "%d\n", reg_data);
-
-	return simple_read_from_buffer(user_buf, count, ppos,
-		val, strlen(val));
-}
-
-static ssize_t device_type_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_DT);
-}
-
-static ssize_t firmware_version_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_FV);
-}
-
-static ssize_t hardware_version_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_HV);
-}
-
-static ssize_t instruction_flash_signature_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_IFS);
-}
-
-static ssize_t static_df_signature_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_SDFS);
-}
-
-static ssize_t chemical_id_read_file(struct file *file, char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_CID);
-}
-
-static ssize_t static_chem_df_signature_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_SCDFS);
-}
-
-static ssize_t all_df_signature_read_file(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_ADFS);
-}
-
-static ssize_t device_reset_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	return _debugfs_write_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_RESET);
-}
-
-static ssize_t lifetime_data_collection_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	int ret;
-	int status;
-	char buf[32];
-	size_t buf_size;
-	char *start = buf;
-	unsigned long value;
-	struct bq27xxx_device_info *di = file->private_data;
-	char mac_buf[40];
-	u8 command[2];
-
-	command[0] = BQ27Z561_MAC_CMD_LDC & 0x00FF;
-	command[1] = (BQ27Z561_MAC_CMD_LDC & 0xFF00) >> 8;
-
-	buf_size = min(count, (sizeof(buf) - 1));
-
-	if (copy_from_user(buf, user_buf, buf_size))
-		return -EFAULT;
-	buf[buf_size] = '\0';
-
-	while (*start == ' ')
-		start++;
-	if (*start == '\0')
-		return -EINVAL;
-	if (kstrtoul(start, 10, &value))
-		return -EINVAL;
-	if (value != 1 || value != 0)
-		return -EINVAL;
-
-	/*   read Manufacturing Status to check Lifetime Data Collection*/
-	ret = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_MS,
-			mac_buf, sizeof(mac_buf));
-	if (ret < 0)
-		return ret;
-	/* LF_EN bit:5 of Manufacturing Status*/
-	status = mac_buf[0] & 0x20;
-	if (status == value)
-		return buf_size;
-
-	/* Userspace has been fiddling around behind the kernel's back */
-	add_taint(TAINT_USER, LOCKDEP_STILL_OK);
-
-	ret = bq27z561_write_block(di, BQ27Z561_MAC_CMD_ADDR, command, 2);
-	if (ret < 0)
-		return ret;
-	return buf_size;
-}
-
-static ssize_t lifetime_data_reset_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	return _debugfs_write_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_LDR);
-}
-
-static ssize_t seal_device_read_file(struct file *file, char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	struct bq27xxx_device_info *di = file->private_data;
 	int ret;
 	int sealed_status;
-	char val[10];
 	char mac_buf[40];
 
 	/*   read Operation Status A to check sealed status*/
@@ -2730,503 +2658,589 @@ static ssize_t seal_device_read_file(struct file *file, char __user *user_buf,
 	 */
 	sealed_status = mac_buf[1] & 0x03;
 
-	snprintf(val, sizeof(val) - 1, "%s\n",
+	return snprintf(buf, buf_len, "%s\n",
 			bq27z561_sealed_status_str[sealed_status]);
 
-	return simple_read_from_buffer(user_buf, count, ppos,
-		val, strlen(val));
 }
 
-static ssize_t seal_device_write_file(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
+static ssize_t bq27xxx_store(struct device *dev,
+					struct device_attribute *dattr,
+					const char *buf, size_t count)
 {
-	return _debugfs_write_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_SD);
-}
+	struct i2c_client *client = to_i2c_client(dev->parent);
+	struct bq27xxx_device_info *di = i2c_get_clientdata(client);
+	struct bq27xxx_attribute *attr =
+		container_of(dattr, struct bq27xxx_attribute, dattr);
+	u32 id = attr->id;
+	bool negative = false;
+	char *start = (char *)buf;
+	unsigned long value;
+	int ret;
+	int status;
+	u8 command[2];
+	bool has_command = false;
+	char mac_buf[40];
 
-static ssize_t device_name_read_file(struct file *file, char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_DN);
-}
-
-static ssize_t device_chem_read_file(struct file *file, char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_DC);
-}
-
-static ssize_t manufacturer_name_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MN);
-}
-
-static ssize_t manufacturer_date_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MD);
-}
-
-static ssize_t serial_number_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_SN);
-}
-
-static ssize_t operation_status_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_OS);
-}
-
-static ssize_t charging_status_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_CS);
-}
-
-static ssize_t gauging_status_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_GS);
-}
-
-static ssize_t manufacturing_status_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MS);
-}
-
-static ssize_t lifetime_data_block_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_LDB1);
-}
-
-static ssize_t manufacturer_info_a_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MI_A);
-}
-
-static ssize_t manufacturer_info_b_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MI_B);
-}
-
-static ssize_t manufacturer_info_c_read_file(struct file *file,
-				char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	return _debugfs_read_file(file, user_buf, count, ppos,
-				BQ27Z561_MAC_CMD_MI_C);
-}
-
-static const struct file_operations reg_data_fops = {
-	.open = simple_open,
-	.read = reg_data_read_file,
-	.write = reg_data_write_file,
-};
-
-static const struct file_operations mac_data_fops = {
-	.open = simple_open,
-	.read = mac_data_read_file,
-	.write = mac_data_write_file,
-};
-
-static const struct file_operations at_rate_fops = {
-	.open = simple_open,
-	.read = at_rate_read_file,
-	.write = at_rate_write_file,
-};
-
-static const struct file_operations at_rate_time_to_empty_fops = {
-	.open = simple_open,
-	.read = at_rate_time_to_empty_read_file,
-};
-
-static const struct file_operations device_type_fops = {
-	.open = simple_open,
-	.read = device_type_read_file,
-};
-
-static const struct file_operations firmware_version_fops = {
-	.open = simple_open,
-	.read = firmware_version_read_file,
-};
-
-static const struct file_operations hardware_version_fops = {
-	.open = simple_open,
-	.read = hardware_version_read_file,
-};
-
-static const struct file_operations instruction_flash_signature_fops = {
-	.open = simple_open,
-	.read = instruction_flash_signature_read_file,
-};
-
-static const struct file_operations static_df_signature_fops = {
-	.open = simple_open,
-	.read = static_df_signature_read_file,
-};
-
-static const struct file_operations chemical_id_fops = {
-	.open = simple_open,
-	.read = chemical_id_read_file,
-};
-
-static const struct file_operations static_chem_df_signature_fops = {
-	.open = simple_open,
-	.read = static_chem_df_signature_read_file,
-};
-
-static const struct file_operations all_df_signature_fops = {
-	.open = simple_open,
-	.read = all_df_signature_read_file,
-};
-
-static const struct file_operations device_reset_fops = {
-	.open = simple_open,
-	.write = device_reset_write_file,
-};
-
-static const struct file_operations lifetime_data_collection_fops = {
-	.open = simple_open,
-	.write = lifetime_data_collection_write_file,
-};
-
-static const struct file_operations lifetime_data_reset_fops = {
-	.open = simple_open,
-	.write = lifetime_data_reset_write_file,
-};
-
-static const struct file_operations seal_device_fops = {
-	.open = simple_open,
-	.read = seal_device_read_file,
-	.write = seal_device_write_file,
-};
-
-static const struct file_operations device_name_fops = {
-	.open = simple_open,
-	.read = device_name_read_file,
-};
-
-static const struct file_operations device_chem_fops = {
-	.open = simple_open,
-	.read = device_chem_read_file,
-};
-
-static const struct file_operations manufacturer_name_fops = {
-	.open = simple_open,
-	.read = manufacturer_name_read_file,
-};
-
-static const struct file_operations manufacturer_date_fops = {
-	.open = simple_open,
-	.read = manufacturer_date_read_file,
-};
-
-static const struct file_operations serial_number_fops = {
-	.open = simple_open,
-	.read = serial_number_read_file,
-};
-
-static const struct file_operations operation_status_fops = {
-	.open = simple_open,
-	.read = operation_status_read_file,
-};
-
-static const struct file_operations charging_status_fops = {
-	.open = simple_open,
-	.read = charging_status_read_file,
-};
-
-static const struct file_operations gauging_status_fops = {
-	.open = simple_open,
-	.read = gauging_status_read_file,
-};
-
-static const struct file_operations manufacturing_status_fops = {
-	.open = simple_open,
-	.read = manufacturing_status_read_file,
-};
-
-static const struct file_operations lifetime_data_block_fops = {
-	.open = simple_open,
-	.read = lifetime_data_block_read_file,
-};
-
-static const struct file_operations manufacturer_info_a_fops = {
-	.open = simple_open,
-	.read = manufacturer_info_a_read_file,
-};
-
-static const struct file_operations manufacturer_info_b_fops = {
-	.open = simple_open,
-	.read = manufacturer_info_b_read_file,
-};
-
-static const struct file_operations manufacturer_info_c_fops = {
-	.open = simple_open,
-	.read = manufacturer_info_c_read_file,
-};
-
-static void bq27z561_create_debugfs(struct bq27xxx_device_info *di)
-{
-	di->debugfs = debugfs_create_dir("bq27z561", NULL);
-	if (IS_ERR_OR_NULL(di->debugfs)) {
-		if (PTR_ERR(di->debugfs) == -ENODEV)
-			pr_err("debugfs is not enabled in the kernel\n");
-		else
-			pr_err("error creating bq27z561 debugfs rc=%ld\n",
-			       (long)di->debugfs);
+	while (*start == ' ')
+		start++;
+	if (*start == '-') {
+		negative = true;
+		start++;
 	}
 
-	debugfs_create_x8("address", 0600, di->debugfs,
-				    &di->reg_addr);
-	debugfs_create_file("data", 0600, di->debugfs,
-				    di, &reg_data_fops);
-	debugfs_create_x16("mac_cmd", 0600, di->debugfs,
-				    &di->reg_data);
-	debugfs_create_file("mac_data", 0600, di->debugfs,
-				    di, &mac_data_fops);
-	debugfs_create_file("at_rate", 0600, di->debugfs,
-				    di, &at_rate_fops);
-	debugfs_create_file("at_rate_time_to_empty", 0600, di->debugfs,
-				di, &at_rate_time_to_empty_fops);
-	debugfs_create_file("device_type", 0400, di->debugfs,
-				di, &device_type_fops);
-	debugfs_create_file("firmware_version", 0400, di->debugfs,
-					di, &firmware_version_fops);
-	debugfs_create_file("hardware_version", 0400, di->debugfs,
-					di, &hardware_version_fops);
-	debugfs_create_file("instruction_flash_signature", 0400, di->debugfs,
-					di, &instruction_flash_signature_fops);
-	debugfs_create_file("static_df_signature", 0400, di->debugfs,
-					di, &static_df_signature_fops);
-	debugfs_create_file("chemical_id", 0400, di->debugfs,
-					di, &chemical_id_fops);
-	debugfs_create_file("static_chem_df_signature", 0400, di->debugfs,
-					di, &static_chem_df_signature_fops);
-	debugfs_create_file("all_df_signature", 0400, di->debugfs,
-					di, &all_df_signature_fops);
-	debugfs_create_file("device_reset", 0200, di->debugfs,
-					di, &device_reset_fops);
-	debugfs_create_file("lifetime_data_collection", 0200, di->debugfs,
-					di, &lifetime_data_collection_fops);
-	debugfs_create_file("lifetime_data_reset", 0200, di->debugfs,
-					di, &lifetime_data_reset_fops);
-	debugfs_create_file("seal_device", 0600, di->debugfs,
-					di, &seal_device_fops);
-	debugfs_create_file("device_name", 0400, di->debugfs,
-					di, &device_name_fops);
-	debugfs_create_file("device_chem", 0400, di->debugfs,
-					di, &device_chem_fops);
-	debugfs_create_file("manufacturer_name", 0400, di->debugfs,
-					di, &manufacturer_name_fops);
-	debugfs_create_file("manufacturer_date", 0400, di->debugfs,
-					di, &manufacturer_date_fops);
-	debugfs_create_file("serial_number", 0400, di->debugfs,
-					di, &serial_number_fops);
-	debugfs_create_file("operation_status", 0400, di->debugfs,
-					di, &operation_status_fops);
-	debugfs_create_file("charging_status", 0400, di->debugfs,
-					di, &charging_status_fops);
-	debugfs_create_file("gauging_status", 0400, di->debugfs,
-					di, &gauging_status_fops);
-	debugfs_create_file("manufacturing_status", 0400, di->debugfs,
-					di, &manufacturing_status_fops);
-	debugfs_create_file("lifetime_data_block", 0400, di->debugfs,
-					di, &lifetime_data_block_fops);
-	debugfs_create_file("manufacturer_info_a", 0400, di->debugfs,
-					di, &manufacturer_info_a_fops);
-	debugfs_create_file("manufacturer_info_b", 0400, di->debugfs,
-					di, &manufacturer_info_b_fops);
-	debugfs_create_file("manufacturer_info_c", 0400, di->debugfs,
-					di, &manufacturer_info_c_fops);
+	if (id == ADDRESS || id == DATA || id == MAC_CMD) {
+		if (kstrtoul(start, 16, &value))
+			return -EINVAL;
+	} else {
+		if (kstrtoul(start, 10, &value))
+			return -EINVAL;
+	}
 
-	/* lifetime nodes */
-	debugfs_create_u16("cell_1_max_voltage", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_lower[0]);
-	debugfs_create_u16("cell_1_min_voltage", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_lower[1]);
-	debugfs_create_x16("max_charge_current", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_lower[2]);
-	debugfs_create_x16("max_discharge_current", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_lower[3]);
-	debugfs_create_x16("max_avg_discharge_current", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_lower[4]);
-	debugfs_create_x16("max_avg_dsg_power", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_lower[5]);
-	debugfs_create_x8("max_temp_cell", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_higher[0]);
-	debugfs_create_x8("min_temp_cell", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_higher[1]);
-	debugfs_create_x8("max_temp_int_sensor", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_higher[2]);
-	debugfs_create_x8("min_temp_int_sensor", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime1_higher[3]);
+	switch (id) {
+	case ADDRESS:
+		di->reg_addr = value;
+		break;
+	case DATA:
+		ret = bq27z561_battery_write_reg(di, di->reg_addr, value);
+		if (ret < 0)
+			return ret;
+		break;
+	case MAC_CMD:
+		di->reg_data = value;
+		break;
+	case MAC_DATA:
+		return 0;
+	case AT_RATE:
+		if (negative)
+			value = -1 * value;
 
-	debugfs_create_u32("total_fw_runtime", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime3);
+		ret = bq27z561_battery_write_reg(di, BQ27Z561_ATRATE_ADDR,
+							value);
+		if (ret < 0)
+			return ret;
+		break;
+	case DEVICE_RESET:
+		command[0] = BQ27Z561_MAC_CMD_RESET & 0x00FF;
+		command[1] = (BQ27Z561_MAC_CMD_RESET & 0xFF00) >> 8;
+		has_command = true;
+		break;
+	case LIFETIME_DATA_COLLECTION:
+		if (value != 1 || value != 0)
+			return -EINVAL;
 
-	debugfs_create_u16("num_valid_charge_terminations", 0400,
-			di->debugfs, &di->lifetime_blocks.lifetime4[0]);
-	debugfs_create_u16("last_valid_charge_term", 0400,
-			di->debugfs, &di->lifetime_blocks.lifetime4[1]);
-	debugfs_create_u16("num_qmax_updates", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime4[2]);
-	debugfs_create_u16("last_qmax_update", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime4[3]);
-	debugfs_create_u16("num_ra_update", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime4[4]);
-	debugfs_create_u16("last_ra_update", 0400, di->debugfs,
-			&di->lifetime_blocks.lifetime4[5]);
+		/* read Manufacturing Status to check Lifetime Data Collection*/
+		ret = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_MS,
+				mac_buf, sizeof(mac_buf));
+		if (ret < 0)
+			return ret;
+		/* LF_EN bit:5 of Manufacturing Status*/
+		status = mac_buf[0] & 0x20;
+		if (status == value)
+			return count;
 
-	debugfs_create_u32("t_ut_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][0]);
-	debugfs_create_u32("t_ut_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][1]);
-	debugfs_create_u32("t_ut_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][2]);
-	debugfs_create_u32("t_ut_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][3]);
-	debugfs_create_u32("t_ut_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][4]);
-	debugfs_create_u32("t_ut_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][5]);
-	debugfs_create_u32("t_ut_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][6]);
-	debugfs_create_u32("t_ut_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[0][7]);
-	debugfs_create_u32("t_lt_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][0]);
-	debugfs_create_u32("t_lt_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][1]);
-	debugfs_create_u32("t_lt_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][2]);
-	debugfs_create_u32("t_lt_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][3]);
-	debugfs_create_u32("t_lt_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][4]);
-	debugfs_create_u32("t_lt_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][5]);
-	debugfs_create_u32("t_lt_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][6]);
-	debugfs_create_u32("t_lt_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[1][7]);
-	debugfs_create_u32("t_stl_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][0]);
-	debugfs_create_u32("t_stl_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][1]);
-	debugfs_create_u32("t_stl_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][2]);
-	debugfs_create_u32("t_stl_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][3]);
-	debugfs_create_u32("t_stl_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][4]);
-	debugfs_create_u32("t_stl_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][5]);
-	debugfs_create_u32("t_stl_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][6]);
-	debugfs_create_u32("t_stl_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[2][7]);
-	debugfs_create_u32("t_rt_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][0]);
-	debugfs_create_u32("t_rt_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][1]);
-	debugfs_create_u32("t_rt_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][2]);
-	debugfs_create_u32("t_rt_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][3]);
-	debugfs_create_u32("t_rt_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][4]);
-	debugfs_create_u32("t_rt_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][5]);
-	debugfs_create_u32("t_rt_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][6]);
-	debugfs_create_u32("t_rt_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[3][7]);
-	debugfs_create_u32("t_sth_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][0]);
-	debugfs_create_u32("t_sth_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][1]);
-	debugfs_create_u32("t_sth_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][2]);
-	debugfs_create_u32("t_sth_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][3]);
-	debugfs_create_u32("t_sth_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][4]);
-	debugfs_create_u32("t_sth_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][5]);
-	debugfs_create_u32("t_sth_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][6]);
-	debugfs_create_u32("t_sth_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[4][7]);
-	debugfs_create_u32("t_ht_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][0]);
-	debugfs_create_u32("t_ht_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][1]);
-	debugfs_create_u32("t_ht_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][2]);
-	debugfs_create_u32("t_ht_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][3]);
-	debugfs_create_u32("t_ht_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][4]);
-	debugfs_create_u32("t_ht_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][5]);
-	debugfs_create_u32("t_ht_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][6]);
-	debugfs_create_u32("t_ht_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[5][7]);
-	debugfs_create_u32("t_ot_rsoc_a", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][0]);
-	debugfs_create_u32("t_ot_rsoc_b", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][1]);
-	debugfs_create_u32("t_ot_rsoc_c", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][2]);
-	debugfs_create_u32("t_ot_rsoc_d", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][3]);
-	debugfs_create_u32("t_ot_rsoc_e", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][4]);
-	debugfs_create_u32("t_ot_rsoc_f", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][5]);
-	debugfs_create_u32("t_ot_rsoc_g", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][6]);
-	debugfs_create_u32("t_ot_rsoc_h", 0400, di->debugfs,
-			&di->lifetime_blocks.temp_zones[6][7]);
+		command[0] = BQ27Z561_MAC_CMD_LDC & 0x00FF;
+		command[1] = (BQ27Z561_MAC_CMD_LDC & 0xFF00) >> 8;
+		has_command = true;
+		break;
+	case LIFETIME_DATA_RESET:
+		command[0] = BQ27Z561_MAC_CMD_LDR & 0x00FF;
+		command[1] = (BQ27Z561_MAC_CMD_LDR & 0xFF00) >> 8;
+		has_command = true;
+		break;
+	case SEAL_DEVICE:
+		command[0] = BQ27Z561_MAC_CMD_SD & 0x00FF;
+		command[1] = (BQ27Z561_MAC_CMD_SD & 0xFF00) >> 8;
+		has_command = true;
+		break;
+	}
+	if (has_command) {
+		ret = bq27z561_write_block(di, BQ27Z561_MAC_CMD_ADDR,
+						command, 2);
+		if (ret < 0)
+			return ret;
+	}
+
+	return count;
 }
 
-static void bq27z561_remove_debugfs(struct bq27xxx_device_info *di)
+static ssize_t bq27xxx_show(struct device *dev,
+				struct device_attribute *dattr,
+				char *buf)
 {
-	debugfs_remove_recursive(di->debugfs);
+	struct i2c_client *client = to_i2c_client(dev->parent);
+	struct bq27xxx_device_info *di = i2c_get_clientdata(client);
+	struct bq27xxx_attribute *attr =
+		container_of(dattr, struct bq27xxx_attribute, dattr);
+	int val = 0;
+	size_t count = 0;
+	u32 id = attr->id;
+	u32 val1 = attr->val1;
+	u32 val2 = attr->val2;
+
+	switch (id) {
+	case ADDRESS:
+		val = di->reg_addr;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case DATA:
+		count = default_reg_data_read_file(di, "0x:%02X\n",
+				di->reg_addr, buf, PAGE_SIZE);
+		break;
+	case MAC_CMD:
+		val = di->reg_data;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case MAC_DATA:
+		if (di->reg_addr != BQ27Z561_MAC_CMD_ADDR)
+			return -EINVAL;
+		count = default_read_block_to_str(di,
+					di->reg_data, buf, PAGE_SIZE);
+		break;
+	case AT_RATE:
+		count = default_reg_data_read_file(di, "%d\n",
+				BQ27Z561_ATRATE_ADDR, buf, PAGE_SIZE);
+		break;
+	case AT_RATE_TIME_TO_EMPTY:
+		count = default_reg_data_read_file(di, "%d\n",
+				BQ27Z561_ATRATETTE_ADDR, buf, PAGE_SIZE);
+		break;
+	case DEVICE_TYPE:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_DT, buf, PAGE_SIZE);
+		break;
+	case FIRMWARE_VERSION:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_FV, buf, PAGE_SIZE);
+		break;
+	case HARDWARE_VERSION:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_HV, buf, PAGE_SIZE);
+		break;
+	case INSTRUCTION_FLASH_SIGNATURE:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_IFS, buf, PAGE_SIZE);
+		break;
+	case STATIC_DF_SIGNATURE:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_SDFS, buf, PAGE_SIZE);
+		break;
+	case CHEMICAL_ID:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_CID, buf, PAGE_SIZE);
+		break;
+	case STATIC_CHEM_DF_SIGNATURE:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_SCDFS, buf, PAGE_SIZE);
+		break;
+	case ALL_DF_SIGNATURE:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_ADFS, buf, PAGE_SIZE);
+		break;
+	case SEAL_DEVICE:
+		count = seal_device_read_block_to_str(di, buf, PAGE_SIZE);
+		break;
+	case DEVICE_NAME:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_DN, buf, PAGE_SIZE);
+		break;
+	case DEVICE_CHEM:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_DC, buf, PAGE_SIZE);
+		break;
+	case MANUFACTURER_NAME:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_MN, buf, PAGE_SIZE);
+		break;
+	case MANUFACTURER_DATE:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_MD, buf, PAGE_SIZE);
+		break;
+	case SERIAL_NUMBER:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_SN, buf, PAGE_SIZE);
+		break;
+	case OPERATION_STATUS:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_OS, buf, PAGE_SIZE);
+	case CHARGING_STATUS:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_CS, buf, PAGE_SIZE);
+		break;
+	case GAUGING_STATUS:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_GS, buf, PAGE_SIZE);
+		break;
+	case MANUFACTURING_STATUS:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_MS, buf, PAGE_SIZE);
+		break;
+	case LIFETIME_DATA_BLOCK:
+		count = default_read_block_to_str(di,
+					BQ27Z561_MAC_CMD_LDB1, buf, PAGE_SIZE);
+		break;
+	case LIFETIME1_LOWER:
+		val = di->lifetime_blocks.lifetime1_lower[val1];
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case LIFETIME1_HIGHER:
+		val = di->lifetime_blocks.lifetime1_higher[val1];
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case LIFETIME3:
+		val = di->lifetime_blocks.lifetime3;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case LIFETIME4:
+		val = di->lifetime_blocks.lifetime4[val1];
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case TEMP_ZONES:
+		val = di->lifetime_blocks.temp_zones[val1][val2];
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case FCT:
+		val = di->fct;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case FCT_STATE:
+		val = di->fct_state;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	}
+
+	return count;
 }
-#endif
+
+static BQ27XXX_ATTR(address, 0664,
+			bq27xxx_show, bq27xxx_store, ADDRESS, 0, 0);
+static BQ27XXX_ATTR(data, 0664,
+			bq27xxx_show, bq27xxx_store, DATA, 0, 0);
+static BQ27XXX_ATTR(mac_cmd, 0664,
+			bq27xxx_show, bq27xxx_store, MAC_CMD, 0, 0);
+static BQ27XXX_ATTR(mac_data, 0664,
+			bq27xxx_show, bq27xxx_store, MAC_DATA, 0, 0);
+static BQ27XXX_ATTR(at_rate, 0664,
+			bq27xxx_show, bq27xxx_store, AT_RATE, 0, 0);
+static BQ27XXX_ATTR(at_rate_time_to_empty, 0664,
+			bq27xxx_show, bq27xxx_store, AT_RATE_TIME_TO_EMPTY, 0, 0);
+static BQ27XXX_ATTR(device_type, 0444,
+			bq27xxx_show, NULL, DEVICE_TYPE, 0, 0);
+static BQ27XXX_ATTR(firmware_version, 0444,
+			bq27xxx_show, NULL, FIRMWARE_VERSION, 0, 0);
+static BQ27XXX_ATTR(hardware_version, 0444,
+			bq27xxx_show, NULL, HARDWARE_VERSION, 0, 0);
+static BQ27XXX_ATTR(instruction_flash_signature, 0444,
+			bq27xxx_show, NULL, INSTRUCTION_FLASH_SIGNATURE, 0, 0);
+static BQ27XXX_ATTR(static_df_signature, 0444,
+			bq27xxx_show, NULL, STATIC_DF_SIGNATURE, 0, 0);
+static BQ27XXX_ATTR(chemical_id, 0444,
+			bq27xxx_show, NULL, CHEMICAL_ID, 0, 0);
+static BQ27XXX_ATTR(static_chem_df_signature, 0444,
+			bq27xxx_show, NULL, STATIC_CHEM_DF_SIGNATURE, 0, 0);
+static BQ27XXX_ATTR(all_df_signature, 0444,
+			bq27xxx_show, NULL, ALL_DF_SIGNATURE, 0, 0);
+static BQ27XXX_ATTR(device_reset, 0220,
+			NULL, bq27xxx_store, DEVICE_RESET, 0, 0);
+static BQ27XXX_ATTR(lifetime_data_collection, 0220,
+			NULL, bq27xxx_store, LIFETIME_DATA_COLLECTION, 0, 0);
+static BQ27XXX_ATTR(lifetime_data_reset, 0220,
+			NULL, bq27xxx_store, LIFETIME_DATA_RESET, 0, 0);
+static BQ27XXX_ATTR(seal_device, 0664,
+			bq27xxx_show, bq27xxx_store, SEAL_DEVICE, 0, 0);
+static BQ27XXX_ATTR(device_name, 0444,
+			bq27xxx_show, NULL, DEVICE_NAME, 0, 0);
+static BQ27XXX_ATTR(device_chem, 0444,
+			bq27xxx_show, NULL, DEVICE_CHEM, 0, 0);
+static BQ27XXX_ATTR(manufacturer_name, 0444,
+			bq27xxx_show, NULL, MANUFACTURER_NAME, 0, 0);
+static BQ27XXX_ATTR(manufacturer_date, 0444,
+			bq27xxx_show, NULL, MANUFACTURER_DATE, 0, 0);
+static BQ27XXX_ATTR(serial_number, 0444,
+			bq27xxx_show, NULL, SERIAL_NUMBER, 0, 0);
+static BQ27XXX_ATTR(operation_status, 0444,
+			bq27xxx_show, NULL, OPERATION_STATUS, 0, 0);
+static BQ27XXX_ATTR(charging_status, 0444,
+			bq27xxx_show, NULL, CHARGING_STATUS, 0, 0);
+static BQ27XXX_ATTR(gauging_status, 0444,
+			bq27xxx_show, NULL, GAUGING_STATUS, 0, 0);
+static BQ27XXX_ATTR(manufacturing_status, 0444,
+			bq27xxx_show, NULL, MANUFACTURING_STATUS, 0, 0);
+static BQ27XXX_ATTR(lifetime_data_block, 0444,
+			bq27xxx_show, NULL, LIFETIME_DATA_BLOCK, 0, 0);
+static BQ27XXX_ATTR(cell_1_max_voltage, 0444,
+			bq27xxx_show, NULL, LIFETIME1_LOWER, 0, 0);
+static BQ27XXX_ATTR(cell_1_min_voltage, 0444,
+			bq27xxx_show, NULL, LIFETIME1_LOWER, 1, 0);
+static BQ27XXX_ATTR(max_charge_current, 0444,
+			bq27xxx_show, NULL, LIFETIME1_LOWER, 2, 0);
+static BQ27XXX_ATTR(max_discharge_current, 0444,
+			bq27xxx_show, NULL, LIFETIME1_LOWER, 3, 0);
+static BQ27XXX_ATTR(max_avg_discharge_current, 0444,
+			bq27xxx_show, NULL, LIFETIME1_LOWER, 4, 0);
+static BQ27XXX_ATTR(max_avg_dsg_power, 0444,
+			bq27xxx_show, NULL, LIFETIME1_LOWER, 5, 0);
+static BQ27XXX_ATTR(max_temp_cell, 0444,
+			bq27xxx_show, NULL, LIFETIME1_HIGHER, 0, 0);
+static BQ27XXX_ATTR(min_temp_cell, 0444,
+			bq27xxx_show, NULL, LIFETIME1_HIGHER, 1, 0);
+static BQ27XXX_ATTR(max_temp_int_sensor, 0444,
+			bq27xxx_show, NULL, LIFETIME1_HIGHER, 2, 0);
+static BQ27XXX_ATTR(min_temp_int_sensor, 0444,
+			bq27xxx_show, NULL, LIFETIME1_HIGHER, 3, 0);
+static BQ27XXX_ATTR(total_fw_runtime, 0444,
+			bq27xxx_show, NULL, LIFETIME3, 0, 0);
+static BQ27XXX_ATTR(num_valid_charge_terminations, 0444,
+			bq27xxx_show, NULL, LIFETIME4, 0, 0);
+static BQ27XXX_ATTR(last_valid_charge_term, 0444,
+			bq27xxx_show, NULL, LIFETIME4, 1, 0);
+static BQ27XXX_ATTR(num_qmax_updates, 0444,
+			bq27xxx_show, NULL, LIFETIME4, 2, 0);
+static BQ27XXX_ATTR(last_qmax_update, 0444,
+			bq27xxx_show, NULL, LIFETIME4, 3, 0);
+static BQ27XXX_ATTR(num_ra_update, 0444,
+			bq27xxx_show, NULL, LIFETIME4, 4, 0);
+static BQ27XXX_ATTR(last_ra_update, 0444,
+			bq27xxx_show, NULL, LIFETIME4, 5, 0);
+static BQ27XXX_ATTR(t_ut_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 0);
+static BQ27XXX_ATTR(t_ut_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 1);
+static BQ27XXX_ATTR(t_ut_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 2);
+static BQ27XXX_ATTR(t_ut_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 3);
+static BQ27XXX_ATTR(t_ut_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 4);
+static BQ27XXX_ATTR(t_ut_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 5);
+static BQ27XXX_ATTR(t_ut_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 6);
+static BQ27XXX_ATTR(t_ut_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 0, 7);
+static BQ27XXX_ATTR(t_lt_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 0);
+static BQ27XXX_ATTR(t_lt_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 1);
+static BQ27XXX_ATTR(t_lt_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 2);
+static BQ27XXX_ATTR(t_lt_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 3);
+static BQ27XXX_ATTR(t_lt_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 4);
+static BQ27XXX_ATTR(t_lt_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 5);
+static BQ27XXX_ATTR(t_lt_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 6);
+static BQ27XXX_ATTR(t_lt_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 1, 7);
+static BQ27XXX_ATTR(t_stl_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 0);
+static BQ27XXX_ATTR(t_stl_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 1);
+static BQ27XXX_ATTR(t_stl_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 2);
+static BQ27XXX_ATTR(t_stl_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 3);
+static BQ27XXX_ATTR(t_stl_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 4);
+static BQ27XXX_ATTR(t_stl_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 5);
+static BQ27XXX_ATTR(t_stl_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 6);
+static BQ27XXX_ATTR(t_stl_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 2, 7);
+static BQ27XXX_ATTR(t_rt_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 0);
+static BQ27XXX_ATTR(t_rt_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 1);
+static BQ27XXX_ATTR(t_rt_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 2);
+static BQ27XXX_ATTR(t_rt_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 3);
+static BQ27XXX_ATTR(t_rt_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 4);
+static BQ27XXX_ATTR(t_rt_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 5);
+static BQ27XXX_ATTR(t_rt_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 6);
+static BQ27XXX_ATTR(t_rt_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 3, 7);
+static BQ27XXX_ATTR(t_sth_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 0);
+static BQ27XXX_ATTR(t_sth_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 1);
+static BQ27XXX_ATTR(t_sth_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 2);
+static BQ27XXX_ATTR(t_sth_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 3);
+static BQ27XXX_ATTR(t_sth_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 4);
+static BQ27XXX_ATTR(t_sth_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 5);
+static BQ27XXX_ATTR(t_sth_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 6);
+static BQ27XXX_ATTR(t_sth_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 4, 7);
+static BQ27XXX_ATTR(t_ht_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 0);
+static BQ27XXX_ATTR(t_ht_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 1);
+static BQ27XXX_ATTR(t_ht_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 2);
+static BQ27XXX_ATTR(t_ht_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 3);
+static BQ27XXX_ATTR(t_ht_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 4);
+static BQ27XXX_ATTR(t_ht_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 5);
+static BQ27XXX_ATTR(t_ht_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 6);
+static BQ27XXX_ATTR(t_ht_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 5, 7);
+static BQ27XXX_ATTR(t_ot_rsoc_a, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 0);
+static BQ27XXX_ATTR(t_ot_rsoc_b, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 1);
+static BQ27XXX_ATTR(t_ot_rsoc_c, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 2);
+static BQ27XXX_ATTR(t_ot_rsoc_d, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 3);
+static BQ27XXX_ATTR(t_ot_rsoc_e, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 4);
+static BQ27XXX_ATTR(t_ot_rsoc_f, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 5);
+static BQ27XXX_ATTR(t_ot_rsoc_g, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 6);
+static BQ27XXX_ATTR(t_ot_rsoc_h, 0444,
+			bq27xxx_show, NULL, TEMP_ZONES, 6, 7);
+static BQ27XXX_ATTR(fct, 0444,
+			bq27xxx_show, NULL, FCT, 0, 0);
+static BQ27XXX_ATTR(fct_state, 0444,
+			bq27xxx_show, NULL, FCT_STATE, 0, 0);
+
+static struct attribute *bq27xxx_attrs[] = {
+	&bq27xxx_attr_address.dattr.attr,
+	&bq27xxx_attr_data.dattr.attr,
+	&bq27xxx_attr_mac_cmd.dattr.attr,
+	&bq27xxx_attr_mac_data.dattr.attr,
+	&bq27xxx_attr_at_rate.dattr.attr,
+	&bq27xxx_attr_at_rate_time_to_empty.dattr.attr,
+	&bq27xxx_attr_device_type.dattr.attr,
+	&bq27xxx_attr_firmware_version.dattr.attr,
+	&bq27xxx_attr_hardware_version.dattr.attr,
+	&bq27xxx_attr_instruction_flash_signature.dattr.attr,
+	&bq27xxx_attr_static_df_signature.dattr.attr,
+	&bq27xxx_attr_chemical_id.dattr.attr,
+	&bq27xxx_attr_static_chem_df_signature.dattr.attr,
+	&bq27xxx_attr_all_df_signature.dattr.attr,
+	&bq27xxx_attr_device_reset.dattr.attr,
+	&bq27xxx_attr_lifetime_data_collection.dattr.attr,
+	&bq27xxx_attr_lifetime_data_reset.dattr.attr,
+	&bq27xxx_attr_seal_device.dattr.attr,
+	&bq27xxx_attr_device_name.dattr.attr,
+	&bq27xxx_attr_device_chem.dattr.attr,
+	&bq27xxx_attr_manufacturer_name.dattr.attr,
+	&bq27xxx_attr_manufacturer_date.dattr.attr,
+	&bq27xxx_attr_serial_number.dattr.attr,
+	&bq27xxx_attr_operation_status.dattr.attr,
+	&bq27xxx_attr_charging_status.dattr.attr,
+	&bq27xxx_attr_gauging_status.dattr.attr,
+	&bq27xxx_attr_manufacturing_status.dattr.attr,
+	&bq27xxx_attr_lifetime_data_block.dattr.attr,
+	&bq27xxx_attr_cell_1_max_voltage.dattr.attr,
+	&bq27xxx_attr_cell_1_min_voltage.dattr.attr,
+	&bq27xxx_attr_max_charge_current.dattr.attr,
+	&bq27xxx_attr_max_discharge_current.dattr.attr,
+	&bq27xxx_attr_max_avg_discharge_current.dattr.attr,
+	&bq27xxx_attr_max_avg_dsg_power.dattr.attr,
+	&bq27xxx_attr_max_temp_cell.dattr.attr,
+	&bq27xxx_attr_min_temp_cell.dattr.attr,
+	&bq27xxx_attr_max_temp_int_sensor.dattr.attr,
+	&bq27xxx_attr_min_temp_int_sensor.dattr.attr,
+	&bq27xxx_attr_total_fw_runtime.dattr.attr,
+	&bq27xxx_attr_num_valid_charge_terminations.dattr.attr,
+	&bq27xxx_attr_last_valid_charge_term.dattr.attr,
+	&bq27xxx_attr_num_qmax_updates.dattr.attr,
+	&bq27xxx_attr_last_qmax_update.dattr.attr,
+	&bq27xxx_attr_num_ra_update.dattr.attr,
+	&bq27xxx_attr_last_ra_update.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_ut_rsoc_h.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_lt_rsoc_h.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_stl_rsoc_h.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_rt_rsoc_h.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_sth_rsoc_h.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_ht_rsoc_h.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_a.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_b.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_c.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_d.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_e.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_f.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_g.dattr.attr,
+	&bq27xxx_attr_t_ot_rsoc_h.dattr.attr,
+	&bq27xxx_attr_fct.dattr.attr,
+	&bq27xxx_attr_fct_state.dattr.attr,
+	NULL
+};
+
+static const struct attribute_group bq27xxx_attr_group = {
+	.attrs = bq27xxx_attrs,
+};
+
+static void bq27z561_create_sysfs(struct bq27xxx_device_info *di)
+{
+	int result = sysfs_create_group(&di->bat->dev.kobj, &bq27xxx_attr_group);
+
+	if (result != 0)
+		dev_err(di->dev, "Error creating sysfs entries: %d\n", result);
+}
+
+static void bq27z561_remove_sysfs(struct bq27xxx_device_info *di)
+{
+	sysfs_remove_group(&di->bat->dev.kobj, &bq27xxx_attr_group);
+}
 
 int bq27xxx_battery_setup(struct bq27xxx_device_info *di)
 {
@@ -3243,6 +3257,9 @@ int bq27xxx_battery_setup(struct bq27xxx_device_info *di)
 	di->unseal_key = bq27xxx_chip_data[di->chip].unseal_key;
 	di->dm_regs    = bq27xxx_chip_data[di->chip].dm_regs;
 	di->opts       = bq27xxx_chip_data[di->chip].opts;
+	di->fct_config_valid = false;
+	di->fct = -1;
+	di->fct_state = -1;
 
 	psy_desc = devm_kzalloc(di->dev, sizeof(*psy_desc), GFP_KERNEL);
 	if (!psy_desc)
@@ -3257,7 +3274,10 @@ int bq27xxx_battery_setup(struct bq27xxx_device_info *di)
 
 	di->bat = power_supply_register_no_ws(di->dev, psy_desc, &psy_cfg);
 	if (IS_ERR(di->bat)) {
-		dev_err(di->dev, "failed to register battery\n");
+		if (PTR_ERR(di->bat) == -EPROBE_DEFER)
+			dev_dbg(di->dev, "failed to register battery, deferring probe\n");
+		else
+			dev_err(di->dev, "failed to register battery\n");
 		return PTR_ERR(di->bat);
 	}
 
@@ -3265,9 +3285,7 @@ int bq27xxx_battery_setup(struct bq27xxx_device_info *di)
 	if (!di->mac_buf)
 		return -ENOMEM;
 
-#ifdef CONFIG_DEBUG_FS
-	bq27z561_create_debugfs(di);
-#endif
+	bq27z561_create_sysfs(di);
 
 	bq27xxx_battery_settings(di);
 	bq27xxx_battery_update(di);
@@ -3296,9 +3314,7 @@ void bq27xxx_battery_teardown(struct bq27xxx_device_info *di)
 
 	kfree(di->mac_buf);
 
-#ifdef CONFIG_DEBUG_FS
-	bq27z561_remove_debugfs(di);
-#endif
+	bq27z561_remove_sysfs(di);
 
 	mutex_lock(&bq27xxx_list_lock);
 	list_del(&di->list);

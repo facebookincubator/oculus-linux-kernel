@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2013, 2018-2019, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2013, 2018-2020, The Linux Foundation. All rights reserved. */
 
 #ifndef __QCOM_CLK_RCG_H__
 #define __QCOM_CLK_RCG_H__
@@ -159,6 +159,7 @@ struct clk_rcg2 {
 	u8			flags;
 #define FORCE_ENABLE_RCG	BIT(0)
 #define HW_CLK_CTRL_MODE	BIT(1)
+#define RCG_UPDATE_BEFORE_PLL	BIT(2)
 };
 
 #define to_clk_rcg2(_hw) container_of(to_clk_regmap(_hw), struct clk_rcg2, clkr)
@@ -173,6 +174,8 @@ extern const struct clk_ops clk_gfx3d_ops;
 extern const struct clk_ops clk_rcg2_shared_ops;
 extern const struct clk_ops clk_dp_ops;
 extern const struct clk_ops clk_rcg2_dependent_ops;
+extern const struct clk_ops clk_gfx3d_src_ops;
+extern const struct clk_ops clk_esc_ops;
 
 struct clk_rcg_dfs_data {
 	struct clk_rcg2 *rcg;

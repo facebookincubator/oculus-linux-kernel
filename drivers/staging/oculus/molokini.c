@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
@@ -303,180 +302,6 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 	}
 }
 
-static ssize_t mpd_dbg_device_name(struct file *file,
-			char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	struct molokini_pd *mpd = file->private_data;
-
-	return simple_read_from_buffer(user_buf, count, ppos,
-		mpd->params.device_name, strlen(mpd->params.device_name));
-}
-
-static const struct file_operations device_name_ops = {
-	.owner = THIS_MODULE,
-	.open = simple_open,
-	.read = mpd_dbg_device_name,
-};
-
-static int molokini_serial(struct seq_file *s, void *p)
-{
-	struct molokini_pd *mpd = s->private;
-
-	seq_printf(s, "%s\n", mpd->params.serial);
-	return 0;
-}
-
-static int molokini_serial_battery(struct seq_file *s, void *p)
-{
-	struct molokini_pd *mpd = s->private;
-
-	seq_printf(s, "%s\n", mpd->params.serial_battery);
-	return 0;
-}
-
-static int molokini_serial_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, molokini_serial, inode->i_private);
-}
-
-static int molokini_serial_battery_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, molokini_serial_battery, inode->i_private);
-}
-
-static const struct file_operations serial_ops = {
-	.owner = THIS_MODULE,
-	.open = molokini_serial_open,
-	.llseek = seq_lseek,
-	.read = seq_read,
-	.release = single_release,
-};
-
-static const struct file_operations serial_battery_ops = {
-	.owner = THIS_MODULE,
-	.open = molokini_serial_battery_open,
-	.llseek = seq_lseek,
-	.read = seq_read,
-	.release = single_release,
-};
-
-static void molokini_create_debugfs(struct molokini_pd *mpd)
-{
-	static const char * const zone[] = {
-		"ut", "lt", "stl", "rt", "sth", "ht", "ot" };
-	static const char * const level[] = {
-		"a", "b", "c", "d", "e", "f", "g", "h" };
-	char temp[13];
-	struct dentry *ent;
-	int i, j;
-
-	mpd->debug_root = debugfs_create_dir("molokini", NULL);
-	if (!mpd->debug_root) {
-		dev_warn(mpd->dev, "Couldn't create debug dir\n");
-		return;
-	}
-
-	/* Manufacturing serial ndoes. */
-	ent = debugfs_create_file("serial", 0400, mpd->debug_root,
-		mpd, &serial_ops);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create serial file\n");
-
-	ent = debugfs_create_file("serial_battery", 0400, mpd->debug_root,
-		mpd, &serial_battery_ops);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create serial_battery file\n");
-
-	/* Standard nodes*/
-	ent = debugfs_create_u16("temp_fg", 0400, mpd->debug_root,
-		&mpd->params.temp_fg);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create temp_fg file\n");
-
-	ent = debugfs_create_u16("voltage", 0400, mpd->debug_root,
-		&mpd->params.voltage);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create voltage file\n");
-
-	ent = debugfs_create_x16("current", 0400, mpd->debug_root,
-		&mpd->params.icurrent);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create current file\n");
-
-	ent = debugfs_create_u16("remaining_capacity", 0400, mpd->debug_root,
-		&mpd->params.remaining_capacity);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create remaining_capacity file\n");
-
-	ent = debugfs_create_u16("fcc", 0400, mpd->debug_root,
-		&mpd->params.fcc);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create fcc file\n");
-
-	ent = debugfs_create_u16("cycle_count", 0400, mpd->debug_root,
-		&mpd->params.cycle_count);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create cycle_count file\n");
-
-	ent = debugfs_create_u8("soh", 0400, mpd->debug_root,
-		&mpd->params.soh);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create soh file\n");
-
-	ent = debugfs_create_file("device_name", 0400, mpd->debug_root, mpd,
-		&device_name_ops);
-	if (!ent)
-		dev_warn(mpd->dev, "Couldn't create device_name file\n");
-
-	/* Lifetime nodes */
-	debugfs_create_u16("cell_1_max_voltage", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_lower[0]);
-	debugfs_create_u16("cell_1_min_voltage", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_lower[1]);
-	debugfs_create_x16("max_charge_current", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_lower[2]);
-	debugfs_create_x16("max_discharge_current", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_lower[3]);
-	debugfs_create_x16("max_avg_discharge_current", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_lower[4]);
-	debugfs_create_x16("max_avg_dsg_power", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_lower[5]);
-	debugfs_create_x8("max_temp_cell", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_higher[0]);
-	debugfs_create_x8("min_temp_cell", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_higher[1]);
-	debugfs_create_x8("max_temp_int_sensor", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_higher[2]);
-	debugfs_create_x8("min_temp_int_sensor", 0400, mpd->debug_root,
-			&mpd->params.lifetime1_higher[3]);
-
-	debugfs_create_u32("total_fw_runtime", 0400, mpd->debug_root,
-			&mpd->params.lifetime3);
-
-	debugfs_create_u16("num_valid_charge_terminations", 0400,
-			mpd->debug_root, &mpd->params.lifetime4[0]);
-	debugfs_create_u16("last_valid_charge_term", 0400,
-			mpd->debug_root, &mpd->params.lifetime4[1]);
-	debugfs_create_u16("num_qmax_updates", 0400, mpd->debug_root,
-			&mpd->params.lifetime4[2]);
-	debugfs_create_u16("last_qmax_update", 0400, mpd->debug_root,
-			&mpd->params.lifetime4[3]);
-	debugfs_create_u16("num_ra_update", 0400, mpd->debug_root,
-			&mpd->params.lifetime4[4]);
-	debugfs_create_u16("last_ra_update", 0400, mpd->debug_root,
-			&mpd->params.lifetime4[5]);
-
-	/* Lifetime temperature zone nodes */
-	for (i = 0; i < NUM_TEMP_ZONE; i++)
-		for (j = 0; j < TEMP_ZONE_LEN; j++) {
-			snprintf(temp, sizeof(temp),
-				"t_%s_rsoc_%s", zone[i], level[j]);
-			debugfs_create_u32(temp, 0400, mpd->debug_root,
-					&mpd->params.temp_zones[i][j]);
-		}
-}
-
 static ssize_t charger_plugged_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -689,6 +514,850 @@ static ssize_t charging_suspend_disable_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(charging_suspend_disable);
 
+static ssize_t serial_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", mpd->params.serial);
+}
+static DEVICE_ATTR_RO(serial);
+
+static ssize_t serial_battery_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", mpd->params.serial_battery);
+}
+static DEVICE_ATTR_RO(serial_battery);
+
+static ssize_t temp_fg_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_fg);
+}
+static DEVICE_ATTR_RO(temp_fg);
+
+static ssize_t voltage_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.voltage);
+}
+static DEVICE_ATTR_RO(voltage);
+
+static ssize_t icurrent_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.icurrent);
+}
+static DEVICE_ATTR_RO(icurrent);
+
+static ssize_t remaining_capacity_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.remaining_capacity);
+}
+static DEVICE_ATTR_RO(remaining_capacity);
+
+static ssize_t fcc_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.fcc);
+}
+static DEVICE_ATTR_RO(fcc);
+
+static ssize_t cycle_count_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.cycle_count);
+}
+static DEVICE_ATTR_RO(cycle_count);
+
+static ssize_t soh_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.soh);
+}
+static DEVICE_ATTR_RO(soh);
+
+static ssize_t device_name_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", mpd->params.device_name);
+}
+static DEVICE_ATTR_RO(device_name);
+
+static ssize_t cell_1_max_voltage_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime1_lower[0]);
+}
+static DEVICE_ATTR_RO(cell_1_max_voltage);
+
+static ssize_t cell_1_min_voltage_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime1_lower[1]);
+}
+static DEVICE_ATTR_RO(cell_1_min_voltage);
+
+static ssize_t max_charge_current_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_lower[2]);
+}
+static DEVICE_ATTR_RO(max_charge_current);
+
+static ssize_t max_discharge_current_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_lower[3]);
+}
+static DEVICE_ATTR_RO(max_discharge_current);
+
+static ssize_t max_avg_discharge_current_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_lower[4]);
+}
+static DEVICE_ATTR_RO(max_avg_discharge_current);
+
+static ssize_t max_avg_dsg_power_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_lower[5]);
+}
+static DEVICE_ATTR_RO(max_avg_dsg_power);
+
+static ssize_t max_temp_cell_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_higher[0]);
+}
+static DEVICE_ATTR_RO(max_temp_cell);
+
+static ssize_t min_temp_cell_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_higher[1]);
+}
+static DEVICE_ATTR_RO(min_temp_cell);
+
+static ssize_t max_temp_int_sensor_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_higher[2]);
+}
+static DEVICE_ATTR_RO(max_temp_int_sensor);
+
+static ssize_t min_temp_int_sensor_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n", mpd->params.lifetime1_higher[3]);
+}
+static DEVICE_ATTR_RO(min_temp_int_sensor);
+
+static ssize_t total_fw_runtime_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime3);
+}
+static DEVICE_ATTR_RO(total_fw_runtime);
+
+static ssize_t num_valid_charge_terminations_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime4[0]);
+}
+static DEVICE_ATTR_RO(num_valid_charge_terminations);
+
+static ssize_t last_valid_charge_term_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime4[1]);
+}
+static DEVICE_ATTR_RO(last_valid_charge_term);
+
+static ssize_t num_qmax_updates_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime4[2]);
+}
+static DEVICE_ATTR_RO(num_qmax_updates);
+
+static ssize_t last_qmax_update_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime4[3]);
+}
+static DEVICE_ATTR_RO(last_qmax_update);
+
+static ssize_t num_ra_update_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime4[4]);
+}
+static DEVICE_ATTR_RO(num_ra_update);
+
+static ssize_t last_ra_update_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.lifetime4[5]);
+}
+static DEVICE_ATTR_RO(last_ra_update);
+
+// ut
+
+static ssize_t t_ut_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][0]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_a);
+
+static ssize_t t_ut_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][1]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_b);
+
+static ssize_t t_ut_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][2]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_c);
+
+static ssize_t t_ut_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][3]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_d);
+
+static ssize_t t_ut_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][4]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_e);
+
+static ssize_t t_ut_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][5]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_f);
+
+static ssize_t t_ut_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][6]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_g);
+
+static ssize_t t_ut_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[0][7]);
+}
+static DEVICE_ATTR_RO(t_ut_rsoc_h);
+
+// lt
+
+static ssize_t t_lt_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][0]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_a);
+
+static ssize_t t_lt_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][1]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_b);
+
+static ssize_t t_lt_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][2]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_c);
+
+static ssize_t t_lt_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][3]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_d);
+
+static ssize_t t_lt_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][4]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_e);
+
+static ssize_t t_lt_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][5]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_f);
+
+static ssize_t t_lt_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][6]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_g);
+
+static ssize_t t_lt_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[1][7]);
+}
+static DEVICE_ATTR_RO(t_lt_rsoc_h);
+
+// stl
+
+static ssize_t t_stl_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][0]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_a);
+
+static ssize_t t_stl_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][1]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_b);
+
+static ssize_t t_stl_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][2]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_c);
+
+static ssize_t t_stl_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][3]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_d);
+
+static ssize_t t_stl_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][4]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_e);
+
+static ssize_t t_stl_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][5]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_f);
+
+static ssize_t t_stl_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][6]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_g);
+
+static ssize_t t_stl_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[2][7]);
+}
+static DEVICE_ATTR_RO(t_stl_rsoc_h);
+
+// rt
+
+static ssize_t t_rt_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][0]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_a);
+
+static ssize_t t_rt_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][1]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_b);
+
+static ssize_t t_rt_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][2]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_c);
+
+static ssize_t t_rt_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][3]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_d);
+
+static ssize_t t_rt_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][4]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_e);
+
+static ssize_t t_rt_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][5]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_f);
+
+static ssize_t t_rt_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][6]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_g);
+
+static ssize_t t_rt_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[3][7]);
+}
+static DEVICE_ATTR_RO(t_rt_rsoc_h);
+
+// sth
+
+static ssize_t t_sth_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][0]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_a);
+
+static ssize_t t_sth_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][1]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_b);
+
+static ssize_t t_sth_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][2]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_c);
+
+static ssize_t t_sth_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][3]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_d);
+
+static ssize_t t_sth_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][4]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_e);
+
+static ssize_t t_sth_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][5]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_f);
+
+static ssize_t t_sth_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][6]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_g);
+
+static ssize_t t_sth_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[4][7]);
+}
+static DEVICE_ATTR_RO(t_sth_rsoc_h);
+
+// ht
+
+static ssize_t t_ht_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][0]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_a);
+
+static ssize_t t_ht_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][1]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_b);
+
+static ssize_t t_ht_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][2]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_c);
+
+static ssize_t t_ht_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][3]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_d);
+
+static ssize_t t_ht_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][4]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_e);
+
+static ssize_t t_ht_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][5]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_f);
+
+static ssize_t t_ht_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][6]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_g);
+
+static ssize_t t_ht_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[5][7]);
+}
+static DEVICE_ATTR_RO(t_ht_rsoc_h);
+
+// ot
+
+static ssize_t t_ot_rsoc_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][0]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_a);
+
+static ssize_t t_ot_rsoc_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][1]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_b);
+
+static ssize_t t_ot_rsoc_c_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][2]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_c);
+
+static ssize_t t_ot_rsoc_d_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][3]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_d);
+
+static ssize_t t_ot_rsoc_e_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][4]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_e);
+
+static ssize_t t_ot_rsoc_f_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][5]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_f);
+
+static ssize_t t_ot_rsoc_g_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][6]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_g);
+
+static ssize_t t_ot_rsoc_h_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct molokini_pd *mpd =
+		(struct molokini_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mpd->params.temp_zones[6][7]);
+}
+static DEVICE_ATTR_RO(t_ot_rsoc_h);
+
 static struct attribute *molokini_attrs[] = {
 	&dev_attr_charger_plugged.attr,
 	&dev_attr_connected.attr,
@@ -696,6 +1365,105 @@ static struct attribute *molokini_attrs[] = {
 	&dev_attr_rsoc.attr,
 	&dev_attr_status.attr,
 	&dev_attr_charging_suspend_disable.attr,
+	&dev_attr_serial.attr,
+	&dev_attr_serial_battery.attr,
+	&dev_attr_temp_fg.attr,
+	&dev_attr_voltage.attr,
+	&dev_attr_icurrent.attr,
+	&dev_attr_remaining_capacity.attr,
+	&dev_attr_fcc.attr,
+	&dev_attr_cycle_count.attr,
+	&dev_attr_soh.attr,
+	&dev_attr_device_name.attr,
+	&dev_attr_cell_1_max_voltage.attr,
+	&dev_attr_cell_1_min_voltage.attr,
+	&dev_attr_max_charge_current.attr,
+	&dev_attr_max_discharge_current.attr,
+	&dev_attr_max_avg_discharge_current.attr,
+	&dev_attr_max_avg_dsg_power.attr,
+	&dev_attr_max_temp_cell.attr,
+	&dev_attr_min_temp_cell.attr,
+	&dev_attr_max_temp_int_sensor.attr,
+	&dev_attr_min_temp_int_sensor.attr,
+
+	&dev_attr_total_fw_runtime.attr,
+	&dev_attr_num_valid_charge_terminations.attr,
+	&dev_attr_last_valid_charge_term.attr,
+	&dev_attr_num_qmax_updates.attr,
+	&dev_attr_last_qmax_update.attr,
+	&dev_attr_num_ra_update.attr,
+	&dev_attr_last_ra_update.attr,
+
+	// ut
+	&dev_attr_t_ut_rsoc_a.attr,
+	&dev_attr_t_ut_rsoc_b.attr,
+	&dev_attr_t_ut_rsoc_c.attr,
+	&dev_attr_t_ut_rsoc_d.attr,
+	&dev_attr_t_ut_rsoc_e.attr,
+	&dev_attr_t_ut_rsoc_f.attr,
+	&dev_attr_t_ut_rsoc_g.attr,
+	&dev_attr_t_ut_rsoc_h.attr,
+
+	// lt
+	&dev_attr_t_lt_rsoc_a.attr,
+	&dev_attr_t_lt_rsoc_b.attr,
+	&dev_attr_t_lt_rsoc_c.attr,
+	&dev_attr_t_lt_rsoc_d.attr,
+	&dev_attr_t_lt_rsoc_e.attr,
+	&dev_attr_t_lt_rsoc_f.attr,
+	&dev_attr_t_lt_rsoc_g.attr,
+	&dev_attr_t_lt_rsoc_h.attr,
+
+	// stl
+	&dev_attr_t_stl_rsoc_a.attr,
+	&dev_attr_t_stl_rsoc_b.attr,
+	&dev_attr_t_stl_rsoc_c.attr,
+	&dev_attr_t_stl_rsoc_d.attr,
+	&dev_attr_t_stl_rsoc_e.attr,
+	&dev_attr_t_stl_rsoc_f.attr,
+	&dev_attr_t_stl_rsoc_g.attr,
+	&dev_attr_t_stl_rsoc_h.attr,
+
+	// rt
+	&dev_attr_t_rt_rsoc_a.attr,
+	&dev_attr_t_rt_rsoc_b.attr,
+	&dev_attr_t_rt_rsoc_c.attr,
+	&dev_attr_t_rt_rsoc_d.attr,
+	&dev_attr_t_rt_rsoc_e.attr,
+	&dev_attr_t_rt_rsoc_f.attr,
+	&dev_attr_t_rt_rsoc_g.attr,
+	&dev_attr_t_rt_rsoc_h.attr,
+
+	// sth
+	&dev_attr_t_sth_rsoc_a.attr,
+	&dev_attr_t_sth_rsoc_b.attr,
+	&dev_attr_t_sth_rsoc_c.attr,
+	&dev_attr_t_sth_rsoc_d.attr,
+	&dev_attr_t_sth_rsoc_e.attr,
+	&dev_attr_t_sth_rsoc_f.attr,
+	&dev_attr_t_sth_rsoc_g.attr,
+	&dev_attr_t_sth_rsoc_h.attr,
+
+	// ht
+	&dev_attr_t_ht_rsoc_a.attr,
+	&dev_attr_t_ht_rsoc_b.attr,
+	&dev_attr_t_ht_rsoc_c.attr,
+	&dev_attr_t_ht_rsoc_d.attr,
+	&dev_attr_t_ht_rsoc_e.attr,
+	&dev_attr_t_ht_rsoc_f.attr,
+	&dev_attr_t_ht_rsoc_g.attr,
+	&dev_attr_t_ht_rsoc_h.attr,
+
+	// ot
+	&dev_attr_t_ot_rsoc_a.attr,
+	&dev_attr_t_ot_rsoc_b.attr,
+	&dev_attr_t_ot_rsoc_c.attr,
+	&dev_attr_t_ot_rsoc_d.attr,
+	&dev_attr_t_ot_rsoc_e.attr,
+	&dev_attr_t_ot_rsoc_f.attr,
+	&dev_attr_t_ot_rsoc_g.attr,
+	&dev_attr_t_ot_rsoc_h.attr,
+
 	NULL,
 };
 ATTRIBUTE_GROUPS(molokini);
@@ -997,7 +1765,6 @@ static int molokini_probe(struct platform_device *pdev)
 	molokini_psy_init(mpd);
 
 	/* Create nodes here. */
-	molokini_create_debugfs(mpd);
 	molokini_create_sysfs(mpd);
 	molokini_default_sysfs_values(mpd);
 

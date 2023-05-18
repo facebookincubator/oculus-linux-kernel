@@ -91,11 +91,11 @@ ccflags-y += -Wheader-guard
 endif
 
 ifeq ($(KERNEL_BUILD), 0)
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/ipc/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/dsp/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/asoc/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/asoc/codecs/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/soc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/ipc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/dsp/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/codecs/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/soc/Module.symvers
 endif
 
 # Module information used by KBuild framework

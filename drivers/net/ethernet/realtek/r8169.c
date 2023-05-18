@@ -229,7 +229,7 @@ static const struct pci_device_id rtl8169_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_DLINK,	0x4300), 0, 0, RTL_CFG_0 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_DLINK,	0x4302), 0, 0, RTL_CFG_0 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_AT,		0xc107), 0, 0, RTL_CFG_0 },
-	{ PCI_DEVICE(0x16ec,			0x0116), 0, 0, RTL_CFG_0 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_USR,		0x0116), 0, 0, RTL_CFG_0 },
 	{ PCI_VENDOR_ID_LINKSYS,		0x1032,
 		PCI_ANY_ID, 0x0024, 0, 0, RTL_CFG_0 },
 	{ 0x0001,				0x8168,
@@ -1009,6 +1009,10 @@ static void r8168dp_2_mdio_write(struct rtl8169_private *tp, int reg, int value)
 static int r8168dp_2_mdio_read(struct rtl8169_private *tp, int reg)
 {
 	int value;
+
+	/* Work around issue with chip reporting wrong PHY ID */
+	if (reg == MII_PHYSID2)
+		return 0xc912;
 
 	r8168dp_2_mdio_start(tp);
 
@@ -4107,6 +4111,27 @@ static void rtl_rar_set(struct rtl8169_private *tp, u8 *addr)
 	rtl_unlock_work(tp);
 }
 
+static void rtl_init_rxcfg(struct rtl8169_private *tp)
+{
+	switch (tp->mac_version) {
+	case RTL_GIGA_MAC_VER_01 ... RTL_GIGA_MAC_VER_06:
+	case RTL_GIGA_MAC_VER_10 ... RTL_GIGA_MAC_VER_17:
+		RTL_W32(tp, RxConfig, RX_FIFO_THRESH | RX_DMA_BURST);
+		break;
+	case RTL_GIGA_MAC_VER_18 ... RTL_GIGA_MAC_VER_24:
+	case RTL_GIGA_MAC_VER_34 ... RTL_GIGA_MAC_VER_36:
+	case RTL_GIGA_MAC_VER_38:
+		RTL_W32(tp, RxConfig, RX128_INT_EN | RX_MULTI_EN | RX_DMA_BURST);
+		break;
+	case RTL_GIGA_MAC_VER_40 ... RTL_GIGA_MAC_VER_51:
+		RTL_W32(tp, RxConfig, RX128_INT_EN | RX_MULTI_EN | RX_DMA_BURST | RX_EARLY_OFF);
+		break;
+	default:
+		RTL_W32(tp, RxConfig, RX128_INT_EN | RX_DMA_BURST);
+		break;
+	}
+}
+
 static int rtl_set_mac_address(struct net_device *dev, void *p)
 {
 	struct rtl8169_private *tp = netdev_priv(dev);
@@ -4123,6 +4148,10 @@ static int rtl_set_mac_address(struct net_device *dev, void *p)
 		rtl_rar_set(tp, dev->dev_addr);
 
 	pm_runtime_put_noidle(d);
+
+	/* Reportedly at least Asus X453MA truncates packets otherwise */
+	if (tp->mac_version == RTL_GIGA_MAC_VER_37)
+		rtl_init_rxcfg(tp);
 
 	return 0;
 }
@@ -4282,27 +4311,6 @@ static void rtl_pll_power_up(struct rtl8169_private *tp)
 		break;
 	default:
 		r8168_pll_power_up(tp);
-	}
-}
-
-static void rtl_init_rxcfg(struct rtl8169_private *tp)
-{
-	switch (tp->mac_version) {
-	case RTL_GIGA_MAC_VER_01 ... RTL_GIGA_MAC_VER_06:
-	case RTL_GIGA_MAC_VER_10 ... RTL_GIGA_MAC_VER_17:
-		RTL_W32(tp, RxConfig, RX_FIFO_THRESH | RX_DMA_BURST);
-		break;
-	case RTL_GIGA_MAC_VER_18 ... RTL_GIGA_MAC_VER_24:
-	case RTL_GIGA_MAC_VER_34 ... RTL_GIGA_MAC_VER_36:
-	case RTL_GIGA_MAC_VER_38:
-		RTL_W32(tp, RxConfig, RX128_INT_EN | RX_MULTI_EN | RX_DMA_BURST);
-		break;
-	case RTL_GIGA_MAC_VER_40 ... RTL_GIGA_MAC_VER_51:
-		RTL_W32(tp, RxConfig, RX128_INT_EN | RX_MULTI_EN | RX_DMA_BURST | RX_EARLY_OFF);
-		break;
-	default:
-		RTL_W32(tp, RxConfig, RX128_INT_EN | RX_DMA_BURST);
-		break;
 	}
 }
 
@@ -6622,7 +6630,7 @@ static irqreturn_t rtl8169_interrupt(int irq, void *dev_instance)
 		return IRQ_NONE;
 
 	rtl_irq_disable(tp);
-	napi_schedule_irqoff(&tp->napi);
+	napi_schedule(&tp->napi);
 
 	return IRQ_HANDLED;
 }
@@ -6822,7 +6830,7 @@ static int rtl8169_close(struct net_device *dev)
 
 	phy_disconnect(dev->phydev);
 
-	pci_free_irq(pdev, 0, tp);
+	free_irq(pci_irq_vector(pdev, 0), tp);
 
 	dma_free_coherent(&pdev->dev, R8169_RX_RING_BYTES, tp->RxDescArray,
 			  tp->RxPhyAddr);
@@ -6877,8 +6885,8 @@ static int rtl_open(struct net_device *dev)
 
 	rtl_request_firmware(tp);
 
-	retval = pci_request_irq(pdev, 0, rtl8169_interrupt, NULL, tp,
-				 dev->name);
+	retval = request_irq(pci_irq_vector(pdev, 0), rtl8169_interrupt,
+			     IRQF_SHARED, dev->name, tp);
 	if (retval < 0)
 		goto err_release_fw_2;
 
@@ -6911,7 +6919,7 @@ out:
 	return retval;
 
 err_free_irq:
-	pci_free_irq(pdev, 0, tp);
+	free_irq(pci_irq_vector(pdev, 0), tp);
 err_release_fw_2:
 	rtl_release_firmware(tp);
 	rtl8169_rx_clear(tp);
@@ -7245,7 +7253,7 @@ static int rtl_alloc_irq(struct rtl8169_private *tp)
 		RTL_W8(tp, Config2, RTL_R8(tp, Config2) & ~MSIEnable);
 		RTL_W8(tp, Cfg9346, Cfg9346_Lock);
 		/* fall through */
-	case RTL_GIGA_MAC_VER_07 ... RTL_GIGA_MAC_VER_24:
+	case RTL_GIGA_MAC_VER_07 ... RTL_GIGA_MAC_VER_17:
 		flags = PCI_IRQ_LEGACY;
 		break;
 	default:

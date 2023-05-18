@@ -856,6 +856,17 @@ void *ipc_log_context_create(int max_num_pages,
 	struct ipc_log_context *ctxt = NULL, *tmp;
 	unsigned long flags;
 
+#ifdef CONFIG_IPC_LOGGING_ENABLE_ALLOWLIST
+	const char *ipc_log_allowlist = CONFIG_IPC_LOGGING_ENABLE_ALLOWLIST;
+
+	if (ipc_log_allowlist &&
+		strlen(ipc_log_allowlist) > 0 &&
+		strncmp(mod_name, ipc_log_allowlist, strlen(ipc_log_allowlist)) == 0) {
+		pr_debug("%s: %s is allowed\n", __func__, mod_name);
+	} else {
+		return NULL;
+	}
+#endif
 	/* check if ipc ctxt already exists */
 	read_lock_irq(&context_list_lock_lha1);
 	list_for_each_entry(tmp, &ipc_log_context_list, list)

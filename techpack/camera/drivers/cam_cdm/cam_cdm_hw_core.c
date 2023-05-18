@@ -406,11 +406,11 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		return -EIO;
 
 	mutex_lock(&cdm_hw->hw_mutex);
-	mutex_lock(&client->lock);
+	cam_cdm_get_client_refcount(client);
 	rc = cam_hw_cdm_bl_fifo_pending_bl_rb(cdm_hw, &pending_bl);
 	if (rc) {
 		CAM_ERR(CAM_CDM, "Cannot read the current BL depth");
-		mutex_unlock(&client->lock);
+		cam_cdm_put_client_refcount(client);
 		mutex_unlock(&cdm_hw->hw_mutex);
 		return rc;
 	}
@@ -538,7 +538,7 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 			}
 		}
 	}
-	mutex_unlock(&client->lock);
+	cam_cdm_put_client_refcount(client);
 	mutex_unlock(&cdm_hw->hw_mutex);
 	return rc;
 

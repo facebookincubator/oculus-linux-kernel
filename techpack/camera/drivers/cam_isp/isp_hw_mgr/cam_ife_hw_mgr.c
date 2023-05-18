@@ -3130,6 +3130,7 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 	}
 	kfree(in_port);
 	in_port = NULL;
+
 	acquire_args->support_consumed_addr =
 		g_ife_hw_mgr.support_consumed_addr;
 
@@ -3889,6 +3890,7 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 		cdm_cmd->cmd_arrary_count = cfg->num_hw_update_entries - skip;
 
 		ctx->applied_req_id = cfg->request_id;
+
 		CAM_DBG(CAM_ISP, "Submit to CDM");
 		atomic_set(&ctx->cdm_done, 0);
 		rc = cam_cdm_submit_bls(ctx->cdm_handle, cdm_cmd);

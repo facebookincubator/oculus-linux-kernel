@@ -190,15 +190,15 @@ static int cookie_init_hw_msi_region(struct iommu_dma_cookie *cookie,
 	start -= iova_offset(iovad, start);
 	num_pages = iova_align(iovad, end - start) >> iova_shift(iovad);
 
-	msi_page = kcalloc(num_pages, sizeof(*msi_page), GFP_KERNEL);
-	if (!msi_page)
-		return -ENOMEM;
-
 	for (i = 0; i < num_pages; i++) {
-		msi_page[i].phys = start;
-		msi_page[i].iova = start;
-		INIT_LIST_HEAD(&msi_page[i].list);
-		list_add(&msi_page[i].list, &cookie->msi_page_list);
+		msi_page = kmalloc(sizeof(*msi_page), GFP_KERNEL);
+		if (!msi_page)
+			return -ENOMEM;
+
+		msi_page->phys = start;
+		msi_page->iova = start;
+		INIT_LIST_HEAD(&msi_page->list);
+		list_add(&msi_page->list, &cookie->msi_page_list);
 		start += iovad->granule;
 	}
 
@@ -340,6 +340,7 @@ int iommu_dma_reserve_iova(struct device *dev, dma_addr_t base,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iommu_dma_reserve_iova);
 
 /*
  * Should be called prior to using dma-apis.
@@ -357,6 +358,7 @@ int iommu_dma_enable_best_fit_algo(struct device *dev)
 	iovad->best_fit = true;
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iommu_dma_enable_best_fit_algo);
 
 /**
  * dma_info_to_prot - Translate DMA API directions and attributes to IOMMU API

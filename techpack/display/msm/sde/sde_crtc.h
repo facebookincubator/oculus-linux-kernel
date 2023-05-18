@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -202,6 +203,18 @@ struct sde_crtc_misr_info {
  */
 #define SDE_CRTC_MAX_EVENT_COUNT	16
 
+/*
+ * enum sde_crtc_vblank_id to list vblank ids for each crtc client
+ * @VBLANK_0:		VBLANK id representing for first interface vsync
+ * @VBLANK_1:		VBLANK id representing for second interface vsync
+ * @SDE_CRTC_MAX_VBLANKS: MAX VBLANK ids supported for CRTC client
+ */
+enum sde_crtc_vblank_id {
+	VBLANK_0 = 0,
+	VBLANK_1 = 1,
+	SDE_CRTC_MAX_VBLANKS,
+};
+
 /**
  * struct sde_crtc - virtualized CRTC data structure
  * @base          : Base drm crtc structure
@@ -221,17 +234,19 @@ struct sde_crtc_misr_info {
  * @stage_cfg     : H/w mixer stage configuration
  * @debugfs_root  : Parent of debugfs node
  * @priv_handle   : Pointer to external private handle, if present
- * @vblank_cb_count : count of vblank callback since last reset
+ * @vblank_cb_count : Array that stores the count of each vblank callback
+		      since last reset
  * @play_count    : frame count between crtc enable and disable
- * @vblank_cb_time  : ktime at vblank count reset
- * @vblank_last_cb_time  : ktime at last vblank notification
+ * @vblank_cb_time  : Array that stores the ktime at vblank count reset
+ * @vblank_last_cb_time	: Array that stores the ktime at last vblank
+			  notification
  * @vblank_last_cb_bl_config  : backlight config at last vblank notification
  * @vblank_last_cb_mode  : display mode at last vblank notification
  * @lineptr_last_cb_time : time in ns at last lineptr notification
  * @lineptr_last_cb_vtotal : total vert scanlines at last lineptr notification
  * @lineptr_last_cb_offset : lineptr offset at last lineptr notification
  * @sysfs_dev  : sysfs device node for crtc
- * @vsync_event_sf : vsync event notifier sysfs device
+ * @vsync_event_sf : Array of vsync event notifiers for sysfs device
  * @lineptr_event_sf : lineptr event notifier sysfs device
  * @enabled       : whether the SDE CRTC is currently enabled. updated in the
  *                  commit-thread, not state-swap time which is earlier, so
@@ -297,10 +312,10 @@ struct sde_crtc {
 	struct dentry *debugfs_root;
 	void *priv_handle;
 
-	u32 vblank_cb_count;
+	u32 vblank_cb_count[SDE_CRTC_MAX_VBLANKS];
 	u64 play_count;
-	ktime_t vblank_cb_time;
-	ktime_t vblank_last_cb_time;
+	ktime_t vblank_cb_time[SDE_CRTC_MAX_VBLANKS];
+	ktime_t vblank_last_cb_time[SDE_CRTC_MAX_VBLANKS];
 	struct dsi_backlight_config vblank_last_cb_bl_config;
 	struct drm_display_mode vblank_last_cb_mode;
 	u64 lineptr_last_cb_time;
@@ -308,7 +323,7 @@ struct sde_crtc {
 	int lineptr_last_cb_offset;
 	struct sde_crtc_fps_info fps_info;
 	struct device *sysfs_dev;
-	struct kernfs_node *vsync_event_sf;
+	struct kernfs_node *vsync_event_sf[SDE_CRTC_MAX_VBLANKS];
 	struct kernfs_node *lineptr_event_sf;
 	bool enabled;
 
@@ -359,9 +374,6 @@ struct sde_crtc {
 	bool needs_hw_reset;
 
 	int comp_ratio;
-
-	/* qsync information */
-	u32 qsync_min_fps;
 
 	/* CAC writeback information */
 	int wb_num_tears;
@@ -859,13 +871,6 @@ void sde_crtc_misr_setup(struct drm_crtc *crtc, bool enable, u32 frame_count);
  */
 void sde_crtc_get_misr_info(struct drm_crtc *crtc,
 		struct sde_crtc_misr_info *crtc_misr_info);
-
-/**
- * sde_crtc_vsync_trigger - to trigger vsync
- * @crtc: Pointer to drm crtc structure
- * Returns: 0 on success, negative errno on failure
- */
-int sde_crtc_vsync_trigger(struct drm_crtc *crtc);
 
 /*
  * sde_crtc_set_compression_ratio - set compression ratio src_bpp/target_bpp

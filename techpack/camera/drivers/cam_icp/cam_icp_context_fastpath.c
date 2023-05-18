@@ -49,8 +49,6 @@ cam_icp_fpc_handle_buf_done(void *context, uint32_t evt_id, void *evt_data)
 		(struct cam_icp_fastpath_context *)context;
 	struct cam_hw_done_event_data *done =
 		(struct cam_hw_done_event_data *)evt_data;
-	enum cam_fp_buffer_status status = evt_id ?
-		CAM_FP_BUFFER_STATUS_ERROR : CAM_FP_BUFFER_STATUS_SUCCESS;
 
 	/*
 	 * First complete the packet. If packet is reused the next
@@ -60,7 +58,7 @@ cam_icp_fpc_handle_buf_done(void *context, uint32_t evt_id, void *evt_data)
 
 	cam_fp_queue_buffer_set_done(&ctx->fp_queue,
 				done->request_id, 0,
-				status, 0);
+				CAM_FP_BUFFER_STATUS_SUCCESS, 0);
 
 	CAM_DBG(CAM_ICP, "Buffer done request id %llu evt id %d",
 		done->request_id, evt_id);

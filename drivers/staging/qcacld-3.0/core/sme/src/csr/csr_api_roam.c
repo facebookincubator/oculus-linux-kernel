@@ -8173,6 +8173,12 @@ csr_roam_reassoc(struct mac_context *mac_ctx, uint32_t session_id,
 		sme_err("No profile specified");
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	if (!session) {
+		sme_err("Session_id invalid %d", session_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	sme_debug(
 		"called  BSSType = %s (%d) authtype = %d  encryType = %d",
 		sme_bss_type_to_string(profile->BSSType),
@@ -20120,6 +20126,11 @@ static bool csr_is_conn_allow_2g_band(struct mac_context *mac_ctx,
 	sap_session_id = csr_find_session_by_type(mac_ctx, QDF_SAP_MODE);
 	if (WLAN_UMAC_VDEV_ID_MAX != sap_session_id) {
 		sap_session = CSR_GET_SESSION(mac_ctx, sap_session_id);
+		if (!sap_session) {
+			sme_err("Session_id invalid %d", sap_session_id);
+			return false;
+		}
+
 		if (0 != sap_session->bssParams.operation_chan_freq &&
 		    sap_session->bssParams.operation_chan_freq != ch_freq) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_ERROR,
@@ -20158,6 +20169,11 @@ static bool csr_is_conn_allow_5g_band(struct mac_context *mac_ctx,
 	p2pgo_session_id = csr_find_session_by_type(mac_ctx, QDF_P2P_GO_MODE);
 	if (WLAN_UMAC_VDEV_ID_MAX != p2pgo_session_id) {
 		p2pgo_session = CSR_GET_SESSION(mac_ctx, p2pgo_session_id);
+		if (!p2pgo_session) {
+			sme_err("Session_id invalid %d", p2pgo_session_id);
+			return false;
+		}
+
 		if (0 != p2pgo_session->bssParams.operation_chan_freq &&
 		    eCSR_ASSOC_STATE_TYPE_NOT_CONNECTED !=
 		    p2pgo_session->connectState &&

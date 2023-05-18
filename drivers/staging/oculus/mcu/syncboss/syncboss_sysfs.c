@@ -514,8 +514,8 @@ static ssize_t te_timestamp_show(struct device *dev,
 	struct syncboss_dev_data *devdata =
 	(struct syncboss_dev_data *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%ld\n",
-		atomic64_read(&devdata->last_te_timestamp_ns));
+	return scnprintf(buf, PAGE_SIZE, "%lld\n",
+			(s64)atomic64_read(&devdata->last_te_timestamp_ns));
 }
 
 static ssize_t num_cameras_show(struct device *dev,

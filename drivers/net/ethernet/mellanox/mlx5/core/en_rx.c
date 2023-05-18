@@ -1267,8 +1267,11 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
 	if (unlikely(!test_bit(MLX5E_RQ_STATE_ENABLED, &rq->state)))
 		return 0;
 
-	if (cq->decmprs_left)
+	if (cq->decmprs_left) {
 		work_done += mlx5e_decompress_cqes_cont(rq, cq, 0, budget);
+		if (cq->decmprs_left || work_done >= budget)
+			goto out;
+	}
 
 	cqe = mlx5_cqwq_get_cqe(&cq->wq);
 	if (!cqe) {
@@ -1311,6 +1314,7 @@ out:
 
 #ifdef CONFIG_MLX5_CORE_IPOIB
 
+#define MLX5_IB_GRH_SGID_OFFSET 8
 #define MLX5_IB_GRH_DGID_OFFSET 24
 #define MLX5_GID_SIZE           16
 
@@ -1324,6 +1328,7 @@ static inline void mlx5i_complete_rx_cqe(struct mlx5e_rq *rq,
 	struct net_device *netdev;
 	struct mlx5e_priv *priv;
 	char *pseudo_header;
+	u32 flags_rqpn;
 	u32 qpn;
 	u8 *dgid;
 	u8 g;
@@ -1344,7 +1349,8 @@ static inline void mlx5i_complete_rx_cqe(struct mlx5e_rq *rq,
 	priv = mlx5i_epriv(netdev);
 	tstamp = &priv->tstamp;
 
-	g = (be32_to_cpu(cqe->flags_rqpn) >> 28) & 3;
+	flags_rqpn = be32_to_cpu(cqe->flags_rqpn);
+	g = (flags_rqpn >> 28) & 3;
 	dgid = skb->data + MLX5_IB_GRH_DGID_OFFSET;
 	if ((!g) || dgid[0] != 0xff)
 		skb->pkt_type = PACKET_HOST;
@@ -1353,16 +1359,28 @@ static inline void mlx5i_complete_rx_cqe(struct mlx5e_rq *rq,
 	else
 		skb->pkt_type = PACKET_MULTICAST;
 
-	/* TODO: IB/ipoib: Allow mcast packets from other VFs
-	 * 68996a6e760e5c74654723eeb57bf65628ae87f4
+	/* Drop packets that this interface sent, ie multicast packets
+	 * that the HCA has replicated.
 	 */
+	if (g && (qpn == (flags_rqpn & 0xffffff)) &&
+	    (memcmp(netdev->dev_addr + 4, skb->data + MLX5_IB_GRH_SGID_OFFSET,
+		    MLX5_GID_SIZE) == 0)) {
+		skb->dev = NULL;
+		return;
+	}
 
 	skb_pull(skb, MLX5_IB_GRH_BYTES);
 
 	skb->protocol = *((__be16 *)(skb->data));
 
-	skb->ip_summed = CHECKSUM_COMPLETE;
-	skb->csum = csum_unfold((__force __sum16)cqe->check_sum);
+	if (netdev->features & NETIF_F_RXCSUM) {
+		skb->ip_summed = CHECKSUM_COMPLETE;
+		skb->csum = csum_unfold((__force __sum16)cqe->check_sum);
+		stats->csum_complete++;
+	} else {
+		skb->ip_summed = CHECKSUM_NONE;
+		stats->csum_none++;
+	}
 
 	if (unlikely(mlx5e_rx_hw_stamp(tstamp)))
 		skb_hwtstamps(skb)->hwtstamp =
@@ -1381,7 +1399,6 @@ static inline void mlx5i_complete_rx_cqe(struct mlx5e_rq *rq,
 
 	skb->dev = netdev;
 
-	stats->csum_complete++;
 	stats->packets++;
 	stats->bytes += cqe_bcnt;
 }

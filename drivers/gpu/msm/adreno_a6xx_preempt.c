@@ -25,6 +25,7 @@ static void _update_wptr(struct adreno_device *adreno_dev, bool reset_timer)
 	struct adreno_ringbuffer *rb = adreno_dev->cur_rb;
 	unsigned long flags;
 	int ret = 0;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 
 	spin_lock_irqsave(&rb->preempt_lock, flags);
 
@@ -34,10 +35,29 @@ static void _update_wptr(struct adreno_device *adreno_dev, bool reset_timer)
 		 * dispatcher context. Do it now.
 		 */
 		if (rb->skip_inline_wptr) {
+			/*
+			 * There could be a situation where GPU comes out of
+			 * ifpc after a fenced write transaction but before
+			 * reading AHB_FENCE_STATUS from KMD, it goes back to
+			 * ifpc due to inactivity (kernel scheduler plays a
+			 * role here). Thus, the GPU could technically be
+			 * re-collapsed between subsequent register writes
+			 * leading to a prolonged preemption sequence. The
+			 * keepalive bit prevents any further power collapse
+			 * while it is set.
+			 */
+			if (gmu_core_isenabled(device))
+				gmu_core_regrmw(device, A6XX_GMU_AO_SPARE_CNTL,
+					0x0, 0x2);
 
 			ret = adreno_gmu_fenced_write(adreno_dev,
 				ADRENO_REG_CP_RB_WPTR, rb->wptr,
 				FENCE_STATUS_WRITEDROPPED0_MASK);
+
+			/* Clear the keep alive */
+			if (gmu_core_isenabled(device))
+				gmu_core_regrmw(device, A6XX_GMU_AO_SPARE_CNTL,
+					0x2, 0x0);
 
 			reset_timer = true;
 			rb->skip_inline_wptr = false;
@@ -895,7 +915,7 @@ void a6xx_preemption_context_destroy(struct kgsl_context *context)
 	struct kgsl_device *device = context->device;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 
-	if (!ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION) ||
+	if (!adreno_is_preemption_enabled(adreno_dev) ||
 			context->user_ctxt_record == NULL)
 		return;
 
@@ -918,7 +938,7 @@ int a6xx_preemption_context_init(struct kgsl_context *context)
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	uint64_t flags = 0;
 
-	if (!ADRENO_FEATURE(adreno_dev, ADRENO_PREEMPTION) ||
+	if (!adreno_is_preemption_enabled(adreno_dev) ||
 			context->user_ctxt_record != NULL)
 		return 0;
 

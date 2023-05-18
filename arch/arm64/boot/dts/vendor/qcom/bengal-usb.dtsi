@@ -9,6 +9,9 @@
 		reg = <0x4e00000 0x100000>;
 		reg-names = "core_base";
 
+		iommus = <&apps_smmu 0x120 0x0>;
+		qcom,iommu-dma = "atomic";
+		qcom,iommu-dma-addr-pool = <0x50000000 0x60000000>;
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
@@ -85,6 +88,7 @@
 			snps,dis_enblslpm_quirk;
 			snps,has-lpm-erratum;
 			snps,hird-threshold = /bits/ 8 <0x10>;
+			snps,usb3-u1u2-disable;
 			snps,usb3_lpm_capable;
 			usb-core-id = <0>;
 			maximum-speed = "super-speed";
@@ -126,10 +130,12 @@
 		compatible = "qcom,qusb2phy";
 		reg = <0x01613000 0x180>,
 			<0x003cb250 0x4>,
-			<0x01b40258 0x4>;
+			<0x01b40258 0x4>,
+			<0x01612000 0x4>;
 		reg-names = "qusb_phy_base",
 			"tcsr_clamp_dig_n_1p8",
-			"tune2_efuse_addr";
+			"tune2_efuse_addr",
+			"eud_enable_reg";
 
 		vdd-supply = <&pm6125_l4>;
 		vdda18-supply = <&pm6125_l12>;

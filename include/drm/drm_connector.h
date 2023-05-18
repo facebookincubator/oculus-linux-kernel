@@ -237,7 +237,7 @@ enum drm_panel_orientation {
 #define DRM_MODE_DP_COLORIMETRY_BT601_YCC		13
 #define DRM_MODE_DP_COLORIMETRY_BT709_YCC		14
 #define DRM_MODE_DP_COLORIMETRY_SRGB			15
-#define DRM_MODE_DP_COLORIMETRY_RGB_WIDE_GAMUT	16
+#define DRM_MODE_DP_COLORIMETRY_RGB_WIDE_GAMUT		16
 #define DRM_MODE_DP_COLORIMETRY_SCRGB			17
 
 /**
@@ -799,12 +799,6 @@ struct drm_connector_funcs {
 
 /* mode specified on the command line */
 struct drm_cmdline_mode {
-	/**
-	 * @name:
-	 *
-	 * Name of the mode.
-	 */
-	char name[DRM_DISPLAY_MODE_LEN];
 	bool specified;
 	bool refresh_specified;
 	bool bpp_specified;
@@ -1177,6 +1171,7 @@ struct drm_connector {
 	 * &drm_mode_config.connector_free_work.
 	 */
 	struct llist_node free_node;
+
 	/**
 	 * @panel:
 	 *
@@ -1198,6 +1193,7 @@ int drm_connector_init(struct drm_device *dev,
 		       struct drm_connector *connector,
 		       const struct drm_connector_funcs *funcs,
 		       int connector_type);
+void drm_connector_attach_edid_property(struct drm_connector *connector);
 int drm_connector_register(struct drm_connector *connector);
 void drm_connector_unregister(struct drm_connector *connector);
 int drm_connector_attach_encoder(struct drm_connector *connector,

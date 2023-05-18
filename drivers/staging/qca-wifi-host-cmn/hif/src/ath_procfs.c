@@ -257,4 +257,13 @@ void athdiag_procfs_remove(void)
 		proc_dir = NULL;
 	}
 }
+#else
+int athdiag_procfs_init(void *scn);
+void athdiag_procfs_remove(void);
+
+int athdiag_procfs_init(void *scn)
+{
+	return 0;
+}
+void athdiag_procfs_remove(void) {}
 #endif
