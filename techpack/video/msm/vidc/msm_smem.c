@@ -257,7 +257,7 @@ int msm_smem_map_dma_buf(struct msm_vidc_inst *inst, struct msm_smem *smem)
 		goto exit;
 	}
 
-	smem->device_addr = (u32)iova + smem->offset;
+	smem->device_addr = (u32)iova;
 
 	smem->refcount++;
 exit:

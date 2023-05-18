@@ -642,9 +642,6 @@ int dsi_conn_set_info_blob(struct drm_connector *connector,
 	case DSI_BACKLIGHT_JDI_NVT:
 		sde_kms_info_add_keystr(info, "backlight type", "jdi_nvt");
 		break;
-	case DSI_BACKLIGHT_NVT:
-		sde_kms_info_add_keystr(info, "backlight type", "nvt");
-		break;
 	case DSI_BACKLIGHT_DCS:
 		sde_kms_info_add_keystr(info, "backlight type", "dcs");
 		break;
@@ -835,8 +832,8 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 	struct drm_display_mode drm_mode;
 	struct dsi_display *display = data;
 	struct edid edid;
-	unsigned int width_mm = connector->display_info.width_mm;
-	unsigned int height_mm = connector->display_info.height_mm;
+	u8 width_mm = connector->display_info.width_mm;
+	u8 height_mm = connector->display_info.height_mm;
 	const u8 edid_buf[EDID_LENGTH] = {
 		0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x44, 0x6D,
 		0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1B, 0x10, 0x01, 0x03,

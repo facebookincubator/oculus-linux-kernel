@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved. */
-/* Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2016-2021, The Linux Foundation. All rights reserved. */
 
 #ifndef _CNSS_PCI_H
 #define _CNSS_PCI_H
@@ -33,6 +32,12 @@ enum pci_link_status {
 	PCI_DEF,
 };
 
+enum  cnss_rtpm_id {
+	RTPM_ID_CNSS,
+	RTPM_ID_MHI,
+	RTPM_ID_MAX,
+};
+
 struct cnss_msi_user {
 	char *name;
 	int num_vectors;
@@ -61,6 +66,15 @@ struct cnss_misc_reg {
 	u32 val;
 };
 
+struct cnss_pm_stats {
+	atomic_t runtime_get;
+	atomic_t runtime_put;
+	atomic_t runtime_get_id[RTPM_ID_MAX];
+	atomic_t runtime_put_id[RTPM_ID_MAX];
+	u64 runtime_get_timestamp_id[RTPM_ID_MAX];
+	u64 runtime_put_timestamp_id[RTPM_ID_MAX];
+};
+
 struct cnss_pci_data {
 	struct pci_dev *pci_dev;
 	struct cnss_plat_data *plat_priv;
@@ -73,6 +87,7 @@ struct cnss_pci_data {
 	struct pci_saved_state *saved_state;
 	struct pci_saved_state *default_state;
 	struct msm_pcie_register_event msm_pci_event;
+	struct cnss_pm_stats pm_stats;
 	atomic_t auto_suspended;
 	atomic_t drv_connected;
 	u8 drv_connected_last;
@@ -200,16 +215,21 @@ int cnss_pci_call_driver_modem_status(struct cnss_pci_data *pci_priv,
 void cnss_pci_pm_runtime_show_usage_count(struct cnss_pci_data *pci_priv);
 int cnss_pci_pm_request_resume(struct cnss_pci_data *pci_priv);
 int cnss_pci_pm_runtime_resume(struct cnss_pci_data *pci_priv);
-int cnss_pci_pm_runtime_get(struct cnss_pci_data *pci_priv);
-int cnss_pci_pm_runtime_get_sync(struct cnss_pci_data *pci_priv);
-void cnss_pci_pm_runtime_get_noresume(struct cnss_pci_data *pci_priv);
-int cnss_pci_pm_runtime_put_autosuspend(struct cnss_pci_data *pci_priv);
-void cnss_pci_pm_runtime_put_noidle(struct cnss_pci_data *pci_priv);
+int cnss_pci_pm_runtime_get(struct cnss_pci_data *pci_priv,
+			    enum cnss_rtpm_id id);
+int cnss_pci_pm_runtime_get_sync(struct cnss_pci_data *pci_priv,
+				 enum cnss_rtpm_id id);
+void cnss_pci_pm_runtime_get_noresume(struct cnss_pci_data *pci_priv,
+				      enum cnss_rtpm_id id);
+int cnss_pci_pm_runtime_put_autosuspend(struct cnss_pci_data *pci_priv,
+					enum cnss_rtpm_id id);
+void cnss_pci_pm_runtime_put_noidle(struct cnss_pci_data *pci_priv,
+				    enum cnss_rtpm_id id);
 void cnss_pci_pm_runtime_mark_last_busy(struct cnss_pci_data *pci_priv);
 int cnss_pci_update_status(struct cnss_pci_data *pci_priv,
 			   enum cnss_driver_status status);
-int cnss_call_driver_uevent(struct cnss_pci_data *pci_priv,
-			    enum cnss_driver_status status, void *data);
+int cnss_pci_call_driver_uevent(struct cnss_pci_data *pci_priv,
+				enum cnss_driver_status status, void *data);
 int cnss_pcie_is_device_down(struct cnss_pci_data *pci_priv);
 int cnss_pci_suspend_bus(struct cnss_pci_data *pci_priv);
 int cnss_pci_resume_bus(struct cnss_pci_data *pci_priv);

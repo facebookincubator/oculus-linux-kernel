@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013, 2021, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -32,6 +32,12 @@ struct pll_freq_tbl {
 	u32 ibits;
 };
 
+struct pll_spm_ctrl {
+	u32 offset;
+	u32 event_bit;
+	void __iomem *spm_base;
+};
+
 /**
  * struct clk_pll - phase locked loop (PLL)
  * @l_reg: L register
@@ -58,11 +64,13 @@ struct clk_pll {
 	const struct pll_freq_tbl *freq_tbl;
 
 	struct clk_regmap clkr;
+	struct pll_spm_ctrl spm_ctrl;
 };
 
 extern const struct clk_ops clk_pll_ops;
 extern const struct clk_ops clk_pll_vote_ops;
 extern const struct clk_ops clk_pll_sr2_ops;
+extern const struct clk_ops clk_pll_hf_ops;
 
 #define to_clk_pll(_hw) container_of(to_clk_regmap(_hw), struct clk_pll, clkr)
 

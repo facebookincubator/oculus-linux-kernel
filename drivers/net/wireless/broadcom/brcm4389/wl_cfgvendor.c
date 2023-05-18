@@ -1856,7 +1856,7 @@ wl_cfgvendor_stop_hal(struct wiphy *wiphy,
 
 #ifdef WL_LATENCY_MODE
 static int
-wl_cfgvendor_set_latency_mode(struct wiphy *wiphy,
+wl_cfgvendor_latency_mode_config(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void *data, int len)
 {
 	int err = BCME_OK, rem, type;
@@ -1874,6 +1874,8 @@ wl_cfgvendor_set_latency_mode(struct wiphy *wiphy,
 		type = nla_type(iter);
 		switch (type) {
 			case ANDR_WIFI_ATTRIBUTE_LATENCY_MODE:
+			/* Intentional fall through to configure the latency mode for voip mode */
+			case ANDR_WIFI_ATTRIBUTE_VOIP_MODE:
 				latency_mode = nla_get_u32(iter);
 				WL_DBG(("%s,Setting latency mode %u\n", __FUNCTION__,
 					latency_mode));
@@ -11413,6 +11415,42 @@ exit:
 }
 #endif /* SUPPORT_OTA_UPDATE */
 
+#ifdef OEM_ANDROID
+static int
+wl_cfgvendor_set_dtim_config(struct wiphy *wiphy,
+	struct wireless_dev *wdev, const void  *data, int len)
+{
+	int err = BCME_OK, rem, type;
+	const struct nlattr *iter;
+	uint32 dtim_multiplier;
+	int set = 0;
+	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+	struct net_device *net = wdev->netdev;
+
+	nla_for_each_attr(iter, data, len, rem) {
+		type = nla_type(iter);
+		switch (type) {
+			case ANDR_WIFI_ATTRIBUTE_DTIM_MULTIPLIER:
+				dtim_multiplier = nla_get_u32(iter);
+				WL_INFORM_MEM(("dtim multiplier %d\n", dtim_multiplier));
+				set = (dtim_multiplier > 0) ? FALSE : TRUE;
+				cfg->suspend_bcn_li_dtim = dtim_multiplier;
+				cfg->max_dtim_enable = set ? TRUE : FALSE;
+				if (cfg->soft_suspend) {
+					wl_cfg80211_set_suspend_bcn_li_dtim(cfg, net, TRUE);
+				}
+				break;
+			default:
+				WL_ERR(("Unknown type: %d\n", type));
+				return err;
+		}
+	}
+
+	return err;
+
+}
+#endif /* OEM_ANDROID */
+
 #ifdef WL_USABLE_CHAN
 static int wl_cfgvendor_get_usable_channels(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void *data, int len)
@@ -11707,12 +11745,14 @@ const struct nla_policy andr_wifi_attr_policy[ANDR_WIFI_ATTRIBUTE_MAX] = {
 	[ANDR_WIFI_ATTRIBUTE_COUNTRY] = { .type = NLA_NUL_STRING, .len = 3 },
 	[ANDR_WIFI_ATTRIBUTE_ND_OFFLOAD_VALUE] = { .type = NLA_U8 },
 	[ANDR_WIFI_ATTRIBUTE_TCPACK_SUP_VALUE] = { .type = NLA_U32 },
-	[ANDR_WIFI_ATTRIBUTE_LATENCY_MODE] = { .type = NLA_U32 },
+	[ANDR_WIFI_ATTRIBUTE_LATENCY_MODE] = { .type = NLA_U32, .len = sizeof(uint32) },
 	/* Dont see ANDR_WIFI_ATTRIBUTE_RANDOM_MAC being used currently */
 	[ANDR_WIFI_ATTRIBUTE_RANDOM_MAC] = { .type = NLA_U32 },
 	[ANDR_WIFI_ATTRIBUTE_TX_POWER_SCENARIO] = { .type = NLA_S8 },
-	[ANDR_WIFI_ATTRIBUTE_THERMAL_MITIGATION] = { .type = NLA_U32 },
+	[ANDR_WIFI_ATTRIBUTE_THERMAL_MITIGATION] = { .type = NLA_S8 },
 	[ANDR_WIFI_ATTRIBUTE_THERMAL_COMPLETION_WINDOW] = { .type = NLA_U32 },
+	[ANDR_WIFI_ATTRIBUTE_VOIP_MODE] = { .type = NLA_U32, .len = sizeof(uint32) },
+	[ANDR_WIFI_ATTRIBUTE_DTIM_MULTIPLIER] = { .type = NLA_U32, .len = sizeof(uint32) },
 };
 
 const struct nla_policy dump_buf_policy[DUMP_BUF_ATTR_MAX] = {
@@ -11749,8 +11789,8 @@ const struct nla_policy dump_buf_policy[DUMP_BUF_ATTR_MAX] = {
 };
 
 const struct nla_policy andr_dbg_policy[DEBUG_ATTRIBUTE_MAX] = {
-	[DEBUG_ATTRIBUTE_GET_DRIVER] = { .type = NLA_UNSPEC },
-	[DEBUG_ATTRIBUTE_GET_FW] = { .type = NLA_UNSPEC },
+	[DEBUG_ATTRIBUTE_GET_DRIVER] = { .type = NLA_BINARY },
+	[DEBUG_ATTRIBUTE_GET_FW] = { .type = NLA_BINARY },
 	[DEBUG_ATTRIBUTE_RING_ID] = { .type = NLA_U32 },
 	[DEBUG_ATTRIBUTE_RING_NAME] = { .type = NLA_NUL_STRING },
 	[DEBUG_ATTRIBUTE_RING_FLAGS] = { .type = NLA_U32 },
@@ -13039,7 +13079,19 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 			.subcmd = WIFI_SUBCMD_SET_LATENCY_MODE
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
-		.doit = wl_cfgvendor_set_latency_mode,
+		.doit = wl_cfgvendor_latency_mode_config,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
+		.policy = andr_wifi_attr_policy,
+		.maxattr = ANDR_WIFI_ATTRIBUTE_MAX
+#endif /* LINUX_VERSION >= 5.3 */
+	},
+	{
+		{
+			.vendor_id = OUI_GOOGLE,
+			.subcmd = WIFI_SUBCMD_CONFIG_VOIP_MODE
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.doit = wl_cfgvendor_latency_mode_config,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
 		.policy = andr_wifi_attr_policy,
 		.maxattr = ANDR_WIFI_ATTRIBUTE_MAX
@@ -13266,6 +13318,20 @@ static struct wiphy_vendor_command wl_vendor_cmds [] = {
 #endif /* LINUX_VERSION >= 5.3 */
 	},
 #endif /* SUPPORT_OTA_UPDATE */
+#ifdef OEM_ANDROID
+	{
+		{
+			.vendor_id = OUI_GOOGLE,
+			.subcmd = WIFI_SUBCMD_SET_DTIM_CONFIG
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.doit = wl_cfgvendor_set_dtim_config,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
+		.policy = andr_wifi_attr_policy,
+		.maxattr = ANDR_WIFI_ATTRIBUTE_MAX
+#endif /* LINUX_VERSION >= 5.3 */
+	},
+#endif /* OEM_ANDROID */
 #ifdef WL_USABLE_CHAN
 	{
 		{

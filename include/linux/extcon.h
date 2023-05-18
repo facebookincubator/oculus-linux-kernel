@@ -201,6 +201,14 @@ extern int extcon_get_property_capability(struct extcon_dev *edev,
 				unsigned int id, unsigned int prop);
 
 /*
+ * Following APIs set array of mutually exclusive.
+ * The 'exclusive' argument indicates the array of mutually exclusive set
+ * of cables that cannot be attached simultaneously.
+ */
+extern int extcon_set_mutually_exclusive(struct extcon_dev *edev,
+				const u32 *exclusive);
+
+/*
  * Following APIs register the notifier block in order to detect
  * the change of both state and property value for each external connector.
  *
@@ -307,6 +315,11 @@ static inline  void devm_extcon_unregister_notifier(struct device *dev,
 static inline struct extcon_dev *extcon_get_extcon_dev(const char *extcon_name)
 {
 	return ERR_PTR(-ENODEV);
+}
+
+static inline const char *extcon_get_edev_name(struct extcon_dev *edev)
+{
+  return NULL;
 }
 
 static inline struct extcon_dev *extcon_find_edev_by_node(struct device_node *node)

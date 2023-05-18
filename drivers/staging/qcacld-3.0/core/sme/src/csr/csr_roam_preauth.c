@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -203,13 +204,20 @@ QDF_STATUS csr_neighbor_roam_preauth_rsp_handler(struct mac_context *mac_ctx,
 						 uint8_t session_id,
 						 QDF_STATUS lim_status)
 {
-	tpCsrNeighborRoamControlInfo neighbor_roam_info =
-		&mac_ctx->roam.neighborRoamInfo[session_id];
+	tpCsrNeighborRoamControlInfo neighbor_roam_info;
+	struct csr_roam_session *session = CSR_GET_SESSION(mac_ctx, session_id);
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	QDF_STATUS preauth_processed = QDF_STATUS_SUCCESS;
 	tpCsrNeighborRoamBSSInfo preauth_rsp_node = NULL;
 	uint8_t reason;
 
+	if (!session) {
+		sme_err("session_id invalid %d", session_id);
+		preauth_processed = QDF_STATUS_E_FAILURE;
+		goto DEQ_PREAUTH;
+	}
+
+	neighbor_roam_info = &mac_ctx->roam.neighborRoamInfo[session_id];
 	if (false == neighbor_roam_info->FTRoamInfo.preauthRspPending) {
 		/*
 		 * This can happen when we disconnect immediately
@@ -378,11 +386,18 @@ static QDF_STATUS csr_neighbor_roam_add_preauth_fail(struct mac_context *mac_ctx
 			uint8_t session_id, tSirMacAddr bssid)
 {
 	uint8_t i = 0;
-	tpCsrNeighborRoamControlInfo neighbor_roam_info =
-		&mac_ctx->roam.neighborRoamInfo[session_id];
-	uint8_t num_mac_addr = neighbor_roam_info->FTRoamInfo.preAuthFailList.
-				numMACAddress;
+	tpCsrNeighborRoamControlInfo neighbor_roam_info;
+	struct csr_roam_session *session = CSR_GET_SESSION(mac_ctx, session_id);
+	uint8_t num_mac_addr;
 
+	if (!session) {
+		sme_err("session_id invalid %d", session_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	neighbor_roam_info = &mac_ctx->roam.neighborRoamInfo[session_id];
+	num_mac_addr = neighbor_roam_info->FTRoamInfo.preAuthFailList.
+			numMACAddress;
 	sme_warn("Added BSSID " QDF_MAC_ADDR_FMT " to Preauth failed list",
 		QDF_MAC_ADDR_REF(bssid));
 
@@ -735,12 +750,17 @@ void csr_roam_ft_pre_auth_rsp_processor(struct mac_context *mac_ctx,
 QDF_STATUS csr_neighbor_roam_issue_preauth_req(struct mac_context *mac_ctx,
 						      uint8_t session_id)
 {
-	tpCsrNeighborRoamControlInfo neighbor_roam_info =
-		&mac_ctx->roam.neighborRoamInfo[session_id];
+	tpCsrNeighborRoamControlInfo neighbor_roam_info;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	tpCsrNeighborRoamBSSInfo neighbor_bss_node;
+	struct csr_roam_session *session = CSR_GET_SESSION(mac_ctx, session_id);
 
+	if (!session) {
+		sme_err("session_id invalid %d", session_id);
+		return QDF_STATUS_E_FAILURE;
+	}
 
+	neighbor_roam_info = &mac_ctx->roam.neighborRoamInfo[session_id];
 	if (false != neighbor_roam_info->FTRoamInfo.preauthRspPending) {
 		/* This must not be true here */
 		QDF_ASSERT(neighbor_roam_info->FTRoamInfo.preauthRspPending ==

@@ -1384,6 +1384,7 @@ typedef struct dhd_pub {
 	/* Pkt filter defination */
 	char * pktfilter[100];
 	int pktfilter_count;
+	int defer_suspend_packet_filter;
 
 	wl_country_t dhd_cspec;		/* Current Locale info */
 #ifdef CUSTOM_COUNTRY_CODE
@@ -2832,17 +2833,20 @@ extern int dhd_set_ap_powersave(dhd_pub_t *dhdp, int ifidx, int enable);
 #define DHD_LLC_STP_DROP_FILTER_NUM	8
 #define DHD_LLC_XID_DROP_FILTER_NUM	9
 #define DHD_UDPNETBIOS_DROP_FILTER_NUM	10
+#define DHD_ETH_0800_DROP_FILTER_NUM    11
 #define DISCARD_IPV4_MCAST	"102 1 6 IP4_H:16 0xf0 0xe0"
 #define DISCARD_IPV6_MCAST	"103 1 6 IP6_H:24 0xff 0xff"
 #define DISCARD_IPV4_BCAST	"107 1 6 IP4_H:16 0xffffffff 0xffffffff"
 #define DISCARD_LLC_STP		"108 1 6 ETH_H:14 0xFFFFFFFFFFFF 0xAAAA0300000C"
 #define DISCARD_LLC_XID		"109 1 6 ETH_H:14 0xFFFFFF 0x0001AF"
 #define DISCARD_UDPNETBIOS	"110 1 6 UDP_H:2 0xffff 0x0089"
+#define DISCARD_ETHERTYPE_0800  "111 1 0 12 0xFFFF 0x0800"
 extern int dhd_os_enable_packet_filter(dhd_pub_t *dhdp, int val);
 extern void dhd_enable_packet_filter(int value, dhd_pub_t *dhd);
 extern int dhd_packet_filter_add_remove(dhd_pub_t *dhdp, int add_remove, int num);
 extern int net_os_enable_packet_filter(struct net_device *dev, int val);
 extern int net_os_rxfilter_add_remove(struct net_device *dev, int val, int num);
+extern void dhd_enable_packet_filter_min_power(int value, dhd_pub_t *dhd);
 
 #define MAX_PKTFLT_BUF_SIZE		2048
 #define MAX_PKTFLT_FIXED_PATTERN_SIZE	32
@@ -3233,6 +3237,9 @@ extern bool bcm_bprintf_bypass;
 
 /* Override to force tx queueing all the time */
 extern uint dhd_force_tx_queueing;
+
+/* Packet filter to optimize host wake ups during suspend */
+extern uint dhd_pkt_filter_min_power;
 
 /* Default bcn_timeout value is 4 */
 #define DEFAULT_BCN_TIMEOUT_VALUE	4

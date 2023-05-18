@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef STP_ERROR_MAPPING_H
 #define STP_ERROR_MAPPING_H
 

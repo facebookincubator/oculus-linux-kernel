@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "clk: %s: " fmt, __func__
@@ -347,10 +347,11 @@ static struct pll_vco brammo_vco[] = {
 };
 
 static struct pll_vco default_vco[] = {
-	{ 1000000000, 2000000000, 0 },
-	{ 750000000, 1500000000, 1 },
 	{ 500000000, 1000000000, 2 },
-	{ 250000000, 500000000, 3 },
+};
+
+static struct pll_vco alpha_vco[] = {
+	{ 750000000, 1500000000, 1 },
 };
 
 static const u8 clk_alpha_pll_regs_offset[][PLL_OFF_MAX_REGS] = {
@@ -452,8 +453,8 @@ static const struct alpha_pll_config gpll10_config = {
 
 static struct clk_alpha_pll gpll10 = {
 	.offset = 0xa000,
-	.vco_table = default_vco,
-	.num_vco = ARRAY_SIZE(default_vco),
+	.vco_table = alpha_vco,
+	.num_vco = ARRAY_SIZE(alpha_vco),
 	.regs = clk_alpha_pll_regs_offset[CLK_ALPHA_PLL_TYPE_DEFAULT],
 	.clkr = {
 		.enable_reg = 0x79000,
@@ -754,6 +755,7 @@ static struct clk_alpha_pll_postdiv gpll8_out_main = {
 		.name = "gpll8_out_main",
 		.parent_names = (const char *[]){ "gpll8" },
 		.num_parents = 1,
+		.flags = CLK_SET_RATE_PARENT,
 		.ops = &clk_alpha_pll_postdiv_ro_ops,
 	},
 };
@@ -1080,7 +1082,7 @@ static const struct freq_tbl ftbl_gcc_camss_ope_clk_src[] = {
 	F(200000000, P_GPLL8_OUT_MAIN, 2, 0, 0),
 	F(266600000, P_GPLL8_OUT_MAIN, 1, 0, 0),
 	F(465000000, P_GPLL8_OUT_MAIN, 1, 0, 0),
-	F(580000000, P_GPLL8_OUT_EARLY, 1, 0, 0),
+	F(576000000, P_GPLL9_OUT_MAIN, 1, 0, 0),
 	{ }
 };
 
@@ -2780,19 +2782,6 @@ static struct clk_branch gcc_gpu_throttle_core_clk = {
 	},
 };
 
-static struct clk_branch gcc_gpu_throttle_xo_clk = {
-	.halt_reg = 0x36044,
-	.halt_check = BRANCH_HALT,
-	.clkr = {
-		.enable_reg = 0x36044,
-		.enable_mask = BIT(0),
-		.hw.init = &(struct clk_init_data){
-			.name = "gcc_gpu_throttle_xo_clk",
-			.ops = &clk_branch2_ops,
-		},
-	},
-};
-
 static struct clk_branch gcc_pdm2_clk = {
 	.halt_reg = 0x2000c,
 	.halt_check = BRANCH_HALT,
@@ -3670,7 +3659,6 @@ static struct clk_regmap *gcc_bengal_clocks[] = {
 	[GCC_GPU_MEMNOC_GFX_CLK] = &gcc_gpu_memnoc_gfx_clk.clkr,
 	[GCC_GPU_SNOC_DVM_GFX_CLK] = &gcc_gpu_snoc_dvm_gfx_clk.clkr,
 	[GCC_GPU_THROTTLE_CORE_CLK] = &gcc_gpu_throttle_core_clk.clkr,
-	[GCC_GPU_THROTTLE_XO_CLK] = &gcc_gpu_throttle_xo_clk.clkr,
 	[GCC_PDM2_CLK] = &gcc_pdm2_clk.clkr,
 	[GCC_PDM2_CLK_SRC] = &gcc_pdm2_clk_src.clkr,
 	[GCC_PDM_AHB_CLK] = &gcc_pdm_ahb_clk.clkr,
@@ -3766,6 +3754,8 @@ static struct clk_regmap *gcc_bengal_clocks[] = {
 static const struct qcom_reset_map gcc_bengal_resets[] = {
 	[GCC_QUSB2PHY_PRIM_BCR] = { 0x1c000 },
 	[GCC_QUSB2PHY_SEC_BCR] = { 0x1c004 },
+	[GCC_SDCC1_BCR] = { 0x38000 },
+	[GCC_SDCC2_BCR] = { 0x141E000 },
 	[GCC_UFS_PHY_BCR] = { 0x45000 },
 	[GCC_USB30_PRIM_BCR] = { 0x1a000 },
 	[GCC_USB_PHY_CFG_AHB2PHY_BCR] = { 0x1d000 },

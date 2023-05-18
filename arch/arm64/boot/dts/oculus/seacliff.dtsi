@@ -18,40 +18,40 @@
 	hsuart14 = "/soc/qcom,qup_uart@98c000";
 };
 
-&pm8150a_l1 {
+&L1C {
 	/* IPD 1.8 */
 	regulator-always-on;
 };
 
-&pm8150a_l4 {
+&L4C {
 	/* FPGA aggregator 1.8 */
 	status = "ok";
 	qcom,init-voltage = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150a_l5 {
+&L5C {
 	status = "disabled";
 };
 
-&pm8150a_l6 {
+&L6C {
 	status = "disabled";
 };
 
-&pm8150a_l7 {
+&L7C {
 	status = "disabled";
 };
 
-&pm8150a_l8 {
+&L8C {
 	/* nRF, IMU, Mag 1.8 */
 	regulator-always-on;
 };
 
-&pm8150a_l9 {
+&L9C {
 	status = "disabled";
 };
 
-&pm8150a_l11 {
+&L11C {
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 	qcom,init-voltage = <3120000>;
 };
@@ -441,11 +441,11 @@
 		status = "ok";
 		compatible = "oculus,fpga";
 		vcciox-voltage-mv = <1800000>;
-		vcciox-supply = <&pm8150a_l4>;
+		vcciox-supply = <&L4C>;
 		vcc-voltage-mv = <1800000>;
-		vcc-supply = <&pm8150a_l4>;
+		vcc-supply = <&L4C>;
 		vccaux-voltage-mv = <2500000>;
-		vccaux-supply = <&pm8150_l13>;
+		vccaux-supply = <&L13A>;
 	};
 
 	kona_mtp_batterydata: qcom,battery-data {
@@ -455,8 +455,4 @@
 		#include "4759214_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Feb17th2021_PM8150B_GUI10014.dtsi"
 		#include "5133886_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Apr23rd2021_PM8150B_GUI10014.dtsi"
 	};
-};
-
-&dwc0 {
-	maximum-speed = "super-speed";
 };

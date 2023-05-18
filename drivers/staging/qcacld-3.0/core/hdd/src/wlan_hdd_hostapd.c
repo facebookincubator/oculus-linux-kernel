@@ -5193,9 +5193,7 @@ int wlan_hdd_cfg80211_start_bss(struct hdd_adapter *adapter,
 	bool go_force_11n_for_11ac = 0;
 	bool bval = false;
 	bool enable_dfs_scan = true;
-#ifdef WLAN_FEATURE_INTERFACE_MGR
 	bool deliver_start_evt = true;
-#endif
 	struct s_ext_cap *p_ext_cap;
 	enum reg_phymode reg_phy_mode, updated_phy_mode;
 

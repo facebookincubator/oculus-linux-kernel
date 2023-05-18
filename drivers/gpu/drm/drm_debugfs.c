@@ -166,12 +166,10 @@ int drm_debugfs_init(struct drm_minor *minor, int minor_id,
 			return ret;
 		}
 
-		if (drm_core_check_feature(dev, DRIVER_MODESET)) {
-			ret = drm_client_debugfs_init(minor);
-			if (ret) {
-				DRM_ERROR("Failed to create client debugfs file\n");
-				return ret;
-			}
+		ret = drm_client_debugfs_init(minor);
+		if (ret) {
+			DRM_ERROR("Failed to create client debugfs file\n");
+			return ret;
 		}
 	}
 
@@ -267,13 +265,13 @@ static ssize_t connector_write(struct file *file, const char __user *ubuf,
 
 	buf[len] = '\0';
 
-	if (!strcmp(buf, "on"))
+	if (sysfs_streq(buf, "on"))
 		connector->force = DRM_FORCE_ON;
-	else if (!strcmp(buf, "digital"))
+	else if (sysfs_streq(buf, "digital"))
 		connector->force = DRM_FORCE_ON_DIGITAL;
-	else if (!strcmp(buf, "off"))
+	else if (sysfs_streq(buf, "off"))
 		connector->force = DRM_FORCE_OFF;
-	else if (!strcmp(buf, "unspecified"))
+	else if (sysfs_streq(buf, "unspecified"))
 		connector->force = DRM_FORCE_UNSPECIFIED;
 	else
 		return -EINVAL;

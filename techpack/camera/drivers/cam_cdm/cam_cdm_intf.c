@@ -24,39 +24,18 @@ static const struct of_device_id msm_cam_cdm_intf_dt_match[] = {
 	{}
 };
 
-static int get_cdm_mgr_refcount(void)
+static bool get_cdm_mgr_refcount(void)
 {
-	int rc = 0;
-
-	mutex_lock(&cam_cdm_mgr_lock);
-	if (cdm_mgr.probe_done == false) {
-		CAM_ERR(CAM_CDM, "CDM intf mgr not probed yet");
-		rc = -EPERM;
-	} else {
-		CAM_DBG(CAM_CDM, "CDM intf mgr get refcount=%d",
-			cdm_mgr.refcount);
-		cdm_mgr.refcount++;
-	}
-	mutex_unlock(&cam_cdm_mgr_lock);
-	return rc;
+	return !refcount_inc_not_zero(&cdm_mgr.refcount);
 }
 
 static void put_cdm_mgr_refcount(void)
 {
-	mutex_lock(&cam_cdm_mgr_lock);
-	if (cdm_mgr.probe_done == false) {
-		CAM_ERR(CAM_CDM, "CDM intf mgr not probed yet");
-	} else {
-		CAM_DBG(CAM_CDM, "CDM intf mgr put refcount=%d",
-			cdm_mgr.refcount);
-		if (cdm_mgr.refcount > 0) {
-			cdm_mgr.refcount--;
-		} else {
-			CAM_ERR(CAM_CDM, "Refcount put when zero");
-			WARN_ON(1);
-		}
-	}
-	mutex_unlock(&cam_cdm_mgr_lock);
+	/*
+	 * Probe should always hold an extra reference, so panic if
+	 * the refcount drops to zero.
+	 */
+	BUG_ON(refcount_dec_and_test(&cdm_mgr.refcount));
 }
 
 static int get_cdm_iommu_handle(struct cam_iommu_handle *cdm_handles,
@@ -247,12 +226,10 @@ int cam_cdm_submit_bls(uint32_t handle, struct cam_cdm_bl_request *data)
 	if (!data)
 		return rc;
 
-	if (!in_softirq()) {
-		if (get_cdm_mgr_refcount()) {
-			CAM_ERR(CAM_CDM, "CDM intf mgr get refcount failed");
-			rc = -EPERM;
-			return rc;
-		}
+	if (get_cdm_mgr_refcount()) {
+		CAM_ERR(CAM_CDM, "CDM intf mgr get refcount failed");
+		rc = -EPERM;
+		return rc;
 	}
 
 	hw_index = CAM_CDM_GET_HW_IDX(handle);
@@ -275,8 +252,7 @@ int cam_cdm_submit_bls(uint32_t handle, struct cam_cdm_bl_request *data)
 				hw_index);
 		}
 	}
-	if (!in_softirq())
-		put_cdm_mgr_refcount();
+	put_cdm_mgr_refcount();
 
 	return rc;
 }
@@ -509,13 +485,11 @@ static int cam_cdm_intf_probe(struct platform_device *pdev)
 		cdm_mgr.nodes[i].data = NULL;
 		cdm_mgr.nodes[i].refcount = 0;
 	}
-	cdm_mgr.probe_done = true;
-	cdm_mgr.refcount = 0;
+	refcount_set(&cdm_mgr.refcount, 1);
 	mutex_unlock(&cam_cdm_mgr_lock);
 	rc = cam_virtual_cdm_probe(pdev);
 	if (rc) {
 		mutex_lock(&cam_cdm_mgr_lock);
-		cdm_mgr.probe_done = false;
 		for (i = 0 ; i < CAM_CDM_INTF_MGR_MAX_SUPPORTED_CDM; i++) {
 			if (cdm_mgr.nodes[i].device || cdm_mgr.nodes[i].data ||
 				(cdm_mgr.nodes[i].refcount != 0))
@@ -536,31 +510,29 @@ static int cam_cdm_intf_probe(struct platform_device *pdev)
 
 static int cam_cdm_intf_remove(struct platform_device *pdev)
 {
-	int i, rc = -EBUSY;
+	int i;
 
-	if (get_cdm_mgr_refcount()) {
+	if (!refcount_read(&cdm_mgr.refcount)) {
 		CAM_ERR(CAM_CDM, "CDM intf mgr get refcount failed");
-		return rc;
+		return -EBUSY;
 	}
 
 	if (cam_virtual_cdm_remove(pdev)) {
 		CAM_ERR(CAM_CDM, "Virtual CDM remove failed");
-		goto end;
+		return -EBUSY;
 	}
-	put_cdm_mgr_refcount();
+
+	if (!refcount_dec_and_test(&cdm_mgr.refcount)) {
+		CAM_ERR(CAM_CDM, "cdm manger refcount not zero %d",
+				refcount_read(&cdm_mgr.refcount));
+		BUG_ON(1);
+	}
 
 	mutex_lock(&cam_cdm_mgr_lock);
-	if (cdm_mgr.refcount != 0) {
-		CAM_ERR(CAM_CDM, "cdm manger refcount not zero %d",
-			cdm_mgr.refcount);
-		goto end;
-	}
-
 	for (i = 0 ; i < CAM_CDM_INTF_MGR_MAX_SUPPORTED_CDM; i++) {
 		if (cdm_mgr.nodes[i].device || cdm_mgr.nodes[i].data ||
 			(cdm_mgr.nodes[i].refcount != 0)) {
 			CAM_ERR(CAM_CDM, "Valid node present in index=%d", i);
-			mutex_unlock(&cam_cdm_mgr_lock);
 			goto end;
 		}
 		mutex_destroy(&cdm_mgr.nodes[i].lock);
@@ -568,12 +540,10 @@ static int cam_cdm_intf_remove(struct platform_device *pdev)
 		cdm_mgr.nodes[i].data = NULL;
 		cdm_mgr.nodes[i].refcount = 0;
 	}
-	cdm_mgr.probe_done = false;
-	rc = 0;
 
 end:
 	mutex_unlock(&cam_cdm_mgr_lock);
-	return rc;
+	return 0;
 }
 
 static struct platform_driver cam_cdm_intf_driver = {

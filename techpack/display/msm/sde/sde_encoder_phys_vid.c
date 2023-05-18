@@ -32,6 +32,7 @@
 /* Poll time to do recovery during active region */
 #define POLL_TIME_USEC_FOR_LN_CNT 500
 #define MAX_POLL_CNT 10
+#define MS_TO_US(t) ((t) * USEC_PER_MSEC)
 
 static bool sde_encoder_phys_vid_is_master(
 		struct sde_encoder_phys *phys_enc)
@@ -243,6 +244,46 @@ static u32 programmable_fetch_get_num_lines(
 		worst_case_needed_lines, needed_vfp_lines, actual_vfp_lines);
 
 	return actual_vfp_lines;
+}
+
+static void skewed_vsync_config(struct sde_encoder_phys *phys_enc,
+				      const struct intf_timing_params *timing)
+{
+	struct sde_intf_offset_cfg cfg = { 0 };
+	struct drm_connector *drm_conn;
+	struct sde_encoder_phys_vid *vid_enc =
+			to_sde_encoder_phys_vid(phys_enc);
+
+	if (phys_enc->split_role != ENC_ROLE_MASTER &&
+			!phys_enc->hw_intf->ops.setup_skewed_vsync)
+		return;
+
+	drm_conn = phys_enc->connector;
+	if (!drm_conn || !drm_conn->state) {
+		SDE_ERROR("No reference to drm_connector\n");
+		return;
+	}
+
+	cfg.offset_percentage = sde_connector_get_property(drm_conn->state,
+						CONNECTOR_PROP_SKEW_VSYNC);
+
+	if (!cfg.offset_percentage) {
+		SDE_DEBUG_VIDENC(vid_enc,
+			"conn_prop: No value set for Skewed_vsync\n");
+		cfg.offset_percentage = 50; /* Default */
+	} else if (cfg.offset_percentage > MAX_SKEW_VSYNC_PERCENTAGE) {
+		cfg.offset_percentage = MAX_SKEW_VSYNC_PERCENTAGE;
+	} else if (cfg.offset_percentage < MIN_SKEW_VSYNC_PERCENTAGE) {
+		cfg.offset_percentage = MIN_SKEW_VSYNC_PERCENTAGE;
+	}
+	SDE_DEBUG_VIDENC(vid_enc,
+		 "skewed_vsync offset_percentage is set to: %u\n",
+						cfg.offset_percentage);
+	sde_encoder_helper_skewed_vsync_config(phys_enc, &cfg);
+	if (!cfg.intf_offset_en)
+		return;
+
+	phys_enc->hw_intf->ops.setup_skewed_vsync(phys_enc->hw_intf, &cfg);
 }
 
 /*
@@ -479,9 +520,10 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 				&intf_cfg);
 	}
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
-	if (phys_enc->hw_intf->cap->type == INTF_DSI)
+	if (phys_enc->hw_intf->cap->type == INTF_DSI) {
 		programmable_fetch_config(phys_enc, &timing_params);
-
+		skewed_vsync_config(phys_enc, &timing_params);
+	}
 exit:
 	if (phys_enc->parent_ops.get_qsync_fps)
 		phys_enc->parent_ops.get_qsync_fps(
@@ -706,9 +748,11 @@ static int sde_encoder_phys_vid_control_vblank_irq(
 	refcount = atomic_read(&phys_enc->vblank_refcount);
 	vid_enc = to_sde_encoder_phys_vid(phys_enc);
 
-	/* Slave encoders don't report vblank */
+	/* Slave encoders don't report vblank except for enabled skew-vsync */
 	if (!sde_encoder_phys_vid_is_master(phys_enc))
-		goto end;
+		if (!sde_encoder_helper_get_skewed_vsync_status
+						(phys_enc->parent))
+			goto end;
 
 	/* protect against negative */
 	if (!enable && refcount == 0) {
@@ -1156,6 +1200,7 @@ static void sde_encoder_phys_vid_disable(struct sde_encoder_phys *phys_enc)
 	struct sde_encoder_phys_vid *vid_enc;
 	unsigned long lock_flags;
 	struct intf_status intf_status = {0};
+	bool vsync_skew_en = false;
 
 	if (!phys_enc || !phys_enc->parent || !phys_enc->parent->dev ||
 			!phys_enc->parent->dev->dev_private) {
@@ -1173,10 +1218,16 @@ static void sde_encoder_phys_vid_disable(struct sde_encoder_phys *phys_enc)
 
 	SDE_DEBUG_VIDENC(vid_enc, "\n");
 
+	vsync_skew_en = sde_encoder_helper_get_skewed_vsync_status
+						(phys_enc->parent);
+
 	if (WARN_ON(!phys_enc->hw_intf->ops.enable_timing))
 		return;
-	else if (!sde_encoder_phys_vid_is_master(phys_enc))
+	else if (!sde_encoder_phys_vid_is_master(phys_enc)) {
+		if (vsync_skew_en)
+			sde_encoder_helper_phys_disable(phys_enc, NULL);
 		goto exit;
+	}
 
 	if (phys_enc->enable_state == SDE_ENC_DISABLED) {
 		SDE_ERROR("already disabled\n");
@@ -1199,6 +1250,23 @@ static void sde_encoder_phys_vid_disable(struct sde_encoder_phys *phys_enc)
 		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
 
 		sde_encoder_phys_vid_single_vblank_wait(phys_enc);
+	}
+
+	if (vsync_skew_en) {
+		u32 fps;
+		u64 frame_time_ms;
+
+		fps = sde_encoder_get_fps(phys_enc->parent);
+		frame_time_ms = 1000;
+		do_div(frame_time_ms, fps);
+		SDE_DEBUG("vsync-skew: Wait extra frame_time=%lld. fps=%d\n",
+							frame_time_ms, fps);
+		SDE_EVT32(DRMID(phys_enc->parent), vsync_skew_en,
+			fps, frame_time_ms, ktime_to_ms(ktime_get()));
+		usleep_range(MS_TO_US(frame_time_ms),
+			MS_TO_US(frame_time_ms + 2));
+		SDE_EVT32(DRMID(phys_enc->parent), vsync_skew_en,
+			fps, frame_time_ms, ktime_to_ms(ktime_get()));
 	}
 
 	sde_encoder_helper_phys_disable(phys_enc, NULL);
@@ -1243,7 +1311,7 @@ static void sde_encoder_phys_vid_handle_post_kickoff(
 
 	avr_mode = sde_connector_get_qsync_mode(phys_enc->connector);
 
-	if (avr_mode && phys_enc->avr_post_kickoff_enabled && vid_enc->base.hw_intf->ops.avr_trigger) {
+	if (avr_mode && vid_enc->base.hw_intf->ops.avr_trigger) {
 		vid_enc->base.hw_intf->ops.avr_trigger(vid_enc->base.hw_intf);
 		SDE_EVT32(DRMID(phys_enc->parent),
 				phys_enc->hw_intf->idx - INTF_0,
@@ -1263,31 +1331,6 @@ static void sde_encoder_phys_vid_prepare_for_commit(
 	if (sde_connector_is_qsync_updated(phys_enc->connector))
 		_sde_encoder_phys_vid_avr_ctrl(phys_enc);
 
-}
-
-static void sde_encoder_phys_vid_vsync_trigger(struct sde_encoder_phys *phys_enc)
-{
-	struct sde_encoder_phys_vid *vid_enc;
-	u32 avr_mode;
-
-	if (!phys_enc) {
-		SDE_ERROR("invalid encoder\n");
-		return;
-	}
-
-	/* T58830016: find appropriate mechanism to disable the post-kickoff
-	 * vsync trigger.
-	 */
-	phys_enc->avr_post_kickoff_enabled = false;
-
-	vid_enc = to_sde_encoder_phys_vid(phys_enc);
-	SDE_DEBUG_VIDENC(vid_enc, "enable_state %d\n", phys_enc->enable_state);
-
-	avr_mode = sde_connector_get_qsync_mode(phys_enc->connector);
-	SDE_DEBUG_VIDENC(vid_enc, "avr_mode %d\n", avr_mode);
-
-	if (avr_mode && vid_enc->base.hw_intf->ops.avr_trigger)
-		vid_enc->base.hw_intf->ops.avr_trigger(vid_enc->base.hw_intf);
 }
 
 static void sde_encoder_phys_vid_irq_control(struct sde_encoder_phys *phys_enc,
@@ -1432,7 +1475,6 @@ static void sde_encoder_phys_vid_init_ops(struct sde_encoder_phys_ops *ops)
 	ops->wait_dma_trigger = sde_encoder_phys_vid_wait_dma_trigger;
 	ops->wait_for_active = sde_encoder_phys_vid_wait_for_active;
 	ops->prepare_commit = sde_encoder_phys_vid_prepare_for_commit;
-	ops->vsync_trigger = sde_encoder_phys_vid_vsync_trigger;
 }
 
 struct sde_encoder_phys *sde_encoder_phys_vid_init(
@@ -1467,11 +1509,6 @@ struct sde_encoder_phys *sde_encoder_phys_vid_init(
 	phys_enc->intf_idx = p->intf_idx;
 
 	SDE_DEBUG_VIDENC(vid_enc, "\n");
-
-	/* TODO(T58830016): Need to find a better way to initialize this
-	 * parameter.
-	 */
-	phys_enc->avr_post_kickoff_enabled = true;
 
 	sde_encoder_phys_vid_init_ops(&phys_enc->ops);
 	phys_enc->parent = p->parent;

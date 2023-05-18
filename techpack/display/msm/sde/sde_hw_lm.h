@@ -10,9 +10,6 @@
 #include "sde_hw_util.h"
 #include "sde_hw_blk.h"
 
-#define SDE_MIXER_LAYOUT_LEFT 0x1
-#define SDE_MIXER_LAYOUT_RIGHT 0x2
-
 struct sde_hw_mixer;
 
 struct sde_hw_mixer_cfg {

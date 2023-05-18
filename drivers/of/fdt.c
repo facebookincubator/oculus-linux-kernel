@@ -25,6 +25,7 @@
 #include <linux/debugfs.h>
 #include <linux/serial_core.h>
 #include <linux/sysfs.h>
+#include <linux/random.h>
 
 #include <asm/setup.h>  /* for COMMAND_LINE_SIZE */
 #include <asm/page.h>
@@ -110,6 +111,7 @@ int of_fdt_get_ddrhbb(int channel, int rank)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(of_fdt_get_ddrhbb);
 
 /**
  * of_fdt_get_ddrrank - Return the rank of ddr on the current device
@@ -141,6 +143,7 @@ int of_fdt_get_ddrrank(int channel)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(of_fdt_get_ddrrank);
 
 /**
  * of_fdt_get_ddrtype - Return the type of ddr (4/5) on the current device
@@ -167,6 +170,7 @@ int of_fdt_get_ddrtype(void)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(of_fdt_get_ddrtype);
 
 /**
  * of_fdt_is_compatible - Return true if given node from the given blob has
@@ -1190,6 +1194,7 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 	int l = 0;
 	const char *p = NULL;
 	char *cmdline = data;
+	const void *rng_seed;
 
 	pr_debug("search \"chosen\", depth: %d, uname: %s\n", depth, uname);
 
@@ -1223,6 +1228,18 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 	}
 
 	pr_debug("Command line is: %s\n", (char*)data);
+
+	rng_seed = of_get_flat_dt_prop(node, "rng-seed", &l);
+	if (rng_seed && l > 0) {
+		add_bootloader_randomness(rng_seed, l);
+
+		/* try to clear seed so it won't be found. */
+		fdt_nop_property(initial_boot_params, node, "rng-seed");
+
+		/* update CRC check value */
+		of_fdt_crc32 = crc32_be(~0, initial_boot_params,
+				fdt_totalsize(initial_boot_params));
+	}
 
 	/* break now */
 	return 1;

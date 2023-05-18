@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -1505,6 +1506,9 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 				sde_kms->catalog->mixer_count - mixer_count : 0;
 	max_dp_dsc_count = sde_kms->catalog->dsc_count > dsc_count ?
 				sde_kms->catalog->dsc_count - dsc_count : 0;
+
+	if (info.skewed_vsync_master)
+		sde_kms->rm.vsync_skew_supported = true;
 
 	/* wb */
 	for (i = 0; i < sde_kms->wb_display_count &&
@@ -3254,43 +3258,30 @@ static void _sde_kms_set_lutdma_vbif_remap(struct sde_kms *sde_kms)
 	sde_vbif_set_qos_remap(sde_kms, &qos_params);
 }
 
-void sde_kms_update_pm_qos_irq_request(struct sde_kms *sde_kms,
-			 bool enable, bool skip_lock)
+static void sde_kms_update_pm_qos_irq_request(struct sde_kms *sde_kms)
 {
-	struct msm_drm_private *priv;
+	struct pm_qos_request *req;
 
-	priv = sde_kms->dev->dev_private;
+	req = &sde_kms->pm_qos_irq_req;
+	req->type = PM_QOS_REQ_AFFINE_CORES;
+	req->cpus_affine = sde_kms->irq_cpu_mask;
 
-	if (!skip_lock)
-		mutex_lock(&priv->phandle.phandle_lock);
-
-	if (enable) {
-		struct pm_qos_request *req;
-		u32 cpu_irq_latency;
-
-		req = &sde_kms->pm_qos_irq_req;
-		req->type = PM_QOS_REQ_AFFINE_CORES;
-		req->cpus_affine = sde_kms->irq_cpu_mask;
-		cpu_irq_latency = sde_kms->catalog->perf.cpu_irq_latency;
-
-		if (pm_qos_request_active(req))
-			pm_qos_update_request(req, cpu_irq_latency);
-		else if (!cpumask_empty(&req->cpus_affine)) {
-			/** If request is not active yet and mask is not empty
-			 *  then it needs to be added initially
-			 */
-			pm_qos_add_request(req, PM_QOS_CPU_DMA_LATENCY,
-					cpu_irq_latency);
-		}
-	} else if (!enable && pm_qos_request_active(&sde_kms->pm_qos_irq_req)) {
-		pm_qos_update_request(&sde_kms->pm_qos_irq_req,
-				PM_QOS_DEFAULT_VALUE);
+	if (pm_qos_request_active(req))
+		pm_qos_update_request(req, SDE_KMS_PM_QOS_CPU_DMA_LATENCY);
+	else if (!cpumask_empty(&req->cpus_affine)) {
+		/** If request is not active yet and mask is not empty
+		 *  then it needs to be added initially
+		 */
+		pm_qos_add_request(req, PM_QOS_CPU_DMA_LATENCY,
+					SDE_KMS_PM_QOS_CPU_DMA_LATENCY);
 	}
+}
 
-	sde_kms->pm_qos_irq_req_en = enable;
-
-	if (!skip_lock)
-		mutex_unlock(&priv->phandle.phandle_lock);
+static void sde_kms_set_default_pm_qos_irq_request(struct sde_kms *sde_kms)
+{
+	if (pm_qos_request_active(&sde_kms->pm_qos_irq_req))
+		pm_qos_update_request(&sde_kms->pm_qos_irq_req,
+					PM_QOS_DEFAULT_VALUE);
 }
 
 static void sde_kms_irq_affinity_notify(
@@ -3312,8 +3303,8 @@ static void sde_kms_irq_affinity_notify(
 	sde_kms->irq_cpu_mask = *mask;
 
 	// request vote with updated irq cpu mask
-	if (sde_kms->pm_qos_irq_req_en)
-		sde_kms_update_pm_qos_irq_request(sde_kms, true, true);
+	if (sde_kms->irq_enabled)
+		sde_kms_update_pm_qos_irq_request(sde_kms);
 
 	mutex_unlock(&priv->phandle.phandle_lock);
 }
@@ -3338,9 +3329,9 @@ static void sde_kms_handle_power_event(u32 event_type, void *usr)
 		sde_kms_init_shared_hw(sde_kms);
 		_sde_kms_set_lutdma_vbif_remap(sde_kms);
 		sde_kms->first_kickoff = true;
-		sde_kms_update_pm_qos_irq_request(sde_kms, true, true);
+		sde_kms_update_pm_qos_irq_request(sde_kms);
 	} else if (event_type == SDE_POWER_EVENT_PRE_DISABLE) {
-		sde_kms_update_pm_qos_irq_request(sde_kms, false, true);
+		sde_kms_set_default_pm_qos_irq_request(sde_kms);
 		sde_irq_update(msm_kms, false);
 		sde_kms->first_kickoff = false;
 	}

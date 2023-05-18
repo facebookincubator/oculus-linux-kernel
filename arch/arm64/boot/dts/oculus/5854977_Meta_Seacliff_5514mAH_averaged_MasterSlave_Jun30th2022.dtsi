@@ -45,9 +45,21 @@ qcom,5854977_Meta_Seacliff_5514mAH_averaged_MasterSlave_Jun30th2022 {
 	/* 1 - OK, 2 - warn, 3 - crit, 4 - missing, 5 - unknown */
 	qcom,rblt-ranges = <1 1 4400000
 				2 2 4200000
-				3 3 3900000
+				3 3 4100000
 				4 4 4200000
 				5 5 4200000>;
+	qcom,fct-support;
+	qcom,fct-ok-range = <0 765>;
+	qcom,fct-warn-range-1 = <765 1530>;
+	qcom,fct-warn-range-2 = <1530 3060>;
+	qcom,fct-warn-range-3 = <3060 6120>;
+	qcom,fct-crit-range = <6120 14057998>;
+	/* 0 - OK, 1 - warn-1, 2- warn-2, 3 - warn-3, 4 - crit, 5 - unknown */
+	qcom,fct-ranges = <4400000 4350000 4350000 4350000 4350000 4400000>;
+	/* UT LT STL RT STH HT OT */
+	qcom,fct-weights = <15183 5149 4931 197 381 986 101633>;
+	/* Denominator in FCT weights math */
+	qcom,fct-weights-div = <10000000 1000000 100000 1000 1000 1000 10000>;
 	qcom,step-chg-ranges-0 = <3000000 4200000 4813000
 				4201000 4400000 1604000>;
 	qcom,step-chg-ranges-1 = <3000000 4000000 1604000

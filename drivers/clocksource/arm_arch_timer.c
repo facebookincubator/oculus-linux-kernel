@@ -29,7 +29,9 @@
 #include <linux/acpi.h>
 
 #include <asm/arch_timer.h>
+#include <asm/traps.h>
 #include <asm/virt.h>
+#include <asm/cputype.h>
 
 #include <clocksource/arm_arch_timer.h>
 
@@ -191,6 +193,25 @@ struct ate_acpi_oem_info {
 	char oem_table_id[ACPI_OEM_TABLE_ID_SIZE + 1];
 	u32 oem_revision;
 };
+
+#ifdef CONFIG_ARM_ERRATUM_858921
+DEFINE_PER_CPU(bool, timer_erratum_858921_workaround_enabled);
+EXPORT_PER_CPU_SYMBOL(timer_erratum_858921_workaround_enabled);
+static void arch_timer_check_858921_workaround(void)
+{
+	unsigned int cpuid_part;
+
+	cpuid_part = read_cpuid_part();
+	if (cpuid_part == ARM_CPU_PART_CORTEX_A73 ||
+	    cpuid_part == QCOM_CPU_PART_KRYO2XX_GOLD) {
+		this_cpu_write(timer_erratum_858921_workaround_enabled, true);
+	} else {
+		this_cpu_write(timer_erratum_858921_workaround_enabled, false);
+	}
+}
+#else
+#define arch_timer_check_858921_workaround()	do { } while (0)
+#endif
 
 #ifdef CONFIG_FSL_ERRATUM_A008585
 /*
@@ -802,6 +823,7 @@ static void __arch_timer_setup(unsigned type,
 		}
 
 		arch_timer_check_ool_workaround(ate_match_local_cap_id, NULL);
+		arch_timer_check_858921_workaround();
 	} else {
 		clk->features |= CLOCK_EVT_FEAT_DYNIRQ;
 		clk->name = "arch_mem_timer";
@@ -843,15 +865,24 @@ static void arch_timer_evtstrm_enable(int divider)
 
 static void arch_timer_configure_evtstream(void)
 {
-	int evt_stream_div, pos;
+	int evt_stream_div, lsb;
 
-	/* Find the closest power of two to the divisor */
-	evt_stream_div = arch_timer_rate / ARCH_TIMER_EVT_STREAM_FREQ;
-	pos = fls(evt_stream_div);
-	if (pos > 1 && !(evt_stream_div & (1 << (pos - 2))))
-		pos--;
+	/*
+	 * As the event stream can at most be generated at half the frequency
+	 * of the counter, use half the frequency when computing the divider.
+	 */
+	evt_stream_div = arch_timer_rate / ARCH_TIMER_EVT_STREAM_FREQ / 2;
+
+	/*
+	 * Find the closest power of two to the divisor. If the adjacent bit
+	 * of lsb (last set bit, starts from 0) is set, then we use (lsb + 1).
+	 */
+	lsb = fls(evt_stream_div) - 1;
+	if (lsb > 0 && (evt_stream_div & BIT(lsb - 1)))
+		lsb++;
+
 	/* enable event stream */
-	arch_timer_evtstrm_enable(min(pos, 15));
+	arch_timer_evtstrm_enable(max(0, min(lsb, 15)));
 }
 
 static void arch_counter_set_user_access(void)
@@ -963,6 +994,7 @@ u32 arch_timer_get_rate(void)
 {
 	return arch_timer_rate;
 }
+EXPORT_SYMBOL_GPL(arch_timer_get_rate);
 
 bool arch_timer_evtstrm_available(void)
 {
@@ -990,6 +1022,7 @@ void arch_timer_mem_get_cval(u32 *lo, u32 *hi)
 		*hi = readl_relaxed_no_log(arch_counter_base + CNTCVAL_HI);
 	}
 }
+EXPORT_SYMBOL_GPL(arch_timer_mem_get_cval);
 
 static u64 arch_counter_get_cntvct_mem(void)
 {
@@ -1520,6 +1553,8 @@ static int __init arch_timer_mem_of_init(struct device_node *np)
 	ret = arch_timer_mem_frame_register(frame);
 	if (!ret && !arch_timer_needs_of_probing())
 		ret = arch_timer_common_init();
+	get_timer_count_hook_init();
+	get_timer_freq_hook_init();
 out:
 	kfree(timer_mem);
 	return ret;

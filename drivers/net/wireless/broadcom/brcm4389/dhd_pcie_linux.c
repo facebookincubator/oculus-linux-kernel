@@ -893,6 +893,9 @@ static int dhdpcie_pci_suspend(struct device *dev)
 		if ((timeleft == 0) || (timeleft == 1)) {
 			DHD_ERROR(("%s: Timed out dhd_bus_busy_state=0x%x\n",
 				__FUNCTION__, bus->dhd->dhd_bus_busy_state));
+			DHD_GENERAL_LOCK(bus->dhd, flags);
+			DHD_BUS_BUSY_CLEAR_SUSPEND_IN_PROGRESS(bus->dhd);
+			DHD_GENERAL_UNLOCK(bus->dhd, flags);
 			return -EBUSY;
 		}
 	} else {
@@ -1874,6 +1877,7 @@ dhdpcie_disable_msi(struct pci_dev *pdev)
 int
 dhdpcie_request_irq(dhdpcie_info_t *dhdpcie_info)
 {
+	cpumask_var_t cpumask_primary;
 	dhd_bus_t *bus = dhdpcie_info->bus;
 	struct pci_dev *pdev = dhdpcie_info->bus->dev;
 
@@ -1905,6 +1909,17 @@ dhdpcie_request_irq(dhdpcie_info_t *dhdpcie_info)
 	}
 
 	dhdpcie_enable_irq_loop(bus);
+
+	/* force affinity */
+	if (alloc_cpumask_var(&cpumask_primary, GFP_KERNEL)) {
+		// use mask f0 to select cores 4,5,6,7
+		if (cpumask_parse("f0", cpumask_primary) >= 0) {
+			irq_set_affinity(pdev->irq, cpumask_primary);
+			free_cpumask_var(cpumask_primary);
+			DHD_ERROR(("%s: Force irq affinity to F0\n",
+				__FUNCTION__));
+		}
+	}
 
 	DHD_TRACE(("%s %s\n", __FUNCTION__, dhdpcie_info->pciname));
 

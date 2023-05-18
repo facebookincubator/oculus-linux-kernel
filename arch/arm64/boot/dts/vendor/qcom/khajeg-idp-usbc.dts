@@ -1,0 +1,14 @@
+/dts-v1/;
+
+#include "khajeg.dtsi"
+#include "khajeg-idp.dtsi"
+#include "khaje-idp-pm7250b.dtsi"
+#include "khajeg-idp-usbc.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Khajeg IDP USBC Audio";
+	compatible = "qcom,khajeg-idp", "qcom,khajeg", "qcom,idp";
+	qcom,msm-id = <585 0x10000>;
+	qcom,board-id = <0x1010022 0>;
+	qcom,pmic-id = <0x2D 0x2E 0x0 0x0>;
+};

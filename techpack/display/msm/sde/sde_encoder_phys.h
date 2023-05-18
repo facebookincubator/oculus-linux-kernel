@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __SDE_ENCODER_PHYS_H__
@@ -139,7 +139,6 @@ struct sde_encoder_virt_ops {
  *                              unitl transaction is complete.
  * @wait_for_active:		Wait for display scan line to be in active area
  * @setup_vsync_source:		Configure vsync source selection for cmd mode.
- * @vsync_trigger:		Trigger a vsync for video mode panel.
  */
 
 struct sde_encoder_phys_ops {
@@ -194,7 +193,6 @@ struct sde_encoder_phys_ops {
 	int (*wait_for_active)(struct sde_encoder_phys *phys);
 	void (*setup_vsync_source)(struct sde_encoder_phys *phys,
 			u32 vsync_source, bool is_dummy);
-	void (*vsync_trigger)(struct sde_encoder_phys *phys_enc);
 };
 
 /**
@@ -304,8 +302,6 @@ struct sde_encoder_irq {
  * @frame_trigger_mode:		frame trigger mode indication for command
  *				mode display
  * @dsc_4hs_merge_en:		enable dsc 4hs merge.
- * @avr_post_kickoff_enabled:	Indicates vsync will be triggered at the end of
- * 				the kickoff for video mode display
  */
 struct sde_encoder_phys {
 	struct drm_encoder *parent;
@@ -351,7 +347,6 @@ struct sde_encoder_phys {
 	int lineptr_offset_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
 	bool dsc_4hs_merge_en;
-	bool avr_post_kickoff_enabled;
 };
 
 static inline int sde_encoder_phys_inc_pending(struct sde_encoder_phys *phys)
@@ -660,6 +655,17 @@ static inline enum sde_3d_blend_mode sde_encoder_helper_get_3d_blend_mode(
 void sde_encoder_helper_split_config(
 		struct sde_encoder_phys *phys_enc,
 		enum sde_intf interface);
+
+/**
+ * sde_encoder_helper_skewed_vsync_config - skewed vsync config helper func
+ *	This helper function may be used by physical encoders to configure
+ *	the skewed_vsync/intf_offset related registers.
+ * @phys_enc: Pointer to physical encoder structure
+ * @cfg: pointer to sde_intf_offset_cfg structure
+ */
+void sde_encoder_helper_skewed_vsync_config(
+		struct sde_encoder_phys *phys_enc,
+		struct sde_intf_offset_cfg *cfg);
 
 /**
  * sde_encoder_helper_reset_mixers - reset mixers associated with phys enc

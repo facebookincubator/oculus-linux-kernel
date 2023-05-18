@@ -34,7 +34,7 @@ static ssize_t bootload_store(struct device *dev, struct device_attribute *attr,
   rc = kstrtol(buf, 10, &val);
   if (rc != 0 || val <= 0) {
 		dev_err(bpd->dev, "NOP for value (%s): %d", buf, rc);
-		return rc;
+		return -EINVAL;
   }
 
 	rc = mutex_lock_interruptible(&bpd->lock);

@@ -25,6 +25,7 @@
 #define PARAMETER_TYPE_CONNECTED_DEVICES 0x85
 #define PARAMETER_TYPE_LOG_TRANSMIT 0x86
 #define PARAMETER_TYPE_LOG_CHUNK 0x87
+#define PARAMETER_TYPE_MOISTURE_DETECTED 0xA0
 
 #define VDO_LOG_TRANSMIT_STOP 0x00
 #define VDO_LOG_TRANSMIT_START 0x01
@@ -69,6 +70,7 @@ struct charging_dock_params_t {
 	u8 broadcast_period;
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
+	bool moisture_detected;
 };
 
 struct charging_dock_device_t {

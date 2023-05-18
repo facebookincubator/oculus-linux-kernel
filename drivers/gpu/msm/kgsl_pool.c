@@ -14,6 +14,7 @@
 #include "kgsl_sharedmem.h"
 
 #ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
+
 /**
  * struct kgsl_page_pool - Structure to hold information for the pool
  * @pool_order: Page order describing the size of the page
@@ -56,41 +57,7 @@ _kgsl_get_pool_from_order(int order)
 
 	return index >= 0 ? &kgsl_pools[index] : NULL;
 }
-#endif
 
-static void kgsl_pool_sync_for_device(struct device *dev, struct page *page,
-		size_t size)
-{
-	struct scatterlist sg;
-
-	/* The caller may choose not to specify a device on purpose */
-	if (!dev)
-		return;
-
-	sg_init_table(&sg, 1);
-	sg_set_page(&sg, page, size, 0);
-	sg_dma_address(&sg) = page_to_phys(page);
-
-	dma_sync_sg_for_device(dev, &sg, 1, DMA_BIDIRECTIONAL);
-}
-
-/* Map the page into kernel and zero it out */
-static void
-_kgsl_pool_zero_page(struct page *p, unsigned int pool_order,
-		struct device *dev)
-{
-	int i;
-
-	for (i = 0; i < (1 << pool_order); i++) {
-		struct page *page = nth_page(p, i);
-
-		clear_highpage(page);
-	}
-
-	kgsl_pool_sync_for_device(dev, p, PAGE_SIZE << pool_order);
-}
-
-#ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 /* Add a page to specified pool */
 static void
 _kgsl_pool_add_page(struct kgsl_page_pool *pool, struct page *p)
@@ -107,12 +74,14 @@ _kgsl_pool_add_page(struct kgsl_page_pool *pool, struct page *p)
 		return;
 	}
 
+	kgsl_zero_page(p, pool->pool_order);
+
 	spin_lock(&pool->list_lock);
 	list_add_tail(&p->lru, &pool->page_list);
 	pool->page_count++;
 	spin_unlock(&pool->list_lock);
-	mod_node_page_state(page_pgdat(p), NR_INDIRECTLY_RECLAIMABLE_BYTES,
-				(PAGE_SIZE << pool->pool_order));
+	mod_node_page_state(page_pgdat(p), NR_KERNEL_MISC_RECLAIMABLE,
+			    (1 << pool->pool_order));
 }
 
 /* Returns a page from specified pool */
@@ -131,8 +100,9 @@ _kgsl_pool_get_page(struct kgsl_page_pool *pool)
 
 	if (p != NULL)
 		mod_node_page_state(page_pgdat(p),
-			NR_INDIRECTLY_RECLAIMABLE_BYTES,
-			-(PAGE_SIZE << pool->pool_order));
+				    NR_KERNEL_MISC_RECLAIMABLE,
+				    -(1 << pool->pool_order));
+
 	return p;
 }
 
@@ -234,25 +204,7 @@ static int kgsl_pool_get_retry_order(unsigned int order)
 
 	return 0;
 }
-#endif /* CONFIG_QCOM_KGSL_PAGE_POOLING */
 
-static gfp_t kgsl_gfp_mask(unsigned int page_order)
-{
-	gfp_t gfp_mask = __GFP_HIGHMEM;
-
-	if (page_order > 0) {
-		gfp_mask |= __GFP_COMP | __GFP_NORETRY | __GFP_NOWARN;
-		gfp_mask &= ~__GFP_RECLAIM;
-	} else
-		gfp_mask |= GFP_KERNEL;
-
-	if (kgsl_sharedmem_get_noretry())
-		gfp_mask |= __GFP_NORETRY | __GFP_NOWARN;
-
-	return gfp_mask;
-}
-
-#ifdef CONFIG_QCOM_KGSL_PAGE_POOLING
 /*
  * Return true if the pool of specified page size is supported
  * or no pools are supported otherwise return false.
@@ -267,8 +219,20 @@ static bool kgsl_pool_available(unsigned int page_size)
 	return (kgsl_get_pool_index(order) >= 0);
 }
 
-static int kgsl_get_page_size(size_t size, unsigned int align)
+/**
+ * kgsl_get_page_size() - Get supported pagesize
+ * @size: Size of the page
+ * @align: Desired alignment of the size
+ *
+ * Return supported pagesize
+ */
+#if !defined(CONFIG_ALLOC_BUFFERS_IN_4K_CHUNKS)
+static inline int kgsl_get_page_size(size_t size, unsigned int align,
+		struct kgsl_memdesc *memdesc)
 {
+	if (memdesc->priv & KGSL_MEMDESC_USE_SHMEM)
+		return PAGE_SIZE;
+
 	if (align >= ilog2(SZ_1M) && size >= SZ_1M &&
 		kgsl_pool_available(SZ_1M))
 		return SZ_1M;
@@ -278,9 +242,16 @@ static int kgsl_get_page_size(size_t size, unsigned int align)
 	else if (align >= ilog2(SZ_8K) && size >= SZ_8K &&
 		kgsl_pool_available(SZ_8K))
 		return SZ_8K;
-
+	else
+		return PAGE_SIZE;
+}
+#else
+static inline int kgsl_get_page_size(size_t size, unsigned int align,
+		struct kgsl_memdesc *memdesc)
+{
 	return PAGE_SIZE;
 }
+#endif
 
 /*
  * kgsl_pool_alloc_page() - Allocate a page of requested size
@@ -291,9 +262,9 @@ static int kgsl_get_page_size(size_t size, unsigned int align)
  *
  * Return total page count on success and negative value on failure
  */
-static int kgsl_pool_alloc_page(int *page_size, struct page **pages,
+int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 			unsigned int pages_len, unsigned int *align,
-			struct device *dev)
+			struct kgsl_memdesc *memdesc)
 {
 	int j;
 	int pcount = 0;
@@ -321,6 +292,7 @@ static int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 			} else
 				return -ENOMEM;
 		}
+		kgsl_zero_page(page, order);
 		goto done;
 	}
 
@@ -340,6 +312,7 @@ static int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 			page = alloc_pages(gfp_mask, order);
 			if (page == NULL)
 				return -ENOMEM;
+			kgsl_zero_page(page, order);
 			goto done;
 		}
 	}
@@ -369,11 +342,11 @@ static int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 			} else
 				return -ENOMEM;
 		}
+
+		kgsl_zero_page(page, order);
 	}
 
 done:
-	_kgsl_pool_zero_page(page, order, dev);
-
 	for (j = 0; j < (*page_size >> PAGE_SHIFT); j++) {
 		p = nth_page(page, j);
 		pages[pcount] = p;
@@ -383,7 +356,8 @@ done:
 	return pcount;
 
 eagain:
-	*page_size = kgsl_get_page_size(size, ilog2(size));
+	*page_size = kgsl_get_page_size(size,
+			ilog2(size), memdesc);
 	*align = ilog2(*page_size);
 	return -EAGAIN;
 }
@@ -523,11 +497,13 @@ static void kgsl_of_get_mempools(struct device_node *parent)
 	of_node_put(node);
 }
 
-void kgsl_init_page_pools(struct platform_device *pdev)
+void kgsl_init_page_pools(struct kgsl_device *device)
 {
+	if (device->flags & KGSL_FLAG_USE_SHMEM)
+		return;
 
 	/* Get GPU mempools data and configure pools */
-	kgsl_of_get_mempools(pdev->dev.of_node);
+	kgsl_of_get_mempools(device->pdev->dev.of_node);
 
 	/* Initialize shrinker */
 	register_shrinker(&kgsl_pool_shrinker);
@@ -542,14 +518,15 @@ void kgsl_exit_page_pools(void)
 	unregister_shrinker(&kgsl_pool_shrinker);
 }
 #else /* CONFIG_QCOM_KGSL_PAGE_POOLING */
-static int kgsl_get_page_size(size_t size, unsigned int align)
+static int kgsl_get_page_size(size_t size, unsigned int align,
+		struct kgsl_memdesc *memdesc)
 {
 	return PAGE_SIZE;
 }
 
 int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 			unsigned int pages_len, unsigned int *align,
-			struct device *dev)
+			struct kgsl_memdesc *memdesc)
 {
 	struct page *page = NULL;
 	gfp_t gfp_mask = kgsl_gfp_mask(0);
@@ -561,7 +538,7 @@ int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 	if (page == NULL)
 		return -ENOMEM;
 
-	_kgsl_pool_zero_page(page, 0, dev);
+	kgsl_zero_page(page, 0);
 
 	*pages = page;
 
@@ -588,7 +565,8 @@ void kgsl_init_page_pools(struct platform_device *pdev) {}
 void kgsl_exit_page_pools(void) {}
 #endif /* !CONFIG_QCOM_KGSL_PAGE_POOLING */
 
-int kgsl_pool_alloc_pages(u64 size, struct page ***pages, struct device *dev)
+int kgsl_pool_alloc_pages(struct kgsl_memdesc *memdesc, u64 size,
+		struct page ***pages)
 {
 	int count = 0;
 	int npages = size >> PAGE_SHIFT;
@@ -603,11 +581,11 @@ int kgsl_pool_alloc_pages(u64 size, struct page ***pages, struct device *dev)
 	/* Start with 1MB alignment to get the biggest page we can */
 	align = ilog2(SZ_1M);
 
-	page_size = kgsl_get_page_size(len, align);
+	page_size = kgsl_get_page_size(len, align, memdesc);
 
 	while (len) {
-		int ret = kgsl_pool_alloc_page(&page_size, &local[count],
-			npages, &align, dev);
+		int ret = kgsl_alloc_page(&page_size, &local[count],
+				npages, &align, memdesc, count);
 
 		if (ret == -EAGAIN)
 			continue;
@@ -623,7 +601,7 @@ int kgsl_pool_alloc_pages(u64 size, struct page ***pages, struct device *dev)
 			for (i = 0; i < count; ) {
 				int n = 1 << compound_order(local[i]);
 
-				kgsl_pool_free_page(local[i]);
+				kgsl_free_page(memdesc, local[i]);
 				i += n;
 			}
 			kvfree(local);
@@ -639,7 +617,7 @@ int kgsl_pool_alloc_pages(u64 size, struct page ***pages, struct device *dev)
 		npages -= ret;
 		len -= page_size;
 
-		page_size = kgsl_get_page_size(len, align);
+		page_size = kgsl_get_page_size(len, align, memdesc);
 	}
 
 	*pages = local;

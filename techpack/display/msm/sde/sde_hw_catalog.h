@@ -182,6 +182,7 @@ enum sde_intr_enum {
  * @SDE_MDP_UBWC_1_5,      Universal Bandwidth compression version 1.5
  * @SDE_MDP_VSYNC_SEL      Vsync selection for command mode panels
  * @SDE_MDP_DHDR_MEMPOOL   Dynamic HDR Metadata mempool present
+ * @SDE_MDP_SKEWED_VSYNC_SUPPORT Chipset supports interface offset feature
  * @SDE_MDP_MAX            Maximum value
 
  */
@@ -193,6 +194,7 @@ enum {
 	SDE_MDP_UBWC_1_5,
 	SDE_MDP_VSYNC_SEL,
 	SDE_MDP_DHDR_MEMPOOL,
+	SDE_MDP_SKEWED_VSYNC_SUPPORT,
 	SDE_MDP_MAX
 };
 
@@ -404,11 +406,13 @@ enum {
  * @SDE_INTF_INPUT_CTRL         Supports the setting of pp block from which
  *                              pixel data arrives to this INTF
  * @SDE_INTF_TE                 INTF block has TE configuration support
+ * @SDE_INTF_SKEWED_VSYNC       INTF block has skewed_vsync support
  * @SDE_INTF_MAX
  */
 enum {
 	SDE_INTF_INPUT_CTRL = 0x1,
 	SDE_INTF_TE,
+	SDE_INTF_SKEWED_VSYNC,
 	SDE_INTF_MAX
 };
 
@@ -1145,7 +1149,6 @@ struct sde_sc_cfg {
  * @cdp_cfg            cdp use case configurations
  * @cpu_mask:          pm_qos cpu mask value
  * @cpu_dma_latency:   pm_qos cpu dma latency value
- * @cpu_irq_latency:   pm_qos cpu irq latency value
  * @axi_bus_width:     axi bus width value in bytes
  * @num_mnoc_ports:    number of mnoc ports
  */
@@ -1176,7 +1179,6 @@ struct sde_perf_cfg {
 	struct sde_perf_cdp_cfg cdp_cfg[SDE_PERF_CDP_USAGE_MAX];
 	u32 cpu_mask;
 	u32 cpu_dma_latency;
-	u32 cpu_irq_latency;
 	u32 axi_bus_width;
 	u32 num_mnoc_ports;
 };

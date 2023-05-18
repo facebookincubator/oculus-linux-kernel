@@ -166,6 +166,45 @@ static int msm_qti_pp_put_eq_band_count_audio_mixer(
 	return 0;
 }
 
+static int msm_qti_pp_put_dtmf_module_enable
+		(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	u16 fe_id = 0;
+	struct msm_pcm_routing_fdai_data fe_dai;
+	struct audio_client *ac = NULL;
+	struct param_hdr_v3 param_hdr;
+	int ret = 0;
+	u32 flag = ucontrol->value.integer.value[0];
+
+	fe_id = ((struct soc_multi_mixer_control *)
+			kcontrol->private_value)->shift;
+	if (fe_id >= MSM_FRONTEND_DAI_MM_SIZE) {
+		pr_err("%s: invalid FE %d\n", __func__, fe_id);
+		return -EINVAL;
+	}
+
+	msm_pcm_routing_get_fedai_info(fe_id, SESSION_TYPE_RX, &fe_dai);
+	ac = q6asm_get_audio_client(fe_dai.strm_id);
+
+	if (ac == NULL) {
+		pr_err("%s ac is null.\n", __func__);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	param_hdr.module_id = AUDPROC_MODULE_ID_DTMF_DETECTION;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AUDPROC_PARAM_ID_ENABLE;
+	param_hdr.param_size = 4;
+
+	ret = q6asm_pack_and_set_pp_param_in_band(ac,
+			param_hdr, (u8 *)&flag);
+
+done:
+	return ret;
+}
+
 static int msm_qti_pp_get_eq_band_audio_mixer(struct snd_kcontrol *kcontrol,
 					    struct snd_ctl_elem_value *ucontrol)
 {
@@ -1162,7 +1201,7 @@ int msm_adsp_inform_mixer_ctl(struct snd_soc_pcm_runtime *rtd,
 	int ctl_len = 0, ret = 0;
 	struct dsp_stream_callback_list *new_event;
 	struct dsp_stream_callback_list *oldest_event;
-	unsigned long spin_flags = 0;
+	unsigned long spin_flags;
 	struct dsp_stream_callback_prtd *kctl_prtd = NULL;
 	struct msm_adsp_event_data *event_data = NULL;
 	const char *mixer_ctl_name = DSP_STREAM_CALLBACK;
@@ -1278,7 +1317,7 @@ int msm_adsp_stream_callback_get(struct snd_kcontrol *kcontrol,
 {
 	uint32_t payload_size = 0;
 	struct dsp_stream_callback_list *oldest_event;
-	unsigned long spin_flags = 0;
+	unsigned long spin_flags;
 	struct dsp_stream_callback_prtd *kctl_prtd = NULL;
 	int ret = 0;
 
@@ -1646,6 +1685,18 @@ static const struct snd_kcontrol_new asphere_mixer_controls[] = {
 	0xFFFFFFFF, 0, 2, msm_qti_pp_asphere_get, msm_qti_pp_asphere_set),
 };
 
+static const struct snd_kcontrol_new dtmf_detect_enable_mixer_controls[] = {
+	SOC_SINGLE_EXT("MultiMedia1 DTMF Detect Enable", SND_SOC_NOPM,
+	MSM_FRONTEND_DAI_MULTIMEDIA1, 1, 0, NULL,
+	msm_qti_pp_put_dtmf_module_enable),
+	SOC_SINGLE_EXT("MultiMedia6 DTMF Detect Enable", SND_SOC_NOPM,
+	MSM_FRONTEND_DAI_MULTIMEDIA6, 1, 0, NULL,
+	msm_qti_pp_put_dtmf_module_enable),
+	SOC_SINGLE_EXT("MultiMedia21 DTMF Detect Enable", SND_SOC_NOPM,
+	MSM_FRONTEND_DAI_MULTIMEDIA21, 1, 0, NULL,
+	msm_qti_pp_put_dtmf_module_enable),
+};
+
 #ifdef CONFIG_QTI_PP
 void msm_qti_pp_add_controls(struct snd_soc_component *component)
 {
@@ -1718,5 +1769,9 @@ void msm_qti_pp_add_controls(struct snd_soc_component *component)
 
 	snd_soc_add_component_controls(component, ec_ffecns_controls,
 			ARRAY_SIZE(ec_ffecns_controls));
+
+	snd_soc_add_component_controls(component,
+				dtmf_detect_enable_mixer_controls,
+			ARRAY_SIZE(dtmf_detect_enable_mixer_controls));
 }
 #endif /* CONFIG_QTI_PP */

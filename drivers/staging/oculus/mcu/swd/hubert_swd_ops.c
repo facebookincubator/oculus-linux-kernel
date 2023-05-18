@@ -60,7 +60,7 @@ int hubert_swd_erase_app(struct device *dev)
 	int status = 0;
 	int i = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	struct flash_info *flash = &devdata->flash_info;
+	struct flash_info *flash = &devdata->mcu_data.flash_info;
 	int flash_pages_to_erase = flash->num_pages - flash->num_retained_pages;
 	int block_size = flash->block_size; /* also known as "row size" */
 	int flash_blocks_to_erase = (flash_pages_to_erase * flash->page_size)
@@ -84,14 +84,14 @@ int hubert_swd_erase_app(struct device *dev)
 size_t hubert_get_write_chunk_size(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	return devdata->flash_info.page_size;
+	return devdata->mcu_data.flash_info.page_size;
 }
 
 int hubert_swd_write_chunk(struct device *dev, int addr, const u8 *data,
 			   size_t len)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	int page_size = devdata->flash_info.page_size;
+	int page_size = devdata->mcu_data.flash_info.page_size;
 	bool partial_page = (len % page_size) != 0;
 	int status = 0;
 	int i = 0;
@@ -228,7 +228,7 @@ static int hubert_swd_erase_eeprom(struct device *dev)
 {
 	int status = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	struct flash_info *flash = &devdata->flash_info;
+	struct flash_info *flash = &devdata->mcu_data.flash_info;
 	int block_size = flash->block_size; /* also known as "row size" */
 	int flash_blocks_to_erase = SWD_SAMD_NVM_EEPROM_SIZE / block_size;
 	int i;

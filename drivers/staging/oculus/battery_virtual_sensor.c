@@ -25,14 +25,14 @@ struct battery_virtual_sensor_data {
 	struct thermal_zone_device *tzd;
 	struct virtual_sensor_common_data data;
 
-	struct power_supply *usb_psy;
+	struct power_supply *batt_psy;
 
 	struct thermal_zone_device *pcm_tz;
 	int pcm_tz_scaling_factor;
 
 	int max_differential;
 
-	bool was_connected;
+	bool was_charging;
 	bool use_pcm_therm_with_charger;
 };
 
@@ -67,20 +67,20 @@ static int get_temp(void *data, int *temperature)
 
 	mutex_lock(&vs->data.lock);
 
-	/* Use PCM thermistor if charger is present */
-	if (vs->use_pcm_therm_with_charger && is_charger_connected(vs->usb_psy)) {
-		vs->was_connected = true;
+	/* Use PCM thermistor if charging */
+	if (vs->use_pcm_therm_with_charger && is_charging(vs->batt_psy)) {
+		vs->was_charging = true;
 
 		*temperature = (int)pcm_temp;
 		ret = 0;
 		goto get_temp_unlock;
 	}
 
-	if (vs->was_connected) {
+	if (vs->was_charging) {
 		/* Zero out history upon disconnection to avoid sudden jumps */
 		virtual_sensor_reset_history(&vs->data);
 
-		vs->was_connected = false;
+		vs->was_charging = false;
 	}
 
 	ret = virtual_sensor_calculate_tz_temp(vs->dev, &vs->data, &tz_temp);
@@ -183,9 +183,9 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 		!of_property_read_bool(pdev->dev.of_node,
 			"dont-use-pcm-with-charger");
 
-	vs->usb_psy = power_supply_get_by_name("usb");
-	if (!vs->usb_psy) {
-		dev_warn(&pdev->dev, "Unable to get charger power_supply");
+	vs->batt_psy = power_supply_get_by_name("battery");
+	if (!vs->batt_psy) {
+		dev_warn(&pdev->dev, "Unable to get battery power_supply");
 		return -EPROBE_DEFER;
 	}
 

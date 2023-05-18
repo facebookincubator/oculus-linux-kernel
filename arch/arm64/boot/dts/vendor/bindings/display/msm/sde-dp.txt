@@ -70,13 +70,13 @@ DP Controller: Required properties:
 - qcom,mst-enable:		MST feature enable control node.
 - qcom,dsc-feature-enable:	DSC feature enable control node.
 - qcom,fec-feature-enable:	FEC feature enable control node.
-- qcom,no-audio-support:	This flag specifies if audio support is not required.
 - qcom,max-dp-dsc-blks:		An integer specifying the max. DSC blocks available for Display port.
 - qcom,max-dp-dsc-input-width-pixs: An integer specifying the max. input width of pixels for each DSC block.
 - qcom,dp-usbpd-detection:	Phandle for the PMI regulator node for USB PHY PD detection.
 - qcom,dp-aux-switch:		Phandle for the driver used to program the AUX switch for Display Port orientation.
 - qcom,dp-hpd-gpio:		HPD gpio for direct DP connector without USB PHY or AUX switch.
 - qcom,dp-gpio-aux-switch:      Gpio DP AUX switch chipset support.
+- qcom,no_tps4_support:		To restrict TPS4 pattern support in link training for Display port.
 - qcom,<type>-supply-entries:		A node that lists the elements of the supply used by the a particular "type" of DSI module. The module "types"
 					can be "core", "ctrl", and "phy". Within the same type,
 					there can be more than one instance of this binding,
@@ -185,7 +185,6 @@ Example:
 		qcom,mst-enable;
 		qcom,dsc-feature-enable;
 		qcom,fec-feature-enable;
-		qcom,no-audio-support;
 		qcom,max-dp-dsc-blks = <2>;
 		qcom,max-dp-dsc-input-width-pixs = <2048>;
 		pinctrl-names = "mdss_dp_active", "mdss_dp_sleep";

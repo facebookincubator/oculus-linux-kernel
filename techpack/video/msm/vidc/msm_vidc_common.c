@@ -6216,7 +6216,7 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 				"Unsupported WxH (%u)x(%u), max supported is (%u)x(%u)\n",
 				output_width, output_height,
 				width_max, height_max);
-				/* Warn, but try to play. */
+			/* Warn, but try to play. */
 		}
 
 		if (!rc && output_height * output_width >

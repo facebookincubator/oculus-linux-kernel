@@ -128,6 +128,7 @@ static int msm_ext_disp_remove_intf_data(struct msm_ext_disp *ext_disp,
 		if (node->data == data) {
 			list_del(pos);
 			pr_debug("Deleted the intf data\n");
+			kfree(node);
 			return 0;
 		}
 	}
@@ -217,7 +218,7 @@ static struct msm_ext_disp *msm_ext_disp_validate_and_get(
 
 	if (!codec ||
 		codec->type >= EXT_DISPLAY_TYPE_MAX ||
-		(codec->ctrl_id != 0 && codec->ctrl_id != 1) ||
+		codec->ctrl_id != 0 ||
 		codec->stream_id >= MSM_EXT_DISP_MAX_CODECS) {
 		pr_err("invalid display codec id\n");
 		goto err;
@@ -452,8 +453,7 @@ static int msm_ext_disp_validate_intf(struct msm_ext_disp_init_data *init_data)
 	}
 
 	if (init_data->codec.type >= EXT_DISPLAY_TYPE_MAX ||
-		(init_data->codec.ctrl_id  != 0 &&
-			init_data->codec.ctrl_id != 1) ||
+		init_data->codec.ctrl_id != 0 ||
 		init_data->codec.stream_id >= MSM_EXT_DISP_MAX_CODECS) {
 		pr_err("Invalid codec info type(%d), ctrl(%d) stream(%d)\n",
 				init_data->codec.type,

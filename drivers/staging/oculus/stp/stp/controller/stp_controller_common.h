@@ -67,6 +67,11 @@ struct stp_type {
 	uint32_t last_tx_notification;
 
 	bool pending_device_ready_signal;
+
+	_Atomic bool device_ready;
+	_Atomic bool has_data;
+	_Atomic bool stop_thread;
+	_Atomic bool suspend;
 };
 
 extern struct stp_type *_stp_controller_data;
@@ -75,6 +80,8 @@ extern struct stp_type *_stp_controller_data;
 /* Initialize the STP controller/device internal data */
 void stp_controller_init_internal(
 	struct stp_controller_transport_table *_transport);
+
+void stp_controller_deinit_internal(void);
 
 void stp_controller_init_transaction(void);
 
@@ -87,11 +94,19 @@ void stp_controller_prepare_tx_packet_data(uint8_t channel, uint8_t *buffer,
 
 void stp_controller_process_data_transaction(struct stp_pending_tx *tx);
 
-void stp_controller_signal_data(void);
+void stp_controller_signal_has_data(void);
+
+bool stp_controller_get_has_data(void);
 
 void stp_controller_signal_device_ready(void);
 
-bool stp_controller_device_ready(void);
+bool stp_controller_get_device_ready(void);
+
+void stp_controller_signal_stop_thread(void);
+
+bool stp_controller_get_stop_thread(void);
+
+void stp_controller_signal_suspend(void);
 
 void stp_controller_set_notification(uint8_t channel, uint32_t notification);
 

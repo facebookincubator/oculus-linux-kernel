@@ -1,0 +1,65 @@
+#include "khaje-idp.dtsi"
+
+&soc {
+	qcom,cam-res-mgr {
+		status = "disabled";
+	};
+};
+
+&cam_cci0 {
+	qcom,actuator0 {
+		status = "disabled";
+	};
+
+	qcom,actuator1 {
+		status = "disabled";
+	};
+
+	qcom,eeprom0 {
+		status = "disabled";
+	};
+
+	qcom,eeprom1 {
+		status = "disabled";
+	};
+
+	qcom,eeprom2 {
+		status = "disabled";
+	};
+
+	qcom,eeprom3 {
+		status = "disabled";
+	};
+
+	qcom,camera-flash@0 {
+		status = "disabled";
+	};
+
+	qcom,camera-flash@1 {
+		status = "disabled";
+	};
+
+	qcom,camera-flash@2 {
+		status = "disabled";
+	};
+
+	 /* Rear*/
+	qcom,cam-sensor0 {
+		status = "disabled";
+	};
+
+	/*Rear Aux*/
+	qcom,cam-sensor1 {
+		status = "disabled";
+	};
+
+	/*Front*/
+	qcom,cam-sensor2 {
+		status = "disabled";
+	};
+
+	/*Rear Aux2*/
+	qcom,cam-sensor3 {
+		status = "disabled";
+	};
+};

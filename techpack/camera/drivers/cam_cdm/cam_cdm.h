@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/random.h>
+#include <linux/refcount.h>
 #include <linux/spinlock_types.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
@@ -153,8 +154,7 @@ struct cam_cdm_client {
 	struct cam_cdm_acquire_data data;
 	void __iomem  *changebase_addr;
 	uint32_t stream_on;
-	uint32_t refcount;
-	struct mutex lock;
+	refcount_t refcount;
 	uint32_t handle;
 };
 
@@ -238,11 +238,10 @@ struct cam_cdm_intf_devices {
 
 /* struct cam_cdm_intf_mgr - CDM mgr interface device struct */
 struct cam_cdm_intf_mgr {
-	bool probe_done;
 	struct cam_cdm_intf_devices nodes[CAM_CDM_INTF_MGR_MAX_SUPPORTED_CDM];
 	uint32_t cdm_count;
 	uint32_t dt_supported_hw_cdm;
-	int32_t refcount;
+	refcount_t refcount;
 };
 
 int cam_cdm_intf_register_hw_cdm(struct cam_hw_intf *hw,
@@ -251,5 +250,19 @@ int cam_cdm_intf_register_hw_cdm(struct cam_hw_intf *hw,
 int cam_cdm_intf_deregister_hw_cdm(struct cam_hw_intf *hw,
 	struct cam_cdm_private_dt_data *data, enum cam_cdm_type type,
 	uint32_t index);
+
+static inline void cam_cdm_get_client_refcount(struct cam_cdm_client *client)
+{
+	refcount_inc(&client->refcount);
+}
+
+static inline void cam_cdm_put_client_refcount(struct cam_cdm_client *client)
+{
+	/*
+	 * Acquire always grabs an extra reference, so panic if
+	 * the refcount drops to zero.
+	 */
+	BUG_ON(refcount_dec_and_test(&client->refcount));
+}
 
 #endif /* _CAM_CDM_H_ */

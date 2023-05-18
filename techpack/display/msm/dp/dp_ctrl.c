@@ -723,10 +723,8 @@ static int dp_ctrl_link_setup(struct dp_ctrl_private *ctrl, bool shallow)
 			break;
 		}
 
-		if (!link_train_max_retries || atomic_read(&ctrl->aborted)) {
-			dp_ctrl_disable_link_clock(ctrl);
+		if (!link_train_max_retries || atomic_read(&ctrl->aborted))
 			break;
-		}
 
 		if (rc != -EAGAIN)
 			dp_ctrl_link_rate_down_shift(ctrl);
@@ -1332,8 +1330,7 @@ static int dp_ctrl_on(struct dp_ctrl *dp_ctrl, bool mst_mode,
 	ctrl->initial_bw_code = ctrl->link->link_params.bw_code;
 
 	rc = dp_ctrl_link_setup(ctrl, shallow);
-	if (!rc)
-		ctrl->power_on = true;
+	ctrl->power_on = true;
 end:
 	return rc;
 }

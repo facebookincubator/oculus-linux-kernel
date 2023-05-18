@@ -48,7 +48,7 @@ bool syncboss_swd_page_is_erased(struct device *dev, u32 page)
 {
 	const u32 FLASH_ERASED_VALUE = 0xffffffff;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	struct flash_info *flash = &devdata->flash_info;
+	struct flash_info *flash = &devdata->mcu_data.flash_info;
 	int page_addr = page * flash->page_size;
 	int w;
 	u32 rd;
@@ -165,8 +165,9 @@ int syncboss_swd_erase_app(struct device *dev)
 	int status = 0;
 	int x;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	struct flash_info *flash = &devdata->flash_info;
+	struct flash_info *flash = &devdata->mcu_data.flash_info;
 	int flash_pages_to_erase = flash->num_pages - flash->num_retained_pages;
+
 	BUG_ON(flash_pages_to_erase < 0);
 
 	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG,
@@ -196,14 +197,15 @@ error:
 size_t syncboss_get_write_chunk_size(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	return devdata->flash_info.block_size;
+
+	return devdata->mcu_data.flash_info.block_size;
 }
 
 int syncboss_swd_write_chunk(struct device *dev, int addr, const u8 *data,
 			     size_t len)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	int block_size = devdata->flash_info.block_size;
+	int block_size = devdata->mcu_data.flash_info.block_size;
 	int status = 0;
 	int i = 0;
 	u32 value = 0;
@@ -254,6 +256,7 @@ int syncboss_swd_read(struct device *dev, int addr, u8 *dest,
 	if (bytes) {
 		int pos = w * sizeof(u32);
 		u32 val = swd_memory_read(dev, addr + pos);
+
 		for (b = 0; b < bytes; b++)
 			dest[pos + b] = ((u8 *)&val)[b];
 	}
@@ -345,7 +348,7 @@ int syncboss_swd_finalize(struct device *dev)
 	// In GTK OS, ensure that firmware will be updateable even without ERASEALL.
 	// In Meta OS, we've just completed an update without ERASEALL, so skip this check because it's
 	// unnecessary and because failing here would be needlessly catastrophic for a customer's unit.
-	if (!devdata->flash_info.erase_all)
+	if (!devdata->erase_all)
 		return 0;
 
 	if (!gpio_is_valid(devdata->gpio_reset))

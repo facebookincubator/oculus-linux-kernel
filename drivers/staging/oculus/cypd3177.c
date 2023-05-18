@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
  */
-
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/device.h>
@@ -12,6 +12,9 @@
 #include <linux/i2c.h>
 #include <linux/power_supply.h>
 #include <linux/of_gpio.h>
+#include <linux/iio/iio.h>
+#include <linux/iio/driver.h>
+#include <linux/iio/machine.h>
 
 #include "cypd.h"
 
@@ -97,6 +100,7 @@
 struct cypd3177 {
 	struct device		*dev;
 	struct i2c_client	*client;
+	struct iio_dev		*indio_dev;
 	struct power_supply	*psy;
 	struct power_supply	*batt_psy;
 	struct notifier_block	 psy_nb;
@@ -105,6 +109,7 @@ struct cypd3177 {
 	struct dentry		*dfs_root;
 	int cypd3177_hpi_gpio;
 	int cypd3177_fault_gpio;
+	int version;
 	unsigned int hpi_irq;
 	unsigned int fault_irq;
 	bool typec_status;
@@ -121,6 +126,7 @@ struct cypd3177 {
 	u32 num_5v_sink_caps;
 	bool sink_cap_5v;
 	int charge_status;
+	struct mutex state_lock;
 };
 
 static struct cypd3177 *__chip;
@@ -501,15 +507,18 @@ static int cypd3177_read_vdm_msg(struct cypd3177 *chip, enum pd_sop_type *sop,
 int cypd_phy_open(struct cypd_phy_params *params)
 {
 	struct cypd3177 *chip = __chip;
-
+	int ret = 0;
 	if (!chip) {
 		pr_err("%s: Invalid handle\n", __func__);
 		return -ENODEV;
 	}
 
+	mutex_lock(&chip->state_lock);
+
 	if (chip->is_opened) {
 		dev_err(&chip->client->dev, "cypd3177 already opened\n");
-		return -EBUSY;
+		ret = -EBUSY;
+		goto unlock_out;
 	}
 
 	cypd3177_enable_vdm(chip);
@@ -517,8 +526,9 @@ int cypd_phy_open(struct cypd_phy_params *params)
 	chip->msg_rx_cb = params->msg_rx_cb;
 
 	chip->is_opened = true;
-
-	return 0;
+unlock_out:
+	mutex_unlock(&chip->state_lock);
+	return ret;
 }
 
 void cypd_phy_close(void)
@@ -530,9 +540,11 @@ void cypd_phy_close(void)
 		return;
 	}
 
+	mutex_lock(&chip->state_lock);
+
 	if (!chip->is_opened) {
 		dev_err(&chip->client->dev, "cypd3177 not opened\n");
-		return;
+		goto unlock_out;
 	}
 
 	cypd3177_disable_vdm(chip);
@@ -541,11 +553,13 @@ void cypd_phy_close(void)
 
 	chip->is_opened = false;
 
+unlock_out:
+	mutex_unlock(&chip->state_lock);
 }
 
 int cypd_phy_write(u16 hdr, const u8 *data, size_t data_len, enum pd_sop_type sop)
 {
-	int rc;
+	int rc = 0;
 	u16 raw = 0;
 	struct cypd3177 *chip = __chip;
 
@@ -554,22 +568,26 @@ int cypd_phy_write(u16 hdr, const u8 *data, size_t data_len, enum pd_sop_type so
 		return -ENODEV;
 	}
 
+	mutex_lock(&chip->state_lock);
+
 	if (!chip->is_opened) {
 		dev_err(&chip->client->dev, "cypd3177 not opened\n");
-		return -ENODEV;
+		rc = -ENODEV;
+		goto unlock_out;
 	}
 
 	if (data_len > MAX_DATA_LENGTH) {
 		dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
 			(int) data_len, MAX_DATA_LENGTH);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto unlock_out;
 	}
 
 	rc = cypd3177_write_vdm_msg(chip, data, data_len);
 	if (rc < 0) {
 		dev_err(&chip->client->dev, "cypd3177 write to data mem failed: %d\n",
 			rc);
-		return rc;
+		goto unlock_out;
 	}
 
 	raw = DM_CTRL_MSG(sop, data_len);
@@ -577,6 +595,9 @@ int cypd_phy_write(u16 hdr, const u8 *data, size_t data_len, enum pd_sop_type so
 				raw);
 	if (rc < 0)
 		dev_err(&chip->client->dev, "cypd3177 write to DM_control failed: %d\n", rc);
+
+unlock_out:
+	mutex_unlock(&chip->state_lock);
 
 	return rc;
 
@@ -608,8 +629,16 @@ static int dev_handle_response(struct cypd3177 *chip)
 	/* open event mask bit3 bit4 bit5 bit6 bit7 bit11 */
 	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_32BIT,
 				EVENT_MASK, EVENT_MASK_OPEN);
-	if (rc < 0)
+	if (rc < 0) {
 		dev_err(&chip->client->dev, "cypd3177 write event mask failed: %d\n",
+			rc);
+		return rc;
+	}
+
+	/* read chip version */
+	rc = cypd3177_get_chip_version(chip, &chip->version);
+	if (rc < 0)
+		dev_err(&chip->client->dev, "cypd3177 read chip version failed: %d\n",
 			rc);
 
 	return rc;
@@ -664,6 +693,8 @@ static void cypd3177_sink_cap_work(struct work_struct *work) {
 	union power_supply_propval val = {0};
 	int ret;
 
+	mutex_lock(&chip->state_lock);
+
 	if (!chip->pd_attach) {
 		dev_dbg(&chip->client->dev, "%s: no PD attached", __func__);
 		goto relax_ws;
@@ -687,6 +718,7 @@ static void cypd3177_sink_cap_work(struct work_struct *work) {
 
 relax_ws:
 	__pm_relax(chip->cypd_ws);
+	mutex_unlock(&chip->state_lock);
 }
 
 #define SINK_CAPS_DELAY_MS 200
@@ -835,13 +867,17 @@ static irqreturn_t cypd3177_hpi_irq_handler(int irq, void *dev_id)
 	int rc;
 	int irq_raw;
 
+	mutex_lock(&chip->state_lock);
+
 	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_8BIT,
 				INTERRURT, &irq_raw);
 	if (rc < 0) {
 		dev_err(&chip->client->dev, "cypd3177 read interrupt event failed: %d\n",
 			rc);
-		return rc;
-	}
+		goto unlock_out;
+	} else
+		rc = IRQ_HANDLED;
+
 	/* mask interrupt event bit0 bit1 */
 	irq_raw = irq_raw & INTERRUPT_MASK;
 
@@ -858,12 +894,17 @@ static irqreturn_t cypd3177_hpi_irq_handler(int irq, void *dev_id)
 		break;
 	}
 
-	return IRQ_HANDLED;
+unlock_out:
+	mutex_unlock(&chip->state_lock);
+
+	return rc;
 }
 
 static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
 {
 	struct cypd3177 *chip = dev_id;
+
+	mutex_lock(&chip->state_lock);
 
 	chip->typec_status = false;
 	chip->pd_attach = 0;
@@ -873,6 +914,7 @@ static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
 		power_supply_changed(chip->psy);
 
 	dev_err(&chip->client->dev, "cypd3177 fault interrupt event ...\n");
+	mutex_unlock(&chip->state_lock);
 
 	return IRQ_HANDLED;
 }
@@ -881,9 +923,7 @@ static enum power_supply_property cypd3177_psy_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
-	POWER_SUPPLY_PROP_CURRENT_MAX,
-	POWER_SUPPLY_PROP_CHIP_VERSION,
-	POWER_SUPPLY_PROP_PD_ACTIVE,
+	POWER_SUPPLY_PROP_CURRENT_MAX
 };
 
 static int cypd3177_get_prop(struct power_supply *psy,
@@ -892,6 +932,8 @@ static int cypd3177_get_prop(struct power_supply *psy,
 {
 	int rc = 0, *val = &pval->intval;
 	struct cypd3177 *chip = power_supply_get_drvdata(psy);
+
+	mutex_lock(&chip->state_lock);
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
@@ -906,10 +948,61 @@ static int cypd3177_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		rc = cypd3177_get_current_max(chip, val);
 		break;
-	case POWER_SUPPLY_PROP_CHIP_VERSION:
-		rc = cypd3177_get_chip_version(chip, val);
+	default:
+		rc = -EINVAL;
 		break;
-	case POWER_SUPPLY_PROP_PD_ACTIVE:
+	}
+
+	if (rc < 0) {
+		dev_err_ratelimited(chip->dev, "property %d unavailable: %d\n", psp, rc);
+		rc = -ENODATA;
+	}
+	mutex_unlock(&chip->state_lock);
+
+	return rc;
+}
+
+static const struct iio_chan_spec cypd3177_iio_channels[] = {
+	{
+		.type = IIO_INDEX,
+		.datasheet_name = "chip_version",
+		.indexed = 1,
+		.channel = CYPD_IIO_PROP_CHIP_VERSION,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED)
+	},
+	{
+		.type = IIO_INDEX,
+		.datasheet_name = "pd_active",
+		.indexed = 1,
+		.channel = CYPD_IIO_PROP_PD_ACTIVE,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED)
+	}
+};
+
+static struct iio_map cypd3177_maps[] = {
+	{
+		.consumer_channel = "cypd_chip_version",
+		.adc_channel_label = "chip_version",
+	},
+	{
+		.consumer_channel = "cypd_pd_active",
+		.adc_channel_label = "pd_active",
+	},
+	{}
+};
+
+static int cypd3177_iio_read_raw(struct iio_dev *indio_dev,
+		struct iio_chan_spec const *chan, int *val,
+		int *val2, long mask)
+{
+	struct cypd3177 *chip = iio_priv(indio_dev);
+	int rc = 0;
+
+	switch (chan->channel) {
+	case CYPD_IIO_PROP_CHIP_VERSION:
+		*val = chip->version;
+		break;
+	case CYPD_IIO_PROP_PD_ACTIVE:
 		*val = chip->pd_attach;
 		break;
 	default:
@@ -918,8 +1011,44 @@ static int cypd3177_get_prop(struct power_supply *psy,
 	}
 
 	if (rc < 0) {
-		pr_err_ratelimited("property %d unavailable: %d\n", psp, rc);
-		return -ENODATA;
+		dev_err_ratelimited(chip->dev, "property %d unavailable: %d\n",
+				chan->channel, rc);
+		rc = -ENODATA;
+	}
+
+	return rc;
+}
+
+static const struct iio_info cypd3177_iio_info = {
+	.read_raw = cypd3177_iio_read_raw
+};
+
+static int cypd3177_init_iio_psy(struct cypd3177 *chip)
+{
+	int i, rc = 0;
+	struct iio_dev *indio_dev = chip->indio_dev;
+
+	indio_dev->name = "cypd3177-driver";
+	indio_dev->modes = INDIO_DIRECT_MODE;
+	indio_dev->info = &cypd3177_iio_info;
+	indio_dev->dev.parent = chip->dev;
+	indio_dev->dev.of_node = chip->dev->of_node;
+	indio_dev->channels = cypd3177_iio_channels;
+	indio_dev->num_channels = CYPD_IIO_PROP_MAX;
+
+	for (i = 0; i < CYPD_IIO_PROP_MAX; i++)
+		cypd3177_maps[i].consumer_dev_name = dev_name(chip->dev);
+
+	rc = iio_map_array_register(indio_dev, cypd3177_maps);
+	if (rc) {
+		dev_err(chip->dev, "Failed to register cypd3177 IIO maps, rc = %d\n", rc);
+		return rc;
+	}
+
+	rc = devm_iio_device_register(chip->dev, indio_dev);
+	if (rc) {
+		dev_err(chip->dev, "Failed to register cypd3177 IIO device, rc = %d\n", rc);
+		iio_map_array_unregister(indio_dev);
 	}
 
 	return rc;
@@ -933,11 +1062,24 @@ static const struct power_supply_desc cypd3177_psy_desc = {
 	.get_property = cypd3177_get_prop,
 };
 
+/*
+ * Some android arch platforms backported wakelock APIs from kernel 5.4..0
+ * Since their minor versions are changed in the Android R OS
+ * Added defines for these platforms
+ * 4.19.81 -> 4.19.110, 4.14.78 -> 4.14.170
+ */
+#if (defined(CONFIG_ARCH_QCOM) && (((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 170)) && \
+	(LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))) || (LINUX_VERSION_CODE >= \
+	KERNEL_VERSION(4, 19, 110))))
+#define WAKELOCK_BACKPORT
+#endif
+
 static int cypd3177_probe(struct i2c_client *i2c,
 	const struct i2c_device_id *id)
 {
 	int rc;
 	struct cypd3177 *chip;
+	struct iio_dev *indio_dev;
 	struct power_supply_config cfg = {0};
 	int i;
 	int pdo_voltage, pdo_current;
@@ -947,9 +1089,11 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		dev_err(&i2c->dev, "I2C functionality not supported\n");
 		return -ENODEV;
 	}
-	chip = devm_kzalloc(&i2c->dev, sizeof(*chip), GFP_KERNEL);
-	if (!chip)
+	indio_dev = devm_iio_device_alloc(&i2c->dev, sizeof(*chip));
+	if (!indio_dev)
 		return -ENOMEM;
+	chip = iio_priv(indio_dev);
+	chip->indio_dev = indio_dev;
 
 	chip->client = i2c;
 	chip->dev = &i2c->dev;
@@ -961,6 +1105,8 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		i2c_set_clientdata(i2c, NULL);
 		return -EPROBE_DEFER;
 	}
+
+	mutex_init(&chip->state_lock);
 
 	/* Create PSY */
 	cfg.drv_data = chip;
@@ -1063,6 +1209,10 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		return rc;
 	}
 
+	rc = cypd3177_init_iio_psy(chip);
+	if (rc < 0)
+		return rc;
+
 	cypd3177_dev_reset(chip);
 
 	/* cypd could call back to us, so have reference ready */
@@ -1077,7 +1227,12 @@ static int cypd3177_probe(struct i2c_client *i2c,
 
 	INIT_DELAYED_WORK(&chip->sink_cap_work, cypd3177_sink_cap_work);
 	chip->psy_nb.notifier_call = psy_changed;
+
+#if ((LINUX_VERSION_CODE  >= KERNEL_VERSION(5, 4, 0)) || defined(WAKELOCK_BACKPORT))
+	chip->cypd_ws = wakeup_source_register(NULL, "cypd-ws");
+#else
 	chip->cypd_ws = wakeup_source_register("cypd-ws");
+#endif
 	dev_dbg(&i2c->dev, "cypd3177 probe successful\n");
 	return 0;
 }
@@ -1088,9 +1243,44 @@ static int cypd3177_remove(struct i2c_client *i2c)
 
 	wakeup_source_unregister(chip->cypd_ws);
 	power_supply_unreg_notifier(&chip->psy_nb);
+	iio_map_array_unregister(chip->indio_dev);
+	mutex_destroy(&chip->state_lock);
 	cypd_destroy(chip->cypd);
 	return 0;
 }
+
+static int cypd3177_resume(struct device *dev)
+{
+	struct cypd3177 *chip = (struct cypd3177 *) dev_get_drvdata(dev);
+	int ret_val = 0;
+	int rc;
+
+	mutex_lock(&chip->state_lock);
+
+	/* check if we were previously online */
+	if (!chip->typec_status)
+		goto unlock_out;
+
+	rc = cypd3177_get_online(chip, &ret_val);
+
+	if (rc < 0 || ret_val == 0) {
+		dev_dbg(&chip->client->dev, "cypd offline upon resume");
+		chip->typec_status = false;
+		chip->pd_attach = 0;
+		chip->sink_cap_5v = false;
+
+		power_supply_changed(chip->psy);
+	} else {
+		dev_dbg(&chip->client->dev, "still online upon resume");
+	}
+
+unlock_out:
+	mutex_unlock(&chip->state_lock);
+
+	return 0;
+}
+
+static SIMPLE_DEV_PM_OPS(cypd3177_pm, NULL, cypd3177_resume);
 
 static const struct of_device_id match_table[] = {
 	{ .compatible = "cy,cypd3177", },
@@ -1100,6 +1290,7 @@ static const struct of_device_id match_table[] = {
 static struct i2c_driver cypd3177_driver = {
 	.driver = {
 		.name = "cypd3177-driver",
+		.pm = &cypd3177_pm,
 		.of_match_table = match_table,
 	},
 	.probe =	cypd3177_probe,

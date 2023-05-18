@@ -1057,6 +1057,59 @@ config REGULATOR_WM8994
 	  This driver provides support for the voltage regulators on the
 	  WM8994 CODEC.
 
+config REGULATOR_MEM_ACC
+	tristate "QTI Memory accelerator regulator driver"
+	help
+	  Say y here to enable the memory accelerator driver for
+	  Qualcomm Technologies, Inc. (QTI) chips. The accelerator
+	  controls delays applied for memory accesses.  This driver
+	  configures the power-mode(corner) for the memory accelerator.
+
+config REGULATOR_CPR
+	bool "RBCPR regulator driver for APC"
+	depends on OF
+	help
+	  Compile in RBCPR (RapidBridge Core Power Reduction) driver to support
+	  corner vote for APC power rail. The driver takes PTE process voltage
+	  suggestions in efuse as initial settings. It converts corner vote
+	  to voltage value before writing to a voltage regulator API, such as
+	  that provided by spm-regulator driver.
+
+config REGULATOR_CPR3
+	bool "CPR3 regulator core support"
+	help
+	  This driver supports Core Power Reduction (CPR) version 3 controllers
+	  which are used by some Qualcomm Technologies, Inc. (QTI) SoCs to
+	  manage important voltage regulators.  CPR3 controllers are capable of
+	  monitoring several ring oscillator sensing loops simultaneously.  The
+	  CPR3 controller informs software when the silicon conditions require
+	  the supply voltage to be increased or decreased.  On certain supply
+	  rails, the CPR3 controller is able to propagate the voltage increase
+	  or decrease requests all the way to the PMIC without software
+	  involvement.
+
+config REGULATOR_CPR4_MMSS_LDO
+	bool "RBCPR3 regulator for MMSS LDO"
+	depends on OF
+	select REGULATOR_CPR3
+	help
+	  This driver supports Qualcomm Technologies, Inc. MMSS graphics
+	  processor specific features.  The MMSS CPR3 controller only uses one
+	  thread to monitor the MMSS LDO voltage requirements. This driver reads
+	  initial voltage values out of hardware fuses and CPR target quotient
+	  values out of device tree.
+
+config REGULATOR_CPRH_KBSS
+	bool "CPRH regulator for KBSS"
+	depends on OF
+	select REGULATOR_CPR3
+	help
+	  This driver supports Qualcomm Technologies, Inc. KBSS application
+	  processor specific features including CPR hardening (CPRh) and two
+	  CPRh controllers which monitor the two KBSS clusters each powered by
+	  independent voltage supplies. This driver reads both initial voltage
+	  and CPR target quotient values out of hardware fuses.
+
 config REGULATOR_REFGEN
 	tristate "Qualcomm Technologies, Inc. REFGEN regulator driver"
 	depends on OF
@@ -1065,6 +1118,16 @@ config REGULATOR_REFGEN
 	  block found on some Qualcomm Technologies Inc. SoCs.  A REFGEN
 	  it used by various PHY blocks found inside of the SoC.  It supports
 	  enable/disable control.
+
+config REGULATOR_MSM_GFX_LDO
+	tristate "MSM GFX LDO Regulator"
+	depends on OF
+	help
+	  This driver supports the MSM GFX (Graphics) LDO regulator. The
+	  GFU core is either powered by an internal MSM LDO or by BHS.
+	  Typically the lower voltage corners are powered by LDO and
+	  the higher ones by BHS. This driver allows for configuration of
+	  the rail between the LDO/BHS as well as the LDO voltage.
 
 config REGULATOR_RPMH
 	tristate "Qualcomm Technologies, Inc. Legacy RPMh regulator driver"
@@ -1085,6 +1148,16 @@ config REGULATOR_RPM_SMD
 	  supplied by some Qualcomm Technologies Inc. PMICs. The RPM SMD regulator driver should
 	  be used on systems which contain an RPM which communicates with the
 	  application processor over SMD.
+
+config REGULATOR_SPM
+	bool "SPM regulator driver"
+	depends on SPMI
+	help
+	  Enable support for the SPM regulator driver which is used for
+	  setting voltages of processor supply regulators via the SPM module
+	  found inside chips of Qualcomm Technologies Inc. The SPM regulator
+	  driver can be used on QTI SoCs where the APSS processor cores are
+	  supplied by their own PMIC regulator.
 
 config REGULATOR_STUB
 	tristate "Stub Regulator"

@@ -62,15 +62,15 @@ struct stp_controller_wait_signal_table {
 	void (*signal_write)(uint8_t channel);
 	int32_t (*wait_read)(uint8_t channel);
 	void (*signal_read)(uint8_t channel);
-	void (*wait_for_device_ready)(void);
-	void (*signal_device_ready)(void);
-	void (*wait_for_data)(void);
-	void (*signal_data)(void);
 	int32_t (*wait_fsync)(uint8_t channel);
 	void (*signal_fsync)(uint8_t channel);
 	void (*reset_fsync)(uint8_t channel);
 	int32_t (*wait_open)(uint8_t channel);
 	void (*signal_open)(uint8_t channel);
+	void (*signal_stp_event)(void);
+	int32_t (*wait_stp_event)(void);
+	int32_t (*pause_thread)(void);
+	int32_t (*resume_thread)(void);
 };
 
 struct stp_controller_init_t {
@@ -142,9 +142,9 @@ int32_t stp_controller_open_blocking(uint8_t channel, uint8_t priority,
 
 int32_t stp_controller_close(uint8_t channel);
 
-bool stp_controller_get_wait_for_data(void);
-
 int32_t stp_controller_fsync(uint8_t channel);
+
+bool stp_controller_pending_event(void);
 
 #ifdef __cplusplus
 }

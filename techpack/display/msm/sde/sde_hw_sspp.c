@@ -295,7 +295,6 @@ static void sde_hw_sspp_set_src_split_order(struct sde_hw_pipe *ctx,
 	SDE_REG_WRITE(c, op_mode_off + idx, opmode);
 }
 
-/* replace non-matching components of the unpack pattern with C3_ALPHA */
 static inline u32 _sspp_unpack_filter(u32 unpack, u8 keep)
 {
 	u32 result = 0, shift = 0;

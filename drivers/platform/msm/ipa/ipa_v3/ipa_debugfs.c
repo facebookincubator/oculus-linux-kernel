@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifdef CONFIG_DEBUG_FS
@@ -322,40 +322,21 @@ static ssize_t ipa3_write_keep_awake(struct file *file, const char __user *buf,
 {
 	s8 option = 0;
 	int ret;
-	uint32_t bw_mbps = 0;
 
 	ret = kstrtos8_from_user(buf, count, 0, &option);
 	if (ret)
 		return ret;
 
-	switch (option) {
-	case 0:
-		IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
-		bw_mbps = 0;
-		break;
-	case 1:
-		IPA_ACTIVE_CLIENTS_INC_SIMPLE();
-		bw_mbps = 0;
-		break;
-	case 2:
-		IPA_ACTIVE_CLIENTS_INC_SIMPLE();
-		bw_mbps = 700;
-		break;
-	case 3:
-		IPA_ACTIVE_CLIENTS_INC_SIMPLE();
-		bw_mbps = 3000;
-		break;
-	case 4:
-		IPA_ACTIVE_CLIENTS_INC_SIMPLE();
-		bw_mbps = 7000;
-		break;
-	default:
-		pr_err("Not support this vote (%d)\n", option);
-		return -EFAULT;
-	}
-	if (ipa3_vote_for_bus_bw(&bw_mbps)) {
-		IPAERR("Failed to vote for bus BW (%u)\n", bw_mbps);
-		return -EFAULT;
+	if (option == 0) {
+		if (ipa_pm_remove_dummy_clients()) {
+			pr_err("Failed to remove dummy clients\n");
+			return -EFAULT;
+		}
+	} else {
+		if (ipa_pm_add_dummy_clients(option - 1)) {
+			pr_err("Failed to add dummy clients\n");
+			return -EFAULT;
+		}
 	}
 
 	return count;
@@ -384,8 +365,8 @@ static ssize_t ipa3_read_mpm_ring_size_dl(struct file *file, char __user *ubuf,
 	int nbytes;
 
 	nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
-				"IPA_MPM_RING_SIZE_DL = %d\n",
-				ipa3_ctx->mpm_ring_size_dl);
+			"IPA_MPM_RING_SIZE_DL = %d\n",
+			ipa3_ctx->mpm_ring_size_dl);
 
 	return simple_read_from_buffer(ubuf, count, ppos, dbg_buff, nbytes);
 }
@@ -396,8 +377,8 @@ static ssize_t ipa3_read_mpm_ring_size_ul(struct file *file, char __user *ubuf,
 	int nbytes;
 
 	nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
-				"IPA_MPM_RING_SIZE_UL = %d\n",
-				ipa3_ctx->mpm_ring_size_ul);
+			"IPA_MPM_RING_SIZE_UL = %d\n",
+			ipa3_ctx->mpm_ring_size_ul);
 
 	return simple_read_from_buffer(ubuf, count, ppos, dbg_buff, nbytes);
 }
@@ -408,21 +389,19 @@ static ssize_t ipa3_read_mpm_uc_thresh(struct file *file, char __user *ubuf,
 	int nbytes;
 
 	nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
-				"IPA_MPM_UC_THRESH = %d\n",
-				ipa3_ctx->mpm_uc_thresh);
+			"IPA_MPM_UC_THRESH = %d\n", ipa3_ctx->mpm_uc_thresh);
 
 	return simple_read_from_buffer(ubuf, count, ppos, dbg_buff, nbytes);
 }
 
 static ssize_t ipa3_read_mpm_teth_aggr_size(struct file *file,
-	char __user *ubuf,
-	size_t count, loff_t *ppos)
+	char __user *ubuf, size_t count, loff_t *ppos)
 {
 	int nbytes;
 
 	nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
-				"IPA_MPM_TETH_AGGR_SIZE = %d\n",
-				ipa3_ctx->mpm_teth_aggr_size);
+			"IPA_MPM_TETH_AGGR_SIZE = %d\n",
+			ipa3_ctx->mpm_teth_aggr_size);
 
 	return simple_read_from_buffer(ubuf, count, ppos, dbg_buff, nbytes);
 }
@@ -456,11 +435,11 @@ static ssize_t ipa3_write_mpm_ring_size_ul(struct file *file,
 	ret = kstrtos8_from_user(buf, count, 0, &option);
 	if (ret)
 		return ret;
-	/* as option is type s8, max it can take is 127 */
+	/* as option type is s8, max it can take is 127 */
 	if ((option > 0) && (option <= IPA_MPM_MAX_RING_LEN))
 		ipa3_ctx->mpm_ring_size_ul = option;
 	else
-		IPAERR("Invalid ul ring size =%d: range is 1 to %d\n",
+		IPAERR("Invalid ul ring size =%d: range is only 1 to %d\n",
 			option, IPA_MPM_MAX_RING_LEN);
 	return count;
 }
@@ -475,11 +454,11 @@ static ssize_t ipa3_write_mpm_uc_thresh(struct file *file,
 	ret = kstrtos8_from_user(buf, count, 0, &option);
 	if (ret)
 		return ret;
-	/* as option is type s8, max it can take is 127 */
+	/* as option type is s8, max it can take is 127 */
 	if ((option > 0) && (option <= IPA_MPM_MAX_UC_THRESH))
 		ipa3_ctx->mpm_uc_thresh = option;
 	else
-		IPAERR("Invalid uc thresh =%d: range is 1 to %d\n",
+		IPAERR("Invalid ul ring size =%d: range is only 1 to %d\n",
 			option, IPA_MPM_MAX_UC_THRESH);
 	return count;
 }
@@ -494,11 +473,11 @@ static ssize_t ipa3_write_mpm_teth_aggr_size(struct file *file,
 	ret = kstrtos8_from_user(buf, count, 0, &option);
 	if (ret)
 		return ret;
-	/* as option is type s8, max it can take is 127 */
+	/* as option type is s8, max it can take is 127 */
 	if ((option > 0) && (option <= IPA_MAX_TETH_AGGR_BYTE_LIMIT))
 		ipa3_ctx->mpm_teth_aggr_size = option;
 	else
-		IPAERR("Invalid teth aggr size =%d: range is 1 to %d\n",
+		IPAERR("Invalid ul ring size =%d: range is only 1 to %d\n",
 			option, IPA_MAX_TETH_AGGR_BYTE_LIMIT);
 	return count;
 }
@@ -1270,8 +1249,9 @@ static ssize_t ipa3_read_stats(struct file *file, char __user *ubuf,
 		"lan_rx_empty=%u\n"
 		"lan_repl_rx_empty=%u\n"
 		"flow_enable=%u\n"
-		"flow_disable=%u\n",
-		"rx_page_drop_cnt=%u\n",
+		"flow_disable=%u\n"
+		"rx_page_drop_cnt=%u\n"
+		"zero_len_frag_pkt_cnt=%u\n",
 		ipa3_ctx->stats.tx_sw_pkts,
 		ipa3_ctx->stats.tx_hw_pkts,
 		ipa3_ctx->stats.tx_non_linear,
@@ -1288,7 +1268,8 @@ static ssize_t ipa3_read_stats(struct file *file, char __user *ubuf,
 		ipa3_ctx->stats.lan_repl_rx_empty,
 		ipa3_ctx->stats.flow_enable,
 		ipa3_ctx->stats.flow_disable,
-		ipa3_ctx->stats.rx_page_drop_cnt);
+		ipa3_ctx->stats.rx_page_drop_cnt,
+		ipa3_ctx->stats.zero_len_frag_pkt_cnt);
 	cnt += nbytes;
 
 	for (i = 0; i < IPAHAL_PKT_STATUS_EXCEPTION_MAX; i++) {
@@ -2965,6 +2946,15 @@ struct dentry *ipa_debugfs_get_root(void)
 EXPORT_SYMBOL(ipa_debugfs_get_root);
 
 #else /* !CONFIG_DEBUG_FS */
+#define INVALID_NO_OF_CHAR (-1)
 void ipa3_debugfs_init(void) {}
 void ipa3_debugfs_remove(void) {}
+int _ipa_read_ep_reg_v3_0(char *buf, int max_len, int pipe)
+{
+	return INVALID_NO_OF_CHAR;
+}
+int _ipa_read_ep_reg_v4_0(char *buf, int max_len, int pipe)
+{
+	return INVALID_NO_OF_CHAR;
+}
 #endif

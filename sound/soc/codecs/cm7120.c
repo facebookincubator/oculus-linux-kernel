@@ -3361,6 +3361,7 @@ static int cm7120_hw_params(struct snd_pcm_substream *substream,
 		break;
 
 	case SNDRV_PCM_FORMAT_S24_LE:
+	case SNDRV_PCM_FORMAT_S32_LE:
 		val_len |= CM7120_I2S_DL_24;
 		break;
 
@@ -3509,7 +3510,7 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 			snd_soc_component_get_drvdata(component);
 	int rc;
 
-	dev_info(component->dev, "SPK wait for cm7120 FW download complete\n");
+	dev_dbg(component->dev, "SPK wait for cm7120 FW download complete\n");
 	rc = wait_for_completion_timeout(&cm7120_codec->fw_download_complete,
 						 FW_DOWNLOAD_TIMEOUT);
 	if (rc == 0) {
@@ -3519,7 +3520,7 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		dev_info(component->dev, "SPK gpio to high\n");
+		dev_dbg(component->dev, "SPK gpio to high\n");
 		rc = pinctrl_select_state(cm7120_codec->pinctrl,
 				cm7120_codec->pin_spk_en);
 		if (rc)
@@ -3527,7 +3528,7 @@ static int SPK_dapm_power_event(struct snd_soc_dapm_widget *w,
 				"pinctrl_select_state error");
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		dev_info(component->dev, "SPK gpio to low\n");
+		dev_dbg(component->dev, "SPK gpio to low\n");
 		rc = pinctrl_select_state(cm7120_codec->pinctrl,
 				cm7120_codec->pin_spk_suspend);
 		if (rc)
@@ -3949,7 +3950,8 @@ static int cm7120_pm_notify(struct notifier_block *nb,
 			container_of(nb, struct cm7120_priv, pm_nb);
 	u32 version = 0;
 
-	cm7120_dsp_mode_i2c_read_addr(cm7120_codec, 0x5FFC001C, &version);
+	cm7120_dsp_mode_i2c_read_addr(cm7120_codec,
+			CM7120_DSP_CHECK_VERSION_REG, &version);
 
 	switch (mode) {
 	case PM_SUSPEND_PREPARE:
@@ -4445,7 +4447,8 @@ static int cm7120_download_firmware(struct cm7120_priv *cm7120_codec)
 	regmap_update_bits(cm7120_codec->virt_regmap, CM7120_PWR_DSP, 0x1, 0x0);
 	msleep(30);
 
-	cm7120_dsp_mode_i2c_read_addr(cm7120_codec, 0x5FFC001C, &version);
+	cm7120_dsp_mode_i2c_read_addr(cm7120_codec,
+			CM7120_DSP_CHECK_VERSION_REG, &version);
 	pr_info("%s (%d): DSP version = 0x%08x\n", __func__, __LINE__, version);
 
 	return 0;

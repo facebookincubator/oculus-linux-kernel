@@ -100,7 +100,7 @@ size_t qm35xxx_get_write_chunk_size(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
-	return devdata->flash_info.block_size;
+	return devdata->mcu_data.flash_info.block_size;
 }
 
 int qm35xxx_swd_write_chunk(struct device *dev, int addr, const u8 *data,

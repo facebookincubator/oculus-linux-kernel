@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2010-2012, 2014-2019, The Linux Foundation. All rights
+ * Copyright (c) 2010-2012, 2014-2020, The Linux Foundation. All rights
  */
 
 #define pr_fmt(fmt) "AXI: %s(): " fmt, __func__
@@ -21,7 +21,6 @@
 #include "msm_bus_core.h"
 #include "msm_bus_adhoc.h"
 
-#define CREATE_TRACE_POINTS
 #include <trace/events/trace_msm_bus.h>
 
 #define MAX_BUFF_SIZE 4096
@@ -563,7 +562,8 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 
 	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
-		if (strnstr(chid, cldata->pdata->name, cnt)) {
+		if (cldata->pdata &&
+			strnstr(chid, cldata->pdata->name, cnt)) {
 			found = 1;
 			strsep(&chid, " ");
 			if (chid) {

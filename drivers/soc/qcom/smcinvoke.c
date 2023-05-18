@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "smcinvoke: %s: " fmt, __func__
@@ -590,15 +591,13 @@ static uint16_t get_server_id(int cb_server_fd)
 	struct smcinvoke_file_data *svr_cxt = NULL;
 	struct file *tmp_filp = fget(cb_server_fd);
 
-	if (!tmp_filp)
+	if (!tmp_filp || !FILE_IS_REMOTE_OBJ(tmp_filp))
 		return server_id;
 
 	svr_cxt = tmp_filp->private_data;
 	if (svr_cxt && svr_cxt->context_type ==  SMCINVOKE_OBJ_TYPE_SERVER)
 		server_id = svr_cxt->server_id;
-
-	if (tmp_filp)
-		fput(tmp_filp);
+	fput(tmp_filp);
 
 	return server_id;
 }
@@ -1025,6 +1024,7 @@ static int marshal_out_invoke_req(const uint8_t *buf, uint32_t buf_size,
 				union smcinvoke_arg *args_buf)
 {
 	int ret = -EINVAL, i = 0;
+	int32_t temp_fd = UHANDLE_NULL;
 	union smcinvoke_tz_args *tz_args = NULL;
 	size_t offset = sizeof(struct smcinvoke_msg_hdr) +
 				OBJECT_COUNTS_TOTAL(req->counts) *
@@ -1065,9 +1065,14 @@ static int marshal_out_invoke_req(const uint8_t *buf, uint32_t buf_size,
 		 * is a CBObj. For CBObj, we have to ensure that it is sent
 		 * to server who serves it and that info comes from USpace.
 		 */
+		temp_fd = UHANDLE_NULL;
+
 		ret = get_uhandle_from_tzhandle(tz_args->handle,
 					TZHANDLE_GET_SERVER(tz_args->handle),
-				(int32_t *)&(args_buf[i].o.fd), NO_LOCK);
+				&temp_fd, NO_LOCK);
+
+		args_buf[i].o.fd = temp_fd;
+
 		if (ret)
 			goto out;
 		tz_args++;
@@ -1146,7 +1151,8 @@ static int prepare_send_scm_msg(const uint8_t *in_buf, phys_addr_t in_paddr,
 		    desc.ret[0] == QSEOS_RESULT_BLOCKED_ON_LISTENER) {
 			ret = qseecom_process_listener_from_smcinvoke(&desc);
 			req->result = (int32_t)desc.ret[1];
-			if (!req->result) {
+			if (!req->result &&
+			  desc.ret[0] != SMCINVOKE_RESULT_INBOUND_REQ_NEEDED) {
 				dmac_inv_range(in_buf, in_buf + in_buf_len);
 				ret = marshal_out_invoke_req(in_buf,
 						in_buf_len, req, args_buf);
@@ -1282,6 +1288,7 @@ static int marshal_in_tzcb_req(const struct smcinvoke_cb_txn *cb_txn,
 				struct smcinvoke_accept *user_req, int srvr_id)
 {
 	int ret = 0, i = 0;
+	int32_t temp_fd = UHANDLE_NULL;
 	union smcinvoke_arg tmp_arg;
 	struct smcinvoke_tzcb_req *tzcb_req = cb_txn->cb_req;
 	union smcinvoke_tz_args *tz_args = tzcb_req->args;
@@ -1358,8 +1365,13 @@ static int marshal_in_tzcb_req(const struct smcinvoke_cb_txn *cb_txn,
 		 * create a new FD and assign to output object's
 		 * context
 		 */
+		temp_fd = UHANDLE_NULL;
+
 		ret = get_uhandle_from_tzhandle(tz_args[i].handle, srvr_id,
-					(int32_t *)&(tmp_arg.o.fd), TAKE_LOCK);
+					&temp_fd, TAKE_LOCK);
+
+		tmp_arg.o.fd = temp_fd;
+
 		if (ret) {
 			ret = -EINVAL;
 			goto out;
@@ -1539,7 +1551,7 @@ static long process_accept_req(struct file *filp, unsigned int cmd,
 		return -EINVAL;
 	}
 
-	if (copy_from_user(&user_args, (void __user *)arg,
+	if (copy_from_user(&user_args, (void __user *)(uintptr_t)arg,
 					sizeof(struct smcinvoke_accept))) {
 		pr_err("copying accept request from user failed\n");
 		return -EFAULT;
@@ -1655,8 +1667,8 @@ static long process_accept_req(struct file *filp, unsigned int cmd,
 							cb_txn->txn_id);
 			kref_put(&cb_txn->ref_cnt, delete_cb_txn);
 			mutex_unlock(&g_smcinvoke_lock);
-			ret =  copy_to_user((void __user *)arg, &user_args,
-					sizeof(struct smcinvoke_accept));
+			ret =  copy_to_user((void __user *)(uintptr_t)arg,
+				&user_args, sizeof(struct smcinvoke_accept));
 		}
 	} while (!cb_txn);
 out:
@@ -1701,7 +1713,7 @@ static long process_invoke_req(struct file *filp, unsigned int cmd,
 		return -EPERM;
 	}
 
-	ret = copy_from_user(&req, (void __user *)arg, sizeof(req));
+	ret = copy_from_user(&req, (void __user *)(uintptr_t)arg, sizeof(req));
 	if (ret) {
 		pr_err("copying invoke req failed\n");
 		return -EFAULT;
@@ -1785,7 +1797,7 @@ static long process_invoke_req(struct file *filp, unsigned int cmd,
 					nr_args * req.argsize);
 	}
 	/* copy result of invoke op */
-	ret |=  copy_to_user((void __user *)arg, &req, sizeof(req));
+	ret |=  copy_to_user((void __user *)(uintptr_t)arg, &req, sizeof(req));
 	if (ret)
 		goto out;
 

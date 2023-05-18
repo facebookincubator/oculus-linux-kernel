@@ -1,0 +1,51 @@
+#include "kona-v2.1-iot-rb5.dtsi"
+
+
+&sde_dsi {
+	status = "disabled";
+};
+
+&sde_dsi1 {
+	status = "disabled";
+};
+
+&mdss_dsi0_pll {
+	status = "disabled";
+};
+
+&mdss_dsi1_pll {
+	status = "disabled";
+};
+
+&cont_splash_memory {
+	status = "disabled";
+};
+
+&disp_rdump_memory {
+	status = "disabled";
+};
+
+&sde_dp {
+	label = "primary";
+	/delete-property/ qcom,max-hdisplay;
+	/delete-property/ qcom,max-vdisplay;
+	/delete-property/ qcom,max-pclk-frequency-khz;
+	qcom,no_tps4_support;
+};
+
+&mdss_mdp {
+	/delete-property/ connectors;
+	connectors = <&sde_dp &sde_rscc>;
+};
+
+&usb1 {
+	status = "disabled";
+};
+
+&usb_qmp_phy {
+	status = "disabled";
+};
+
+&usb2_phy1 {
+	status = "disabled";
+};

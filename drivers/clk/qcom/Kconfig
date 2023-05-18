@@ -1,3 +1,5 @@
+source "drivers/clk/qcom/mdss/Kconfig"
+
 config QCOM_GDSC
 	bool
 	select PM_GENERIC_DOMAINS if PM
@@ -505,3 +507,145 @@ config SDM_VIDEOCC_LAGOON
 	  LAGOON devices.
 	  Say Y if you want to support video devices and functionality such as
 	  video encode/decode.
+
+config QM_GCC_SCUBA
+	tristate "SCUBA Global Clock Controller"
+	select QCOM_GDSC
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the global clock controller on Qualcomm Technologies, Inc
+	  SCUBA devices.
+	  Say Y if you want to use peripheral devices such as UART, SPI, I2C,
+	  USB, SD/eMMC, etc.
+
+config QM_DISPCC_SCUBA
+	tristate "SCUBA Display Clock Controller"
+	select QM_GCC_SCUBA
+	help
+	  Support for the display clock controller on Qualcomm Technologies, Inc.
+	  SCUBA devices.
+	  Say Y if you want to support display devices and functionality such as
+	  splash screen.
+
+config QM_GPUCC_SCUBA
+	tristate "SCUBA Graphics Clock Controller"
+	select QM_GCC_SCUBA
+	help
+	  Support for the graphics clock controller on Qualcomm Technologies, Inc.
+	  SCUBA devices.
+	  Say Y if you want to support graphics controller devices
+	  and it's functionalities.
+
+config QM_DEBUGCC_SCUBA
+	tristate "SCUBA Debug Clock Controller"
+	depends on QM_GCC_SCUBA
+	help
+	  Support for the debug clock controller on Qualcomm Technologies, Inc
+	  SCUBA devices.
+	  Say Y if you want to support the clock measurement functionality.
+
+config SDM_GCC_660
+	tristate "SDM660 Global Clock Controller"
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the global clock controller on Qualcomm Technologies, Inc
+	  SDM660 devices.
+	  Say Y if you want to use peripheral devices such as UART, SPI, I2C,
+	  USB, UFS, SD/eMMC, PCIe, etc.
+
+config SDM_GPUCC_660
+	tristate "SDM660 Graphics Clock Controller"
+	select SDM_GCC_660
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the graphics clock controller on Qualcomm Technologies, Inc
+	  SDM660 devices.
+	  Say Y if you want to support graphics controller devices which will
+	  be required to enable those device.
+
+config SDM_MMCC_660
+	tristate "SDM660 Multimedia Clock Controller"
+	select SDM_GCC_660
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the multimedia clock controller on Qualcomm Technologies, Inc
+	  SDM660 devices.
+	  Say Y if you want to support multimedia devices such as display,
+	  video encode/decode, camera, etc.
+
+config CLOCK_CPU_OSM_660
+	tristate "OSM CPU Clock Controller for SDM660"
+	depends on COMMON_CLK_QCOM
+	help
+	 Support for the OSM clock controller for SDM660.
+	 Operating State Manager (OSM) is a hardware engine used by some
+	 Qualcomm Technologies, Inc. (QTI) SoCs to manage frequency and
+	 voltage scaling in hardware. OSM is capable of controlling
+	 frequency and voltage requests for multiple clusters via the
+	 existence of multiple OSM domains.
+	 Say Y if you want to support OSM clocks.
+
+config SDM_GCC_429W
+	tristate "SDM429w Global Clock Controller"
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the global clock controller on SDM429w/QM215 devices.
+	  Say Y if you want to use peripheral devices such as UART, SPI,
+	  I2C, USB, UFS, SDCC, Display, Camera, Video etc.
+
+config SDM_DEBUGCC_429W
+	tristate "SDM429W Debug Clock Controller"
+	depends on SDM_GCC_429W
+	help
+	  Support for the debug clock controller on Qualcomm Technologies, Inc
+	  SDM429W/QM215 devices.
+	  Say Y if you want to support the clock measurement functionality.
+
+config CLOCK_CPU_SDM
+	bool "CPU SDM Clock Controller"
+	depends on COMMON_CLK_QCOM
+	help
+	 Support for the cpu clock controller on SDM based devices(e.g. QM215/SDM429).
+	 Say Y if you want to support CPU clock scaling using
+	 CPUfreq drivers for dynamic power management.
+
+config SM_GCC_KHAJE
+	tristate "KHAJE Global Clock Controller"
+	depends on COMMON_CLK_QCOM
+	help
+	 Support for the global clock controller on KHAJE devices.
+	 Say Y if you want to use peripheral devices such as UART, SPI,
+	 I2C, USB, UFS, SDCC, PCIe, Camera, Video etc.
+
+config SM_GPUCC_KHAJE
+	tristate "KHAJE Graphics Clock Controller"
+	select SM_GCC_KHAJE
+	help
+	 Support for the graphics clock controller on Qualcomm Technologies, Inc
+	 KHAJE devices.
+	 Say Y if you want to support graphics controller devices.
+
+config SM_DISPCC_KHAJE
+	tristate "KHAJE Display Clock Controller"
+	select SM_GCC_KHAJE
+	help
+	 Support for the display clock controller on Qualcomm Technologies, Inc.
+	 KHAJE devices.
+	 Say Y if you want to support display devices and functionality such as
+	 splash screen.
+
+config SM_DEBUGCC_KHAJE
+	tristate "KHAJE Debug Clock Controller"
+	select SM_GCC_KHAJE
+	help
+	 Support for the debug clock controller on Qualcomm Technologies, Inc
+	 KHAJE devices.
+	 Say Y if you want to support the clock measurement functionality.
+
+config SDM_DEBUGCC_439
+	tristate "SDM439 SDM429 Debug Clock Controller"
+	depends on SDM_GCC_429W
+	help
+	  Support for the debug clock controller on Qualcomm Technologies, Inc
+	  SDM429/SDM439 devices.
+	  Say Y if you want to support the clock measurement functionality.

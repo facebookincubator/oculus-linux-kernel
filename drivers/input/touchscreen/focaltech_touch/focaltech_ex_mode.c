@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * FocalTech ftxxxx TouchScreen driver.
@@ -128,7 +127,7 @@ static ssize_t fts_glove_mode_store(
 			FTS_DEBUG("enter glove mode");
 			ret = fts_ex_mode_switch(MODE_GLOVE, ENABLE);
 			if (ret >= 0) {
-				ts_data->glove_mode = true;
+				ts_data->glove_mode = ENABLE;
 			}
 		}
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
@@ -136,7 +135,7 @@ static ssize_t fts_glove_mode_store(
 			FTS_DEBUG("exit glove mode");
 			ret = fts_ex_mode_switch(MODE_GLOVE, DISABLE);
 			if (ret >= 0) {
-				ts_data->glove_mode = false;
+				ts_data->glove_mode = DISABLE;
 			}
 		}
 	}
@@ -176,7 +175,7 @@ static ssize_t fts_cover_mode_store(
 			FTS_DEBUG("enter cover mode");
 			ret = fts_ex_mode_switch(MODE_COVER, ENABLE);
 			if (ret >= 0) {
-				ts_data->cover_mode = true;
+				ts_data->cover_mode = ENABLE;
 			}
 		}
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
@@ -184,7 +183,7 @@ static ssize_t fts_cover_mode_store(
 			FTS_DEBUG("exit cover mode");
 			ret = fts_ex_mode_switch(MODE_COVER, DISABLE);
 			if (ret >= 0) {
-				ts_data->cover_mode = false;
+				ts_data->cover_mode = DISABLE;
 			}
 		}
 	}
@@ -205,8 +204,7 @@ static ssize_t fts_charger_mode_show(
 	fts_read_reg(FTS_REG_CHARGER_MODE_EN, &val);
 	count = snprintf(buf + count, PAGE_SIZE, "Charger Mode:%s\n",
 			ts_data->charger_mode ? "On" : "Off");
-	count += snprintf(buf + count, PAGE_SIZE, "Charger Reg(0x8B):%d\n",
-			val);
+	count += snprintf(buf + count, PAGE_SIZE, "Charger Reg(0x8B):%d\n", val);
 	mutex_unlock(&input_dev->mutex);
 
 	return count;
@@ -224,7 +222,7 @@ static ssize_t fts_charger_mode_store(
 			FTS_DEBUG("enter charger mode");
 			ret = fts_ex_mode_switch(MODE_CHARGER, ENABLE);
 			if (ret >= 0) {
-				ts_data->charger_mode = true;
+				ts_data->charger_mode = ENABLE;
 			}
 		}
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
@@ -232,7 +230,7 @@ static ssize_t fts_charger_mode_store(
 			FTS_DEBUG("exit charger mode");
 			ret = fts_ex_mode_switch(MODE_CHARGER, DISABLE);
 			if (ret >= 0) {
-				ts_data->charger_mode = false;
+				ts_data->charger_mode = DISABLE;
 			}
 		}
 	}
@@ -334,9 +332,9 @@ int fts_ex_mode_init(struct fts_ts_data *ts_data)
 {
 	int ret = 0;
 
-	ts_data->glove_mode = false;
-	ts_data->cover_mode = false;
-	ts_data->charger_mode = false;
+	ts_data->glove_mode = DISABLE;
+	ts_data->cover_mode = DISABLE;
+	ts_data->charger_mode = DISABLE;
 	ts_data->report_rate = 0;
 
 	ret = sysfs_create_group(&ts_data->dev->kobj, &fts_touch_mode_group);

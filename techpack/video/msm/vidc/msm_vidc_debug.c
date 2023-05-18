@@ -36,59 +36,6 @@ struct core_inst_pair {
 	struct msm_vidc_inst *inst;
 };
 
-void msm_vidc_dprintk(u32 level, u32 sid, const char *fmt, ...)
-{
-	char trace_logbuf[MAX_TRACER_LOG_LENGTH];
-	char *cur, *end;
-	va_list args;
-
-	if (!is_print_allowed(sid, level) ||
-			!(msm_vidc_debug & (VIDC_FTRACE | VIDC_PRINTK)))
-		return;
-
-	cur = trace_logbuf;
-	end = cur + MAX_TRACER_LOG_LENGTH;
-
-	cur += snprintf(trace_logbuf, MAX_TRACER_LOG_LENGTH,
-			VIDC_DBG_TAG, get_debug_level_str(level),
-			sid, get_codec_name(sid));
-
-	va_start(args, fmt);
-	cur += vscnprintf(cur, end - cur, fmt, args);
-	va_end(args);
-
-	if (msm_vidc_debug & VIDC_FTRACE)
-		trace_msm_vidc_printf(trace_logbuf, cur - trace_logbuf);
-
-	if (msm_vidc_debug & VIDC_PRINTK)
-		pr_info("%s\n", trace_logbuf);
-}
-
-void msm_vidc_dprintk_firmware(u32 level, const char *fmt, ...)
-{
-	char trace_logbuf[MAX_TRACER_LOG_LENGTH];
-	char *cur, *end;
-	va_list args;
-
-	if (!(level & (FW_FTRACE | FW_PRINTK)))
-		return;
-
-	cur = trace_logbuf;
-	end = cur + MAX_TRACER_LOG_LENGTH;
-
-	cur += snprintf(trace_logbuf, MAX_TRACER_LOG_LENGTH, FW_DBG_TAG, "fw");
-
-	va_start(args, fmt);
-	cur += vscnprintf(cur, end - cur, fmt, args);
-	va_end(args);
-
-	if (level & FW_FTRACE)
-		trace_msm_vidc_printf(trace_logbuf, cur - trace_logbuf);
-
-	if (level & FW_PRINTK)
-		pr_info("%s\n", trace_logbuf);
-}
-
 static u32 write_str(char *buffer,
 		size_t size, const char *fmt, ...)
 {
@@ -743,3 +690,32 @@ inline void update_log_ctxt(u32 sid, u32 session_type, u32 fourcc)
 	vidc_driver->ctxt[sid-1].name[5] = '\0';
 }
 
+void msm_vidc_ftrace(const char *debug_level, u32 sid, const char *codec_name, const char *fmt, ...)
+{
+	va_list args;
+	char trace_logbuf[MAX_TRACER_LOG_LENGTH];
+	int log_length;
+
+	va_start(args, fmt);
+	log_length = snprintf(trace_logbuf, MAX_TRACER_LOG_LENGTH,
+		VIDC_DBG_TAG, debug_level, sid, codec_name);
+	log_length += vsnprintf(trace_logbuf+log_length, MAX_TRACER_LOG_LENGTH-log_length,
+		fmt, args);
+	va_end(args);
+	trace_msm_vidc_printf(trace_logbuf, log_length);
+}
+
+void msm_fw_ftrace(const char *name, const char *fmt, ...)
+{
+	va_list args;
+	char trace_logbuf[MAX_TRACER_LOG_LENGTH];
+	int log_length;
+
+	va_start(args, fmt);
+	log_length = snprintf(trace_logbuf, MAX_TRACER_LOG_LENGTH,
+		FW_DBG_TAG, name);
+	log_length += vsnprintf(trace_logbuf+log_length, MAX_TRACER_LOG_LENGTH-log_length,
+		fmt, args);
+	va_end(args);
+	trace_msm_vidc_printf(trace_logbuf, log_length);
+}

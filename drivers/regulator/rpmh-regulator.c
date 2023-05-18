@@ -523,7 +523,7 @@ static void rpmh_regulator_req(struct rpmh_vreg *vreg,
 		enum rpmh_state state)
 {
 	struct rpmh_aggr_vreg *aggr_vreg = vreg->aggr_vreg;
-	char buf[DEBUG_PRINT_BUFFER_SIZE];
+	static char buf[DEBUG_PRINT_BUFFER_SIZE];
 	size_t buflen = DEBUG_PRINT_BUFFER_SIZE;
 	const char *const *param_name;
 	int i, max_reg_index;

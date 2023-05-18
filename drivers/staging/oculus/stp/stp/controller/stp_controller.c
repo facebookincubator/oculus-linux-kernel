@@ -113,14 +113,14 @@ int32_t stp_controller_init(struct stp_controller_init_t *init)
 
 	if (!init->wait_signal->wait_write ||
 	    !init->wait_signal->signal_write || !init->wait_signal->wait_read ||
-	    !init->wait_signal->signal_read ||
-	    !init->wait_signal->wait_for_device_ready ||
-	    !init->wait_signal->signal_device_ready ||
-	    !init->wait_signal->wait_for_data ||
-	    !init->wait_signal->signal_data || !init->wait_signal->wait_fsync ||
+	    !init->wait_signal->signal_read || !init->wait_signal->wait_fsync ||
 	    !init->wait_signal->signal_fsync ||
 	    !init->wait_signal->reset_fsync || !init->wait_signal->wait_open ||
-	    !init->wait_signal->signal_open) {
+	    !init->wait_signal->signal_open ||
+	    !init->wait_signal->signal_stp_event ||
+	    !init->wait_signal->wait_stp_event ||
+	    !init->wait_signal->pause_thread ||
+	    !init->wait_signal->resume_thread) {
 		STP_LOG_ERROR("STP controller: invalid wait/signal parameter");
 		ret = STP_ERROR;
 		goto error;
@@ -143,6 +143,8 @@ error:
 int32_t stp_controller_deinit(void)
 {
 	STP_LOCK_DEINIT(_stp_controller_data->lock_notification);
+
+	stp_controller_deinit_internal();
 
 	return STP_SUCCESS;
 }
@@ -193,32 +195,126 @@ static bool stp_controller_data_transaction(void)
 	return do_transaction;
 }
 
-void stp_controller_wait_for_data(void)
+void stp_controller_signal_has_data(void)
 {
-	_stp_controller_data->wait_signal->wait_for_data();
-
-	stp_controller_signal_device_ready();
+	_stp_controller_data->has_data = true;
+	_stp_controller_data->wait_signal->signal_stp_event();
 }
 
-void stp_controller_signal_data(void)
+bool stp_controller_get_has_data(void)
 {
-	_stp_controller_data->wait_signal->signal_data();
+	return _stp_controller_data->has_data;
+}
+
+void stp_controller_unset_has_data(void)
+{
+	_stp_controller_data->has_data = false;
 }
 
 void stp_controller_signal_device_ready(void)
 {
-	_stp_controller_data->wait_signal->signal_device_ready();
+	_stp_controller_data->device_ready = true;
+	_stp_controller_data->wait_signal->signal_stp_event();
 }
 
-void stp_controller_wait_for_device_ready(void)
+bool stp_controller_get_device_ready(void)
 {
-	_stp_controller_data->wait_signal->wait_for_device_ready();
+	return _stp_controller_data->device_ready;
 }
 
-static void stp_resignal_mcu_ready(void)
+void stp_controller_unset_device_ready(void)
 {
-	if (_stp_controller_data->handshake->device_can_receive())
-		_stp_controller_data->wait_signal->signal_device_ready();
+	_stp_controller_data->device_ready = false;
+}
+
+void stp_controller_signal_stop_thread(void)
+{
+	_stp_controller_data->stop_thread = true;
+	_stp_controller_data->wait_signal->signal_stp_event();
+}
+
+bool stp_controller_get_stop_thread(void)
+{
+	return _stp_controller_data->stop_thread;
+}
+
+void stp_controller_unset_stop_thread(void)
+{
+	_stp_controller_data->stop_thread = false;
+}
+
+void stp_controller_signal_suspend(void)
+{
+	_stp_controller_data->suspend = true;
+	_stp_controller_data->wait_signal->signal_stp_event();
+}
+
+bool stp_controller_get_suspend(void)
+{
+	return _stp_controller_data->suspend;
+}
+
+void stp_controller_unset_suspend(void)
+{
+	_stp_controller_data->suspend = false;
+}
+
+bool stp_controller_pending_event(void)
+{
+	bool pending = false;
+
+	pending = pending || stp_controller_get_device_ready();
+	pending = pending || stp_controller_get_has_data();
+	pending = pending || stp_controller_get_stop_thread();
+	pending = pending || stp_controller_get_suspend();
+
+	return pending;
+}
+
+int32_t stp_controller_process_event(void)
+{
+	// Flag we use to keep a record that after mcu informing SoC it is ready
+	// but either side has no traffic. In this case, whenever the has data flag
+	// is raised we can utilize this free cycle and start sending
+	static bool device_ready_with_no_transaction;
+
+	int32_t ret = STP_SUCCESS;
+
+	if (stp_controller_get_stop_thread()) {
+		ret = STP_SUCCESS;
+	} else if (stp_controller_get_suspend()) {
+		stp_controller_unset_suspend();
+		_stp_controller_data->wait_signal->pause_thread();
+	} else if (stp_controller_get_device_ready() ||
+		   device_ready_with_no_transaction) {
+		stp_controller_unset_device_ready();
+		stp_controller_unset_has_data();
+		if (_stp_controller_data->state == STP_STATE_INIT) {
+			stp_controller_init_transaction();
+		} else if (_stp_controller_data->state == STP_STATE_DATA) {
+			if (_stp_controller_data->handshake
+				    ->device_can_receive() &&
+			    !stp_controller_data_transaction()) {
+				device_ready_with_no_transaction = true;
+			} else {
+				device_ready_with_no_transaction = false;
+			}
+		} else {
+			STP_LOG_ERROR("STP controller unknown state: %zu",
+				      (size_t)_stp_controller_data->state);
+			ret = STP_ERROR;
+		}
+
+	} else {
+		// Controller has data but device is not yet ready. We need to unset
+		// data here to prevent a tight loop. Rely on device_ready flag to initiate
+		// the next transaction
+		stp_controller_unset_has_data();
+		STP_LOG_DEBUG("no event available!");
+		ret = STP_SUCCESS;
+	}
+
+	return ret;
 }
 
 /* controller main transaction entry. Should be called from a separate thread */
@@ -228,21 +324,11 @@ int32_t stp_controller_transaction_thread(void)
 
 	STP_ASSERT(_stp_controller_data && _stp_controller_data->handshake,
 		   "Invalid internal data");
+	ret = _stp_controller_data->wait_signal->wait_stp_event();
+	if (ret)
+		return STP_ERROR_IO_INTERRUPT;
 
-	stp_controller_wait_for_device_ready();
-
-	if (_stp_controller_data->state == STP_STATE_INIT) {
-		stp_controller_init_transaction();
-	} else if (_stp_controller_data->state == STP_STATE_DATA) {
-		if (!stp_controller_data_transaction()) {
-			stp_controller_wait_for_data();
-			stp_resignal_mcu_ready();
-		}
-	} else {
-		STP_LOG_ERROR("STP controller unknown state: %zu",
-			      (size_t)_stp_controller_data->state);
-		ret = STP_ERROR;
-	}
+	ret = stp_controller_process_event();
 
 	return ret;
 }
@@ -320,6 +406,8 @@ void stp_controller_prepare_common_tx_transaction(void)
 void stp_controller_init_internal(
 	struct stp_controller_transport_table *transport)
 {
+	STP_LOG_INFO("stp_controller_init_internal");
+
 	STP_ASSERT(transport, "Invalid parameter(s)");
 
 	memset(_stp_controller_data, 0, sizeof(*_stp_controller_data));
@@ -331,7 +419,31 @@ void stp_controller_init_internal(
 	_stp_controller_data->device_channels_status = 0xFFFFFFFF;
 	_stp_controller_data->prev_channels_status = 0xFFFFFFFF;
 
+	_stp_controller_data->has_data = false;
+	_stp_controller_data->device_ready = false;
+	_stp_controller_data->stop_thread = false;
+	_stp_controller_data->suspend = false;
+
 	STP_LOCK_INIT(_stp_controller_data->lock_notification);
+
+	for (uint8_t i = 0; i < STP_TOTAL_NUM_CHANNELS; i++) {
+		stp_pl_init_lock(&_stp_controller_data->channels[i].rx_pl);
+		stp_pl_init_lock(&_stp_controller_data->channels[i].tx_pl);
+
+		STP_LOCK_INIT(_stp_controller_data->channels[i].read_lock);
+		STP_LOCK_INIT(_stp_controller_data->channels[i].write_lock);
+	}
+}
+
+void stp_controller_deinit_internal(void)
+{
+	for (uint8_t i = 0; i < STP_TOTAL_NUM_CHANNELS; i++) {
+		stp_pl_deinit_lock(&_stp_controller_data->channels[i].rx_pl);
+		stp_pl_deinit_lock(&_stp_controller_data->channels[i].tx_pl);
+
+		STP_LOCK_DEINIT(_stp_controller_data->channels[i].read_lock);
+		STP_LOCK_DEINIT(_stp_controller_data->channels[i].write_lock);
+	}
 }
 
 void stp_controller_init_transaction(void)

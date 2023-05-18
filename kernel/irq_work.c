@@ -144,7 +144,8 @@ static void irq_work_run_list(struct llist_head *list)
 	struct llist_node *llnode;
 	unsigned long flags;
 
-	BUG_ON(!irqs_disabled());
+	if (WARN_ON(!irqs_disabled()))
+		return;
 
 	if (llist_empty(list))
 		return;

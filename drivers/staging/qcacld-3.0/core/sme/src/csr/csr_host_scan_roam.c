@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -504,12 +505,18 @@ void csr_neighbor_roam_request_handoff(struct mac_context *mac_ctx,
 		uint8_t session_id)
 {
 	struct csr_roam_info *roam_info;
-	tpCsrNeighborRoamControlInfo neighbor_roam_info =
-		&mac_ctx->roam.neighborRoamInfo[session_id];
+	struct csr_roam_session *session = CSR_GET_SESSION(mac_ctx, session_id);
+	tpCsrNeighborRoamControlInfo neighbor_roam_info;
 	tCsrNeighborRoamBSSInfo handoff_node;
 	uint32_t roamid = 0;
 	QDF_STATUS status;
 
+	if (!session) {
+		sme_err("Session_id invalid %d", session_id);
+		return;
+	}
+
+	neighbor_roam_info = &mac_ctx->roam.neighborRoamInfo[session_id];
 	QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG, "%s session_id=%d",
 		  __func__, session_id);
 

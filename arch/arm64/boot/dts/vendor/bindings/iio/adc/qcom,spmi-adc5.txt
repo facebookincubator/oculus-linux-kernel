@@ -9,8 +9,9 @@ ADC node:
     Usage: required
     Value type: <string>
     Definition: Should contain "qcom,spmi-adc5" for PMIC5 ADC devices.
-                Should contain "qcom,spmi-adc7" for PMIC7 ADC devices.
+        Should contain "qcom,spmi-adc7" for PMIC7 ADC devices.
 		Should contain "qcom,spmi-adc-rev2" for PMIC refresh ADC devices.
+		Should contain "qcom,spmi-adc5-lite" for PMIC5 ADC-lite devices.
 
 - reg:
     Usage: required for VADC base address

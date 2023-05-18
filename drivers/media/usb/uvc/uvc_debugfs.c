@@ -79,13 +79,12 @@ void uvc_debugfs_init_stream(struct uvc_streaming *stream)
 {
 	struct usb_device *udev = stream->dev->udev;
 	struct dentry *dent;
-	char dir_name[33];
+	char dir_name[32];
 
 	if (uvc_debugfs_root_dir == NULL)
 		return;
 
-	snprintf(dir_name, sizeof(dir_name), "%u-%u-%u", udev->bus->busnum,
-		 udev->devnum, stream->intfnum);
+	sprintf(dir_name, "%u-%u", udev->bus->busnum, udev->devnum);
 
 	dent = debugfs_create_dir(dir_name, uvc_debugfs_root_dir);
 	if (IS_ERR_OR_NULL(dent)) {

@@ -18,18 +18,13 @@
 extern void of_thermal_handle_trip_temp(struct thermal_zone_device *tz,
 					int trip_temp);
 
-int is_charger_connected(struct power_supply *usb_psy)
+int is_charging(struct power_supply *batt_psy)
 {
 	union power_supply_propval val = {0};
 
-	/*
-	 * Check presence of USB charger, since it is possible to be connected
-	 * to USB without charging but still draw power from the charger to run
-	 * the system.
-	 */
-	return (usb_psy && !power_supply_get_property(usb_psy,
-				POWER_SUPPLY_PROP_PRESENT, &val) &&
-			val.intval != 0);
+	return (batt_psy && !power_supply_get_property(batt_psy,
+				POWER_SUPPLY_PROP_CURRENT_NOW, &val) &&
+			val.intval > 0);
 }
 
 /*
@@ -598,7 +593,7 @@ ssize_t charging_constant_store(struct device *dev,
 		(struct virtual_sensor_common_data *) dev_get_drvdata(dev);
 	int ret, constant;
 
-	ret = kstrtoint_from_user(buf, count, 10, &constant);
+	ret = kstrtoint(buf, 10, &constant);
 	if (ret < 0)
 		return -EINVAL;
 
@@ -638,7 +633,7 @@ ssize_t discharging_constant_store(struct device *dev,
 		(struct virtual_sensor_common_data *) dev_get_drvdata(dev);
 	int ret, constant;
 
-	ret = kstrtoint_from_user(buf, count, 10, &constant);
+	ret = kstrtoint(buf, 10, &constant);
 	if (ret < 0)
 		return -EINVAL;
 

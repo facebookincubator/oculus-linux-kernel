@@ -12,6 +12,7 @@
 #include <linux/of_platform.h>
 #include <linux/power_supply.h>
 #include <linux/slab.h>
+#include <linux/iio/consumer.h>
 
 #include "cypd.h"
 
@@ -97,17 +98,22 @@ enum vdm_state {
 	MODE_EXITED,
 };
 
+static const char * const cypd_iio_channel_map[] = {
+	"cypd_chip_version", "cypd_pd_active",
+};
+
 struct cypd {
 	struct device			dev;
 	struct workqueue_struct	*wq;
 	struct work_struct	sm_work;
+	struct work_struct	psy_changed_work;
 	bool			sm_queued;
 	struct hrtimer			timer;
 	enum cypd_state		current_state;
 	bool					pd_connected;
-	bool			pd_phy_opened;
 	struct power_supply		*wireless_psy;
 	struct notifier_block	psy_nb;
+	struct iio_channel		*iio_channels[CYPD_IIO_PROP_MAX];
 	bool			pd_active;
 	enum data_role		current_dr;
 	enum power_role		current_pr;
@@ -129,6 +135,11 @@ struct cypd {
 	bool			vdm_in_suspend;
 };
 
+struct vdm_work {
+	struct cypd *pd;
+	struct work_struct work;
+};
+
 struct cypd_state_handler {
 	void (*enter_state)(struct cypd *pd);
 	void (*handle_state)(struct cypd *pd, struct rx_msg *msg);
@@ -141,7 +152,9 @@ static void cypd_set_state(struct cypd *pd, enum cypd_state next_state);
 static int pd_send_msg(struct cypd *pd, u8 msg_type, const u32 *data,
 		size_t num_data, enum pd_sop_type sop);
 static const char *msg_to_string(u8 id, bool is_data, bool is_ext);
-static int cypd_startup_common(struct cypd *pd);
+static void cypd_startup_common(struct cypd *pd);
+static int queue_vdm_open_work(struct cypd *pd);
+static int queue_vdm_close_work(struct cypd *pd);
 
 static void kick_sm(struct cypd *pd, int ms)
 {
@@ -180,16 +193,10 @@ static void handle_state_unknown(struct cypd *pd, struct rx_msg *rx_msg)
 
 static void enter_state_snk_ready(struct cypd *pd)
 {
-	int ret;
-
 	pd->current_dr = DR_UFP;
 	pd->current_pr = PR_SINK;
 
-	ret = cypd_startup_common(pd);
-	if (ret) {
-		dev_err(&pd->dev, "cypd_startup failed\n");
-		return;
-	}
+	cypd_startup_common(pd);
 
 	if (pd->vdm_tx)
 		kick_sm(pd, 0);
@@ -314,11 +321,7 @@ static void enter_state_disconnect(struct cypd *pd)
 {
 	dev_info(&pd->dev, "PD disconnect\n");
 
-	if (pd->pd_phy_opened) {
-		cypd_phy_close();
-		pd->pd_phy_opened = false;
-	}
-
+	queue_vdm_close_work(pd);
 	rx_msg_cleanup(pd);
 	reset_vdm_state(pd);
 
@@ -785,7 +788,7 @@ int cypd_send_vdm(struct cypd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos)
 		pd->vdm_tx = NULL;
 	}
 
-	vdm_tx = kzalloc(sizeof(*vdm_tx), GFP_KERNEL);
+	vdm_tx = kzalloc(sizeof(*vdm_tx), GFP_ATOMIC);
 	if (!vdm_tx)
 		return -ENOMEM;
 
@@ -912,25 +915,72 @@ static void cypd_sm(struct work_struct *w)
 		pm_relax(&pd->dev);
 }
 
-static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
+static void cypd_vdm_open_work(struct work_struct *w)
 {
-	struct cypd *pd = container_of(nb, struct cypd, psy_nb);
-	union power_supply_propval val = {0};
+	struct vdm_work *work = container_of(w, struct vdm_work, work);
+	struct cypd *pd = work->pd;
+	struct cypd_phy_params phy_params = {
+		.msg_rx_cb		= phy_msg_received,
+	};
 	int ret;
 
-	if (ptr != pd->wireless_psy || evt != PSY_EVENT_PROP_CHANGED)
-		return 0;
+	ret = cypd_phy_open(&phy_params);
+	if (ret && ret != -EBUSY)
+		dev_err(&pd->dev, "error opening PD PHY %d\n", ret);
 
-	dev_dbg(&pd->dev, "Received psy changed\n");
+	kfree(work);
+}
 
-	ret = power_supply_get_property(pd->wireless_psy,
-			POWER_SUPPLY_PROP_PD_ACTIVE, &val);
-	if (ret) {
-		dev_err(&pd->dev, "Unable to read PD_ACTIVE state: %d\n", ret);
-		return ret;
+static void cypd_vdm_close_work(struct work_struct *w)
+{
+	struct vdm_work *work = container_of(w, struct vdm_work, work);
+
+	cypd_phy_close();
+	kfree(work);
+}
+
+static int queue_vdm_open_work(struct cypd *pd)
+{
+	struct vdm_work *vdm_work;
+
+	vdm_work = kzalloc(sizeof(struct vdm_work), GFP_ATOMIC);
+	if (!vdm_work)
+		return -ENOMEM;
+
+	vdm_work->pd = pd;
+	INIT_WORK(&vdm_work->work, cypd_vdm_open_work);
+	queue_work(pd->wq, &vdm_work->work);
+
+	return 0;
+}
+
+static int queue_vdm_close_work(struct cypd *pd)
+{
+	struct vdm_work *vdm_work;
+
+	vdm_work = kzalloc(sizeof(struct vdm_work), GFP_ATOMIC);
+	if (!vdm_work)
+		return -ENOMEM;
+
+	vdm_work->pd = pd;
+	INIT_WORK(&vdm_work->work, cypd_vdm_close_work);
+	queue_work(pd->wq, &vdm_work->work);
+
+	return 0;
+}
+
+static void cypd_pe_psy_changed_work(struct work_struct *work)
+{
+	int ret, val;
+	struct cypd *pd = container_of(work, struct cypd, psy_changed_work);
+
+	ret = iio_read_channel_processed(pd->iio_channels[CYPD_IIO_PROP_PD_ACTIVE], &val);
+	if (ret < 0) {
+		dev_err(&pd->dev, "Unable to read pd_active state: %d\n", ret);
+		return;
 	}
 
-	pd->pd_connected = val.intval;
+	pd->pd_connected = val;
 
 	if (pd->pd_connected)
 		cypd_set_state(pd, PE_SNK_READY);
@@ -941,7 +991,20 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 		kick_sm(pd, 0);
 	else
 		dev_dbg(&pd->dev, "cypd_sm already running\n");
-	return 0;
+}
+
+static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
+{
+	struct cypd *pd = container_of(nb, struct cypd, psy_nb);
+
+	if (ptr != pd->wireless_psy || evt != PSY_EVENT_PROP_CHANGED)
+		return 0;
+
+	dev_dbg(&pd->dev, "Received psy changed\n");
+
+	schedule_work(&pd->psy_changed_work);
+
+	return NOTIFY_OK;
 }
 
 static enum hrtimer_restart pd_timeout(struct hrtimer *timer)
@@ -1026,29 +1089,14 @@ struct cypd *devm_cypd_get_by_phandle(struct device *dev, const char *phandle)
 }
 EXPORT_SYMBOL(devm_cypd_get_by_phandle);
 
-static int cypd_startup_common(struct cypd *pd)
+static void cypd_startup_common(struct cypd *pd)
 {
-	struct cypd_phy_params phy_params = {
-		.msg_rx_cb		= phy_msg_received,
-	};
-	int ret = 0;
-
 	/* force spec rev to be 3.0 */
 	pd->spec_rev = PD_REV_30;
 
-	if (pd->pd_phy_opened) {
-		cypd_phy_close();
-		pd->pd_phy_opened = false;
-	}
-
-	ret = cypd_phy_open(&phy_params);
-	if (ret) {
-		dev_err(&pd->dev, "error opening PD PHY %d\n", ret);
-		return ret;
-	}
-	pd->pd_phy_opened = true;
-
-	return 0;
+	/* Close first, in case it was already open */
+	queue_vdm_close_work(pd);
+	queue_vdm_open_work(pd);
 }
 
 static int num_pd_instances;
@@ -1067,6 +1115,7 @@ struct cypd *cypd_create(struct device *parent)
 {
 	int ret;
 	struct cypd *pd;
+	int i;
 
 	if (!cypd_class.p)
 		return ERR_PTR(-EPROBE_DEFER);
@@ -1117,6 +1166,18 @@ struct cypd *cypd_create(struct device *parent)
 	ret = power_supply_reg_notifier(&pd->psy_nb);
 	if (ret)
 		goto del_inst;
+	INIT_WORK(&pd->psy_changed_work, cypd_pe_psy_changed_work);
+
+	for (i = 0; i < CYPD_IIO_PROP_MAX; i++) {
+		pd->iio_channels[i] = devm_iio_channel_get(parent,
+						cypd_iio_channel_map[i]);
+		if (IS_ERR(pd->iio_channels[i])) {
+			dev_err(&pd->dev, "failed to get %s iio channel\n",
+						cypd_iio_channel_map[i]);
+			ret = PTR_ERR(pd->iio_channels[i]);
+			goto del_inst;
+		}
+	}
 
 	/* force read initial power_supply values */
 	psy_changed(&pd->psy_nb, PSY_EVENT_PROP_CHANGED, pd->wireless_psy);

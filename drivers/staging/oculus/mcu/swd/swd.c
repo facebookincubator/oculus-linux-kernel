@@ -25,9 +25,9 @@
 #define SWD_CLK_FALLING 0
 #define SWD_CLK_RISING  1
 
-#define SWD_VAL_OK    	0x01
-#define SWD_VAL_WAIT  	0x02
-#define SWD_VAL_FAULT 	0x04
+#define SWD_VAL_OK		0x01
+#define SWD_VAL_WAIT	0x02
+#define SWD_VAL_FAULT	0x04
 
 /* DP registers */
 #define SWD_DP_REG_RO_IDCODE    0x0
@@ -35,7 +35,7 @@
 #define SWD_DP_REG_RW_CTRLSTAT  0x4
 #define SWD_DP_REG_RO_RESEND    0x8
 #define SWD_DP_REG_WO_SELECT    0x8
-#define SWD_DP_REG_RO_RDBUFF    0xC
+#define SWD_DP_REG_RO_RDBUFF	0xC
 
 /* Supported IDCODEs */
 /* Cortex-M0 r0p0 - Conforms to DPv1 */
@@ -78,9 +78,9 @@
 #define SWD_VAL_AIRCR_SYSRSTRQ	0x04
 
 /* Core Debug registers */
-#define SWD_REG_DHCSR          	0xE000EDF0
-#define SWD_VAL_DHCSR_DBGKEY    0xa05f0000
-#define SWD_VAL_DHCSR_C_HALT    0x02
+#define SWD_REG_DHCSR			0xE000EDF0
+#define SWD_VAL_DHCSR_DBGKEY	0xa05f0000
+#define SWD_VAL_DHCSR_C_HALT	0x02
 #define SWD_VAL_DHCSR_C_DEBUGEN 0x01
 #define SWD_VAL_DHCSR_INC_32	0x23000012
 
@@ -122,11 +122,10 @@ static inline void swd_wire_set_direction(struct swd_dev_data *devdata,
 					  enum swd_direction direction)
 {
 	if (devdata->direction != direction) {
-		if (direction == SWD_DIRECTION_OUT) {
+		if (direction == SWD_DIRECTION_OUT)
 			gpio_direction_output(devdata->gpio_swdio, 0);
-		} else {
+		else
 			gpio_direction_input(devdata->gpio_swdio);
-		}
 		devdata->direction = direction;
 	}
 }
@@ -145,9 +144,8 @@ static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
 
 	swd_wire_set_direction(devdata, SWD_DIRECTION_OUT);
 	gpio_set_value(devdata->gpio_swdio, value);
-	for (i = 0; i < len; i++) {
+	for (i = 0; i < len; i++)
 		swd_wire_clock(devdata);
-	}
 }
 
 static bool swd_wire_read(struct swd_dev_data *devdata)
@@ -193,19 +191,16 @@ static bool swd_wire_header(struct device *dev, bool read,
 		ack |= swd_wire_read(devdata) << 1;
 		ack |= swd_wire_read(devdata) << 2;
 
-		if (ack == SWD_VAL_OK) {
+		if (ack == SWD_VAL_OK)
 			return true;
-		}
 
 		swd_wire_turnaround(devdata);
 
-		if (ack == SWD_VAL_WAIT) {
+		if (ack == SWD_VAL_WAIT)
 			continue;
-		}
 
-		if (ack == SWD_VAL_FAULT) {
+		if (ack == SWD_VAL_FAULT)
 			dev_err_ratelimited(dev, "Bus fault condition in %s\n", __func__);
-		}
 
 		return false;
 	}
@@ -243,6 +238,7 @@ static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
 	data = cpu_to_le32(data);
 	for (i = 0; i < 32; i++) {
 		bool value = !!(data & (1<<i));
+
 		bitcount += value;
 		swd_wire_write(devdata, value);
 	}
@@ -266,6 +262,7 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 
 	for (i = 0; i < 32; i++) {
 		bool value = swd_wire_read(devdata);
+
 		bitcount += value;
 		data |= (value<<i);
 	}
@@ -352,9 +349,8 @@ static bool swd_mode_switch(struct device *dev)
 				 SWD_VAL_READ,
 				 SWD_VAL_DP,
 				 SWD_DP_REG_RO_IDCODE);
-	for (i = 0; i < 34; i++) {
+	for (i = 0; i < 34; i++)
 		swd_wire_read(devdata);
-	}
 
 	if (status) {
 		idcode = swd_dp_read(dev, 0);
@@ -370,7 +366,7 @@ static bool swd_mode_switch(struct device *dev)
 			     SWD_VAL_ABORT_CLEAR);
 		swd_dp_write(dev,
 				SWD_DP_REG_WO_SELECT,
-				devdata->mem_ap << SWD_VAL_SELECT_AP_SHIFT);
+				devdata->mcu_data.mem_ap << SWD_VAL_SELECT_AP_SHIFT);
 
 		ack = (1<<SWD_VAL_CTRLSTAT_CSYSPWRUPACK) |
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPACK);

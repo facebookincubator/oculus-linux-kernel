@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
@@ -127,6 +127,9 @@ void adreno_perfcounter_restore(struct adreno_device *adreno_dev)
 	struct adreno_perfcount_group *group;
 	unsigned int counter, groupid;
 
+	if (adreno_is_a702(adreno_dev))
+		return;
+
 	/* Do not save/restore if not requested */
 	if (counters == NULL || !adreno_dev->perfcounter)
 		return;
@@ -160,6 +163,9 @@ inline void adreno_perfcounter_save(struct adreno_device *adreno_dev)
 	struct adreno_perfcounters *counters = ADRENO_PERFCOUNTERS(adreno_dev);
 	struct adreno_perfcount_group *group;
 	unsigned int counter, groupid;
+
+	if (adreno_is_a702(adreno_dev))
+		return;
 
 	/* Do not save/restore if not requested */
 	if (counters == NULL || !adreno_dev->perfcounter)
@@ -919,7 +925,7 @@ static uint64_t _perfcounter_read_alwayson(struct adreno_device *adreno_dev,
 {
 	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 
-	return gpudev->read_alwayson(adreno_dev) + group->regs[counter].value;
+	return gpudev->read_alwayson(adreno_dev);
 }
 
 static uint64_t _perfcounter_read_pwr(struct adreno_device *adreno_dev,

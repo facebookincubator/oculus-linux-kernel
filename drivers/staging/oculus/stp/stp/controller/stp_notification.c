@@ -61,7 +61,7 @@ void stp_controller_set_notification(uint8_t channel, uint32_t notification)
 
 	STP_UNLOCK(_stp_controller_data->lock_notification);
 
-	stp_controller_signal_data();
+	stp_controller_signal_has_data();
 }
 
 void stp_controller_prepare_tx_notification(bool *do_transaction)

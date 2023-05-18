@@ -97,7 +97,7 @@ static int msm_dtmf_rx_generate_put(struct snd_kcontrol *kcontrol,
 	uint16_t gain = ucontrol->value.integer.value[3];
 
 	pr_debug("%s: low_freq=%d high_freq=%d duration=%lld gain=%d\n",
-		 __func__, low_freq, high_freq, (int)duration, gain);
+		 __func__, low_freq, high_freq, duration, gain);
 
 	if (duration == DTMF_MAX_DURATION)
 		duration = -1;
@@ -224,7 +224,7 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 	struct dtmf_buf_node *buf_node = NULL;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct dtmf_drv_info *prtd = runtime->private_data;
-	unsigned long dsp_flags = 0;
+	unsigned long dsp_flags;
 
 	ret = wait_event_interruptible_timeout(prtd->out_wait,
 				(!list_empty(&prtd->out_queue)),
@@ -324,7 +324,7 @@ static int msm_pcm_close(struct snd_pcm_substream *substream)
 	struct snd_pcm_substream *c_substream;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct dtmf_drv_info *prtd = runtime->private_data;
-	unsigned long dsp_flags = 0;
+	unsigned long dsp_flags;
 
 	pr_debug("%s() DTMF\n", __func__);
 
