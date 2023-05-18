@@ -26,13 +26,8 @@ ifeq ($(KERNEL_BUILD), 0)
 		endif
 	endif
 	ifeq ($(CONFIG_ARCH_KONA), y)
-		ifeq ($(CONFIG_OCULUS_unknown3865), y)
-			include $(AUDIO_ROOT)/config/unknown3.conf
-			INCS    +=  -include $(AUDIO_ROOT)/config/unknown3conf.h
-		else
-			include $(AUDIO_ROOT)/config/konaauto.conf
-			INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
-		endif
+		include $(AUDIO_ROOT)/config/konaauto.conf
+		INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
 	endif
 	ifeq ($(CONFIG_ARCH_LITO), y)
 		include $(AUDIO_ROOT)/config/litoauto.conf
@@ -81,6 +76,11 @@ ifeq ($(KERNEL_BUILD), 0)
 		export
 		INCS    +=  -include $(AUDIO_ROOT)/config/gvmautoconf.h
 	endif
+	ifeq ($(CONFIG_ARCH_SDM660), y)
+		include $(AUDIO_ROOT)/config/sdm660auto.conf
+		export
+		INCS    +=  -include $(AUDIO_ROOT)/config/sdm660autoconf.h
+	endif
 endif
 
 # As per target team, build is done as follows:
@@ -117,6 +117,11 @@ endif
 # for pinctrl LPI driver
 ifdef CONFIG_PINCTRL_LPI
 	PINCTRL_LPI_OBJS += pinctrl-lpi.o
+endif
+
+# for pinctrl LPI legacy driver
+ifdef CONFIG_PINCTRL_LPI_LEGACY
+	PINCTRL_LPI_OBJS += pinctrl-lpi-legacy.o
 endif
 
 # for soundwire driver
@@ -164,7 +169,7 @@ CDEFINES +=	-DANI_LITTLE_BYTE_ENDIAN \
 KBUILD_CPPFLAGS += $(CDEFINES)
 
 ifeq ($(KERNEL_BUILD), 0)
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/dsp/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/dsp/Module.symvers
 endif
 
 # Currently, for versions of gcc which support it, the kernel Makefile
@@ -189,6 +194,9 @@ obj-$(CONFIG_PINCTRL_WCD) += pinctrl_wcd_dlkm.o
 pinctrl_wcd_dlkm-y := $(PINCTRL_WCD_OBJS)
 
 obj-$(CONFIG_PINCTRL_LPI) += pinctrl_lpi_dlkm.o
+pinctrl_lpi_dlkm-y := $(PINCTRL_LPI_OBJS)
+
+obj-$(CONFIG_PINCTRL_LPI_LEGACY) += pinctrl_lpi_dlkm.o
 pinctrl_lpi_dlkm-y := $(PINCTRL_LPI_OBJS)
 
 obj-$(CONFIG_SOUNDWIRE) += swr_dlkm.o

@@ -760,6 +760,8 @@ static void sched_debug_header(struct seq_file *m)
 	PN(sysctl_sched_min_granularity);
 	PN(sysctl_sched_wakeup_granularity);
 	P(sysctl_sched_child_runs_first);
+	P(sysctl_sched_rt_wakeup_on_idle);
+	P(sysctl_sched_rt_preempt_lowest);
 	P(sysctl_sched_features);
 #ifdef CONFIG_SCHED_WALT
 	P(sched_init_task_load_windows);

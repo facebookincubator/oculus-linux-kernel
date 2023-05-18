@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
-&pm8150_l10 {
+&L10A {
 	qcom,init-voltage = <2960000>;
 };
 
@@ -9,7 +9,7 @@
 	as5510-driver {
 		reg = <0x56>;
 		compatible = "ams,as5510";
-		power-supply = <&pm8150_l10>;
+		power-supply = <&L10A>;
 	};
 };
 

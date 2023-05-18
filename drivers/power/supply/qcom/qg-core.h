@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  */
 
 #ifndef __QG_CORE_H__
@@ -114,6 +114,7 @@ struct qpnp_qg {
 	struct votable		*good_ocv_irq_disable_votable;
 	u32			qg_base;
 	u8			qg_subtype;
+	u8			qg_mode;
 
 	/* local data variables */
 	u32			batt_id_ohm;
@@ -128,6 +129,7 @@ struct qpnp_qg {
 
 	/* status variable */
 	u32			*debug_mask;
+	u32			qg_version;
 	bool			qg_device_open;
 	bool			profile_loaded;
 	bool			battery_missing;
@@ -143,6 +145,7 @@ struct qpnp_qg {
 	bool			fvss_active;
 	bool			tcss_active;
 	bool			bass_active;
+	bool			first_profile_load;
 	int			charge_status;
 	int			charge_type;
 	int			chg_iterm_ma;
@@ -160,6 +163,8 @@ struct qpnp_qg {
 	int			tcss_entry_count;
 	int			max_fcc_limit_ma;
 	int			bsoc_bass_entry;
+	int			qg_v_ibat;
+	int			qg_charge_counter;
 	u32			fifo_done_count;
 	u32			wa_flags;
 	u32			seq_no;
@@ -170,6 +175,7 @@ struct qpnp_qg {
 	u32			s2_state_mask;
 	u32			soc_fvss_entry;
 	u32			vbat_fvss_entry;
+	u32			max_fifo_length;
 	ktime_t			last_user_update_time;
 	ktime_t			last_fifo_update_time;
 	unsigned long		last_maint_soc_update_time;
@@ -257,5 +263,14 @@ enum qg_wa_flags {
 	QG_PON_OCV_WA = BIT(3),
 };
 
+enum qg_version {
+	QG_PMIC5,
+	QG_LITE,
+};
+
+enum qg_mode {
+	QG_V_I_MODE,
+	QG_V_MODE,
+};
 
 #endif /* __QG_CORE_H__ */

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/slab.h>
 #include <linux/init.h>
@@ -1378,8 +1378,8 @@ int diag_process_apps_pkt(unsigned char *buf, int len, int pid)
 			}
 		}
 		mutex_unlock(&driver->md_session_lock);
-		diag_update_md_clients(HDLC_SUPPORT_TYPE);
 		mutex_unlock(&driver->hdlc_disable_mutex);
+		diag_update_md_clients(HDLC_SUPPORT_TYPE);
 		return 0;
 	}
 #endif
@@ -1824,6 +1824,12 @@ void diag_process_non_hdlc_pkt(unsigned char *buf, int len, int pid)
 	if (partial_pkt->remaining == 0) {
 		actual_pkt = (struct diag_pkt_frame_t *)(partial_pkt->data);
 		data_ptr = partial_pkt->data + header_len;
+		if ((header_len + actual_pkt->length + 1) >
+				partial_pkt->capacity) {
+			mutex_unlock(&driver->hdlc_recovery_mutex);
+			return;
+		}
+
 		if (*(uint8_t *)(data_ptr + actual_pkt->length) !=
 						CONTROL_CHAR) {
 			mutex_unlock(&driver->hdlc_recovery_mutex);
@@ -1872,6 +1878,11 @@ start:
 						 partial_pkt->read_len;
 			partial_pkt->processing = 1;
 			memcpy(partial_pkt->data, buf, partial_pkt->read_len);
+			mutex_unlock(&driver->hdlc_recovery_mutex);
+			break;
+		}
+		if ((header_len + actual_pkt->length + 1) >
+				partial_pkt->capacity) {
 			mutex_unlock(&driver->hdlc_recovery_mutex);
 			break;
 		}

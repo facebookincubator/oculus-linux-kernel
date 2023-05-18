@@ -772,6 +772,103 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 	return rc;
 }
 
+#ifdef CONFIG_SPECTRA_CAMERA_SENSOR_ACCESS
+static int cam_sensor_cci_handle(struct cam_sensor_ctrl_t *s_ctrl,
+				struct cam_control *cmd)
+{
+	int rc = 0;
+	struct i2c_rdwr_header header;
+
+	if (cmd->handle == 0) {
+		CAM_ERR(CAM_SENSOR, "%s: Null handle\n", __func__);
+		return -EFAULT;
+	}
+
+	rc = copy_from_user(&header,
+		u64_to_user_ptr(cmd->handle),
+		sizeof(struct i2c_rdwr_header));
+	if (rc < 0) {
+		CAM_ERR(CAM_SENSOR, "Failed Copying from user");
+		return -EFAULT;
+	}
+
+	if (header.op_code == MSM_CCI_I2C_READ) {
+		struct cam_cmd_read    data_read;
+
+		if (cmd->size !=
+			(sizeof(struct i2c_rdwr_header) +
+			sizeof(struct cam_cmd_read))) {
+			CAM_ERR(CAM_SENSOR,
+				"%s: Invalid size %zd, only support 1 read\n",
+				__func__, cmd->size);
+			return -EFAULT;
+		}
+
+		rc = copy_from_user(&data_read,
+			u64_to_user_ptr(cmd->handle+sizeof(header)),
+			sizeof(struct cam_cmd_read));
+		if (rc < 0) {
+			CAM_ERR(CAM_SENSOR, "Failed Copying from user");
+			return -EFAULT;
+		}
+
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			data_read.reg_data,
+			&data_read.reg_data,
+			header.addr_type,
+			header.data_type);
+		if (rc != 0) {
+			CAM_ERR(CAM_SENSOR, "Failed to read all");
+			return -EFAULT;
+		}
+
+		rc = copy_to_user(u64_to_user_ptr(cmd->handle+sizeof(header)),
+			&data_read, sizeof(struct cam_cmd_read));
+		if (rc < 0)
+			CAM_ERR(CAM_SENSOR, "Failed Copy to User");
+
+	} else if (header.op_code == MSM_CCI_I2C_WRITE) {
+		struct i2c_random_wr_payload wr;
+		struct cam_sensor_i2c_reg_setting i2c_reg_settings = {0};
+		struct cam_sensor_i2c_reg_array i2c_reg_array = {0};
+
+		if (cmd->size !=
+			(sizeof(struct i2c_rdwr_header) +
+			sizeof(struct i2c_random_wr_payload))) {
+			CAM_ERR(CAM_SENSOR,
+				"%s: Invalid size %zd, only support 1 write\n",
+				__func__, cmd->size);
+			return -EFAULT;
+		}
+		rc = copy_from_user(&wr,
+			u64_to_user_ptr(cmd->handle+sizeof(header)),
+			sizeof(struct i2c_random_wr_payload));
+		if (rc < 0) {
+			CAM_ERR(CAM_SENSOR, "Failed Copying from user");
+			return -EFAULT;
+		}
+
+		i2c_reg_array.reg_addr = wr.reg_addr;
+		i2c_reg_array.reg_data = wr.reg_data;
+
+		i2c_reg_settings.addr_type = header.addr_type;
+		i2c_reg_settings.data_type = header.data_type;
+		i2c_reg_settings.reg_setting = &i2c_reg_array;
+		i2c_reg_settings.size = 1; // only supports 1 write
+
+		rc = camera_io_dev_write(&(s_ctrl->io_master_info), &i2c_reg_settings);
+		if (rc < 0)
+			CAM_ERR(CAM_SENSOR, "Failed to camera_io_dev_write");
+
+	} else {
+		rc = -EFAULT;
+	}
+
+	return rc;
+}
+#endif
+
 int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 	void *arg)
 {
@@ -854,23 +951,6 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 				goto free_power_settings;
 			}
 
-			if (s_ctrl->i2c_data.poweron_reg_settings.is_settings_valid) {
-				rc = cam_sensor_apply_settings(s_ctrl, 0,
-					CAM_SENSOR_PACKET_OPCODE_SENSOR_POWERON_REG);
-				if (rc < 0) {
-					CAM_ERR(CAM_SENSOR, "PowerOn REG_WR failed");
-					goto free_power_settings;
-				}
-			}
-
-			/* Match sensor ID */
-			rc = cam_sensor_match_id(s_ctrl);
-			if (rc < 0) {
-				cam_sensor_power_down(s_ctrl);
-				msleep(20);
-				goto free_power_settings;
-			}
-
 			if (s_ctrl->i2c_data.poweroff_reg_settings.is_settings_valid) {
 				rc = cam_sensor_apply_settings(s_ctrl, 0,
 					CAM_SENSOR_PACKET_OPCODE_SENSOR_POWEROFF_REG);
@@ -878,6 +958,14 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 					CAM_ERR(CAM_SENSOR, "PowerOff REG_WR failed");
 					goto free_power_settings;
 				}
+			}
+
+			/* Match sensor ID */
+			rc = cam_sensor_match_id(s_ctrl);
+			if (rc < 0) {
+			        cam_sensor_power_down(s_ctrl);
+			        msleep(20);
+			        goto free_power_settings;
 			}
 
 			CAM_INFO(CAM_SENSOR,
@@ -1178,6 +1266,25 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr);
 	}
 		break;
+#ifdef CONFIG_SPECTRA_CAMERA_SENSOR_ACCESS
+	case CAM_SENSOR_CCI_CMD: {
+		if ((s_ctrl->is_probe_succeed == 0) ||
+			(s_ctrl->sensor_state != CAM_SENSOR_ACQUIRE)) {
+			CAM_WARN(CAM_SENSOR,
+				"Not in right state to aquire %s state: %d",
+				s_ctrl->device_name, s_ctrl->sensor_state);
+			rc = -EINVAL;
+			goto release_mutex;
+		}
+
+		rc = cam_sensor_cci_handle(s_ctrl, cmd);
+		if (rc < 0) {
+			CAM_ERR(CAM_SENSOR, "Failed cci handle");
+			goto release_mutex;
+		}
+	}
+		break;
+#endif
 	default:
 		CAM_ERR(CAM_SENSOR, "Invalid Opcode: %d", cmd->op_code);
 		rc = -EINVAL;

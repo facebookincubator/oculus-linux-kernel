@@ -54,7 +54,7 @@ struct virtual_sensor_common_data {
 	struct delayed_work poll_queue;
 };
 
-int is_charger_connected(struct power_supply *usb_psy);
+int is_charging(struct power_supply *batt_psy);
 
 int virtual_sensor_calculate_tz_temp(struct device *dev,
 		struct virtual_sensor_common_data *data, s64 *temperature);

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*******************************************************************************
  * @file arfirmware_io_interface.h
  *
@@ -32,8 +32,14 @@ struct __packed ar_queue_create_req {
 	ar_endpoint_id_t hlos_endpoint_id;
 	/// The fw id of the queue for firmware IPC
 	ar_endpoint_id_t fw_endpoint_id;
-	/// Where the queue resides.
+	/**
+	 * This is either the segment that contains the entire queue (metadata +
+	 * data), or just the metadata region. The metadata region consists of
+	 * producer + consumer + guard page.
+	 */
 	struct ar_mem_segment queue_segment;
+	/// Where the queue data segment resides, if it is disjoint.
+	struct ar_mem_segment queue_data_segment;
 };
 
 /**
@@ -46,6 +52,15 @@ struct __packed ar_device_information_req {
 	uint16_t rcv_ring_max;
 	bool require_contiguous_memory_for_queues;
 	uint16_t rcv_ring_pend_buff_count_max;
+};
+
+/**
+ * Structure containing queue debug information
+ */
+struct __packed ar_queue_debug_req {
+	uint64_t msg_count;
+	uint16_t consumer_idx;
+	uint16_t producer_idx;
 };
 
 /**
@@ -63,7 +78,7 @@ struct __packed ar_region_register_req {
  */
 struct __packed ar_pend_payload_req {
 	/// External mem region id associated with this address range
-	uint32_t mem_region_id;
+	uint16_t mem_region_id;
 	/// payload chunk count
 	uint16_t chunk_count;
 	/// payload chunks
@@ -89,3 +104,4 @@ struct __packed ar_queue_event {
 #define ARFW_PEND_PAYLOAD _IOR(ARFW_CHDEV_MAGIC, 3, struct ar_pend_payload_req*)
 #define ARFW_CONSUMED_INDEX _IO(ARFW_CHDEV_MAGIC, 4)
 #define ARFW_DEV_INFO _IOW(ARFW_CHDEV_MAGIC, 5, struct ar_device_information_req*)
+#define ARFW_QUEUE_DEBUG _IOW(ARFW_CHDEV_MAGIC, 6, struct ar_queue_debug_req*)

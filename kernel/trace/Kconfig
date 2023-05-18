@@ -98,6 +98,13 @@ config IPC_LOGGING
 
 	  If in doubt, say no.
 
+config IPC_LOGGING_ENABLE_ALLOWLIST
+	string "Enable ipc logging for allowed driver only"
+	depends on IPC_LOGGING
+	help
+	  on Oculus A12, majority of the drivers are not using IPC logging anymore,
+	  Except Hollywood bluetooth uart. Use this option to achieve this purpose.
+
 config QCOM_RTB
 	bool "Register tracing"
 	help
@@ -134,7 +141,6 @@ config PREEMPTIRQ_TRACEPOINTS
 
 config TRACING
 	bool
-	select DEBUG_FS
 	select RING_BUFFER
 	select STACKTRACE if STACKTRACE_SUPPORT
 	select TRACEPOINTS

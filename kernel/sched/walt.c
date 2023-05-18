@@ -202,6 +202,14 @@ early_param("sched_predl", set_sched_predl);
 __read_mostly unsigned int walt_scale_demand_divisor;
 #define scale_demand(d) ((d)/walt_scale_demand_divisor)
 
+static inline void walt_irq_work_queue(struct irq_work *work)
+{
+	if (likely(cpu_online(raw_smp_processor_id())))
+		irq_work_queue(work);
+	else
+		irq_work_queue_on(work, cpumask_any(cpu_online_mask));
+}
+
 void inc_rq_walt_stats(struct rq *rq, struct task_struct *p)
 {
 	inc_nr_big_task(&rq->walt_stats, p);
@@ -578,7 +586,6 @@ __cpu_util_freq_walt(int cpu, struct sched_walt_cpu_load *walt_load)
 
 		nl = div64_u64(nl * (100 + boost), walt_cpu_util_freq_divisor);
 
-		walt_load->prev_window_util = util;
 		walt_load->nl = nl;
 		walt_load->pl = pl;
 		walt_load->ws = walt_load_reported_window;
@@ -613,7 +620,6 @@ cpu_util_freq_walt(int cpu, struct sched_walt_cpu_load *walt_load)
 		mpct = 100;
 
 	util = ADJUSTED_ASYM_CAP_CPU_UTIL(util, util_other, mpct);
-	walt_load->prev_window_util = util;
 
 	walt_load->nl = ADJUSTED_ASYM_CAP_CPU_UTIL(walt_load->nl, wl_other.nl,
 						   mpct);
@@ -633,7 +639,7 @@ cpu_util_freq_walt(int cpu, struct sched_walt_cpu_load *walt_load)
 static inline void account_load_subtractions(struct rq *rq)
 {
 	u64 ws = rq->window_start;
-	u64 prev_ws = ws - sched_ravg_window;
+	u64 prev_ws = ws - rq->prev_window_size;
 	struct load_subtractions *ls = rq->load_subs;
 	int i;
 
@@ -708,7 +714,7 @@ void update_cluster_load_subtractions(struct task_struct *p,
 {
 	struct sched_cluster *cluster = cpu_cluster(cpu);
 	struct cpumask cluster_cpus = cluster->cpus;
-	u64 prev_ws = ws - sched_ravg_window;
+	u64 prev_ws = ws - cpu_rq(cpu)->prev_window_size;
 	int i;
 
 	cpumask_clear_cpu(cpu, &cluster_cpus);
@@ -982,7 +988,7 @@ void fixup_busy_time(struct task_struct *p, int new_cpu)
 	if (!same_freq_domain(new_cpu, task_cpu(p))) {
 		src_rq->notif_pending = true;
 		dest_rq->notif_pending = true;
-		sched_irq_work_queue(&walt_migration_irq_work);
+		walt_irq_work_queue(&walt_migration_irq_work);
 	}
 
 	if (is_ed_enabled()) {
@@ -2071,8 +2077,10 @@ static inline void run_walt_irq_work(u64 old_window_start, struct rq *rq)
 
 	result = atomic64_cmpxchg(&walt_irq_work_lastq_ws, old_window_start,
 				   rq->window_start);
-	if (result == old_window_start)
-		sched_irq_work_queue(&walt_cpufreq_irq_work);
+	if (result == old_window_start) {
+		walt_irq_work_queue(&walt_cpufreq_irq_work);
+		trace_walt_window_rollover(rq->window_start);
+	}
 }
 
 /* Reflect task activity on its demand and cpu's busy time statistics */
@@ -2653,7 +2661,6 @@ static void transfer_busy_time(struct rq *rq, struct related_thread_group *grp,
  * Enable colocation and frequency aggregation for all threads in a process.
  * The children inherits the group id from the parent.
  */
-unsigned int __read_mostly sysctl_sched_enable_thread_grouping;
 unsigned int __read_mostly sysctl_sched_coloc_downmigrate_ns;
 
 struct related_thread_group *related_thread_groups[MAX_NUM_CGROUP_COLOC_ID];
@@ -2925,34 +2932,25 @@ void add_new_task_to_grp(struct task_struct *new)
 {
 	unsigned long flags;
 	struct related_thread_group *grp;
-	struct task_struct *leader = new->group_leader;
-	unsigned int leader_grp_id = sched_get_group_id(leader);
 
-	if (!sysctl_sched_enable_thread_grouping &&
-	    leader_grp_id != DEFAULT_CGROUP_COLOC_ID)
+	/*
+	 * If the task does not belong to colocated schedtune
+	 * cgroup, nothing to do. We are checking this without
+	 * lock. Even if there is a race, it will be added
+	 * to the co-located cgroup via cgroup attach.
+	 */
+	if (!schedtune_task_colocated(new))
 		return;
 
-	if (thread_group_leader(new))
-		return;
-
-	if (leader_grp_id == DEFAULT_CGROUP_COLOC_ID) {
-		if (!same_schedtune(new, leader))
-			return;
-	}
-
+	grp = lookup_related_thread_group(DEFAULT_CGROUP_COLOC_ID);
 	write_lock_irqsave(&related_thread_group_lock, flags);
-
-	rcu_read_lock();
-	grp = task_related_thread_group(leader);
-	rcu_read_unlock();
 
 	/*
 	 * It's possible that someone already added the new task to the
-	 * group. A leader's thread group is updated prior to calling
-	 * this function. It's also possible that the leader has exited
-	 * the group. In either case, there is nothing else to do.
+	 * group. or it might have taken out from the colocated schedtune
+	 * cgroup. check these conditions under lock.
 	 */
-	if (!grp || new->grp) {
+	if (!schedtune_task_colocated(new) || new->grp) {
 		write_unlock_irqrestore(&related_thread_group_lock, flags);
 		return;
 	}
@@ -3457,11 +3455,19 @@ void walt_irq_work(struct irq_work *irq_work)
 	/*
 	 * If the window change request is in pending, good place to
 	 * change sched_ravg_window since all rq locks are acquired.
+	 *
+	 * If the current window roll over is delayed such that the
+	 * mark_start (current wallclock with which roll over is done)
+	 * of the current task went past the window start with the
+	 * updated new window size, delay the update to the next
+	 * window roll over. Otherwise the CPU counters (prs and crs) are
+	 * not rolled over properly as mark_start > window_start.
 	 */
 	if (!is_migration) {
 		spin_lock_irqsave(&sched_ravg_window_lock, flags);
 
-		if (sched_ravg_window != new_sched_ravg_window) {
+		if ((sched_ravg_window != new_sched_ravg_window) &&
+		    (wc < this_rq()->window_start + new_sched_ravg_window)) {
 			sched_ravg_window_change_time = sched_ktime_clock();
 			printk_deferred("ALERT: changing window size from %u to %u at %lu\n",
 					sched_ravg_window,
@@ -3562,6 +3568,9 @@ int walt_proc_group_thresholds_handler(struct ctl_table *table, int write,
 	static DEFINE_MUTEX(mutex);
 	struct rq *rq = cpu_rq(cpumask_first(cpu_possible_mask));
 	unsigned long flags;
+
+	if (unlikely(num_sched_clusters <= 0))
+		return -EPERM;
 
 	mutex_lock(&mutex);
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);

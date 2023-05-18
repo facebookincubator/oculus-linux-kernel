@@ -130,6 +130,10 @@ static void *arm_dma_remap(struct device *dev, void *cpu_addr,
 static void arm_dma_unremap(struct device *dev, void *remapped_addr,
 				size_t size);
 
+static void arm_iommu_sync_sg_for_device(struct device *dev,
+		struct scatterlist *sg, int nents, enum dma_data_direction dir);
+static void arm_iommu_sync_sg_for_cpu(struct device *dev,
+		struct scatterlist *sg, int nents, enum dma_data_direction dir);
 
 static pgprot_t __get_dma_pgprot(unsigned long attrs, pgprot_t prot,
 				 bool coherent)
@@ -1811,7 +1815,7 @@ static int __map_sg_chunk(struct device *dev, struct scatterlist *sg,
 	int ret = 0;
 	unsigned int count;
 	struct scatterlist *s;
-	int prot;
+	int prot = 0;
 
 	size = PAGE_ALIGN(size);
 	*handle = ARM_MAPPING_ERROR;
@@ -1820,6 +1824,11 @@ static int __map_sg_chunk(struct device *dev, struct scatterlist *sg,
 	if (iova == ARM_MAPPING_ERROR)
 		return -ENOMEM;
 
+	/*
+	 * Check for coherency.
+	 */
+	prot |= is_coherent ? IOMMU_CACHE : 0;
+
 	for (count = 0, s = sg; count < (size >> PAGE_SHIFT); s = sg_next(s)) {
 		phys_addr_t phys = page_to_phys(sg_page(s));
 		unsigned int len = PAGE_ALIGN(s->offset + s->length);
@@ -1827,7 +1836,7 @@ static int __map_sg_chunk(struct device *dev, struct scatterlist *sg,
 		if (!is_coherent && (attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
 			__dma_page_cpu_to_dev(sg_page(s), s->offset, s->length, dir);
 
-		prot = __dma_info_to_prot(dir, attrs);
+		prot |= __dma_info_to_prot(dir, attrs);
 
 		ret = iommu_map(mapping->domain, iova, phys, len, prot);
 		if (ret < 0)
@@ -1931,9 +1940,23 @@ int arm_iommu_map_sg(struct device *dev, struct scatterlist *sg,
 	dma_addr_t iova;
 	int prot = __dma_info_to_prot(dir, attrs);
 	bool coherent;
+	/*
+	 * This is used to check if there are any unaligned offset/size
+	 * given in the scatter list.
+	 */
+	bool unaligned_offset_size = false;
 
-	for_each_sg(sg, s, nents, i)
+	for_each_sg(sg, s, nents, i) {
 		total_length += s->length;
+		if ((s->offset & ~PAGE_MASK) || (s->length & ~PAGE_MASK)) {
+			unaligned_offset_size = true;
+			break;
+		}
+	}
+
+	if (unaligned_offset_size)
+		return __iommu_map_sg(dev, sg, nents, dir, attrs,
+				      is_dma_coherent(dev, attrs, false));
 
 	iova = __alloc_iova(mapping, total_length);
 	if (iova == ARM_MAPPING_ERROR)
@@ -1950,9 +1973,15 @@ int arm_iommu_map_sg(struct device *dev, struct scatterlist *sg,
 
 	for_each_sg(sg, s, nents, i) {
 		s->dma_address = iova + current_offset;
-		s->dma_length = total_length - current_offset;
+		if (i == 0)
+			s->dma_length = total_length;
+		else
+			s->dma_length = 0;
 		current_offset += s->length;
 	}
+
+	if ((attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
+		arm_iommu_sync_sg_for_device(dev, sg, nents, dir);
 
 	return nents;
 }
@@ -2009,6 +2038,9 @@ void arm_iommu_unmap_sg(struct device *dev, struct scatterlist *sg, int nents,
 	unsigned int total_length = sg_dma_len(sg);
 	dma_addr_t iova = sg_dma_address(sg);
 
+	if ((attrs & DMA_ATTR_SKIP_CPU_SYNC) == 0)
+		arm_iommu_sync_sg_for_cpu(dev, sg, nents, dir);
+
 	total_length = PAGE_ALIGN((iova & ~PAGE_MASK) + total_length);
 	iova &= PAGE_MASK;
 
@@ -2023,8 +2055,8 @@ void arm_iommu_unmap_sg(struct device *dev, struct scatterlist *sg, int nents,
  * @nents: number of buffers to map (returned from dma_map_sg)
  * @dir: DMA transfer direction (same as was passed to dma_map_sg)
  */
-void arm_iommu_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg,
-			int nents, enum dma_data_direction dir)
+static void arm_iommu_sync_sg_for_cpu(struct device *dev,
+		struct scatterlist *sg, int nents, enum dma_data_direction dir)
 {
 	struct scatterlist *s;
 	int i;
@@ -2047,8 +2079,8 @@ void arm_iommu_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg,
  * @nents: number of buffers to map (returned from dma_map_sg)
  * @dir: DMA transfer direction (same as was passed to dma_map_sg)
  */
-void arm_iommu_sync_sg_for_device(struct device *dev, struct scatterlist *sg,
-			int nents, enum dma_data_direction dir)
+static void arm_iommu_sync_sg_for_device(struct device *dev,
+		struct scatterlist *sg, int nents, enum dma_data_direction dir)
 {
 	struct scatterlist *s;
 	int i;
@@ -2674,7 +2706,6 @@ static bool arm_setup_iommu_dma_ops(struct device *dev, u64 dma_base, u64 size,
 		return false;
 	}
 
-	kref_get(&mapping->kref);
 	to_dma_iommu_mapping(dev) = mapping;
 
 	return true;
@@ -2689,12 +2720,13 @@ static void arm_teardown_iommu_dma_ops(struct device *dev)
 	if (!mapping)
 		return;
 
+	iommu_domain_get_attr(mapping->domain, DOMAIN_ATTR_S1_BYPASS,
+			&s1_bypass);
+
 	kref_put(&mapping->kref, arm_iommu_dma_release_mapping);
 	to_dma_iommu_mapping(dev) = NULL;
 
 	/* Let arch_setup_dma_ops() start again from scratch upon re-probe */
-	iommu_domain_get_attr(mapping->domain, DOMAIN_ATTR_S1_BYPASS,
-			&s1_bypass);
 	if (!s1_bypass)
 		set_dma_ops(dev, NULL);
 
@@ -2746,7 +2778,7 @@ void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 #endif
 	dev->archdata.dma_ops_setup = true;
 }
-EXPORT_SYMBOL(arch_setup_dma_ops);
+EXPORT_SYMBOL_GPL(arch_setup_dma_ops);
 
 void arch_teardown_dma_ops(struct device *dev)
 {

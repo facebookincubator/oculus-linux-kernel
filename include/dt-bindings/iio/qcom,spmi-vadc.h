@@ -139,6 +139,7 @@
 #define ADC_GPIO7				0x18
 #define ADC_SBUx				0x99
 #define ADC_MID_CHG_DIV6			0x1e
+#define ANA_IN					0x1d
 #define ADC_OFF					0xff
 
 /* 30k pull-up1 */
@@ -158,6 +159,7 @@
 #define ADC_GPIO6_PU1				0x37
 #define ADC_GPIO7_PU1				0x38
 #define ADC_SBUx_PU1				0x39
+#define ANA_IN					0x1d
 
 /* 100k pull-up2 */
 #define ADC_BAT_THERM_PU2			0x4a
@@ -239,6 +241,7 @@
 #define ADC_SCALE_HW_CALIB_BATT_THERM_30K	0xD
 #define ADC_SCALE_HW_CALIB_BATT_THERM_400K	0xE
 #define ADC_SCALE_HW_CALIB_PM5_SMB1398_TEMP	0xF
+#define ADC_SCALE_HW_CALIB_PM2250_S3_DIE_TEMP	0x10
 
 /* ADC channels for ADC for PMIC7 */
 
@@ -317,7 +320,8 @@
 #define ADC7_VBAT_2S_MID			0x96
 
 /* VADC scale function index */
-#define ADC_SCALE_HW_CALIB_THERM_100K_PU_PM7	0x10
-#define ADC_SCALE_HW_CALIB_PMIC_THERM_PM7	0x11
+#define ADC_SCALE_HW_CALIB_THERM_100K_PU_PM7	0x11
+#define ADC_SCALE_HW_CALIB_PMIC_THERM_PM7	0x12
+#define ADC_SCALE_BATT_THERM_QRD_215		0x13
 
 #endif /* _DT_BINDINGS_QCOM_SPMI_VADC_H */

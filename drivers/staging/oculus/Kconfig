@@ -30,6 +30,13 @@ config BLU_FW
 	help
 	  Allow automatic/OTA FW updates for the backlight MCU.
 
+config CAM_FSYNC
+	bool "Oculus Camera FSYNC Timestamp driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable Camera FSYNC Timestamp driver
+
 config CHARGER_CYPD3177
 	tristate "CONFIG_CYPD3177 support"
 	default n
@@ -82,6 +89,13 @@ config FRONT_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the front
 	  panel skin temperature of a device.
+
+config GENERIC_VIRTUAL_SENSOR
+	tristate "Generic Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a generic virtual sensor driver which
+	  can be configured through userspace.
 
 config GPIO_CAPACITOR
 	tristate "Cap Hold Up Circuit controlled by GPIO"
@@ -171,14 +185,13 @@ config OCULUS_STARLET
 	help
 	  Enable support for the starlet device
 
-config VENDOR_DT_OUTPUT_DISABLE
-	bool "Disable building of device trees for test platforms"
-	default y
+config POWER_STATE_VIRTUAL_SENSOR
+	tristate "SN Power State Driver"
+	default n
 	help
-	  Building Qualcomm kernels with default flags causes serveral unrelated
-	  device-trees to be built by default. Don't build them when
-	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
-	  platforms.
+	  This driver is built as a virtual sensor and plugged into the
+	  thermal HAL to provide power state that will be used for
+	  hammerhead power management.
 
 config REGULATOR_AW37504
 	tristate "AW37504 Kernel Driver"
@@ -188,6 +201,14 @@ config REGULATOR_AW37504
 	  AW37504 Kernel Driver to control the Seacliff BOE panels.
 	  This driver sets the positive and negative voltage and the current
 	  for the panels.
+
+config REGULATOR_SGM62110
+	tristate "SGM62110 Kernel Driver"
+	default n
+	depends on I2C
+	help
+	  SGM62110 Kernel Driver to control the unknown3 Wlan FEM power.
+	  This driver sets FEM VCC voltage for QM45391/QM45392.
 
 config RT600_CTRL
 	tristate "Oculus RT600 control driver"
@@ -234,6 +255,15 @@ config TOP_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the top
 	  panel skin temperature of a device.
+
+config VENDOR_DT_OUTPUT_DISABLE
+	bool "Disable building of device trees for test platforms"
+	default y
+	help
+	  Building Qualcomm kernels with default flags causes serveral unrelated
+	  device-trees to be built by default. Don't build them when
+	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
+	  platforms.
 
 config VIRTUAL_SENSOR_UTILS
 	tristate "Virtual Sensor Utilities"

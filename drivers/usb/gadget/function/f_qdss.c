@@ -2,7 +2,7 @@
 /*
  * f_qdss.c -- QDSS function Driver
  *
- * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -22,9 +22,9 @@ static struct usb_interface_descriptor qdss_data_intf_desc = {
 	.bDescriptorType    =	USB_DT_INTERFACE,
 	.bAlternateSetting  =   0,
 	.bNumEndpoints      =	1,
-	.bInterfaceClass    =	0xff,
-	.bInterfaceSubClass =	0xff,
-	.bInterfaceProtocol =	0xff,
+	.bInterfaceClass    =	USB_CLASS_VENDOR_SPEC,
+	.bInterfaceSubClass =	USB_SUBCLASS_VENDOR_SPEC,
+	.bInterfaceProtocol =	0x70,
 };
 
 static struct usb_endpoint_descriptor qdss_hs_data_desc = {
@@ -56,9 +56,9 @@ static struct usb_interface_descriptor qdss_ctrl_intf_desc = {
 	.bDescriptorType    =	USB_DT_INTERFACE,
 	.bAlternateSetting  =   0,
 	.bNumEndpoints      =	2,
-	.bInterfaceClass    =	0xff,
-	.bInterfaceSubClass =	0xff,
-	.bInterfaceProtocol =	0xff,
+	.bInterfaceClass    =	USB_CLASS_VENDOR_SPEC,
+	.bInterfaceSubClass =	USB_SUBCLASS_VENDOR_SPEC,
+	.bInterfaceProtocol =	0x70,
 };
 
 static struct usb_endpoint_descriptor qdss_hs_ctrl_in_desc = {
@@ -228,19 +228,12 @@ static void qdss_write_complete(struct usb_ep *ep,
 
 	qdss_log("%s\n", __func__);
 
-	if (qdss->debug_inface_enabled) {
-		in = qdss->port.ctrl_in;
-		list_pool = &qdss->ctrl_write_pool;
-		state = USB_QDSS_CTRL_WRITE_DONE;
-	} else {
-		in = qdss->port.data;
-		list_pool = &qdss->data_write_pool;
-		state = USB_QDSS_DATA_WRITE_DONE;
-	}
+	in = qdss->port.data;
+	list_pool = &qdss->data_write_pool;
+	state = USB_QDSS_DATA_WRITE_DONE;
 
 	spin_lock_irqsave(&qdss->lock, flags);
-	if (!qdss->debug_inface_enabled)
-		list_del(&qreq->list);
+	list_del(&qreq->list);
 	list_add_tail(&qreq->list, list_pool);
 	complete(&qreq->write_done);
 	if (req->length != 0) {
@@ -280,14 +273,6 @@ void usb_qdss_free_req(struct usb_qdss_ch *ch)
 
 	}
 
-	list_for_each_safe(act, tmp, &qdss->ctrl_write_pool) {
-		qreq = list_entry(act, struct qdss_req, list);
-		list_del(&qreq->list);
-		usb_ep_free_request(qdss->port.ctrl_in, qreq->usb_req);
-		kfree(qreq);
-
-	}
-
 	spin_unlock_irqrestore(&qdss->lock, flags);
 }
 EXPORT_SYMBOL(usb_qdss_free_req);
@@ -309,19 +294,8 @@ int usb_qdss_alloc_req(struct usb_qdss_ch *ch, int no_write_buf)
 		return -ENODEV;
 	}
 
-	if ((qdss->debug_inface_enabled && no_write_buf <= 0) ||
-		(!qdss->debug_inface_enabled && no_write_buf <= 0)) {
-		pr_err("%s: missing params\n", __func__);
-		return -ENODEV;
-	}
-
-	if (qdss->debug_inface_enabled) {
-		in = qdss->port.ctrl_in;
-		list_pool = &qdss->ctrl_write_pool;
-	} else {
-		in = qdss->port.data;
-		list_pool = &qdss->data_write_pool;
-	}
+	in = qdss->port.data;
+	list_pool = &qdss->data_write_pool;
 
 	for (i = 0; i < no_write_buf; i++) {
 		qreq = kzalloc(sizeof(struct qdss_req), GFP_KERNEL);
@@ -427,7 +401,7 @@ static int qdss_bind(struct usb_configuration *c, struct usb_function *f)
 		&qdss_data_ep_comp_desc);
 	if (!ep) {
 		pr_err("%s: ep_autoconfig error\n", __func__);
-		goto fail;
+		goto clear_ep;
 	}
 	qdss->port.data = ep;
 	ep->driver_data = qdss;
@@ -437,8 +411,9 @@ static int qdss_bind(struct usb_configuration *c, struct usb_function *f)
 			&qdss_ctrl_in_ep_comp_desc);
 		if (!ep) {
 			pr_err("%s: ep_autoconfig error\n", __func__);
-			goto fail;
+			goto clear_ep;
 		}
+
 		qdss->port.ctrl_in = ep;
 		ep->driver_data = qdss;
 
@@ -446,10 +421,19 @@ static int qdss_bind(struct usb_configuration *c, struct usb_function *f)
 			&qdss_ctrl_out_ep_comp_desc);
 		if (!ep) {
 			pr_err("%s: ep_autoconfig error\n", __func__);
-			goto fail;
+			goto clear_ep;
 		}
 		qdss->port.ctrl_out = ep;
 		ep->driver_data = qdss;
+	}
+
+	if (!strcmp(qdss->ch.name, USB_QDSS_CH_MSM)) {
+		ret = alloc_sps_req(qdss->port.data);
+		if (ret) {
+			pr_err("%s: alloc_sps_req error (%d)\n",
+							__func__, ret);
+			goto clear_ep;
+		}
 	}
 
 	/*update fs descriptors*/
@@ -484,9 +468,18 @@ static int qdss_bind(struct usb_configuration *c, struct usb_function *f)
 		goto fail;
 
 	return 0;
+
 fail:
+	/* check if usb_request allocated */
+	if (qdss->endless_req) {
+		usb_ep_free_request(qdss->port.data,
+				qdss->endless_req);
+		qdss->endless_req = NULL;
+	}
+
+clear_ep:
 	clear_eps(f);
-	clear_desc(gadget, f);
+
 	return -ENOTSUPP;
 }
 
@@ -500,11 +493,15 @@ static void qdss_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	flush_workqueue(qdss->wq);
 
+	if (qdss->endless_req) {
+		usb_ep_free_request(qdss->port.data,
+				qdss->endless_req);
+		qdss->endless_req = NULL;
+	}
+
 	/* Reset string ids */
 	qdss_string_defs[QDSS_DATA_IDX].id = 0;
 	qdss_string_defs[QDSS_CTRL_IDX].id = 0;
-
-	qdss->debug_inface_enabled = 0;
 
 	clear_eps(f);
 	clear_desc(gadget, f);
@@ -537,7 +534,6 @@ static void usb_qdss_disconnect_work(struct work_struct *work)
 {
 	struct f_qdss *qdss;
 	int status;
-	unsigned long flags;
 
 	qdss = container_of(work, struct f_qdss, disconnect_w);
 	qdss_log("%s: channel name = %s\n", __func__, qdss->ch.name);
@@ -559,14 +555,6 @@ static void usb_qdss_disconnect_work(struct work_struct *work)
 		status = set_qdss_data_connection(qdss, 0);
 		if (status)
 			pr_err("qdss_disconnect error\n");
-
-		spin_lock_irqsave(&qdss->lock, flags);
-		if (qdss->endless_req) {
-			usb_ep_free_request(qdss->port.data,
-					qdss->endless_req);
-			qdss->endless_req = NULL;
-		}
-		spin_unlock_irqrestore(&qdss->lock, flags);
 	}
 
 	/*
@@ -605,17 +593,22 @@ static void usb_qdss_connect_work(struct work_struct *work)
 	qdss = container_of(work, struct f_qdss, connect_w);
 
 	/* If cable is already removed, discard connect_work */
+	spin_lock_irqsave(&qdss->lock, flags);
 	if (qdss->usb_connected == 0) {
 		qdss_log("%s: discard connect_work\n", __func__);
+		spin_unlock_irqrestore(&qdss->lock, flags);
 		cancel_work_sync(&qdss->disconnect_w);
 		return;
 	}
 
 	qdss_log("%s: channel name = %s\n", __func__, qdss->ch.name);
 
-	if (!strcmp(qdss->ch.name, USB_QDSS_CH_MDM))
+	if (!strcmp(qdss->ch.name, USB_QDSS_CH_MDM)) {
+		spin_unlock_irqrestore(&qdss->lock, flags);
 		goto notify;
+	}
 
+	spin_unlock_irqrestore(&qdss->lock, flags);
 	status = set_qdss_data_connection(qdss, 1);
 	if (status) {
 		pr_err("set_qdss_data_connection error(%d)\n", status);
@@ -778,7 +771,6 @@ static struct f_qdss *alloc_usb_qdss(char *channel_name)
 	spin_unlock_irqrestore(&channel_lock, flags);
 
 	spin_lock_init(&qdss->lock);
-	INIT_LIST_HEAD(&qdss->ctrl_write_pool);
 	INIT_LIST_HEAD(&qdss->data_write_pool);
 	INIT_LIST_HEAD(&qdss->queued_data_pool);
 	INIT_WORK(&qdss->connect_w, usb_qdss_connect_work);
@@ -786,52 +778,6 @@ static struct f_qdss *alloc_usb_qdss(char *channel_name)
 
 	return qdss;
 }
-
-int usb_qdss_ctrl_write(struct usb_qdss_ch *ch, struct qdss_request *d_req)
-{
-	struct f_qdss *qdss = ch->priv_usb;
-	unsigned long flags;
-	struct usb_request *req = NULL;
-	struct qdss_req *qreq;
-
-	qdss_log("%s\n", __func__);
-
-	if (!qdss)
-		return -ENODEV;
-
-	spin_lock_irqsave(&qdss->lock, flags);
-
-	if (qdss->usb_connected == 0) {
-		spin_unlock_irqrestore(&qdss->lock, flags);
-		return -EIO;
-	}
-
-	if (list_empty(&qdss->ctrl_write_pool)) {
-		pr_err("error: %s list is empty\n", __func__);
-		spin_unlock_irqrestore(&qdss->lock, flags);
-		return -EAGAIN;
-	}
-
-	qreq = list_first_entry(&qdss->ctrl_write_pool, struct qdss_req,
-		list);
-	list_del(&qreq->list);
-	spin_unlock_irqrestore(&qdss->lock, flags);
-
-	qreq->qdss_req = d_req;
-	req = qreq->usb_req;
-	req->buf = d_req->buf;
-	req->length = d_req->length;
-	if (usb_ep_queue(qdss->port.ctrl_in, req, GFP_ATOMIC)) {
-		spin_lock_irqsave(&qdss->lock, flags);
-		list_add_tail(&qreq->list, &qdss->ctrl_write_pool);
-		spin_unlock_irqrestore(&qdss->lock, flags);
-		pr_err("%s usb_ep_queue failed\n", __func__);
-		return -EIO;
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(usb_qdss_ctrl_write);
 
 int usb_qdss_write(struct usb_qdss_ch *ch, struct qdss_request *d_req)
 {
@@ -961,15 +907,20 @@ void usb_qdss_close(struct usb_qdss_ch *ch)
 	if (!qdss)
 		goto close;
 	qdss->qdss_close = true;
+	spin_lock(&qdss->lock);
 	while (!list_empty(&qdss->queued_data_pool)) {
 		qreq = list_first_entry(&qdss->queued_data_pool,
 				struct qdss_req, list);
+		spin_unlock(&qdss->lock);
 		spin_unlock_irqrestore(&channel_lock, flags);
-		usb_ep_dequeue(qdss->port.data, qreq->usb_req);
-		wait_for_completion(&qreq->write_done);
+		qdss_log("dequeue req:%pK\n", qreq->usb_req);
+		if (!usb_ep_dequeue(qdss->port.data, qreq->usb_req))
+			wait_for_completion(&qreq->write_done);
 		spin_lock_irqsave(&channel_lock, flags);
+		spin_lock(&qdss->lock);
 	}
 
+	spin_unlock(&qdss->lock);
 	spin_unlock_irqrestore(&channel_lock, flags);
 	usb_qdss_free_req(ch);
 	spin_lock_irqsave(&channel_lock, flags);
@@ -985,13 +936,10 @@ close:
 
 	if (qdss->endless_req) {
 		spin_unlock_irqrestore(&channel_lock, flags);
+		/* Flush connect work before proceeding with de-queue */
+		flush_work(&qdss->connect_w);
 		usb_ep_dequeue(qdss->port.data, qdss->endless_req);
 		spin_lock_irqsave(&channel_lock, flags);
-		if (qdss->endless_req) {
-			usb_ep_free_request(qdss->port.data,
-					qdss->endless_req);
-			qdss->endless_req = NULL;
-		}
 	}
 	gadget = qdss->gadget;
 	ch->app_conn = 0;
@@ -1031,7 +979,9 @@ static void qdss_cleanup(void)
 
 static void qdss_free_func(struct usb_function *f)
 {
-	/* Do nothing as usb_qdss_alloc() doesn't alloc anything. */
+	struct f_qdss *qdss = func_to_qdss(f);
+
+	qdss->debug_inface_enabled = false;
 }
 
 static inline struct usb_qdss_opts *to_f_qdss_opts(struct config_item *item)
@@ -1161,8 +1111,6 @@ static struct usb_function *qdss_alloc(struct usb_function_instance *fi)
 	struct f_qdss *usb_qdss = opts->usb_qdss;
 
 	usb_qdss->port.function.name = "usb_qdss";
-	usb_qdss->port.function.fs_descriptors = qdss_fs_desc;
-	usb_qdss->port.function.hs_descriptors = qdss_hs_desc;
 	usb_qdss->port.function.strings = qdss_strings;
 	usb_qdss->port.function.bind = qdss_bind;
 	usb_qdss->port.function.unbind = qdss_unbind;

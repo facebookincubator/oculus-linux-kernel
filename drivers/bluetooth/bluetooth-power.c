@@ -390,6 +390,7 @@ static int bt_configure_gpios(int on)
 				__func__);
 			return rc;
 		}
+
 		msleep(50);
 		/*  Check  if  SW_CTRL  is  asserted  */
 		if  (bt_sw_ctrl_gpio  >=  0)  {
@@ -885,7 +886,6 @@ static int bt_power_populate_dt_pinfo(struct platform_device *pdev)
 		if (bt_power_pdata->bt_gpio_sys_rst < 0)
 			BT_PWR_INFO("bt-reset-gpio not provided in devicetree");
 
-		BT_PWR_INFO("%s: getting wl-reset-gpio ", __func__);
 		bt_power_pdata->wl_gpio_sys_rst =
 			of_get_named_gpio(pdev->dev.of_node,
 						"qca,wl-reset-gpio", 0);
@@ -1149,7 +1149,7 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case BT_CMD_CHIPSET_VERS:
 		chipset_version = (int)arg;
-		BT_PWR_ERR("BT_CMD_CHIP_VERS soc_version:%x", chipset_version);
+		BT_PWR_ERR("unified Current SOC Version : %x", chipset_version);
 		if (chipset_version) {
 			soc_id = chipset_version;
 			if (soc_id == QCA_HSP_SOC_ID_0100 ||

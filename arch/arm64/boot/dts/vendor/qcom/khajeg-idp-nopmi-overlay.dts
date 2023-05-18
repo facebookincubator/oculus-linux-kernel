@@ -1,0 +1,13 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include "khajeg-idp-nopmi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Khajeg IDP nopmi";
+	compatible = "qcom,khajeg-idp", "qcom,khajeg", "qcom,idp";
+	qcom,msm-id = <585 0x10000>;
+	qcom,board-id = <0x10022 0>;
+	qcom,pmic-id = <0x2D 0x0 0x0 0x0>;
+};

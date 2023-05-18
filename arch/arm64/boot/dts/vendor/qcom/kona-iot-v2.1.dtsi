@@ -5,6 +5,7 @@
 	compatible = "qcom,kona-iot";
 	qcom,msm-id = <481 0x20001>;
 };
+
 &soc {
 	msm_vidc: qcom,vidc@aa00000 {
 		compatible = "qcom,msm-vidc", "qcom,qcs8250-vidc";
@@ -19,4 +20,8 @@
 &mdss_dsi1_pll {
 	/delete-property/ qcom,dsi-pll-ssc-en;
 	/delete-property/ qcom,dsi-pll-ssc-mode;
+};
+
+&pcie2 {
+	qcom,boot-option = <0x0>;
 };

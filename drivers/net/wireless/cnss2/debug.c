@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved. */
 
 #include <linux/err.h>
 #include <linux/seq_file.h>
@@ -10,9 +10,27 @@
 #include "pci.h"
 
 #define MMIO_REG_ACCESS_MEM_TYPE		0xFF
+#define HEX_DUMP_ROW_SIZE			16
 
 void *cnss_ipc_log_context;
 void *cnss_ipc_log_long_context;
+
+static void cnss_print_hex_dump(const void *buf, int len)
+{
+	const u8 *ptr = buf;
+	int i, linelen, remaining = len, rowsize = HEX_DUMP_ROW_SIZE;
+	unsigned char linebuf[HEX_DUMP_ROW_SIZE * 3 + 1];
+
+	for (i = 0; i < len; i += rowsize) {
+		linelen = min(remaining, rowsize);
+		remaining -= rowsize;
+
+		hex_dump_to_buffer(ptr + i, linelen, rowsize, 1,
+				   linebuf, sizeof(linebuf), false);
+
+		cnss_pr_dbg("%.8x: %s\n", i, linebuf);
+	}
+}
 
 static int cnss_pin_connect_show(struct seq_file *s, void *data)
 {
@@ -112,6 +130,9 @@ static int cnss_stats_show_state(struct seq_file *s,
 			continue;
 		case CNSS_IN_REBOOT:
 			seq_puts(s, "IN_REBOOT");
+			continue;
+		case CNSS_QMI_DEL_SERVER:
+			seq_puts(s, "DEL_SERVER_IN_PROGRESS");
 			continue;
 		}
 
@@ -496,13 +517,14 @@ static ssize_t cnss_runtime_pm_debug_write(struct file *fp,
 	} else if (sysfs_streq(cmd, "resume")) {
 		ret = cnss_pci_pm_runtime_resume(pci_priv);
 	} else if (sysfs_streq(cmd, "get")) {
-		ret = cnss_pci_pm_runtime_get(pci_priv);
+		ret = cnss_pci_pm_runtime_get(pci_priv, RTPM_ID_CNSS);
 	} else if (sysfs_streq(cmd, "get_noresume")) {
-		cnss_pci_pm_runtime_get_noresume(pci_priv);
+		cnss_pci_pm_runtime_get_noresume(pci_priv, RTPM_ID_CNSS);
 	} else if (sysfs_streq(cmd, "put_autosuspend")) {
-		ret = cnss_pci_pm_runtime_put_autosuspend(pci_priv);
+		ret = cnss_pci_pm_runtime_put_autosuspend(pci_priv,
+							  RTPM_ID_CNSS);
 	} else if (sysfs_streq(cmd, "put_noidle")) {
-		cnss_pci_pm_runtime_put_noidle(pci_priv);
+		cnss_pci_pm_runtime_put_noidle(pci_priv, RTPM_ID_CNSS);
 	} else if (sysfs_streq(cmd, "mark_last_busy")) {
 		cnss_pci_pm_runtime_mark_last_busy(pci_priv);
 	} else if (sysfs_streq(cmd, "resume_bus")) {
@@ -522,6 +544,17 @@ static ssize_t cnss_runtime_pm_debug_write(struct file *fp,
 
 static int cnss_runtime_pm_debug_show(struct seq_file *s, void *data)
 {
+	struct cnss_plat_data *plat_priv = s->private;
+	struct cnss_pci_data *pci_priv;
+	int i;
+
+	if (!plat_priv)
+		return -ENODEV;
+
+	pci_priv = plat_priv->bus_priv;
+	if (!pci_priv)
+		return -ENODEV;
+
 	seq_puts(s, "\nUsage: echo <action> > <debugfs_path>/cnss/runtime_pm\n");
 	seq_puts(s, "<action> can be one of below:\n");
 	seq_puts(s, "usage_count: get runtime PM usage count\n");
@@ -534,6 +567,25 @@ static int cnss_runtime_pm_debug_show(struct seq_file *s, void *data)
 	seq_puts(s, "mark_last_busy: do runtime PM mark last busy\n");
 	seq_puts(s, "resume_bus: do bus resume only\n");
 	seq_puts(s, "suspend_bus: do bus suspend only\n");
+
+	seq_puts(s, "\nStats:\n");
+	seq_printf(s, "%s: %u\n", "get count",
+		   atomic_read(&pci_priv->pm_stats.runtime_get));
+	seq_printf(s, "%s: %u\n", "put count",
+		   atomic_read(&pci_priv->pm_stats.runtime_put));
+	seq_printf(s, "%-10s%-10s%-10s%-15s%-15s\n",
+		   "id:", "get",  "put", "get time(us)", "put time(us)");
+	for (i = 0; i < RTPM_ID_MAX; i++) {
+		seq_printf(s, "%d%-9s", i, ":");
+		seq_printf(s, "%-10d",
+			   atomic_read(&pci_priv->pm_stats.runtime_get_id[i]));
+		seq_printf(s, "%-10d",
+			   atomic_read(&pci_priv->pm_stats.runtime_put_id[i]));
+		seq_printf(s, "%-15llu",
+			   pci_priv->pm_stats.runtime_get_timestamp_id[i]);
+		seq_printf(s, "%-15llu\n",
+			   pci_priv->pm_stats.runtime_put_timestamp_id[i]);
+	}
 
 	return 0;
 }
@@ -750,6 +802,95 @@ static const struct file_operations cnss_dynamic_feature_fops = {
 	.llseek = seq_lseek,
 };
 
+static int cnss_wfc_call_status_debug_show(struct seq_file *s, void *data)
+{
+	seq_puts(s, "\nUsage: echo <data_len> <hex data> > <debugfs_path>/cnss/wfc_call_status\n");
+	seq_puts(s, "e.g. Send 4 bytes of hex data for WFC call status using QMI message:\n");
+	seq_puts(s, "echo '0x4 0xA 0xB 0xC 0xD' > /d/cnss/wfc_call_status\n");
+
+	return 0;
+}
+
+static ssize_t cnss_wfc_call_status_debug_write(struct file *fp,
+						const char __user *user_buf,
+						size_t count, loff_t *off)
+{
+	struct cnss_plat_data *plat_priv =
+		((struct seq_file *)fp->private_data)->private;
+	char buf[(QMI_WLFW_MAX_WFC_CALL_STATUS_DATA_SIZE_V01 + 1) * 5];
+	char *sptr, *token;
+	unsigned int len = 0;
+	const char *delim = " ";
+	u32 data_len;
+	u8 data[QMI_WLFW_MAX_WFC_CALL_STATUS_DATA_SIZE_V01] = {0}, data_byte;
+	int ret = 0, i;
+
+	if (!test_bit(CNSS_FW_READY, &plat_priv->driver_state)) {
+		cnss_pr_err("Firmware is not ready yet\n");
+		return -EINVAL;
+	}
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	sptr = buf;
+
+	token = strsep(&sptr, delim);
+	if (!token || !sptr)
+		return -EINVAL;
+
+	if (kstrtou32(token, 0, &data_len))
+		return -EINVAL;
+
+	cnss_pr_dbg("Parsing 0x%x bytes data for WFC call status\n", data_len);
+
+	if (data_len > QMI_WLFW_MAX_WFC_CALL_STATUS_DATA_SIZE_V01 ||
+	    data_len == 0) {
+		cnss_pr_err("Invalid data length 0x%x\n", data_len);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < data_len; i++) {
+		token = strsep(&sptr, delim);
+		if (!token || (!sptr && i < data_len - 1)) {
+			cnss_pr_err("Input data is less than length\n");
+			return -EINVAL;
+		}
+
+		if (kstrtou8(token, 0, &data_byte)) {
+			cnss_pr_err("Data format is incorrect\n");
+			return -EINVAL;
+		}
+
+		data[i] = data_byte;
+	}
+
+	cnss_print_hex_dump(data, data_len);
+
+	ret = cnss_wlfw_wfc_call_status_send_sync(plat_priv, data_len, data);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static int cnss_wfc_call_status_debug_open(struct inode *inode,
+					   struct file *file)
+{
+	return single_open(file, cnss_wfc_call_status_debug_show,
+			   inode->i_private);
+}
+
+static const struct file_operations cnss_wfc_call_status_debug_fops = {
+	.read		= seq_read,
+	.write		= cnss_wfc_call_status_debug_write,
+	.open		= cnss_wfc_call_status_debug_open,
+	.owner		= THIS_MODULE,
+	.llseek		= seq_lseek,
+};
+
 #ifdef CONFIG_CNSS2_DEBUG
 static int cnss_create_debug_only_node(struct cnss_plat_data *plat_priv)
 {
@@ -767,15 +908,11 @@ static int cnss_create_debug_only_node(struct cnss_plat_data *plat_priv)
 			    &cnss_control_params_debug_fops);
 	debugfs_create_file("dynamic_feature", 0600, root_dentry, plat_priv,
 			    &cnss_dynamic_feature_fops);
+	debugfs_create_file("wfc_call_status", 0600, root_dentry, plat_priv,
+			    &cnss_wfc_call_status_debug_fops);
 
 	return 0;
 }
-#else
-static int cnss_create_debug_only_node(struct cnss_plat_data *plat_priv)
-{
-	return 0;
-}
-#endif
 
 int cnss_debugfs_create(struct cnss_plat_data *plat_priv)
 {
@@ -806,6 +943,16 @@ void cnss_debugfs_destroy(struct cnss_plat_data *plat_priv)
 {
 	debugfs_remove_recursive(plat_priv->root_dentry);
 }
+#else
+int cnss_debugfs_create(struct cnss_plat_data *plat_priv)
+{
+	return 0;
+}
+
+void cnss_debugfs_destroy(struct cnss_plat_data *plat_priv)
+{
+}
+#endif
 
 int cnss_debug_init(void)
 {

@@ -36,8 +36,12 @@
 #endif
 
 #ifdef WLAN_SUPPORT_TWT
+
 #include <wmi_unified_twt_param.h>
-#endif
+/* Max TWT sessions per peer (supported by fw) */
+#define TWT_PEER_MAX_SESSIONS 1
+
+#endif /* WLAN_SUPPORT_TWT */
 
 #define MAX_NUM_CHAINS              2
 

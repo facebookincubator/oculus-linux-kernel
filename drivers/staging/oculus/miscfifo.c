@@ -3,6 +3,7 @@
 #include <linux/miscfifo.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/version.h>
 
 #define REC_MAX_LENGTH	0xff
 #define REC_SIZE	1
@@ -145,18 +146,25 @@ EXPORT_SYMBOL(miscfifo_fop_release);
 static void get_current_client_name(char *buf, size_t size)
 {
 	struct mm_struct *mm;
+	struct rw_semaphore *rw_sem;
 
 	mm = current->mm;
 	if (!mm)
 		goto error;
 
-	down_read(&mm->mmap_sem);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0))
+	rw_sem = &mm->mmap_lock;
+#else
+	rw_sem = &mm->mmap_sem;
+#endif
+
+	down_read(rw_sem);
 	if (!mm->exe_file) {
-		up_read(&mm->mmap_sem);
+		up_read(rw_sem);
 		goto error;
 	}
 	snprintf(buf, size, "%s (%d)", mm->exe_file->f_path.dentry->d_name.name, current->pid);
-	up_read(&mm->mmap_sem);
+	up_read(rw_sem);
 
 	return;
 
@@ -237,7 +245,9 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 		} else {
 			if (!client->logged_fifo_full) {
 				dev_info_ratelimited(mf->dev, "miscfifo %s opened by %s is full",
-						     client->file->f_path.dentry->d_name.name,
+						     client->file->f_path.dentry ?
+						     (char *)client->file->f_path.dentry->d_name.name :
+						     "unknown",
 						     client->name);
 				client->logged_fifo_full = true;
 			}

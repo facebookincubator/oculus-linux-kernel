@@ -1,8 +1,8 @@
 #include "lagoon-audio-overlay.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include "lagoon-sde-display.dtsi"
-#include "lagoon-thermal-overlay.dtsi"
 #include "camera/lagoon-camera-sensor-cdp.dtsi"
+#include "lagoon-thermal-overlay.dtsi"
 
 &soc {
 };

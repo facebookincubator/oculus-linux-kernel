@@ -39,7 +39,7 @@ static int32_t stp_controller_check_for_rw_errors(uint8_t channel)
 	if (!synced) {
 		ret = STP_ERROR_NOT_SYNCED;
 		if (_stp_controller_data->handshake->device_can_receive())
-			_stp_controller_data->wait_signal->signal_device_ready();
+			stp_controller_signal_device_ready();
 		goto error;
 	}
 
@@ -97,7 +97,7 @@ int32_t stp_controller_read_nb(uint8_t channel, uint8_t *buffer,
 		stp_pl_get_data(&_stp_controller_data->channels[channel].rx_pl,
 				buffer, *data_size);
 
-	stp_controller_signal_data();
+	stp_controller_signal_has_data();
 
 error:
 	STP_UNLOCK(_stp_controller_data->channels[channel].rx_pl.lock);
@@ -158,7 +158,6 @@ int32_t stp_controller_read_minimum(uint8_t channel, uint8_t *buffer,
 
 		ret = _stp_controller_data->wait_signal->wait_read(channel);
 		if (ret < 0) {
-			STP_LOG_ERROR("stp_read intrerupted!");
 			ret = STP_ERROR_IO_INTERRUPT;
 			break;
 		}
@@ -188,6 +187,8 @@ int32_t stp_controller_write(uint8_t channel, const uint8_t *buffer,
 	if (ret != STP_SUCCESS)
 		return ret;
 
+	_stp_controller_data->wait_signal->reset_fsync(channel);
+
 	while (1) {
 		STP_LOCK(_stp_controller_data->channels[channel].tx_pl.lock);
 
@@ -214,7 +215,7 @@ int32_t stp_controller_write(uint8_t channel, const uint8_t *buffer,
 			p += size_av;
 		}
 
-		stp_controller_signal_data();
+		stp_controller_signal_has_data();
 
 		STP_UNLOCK(_stp_controller_data->channels[channel].tx_pl.lock);
 
@@ -231,11 +232,13 @@ int32_t stp_controller_write(uint8_t channel, const uint8_t *buffer,
 		}
 	}
 
-	_stp_controller_data->wait_signal->reset_fsync(channel);
-
 	*data_size = buffer_size - remaining_data;
 
+	return ret;
+
 error:
+	/* If there is an error, we need to signal fsync to unblock the clients */
+	_stp_controller_data->wait_signal->signal_fsync(channel);
 	return ret;
 }
 
@@ -267,15 +270,20 @@ int32_t stp_controller_write_nb(uint8_t channel, const uint8_t *buffer,
 		*data_size = size_av;
 
 	if (*data_size > 0) {
+		_stp_controller_data->wait_signal->reset_fsync(channel);
 		stp_pl_add_data(&_stp_controller_data->channels[channel].tx_pl,
 				buffer, *data_size);
-		_stp_controller_data->wait_signal->reset_fsync(channel);
-		stp_controller_signal_data();
+		stp_controller_signal_has_data();
 	}
+
+	STP_UNLOCK(_stp_controller_data->channels[channel].tx_pl.lock);
+
+	return ret;
 
 error:
 	STP_UNLOCK(_stp_controller_data->channels[channel].tx_pl.lock);
-
+	/* If there is an error, we need to signal fsync to unblock the clients */
+	_stp_controller_data->wait_signal->signal_fsync(channel);
 	return ret;
 }
 
@@ -478,9 +486,6 @@ int32_t stp_controller_open(uint8_t channel, uint8_t priority,
 	stp_pl_init(&_stp_controller_data->channels[channel].tx_pl, tx_buffer,
 		    tx_buffer_size);
 
-	STP_LOCK_INIT(_stp_controller_data->channels[channel].read_lock);
-	STP_LOCK_INIT(_stp_controller_data->channels[channel].write_lock);
-
 	_stp_controller_data->channels[channel].controller_connected = true;
 	_stp_controller_data->channels[channel].valid_session = true;
 
@@ -518,9 +523,6 @@ int32_t stp_controller_open_blocking(uint8_t channel, uint8_t priority,
 	stp_pl_init(&_stp_controller_data->channels[channel].tx_pl, tx_buffer,
 		    tx_buffer_size);
 
-	STP_LOCK_INIT(_stp_controller_data->channels[channel].read_lock);
-	STP_LOCK_INIT(_stp_controller_data->channels[channel].write_lock);
-
 	_stp_controller_data->channels[channel].controller_connected = true;
 	_stp_controller_data->channels[channel].valid_session = true;
 
@@ -551,9 +553,6 @@ int32_t stp_controller_close(uint8_t channel)
 
 	stp_pl_deinit(&_stp_controller_data->channels[channel].rx_pl);
 	stp_pl_deinit(&_stp_controller_data->channels[channel].tx_pl);
-
-	STP_LOCK_DEINIT(_stp_controller_data->channels[channel].read_lock);
-	STP_LOCK_DEINIT(_stp_controller_data->channels[channel].write_lock);
 
 	return ret;
 }

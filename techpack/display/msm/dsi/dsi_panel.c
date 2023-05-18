@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
@@ -603,9 +604,6 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 		if (cmds->last_command)
 			cmds->msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
 
-		if (type == DSI_CMD_SET_VID_TO_CMD_SWITCH)
-			cmds->msg.flags |= MIPI_DSI_MSG_ASYNC_OVERRIDE;
-
 		len = ops->transfer(panel->host, &cmds->msg);
 		if (len < 0) {
 			rc = len;
@@ -690,10 +688,11 @@ static int dsi_panel_dcs_set_display_brightness_c2(struct mipi_dsi_device *dsi,
 	u16 brightness = (u16)bl_lvl;
 	u8 first_byte = brightness & 0xff;
 	u8 second_byte = brightness >> 8;
-	u8 payload[8] = {second_byte, first_byte,
+	u8 payload[11] = {second_byte, first_byte,
 		second_byte, first_byte,
 		second_byte, first_byte,
-		second_byte, first_byte};
+		second_byte, first_byte,
+		02, 00, 00};
 
 	return mipi_dsi_dcs_write(dsi, 0xC2, payload, sizeof(payload));
 }
@@ -778,7 +777,7 @@ error:
 }
 
 static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
-			u32 bl_lvl)
+		u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_mode_info *timing;
@@ -845,47 +844,6 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 	bl_config->jdi_scanline_duration = bl_lvl;
 	bl_config->jdi_scanline_offset[0] = right_scanline;
 	bl_config->jdi_scanline_offset[1] = left_scanline;
-
-error:
-	return rc;
-}
-
-static int dsi_panel_nvt_update_backlight(struct dsi_panel *panel,
-			u32 bl_lvl)
-{
-	int rc = 0;
-	struct dsi_mode_info *timing;
-	struct mipi_dsi_device *dsi;
-	struct dsi_backlight_config *bl_config;
-
-	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
-	u8 blu_level_msb[2] = {0x8F, 0x00}; /* BLU level MSB */
-	u8 blu_level_lsb[2] = {0x90, 0x00}; /* BLU level LSB */
-
-	if (!panel || !panel->cur_mode || (bl_lvl > 0xFFFF))
-		return -EINVAL;
-
-	dsi = &panel->mipi_device;
-	bl_config = &panel->bl_config;
-	timing = &panel->cur_mode->timing;
-
-	/* Transform backlight level into illumination period in scanlines */
-	bl_lvl = (bl_lvl * bl_config->jdi_blu_default_duty * 1000) / (timing->refresh_rate * 1800 /* Internal TFT 1H Time */);
-
-	blu_level_msb[1] = bl_lvl >> 8;
-	blu_level_lsb[1] = bl_lvl & 0xFF;
-
-	/* Queue the DCS writes so they can be batched together in one frame. */
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), 0, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_msb, sizeof(blu_level_msb), 0, 0);
-	/* Send with last command flag */
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_level_lsb, sizeof(blu_level_lsb), MIPI_DSI_MSG_LASTCOMMAND, 0);
-
-	if (rc) {
-		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
-		goto error;
-	}
-	bl_config->jdi_scanline_duration = bl_lvl;
 
 error:
 	return rc;
@@ -1094,6 +1052,8 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 		blu_internal_off_time_us = internal_vsync_us - blu_off_to_internal_vsync_us;
 		/* Calculate when the PWM signal should be sent to meet the BLU off time */
 		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us - tdel_us - fifo_time_us;
+		/* Convert the PWM time to internal horizontal lines */
+		pwm_line = pwm_us / internal_1h_us;
 	} else {
 		/* Internal vsync: for refresh rates lower than 90 we use the 90Hz frame period to reduce latency */
 		internal_vsync_us = 1000000/90 + fifo_time_us;
@@ -1103,6 +1063,8 @@ int dsi_panel_handle_dfps_pwm_fifo_local_dimming(struct dsi_panel *panel, u32 bl
 
 		/* Calculate when the PWM signal should be sent to meet the 90Hz latency*/
 		pwm_us = blu_internal_off_time_us - blu_on_time_duration_us_ref / 90 - tdel_us - fifo_time_us;
+		/* Convert the PWM time to internal horizontal lines */
+		pwm_line = pwm_us / internal_1h_us;
 	}
 
 	/* Adjust backlight timing to match target settling time (if enabled). */
@@ -1244,9 +1206,6 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	case DSI_BACKLIGHT_JDI_NVT:
 		rc = dsi_panel_jdi_nvt_update_backlight(panel, bl_lvl);
 		break;
-	case DSI_BACKLIGHT_NVT:
-		rc = dsi_panel_nvt_update_backlight(panel, bl_lvl);//TODO
-		break;
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_update_pwm_backlight(panel, bl_lvl);
 		break;
@@ -1275,7 +1234,6 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
 	case DSI_BACKLIGHT_JDI_NVT:
-	case DSI_BACKLIGHT_NVT:
 	case DSI_BACKLIGHT_EXTERNAL:
 	case DSI_BACKLIGHT_PWM:
 	default:
@@ -1402,7 +1360,6 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_JDI:
 	case DSI_BACKLIGHT_JDI_NVT:
-	case DSI_BACKLIGHT_NVT:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
@@ -1949,6 +1906,31 @@ static int dsi_panel_parse_qsync_caps(struct dsi_panel *panel,
 			panel->name, rc);
 
 	panel->qsync_min_fps = val;
+
+	return rc;
+}
+
+static int dsi_panel_parse_skewed_vsync(struct dsi_panel *panel)
+{
+	int rc = 0;
+	const char *string;
+	struct dsi_parser_utils *utils = &panel->utils;
+
+	rc = utils->read_string(utils->data,
+			"qcom,mdss-dsi-skewed-vsync-master", &string);
+	if (rc) {
+		DSI_DEBUG("[%s] Skewed Vsync not enabled. rc:%d\n",
+			panel->name, rc);
+		return rc;
+	}
+
+	if (!strcmp(string, "intf1"))
+		panel->skewed_vsync_master = INTF_1_IS_MASTER;
+	else if (!strcmp(string, "intf2"))
+		panel->skewed_vsync_master = INTF_2_IS_MASTER;
+	else
+		DSI_ERR("[%s] Unknown skewed-vsync settings.\n",
+						panel->name);
 
 	return rc;
 }
@@ -2718,12 +2700,12 @@ static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 	panel->reset_config.power_off_delay = 0;
 	rc = utils->read_u32(utils->data,
 		"qcom,mdss-dsi-reset-off-delay", &panel->reset_config.power_off_delay);
-	if (rc == -EINVAL) {
+
+	if (rc == -EINVAL)
 		/* -EINVAL means entry was not found, this is not an error */
 		rc = 0;
-	} else if (rc) {
+	else if (rc)
 		DSI_ERR("[%s] cannot read dsi-reset-off-delay\n", panel->name);
-	}
 
 	panel->reset_config.sec_power_off_delay = 0;
 	rc = utils->read_u32(utils->data,
@@ -3032,8 +3014,6 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_JDI;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi_nvt")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI_NVT;
-	} else if (!strcmp(bl_type, "bl_ctrl_nvt")) {
-		panel->bl_config.type = DSI_BACKLIGHT_NVT;
 	} else if (!strcmp(bl_type, "bl_ctrl_local_dimming")) {
 		panel->bl_config.type = DSI_BACKLIGHT_LOCAL_DIMMING;
 	} else {
@@ -3095,8 +3075,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	}
 
 	if (panel->bl_config.type == DSI_BACKLIGHT_JDI
-		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT
-		|| panel->bl_config.type == DSI_BACKLIGHT_NVT) {
+		|| panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
 		rc = utils->read_u32(utils->data,
 			"qcom,mdss-dsi-jdi-default-duty-cycle", &val);
 		if (rc) {
@@ -4149,6 +4128,10 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (rc)
 		DSI_ERR("failed to parse power config, rc=%d\n", rc);
 
+	rc = dsi_panel_parse_skewed_vsync(panel);
+	if (rc)
+		DSI_DEBUG("failed to parse skewed-vsync settings, rc=%d\n", rc);
+
 	rc = dsi_panel_parse_bl_config(panel);
 	if (rc) {
 		DSI_ERR("failed to parse backlight config, rc=%d\n", rc);
@@ -4792,6 +4775,8 @@ int dsi_panel_update_pps(struct dsi_panel *panel)
 	int rc = 0;
 	struct dsi_panel_cmd_set *set = NULL;
 	struct dsi_display_mode_priv_info *priv_info = NULL;
+	struct dsi_parser_utils *utils = &panel->utils;
+	int panel_cnt = 0;
 
 	if (!panel || !panel->cur_mode) {
 		DSI_ERR("invalid params\n");
@@ -4803,6 +4788,11 @@ int dsi_panel_update_pps(struct dsi_panel *panel)
 	priv_info = panel->cur_mode->priv_info;
 
 	set = &priv_info->cmd_sets[DSI_CMD_SET_PPS];
+
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-panel-count",
+							&panel_cnt);
+	if (!rc && panel_cnt == 2)
+		priv_info->dsc.pic_width >>= 1;
 
 	dsi_dsc_create_pps_buf_cmd(&priv_info->dsc, panel->dsc_pps_cmd, 0);
 	rc = dsi_panel_create_cmd_packets(panel->dsc_pps_cmd,
@@ -5283,8 +5273,6 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 		dsi_panel_jdi_update_backlight(panel, 0);
 	else if (panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
 		dsi_panel_jdi_nvt_update_backlight(panel, 0);
-	else if (panel->bl_config.type == DSI_BACKLIGHT_NVT)
-		dsi_panel_nvt_update_backlight(panel, 0);
 	else if (panel->bl_config.type == DSI_BACKLIGHT_LOCAL_DIMMING &&
 			panel->bl_config.temperature_dependent_timing)
 		cancel_delayed_work_sync(&panel->bl_config.bl_temp_dwork);

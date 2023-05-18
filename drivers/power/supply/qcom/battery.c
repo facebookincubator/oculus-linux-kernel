@@ -834,7 +834,7 @@ static void pl_taper_work(struct work_struct *work)
 
 	chip->taper_entry_fv = get_effective_result(chip->fv_votable);
 	chip->taper_work_running = true;
-	fcc_ua = get_client_vote(chip->fcc_votable, BATT_PROFILE_VOTER);
+	fcc_ua = get_effective_result(chip->fcc_votable);
 	vote(chip->fcc_votable, TAPER_STEPPER_VOTER, true, fcc_ua);
 	while (true) {
 		if (get_effective_result(chip->pl_disable_votable)) {
@@ -1999,7 +1999,7 @@ int qcom_batt_init(struct charger_param *chg_param)
 	pl_config_init(chip, chg_param->smb_version);
 	chip->restricted_current = DEFAULT_RESTRICTED_CURRENT_UA;
 
-	chip->pl_ws = wakeup_source_register("qcom-battery");
+	chip->pl_ws = wakeup_source_register(NULL, "qcom-battery");
 	if (!chip->pl_ws)
 		goto cleanup;
 

@@ -33,7 +33,9 @@
 #define KGSL_IOMMU_SECURE_BASE(_mmu)	\
 	(KGSL_IOMMU_GLOBAL_MEM_BASE(_mmu) - KGSL_IOMMU_SECURE_SIZE)
 
-#define KGSL_IOMMU_SVM_BASE32		0x300000
+#define KGSL_IOMMU_SVM_BASE32(__mmu)	\
+	(ADRENO_DEVICE(KGSL_MMU_DEVICE(__mmu))->uche_gmem_base + \
+		ADRENO_DEVICE(KGSL_MMU_DEVICE(__mmu))->gpucore->gmem_size)
 #define KGSL_IOMMU_SVM_END32		(0xC0000000 - SZ_16M)
 
 /* The CPU supports 39 bit addresses */
@@ -121,7 +123,7 @@ struct kgsl_iommu_context {
 	struct kgsl_pagetable *default_pt;
 	void __iomem *regbase;
 	spinlock_t fault_lock;
-	int outstanding_fault_count;
+	atomic_t outstanding_fault_count;
 	struct kgsl_iommu_fault_regs fault_regs;
 };
 

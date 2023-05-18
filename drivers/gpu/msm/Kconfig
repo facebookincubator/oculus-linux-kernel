@@ -149,3 +149,11 @@ config QCOM_KGSL_LAZY_GPUREADONLY
 	  read-only, i.e. they are only write-allocated via CPU access. This
 	  reduces memory consumption at a small performance cost. If unsure,
 	  say 'Y'.
+
+config QCOM_KGSL_LAZY_SYSTEM_PROCESSES
+	bool "Lazily allocate memory for system processes"
+	depends on QCOM_KGSL_LAZY_ALLOCATION
+	default y if QCOM_KGSL
+	help
+	  Enables lazy allocation for system process memory entries, such as
+	  surfaceflinger. If unsure, say 'Y'.

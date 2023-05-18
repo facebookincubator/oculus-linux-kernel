@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __ADRENO_H
@@ -14,8 +14,8 @@
 #include "adreno_ringbuffer.h"
 #include "kgsl_sharedmem.h"
 
-/* Index to preemption scratch buffer to store KMD postamble */
-#define KMD_POSTAMBLE_IDX 100
+#define DEVICE_3D_NAME "kgsl-3d"
+#define DEVICE_3D0_NAME "kgsl-3d0"
 
 /* Index to preemption scratch buffer to store KMD postamble */
 #define KMD_POSTAMBLE_IDX 100
@@ -115,6 +115,20 @@
 /* The target supports ringbuffer level APRIV */
 #define ADRENO_APRIV BIT(21)
 /*
+ * Use SHMEM for page allocation. There will be no support
+ * for pools and higher order pages.
+ */
+#define ADRENO_USE_SHMEM BIT(22)
+/*
+ * Make pages available for reclaim. Process foreground/background
+ * activity is known through sysfs exposed per process. Based on
+ * this, pages are unpinned and made available to Per Process
+ * Reclaim (PPR). SHMEM is used for allocation of pages and
+ * support for pools is removed.
+ */
+#define ADRENO_PROCESS_RECLAIM BIT(23)
+
+/*
  * Adreno GPU quirks - control bits for various workarounds
  */
 
@@ -189,6 +203,7 @@ enum adreno_gpurev {
 	ADRENO_REV_A418 = 418,
 	ADRENO_REV_A420 = 420,
 	ADRENO_REV_A430 = 430,
+	ADRENO_REV_A504 = 504,
 	ADRENO_REV_A505 = 505,
 	ADRENO_REV_A506 = 506,
 	ADRENO_REV_A508 = 508,
@@ -207,6 +222,7 @@ enum adreno_gpurev {
 	ADRENO_REV_A640 = 640,
 	ADRENO_REV_A650 = 650,
 	ADRENO_REV_A680 = 680,
+	ADRENO_REV_A702 = 702,
 };
 
 #define ADRENO_SOFT_FAULT BIT(0)
@@ -361,7 +377,6 @@ struct adreno_reglist {
  * @patchid: Match for the patch revision of the GPU
  * @features: Common adreno features supported by this core
  * @gpudev: Pointer to the GPU family specific functions for this core
- * @gmem_base: Base address of binning memory (GMEM/OCMEM)
  * @gmem_size: Amount of binning memory (GMEM/OCMEM) to reserve for the core
  * @bus_width: Bytes transferred in 1 cycle
  */
@@ -370,7 +385,6 @@ struct adreno_gpu_core {
 	unsigned int core, major, minor, patchid;
 	unsigned long features;
 	struct adreno_gpudev *gpudev;
-	unsigned long gmem_base;
 	size_t gmem_size;
 	u32 bus_width;
 	/** @snapshot_size: Size of the static snapshot region in bytes */
@@ -382,6 +396,7 @@ struct adreno_gpu_core {
  * @dev: Reference to struct kgsl_device
  * @priv: Holds the private flags specific to the adreno_device
  * @chipid: Chip ID specific to the GPU
+ * @uche_gmem_base: Base address of GMEM for UCHE access
  * @cx_misc_len: Length of the CX MISC register block
  * @cx_misc_virt: Pointer where the CX MISC block is mapped
  * @rscc_base: Base physical address of the RSCC
@@ -467,6 +482,7 @@ struct adreno_device {
 	struct kgsl_device dev;    /* Must be first field in this struct */
 	unsigned long priv;
 	unsigned int chipid;
+	u64 uche_gmem_base;
 	unsigned long cx_dbgc_base;
 	unsigned int cx_dbgc_len;
 	void __iomem *cx_dbgc_virt;
@@ -544,11 +560,6 @@ struct adreno_device {
 	bool gpuhtw_llc_slice_enable;
 	unsigned int zap_loaded;
 	unsigned int soc_hw_rev;
-	/*
-	 * @perfcounter: Flag to clear perfcounters across contexts and
-	 * controls perfcounter ioctl read
-	 */
-	bool perfcounter;
 	/**
 	 * @critpkts: Memory descriptor for 5xx critical packets if applicable
 	 */
@@ -559,6 +570,11 @@ struct adreno_device {
 	struct kgsl_memdesc *critpkts_secure;
 	/** @cp_init_cmds: A copy of the CP INIT commands */
 	const void *cp_init_cmds;
+	/*
+	 * @perfcounter: Flag to clear perfcounters across contexts and
+	 * controls perfcounter ioctl read
+	 */
+	bool perfcounter;
 };
 
 /**
@@ -1062,6 +1078,7 @@ long adreno_ioctl_perfcounter_put(struct kgsl_device_private *dev_priv,
 int adreno_efuse_map(struct platform_device *pdev);
 int adreno_efuse_read_u32(unsigned int offset, unsigned int *val);
 void adreno_efuse_unmap(void);
+void adreno_efuse_speed_bin_array(struct adreno_device *adreno_dev);
 
 bool adreno_is_cx_dbgc_register(struct kgsl_device *device,
 		unsigned int offset);
@@ -1112,6 +1129,7 @@ static inline int adreno_is_a5xx(struct adreno_device *adreno_dev)
 			ADRENO_GPUREV(adreno_dev) < 600;
 }
 
+ADRENO_TARGET(a504, ADRENO_REV_A504)
 ADRENO_TARGET(a505, ADRENO_REV_A505)
 ADRENO_TARGET(a506, ADRENO_REV_A506)
 ADRENO_TARGET(a508, ADRENO_REV_A508)
@@ -1132,16 +1150,17 @@ static inline int adreno_is_a530v3(struct adreno_device *adreno_dev)
 		(ADRENO_CHIPID_PATCH(adreno_dev->chipid) == 2);
 }
 
-static inline int adreno_is_a505_or_a506(struct adreno_device *adreno_dev)
+static inline int adreno_is_a504_to_a506(struct adreno_device *adreno_dev)
 {
-	return ADRENO_GPUREV(adreno_dev) >= 505 &&
+	return ADRENO_GPUREV(adreno_dev) >= 504 &&
 			ADRENO_GPUREV(adreno_dev) <= 506;
 }
 
 static inline int adreno_is_a6xx(struct adreno_device *adreno_dev)
 {
-	return ADRENO_GPUREV(adreno_dev) >= 600 &&
-			ADRENO_GPUREV(adreno_dev) < 700;
+	int rev = ADRENO_GPUREV(adreno_dev);
+
+	return (rev >= 600 && rev < 700) || (rev == 702);
 }
 
 ADRENO_TARGET(a610, ADRENO_REV_A610)
@@ -1153,6 +1172,7 @@ ADRENO_TARGET(a630, ADRENO_REV_A630)
 ADRENO_TARGET(a640, ADRENO_REV_A640)
 ADRENO_TARGET(a650, ADRENO_REV_A650)
 ADRENO_TARGET(a680, ADRENO_REV_A680)
+ADRENO_TARGET(a702, ADRENO_REV_A702)
 
 /*
  * All the derived chipsets from A615 needs to be added to this
@@ -1817,6 +1837,17 @@ int adreno_clear_pending_transactions(struct kgsl_device *device);
 void adreno_gmu_send_nmi(struct adreno_device *adreno_dev);
 void adreno_smmu_resume(struct adreno_device *adreno_dev);
 
+/**
+ * adreno_zap_shader_load - Helper function for loading the zap shader
+ * adreno_dev: A handle to an Adreno GPU device
+ * name: Name of the zap shader to load
+ *
+ * A target indepedent helper function for loading the zap shader.
+ *
+ * Return: 0 on success or negative on failure.
+ */
+int adreno_zap_shader_load(struct adreno_device *adreno_dev,
+		const char *name);
 
 /**
  * adreno_get_firwmare - Load firmware into a adreno_firmware struct
@@ -1831,16 +1862,4 @@ void adreno_smmu_resume(struct adreno_device *adreno_dev);
  */
 int adreno_get_firmware(struct adreno_device *adreno_dev,
 		const char *fwfile, struct adreno_firmware *firmware);
-
-/**
- * adreno_zap_shader_load - Helper function for loading the zap shader
- * adreno_dev: A handle to an Adreno GPU device
- * name: Name of the zap shader to load
- *
- * A target indepedent helper function for loading the zap shader.
- *
- * Return: 0 on success or negative on failure.
- */
-int adreno_zap_shader_load(struct adreno_device *adreno_dev,
-		const char *name);
 #endif /*__ADRENO_H */

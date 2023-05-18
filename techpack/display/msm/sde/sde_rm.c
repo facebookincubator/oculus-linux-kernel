@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -31,6 +32,10 @@
 #define RM_IS_TOPOLOGY_MATCH(t, r) ((t).num_lm == (r).num_lm && \
 				(t).num_comp_enc == (r).num_enc && \
 				(t).num_intf == (r).num_intf)
+#define RM_IS_TOPOLOGY_MATCH_WITH_CTL(t, r, c) ((t).num_lm == (r).num_lm && \
+				(t).num_comp_enc == (r).num_enc && \
+				(t).num_intf == (r).num_intf) && \
+				(t).num_ctl == c
 
 /**
  * toplogy information to be used when ctl path version does not
@@ -65,6 +70,7 @@ static const struct sde_rm_topology_def g_ctl_ver_1_top_table[] = {
 	{   SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE,     4, 0, 2, 1, false },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC, 4, 3, 2, 1, false },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,    4, 4, 2, 1, false },
+	{   SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL, 4, 4, 2, 2, false },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE, 4, 4, 1, 1, false },
 };
 
@@ -309,10 +315,17 @@ enum sde_rm_topology_name sde_rm_get_topology_name(struct sde_rm *rm,
 {
 	int i;
 
-	for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++)
-		if (RM_IS_TOPOLOGY_MATCH(rm->topology_tbl[i], topology))
+	for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++) {
+		if (rm->vsync_skew_supported) {
+			if (RM_IS_TOPOLOGY_MATCH_WITH_CTL(rm->topology_tbl[i],
+						topology, DUAL_CTL)) {
+				return rm->topology_tbl[i].top_name;
+			}
+		} else if (RM_IS_TOPOLOGY_MATCH(rm->topology_tbl[i],
+					topology)) {
 			return rm->topology_tbl[i].top_name;
-
+		}
+	}
 	return SDE_RM_TOPOLOGY_NONE;
 }
 
@@ -415,6 +428,33 @@ bool sde_rm_get_hw(struct sde_rm *rm, struct sde_rm_hw_iter *i)
 	mutex_unlock(&rm->rm_lock);
 
 	return ret;
+}
+
+int sde_rm_get_hw_count(struct sde_rm *rm, uint32_t enc_id,
+			enum sde_hw_blk_type type)
+{
+	struct list_head *blk_list;
+	struct sde_rm_hw_blk *blk;
+	int count = 0;
+
+	mutex_lock(&rm->rm_lock);
+	if (!rm || type >= SDE_HW_BLK_MAX) {
+		SDE_ERROR("invalid rm/type %d\n", type);
+		count = -EINVAL;
+		goto exit;
+	}
+
+	blk_list = &rm->hw_blks[type];
+	list_for_each_entry(blk, blk_list, list) {
+		struct sde_rm_rsvp *rsvp = blk->rsvp;
+
+		if (rsvp && rsvp->enc_id == enc_id)
+			count++;
+	}
+
+exit:
+	mutex_unlock(&rm->rm_lock);
+	return count;
 }
 
 bool sde_rm_request_hw_blk(struct sde_rm *rm, struct sde_rm_hw_request *hw)
@@ -1736,6 +1776,7 @@ int sde_rm_cont_splash_res_init(struct msm_drm_private *priv,
 	struct sde_hw_mdp *hw_mdp;
 	struct sde_splash_display *splash_display;
 	u8 intf_sel;
+	int valid_ctl_blks = 0;
 
 	if (!priv || !rm || !cat || !splash_data) {
 		SDE_ERROR("invalid input parameters\n");
@@ -1756,6 +1797,9 @@ int sde_rm_cont_splash_res_init(struct msm_drm_private *priv,
 	sde_kms = to_sde_kms(priv->kms);
 
 	hw_mdp = sde_rm_get_mdp(rm);
+
+	if (rm->vsync_skew_supported)
+		valid_ctl_blks = DUAL_CTL;
 
 	sde_rm_init_hw_iter(&iter_c, 0, SDE_HW_BLK_CTL);
 	while (_sde_rm_get_hw_locked(rm, &iter_c)
@@ -1779,7 +1823,9 @@ int sde_rm_cont_splash_res_init(struct msm_drm_private *priv,
 			splash_display->ctl_ids[splash_display->ctl_cnt++] =
 				iter_c.blk->id;
 		}
-		index++;
+		valid_ctl_blks--;
+		if (valid_ctl_blks == 0)
+			index++;
 	}
 
 	return 0;
@@ -1802,7 +1848,13 @@ static int _sde_rm_populate_requirements(
 	sde_encoder_get_hw_resources(enc, &reqs->hw_res, conn_state);
 
 	for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++) {
-		if (RM_IS_TOPOLOGY_MATCH(rm->topology_tbl[i],
+		if (rm->vsync_skew_supported) {
+			if (RM_IS_TOPOLOGY_MATCH_WITH_CTL(rm->topology_tbl[i],
+					reqs->hw_res.topology, DUAL_CTL)) {
+				reqs->topology = &rm->topology_tbl[i];
+				break;
+			}
+		} else if (RM_IS_TOPOLOGY_MATCH(rm->topology_tbl[i],
 					reqs->hw_res.topology)) {
 			reqs->topology = &rm->topology_tbl[i];
 			break;
@@ -1932,11 +1984,19 @@ int sde_rm_update_topology(struct sde_rm *rm,
 
 	if (topology) {
 		top = *topology;
-		for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++)
-			if (RM_IS_TOPOLOGY_MATCH(rm->topology_tbl[i], top)) {
+		for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++) {
+			if (rm->vsync_skew_supported) {
+				if (RM_IS_TOPOLOGY_MATCH_WITH_CTL
+					(rm->topology_tbl[i], top, DUAL_CTL)) {
+					top_name = rm->topology_tbl[i].top_name;
+					break;
+				}
+			} else if (RM_IS_TOPOLOGY_MATCH
+					(rm->topology_tbl[i], top)) {
 				top_name = rm->topology_tbl[i].top_name;
 				break;
 			}
+		}
 	}
 
 	ret = msm_property_set_property(

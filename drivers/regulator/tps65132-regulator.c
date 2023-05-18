@@ -36,21 +36,15 @@
 #define TPS65132_VOUT_VMIN		4000000
 #define TPS65132_VOUT_VMAX		6000000
 #define TPS65132_VOUT_STEP		100000
-#define TPS65132_LOW_CURRENT_40MA		40000
-#define TPS65132_MID_CURRENT_80MA		80000
 
 #define TPS65132_REG_APPS_DIS_VPOS		BIT(0)
 #define TPS65132_REG_APPS_DIS_VNEG		BIT(1)
-#define TPS65132_REG_APPS			BIT(6)
 
 #define TPS65132_REGULATOR_ID_VPOS	0
 #define TPS65132_REGULATOR_ID_VNEG	1
 #define TPS65132_MAX_REGULATORS		2
 
 #define TPS65132_ACT_DIS_TIME_SLACK		1000
-
-#define TPS65132_REG_LOW_CURRENT_40MA		(0 << 6)
-#define TPS65132_REG_MID_CURRENT_80MA		(1 << 6)
 
 struct tps65132_reg_pdata {
 	struct gpio_desc *en_gpiod;
@@ -126,31 +120,10 @@ static int tps65132_regulator_is_enabled(struct regulator_dev *rdev)
 	return 1;
 }
 
-static int tps65132_regulator_set_load(struct regulator_dev *rdev, int load_uA)
-{
-	if (load_uA == TPS65132_LOW_CURRENT_40MA) {
-		regmap_update_bits(rdev->regmap,
-				  rdev->desc->active_discharge_reg,
-				  TPS65132_REG_LOW_CURRENT_40MA, TPS65132_REG_APPS);
-		return 0;
-	}
-	else if (load_uA == TPS65132_MID_CURRENT_80MA) {
-		regmap_update_bits(rdev->regmap,
-				  rdev->desc->active_discharge_reg,
-				  TPS65132_REG_MID_CURRENT_80MA, TPS65132_REG_APPS);
-		return 0;
-	} else {
-		dev_err(&rdev->dev, "Failed to set load because of unsupported current valuse:%d\n",
-			load_uA);
-		return -1;
-	}
-}
-
 static struct regulator_ops tps65132_regulator_ops = {
 	.enable = tps65132_regulator_enable,
 	.disable = tps65132_regulator_disable,
 	.is_enabled = tps65132_regulator_is_enabled,
-	.set_load = tps65132_regulator_set_load,
 	.list_voltage = regulator_list_voltage_linear,
 	.map_voltage = regulator_map_voltage_linear,
 	.get_voltage_sel = regulator_get_voltage_sel_regmap,

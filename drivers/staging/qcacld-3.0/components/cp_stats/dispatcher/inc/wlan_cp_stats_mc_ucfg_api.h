@@ -37,6 +37,15 @@
 #include "../../core/src/wlan_cp_stats_defs.h"
 #include <qdf_event.h>
 
+/* Max TWT sessions supported */
+#define TWT_PSOC_MAX_SESSIONS TWT_PEER_MAX_SESSIONS
+
+/* Valid dialog_id 0 to (0xFF - 1) */
+#define TWT_MAX_DIALOG_ID (0xFF - 1)
+
+/* dialog_id used to get all peer's twt session parameters */
+#define TWT_GET_ALL_PEER_PARAMS_DIALOG_ID (0xFF)
+
 /**
  * ucfg_twt_get_peer_session_params() - Retrieves peer twt session parameters
  * corresponding to a peer by using mac_addr and dialog id
@@ -376,31 +385,6 @@ QDF_STATUS ucfg_send_big_data_stats_request(struct wlan_objmgr_vdev *vdev,
 {
 	return QDF_STATUS_SUCCESS;
 }
-
-static inline QDF_STATUS ucfg_mc_cp_stats_write_wow_stats(
-				struct wlan_objmgr_psoc *psoc,
-				char *buffer, uint16_t max_len, int *ret)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS ucfg_mc_cp_stats_cca_stats_get(
-				struct wlan_objmgr_vdev *vdev,
-				struct cca_stats *cca_stats)
-{
-	return QDF_STATUS_E_INVAL;
-}
-
-#ifdef WLAN_SUPPORT_TWT
-
-static inline QDF_STATUS
-ucfg_twt_get_peer_session_params(struct wlan_objmgr_psoc *psoc_obj,
-				 struct wmi_host_twt_session_stats_info *param)
-{
-	return QDF_STATUS_E_INVAL;
-}
-
-#endif /* WLAN_SUPPORT_TWT */
 #endif /* QCA_SUPPORT_CP_STATS */
 
 #endif /* __WLAN_CP_STATS_MC_UCFG_API_H__ */

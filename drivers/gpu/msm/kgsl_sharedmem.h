@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2002, 2007-2020, The Linux Foundation. All rights reserved.
  */
 #ifndef __KGSL_SHAREDMEM_H
 #define __KGSL_SHAREDMEM_H
@@ -140,6 +140,16 @@ void *kgsl_sharedmem_vm_map_readwrite(struct kgsl_memdesc *memdesc, u64 offset,
 #define MEMFLAGS(_flags, _mask, _shift) \
 	((unsigned int) (((_flags) & (_mask)) >> (_shift)))
 
+/**
+ * kgsl_memdesc_get_*size - Get relevant parameters for memdescs
+ * @memdesc: Memory descriptor for the object
+ *
+ * Return: The relevant size for the requested parameters.
+ */
+uint64_t kgsl_memdesc_get_physsize(struct kgsl_memdesc *memdesc);
+uint64_t kgsl_memdesc_get_swapsize(struct kgsl_memdesc *memdesc);
+uint64_t kgsl_memdesc_get_mapsize(struct kgsl_memdesc *memdesc);
+
 /*
  * kgsl_memdesc_get_align - Get alignment flags from a memdesc
  * @memdesc - the memdesc
@@ -250,6 +260,17 @@ kgsl_memdesc_has_guard_page(const struct kgsl_memdesc *memdesc)
 	return (memdesc->priv & KGSL_MEMDESC_GUARD_PAGE) != 0;
 }
 
+/**
+ * kgsl_memdesc_is_reclaimed - check if a buffer is reclaimed
+ * @memdesc: the memdesc
+ *
+ * Return: true if the memdesc pages were reclaimed, false otherwise
+ */
+static inline bool kgsl_memdesc_is_reclaimed(const struct kgsl_memdesc *memdesc)
+{
+	return memdesc && (memdesc->priv & KGSL_MEMDESC_RECLAIMED);
+}
+
 /*
  * kgsl_memdesc_guard_page_size - returns guard page size
  * @memdesc - the memdesc
@@ -301,6 +322,50 @@ void kgsl_sharedmem_set_noretry(bool val);
 bool kgsl_sharedmem_get_noretry(void);
 
 /**
+ * kgsl_alloc_sgt_from_pages() - Allocate a sg table
+ *
+ * @pages: An array of pointers to allocated pages
+ * @page_count: Total number of pages allocated
+ *
+ * Allocate and return pointer to a sg table
+ */
+static inline struct sg_table *kgsl_alloc_sgt_from_pages(struct page **pages,
+		unsigned int page_count)
+{
+	int ret;
+	struct sg_table *sgt;
+
+	sgt = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
+	if (sgt == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	ret = sg_alloc_table_from_pages(sgt, pages, page_count, 0,
+			(size_t)page_count << PAGE_SHIFT, GFP_KERNEL);
+	if (ret) {
+		kfree(sgt);
+		return ERR_PTR(ret);
+	}
+
+	return sgt;
+}
+
+/**
+ * kgsl_free_sgt() - Free a sg table structure
+ *
+ * @sgt: sg table pointer to be freed
+ *
+ * Free the sg table allocated using sgt and free the
+ * sgt structure itself
+ */
+static inline void kgsl_free_sgt(struct sg_table *sgt)
+{
+	if (sgt != NULL) {
+		sg_free_table(sgt);
+		kfree(sgt);
+	}
+}
+
+/**
  * kgsl_cachemode_is_cached - Return true if the passed flags indicate a cached
  * buffer
  * @flags: A bitmask of KGSL_MEMDESC_ flags
@@ -314,5 +379,57 @@ static inline bool kgsl_cachemode_is_cached(u64 flags)
 	return (mode != KGSL_CACHEMODE_UNCACHED &&
 		mode != KGSL_CACHEMODE_WRITECOMBINE);
 }
+
+int kgsl_alloc_page(int *page_size, struct page **pages, unsigned int pages_len,
+		unsigned int *align, struct kgsl_memdesc *memdesc,
+		unsigned int page_off);
+void kgsl_free_page(struct kgsl_memdesc *memdesc, struct page *p);
+
+/**
+ * kgsl_gfp_mask() - get gfp_mask to be used
+ * @page_order: order of the page
+ *
+ * Get the gfp_mask to be used for page allocation
+ * based on the order of the page
+ *
+ * Return appropriate gfp_mask
+ */
+unsigned int kgsl_gfp_mask(unsigned int page_order);
+
+/**
+ * kgsl_zero_page() - zero out a page
+ * @p: pointer to the struct page
+ * @order: order of the page
+ *
+ * Map a page into kernel and zero it out
+ */
+void kgsl_zero_page(struct page *page, unsigned int order);
+
+/**
+ * kgsl_flush_page - flush a page
+ * @page: pointer to the struct page
+ *
+ * Map a page into kernel and flush it
+ */
+void kgsl_flush_page(struct page *page);
+
+/**
+ * struct kgsl_process_attribute - basic attribute for a process
+ * @attr: Underlying struct attribute
+ * @show: Attribute show function
+ * @store: Attribute store function
+ */
+struct kgsl_process_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct kobject *kobj,
+			struct kgsl_process_attribute *attr, char *buf);
+	ssize_t (*store)(struct kobject *kobj,
+		struct kgsl_process_attribute *attr, const char *buf,
+		ssize_t count);
+};
+
+#define PROCESS_ATTR(_name, _mode, _show, _store) \
+	static struct kgsl_process_attribute attr_##_name = \
+			__ATTR(_name, _mode, _show, _store)
 
 #endif /* __KGSL_SHAREDMEM_H */

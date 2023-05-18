@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018,2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt)	"io-pgtable-msm-secure: " fmt
@@ -15,7 +15,7 @@
 #include <linux/dma-mapping.h>
 #include <asm/cacheflush.h>
 
-#include "io-pgtable.h"
+#include <linux/io-pgtable.h>
 
 #define IOMMU_SECURE_PTBL_SIZE  3
 #define IOMMU_SECURE_PTBL_INIT  4
@@ -66,7 +66,7 @@ int msm_iommu_sec_pgtbl_init(void)
 	/* Now allocate memory for the secure page tables */
 	attrs = DMA_ATTR_NO_KERNEL_MAPPING;
 	dev.coherent_dma_mask = DMA_BIT_MASK(sizeof(dma_addr_t) * 8);
-	arch_setup_dma_ops(&dev, 0, 0, NULL, 1);
+	arch_setup_dma_ops(&dev, 0, 0, NULL, 0);
 	cpu_addr = dma_alloc_attrs(&dev, psize[0], &paddr, GFP_KERNEL, attrs);
 	if (!cpu_addr) {
 		pr_err("%s: Failed to allocate %d bytes for PTBL\n",

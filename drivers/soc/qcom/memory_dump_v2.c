@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2017, 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, 2019-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <asm/cacheflush.h>
@@ -28,6 +28,7 @@
 
 #define INPUT_DATA_BY_HLOS		0x00C0FFEE
 #define FORMAT_VERSION_1		0x1
+#define FORMAT_VERSION_2		0x2
 #define CORE_REG_NUM_DEFAULT		0x1
 
 #define MAGIC_INDEX			0
@@ -36,6 +37,20 @@
 #define OUTPUT_DUMP_INDEX		3
 #define PERCORE_INDEX			4
 #define SYSTEM_REGS_INPUT_INDEX	5
+
+#define CMD_REPEAT_READ			(0x2 << 24)
+#define CMD_DELAY			(0x1 << 24)
+#define CMD_READ			0x0
+#define CMD_READ_WORD			0x1
+#define CMD_WRITE			0x2
+#define CMD_EXTRA			0x3
+
+#define CMD_MASK			0x3
+#define OFFSET_MASK			GENMASK(31, 2)
+#define EXTRA_CMD_MASK			GENMASK(31, 24)
+#define EXTRA_VALUE_MASK		GENMASK(23, 0)
+#define MAX_EXTRA_VALUE			0xffffff
+
 
 struct cpuss_dump_data {
 	void *dump_vaddr;
@@ -67,6 +82,7 @@ struct msm_memory_dump {
 };
 
 static struct msm_memory_dump memdump;
+static struct msm_mem_dump_vaddr_tbl vaddr_tbl;
 
 /**
  * update_reg_dump_table - update the register dump table
@@ -119,7 +135,7 @@ static int update_reg_dump_table(struct device *dev, u32 core_reg_num)
 	memset(cpudata->dump_vaddr, 0xDE, cpudata->size);
 	p = (struct reg_dump_data *)cpudata->dump_vaddr;
 	p->magic = INPUT_DATA_BY_HLOS;
-	p->version = FORMAT_VERSION_1;
+	p->version = FORMAT_VERSION_2;
 	p->system_regs_input_index = system_regs_input_index;
 	p->regdump_output_byte_offset = regdump_output_byte_offset;
 	memset((uint32_t *)cpudata->dump_vaddr + PERCORE_INDEX, 0x0,
@@ -197,9 +213,8 @@ static ssize_t register_config_show(struct device *dev,
 	char local_buf[64];
 	int len = 0, count = 0;
 	int index, system_index_start, index_end;
-	uint32_t register_offset, length_in_bytes;
-	uint32_t length_in_words;
-	uint32_t *p;
+	uint32_t register_offset, val;
+	uint32_t *p, cmd;
 	struct cpuss_dump_data *cpudata = dev_get_drvdata(dev);
 
 	buf[0] = '\0';
@@ -212,7 +227,7 @@ static ssize_t register_config_show(struct device *dev,
 	p = (uint32_t *)cpudata->dump_vaddr;
 
 	/* print per-core & system registers */
-	len = snprintf(local_buf, 64, "per-core registers:\n");
+	len = scnprintf(local_buf, 64, "per-core registers:\n");
 	strlcat(buf, local_buf, PAGE_SIZE);
 	count += len;
 
@@ -221,7 +236,7 @@ static ssize_t register_config_show(struct device *dev,
 			cpudata->sys_reg_size / sizeof(uint32_t) + 1;
 	for (index = PERCORE_INDEX; index < index_end;) {
 		if (index == system_index_start) {
-			len = snprintf(local_buf, 64, "system registers:\n");
+			len = scnprintf(local_buf, 64, "system registers:\n");
 			if ((count + len) > PAGE_SIZE) {
 				dev_err(dev, "Couldn't write complete config\n");
 				break;
@@ -237,19 +252,44 @@ static ssize_t register_config_show(struct device *dev,
 			continue;
 		}
 
-		if (register_offset & 0x3) {
-			length_in_words = register_offset & 0x3;
-			length_in_bytes = length_in_words << 2;
-			len = snprintf(local_buf, 64,
-				"Index: 0x%x, addr: 0x%x\n",
-				index, register_offset);
-			index++;
-		} else {
-			length_in_bytes = *(p + index + 1);
-			len = snprintf(local_buf, 64,
-				"Index: 0x%x, addr: 0x%x, length: 0x%x\n",
-				index, register_offset, length_in_bytes);
+		cmd = register_offset & CMD_MASK;
+		register_offset &= OFFSET_MASK;
+
+		switch (cmd) {
+		case CMD_READ:
+			val = *(p + index + 1);
+			len = scnprintf(local_buf, 64,
+			"0x%x, 0x%x, r\n",
+			register_offset, val);
 			index += 2;
+		break;
+		case CMD_READ_WORD:
+			len = scnprintf(local_buf, 64,
+			"0x%x, 0x%x, r\n",
+			register_offset, 0x4);
+			index++;
+		break;
+		case CMD_WRITE:
+			val = *(p + index + 1);
+			len = scnprintf(local_buf, 64,
+			"0x%x, 0x%x, w\n",
+			register_offset, val);
+			index += 2;
+		break;
+		case CMD_EXTRA:
+			val = *(p + index + 1);
+			cmd = val & EXTRA_CMD_MASK;
+			val &= EXTRA_VALUE_MASK;
+			if (cmd == CMD_DELAY)
+				len = scnprintf(local_buf, 64,
+				"0x%x, 0x%x, d\n",
+				register_offset, val);
+			else
+				len = scnprintf(local_buf, 64,
+				"0x%x, 0x%x, R\n",
+				register_offset, val);
+			index += 2;
+		break;
 		}
 
 		if ((count + len) > PAGE_SIZE) {
@@ -265,6 +305,49 @@ static ssize_t register_config_show(struct device *dev,
 	return count;
 }
 
+static int config_cpuss_register(struct device *dev,
+		uint32_t *p, uint32_t index, char cmd,
+		uint32_t register_offset, uint32_t val)
+{
+	int ret = 0;
+
+	switch (cmd) {
+	case 'r':
+		if (val > 4) {
+			*(p + index) = register_offset;
+			*(p + index + 1) = val;
+		} else {
+			*(p + index) = register_offset | CMD_READ_WORD;
+		}
+	break;
+	case 'R':
+		if (val > MAX_EXTRA_VALUE) {
+			dev_err(dev, "repeat read time exceeded the limit\n");
+			ret = -EINVAL;
+			return ret;
+		}
+		*(p + index) = register_offset | CMD_EXTRA;
+		*(p + index + 1) = val | CMD_REPEAT_READ;
+	break;
+	case 'd':
+		if (val > MAX_EXTRA_VALUE) {
+			dev_err(dev, "sleep time exceeded the limit\n");
+			ret = -EINVAL;
+			return ret;
+		}
+		*(p + index) = CMD_EXTRA;
+		*(p + index + 1) = val | CMD_DELAY;
+	break;
+	case 'w':
+		*(p + index) = register_offset | CMD_WRITE;
+		*(p + index + 1) = val;
+	break;
+	default:
+		dev_err(dev, "Don't support this command\n");
+		ret = -EINVAL;
+	}
+	return ret;
+}
 /**
  * This function sets configs of per-core or system registers.
  */
@@ -273,9 +356,9 @@ static ssize_t register_config_store(struct device *dev,
 			const char *buf, size_t size)
 {
 	int ret;
-	uint32_t register_offset, length_in_bytes, per_core = 0;
-	uint32_t length_in_words;
+	uint32_t register_offset, val, reserve_size = 4, per_core = 0;
 	int nval;
+	char cmd;
 	uint32_t num_cores;
 	u32 extra_memory;
 	u32 used_memory;
@@ -283,29 +366,37 @@ static ssize_t register_config_store(struct device *dev,
 	uint32_t *p;
 	struct cpuss_dump_data *cpudata = dev_get_drvdata(dev);
 
-	nval = sscanf(buf, "%x %x %u", &register_offset,
-				&length_in_bytes, &per_core);
-	if (nval != 2 && nval != 3)
+	nval = sscanf(buf, "%x %x %c %u", &register_offset,
+				&val, &cmd, &per_core);
+	if (nval < 2)
 		return -EINVAL;
+	if (nval == 2)
+		cmd = 'r';
 	if (per_core > 1)
 		return -EINVAL;
 	if (register_offset & 0x3) {
 		dev_err(dev, "Invalid address, must be 4 byte aligned\n");
 		return -EINVAL;
 	}
-	if (length_in_bytes & 0x3) {
-		dev_err(dev, "Invalid length, must be 4 byte aligned\n");
-		return -EINVAL;
-	}
-	if (length_in_bytes == 0) {
-		dev_err(dev, "Invalid length of 0\n");
-		return -EINVAL;
+
+	if (cmd == 'r' || cmd == 'R') {
+		if (val == 0) {
+			dev_err(dev, "Invalid length of 0\n");
+			return -EINVAL;
+		}
+		if (cmd == 'r' && val & 0x3) {
+			dev_err(dev, "Invalid length, must be 4 byte aligned\n");
+			return -EINVAL;
+		}
+		if (cmd == 'R')
+			reserve_size = val * 4;
+		else
+			reserve_size = val;
 	}
 
 	mutex_lock(&cpudata->mutex);
 
 	p = (uint32_t *)cpudata->dump_vaddr;
-	length_in_words = length_in_bytes >> 2;
 	if (per_core) { /* per-core register */
 		if (cpudata->core_reg_used_num == cpudata->core_reg_num) {
 			dev_err(dev, "Couldn't add per-core config, out of range\n");
@@ -314,26 +405,25 @@ static ssize_t register_config_store(struct device *dev,
 		}
 
 		num_cores = num_possible_cpus();
-		extra_memory = length_in_bytes * num_cores;
+		extra_memory = reserve_size * num_cores;
 		used_memory = cpudata->used_memory + extra_memory;
-		if (extra_memory / num_cores < length_in_bytes ||
-				used_memory > cpudata->size ||
-				used_memory < cpudata->used_memory) {
+		if (extra_memory / num_cores < reserve_size ||
+			used_memory > cpudata->size ||
+			used_memory < cpudata->used_memory) {
 			dev_err(dev, "Couldn't add per-core reg config, no enough memory\n");
 			ret = -ENOMEM;
 			goto err;
 		}
 
-		if (length_in_words > 3) {
-			*(p + cpudata->core_reg_end_index) = register_offset;
-			*(p + cpudata->core_reg_end_index + 1) =
-					length_in_bytes;
-			cpudata->core_reg_end_index += 2;
-		} else {
-			*(p + cpudata->core_reg_end_index) = register_offset |
-					length_in_words;
+		ret = config_cpuss_register(dev, p, cpudata->core_reg_end_index,
+				cmd, register_offset, val);
+		if (ret)
+			goto err;
+
+		if (cmd == 'r' && val == 4)
 			cpudata->core_reg_end_index++;
-		}
+		else
+			cpudata->core_reg_end_index += 2;
 
 		cpudata->core_reg_used_num++;
 		cpudata->used_memory = used_memory;
@@ -341,40 +431,34 @@ static ssize_t register_config_store(struct device *dev,
 		system_reg_end_index = *(p + SYS_REG_INPUT_INDEX) +
 				cpudata->sys_reg_size / sizeof(uint32_t);
 
-		if (length_in_words > 3) {
-			extra_memory = sizeof(uint32_t) * 2 + length_in_bytes;
-			used_memory = cpudata->used_memory + extra_memory;
-			if (extra_memory < length_in_bytes ||
-					used_memory > cpudata->size ||
-					used_memory < cpudata->used_memory) {
-				dev_err(dev, "Couldn't add system reg config, no enough memory\n");
-				ret = -ENOMEM;
-				goto err;
-			}
+		if (cmd == 'r' && reserve_size == 4)
+			extra_memory = sizeof(uint32_t) + reserve_size;
+		else
+			extra_memory = sizeof(uint32_t) * 2 + reserve_size;
 
-			*(p + system_reg_end_index) = register_offset;
-			*(p + system_reg_end_index + 1) = length_in_bytes;
-			system_reg_end_index += 2;
-			cpudata->sys_reg_size += sizeof(uint32_t) * 2;
-		} else {
-			extra_memory = sizeof(uint32_t) + length_in_bytes;
-			used_memory = cpudata->used_memory + extra_memory;
-			if (extra_memory < length_in_bytes ||
-					used_memory > cpudata->size ||
-					used_memory < cpudata->used_memory) {
-				dev_err(dev, "Couldn't add system reg config, no enough memory\n");
-				ret = -ENOMEM;
-				goto err;
-			}
+		used_memory = cpudata->used_memory + extra_memory;
+		if (extra_memory < reserve_size ||
+				used_memory > cpudata->size ||
+				used_memory < cpudata->used_memory) {
+			dev_err(dev, "Couldn't add system reg config, no enough memory\n");
+			ret = -ENOMEM;
+			goto err;
+		}
 
-			*(p + system_reg_end_index) = register_offset |
-					length_in_words;
+		ret = config_cpuss_register(dev, p, system_reg_end_index,
+				cmd, register_offset, val);
+		if (ret)
+			goto err;
+
+		if (cmd == 'r' && val == 4) {
 			system_reg_end_index++;
 			cpudata->sys_reg_size += sizeof(uint32_t);
+		} else {
+			system_reg_end_index += 2;
+			cpudata->sys_reg_size += sizeof(uint32_t) * 2;
 		}
 
 		cpudata->used_memory = used_memory;
-
 		*(p + system_reg_end_index) = 0x0;
 		*(p + OUTPUT_DUMP_INDEX) = (system_reg_end_index + 1)
 				* sizeof(uint32_t);
@@ -388,6 +472,24 @@ err:
 }
 static DEVICE_ATTR_RW(register_config);
 
+static ssize_t format_version_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	int ret;
+	struct reg_dump_data *p;
+	struct cpuss_dump_data *cpudata = dev_get_drvdata(dev);
+
+	if (!cpudata)
+		return -EFAULT;
+
+	mutex_lock(&cpudata->mutex);
+	p = (struct reg_dump_data *)cpudata->dump_vaddr;
+	ret = scnprintf(buf, PAGE_SIZE, "%u\n", p->version);
+
+	mutex_unlock(&cpudata->mutex);
+	return ret;
+}
+static DEVICE_ATTR_RO(format_version);
 /**
  * This function resets the register dump table.
  */
@@ -412,6 +514,7 @@ static const struct device_attribute *register_dump_attrs[] = {
 	&dev_attr_core_reg_num,
 	&dev_attr_register_config,
 	&dev_attr_register_reset,
+	&dev_attr_format_version,
 	NULL,
 };
 
@@ -577,7 +680,7 @@ int msm_dump_data_register(enum msm_dump_table_ids id,
 
 	ret = register_dump_table_entry(id, entry);
 	if (!ret)
-		if (msm_dump_data_add_minidump(entry))
+		if (msm_dump_data_add_minidump(entry) < 0)
 			pr_err("Failed to add entry in Minidump table\n");
 
 	return ret;
@@ -596,6 +699,28 @@ int msm_dump_data_register_nominidump(enum msm_dump_table_ids id,
 	return register_dump_table_entry(id, entry);
 }
 EXPORT_SYMBOL(msm_dump_data_register_nominidump);
+
+struct dump_vaddr_entry *get_msm_dump_ptr(enum msm_dump_data_ids id)
+{
+	int i;
+
+	if (!vaddr_tbl.entries)
+		return NULL;
+
+	if (id > MSM_DUMP_DATA_MAX)
+		return NULL;
+
+	for (i = 0; i < vaddr_tbl.num_node; i++) {
+		if (vaddr_tbl.entries[i].id == id)
+			break;
+	}
+
+	if (i == vaddr_tbl.num_node)
+		return NULL;
+
+	return &vaddr_tbl.entries[i];
+}
+EXPORT_SYMBOL(get_msm_dump_ptr);
 
 #define MSM_DUMP_TOTAL_SIZE_OFFSET	0x724
 static int init_memory_dump(void *dump_vaddr, phys_addr_t phys_addr,
@@ -653,14 +778,9 @@ static int init_memory_dump(void *dump_vaddr, phys_addr_t phys_addr,
 static int __init init_debug_lar_unlock(void)
 {
 	int ret;
-	uint32_t argument = 0;
 	struct scm_desc desc = {0};
 
-	if (!is_scm_armv8())
-		ret = scm_call(SCM_SVC_TZ, SCM_CMD_DEBUG_LAR_UNLOCK, &argument,
-			       sizeof(argument), NULL, 0);
-	else
-		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_TZ,
+	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_TZ,
 				SCM_CMD_DEBUG_LAR_UNLOCK), &desc);
 	if (ret)
 		pr_err("Core Debug Lock unlock failed, ret: %d\n", ret);
@@ -690,6 +810,14 @@ static int mem_dump_alloc(struct platform_device *pdev)
 	uint32_t ns_vmids[] = {VMID_HLOS};
 	uint32_t ns_vm_perms[] = {PERM_READ | PERM_WRITE};
 	u64 shm_bridge_handle;
+	int i = 0;
+
+	vaddr_tbl.num_node = of_get_child_count(node);
+	vaddr_tbl.entries = devm_kcalloc(&pdev->dev, vaddr_tbl.num_node,
+				 sizeof(struct dump_vaddr_entry),
+				 GFP_KERNEL);
+	if (!vaddr_tbl.entries)
+		dev_err(&pdev->dev, "Unable to allocate mem for ptr addr\n");
 
 	total_size = size = ret = no_of_nodes = 0;
 	/* For dump table registration with IMEM */
@@ -765,16 +893,23 @@ static int mem_dump_alloc(struct platform_device *pdev)
 		dump_entry.addr = phys_addr;
 		ret = msm_dump_data_register_nominidump(MSM_DUMP_TABLE_APPS,
 					&dump_entry);
-		if (ret)
+		if (ret) {
 			dev_err(&pdev->dev, "Data dump setup failed, id = %d\n",
 				id);
+		} else if (vaddr_tbl.entries) {
+			vaddr_tbl.entries[i].id = id;
+			vaddr_tbl.entries[i].dump_vaddr =
+					 dump_vaddr + MSM_DUMP_DATA_SIZE;
+			vaddr_tbl.entries[i].dump_data_vaddr = dump_data;
+			i++;
+		}
 
 		md_entry.phys_addr = dump_data->addr;
 		md_entry.virt_addr = (uintptr_t)dump_vaddr + MSM_DUMP_DATA_SIZE;
 		md_entry.size = size;
 		md_entry.id = id;
 		strlcpy(md_entry.name, child_node->name, sizeof(md_entry.name));
-		if (msm_minidump_add_region(&md_entry))
+		if (msm_minidump_add_region(&md_entry) < 0)
 			dev_err(&pdev->dev, "Mini dump entry failed id = %d\n",
 				id);
 

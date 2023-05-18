@@ -45,6 +45,12 @@ enum pd_sop_type {
 	SOPII_MSG,
 };
 
+enum cypd3177_iio_prop {
+	CYPD_IIO_PROP_CHIP_VERSION = 0,
+	CYPD_IIO_PROP_PD_ACTIVE,
+	CYPD_IIO_PROP_MAX
+};
+
 struct cypd_phy_params {
 	void	(*msg_rx_cb)(struct cypd *pd, enum pd_sop_type sop,
 					u8 *buf, size_t len);

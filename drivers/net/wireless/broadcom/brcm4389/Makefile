@@ -29,6 +29,8 @@ endif
 # SDIO/PCIe Basic feature
 #####################
 
+subdir-ccflags-y := -I$(srctree)/drivers/net/wireless/broadcom/brcm4389/include
+
 ifeq ($(CONFIG_BCMDHD),)
 CONFIG_BCMDHD=m
 CONFIG_BCMDHD_PCIE=y
@@ -113,6 +115,12 @@ DHDCFLAGS += -DSYSFS_EXPORT_COUNTRY
 
 # Enable SBN feature
 DHDCFLAGS += -DDHD_SBN
+
+# Enable auto country selection
+DHDCFLAGS += -DWL_AUTO_COUNTRY
+
+# Autocountry
+DHDCFLAGS += -DWL_AUTOCOUNTRY_DEFAULT="\"XZ\""
 
 # Skip pktlogging of data packets
 DHDCFLAGS += -DDHD_SKIP_PKTLOGGING_FOR_DATA_PKTS
@@ -297,7 +305,7 @@ DHDCFLAGS += -DCUSTOM_WAKE_REASON_STATS
 DHDCFLAGS += -DWL_USE_RANDOMIZED_SCAN
 DHDCFLAGS += -DSTA_RANDMAC_ENFORCED
 #Connected MAC randomization
-DHDCFLAGS += -DWL_STA_ASSOC_RAND
+#DHDCFLAGS += -DWL_STA_ASSOC_RAND
 #Soft AP MAC randomization
 DHDCFLAGS += -DWL_SOFTAP_RAND
 #p2p MAC randomization
@@ -479,8 +487,6 @@ DHDCFLAGS += -DSUPPORT_PM2_ONLY
 DHDCFLAGS += -DCUSTOM_PNO_EVENT_LOCK_xTIME=10
 #Vendor Extension
 DHDCFLAGS += -DWL_VENDOR_EXT_SUPPORT
-#Gscan
-DHDCFLAGS += -DGSCAN_SUPPORT
 #RSSI Monitor
 DHDCFLAGS += -DRSSI_MONITOR_SUPPORT
 #RTT
@@ -605,6 +611,13 @@ ifneq ($(filter y, $(CONFIG_BCM4389)),)
 
   DHDCFLAGS += -DBCM4389_CHIP_DEF -DSUPPORT_MULTIPLE_REVISION
   DHDCFLAGS += -DSUPPORT_MIXED_MODULES -DSUPPORT_MULTIPLE_BOARDTYPE -DSUPPORT_MULTIPLE_CHIPS
+endif
+
+ifneq ($(filter y, $(CONFIG_6GHZ_BKPORT)),)
+  #6GHz support
+  # Native 6GHz band supported available.
+  # For Backported kernels, kernels/customer makefiles should explicitly define CONFIG_6GHZ_BKPORT
+  DHDCFLAGS += -DCONFIG_6GHZ_BKPORT
 endif
 
 # For 4389 and 4375

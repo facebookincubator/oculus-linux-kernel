@@ -16,6 +16,7 @@
 #include <linux/mm_types.h>
 #include <linux/mutex.h>
 #include <linux/rbtree.h>
+#include <linux/proc_fs.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>
 #include <linux/shrinker.h>
@@ -165,6 +166,7 @@ struct ion_device {
 	struct rw_semaphore lock;
 	struct plist_head heaps;
 	struct dentry *debug_root;
+	struct proc_dir_entry *proc_ion_root;
 	int heap_cnt;
 };
 
@@ -462,6 +464,12 @@ void ion_page_pool_free_immediate(struct ion_page_pool *pool,
 				  struct page *page);
 int ion_page_pool_total(struct ion_page_pool *pool, bool high);
 size_t ion_system_heap_secure_page_pool_total(struct ion_heap *heap, int vmid);
+
+#ifdef CONFIG_ION_SYSTEM_HEAP
+long ion_page_pool_nr_pages(void);
+#else
+static inline long ion_page_pool_nr_pages(void) { return 0; }
+#endif
 
 /** ion_page_pool_shrink - shrinks the size of the memory cached in the pool
  * @pool:		the pool

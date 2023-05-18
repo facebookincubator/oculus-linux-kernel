@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  *
  */
 
@@ -265,17 +265,9 @@ struct sdhci_msm_debug_data {
 	struct sdhci_host copy_host;
 };
 
-struct sdhci_msm_ice_data {
-	struct qcom_ice_variant_ops *vops;
-	struct platform_device *pdev;
-	int state;
-};
-
 struct sdhci_msm_host {
 	struct platform_device	*pdev;
 	void __iomem *core_mem;    /* MSM SDCC mapped address */
-	void __iomem *cryptoio;    /* ICE HCI mapped address */
-	bool ice_hci_support;
 	int	pwr_irq;	/* power irq */
 	struct clk	 *clk;     /* main SD/MMC bus clock */
 	struct clk	 *pclk;    /* SDHC peripheral bus clock */
@@ -327,11 +319,12 @@ struct sdhci_msm_host {
 	int soc_min_rev;
 	struct workqueue_struct *pm_qos_wq;
 	struct sdhci_msm_dll_hsr *dll_hsr;
-	struct sdhci_msm_ice_data ice;
 	u32 ice_clk_rate;
 	bool debug_mode_enabled;
 	bool reg_store;
+	bool vbias_skip_wa;
 	struct reset_control *core_reset;
+	u32 minor;
 };
 
 extern char *saved_command_line;

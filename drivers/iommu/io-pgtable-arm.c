@@ -22,6 +22,7 @@
 
 #include <linux/atomic.h>
 #include <linux/iommu.h>
+#include <linux/io-pgtable.h>
 #include <linux/kernel.h>
 #include <linux/scatterlist.h>
 #include <linux/sizes.h>
@@ -30,8 +31,6 @@
 #include <linux/dma-mapping.h>
 
 #include <asm/barrier.h>
-
-#include "io-pgtable.h"
 
 #define ARM_LPAE_MAX_ADDR_BITS		48
 #define ARM_LPAE_S2_MAX_CONCAT_PAGES	16
@@ -802,13 +801,12 @@ static size_t arm_lpae_split_blk_unmap(struct arm_lpae_io_pgtable *data,
 			return 0;
 
 		tablep = iopte_deref(pte, data);
+	} else if (unmap_idx >= 0) {
+		io_pgtable_tlb_add_flush(&data->iop, iova, size, size, true);
+		return size;
 	}
 
-	if (unmap_idx < 0)
-		return __arm_lpae_unmap(data, iova, size, lvl, tablep);
-
-	io_pgtable_tlb_add_flush(&data->iop, iova, size, size, true);
-	return size;
+	return __arm_lpae_unmap(data, iova, size, lvl, tablep);
 }
 
 static size_t __arm_lpae_unmap(struct arm_lpae_io_pgtable *data,
@@ -1451,10 +1449,14 @@ static inline void __list_block_pte(struct arm_lpae_io_pgtable *data,
 
 	for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;) {
 		struct page *page = pfn_to_page(blk_pfn + i);
+		struct list_head *lru = &page->lru;
 		const unsigned long order = compound_order(page);
 		const unsigned long compound_pages = 1 << order;
 
-		list_add_tail(&page->lru, page_list);
+		/* Move the page LRU pointer if it's already assigned. */
+		if (lru->next != LIST_POISON1 && lru->prev != LIST_POISON2)
+			list_del(lru);
+		list_add_tail(lru, page_list);
 		page->index = *pgoffp;
 
 		*iovap += PAGE_SIZE << order;
@@ -1489,6 +1491,7 @@ static inline int __list_table_pte(struct arm_lpae_io_pgtable *data,
 
 	for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;) {
 		struct page *page;
+		struct list_head *lru;
 		unsigned long order;
 		unsigned long compound_pages;
 
@@ -1504,10 +1507,14 @@ static inline int __list_table_pte(struct arm_lpae_io_pgtable *data,
 		phys = (phys_addr_t)iopte_to_pfn(pte, data)
 				<< data->pg_shift;
 		page = phys_to_page(phys);
+		lru = &page->lru;
 		order = compound_order(page);
 		compound_pages = 1 << order;
 
-		list_add_tail(&page->lru, page_list);
+		/* Move the page LRU pointer if it's already assigned. */
+		if (lru->next != LIST_POISON1 && lru->prev != LIST_POISON2)
+			list_del(lru);
+		list_add_tail(lru, page_list);
 		page->index = *pgoffp;
 
 		*iovap += PAGE_SIZE << order;
@@ -1596,7 +1603,8 @@ static int arm_lpae_get_backing_pages(struct io_pgtable_ops *ops,
 
 static inline void __set_block_pte_access_flag(struct arm_lpae_io_pgtable *data,
 		arm_lpae_iopte *ptep, int lvl, dma_addr_t *iovap,
-		unsigned long *pgoffp, int page_count, bool access_flag)
+		unsigned long *pgoffp, int page_count,
+		arm_lpae_iopte access_flag)
 {
 	struct io_pgtable_cfg *cfg = &data->iop.cfg;
 	unsigned long pages_per_entry, iova_mask, pfn_offset, pages_to_scan;
@@ -1613,19 +1621,17 @@ static inline void __set_block_pte_access_flag(struct arm_lpae_io_pgtable *data,
 	*pgoffp += pages_to_scan;
 
 	pte = READ_ONCE(*ptep);
-	if (access_flag)
-		__arm_lpae_set_pte(ptep, pte | ARM_LPAE_PTE_AF, cfg);
-	else
-		__arm_lpae_set_pte(ptep, pte & ~ARM_LPAE_PTE_AF, cfg);
+	__arm_lpae_set_pte(ptep, (pte & ~ARM_LPAE_PTE_AF) | access_flag, cfg);
 }
 
 static inline int __set_table_pte_access_flag(struct arm_lpae_io_pgtable *data,
 		arm_lpae_iopte ppte, dma_addr_t *iovap, unsigned long *pgoffp,
-		int page_count, bool access_flag)
+		int page_count, arm_lpae_iopte access_flag)
 {
 	struct io_pgtable_cfg *cfg = &data->iop.cfg;
 	unsigned long pages_per_entry, pfn_offset, pages_to_scan, i, j = 0;
 	arm_lpae_iopte pte, *ptep;
+	dma_addr_t start_iova;
 
 	ptep = iopte_deref(ppte, data);
 	if (!ptep)
@@ -1646,23 +1652,25 @@ static inline int __set_table_pte_access_flag(struct arm_lpae_io_pgtable *data,
 	*pgoffp += pages_to_scan;
 
 	ptep += pfn_offset;
+	start_iova = __arm_lpae_dma_addr(ptep);
 	for (i = pfn_offset; i < pages_per_entry && j < pages_to_scan;
 			ptep++, i++, j++) {
 		pte = READ_ONCE(*ptep);
 		if (!(pte & ARM_LPAE_PTE_VALID))
 			continue;
-		else if (access_flag)
-			__arm_lpae_set_pte(ptep, pte | ARM_LPAE_PTE_AF, cfg);
-		else
-			__arm_lpae_set_pte(ptep, pte & ~ARM_LPAE_PTE_AF, cfg);
+		WRITE_ONCE(*ptep, (pte & ~ARM_LPAE_PTE_AF) | access_flag);
 	}
+
+	pgtable_dma_sync_single_for_device(cfg, start_iova,
+			pages_to_scan * sizeof(*ptep), DMA_TO_DEVICE);
+
 	return 0;
 }
 
 static int __arm_lpae_set_page_range_access_flag(
 		struct arm_lpae_io_pgtable *data, arm_lpae_iopte *ptep, int lvl,
 		dma_addr_t *iovap, unsigned long *pgoffp, int page_count,
-		bool access_flag)
+		arm_lpae_iopte access_flag)
 {
 	const unsigned long max_entries = ARM_LPAE_GRANULE(data) / sizeof(*ptep);
 	arm_lpae_iopte pte;
@@ -1721,10 +1729,11 @@ static int arm_lpae_set_page_range_access_flag(struct io_pgtable_ops *ops,
 	arm_lpae_iopte *ptep = data->pgd;
 	dma_addr_t iova = addr & PAGE_MASK;
 	unsigned long pgoff = 0;
+	arm_lpae_iopte access_flag_pte = access_flag ? ARM_LPAE_PTE_AF : 0;
 	int lvl = ARM_LPAE_START_LVL(data);
 
 	return __arm_lpae_set_page_range_access_flag(data, ptep, lvl, &iova,
-			&pgoff, page_count, access_flag);
+			&pgoff, page_count, access_flag_pte);
 }
 
 static phys_addr_t arm_lpae_iova_to_phys(struct io_pgtable_ops *ops,

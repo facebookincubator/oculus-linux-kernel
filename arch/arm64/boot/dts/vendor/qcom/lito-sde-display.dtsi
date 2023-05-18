@@ -127,40 +127,6 @@
 		};
 	};
 
-	dsi_panel_pwr_supply_labibb: dsi_panel_pwr_supply_labibb {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		qcom,panel-supply-entry@0 {
-			reg = <0>;
-			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
-			qcom,supply-enable-load = <62000>;
-			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <20>;
-		};
-
-		qcom,panel-supply-entry@1 {
-			reg = <1>;
-			qcom,supply-name = "lab";
-			qcom,supply-min-voltage = <4600000>;
-			qcom,supply-max-voltage = <6000000>;
-			qcom,supply-enable-load = <100000>;
-			qcom,supply-disable-load = <100>;
-		};
-
-		qcom,panel-supply-entry@2 {
-			reg = <2>;
-			qcom,supply-name = "ibb";
-			qcom,supply-min-voltage = <4600000>;
-			qcom,supply-max-voltage = <6000000>;
-			qcom,supply-enable-load = <100000>;
-			qcom,supply-disable-load = <100>;
-			qcom,supply-post-on-sleep = <20>;
-		};
-	};
-
 	sde_dsi: qcom,dsi-display-primary {
 		compatible = "qcom,dsi-display";
 		label = "primary";
@@ -249,6 +215,7 @@
 	qcom,dp-usbpd-detection = <&pm7250b_pdphy>;
 	qcom,ext-disp = <&ext_disp>;
 	qcom,dp-aux-switch = <&fsa4480>;
+	extcon = <&pm7250b_pdphy>;
 
 	qcom,usbplug-cc-gpio = <&tlmm 114 0>;
 
@@ -325,6 +292,7 @@
 	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_hfp";
 	qcom,mdss-dsi-min-refresh-rate = <55>;
 	qcom,mdss-dsi-max-refresh-rate = <60>;
+	qcom,mdss-dsi-qsync-min-refresh-rate = <55>;
 	qcom,esd-check-enabled;
 	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
 	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];

@@ -1001,6 +1001,11 @@ void Boot_Update_Firmware(struct work_struct *work)
 	snprintf(firmware_name, sizeof(firmware_name),
 			BOOT_UPDATE_FIRMWARE_NAME);
 
+	if (ts->nvt_pid == 0x5B0B) {
+		NVT_LOG("Skip Firmware Update\n");
+		return;
+	}
+
 	// request bin file in "/etc/firmware"
 	ret = update_firmware_request(firmware_name);
 	if (ret) {

@@ -42,13 +42,8 @@ ifeq ($(KERNEL_BUILD), 0)
 		INCS    +=  -include $(AUDIO_ROOT)/config/sm6150autoconf.h
 	endif
 	ifeq ($(CONFIG_ARCH_KONA), y)
-		ifeq ($(CONFIG_OCULUS_unknown3865), y)
-			include $(AUDIO_ROOT)/config/unknown3.conf
-			INCS    +=  -include $(AUDIO_ROOT)/config/unknown3conf.h
-		else
-			include $(AUDIO_ROOT)/config/konaauto.conf
-			INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
-		endif
+		include $(AUDIO_ROOT)/config/konaauto.conf
+		INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
 	endif
 	ifeq ($(CONFIG_ARCH_LITO), y)
 		include $(AUDIO_ROOT)/config/litoauto.conf
@@ -74,6 +69,11 @@ ifeq ($(KERNEL_BUILD), 0)
 		include $(AUDIO_ROOT)/config/gvmauto.conf
 		export
 		INCS    +=  -include $(AUDIO_ROOT)/config/gvmautoconf.h
+	endif
+	ifeq ($(CONFIG_ARCH_SDM660), y)
+		include $(AUDIO_ROOT)/config/sdm660auto.conf
+		export
+		INCS    +=  -include $(AUDIO_ROOT)/config/sdm660autoconf.h
 	endif
 endif
 
@@ -226,8 +226,8 @@ endif
 
 
 ifeq ($(KERNEL_BUILD), 0)
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/dsp/Module.symvers
-KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/kona/opensource/audio-kernel/soc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/dsp/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/soc/Module.symvers
 endif
 
 ifeq ($(KERNEL_BUILD), 1)
@@ -235,8 +235,9 @@ ifeq ($(KERNEL_BUILD), 1)
 	obj-y	+= wcd937x/
 	obj-y	+= wcd938x/
 	obj-y	+= bolero/
-	obj-y	+= wsa883x/
 	obj-y	+= rouleur/
+	obj-y	+= wsa883x/
+	obj-y	+= sdm660_cdc/
 endif
 # Module information used by KBuild framework
 obj-$(CONFIG_AUDIO_EXT_CLK_UP) += audio_ext_clk_up_dlkm.o

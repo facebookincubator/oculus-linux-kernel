@@ -53,7 +53,7 @@ void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
 		smp_call_func_t func, void *info, bool wait,
 		gfp_t gfp_flags);
 
-int smp_call_function_single_async(int cpu, call_single_data_t *csd);
+int smp_call_function_single_async(int cpu, struct __call_single_data *csd);
 
 #ifdef CONFIG_SMP
 
@@ -78,26 +78,6 @@ extern void smp_send_stop(void);
  */
 extern void smp_send_reschedule(int cpu);
 
-/*
- * Function prototype to handle hypervisor IPIs.
- */
-typedef void (*hypervisor_ipi_func_t)(void);
-
-#if IS_ENABLED(CONFIG_HYPERVISOR_GUEST)
-/*
- * sends a 'hypervisor' event to another CPU:
- */
-extern void smp_send_hypervisor(int cpu);
-
-/*
- * Register hypervisor IPI handler.
- */
-extern void smp_register_hypervisor_ipi_handler(hypervisor_ipi_func_t func);
-#else
-static inline void smp_send_hypervisor(int cpu) { }
-static inline void
-smp_register_hypervisor_ipi_handler(hypervisor_ipi_func_t func) {}
-#endif
 
 /*
  * Prepare machine for booting other CPUs.

@@ -4,7 +4,9 @@
  */
 
 #include <linux/delay.h>
+#include <linux/fs.h>
 #include <linux/gpio.h>
+#include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/notifier.h>
 #include <linux/of_gpio.h>
@@ -21,15 +23,20 @@ struct rt600_ctrl_ctx {
 	struct work_struct boot_work;
 	struct work_struct reset_work;
 	struct work_struct reset_work_spl;
+	unsigned int crash_notify_gpio;
 	unsigned int rstn_gpio;
 	unsigned int nirq_gpio;
 	// port << 8 | pin
 	uint32_t nirq_pinmap;
 	enum rt600_boot_state boot_state;
 	char *state_show;
+	struct kernfs_node *crash_attr_node;
+	atomic_t reset_complete;
+	struct kernfs_node *reset_complete_attr_node;
 };
 
-#define RT600_RESET_DELAY    100
+#define RT600_RESET_DELAY    	100
+#define RT600_WAKE_TIME_MS 		1000
 
 #define RT600_BOOT_STATE_NORMAL      "normal"
 #define RT600_BOOT_STATE_FLASHING    "flashing"
@@ -98,7 +105,7 @@ static ssize_t reset_store(struct device *dev,
 	struct rt600_ctrl_ctx *ctx = dev_get_drvdata(dev);
 	long res;
 
-	if (!kstrtol(buf, 0, &res) && res)
+	if (!kstrtol(buf, 0, &res) && res && atomic_xchg(&ctx->reset_complete, 0))
 		schedule_work(&ctx->reset_work);
 
 	return count;
@@ -111,7 +118,7 @@ static ssize_t reset_spl_store(struct device *dev,
 	struct rt600_ctrl_ctx *ctx = dev_get_drvdata(dev);
 	long res;
 
-	if (!kstrtol(buf, 0, &res) && res)
+	if (!kstrtol(buf, 0, &res) && res && atomic_xchg(&ctx->reset_complete, 0))
 		schedule_work(&ctx->reset_work_spl);
 
 	return count;
@@ -141,6 +148,29 @@ static ssize_t nirq_value_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d", gpio_get_value(ctx->nirq_gpio));
 }
 static DEVICE_ATTR_RO(nirq_value);
+
+static ssize_t crash_notify_show(struct device *dev,
+			       struct device_attribute *attr,
+			       char *buf)
+{
+	struct rt600_ctrl_ctx *ctx = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d", gpio_get_value(ctx->crash_notify_gpio));
+}
+static DEVICE_ATTR_RO(crash_notify);
+
+static irqreturn_t crash_notify_irq_handler(int irq, void *data)
+{
+	struct rt600_ctrl_ctx *ctx = data;
+
+	pm_wakeup_event(ctx->dev, RT600_WAKE_TIME_MS);
+
+	if (ctx && ctx->crash_attr_node) {
+		sysfs_notify_dirent(ctx->crash_attr_node);
+	}
+
+	return IRQ_HANDLED;
+}
 
 int rt600_event_register(struct notifier_block *nb)
 {
@@ -185,6 +215,16 @@ static void boot_work(struct work_struct *work)
 	blocking_notifier_call_chain(&state_subscribers, ctx->boot_state, NULL);
 }
 
+static void reset_complete_notify(struct rt600_ctrl_ctx *ctx)
+{
+	atomic_set(&ctx->reset_complete, 1);
+	if (ctx && ctx->reset_complete_attr_node) {
+		sysfs_notify_dirent(ctx->reset_complete_attr_node);
+	} else {
+		dev_err(ctx->dev, "failed to notify reset_complete");
+	}
+}
+
 static void reset_work(struct work_struct *work)
 {
 	struct rt600_ctrl_ctx *ctx =
@@ -192,6 +232,7 @@ static void reset_work(struct work_struct *work)
 
 	dev_info(ctx->dev, "Resetting ...");
 	toggle_reset(ctx);
+	reset_complete_notify(ctx);
 }
 
 static void reset_work_spl(struct work_struct *work)
@@ -201,8 +242,18 @@ static void reset_work_spl(struct work_struct *work)
 
 	dev_info(ctx->dev, "Resetting to SPL...");
 	toggle_reset_spl(ctx);
+	reset_complete_notify(ctx);
 }
 
+static ssize_t reset_complete_show(struct device *dev,
+			                       struct device_attribute *attr,
+			                       char *buf)
+{
+	struct rt600_ctrl_ctx *ctx = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d", atomic_read(&ctx->reset_complete));
+}
+static DEVICE_ATTR_RO(reset_complete);
 
 #define NIRQ_PINMAP_COUNT 2
 static int rt600_ctrl_probe(struct platform_device *pdev)
@@ -210,6 +261,7 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct rt600_ctrl_ctx *ctx =
 		devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
+	int irq_number = 0;
 	int rc = 0;
 	uint32_t nirq_pinmap[NIRQ_PINMAP_COUNT];
 
@@ -254,6 +306,27 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 		gpio_direction_input(ctx->nirq_gpio);
 	}
 
+	ctx->crash_notify_gpio = of_get_named_gpio(dev->of_node, "crash-notify-gpio", 0);
+	if (gpio_is_valid(ctx->crash_notify_gpio)) {
+		if (devm_gpio_request(dev, ctx->crash_notify_gpio, "crash_notify_gpio")) {
+			dev_warn(dev, "failed to request crash_notify gpio");
+		} else {
+			gpio_direction_input(ctx->crash_notify_gpio);
+			irq_number = gpio_to_irq(ctx->crash_notify_gpio);
+			rc = devm_request_irq(dev, irq_number, &crash_notify_irq_handler, IRQF_TRIGGER_FALLING, "crash_notify_gpio", ctx);
+			if (rc) {
+				dev_err(dev, "crash_notify irq request failure");
+				return rc;
+			}
+
+			rc = enable_irq_wake(irq_number);
+			if (rc) {
+				dev_err(dev, "Failed to set IRQ wake for `%d`", irq_number);
+				return rc;
+			}
+		}
+	}
+
 	if (of_property_read_u32_array(dev->of_node, "nirq-mcu-map", nirq_pinmap, NIRQ_PINMAP_COUNT)) {
 		dev_err(dev, "nirq pinmap not valid");
 		return -EINVAL;
@@ -268,11 +341,31 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 	INIT_WORK(&ctx->reset_work_spl, reset_work_spl);
 
 	device_create_file(dev, &dev_attr_boot_state);
+	device_create_file(dev, &dev_attr_crash_notify);
 	device_create_file(dev, &dev_attr_nirq_value);
 	device_create_file(dev, &dev_attr_nirq_pinmap);
 	device_create_file(dev, &dev_attr_reset);
 	device_create_file(dev, &dev_attr_reset_spl);
+	device_create_file(dev, &dev_attr_reset_complete);
+
+	ctx->crash_attr_node = sysfs_get_dirent(ctx->dev->kobj.sd, "crash_notify");
+	if(!ctx->crash_attr_node) {
+		dev_info(dev, "failed to get crash_notify kernel fs node");
+	}
+
+	atomic_set(&ctx->reset_complete, 1);
+	ctx->reset_complete_attr_node = sysfs_get_dirent(ctx->dev->kobj.sd, "reset_complete");
+	if(!ctx->reset_complete_attr_node) {
+		dev_info(dev, "failed to get reset_complete kernel fs node");
+	}
+
 	platform_set_drvdata(pdev, ctx);
+
+	rc = device_init_wakeup(ctx->dev, true);
+	if (rc) {
+		dev_err(dev, "Failed to init wakesource");
+		return rc;
+	}
 
 	dev_info(dev, "rt600-ctrl probe success.\n");
 
@@ -283,11 +376,17 @@ static int rt600_ctrl_remove(struct platform_device *pdev)
 {
 	struct rt600_ctrl_ctx *ctx = platform_get_drvdata(pdev);
 
+	if (device_init_wakeup(ctx->dev, false)) {
+		dev_err(ctx->dev, "Failed to deinit wakesource");
+	}
+
 	device_remove_file(ctx->dev, &dev_attr_boot_state);
+	device_remove_file(ctx->dev, &dev_attr_crash_notify);
 	device_remove_file(ctx->dev, &dev_attr_nirq_value);
 	device_remove_file(ctx->dev, &dev_attr_nirq_pinmap);
 	device_remove_file(ctx->dev, &dev_attr_reset);
 	device_remove_file(ctx->dev, &dev_attr_reset_spl);
+	device_remove_file(ctx->dev, &dev_attr_reset_complete);
 
 	devm_kfree(ctx->dev, ctx);
 

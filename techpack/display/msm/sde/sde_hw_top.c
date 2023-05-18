@@ -39,6 +39,7 @@
 #define MDP_WD_TIMER_1_CTL                0x390
 #define MDP_WD_TIMER_1_CTL2               0x394
 #define MDP_WD_TIMER_1_LOAD_VALUE         0x398
+#define MDP_INTF_SKEW_ENABLE              0x410
 #define MDP_PERIPH_DBGBUS_CTRL            0x418
 #define MDP_WD_TIMER_2_CTL                0x420
 #define MDP_WD_TIMER_2_CTL2               0x424
@@ -49,6 +50,8 @@
 #define MDP_WD_TIMER_4_CTL                0x440
 #define MDP_WD_TIMER_4_CTL2               0x444
 #define MDP_WD_TIMER_4_LOAD_VALUE         0x448
+
+#define MDP_INTF_OFFSET_CTRL              0x458
 
 #define MDP_TICK_COUNT                    16
 #define XO_CLK_RATE                       19200
@@ -335,6 +338,27 @@ static void sde_hw_setup_vsync_source_v1(struct sde_hw_mdp *mdp,
 }
 
 
+static void sde_hw_setup_skewed_vsync(struct sde_hw_mdp *mdp,
+		struct sde_intf_offset_cfg *cfg)
+{
+	struct sde_hw_blk_reg_map *c;
+	u32 offset_ctrl = 0x0, skew_enable = 0x0;
+
+	c = &mdp->hw;
+
+	/* Default interface paired for skew is INTF1 & INTF2 */
+	skew_enable = BIT(1) | BIT(2);
+	if (cfg->set_master_intf == INTF_2_IS_MASTER)
+		offset_ctrl |= BIT(4);
+	else /* Default settings: Master-intf1 and slave-intf2 */
+		offset_ctrl |= BIT(8);
+
+	offset_ctrl |= BIT(1); /* Enable interface Offset */
+
+	SDE_REG_WRITE(c, MDP_INTF_OFFSET_CTRL, offset_ctrl);
+	SDE_REG_WRITE(c, MDP_INTF_SKEW_ENABLE, skew_enable);
+}
+
 static void sde_hw_get_safe_status(struct sde_hw_mdp *mdp,
 		struct sde_danger_safe_status *status)
 {
@@ -563,6 +587,8 @@ static void _setup_mdp_ops(struct sde_hw_mdp_ops *ops,
 		ops->setup_vsync_source = sde_hw_setup_vsync_source_v1;
 	if (cap & BIT(SDE_MDP_DHDR_MEMPOOL))
 		ops->set_hdr_plus_metadata = sde_hw_set_hdr_plus_metadata;
+	if (cap & BIT(SDE_MDP_SKEWED_VSYNC_SUPPORT))
+		ops->setup_skewed_vsync = sde_hw_setup_skewed_vsync;
 	ops->get_autorefresh_status = sde_hw_get_autorefresh_status;
 }
 

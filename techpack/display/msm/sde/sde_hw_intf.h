@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SDE_HW_INTF_H
@@ -67,6 +68,7 @@ struct intf_avr_params {
  *  Assumption is these functions will be called after clocks are enabled
  * @ setup_timing_gen : programs the timing engine
  * @ setup_prog_fetch : enables/disables the programmable fetch logic
+ * @ setup_skewed_vsync : programs the skewed vsync offsets
  * @ setup_rot_start  : enables/disables the rotator start trigger
  * @ enable_timing: enable/disable timing engine
  * @ get_status: returns if timing engine is enabled or not
@@ -83,6 +85,9 @@ struct sde_hw_intf_ops {
 
 	void (*setup_prg_fetch)(struct sde_hw_intf *intf,
 			const struct intf_prog_fetch *fetch);
+
+	void (*setup_skewed_vsync)(struct sde_hw_intf *intf,
+			const struct sde_intf_offset_cfg *cfg);
 
 	void (*setup_rot_start)(struct sde_hw_intf *intf,
 			const struct intf_prog_fetch *fetch);

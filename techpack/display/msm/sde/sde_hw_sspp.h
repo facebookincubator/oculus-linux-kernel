@@ -111,13 +111,6 @@ struct sde_hw_sharp_cfg {
 	u32 noise_thr;
 };
 
-
-enum sde_sspp_layout_index {
-	SDE_SSPP_LAYOUT_NONE = 0,
-	SDE_SSPP_LAYOUT_LEFT,
-	SDE_SSPP_LAYOUT_RIGHT,
-};
-
 struct sde_hw_pixel_ext {
 	/* scaling factors are enabled for this input layer */
 	uint8_t enable_pxl_ext;
@@ -317,6 +310,7 @@ struct sde_hw_sspp_ops {
 	 * @blend_enabled: flag indicating blend enabled or disabled on plane
 	 * @flags: Extra flags for format config
 	 * @index: rectangle index in multirect
+	 * @color_filter: color component to be extracted
 	 */
 	void (*setup_format)(struct sde_hw_pipe *ctx,
 			const struct sde_format *fmt,

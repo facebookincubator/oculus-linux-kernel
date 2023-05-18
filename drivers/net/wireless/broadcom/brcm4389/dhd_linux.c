@@ -639,6 +639,11 @@ module_param(dhd_slpauto, uint, 0);
 /* Global Pkt filter enable control */
 uint dhd_pkt_filter_enable = TRUE;
 module_param(dhd_pkt_filter_enable, uint, 0);
+
+/* Packet filter flag to minimize host wakeups and power consumption */
+uint dhd_pkt_filter_min_power = TRUE;
+module_param(dhd_pkt_filter_min_power, uint, 0660);
+
 #endif
 
 /* Pkt filter init setup */
@@ -1305,6 +1310,9 @@ static int dhd_pm_callback(struct notifier_block *nfb, unsigned long action, voi
 		dhd_config_twt_event_mask_in_suspend(&dhdinfo->pub, TRUE);
 		dhd_send_twt_info_suspend(&dhdinfo->pub, TRUE);
 #endif /* WL_TWT */
+		if (action == PM_SUSPEND_PREPARE)
+			dhd_enable_packet_filter_min_power(1, &dhdinfo->pub);
+
 		break;
 
 	case PM_POST_HIBERNATION:
@@ -1313,6 +1321,9 @@ static int dhd_pm_callback(struct notifier_block *nfb, unsigned long action, voi
 #ifdef DHD_PCIE_RUNTIMEPM
 		DHD_ENABLE_RUNTIME_PM(&dhdinfo->pub);
 #endif /* DHD_PCIE_RUNTIMEPM */
+		if (action == PM_POST_SUSPEND)
+			dhd_enable_packet_filter_min_power(0, &dhdinfo->pub);
+
 		break;
 	}
 
@@ -2236,12 +2247,17 @@ dhd_enable_packet_filter(int value, dhd_pub_t *dhd)
 	int i;
 
 	DHD_ERROR(("%s: enter, value = %d\n", __FUNCTION__, value));
+	if (dhd_pkt_filter_min_power)
+		dhd->defer_suspend_packet_filter = true;
+
 	if ((dhd->op_mode &
 		(DHD_FLAG_HOSTAP_MODE | DHD_FLAG_P2P_GO_MODE)) &&
 		value) {
-		DHD_ERROR(("%s: DHD_FLAG_HOSTAP_MODE or DHD_FLAG_P2P_GO_MODE\n", __FUNCTION__));
+		DHD_ERROR(("%s: Operation deferred, DHD_FLAG_HOSTAP_MODE"
+			" or DHD_FLAG_P2P_GO_MODE\n", __func__));
 		return;
 	}
+
 	/* 1 - Enable packet filter, only allow unicast packet to send up */
 	/* 0 - Disable packet filter */
 	if (dhd_pkt_filter_enable && (!value ||
@@ -2282,6 +2298,8 @@ dhd_packet_filter_add_remove(dhd_pub_t *dhdp, int add_remove, int num)
 	char *filterp = NULL;
 	int filter_id = 0;
 
+	DHD_TRACE(("%s: enter. value = %d num = %d\n",
+			__func__, add_remove, num));
 	switch (num) {
 		case DHD_BROADCAST_FILTER_NUM:
 			filterp = "101 0 0 0 0xFFFFFFFFFFFF 0xFFFFFFFFFFFF";
@@ -2330,6 +2348,10 @@ dhd_packet_filter_add_remove(dhd_pub_t *dhdp, int add_remove, int num)
 				" 0xFFFFFFFFFFFF0000000000000806";
 			filter_id = 106;
 			break;
+		case DHD_ETH_0800_DROP_FILTER_NUM:
+			filterp = DISCARD_ETHERTYPE_0800;
+			filter_id = 111;
+			break;
 		default:
 			return -EINVAL;
 	}
@@ -2347,6 +2369,41 @@ dhd_packet_filter_add_remove(dhd_pub_t *dhdp, int add_remove, int num)
 
 	return 0;
 }
+
+void dhd_enable_packet_filter_min_power(int value, dhd_pub_t *dhd)
+{
+	if (dhd_pkt_filter_min_power && dhd->defer_suspend_packet_filter) {
+		if (value) {
+			DHD_INFO(("%s: Set packet filters to minimize power\n",
+				__func__));
+			/* Filter that accepts all unicasts is disabled */
+			dhd_pktfilter_offload_enable(dhd,
+				dhd->pktfilter[DHD_UNICAST_FILTER_NUM],
+				FALSE, dhd_master_mode);
+			/*
+			 * Enable ethertype 0800 filter to match and discard
+			 * most ethernet frames.
+			 */
+			dhd_packet_filter_add_remove(dhd, 1,
+				DHD_ETH_0800_DROP_FILTER_NUM);
+			dhd_pktfilter_offload_enable(dhd,
+				dhd->pktfilter[DHD_ETH_0800_DROP_FILTER_NUM],
+				TRUE, dhd_master_mode);
+		} else {
+			DHD_INFO(("%s: Restore packet filters\n",
+					__func__));
+			/* Enable unicast filter */
+			if (dhd->pktfilter[DHD_UNICAST_FILTER_NUM] != NULL)
+				dhd_pktfilter_offload_enable(dhd,
+					dhd->pktfilter[DHD_UNICAST_FILTER_NUM],
+					TRUE, dhd_master_mode);
+			/* Remove ethertype 0800 frame filter */
+			dhd_packet_filter_add_remove(dhd, 0,
+				DHD_ETH_0800_DROP_FILTER_NUM);
+		}
+	}
+}
+
 #endif /* PKT_FILTER_SUPPORT */
 
 static int dhd_set_suspend(int value, dhd_pub_t *dhd)
@@ -11311,6 +11368,9 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 #endif /* WBTEXT && RRM_BCNREQ_MAX_CHAN_TIME */
 
 	uint32 d3_hostwake_delay = D3_HOSTWAKE_DELAY;
+#if defined(WL_AUTOCOUNTRY_DEFAULT)
+	char country_buf[3] = WL_AUTOCOUNTRY_DEFAULT;
+#endif
 #ifdef SUPPORT_MULTIPLE_CLMBLOB
 	char customer_clm_file_name[MAX_FILE_LEN] = {0, };
 #endif /* SUPPORT_MULTIPLE_CLMBLOB */
@@ -12146,6 +12206,20 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 #endif /* WL_UWB_COEX_DEF_ENABLE */
 #endif /* WL_UWB_COEX */
 
+#if defined(WL_AUTOCOUNTRY_DEFAULT)
+	if (dhd_iovar(dhd, 0, "autocountry_default", (char *)country_buf,
+				  sizeof(country_buf), NULL, 0, TRUE) != BCME_OK) {
+		DHD_ERROR(("failed to set the default autocountry\n"));
+	} else {
+		DHD_ERROR(("default autocountry is %s\n", country_buf));
+	}
+	if (dhd_wl_ioctl_set_intiovar(dhd, "autocountry",
+								  TRUE, WLC_SET_VAR, TRUE, 0) != BCME_OK) {
+		DHD_ERROR(("autocountry failure\n"));
+	} else {
+		DHD_ERROR(("autocountry success\n"));
+	}
+#endif /* WL_AUTOCOUNTRY_DEFAULT */
 done:
 	if (iov_buf) {
 		MFREE(dhd->osh, iov_buf, WLC_IOCTL_SMLEN);

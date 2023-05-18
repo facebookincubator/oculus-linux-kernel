@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _WCD938X_INTERNAL_H
@@ -103,7 +103,6 @@ struct wcd938x_priv {
 	int ear_rx_path;
 	bool dev_up;
 	bool usbc_hs_status;
-	u32 dmic_rate;
 };
 
 struct wcd938x_micbias_setting {
@@ -138,6 +137,22 @@ enum {
 	WCD_RX1,
 	WCD_RX2,
 	WCD_RX3
+};
+
+enum {
+	BOLERO_WCD_EVT_TX_CH_HOLD_CLEAR = 1,
+	BOLERO_WCD_EVT_PA_OFF_PRE_SSR,
+	BOLERO_WCD_EVT_SSR_DOWN,
+	BOLERO_WCD_EVT_SSR_UP,
+	BOLERO_WCD_EVT_CLK_NOTIFY,
+};
+
+enum {
+	WCD_BOLERO_EVT_RX_MUTE = 1,	/* for RX mute/unmute */
+	WCD_BOLERO_EVT_IMPED_TRUE,	/* for imped true */
+	WCD_BOLERO_EVT_IMPED_FALSE,	/* for imped false */
+	WCD_BOLERO_EVT_RX_COMPANDER_SOFT_RST,
+	WCD_BOLERO_EVT_BCS_CLK_OFF,
 };
 
 enum {

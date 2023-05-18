@@ -1,7 +1,7 @@
 /dts-v1/;
 /plugin/;
 
-#include "kona-cdp-lcd-tron.dtsi"
+#include "kona-cdp-lcd.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. kona CDP (LCD) tron";

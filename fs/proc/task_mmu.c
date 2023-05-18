@@ -548,9 +548,13 @@ static int smaps_pte_hole(unsigned long addr, unsigned long end,
 		struct mm_walk *walk)
 {
 	struct mem_size_stats *mss = walk->private;
+	u64 swap_usage;
 
-	mss->swap += shmem_partial_swap_usage(
-			walk->vma->vm_file->f_mapping, addr, end);
+	swap_usage = shmem_partial_swap_usage(walk->vma->vm_file->f_mapping,
+			addr, end);
+	mss->swap += swap_usage;
+	mss->swap_pss += swap_usage << PSS_SHIFT;
+	mss->swap_uss += swap_usage;
 
 	return 0;
 }
@@ -594,9 +598,11 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 		if (!page)
 			return;
 
-		if (radix_tree_exceptional_entry(page))
+		if (radix_tree_exceptional_entry(page)) {
 			mss->swap += PAGE_SIZE;
-		else
+			mss->swap_pss += (u64)PAGE_SIZE << PSS_SHIFT;
+			mss->swap_uss += PAGE_SIZE;
+		} else
 			put_page(page);
 
 		return;
@@ -805,6 +811,8 @@ static void smap_gather_stats(struct vm_area_struct *vma,
 		if (!shmem_swapped || (vma->vm_flags & VM_SHARED) ||
 					!(vma->vm_flags & VM_WRITE)) {
 			mss->swap += shmem_swapped;
+			mss->swap_pss += shmem_swapped << PSS_SHIFT;
+			mss->swap_uss += shmem_swapped;
 		} else {
 			mss->check_shmem_swap = true;
 			smaps_walk.pte_hole = smaps_pte_hole;
@@ -830,6 +838,46 @@ static int show_private_map(struct seq_file *m, void *v)
 	SEQ_PUT_DEC(NULL, mss.private_clean);
 	SEQ_PUT_DEC(" ", mss.private_dirty);
 	SEQ_PUT_DEC(" ", mss.swap_uss);
+	seq_puts(m, " : ");
+	show_map_vma(m, vma);
+
+	m_cache_vma(m, vma);
+
+	return 0;
+}
+
+static void *start_smap_inline(struct seq_file *m, loff_t *ppos)
+{
+	void *start = m_start(m, ppos);
+
+	if (!IS_ERR_OR_NULL(start) && *ppos == 0) {
+		seq_printf(m, "% 8s", "RSS");
+		seq_printf(m, " % 8s", "PSS");
+		seq_printf(m, " % 8s", "SClean");
+		seq_printf(m, " % 8s", "SDirty");
+		seq_printf(m, " % 8s", "PClean");
+		seq_printf(m, " % 8s", "PDirty");
+		seq_printf(m, " : VMA\n");
+	}
+
+	return start;
+}
+
+static int show_smap_inline(struct seq_file *m, void *v)
+{
+	struct vm_area_struct *vma = v;
+	struct mem_size_stats mss;
+
+	memset(&mss, 0, sizeof(mss));
+
+	smap_gather_stats(vma, &mss);
+
+	SEQ_PUT_DEC(NULL, mss.resident);
+	SEQ_PUT_DEC(" ", mss.pss >> PSS_SHIFT);
+	SEQ_PUT_DEC(" ", mss.shared_clean);
+	SEQ_PUT_DEC(" ", mss.shared_dirty);
+	SEQ_PUT_DEC(" ", mss.private_clean);
+	SEQ_PUT_DEC(" ", mss.private_dirty);
 	seq_puts(m, " : ");
 	show_map_vma(m, vma);
 
@@ -886,6 +934,8 @@ static int show_smap(struct seq_file *m, void *v)
 	seq_puts(m, " kB\n");
 
 	__show_smap(m, &mss);
+
+	seq_printf(m, "THPeligible:    %d\n", transparent_hugepage_enabled(vma));
 
 	if (arch_pkeys_enabled())
 		seq_printf(m, "ProtectionKey:  %8u\n", vma_pkey(vma));
@@ -972,6 +1022,18 @@ static int pid_smaps_open(struct inode *inode, struct file *file)
 	return do_maps_open(inode, file, &proc_pid_smaps_op);
 }
 
+static const struct seq_operations proc_pid_smaps_inline_op = {
+	.start	= start_smap_inline,
+	.next	= m_next,
+	.stop	= m_stop,
+	.show	= show_smap_inline
+};
+
+static int pid_smaps_inline_open(struct inode *inode, struct file *file)
+{
+	return do_maps_open(inode, file, &proc_pid_smaps_inline_op);
+}
+
 static int smaps_rollup_open(struct inode *inode, struct file *file)
 {
 	int ret;
@@ -1022,6 +1084,13 @@ const struct file_operations proc_pid_private_maps_operations = {
 
 const struct file_operations proc_pid_smaps_operations = {
 	.open		= pid_smaps_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= proc_map_release,
+};
+
+const struct file_operations proc_pid_smaps_inline_operations = {
+	.open		= pid_smaps_inline_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= proc_map_release,
@@ -1708,6 +1777,74 @@ const struct file_operations proc_pagemap_operations = {
 #endif /* CONFIG_PROC_PAGE_MONITOR */
 
 #ifdef CONFIG_PROCESS_RECLAIM
+static BLOCKING_NOTIFIER_HEAD(proc_reclaim_notifier);
+
+int proc_reclaim_notifier_register(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&proc_reclaim_notifier, nb);
+}
+
+int proc_reclaim_notifier_unregister(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&proc_reclaim_notifier, nb);
+}
+
+static void proc_reclaim_notify(unsigned long pid, void *rp)
+{
+	blocking_notifier_call_chain(&proc_reclaim_notifier, pid, rp);
+}
+
+int reclaim_address_space(struct address_space *mapping,
+			struct reclaim_param *rp)
+{
+	struct radix_tree_iter iter;
+	void __rcu **slot;
+	pgoff_t start;
+	struct page *page;
+	LIST_HEAD(page_list);
+	int reclaimed;
+	int ret = NOTIFY_OK;
+
+	lru_add_drain();
+	start = 0;
+	rcu_read_lock();
+
+	radix_tree_for_each_slot(slot, &mapping->i_pages, &iter, start) {
+
+		page = radix_tree_deref_slot(slot);
+
+		if (radix_tree_deref_retry(page)) {
+			slot = radix_tree_iter_retry(&iter);
+			continue;
+		}
+
+		if (radix_tree_exceptional_entry(page))
+			continue;
+
+		if (isolate_lru_page(page))
+			continue;
+
+		rp->nr_scanned++;
+
+		list_add(&page->lru, &page_list);
+		inc_node_page_state(page, NR_ISOLATED_ANON +
+				page_is_file_cache(page));
+
+		if (need_resched()) {
+			slot = radix_tree_iter_resume(slot, &iter);
+			cond_resched_rcu();
+		}
+	}
+	rcu_read_unlock();
+	reclaimed = reclaim_pages_from_list(&page_list, NULL);
+	rp->nr_reclaimed += reclaimed;
+
+	if (rp->nr_scanned >= rp->nr_to_reclaim)
+		ret = NOTIFY_DONE;
+
+	return ret;
+}
+
 static int reclaim_pte_range(pmd_t *pmd, unsigned long addr,
 				unsigned long end, struct mm_walk *walk)
 {
@@ -1778,6 +1915,29 @@ enum reclaim_type {
 	RECLAIM_ALL,
 	RECLAIM_RANGE,
 };
+
+struct reclaim_param reclaim_task_nomap(struct task_struct *task,
+		int nr_to_reclaim)
+{
+	struct mm_struct *mm;
+	struct reclaim_param rp = {
+		.nr_to_reclaim = nr_to_reclaim,
+	};
+
+	get_task_struct(task);
+	mm = get_task_mm(task);
+	if (!mm)
+		goto out;
+	down_read(&mm->mmap_sem);
+
+	proc_reclaim_notify((unsigned long)task_pid(task), (void *)&rp);
+
+	up_read(&mm->mmap_sem);
+	mmput(mm);
+out:
+	put_task_struct(task);
+	return rp;
+}
 
 struct reclaim_param reclaim_task_anon(struct task_struct *task,
 		int nr_to_reclaim)

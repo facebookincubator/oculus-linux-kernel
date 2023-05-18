@@ -1,6 +1,12 @@
 #ifndef STP_COMMON_PUBLIC_H
 #define STP_COMMON_PUBLIC_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stp/common/stp_os.h>
+
 // total number of channels
 #define STP_TOTAL_NUM_CHANNELS 32
 
@@ -48,8 +54,19 @@ enum stp_error_type {
 
 	STP_ERROR_IO_INTERRUPT = 12,
 
+	// STP is not re-entrant from inside a callback on the main STP thread
+	STP_ERROR_INSIDE_CALLBACK = 13,
+
+	// Channel not available during initialization
+	STP_ERROR_CHANNEL_UNAVAILABLE = 14,
+
+	// Space unavailable for non-blocking writes
+	STP_ERROR_TX_SPACE_UNAVAILABLE = 15,
+	// Data unavailable for non-blocking reads (intentionally the same value as the space unavailable error)
+	STP_ERROR_RX_DATA_UNAVAILABLE = 15,
+
 	// STP next error
-	STP_ERROR_NEXT_ERROR = 13,
+	STP_ERROR_NEXT_ERROR = 16,
 };
 
 /* get attributes */
@@ -109,6 +126,21 @@ enum stp_notification_type {
 	STP_NOTIFICATION_TX_SPACE_AVAILABLE,
 };
 
+/**
+ * Structure containing the options for opening a channel
+ */
+struct stp_channel_opts_t {
+	uint8_t priority;
+	uint8_t *rx_buffer;
+	size_t rx_buffer_size;
+	uint8_t *tx_buffer;
+	size_t tx_buffer_size;
+};
+
 typedef void (*stp_channel_callback)(uint8_t channel, uint32_t notification);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

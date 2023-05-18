@@ -12,13 +12,15 @@ msm_kgsl_core-y = \
 	kgsl_mmu.o \
 	kgsl_snapshot.o \
 	kgsl_events.o \
-	kgsl_pool.o \
 	kgsl_gmu_core.o \
 	kgsl_gmu.o \
 	kgsl_rgmu.o \
 	kgsl_hfi.o \
-	kgsl_timeline.o \
+	kgsl_pool.o \
+	kgsl_procfs.o \
+	kgsl_reclaim.o \
 	kgsl_threadstats.o \
+	kgsl_timeline.o \
 	kgsl_util.o
 
 msm_kgsl_core-$(CONFIG_QCOM_KGSL_IOMMU) += kgsl_iommu.o

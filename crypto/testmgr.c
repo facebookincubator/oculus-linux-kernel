@@ -1400,8 +1400,8 @@ static int test_comp(struct crypto_comp *tfm,
 		int ilen;
 		unsigned int dlen = COMP_BUF_SIZE;
 
-		memset(output, 0, sizeof(COMP_BUF_SIZE));
-		memset(decomp_output, 0, sizeof(COMP_BUF_SIZE));
+		memset(output, 0, COMP_BUF_SIZE);
+		memset(decomp_output, 0, COMP_BUF_SIZE);
 
 		ilen = ctemplate[i].inlen;
 		ret = crypto_comp_compress(tfm, ctemplate[i].input,
@@ -1445,7 +1445,7 @@ static int test_comp(struct crypto_comp *tfm,
 		int ilen;
 		unsigned int dlen = COMP_BUF_SIZE;
 
-		memset(decomp_output, 0, sizeof(COMP_BUF_SIZE));
+		memset(decomp_output, 0, COMP_BUF_SIZE);
 
 		ilen = dtemplate[i].inlen;
 		ret = crypto_comp_decompress(tfm, dtemplate[i].input,
@@ -2617,6 +2617,30 @@ static const struct alg_test_desc alg_test_descs[] = {
 		.test = alg_test_null,
 		.fips_allowed = 1,
 	}, {
+		.alg = "blake2s-128",
+		.test = alg_test_hash,
+		.suite = {
+			.hash = __VECS(blakes2s_128_tv_template)
+		}
+	}, {
+		.alg = "blake2s-160",
+		.test = alg_test_hash,
+		.suite = {
+			.hash = __VECS(blakes2s_160_tv_template)
+		}
+	}, {
+		.alg = "blake2s-224",
+		.test = alg_test_hash,
+		.suite = {
+			.hash = __VECS(blakes2s_224_tv_template)
+		}
+	}, {
+		.alg = "blake2s-256",
+		.test = alg_test_hash,
+		.suite = {
+			.hash = __VECS(blakes2s_256_tv_template)
+		}
+	}, {
 		.alg = "cbc(aes)",
 		.test = alg_test_skcipher,
 		.fips_allowed = 1,
@@ -2820,6 +2844,12 @@ static const struct alg_test_desc alg_test_descs[] = {
 		.test = alg_test_skcipher,
 		.suite = {
 			.cipher = __VECS(cts_mode_tv_template)
+		}
+	}, {
+		.alg = "curve25519",
+		.test = alg_test_kpp,
+		.suite = {
+			.kpp = __VECS(curve25519_tv_template)
 		}
 	}, {
 		.alg = "deflate",

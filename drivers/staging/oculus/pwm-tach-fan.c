@@ -30,6 +30,9 @@
 #include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
+#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
+#include <linux/soc/qcom/panel_event_notifier.h>
+#endif
 #include <linux/sysfs.h>
 #include <linux/thermal.h>
 
@@ -59,7 +62,13 @@ struct pwm_fan_ctx {
 	struct workqueue_struct *wq;
 	struct work_struct fan_work;
 	struct work_struct fan_recovery_work;
+#ifdef CONFIG_DRM
 	struct notifier_block fb_notif;
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	void *notifier_cookie;
+#endif
+#endif
+	unsigned int cold_boot_pwm;
 	unsigned int pwm_value;
 	unsigned int pwm_fan_state;
 	unsigned int pwm_fan_max_state;
@@ -197,8 +206,8 @@ static int set_rpm_locked(struct pwm_fan_ctx *ctx, unsigned long rpm)
 		return set_pwm_locked(ctx, 0);
 
 	if (current_rpm_value == 0) {
-		/* Start fan at 1/3 speed so it can start */
-		ret = set_pwm_locked(ctx, 33 * MAX_PWM / 100);
+		/* Start fan at "cold boot" speed so it can start */
+		ret = set_pwm_locked(ctx, ctx->cold_boot_pwm);
 		if (ret)
 			ctx->rpm_value = current_rpm_value;
 	}
@@ -291,7 +300,7 @@ static ssize_t show_rpm(struct device *dev,
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
 
-	return snprintf(buf, MAX_STR_LEN, "%ld\n", atomic64_read(&ctx->rpm));
+	return snprintf(buf, MAX_STR_LEN, "%lld\n", (s64)atomic64_read(&ctx->rpm));
 }
 
 /*
@@ -404,6 +413,44 @@ static const struct thermal_cooling_device_ops pwm_fan_cooling_ops = {
 };
 
 #ifdef CONFIG_DRM
+#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
+static void pwm_fan_panel_notifier_cb(enum panel_event_notifier_tag tag,
+		struct panel_event_notification *notification, void *client_data)
+{
+	struct pwm_fan_ctx *ctx =
+		container_of(client_data, struct pwm_fan_ctx, fb_notif);
+	int current_rpm_value = 0;
+
+	if (!notification)
+		return;
+
+	mutex_lock(&ctx->lock);
+	switch (notification->notif_type) {
+	case DRM_PANEL_EVENT_BLANK:
+	case DRM_PANEL_EVENT_BLANK_LP:
+		if (!ctx->is_display_on)
+			break;
+		current_rpm_value = ctx->rpm_value;
+		if (current_rpm_value != 0)
+			set_rpm_locked(ctx, 0);
+		ctx->resume_rpm_value = current_rpm_value;
+		ctx->is_display_on = false;
+		break;
+	case DRM_PANEL_EVENT_UNBLANK:
+		if (ctx->is_display_on)
+			break;
+		current_rpm_value = ctx->resume_rpm_value;
+		if (current_rpm_value > 0)
+			set_rpm_locked(ctx, current_rpm_value);
+		ctx->is_display_on = true;
+		break;
+	default:
+		/* NONE, FPS_CHANGE don't matter to this driver */
+		break;
+	}
+	mutex_unlock(&ctx->lock);
+}
+#else
 static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 				unsigned long event, void *data)
 {
@@ -443,6 +490,7 @@ static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 
 	return 0;
 }
+#endif
 #endif
 
 static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
@@ -499,8 +547,8 @@ static void fan_recovery_work_func(struct work_struct *work)
 		if (pwm > MAX_PWM)
 			pwm = MAX_PWM;
 
-		if (pwm < COLD_BOOT_PWM)
-			pwm = COLD_BOOT_PWM;
+		if (pwm < ctx->cold_boot_pwm)
+			pwm = ctx->cold_boot_pwm;
 
 		set_pwm_locked(ctx, pwm);
 		ctx->reset_count++;
@@ -562,8 +610,8 @@ static void fan_work_func(struct work_struct *work)
 	/* Take median of last 3 historical RPM values */
 	/* TODO(ethanc): Take median across N samples */
 	rpm_mid = MID(ctx->rpm_history[rpm_history_idx % MAX_RPM_HISTORY],
-		ctx->rpm_history[(rpm_history_idx - 1) % MAX_RPM_HISTORY],
-		ctx->rpm_history[(rpm_history_idx - 2) % MAX_RPM_HISTORY]);
+		ctx->rpm_history[abs((rpm_history_idx - 1) % MAX_RPM_HISTORY)],
+		ctx->rpm_history[abs((rpm_history_idx - 2) % MAX_RPM_HISTORY)]);
 
 	/*
 	 * To make the actual rpm closer to the set value
@@ -665,6 +713,10 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	struct device *hwmon;
 	struct pwm_fan_ctx *ctx;
 
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	void *cookie;
+#endif
+
 	int ret;
 	u32 dt_addr;
 
@@ -733,8 +785,8 @@ static int pwm_fan_probe(struct platform_device *pdev)
 
 	ctx->pwm = devm_of_pwm_get(&pdev->dev, pdev->dev.of_node, NULL);
 	if (IS_ERR(ctx->pwm)) {
-		dev_err(&pdev->dev, "Could not get PWM\n");
 		ret = PTR_ERR(ctx->pwm);
+		dev_err(&pdev->dev, "Could not get PWM %d\n", ret);
 		goto err_tach_gpio_dir;
 	}
 
@@ -751,6 +803,17 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	ctx->is_display_on = true;
 	ctx->reset_count = 0;
 #ifdef CONFIG_DRM
+#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
+	cookie = panel_event_notifier_register(
+			PANEL_EVENT_NOTIFICATION_PRIMARY,
+			PANEL_EVENT_NOTIFIER_CLIENT_FAN,
+			active_panel,
+			&pwm_fan_panel_notifier_cb,
+			&ctx->fb_notif);
+	if (!cookie)
+		goto err_tach_gpio_dir;
+	ctx->notifier_cookie = cookie;
+#else
 	ctx->fb_notif.notifier_call = pwm_fan_fb_notifier_cb;
 	if (active_panel) {
 		ret = drm_panel_notifier_register(active_panel,
@@ -759,6 +822,12 @@ static int pwm_fan_probe(struct platform_device *pdev)
 			goto err_tach_gpio_dir;
 	}
 #endif
+#endif
+
+	ret = of_property_read_u32(pdev->dev.of_node, "oculus,cold-boot-pwm", &ctx->cold_boot_pwm);
+	if(ret) {
+		ctx->cold_boot_pwm = COLD_BOOT_PWM;
+	}
 
 	ret = of_property_read_u32(pdev->dev.of_node, "max-rpm", &ctx->max_rpm);
 	if (ret) {
@@ -797,7 +866,8 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	return 0;
 
 err_tach_gpio_dir:
-	pwm_disable(ctx->pwm);
+	if (!IS_ERR(ctx->pwm))
+		pwm_disable(ctx->pwm);
 	return ret;
 }
 
@@ -806,8 +876,13 @@ static int pwm_fan_remove(struct platform_device *pdev)
 	struct pwm_fan_ctx *ctx = platform_get_drvdata(pdev);
 
 #ifdef CONFIG_DRM
+#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
+	if (active_panel && ctx->notifier_cookie)
+		panel_event_notifier_unregister(&ctx->notifier_cookie);
+#else
 	if (active_panel)
 		drm_panel_notifier_unregister(active_panel, &ctx->fb_notif);
+#endif
 #endif
 
 	thermal_cooling_device_unregister(ctx->cdev);

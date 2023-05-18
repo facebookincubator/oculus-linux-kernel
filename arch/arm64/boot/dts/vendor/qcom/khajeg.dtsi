@@ -1,0 +1,123 @@
+/dts-v1/;
+
+#include "khaje.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Khajeg SoC";
+	compatible = "qcom,khajeg";
+	qcom,msm-id = <585 0x10000>;
+};
+&soc {
+	qcom,cam-req-mgr {
+		status = "disabled";
+	};
+
+	cam_csiphy0: qcom,csiphy0 {
+		status = "disabled";
+	};
+
+	cam_csiphy1: qcom,csiphy1 {
+		status = "disabled";
+	};
+
+	cam_csiphy2: qcom,csiphy2 {
+		status = "disabled";
+	};
+
+	cam_cci0: qcom,cci0 {
+		status = "disabled";
+	};
+
+	qcom,cam_smmu {
+		status = "disabled";
+	};
+
+	qcom,cam-cpas@5c11000 {
+		status = "disabled";
+	};
+
+	qcom,cam-cdm-intf {
+		status = "disabled";
+	};
+
+	cam_cpas_cdm: qcom,cpas-cdm0@5c23000 {
+		status = "disabled";
+	};
+
+	cam_ope_cdm: qcom,ope-cdm0@5c42000 {
+		status = "disabled";
+	};
+
+	qcom,cam-isp {
+		status = "disabled";
+	};
+
+	cam_tfe_csid0: qcom,tfe_csid0@5c6e000 {
+		status = "disabled";
+	};
+
+	cam_tfe0: qcom,tfe0@5c6e000 {
+		status = "disabled";
+	};
+
+	cam_tfe_csid1: qcom,tfe_csid1@5c75000 {
+		status = "disabled";
+	};
+
+	cam_tfe1: qcom,tfe1@5c75000 {
+		status = "disabled";
+	};
+
+	cam_tfe_csid2: qcom,tfe_csid2@5c7c000 {
+		status = "disabled";
+	};
+
+	cam_tfe2: qcom,tfe2@5c7c000 {
+		status = "disabled";
+	};
+
+	cam_ppi0: qcom,ppi0@5cb3000 {
+		status = "disabled";
+	};
+
+	cam_ppi1: qcom,ppi1@5cb3200 {
+		status = "disabled";
+	};
+
+	cam_ppi2: qcom,ppi2@5cb3400 {
+		status = "disabled";
+	};
+
+	cam_tfe_tpg0: qcom,tpg0@5c66000 {
+		status = "disabled";
+	};
+
+	cam_tfe_tpg1: qcom,tpg0@5c68000 {
+		status = "disabled";
+	};
+
+	qcom,cam-ope {
+		status = "disabled";
+	};
+
+	ope: qcom,ope@0x5c42000 {
+		status = "disabled";
+	};
+
+	qcom,msm_gsi {
+		status = "disabled";
+	};
+
+	qcom,rmnet-ipa {
+		status = "disabled";
+	};
+
+	qcom,ipa_fws {
+		status = "disabled";
+	};
+
+	ipa_hw: qcom,ipa@0x5800000 {
+		status = "disabled";
+	};
+
+};

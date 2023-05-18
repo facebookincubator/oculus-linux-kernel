@@ -603,11 +603,13 @@ struct cam_set_stream_mode_cmd_return {
  * struct cam_set_stream_mode_frame_params - Frame parameters
  * @image_id:                                 Image id
  * @timestamp:                                timestamp of image arrival
+ * @sof_timestamp:                            Start-of-Frame timestamp
  * @frame_num:                                The frame number
  */
 struct cam_set_stream_mode_frame_params {
 	uint64_t        image_id;
 	uint64_t        timestamp;
+	uint64_t        sof_timestamp;
 	int64_t         frame_num;
 };
 

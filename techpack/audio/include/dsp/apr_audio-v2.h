@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
@@ -10,6 +9,9 @@
 
 #include <ipc/apr.h>
 #include <linux/msm_audio.h>
+
+/* number of threshold levels in speaker protection module */
+#define MAX_CPS_LEVELS 3
 
 /* size of header needed for passing data out of band */
 #define APR_CMD_OB_HDR_SZ  12
@@ -599,7 +601,7 @@ struct adm_cmd_device_open_v8 {
  * In all other use cases this should be set to 0xffff
  */
 
-	u16                  reserved;
+	u16 compressed_data_type;
 } __packed;
 
 /*
@@ -1357,6 +1359,7 @@ struct adm_cmd_connect_afe_port_v5 {
 #define RT_PROXY_PORT_001_RX	0x2000
 #define RT_PROXY_PORT_001_TX	0x2001
 #define AFE_LOOPBACK_TX	0x6001
+#define HDMI_RX_MS			0x6002
 #define DISPLAY_PORT_RX	0x6020
 
 #define AFE_LANE_MASK_INVALID 0
@@ -1386,7 +1389,7 @@ struct adm_cmd_connect_afe_port_v5 {
 #define AFE_PORT_ID_SLIMBUS_RANGE_SIZE	0xA
 
 /* Size of the range of port IDs for real-time proxy ports. */
-#define  AFE_PORT_ID_RT_PROXY_PORT_RANGE_SIZE	0x2
+#define  AFE_PORT_ID_RT_PROXY_PORT_RANGE_SIZE	0x4
 
 /* Size of the range of port IDs for pseudoports. */
 #define AFE_PORT_ID_PSEUDOPORT_RANGE_SIZE	0x5
@@ -1563,6 +1566,8 @@ struct adm_cmd_connect_afe_port_v5 {
 #define AFE_PORT_ID_SLIMBUS_MULTI_CHAN_9_RX      0x4012
 /* SLIMbus Tx port on channel 9. */
 #define AFE_PORT_ID_SLIMBUS_MULTI_CHAN_9_TX      0x4013
+/*AFE Rx port for audio over hdmi*/
+#define AFE_PORT_ID_HDMI_MS					0x6002
 /* AFE Rx port for audio over Display port */
 #define AFE_PORT_ID_HDMI_OVER_DP_RX              0x6020
 /*USB AFE port */
@@ -1664,6 +1669,16 @@ struct adm_cmd_connect_afe_port_v5 {
  */
 #define AFE_PORT_ID_VOICE2_PLAYBACK_TX  0x8002
 #define AFE_PORT_ID_VOICE_PLAYBACK_TX   0x8005
+
+/*
+ * Proxyport used for voice call data processing.
+ * In cases like call-screening feature, where user can communicate
+ * with caller with the help of "call screen" mode, and without
+ * connecting the call with any HW input/output devices in the phon,
+ * voice call can use Pseudo port to start voice data processing.
+ */
+#define RT_PROXY_PORT_002_TX  0x2003
+#define RT_PROXY_PORT_002_RX  0x2002
 
 #define AFE_PORT_ID_PRIMARY_TDM_RX \
 	(AFE_PORT_ID_TDM_PORT_RANGE_START + 0x00)
@@ -2352,6 +2367,28 @@ int16_t        excursionf[AFE_SPKR_PROT_EXCURSIONF_LEN];
  */
 } __packed;
 
+struct lpass_swr_spkr_dep_cfg_t {
+	uint32_t vbatt_pkd_reg_addr;
+	uint32_t temp_pkd_reg_addr;
+	uint32_t value_normal_thrsd[MAX_CPS_LEVELS];
+	uint32_t value_low1_thrsd[MAX_CPS_LEVELS];
+	uint32_t value_low2_thrsd[MAX_CPS_LEVELS];
+} __packed;
+
+struct lpass_swr_hw_reg_cfg_t {
+	uint32_t lpass_wr_cmd_reg_phy_addr;
+	uint32_t lpass_rd_cmd_reg_phy_addr;
+	uint32_t lpass_rd_fifo_reg_phy_addr;
+	uint32_t vbatt_lower1_threshold;
+	uint32_t vbatt_lower2_threshold;
+	uint32_t num_spkr;
+} __packed;
+
+struct afe_cps_hw_intf_cfg {
+	uint32_t lpass_hw_intf_cfg_mode;
+	struct lpass_swr_hw_reg_cfg_t hw_reg_cfg;
+	struct lpass_swr_spkr_dep_cfg_t *spkr_dep_cfg;
+} __packed;
 
 #define AFE_SERVICE_CMD_REGISTER_RT_PORT_DRIVER	0x000100E0
 
@@ -2545,6 +2582,7 @@ struct afe_port_data_cmd_rt_proxy_port_read_v2 {
 #define AFE_GENERIC_COMPRESSED           0x8
 #define AFE_LINEAR_PCM_DATA_PACKED_16BIT 0X6
 #define AFE_DSD_DOP_W_MARKER_DATA        0x9
+#define AFE_DSD_DATA                     0xA
 
 /* This param id is used to configure I2S interface */
 #define AFE_PARAM_ID_I2S_CONFIG	0x0001020D
@@ -4350,6 +4388,7 @@ struct asm_aac_frame_size_control_t {
 struct asm_aac_enc_cfg_t {
 	struct asm_aac_enc_cfg_v2_t aac_cfg;
 	struct asm_aac_frame_size_control_t frame_ctl;
+	struct asm_aac_frame_size_control_t frame_ctl_v2;
 } __packed;
 
 /* FMT ID for apt-X Classic */
@@ -4726,6 +4765,56 @@ struct afe_enc_config {
 	u32 scrambler_mode;
 	u32 mono_mode;
 	union afe_enc_config_data data;
+};
+
+/*
+ * Enable TTP generator in AFE.
+ */
+#define AVS_DEPACKETIZER_PARAM_ID_TTP_GEN_STATE         0x000132EF
+/*
+ * Configure TTP generator params in AFE.
+ */
+#define AVS_DEPACKETIZER_PARAM_ID_TTP_GEN_CFG           0x000132F0
+#define MAX_TTP_OFFSET_PAIRS  4
+struct afe_ttp_gen_enable_t {
+	uint16_t enable;
+	uint16_t reserved;
+} __packed;
+
+struct afe_ttp_ssrc_offset_pair_t {
+	uint32_t ssrc;
+	uint32_t offset;
+} __packed;
+
+struct afe_ttp_gen_cfg_t {
+	uint32_t ttp_offset_default;
+	/*
+	 * TTP offset uses for all other cases
+	 * where no valid SSRC is received.
+	 */
+	uint32_t settling_time;
+	/*
+	 * If settling_mode==0x00: time in [us]
+	 * after first received packet until
+	 * packets are no longer dropped.
+	 */
+	uint16_t settling_mode;
+	/*
+	 * 0x00(Drop), 0x01(Settle)
+	 */
+	uint16_t num_ssrc_offsets;
+	/*
+	 * Number of SSRC/TTPOFFSET pairs to follow
+	 */
+	struct afe_ttp_ssrc_offset_pair_t ssrc_ttp_offset[MAX_TTP_OFFSET_PAIRS];
+	/*
+	 * Array of ssrc/offset pairs
+	 */
+} __packed;
+
+struct afe_ttp_config {
+	struct afe_ttp_gen_enable_t ttp_gen_enable;
+	struct afe_ttp_gen_cfg_t ttp_gen_cfg;
 };
 
 union afe_dec_config_data {
@@ -5381,9 +5470,6 @@ struct afe_param_id_lpass_core_shared_clk_cfg {
 #define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX		0x10015002
 #define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_AUDIOSPHERE	0x10028000
 #define VPM_TX_DM_FLUENCE_EF_COPP_TOPOLOGY		0x10000005
-#define VPM_TX_QMIC_FLUENCE_PRO_VC_COPP_TOPOLOGY	0x10000006
-#define VPM_TX_VOICE_FLUENCE_NN_COPP_TOPOLOGY		0x10028008
-#define VPM_TX_VOICE_FLUENCE_PROVC_NN_COPP_TOPOLOGY	0x10000002
 
 /* Memory map regions command payload used by the
  * #ASM_CMD_SHARED_MEM_MAP_REGIONS ,#ADM_CMD_SHARED_MEM_MAP_REGIONS
@@ -7550,6 +7636,7 @@ struct asm_data_cmd_iec_60958_frame_rate {
 #define ASM_SESSION_CMD_RUN_STARTIME_RUN_AT_ABSOLUTEIME 1
 #define ASM_SESSION_CMD_RUN_STARTIME_RUN_AT_RELATIVEIME 2
 #define ASM_SESSION_CMD_RUN_STARTIME_RUN_WITH_DELAY     3
+#define ASM_SESSION_CMD_RUN_STARTIME_RUN_WITH_TTP       4
 
 #define ASM_BIT_MASK_RUN_STARTIME                 (0x00000003UL)
 
@@ -7573,6 +7660,7 @@ struct asm_session_cmd_run_v2 {
  *- #ASM_SESSION_CMD_RUN_STARTIME_RUN_AT_ABSOLUTEIME
  *- #ASM_SESSION_CMD_RUN_STARTIME_RUN_AT_RELATIVEIME
  *- #ASM_SESSION_CMD_RUN_STARTIME_RUN_WITH_DELAY
+ *- #ASM_SESSION_CMD_RUN_STARTIME_RUN_WITH_TTP
  *
  *All other bits are reserved; clients must set them to zero.
  */
@@ -8882,6 +8970,13 @@ struct asm_data_cmd_remove_silence {
 /* Shift value for the IEC 61937 to 61937 pass-through capture. */
 #define ASM_SHIFT_IEC_61937_PASS_THROUGH_FLAG           0
 
+/* Bitmask for the DSD pass-through capture. */
+#define ASM_BIT_MASK_COMPRESSED_FORMAT_FLAG             (0x00000003UL)
+
+/* Shift value for the DSD pass-through capture. */
+#define ASM_SHIFT_DSD_COMPRESSED_FORMAT_FLAG            0
+
+#define ASM_DSD_FORMAT_FLAG                             2
 struct asm_stream_cmd_open_read_compressed {
 	struct apr_hdr hdr;
 	u32                    mode_flags;
@@ -8893,6 +8988,12 @@ struct asm_stream_cmd_open_read_compressed {
  * - Use #ASM_BIT_MASK_IEC_61937_PASS_THROUGH_FLAG to set the bitmask
  *   and #ASM_SHIFT_IEC_61937_PASS_THROUGH_FLAG to set the shift value
  *   for this bit.
+ * Supported values for bit 1: (DSD native pass-through mode)
+ * 0 -- non DSD operation
+ * 1 -- Pass-through transfer of the DSD format stream
+ * To set this bit, use #ASM_BIT_MASK_DSD_PASS_THROUGH_FLAG and
+ * use #ASM_SHIFT_DSD_PASS_THROUGH_FLAG to set the shift value for
+ * this bit
  * Supported values for bit 4:
  * - 0 -- Return data buffer contains all encoded frames only; it does
  *      not contain frame metadata.
@@ -8909,6 +9010,9 @@ struct asm_stream_cmd_open_read_compressed {
  * Supported values: should be greater than 0 for IEC to RAW compressed
  *                   unpack mode.
  *                   Value is don't care for IEC 61937 pass-through mode.
+ * @values
+ * - >0 -- For IEC 61937-to-RAW Compressed Unpack mode
+ * - 1  -- For IEC 61937 or DSD Pass-through mode
  */
 
 } __packed;
@@ -10705,6 +10809,7 @@ struct cmd_set_topologies {
 #define AFE_PARAM_ID_FBSP_MODE_RX_CFG 0x0001021D
 #define AFE_PARAM_ID_FBSP_PTONE_RAMP_CFG 0x00010260
 #define AFE_PARAM_ID_SP_RX_TMAX_XMAX_LOGGING 0x000102BC
+#define AFE_PARAM_ID_CPS_LPASS_HW_INTF_CFG 0x000102EF
 
 struct asm_fbsp_mode_rx_cfg {
 	uint32_t minor_version;
@@ -11615,6 +11720,10 @@ struct avcs_fwk_ver_info {
 #define LSM_SESSION_CMD_SET_PARAMS			(0x00012A83)
 #define LSM_SESSION_CMD_SET_PARAMS_V2			(0x00012A8F)
 #define LSM_SESSION_CMD_SET_PARAMS_V3			(0x00012A92)
+#define LSM_SESSION_CMD_GET_PARAMS_V2			(0x00012A90)
+#define LSM_SESSION_CMDRSP_GET_PARAMS_V2		(0x00012A91)
+#define LSM_SESSION_CMD_GET_PARAMS_V3			(0x00012A93)
+#define LSM_SESSION_CMDRSP_GET_PARAMS_V3		(0x00012A94)
 #define LSM_SESSION_CMD_REGISTER_SOUND_MODEL		(0x00012A84)
 #define LSM_SESSION_CMD_DEREGISTER_SOUND_MODEL		(0x00012A85)
 #define LSM_SESSION_CMD_START				(0x00012A86)
@@ -12096,6 +12205,35 @@ struct afe_clk_cfg {
 #define AFE_PARAM_ID_LPAIF_CLK_CONFIG	0x00010238
 #define AFE_MODULE_CLOCK_SET		0x0001028F
 #define AFE_PARAM_ID_CLOCK_SET		0x00010290
+
+struct afe_set_clk_drift {
+	/*
+	 * Clock ID
+	 *	@values
+	 *	- 0x100 to 0x10E
+	 *	- 0x200 to 0x20C
+	 *	- 0x500 to 0x505
+	 */
+	uint32_t clk_id;
+
+	/*
+	 * Clock drift  (in PPB) to be set.
+	 *	@values
+	 *	- need to get values from DSP team
+	 */
+	int32_t clk_drift;
+
+	/*
+	 * Clock rest.
+	 *	@values
+	 *	- 1 -- Reset PLL with the original frequency
+	 *	- 0 -- Adjust the clock with the clk drift value
+	 */
+	uint32_t clk_reset;
+} __packed;
+
+/* This param id is used to adjust audio interface PLL*/
+#define AFE_PARAM_ID_CLOCK_ADJUST       0x000102C6
 
 enum afe_lpass_digital_clk_src {
 	Q6AFE_LPASS_DIGITAL_ROOT_INVALID,
@@ -12648,6 +12786,12 @@ struct afe_av_dev_drift_get_param_resp {
  */
 #define ASM_SESSION_MTMX_STRTR_PARAM_RENDER_WINDOW_END_V2   0x00010DD2
 
+/* Parameter used by #ASM_SESSION_MTMX_STRTR_MODULE_ID_AVSYNC to specify the
+ * ttp offset value. This parameter is supported only for a Set
+ * command (not a Get command) in the Tx direction
+ */
+#define ASM_SESSION_MTMX_STRTR_PARAM_TTP_OFFSET 0x00013228
+
 /* Generic payload of the window parameters in the
  * #ASM_SESSION_MTMX_STRTR_MODULE_ID_AVSYNC module.
  * This payload is supported only for a Set command
@@ -12756,6 +12900,26 @@ struct asm_session_mtmx_strtr_param_render_mode_t {
 	u32                  flags;
 } __packed;
 
+struct asm_session_mtmx_strtr_param_ttp_offset_t {
+	uint32_t                  ttp_offset_lsw;
+	/* Lower 32 bits of the ttp_offset in microseconds. */
+
+	uint32_t                  ttp_offset_msw;
+	/* Upper 32 bits of the ttp_offset in microseconds.
+	 *
+	 * Internal default value is 0 for both values. The 64-bit number
+	 * formed by ttp_offset_lsw and ttp_offset_lsw is treated as unsigned.
+	 * In case of local DSP loopback when using start flag
+	 * ASM_SESSION_CMD_RUN_START_TIME_RUN_WITH_TTP the max. ttp_offset
+	 * value is limited by internal buffer constraints. Currently the
+	 * limit is 200ms.
+
+	 * This parameter can be set before or while an ASM stream is running,
+	 * allowing “at-run-time” changes of the overall latency.
+	 */
+
+} __packed;
+
 /* Parameter used by #ASM_SESSION_MTMX_STRTR_MODULE_ID_AVSYNC which allows the
  * audio client to specify the clock recovery mechanism that the audio DSP
  * should use.
@@ -12827,6 +12991,7 @@ union asm_session_mtmx_strtr_param_config {
 	struct asm_session_mtmx_strtr_param_render_mode_t render_param;
 	struct asm_session_mtmx_strtr_param_clk_rec_t clk_rec_param;
 	struct asm_session_mtmx_param_adjust_session_time_ctl_t adj_time_param;
+	struct asm_session_mtmx_strtr_param_ttp_offset_t ttp_offset;
 } __packed;
 
 struct asm_mtmx_strtr_params {
@@ -13044,6 +13209,12 @@ struct afe_doa_tracking_mon_get_param_resp {
 #define AUDPROC_MODULE_ID_FFECNS 0x00010952
 #define AUDPROC_MODULE_ID_FFNS 0x00010962
 #define AUDPROC_PARAM_ID_FFV_DOA_TRACKING_PARAM 0x0001097C
+
+/*
+* ID of the DTMF Detection Module.
+*/
+#define AUDPROC_MODULE_ID_DTMF_DETECTION        0x00010940
+
 #define AUDPROC_PARAM_ID_FFV_DOA_TRACKING_MONITOR 0x0001097D
 
 struct admx_sec_primary_mic_ch {

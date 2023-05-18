@@ -2232,6 +2232,9 @@
 #define CM7120_MIC_ID_DUMP_TO_CHANNEL0_MASK (0xf << 0)
 #define CM7120_MIC_ID_DUMP_TO_CHANNEL0_SFT 0
 
+/* DSP (0x5FFC001C) check version register */
+#define CM7120_DSP_CHECK_VERSION_REG 0x5ffc001c
+
 /* System Clock Source */
 enum {
 	CM7120_SCLK_S_MCLK,

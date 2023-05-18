@@ -76,8 +76,7 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 	struct cam_cdm_bl_request *cdm_cmd = req->data;
 	struct cam_cdm *core = (struct cam_cdm *)cdm_hw->core_info;
 
-	if (!in_softirq())
-		mutex_lock(&client->lock);
+	cam_cdm_get_client_refcount(client);
 	for (i = 0; i < req->data->cmd_arrary_count ; i++) {
 		uintptr_t vaddr_ptr = 0;
 		size_t len = 0;
@@ -164,11 +163,6 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		if (true == req->data->flag) {
 			struct cam_cdm_bl_cb_request_entry *node;
 
-			if (in_softirq()) {
-				CAM_ERR(CAM_CDM,
-					"Cannot signal in soft irq context");
-				break;
-			}
 			node = kzalloc(sizeof(
 				struct cam_cdm_bl_cb_request_entry),
 				GFP_KERNEL);
@@ -202,8 +196,7 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		}
 		break;
 	}
-	if (!in_softirq())
-		mutex_unlock(&client->lock);
+	cam_cdm_put_client_refcount(client);
 	return rc;
 }
 

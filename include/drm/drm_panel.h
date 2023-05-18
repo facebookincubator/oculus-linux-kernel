@@ -24,6 +24,7 @@
 #ifndef __DRM_PANEL_H__
 #define __DRM_PANEL_H__
 
+#include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/list.h>
 #include <linux/notifier.h>
@@ -117,6 +118,12 @@ struct drm_panel {
 	const struct drm_panel_funcs *funcs;
 
 	struct list_head list;
+
+	/**
+	 * @nh:
+	 *
+	 * panel notifier list head
+	 */
 	struct blocking_notifier_head nh;
 };
 

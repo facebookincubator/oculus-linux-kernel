@@ -376,7 +376,7 @@ DEFINE_EVENT(msm_vidc_perf, msm_vidc_perf_bus_vote,
 	TP_ARGS(governor_mode, ab)
 );
 
-#define MAX_TRACER_LOG_LENGTH 128
+#define MAX_TRACER_LOG_LENGTH 80
 
 DECLARE_EVENT_CLASS(msm_v4l2_vidc_log,
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -38,6 +39,9 @@
 
 #define IDLE_POWERCOLLAPSE_DURATION	(66 - 16/2)
 #define IDLE_POWERCOLLAPSE_IN_EARLY_WAKEUP (200 - 16/2)
+
+#define MIN_SKEW_VSYNC_PERCENTAGE 10
+#define MAX_SKEW_VSYNC_PERCENTAGE 75
 
 /**
  * Encoder functions and data types
@@ -107,7 +111,7 @@ void sde_encoder_get_hw_resources(struct drm_encoder *encoder,
  * @data:	user data provided to callback
  */
 void sde_encoder_register_vblank_callback(struct drm_encoder *encoder,
-		void (*cb)(void *), void *data);
+		void (*cb)(void *), void (*cb2)(void *), void *data);
 
 /**
  * sde_encoder_register_lineptr_callback - provide callback to encoder that
@@ -199,6 +203,14 @@ int sde_encoder_wait_for_event(struct drm_encoder *drm_encoder,
 						enum msm_event_wait event);
 
 /**
+ * sde_encoder_helper_get_skewed_vsync_status: Returns whether skewed-vsync
+ *			feature is enabled/disabled.
+ * @drm_enc:	encoder pointer
+ * Returns:	true/false if skew-vsync feature is enabled/disabled.
+ */
+bool sde_encoder_helper_get_skewed_vsync_status(struct drm_encoder *drm_enc);
+
+/**
  * sde_encoder_idle_request - request for idle request to avoid 4 vsync cycle
  *                            to turn off the clocks.
  * @encoder:	encoder pointer
@@ -211,14 +223,6 @@ int sde_encoder_idle_request(struct drm_encoder *drm_enc);
  * @encoder: Pointer to drm encoder object
  */
 u32 sde_encoder_get_fps(struct drm_encoder *encoder);
-
-/**
- * sde_encoder_get_qsync_min_fps - get qsync min frame rate of the given encoder
- * @encoder: Pointer to drm encoder object
- * @min_fps: Populated with the qsync min frame rate
- * Returns: 0 on success, -errno otherwise.
- */
-int sde_encoder_get_qsync_min_fps(struct drm_encoder *encoder, u32 *min_fps);
 
 /*
  * sde_encoder_get_intf_mode - get interface mode of the given encoder
@@ -383,12 +387,6 @@ void sde_encoder_needs_hw_reset(struct drm_encoder *enc);
  * @enable:	enable/disable flag
  */
 void sde_encoder_uidle_enable(struct drm_encoder *drm_enc, bool enable);
-
-/**
- * sde_encoder_vsync_trigger - trigger panel vsync
- * @drm_enc:	Pointer to drm encoder structure
- */
-int sde_encoder_vsync_trigger(struct drm_encoder *drm_enc);
 
 void sde_encoder_trigger_wb_cac(struct drm_device *drm_dev, bool disarm);
 

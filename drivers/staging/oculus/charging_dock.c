@@ -390,6 +390,11 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 				parameter_type);
 			parse_connected_devices(ddev, vdos, num_vdos);
 			break;
+		case PARAMETER_TYPE_MOISTURE_DETECTED:
+			dev_dbg(ddev->dev, "Received moisture detected: 0x%x value=%d",
+				parameter_type, vdos[0]);
+			ddev->params.moisture_detected = vdos[0];
+			break;
 		default:
 			dev_err(ddev->dev, "Unsupported broadcast parameter 0x%x",
 				parameter_type);
@@ -919,6 +924,26 @@ static ssize_t port_3_serial_number_system_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(port_3_serial_number_system);
 
+static ssize_t dock_type_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->intf_type);
+}
+static DEVICE_ATTR_RO(dock_type);
+
+static ssize_t moisture_detected_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->params.moisture_detected);
+}
+static DEVICE_ATTR_RO(moisture_detected);
+
 static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_docked.attr,
 	&dev_attr_broadcast_period.attr,
@@ -961,6 +986,8 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_port_1_serial_number_system.attr,
 	&dev_attr_port_2_serial_number_system.attr,
 	&dev_attr_port_3_serial_number_system.attr,
+	&dev_attr_dock_type.attr,
+	&dev_attr_moisture_detected.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);

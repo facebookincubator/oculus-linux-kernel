@@ -3,14 +3,14 @@ qcom,4203348_goertek_hollywood_100k_3636mah_oct21st2019 {
 	qcom,profile-revision = <24>;
 	/* #4203348_Goertek_RangyaoDesay_3636mAh_averaged_MasterSlave_Oct21st2019*/
 	qcom,max-voltage-uv = <4400000>;
-	qcom,fastchg-current-ma = <2000>;/* 0.5C */
+	qcom,fastchg-current-ma = <1820>;/* 0.5C */
 	qcom,jeita-fcc-ranges-0 = <50 100  720000
 				101 200  1820000
-				201 450  2000000
+				201 450  1820000
 				451 550  720000>;
 	qcom,jeita-fcc-ranges-1 = <50 100  720000
 				101 200  1820000
-				201 450  2000000
+				201 450  1820000
 				451 550  720000>;
 	qcom,jeita-fv-ranges-0 = <50  100  4400000
 				101 200  4400000
@@ -20,12 +20,12 @@ qcom,4203348_goertek_hollywood_100k_3636mah_oct21st2019 {
 				101 200  4100000
 				201 450  4100000
 				451 550  3900000>;
-	qcom,cycle-fcc-ranges-0 = <0  300  2000000
-				301 500  2000000
-				501 800  2000000>;
-	qcom,cycle-fcc-ranges-1 = <0  300  2000000
-				301 500  2000000
-				501 800  2000000>;
+	qcom,cycle-fcc-ranges-0 = <0  300  1820000
+				301 500  1820000
+				501 800  1820000>;
+	qcom,cycle-fcc-ranges-1 = <0  300  1820000
+				301 500  1820000
+				501 800  1820000>;
 	qcom,cycle-fv-ranges-0 = <0   300  4400000
 				301 500  4400000
 				501 800  4300000>;
@@ -36,10 +36,10 @@ qcom,4203348_goertek_hollywood_100k_3636mah_oct21st2019 {
 				4101000 4400000 0>;
 	qcom,chg-disable-ranges-1 = <3600000 4100000 0
 				4101000 4400000 1>;
-	qcom,step-chg-ranges-0 = <3600000 4060000 2000000
-				4061000 4400000 2000000>;
-	qcom,step-chg-ranges-1 = <3600000 4060000 2000000
-				4061000 4400000 2000000>;
+	qcom,step-chg-ranges-0 = <3600000 4060000 1820000
+				4061000 4400000 1820000>;
+	qcom,step-chg-ranges-1 = <3600000 4060000 1820000
+				4061000 4400000 1820000>;
 	/* COLD = 0 DegC, HOT = 52 DegC */
 	qcom,jeita-hard-thresholds = <0x58cd 0x1882>;
 	/* COOL = 10 DegC, WARM = 45 DegC */

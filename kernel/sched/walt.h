@@ -451,7 +451,28 @@ static int in_sched_bug;
 	}						\
 })
 
+static inline bool prefer_spread_on_idle(int cpu, bool new_ilb)
+{
+	switch (sysctl_sched_prefer_spread) {
+	case 1:
+		return is_min_capacity_cpu(cpu);
+	case 2:
+		return true;
+	case 3:
+		return (new_ilb && is_min_capacity_cpu(cpu));
+	case 4:
+		return new_ilb;
+	default:
+		return false;
+	}
+}
+
 #else /* CONFIG_SCHED_WALT */
+
+static inline bool prefer_spread_on_idle(int cpu)
+{
+	return false;
+}
 
 static inline void walt_sched_init_rq(struct rq *rq) { }
 

@@ -131,7 +131,8 @@ static ssize_t time_show(struct device *dev,
 	ret = mhi_get_remote_time_sync(mhi_dev, &t_host, &t_device);
 	if (ret) {
 		MHI_ERR("Failed to obtain time, ret:%d\n", ret);
-		return ret;
+		return scnprintf(buf, PAGE_SIZE,
+				 "Request failed or feature unsupported\n");
 	}
 
 	return scnprintf(buf, PAGE_SIZE, "local: %llu remote: %llu (ticks)\n",
@@ -151,7 +152,8 @@ static ssize_t time_us_show(struct device *dev,
 	ret = mhi_get_remote_time_sync(mhi_dev, &t_host, &t_device);
 	if (ret) {
 		MHI_ERR("Failed to obtain time, ret:%d\n", ret);
-		return ret;
+		return scnprintf(buf, PAGE_SIZE,
+				 "Request failed or feature unsupported\n");
 	}
 
 	return scnprintf(buf, PAGE_SIZE, "local: %llu remote: %llu (us)\n",
@@ -1049,7 +1051,16 @@ void mhi_deinit_chan_ctxt(struct mhi_controller *mhi_cntrl,
 	vfree(buf_ring->base);
 
 	buf_ring->base = tre_ring->base = NULL;
+	tre_ring->ctxt_wp = NULL;
 	chan_ctxt->rbase = 0;
+	chan_ctxt->rlen = 0;
+	chan_ctxt->rp = chan_ctxt->wp = chan_ctxt->rbase;
+	tre_ring->rp = tre_ring->wp = tre_ring->base;
+	buf_ring->rp = buf_ring->wp = buf_ring->base;
+
+	/* Update to all cores */
+	smp_wmb();
+
 }
 
 int mhi_init_chan_ctxt(struct mhi_controller *mhi_cntrl,

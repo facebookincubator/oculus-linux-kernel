@@ -405,6 +405,10 @@ int mmc_clk_update_freq_deferred(struct mmc_host *host,
 	else
 		pr_err("%s: %s: failed (%d) at freq=%lu\n",
 			mmc_hostname(host), __func__, err, freq);
+
+	mmc_log_string(host,
+			"deferred clock scale state %d freq %lu done with err %d\n",
+			state, freq, err);
 	/*
 	 * CQE would be enabled as part of CQE issueing path
 	 * So no need to unhalt it explicitly
@@ -534,7 +538,7 @@ static int mmc_devfreq_set_target(struct device *dev,
 		*freq, current->comm);
 
 	spin_lock_irqsave(&clk_scaling->lock, flags);
-	if (clk_scaling->target_freq == *freq ||
+	if (clk_scaling->curr_freq == *freq ||
 		clk_scaling->skip_clk_scale_freq_update) {
 		spin_unlock_irqrestore(&clk_scaling->lock, flags);
 		goto out;
@@ -613,6 +617,8 @@ void mmc_deferred_scaling(struct mmc_host *host)
 	pr_debug("%s: doing deferred frequency change (%lu) (%s)\n",
 				mmc_hostname(host),
 				target_freq, current->comm);
+	mmc_log_string(host, "doing deferred frequency change (%lu) (%s)\n",
+			target_freq, current->comm);
 
 	err = mmc_clk_update_freq_deferred(host, target_freq,
 		clk_scaling.state);
@@ -2707,10 +2713,11 @@ int mmc_resume_bus(struct mmc_host *host)
 		}
 		if (host->card->ext_csd.cmdq_en && !host->cqe_enabled) {
 			err = host->cqe_ops->cqe_enable(host, host->card);
-			host->cqe_enabled = true;
 			if (err)
 				pr_err("%s: %s: cqe enable failed: %d\n",
 				       mmc_hostname(host), __func__, err);
+			else
+				host->cqe_enabled = true;
 		}
 	}
 
@@ -3030,8 +3037,11 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	 * the erase operation does not exceed the max_busy_timeout, we should
 	 * use R1B response. Or we need to prevent the host from doing hw busy
 	 * detection, which is done by converting to a R1 response instead.
+	 * Note, some hosts requires R1B, which also means they are on their own
+	 * when it comes to deal with the busy timeout.
 	 */
-	if (card->host->max_busy_timeout &&
+	if (!(card->host->caps & MMC_CAP_NEED_RSP_BUSY) &&
+	    card->host->max_busy_timeout &&
 	    busy_timeout > card->host->max_busy_timeout) {
 		cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_AC;
 	} else {

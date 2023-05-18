@@ -684,12 +684,12 @@ static dma_addr_t ipa_mpm_smmu_map(void *va_addr,
 	} else {
 		if (dir == DMA_TO_HIPA)
 			iova = dma_map_single(ipa3_ctx->pdev, va_addr,
-					ipa3_ctx->mpm_ring_size_dl *
-					IPA_MPM_DESC_SIZE, dir);
+				ipa3_ctx->mpm_ring_size_dl *
+				IPA_MPM_DESC_SIZE, dir);
 		else
 			iova = dma_map_single(ipa3_ctx->pdev, va_addr,
-					ipa3_ctx->mpm_ring_size_ul *
-					IPA_MPM_DESC_SIZE, dir);
+				ipa3_ctx->mpm_ring_size_ul *
+				IPA_MPM_DESC_SIZE, dir);
 
 		if (dma_mapping_error(ipa3_ctx->pdev, iova)) {
 			IPA_MPM_ERR("dma_map_single failure for entry\n");
@@ -765,12 +765,12 @@ static void ipa_mpm_smmu_unmap(dma_addr_t carved_iova, int sz, int dir,
 	} else {
 		if (dir == DMA_TO_HIPA)
 			dma_unmap_single(ipa3_ctx->pdev, ap_cb_iova,
-					ipa3_ctx->mpm_ring_size_dl *
-					IPA_MPM_DESC_SIZE, dir);
+				ipa3_ctx->mpm_ring_size_dl *
+				IPA_MPM_DESC_SIZE, dir);
 		else
 			dma_unmap_single(ipa3_ctx->pdev, ap_cb_iova,
-					ipa3_ctx->mpm_ring_size_ul *
-					IPA_MPM_DESC_SIZE, dir);
+				ipa3_ctx->mpm_ring_size_ul *
+				IPA_MPM_DESC_SIZE, dir);
 	}
 }
 
@@ -981,6 +981,7 @@ static int ipa_mpm_connect_mhip_gsi_pipe(enum ipa_client_type mhip_client,
 		ring_size = ipa3_ctx->mpm_ring_size_dl;
 	else
 		ring_size = ipa3_ctx->mpm_ring_size_ul;
+
 	for (i = 1, k = 1; i < ring_size; i++, k++) {
 		buff_va = kzalloc(TRE_BUFF_SIZE, GFP_KERNEL);
 		if (!buff_va)
@@ -1321,6 +1322,7 @@ static void ipa_mpm_clean_mhip_chan(int mhi_idx,
 		ring_size = ipa3_ctx->mpm_ring_size_dl_cache;
 	else
 		ring_size = ipa3_ctx->mpm_ring_size_ul_cache;
+
 	for (i = 1; i < ring_size; i++) {
 		if (IPA_CLIENT_IS_PROD(mhip_client)) {
 			ipa_mpm_smmu_unmap(
@@ -2623,7 +2625,9 @@ static int ipa_mpm_mhi_probe_cb(struct mhi_device *mhi_dev,
 	ipa3_ctx->mpm_ring_size_dl_cache = ipa3_ctx->mpm_ring_size_dl;
 	IPA_MPM_DBG("Mpm ring size ul/dl %d / %d",
 		ipa3_ctx->mpm_ring_size_ul, ipa3_ctx->mpm_ring_size_dl);
+
 	IPA_MPM_FUNC_EXIT();
+
 	return 0;
 
 fail_gsi_setup:
@@ -2659,6 +2663,7 @@ static void ipa_mpm_init_mhip_channel_info(void)
 
 	IPA_MPM_DBG("Teth Aggregation byte limit =%d\n",
 		ipa3_ctx->mpm_teth_aggr_size);
+
 	/* IPA_MPM_MHIP_CH_ID_1 => MHIP RMNET PIPES */
 	ipa_mpm_pipes[IPA_MPM_MHIP_CH_ID_1].dl_cons.ipa_client =
 		IPA_CLIENT_MHI_PRIME_RMNET_PROD;

@@ -67,6 +67,7 @@ static void adreno_ringbuffer_wptr(struct adreno_device *adreno_dev,
 		struct adreno_ringbuffer *rb)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	unsigned long flags;
 	int ret = 0;
 
@@ -81,6 +82,17 @@ static void adreno_ringbuffer_wptr(struct adreno_device *adreno_dev,
 			kgsl_pwrscale_busy(device);
 
 			/*
+			 * There could be a situation where GPU comes out of
+			 * ifpc after a fenced write transaction but before
+			 * reading AHB_FENCE_STATUS from KMD, it goes back to
+			 * ifpc due to inactivity (kernel scheduler plays a
+			 * role here). Put a keep alive vote to avoid such
+			 * unlikely scenario.
+			 */
+			if (gpudev->gpu_keepalive)
+				gpudev->gpu_keepalive(adreno_dev, true);
+
+			/*
 			 * Ensure the write posted after a possible
 			 * GMU wakeup (write could have dropped during wakeup)
 			 */
@@ -88,6 +100,9 @@ static void adreno_ringbuffer_wptr(struct adreno_device *adreno_dev,
 				ADRENO_REG_CP_RB_WPTR, rb->_wptr,
 				FENCE_STATUS_WRITEDROPPED0_MASK);
 			rb->skip_inline_wptr = false;
+			if (gpudev->gpu_keepalive)
+				gpudev->gpu_keepalive(adreno_dev, false);
+
 		}
 	} else {
 		/*
@@ -1213,7 +1228,7 @@ int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
 	if (!ADRENO_LEGACY_PM4(adreno_dev))
 		dwords += 1;
 
-	link = kcalloc(dwords, sizeof(unsigned int), GFP_KERNEL);
+	link = kvcalloc(dwords, sizeof(unsigned int), GFP_KERNEL);
 	if (!link) {
 		ret = -ENOMEM;
 		goto done;
@@ -1384,7 +1399,7 @@ done:
 	trace_kgsl_issueibcmds(device, context->id, numibs, drawobj->timestamp,
 			drawobj->flags, ret, drawctxt->type);
 
-	kfree(link);
+	kvfree(link);
 	return ret;
 }
 
