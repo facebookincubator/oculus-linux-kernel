@@ -69,8 +69,8 @@ class EvaluatorInterface:
     def soc_reboot(self):
         pass
 
-    def mcu_query_build_info(self):
-        """Queries build info on mfg image to trigger resync"""
+    def send_eval_command(self, command: str):
+        """A command to send if first evaluation loop fails"""
         pass
 
     def get_log(self) -> str:
@@ -126,9 +126,25 @@ class PluginInterface:
 
 
 class SerialEvaluator(EvaluatorInterface):
-    def __init__(self, port: str, baud: int = 115200, timeout: int = 5):
-        self.s = serial.Serial(port=port, baudrate=baud, timeout=timeout, exclusive=True)
+    def __init__(
+        self,
+        port: str,
+        success_text: str = "stp_invalidate_session",
+        error_text: str = None,
+        baud: int = 115200,
+        timeout: int = 5,
+    ):
+        self.s = serial.Serial(
+            port=port, baudrate=baud, timeout=timeout, exclusive=True
+        )
         self.log = ""
+        self.success_text = success_text
+        self.error_text = error_text
+        flog.info(
+            "serial evaluator initialized",
+            success_text=success_text,
+            error_text=error_text,
+        )
 
     def sync(self, timeout: int) -> bool:
         tstart = datetime.now()
@@ -138,9 +154,12 @@ class SerialEvaluator(EvaluatorInterface):
             if line:
                 self.log += line
             line.strip()
-            if "stp_invalidate_session" in line.lower():
+            if self.success_text in line.lower():
                 flog.info(line)
                 return True
+            if self.error_text and (self.error_text in line.lower()):
+                flog.error("found error text")
+                return False
             tnow = datetime.now()
         return False
 
@@ -158,9 +177,10 @@ class SerialEvaluator(EvaluatorInterface):
         self.get_su()
         self.s.write(b"reboot\n")
 
-    def mcu_query_build_info(self):
+    def send_eval_command(self, command: str):
         self.get_su()
-        self.s.write(b"mfg mcu build_info\n")
+        command = command + "\n"
+        self.s.write(command.encode("ascii"))
 
     def get_log(self) -> str:
         return self.log
@@ -326,12 +346,12 @@ class TestPlugins:
                 p.terminate()
 
     def on_stop(self):
-        self.filename = f"stp_{datetime.now().strftime('%m-%d-%H_%M')}"
+        self.filename = f"stp_{datetime.now().strftime('%m-%d-%H_%M_%S')}"
         for p in self.plugins:
             p.stop()
 
     def on_fail(self):
-        flog.error(self.filename)
+        flog.error("failure", file_prefix=self.filename)
 
         for p in self.plugins:
             p.fail(self.filename)
@@ -341,7 +361,7 @@ class TestPlugins:
             evaluator.clear_log()
 
     def on_resync(self):
-        flog.warn(self.filename)
+        flog.warn("resynced", file_prefix=self.filename)
 
         for p in self.plugins:
             p.resync(self.filename)
@@ -371,7 +391,9 @@ class KasaManager:
 
 
 class STPStressTest:
-    def __init__(self, evaluator: SerialEvaluator):
+    def __init__(
+        self, evaluator: SerialEvaluator, eval_command: str = None, timeout: int = 20
+    ):
         self.evaluator = evaluator
         self.sync_count = 0
         self.timeout_count = 0
@@ -380,6 +402,9 @@ class STPStressTest:
         self.iterations = 0
         self.consecutive_fails = 0
         self.resyncing = False
+        self.eval_command = eval_command
+        self.timeout = timeout
+        flog.info("test initialized", eval_command=eval_command, timeout=timeout)
 
     def log(self):
         log.info(
@@ -394,11 +419,13 @@ class STPStressTest:
         self.iterations += 1
         self.evaluator.clear_log()
         try:
-            if self.evaluator.sync(20):
+            if self.evaluator.sync(self.timeout):
                 self.sync_count += 1
                 return EvaluateResult.SYNCED
             self.resync_count += 1
-            self.evaluator.mcu_query_build_info()
+            if not self.eval_command:
+                return EvaluateResult.TIMEOUT
+            self.evaluator.send_eval_command(self.eval_command)
             if self.evaluator.sync(10):
                 return EvaluateResult.RESYNC
             self.timeout_count += 1
@@ -429,6 +456,35 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exit_on_error", action="store_true", help="halts the test on first failure"
     )
+    parser.add_argument(
+        "--eval_command",
+        type=str,
+        help="text command to be sent to SoC during test evaluation if the first "
+        + "evaluation run fails. If no command is specified, test failure occurs "
+        + "without a retry per iteration",
+    )
+    parser.add_argument(
+        "--error_text",
+        type=str,
+        help="text that will end test as a failed run",
+    )
+    parser.add_argument(
+        "--success_text",
+        type=str,
+        help="text that will end test as a successful run",
+        default="stp_invalidate_session",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        help="duration to look for pass or fail string in seconds",
+        default=20,
+    )
+    parser.add_argument(
+        "--stress_mcu",
+        action="store_true",
+        help="reboots MCU during evaluation instead of SoC"
+    )
 
     args = parser.parse_args()
 
@@ -440,8 +496,12 @@ if __name__ == "__main__":
 
     plugin_list = []
 
-    evaluator = SerialEvaluator(port=args.serial)
-    test = STPStressTest(evaluator=evaluator)
+    evaluator = SerialEvaluator(
+        port=args.serial, success_text=args.success_text.lower(), error_text=args.error_text.lower()
+    )
+    test = STPStressTest(
+        evaluator=evaluator, eval_command=args.eval_command, timeout=args.timeout
+    )
 
     kasa = KasaManager(args.kasa_ip) if args.kasa_ip else None
 
@@ -474,12 +534,14 @@ if __name__ == "__main__":
                 if args.exit_on_error and (fail_count != 0):
                     exit()
 
-                if fail_count > 10:
+                if fail_count > 10 and kasa:
                     flog.error("10 Failures, power cycling")
                     kasa.power_cycle()
                 elif fail_count > 3:
                     evaluator.mcu_reboot()
                     evaluator.soc_reboot()
+                elif args.stress_mcu:
+                    evaluator.mcu_reboot()
                 else:
                     evaluator.soc_reboot()
 

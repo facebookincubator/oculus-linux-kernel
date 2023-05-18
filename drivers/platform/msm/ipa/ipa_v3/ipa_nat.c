@@ -2110,9 +2110,9 @@ static void ipa3_nat_ipv6ct_free_mem(
 				mld_ptr->index_table_addr           = NULL;
 				mld_ptr->index_table_expansion_addr = NULL;
 			}
+
 			dev->is_hw_init           = false;
 			dev->is_mapped            = false;
-
 			memset(nm_ptr->mem_loc, 0, sizeof(nm_ptr->mem_loc));
 		}
 	}

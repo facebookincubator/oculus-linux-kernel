@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -54,7 +54,8 @@ static const struct diag_ssid_range_t msg_mask_tbl[] = {
 	{ .ssid_first = MSG_SSID_22, .ssid_last = MSG_SSID_22_LAST },
 	{ .ssid_first = MSG_SSID_23, .ssid_last = MSG_SSID_23_LAST },
 	{ .ssid_first = MSG_SSID_24, .ssid_last = MSG_SSID_24_LAST },
-	{ .ssid_first = MSG_SSID_25, .ssid_last = MSG_SSID_25_LAST }
+	{ .ssid_first = MSG_SSID_25, .ssid_last = MSG_SSID_25_LAST },
+	{ .ssid_first = MSG_SSID_26, .ssid_last = MSG_SSID_26_LAST }
 };
 
 static int diag_save_user_msg_mask(struct diag_md_session_t *info);
@@ -3120,8 +3121,13 @@ int diag_copy_to_user_msg_mask(char __user *buf, size_t count,
 		return -EINVAL;
 	}
 
-	err = copy_to_user(buf, mask_info->update_buf_client,
+	if ((count - (sizeof(int))) >=
+			mask_info->update_buf_client_len) {
+		err = copy_to_user(buf, mask_info->update_buf_client,
 				mask_info->update_buf_client_len);
+	} else {
+		err = -EINVAL;
+	}
 	if (err) {
 		pr_err("diag: In %s Unable to send msg masks to user space clients, err: %d\n",
 		       __func__, err);
@@ -3147,8 +3153,13 @@ int diag_copy_to_user_log_mask(char __user *buf, size_t count,
 		return -EINVAL;
 	}
 
-	err = copy_to_user(buf, mask_info->update_buf_client,
+	if ((count - (sizeof(int))) >=
+			mask_info->update_buf_client_len) {
+		err = copy_to_user(buf, mask_info->update_buf_client,
 				mask_info->update_buf_client_len);
+	} else {
+		err = -EINVAL;
+	}
 	if (err) {
 		pr_err("diag: In %s Unable to send msg masks to user space clients, err: %d\n",
 		       __func__, err);

@@ -42,7 +42,7 @@
 #define FL(x)    "%s: " x, __func__
 #endif
 
-#define QDF_TRACE_BUFFER_SIZE (512)
+#define QDF_TRACE_BUFFER_SIZE (256)
 
 /*
  * Extracts the 8-bit group id from the wmi command id by performing the

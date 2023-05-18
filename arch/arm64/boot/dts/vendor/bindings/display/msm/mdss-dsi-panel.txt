@@ -169,6 +169,11 @@ Optional properties:
 					"dfps_immediate_porch_mode_vfp" = FPS change request is
 					implemented immediately by changing panel vertical
 					front porch values.
+- qcom,dsi-supported-dfps-list:	List containing all the supported refresh rates.
+- qcom,dsi-supported-qsync-min-fps-list:	The fps value in this list indicates the qsync min
+					fps corresponding to the mode in the qcom,dsi-supported-dfps-list
+					with same index. qcom,dsi-supported-qsync-min-fps-list cannot be
+					defined along with qcom,mdss-dsi-qsync-min-refresh-rate.
 - qcom,min-refresh-rate:		Minimum refresh rate supported by the panel.
 - qcom,max-refresh-rate:		Maximum refresh rate supported by the panel. If max refresh
 					rate is not specified, then the frame rate of the panel in
@@ -429,6 +434,7 @@ Optional properties:
 - qcom,mdss-dsi-tx-eot-append:		Boolean used to enable appending end of transmission packets.
 - qcom,ulps-enabled:			Boolean to enable support for Ultra Low Power State (ULPS) mode.
 - qcom,suspend-ulps-enabled:		Boolean to enable support for ULPS mode for panels during suspend state.
+- qcom,platform-reset-gpio-always-on:	Boolean to keep display reset gpio on during suspend.
 - qcom,panel-roi-alignment:		Specifies the panel ROI alignment restrictions on its
 					left, top, width, height alignments and minimum width and
 					height values. This property is specified per timing node to support
@@ -586,9 +592,6 @@ Optional properties:
 					to show proper display.
 - qcom,mdss-dsi-video-mode:		A boolean to indicates current timing can only work in video mode.
 - qcom,mdss-dsi-cmd-mode:		A boolean to indicates current timing can only work in command mode.
-- qcom,mdss-dsi-ext-bridge-hpd: 	A boolean value indicates an external bridge can support hotplug.
-- qcom,mdss-dsi-ext-bridge-dynamic-mode-set:	A boolean value indicates external bridge can support dynamic mode set.
-- qcom,mdss-dsi-ext-bridge-custom-topology: A boolean to indicate use of custom display topology for external bridge.
 
 Additional properties added to the second level nodes that represent timings properties:
 - qcom,mdss-dsi-timing-default:		Property that specifies the current child as the default
@@ -698,6 +701,8 @@ Example:
 		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update = "dfps_suspend_resume_mode";
+		qcom,dsi-supported-dfps-list = <30 45 60>;
+		qcom,dsi-supported-qsync-min-fps-list = <30 40 55>;
 		qcom,min-refresh-rate = <30>;
 		qcom,max-refresh-rate = <60>;
 		qcom,dsi-dyn-clk-enable;

@@ -185,14 +185,22 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_UCODE BIT(7)
 /* For global buffers, randomly assign an address from the region */
 #define KGSL_MEMDESC_RANDOM BIT(8)
-/* Allocate memory from the system instead of the pools */
-#define KGSL_MEMDESC_SYSMEM BIT(9)
 /* The kernel has write access to this memdesc's buffer */
-#define KGSL_MEMDESC_KERNEL_RW BIT(10)
+#define KGSL_MEMDESC_KERNEL_RW BIT(9)
+/* Allocate memory from the system instead of the pools */
+#define KGSL_MEMDESC_SYSMEM BIT(10)
+/* The memdesc pages can be reclaimed */
+#define KGSL_MEMDESC_CAN_RECLAIM BIT(11)
+/* The memdesc pages were reclaimed */
+#define KGSL_MEMDESC_RECLAIMED BIT(12)
+/* Skip reclaim of the memdesc pages */
+#define KGSL_MEMDESC_SKIP_RECLAIM BIT(13)
+/* Use SHMEM for allocation */
+#define KGSL_MEMDESC_USE_SHMEM BIT(14)
 /* This entry is backed by fixed physical resources that cannot be freed */
-#define KGSL_MEMDESC_FIXED BIT(11)
+#define KGSL_MEMDESC_FIXED BIT(15)
 /* Lazily allocate memory for this entry */
-#define KGSL_MEMDESC_LAZY_ALLOCATION BIT(12)
+#define KGSL_MEMDESC_LAZY_ALLOCATION BIT(16)
 
 /**
  * struct kgsl_memdesc - GPU memory object descriptor
@@ -205,6 +213,7 @@ struct kgsl_memdesc_ops {
  * @sgt: Scatter gather table for allocated pages
  * @ops: Function hooks for the memdesc memory type
  * @flags: Flags set from userspace
+ * @shmem_filp: Pointer to the shmem file backing this memdesc
  */
 struct kgsl_memdesc {
 	struct kgsl_pagetable *pagetable;
@@ -216,11 +225,16 @@ struct kgsl_memdesc {
 	struct sg_table *sgt;
 	struct kgsl_memdesc_ops *ops;
 	uint64_t flags;
+	struct file *shmem_filp;
+	/**
+	 * @reclaimed_page_count: Total number of pages reclaimed
+	 */
+	int reclaimed_page_count;
 	/*
-	 * @lock: Spinlock to protect the gpuaddr from being accessed by
+	 * @gpuaddr_lock: Spinlock to protect the gpuaddr from being accessed by
 	 * multiple entities trying to map the same SVM region at once
 	 */
-	spinlock_t lock;
+	spinlock_t gpuaddr_lock;
 };
 
 /**

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * RMNET configuration engine
  *
@@ -96,15 +97,23 @@ static int rmnet_unregister_real_device(struct net_device *real_dev,
 	return 0;
 }
 
-static int rmnet_register_real_device(struct net_device *real_dev)
+static int rmnet_register_real_device(struct net_device *real_dev,
+				      struct netlink_ext_ack *extack)
 {
 	struct rmnet_port *port;
 	int rc, entry;
 
 	ASSERT_RTNL();
 
-	if (rmnet_is_real_dev_registered(real_dev))
+	if (rmnet_is_real_dev_registered(real_dev)) {
+		port = rmnet_get_port_rtnl(real_dev);
+		if (port->rmnet_mode != RMNET_EPMODE_VND) {
+			NL_SET_ERR_MSG_MOD(extack, "bridge device already exists");
+			return -EINVAL;
+		}
+
 		return 0;
+	}
 
 	port = kzalloc(sizeof(*port), GFP_ATOMIC);
 	if (!port)
@@ -184,7 +193,7 @@ static int rmnet_newlink(struct net *src_net, struct net_device *dev,
 
 	mux_id = nla_get_u16(data[IFLA_RMNET_MUX_ID]);
 
-	err = rmnet_register_real_device(real_dev);
+	err = rmnet_register_real_device(real_dev, extack);
 	if (err)
 		goto err0;
 
@@ -367,10 +376,13 @@ static int rmnet_changelink(struct net_device *dev, struct nlattr *tb[],
 	struct rmnet_port *port;
 	u16 mux_id;
 
+	if (!dev)
+		return -ENODEV;
+
 	real_dev = __dev_get_by_index(dev_net(dev),
 				      nla_get_u32(tb[IFLA_LINK]));
 
-	if (!real_dev || !dev || !rmnet_is_real_dev_registered(real_dev))
+	if (!real_dev || !rmnet_is_real_dev_registered(real_dev))
 		return -ENODEV;
 
 	port = rmnet_get_port_rtnl(real_dev);
@@ -522,7 +534,7 @@ int rmnet_add_bridge(struct net_device *rmnet_dev,
 	if (rmnet_is_real_dev_registered(slave_dev))
 		return -EBUSY;
 
-	err = rmnet_register_real_device(slave_dev);
+	err = rmnet_register_real_device(slave_dev, extack);
 	if (err)
 		return -EBUSY;
 
@@ -705,6 +717,36 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL(rmnet_all_flows_enabled);
+
+void rmnet_prepare_ps_bearers(void *port, u8 *num_bearers, u8 *bearer_id)
+{
+	struct rmnet_endpoint *ep;
+	unsigned long bkt;
+	u8 current_num_bearers = 0;
+	u8 number_bearers_left = 0;
+	u8 num_bearers_in_out;
+
+	if (unlikely(!port || !num_bearers))
+		return;
+
+	number_bearers_left = *num_bearers;
+
+	rcu_read_lock();
+	hash_for_each_rcu(((struct rmnet_port *)port)->muxed_ep,
+			  bkt, ep, hlnode) {
+		num_bearers_in_out = number_bearers_left;
+		qmi_rmnet_prepare_ps_bearers(ep->egress_dev,
+					     &num_bearers_in_out,
+					     bearer_id ? bearer_id +
+						current_num_bearers : NULL);
+		current_num_bearers += num_bearers_in_out;
+		number_bearers_left -= num_bearers_in_out;
+	}
+	rcu_read_unlock();
+
+	*num_bearers = current_num_bearers;
+}
+EXPORT_SYMBOL(rmnet_prepare_ps_bearers);
 
 int rmnet_get_powersave_notif(void *port)
 {

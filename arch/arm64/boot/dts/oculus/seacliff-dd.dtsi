@@ -34,9 +34,9 @@
 		cell-index = <6>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <0>;
-		cam_avdd-supply = <&pm8150a_l10>;
-		cam_dovdd-supply = <&pm8150_l15>;
-		cam_dvdd-supply = <&pm8150a_l2>;
+		cam_avdd-supply = <&L10C>;
+		cam_dovdd-supply = <&L15A>;
+		cam_dvdd-supply = <&L2C>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_avdd", "cam_dovdd", "cam_dvdd",
 			"cam_clk";

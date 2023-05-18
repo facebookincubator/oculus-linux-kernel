@@ -56,6 +56,7 @@ struct sugov_policy {
 	s64			down_rate_delay_ns;
 	unsigned int		next_freq;
 	unsigned int		cached_raw_freq;
+	unsigned int		prev_cached_raw_freq;
 
 	/* The next fields are only needed if fast switch cannot be used: */
 	struct			irq_work irq_work;
@@ -179,8 +180,11 @@ static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
 	if (sg_policy->next_freq == next_freq)
 		return false;
 
-	if (sugov_up_down_rate_limit(sg_policy, time, next_freq))
+	if (sugov_up_down_rate_limit(sg_policy, time, next_freq)) {
+		/* Restore cached freq as next_freq is not changed */
+		sg_policy->cached_raw_freq = sg_policy->prev_cached_raw_freq;
 		return false;
+	}
 
 	sg_policy->next_freq = next_freq;
 	sg_policy->last_freq_update_time = time;
@@ -315,7 +319,7 @@ static void sugov_deferred_update(struct sugov_policy *sg_policy, u64 time,
 
 	if (use_pelt())
 		sg_policy->work_in_progress = true;
-	sched_irq_work_queue(&sg_policy->irq_work);
+	irq_work_queue(&sg_policy->irq_work);
 }
 
 #define TARGET_LOAD 80
@@ -355,9 +359,13 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 		return sg_policy->next_freq;
 
 	sg_policy->need_freq_update = false;
+	sg_policy->prev_cached_raw_freq = sg_policy->cached_raw_freq;
 	sg_policy->cached_raw_freq = freq;
 	return cpufreq_driver_resolve_freq(policy, freq);
 }
+
+extern long
+schedtune_cpu_margin_with(unsigned long util, int cpu, struct task_struct *p);
 
 /*
  * This function computes an effective utilization for the given CPU, to be
@@ -382,15 +390,17 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
  * based on the task model parameters and gives the minimal utilization
  * required to meet deadlines.
  */
-unsigned long schedutil_freq_util(int cpu, unsigned long util,
-				  unsigned long max, enum schedutil_type type)
+unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+				 unsigned long max, enum schedutil_type type,
+				 struct task_struct *p)
 {
-	unsigned long dl_util, irq;
+	unsigned long dl_util, util, irq;
 	struct rq *rq = cpu_rq(cpu);
 
-	if (sched_feat(SUGOV_RT_MAX_FREQ) && type == FREQUENCY_UTIL &&
-						rt_rq_is_runnable(&rq->rt))
+	if (sched_feat(SUGOV_RT_MAX_FREQ) && !IS_BUILTIN(CONFIG_UCLAMP_TASK) &&
+	    type == FREQUENCY_UTIL && rt_rq_is_runnable(&rq->rt)) {
 		return max;
+	}
 
 	/*
 	 * Early check to see if IRQ/steal time saturates the CPU, can be
@@ -402,11 +412,25 @@ unsigned long schedutil_freq_util(int cpu, unsigned long util,
 		return max;
 
 	/*
-	 * The function is called with @util defined as the aggregation (the
-	 * sum) of RT and CFS signals, hence leaving the special case of DL
-	 * to be delt with. The exact way of doing things depend on the calling
-	 * context.
+	 * Because the time spend on RT/DL tasks is visible as 'lost' time to
+	 * CFS tasks and we use the same metric to track the effective
+	 * utilization (PELT windows are synchronized) we can directly add them
+	 * to obtain the CPU's actual utilization.
+	 *
+	 * CFS and RT utilization can be boosted or capped, depending on
+	 * utilization clamp constraints requested by currently RUNNABLE
+	 * tasks.
+	 * When there are no CFS RUNNABLE tasks, clamps are released and
+	 * frequency will be gracefully reduced with the utilization decay.
 	 */
+	util = util_cfs + cpu_util_rt(rq);
+	if (type == FREQUENCY_UTIL)
+#ifdef CONFIG_SCHED_TUNE
+		util += schedtune_cpu_margin_with(util, cpu, p);
+#else
+		util = uclamp_rq_util_with(rq, util, p);
+#endif
+
 	dl_util = cpu_util_dl(rq);
 
 	/*
@@ -465,20 +489,21 @@ static unsigned long sugov_get_util(struct sugov_cpu *sg_cpu)
 	sg_cpu->max = max;
 	sg_cpu->bw_dl = cpu_bw_dl(rq);
 
-	return boosted_cpu_util(sg_cpu->cpu, 0, &sg_cpu->walt_load);
+	return stune_util(sg_cpu->cpu, 0, &sg_cpu->walt_load);
 }
 #else
 static unsigned long sugov_get_util(struct sugov_cpu *sg_cpu)
 {
 	struct rq *rq = cpu_rq(sg_cpu->cpu);
-	unsigned long util = boosted_cpu_util(sg_cpu->cpu, cpu_util_rt(rq),
-									NULL);
+
+	unsigned long util_cfs = cpu_util_cfs(rq);
 	unsigned long max = arch_scale_cpu_capacity(NULL, sg_cpu->cpu);
 
 	sg_cpu->max = max;
 	sg_cpu->bw_dl = cpu_bw_dl(rq);
 
-	return schedutil_freq_util(sg_cpu->cpu, util, max, FREQUENCY_UTIL);
+	return schedutil_cpu_util(sg_cpu->cpu, util_cfs, max,
+				  FREQUENCY_UTIL, NULL);
 }
 #endif
 
@@ -733,8 +758,8 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	if (busy && next_f < sg_policy->next_freq) {
 		next_f = sg_policy->next_freq;
 
-		/* Reset cached freq as next_freq has changed */
-		sg_policy->cached_raw_freq = 0;
+		/* Restore cached freq as next_freq has changed */
+		sg_policy->cached_raw_freq = sg_policy->prev_cached_raw_freq;
 	}
 
 	/*
@@ -1371,6 +1396,7 @@ static int sugov_start(struct cpufreq_policy *policy)
 	sg_policy->limits_changed		= false;
 	sg_policy->need_freq_update		= false;
 	sg_policy->cached_raw_freq		= 0;
+	sg_policy->prev_cached_raw_freq		= 0;
 
 	for_each_cpu(cpu, policy->cpus) {
 		struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, cpu);

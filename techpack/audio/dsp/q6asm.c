@@ -145,56 +145,6 @@ struct generic_get_data_ {
 };
 static struct generic_get_data_ *generic_get_data;
 
-#ifdef CONFIG_DEBUG_FS
-#define OUT_BUFFER_SIZE 56
-#define IN_BUFFER_SIZE 24
-
-static struct timeval out_cold_tv;
-static struct timeval out_warm_tv;
-static struct timeval out_cont_tv;
-static struct timeval in_cont_tv;
-static long out_enable_flag;
-static long in_enable_flag;
-static struct dentry *out_dentry;
-static struct dentry *in_dentry;
-static int in_cont_index;
-/*This var is used to keep track of first write done for cold output latency */
-static int out_cold_index;
-static char *out_buffer;
-static char *in_buffer;
-
-static uint32_t adsp_reg_event_opcode[] = {
-	ASM_STREAM_CMD_REGISTER_PP_EVENTS,
-	ASM_STREAM_CMD_REGISTER_ENCDEC_EVENTS,
-	ASM_STREAM_CMD_REGISTER_IEC_61937_FMT_UPDATE };
-
-static uint32_t adsp_raise_event_opcode[] = {
-	ASM_STREAM_PP_EVENT,
-	ASM_STREAM_CMD_ENCDEC_EVENTS,
-	ASM_IEC_61937_MEDIA_FMT_EVENT };
-
-static int is_adsp_reg_event(uint32_t cmd)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(adsp_reg_event_opcode); i++) {
-		if (cmd == adsp_reg_event_opcode[i])
-			return i;
-	}
-	return -EINVAL;
-}
-
-static int is_adsp_raise_event(uint32_t cmd)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(adsp_raise_event_opcode); i++) {
-		if (cmd == adsp_raise_event_opcode[i])
-			return i;
-	}
-	return -EINVAL;
-}
-
 static inline void q6asm_set_flag_in_token(union asm_token_struct *asm_token,
 					   int flag, int flag_offset)
 {
@@ -276,6 +226,56 @@ uint8_t q6asm_get_stream_id_from_token(uint32_t token)
 	return asm_token._token.stream_id;
 }
 EXPORT_SYMBOL(q6asm_get_stream_id_from_token);
+
+static uint32_t adsp_reg_event_opcode[] = {
+	ASM_STREAM_CMD_REGISTER_PP_EVENTS,
+	ASM_STREAM_CMD_REGISTER_ENCDEC_EVENTS,
+	ASM_STREAM_CMD_REGISTER_IEC_61937_FMT_UPDATE };
+
+static int is_adsp_reg_event(uint32_t cmd)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(adsp_reg_event_opcode); i++) {
+		if (cmd == adsp_reg_event_opcode[i])
+			return i;
+	}
+	return -EINVAL;
+}
+
+static uint32_t adsp_raise_event_opcode[] = {
+	ASM_STREAM_PP_EVENT,
+	ASM_STREAM_CMD_ENCDEC_EVENTS,
+	ASM_IEC_61937_MEDIA_FMT_EVENT };
+
+static int is_adsp_raise_event(uint32_t cmd)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(adsp_raise_event_opcode); i++) {
+		if (cmd == adsp_raise_event_opcode[i])
+			return i;
+	}
+	return -EINVAL;
+}
+
+#ifdef CONFIG_DEBUG_FS
+#define OUT_BUFFER_SIZE 56
+#define IN_BUFFER_SIZE 24
+
+static struct timeval out_cold_tv;
+static struct timeval out_warm_tv;
+static struct timeval out_cont_tv;
+static struct timeval in_cont_tv;
+static long out_enable_flag;
+static long in_enable_flag;
+static struct dentry *out_dentry;
+static struct dentry *in_dentry;
+static int in_cont_index;
+/*This var is used to keep track of first write done for cold output latency */
+static int out_cold_index;
+static char *out_buffer;
+static char *in_buffer;
 
 static int audio_output_latency_dbgfs_open(struct inode *inode,
 							struct file *file)
@@ -3096,6 +3096,10 @@ int q6asm_open_read_compressed(struct audio_client *ac, uint32_t format,
 		open.mode_flags = 0x1;
 		open.frames_per_buf = 1;
 		pr_debug("%s: Flag 1 IEC61937 output\n", __func__);
+	} else if (format == FORMAT_DSD) {
+		open.mode_flags = ASM_DSD_FORMAT_FLAG;
+		open.frames_per_buf = 1;
+		pr_debug("%s: Flag 2 DSD output\n", __func__);
 	} else {
 		open.mode_flags = 0;
 		open.frames_per_buf = 1;
@@ -5691,8 +5695,8 @@ int q6asm_map_channels(u8 *channel_mapping, uint32_t channels,
 	} else if (channels == 6) {
 		lchannel_mapping[0] = PCM_CHANNEL_FL;
 		lchannel_mapping[1] = PCM_CHANNEL_FR;
-		lchannel_mapping[2] = PCM_CHANNEL_LFE;
-		lchannel_mapping[3] = PCM_CHANNEL_FC;
+		lchannel_mapping[2] = PCM_CHANNEL_FC;
+		lchannel_mapping[3] = PCM_CHANNEL_LFE;
 		lchannel_mapping[4] = use_back_flavor ?
 			PCM_CHANNEL_LB : PCM_CHANNEL_LS;
 		lchannel_mapping[5] = use_back_flavor ?
@@ -5707,19 +5711,19 @@ int q6asm_map_channels(u8 *channel_mapping, uint32_t channels,
 		lchannel_mapping[2] = PCM_CHANNEL_FC;
 		lchannel_mapping[3] = PCM_CHANNEL_LFE;
 		lchannel_mapping[4] = use_back_flavor ?
-			PCM_CHANNEL_LS : PCM_CHANNEL_LB;
+			PCM_CHANNEL_LB : PCM_CHANNEL_LS;
 		lchannel_mapping[5] = use_back_flavor ?
-			PCM_CHANNEL_RS : PCM_CHANNEL_RB;
+			PCM_CHANNEL_RB : PCM_CHANNEL_RS;
 		lchannel_mapping[6] = PCM_CHANNEL_CS;
 	} else if (channels == 8) {
 		lchannel_mapping[0] = PCM_CHANNEL_FL;
 		lchannel_mapping[1] = PCM_CHANNEL_FR;
-		lchannel_mapping[2] = PCM_CHANNEL_LFE;
-		lchannel_mapping[3] = PCM_CHANNEL_FC;
-		lchannel_mapping[4] = PCM_CHANNEL_LS;
-		lchannel_mapping[5] = PCM_CHANNEL_RS;
-		lchannel_mapping[6] = PCM_CHANNEL_LB;
-		lchannel_mapping[7] = PCM_CHANNEL_RB;
+		lchannel_mapping[2] = PCM_CHANNEL_FC;
+		lchannel_mapping[3] = PCM_CHANNEL_LFE;
+		lchannel_mapping[4] = PCM_CHANNEL_LB;
+		lchannel_mapping[5] = PCM_CHANNEL_RB;
+		lchannel_mapping[6] = PCM_CHANNEL_LS;
+		lchannel_mapping[7] = PCM_CHANNEL_RS;
 	} else if (channels == 10) {
 		lchannel_mapping[0] = PCM_CHANNEL_FL;
 		lchannel_mapping[1] = PCM_CHANNEL_FR;
@@ -10050,16 +10054,105 @@ fail_cmd:
 EXPORT_SYMBOL(q6asm_send_mtmx_strtr_window);
 
 /**
+ * q6asm_send_mtmx_strtr_ttp_offset -
+ *       command to send matrix for ttp offset
+ *
+ * @ac: Audio client handle
+ * @ttp_offset: ttp offset params
+ * @param_id: param id for ttp offset
+ * @dir: RX or TX direction
+ *
+ * Returns 0 on success or error on failure
+ */
+int q6asm_send_mtmx_strtr_ttp_offset(struct audio_client *ac,
+		struct asm_session_mtmx_strtr_param_ttp_offset_t *ttp_offset,
+		uint32_t param_id, int dir)
+{
+	struct asm_mtmx_strtr_params matrix;
+	int sz = 0;
+	int rc  = 0;
+
+	pr_debug("%s: ttp offset lsw is %d, ttp offset msw is %d\n", __func__,
+		  ttp_offset->ttp_offset_lsw, ttp_offset->ttp_offset_msw);
+
+	if (!ac) {
+		pr_err("%s: audio client handle is NULL\n", __func__);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	if (ac->apr == NULL) {
+		pr_err("%s: ac->apr is NULL", __func__);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&matrix, 0, sizeof(struct asm_mtmx_strtr_params));
+	sz = sizeof(struct asm_mtmx_strtr_params);
+	q6asm_add_hdr(ac, &matrix.hdr, sz, TRUE);
+	atomic_set(&ac->cmd_state, -1);
+	matrix.hdr.opcode = ASM_SESSION_CMD_SET_MTMX_STRTR_PARAMS_V2;
+
+	matrix.param.data_payload_addr_lsw = 0;
+	matrix.param.data_payload_addr_msw = 0;
+	matrix.param.mem_map_handle = 0;
+	matrix.param.data_payload_size =
+		sizeof(struct param_hdr_v1) +
+		sizeof(struct asm_session_mtmx_strtr_param_ttp_offset_t);
+	matrix.param.direction = dir;
+	matrix.data.module_id = ASM_SESSION_MTMX_STRTR_MODULE_ID_AVSYNC;
+	matrix.data.param_id = param_id;
+	matrix.data.param_size =
+		sizeof(struct asm_session_mtmx_strtr_param_ttp_offset_t);
+	matrix.data.reserved = 0;
+	memcpy(&(matrix.config.ttp_offset),
+	       ttp_offset,
+	       sizeof(struct asm_session_mtmx_strtr_param_ttp_offset_t));
+
+	rc = apr_send_pkt(ac->apr, (uint32_t *) &matrix);
+	if (rc < 0) {
+		pr_err("%s: ttp offset send failed paramid [0x%x]\n",
+			__func__, matrix.data.param_id);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	rc = wait_event_timeout(ac->cmd_wait,
+			(atomic_read(&ac->cmd_state) >= 0),
+			msecs_to_jiffies(TIMEOUT_MS));
+	if (!rc) {
+		pr_err("%s: timeout, ttp offset paramid[0x%x]\n",
+			__func__, matrix.data.param_id);
+		rc = -ETIMEDOUT;
+		goto fail_cmd;
+	}
+
+	if (atomic_read(&ac->cmd_state) > 0) {
+		pr_err("%s: DSP returned error[%s]\n",
+				__func__, adsp_err_get_err_str(
+				atomic_read(&ac->cmd_state)));
+		rc = adsp_err_get_lnx_err_code(
+				atomic_read(&ac->cmd_state));
+		goto fail_cmd;
+	}
+	rc = 0;
+fail_cmd:
+	return rc;
+}
+EXPORT_SYMBOL(q6asm_send_mtmx_strtr_ttp_offset);
+
+/**
  * q6asm_send_mtmx_strtr_render_mode -
  *       command to send matrix for render mode
  *
  * @ac: Audio client handle
  * @render_mode: rendering mode
+ * @dir: RX or TX direction
  *
  * Returns 0 on success or error on failure
  */
 int q6asm_send_mtmx_strtr_render_mode(struct audio_client *ac,
-		uint32_t render_mode)
+		uint32_t render_mode, int dir)
 {
 	struct asm_mtmx_strtr_params matrix;
 	struct asm_session_mtmx_strtr_param_render_mode_t render_param;
@@ -10103,7 +10196,7 @@ int q6asm_send_mtmx_strtr_render_mode(struct audio_client *ac,
 	matrix.param.data_payload_size =
 		sizeof(struct param_hdr_v1) +
 		sizeof(struct asm_session_mtmx_strtr_param_render_mode_t);
-	matrix.param.direction = 0; /* RX */
+	matrix.param.direction = dir;
 	matrix.data.module_id = ASM_SESSION_MTMX_STRTR_MODULE_ID_AVSYNC;
 	matrix.data.param_id = ASM_SESSION_MTMX_STRTR_PARAM_RENDER_MODE_CMD;
 	matrix.data.param_size =

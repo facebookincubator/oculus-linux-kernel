@@ -129,8 +129,8 @@ enum msm_mdp_plane_property {
 	PLANE_PROP_SRC_CONFIG,
 	PLANE_PROP_FB_TRANSLATION_MODE,
 	PLANE_PROP_MULTIRECT_MODE,
-	PLANE_PROP_COLOR_FILTER,
 	PLANE_PROP_LAYOUT,
+	PLANE_PROP_COLOR_FILTER,
 
 	/* total # of properties */
 	PLANE_PROP_COUNT
@@ -193,6 +193,7 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_ROI_V1,
 	CONNECTOR_PROP_BL_SCALE,
 	CONNECTOR_PROP_SV_BL_SCALE,
+	CONNECTOR_PROP_SKEW_VSYNC,
 	CONNECTOR_PROP_SUPPORTED_COLORSPACES,
 
 	/* enum/bitmask properties */
@@ -507,6 +508,16 @@ struct msm_resource_caps_info {
 };
 
 /**
+ * Select master between intf1 and intf2 for skewed vsync feature.
+ * @INTF_1_MASTER: Select intf1 as master
+ * @INTF_2_MASTER: Select intf2 as master
+ */
+enum {
+	INTF_1_IS_MASTER = 0x1,
+	INTF_2_IS_MASTER
+};
+
+/**
  * struct msm_display_info - defines display properties
  * @intf_type:          DRM_MODE_CONNECTOR_ display type
  * @capabilities:       Bitmask of display flags
@@ -531,6 +542,8 @@ struct msm_resource_caps_info {
  *			for dsi display)
  * @lm_count:		max layer mixer blocks used by display (only available
  *			for dsi display)
+ * @skewed_vsync_master	Specifies the master interface for skewed vsync.
+ *			If this is not set, the feature is disabled.
  */
 struct msm_display_info {
 	int intf_type;
@@ -557,6 +570,7 @@ struct msm_display_info {
 
 	uint32_t dsc_count;
 	uint32_t lm_count;
+	u8 skewed_vsync_master;
 };
 
 #define MSM_MAX_ROI	4
@@ -722,18 +736,18 @@ struct msm_drm_private {
 	/* update the flag when msm driver receives shutdown notification */
 	bool shutdown_in_progress;
 
-	/* writeback commit submitted on next vblank */
-	struct msm_commit *deferred_commit;
-
-	u32 wb_thread_rtprio;
-	cpumask_t wb_thread_cpumask;
-
 	/* lineptr to Vsync offset in scanlines */
 	s32 lineptr_offset_default;
+
+	/* writeback commit submitted on next vblank */
+	struct msm_commit *deferred_commit;
 
 	/* mild/severe tear thresholds for WB trigger */
 	u32 wb_mild_tear_threshold;
 	u32 wb_severe_tear_threshold;
+
+	u32 wb_thread_rtprio;
+	cpumask_t wb_thread_cpumask;
 };
 
 /* get struct msm_kms * from drm_device * */

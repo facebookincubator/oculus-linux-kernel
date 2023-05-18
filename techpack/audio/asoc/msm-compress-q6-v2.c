@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 
@@ -80,6 +80,8 @@ const DECLARE_TLV_DB_LINEAR(msm_compr_vol_gain, 0,
 #ifndef COMPRESSED_PERF_MODE_FLAG
 #define COMPRESSED_PERF_MODE_FLAG 0
 #endif
+
+#define DSD_BLOCK_SIZE_4 4
 
 struct msm_compr_gapless_state {
 	bool set_next_stream_id;
@@ -223,25 +225,32 @@ static int msm_compr_send_dec_params(struct snd_compr_stream *cstream,
 				     int stream_id);
 
 static int msm_compr_set_render_mode(struct msm_compr_audio *prtd,
-				     uint32_t render_mode) {
+				     uint32_t render_mode, int dir) {
 	int ret = -EINVAL;
 	struct audio_client *ac = prtd->audio_client;
 
 	pr_debug("%s, got render mode %u\n", __func__, render_mode);
 
-	if (render_mode == SNDRV_COMPRESS_RENDER_MODE_AUDIO_MASTER) {
+	switch (render_mode) {
+	case SNDRV_COMPRESS_RENDER_MODE_AUDIO_MASTER:
 		render_mode = ASM_SESSION_MTMX_STRTR_PARAM_RENDER_DEFAULT;
-	} else if (render_mode == SNDRV_COMPRESS_RENDER_MODE_STC_MASTER) {
+		break;
+	case SNDRV_COMPRESS_RENDER_MODE_STC_MASTER:
 		render_mode = ASM_SESSION_MTMX_STRTR_PARAM_RENDER_LOCAL_STC;
 		prtd->run_mode = ASM_SESSION_CMD_RUN_STARTIME_RUN_WITH_DELAY;
-	} else {
+		break;
+	case SNDRV_COMPRESS_RENDER_MODE_TTP:
+		render_mode = ASM_SESSION_MTMX_STRTR_PARAM_RENDER_LOCAL_STC;
+		prtd->run_mode = ASM_SESSION_CMD_RUN_STARTIME_RUN_WITH_TTP;
+		break;
+	default:
 		pr_err("%s, Invalid render mode %u\n", __func__,
 			render_mode);
 		ret = -EINVAL;
 		goto exit;
 	}
 
-	ret = q6asm_send_mtmx_strtr_render_mode(ac, render_mode);
+	ret = q6asm_send_mtmx_strtr_render_mode(ac, render_mode, dir);
 	if (ret) {
 		pr_err("%s, Render mode can't be set error %d\n", __func__,
 			ret);
@@ -312,6 +321,29 @@ static int msm_compr_set_render_window(struct audio_client *ac,
 	}
 
 exit:
+	return ret;
+}
+
+static int msm_compr_set_ttp_offset(struct audio_client *ac,
+		uint32_t offset_lsw, uint32_t offset_msw, int dir)
+{
+	int ret = -EINVAL;
+	struct asm_session_mtmx_strtr_param_ttp_offset_t ttp_offset;
+	uint32_t param_id;
+
+	pr_debug("%s, ttp offset lsw 0x%x  ttp offset msw 0x%x\n",
+		 __func__, offset_lsw, offset_msw);
+
+	memset(&ttp_offset, 0,
+	       sizeof(struct asm_session_mtmx_strtr_param_ttp_offset_t));
+	ttp_offset.ttp_offset_lsw = offset_lsw;
+	ttp_offset.ttp_offset_msw = offset_msw;
+	param_id = ASM_SESSION_MTMX_STRTR_PARAM_TTP_OFFSET;
+	ret = q6asm_send_mtmx_strtr_ttp_offset(ac, &ttp_offset, param_id, dir);
+	if (ret)
+		pr_err("%s, ttp offset can't be set error %d\n", __func__,
+			ret);
+
 	return ret;
 }
 
@@ -1240,6 +1272,11 @@ static int msm_compr_send_media_format_block(struct snd_compr_stream *cstream,
 		dsd_cfg.num_version = 0;
 		dsd_cfg.is_bitwise_big_endian = 1;
 		dsd_cfg.dsd_channel_block_size = 1;
+
+		if (codec_options->dsd_dec.blk_size == DSD_BLOCK_SIZE_4)
+			dsd_cfg.dsd_channel_block_size =
+				codec_options->dsd_dec.blk_size;
+
 		ret = q6asm_media_format_block_dsd(prtd->audio_client,
 						   &dsd_cfg, stream_id);
 		if (ret < 0)
@@ -1511,6 +1548,7 @@ static int msm_compr_configure_dsp_for_capture(struct snd_compr_stream *cstream)
 	struct audio_client *ac = prtd->audio_client;
 	uint32_t stream_index;
 	uint32_t enc_cfg_id = ENC_CFG_ID_NONE;
+	bool compress_ts = false;
 
 	switch (prtd->codec_param.codec.format) {
 	case SNDRV_PCM_FORMAT_S24_LE:
@@ -1560,22 +1598,19 @@ static int msm_compr_configure_dsp_for_capture(struct snd_compr_stream *cstream)
 			return ret;
 		}
 	} else {
-		if (prtd->codec_param.codec.flags & COMPRESSED_TIMESTAMP_FLAG) {
+		if (prtd->codec_param.codec.flags & COMPRESSED_TIMESTAMP_FLAG)
+			compress_ts = true;
+
+		if (q6core_get_avcs_api_version_per_service(
+				APRV2_IDS_SERVICE_ID_ADSP_ASM_V) >=
+				ADSP_ASM_API_VERSION_V2)
+			ret = q6asm_open_read_v5(prtd->audio_client,
+					prtd->codec, bits_per_sample,
+					compress_ts, enc_cfg_id);
+		else
 			ret = q6asm_open_read_v4(prtd->audio_client,
-					prtd->codec,
-					bits_per_sample, true, enc_cfg_id);
-		} else {
-			if (q6core_get_avcs_api_version_per_service(
-					APRV2_IDS_SERVICE_ID_ADSP_ASM_V) >=
-					ADSP_ASM_API_VERSION_V2)
-				ret = q6asm_open_read_v5(prtd->audio_client,
-						prtd->codec, bits_per_sample,
-						false, enc_cfg_id);
-			else
-				ret = q6asm_open_read_v4(prtd->audio_client,
-						prtd->codec, bits_per_sample,
-						false, enc_cfg_id);
-		}
+					prtd->codec, bits_per_sample,
+					compress_ts, enc_cfg_id);
 		if (ret < 0) {
 			pr_err("%s: q6asm_open_read failed:%d\n",
 					__func__, ret);
@@ -3209,7 +3244,8 @@ static int msm_compr_set_metadata(struct snd_compr_stream *cstream,
 			 __func__, metadata->value[0]);
 		prtd->gapless_state.initial_samples_drop = metadata->value[0];
 	} else if (metadata->key == SNDRV_COMPRESS_RENDER_MODE) {
-		return msm_compr_set_render_mode(prtd, metadata->value[0]);
+		return msm_compr_set_render_mode(prtd, metadata->value[0],
+				cstream->direction);
 	} else if (metadata->key == SNDRV_COMPRESS_CLK_REC_MODE) {
 		return msm_compr_set_clk_rec_mode(ac, metadata->value[0]);
 	} else if (metadata->key == SNDRV_COMPRESS_RENDER_WINDOW) {
@@ -3230,6 +3266,9 @@ static int msm_compr_set_metadata(struct snd_compr_stream *cstream,
 		return msm_compr_adjust_session_clock(ac,
 				metadata->value[0],
 				metadata->value[1]);
+	} else if (metadata->key == SNDRV_COMPRESS_IN_TTP_OFFSET) {
+		return msm_compr_set_ttp_offset(ac, metadata->value[0],
+				metadata->value[1], cstream->direction);
 	}
 
 	return 0;

@@ -88,13 +88,13 @@
 	qcom,allow-suspend;
 };
 
-&pm8150a_l7 {
+&L7C {
 	qcom,init-voltage = <3000000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 	regulator-always-on;
 };
 
-&pm8150a_l8 {
+&L8C {
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 	regulator-always-on;
 };
@@ -115,9 +115,9 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
-		oculus,imu-core-supply = <&pm8150a_l7>;
+		oculus,imu-core-supply = <&L7C>;
 		oculus,imu-core-voltage-level = <3000000 3000000>;
-		oculus,mag-core-supply = <&pm8150a_l8>;
+		oculus,mag-core-supply = <&L8C>;
 		oculus,mag-core-voltage-level = <1800000 1800000>;
 
 		oculus,syncboss-reset  = <&tlmm 5 0>;

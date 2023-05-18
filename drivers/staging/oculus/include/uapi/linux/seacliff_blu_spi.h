@@ -17,12 +17,25 @@
 #define BLU_SPI_GET_BACKLIGHT_IOCTL \
 	_IOWR(MAGIC_NUM, 4, struct blu_spi_backlight_matrix)
 
+/* ioctl used to get the BRO matrix */
+#define BLU_SPI_GET_BRO_IOCTL \
+	_IOWR(MAGIC_NUM, 5, struct blu_spi_bro_matrix)
+
 /* struct passed to BLU_SPI_SET_BACKLIGHT_IOCTL which is
  * used to send the backlight matrix from the LD engine
  * in the compositor to the BLU driver
  */
 struct blu_spi_backlight_matrix {
 	const uint8_t *backlight_matrix;
+	size_t matrix_size;
+};
+
+/* struct passed to BLU_SPI_GET_BRO_IOCTL which is
+ * used to send the BRO compensation matrix from the
+ * compositor to the BLU driver
+ */
+struct blu_spi_bro_matrix {
+	const uint8_t *bro_matrix;
 	size_t matrix_size;
 };
 
@@ -36,6 +49,5 @@ struct blu_spi_debug_message {
 	uint64_t rx_buf;
 	uint32_t len;
 };
-
 
 #endif  // SEACLIFF_BLU_SPI_H

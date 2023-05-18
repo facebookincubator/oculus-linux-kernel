@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/of_gpio.h>
@@ -56,7 +57,6 @@ static int stp_configure_single_gpio_irq(struct device *const dev,
 	return 0;
 
 exit_gpio:
-	devm_gpio_free(dev, gpio);
 	return rval;
 }
 
@@ -64,14 +64,10 @@ void stp_release_gpio_irq(struct device *const dev,
 			  struct stp_gpio_data *const data)
 {
 	disable_irq(data->device_can_receive_irq);
-	devm_free_irq(dev, data->device_can_receive_irq, NULL);
-	devm_gpio_free(dev, data->device_can_receive);
 	data->device_can_receive_irq = 0;
 
 	disable_irq_wake(data->device_has_data_irq);
 	disable_irq(data->device_has_data_irq);
-	devm_free_irq(dev, data->device_has_data_irq, NULL);
-	devm_gpio_free(dev, data->device_has_data);
 	data->device_has_data_irq = 0;
 }
 
@@ -94,11 +90,9 @@ int stp_config_gpio_irq(struct device *const dev,
 	rval = stp_configure_single_gpio_irq(dev, data->device_has_data,
 					     "MCU_has_data", has_data_cb,
 					     IRQF_TRIGGER_FALLING, &irq_number);
-	if (rval) {
-		devm_gpio_free(dev, data->device_can_receive);
-		devm_free_irq(dev, data->device_can_receive_irq, NULL);
+	if (rval)
 		return rval;
-	}
+
 	data->device_has_data_irq = irq_number;
 
 	// Has data should be able to wake on suspend

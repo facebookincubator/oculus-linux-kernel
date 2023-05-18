@@ -16,7 +16,6 @@
 /delete-node/ &dcc;
 /delete-node/ &disp_rdump_memory;
 /delete-node/ &dump_mem;
-/delete-node/ &dwc1;
 /delete-node/ &ipa_hw;
 /delete-node/ &mdm0;
 /delete-node/ &mdss_rotator;
@@ -48,8 +47,21 @@
 	};
 };
 
+&gpu_gx_gdsc {
+	/delete-property/ qcom,skip-disable-before-sw-enable;
+};
+
 &kgsl_smmu {
 	/delete-property/ qcom,no-dynamic-asid;
+};
+
+&mdss_mdp {
+	/delete-property/ qcom,sde-has-dim-layer;
+
+	/delete-property/ qcom,sde-vbif-qos-cwb-remap;
+	/delete-property/ qcom,sde-vbif-qos-lutdma-remap;
+	/delete-property/ qcom,sde-vbif-qos-nrt-remap;
+	/delete-property/ qcom,sde-vbif-qos-rt-remap;
 };
 
 &soc {

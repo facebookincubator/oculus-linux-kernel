@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -29,6 +30,7 @@
 	(x == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE ||\
 		x == SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC ||\
 		x == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE || \
+		x == SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL || \
 		x == SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE)
 
 /**
@@ -60,6 +62,7 @@ enum sde_rm_topology_name {
 	SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE,
 	SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC,
 	SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,
+	SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE_DUALCTL,
 	SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE,
 	SDE_RM_TOPOLOGY_MAX,
 };
@@ -151,6 +154,7 @@ struct sde_rm_topology_def {
  * @rsvp_next_seq: sequence number for next reservation for debugging purposes
  * @rm_lock: resource manager mutex
  * @avail_res: Pointer with curr available resources
+ * @vsync_skew_supported: Boolean that is true when vsync_skew is enabled.
  */
 struct sde_rm {
 	struct drm_device *dev;
@@ -162,6 +166,7 @@ struct sde_rm {
 	struct mutex rm_lock;
 	const struct sde_rm_topology_def *topology_tbl;
 	struct msm_resource_caps_info avail_res;
+	bool vsync_skew_supported;
 };
 
 /**
@@ -321,6 +326,17 @@ int sde_rm_cont_splash_res_init(struct msm_drm_private *priv,
 				struct sde_rm *rm,
 				struct sde_splash_data *splash_data,
 				struct sde_mdss_cfg *cat);
+
+
+/**
+ * sde_rm_get_hw_count - retrieves the number of hw blks per enc
+ * @rm: SDE Resource Manager handle
+ * @enc_id: encoder id for which we need to count to hw Blks
+ * @type: Type of hardware block
+ * @return: number of hardware blocks associated with this encoder
+ */
+int sde_rm_get_hw_count(struct sde_rm *rm, uint32_t enc_id,
+				enum sde_hw_blk_type type);
 
 /**
  * sde_rm_update_topology - sets topology property of the connector

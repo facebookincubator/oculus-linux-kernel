@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef STP_DEVICE_H
 #define STP_DEVICE_H
 
@@ -17,6 +18,7 @@ int stp_create_device(struct device *dev);
 int stp_remove_device(struct device *dev);
 
 int stp_create_channel(struct stp_channel_data *const data);
+int stp_release_channel(uint8_t channel);
 int stp_remove_channel(uint8_t channel);
 
 void stp_channel_signal_write(uint8_t channel);

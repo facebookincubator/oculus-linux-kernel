@@ -52,6 +52,7 @@ avago	Avago Technologies
 avia	avia semiconductor
 avic	Shanghai AVIC Optoelectronics Co., Ltd.
 avnet	Avnet, Inc.
+awinic  Shanghai Awinic Electronic Technology Co., LTD.
 axentia	Axentia Technologies AB
 axis	Axis Communications AB
 bananapi BIPAI KEJI LIMITED
@@ -270,12 +271,12 @@ nintendo	Nintendo
 nlt	NLT Technologies, Ltd.
 nokia	Nokia
 nordic	Nordic Semiconductor
+novatek	Novatek Microelectronics Corporation
 nutsboard	NutsBoard
 nuvoton	Nuvoton Technology Corporation
 nvd	New Vision Display
 nvidia	NVIDIA
 nxp	NXP Semiconductors
-oculus	Facebook Inc.
 okaya	Okaya Electric America, Inc.
 oki	Oki Electric Industry Co., Ltd.
 olimex	OLIMEX Ltd.

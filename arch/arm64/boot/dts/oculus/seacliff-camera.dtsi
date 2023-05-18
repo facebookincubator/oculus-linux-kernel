@@ -72,7 +72,7 @@
 	};
 };
 
-&pm8150a_l2 {
+&L2C {
 	/* Teton power */
 	regulator-min-microvolt = <1050000>;
 	regulator-max-microvolt = <1050000>;
@@ -80,13 +80,13 @@
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150a_l3 {
+&L3C {
 	/* Glacier power, FPGA power */
 	qcom,init-voltage = <1200000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150a_l10 {
+&L10C {
 	/* Canyon, Glacier, Teton power */
 	regulator-min-microvolt = <2960000>;
 	regulator-max-microvolt = <2960000>;
@@ -94,7 +94,7 @@
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150_l10 {
+&L10A {
 	/* Esker power */
 	qcom,init-voltage = <2960000>;
 	regulator-min-microvolt = <2960000>;
@@ -102,7 +102,7 @@
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150_l13 {
+&L13A {
 	/* FPGA power */
 	regulator-min-microvolt = <2500000>;
 	regulator-max-microvolt = <2500000>;
@@ -110,7 +110,7 @@
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
 
-&pm8150_l15 {
+&L15A {
 	/* Canyon, Glacier, Teton, Esker power */
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
 };
@@ -145,9 +145,9 @@
 		cell-index = <0>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <2>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_l15>;
-		cam_vdig-supply = <&pm8150a_l3>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&L15A>;
+		cam_vdig-supply = <&L3C>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
@@ -181,9 +181,9 @@
 		cell-index = <1>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <4>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_l15>;
-		cam_vdig-supply = <&pm8150a_l3>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&L15A>;
+		cam_vdig-supply = <&L3C>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
@@ -217,8 +217,8 @@
 		cell-index = <2>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <1>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_l15>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&L15A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio",
 			"cam_clk";
@@ -252,8 +252,8 @@
 		cell-index = <3>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <5>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_l15>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&L15A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio",
 			"cam_clk";
@@ -287,9 +287,9 @@
 		cell-index = <4>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <0>;
-		cam_vana-supply = <&pm8150a_l10>;
-		cam_vio-supply = <&pm8150_l15>;
-		cam_vdig-supply = <&pm8150a_l2>;
+		cam_vana-supply = <&L10C>;
+		cam_vio-supply = <&L15A>;
+		cam_vdig-supply = <&L2C>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_vdig",
 			"cam_clk";
@@ -323,8 +323,8 @@
 		cell-index = <5>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <3>;
-		cam_vana-supply = <&pm8150_l10>;
-		cam_vio-supply = <&pm8150_l15>;
+		cam_vana-supply = <&L10A>;
+		cam_vio-supply = <&L15A>;
 		cam_clk-supply = <&titan_top_gdsc>;
 		regulator-names = "cam_vana", "cam_vio", "cam_clk";
 		rgltr-cntrl-support;

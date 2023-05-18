@@ -10281,17 +10281,17 @@ static void hdd_pld_request_bus_bandwidth(struct hdd_context *hdd_ctx,
 			hdd_pm_qos_update_request(hdd_ctx, &pm_qos_cpu_mask);
 	}
 
+#ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 	/* Roaming is a high priority job but gets processed in scheduler
 	 * thread, bypassing printing stats so that kworker exits quickly and
 	 * scheduler thread can utilize CPU.
 	 */
 	if (!hdd_is_roaming_in_progress(hdd_ctx)) {
-#ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 		hdd_display_periodic_stats(hdd_ctx,
 					   (total_pkts > 0) ? true : false);
-#endif
 		hdd_periodic_sta_stats_display(hdd_ctx);
 	}
+#endif
 }
 
 #ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
@@ -16234,10 +16234,7 @@ int hdd_init(void)
 
 	hdd_trace_init();
 	hdd_register_debug_callback();
-
-#ifdef FEATURE_ROAM_DEBUG
 	wlan_roam_debug_init();
-#endif
 
 	return 0;
 }
@@ -16251,9 +16248,7 @@ int hdd_init(void)
  */
 void hdd_deinit(void)
 {
-#ifdef FEATURE_ROAM_DEBUG
 	wlan_roam_debug_deinit();
-#endif
 
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	wlan_logging_sock_deinit_svc();
@@ -16800,7 +16795,6 @@ static QDF_STATUS hdd_qdf_init(void)
 		goto talloc_deinit;
 	}
 
-#ifdef TRACE_RECORD
 	status = qdf_trace_spin_lock_init();
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("Failed to init spinlock; status:%u", status);
@@ -16808,15 +16802,11 @@ static QDF_STATUS hdd_qdf_init(void)
 	}
 
 	qdf_trace_init();
-#endif
-
 	qdf_register_debugcb_init();
 
 	return QDF_STATUS_SUCCESS;
 
-#ifdef TRACE_RECORD
 cpuhp_deinit:
-#endif
 	qdf_cpuhp_deinit();
 talloc_deinit:
 	qdf_talloc_feature_deinit();
@@ -16840,9 +16830,7 @@ static void hdd_qdf_deinit(void)
 {
 	/* currently, no debugcb deinit */
 
-#ifdef TRACE_RECORD
 	qdf_trace_deinit();
-#endif
 
 	/* currently, no trace spinlock deinit */
 
@@ -19080,4 +19068,3 @@ static const struct kernel_param_ops timer_multiplier_ops = {
 };
 
 module_param_cb(timer_multiplier, &timer_multiplier_ops, NULL, 0644);
-

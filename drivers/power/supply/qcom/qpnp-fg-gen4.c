@@ -4145,6 +4145,8 @@ static void soc_scale_work(struct work_struct *work)
 
 	mutex_unlock(&chip->soc_scale_lock);
 	if (chip->prev_soc_scale_msoc != chip->soc_scale_msoc) {
+		/* update MSOC */
+		fg_gen4_write_scale_msoc(chip);
 		if (batt_psy_initialized(fg))
 			power_supply_changed(fg->batt_psy);
 	}
@@ -4505,7 +4507,7 @@ static ssize_t cycle_counts_buckets_store(struct device *dev,
 	rc = restore_cycle_count(chip->counter);
 	if (rc < 0) {
 		pr_err("Error in restoring cycle counts, rc=%d\n", rc);
-		 return rc;
+		return rc;
 	}
 
 	return count;
@@ -4642,6 +4644,9 @@ static int fg_psy_get_property(struct power_supply *psy,
 		rc = fg_get_sram_prop(fg, FG_SRAM_VBATT_FULL, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_AVG:
+		rc = ttf_get_time_to_full(chip->ttf, &pval->intval);
+		break;
+	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
 		rc = ttf_get_time_to_full(chip->ttf, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
@@ -4844,6 +4849,7 @@ static enum power_supply_property fg_psy_props[] = {
 	POWER_SUPPLY_PROP_DEBUG_BATTERY,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_AVG,
+	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
 	POWER_SUPPLY_PROP_CC_STEP,
 	POWER_SUPPLY_PROP_CC_STEP_SEL,
@@ -6465,12 +6471,7 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	/* Keep MEM_ATTN_IRQ disabled until we require it */
 	vote(chip->mem_attn_irq_en_votable, MEM_ATTN_IRQ_VOTER, false, 0);
 
-	rc = fg_debugfs_create(fg);
-	if (rc < 0) {
-		dev_err(fg->dev, "Error in creating debugfs entries, rc:%d\n",
-			rc);
-		goto exit;
-	}
+	fg_debugfs_create(fg);
 
 	rc = sysfs_create_groups(&fg->dev->kobj, fg_groups);
 	if (rc < 0) {

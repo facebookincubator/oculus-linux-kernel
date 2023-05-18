@@ -13,6 +13,7 @@
 #include <linux/seq_file.h>
 #include <linux/delay.h>
 #include <linux/random.h>
+#include <linux/mm_inline.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/secure_buffer.h>
 #include <uapi/linux/sched/types.h>
@@ -102,6 +103,15 @@ static inline void __iomem *kgsl_iommu_reg(struct kgsl_iommu_context *ctx)
 static int _remove_gpuaddr(struct kgsl_pagetable *pagetable,
 		uint64_t gpuaddr);
 
+static void kgsl_iommu_release_page_list(struct kgsl_memdesc *memdesc,
+		struct list_head *page_list)
+{
+	struct page *page, *tmp;
+
+	list_for_each_entry_safe(page, tmp, page_list, lru)
+		list_del(&page->lru);
+}
+
 static void kgsl_iommu_unmap_globals(struct kgsl_mmu *mmu,
 		struct kgsl_pagetable *pagetable)
 {
@@ -116,7 +126,6 @@ static void kgsl_iommu_unmap_globals(struct kgsl_mmu *mmu,
 		return;
 
 	list_for_each_entry(md, &device->globals, node) {
-		struct page *page, *tmp;
 		LIST_HEAD(page_list);
 		int ret;
 
@@ -127,13 +136,12 @@ static void kgsl_iommu_unmap_globals(struct kgsl_mmu *mmu,
 			_remove_gpuaddr(pagetable, md->memdesc.gpuaddr);
 
 		ret = kgsl_mmu_get_backing_pages(&md->memdesc, &page_list);
-		if (ret)
-			continue;
 
-		kgsl_mmu_unmap(pagetable, &md->memdesc, &page_list);
+		if (!ret)
+			kgsl_mmu_unmap(pagetable, &md->memdesc, &page_list);
 
-		list_for_each_entry_safe(page, tmp, &page_list, lru)
-			list_del(&page->lru);
+		/* Clean up after ourselves. */
+		kgsl_iommu_release_page_list(&md->memdesc, &page_list);
 	}
 }
 
@@ -917,32 +925,37 @@ no_pt:
 		 * Turn off GPU IRQ so we don't get faults from it too.
 		 * The device mutex must be held to change power state
 		 */
-		mutex_lock(&device->mutex);
-		kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
-		mutex_unlock(&device->mutex);
+		if (mutex_trylock(&device->mutex)) {
+			kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
+			mutex_unlock(&device->mutex);
 
-		/*
-		 * We do not want the h/w to resume fetching data from an iommu
-		 * that has faulted, this is better for debugging as it will stall
-		 * the GPU and trigger a snapshot. Return EBUSY error.
-		 */
-		ret = -EBUSY;
+			/*
+			 * We do not want the h/w to resume fetching data from
+			 * an iommu that has faulted, this is better for
+			 * debugging as it will stall the GPU and trigger a
+			 * snapshot. Return EBUSY error.
+			 */
+			ret = -EBUSY;
 
-		/*
-		 * Disable context fault interrupts
-		 * as we do not clear FSR in the ISR.
-		 * Will be re-enabled after FSR is cleared.
-		 */
-		sctlr_val = KGSL_IOMMU_GET_CTX_REG(ctx, KGSL_IOMMU_CTX_SCTLR);
-		sctlr_val &= ~(0x1 << KGSL_IOMMU_SCTLR_CFIE_SHIFT);
-		KGSL_IOMMU_SET_CTX_REG(ctx, KGSL_IOMMU_CTX_SCTLR, sctlr_val);
+			/*
+			 * Disable context fault interrupts
+			 * as we do not clear FSR in the ISR.
+			 * Will be re-enabled after FSR is cleared.
+			 */
+			sctlr_val = KGSL_IOMMU_GET_CTX_REG(ctx,
+					KGSL_IOMMU_CTX_SCTLR);
+			sctlr_val &= ~(0x1 << KGSL_IOMMU_SCTLR_CFIE_SHIFT);
+			KGSL_IOMMU_SET_CTX_REG(ctx, KGSL_IOMMU_CTX_SCTLR,
+					sctlr_val);
 
-		/* This is used by reset/recovery path */
-		ctx->stalled_on_fault = true;
+			/* This is used by reset/recovery path */
+			ctx->stalled_on_fault = true;
 
-		adreno_set_gpu_fault(adreno_dev, ADRENO_IOMMU_PAGE_FAULT);
-		/* Go ahead with recovery*/
-		adreno_dispatcher_schedule(device);
+			adreno_set_gpu_fault(adreno_dev,
+					ADRENO_IOMMU_PAGE_FAULT);
+			/* Go ahead with recovery*/
+			adreno_dispatcher_schedule(device);
+		}
 	}
 
 	if (!rate_limited) {
@@ -1037,7 +1050,7 @@ static irqreturn_t kgsl_iommu_context_fault_isr(int irq, void *data)
 			&adreno_dev->ft_pf_policy);
 
 	spin_lock_irqsave(&ctx->fault_lock, flags);
-	ctx->outstanding_fault_count++;
+	atomic_inc(&ctx->outstanding_fault_count);
 
 	/*
 	 * Get the IRQ handler thread woken up so the thread is ready to process
@@ -1072,20 +1085,21 @@ static irqreturn_t kgsl_iommu_context_fault_isr(int irq, void *data)
 }
 
 /* Wait a while after our last reported fault before sleeping the thread. */
-#define BUSY_WAIT_NS 50000
+#define BUSY_WAIT_CYCLES 192 /* ~10 us @ 19.2 MHz */
 
 static irqreturn_t kgsl_iommu_context_fault_thread(int irq, void *data)
 {
 	struct kgsl_iommu_context *ctx = data;
 	struct kgsl_iommu_fault_regs fault_regs;
-	unsigned long wait_start, flags;
+	cycles_t wait_start;
+	unsigned long flags;
 	int ret;
 	const bool stall_on_fault = test_bit(KGSL_FT_PAGEFAULT_STALL_ENABLE,
 			&ADRENO_DEVICE(ctx->kgsldev)->ft_pf_policy);
 
 	spin_lock_irqsave(&ctx->fault_lock, flags);
 	memcpy(&fault_regs, &ctx->fault_regs, sizeof(fault_regs));
-	ctx->outstanding_fault_count--;
+	atomic_dec(&ctx->outstanding_fault_count);
 	spin_unlock_irqrestore(&ctx->fault_lock, flags);
 
 	ret = kgsl_iommu_fault_handler(ctx, &fault_regs);
@@ -1108,16 +1122,18 @@ static irqreturn_t kgsl_iommu_context_fault_thread(int irq, void *data)
 	if (!stall_on_fault)
 		enable_irq(ctx->irq);
 
-	wait_start = ktime_get_ns();
-	while (!READ_ONCE(ctx->outstanding_fault_count)) {
+	wait_start = get_cycles();
+	while (!atomic_read(&ctx->outstanding_fault_count)) {
 		/* Stop if the handler thread has been signaled to do so. */
 		if (kthread_should_stop())
 			break;
 
 		/* Otherwise keep the thread awake for a while. */
-		ndelay(250);
-		if (ktime_get_ns() - wait_start >= BUSY_WAIT_NS)
+		if (get_cycles() - wait_start >= BUSY_WAIT_CYCLES)
 			break;
+
+		/* Take a nap. */
+		cpu_relax();
 	}
 
 	return IRQ_HANDLED;
@@ -1271,24 +1287,22 @@ static void kgsl_iommu_destroy_pagetable(struct kgsl_pagetable *pt)
 		/* Unmap any pending secure global buffers */
 		list_for_each_entry(md, &device->globals, node) {
 			if (md->memdesc.flags & KGSL_MEMFLAGS_SECURE) {
-				struct page *page, *tmp;
 				LIST_HEAD(page_list);
 				int ret;
 
 				ret = kgsl_mmu_get_backing_pages(&md->memdesc,
 						&page_list);
-				if (ret)
-					continue;
+				if (!ret)
+					kgsl_mmu_unmap(pt, &md->memdesc,
+							&page_list);
 
-				kgsl_mmu_unmap(pt, &md->memdesc, &page_list);
-
-				list_for_each_entry_safe(page, tmp, &page_list, lru)
-					list_del(&page->lru);
+				/* Clean up after ourselves. */
+				kgsl_iommu_release_page_list(&md->memdesc,
+						&page_list);
 			}
 		}
-	} else {
+	} else
 		kgsl_iommu_unmap_globals(mmu, pt);
-	}
 
 	if (iommu_pt->domain) {
 		trace_kgsl_pagetable_destroy(iommu_pt->ttbr0, pt->name);
@@ -1314,7 +1328,7 @@ static void setup_64bit_pagetable(struct kgsl_mmu *mmu,
 		pt->va_start = KGSL_IOMMU_SECURE_BASE(mmu);
 		pt->va_end = KGSL_IOMMU_SECURE_END(mmu);
 	} else {
-		pt->compat_va_start = KGSL_IOMMU_SVM_BASE32;
+		pt->compat_va_start = KGSL_IOMMU_SVM_BASE32(mmu);
 		pt->compat_va_end = KGSL_IOMMU_SECURE_BASE(mmu);
 		pt->va_start = KGSL_IOMMU_VA_BASE64;
 		pt->va_end = KGSL_IOMMU_VA_END64;
@@ -1323,7 +1337,7 @@ static void setup_64bit_pagetable(struct kgsl_mmu *mmu,
 	if (pagetable->name != KGSL_MMU_GLOBAL_PT &&
 		pagetable->name != KGSL_MMU_SECURE_PT) {
 		if (kgsl_is_compat_task()) {
-			pt->svm_start = KGSL_IOMMU_SVM_BASE32;
+			pt->svm_start = KGSL_IOMMU_SVM_BASE32(mmu);
 			pt->svm_end = KGSL_IOMMU_SECURE_BASE(mmu);
 		} else {
 			pt->svm_start = KGSL_IOMMU_SVM_BASE64;
@@ -1343,13 +1357,13 @@ static void setup_32bit_pagetable(struct kgsl_mmu *mmu,
 			pt->va_start = KGSL_IOMMU_SECURE_BASE(mmu);
 			pt->va_end = KGSL_IOMMU_SECURE_END(mmu);
 		} else {
-			pt->va_start = KGSL_IOMMU_SVM_BASE32;
+			pt->va_start = KGSL_IOMMU_SVM_BASE32(mmu);
 			pt->va_end = KGSL_IOMMU_SECURE_BASE(mmu);
 			pt->compat_va_start = pt->va_start;
 			pt->compat_va_end = pt->va_end;
 		}
 	} else {
-		pt->va_start = KGSL_IOMMU_SVM_BASE32;
+		pt->va_start = KGSL_IOMMU_SVM_BASE32(mmu);
 		pt->va_end = KGSL_IOMMU_GLOBAL_MEM_BASE(mmu);
 		pt->compat_va_start = pt->va_start;
 		pt->compat_va_end = pt->va_end;
@@ -1357,7 +1371,7 @@ static void setup_32bit_pagetable(struct kgsl_mmu *mmu,
 
 	if (pagetable->name != KGSL_MMU_GLOBAL_PT &&
 		pagetable->name != KGSL_MMU_SECURE_PT) {
-		pt->svm_start = KGSL_IOMMU_SVM_BASE32;
+		pt->svm_start = KGSL_IOMMU_SVM_BASE32(mmu);
 		pt->svm_end = KGSL_IOMMU_SVM_END32;
 	}
 }
@@ -2331,8 +2345,8 @@ kgsl_iommu_map(struct kgsl_pagetable *pt,
 	 * need of the SG table since all subsequent operations look up the
 	 * entry's backing pages. Free the SGT now unless it's a global where
 	 * the SGT might be needed for another mapping of the entry, a usermem
-	 * buffer since freeing them requires special handling, or a non-lazy
-	 * secure buffer.
+	 * buffer since freeing them requires special handling, or a secure
+	 * buffer.
 	 */
 	if (memdesc->sgt != NULL && !is_usermem && !is_global && !is_secured) {
 		sg_free_table(memdesc->sgt);
@@ -3013,14 +3027,14 @@ static bool kgsl_iommu_addr_in_range(struct kgsl_pagetable *pagetable,
 	if (gpuaddr == 0)
 		return false;
 
-	if (gpuaddr >= pt->va_start && (gpuaddr + size) <= pt->va_end)
+	if (gpuaddr >= pt->va_start && (gpuaddr + size) < pt->va_end)
 		return true;
 
 	if (gpuaddr >= pt->compat_va_start &&
-			(gpuaddr + size) <= pt->compat_va_end)
+			(gpuaddr + size) < pt->compat_va_end)
 		return true;
 
-	if (gpuaddr >= pt->svm_start && (gpuaddr + size) <= pt->svm_end)
+	if (gpuaddr >= pt->svm_start && (gpuaddr + size) < pt->svm_end)
 		return true;
 
 	return false;
@@ -3303,5 +3317,6 @@ static struct kgsl_mmu_pt_ops iommu_pt_ops = {
 	.mmu_find_mapped_page = kgsl_iommu_find_mapped_page,
 	.mmu_find_mapped_page_range = kgsl_iommu_find_mapped_page_range,
 	.mmu_get_backing_pages = kgsl_iommu_get_backing_pages,
+	.mmu_release_page_list = kgsl_iommu_release_page_list,
 	.mmu_set_access_flag = kgsl_iommu_set_access_flag,
 };

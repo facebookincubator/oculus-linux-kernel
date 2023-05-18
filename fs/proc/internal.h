@@ -306,6 +306,7 @@ extern const struct file_operations proc_pid_maps_operations;
 extern const struct file_operations proc_pid_numa_maps_operations;
 extern const struct file_operations proc_pid_private_maps_operations;
 extern const struct file_operations proc_pid_smaps_operations;
+extern const struct file_operations proc_pid_smaps_inline_operations;
 extern const struct file_operations proc_pid_smaps_rollup_operations;
 extern const struct file_operations proc_clear_refs_operations;
 extern const struct file_operations proc_pagemap_operations;

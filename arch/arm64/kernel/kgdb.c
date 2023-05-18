@@ -28,7 +28,6 @@
 
 #include <asm/debug-monitors.h>
 #include <asm/insn.h>
-#include <asm/ptrace.h>
 #include <asm/traps.h>
 
 struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
@@ -111,8 +110,6 @@ struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "fpsr", 4, -1 },
 	{ "fpcr", 4, -1 },
 };
-
-static DEFINE_PER_CPU(unsigned int, kgdb_pstate);
 
 char *dbg_get_reg(int regno, void *mem, struct pt_regs *regs)
 {
@@ -211,13 +208,15 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 		atomic_set(&kgdb_cpu_doing_single_step, -1);
 		kgdb_single_step =  0;
 
+		/*
+		 * Received continue command, disable single step
+		 */
+		if (kernel_active_single_step())
+			kernel_disable_single_step();
+
 		err = 0;
 		break;
 	case 's':
-		/* mask interrupts while single stepping */
-		__this_cpu_write(kgdb_pstate, linux_regs->pstate);
-		linux_regs->pstate |= PSR_I_BIT;
-
 		/*
 		 * Update step address value with address passed
 		 * with step packet.
@@ -229,6 +228,7 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 		kgdb_arch_update_addr(linux_regs, remcom_in_buffer);
 		atomic_set(&kgdb_cpu_doing_single_step, raw_smp_processor_id());
 		kgdb_single_step =  1;
+
 		/*
 		 * Enable single step handling
 		 */
@@ -266,21 +266,10 @@ NOKPROBE_SYMBOL(kgdb_compiled_brk_fn);
 
 static int kgdb_step_brk_fn(struct pt_regs *regs, unsigned int esr)
 {
-	unsigned int pstate;
-
 	if (user_mode(regs) || !kgdb_single_step)
 		return DBG_HOOK_ERROR;
 
-	kernel_disable_single_step();
-
-	/* restore interrupt mask status */
-	pstate = __this_cpu_read(kgdb_pstate);
-	if (pstate & PSR_I_BIT)
-		regs->pstate |= PSR_I_BIT;
-	else
-		regs->pstate &= ~PSR_I_BIT;
-
-	kgdb_handle_exception(1, SIGTRAP, 0, regs);
+	kgdb_handle_exception(0, SIGTRAP, 0, regs);
 	return DBG_HOOK_HANDLED;
 }
 NOKPROBE_SYMBOL(kgdb_step_brk_fn);

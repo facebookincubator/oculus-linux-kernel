@@ -95,8 +95,8 @@ struct blu_device {
 	bool debug_blu;
 	/* frames dropped when SPI write fails */
 	u16 dropped_frames;
-	/* flag to toggle backlight rolloff */
-	bool rolloff_en;
+	/* load specific backlight rolloff profile */
+	u16 rolloff_en;
 	/* flag to control cross-eye brightness adjustment */
 	bool ceb_en;
 
@@ -245,9 +245,32 @@ static void apply_blu_brightness(struct blu_device *blu)
 	blu->brightness_buffer[blu->matrix_size-1] = checksum;
 }
 
+static void apply_blu_bro(struct blu_device *blu)
+{
+	struct spi_device *spi = blu->spi;
+	u8 *bro_profile_source;
+	int ret = 0;
+
+	if (blu->rolloff_size != 0 && blu->rolloff_en && blu->rolloff_en <= NUM_BRO_PROFILES) {
+		/* rolloff_en refers to the first, second etc so we subtract one here */
+		bro_profile_source = bro_profiles[blu->rolloff_en - 1];
+	} else {
+		if (blu->rolloff_en > NUM_BRO_PROFILES) {
+			dev_err(&spi->dev, "Illegal value for rolloff_en: %d, expected 0 - %d. Assuming 0", blu->rolloff_en, NUM_BRO_PROFILES);
+		}
+		/* send in default no-op rolloff values */
+		bro_profile_source = blu->bro_profile_default;
+	}
+	memcpy(blu->bro_profile_buffer, bro_profile_source,  blu->rolloff_size);
+	ret = spi_write(spi, blu->bro_profile_buffer, blu->rolloff_size);
+
+	if (ret)
+		dev_err(&spi->dev, "failed to set rolloff values, error %d\n", ret);
+}
+
 static irqreturn_t blu_isr(int isr, void *blu_dev)
 {
-	/* SPI commands to enter/exit soft reset mode*/
+	/* SPI commands to enter/exit soft reset mode */
 	static const u8 blu_enter_reset_cmd[] = { 0x01, 0x00, 0x01, 0x00, 0x00, 0x00 };
 	static const u8 blu_exit_reset_cmd[] = { 0x01, 0x00, 0x01, 0x00, 0x00, 0x01 };
 	static const u8 blu_led_timing[] = { 0x01, 0x00, 0x05, 0x00, 0x02, 0x23, 0x50, 0x7F, 0xFE, 0x11 };
@@ -287,15 +310,7 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 			dev_err(&spi->dev, "failed to set LED current, error %d\n", ret);
 
 		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
-		if (blu->rolloff_size != 0 && blu->rolloff_en) {
-			memcpy(blu->bro_profile_buffer, bro_profiles[SELECTED_BRO_PROFILE], blu->rolloff_size);
-			ret = spi_write(spi, blu->bro_profile_buffer, blu->rolloff_size);
-		} else {
-			/* send in default no-op rolloff values */
-			ret = spi_write(spi, blu->bro_profile_default, blu->rolloff_size);
-		}
-		if (ret)
-			dev_err(&spi->dev, "failed to set rolloff values, error %d\n", ret);
+		apply_blu_bro(blu);
 
 		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
 		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
@@ -313,6 +328,7 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		if (old) {
 			swap_buffers(&(blu->backlight_matrix), &(blu->back_buffer));
 			apply_edge_masking(blu);
+			atomic_set(&blu->buffer_dirty, 0);
 		}
 
 		/* Apply brightness correction assuming all local dimming matrix values are at max brightness (255) */
@@ -342,8 +358,6 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 				blu->dropped_frames++;
 			}
 		}
-
-		atomic_set(&blu->buffer_dirty, 0);
 	}
 
 	++blu->frame_counts;
@@ -434,7 +448,7 @@ static void send_spi_message(struct blu_device *blu)
 	if (ret)
 		dev_err(&blu->spi->dev, "Error sending spi debug message %d\n", ret);
 
-	complete(&blu->rx_ready);
+	complete_all(&blu->rx_ready);
 
 	enable_irq(blu->irq);
 }
@@ -554,6 +568,30 @@ static int get_backlight_matrix(struct blu_device *blu,
 	return ret;
 }
 
+static int get_bro_matrix(struct blu_device *blu,
+		struct blu_spi_bro_matrix __user *bro_dump)
+{
+	int ret;
+	uint8_t *matrix_addr;
+
+	/* copy the bro matrix address we want to write to from user space */
+	ret = copy_from_user(&matrix_addr, bro_dump, sizeof(blu->bro_profile_buffer));
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from user space\n", ret);
+		return -EFAULT;
+	}
+
+	/* copy the current bro matrix back to user space */
+	ret = copy_to_user(matrix_addr, &(blu->bro_profile_buffer[0]),
+			   blu->rolloff_size);
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes of BRO data to user space\n", ret);
+		return -EFAULT;
+	}
+
+	return ret;
+}
+
 static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 		unsigned long arg)
 {
@@ -572,6 +610,9 @@ static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 	case BLU_SPI_GET_BACKLIGHT_IOCTL:
 		return get_backlight_matrix(blu,
 			(struct blu_spi_backlight_matrix *)arg);
+	case BLU_SPI_GET_BRO_IOCTL:
+		return get_bro_matrix(blu,
+			(struct blu_spi_bro_matrix *)arg);
 	default:
 		dev_err(&blu->spi->dev, "Unrecognized IOCTL %ul\n", cmd);
 		return -EINVAL;
@@ -670,16 +711,23 @@ static ssize_t rolloff_en_store(struct device *dev,
 	struct miscdevice *miscdev = dev_get_drvdata(dev);
 	struct blu_device *blu_dev =
 		container_of(miscdev, struct blu_device, misc);
-	int ret;
-	bool temp;
 
-	ret = kstrtobool(buf, &temp);
+	int ret;
+	u16 temp;
+
+	ret = kstrtou16(buf, /* base */ 10, &temp);
 	if (ret < 0) {
-		dev_err(dev, "Illegal input for rolloff_en: %s", buf);
+		dev_err(dev, "Illegal input for rolloff_en: %s, expected 0 - %d", buf, NUM_BRO_PROFILES);
 		return ret;
 	}
 
+	if (temp > NUM_BRO_PROFILES) {
+		dev_err(dev, "Illegal value for rolloff_en: %d, expected 0 - %d. Assuming 0", temp, NUM_BRO_PROFILES);
+		temp = 0;
+	}
+
 	blu_dev->rolloff_en = temp;
+	apply_blu_bro(blu_dev);
 	return count;
 }
 static DEVICE_ATTR_RW(rolloff_en);
@@ -865,6 +913,7 @@ static int blu_spi_probe(struct spi_device *spi)
 	}
 
 	init_completion(&blu->rx_ready);
+	blu->rx_ready.done = 1;  // initialize as done
 	INIT_WORK(&blu->work_blm, do_transfer_backlight_matrix);
 	INIT_WORK(&blu->work_msg, do_send_spi_message);
 

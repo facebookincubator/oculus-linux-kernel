@@ -68,6 +68,7 @@
 #define DEFAULT_MPM_RING_SIZE_DL 64
 #define DEFAULT_MPM_TETH_AGGR_SIZE 24
 #define DEFAULT_MPM_UC_THRESH_SIZE 4
+
 /*
  * The following for adding code (ie. for EMULATION) not found on x86.
  */
@@ -708,6 +709,7 @@ static int ipa3_ioctl_add_rt_rule_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header, (const void __user *)arg,
@@ -746,11 +748,20 @@ static int ipa3_ioctl_add_rt_rule_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_add_rt_rule_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_add_rt_rule_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_add_rt_rule_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_add_rt_rule_v2 *)param)->
+			((struct ipa_ioc_add_rt_rule_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -794,6 +805,8 @@ static int ipa3_ioctl_add_rt_rule_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -809,6 +822,7 @@ static int ipa3_ioctl_add_rt_rule_ext_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header,
@@ -850,11 +864,20 @@ static int ipa3_ioctl_add_rt_rule_ext_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_add_rt_rule_ext_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_add_rt_rule_ext_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_add_rt_rule_ext_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_add_rt_rule_ext_v2 *)param)->
+			((struct ipa_ioc_add_rt_rule_ext_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -900,6 +923,8 @@ static int ipa3_ioctl_add_rt_rule_ext_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -915,6 +940,7 @@ static int ipa3_ioctl_add_rt_rule_after_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header, (const void __user *)arg,
@@ -955,11 +981,19 @@ static int ipa3_ioctl_add_rt_rule_after_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_add_rt_rule_after_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_add_rt_rule_after_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_add_rt_rule_after_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_add_rt_rule_after_v2 *)param)->
+			((struct ipa_ioc_add_rt_rule_after_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -1003,6 +1037,8 @@ static int ipa3_ioctl_add_rt_rule_after_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -1018,6 +1054,7 @@ static int ipa3_ioctl_mdfy_rt_rule_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header, (const void __user *)arg,
@@ -1058,11 +1095,19 @@ static int ipa3_ioctl_mdfy_rt_rule_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_mdfy_rt_rule_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_mdfy_rt_rule_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_mdfy_rt_rule_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_mdfy_rt_rule_v2 *)param)->
+			((struct ipa_ioc_mdfy_rt_rule_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -1106,6 +1151,8 @@ static int ipa3_ioctl_mdfy_rt_rule_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -1121,6 +1168,7 @@ static int ipa3_ioctl_add_flt_rule_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header, (const void __user *)arg,
@@ -1160,11 +1208,19 @@ static int ipa3_ioctl_add_flt_rule_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_add_flt_rule_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_add_flt_rule_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_add_flt_rule_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_add_flt_rule_v2 *)param)->
+			((struct ipa_ioc_add_flt_rule_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -1207,6 +1263,8 @@ static int ipa3_ioctl_add_flt_rule_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -1222,6 +1280,7 @@ static int ipa3_ioctl_add_flt_rule_after_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header, (const void __user *)arg,
@@ -1262,11 +1321,19 @@ static int ipa3_ioctl_add_flt_rule_after_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_add_flt_rule_after_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_add_flt_rule_after_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_add_flt_rule_after_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_add_flt_rule_after_v2 *)param)->
+			((struct ipa_ioc_add_flt_rule_after_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -1310,6 +1377,8 @@ static int ipa3_ioctl_add_flt_rule_after_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -1325,6 +1394,7 @@ static int ipa3_ioctl_mdfy_flt_rule_v2(unsigned long arg)
 	u32 pyld_sz;
 	u64 uptr = 0;
 	u8 *param = NULL;
+	u8 *param2 = NULL;
 	u8 *kptr = NULL;
 
 	if (copy_from_user(header, (const void __user *)arg,
@@ -1365,11 +1435,19 @@ static int ipa3_ioctl_mdfy_flt_rule_v2(unsigned long arg)
 		retval = -EFAULT;
 		goto free_param_kptr;
 	}
+
+	param2 = memdup_user((const void __user *)arg,
+		sizeof(struct ipa_ioc_mdfy_flt_rule_v2));
+	if (IS_ERR(param2)) {
+		retval = -EFAULT;
+		goto free_param_kptr;
+	}
+
 	/* add check in case user-space module compromised */
-	if (unlikely(((struct ipa_ioc_mdfy_flt_rule_v2 *)param)->num_rules
+	if (unlikely(((struct ipa_ioc_mdfy_flt_rule_v2 *)param2)->num_rules
 		!= pre_entry)) {
 		IPAERR_RL("current %d pre %d\n",
-			((struct ipa_ioc_mdfy_flt_rule_v2 *)param)->
+			((struct ipa_ioc_mdfy_flt_rule_v2 *)param2)->
 				num_rules, pre_entry);
 			retval = -EFAULT;
 			goto free_param_kptr;
@@ -1413,6 +1491,8 @@ static int ipa3_ioctl_mdfy_flt_rule_v2(unsigned long arg)
 free_param_kptr:
 	if (!IS_ERR(param))
 		kfree(param);
+	if (!IS_ERR(param2))
+		kfree(param2);
 	kfree(kptr);
 
 	return retval;
@@ -5283,7 +5363,7 @@ void ipa3_inc_acquire_wakelock(void)
 	spin_lock_irqsave(&ipa3_ctx->wakelock_ref_cnt.spinlock, flags);
 	ipa3_ctx->wakelock_ref_cnt.cnt++;
 	if (ipa3_ctx->wakelock_ref_cnt.cnt == 1)
-		__pm_stay_awake(&ipa3_ctx->w_lock);
+		__pm_stay_awake(ipa3_ctx->w_lock);
 	IPADBG_LOW("active wakelock ref cnt = %d\n",
 		ipa3_ctx->wakelock_ref_cnt.cnt);
 	spin_unlock_irqrestore(&ipa3_ctx->wakelock_ref_cnt.spinlock, flags);
@@ -5306,7 +5386,7 @@ void ipa3_dec_release_wakelock(void)
 	IPADBG_LOW("active wakelock ref cnt = %d\n",
 		ipa3_ctx->wakelock_ref_cnt.cnt);
 	if (ipa3_ctx->wakelock_ref_cnt.cnt == 0)
-		__pm_relax(&ipa3_ctx->w_lock);
+		__pm_relax(ipa3_ctx->w_lock);
 	spin_unlock_irqrestore(&ipa3_ctx->wakelock_ref_cnt.spinlock, flags);
 }
 
@@ -7025,8 +7105,14 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 		goto fail_device_create;
 	}
 
-	/* Create a wakeup source. */
-	wakeup_source_init(&ipa3_ctx->w_lock, "IPA_WS");
+	/* Register a wakeup source. */
+	ipa3_ctx->w_lock =
+		wakeup_source_register(&ipa_pdev->dev, "IPA_WS");
+	if (!ipa3_ctx->w_lock) {
+		IPAERR("IPA wakeup source register failed\n");
+		result = -ENOMEM;
+		goto fail_w_source_register;
+	}
 	spin_lock_init(&ipa3_ctx->wakelock_ref_cnt.spinlock);
 
 	/* Initialize Power Management framework */
@@ -7119,6 +7205,9 @@ fail_gsi_pre_fw_load_init:
 fail_ipa_dma_setup:
 	ipa_pm_destroy();
 fail_ipa_pm_init:
+	wakeup_source_unregister(ipa3_ctx->w_lock);
+	ipa3_ctx->w_lock = NULL;
+fail_w_source_register:
 	device_destroy(ipa3_ctx->cdev.class, ipa3_ctx->cdev.dev_num);
 fail_device_create:
 	unregister_chrdev_region(ipa3_ctx->cdev.dev_num, 1);
@@ -7180,8 +7269,10 @@ fail_mem_ctrl:
 	kfree(ipa3_ctx->ipa_tz_unlock_reg);
 	ipa3_ctx->ipa_tz_unlock_reg = NULL;
 fail_tz_unlock_reg:
-	if (ipa3_ctx->logbuf)
+	if (ipa3_ctx->logbuf) {
 		ipc_log_context_destroy(ipa3_ctx->logbuf);
+		ipa3_ctx->logbuf = NULL;
+	}
 fail_uc_file_alloc:
 	kfree(ipa3_ctx->gsi_fw_file_name);
 fail_gsi_file_alloc:
@@ -8647,6 +8738,7 @@ void ipa_pc_qmp_enable(void)
  *            PCIe Version
  *************************************************************/
 
+#ifdef CONFIG_PCI
 int ipa3_pci_drv_probe(
 	struct pci_dev            *pci_dev,
 	struct ipa_api_controller *api_ctrl,
@@ -8806,6 +8898,7 @@ int ipa3_pci_drv_probe(
 
 	return result;
 }
+#endif
 
 /*
  * The following returns transport register memory location and

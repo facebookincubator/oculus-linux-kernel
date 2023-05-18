@@ -65,9 +65,7 @@
 			interrupt-parent = <&tlmm>;
 			interrupts = <71 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_dual_boe_lcd_video
-				&dsi_dual_boe_lcd_dsc_video
-				&dsi_dual_boe_90hz_dsc>;
+			panel = <&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			pinctrl-names = "default";
@@ -86,9 +84,7 @@
 			interrupt-parent = <&tlmm>;
 			interrupts = <72 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_dual_boe_lcd_video
-				&dsi_dual_boe_lcd_dsc_video
-				&dsi_dual_boe_90hz_dsc>;
+			panel = <&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 1 40000>;
 			pinctrl-names = "default";
@@ -107,7 +103,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&pm8150l_adc_tm ADC_AMUX_THM1_PU2>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cam0_usr_fan_trip0: cam0_usr_fan_trip0 {
@@ -190,7 +186,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&pm8150l_adc_tm ADC_AMUX_THM3_PU2>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cam1_usr_fan_trip0: cam1_usr_fan_trip0 {
@@ -274,7 +270,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 1>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_0_0_fan_trip0: cpu_0_0_fan_trip0 {
@@ -357,7 +353,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 2>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_0_1_fan_trip0: cpu_0_1_fan_trip0 {
@@ -440,7 +436,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 3>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_0_2_fan_trip0: cpu_0_2_fan_trip0 {
@@ -523,7 +519,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 4>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_0_3_fan_trip0: cpu_0_3_fan_trip0 {
@@ -606,7 +602,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 7>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_0_fan_trip0: cpu_1_0_fan_trip0 {
@@ -689,7 +685,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 8>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_1_fan_trip0: cpu_1_1_fan_trip0 {
@@ -772,7 +768,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 9>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_2_fan_trip0: cpu_1_2_fan_trip0 {
@@ -855,7 +851,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 10>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_3_fan_trip0: cpu_1_3_fan_trip0 {
@@ -938,7 +934,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 11>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_4_fan_trip0: cpu_1_4_fan_trip0 {
@@ -1021,7 +1017,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 12>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_5_fan_trip0: cpu_1_5_fan_trip0 {
@@ -1104,7 +1100,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 13>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_6_fan_trip0: cpu_1_6_fan_trip0 {
@@ -1187,7 +1183,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 14>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpu_1_7_fan_trip0: cpu_1_7_fan_trip0 {
@@ -1270,7 +1266,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 5>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpuss_0_fan_trip0: cpuss_0_fan_trip0 {
@@ -1353,7 +1349,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 6>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			cpuss_1_fan_trip0: cpuss_1_fan_trip0 {
@@ -1436,7 +1432,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&display_virtual_sensor>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			display_virt_fan_trip0: display_virt_fan_trip0 {
@@ -1519,7 +1515,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens0 15>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			gpuss_0_fan_trip0: gpuss_0_fan_trip0 {
@@ -1602,7 +1598,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&tsens1 8>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			gpuss_1_fan_trip0: gpuss_1_fan_trip0 {
@@ -1685,7 +1681,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&pm8150_tz>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			pm8150_fan_trip0: pm8150_fan_trip0 {
@@ -1768,7 +1764,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&pm8150b_adc_tm ADC_AMUX_THM2_PU2>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			smb_usr_fan_trip0: smb_usr_fan_trip0 {
@@ -1851,7 +1847,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&pm8150_adc_tm ADC_AMUX_THM1_PU2>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			usbc_usr_fan_trip0: usbc_usr_fan_trip0 {
@@ -1934,7 +1930,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&vrapi_front_panel_sensor>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			fp_fan_trip0: fp_fan_trip0 {
@@ -2017,7 +2013,7 @@
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
 		thermal-sensors = <&vrapi_top_panel_sensor>;
-		thermal-governor = "step_wise";
+		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
 			tp_fan_trip0: tp_fan_trip0 {

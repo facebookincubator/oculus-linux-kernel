@@ -215,7 +215,11 @@ struct drm_msm_gem_cpu_fini {
  */
 struct drm_msm_gem_submit_reloc {
 	__u32 submit_offset;  /* in, offset from submit_bo */
+#ifdef __cplusplus
+	__u32 or_val;
+#else
 	__u32 or;             /* in, value OR'd with result */
+#endif
 	__s32 shift;          /* in, amount of left shift (can be negative) */
 	__u32 reloc_idx;      /* in, index of reloc_bo buffer */
 	__u64 reloc_offset;   /* in, offset from start of reloc_bo */
@@ -407,14 +411,6 @@ struct drm_msm_power_ctrl {
 	__u32 flags;
 };
 
-/**
- * struct drm_msm_vsync_trigger - trigger panel vsync
- */
-struct drm_msm_vsync_trigger {
-	__u32 crtc_id;
-	__s32 fence;
-};
-
 #define DRM_MSM_GET_PARAM              0x00
 /* placeholder:
 #define DRM_MSM_SET_PARAM              0x01
@@ -436,8 +432,7 @@ struct drm_msm_vsync_trigger {
 #define DRM_MSM_DEREGISTER_EVENT       0x42
 #define DRM_MSM_RMFB2                  0x43
 #define DRM_MSM_POWER_CTRL             0x44
-#define DRM_MSM_VSYNC_TRIGGER          0x45
-#define DRM_MSM_CAC_WRITEBACK_TRIGGER  0x46
+#define DRM_MSM_CAC_WRITEBACK_TRIGGER  0x45
 
 /* sde custom events */
 #define DRM_EVENT_HISTOGRAM 0x80000000
@@ -472,8 +467,6 @@ struct drm_msm_vsync_trigger {
 #define DRM_IOCTL_MSM_SUBMITQUEUE_CLOSE  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_SUBMITQUEUE_CLOSE, __u32)
 #define DRM_IOCTL_MSM_POWER_CTRL DRM_IOW((DRM_COMMAND_BASE + \
 			DRM_MSM_POWER_CTRL), struct drm_msm_power_ctrl)
-#define DRM_IOCTL_MSM_VSYNC_TRIGGER DRM_IOW((DRM_COMMAND_BASE + \
-			DRM_MSM_VSYNC_TRIGGER), struct drm_msm_vsync_trigger)
 #define DRM_IOCTL_MSM_CAC_WRITEBACK_TRIGGER DRM_IO(DRM_COMMAND_BASE + \
 			DRM_MSM_CAC_WRITEBACK_TRIGGER)
 

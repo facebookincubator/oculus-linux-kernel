@@ -352,6 +352,12 @@
 			no-map;
 		};
 
+		reserved_xbl_uefi_log: res_xbl_uefi_log_region@80880000 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0x0 0x80880000 0x0 0x14000>;
+		};
+
 		sec_apps_mem: sec_apps_region@808ff000 {
 			compatible = "removed-dma-pool";
 			no-map;
@@ -528,7 +534,7 @@
 	};
 
 	chosen {
-		bootargs = "rcupdate.rcu_expedited=1 rcu_nocbs=0-7 earlycon=msm_geni_serial,0x888000";
+		bootargs = "rcupdate.rcu_expedited=1 rcu_nocbs=0-7 earlycon=msm_geni_serial,0x888000 kpti=off";
 	};
 
 	soc: soc { };
@@ -1591,6 +1597,7 @@
 		compatible = "qcom,aop-qmp-clk";
 		mboxes = <&qmp_aop 0>;
 		mbox-names = "qdss_clk";
+		qcom,clk-stop-bimc-log;
 		#clock-cells = <1>;
 	};
 
@@ -1755,43 +1762,17 @@
 		cell-index = <0>;
 	};
 
-	ufs_ice: ufsice@1d90000 {
-		compatible = "qcom,ice";
-		reg = <0x1d90000 0x8000>;
-		qcom,enable-ice-clk;
-		clock-names = "ufs_core_clk", "bus_clk",
-				"iface_clk", "ice_core_clk";
-		clocks = <&gcc GCC_UFS_PHY_AXI_CLK>,
-			<&gcc GCC_UFS_1X_CLKREF_CLK>,
-			<&gcc GCC_UFS_PHY_AHB_CLK>,
-			<&gcc GCC_UFS_PHY_ICE_CORE_CLK>;
-		qcom,op-freq-hz = <0>, <0>, <0>, <300000000>;
-		vdd-hba-supply = <&ufs_phy_gdsc>;
-		qcom,msm-bus,name = "ufs_ice_noc";
-		qcom,msm-bus,num-cases = <2>;
-		qcom,msm-bus,num-paths = <1>;
-		qcom,msm-bus,vectors-KBps =
-				<MSM_BUS_MASTER_AMPSS_M0
-				 MSM_BUS_SLAVE_UFS_CFG 0 0>,    /* No vote */
-				<MSM_BUS_MASTER_AMPSS_M0
-				 MSM_BUS_SLAVE_UFS_CFG 1000 0>;
-				 /* Max. bandwidth */
-		qcom,bus-vector-names = "MIN",
-					"MAX";
-		qcom,instance-type = "ufs";
-	};
-
 	ufshc_mem: ufshc@1d84000 {
 		compatible = "qcom,ufshc";
-		reg = <0x1d84000 0x3000>;
+		reg = <0x1d84000 0x3000>, <0x1d90000 0x8000>;
+		reg-names = "ufs_mem", "ufs_ice";
 		interrupts = <GIC_SPI 265 IRQ_TYPE_LEVEL_HIGH>;
 		phys = <&ufsphy_mem>;
 		phy-names = "ufsphy";
-		ufs-qcom-crypto = <&ufs_ice>;
 
 		lanes-per-direction = <2>;
 		dev-ref-clk-freq = <0>; /* 19.2 MHz */
-		spm-level = <5>;
+		spm-level = <3>;
 
 		clock-names =
 			"core_clk",
@@ -1895,41 +1876,14 @@
 		status = "disabled";
 	};
 
-	sdcc1_ice: sdcc1ice@7c8000 {
-		compatible = "qcom,ice";
-		reg = <0x7c8000 0x8000>;
-		qcom,enable-ice-clk;
-		clock-names = "ice_core_clk_src", "ice_core_clk",
-				"bus_clk", "iface_clk";
-		clocks = <&gcc GCC_SDCC1_ICE_CORE_CLK_SRC>,
-			<&gcc GCC_SDCC1_ICE_CORE_CLK>,
-			<&gcc GCC_SDCC1_AHB_CLK>,
-			<&gcc GCC_SDCC1_APPS_CLK>;
-		qcom,op-freq-hz = <300000000>, <0>, <0>, <0>;
-		qcom,msm-bus,name = "sdcc_ice_noc";
-		qcom,msm-bus,num-cases = <2>;
-		qcom,msm-bus,num-paths = <1>;
-		qcom,msm-bus,vectors-KBps =
-				<MSM_BUS_MASTER_AMPSS_M0
-				 MSM_BUS_SLAVE_UFS_MEM_CFG 0 0>,
-				 /* No vote */
-				<MSM_BUS_MASTER_AMPSS_M0
-				 MSM_BUS_SLAVE_UFS_MEM_CFG 1000 0>;
-				 /* Max. bandwidth */
-		qcom,bus-vector-names = "MIN",
-					"MAX";
-		qcom,instance-type = "sdcc";
-	};
-
 	sdhc_1: sdhci@7c4000 {
 		compatible = "qcom,sdhci-msm-v5", "qcom,sdhci-msm-cqe";
-		reg = <0x7c4000 0x1000>, <0x7c5000 0x1000>;
-		reg-names = "hc_mem", "cqhci_mem";
+		reg = <0x7c4000 0x1000>, <0x7c5000 0x1000>, <0x7c8000 0x8000>;
+		reg-names = "hc_mem", "cqhci_mem", "cqhci_ice";
 
 		interrupts = <GIC_SPI 202 IRQ_TYPE_LEVEL_HIGH>,
 				<GIC_SPI 204 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "hc_irq", "pwr_irq";
-		sdhc-msm-crypto = <&sdcc1_ice>;
 
 		qcom,bus-width = <8>;
 		qcom,large-address-bus;
@@ -2115,10 +2069,9 @@
 		};
 
 		ufsphy_mem: ufsphy_mem@1d87000 {
-			reg = <0x1d87000 0xe00>; /* PHY regs */
-			reg-names = "phy_mem";
+			reg = <0x1d87000 0xe00>, <0x1d90000 0x8000>;
+			reg-names = "phy_mem", "ufs_ice";
 			#phy-cells = <0>;
-			ufs-qcom-crypto = <&ufs_ice>;
 
 			lanes-per-direction = <2>;
 			qcom,rpmh-resource-name = "qphy.lvl";
@@ -2173,7 +2126,7 @@
 		#mbox-cells = <2>;
 	};
 
-	cache-controller@9200000 {
+	llcc: cache-controller@9200000 {
 		compatible = "qcom,llcc-v1";
 		reg = <0x9200000 0xd0000> , <0x9600000 0x50000>;
 		reg-names = "llcc_base", "llcc_broadcast_base";
@@ -2510,6 +2463,21 @@
 		clk_reg {
 			qcom,dump-size = <0x1000>;
 			qcom,dump-id = <0x163>;
+		};
+
+		osm_reg {
+			qcom,dump-size = <0x400>;
+			qcom,dump-id = <0x163>;
+		};
+
+		pcu_reg {
+			qcom,dump-size = <0x400>;
+			qcom,dump-id = <0x164>;
+		};
+
+		fsm_data {
+			qcom,dump-size = <0x400>;
+			qcom,dump-id = <0x165>;
 		};
 	};
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2020, 2022 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
@@ -701,6 +701,8 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 			goto map_hw_fail;
 		}
 	}
+	mutex_unlock(&tbl.m_lock);
+	mutex_lock(&tbl.m_lock);
 	tbl.bufq[idx].fd = fd;
 	tbl.bufq[idx].dma_buf = NULL;
 	tbl.bufq[idx].flags = cmd->flags;

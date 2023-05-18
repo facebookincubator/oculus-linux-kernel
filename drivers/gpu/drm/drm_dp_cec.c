@@ -289,7 +289,7 @@ static void drm_dp_cec_unregister_work(struct work_struct *work)
  */
 void drm_dp_cec_set_edid(struct drm_dp_aux *aux, const struct edid *edid)
 {
-	u32 cec_caps = CEC_CAP_DEFAULTS;
+	u32 cec_caps = CEC_CAP_DEFAULTS | CEC_CAP_NEEDS_HPD;
 	unsigned int num_las = 1;
 	u8 cap;
 
@@ -403,10 +403,7 @@ EXPORT_SYMBOL(drm_dp_cec_unset_edid);
 void drm_dp_cec_register_connector(struct drm_dp_aux *aux, const char *name,
 				   struct device *parent)
 {
-	if (aux->cec.adap) {
-		WARN_ON(aux->cec.adap);
-		return;
-	}
+	WARN_ON(aux->cec.adap);
 	aux->cec.name = name;
 	aux->cec.parent = parent;
 	INIT_DELAYED_WORK(&aux->cec.unregister_work,

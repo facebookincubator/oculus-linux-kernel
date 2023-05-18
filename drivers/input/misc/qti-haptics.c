@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -956,6 +956,8 @@ static int qti_haptics_playback(struct input_dev *dev, int effect_id, int val)
 
 	dev_dbg(chip->dev, "playback, val = %d\n", val);
 	if (!!val) {
+		pr_debug("Vibration - on at %lu us\n",
+				(unsigned long)ktime_to_us(ktime_get()));
 		rc = qti_haptics_module_en(chip, true);
 		if (rc < 0)
 			return rc;
@@ -985,6 +987,8 @@ static int qti_haptics_playback(struct input_dev *dev, int effect_id, int val)
 			}
 		}
 	} else {
+		pr_debug("Vibration - off at %lu us\n",
+				(unsigned long)ktime_to_us(ktime_get()));
 		play->length_us = 0;
 		rc = qti_haptics_play(chip, false);
 		if (rc < 0)
@@ -1683,11 +1687,11 @@ static ssize_t brake_pattern_dbgfs_write(struct file *filep,
 {
 	struct qti_hap_effect *effect =
 		(struct qti_hap_effect *)filep->private_data;
-	char *kbuf, *token;
+	char *kbuf, *str, *token;
 	int rc = 0, i = 0, j;
 	u32 val;
 
-	kbuf = kmalloc(count + 1, GFP_KERNEL);
+	kbuf = kzalloc(count + 1, GFP_KERNEL);
 	if (!kbuf)
 		return -ENOMEM;
 
@@ -1699,8 +1703,8 @@ static ssize_t brake_pattern_dbgfs_write(struct file *filep,
 
 	kbuf[count] = '\0';
 	*ppos += count;
-
-	while ((token = strsep(&kbuf, " ")) != NULL) {
+	str = kbuf;
+	while ((token = strsep(&str, " ")) != NULL) {
 		rc = kstrtouint(token, 0, &val);
 		if (rc < 0) {
 			rc = -EINVAL;
@@ -1766,11 +1770,11 @@ static ssize_t pattern_dbgfs_write(struct file *filep,
 {
 	struct qti_hap_effect *effect =
 		(struct qti_hap_effect *)filep->private_data;
-	char *kbuf, *token;
+	char *kbuf, *str, *token;
 	int rc = 0, i = 0, j;
 	u32 val;
 
-	kbuf = kmalloc(count + 1, GFP_KERNEL);
+	kbuf = kzalloc(count + 1, GFP_KERNEL);
 	if (!kbuf)
 		return -ENOMEM;
 
@@ -1782,8 +1786,8 @@ static ssize_t pattern_dbgfs_write(struct file *filep,
 
 	kbuf[count] = '\0';
 	*ppos += count;
-
-	while ((token = strsep(&kbuf, " ")) != NULL) {
+	str = kbuf;
+	while ((token = strsep(&str, " ")) != NULL) {
 		rc = kstrtouint(token, 0, &val);
 		if (rc < 0) {
 			rc = -EINVAL;

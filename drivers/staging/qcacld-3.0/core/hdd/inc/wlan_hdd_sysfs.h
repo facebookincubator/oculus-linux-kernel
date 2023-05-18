@@ -67,21 +67,6 @@ void hdd_create_adapter_sysfs_files(struct hdd_adapter *adapter);
  * Return: none
  */
 void hdd_destroy_adapter_sysfs_files(struct hdd_adapter *adapter);
-
-/**
- * hdd_sysfs_create_regulatory_interface() - create regulatory interface
- *
- * Return: none
- */
-void hdd_sysfs_create_regulatory_root_obj(void);
-
-/**
- * hdd_sysfs_destroy_regulatory_interface() - destroy regulatory interface
- *
- * Return: none
- */
-void hdd_sysfs_destroy_regulatory_root_obj(void);
-
 #else
 static inline int
 hdd_sysfs_validate_and_copy_buf(char *dest_buf, size_t dest_buf_size,
@@ -115,17 +100,6 @@ static void hdd_create_adapter_sysfs_files(struct hdd_adapter *adapter)
 static void hdd_destroy_adapter_sysfs_files(struct hdd_adapter *adapter)
 {
 }
-
-static inline
-void hdd_sysfs_create_regulatory_root_obj(void)
-{
-}
-
-static inline
-void hdd_sysfs_destroy_regulatory_root_obj(void)
-{
-}
-
 #endif /* End of WLAN SYSFS*/
 
 #endif /* End of _WLAN_HDD_SYSFS_H_ */

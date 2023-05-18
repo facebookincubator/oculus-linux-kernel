@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * FocalTech TouchScreen driver.
@@ -126,10 +125,10 @@ static ssize_t fts_gesture_store(
 	mutex_lock(&ts_data->input_dev->mutex);
 	if (FTS_SYSFS_ECHO_ON(buf)) {
 		FTS_DEBUG("enable gesture");
-		ts_data->gesture_mode = true;
+		ts_data->gesture_mode = ENABLE;
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
 		FTS_DEBUG("disable gesture");
-		ts_data->gesture_mode = false;
+		ts_data->gesture_mode = DISABLE;
 	}
 	mutex_unlock(&ts_data->input_dev->mutex);
 
@@ -463,12 +462,7 @@ int fts_gesture_init(struct fts_ts_data *ts_data)
 	fts_create_gesture_sysfs(ts_data->dev);
 
 	memset(&fts_gesture_data, 0, sizeof(struct fts_gesture_st));
-
-#if FTS_GESTURE_EN
-	ts_data->gesture_mode = true;
-#else
-	ts_data->gesture_mode = false;
-#endif
+	ts_data->gesture_mode = FTS_GESTURE_EN;
 
 	FTS_FUNC_EXIT();
 	return 0;

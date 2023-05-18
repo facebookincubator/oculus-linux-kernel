@@ -2265,7 +2265,7 @@ int cam_req_mgr_process_sched_req(void *priv, void *data)
 
 	if (slot->status != CRM_SLOT_STATUS_NO_REQ &&
 		slot->status != CRM_SLOT_STATUS_REQ_APPLIED)
-		CAM_DBG(CAM_CRM, "in_q overwrite %d", slot->status);
+		CAM_WARN(CAM_CRM, "in_q overwrite %d", slot->status);
 
 	slot->status = CRM_SLOT_STATUS_REQ_ADDED;
 	slot->req_id = sched_req->req_id;
@@ -4020,22 +4020,22 @@ int cam_req_mgr_link_control(struct cam_req_mgr_link_control *control)
 
 		mutex_lock(&link->lock);
 		if (control->ops == CAM_REQ_MGR_LINK_ACTIVATE) {
-			/* Start SOF watchdog timer */
-			rc = crm_timer_init(&link->watchdog,
-				CAM_REQ_MGR_WATCHDOG_TIMEOUT, link,
-				&__cam_req_mgr_sof_freeze);
-			if (rc < 0) {
-				CAM_ERR(CAM_CRM,
-					"SOF timer start fails: link=0x%x",
-					link->link_hdl);
-				rc = -EFAULT;
-			}
 			spin_lock_bh(&link->link_state_spin_lock);
 			link->state = CAM_CRM_LINK_STATE_READY;
 			spin_unlock_bh(&link->link_state_spin_lock);
 			if (control->init_timeout[i])
 				link->skip_wd_validation = true;
 			init_timeout = (2 * control->init_timeout[i]);
+			/* Start SOF watchdog timer */
+			rc = crm_timer_init(&link->watchdog,
+				(init_timeout + CAM_REQ_MGR_WATCHDOG_TIMEOUT),
+				link, &__cam_req_mgr_sof_freeze);
+			if (rc < 0) {
+				CAM_ERR(CAM_CRM,
+					"SOF timer start fails: link=0x%x",
+					link->link_hdl);
+				rc = -EFAULT;
+			}
 			/* notify nodes */
 			for (j = 0; j < link->num_devs; j++) {
 				dev = &link->l_dev[j];

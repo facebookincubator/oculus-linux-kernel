@@ -56,6 +56,8 @@
 #include <asm/tlb.h>
 #include <asm/alternative.h>
 
+EXPORT_SYMBOL_GPL(kimage_vaddr);
+
 /*
  * We need to be able to catch inadvertent references to memstart_addr
  * that occur (potentially in generic code) before arm64_memblock_init()
@@ -330,6 +332,7 @@ static void __init update_memory_limit(void)
 	phys_addr_t end_addr, addr_aligned, offset;
 	int len;
 	const __be32 *prop;
+	char *status;
 	phys_addr_t min_ddr_sz = 0, offline_sz = 0;
 	int t_len = (2 * dt_root_size_cells) * sizeof(__be32);
 
@@ -346,6 +349,12 @@ static void __init update_memory_limit(void)
 	node = of_get_flat_dt_subnode_by_name(dt_root, "mem-offline");
 	if (node == -FDT_ERR_NOTFOUND) {
 		pr_err("mem-offine node not found in FDT\n");
+		return;
+	}
+
+	status = (char *)fdt_getprop(initial_boot_params, node, "status", NULL);
+	if (status && !strcmp(status, "disabled")) {
+		pr_info("mem-offline device is disabled\n");
 		return;
 	}
 
@@ -499,10 +508,9 @@ void __init arm64_memblock_init(void)
 	 * Save bootloader imposed memory limit before we overwirte
 	 * memblock.
 	 */
-	if (memory_limit == PHYS_ADDR_MAX)
+	bootloader_memory_limit = memblock_max_addr(memory_limit);
+	if (bootloader_memory_limit > memblock_end_of_DRAM())
 		bootloader_memory_limit = memblock_end_of_DRAM();
-	else
-		bootloader_memory_limit = memblock_max_addr(memory_limit);
 
 	update_memory_limit();
 
@@ -889,21 +897,15 @@ static void kernel_physical_mapping_remove(unsigned long start,
 
 }
 
-int arch_remove_memory(u64 start, u64 size, struct vmem_altmap *altmap)
+void arch_remove_memory(int nid, u64 start, u64 size,
+			struct vmem_altmap *altmap)
 {
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
-	struct page *page = pfn_to_page(start_pfn);
-	struct zone *zone;
-	int ret = 0;
 
-	zone = page_zone(page);
-	ret = __remove_pages(zone, start_pfn, nr_pages, altmap);
-	WARN_ON_ONCE(ret);
+	__remove_pages(start_pfn, nr_pages, altmap);
 
 	kernel_physical_mapping_remove(start, start + size);
-
-	return ret;
 }
 
 #endif /* CONFIG_MEMORY_HOTREMOVE */

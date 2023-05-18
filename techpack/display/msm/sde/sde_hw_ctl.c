@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
@@ -980,8 +981,14 @@ static int sde_hw_ctl_intf_cfg_v1(struct sde_hw_ctl *ctx,
 			intf_active |= BIT(cfg->intf[i] - INTF_0);
 	}
 
-	if (cfg->intf_count > 1)
+	if (cfg->intf_count > 1) {
 		intf_master = BIT(cfg->intf_master - INTF_0);
+	} else if (cfg->intf_count == 1) {
+		if (cfg->intf_master)
+			intf_master = BIT(cfg->intf_master - INTF_0);
+		else
+			intf_master = BIT(cfg->intf[i] - INTF_0);
+	}
 
 	for (i = 0; i < cfg->wb_count; i++) {
 		if (cfg->wb[i])

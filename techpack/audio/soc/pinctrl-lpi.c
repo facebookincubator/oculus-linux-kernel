@@ -708,7 +708,7 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 		}
 	} else {
 		slew_base = NULL;
-		dev_dbg(dev, "error in reading lpi slew register: %d\n",
+		dev_dbg(dev, "%s: error in reading lpi slew register: %d\n",
 			__func__, ret);
 	}
 

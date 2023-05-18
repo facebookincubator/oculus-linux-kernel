@@ -11,9 +11,13 @@ ifeq ($(call is-board-platform,$(MSMSTEPPE) $(TRINKET)),true)
 AUDIO_SELECT  := CONFIG_SND_SOC_SM6150=m
 endif
 
+ifeq ($(call is-board-platform,sdm660),true)
+AUDIO_SELECT  := CONFIG_SND_SOC_SDM660=m
+endif
+
 AUDIO_CHIPSET := audio
 # Build/Package only in case of supported target
-ifeq ($(call is-board-platform-in-list,msmnile $(MSMSTEPPE) $(TRINKET)),true)
+ifeq ($(call is-board-platform-in-list,msmnile $(MSMSTEPPE) $(TRINKET) sdm660),true)
 
 LOCAL_PATH := $(call my-dir)
 
@@ -21,7 +25,7 @@ LOCAL_PATH := $(call my-dir)
 ifneq ($(findstring vendor,$(LOCAL_PATH)),)
 
 ifneq ($(findstring opensource,$(LOCAL_PATH)),)
-	AUDIO_BLD_DIR := $(shell pwd)/vendor/qcom/kona/opensource/audio-kernel
+	AUDIO_BLD_DIR := $(shell pwd)/vendor/qcom/opensource/audio-kernel
 endif # opensource
 
 DLKM_DIR := $(TOP)/device/qcom/common/dlkm

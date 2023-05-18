@@ -21001,42 +21001,6 @@ static int __wlan_hdd_cfg80211_connect(struct wiphy *wiphy,
 	hdd_dump_connect_req(adapter, ndev, req);
 
 	/*
-	 * Following code will be cleaned up once the interface manager
-	 * module is enabled
-	 */
-#ifndef WLAN_FEATURE_INTERFACE_MGR
-	/*
-	 * Disable NAN Discovery if incoming connection is P2P or if a STA
-	 * connection already exists and if this is a case of STA+STA
-	 * or SAP+STA concurrency
-	 */
-	sta_cnt = policy_mgr_get_mode_specific_conn_info(hdd_ctx->psoc, NULL,
-							 vdev_id_list,
-							 PM_STA_MODE);
-	sap_cnt = policy_mgr_get_mode_specific_conn_info(hdd_ctx->psoc, NULL,
-							 &vdev_id_list[sta_cnt],
-							 PM_SAP_MODE);
-
-	if (adapter->device_mode == QDF_P2P_CLIENT_MODE || sap_cnt || sta_cnt) {
-		hdd_debug("Invalid NAN concurrency. SAP: %d STA: %d P2P: %d",
-			  sap_cnt, sta_cnt,
-			  (adapter->device_mode == QDF_P2P_CLIENT_MODE));
-		for (i = 0; i < sta_cnt + sap_cnt; i++)
-			if (vdev_id_list[i] == adapter->vdev_id)
-				disable_nan = false;
-		if (disable_nan)
-			ucfg_nan_disable_concurrency(hdd_ctx->psoc);
-	}
-	/*
-	 * STA+NDI concurrency gets preference over NDI+NDI. Disable
-	 * first NDI in case an NDI+NDI concurrency exists if FW does
-	 * not support 4 port concurrency of two NDI + NAN with STA.
-	 */
-	if (!ucfg_nan_is_sta_nan_ndi_4_port_allowed(hdd_ctx->psoc))
-		ucfg_nan_check_and_disable_unsupported_ndi(hdd_ctx->psoc,
-							   false);
-#endif
-	/*
 	 * In STA + STA roaming scenario, connection to same ssid but different
 	 * bssid is allowed on both vdevs. So there could be a race where the
 	 * STA1 connectes to a bssid when roaming is in progress on STA2 for

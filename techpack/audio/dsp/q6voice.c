@@ -515,6 +515,8 @@ static void voc_set_error_state(uint16_t reset_proc)
 		if (v != NULL) {
 			v->voc_state = VOC_ERROR;
 			v->rec_info.recording = 0;
+			v->music_info.playing = 0;
+			v->music_info.force = 0;
 		}
 	}
 }
@@ -1304,8 +1306,7 @@ static int voice_destroy_mvm_cvs_session(struct voice_data *v)
 
 	if (!apr_mvm || !apr_cvs) {
 		pr_err("%s: apr_mvm or apr_cvs is NULL\n", __func__);
-		ret = -EINVAL;
-		goto fail;
+		return -EINVAL;
 	}
 	mvm_handle = voice_get_mvm_handle(v);
 	cvs_handle = voice_get_cvs_handle(v);
@@ -3828,6 +3829,14 @@ static int voice_unmap_cal_memory(int32_t cal_type,
 			else
 				pr_err("%s: Invalid cal type %d!\n",
 					__func__, cal_type);
+
+			result2 = voice_send_start_voice_cmd(v);
+			if (result2) {
+				pr_err("%s: Voice_send_start_voice_cmd failed for session 0x%x, err %d!\n",
+					__func__, v->session_id, result2);
+
+				result = result2;
+			}
 		}
 
 		if ((cal_block->map_data.q6map_handle != 0) &&
@@ -5242,9 +5251,7 @@ static int voice_destroy_vocproc(struct voice_data *v)
 	}
 
 	voice_send_cvp_deregister_vol_cal_cmd(v);
-	mutex_lock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 	voice_send_cvp_deregister_cal_cmd(v);
-	mutex_unlock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 	voice_send_cvp_deregister_dev_cfg_cmd(v);
 	voice_send_cvs_deregister_cal_cmd(v);
 
@@ -7086,13 +7093,11 @@ int voc_disable_device(uint32_t session_id)
 		if (ret < 0) {
 			pr_err("%s: Pause Voice Call failed for session 0x%x, err %d!\n",
 			       __func__, v->session_id, ret);
-			goto fail;
+			goto done;
 		}
 		rtac_remove_voice(voice_get_cvs_handle(v));
 		voice_send_cvp_deregister_vol_cal_cmd(v);
-		mutex_lock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 		voice_send_cvp_deregister_cal_cmd(v);
-		mutex_unlock(&common.cal_data[CVP_VOCPROC_CAL]->lock);
 		voice_send_cvp_deregister_dev_cfg_cmd(v);
 
 		/* Unload topology modules */
@@ -7103,7 +7108,8 @@ int voc_disable_device(uint32_t session_id)
 		pr_debug("%s: called in voc state=%d, No_OP\n",
 			 __func__, v->voc_state);
 	}
-fail:
+
+done:
 	mutex_unlock(&v->lock);
 
 	return ret;

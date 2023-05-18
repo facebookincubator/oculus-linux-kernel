@@ -1,4 +1,4 @@
-
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef STP_DRIVER_DATA_H
 #define STP_DRIVER_DATA_H
 
@@ -16,14 +16,15 @@ struct stp_driver_stats {
 struct spi_stp_driver_data {
 	struct spi_device *spi;
 	struct stp_gpio_data gpio_data;
-	struct completion device_ready;
-	struct completion data_ready;
 	struct completion stp_thread_complete;
 	struct task_struct *stp_thread;
-	atomic_t stop_thread;
+	// Wait queue for the stp controller thread
+	wait_queue_head_t thread_event_queue;
 	struct stp_driver_stats stats;
 	uint8_t *controller_tx_buffer;
 	uint8_t *controller_rx_buffer;
+	bool suspended;
+	atomic_t has_data_in_suspend;
 };
 
 #endif

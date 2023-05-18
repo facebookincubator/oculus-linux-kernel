@@ -16,6 +16,7 @@ struct qxr_stdalonevwr {
 	struct platform_device *pdev;
 	struct regulator *reg_imu;
 	struct regulator *reg_dmic;
+	/*int ndi_5v_en;*/
 	bool initDone;
 };
 
@@ -45,8 +46,9 @@ static int qxr_stdalonevwr_allocate_res(void)
 		rc = regulator_enable(pdata->reg_dmic);
 		if (rc < 0)
 			pr_err("%s Oracle MIC BIAS reg pm8150_l10 failed\n",
-								 __func__);
+					 __func__);
 	}
+
 	pdata->initDone = true;
 	pr_debug("%s rc:%d\n", __func__, rc);
 	return rc;
@@ -72,6 +74,7 @@ static int qxr_stdalonevwr_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	pdata->pdev = pdev;
+	/*pdata->ndi_5v_en = 1237;*/
 	pdata->initDone = false;
 	qxr_stdalonevwr_allocate_res();
 	pr_info("%s done\n", __func__);

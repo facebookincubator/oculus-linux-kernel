@@ -1959,7 +1959,25 @@ static void soc_check_tplg_fes(struct snd_soc_card *card)
 			dai_link->platform_name = component->name;
 
 			/* convert non BE into BE */
-			dai_link->no_pcm = 1;
+			if (!dai_link->no_pcm) {
+				dai_link->no_pcm = 1;
+
+				if (dai_link->dpcm_playback)
+					dev_warn(card->dev,
+						 "invalid configuration, dailink %s has flags no_pcm=0 and dpcm_playback=1\n",
+						 dai_link->name);
+				if (dai_link->dpcm_capture)
+					dev_warn(card->dev,
+						 "invalid configuration, dailink %s has flags no_pcm=0 and dpcm_capture=1\n",
+						 dai_link->name);
+
+				/* convert normal link into DPCM one */
+				if (!(dai_link->dpcm_playback ||
+				      dai_link->dpcm_capture)) {
+					dai_link->dpcm_playback = !dai_link->capture_only;
+					dai_link->dpcm_capture = !dai_link->playback_only;
+				}
+			}
 
 			/* override any BE fixups */
 			dai_link->be_hw_params_fixup =
@@ -2774,6 +2792,7 @@ int snd_soc_register_card(struct snd_soc_card *card)
 	mutex_init(&card->mutex);
 	mutex_init(&card->dapm_mutex);
 	mutex_init(&card->dapm_power_mutex);
+	spin_lock_init(&card->dpcm_lock);
 
 	ret = snd_soc_instantiate_card(card);
 	if (ret != 0)
@@ -3759,7 +3778,7 @@ int snd_soc_info_multi_ext(struct snd_kcontrol *kcontrol,
 	uinfo->value.integer.max = platform_max;
 	return 0;
 }
-EXPORT_SYMBOL(snd_soc_info_multi_ext);
+EXPORT_SYMBOL_GPL(snd_soc_info_multi_ext);
 
 int snd_soc_get_dai_name(struct of_phandle_args *args,
 				const char **dai_name)

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __KGSL_DEVICE_H
 #define __KGSL_DEVICE_H
@@ -17,73 +18,6 @@
 #define KGSL_IOCTL_FUNC(_cmd, _func) \
 	[_IOC_NR((_cmd))] = \
 		{ .cmd = (_cmd), .func = (_func) }
-
-/**
- * kgsl_copy_struct_from_user: copy a struct from userspace
- * @dst:   Destination address, in kernel space. This buffer must be @ksize
- *         bytes long.
- * @ksize: Size of @dst struct.
- * @src:   Source address, in userspace.
- * @usize: (Alleged) size of @src struct.
- *
- * Copies a struct from userspace to kernel space, in a way that guarantees
- * backwards-compatibility for struct syscall arguments (as long as future
- * struct extensions are made such that all new fields are *appended* to the
- * old struct, and zeroed-out new fields have the same meaning as the old
- * struct).
- *
- * @ksize is just sizeof(*dst), and @usize should've been passed by userspace.
- * The recommended usage is something like the following:
- *
- *   SYSCALL_DEFINE2(foobar, const struct foo __user *, uarg, size_t, usize)
- *   {
- *      int err;
- *      struct foo karg = {};
- *
- *      if (usize > PAGE_SIZE)
- *        return -E2BIG;
- *      if (usize < FOO_SIZE_VER0)
- *        return -EINVAL;
- *
- *      err = kgsl_copy_struct_from_user(&karg, sizeof(karg), uarg, usize);
- *      if (err)
- *        return err;
- *
- *      // ...
- *   }
- *
- * There are three cases to consider:
- *  * If @usize == @ksize, then it's copied verbatim.
- *  * If @usize < @ksize, then the userspace has passed an old struct to a
- *    newer kernel. The rest of the trailing bytes in @dst (@ksize - @usize)
- *    are to be zero-filled.
- *  * If @usize > @ksize, then the userspace has passed a new struct to an
- *    older kernel. The trailing bytes unknown to the kernel (@usize - @ksize)
- *    are checked to ensure they are zeroed, otherwise -E2BIG is returned.
- *
- * Returns (in all cases, some data may have been copied):
- *  * -E2BIG:  (@usize > @ksize) and there are non-zero trailing bytes in @src.
- *  * -EFAULT: access to userspace failed.
- */
-static __always_inline __must_check int
-kgsl_copy_struct_from_user(void *dst, size_t ksize, const void __user *src,
-		      size_t usize)
-{
-	size_t size = min(ksize, usize);
-	size_t rest = max(ksize, usize) - size;
-
-	/* Deal with trailing bytes. */
-	if (usize < ksize) {
-		memset(dst + size, 0, rest);
-	} else if (usize > ksize) {
-		if (memchr_inv(src + size, 0, rest))
-			return -E2BIG;
-	}
-	/* Copy the interoperable parts of the struct. */
-	if (copy_from_user(dst, src, size))
-		return -EFAULT;
-	return 0;
-}
 
 /*
  * KGSL device state is initialized to INIT when platform_probe		*
@@ -118,7 +52,9 @@ enum kgsl_event_results {
 	KGSL_EVENT_CANCELLED = 2,
 };
 
-#define KGSL_FLAG_WAKE_ON_TOUCH BIT(0)
+#define KGSL_FLAG_WAKE_ON_TOUCH   BIT(0)
+#define KGSL_FLAG_USE_SHMEM       BIT(1)
+#define KGSL_FLAG_PROCESS_RECLAIM BIT(2)
 
 /*
  * "list" of event types for ftrace symbolic magic
@@ -396,6 +332,11 @@ struct kgsl_device {
 	/* Allow restricting high and maximum priority contexts */
 	struct list_head privileged_uid_list;
 	pid_t privileged_tid;
+
+#if IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_ALLOCATION)
+	spinlock_t lazy_process_list_lock;
+	struct list_head lazy_process_list;
+#endif
 };
 
 #define KGSL_MMU_DEVICE(_mmu) \
@@ -506,6 +447,7 @@ struct kgsl_thread_private {
  * all devices)
  * @priv: Internal flags, use KGSL_PROCESS_* values
  * @pid: Identification structure for the task owner of the process
+ * @uid: UID of the process
  * @comm: task name of the process
  * @mem_lock: Spinlock to protect the process memory lists
  * @refcount: kref object for reference counting the process
@@ -524,6 +466,7 @@ struct kgsl_thread_private {
 struct kgsl_process_private {
 	unsigned long priv;
 	struct pid *pid;
+	kuid_t uid;
 	char comm[TASK_COMM_LEN];
 	spinlock_t mem_lock;
 	struct kref refcount;
@@ -532,6 +475,7 @@ struct kgsl_process_private {
 	struct list_head list;
 	struct kobject kobj;
 	struct dentry *debug_root;
+	struct proc_dir_entry *proc_root;
 	struct {
 		atomic_long_t cur;
 		uint64_t max;
@@ -542,6 +486,26 @@ struct kgsl_process_private {
 	atomic_t ctxt_count;
 	spinlock_t ctxt_count_lock;
 	int dump_id;
+	/**
+	 * @state: state consisting KGSL_PROC_STATE and KGSL_PROC_PINNED_STATE
+	 */
+	unsigned long state;
+	/**
+	 * @reclaimed_page_cout: The number of pages reclaimed from this process
+	 */
+	atomic_t reclaimed_page_count;
+	/**
+	 * @fg_work: Work struct to schedule foreground work
+	 */
+	struct work_struct fg_work;
+	/**
+	 * @reclaim_lock: Mutex lock to protect KGSL_PROC_PINNED_STATE
+	 */
+	struct mutex reclaim_lock;
+	/**
+	 * @cmd_count: The number of cmds that are active for the process
+	 */
+	atomic_t cmd_count;
 };
 
 /**

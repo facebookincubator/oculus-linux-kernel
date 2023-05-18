@@ -7,7 +7,9 @@
 #define __KGSL_MMU_H
 
 #include <linux/platform_device.h>
+#include <linux/rmap.h>
 #include <linux/rtmutex.h>
+#include <linux/swap.h>
 
 #include "kgsl_iommu.h"
 
@@ -53,9 +55,6 @@ struct kgsl_pagetable {
 		atomic_t entries;
 		atomic_long_t mapped;
 		atomic_long_t max_mapped;
-		atomic_long_t immediate_pages;
-		atomic_long_t cpu_faults;
-		atomic_long_t gpu_faults;
 	} stats;
 	const struct kgsl_mmu_pt_ops *pt_ops;
 	uint64_t fault_addr;
@@ -122,6 +121,8 @@ struct kgsl_mmu_pt_ops {
 	struct page **(*mmu_find_mapped_page_range)(struct kgsl_memdesc *memdesc,
 			uint64_t offset, uint64_t size, unsigned int *page_count);
 	int (*mmu_get_backing_pages)(struct kgsl_memdesc *memdesc,
+			struct list_head *page_list);
+	void (*mmu_release_page_list)(struct kgsl_memdesc *memdesc,
 			struct list_head *page_list);
 	int (*mmu_set_access_flag)(struct kgsl_memdesc *memdesc, bool access_flag);
 };
@@ -205,6 +206,7 @@ void kgsl_mmu_suspend(struct kgsl_device *device);
 struct kgsl_pagetable *kgsl_mmu_getpagetable_ptbase(struct kgsl_mmu *mmu,
 						u64 ptbase);
 
+void kgsl_print_global_pt_entries(struct seq_file *s);
 void kgsl_mmu_putpagetable(struct kgsl_pagetable *pagetable);
 
 int kgsl_mmu_get_gpuaddr(struct kgsl_pagetable *pagetable,
@@ -252,6 +254,8 @@ struct page *kgsl_mmu_find_mapped_page(struct kgsl_memdesc *memdesc,
 struct page **kgsl_mmu_find_mapped_page_range(struct kgsl_memdesc *memdesc,
 		uint64_t offset, uint64_t size, unsigned int *page_count);
 int kgsl_mmu_get_backing_pages(struct kgsl_memdesc *memdesc,
+		struct list_head *page_list);
+int kgsl_mmu_release_page_list(struct kgsl_memdesc *memdesc,
 		struct list_head *page_list);
 int kgsl_mmu_set_access_flag(struct kgsl_memdesc *memdesc, bool access_flag);
 
@@ -390,16 +394,6 @@ static inline bool kgsl_mmu_is_global_pt(struct kgsl_pagetable *pt)
 }
 
 /**
- * kgsl_mmu_map_global - Map a memdesc as a global buffer
- * @device: A KGSL GPU device handle
- * @memdesc: Pointer to a GPU memory descriptor
- *
- * Map a buffer as globally accessible in all pagetable contexts
- */
-void kgsl_mmu_map_global(struct kgsl_device *device,
-		struct kgsl_memdesc *memdesc);
-
-/**
  * kgsl_mmu_pagetable_get_context_bank - Return the context bank number
  * @pagetable: A handle to a given pagetable
  *
@@ -409,6 +403,16 @@ void kgsl_mmu_map_global(struct kgsl_device *device,
  * negative error on failure.
  */
 int kgsl_mmu_pagetable_get_context_bank(struct kgsl_pagetable *pagetable);
+
+/**
+ * kgsl_mmu_map_global - Map a memdesc as a global buffer
+ * @device: A KGSL GPU device handle
+ * @memdesc: Pointer to a GPU memory descriptor
+ *
+ * Map a buffer as globally accessible in all pagetable contexts
+ */
+void kgsl_mmu_map_global(struct kgsl_device *device,
+		struct kgsl_memdesc *memdesc);
 
 #if IS_ENABLED(CONFIG_ARM_SMMU)
 unsigned int kgsl_iommu_get_protection_flags(struct kgsl_pagetable *pt,

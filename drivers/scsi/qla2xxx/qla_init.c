@@ -242,15 +242,13 @@ qla2x00_async_login(struct scsi_qla_host *vha, fc_port_t *fcport,
 	qla2x00_init_timer(sp, qla2x00_get_async_timeout(vha) + 2);
 
 	sp->done = qla2x00_async_login_sp_done;
-	if (N2N_TOPO(fcport->vha->hw) && fcport_is_bigger(fcport)) {
+	if (N2N_TOPO(fcport->vha->hw) && fcport_is_bigger(fcport))
 		lio->u.logio.flags |= SRB_LOGIN_PRLI_ONLY;
-	} else {
+	else
 		lio->u.logio.flags |= SRB_LOGIN_COND_PLOGI;
 
-		if (fcport->fc4f_nvme)
-			lio->u.logio.flags |= SRB_LOGIN_SKIP_PRLI;
-
-	}
+	if (fcport->fc4f_nvme)
+		lio->u.logio.flags |= SRB_LOGIN_SKIP_PRLI;
 
 	ql_dbg(ql_dbg_disc, vha, 0x2072,
 	    "Async-login - %8phC hdl=%x, loopid=%x portid=%02x%02x%02x "
@@ -292,9 +290,6 @@ qla2x00_async_logout(struct scsi_qla_host *vha, fc_port_t *fcport)
 	srb_t *sp;
 	struct srb_iocb *lio;
 	int rval = QLA_FUNCTION_FAILED;
-
-	if (!vha->flags.online || (fcport->flags & FCF_ASYNC_SENT))
-		return rval;
 
 	fcport->flags |= FCF_ASYNC_SENT;
 	sp = qla2x00_get_sp(vha, fcport, GFP_KERNEL);
@@ -438,6 +433,7 @@ int qla_post_els_plogi_work(struct scsi_qla_host *vha, fc_port_t *fcport)
 
 	e->u.fcport.fcport = fcport;
 	fcport->flags |= FCF_ASYNC_ACTIVE;
+	fcport->disc_state = DSC_LOGIN_PEND;
 	return qla2x00_post_work(vha, e);
 }
 
@@ -804,6 +800,7 @@ qla24xx_async_gnl_sp_done(void *s, int res)
 	if (res == QLA_FUNCTION_TIMEOUT)
 		return;
 
+	sp->fcport->flags &= ~(FCF_ASYNC_SENT|FCF_ASYNC_ACTIVE);
 	memset(&ea, 0, sizeof(ea));
 	ea.sp = sp;
 	ea.rc = res;
@@ -831,25 +828,24 @@ qla24xx_async_gnl_sp_done(void *s, int res)
 		    (loop_id & 0x7fff));
 	}
 
-	spin_lock_irqsave(&vha->gnl.fcports_lock, flags);
+	spin_lock_irqsave(&vha->hw->tgt.sess_lock, flags);
 
 	INIT_LIST_HEAD(&h);
 	fcport = tf = NULL;
 	if (!list_empty(&vha->gnl.fcports))
 		list_splice_init(&vha->gnl.fcports, &h);
+	spin_unlock_irqrestore(&vha->hw->tgt.sess_lock, flags);
 
 	list_for_each_entry_safe(fcport, tf, &h, gnl_entry) {
 		list_del_init(&fcport->gnl_entry);
-		spin_lock(&vha->hw->tgt.sess_lock);
+		spin_lock_irqsave(&vha->hw->tgt.sess_lock, flags);
 		fcport->flags &= ~(FCF_ASYNC_SENT | FCF_ASYNC_ACTIVE);
-		spin_unlock(&vha->hw->tgt.sess_lock);
+		spin_unlock_irqrestore(&vha->hw->tgt.sess_lock, flags);
 		ea.fcport = fcport;
 
 		qla2x00_fcport_event_handler(vha, &ea);
 	}
-	spin_unlock_irqrestore(&vha->gnl.fcports_lock, flags);
 
-	spin_lock_irqsave(&vha->hw->tgt.sess_lock, flags);
 	/* create new fcport if fw has knowledge of new sessions */
 	for (i = 0; i < n; i++) {
 		port_id_t id;
@@ -882,6 +878,8 @@ qla24xx_async_gnl_sp_done(void *s, int res)
 		}
 	}
 
+	spin_lock_irqsave(&vha->hw->tgt.sess_lock, flags);
+	vha->gnl.sent = 0;
 	spin_unlock_irqrestore(&vha->hw->tgt.sess_lock, flags);
 
 	sp->free(sp);
@@ -901,27 +899,24 @@ int qla24xx_async_gnl(struct scsi_qla_host *vha, fc_port_t *fcport)
 	ql_dbg(ql_dbg_disc, vha, 0x20d9,
 	    "Async-gnlist WWPN %8phC \n", fcport->port_name);
 
-	spin_lock_irqsave(&vha->gnl.fcports_lock, flags);
-	if (!list_empty(&fcport->gnl_entry)) {
-		spin_unlock_irqrestore(&vha->gnl.fcports_lock, flags);
-		rval = QLA_SUCCESS;
-		goto done;
-	}
-
-	spin_lock(&vha->hw->tgt.sess_lock);
+	spin_lock_irqsave(&vha->hw->tgt.sess_lock, flags);
+	fcport->flags |= FCF_ASYNC_SENT;
 	fcport->disc_state = DSC_GNL;
 	fcport->last_rscn_gen = fcport->rscn_gen;
 	fcport->last_login_gen = fcport->login_gen;
-	spin_unlock(&vha->hw->tgt.sess_lock);
 
 	list_add_tail(&fcport->gnl_entry, &vha->gnl.fcports);
-	spin_unlock_irqrestore(&vha->gnl.fcports_lock, flags);
+	if (vha->gnl.sent) {
+		spin_unlock_irqrestore(&vha->hw->tgt.sess_lock, flags);
+		return QLA_SUCCESS;
+	}
+	vha->gnl.sent = 1;
+	spin_unlock_irqrestore(&vha->hw->tgt.sess_lock, flags);
 
 	sp = qla2x00_get_sp(vha, fcport, GFP_KERNEL);
 	if (!sp)
 		goto done;
 
-	fcport->flags |= FCF_ASYNC_SENT;
 	sp->type = SRB_MB_IOCB;
 	sp->name = "gnlist";
 	sp->gen1 = fcport->rscn_gen;
@@ -970,6 +965,7 @@ int qla24xx_post_gnl_work(struct scsi_qla_host *vha, fc_port_t *fcport)
 
 	e->u.fcport.fcport = fcport;
 	fcport->flags |= FCF_ASYNC_ACTIVE;
+	fcport->disc_state = DSC_LOGIN_PEND;
 	return qla2x00_post_work(vha, e);
 }
 
@@ -987,13 +983,11 @@ void qla24xx_async_gpdb_sp_done(void *s, int res)
 	    "Async done-%s res %x, WWPN %8phC mb[1]=%x mb[2]=%x \n",
 	    sp->name, res, fcport->port_name, mb[1], mb[2]);
 
-	if (res == QLA_FUNCTION_TIMEOUT) {
-		dma_pool_free(sp->vha->hw->s_dma_pool, sp->u.iocb_cmd.u.mbx.in,
-			sp->u.iocb_cmd.u.mbx.in_dma);
-		return;
-	}
-
 	fcport->flags &= ~(FCF_ASYNC_SENT | FCF_ASYNC_ACTIVE);
+
+	if (res == QLA_FUNCTION_TIMEOUT)
+		goto done;
+
 	memset(&ea, 0, sizeof(ea));
 	ea.event = FCME_GPDB_DONE;
 	ea.fcport = fcport;
@@ -1001,6 +995,7 @@ void qla24xx_async_gpdb_sp_done(void *s, int res)
 
 	qla2x00_fcport_event_handler(vha, &ea);
 
+done:
 	dma_pool_free(ha->s_dma_pool, sp->u.iocb_cmd.u.mbx.in,
 		sp->u.iocb_cmd.u.mbx.in_dma);
 
@@ -1208,11 +1203,9 @@ void __qla24xx_handle_gpdb_event(scsi_qla_host_t *vha, struct event_arg *ea)
 		vha->fcport_count++;
 		ea->fcport->login_succ = 1;
 
-		ql_dbg(ql_dbg_disc, vha, 0x20d6,
-		    "%s %d %8phC post upd_fcport fcp_cnt %d\n",
-		    __func__, __LINE__,  ea->fcport->port_name,
-		    vha->fcport_count);
-		qla24xx_post_upd_fcport_work(vha, ea->fcport);
+		spin_unlock_irqrestore(&vha->hw->tgt.sess_lock, flags);
+		qla24xx_sched_upd_fcport(ea->fcport);
+		spin_lock_irqsave(&vha->hw->tgt.sess_lock, flags);
 	} else if (ea->fcport->login_succ) {
 		/*
 		 * We have an existing session. A late RSCN delivery
@@ -1330,6 +1323,7 @@ int qla24xx_fcport_handle_login(struct scsi_qla_host *vha, fc_port_t *fcport)
 {
 	u16 data[2];
 	u64 wwn;
+	u16 sec;
 
 	ql_dbg(ql_dbg_disc, vha, 0x20d8,
 	    "%s %8phC DS %d LS %d P %d fl %x confl %p rscn %d|%d login %d retry %d lid %d scan %d\n",
@@ -1461,6 +1455,22 @@ int qla24xx_fcport_handle_login(struct scsi_qla_host *vha, fc_port_t *fcport)
 			qla24xx_post_prli_work(vha, fcport);
 		break;
 
+	case DSC_UPD_FCPORT:
+		sec =  jiffies_to_msecs(jiffies -
+		    fcport->jiffies_at_registration)/1000;
+		if (fcport->sec_since_registration < sec && sec &&
+		    !(sec % 60)) {
+			fcport->sec_since_registration = sec;
+			ql_dbg(ql_dbg_disc, fcport->vha, 0xffff,
+			    "%s %8phC - Slow Rport registration(%d Sec)\n",
+			    __func__, fcport->port_name, sec);
+		}
+
+		if (fcport->next_disc_state != DSC_DELETE_PEND)
+			fcport->next_disc_state = DSC_ADISC;
+		set_bit(RELOGIN_NEEDED, &vha->dpc_flags);
+		break;
+
 	default:
 		break;
 	}
@@ -1576,8 +1586,10 @@ void qla2x00_fcport_event_handler(scsi_qla_host_t *vha, struct event_arg *ea)
 		case RSCN_PORT_ADDR:
 			fcport = qla2x00_find_fcport_by_nportid
 				(vha, &ea->id, 1);
-			if (fcport)
-				fcport->rscn_rcvd = 1;
+			if (fcport) {
+				fcport->scan_needed = 1;
+				fcport->rscn_gen++;
+			}
 
 			spin_lock_irqsave(&vha->work_lock, flags);
 			if (vha->scan.scan_flags == 0) {
@@ -1772,38 +1784,34 @@ int
 qla24xx_async_abort_cmd(srb_t *cmd_sp, bool wait)
 {
 	scsi_qla_host_t *vha = cmd_sp->vha;
-	fc_port_t *fcport = cmd_sp->fcport;
 	struct srb_iocb *abt_iocb;
 	srb_t *sp;
 	int rval = QLA_FUNCTION_FAILED;
 
-	sp = qla2x00_get_sp(vha, fcport, GFP_KERNEL);
+	sp = qla2xxx_get_qpair_sp(cmd_sp->qpair, cmd_sp->fcport, GFP_KERNEL);
 	if (!sp)
 		goto done;
 
 	abt_iocb = &sp->u.iocb_cmd;
 	sp->type = SRB_ABT_CMD;
 	sp->name = "abort";
+	sp->qpair = cmd_sp->qpair;
 	if (wait)
 		sp->flags = SRB_WAKEUP_ON_COMP;
 
 	abt_iocb->timeout = qla24xx_abort_iocb_timeout;
 	init_completion(&abt_iocb->u.abt.comp);
-	qla2x00_init_timer(sp, qla2x00_get_async_timeout(vha));
+	/* FW can send 2 x ABTS's timeout/20s */
+	qla2x00_init_timer(sp, 42);
 
 	abt_iocb->u.abt.cmd_hndl = cmd_sp->handle;
-
-	if (vha->flags.qpairs_available && cmd_sp->qpair)
-		abt_iocb->u.abt.req_que_no =
-		    cpu_to_le16(cmd_sp->qpair->req->id);
-	else
-		abt_iocb->u.abt.req_que_no = cpu_to_le16(vha->req->id);
+	abt_iocb->u.abt.req_que_no = cpu_to_le16(cmd_sp->qpair->req->id);
 
 	sp->done = qla24xx_abort_sp_done;
 
 	ql_dbg(ql_dbg_async, vha, 0x507c,
-	    "Abort command issued - hdl=%x, target_id=%x\n",
-	    cmd_sp->handle, fcport->tgt_id);
+	    "Abort command issued - hdl=%x, type=%x\n",
+	    cmd_sp->handle, cmd_sp->type);
 
 	rval = qla2x00_start_sp(sp);
 	if (rval != QLA_SUCCESS)
@@ -4749,6 +4757,7 @@ qla2x00_alloc_fcport(scsi_qla_host_t *vha, gfp_t flags)
 		return NULL;
 	}
 	INIT_WORK(&fcport->del_work, qla24xx_delete_sess_fn);
+	INIT_WORK(&fcport->reg_work, qla_register_fcport_fn);
 	INIT_LIST_HEAD(&fcport->gnl_entry);
 	INIT_LIST_HEAD(&fcport->list);
 
@@ -4823,14 +4832,8 @@ qla2x00_configure_loop(scsi_qla_host_t *vha)
 		set_bit(RSCN_UPDATE, &flags);
 		clear_bit(LOCAL_LOOP_UPDATE, &flags);
 
-	} else if (ha->current_topology == ISP_CFG_N) {
-		clear_bit(RSCN_UPDATE, &flags);
-		if (qla_tgt_mode_enabled(vha)) {
-			/* allow the other side to start the login */
-			clear_bit(LOCAL_LOOP_UPDATE, &flags);
-			set_bit(RELOGIN_NEEDED, &vha->dpc_flags);
-		}
-	} else if (ha->current_topology == ISP_CFG_NL) {
+	} else if (ha->current_topology == ISP_CFG_NL ||
+		   ha->current_topology == ISP_CFG_N) {
 		clear_bit(RSCN_UPDATE, &flags);
 		set_bit(LOCAL_LOOP_UPDATE, &flags);
 	} else if (!vha->flags.online ||
@@ -4874,19 +4877,10 @@ qla2x00_configure_loop(scsi_qla_host_t *vha)
 			 */
 			if (qla_tgt_mode_enabled(vha) ||
 			    qla_dual_mode_enabled(vha)) {
-				if (IS_QLA27XX(ha) || IS_QLA83XX(ha)) {
-					spin_lock_irqsave(&ha->tgt.atio_lock,
-					    flags);
-					qlt_24xx_process_atio_queue(vha, 0);
-					spin_unlock_irqrestore(
-					    &ha->tgt.atio_lock, flags);
-				} else {
-					spin_lock_irqsave(&ha->hardware_lock,
-					    flags);
-					qlt_24xx_process_atio_queue(vha, 1);
-					spin_unlock_irqrestore(
-					    &ha->hardware_lock, flags);
-				}
+				spin_lock_irqsave(&ha->tgt.atio_lock, flags);
+				qlt_24xx_process_atio_queue(vha, 0);
+				spin_unlock_irqrestore(&ha->tgt.atio_lock,
+				    flags);
 			}
 		}
 	}
@@ -5244,13 +5238,15 @@ qla2x00_reg_remote_port(scsi_qla_host_t *vha, fc_port_t *fcport)
 void
 qla2x00_update_fcport(scsi_qla_host_t *vha, fc_port_t *fcport)
 {
-	fcport->vha = vha;
-
 	if (IS_SW_RESV_ADDR(fcport->d_id))
 		return;
 
+	ql_dbg(ql_dbg_disc, vha, 0x20ef, "%s %8phC\n",
+	    __func__, fcport->port_name);
+
+	fcport->disc_state = DSC_UPD_FCPORT;
+	fcport->login_retry = vha->hw->login_retry_count;
 	fcport->flags &= ~(FCF_LOGIN_NEEDED | FCF_ASYNC_SENT);
-	fcport->disc_state = DSC_LOGIN_COMPLETE;
 	fcport->deleted = 0;
 	fcport->logout_on_delete = 1;
 	fcport->login_retry = vha->hw->login_retry_count;
@@ -5312,6 +5308,36 @@ qla2x00_update_fcport(scsi_qla_host_t *vha, fc_port_t *fcport)
 		}
 	}
 	qla2x00_set_fcport_state(fcport, FCS_ONLINE);
+
+	fcport->disc_state = DSC_LOGIN_COMPLETE;
+}
+
+void qla_register_fcport_fn(struct work_struct *work)
+{
+	fc_port_t *fcport = container_of(work, struct fc_port, reg_work);
+	u32 rscn_gen = fcport->rscn_gen;
+	u16 data[2];
+
+	if (IS_SW_RESV_ADDR(fcport->d_id))
+		return;
+
+	qla2x00_update_fcport(fcport->vha, fcport);
+
+	if (rscn_gen != fcport->rscn_gen) {
+		/* RSCN(s) came in while registration */
+		switch (fcport->next_disc_state) {
+		case DSC_DELETE_PEND:
+			qlt_schedule_sess_for_deletion(fcport);
+			break;
+		case DSC_ADISC:
+			data[0] = data[1] = 0;
+			qla2x00_post_async_adisc_work(fcport->vha, fcport,
+			    data);
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 /*
@@ -5733,8 +5759,7 @@ qla2x00_find_all_fabric_devs(scsi_qla_host_t *vha)
 		if (test_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags))
 			break;
 
-		if ((fcport->flags & FCF_FABRIC_DEVICE) == 0 ||
-		    (fcport->flags & FCF_LOGIN_NEEDED) == 0)
+		if ((fcport->flags & FCF_FABRIC_DEVICE) == 0)
 			continue;
 
 		if (fcport->scan_state == QLA_FCPORT_SCAN) {
@@ -5757,7 +5782,8 @@ qla2x00_find_all_fabric_devs(scsi_qla_host_t *vha)
 			}
 		}
 
-		if (fcport->scan_state == QLA_FCPORT_FOUND)
+		if (fcport->scan_state == QLA_FCPORT_FOUND &&
+		    (fcport->flags & FCF_LOGIN_NEEDED) != 0)
 			qla24xx_fcport_handle_login(vha, fcport);
 	}
 	return (rval);
@@ -6515,6 +6541,7 @@ qla2x00_abort_isp_cleanup(scsi_qla_host_t *vha)
 	if (!(IS_P3P_TYPE(ha)))
 		ha->isp_ops->reset_chip(vha);
 
+	ha->link_data_rate = PORT_SPEED_UNKNOWN;
 	SAVE_TOPO(ha);
 	ha->flags.rida_fmt2 = 0;
 	ha->flags.n2n_ae = 0;
@@ -8739,8 +8766,6 @@ int qla2xxx_delete_qpair(struct scsi_qla_host *vha, struct qla_qpair *qpair)
 	struct qla_hw_data *ha = qpair->hw;
 
 	qpair->delete_in_progress = 1;
-	while (atomic_read(&qpair->ref_count))
-		msleep(500);
 
 	ret = qla25xx_delete_req_que(vha, qpair->req);
 	if (ret != QLA_SUCCESS)

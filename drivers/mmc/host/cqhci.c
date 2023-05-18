@@ -6,6 +6,7 @@
 #include <linux/delay.h>
 #include <linux/highmem.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
@@ -17,7 +18,10 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 
+#include "../core/queue.h"
 #include "cqhci.h"
+#include "cqhci-crypto.h"
+
 #include "sdhci-msm.h"
 
 #define DCMD_SLOT 31
@@ -154,6 +158,8 @@ static void cqhci_dumpregs(struct cqhci_host *cq_host)
 	CQHCI_DUMP("Vendor cfg 0x%08x\n",
 		   cqhci_readl(cq_host, CQHCI_VENDOR_CFG + offset));
 
+	cqhci_crypto_debug(cq_host);
+
 	if (cq_host->ops->dumpregs)
 		cq_host->ops->dumpregs(mmc);
 	else
@@ -257,7 +263,6 @@ static void __cqhci_enable(struct cqhci_host *cq_host)
 {
 	struct mmc_host *mmc = cq_host->mmc;
 	u32 cqcfg;
-	u32 cqcap = 0;
 
 	cqcfg = cqhci_readl(cq_host, CQHCI_CFG);
 
@@ -275,16 +280,9 @@ static void __cqhci_enable(struct cqhci_host *cq_host)
 	if (cq_host->caps & CQHCI_TASK_DESC_SZ_128)
 		cqcfg |= CQHCI_TASK_DESC_SZ;
 
-	cqcap = cqhci_readl(cq_host, CQHCI_CAP);
-	if (cqcap & CQHCI_CAP_CS) {
-		/*
-		 * In case host controller supports cryptographic operations
-		 * then, enable crypro support.
-		 */
-		cq_host->caps |= CQHCI_CAP_CRYPTO_SUPPORT;
+	if (cqhci_host_is_crypto_supported(cq_host)) {
 		cqcfg |= CQHCI_ICE_ENABLE;
-		/*
-		 * For SDHC v5.0 onwards, ICE 3.0 specific registers are added
+		/* For SDHC v5.0 onwards, ICE 3.0 specific registers are added
 		 * in CQ register space, due to which few CQ registers are
 		 * shifted. Set offset_changed boolean to use updated address.
 		 */
@@ -333,12 +331,15 @@ static void __cqhci_disable(struct cqhci_host *cq_host)
 	cq_host->mmc->cqe_on = false;
 
 	cq_host->activated = false;
+
 	mmc_log_string(cq_host->mmc, "CQ disabled\n");
 }
 
 int cqhci_suspend(struct mmc_host *mmc)
 {
 	struct cqhci_host *cq_host = mmc->cqe_private;
+
+	cqhci_crypto_suspend(cq_host);
 
 	if (cq_host->enabled)
 		__cqhci_disable(cq_host);
@@ -368,7 +369,13 @@ static int cqhci_enable(struct mmc_host *mmc, struct mmc_card *card)
 	if (err)
 		return err;
 
+	if (cqhci_host_is_crypto_supported(cq_host))
+		cqhci_crypto_enable(cq_host);
+
 	__cqhci_enable(cq_host);
+
+	if (cq_host->ops->enhanced_strobe_mask)
+		cq_host->ops->enhanced_strobe_mask(mmc, true);
 
 	cq_host->enabled = true;
 
@@ -381,12 +388,16 @@ static int cqhci_enable(struct mmc_host *mmc, struct mmc_card *card)
 /* CQHCI is idle and should halt immediately, so set a small timeout */
 #define CQHCI_OFF_TIMEOUT 100
 
+static u32 cqhci_read_ctl(struct cqhci_host *cq_host)
+{
+	return cqhci_readl(cq_host, CQHCI_CTL);
+}
+
 static void cqhci_off(struct mmc_host *mmc)
 {
 	struct cqhci_host *cq_host = mmc->cqe_private;
-	ktime_t timeout;
-	bool timed_out;
 	u32 reg;
+	int err;
 
 	if (!cq_host->enabled || !mmc->cqe_on || cq_host->recovery_halt) {
 		pr_debug("%s: %s: CQE is already %s\n", mmc_hostname(mmc),
@@ -399,19 +410,14 @@ static void cqhci_off(struct mmc_host *mmc)
 
 	cqhci_writel(cq_host, CQHCI_HALT, CQHCI_CTL);
 
-	timeout = ktime_add_us(ktime_get(), CQHCI_OFF_TIMEOUT);
-	while (1) {
-		timed_out = ktime_compare(ktime_get(), timeout) > 0;
-		reg = cqhci_readl(cq_host, CQHCI_CTL);
-		if ((reg & CQHCI_HALT) || timed_out)
-			break;
-	}
-
-	if (timed_out && !(reg & CQHCI_HALT))
+	err = readx_poll_timeout(cqhci_read_ctl, cq_host, reg,
+				 reg & CQHCI_HALT, 0, CQHCI_OFF_TIMEOUT);
+	if (err < 0)
 		pr_err("%s: cqhci: CQE stuck on\n", mmc_hostname(mmc));
-	else
+	else {
 		pr_debug("%s: cqhci: CQE off\n", mmc_hostname(mmc));
-
+		mmc_log_string(mmc, "cqhci: CQE off\n");
+	}
 	mmc->cqe_on = false;
 }
 
@@ -424,7 +430,13 @@ static void cqhci_disable(struct mmc_host *mmc)
 
 	cqhci_off(mmc);
 
+	if (cqhci_host_is_crypto_supported(cq_host))
+		cqhci_crypto_disable(cq_host);
+
 	__cqhci_disable(cq_host);
+
+	if (cq_host->ops->enhanced_strobe_mask)
+		cq_host->ops->enhanced_strobe_mask(mmc, false);
 
 	dmam_free_coherent(mmc_dev(mmc), cq_host->data_size,
 			   cq_host->trans_desc_base,
@@ -583,16 +595,23 @@ static void cqhci_pm_qos_vote(struct sdhci_host *host, struct mmc_request *mrq)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	struct mmc_queue_req *mqrq = container_of(mrq, struct mmc_queue_req,
+						  brq.mrq);
+	struct request *req = mmc_queue_req_to_req(mqrq);
 
 	sdhci_msm_pm_qos_cpu_vote(host,
-		msm_host->pdata->pm_qos_data.cmdq_latency, mrq->req->cpu);
+		msm_host->pdata->pm_qos_data.cmdq_latency, req->cpu);
 }
 
 static void cqhci_pm_qos_unvote(struct sdhci_host *host,
 						struct mmc_request *mrq)
 {
+	struct mmc_queue_req *mqrq = container_of(mrq, struct mmc_queue_req,
+						  brq.mrq);
+	struct request *req = mmc_queue_req_to_req(mqrq);
+
 	/* use async as we're inside an atomic context (soft-irq) */
-	sdhci_msm_pm_qos_cpu_unvote(host, mrq->req->cpu, true);
+	sdhci_msm_pm_qos_cpu_unvote(host, req->cpu, true);
 }
 
 static void cqhci_post_req(struct mmc_host *host, struct mmc_request *mrq)
@@ -617,7 +636,7 @@ static inline int cqhci_tag(struct mmc_request *mrq)
 }
 
 static inline
-void cqe_prep_crypto_desc(struct cqhci_host *cq_host, u64 *task_desc,
+void cqhci_prep_crypto_desc(struct cqhci_host *cq_host, u64 *task_desc,
 			u64 ice_ctx)
 {
 	u64 *ice_desc = NULL;
@@ -628,8 +647,8 @@ void cqe_prep_crypto_desc(struct cqhci_host *cq_host, u64 *task_desc,
 		 * ice context is present in the upper 64bits of task descriptor
 		 * ice_conext_base_address = task_desc + 8-bytes
 		 */
-		ice_desc = (__le64 __force *)((u8 *)task_desc +
-					CQHCI_TASK_DESC_TASK_PARAMS_SIZE);
+		ice_desc = (u64 *)((u8 *)task_desc +
+					CQHCI_TASK_DESC_ICE_PARAM_OFFSET);
 		memset(ice_desc, 0, CQHCI_TASK_DESC_ICE_PARAMS_SIZE);
 
 		/*
@@ -663,6 +682,7 @@ static int cqhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	if (!mmc->cqe_on) {
 		cqhci_writel(cq_host, 0, CQHCI_CTL);
 		mmc->cqe_on = true;
+		mmc_log_string(mmc, "cqhci: CQE on\n");
 		pr_debug("%s: cqhci: CQE on\n", mmc_hostname(mmc));
 		if (cqhci_readl(cq_host, CQHCI_CTL) && CQHCI_HALT) {
 			pr_err("%s: cqhci: CQE failed to exit halt state\n",
@@ -673,25 +693,23 @@ static int cqhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	}
 
 	if (mrq->data) {
-		if (cq_host->ops->crypto_cfg) {
-			err = cq_host->ops->crypto_cfg(mmc, mrq, tag, &ice_ctx);
-			if (err) {
-				mmc->err_stats[MMC_ERR_ICE_CFG]++;
-				pr_err("%s: failed to configure crypto: err %d tag %d\n",
-						mmc_hostname(mmc), err, tag);
-				goto out;
-			}
+		err = cqhci_crypto_get_ctx(cq_host, mrq, &ice_ctx);
+		if (err) {
+			mmc->err_stats[MMC_ERR_ICE_CFG]++;
+			pr_err("%s: failed to retrieve crypto ctx for tag %d\n",
+				mmc_hostname(mmc), tag);
+			goto out;
 		}
 		task_desc = (__le64 __force *)get_desc(cq_host, tag);
 		cqhci_prep_task_desc(mrq, &data, 1);
 		*task_desc = cpu_to_le64(data);
-		cqe_prep_crypto_desc(cq_host, task_desc, ice_ctx);
+		cqhci_prep_crypto_desc(cq_host, task_desc, ice_ctx);
 
 		err = cqhci_prep_tran_desc(mrq, cq_host, tag);
 		if (err) {
 			pr_err("%s: cqhci: failed to setup tx desc: %d\n",
 			       mmc_hostname(mmc), err);
-			goto end_crypto;
+			goto out;
 		}
 		/* PM QoS */
 		sdhci_msm_pm_qos_irq_vote(host);
@@ -733,21 +751,35 @@ out_unlock:
 	if (err)
 		cqhci_post_req(mmc, mrq);
 
-	goto out;
-
-end_crypto:
-	if (cq_host->ops->crypto_cfg_end && mrq->data) {
-		err = cq_host->ops->crypto_cfg_end(mmc, mrq);
-		if (err)
-			pr_err("%s: failed to end ice config: err %d tag %d\n",
-					mmc_hostname(mmc), err, tag);
-	}
-	if (!(cq_host->caps & CQHCI_CAP_CRYPTO_SUPPORT) &&
-			cq_host->ops->crypto_cfg_reset && mrq->data)
-		cq_host->ops->crypto_cfg_reset(mmc, tag);
-
+	if (mrq->data)
+		cqhci_complete_crypto_desc(cq_host, mrq, NULL);
 out:
 	return err;
+}
+
+static void cqhci_crypto_update_queue(struct mmc_host *mmc,
+					struct request_queue *queue)
+{
+	struct cqhci_host *cq_host;
+
+	if (!mmc) {
+		pr_err("%s mmc host is NULL\n", __func__);
+		return;
+	}
+
+	cq_host = mmc->cqe_private;
+	if (!cq_host) {
+		pr_err("%s cq host is NULL\n", __func__);
+		return;
+	}
+
+	if (cq_host->caps & CQHCI_CAP_CRYPTO_SUPPORT) {
+		if (queue)
+			cqhci_crypto_setup_rq_keyslot_manager(cq_host, queue);
+		else
+			pr_err("%s can not register keyslot manager\n",
+				mmc_hostname(mmc));
+	}
 }
 
 static void cqhci_recovery_needed(struct mmc_host *mmc, struct mmc_request *mrq,
@@ -849,7 +881,7 @@ static void cqhci_finish_mrq(struct mmc_host *mmc, unsigned int tag)
 	struct cqhci_slot *slot = &cq_host->slot[tag];
 	struct mmc_request *mrq = slot->mrq;
 	struct mmc_data *data;
-	int err = 0, offset = 0;
+	int offset = 0;
 
 	if (cq_host->offset_changed)
 		offset = CQE_V5_VENDOR_CFG;
@@ -871,13 +903,8 @@ static void cqhci_finish_mrq(struct mmc_host *mmc, unsigned int tag)
 
 	data = mrq->data;
 	if (data) {
-		if (cq_host->ops->crypto_cfg_end) {
-			err = cq_host->ops->crypto_cfg_end(mmc, mrq);
-			if (err) {
-				pr_err("%s: failed to end ice config: err %d tag %d\n",
-						mmc_hostname(mmc), err, tag);
-			}
-		}
+		cqhci_complete_crypto_desc(cq_host, mrq, NULL);
+
 		if (data->error)
 			data->bytes_xfered = 0;
 		else
@@ -889,9 +916,6 @@ static void cqhci_finish_mrq(struct mmc_host *mmc, unsigned int tag)
 				CQHCI_VENDOR_CFG + offset);
 	}
 
-	if (!(cq_host->caps & CQHCI_CAP_CRYPTO_SUPPORT) &&
-			cq_host->ops->crypto_cfg_reset)
-		cq_host->ops->crypto_cfg_reset(mmc, tag);
 	mmc_cqe_request_done(mmc, mrq);
 }
 
@@ -1088,6 +1112,8 @@ static void cqhci_recovery_start(struct mmc_host *mmc)
 
 	pr_debug("%s: cqhci: %s\n", mmc_hostname(mmc), __func__);
 
+	cqhci_crypto_reset(cq_host);
+
 	WARN_ON(!cq_host->recovery_halt);
 
 	cqhci_halt(mmc, CQHCI_START_HALT_TIMEOUT);
@@ -1208,6 +1234,8 @@ static void cqhci_recovery_finish(struct mmc_host *mmc)
 
 	cqhci_set_irqs(cq_host, CQHCI_IS_MASK);
 
+	cqhci_crypto_recovery_finish(cq_host);
+
 	pr_debug("%s: cqhci: recovery done\n", mmc_hostname(mmc));
 	mmc_log_string(mmc, "recovery done\n");
 }
@@ -1222,6 +1250,7 @@ static const struct mmc_cqe_ops cqhci_cqe_ops = {
 	.cqe_timeout = cqhci_timeout,
 	.cqe_recovery_start = cqhci_recovery_start,
 	.cqe_recovery_finish = cqhci_recovery_finish,
+	.cqe_crypto_update_queue = cqhci_crypto_update_queue,
 };
 
 struct cqhci_host *cqhci_pltfm_init(struct platform_device *pdev)
@@ -1285,14 +1314,6 @@ int cqhci_init(struct cqhci_host *cq_host, struct mmc_host *mmc,
 		mmc->cqe_qdepth -= 1;
 
 	cqcap = cqhci_readl(cq_host, CQHCI_CAP);
-	if (cqcap & CQHCI_CAP_CS) {
-		/*
-		 * In case host controller supports cryptographic operations
-		 * then, it uses 128bit task descriptor. Upper 64 bits of task
-		 * descriptor would be used to pass crypto specific informaton.
-		 */
-		cq_host->caps |= CQHCI_TASK_DESC_SZ_128;
-	}
 
 	cq_host->slot = devm_kcalloc(mmc_dev(mmc), cq_host->num_slots,
 				     sizeof(*cq_host->slot), GFP_KERNEL);
@@ -1302,6 +1323,13 @@ int cqhci_init(struct cqhci_host *cq_host, struct mmc_host *mmc,
 	}
 
 	spin_lock_init(&cq_host->lock);
+
+	err = cqhci_host_init_crypto(cq_host);
+	if (err) {
+		pr_err("%s: CQHCI version %u.%02u Crypto init failed err %d\n",
+		       mmc_hostname(mmc), cqhci_ver_major(cq_host),
+		       cqhci_ver_minor(cq_host), err);
+	}
 
 	init_completion(&cq_host->halt_comp);
 	init_waitqueue_head(&cq_host->wait_queue);

@@ -6,10 +6,24 @@ menuconfig OCULUS_MCU
 
 if OCULUS_MCU
 
+config OCULUS_MCU_MUX
+	tristate "Oculus MCU Mux Driver"
+	select MULTIPLEXER
+	select MUX_GPIO
+	help
+	  Oculus MCU Mux GPIO control Driver
+
 config OCULUS_SWD
 	bool "Oculus MCU SWD Driver"
 	help
 	  Oculus SWD Driver
+
+config OCULUS_SWD_DEBUG
+	bool "Oculus MCU SWD Debug support"
+	depends on DEBUG_FS && OCULUS_SWD
+	default n
+	help
+	  Oculus SWD Debug support
 
 config OCULUS_SWD_HUBERT
 	bool "Hubert SWD Driver"
@@ -21,16 +35,16 @@ config OCULUS_SWD_HUBERT
 config OCULUS_SWD_QM35
 	bool "QM35 SWD Driver"
 	select OCULUS_SWD
-	default y
+	default n
 	help
 	  Oculus QM35 SWD Support
 
-config OCULUS_SWD_SAFETYBOSS
-	bool "Safetyboss SWD Driver"
+config OCULUS_SWD_STM32G0
+	bool "STM32G0 SWD Driver"
 	select OCULUS_SWD
 	default n
 	help
-	  Oculus Safetyboss SWD Support
+	  Oculus STM32G0 SWD Support
 
 config OCULUS_SWD_SYNCBOSS
 	bool "Syncboss SWD Driver"
@@ -38,6 +52,20 @@ config OCULUS_SWD_SYNCBOSS
 	default y
 	help
 	  Oculus Syncboss SWD Support
+
+config OCULUS_SWD_SYNCBOSS_NRF5340
+	bool "Syncboss SWD Driver for NRF5340"
+	select OCULUS_SWD
+	default n
+	help
+	  Oculus Syncboss SWD Support for NRF5340
+
+config OCULUS_SWD_STM32L4
+	bool "STM32L4 SWD Driver"
+	select OCULUS_SWD
+	default n
+	help
+	  Oculus STM32L4 SWD Support
 
 config SYNCBOSS
 	bool "Syncboss SPI Driver"
@@ -52,5 +80,12 @@ config SYNCBOSS_CAMERA_CONTROL
 	default y
 	help
 	  Allow Syncboss driver to control camera hardware
+
+config SYNCBOSS_HALL_SENSOR_REGULATOR_CONTROL
+	bool "Support Syncboss hall sensor regulator control"
+	depends on SYNCBOSS
+	default y
+	help
+	  Allow Syncboss driver to control hall sensor regulator
 
 endif # OCULUS_MCU

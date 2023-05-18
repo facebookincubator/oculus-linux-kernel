@@ -364,6 +364,21 @@ Charger specific properties:
   Definition: Specifies the step size of each step of FCC stepper algorithm.
 		If left unspecified, the default value is 100mA.
 
+- qcom,hvdcp2-max-icl-ua
+  Usage:      optional
+  Value type: <u32>
+  Definition: Specifies the maximum input current limit that can be configured
+		for HVDCP2 adapter when it's working at 5V and 9V.
+		If left unspecified, the default value is 3000mA.
+
+- qcom,hvdcp2-12v-max-icl-ua
+  Usage:      optional
+  Value type: <u32>
+  Definition: Specifies the maximum input current limit that can be configured
+		for HVDCP2 adapter when it's working at 12V.
+		If left unspecified, the default value is the same value
+		specified in "qcom,hvdcp2-max-icl-ua".
+
 - qcom,hvdcp3-max-icl-ua
   Usage:      optional
   Value type: <u32>
@@ -389,6 +404,12 @@ Charger specific properties:
   Definition: Specifies the maximum input current limit that can be configured
 		for PPS adapter in CV mode.
 		If left unspecified, the default value is 4000mA.
+
+- qcom,jeita-arb-enable
+  Usage:      optional
+  Value type: bool
+  Definition: Boolean flag which indicates if JETIA ARB handling when
+		Vjeita > Vbatt is enabled.
 
 =============================================
 Second Level Nodes - SMB5 Charger Peripherals

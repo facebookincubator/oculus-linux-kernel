@@ -25,7 +25,7 @@ struct top_panel_sensor_data {
 	struct thermal_zone_device *tzd;
 	struct virtual_sensor_common_data data;
 
-	struct power_supply *usb_psy;
+	struct power_supply *batt_psy;
 };
 
 static int top_panel_get_temp(void *data, int *temperature)
@@ -52,7 +52,7 @@ static int top_panel_get_temp(void *data, int *temperature)
 	temp = div64_s64(tz_temp + iio_temp, COEFFICIENT_SCALAR);
 
 	/* Account for charging */
-	temp += (s64)(is_charger_connected(fp->usb_psy) ?
+	temp += (s64)(is_charging(fp->batt_psy) ?
 		fp->data.intercept_constant_charging :
 		fp->data.intercept_constant_discharging);
 
@@ -101,9 +101,9 @@ static int top_panel_sensor_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	fp->usb_psy = power_supply_get_by_name("usb");
-	if (!fp->usb_psy) {
-		dev_warn(&pdev->dev, "Unable to get charger power_supply\n");
+	fp->batt_psy = power_supply_get_by_name("battery");
+	if (!fp->batt_psy) {
+		dev_warn(&pdev->dev, "Unable to get battery power_supply\n");
 		return -EPROBE_DEFER;
 	}
 

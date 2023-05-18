@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -347,8 +347,10 @@ static void stop_pcm(struct msm_pcm_loopback *pcm)
 	struct snd_soc_pcm_runtime *soc_pcm_rx;
 	struct snd_soc_pcm_runtime *soc_pcm_tx;
 
-	if (pcm->audio_client == NULL)
+	if (pcm->audio_client == NULL) {
+		pr_err("%s: audio client freed\n", __func__);
 		return;
+	}
 
 	mutex_lock(&loopback_session_lock);
 	q6asm_cmd(pcm->audio_client, CMD_CLOSE);
@@ -466,6 +468,12 @@ static int msm_pcm_prepare(struct snd_pcm_substream *substream)
 			pcm->capture_substream->private_data;
 		event.event_func = msm_pcm_route_event_handler;
 		event.priv_data = (void *) pcm;
+
+		if (!pcm->audio_client) {
+			mutex_unlock(&pcm->lock);
+			pr_err("%s: audio client freed\n", __func__);
+			return -EINVAL;
+		}
 		msm_pcm_routing_reg_phy_stream(soc_pcm_tx->dai_link->id,
 			pcm->audio_client->perf_mode,
 			pcm->session_id, pcm->capture_substream->stream);
@@ -873,7 +881,7 @@ static int msm_pcm_channel_mixer_cfg_ctl_put(struct snd_kcontrol *kcontrol,
 			chmixer_pspd);
 
 	mutex_lock(&loopback_session_lock);
-	if (substream->runtime && substream->ref_count <= 0) {
+	if (substream->ref_count <= 0) {
 		pr_err_ratelimited("%s: substream ref_count:%d invalid\n",
 				__func__, substream->ref_count);
 		mutex_unlock(&loopback_session_lock);

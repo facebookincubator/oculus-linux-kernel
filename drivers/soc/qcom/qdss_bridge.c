@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 
 #define KMSG_COMPONENT "QDSS diag bridge"
@@ -151,7 +151,8 @@ static int qdss_check_entry(struct qdss_bridge_drvdata *drvdata)
 	int ret = 0;
 
 	list_for_each_entry(entry, &drvdata->buf_tbl, link) {
-		if (atomic_read(&entry->available) == 0) {
+		if (atomic_read(&entry->available) == 0
+			&& atomic_read(&entry->used) == 1) {
 			ret = 1;
 			return ret;
 		}
@@ -199,6 +200,7 @@ static void qdss_buf_tbl_remove(struct qdss_bridge_drvdata *drvdata,
 		if (entry->buf != buf)
 			continue;
 		atomic_set(&entry->available, 1);
+		atomic_set(&entry->used, 0);
 		spin_unlock_bh(&drvdata->lock);
 		return;
 	}
@@ -382,6 +384,7 @@ static int usb_write(struct qdss_bridge_drvdata *drvdata,
 
 	entry->usb_req->buf = buf;
 	entry->usb_req->length = len;
+	atomic_set(&entry->used, 1);
 	ret = usb_qdss_write(drvdata->usb_ch, entry->usb_req);
 
 	return ret;
@@ -465,8 +468,7 @@ static void usb_notifier(void *priv, unsigned int event,
 {
 	struct qdss_bridge_drvdata *drvdata = priv;
 
-	if (!drvdata || drvdata->mode != MHI_TRANSFER_TYPE_USB
-			|| drvdata->opened != ENABLE) {
+	if (!drvdata || drvdata->mode != MHI_TRANSFER_TYPE_USB) {
 		pr_err_ratelimited("%s can't be called in invalid status.\n",
 				__func__);
 		return;
@@ -474,8 +476,10 @@ static void usb_notifier(void *priv, unsigned int event,
 
 	switch (event) {
 	case USB_QDSS_CONNECT:
-		usb_qdss_alloc_req(ch, drvdata->nr_trbs);
-		mhi_queue_read(drvdata);
+		if (drvdata->opened == ENABLE) {
+			usb_qdss_alloc_req(ch, drvdata->nr_trbs);
+			mhi_queue_read(drvdata);
+		}
 		break;
 
 	case USB_QDSS_DISCONNECT:
@@ -505,21 +509,15 @@ static int mhi_ch_open(struct qdss_bridge_drvdata *drvdata)
 		spin_unlock_bh(&drvdata->lock);
 		return -ERESTARTSYS;
 	}
-	drvdata->opened = ENABLE;
 	spin_unlock_bh(&drvdata->lock);
 
 	ret = mhi_prepare_for_transfer(drvdata->mhi_dev);
 	if (ret) {
 		pr_err("Unable to open MHI channel\n");
-		goto err;
+		return ret;
 	}
 
 	return 0;
-err:
-	spin_lock_bh(&drvdata->lock);
-	drvdata->opened = DISABLE;
-	spin_unlock_bh(&drvdata->lock);
-	return ret;
 }
 
 static void qdss_bridge_open_work_fn(struct work_struct *work)
@@ -544,9 +542,9 @@ static void qdss_bridge_open_work_fn(struct work_struct *work)
 		goto err;
 	}
 
+	drvdata->opened = ENABLE;
 	return;
 err:
-	drvdata->opened = DISABLE;
 	mhi_unprepare_from_transfer(drvdata->mhi_dev);
 	mhi_ch_close(drvdata);
 err_open:
@@ -715,9 +713,10 @@ static ssize_t mhi_uci_read(struct file *file,
 			pr_err("Failed to recycle element, ret: %d\n", ret);
 			qdss_del_buf_tbl_entry(drvdata, uci_buf->buf);
 			uci_buf->buf = NULL;
-			uci_buf = NULL;
+			kfree(uci_buf);
 			return ret;
 		}
+		kfree(uci_buf);
 	}
 
 	pr_debug("Returning %lu bytes\n", to_copy);
@@ -778,13 +777,12 @@ static int mhi_uci_open(struct inode *inode, struct file *filp)
 		spin_unlock_bh(&drvdata->lock);
 		return ret;
 	}
-	drvdata->opened = ENABLE;
 	spin_unlock_bh(&drvdata->lock);
 
 	ret = mhi_prepare_for_transfer(drvdata->mhi_dev);
 	if (ret) {
 		pr_err("Error starting transfer channels\n");
-		goto error_open_chan;
+		return ret;
 	}
 
 	ret = mhi_queue_inbound(drvdata);
@@ -792,6 +790,7 @@ static int mhi_uci_open(struct inode *inode, struct file *filp)
 		goto error_rx_queue;
 
 	filp->private_data = drvdata;
+	drvdata->opened = ENABLE;
 	return ret;
 
 error_rx_queue:
@@ -799,12 +798,9 @@ error_rx_queue:
 	list_for_each_entry_safe(buf_itr, tmp, &drvdata->read_done_list, link) {
 		list_del(&buf_itr->link);
 		kfree(buf_itr->buf);
+		kfree(buf_itr);
 	}
 
-error_open_chan:
-	spin_lock_bh(&drvdata->lock);
-	drvdata->opened = DISABLE;
-	spin_unlock_bh(&drvdata->lock);
 	return ret;
 }
 

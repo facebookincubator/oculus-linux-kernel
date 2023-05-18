@@ -9,6 +9,7 @@ menu "Serial drivers"
 
 config SERIAL_EARLYCON
 	bool
+	depends on SERIAL_CORE
 	help
 	  Support for early consoles with the earlycon parameter. This enables
 	  the console before standard serial driver is probed. The console is
@@ -998,6 +999,20 @@ config SERIAL_MSM_GENI
 	    hardware.
 	    The driver supports console and High speed UART functions.
 
+config SERIAL_MSM_GENI_HALF_SAMPLING
+	bool "Changes clock divider which impacts sampling rate for QUP HW ver greater than 2.5.0"
+	help
+	  Clock divider value should be doubled for QUP hardware version
+	  greater than 2.5.0.
+	  As earlycon can't have HW version awareness, decision is taken
+	  based on the configuration.
+
+config SERIAL_MSM_GENI_EARLY_CONSOLE
+	bool "MSM on-chip GENI HW based early console support"
+	select SERIAL_MSM_GENI_HALF_SAMPLING
+	help
+	  Serial early console driver for Qualcomm Technologies Inc's GENI
+	  based QUP hardware.
 
 config SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 	bool "Monitoring geni_ios register value"
@@ -1032,6 +1047,18 @@ config SERIAL_MSM_GENI_DISALLOW_SUSPEND_RFR_PULL
 	  Temporary solution for problem communicating with Broadcom BT chip
 	  where serial driver fails to receive data after resume, causing
 	  Bluetooth services to crash.
+
+config SERIAL_MSM_HS
+	tristate "MSM UART High Speed: Serial Driver"
+	depends on ARCH_QCOM
+	select SERIAL_CORE
+	help
+	  If you have a machine based on MSM family of SoCs, you
+	  can enable its onboard high speed serial port by enabling
+	  this option.
+
+	  Choose M here to compile it as a module. The module will be
+	  called msm_serial_hs.
 
 config SERIAL_VT8500
 	bool "VIA VT8500 on-chip serial port support"

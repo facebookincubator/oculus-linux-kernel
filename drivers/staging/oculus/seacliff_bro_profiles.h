@@ -8,7 +8,6 @@
  */
 #define BRO_COMMAND_SIZE 581
 #define NUM_BRO_PROFILES 2
-#define SELECTED_BRO_PROFILE 0
 
 /*
  * BRO Profiles:

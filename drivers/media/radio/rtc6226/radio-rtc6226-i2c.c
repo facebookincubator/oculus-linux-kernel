@@ -259,6 +259,8 @@ static void rtc6226_i2c_interrupt_handler(struct rtc6226_device *radio)
 		rtc6226_reset_rds_data(radio);
 		FMDBG("%s clear Seek/Tune bit\n", __func__);
 		if (radio->seek_tune_status == SEEK_PENDING) {
+			/* Enable the RDS as it was disabled before seek */
+			rtc6226_rds_on(radio);
 			FMDBG("posting RTC6226_EVT_SEEK_COMPLETE event\n");
 			rtc6226_q_event(radio, RTC6226_EVT_SEEK_COMPLETE);
 			/* post tune comp evt since seek results in a tune.*/
@@ -523,13 +525,9 @@ static int rtc6226_fm_power_cfg(struct rtc6226_device *radio, bool powerflag)
 int rtc6226_fops_open(struct file *file)
 {
 	struct rtc6226_device *radio = video_drvdata(file);
-	int retval = v4l2_fh_open(file);
+	int retval;
 
 	FMDBG("%s enter user num = %d\n", __func__, radio->users);
-	if (retval) {
-		FMDERR("%s fail to open v4l2\n", __func__);
-		return retval;
-	}
 	if (atomic_inc_return(&radio->users) != 1) {
 		FMDERR("Device already in use. Try again later\n");
 		atomic_dec(&radio->users);
@@ -560,7 +558,6 @@ open_err_req_irq:
 	rtc6226_fm_power_cfg(radio, TURNING_OFF);
 open_err_setup:
 	atomic_dec(&radio->users);
-	v4l2_fh_release(file);
 	return retval;
 }
 
@@ -573,18 +570,16 @@ int rtc6226_fops_release(struct file *file)
 	int retval = 0;
 
 	FMDBG("%s : Exit\n", __func__);
-	if (v4l2_fh_is_singular_file(file)) {
-		if (radio->mode != FM_OFF) {
-			rtc6226_power_down(radio);
-			radio->mode = FM_OFF;
-		}
+	if (radio->mode != FM_OFF) {
+		rtc6226_power_down(radio);
+		radio->mode = FM_OFF;
 	}
 	rtc6226_disable_irq(radio);
 	atomic_dec(&radio->users);
 	retval = rtc6226_fm_power_cfg(radio, TURNING_OFF);
 	if (retval < 0)
 		FMDERR("%s: failed to apply voltage\n", __func__);
-	return v4l2_fh_release(file);
+	return retval;
 }
 
 static int rtc6226_parse_dt(struct device *dev,

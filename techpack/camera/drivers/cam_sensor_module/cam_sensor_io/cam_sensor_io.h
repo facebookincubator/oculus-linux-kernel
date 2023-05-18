@@ -10,7 +10,6 @@
 
 #include "cam_sensor_cmn_header.h"
 
-
 #define CCI_MASTER 1
 #define I2C_MASTER 2
 #define SPI_MASTER 3

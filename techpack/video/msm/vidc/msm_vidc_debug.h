@@ -79,10 +79,26 @@ extern bool msm_vidc_lossless_encode;
 extern bool msm_vidc_cvp_usage;
 extern int msm_vidc_err_recovery_disable;
 
-void msm_vidc_dprintk(u32 level, u32 sid, const char *fmt, ...);
-
-#define dprintk(__level, sid, __fmt, ...) \
-	msm_vidc_dprintk(__level, sid, __fmt, ##__VA_ARGS__)
+#define dprintk(__level, sid, __fmt, ...)	\
+	do { \
+		if (is_print_allowed(sid, __level)) { \
+			if (msm_vidc_debug & VIDC_FTRACE) { \
+				msm_vidc_ftrace( \
+					get_debug_level_str(__level), \
+					sid, \
+					get_codec_name(sid), \
+					__fmt, \
+					##__VA_ARGS__); \
+			} \
+			if (msm_vidc_debug & VIDC_PRINTK) { \
+				pr_info(VIDC_DBG_TAG __fmt, \
+					get_debug_level_str(__level), \
+					sid, \
+					get_codec_name(sid), \
+					##__VA_ARGS__); \
+			} \
+		} \
+	} while (0)
 
 #define s_vpr_e(sid, __fmt, ...) dprintk(VIDC_ERR, sid, __fmt, ##__VA_ARGS__)
 #define s_vpr_h(sid, __fmt, ...) dprintk(VIDC_HIGH, sid, __fmt, ##__VA_ARGS__)
@@ -106,10 +122,20 @@ void msm_vidc_dprintk(u32 level, u32 sid, const char *fmt, ...);
 #define d_vpr_b(__fmt, ...) \
 			dprintk(VIDC_BUS, DEFAULT_SID, __fmt, ##__VA_ARGS__)
 
-void msm_vidc_dprintk_firmware(u32 level, const char *fmt, ...);
-
-#define dprintk_firmware(__level, __fmt, ...) \
-	msm_vidc_dprintk_firmware(__level, __fmt, ##__VA_ARGS__)
+#define dprintk_firmware(__level, __fmt, ...)	\
+	do { \
+		if (__level & FW_FTRACE) { \
+			msm_fw_ftrace( \
+				"fw", \
+				__fmt, \
+				##__VA_ARGS__); \
+		} \
+		if (__level & FW_PRINTK) { \
+			pr_info(FW_DBG_TAG __fmt, \
+				"fw", \
+				##__VA_ARGS__); \
+		} \
+	} while (0)
 
 #define dprintk_ratelimit(__level, __fmt, arg...) \
 	do { \
@@ -135,6 +161,8 @@ void msm_vidc_debugfs_update(struct msm_vidc_inst *inst,
 int msm_vidc_check_ratelimit(void);
 int get_sid(u32 *sid, u32 session_type);
 void update_log_ctxt(u32 sid, u32 session_type, u32 fourcc);
+void msm_vidc_ftrace(const char *debug_level, u32 sid, const char *codec_name, const char *fmt, ...);
+void msm_fw_ftrace(const char *name, const char *fmt, ...);
 
 static inline char *get_debug_level_str(int level)
 {

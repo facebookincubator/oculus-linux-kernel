@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * FocalTech TouchScreen driver.
@@ -212,7 +211,7 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 	int  ret = 0;
 	u8   reg_value = 0;
 	u8   reg_addr = 0;
-	bool hardware_reset = false;
+	bool hardware_reset = 0;
 
 	/* 1. esdcheck is interrupt, then return */
 	if (fts_esdcheck_data.intr == 1) {
@@ -263,7 +262,7 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 	}
 
 	/* 8. If need hardware reset, then handle it here */
-	if (hardware_reset) {
+	if (hardware_reset == 1) {
 		FTS_DEBUG("NoACK=%d, Error Data=%d, Hardware Reset=%d",
 				fts_esdcheck_data.nack_cnt,
 				fts_esdcheck_data.dataerror_cnt,

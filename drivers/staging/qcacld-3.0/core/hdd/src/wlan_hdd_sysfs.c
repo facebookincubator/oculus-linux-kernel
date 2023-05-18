@@ -707,7 +707,7 @@ static void hdd_sysfs_destroy_driver_root_obj(void)
 	}
 }
 
-void hdd_sysfs_create_regulatory_root_obj(void)
+static void hdd_sysfs_create_regulatory_root_obj(void)
 {
 	int error;
 
@@ -720,7 +720,7 @@ void hdd_sysfs_create_regulatory_root_obj(void)
 		hdd_err("could not create country code sysfs file");
 }
 
-void hdd_sysfs_destroy_regulatory_root_obj(void)
+static void hdd_sysfs_destroy_regulatory_root_obj(void)
 {
 	sysfs_remove_file(wlan_kobject, &regulatory_region_attribute.attr);
 }
@@ -874,8 +874,8 @@ void hdd_create_sysfs_files(struct hdd_context *hdd_ctx)
 {
 	hdd_sysfs_create_driver_root_obj();
 	hdd_sysfs_create_version_interface(hdd_ctx->psoc);
-	hdd_sysfs_mem_stats_create(wlan_kobject);
 	hdd_sysfs_create_regulatory_root_obj();
+	hdd_sysfs_mem_stats_create(wlan_kobject);
 	if  (QDF_GLOBAL_MISSION_MODE == hdd_get_conparam()) {
 		hdd_sysfs_create_powerstats_interface();
 		hdd_sysfs_fw_mode_config_create(driver_kobject);
@@ -916,8 +916,8 @@ void hdd_destroy_sysfs_files(void)
 		hdd_sysfs_fw_mode_config_destroy(driver_kobject);
 		hdd_sysfs_destroy_powerstats_interface();
 	}
-	hdd_sysfs_destroy_regulatory_root_obj();
 	hdd_sysfs_mem_stats_destroy(wlan_kobject);
+	hdd_sysfs_destroy_regulatory_root_obj();
 	hdd_sysfs_destroy_version_interface();
 	hdd_sysfs_destroy_driver_root_obj();
 }

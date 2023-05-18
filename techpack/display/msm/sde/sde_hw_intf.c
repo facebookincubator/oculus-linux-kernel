@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 #include <linux/iopoll.h>
 
@@ -57,6 +58,7 @@
 #define   INTF_TPG_RGB_MAPPING          0x11C
 #define   INTF_PROG_FETCH_START         0x170
 #define   INTF_PROG_ROT_START           0x174
+#define   INTF_PROG_INTF_OFFSET_EN      0x178
 
 #define INTF_MISR_CTRL			0x180
 #define INTF_MISR_SIGNATURE		0x184
@@ -391,6 +393,28 @@ static void sde_hw_intf_setup_prg_fetch(
 	}
 
 	SDE_REG_WRITE(c, INTF_CONFIG, fetch_enable);
+}
+
+static void sde_hw_intf_setup_skewed_vsync(
+		struct sde_hw_intf *intf,
+		const struct sde_intf_offset_cfg *cfg)
+{
+	struct sde_hw_blk_reg_map *c = &intf->hw;
+	u32 prog_fetch_enable = 0, fetch_start = 0;
+	u32 intf_offset = 0, vsync_period, prog_fetch_linecnt = 0;
+
+	prog_fetch_enable = SDE_REG_READ(c, INTF_CONFIG);
+	vsync_period = SDE_REG_READ(c, INTF_VSYNC_PERIOD_F0);
+	intf_offset = vsync_period * cfg->offset_percentage / 100;
+	if (prog_fetch_enable & BIT(31)) {
+		fetch_start = SDE_REG_READ(c, INTF_PROG_FETCH_START);
+		prog_fetch_linecnt = vsync_period - fetch_start;
+		if (intf_offset >= prog_fetch_linecnt)
+			intf_offset = intf_offset - prog_fetch_linecnt;
+		else
+			intf_offset = fetch_start + intf_offset;
+	}
+	SDE_REG_WRITE(c, INTF_PROG_INTF_OFFSET_EN, intf_offset);
 }
 
 static void sde_hw_intf_bind_pingpong_blk(
@@ -732,6 +756,8 @@ static void _setup_intf_ops(struct sde_hw_intf_ops *ops,
 {
 	ops->setup_timing_gen = sde_hw_intf_setup_timing_engine;
 	ops->setup_prg_fetch  = sde_hw_intf_setup_prg_fetch;
+	if (cap & BIT(SDE_INTF_SKEWED_VSYNC))
+		ops->setup_skewed_vsync  = sde_hw_intf_setup_skewed_vsync;
 	ops->get_status = sde_hw_intf_get_status;
 	ops->enable_timing = sde_hw_intf_enable_timing_engine;
 	ops->setup_misr = sde_hw_intf_setup_misr;
@@ -740,8 +766,8 @@ static void _setup_intf_ops(struct sde_hw_intf_ops *ops,
 	ops->avr_setup = sde_hw_intf_avr_setup;
 	ops->avr_trigger = sde_hw_intf_avr_trigger;
 	ops->avr_ctrl = sde_hw_intf_avr_ctrl;
-	ops->set_lineptr_value = sde_hw_intf_set_lineptr_value;
 	ops->enable_dsc_4hs_merge = sde_hw_intf_enable_dsc_4hs_merge;
+	ops->set_lineptr_value = sde_hw_intf_set_lineptr_value;
 
 	if (cap & BIT(SDE_INTF_INPUT_CTRL))
 		ops->bind_pingpong_blk = sde_hw_intf_bind_pingpong_blk;
