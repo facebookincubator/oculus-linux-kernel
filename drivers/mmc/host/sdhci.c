@@ -761,6 +761,15 @@ static void sdhci_adma_table_post(struct sdhci_host *host,
 
 static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 {
+#ifdef CONFIG_MMC_QUALCOMM_WORKAROUND_CMD1_TIMEOUT
+	/*
+	 * This is the workaround change from Qualcomm. The purpose of this
+	 * change is to force sdhci_calc_timeout() return 0xF, which is the
+	 * maximum timeout value.
+	 * REF: T130469476, https://fburl.com/qualcommsupportcase06497272
+	 */
+	return 0xF;
+#else
 	u8 count;
 	struct mmc_data *data = cmd->data;
 	unsigned target_timeout, current_timeout;
@@ -834,6 +843,7 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 	}
 
 	return count;
+#endif /* MMC_QUALCOMM_WORKAROUND_CMD1_TIMEOUT */
 }
 
 static void sdhci_set_transfer_irqs(struct sdhci_host *host)

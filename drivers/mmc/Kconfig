@@ -27,6 +27,14 @@ config MMC_PERF_PROFILING
 	  If you say Y here, support will be added for collecting
 	  performance numbers at the MMC Queue and Host layers.
 
+config MMC_QUALCOMM_WORKAROUND_CMD1_TIMEOUT
+       bool "Qualcomm workaround for CMD1 timeout"
+       depends on MMC != n
+       default n
+  help
+    This enables the use of Qualcomm's workaround to use the maximum
+    value for the timeout when issuing the CMDs
+
 if MMC
 
 source "drivers/mmc/core/Kconfig"
