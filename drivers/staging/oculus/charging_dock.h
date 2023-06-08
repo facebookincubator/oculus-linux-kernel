@@ -5,6 +5,7 @@
 
 #include <linux/cypd.h>
 #include <linux/mutex.h>
+#include <linux/power_supply.h>
 #include <linux/usb/usbpd.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
@@ -25,6 +26,7 @@
 #define PARAMETER_TYPE_CONNECTED_DEVICES 0x85
 #define PARAMETER_TYPE_LOG_TRANSMIT 0x86
 #define PARAMETER_TYPE_LOG_CHUNK 0x87
+#define PARAMETER_TYPE_STATE_OF_CHARGE 0x88
 #define PARAMETER_TYPE_MOISTURE_DETECTED 0xA0
 
 #define VDO_LOG_TRANSMIT_STOP 0x00
@@ -61,6 +63,12 @@ struct port_config_t {
 	char serial_number_system[16];
 };
 
+enum state_of_charge_t {
+	CHARGING,
+	CHARGED,
+	NOT_CHARGING
+};
+
 struct charging_dock_params_t {
 	u32 fw_version;
 	char serial_number_mlb[16];
@@ -71,6 +79,7 @@ struct charging_dock_params_t {
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
 	bool moisture_detected;
+	enum state_of_charge_t state_of_charge;
 };
 
 struct charging_dock_device_t {
@@ -84,6 +93,8 @@ struct charging_dock_device_t {
 	struct usbpd_svid_handler usbpd_vdm_handler;
 	/* client struct to register with cypd engine */
 	struct cypd_svid_handler cypd_vdm_handler;
+	/* client struct to register with cypd engine (alternate) */
+	struct cypd_svid_handler cypd_vdm_handler_alt;
 	/* docked/undocked status */
 	bool docked;
 	/* lock for modifying device struct */
@@ -100,6 +111,15 @@ struct charging_dock_device_t {
 	char *log;
 	u32 log_chunk_num;
 	bool gathering_log;
+	/* power supply object handle for internal HMD battery */
+	struct power_supply *battery_psy;
+	/* notifier block for handling power supply change events */
+	struct notifier_block nb;
+	u16 current_svid;
+	/* work for sending state of charge to dock */
+	struct delayed_work dwork_soc;
+	/* flag to tell if state of charge needs to be sent to dock*/
+	bool send_state_of_charge;
 };
 
 #endif /* _CHARGING_DOCK_H__ */

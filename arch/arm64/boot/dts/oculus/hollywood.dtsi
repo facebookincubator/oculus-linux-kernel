@@ -50,9 +50,9 @@
 		reset-gpios = <&tlmm 89 GPIO_ACTIVE_HIGH>;
 	};
 
-	molokini: oculus,molokini {
+	external_battery: oculus,external_battery {
 		status = "ok";
-		compatible = "oculus,molokini";
+		compatible = "oculus,external-battery";
 		svid = <0x28330000>;
 		battery-usbpd = <&pm8150b_pdphy>;
 		charging-suspend-thresh = <100>;

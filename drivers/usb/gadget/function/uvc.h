@@ -14,6 +14,7 @@
 #include <linux/spinlock.h>
 #include <linux/usb/composite.h>
 #include <linux/videodev2.h>
+#include <linux/wait.h>
 
 #include <media/v4l2-device.h>
 #include <media/v4l2-dev.h>
@@ -24,6 +25,7 @@
 struct usb_ep;
 struct usb_request;
 struct uvc_descriptor_header;
+struct uvc_device;
 
 /* ------------------------------------------------------------------------
  * Debugging, printing and logging
@@ -51,14 +53,14 @@ extern unsigned int uvc_gadget_trace_param;
 			printk(KERN_DEBUG "uvcvideo: " msg); \
 	} while (0)
 
-#define uvc_warn_once(dev, warn, msg...) \
-	do { \
-		if (!test_and_set_bit(warn, &dev->warnings)) \
-			printk(KERN_INFO "uvcvideo: " msg); \
-	} while (0)
-
-#define uvc_printk(level, msg...) \
-	printk(level "uvcvideo: " msg)
+#define uvcg_dbg(f, fmt, args...) \
+	dev_dbg(&(f)->config->cdev->gadget->dev, "%s: " fmt, (f)->name, ##args)
+#define uvcg_info(f, fmt, args...) \
+	dev_info(&(f)->config->cdev->gadget->dev, "%s: " fmt, (f)->name, ##args)
+#define uvcg_warn(f, fmt, args...) \
+	dev_warn(&(f)->config->cdev->gadget->dev, "%s: " fmt, (f)->name, ##args)
+#define uvcg_err(f, fmt, args...) \
+	dev_err(&(f)->config->cdev->gadget->dev, "%s: " fmt, (f)->name, ##args)
 
 /* ------------------------------------------------------------------------
  * Driver specific constants
@@ -73,6 +75,7 @@ extern unsigned int uvc_gadget_trace_param;
  */
 
 struct uvc_video {
+	struct uvc_device *uvc;
 	struct usb_ep *ep;
 
 	/* Frame parameters */
@@ -113,6 +116,8 @@ struct uvc_device {
 	enum uvc_state state;
 	struct usb_function func;
 	struct uvc_video video;
+	bool func_connected;
+	wait_queue_head_t func_connected_queue;
 
 	/* Descriptors */
 	struct {
@@ -146,6 +151,7 @@ static inline struct uvc_device *to_uvc(struct usb_function *f)
 struct uvc_file_handle {
 	struct v4l2_fh vfh;
 	struct uvc_video *device;
+	bool is_uvc_app_handle;
 };
 
 #define to_uvc_file_handle(handle) \

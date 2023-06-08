@@ -20,17 +20,10 @@
 
 #define COEFFICIENT_SCALAR 10000
 
-struct front_panel_sensor_data {
-	struct device *dev;
-	struct thermal_zone_device *tzd;
-	struct virtual_sensor_common_data data;
-
-	struct power_supply *batt_psy;
-};
-
 static int front_panel_get_temp(void *data, int *temperature)
 {
-	struct front_panel_sensor_data *fp = data;
+	struct virtual_sensor_drvdata *fp = data;
+	struct virtual_sensor_common_data *coeff_data;
 	s64 tz_temp = 0, iio_temp = 0, temp;
 	int ret;
 
@@ -39,28 +32,29 @@ static int front_panel_get_temp(void *data, int *temperature)
 
 	*temperature = 0;
 
-	mutex_lock(&fp->data.lock);
+	if (is_charging(fp->batt_psy))
+		coeff_data = &fp->data_charging;
+	else
+		coeff_data = &fp->data_discharging;
 
-	ret = virtual_sensor_calculate_tz_temp(fp->dev, &fp->data, &tz_temp);
+	mutex_lock(&fp->lock);
+
+	ret = virtual_sensor_calculate_tz_temp(fp->dev, coeff_data, &tz_temp);
 	if (ret)
 		goto get_temp_unlock;
 
-	ret = virtual_sensor_calculate_iio_temp(fp->dev, &fp->data, &iio_temp);
+	ret = virtual_sensor_calculate_iio_temp(fp->dev, coeff_data, &iio_temp);
 	if (ret)
 		goto get_temp_unlock;
 
 	temp = div64_s64(tz_temp + iio_temp, COEFFICIENT_SCALAR);
-
-	/* Account for charging */
-	temp += (s64)(is_charging(fp->batt_psy) ?
-		fp->data.intercept_constant_charging :
-		fp->data.intercept_constant_discharging);
+	temp += coeff_data->intercept;
 
 	*temperature = (int)temp;
 	ret = 0;
 
 get_temp_unlock:
-	mutex_unlock(&fp->data.lock);
+	mutex_unlock(&fp->lock);
 	return ret;
 }
 
@@ -68,13 +62,28 @@ static const struct thermal_zone_of_device_ops front_panel_thermal_ops = {
 	.get_temp = front_panel_get_temp,
 };
 
+static DEVICE_ATTR_RW(tz_coefficients_discharging);
+static DEVICE_ATTR_RW(tz_slope_coefficients_discharging);
+static DEVICE_ATTR_RW(iio_coefficients_discharging);
+static DEVICE_ATTR_RW(iio_slope_coefficients_discharging);
+static DEVICE_ATTR_RW(tz_coefficients_charging);
+static DEVICE_ATTR_RW(tz_slope_coefficients_charging);
+static DEVICE_ATTR_RW(iio_coefficients_charging);
+static DEVICE_ATTR_RW(iio_slope_coefficients_charging);
+static DEVICE_ATTR_RW(intercept_charging);
+static DEVICE_ATTR_RW(intercept_discharging);
+
 static struct attribute *front_panel_sensor_attrs[] = {
-	&dev_attr_tz_coefficients.attr,
-	&dev_attr_tz_slope_coefficients.attr,
-	&dev_attr_iio_coefficients.attr,
-	&dev_attr_iio_slope_coefficients.attr,
-	&dev_attr_charging_constant.attr,
-	&dev_attr_discharging_constant.attr,
+	&dev_attr_tz_coefficients_discharging.attr,
+	&dev_attr_tz_slope_coefficients_discharging.attr,
+	&dev_attr_iio_coefficients_discharging.attr,
+	&dev_attr_iio_slope_coefficients_discharging.attr,
+	&dev_attr_tz_coefficients_charging.attr,
+	&dev_attr_tz_slope_coefficients_charging.attr,
+	&dev_attr_iio_coefficients_charging.attr,
+	&dev_attr_iio_slope_coefficients_charging.attr,
+	&dev_attr_intercept_discharging.attr,
+	&dev_attr_intercept_charging.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(front_panel_sensor);
@@ -82,7 +91,7 @@ ATTRIBUTE_GROUPS(front_panel_sensor);
 static int front_panel_sensor_probe(struct platform_device *pdev)
 {
 	int ret = 0;
-	struct front_panel_sensor_data *fp;
+	struct virtual_sensor_drvdata *fp;
 	struct thermal_zone_device *tzd = NULL;
 
 	dev_dbg(&pdev->dev, "probing");
@@ -93,11 +102,25 @@ static int front_panel_sensor_probe(struct platform_device *pdev)
 
 	fp->dev = &pdev->dev;
 
-	mutex_init(&fp->data.lock);
+	mutex_init(&fp->lock);
 
-	ret = virtual_sensor_parse_common_dt(fp->dev, &fp->data);
+	fp->data_charging.name = "charging";
+	ret = virtual_sensor_parse_dt(fp->dev, &fp->data_charging);
+	if (ret == -EPROBE_DEFER)
+		return ret;
+	else if (ret < 0) {
+		dev_err(&pdev->dev,
+			"Failed to parse data for sensor \"%s\": %d",
+			fp->data_charging.name, ret);
+		return ret;
+	}
+
+	fp->data_discharging.name = "discharging";
+	ret = virtual_sensor_parse_dt(fp->dev, &fp->data_discharging);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to parse common data: %d", ret);
+		dev_err(&pdev->dev,
+			"Failed to parse data for sensor \"%s\": %d",
+			fp->data_charging.name, ret);
 		return ret;
 	}
 
@@ -107,7 +130,8 @@ static int front_panel_sensor_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
-	virtual_sensor_reset_history(&fp->data);
+	virtual_sensor_reset_history(&fp->data_charging);
+	virtual_sensor_reset_history(&fp->data_discharging);
 
 	tzd = thermal_zone_of_sensor_register(&pdev->dev, 0, fp,
 			&front_panel_thermal_ops);
@@ -119,11 +143,12 @@ static int front_panel_sensor_probe(struct platform_device *pdev)
 	}
 	fp->tzd = tzd;
 
-	dev_set_drvdata(&pdev->dev, &fp->data);
+	dev_set_drvdata(&pdev->dev, fp);
 
-	fp->data.tzd = fp->tzd;
-	virtual_sensor_workqueue_register(&fp->data);
-
+	fp->data_charging.tzd = fp->tzd;
+	fp->data_discharging.tzd = fp->tzd;
+	virtual_sensor_workqueue_register(&fp->data_charging);
+	virtual_sensor_workqueue_register(&fp->data_discharging);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, front_panel_sensor_groups);
 	if (ret < 0)
@@ -134,18 +159,17 @@ static int front_panel_sensor_probe(struct platform_device *pdev)
 
 static int front_panel_sensor_remove(struct platform_device *pdev)
 {
-	struct virtual_sensor_common_data *data =
-			(struct virtual_sensor_common_data *) platform_get_drvdata(pdev);
-	struct front_panel_sensor_data *vs =
-			(struct front_panel_sensor_data *) data->parent;
+	struct virtual_sensor_drvdata *vs =
+			(struct virtual_sensor_drvdata *) platform_get_drvdata(pdev);
 
-	virtual_sensor_workqueue_unregister(&vs->data);
+	virtual_sensor_workqueue_unregister(&vs->data_charging);
+	virtual_sensor_workqueue_unregister(&vs->data_discharging);
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 
 	sysfs_remove_groups(&pdev->dev.kobj, front_panel_sensor_groups);
 
-	mutex_destroy(&data->lock);
+	mutex_destroy(&vs->lock);
 
 	return 0;
 }

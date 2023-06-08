@@ -172,10 +172,6 @@
 #ifdef SUPPORT_LTECX
 #define CMD_LTECX_SET		"LTECOEX"
 #endif /* SUPPORT_LTECX */
-#ifdef TEST_TX_POWER_CONTROL
-#define CMD_TEST_SET_TX_POWER		"TEST_SET_TX_POWER"
-#define CMD_TEST_GET_TX_POWER		"TEST_GET_TX_POWER"
-#endif /* TEST_TX_POWER_CONTROL */
 #define CMD_SARLIMIT_TX_CONTROL		"SET_TX_POWER_CALLING"
 #define CMD_SARLIMIT_NR_SUB6_BANDINFO	"SET_TX_POWER_SUB6_BAND"
 #ifdef SUPPORT_SET_TID
@@ -500,6 +496,19 @@ static int wl_android_simulate_degraded_performance(struct net_device *dev,
 #endif /* SIMULATE_DEGRADED_PERFORMANCE */
 #define CMD_CHANGE_TX_CHAIN "SET_TXCHAIN"
 static int wl_android_set_tx_chain(struct net_device *dev, char *command);
+
+#ifdef TEST_TX_POWER_CONTROL
+#define CMD_TEST_SET_TX_POWER		"TEST_SET_TX_POWER"
+#define CMD_TEST_GET_TX_POWER		"TEST_GET_TX_POWER"
+#endif /* TEST_TX_POWER_CONTROL */
+
+#define CMD_SET_DYNAMIC_INACTIVITY_TIMER "SET_DYNAMIC_INACTIVITY_TIMER"
+static int wl_android_set_dynamic_inactivity_timer(struct net_device *dev,
+						   char *command);
+#define CMD_GET_DYNAMIC_INACTIVITY_TIMER "GET_DYNAMIC_INACTIVITY_TIMER"
+static int wl_android_get_dynamic_inactivity_timer(struct net_device *dev,
+						   char *command,
+						   int total_len);
 
 #define BUFSZ 8
 #define BUFSZN	BUFSZ + 1
@@ -7927,57 +7936,6 @@ int wl_android_set_singlecore_scan(struct net_device *dev, char *command)
 	return error;
 }
 
-#ifdef TEST_TX_POWER_CONTROL
-static int
-wl_android_set_tx_power(struct net_device *dev, const char* string_num)
-{
-	int err = 0;
-	s32 dbm;
-	enum nl80211_tx_power_setting type;
-
-	dbm = bcm_atoi(string_num);
-
-	if (dbm < -1) {
-		DHD_ERROR(("wl_android_set_tx_power: dbm is negative...\n"));
-		return -EINVAL;
-	}
-
-	if (dbm == -1)
-		type = NL80211_TX_POWER_AUTOMATIC;
-	else
-		type = NL80211_TX_POWER_FIXED;
-
-	err = wl_set_tx_power(dev, type, dbm);
-	if (unlikely(err)) {
-		DHD_ERROR(("wl_android_set_tx_power: error (%d)\n", err));
-		return err;
-	}
-
-	return 1;
-}
-
-static int
-wl_android_get_tx_power(struct net_device *dev, char *command, int total_len)
-{
-	int err;
-	int bytes_written;
-	s32 dbm = 0;
-
-	err = wl_get_tx_power(dev, &dbm);
-	if (unlikely(err)) {
-		DHD_ERROR(("wl_android_get_tx_power: error (%d)\n", err));
-		return err;
-	}
-
-	bytes_written = snprintf(command, total_len, "%s %d",
-		CMD_TEST_GET_TX_POWER, dbm);
-
-	DHD_ERROR(("wl_android_get_tx_power: GET_TX_POWER: dBm=%d\n", dbm));
-
-	return bytes_written;
-}
-#endif /* TEST_TX_POWER_CONTROL */
-
 #define NRSUB6_SAR_ENABLE "6"
 
 static int
@@ -8212,6 +8170,57 @@ wl_android_get_tid(struct net_device *dev, char* command, int total_len)
 }
 #endif /* SUPPORT_SET_TID */
 #endif /* CUSTOMER_HW4_PRIVATE_CMD */
+
+#ifdef TEST_TX_POWER_CONTROL
+static int
+wl_android_set_tx_power(struct net_device *dev, const char* string_num)
+{
+	int err = 0;
+	s32 dbm;
+	enum nl80211_tx_power_setting type;
+
+	dbm = bcm_atoi(string_num);
+
+	if (dbm < -1) {
+		DHD_ERROR(("wl_android_set_tx_power: dbm is negative...\n"));
+		return -EINVAL;
+	}
+
+	if (dbm == -1)
+		type = NL80211_TX_POWER_AUTOMATIC;
+	else
+		type = NL80211_TX_POWER_FIXED;
+
+	err = wl_set_tx_power(dev, type, dbm);
+	if (unlikely(err)) {
+		DHD_ERROR(("wl_android_set_tx_power: error (%d)\n", err));
+		return err;
+	}
+
+	return 1;
+}
+
+static int
+wl_android_get_tx_power(struct net_device *dev, char *command, int total_len)
+{
+	int err;
+	int bytes_written;
+	s32 dbm = 0;
+
+	err = wl_get_tx_power(dev, &dbm);
+	if (unlikely(err)) {
+		DHD_ERROR(("wl_android_get_tx_power: error (%d)\n", err));
+		return err;
+	}
+
+	bytes_written = snprintf(command, total_len, "%s %d",
+		CMD_TEST_GET_TX_POWER, dbm);
+
+	DHD_ERROR(("wl_android_get_tx_power: GET_TX_POWER: dBm=%d\n", dbm));
+
+	return bytes_written;
+}
+#endif /* TEST_TX_POWER_CONTROL */
 
 int wl_android_set_roam_mode(struct net_device *dev, char *command)
 {
@@ -13306,17 +13315,6 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	else if (strnicmp(command, CMD_SET_SCSCAN, strlen(CMD_SET_SCSCAN)) == 0) {
 		bytes_written = wl_android_set_singlecore_scan(net, command);
 	}
-#ifdef TEST_TX_POWER_CONTROL
-	else if (strnicmp(command, CMD_TEST_SET_TX_POWER,
-		strlen(CMD_TEST_SET_TX_POWER)) == 0) {
-		int skip = strlen(CMD_TEST_SET_TX_POWER) + 1;
-		wl_android_set_tx_power(net, (const char*)command+skip);
-	}
-	else if (strnicmp(command, CMD_TEST_GET_TX_POWER,
-		strlen(CMD_TEST_GET_TX_POWER)) == 0) {
-		wl_android_get_tx_power(net, command, priv_cmd.total_len);
-	}
-#endif /* TEST_TX_POWER_CONTROL */
 	else if (strnicmp(command, CMD_SARLIMIT_TX_CONTROL,
 		strlen(CMD_SARLIMIT_TX_CONTROL)) == 0) {
 		int skip = strlen(CMD_SARLIMIT_TX_CONTROL) + 1;
@@ -13939,10 +13937,30 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			priv_cmd.total_len);
 	}
 #endif /* LIMIT_AP_BW */
-	else if (strnicmp(command, CMD_CHANGE_TX_CHAIN,
-			  strlen(CMD_CHANGE_TX_CHAIN)) == 0) {
+	else if (strnicmp(command, CMD_SET_DYNAMIC_INACTIVITY_TIMER,
+			  strlen(CMD_SET_DYNAMIC_INACTIVITY_TIMER)) == 0) {
+		bytes_written =
+			wl_android_set_dynamic_inactivity_timer(net, command);
+	} else if (strnicmp(command, CMD_GET_DYNAMIC_INACTIVITY_TIMER,
+			    strlen(CMD_GET_DYNAMIC_INACTIVITY_TIMER)) == 0) {
+		bytes_written = wl_android_get_dynamic_inactivity_timer(
+			net, command, priv_cmd.total_len);
+	} else if (strnicmp(command, CMD_CHANGE_TX_CHAIN,
+			    strlen(CMD_CHANGE_TX_CHAIN)) == 0) {
 		bytes_written = wl_android_set_tx_chain(net, command);
-	} else {
+	}
+#ifdef TEST_TX_POWER_CONTROL
+	else if (strnicmp(command, CMD_TEST_SET_TX_POWER,
+		strlen(CMD_TEST_SET_TX_POWER)) == 0) {
+		int skip = strlen(CMD_TEST_SET_TX_POWER) + 1;
+		bytes_written = wl_android_set_tx_power(net, (const char*)command+skip);
+	}
+	else if (strnicmp(command, CMD_TEST_GET_TX_POWER,
+		strlen(CMD_TEST_GET_TX_POWER)) == 0) {
+		bytes_written = wl_android_get_tx_power(net, command, priv_cmd.total_len);
+	}
+#endif /* TEST_TX_POWER_CONTROL */
+	else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 #ifdef CUSTOMER_HW4_DEBUG
 		bytes_written = BCME_UNSUPPORTED;
@@ -15664,6 +15682,7 @@ static int wl_android_xrapi_send_proberesp(struct net_device *dev,
 	if (assoc_maclist->count != 1) {
 		WL_ERR(("Error: Only one client allowed: %d client connected.\n",
 			assoc_maclist->count));
+		res = BCME_NOTASSOCIATED;
 		goto exit;
 	} else {
 		WL_INFORM(("Associated client=" MACDBG "\n",
@@ -15993,79 +16012,46 @@ exit:
 }
 
 /*
- * Send WL_XRAPI_CMD_PSMODE cmd to BRCM FW to Request dedicated PowerSave Mode change.
+ * Handle the request of enable/disable XRAP Power save from user space.
  */
 static int wl_android_request_ps_mode_change(struct net_device *dev,
 					     char *command, int total_len)
 {
 	int res = BCME_OK;
-	uint8 *pxtlv = NULL;
-	uint16 buflen = 0, buflen_start = 0;
-	bcm_iov_buf_t *iov_buf = NULL;
-	xrapi_psmode_t psmode = {};
 	char *pos, *token;
-	uint16 iovlen = 0;
-	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
-	uint8 *iov_resp = NULL;
+	uint8 pm_mode = 0;
+	u32 systemIntervalUs = 0;
+	int bytes_written = 0;
 
-	iov_buf = (bcm_iov_buf_t *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
-	if (iov_buf == NULL) {
-		res = BCME_NOMEM;
-		WL_ERR(("iov buf memory alloc exited\n"));
-		goto exit;
-	}
-	iov_resp = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_MAXLEN);
-	if (iov_resp == NULL) {
-		res = BCME_NOMEM;
-		WL_ERR(("iov resp memory alloc exited\n"));
-		goto exit;
-	}
-
-	/* fill header */
-	iov_buf->version = WL_XRAPI_IOV_VERSION_1_1;
-	iov_buf->id = WL_XRAPI_CMD_PSMODE;
 	/* drop command */
 	pos = command;
 	token = bcmstrtok(&pos, " ", NULL);
 	/* pm_mode */
 	token = bcmstrtok(&pos, " ", NULL);
-	if (!token)
+	if (!token) {
+		res = BCME_BADARG;
 		goto exit;
-	psmode.pm_mode = (u8)bcm_strtoul(token, NULL, 10);
-	/* tbtt_tx_required */
+	}
+	pm_mode = (u8)bcm_strtoul(token, NULL, 10);
+	/* get system interval after enable */
 	token = bcmstrtok(&pos, " ", NULL);
-	if (!token)
-		goto exit;
-	psmode.tbtt_tx_required = (u8)bcm_strtoul(token, NULL, 10);
-	WL_DBG(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x tbtt_tx_required 0x%x\n",
-		psmode.pm_mode, psmode.tbtt_tx_required));
-	buflen = buflen_start = WLC_IOCTL_SMLEN - sizeof(bcm_iov_buf_t);
-	pxtlv = (uint8 *)&iov_buf->data[0];
-	res = bcm_pack_xtlv_entry(&pxtlv, &buflen, WL_XRAPI_XTLV_PSMODE,
-				  sizeof(xrapi_psmode_t), (uint8 *)&psmode,
-				  BCM_XTLV_OPTION_ALIGN32);
-	if (res != BCME_OK) {
-		WL_ERR(("bcm pack err %d\n", res));
+	if (!token) {
+		res = BCME_BADARG;
 		goto exit;
 	}
-	iov_buf->len = buflen_start - buflen;
-	iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
-	res = wldev_iovar_setbuf(dev, "xrapi", iov_buf, iovlen, iov_resp,
-				 WLC_IOCTL_MAXLEN, NULL);
-	if (res != BCME_OK) {
-		WL_ERR(("Fail to send WL_XRAPI_CMD_PSMODE %d\n", res));
-		goto exit;
-	}
-	WL_DBG(("WL_XRAPI_CMD_PSMODE sent\n"));
+	systemIntervalUs = (u32)bcm_strtoul(token, NULL, 10);
+
+	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x systemIntervalUs = %d us\n", pm_mode, systemIntervalUs));
 
 exit:
-	if (iov_buf)
-		MFREE(cfg->osh, iov_buf, WLC_IOCTL_SMLEN);
+	// Save the status "res" to "command".
+	// Call the copy_to_user (in the caller function) to send the status back to user space.
+	bytes_written = snprintf(command, total_len, "STATUS %d", res);
+	if (unlikely(bytes_written > total_len))
+		WL_ERR(("%s return status Error, bytes_written=%d, total_len=%d", __func__,
+			bytes_written, total_len));
 
-	if (iov_resp)
-		MFREE(cfg->osh, iov_resp, WLC_IOCTL_MAXLEN);
-
-	return res;
+	return bytes_written;
 }
 
 #if defined(TSF_GSYNC)
@@ -16199,4 +16185,58 @@ static int wl_android_set_tx_chain(struct net_device *dev, char *command)
 exit:
 	WL_DBG(("%s %d, res %d\n", CMD_CHANGE_TX_CHAIN, txchain, res));
 	return res;
+}
+
+static int wl_android_set_dynamic_inactivity_timer(struct net_device *dev,
+						   char *command)
+{
+	int res = BCME_OK;
+	char *pos, *token;
+	uint32_t return_to_sleep_time = 0;
+	int idx = 0;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	if (command == NULL) {
+		res = BCME_BADARG;
+		goto exit;
+	}
+
+	/* skip command token */
+	pos = command;
+	bcmstrtok(&pos, " ", NULL);
+	/* get return to sleep time after command */
+	token = bcmstrtok(&pos, " ", NULL);
+
+	return_to_sleep_time = (u32)bcm_strtoul(token, NULL, 10);
+	idx = dhd_net2idx(dhdp->info, dev);
+	res = dhd_iovar(dhdp, idx, "pm2_sleep_ret",
+			(char *)&return_to_sleep_time,
+			sizeof(return_to_sleep_time), NULL, 0, TRUE);
+	return res;
+
+exit:
+	WL_DBG(("%s %d, res %d\n", CMD_SET_DYNAMIC_INACTIVITY_TIMER,
+		return_to_sleep_time, res));
+	return res;
+}
+
+static int wl_android_get_dynamic_inactivity_timer(struct net_device *dev,
+						   char *command, int total_len)
+{
+	uint return_to_sleep_time;
+	int ret = BCME_OK;
+	int bytes_written = 0;
+	int idx = 0;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+	idx = dhd_net2idx(dhdp->info, dev);
+	ret = dhd_wl_ioctl_get_intiovar(dhdp, "pm2_sleep_ret",
+					&return_to_sleep_time, WLC_GET_VAR,
+					FALSE, idx);
+	if (unlikely(ret)) {
+		DHD_ERROR(("%s: failed to get pm2_sleep_ret\n", __FUNCTION__));
+		return ret;
+	}
+	bytes_written =
+		snprintf(command, total_len, "STATUS %d", return_to_sleep_time);
+	return bytes_written;
 }

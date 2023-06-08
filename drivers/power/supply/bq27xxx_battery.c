@@ -1483,11 +1483,9 @@ static int bq27xxx_get_fct_settings_from_profile(struct bq27xxx_device_info *di)
 
 static int bq27xxx_update_fct(struct bq27xxx_device_info *di)
 {
-	u64 val;
+	u64 val = 0;
 	struct votable *fv_votable;
 	int i;
-
-	val = NULL;
 
 	/* calculate FCT */
 	for (i = 0; i < ARRAY_SIZE(di->fct_weights); i++) {
@@ -2277,7 +2275,7 @@ static int bq27z561_mac_data_to_str(struct bq27xxx_device_info *di,
 static int bq27z561_battery_read_mac_block(struct bq27xxx_device_info *di,
 					 u16 mac_cmd, char *buf, int buf_len)
 {
-	int ret;
+	int ret = 0;
 	u8 lens;
 	u8 command[2];
 

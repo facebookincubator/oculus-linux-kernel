@@ -242,14 +242,6 @@ struct syncboss_dev_data {
 	/* True if the MCU can be woken from shutdown via a SPI transaction (CS toggle) */
 	bool has_wake_on_spi;
 
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-	/* True if we must enable the camera temperature sensor
-	 * regulator (needed for syncboss to function properly on
-	 * pre-EVT3 units
-	 */
-	bool must_enable_camera_temp_sensor_power;
-#endif
-
 	/* prox calibration values */
 	int prox_canc;
 	int prox_thdl;

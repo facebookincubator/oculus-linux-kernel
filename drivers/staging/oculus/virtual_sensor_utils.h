@@ -8,10 +8,16 @@
 #include <linux/power_supply.h>
 #include <linux/thermal.h>
 
-struct virtual_sensor_common_data {
-	struct mutex lock;
+#define THERMAL_MAX_VIRT_SENSORS 10
 
+/**
+ * Data for an individual logical sensor, e.g. charging or discharging.
+ */
+struct virtual_sensor_common_data {
 	void *parent;
+
+	/* Matched in device tree */
+	const char *name;
 
 	struct thermal_zone_device *tzs[THERMAL_MAX_VIRT_SENSORS];
 	struct iio_channel *iios[THERMAL_MAX_VIRT_SENSORS];
@@ -45,13 +51,29 @@ struct virtual_sensor_common_data {
 	int tz_count;
 	int iio_count;
 
-	int intercept_constant_charging;
-	int intercept_constant_discharging;
+	int intercept;
 
 	/* virtual thermal sensor info to run workqueue */
 	int internal_polling_delay;
 	struct thermal_zone_device *tzd;
 	struct delayed_work poll_queue;
+};
+
+/**
+ * Data for the virtual sensor driver, accessed with dev_[get/set]_drvdata
+ *
+ * Contains two logical sensors, one for charging and one for discharging.
+ */
+struct virtual_sensor_drvdata {
+	struct mutex lock;
+
+	struct device *dev;
+	struct thermal_zone_device *tzd;
+	struct virtual_sensor_common_data data_charging;
+	struct virtual_sensor_common_data data_discharging;
+
+	struct power_supply *batt_psy;	/* For determining charge status */
+	void *data;						/* Driver-specific data */
 };
 
 int is_charging(struct power_supply *batt_psy);
@@ -64,44 +86,58 @@ int virtual_sensor_calculate_iio_temp(struct device *dev,
 
 void virtual_sensor_reset_history(struct virtual_sensor_common_data *data);
 
-int virtual_sensor_parse_common_dt(struct device *dev,
+int virtual_sensor_parse_dt(struct device *dev,
 		struct virtual_sensor_common_data *data);
 
-ssize_t tz_coefficients_show(struct device *dev, struct device_attribute *attr,
-		char *buf);
-ssize_t tz_coefficients_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count);
-static DEVICE_ATTR_RW(tz_coefficients);
-
-ssize_t tz_slope_coefficients_show(struct device *dev,
+ssize_t tz_coefficients_discharging_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
-ssize_t tz_slope_coefficients_store(struct device *dev,
+ssize_t tz_coefficients_discharging_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
-static DEVICE_ATTR_RW(tz_slope_coefficients);
 
-ssize_t iio_coefficients_show(struct device *dev, struct device_attribute *attr,
-		char *buf);
-ssize_t iio_coefficients_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count);
-static DEVICE_ATTR_RW(iio_coefficients);
-
-ssize_t iio_slope_coefficients_show(struct device *dev,
+ssize_t tz_slope_coefficients_discharging_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
-ssize_t iio_slope_coefficients_store(struct device *dev,
+ssize_t tz_slope_coefficients_discharging_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
-static DEVICE_ATTR_RW(iio_slope_coefficients);
 
-ssize_t charging_constant_show(struct device *dev,
+ssize_t iio_coefficients_discharging_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
-ssize_t charging_constant_store(struct device *dev,
+ssize_t iio_coefficients_discharging_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
-static DEVICE_ATTR_RW(charging_constant);
 
-ssize_t discharging_constant_show(struct device *dev,
+ssize_t iio_slope_coefficients_discharging_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
-ssize_t discharging_constant_store(struct device *dev,
+ssize_t iio_slope_coefficients_discharging_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
-static DEVICE_ATTR_RW(discharging_constant);
+
+ssize_t tz_coefficients_charging_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t tz_coefficients_charging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+
+ssize_t tz_slope_coefficients_charging_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t tz_slope_coefficients_charging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+
+ssize_t iio_coefficients_charging_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t iio_coefficients_charging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+
+ssize_t iio_slope_coefficients_charging_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t iio_slope_coefficients_charging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+
+ssize_t intercept_charging_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t intercept_charging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+
+ssize_t intercept_discharging_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t intercept_discharging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
 
 void virtual_sensor_workqueue_register(struct virtual_sensor_common_data *data);
 void virtual_sensor_workqueue_unregister(struct virtual_sensor_common_data *data);

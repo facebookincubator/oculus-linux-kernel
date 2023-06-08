@@ -4408,7 +4408,7 @@ int q6asm_open_shared_io(struct audio_client *ac,
 	open->topo_id = cal_info.topology_id;
 
 	if (config->format == FORMAT_LINEAR_PCM)
-		open->fmt_id = ASM_MEDIA_FMT_MULTI_CHANNEL_PCM_V3;
+		open->fmt_id = ASM_MEDIA_FMT_MULTI_CHANNEL_PCM_V4;
 	else {
 		pr_err("%s: Invalid format[%d]\n", __func__, config->format);
 		rc = -EINVAL;
@@ -4427,12 +4427,14 @@ int q6asm_open_shared_io(struct audio_client *ac,
 	if (rc)
 		goto done;
 
-	/* asm_multi_channel_pcm_fmt_blk_v3 */
+	/* asm_multi_channel_pcm_fmt_blk_v4 */
 	open->fmt.num_channels = config->channels;
 	open->fmt.bits_per_sample = config->bits_per_sample;
 	open->fmt.sample_rate = config->rate;
 	open->fmt.is_signed = 1;
 	open->fmt.sample_word_size = config->sample_word_size;
+	open->fmt.endianness = 0; /* LE */
+	open->fmt.mode = 0;
 
 	channel_mapping = open->fmt.channel_mapping;
 

@@ -14,6 +14,7 @@
 struct nautilus_dev_data {
 	struct pinctrl_state *pins_clock;
 	struct clk *pclk;
+	bool clk_enabled;
 };
 
 static ssize_t nautilus_clk_enable(struct device *dev,
@@ -36,6 +37,7 @@ static ssize_t nautilus_clk_enable(struct device *dev,
 	} else {
 		clk_disable_unprepare(devdata->pclk);
 	}
+	devdata->clk_enabled = clk_enable;
 	return count;
 }
 
@@ -103,6 +105,39 @@ static int nautilus_clk_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int nautilus_clk_suspend(struct device *dev)
+{
+	struct nautilus_dev_data *devdata =
+		(struct nautilus_dev_data *)dev_get_drvdata(dev);
+
+	if (devdata->clk_enabled)
+		clk_disable_unprepare(devdata->pclk);
+
+	return 0;
+}
+
+static int nautilus_clk_resume(struct device *dev)
+{
+	int ret = 0;
+	struct nautilus_dev_data *devdata =
+		(struct nautilus_dev_data *)dev_get_drvdata(dev);
+
+	if (devdata->clk_enabled) {
+		ret = clk_prepare_enable(devdata->pclk);
+		if (ret)
+			dev_err(dev, "Failed to enable clk");
+	}
+
+	return ret;
+}
+#else
+#define nautilus_clk_suspend NULL
+#define nautilus_clk_resume NULL
+#endif
+
+static SIMPLE_DEV_PM_OPS(nautilus_clk_pm_ops, nautilus_clk_suspend, nautilus_clk_resume);
+
 static const struct of_device_id nautilus_clk_of_match[] = {
 	{ .compatible = "oculus,nautilus_clk", },
 	{}
@@ -115,6 +150,7 @@ static struct platform_driver nautilus_clk_driver = {
 		.name = "oculus,nautilus_clk",
 		.owner = THIS_MODULE,
 		.of_match_table = nautilus_clk_of_match,
+		.pm = &nautilus_clk_pm_ops,
 	},
 	.probe	= nautilus_clk_probe,
 	.remove = nautilus_clk_remove,
