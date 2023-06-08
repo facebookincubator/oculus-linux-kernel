@@ -21,42 +21,39 @@
 #define COEFFICIENT_SCALAR 10000
 
 struct battery_virtual_sensor_data {
-	struct device *dev;
-	struct thermal_zone_device *tzd;
-	struct virtual_sensor_common_data data;
-
-	struct power_supply *batt_psy;
-
 	struct thermal_zone_device *pcm_tz;
 	int pcm_tz_scaling_factor;
 
 	int max_differential;
 
 	bool was_charging;
-	bool use_pcm_therm_with_charger;
 };
 
-static int get_pcm_temp(struct battery_virtual_sensor_data *vs, s64 *tz_temp)
+static int get_pcm_temp(struct virtual_sensor_drvdata *vs, s64 *tz_temp)
 {
 	int ret;
 	int temp;
+	struct battery_virtual_sensor_data *battery_vs = vs->data;
 
-	ret = thermal_zone_get_temp(vs->pcm_tz, &temp);
+	ret = thermal_zone_get_temp(battery_vs->pcm_tz, &temp);
 	if (ret != 0) {
 		dev_warn(vs->dev,
 				"Error getting temperature: %s (%d)",
-				vs->pcm_tz->type, ret);
+				battery_vs->pcm_tz->type, ret);
 		return ret;
 	}
 
-	*tz_temp = (s64)temp * (s64)vs->pcm_tz_scaling_factor;
+	*tz_temp = (s64)temp * (s64)battery_vs->pcm_tz_scaling_factor;
 	return 0;
 }
 
 static int get_temp(void *data, int *temperature)
 {
-	struct battery_virtual_sensor_data *vs = data;
+	struct virtual_sensor_drvdata *vs = data;
+	struct battery_virtual_sensor_data *battery_vs = vs->data;
+	struct virtual_sensor_common_data *coeff_data;
 	s64 tz_temp = 0, iio_temp = 0, temp, pcm_temp = 0;
+	const bool charging = is_charging(vs->batt_psy);
 	int ret;
 
 	*temperature = 0;
@@ -65,39 +62,35 @@ static int get_temp(void *data, int *temperature)
 	if (ret != 0)
 		return ret;
 
-	mutex_lock(&vs->data.lock);
+	mutex_lock(&vs->lock);
 
-	/* Use PCM thermistor if charging */
-	if (vs->use_pcm_therm_with_charger && is_charging(vs->batt_psy)) {
-		vs->was_charging = true;
-
-		*temperature = (int)pcm_temp;
-		ret = 0;
-		goto get_temp_unlock;
-	}
-
-	if (vs->was_charging) {
+	if (!charging && battery_vs->was_charging) {
 		/* Zero out history upon disconnection to avoid sudden jumps */
-		virtual_sensor_reset_history(&vs->data);
-
-		vs->was_charging = false;
+		virtual_sensor_reset_history(&vs->data_charging);
+		virtual_sensor_reset_history(&vs->data_discharging);
 	}
 
-	ret = virtual_sensor_calculate_tz_temp(vs->dev, &vs->data, &tz_temp);
+	if (charging) {
+		battery_vs->was_charging = true;
+		coeff_data = &vs->data_charging;
+	} else {
+		battery_vs->was_charging = false;
+		coeff_data = &vs->data_discharging;
+	}
+
+	ret = virtual_sensor_calculate_tz_temp(vs->dev, coeff_data, &tz_temp);
 	if (ret)
 		goto get_temp_unlock;
 
-	ret = virtual_sensor_calculate_iio_temp(vs->dev, &vs->data, &iio_temp);
+	ret = virtual_sensor_calculate_iio_temp(vs->dev, coeff_data, &iio_temp);
 	if (ret)
 		goto get_temp_unlock;
 
 	temp = div64_s64(tz_temp + iio_temp, COEFFICIENT_SCALAR);
-
-	/* Account for charging */
-	temp += (s64)vs->data.intercept_constant_discharging;
+	temp += coeff_data->intercept;
 
 	/* If virtual sensor temp greatly differs from PCM, use PCM */
-	if (abs(temp - pcm_temp) > vs->max_differential)
+	if (abs(temp - pcm_temp) > battery_vs->max_differential)
 		*temperature = (int)pcm_temp;
 	else
 		*temperature = (int)temp;
@@ -105,7 +98,7 @@ static int get_temp(void *data, int *temperature)
 	ret = 0;
 
 get_temp_unlock:
-	mutex_unlock(&vs->data.lock);
+	mutex_unlock(&vs->lock);
 	return ret;
 }
 
@@ -113,12 +106,28 @@ static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
 	.get_temp = get_temp,
 };
 
+static DEVICE_ATTR_RW(tz_coefficients_discharging);
+static DEVICE_ATTR_RW(tz_slope_coefficients_discharging);
+static DEVICE_ATTR_RW(iio_coefficients_discharging);
+static DEVICE_ATTR_RW(iio_slope_coefficients_discharging);
+static DEVICE_ATTR_RW(tz_coefficients_charging);
+static DEVICE_ATTR_RW(tz_slope_coefficients_charging);
+static DEVICE_ATTR_RW(iio_coefficients_charging);
+static DEVICE_ATTR_RW(iio_slope_coefficients_charging);
+static DEVICE_ATTR_RW(intercept_charging);
+static DEVICE_ATTR_RW(intercept_discharging);
+
 static struct attribute *battery_virtual_sensor_attrs[] = {
-	&dev_attr_tz_coefficients.attr,
-	&dev_attr_tz_slope_coefficients.attr,
-	&dev_attr_iio_coefficients.attr,
-	&dev_attr_iio_slope_coefficients.attr,
-	&dev_attr_discharging_constant.attr,
+	&dev_attr_tz_coefficients_discharging.attr,
+	&dev_attr_tz_slope_coefficients_discharging.attr,
+	&dev_attr_iio_coefficients_discharging.attr,
+	&dev_attr_iio_slope_coefficients_discharging.attr,
+	&dev_attr_tz_coefficients_charging.attr,
+	&dev_attr_tz_slope_coefficients_charging.attr,
+	&dev_attr_iio_coefficients_charging.attr,
+	&dev_attr_iio_slope_coefficients_charging.attr,
+	&dev_attr_intercept_discharging.attr,
+	&dev_attr_intercept_charging.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_virtual_sensor);
@@ -126,7 +135,8 @@ ATTRIBUTE_GROUPS(battery_virtual_sensor);
 static int virtual_sensor_probe(struct platform_device *pdev)
 {
 	int ret = 0;
-	struct battery_virtual_sensor_data *vs;
+	struct virtual_sensor_drvdata *vs;
+	struct battery_virtual_sensor_data *battery_vs;
 	struct thermal_zone_device *tzd = NULL;
 	const char *pcm_tz_name;
 
@@ -138,7 +148,13 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	vs->dev = &pdev->dev;
 
-	mutex_init(&vs->data.lock);
+	mutex_init(&vs->lock);
+
+	battery_vs = devm_kzalloc(vs->dev, sizeof(*battery_vs), GFP_KERNEL);
+
+	vs->data = battery_vs;
+	if (!vs->data)
+		return -ENOMEM;
 
 	ret = of_property_read_string(pdev->dev.of_node, "pcm-thermal-zone",
 			&pcm_tz_name);
@@ -150,38 +166,47 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	ret = of_property_read_u32(pdev->dev.of_node,
 			"pcm-thermal-zone-scaling-factor",
-			&vs->pcm_tz_scaling_factor);
+			&battery_vs->pcm_tz_scaling_factor);
 	if (ret < 0) {
-		dev_err(&pdev->dev,
-			"Failed to read pcm-thermal-zone-scaling-factor: %d",
-			ret);
-		return ret;
+		dev_dbg(&pdev->dev, "No pcm-tz-scaling-factor specified, using 1");
+		battery_vs->pcm_tz_scaling_factor = 1;
+		ret = 0;
 	}
 
-	vs->pcm_tz = thermal_zone_get_zone_by_name(pcm_tz_name);
-	if (IS_ERR(vs->pcm_tz)) {
-		dev_err(&pdev->dev, "sensor %s get_zone error: %d",
+	battery_vs->pcm_tz = thermal_zone_get_zone_by_name(pcm_tz_name);
+	if (IS_ERR(battery_vs->pcm_tz)) {
+		dev_dbg(&pdev->dev, "sensor %s get_zone error: %d",
 				pcm_tz_name, ret);
 		return -EPROBE_DEFER;
 	}
 
-	ret = virtual_sensor_parse_common_dt(vs->dev, &vs->data);
+	vs->data_charging.name = "charging";
+	ret = virtual_sensor_parse_dt(vs->dev, &vs->data_charging);
+	if (ret == -EPROBE_DEFER)
+		return ret;
+	else if (ret < 0) {
+		dev_err(&pdev->dev,
+			"Failed to parse data for sensor \"%s\": %d",
+			vs->data_charging.name, ret);
+		return ret;
+	}
+
+	vs->data_discharging.name = "discharging";
+	ret = virtual_sensor_parse_dt(vs->dev, &vs->data_discharging);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to parse common data: %d", ret);
+		dev_err(&pdev->dev,
+			"Failed to parse data for sensor \"%s\": %d",
+			vs->data_charging.name, ret);
 		return ret;
 	}
 
 	ret = of_property_read_u32(pdev->dev.of_node, "max-differential",
-			&vs->max_differential);
+			&battery_vs->max_differential);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to parse max-differential: %d",
 				ret);
 		return ret;
 	}
-
-	vs->use_pcm_therm_with_charger =
-		!of_property_read_bool(pdev->dev.of_node,
-			"dont-use-pcm-with-charger");
 
 	vs->batt_psy = power_supply_get_by_name("battery");
 	if (!vs->batt_psy) {
@@ -189,7 +214,8 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
-	virtual_sensor_reset_history(&vs->data);
+	virtual_sensor_reset_history(&vs->data_charging);
+	virtual_sensor_reset_history(&vs->data_discharging);
 
 	tzd = thermal_zone_of_sensor_register(&pdev->dev, 0, vs,
 			&virtual_sensor_thermal_ops);
@@ -201,10 +227,12 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 	}
 	vs->tzd = tzd;
 
-	dev_set_drvdata(&pdev->dev, &vs->data);
+	dev_set_drvdata(&pdev->dev, vs);
 
-	vs->data.tzd = vs->tzd;
-	virtual_sensor_workqueue_register(&vs->data);
+	vs->data_charging.tzd = vs->tzd;
+	vs->data_discharging.tzd = vs->tzd;
+	virtual_sensor_workqueue_register(&vs->data_charging);
+	virtual_sensor_workqueue_register(&vs->data_discharging);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, battery_virtual_sensor_groups);
 	if (ret < 0)
@@ -215,18 +243,17 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 static int virtual_sensor_remove(struct platform_device *pdev)
 {
-	struct virtual_sensor_common_data *data =
-			(struct virtual_sensor_common_data *) platform_get_drvdata(pdev);
-	struct battery_virtual_sensor_data *vs =
-			(struct battery_virtual_sensor_data *) data->parent;
+	struct virtual_sensor_drvdata *vs =
+			(struct virtual_sensor_drvdata *) platform_get_drvdata(pdev);
 
-	virtual_sensor_workqueue_unregister(&vs->data);
+	virtual_sensor_workqueue_unregister(&vs->data_charging);
+	virtual_sensor_workqueue_unregister(&vs->data_discharging);
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 
 	sysfs_remove_groups(&pdev->dev.kobj, battery_virtual_sensor_groups);
 
-	mutex_destroy(&data->lock);
+	mutex_destroy(&vs->lock);
 
 	return 0;
 }

@@ -103,6 +103,8 @@ static int fpga_regulator_enable(struct fpga_data *ctx)
 		goto fail_vccaux;
 	}
 
+	ctx->regulator_on = true;
+
 	dev_dbg(ctx->dev, "Enabled regulators");
 
 	return 0;
@@ -155,6 +157,8 @@ static int fpga_regulator_disable(struct fpga_data *ctx)
 	}
 
 	dev_dbg(ctx->dev, "Disabled regulators");
+
+	ctx->regulator_on = false;
 
 	return 0;
 }
@@ -211,7 +215,6 @@ static ssize_t pwr_enable_store(struct device *dev,
 				status);
 			goto error;
 		}
-		devdata->regulator_on = true;
 	} else {
 		status = fpga_regulator_disable(devdata);
 		if (status) {
@@ -219,7 +222,6 @@ static ssize_t pwr_enable_store(struct device *dev,
 				status);
 			goto error;
 		}
-		devdata->regulator_on = false;
 	}
 
 	mutex_unlock(&devdata->lock);

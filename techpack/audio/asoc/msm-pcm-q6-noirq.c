@@ -79,7 +79,8 @@ static struct snd_pcm_hardware msm_pcm_hardware_playback = {
 				SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME),
 	.formats =              (SNDRV_PCM_FMTBIT_S16_LE |
 				SNDRV_PCM_FMTBIT_S24_LE |
-				SNDRV_PCM_FMTBIT_S24_3LE),
+				SNDRV_PCM_FMTBIT_S24_3LE |
+				SNDRV_PCM_FMTBIT_S32_LE),
 	.rates =                SNDRV_PCM_RATE_8000_192000,
 	.rate_min =             8000,
 	.rate_max =             192000,
@@ -103,7 +104,8 @@ static struct snd_pcm_hardware msm_pcm_hardware_capture = {
 				SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME),
 	.formats =              (SNDRV_PCM_FMTBIT_S16_LE |
 				SNDRV_PCM_FMTBIT_S24_LE |
-				SNDRV_PCM_FMTBIT_S24_3LE),
+				SNDRV_PCM_FMTBIT_S24_3LE |
+				SNDRV_PCM_FMTBIT_S32_LE),
 	.rates =                SNDRV_PCM_RATE_8000_48000,
 	.rate_min =             8000,
 	.rate_max =             48000,
@@ -320,7 +322,11 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 			pdata->ch_map[soc_prtd->dai_link->id]->channel_map;
 	}
 
-	switch (runtime->format) {
+	switch (params_format(params)) {
+	case SNDRV_PCM_FORMAT_S32_LE:
+		bits_per_sample = 32;
+		sample_word_size = 32;
+		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
 		bits_per_sample = 24;
 		sample_word_size = 32;
@@ -343,6 +349,11 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 	config.sample_word_size = sample_word_size;
 	config.bufsz = params_buffer_bytes(params) / params_periods(params);
 	config.bufcnt = params_periods(params);
+
+	pr_debug(
+		"%s: open shared io: bits_per_sample=%d rate=%d channels=%d sample_word_size=%d\n",
+		__func__, config.bits_per_sample, config.rate, config.channels,
+		config.sample_word_size);
 
 	ret = q6asm_open_shared_io(prtd->audio_client, &config, dir,
 				   use_default_chmap, chmap);

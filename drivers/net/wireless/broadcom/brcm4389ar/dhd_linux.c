@@ -15395,7 +15395,7 @@ _dhd_module_init(void)
 	return err;
 }
 
-static int
+static int __init
 dhd_module_init(void)
 {
 	int err;

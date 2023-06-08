@@ -116,6 +116,12 @@ ifneq ($(filter y, $(CONFIG_6GHZ_BKPORT)),)
   DHDCFLAGS += -DCONFIG_6GHZ_BKPORT
 endif
 
+#########################################
+# Cutomize for AR
+#########################################
+# Enable Tx Power Control
+DHDCFLAGS += -DTEST_TX_POWER_CONTROL
+
 #################
 # Common feature
 #################

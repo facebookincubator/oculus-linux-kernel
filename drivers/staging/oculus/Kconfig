@@ -137,14 +137,14 @@ config MISCFIFO_SAMPLE
 	help
 	  Example usage of miscfifo chardev driver
 
-config MOLOKINI
-	tristate "Molokini usbpd driver"
+config OCULUS_EXTERNAL_BATTERY
+	tristate "External battery usbpd driver"
 	default n
 	help
-	  Molokini usbpd kernel module for registering unstructured vdm messages.
-	  Messages will be sent with host device acting as a source and a sink to
-	  Molokini.
-	  Also creates debugfs nodes to advertise Molokini battery parameters.
+	  External battery usbpd kernel module for registering unstructured vdm
+	  messages. Messages will be sent with host device acting as a source and
+	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
+	  external battery parameters.
 
 config NAUTILUS_CLK
 	tristate "NAUTILUS CLK CONTROL Kernel Driver"
@@ -255,6 +255,15 @@ config TOP_PANEL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing the top
 	  panel skin temperature of a device.
+
+config UVLO_TLV4021
+    tristate "uvlo tlv4021 driver"
+    default n
+    depends on OCULUS
+    help
+      Driver implementing uvlo device for detecting the interrupt captured
+      by TLV4021 and report it through sysfs node.
+      If you say yes here you get support for the uvlo driver.
 
 config VENDOR_DT_OUTPUT_DISABLE
 	bool "Disable building of device trees for test platforms"

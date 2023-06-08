@@ -222,6 +222,26 @@
 			};
 		};
 	};
+
+	cpu-1-6-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpu-1-7-usr {
+		trips {
+			active-config2 {
+				temperature = <105000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
 };
 
 &usb0 {

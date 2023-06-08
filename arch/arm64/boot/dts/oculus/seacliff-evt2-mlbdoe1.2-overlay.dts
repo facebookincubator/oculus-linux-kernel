@@ -178,3 +178,14 @@
 		};
 	};
 };
+
+&vendor {
+	uvlo_tlv4021: uvlo_tlv4021 {
+		compatible = "meta,uvlo-tlv4021";
+		status = "ok";
+		tlv4021,irq-gpio = <&tlmm 72 0x1>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <72 2>;
+		interrupt-names = "uvlo_tlv4021_irq";
+	};
+};
