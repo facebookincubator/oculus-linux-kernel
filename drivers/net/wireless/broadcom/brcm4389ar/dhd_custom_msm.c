@@ -179,19 +179,14 @@ void dhd_plat_pcie_deregister_event(void *plat_info)
 int __init
 dhd_wifi_init_gpio(void)
 {
-	char *wlan_node = DHD_DT_COMPAT_ENTRY;
-	struct device_node *root_node = NULL;
+    char *wlan_node = DHD_DT_COMPAT_ENTRY;
+    struct device_node *root_node = NULL;
 
-	root_node = of_find_compatible_node(NULL, NULL, wlan_node);
-	if (!root_node) {
-		WARN(1, "failed to get device node of BRCM WLAN\n");
-		return -ENODEV;
-	}
-
-	if (!of_device_is_available(root_node)) {
-		printk(KERN_ERR "%s: brcm wlan device status is disable\n", __FUNCTION__);
-		return -ENXIO;
-	}
+    root_node = of_find_compatible_node(NULL, NULL, wlan_node);
+    if (!root_node) {
+        WARN(1, "failed to get device node of BRCM WLAN\n");
+        return -ENODEV;
+    }
 
 #ifdef CONFIG_WL_LOAD_SWITCH
     /* ========== WLAN_PWR_EN ============ */
@@ -207,54 +202,36 @@ dhd_wifi_init_gpio(void)
     }
 #endif /* CONFIG_WL_LOAD_SWITCH */
 
-	/* ========== WLAN_PWR_EN ============ */
-	wlan_reg_on = of_get_named_gpio(root_node, WIFI_WL_REG_ON_PROPNAME, 0);
-	printk(KERN_INFO "%s: gpio_wlan_power : %d\n", __FUNCTION__, wlan_reg_on);
+    /* ========== WLAN_REG_ON ============ */
+    wlan_reg_on = of_get_named_gpio(root_node, WIFI_WL_REG_ON_PROPNAME, 0);
+    printk(KERN_INFO "%s: gpio_wlan_power : %d\n", __FUNCTION__, wlan_reg_on);
 
-	if (gpio_request_one(wlan_reg_on, GPIOF_OUT_INIT_LOW, "WL_REG_ON")) {
-		printk(KERN_ERR "%s: Faiiled to request gpio %d for WL_REG_ON\n",
-			__FUNCTION__, wlan_reg_on);
-	} else {
-		printk(KERN_ERR "%s: gpio_request WL_REG_ON done - WLAN_EN: GPIO %d\n",
-			__FUNCTION__, wlan_reg_on);
-	}
-
-	if (gpio_direction_output(wlan_reg_on, 1)) {
-		printk(KERN_ERR "%s: WL_REG_ON failed to pull up\n", __FUNCTION__);
-	} else {
-		printk(KERN_ERR "%s: WL_REG_ON is pulled up\n", __FUNCTION__);
-	}
-
-	if (gpio_get_value(wlan_reg_on)) {
-		printk(KERN_INFO "%s: Initial WL_REG_ON: [%d]\n",
-			__FUNCTION__, gpio_get_value(wlan_reg_on));
-	}
-
-	/* Wait for WIFI_TURNON_DELAY due to power stability */
-	msleep(WIFI_TURNON_DELAY);
-
+    if (gpio_request_one(wlan_reg_on, GPIOF_DIR_OUT, "WL_REG_ON")) {
+        printk(KERN_ERR "%s: Faiiled to request gpio %d for WL_REG_ON\n",
+            __FUNCTION__, wlan_reg_on);
+    } else {
+        printk(KERN_ERR "%s: gpio_request WL_REG_ON done - WLAN_EN: GPIO %d\n",
+            __FUNCTION__, wlan_reg_on);
+    }
 #ifdef CONFIG_BCMDHD_OOB_HOST_WAKE
-	/* ========== WLAN_HOST_WAKE ============ */
-	wlan_host_wake_up = of_get_named_gpio(root_node, WIFI_WLAN_HOST_WAKE_PROPNAME, 0);
-	printk(KERN_INFO "%s: gpio_wlan_host_wake : %d\n", __FUNCTION__, wlan_host_wake_up);
+    /* ========== WLAN_HOST_WAKE ============ */
+    wlan_host_wake_up = of_get_named_gpio(root_node, WIFI_WLAN_HOST_WAKE_PROPNAME, 0);
+    printk(KERN_INFO "%s: gpio_wlan_host_wake : %d\n", __FUNCTION__, wlan_host_wake_up);
 
-#ifndef CUSTOMER_HW2
-	if (gpio_request_one(wlan_host_wake_up, GPIOF_IN, "WLAN_HOST_WAKE")) {
-		printk(KERN_ERR "%s: Faiiled to request gpio %d for WLAN_HOST_WAKE\n",
-			__FUNCTION__, wlan_host_wake_up);
-			return -ENODEV;
-	} else {
-		printk(KERN_ERR "%s: gpio_request WLAN_HOST_WAKE done"
-			" - WLAN_HOST_WAKE: GPIO %d\n",
-			__FUNCTION__, wlan_host_wake_up);
-	}
-#endif /* !CUSTOMER_HW2 */
+    if (gpio_request_one(wlan_host_wake_up, GPIOF_IN, "WLAN_HOST_WAKE")) {
+        printk(KERN_ERR "%s: Faiiled to request gpio %d for WLAN_HOST_WAKE\n",
+            __FUNCTION__, wlan_host_wake_up);
+            return -ENODEV;
+    } else {
+        printk(KERN_ERR "%s: gpio_request WLAN_HOST_WAKE done"
+            " - WLAN_HOST_WAKE: GPIO %d\n",
+            __FUNCTION__, wlan_host_wake_up);
+    }
 
-	gpio_direction_input(wlan_host_wake_up);
-	wlan_host_wake_irq = gpio_to_irq(wlan_host_wake_up);
+    gpio_direction_input(wlan_host_wake_up);
+    wlan_host_wake_irq = gpio_to_irq(wlan_host_wake_up);
 #endif /* CONFIG_BCMDHD_OOB_HOST_WAKE */
-
-	return 0;
+    return 0;
 }
 
 int
@@ -412,6 +389,10 @@ dhd_wlan_init(void)
 			" ret=%d\n", __FUNCTION__, ret);
 	}
 #endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
+
+    /* power cycle */
+    dhd_wlan_power(false);
+    ret = dhd_wlan_power(true);
 
 fail:
 	printk(KERN_INFO"%s: FINISH.......\n", __FUNCTION__);

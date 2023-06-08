@@ -764,6 +764,32 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 	CAM_DBG(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
 		chipid, slave_info->sensor_id);
 
+    /* hack for imx681 ES1 and ES2 */
+	if (chipid == 0x0681) {
+		struct cam_sensor_i2c_reg_setting i2c_reg_settings = {0};
+		struct cam_sensor_i2c_reg_array i2c_reg_array = {0};
+
+		i2c_reg_settings.addr_type = 2;
+		i2c_reg_settings.data_type = 1;
+		i2c_reg_settings.reg_setting = &i2c_reg_array;
+		i2c_reg_settings.size = 1;
+
+		i2c_reg_array.reg_addr = 0x3202;
+		i2c_reg_array.reg_data = 0;
+		camera_io_dev_write(&(s_ctrl->io_master_info), &i2c_reg_settings);
+
+		i2c_reg_array.reg_addr = 0x3200;
+		i2c_reg_array.reg_data = 1;
+		camera_io_dev_write(&(s_ctrl->io_master_info), &i2c_reg_settings);
+
+		uint32_t sensor_version = 0;
+
+		camera_io_dev_read(&(s_ctrl->io_master_info), 0x3206, &sensor_version, 2, 1);
+		CAM_DBG(CAM_SENSOR, "0x%x sensor_version 0x%x:", chipid, sensor_version);
+
+		chipid |= sensor_version << 12;
+	}
+
 	if (cam_sensor_id_by_mask(s_ctrl, chipid) != slave_info->sensor_id) {
 		CAM_WARN(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
 				chipid, slave_info->sensor_id);

@@ -1101,7 +1101,7 @@ static int cypd3177_probe(struct i2c_client *i2c,
 
 	chip->batt_psy = power_supply_get_by_name("battery");
 	if (!chip->batt_psy) {
-		dev_err(&i2c->dev, "cypd3177 failed to get batt_psy, defer probe\n");
+		dev_dbg(&i2c->dev, "cypd3177 failed to get batt_psy, defer probe\n");
 		i2c_set_clientdata(i2c, NULL);
 		return -EPROBE_DEFER;
 	}

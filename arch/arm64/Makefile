@@ -131,6 +131,8 @@ core-$(CONFIG_EFI_STUB) += $(objtree)/drivers/firmware/efi/libstub/lib.a
 
 ifeq ($(CONFIG_BUILD_ARM64_KERNEL_COMPRESSION_GZIP),y)
 KBUILD_IMAGE   := Image.gz
+else ifeq ($(CONFIG_BUILD_ARM64_KERNEL_COMPRESSION_LZ4),y)
+KBUILD_IMAGE   := Image.lz4
 else
 KBUILD_IMAGE   := Image
 endif

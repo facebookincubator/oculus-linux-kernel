@@ -91,7 +91,6 @@ struct bq27xxx_device_info {
 	struct power_supply *bat;
 	struct list_head list;
 	struct mutex lock;
-	struct dentry *debugfs;
 	struct bq27xxx_reg_lifetime_blocks lifetime_blocks;
 	u8 *regs;
 	u8 reg_addr;

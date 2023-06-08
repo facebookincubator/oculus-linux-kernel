@@ -40,6 +40,8 @@ struct __packed ar_queue_create_req {
 	struct ar_mem_segment queue_segment;
 	/// Where the queue data segment resides, if it is disjoint.
 	struct ar_mem_segment queue_data_segment;
+	/// Whether this queue is mirroring another one in the user space
+	bool queue_mirror;
 };
 
 /**

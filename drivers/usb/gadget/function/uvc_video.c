@@ -185,12 +185,13 @@ uvc_video_complete(struct usb_ep *ep, struct usb_request *req)
 		break;
 
 	case -ESHUTDOWN:	/* disconnect from host. */
-		printk(KERN_DEBUG "VS request cancelled.\n");
+		uvcg_dbg(&video->uvc->func, "VS request cancelled.\n");
 		uvcg_queue_cancel(queue, 1);
 		goto requeue;
 
 	default:
-		printk(KERN_INFO "VS request completed with status %d.\n",
+		uvcg_info(&video->uvc->func,
+			"VS request completed with status %d.\n",
 			req->status);
 		uvcg_queue_cancel(queue, 0);
 		goto requeue;
@@ -359,8 +360,8 @@ int uvcg_video_enable(struct uvc_video *video, int enable)
 	int ret;
 
 	if (video->ep == NULL) {
-		printk(KERN_INFO "Video enable failed, device is "
-			"uninitialized.\n");
+		uvcg_info(&video->uvc->func,
+			"Video enable failed, device is uninitialized.\n");
 		return -ENODEV;
 	}
 
@@ -392,11 +393,12 @@ int uvcg_video_enable(struct uvc_video *video, int enable)
 /*
  * Initialize the UVC video stream.
  */
-int uvcg_video_init(struct uvc_video *video)
+int uvcg_video_init(struct uvc_video *video, struct uvc_device *uvc)
 {
 	INIT_LIST_HEAD(&video->req_free);
 	spin_lock_init(&video->req_lock);
 
+	video->uvc = uvc;
 	video->fcc = V4L2_PIX_FMT_YUYV;
 	video->bpp = 16;
 	video->width = 320;
@@ -408,4 +410,3 @@ int uvcg_video_init(struct uvc_video *video)
 			&video->mutex);
 	return 0;
 }
-

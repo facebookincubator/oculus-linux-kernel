@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 #include "syncboss.h"
-#include "syncboss_camera.h"
 
 /* Valid sequence numbers are from [1, 254] */
 #define SYNCBOSS_MIN_SEQ_NUM 1
@@ -518,18 +517,6 @@ static ssize_t te_timestamp_show(struct device *dev,
 			(s64)atomic64_read(&devdata->last_te_timestamp_ns));
 }
 
-static ssize_t num_cameras_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	int num_cams = 0;
-
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-	num_cams = get_num_cameras();
-#endif
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", num_cams);
-}
-
 static ssize_t enable_fastpath_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
@@ -611,7 +598,6 @@ static ssize_t enable_fastpath_store(struct device *dev,
  *      /vendor/firmware/syncboss.bin)
  * next_avail_seq_num - the next available sequence number for control calls
  * te_timestamp - timestamp of the last TE event
- * num_cameras - number of cameras configured via device tree
  * enable_fastpath - enable or disable faspath
  */
 static DEVICE_ATTR_WO(reset);
@@ -624,7 +610,6 @@ static DEVICE_ATTR_RW(stats);
 static DEVICE_ATTR_RW(poll_prio);
 static DEVICE_ATTR_RO(next_avail_seq_num);
 static DEVICE_ATTR_RO(te_timestamp);
-static DEVICE_ATTR_RO(num_cameras);
 static DEVICE_ATTR_RW(enable_fastpath);
 
 static struct attribute *syncboss_attrs[] = {
@@ -638,7 +623,6 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_poll_prio.attr,
 	&dev_attr_next_avail_seq_num.attr,
 	&dev_attr_te_timestamp.attr,
-	&dev_attr_num_cameras.attr,
 	&dev_attr_enable_fastpath.attr,
 	NULL
 };

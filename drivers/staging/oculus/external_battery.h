@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#ifndef _MOLOKINI_H__
-#define _MOLOKINI_H__
+#ifndef _EXT_BATT_H__
+#define _EXT_BATT_H__
 
 #include <linux/mutex.h>
 #include <linux/power_supply.h>
@@ -9,43 +9,43 @@
 #include <linux/workqueue.h>
 
 /* Mount states */
-enum molokini_fw_mount_state {
-	MOLOKINI_FW_OFF_HEAD = 0,
-	MOLOKINI_FW_ON_HEAD,
-	MOLOKINI_FW_UNKNOWN,
+enum ext_batt_fw_mount_state {
+	EXT_BATT_FW_OFF_HEAD = 0,
+	EXT_BATT_FW_ON_HEAD,
+	EXT_BATT_FW_UNKNOWN,
 };
 
 /* Parameter types */
-#define MOLOKINI_FW_VERSION_NUMBER 0x01
-#define MOLOKINI_FW_SERIAL 0x02
-#define MOLOKINI_FW_SERIAL_BATTERY 0x03
-#define MOLOKINI_FW_TEMP_BOARD 0x04
-#define MOLOKINI_FW_TEMP_BATT 0x05
-#define MOLOKINI_FW_TEMP_FG 0x06
-#define MOLOKINI_FW_VOLTAGE 0x08
-#define MOLOKINI_FW_BATT_STATUS 0x0A
-#define MOLOKINI_FW_CURRENT 0x0C
-#define MOLOKINI_FW_REMAINING_CAPACITY 0x10
-#define MOLOKINI_FW_FCC 0x12
-#define MOLOKINI_FW_CYCLE_COUNT 0x2A
-#define MOLOKINI_FW_RSOC 0x2C
-#define MOLOKINI_FW_SOH 0x2E
-#define MOLOKINI_FW_DEVICE_NAME 0x4A
-#define MOLOKINI_FW_LDB1 0x60
-#define MOLOKINI_FW_LDB3 0x62
-#define MOLOKINI_FW_LDB4 0x63
-#define MOLOKINI_FW_LDB6 0x65 /* TEMP ZONE 0 */
-#define MOLOKINI_FW_LDB7 0x66 /* TEMP ZONE 1 */
-#define MOLOKINI_FW_LDB8 0x67 /* TEMP ZONE 2 */
-#define MOLOKINI_FW_LDB9 0x68 /* TEMP ZONE 3 */
-#define MOLOKINI_FW_LDB10 0x69 /* TEMP ZONE 4 */
-#define MOLOKINI_FW_LDB11 0x6A /* TEMP ZONE 5 */
-#define MOLOKINI_FW_LDB12 0x6B /* TEMP ZONE 6 */
-#define MOLOKINI_FW_MANUFACTURER_INFO1 0x70
-#define MOLOKINI_FW_MANUFACTURER_INFO2 0x7A
-#define MOLOKINI_FW_MANUFACTURER_INFO3 0x7B
-#define MOLOKINI_FW_HMD_MOUNTED 0x80
-#define MOLOKINI_FW_CHARGER_PLUGGED 0x82
+#define EXT_BATT_FW_VERSION_NUMBER 0x01
+#define EXT_BATT_FW_SERIAL 0x02
+#define EXT_BATT_FW_SERIAL_BATTERY 0x03
+#define EXT_BATT_FW_TEMP_BOARD 0x04
+#define EXT_BATT_FW_TEMP_BATT 0x05
+#define EXT_BATT_FW_TEMP_FG 0x06
+#define EXT_BATT_FW_VOLTAGE 0x08
+#define EXT_BATT_FW_BATT_STATUS 0x0A
+#define EXT_BATT_FW_CURRENT 0x0C
+#define EXT_BATT_FW_REMAINING_CAPACITY 0x10
+#define EXT_BATT_FW_FCC 0x12
+#define EXT_BATT_FW_CYCLE_COUNT 0x2A
+#define EXT_BATT_FW_RSOC 0x2C
+#define EXT_BATT_FW_SOH 0x2E
+#define EXT_BATT_FW_DEVICE_NAME 0x4A
+#define EXT_BATT_FW_LDB1 0x60
+#define EXT_BATT_FW_LDB3 0x62
+#define EXT_BATT_FW_LDB4 0x63
+#define EXT_BATT_FW_LDB6 0x65 /* TEMP ZONE 0 */
+#define EXT_BATT_FW_LDB7 0x66 /* TEMP ZONE 1 */
+#define EXT_BATT_FW_LDB8 0x67 /* TEMP ZONE 2 */
+#define EXT_BATT_FW_LDB9 0x68 /* TEMP ZONE 3 */
+#define EXT_BATT_FW_LDB10 0x69 /* TEMP ZONE 4 */
+#define EXT_BATT_FW_LDB11 0x6A /* TEMP ZONE 5 */
+#define EXT_BATT_FW_LDB12 0x6B /* TEMP ZONE 6 */
+#define EXT_BATT_FW_MANUFACTURER_INFO1 0x70
+#define EXT_BATT_FW_MANUFACTURER_INFO2 0x7A
+#define EXT_BATT_FW_MANUFACTURER_INFO3 0x7B
+#define EXT_BATT_FW_HMD_MOUNTED 0x80
+#define EXT_BATT_FW_CHARGER_PLUGGED 0x82
 
 /* Vendor Defined Object Section */
 #define LIFETIME_1_LOWER_LEN 6
@@ -54,8 +54,8 @@ enum molokini_fw_mount_state {
 #define NUM_TEMP_ZONE 7
 #define TEMP_ZONE_LEN 8
 
-/* molokini TI fuel gauge parameters */
-struct molokini_parameters {
+/* ext_batt TI fuel gauge parameters */
+struct ext_batt_parameters {
 	/* Manufacturing serial parameters */
 	char serial[32];
 	char serial_battery[32];
@@ -86,7 +86,7 @@ struct molokini_parameters {
 	u32 manufacturer_info_c;
 };
 
-struct molokini_pd {
+struct ext_batt_pd {
 	/* platform device handle */
 	struct device *dev;
 
@@ -96,20 +96,20 @@ struct molokini_pd {
 	/* client struct to register with usbpd engine */
 	struct usbpd_svid_handler vdm_handler;
 
-	/* molokini connection status */
+	/* ext_batt connection status */
 	bool connected;
 
-	/* lock for modifying molokini_pd struct */
+	/* lock for modifying ext_batt_pd struct */
 	struct mutex lock;
-	/* molokini TI fuel gauge debugfs directory */
+	/* ext_batt TI fuel gauge debugfs directory */
 	struct dentry *debug_root;
 
-	struct molokini_parameters params;
+	struct ext_batt_parameters params;
 
 	/* mount state held locally, messaged as u32 vdo */
 	u32 mount_state;
 	/* last ACK received from Molokini for mount status */
-	enum molokini_fw_mount_state last_mount_ack;
+	enum ext_batt_fw_mount_state last_mount_ack;
 	/* work for periodically processing HMD mount state */
 	struct delayed_work dwork;
 	/* power supply object handle for internal HMD battery */
@@ -118,7 +118,7 @@ struct molokini_pd {
 	struct power_supply	*usb_psy;
 	/* notifier block for handling power supply change events */
 	struct notifier_block nb;
-	/* molokini on-demand charging suspend disable */
+	/* ext_batt on-demand charging suspend disable */
 	bool charging_suspend_disable;
 	/* battery capacity threshold for charging suspend */
 	u32 charging_suspend_threshold;
@@ -126,4 +126,4 @@ struct molokini_pd {
 	u32 charging_resume_threshold;
 };
 
-#endif /* _MOLOKINI_H__ */
+#endif /* _EXT_BATT_H__ */

@@ -62,11 +62,11 @@ static void zcomp_strm_free(struct zcomp_strm *zstrm)
 }
 
 #if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
-static int zcomp_alloc_zstd_contexts(struct zcomp_strm *zstrm)
+static int zcomp_alloc_zstd_contexts(struct zcomp_strm *zstrm, unsigned int compression_level)
 {
 	size_t cctx_wksp_size, dctx_wksp_size;
 
-	zstrm->params = ZSTD_getParams(CONFIG_ZRAM_ZSTD_COMPRESSION_LEVEL, PAGE_SIZE, 0);
+	zstrm->params = ZSTD_getParams(compression_level, PAGE_SIZE, 0);
 	if (zstrm->params.cParams.windowLog > ilog2(PAGE_SIZE))
 		zstrm->params.cParams.windowLog = ilog2(PAGE_SIZE);
 
@@ -98,7 +98,7 @@ static struct zcomp_strm *zcomp_strm_alloc(struct zcomp *comp)
 		return NULL;
 
 #if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
-	if (zcomp_alloc_zstd_contexts(zstrm))
+	if (zcomp_alloc_zstd_contexts(zstrm, comp->compression_level))
 		goto error;
 #else
 	zstrm->tfm = crypto_alloc_comp(comp->name, 0, 0);
@@ -302,7 +302,7 @@ void zcomp_destroy(struct zcomp *comp)
  * case of allocation error, or any other error potentially
  * returned by zcomp_init().
  */
-struct zcomp *zcomp_create(const char *compress)
+struct zcomp *zcomp_create(const char *compress, unsigned int compression_level)
 {
 	struct zcomp *comp;
 	int error;
@@ -315,6 +315,9 @@ struct zcomp *zcomp_create(const char *compress)
 		return ERR_PTR(-ENOMEM);
 
 	comp->name = compress;
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	comp->compression_level = compression_level;
+#endif
 	error = zcomp_init(comp);
 	if (error) {
 		kfree(comp);
