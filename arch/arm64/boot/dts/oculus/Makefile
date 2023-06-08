@@ -30,7 +30,8 @@ dtbo-$(CONFIG_OCULUS_SEACLIFF) += \
 
 dtbo-$(CONFIG_OCULUS_unknown5) += \
 	unknown5-p0-overlay.dtbo \
-	unknown5-poc1-nff-overlay.dtbo
+	unknown5-poc1-nff-overlay.dtbo \
+	unknown5-poc1-ff-overlay.dtbo
 
 hollywood-poc2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-p1.1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
@@ -58,6 +59,7 @@ seacliff-pvt-b-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1
 seacliff-pvt-b-mlb2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 unknown5-p0-overlay.dtbo-base := kona-unknown5.dtb kona-v2-unknown5.dtb kona-v2.1-unknown5.dtb
 unknown5-poc1-nff-overlay.dtbo-base := kona-unknown5.dtb kona-v2-unknown5.dtb kona-v2.1-unknown5.dtb
+unknown5-poc1-ff-overlay.dtbo-base := kona-unknown5.dtb kona-v2-unknown5.dtb kona-v2.1-unknown5.dtb
 
 endif
 endif

@@ -16,6 +16,8 @@
 #include <linux/gpio/consumer.h>
 
 #define SGM62110_CONTROL_REG 0x01
+#define SGM62110_STATUS_REG 0x02
+#define SGM62110_DEV_ID_REG 0x03
 #define SGM62110_BUCK_ENABLE_MASK 0x20
 #define SGM62110_BUCKBOOST_ENABLE_MASK 0x60
 #define SGM62110_VOUT1_MASK 0x7f
@@ -46,10 +48,23 @@ struct sgm62110_regulator_info {
 	int en_gpio_state;
 };
 
+static bool sgm62110_readable(struct device *dev, unsigned int reg)
+{
+	return (reg >= SGM62110_CONTROL_REG && reg <= SGM62110_REG_MAX);
+}
+
+static bool sgm62110_writable(struct device *dev, unsigned int reg)
+{
+	return (reg >= SGM62110_CONTROL_REG && reg <= SGM62110_REG_MAX) &&
+		(reg != SGM62110_STATUS_REG) && (reg != SGM62110_DEV_ID_REG);
+}
+
 static const struct regmap_config sgm62110_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 	.max_register = SGM62110_REG_MAX,
+	.readable_reg = sgm62110_readable,
+	.writeable_reg = sgm62110_writable,
 };
 
 static const struct linear_range SGM62110_BUCK_RANGES[] = {

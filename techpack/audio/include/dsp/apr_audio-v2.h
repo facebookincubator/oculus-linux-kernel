@@ -7994,7 +7994,7 @@ struct asm_stream_cmd_open_shared_io {
 	uint16_t                shared_circ_buf_num_regions;
 	uint32_t                shared_circ_buf_property_flag;
 	uint32_t                num_watermark_levels;
-	struct asm_multi_channel_pcm_fmt_blk_v3         fmt;
+	struct asm_multi_channel_pcm_fmt_blk_v4         fmt;
 	struct avs_shared_map_region_payload            map_region_pos_buf;
 	struct avs_shared_map_region_payload            map_region_circ_buf;
 	struct asm_shared_watermark_level watermark[0];

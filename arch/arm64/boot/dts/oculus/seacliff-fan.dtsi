@@ -1431,7 +1431,7 @@
 	display-virt-fan {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
-		thermal-sensors = <&display_virtual_sensor>;
+		thermal-sensors = <&display_virtual_sensor_fan>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
@@ -1929,7 +1929,7 @@
 	fp-fan {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
-		thermal-sensors = <&vrapi_front_panel_sensor>;
+		thermal-sensors = <&vrapi_front_panel_sensor_fan>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {
@@ -2012,7 +2012,7 @@
 	tp-fan {
 		polling-delay-passive = <100>;
 		polling-delay = <1000>;
-		thermal-sensors = <&vrapi_top_panel_sensor>;
+		thermal-sensors = <&vrapi_top_panel_sensor_fan>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
 		trips {

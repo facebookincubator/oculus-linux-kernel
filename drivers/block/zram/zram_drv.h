@@ -148,6 +148,9 @@ struct zram {
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
+#if CONFIG_ZRAM_ZSTD_ADVANCED
+	unsigned int compression_level;
+#endif
 };
 
 static inline bool zram_dedup_enabled(struct zram *zram)

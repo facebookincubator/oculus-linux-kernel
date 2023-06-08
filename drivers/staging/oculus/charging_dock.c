@@ -10,6 +10,16 @@
 #include "charging_dock.h"
 #include "../usbvdm.h"
 
+/*
+ * Value for green LED when battery is at or above this percent
+ * This is defined at framework level for HMD so we will borrow
+ * it from there (config_notificationsBatteryNearlyFullLevel)
+ */
+#define BATTERY_NEARLY_FULL_LEVEL	98
+
+static int batt_psy_notifier_call(struct notifier_block *nb,
+	unsigned long ev, void *ptr);
+
 static void charging_dock_send_vdm_request(
 	struct charging_dock_device_t *ddev, u32 parameter, u32 vdo)
 {
@@ -17,12 +27,12 @@ static void charging_dock_send_vdm_request(
 	u32 vdm_vdo = 0;
 	int num_vdos = 0;
 	int result = -1;
-	u16 svid = ddev->intf_type == INTF_TYPE_USBPD ? ddev->usbpd_vdm_handler.svid : ddev->cypd_vdm_handler.svid;
 
 	/* header(32) = svid(16) ack(1) proto(2) high(1) size(3) param(8) */
-	vdm_header = VDMH_CONSTRUCT(svid, 0, VDM_REQUEST, 0, 0, parameter);
+	vdm_header = VDMH_CONSTRUCT(ddev->current_svid, 0, VDM_REQUEST, 0, 0, parameter);
 
 	if (parameter == PARAMETER_TYPE_BROADCAST_PERIOD ||
+			parameter == PARAMETER_TYPE_STATE_OF_CHARGE ||
 			parameter == PARAMETER_TYPE_LOG_TRANSMIT ||
 			parameter == PARAMETER_TYPE_LOG_CHUNK) {
 		vdm_vdo = vdo;
@@ -76,7 +86,27 @@ static void charging_dock_handle_work(struct work_struct *work)
 	mutex_unlock(&ddev->lock);
 }
 
-static void vdm_connect_common(struct charging_dock_device_t *ddev, enum charging_dock_intf_type intf_type)
+static void charging_dock_handle_work_soc(struct work_struct *work)
+{
+	struct charging_dock_device_t *ddev =
+		container_of(work, struct charging_dock_device_t, dwork_soc.work);
+
+	dev_dbg(ddev->dev, "%s: enter", __func__);
+
+	mutex_lock(&ddev->lock);
+	if (!ddev->docked || ddev->intf_type == INTF_TYPE_UNKNOWN) {
+		mutex_unlock(&ddev->lock);
+		return;
+	}
+
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_STATE_OF_CHARGE,
+		ddev->params.state_of_charge);
+
+	mutex_unlock(&ddev->lock);
+}
+
+static void vdm_connect_common(struct charging_dock_device_t *ddev,
+	enum charging_dock_intf_type intf_type, u16 svid)
 {
 	/*
 	 * Client notifications only occur during docked/undocked
@@ -91,11 +121,19 @@ static void vdm_connect_common(struct charging_dock_device_t *ddev, enum chargin
 	mutex_lock(&ddev->lock);
 	ddev->docked = true;
 	ddev->intf_type = intf_type;
+	ddev->current_svid = svid;
 	mutex_unlock(&ddev->lock);
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
 	schedule_delayed_work(&ddev->dwork, 0);
+
+	if (ddev->send_state_of_charge) {
+		ddev->params.state_of_charge = NOT_CHARGING;
+		/* Force re-evaluation */
+		batt_psy_notifier_call(&ddev->nb, PSY_EVENT_PROP_CHANGED,
+				ddev->battery_psy);
+	}
 }
 
 static void cypd_vdm_connect(struct cypd_svid_handler *hdlr)
@@ -103,7 +141,15 @@ static void cypd_vdm_connect(struct cypd_svid_handler *hdlr)
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
 	dev_info(ddev->dev, "cypd vdm connect\n");
-	vdm_connect_common(ddev, INTF_TYPE_CYPD);
+	vdm_connect_common(ddev, INTF_TYPE_CYPD, hdlr->svid);
+}
+
+static void cypd_vdm_connect_alt(struct cypd_svid_handler *hdlr)
+{
+	struct charging_dock_device_t *ddev =
+		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
+	dev_info(ddev->dev, "cypd vdm connect alt\n");
+	vdm_connect_common(ddev, INTF_TYPE_CYPD, hdlr->svid);
 }
 
 static void usbpd_vdm_connect(struct usbpd_svid_handler *hdlr, bool supports_usb_comm)
@@ -111,7 +157,7 @@ static void usbpd_vdm_connect(struct usbpd_svid_handler *hdlr, bool supports_usb
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, usbpd_vdm_handler);
 	dev_info(ddev->dev, "usbpd vdm connect: usb_comm=%d\n", supports_usb_comm);
-	vdm_connect_common(ddev, INTF_TYPE_USBPD);
+	vdm_connect_common(ddev, INTF_TYPE_USBPD, hdlr->svid);
 }
 
 static void vdm_disconnect_common(struct charging_dock_device_t *ddev, enum charging_dock_intf_type intf_type)
@@ -128,11 +174,14 @@ static void vdm_disconnect_common(struct charging_dock_device_t *ddev, enum char
 	mutex_lock(&ddev->lock);
 	ddev->docked = false;
 	ddev->intf_type = INTF_TYPE_UNKNOWN;
+	ddev->current_svid = 0;
 	mutex_unlock(&ddev->lock);
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
 	cancel_delayed_work_sync(&ddev->dwork);
+	if (ddev->send_state_of_charge)
+		cancel_delayed_work_sync(&ddev->dwork_soc);
 }
 
 static void cypd_vdm_disconnect(struct cypd_svid_handler *hdlr)
@@ -140,6 +189,14 @@ static void cypd_vdm_disconnect(struct cypd_svid_handler *hdlr)
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
 	dev_info(ddev->dev, "cypd vdm disconnect\n");
+	vdm_disconnect_common(ddev, INTF_TYPE_CYPD);
+}
+
+static void cypd_vdm_disconnect_alt(struct cypd_svid_handler *hdlr)
+{
+	struct charging_dock_device_t *ddev =
+		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
+	dev_info(ddev->dev, "cypd vdm disconnect alt\n");
 	vdm_disconnect_common(ddev, INTF_TYPE_CYPD);
 }
 
@@ -260,7 +317,7 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 	protocol_type = VDMH_PROTOCOL(vdm_hdr);
 	parameter_type = VDMH_PARAMETER(vdm_hdr);
 
-	dev_dbg(ddev->dev, "VDM protocol type = %d, VDM parameter = %d\n",
+	dev_dbg(ddev->dev, "VDM protocol type = %d, VDM parameter = 0x%02x\n",
 		protocol_type, parameter_type);
 
 	if (num_vdos == 0) {
@@ -304,6 +361,13 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 				vdos[0],
 				ddev->params.broadcast_period);
 			break;
+		case PARAMETER_TYPE_STATE_OF_CHARGE:
+			dev_dbg(ddev->dev, "Received State of Charge: 0x%x value=0x%02x",
+				parameter_type, vdos[0]);
+			if ((vdos[0] & 0x01) != ddev->params.state_of_charge)
+				dev_err(ddev->dev,
+					"Error: State-of-Charge received: %d != sent: %d\n",
+					(vdos[0] & 0x01), ddev->params.state_of_charge);
 		case PARAMETER_TYPE_LOG_TRANSMIT:
 			/* Receiving a response to one of two messages
 			 * - TRANSMIT_STOP
@@ -408,6 +472,16 @@ static void cypd_vdm_received(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
 {
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
+	dev_info(ddev->dev, "cypd vdm received\n");
+	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
+}
+
+static void cypd_vdm_received_alt(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
+		const u32 *vdos, int num_vdos)
+{
+	struct charging_dock_device_t *ddev =
+		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
+	dev_info(ddev->dev, "cypd vdm received alt\n");
 	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
 }
 
@@ -1002,6 +1076,110 @@ static void charging_dock_create_sysfs(struct charging_dock_device_t *ddev)
 		dev_err(ddev->dev, "Error creating sysfs entries: %d\n", result);
 }
 
+static int batt_psy_notifier_call(struct notifier_block *nb,
+		unsigned long ev, void *ptr)
+{
+	int result = 0;
+	struct power_supply *psy = ptr;
+	struct charging_dock_device_t *ddev = NULL;
+	union power_supply_propval capacity = {0};
+	union power_supply_propval status = {0};
+	enum state_of_charge_t soc = NOT_CHARGING;
+
+	if (IS_ERR_OR_NULL(nb))
+		return NOTIFY_BAD;
+
+	ddev = container_of(nb, struct charging_dock_device_t, nb);
+	if (IS_ERR_OR_NULL(ddev) || IS_ERR_OR_NULL(ddev->battery_psy))
+		return NOTIFY_BAD;
+
+	/*  Read battery capacity only if we are docked via Pogo connection */
+	if (!ddev->docked || ddev->intf_type != INTF_TYPE_CYPD)
+		return NOTIFY_OK;
+
+	if (psy != ddev->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
+		return NOTIFY_OK;
+
+	/* Battery status */
+	result = power_supply_get_property(ddev->battery_psy,
+			POWER_SUPPLY_PROP_STATUS, &status);
+	if (result) {
+		/*
+		 * Log failure and return okay for this call with the hope
+		 * that we can read battery status next time around.
+		 */
+		dev_err(ddev->dev, "Unable to read battery status: %d\n", result);
+		return NOTIFY_OK;
+	}
+
+	if (status.intval == POWER_SUPPLY_STATUS_FULL) {
+		/* If fully charged, no need to read battery level */
+		soc = CHARGED;
+	} else if (status.intval == POWER_SUPPLY_STATUS_CHARGING) {
+		/* Battery capacity */
+		result = power_supply_get_property(ddev->battery_psy,
+				POWER_SUPPLY_PROP_CAPACITY, &capacity);
+		if (result) {
+			/*
+			 * Log failure and return okay for this call with the hope
+			 * that we can read battery capacity next time around.
+			 */
+			dev_err(ddev->dev, "Unable to read battery capacity: %d\n", result);
+			return NOTIFY_OK;
+		}
+		/* Determine soc from battery level to match BatteryService logic */
+		soc = (capacity.intval >= BATTERY_NEARLY_FULL_LEVEL) ? CHARGED : CHARGING;
+	}
+
+	if (soc != ddev->params.state_of_charge) {
+		ddev->params.state_of_charge = soc;
+
+		/* Send State of Charge only if charging or fully charged */
+		if (soc != NOT_CHARGING) {
+			dev_info(ddev->dev, "Sending SOC = 0x%x\n", soc);
+			schedule_delayed_work(&ddev->dwork_soc, 0);
+		}
+	}
+
+	return NOTIFY_OK;
+}
+
+static void batt_psy_register_notifier(struct charging_dock_device_t *ddev)
+{
+	int result = 0;
+
+	if (ddev->nb.notifier_call == NULL) {
+		dev_err(ddev->dev, "Notifier block's notifier call is NULL\n");
+		return;
+	}
+
+	result = power_supply_reg_notifier(&ddev->nb);
+	if (result != 0) {
+		dev_err(ddev->dev, "Failed to register power supply notifier, result:%d\n",
+				result);
+	}
+}
+
+static void batt_psy_unregister_notifier(struct charging_dock_device_t *ddev)
+{
+	/*
+	 * Safe to call unreg notifier even if notifier block wasn't registered
+	 * with the kernel due to some prior failure.
+	 */
+	power_supply_unreg_notifier(&ddev->nb);
+}
+
+static void batt_psy_init(struct charging_dock_device_t *ddev)
+{
+	ddev->nb.notifier_call = NULL;
+	ddev->battery_psy = power_supply_get_by_name("battery");
+	if (IS_ERR_OR_NULL(ddev->battery_psy)) {
+		dev_err(ddev->dev, "Failed to get battery power supply, returning\n");
+		return;
+	}
+	ddev->nb.notifier_call = batt_psy_notifier_call;
+}
+
 static int charging_dock_probe(struct platform_device *pdev)
 {
 	int result = 0;
@@ -1016,13 +1194,14 @@ static int charging_dock_probe(struct platform_device *pdev)
 
 	// Interface type is not known until we get a vdm_connect callback
 	ddev->intf_type = INTF_TYPE_UNKNOWN;
+	ddev->current_svid = 0;
 
 	// usbpd: return on failure only if interface is enabled on the platform
 	ddev->upd = devm_usbpd_get_by_phandle(&pdev->dev, "charger-usbpd");
 	if (IS_ERR_OR_NULL(ddev->upd)) {
-		dev_err(&pdev->dev, "devm_usbpd_get_by_phandle failed: %ld\n",
-				PTR_ERR(ddev->upd));
 #if IS_ENABLED(CONFIG_USB_PD_POLICY)
+		dev_err_ratelimited(&pdev->dev, "devm_usbpd_get_by_phandle failed: %ld\n",
+				PTR_ERR(ddev->upd));
 		return PTR_ERR(ddev->upd);
 #endif
 	}
@@ -1030,9 +1209,9 @@ static int charging_dock_probe(struct platform_device *pdev)
 	// cypd: return on failure only if interface is enabled on the platform
 	ddev->cpd = devm_cypd_get_by_phandle(&pdev->dev, "charger-cypd");
 	if (IS_ERR_OR_NULL(ddev->cpd)) {
-		dev_err(&pdev->dev, "devm_cypd_get_by_phandle failed: %ld\n",
-				PTR_ERR(ddev->cpd));
 #if IS_ENABLED(CONFIG_CYPD_POLICY_ENGINE)
+		dev_err_ratelimited(&pdev->dev, "devm_cypd_get_by_phandle failed: %ld\n",
+				PTR_ERR(ddev->cpd));
 		return PTR_ERR(ddev->cpd);
 #endif
 	}
@@ -1058,6 +1237,10 @@ static int charging_dock_probe(struct platform_device *pdev)
 		ddev->cypd_vdm_handler.disconnect = cypd_vdm_disconnect;
 		ddev->cypd_vdm_handler.vdm_received = cypd_vdm_received;
 
+		ddev->cypd_vdm_handler_alt.connect = cypd_vdm_connect_alt;
+		ddev->cypd_vdm_handler_alt.disconnect = cypd_vdm_disconnect_alt;
+		ddev->cypd_vdm_handler_alt.vdm_received = cypd_vdm_received_alt;
+
 		result = of_property_read_u16(pdev->dev.of_node,
 			"svid-cypd", &ddev->cypd_vdm_handler.svid);
 		if (result < 0) {
@@ -1066,7 +1249,19 @@ static int charging_dock_probe(struct platform_device *pdev)
 				    result);
 			return result;
 		}
-		dev_dbg(&pdev->dev, "Property svid-cypd=%x", ddev->cypd_vdm_handler.svid);
+		dev_dbg(&pdev->dev, "Property svid-cypd=0x%04x", ddev->cypd_vdm_handler.svid);
+
+		/* alt */
+		result = of_property_read_u16(pdev->dev.of_node,
+			"svid-cypd-alt", &ddev->cypd_vdm_handler_alt.svid);
+		if (result < 0) {
+			dev_err(&pdev->dev,
+				"Charging dock cypd SVID (alt) unavailable, not failing probe, result:%d\n",
+				    result);
+			result = 0;
+		} else {
+			dev_dbg(&pdev->dev, "Property svid-cypd-alt=0x%04x", ddev->cypd_vdm_handler_alt.svid);
+		}
 	}
 
 	result = of_property_read_u32(pdev->dev.of_node,
@@ -1080,8 +1275,16 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->params.broadcast_period = (u8)temp_val;
 	dev_dbg(&pdev->dev, "Broadcast period=%d\n", ddev->params.broadcast_period);
 
+	ddev->send_state_of_charge = of_property_read_bool(pdev->dev.of_node,
+			"send-state-of-charge");
+	dev_dbg(&pdev->dev, "Send state of charge=%d\n", ddev->send_state_of_charge);
+
 	mutex_init(&ddev->lock);
 	INIT_DELAYED_WORK(&ddev->dwork, charging_dock_handle_work);
+	if (ddev->send_state_of_charge) {
+		INIT_DELAYED_WORK(&ddev->dwork_soc, charging_dock_handle_work_soc);
+		ddev->params.state_of_charge = NOT_CHARGING;
+	}
 	init_waitqueue_head(&ddev->tx_waitq);
 
 	/* Register VDM callbacks */
@@ -1100,12 +1303,26 @@ static int charging_dock_probe(struct platform_device *pdev)
 			return result;
 		}
 		dev_dbg(&pdev->dev, "Registered cypd svid 0x%04x", ddev->cypd_vdm_handler.svid);
+		// alt
+		if (ddev->cypd_vdm_handler_alt.svid) {
+			result = cypd_register_svid(ddev->cpd, &ddev->cypd_vdm_handler_alt);
+			if (result != 0)
+				dev_err(&pdev->dev, "Failed to register cypd vdm handler: %d(0x%x)", result, result);
+			else
+				dev_dbg(&pdev->dev, "Registered cypd svid 0x%04x (alt)", ddev->cypd_vdm_handler_alt.svid);
+		}
 	}
 
 	ddev->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, ddev);
 
 	charging_dock_create_sysfs(ddev);
+
+	if (ddev->send_state_of_charge) {
+		/* Query power supply and register for events */
+		batt_psy_init(ddev);
+		batt_psy_register_notifier(ddev);
+	}
 
 	return result;
 }
@@ -1123,6 +1340,10 @@ static int charging_dock_remove(struct platform_device *pdev)
 		cypd_unregister_svid(ddev->cpd, &ddev->cypd_vdm_handler);
 
 	cancel_delayed_work_sync(&ddev->dwork);
+	if (ddev->send_state_of_charge) {
+		batt_psy_unregister_notifier(ddev);
+		cancel_delayed_work_sync(&ddev->dwork_soc);
+	}
 	wake_up_all(&ddev->tx_waitq);
 	mutex_destroy(&ddev->lock);
 	sysfs_remove_groups(&ddev->dev->kobj, charging_dock_groups);

@@ -25,7 +25,39 @@
  */
 enum ar_user_event_type {
 	AR_USER_QUEUE_CREATE,
-	AR_USER_PEND_BUFFER,
+	AR_USER_BUFFER_CREATE,
+	AR_USER_BUFFER_DESTROY,
+	AR_USER_BUFFER_PEND,
+};
+
+/**
+ * Event data for new buffer registration.
+ */
+struct ar_user_create_buffer_data {
+	uint16_t id;
+};
+
+/**
+ * Event data for buffer destruction.
+ */
+struct ar_user_destroy_buffer_data {
+	uint16_t id;
+};
+
+/**
+ * Event data for each buffer pend operation.
+ */
+struct ar_user_pend_buffer_data {
+	uint16_t id;
+};
+
+/**
+ * Event data that can be optionally passed for certain event types.
+ */
+union ar_user_event_data {
+	struct ar_user_create_buffer_data create_buffer;
+	struct ar_user_destroy_buffer_data destroy_buffer;
+	struct ar_user_pend_buffer_data pend_buffer;
 };
 
 /**
@@ -34,7 +66,8 @@ enum ar_user_event_type {
 struct __packed ar_user_event {
 	enum ar_user_event_type type;
 	/// The queue id associated with this event.
-	uint32_t queue_id;
+	uint32_t queue_handle;
+	union ar_user_event_data data;
 };
 
 /**
@@ -58,9 +91,9 @@ struct __packed ar_user_unregister_req {
  */
 struct __packed ar_user_queue_info_req {
 	/// queue id to get information for.
-	uint32_t queue_id;
+	uint32_t handle;
 	/// Direction that this queue transfers data in.
-	enum ar_queue_direction queue_direction;
+	enum ar_queue_direction direction;
 	/// The buffer size of queue elements
 	uint32_t element_size;
 	/// The count of elements in the queue

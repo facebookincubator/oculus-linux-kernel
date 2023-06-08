@@ -16,9 +16,6 @@
 #include <linux/time64.h>
 #include <linux/wait.h>
 #include <linux/regulator/consumer.h>
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-#include <syncboss_camera.h>
-#endif
 
 #include "../fw_helpers.h"
 
@@ -637,8 +634,6 @@ void syncboss_pin_reset(struct syncboss_dev_data *devdata)
 		return;
 	}
 
-	dev_info(&devdata->spi->dev, "Pin-resetting SyncBoss");
-
 	gpio_set_value(devdata->gpio_reset, 0);
 	msleep(SYNCBOSS_RESET_TIME_MS);
 
@@ -777,7 +772,7 @@ static const struct file_operations fops = {
 static const struct file_operations stream_fops = {
 	.open = syncboss_stream_open,
 	.release = syncboss_stream_release,
-	.read = miscfifo_fop_read,
+	.read = miscfifo_fop_read_many,
 	.poll = miscfifo_fop_poll,
 	.unlocked_ioctl = syncboss_stream_ioctl
 };
@@ -1622,19 +1617,19 @@ static void restore_spi_prepare_ops(struct syncboss_dev_data *devdata)
 	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
 }
 
-static int wake_mcu_if_asleep(struct syncboss_dev_data *devdata)
+static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 {
 	int status = 0;
 	bool mcu_awake = is_mcu_awake(devdata);
 
-	if (mcu_awake)
+	if (mcu_awake && !force_pin_reset)
 		return 0;
 
 	/*
 	 * If supported, attempt to wake the MCU by sending it a dummy SPI
 	 * transaction. The MCU will wake on CS toggle.
 	 */
-	if (devdata->has_wake_on_spi && !devdata->force_reset_on_open) {
+	if (devdata->has_wake_on_spi && !force_pin_reset) {
 		dev_info(&devdata->spi->dev,
 			 "Attemping to wake MCU by sending a dummy SPI transaction (mcu awake: %d)",
 			 !!mcu_awake);
@@ -1655,11 +1650,11 @@ static int wake_mcu_if_asleep(struct syncboss_dev_data *devdata)
 	 * Wake on SPI is either not supported or failed, or a force reset was requested.
 	 * Try a pin reset.
 	 */
-	if (!mcu_awake || devdata->force_reset_on_open) {
+	if (!mcu_awake || force_pin_reset) {
 		dev_info(&devdata->spi->dev,
-			 "Force-resetting MCU (mcu awake: %d, force on open: %d)",
+			 "Pin-resetting MCU (mcu awake: %d, forced: %d)",
 			 !!mcu_awake,
-			 !!devdata->force_reset_on_open);
+			 !!force_pin_reset);
 		syncboss_pin_reset(devdata);
 
 		status = wait_for_syncboss_wake_state(devdata, true);
@@ -1733,35 +1728,7 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	 */
 	override_spi_prepare_ops(devdata);
 
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-	if (devdata->must_enable_camera_temp_sensor_power) {
-		int camera_temp_power_status = 0;
-
-		dev_info(&devdata->spi->dev,
-			 "Enabling camera temperature sensor power");
-		camera_temp_power_status = enable_camera_temp_sensor_power();
-
-		if (camera_temp_power_status == 0) {
-			dev_info(&devdata->spi->dev,
-				 "Successfully enabled temp sensor power");
-			/* Only need to do this once */
-			devdata->must_enable_camera_temp_sensor_power = false;
-		} else if (camera_temp_power_status == -EAGAIN) {
-			/*
-			 * If this is really early in the boot
-			 * process, this operation might fail.  This
-			 * is ok, we'll just get it later.
-			 */
-			dev_info(&devdata->spi->dev,
-				 "Camera temperature sensors not ready yet. Will try again later");
-		} else {
-			dev_warn(&devdata->spi->dev,
-				 "Failed to enable temp sensor power: %d.",
-				 camera_temp_power_status);
-		}
-	}
-#endif
-	status = wake_mcu_if_asleep(devdata);
+	status = wake_mcu(devdata, devdata->force_reset_on_open);
 	if (status)
 		goto error_after_spi_ops_update;
 
@@ -1882,9 +1849,6 @@ static void syncboss_on_camera_release(struct syncboss_dev_data *devdata)
 	dev_info(&devdata->spi->dev, "Turning off cameras");
 
 	devdata->cameras_enabled = false;
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-	disable_cameras();
-#endif
 }
 
 static void stop_streaming_locked(struct syncboss_dev_data *devdata)
@@ -2127,16 +2091,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->has_no_prox_cal = of_property_read_bool(node, "oculus,syncboss-has-no-prox-cal");
 	devdata->has_wake_on_spi = of_property_read_bool(node, "oculus,syncboss-has-wake-on-spi");
 	devdata->has_wake_reasons = of_property_read_bool(node, "oculus,syncboss-has-wake-reasons");
-
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-	if (of_find_property(node,
-			"oculus,syncboss-must-enable-cam-temp-sensor-power",
-			NULL))
-		devdata->must_enable_camera_temp_sensor_power = true;
-	dev_info(&devdata->spi->dev, "must-enable-cam-temp-sensor-power: %s",
-		 devdata->must_enable_camera_temp_sensor_power ?
-		 "true" : "false");
-#endif
 
 	dev_info(&devdata->spi->dev,
 		 "GPIOs: reset: %d, timesync: %d, wakeup: %d, nsync: %d",
@@ -2398,9 +2352,6 @@ static void syncboss_on_camera_probe(struct syncboss_dev_data *devdata)
 {
 	dev_info(&devdata->spi->dev, "Turning on cameras");
 
-#ifdef CONFIG_SYNCBOSS_CAMERA_CONTROL
-	enable_cameras();
-#endif
 	devdata->cameras_enabled = true;
 }
 

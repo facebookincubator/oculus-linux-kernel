@@ -1035,6 +1035,35 @@ static ssize_t comp_algorithm_store(struct device *dev,
 	return len;
 }
 
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+static ssize_t comp_level_show(struct device *dev,
+		struct device_attribute *attr, char *buf) {
+	struct zram *zram = dev_to_zram(dev);
+	size_t sz;
+
+	down_read(&zram->init_lock);
+	sz = scnprintf(buf, PAGE_SIZE,
+		"%d\n", zram->compression_level);
+	up_read(&zram->init_lock);
+
+	return sz;
+}
+
+static ssize_t comp_level_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t len) {
+	struct zram *zram = dev_to_zram(dev);
+	unsigned int val;
+	if (kstrtouint(buf, 10, &val) || (val < 1 && val > 22))
+		return -EINVAL;
+
+	down_write(&zram->init_lock);
+	zram->compression_level = val;
+	up_write(&zram->init_lock);
+
+	return len;
+}
+#endif
+
 static ssize_t use_dedup_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1859,8 +1888,11 @@ static ssize_t disksize_store(struct device *dev,
 		err = -ENOMEM;
 		goto out_unlock;
 	}
-
-	comp = zcomp_create(zram->compressor);
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	comp = zcomp_create(zram->compressor, zram->compression_level);
+#else
+	comp = zcomp_create(zram->compressor, -1);
+#endif
 	if (IS_ERR(comp)) {
 		pr_err("Cannot initialise %s compressing backend\n",
 				zram->compressor);
@@ -1960,6 +1992,9 @@ static DEVICE_ATTR_WO(mem_used_max);
 static DEVICE_ATTR_WO(idle);
 static DEVICE_ATTR_RW(max_comp_streams);
 static DEVICE_ATTR_RW(comp_algorithm);
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+static DEVICE_ATTR_RW(comp_level);
+#endif
 #ifdef CONFIG_ZRAM_WRITEBACK
 static DEVICE_ATTR_RW(backing_dev);
 static DEVICE_ATTR_WO(writeback);
@@ -1982,6 +2017,9 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_idle.attr,
 	&dev_attr_max_comp_streams.attr,
 	&dev_attr_comp_algorithm.attr,
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	&dev_attr_comp_level.attr,
+#endif
 #ifdef CONFIG_ZRAM_WRITEBACK
 	&dev_attr_backing_dev.attr,
 	&dev_attr_writeback.attr,
@@ -2093,6 +2131,9 @@ static int zram_add(void)
 	add_disk(zram->disk);
 
 	strlcpy(zram->compressor, default_compressor, sizeof(zram->compressor));
+#if IS_ENABLED(CONFIG_ZRAM_ZSTD_ADVANCED)
+	zram->compression_level = CONFIG_ZRAM_ZSTD_COMPRESSION_LEVEL;
+#endif
 
 	zram_debugfs_register(zram);
 	pr_info("Added device: %s\n", zram->disk->disk_name);

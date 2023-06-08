@@ -1573,6 +1573,12 @@ config BUILD_ARM64_KERNEL_COMPRESSION_GZIP
 	  gzip is based on the DEFLATE
 	  algorithm.
 
+config BUILD_ARM64_KERNEL_COMPRESSION_LZ4
+	bool "Build lz4 compressed kernel image"
+	help
+	  Build a kernel image using lz4
+	  compression with concatenated dtb.
+
 config BUILD_ARM64_UNCOMPRESSED_KERNEL
 	bool "Build uncompressed kernel image"
 	help
