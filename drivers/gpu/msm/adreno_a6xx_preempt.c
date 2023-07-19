@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "adreno.h"
@@ -641,8 +641,8 @@ unsigned int a6xx_preemption_pre_ibsubmit(
 		 * preemption
 		 */
 		if (!adreno_dev->perfcounter) {
-			u64 kmd_postamble_addr =
-			PREEMPT_SCRATCH_ADDR(adreno_dev, KMD_POSTAMBLE_IDX);
+			u64 kmd_postamble_addr = SCRATCH_POSTAMBLE_ADDR
+						(KGSL_DEVICE(adreno_dev));
 
 			*cmds++ = cp_type7_packet(CP_SET_AMBLE, 3);
 			*cmds++ = lower_32_bits(kmd_postamble_addr);
@@ -806,6 +806,8 @@ static int a6xx_preemption_ringbuffer_init(struct adreno_device *adreno_dev,
 
 int a6xx_preemption_init(struct adreno_device *adreno_dev)
 {
+	u32 flags = ADRENO_FEATURE(adreno_dev, ADRENO_APRIV) ?
+			KGSL_MEMDESC_PRIVILEGED : 0;
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_iommu *iommu = KGSL_IOMMU_PRIV(device);
 	struct adreno_preemption *preempt = &adreno_dev->preempt;
@@ -821,7 +823,7 @@ int a6xx_preemption_init(struct adreno_device *adreno_dev)
 	INIT_WORK(&preempt->work, _a6xx_preemption_worker);
 
 	if (IS_ERR_OR_NULL(preempt->scratch)) {
-		preempt->scratch = kgsl_allocate_global(device, PAGE_SIZE, 0, 0,
+		preempt->scratch = kgsl_allocate_global(device, PAGE_SIZE, 0, flags,
 				"preemption_scratch");
 		if (IS_ERR_OR_NULL(preempt->scratch))
 			return (!preempt->scratch) ? -EINVAL :
@@ -865,10 +867,11 @@ int a6xx_preemption_init(struct adreno_device *adreno_dev)
 	}
 
 	/*
-	 * First 8 dwords of the preemption scratch buffer is used to store the
-	 * address for CP to save/restore VPC data. Reserve 11 dwords in the
-	 * preemption scratch buffer from index KMD_POSTAMBLE_IDX for KMD
-	 * postamble pm4 packets
+	 * First 28 dwords of the device scratch buffer are used to store
+	 * shadow rb data. Reserve 11 dwords in the device scratch buffer
+	 * from SCRATCH_POSTAMBLE_OFFSET for KMD postamble pm4 packets.
+	 * This should be in *device->scratch* so that userspace cannot
+	 * access it.
 	 */
 	if (!IS_ERR_OR_NULL(preempt->scratch)) {
 		void *rw_scratch_kptr;
@@ -876,7 +879,7 @@ int a6xx_preemption_init(struct adreno_device *adreno_dev)
 		u32 count = 0;
 
 		rw_scratch_kptr = kgsl_sharedmem_vm_map_readwrite(
-				preempt->scratch, 0, PAGE_SIZE, &page_count);
+				device->scratch, 0, PAGE_SIZE, &page_count);
 		if (IS_ERR_OR_NULL(rw_scratch_kptr))
 			return (!rw_scratch_kptr) ? -EINVAL :
 					PTR_ERR(rw_scratch_kptr);
@@ -884,8 +887,7 @@ int a6xx_preemption_init(struct adreno_device *adreno_dev)
 			 "preemption scratch mapping size does not match buffer size\n"))
 			return -EINVAL;
 
-		postamble = (u32*)(rw_scratch_kptr + KMD_POSTAMBLE_IDX *
-				sizeof(u64));
+		postamble = (u32*)(rw_scratch_kptr + SCRATCH_POSTAMBLE_OFFSET);
 
 		postamble[count++] = cp_type7_packet(CP_REG_RMW, 3);
 		postamble[count++] = A6XX_RBBM_PERFCTR_SRAM_INIT_CMD;

@@ -138,19 +138,39 @@ config MISCFIFO_SAMPLE
 	  Example usage of miscfifo chardev driver
 
 config OCULUS_EXTERNAL_BATTERY
-	tristate "External battery usbpd driver"
+	tristate "External battery driver"
+	depends on OCULUS_EXTERNAL_BATTERY_USBPD || OCULUS_EXTERNAL_BATTERY_GLINK
 	default n
 	help
-	  External battery usbpd kernel module for registering unstructured vdm
+	  External battery driver for sending and receiving unstructured vdm
 	  messages. Messages will be sent with host device acting as a source and
 	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
 	  external battery parameters.
 
-config NAUTILUS_CLK
-	tristate "NAUTILUS CLK CONTROL Kernel Driver"
+config OCULUS_EXTERNAL_BATTERY_USBPD
+	tristate "External battery usbpd"
+	depends on USB_PD_POLICY
 	default n
 	help
-	  Enable support for controlling the nautilus device clock
+	  USBPD extension to the external_battery driver. Specifies that it
+	  should used the kernel's usbpd stack for VDM messaging.
+
+config OCULUS_EXTERNAL_BATTERY_GLINK
+	tristate "External battery glink driver"
+	depends on OCULUS_VDM_GLINK
+	default n
+	help
+	  External battery glink kernel module for registering unstructured vdm
+	  messages. Messages will be sent with host device acting as a source and
+	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
+	  external battery parameters.
+
+config NAUTILUS_RESOURCE_MANAGER
+	tristate "Nautilus resource manager kernel driver"
+	default n
+	help
+	  Enable support for controlling the nautilus-related resources, such
+	  as power rails and clocks.
 
 config OCULUS_CHARGING_DOCK
 	tristate "Oculus charging dock driver"
@@ -184,6 +204,15 @@ config OCULUS_STARLET
 	select ARCH_BENGAL
 	help
 	  Enable support for the starlet device
+
+config OCULUS_VDM_GLINK
+	tristate "VDM Glink Driver"
+	depends on QTI_PMIC_GLINK
+	default n
+	help
+	  This driver proxies USB PD VDM connections, disconnections,
+	  and messages to and from the ADSP.
+
 
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"

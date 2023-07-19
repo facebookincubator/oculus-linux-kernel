@@ -106,6 +106,45 @@ static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
 	.get_temp = get_temp,
 };
 
+ssize_t max_differential_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct virtual_sensor_drvdata *vs = dev_get_drvdata(dev);
+	struct battery_virtual_sensor_data *battery_vs = vs->data;
+	ssize_t ret;
+
+	ret = mutex_lock_interruptible(&vs->lock);
+	if (ret < 0) {
+		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		return ret;
+	}
+
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", battery_vs->max_differential);
+	mutex_unlock(&vs->lock);
+
+	return ret;
+}
+
+ssize_t max_differential_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct virtual_sensor_drvdata *vs = dev_get_drvdata(dev);
+	struct battery_virtual_sensor_data *battery_vs = vs->data;
+	ssize_t ret;
+
+	ret = mutex_lock_interruptible(&vs->lock);
+	if (ret < 0) {
+		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		return ret;
+	}
+
+	if (kstrtoint(buf, 10, &battery_vs->max_differential))
+		return -EINVAL;
+	mutex_unlock(&vs->lock);
+
+	return count;
+}
+
 static DEVICE_ATTR_RW(tz_coefficients_discharging);
 static DEVICE_ATTR_RW(tz_slope_coefficients_discharging);
 static DEVICE_ATTR_RW(iio_coefficients_discharging);
@@ -116,6 +155,7 @@ static DEVICE_ATTR_RW(iio_coefficients_charging);
 static DEVICE_ATTR_RW(iio_slope_coefficients_charging);
 static DEVICE_ATTR_RW(intercept_charging);
 static DEVICE_ATTR_RW(intercept_discharging);
+static DEVICE_ATTR_RW(max_differential);
 
 static struct attribute *battery_virtual_sensor_attrs[] = {
 	&dev_attr_tz_coefficients_discharging.attr,
@@ -128,6 +168,7 @@ static struct attribute *battery_virtual_sensor_attrs[] = {
 	&dev_attr_iio_slope_coefficients_charging.attr,
 	&dev_attr_intercept_discharging.attr,
 	&dev_attr_intercept_charging.attr,
+	&dev_attr_max_differential.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_virtual_sensor);

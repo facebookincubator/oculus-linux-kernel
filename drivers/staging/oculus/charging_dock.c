@@ -90,18 +90,60 @@ static void charging_dock_handle_work_soc(struct work_struct *work)
 {
 	struct charging_dock_device_t *ddev =
 		container_of(work, struct charging_dock_device_t, dwork_soc.work);
+	int result = 0;
+	union power_supply_propval capacity = {0};
+	union power_supply_propval status = {0};
+	enum state_of_charge_t soc = NOT_CHARGING;
 
 	dev_dbg(ddev->dev, "%s: enter", __func__);
 
 	mutex_lock(&ddev->lock);
-	if (!ddev->docked || ddev->intf_type == INTF_TYPE_UNKNOWN) {
-		mutex_unlock(&ddev->lock);
-		return;
+	if (!ddev->docked || ddev->intf_type == INTF_TYPE_UNKNOWN)
+		goto out;
+
+	/* Battery status */
+	result = power_supply_get_property(ddev->battery_psy,
+			POWER_SUPPLY_PROP_STATUS, &status);
+	if (result) {
+		/*
+		 * Log failure and return okay for this call with the hope
+		 * that we can read battery status next time around.
+		 */
+		dev_err(ddev->dev, "Unable to read battery status: %d\n", result);
+		goto out;
 	}
 
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_STATE_OF_CHARGE,
-		ddev->params.state_of_charge);
+	if (status.intval == POWER_SUPPLY_STATUS_FULL) {
+		/* If fully charged, no need to read battery level */
+		soc = CHARGED;
+	} else if (status.intval == POWER_SUPPLY_STATUS_CHARGING) {
+		/* Battery capacity */
+		result = power_supply_get_property(ddev->battery_psy,
+				POWER_SUPPLY_PROP_CAPACITY, &capacity);
+		if (result) {
+			/*
+			 * Log failure and return okay for this call with the hope
+			 * that we can read battery capacity next time around.
+			 */
+			dev_err(ddev->dev, "Unable to read battery capacity: %d\n", result);
+			goto out;
+		}
+		/* Determine soc from battery level to match BatteryService logic */
+		soc = (capacity.intval >= BATTERY_NEARLY_FULL_LEVEL) ? CHARGED : CHARGING;
+	}
 
+	if (soc != ddev->params.state_of_charge) {
+		ddev->params.state_of_charge = soc;
+
+		/* Send State of Charge only if charging or fully charged */
+		if (soc != NOT_CHARGING) {
+			dev_info(ddev->dev, "Sending SOC = 0x%x\n", soc);
+			charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_STATE_OF_CHARGE,
+				ddev->params.state_of_charge);
+		}
+	}
+
+out:
 	mutex_unlock(&ddev->lock);
 }
 
@@ -472,7 +514,7 @@ static void cypd_vdm_received(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
 {
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
-	dev_info(ddev->dev, "cypd vdm received\n");
+	dev_dbg(ddev->dev, "cypd vdm received\n");
 	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
 }
 
@@ -481,7 +523,7 @@ static void cypd_vdm_received_alt(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
 {
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
-	dev_info(ddev->dev, "cypd vdm received alt\n");
+	dev_dbg(ddev->dev, "cypd vdm received alt\n");
 	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
 }
 
@@ -1079,12 +1121,8 @@ static void charging_dock_create_sysfs(struct charging_dock_device_t *ddev)
 static int batt_psy_notifier_call(struct notifier_block *nb,
 		unsigned long ev, void *ptr)
 {
-	int result = 0;
 	struct power_supply *psy = ptr;
 	struct charging_dock_device_t *ddev = NULL;
-	union power_supply_propval capacity = {0};
-	union power_supply_propval status = {0};
-	enum state_of_charge_t soc = NOT_CHARGING;
 
 	if (IS_ERR_OR_NULL(nb))
 		return NOTIFY_BAD;
@@ -1093,53 +1131,14 @@ static int batt_psy_notifier_call(struct notifier_block *nb,
 	if (IS_ERR_OR_NULL(ddev) || IS_ERR_OR_NULL(ddev->battery_psy))
 		return NOTIFY_BAD;
 
-	/*  Read battery capacity only if we are docked via Pogo connection */
+	/*  Only proceed if we are docked via Pogo connection */
 	if (!ddev->docked || ddev->intf_type != INTF_TYPE_CYPD)
 		return NOTIFY_OK;
 
 	if (psy != ddev->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
 
-	/* Battery status */
-	result = power_supply_get_property(ddev->battery_psy,
-			POWER_SUPPLY_PROP_STATUS, &status);
-	if (result) {
-		/*
-		 * Log failure and return okay for this call with the hope
-		 * that we can read battery status next time around.
-		 */
-		dev_err(ddev->dev, "Unable to read battery status: %d\n", result);
-		return NOTIFY_OK;
-	}
-
-	if (status.intval == POWER_SUPPLY_STATUS_FULL) {
-		/* If fully charged, no need to read battery level */
-		soc = CHARGED;
-	} else if (status.intval == POWER_SUPPLY_STATUS_CHARGING) {
-		/* Battery capacity */
-		result = power_supply_get_property(ddev->battery_psy,
-				POWER_SUPPLY_PROP_CAPACITY, &capacity);
-		if (result) {
-			/*
-			 * Log failure and return okay for this call with the hope
-			 * that we can read battery capacity next time around.
-			 */
-			dev_err(ddev->dev, "Unable to read battery capacity: %d\n", result);
-			return NOTIFY_OK;
-		}
-		/* Determine soc from battery level to match BatteryService logic */
-		soc = (capacity.intval >= BATTERY_NEARLY_FULL_LEVEL) ? CHARGED : CHARGING;
-	}
-
-	if (soc != ddev->params.state_of_charge) {
-		ddev->params.state_of_charge = soc;
-
-		/* Send State of Charge only if charging or fully charged */
-		if (soc != NOT_CHARGING) {
-			dev_info(ddev->dev, "Sending SOC = 0x%x\n", soc);
-			schedule_delayed_work(&ddev->dwork_soc, 0);
-		}
-	}
+	schedule_delayed_work(&ddev->dwork_soc, 0);
 
 	return NOTIFY_OK;
 }

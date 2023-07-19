@@ -468,6 +468,17 @@ static android_custom_dwell_time_t custom_scan_dwell[] =
 #endif /* WBTEXT */
 
 #if defined(TSF_GSYNC)
+/* Add a define to mark the new logic added
+ to calucate the dhd and our system time offset */
+#define CALCULATE_TIME_OFFSET
+
+#ifdef CALCULATE_TIME_OFFSET
+#define TIMESPEC64_TO_US(ts)  (((ts).tv_sec * USEC_PER_SEC) + \
+							(ts).tv_nsec / NSEC_PER_USEC)
+#define OFFSET_OF_SYSTEMTIME_VS_DHDTIME(systs_us, dhdts_us) (systs_us - dhdts_us)
+static int64_t g_offset_systemtime_vs_dhdtime = 0;
+#endif
+
 #define CMD_XRAPI_SEND_PROBERESP "XRAPI_SEND_PROBERESP"
 #define CMD_XRAPI_REQUEST_TSYNC "XRAPI_REQUEST_TSYNC"
 #define CMD_XRAPI_SET_NEXTWAKE "XRAPI_SET_NEXTWAKE"
@@ -485,7 +496,8 @@ static int wl_android_send_txdone_indication(struct net_device *dev,
 static int wl_android_get_xrapi_stats(struct net_device *dev);
 static int wl_android_request_ps_mode_change(struct net_device *dev,
 					     char *command, int total_len);
-
+static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf);
+static int wl_send_txdone_indication(struct net_device *dev);
 #endif /* TSF_GSYNC */
 
 #ifdef SIMULATE_DEGRADED_PERFORMANCE
@@ -507,6 +519,10 @@ static int wl_android_set_dynamic_inactivity_timer(struct net_device *dev,
 						   char *command);
 #define CMD_GET_DYNAMIC_INACTIVITY_TIMER "GET_DYNAMIC_INACTIVITY_TIMER"
 static int wl_android_get_dynamic_inactivity_timer(struct net_device *dev,
+						   char *command,
+						   int total_len);
+#define CMD_GET_TX_RX_DURATION "GET_TX_RX_DURATION"
+static int wl_android_get_tx_rx_duration(struct net_device *dev,
 						   char *command,
 						   int total_len);
 
@@ -13945,6 +13961,9 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			    strlen(CMD_GET_DYNAMIC_INACTIVITY_TIMER)) == 0) {
 		bytes_written = wl_android_get_dynamic_inactivity_timer(
 			net, command, priv_cmd.total_len);
+	} else if (strnicmp(command, CMD_GET_TX_RX_DURATION,
+			    strlen(CMD_GET_TX_RX_DURATION)) == 0) {
+		bytes_written = wl_android_get_tx_rx_duration(net, command, priv_cmd.total_len);
 	} else if (strnicmp(command, CMD_CHANGE_TX_CHAIN,
 			    strlen(CMD_CHANGE_TX_CHAIN)) == 0) {
 		bytes_written = wl_android_set_tx_chain(net, command);
@@ -15798,7 +15817,7 @@ exit:
 }
 #endif // TSF_GSYNC
 
-/*
+/* Handle vendor CMD_XRAPI_SET_NEXTWAKE from user space.
  * Set next wakeup time, notify BRCM fw that it can go to sleep now
  * and shall wake up at the given wakeup time.
  */
@@ -15806,15 +15825,68 @@ static int wl_android_set_nextwakeup(struct net_device *dev, char *command,
 				     int total_len)
 {
 	int res = BCME_OK;
+	wl_tsf_t tsf;
+	char *pos, *token;
+	int bytes_written = 0;
+
+	bzero(&tsf, sizeof(tsf));
+	pos = command;
+	/* drop command */
+	token = bcmstrtok(&pos, " ", NULL);
+	/* tsf_l */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		res = BCME_BADARG;
+		WL_ERR(("Next wakeup time is empty\n"));
+		goto exit;
+	}
+	tsf.tsf_l = bcm_strtoul(token, NULL, 10);
+	/* tsf_h */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		res = BCME_BADARG;
+		WL_ERR(("Next wakeup time is empty\n"));
+		goto exit;
+	}
+	tsf.tsf_h = bcm_strtoul(token, NULL, 10);
+	WL_DBG(("WL_XRAPI_CMD_NEXTWAKE tsf_h 0x%x tsf_l 0x%x\n", tsf.tsf_h,
+		tsf.tsf_l));
+
+	res = wl_set_nextwakeup(dev, &tsf);
+
+exit:
+	// Save the status "res" to "command".
+	// Call the copy_to_user (in the caller function) to send the status back to user space.
+	bytes_written = snprintf(command, total_len, "STATUS %d", res);
+	if (unlikely(bytes_written > total_len)) {
+		WL_ERR(("WL_XRAPI_CMD_NEXTWAKE return status Error, bytes_written=%d, total_len=%d",
+			bytes_written, total_len));
+		return -EINVAL;
+	}
+
+	return bytes_written;
+}
+
+/*
+ * Set next wakeup time, notify BRCM fw that it can go to sleep now
+ * and shall wake up at the given wakeup time.
+ */
+static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf)
+{
+	int res = BCME_OK;
 	uint8 *pxtlv = NULL;
 	uint16 buflen = 0, buflen_start = 0;
 	bcm_iov_buf_t *iov_buf = NULL;
 	wl_tsf_t tsf;
-	char *pos, *token;
 	uint16 iovlen = 0;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	uint8 *iov_resp = NULL;
-	int bytes_written = 0;
+
+	if( wakeup_tsf == NULL) {
+		res = BCME_BADARG;
+		WL_ERR(("Wakeup time stamp is empty\n"));
+		goto exit;
+	}
 
 	iov_buf = (bcm_iov_buf_t *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
 	if (iov_buf == NULL) {
@@ -15832,25 +15904,13 @@ static int wl_android_set_nextwakeup(struct net_device *dev, char *command,
 	iov_buf->version = WL_XRAPI_IOV_VERSION_1_1;
 	iov_buf->id = WL_XRAPI_CMD_NEXTWAKE;
 	bzero(&tsf, sizeof(tsf));
-	pos = command;
-	/* drop command */
-	token = bcmstrtok(&pos, " ", NULL);
-	/* tsf_l */
-	token = bcmstrtok(&pos, " ", NULL);
-	if (!token)
-		goto exit;
-	tsf.tsf_l = bcm_strtoul(token, NULL, 10);
-	/* tsf_h */
-	token = bcmstrtok(&pos, " ", NULL);
-	if (!token)
-		goto exit;
-	tsf.tsf_h = bcm_strtoul(token, NULL, 10);
-	WL_DBG(("WL_XRAPI_CMD_NEXTWAKE tsf_h 0x%x tsf_l 0x%x\n", tsf.tsf_h,
-		tsf.tsf_l));
+
+	WL_ERR(("%s tsf_h 0x%x tsf_l 0x%x\n", __func__, wakeup_tsf->tsf_h,
+		wakeup_tsf->tsf_l));
 	buflen = buflen_start = WLC_IOCTL_SMLEN - sizeof(bcm_iov_buf_t);
 	pxtlv = (uint8 *)&iov_buf->data[0];
 	res = bcm_pack_xtlv_entry(&pxtlv, &buflen, WL_XRAPI_XTLV_TSF,
-				  sizeof(tsf), (uint8 *)&tsf,
+				  sizeof(wl_tsf_t), (uint8 *)wakeup_tsf,
 				  BCM_XTLV_OPTION_ALIGN32);
 	if (res != BCME_OK) {
 		WL_ERR(("bcm pack err %d\n", res));
@@ -15873,12 +15933,27 @@ exit:
 	if (iov_resp)
 		MFREE(cfg->osh, iov_resp, WLC_IOCTL_MAXLEN);
 
+	return res;
+}
+
+/*
+ * Handle the vendor CMD_XRAPI_TXDONE_INDICATION from user space.
+ * Ask BRCM FW to send an EOT frame once it detects its tx is done.
+ */
+static int wl_android_send_txdone_indication(struct net_device *dev,
+					     char *command, int total_len)
+{
+	int bytes_written = 0;
+	int res = wl_send_txdone_indication(dev);
+
 	// Save the status "res" to "command".
 	// Call the copy_to_user (in the caller function) to send the status back to user space.
 	bytes_written = snprintf(command, total_len, "STATUS %d", res);
-	if (unlikely(bytes_written > total_len))
-		WL_ERR(("WL_XRAPI_CMD_NEXTWAKE return status Error, bytes_written=%d, total_len=%d",
+	if (unlikely(bytes_written > total_len)) {
+		WL_ERR(("WL_XRAPI_CMD_TXDONE_INDICATION return status Error, bytes_written=%d, total_len=%d",
 			bytes_written, total_len));
+		return -EINVAL;
+	}
 
 	return bytes_written;
 }
@@ -15887,15 +15962,13 @@ exit:
  * Send TX_DONE cmd to BRCM FW to inidicate all the TX traffic has been enqueued.
  * BRCM FW will be reponsible to generate a special EOT frame once it detects its tx is done.
  */
-static int wl_android_send_txdone_indication(struct net_device *dev,
-					     char *command, int total_len)
+static int wl_send_txdone_indication(struct net_device *dev)
 {
 	int res = BCME_OK;
 	bcm_iov_buf_t *iov_buf = NULL;
 	uint8 *iov_resp = NULL;
 	uint16 iovlen = 0;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
-	int bytes_written = 0;
 
 	iov_buf = (bcm_iov_buf_t *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
 	if (iov_buf == NULL) {
@@ -15931,14 +16004,7 @@ exit:
 	if (iov_resp)
 		MFREE(cfg->osh, iov_resp, WLC_IOCTL_MAXLEN);
 
-	// Save the status "res" to "command".
-	// Call the copy_to_user (in the caller function) to send the status back to user space.
-	bytes_written = snprintf(command, total_len, "STATUS %d", res);
-	if (unlikely(bytes_written > total_len))
-		WL_ERR(("WL_XRAPI_CMD_TXDONE_INDICATION return status Error, bytes_written=%d, total_len=%d",
-			bytes_written, total_len));
-
-	return bytes_written;
+	return res;
 }
 
 /*
@@ -16020,8 +16086,14 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 	int res = BCME_OK;
 	char *pos, *token;
 	uint8 pm_mode = 0;
-	u32 systemIntervalUs = 0;
+	u32 system_interval_us = 0;
 	int bytes_written = 0;
+#ifdef CALCULATE_TIME_OFFSET
+	int64_t system_current_time = 0;
+	int64_t dhd_current_time = 0;
+	int64_t dhd_wakeup_time = 0;
+	wl_tsf_t tsf;
+#endif
 
 	/* drop command */
 	pos = command;
@@ -16039,9 +16111,35 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 		res = BCME_BADARG;
 		goto exit;
 	}
-	systemIntervalUs = (u32)bcm_strtoul(token, NULL, 10);
+	system_interval_us = (u32)bcm_strtoul(token, NULL, 10);
 
-	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x systemIntervalUs = %d us\n", pm_mode, systemIntervalUs));
+	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x system_interval_us = %d us\n", pm_mode, system_interval_us));
+
+	if (pm_mode == 1) {
+		// Send EOT to indicate tx done.
+		res = wl_send_txdone_indication(dev);
+		if (res != BCME_OK) {
+			WL_ERR(("Fail to send WL_XRAPI_CMD_STATS %d\n", res));
+			goto exit;
+		}
+#ifdef CALCULATE_TIME_OFFSET
+		// Calculate the next wakeup time
+		// Get gpio time sync event time
+		system_current_time = ktime_to_us(ktime_get_boottime());
+		dhd_current_time = system_current_time - g_offset_systemtime_vs_dhdtime;
+		dhd_wakeup_time = dhd_current_time + system_interval_us;
+		DHD_ERROR(("%s: offset=0x%016llx system_current_time=0x%016llx dhd_current_time=0x%016llx, dhd_wakeup_time=0x%016llx\n", __func__, g_offset_systemtime_vs_dhdtime, system_current_time, dhd_current_time, dhd_wakeup_time));
+
+		bzero(&tsf, sizeof(tsf));
+		memcpy(&tsf, &dhd_wakeup_time, sizeof(wl_tsf_t));
+#endif
+		// Set next wakeup
+		wl_set_nextwakeup(dev, &tsf);
+		if (res != BCME_OK) {
+			WL_ERR(("Fail to send WL_XRAPI_CMD_NEXTWAKE %d\n", res));
+			goto exit;
+		}
+	}
 
 exit:
 	// Save the status "res" to "command".
@@ -16061,6 +16159,11 @@ int wl_android_xrapi_notify_time_sync_event(struct net_device *dev,
 	int res = BCME_OK;
 	struct bcm_cfg80211 *cfg;
 	struct wiphy *wiphy;
+#ifdef CALCULATE_TIME_OFFSET
+	tsf_gsync_result_t *result;
+	int64_t systs = 0;
+	uint64_t dhdts = 0;
+#endif
 
 	cfg = wl_cfg80211_get_bcmcfg();
 	if (!cfg || !cfg->wdev) {
@@ -16075,6 +16178,14 @@ int wl_android_xrapi_notify_time_sync_event(struct net_device *dev,
 		res = BCME_BADARG;
 		return res;
 	}
+
+#ifdef CALCULATE_TIME_OFFSET
+	result = (tsf_gsync_result_t *)event_data;
+	systs = ktime_to_us(ktime_get_boottime());
+	dhdts = ((uint64)result->tsf.tsf_h << 32u)|(result->tsf.tsf_l);
+	g_offset_systemtime_vs_dhdtime = OFFSET_OF_SYSTEMTIME_VS_DHDTIME(systs, dhdts);
+	DHD_ERROR(("%s: systs=0x%016llx\n dhdts=0x%016llx offset=0x%016llx\n", __func__, systs, dhdts, g_offset_systemtime_vs_dhdtime));
+#endif
 
 	WL_ERR(("BRCM_VENDOR_EVENT_XRAPI_TIME_SYNC sent %d\n",
 		NL80211_CMD_VENDOR));
@@ -16239,4 +16350,67 @@ static int wl_android_get_dynamic_inactivity_timer(struct net_device *dev,
 	bytes_written =
 		snprintf(command, total_len, "STATUS %d", return_to_sleep_time);
 	return bytes_written;
+}
+
+#define PWRSTATS_IOV_BUFFER_LEN (OFFSETOF(wl_pwrstats_t, data) \
+	+ sizeof(uint32) \
+	+ sizeof(wl_pwr_phy_stats_t) \
+	+ (uint)strlen("pwrstats") + 1)
+
+static int wl_android_get_tx_rx_duration(struct net_device *dev,
+						   char *command,
+						   int total_len)
+{
+	int ret = BCME_OK;
+	uint len, taglen;
+	uint16 type;
+	void *p_data = NULL;
+	static char iovar_buf[PWRSTATS_IOV_BUFFER_LEN];
+	wl_pwrstats_query_t p_query;
+	wl_pwrstats_t *pwrstats;
+
+	p_query.length = 1;
+	p_query.type[0] = WL_PWRSTATS_TYPE_PHY;
+
+	ret = wldev_iovar_getbuf(dev, "pwrstats", &p_query, sizeof(p_query),
+		iovar_buf, PWRSTATS_IOV_BUFFER_LEN, NULL);
+
+	if (ret != BCME_OK) {
+		DHD_ERROR(("pwrstats error (%d)\n", ret));
+		return ret;
+	}
+
+	/* Check version */
+	pwrstats = (wl_pwrstats_t *) iovar_buf;
+	if (dtoh16(pwrstats->version) != WL_PWRSTATS_VERSION) {
+		DHD_ERROR(("PWRSTATS Version mismatch\n"));
+		return BCME_ERROR;
+	}
+
+	/* Parse TLVs */
+	len = dtoh16(pwrstats->length) - WL_PWR_STATS_HDRLEN;
+	p_data = pwrstats->data;
+	type = dtoh16(((uint16 *)p_data)[0]);
+	taglen = dtoh16(((uint16 *)p_data)[1]);
+
+	if ((taglen < BCM_XTLV_HDR_SIZE) || (taglen > len)) {
+		DHD_ERROR(("Bad len %d for tag %d, remaining len %d\n",
+				taglen, type, len));
+		return BCME_ERROR;
+	}
+
+	if (taglen & 0xF000) {
+		DHD_ERROR(("Reserved bits in len %d for tag %d, remaining len %d\n",
+				taglen, type, len));
+		return BCME_ERROR;
+	}
+
+	if (type != WL_PWRSTATS_TYPE_PHY) {
+		DHD_ERROR(("Expected pwrstats type %d but got %d\n", WL_PWRSTATS_TYPE_PHY, type));
+		return BCME_ERROR;
+	}
+
+	wl_pwr_phy_stats_t *stats = (wl_pwr_phy_stats_t *)p_data;
+
+	return snprintf(command, total_len, "%s %d %d", CMD_GET_TX_RX_DURATION, stats->tx_dur, stats->rx_dur);
 }

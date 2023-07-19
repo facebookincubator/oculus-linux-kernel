@@ -193,10 +193,10 @@ static int read_cal_int(struct syncboss_dev_data *devdata,
 	const struct firmware *fw = NULL;
 	char tempstr[16] = {0};
 
-	status = request_firmware(&fw, cal_file_name, &devdata->spi->dev);
+	status = firmware_request_nowarn(&fw, cal_file_name, &devdata->spi->dev);
 	if (status != 0) {
 		dev_err(&devdata->spi->dev,
-			"request_firmware() returned %d. Please ensure %s is present",
+			"firmware_request_nowarn() returned %d. Ensure %s is present",
 			status, cal_file_name);
 		return status;
 	}
@@ -503,16 +503,19 @@ out:
 
 static int syncboss_powerstate_release(struct inode *inode, struct file *file)
 {
-	int status;
 	struct miscfifo_client *client = file->private_data;
 	struct miscfifo *mf = client->mf;
 	struct syncboss_dev_data *devdata =
 		container_of(mf, struct syncboss_dev_data,
 			     powerstate_fifo);
 
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status)
-		return status;
+	/*
+	 * It is unsafe to use the interruptible variant here, as the driver can get
+	 * in an inconsistent state if this lock fails. We need to make sure release
+	 * handling occurs, since we can't retry releasing the file if, e.g., the
+	 * file is released when a process is killed.
+	 */
+	mutex_lock(&devdata->state_mutex);
 
 	--devdata->powerstate_client_count;
 
@@ -648,13 +651,16 @@ void syncboss_pin_reset(struct syncboss_dev_data *devdata)
 
 static int syncboss_release(struct inode *inode, struct file *f)
 {
-	int status;
 	struct syncboss_dev_data *devdata =
 		container_of(f->private_data, struct syncboss_dev_data, misc);
 
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status)
-		return status;
+	/*
+	 * It is unsafe to use the interruptible variant here, as the driver can get
+	 * in an inconsistent state if this lock fails. We need to make sure release
+	 * handling occurs, since we can't retry releasing the file if, e.g., the
+	 * file is released when a process is killed.
+	 */
+	mutex_lock(&devdata->state_mutex);
 
 	syncboss_dec_streaming_client_count_locked(devdata);
 	mutex_unlock(&devdata->state_mutex);
@@ -703,33 +709,45 @@ static int syncboss_nsync_open(struct inode *inode, struct file *f)
 	if (status)
 		return status;
 
-	++devdata->nsync_client_count;
-	if (devdata->nsync_client_count == 1) {
-		devdata->nsync_irq_count = 0;
-		devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
-		irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
-		status = devm_request_threaded_irq(
-			&devdata->spi->dev, devdata->nsync_irq, isr_primary_nsync,
-			isr_thread_nsync, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
-			devdata->misc_nsync.name, devdata);
-
-		if (status < 0) {
-			dev_err(&devdata->spi->dev, "SyncBoss nsync IRQ request failed (%d)",
-				status);
-			goto out;
-		}
+	if (devdata->nsync_client_count != 0) {
+		dev_err(&devdata->spi->dev, "SyncBoss nsync device cannot be opened by more than one user");
+		status = -EBUSY;
+		goto unlock;
 	}
 
+	++devdata->nsync_client_count;
+
 	status = miscfifo_fop_open(f, &devdata->nsync_fifo);
-	if (status < 0)
-		goto out;
+	if (status < 0) {
+		dev_err(&devdata->spi->dev, "SyncBoss nsync miscfifo open failed (%d)",
+			status);
+		goto decrement_ref;
+	}
+
+	devdata->nsync_irq_count = 0;
+	devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
+	irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
+	status = devm_request_threaded_irq(
+		&devdata->spi->dev, devdata->nsync_irq, isr_primary_nsync,
+		isr_thread_nsync, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+		devdata->misc_nsync.name, devdata);
+
+	if (status < 0) {
+		dev_err(&devdata->spi->dev, "SyncBoss nsync IRQ request failed (%d)",
+			status);
+		goto miscfifo_release;
+	}
 
 	dev_info(&devdata->spi->dev, "SyncBoss nsync handle opened (%s)",
 		 current->comm);
-out:
+
+miscfifo_release:
+	if (status < 0)
+		miscfifo_fop_release(inode, f);
+decrement_ref:
 	if (status < 0)
 		--devdata->nsync_client_count;
-
+unlock:
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }
@@ -741,17 +759,25 @@ static int syncboss_nsync_release(struct inode *inode, struct file *file)
 	struct syncboss_dev_data *devdata =
 		container_of(client->mf, struct syncboss_dev_data, nsync_fifo);
 
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status)
-		return status;
-
-	status = miscfifo_fop_release(inode, file);
-	if (status)
-		goto out;
+	/*
+	 * It is unsafe to use the interruptible variant here, as the driver can get
+	 * in an inconsistent state if this lock fails. We need to make sure release
+	 * handling occurs, since we can't retry releasing the file if, e.g., the
+	 * file is released when a process is killed.
+	 */
+	mutex_lock(&devdata->state_mutex);
 
 	--devdata->nsync_client_count;
 	if (devdata->nsync_client_count == 0)
 		devm_free_irq(&devdata->spi->dev, devdata->nsync_irq, devdata);
+
+	miscfifo_clear(&devdata->nsync_fifo);
+
+	status = miscfifo_fop_release(inode, file);
+	if (status) {
+		dev_err(&devdata->spi->dev, "SyncBoss nsync failed to release with status (%d)", status);
+		goto out;
+	}
 
 	dev_info(&devdata->spi->dev, "SyncBoss nsync handle closed (%s)",
 		 current->comm);
@@ -1793,8 +1819,7 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	push_prox_cal_and_enable_wake(devdata, devdata->powerstate_events_enabled);
 
 	/* Ask for the wake reason so powerstate0 has something to report */
-	if (devdata->has_wake_reasons)
-		query_wake_reason(devdata);
+	query_wake_reason(devdata);
 
 	return 0;
 
@@ -2025,8 +2050,7 @@ static irqreturn_t isr_thread_wakeup(int irq, void *p)
 	if (devdata->has_prox)
 		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_UP);
 
-	if (devdata->has_wake_reasons)
-		query_wake_reason(devdata);
+	query_wake_reason(devdata);
 
 	/*
 	 * Hold the wake-lock for a short period of time (which should
@@ -2090,7 +2114,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->has_prox = of_property_read_bool(node, "oculus,syncboss-has-prox");
 	devdata->has_no_prox_cal = of_property_read_bool(node, "oculus,syncboss-has-no-prox-cal");
 	devdata->has_wake_on_spi = of_property_read_bool(node, "oculus,syncboss-has-wake-on-spi");
-	devdata->has_wake_reasons = of_property_read_bool(node, "oculus,syncboss-has-wake-reasons");
 
 	dev_info(&devdata->spi->dev,
 		 "GPIOs: reset: %d, timesync: %d, wakeup: %d, nsync: %d",
@@ -2099,8 +2122,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 
 	dev_info(&devdata->spi->dev, "has-prox: %s",
 		 devdata->has_prox ? "true" : "false");
-	dev_info(&devdata->spi->dev, "has-wake-reasons: %s",
-		 devdata->has_wake_reasons ? "true" : "false");
 	if (devdata->gpio_reset < 0) {
 		dev_err(&devdata->spi->dev,
 			"The reset GPIO was not specificed in the device tree. We will be unable to reset or update firmware");
@@ -2148,12 +2169,7 @@ static int syncboss_probe(struct spi_device *spi)
 	mutex_init(&devdata->msg_queue_lock);
 	INIT_LIST_HEAD(&devdata->msg_queue_list);
 
-#ifdef CONFIG_SYNCBOSS_HALL_SENSOR_REGULATOR_CONTROL
 	devm_fw_init_regulator(dev, &devdata->hall_sensor, "hall-sensor");
-#else
-	devdata->hall_sensor = NULL;
-#endif
-
 	devm_fw_init_regulator(dev, &devdata->mcu_core, "mcu-core");
 	devm_fw_init_regulator(dev, &devdata->imu_core, "imu-core");
 	devm_fw_init_regulator(dev, &devdata->mag_core, "mag-core");
@@ -2365,7 +2381,7 @@ static ssize_t syncboss_write(struct file *filp, const char __user *buf,
 	return queue_tx_packet(devdata, buf, count, /* from_user */ true);
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 struct syncboss_resume_work_data {
 	struct work_struct work;
 	struct syncboss_dev_data *devdata;
@@ -2468,23 +2484,9 @@ static int syncboss_resume(struct device *dev)
 
 	return 0;
 }
-
-#else
-static int syncboss_suspend(struct device *dev)
-{
-	return 0;
-}
-
-static int syncboss_resume(struct device *dev)
-{
-	return 0;
-}
 #endif
 
-static const struct dev_pm_ops syncboss_pm_ops = {
-	.suspend = syncboss_suspend,
-	.resume  = syncboss_resume,
-};
+static SIMPLE_DEV_PM_OPS(syncboss_pm_ops, syncboss_suspend, syncboss_resume);
 
 /* SPI Driver Info */
 struct spi_driver oculus_syncboss_driver = {

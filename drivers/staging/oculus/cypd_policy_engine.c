@@ -111,7 +111,7 @@ struct cypd {
 	struct hrtimer			timer;
 	enum cypd_state		current_state;
 	bool					pd_connected;
-	struct power_supply		*wireless_psy;
+	struct power_supply		*cypd_psy;
 	struct notifier_block	psy_nb;
 	struct iio_channel		*iio_channels[CYPD_IIO_PROP_MAX];
 	bool			pd_active;
@@ -997,7 +997,7 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
 {
 	struct cypd *pd = container_of(nb, struct cypd, psy_nb);
 
-	if (ptr != pd->wireless_psy || evt != PSY_EVENT_PROP_CHANGED)
+	if (ptr != pd->cypd_psy || evt != PSY_EVENT_PROP_CHANGED)
 		return 0;
 
 	dev_dbg(&pd->dev, "Received psy changed\n");
@@ -1155,9 +1155,9 @@ struct cypd *cypd_create(struct device *parent)
 	INIT_LIST_HEAD(&pd->rx_q);
 	INIT_LIST_HEAD(&pd->svid_handlers);
 
-	pd->wireless_psy = power_supply_get_by_name("wireless");
-	if (!pd->wireless_psy) {
-		dev_dbg(&pd->dev, "Could not get wireless power_supply, deferring probe\n");
+	pd->cypd_psy = power_supply_get_by_name("cypd3177");
+	if (!pd->cypd_psy) {
+		dev_dbg(&pd->dev, "Could not get cypd power_supply, deferring probe\n");
 		ret = -EPROBE_DEFER;
 		goto destroy_wq;
 	}
@@ -1180,7 +1180,7 @@ struct cypd *cypd_create(struct device *parent)
 	}
 
 	/* force read initial power_supply values */
-	psy_changed(&pd->psy_nb, PSY_EVENT_PROP_CHANGED, pd->wireless_psy);
+	psy_changed(&pd->psy_nb, PSY_EVENT_PROP_CHANGED, pd->cypd_psy);
 
 	dev_dbg(&pd->dev, "cypd policy engine created successfully\n");
 	return pd;
@@ -1208,7 +1208,7 @@ void cypd_destroy(struct cypd *pd)
 		return;
 
 	power_supply_unreg_notifier(&pd->psy_nb);
-	power_supply_put(pd->wireless_psy);
+	power_supply_put(pd->cypd_psy);
 	device_unregister(&pd->dev);
 	kfree(pd);
 }

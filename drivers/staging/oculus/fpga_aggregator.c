@@ -163,87 +163,6 @@ static int fpga_regulator_disable(struct fpga_data *ctx)
 	return 0;
 }
 
-
-static ssize_t pwr_enable_show(struct device *dev,
-		  struct device_attribute *attr, char *buf)
-{
-	int status = 0;
-	ssize_t retval = 0;
-	struct fpga_data *devdata = dev_get_drvdata(dev);
-
-	status = mutex_lock_interruptible(&devdata->lock);
-	if (status != 0) {
-		dev_err(dev, "Failed to get mutex lock: %d", status);
-		return status;
-	}
-
-	retval = snprintf(buf, PAGE_SIZE, "%u\n", devdata->regulator_on);
-
-	mutex_unlock(&devdata->lock);
-	return retval;
-}
-
-static ssize_t pwr_enable_store(struct device *dev,
-		  struct device_attribute *attr, const char *buf, size_t count)
-{
-	int status;
-	bool pwr_enable = false;
-	struct fpga_data *devdata = dev_get_drvdata(dev);
-
-	status = strtobool(buf, &pwr_enable);
-	if (status < 0)
-		return status;
-
-	status = mutex_lock_interruptible(&devdata->lock);
-	if (status != 0) {
-		dev_err(dev, "Failed to get mutex lock: %d", status);
-		return status;
-	}
-
-	if ((pwr_enable && devdata->regulator_on) ||
-	    (!pwr_enable && !devdata->regulator_on)) {
-		dev_warn(dev, "regulator is already %s\n",
-			pwr_enable ? "enabled" : "disabled");
-		mutex_unlock(&devdata->lock);
-		return count;
-	}
-
-	if (pwr_enable) {
-		status = fpga_regulator_enable(devdata);
-		if (status) {
-			dev_err(dev, "Failed to enable fpga regulators %d",
-				status);
-			goto error;
-		}
-	} else {
-		status = fpga_regulator_disable(devdata);
-		if (status) {
-			dev_err(dev, "Failed to disable fpga regulators %d",
-				status);
-			goto error;
-		}
-	}
-
-	mutex_unlock(&devdata->lock);
-	return count;
-
-error:
-	mutex_unlock(&devdata->lock);
-	return status;
-}
-
-static DEVICE_ATTR_RW(pwr_enable);
-
-static struct attribute *fpga_attr[] = {
-	&dev_attr_pwr_enable.attr,
-	NULL
-};
-
-static const struct attribute_group fpga_attr_group = {
-	.name = "fpga",
-	.attrs = fpga_attr
-};
-
 static int fpga_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -310,11 +229,6 @@ static int fpga_probe(struct platform_device *pdev)
 	fpga_regulator_enable(ctx);
 	ctx->regulator_on = true;
 
-	rc = sysfs_create_group(&pdev->dev.kobj, &fpga_attr_group);
-	if (rc) {
-		dev_warn(dev, "device_create_file failed\n");
-	}
-
 	return 0;
 }
 
@@ -322,7 +236,6 @@ static int fpga_remove(struct platform_device *pdev)
 {
 	struct fpga_data *ctx = platform_get_drvdata(pdev);
 
-	sysfs_remove_group(&pdev->dev.kobj, &fpga_attr_group);
 	fpga_regulator_disable(ctx);
 
 	return 0;
