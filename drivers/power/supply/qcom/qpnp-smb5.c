@@ -635,6 +635,16 @@ static int smb5_parse_dt_misc(struct smb5 *chip, struct device_node *node)
 
 	of_property_read_u32(node, "dcin-icl-uv", &chg->dcin_icl_voltage);
 
+	rc = of_property_read_string(node, "wls-psy-name",
+						&chg->wls_psy_name);
+
+	/* if DT isn't defined, set name to "undefined", so
+	 * power_supply_get_by_name() doesn't crash on a
+	 * NULL ptr
+	 */
+	if (rc)
+		chg->wls_psy_name = "undefined";
+
 	return 0;
 }
 

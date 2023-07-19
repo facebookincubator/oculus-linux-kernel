@@ -857,7 +857,7 @@ void *ipc_log_context_create(int max_num_pages,
 	unsigned long flags;
 
 #ifdef CONFIG_IPC_LOGGING_ENABLE_ALLOWLIST
-	const char *ipc_log_allowlist = CONFIG_IPC_LOGGING_ENABLE_ALLOWLIST;
+	const char *ipc_log_allowlist = CONFIG_IPC_LOGGING_ALLOWLIST;
 
 	if (ipc_log_allowlist &&
 		strlen(ipc_log_allowlist) > 0 &&

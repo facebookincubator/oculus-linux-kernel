@@ -2723,7 +2723,7 @@ static ssize_t bq27xxx_store(struct device *dev,
 		has_command = true;
 		break;
 	case LIFETIME_DATA_COLLECTION:
-		if (value != 1 || value != 0)
+		if (value != 1 && value != 0)
 			return -EINVAL;
 
 		/* read Manufacturing Status to check Lifetime Data Collection*/
@@ -2732,7 +2732,7 @@ static ssize_t bq27xxx_store(struct device *dev,
 		if (ret < 0)
 			return ret;
 		/* LF_EN bit:5 of Manufacturing Status*/
-		status = mac_buf[0] & 0x20;
+		status = (mac_buf[0] & 0x20) >> 5;
 		if (status == value)
 			return count;
 

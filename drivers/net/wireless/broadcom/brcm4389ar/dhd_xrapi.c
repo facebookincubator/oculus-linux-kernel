@@ -57,16 +57,20 @@ int dhd_tsf_gsync_handler(dhd_pub_t *dhd, const wl_event_msg_t *event, void *eve
 	switch (status) {
 	case WLC_E_STATUS_SUCCESS:
 	{
-		DHD_ERROR(("%s: ReqID=%d TSF=0x%016llx TS_BCN=0x%016llx LOCAL_TSF_BCN=0x%016llx\n",
-			__FUNCTION__, result->req_id,
-			((uint64)result->tsf.tsf_h << 32u)|(result->tsf.tsf_l),
-			((uint64)result->ts_bcn.tsf_h << 32u)|(result->ts_bcn.tsf_l),
-			((uint64)result->ltsf_bcn.tsf_h << 32u)|(result->ltsf_bcn.tsf_l)));
 #ifdef XRAPI_IN_USER_SPACE
 		wl_android_xrapi_notify_time_sync_event(
 			dhd_linux_get_primary_netdev(dhd), event_data,
 			sizeof(tsf_gsync_result_t));
 #endif //XRAPI_IN_USER_SPACE
+		if (result == NULL) {
+			return -EINVAL;
+		}
+
+		DHD_ERROR(("%s: ReqID=%d TSF=0x%016llx TS_BCN=0x%016llx LOCAL_TSF_BCN=0x%016llx\n",
+			__func__, result->req_id,
+			((uint64)result->tsf.tsf_h << 32u)|(result->tsf.tsf_l),
+			((uint64)result->ts_bcn.tsf_h << 32u)|(result->ts_bcn.tsf_l),
+			((uint64)result->ltsf_bcn.tsf_h << 32u)|(result->ltsf_bcn.tsf_l)));
 		break;
 	}
 
