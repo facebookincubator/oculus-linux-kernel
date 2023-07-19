@@ -74,6 +74,7 @@
 			   "rblt_res",
 			   "psns_res";
 	dcin-icl-uv = <40000>;
+	wls-psy-name = "cypd3177";
 
 	pinctrl-names = "default", "boost_5v_active",
 			"vdd_vconn_suspend", "vdd_vconn_active";
@@ -200,7 +201,6 @@
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
 		oculus,syncboss-boots-to-shutdown-state;
-		oculus,syncboss-has-wake-reasons;
 
 		swd@0 {
 			compatible = "oculus,swd";
@@ -271,8 +271,6 @@
 		compatible = "cy,cypd3177";
 		reg = <0x08>;
 		status = "ok";
-		cy,hpi-gpio = <&tlmm 70 0x0>;
-		cy,fault-gpio = <&tlmm 69 0x1>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <70 2>, <69 1>;
 		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
@@ -309,7 +307,7 @@
 		};
 		config {
 			pins = "gpio70", "gpio69";
-			drive-strength = <2>;
+			bias-pull-up;
 			input-enable;
 		};
 	};

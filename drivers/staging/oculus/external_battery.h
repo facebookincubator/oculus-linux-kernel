@@ -90,9 +90,6 @@ struct ext_batt_pd {
 	/* platform device handle */
 	struct device *dev;
 
-	/* usbpd protocol engine handle */
-	struct usbpd *upd;
-
 	/* client struct to register with usbpd engine */
 	struct usbpd_svid_handler vdm_handler;
 
@@ -111,7 +108,9 @@ struct ext_batt_pd {
 	/* last ACK received from Molokini for mount status */
 	enum ext_batt_fw_mount_state last_mount_ack;
 	/* work for periodically processing HMD mount state */
-	struct delayed_work dwork;
+	struct delayed_work mount_state_work;
+	/* work for handling the power_supply notifier callback logic */
+	struct work_struct psy_notifier_work;
 	/* power supply object handle for internal HMD battery */
 	struct power_supply *battery_psy;
 	/* power supply object handle for USB power supply */
@@ -125,5 +124,10 @@ struct ext_batt_pd {
 	/* battery capacity threshold for charging resume */
 	u32 charging_resume_threshold;
 };
+
+int external_battery_register_svid_handler(struct ext_batt_pd *pd);
+int external_battery_unregister_svid_handler(struct ext_batt_pd *pd);
+
+int external_battery_send_vdm(struct ext_batt_pd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos);
 
 #endif /* _EXT_BATT_H__ */

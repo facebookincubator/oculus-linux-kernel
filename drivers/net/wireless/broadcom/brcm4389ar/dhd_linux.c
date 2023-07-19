@@ -9681,8 +9681,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 #endif /* DHD_LB_TXP */
 
 #ifdef DHD_LB_RXP
-	/* Trun ON the feature by default */
-	atomic_set(&dhd->lb_rxp_active, 1);
+	// Turn off lb_rxap_active to get better latency and throughput.
+	// refer to T152435315 for details.
+	// TODO: T153144861
+	/* Trun OFF the feature by default */
+	atomic_set(&dhd->lb_rxp_active, 0);
 #endif /* DHD_LB_RXP */
 
 	/* Initialize the Load Balancing Tasklets and Napi object */

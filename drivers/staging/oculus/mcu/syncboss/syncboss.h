@@ -194,7 +194,7 @@ struct syncboss_dev_data {
 	 * and NRF.
 	 */
 	atomic_long_t nsync_irq_timestamp;
-	u64 nsync_irq_count;
+	u32 nsync_irq_count;
 
 	/* Timestamp of last TE event
 	 * This signal is driven by the display hardware's TE line to
@@ -235,9 +235,6 @@ struct syncboss_dev_data {
 
 	/* True if prox calibration data is not required for prox to work */
 	bool has_no_prox_cal;
-
-	/* True if the MCU support querying wakeup reasons */
-	bool has_wake_reasons;
 
 	/* True if the MCU can be woken from shutdown via a SPI transaction (CS toggle) */
 	bool has_wake_on_spi;

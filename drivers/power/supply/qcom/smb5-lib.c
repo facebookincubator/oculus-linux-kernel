@@ -1139,7 +1139,7 @@ static int smblib_notifier_call(struct notifier_block *nb,
 		pm_stay_awake(chg->dev);
 		schedule_work(&chg->cp_status_change_work);
 	}
-	if (!strcmp(psy->desc->name, "wireless"))
+	if (!strcmp(psy->desc->name, chg->wls_psy_name))
 		schedule_work(&chg->dc_detect_work);
 
 	return NOTIFY_OK;
@@ -3214,7 +3214,7 @@ int smblib_get_prop_voltage_wls_output(struct smb_charger *chg,
 	int rc;
 
 	if (!chg->wls_psy) {
-		chg->wls_psy = power_supply_get_by_name("wireless");
+		chg->wls_psy = power_supply_get_by_name(chg->wls_psy_name);
 		if (!chg->wls_psy)
 			return -ENODEV;
 	}
@@ -3329,7 +3329,7 @@ int smblib_get_prop_dc_voltage_max(struct smb_charger *chg,
 	val->intval = MICRO_12V;
 
 	if (!chg->wls_psy)
-		chg->wls_psy = power_supply_get_by_name("wireless");
+		chg->wls_psy = power_supply_get_by_name(chg->wls_psy_name);
 
 	if (chg->wls_psy) {
 		rc = power_supply_get_property(chg->wls_psy,
@@ -3351,7 +3351,7 @@ int smblib_get_prop_dc_voltage_now(struct smb_charger *chg,
 	int rc;
 
 	if (!chg->wls_psy) {
-		chg->wls_psy = power_supply_get_by_name("wireless");
+		chg->wls_psy = power_supply_get_by_name(chg->wls_psy_name);
 		if (!chg->wls_psy)
 			return -ENODEV;
 	}
@@ -3374,7 +3374,7 @@ int smblib_get_prop_dc_hw_current_max(struct smb_charger *chg,
 	int rc;
 
 	if (!chg->wls_psy) {
-		chg->wls_psy = power_supply_get_by_name("wireless");
+		chg->wls_psy = power_supply_get_by_name(chg->wls_psy_name);
 		if (!chg->wls_psy)
 			return -ENODEV;
 	}
@@ -3426,7 +3426,7 @@ int smblib_set_prop_voltage_wls_output(struct smb_charger *chg,
 	int rc;
 
 	if (!chg->wls_psy) {
-		chg->wls_psy = power_supply_get_by_name("wireless");
+		chg->wls_psy = power_supply_get_by_name(chg->wls_psy_name);
 		if (!chg->wls_psy)
 			return -ENODEV;
 	}

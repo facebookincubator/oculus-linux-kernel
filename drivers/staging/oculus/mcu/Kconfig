@@ -6,13 +6,6 @@ menuconfig OCULUS_MCU
 
 if OCULUS_MCU
 
-config OCULUS_MCU_MUX
-	tristate "Oculus MCU Mux Driver"
-	select MULTIPLEXER
-	select MUX_GPIO
-	help
-	  Oculus MCU Mux GPIO control Driver
-
 config OCULUS_SWD
 	bool "Oculus MCU SWD Driver"
 	help
@@ -73,19 +66,5 @@ config SYNCBOSS
 	default y
 	help
 	  Oculus Syncboss Driver
-
-config SYNCBOSS_CAMERA_CONTROL
-	bool "Support Syncboss camera control"
-	depends on SYNCBOSS
-	default y
-	help
-	  Allow Syncboss driver to control camera hardware
-
-config SYNCBOSS_HALL_SENSOR_REGULATOR_CONTROL
-	bool "Support Syncboss hall sensor regulator control"
-	depends on SYNCBOSS
-	default y
-	help
-	  Allow Syncboss driver to control hall sensor regulator
 
 endif # OCULUS_MCU

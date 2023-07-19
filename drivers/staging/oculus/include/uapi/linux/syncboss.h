@@ -47,7 +47,7 @@ struct syncboss_driver_stream_type_filter {
 
 struct syncboss_nsync_event {
 	uint64_t timestamp;
-	uint64_t count;
+	uint32_t count;
 } __attribute__((packed));
 
 #define SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG 2

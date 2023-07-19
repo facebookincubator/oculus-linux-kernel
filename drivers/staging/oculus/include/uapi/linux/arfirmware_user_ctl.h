@@ -33,22 +33,24 @@ enum ar_user_event_type {
 /**
  * Event data for new buffer registration.
  */
-struct ar_user_create_buffer_data {
-	uint16_t id;
+struct __packed ar_user_create_buffer_data {
+	uint16_t region_id;
+	size_t region_size;
 };
 
 /**
  * Event data for buffer destruction.
  */
-struct ar_user_destroy_buffer_data {
-	uint16_t id;
+struct __packed ar_user_destroy_buffer_data {
+	uint16_t region_id;
 };
 
 /**
  * Event data for each buffer pend operation.
  */
-struct ar_user_pend_buffer_data {
-	uint16_t id;
+struct __packed ar_user_pend_buffer_data {
+	uint16_t region_id;
+	uint16_t pend_id;
 };
 
 /**
@@ -110,5 +112,7 @@ struct __packed ar_user_queue_info_req {
 #define AR_USER_CTL_MAGIC 0xc6
 #define AR_USER_CTL_REGISTER _IOR(AR_USER_CTL_MAGIC, 0, struct ar_user_register_req*)
 #define AR_USER_CTL_UNREGISTER _IOR(AR_USER_CTL_MAGIC, 1, struct ar_user_unregister_req*)
-#define AR_USER_CTL_BIND _IOR(AR_USER_CTL_MAGIC, 2, uint32_t)
-#define AR_USER_CTL_QUEUE_INFO _IOW(AR_USER_CTL_MAGIC, 3, struct ar_user_queue_info_req*)
+#define AR_USER_CTL_BIND_QUEUE _IOR(AR_USER_CTL_MAGIC, 2, uint32_t)
+#define AR_USER_CTL_BIND_REGION _IOR(AR_USER_CTL_MAGIC, 3, uint16_t)
+#define AR_USER_CTL_QUEUE_INFO _IOW(AR_USER_CTL_MAGIC, 4, struct ar_user_queue_info_req*)
+#define AR_USER_CTL_REQUEST_PEND _IOW(AR_USER_CTL_MAGIC, 5, uint32_t)

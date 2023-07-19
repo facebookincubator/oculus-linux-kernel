@@ -6,22 +6,23 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/device.h>
+#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/jiffies.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/power_supply.h>
-#include <linux/of_gpio.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/driver.h>
 #include <linux/iio/machine.h>
+#include <linux/of_irq.h>
 
 #include "cypd.h"
 
 /* Status Registers */
 #define DEVICE_MODE	0x0000
 #define SILICON_ID	0x0002
-#define INTERRURT	0x0006	/* Interrupt for which INTR pin */
+#define INTERRUPT	0x0006	/* Interrupt for which INTR pin */
 #define PD_STATUS	0x1008
 #define TYPE_C_STATUS	0x100C
 #define BUS_VOLTAGE	0x100D
@@ -57,12 +58,10 @@
 #define PD_CONTRACT_COMPLETE	0x86
 #define VDM_RECEIVED		0x90
 #define HARD_RESET		0x9A
-#define DEV_EVENT		1
-#define PD_EVENT		2
+#define DEV_EVENT		BIT(0)
+#define PD_EVENT		BIT(1)
 
 #define OUT_EN_L_BIT		BIT(0)	/* Port Partner Connection status */
-#define CLEAR_DEV_INT		BIT(0)
-#define CLEAR_PD_INT		BIT(1)
 #define EVENT_MASK_OPEN		(BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(7) | BIT(11))
 #define CYPD3177_REG_8BIT	1
 #define CYPD3177_REG_16BIT	2
@@ -72,7 +71,6 @@
 #define PDO_VOLTAGE_UNIT	50000
 #define RDO_BIT0_BIT9		0x3ff
 #define RDO_CURRENT_UNIT	10
-#define INTERRUPT_MASK		0x03
 #define RESET_DEV		0x152
 #define VOLTAGE_9V		9000000
 #define VDM_ENABLE		0x1
@@ -107,8 +105,6 @@ struct cypd3177 {
 	struct delayed_work	 sink_cap_work;
 	struct wakeup_source	*cypd_ws;
 	struct dentry		*dfs_root;
-	int cypd3177_hpi_gpio;
-	int cypd3177_fault_gpio;
 	int version;
 	unsigned int hpi_irq;
 	unsigned int fault_irq;
@@ -618,14 +614,6 @@ static int dev_handle_response(struct cypd3177 *chip)
 
 	dev_dbg(&chip->client->dev, "cypd3177 received dev response: %d\n", raw);
 
-	/* clear device corresponding bit */
-	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT, INTERRURT,
-				CLEAR_DEV_INT);
-	if (rc < 0) {
-		dev_err(&chip->client->dev, "cypd3177 write clear dev interrupt failed: %d\n",
-			rc);
-		return rc;
-	}
 	/* open event mask bit3 bit4 bit5 bit6 bit7 bit11 */
 	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_32BIT,
 				EVENT_MASK, EVENT_MASK_OPEN);
@@ -724,9 +712,7 @@ relax_ws:
 #define SINK_CAPS_DELAY_MS 200
 static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr) {
 	struct cypd3177 *chip = container_of(nb, struct cypd3177, psy_nb);
-	union power_supply_propval val = {0};
 	struct power_supply *psy = ptr;
-	int ret;
 
 	if (!chip->pd_attach || !chip->batt_psy ||
 	    strcmp(psy->desc->name, "battery") != 0 ||
@@ -734,27 +720,8 @@ static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr) 
 		return 0;
 	}
 
-	ret = power_supply_get_property(chip->batt_psy, POWER_SUPPLY_PROP_STATUS, &val);
-
-	if (ret) {
-		dev_err(&chip->client->dev,
-			"%s: power_supply_get_property returned error %d\n",
-			__func__, ret);
-		return ret;
-	}
-
-	dev_dbg(&chip->client->dev,
-		"%s: current charge_status %d, new charge_status %d, sink_cap_5v %d\n",
-		__func__, chip->charge_status, val.intval, chip->sink_cap_5v);
-
-	if (val.intval == POWER_SUPPLY_STATUS_FULL && !chip->sink_cap_5v) {
-		__pm_stay_awake(chip->cypd_ws);
-		schedule_delayed_work(&chip->sink_cap_work, msecs_to_jiffies(SINK_CAPS_DELAY_MS));
-	} else if (val.intval != POWER_SUPPLY_STATUS_FULL && chip->sink_cap_5v) {
-		chip->sink_cap_5v = false;
-	}
-
-	chip->charge_status = val.intval;
+	__pm_stay_awake(chip->cypd_ws);
+	schedule_delayed_work(&chip->sink_cap_work, msecs_to_jiffies(SINK_CAPS_DELAY_MS));
 
 	return 0;
 }
@@ -824,7 +791,7 @@ static int pd_handle_response(struct cypd3177 *chip)
 		break;
 	case VDM_RECEIVED:
 		data_len = VDM_DATA_LEN(pd_raw);
-		dev_err(&chip->client->dev, "VDM received: length:%d\n", data_len);
+		dev_dbg(&chip->client->dev, "VDM received: length:%d\n", data_len);
 		if (data_len > MAX_DATA_LENGTH) {
 			dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
 				data_len, MAX_DATA_LENGTH);
@@ -850,12 +817,6 @@ static int pd_handle_response(struct cypd3177 *chip)
 	default:
 		break;
 	}
-	/* clear pd corresponding bit */
-	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT,
-				INTERRURT, CLEAR_PD_INT);
-	if (rc < 0)
-		dev_err(&chip->client->dev, "cypd3177 write clear pd interrupt failed: %d\n",
-			rc);
 
 	kfree(buf);
 	return rc;
@@ -870,34 +831,41 @@ static irqreturn_t cypd3177_hpi_irq_handler(int irq, void *dev_id)
 	mutex_lock(&chip->state_lock);
 
 	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_8BIT,
-				INTERRURT, &irq_raw);
+				INTERRUPT, &irq_raw);
 	if (rc < 0) {
 		dev_err(&chip->client->dev, "cypd3177 read interrupt event failed: %d\n",
 			rc);
 		goto unlock_out;
-	} else
-		rc = IRQ_HANDLED;
+	}
 
-	/* mask interrupt event bit0 bit1 */
-	irq_raw = irq_raw & INTERRUPT_MASK;
-
-	switch (irq_raw) {
-	case DEV_EVENT:
+	if (irq_raw & DEV_EVENT)
 		dev_handle_response(chip);
-		break;
-	case PD_EVENT:
+
+	if (irq_raw & PD_EVENT)
 		pd_handle_response(chip);
-		break;
-	default:
+
+	if (irq_raw & ~(DEV_EVENT | PD_EVENT))
 		dev_err(&chip->client->dev, "cypd3177 read interrupt event irq_raw=%d\n",
 			irq_raw);
-		break;
-	}
+
+	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_8BIT,
+			INTERRUPT, irq_raw);
+	if (rc < 0)
+		dev_err(&chip->client->dev, "cypd3177 write interrupt failed: %d\n",
+			rc);
 
 unlock_out:
 	mutex_unlock(&chip->state_lock);
 
-	return rc;
+	/*
+	 * From BCR HPI Guide:
+	 * There can be a delay of up to 50 µsec from the time system controller clears the
+	 * interrupt to the time the INTR signal is de-asserted. The system controller should
+	 * take care to not sample the INTR signal in this period.
+	 */
+	usleep_range(50, 200);
+
+	return IRQ_HANDLED;
 }
 
 static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
@@ -1055,7 +1023,7 @@ static int cypd3177_init_iio_psy(struct cypd3177 *chip)
 }
 
 static const struct power_supply_desc cypd3177_psy_desc = {
-	.name = "wireless",
+	.name = "cypd3177",
 	.type = POWER_SUPPLY_TYPE_WIRELESS,
 	.properties = cypd3177_psy_props,
 	.num_properties = ARRAY_SIZE(cypd3177_psy_props),
@@ -1122,51 +1090,6 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		return rc;
 	}
 
-	/* Get the cypd3177 hpi gpio and config it */
-	chip->cypd3177_hpi_gpio = of_get_named_gpio(chip->dev->of_node,
-						"cy,hpi-gpio", 0);
-	if (!gpio_is_valid(chip->cypd3177_hpi_gpio)) {
-		dev_err(&i2c->dev, "cypd3177 hpi gpio is invalid\n");
-		return -EINVAL;
-	}
-	rc = devm_gpio_request_one(chip->dev, chip->cypd3177_hpi_gpio,
-				GPIOF_IN, "cypd3177-hpi");
-	if (rc) {
-		dev_err(&i2c->dev, "cypd3177 request hpi gpio failed\n");
-		return rc;
-	}
-	rc = devm_request_threaded_irq(chip->dev,
-				gpio_to_irq(chip->cypd3177_hpi_gpio),
-				NULL, cypd3177_hpi_irq_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-				"cypd3177_hpi_irq", chip);
-	if (rc) {
-		dev_err(&i2c->dev, "cypd3177 failed to request hpi interrupt\n");
-		return rc;
-	}
-	/* Get the cypd3177 fault gpio and config it */
-	chip->cypd3177_fault_gpio = of_get_named_gpio(chip->dev->of_node,
-						"cy,fault-gpio", 0);
-	if (!gpio_is_valid(chip->cypd3177_fault_gpio)) {
-		dev_err(&i2c->dev, "cypd3177 fault gpio is invalid\n");
-		return -EINVAL;
-	}
-	rc = devm_gpio_request_one(chip->dev, chip->cypd3177_fault_gpio,
-				GPIOF_IN, "cypd3177-fault");
-	if (rc) {
-		dev_err(&i2c->dev, "cypd3177 request fault gpio failed\n");
-		return rc;
-	}
-	rc = devm_request_threaded_irq(chip->dev,
-				gpio_to_irq(chip->cypd3177_fault_gpio),
-				NULL, cypd3177_fault_irq_handler,
-				IRQF_TRIGGER_RISING | IRQF_ONESHOT,
-				"cypd3177_fault_irq", chip);
-	if (rc) {
-		dev_err(&i2c->dev, "cypd3177 failed to request fault interrupt\n");
-		return rc;
-	}
-
 	chip->num_sink_caps = device_property_read_u32_array(chip->dev,
 			"cypd3177,custom-sink-caps", NULL, 0);
 	if (chip->num_sink_caps > 0) {
@@ -1228,6 +1151,28 @@ static int cypd3177_probe(struct i2c_client *i2c,
 	INIT_DELAYED_WORK(&chip->sink_cap_work, cypd3177_sink_cap_work);
 	chip->psy_nb.notifier_call = psy_changed;
 
+	chip->hpi_irq = of_irq_get_byname(chip->dev->of_node, "cypd3177_hpi_irq");
+	rc = devm_request_threaded_irq(chip->dev,
+				chip->hpi_irq,
+				NULL, cypd3177_hpi_irq_handler,
+				IRQF_TRIGGER_LOW | IRQF_ONESHOT,
+				"cypd3177_hpi_irq", chip);
+	if (rc) {
+		dev_err(&i2c->dev, "cypd3177 failed to request hpi interrupt\n");
+		return rc;
+	}
+
+	chip->fault_irq = of_irq_get_byname(chip->dev->of_node, "cypd3177_fault_irq");
+	rc = devm_request_threaded_irq(chip->dev,
+				chip->fault_irq,
+				NULL, cypd3177_fault_irq_handler,
+				IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+				"cypd3177_fault_irq", chip);
+	if (rc) {
+		dev_err(&i2c->dev, "cypd3177 failed to request fault interrupt\n");
+		return rc;
+	}
+
 #if ((LINUX_VERSION_CODE  >= KERNEL_VERSION(5, 4, 0)) || defined(WAKELOCK_BACKPORT))
 	chip->cypd_ws = wakeup_source_register(NULL, "cypd-ws");
 #else
@@ -1249,6 +1194,16 @@ static int cypd3177_remove(struct i2c_client *i2c)
 	return 0;
 }
 
+static int cypd3177_suspend(struct device *dev)
+{
+	struct cypd3177 *chip = (struct cypd3177 *) dev_get_drvdata(dev);
+
+	disable_irq(chip->hpi_irq);
+	disable_irq(chip->fault_irq);
+
+	return 0;
+}
+
 static int cypd3177_resume(struct device *dev)
 {
 	struct cypd3177 *chip = (struct cypd3177 *) dev_get_drvdata(dev);
@@ -1256,6 +1211,9 @@ static int cypd3177_resume(struct device *dev)
 	int rc;
 
 	mutex_lock(&chip->state_lock);
+
+	enable_irq(chip->fault_irq);
+	enable_irq(chip->hpi_irq);
 
 	/* check if we were previously online */
 	if (!chip->typec_status)
@@ -1280,7 +1238,7 @@ unlock_out:
 	return 0;
 }
 
-static SIMPLE_DEV_PM_OPS(cypd3177_pm, NULL, cypd3177_resume);
+static SIMPLE_DEV_PM_OPS(cypd3177_pm, cypd3177_suspend, cypd3177_resume);
 
 static const struct of_device_id match_table[] = {
 	{ .compatible = "cy,cypd3177", },
