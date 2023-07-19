@@ -42,6 +42,7 @@ enum usb_charging_state {
 };
 
 static void ext_batt_mount_status_work(struct work_struct *work);
+static void ext_batt_psy_notifier_work(struct work_struct *work);
 static void ext_batt_psy_register_notifier(struct ext_batt_pd *pd);
 static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 		unsigned long ev, void *ptr);
@@ -79,7 +80,7 @@ static void vdm_connect(struct usbpd_svid_handler *hdlr,
 	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
 	mutex_unlock(&pd->lock);
 
-	schedule_delayed_work(&pd->dwork, 0);
+	schedule_delayed_work(&pd->mount_state_work, 0);
 	ext_batt_psy_register_notifier(pd);
 
 	/* Force re-evaluation */
@@ -99,14 +100,15 @@ static void vdm_disconnect(struct usbpd_svid_handler *hdlr)
 	 * state transitions. This should not be called when Molokini
 	 * is already disconnected.
 	 */
-	WARN_ON(!pd->connected);
+	/* TODO(T153142293): prevent vdm_disconenct from being called if not previously connected */
+	/* WARN_ON(!pd->connected); */
 
 	mutex_lock(&pd->lock);
 	pd->connected = false;
 	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
 	mutex_unlock(&pd->lock);
 
-	cancel_delayed_work_sync(&pd->dwork);
+	cancel_delayed_work_sync(&pd->mount_state_work);
 	ext_batt_psy_unregister_notifier(pd);
 
 	/* Re-enable USB input charging path if disabled */
@@ -398,8 +400,8 @@ static ssize_t mount_state_store(struct device *dev,
 	pd->mount_state = temp;
 
 	if (pd->connected) {
-		cancel_delayed_work(&pd->dwork);
-		schedule_delayed_work(&pd->dwork, 0);
+		cancel_delayed_work(&pd->mount_state_work);
+		schedule_delayed_work(&pd->mount_state_work, 0);
 	}
 	mutex_unlock(&pd->lock);
 
@@ -1486,7 +1488,7 @@ static void ext_batt_default_sysfs_values(struct ext_batt_pd *pd)
 static void ext_batt_mount_status_work(struct work_struct *work)
 {
 	struct ext_batt_pd *pd =
-		container_of(work, struct ext_batt_pd, dwork.work);
+		container_of(work, struct ext_batt_pd, mount_state_work.work);
 	int result;
 	u32 mount_state_header = 0;
 	u32 mount_state_vdo = pd->mount_state;
@@ -1512,7 +1514,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 		else
 			mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_ON_HEAD << 8);
 
-		result = usbpd_send_vdm(pd->upd, mount_state_header,
+		result = external_battery_send_vdm(pd, mount_state_header,
 			&mount_state_vdo, 1);
 		if (result != 0)
 			dev_err(pd->dev,
@@ -1527,7 +1529,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 	 * Schedule periodically to ensure that ext_batt ACKs the
 	 * current mount state.
 	 */
-	schedule_delayed_work(&pd->dwork, MOUNT_WORK_DELAY_SECONDS * HZ);
+	schedule_delayed_work(&pd->mount_state_work, MOUNT_WORK_DELAY_SECONDS * HZ);
 
 	mutex_unlock(&pd->lock);
 }
@@ -1606,13 +1608,31 @@ static void handle_battery_capacity_change(struct ext_batt_pd *pd,
 	}
 }
 
+static void ext_batt_psy_notifier_work(struct work_struct *work)
+{
+	int result;
+	union power_supply_propval val;
+	struct ext_batt_pd *pd = container_of(work, struct ext_batt_pd, psy_notifier_work);
+
+	result = power_supply_get_property(pd->battery_psy,
+			POWER_SUPPLY_PROP_CAPACITY, &val);
+	if (result) {
+		/*
+		 * Log failure and return okay for this call with the hope
+		 * that we can read battery capacity next time around.
+		 */
+		dev_err(pd->dev, "Unable to read battery capacity: %d\n", result);
+		return;
+	}
+
+	handle_battery_capacity_change(pd, val.intval);
+}
+
 static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 		unsigned long ev, void *ptr)
 {
-	int result = 0;
 	struct power_supply *psy = ptr;
 	struct ext_batt_pd *pd = NULL;
-	union power_supply_propval val;
 
 	if (IS_ERR_OR_NULL(nb))
 		return NOTIFY_BAD;
@@ -1626,18 +1646,7 @@ static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 	if (psy != pd->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
 
-	result = power_supply_get_property(pd->battery_psy,
-			POWER_SUPPLY_PROP_CAPACITY, &val);
-	if (result) {
-		/*
-		 * Log failure and return okay for this call with the hope
-		 * that we can read battery capacity next time around.
-		 */
-		dev_err(pd->dev, "Unable to read battery capacity: %d\n", result);
-		return NOTIFY_OK;
-	}
-
-	handle_battery_capacity_change(pd, val.intval);
+	schedule_work(&pd->psy_notifier_work);
 
 	return NOTIFY_OK;
 }
@@ -1696,13 +1705,6 @@ static int ext_batt_probe(struct platform_device *pdev)
 	if (!pd)
 		return -ENOMEM;
 
-	pd->upd = devm_usbpd_get_by_phandle(&pdev->dev, "battery-usbpd");
-	if (IS_ERR_OR_NULL(pd->upd)) {
-		dev_err(&pdev->dev, "devm_usbpd_get_by_phandle failed: %ld\n",
-				PTR_ERR(pd->upd));
-		return PTR_ERR(pd->upd);
-	}
-
 	pd->vdm_handler.connect = vdm_connect;
 	pd->vdm_handler.disconnect = vdm_disconnect;
 	pd->vdm_handler.vdm_received = vdm_received;
@@ -1747,10 +1749,16 @@ static int ext_batt_probe(struct platform_device *pdev)
 	mutex_init(&pd->lock);
 
 	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
-	INIT_DELAYED_WORK(&pd->dwork, ext_batt_mount_status_work);
+	INIT_DELAYED_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
+
+	pd->dev = &pdev->dev;
+	dev_set_drvdata(&pdev->dev, pd);
 
 	/* Register VDM callbacks */
-	result = usbpd_register_svid(pd->upd, &pd->vdm_handler);
+	result = external_battery_register_svid_handler(pd);
+	if (result == -EPROBE_DEFER)
+		return result;
+
 	if (result != 0) {
 		dev_err(&pdev->dev, "Failed to register vdm handler");
 		return result;
@@ -1758,11 +1766,9 @@ static int ext_batt_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "Registered svid 0x%04x",
 		pd->vdm_handler.svid);
 
-	pd->dev = &pdev->dev;
-	dev_set_drvdata(&pdev->dev, pd);
-
 	/* Query power supply and register for events */
 	ext_batt_psy_init(pd);
+	INIT_WORK(&pd->psy_notifier_work, ext_batt_psy_notifier_work);
 
 	/* Create nodes here. */
 	ext_batt_create_sysfs(pd);
@@ -1777,13 +1783,12 @@ static int ext_batt_remove(struct platform_device *pdev)
 
 	dev_dbg(pd->dev, "enter\n");
 
-	if (pd->upd != NULL)
-		usbpd_unregister_svid(pd->upd, &pd->vdm_handler);
+	external_battery_unregister_svid_handler(pd);
 
 	mutex_lock(&pd->lock);
 	pd->connected = false;
 	mutex_unlock(&pd->lock);
-	cancel_delayed_work_sync(&pd->dwork);
+	cancel_delayed_work_sync(&pd->mount_state_work);
 	set_usb_charging_state(pd, CHARGING_RESUME);
 	ext_batt_psy_unregister_notifier(pd);
 	mutex_destroy(&pd->lock);

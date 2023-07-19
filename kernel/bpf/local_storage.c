@@ -12,7 +12,7 @@ DEFINE_PER_CPU(void*, bpf_cgroup_storage);
 #ifdef CONFIG_CGROUP_BPF
 
 #define LOCAL_STORAGE_CREATE_FLAG_MASK					\
-	(BPF_F_NUMA_NODE | BPF_F_RDONLY | BPF_F_WRONLY)
+	(BPF_F_NUMA_NODE | BPF_F_ACCESS_MASK)
 
 struct bpf_cgroup_storage_map {
 	struct bpf_map map;
@@ -202,8 +202,8 @@ static struct bpf_map *cgroup_storage_map_alloc(union bpf_attr *attr)
 	if (attr->value_size > PAGE_SIZE)
 		return ERR_PTR(-E2BIG);
 
-	if (attr->map_flags & ~LOCAL_STORAGE_CREATE_FLAG_MASK)
-		/* reserved bits should not be used */
+	if (attr->map_flags & ~LOCAL_STORAGE_CREATE_FLAG_MASK ||
+	    !bpf_map_flags_access_ok(attr->map_flags))
 		return ERR_PTR(-EINVAL);
 
 	if (attr->max_entries)

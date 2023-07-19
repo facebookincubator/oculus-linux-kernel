@@ -427,6 +427,7 @@ struct smb_charger {
 	struct power_supply		*wls_psy;
 	struct power_supply		*cp_psy;
 	enum power_supply_type		real_charger_type;
+	const char			*wls_psy_name;
 
 	/* notifiers */
 	struct notifier_block	nb;

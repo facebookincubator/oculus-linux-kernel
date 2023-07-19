@@ -787,6 +787,9 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		camera_io_dev_read(&(s_ctrl->io_master_info), 0x3206, &sensor_version, 2, 1);
 		CAM_DBG(CAM_SENSOR, "0x%x sensor_version 0x%x:", chipid, sensor_version);
 
+		if (sensor_version == 0)
+			sensor_version = 0x01;
+
 		chipid |= sensor_version << 12;
 	}
 
