@@ -32,7 +32,7 @@
 	};
 
 	display_virtual_sensor_fan: display_virtual_sensor_fan {
-		compatible = "oculus,display-virtual-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -63,7 +63,7 @@
 	};
 
 	display_virtual_sensor_usr: display_virtual_sensor_usr {
-		compatible = "oculus,display-virtual-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -94,7 +94,7 @@
 	};
 
 	vrapi_front_panel_sensor_fan: vrapi_front_panel_sensor_fan {
-		compatible = "oculus,front-panel-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -125,7 +125,7 @@
 	};
 
 	vrapi_front_panel_sensor_usr: vrapi_front_panel_sensor_usr {
-		compatible = "oculus,front-panel-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -156,7 +156,7 @@
 	};
 
 	vrapi_top_panel_sensor_fan: vrapi_top_panel_sensor_fan {
-		compatible = "oculus,top-panel-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -187,7 +187,7 @@
 	};
 
 	vrapi_top_panel_sensor_usr: vrapi_top_panel_sensor_usr {
-		compatible = "oculus,top-panel-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 

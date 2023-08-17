@@ -67,28 +67,12 @@ config CYPD_POLICY_ENGINE
 	  controller device driver in order to transmit and receive PD messages
 	  on its behalf.
 
-config DISPLAY_VIRTUAL_SENSOR
-	tristate "Display Virtual Sensor Driver"
-	default n
-	select VIRTUAL_SENSOR_UTILS
-	help
-	  This driver implements a virtual sensor driver representing the
-	  display temperature of a device.
-
 config FPGA_AGGREGATOR
 	tristate "FPGA Aggregator Kernel Driver"
 	default n
 	help
 	  FPGA aggregator kernel module that controls the regulators
 	  for the FPGA hardware.
-
-config FRONT_PANEL_SENSOR
-	tristate "Front Panel Virtual Sensor Driver"
-	default n
-	select VIRTUAL_SENSOR_UTILS
-	help
-	  This driver implements a virtual sensor driver representing the front
-	  panel skin temperature of a device.
 
 config GENERIC_VIRTUAL_SENSOR
 	tristate "Generic Virtual Sensor Driver"
@@ -139,7 +123,7 @@ config MISCFIFO_SAMPLE
 
 config OCULUS_EXTERNAL_BATTERY
 	tristate "External battery driver"
-	depends on OCULUS_EXTERNAL_BATTERY_USBPD || OCULUS_EXTERNAL_BATTERY_GLINK
+	depends on USB_PD_POLICY || OCULUS_VDM_GLINK
 	default n
 	help
 	  External battery driver for sending and receiving unstructured vdm
@@ -147,23 +131,28 @@ config OCULUS_EXTERNAL_BATTERY
 	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
 	  external battery parameters.
 
+if OCULUS_EXTERNAL_BATTERY
+choice
+	prompt "VDM Messaging Driver"
+
 config OCULUS_EXTERNAL_BATTERY_USBPD
-	tristate "External battery usbpd"
+	bool "External battery usbpd"
 	depends on USB_PD_POLICY
-	default n
 	help
 	  USBPD extension to the external_battery driver. Specifies that it
 	  should used the kernel's usbpd stack for VDM messaging.
 
 config OCULUS_EXTERNAL_BATTERY_GLINK
-	tristate "External battery glink driver"
+	bool "External battery glink driver"
 	depends on OCULUS_VDM_GLINK
-	default n
 	help
 	  External battery glink kernel module for registering unstructured vdm
 	  messages. Messages will be sent with host device acting as a source and
 	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
 	  external battery parameters.
+
+endchoice
+endif #OCULUS_EXTERNAL_BATTERY
 
 config NAUTILUS_RESOURCE_MANAGER
 	tristate "Nautilus resource manager kernel driver"
@@ -213,6 +202,13 @@ config OCULUS_VDM_GLINK
 	  This driver proxies USB PD VDM connections, disconnections,
 	  and messages to and from the ADSP.
 
+config OCULUS_VIRTUAL_SENSOR
+	tristate "Virtual Sensor Driver"
+	default n
+	select VIRTUAL_SENSOR_UTILS
+	help
+	  This driver implements a virtual sensor driver representing a particular
+	  component of a device that can be configured in the device tree.
 
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"
@@ -276,14 +272,6 @@ config SPI_STP
 	  to facilitate communication between MCU and SoC. Driver supports up to 32
 	  pre-configured STP channels. Each STP channel is exposed as a dedicated
 	  character device, interfaceable through syscalls
-
-config TOP_PANEL_SENSOR
-	tristate "Top Panel Virtual Sensor Driver"
-	default n
-	select VIRTUAL_SENSOR_UTILS
-	help
-	  This driver implements a virtual sensor driver representing the top
-	  panel skin temperature of a device.
 
 config UVLO_TLV4021
     tristate "uvlo tlv4021 driver"

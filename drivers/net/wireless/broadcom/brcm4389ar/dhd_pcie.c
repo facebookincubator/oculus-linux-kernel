@@ -106,6 +106,10 @@
 #include <dhd_linux_priv.h>
 #endif /* DHD_CONTROL_PCIE_CPUCORE_WIFI_TURNON */
 
+#ifdef ENABLE_PERFORMANCE_DEBUG
+#include <performance_custom.h>
+#endif
+
 #define EXTENDED_PCIE_DEBUG_DUMP 1	/* Enable Extended pcie registers dump */
 
 #define MEMBLOCK	2048		/* Block size used for downloading of dongle image */
@@ -6464,6 +6468,10 @@ BCMFASTPATH(dhd_bus_txdata)(struct dhd_bus *bus, void *txp, uint8 ifidx)
 #if (defined(BCM_ROUTER_DHD) && defined(HNDCTF))
 	void *ntxp = NULL;
 	uint8 prio = PKTPRIO(txp);
+#endif
+
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	latency_event_mark(DHD_BUS_TX_DATA, NULL);
 #endif
 
 	if (!bus->dhd->flowid_allocator) {

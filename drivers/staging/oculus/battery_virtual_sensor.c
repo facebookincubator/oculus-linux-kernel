@@ -53,7 +53,7 @@ static int get_temp(void *data, int *temperature)
 	struct battery_virtual_sensor_data *battery_vs = vs->data;
 	struct virtual_sensor_common_data *coeff_data;
 	s64 tz_temp = 0, iio_temp = 0, temp, pcm_temp = 0;
-	const bool charging = is_charging(vs->batt_psy);
+	const bool charging = is_charging();
 	int ret;
 
 	*temperature = 0;
@@ -115,7 +115,7 @@ ssize_t max_differential_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&vs->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 
@@ -134,7 +134,7 @@ ssize_t max_differential_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&vs->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 
@@ -247,12 +247,6 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to parse max-differential: %d",
 				ret);
 		return ret;
-	}
-
-	vs->batt_psy = power_supply_get_by_name("battery");
-	if (!vs->batt_psy) {
-		dev_warn(&pdev->dev, "Unable to get battery power_supply");
-		return -EPROBE_DEFER;
 	}
 
 	virtual_sensor_reset_history(&vs->data_charging);

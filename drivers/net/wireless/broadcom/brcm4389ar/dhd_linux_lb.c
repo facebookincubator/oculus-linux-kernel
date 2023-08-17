@@ -1128,6 +1128,7 @@ dhd_napi_schedule(void *info)
 	DHD_GENERAL_UNLOCK(&dhd->pub, flags);
 #endif /* OEM_ANDROID */
 
+	local_bh_disable();
 	/* add napi_struct to softnet data poll list and raise NET_RX_SOFTIRQ */
 	if (napi_schedule_prep(&dhd->rx_napi_struct)) {
 
@@ -1148,6 +1149,7 @@ dhd_napi_schedule(void *info)
 		raise_softirq(NET_RX_SOFTIRQ);
 #endif /* WAKEUP_KSOFTIRQD_POST_NAPI_SCHEDULE */
 	}
+	local_bh_enable();
 
 	/*
 	 * If the rx_napi_struct was already running, then we let it complete

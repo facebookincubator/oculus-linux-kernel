@@ -23,6 +23,8 @@ struct cpufreq_stats {
 	unsigned int state_num;
 	unsigned int last_index;
 	u64 *time_in_state;
+	u64 *busy_time_in_state;
+	u64 *idle_time_in_state;
 	unsigned int *freq_table;
 	unsigned int *trans_table;
 };
@@ -42,7 +44,7 @@ static void cpufreq_stats_clear_table(struct cpufreq_stats *stats)
 {
 	unsigned int count = stats->max_state;
 
-	memset(stats->time_in_state, 0, count * sizeof(u64));
+	memset(stats->time_in_state, 0, 3 * count * sizeof(u64));
 	memset(stats->trans_table, 0, count * count * sizeof(int));
 	stats->last_time = get_jiffies_64();
 	stats->total_trans = 0;
@@ -61,9 +63,13 @@ static ssize_t show_time_in_state(struct cpufreq_policy *policy, char *buf)
 
 	cpufreq_stats_update(stats);
 	for (i = 0; i < stats->state_num; i++) {
-		len += sprintf(buf + len, "%u %llu\n", stats->freq_table[i],
+		len += sprintf(buf + len, "%u %llu %llu %llu\n", stats->freq_table[i],
 			(unsigned long long)
-			jiffies_64_to_clock_t(stats->time_in_state[i]));
+			jiffies_64_to_clock_t(stats->time_in_state[i]),
+			(unsigned long long)
+			nsec_to_clock_t(stats->busy_time_in_state[i]),
+			(unsigned long long)
+			nsec_to_clock_t(stats->idle_time_in_state[i]));
 	}
 	return len;
 }
@@ -181,7 +187,7 @@ void cpufreq_stats_create_table(struct cpufreq_policy *policy)
 	if (!stats)
 		return;
 
-	alloc_size = count * sizeof(int) + count * sizeof(u64);
+	alloc_size = count * sizeof(int) + 3 * count * sizeof(u64);
 
 	alloc_size += count * count * sizeof(int);
 
@@ -190,7 +196,10 @@ void cpufreq_stats_create_table(struct cpufreq_policy *policy)
 	if (!stats->time_in_state)
 		goto free_stat;
 
-	stats->freq_table = (unsigned int *)(stats->time_in_state + count);
+	stats->busy_time_in_state = stats->time_in_state + count;
+	stats->idle_time_in_state = stats->busy_time_in_state + count;
+
+	stats->freq_table = (unsigned int *)(stats->time_in_state + 3 * count);
 
 	stats->trans_table = stats->freq_table + count;
 
@@ -240,4 +249,30 @@ void cpufreq_stats_record_transition(struct cpufreq_policy *policy,
 	stats->last_index = new_index;
 	stats->trans_table[old_index * stats->max_state + new_index]++;
 	stats->total_trans++;
+}
+
+void cpufreq_stats_update_busy_time(struct task_struct *p, u64 cputime)
+{
+	struct cpufreq_policy *policy;
+	unsigned long flags;
+
+	policy = cpufreq_cpu_get(task_cpu(p));
+	if (policy && policy->stats && !is_idle_task(p)) {
+		spin_lock_irqsave(&cpufreq_stats_lock, flags);
+		policy->stats->busy_time_in_state[policy->stats->last_index] += cputime;
+		spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
+	}
+}
+
+void cpufreq_stats_update_idle_time(u64 cputime)
+{
+	struct cpufreq_policy *policy;
+	unsigned long flags;
+
+	policy = cpufreq_cpu_get(smp_processor_id());
+	if (policy && policy->stats) {
+		spin_lock_irqsave(&cpufreq_stats_lock, flags);
+		policy->stats->idle_time_in_state[policy->stats->last_index] += cputime;
+		spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
+	}
 }

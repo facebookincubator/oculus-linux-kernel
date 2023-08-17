@@ -173,6 +173,10 @@
 #include <wl_android.h>
 #endif
 
+#ifdef ENABLE_PERFORMANCE_DEBUG
+#include <performance_custom.h>
+#endif
+
 #define WME_PRIO2AC(prio)  wme_fifo2ac[prio2fifo[(prio)]]
 
 void
@@ -205,6 +209,10 @@ BCMFASTPATH(__dhd_sendpkt)(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 	dhd_if_t *ifp;
 	unsigned long flags;
 	uint datalen;
+
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	latency_event_mark(DHD_SEND_PKT, NULL);
+#endif
 
 	DHD_GENERAL_LOCK(dhdp, flags);
 	ifp = dhd_get_ifp(dhdp, ifidx);
@@ -600,8 +608,6 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 	int prio = 0;
 #endif /* DHD_MQ && DHD_MQ_STATS */
 
-	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
-
 #if defined(DHD_MQ) && defined(DHD_MQ_STATS)
 	qidx = skb_get_queue_mapping(skb);
 	/* if in a non pre-emptable context, smp_processor_id can be used
@@ -769,6 +775,12 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 		ret = -ENOMEM;
 		goto done;
 	}
+
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	if (ntoh16(skb->protocol) == ETHERTYPE_FACEBOOK_USB) {
+		latency_event_mark(DHD_START_XMIT, PKTDATA(dhd->pub.osh, pktbuf));
+	}
+#endif /* ENABLE_PERFORMANCE_DEBUG */
 
 #ifdef DHD_WET
 	/* wet related packet proto manipulation should be done in DHD
@@ -1047,6 +1059,12 @@ dhd_txcomplete(dhd_pub_t *dhdp, void *txp, bool success)
 	if (type == ETHER_TYPE_802_1X) {
 		atomic_dec(&dhd->pend_8021x_cnt);
 	}
+
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	if (type == ETHERTYPE_FACEBOOK_USB) {
+		latency_event_mark(DHD_TXCOMPLETE, PKTDATA(dhdp->osh, txp));
+	}
+#endif
 
 #ifdef PROP_TXSTATUS
 	if (dhdp->wlfc_state && (dhdp->proptxstatus_mode != WLFC_FCMODE_NONE)) {

@@ -325,10 +325,14 @@ int fwupdate_update_app(struct device *dev)
 	// If there are no children, must update the parent
 	if (devdata->num_children == 0) {
 		status = fwupdate_update_single_app(dev, &devdata->mcu_data, devdata->erase_all);
+		if (status)
+			return status;
 	} else {
 		for (index = 0; index < devdata->num_children; index++) {
 			childdata = &devdata->child_mcu_data[index];
 			status = fwupdate_update_single_app(dev, childdata, devdata->erase_all);
+			if (status)
+				return status;
 		}
 	}
 
@@ -462,8 +466,7 @@ ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf)
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(dev, "Failed to get state mutex: %d", status);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -602,7 +605,7 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		dev_err(dev, "Failed to get state mutex: %d", status);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 

@@ -205,10 +205,11 @@ struct sde_rm_hw_request {
  * sde_rm_get_topology_name - get the name of the given topology config
  * @rm: SDE Resource Manager handle
  * @topology: msm_display_topology topology config
+ * @conn_is_dsi: true if the current connector is DSI
  * @Return: name of the given topology
  */
 enum sde_rm_topology_name sde_rm_get_topology_name(struct sde_rm *rm,
-	struct msm_display_topology topology);
+	struct msm_display_topology topology, bool conn_is_dsi);
 
 /**
  * sde_rm_get_topology_num_encoders - get number of encoders in given topology

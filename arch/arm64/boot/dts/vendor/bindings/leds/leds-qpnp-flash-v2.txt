@@ -28,6 +28,9 @@ Optional properties:
 - qcom,ramp-down-step	: Integer property to specify flash current ramp down
 			  time step. Unit is in nS. Allowed values are: 200, 400, 800, 1600,
 			  3200, 6400, 12800, 25600.
+- qcom,torch-realtime-brightness-control : Boolean property which enables torch realtime brightness control
+				  which gives option to change brightness from torch node when it is
+				  already enabled from switch node.
 - qcom,short-circuit-det	: Boolean property which enables short circuit fault detection.
 - qcom,open-circuit-det		: Boolean property which enables open circuit fault detection.
 - qcom,vph-droop-det		: Boolean property which enables VPH droop detection.

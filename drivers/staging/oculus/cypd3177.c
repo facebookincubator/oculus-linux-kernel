@@ -82,6 +82,18 @@
 #define VDM_DATA_LEN(msg) \
 	((msg & 0xFF00) >> 8)
 
+/* EVENT_STATUS Fields */
+#define EVENT_STATUS_TYPEC_ATTACHED		BIT(0)
+#define EVENT_STATUS_PD_CONTRACT_COMPLETE	BIT(2)
+
+/* TYPE_C_STATUS Fields */
+#define TYPE_C_STATUS_TYPE_SOURCE_VAL		2
+#define TYPE_C_STATUS_ATTACHED_TYPE_SHIFT	2
+#define TYPE_C_STATUS_ATTACHED_TYPE_MASK	(0x7 << TYPE_C_STATUS_ATTACHED_TYPE_SHIFT)
+
+/* PD_STATUS Fields */
+#define PD_STATUS_CONTRACT_MASK			BIT(10)
+
 /* SNKP Signature */
 #define SNKP	0x534E4B50
 
@@ -599,39 +611,6 @@ unlock_out:
 
 }
 
-static int dev_handle_response(struct cypd3177 *chip)
-{
-	int raw;
-	int rc;
-
-	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_16BIT,
-				DEV_RESPONSE, &raw);
-	if (rc < 0) {
-		dev_err(&chip->client->dev, "cypd3177 read dev response failed: %d\n",
-			rc);
-		return rc;
-	}
-
-	dev_dbg(&chip->client->dev, "cypd3177 received dev response: %d\n", raw);
-
-	/* open event mask bit3 bit4 bit5 bit6 bit7 bit11 */
-	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_32BIT,
-				EVENT_MASK, EVENT_MASK_OPEN);
-	if (rc < 0) {
-		dev_err(&chip->client->dev, "cypd3177 write event mask failed: %d\n",
-			rc);
-		return rc;
-	}
-
-	/* read chip version */
-	rc = cypd3177_get_chip_version(chip, &chip->version);
-	if (rc < 0)
-		dev_err(&chip->client->dev, "cypd3177 read chip version failed: %d\n",
-			rc);
-
-	return rc;
-}
-
 static int cypd3177_set_sink_caps(struct cypd3177 *chip, int num_sink_caps) {
 	int rc;
 	u8 pdo_mask;
@@ -709,6 +688,148 @@ relax_ws:
 	mutex_unlock(&chip->state_lock);
 }
 
+static void pd_handle_typec_connect(struct cypd3177 *chip)
+{
+	if (chip->typec_status)
+		return;
+
+	chip->typec_status = true;
+	chip->pdo_update_flag = false;
+	chip->sink_cap_5v = false;
+	power_supply_reg_notifier(&chip->psy_nb);
+
+	if (!waiting_for_debounce(chip)) {
+		chip->last_conn_time_jiffies = jiffies;
+		power_supply_changed(chip->psy);
+	}
+}
+
+static void pd_handle_typec_disconnect_or_reset(struct cypd3177 *chip)
+{
+	if (!chip->typec_status)
+		return;
+
+	chip->typec_status = false;
+	chip->pd_attach = 0;
+	chip->sink_cap_5v = false;
+	power_supply_unreg_notifier(&chip->psy_nb);
+	power_supply_changed(chip->psy);
+}
+
+static void pd_handle_contract_complete(struct cypd3177 *chip)
+{
+	chip->pd_attach = 1;
+
+	/*
+	 * If custom sink PDOs are defined and not be updated, when
+	 * PD negotiation is completed at the first time, these custom
+	 * PDOs need to be updated and enabled.
+	 */
+	if ((chip->num_sink_caps > 0) && (!chip->pdo_update_flag)) {
+		dev_dbg(&chip->client->dev, "setting all custom sink caps");
+
+		chip->pdo_update_flag = true;
+		cypd3177_set_sink_caps(chip, chip->num_sink_caps);
+	} else {
+		/*
+		 * cypd3177 is powered by dock. Everytime we reconnect, we need to
+		 * update it with our custom PDOs. It initially negotations PDOs with
+		 * it's default values. We then update it with our custom PDOs and it
+		 * renegotates a new PDO. We only want to notify power_supply_updated
+		 * after this second negotation.
+		 */
+		dev_dbg(&chip->client->dev, "final PD negotiation");
+		power_supply_changed(chip->psy);
+	}
+}
+
+static void pd_handle_vdm_received(struct cypd3177 *chip, int pd_raw)
+{
+	int rc, data_len = VDM_DATA_LEN(pd_raw);
+	enum pd_sop_type sop;
+	u8 *buf;
+
+	dev_dbg(&chip->client->dev, "VDM received: length:%d\n", data_len);
+	if (data_len > MAX_DATA_LENGTH) {
+		dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
+			data_len, MAX_DATA_LENGTH);
+		return;
+	}
+	buf = kzalloc(data_len, GFP_KERNEL);
+	rc = cypd3177_read_vdm_msg(chip, &sop, buf, data_len);
+	if (rc < 0)
+		return;
+
+	/* Account for the trimmed sop type and reserved byte */
+	data_len = data_len - sizeof(u16);
+
+	print_hex_dump_debug("VDM msg:", DUMP_PREFIX_NONE, 32, 4, buf, data_len,
+		false);
+
+	/* Report to cypd policy engine */
+	if (chip->msg_rx_cb)
+		chip->msg_rx_cb(chip->cypd, sop, buf, data_len);
+
+	kfree(buf);
+}
+
+static int dev_handle_response(struct cypd3177 *chip)
+{
+	int raw;
+	int rc;
+
+	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_16BIT,
+				DEV_RESPONSE, &raw);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 read dev response failed: %d\n",
+			rc);
+		return rc;
+	}
+
+	dev_dbg(&chip->client->dev, "cypd3177 received dev response: %d\n", raw);
+
+	/* open event mask bit3 bit4 bit5 bit6 bit7 bit11 */
+	rc = cypd3177_i2c_write_reg(chip->client, CYPD3177_REG_32BIT,
+				EVENT_MASK, EVENT_MASK_OPEN);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 write event mask failed: %d\n",
+			rc);
+		return rc;
+	}
+
+	/* read chip version */
+	rc = cypd3177_get_chip_version(chip, &chip->version);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 read chip version failed: %d\n",
+			rc);
+		return rc;
+	}
+
+	/* read and process initial typec status */
+	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
+				TYPE_C_STATUS, &raw);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 read type_c_status response failed: %d\n",
+			rc);
+		return rc;
+	}
+	if (((raw & TYPE_C_STATUS_ATTACHED_TYPE_MASK) >> TYPE_C_STATUS_ATTACHED_TYPE_SHIFT) == TYPE_C_STATUS_TYPE_SOURCE_VAL)
+		pd_handle_typec_connect(chip);
+
+	// read and process initial pd status
+	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
+				PD_STATUS, &raw);
+	if (rc < 0) {
+		dev_err(&chip->client->dev, "cypd3177 read pd_status response failed: %d\n",
+			rc);
+		return rc;
+	}
+	if (raw & PD_STATUS_CONTRACT_MASK)
+		pd_handle_contract_complete(chip);
+
+	return rc;
+}
+
 #define SINK_CAPS_DELAY_MS 200
 static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr) {
 	struct cypd3177 *chip = container_of(nb, struct cypd3177, psy_nb);
@@ -730,9 +851,6 @@ static int pd_handle_response(struct cypd3177 *chip)
 {
 	int rc;
 	int pd_raw, pd_event;
-	int data_len;
-	u8 *buf = NULL;
-	enum pd_sop_type sop;
 
 	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
 				PD_RESPONSE, &pd_raw);
@@ -746,79 +864,22 @@ static int pd_handle_response(struct cypd3177 *chip)
 	pd_event = pd_raw & 0xFF;
 	switch (pd_event) {
 	case TYPEC_CONNECT:
-		chip->typec_status = true;
-		chip->pdo_update_flag = false;
-		chip->sink_cap_5v = false;
-		power_supply_reg_notifier(&chip->psy_nb);
-
-		if (!waiting_for_debounce(chip)) {
-			chip->last_conn_time_jiffies = jiffies;
-			power_supply_changed(chip->psy);
-		}
+		pd_handle_typec_connect(chip);
 		break;
 	case PD_CONTRACT_COMPLETE:
-		chip->pd_attach = 1;
-
-		/*
-		 * If custom sink PDOs are defined and not be updated, when
-		 * PD negotiation is completed at the first time, these custom
-		 * PDOs need to be updated and enabled.
-		 */
-		if ((chip->num_sink_caps > 0) && (!chip->pdo_update_flag)) {
-			dev_dbg(&chip->client->dev, "setting all custom sink caps");
-
-			chip->pdo_update_flag = true;
-			rc = cypd3177_set_sink_caps(chip, chip->num_sink_caps);
-		} else {
-			/*
-			 * cypd3177 is powered by dock. Everytime we reconnect, we need to
-			 * update it with our custom PDOs. It initially negotations PDOs with
-			 * it's default values. We then update it with our custom PDOs and it
-			 * renegotates a new PDO. We only want to notify power_supply_updated
-			 * after this second negotation.
-			 */
-			dev_dbg(&chip->client->dev, "final PD negotiation");
-			power_supply_changed(chip->psy);
-		}
+		pd_handle_contract_complete(chip);
 		break;
 	case TYPEC_DISCONNECT:
 	case HARD_RESET:
-		chip->typec_status = false;
-		chip->pd_attach = 0;
-		chip->sink_cap_5v = false;
-		power_supply_unreg_notifier(&chip->psy_nb);
-		power_supply_changed(chip->psy);
+		pd_handle_typec_disconnect_or_reset(chip);
 		break;
 	case VDM_RECEIVED:
-		data_len = VDM_DATA_LEN(pd_raw);
-		dev_dbg(&chip->client->dev, "VDM received: length:%d\n", data_len);
-		if (data_len > MAX_DATA_LENGTH) {
-			dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
-				data_len, MAX_DATA_LENGTH);
-			break;
-		}
-		buf = kzalloc(data_len, GFP_KERNEL);
-		rc = cypd3177_read_vdm_msg(chip, &sop, buf, data_len);
-		if (rc < 0)
-			break;
-
-		/* Account for the trimmed sop type and reserved byte */
-		data_len = data_len - sizeof(u16);
-
-		print_hex_dump_debug("VDM msg:", DUMP_PREFIX_NONE, 32, 4, buf, data_len,
-			false);
-
-		/* Report to cypd policy engine */
-		if (chip->msg_rx_cb)
-			chip->msg_rx_cb(chip->cypd, sop, buf, data_len);
-
+		pd_handle_vdm_received(chip, pd_raw);
 		break;
-
 	default:
 		break;
 	}
 
-	kfree(buf);
 	return rc;
 }
 
@@ -874,6 +935,11 @@ static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
 
 	mutex_lock(&chip->state_lock);
 
+	dev_info(&chip->client->dev, "cypd3177 input voltage fault (unplugged/undocked?)\n");
+
+	if (!chip->typec_status)
+		goto out;
+
 	chip->typec_status = false;
 	chip->pd_attach = 0;
 	chip->sink_cap_5v = false;
@@ -881,7 +947,7 @@ static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
 	if (chip->psy)
 		power_supply_changed(chip->psy);
 
-	dev_err(&chip->client->dev, "cypd3177 fault interrupt event ...\n");
+out:
 	mutex_unlock(&chip->state_lock);
 
 	return IRQ_HANDLED;

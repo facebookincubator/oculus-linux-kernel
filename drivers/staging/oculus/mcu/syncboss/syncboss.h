@@ -2,11 +2,14 @@
 #ifndef _SYNCBOSS_H
 #define _SYNCBOSS_H
 
+#include <linux/debugfs.h>
 #include <linux/kernel.h>
+#include <linux/list.h>
 #include <linux/miscfifo.h>
 #include <linux/of_platform.h>
 #include <linux/spi/spi.h>
 #include <linux/syncboss.h>
+#include <linux/types.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 #include <uapi/linux/sched/types.h>
@@ -14,6 +17,10 @@
 
 #include "syncboss_protocol.h"
 #include "../swd/swd.h"
+
+#define SYNCBOSS_SEQ_NUM_MIN 1
+#define SYNCBOSS_SEQ_NUM_MAX 254
+#define SYNCBOSS_SEQ_NUM_BITS (SYNCBOSS_SEQ_NUM_MAX + 1)
 
 /* Device stats */
 struct syncboss_stats {
@@ -63,6 +70,18 @@ struct syncboss_stream_settings {
 	u32 spi_max_clk_rate;
 };
 
+/* Data related to clients */
+struct syncboss_client_data {
+	struct list_head list_entry;
+	struct file *file;
+	struct task_struct *task;
+	u64 index;
+	u64 seq_num_allocation_count;
+	/* Bitmap of allocated sequence numbers (ioctl) */
+	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+	struct dentry *dentry;
+};
+
 /* Device state */
 struct syncboss_dev_data {
 	/*
@@ -84,6 +103,10 @@ struct syncboss_dev_data {
 	 * device is used for sending data to the SyncBoss
 	 */
 	struct miscdevice misc;
+
+	/* Data related to clients */
+	u64 client_data_index;
+	struct list_head client_data_list;
 
 	/* In the new stream interface, we have a separate misc device
 	 * just for reading stream data from the SyncBoss
@@ -227,8 +250,19 @@ struct syncboss_dev_data {
 	/* Real-Time priority to use for spi polling thread */
 	int poll_prio;
 
-	/* The next sequence number available for a control call */
+	/* Sequence number interface selection: ioctl if true, sysfs otherwise */
+	bool has_seq_num_ioctl;
+
+	/* The next sequence number available for a control call (sysfs) */
 	int next_avail_seq_num;
+
+	/* The last sequence number used for a control call (ioctl) */
+	int last_seq_num;
+
+	/* Bitmap of allocated sequence numbers (ioctl) */
+	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+
+	u64 seq_num_allocation_count;
 
 	/* True if the syncboss controlls a prox sensor */
 	bool has_prox;
@@ -276,6 +310,9 @@ struct syncboss_dev_data {
 
 	/* True if we should enable the fastpath spi code path */
 	bool use_fastpath;
+
+	struct dentry *dentry;
+	struct dentry *clients_dentry;
 };
 
 int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata);

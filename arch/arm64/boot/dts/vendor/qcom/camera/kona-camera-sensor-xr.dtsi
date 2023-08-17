@@ -373,6 +373,7 @@
 					"CAM_VDIG2";
 		sensor-mode = <0>;
 		cci-master = <0>;
+		concurrency-sensors-on-same-cci = <2>;
 		status = "ok";
 		clocks = <&clock_camcc CAM_CC_MCLK2_CLK>;
 		clock-names = "cam_clk";
@@ -471,6 +472,7 @@
 					"CAM_VDIG3";
 		sensor-mode = <0>;
 		cci-master = <1>;
+		concurrency-sensors-on-same-cci = <2>;
 		status = "ok";
 		clocks = <&clock_camcc CAM_CC_MCLK3_CLK>;
 		clock-names = "cam_clk";

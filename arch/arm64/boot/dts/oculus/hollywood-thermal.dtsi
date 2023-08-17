@@ -42,7 +42,7 @@
 	};
 
 	display_virtual_sensor: display_virtual_sensor {
-		compatible = "oculus,display-virtual-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -73,7 +73,7 @@
 	};
 
 	vrapi_front_panel_sensor_fan: vrapi_front_panel_sensor_fan {
-		compatible = "oculus,front-panel-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
@@ -104,7 +104,7 @@
 	};
 
 	vrapi_front_panel_sensor_usr: vrapi_front_panel_sensor_usr {
-		compatible = "oculus,front-panel-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 

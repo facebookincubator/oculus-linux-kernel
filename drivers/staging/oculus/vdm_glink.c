@@ -46,41 +46,38 @@ struct vdm_glink_dev {
 	struct mutex			state_lock;
 	struct vdm_glink_vdm_msg	rx_vdm;
 	enum pmic_glink_state		state;
-	struct usbpd_svid_handler	*svid_handler;
+	struct glink_svid_handler	*svid_handler;
 };
 
-int vdm_glink_register_handler(void *udev, struct usbpd_svid_handler *handler)
+int vdm_glink_register_handler(struct vdm_glink_dev *udev,
+		struct glink_svid_handler *handler)
 {
-	struct vdm_glink_dev *vdm_glink_udev = (struct vdm_glink_dev *) udev;
-
 	if (udev == NULL)
 		return -EINVAL;
 
-	mutex_lock(&vdm_glink_udev->state_lock);
-	vdm_glink_udev->svid_handler = handler;
-	mutex_unlock(&vdm_glink_udev->state_lock);
+	mutex_lock(&udev->state_lock);
+	udev->svid_handler = handler;
+	mutex_unlock(&udev->state_lock);
 	return 0;
 }
 EXPORT_SYMBOL(vdm_glink_register_handler);
 
-int vdm_glink_unregister_handler(void *udev)
+int vdm_glink_unregister_handler(struct vdm_glink_dev *udev)
 {
-	struct vdm_glink_dev *vdm_glink_udev = (struct vdm_glink_dev *) udev;
-
 	if (udev == NULL)
 		return -EINVAL;
 
-	mutex_lock(&vdm_glink_udev->state_lock);
-	vdm_glink_udev->svid_handler = NULL;
-	mutex_unlock(&vdm_glink_udev->state_lock);
+	mutex_lock(&udev->state_lock);
+	udev->svid_handler = NULL;
+	mutex_unlock(&udev->state_lock);
 	return 0;
 }
 EXPORT_SYMBOL(vdm_glink_unregister_handler);
 
-int vdm_glink_send_vdm(void *udev, u32 vdm_hdr, const u32 *vdos, u32 num_vdos)
+int vdm_glink_send_vdm(struct vdm_glink_dev *vdm_glink_udev,
+		u32 vdm_hdr, const u32 *vdos, u32 num_vdos)
 {
 	struct vdm_glink_vdm_msg vdm_msg = { { 0 } };
-	struct vdm_glink_dev *vdm_glink_udev = (struct vdm_glink_dev *) udev;
 	int rc = 0;
 
 	mutex_lock(&vdm_glink_udev->state_lock);
