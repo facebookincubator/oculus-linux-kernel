@@ -48,6 +48,9 @@
 #include <bcmmsgbuf.h>
 #include <dhd_pcie.h>
 
+#ifdef ENABLE_PERFORMANCE_DEBUG
+#include <performance_custom.h>
+#endif
 static INLINE int dhd_flow_queue_throttle(flow_queue_t *queue);
 
 static INLINE uint16 dhd_flowid_find(dhd_pub_t *dhdp, uint8 ifindex,
@@ -174,7 +177,9 @@ int
 BCMFASTPATH(dhd_flow_queue_enqueue)(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt)
 {
 	int ret = BCME_OK;
-
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	latency_event_mark(DHD_FLOW_ENQUEUE, NULL);
+#endif
 	ASSERT(queue != NULL);
 
 	if (dhd_flow_queue_throttle(queue)) {
@@ -228,7 +233,9 @@ BCMFASTPATH(dhd_flow_queue_dequeue)(dhd_pub_t *dhdp, flow_queue_t *queue)
 	DHD_CUMM_CTR_DECR(DHD_FLOW_QUEUE_L2CLEN_PTR(queue));
 
 	FLOW_QUEUE_PKT_SETNEXT(pkt, NULL); /* dettach packet from queue */
-
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	latency_event_mark(DHD_FLOW_DEQUEUE, NULL);
+#endif
 done:
 	return pkt;
 }

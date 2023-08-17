@@ -182,8 +182,10 @@ int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
 	struct dentry *entry;
 
 	status = mutex_lock_interruptible(&swd_debug_data_lock);
-	if (status)
-		return -EBUSY;
+	if (status) {
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, status);
+		return status;
+	}
 
 	if (debug_data.swd_debug_flavors_count == 0)
 		debug_data.swd_debug_root_entry =
@@ -243,8 +245,10 @@ int fwupdate_remove_debugfs(struct device *dev)
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
 	status = mutex_lock_interruptible(&swd_debug_data_lock);
-	if (status)
-		return -EBUSY;
+	if (status) {
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, status);
+		return status;
+	}
 
 	debugfs_remove_recursive(devdata->debug_entry);
 

@@ -751,11 +751,16 @@ lim_deactivate_and_change_per_sta_id_timer(struct mac_context *mac, uint32_t tim
 	switch (timerId) {
 	case eLIM_CNF_WAIT_TIMER:
 
-		if (tx_timer_deactivate
-			    (&mac->lim.lim_timers.gpLimCnfWaitTimer[staId])
-		    != TX_SUCCESS) {
+		if (staId >= (mac->lim.maxStation + 1)) {
+			pe_err("Invalid staId = %d ", staId);
+			return;
+		}
+
+		if (tx_timer_deactivate(&mac->lim.lim_timers.gpLimCnfWaitTimer[staId])
+					!= TX_SUCCESS) {
 			pe_err("unable to deactivate CNF wait timer");
 		}
+
 		/* Change timer to reactivate it in future */
 		val = mac->mlme_cfg->sta.wait_cnf_timeout;
 		val = SYS_MS_TO_TICKS(val);

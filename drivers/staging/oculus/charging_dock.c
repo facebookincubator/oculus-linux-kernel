@@ -570,7 +570,7 @@ static ssize_t broadcast_period_store(struct device *dev,
 
 	result = mutex_lock_interruptible(&ddev->lock);
 	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, result);
 		return result;
 	}
 

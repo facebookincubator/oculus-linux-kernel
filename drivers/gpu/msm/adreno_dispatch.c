@@ -694,6 +694,14 @@ static int sendcmd(struct adreno_device *adreno_dev,
 	thread->stats[KGSL_THREADSTATS_SUBMITTED_ID] = drawobj->timestamp;
 	thread->stats[KGSL_THREADSTATS_SUBMITTED_COUNT]++;
 
+	/*
+	 * Update the thread-local time sync. This can be used to adjust
+	 * the ALWAYSON performance counter output back to the kernel's
+	 * monotonic clock.
+	 */
+	thread->stats[KGSL_THREADSTATS_SYNC_DELTA] = thread->sync_ktime -
+			thread->sync_ticks * 10000 / 192;
+
 	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_SUBMITTED_EVENT]);
 
 	trace_adreno_cmdbatch_submitted(drawobj, (int) dispatcher->inflight,

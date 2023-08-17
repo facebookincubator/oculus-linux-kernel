@@ -168,7 +168,6 @@
 
 #define BQ27Z561_MAC_LEN	128
 #define BQ27Z561_SUB_LEN	4	//2-byte command, 1-byte checksum and 1-byte length
-#define ARC_BATTERY_HEAD	"LGCSWD"	//Head byte of arc battery
 
 static const char * const bq27z561_sealed_status_str[] = {
 	"Reserved", "Full Access", "Unsealed", "Sealed"};
@@ -710,9 +709,6 @@ static enum power_supply_property bq27541_props[] = {
 	POWER_SUPPLY_PROP_POWER_AVG,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_MANUFACTURER,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO_A,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO_B,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO_C,
 };
 #define bq27542_props bq27541_props
 #define bq27546_props bq27541_props
@@ -755,12 +751,6 @@ static enum power_supply_property bq27421_props[] = {
 #define bq27441_props bq27421_props
 #define bq27621_props bq27421_props
 
-enum bq27xxx_manufacturer_info_type {
-	MANUFACTURER_INFO_A,
-	MANUFACTURER_INFO_B,
-	MANUFACTURER_INFO_C,
-};
-
 enum fct_state {
 	FCT_OK = 0,
 	FCT_WARN_1 = 1,
@@ -791,9 +781,6 @@ static enum power_supply_property bq27z561_props[] = {
 	POWER_SUPPLY_PROP_BQ27Z561_INTERTEMP,
 	POWER_SUPPLY_PROP_BQ27Z561_REMAININGCAPACITY,
 	POWER_SUPPLY_PROP_MANUFACTURER,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO_A,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO_B,
-	POWER_SUPPLY_PROP_MANUFACTURER_INFO_C,
 };
 
 struct bq27xxx_dm_reg {
@@ -1036,6 +1023,9 @@ enum {
 	TEMP_ZONES,
 	FCT, /* float charge raw */
 	FCT_STATE, /* float charge state */
+	MFG_INFO_A,
+	MFG_INFO_B,
+	MFG_INFO_C,
 };
 
 /**
@@ -2422,75 +2412,6 @@ static int bq27z561_get_remaining_capacity(struct bq27xxx_device_info *di,
 	return 0;
 }
 
-static int bq27z561_get_manufacturer_info(struct bq27xxx_device_info *di,
-				enum bq27xxx_manufacturer_info_type type,
-				union power_supply_propval *val)
-{
-	int ret;
-	char buf[BQ27Z561_MAC_BLOCK_LEN + 1];
-	char tmp_str[7];
-
-	val->strval = NULL;
-	memset(di->mac_buf, 0x00, BQ27Z561_MAC_LEN);
-	mutex_lock(&bq27xxx_list_lock);
-	ret = bq27z561_battery_read_mac_block(di,
-			BQ27Z561_MAC_CMD_MI_A, buf,
-			BQ27Z561_MAC_BLOCK_LEN + 1);
-	if (ret < 0) {
-		dev_err(di->dev, "get manufacturer info error\n");
-		mutex_unlock(&bq27xxx_list_lock);
-		return ret;
-	}
-
-	if (type == MANUFACTURER_INFO_A) {
-		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
-		val->strval = di->mac_buf;
-		mutex_unlock(&bq27xxx_list_lock);
-		return ret;
-	} else if (type == MANUFACTURER_INFO_B &&
-		strnstr(buf, ARC_BATTERY_HEAD, 6)) {
-		ret = bq27z561_battery_read_mac_block(di,
-				BQ27Z561_MAC_CMD_MI_B, buf,
-				BQ27Z561_MAC_BLOCK_LEN + 1);
-		if (ret < 0) {
-			dev_err(di->dev, "get manufacturer info error\n");
-			mutex_unlock(&bq27xxx_list_lock);
-			return ret;
-		}
-		/* Refer to Battery Pack Genealogy ERS document
-		 * (https://fburl.com/diff/uo2prae3) for more information.
-		 *
-		 * The first three bytes of manufacturer info block B are hex
-		 * convert them to string after read these three bytes out
-		 */
-		if (buf[0] < '0') {
-			memset(tmp_str, 0x00, sizeof(tmp_str));
-			snprintf(tmp_str, sizeof(tmp_str) - 1, "%02X%02X%02X",
-					buf[0], buf[1], buf[2]);
-			strlcat(di->mac_buf, tmp_str, BQ27Z561_MAC_LEN);
-			strlcat(di->mac_buf, buf + 3, BQ27Z561_MAC_LEN);
-		} else
-			strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
-		val->strval = di->mac_buf;
-		mutex_unlock(&bq27xxx_list_lock);
-		return ret;
-	} else if (type == MANUFACTURER_INFO_C &&
-		strnstr(buf, ARC_BATTERY_HEAD, 6)) {
-		ret = bq27z561_battery_read_mac_block(di,
-				BQ27Z561_MAC_CMD_MI_C, buf,
-				BQ27Z561_MAC_BLOCK_LEN + 1);
-		if (ret < 0) {
-			dev_err(di->dev, "get manufacturer info error\n");
-			mutex_unlock(&bq27xxx_list_lock);
-			return ret;
-		}
-		strlcat(di->mac_buf, buf, BQ27Z561_MAC_LEN);
-		val->strval = di->mac_buf;
-	}
-	mutex_unlock(&bq27xxx_list_lock);
-	return 0;
-}
-
 static int bq27xxx_battery_get_property(struct power_supply *psy,
 					enum power_supply_property psp,
 					union power_supply_propval *val)
@@ -2583,15 +2504,6 @@ static int bq27xxx_battery_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_MANUFACTURER:
 		val->strval = BQ27XXX_MANUFACTURER;
-		break;
-	case POWER_SUPPLY_PROP_MANUFACTURER_INFO_A:
-		ret = bq27z561_get_manufacturer_info(di, MANUFACTURER_INFO_A, val);
-		break;
-	case POWER_SUPPLY_PROP_MANUFACTURER_INFO_B:
-		ret = bq27z561_get_manufacturer_info(di, MANUFACTURER_INFO_B, val);
-		break;
-	case POWER_SUPPLY_PROP_MANUFACTURER_INFO_C:
-		ret = bq27z561_get_manufacturer_info(di, MANUFACTURER_INFO_C, val);
 		break;
 	default:
 		return -EINVAL;
@@ -2770,10 +2682,12 @@ static ssize_t bq27xxx_show(struct device *dev,
 	struct bq27xxx_attribute *attr =
 		container_of(dattr, struct bq27xxx_attribute, dattr);
 	int val = 0;
-	size_t count = 0;
+	ssize_t count = 0, write_count = 0;
 	u32 id = attr->id;
 	u32 val1 = attr->val1;
 	u32 val2 = attr->val2;
+	char mac_buf[40];
+	char tmp_str[5];
 
 	switch (id) {
 	case ADDRESS:
@@ -2903,6 +2817,47 @@ static ssize_t bq27xxx_show(struct device *dev,
 	case FCT_STATE:
 		val = di->fct_state;
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case MFG_INFO_A:
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_MI_A,
+			buf, PAGE_SIZE);
+		/* TODO, newline doesn't affect in hollywood for some reason*/
+		strlcat(buf, "\n", PAGE_SIZE);
+		break;
+	case MFG_INFO_B:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_MI_B,
+			mac_buf, sizeof(mac_buf));
+		/* Refer to Battery Pack Genealogy ERS document
+		 * (https://fburl.com/diff/uo2prae3) for more information.
+		 *
+		 * The first three bytes of manufacturer info block B are hex
+		 * convert them to string after read these three bytes out
+		 */
+		if (mac_buf[0] < '0') {
+			memset(tmp_str, 0x00, sizeof(tmp_str));
+			snprintf(tmp_str, sizeof(tmp_str) - 1, "%02X%02X%02X",
+				mac_buf[0], mac_buf[1], mac_buf[2]);
+			strlcat(buf, tmp_str, PAGE_SIZE);
+			strlcat(buf, mac_buf + 3, PAGE_SIZE);
+		} else {
+			strlcat(buf, mac_buf, PAGE_SIZE);
+		}
+		/* TODO: T153384909 Fix newline on hollywood*/
+		strlcat(buf, "\n", PAGE_SIZE);
+		break;
+	case MFG_INFO_C:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_MI_C,
+			mac_buf, sizeof(mac_buf));
+		for (val = 0; val < count; val++) {
+			if (mac_buf[val] != '\0') {
+				buf[write_count] = mac_buf[val];
+				write_count++;
+			}
+		}
+		buf[write_count] = '\0';
+		strlcat(buf, "\n", PAGE_SIZE);
 		break;
 	}
 
@@ -3115,6 +3070,12 @@ static BQ27XXX_ATTR(fct, 0444,
 			bq27xxx_show, NULL, FCT, 0, 0);
 static BQ27XXX_ATTR(fct_state, 0444,
 			bq27xxx_show, NULL, FCT_STATE, 0, 0);
+static BQ27XXX_ATTR(manufacturer_info_a, 0444,
+			bq27xxx_show, NULL, MFG_INFO_A, 0, 0);
+static BQ27XXX_ATTR(manufacturer_info_b, 0444,
+			bq27xxx_show, NULL, MFG_INFO_B, 0, 0);
+static BQ27XXX_ATTR(manufacturer_info_c, 0444,
+			bq27xxx_show, NULL, MFG_INFO_C, 0, 0);
 
 static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_address.dattr.attr,
@@ -3220,6 +3181,9 @@ static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_t_ot_rsoc_h.dattr.attr,
 	&bq27xxx_attr_fct.dattr.attr,
 	&bq27xxx_attr_fct_state.dattr.attr,
+	&bq27xxx_attr_manufacturer_info_a.dattr.attr,
+	&bq27xxx_attr_manufacturer_info_b.dattr.attr,
+	&bq27xxx_attr_manufacturer_info_c.dattr.attr,
 	NULL
 };
 

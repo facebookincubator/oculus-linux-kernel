@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -1654,18 +1655,27 @@ static int32_t cam_cci_write(struct v4l2_subdev *sd,
 	case MSM_CCI_I2C_WRITE:
 	case MSM_CCI_I2C_WRITE_SEQ:
 	case MSM_CCI_I2C_WRITE_BURST:
-		for (i = 0; i < NUM_QUEUES; i++) {
-			if (mutex_trylock(&cci_master_info->mutex_q[i])) {
-				rc = cam_cci_i2c_write(sd, c_ctrl, i,
-					MSM_SYNC_DISABLE);
-				mutex_unlock(&cci_master_info->mutex_q[i]);
-				return rc;
+		if (!c_ctrl->force_low_priority) {
+			for (i = 0; i < NUM_QUEUES; i++) {
+				if (mutex_trylock(
+					&cci_master_info->mutex_q[i])) {
+					rc = cam_cci_i2c_write(sd, c_ctrl, i,
+						MSM_SYNC_DISABLE);
+					mutex_unlock(
+						&cci_master_info->mutex_q[i]);
+					return rc;
+				}
 			}
+			mutex_lock(&cci_master_info->mutex_q[PRIORITY_QUEUE]);
+			rc = cam_cci_i2c_write(sd, c_ctrl,
+				PRIORITY_QUEUE, MSM_SYNC_DISABLE);
+			mutex_unlock(&cci_master_info->mutex_q[PRIORITY_QUEUE]);
+		} else {
+			mutex_lock(&cci_master_info->mutex_q[SYNC_QUEUE]);
+			rc = cam_cci_i2c_write(sd, c_ctrl,
+				SYNC_QUEUE, MSM_SYNC_DISABLE);
+			mutex_unlock(&cci_master_info->mutex_q[SYNC_QUEUE]);
 		}
-		mutex_lock(&cci_master_info->mutex_q[PRIORITY_QUEUE]);
-		rc = cam_cci_i2c_write(sd, c_ctrl,
-			PRIORITY_QUEUE, MSM_SYNC_DISABLE);
-		mutex_unlock(&cci_master_info->mutex_q[PRIORITY_QUEUE]);
 		break;
 	case MSM_CCI_I2C_WRITE_ASYNC:
 		rc = cam_cci_i2c_write_async(sd, c_ctrl,

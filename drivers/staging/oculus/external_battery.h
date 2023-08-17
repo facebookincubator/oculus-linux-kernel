@@ -3,9 +3,9 @@
 #ifndef _EXT_BATT_H__
 #define _EXT_BATT_H__
 
+#include <linux/iio/consumer.h>
 #include <linux/mutex.h>
 #include <linux/power_supply.h>
-#include <linux/usb/usbpd.h>
 #include <linux/workqueue.h>
 
 /* Mount states */
@@ -46,6 +46,7 @@ enum ext_batt_fw_mount_state {
 #define EXT_BATT_FW_MANUFACTURER_INFO3 0x7B
 #define EXT_BATT_FW_HMD_MOUNTED 0x80
 #define EXT_BATT_FW_CHARGER_PLUGGED 0x82
+#define EXT_BATT_FW_HMD_DOCKED 0x84
 
 /* Vendor Defined Object Section */
 #define LIFETIME_1_LOWER_LEN 6
@@ -70,6 +71,7 @@ struct ext_batt_parameters {
 	u16 cycle_count;
 	u8 rsoc;
 	u8 soh;
+	u32 fw_version;
 	char device_name[16];
 	bool charger_plugged;
 
@@ -90,8 +92,8 @@ struct ext_batt_pd {
 	/* platform device handle */
 	struct device *dev;
 
-	/* client struct to register with usbpd engine */
-	struct usbpd_svid_handler vdm_handler;
+	/* Vendor ID, needed to construct VDM messages */
+	u16 svid;
 
 	/* ext_batt connection status */
 	bool connected;
@@ -109,14 +111,24 @@ struct ext_batt_pd {
 	enum ext_batt_fw_mount_state last_mount_ack;
 	/* work for periodically processing HMD mount state */
 	struct delayed_work mount_state_work;
+	/* internal HMD battery state of charge */
+	u32 hmd_soc;
+	/* 0/1 for undocked/docked */
+	int dock_state;
+	/* work for periodically processing HMD dock state */
+	struct delayed_work dock_state_dwork;
 	/* work for handling the power_supply notifier callback logic */
 	struct work_struct psy_notifier_work;
 	/* power supply object handle for internal HMD battery */
 	struct power_supply *battery_psy;
 	/* power supply object handle for USB power supply */
 	struct power_supply	*usb_psy;
+	/* power supply object handle for CYPD power supply */
+	struct power_supply	*cypd_psy;
 	/* notifier block for handling power supply change events */
 	struct notifier_block nb;
+	/* iio channel to retrieve dock state from CYPD */
+	struct iio_channel	*cypd_pd_active_chan;
 	/* ext_batt on-demand charging suspend disable */
 	bool charging_suspend_disable;
 	/* battery capacity threshold for charging suspend */
@@ -129,5 +141,10 @@ int external_battery_register_svid_handler(struct ext_batt_pd *pd);
 int external_battery_unregister_svid_handler(struct ext_batt_pd *pd);
 
 int external_battery_send_vdm(struct ext_batt_pd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos);
+
+void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm);
+void ext_batt_vdm_disconnect(struct ext_batt_pd *pd);
+void ext_batt_vdm_received(struct ext_batt_pd *pd,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos);
 
 #endif /* _EXT_BATT_H__ */

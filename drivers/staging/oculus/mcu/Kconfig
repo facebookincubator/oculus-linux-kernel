@@ -67,4 +67,10 @@ config SYNCBOSS
 	help
 	  Oculus Syncboss Driver
 
+config SYNCBOSS_DEBUG
+	bool "Syncboss SPI Driver Debug Facilities"
+	depends on SYNCBOSS && DEBUG_FS
+	default y
+	help
+	  Oculus Syncboss SPI Driver Debug Facilities
 endif # OCULUS_MCU
