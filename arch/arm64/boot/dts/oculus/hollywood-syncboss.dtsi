@@ -126,6 +126,7 @@
 
 		oculus,syncboss-has-prox;
 		oculus,syncboss-use-fastpath;
+		oculus,syncboss-has-wake-reasons;
 
 		swd@0 {
 			compatible = "oculus,swd";

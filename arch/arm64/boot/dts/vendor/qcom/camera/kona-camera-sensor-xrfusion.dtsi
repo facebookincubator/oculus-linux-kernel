@@ -588,6 +588,7 @@
 					"CAM_VDIG2";
 		sensor-mode = <0>;
 		cci-master = <0>;
+		concurrency-sensors-on-same-cci = <2>;
 		status = "ok";
 		clocks = <&clock_camcc CAM_CC_MCLK2_CLK>;
 		clock-names = "cam_clk";
@@ -686,6 +687,7 @@
 					"CAM_VDIG3";
 		sensor-mode = <0>;
 		cci-master = <1>;
+		concurrency-sensors-on-same-cci = <2>;
 		status = "ok";
 		clocks = <&clock_camcc CAM_CC_MCLK3_CLK>;
 		clock-names = "cam_clk";
@@ -724,18 +726,21 @@
 			<&tlmm 131 0>,
 			<&tlmm 43 0>,
 			<&tlmm 41 0>,
-			<&tlmm 42 0>;
+			<&tlmm 42 0>,
+			<&tlmm 116 0>;
 		gpio-reset = <1>;
 		gpio-vana = <2>;
 		gpio-vio = <3>;
 		gpio-vdig = <4>;
-		gpio-req-tbl-num = <0 1 2 3 4>;
-		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-custom1 = <5>;
+		gpio-req-tbl-num = <0 1 2 3 4 5>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0>;
 		gpio-req-tbl-label = "CAMIF_MCLK4",
 					"CAM_RESET4",
 					"CAM_VANA4",
 					"CAM_VIO4",
-					"CAM_VDIG4";
+					"CAM_VDIG4",
+					"CAM_CUSTOM1";
 		sensor-mode = <0>;
 		cci-master = <1>;
 		status = "ok";
@@ -775,18 +780,21 @@
 			<&tlmm 130 0>,
 			<&tlmm 43 0>,
 			<&tlmm 41 0>,
-			<&tlmm 42 0>;
+			<&tlmm 42 0>,
+			<&tlmm 116 0>;
 		gpio-reset = <1>;
 		gpio-vana = <2>;
 		gpio-vio = <3>;
 		gpio-vdig = <4>;
-		gpio-req-tbl-num = <0 1 2 3 4>;
-		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-custom1 = <5>;
+		gpio-req-tbl-num = <0 1 2 3 4 5>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0>;
 		gpio-req-tbl-label = "CAMIF_MCLK5",
 					"CAM_RESET5",
 					"CAM_VANA5",
 					"CAM_VIO5",
-					"CAM_VDIG5";
+					"CAM_VDIG5",
+					"CAM_CUSTOM1";
 		sensor-mode = <0>;
 		cci-master = <0>;
 		status = "ok";

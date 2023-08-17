@@ -32,6 +32,10 @@
 &kgsl_msm_iommu {
 	oculus,context-fault-irq-priority = <98>;
 	oculus,context-fault-irq-affinity = <&CPU4 &CPU5 &CPU6 &CPU7>;
+
+	gfx3d_user {
+		qcom,iommu-faults = "non-fatal";
+	};
 };
 
 &kgsl_smmu {

@@ -61,4 +61,8 @@ struct syncboss_nsync_event {
 #define SYNCBOSS_SET_STREAMFILTER_IOCTL \
 	_IOW(MISC_MAJOR, 1, struct syncboss_driver_stream_type_filter)
 
+/* ioctl used to allocate and release sequence numbers */
+#define SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL _IOR(MISC_MAJOR, 2, uint8_t)
+#define SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL _IOW(MISC_MAJOR, 3, uint8_t)
+
  #endif

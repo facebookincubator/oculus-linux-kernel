@@ -89,7 +89,7 @@ struct kgsl_threadstat_attribute {
 static ssize_t threadstat_attr_show(struct kgsl_thread_private *priv, int type,
 				    char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%lu\n", priv->stats[type]);
+	return snprintf(buf, PAGE_SIZE, "%ld\n", priv->stats[type]);
 }
 
 #define THREADSTAT_ATTR(_type, _name) \
@@ -122,6 +122,7 @@ struct kgsl_threadstat_attribute threadstat_attrs[] = {
 	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_RETIRED, retired),
 	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_QUEUED, queued),
 	THREADSTAT_ATTR(KGSL_THREADSTATS_ACTIVE_TIME, active_time),
+	THREADSTAT_ATTR(KGSL_THREADSTATS_SYNC_DELTA, sync_delta),
 };
 
 #define to_threadstat_attr(a) \

@@ -115,6 +115,8 @@ ifneq ($(filter y, $(CONFIG_6GHZ_BKPORT)),)
   # For Backported kernels, kernels/customer makefiles should explicitly define CONFIG_6GHZ_BKPORT
   DHDCFLAGS += -DCONFIG_6GHZ_BKPORT
 endif
+#Enable latency measurement
+# DHDCFLAGS += -DENABLE_PERFORMANCE_DEBUG
 
 #########################################
 # Cutomize for AR
@@ -246,7 +248,7 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
 # DHD_LB_RXP - Perform RX Packet processing in parallel, default enabled
 # DHD_LB_TXP - Perform TX Packet processing in parallel, default disabled, enabled using DHD_LB_TXP_DEFAULT_ENAB
 # DHD_LB_STATS - To display the Load Blancing statistics
-	DHDCFLAGS += -DDHD_LB -DDHD_LB_RXP -DDHD_LB_TXP -DDHD_LB_STATS
+  DHDCFLAGS += -DDHD_LB -DDHD_LB_RXP -DDHD_LB_TXP -DDHD_LB_STATS
 	DHDCFLAGS += -DDHD_LB_TXP_DEFAULT_ENAB
 	DHDCFLAGS += -DLB_RXP_STOP_THR=500 -DLB_RXP_STRT_THR=499
 	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0xF0 -DDHD_LB_SECONDARY_CPUS=0x0E
@@ -772,7 +774,7 @@ DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o dhd_custom_cis.o 
     dhd_pno.o dhd_rtt.o dhd_linux_pktdump.o wl_cfg_btcoex.o hnd_pktq.o \
     hnd_pktpool.o wl_cfgvendor.o bcmxtlv.o bcm_app_utils.o dhd_debug.o frag.o \
     dhd_debug_linux.o wl_cfgnan.o dhd_mschdbg.o bcmbloom.o dhd_dbg_ring.o bcmstdlib_s.o \
-    dhd_linux_exportfs.o dhd_linux_tx.o dhd_linux_rx.o dhd_log_dump.o fwpkg_utils.o
+    dhd_linux_exportfs.o dhd_linux_tx.o dhd_linux_rx.o dhd_log_dump.o fwpkg_utils.o performance_custom.o
 
 # This file will be here only for internal builds and sets flags which may
 # affect subsequent behavior. See extended comment within it for details.

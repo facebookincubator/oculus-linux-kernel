@@ -2389,6 +2389,7 @@ static int sde_connector_populate_mode_info(struct drm_connector *conn,
 	struct sde_connector *c_conn = NULL;
 	struct drm_display_mode *mode;
 	struct msm_mode_info mode_info;
+	bool conn_is_dsi = false;
 	int rc = 0;
 
 	if (!conn || !conn->dev || !conn->dev->dev_private) {
@@ -2405,6 +2406,8 @@ static int sde_connector_populate_mode_info(struct drm_connector *conn,
 		return -EINVAL;
 	}
 
+	if (c_conn->connector_type == DRM_MODE_CONNECTOR_DSI)
+		conn_is_dsi = true;
 	list_for_each_entry(mode, &conn->modes, head) {
 		int topology_idx = 0;
 
@@ -2425,7 +2428,7 @@ static int sde_connector_populate_mode_info(struct drm_connector *conn,
 					mode_info.clk_rate);
 
 		topology_idx = (int)sde_rm_get_topology_name(&sde_kms->rm,
-				mode_info.topology);
+					mode_info.topology, conn_is_dsi);
 		if (topology_idx < SDE_RM_TOPOLOGY_MAX) {
 			sde_kms_info_add_keystr(info, "topology",
 					e_topology_name[topology_idx].name);

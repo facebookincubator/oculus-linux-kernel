@@ -302,6 +302,15 @@ Image sensor node contains properties of camera image sensor
 	- 0 -> MASTER 0
 	- 1 -> MASTER 1
 
+- concurrency-sensors-on-same-cci
+  Usage: optional
+  Value type: <u32>
+  Definition: should indicate how many sensors are concurrency on same cci
+    master
+    - 1 -> No concurrency sensor
+    - 2 or more -> There are more than two concurrency sensors on same cci
+      master
+
 - csiphy-sd-index
   Usage: required
   Value type: <u32>

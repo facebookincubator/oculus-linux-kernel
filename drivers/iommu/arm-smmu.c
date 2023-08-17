@@ -2108,7 +2108,7 @@ static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 					&phys_atos);
 			else
 				dev_err(smmu->dev, "hard iova-to-phys (ATOS) failed\n");
-			dev_err(smmu->dev, "SID=0x%x\n", frsynra);
+			dev_err(smmu->dev, "SID=0x%x, client=%s\n", frsynra, dev_name(smmu_domain->dev));
 		}
 		ret = IRQ_HANDLED;
 		resume = RESUME_TERMINATE;

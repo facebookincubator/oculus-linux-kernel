@@ -21,6 +21,8 @@
 
 #include "spi_fastpath.h"
 #include "syncboss.h"
+#include "syncboss_debugfs.h"
+#include "syncboss_sequence_number.h"
 #include "syncboss_protocol.h"
 
 #ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
@@ -361,6 +363,14 @@ static int syncboss_dec_streaming_client_count_locked(struct syncboss_dev_data *
 		stop_streaming_locked(devdata);
 
 		syncboss_dec_mcu_client_count_locked(devdata);
+
+		/*
+		 * T114417103 Resetting the ioctl interface state shouldn't be necessary
+		 * but it doesn't hurt and may help if there is a case where we are
+		 * leaking for some reason.
+		 * Reset the mode to allow changing modes by stopping all clients.
+		 */
+		syncboss_sequence_number_reset_locked(devdata);
 	}
 	return 0;
 }
@@ -385,29 +395,254 @@ static int fw_update_check_busy(struct device *dev, void *data)
 	return 0;
 }
 
+static void client_data_init_locked(struct syncboss_dev_data *devdata)
+{
+	INIT_LIST_HEAD(&devdata->client_data_list);
+	devdata->client_data_index = 0;
+}
+
+static int client_data_create_locked(struct syncboss_dev_data *devdata,
+		struct file *file, struct task_struct *task,
+		struct syncboss_client_data **client_data)
+{
+	struct device *dev = &devdata->spi->dev;
+		struct syncboss_client_data *data;
+	int status;
+
+	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&data->list_entry);
+	data->file = file;
+	data->task = task;
+	data->index = devdata->client_data_index++;
+	data->seq_num_allocation_count = 0;
+	bitmap_zero(data->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+
+	data->index = devdata->client_data_index++;
+	status = syncboss_debugfs_client_add_locked(devdata, data);
+	if (status && -ENODEV != status)
+		dev_warn(dev, "Failed to add client data to debugfs for %d: %d",
+			data->task->pid, status);
+
+	list_add_tail(&data->list_entry, &devdata->client_data_list);
+
+	*client_data = data;
+
+	return 0;
+}
+
+static struct syncboss_client_data *client_data_get_locked(
+	struct syncboss_dev_data *devdata, struct file *file)
+{
+	struct syncboss_client_data *data;
+
+	list_for_each_entry(data, &devdata->client_data_list, list_entry) {
+		if (data->file == file)
+			return data;
+	}
+
+	return NULL;
+}
+
+static void client_data_destroy_locked(struct syncboss_dev_data *devdata,
+	struct syncboss_client_data *client_data)
+{
+	struct device *dev = &devdata->spi->dev;
+
+	syncboss_debugfs_client_remove_locked(devdata, client_data);
+
+	list_del(&client_data->list_entry);
+
+	syncboss_sequence_number_release_client_locked(devdata, client_data);
+
+	devm_kfree(dev, client_data);
+}
+
 static int syncboss_open(struct inode *inode, struct file *f)
 {
 	int status;
 	struct syncboss_dev_data *devdata =
 	    container_of(f->private_data, struct syncboss_dev_data, misc);
-	dev_info(&devdata->spi->dev, "SyncBoss handle opened (%s)",
-		 current->comm);
+	struct device *dev = &devdata->spi->dev;
+	struct syncboss_client_data *client_data;
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status)
-		return status;
+	if (status) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d (%s: pid %d)",
+			__func__, status, current->comm, current->pid);
+		goto ret;
+	}
 
 	/* Ensure a FW update is not in progress */
 	status = device_for_each_child(&devdata->spi->dev, NULL,
 				       fw_update_check_busy);
-	if (status)
-		goto out;
+	if (status) {
+		dev_err(dev, "On SyncBoss handle opened by %s (%d), firmware update busy: %d",
+			current->comm, current->pid, status);
+		goto unlock;
+	}
 
 	status = syncboss_inc_streaming_client_count_locked(devdata);
+	if (status) {
+		dev_err(dev, "On SyncBoss handle opened by %s (%d), failed to increment streaming client count: %d",
+			current->comm, current->pid, status);
+		goto unlock;
+	}
 
-out:
+	status = client_data_create_locked(devdata, f, current, &client_data);
+	if (status) {
+		dev_err(dev, "On SyncBoss handle opened by %s (%d), failed to create client data: %d",
+			current->comm, current->pid, status);
+		goto dec_streaming_client;
+	}
+
+	dev_info(dev, "SyncBoss handle opened by %s (%d), client %lld",
+		client_data->task->comm, client_data->task->pid, client_data->index);
+
+	goto unlock;
+
+dec_streaming_client:
+	syncboss_dec_streaming_client_count_locked(devdata);
+
+unlock:
 	mutex_unlock(&devdata->state_mutex);
 
+ret:
+	return status;
+}
+
+static long syncboss_ioctl_handle_seq_num_allocate_locked(
+	struct syncboss_dev_data *devdata, struct syncboss_client_data *client_data,
+	unsigned long arg)
+{
+	struct device *dev = &devdata->spi->dev;
+	long status;
+	long status_release;
+	uint8_t seq;
+
+	if (!devdata->has_seq_num_ioctl) {
+		dev_err_ratelimited(dev,
+			"Sequence number iocls are disabled based on device tree configuration. Requested by %s (%d), client %lld",
+			client_data->task->comm, client_data->task->pid, client_data->index);
+		status = -EPERM;
+		goto ret;
+	}
+
+	status = syncboss_sequence_number_allocate_locked(devdata, client_data, &seq);
+	if (status) {
+		dev_err(dev,
+			"Failed to allocate sequence number: %ld. Requested by %s (%d), client %lld",
+			status, client_data->task->comm, client_data->task->pid,
+			client_data->index);
+		goto ret;
+	}
+
+	status = copy_to_user((uint8_t __user *)arg, &seq, sizeof(seq));
+	if (status) {
+		dev_err(dev,
+			"Failed to copy sequence number %d to user: %ld. Requested by %s (%d), client %lld",
+			seq, status, client_data->task->comm, client_data->task->pid,
+			client_data->index);
+		status = -EFAULT;
+		goto seq_num_release;
+	}
+
+	goto ret;
+
+seq_num_release:
+	/* Don't clobber the original error */
+	status_release = syncboss_sequence_number_release_locked(devdata, client_data, seq);
+	if (status_release) {
+		dev_err(dev,
+			"Leaking sequence number %d due to failure to release on error: %ld. Requested by %s (%d), client %lld",
+			seq, status_release, client_data->task->comm, client_data->task->pid,
+			client_data->index);
+	}
+
+ret:
+	return status;
+}
+
+static long syncboss_ioctl_handle_seq_num_release_locked(
+	struct syncboss_dev_data *devdata, struct syncboss_client_data *client_data,
+	unsigned long arg)
+{
+	struct device *dev = &devdata->spi->dev;
+	long status;
+	uint8_t seq;
+
+	if (!devdata->has_seq_num_ioctl) {
+		dev_err_ratelimited(dev,
+			"Sequence number iocls are disabled based on device tree configuration. Requested by %s (%d), client %lld",
+			client_data->task->comm, client_data->task->pid, client_data->index);
+		return -EPERM;
+	}
+
+	status = copy_from_user(&seq, (uint8_t __user *)arg, sizeof(arg));
+	if (status) {
+		dev_err(dev,
+			"Failed to copy sequence number from user: %ld. Requested by %s (%d), client %lld",
+			status, client_data->task->comm, client_data->task->pid, client_data->index);
+		return -EFAULT;
+	}
+
+	status = syncboss_sequence_number_release_locked(devdata, client_data, seq);
+	if (status) {
+		dev_err(dev,
+			"Leaking sequence number %d due to failure to release: %ld. Requested by %s (%d), client %lld",
+			seq, status, client_data->task->comm, client_data->task->pid,
+			client_data->index);
+		return status;
+	}
+
+	return status;
+}
+
+static long syncboss_ioctl(struct file *file, unsigned int cmd,
+				  unsigned long arg)
+{
+	int status = 0;
+	struct syncboss_client_data *client_data;
+	struct syncboss_dev_data *devdata =
+		container_of(file->private_data, struct syncboss_dev_data, misc);
+	struct device *dev = &devdata->spi->dev;
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
+		goto ret;
+	}
+
+	client_data = client_data_get_locked(devdata, file);
+	if (!client_data) {
+		dev_err(dev, "Failed to get client data for %s (%d)", current->comm,
+			current->pid);
+		status = -ENXIO;
+		goto unlock;
+	}
+
+	switch (cmd) {
+	case SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL:
+		status = syncboss_ioctl_handle_seq_num_allocate_locked(devdata,
+					client_data, arg);
+		break;
+	case SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL:
+		status = syncboss_ioctl_handle_seq_num_release_locked(devdata,
+					client_data, arg);
+		break;
+	default:
+		dev_err(dev, "Unrecognized IOCTL %d. Requested by %s (%d), client %lld",
+			cmd, client_data->task->comm, client_data->task->pid, client_data->index);
+		status = -EINVAL;
+		break;
+	}
+
+unlock:
+	mutex_unlock(&devdata->state_mutex);
+
+ret:
 	return status;
 }
 
@@ -469,8 +704,10 @@ static int syncboss_powerstate_open(struct inode *inode, struct file *f)
 		 current->comm);
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status)
+	if (status) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
+	}
 
 	status = miscfifo_fop_open(f, &devdata->powerstate_fifo);
 	if (status)
@@ -592,7 +829,7 @@ static long syncboss_stream_ioctl(struct file *file, unsigned int cmd,
 		return syncboss_set_stream_type_filter(devdata, file,
 			(struct syncboss_driver_stream_type_filter *)arg);
 	default:
-		dev_err(&devdata->spi->dev, "Unrecognized IOCTL %ul\n", cmd);
+		dev_err(&devdata->spi->dev, "Unrecognized stream IOCTL %d", cmd);
 		return -EINVAL;
 	}
 	return 0;
@@ -653,6 +890,8 @@ static int syncboss_release(struct inode *inode, struct file *f)
 {
 	struct syncboss_dev_data *devdata =
 		container_of(f->private_data, struct syncboss_dev_data, misc);
+	struct device *dev = &devdata->spi->dev;
+	struct syncboss_client_data *client_data;
 
 	/*
 	 * It is unsafe to use the interruptible variant here, as the driver can get
@@ -662,10 +901,21 @@ static int syncboss_release(struct inode *inode, struct file *f)
 	 */
 	mutex_lock(&devdata->state_mutex);
 
+	client_data = client_data_get_locked(devdata, f);
+	BUG_ON(!client_data);
+
+	dev_info(dev, "SyncBoss handle closed by %s (%d), client %lld",
+		client_data->task->comm, client_data->task->pid, client_data->index);
+
+	/* This must be done before syncboss_dec_streaming_client_count_locked
+	 * since it will syncboss_sequence_number_reset_locked if the ref count
+	 * goes to zero and reset checks for any remaining clients. */
+	client_data_destroy_locked(devdata, client_data);
+
 	syncboss_dec_streaming_client_count_locked(devdata);
+
 	mutex_unlock(&devdata->state_mutex);
 
-	dev_info(&devdata->spi->dev, "SyncBoss handle closed");
 	return 0;
 }
 
@@ -706,8 +956,10 @@ static int syncboss_nsync_open(struct inode *inode, struct file *f)
 			     misc_nsync);
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status)
+	if (status) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
+	}
 
 	if (devdata->nsync_client_count != 0) {
 		dev_err(&devdata->spi->dev, "SyncBoss nsync device cannot be opened by more than one user");
@@ -792,7 +1044,8 @@ static const struct file_operations fops = {
 	.release = syncboss_release,
 	.read = NULL,
 	.write = syncboss_write,
-	.poll = NULL
+	.poll = NULL,
+	.unlocked_ioctl = syncboss_ioctl
 };
 
 static const struct file_operations stream_fops = {
@@ -2077,7 +2330,17 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->spi = spi;
 
 	devdata->streaming_client_count = 0;
+
+	/* T114417103: for old sysfs sequence number mechanism */
 	devdata->next_avail_seq_num = 1;
+	/* T114417103: for new ioctl sequence number mechanism */
+	client_data_init_locked(devdata);
+	/*
+	 * syncboss_sequence_number_reset_locked does some unnecessary initilization
+	 * as devdata is zero initilized
+	 */
+	devdata->last_seq_num = SYNCBOSS_SEQ_NUM_MAX;
+
 	devdata->next_stream_settings.transaction_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
 	devdata->next_stream_settings.min_time_between_transactions_ns =
 		SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
@@ -2114,6 +2377,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->has_prox = of_property_read_bool(node, "oculus,syncboss-has-prox");
 	devdata->has_no_prox_cal = of_property_read_bool(node, "oculus,syncboss-has-no-prox-cal");
 	devdata->has_wake_on_spi = of_property_read_bool(node, "oculus,syncboss-has-wake-on-spi");
+	devdata->has_seq_num_ioctl = of_property_read_bool(node, "oculus,syncboss-has-seq-num-ioctl");
 
 	dev_info(&devdata->spi->dev,
 		 "GPIOs: reset: %d, timesync: %d, wakeup: %d, nsync: %d",
@@ -2318,6 +2582,11 @@ static int syncboss_probe(struct spi_device *spi)
 		}
 	}
 
+	status = syncboss_debugfs_init(devdata);
+	if (status && -ENODEV != status) {
+		dev_err(dev, "Failed to init debugfs: %d", status);
+		return status;
+	}
 	/*
 	 * Init device as a wakeup source (so wake interrupts can hold
 	 * the wake lock)
@@ -2355,6 +2624,8 @@ static int syncboss_remove(struct spi_device *spi)
 
 	of_platform_depopulate(&spi->dev);
 	syncboss_deinit_sysfs_attrs(devdata);
+
+	syncboss_debugfs_deinit(devdata);
 
 	misc_deregister(&devdata->misc_stream);
 	misc_deregister(&devdata->misc_control);

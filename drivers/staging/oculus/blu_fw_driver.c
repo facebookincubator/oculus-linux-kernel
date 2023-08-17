@@ -47,7 +47,7 @@ static ssize_t bootload_store(struct device *dev, struct device_attribute *attr,
 
 	rc = mutex_lock_interruptible(&bpd->lock);
 	if (rc != 0) {
-		dev_err(bpd->dev, "Failed to get mutex: %d", rc);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, rc);
 		return rc;
 	}
 

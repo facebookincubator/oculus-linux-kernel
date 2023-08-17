@@ -72,11 +72,10 @@ struct virtual_sensor_drvdata {
 	struct virtual_sensor_common_data data_charging;
 	struct virtual_sensor_common_data data_discharging;
 
-	struct power_supply *batt_psy;	/* For determining charge status */
 	void *data;						/* Driver-specific data */
 };
 
-int is_charging(struct power_supply *batt_psy);
+int is_charging(void);
 
 int virtual_sensor_calculate_tz_temp(struct device *dev,
 		struct virtual_sensor_common_data *data, s64 *temperature);

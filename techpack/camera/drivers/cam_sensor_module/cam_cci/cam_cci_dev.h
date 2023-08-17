@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CCI_DEV_H_
@@ -284,6 +285,7 @@ struct cam_cci_ctrl {
 		struct cam_cci_wait_sync_cfg cci_wait_sync_cfg;
 		struct cam_cci_gpio_cfg gpio_cfg;
 	} cfg;
+	bool force_low_priority;
 };
 
 struct cci_write_async {
