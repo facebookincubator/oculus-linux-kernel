@@ -11,6 +11,7 @@
 
 #define DEFAULT_EXT_BATT_VID 0x2833
 #define MOUNT_WORK_DELAY_SECONDS 30
+#define PR_SWAP_SOC_THRESHOLD 95
 
 #define STATUS_FULLY_DISCHARGED BIT(4)
 #define STATUS_FULLY_CHARGED BIT(5)
@@ -60,13 +61,9 @@ static void convert_battery_status(struct ext_batt_pd *pd, u16 status)
 		strcpy(pd->params.battery_status, battery_status_text[UNKNOWN]);
 }
 
-static void vdm_connect(struct usbpd_svid_handler *hdlr,
-		bool supports_usb_comm)
+void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
 {
-	struct ext_batt_pd *pd =
-		container_of(hdlr, struct ext_batt_pd, vdm_handler);
-
-	dev_dbg(pd->dev, "enter: usb-com=%d\n", supports_usb_comm);
+	dev_dbg(pd->dev, "%s: enter: usb-com=%d\n", __func__, usb_comm);
 
 	/*
 	 * Client notifications only occur during connect/disconnect
@@ -81,19 +78,18 @@ static void vdm_connect(struct usbpd_svid_handler *hdlr,
 	mutex_unlock(&pd->lock);
 
 	schedule_delayed_work(&pd->mount_state_work, 0);
-	ext_batt_psy_register_notifier(pd);
+
+	cancel_delayed_work_sync(&pd->dock_state_dwork);
+	schedule_delayed_work(&pd->dock_state_dwork, 0);
 
 	/* Force re-evaluation */
 	ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
 			pd->battery_psy);
 }
 
-static void vdm_disconnect(struct usbpd_svid_handler *hdlr)
+void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 {
-	struct ext_batt_pd *pd =
-		container_of(hdlr, struct ext_batt_pd, vdm_handler);
-
-	dev_dbg(pd->dev, "enter\n");
+	dev_dbg(pd->dev, "%s: enter", __func__);
 
 	/*
 	 * Client notifications only occur during connect/disconnect
@@ -109,40 +105,52 @@ static void vdm_disconnect(struct usbpd_svid_handler *hdlr)
 	mutex_unlock(&pd->lock);
 
 	cancel_delayed_work_sync(&pd->mount_state_work);
-	ext_batt_psy_unregister_notifier(pd);
+	cancel_delayed_work_sync(&pd->dock_state_dwork);
 
 	/* Re-enable USB input charging path if disabled */
 	set_usb_charging_state(pd, CHARGING_RESUME);
 }
 
-static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
-		const u32 *vdos, int num_vdos)
+void ext_batt_vdm_received(struct ext_batt_pd *pd,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
 	u32 protocol_type, parameter_type, sb, high_bytes, acked;
-	struct ext_batt_pd *pd =
-		container_of(hdlr, struct ext_batt_pd, vdm_handler);
+	int rc = 0;
+	union power_supply_propval power_role = {0};
 
 	dev_dbg(pd->dev,
-		"enter: vdm_hdr=0x%x, vdos?=%d, num_vdos=%d\n",
-		vdm_hdr, vdos != NULL, num_vdos);
+		"%s: enter: vdm_hdr=0x%x, vdos?=%d, num_vdos=%d\n",
+		__func__, vdm_hdr, vdos != NULL, num_vdos);
 
 	protocol_type = VDMH_PROTOCOL(vdm_hdr);
 	parameter_type = VDMH_PARAMETER(vdm_hdr);
 
 	if (protocol_type == VDM_RESPONSE) {
 		acked = VDMH_ACK(vdm_hdr);
-		if (parameter_type != EXT_BATT_FW_HMD_MOUNTED || !acked) {
-			dev_warn(pd->dev, "Unsupported response parameter 0x%x or NACK(ack=%d)",
-				parameter_type, acked);
-			return;
+		if (!acked) {
+			dev_warn(pd->dev, "NACK(ack=%d)", acked);
+		} else if (parameter_type == EXT_BATT_FW_HMD_MOUNTED) {
+			dev_info(pd->dev,
+				"Received mount status ack response code 0x%x",
+				vdos[0]);
+
+			pd->last_mount_ack = VDO_ACK_STATUS(vdos[0]);
+		} else if (parameter_type == EXT_BATT_FW_HMD_DOCKED) {
+			dev_info(pd->dev,
+				"Received dock status ack response code 0x%x", vdos[0]);
+			/* Recall the lie we told Lehua when sending the dock VDM */
+			power_role.intval = VDO_ACK_STATUS(vdos[0]);
+
+			dev_info(pd->dev, "Sending PR_SWAP to role=%d", power_role.intval);
+			rc = power_supply_set_property(pd->usb_psy,
+					POWER_SUPPLY_PROP_TYPEC_POWER_ROLE, &power_role);
+			/* the default timeout is too short for PR_SWAP, ignore it */
+			if (rc != -ETIMEDOUT)
+				dev_err(pd->dev, "Failed sending PR_SWAP: rc=%d", rc);
+		} else {
+			dev_warn(pd->dev, "Unsupported response parameter 0x%x",
+					parameter_type);
 		}
-
-		dev_info(pd->dev,
-			"Received mount status ack response code 0x%x",
-			vdos[0]);
-
-		pd->last_mount_ack = VDO_MOUNT_STATE_ACK_STATUS(vdos[0]);
-
 		return;
 	}
 
@@ -164,6 +172,9 @@ static void vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 
 	high_bytes = VDMH_HIGH(vdm_hdr);
 	switch (parameter_type) {
+	case EXT_BATT_FW_VERSION_NUMBER:
+		pd->params.fw_version = vdos[0];
+		break;
 	case EXT_BATT_FW_SERIAL:
 		memcpy(pd->params.serial,
 			vdos, sizeof(pd->params.serial));
@@ -393,7 +404,7 @@ static ssize_t mount_state_store(struct device *dev,
 
 	result = mutex_lock_interruptible(&pd->lock);
 	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, result);
 		return result;
 	}
 
@@ -451,7 +462,7 @@ static ssize_t status_show(struct device *dev,
 
 	result = mutex_lock_interruptible(&pd->lock);
 	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, result);
 		return result;
 	}
 
@@ -471,7 +482,7 @@ static ssize_t status_store(struct device *dev,
 
 	result = mutex_lock_interruptible(&pd->lock);
 	if (result != 0) {
-		dev_err(dev, "Failed to get mutex: %d", result);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, result);
 		return result;
 	}
 
@@ -605,6 +616,16 @@ static ssize_t soh_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.soh);
 }
 static DEVICE_ATTR_RO(soh);
+
+static ssize_t fw_version_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.fw_version);
+}
+static DEVICE_ATTR_RO(fw_version);
 
 static ssize_t device_name_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1376,6 +1397,7 @@ static struct attribute *ext_batt_attrs[] = {
 	&dev_attr_fcc.attr,
 	&dev_attr_cycle_count.attr,
 	&dev_attr_soh.attr,
+	&dev_attr_fw_version.attr,
 	&dev_attr_device_name.attr,
 	&dev_attr_cell_1_max_voltage.attr,
 	&dev_attr_cell_1_min_voltage.attr,
@@ -1505,7 +1527,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 	if (pd->mount_state != pd->last_mount_ack) {
 		mount_state_header =
 			VDMH_CONSTRUCT(
-				pd->vdm_handler.svid,
+				pd->svid,
 				0, 1, 0, 1,
 				EXT_BATT_FW_HMD_MOUNTED);
 
@@ -1531,6 +1553,49 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 	 */
 	schedule_delayed_work(&pd->mount_state_work, MOUNT_WORK_DELAY_SECONDS * HZ);
 
+	mutex_unlock(&pd->lock);
+}
+
+static void ext_batt_dock_state_work(struct work_struct *work)
+{
+	struct ext_batt_pd *pd =
+		container_of(work, struct ext_batt_pd, dock_state_dwork.work);
+	int rc;
+	int new_power_role;
+	u32 dock_state_hdr, dock_state_vdo;
+
+	dev_dbg(pd->dev, "%s: enter", __func__);
+
+	mutex_lock(&pd->lock);
+	if (!pd->connected || !pd->cypd_pd_active_chan)
+		goto out;
+
+	rc = iio_read_channel_processed(pd->cypd_pd_active_chan, &pd->dock_state);
+	if (rc < 0) {
+		dev_err(pd->dev, "couldn't read cypd pd_active: rc=%d\n", rc);
+		goto out;
+	}
+
+	new_power_role = (pd->dock_state && pd->hmd_soc >= PR_SWAP_SOC_THRESHOLD);
+
+	dock_state_hdr =
+		VDMH_CONSTRUCT(
+			pd->svid,
+			0, VDM_REQUEST, 0, 1,
+			EXT_BATT_FW_HMD_DOCKED);
+	/*
+	 *	Greedy Lehua expects to be in SNK mode whenever the HMD is docked, but
+	 *	we want to prioritize charging the internal battery first. Tell a white
+	 *	lie and claim we're docked only when we're ready to supply power to it.
+	 */
+	dock_state_vdo = new_power_role;
+
+	dev_dbg(pd->dev, "sending dock VDM: dock_state=%d", dock_state_vdo);
+	rc = external_battery_send_vdm(pd, dock_state_hdr, &dock_state_vdo, 1);
+	if (rc < 0)
+		dev_err(pd->dev, "error sending dock VDM: rc=%d", rc);
+
+out:
 	mutex_unlock(&pd->lock);
 }
 
@@ -1587,10 +1652,23 @@ static void set_usb_charging_state(struct ext_batt_pd *pd,
 static void handle_battery_capacity_change(struct ext_batt_pd *pd,
 		u32 capacity)
 {
+	bool crossed_soc_threshold;
+
 	dev_dbg(pd->dev,
 			"Battery capacity change event. Capacity = %d, connected = %d, mount state = %d, charger plugged = %d\n",
 			capacity, pd->connected, pd->mount_state,
 			pd->params.charger_plugged);
+
+	/* May need to swap power roles if the HMD battery ticks above or below */
+	crossed_soc_threshold =
+		(pd->hmd_soc < PR_SWAP_SOC_THRESHOLD && capacity >= PR_SWAP_SOC_THRESHOLD) ||
+		(pd->hmd_soc >= PR_SWAP_SOC_THRESHOLD && capacity < PR_SWAP_SOC_THRESHOLD);
+	pd->hmd_soc = capacity;
+
+	if (crossed_soc_threshold) {
+		cancel_delayed_work_sync(&pd->dock_state_dwork);
+		schedule_delayed_work(&pd->dock_state_dwork, 0);
+	}
 
 	if ((pd->charging_suspend_disable) ||
 		(!pd->connected) ||
@@ -1613,6 +1691,13 @@ static void ext_batt_psy_notifier_work(struct work_struct *work)
 	int result;
 	union power_supply_propval val;
 	struct ext_batt_pd *pd = container_of(work, struct ext_batt_pd, psy_notifier_work);
+
+	mutex_lock(&pd->lock);
+	if (!pd->connected) {
+		mutex_unlock(&pd->lock);
+		return;
+	}
+	mutex_unlock(&pd->lock);
 
 	result = power_supply_get_property(pd->battery_psy,
 			POWER_SUPPLY_PROP_CAPACITY, &val);
@@ -1643,10 +1728,16 @@ static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 		return NOTIFY_BAD;
 	}
 
-	if (psy != pd->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
+	if (ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
 
-	schedule_work(&pd->psy_notifier_work);
+	if (psy == pd->battery_psy)
+		schedule_work(&pd->psy_notifier_work);
+
+	if (pd->cypd_psy && psy == pd->cypd_psy) {
+		cancel_delayed_work(&pd->dock_state_dwork);
+		schedule_delayed_work(&pd->dock_state_dwork, 0);
+	}
 
 	return NOTIFY_OK;
 }
@@ -1676,21 +1767,32 @@ static void ext_batt_psy_unregister_notifier(struct ext_batt_pd *pd)
 	power_supply_unreg_notifier(&pd->nb);
 }
 
-static void ext_batt_psy_init(struct ext_batt_pd *pd)
+static int ext_batt_psy_init(struct ext_batt_pd *pd)
 {
 	pd->nb.notifier_call = NULL;
 	pd->battery_psy = power_supply_get_by_name("battery");
 	if (IS_ERR_OR_NULL(pd->battery_psy)) {
 		dev_err(pd->dev, "Failed to get battery power supply\n");
-		return;
+		return -EPROBE_DEFER;
 	}
 
 	pd->usb_psy = power_supply_get_by_name("usb");
 	if (IS_ERR_OR_NULL(pd->usb_psy)) {
 		dev_err(pd->dev, "Failed to get USB power supply\n");
-		return;
+		return -EPROBE_DEFER;
 	}
+
+	#ifdef CONFIG_CHARGER_CYPD3177
+	pd->cypd_psy = power_supply_get_by_name("cypd3177");
+	if (!pd->cypd_psy) {
+		dev_err(pd->dev, "Failed to get CYPD psy");
+		return -EPROBE_DEFER;
+	}
+	#endif
+
 	pd->nb.notifier_call = ext_batt_psy_notifier_call;
+	ext_batt_psy_register_notifier(pd);
+	return 0;
 }
 
 static int ext_batt_probe(struct platform_device *pdev)
@@ -1698,26 +1800,22 @@ static int ext_batt_probe(struct platform_device *pdev)
 	int result = 0;
 	struct ext_batt_pd *pd;
 
-	dev_dbg(&pdev->dev, "enter\n");
+	dev_dbg(&pdev->dev, "%s: enter", __func__);
 
 	pd = devm_kzalloc(
 			&pdev->dev, sizeof(*pd), GFP_KERNEL);
 	if (!pd)
 		return -ENOMEM;
 
-	pd->vdm_handler.connect = vdm_connect;
-	pd->vdm_handler.disconnect = vdm_disconnect;
-	pd->vdm_handler.vdm_received = vdm_received;
-
 	result = of_property_read_u16(pdev->dev.of_node,
-		"svid", &pd->vdm_handler.svid);
+		"svid", &pd->svid);
 	if (result < 0) {
-		pd->vdm_handler.svid = DEFAULT_EXT_BATT_VID;
+		pd->svid = DEFAULT_EXT_BATT_VID;
 		dev_err(&pdev->dev,
 			"svid unavailable, defaulting to svid=%x, result:%d\n",
 			DEFAULT_EXT_BATT_VID, result);
 	}
-	dev_dbg(&pdev->dev, "Property svid=%x", pd->vdm_handler.svid);
+	dev_dbg(&pdev->dev, "Property svid=%x", pd->svid);
 
 	result = of_property_read_u32(pdev->dev.of_node,
 		"charging-suspend-thresh", &pd->charging_suspend_threshold);
@@ -1751,6 +1849,16 @@ static int ext_batt_probe(struct platform_device *pdev)
 	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
 	INIT_DELAYED_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
 
+	#ifdef CONFIG_CHARGER_CYPD3177
+	pd->cypd_pd_active_chan = iio_channel_get(NULL, "cypd_pd_active");
+	if (IS_ERR(pd->cypd_pd_active_chan)) {
+		if (PTR_ERR(pd->cypd_pd_active_chan) != -EPROBE_DEFER)
+			dev_err_ratelimited(pd->dev, "cypd pd_active channel unavailable");
+		return -EPROBE_DEFER;
+	}
+	#endif
+	INIT_DELAYED_WORK(&pd->dock_state_dwork, ext_batt_dock_state_work);
+
 	pd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, pd);
 
@@ -1764,11 +1872,13 @@ static int ext_batt_probe(struct platform_device *pdev)
 		return result;
 	}
 	dev_dbg(&pdev->dev, "Registered svid 0x%04x",
-		pd->vdm_handler.svid);
+		pd->svid);
 
 	/* Query power supply and register for events */
-	ext_batt_psy_init(pd);
 	INIT_WORK(&pd->psy_notifier_work, ext_batt_psy_notifier_work);
+	result = ext_batt_psy_init(pd);
+	if (result == -EPROBE_DEFER)
+		return result;
 
 	/* Create nodes here. */
 	ext_batt_create_sysfs(pd);
@@ -1781,7 +1891,7 @@ static int ext_batt_remove(struct platform_device *pdev)
 {
 	struct ext_batt_pd *pd = platform_get_drvdata(pdev);
 
-	dev_dbg(pd->dev, "enter\n");
+	dev_dbg(pd->dev, "%s: enter", __func__);
 
 	external_battery_unregister_svid_handler(pd);
 
@@ -1789,8 +1899,13 @@ static int ext_batt_remove(struct platform_device *pdev)
 	pd->connected = false;
 	mutex_unlock(&pd->lock);
 	cancel_delayed_work_sync(&pd->mount_state_work);
+	cancel_delayed_work_sync(&pd->dock_state_dwork);
 	set_usb_charging_state(pd, CHARGING_RESUME);
 	ext_batt_psy_unregister_notifier(pd);
+	if (pd->cypd_psy) {
+		power_supply_put(pd->cypd_psy);
+		iio_channel_release(pd->cypd_pd_active_chan);
+	}
 	mutex_destroy(&pd->lock);
 
 	sysfs_remove_groups(&pd->dev->kobj, ext_batt_groups);

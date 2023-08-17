@@ -95,6 +95,10 @@
 #include <dhd_xrapi.h>
 #endif /* XRAPI  && QFLUSH_LOG */
 
+#ifdef ENABLE_PERFORMANCE_DEBUG
+#include <performance_custom.h>
+#endif
+
 extern char dhd_version[];
 extern char fw_version[];
 
@@ -7348,6 +7352,10 @@ BCMFASTPATH(dhd_prot_process_msgbuf_rxcpl)(dhd_pub_t *dhd, int ringtype, uint32 
 	uint8 sync;
 	unsigned long rx_lock_flags = 0;
 
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	latency_event_mark(DHD_PROT_MSGBUF_RXCMP, NULL);
+#endif
+
 #ifdef DHD_LB_RXP
 	/* must be the first check in this function */
 	(void)dhd_prot_lb_rxp_flow_ctrl(dhd);
@@ -9892,7 +9900,9 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 		DHD_PKT_SET_QTIME(PKTBUF, OSL_SYSUPTIME_US());
 	}
 #endif /* TX_STATUS_LATENCY_STATS */
-
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	latency_event_mark(DHD_PROT_TXDATA, NULL);
+#endif
 	DHD_RING_UNLOCK(ring->ring_lock, flags);
 
 	OSL_ATOMIC_INC(dhd->osh, &prot->active_tx_count);

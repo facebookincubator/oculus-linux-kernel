@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include "syncboss.h"
 
+#define CONTROL_GROUP_NAME "control"
+
 /* Valid sequence numbers are from [1, 254] */
 #define SYNCBOSS_MIN_SEQ_NUM 1
 #define SYNCBOSS_MAX_SEQ_NUM 254
@@ -18,8 +20,7 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 
 		status = mutex_lock_interruptible(&devdata->state_mutex);
 		if (status != 0) {
-			dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-				status);
+			dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 			return status;
 		}
 		syncboss_pin_reset(devdata);
@@ -43,9 +44,7 @@ static ssize_t transaction_length_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -76,9 +75,7 @@ static ssize_t transaction_length_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -112,25 +109,33 @@ static ssize_t next_avail_seq_num_show(struct device *dev,
 				       char *buf)
 {
 	int status = 0;
-	int retval = 0;
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(dev);
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
-		return status;
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
+		goto ret;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
-			   devdata->next_avail_seq_num);
+	if (devdata->has_seq_num_ioctl) {
+		dev_err_ratelimited(dev,
+			"Sequence number sysfs node is disabled based on device tree configuration. Requested by %s (%d)",
+			current->comm, current->pid);
+		status = -EPERM;
+		goto unlock;
+	}
+
+	status = scnprintf(buf, PAGE_SIZE, "%d\n",
+				devdata->next_avail_seq_num);
 
 	devdata->next_avail_seq_num = next_seq_num(devdata->next_avail_seq_num);
 
+unlock:
 	mutex_unlock(&devdata->state_mutex);
-	return retval;
+
+ret:
+	return status;
 }
 
 static ssize_t cpu_affinity_show(struct device *dev,
@@ -143,9 +148,7 @@ static ssize_t cpu_affinity_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -173,9 +176,7 @@ static ssize_t cpu_affinity_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -203,9 +204,7 @@ static ssize_t transaction_period_us_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -233,9 +232,7 @@ static ssize_t transaction_period_us_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -264,9 +261,7 @@ static ssize_t minimum_time_between_transactions_us_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -296,9 +291,7 @@ static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -328,9 +321,7 @@ static ssize_t stats_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -367,10 +358,14 @@ static ssize_t stats_store(struct device *dev,
 		return -EINVAL;
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status == 0) {
-		memset(&devdata->stats, 0, sizeof(devdata->stats));
-		status = count;
+	if (status != 0) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
+		return status;
 	}
+
+	memset(&devdata->stats, 0, sizeof(devdata->stats));
+	status = count;
+
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }
@@ -385,9 +380,7 @@ static ssize_t spi_max_clk_rate_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -420,9 +413,7 @@ static ssize_t spi_max_clk_rate_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -455,9 +446,7 @@ static ssize_t poll_prio_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -488,9 +477,7 @@ static ssize_t poll_prio_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -528,9 +515,7 @@ static ssize_t enable_fastpath_show(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -557,9 +542,7 @@ static ssize_t enable_fastpath_store(struct device *dev,
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
-		/* Failed to get the sem */
-		dev_err(&devdata->spi->dev, "Failed to get state mutex: %d",
-			status);
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
 		return status;
 	}
 
@@ -621,14 +604,13 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_cpu_affinity.attr,
 	&dev_attr_stats.attr,
 	&dev_attr_poll_prio.attr,
-	&dev_attr_next_avail_seq_num.attr,
 	&dev_attr_te_timestamp.attr,
 	&dev_attr_enable_fastpath.attr,
 	NULL
 };
 
 static struct attribute_group syncboss_attr_grp = {
-	.name = "control",
+	.name = CONTROL_GROUP_NAME,
 	.attrs = syncboss_attrs
 };
 
@@ -663,6 +645,15 @@ int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata)
 	if (ret) {
 		dev_err(spi_dev, "sysfs_create_group failed: error %d\n", ret);
 		return ret;
+	}
+
+	if (!devdata->has_seq_num_ioctl) {
+		ret = sysfs_add_file_to_group(&spi_dev->kobj,
+			&dev_attr_next_avail_seq_num.attr, CONTROL_GROUP_NAME);
+		if (ret) {
+			dev_err(spi_dev, "sysfs_add_file_to_group failed: error %d\n", ret);
+			return ret;
+		}
 	}
 
 	ret = sysfs_create_link(&devdata->misc.this_device->kobj,

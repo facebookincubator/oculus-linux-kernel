@@ -177,6 +177,10 @@
 #include <wl_android.h>
 #endif
 
+#ifdef ENABLE_PERFORMANCE_DEBUG
+#include <performance_custom.h>
+#endif
+
 /* RX frame thread priority */
 int dhd_rxf_prio = CUSTOM_RXF_PRIO_SETTING;
 module_param(dhd_rxf_prio, int, 0);
@@ -1061,6 +1065,12 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			}
 #endif /* DHD_WAKE_STATUS */
 		}
+
+#ifdef ENABLE_PERFORMANCE_DEBUG
+	if (ntoh16(skb->protocol) == ETHERTYPE_FACEBOOK_USB) {
+		latency_event_mark(DHD_RX_FRAME_EXIT, (uint8_t *)eh);
+	}
+#endif /* ENABLE_PERFORMANCE_DEBUG */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
 		ifp->net->last_rx = jiffies;

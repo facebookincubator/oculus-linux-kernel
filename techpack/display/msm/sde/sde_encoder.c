@@ -910,6 +910,7 @@ void sde_encoder_helper_skewed_vsync_config(
 
 	cfg->intf_offset_en = true;
 	cfg->set_master_intf = disp_info->skewed_vsync_master;
+	cfg->fps = sde_encoder_get_fps(&sde_enc->base);
 
 	if (phys_enc->split_role == ENC_ROLE_MASTER &&
 			hw_mdptop->ops.setup_skewed_vsync)

@@ -19,7 +19,7 @@
 
 #define COEFFICIENT_SCALAR 10000
 
-static int get_temp(void *data, int *temperature)
+static int virtual_sensor_get_temp(void *data, int *temperature)
 {
 	struct virtual_sensor_drvdata *vs = data;
 	struct virtual_sensor_common_data *coeff_data;
@@ -31,7 +31,7 @@ static int get_temp(void *data, int *temperature)
 
 	*temperature = 0;
 
-	if (is_charging(vs->batt_psy))
+	if (is_charging())
 		coeff_data = &vs->data_charging;
 	else
 		coeff_data = &vs->data_discharging;
@@ -58,7 +58,7 @@ get_temp_unlock:
 }
 
 static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
-	.get_temp = get_temp,
+	.get_temp = virtual_sensor_get_temp,
 };
 
 static DEVICE_ATTR_RW(tz_coefficients_discharging);
@@ -72,7 +72,7 @@ static DEVICE_ATTR_RW(iio_slope_coefficients_charging);
 static DEVICE_ATTR_RW(intercept_charging);
 static DEVICE_ATTR_RW(intercept_discharging);
 
-static struct attribute *display_virtual_sensor_attrs[] = {
+static struct attribute *virtual_sensor_attrs[] = {
 	&dev_attr_tz_coefficients_discharging.attr,
 	&dev_attr_tz_slope_coefficients_discharging.attr,
 	&dev_attr_iio_coefficients_discharging.attr,
@@ -85,13 +85,13 @@ static struct attribute *display_virtual_sensor_attrs[] = {
 	&dev_attr_intercept_charging.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(display_virtual_sensor);
+ATTRIBUTE_GROUPS(virtual_sensor);
 
 static int virtual_sensor_probe(struct platform_device *pdev)
 {
+	int ret = 0;
 	struct virtual_sensor_drvdata *vs;
 	struct thermal_zone_device *tzd = NULL;
-	int ret = 0;
 
 	dev_dbg(&pdev->dev, "probing");
 
@@ -123,12 +123,6 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	vs->batt_psy = power_supply_get_by_name("battery");
-	if (!vs->batt_psy) {
-		dev_warn(&pdev->dev, "Unable to get battery power_supply\n");
-		return -EPROBE_DEFER;
-	}
-
 	virtual_sensor_reset_history(&vs->data_charging);
 	virtual_sensor_reset_history(&vs->data_discharging);
 
@@ -149,9 +143,9 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 	virtual_sensor_workqueue_register(&vs->data_charging);
 	virtual_sensor_workqueue_register(&vs->data_discharging);
 
-	ret = sysfs_create_groups(&pdev->dev.kobj, display_virtual_sensor_groups);
+	ret = sysfs_create_groups(&pdev->dev.kobj, virtual_sensor_groups);
 	if (ret < 0)
-		dev_err(&pdev->dev, "Failed to create sysfs files\n");
+		dev_err(&pdev->dev, "Failed to create sysfs files");
 
 	return ret;
 }
@@ -166,7 +160,7 @@ static int virtual_sensor_remove(struct platform_device *pdev)
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 
-	sysfs_remove_groups(&pdev->dev.kobj, display_virtual_sensor_groups);
+	sysfs_remove_groups(&pdev->dev.kobj, virtual_sensor_groups);
 
 	mutex_destroy(&vs->lock);
 
@@ -174,7 +168,7 @@ static int virtual_sensor_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id virtual_sensor_table[] = {
-	{ .compatible = "oculus,display-virtual-sensor" },
+	{ .compatible = "oculus,virtual-sensor" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, virtual_sensor_table);
@@ -183,23 +177,23 @@ static struct platform_driver virtual_sensor_driver = {
 	.probe = virtual_sensor_probe,
 	.remove = virtual_sensor_remove,
 	.driver = {
-		.name = "display-virtual-sensor",
+		.name = "virtual-sensor",
 		.of_match_table = virtual_sensor_table,
 	},
 };
 
-static int __init display_virtual_sensor_init(void)
+static int __init virtual_sensor_init(void)
 {
 	pr_debug("%s: Initializing\n", __func__);
 	return platform_driver_register(&virtual_sensor_driver);
 }
-late_initcall(display_virtual_sensor_init);
+late_initcall(virtual_sensor_init);
 
-static void __exit display_virtual_sensor_deinit(void)
+static void __exit virtual_sensor_deinit(void)
 {
 	platform_driver_unregister(&virtual_sensor_driver);
 }
-module_exit(display_virtual_sensor_deinit);
+module_exit(virtual_sensor_deinit);
 
-MODULE_ALIAS("display_virtual_sensor");
+MODULE_ALIAS("virtual_sensor");
 MODULE_LICENSE("GPL v2");

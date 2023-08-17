@@ -489,6 +489,39 @@ static ssize_t debounce_us_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(debounce_us);
 
+static ssize_t power_on_reason_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	int rc;
+	int index;
+	struct qpnp_pon *pon = (struct qpnp_pon *)dev_get_drvdata(dev);
+	unsigned int pon_sts = 0;
+	/* PON reason */
+	rc = qpnp_pon_read(pon, QPNP_PON_REASON1(pon), &pon_sts);
+	if (rc)
+		goto Leave;
+
+	index = ffs(pon_sts) - 1;
+	if (index >= ARRAY_SIZE(qpnp_pon_reason) || index < 0)
+		ret = snprintf(buf, PAGE_SIZE, "%d\n", index);
+	else
+		ret = snprintf(buf, PAGE_SIZE, "%s\n", qpnp_pon_reason[index]);
+
+Leave:
+	return ret;
+}
+static DEVICE_ATTR_RO(power_on_reason);
+
+static ssize_t power_off_reason_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct qpnp_pon *pon = (struct qpnp_pon *)dev_get_drvdata(dev);
+
+	/* Take advantage of the fact that POFF reason is already read and stored in pon->pon_power_off_reason
+	when driver probed at boot. This value shouldn't change while device is running. */
+	return snprintf(buf, PAGE_SIZE, "%s\n", qpnp_poff_reason[pon->pon_power_off_reason]);
+}
+static DEVICE_ATTR_RO(power_off_reason);
+
 static int qpnp_pon_reset_config(struct qpnp_pon *pon,
 				 enum pon_power_off_type type)
 {
@@ -2388,6 +2421,20 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 	rc = device_create_file(dev, &dev_attr_debounce_us);
 	if (rc) {
 		dev_err(dev, "sysfs debounce file creation failed, rc=%d\n",
+			rc);
+		return rc;
+	}
+
+	rc = device_create_file(dev, &dev_attr_power_on_reason);
+	if (rc) {
+		dev_err(dev, "sysfs power-on reason file creation failed, rc=%d\n",
+			rc);
+		return rc;
+	}
+
+	rc = device_create_file(dev, &dev_attr_power_off_reason);
+	if (rc) {
+		dev_err(dev, "sysfs power-off reason file creation failed, rc=%d\n",
 			rc);
 		return rc;
 	}

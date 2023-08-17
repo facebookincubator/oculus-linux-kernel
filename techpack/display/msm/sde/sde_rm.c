@@ -311,12 +311,12 @@ void sde_rm_init_hw_iter(
 }
 
 enum sde_rm_topology_name sde_rm_get_topology_name(struct sde_rm *rm,
-	struct msm_display_topology topology)
+	struct msm_display_topology topology, bool conn_is_dsi)
 {
 	int i;
 
 	for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++) {
-		if (rm->vsync_skew_supported) {
+		if (rm->vsync_skew_supported && conn_is_dsi) {
 			if (RM_IS_TOPOLOGY_MATCH_WITH_CTL(rm->topology_tbl[i],
 						topology, DUAL_CTL)) {
 				return rm->topology_tbl[i].top_name;
@@ -1848,7 +1848,9 @@ static int _sde_rm_populate_requirements(
 	sde_encoder_get_hw_resources(enc, &reqs->hw_res, conn_state);
 
 	for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++) {
-		if (rm->vsync_skew_supported) {
+		if ((rm->vsync_skew_supported) &&
+				(conn_state->connector->connector_type
+					== DRM_MODE_CONNECTOR_DSI)) {
 			if (RM_IS_TOPOLOGY_MATCH_WITH_CTL(rm->topology_tbl[i],
 					reqs->hw_res.topology, DUAL_CTL)) {
 				reqs->topology = &rm->topology_tbl[i];
@@ -1985,7 +1987,9 @@ int sde_rm_update_topology(struct sde_rm *rm,
 	if (topology) {
 		top = *topology;
 		for (i = 0; i < SDE_RM_TOPOLOGY_MAX; i++) {
-			if (rm->vsync_skew_supported) {
+			if ((rm->vsync_skew_supported) &&
+					(conn_state->connector->connector_type
+						== DRM_MODE_CONNECTOR_DSI)) {
 				if (RM_IS_TOPOLOGY_MATCH_WITH_CTL
 					(rm->topology_tbl[i], top, DUAL_CTL)) {
 					top_name = rm->topology_tbl[i].top_name;
@@ -2017,6 +2021,7 @@ bool sde_rm_topology_is_group(struct sde_rm *rm,
 	struct drm_connector_state *conn_state;
 	struct msm_display_topology topology;
 	enum sde_rm_topology_name name;
+	bool conn_is_dsi = false;
 
 	if ((!rm) || (!state) || (!state->state)) {
 		pr_err("invalid arguments: rm:%d state:%d atomic state:%d\n",
@@ -2047,7 +2052,10 @@ bool sde_rm_topology_is_group(struct sde_rm *rm,
 			continue;
 		}
 
-		name = sde_rm_get_topology_name(rm, topology);
+		if (conn_state->connector->connector_type
+				== DRM_MODE_CONNECTOR_DSI)
+			conn_is_dsi = true;
+		name = sde_rm_get_topology_name(rm, topology, conn_is_dsi);
 		switch (group) {
 		case SDE_RM_TOPOLOGY_GROUP_SINGLEPIPE:
 			if (TOPOLOGY_SINGLEPIPE_MODE(name))

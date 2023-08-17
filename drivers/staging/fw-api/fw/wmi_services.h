@@ -65,10 +65,10 @@ typedef  enum  {
     WMI_SERVICE_GPIO=25,                    /* GPIO service */
     WMI_SERVICE_STA_DTIM_PS_MODULATED_DTIM=26, /* Modulated DTIM support */
     WMI_STA_UAPSD_BASIC_AUTO_TRIG=27,       /* Basic version of station UAPSD AC Trigger Generation Method with
-                                             * variable tigger periods (service, delay, and suspend intervals) */
+                                             * variable trigger periods (service, delay, and suspend intervals) */
     WMI_STA_UAPSD_VAR_AUTO_TRIG=28,         /* Station UAPSD AC Trigger Generation Method with variable
                                              * trigger periods (service, delay, and suspend intervals) */
-    WMI_SERVICE_STA_KEEP_ALIVE=29,          /* Serivce to support the STA KEEP ALIVE mechanism */
+    WMI_SERVICE_STA_KEEP_ALIVE=29,          /* Service to support the STA KEEP ALIVE mechanism */
     WMI_SERVICE_TX_ENCAP=30,                /* Packet type for TX encapsulation */
     WMI_SERVICE_AP_PS_DETECT_OUT_OF_SYNC=31, /* detect out-of-sync sleeping stations */
     WMI_SERVICE_EARLY_RX=32,                /* adaptive early-rx feature */
@@ -523,8 +523,8 @@ typedef  enum  {
     WMI_SERVICE_WAPI_CONCURRENCY_SUPPORTED = 277, /* Indicates FW support for WAPI concurrency */
     WMI_SERVICE_SAP_CONNECTED_D3WOW = 278,  /* Indicates FW support for D3WoW for SAP connected case */
     WMI_SERVICE_GO_CONNECTED_D3WOW = 279,   /* Indicates FW support for D3WoW for P2P GO connected case */
-    WMI_SERVICE_EXT_TPC_REG_SUPPORT = 280, /* Support for new 6G TPC power limits */
-    WMI_SERVICE_REG_CC_EXT_EVENT_SUPPORT = 281, /* Support for Extended REG_CC Event with additional params for 6G */
+    WMI_SERVICE_EXT_TPC_REG_SUPPORT = 280, /* Support for new 6 GHz TPC power limits */
+    WMI_SERVICE_REG_CC_EXT_EVENT_SUPPORT = 281, /* Support for Extended REG_CC Event with additional params for 6 GHz */
     WMI_SERVICE_NDI_TXBF_SUPPORT = 282, /* Indicates FW support for Tx beamforming with NDI VDEV */
     WMI_SERVICE_ENABLE_LOWER_6G_EDGE_CH_SUPP = 283, /* Indicates FW support for enabling lower 6 GHz edge channel 5935 */
     WMI_SERVICE_DISABLE_UPPER_6G_EDGE_CH_SUPP = 284, /* Indicates FW support for disabling upper 6 GHz edge channel 7115 */
@@ -597,6 +597,13 @@ typedef  enum  {
     WMI_SERVICE_HALPHY_CTRL_PATH_STATS = 344, /* HALPHY STATS through control path */
     WMI_SERVICE_PEER_CHWIDTH_PUNCTURE_BITMAP_SUPPORT = 345, /* FW supports puncture bitmap change with channel width switch */
     WMI_SERVICE_BANG_RADAR_320_SUPPORT = 346, /* Host to send frequency offset for bang radar in extended field for 320M support */
+    WMI_SERVICE_XGAP_SUPPORT = 347, /* FW support for XGAP */
+    WMI_SERVICE_OBSS_PER_PACKET_SR_SUPPORT = 348, /* Spatial Reuse support for per PPDU setting */
+    WMI_SERVICE_MULTIPLE_VDEV_RESTART_BITMAP_SUPPORT = 349, /* Extended Multiple VDEV Restart with Bitmap Support */
+    WMI_SERVICE_WMI_SERVICE_WPA3_SHA384_ROAM_SUPPORT = 350, /* Indicates FW supports WPA3 SHA384 roaming */
+    WMI_SERVICE_ODD_LIVEDUMP_SUPPORT = 351, /* Support for ODD Livedump from the FW */
+    WMI_SERVICE_EIRP_PREFERRED_SUPPORT = 352, /* Support for OOBE feature where only EIRP powers will be sent in 6 GHz TPC WMI */
+    WMI_SERVICE_RTT_TX_RX_CHAIN_IDX_SUPPORT = 353, /* FW Supports configuring Tx and Rx Chainmask in intiator and Responder */
 
 
     WMI_MAX_EXT2_SERVICE
@@ -631,15 +638,15 @@ typedef  enum  {
  */
 #define WMI_SERVICE_ENABLE(pwmi_svc_bmap,svc_id) \
     ( (pwmi_svc_bmap)[(svc_id)/(sizeof(A_UINT32))] |= \
-         (1 << ((svc_id)%(sizeof(A_UINT32)))) )
+         ((A_UINT32) 1 << ((svc_id)%(sizeof(A_UINT32)))) )
 
 #define WMI_SERVICE_DISABLE(pwmi_svc_bmap,svc_id) \
     ( (pwmi_svc_bmap)[(svc_id)/(sizeof(A_UINT32))] &=  \
-      ( ~(1 << ((svc_id)%(sizeof(A_UINT32)))) ) )
+      ( ~((A_UINT32) 1 << ((svc_id)%(sizeof(A_UINT32)))) ) )
 
 #define WMI_SERVICE_IS_ENABLED(pwmi_svc_bmap,svc_id) \
     ( ((pwmi_svc_bmap)[(svc_id)/(sizeof(A_UINT32))] &  \
-       (1 << ((svc_id)%(sizeof(A_UINT32)))) ) != 0)
+       ((A_UINT32) 1 << ((svc_id)%(sizeof(A_UINT32)))) ) != 0)
 
 
 #define WMI_SERVICE_EXT_ENABLE(pwmi_svc_bmap, pwmi_svc_ext_bmap, svc_id) \
@@ -649,7 +656,7 @@ typedef  enum  {
         } else { \
             int word = ((svc_id) - WMI_MAX_SERVICE) / 32; \
             int bit = (svc_id) & 0x1f; /* svc_id mod 32 */ \
-            (pwmi_svc_ext_bmap)[word] |= (1 << bit); \
+            (pwmi_svc_ext_bmap)[word] |= ((A_UINT32) 1 << bit); \
         } \
     } while (0)
 
@@ -660,7 +667,7 @@ typedef  enum  {
         } else { \
             int word = ((svc_id) - WMI_MAX_SERVICE) / 32; \
             int bit = (svc_id) & 0x1f; /* svc_id mod 32 */ \
-            (pwmi_svc_ext_bmap)[word] &= ~(1 << bit); \
+            (pwmi_svc_ext_bmap)[word] &= ~((A_UINT32) 1 << bit); \
         } \
     } while (0)
 
@@ -684,7 +691,7 @@ typedef  enum  {
         } else { \
             int word = ((svc_id) - WMI_MAX_EXT_SERVICE) / 32; \
             int bit = (svc_id) & 0x1f; /* svc_id mod 32 */ \
-            (pwmi_svc_ext2_bmap)[word] |= (1 << bit); \
+            (pwmi_svc_ext2_bmap)[word] |= ((A_UINT32) 1 << bit); \
         } \
     } while (0)
 
@@ -698,7 +705,7 @@ typedef  enum  {
         } else { \
             int word = ((svc_id) - WMI_MAX_EXT_SERVICE) / 32; \
             int bit = (svc_id) & 0x1f; /* svc_id mod 32 */ \
-            (pwmi_svc_ext2_bmap)[word] &= ~(1 << bit); \
+            (pwmi_svc_ext2_bmap)[word] &= ~((A_UINT32) 1 << bit); \
         } \
     } while (0)
 

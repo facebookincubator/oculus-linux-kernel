@@ -16365,6 +16365,7 @@ static int wl_android_get_tx_rx_duration(struct net_device *dev,
 	uint len, taglen;
 	uint16 type;
 	void *p_data = NULL;
+	wl_pwr_phy_stats_t *stats = NULL;
 	static char iovar_buf[PWRSTATS_IOV_BUFFER_LEN];
 	wl_pwrstats_query_t p_query;
 	wl_pwrstats_t *pwrstats;
@@ -16410,7 +16411,7 @@ static int wl_android_get_tx_rx_duration(struct net_device *dev,
 		return BCME_ERROR;
 	}
 
-	wl_pwr_phy_stats_t *stats = (wl_pwr_phy_stats_t *)p_data;
+	stats = (wl_pwr_phy_stats_t *)p_data;
 
 	return snprintf(command, total_len, "%s %d %d", CMD_GET_TX_RX_DURATION, stats->tx_dur, stats->rx_dur);
 }

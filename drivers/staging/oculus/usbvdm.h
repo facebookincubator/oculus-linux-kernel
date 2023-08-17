@@ -7,7 +7,7 @@
 #define VDOS_MAX_BYTES 16
 
 /* Vendor Defined Objects Macros */
-#define VDO_MOUNT_STATE_ACK_STATUS(v) (v & 0xFF)
+#define VDO_ACK_STATUS(v) (v & 0xFF)
 
 /* Vendor Defined Message Header Macros */
 #define VDMH_PARAMETER(h) (h & 0xFF)

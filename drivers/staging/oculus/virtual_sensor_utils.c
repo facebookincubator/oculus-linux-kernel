@@ -11,13 +11,31 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
-int is_charging(struct power_supply *batt_psy)
-{
-	union power_supply_propval val = {0};
+static struct power_supply *usb_psy;
+static struct power_supply *wls_psy;
 
-	return (batt_psy && !power_supply_get_property(batt_psy,
-				POWER_SUPPLY_PROP_CURRENT_NOW, &val) &&
-			val.intval > 0);
+int is_charging(void)
+{
+	bool usb_online, wls_online;
+	union power_supply_propval usb_val = {0}, wls_val = {0};
+	const enum power_supply_property psy_prop = POWER_SUPPLY_PROP_ONLINE;
+
+	if (!usb_psy)
+		usb_psy = power_supply_get_by_name("usb");
+
+	#ifdef CONFIG_CHARGER_CYPD3177
+	if (!wls_psy)
+		wls_psy = power_supply_get_by_name("cypd3177");
+	#endif
+
+	usb_online = usb_psy &&
+			!power_supply_get_property(usb_psy, psy_prop, &usb_val) &&
+			usb_val.intval > 0;
+	wls_online = wls_psy &&
+			!power_supply_get_property(wls_psy, psy_prop, &wls_val) &&
+			wls_val.intval > 0;
+
+	return usb_online || wls_online;
 }
 
 /*
@@ -476,7 +494,7 @@ ssize_t tz_coefficients_discharging_show(struct device *dev, struct device_attri
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.tz_coefficients, data.tz_count, buf);
@@ -495,7 +513,7 @@ ssize_t tz_coefficients_discharging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->tz_coefficients, data->tz_count, buf);
@@ -516,7 +534,7 @@ ssize_t tz_slope_coefficients_discharging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.tz_slope_coefficients, data.tz_count, buf);
@@ -535,7 +553,7 @@ ssize_t tz_slope_coefficients_discharging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->tz_slope_coefficients, data->tz_count, buf);
@@ -556,7 +574,7 @@ ssize_t iio_coefficients_discharging_show(struct device *dev, struct device_attr
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.iio_coefficients, data.iio_count, buf);
@@ -575,7 +593,7 @@ ssize_t iio_coefficients_discharging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->iio_coefficients, data->iio_count, buf);
@@ -596,7 +614,7 @@ ssize_t iio_slope_coefficients_discharging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.iio_slope_coefficients, data.iio_count, buf);
@@ -615,7 +633,7 @@ ssize_t iio_slope_coefficients_discharging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->iio_slope_coefficients, data->iio_count, buf);
@@ -636,7 +654,7 @@ ssize_t tz_coefficients_charging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.tz_coefficients, data.tz_count, buf);
@@ -655,7 +673,7 @@ ssize_t tz_coefficients_charging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->tz_coefficients, data->tz_count, buf);
@@ -676,7 +694,7 @@ ssize_t tz_slope_coefficients_charging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.tz_slope_coefficients,	data.tz_count, buf);
@@ -695,7 +713,7 @@ ssize_t tz_slope_coefficients_charging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->tz_slope_coefficients, data->tz_count, buf);
@@ -716,7 +734,7 @@ ssize_t iio_coefficients_charging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.iio_coefficients, data.iio_count, buf);
@@ -735,7 +753,7 @@ ssize_t iio_coefficients_charging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->iio_coefficients, data->iio_count, buf);
@@ -756,7 +774,7 @@ ssize_t iio_slope_coefficients_charging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = show_coefficients(data.iio_slope_coefficients, data.iio_count, buf);
@@ -775,7 +793,7 @@ ssize_t iio_slope_coefficients_charging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	ret = store_coefficients(data->iio_slope_coefficients, data->iio_count, buf);
@@ -796,7 +814,7 @@ ssize_t intercept_charging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = sprintf(buf, "%d\n", data.intercept);
@@ -819,7 +837,7 @@ ssize_t intercept_charging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	data->intercept = constant;
@@ -838,7 +856,7 @@ ssize_t intercept_discharging_show(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %zd\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
 	ret = sprintf(buf, "%d\n", data.intercept);
@@ -861,7 +879,7 @@ ssize_t intercept_discharging_store(struct device *dev,
 
 	ret = mutex_lock_interruptible(&drvdata->lock);
 	if (ret < 0) {
-		dev_err(dev, "Failed to obtain mutex: %d\n", ret);
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, ret);
 		return ret;
 	}
 	data->intercept = constant;
@@ -888,10 +906,11 @@ extern void of_thermal_handle_trip_temp(struct thermal_zone_device *tz, int trip
 
 static void virtual_sensor_check(struct work_struct *work)
 {
-	int ret = 0;
-	int temp;
 	struct virtual_sensor_common_data *data = container_of(work, struct virtual_sensor_common_data, poll_queue.work);
 	struct thermal_zone_device *tzd = data->tzd;
+
+#ifdef CONFIG_ARCH_KONA
+	int ret, temp;
 
 	ret = thermal_zone_get_temp(tzd, &temp);
 	if (ret) {
@@ -901,7 +920,6 @@ static void virtual_sensor_check(struct work_struct *work)
 				 ret);
 		return;
 	}
-#ifdef CONFIG_ARCH_KONA
 	of_thermal_handle_trip_temp(tzd, temp);
 #else
 	thermal_zone_device_update(tzd, THERMAL_EVENT_UNSPECIFIED);
