@@ -1709,7 +1709,7 @@
 		reg-names = "dcc-base", "dcc-ram-base";
 
 		clocks = <&clock_gcc GCC_DCC_AHB_CLK>;
-		clock-names = "dcc_clk";
+		clock-names = "apb_pclk";
 	};
 
 	tcsr_mutex_block: syscon@1f40000 {

@@ -110,6 +110,10 @@
 #include <performance_custom.h>
 #endif
 
+#ifdef CONFIG_XRPS_DHD_HOOKS
+#include "xrps.h"
+#endif /* CONFIG_XRPS_DHD_HOOKS */
+
 #define EXTENDED_PCIE_DEBUG_DUMP 1	/* Enable Extended pcie registers dump */
 
 #define MEMBLOCK	2048		/* Block size used for downloading of dongle image */
@@ -6349,6 +6353,13 @@ BCMFASTPATH(dhd_bus_schedule_queue)(struct dhd_bus  *bus, uint16 flow_id, bool t
 			DHD_FLOWRING_UNLOCK(flow_ring_node->lock, flags);
 			return BCME_NOTREADY;
 		}
+
+#ifdef CONFIG_XRPS_DHD_HOOKS
+		if (xrps_is_init() && bus->dhd->xrps_intf->handle_flowring(flow_id)) {
+			DHD_FLOWRING_UNLOCK(flow_ring_node->lock, flags);
+			return BCME_OK;
+		}
+#endif /* CONFIG_XRPS_DHD_HOOKS */
 
 		while ((txp = dhd_flow_queue_dequeue(bus->dhd, queue)) != NULL) {
 			PKTORPHAN(txp);

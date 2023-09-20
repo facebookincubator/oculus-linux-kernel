@@ -16,14 +16,6 @@ config AS5510
 	  Here is spec sheet:
 	  http://www.mouser.com/ds/2/588/AS5510_Datasheet_EN_v3-272817.pdf
 
-config BATTERY_VIRTUAL_SENSOR
-	tristate "Battery Virtual Sensor Driver"
-	default n
-	select VIRTUAL_SENSOR_UTILS
-	help
-	  This driver implements a virtual sensor driver representing the
-	  battery temperature of a device.
-
 config BLU_FW
 	tristate "Support BLU FW Updates"
 	default n
@@ -35,7 +27,7 @@ config CAM_FSYNC
 	depends on OCULUS
 	default n
 	help
-	    Enable Camera FSYNC Timestamp driver
+	  Enable Camera FSYNC Timestamp driver
 
 config CHARGER_CYPD3177
 	tristate "CONFIG_CYPD3177 support"
@@ -51,13 +43,14 @@ config CHARGING_THERMAL_CONTROLLER
 	tristate "Charging Thermal Controller Driver"
 	default n
 	help
-		This driver votes on a device tree defined pmic votable when trip points
-		associated with a cooling device are passed. There are three states:
-		0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
-		these levels are also device tree defined.
+	  This driver votes on a device tree defined pmic votable when trip points
+	  associated with a cooling device are passed. There are three states:
+	  0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
+	  these levels are also device tree defined.
 
 config CYPD_POLICY_ENGINE
 	tristate "Cypress Power Delivery Policy Engine"
+	depends on CHARGER_CYPD3177
 	default n
 	help
 	  Say Y here to enable CYPD policy engine. This driver implements policy
@@ -85,10 +78,10 @@ config GPIO_CAPACITOR
 	tristate "Cap Hold Up Circuit controlled by GPIO"
 	default n
 	help
-		Cap Hold-Up circuit along with AP suspend so that this circuit is active
-		when the system is active (busy and capable of high power peaks) to avoid
-		sudden high current. And disabled when not in use (EG: Standby) since the
-		circuit has some leakage to prevent excessive power drain.
+	  Cap Hold-Up circuit along with AP suspend so that this circuit is active
+	  when the system is active (busy and capable of high power peaks) to avoid
+	  sudden high current. And disabled when not in use (EG: Standby) since the
+	  circuit has some leakage to prevent excessive power drain.
 
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
@@ -131,28 +124,13 @@ config OCULUS_EXTERNAL_BATTERY
 	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
 	  external battery parameters.
 
-if OCULUS_EXTERNAL_BATTERY
-choice
-	prompt "VDM Messaging Driver"
-
-config OCULUS_EXTERNAL_BATTERY_USBPD
-	bool "External battery usbpd"
-	depends on USB_PD_POLICY
+config POWERSTATE_MANAGER
+	tristate "Powerstate manager driver"
+	default n
 	help
-	  USBPD extension to the external_battery driver. Specifies that it
-	  should used the kernel's usbpd stack for VDM messaging.
-
-config OCULUS_EXTERNAL_BATTERY_GLINK
-	bool "External battery glink driver"
-	depends on OCULUS_VDM_GLINK
-	help
-	  External battery glink kernel module for registering unstructured vdm
-	  messages. Messages will be sent with host device acting as a source and
-	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
-	  external battery parameters.
-
-endchoice
-endif #OCULUS_EXTERNAL_BATTERY
+	  Driver for allowing services to prevent AP suspend. Specifically useful
+	  for vendor services, which cannot talk to the PowerManager service and
+	  have no other robust way to acquire wakelocks.
 
 config NAUTILUS_RESOURCE_MANAGER
 	tristate "Nautilus resource manager kernel driver"
@@ -163,6 +141,7 @@ config NAUTILUS_RESOURCE_MANAGER
 
 config OCULUS_CHARGING_DOCK
 	tristate "Oculus charging dock driver"
+	depends on USB_PD_POLICY || OCULUS_VDM_GLINK || CYPD_POLICY_ENGINE
 	default n
 	help
 	  Oculus charging dock driver handling unstructured vdm messages between
@@ -239,10 +218,10 @@ config RT600_CTRL
 	tristate "Oculus RT600 control driver"
 	default n
 	help
-	    Enable RT600 control driver. This driver controls RT600 state
-		for flashing and reset. RT600 state needs to be modified via
-		sysfs to enable testing of different state transitions and also
-		to ensure RT600 is in the correct state for flashing.
+	  Enable RT600 control driver. This driver controls RT600 state
+	  for flashing and reset. RT600 state needs to be modified via
+	  sysfs to enable testing of different state transitions and also
+	  to ensure RT600 is in the correct state for flashing.
 
 config SEACLIFF_BLU
 	tristate "Oculus Seacliff SPI BLU Driver"
@@ -273,14 +252,24 @@ config SPI_STP
 	  pre-configured STP channels. Each STP channel is exposed as a dedicated
 	  character device, interfaceable through syscalls
 
+config ST_VD6281_ADAPTER
+	tristate "ST VD6281 Driver"
+	default n
+	depends on I2C
+	help
+	  This driver controls the ST VD6281 sensor. This sensor is both a
+	  flicker and an ambient light sensor (ALS). The sensor has an I2C
+	  interface for ALS data and configuration and uses SPI for obtaining
+	  raw flicker data.
+
 config UVLO_TLV4021
-    tristate "uvlo tlv4021 driver"
-    default n
-    depends on OCULUS
-    help
-      Driver implementing uvlo device for detecting the interrupt captured
-      by TLV4021 and report it through sysfs node.
-      If you say yes here you get support for the uvlo driver.
+	tristate "uvlo tlv4021 driver"
+	default n
+	depends on OCULUS
+	help
+	  Driver implementing uvlo device for detecting the interrupt captured
+	  by TLV4021 and report it through sysfs node.
+	  If you say yes here you get support for the uvlo driver.
 
 config VENDOR_DT_OUTPUT_DISABLE
 	bool "Disable building of device trees for test platforms"

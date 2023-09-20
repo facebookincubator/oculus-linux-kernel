@@ -6841,7 +6841,7 @@ dhd_stop(struct net_device *net)
 				(dhd->dhd_state & DHD_ATTACH_STATE_CFG80211)) {
 				int i;
 #ifdef DHD_4WAYM4_FAIL_DISCONNECT
-				dhd_cleanup_m4_state_work(&dhd->pub, ifidx);
+				dhd_cleanup_m4_state_work_all(&dhd->pub);
 #endif /* DHD_4WAYM4_FAIL_DISCONNECT */
 #ifdef DHD_PKTDUMP_ROAM
 				dhd_dump_pkt_clear(&dhd->pub);
@@ -23953,6 +23953,29 @@ dhd_cleanup_m4_state_work(dhd_pub_t *dhdp, int ifidx)
 	ifp = dhdinfo->iflist[ifidx];
 	if (ifp) {
 		cancel_delayed_work_sync(&ifp->m4state_work);
+	}
+}
+
+void
+dhd_cleanup_m4_state_work_all(dhd_pub_t *dhdp)
+{
+	dhd_info_t *dhdinfo;
+	dhd_if_t *ifp;
+	int ifidx;
+
+	dhdinfo = (dhd_info_t *)(dhdp->info);
+	if (!dhdinfo) {
+		DHD_ERROR(("%s: dhdinfo is NULL\n", __FUNCTION__));
+		return;
+	}
+
+	/* clear the work for all interfces */
+	for (ifidx = 0; ifidx < DHD_MAX_IFS; ifidx++) {
+		ifp = dhdinfo->iflist[ifidx];
+		if (ifp) {
+			cancel_delayed_work_sync(&ifp->m4state_work);
+			DHD_ERROR(("cancel delayed work for ifidx %d\n", ifidx));
+		}
 	}
 }
 #endif /* DHD_4WAYM4_FAIL_DISCONNECT */

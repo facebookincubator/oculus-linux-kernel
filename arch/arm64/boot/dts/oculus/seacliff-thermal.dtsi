@@ -4,17 +4,16 @@
 
 &vendor {
 	battery_virtual_sensor: battery_virtual_sensor {
-		compatible = "oculus,battery-virtual-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		pcm-thermal-zone = "battery";
-		pcm-thermal-zone-scaling-factor = <1>;
+		fallback-thermal-zone = "battery";
+		fallback-tolerance = <10000>;
 
 		thermal-zones = "battery";
 		thermal-zone-scaling-factors = <1>;
 
-		max-differential = <10000>;
 		internal-polling-delay = <1000>;
 
 		coefficients {

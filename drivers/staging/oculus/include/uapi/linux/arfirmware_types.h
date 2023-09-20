@@ -57,6 +57,7 @@ enum ar_queue_direction {
 struct ar_mem_segment {
 	void *ptr;
 	uint32_t size;
+	int32_t mem_fd;
 };
 
 /**

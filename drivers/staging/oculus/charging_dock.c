@@ -17,6 +17,12 @@
  */
 #define BATTERY_NEARLY_FULL_LEVEL	98
 
+struct svid_handler_info {
+	struct charging_dock_device_t *ddev;
+	struct glink_svid_handler handler;
+	struct list_head entry;
+};
+
 static int batt_psy_notifier_call(struct notifier_block *nb,
 	unsigned long ev, void *ptr);
 
@@ -43,6 +49,8 @@ static void charging_dock_send_vdm_request(
 		result = usbpd_send_vdm(ddev->upd, vdm_header, &vdm_vdo, num_vdos);
 	else if (ddev->intf_type == INTF_TYPE_CYPD)
 		result = cypd_send_vdm(ddev->cpd, vdm_header, &vdm_vdo, num_vdos);
+	else if (ddev->intf_type == INTF_TYPE_GLINK)
+		result = vdm_glink_send_vdm(ddev->gpd, vdm_header, &vdm_vdo, num_vdos);
 
 	if (result != 0) {
 		dev_err(ddev->dev,
@@ -194,6 +202,16 @@ static void cypd_vdm_connect_alt(struct cypd_svid_handler *hdlr)
 	vdm_connect_common(ddev, INTF_TYPE_CYPD, hdlr->svid);
 }
 
+static void glink_vdm_connect(struct glink_svid_handler *hdlr, bool unused)
+{
+	struct svid_handler_info *handler_info =
+			container_of(hdlr, struct svid_handler_info, handler);
+	struct charging_dock_device_t *ddev = handler_info->ddev;
+
+	dev_info(ddev->dev, "glink vdm connect alt");
+	vdm_connect_common(ddev, INTF_TYPE_GLINK, hdlr->svid);
+}
+
 static void usbpd_vdm_connect(struct usbpd_svid_handler *hdlr, bool supports_usb_comm)
 {
 	struct charging_dock_device_t *ddev =
@@ -240,6 +258,16 @@ static void cypd_vdm_disconnect_alt(struct cypd_svid_handler *hdlr)
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
 	dev_info(ddev->dev, "cypd vdm disconnect alt\n");
 	vdm_disconnect_common(ddev, INTF_TYPE_CYPD);
+}
+
+static void glink_vdm_disconnect(struct glink_svid_handler *hdlr)
+{
+	struct svid_handler_info *handler_info =
+			container_of(hdlr, struct svid_handler_info, handler);
+	struct charging_dock_device_t *ddev = handler_info->ddev;
+
+	dev_info(ddev->dev, "glink vdm disconnect");
+	vdm_disconnect_common(ddev, INTF_TYPE_GLINK);
 }
 
 static void usbpd_vdm_disconnect(struct usbpd_svid_handler *hdlr)
@@ -343,6 +371,20 @@ static void parse_connected_devices(struct charging_dock_device_t *ddev, const u
 	}
 }
 
+static void vdm_memcpy(struct charging_dock_device_t *ddev,
+		u32 param, int num_vdos,
+		void *dest, const void *src, size_t count)
+{
+	if (count > num_vdos * sizeof(u32)) {
+		dev_warn(ddev->dev,
+				"Received VDM (0x%02x) of insufficent length: %lu",
+				param, count);
+		return;
+	}
+
+	memcpy(dest, src, count);
+}
+
 static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr,
 		const u32 *vdos, int num_vdos)
 {
@@ -386,14 +428,16 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 			ddev->params.fw_version = vdos[0];
 			break;
 		case PARAMETER_TYPE_SERIAL_NUMBER_MLB:
-			memcpy(ddev->params.serial_number_mlb,
+			vdm_memcpy(ddev, parameter_type, num_vdos,
+				ddev->params.serial_number_mlb,
 				vdos, sizeof(ddev->params.serial_number_mlb));
 			break;
 		case PARAMETER_TYPE_BOARD_TEMPERATURE:
 			ddev->params.board_temp = vdos[0];
 			break;
 		case PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM:
-			memcpy(ddev->params.serial_number_system,
+			vdm_memcpy(ddev, parameter_type, num_vdos,
+				ddev->params.serial_number_system,
 				vdos, sizeof(ddev->params.serial_number_system));
 			break;
 		case PARAMETER_TYPE_BROADCAST_PERIOD:
@@ -469,7 +513,9 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 						log_chunk_size);
 				break;
 			}
-			memcpy(ddev->log + log_chunk_offset, vdos, log_chunk_size);
+			vdm_memcpy(ddev, parameter_type, num_vdos,
+					ddev->log + log_chunk_offset,
+					vdos, log_chunk_size);
 			break;
 		default:
 			dev_err(ddev->dev, "Unsupported response parameter 0x%x",
@@ -524,6 +570,17 @@ static void cypd_vdm_received_alt(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
 	struct charging_dock_device_t *ddev =
 		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
 	dev_dbg(ddev->dev, "cypd vdm received alt\n");
+	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
+}
+
+static void glink_vdm_received(struct glink_svid_handler *hdlr, u32 vdm_hdr,
+		const u32 *vdos, int num_vdos)
+{
+	struct svid_handler_info *handler_info =
+			container_of(hdlr, struct svid_handler_info, handler);
+	struct charging_dock_device_t *ddev = handler_info->ddev;
+
+	dev_dbg(ddev->dev, "glink vdm received\n");
 	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
 }
 
@@ -1182,7 +1239,10 @@ static void batt_psy_init(struct charging_dock_device_t *ddev)
 static int charging_dock_probe(struct platform_device *pdev)
 {
 	int result = 0;
+	int i, num_supported;
+	u16 *supported_devices;
 	struct charging_dock_device_t *ddev;
+	struct svid_handler_info *handler_info;
 	u32 temp_val = 0;
 
 	dev_dbg(&pdev->dev, "enter\n");
@@ -1212,6 +1272,17 @@ static int charging_dock_probe(struct platform_device *pdev)
 		dev_err_ratelimited(&pdev->dev, "devm_cypd_get_by_phandle failed: %ld\n",
 				PTR_ERR(ddev->cpd));
 		return PTR_ERR(ddev->cpd);
+#endif
+	}
+
+	// glink: return on failure only if interface is enabled on the platform
+	ddev->gpd = devm_vdm_glink_get_by_phandle(&pdev->dev, "vdm-glink");
+	if (IS_ERR_OR_NULL(ddev->gpd)) {
+#if IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)
+		dev_err_ratelimited(&pdev->dev,
+				"devm_vdm_glink_get_by_phandle failed: %ld",
+				PTR_ERR(ddev->gpd));
+		return PTR_ERR(ddev->gpd);
 #endif
 	}
 
@@ -1263,6 +1334,47 @@ static int charging_dock_probe(struct platform_device *pdev)
 		}
 	}
 
+	if (!IS_ERR_OR_NULL(ddev->gpd)) {
+		INIT_LIST_HEAD(&ddev->glink_handlers);
+
+		num_supported = device_property_read_u16_array(&pdev->dev,
+				"supported-devices", NULL, 0);
+		if (num_supported <= 0 || (num_supported % 2) != 0) {
+			dev_err(&pdev->dev,
+					"supported-devices must be specified as a list of SVID/PID pairs, rc=%d",
+					num_supported);
+			return -EINVAL;
+		}
+
+		supported_devices = kcalloc(num_supported, sizeof(u16), GFP_KERNEL);
+		if (!supported_devices)
+			return -ENOMEM;
+
+		result = device_property_read_u16_array(&pdev->dev,
+				"supported-devices", supported_devices, num_supported);
+		if (result) {
+			dev_err(&pdev->dev,
+					"failed reading supported-devices, rc=%d num_supported=%d",
+					result, num_supported);
+			return result;
+		}
+
+		for (i = 0; i < num_supported; i += 2) {
+			handler_info = devm_kzalloc(&pdev->dev,
+					sizeof(*handler_info), GFP_KERNEL);
+			if (!handler_info)
+				return -ENOMEM;
+
+			handler_info->ddev = ddev;
+			handler_info->handler.svid = supported_devices[i];
+			handler_info->handler.pid = supported_devices[i+1];
+			handler_info->handler.connect = glink_vdm_connect;
+			handler_info->handler.disconnect = glink_vdm_disconnect;
+			handler_info->handler.vdm_received = glink_vdm_received;
+			list_add_tail(&handler_info->entry, &ddev->glink_handlers);
+		}
+	}
+
 	result = of_property_read_u32(pdev->dev.of_node,
 		"broadcast-period-min", &temp_val);
 	if (result < 0 || temp_val > MAX_BROADCAST_PERIOD_MIN) {
@@ -1311,6 +1423,21 @@ static int charging_dock_probe(struct platform_device *pdev)
 				dev_dbg(&pdev->dev, "Registered cypd svid 0x%04x (alt)", ddev->cypd_vdm_handler_alt.svid);
 		}
 	}
+	if (!IS_ERR_OR_NULL(ddev->gpd)) {
+		/*
+		 * TODO(T156681666): clean up vdm_glink naming so it is more like the
+		 * other interfaces
+		 */
+		list_for_each_entry(handler_info, &ddev->glink_handlers, entry) {
+			result = vdm_glink_register_handler(ddev->gpd, &handler_info->handler);
+			if (result != 0) {
+				dev_err(&pdev->dev, "Failed to register glink vdm handler: %d(0x%x)", result, result);
+				return result;
+			}
+			dev_dbg(&pdev->dev, "Registered glink SVID/PID 0x%04x/0x%04x",
+					handler_info->handler.svid, handler_info->handler.pid);
+		}
+	}
 
 	ddev->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, ddev);
@@ -1329,6 +1456,7 @@ static int charging_dock_probe(struct platform_device *pdev)
 static int charging_dock_remove(struct platform_device *pdev)
 {
 	struct charging_dock_device_t *ddev = platform_get_drvdata(pdev);
+	struct svid_handler_info *handler_info;
 
 	dev_dbg(ddev->dev, "enter\n");
 
@@ -1337,6 +1465,10 @@ static int charging_dock_remove(struct platform_device *pdev)
 
 	if (ddev->cpd != NULL)
 		cypd_unregister_svid(ddev->cpd, &ddev->cypd_vdm_handler);
+
+	if (ddev->gpd != NULL)
+		list_for_each_entry(handler_info, &ddev->glink_handlers, entry)
+			vdm_glink_unregister_handler(ddev->gpd, &handler_info->handler);
 
 	cancel_delayed_work_sync(&ddev->dwork);
 	if (ddev->send_state_of_charge) {

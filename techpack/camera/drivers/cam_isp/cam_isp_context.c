@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -4187,6 +4187,69 @@ error:
 	return 0;
 }
 
+static int __cam_isp_ctx_rdi_only_reg_upd_in_applied_state(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	struct cam_ctx_request  *req = NULL;
+	struct cam_context      *ctx = ctx_isp->base;
+	struct cam_isp_ctx_req  *req_isp;
+	uint64_t  request_id  = 0;
+
+	if (list_empty(&ctx->wait_req_list)) {
+		CAM_ERR_RATE_LIMIT(CAM_ISP,
+			"Reg upd ack with no waiting req ctx %u active cnt %d",
+			ctx->ctx_id, ctx_isp->active_req_cnt);
+
+		/*  move the sub state machine to SOF sub state */
+		ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_SOF;
+		goto end;
+	}
+
+	ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_EPOCH;
+
+	req = list_first_entry(&ctx->wait_req_list,
+			struct cam_ctx_request, list);
+	list_del_init(&req->list);
+
+	req_isp = (struct cam_isp_ctx_req *) req->req_priv;
+
+	request_id = (req_isp->hw_update_data.packet_opcode_type ==
+			CAM_ISP_PACKET_INIT_DEV) ? 0 : req->request_id;
+
+	if (req_isp->num_fence_map_out != 0) {
+		list_add_tail(&req->list, &ctx->active_req_list);
+		ctx_isp->active_req_cnt++;
+		request_id = req->request_id;
+		CAM_DBG(CAM_REQ,
+			"move request %lld to active list(cnt = %d), ctx %u",
+			req->request_id, ctx_isp->active_req_cnt, ctx->ctx_id);
+	} else {
+		/* no io config, so the request is completed. */
+		list_add_tail(&req->list, &ctx->free_req_list);
+		CAM_DBG(CAM_ISP,
+			"move active req %lld to free list(cnt = %d), ctx %u",
+			req->request_id, ctx_isp->active_req_cnt, ctx->ctx_id);
+	}
+
+	if (request_id) {
+		ctx_isp->reported_req_id = request_id;
+		__cam_isp_ctx_send_sof_timestamp(ctx_isp, request_id,
+			CAM_REQ_MGR_SOF_EVENT_SUCCESS);
+	}
+
+	CAM_DBG(CAM_ISP, "next Substate[%s] ctx %u",
+		__cam_isp_ctx_substate_val_to_type(ctx_isp->substate_activated),
+		ctx->ctx_id);
+
+	__cam_isp_ctx_update_event_record(ctx_isp, CAM_ISP_CTX_EVENT_RUP, req);
+
+	return 0;
+end:
+	__cam_isp_ctx_update_event_record(ctx_isp, CAM_ISP_CTX_EVENT_RUP, NULL);
+
+	return 0;
+}
+
 static struct cam_isp_ctx_irq_ops
 	cam_isp_ctx_rdi_only_activated_state_machine_irq
 			[CAM_ISP_CTX_ACTIVATED_MAX] = {
@@ -4206,7 +4269,7 @@ static struct cam_isp_ctx_irq_ops
 		.irq_ops = {
 			__cam_isp_ctx_handle_error,
 			__cam_isp_ctx_rdi_only_sof_in_applied_state,
-			NULL,
+			__cam_isp_ctx_rdi_only_reg_upd_in_applied_state,
 			NULL,
 			NULL,
 			__cam_isp_ctx_buf_done_in_applied,

@@ -2313,6 +2313,15 @@ wl_cfgp2p_set_p2p_ecsa(struct bcm_cfg80211 *cfg, struct net_device *ndev, char* 
 		chnsp = wl_chspec_host_to_driver(chnsp);
 		csa_arg.chspec = chnsp;
 
+		if ((err = wldev_iovar_getint(ndev, "per_chan_info", &chnsp)) == BCME_OK) {
+			if (chnsp & WL_CHAN_RESTRICTED) {
+				CFGP2P_ERR(("restricted use channel (0x%x)\n", chnsp));
+				return BCME_ERROR;
+			}
+		} else {
+			CFGP2P_ERR(("get 'per_chan_info' failed (%d)\n", err));
+		}
+
 		err = wldev_iovar_setbuf(dev, "csa", &csa_arg, sizeof(csa_arg),
 			smbuf, sizeof(smbuf), NULL);
 		if (err) {

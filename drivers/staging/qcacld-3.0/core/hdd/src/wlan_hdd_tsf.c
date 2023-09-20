@@ -1439,7 +1439,7 @@ static ssize_t hdd_wlan_tsf_show(struct device *dev,
 	return err_size;
 }
 
-static DEVICE_ATTR(tsf, 0400, hdd_wlan_tsf_show, NULL);
+static DEVICE_ATTR(tsf, 0444, hdd_wlan_tsf_show, NULL);
 
 static enum hdd_tsf_op_result hdd_tsf_sync_init(struct hdd_adapter *adapter)
 {

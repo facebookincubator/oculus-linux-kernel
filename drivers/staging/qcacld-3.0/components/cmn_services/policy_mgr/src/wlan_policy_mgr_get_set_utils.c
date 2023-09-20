@@ -152,6 +152,22 @@ policy_mgr_get_sta_sap_scc_on_dfs_chnl(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
+QDF_STATUS
+policy_mgr_get_dfs_sta_sap_go_scc_movement(struct wlan_objmgr_psoc *psoc,
+					   bool *move_sap_go_first)
+{
+	struct policy_mgr_psoc_priv_obj *pm_ctx;
+
+	pm_ctx = policy_mgr_get_context(psoc);
+	if (!pm_ctx) {
+		policy_mgr_err("pm_ctx is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+	*move_sap_go_first = pm_ctx->cfg.move_sap_go_1st_on_dfs_sta_csa;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 static bool
 policy_mgr_update_dfs_master_dynamic_enabled(
 	struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)

@@ -5,7 +5,9 @@
 
 #include <linux/kthread.h>
 #include <linux/notifier.h>
+#include <linux/pagevec.h>
 #include <linux/shmem_fs.h>
+#include <linux/swap.h>
 
 #include "kgsl_reclaim.h"
 #include "kgsl_sharedmem.h"
@@ -217,6 +219,12 @@ ssize_t kgsl_proc_max_reclaim_limit_show(struct device *dev,
 		return 0;
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kgsl_reclaim_max_page_limit);
+}
+
+static void kgsl_release_page_vec(struct pagevec *pvec)
+{
+	check_move_unevictable_pages(pvec->pages, pvec->nr);
+	__pagevec_release(pvec);
 }
 
 static int kgsl_reclaim_callback(struct notifier_block *nb,

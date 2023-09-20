@@ -621,6 +621,48 @@ CFG_INI_UINT("g_pcl_band_priority", 0, 1, 0, CFG_VALUE_OR_DEFAULT, \
 CFG_INI_UINT("g_prefer_5g_scc_to_dbs", 0, 0xFFFFFFFF, 0, CFG_VALUE_OR_DEFAULT, \
 	     "5G SCC has higher priority than DBS")
 
+/*
+ * <ini>
+ * g_move_sap_go_1st_on_dfs_sta_csa - Move SAP / GO first to enforce scc
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini moves SAP / GO first to enforce scc in STA+SAP (GO) DFS SCC
+ * 0 - Keep default MCC to SCC enforcement movement
+ * 1 - Move SAP / GO first before STA's movement to non-DFS channel
+ *
+ * In STA+SAP / GO concurrency, SCC is enforced by moving SAP / GO
+ * to STA's operating channel. STA side, if there is a CSA
+ * then SCC will be enforced only after STA moves to new channel.
+ *
+ * In usecase of STA + GO SCC on DFS channel, CSA is sent with no-TX
+ * and STA's movement will only happen once CSA count becomes 0.
+ * This will block data transmission till then, which will have bad
+ * user experience in case of XR where, it needs to have periodic data
+ * transmission in every 1 second with GO interface.
+ *
+ * To resolve this, it is better to move GO / SAP first to allow 1
+ * second periodic transmissions. And once the STA moves to new channel,
+ * existing logic will be triggered to enforce SCC.
+ *
+ * This INI is added to change the behavior only in this specific case.
+ * If this INI is set, then move SAP / GO first upon receiving very first
+ * CSA from AP to a non-DFS channel. Current MCC to SCC rules will be applied
+ * once STA moves to new channel after CSA count becomes 0.
+ *
+ * Dependency: g_sta_sap_scc_on_dfs_chan, g_enable_go_force_scc
+ *
+ * Supported Feature: SAP / P2P-GO
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_MOVE_SAP_GO_1ST_ON_DFS_STA_CSA \
+CFG_INI_BOOL("g_move_sap_go_1st_on_dfs_sta_csa", 0, \
+	     "Move SAP / GO first to enforce scc on dfs sta csa")
+
 #define CFG_POLICY_MGR_ALL \
 		CFG(CFG_MCC_TO_SCC_SWITCH) \
 		CFG(CFG_CONC_SYS_PREF) \
@@ -643,5 +685,6 @@ CFG_INI_UINT("g_prefer_5g_scc_to_dbs", 0, 0xFFFFFFFF, 0, CFG_VALUE_OR_DEFAULT, \
 		CFG(CFG_ALLOW_MCC_GO_DIFF_BI) \
 		CFG(CFG_P2P_GO_ENABLE_FORCE_SCC) \
 		CFG(CFG_PCL_BAND_PRIORITY) \
-		CFG(CFG_PREFER_5G_SCC_TO_DBS)
+		CFG(CFG_PREFER_5G_SCC_TO_DBS) \
+		CFG(CFG_MOVE_SAP_GO_1ST_ON_DFS_STA_CSA)
 #endif

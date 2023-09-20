@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of_device.h>
@@ -1589,12 +1590,31 @@ static int dsi_message_rx(struct dsi_ctrl *dsi_ctrl,
 		/* clear RDBK_DATA registers before proceeding */
 		dsi_ctrl->hw.ops.clear_rdbk_register(&dsi_ctrl->hw);
 
+		dsi_ctrl->hw.ops.clear_interrupt_status(&dsi_ctrl->hw,
+			DSI_BTA_DONE);
+		dsi_ctrl_enable_status_interrupt(dsi_ctrl,
+			DSI_SINT_BTA_DONE,
+			NULL);
+		reinit_completion(&dsi_ctrl->irq_info.bta_done);
+
 		rc = dsi_message_tx(dsi_ctrl, msg, flags);
 		if (rc) {
 			DSI_CTRL_ERR(dsi_ctrl, "Message transmission failed, rc=%d\n",
 					rc);
+			dsi_ctrl_disable_status_interrupt(dsi_ctrl,
+				DSI_SINT_BTA_DONE);
 			goto error;
 		}
+
+		rc = wait_for_completion_timeout(
+			&dsi_ctrl->irq_info.bta_done,
+			msecs_to_jiffies(DSI_CTRL_TX_TO_MS));
+		if (rc <= 0)
+			DSI_CTRL_DEBUG(dsi_ctrl,
+				"Failed to wait for bta done\n");
+		dsi_ctrl_disable_status_interrupt(dsi_ctrl,
+			DSI_SINT_BTA_DONE);
+
 		/*
 		 * wait before reading rdbk_data register, if any delay is
 		 * required after sending the read command.

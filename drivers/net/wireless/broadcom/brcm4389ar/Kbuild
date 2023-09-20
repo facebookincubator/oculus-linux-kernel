@@ -119,10 +119,22 @@ endif
 # DHDCFLAGS += -DENABLE_PERFORMANCE_DEBUG
 
 #########################################
-# Cutomize for AR
+# Customize for AR
 #########################################
 # Enable Tx Power Control
 DHDCFLAGS += -DTEST_TX_POWER_CONTROL
+
+ifeq ($(CONFIG_XRPS),y)
+DHDCFLAGS += -DCONFIG_XRPS
+endif
+
+ifeq ($(CONFIG_XRPS_PROFILING),y)
+DHDCFLAGS += -DCONFIG_XRPS_PROFILING
+endif
+
+ifeq ($(CONFIG_XRPS_DHD_HOOKS),y)
+DHDCFLAGS += -DCONFIG_XRPS_DHD_HOOKS
+endif
 
 #################
 # Common feature
@@ -798,7 +810,6 @@ ifneq ($(filter -DDHD_STATUS_LOGGING,$(DHDCFLAGS)),)
 	DHDOFILES += dhd_statlog.o
 endif
 
-
 ifneq ($(filter y, $(CONFIG_SOC_GS101) $(CONFIG_SOC_EXYNOS9820) $(CONFIG_SOC_S5E9925)),)
   DHDOFILES += dhd_custom_exynos.o
 else ifneq ($(CONFIG_ARCH_HISI),)
@@ -831,6 +842,14 @@ endif
 
 ifneq ($(filter -DXRAPI, $(DHDCFLAGS)),)
 DHDOFILES += dhd_xrapi.o
+endif
+
+ifneq ($(CONFIG_XRPS),)
+DHDOFILES += dhd_xrps.o xrps_linux.o xrps.o
+endif
+
+ifneq ($(CONFIG_XRPS_PROFILING),)
+DHDOFILES += xrps_profiling.o
 endif
 
 bcmdhd$(BCM_WLAN_CHIP_SUFFIX)-objs := $(DHDOFILES)
