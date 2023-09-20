@@ -4,16 +4,16 @@
 #include <linux/slab.h>
 
 #include "swd.h"
-#include "swd_registers_nrf.h"
-#include "syncboss_swd_ops.h"
+#include "swd_registers_nrf52xxx.h"
+#include "syncboss_swd_ops_nrf52xxx.h"
 
-static int syncboss_swd_is_nvmc_ready(struct device *dev)
+static int syncboss_swd_nrf52xxx_is_nvmc_ready(struct device *dev)
 {
 	return (swd_memory_read(dev, SWD_NRF_NVMC_READY) &
 		SWD_NRF_NVMC_READY_BM) == SWD_NRF_NVMC_READY_Ready;
 }
 
-static int syncboss_swd_wait_for_nvmc_ready(struct device *dev)
+static int syncboss_swd_nrf52xxx_wait_for_nvmc_ready(struct device *dev)
 {
 	const u64 SWD_READY_TIMEOUT_MS = 500;
 	u64 timeout_time_ns = 0;
@@ -22,7 +22,7 @@ static int syncboss_swd_wait_for_nvmc_ready(struct device *dev)
 	    ktime_get_ns() + (SWD_READY_TIMEOUT_MS * NSEC_PER_MSEC);
 
 	while (ktime_get_ns() < timeout_time_ns) {
-		if (syncboss_swd_is_nvmc_ready(dev))
+		if (syncboss_swd_nrf52xxx_is_nvmc_ready(dev))
 			return 0;
 
 		/*
@@ -36,7 +36,7 @@ static int syncboss_swd_wait_for_nvmc_ready(struct device *dev)
 	 * Try once more, just in case we were preempted at an unlucky time
 	 * after calculating timeout_time_ns
 	 */
-	if (syncboss_swd_is_nvmc_ready(dev))
+	if (syncboss_swd_nrf52xxx_is_nvmc_ready(dev))
 		return 0;
 
 	dev_err(dev, "SyncBoss SWD NVMC not ready after %llums",
@@ -44,7 +44,7 @@ static int syncboss_swd_wait_for_nvmc_ready(struct device *dev)
 	return -ETIMEDOUT;
 }
 
-bool syncboss_swd_page_is_erased(struct device *dev, u32 page)
+bool syncboss_swd_nrf52xxx_page_is_erased(struct device *dev, u32 page)
 {
 	const u32 FLASH_ERASED_VALUE = 0xffffffff;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
@@ -121,7 +121,31 @@ static int disable_hw_approtect(struct device *dev)
 	return 0;
 }
 
-int syncboss_swd_chip_erase(struct device *dev)
+static int swd_get_flash_write_time_us(struct device *dev)
+{
+	u32 part = swd_memory_read(dev, SWD_NRF_FICR_PART);
+
+	switch (part) {
+	case 0x52833:	// datasheet: 42.5us
+	case 0x52840:	// datasheet: 41us
+		return 45;
+	default:
+		// Per the datasheet, writes take at most 338us to complete for nRF52832-based chips
+		return 340;
+	}
+}
+
+int syncboss_swd_nrf52832_prepare(struct device *dev)
+{
+	/* BPROT is nR52832-specific (not present on nRF52833 or nRF52840) */
+	swd_select_ap(dev, SWD_NRF_APSEL_MEMAP);
+	swd_memory_write(dev, SWD_NRF52832_BPROT_DISABLEINDEBUG,
+			SWD_NRF52832_BPROT_DISABLEINDEBUG_DisableInDebug);
+
+	return 0;
+}
+
+int syncboss_swd_nrf52xxx_chip_erase(struct device *dev)
 {
 	/*
 	 * https://infocenter.nordicsemi.com/topic/nwp_027/WP/nwp_027/nWP_027_erasing.html
@@ -160,7 +184,7 @@ int syncboss_swd_chip_erase(struct device *dev)
 	return disable_hw_approtect(dev);
 }
 
-int syncboss_swd_erase_app(struct device *dev)
+int syncboss_swd_nrf52xxx_erase_app(struct device *dev)
 {
 	int status = 0;
 	int x;
@@ -173,14 +197,19 @@ int syncboss_swd_erase_app(struct device *dev)
 	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG,
 			 SWD_NRF_NVMC_CONFIG_EEN);
 
-	/* Note: Instead of issuing an ERASEALL command, we erase each page
+	/*
+	 * Note: Instead of issuing an ERASEALL command, we erase each page
 	 * separately. This is to preserve the UICR, bootloader, and end of flash
 	 * where we store some data that shouldn't be touched by firmware update.
 	 */
+	status = syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev);
+	if (status != 0)
+		goto error;
+
 	for (x = flash->num_protected_bootloader_pages; x < flash_pages_to_erase; ++x) {
 		swd_memory_write(dev, SWD_NRF_NVMC_ERASEPAGE,
 			x * flash->page_size);
-		status = syncboss_swd_wait_for_nvmc_ready(dev);
+		status = syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			goto error;
 	}
@@ -201,44 +230,41 @@ size_t syncboss_get_write_chunk_size(struct device *dev)
 	return devdata->mcu_data.flash_info.block_size;
 }
 
-int syncboss_swd_write_chunk(struct device *dev, int addr, const u8 *data,
+int syncboss_swd_nrf52xxx_write_chunk(struct device *dev, int addr, const u8 *data,
 			     size_t len)
 {
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	int block_size = devdata->mcu_data.flash_info.block_size;
-	int status = 0;
 	int i = 0;
 	u32 value = 0;
-	u32 bytes_left = 0;
+	size_t bytes_left = 0;
+	u32 word_write_time_us = swd_get_flash_write_time_us(dev);
 
-	if (addr % block_size != 0) {
-		dev_err(dev, "Write start address of 0x%08X isn't on a block boundary.\n",
-			addr);
+	if (addr % sizeof(value) != 0) {
+		dev_err(dev, "Write start address 0x%08X is not word-aligned.", addr);
 		return -EINVAL;
 	}
 
-	for (i = 0; i < len; i += sizeof(u32)) {
+	for (i = sizeof(value); i < len; i += sizeof(value)) {
 		bytes_left = len - i;
-		if (bytes_left >= sizeof(u32)) {
-			value = *((u32 *)&data[i]);
-		} else {
-			value = 0;
-			memcpy(&value, &data[i], bytes_left);
-		}
+		value = 0;
+		memcpy(&value, &data[i], min(bytes_left, sizeof(value)));
 
-		if (i == 0)
+		if (i == sizeof(value))
 			swd_memory_write(dev, addr + i, value);
 		else
-			swd_memory_write_next(dev, value);
-
-		// Per the datasheet, writes take at most 338us to complete.
-		usleep_range(340, 380);
+			swd_memory_write_next_delayed(dev, value, word_write_time_us);
 	}
+	usleep_range(word_write_time_us, word_write_time_us + 40);
 
-	return status;
+	// Write the first word last to ensure an incomplete image can't possibly boot.
+	value = 0;
+	memcpy(&value, &data[0], min(len, sizeof(value)));
+	swd_memory_write(dev, addr, value);
+	usleep_range(word_write_time_us, word_write_time_us + 40);
+
+	return 0;
 }
 
-int syncboss_swd_read(struct device *dev, int addr, u8 *dest,
+int syncboss_swd_nrf52xxx_read(struct device *dev, int addr, u8 *dest,
 		      size_t len)
 {
 	int w, words = len / sizeof(u32);
@@ -264,21 +290,21 @@ int syncboss_swd_read(struct device *dev, int addr, u8 *dest,
 	return 0;
 }
 
-static int syncboss_swd_erase_uicr(struct device *dev)
+static int syncboss_swd_nrf52xxx_erase_uicr(struct device *dev)
 {
 	int status;
 
 	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG, SWD_NRF_NVMC_CONFIG_EEN);
 
 	swd_memory_write(dev, SWD_NRF_NVMC_ERASEUICR, SWD_NRF_NVMC_ERASEUICR_Start);
-	status = syncboss_swd_wait_for_nvmc_ready(dev);
+	status = syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev);
 
 	swd_memory_write(dev, SWD_NRF_NVMC_CONFIG, SWD_NRF_NVMC_CONFIG_WEN);
 
 	return status;
 }
 
-int syncboss_swd_provisioning_read(struct device *dev, int addr, u8 *data, size_t len)
+int syncboss_swd_nrf52xxx_provisioning_read(struct device *dev, int addr, u8 *data, size_t len)
 {
 	int status;
 
@@ -287,14 +313,14 @@ int syncboss_swd_provisioning_read(struct device *dev, int addr, u8 *data, size_
 		return -EINVAL;
 	}
 
-	status = syncboss_swd_read(dev, addr, data, len);
+	status = syncboss_swd_nrf52xxx_read(dev, addr, data, len);
 	if (status)
 		dev_err(dev, "Failed to read provisioning data\n");
 
 	return status;
 }
 
-int syncboss_swd_provisioning_write(struct device *dev, int addr, u8 *data, size_t len)
+int syncboss_swd_nrf52xxx_provisioning_write(struct device *dev, int addr, u8 *data, size_t len)
 {
 	int status;
 	u8 *uicr_data;
@@ -311,7 +337,7 @@ int syncboss_swd_provisioning_write(struct device *dev, int addr, u8 *data, size
 	if (!uicr_data)
 		return -ENOMEM;
 
-	status = syncboss_swd_read(dev, SWD_NRF_UICR_BASE, uicr_data,
+	status = syncboss_swd_nrf52xxx_read(dev, SWD_NRF_UICR_BASE, uicr_data,
 				   SWD_NRF_UICR_SIZE);
 	if (status) {
 		dev_err(dev, "Failed to read UICR\n");
@@ -320,13 +346,13 @@ int syncboss_swd_provisioning_write(struct device *dev, int addr, u8 *data, size
 
 	memcpy(uicr_data + uicr_offset, data, len);
 
-	syncboss_swd_erase_uicr(dev);
+	syncboss_swd_nrf52xxx_erase_uicr(dev);
 	if (status) {
 		dev_err(dev, "Failed to erase UICR\n");
 		goto error;
 	}
 
-	status = syncboss_swd_write_chunk(dev, SWD_NRF_UICR_BASE, uicr_data,
+	status = syncboss_swd_nrf52xxx_write_chunk(dev, SWD_NRF_UICR_BASE, uicr_data,
 					  SWD_NRF_UICR_SIZE);
 	if (status) {
 		dev_err(dev, "Failed to write UICR\n");
@@ -338,7 +364,7 @@ error:
 	return status;
 }
 
-int syncboss_swd_finalize(struct device *dev)
+int syncboss_swd_nrf52xxx_finalize(struct device *dev)
 {
 	static const int RESET_GPIO_TIME_MS = 5;
 	static const int BOOT_TIME_MS = 100;
@@ -376,7 +402,7 @@ int syncboss_swd_finalize(struct device *dev)
 		goto error;
 
 	// Read an arbitrary value from MEM-AP as a sanity check.
-	approtect_is_disabled = (syncboss_swd_wait_for_nvmc_ready(dev) == 0);
+	approtect_is_disabled = (syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev) == 0);
 	if (!approtect_is_disabled)
 		goto error;
 

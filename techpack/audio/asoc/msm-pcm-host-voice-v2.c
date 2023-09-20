@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -624,6 +625,12 @@ static int hpcm_start_vocpcm(char *pcm_id, struct hpcm_drv *prtd,
 						prtd->mixer_conf.tx.sample_rate;
 			(*no_of_tp)++;
 		}
+	}
+
+	if (*no_of_tp != no_of_tp_req && *no_of_tp > 2) {
+		pr_err("%s:: Invalid hpcm start request\n", __func__);
+		memset(&prtd->start_cmd, 0, sizeof(struct start_cmd));
+		return -EINVAL;
 	}
 
 	if ((prtd->mixer_conf.tx.enable || prtd->mixer_conf.rx.enable) &&

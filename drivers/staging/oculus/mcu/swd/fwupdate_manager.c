@@ -9,7 +9,7 @@
 #include "hubert_swd_ops.h"
 #include "fwupdate_operations.h"
 #include "swd.h"
-#include "syncboss_swd_ops.h"
+#include "syncboss_swd_ops_nrf52xxx.h"
 #include "syncboss_swd_ops_nrf5340.h"
 #include "stm32g0_swd_ops.h"
 #include "qm35xxx_swd_ops.h"
@@ -26,19 +26,49 @@ static struct {
 	const char *flavor;
 	struct swd_ops_params swd_ops;
 } archs_params[] = {
-#ifdef CONFIG_OCULUS_SWD_SYNCBOSS
+#ifdef CONFIG_OCULUS_SWD_SYNCBOSS_NRF52XXX
 	{
 		.flavor = "nrf52832",
 		.swd_ops = {
-			.provisioning_read = syncboss_swd_provisioning_read,
-			.provisioning_write = syncboss_swd_provisioning_write,
-			.target_erase = syncboss_swd_erase_app,
-			.target_chip_erase = syncboss_swd_chip_erase,
-			.target_program_write_chunk = syncboss_swd_write_chunk,
+			.target_prepare = syncboss_swd_nrf52832_prepare,
+
+			.provisioning_read = syncboss_swd_nrf52xxx_provisioning_read,
+			.provisioning_write = syncboss_swd_nrf52xxx_provisioning_write,
+			.target_erase = syncboss_swd_nrf52xxx_erase_app,
+			.target_chip_erase = syncboss_swd_nrf52xxx_chip_erase,
+			.target_program_write_chunk = syncboss_swd_nrf52xxx_write_chunk,
 			.target_get_write_chunk_size = syncboss_get_write_chunk_size,
-			.target_program_read = syncboss_swd_read,
-			.target_page_is_erased = syncboss_swd_page_is_erased,
-			.target_finalize = syncboss_swd_finalize,
+			.target_program_read = syncboss_swd_nrf52xxx_read,
+			.target_page_is_erased = syncboss_swd_nrf52xxx_page_is_erased,
+			.target_finalize = syncboss_swd_nrf52xxx_finalize,
+		}
+	},
+	{
+		.flavor = "nrf52833",
+		.swd_ops = {
+			.provisioning_read = syncboss_swd_nrf52xxx_provisioning_read,
+			.provisioning_write = syncboss_swd_nrf52xxx_provisioning_write,
+			.target_erase = syncboss_swd_nrf52xxx_erase_app,
+			.target_chip_erase = syncboss_swd_nrf52xxx_chip_erase,
+			.target_program_write_chunk = syncboss_swd_nrf52xxx_write_chunk,
+			.target_get_write_chunk_size = syncboss_get_write_chunk_size,
+			.target_program_read = syncboss_swd_nrf52xxx_read,
+			.target_page_is_erased = syncboss_swd_nrf52xxx_page_is_erased,
+			.target_finalize = syncboss_swd_nrf52xxx_finalize,
+		}
+	},
+	{
+		.flavor = "nrf52840",
+		.swd_ops = {
+			.provisioning_read = syncboss_swd_nrf52xxx_provisioning_read,
+			.provisioning_write = syncboss_swd_nrf52xxx_provisioning_write,
+			.target_erase = syncboss_swd_nrf52xxx_erase_app,
+			.target_chip_erase = syncboss_swd_nrf52xxx_chip_erase,
+			.target_program_write_chunk = syncboss_swd_nrf52xxx_write_chunk,
+			.target_get_write_chunk_size = syncboss_get_write_chunk_size,
+			.target_program_read = syncboss_swd_nrf52xxx_read,
+			.target_page_is_erased = syncboss_swd_nrf52xxx_page_is_erased,
+			.target_finalize = syncboss_swd_nrf52xxx_finalize,
 		}
 	},
 #endif
@@ -236,12 +266,11 @@ int fwupdate_update_prepare(struct device *dev)
 	return 0;
 }
 
-static int fwupdate_update_write_single_app(struct device *dev, struct swd_mcu_data *mcudata, int bytes_written)
+static int fwupdate_update_write_single_app(struct device *dev, struct swd_mcu_data *mcudata, int bytes_to_skip)
 {
-	int iteration_ctr = 0;
 	int status;
 	size_t chunk_size;
-	size_t bytes_left = 0;
+	int offset = 0;
 	size_t bytes_to_write = 0;
 	const struct firmware *fw = mcudata->fw;
 
@@ -250,24 +279,25 @@ static int fwupdate_update_write_single_app(struct device *dev, struct swd_mcu_d
 		return 0;
 
 	chunk_size = mcudata->swd_ops.target_get_write_chunk_size(dev);
+	BUG_ON((bytes_to_skip % chunk_size) != 0);
 	atomic_set(&mcudata->fw_chunks_to_write, DIV_ROUND_UP(fw->size, chunk_size));
 
-	dev_dbg(dev, "%s: Writing chunks", mcudata->fw_path);
-	while (bytes_written < fw->size) {
-		dev_dbg(dev, "Writing chunk %d", iteration_ctr++);
+	// Write the chunks last to first so that an incomplete firmware image is unbootable.
+	bytes_to_write = fw->size % chunk_size;
+	if (bytes_to_write == 0)
+		bytes_to_write = chunk_size;
 
-		bytes_left = fw->size - bytes_written;
-		bytes_to_write = min(bytes_left, chunk_size);
+	for (offset = fw->size - bytes_to_write; offset >= bytes_to_skip; offset -= chunk_size) {
+		dev_dbg(dev, "Writing %lu-byte chunk @ 0x%x ", bytes_to_write, offset);
 		status = mcudata->swd_ops.target_program_write_chunk(
 						  dev,
-						  bytes_written,
-						  &fw->data[bytes_written],
+						  offset,
+						  &fw->data[offset],
 						  bytes_to_write);
 		if (status)
 			return status;
 
-		dev_dbg(dev, "Done writing chunk");
-		bytes_written += bytes_to_write;
+		bytes_to_write = chunk_size;
 		atomic_inc(&mcudata->fw_chunks_written);
 	}
 

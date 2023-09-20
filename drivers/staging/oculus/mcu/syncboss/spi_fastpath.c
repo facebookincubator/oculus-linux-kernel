@@ -11,7 +11,7 @@ static int fastpath_transfer_one_message(struct spi_master *master,
 		ret = master->transfer_one(master, msg->spi, xfer);
 		if (ret < 0) {
 			dev_err(&msg->spi->dev,
-				"SPI transfer failed: %d\n", ret);
+				"SPI fastpath transfer_one failed: %d\n", ret);
 			goto out;
 		}
 
@@ -41,7 +41,7 @@ int spi_fastpath_transfer(struct spi_device* spi, struct spi_message* msg)
 	status = fastpath_transfer_one_message(master, master->cur_msg);
 	if (status) {
 		dev_err(&master->dev,
-			"failed to transfer one message from queue\n");
+			"fastpath transfer_one_message failed\n");
 	}
 
 	if (!status) {

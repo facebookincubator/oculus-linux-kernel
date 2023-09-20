@@ -23,6 +23,25 @@ struct blu_pd {
 	struct mutex lock;
 };
 
+static bool store_is_true(struct device *dev, const char *buf, size_t count)
+{
+	int rc;
+	bool should_run;
+
+	if (count == 0) {
+		dev_err(dev, "NOP on empty buffer");
+		return false;
+	}
+
+	rc = kstrtobool(buf, &should_run);
+	if (rc != 0) {
+		dev_err(dev, "NOP for value (%s): %d", buf, rc);
+		return false;
+	}
+
+	return should_run;
+}
+
 static ssize_t bootload_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return scnprintf(buf, PAGE_SIZE, "N/A\n");
@@ -32,16 +51,14 @@ static ssize_t bootload_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
 	struct blu_pd *bpd;
-	long val;
 	int rc;
 
 	bpd = dev_get_drvdata(dev);
 	if (!bpd)
 		return -ENOMEM;
 
-	rc = kstrtol(buf, 10, &val);
-	if (rc != 0 || val <= 0) {
-		dev_err(bpd->dev, "NOP for value (%s): %d", buf, rc);
+	if (!store_is_true(bpd->dev, buf, count)) {
+		dev_err(bpd->dev, "NOP on invalid store trigger");
 		return -EINVAL;
 	}
 
@@ -66,10 +83,48 @@ static ssize_t bootload_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+static ssize_t reset_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "N/A\n");
+}
+
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct blu_pd *bpd;
+	int rc;
+
+	bpd = dev_get_drvdata(dev);
+	if (!bpd)
+		return -ENOMEM;
+
+	if (!store_is_true(bpd->dev, buf, count)) {
+		dev_err(bpd->dev, "NOP on invalid store trigger");
+		return -EINVAL;
+	}
+
+	rc = mutex_lock_interruptible(&bpd->lock);
+	if (rc != 0) {
+		dev_err(bpd->dev, "Failed to get mutex: %d", rc);
+		return rc;
+	}
+
+	// Pin reset MCU
+	gpiod_set_value(bpd->reset_gpio, 1);
+	msleep(100);
+	gpiod_set_value(bpd->reset_gpio, 0);
+	msleep(100);
+	mutex_unlock(&bpd->lock);
+
+	return count;
+}
+
 static DEVICE_ATTR(bootload, 0644, bootload_show, bootload_store);
+static DEVICE_ATTR(reset, 0644, reset_show, reset_store);
 
 static struct attribute *blu_attrs[] = {
 	&dev_attr_bootload.attr,
+	&dev_attr_reset.attr,
 	NULL
 };
 

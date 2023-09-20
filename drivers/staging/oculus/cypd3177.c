@@ -53,6 +53,7 @@
 #define WRITE_DATA_REGION 0x1800
 
 /* PD RESPONSE EVENT */
+#define PD_PORT_BUSY		0x12
 #define TYPEC_CONNECT		0x84
 #define TYPEC_DISCONNECT	0x85
 #define PD_CONTRACT_COMPLETE	0x86
@@ -134,6 +135,7 @@ struct cypd3177 {
 	u32 num_5v_sink_caps;
 	bool sink_cap_5v;
 	int charge_status;
+	bool handle_port_busy;
 	struct mutex state_lock;
 };
 
@@ -743,6 +745,17 @@ static void pd_handle_contract_complete(struct cypd3177 *chip)
 	}
 }
 
+static void pd_handle_pd_port_busy(struct cypd3177 *chip)
+{
+	dev_dbg(&chip->client->dev, "pd_handle_pd_port_busy:reset\n");
+	cypd3177_dev_reset(chip);
+	chip->typec_status = false;
+	chip->pd_attach = 0;
+	chip->sink_cap_5v = false;
+	power_supply_unreg_notifier(&chip->psy_nb);
+	power_supply_changed(chip->psy);
+}
+
 static void pd_handle_vdm_received(struct cypd3177 *chip, int pd_raw)
 {
 	int rc, data_len = VDM_DATA_LEN(pd_raw);
@@ -875,6 +888,10 @@ static int pd_handle_response(struct cypd3177 *chip)
 		break;
 	case VDM_RECEIVED:
 		pd_handle_vdm_received(chip, pd_raw);
+		break;
+	case PD_PORT_BUSY:
+		if (chip->handle_port_busy)
+			pd_handle_pd_port_busy(chip);
 		break;
 	default:
 		break;
@@ -1197,6 +1214,9 @@ static int cypd3177_probe(struct i2c_client *i2c,
 			"cypd3177 failed reading initial-connection-debounce-ms, rc = %d\n", rc);
 		return rc;
 	}
+
+	chip->handle_port_busy = device_property_read_bool(chip->dev,
+			"cypd3177,handle-port-busy");
 
 	rc = cypd3177_init_iio_psy(chip);
 	if (rc < 0)

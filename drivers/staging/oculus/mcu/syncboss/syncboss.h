@@ -26,7 +26,10 @@
 struct syncboss_stats {
 	u32 num_bad_magic_numbers;
 	u32 num_bad_checksums;
-	u32 num_rejected_transactions;
+	u32 num_invalid_transactions_received;
+	u32 num_empty_transactions_received;
+	u32 num_empty_transactions_sent;
+	u32 num_transactions;
 
 	s32 last_awake_dur_ms;
 	s32 last_asleep_dur_ms;
@@ -56,12 +59,25 @@ struct spi_prepare_ops {
 };
 
 struct syncboss_stream_settings {
-	/* The desired period of subsequent SPI transactions. */
-	u32 transaction_period_ns;
+	/*
+	 * The desired interval of polled SPI transactions, when using
+	 * legacy SPI polling mode.
+	 */
+	u32 trans_period_ns;
 
-	/* The minimum time to wait between the end of a SPI */
-	/* transaction and the start of the next SPI transaction. */
-	u32 min_time_between_transactions_ns;
+	/*
+	 * The minimum time to wait between the end of a SPI
+	 * transaction and the start of the next SPI transaction.
+	 * Transactions triggered by data ready IRQs are not affected
+	 * by this.
+	 */
+	u32 min_time_between_trans_ns;
+
+	/*
+	 * Maximum amount of time to delay sending of a message while
+	 * waiting for a full transactions's worth of data.
+	 */
+	u32 max_msg_send_delay_ns;
 
 	/* Length of the fixed-size SPI transaction */
 	u16 transaction_length;
@@ -80,6 +96,13 @@ struct syncboss_client_data {
 	/* Bitmap of allocated sequence numbers (ioctl) */
 	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
 	struct dentry *dentry;
+};
+
+struct syncboss_timing {
+	u64 prev_trans_start_time_ns;
+	u64 prev_trans_end_time_ns;
+	u64 min_time_between_trans_ns;
+	u64 trans_period_ns; /* used only for legacy polling mode */
 };
 
 /* Device state */
@@ -160,6 +183,9 @@ struct syncboss_dev_data {
 	/* The rate to run the spi clock at (in Hz). Not to be updated while streaming is active. */
 	u32 spi_max_clk_rate;
 
+	/* Time to wait before sending a less than full transaction. */
+	u32 max_msg_send_delay_ns;
+
 	/*
 	 * For long work items we don't want to monopolize the system shared workqueue with.
 	 * state_mutex must be held while enqueueing work due to syncboss_resume's locking
@@ -170,10 +196,20 @@ struct syncboss_dev_data {
 	/* Used to wait for events on resume to complete before allowing suspend */
 	struct completion pm_resume_completion;
 
-	/* Handle to the task that is performing the periodic SPI
+	/*
+	 * Handle to the task that is performing the SPI
 	 * transactions
 	 */
 	struct task_struct *worker;
+
+	/*
+	 * Wakes the SPI handling thread to send messages rather than
+	 * waiting for the nRF to signal data ready.
+	 */
+	struct hrtimer wake_timer;
+
+	/* Wakes the SPI handling to send outgoing messages. */
+	struct hrtimer send_timer;
 
 	/*
 	 * A pointer to a default message to send/receive if
@@ -189,8 +225,11 @@ struct syncboss_dev_data {
 	/* Buffer for RX data */
 	struct rx_history_elem *rx_elem;
 
-	/* The total number of SPI transactions that have ocurred so far */
-	u64 transaction_ctr;
+	/*
+	 * The total number of SPI transactions that have ocurred
+	 * since the MCU booted.
+	 */
+	atomic64_t transaction_ctr;
 
 	/* Mutex that protects the state of this structure */
 	struct mutex state_mutex;
@@ -201,10 +240,10 @@ struct syncboss_dev_data {
 	int gpio_timesync;
 	/* Time sync IRQ */
 	int timesync_irq;
-	/* AP Wakeup line  */
-	int gpio_wakeup;
-	/* Wakeup IRQ */
-	int wakeup_irq;
+	/* Data ready / wakeup line  */
+	int gpio_ready;
+	/* IRQ signaling the MCU is ready for a transaction */
+	int ready_irq;
 
 	/* GPIO NSYNC */
 	int gpio_nsync;
@@ -302,6 +341,9 @@ struct syncboss_dev_data {
 	/* True if streaming is running */
 	bool is_streaming;
 
+	/* True if a MCU wake-up has been handled since previous shutdown */
+	bool wakeup_handled;
+
 	/* The last time syncboss was reset (monotonic time in ms) */
 	s64 last_reset_time_ms;
 
@@ -310,6 +352,21 @@ struct syncboss_dev_data {
 
 	/* True if we should enable the fastpath spi code path */
 	bool use_fastpath;
+
+	/* > 0 if data ready IRQ has fired but had not yet been handled */
+	atomic64_t data_ready_fired_count;
+
+	/* > 0 if data ready IRQ has fired but wake reasons have not yet been queried */
+	u64 data_ready_fired_accum;
+
+	/* True if a wakeup timer has fired but had not yet been handled */
+	bool wake_timer_fired;
+
+	/*
+	 * True if MCU support IRQ-based transaction. False for
+	 * legacy polling mode.
+	 */
+	bool use_irq_mode;
 
 	struct dentry *dentry;
 	struct dentry *clients_dentry;

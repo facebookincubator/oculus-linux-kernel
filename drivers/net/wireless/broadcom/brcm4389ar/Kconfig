@@ -179,3 +179,23 @@ config 6GHZ_BKPORT
 	default n
 	---help---
 	  For Backported kernels, use the config to enable 6GHz band support.
+
+config XRPS
+	bool "Enable XR Power Save"
+	default n
+	help
+		Enable XR Power Save
+
+config XRPS_PROFILING
+	bool "XRPS profiling"
+	depends on XRPS
+	default n
+	help
+		Debug print significant events with their timestamps
+
+config XRPS_DHD_HOOKS
+	bool "Enable XR Power Save DHD hooks"
+	depends on XRPS && BCMDHD
+	default n
+	help
+		Enable XR Power Save DHD hooks

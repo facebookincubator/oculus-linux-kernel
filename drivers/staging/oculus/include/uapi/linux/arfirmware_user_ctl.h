@@ -36,6 +36,7 @@ enum ar_user_event_type {
 struct __packed ar_user_create_buffer_data {
 	uint16_t region_id;
 	size_t region_size;
+	int32_t region_mem_fd;
 };
 
 /**
@@ -69,7 +70,20 @@ struct __packed ar_user_event {
 	enum ar_user_event_type type;
 	/// The queue id associated with this event.
 	uint32_t queue_handle;
+	/// Direction that this queue transfers data in.
+	enum ar_queue_direction direction;
+	/// The hlos id of the queue for firmware IPC
+	ar_endpoint_id_t hlos_endpoint_id;
+	/// The fw id of the queue for firmware IPC
+	ar_endpoint_id_t fw_endpoint_id;
 	union ar_user_event_data data;
+};
+
+#define AR_USER_EVENT_BATCH_MAX 20
+
+struct __packed ar_user_event_batch {
+	struct ar_user_event events[AR_USER_EVENT_BATCH_MAX];
+	uint16_t size;
 };
 
 /**
@@ -106,6 +120,11 @@ struct __packed ar_user_queue_info_req {
 	ar_endpoint_id_t fw_endpoint_id;
 };
 
+struct __packed ar_user_pend_req {
+	uint32_t handle;
+	uint32_t size;
+};
+
 /**
  * Magic number for the ar-user-ctl device ioctls
  */
@@ -115,4 +134,4 @@ struct __packed ar_user_queue_info_req {
 #define AR_USER_CTL_BIND_QUEUE _IOR(AR_USER_CTL_MAGIC, 2, uint32_t)
 #define AR_USER_CTL_BIND_REGION _IOR(AR_USER_CTL_MAGIC, 3, uint16_t)
 #define AR_USER_CTL_QUEUE_INFO _IOW(AR_USER_CTL_MAGIC, 4, struct ar_user_queue_info_req*)
-#define AR_USER_CTL_REQUEST_PEND _IOW(AR_USER_CTL_MAGIC, 5, uint32_t)
+#define AR_USER_CTL_REQUEST_PEND _IOW(AR_USER_CTL_MAGIC, 5, struct ar_user_pend_req*)

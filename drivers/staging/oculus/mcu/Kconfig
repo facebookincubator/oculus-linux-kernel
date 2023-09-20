@@ -39,8 +39,8 @@ config OCULUS_SWD_STM32G0
 	help
 	  Oculus STM32G0 SWD Support
 
-config OCULUS_SWD_SYNCBOSS
-	bool "Syncboss SWD Driver"
+config OCULUS_SWD_SYNCBOSS_NRF52XXX
+	bool "Syncboss SWD Driver for NRF52XXX"
 	select OCULUS_SWD
 	default y
 	help

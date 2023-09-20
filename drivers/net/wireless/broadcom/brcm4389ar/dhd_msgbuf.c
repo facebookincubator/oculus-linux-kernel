@@ -99,6 +99,10 @@
 #include <performance_custom.h>
 #endif
 
+#ifdef CONFIG_XRPS_DHD_HOOKS
+#include "xrps.h"
+#endif /* CONFIG_XRPS_DHD_HOOKS */
+
 extern char dhd_version[];
 extern char fw_version[];
 
@@ -8987,6 +8991,12 @@ BCMFASTPATH(dhd_prot_txstatus_process)(dhd_pub_t *dhd, void *msg)
 #endif /* DHD_PKT_LOGGING */
 #if defined(BCMPCIE) && (defined(LINUX) || defined(OEM_ANDROID) || defined(DHD_EFI))
 	dhd_txcomplete(dhd, pkt, pkt_fate);
+
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	if (xrps_is_init())
+		dhd->xrps_intf->txcmplt_cb(pkt_fate, (OSL_ATOMIC_READ(dhd->osh, &prot->active_tx_count) != 0));
+#endif // CONFIG_XRPS_DHD_HOOKS
+
 #ifdef DHD_4WAYM4_FAIL_DISCONNECT
 	dhd_eap_txcomplete(dhd, pkt, pkt_fate, txstatus->cmn_hdr.if_id);
 #endif /* DHD_4WAYM4_FAIL_DISCONNECT */

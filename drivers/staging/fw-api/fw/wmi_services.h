@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -563,7 +563,7 @@ typedef  enum  {
     WMI_SERVICE_DYNAMIC_VDEV_MAC_ADDR_UPDATE_SUPPORT = 310, /* FW supports dynamic vdev mac address updating */
     WMI_SERVICE_SAWF_LEVEL0 = 311, /* FW supports WMI_SAWF_SVC_CLASS CFG_CMD + DISABLE_CMD msgs */
     WMI_SERVICE_RTT_11AZ_NTB_SUPPORT = 312, /* FW support for 11AZ non trigger based ranging */
-    WMI_SERVICE_RTT_11AZ_TB_SUPPORT = 313, /* FW support for 11AZ trigger based ranging */
+    WMI_SERVICE_RTT_11AZ_TB_SUPPORT = 313, /* FW support for 11AZ trigger based ranging ISTA role */
     WMI_SERVICE_RTT_11AZ_MAC_SEC_SUPPORT = 314, /* FW support for 11AZ secure FTM */
     WMI_SERVICE_RTT_11AZ_MAC_PHY_SEC_SUPPORT = 315, /* FW support for 11AZ secure LTF + FTM */
     WMI_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT = 316, /* Information corresponding to each Spectral scan session will be sent by the FW before the reports corresponding to that session are sent */
@@ -604,7 +604,23 @@ typedef  enum  {
     WMI_SERVICE_ODD_LIVEDUMP_SUPPORT = 351, /* Support for ODD Livedump from the FW */
     WMI_SERVICE_EIRP_PREFERRED_SUPPORT = 352, /* Support for OOBE feature where only EIRP powers will be sent in 6 GHz TPC WMI */
     WMI_SERVICE_RTT_TX_RX_CHAIN_IDX_SUPPORT = 353, /* FW Supports configuring Tx and Rx Chainmask in intiator and Responder */
-
+    WMI_SERVICE_RESTRICTED_TWT = 354, /* Support for R-TWT feature */
+    WMI_SERVICE_SLO_SUPPORTED = 355, /* Support for Single Link 11BE */
+    WMI_SERVICE_RTT_11AZ_TB_RSTA_SUPPORT = 356, /* FW support for 11AZ trigger based ranging Responder (RSTA) role */
+    WMI_SERVICE_SUPPORT_11D_FOR_HOST_SCAN = 357,
+    WMI_SERVICE_DETERMINISTIC_SCHEDULER_LEVEL0 = 358, /* FW supports 12.2 level scheduler mode disable commands and stats */
+    WMI_SERVICE_COORDINATED_AP_TDMA = 359, /* Support for Coordinated-AP TDMA feature */
+    WMI_SERVICE_HPA_SUPPORT = 360, /* Support for Host Platform Authentication */
+    WMI_SERVICE_WMSK_COMPACTION_RX_TLVS = 361, /* Support word mask subscription for rx tlv compaction */
+    WMI_SERVICE_PRE_RX_TO = 362, /* Support for Pre RX timeout */
+    WMI_SERVICE_TDLS_CONCURRENCY_SUPPORT = 363, /* Support for TDLS concurrency in FW */
+    WMI_SERVICE_SELF_MLD_ROAM_BETWEEN_DBS_AND_HBS = 364, /* Suppport roam between DBS(2G+5G/6G) to HBS(5G+6G) with self AP MLD. */
+    WMI_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365, /* Support rx peer meta data v1a and v1b */
+    WMI_SERVICE_CFR_CAPTURE_PDEV_ID_SOC = 366, /* Host can send PDEV_ID_SOC with CFR capture request and FW can derive pdev_id from TA address */
+    WMI_SERVICE_11BE_MLO_TDLS_SUPPORT = 367, /* Indicates FW supports 11be MLO TDLS. Host should enable 11be on TDLS only when FW indicates the support. */
+    WMI_SERVICE_MANUAL_ULOFDMA_TRIGGER_SUPPORT = 368, /* Support for Host triggered Manual UL OFDMA trigger frame feature */
+    WMI_SERVICE_STANDALONE_SOUND = 369, /* FW supports standalone sounding */
+    WMI_SERVICE_AFC_RESP_BINARY_FORMAT_SUPPORTED = 370, /* Service bit to indicate the supported AFC payload response format */
 
     WMI_MAX_EXT2_SERVICE
 

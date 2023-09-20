@@ -469,7 +469,7 @@ int rpmh_write_batch(const struct device *dev, enum rpmh_state state,
 	}
 
 	time_left = RPMH_TIMEOUT_MS;
-	while (i--) {
+	for (i = 0; i < count; i++) {
 		time_left = wait_for_completion_timeout(&compls[i], time_left);
 		if (!time_left) {
 			/*

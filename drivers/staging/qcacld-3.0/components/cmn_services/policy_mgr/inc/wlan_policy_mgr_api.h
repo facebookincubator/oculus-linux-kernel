@@ -208,7 +208,21 @@ policy_mgr_set_sta_sap_scc_on_dfs_chnl(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 policy_mgr_get_sta_sap_scc_on_dfs_chnl(struct wlan_objmgr_psoc *psoc,
 				       uint8_t *sta_sap_scc_on_dfs_chnl);
-
+/**
+ * policy_mgr_get_dfs_sta_sap_go_scc_movement() - returns SAP / GO's movement
+ * in STA+SAP DFS SCC concurrency to whether SAP / GO should be moved first
+ * or not.
+ * @psoc: pointer to psoc
+ * @move_sap_go_first: value to be filled
+ *
+ * In STA+SAP DFS SCC concurrency, this API returns config on whether to move
+ * SAP / GO first on getting CSA STA side or not.
+ *
+ * Return: QDF_STATUS_SUCCESS up on success and any other status for failure.
+ */
+QDF_STATUS
+policy_mgr_get_dfs_sta_sap_go_scc_movement(struct wlan_objmgr_psoc *psoc,
+					   bool *move_sap_go_first);
 /**
  * policy_mgr_get_dfs_master_dynamic_enabled() - support dfs master or not
  * on AP interafce when STA+SAP(GO) concurrency

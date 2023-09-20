@@ -46,6 +46,12 @@ void swd_memory_write(struct device *dev, u32 address, u32 data);
 /* Write 4 bytes of memory to the next address after the previously-read/written word */
 void swd_memory_write_next(struct device *dev, u32 data);
 
+/*
+ * Write the next 4 bytes of memory, but don't bitbang the last bit until some minimum
+ * time has passed to allow for the previous write to finish.
+ */
+void swd_memory_write_next_delayed(struct device *dev, u32 data, u32 delay_us);
+
 /* Reset the target */
 void swd_reset(struct device *dev);
 

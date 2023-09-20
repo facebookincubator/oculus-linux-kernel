@@ -66,7 +66,7 @@ int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
 
 	status = snprintf(i_str, sizeof(i_str), "%llu", client_data->index);
 	if (status < 0 || status >= sizeof(i_str)) {
-		dev_err(dev, "Failed to convert %llu to string: %d", client_data->index,
+		dev_err(dev, "failed to convert %llu to string: %d", client_data->index,
 			status);
 			return status;
 	}
@@ -79,7 +79,7 @@ int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
 	 */
 	client_data->dentry = debugfs_create_dir(i_str, devdata->clients_dentry);
 	if (IS_ERR_OR_NULL(client_data->dentry)) {
-		dev_err(dev, "Failed to create debugfs " ROOT_DIR_NAME
+		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			"/clients/%s dir: %ld", i_str,
 			PTR_ERR(devdata->clients_dentry));
 		return PTR_ERR(client_data->dentry);
@@ -91,7 +91,7 @@ int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
 			0444, client_data->dentry,
 			&client_data->task->pid);
 	} else {
-		dev_err(dev, "Failed to create debugfs " ROOT_DIR_NAME
+		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			"/clients/%s/pid: unhandled pid size: %zu", i_str,
 			sizeof(client_data->task->pid));
 			return -EIO;
@@ -105,7 +105,7 @@ int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
 		client_data->allocated_seq_num);
 	if (IS_ERR_OR_NULL(dentry)) {
 		dev_err(dev,
-			"Failed to create debugfs " ROOT_DIR_NAME
+			"failed to create debugfs " ROOT_DIR_NAME
 			"/clients/%s/allocated_sequence_numbers: %ld", i_str,
 			PTR_ERR(dentry));
 		return PTR_ERR(dentry);
@@ -130,14 +130,14 @@ int syncboss_debugfs_init(struct syncboss_dev_data *devdata)
 
 	devdata->dentry = debugfs_create_dir(ROOT_DIR_NAME, NULL);
 	if (IS_ERR_OR_NULL(devdata->dentry)) {
-		dev_err(dev, "Failed to create debugfs " ROOT_DIR_NAME
+		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			" dir: %ld", PTR_ERR(devdata->dentry));
 		return PTR_ERR(devdata->dentry);
 	}
 
 	devdata->clients_dentry = debugfs_create_dir("clients", devdata->dentry);
 	if (IS_ERR_OR_NULL(devdata->clients_dentry)) {
-		dev_err(dev, "Failed to create debugfs " ROOT_DIR_NAME
+		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			"/clients dir: %ld", PTR_ERR(devdata->clients_dentry));
 		return PTR_ERR(devdata->clients_dentry);
 	}
@@ -145,7 +145,7 @@ int syncboss_debugfs_init(struct syncboss_dev_data *devdata)
 	dentry = debugfs_create_file("sequence_number_mode", 0444,
 		devdata->dentry, &devdata->has_seq_num_ioctl, &seq_num_mode_fops);
 	if (IS_ERR_OR_NULL(dentry)) {
-		dev_err(dev, "Failed to create debugfs " ROOT_DIR_NAME
+		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			"/sequence_number_mode: %ld", PTR_ERR(dentry));
 		return PTR_ERR(dentry);
 	}
@@ -157,7 +157,7 @@ int syncboss_debugfs_init(struct syncboss_dev_data *devdata)
 	dentry = create_allocated_sequence_numbers_dentry(devdata->dentry,
 		devdata->allocated_seq_num);
 	if (IS_ERR_OR_NULL(dentry)) {
-		dev_err(dev, "Failed to create debugfs " ROOT_DIR_NAME
+		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			"/allocated_sequence_numbers: %ld", PTR_ERR(dentry));
 		return PTR_ERR(dentry);
 	}

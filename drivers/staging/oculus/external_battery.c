@@ -5,13 +5,16 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
+#include <linux/slab.h>
 
 #include "external_battery.h"
 #include "usbvdm.h"
 
 #define DEFAULT_EXT_BATT_VID 0x2833
 #define MOUNT_WORK_DELAY_SECONDS 30
-#define PR_SWAP_SOC_THRESHOLD 95
+
+#define ENABLE_OTG_SOC_THRESHOLD 95
+#define OTG_CURRENT_LIMIT_UA 1500000
 
 #define STATUS_FULLY_DISCHARGED BIT(4)
 #define STATUS_FULLY_CHARGED BIT(5)
@@ -24,6 +27,13 @@
  */
 #define EXT_BATT_FW_VDM_PERIOD_ON_HEAD 0
 #define EXT_BATT_FW_VDM_PERIOD_OFF_HEAD 14
+
+/* Factors to convert 2h/h time units to seconds */
+#define HR_TO_SECONDS			3600
+#define TWO_HRS_TO_SECONDS		7200
+
+/* Wait time before considering a mount state VDM unreceived */
+#define MOUNT_STATE_ACK_TIMEOUT_MS 2000
 
 static const char * const battery_status_text[] = {
 	"Not charging",
@@ -40,6 +50,17 @@ enum battery_status_value {
 enum usb_charging_state {
 	CHARGING_RESUME = 0,
 	CHARGING_SUSPEND = 1,
+};
+
+/*
+ * TODO(T158272135): This struct will be made non-specific to Glink when
+ * PID-based registration is added to USBPD and CYPD, likely using a union of
+ * the three handler types
+ */
+struct glink_svid_handler_info {
+	struct ext_batt_pd *pd;
+	struct glink_svid_handler handler;
+	struct list_head entry;
 };
 
 static void ext_batt_mount_status_work(struct work_struct *work);
@@ -61,6 +82,155 @@ static void convert_battery_status(struct ext_batt_pd *pd, u16 status)
 		strcpy(pd->params.battery_status, battery_status_text[UNKNOWN]);
 }
 
+
+static void usbpd_vdm_connect(struct usbpd_svid_handler *hdlr, bool usb_comm)
+{
+	struct ext_batt_pd *pd = container_of(hdlr, struct ext_batt_pd, usbpd_hdlr);
+
+	ext_batt_vdm_connect(pd, usb_comm);
+}
+
+static void usbpd_vdm_disconnect(struct usbpd_svid_handler *hdlr)
+{
+	struct ext_batt_pd *pd = container_of(hdlr, struct ext_batt_pd, usbpd_hdlr);
+
+	ext_batt_vdm_disconnect(pd);
+}
+
+static void usbpd_vdm_received(struct usbpd_svid_handler *hdlr,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	struct ext_batt_pd *pd = container_of(hdlr, struct ext_batt_pd, usbpd_hdlr);
+
+	ext_batt_vdm_received(pd, vdm_hdr, vdos, num_vdos);
+}
+
+static void glink_vdm_connect(struct glink_svid_handler *hdlr, bool usb_comm)
+{
+	struct glink_svid_handler_info *handler_info =
+			container_of(hdlr, struct glink_svid_handler_info, handler);
+
+	ext_batt_vdm_connect(handler_info->pd, usb_comm);
+}
+
+static void glink_vdm_disconnect(struct glink_svid_handler *hdlr)
+{
+	struct glink_svid_handler_info *handler_info =
+			container_of(hdlr, struct glink_svid_handler_info, handler);
+
+	ext_batt_vdm_disconnect(handler_info->pd);
+}
+
+static void glink_vdm_received(struct glink_svid_handler *hdlr,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	struct glink_svid_handler_info *handler_info =
+			container_of(hdlr, struct glink_svid_handler_info, handler);
+
+	ext_batt_vdm_received(handler_info->pd, vdm_hdr, vdos, num_vdos);
+}
+
+int external_battery_register_svid_handlers(struct ext_batt_pd *pd)
+{
+	int i, num_supported;
+	u16 *supported_devices;
+	struct glink_svid_handler_info *handler_info;
+	int rc;
+
+	if (IS_ENABLED(CONFIG_USB_PD_POLICY)) {
+		pd->usbpd_hdlr.svid = pd->svid;
+		pd->usbpd_hdlr.connect = usbpd_vdm_connect;
+		pd->usbpd_hdlr.disconnect = usbpd_vdm_disconnect;
+		pd->usbpd_hdlr.vdm_received = usbpd_vdm_received;
+
+		return usbpd_register_svid(pd->intf_usbpd, &pd->usbpd_hdlr);
+	}
+
+	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)) {
+		INIT_LIST_HEAD(&pd->glink_handlers);
+
+		num_supported = device_property_read_u16_array(pd->dev,
+				"supported-devices", NULL, 0);
+		if (num_supported <= 0 || (num_supported % 2) != 0) {
+			dev_err(pd->dev,
+					"supported-devices must be specified as a list of SVID/PID pairs, rc=%d",
+					num_supported);
+			return -EINVAL;
+		}
+
+		supported_devices = kcalloc(num_supported, sizeof(u16), GFP_KERNEL);
+		if (!supported_devices)
+			return -ENOMEM;
+
+		rc = device_property_read_u16_array(pd->dev,
+				"supported-devices", supported_devices, num_supported);
+		if (rc) {
+			dev_err(pd->dev,
+					"failed reading supported-devices, rc=%d num_supported=%d",
+					rc, num_supported);
+			kfree(supported_devices);
+			return rc;
+		}
+
+		for (i = 0; i < num_supported; i += 2) {
+			handler_info = devm_kzalloc(pd->dev,
+					sizeof(*handler_info), GFP_KERNEL);
+			if (!handler_info) {
+				kfree(supported_devices);
+				return -ENOMEM;
+			}
+
+			handler_info->pd = pd;
+			handler_info->handler.svid = supported_devices[i];
+			handler_info->handler.pid = supported_devices[i+1];
+			handler_info->handler.connect = glink_vdm_connect;
+			handler_info->handler.disconnect = glink_vdm_disconnect;
+			handler_info->handler.vdm_received = glink_vdm_received;
+			list_add_tail(&handler_info->entry, &pd->glink_handlers);
+
+			rc = vdm_glink_register_handler(pd->intf_glink, &handler_info->handler);
+			if (rc != 0) {
+				dev_err(pd->dev,
+						"failed registering glink handler, SVID/PID = 0x%04x/0x%04x",
+						handler_info->handler.svid, handler_info->handler.pid);
+				kfree(supported_devices);
+				return rc;
+			}
+			dev_dbg(pd->dev, "Registered glink SVID/PID 0x%04x/0x%04x",
+					handler_info->handler.svid, handler_info->handler.pid);
+		}
+
+		kfree(supported_devices);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+void external_battery_unregister_svid_handlers(struct ext_batt_pd *pd)
+{
+	struct glink_svid_handler_info *handler_info;
+
+	if (IS_ENABLED(CONFIG_USB_PD_POLICY))
+		usbpd_unregister_svid(pd->intf_usbpd, &pd->usbpd_hdlr);
+
+	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK))
+		list_for_each_entry(handler_info, &pd->glink_handlers, entry)
+			vdm_glink_unregister_handler(pd->intf_glink, &handler_info->handler);
+}
+
+int external_battery_send_vdm(struct ext_batt_pd *pd,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	if (IS_ENABLED(CONFIG_USB_PD_POLICY))
+		return usbpd_send_vdm(pd->intf_usbpd, vdm_hdr, vdos, num_vdos);
+
+	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK))
+		return vdm_glink_send_vdm(pd->intf_glink, vdm_hdr, vdos, num_vdos);
+
+	return -EINVAL;
+}
+
 void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
 {
 	dev_dbg(pd->dev, "%s: enter: usb-com=%d\n", __func__, usb_comm);
@@ -74,7 +244,8 @@ void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
 
 	mutex_lock(&pd->lock);
 	pd->connected = true;
-	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
+	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
+	pd->params.rsoc = 0;
 	mutex_unlock(&pd->lock);
 
 	schedule_delayed_work(&pd->mount_state_work, 0);
@@ -101,7 +272,8 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 
 	mutex_lock(&pd->lock);
 	pd->connected = false;
-	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
+	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
+	pd->params.rsoc = 0;
 	mutex_unlock(&pd->lock);
 
 	cancel_delayed_work_sync(&pd->mount_state_work);
@@ -109,6 +281,266 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 
 	/* Re-enable USB input charging path if disabled */
 	set_usb_charging_state(pd, CHARGING_RESUME);
+}
+
+static void vdm_memcpy(struct ext_batt_pd *pd,
+		u32 param, int num_vdos,
+		void *dest, const void *src, size_t count)
+{
+	if (count > num_vdos * sizeof(u32)) {
+		dev_warn(pd->dev,
+				"Received VDM (0x%02x) of insufficent length: %lu",
+				param, count);
+		return;
+	}
+
+	memcpy(dest, src, count);
+}
+
+static void process_lifetime_data_blocks_molokini(struct ext_batt_pd *pd,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	u32 parameter_type = VDMH_PARAMETER(vdm_hdr);
+	u32 high_bytes = VDMH_HIGH(vdm_hdr);
+
+	switch (parameter_type) {
+	case EXT_BATT_FW_LDB1:
+		vdm_memcpy(pd, parameter_type, num_vdos,
+			pd->params.lifetime1.values.lower, vdos,
+			sizeof(pd->params.lifetime1.values.lower));
+		break;
+	case EXT_BATT_FW_LDB3:
+		pd->params.lifetime3 = vdos[0];
+		break;
+	case EXT_BATT_FW_LDB4:
+		vdm_memcpy(pd, parameter_type, num_vdos,
+			pd->params.lifetime4.values.lower, vdos,
+			sizeof(pd->params.lifetime4.values.lower));
+		break;
+	case EXT_BATT_FW_LDB6:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[0],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[0] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB7:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[1],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[1] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB8:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[2],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[2] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB9:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[3],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[3] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB10:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+					pd->params.temp_zones.tz_molokini[4],
+					vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[4] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB11:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[5],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[5] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB12:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[6],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_molokini[6] +
+				VDOS_MAX_BYTES / sizeof(u32),
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_MANUFACTURER_INFO1:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_a.values.lower, vdos,
+				sizeof(pd->params.manufacturer_info_a.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_a.values.higher, vdos,
+				sizeof(pd->params.manufacturer_info_a.values.higher));
+		break;
+	case EXT_BATT_FW_MANUFACTURER_INFO2:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_b.values.lower, vdos,
+				sizeof(pd->params.manufacturer_info_b.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_b.values.higher, vdos,
+				sizeof(pd->params.manufacturer_info_b.values.higher));
+		break;
+	case EXT_BATT_FW_MANUFACTURER_INFO3:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_c.values.lower, vdos,
+				sizeof(pd->params.manufacturer_info_c.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_c.values.higher, vdos,
+				sizeof(pd->params.manufacturer_info_c.values.higher));
+		break;
+	default:
+		dev_err(pd->dev, "Unknown Molokini lifetime data block\n");
+		break;
+	}
+}
+
+static void process_lifetime_data_blocks_lehua(struct ext_batt_pd *pd,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	u32 parameter_type = VDMH_PARAMETER(vdm_hdr);
+	u32 high_bytes = VDMH_HIGH(vdm_hdr);
+
+	switch (parameter_type) {
+	case EXT_BATT_FW_LDB1:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime1.values.lower, vdos,
+				sizeof(pd->params.lifetime1.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime1.values.higher, vdos,
+				sizeof(pd->params.lifetime1.values.higher));
+		break;
+	case EXT_BATT_FW_LDB2:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime2.values.lower, vdos,
+				sizeof(pd->params.lifetime2.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime2.values.higher, vdos,
+				sizeof(pd->params.lifetime2.values.higher));
+		break;
+	case EXT_BATT_FW_LDB3:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[0],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[1],
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB4:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[2],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[3],
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB5:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[4],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[5],
+				vdos, VDOS_MAX_BYTES);
+		break;
+	case EXT_BATT_FW_LDB6:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.temp_zones.tz_lehua[6],
+				vdos, VDOS_MAX_BYTES);
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime6.values, vdos,
+				sizeof(pd->params.lifetime6.values));
+		break;
+	case EXT_BATT_FW_LDB7:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime7.values.lower, vdos,
+				sizeof(pd->params.lifetime7.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime7.values.higher, vdos,
+				sizeof(pd->params.lifetime7.values.higher));
+		break;
+	case EXT_BATT_FW_LDB8:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime8.values.lower, vdos,
+				sizeof(pd->params.lifetime8.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.lifetime8.values.higher, vdos,
+				sizeof(pd->params.lifetime8.values.higher));
+		break;
+	case EXT_BATT_FW_MANUFACTURER_INFOA:
+		if (!high_bytes)
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_a.values.lower, vdos,
+				sizeof(pd->params.manufacturer_info_a.values.lower));
+		else
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_a.values.higher, vdos,
+				sizeof(pd->params.manufacturer_info_a.values.higher));
+		break;
+	default:
+		dev_err(pd->dev, "Unknown Lehua lifetime data block: 0x%x\n",
+			parameter_type);
+		break;
+	}
+}
+
+static void process_lifetime_data_blocks(struct ext_batt_pd *pd,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	if (pd->batt_id == EXT_BATT_ID_MOLOKINI)
+		process_lifetime_data_blocks_molokini(pd, vdm_hdr, vdos, num_vdos);
+	else if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		process_lifetime_data_blocks_lehua(pd, vdm_hdr, vdos, num_vdos);
 }
 
 void ext_batt_vdm_received(struct ext_batt_pd *pd,
@@ -134,28 +566,78 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 				"Received mount status ack response code 0x%x",
 				vdos[0]);
 
-			pd->last_mount_ack = VDO_ACK_STATUS(vdos[0]);
+			complete(&pd->mount_state_ack);
 		} else if (parameter_type == EXT_BATT_FW_HMD_DOCKED) {
 			dev_info(pd->dev,
 				"Received dock status ack response code 0x%x", vdos[0]);
-			/* Recall the lie we told Lehua when sending the dock VDM */
-			power_role.intval = VDO_ACK_STATUS(vdos[0]);
+			pd->last_dock_ack = vdos[0];
+
+			/*
+			 * dock_state (0=undocked, 1=docked) conveniently matches the power
+			 * role we'd like to switch to (0=sink, 1=source)
+			 */
+			power_role.intval = vdos[0];
+
+			/*
+			 * don't send PR_SWAP to sink if the ext batt's soc is <= 1 and we haven't had
+			 * a chance to charge it (source_current is 0). On Lehua, this indicates it's
+			 * in a low power state and needs to be connected as a source to stay awake
+			 */
+			if (power_role.intval == EXT_BATT_FW_UNDOCKED && pd->params.rsoc <= 1 &&
+					pd->source_current == 0)
+				return;
 
 			dev_info(pd->dev, "Sending PR_SWAP to role=%d", power_role.intval);
 			rc = power_supply_set_property(pd->usb_psy,
 					POWER_SUPPLY_PROP_TYPEC_POWER_ROLE, &power_role);
 			/* the default timeout is too short for PR_SWAP, ignore it */
-			if (rc != -ETIMEDOUT)
+			if (rc && rc != -ETIMEDOUT)
 				dev_err(pd->dev, "Failed sending PR_SWAP: rc=%d", rc);
+
+			/* Force re-evaluation, so source current can be set correctly */
+			ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
+				pd->battery_psy);
 		} else {
 			dev_warn(pd->dev, "Unsupported response parameter 0x%x",
 					parameter_type);
 		}
 		return;
+	} else if (protocol_type == VDM_REQUEST &&
+				parameter_type >= EXT_BATT_FW_ERROR_UFP_LPD &&
+				parameter_type <= EXT_BATT_FW_ERROR_DRP_OVP) {
+
+		u32 error_state_header = 0;
+		u32 error_state_vdo = vdos[0];
+		int index = parameter_type - EXT_BATT_FW_ERROR_UFP_LPD;
+
+		// svid, ack, proto, high, size, param
+		error_state_header =
+			VDMH_CONSTRUCT(
+				pd->svid,
+				1, VDM_RESPONSE, 0, 1,
+				parameter_type);
+
+		rc = external_battery_send_vdm(pd, error_state_header,
+			&error_state_vdo, 1);
+
+		if (rc != 0) {
+			dev_err(pd->dev,
+				"Error sending HMD response for error 0x%x rc=%d",
+				parameter_type, rc);
+		} else {
+			/*
+			 * track frequency of error conditions so that they could
+			 * be exposed as SysFs and can be sampled appropriately
+			 */
+			dev_dbg(pd->dev, "Error condition index=%d\n", index);
+			if (index >= 0 && index < EXT_BATT_FW_ERROR_CONDITIONS && error_state_vdo)
+				pd->params.error_conditions[index]++;
+		}
+		return;
 	}
 
 	if (protocol_type != VDM_BROADCAST) {
-		dev_warn(pd->dev, "Usupported Protocol=%d\n", protocol_type);
+		dev_warn(pd->dev, "Unsupported Protocol=%d\n", protocol_type);
 		return;
 	}
 
@@ -176,12 +658,19 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		pd->params.fw_version = vdos[0];
 		break;
 	case EXT_BATT_FW_SERIAL:
-		memcpy(pd->params.serial,
+		vdm_memcpy(pd, parameter_type, num_vdos,
+			pd->params.serial,
 			vdos, sizeof(pd->params.serial));
 		break;
 	case EXT_BATT_FW_SERIAL_BATTERY:
-		memcpy(pd->params.serial_battery,
+		vdm_memcpy(pd, parameter_type, num_vdos,
+			pd->params.serial_battery,
 			vdos, sizeof(pd->params.serial_battery));
+		break;
+	case EXT_BATT_FW_SERIAL_SYSTEM:
+		vdm_memcpy(pd, parameter_type, num_vdos,
+			pd->params.serial_system,
+			vdos, sizeof(pd->params.serial_system));
 		break;
 	case EXT_BATT_FW_TEMP_FG:
 		pd->params.temp_fg = vdos[0];
@@ -190,7 +679,8 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		pd->params.voltage = vdos[0];
 		break;
 	case EXT_BATT_FW_BATT_STATUS:
-		convert_battery_status(pd, vdos[0]);
+		pd->params.batt_status = vdos[0];
+		convert_battery_status(pd, pd->params.batt_status);
 		break;
 	case EXT_BATT_FW_CURRENT:
 		pd->params.icurrent = vdos[0]; /* negative range */
@@ -200,6 +690,11 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		break;
 	case EXT_BATT_FW_FCC:
 		pd->params.fcc = vdos[0];
+		break;
+	case EXT_BATT_FW_PACK_ASSEMBLY_PN:
+		vdm_memcpy(pd, parameter_type, num_vdos,
+			pd->params.pack_assembly_pn,
+			vdos, sizeof(pd->params.pack_assembly_pn));
 		break;
 	case EXT_BATT_FW_CYCLE_COUNT:
 		pd->params.cycle_count = vdos[0];
@@ -216,95 +711,26 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 				sizeof(u32) * num_vdos &&
 			vdm_size_bytes[sb] <=
 				sizeof(pd->params.device_name)) {
-			memcpy(pd->params.device_name,
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.device_name,
 				vdos, vdm_size_bytes[sb]);
 		}
 		break;
-	case EXT_BATT_FW_LDB1:
-		memcpy(pd->params.lifetime1_lower, vdos,
-			sizeof(pd->params.lifetime1_lower));
-		memcpy(pd->params.lifetime1_higher,
-			vdos + LIFETIME_1_LOWER_LEN,
-			sizeof(pd->params.lifetime1_higher));
+	case EXT_BATT_FW_LDB1 ... EXT_BATT_FW_MANUFACTURER_INFO3:
+		process_lifetime_data_blocks(pd, vdm_hdr, vdos, num_vdos);
 		break;
-	case EXT_BATT_FW_LDB3:
-		pd->params.lifetime3 = vdos[0];
-		break;
-	case EXT_BATT_FW_LDB4:
-		memcpy(pd->params.lifetime4,
-			vdos, sizeof(pd->params.lifetime4));
-		break;
-	case EXT_BATT_FW_LDB6:
+	/* Handle manufaturer info B data block here since this is not
+	 * defined within the LDB range (for Lehua)
+	 */
+	case EXT_BATT_FW_MANUFACTURER_INFOB:
 		if (!high_bytes)
-			memcpy(pd->params.temp_zones[0],
-				vdos, VDOS_MAX_BYTES);
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_b.values.lower, vdos,
+				sizeof(pd->params.manufacturer_info_b.values.lower));
 		else
-			memcpy(pd->params.temp_zones[0] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_LDB7:
-		if (!high_bytes)
-			memcpy(pd->params.temp_zones[1],
-				vdos, VDOS_MAX_BYTES);
-		else
-			memcpy(pd->params.temp_zones[1] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_LDB8:
-		if (!high_bytes)
-			memcpy(pd->params.temp_zones[2],
-				vdos, VDOS_MAX_BYTES);
-		else
-			memcpy(pd->params.temp_zones[2] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_LDB9:
-		if (!high_bytes)
-			memcpy(pd->params.temp_zones[3],
-				vdos, VDOS_MAX_BYTES);
-		else
-			memcpy(pd->params.temp_zones[3] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_LDB10:
-		if (!high_bytes)
-			memcpy(pd->params.temp_zones[4],
-					vdos, VDOS_MAX_BYTES);
-		else
-			memcpy(pd->params.temp_zones[4] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_LDB11:
-		if (!high_bytes)
-			memcpy(pd->params.temp_zones[5],
-				vdos, VDOS_MAX_BYTES);
-		else
-			memcpy(pd->params.temp_zones[5] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_LDB12:
-		if (!high_bytes)
-			memcpy(pd->params.temp_zones[6],
-				vdos, VDOS_MAX_BYTES);
-		else
-			memcpy(pd->params.temp_zones[6] +
-				VDOS_MAX_BYTES / sizeof(u32),
-				vdos, VDOS_MAX_BYTES);
-		break;
-	case EXT_BATT_FW_MANUFACTURER_INFO1:
-		pd->params.manufacturer_info_a = vdos[0];
-		break;
-	case EXT_BATT_FW_MANUFACTURER_INFO2:
-		pd->params.manufacturer_info_b = vdos[0];
-		break;
-	case EXT_BATT_FW_MANUFACTURER_INFO3:
-		pd->params.manufacturer_info_c = vdos[0];
+			vdm_memcpy(pd, parameter_type, num_vdos,
+				pd->params.manufacturer_info_b.values.higher, vdos,
+				sizeof(pd->params.manufacturer_info_b.values.higher));
 		break;
 	case EXT_BATT_FW_CHARGER_PLUGGED:
 		pd->params.charger_plugged = vdos[0];
@@ -423,7 +849,35 @@ static ssize_t mount_state_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(mount_state);
 
+static u32 scale_rsoc(u32 rsoc, u32 min, u32 max) {
+	if (rsoc < min)
+		return 0;
+	else if (rsoc > max)
+		return 100;
+
+	/* Multiply by 100 first to avoid int division issues */
+	return (100 * (rsoc - min)) / (max - min);
+}
+
 static ssize_t rsoc_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	u32 rsoc = pd->params.rsoc;
+
+	if (pd->rsoc_scaling_enabled) {
+		rsoc = scale_rsoc(rsoc,
+			pd->rsoc_scaling_min_level,
+			pd->rsoc_scaling_max_level);
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", rsoc);
+}
+static DEVICE_ATTR_RO(rsoc);
+
+static ssize_t rsoc_raw_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct ext_batt_pd *pd =
@@ -432,7 +886,7 @@ static ssize_t rsoc_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.rsoc);
 }
 
-static ssize_t rsoc_store(struct device *dev,
+static ssize_t rsoc_raw_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
@@ -451,7 +905,7 @@ static ssize_t rsoc_store(struct device *dev,
 
 	return count;
 }
-static DEVICE_ATTR_RW(rsoc);
+static DEVICE_ATTR_RW(rsoc_raw);
 
 static ssize_t status_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -597,6 +1051,26 @@ static ssize_t fcc_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(fcc);
 
+static ssize_t pack_assembly_pn_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", pd->params.pack_assembly_pn);
+}
+static DEVICE_ATTR_RO(pack_assembly_pn);
+
+static ssize_t battery_status_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->params.batt_status);
+}
+static DEVICE_ATTR_RO(battery_status);
+
 static ssize_t cycle_count_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -643,7 +1117,8 @@ static ssize_t cell_1_max_voltage_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime1_lower[0]);
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.lifetime1.ldb_molokini.cell_1_max_voltage);
 }
 static DEVICE_ATTR_RO(cell_1_max_voltage);
 
@@ -653,7 +1128,8 @@ static ssize_t cell_1_min_voltage_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime1_lower[1]);
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.lifetime1.ldb_molokini.cell_1_min_voltage);
 }
 static DEVICE_ATTR_RO(cell_1_min_voltage);
 
@@ -663,7 +1139,12 @@ static ssize_t max_charge_current_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_lower[2]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_lehua.max_charge_current);
+	else
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_molokini.max_charge_current);
 }
 static DEVICE_ATTR_RO(max_charge_current);
 
@@ -673,7 +1154,12 @@ static ssize_t max_discharge_current_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_lower[3]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_lehua.max_discharge_current);
+	else
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_molokini.max_discharge_current);
 }
 static DEVICE_ATTR_RO(max_discharge_current);
 
@@ -683,7 +1169,12 @@ static ssize_t max_avg_discharge_current_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_lower[4]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_lehua.max_avg_discharge_current);
+	else
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_molokini.max_avg_discharge_current);
 }
 static DEVICE_ATTR_RO(max_avg_discharge_current);
 
@@ -693,7 +1184,12 @@ static ssize_t max_avg_dsg_power_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_lower[5]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_lehua.max_avg_dsg_power);
+	else
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_molokini.max_avg_dsg_power);
 }
 static DEVICE_ATTR_RO(max_avg_dsg_power);
 
@@ -703,7 +1199,12 @@ static ssize_t max_temp_cell_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_higher[0]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_lehua.max_temp_cell);
+	else
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_molokini.max_temp_cell);
 }
 static DEVICE_ATTR_RO(max_temp_cell);
 
@@ -713,7 +1214,12 @@ static ssize_t min_temp_cell_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_higher[1]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_lehua.min_temp_cell);
+	else
+		return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+			pd->params.lifetime1.ldb_molokini.min_temp_cell);
 }
 static DEVICE_ATTR_RO(min_temp_cell);
 
@@ -723,7 +1229,8 @@ static ssize_t max_temp_int_sensor_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_higher[2]);
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+		pd->params.lifetime1.ldb_molokini.max_temp_int_sensor);
 }
 static DEVICE_ATTR_RO(max_temp_int_sensor);
 
@@ -733,7 +1240,8 @@ static ssize_t min_temp_int_sensor_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%x\n", pd->params.lifetime1_higher[3]);
+	return scnprintf(buf, PAGE_SIZE, "0x%x\n",
+		pd->params.lifetime1.ldb_molokini.min_temp_int_sensor);
 }
 static DEVICE_ATTR_RO(min_temp_int_sensor);
 
@@ -743,7 +1251,12 @@ static ssize_t total_fw_runtime_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime3);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "%u\n",
+			TWO_HRS_TO_SECONDS *
+			pd->params.lifetime2.ldb_lehua.total_fw_runtime);
+	else
+		return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime3);
 }
 static DEVICE_ATTR_RO(total_fw_runtime);
 
@@ -753,7 +1266,12 @@ static ssize_t num_valid_charge_terminations_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime4[0]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "%u\n",
+			pd->params.lifetime8.ldb_lehua.num_valid_charge_terminations);
+	else
+		return scnprintf(buf, PAGE_SIZE, "%u\n",
+			pd->params.lifetime4.ldb_molokini.num_valid_charge_terminations);
 }
 static DEVICE_ATTR_RO(num_valid_charge_terminations);
 
@@ -763,7 +1281,12 @@ static ssize_t last_valid_charge_term_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime4[1]);
+	if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		return scnprintf(buf, PAGE_SIZE, "%u\n",
+			pd->params.lifetime8.ldb_lehua.last_valid_charge_term);
+	else
+		return scnprintf(buf, PAGE_SIZE, "%u\n",
+			pd->params.lifetime4.ldb_molokini.last_valid_charge_term);
 }
 static DEVICE_ATTR_RO(last_valid_charge_term);
 
@@ -773,7 +1296,8 @@ static ssize_t num_qmax_updates_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime4[2]);
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.lifetime4.ldb_molokini.num_qmax_updates);
 }
 static DEVICE_ATTR_RO(num_qmax_updates);
 
@@ -783,7 +1307,8 @@ static ssize_t last_qmax_update_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime4[3]);
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.lifetime4.ldb_molokini.last_qmax_update);
 }
 static DEVICE_ATTR_RO(last_qmax_update);
 
@@ -793,7 +1318,8 @@ static ssize_t num_ra_update_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime4[4]);
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.lifetime4.ldb_molokini.num_ra_update);
 }
 static DEVICE_ATTR_RO(num_ra_update);
 
@@ -803,585 +1329,50 @@ static ssize_t last_ra_update_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.lifetime4[5]);
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.lifetime4.ldb_molokini.last_ra_update);
 }
 static DEVICE_ATTR_RO(last_ra_update);
 
-// ut
-
-static ssize_t t_ut_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][0]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_a);
-
-static ssize_t t_ut_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][1]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_b);
-
-static ssize_t t_ut_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][2]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_c);
-
-static ssize_t t_ut_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][3]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_d);
-
-static ssize_t t_ut_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][4]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_e);
-
-static ssize_t t_ut_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][5]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_f);
-
-static ssize_t t_ut_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][6]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_g);
-
-static ssize_t t_ut_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[0][7]);
-}
-static DEVICE_ATTR_RO(t_ut_rsoc_h);
-
-// lt
-
-static ssize_t t_lt_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][0]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_a);
-
-static ssize_t t_lt_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][1]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_b);
-
-static ssize_t t_lt_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][2]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_c);
-
-static ssize_t t_lt_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][3]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_d);
-
-static ssize_t t_lt_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][4]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_e);
-
-static ssize_t t_lt_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][5]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_f);
-
-static ssize_t t_lt_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][6]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_g);
-
-static ssize_t t_lt_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[1][7]);
-}
-static DEVICE_ATTR_RO(t_lt_rsoc_h);
-
-// stl
-
-static ssize_t t_stl_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][0]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_a);
-
-static ssize_t t_stl_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][1]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_b);
-
-static ssize_t t_stl_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][2]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_c);
-
-static ssize_t t_stl_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][3]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_d);
-
-static ssize_t t_stl_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][4]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_e);
-
-static ssize_t t_stl_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][5]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_f);
-
-static ssize_t t_stl_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][6]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_g);
-
-static ssize_t t_stl_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[2][7]);
-}
-static DEVICE_ATTR_RO(t_stl_rsoc_h);
-
-// rt
-
-static ssize_t t_rt_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][0]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_a);
-
-static ssize_t t_rt_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][1]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_b);
-
-static ssize_t t_rt_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][2]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_c);
-
-static ssize_t t_rt_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][3]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_d);
-
-static ssize_t t_rt_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][4]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_e);
-
-static ssize_t t_rt_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][5]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_f);
-
-static ssize_t t_rt_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][6]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_g);
-
-static ssize_t t_rt_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[3][7]);
-}
-static DEVICE_ATTR_RO(t_rt_rsoc_h);
-
-// sth
-
-static ssize_t t_sth_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][0]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_a);
-
-static ssize_t t_sth_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][1]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_b);
-
-static ssize_t t_sth_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][2]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_c);
-
-static ssize_t t_sth_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][3]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_d);
-
-static ssize_t t_sth_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][4]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_e);
-
-static ssize_t t_sth_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][5]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_f);
-
-static ssize_t t_sth_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][6]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_g);
-
-static ssize_t t_sth_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[4][7]);
-}
-static DEVICE_ATTR_RO(t_sth_rsoc_h);
-
-// ht
-
-static ssize_t t_ht_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][0]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_a);
-
-static ssize_t t_ht_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][1]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_b);
-
-static ssize_t t_ht_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][2]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_c);
-
-static ssize_t t_ht_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][3]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_d);
-
-static ssize_t t_ht_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][4]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_e);
-
-static ssize_t t_ht_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][5]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_f);
-
-static ssize_t t_ht_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][6]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_g);
-
-static ssize_t t_ht_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[5][7]);
-}
-static DEVICE_ATTR_RO(t_ht_rsoc_h);
-
-// ot
-
-static ssize_t t_ot_rsoc_a_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][0]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_a);
-
-static ssize_t t_ot_rsoc_b_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][1]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_b);
-
-static ssize_t t_ot_rsoc_c_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][2]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_c);
-
-static ssize_t t_ot_rsoc_d_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][3]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_d);
-
-static ssize_t t_ot_rsoc_e_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][4]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_e);
-
-static ssize_t t_ot_rsoc_f_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][5]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_f);
-
-static ssize_t t_ot_rsoc_g_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][6]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_g);
-
-static ssize_t t_ot_rsoc_h_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_zones[6][7]);
-}
-static DEVICE_ATTR_RO(t_ot_rsoc_h);
-
-static struct attribute *ext_batt_attrs[] = {
+/* Temp zones might need to be scaled to convert time from hourly
+ * units (2h/h) to seconds
+ */
+#define TEMPZONE_RSOC_PARAM(_name, _sname, _tz, _soc, _scale)			\
+static ssize_t _name##_show(struct device *dev,				\
+	struct device_attribute *attr, char *buf)			\
+{									\
+	struct ext_batt_pd *pd =	\
+		(struct ext_batt_pd *) dev_get_drvdata(dev);	\
+	return scnprintf(buf, PAGE_SIZE, "%u\n",	\
+		_scale * pd->params.temp_zones.tz_##_sname[_tz][_soc]);	\
+}									\
+static DEVICE_ATTR_RO(_name)
+
+/* Molokini temp zones - time units are already in seconds */
+
+/* Molokini Temp zones naming format: t_{_tzlabel}_rsoc_{_soclabel} */
+#define MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, _soclabel, _soc)			\
+	TEMPZONE_RSOC_PARAM(t_##_tzlabel##_rsoc_##_soclabel, molokini, _tz, _soc, 1)
+
+#define MOLOKINI_TEMPZONE_RSOC_PARAMS(_tzlabel, _tz)			\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, a, 0);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, b, 1);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, c, 2);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, d, 3);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, e, 4);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, f, 5);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, g, 6);		\
+	MOLOKINI_TEMPZONE_RSOC_PARAM(_tzlabel, _tz, h, 7)
+
+MOLOKINI_TEMPZONE_RSOC_PARAMS(ut,  0);
+MOLOKINI_TEMPZONE_RSOC_PARAMS(lt,  1);
+MOLOKINI_TEMPZONE_RSOC_PARAMS(stl, 2);
+MOLOKINI_TEMPZONE_RSOC_PARAMS(rt,  3);
+MOLOKINI_TEMPZONE_RSOC_PARAMS(sth, 4);
+MOLOKINI_TEMPZONE_RSOC_PARAMS(ht,  5);
+MOLOKINI_TEMPZONE_RSOC_PARAMS(ot,  6);
+
+static struct attribute *ext_batt_molokini_attrs[] = {
 	&dev_attr_charger_plugged.attr,
 	&dev_attr_connected.attr,
 	&dev_attr_mount_state.attr,
@@ -1490,14 +1481,508 @@ static struct attribute *ext_batt_attrs[] = {
 
 	NULL,
 };
-ATTRIBUTE_GROUPS(ext_batt);
+ATTRIBUTE_GROUPS(ext_batt_molokini);
+
+/* Lehua+ SysFs nodes */
+
+#define LIFETIME_DATA_BLOCK_PARAM(_name, _sname, _ldb, _fmt, _scale)			\
+static ssize_t _name##_show(struct device *dev,				\
+	struct device_attribute *attr, char *buf)			\
+{									\
+	struct ext_batt_pd *pd =	\
+		(struct ext_batt_pd *) dev_get_drvdata(dev);	\
+	return scnprintf(buf, PAGE_SIZE, _fmt"\n",	\
+		_scale * pd->params.lifetime##_ldb.ldb_##_sname._name);	\
+}									\
+static DEVICE_ATTR_RO(_name)
+
+#define LEHUA_LIFETIME_DATA_BLOCK_PARAM(_name, _ldb, _fmt, _scale)			\
+	LIFETIME_DATA_BLOCK_PARAM(_name, lehua, _ldb, _fmt, _scale)
+
+#define LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16_SCALED(_name, _ldb, _scale)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM(_name, _ldb, "%u", _scale)
+
+#define LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16(_name, _ldb)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16_SCALED(_name, _ldb, 1)
+
+#define LEHUA_LIFETIME_DATA_BLOCK_PARAM_HEX(_name, _ldb)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM(_name, _ldb, "0x%x", 1)
+
+/* LDB 1 */
+
+#define LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(_name)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16(_name, 1)
+
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_voltage_cell_1);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_voltage_cell_2);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_voltage_cell_3);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_voltage_cell_4);
+
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(min_voltage_cell_1);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(min_voltage_cell_2);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(min_voltage_cell_3);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(min_voltage_cell_4);
+
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_delta_cell_voltage);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_temp_delta);
+LEHUA_LIFETIME1_DATA_BLOCK_PARAM_U16(max_temp_fet);
+
+/* LDB 2 */
+
+#define LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16(_name)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16(_name, 2)
+
+#define LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(_name, _scale)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16_SCALED(_name, 2, _scale)
+
+#define LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(_name)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_HEX(_name, 2)
+
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(num_shutdowns);
+
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(avg_temp_cell);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(min_temp_cell_a);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(min_temp_cell_b);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(min_temp_cell_c);
+
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(max_temp_cell_a);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(max_temp_cell_b);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_HEX(max_temp_cell_c);
+
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_ut,  TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_lt,  TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_stl, TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_rt,  TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_sth, TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_ht,  TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_ot,  TWO_HRS_TO_SECONDS);
+
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_hvlt, HR_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_hvmt, HR_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(time_spent_hvht, HR_TO_SECONDS);
+LEHUA_LIFETIME2_DATA_BLOCK_PARAM_U16_SCALED(using_time_pf,   HR_TO_SECONDS);
+
+/* LDB 6 */
+
+#define LEHUA_LIFETIME6_DATA_BLOCK_PARAM_U16_SCALED(_name, _scale)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16_SCALED(_name, 6, _scale)
+
+LEHUA_LIFETIME6_DATA_BLOCK_PARAM_U16_SCALED(cb_time_cell_1, TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME6_DATA_BLOCK_PARAM_U16_SCALED(cb_time_cell_2, TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME6_DATA_BLOCK_PARAM_U16_SCALED(cb_time_cell_3, TWO_HRS_TO_SECONDS);
+LEHUA_LIFETIME6_DATA_BLOCK_PARAM_U16_SCALED(cb_time_cell_4, TWO_HRS_TO_SECONDS);
+
+/* LDB 7 */
+
+#define LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(_name)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16(_name, 7)
+
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_cov_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_cov_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_cuv_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_cuv_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_ocd_1_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_ocd_1_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_ocd_2_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_ocd_2_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_occ_1_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_occ_1_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_occ_2_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_occ_2_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_aold_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_aold_event);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(num_ascd_events);
+LEHUA_LIFETIME7_DATA_BLOCK_PARAM_U16(last_ascd_event);
+
+/* LDB 8 */
+
+#define LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(_name)			\
+	LEHUA_LIFETIME_DATA_BLOCK_PARAM_U16(_name, 8)
+
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(num_ascc_events);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(last_ascc_event);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(num_otc_events);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(last_otc_event);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(num_otd_events);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(last_otd_event);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(num_otf_events);
+LEHUA_LIFETIME8_DATA_BLOCK_PARAM_U16(last_otf_event);
+
+/* Lehua temp zones - time units are in 2h so convert to seconds */
+
+/* Lehua Temp zones naming format: st_temp{_tz}_rsoc_{_soc} */
+#define LEHUA_TEMPZONE_RSOC_PARAM(_tz, _soc)			\
+	TEMPZONE_RSOC_PARAM(st_temp##_tz##_rsoc_##_soc, lehua, 	\
+						_tz, _soc, TWO_HRS_TO_SECONDS)
+
+#define LEHUA_TEMPZONE_RSOC_PARAMS(_tz)			\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 0);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 1);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 2);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 3);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 4);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 5);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 6);		\
+	LEHUA_TEMPZONE_RSOC_PARAM(_tz, 7)
+
+LEHUA_TEMPZONE_RSOC_PARAMS(0);
+LEHUA_TEMPZONE_RSOC_PARAMS(1);
+LEHUA_TEMPZONE_RSOC_PARAMS(2);
+LEHUA_TEMPZONE_RSOC_PARAMS(3);
+LEHUA_TEMPZONE_RSOC_PARAMS(4);
+LEHUA_TEMPZONE_RSOC_PARAMS(5);
+LEHUA_TEMPZONE_RSOC_PARAMS(6);
+
+/* LDBs as nodes */
+static ssize_t ldb_show_common(char *buf, struct ldb_values *ldb)
+{
+	int i, len = 0;
+
+	for (i = MAX_VDOS_PER_VDM-1; i >= 0; i--)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "0x%08x ",
+				ldb->higher[i]);
+	for (i = MAX_VDOS_PER_VDM-1; i >= 0; i--)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "0x%08x ",
+				ldb->lower[i]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
+
+	return len;
+}
+
+#define LDB_PARAM(_name, _ldb)			\
+static ssize_t _name##_show(struct device *dev,				\
+	struct device_attribute *attr, char *buf)			\
+{									\
+	struct ext_batt_pd *pd =	\
+		(struct ext_batt_pd *) dev_get_drvdata(dev);	\
+	return ldb_show_common(buf, &pd->params.lifetime##_ldb.values);	\
+}									\
+static DEVICE_ATTR_RO(_name)
+
+#define LEHUA_LDB_PARAM(_ldb)			\
+	LDB_PARAM(ldb##_ldb, _ldb)
+
+LEHUA_LDB_PARAM(1);
+LEHUA_LDB_PARAM(2);
+LEHUA_LDB_PARAM(7);
+LEHUA_LDB_PARAM(8);
+
+static ssize_t manufacturer_info_a_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n",
+		pd->params.manufacturer_info_a.data);
+}
+static DEVICE_ATTR_RO(manufacturer_info_a);
+
+static ssize_t manufacturer_info_b_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+	int i, len = 0;
+
+	for (i = MAX_VDOS_PER_VDM-1; i >= 0; i--)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "0x%08x ",
+				pd->params.manufacturer_info_b.values.higher[i]);
+	for (i = MAX_VDOS_PER_VDM-1; i >= 0; i--)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "0x%08x ",
+				pd->params.manufacturer_info_b.values.lower[i]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
+
+	return len;
+
+}
+static DEVICE_ATTR_RO(manufacturer_info_b);
+
+/* Lehua+ error conditions reported to HMD */
+
+static ssize_t error_common(struct device *dev,
+		struct device_attribute *attr, char *buf, int param)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+	int index = param - EXT_BATT_FW_ERROR_UFP_LPD;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		pd->params.error_conditions[index]);
+}
+
+static ssize_t error_ufp_lpd_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_UFP_LPD);
+}
+static DEVICE_ATTR_RO(error_ufp_lpd);
+
+static ssize_t error_ufp_ocp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_UFP_OCP);
+}
+static DEVICE_ATTR_RO(error_ufp_ocp);
+
+static ssize_t error_drp_ocp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_DRP_OCP);
+}
+static DEVICE_ATTR_RO(error_drp_ocp);
+
+static ssize_t error_ufp_otp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_UFP_OTP);
+}
+static DEVICE_ATTR_RO(error_ufp_otp);
+
+static ssize_t error_drp_otp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_DRP_OTP);
+}
+static DEVICE_ATTR_RO(error_drp_otp);
+
+static ssize_t error_batt_otp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_BATT_OTP);
+}
+static DEVICE_ATTR_RO(error_batt_otp);
+
+static ssize_t error_pcm_otp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_PCM_OTP);
+}
+static DEVICE_ATTR_RO(error_pcm_otp);
+
+static ssize_t error_drp_scp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_DRP_SCP);
+}
+static DEVICE_ATTR_RO(error_drp_scp);
+
+static ssize_t error_ufp_ovp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_UFP_OVP);
+}
+static DEVICE_ATTR_RO(error_ufp_ovp);
+
+static ssize_t error_drp_ovp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return error_common(dev, attr, buf, EXT_BATT_FW_ERROR_DRP_OVP);
+}
+static DEVICE_ATTR_RO(error_drp_ovp);
+
+static struct attribute *ext_batt_lehua_attrs[] = {
+	&dev_attr_charger_plugged.attr,
+	&dev_attr_connected.attr,
+	&dev_attr_mount_state.attr,
+	&dev_attr_rsoc.attr,
+	&dev_attr_rsoc_raw.attr,
+	&dev_attr_status.attr,
+	&dev_attr_battery_status.attr,
+	&dev_attr_serial.attr,
+	&dev_attr_serial_battery.attr,
+	&dev_attr_temp_fg.attr,
+	&dev_attr_voltage.attr,
+	&dev_attr_icurrent.attr,
+	&dev_attr_remaining_capacity.attr,
+	&dev_attr_fcc.attr,
+	&dev_attr_pack_assembly_pn.attr,
+	&dev_attr_cycle_count.attr,
+	&dev_attr_soh.attr,
+	&dev_attr_fw_version.attr,
+	&dev_attr_device_name.attr,
+
+	/* LDB 1 */
+	&dev_attr_max_voltage_cell_1.attr,
+	&dev_attr_max_voltage_cell_2.attr,
+	&dev_attr_max_voltage_cell_3.attr,
+	&dev_attr_max_voltage_cell_4.attr,
+	&dev_attr_min_voltage_cell_1.attr,
+	&dev_attr_min_voltage_cell_2.attr,
+	&dev_attr_min_voltage_cell_3.attr,
+	&dev_attr_min_voltage_cell_4.attr,
+	&dev_attr_max_delta_cell_voltage.attr,
+	&dev_attr_max_charge_current.attr,
+	&dev_attr_max_discharge_current.attr,
+	&dev_attr_max_avg_discharge_current.attr,
+	&dev_attr_max_avg_dsg_power.attr,
+	&dev_attr_max_temp_cell.attr,
+	&dev_attr_min_temp_cell.attr,
+	&dev_attr_max_temp_delta.attr,
+	&dev_attr_max_temp_fet.attr,
+
+	/* LDB 2 */
+	&dev_attr_num_shutdowns.attr,
+	&dev_attr_avg_temp_cell.attr,
+	&dev_attr_min_temp_cell_a.attr,
+	&dev_attr_min_temp_cell_b.attr,
+	&dev_attr_min_temp_cell_c.attr,
+	&dev_attr_max_temp_cell_a.attr,
+	&dev_attr_max_temp_cell_b.attr,
+	&dev_attr_max_temp_cell_c.attr,
+	&dev_attr_time_spent_ut.attr,
+	&dev_attr_time_spent_lt.attr,
+	&dev_attr_time_spent_stl.attr,
+	&dev_attr_time_spent_rt.attr,
+	&dev_attr_time_spent_sth.attr,
+	&dev_attr_time_spent_ht.attr,
+	&dev_attr_time_spent_ot.attr,
+	&dev_attr_time_spent_hvlt.attr,
+	&dev_attr_time_spent_hvmt.attr,
+	&dev_attr_time_spent_hvht.attr,
+	&dev_attr_total_fw_runtime.attr,
+	&dev_attr_using_time_pf.attr,
+
+	/* LDB 6 */
+	&dev_attr_cb_time_cell_1.attr,
+	&dev_attr_cb_time_cell_2.attr,
+	&dev_attr_cb_time_cell_3.attr,
+	&dev_attr_cb_time_cell_4.attr,
+
+	/* LDB 7 */
+	&dev_attr_num_cov_events.attr,
+	&dev_attr_last_cov_event.attr,
+	&dev_attr_num_cuv_events.attr,
+	&dev_attr_last_cuv_event.attr,
+	&dev_attr_num_ocd_1_events.attr,
+	&dev_attr_last_ocd_1_event.attr,
+	&dev_attr_num_ocd_2_events.attr,
+	&dev_attr_last_ocd_2_event.attr,
+	&dev_attr_num_occ_1_events.attr,
+	&dev_attr_last_occ_1_event.attr,
+	&dev_attr_num_occ_2_events.attr,
+	&dev_attr_last_occ_2_event.attr,
+	&dev_attr_num_aold_events.attr,
+	&dev_attr_last_aold_event.attr,
+	&dev_attr_num_ascd_events.attr,
+	&dev_attr_last_ascd_event.attr,
+
+	/* LDB 8 */
+	&dev_attr_num_ascc_events.attr,
+	&dev_attr_last_ascc_event.attr,
+	&dev_attr_num_otc_events.attr,
+	&dev_attr_last_otc_event.attr,
+	&dev_attr_num_otd_events.attr,
+	&dev_attr_last_otd_event.attr,
+	&dev_attr_num_otf_events.attr,
+	&dev_attr_last_otf_event.attr,
+	&dev_attr_num_valid_charge_terminations.attr,
+	&dev_attr_last_valid_charge_term.attr,
+
+	/* Temp zone 0 storage times */
+	&dev_attr_st_temp0_rsoc_0.attr,
+	&dev_attr_st_temp0_rsoc_1.attr,
+	&dev_attr_st_temp0_rsoc_2.attr,
+	&dev_attr_st_temp0_rsoc_3.attr,
+	&dev_attr_st_temp0_rsoc_4.attr,
+	&dev_attr_st_temp0_rsoc_5.attr,
+	&dev_attr_st_temp0_rsoc_6.attr,
+	&dev_attr_st_temp0_rsoc_7.attr,
+
+	/* Temp zone 1 storage times */
+	&dev_attr_st_temp1_rsoc_0.attr,
+	&dev_attr_st_temp1_rsoc_1.attr,
+	&dev_attr_st_temp1_rsoc_2.attr,
+	&dev_attr_st_temp1_rsoc_3.attr,
+	&dev_attr_st_temp1_rsoc_4.attr,
+	&dev_attr_st_temp1_rsoc_5.attr,
+	&dev_attr_st_temp1_rsoc_6.attr,
+	&dev_attr_st_temp1_rsoc_7.attr,
+
+	/* Temp zone 2 storage times */
+	&dev_attr_st_temp2_rsoc_0.attr,
+	&dev_attr_st_temp2_rsoc_1.attr,
+	&dev_attr_st_temp2_rsoc_2.attr,
+	&dev_attr_st_temp2_rsoc_3.attr,
+	&dev_attr_st_temp2_rsoc_4.attr,
+	&dev_attr_st_temp2_rsoc_5.attr,
+	&dev_attr_st_temp2_rsoc_6.attr,
+	&dev_attr_st_temp2_rsoc_7.attr,
+
+	/* Temp zone 3 storage times */
+	&dev_attr_st_temp3_rsoc_0.attr,
+	&dev_attr_st_temp3_rsoc_1.attr,
+	&dev_attr_st_temp3_rsoc_2.attr,
+	&dev_attr_st_temp3_rsoc_3.attr,
+	&dev_attr_st_temp3_rsoc_4.attr,
+	&dev_attr_st_temp3_rsoc_5.attr,
+	&dev_attr_st_temp3_rsoc_6.attr,
+	&dev_attr_st_temp3_rsoc_7.attr,
+
+	/* Temp zone 4 storage times */
+	&dev_attr_st_temp4_rsoc_0.attr,
+	&dev_attr_st_temp4_rsoc_1.attr,
+	&dev_attr_st_temp4_rsoc_2.attr,
+	&dev_attr_st_temp4_rsoc_3.attr,
+	&dev_attr_st_temp4_rsoc_4.attr,
+	&dev_attr_st_temp4_rsoc_5.attr,
+	&dev_attr_st_temp4_rsoc_6.attr,
+	&dev_attr_st_temp4_rsoc_7.attr,
+
+	/* Temp zone 5 storage times */
+	&dev_attr_st_temp5_rsoc_0.attr,
+	&dev_attr_st_temp5_rsoc_1.attr,
+	&dev_attr_st_temp5_rsoc_2.attr,
+	&dev_attr_st_temp5_rsoc_3.attr,
+	&dev_attr_st_temp5_rsoc_4.attr,
+	&dev_attr_st_temp5_rsoc_5.attr,
+	&dev_attr_st_temp5_rsoc_6.attr,
+	&dev_attr_st_temp5_rsoc_7.attr,
+
+	/* Temp zone 6 storage times */
+	&dev_attr_st_temp6_rsoc_0.attr,
+	&dev_attr_st_temp6_rsoc_1.attr,
+	&dev_attr_st_temp6_rsoc_2.attr,
+	&dev_attr_st_temp6_rsoc_3.attr,
+	&dev_attr_st_temp6_rsoc_4.attr,
+	&dev_attr_st_temp6_rsoc_5.attr,
+	&dev_attr_st_temp6_rsoc_6.attr,
+	&dev_attr_st_temp6_rsoc_7.attr,
+
+	/* LDBs */
+	&dev_attr_ldb1.attr,
+	&dev_attr_ldb2.attr,
+	&dev_attr_ldb7.attr,
+	&dev_attr_ldb8.attr,
+
+	&dev_attr_manufacturer_info_a.attr,
+	&dev_attr_manufacturer_info_b.attr,
+
+	/* Error conditions reported to HMD */
+	&dev_attr_error_ufp_lpd.attr,
+	&dev_attr_error_ufp_ocp.attr,
+	&dev_attr_error_drp_ocp.attr,
+	&dev_attr_error_ufp_otp.attr,
+	&dev_attr_error_drp_otp.attr,
+	&dev_attr_error_batt_otp.attr,
+	&dev_attr_error_pcm_otp.attr,
+	&dev_attr_error_drp_scp.attr,
+	&dev_attr_error_ufp_ovp.attr,
+	&dev_attr_error_drp_ovp.attr,
+
+	NULL,
+};
+ATTRIBUTE_GROUPS(ext_batt_lehua);
 
 static void ext_batt_create_sysfs(struct ext_batt_pd *pd)
 {
-	int result;
+	int result = 0;
 
-	/* Mount state node */
-	result = sysfs_create_groups(&pd->dev->kobj, ext_batt_groups);
+	/* Mount relevant nodes */
+	if (pd->batt_id == EXT_BATT_ID_MOLOKINI)
+		result = sysfs_create_groups(&pd->dev->kobj, ext_batt_molokini_groups);
+	else if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		result = sysfs_create_groups(&pd->dev->kobj, ext_batt_lehua_groups);
 	if (result != 0)
 		dev_err(pd->dev, "Error creating sysfs entries: %d\n", result);
 }
@@ -1523,35 +2008,32 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 		return;
 	}
 
-	/* Send HMD Mount request if needed */
-	if (pd->mount_state != pd->last_mount_ack) {
-		mount_state_header =
-			VDMH_CONSTRUCT(
-				pd->svid,
-				0, 1, 0, 1,
-				EXT_BATT_FW_HMD_MOUNTED);
+	mount_state_header =
+		VDMH_CONSTRUCT(
+			pd->svid,
+			0, 1, 0, 1,
+			EXT_BATT_FW_HMD_MOUNTED);
 
-		if (pd->mount_state == 0)
-			mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_OFF_HEAD << 8);
-		else
-			mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_ON_HEAD << 8);
+	if (pd->mount_state == 0)
+		mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_OFF_HEAD << 8);
+	else
+		mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_ON_HEAD << 8);
 
-		result = external_battery_send_vdm(pd, mount_state_header,
-			&mount_state_vdo, 1);
-		if (result != 0)
-			dev_err(pd->dev,
-				"Error sending HMD mount request: %d", result);
-		else
-			dev_dbg(pd->dev,
-				"Sent HMD mount request: header=0x%x mount_state_vdo=0x%x",
-				mount_state_header, mount_state_vdo);
+	reinit_completion(&pd->mount_state_ack);
+	result = external_battery_send_vdm(pd, mount_state_header,
+		&mount_state_vdo, 1);
+	if (result != 0) {
+		dev_err(pd->dev, "Error sending HMD mount request: %d", result);
+		mutex_unlock(&pd->lock);
+		return;
 	}
 
-	/*
-	 * Schedule periodically to ensure that ext_batt ACKs the
-	 * current mount state.
-	 */
-	schedule_delayed_work(&pd->mount_state_work, MOUNT_WORK_DELAY_SECONDS * HZ);
+	result = wait_for_completion_timeout(&pd->mount_state_ack,
+			msecs_to_jiffies(MOUNT_STATE_ACK_TIMEOUT_MS));
+	if (!result) {
+		dev_err(pd->dev, "Timed out waiting for mount state ACK, retrying");
+		schedule_delayed_work(&pd->mount_state_work, 0);
+	}
 
 	mutex_unlock(&pd->lock);
 }
@@ -1561,7 +2043,6 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 	struct ext_batt_pd *pd =
 		container_of(work, struct ext_batt_pd, dock_state_dwork.work);
 	int rc;
-	int new_power_role;
 	u32 dock_state_hdr, dock_state_vdo;
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
@@ -1576,19 +2057,16 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 		goto out;
 	}
 
-	new_power_role = (pd->dock_state && pd->hmd_soc >= PR_SWAP_SOC_THRESHOLD);
+	if (pd->dock_state == pd->last_dock_ack)
+		goto out;
 
 	dock_state_hdr =
 		VDMH_CONSTRUCT(
 			pd->svid,
 			0, VDM_REQUEST, 0, 1,
 			EXT_BATT_FW_HMD_DOCKED);
-	/*
-	 *	Greedy Lehua expects to be in SNK mode whenever the HMD is docked, but
-	 *	we want to prioritize charging the internal battery first. Tell a white
-	 *	lie and claim we're docked only when we're ready to supply power to it.
-	 */
-	dock_state_vdo = new_power_role;
+
+	dock_state_vdo = pd->dock_state;
 
 	dev_dbg(pd->dev, "sending dock VDM: dock_state=%d", dock_state_vdo);
 	rc = external_battery_send_vdm(pd, dock_state_hdr, &dock_state_vdo, 1);
@@ -1617,21 +2095,14 @@ static void set_usb_charging_state(struct ext_batt_pd *pd,
 	union power_supply_propval val = {0};
 	int result = 0;
 
+	if (pd->usb_psy_charging_state == state) {
+		dev_dbg(pd->dev, "Current state is %s, no action needed\n",
+				usb_charging_state(state));
+		return;
+	}
+
 	if (IS_ERR_OR_NULL(pd->usb_psy)) {
 		dev_err(pd->dev, "USB power supply handle is invalid.\n");
-		return;
-	}
-
-	result = power_supply_get_property(pd->usb_psy,
-					POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
-	if (result) {
-		dev_err(pd->dev, "Unable to read charging state: %d\n", result);
-		return;
-	}
-
-	if (state == val.intval) {
-		dev_dbg(pd->dev, "Current USB charging state is %s. No action needed.\n",
-				usb_charging_state(state));
 		return;
 	}
 
@@ -1639,36 +2110,55 @@ static void set_usb_charging_state(struct ext_batt_pd *pd,
 
 	result = power_supply_set_property(pd->usb_psy,
 				POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
-	if (result) {
+	/* the default timeout is too short, ignore it */
+	if (result && result != -ETIMEDOUT) {
 		dev_err(pd->dev, "Unable to update USB charging state: %d\n", result);
 		return;
 	}
+
+	pd->usb_psy_charging_state = state;
 
 	dev_dbg(pd->dev,
 			"USB charging state updated successfully. New state: %s\n",
 			usb_charging_state(state));
 }
 
+static void set_usb_output_current_limit(struct ext_batt_pd *pd, int current_ua)
+{
+	union power_supply_propval val = {current_ua};
+	int result = 0;
+
+	if (IS_ERR_OR_NULL(pd->usb_psy)) {
+		dev_err(pd->dev, "USB power supply handle is invalid.");
+		return;
+	}
+
+	dev_dbg(pd->dev, "Setting source current to %d uA", val.intval);
+
+	result = power_supply_set_property(pd->usb_psy,
+				POWER_SUPPLY_PROP_OUTPUT_CURRENT_LIMIT, &val);
+
+	/* the default timeout is too short, ignore it */
+	if (result && result != -ETIMEDOUT) {
+		dev_err(pd->dev, "Unable to set output current limit: rc=%d\n", result);
+		return;
+	}
+
+	pd->source_current = current_ua;
+}
+
 static void handle_battery_capacity_change(struct ext_batt_pd *pd,
 		u32 capacity)
 {
-	bool crossed_soc_threshold;
-
 	dev_dbg(pd->dev,
 			"Battery capacity change event. Capacity = %d, connected = %d, mount state = %d, charger plugged = %d\n",
 			capacity, pd->connected, pd->mount_state,
 			pd->params.charger_plugged);
 
-	/* May need to swap power roles if the HMD battery ticks above or below */
-	crossed_soc_threshold =
-		(pd->hmd_soc < PR_SWAP_SOC_THRESHOLD && capacity >= PR_SWAP_SOC_THRESHOLD) ||
-		(pd->hmd_soc >= PR_SWAP_SOC_THRESHOLD && capacity < PR_SWAP_SOC_THRESHOLD);
-	pd->hmd_soc = capacity;
-
-	if (crossed_soc_threshold) {
-		cancel_delayed_work_sync(&pd->dock_state_dwork);
-		schedule_delayed_work(&pd->dock_state_dwork, 0);
-	}
+	if (capacity >= ENABLE_OTG_SOC_THRESHOLD)
+		set_usb_output_current_limit(pd, OTG_CURRENT_LIMIT_UA);
+	else
+		set_usb_output_current_limit(pd, 0);
 
 	if ((pd->charging_suspend_disable) ||
 		(!pd->connected) ||
@@ -1772,20 +2262,20 @@ static int ext_batt_psy_init(struct ext_batt_pd *pd)
 	pd->nb.notifier_call = NULL;
 	pd->battery_psy = power_supply_get_by_name("battery");
 	if (IS_ERR_OR_NULL(pd->battery_psy)) {
-		dev_err(pd->dev, "Failed to get battery power supply\n");
+		dev_dbg(pd->dev, "Failed to get battery power supply\n");
 		return -EPROBE_DEFER;
 	}
 
 	pd->usb_psy = power_supply_get_by_name("usb");
 	if (IS_ERR_OR_NULL(pd->usb_psy)) {
-		dev_err(pd->dev, "Failed to get USB power supply\n");
+		dev_dbg(pd->dev, "Failed to get USB power supply\n");
 		return -EPROBE_DEFER;
 	}
 
 	#ifdef CONFIG_CHARGER_CYPD3177
 	pd->cypd_psy = power_supply_get_by_name("cypd3177");
 	if (!pd->cypd_psy) {
-		dev_err(pd->dev, "Failed to get CYPD psy");
+		dev_dbg(pd->dev, "Failed to get CYPD psy");
 		return -EPROBE_DEFER;
 	}
 	#endif
@@ -1799,6 +2289,7 @@ static int ext_batt_probe(struct platform_device *pdev)
 {
 	int result = 0;
 	struct ext_batt_pd *pd;
+	const char *batt_name;
 
 	dev_dbg(&pdev->dev, "%s: enter", __func__);
 
@@ -1844,16 +2335,52 @@ static int ext_batt_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	pd->rsoc_scaling_enabled = of_property_read_bool(pdev->dev.of_node,
+			"rsoc-scaling");
+	dev_dbg(&pdev->dev, "rsoc scaling enabled=%d\n", pd->rsoc_scaling_enabled);
+
+	if (pd->rsoc_scaling_enabled) {
+		result = of_property_read_u32(pdev->dev.of_node,
+				"rsoc-scaling-min-level", &pd->rsoc_scaling_min_level);
+		if (result < 0) {
+			dev_err(&pdev->dev,
+					"rsoc scaling min value unavailable, failing probe, result:%d\n",
+					result);
+			return result;
+		}
+		dev_dbg(&pdev->dev, "rsoc scaling min value=%d\n",
+				pd->rsoc_scaling_min_level);
+
+		result = of_property_read_u32(pdev->dev.of_node,
+			"rsoc-scaling-max-level", &pd->rsoc_scaling_max_level);
+		if (result < 0) {
+			dev_err(&pdev->dev,
+					"rsoc scaling max level unavailable, failing probe, result:%d\n",
+					result);
+			return result;
+		}
+		dev_dbg(&pdev->dev, "rsoc scaling max level=%d\n",
+				pd->rsoc_scaling_max_level);
+	}
+
+	pd->batt_id = EXT_BATT_ID_MOLOKINI;
+	result = of_property_read_string(pdev->dev.of_node, "batt-name", &batt_name);
+	if (result < 0)
+		dev_dbg(&pdev->dev, "Could not find battery name\n");
+	else if (strcmp(batt_name, "lehua") == 0)
+		pd->batt_id = EXT_BATT_ID_LEHUA;
+
 	mutex_init(&pd->lock);
 
-	pd->last_mount_ack = EXT_BATT_FW_UNKNOWN;
+	init_completion(&pd->mount_state_ack);
+	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
 	INIT_DELAYED_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
 
 	#ifdef CONFIG_CHARGER_CYPD3177
 	pd->cypd_pd_active_chan = iio_channel_get(NULL, "cypd_pd_active");
 	if (IS_ERR(pd->cypd_pd_active_chan)) {
 		if (PTR_ERR(pd->cypd_pd_active_chan) != -EPROBE_DEFER)
-			dev_err_ratelimited(pd->dev, "cypd pd_active channel unavailable");
+			dev_dbg(pd->dev, "cypd pd_active channel unavailable");
 		return -EPROBE_DEFER;
 	}
 	#endif
@@ -1862,8 +2389,16 @@ static int ext_batt_probe(struct platform_device *pdev)
 	pd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, pd);
 
+	pd->intf_usbpd = devm_usbpd_get_by_phandle(pd->dev, "battery-usbpd");
+	if (IS_ENABLED(CONFIG_USB_PD_POLICY) && IS_ERR(pd->intf_usbpd))
+		return PTR_ERR(pd->intf_usbpd);
+
+	pd->intf_glink = devm_vdm_glink_get_by_phandle(pd->dev, "vdm-glink");
+	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK) && IS_ERR(pd->intf_glink))
+		return PTR_ERR(pd->intf_glink);
+
 	/* Register VDM callbacks */
-	result = external_battery_register_svid_handler(pd);
+	result = external_battery_register_svid_handlers(pd);
 	if (result == -EPROBE_DEFER)
 		return result;
 
@@ -1893,7 +2428,7 @@ static int ext_batt_remove(struct platform_device *pdev)
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
 
-	external_battery_unregister_svid_handler(pd);
+	external_battery_unregister_svid_handlers(pd);
 
 	mutex_lock(&pd->lock);
 	pd->connected = false;
@@ -1908,7 +2443,10 @@ static int ext_batt_remove(struct platform_device *pdev)
 	}
 	mutex_destroy(&pd->lock);
 
-	sysfs_remove_groups(&pd->dev->kobj, ext_batt_groups);
+	if (pd->batt_id == EXT_BATT_ID_MOLOKINI)
+		sysfs_remove_groups(&pd->dev->kobj, ext_batt_molokini_groups);
+	else if (pd->batt_id == EXT_BATT_ID_LEHUA)
+		sysfs_remove_groups(&pd->dev->kobj, ext_batt_lehua_groups);
 
 	return 0;
 }

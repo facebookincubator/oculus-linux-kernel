@@ -2577,6 +2577,7 @@ extern void dhd_txcomplete(dhd_pub_t *dhdp, void *txp, bool success);
 #ifdef DHD_4WAYM4_FAIL_DISCONNECT
 extern void dhd_eap_txcomplete(dhd_pub_t *dhdp, void *txp, bool success, int ifidx);
 extern void dhd_cleanup_m4_state_work(dhd_pub_t *dhdp, int ifidx);
+extern void dhd_cleanup_m4_state_work_all(dhd_pub_t *dhdp);
 #endif /* DHD_4WAYM4_FAIL_DISCONNECT */
 
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
