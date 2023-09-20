@@ -133,36 +133,45 @@ size_t stm32g0_get_write_chunk_size(struct device *dev)
 
 int stm32g0_swd_write_chunk(struct device *dev, int addr, const u8 *data, size_t len)
 {
-	int bytes_left = len;
+	size_t bytes_left = len;
 	int i = 0;
-	u32 value = 0;
+	u32 doubleword[2];
+	const u32 tprog_us = 125;
+	u32 readback;
 
 	BUG_ON(len == 0);
 	BUG_ON(addr < 0);
+	BUG_ON((addr % sizeof(doubleword)) != 0);
 
-	for (i = 0; i < len; i += sizeof(u32)) {
+	for (i = 0; i < len; i += sizeof(doubleword)) {
 		bytes_left = len - i;
-		if (bytes_left >= sizeof(u32)) {
-			value = *((u32 *)&data[i]);
+		memset(doubleword, 0, sizeof(doubleword));
+		memcpy(doubleword, &data[i], min(bytes_left, sizeof(doubleword)));
+
+		if (i == 0) {
+			swd_memory_write(dev, SWD_STM32G0_FLASH_MEM_START_ADDR + addr, doubleword[0]);
+			swd_memory_write_next(dev, doubleword[1]);
 		} else {
-			value = 0;
-			memcpy(&value, &data[i], bytes_left);
+			// Per datasheet, wait for tprog is necessary at the end of a double word write.
+			// Accomplish this by delaying before the first word of the next double word write.
+			swd_memory_write_next_delayed(dev, doubleword[0], tprog_us);
+			swd_memory_write_next(dev, doubleword[1]);
 		}
-
-		if (i == 0)
-			swd_memory_write(dev, SWD_STM32G0_FLASH_MEM_START_ADDR + addr + i, value);
-		else
-			swd_memory_write_next(dev, value);
-
-		// Wait for tprog after every double word write, per datasheet.
-		if (i % (2*sizeof(u32)) != 0)
-			usleep_range(125, 140);
 	}
 
-	// Finish off the final double word write if necessary.
-	if (len % (2*sizeof(u32)) != 0) {
-		swd_memory_write_next(dev, 0);
-		usleep_range(125, 140);
+	// Ensure final double word write is finished.
+	usleep_range(tprog_us, tprog_us + 40);
+
+	// Verify the page one word at a time.
+	for (i = 0; i < len; i += sizeof(readback)) {
+		if (i == 0)
+			readback = swd_memory_read(dev, SWD_STM32G0_FLASH_MEM_START_ADDR + addr);
+		else
+			readback = swd_memory_read_next(dev);
+
+		bytes_left = len - i;
+		if (memcmp(&readback, &data[i], min(sizeof(readback), bytes_left)) != 0)
+			return -EIO;
 	}
 
 	return stm32g0_swd_get_errors(dev);

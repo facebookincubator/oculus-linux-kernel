@@ -31,6 +31,9 @@
 #include <wlioctl.h>
 #include <dhd_xrapi.h>
 #include <wl_android.h>
+#ifdef CONFIG_XRPS_DHD_HOOKS
+#include "xrps.h"
+#endif /* CONFIG_XRPS_DHD_HOOKS */
 
 #if defined(DHD_MAGIC_PKT_FILTER)
 /* Make sure PKT_FILTER_SUPPORT is not defined, it's exclusive */
@@ -94,7 +97,10 @@ int dhd_tsf_gsync_handler(dhd_pub_t *dhd, const wl_event_msg_t *event, void *eve
 void dhd_xrapi_eot_handler(dhd_pub_t *dhdp, void * pktbuf)
 {
 	DHD_TRACE(("dhd_xrapi_eot_handler: Enter\n"));
-	// TBD by customer
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	if (xrps_is_init())
+		dhdp->xrps_intf->rx_eot_cb(pktbuf);
+#endif /* CONFIG_XRPS_DHD_HOOKS */
 	PKTFREE(dhdp->osh, pktbuf, FALSE);
 	return;
 }

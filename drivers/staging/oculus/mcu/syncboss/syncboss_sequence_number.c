@@ -9,11 +9,11 @@ void syncboss_sequence_number_reset_locked(struct syncboss_dev_data *devdata)
 	struct device *dev = &devdata->spi->dev;
 
 	if (!list_empty(&devdata->client_data_list))
-		dev_err(dev, "Resetting sequence numbers while clients exist");
+		dev_err(dev, "resetting sequence numbers while clients exist");
 
 	devdata->last_seq_num = SYNCBOSS_SEQ_NUM_MAX;
 	if (!bitmap_empty(devdata->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS)) {
-		dev_err(dev, "Resetting sequence numbers with non-zero bitmap");
+		dev_err(dev, "resetting sequence numbers with non-zero bitmap");
 		bitmap_zero(devdata->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
 	}
 	devdata->seq_num_allocation_count = 0;
@@ -46,7 +46,7 @@ int syncboss_sequence_number_allocate_locked(struct syncboss_dev_data *devdata,
 							SYNCBOSS_SEQ_NUM_MIN /* offset (start) */);
 		if (next_seq_avail >= next_seq) {
 			dev_warn(dev,
-				"No sequence numbers available for %s (%d)",
+				"no sequence numbers available for %s (%d)",
 				client_data->task->comm, client_data->task->pid);
 			return -EAGAIN;
 		}
@@ -75,7 +75,7 @@ int syncboss_sequence_number_release_locked(struct syncboss_dev_data *devdata,
 
 	if (seq < SYNCBOSS_SEQ_NUM_MIN || seq > SYNCBOSS_SEQ_NUM_MAX) {
 		dev_err(&devdata->spi->dev,
-				"Sequence number %d is out of range [%d, %d]", seq,
+				"sequence number %d is out of range [%d, %d]", seq,
 				SYNCBOSS_SEQ_NUM_MIN, SYNCBOSS_SEQ_NUM_MAX);
 		return -EINVAL;
 	}

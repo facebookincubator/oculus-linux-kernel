@@ -11,31 +11,14 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
-static struct power_supply *usb_psy;
-static struct power_supply *wls_psy;
-
-int is_charging(void)
+bool is_charging(struct power_supply *batt_psy)
 {
-	bool usb_online, wls_online;
-	union power_supply_propval usb_val = {0}, wls_val = {0};
-	const enum power_supply_property psy_prop = POWER_SUPPLY_PROP_ONLINE;
+	union power_supply_propval batt_val = {0};
+	const enum power_supply_property psy_prop = POWER_SUPPLY_PROP_CURRENT_NOW;
 
-	if (!usb_psy)
-		usb_psy = power_supply_get_by_name("usb");
-
-	#ifdef CONFIG_CHARGER_CYPD3177
-	if (!wls_psy)
-		wls_psy = power_supply_get_by_name("cypd3177");
-	#endif
-
-	usb_online = usb_psy &&
-			!power_supply_get_property(usb_psy, psy_prop, &usb_val) &&
-			usb_val.intval > 0;
-	wls_online = wls_psy &&
-			!power_supply_get_property(wls_psy, psy_prop, &wls_val) &&
-			wls_val.intval > 0;
-
-	return usb_online || wls_online;
+	return batt_psy &&
+			!power_supply_get_property(batt_psy, psy_prop, &batt_val) &&
+			batt_val.intval > 0;
 }
 
 /*
@@ -884,6 +867,43 @@ ssize_t intercept_discharging_store(struct device *dev,
 	}
 	data->intercept = constant;
 	mutex_unlock(&drvdata->lock);
+
+	return count;
+}
+
+ssize_t fallback_tolerance_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct virtual_sensor_drvdata *vs = dev_get_drvdata(dev);
+	ssize_t ret;
+
+	ret = mutex_lock_interruptible(&vs->lock);
+	if (ret < 0) {
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
+		return ret;
+	}
+
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", vs->fallback_tolerance);
+	mutex_unlock(&vs->lock);
+
+	return ret;
+}
+
+ssize_t fallback_tolerance_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct virtual_sensor_drvdata *vs = dev_get_drvdata(dev);
+	ssize_t ret;
+
+	ret = mutex_lock_interruptible(&vs->lock);
+	if (ret < 0) {
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
+		return ret;
+	}
+
+	if (kstrtoint(buf, 10, &vs->fallback_tolerance))
+		return -EINVAL;
+	mutex_unlock(&vs->lock);
 
 	return count;
 }

@@ -163,6 +163,16 @@ typedef sta_info_v4_t wlcfg_sta_info_t;
 #define MSCS_CFG_DEF_TCLAS_MASK         0x5Fu   /* TCLAS mask  */
 #endif /* MSCS_CFG_DEF_TCLAS_MASK */
 
+#if defined(CONFIG_6GHZ_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+/* Native 6GHz band supported available. For Backported
+ * kernels, kernels/customer makefiles should explicitly
+ * define CONFIG_6GHZ_BKPORT
+ */
+#if defined(WL_6G_BAND)
+#define CFG80211_6G_SUPPORT
+#endif
+#endif /* CONFIG_6GHZ_BKPORT || LINUX_VER >= 5.4 */
+
 #define CH_TO_CHSPC(band, _channel) \
 	((_channel | band) | WL_CHANSPEC_BW_20 | WL_CHANSPEC_CTL_SB_NONE)
 #define CHAN2G(_channel, _freq, _flags) {			\
@@ -264,16 +274,6 @@ typedef sta_info_v4_t wlcfg_sta_info_t;
 #define WAIT_FOR_DISCONNECT_MAX 10
 #endif /* WAIT_FOR_DISCONNECT_MAX */
 #define WAIT_FOR_DISCONNECT_STATE_SYNC 10
-
-#if defined(CONFIG_6GHZ_BKPORT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-/* Native 6GHz band supported available. For Backported
- * kernels, kernels/customer makefiles should explicitly
- * define CONFIG_6GHZ_BKPORT
- */
-#if defined(WL_6G_BAND)
-#define CFG80211_6G_SUPPORT
-#endif
-#endif /* CONFIG_6GHZ_BKPORT || LINUX_VER >= 5.4 */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 /* Newer kernels use defines from nl80211.h */

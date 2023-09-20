@@ -592,6 +592,41 @@ static int get_bro_matrix(struct blu_device *blu,
 	return ret;
 }
 
+static int set_bro_matrix(struct blu_device *blu, struct blu_spi_bro_matrix __user *bro)
+{
+	int ret = 0;
+	struct blu_spi_bro_matrix bro_matrix;
+	uint8_t *matrix_addr;
+
+	/* first get the struct from user space */
+	ret = copy_from_user(&bro_matrix, bro, sizeof(bro_matrix));
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from user space\n", ret);
+		return -EFAULT;
+	}
+
+	/* copy the address of the struct from user space */
+	ret = copy_from_user(&matrix_addr, bro, sizeof(matrix_addr));
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from user space\n", ret);
+		return -EFAULT;
+	}
+
+	if (!bro_matrix.matrix_size || bro_matrix.matrix_size > BRO_COMMAND_SIZE) {
+		dev_err(&blu->spi->dev, "Invalid matrix size\n");
+		return -EINVAL;
+	}
+
+	/* copy the new bro matrix to the driver */
+	ret = copy_from_user(bro_profiles[NUM_BRO_PROFILES-1], matrix_addr, bro_matrix.matrix_size*sizeof(uint8_t));
+
+	/* apply the new bro profile to the driver */
+	blu->rolloff_en = 3;
+	apply_blu_bro(blu);
+
+	return ret;
+}
+
 static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 		unsigned long arg)
 {
@@ -613,6 +648,8 @@ static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 	case BLU_SPI_GET_BRO_IOCTL:
 		return get_bro_matrix(blu,
 			(struct blu_spi_bro_matrix *)arg);
+	case BLU_SPI_SET_BRO_IOCTL:
+		return set_bro_matrix(blu, (struct blu_spi_bro_matrix *)arg);
 	default:
 		dev_err(&blu->spi->dev, "Unrecognized IOCTL %ul\n", cmd);
 		return -EINVAL;

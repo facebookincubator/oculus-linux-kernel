@@ -497,7 +497,6 @@ static int wl_android_get_xrapi_stats(struct net_device *dev);
 static int wl_android_request_ps_mode_change(struct net_device *dev,
 					     char *command, int total_len);
 static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf);
-static int wl_send_txdone_indication(struct net_device *dev);
 #endif /* TSF_GSYNC */
 
 #ifdef SIMULATE_DEGRADED_PERFORMANCE
@@ -15962,7 +15961,7 @@ static int wl_android_send_txdone_indication(struct net_device *dev,
  * Send TX_DONE cmd to BRCM FW to inidicate all the TX traffic has been enqueued.
  * BRCM FW will be reponsible to generate a special EOT frame once it detects its tx is done.
  */
-static int wl_send_txdone_indication(struct net_device *dev)
+int wl_send_txdone_indication(struct net_device *dev)
 {
 	int res = BCME_OK;
 	bcm_iov_buf_t *iov_buf = NULL;
@@ -16088,12 +16087,6 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 	uint8 pm_mode = 0;
 	u32 system_interval_us = 0;
 	int bytes_written = 0;
-#ifdef CALCULATE_TIME_OFFSET
-	int64_t system_current_time = 0;
-	int64_t dhd_current_time = 0;
-	int64_t dhd_wakeup_time = 0;
-	wl_tsf_t tsf;
-#endif
 
 	/* drop command */
 	pos = command;
@@ -16114,32 +16107,10 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 	system_interval_us = (u32)bcm_strtoul(token, NULL, 10);
 
 	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x system_interval_us = %d us\n", pm_mode, system_interval_us));
-
-	if (pm_mode == 1) {
-		// Send EOT to indicate tx done.
-		res = wl_send_txdone_indication(dev);
-		if (res != BCME_OK) {
-			WL_ERR(("Fail to send WL_XRAPI_CMD_STATS %d\n", res));
-			goto exit;
-		}
-#ifdef CALCULATE_TIME_OFFSET
-		// Calculate the next wakeup time
-		// Get gpio time sync event time
-		system_current_time = ktime_to_us(ktime_get_boottime());
-		dhd_current_time = system_current_time - g_offset_systemtime_vs_dhdtime;
-		dhd_wakeup_time = dhd_current_time + system_interval_us;
-		DHD_ERROR(("%s: offset=0x%016llx system_current_time=0x%016llx dhd_current_time=0x%016llx, dhd_wakeup_time=0x%016llx\n", __func__, g_offset_systemtime_vs_dhdtime, system_current_time, dhd_current_time, dhd_wakeup_time));
-
-		bzero(&tsf, sizeof(tsf));
-		memcpy(&tsf, &dhd_wakeup_time, sizeof(wl_tsf_t));
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	xrps_set_sys_interval_us(system_interval_us);
+	xrps_set_mode(pm_mode);
 #endif
-		// Set next wakeup
-		wl_set_nextwakeup(dev, &tsf);
-		if (res != BCME_OK) {
-			WL_ERR(("Fail to send WL_XRAPI_CMD_NEXTWAKE %d\n", res));
-			goto exit;
-		}
-	}
 
 exit:
 	// Save the status "res" to "command".

@@ -28,7 +28,7 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 
 		status = count;
 	} else {
-		dev_err(dev, "Invalid argument: \"%s\".	 Must be 1", buf);
+		dev_err(dev, "invalid argument: \"%s\".	 Must be 1", buf);
 		status = -EINVAL;
 	}
 	return status;
@@ -65,10 +65,10 @@ static ssize_t transaction_length_store(struct device *dev,
 
 	status = kstrtou32(buf, /*base */10, &temp_transaction_length);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse integer out of %s", buf);
+		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	} else if (temp_transaction_length > SYNCBOSS_MAX_TRANSACTION_LENGTH) {
-		dev_err(dev, "Transaction length must be <= %d",
+		dev_err(dev, "transaction length must be <= %d",
 			SYNCBOSS_MAX_TRANSACTION_LENGTH);
 		return -EINVAL;
 	}
@@ -83,9 +83,8 @@ static ssize_t transaction_length_store(struct device *dev,
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
-			"Transaction length changed while streaming.");
-		dev_info(dev,
-			"This change will not take effect until the stream is stopped and restarted");
+			"transaction length changed while streaming.\n"
+			"this change will not take effect until the stream is stopped and restarted");
 	}
 
 	mutex_unlock(&devdata->state_mutex);
@@ -120,7 +119,7 @@ static ssize_t next_avail_seq_num_show(struct device *dev,
 
 	if (devdata->has_seq_num_ioctl) {
 		dev_err_ratelimited(dev,
-			"Sequence number sysfs node is disabled based on device tree configuration. Requested by %s (%d)",
+			"sequence number sysfs node is disabled based on device tree configuration. Requested by %s (%d)",
 			current->comm, current->pid);
 		status = -EPERM;
 		goto unlock;
@@ -170,7 +169,7 @@ static ssize_t cpu_affinity_store(struct device *dev,
 
 	status = cpumask_parse(buf, &temp_cpu_affinity);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse cpumask out of %s", buf);
+		dev_err(dev, "failed to parse cpumask out of %s", buf);
 		return -EINVAL;
 	}
 
@@ -184,9 +183,8 @@ static ssize_t cpu_affinity_store(struct device *dev,
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
-			"CPU affinity changed while streaming.");
-		dev_info(dev,
-			"This change will not take effect until the stream is stopped and restarted");
+			"CPU affinity changed while streaming.\n"
+			"this change will not take effect until the stream is stopped and restarted");
 	}
 
 	mutex_unlock(&devdata->state_mutex);
@@ -209,7 +207,7 @@ static ssize_t transaction_period_us_show(struct device *dev,
 	}
 
 	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
-			   devdata->next_stream_settings.transaction_period_ns / 1000);
+			   devdata->next_stream_settings.trans_period_ns / 1000);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -226,7 +224,7 @@ static ssize_t transaction_period_us_store(struct device *dev,
 
 	status = kstrtou32(buf, /*base */10, &temp_transaction_period_us);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse integer out of %s", buf);
+		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	}
 
@@ -236,14 +234,13 @@ static ssize_t transaction_period_us_store(struct device *dev,
 		return status;
 	}
 
-	devdata->next_stream_settings.transaction_period_ns = temp_transaction_period_us * 1000;
+	devdata->next_stream_settings.trans_period_ns = temp_transaction_period_us * 1000;
 	status = count;
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
-			 "Transaction period changed while streaming.");
-		dev_info(dev,
-			 "This change will not take effect until the stream is stopped and restarted");
+			 "transaction period changed while streaming.\n"
+			 "this change will not take effect until the stream is stopped and restarted");
 	}
 
 	mutex_unlock(&devdata->state_mutex);
@@ -267,7 +264,7 @@ static ssize_t minimum_time_between_transactions_us_show(struct device *dev,
 
 	retval = scnprintf(
 	    buf, PAGE_SIZE, "%ld\n",
-	    (devdata->next_stream_settings.min_time_between_transactions_ns / NSEC_PER_USEC));
+	    (devdata->next_stream_settings.min_time_between_trans_ns / NSEC_PER_USEC));
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -278,14 +275,13 @@ static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 						  const char *buf, size_t count)
 {
 	int status = 0;
-	u32 temp_minimum_time_between_transactions_us = 0;
+	u32 temp_minimum_time_between_trans_us = 0;
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(dev);
 
-	status = kstrtou32(buf, /*base */10,
-			   &temp_minimum_time_between_transactions_us);
+	status = kstrtou32(buf, /*base */10, &temp_minimum_time_between_trans_us);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse integer out of %s", buf);
+		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	}
 
@@ -295,15 +291,75 @@ static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 		return status;
 	}
 
-	devdata->next_stream_settings.min_time_between_transactions_ns =
-	    temp_minimum_time_between_transactions_us * NSEC_PER_USEC;
+	devdata->next_stream_settings.min_time_between_trans_ns =
+	    temp_minimum_time_between_trans_us * NSEC_PER_USEC;
 	status = count;
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
-			 "Minimum time between transactions changed while streaming.");
-		dev_info(dev,
+			 "minimum time between transactions changed while streaming.\n"
 			 "This change will not take effect until the stream is stopped and restarted");
+	}
+
+	mutex_unlock(&devdata->state_mutex);
+	return status;
+}
+
+static ssize_t maximum_send_delay_us_show(struct device *dev,
+					  struct device_attribute *attr,
+					  char *buf)
+{
+	int status = 0;
+	int retval = 0;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
+		return status;
+	}
+
+	retval = scnprintf(
+	    buf, PAGE_SIZE, "%ld\n",
+	    (devdata->next_stream_settings.max_msg_send_delay_ns / NSEC_PER_USEC));
+
+	mutex_unlock(&devdata->state_mutex);
+	return retval;
+}
+
+static ssize_t maximum_send_delay_us_store(struct device *dev,
+					   struct device_attribute *attr,
+					    const char *buf, size_t count)
+{
+	int status = 0;
+	u32 max_msg_send_delay_us;
+	u32 max_msg_send_delay_ns;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	status = kstrtou32(buf, /*base */10,
+			   &max_msg_send_delay_us);
+	if (status < 0) {
+		dev_err(dev, "failed to parse integer out of %s", buf);
+		return -EINVAL;
+	}
+
+	max_msg_send_delay_ns = max_msg_send_delay_us * NSEC_PER_USEC;
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
+		return status;
+	}
+
+	devdata->next_stream_settings.max_msg_send_delay_ns = max_msg_send_delay_ns;
+	status = count;
+
+	if (devdata->is_streaming) {
+		dev_info(dev,
+			 "maximum send delay changed while streaming.\n"
+			 "this change will not take effect until the stream is stopped and restarted");
 	}
 
 	mutex_unlock(&devdata->state_mutex);
@@ -327,16 +383,22 @@ static ssize_t stats_show(struct device *dev,
 
 	retval = scnprintf(
 		buf, PAGE_SIZE,
-		"num_bad_magic_numbers     : %u\n"
-		"num_bad_checksums         : %u\n"
-		"num_rejected_transactions : %u\n"
+		"num_bad_magic_numbers            : %u\n"
+		"num_bad_checksums                : %u\n"
+		"num_invalid_transactions_received: %u\n"
+		"num_empty_transactions_received  : %u\n"
+		"num_empty_transactions_sent      : %u\n"
+		"num_transactions                 : %u\n"
 		"\n"
-		"last_awake_dur_ms:        : %d\n"
-		"last_asleep_dur_ms:       : %d\n"
+		"last_awake_dur_ms         : %d\n"
+		"last_asleep_dur_ms        : %d\n"
 		"",
 		devdata->stats.num_bad_magic_numbers,
 		devdata->stats.num_bad_checksums,
-		devdata->stats.num_rejected_transactions,
+		devdata->stats.num_invalid_transactions_received,
+		devdata->stats.num_empty_transactions_received,
+		devdata->stats.num_empty_transactions_sent,
+		devdata->stats.num_transactions,
 
 		devdata->stats.last_awake_dur_ms,
 		devdata->stats.last_asleep_dur_ms
@@ -401,12 +463,12 @@ static ssize_t spi_max_clk_rate_store(struct device *dev,
 
 	status = kstrtou32(buf, /*base */10, &temp_spi_max_clk_rate);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse integer out of %s", buf);
+		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	}
 
 	if (temp_spi_max_clk_rate > devdata->spi->max_speed_hz) {
-		dev_err(dev, "Invalid value of spi_max_clk_rate: %u (max value: %u)",
+		dev_err(dev, "invalid value of spi_max_clk_rate: %u (max value: %u)",
 			temp_spi_max_clk_rate, devdata->spi->max_speed_hz);
 		return -EINVAL;
 	}
@@ -427,9 +489,8 @@ static ssize_t spi_max_clk_rate_store(struct device *dev,
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
-			 "SPI max clock rate changed while streaming.");
-		dev_info(dev,
-			 "This change will not take effect until the stream is stopped and restarted");
+			 "SPI max clock rate changed while streaming.\n"
+			 "this change will not take effect until the stream is stopped and restarted");
 	}
 
 	mutex_unlock(&devdata->state_mutex);
@@ -467,11 +528,11 @@ static ssize_t poll_prio_store(struct device *dev,
 
 	status = kstrtou16(buf, /*base */10, &temp_priority);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse integer out of %s", buf);
+		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	} else if (temp_priority < 1 ||
 		   temp_priority > (MAX_USER_RT_PRIO - 1)) {
-		dev_err(dev, "Invalid real time priority");
+		dev_err(dev, "invalid real time priority");
 		return -EINVAL;
 	}
 
@@ -485,9 +546,8 @@ static ssize_t poll_prio_store(struct device *dev,
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
-			 "Poll thread priority changed while streaming.");
-		dev_info(dev,
-			 "This change will not take effect until the stream is stopped and restarted");
+			 "poll thread priority changed while streaming.\n"
+			 "this change will not take effect until the stream is stopped and restarted");
 	}
 
 	mutex_unlock(&devdata->state_mutex);
@@ -536,7 +596,7 @@ static ssize_t enable_fastpath_store(struct device *dev,
 
 	status = kstrtou32(buf, /*base*/10, &temp_fastpath);
 	if (status < 0) {
-		dev_err(dev, "Failed to parse integer out of %s", buf);
+		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	}
 
@@ -553,6 +613,26 @@ static ssize_t enable_fastpath_store(struct device *dev,
 	return status;
 }
 
+static ssize_t streaming_show(
+	struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int retval = 0;
+	int status = 0;
+	struct syncboss_dev_data *devdata =
+		(struct syncboss_dev_data *)dev_get_drvdata(dev);
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
+		return status;
+	}
+
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->is_streaming);
+
+	mutex_unlock(&devdata->state_mutex);
+	return retval;
+}
 
 /* Sysfs Attributes
  * ================
@@ -567,9 +647,11 @@ static ssize_t enable_fastpath_store(struct device *dev,
  * settings.
  *
  * transaction_length - set the fixed size of the periodic SPI transaction
- * transaction_period_us - set the period of the SPI requests
+ * transaction_period_us - set the period of the SPI polling (legacy polling mode only)
  * minimum_time_between_transactions_us - set the minimum amount of time we
  *     should wait between SPI transactions
+ * maximum_send_delay_us - set the maximum amount of time we should wait for more data
+ *     before sending a queued command to the MCU
  * transaction_history_size - set the size of the transaction history
  * spi_max_clk_rate - set the maximum clock rate to use for SPI transactions
  *     (actual clock rate may be lower)
@@ -587,6 +669,7 @@ static DEVICE_ATTR_WO(reset);
 static DEVICE_ATTR_RW(spi_max_clk_rate);
 static DEVICE_ATTR_RW(transaction_period_us);
 static DEVICE_ATTR_RW(minimum_time_between_transactions_us);
+static DEVICE_ATTR_RW(maximum_send_delay_us);
 static DEVICE_ATTR_RW(transaction_length);
 static DEVICE_ATTR_RW(cpu_affinity);
 static DEVICE_ATTR_RW(stats);
@@ -594,18 +677,21 @@ static DEVICE_ATTR_RW(poll_prio);
 static DEVICE_ATTR_RO(next_avail_seq_num);
 static DEVICE_ATTR_RO(te_timestamp);
 static DEVICE_ATTR_RW(enable_fastpath);
+static DEVICE_ATTR_RO(streaming);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_spi_max_clk_rate.attr,
 	&dev_attr_transaction_period_us.attr,
 	&dev_attr_minimum_time_between_transactions_us.attr,
+	&dev_attr_maximum_send_delay_us.attr,
 	&dev_attr_transaction_length.attr,
 	&dev_attr_cpu_affinity.attr,
 	&dev_attr_stats.attr,
 	&dev_attr_poll_prio.attr,
 	&dev_attr_te_timestamp.attr,
 	&dev_attr_enable_fastpath.attr,
+	&dev_attr_streaming.attr,
 	NULL
 };
 

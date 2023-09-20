@@ -92,10 +92,10 @@ dhd_wifi_init_gpio(void)
     printk(KERN_INFO "%s: gpio_wlan_power : %d\n", __FUNCTION__, wlan_pwr_on);
 
     if (gpio_request_one(wlan_pwr_on, GPIOF_DIR_OUT, "WLAN_PWR_EN")) {
-        printk(KERN_ERR "%s: Faiiled to request gpio %d for WLAN_PWR_EN\n",
+        printk(KERN_ERR "%s: Failed to request gpio %d for WLAN_PWR_EN\n",
             __FUNCTION__, wlan_pwr_on);
     } else {
-        printk(KERN_ERR "%s: gpio_request WLAN_PWR_EN done - WLAN_EN: GPIO %d\n",
+        printk(KERN_INFO "%s: gpio_request WLAN_PWR_EN done - WLAN_EN: GPIO %d\n",
             __FUNCTION__, wlan_pwr_on);
     }
 #endif /* CONFIG_WL_LOAD_SWITCH */
@@ -105,10 +105,10 @@ dhd_wifi_init_gpio(void)
     printk(KERN_INFO "%s: gpio_wlan_power : %d\n", __FUNCTION__, wlan_reg_on);
 
     if (gpio_request_one(wlan_reg_on, GPIOF_DIR_OUT, "WL_REG_ON")) {
-        printk(KERN_ERR "%s: Faiiled to request gpio %d for WL_REG_ON\n",
+        printk(KERN_ERR "%s: Failed to request gpio %d for WL_REG_ON\n",
             __FUNCTION__, wlan_reg_on);
     } else {
-        printk(KERN_ERR "%s: gpio_request WL_REG_ON done - WLAN_EN: GPIO %d\n",
+        printk(KERN_INFO "%s: gpio_request WL_REG_ON done - WLAN_EN: GPIO %d\n",
             __FUNCTION__, wlan_reg_on);
     }
 #ifdef CONFIG_BCMDHD_OOB_HOST_WAKE
@@ -117,11 +117,11 @@ dhd_wifi_init_gpio(void)
     printk(KERN_INFO "%s: gpio_wlan_host_wake : %d\n", __FUNCTION__, wlan_host_wake_up);
 
     if (gpio_request_one(wlan_host_wake_up, GPIOF_IN, "WLAN_HOST_WAKE")) {
-        printk(KERN_ERR "%s: Faiiled to request gpio %d for WLAN_HOST_WAKE\n",
+        printk(KERN_ERR "%s: Failed to request gpio %d for WLAN_HOST_WAKE\n",
             __FUNCTION__, wlan_host_wake_up);
             return -ENODEV;
     } else {
-        printk(KERN_ERR "%s: gpio_request WLAN_HOST_WAKE done"
+        printk(KERN_INFO "%s: gpio_request WLAN_HOST_WAKE done"
             " - WLAN_HOST_WAKE: GPIO %d\n",
             __FUNCTION__, wlan_host_wake_up);
     }

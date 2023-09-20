@@ -10,6 +10,8 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
+#include "vdm_glink.h"
+
 #define REQ_ACK_TIMEOUT_MS 200
 #define MAX_BROADCAST_PERIOD_MIN 60
 #define MAX_LOG_SIZE 4096
@@ -38,6 +40,7 @@ enum charging_dock_intf_type {
 	INTF_TYPE_UNKNOWN,
 	INTF_TYPE_USBPD, // USB-PD
 	INTF_TYPE_CYPD,	// CYPRESS-PD
+	INTF_TYPE_GLINK, // QTI PMIC GLINK
 };
 
 enum port_state_t {
@@ -89,12 +92,16 @@ struct charging_dock_device_t {
 	struct usbpd *upd;
 	/* cypd protocol engine handle */
 	struct cypd *cpd;
+	/* glink protocol engine handle */
+	struct vdm_glink_dev *gpd;
 	/* client struct to register with usbpd engine */
 	struct usbpd_svid_handler usbpd_vdm_handler;
 	/* client struct to register with cypd engine */
 	struct cypd_svid_handler cypd_vdm_handler;
 	/* client struct to register with cypd engine (alternate) */
 	struct cypd_svid_handler cypd_vdm_handler_alt;
+	/* list of client structs to register with glink engine */
+	struct list_head glink_handlers;
 	/* docked/undocked status */
 	bool docked;
 	/* lock for modifying device struct */

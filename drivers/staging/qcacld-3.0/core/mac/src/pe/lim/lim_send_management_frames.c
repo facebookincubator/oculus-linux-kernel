@@ -59,6 +59,13 @@
 #include <wlan_mlme_main.h>
 #include "wlan_crypto_global_api.h"
 
+#ifdef WLAN_META_FEATURE_VSIE_ACTION_FRAME
+#define META_IE_DL_PRIORITY				(1ULL << 0)
+#define META_IE_DL_SMART_SCHEDULING		(1ULL << 1)
+#define META_IE_UL_SMART_SCHEDULING		(1ULL << 2)
+#define META_IE_6GHZ_CAPABILITY			(1ULL << 3)
+#endif /* WLAN_META_FEATURE_VSIE_ACTION_FRAME */
+
 /**
  *
  * \brief This function is called to add the sequence number to the
@@ -2064,6 +2071,19 @@ lim_send_assoc_req_mgmt_frame(struct mac_context *mac_ctx,
 	uint8_t mscs_ext_ie_len = 0;
 	bool bss_mfp_capable;
 	int8_t peer_rssi = 0;
+#ifdef WLAN_META_FEATURE_VSIE_ACTION_FRAME
+#define META_OUI_LENGTH 12 // oui(3) + ver(1) + payload(8)
+	const uint8_t meta_ie_header[] = {WLAN_ELEMID_VENDOR,
+							   META_OUI_LENGTH,
+							   0xC0, /* OUI byte 0 */
+							   0xDD, /* OUI byte 1 */
+							   0x8A, /* OUI byte 2 */
+							   0x2,  /* version */};
+	uint64_t meta_ie_payload = 0;
+	uint16_t meta_ie_header_len = sizeof(meta_ie_header);
+	uint16_t meta_ie_payload_len = sizeof(meta_ie_payload);
+	uint16_t meta_ie_len = meta_ie_header_len + meta_ie_payload_len;
+#endif /* WLAN_META_FEATURE_VSIE_ACTION_FRAME */
 
 	if (!pe_session) {
 		pe_err("pe_session is NULL");
@@ -2080,6 +2100,9 @@ lim_send_assoc_req_mgmt_frame(struct mac_context *mac_ctx,
 		return;
 	}
 	add_ie_len = pe_session->lim_join_req->addIEAssoc.length;
+#ifdef WLAN_META_FEATURE_VSIE_ACTION_FRAME
+	add_ie_len += meta_ie_len;
+#endif /* WLAN_META_FEATURE_VSIE_ACTION_FRAME */
 	if (add_ie_len) {
 		add_ie = qdf_mem_malloc(add_ie_len);
 		if (!add_ie) {
@@ -2091,9 +2114,16 @@ lim_send_assoc_req_mgmt_frame(struct mac_context *mac_ctx,
 		 * the IE, these IE will be required in assoc/re-assoc
 		 * retry. So do not modify the original IE.
 		 */
+#ifdef WLAN_META_FEATURE_VSIE_ACTION_FRAME
+		qdf_mem_copy(add_ie, pe_session->lim_join_req->addIEAssoc.addIEdata,
+			     add_ie_len - meta_ie_len);
+		/* add extra ie to local for meta IE */
+		qdf_mem_copy(add_ie + add_ie_len - meta_ie_len, meta_ie_header, meta_ie_header_len);
+		qdf_mem_copy(add_ie + add_ie_len - meta_ie_payload_len, &meta_ie_payload, meta_ie_payload_len);
+#else
 		qdf_mem_copy(add_ie, pe_session->lim_join_req->addIEAssoc.addIEdata,
 			     add_ie_len);
-
+#endif /* WLAN_META_FEATURE_VSIE_ACTION_FRAME */
 	}
 
 	frm = qdf_mem_malloc(sizeof(tDot11fAssocRequest));

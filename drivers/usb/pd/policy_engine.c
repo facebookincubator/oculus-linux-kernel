@@ -413,6 +413,7 @@ struct usbpd {
 
 	u32			sink_caps[7];
 	int			num_sink_caps;
+	int			src_caps_retries;
 
 	struct power_supply	*usb_psy;
 	struct power_supply	*bat_psy;
@@ -2340,7 +2341,7 @@ static void handle_state_src_send_capabilities(struct usbpd *pd,
 		 * same state for the next retry.
 		 */
 		pd->caps_count++;
-		if (pd->caps_count >= PD_CAPS_COUNT) {
+		if (pd->caps_count >= pd->src_caps_retries) {
 			usbpd_dbg(&pd->dev, "Src CapsCounter exceeded, disabling PD\n");
 			usbpd_set_state(pd, PE_SRC_DISABLED);
 
@@ -4996,6 +4997,12 @@ struct usbpd *usbpd_create(struct device *parent)
 
 	if (device_property_read_bool(parent, "qcom,pd-20-source-only"))
 		pd->pd20_source_only = true;
+
+	/* Allow to configure retries count from a device tree. */
+	ret = device_property_read_u32(parent, "qcom,usbpd-src-send-cap-count", &pd->src_caps_retries);
+	if (ret) {
+		pd->src_caps_retries = PD_CAPS_COUNT;
+	}
 
 	/*
 	 * Register a Type-C class instance (/sys/class/typec/portX).

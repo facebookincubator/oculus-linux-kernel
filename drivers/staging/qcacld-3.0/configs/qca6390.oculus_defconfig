@@ -371,3 +371,6 @@ ifeq ($(TARGET_BUILD_VARIANT),eng)
 	CONFIG_WLAN_LOG_ENTER := y
 	CONFIG_WLAN_LOG_EXIT := y
 endif
+
+#Meta specific VSIE insertion flag
+CONFIG_WLAN_META_FEATURE_VSIE_ACTION_FRAME := y
