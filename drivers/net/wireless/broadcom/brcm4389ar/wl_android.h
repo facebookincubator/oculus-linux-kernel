@@ -78,6 +78,7 @@ int wl_android_wifi_off(struct net_device *dev, bool on_failure);
 int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr);
 int wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len);
 int wl_android_set_spect(struct net_device *dev, int spect);
+int wl_send_txdone_indication(struct net_device *dev);
 
 #ifdef WL_GENL
 typedef struct bcm_event_hdr {

@@ -1429,8 +1429,8 @@
 	};
 
 	display-virt-fan {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-sensors = <&display_virtual_sensor_fan>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -1927,8 +1927,8 @@
 	};
 
 	fp-fan {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-sensors = <&vrapi_front_panel_sensor_fan>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -2010,8 +2010,8 @@
 	};
 
 	tp-fan {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-sensors = <&vrapi_top_panel_sensor_fan>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;

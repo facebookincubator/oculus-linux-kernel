@@ -72,10 +72,21 @@ struct virtual_sensor_drvdata {
 	struct virtual_sensor_common_data data_charging;
 	struct virtual_sensor_common_data data_discharging;
 
-	void *data;						/* Driver-specific data */
+	/* A fallback thermal zone can be specified in the device tree. If the
+	 * difference between the virtual sensor's calculated temp and the temp of
+	 * the fallback thermal zone exceeds the specified tolerance, the virtual
+	 * sensor will report the temperature of the fallback thermal zone as its
+	 * own thermal zone's temperature.
+	 */
+	struct thermal_zone_device *fallback_tzd;
+	int fallback_tz_scaling_factor;
+	int fallback_tolerance;
+
+	bool was_charging;
+	struct power_supply *batt_psy;
 };
 
-int is_charging(void);
+bool is_charging(struct power_supply *batt_psy);
 
 int virtual_sensor_calculate_tz_temp(struct device *dev,
 		struct virtual_sensor_common_data *data, s64 *temperature);
@@ -136,6 +147,11 @@ ssize_t intercept_charging_store(struct device *dev,
 ssize_t intercept_discharging_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
 ssize_t intercept_discharging_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+
+ssize_t fallback_tolerance_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+ssize_t fallback_tolerance_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
 
 void virtual_sensor_workqueue_register(struct virtual_sensor_common_data *data);

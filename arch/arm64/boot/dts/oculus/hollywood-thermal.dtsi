@@ -4,15 +4,16 @@
 
 &vendor {
 	battery_virtual_sensor: battery_virtual_sensor {
-		compatible = "oculus,battery-virtual-sensor";
+		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
 		io-channels = <&pm8150l_vadc ADC_AMUX_THM2_PU2>;
 		io-channel-names = "soc_temp";
 
-		pcm-thermal-zone = "batt-usr";
-		pcm-thermal-zone-scaling-factor = <100>;
+		fallback-thermal-zone = "batt-usr";
+		fallback-scaling-factor = <100>;
+		fallback-tolerance = <8000>;
 
 		thermal-zones = "batt-usr", "pcb3-usr", "pcb2-usr", "pcb1-usr",
 				"rfpa-usr", "imu-usr";
@@ -20,7 +21,6 @@
 
 		io-scaling-factors = <1>;
 
-		max-differential = <8000>;
 		internal-polling-delay = <1000>;
 
 		coefficients {
@@ -1122,8 +1122,8 @@
 	};
 
 	fp-fan {
-		polling-delay-passive = <100>;
-		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
 		thermal-governor = "single_step";
 		thermal-sensors = <&vrapi_front_panel_sensor_fan>;
 		wake-capable-sensor;

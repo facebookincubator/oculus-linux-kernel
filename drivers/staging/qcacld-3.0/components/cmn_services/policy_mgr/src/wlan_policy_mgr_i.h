@@ -254,6 +254,8 @@ extern enum policy_mgr_conc_next_action
  * @go_force_scc: Enable/Disable P2P GO force SCC
  * @pcl_band_priority: PCL channel order between 5G and 6G.
  * @prefer_5g_scc_to_dbs: Prefer to work in 5G SCC mode.
+ * @move_sap_go_1st_on_dfs_sta_csa: Enable/Disable SAP / GO's movement
+ *				    to non-DFS channel before STA
  */
 struct policy_mgr_cfg {
 	uint8_t mcc_to_scc_switch;
@@ -278,6 +280,7 @@ struct policy_mgr_cfg {
 	uint8_t go_force_scc;
 	enum policy_mgr_pcl_band_priority pcl_band_priority;
 	uint32_t prefer_5g_scc_to_dbs;
+	bool move_sap_go_1st_on_dfs_sta_csa;
 };
 
 /**

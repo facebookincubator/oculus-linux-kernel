@@ -98,6 +98,13 @@ struct __packed ar_queue_event {
 	};
 };
 
+#define AR_QUEUE_EVENT_BATCH_MAX 20
+
+struct __packed ar_queue_event_batch {
+	struct ar_queue_event events[AR_QUEUE_EVENT_BATCH_MAX];
+	uint16_t size;
+};
+
 /// Magic number for ARFW device ioctls
 #define ARFW_CHDEV_MAGIC 0xc5
 #define ARFW_QUEUE_CREATE _IOR(ARFW_CHDEV_MAGIC, 0, struct ar_queue_create_req*)

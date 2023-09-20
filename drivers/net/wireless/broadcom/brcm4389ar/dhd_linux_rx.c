@@ -741,7 +741,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 
 #ifdef XRAPI
 		if (protocol == ETHER_TYPE_XRAPI) {
-			DHD_ERROR(("RECV ETHER_TYPE_XRAPI frame\n"));
+			DHD_INFO(("RECV ETHER_TYPE_XRAPI frame\n"));
 			dhd_xrapi_eot_handler(dhdp, pktbuf);
 			continue;
 		}
@@ -1082,6 +1082,10 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			dhdp->rx_packets++; /* Local count */
 			ifp->stats.rx_bytes += skb->len;
 			ifp->stats.rx_packets++;
+#ifdef CONFIG_XRPS_DHD_HOOKS
+			if (xrps_is_init())
+				dhdp->xrps_intf->rx_cb();
+#endif /* CONFIG_XRPS_DHD_HOOKS */
 		}
 #if defined(DHD_TCP_WINSIZE_ADJUST)
 		if (dhd_use_tcp_window_size_adjust) {

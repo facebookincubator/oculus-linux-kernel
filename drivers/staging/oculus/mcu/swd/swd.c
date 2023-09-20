@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/printk.h>
 
@@ -221,12 +222,15 @@ void swd_flush(struct device *dev)
 		swd_wire_write(devdata, 0);
 }
 
-static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
+static void swd_dpap_write_delayed(struct device *dev, bool apndp, u8 reg, u32 data, u32 delay_us)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int bitcount = 0;
 	int i = 0;
 	bool parity;
+	u64 start_time_us = ktime_to_us(ktime_get());
+	int elapsed_us;
+	int remaining_us;
 
 	if (!swd_wire_header(dev, SWD_VAL_WRITE, apndp, reg)) {
 		dev_err_ratelimited(dev, "SWD response is invalid/unknown in %s\n",
@@ -242,8 +246,22 @@ static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
 		bitcount += value;
 		swd_wire_write(devdata, value);
 	}
+
+	// Hold off on writing the parity bit until the requested delay has elapsed.
+	elapsed_us = ktime_to_us(ktime_get()) - start_time_us;
+	remaining_us = delay_us - elapsed_us;
+	if (remaining_us > 10)
+		usleep_range(remaining_us, remaining_us + 40);
+	else if (remaining_us > 0)
+		udelay(remaining_us);
+
 	parity = bitcount & 1;
 	swd_wire_write(devdata, parity);
+}
+
+static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
+{
+	swd_dpap_write_delayed(dev, apndp, reg, data, 0);
 }
 
 static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
@@ -282,6 +300,11 @@ void swd_ap_write(struct device *dev, u8 reg, u32 data)
 	swd_dpap_write(dev, SWD_VAL_AP, reg, data);
 }
 
+static void swd_ap_write_delayed(struct device *dev, u8 reg, u32 data, u32 delay_us)
+{
+	swd_dpap_write_delayed(dev, SWD_VAL_AP, reg, data, delay_us);
+}
+
 u32 swd_ap_read(struct device *dev, u8 reg)
 {
 	return swd_dpap_read(dev, SWD_VAL_AP, reg);
@@ -312,6 +335,11 @@ void swd_memory_write(struct device *dev, u32 address, u32 data)
 void swd_memory_write_next(struct device *dev, u32 data)
 {
 	swd_ap_write(dev, SWD_MEMAP_REG_RW_DRW, data);
+}
+
+void swd_memory_write_next_delayed(struct device *dev, u32 data, u32 delay_us)
+{
+	swd_ap_write_delayed(dev, SWD_MEMAP_REG_RW_DRW, data, delay_us);
 }
 
 u32 swd_memory_read(struct device *dev, u32 address)

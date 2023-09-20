@@ -268,6 +268,10 @@ static void dhd_blk_tsfl_handler(struct work_struct * work);
 #include <dhd_xrapi.h>
 #endif /* XRAPI */
 
+#ifdef CONFIG_XRPS_DHD_HOOKS
+#include "xrps.h"
+#endif /* CONFIG_XRPS_DHD_HOOKS */
+
 #if defined(DHD_TCP_WINSIZE_ADJUST)
 static uint target_ports[MAX_TARGET_PORTS] = {20, 0, 0, 0, 0};
 static uint dhd_use_tcp_window_size_adjust = FALSE;
@@ -9888,6 +9892,13 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	INIT_WORK(&dhd->dhd_dump_proc_work, dhd_dump_proc);
 #endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	if (xrps_init() != 0) {
+		DHD_ERROR(("%s() xrps_init failed\n", __func__));
+		goto fail;
+	}
+#endif /* CONFIG_XRPS_DHD_HOOKS */
+
 	return &dhd->pub;
 
 fail:
@@ -14696,6 +14707,11 @@ void dhd_detach(dhd_pub_t *dhdp)
 	}
 #endif /* BCMDBUS */
 #endif /* defined(BCM_DNGL_EMBEDIMAGE) || defined(BCM_REQUEST_FW) */
+
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	if (xrps_is_init())
+		xrps_cleanup();
+#endif /* CONFIG_XRPS_DHD_HOOKS */
 
 #ifdef PROP_TXSTATUS
 #ifdef DHD_WLFC_THREAD

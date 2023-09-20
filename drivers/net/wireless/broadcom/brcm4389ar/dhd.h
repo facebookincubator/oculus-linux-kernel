@@ -55,6 +55,10 @@
 #ifdef DHD_BUZZZ_LOG_ENABLED
 #include <dhd_buzzz.h>
 #endif /* DHD_BUZZZ_LOG_ENABLED */
+#ifdef CONFIG_XRPS_DHD_HOOKS
+#include "xrps.h"
+#endif /* CONFIG_XRPS_DHD_HOOKS */
+
 /* The kernel threading is sdio-specific */
 struct task_struct;
 struct sched_param;
@@ -2022,6 +2026,9 @@ typedef struct dhd_pub {
 #ifdef SIMULATE_DEGRADED_PERFORMANCE
 	uint32 performance_delay_us;
 #endif /* SIMULATE_DEGRADED_PERFORMANCE */
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	struct xrps_intf *xrps_intf;
+#endif /* CONFIG_XRPS_DHD_HOOKS */
 } dhd_pub_t;
 
 #if defined(__linux__)

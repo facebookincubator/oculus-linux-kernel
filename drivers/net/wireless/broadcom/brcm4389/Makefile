@@ -145,6 +145,10 @@ DHDCFLAGS += -DWLFBT
 DHDCFLAGS += -DOKC_SUPPORT
 
 DHDCFLAGS += -DWL_CFG80211
+# BKPORT support for older version of kernel
+DHDCFLAGS += -DCONFIG_6GHZ_BKPORT
+# CFG80211 support for 6G
+DHDCFLAGS += -DCFG80211_6G_SUPPORT
 # Android iface management
 DHDCFLAGS += -DWL_IFACE_MGMT
 #Debug flag

@@ -3,13 +3,14 @@
 #ifndef _VDM_GLINK_H__
 #define _VDM_GLINK_H__
 
-#if IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)
-
 /*
+ * Implemented by client
+ *
  * Loosely mimics struct usbpd_svid_handler
  */
 struct glink_svid_handler {
 	u16 svid;
+	u16 pid;
 
 	/* Notified when VDM session established/reset; must be implemented */
 	void (*connect)(struct glink_svid_handler *hdlr,
@@ -19,15 +20,24 @@ struct glink_svid_handler {
 	/* Unstructured VDM */
 	void (*vdm_received)(struct glink_svid_handler *hdlr, u32 vdm_hdr,
 			const u32 *vdos, int num_vdos);
+
+	/* client should leave these blank; private members used by Glink driver */
+	struct list_head entry;
 };
 
 struct vdm_glink_dev;
+
+#if IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)
 
 int vdm_glink_send_vdm(struct vdm_glink_dev *udev,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos);
 int vdm_glink_register_handler(struct vdm_glink_dev *udev,
 		struct glink_svid_handler *handler);
-int vdm_glink_unregister_handler(struct vdm_glink_dev *udev);
+void vdm_glink_unregister_handler(struct vdm_glink_dev *udev,
+		struct glink_svid_handler *hdlr);
+
+struct vdm_glink_dev *devm_vdm_glink_get_by_phandle(struct device *dev,
+		const char *phandle);
 
 #else
 
@@ -42,9 +52,16 @@ static int vdm_glink_register_handler(struct vdm_glink_dev *udev,
 {
 	return -EINVAL;
 }
-static int vdm_glink_unregister_handler(struct vdm_glink_dev *udev)
+static void vdm_glink_unregister_handler(struct vdm_glink_dev *udev,
+		struct glink_svid_handler *hdlr)
 {
-	return -EINVAL;
+	return;
+}
+
+static struct vdm_glink_dev *devm_vdm_glink_get_by_phandle(struct device *dev,
+		const char *phandle)
+{
+	return ERR_PTR(-EINVAL);
 }
 
 #endif
