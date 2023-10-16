@@ -1,13 +1,7 @@
-/*  Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/slab.h>
 #include <linux/kthread.h>
@@ -2723,6 +2717,13 @@ static int voice_send_cvs_register_cal_cmd(struct voice_data *v)
 		pr_err("%s: Voice_get_cal failed for cal %d!\n",
 			__func__, CVS_VOCSTRM_CAL);
 
+		goto unlock;
+	}
+
+	if (col_data->cal_data.size >= MAX_COL_INFO_SIZE) {
+		pr_err("%s: Invalid cal data size %d!\n",
+			__func__, col_data->cal_data.size);
+		ret = -EINVAL;
 		goto unlock;
 	}
 

@@ -1,13 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -371,6 +364,13 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 		switch (prtd->mode) {
 		case MODE_AMR_WB:
 		case MODE_AMR: {
+			if (pkt_len <= DSP_FRAME_HDR_LEN) {
+				pr_err("%s: pkt_len %d is < required len\n",
+						__func__, pkt_len);
+				spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+							dsp_flags);
+				return;
+			}
 			/* Remove the DSP frame info header. Header format:
 			 * Bits 0-3: Frame rate
 			 * Bits 4-7: Frame type
@@ -391,6 +391,13 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 		case MODE_4GV_NB:
 		case MODE_4GV_WB:
 		case MODE_4GV_NW: {
+			if (pkt_len <= DSP_FRAME_HDR_LEN) {
+				pr_err("%s: pkt_len %d is < required len\n",
+						__func__, pkt_len);
+				spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+							dsp_flags);
+				return;
+			}
 			/* Remove the DSP frame info header.
 			 * Header format:
 			 * Bits 0-3: frame rate
@@ -428,6 +435,13 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 			buf_node->frame.frm_hdr.timestamp = timestamp;
 			voc_pkt = voc_pkt + DSP_FRAME_HDR_LEN;
 
+			if (pkt_len <= 2 * DSP_FRAME_HDR_LEN) {
+				pr_err("%s: pkt_len %d is < required len\n",
+						__func__, pkt_len);
+				spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+							dsp_flags);
+				return;
+			}
 			/* There are two frames in the buffer. Length of the
 			 * first frame:
 			 */
@@ -462,6 +476,14 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 							(*voc_pkt) & 0x03;
 				buf_node->frame.frm_hdr.timestamp = timestamp;
 				voc_pkt = voc_pkt + DSP_FRAME_HDR_LEN;
+
+				if (pkt_len <= 2 * DSP_FRAME_HDR_LEN) {
+					pr_err("%s: pkt_len %d is < required len\n",
+							__func__, pkt_len);
+					spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+								dsp_flags);
+					return;
+				}
 
 				/* There are two frames in the buffer. Length
 				 * of the second frame:

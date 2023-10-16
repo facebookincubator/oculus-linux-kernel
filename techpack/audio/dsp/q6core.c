@@ -187,7 +187,7 @@ EXPORT_SYMBOL(q6core_send_uevent);
 static int parse_fwk_version_info(uint32_t *payload, uint16_t payload_size)
 {
 	size_t ver_size;
-	int num_services;
+	uint16_t num_services;
 
 	pr_debug("%s: Payload info num services %d\n",
 		 __func__, payload[4]);

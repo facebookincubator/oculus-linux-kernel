@@ -1,13 +1,6 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -645,6 +638,12 @@ static int hpcm_start_vocpcm(char *pcm_id, struct hpcm_drv *prtd,
 		}
 	}
 
+	if (*no_of_tp != no_of_tp_req && *no_of_tp > 2) {
+		pr_err("%s:: Invalid hpcm start request\n", __func__);
+		memset(&prtd->start_cmd, 0, sizeof(struct start_cmd));
+		return -EINVAL;
+	}
+
 	if ((prtd->mixer_conf.tx.enable || prtd->mixer_conf.rx.enable) &&
 	    *no_of_tp == no_of_tp_req) {
 		voc_send_cvp_start_vocpcm(voc_get_session_id(sess_name),
@@ -701,6 +700,12 @@ static void hpcm_copy_capture_data_to_queue(struct dai_data *dai_data,
 
 	if (dai_data->substream == NULL)
 		return;
+
+	if (len >= HPCM_MAX_VOC_PKT_SIZE) {
+		pr_err("%s: Copy capture data len %d is > HPCM_MAX_VOC_PKT_SIZE\n",
+			__func__, len);
+		return;
+	}
 
 	/* Copy out buffer packet into free_queue */
 	spin_lock_irqsave(&dai_data->dsp_lock, dsp_flags);

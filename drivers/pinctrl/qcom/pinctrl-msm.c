@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2013, Sony Mobile Communications AB.
  * Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -74,6 +75,7 @@ struct msm_pinctrl {
 	const struct msm_pinctrl_soc_data *soc;
 	void __iomem *regs;
 	void __iomem *pdc_regs;
+	void __iomem *spi_base;
 	phys_addr_t spi_cfg_regs;
 	phys_addr_t spi_cfg_end;
 };
@@ -1301,6 +1303,7 @@ static void add_dirconn_tlmm(struct irq_data *d, irq_hw_number_t irq)
 	struct msm_pinctrl *pctrl;
 	phys_addr_t spi_cfg_reg = 0;
 	unsigned long flags;
+	u32 offset_local;
 
 	offset = select_dir_conn_mux(d, &irq);
 	if (offset < 0 || !parent_data)
@@ -1321,16 +1324,19 @@ static void add_dirconn_tlmm(struct irq_data *d, irq_hw_number_t irq)
 		if (pctrl->spi_cfg_regs) {
 			spi_cfg_reg = pctrl->spi_cfg_regs +
 					((dir_conn_data->hwirq - 32) / 32) * 4;
+			offset_local = ((dir_conn_data->hwirq - 32) / 32) * 4;
 			if (spi_cfg_reg < pctrl->spi_cfg_end) {
 				spin_lock_irqsave(&pctrl->lock, flags);
-				val = scm_io_read(spi_cfg_reg);
+				val = readl_relaxed(pctrl->spi_base +
+								offset_local);
 				/*
 				 * Clear the respective bit for edge type
 				 * interrupt
 				 */
 				val &= ~(1 << ((dir_conn_data->hwirq - 32)
 									% 32));
-				WARN_ON(scm_io_write(spi_cfg_reg, val));
+				writel_relaxed(val, pctrl->spi_base +
+								offset_local);
 				spin_unlock_irqrestore(&pctrl->lock, flags);
 			} else
 				pr_err("%s: type config failed for SPI: %lu\n",
@@ -1381,6 +1387,7 @@ static int msm_dirconn_irq_set_type(struct irq_data *d, unsigned int type)
 	unsigned int config_val = 0;
 	unsigned int val = 0;
 	unsigned long flags;
+	u32 offset_local;
 
 	if (!parent_data)
 		return 0;
@@ -1407,13 +1414,14 @@ static int msm_dirconn_irq_set_type(struct irq_data *d, unsigned int type)
 	if (pctrl->spi_cfg_regs && type != IRQ_TYPE_NONE) {
 		spi_cfg_reg = pctrl->spi_cfg_regs +
 				((parent_data->hwirq - 32) / 32) * 4;
+		offset_local = ((parent_data->hwirq - 32) / 32) * 4;
 		if (spi_cfg_reg < pctrl->spi_cfg_end) {
 			spin_lock_irqsave(&pctrl->lock, flags);
-			val = scm_io_read(spi_cfg_reg);
+			val = readl_relaxed(pctrl->spi_base + offset_local);
 			val &= ~(1 << ((parent_data->hwirq - 32) % 32));
 			if (config_val)
 				val |= (1 << ((parent_data->hwirq - 32)  % 32));
-			WARN_ON(scm_io_write(spi_cfg_reg, val));
+			writel_relaxed(val, pctrl->spi_base + offset_local);
 			spin_unlock_irqrestore(&pctrl->lock, flags);
 		} else
 			pr_err("%s: type config failed for SPI: %lu\n",
