@@ -211,7 +211,7 @@ config REGULATOR_SGM62110
 	default n
 	depends on I2C
 	help
-	  SGM62110 Kernel Driver to control the unknown3 Wlan FEM power.
+	  SGM62110 Kernel Driver to control the Eureka Wlan FEM power.
 	  This driver sets FEM VCC voltage for QM45391/QM45392.
 
 config RT600_CTRL
