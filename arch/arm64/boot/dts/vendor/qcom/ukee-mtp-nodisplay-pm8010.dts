@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ukee.dtsi"
+#include "ukee-mtp-nodisplay-pm8010.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee MTP + nodisplay with PM8010";
+	compatible = "qcom,ukee-mtp", "qcom,ukee", "qcom,mtp";
+	qcom,board-id = <0x10008 2>;
+};

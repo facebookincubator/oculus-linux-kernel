@@ -1,0 +1,8 @@
+#include "montague.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. MontagueP SoC";
+	compatible = "qcom,montaguep";
+	qcom,msm-id = <582 0x10000>;
+};
+

@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "neo-sde-display-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO IDP Helios";
+	compatible = "qcom,neo-idp", "qcom,neo", "qcom,idp";
+	qcom,msm-id = <525 0x10000>, <554 0x10000>;
+	qcom,board-id = <34 0>, <34 1>, <34 2>, <33 0>;
+};

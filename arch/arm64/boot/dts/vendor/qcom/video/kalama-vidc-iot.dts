@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/qcom,gcc-kalama.h>
+#include <dt-bindings/interconnect/qcom,kalama.h>
+#include <dt-bindings/clock/qcom,videocc-kalama.h>
+#include "kalama-vidc-iot.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Kalama";
+	compatible = "qcom,kalama", "qcom,kalamap";
+	qcom,msm-id = <603 0x20000>, <604 0x20000>;
+	qcom,board-id = <0 0>;
+};

@@ -1,0 +1,162 @@
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+#include "anorak-pmic-overlay.dtsi"
+#include "anorak-thermal-overlay.dtsi"
+
+&sdhc_2 {
+	status = "ok";
+
+	vdd-supply = <&L12B>;
+	qcom,vdd-voltage-level = <2960000 2960000>;
+	qcom,vdd-current-level = <0 800000>;
+
+	vdd-io-supply = <&L18B>;
+	qcom,vdd-io-voltage-level = <1800000 2960000>;
+	qcom,vdd-io-current-level = <0 22000>;
+
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sdc2_on>;
+	pinctrl-1 = <&sdc2_off>;
+
+	cd-gpios = <&tlmm 175 GPIO_ACTIVE_LOW>;
+};
+
+
+&ufsphy_mem {
+	compatible = "qcom,ufs-phy-qmp-v4-anarok";
+
+	vdda-phy-supply = <&L2F>;
+	vdda-pll-supply = <&L2C>;
+	vdda-phy-max-microamp = <138000>;
+	vdda-pll-max-microamp = <18300>;
+
+	status = "ok";
+};
+
+&ufshc_mem {
+	vdd-hba-supply = <&gcc_ufs_phy_gdsc>;
+
+	vcc-supply = <&L13B>;
+	vcc-max-microamp = <1300000>;
+
+	vccq-supply = <&L3B>;
+	vccq-max-microamp = <1200000>;
+
+	qcom,vddp-ref-clk-supply = <&L3B>;
+	qcom,vddp-ref-clk-max-microamp = <100>;
+
+	status = "ok";
+};
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&key_vol_up_default
+			     &key_confirm_default
+			     &key_back_default>;
+
+		confirm_key {
+			label = "confirm_key";
+			gpios = <&pm8550b_gpios 2 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_OK>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+
+		back_key {
+			label = "back_key";
+			gpios = <&pm8550b_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_BACK>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&pm8550b_gpios 10 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEUP>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+};
+
+&pm8550b_haptics {
+	status = "okay";
+
+};
+
+&pmxr2230_flash {
+	status = "disabled";
+};
+
+&battery_charger {
+	qcom,thermal-mitigation-step = <500000>;
+	qcom,wireless-charging-not-supported;
+};
+
+&msm_sdexpress {
+	vdd1-supply = <&L12B>;
+	qcom,vdd1-voltage-level = <2960000 2960000>;
+	qcom,vdd1-current-level = <0 600000>;
+
+	vdd2-supply = <&L4B>;
+	qcom,vdd2-voltage-level = <1800000 1800000>;
+	qcom,vdd2-current-level = <0 600000>;
+
+	sdexpress-gpios = <&tlmm 172 0>;
+	clkreq-gpios = <&tlmm 171 GPIO_ACTIVE_LOW>;
+
+	status = "ok";
+};
+
+&regulator_ocp_notifier {
+	periph-1c1-supply = <&L1B>;
+	periph-1c3-supply = <&L3B>;
+	periph-1c4-supply = <&L4B>;
+	periph-1c5-supply = <&L5B>;
+	periph-1c6-supply = <&L6B>;
+	periph-1c7-supply = <&L7B>;
+	periph-1c8-supply = <&L8B>;
+	periph-1c9-supply = <&L9B>;
+	periph-1ca-supply = <&L10B>;
+	periph-1cb-supply = <&L11B>;
+	periph-1cc-supply = <&L12B>;
+	periph-1cd-supply = <&L13B>;
+	periph-1ce-supply = <&L14B>;
+	periph-1cf-supply = <&L15B>;
+	periph-1d2-supply = <&L18B>;
+	periph-1d4-supply = <&L20B>;
+	periph-1d5-supply = <&L21B>;
+	periph-1d6-supply = <&L22B>;
+	periph-1d7-supply = <&L23B>;
+	periph-2c1-supply = <&L1C_LEVEL>;
+	periph-2c2-supply = <&L2C>;
+	periph-3c1-supply = <&L1D>;
+	periph-3c2-supply = <&L2D>;
+	periph-5c1-supply = <&L1F_LEVEL>;
+	periph-5c2-supply = <&L2F>;
+	periph-5c3-supply = <&L3F>;
+	periph-c40-supply = <&L1M>;
+	periph-c41-supply = <&L2M>;
+	periph-c42-supply = <&L3M>;
+	periph-c43-supply = <&L4M>;
+	periph-c44-supply = <&L5M>;
+	periph-c45-supply = <&L6M>;
+	periph-d40-supply = <&L1N>;
+	periph-d41-supply = <&L2N>;
+	periph-d42-supply = <&L3N>;
+	periph-d43-supply = <&L4N>;
+	periph-d44-supply = <&L5N>;
+	periph-d46-supply = <&L7N>;
+};

@@ -1,0 +1,3 @@
+#include <dt-bindings/interconnect/qcom,neo.h>
+#include "neo-idp.dtsi"
+

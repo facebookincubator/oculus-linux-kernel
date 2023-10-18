@@ -1,0 +1,10 @@
+/dts-v1/;
+/plugin/;
+#include "neo_le-camera-sensor-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO QXR";
+	compatible = "qcom,neo", "qcom,neo-qxr";
+	qcom,msm-id = <525 0x10000>;
+	qcom,board-id = <0x10026 0x0>, <0x10026 0x1>, <0x10026 0x3>;
+};

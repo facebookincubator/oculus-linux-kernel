@@ -1,0 +1,17 @@
+#include "cape.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. CapeP";
+	compatible = "qcom,capep";
+	qcom,msm-id = <531 0x10000>;
+};
+
+&soc {
+	qcom,rmnet-ipa {
+	status = "disabled";
+	};
+};
+
+&ipa_hw {
+	status = "disabled";
+};

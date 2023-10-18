@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "diwali-sde-display-rumi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Diwali Rumi";
+	compatible = "qcom,diwali-rumi", "qcom,diwali";
+	qcom,msm-id = <506 0x10000>, <547 0x10000>;
+	qcom,board-id = <0x1000F 0>;
+};

@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,camcc-kalama.h>
+#include <dt-bindings/clock/qcom,videocc-kalama.h>
+#include <dt-bindings/clock/qcom,dispcc-kalama.h>
+
+#include "kalama-mmrm-vm-fe.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Kalama";
+	compatible = "qcom,kalama";
+	qcom,msm-id = <519 0x10000>, <536 0x10000>, <603 0x10000>, <604 0x10000>;
+	qcom,board-id = <0x10001 0>;
+};

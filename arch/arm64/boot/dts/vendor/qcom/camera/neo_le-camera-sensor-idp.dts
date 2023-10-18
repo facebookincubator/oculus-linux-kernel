@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/clock/qcom,gcc-neo.h>
+#include <dt-bindings/clock/qcom,camcc-neo.h>
+#include <dt-bindings/interconnect/qcom,neo.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+#include "neo_le-camera-sensor-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO Soc";
+	compatible = "qcom,neo";
+	qcom,msm-id = <525 0x10000>;
+	qcom,board-id = <34 0>, <34 1>, <34 2>;
+};

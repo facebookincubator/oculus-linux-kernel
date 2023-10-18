@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	model = "Eureka (EVT2.2)";
+	compatible = "qcom,anorak", "oculus,eureka", "oculus,eureka-evt2.2";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x20040 0x2>;
+};
+
+&cypd3177 {
+	cypd3177,custom-sink-caps = <5000 2330>, /* 5V @ 2.33A */
+	<5000 2600>,  /*  5V @ 2.60A */
+	<5000 3000>;  /*  5V @ 3.00A */
+};
+
+&wlan {
+	cal-file-prefix = "eureka_evt2.0_";
+};

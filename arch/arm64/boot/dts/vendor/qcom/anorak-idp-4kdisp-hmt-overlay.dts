@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-idp-4kdisp-hmt.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak IDP 4K display + HMT";
+	compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10022 0x6>;
+};

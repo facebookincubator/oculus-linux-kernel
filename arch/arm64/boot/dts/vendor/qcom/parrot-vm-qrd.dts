@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "parrot-vm.dtsi"
+#include "parrot-vm-qrd.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Parrot VM QRD";
+	compatible = "qcom,parrot-qrd", "qcom,parrot", "qcom,qrd";
+	qcom,board-id = <0x1000B 0>;
+};

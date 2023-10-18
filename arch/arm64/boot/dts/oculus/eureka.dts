@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "eureka-base.dtsi"
+
+/ {
+	model = "Eureka";
+	compatible = "qcom,anorak", "oculus,eureka";
+	qcom,board-id = <0 0>;
+};

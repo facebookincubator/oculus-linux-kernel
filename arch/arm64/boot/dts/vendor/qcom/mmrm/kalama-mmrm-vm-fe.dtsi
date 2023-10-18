@@ -1,0 +1,34 @@
+&soc {
+	mmrm_vm_fe: qcom,mmrm-vm-fe {
+		compatible = "qcom,mmrm-vm-fe";
+		status = "disable";
+
+		/* Client info */
+		mmrm-client-info =
+			<0x1 CAM_CC_IFE_0_CLK_SRC>,
+			<0x1 CAM_CC_IFE_1_CLK_SRC>,
+			<0x1 CAM_CC_IFE_2_CLK_SRC>,
+			<0x1 CAM_CC_CSID_CLK_SRC>,
+			<0x1 CAM_CC_SFE_0_CLK_SRC>,
+			<0x1 CAM_CC_SFE_1_CLK_SRC>,
+			<0x1 CAM_CC_IPE_NPS_CLK_SRC>,
+			<0x1 CAM_CC_BPS_CLK_SRC>,
+			<0x1 CAM_CC_IFE_LITE_CLK_SRC>,
+			<0x1 CAM_CC_JPEG_CLK_SRC>,
+			<0x1 CAM_CC_CAMNOC_AXI_CLK_SRC>,
+			<0x1 CAM_CC_IFE_LITE_CSID_CLK_SRC>,
+			<0x1 CAM_CC_ICP_CLK_SRC>,
+			<0x1 CAM_CC_CPHY_RX_CLK_SRC>,
+			<0x1 CAM_CC_CSI0PHYTIMER_CLK_SRC>,
+			<0x1 CAM_CC_CSI1PHYTIMER_CLK_SRC>,
+			<0x1 CAM_CC_CSI2PHYTIMER_CLK_SRC>,
+			<0x1 CAM_CC_CSI3PHYTIMER_CLK_SRC>,
+			<0x1 CAM_CC_CSI4PHYTIMER_CLK_SRC>,
+			<0x1 CAM_CC_CSI5PHYTIMER_CLK_SRC>,
+			<0x1 CAM_CC_CCI_0_CLK_SRC>,
+			<0x1 CAM_CC_CCI_1_CLK_SRC>,
+			<0x1 CAM_CC_SLOW_AHB_CLK_SRC>,
+			<0x1 CAM_CC_FAST_AHB_CLK_SRC>;
+	};
+};
+

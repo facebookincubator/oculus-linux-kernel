@@ -1,0 +1,11 @@
+#include "parrot-sde-display-common.dtsi"
+
+&sde_dsi {
+	clocks = <&clock_cpucc 0>,
+			<&clock_cpucc 1>;
+	clock-names = "pll_byte_clk0", "pll_dsi_clk0";
+};
+
+&mdss_mdp {
+	connectors = <&sde_dsi &smmu_sde_unsec>;
+};

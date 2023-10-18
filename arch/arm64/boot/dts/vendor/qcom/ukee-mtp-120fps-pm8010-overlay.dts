@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "ukee-mtp-120fps-pm8010.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee MTP + 120fps with PM8010";
+	compatible = "qcom,ukee-mtp", "qcom,ukee", "qcom,mtp";
+	qcom,msm-id = <591 0x10000>;
+	qcom,board-id = <0x10008 3>;
+};

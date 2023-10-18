@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ukee-vm.dtsi"
+#include "ukee-vm-cdp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee SVM CDP + QHD";
+	compatible = "qcom,ukee-cdp", "qcom,ukee", "qcom,cdp";
+	qcom,board-id = <0x10001 2>;
+};

@@ -1,0 +1,209 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "anorak-oculus-base.dtsi"
+
+#include "eureka-adc.dtsi"
+#include "eureka-audio.dtsi"
+#include "eureka-camera.dtsi"
+#include "eureka-panel.dtsi"
+#include "eureka-regulator.dtsi"
+#include "eureka-santana-manager.dtsi"
+#include "eureka-thermal.dtsi"
+
+&fan_pwm_default {
+	pins = "gpio8";
+};
+
+&L21B {
+	/* HALL sensor/IPD 3.0V */
+	status = "ok";
+	qcom,init-voltage = <3000000>;
+	regulator-always-on;
+};
+
+&mdss_dsi_phy0 {
+	/delete-property/ qcom,dsi-pll-ssc-en;
+};
+
+&mdss_dsi_phy1 {
+	/delete-property/ qcom,dsi-pll-ssc-en;
+};
+
+&mdss_mdp0 {
+	connectors = <&sde_dsi &sde_wb1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc0>;
+};
+
+&qupv3_se0_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	bq27z561: fuel-gauge@0x55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		status = "okay";
+	};
+};
+
+&qupv3_se2_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+
+	cypd3177: cypd3177@08 {
+		compatible = "cy,cypd3177";
+		reg = <0x08>;
+		status = "ok";
+		interrupt-parent = <&tlmm>;
+		interrupts = <42 IRQ_TYPE_EDGE_FALLING>, <175 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "cypd3177_hpi_irq", "cypd3177_fault_irq";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cypd3177_irq_default>;
+		cypd3177,handle-port-busy;
+		cypd3177,initial-connection-debounce-ms = <3000>;
+
+		cypd3177,num-5v-sink-caps = <3>;
+		cypd3177,custom-sink-caps = <5000 2330>, /* 5V @ 2.33A */
+		<5000 2600>,  /*  5V @ 2.60A */
+		<5000 3000>,  /*  5V @ 3.00A */
+		<9000 2300>,  /*  9V @ 2.30A */
+		<9000 2600>,  /*  9V @ 2.60A */
+		<12000 1900>, /* 12V @ 1.90A */
+		<12000 2250>; /* 12V @ 2.25A */
+	};
+};
+
+&qupv3_se10_spi {
+	status = "ok";
+	vd6283@0 {
+		compatible = "st,vd6281_spi";
+		reg = <0>;
+		spi-cpha;
+		spi-max-frequency = <10000000>;
+		chunk-size = <32768>;
+		status = "ok";
+	};
+};
+
+&qupv3_se13_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	ak09973: ak09973@0x10 {
+		reg = <0x10>;
+		compatible = "akm,ak09973";
+		vdd-supply = <&L7B>;
+	};
+
+	vd6283: vd6283@0x20 {
+		compatible = "st,vd6281_adapter";
+		reg = <0x20>;
+		sid = <0x40>;
+		status = "ok";
+		vdd-supply = <&L6B>;
+	};
+
+	ipd: as5510@0x56 {
+		reg = <0x56>;
+		compatible = "ams,as5510";
+		power-supply = <&L21B>;
+	};
+};
+
+&sde_dp {
+	status = "disabled";
+	qcom,dp-gpio-aux-switch;
+	qcom,aux-en-gpio = <&tlmm 45 0>;
+	qcom,aux-sel-gpio = <&tlmm 87 0>;
+	qcom,usbplug-cc-gpio = <&tlmm 160 0>;
+};
+
+&sde_dp_pll {
+	status = "disabled";
+};
+
+&sde_dsi1 {
+	status = "disabled";
+};
+
+&sde_rscc1 {
+	status = "disabled";
+};
+
+&sde_wb1 {
+	status = "ok";
+};
+
+&smmu_sde_sec1 {
+	status = "disabled";
+};
+
+&smmu_sde_unsec1 {
+	status = "disabled";
+};
+
+&soc {
+	qcom,pmic_glink {
+		vdm_glink: oculus,vdm_glink {
+			compatible = "oculus,vdm_glink";
+		};
+	};
+};
+
+&tlmm {
+	cypd3177_irq_default: cypd3177_irq_default {
+		mux {
+			pins = "gpio42", "gpio175";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio42", "gpio175";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+
+&usb2_phy0 {
+	qcom,param-override-seq = <0x83 0x6c
+				0xc8 0x70
+				0x14 0x74
+				0x03 0x78>;
+};
+
+&wlan {
+	vdd-wlan-fem-en-supply = <&sgm62110_buck>;
+	qcom,vdd-wlan-fem-en-config = <3850000 3850000 0 0 0>;
+};
+
+&vendor {
+	charging_dock: oculus,charging_dock {
+		status = "ok";
+		compatible = "oculus,charging-dock";
+		svid-cypd = <0x2ec60000>;
+		svid-cypd-alt = <0x28330000>; // Meta
+		supported-devices =
+			/bits/ 16 <0x2ec6 0x2202>,	/* Buru */
+			/bits/ 16 <0x2ec6 0x5000>, 	/* Maui */
+			/bits/ 16 <0x2ec6 0x2200>,	/* UPA 18W */
+			/bits/ 16 <0x2ec6 0x2103>;	/* UPA 45W */
+		charger-cypd = <&cypd3177>;
+		vdm-glink = <&vdm_glink>;
+		broadcast-period-min = <15>;
+		send-state-of-charge;
+	};
+
+	external_battery: oculus,external_battery {
+		status = "ok";
+		compatible = "oculus,external-battery";
+		svid = <0x28330000>;
+		vdm-glink = <&vdm_glink>;
+		supported-devices =
+			/bits/ 16 <0x2833 0x5001>; /* Lehua+ */
+		batt-name = "lehua";
+		charging-suspend-thresh = <100>;
+		charging-resume-thresh = <95>;
+		rsoc-scaling;
+		rsoc-scaling-min-level = <1>;
+		rsoc-scaling-max-level = <100>;
+	};
+};

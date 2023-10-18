@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "montague.dtsi"
+#include "montague-moselle.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague Moselle IDP";
+	compatible = "qcom,montague-idp", "qcom,montague", "qcom,idp";
+	qcom,board-id = <0x10022 3>;
+};
+

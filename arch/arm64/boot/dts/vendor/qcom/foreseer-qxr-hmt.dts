@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "neo.dtsi"
+#include "foreseer-qxr-hmt.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Foreseer QXR HMT";
+	compatible = "qcom,neo", "qcom,neo-qxr";
+	qcom,board-id = <0x10026 0x3>;
+};

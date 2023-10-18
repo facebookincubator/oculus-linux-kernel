@@ -1,0 +1,5 @@
+clangd*
+.cache
+compile_commands.json
+cscope*
+cam_generated_h

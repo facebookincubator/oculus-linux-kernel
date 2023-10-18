@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-qxr-hmt-ufs-ref.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak QXR HMT UFS REF";
+	compatible = "qcom,anorak-qxr", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10126 0x2>;
+};

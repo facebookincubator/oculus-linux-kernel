@@ -1,0 +1,27 @@
+* Qualcomm Technologies, Inc. MSM CSIPHY Remote
+
+=======================
+Required Node Structure
+=======================
+The remote CSIPHY node is described in the first level of device nodes.
+
+======================================
+First Level Node - CSIPHY Remote device
+======================================
+- cell-index
+  Usage: required
+  Value type: <u32>
+  Definition: Should specify the HW ID
+
+- compatible
+  Usage: required
+  Value type: <string>
+  Definition: Should specify the compatibility strings
+
+Example:
+
+cam_csiphy_remote0 {
+	cell-index = <0>;
+	compatible = "qcom,csiphy-remote-v1.2.1", "qcom,csiphy-remote";
+	status = "ok";
+};

@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "parrot-vm.dtsi"
+#include "parrot-vm-atp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Parrot SVM ATP";
+	compatible = "qcom,parrot-atp", "qcom,parrot", "qcom,atp";
+	qcom,board-id = <33 0>;
+};

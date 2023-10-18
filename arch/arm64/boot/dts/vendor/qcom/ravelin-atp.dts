@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelin.dtsi"
+#include "ravelin-atp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin ATP";
+	compatible = "qcom,ravelin-atp", "qcom,ravelin", "qcom,atp";
+	qcom,board-id = <33 0>;
+};

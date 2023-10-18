@@ -1,0 +1,121 @@
+#include "anorak-idp.dtsi"
+#include <dt-bindings/interconnect/qcom,anorak.h>
+
+&wlan {
+	status = "disabled";
+};
+
+&bluetooth {
+	status = "disabled";
+};
+
+&soc {
+
+	wlan_kiwi: qcom,cnss-kiwi@b0000000 {
+		compatible = "qcom,cnss-kiwi";
+		reg = <0xb0000000 0x10000>;
+		reg-names = "smmu_iova_ipa";
+		wlan-en-gpio = <&tlmm 120 0>;
+
+		pinctrl-names = "wlan_en_active", "wlan_en_sleep";
+		pinctrl-0 = <&cnss_wlan_en_active>;
+		pinctrl-1 = <&cnss_wlan_en_sleep>;
+		qcom,wlan;
+		qcom,wlan-rc-num = <0>;
+		qcom,wlan-ramdump-dynamic = <0x780000>;
+		qcom,wlan-cbc-enabled;
+		use-pm-domain;
+		qcom,same-dt-multi-dev;
+		mboxes = <&qmp_aop 0>;
+
+		vdd-wlan-dig-supply = <&S3B>;
+		qcom,vdd-wlan-dig-config = <950000 1120000 0 0 1>;
+		vdd-wlan-io-supply = <&L7B>;
+		qcom,vdd-wlan-io-config = <1800000 1800000 0 0 1>;
+		vdd-wlan-rfa1-supply = <&S1B>;
+		qcom,vdd-wlan-rfa1-config = <1880000 2040000 0 0 1>;
+		vdd-wlan-rfa2-supply = <&S2B>;
+		qcom,vdd-wlan-rfa2-config = <1350000 1370000 0 0 1>;
+		vdd-wlan-supply = <&S4F>;
+		qcom,vdd-wlan-config = <952000 952000 0 0 1>;
+
+		interconnects =
+		<&pcie_noc MASTER_PCIE_0 &pcie_noc SLAVE_ANOC_PCIE_GEM_NOC>,
+		<&gem_noc MASTER_ANOC_PCIE_GEM_NOC &mc_virt SLAVE_EBI1>;
+		interconnect-names = "pcie_to_memnoc", "memnoc_to_ddr";
+
+		qcom,icc-path-count = <2>;
+		qcom,bus-bw-cfg-count = <9>;
+		qcom,bus-bw-cfg =
+		/** ICC Path 1 **/
+		<0 0>, /* no vote */
+		/* idle: 0-18 Mbps snoc/anoc: 150 Mhz */
+		<2250 1599540>,
+		/* low: 18-60 Mbps snoc/anoc: 150 Mhz */
+		<7500 1599540>,
+		/* medium: 60-240 Mbps snoc/anoc: 150 Mhz*/
+		<30000 1599540>,
+		/* high: 240-1200 Mbps snoc/anoc: 240 Mhz */
+		<100000 3199610>,
+		/* very high: > 1200 Mbps snoc/anoc: 403 Mhz */
+		<175000 6447980>,
+		/* ultra high: DBS mode snoc/anoc: 403 Mhz */
+		<175000 6447980>,
+		/* super high: DBS mode snoc/anoc: 403 Mhz */
+		<175000 6447980>,
+		/* low (latency critical): 18-60 Mbps snoc/anoc: 240 Mhz */
+		<7500 3199610>,
+
+		/** ICC Path 2 **/
+		<0 0>,
+		/* ddr: 451.2 MHz */
+		<2250 2749600>,
+		/* ddr: 451.2 MHz */
+		<7500 2749600>,
+		/* ddr: 451.2 MHz */
+		<30000 2749600>,
+		/* ddr: 451.2 MHz */
+		<100000 2749600>,
+		/* ddr: 1555 MHz */
+		<175000 9479200>,
+		/* ddr: 2092 MHz */
+		<175000 12756000>,
+		/* ddr: 2133 MHz */
+		<175000 13106400>,
+		/* ddr: 547.2 MHz */
+		<7500 3335200>;
+
+		qcom,pdc_init_table =
+			" {class: wlan_pdc, ss: rf, res: s4f.m, enable: 0}",
+			" {class: wlan_pdc, ss: rf, res: s4f.e, enable: 0}",
+			" {class: wlan_pdc, ss: bb, res: s4f.v, upval: 940}",
+			" {class: wlan_pdc, ss: bb, res: s4f.v, dwnval: 420}",
+			" {class: wlan_pdc, ss: bb, res: pdc, enable: 1}";
+	};
+
+	bt_hmt: bt_kiwi {
+		compatible = "qcom,kiwi";
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_en_sleep>;
+		qcom,wl-reset-gpio = <&tlmm 120 0>; /* WL_CTRL */
+		qcom,bt-reset-gpio = <&tlmm 122 0>; /* BT_EN */
+		qcom,bt-sw-ctrl-gpio = <&tlmm 146 0>; /* SW_CTRL */
+
+		qcom,bt-vdd-io-supply     = <&L7B>; /* BT VDD1.8 AON */
+		qcom,bt-vdd-aon-supply    = <&S3B>; /* BT AON LDO*/
+		qcom,bt-vdd-rfacmn-supply = <&S3B>;
+		qcom,bt-vdd-dig-supply    = <&S3B>; /* BT LDO*/
+		qcom,bt-vdd-rfa-0p8-supply = <&S3B>; /* BT RFA0p8 CMN LDO*/
+		qcom,bt-vdd-rfa1-supply   = <&S1B>; /* BT RFA1.8 LDO */
+		qcom,bt-vdd-rfa2-supply   = <&S2B>; /* BT RFA1.2 LDO */
+
+		qcom,bt-vdd-io-config  = <1800000 1800000 0 1>;
+		qcom,bt-vdd-aon-config = <950000 950000 0 1>;
+		qcom,bt-vdd-rfacmn-config = <950000 950000 0 1>;
+		qcom,bt-vdd-dig-config = <950000 950000 0 1>;
+		qcom,bt-vdd-rfa-0p8-config  = <950000 950000 0 1>;
+		qcom,bt-vdd-rfa1-config = <1900000 1900000 0 1>;
+		qcom,bt-vdd-rfa2-config = <1350000 1350000 0 1>;
+	};
+
+};

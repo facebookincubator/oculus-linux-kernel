@@ -1,0 +1,134 @@
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+&soc {
+	qcom,smp2p-wpss {
+		smp2p_wlan_2_in: qcom,smp2p-wlan-2-in {
+			qcom,entry-name = "wlan_soc_wake";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+		smp2p_wlan_2_out: qcom,smp2p-wlan-2-out {
+			qcom,entry-name = "wlan_soc_wake";
+			#qcom,smem-state-cells = <1>;
+		};
+
+		smp2p_wlan_3_out: qcom,smp2p-wlan-3-out {
+			qcom,entry-name = "wlan_ep_power_save";
+			#qcom,smem-state-cells = <1>;
+		};
+	};
+
+	wpss_pas: remoteproc-wpss@8a00000 {
+		firmware-name = "qca6750/wpss.mdt";
+	};
+
+	icnss2: qcom,wcn6750 {
+		status = "disabled";
+		compatible = "qcom,wcn6750";
+		reg = <0x17210040 0x0>,
+		      <0xb0000000 0x10000>;
+		reg-names = "msi_addr", "smmu_iova_ipa";
+		qcom,rproc-handle = <&wpss_pas>;
+		iommus = <&apps_smmu 0x1400 0x1>;
+		interrupts = <GIC_SPI 768 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 769 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 770 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 771 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 772 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 773 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 774 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 775 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 776 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 777 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 778 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 779 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 780 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 781 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 782 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 783 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 784 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 785 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 786 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 787 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 788 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 789 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 790 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 791 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 792 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 793 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 794 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 795 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 796 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 797 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 798 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 799 IRQ_TYPE_EDGE_RISING>;
+
+		qcom,iommu-dma = "fastmap";
+		qcom,iommu-faults = "stall-disable", "HUPCF", "non-fatal";
+		qcom,iommu-dma-addr-pool = <0xa0000000 0x10000000>;
+		qcom,iommu-geometry = <0xa0000000 0x10010000>;
+		dma-coherent;
+		qcom,fw-prefix;
+		qcom,wlan;
+		tsens = "quiet-therm";
+		qcom,wlan-msa-fixed-region = <&wlan_msa_mem>;
+		vdd-cx-mx-supply = <&S7B>;
+		qcom,vdd-cx-mx-config = <1010000 1120000 0 0 1>;
+		vdd-1.8-xo-supply = <&S9B>;
+		qcom,vdd-1.8-xo-config = <1856000 2040000 0 0 0>;
+		vdd-1.3-rfa-supply = <&S8B>;
+		qcom,vdd-1.3-rfa-config = <1250000 1352000 0 0 0>;
+
+		qcom,smem-states = <&smp2p_wlan_1_out 0>,
+				   <&smp2p_wlan_2_out 0>,
+				   <&smp2p_wlan_3_out 0>;
+		qcom,smem-state-names = "wlan-smp2p-out",
+					"wlan-soc-wake-smp2p-out",
+					"wlan-ep-powersave-smp2p-out";
+
+		icnss_cdev_apss: qcom,icnss_cdev1 {
+			#cooling-cells = <2>;
+		};
+
+		icnss_cdev_wpss: qcom,icnss_cdev2 {
+			#cooling-cells = <2>;
+		};
+
+		qcom,smp2p_map_wlan_1_in {
+			interrupts-extended = <&smp2p_wlan_1_in 0 0>,
+					      <&smp2p_wlan_1_in 1 0>;
+			interrupt-names = "qcom,smp2p-force-fatal-error",
+					  "qcom,smp2p-early-crash-ind";
+		};
+
+		qcom,smp2p_map_wlan_2_in {
+			interrupts-extended = <&smp2p_wlan_2_in 0 0>;
+			interrupt-names = "qcom,smp2p-soc-wake-ack";
+		};
+	};
+
+	bluetooth_wcn6750: bt_wcn6750 {
+		compatible = "qcom,wcn6750-bt";
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_en_sleep>;
+		qcom,wl-reset-gpio = <&tlmm 43 0>; /* WL_CTRL */
+		qcom,bt-reset-gpio = <&tlmm 39 0>; /* BT_EN */
+		qcom,bt-sw-ctrl-gpio = <&tlmm 56 0>; /* SW_CTRL */
+
+		qcom,bt-vdd-io-supply = <&L21B>;  /* IO */
+		qcom,bt-vdd-aon-supply = <&S7B>;
+		qcom,bt-vdd-dig-supply = <&S7B>; /* BT_CX_MX */
+		qcom,bt-vdd-rfa1-supply = <&S9B>; /* RFA 1p7 */
+		qcom,bt-vdd-rfa2-supply = <&S8B>; /* RFA 1p2 */
+
+		/* Max Voltages are derived from the buck Max Voltage */
+		qcom,bt-vdd-io-config = <1800000 1800000 0 1>;
+		qcom,bt-vdd-aon-config = <850000 1120000 0 1>;
+		qcom,bt-vdd-dig-config = <800000 1120000 0 1>;
+		qcom,bt-vdd-rfa1-config = <1856000 2040000 0 1>;
+		qcom,bt-vdd-rfa2-config = <1250000 1352000 0 1>;
+		status = "disabled";
+	};
+};
+

@@ -1,0 +1,63 @@
+#include "neo-audio-overlay.dtsi"
+
+&va_macro {
+	va-vdd-micb-supply = <&L12A>;
+	qcom,va-vdd-micb-voltage = <1800000 1800000>;
+	qcom,va-vdd-micb-current = <1500>;
+};
+
+&waipio_snd {
+	qcom,model = "neo-idp-sg-snd-card";
+	qcom,audio-routing =
+		"TX DMIC0", "Digital Mic0",
+		"TX DMIC0", "VA MIC BIAS",
+		"TX DMIC1", "Digital Mic1",
+		"TX DMIC1", "VA MIC BIAS",
+		"TX DMIC2", "Digital Mic2",
+		"TX DMIC2", "VA MIC BIAS",
+		"TX DMIC3", "Digital Mic3",
+		"TX DMIC3", "VA MIC BIAS",
+		"TX DMIC4", "Digital Mic4",
+		"TX DMIC4", "VA MIC BIAS",
+		"TX DMIC5", "Digital Mic5",
+		"TX DMIC5", "VA MIC BIAS",
+		"WSA SRC0_INP", "SRC0",
+		"WSA_TX DEC0_INP", "TX DEC0 MUX",
+		"WSA_TX DEC1_INP", "TX DEC1 MUX",
+		"RX_TX DEC0_INP", "TX DEC0 MUX",
+		"RX_TX DEC1_INP", "TX DEC1 MUX",
+		"RX_TX DEC2_INP", "TX DEC2 MUX",
+		"RX_TX DEC3_INP", "TX DEC3 MUX",
+		"RX_TX DEC4_INP", "TX DEC4 MUX",
+		"RX_TX DEC5_INP", "TX DEC5 MUX",
+		"SpkrLeft IN", "WSA_SPK1 OUT",
+		"SpkrRight IN", "WSA_SPK2 OUT",
+		"VA SWR_INPUT", "VA_SWR_CLK",
+		"VA_AIF1 CAP", "VA_SWR_CLK",
+		"VA_AIF2 CAP", "VA_SWR_CLK",
+		"VA_AIF3 CAP", "VA_SWR_CLK",
+		"VA DMIC0", "Digital Mic0",
+		"VA DMIC1", "Digital Mic1",
+		"VA DMIC2", "Digital Mic2",
+		"VA DMIC3", "Digital Mic3",
+		"VA DMIC4", "Digital Mic4",
+		"VA DMIC5", "Digital Mic5",
+		"VA DMIC0", "VA MIC BIAS",
+		"VA DMIC1", "VA MIC BIAS",
+		"VA DMIC2", "VA MIC BIAS",
+		"VA DMIC3", "VA MIC BIAS",
+		"VA DMIC4", "VA MIC BIAS",
+		"VA DMIC5", "VA MIC BIAS";
+};
+
+&wcd938x_codec {
+	status = "disabled";
+};
+
+&wcd938x_tx_slave {
+	status = "disabled";
+};
+
+&wcd938x_rx_slave {
+	status = "disabled";
+};
