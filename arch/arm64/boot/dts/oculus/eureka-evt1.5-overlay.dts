@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "eureka-nonpor-blu-uart-overrides.dtsi"
+
+/ {
+	model = "Eureka (EVT1.5)";
+	compatible = "qcom,anorak", "oculus,eureka", "oculus,eureka-evt1.5";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10540 0x2>;
+};
+
+&cypd3177 {
+	cypd3177,custom-sink-caps = <5000 2330>, /* 5V @ 2.33A */
+	<5000 2600>,  /*  5V @ 2.60A */
+	<5000 3000>;  /*  5V @ 3.00A */
+};

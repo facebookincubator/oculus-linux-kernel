@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/clock/qcom,gcc-anorak.h>
+
+&aliases {
+	hsuart12 = &qupv3_se3_2uart; /* /dev/ttyHS12 */
+};
+
+&tlmm {
+	nautilus_clk_pin: projector_clk_pin {
+		mux {
+			pins = "gpio107";
+			function = "gcc_gp9_clk";
+		};
+		config {
+			pins = "gpio107";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
+	santana_manager_float_swd: santana_manager_float_swd {
+		mux {
+			pins = "gpio54", "gpio55";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio54", "gpio55";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	santana_manager_reset_default: santana_manager_reset_default {
+		mux {
+			pins = "gpio115";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio115";
+			// Reset is active-high. This pin
+			// is not connected before EVT2.
+			drive-strength = <6>;
+			output-low;
+		};
+	};
+
+	qupv3_se3_2uart_rx_sleep: qupv3_se3_2uart_rx_sleep {
+		mux {
+			pins = "gpio137";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio137";
+			bias-pull-down;
+		};
+	};
+};
+
+// Santana manager UART
+&qupv3_se3_2uart {
+	status = "ok";
+	pinctrl-0 = <&qupv3_se3_2uart_rx_active>;
+	pinctrl-1 = <&qupv3_se3_2uart_rx_sleep>;
+	qcom,allow-suspend;
+};
+
+&vendor {
+	nautilus: oculus,nautilus {
+		status = "ok";
+		compatible = "oculus,nautilus";
+		pinctrl-names = "default";
+		pinctrl-0 = <&nautilus_clk_pin>;
+		clocks = <&gcc GCC_GP9_CLK>;
+		clock-names = "nautilus-clock";
+		vdd-supply = <&L9B>;
+	};
+};

@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "diwali-audio-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Diwali IDP AMOLED";
+	compatible = "qcom,diwali-idp", "qcom,diwali", "qcom,idp";
+	qcom,msm-id = <506 0x10000>, <547 0x10000>, <564 0x10000>;
+	qcom,board-id = <34 3>;
+};

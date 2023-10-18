@@ -1,0 +1,12 @@
+/dts-v1/;
+/memreserve/ 0x90000000 0x00010000;
+
+#include "montague.dtsi"
+#include "montague-rumi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague RUMI";
+	compatible = "qcom,montague-rumi", "qcom,montague", "qcom,rumi";
+	qcom,board-id = <0x1000F 0>;
+};
+

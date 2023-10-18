@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	model = "Eureka (PVT1.1)";
+	compatible = "qcom,anorak", "oculus,eureka", "oculus,eureka-pvt1.1";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10140 0x4>;
+};
+
+&wlan {
+	cal-file-prefix = "eureka_pvt1.1_";
+};

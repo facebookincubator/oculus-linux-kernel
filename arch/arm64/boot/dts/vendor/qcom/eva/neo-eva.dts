@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/soc/qcom,ipcc.h>
+#include <dt-bindings/interconnect/qcom,neo.h>
+#include <dt-bindings/clock/qcom,videocc-neo.h>
+#include <dt-bindings/clock/qcom,gcc-neo.h>
+#include "neo-eva.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. neo v1 SoC";
+	compatible = "qcom,neo";
+	qcom,msm-id = <525 0x10000>, <525 0x20000>;
+	qcom,board-id = <0 0>;
+};

@@ -1,0 +1,17 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-anorak.h>
+#include <dt-bindings/clock/qcom,camcc-anorak.h>
+#include <dt-bindings/interconnect/qcom,anorak.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+#include "anorak-camera-sensor-idp.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak IDP";
+	compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp";
+	qcom,msm-id   = <549 0x10000>;
+	qcom,board-id = <0x10022 0x0>, <0x10022 0x1>, <0x10022 0x3>, <34 0>, <34 1>,
+			<0x10021 0x0>, <0x10022 0x2>, <0x10022 0x4>, <0x10022 0x5>, <0x10022 0x6>;
+};

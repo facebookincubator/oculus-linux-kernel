@@ -1,0 +1,12 @@
+/dts-v1/;
+/memreserve/ 0x90000000 0x00010000;
+
+#include "ravelin.dtsi"
+#include "ravelin-rumi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin RUMI";
+	compatible = "qcom,ravelin-rumi", "qcom,ravelin", "qcom,rumi";
+	qcom,board-id = <0x1000F 0>;
+};
+

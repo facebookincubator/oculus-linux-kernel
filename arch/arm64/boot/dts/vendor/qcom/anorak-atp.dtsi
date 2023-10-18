@@ -1,0 +1,302 @@
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/clock/qcom,gcc-anorak.h>
+#include <dt-bindings/clock/qcom,rpmh.h>
+#include "anorak-pmic-overlay.dtsi"
+#include <dt-bindings/interconnect/qcom,anorak.h>
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&key_vol_up_default
+			     &key_confirm_default
+			     &key_back_default>;
+
+		confirm_key {
+			label = "confirm_key";
+			gpios = <&pm8550b_gpios 2 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_OK>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+
+		back_key {
+			label = "back_key";
+			gpios = <&pm8550b_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_BACK>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&pm8550b_gpios 10 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEUP>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+};
+
+&battery_charger {
+	qcom,wireless-charging-not-supported;
+};
+
+&msm_sdexpress {
+	vdd1-supply = <&L12B>;
+	qcom,vdd1-voltage-level = <2960000 2960000>;
+	qcom,vdd1-current-level = <0 600000>;
+
+	vdd2-supply = <&L4B>;
+	qcom,vdd2-voltage-level = <1800000 1800000>;
+	qcom,vdd2-current-level = <0 600000>;
+
+	sdexpress-gpios = <&tlmm 172 0>;
+	clkreq-gpios = <&tlmm 171 GPIO_ACTIVE_LOW>;
+
+	status = "ok";
+};
+
+&regulator_ocp_notifier {
+	periph-1c1-supply = <&L1B>;
+	periph-1c3-supply = <&L3B>;
+	periph-1c4-supply = <&L4B>;
+	periph-1c5-supply = <&L5B>;
+	periph-1c6-supply = <&L6B>;
+	periph-1c7-supply = <&L7B>;
+	periph-1c8-supply = <&L8B>;
+	periph-1c9-supply = <&L9B>;
+	periph-1ca-supply = <&L10B>;
+	periph-1cb-supply = <&L11B>;
+	periph-1cc-supply = <&L12B>;
+	periph-1cd-supply = <&L13B>;
+	periph-1ce-supply = <&L14B>;
+	periph-1cf-supply = <&L15B>;
+	periph-1d2-supply = <&L18B>;
+	periph-1d4-supply = <&L20B>;
+	periph-1d5-supply = <&L21B>;
+	periph-1d6-supply = <&L22B>;
+	periph-1d7-supply = <&L23B>;
+	periph-2c1-supply = <&L1C_LEVEL>;
+	periph-2c2-supply = <&L2C>;
+	periph-3c1-supply = <&L1D>;
+	periph-3c2-supply = <&L2D>;
+	periph-5c1-supply = <&L1F_LEVEL>;
+	periph-5c2-supply = <&L2F>;
+	periph-5c3-supply = <&L3F>;
+	periph-c40-supply = <&L1M>;
+	periph-c41-supply = <&L2M>;
+	periph-c42-supply = <&L3M>;
+	periph-c43-supply = <&L4M>;
+	periph-c44-supply = <&L5M>;
+	periph-c45-supply = <&L6M>;
+	periph-d40-supply = <&L1N>;
+	periph-d41-supply = <&L2N>;
+	periph-d42-supply = <&L3N>;
+	periph-d43-supply = <&L4N>;
+	periph-d44-supply = <&L5N>;
+	periph-d46-supply = <&L7N>;
+};
+
+&ufsphy_mem {
+	compatible = "qcom,ufs-phy-qmp-v4-anarok";
+
+	vdda-phy-supply = <&L2F>;
+	vdda-pll-supply = <&L2C>;
+	vdda-phy-max-microamp = <138000>;
+	vdda-pll-max-microamp = <18300>;
+
+	status = "ok";
+};
+
+&ufshc_mem {
+	vdd-hba-supply = <&gcc_ufs_phy_gdsc>;
+
+	vcc-supply = <&L13B>;
+	vcc-max-microamp = <1300000>;
+
+	vccq-supply = <&L3B>;
+	vccq-max-microamp = <1200000>;
+
+	qcom,vddp-ref-clk-supply = <&L3B>;
+	qcom,vddp-ref-clk-max-microamp = <100>;
+
+	/* Modify UFS device ref_clk handle to
+	 * RPMH_LN_BB_CLK8 clock for Anorak ATP
+	 * platform to improve IPN phase noise
+	 */
+	clock-names =
+		"core_clk",
+		"bus_aggr_clk",
+		"iface_clk",
+		"core_clk_unipro",
+		"core_clk_ice",
+		"ref_clk",
+		"tx_lane0_sync_clk",
+		"rx_lane0_sync_clk",
+		"rx_lane1_sync_clk";
+	clocks =
+		<&gcc GCC_UFS_PHY_AXI_CLK>,
+		<&gcc GCC_AGGRE_UFS_PHY_AXI_CLK>,
+		<&gcc GCC_UFS_PHY_AHB_CLK>,
+		<&gcc GCC_UFS_PHY_UNIPRO_CORE_CLK>,
+		<&gcc GCC_UFS_PHY_ICE_CORE_CLK>,
+		<&rpmhcc RPMH_LN_BB_CLK8>,
+		<&gcc GCC_UFS_PHY_TX_SYMBOL_0_CLK>,
+		<&gcc GCC_UFS_PHY_RX_SYMBOL_0_CLK>,
+		<&gcc GCC_UFS_PHY_RX_SYMBOL_1_CLK>;
+
+	status = "ok";
+};
+
+&wlan {
+	status = "disabled";
+};
+
+&bluetooth {
+	status = "disabled";
+};
+
+&cnss_pins {
+	cnss_host_sol_default: cnss_host_sol_default {
+		mux {
+			pins = "gpio124";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio124";
+			drive-strength = <4>;
+			bias-pull-down;
+		};
+	};
+
+	cnss_dev_sol_default: cnss_dev_sol_default {
+		mux {
+			pins = "gpio123";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio123";
+			drive-strength = <4>;
+			bias-pull-down;
+		};
+	};
+};
+
+&soc {
+
+	wlan_kiwi: qcom,cnss-kiwi@b0000000 {
+		compatible = "qcom,cnss-kiwi";
+		reg = <0xb0000000 0x10000>;
+		reg-names = "smmu_iova_ipa";
+		wlan-en-gpio = <&tlmm 120 0>;
+		wlan-host-sol-gpio = <&tlmm 124 0>;
+		wlan-dev-sol-gpio = <&tlmm 123 0>;
+
+		pinctrl-names = "wlan_en_active", "wlan_en_sleep", "sol_default";
+		pinctrl-0 = <&cnss_wlan_en_active>;
+		pinctrl-1 = <&cnss_wlan_en_sleep>;
+		pinctrl-2 = <&cnss_host_sol_default &cnss_dev_sol_default>;
+		qcom,wlan;
+		qcom,wlan-rc-num = <0>;
+		qcom,wlan-ramdump-dynamic = <0x780000>;
+		qcom,wlan-cbc-enabled;
+		use-pm-domain;
+		qcom,same-dt-multi-dev;
+		mboxes = <&qmp_aop 0>;
+
+		vdd-wlan-dig-supply = <&S3B>;
+		qcom,vdd-wlan-dig-config = <950000 1120000 0 0 1>;
+		vdd-wlan-io-supply = <&L7B>;
+		qcom,vdd-wlan-io-config = <1800000 1800000 0 0 1>;
+		vdd-wlan-rfa1-supply = <&S1B>;
+		qcom,vdd-wlan-rfa1-config = <1880000 2040000 0 0 1>;
+		vdd-wlan-rfa2-supply = <&S2B>;
+		qcom,vdd-wlan-rfa2-config = <1352000 1370000 0 0 1>;
+		vdd-wlan-supply = <&S4F>;
+		qcom,vdd-wlan-config = <952000 952000 0 0 1>;
+
+		interconnects =
+		<&pcie_noc MASTER_PCIE_0 &pcie_noc SLAVE_ANOC_PCIE_GEM_NOC>,
+		<&gem_noc MASTER_ANOC_PCIE_GEM_NOC &mc_virt SLAVE_EBI1>;
+		interconnect-names = "pcie_to_memnoc", "memnoc_to_ddr";
+
+		qcom,icc-path-count = <2>;
+		qcom,bus-bw-cfg-count = <9>;
+		qcom,bus-bw-cfg =
+		/** ICC Path 1 **/
+		<0 0>, /* no vote */
+		/* idle: 0-18 Mbps snoc/anoc: 150 Mhz */
+		<2250 1599540>,
+		/* low: 18-60 Mbps snoc/anoc: 150 Mhz */
+		<7500 1599540>,
+		/* medium: 60-240 Mbps snoc/anoc: 150 Mhz*/
+		<30000 1599540>,
+		/* high: 240-1200 Mbps snoc/anoc: 240 Mhz */
+		<100000 3199610>,
+		/* very high: > 1200 Mbps snoc/anoc: 403 Mhz */
+		<175000 6447980>,
+		/* ultra high: DBS mode snoc/anoc: 403 Mhz */
+		<175000 6447980>,
+		/* super high: DBS mode snoc/anoc: 403 Mhz */
+		<175000 6447980>,
+		/* low (latency critical): 18-60 Mbps snoc/anoc: 240 Mhz */
+		<7500 3199610>,
+
+		/** ICC Path 2 **/
+		<0 0>,
+		/* ddr: 451.2 MHz */
+		<2250 2749600>,
+		/* ddr: 451.2 MHz */
+		<7500 2749600>,
+		/* ddr: 451.2 MHz */
+		<30000 2749600>,
+		/* ddr: 451.2 MHz */
+		<100000 2749600>,
+		/* ddr: 1555 MHz */
+		<175000 9479200>,
+		/* ddr: 2092 MHz */
+		<175000 12756000>,
+		/* ddr: 2133 MHz */
+		<175000 13106400>,
+		/* ddr: 547.2 MHz */
+		<7500 3335200>;
+	};
+
+	bt_hmt: bt_kiwi {
+		compatible = "qcom,kiwi";
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_en_sleep>;
+		qcom,wl-reset-gpio = <&tlmm 120 0>; /* WL_CTRL */
+		qcom,bt-reset-gpio = <&tlmm 122 0>; /* BT_EN */
+		qcom,bt-sw-ctrl-gpio = <&tlmm 146 0>; /* SW_CTRL */
+
+		qcom,bt-vdd-io-supply     = <&L7B>; /* BT VDD1.8 AON */
+		qcom,bt-vdd-aon-supply    = <&S3B>; /* BT AON LDO*/
+		qcom,bt-vdd-rfacmn-supply = <&S3B>;
+		qcom,bt-vdd-dig-supply    = <&S3B>; /* BT LDO*/
+		qcom,bt-vdd-rfa-0p8-supply = <&S3B>; /* BT RFA0p8 CMN LDO*/
+		qcom,bt-vdd-rfa1-supply   = <&S1B>; /* BT RFA1.8 LDO */
+		qcom,bt-vdd-rfa2-supply   = <&S2B>; /* BT RFA1.2 LDO */
+
+		qcom,bt-vdd-io-config  = <1800000 1800000 0 1>;
+		qcom,bt-vdd-aon-config = <950000 950000 0 1>;
+		qcom,bt-vdd-rfacmn-config = <950000 950000 0 1>;
+		qcom,bt-vdd-dig-config = <950000 950000 0 1>;
+		qcom,bt-vdd-rfa-0p8-config  = <950000 950000 0 1>;
+		qcom,bt-vdd-rfa1-config = <1900000 1900000 0 1>;
+		qcom,bt-vdd-rfa2-config = <1350000 1350000 0 1>;
+	};
+
+};

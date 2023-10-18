@@ -1,0 +1,82 @@
+#include "anorak-audio-overlay.dtsi"
+
+&va_macro {
+	va-vdd-micb-supply = <&L11B>;
+	va-vdd-micb = <&L11B>;
+	qcom,va-vdd-micb-voltage = <1800000 1800000>;
+	qcom,va-vdd-micb-current = <1500>;
+};
+
+&waipio_snd {
+
+	qcom,model = "anorak-qxr-snd-card";
+	qcom,audio-routing =
+		"AMIC1", "Analog Mic1",
+		"AMIC1", "MIC BIAS3",
+		"AMIC3", "Analog Mic3",
+		"AMIC3", "MIC BIAS1",
+		"AMIC2", "Analog Mic2",
+		"AMIC2", "MIC BIAS2",
+		"AMIC4", "Analog Mic4",
+		"AMIC4", "MIC BIAS4",
+		"AMIC5", "Analog Mic5",
+		"AMIC5", "MIC BIAS4",
+		"VA AMIC1", "Analog Mic1",
+		"VA AMIC1", "VA MIC BIAS1",
+		"VA AMIC2", "VA MIC BIAS2",
+		"VA AMIC3", "Analog Mic3",
+		"VA AMIC3", "Analog Mic3",
+		"VA AMIC3", "VA MIC BIAS3",
+		"VA AMIC4", "Analog Mic4",
+		"VA AMIC4", "VA MIC BIAS4",
+		"VA AMIC5", "Analog Mic5",
+		"VA AMIC5", "VA MIC BIAS4",
+		"DMIC0", "Digital Mic0",
+		"DMIC0", "VA MIC BIAS",
+		"DMIC0", "MIC BIAS1",
+		"DMIC1", "Digital Mic1",
+		"DMIC1", "VA MIC BIAS",
+		"DMIC1", "MIC BIAS1",
+		"DMIC2", "Digital Mic2",
+		"DMIC2", "VA MIC BIAS",
+		"DMIC2", "MIC BIAS1",
+		"DMIC3", "Digital Mic3",
+		"DMIC3", "VA MIC BIAS",
+		"DMIC3", "MIC BIAS1",
+		"DMIC4", "Digital Mic4",
+		"DMIC4", "VA MIC BIAS",
+		"DMIC4", "MIC BIAS3",
+		"DMIC5", "Digital Mic5",
+		"DMIC5", "VA MIC BIAS",
+		"DMIC5", "MIC BIAS3",
+		"DMIC6", "Digital Mic6",
+		"DMIC6", "VA MIC BIAS",
+		"DMIC6", "MIC BIAS4",
+		"DMIC7", "Digital Mic7",
+		"DMIC7", "VA MIC BIAS",
+		"DMIC7", "MIC BIAS4",
+		"IN1_HPHL", "HPHL_OUT",
+		"IN2_HPHR", "HPHR_OUT",
+		"IN3_AUX", "AUX_OUT",
+		"WSA SRC0_INP", "SRC0",
+		"WSA_TX DEC0_INP", "TX DEC0 MUX",
+		"WSA_TX DEC1_INP", "TX DEC1 MUX",
+		"WSA2 SRC0_INP", "SRC0",
+		"WSA2_TX DEC0_INP", "TX DEC0 MUX",
+		"WSA2_TX DEC1_INP", "TX DEC1 MUX",
+		"RX_TX DEC0_INP", "TX DEC0 MUX",
+		"RX_TX DEC1_INP", "TX DEC1 MUX",
+		"RX_TX DEC2_INP", "TX DEC2 MUX",
+		"RX_TX DEC3_INP", "TX DEC3 MUX",
+		"SpkrLeft IN", "WSA_SPK1 OUT",
+		"SpkrRight IN", "WSA_SPK2 OUT",
+		"Spkr2Left IN", "WSA2_SPK1 OUT",
+		"Spkr2Right IN", "WSA2_SPK2 OUT",
+		"TX SWR_INPUT", "WCD_TX_OUTPUT",
+		"TX SWR_INPUT", "WCD_TX_OUTPUT",
+		"VA SWR_INPUT", "VA_SWR_CLK",
+		"VA SWR_INPUT", "WCD_TX_OUTPUT",
+		"VA_AIF1 CAP", "VA_SWR_CLK";
+
+};
+

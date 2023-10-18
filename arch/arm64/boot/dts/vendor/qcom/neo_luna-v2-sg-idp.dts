@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "neo_luna-v2.dtsi"
+#include "neo_luna-v2-sg-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO LUNA-V2 SG IDP";
+	compatible = "qcom,neo-idp", "qcom,neo", "qcom,idp";
+	qcom,board-id = <34 1>;
+};

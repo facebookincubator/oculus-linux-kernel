@@ -1,0 +1,241 @@
+#include <dt-bindings/clock/qcom,gcc-anorak.h>
+#include <dt-bindings/gpio/gpio.h>
+
+&arch_timer {
+	clock-frequency = <500000>;
+};
+
+&memtimer {
+	clock-frequency = <500000>;
+};
+
+&soc {
+	usb_emuphy: phy@a784000 {
+		compatible = "qcom,usb-emu-phy";
+		reg = <0x0a784000 0x9500>;
+
+		qcom,emu-init-seq = <0xfffff 0x4
+			0xffff0 0x4
+			0x100000 0x20
+			0x0 0x20
+			0x000101F0 0x20
+			0x00100000 0x3c
+			0x0 0x3c
+			0x0 0x4>;
+	};
+
+	bi_tcxo: bi_tcxo {
+		compatible = "fixed-factor-clock";
+		clock-mult = <1>;
+		clock-div = <4>;
+		clocks = <&xo_board>;
+		#clock-cells = <0>;
+	};
+
+	bi_tcxo_ao: bi_tcxo_ao {
+		compatible = "fixed-factor-clock";
+		clock-mult = <1>;
+		clock-div = <4>;
+		clocks = <&xo_board>;
+		#clock-cells = <0>;
+	};
+};
+
+&pcie0 {
+	status = "disabled";
+	reg = <0x01c00000 0x3000>,
+		<0x01c06000 0x2000>,
+		<0x60000000 0xf1d>,
+		<0x60000f20 0xa8>,
+		<0x60001000 0x1000>,
+		<0x60100000 0x100000>,
+		<0x1c04000 0x1000>;
+		reg-names = "parf", "phy", "dm_core", "elbi", "iatu", "conf",
+			"rumi";
+		qcom,target-link-speed = <0x1>;
+		qcom,link-check-max-count = <200>; /* 1 sec */
+		qcom,no-l0s-supported;
+		qcom,no-l1-supported;
+		qcom,no-l1ss-supported;
+		qcom,no-aux-clk-sync;
+};
+
+&pcie1 {
+	status = "disabled";
+	reg = <0x01c08000 0x3000>,
+		<0x01c0e000 0x2000>,
+		<0x64000000 0xf1d>,
+		<0x64000f20 0xa8>,
+		<0x64001000 0x1000>,
+		<0x64100000 0x100000>,
+		<0x1c0d000 0x1000>;
+		reg-names = "parf", "phy", "dm_core", "elbi", "iatu", "conf",
+			"rumi";
+		qcom,target-link-speed = <0x1>;
+		qcom,link-check-max-count = <200>; /* 1 sec */
+		qcom,no-l0s-supported;
+		qcom,no-l1-supported;
+		qcom,no-l1ss-supported;
+		qcom,no-aux-clk-sync;
+};
+
+&pcie2 {
+	status = "ok";
+	reg = <0x01c10000 0x3000>,
+		<0x01c16000 0x2000>,
+		<0x40000000 0xf1d>,
+		<0x40000f20 0xa8>,
+		<0x40001000 0x1000>,
+		<0x40100000 0x100000>,
+		<0x01c14000 0x1000>;
+		reg-names = "parf", "phy", "dm_core", "elbi", "iatu", "conf",
+			"rumi";
+		qcom,target-link-speed = <0x1>;
+		qcom,link-check-max-count = <200>; /* 1 sec */
+		qcom,no-l0s-supported;
+		qcom,no-l1-supported;
+		qcom,no-l1ss-supported;
+		qcom,no-aux-clk-sync;
+};
+
+&sdhc_2 {
+	status = "ok";
+	vdd-supply = <&L12B>;
+	qcom,vdd-voltage-level = <2960000 2960000>;
+	qcom,vdd-current-level = <0 800000>;
+
+	vdd-io-supply = <&L18B>;
+	qcom,vdd-io-voltage-level = <2960000 2960000>;
+	qcom,vdd-io-current-level = <0 22000>;
+
+	is_rumi;
+
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sdc2_on>;
+	pinctrl-1 = <&sdc2_off>;
+
+	cd-gpios = <&tlmm 175 GPIO_ACTIVE_LOW>;
+};
+
+&ufsphy_mem {
+	compatible = "qcom,ufs-phy-qrbtc-sdm845";
+
+	vdda-phy-supply = <&L2F>;
+	vdda-pll-supply = <&L2C>;
+	vdda-phy-max-microamp = <138000>;
+	vdda-pll-max-microamp = <18300>;
+
+	status = "ok";
+};
+
+&ufshc_mem {
+	limit-tx-hs-gear = <1>;
+	limit-rx-hs-gear = <1>;
+	limit-rate = <1>; /* HS Rate-B */
+
+	vdd-hba-supply = <&gcc_ufs_phy_gdsc>;
+	vdd-hba-fixed-regulator;
+
+	vcc-supply = <&L13B>;
+	vcc-max-microamp = <1300000>;
+
+	vccq-supply = <&L3B>;
+	vccq-max-microamp = <1200000>;
+
+	qcom,vddp-ref-clk-supply = <&L3B>;
+	qcom,vddp-ref-clk-max-microamp = <100>;
+
+	qcom,disable-lpm;
+	rpm-level = <0>;
+	spm-level = <0>;
+
+	qcom,iommu-dma = "bypass";
+	status = "ok";
+};
+
+&usb0 {
+	dwc3@a600000 {
+		usb-phy = <&usb_emuphy>, <&usb_nop_phy>;
+		dr_mode = "peripheral";
+		maximum-speed = "high-speed";
+	};
+
+};
+
+&qupv3_se6_2uart {
+	qcom,rumi_platform;
+};
+
+&gcc {
+	clocks = <&bi_tcxo>, <&sleep_clk>,
+		<&pcie_0_pipe_clk>, <&pcie_1_pipe_clk>,
+		<&pcie_2_phy_aux_clk>, <&pcie_2_pipe_clk>,
+		<&ufs_phy_rx_symbol_0_clk>, <&ufs_phy_rx_symbol_1_clk>,
+		<&ufs_phy_tx_symbol_0_clk>, <&usb3_phy_wrapper_gcc_usb30_pipe_clk>;
+};
+
+&videocc {
+	clocks = <&bi_tcxo>, <&sleep_clk>,
+		<&gcc GCC_VIDEO_AHB_CLK>;
+};
+
+&camcc {
+	clocks = <&bi_tcxo>, <&sleep_clk>,
+		<&gcc GCC_CAMERA_AHB_CLK>;
+};
+
+&gpucc {
+	clocks = <&bi_tcxo>,
+		<&gcc GCC_GPU_GPLL0_CLK_SRC>,
+		<&gcc GCC_GPU_GPLL0_DIV_CLK_SRC>;
+};
+
+&dispcc0 {
+	clocks = <&bi_tcxo>,
+		<&bi_tcxo_ao>,
+		<&sleep_clk>,
+		<&gcc GCC_DISP_AHB_CLK>;
+};
+
+&dispcc1 {
+	clocks = <&bi_tcxo>,
+		<&bi_tcxo_ao>,
+		<&sleep_clk>,
+		<&gcc GCC_DISP1_AHB_CLK>;
+};
+
+&debugcc {
+	clocks = <&bi_tcxo>;
+};
+
+&tsens0 {
+	status = "disabled";
+};
+
+&tsens1 {
+	status = "disabled";
+};
+
+&rpmhcc {
+	compatible = "qcom,dummycc";
+	clock-output-names = "rpmhcc_clocks";
+};
+
+&msm_sdexpress {
+	vdd1-supply = <&L12B>;
+	qcom,vdd1-voltage-level = <2960000 2960000>;
+	qcom,vdd1-current-level = <0 600000>;
+
+	vdd2-supply = <&L4B>;
+	qcom,vdd2-voltage-level = <1800000 1800000>;
+	qcom,vdd2-current-level = <0 600000>;
+
+	sdexpress-gpios = <&tlmm 172 0>;
+	clkreq-gpios = <&tlmm 171 GPIO_ACTIVE_LOW>;
+
+	status = "ok";
+};
+
+&cpufreq_hw {
+	clocks = <&bi_tcxo>, <&gcc GCC_GPLL0>;
+};

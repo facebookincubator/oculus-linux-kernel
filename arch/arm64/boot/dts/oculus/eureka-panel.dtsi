@@ -1,0 +1,369 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/clock/qcom,dispcc-anorak.h>
+
+#include "eureka-dsi-panel-jdi-nvt-dsc-4k-90hz-video.dtsi"
+#include "eureka-dsi-panel-jdi-nvt-dsc-4k-90hz-video-pre-evt.dtsi"
+#include "eureka-dsi-panel-sharp-nvt-dsc-4k-90hz-video.dtsi"
+#include "eureka-dsi-panel-sharp-nvt-dsc-4k-90hz-video-pre-evt.dtsi"
+
+&aliases {
+	// BLU UART
+	hsuart13 = &qupv3_se12_2uart; /* /dev/ttyHS13 */
+};
+
+&fan {
+	panel = <&dsi_jdi_nvt_4k_90Hz_dsc_video
+		&dsi_jdi_nvt_4k_90Hz_dsc_video_pre_evt
+		&dsi_sharp_nvt_4k_90Hz_dsc_video
+		&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt>;
+};
+
+&L12B {
+	qcom,init-voltage = <3300000>;
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-boot-on;
+};
+
+&mdss_mdp0 {
+	qcom,sde-lineptr-scanline-advance = <500>;
+};
+
+&qupv3_se2_i2c {
+	status = "ok";
+
+	tps65132@3e {
+		compatible = "ti,tps65132";
+		reg = <0x3e>;
+
+		disp_vsp: outp {
+			regulator-name = "outp";
+			regulator-min-microvolt = <4000000>;
+			regulator-max-microvolt = <6000000>;
+			regulator-min-microamp = <40000>;
+			regulator-max-microamp = <80000>;
+			regulator-allow-set-load;
+			regulator-boot-on;
+			enable-gpios = <&tlmm 8 0>;
+			ti,active-discharge-time-us = <0>;
+		};
+
+		disp_vsn: outn {
+			regulator-name = "outn";
+			regulator-min-microvolt = <4000000>;
+			regulator-max-microvolt = <6000000>;
+			regulator-min-microamp = <40000>;
+			regulator-max-microamp = <80000>;
+			regulator-allow-set-load;
+			regulator-boot-on;
+			enable-gpios = <&tlmm 9 0>;
+			ti,active-discharge-time-us = <0>;
+		};
+	};
+};
+
+&qupv3_se12_2uart {
+	/* BLU FW flashing */
+	status = "ok";
+
+	/*
+	 * pinctrl configuration is moved to &blu, since UART
+	 * pull-ups/down require special sequencing with respect
+	 * to L12B regulator enable/disable. See T148253155 for
+	 * details.
+	 */
+	pinctrl-0 = <>;
+	pinctrl-1 = <>;
+};
+
+&qupv3_se12_2uart_tx_active {
+	config {
+		bias-pull-up;
+	};
+};
+
+&qupv3_se12_2uart_rx_active {
+	config {
+		bias-pull-up;
+	};
+};
+
+&qupv3_se12_2uart_sleep {
+	config {
+		bias-pull-down;
+	};
+};
+
+/delete-node/ &display_panel_avdd;
+/delete-node/ &display_panel_avee;
+/delete-node/ &dsi_panel_pwr_supply_oled;
+
+&sde_dsi {
+	avdd-supply = <>;
+	avee-supply = <>;
+	vddio-supply = <&L5B>;
+	disp_vsp-supply = <&disp_vsp>;
+	disp_vsn-supply = <&disp_vsn>;
+
+	qcom,dsi-default-panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video>;
+};
+
+&sde_dsi1 {
+	avdd-supply = <>;
+	avee-supply = <>;
+};
+
+&soc {
+	display_panel_vsp_en: display_panel_vsp_en {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "display_panel_vsp_en";
+		gpio = <&tlmm 8 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_vsp_en_default>;
+	};
+
+	dsi_panel_pwr_supply_eureka: dsi_panel_pwr_supply_eureka {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		qcom,panel-supply-entry@0 {
+			reg = <0>;
+			qcom,supply-name = "vddio";
+			qcom,supply-min-voltage = <1800000>;
+			qcom,supply-max-voltage = <1800000>;
+			qcom,supply-enable-load = <62000>;
+			qcom,supply-disable-load = <80>;
+			qcom,supply-post-on-sleep = <20>;
+			qcom,supply-pre-off-sleep = <15>;
+		};
+
+		qcom,panel-supply-entry@1 {
+			reg = <1>;
+			qcom,supply-name = "display_panel_vsp_en";
+			qcom,supply-min-voltage = <3300000>;
+			qcom,supply-max-voltage = <3300000>;
+			qcom,supply-enable-load = <100000>;
+			qcom,supply-disable-load = <100>;
+		};
+
+		qcom,panel-supply-entry@2 {
+			reg = <2>;
+			qcom,supply-name = "disp_vsp";
+			qcom,supply-min-voltage = <5700000>;
+			qcom,supply-max-voltage = <5700000>;
+			qcom,supply-enable-load = <80000>;
+			qcom,supply-off-min-voltage = <4000000>;
+			qcom,supply-disable-load = <0>;
+			qcom,supply-post-on-sleep = <20>;
+			qcom,supply-pre-on-sleep = <10>;
+			qcom,supply-pre-off-sleep = <10>;
+		};
+
+		qcom,panel-supply-entry@3 {
+			reg = <3>;
+			qcom,supply-name = "disp_vsn";
+			qcom,supply-min-voltage = <5700000>;
+			qcom,supply-max-voltage = <5700000>;
+			qcom,supply-enable-load = <80000>;
+			qcom,supply-off-min-voltage = <4000000>;
+			qcom,supply-disable-load = <0>;
+			qcom,supply-post-on-sleep = <0>;
+			qcom,supply-pre-on-sleep = <10>;
+		};
+	};
+};
+
+&dsi_jdi_nvt_4k_90Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+	qcom,mdss-dsi-reset-off-delay = <0>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve = <25000 6000>;
+	meta,thermal-zone = "pcb1-usr";
+	meta,max-blu-pulse-overlap-us = <800>;
+
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&dsi_jdi_nvt_4k_90Hz_dsc_video_pre_evt {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+	qcom,mdss-dsi-reset-off-delay = <0>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<10000 7330>,
+		<25000 6270>,
+		<30000 5810>,
+		<35000 5460>,
+		<45000 4850>,
+		<55000 4600>;
+	meta,thermal-zone = "disp-virt";
+	meta,max-blu-pulse-overlap-us = <500>;
+
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 00 00 00 2A 33 0D
+				1F 0C 03 04 00 00 00
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&dsi_sharp_nvt_4k_90Hz_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+	qcom,mdss-dsi-reset-off-delay = <0>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve = <25000 6850>;
+	meta,thermal-zone = "pcb1-usr";
+	meta,max-blu-pulse-overlap-us = <800>;
+
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <82>; /* 8.2% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+	qcom,mdss-dsi-reset-off-delay = <0>;
+	qcom,mdss-dsi-sec-reset-off-delay = <30>;
+	qcom,mdss-dsi-t-clk-post = <0x0F>;
+	qcom,mdss-dsi-t-clk-pre = <0x1F>;
+	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<10000 7330>,
+		<25000 7330>,
+		<30000 7050>,
+		<35000 6380>,
+		<45000 5140>,
+		<55000 4220>;
+	meta,thermal-zone = "disp-virt";
+	meta,max-blu-pulse-overlap-us = <500>;
+
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 00 00 00 2A 33 0D
+				1F 0C 03 04 00 00 00
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+	};
+};
+
+&tlmm {
+	display_panel_vsp_en_default: display_panel_vsp_en_default {
+		mux {
+			pins = "gpio8";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio8";
+			drive-strength = <8>;
+			bias-disable;
+			output-high;
+		};
+	};
+
+	blu_reset_default: blu_reset_default {
+		mux {
+			pins = "gpio141";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio141";
+			drive-strength = <8>;
+			bias-disable;
+			output-high;
+		};
+	};
+
+	blu_boot_default: blu_boot_default {
+		mux {
+			pins = "gpio148";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio148";
+			drive-strength = <8>;
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&vendor {
+	blu: oculus,blu {
+		status = "ok";
+		compatible = "oculus,blu";
+		reset-gpios = <&tlmm 141 0>;
+		boot-gpios = <&tlmm 148 0>;
+
+		vdd-supply = <&L12B>;
+		uart-supply = <&L7B>;
+
+		pinctrl-names = "uart_active", "uart_sleep";
+		pinctrl-0 = <&qupv3_se12_2uart_tx_active>, <&qupv3_se12_2uart_rx_active>;
+		pinctrl-1 = <&qupv3_se12_2uart_sleep>;
+	};
+};

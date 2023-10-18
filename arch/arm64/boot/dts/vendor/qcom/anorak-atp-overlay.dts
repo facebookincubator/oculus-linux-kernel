@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-atp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak ATP";
+	compatible = "qcom,anorak-atp", "qcom,anorak", "qcom,atp";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10021 0x0>;
+};

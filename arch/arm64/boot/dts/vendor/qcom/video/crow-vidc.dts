@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/qcom,gcc-crow.h>
+#include <dt-bindings/interconnect/qcom,crow.h>
+#include <dt-bindings/clock/qcom,videocc-crow.h>
+#include "crow-vidc.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Crow";
+	compatible = "qcom,crow";
+	qcom,msm-id = <608 0x10000>;
+	qcom,board-id = <0 0>;
+};

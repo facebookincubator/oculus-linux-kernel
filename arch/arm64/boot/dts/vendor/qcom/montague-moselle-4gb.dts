@@ -1,0 +1,9 @@
+/dts-v1/;
+#include "montague-4gb.dtsi"
+#include "montague-moselle.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague Moselle 4Gb IDP";
+	compatible = "qcom,montague-idp", "qcom,montague", "qcom,idp";
+	qcom,board-id = <0x10022 0x603>;
+};

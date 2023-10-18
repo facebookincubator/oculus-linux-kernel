@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/clock/qcom,audio-ext-clk.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/sound/audio-codec-port-types.h>
+#include <dt-bindings/sound/qcom,lpass-cdc-clk-rsc.h>
+
+#include "vendor-base/qcom/audio/waipio-lpi.dtsi"
+
+&lpass_cdc {
+	qcom,num-macros = <2>;
+	qcom,lpass-cdc-version = <6>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+	lpass-cdc-clk-rsc-mngr {
+		compatible = "qcom,lpass-cdc-clk-rsc-mngr";
+		qcom,fs-gen-sequence = <0x3000 0x1 0x1>, <0x3004 0x3 0x3>,
+					<0x3004 0x3 0x1>, <0x3080 0x2 0x2>;
+	qcom,rx_mclk_mode_muxsel = <0x033A40D8>;
+	qcom,wsa_mclk_mode_muxsel = <0x033A20E0>;
+	qcom,va_mclk_mode_muxsel = <0x03420000>;
+	clock-names = "tx_core_clk", "va_core_clk",
+		"rx_tx_core_clk";
+	clocks = <&clock_audio_tx_1 0>, <&clock_audio_va_1 0>,
+		<&clock_audio_rx_tx 0>;
+	};
+
+	va_macro: va-macro@33F0000 {
+		compatible = "qcom,lpass-cdc-va-macro";
+		reg = <0x33F0000 0x0>;
+		clock-names = "lpass_audio_hw_vote";
+		clocks = <&lpass_audio_hw_vote 0>;
+		qcom,va-dmic-sample-rate = <600000>;
+		qcom,va-clk-mux-select = <1>;
+		qcom,va-island-mode-muxsel = <0x03420000>;
+		qcom,default-clk-id = <TX_CORE_CLK>;
+		qcom,is-used-swr-gpio = <0>;
+	};
+
+	tx_macro: tx-macro@3220000 {
+		compatible = "qcom,lpass-cdc-tx-macro";
+		reg = <0x3220000 0x0>;
+		qcom,default-clk-id = <TX_CORE_CLK>;
+		qcom,tx-dmic-sample-rate = <2400000>;
+		qcom,is-used-swr-gpio = <0>;
+	};
+};
+
+&soc {
+	clock_audio_va_1: va_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x307>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_wsa_1: wsa_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_2>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x309>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_wsa_2: wsa2_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_9>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x310>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_rx_1: rx_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_4>;
+		qcom,codec-lpass-ext-clk-freq = <22579200>;
+		qcom,codec-lpass-clk-id = <0x30E>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_rx_tx: rx_core_tx_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_10>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x312>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_tx_1: tx_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_6>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x30C>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_wsa_tx: wsa_core_tx_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_11>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x314>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_wsa2_tx: wsa2_core_tx_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_12>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x316>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_rx_mclk2_2x_clk: rx_mclk2_2x_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_13>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x318>;
+		#clock-cells = <1>;
+	};
+};
+
+&waipio_snd {
+	qcom,model = "anorak-max98388-snd-card";
+	qcom,msm-mi2s-master = <1>, <1>, <1>, <1>, <1>, <1>;
+	qcom,mi2s-tdm-is-hw-vote-needed = <1>, <0>, <1>, <0>, <0>, <0>;
+	qcom,auxpcm-audio-intf = <0>;
+	qcom,wcn-bt = <0>;
+	qcom,mi2s-audio-intf = <1>;
+	qcom,tdm-audio-intf = <0>;
+	qcom,ext-disp-audio-rx = <0>;
+	qcom,afe-rxtx-lb = <0>;
+	fsa4480-i2c-handle = <>;
+	qcom,tdm-max-slots = <8>;
+	qcom,tdm-clk-attribute = <0x1>, <0x1>, <0x1>, <0x1>, <0x1>, <0x1>;
+	qcom,mi2s-clk-attribute = <0x1>, <0x1>, <0x1>, <0x1>, <0x1>, <0x1>;
+	qcom,audio-routing =
+		"VA_AIF1 CAP", "VA_SWR_CLK",
+		"VA_AIF2 CAP", "VA_SWR_CLK",
+		"VA_AIF3 CAP", "VA_SWR_CLK";
+	qcom,msm-mbhc-usbc-audio-supported = <0>;
+	qcom,msm-mbhc-hphl-swh = <1>;
+	qcom,msm-mbhc-gnd-swh = <1>;
+
+	qcom,wsa-max-devs = <0>;
+	qcom,msm_audio_ssr_devs = <&audio_gpr>, <&lpi_tlmm>,
+			  <&lpass_cdc>;
+	qcom,wcd-disabled = <1>;
+	qcom,lpass-tx-only;
+};
+
+&va_cdc_dma_0_tx {
+	qcom,msm-dai-is-island-supported = <1>;
+};

@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "anorak.dtsi"
+#include "anorak-idp-top-hsp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak IDP Topanga with EDP display + HSP";
+	compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp";
+	qcom,board-id = <0x10022 0x4>;
+};

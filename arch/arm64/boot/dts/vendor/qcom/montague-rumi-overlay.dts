@@ -1,0 +1,12 @@
+/dts-v1/;
+/plugin/;
+
+#include "montague-rumi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague RUMI";
+	compatible = "qcom,montague-rumi", "qcom,montague", "qcom,rumi";
+	qcom,msm-id = <581 0x10000>, <582 0x10000>;
+	qcom,board-id = <0x1000F 0>;
+};
+

@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "montaguep.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. MontagueP SoC";
+	compatible = "qcom,montaguep";
+	qcom,board-id = <0 0>;
+};
+

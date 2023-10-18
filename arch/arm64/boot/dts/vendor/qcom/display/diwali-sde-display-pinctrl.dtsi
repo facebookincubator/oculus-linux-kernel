@@ -1,0 +1,137 @@
+&tlmm {
+	display_panel_avdd_default: display_panel_avdd_default {
+		mux {
+			pins = "gpio168";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio168";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	display_panel_extvdd_default: display_panel_extvdd_default {
+		mux {
+			pins = "gpio148";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio148";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	pmx_sde: pmx_sde {
+		sde_dsi_active: sde_dsi_active {
+			mux {
+				pins = "gpio42";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio42";
+				drive-strength = <8>;   /* 8 mA */
+				bias-disable = <0>;   /* no pull */
+			};
+		};
+
+		sde_dsi_suspend: sde_dsi_suspend {
+			mux {
+				pins = "gpio42";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio42";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+
+		sde_dsi1_active: sde_dsi1_active {
+			mux {
+				pins = "gpio4";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio4";
+				drive-strength = <8>;   /* 8 mA */
+				bias-disable = <0>;   /* no pull */
+			};
+		};
+
+		sde_dsi1_suspend: sde_dsi1_suspend {
+			mux {
+				pins = "gpio4";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio4";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+	};
+
+	pmx_sde_te: pmx_sde_te {
+		sde_te_active: sde_te_active {
+			mux {
+				pins = "gpio82";
+				function = "mdp_vsync";
+			};
+
+			config {
+				pins = "gpio82";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+
+		sde_te_suspend: sde_te_suspend {
+			mux {
+				pins = "gpio82";
+				function = "mdp_vsync";
+			};
+
+			config {
+				pins = "gpio82";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+
+		sde_te1_active: sde_te1_active {
+			mux {
+				pins = "gpio81";
+				function = "mdp_vsync";
+			};
+
+			config {
+				pins = "gpio81";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+
+		sde_te1_suspend: sde_te1_suspend {
+			mux {
+				pins = "gpio81";
+				function = "mdp_vsync";
+			};
+
+			config {
+				pins = "gpio81";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+	};
+};

@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+VIDEO_ROOT=$(srctree)/techpack/video
+
+KBUILD_CPPFLAGS += -DCONFIG_MSM_MMRM=1
+
+ifeq ($(CONFIG_ARCH_WAIPIO), y)
+include $(VIDEO_ROOT)/config/waipio_video.conf
+LINUXINCLUDE    += -include $(VIDEO_ROOT)/config/waipio_video.h \
+                   -I$(VIDEO_ROOT)/driver/platform/waipio/inc
+endif
+
+ifeq ($(CONFIG_ARCH_KALAMA), y)
+include $(VIDEO_ROOT)/config/kalama_video.conf
+include $(VIDEO_ROOT)/config/crow_video.conf
+LINUXINCLUDE    += -include $(VIDEO_ROOT)/config/kalama_video.h \
+                   -I$(VIDEO_ROOT)/driver/platform/kalama/inc
+
+LINUXINCLUDE    += -include $(VIDEO_ROOT)/config/crow_video.h \
+                   -I$(VIDEO_ROOT)/driver/platform/crow/inc
+endif
+
+ifeq ($(CONFIG_ARCH_ANORAK), y)
+include $(VIDEO_ROOT)/config/anorak_video.conf
+LINUXINCLUDE    += -include $(VIDEO_ROOT)/config/anorak_video.h \
+                   -I$(VIDEO_ROOT)/driver/platform/anorak/inc
+endif
+
+ifeq ($(CONFIG_ARCH_CROW), y)
+include $(VIDEO_ROOT)/config/crow_video.conf
+LINUXINCLUDE    += -include $(VIDEO_ROOT)/config/crow_video.h \
+                   -I$(VIDEO_ROOT)/driver/platform/crow/inc
+endif
+
+LINUXINCLUDE    += -I$(VIDEO_ROOT)/driver/vidc/inc \
+                   -I$(VIDEO_ROOT)/driver/platform/common/inc \
+                   -I$(VIDEO_ROOT)/include/uapi
+
+USERINCLUDE     += -I$(VIDEO_ROOT)/include/uapi/media \
+                   -I$(VIDEO_ROOT)/include/uapi
+
+ifeq ($(CONFIG_MSM_VIDC_WAIPIO), y)
+obj-m += msm_video.o
+msm_video-objs += driver/platform/waipio/src/msm_vidc_waipio.o
+endif
+
+ifeq ($(CONFIG_MSM_VIDC_KALAMA), y)
+obj-m += msm_video.o
+msm_video-objs += driver/platform/kalama/src/msm_vidc_kalama.o
+endif
+
+ifeq ($(CONFIG_MSM_VIDC_ANORAK), y)
+obj-m += msm_video.o
+msm_video-objs += driver/platform/anorak/src/msm_vidc_anorak.o
+endif
+
+ifeq ($(CONFIG_MSM_VIDC_CROW), y)
+msm_video-objs += driver/platform/crow/src/msm_vidc_crow.o
+endif
+
+ifeq ($(CONFIG_MSM_VIDC_IRIS2), y)
+LINUXINCLUDE   += -I$(VIDEO_ROOT)/driver/variant/iris2/inc
+msm_video-objs += driver/variant/iris2/src/msm_vidc_buffer_iris2.o \
+                  driver/variant/iris2/src/msm_vidc_power_iris2.o \
+                  driver/variant/iris2/src/msm_vidc_iris2.o
+endif
+
+ifeq ($(CONFIG_MSM_VIDC_IRIS3), y)
+LINUXINCLUDE    += -I$(VIDEO_ROOT)/driver/variant/iris3/inc
+msm_video-objs += driver/variant/iris3/src/msm_vidc_buffer_iris3.o \
+                  driver/variant/iris3/src/msm_vidc_power_iris3.o \
+                  driver/variant/iris3/src/msm_vidc_iris3.o
+endif
+
+msm_video-objs += driver/vidc/src/msm_vidc_v4l2.o \
+                  driver/vidc/src/msm_vidc_vb2.o \
+                  driver/vidc/src/msm_vidc.o \
+                  driver/vidc/src/msm_vdec.o \
+                  driver/vidc/src/msm_venc.o \
+                  driver/vidc/src/msm_vidc_driver.o \
+                  driver/vidc/src/msm_vidc_control.o \
+                  driver/vidc/src/msm_vidc_buffer.o \
+                  driver/vidc/src/msm_vidc_power.o \
+                  driver/vidc/src/msm_vidc_probe.o \
+                  driver/vidc/src/msm_vidc_dt.o \
+                  driver/vidc/src/msm_vidc_debug.o \
+                  driver/vidc/src/msm_vidc_memory.o \
+                  driver/vidc/src/msm_vidc_fence.o \
+                  driver/vidc/src/venus_hfi.o \
+                  driver/vidc/src/hfi_packet.o \
+                  driver/vidc/src/venus_hfi_response.o \
+                  driver/platform/common/src/msm_vidc_platform.o

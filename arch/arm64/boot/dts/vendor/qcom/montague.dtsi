@@ -1,0 +1,26 @@
+#include "ravelin.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague SoC";
+	compatible = "qcom,montague";
+	qcom,msm-id = <581 0x10000>;
+};
+
+&apps_rsc {
+	rpmh-regulator-sf1-vreg-enable {
+		status = "ok";
+	};
+
+	rpmh-regulator-sf1-vreg-mode {
+		status = "ok";
+	};
+};
+
+&soc {
+	mhi_qrtr_cnss {
+		compatible = "qcom,qrtr-mhi";
+		qcom,dev-id = <0x1103>;
+		qcom,net-id = <0>;
+		qcom,low-latency;
+	};
+};

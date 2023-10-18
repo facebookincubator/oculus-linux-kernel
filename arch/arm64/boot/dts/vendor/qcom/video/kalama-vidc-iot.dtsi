@@ -1,0 +1,23 @@
+
+#include "kalama-vidc-v2.dtsi"
+
+/* Kalama-iot-specific changes */
+&msm_vidc {
+	compatible = "qcom,msm-vidc", "qcom,msm-vidc-kalama-iot", "qcom,msm-vidc-iris3";
+	vidc,firmware-name = "vpu30_4v_16mb";
+
+	secure_non_pixel_cb {
+		qcom,iommu-dma-addr-pool = <0x02000000 0x23800000>;
+		virtual-addr-pool = <0x02000000 0x23800000>;
+	};
+
+	secure_bitstream_cb {
+		qcom,iommu-dma-addr-pool = <0x01000000 0xdeb00000>;
+		virtual-addr-pool = <0x01000000 0xdeb00000>;
+	};
+
+	secure_pixel_cb {
+		qcom,iommu-dma-addr-pool = <0x01000000 0xdeb00000>;
+		virtual-addr-pool = <0x01000000 0xdeb00000>;
+	};
+};

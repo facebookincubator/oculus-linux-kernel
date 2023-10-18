@@ -1,0 +1,59 @@
+#include <dt-bindings/sound/qcom,gpr.h>
+
+&soc {
+	qupv3_se3_spi: spi@98c000 {  /* BLSP3 QUP3*/
+		status = "ok";
+		qcom,shared_ee;
+		qcom,helios-spi {
+			compatible = "qcom,helios-spi";
+			reg = <0>;
+			helios-spi-frequency = <32000000>;
+			interrupt-parent = <&tlmm>;
+			qcom,irq-gpio = <&tlmm 30 1>;
+		};
+	};
+
+	qcom,rproc-helios {
+		compatible = "qcom,rproc-helios";
+		qcom,firmware-name = "XRC130.elf";
+		qcom,ssr-name = "helios";
+
+		/* This doesn't map to any interrupt */
+		interrupt-names = "dummy";
+	};
+
+	qcom,helios-daemon {
+		compatible = "qcom,helios-daemon";
+	};
+
+	qcom,glink-helioscom-xprt-helios {
+		compatible = "qcom,glink-helioscom-xprt";
+		label = "helios";
+
+		qcom,helios_qrtr {
+			qcom,glink-channels = "IPCRTR";
+			qcom,intents = <0x800  5
+					0x2000 3
+					0x4400 2>;
+			};
+		qcom,glinkpkt_disp_bus {
+			qcom,glink-channels = "AH_BUS";
+			qcom,intents = <0x100 1
+					0x200 1>;
+			};
+		qcom,glinkpkt_iris_bus {
+			qcom,glink-channels = "AH_IRIS";
+			qcom,intents = <0x800 2>;
+		};
+		qcom,glinkpkt_ai_bus {
+			qcom,glink-channels = "AH_AI";
+			qcom,intents = <0x200 60
+					0x4c000 10>;
+		};
+		qcom,glinkpkt_pm_bus {
+			qcom,glink-channels = "AH_PM";
+			qcom,intents = <0x200 6
+					0x200 1>;
+		};
+	};
+};

@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-anorak.h>
+#include <dt-bindings/clock/qcom,camcc-anorak.h>
+#include <dt-bindings/interconnect/qcom,anorak.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+#include "anorak-camera-sensor-qxr.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak QXR";
+	compatible = "qcom,anorak-qxr", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10026 0x0>, <0x10026 0x1>, <0x10126 0x2>, <0x10126 0x3>;
+};

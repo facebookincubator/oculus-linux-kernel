@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+DISPLAY_ROOT=$(srctree)/techpack/display
+
+LINUXINCLUDE    += \
+		   -I$(DISPLAY_ROOT)/include/uapi \
+		   -I$(DISPLAY_ROOT)/include
+USERINCLUDE     += -I$(DISPLAY_ROOT)/include/uapi
+
+obj-m += msm/

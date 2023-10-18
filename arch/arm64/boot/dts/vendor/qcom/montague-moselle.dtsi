@@ -1,0 +1,37 @@
+#include "montague-hsp.dtsi"
+
+&icnss2 {
+	status = "ok";
+};
+
+&pcie0 {
+	status = "disabled";
+};
+
+&pcie0_msi {
+	status = "disabled";
+};
+
+&wlan {
+	status = "disabled";
+};
+
+&cnss_wlan_mem {
+	status = "disabled";
+};
+
+&bluetooth {
+	status = "disabled";
+};
+
+&bluetooth_qca6490 {
+	status = "disabled";
+};
+
+&bluetooth_wcn6750 {
+	status = "ok";
+};
+
+&wpss_pas {
+	status = "ok";
+};
