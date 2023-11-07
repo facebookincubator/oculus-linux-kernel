@@ -84,6 +84,7 @@
 #define WLAN_IPA_UC_ENABLE_MASK             BIT(5)
 #define WLAN_IPA_UC_STA_ENABLE_MASK         BIT(6)
 #define WLAN_IPA_REAL_TIME_DEBUGGING        BIT(8)
+#define WLAN_IPA_OPT_WIFI_DP                BIT(9)
 
 #ifdef QCA_IPA_LL_TX_FLOW_CONTROL
 #define WLAN_IPA_MAX_BANDWIDTH              4800
@@ -110,6 +111,8 @@
  * @WLAN_IPA_UC_OPCODE_QUOTA_RSP: IPA UC quota response
  * @WLAN_IPA_UC_OPCODE_QUOTA_IND: IPA UC quota indication
  * @WLAN_IPA_UC_OPCODE_UC_READY: IPA UC ready indication
+ * @WLAN_IPA_FILTER_RSV_NOTIFY: OPT WIFI DP filter reserve notification
+ * @WLAN_IPA_FILTER_REL_NOTIFY: OPT WIFI DP filter release notification
  * @WLAN_IPA_UC_OPCODE_MAX: IPA UC max operation code
  */
 enum wlan_ipa_uc_op_code {
@@ -124,6 +127,8 @@ enum wlan_ipa_uc_op_code {
 	WLAN_IPA_UC_OPCODE_QUOTA_IND = 7,
 #endif
 	WLAN_IPA_UC_OPCODE_UC_READY = 8,
+	WLAN_IPA_FILTER_RSV_NOTIFY = 9,
+	WLAN_IPA_FILTER_REL_NOTIFY = 10,
 	/* keep this last */
 	WLAN_IPA_UC_OPCODE_MAX
 };

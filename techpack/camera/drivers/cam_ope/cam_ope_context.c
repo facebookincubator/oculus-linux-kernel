@@ -157,6 +157,7 @@ static int __cam_ope_config_dev_in_ready(struct cam_context *ctx,
 	if (rc)
 		CAM_ERR(CAM_OPE, "Failed to prepare device");
 
+	cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 	return rc;
 }
 

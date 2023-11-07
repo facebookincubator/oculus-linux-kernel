@@ -5134,6 +5134,38 @@ static inline void wma_get_dynamic_vdev_macaddr_support(
 }
 #endif
 
+#ifdef WLAN_FEATURE_NAN
+/**
+ * wma_nan_set_pairing_feature() - set feature bit for Secure NAN if max
+ * pairing session has non-zero value.
+ *
+ * Return: none
+ */
+static void wma_nan_set_pairing_feature(void)
+{
+	tp_wma_handle wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
+	struct target_psoc_info *tgt_hdl;
+	struct wlan_objmgr_psoc *psoc;
+
+	if (!wma_handle) {
+		wma_err("wma handle is null");
+		return;
+	}
+
+	psoc = wma_handle->psoc;
+	tgt_hdl = wlan_psoc_get_tgt_if_handle(psoc);
+	if (!tgt_hdl) {
+		wma_err("tgt_hdl is null");
+		return;
+	}
+
+	if (tgt_hdl->info.service_ext2_param.max_nan_pairing_sessions) {
+		wma_set_fw_wlan_feat_caps(SECURE_NAN);
+		wma_debug("Secure NAN is enabled");
+	}
+}
+#endif /* WLAN_FEATURE_NAN */
+
 /**
  * wma_update_target_services() - update target services from wma handle
  * @wmi_handle: Unified wmi handle
@@ -5226,6 +5258,7 @@ static inline void wma_update_target_services(struct wmi_unified *wmi_handle,
 #ifdef WLAN_FEATURE_NAN
 	if (wmi_service_enabled(wmi_handle, wmi_service_nan))
 		g_fw_wlan_feat_caps |= (1 << NAN);
+	wma_nan_set_pairing_feature();
 #endif /* WLAN_FEATURE_NAN */
 
 	if (wmi_service_enabled(wmi_handle, wmi_service_rtt))

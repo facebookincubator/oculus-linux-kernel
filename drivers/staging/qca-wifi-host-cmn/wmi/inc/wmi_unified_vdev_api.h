@@ -126,6 +126,17 @@ wmi_extract_vdev_stopped_param(struct wmi_unified *wmi_handle, void *evt_buf,
 			       uint32_t *vdev_id);
 
 /**
+ * wmi_send_peer_vlan_config() - send peer vlan configuration
+ * @wmi_handle: wmi handle
+ * @mac_addr: mac address of the peer
+ * @param: vlan parameter
+ */
+QDF_STATUS
+wmi_send_peer_vlan_config(struct wmi_unified *wmi_handle,
+			  uint8_t *mac_addr,
+			  struct peer_vlan_config_param param);
+
+/**
  * wmi_extract_vdev_delete_resp() - extract vdev delete response
  * @wmi_handle: wmi handle
  * @evt_buf: pointer to event buffer

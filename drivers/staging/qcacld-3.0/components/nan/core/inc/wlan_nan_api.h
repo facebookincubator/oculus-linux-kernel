@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -228,6 +228,16 @@ bool wlan_nan_is_beamforming_supported(struct wlan_objmgr_psoc *psoc);
  */
 bool wlan_is_nan_allowed_on_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq);
 
+/**
+ * nan_handle_emlsr_concurrency()- Handle NAN+eMLSR concurrency
+ * @psoc: pointer to psoc object
+ * @nan_enable: Carries true if NAN is getting enabled.
+ *		Carries false upon NAN enable failure/NAN disabled indication
+ *
+ * Return: void
+ */
+void nan_handle_emlsr_concurrency(struct wlan_objmgr_psoc *psoc,
+				  bool nan_enable);
 #else /* WLAN_FEATURE_NAN */
 static inline QDF_STATUS nan_init(void)
 {
@@ -285,6 +295,10 @@ bool wlan_is_nan_allowed_on_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq)
 {
 	return false;
 }
+
+static inline void
+nan_handle_emlsr_concurrency(struct wlan_objmgr_psoc *psoc, bool nan_enable)
+{}
 #endif /* WLAN_FEATURE_NAN */
 
 #if defined(WLAN_FEATURE_NAN) && defined(WLAN_FEATURE_11BE_MLO)

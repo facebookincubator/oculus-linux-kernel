@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -87,6 +87,30 @@ QDF_STATUS reg_send_scheduler_msg_sb(struct wlan_objmgr_psoc *psoc,
  */
 QDF_STATUS reg_send_scheduler_msg_nb(struct wlan_objmgr_psoc *psoc,
 				     struct wlan_objmgr_pdev *pdev);
+/**
+ * reg_register_is_chan_connected_callback() - Register callback to check if
+ *                                             channel is connected
+ * @psoc: Pointer to global psoc structure.
+ * @cbk: Pointer to callback function
+ *
+ * Return: None
+ */
+void
+reg_register_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
+					reg_is_chan_connected_callback cbk);
+
+/**
+ * reg_unregister_is_chan_connected_callback() - Unregister callback to check
+ *                                               if channel is connected
+ * @psoc: Pointer to global psoc structure.
+ * @cbk: Pointer to callback function
+ *
+ * Return: None
+ */
+void
+reg_unregister_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
+					  reg_is_chan_connected_callback cbk);
+
 #else
 static inline void reg_register_chan_change_callback(
 		struct wlan_objmgr_psoc *psoc, reg_chan_change_callback cbk,
@@ -119,6 +143,18 @@ static inline QDF_STATUS reg_send_scheduler_msg_nb(
 		struct wlan_objmgr_psoc *psoc, struct wlan_objmgr_pdev *pdev)
 {
 	return QDF_STATUS_SUCCESS;
+}
+
+static inline void
+reg_register_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
+					reg_is_chan_connected_callback cbk)
+{
+}
+
+static inline void
+reg_unregister_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
+					  reg_is_chan_connected_callback cbk)
+{
 }
 #endif
 #endif

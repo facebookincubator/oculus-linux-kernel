@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -336,6 +336,7 @@ wlan_hdd_cfg80211_send_set_ltf_keyseed_mlo_vdev(struct hdd_context *hdd_ctx,
 	struct wlan_objmgr_peer *peer;
 	uint16_t link, vdev_count = 0;
 	struct qdf_mac_addr peer_link_mac;
+	struct qdf_mac_addr original_mac;
 	struct wlan_objmgr_vdev *wlan_vdev_list[WLAN_UMAC_MLO_MAX_VDEVS] = {0};
 	QDF_STATUS status;
 
@@ -343,6 +344,7 @@ wlan_hdd_cfg80211_send_set_ltf_keyseed_mlo_vdev(struct hdd_context *hdd_ctx,
 		return QDF_STATUS_SUCCESS;
 
 	qdf_copy_macaddr(&peer_link_mac, &data->peer_mac_addr);
+	qdf_copy_macaddr(&original_mac, &data->peer_mac_addr);
 	mlo_sta_get_vdev_list(vdev, &vdev_count, wlan_vdev_list);
 
 	for (link = 0; link < vdev_count; link++) {
@@ -405,6 +407,7 @@ wlan_hdd_cfg80211_send_set_ltf_keyseed_mlo_vdev(struct hdd_context *hdd_ctx,
 
 		mlo_release_vdev_ref(link_vdev);
 	}
+	qdf_copy_macaddr(&data->peer_mac_addr, &original_mac);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -518,7 +521,11 @@ wlan_hdd_cfg80211_send_set_ltf_keyseed(struct wiphy *wiphy,
 					   WLAN_WIFI_POS_CORE_ID);
 	if (!peer) {
 		hdd_err_rl("PASN peer is not found");
-		ret = -EFAULT;
+		/*
+		 * Auth status need not be sent for the BSS PASN
+		 * peer. So, return if peer is not found
+		 */
+		ret = 0;
 		goto err;
 	}
 

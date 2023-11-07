@@ -15,6 +15,7 @@
 #include "dsi_defs.h"
 #include "dsi_panel.h"
 #include "dsi_ctrl_hw.h"
+#include "dsi_defs.h"
 #include "dsi_parser.h"
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
@@ -943,13 +944,19 @@ static void dsi_panel_temp_dependent_bl_task_tokki_a(struct work_struct *work)
 			struct dsi_backlight_config, bl_temp_dwork.work);
 	struct dsi_panel *panel = container_of(bl_config, struct dsi_panel,
 			bl_config);
-	int ret, temp = 0;
+	int ret = 0, temp = 0;
 
 	mutex_lock(&panel->panel_lock);
 
 	if (thermal_zone_device_is_enabled(bl_config->bl_temp_tz)) {
 		/* Read the thermistor and calculate the desired settling time. */
-		ret = thermal_zone_get_temp(bl_config->bl_temp_tz, &temp);
+
+		if (bl_config->bl_temperature_override > 0) {
+			temp = bl_config->bl_temperature_override;
+		} else {
+			ret = thermal_zone_get_temp(bl_config->bl_temp_tz, &temp);
+		}
+
 		bl_config->settling_time_target_us =
 				dsi_panel_calculate_settling_time(bl_config,
 						(ret < 0) ? INT_MIN : temp);
@@ -1252,6 +1259,33 @@ static int dsi_panel_parse_fsc_rgb_order(struct dsi_panel *panel,
 		}
 	}
 
+	return rc;
+}
+
+static int dsi_panel_parse_skewed_vsync(struct dsi_panel *panel)
+{
+	int rc = 0;
+	const char *string;
+	struct dsi_parser_utils *utils = &panel->utils;
+
+	rc = utils->read_string(utils->data,
+			"qcom,mdss-dsi-skewed-vsync-master", &string);
+	if (rc)
+		goto fail;
+
+	if (!strcmp(string, "intf1"))
+		panel->skewed_vsync_master = INTF_1_IS_MASTER;
+	else if (!strcmp(string, "intf2"))
+		panel->skewed_vsync_master = INTF_2_IS_MASTER;
+	else
+		goto fail;
+
+	rc = utils->read_u32(utils->data,
+			"qcom,mdss-vsync-skew-offset-line", &panel->skew_offset_line);
+
+	return 0;
+fail:
+	DSI_DEBUG("[%s] Skewed Vsync master not set. rc:%d\n", panel->name, rc);
 	return rc;
 }
 
@@ -4331,7 +4365,7 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	struct dsi_parser_utils *utils;
 	const char *panel_physical_type;
 	int rc = 0, size;
-	char *new_panel_name, *panel_eye_type;
+	char *new_panel_name = NULL, *panel_eye_type;
 	bool is_panel_xr;
 
 	panel = kzalloc(sizeof(*panel), GFP_KERNEL);
@@ -4458,6 +4492,10 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (rc)
 		DSI_DEBUG("failed to read fsc color order, rc=%d\n", rc);
 
+	rc = dsi_panel_parse_skewed_vsync(panel);
+	if (rc)
+		DSI_DEBUG("failed to parse skewed-vsync settings, rc=%d\n", rc);
+
 	rc = dsi_panel_vreg_get(panel);
 	if (rc) {
 		DSI_ERR("[%s] failed to get panel regulators, rc=%d\n",
@@ -4478,8 +4516,7 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 
 	return panel;
 error:
-	if (new_panel_name)
-		kfree(new_panel_name);
+	kfree(new_panel_name);
 	kfree(panel);
 	return ERR_PTR(rc);
 }

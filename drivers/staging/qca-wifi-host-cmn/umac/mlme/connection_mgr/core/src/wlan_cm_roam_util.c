@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -149,6 +149,9 @@ cm_fill_bss_info_in_roam_rsp_by_cm_id(struct cnx_mgr *cm_ctx,
 	struct cm_req *cm_req;
 	uint32_t prefix = CM_ID_GET_PREFIX(cm_id);
 	struct wlan_cm_roam_req *req;
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	struct scan_cache_node *candidate;
+	struct scan_cache_entry *entry;
 
 	if (prefix != ROAM_REQ_PREFIX)
 		return QDF_STATUS_E_INVAL;
@@ -159,25 +162,34 @@ cm_fill_bss_info_in_roam_rsp_by_cm_id(struct cnx_mgr *cm_ctx,
 		qdf_list_peek_next(&cm_ctx->req_list, cur_node, &next_node);
 		cm_req = qdf_container_of(cur_node, struct cm_req, node);
 
-		if (cm_req->cm_id == cm_id) {
-			req = &cm_req->roam_req.req;
-			resp->freq = req->chan_freq;
-			wlan_vdev_mlme_get_ssid(cm_ctx->vdev, resp->ssid.ssid,
-						&resp->ssid.length);
-
-			if (!qdf_is_macaddr_zero(&req->bssid))
-				qdf_copy_macaddr(&resp->bssid, &req->bssid);
-
-			cm_req_lock_release(cm_ctx);
-			return QDF_STATUS_SUCCESS;
+		if (cm_req->cm_id != cm_id) {
+			cur_node = next_node;
+			next_node = NULL;
+			continue;
 		}
 
-		cur_node = next_node;
-		next_node = NULL;
+		status = QDF_STATUS_SUCCESS;
+
+		req = &cm_req->roam_req.req;
+		resp->freq = req->chan_freq;
+		wlan_vdev_mlme_get_ssid(cm_ctx->vdev, resp->ssid.ssid,
+					&resp->ssid.length);
+
+		if (qdf_is_macaddr_zero(&req->bssid))
+			break;
+
+		candidate = cm_req->roam_req.cur_candidate;
+		qdf_copy_macaddr(&resp->bssid, &req->bssid);
+		if (candidate) {
+			entry = candidate->entry;
+			cm_connect_resp_fill_mld_addr_from_candidate(cm_ctx->vdev,
+								     entry, resp);
+		}
+		break;
 	}
 	cm_req_lock_release(cm_ctx);
 
-	return QDF_STATUS_E_FAILURE;
+	return status;
 }
 
 bool cm_is_roam_enabled(struct wlan_objmgr_psoc *psoc)

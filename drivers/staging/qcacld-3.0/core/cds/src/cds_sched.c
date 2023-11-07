@@ -70,7 +70,7 @@ enum notifier_state {
 
 static p_cds_sched_context gp_cds_sched_context;
 
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 static int cds_ol_rx_thread(void *arg);
 static uint32_t affine_cpu;
 static QDF_STATUS cds_alloc_ol_rx_pkt_freeq(p_cds_sched_context pSchedContext);
@@ -445,7 +445,7 @@ static void cds_cpu_before_offline_cb(void *context, uint32_t cpu)
 {
 	cds_cpu_hotplug_notify(cpu, false);
 }
-#endif /* QCA_CONFIG_SMP */
+#endif /* WLAN_DP_LEGACY_OL_RX_THREAD */
 
 QDF_STATUS cds_sched_open(void *p_cds_context,
 			  p_cds_sched_context pSchedContext,
@@ -462,7 +462,7 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
 		return QDF_STATUS_E_INVAL;
 	}
 	qdf_mem_zero(pSchedContext, sizeof(cds_sched_context));
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 	spin_lock_init(&pSchedContext->ol_rx_thread_lock);
 	init_waitqueue_head(&pSchedContext->ol_rx_wait_queue);
 	init_completion(&pSchedContext->ol_rx_start_event);
@@ -489,7 +489,7 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
 #endif
 	gp_cds_sched_context = pSchedContext;
 
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 	pSchedContext->ol_rx_thread = kthread_create(cds_ol_rx_thread,
 						       pSchedContext,
 						       "cds_ol_rx_thread");
@@ -507,10 +507,8 @@ QDF_STATUS cds_sched_open(void *p_cds_context,
 	/* We're good now: Let's get the ball rolling!!! */
 	cds_debug("CDS Scheduler successfully Opened");
 	return QDF_STATUS_SUCCESS;
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 OL_RX_THREAD_START_FAILURE:
-#endif
-#ifdef QCA_CONFIG_SMP
 	qdf_cpuhp_unregister(&pSchedContext->cpuhp_event_handle);
 	cds_free_ol_rx_pkt_freeq(gp_cds_sched_context);
 pkt_freeqalloc_failure:
@@ -521,7 +519,7 @@ pkt_freeqalloc_failure:
 
 } /* cds_sched_open() */
 
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 void cds_free_ol_rx_pkt_freeq(p_cds_sched_context pSchedContext)
 {
 	struct cds_ol_rx_pkt *pkt;

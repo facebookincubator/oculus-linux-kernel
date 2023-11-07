@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_COMPAT_H_
@@ -30,6 +31,19 @@
 #include <linux/qcom-dma-mapping.h>
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#ifdef CONFIG_SECURE_CAMERA_V3
+#undef CONFIG_SECURE_CAMERA_V3
+#endif
+#endif
+
+#ifdef CONFIG_SECURE_CAMERA_V3
+#include <soc/qcom/smci_clientenv.h>
+#include <soc/qcom/smci_opener.h>
+#include <soc/qcom/ctrusted_camera_driver.h>
+#include <soc/qcom/trusted_camera_driver.h>
+#endif
+
 struct cam_fw_alloc_info {
 	struct device *fw_dev;
 	void          *fw_kva;
@@ -43,7 +57,7 @@ int cam_ife_notify_safe_lut_scm(bool safe_trigger);
 int camera_component_match_add_drivers(struct device *master_dev,
 	struct component_match **match_list);
 int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
-	bool protect, int32_t offset);
+	bool protect, int32_t offset, bool is_shutdown);
 void cam_free_clear(const void *);
 void cam_check_iommu_faults(struct iommu_domain *domain,
 	struct cam_smmu_pf_info *pf_info);
@@ -52,7 +66,10 @@ int cam_compat_util_get_dmabuf_va(struct dma_buf *dmabuf, uintptr_t *vaddr);
 void cam_compat_util_put_dmabuf_va(struct dma_buf *dmabuf, void *vaddr);
 void cam_smmu_util_iommu_custom(struct device *dev,
 	dma_addr_t discard_start, size_t discard_length);
-
+#ifdef CONFIG_SECURE_CAMERA_V3
+int cam_isp_notify_secure_unsecure_port(struct port_info *sec_unsec_port_info);
+int32_t cam_convert_hw_id_to_secure_hw_type(uint32_t hw_id);
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
 int cam_req_mgr_ordered_list_cmp(void *priv,
 	const struct list_head *head_1, const struct list_head *head_2);

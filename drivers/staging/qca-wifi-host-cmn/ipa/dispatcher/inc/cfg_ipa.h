@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,10 @@
  * bit2 - IPv6 enable
  * bit3 - IPA Resource Manager (RM) enable
  * bit4 - IPA Clock scaling enable
+ * bit5 - IPA UC enable
+ * bit6 - IPA UC STA enable
+ * bit8 - IPA real time debugging
+ * bit9 - IPA Optional wifi dp enable
  */
 
 /*

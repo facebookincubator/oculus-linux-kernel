@@ -56,6 +56,9 @@
 #define CAM_REQ_MGR_MAX_HANDLES_V2        256
 #define MAX_LINKS_PER_SESSION             2
 
+/* Interval for cam_info_rate_limit_custom() */
+#define CAM_RATE_LIMIT_INTERVAL_5SEC 5
+
 /* V4L event type which user space will subscribe to */
 #define V4L_EVENT_CAM_REQ_MGR_EVENT       (V4L2_EVENT_PRIVATE_START + 0)
 

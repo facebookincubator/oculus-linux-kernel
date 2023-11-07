@@ -6,6 +6,7 @@
 
 #include <linux/iommu.h>
 #include <linux/sched/clock.h>
+#include <soc/qcom/msm_performance.h>
 
 #include "adreno.h"
 #include "adreno_a6xx.h"
@@ -1457,6 +1458,10 @@ static void a6xx_add_profile_events(struct adreno_device *adreno_dev,
 	kgsl_thread_submit_cmdobj(context->thread_priv, drawobj->timestamp,
 			time->ktime, time->ticks);
 
+	msm_perf_events_update(MSM_PERF_GFX, MSM_PERF_SUBMIT,
+		pid_nr(context->proc_priv->pid),
+		context->id, drawobj->timestamp,
+		!!(drawobj->flags & KGSL_DRAWOBJ_END_OF_FRAME));
 	trace_adreno_cmdbatch_submitted(drawobj, &info, time->ticks,
 		(unsigned long) time_in_s, time_in_ns / 1000, 0);
 

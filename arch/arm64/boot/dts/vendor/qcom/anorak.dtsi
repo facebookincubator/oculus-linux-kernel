@@ -1785,6 +1785,26 @@
 					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_TEST
 					IRQ_TYPE_EDGE_RISING>;
 			};
+
+			ipclite_signal_4 {
+				index = <4>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_APSS
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_APSS
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR
+					IRQ_TYPE_EDGE_RISING>;
+			};
+
+			ipclite_signal_5 {
+				index = <5>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_APSS
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_APSS
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG
+					IRQ_TYPE_EDGE_RISING>;
+			};
 		};
 
 		ipclite_cdsp: cdsp {
@@ -1829,6 +1849,26 @@
 				interrupt-parent = <&ipcc_compute_l0>;
 				interrupts = <IPCC_CLIENT_CDSP
 					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_TEST
+					IRQ_TYPE_EDGE_RISING>;
+			};
+
+			ipclite_signal_4 {
+				index = <4>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_CDSP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_CDSP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR
+					IRQ_TYPE_EDGE_RISING>;
+			};
+
+			ipclite_signal_5 {
+				index = <5>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_CDSP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_CDSP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG
 					IRQ_TYPE_EDGE_RISING>;
 			};
 		};
@@ -1877,6 +1917,26 @@
 					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_TEST
 					IRQ_TYPE_EDGE_RISING>;
 			};
+
+			ipclite_signal_4 {
+				index = <4>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_CVP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_CVP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR
+					IRQ_TYPE_EDGE_RISING>;
+			};
+
+			ipclite_signal_5 {
+				index = <5>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_CVP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_CVP
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG
+					IRQ_TYPE_EDGE_RISING>;
+			};
 		};
 
 		ipclite_vpu: vpu {
@@ -1921,6 +1981,26 @@
 				interrupt-parent = <&ipcc_compute_l0>;
 				interrupts = <IPCC_CLIENT_VPU
 					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_TEST
+					IRQ_TYPE_EDGE_RISING>;
+			};
+
+			ipclite_signal_4 {
+				index = <4>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_VPU
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_VPU
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_SSR
+					IRQ_TYPE_EDGE_RISING>;
+			};
+
+			ipclite_signal_5 {
+				index = <5>;
+				mboxes = <&ipcc_compute_l0 IPCC_CLIENT_VPU
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG>;
+				interrupt-parent = <&ipcc_compute_l0>;
+				interrupts = <IPCC_CLIENT_VPU
+					IPCC_COMPUTE_L0_SIGNAL_IPCLITE_DEBUG
 					IRQ_TYPE_EDGE_RISING>;
 			};
 		};
@@ -2674,6 +2754,9 @@
 		qcom,iommu-dma = "fastmap";
 		dma-coherent;
 
+		qcom,iommu-dma-addr-pool = <0x40000000 0x40000000>;
+		qcom,iommu-geometry = <0x40000000 0x40000000>;
+
 		reset-gpios = <&tlmm 224 GPIO_ACTIVE_LOW>;
 		resets = <&gcc GCC_UFS_PHY_BCR>;
 		reset-names = "rst";
@@ -2751,6 +2834,7 @@
 		qcom,hyplog-enabled;
 		hyplog-address-offset = <0x410>;
 		hyplog-size-offset = <0x414>;
+		tmecrashdump-address-offset = <0x81CA0000>;
 	};
 
 	qcom_qseecom: qseecom@c1700000 {
@@ -3002,7 +3086,7 @@
 		clock-names =  "pdm_ahb_clk", "pwm_core_clk";
 		assigned-clocks = <&gcc GCC_PWM0_XO512_CLK>;
 		assigned-clock-rates = <19200000>;
-		#pwm-cells = <2>;
+		#pwm-cells = <3>;
 
 		pwm@0 {
 			frame-index = <0>;

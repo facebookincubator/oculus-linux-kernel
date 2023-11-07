@@ -123,6 +123,13 @@ ucfg_cm_update_session_assoc_ie(struct wlan_objmgr_psoc *psoc,
 	cm_update_session_assoc_ie(psoc, vdev_id, assoc_ie);
 }
 
+static inline void
+ucfg_cm_get_associated_ch_info(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			       struct connect_chan_info *chan_info)
+{
+	wlan_cm_get_associated_ch_info(psoc, vdev_id, chan_info);
+}
+
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 /**

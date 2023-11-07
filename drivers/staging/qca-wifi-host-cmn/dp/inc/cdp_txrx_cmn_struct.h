@@ -723,6 +723,7 @@ enum wlan_op_subtype {
  * @vdev_stats_id: Stats ID of the vdev
  * @op_mode: Operation mode of the vdev
  * @subtype: subtype of the vdev
+ * @qdf_opmode: Operation mode of the vdev
  * @mld_mac_addr: MLD mac addr of the current vdev.
  */
 struct cdp_vdev_info {
@@ -731,6 +732,7 @@ struct cdp_vdev_info {
 	uint8_t vdev_stats_id;
 	enum wlan_op_mode op_mode;
 	enum wlan_op_subtype subtype;
+	enum QDF_OPMODE qdf_opmode;
 #ifdef WLAN_FEATURE_11BE_MLO
 	uint8_t *mld_mac_addr;
 #endif

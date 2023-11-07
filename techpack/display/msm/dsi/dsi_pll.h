@@ -218,7 +218,7 @@ int dsi_pll_init(struct platform_device *pdev,
 
 void dsi_pll_parse_dfps_data(struct platform_device *pdev, struct dsi_pll_resource *pll_res);
 
-int dsi_pll_program_slave(struct dsi_pll_resource *pll_res);
+int dsi_pll_program_slave(struct dsi_pll_resource *pll_res, bool skip_op);
 
-int dsi_pll_5nm_program_slave(struct dsi_pll_resource *pll_res);
+int dsi_pll_5nm_program_slave(struct dsi_pll_resource *pll_res, bool skip_op);
 #endif

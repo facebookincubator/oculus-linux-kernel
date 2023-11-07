@@ -187,6 +187,35 @@
 			drive-strength = <2>; /* 2 MA */
 		};
 	};
+
+	ipd_int_active: ipd_int_active {
+		mux {
+			pins = "gpio207";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio207";
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-up;           /* PULL UP */
+			input-enable;
+		};
+	};
+
+	ipd_int_sleep: ipd_int_sleep {
+		mux {
+			pins = "gpio207";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio207";
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+			input-enable;
+		};
+	};
+
 };
 
 &soc {
@@ -609,7 +638,32 @@
 	k09973: k09973@10 {
 		compatible = "qcom,ipd";
 		reg = <0x10>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <207 0x2008>;
+		pinctrl-names = "ipd_int_active","ipd_int_sleep";
 
+		pinctrl-0 = <&ipd_int_active>;
+		pinctrl-1 = <&ipd_int_sleep>;
+
+
+		gpios = <&tlmm 207 GPIO_ACTIVE_HIGH>;
+		ipd,measurment_number = <4>;
+		ipd,DRDY_event = <0>;
+		ipd,SW_event = <1 1 1 0>;
+		ipd,ERR_event = <0>;
+		ipd,POL_setting = <0 0 0 0 >;
+		ipd,SDR_setting = <0>;
+		ipd,SMR_setting = <1>;
+		ipd,Mode = <4>;
+		ipd,Device_type = <1>;
+		ipd,near_ipd = <58>;
+		ipd,far_ipd = <68>;
+		ipd,near_res = <1350>;
+		ipd,far_res = <7945>;
+		ipd,threshold_X = <1500 500>;
+		ipd,threshold_Y = <0 1000>;
+		ipd,threshold_Z = <13000 12000>;
+		ipd,threshold_V = <0 1000>;
 		#io-channel-cells = <1>;
 		io-channel-ranges;
 		io-channels = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX_THM5_100K_PU>;

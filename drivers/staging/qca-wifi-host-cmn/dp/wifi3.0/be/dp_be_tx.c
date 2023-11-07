@@ -506,7 +506,7 @@ void dp_tx_set_particular_tx_queue(struct dp_soc *soc,
 				   uint32_t *hal_tx_desc,
 				   qdf_nbuf_t nbuf)
 {
-	if (!soc->wlan_cfg_ctx->tx_pkt_inspect_for_ilp)
+	if (!soc->tx_ilp_enable)
 		return;
 
 	if (qdf_unlikely(QDF_NBUF_CB_GET_PACKET_TYPE(nbuf) ==

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2022, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/iommu.h>
@@ -1874,7 +1875,7 @@ enum msm_vidc_allow msm_vidc_allow_streamoff(struct msm_vidc_inst *inst, u32 typ
 		else if (!inst->bufq[OUTPUT_META_PORT].vb2q->streaming)
 			allow = MSM_VIDC_IGNORE;
 	}
-	if (allow != MSM_VIDC_ALLOW)
+	if (allow != MSM_VIDC_ALLOW && allow != MSM_VIDC_IGNORE)
 		i_vpr_e(inst, "%s: type %d is %s in state %s\n",
 				__func__, type, allow_name(allow),
 				state_name(inst->state));
@@ -5582,6 +5583,7 @@ void msm_vidc_ssr_handler(struct work_struct *work)
 
 	core_lock(core, __func__);
 	if (core->state == MSM_VIDC_CORE_INIT) {
+		d_vpr_e("%s: ssr type %d\n", __func__, ssr->ssr_type);
 		/*
 		 * In current implementation, user-initiated SSR triggers
 		 * a fatal error from hardware. However, there is no way
@@ -7094,4 +7096,17 @@ int msm_vidc_update_input_meta_buffer_index(struct msm_vidc_inst *inst,
 		rc = -EINVAL;
 	}
 	return rc;
+}
+
+int msm_vidc_get_src_clk_scaling_ratio(struct msm_vidc_core *core)
+{
+	int scaling_ratio = 3;
+	if (!core || !core->platform) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+	if (core->platform->data.vpu_ver == VPU_VERSION_IRIS2_1)
+		scaling_ratio = 1;
+
+	return scaling_ratio;
 }

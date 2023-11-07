@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -117,6 +117,7 @@ static QDF_STATUS pmo_configure_wow_ap(struct wlan_objmgr_vdev *vdev)
 	QDF_STATUS ret;
 	uint8_t mac_mask[QDF_MAC_ADDR_SIZE];
 	struct pmo_vdev_priv_obj *vdev_ctx;
+	struct qdf_mac_addr bridgeaddr;
 
 	vdev_ctx = pmo_vdev_get_priv(vdev);
 
@@ -133,6 +134,20 @@ static QDF_STATUS pmo_configure_wow_ap(struct wlan_objmgr_vdev *vdev)
 			QDF_MAC_ADDR_SIZE, false);
 	if (ret != QDF_STATUS_SUCCESS) {
 		pmo_err("Failed to add WOW unicast pattern ret %d", ret);
+		return ret;
+	}
+
+	/* Setup Bridge MAC address */
+	pmo_get_vdev_bridge_addr(vdev, &bridgeaddr);
+	if (qdf_is_macaddr_zero(&bridgeaddr))
+		return ret;
+
+	ret = pmo_tgt_send_wow_patterns_to_fw(vdev,
+			pmo_get_and_increment_wow_default_ptrn(vdev_ctx),
+			bridgeaddr.bytes, QDF_MAC_ADDR_SIZE, 0, mac_mask,
+			QDF_MAC_ADDR_SIZE, false);
+	if (ret != QDF_STATUS_SUCCESS) {
+		pmo_err("Failed to add Bridge MAC address");
 		return ret;
 	}
 

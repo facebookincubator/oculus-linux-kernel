@@ -41,7 +41,6 @@
 		qcom,ubwc-mode = <3>;
 
 		qcom,no-nap;
-		qcom,initial-pwrlevel = <0>;
 
 		interconnects = <&gem_noc MASTER_GFX3D &mc_virt SLAVE_EBI1>;
 		interconnect-names = "gpu_icc_path";
@@ -68,20 +67,173 @@
 			memory-region = <&gpu_microcode_mem>;
 		};
 
-		qcom,gpu-pwrlevels {
+		/*
+		 * Speed-bin zero is default speed bin.
+		 * For rest of the speed bins, speed-bin value
+		 * is calculated as FMAX/4.8 MHz round up to zero
+		 * decimal places plus two margin to account for
+		 * clock jitters.
+		 */
+		qcom,gpu-pwrlevel-bins {
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			compatible = "qcom,gpu-pwrlevels";
+			compatible = "qcom,gpu-pwrlevel-bins";
 
-			qcom,gpu-pwrlevel@0 {
-				reg = <0>;
-				qcom,gpu-freq = <320000000>;
-				qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+			qcom,gpu-pwrlevels-0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
 
-				qcom,bus-freq = <6>;
-				qcom,bus-min = <6>;
-				qcom,bus-max = <8>;
+				qcom,speed-bin = <0>;
+
+				qcom,initial-pwrlevel = <6>;
+
+				/* TURBO_L1 */
+				qcom,gpu-pwrlevel@0 {
+					reg = <0>;
+					qcom,gpu-freq = <843000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_TURBO_L1>;
+					qcom,bus-freq = <11>;
+					qcom,bus-min = <10>;
+					qcom,bus-max = <11>;
+
+					qcom,acd-level = <0xA82E5FFD>;
+				};
+
+				/* TURBO */
+				qcom,gpu-pwrlevel@1 {
+					reg = <1>;
+					qcom,gpu-freq = <780000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_TURBO>;
+					qcom,bus-freq = <10>;
+					qcom,bus-min = <9>;
+					qcom,bus-max = <11>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* NOM */
+				qcom,gpu-pwrlevel@2 {
+					reg = <2>;
+					qcom,gpu-freq = <644000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_NOM>;
+					qcom,bus-freq = <9>;
+					qcom,bus-min = <7>;
+					qcom,bus-max = <11>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* SVS_L1 */
+				qcom,gpu-pwrlevel@3 {
+					reg = <3>;
+					qcom,gpu-freq = <570000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+					qcom,bus-freq = <7>;
+					qcom,bus-min = <6>;
+					qcom,bus-max = <10>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* SVS */
+				qcom,gpu-pwrlevel@4 {
+					reg = <4>;
+					qcom,gpu-freq = <450000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_SVS>;
+					qcom,bus-freq = <6>;
+					qcom,bus-min = <6>;
+					qcom,bus-max = <9>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* LOW SVS */
+				qcom,gpu-pwrlevel@5 {
+					reg = <5>;
+					qcom,gpu-freq = <320000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+					qcom,bus-freq = <6>;
+					qcom,bus-min = <6>;
+					qcom,bus-max = <8>;
+				};
+
+				/* LOW SVS_D1 */
+				qcom,gpu-pwrlevel@6 {
+					reg = <6>;
+					qcom,gpu-freq = <235000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
+					qcom,bus-freq = <3>;
+					qcom,bus-min = <3>;
+					qcom,bus-max = <6>;
+				};
+
+			};
+
+			qcom,gpu-pwrlevels-1 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				qcom,speed-bin = <137>;
+
+				qcom,initial-pwrlevel = <4>;
+
+				/* NOM */
+				qcom,gpu-pwrlevel@0 {
+					reg = <0>;
+					qcom,gpu-freq = <644000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_NOM>;
+					qcom,bus-freq = <11>;
+					qcom,bus-min = <8>;
+					qcom,bus-max = <11>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* SVS_L1 */
+				qcom,gpu-pwrlevel@1 {
+					reg = <1>;
+					qcom,gpu-freq = <570000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+					qcom,bus-freq = <7>;
+					qcom,bus-min = <6>;
+					qcom,bus-max = <10>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* SVS */
+				qcom,gpu-pwrlevel@2 {
+					reg = <2>;
+					qcom,gpu-freq = <450000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_SVS>;
+					qcom,bus-freq = <6>;
+					qcom,bus-min = <6>;
+					qcom,bus-max = <9>;
+
+					qcom,acd-level = <0xC0285FFD>;
+				};
+
+				/* LOW SVS */
+				qcom,gpu-pwrlevel@3 {
+					reg = <3>;
+					qcom,gpu-freq = <320000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+					qcom,bus-freq = <6>;
+					qcom,bus-min = <6>;
+					qcom,bus-max = <8>;
+				};
+
+				/* LOW SVS_D1 */
+				qcom,gpu-pwrlevel@4 {
+					reg = <4>;
+					qcom,gpu-freq = <235000000>;
+					qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
+					qcom,bus-freq = <3>;
+					qcom,bus-min = <3>;
+					qcom,bus-max = <6>;
+				};
+
 			};
 		};
 	};

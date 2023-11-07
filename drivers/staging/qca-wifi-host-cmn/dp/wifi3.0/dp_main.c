@@ -54,6 +54,9 @@
 #include "qdf_mem.h"   /* qdf_mem_malloc,free */
 #include "cfg_ucfg_api.h"
 #include <wlan_module_ids.h>
+#ifdef QCA_MULTIPASS_SUPPORT
+#include <enet.h>
+#endif
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 #include "cdp_txrx_flow_ctrl_v2.h"
@@ -2154,7 +2157,7 @@ static inline void dp_srng_mem_free_consistent(struct dp_soc *soc,
 }
 
 void dp_desc_multi_pages_mem_alloc(struct dp_soc *soc,
-				   enum dp_desc_type desc_type,
+				   enum qdf_dp_desc_type desc_type,
 				   struct qdf_mem_multi_page_t *pages,
 				   size_t element_size,
 				   uint32_t element_num,
@@ -2186,7 +2189,7 @@ end:
 }
 
 void dp_desc_multi_pages_mem_free(struct dp_soc *soc,
-				  enum dp_desc_type desc_type,
+				  enum qdf_dp_desc_type desc_type,
 				  struct qdf_mem_multi_page_t *pages,
 				  qdf_dma_context_t memctxt,
 				  bool cacheable)
@@ -3746,7 +3749,7 @@ void dp_hw_link_desc_pool_banks_free(struct dp_soc *soc, uint32_t mac_id)
 				     soc->ctrl_psoc,
 				     WLAN_MD_DP_SRNG_WBM_IDLE_LINK,
 				     "hw_link_desc_bank");
-		dp_desc_multi_pages_mem_free(soc, DP_HW_LINK_DESC_TYPE,
+		dp_desc_multi_pages_mem_free(soc, QDF_DP_HW_LINK_DESC_TYPE,
 					     pages, 0, false);
 	}
 }
@@ -3848,7 +3851,7 @@ QDF_STATUS dp_hw_link_desc_pool_banks_alloc(struct dp_soc *soc, uint32_t mac_id)
 		     soc, total_mem_size);
 
 	dp_set_max_page_size(pages, max_alloc_size);
-	dp_desc_multi_pages_mem_alloc(soc, DP_HW_LINK_DESC_TYPE,
+	dp_desc_multi_pages_mem_alloc(soc, QDF_DP_HW_LINK_DESC_TYPE,
 				      pages,
 				      link_desc_size,
 				      *total_link_descs,
@@ -7339,6 +7342,7 @@ static QDF_STATUS dp_vdev_attach_wifi3(struct cdp_soc_t *cdp_soc,
 	enum wlan_op_mode op_mode = vdev_info->op_mode;
 	enum wlan_op_subtype subtype = vdev_info->subtype;
 	uint8_t vdev_stats_id = vdev_info->vdev_stats_id;
+	enum QDF_OPMODE qdf_opmode = vdev_info->qdf_opmode;
 
 	vdev_context_size =
 		soc->arch_ops.txrx_get_context_size(DP_CONTEXT_TYPE_VDEV);
@@ -7366,6 +7370,7 @@ static QDF_STATUS dp_vdev_attach_wifi3(struct cdp_soc_t *cdp_soc,
 	vdev->opmode = op_mode;
 	vdev->subtype = subtype;
 	vdev->osdev = soc->osdev;
+	vdev->qdf_opmode = qdf_opmode;
 
 	vdev->osif_rx = NULL;
 	vdev->osif_rsim_rx_decap = NULL;
@@ -8553,15 +8558,12 @@ static void dp_peer_setup_get_reo_hash(struct dp_vdev *vdev,
 	 * Hence, *reo_dest = IPA_REO_DEST_RING_IDX + 1
 	 */
 	if (wlan_cfg_is_ipa_enabled(soc->wlan_cfg_ctx)) {
-		if (vdev->opmode == wlan_op_mode_ap) {
+		if (dp_ipa_is_mdm_platform()) {
 			*reo_dest = IPA_REO_DEST_RING_IDX + 1;
-			*hash_based = 0;
-		} else if (vdev->opmode == wlan_op_mode_sta &&
-			   dp_ipa_is_mdm_platform()) {
-			*reo_dest = IPA_REO_DEST_RING_IDX + 1;
-		} else if (vdev->opmode == wlan_op_mode_sta &&
-			   (!dp_ipa_is_mdm_platform())) {
-			dp_debug("opt_dp: default reo ring is set");
+			if (vdev->opmode == wlan_op_mode_ap)
+				*hash_based = 0;
+		} else {
+			dp_debug("opt_dp: default HOST reo ring is set");
 		}
 	}
 }
@@ -10734,6 +10736,9 @@ static QDF_STATUS dp_set_peer_param(struct cdp_soc_t *cdp_soc,  uint8_t vdev_id,
 		txrx_peer->nawds_enabled = val.cdp_peer_param_nawds;
 		break;
 	case CDP_CONFIG_ISOLATION:
+		dp_info("Peer " QDF_MAC_ADDR_FMT " vdev_id %d, isolation %d",
+			QDF_MAC_ADDR_REF(peer_mac), vdev_id,
+			val.cdp_peer_param_isolation);
 		dp_set_peer_isolation(txrx_peer, val.cdp_peer_param_isolation);
 		break;
 	case CDP_CONFIG_IN_TWT:
@@ -11213,6 +11218,8 @@ dp_set_vdev_param(struct cdp_soc_t *cdp_soc, uint8_t vdev_id,
 		break;
 	case CDP_UPDATE_MULTIPASS:
 		vdev->multipass_en = val.cdp_vdev_param_update_multipass;
+		dp_info("vdev %d Multipass enable %d", vdev_id,
+			vdev->multipass_en);
 		break;
 	case CDP_TX_ENCAP_TYPE:
 		vdev->tx_encap_type = val.cdp_vdev_param_tx_encap;
@@ -14176,6 +14183,62 @@ void dp_set_tx_pause(struct cdp_soc_t *soc_hdl, bool flag)
 	soc->is_tx_pause = flag;
 }
 
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+/**
+ * dp_evaluate_update_tx_ilp_config() - Evaluate and update DP TX
+ *                                      ILP configuration
+ * @soc_hdl: CDP SOC handle
+ * @num_msdu_idx_map: Number of HTT msdu index to qtype map in array
+ * @msdu_idx_map_arr: Pointer to HTT msdu index to qtype map array
+ *
+ * This function will check: (a) TX ILP INI configuration,
+ * (b) index 3 value in array same as HTT_MSDU_QTYPE_LATENCY_TOLERANT,
+ * only if both (a) and (b) condition is met, then TX ILP feature is
+ * considered to be enabled.
+ *
+ * Return: Final updated TX ILP enable result in dp_soc,
+ *         true is enabled, false is not
+ */
+static
+bool dp_evaluate_update_tx_ilp_config(struct cdp_soc_t *soc_hdl,
+				      uint8_t num_msdu_idx_map,
+				      uint8_t *msdu_idx_map_arr)
+{
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	bool enable_tx_ilp = false;
+
+	/**
+	 * Check INI configuration firstly, if it's disabled,
+	 * then keep feature disabled.
+	 */
+	if (!wlan_cfg_get_tx_ilp_inspect_config(soc->wlan_cfg_ctx)) {
+		dp_info("TX ILP INI is disabled already");
+		goto update_tx_ilp;
+	}
+
+	/* Check if the msdu index to qtype map table is valid */
+	if (num_msdu_idx_map != HTT_MSDUQ_MAX_INDEX || !msdu_idx_map_arr) {
+		dp_info("Invalid msdu_idx qtype map num: 0x%x, arr_addr %pK",
+			num_msdu_idx_map, msdu_idx_map_arr);
+		goto update_tx_ilp;
+	}
+
+	dp_info("msdu_idx_map_arr idx 0x%x value 0x%x",
+		HTT_MSDUQ_INDEX_CUSTOM_PRIO_1,
+		msdu_idx_map_arr[HTT_MSDUQ_INDEX_CUSTOM_PRIO_1]);
+
+	if (HTT_MSDU_QTYPE_USER_SPECIFIED ==
+	    msdu_idx_map_arr[HTT_MSDUQ_INDEX_CUSTOM_PRIO_1])
+		enable_tx_ilp = true;
+
+update_tx_ilp:
+	soc->tx_ilp_enable = enable_tx_ilp;
+	dp_info("configure tx ilp enable %d", soc->tx_ilp_enable);
+
+	return soc->tx_ilp_enable;
+}
+#endif
+
 static struct cdp_cmn_ops dp_ops_cmn = {
 	.txrx_soc_attach_target = dp_soc_attach_target_wifi3,
 	.txrx_vdev_attach = dp_vdev_attach_wifi3,
@@ -15269,6 +15332,9 @@ static struct cdp_misc_ops dp_ops_misc = {
 	.set_bus_vote_lvl_high = dp_set_bus_vote_lvl_high,
 	.get_bus_vote_lvl_high = dp_get_bus_vote_lvl_high,
 #endif
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+	.evaluate_update_tx_ilp_cfg = dp_evaluate_update_tx_ilp_config,
+#endif
 };
 #endif
 
@@ -15592,6 +15658,19 @@ dp_get_link_desc_id_start(uint16_t arch_id)
 	}
 }
 
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+static inline
+void dp_soc_init_tx_ilp(struct dp_soc *soc)
+{
+	soc->tx_ilp_enable = false;
+}
+#else
+static inline
+void dp_soc_init_tx_ilp(struct dp_soc *soc)
+{
+}
+#endif
+
 /**
  * dp_soc_attach() - Attach txrx SOC
  * @ctrl_psoc: Opaque SOC handle from control plane
@@ -15642,6 +15721,7 @@ dp_soc_attach(struct cdp_ctrl_objmgr_psoc *ctrl_psoc,
 	soc->ctrl_psoc = ctrl_psoc;
 	soc->osdev = qdf_osdev;
 	soc->num_hw_dscp_tid_map = HAL_MAX_HW_DSCP_TID_MAPS;
+	dp_soc_init_tx_ilp(soc);
 	hal_rx_get_tlv_size(soc->hal_soc, &soc->rx_pkt_tlv_size,
 			    &soc->rx_mon_pkt_tlv_size);
 	soc->idle_link_bm_id = hal_get_idle_link_bm_id(soc->hal_soc,
@@ -17603,3 +17683,100 @@ void dp_destroy_direct_link_refill_ring(struct cdp_soc_t *soc_hdl,
 	dp_srng_free(soc, &pdev->rx_refill_buf_ring4);
 }
 #endif
+
+#ifdef QCA_MULTIPASS_SUPPORT
+QDF_STATUS dp_set_vlan_groupkey(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+				uint16_t vlan_id, uint16_t group_key)
+{
+	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
+	struct dp_vdev *vdev = dp_vdev_get_ref_by_id(soc, vdev_id,
+						     DP_MOD_ID_TX_MULTIPASS);
+	QDF_STATUS status;
+
+	dp_info("Try: vdev_id %d, vdev %pK, multipass_en %d, vlan_id %d, group_key %d",
+		vdev_id, vdev, vdev ? vdev->multipass_en : 0, vlan_id,
+		group_key);
+	if (!vdev || !vdev->multipass_en) {
+		status = QDF_STATUS_E_INVAL;
+		goto fail;
+	}
+
+	if (!vdev->iv_vlan_map) {
+		uint16_t vlan_map_size = (sizeof(uint16_t)) * DP_MAX_VLAN_IDS;
+
+		vdev->iv_vlan_map = (uint16_t *)qdf_mem_malloc(vlan_map_size);
+		if (!vdev->iv_vlan_map) {
+			QDF_TRACE_ERROR(QDF_MODULE_ID_DP, "iv_vlan_map");
+			status = QDF_STATUS_E_NOMEM;
+			goto fail;
+		}
+
+		/*
+		 * 0 is invalid group key.
+		 * Initilalize array with invalid group keys.
+		 */
+		qdf_mem_zero(vdev->iv_vlan_map, vlan_map_size);
+	}
+
+	if (vlan_id >= DP_MAX_VLAN_IDS) {
+		status = QDF_STATUS_E_INVAL;
+		goto fail;
+	}
+
+	dp_info("Successful setting: vdev_id %d, vlan_id %d, group_key %d",
+		vdev_id, vlan_id, group_key);
+	vdev->iv_vlan_map[vlan_id] = group_key;
+	status = QDF_STATUS_SUCCESS;
+fail:
+	if (vdev)
+		dp_vdev_unref_delete(soc, vdev, DP_MOD_ID_TX_MULTIPASS);
+	return status;
+}
+
+void dp_tx_remove_vlan_tag(struct dp_vdev *vdev, qdf_nbuf_t nbuf)
+{
+	struct vlan_ethhdr veth_hdr;
+	struct vlan_ethhdr *veh = (struct vlan_ethhdr *)nbuf->data;
+
+	/*
+	 * Extract VLAN header of 4 bytes:
+	 * Frame Format : {dst_addr[6], src_addr[6], 802.1Q header[4],
+	 *		   EtherType[2], Payload}
+	 * Before Removal : xx xx xx xx xx xx xx xx xx xx xx xx 81 00 00 02
+	 *		    08 00 45 00 00...
+	 * After Removal  : xx xx xx xx xx xx xx xx xx xx xx xx 08 00 45 00
+	 *		    00...
+	 */
+	qdf_mem_copy(&veth_hdr, veh, sizeof(veth_hdr));
+	qdf_nbuf_pull_head(nbuf, ETHERTYPE_VLAN_LEN);
+	veh = (struct vlan_ethhdr *)nbuf->data;
+	qdf_mem_copy(veh, &veth_hdr, 2 * QDF_MAC_ADDR_SIZE);
+}
+
+void dp_tx_vdev_multipass_deinit(struct dp_vdev *vdev)
+{
+	struct dp_txrx_peer *txrx_peer = NULL;
+
+	qdf_spin_lock_bh(&vdev->mpass_peer_mutex);
+	TAILQ_FOREACH(txrx_peer, &vdev->mpass_peer_list, mpass_peer_list_elem)
+		qdf_err("Peers present in mpass list : %d", txrx_peer->peer_id);
+	qdf_spin_unlock_bh(&vdev->mpass_peer_mutex);
+
+	if (vdev->iv_vlan_map) {
+		qdf_mem_free(vdev->iv_vlan_map);
+		vdev->iv_vlan_map = NULL;
+	}
+
+	qdf_spinlock_destroy(&vdev->mpass_peer_mutex);
+}
+
+void dp_peer_multipass_list_init(struct dp_vdev *vdev)
+{
+	/*
+	 * vdev->iv_vlan_map is allocated when the first configuration command
+	 * is issued to avoid unnecessary allocation for regular mode VAP.
+	 */
+	TAILQ_INIT(&vdev->mpass_peer_list);
+	qdf_spinlock_create(&vdev->mpass_peer_mutex);
+}
+#endif /* QCA_MULTIPASS_SUPPORT */

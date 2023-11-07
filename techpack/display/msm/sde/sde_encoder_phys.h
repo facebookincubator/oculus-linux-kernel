@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -287,6 +287,7 @@ struct sde_encoder_irq {
  * @intf_cfg:		Interface hardware configuration
  * @intf_cfg_v1:        Interface hardware configuration to be used if control
  *                      path supports SDE_CTL_ACTIVE_CFG
+ * @cfg:		INTF offset configuration for skew enabled displays
  * @comp_type:      Type of compression supported
  * @comp_ratio:		Compression ratio
  * @dsc_extra_pclk_cycle_cnt: Extra pclk cycle count for DSC over DP
@@ -339,6 +340,7 @@ struct sde_encoder_phys {
 	enum sde_intf intf_idx;
 	struct sde_hw_intf_cfg intf_cfg;
 	struct sde_hw_intf_cfg_v1 intf_cfg_v1;
+	struct sde_intf_offset_cfg cfg;
 	enum msm_display_compression_type comp_type;
 	u32 comp_ratio;
 	u32 dsc_extra_pclk_cycle_cnt;
@@ -906,5 +908,16 @@ void sde_encoder_helper_setup_misr(struct sde_encoder_phys *phys_enc,
  */
 int sde_encoder_helper_collect_misr(struct sde_encoder_phys *phys_enc,
 		bool nonblock, u32 *misr_value);
+
+/**
+ * sde_encoder_helper_skewed_vsync_config - skewed vsync config helper func
+ *	This helper function may be used by physical encoders to configure
+ *	the skewed_vsync/intf_offset related registers.
+ * @phys_enc: Pointer to physical encoder structure
+ * @cfg: pointer to sde_intf_offset_cfg structure
+ */
+void sde_encoder_helper_skewed_vsync_config(
+		struct sde_encoder_phys *phys_enc,
+		struct sde_intf_offset_cfg *cfg);
 
 #endif /* __sde_encoder_phys_H__ */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1011,4 +1011,15 @@ void wlan_minidump_remove(void *start_addr, const size_t size,
 			  enum wlan_minidump_host_data type,
 			  const char *name);
 
+/**
+ * wlan_util_is_vdev_in_cac_wait() - Check if dfs sap vdev is in cac wait
+ * @pdev: pdev object
+ * @dbg_id: object manager ref id
+ *
+ * This function checks if dfs sap vdev is in cac wait state
+ *
+ * Return: true, if cac is in progress, otherwise false
+ */
+bool wlan_util_is_vdev_in_cac_wait(struct wlan_objmgr_pdev *pdev,
+				   wlan_objmgr_ref_dbgid dbg_id);
 #endif /* _WLAN_UTILITY_H_ */

@@ -149,6 +149,8 @@ enum msm_mdp_plane_property {
 	PLANE_PROP_SYS_CACHE_TYPE,
 	PLANE_PROP_CAC_TYPE,
 	PLANE_PROP_LAYOUT,
+	PLANE_PROP_SRC_RECT_EXT,
+	PLANE_PROP_DST_RECT_EXT,
 
 	/* total # of properties */
 	PLANE_PROP_COUNT
@@ -802,6 +804,16 @@ struct msm_resource_caps_info {
 };
 
 /**
+ * Select master between intf1 and intf2 for skewed vsync feature.
+ * @INTF_1_MASTER: Select intf1 as master
+ * @INTF_2_MASTER: Select intf2 as master
+ */
+enum {
+	INTF_1_IS_MASTER = 0x1,
+	INTF_2_IS_MASTER
+};
+
+/**
  * struct msm_display_info - defines display properties
  * @intf_type:          DRM_MODE_CONNECTOR_ display type
  * @capabilities:       Bitmask of display flags
@@ -831,6 +843,9 @@ struct msm_resource_caps_info {
  *			for dsi display)
  * @ctl_op_sync:        Indicates dual display panels are operating in sync mode
  * @is_master:          Flag indicating the Master display which drives the displays in sync mode
+ * @skewed_vsync_master Specifies the master interface for skewed vsync.
+ *			If this is not set, the feature is disabled.
+ * @skew_offset_line	skew offset line set in Master DPU INTF to send vsync input for Slave DPU.
  */
 struct msm_display_info {
 	int intf_type;
@@ -863,6 +878,8 @@ struct msm_display_info {
 	uint32_t lm_count;
 	bool ctl_op_sync;
 	bool is_master;
+	u8 skewed_vsync_master;
+	uint32_t skew_offset_line;
 };
 
 #define MSM_MAX_ROI	4

@@ -317,7 +317,7 @@
 		alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
 		no-map;
 		alignment = <0x0 0x400000>;
-		size = <0x0 0xC00000>;
+		size = <0x0 0x1000000>;
 	};
 
 	lsr_righteye_mem_heap: lsr_righteye_region {
@@ -325,7 +325,7 @@
 		alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
 		no-map;
 		alignment = <0x0 0x400000>;
-		size = <0x0 0xC00000>;
+		size = <0x0 0x1000000>;
 	};
 
 	lsr_depth_mem_heap: lsr_depth_region {
@@ -1073,7 +1073,7 @@
 
 		/* DLL HSR settings. Refer go/hsr - <Target> DLL settings */
 		qcom,dll-hsr-list = <0x000F442C 0x0 0x01
-					0x090106C0 0x80040868>;
+					0x2c010800 0x80040868>;
 
 		/* Add dt entry for gcc hw reset */
 		resets = <&gcc GCC_SDCC1_BCR>;
@@ -2238,6 +2238,7 @@
 		qcom,hyplog-enabled;
 		hyplog-address-offset = <0x410>;
 		hyplog-size-offset = <0x414>;
+		tmecrashdump-address-offset = <0x808a0000>;
 	};
 
 	qcom_qseecom: qseecom@E8900000 {

@@ -68,10 +68,15 @@
 
 		gpu_qtb: gpu_qtb@3de8000 {
 			compatible = "qcom,qsmmuv500-tbu", "qcom,qtb500";
-			reg = <0x3de8000 0x1000>;
-			reg-names = "base";
+			reg = <0x3de8000 0x1000>,
+			    <0x3dec000 0x1000>;
+			reg-names = "base", "debugchain-base";
 			qcom,iova-width = <49>;
 			interconnects = <&gem_noc MASTER_GPU_TCU &mc_virt SLAVE_EBI1>;
+			qcom,regulator-names = "vdd";
+			vdd-supply = <&gpu_cc_cx_gdsc>;
+			clocks = <&gpucc GPU_CC_HUB_CX_INT_CLK>;
+			clock-names = "gpu_cc_hub_cx_int";
 			qcom,stream-id-range = <0x0 0x400>;
 			qcom,num-qtb-ports = <2>;
 		};

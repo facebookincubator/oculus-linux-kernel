@@ -41,6 +41,9 @@ int cam_context_shutdown(struct cam_context *ctx)
 	if (ctx->state > CAM_CTX_AVAILABLE && ctx->state < CAM_CTX_STATE_MAX) {
 		cmd.session_handle = ctx->session_hdl;
 		cmd.dev_handle = ctx->dev_hdl;
+		mutex_lock(&ctx->ctx_mutex);
+		ctx->is_shutdown = TRUE;
+		mutex_unlock(&ctx->ctx_mutex);
 		rc = cam_context_handle_release_dev(ctx, &cmd);
 		if (rc)
 			CAM_ERR(CAM_CORE,
@@ -780,6 +783,7 @@ int cam_context_init(struct cam_context *ctx,
 	ctx->state_machine = NULL;
 	ctx->ctx_priv = NULL;
 	ctx->img_iommu_hdl = img_iommu_hdl;
+	ctx->is_shutdown = FALSE;
 
 	return 0;
 }

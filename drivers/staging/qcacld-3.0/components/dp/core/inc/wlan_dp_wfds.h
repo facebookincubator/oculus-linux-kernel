@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -171,9 +171,11 @@ QDF_STATUS dp_wfds_init(struct dp_direct_link_context *direct_link_ctx);
 /**
  * dp_wfds_deinit() - Deinitialize DP WFDS context
  * @direct_link_ctx: DP Direct Link context
+ * @is_ssr: true if SSR is in progress else false
  *
  * Return: None
  */
-void dp_wfds_deinit(struct dp_direct_link_context *direct_link_ctx);
+void dp_wfds_deinit(struct dp_direct_link_context *direct_link_ctx,
+		    bool is_ssr);
 #endif
 #endif

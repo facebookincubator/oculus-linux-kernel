@@ -1876,14 +1876,19 @@ uint8_t qdf_eapol_get_key_type(uint8_t *data, enum qdf_proto_subtype subtype)
  * @type: Protocol type
  * @subtype: Protocol subtype
  * @dir: Rx or Tx
+ * @op_mode: Vdev Operation mode
  *
  * Return: true or false
  */
 static inline
 bool qdf_skip_wlan_connectivity_log(enum qdf_proto_type type,
 				    enum qdf_proto_subtype subtype,
-				    enum qdf_proto_dir dir)
+				    enum qdf_proto_dir dir,
+				    enum QDF_OPMODE op_mode)
 {
+	if (op_mode != QDF_STA_MODE)
+		return true;
+
 	if (dir == QDF_RX && type == QDF_PROTO_TYPE_DHCP &&
 	    (subtype == QDF_PROTO_DHCP_DISCOVER ||
 	     subtype == QDF_PROTO_DHCP_REQUEST))
@@ -1898,6 +1903,7 @@ bool qdf_skip_wlan_connectivity_log(enum qdf_proto_type type,
  * @subtype: Protocol subtype
  * @dir: Rx or Tx
  * @qdf_tx_status: Tx completion status
+ * @op_mode: Vdev Operation mode
  * @vdev_id: DP vdev ID
  * @data: skb data pointer
  *
@@ -1908,13 +1914,14 @@ void qdf_fill_wlan_connectivity_log(enum qdf_proto_type type,
 				    enum qdf_proto_subtype subtype,
 				    enum qdf_proto_dir dir,
 				    enum qdf_dp_tx_rx_status qdf_tx_status,
+				    enum QDF_OPMODE op_mode,
 				    uint8_t vdev_id, uint8_t *data)
 {
 	uint8_t pkt_type;
 
 	WLAN_HOST_DIAG_EVENT_DEF(wlan_diag_event, struct wlan_diag_packet_info);
 
-	if (qdf_skip_wlan_connectivity_log(type, subtype, dir))
+	if (qdf_skip_wlan_connectivity_log(type, subtype, dir, op_mode))
 		return;
 
 	qdf_mem_zero(&wlan_diag_event, sizeof(wlan_diag_event));
@@ -2107,6 +2114,7 @@ void qdf_fill_wlan_connectivity_log(enum qdf_proto_type type,
 				    enum qdf_proto_subtype subtype,
 				    enum qdf_proto_dir dir,
 				    enum qdf_dp_tx_rx_status qdf_tx_status,
+					enum QDF_OPMODE op_mode,
 				    uint8_t vdev_id, uint8_t *data)
 {
 }
@@ -2118,11 +2126,13 @@ void qdf_fill_wlan_connectivity_log(enum qdf_proto_type type,
  * @skb: skb pointer
  * @dir: direction
  * @pdev_id: ID of the pdev
+ * @op_mode: Vdev Operation mode
  *
  * Return: true/false
  */
 static bool qdf_log_eapol_pkt(uint8_t vdev_id, struct sk_buff *skb,
-			      enum qdf_proto_dir dir, uint8_t pdev_id)
+			      enum qdf_proto_dir dir, uint8_t pdev_id,
+				  enum QDF_OPMODE op_mode)
 {
 	enum qdf_proto_subtype subtype;
 	uint32_t dp_eap_trace;
@@ -2149,7 +2159,8 @@ static bool qdf_log_eapol_pkt(uint8_t vdev_id, struct sk_buff *skb,
 					  QDF_TRACE_DEFAULT_MSDU_ID,
 					  QDF_TX_RX_STATUS_INVALID);
 		qdf_fill_wlan_connectivity_log(QDF_PROTO_TYPE_EAPOL, subtype,
-					       QDF_RX, 0, vdev_id, skb->data);
+					       QDF_RX, 0, op_mode,
+					       vdev_id, skb->data);
 	}
 
 	if (dp_eap_trace) {
@@ -2196,11 +2207,13 @@ static bool qdf_log_eapol_pkt(uint8_t vdev_id, struct sk_buff *skb,
  * @skb: skb pointer
  * @dir: direction
  * @pdev_id: ID of the pdev
+ * @op_mode: Vdev Operation mode
  *
  * Return: true/false
  */
 static bool qdf_log_dhcp_pkt(uint8_t vdev_id, struct sk_buff *skb,
-			     enum qdf_proto_dir dir, uint8_t pdev_id)
+			     enum qdf_proto_dir dir, uint8_t pdev_id,
+				 enum QDF_OPMODE op_mode)
 {
 	enum qdf_proto_subtype subtype = QDF_PROTO_INVALID;
 	uint32_t dp_dhcp_trace;
@@ -2227,7 +2240,7 @@ static bool qdf_log_dhcp_pkt(uint8_t vdev_id, struct sk_buff *skb,
 					  QDF_TRACE_DEFAULT_MSDU_ID,
 					  QDF_TX_RX_STATUS_INVALID);
 		qdf_fill_wlan_connectivity_log(QDF_PROTO_TYPE_DHCP, subtype,
-					       QDF_RX, 0, vdev_id, 0);
+					       QDF_RX, 0, op_mode, vdev_id, 0);
 	}
 
 	if (dp_dhcp_trace) {
@@ -2319,15 +2332,16 @@ static bool qdf_log_arp_pkt(uint8_t vdev_id, struct sk_buff *skb,
 
 
 bool qdf_dp_trace_log_pkt(uint8_t vdev_id, struct sk_buff *skb,
-			  enum qdf_proto_dir dir, uint8_t pdev_id)
+			  enum qdf_proto_dir dir, uint8_t pdev_id,
+			  enum QDF_OPMODE op_mode)
 {
 	if (!qdf_dp_get_proto_bitmap() && !qdf_dp_get_proto_event_bitmap())
 		return false;
 	if (qdf_log_arp_pkt(vdev_id, skb, dir, pdev_id))
 		return true;
-	if (qdf_log_dhcp_pkt(vdev_id, skb, dir, pdev_id))
+	if (qdf_log_dhcp_pkt(vdev_id, skb, dir, pdev_id, op_mode))
 		return true;
-	if (qdf_log_eapol_pkt(vdev_id, skb, dir, pdev_id))
+	if (qdf_log_eapol_pkt(vdev_id, skb, dir, pdev_id, op_mode))
 		return true;
 	if (qdf_log_icmp_pkt(vdev_id, skb, dir, pdev_id))
 		return true;
@@ -2724,7 +2738,8 @@ qdf_export_symbol(qdf_dp_get_status_from_a_status);
 void qdf_dp_trace_ptr(qdf_nbuf_t nbuf, enum QDF_DP_TRACE_ID code,
 		uint8_t pdev_id, uint8_t *data, uint8_t size,
 		uint16_t msdu_id, uint16_t buf_arg_status,
-		enum qdf_dp_tx_rx_status qdf_tx_status)
+		enum qdf_dp_tx_rx_status qdf_tx_status,
+		enum QDF_OPMODE op_mode)
 {
 	struct qdf_dp_trace_ptr_buf buf;
 	int buf_size = sizeof(struct qdf_dp_trace_ptr_buf);
@@ -2741,7 +2756,7 @@ void qdf_dp_trace_ptr(qdf_nbuf_t nbuf, enum QDF_DP_TRACE_ID code,
 					 pkt_type, subtype,
 					 QDF_TX, msdu_id, qdf_tx_status);
 		qdf_fill_wlan_connectivity_log(pkt_type, subtype,
-					       QDF_TX, qdf_tx_status,
+					       QDF_TX, qdf_tx_status, op_mode,
 					       QDF_NBUF_CB_TX_VDEV_CTX(nbuf),
 					       nbuf->data);
 	}

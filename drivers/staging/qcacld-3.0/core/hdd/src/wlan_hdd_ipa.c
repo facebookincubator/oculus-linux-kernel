@@ -204,7 +204,8 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t nbuf, qdf_netdev_t dev)
 
 	ucfg_dp_event_eapol_log(nbuf, QDF_RX);
 	qdf_dp_trace_log_pkt(adapter->vdev_id,
-			     nbuf, QDF_RX, QDF_TRACE_DEFAULT_PDEV_ID);
+			     nbuf, QDF_RX, QDF_TRACE_DEFAULT_PDEV_ID,
+			     adapter->device_mode);
 	DPTRACE(qdf_dp_trace(nbuf,
 			     QDF_DP_TRACE_RX_HDD_PACKET_PTR_RECORD,
 			     QDF_TRACE_DEFAULT_PDEV_ID,

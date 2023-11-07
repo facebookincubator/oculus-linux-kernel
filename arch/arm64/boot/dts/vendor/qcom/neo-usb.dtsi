@@ -62,6 +62,7 @@
 			snps,dis-u1-entry-quirk;
 			snps,dis-u2-entry-quirk;
 			snps,dis_u2_susphy_quirk;
+			snps,dis_u3_susphy_quirk;
 			snps,parkmode-disable-ss-quirk;
 			tx-fifo-resize;
 			usb-role-switch;

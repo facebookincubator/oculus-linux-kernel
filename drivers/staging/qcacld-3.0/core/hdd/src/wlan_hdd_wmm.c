@@ -2219,7 +2219,7 @@ static uint16_t __hdd_wmm_select_queue(struct net_device *dev,
 
 	hdd_update_pkt_priority_with_inspection(skb, up);
 
-	index = hdd_get_queue_index(skb->priority, is_critical);
+	index = hdd_get_queue_index(up, is_critical);
 
 	return hdd_get_tx_queue_for_ac(adapter, skb, index);
 }

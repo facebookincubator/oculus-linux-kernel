@@ -42,6 +42,7 @@
 #ifdef DP_RATETABLE_SUPPORT
 #include "dp_ratetable.h"
 #endif
+#include "enet.h"
 
 #ifdef DUP_RX_DESC_WAR
 void dp_rx_dump_info_and_assert(struct dp_soc *soc,
@@ -1179,6 +1180,22 @@ void dp_rx_fill_mesh_stats(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 	rate_mcs = hal_rx_tlv_rate_mcs_get(soc->hal_soc, rx_tlv_hdr);
 	bw = hal_rx_tlv_bw_get(soc->hal_soc, rx_tlv_hdr);
 	nss = hal_rx_msdu_start_nss_get(soc->hal_soc, rx_tlv_hdr);
+
+	/*
+	 * The MCS index does not start with 0 when NSS>1 in HT mode.
+	 * MCS params for optional 20/40MHz, NSS=1~3, EQM(NSS>1):
+	 * ------------------------------------------------------
+	 *         NSS     |   1   |   2    |    3    |    4
+	 * ------------------------------------------------------
+	 * MCS index: HT20 | 0 ~ 7 | 8 ~ 15 | 16 ~ 23 | 24 ~ 31
+	 * ------------------------------------------------------
+	 * MCS index: HT40 | 0 ~ 7 | 8 ~ 15 | 16 ~ 23 | 24 ~ 31
+	 * ------------------------------------------------------
+	 * Currently, the MAX_NSS=2. If NSS>2, MCS index = 8 * (NSS-1)
+	 */
+	if ((pkt_type == DOT11_N) && (nss == 2))
+		rate_mcs += 8;
+
 	rx_info->rs_ratephy1 = rate_mcs | (nss << 0x8) | (pkt_type << 16) |
 				(bw << 24);
 
@@ -2287,6 +2304,21 @@ void dp_rx_msdu_extd_stats_update(struct dp_soc *soc, qdf_nbuf_t nbuf,
 	pkt_type = (pkt_type >= HAL_DOT11_MAX ? DOT11_MAX :
 		    hal_2_dp_pkt_type_map[pkt_type]);
 
+	/*
+	 * The MCS index does not start with 0 when NSS>1 in HT mode.
+	 * MCS params for optional 20/40MHz, NSS=1~3, EQM(NSS>1):
+	 * ------------------------------------------------------
+	 *         NSS     |   1   |   2    |    3    |    4
+	 * ------------------------------------------------------
+	 * MCS index: HT20 | 0 ~ 7 | 8 ~ 15 | 16 ~ 23 | 24 ~ 31
+	 * ------------------------------------------------------
+	 * MCS index: HT40 | 0 ~ 7 | 8 ~ 15 | 16 ~ 23 | 24 ~ 31
+	 * ------------------------------------------------------
+	 * Currently, the MAX_NSS=2. If NSS>2, MCS index = 8 * (NSS-1)
+	 */
+	if ((pkt_type == DOT11_N) && (nss == 2))
+		mcs += 8;
+
 	DP_PEER_EXTD_STATS_INCC(txrx_peer, rx.rx_mpdu_cnt[mcs], 1,
 		      ((mcs < MAX_MCS) && QDF_NBUF_CB_RX_CHFRAG_START(nbuf)));
 	DP_PEER_EXTD_STATS_INCC(txrx_peer, rx.rx_mpdu_cnt[MAX_MCS - 1], 1,
@@ -2984,7 +3016,7 @@ dp_rx_pdev_desc_pool_alloc(struct dp_pdev *pdev)
 	rx_desc_pool = &soc->rx_desc_buf[mac_for_pdev];
 	rx_sw_desc_num = wlan_cfg_get_dp_soc_rx_sw_desc_num(soc->wlan_cfg_ctx);
 
-	rx_desc_pool->desc_type = DP_RX_DESC_BUF_TYPE;
+	rx_desc_pool->desc_type = QDF_DP_RX_DESC_BUF_TYPE;
 	status = dp_rx_desc_pool_alloc(soc,
 				       rx_sw_desc_num,
 				       rx_desc_pool);
@@ -3158,3 +3190,33 @@ void dp_rx_mark_first_packet_after_wow_wakeup(struct dp_pdev *pdev,
 	}
 }
 #endif
+
+#ifdef QCA_MULTIPASS_SUPPORT
+bool dp_rx_multipass_process(struct dp_txrx_peer *txrx_peer, qdf_nbuf_t nbuf,
+			     uint8_t tid)
+{
+	struct vlan_ethhdr *vethhdrp;
+
+	if (qdf_unlikely(!txrx_peer->vlan_id))
+		return true;
+
+	vethhdrp = (struct vlan_ethhdr *)qdf_nbuf_data(nbuf);
+	/*
+	 * h_vlan_proto & h_vlan_TCI should be 0x8100 & zero respectively
+	 * as it is expected to be padded by 0
+	 * return false if frame doesn't have above tag so that caller will
+	 * drop the frame.
+	 */
+	if (qdf_unlikely(vethhdrp->h_vlan_proto != htons(QDF_ETH_TYPE_8021Q)) ||
+	    qdf_unlikely(vethhdrp->h_vlan_TCI != 0))
+		return false;
+
+	vethhdrp->h_vlan_TCI = htons(((tid & 0x7) << VLAN_PRIO_SHIFT) |
+		(txrx_peer->vlan_id & VLAN_VID_MASK));
+
+	if (vethhdrp->h_vlan_encapsulated_proto == htons(ETHERTYPE_PAE))
+		dp_tx_remove_vlan_tag(txrx_peer->vdev, nbuf);
+
+	return true;
+}
+#endif /* QCA_MULTIPASS_SUPPORT */

@@ -97,6 +97,11 @@ bool ipa_config_is_uc_enabled(void)
 	return g_ipa_config ? wlan_ipa_uc_is_enabled(g_ipa_config) : 0;
 }
 
+bool ipa_config_is_opt_wifi_dp_enabled(void)
+{
+	return g_ipa_config ? wlan_ipa_is_opt_wifi_dp_enabled(g_ipa_config) : 0;
+}
+
 bool ipa_config_is_vlan_enabled(void)
 {
 	if (!ipa_config_is_enabled())
@@ -649,10 +654,14 @@ QDF_STATUS ipa_uc_ol_deinit(struct wlan_objmgr_pdev *pdev)
 
 	status = wlan_ipa_uc_ol_deinit(ipa_obj);
 	ipa_obj_cleanup(ipa_obj);
+
+out:
+	if (g_instances_added)
+		g_instances_added--;
+
 	if (!g_instances_added)
 		ipa_disable_register_cb();
 
-out:
 	ipa_init_deinit_unlock();
 	return status;
 }

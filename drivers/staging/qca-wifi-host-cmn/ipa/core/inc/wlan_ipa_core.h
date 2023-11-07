@@ -48,6 +48,18 @@ static inline bool wlan_ipa_uc_is_enabled(struct wlan_ipa_config *ipa_cfg)
 }
 
 /**
+ * wlan_ipa_is_opt_wifi_dp_enabled() - Is IPA optional wifi dp enabled?
+ * @ipa_cfg: IPA config
+ *
+ * Return: true if IPA opt wifi dp is enabled, false otherwise
+ */
+static inline bool wlan_ipa_is_opt_wifi_dp_enabled(
+						struct wlan_ipa_config *ipa_cfg)
+{
+	return WLAN_IPA_IS_CONFIG_ENABLED(ipa_cfg, WLAN_IPA_OPT_WIFI_DP);
+}
+
+/**
  * wlan_ipa_is_rt_debugging_enabled() - Is IPA RT debugging enabled?
  * @ipa_cfg: IPA config
  *
@@ -514,7 +526,7 @@ void wlan_ipa_uc_rt_debug_host_dump(struct wlan_ipa_priv *ipa_ctx);
 
 /**
  * wlan_ipa_uc_rt_debug_destructor() - called by data packet free
- * @nbuff: packet pinter
+ * @nbuff: packet pointer
  *
  * when free data packet, will be invoked by wlan client and will increase
  * free counter
@@ -891,9 +903,9 @@ int wlan_ipa_wdi_opt_dpath_flt_rsrv_cb(
  *
  * @is_success : result of filter reservation
  *
- * @Return 0 on success, negative on failure
+ * Return: None
  */
-int wlan_ipa_wdi_opt_dpath_notify_flt_rsvd(bool is_success);
+void wlan_ipa_wdi_opt_dpath_notify_flt_rsvd(bool is_success);
 
 /**
  * wlan_ipa_wdi_opt_dpath_flt_add_cb - Add rx filter tuple to cce filter
@@ -920,7 +932,6 @@ int wlan_ipa_wdi_opt_dpath_flt_rem_cb(
 /**
  * wlan_ipa_wdi_opt_dpath_notify_flt_add_rem_cb() - notify filter add/remove
  * result to IPA
- *
  * @result0 : result of add/remove filter0
  * @result1 : result of add/remove filter1
  *
@@ -940,13 +951,12 @@ int wlan_ipa_wdi_opt_dpath_flt_rsrv_rel_cb(void *ipa_ctx);
 /**
  * wlan_ipa_wdi_opt_dpath_notify_flt_rlsd() - notify filter release
  * response to IPA
- *
  * @result0 : result of filter0 release
  * @result1 : result of filter1 release
  *
- * @Return: 0 on success, negative on failure
+ * Return: void
  */
-int wlan_ipa_wdi_opt_dpath_notify_flt_rlsd(int result0, int result1);
+void wlan_ipa_wdi_opt_dpath_notify_flt_rlsd(int result0, int result1);
 
 #endif /* IPA_OPT_WIFI_DP */
 #endif /* IPA_OFFLOAD */

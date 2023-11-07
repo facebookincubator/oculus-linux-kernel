@@ -5175,6 +5175,7 @@ typedef enum {
 	wmi_mlo_teardown_complete_event_id,
 	wmi_mlo_link_set_active_resp_eventid,
 	wmi_mlo_link_removal_eventid,
+	wmi_mlo_link_disable_request_eventid,
 #endif
 	wmi_pdev_fips_extend_event_id,
 	wmi_roam_frame_event_id,
@@ -5585,6 +5586,7 @@ typedef enum {
 	PDEV_PARAM(pdev_param_btcoex_cfg, UNAVAILABLE_PARAM),
 	PDEV_PARAM(pdev_param_soft_tx_chain_mask, PDEV_PARAM_TX_CHAIN_MASK),
 	PDEV_PARAM(pdev_param_enable_peer_retry_stats, UNAVAILABLE_PARAM),
+	PDEV_PARAM(pdev_param_pcie_config, PDEV_PARAM_PCIE_CONFIG),
 	pdev_param_max,
 } wmi_conv_pdev_params_id;
 
@@ -5899,6 +5901,8 @@ typedef enum {
 	VDEV_PARAM(vdev_param_ap_keepalive_max_idle_inactive_secs,
 		   VDEV_PARAM_AP_KEEPALIVE_MAX_IDLE_INACTIVE_TIME_SECS),
 	VDEV_PARAM(vdev_param_set_extra_eht_ltf, VDEV_PARAM_EXTRA_EHT_LTF),
+	VDEV_PARAM(vdev_param_chwidth_with_notify,
+		   VDEV_PARAM_CHWIDTH_WITH_NOTIFY),
 	vdev_param_max,
 } wmi_conv_vdev_param_id;
 
@@ -6139,6 +6143,7 @@ typedef enum {
 	wmi_service_twt_nudge,
 	wmi_service_all_twt,
 	wmi_service_twt_statistics,
+	wmi_service_restricted_twt,
 #endif
 	wmi_service_wapi_concurrency_supported,
 	wmi_service_sap_connected_d3_wow,
@@ -6248,6 +6253,9 @@ typedef enum {
 	wmi_service_multiple_vdev_restart_bmap,
 	wmi_service_self_mld_roam_between_dbs_and_hbs,
 	wmi_service_cfr_capture_pdev_id_soc,
+	wmi_service_cca_busy_info_for_each_20mhz,
+	wmi_service_vdev_param_chwidth_with_notify_support,
+
 	wmi_services_max,
 } wmi_conv_service_ids;
 #define WMI_SERVICE_UNAVAILABLE 0xFFFF
@@ -6617,6 +6625,7 @@ struct target_feature_set {
  * @num_max_active_vdevs: max number of active virtual devices (VAPs) to
  * support
  * @notify_frame_support: capability to mark notify frames from host
+ * @tx_ilp_enable: capability to support TX ILP from host
  */
 typedef struct {
 	uint32_t num_vdevs;
@@ -6744,6 +6753,9 @@ typedef struct {
 	bool reo_qdesc_shared_addr_table_enabled;
 	uint32_t num_max_active_vdevs;
 	uint8_t notify_frame_support;
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+	uint8_t tx_ilp_enable;
+#endif
 } target_resource_config;
 
 /**
@@ -9109,6 +9121,36 @@ struct vap_tidmap_prec_params {
 };
 
 #endif
+
+/**
+ * struct peer_vlan_config_param - peer vlan parameter
+ * @tx_cmd: Tx command
+ * @rx_cmd: Rx Command
+ * @tx_strip_insert: Strip or Insert vlan in Tx[0:Strip, 1: Insert]
+ * @tx_strip_insert_inner: Enable tx_strip_insert operation for inner vlan tag.
+ * @tx_strip_insert_outer: Enable tx_strip_insert operation for outer vlan tag.
+ * @rx_strip_c_tag: Strip c_tag
+ * @rx_strip_s_tag: Strip s_tag
+ * @rx_insert_c_tag: Insert c_tag
+ * @rx_insert_s_tag: Insert s_tag
+ * @insert_vlan_inner_tci: Vlan inner tci
+ * @insert_vlan_outer_tci: Vlan outer tci
+ * @vdev_id: vdev id corresponding to peer.
+ */
+struct peer_vlan_config_param {
+	uint16_t tx_cmd:1;
+	uint16_t rx_cmd:1;
+	uint16_t tx_strip_insert:1;
+	uint16_t tx_strip_insert_inner:1;
+	uint16_t tx_strip_insert_outer:1;
+	uint16_t rx_strip_c_tag:1;
+	uint16_t rx_strip_s_tag:1;
+	uint16_t rx_insert_c_tag:1;
+	uint16_t rx_insert_s_tag:1;
+	uint16_t insert_vlan_inner_tci;
+	uint16_t insert_vlan_outer_tci;
+	uint8_t vdev_id;
+};
 
 /**
  * struct wmi_cfr_peer_tx_event_param - CFR peer tx_event params

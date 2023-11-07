@@ -22,6 +22,10 @@
 #include "wlan_t2lm_api.h"
 #include <wlan_mlo_t2lm.h>
 #include "wlan_cm_api.h"
+#include "wlan_mlo_mgr_roam.h"
+
+#define T2LM_MIN_DIALOG_TOKEN         1
+#define T2LM_MAX_DIALOG_TOKEN         0xFF
 
 static
 const char *t2lm_get_event_str(enum wlan_t2lm_evt event)
@@ -110,6 +114,22 @@ bool t2lm_is_valid_t2lm_link_map(struct wlan_objmgr_vdev *vdev,
 	return is_valid_link_mask;
 }
 
+static uint8_t
+t2lm_gen_dialog_token(struct wlan_mlo_peer_t2lm_policy *t2lm_policy)
+{
+	if (!t2lm_policy)
+		return 0;
+
+	if (t2lm_policy->self_gen_dialog_token == T2LM_MAX_DIALOG_TOKEN)
+		/* wrap is ok */
+		t2lm_policy->self_gen_dialog_token = T2LM_MIN_DIALOG_TOKEN;
+	else
+		t2lm_policy->self_gen_dialog_token += 1;
+
+	t2lm_debug("gen dialog token %d", t2lm_policy->self_gen_dialog_token);
+	return t2lm_policy->self_gen_dialog_token;
+}
+
 QDF_STATUS t2lm_handle_rx_req(struct wlan_objmgr_vdev *vdev,
 			      struct wlan_objmgr_peer *peer,
 			      void *event_data, uint8_t *token)
@@ -165,15 +185,104 @@ QDF_STATUS t2lm_handle_tx_resp(struct wlan_objmgr_vdev *vdev,
 }
 
 QDF_STATUS t2lm_handle_tx_req(struct wlan_objmgr_vdev *vdev,
+			      struct wlan_objmgr_peer *peer,
 			      void *event_data, uint8_t *token)
 {
-	return QDF_STATUS_SUCCESS;
+	struct wlan_t2lm_onging_negotiation_info *t2lm_neg;
+	struct wlan_action_frame_args args;
+	QDF_STATUS status;
+
+	if (!vdev)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	if (!event_data) {
+		t2lm_err("Null event data ptr");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	t2lm_neg = (struct wlan_t2lm_onging_negotiation_info *)event_data;
+	args.category = ACTION_CATEGORY_PROTECTED_EHT;
+	args.action = EHT_T2LM_REQUEST;
+	args.arg1 = *token;
+
+	status = lim_send_t2lm_action_req_frame(vdev,
+						wlan_peer_get_macaddr(peer),
+						&args, t2lm_neg,
+						*token);
+
+	if (QDF_IS_STATUS_ERROR(status)) {
+		t2lm_err("Failed to send T2LM action request frame");
+	} else {
+		t2lm_debug("Copy the ongoing neg to peer");
+		qdf_mem_copy(&peer->mlo_peer_ctx->t2lm_policy.ongoing_tid_to_link_mapping,
+			     t2lm_neg, sizeof(struct wlan_t2lm_onging_negotiation_info));
+	}
+
+	return status;
 }
 
 QDF_STATUS t2lm_handle_rx_resp(struct wlan_objmgr_vdev *vdev,
+			       struct wlan_objmgr_peer *peer,
 			       void *event_data, uint8_t *token)
 {
-	return QDF_STATUS_SUCCESS;
+	struct wlan_t2lm_onging_negotiation_info t2lm_rsp = {0};
+	struct wlan_t2lm_onging_negotiation_info *t2lm_req;
+	QDF_STATUS status;
+	struct wlan_mlo_peer_context *ml_peer;
+	struct wlan_t2lm_info *t2lm_info;
+	uint8_t dir;
+
+	if (!peer) {
+		t2lm_err("peer is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	ml_peer = peer->mlo_peer_ctx;
+	if (!ml_peer) {
+		t2lm_err("ml peer is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	/* ignore the frame if all links are not connected */
+	if (!mlo_check_if_all_links_up(vdev))
+		return QDF_STATUS_SUCCESS;
+
+	status = wlan_mlo_parse_t2lm_action_frame(&t2lm_rsp, event_data,
+						  WLAN_T2LM_CATEGORY_RESPONSE);
+	if (status != QDF_STATUS_SUCCESS) {
+		mlme_err("Unable to parse T2LM request action frame");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	mlme_debug("t2lm rsp dialog token %d", t2lm_rsp.dialog_token);
+	mlme_debug("t2lm rsp is %d", t2lm_rsp.t2lm_resp_type);
+	t2lm_req = &ml_peer->t2lm_policy.ongoing_tid_to_link_mapping;
+	if (!t2lm_req) {
+		t2lm_err("Ongoing tid neg is null");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	for (dir = 0; dir < WLAN_T2LM_MAX_DIRECTION; dir++) {
+		t2lm_info = &t2lm_req->t2lm_info[dir];
+		if (t2lm_info &&
+		    t2lm_info->direction != WLAN_T2LM_INVALID_DIRECTION) {
+			if (t2lm_rsp.dialog_token == t2lm_req->dialog_token &&
+			    t2lm_rsp.t2lm_resp_type == WLAN_T2LM_RESP_TYPE_SUCCESS) {
+				status = wlan_send_tid_to_link_mapping(vdev,
+								       t2lm_info);
+				if (QDF_IS_STATUS_ERROR(status)) {
+					t2lm_err("sending t2lm wmi failed");
+					break;
+				}
+			} else if (t2lm_rsp.dialog_token == t2lm_req->dialog_token &&
+				   t2lm_rsp.t2lm_resp_type != WLAN_T2LM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING) {
+				t2lm_debug("T2LM rsp status denied, clear ongoing tid mapping");
+				wlan_t2lm_clear_ongoing_negotiation(peer);
+			}
+		}
+	}
+
+	return status;
 }
 
 QDF_STATUS t2lm_handle_rx_teardown(struct wlan_objmgr_vdev *vdev,
@@ -245,10 +354,10 @@ QDF_STATUS t2lm_deliver_event(struct wlan_objmgr_vdev *vdev,
 		status = t2lm_handle_tx_resp(vdev, event_data, token);
 		break;
 	case WLAN_T2LM_EV_ACTION_FRAME_TX_REQ:
-		status = t2lm_handle_tx_req(vdev, event_data, token);
+		status = t2lm_handle_tx_req(vdev, peer, event_data, token);
 		break;
 	case WLAN_T2LM_EV_ACTION_FRAME_RX_RESP:
-		status = t2lm_handle_rx_resp(vdev, event_data, token);
+		status = t2lm_handle_rx_resp(vdev, peer, event_data, token);
 		break;
 	case WLAN_T2LM_EV_ACTION_FRAME_RX_TEARDOWN:
 		status = t2lm_handle_rx_teardown(vdev, peer, event_data);
@@ -380,11 +489,42 @@ end:
 }
 
 void
+wlan_t2lm_clear_ongoing_negotiation(struct wlan_objmgr_peer *peer)
+{
+	struct wlan_mlo_peer_context *ml_peer;
+	struct wlan_t2lm_onging_negotiation_info *ongoing_tid_to_link_mapping;
+	uint8_t i;
+
+	ml_peer = peer->mlo_peer_ctx;
+	if (!ml_peer) {
+		t2lm_err("ml peer is null");
+		return;
+	}
+
+	ongoing_tid_to_link_mapping = &ml_peer->t2lm_policy.ongoing_tid_to_link_mapping;
+	if (!ongoing_tid_to_link_mapping) {
+		t2lm_err("ongoing tid mapping is null");
+		return;
+	}
+
+	qdf_mem_zero(&ongoing_tid_to_link_mapping->t2lm_info,
+		     sizeof(struct wlan_t2lm_info) * WLAN_T2LM_MAX_DIRECTION);
+
+	ongoing_tid_to_link_mapping->dialog_token = 0;
+	ongoing_tid_to_link_mapping->category = WLAN_T2LM_CATEGORY_NONE;
+	ongoing_tid_to_link_mapping->t2lm_resp_type = WLAN_T2LM_RESP_TYPE_INVALID;
+	ongoing_tid_to_link_mapping->t2lm_tx_status = WLAN_T2LM_TX_STATUS_NONE;
+
+	for (i = 0; i < WLAN_T2LM_MAX_DIRECTION; i++)
+		ongoing_tid_to_link_mapping->t2lm_info[i].direction =
+				WLAN_T2LM_INVALID_DIRECTION;
+}
+
+void
 wlan_t2lm_clear_peer_negotiation(struct wlan_objmgr_peer *peer)
 {
 	struct wlan_mlo_peer_context *ml_peer;
 	struct wlan_prev_t2lm_negotiated_info *t2lm_negotiated_info;
-
 	uint8_t i;
 
 	ml_peer = peer->mlo_peer_ctx;
@@ -401,6 +541,162 @@ wlan_t2lm_clear_peer_negotiation(struct wlan_objmgr_peer *peer)
 	for (i = 0; i < WLAN_T2LM_MAX_DIRECTION; i++)
 		t2lm_negotiated_info->t2lm_info[i].direction =
 				WLAN_T2LM_INVALID_DIRECTION;
+}
+
+void
+wlan_t2lm_clear_all_tid_mapping(struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_objmgr_peer *peer;
+	struct wlan_t2lm_context *t2lm_ctx;
+
+	if (!vdev) {
+		t2lm_err("Vdev is null");
+		return;
+	}
+
+	if (!wlan_vdev_mlme_is_mlo_vdev(vdev))
+		return;
+
+	if (!vdev->mlo_dev_ctx) {
+		t2lm_err("mlo dev ctx is null");
+		return;
+	}
+
+	t2lm_ctx = &vdev->mlo_dev_ctx->t2lm_ctx;
+	peer = wlan_vdev_get_bsspeer(vdev);
+	if (!peer) {
+		t2lm_err("peer is null");
+		return;
+	}
+	qdf_mem_zero(&t2lm_ctx->established_t2lm,
+		     sizeof(struct wlan_mlo_t2lm_ie));
+	t2lm_ctx->established_t2lm.t2lm.direction = WLAN_T2LM_INVALID_DIRECTION;
+
+	qdf_mem_zero(&t2lm_ctx->upcoming_t2lm,
+		     sizeof(struct wlan_mlo_t2lm_ie));
+	t2lm_ctx->upcoming_t2lm.t2lm.direction = WLAN_T2LM_INVALID_DIRECTION;
+
+	wlan_t2lm_clear_peer_negotiation(peer);
+	wlan_t2lm_clear_ongoing_negotiation(peer);
+	wlan_mlo_t2lm_timer_stop(vdev);
+}
+
+static bool
+wlan_is_ml_link_disabled(uint32_t link_id_bitmap,
+			 uint8_t ml_link_id)
+{
+	uint8_t link;
+
+	if (!link_id_bitmap) {
+		t2lm_err("Link id bitmap is 0");
+		return false;
+	}
+
+	for (link = 0; link < WLAN_T2LM_MAX_NUM_LINKS; link++) {
+		if ((link == ml_link_id) &&
+		    (link_id_bitmap & BIT(link))) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void
+wlan_t2lm_set_link_mapping_of_tids(uint8_t link_id,
+				   struct wlan_t2lm_info *t2lm_info,
+				   bool set)
+{
+	uint8_t tid_num;
+
+	if (link_id >= WLAN_T2LM_MAX_NUM_LINKS) {
+		t2lm_err("Max 16 t2lm links are supported");
+		return;
+	}
+
+	for (tid_num = 0; tid_num < T2LM_MAX_NUM_TIDS; tid_num++) {
+		if (set)
+			t2lm_info->ieee_link_map_tid[tid_num] |= BIT(link_id);
+		else
+			t2lm_info->ieee_link_map_tid[tid_num] &= ~BIT(link_id);
+	}
+}
+
+QDF_STATUS
+wlan_populate_link_disable_t2lm_frame(struct wlan_objmgr_vdev *vdev,
+				      struct mlo_link_disable_request_evt_params *params)
+{
+	struct wlan_objmgr_peer *peer;
+	struct wlan_mlo_dev_context *ml_dev_ctx;
+	struct wlan_mlo_peer_t2lm_policy *t2lm_policy;
+	struct wlan_objmgr_vdev *tmp_vdev;
+	struct wlan_t2lm_onging_negotiation_info t2lm_neg = {0};
+	uint8_t dir = WLAN_T2LM_BIDI_DIRECTION;
+	uint8_t i = 0;
+	QDF_STATUS status;
+	uint8_t link_id;
+
+	peer = wlan_objmgr_vdev_try_get_bsspeer(vdev,
+						WLAN_MLO_MGR_ID);
+
+	if (!peer) {
+		t2lm_err("peer is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	if (!vdev->mlo_dev_ctx)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	t2lm_policy = &peer->mlo_peer_ctx->t2lm_policy;
+	t2lm_neg = t2lm_policy->ongoing_tid_to_link_mapping;
+
+	t2lm_neg.category = WLAN_T2LM_CATEGORY_REQUEST;
+	t2lm_neg.dialog_token = t2lm_gen_dialog_token(t2lm_policy);
+	qdf_mem_zero(&t2lm_neg.t2lm_info,
+		     sizeof(struct wlan_t2lm_info) * WLAN_T2LM_MAX_DIRECTION);
+	for (i = 0; i < WLAN_T2LM_MAX_DIRECTION; i++)
+		t2lm_neg.t2lm_info[i].direction = WLAN_T2LM_INVALID_DIRECTION;
+
+	t2lm_neg.t2lm_info[dir].default_link_mapping = 0;
+	t2lm_neg.t2lm_info[dir].direction = WLAN_T2LM_BIDI_DIRECTION;
+	t2lm_neg.t2lm_info[dir].mapping_switch_time_present = 0;
+	t2lm_neg.t2lm_info[dir].expected_duration_present = 0;
+	t2lm_neg.t2lm_info[dir].link_mapping_size = 1;
+
+	t2lm_debug("dir %d", t2lm_neg.t2lm_info[dir].direction);
+	ml_dev_ctx = vdev->mlo_dev_ctx;
+
+	for (i = 0; i < WLAN_UMAC_MLO_MAX_VDEVS; i++) {
+		if (!ml_dev_ctx->wlan_vdev_list[i])
+			continue;
+
+		tmp_vdev = ml_dev_ctx->wlan_vdev_list[i];
+		link_id = wlan_vdev_get_link_id(tmp_vdev);
+
+		/* if link id matches disabled link id bitmap
+		 * set that bit as 0.
+		 */
+		if (wlan_is_ml_link_disabled(params->link_id_bitmap,
+					     link_id)) {
+			wlan_t2lm_set_link_mapping_of_tids(link_id,
+						&t2lm_neg.t2lm_info[dir],
+						0);
+			t2lm_debug("Disabled link id %d", link_id);
+		} else {
+			wlan_t2lm_set_link_mapping_of_tids(link_id,
+						&t2lm_neg.t2lm_info[dir],
+						1);
+			t2lm_debug("Enabled link id %d", link_id);
+		}
+	}
+
+	status = t2lm_deliver_event(vdev, peer,
+				    WLAN_T2LM_EV_ACTION_FRAME_TX_REQ,
+				    &t2lm_neg,
+				    &t2lm_neg.dialog_token);
+
+	wlan_objmgr_peer_release_ref(peer, WLAN_MLO_MGR_ID);
+	return status;
 }
 
 QDF_STATUS wlan_t2lm_deliver_event(struct wlan_objmgr_vdev *vdev,

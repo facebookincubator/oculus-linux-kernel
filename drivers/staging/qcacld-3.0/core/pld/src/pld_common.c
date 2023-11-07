@@ -2668,6 +2668,46 @@ int pld_get_wlan_unsafe_channel_sap(
 }
 #endif
 
+void pld_set_tsf_sync_period(struct device *dev, u32 val)
+{
+	switch (pld_get_bus_type(dev)) {
+	case PLD_BUS_TYPE_PCIE:
+		pld_pcie_set_tsf_sync_period(dev, val);
+		break;
+	case PLD_BUS_TYPE_PCIE_FW_SIM:
+	case PLD_BUS_TYPE_IPCI_FW_SIM:
+	case PLD_BUS_TYPE_SNOC_FW_SIM:
+	case PLD_BUS_TYPE_SNOC:
+	case PLD_BUS_TYPE_IPCI:
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+		break;
+	default:
+		pr_err("Invalid device type\n");
+		break;
+	}
+}
+
+void pld_reset_tsf_sync_period(struct device *dev)
+{
+	switch (pld_get_bus_type(dev)) {
+	case PLD_BUS_TYPE_PCIE:
+		pld_pcie_reset_tsf_sync_period(dev);
+		break;
+	case PLD_BUS_TYPE_PCIE_FW_SIM:
+	case PLD_BUS_TYPE_IPCI_FW_SIM:
+	case PLD_BUS_TYPE_SNOC_FW_SIM:
+	case PLD_BUS_TYPE_SNOC:
+	case PLD_BUS_TYPE_IPCI:
+	case PLD_BUS_TYPE_SDIO:
+	case PLD_BUS_TYPE_USB:
+		break;
+	default:
+		pr_err("Invalid device type\n");
+		break;
+	}
+}
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 int pld_is_ipa_offload_disabled(struct device *dev)
 {

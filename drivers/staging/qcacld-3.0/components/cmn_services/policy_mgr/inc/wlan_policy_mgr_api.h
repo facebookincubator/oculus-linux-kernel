@@ -1127,6 +1127,24 @@ void policy_mgr_decr_session_set_pcl(struct wlan_objmgr_psoc *psoc,
 
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
+ * policy_mgr_mlo_sta_set_link() - Set link mode for MLO STA
+ * @psoc: psoc object
+ * @reason: reason to set
+ * @mode: mode to set
+ * @num_mlo_vdev: number of vdevs
+ * @mlo_vdev_lst: vdev list
+ *
+ * Interface to set link mode for MLO STA
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+policy_mgr_mlo_sta_set_link(struct wlan_objmgr_psoc *psoc,
+			    enum mlo_link_force_reason reason,
+			    enum mlo_link_force_mode mode,
+			    uint8_t num_mlo_vdev, uint8_t *mlo_vdev_lst);
+
+/**
  * policy_mgr_is_ml_vdev_id() - check if vdev id is part of ML
  * @psoc: PSOC object information
  * @vdev_id: vdev id to check
@@ -1181,6 +1199,14 @@ void policy_mgr_move_vdev_from_connection_to_disabled_tbl(
 bool
 policy_mgr_ml_link_vdev_need_to_be_disabled(struct wlan_objmgr_psoc *psoc,
 					    struct wlan_objmgr_vdev *vdev);
+
+/**
+ * policy_mgr_wait_for_set_link_update() - Wait for set/clear link response
+ * @psoc: psoc pointer
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS policy_mgr_wait_for_set_link_update(struct wlan_objmgr_psoc *psoc);
 #else
 static inline bool
 policy_mgr_is_ml_vdev_id(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)
@@ -1210,6 +1236,12 @@ static inline void
 policy_mgr_move_vdev_from_connection_to_disabled_tbl(
 						struct wlan_objmgr_psoc *psoc,
 						uint8_t vdev_id) {}
+
+static inline QDF_STATUS
+policy_mgr_wait_for_set_link_update(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
 #endif
 
 /**
@@ -3940,18 +3972,18 @@ void policy_mgr_check_and_stop_opportunistic_timer(
 	struct wlan_objmgr_psoc *psoc, uint8_t id);
 
 /**
- * policy_mgr_set_weight_of_dfs_passive_channels_to_zero() - set weight of dfs
- * and passive channels to 0
+ * policy_mgr_set_weight_of_disabled_inactive_channels_to_zero() - set weight
+ * of disabled and inactive channels to 0
  * @psoc: pointer to soc
  * @pcl: preferred channel freq list
  * @len: length of preferred channel list
  * @weight_list: preferred channel weight list
  * @weight_len: length of weight list
- * This function set the weight of dfs and passive channels to 0
+ * This function set the weight of disabled and inactive channels to 0
  *
  * Return: None
  */
-void policy_mgr_set_weight_of_dfs_passive_channels_to_zero(
+void policy_mgr_set_weight_of_disabled_inactive_channels_to_zero(
 		struct wlan_objmgr_psoc *psoc, uint32_t *pcl,
 		uint32_t *len, uint8_t *weight_list, uint32_t weight_len);
 /**
@@ -4689,10 +4721,10 @@ void policy_mgr_handle_ml_sta_links_on_vdev_down(struct wlan_objmgr_psoc *psoc,
  * policy_mgr_handle_emlsr_sta_concurrency() - Handle concurrency scenarios with
  * EMLSR STA.
  * @psoc: objmgr psoc
- * @vdev: pointer to vdev
- * @ap_coming_up: Check if the new connection request is SAP/P2P GO/NAN
- * @sta_coming_up: Check if the new connection request is STA/P2P Client
- * @emlsr_sta_coming_up: Check if the new connection request is EMLSR STA
+ * @conc_con_coming_up: Indicates if any concurrent connection is coming up
+ * @emlsr_sta_coming_up: Carries true when eMLSR STA is coming up.
+ *			 Carries true when an unsupported concurrency is
+ *			 gone, so that host can let firmware go to eMLSR mode.
  *
  * The API handles concurrency scenarios with existing EMLSR connection when a
  * new connection request is received OR with an existing legacy connection when
@@ -4701,9 +4733,7 @@ void policy_mgr_handle_ml_sta_links_on_vdev_down(struct wlan_objmgr_psoc *psoc,
  * Return: none
  */
 void policy_mgr_handle_emlsr_sta_concurrency(struct wlan_objmgr_psoc *psoc,
-					     struct wlan_objmgr_vdev *vdev,
-					     bool ap_coming_up,
-					     bool sta_coming_up,
+					     bool conc_con_coming_up,
 					     bool emlsr_sta_coming_up);
 
 /**
@@ -4910,9 +4940,9 @@ bool policy_mgr_is_ll_sap_concurrency_valid(struct wlan_objmgr_psoc *psoc,
  * @discon_freq: disconnect frequency
  * @type: enum indoor_conc_update_type
  *
- * Return: None
+ * Return: True if need to compute pdev current channel list
  */
-void
+bool
 policy_mgr_update_indoor_concurrency(struct wlan_objmgr_psoc *psoc,
 				     uint8_t vdev_id,
 				     uint32_t discon_freq,

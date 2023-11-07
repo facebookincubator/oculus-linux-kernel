@@ -157,6 +157,12 @@
 	bootargs = "loglevel=6 kernel.panic_on_rcu_stall=1 loop.max_part=7 pcie_ports=compat service_locator.enable=1 msm_rtb.filter=0x237 allow_mismatched_32bit_el0 kasan=off rcupdate.rcu_expedited=1 rcu_nocbs=0-5 ftrace_dump_on_oops pstore.compress=none kpti=off swiotlb=noforce cgroup.memory=nokmem,nosocket allow_file_spec_access can.stats_timer=0 disable_dma32=on cpufreq.default_governor=performance";
 };
 
+&L1D {
+	/delete-property/ qcom,proxy-consumer-enable;
+	/delete-property/ qcom,proxy-consumer-current;
+	/delete-property/ qcom,proxy-consumer-voltage;
+};
+
 &mdss_dsi2 {
 	status = "disabled";
 };
@@ -208,6 +214,17 @@
 	blue {
 		qcom,continuous-mode;
 		qcom,default-brightness = <60>;
+	};
+};
+
+/* Battery I2C */
+&qupv3_se0_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+
+	bq27z561: fuel-gauge@0x55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
 	};
 };
 
@@ -266,7 +283,7 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&key_vol_up_default>;
 
-		vol_up {
+		vol_up: vol_up {
 			label = "volume_up";
 			gpios = <&pm8550b_gpios 10 GPIO_ACTIVE_LOW>;
 			linux,input-type = <1>;
@@ -326,14 +343,6 @@
 &thermal_zones {
 	/delete-node/ pm8010m_tz;
 	/delete-node/ pm8010n_tz;
-	/delete-node/ pm8550b-bcl-lvl0;
-	/delete-node/ pm8550b-bcl-lvl1;
-	/delete-node/ pm8550b-bcl-lvl2;
-	/delete-node/ pm8550b-ibat-lvl0;
-	/delete-node/ pm8550b-ibat-lvl1;
-	/delete-node/ pmxr2230-bcl-lvl0;
-	/delete-node/ pmxr2230-bcl-lvl1;
-	/delete-node/ pmxr2230-bcl-lvl2;
 	/delete-node/ socd;
 
 	// cpu-pause CDEV driver is not present, and we reuse these CPU thermal zones
@@ -447,6 +456,51 @@
 		};
 	};
 
+	pm8550b-bcl-lvl0 {
+		cooling-maps {
+			/delete-node/ lbat_cpu_2_3;
+			/delete-node/ lbat_cdsp0;
+			/delete-node/ lbat_gpu0;
+		};
+	};
+
+	pm8550b-bcl-lvl1 {
+		cooling-maps {
+			/delete-node/ lbat_cpu_4_5;
+			/delete-node/ lbat_cdsp1;
+			/delete-node/ lbat_gpu1;
+		};
+	};
+
+	pm8550b-bcl-lvl2 {
+		cooling-maps {
+			/delete-node/ lbat_cdsp2;
+			/delete-node/ lbat_gpu2;
+		};
+	};
+
+	pmxr2230-bcl-lvl0 {
+		cooling-maps {
+			/delete-node/ vph_cpu_2_3;
+			/delete-node/ vph_cdsp0;
+			/delete-node/ vph_gpu0;
+		};
+	};
+
+	pmxr2230-bcl-lvl1 {
+		cooling-maps {
+			/delete-node/ vph_cpu_4_5;
+			/delete-node/ vph_cdsp1;
+			/delete-node/ vph_gpu1;
+		};
+	};
+
+	pmxr2230-bcl-lvl2 {
+		cooling-maps {
+			/delete-node/ vph_cdsp2;
+			/delete-node/ vph_gpu2;
+		};
+	};
 };
 
 &tlmm {
@@ -454,7 +508,7 @@
 	 * Mark XPU-protected GPIOs are reserved, to prevent
 	 * attempted initialization at boot.
 	 */
-	qcom,gpios-reserved = <53 54 55 136>;
+	qcom,gpios-reserved = <53 54 55 115 136>;
 
 	/delete-node/ pcie1;
 	/delete-node/ pcie2;
@@ -566,6 +620,7 @@
 	qcom,vddp-ref-clk-supply = <&L3B>;
 	qcom,vddp-ref-clk-max-microamp = <100>;
 
+	spm-level = <3>;
 	status = "ok";
 };
 

@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  */
-/* Copyright (c) 2022. Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include <linux/iommu.h>
 #include <linux/qcom_scm.h>
@@ -641,7 +641,7 @@ static int __tzbsp_set_video_state(enum tzbsp_video_state state)
 int __set_clk_rate(struct msm_vidc_core *core,
 		struct clock_info *cl, u64 rate)
 {
-	int rc = 0;
+	int rc = 0, src_clk_scale_ratio = 1;
 	struct mmrm_client_data client_data;
 	struct mmrm_client *client;
 
@@ -662,7 +662,8 @@ int __set_clk_rate(struct msm_vidc_core *core,
 	 * and used for scaling.
 	 * TODO: Remove this scaling if using source clock instead of branch clock.
 	 */
-	rate = rate * MSM_VIDC_CLOCK_SOURCE_SCALING_RATIO;
+	src_clk_scale_ratio = msm_vidc_get_src_clk_scaling_ratio(core);
+	rate = rate * src_clk_scale_ratio;
 
 	/* bail early if requested clk rate is not changed */
 	if (rate == cl->prev)

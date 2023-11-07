@@ -7,5 +7,5 @@
 / {
 	model = "Eureka";
 	compatible = "qcom,anorak", "oculus,eureka";
-	qcom,board-id = <0 0>;
+	qcom,board-id = <0x000040 0x0>;
 };

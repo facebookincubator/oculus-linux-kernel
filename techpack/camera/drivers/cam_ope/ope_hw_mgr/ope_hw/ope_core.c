@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -588,6 +588,7 @@ static uint32_t *ope_create_frame_cmd_batch(struct cam_ope_hw_mgr *hw_mgr,
 				dmi_cmd = (struct cdm_dmi_cmd *)temp;
 				if (!dmi_cmd->addr) {
 					CAM_ERR(CAM_OPE, "Null dmi cmd addr");
+					cam_mem_put_cpu_buf(frm_proc->cmd_buf[i][j].mem_handle);
 					return NULL;
 				}
 
@@ -608,6 +609,8 @@ static uint32_t *ope_create_frame_cmd_batch(struct cam_ope_hw_mgr *hw_mgr,
 		if (hw_mgr->frame_dump_enable)
 			dump_frame_cmd(frm_proc, i, j,
 				iova_addr, kmd_buf, buf_len);
+
+		cam_mem_put_cpu_buf(frm_proc->cmd_buf[i][j].mem_handle);
 	}
 	return kmd_buf;
 
@@ -747,6 +750,8 @@ static uint32_t *ope_create_frame_cmd(struct cam_ope_hw_mgr *hw_mgr,
 					if (!dmi_cmd->addr) {
 						CAM_ERR(CAM_OPE,
 							"Null dmi cmd addr");
+						cam_mem_put_cpu_buf(
+							frm_proc->cmd_buf[i][j].mem_handle);
 						return NULL;
 					}
 
@@ -768,6 +773,8 @@ static uint32_t *ope_create_frame_cmd(struct cam_ope_hw_mgr *hw_mgr,
 			if (hw_mgr->frame_dump_enable)
 				dump_frame_cmd(frm_proc, i, j,
 					iova_addr, kmd_buf, buf_len);
+
+			cam_mem_put_cpu_buf(frm_proc->cmd_buf[i][j].mem_handle);
 		}
 	}
 	return kmd_buf;
@@ -862,6 +869,7 @@ static uint32_t *ope_create_stripe_cmd(struct cam_ope_hw_mgr *hw_mgr,
 				dmi_cmd = (struct cdm_dmi_cmd *)temp;
 				if (!dmi_cmd->addr) {
 					CAM_ERR(CAM_OPE, "Null dmi cmd addr");
+					cam_mem_put_cpu_buf(frm_proc->cmd_buf[i][k].mem_handle);
 					return NULL;
 				}
 
@@ -880,6 +888,8 @@ static uint32_t *ope_create_stripe_cmd(struct cam_ope_hw_mgr *hw_mgr,
 		if (hw_mgr->frame_dump_enable)
 			dump_stripe_cmd(frm_proc, stripe_idx, i, k,
 				iova_addr, kmd_buf, buf_len);
+
+		cam_mem_put_cpu_buf(frm_proc->cmd_buf[i][k].mem_handle);
 	}
 
 	ope_dev = hw_mgr->ope_dev_intf[0]->hw_priv;

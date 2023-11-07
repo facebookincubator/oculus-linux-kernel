@@ -2049,6 +2049,12 @@ QDF_STATUS wmi_unified_cmd_send_fl(wmi_unified_t wmi_handle, wmi_buf_t buf,
 		return QDF_STATUS_E_INVAL;
 	}
 
+	if (wmi_has_wow_enable_ack_failed(wmi_handle)) {
+		wmi_nofl_err("wow enable ack already failed(via %s:%u)",
+			     func, line);
+		return QDF_STATUS_E_INVAL;
+	}
+
 #ifndef WMI_NON_TLV_SUPPORT
 	/* Do sanity check on the TLV parameter structure */
 	if (wmi_handle->target_type == WMI_TLV_TARGET) {
@@ -3022,6 +3028,21 @@ void *wmi_unified_get_soc_handle(struct wmi_unified *wmi_handle)
 	return wmi_handle->soc;
 }
 
+void wmi_set_wow_enable_ack_failed(wmi_unified_t wmi_handle)
+{
+	qdf_atomic_set(&wmi_handle->is_wow_enable_ack_failed, 1);
+}
+
+void wmi_clear_wow_enable_ack_failed(wmi_unified_t wmi_handle)
+{
+	qdf_atomic_set(&wmi_handle->is_wow_enable_ack_failed, 0);
+}
+
+bool wmi_has_wow_enable_ack_failed(wmi_unified_t wmi_handle)
+{
+	return qdf_atomic_read(&wmi_handle->is_wow_enable_ack_failed);
+}
+
 /**
  * wmi_interface_logging_init: Interface looging init
  * @wmi_handle: Pointer to wmi handle object
@@ -3108,6 +3129,7 @@ void *wmi_unified_get_pdev_handle(struct wmi_soc *soc, uint32_t pdev_idx)
 		wmi_interface_logging_init(wmi_handle, pdev_idx);
 		qdf_atomic_init(&wmi_handle->pending_cmds);
 		qdf_atomic_init(&wmi_handle->is_target_suspended);
+		qdf_atomic_init(&wmi_handle->is_wow_enable_ack_failed);
 		wmi_handle->target_type = soc->target_type;
 		wmi_handle->wmi_max_cmds = soc->wmi_max_cmds;
 
@@ -3237,6 +3259,7 @@ void *wmi_unified_attach(void *scn_handle,
 	qdf_atomic_init(&wmi_handle->is_target_suspended);
 	qdf_atomic_init(&wmi_handle->is_target_suspend_acked);
 	qdf_atomic_init(&wmi_handle->num_stats_over_qmi);
+	qdf_atomic_init(&wmi_handle->is_wow_enable_ack_failed);
 	wmi_runtime_pm_init(wmi_handle);
 	wmi_interface_logging_init(wmi_handle, WMI_HOST_PDEV_ID_0);
 
@@ -3320,6 +3343,7 @@ void wmi_unified_detach(struct wmi_unified *wmi_handle)
 
 			wmi_interface_sequence_deinit(soc->wmi_pdev[i]);
 			wmi_ext_dbgfs_deinit(soc->wmi_pdev[i]);
+			wmi_clear_wow_enable_ack_failed(soc->wmi_pdev[i]);
 
 			qdf_mem_free(soc->wmi_pdev[i]);
 		}

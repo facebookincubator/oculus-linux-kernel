@@ -38,6 +38,7 @@
 #include "qdf_platform.h"
 #include "wlan_osif_request_manager.h"
 #include "wlan_p2p_api.h"
+#include "wlan_mlme_vdev_mgr_interface.h"
 
 QDF_STATUS nan_set_discovery_state(struct wlan_objmgr_psoc *psoc,
 				   enum nan_disc_state new_state)
@@ -942,6 +943,7 @@ QDF_STATUS nan_disable_cleanup(struct wlan_objmgr_psoc *psoc)
 		if (psoc_nan_obj->is_explicit_disable && call_back)
 			call_back(psoc_nan_obj->nan_disc_request_ctx);
 
+		nan_handle_emlsr_concurrency(psoc, false);
 		policy_mgr_nan_sap_post_disable_conc_check(psoc);
 	} else {
 		/* Should not happen, NAN state can always be disabled */
@@ -986,35 +988,16 @@ static QDF_STATUS nan_handle_schedule_update(
 }
 
 /**
- * nan_handle_host_update() - Updates Host about NAN Datapath status
+ * nan_handle_host_update() - extract the vdev from host event
  * @evt: Event data received from firmware
  * @vdev: pointer to vdev
  *
- * Return: status of operation
+ * Return: none
  */
-static QDF_STATUS nan_handle_host_update(struct nan_datapath_host_event *evt,
+static void nan_handle_host_update(struct nan_datapath_host_event *evt,
 					 struct wlan_objmgr_vdev **vdev)
 {
-	struct wlan_objmgr_psoc *psoc;
-	struct nan_psoc_priv_obj *psoc_nan_obj;
-
 	*vdev = evt->vdev;
-	psoc = wlan_vdev_get_psoc(evt->vdev);
-	if (!psoc) {
-		nan_err("psoc is NULL");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	psoc_nan_obj = nan_get_psoc_priv_obj(psoc);
-	if (!psoc_nan_obj) {
-		nan_err("psoc_nan_obj is NULL");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	psoc_nan_obj->cb_obj.os_if_ndp_event_handler(psoc, evt->vdev,
-						     NDP_HOST_UPDATE, evt);
-
-	return QDF_STATUS_SUCCESS;
 }
 
 QDF_STATUS nan_discovery_event_handler(struct scheduler_msg *msg)
@@ -1185,11 +1168,36 @@ static QDF_STATUS nan_set_hw_mode(struct wlan_objmgr_psoc *psoc,
 		goto pre_enable_failure;
 	}
 
+	if (wlan_util_is_vdev_in_cac_wait(pdev, WLAN_NAN_ID)) {
+		nan_err_rl("cac is in progress");
+		status = QDF_STATUS_E_FAILURE;
+		goto pre_enable_failure;
+	}
+
 pre_enable_failure:
 	if (pdev)
 		wlan_objmgr_pdev_release_ref(pdev, WLAN_NAN_ID);
 
 	return status;
+}
+
+void nan_handle_emlsr_concurrency(struct wlan_objmgr_psoc *psoc,
+				  bool nan_enable)
+{
+	if (nan_enable) {
+		/*
+		 * Check if any set link is already progress,
+		 * wait for it to complete
+		 */
+		policy_mgr_wait_for_set_link_update(psoc);
+
+		wlan_handle_emlsr_sta_concurrency(psoc, true, false);
+
+		/* Wait till rsp is received if NAN enable causes a set link */
+		policy_mgr_wait_for_set_link_update(psoc);
+	} else {
+		wlan_handle_emlsr_sta_concurrency(psoc, false, true);
+	}
 }
 
 QDF_STATUS nan_discovery_pre_enable(struct wlan_objmgr_pdev *pdev,
@@ -1221,6 +1229,8 @@ QDF_STATUS nan_discovery_pre_enable(struct wlan_objmgr_pdev *pdev,
 		if (QDF_IS_STATUS_ERROR(status))
 			goto pre_enable_failure;
 	}
+
+	nan_handle_emlsr_concurrency(psoc, true);
 
 	/* Try to teardown TDLS links, but do not wait */
 	status = ucfg_tdls_teardown_links(psoc);

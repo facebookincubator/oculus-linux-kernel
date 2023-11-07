@@ -1074,10 +1074,12 @@ int ucfg_pmo_psoc_clear_target_wake_up(struct wlan_objmgr_psoc *psoc);
  * ucfg_pmo_psoc_target_suspend_acknowledge() - Clear initial wake up status
  * @context: caller-provided context
  * @wow_nack: Was WoW NACK'ed
+ * @reason_code: WoW status reason code
  *
  * Return: None
  */
-void ucfg_pmo_psoc_target_suspend_acknowledge(void *context, bool wow_nack);
+void ucfg_pmo_psoc_target_suspend_acknowledge(void *context, bool wow_nack,
+					      uint16_t reason_code);
 
 /**
  * ucfg_pmo_psoc_wakeup_host_event_received() - got host wake up evennt from fwr
@@ -1098,6 +1100,18 @@ void ucfg_pmo_psoc_wakeup_host_event_received(struct wlan_objmgr_psoc *psoc);
  */
 QDF_STATUS ucfg_pmo_config_listen_interval(struct wlan_objmgr_vdev *vdev,
 					   uint32_t listen_interval);
+
+/**
+ * ucfg_pmo_get_listen_interval() - function to get listen interval
+ * @vdev: objmgr vdev
+ * @listen_interval: pointer to store listen interval
+ *
+ * This function allows user to get listen interval dynamically
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS ucfg_pmo_get_listen_interval(struct wlan_objmgr_vdev *vdev,
+					uint32_t *listen_interval);
 
 /**
  * ucfg_pmo_config_modulated_dtim() - function to configure modulated dtim
@@ -1878,7 +1892,8 @@ ucfg_pmo_psoc_clear_target_wake_up(struct wlan_objmgr_psoc *psoc)
 }
 
 static inline void
-ucfg_pmo_psoc_target_suspend_acknowledge(void *context, bool wow_nack)
+ucfg_pmo_psoc_target_suspend_acknowledge(void *context, bool wow_nack,
+					 uint16_t reason_code)
 {
 }
 
@@ -2383,4 +2398,24 @@ void ucfg_pmo_notify_system_resume(struct wlan_objmgr_psoc *psoc)
 {
 }
 #endif
+
+/**
+ * ucfg_pmo_set_vdev_bridge_addr() - API to set Bridge mac address
+ * @vdev: objmgr vdev
+ * @bridgeaddr: Bridge mac address
+ *
+ * Return: if success pmo vdev ctx else NULL
+ */
+QDF_STATUS ucfg_pmo_set_vdev_bridge_addr(struct wlan_objmgr_vdev *vdev,
+					 struct qdf_mac_addr *bridgeaddr);
+
+/**
+ * ucfg_pmo_get_vdev_bridge_addr() - API to get Bridge mac address
+ * @vdev: objmgr vdev
+ * @bridgeaddr: Bridge mac address
+ *
+ * Return: if success pmo vdev ctx else NULL
+ */
+QDF_STATUS ucfg_pmo_get_vdev_bridge_addr(struct wlan_objmgr_vdev *vdev,
+					 struct qdf_mac_addr *bridgeaddr);
 #endif /* end  of _WLAN_PMO_UCFG_API_H_ */

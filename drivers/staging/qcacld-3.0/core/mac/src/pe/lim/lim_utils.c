@@ -80,6 +80,7 @@
 #include "wlan_cmn_ieee80211.h"
 #include <wlan_cm_api.h>
 #include <wlan_vdev_mgr_utils_api.h>
+#include "parser_api.h"
 
 /** -------------------------------------------------------------
    \fn lim_delete_dialogue_token_list
@@ -8223,6 +8224,8 @@ void lim_set_mlo_caps(struct mac_context *mac, struct pe_session *session,
 		mlo_ie_info->eml_capab_present = dot11_cap.eml_capab_present;
 		mlo_ie_info->mld_capab_and_op_present = dot11_cap.mld_capab_and_op_present;
 		mlo_ie_info->mld_id_present = dot11_cap.mld_id_present;
+		mlo_ie_info->ext_mld_capab_and_op_present =
+				dot11_cap.ext_mld_capab_and_op_present;
 		mlo_ie_info->reserved_1 = dot11_cap.reserved_1;
 		mlo_ie_info->common_info_length = dot11_cap.common_info_length;
 		qdf_mem_copy(&mlo_ie_info->mld_mac_addr,
@@ -8233,29 +8236,22 @@ void lim_set_mlo_caps(struct mac_context *mac, struct pe_session *session,
 }
 
 QDF_STATUS lim_send_mlo_caps_ie(struct mac_context *mac_ctx,
-				struct pe_session *session,
+				struct wlan_objmgr_vdev *vdev,
 				enum QDF_OPMODE device_mode,
 				uint8_t vdev_id)
 {
-	uint8_t mlo_cap_total_len = DOT11F_IE_MLO_IE_MIN_LEN +
-				    EHT_CAP_OUI_LEN + QDF_MAC_ADDR_SIZE;
+
 	QDF_STATUS status_2g, status_5g;
-	uint8_t mlo_caps[DOT11F_IE_MLO_IE_MIN_LEN +
-			 EHT_CAP_OUI_LEN + QDF_MAC_ADDR_SIZE] = {0};
+	struct wlan_mlo_ie mlo_ie;
 
-	mlo_caps[0] = DOT11F_EID_MLO_IE;
-	mlo_caps[1] = DOT11F_IE_MLO_IE_MIN_LEN + 1;
-
-	qdf_mem_copy(&mlo_caps[2], MLO_IE_OUI_TYPE, MLO_IE_OUI_SIZE);
-	lim_set_mlo_caps(mac_ctx, session, mlo_caps, mlo_cap_total_len);
-
+	populate_dot11f_mlo_ie(mac_ctx, vdev, &mlo_ie);
 	status_2g = lim_send_ie(mac_ctx, vdev_id, DOT11F_EID_MLO_IE,
-				CDS_BAND_2GHZ, &mlo_caps[2],
-				EHT_CAP_OUI_LEN + QDF_MAC_ADDR_SIZE);
+				CDS_BAND_2GHZ, &mlo_ie.data[2],
+				mlo_ie.num_data - 2);
 
 	status_5g = lim_send_ie(mac_ctx, vdev_id, DOT11F_EID_MLO_IE,
-				CDS_BAND_5GHZ, &mlo_caps[2],
-				EHT_CAP_OUI_LEN + QDF_MAC_ADDR_SIZE);
+				CDS_BAND_5GHZ, &mlo_ie.data[2],
+				mlo_ie.num_data - 2);
 
 	if (QDF_IS_STATUS_SUCCESS(status_2g) &&
 	    QDF_IS_STATUS_SUCCESS(status_5g)) {
@@ -8942,6 +8938,10 @@ void lim_set_eht_caps(struct mac_context *mac, struct pe_session *session,
 		eht_cap->eht_trs_support = dot11_cap.eht_trs_support;
 		eht_cap->txop_return_support_txop_share_m2 =
 			dot11_cap.txop_return_support_txop_share_m2;
+		eht_cap->two_bqrs_support =
+			dot11_cap.two_bqrs_support;
+		eht_cap->eht_link_adaptation_support =
+			dot11_cap.eht_link_adaptation_support;
 		eht_cap->support_320mhz_6ghz = dot11_cap.support_320mhz_6ghz;
 		eht_cap->ru_242tone_wt_20mhz = dot11_cap.ru_242tone_wt_20mhz;
 		eht_cap->ndp_4x_eht_ltf_3dot2_us_gi =
@@ -9007,6 +9007,12 @@ void lim_set_eht_caps(struct mac_context *mac, struct pe_session *session,
 			dot11_cap.rx_1k_qam_in_wider_bw_dl_ofdma;
 		eht_cap->rx_4k_qam_in_wider_bw_dl_ofdma =
 			dot11_cap.rx_4k_qam_in_wider_bw_dl_ofdma;
+		eht_cap->limited_cap_support_20mhz =
+			dot11_cap.limited_cap_support_20mhz;
+		eht_cap->triggered_mu_bf_full_bw_fb_and_dl_mumimo =
+			dot11_cap.triggered_mu_bf_full_bw_fb_and_dl_mumimo;
+		eht_cap->mru_support_20mhz =
+			dot11_cap.mru_support_20mhz;
 
 		if ((is_band_2g && !dot11_he_cap.chan_width_0) ||
 			(!is_band_2g && !dot11_he_cap.chan_width_1 &&
@@ -9280,6 +9286,8 @@ void lim_intersect_ap_emlsr_caps(struct mac_context *mac_ctx,
 		 add_bss->staContext.emlsr_trans_timeout);
 }
 
+#define MAX_MSD_OFDM_ED_THRESHOLD 10
+
 void lim_extract_msd_caps(struct mac_context *mac_ctx,
 			  struct pe_session *session,
 			  struct bss_params *add_bss,
@@ -9319,11 +9327,20 @@ void lim_extract_msd_caps(struct mac_context *mac_ctx,
 				assoc_rsp->mlo_ie.mlo_ie.medium_sync_delay_info.medium_sync_duration;
 			add_bss->staContext.msd_caps.med_sync_ofdm_ed_thresh =
 				assoc_rsp->mlo_ie.mlo_ie.medium_sync_delay_info.medium_sync_ofdm_ed_thresh;
+			if (add_bss->staContext.msd_caps.med_sync_ofdm_ed_thresh >
+			    MAX_MSD_OFDM_ED_THRESHOLD)
+				add_bss->staContext.msd_caps.med_sync_ofdm_ed_thresh = 0;
 			add_bss->staContext.msd_caps.med_sync_max_txop_num =
 				assoc_rsp->mlo_ie.mlo_ie.medium_sync_delay_info.medium_sync_max_txop_num;
 		} else {
-			/* Fill MSD params with zeroes if MSD caps are absent */
-			add_bss->staContext.msd_caps.med_sync_duration = 0;
+			/**
+			 * Fill MSD params with default values if MSD caps are
+			 * absent.
+			 * MSD duration = 5484usec / 32 = 171.
+			 * OFDM ED threshold = 0. FW adds -72 to Host value.
+			 * Maximum number of TXOPs = AP value (default = 0).
+			 */
+			add_bss->staContext.msd_caps.med_sync_duration = 171;
 			add_bss->staContext.msd_caps.med_sync_ofdm_ed_thresh = 0;
 			add_bss->staContext.msd_caps.med_sync_max_txop_num = 0;
 		}
@@ -9582,6 +9599,9 @@ enum rateid lim_get_min_session_txrate(struct pe_session *session,
 		return rid;
 
 	lim_get_min_rate(&min_rate, rateset);
+
+	if (session->is_oui_auth_assoc_6mbps_2ghz_enable)
+		min_rate = SIR_MAC_RATE_6;
 
 	switch (min_rate) {
 	case SIR_MAC_RATE_1:
@@ -11146,7 +11166,7 @@ lim_set_tpc_power(struct mac_context *mac_ctx, struct pe_session *session)
 	    session->opmode == QDF_P2P_GO_MODE)
 		mlme_obj->reg_tpc_obj.num_pwr_levels = 0;
 
-	lim_calculate_tpc(mac_ctx, session, false, 0, false);
+	lim_calculate_tpc(mac_ctx, session, false);
 
 	tx_ops->set_tpc_power(mac_ctx->psoc, session->vdev_id,
 			      &mlme_obj->reg_tpc_obj);
@@ -11289,7 +11309,7 @@ lim_is_power_change_required_for_sta(struct mac_context *mac_ctx,
 
 	wlan_reg_get_cur_6g_ap_pwr_type(mac_ctx->pdev, &ap_power_type_6g);
 
-	if (sta_session->ap_power_type_6g == REG_INDOOR_AP &&
+	if (sta_session->best_6g_power_type == REG_INDOOR_AP &&
 	    channel_state & CHANNEL_STATE_ENABLE &&
 	    ap_power_type_6g == REG_VERY_LOW_POWER_AP) {
 		pe_debug("Change the power type of STA from LPI to VLP");
@@ -11392,4 +11412,41 @@ lim_update_tx_pwr_on_ctry_change_cb(uint8_t vdev_id)
 	}
 
 	lim_set_tpc_power(mac_ctx, session);
+}
+
+bool lim_is_chan_connected_for_mode(struct wlan_objmgr_psoc *psoc,
+				    enum QDF_OPMODE device_mode,
+				    qdf_freq_t chan_freq)
+{
+	struct wlan_channel *des_chan;
+	struct wlan_objmgr_vdev *vdev;
+	uint8_t vdev_id;
+
+	for (vdev_id = 0; vdev_id < WLAN_UMAC_PSOC_MAX_VDEVS; vdev_id++) {
+		vdev =
+		wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						     WLAN_LEGACY_MAC_ID);
+		if (!vdev)
+			continue;
+
+		if (vdev->vdev_mlme.vdev_opmode != device_mode)
+			goto next;
+
+		if (!wlan_cm_is_vdev_connected(vdev))
+			goto next;
+
+		des_chan = vdev->vdev_mlme.des_chan;
+		if (!des_chan)
+			goto next;
+
+		if (des_chan->ch_freq != chan_freq)
+			goto next;
+
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
+		return true;
+next:
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
+	}
+
+	return false;
 }

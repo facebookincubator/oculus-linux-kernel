@@ -1163,8 +1163,7 @@ uint16_t ce_get_direct_link_dest_srng_buffers(struct hif_softc *scn,
 	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
 	struct CE_state *ce_state;
 	struct service_to_pipe *tgt_svc_cfg;
-	qdf_nbuf_t nbuf;
-	uint64_t *nbuf_dmaaddr = NULL;
+	uint64_t *dma_addr_arr = NULL;
 	uint32_t i;
 	uint32_t j = 0;
 
@@ -1182,25 +1181,23 @@ uint16_t ce_get_direct_link_dest_srng_buffers(struct hif_softc *scn,
 			return QDF_STATUS_E_FAILURE;
 		}
 
-		nbuf_dmaaddr = qdf_mem_malloc(sizeof(*nbuf_dmaaddr) *
-					      ce_state->dest_ring->nentries);
-		if (!nbuf_dmaaddr)
+		QDF_ASSERT(scn->dl_recv_pages.dma_pages);
+
+		dma_addr_arr = qdf_mem_malloc(sizeof(*dma_addr_arr) *
+					      scn->dl_recv_pages.num_pages);
+		if (!dma_addr_arr)
 			return 0;
 
-		for (j = 0; j < ce_state->dest_ring->nentries; j++) {
-			nbuf = ce_state->dest_ring->per_transfer_context[j];
-			if (!nbuf)
-				break;
-
-			nbuf_dmaaddr[j] = QDF_NBUF_CB_PADDR(nbuf);
-		}
+		for (j = 0; j < scn->dl_recv_pages.num_pages; j++)
+			dma_addr_arr[j] =
+				scn->dl_recv_pages.dma_pages[j].page_p_addr;
 
 		*buf_size = ce_state->src_sz_max;
 
 		break;
 	}
 
-	*dma_addr = nbuf_dmaaddr;
+	*dma_addr = dma_addr_arr;
 
 	return j;
 }

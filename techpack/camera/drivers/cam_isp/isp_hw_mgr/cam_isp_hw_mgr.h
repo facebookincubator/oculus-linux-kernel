@@ -78,6 +78,7 @@ struct cam_isp_hw_mgr {
  * @decode_fmt:          decode format
  * @use_wm_pack:         Flag to indicate if WM is to be used for packing
  * @linked:              Indicates if this hw res to linked to any ife context
+ * @secure_mask:         Mask for secure register to secure the resource
  *
  */
 struct cam_isp_hw_mgr_res {
@@ -93,6 +94,7 @@ struct cam_isp_hw_mgr_res {
 	uint32_t                         decode_fmt;
 	bool                             use_wm_pack;
 	bool                             linked;
+	uint32_t                         secure_mask;
 };
 
 /**

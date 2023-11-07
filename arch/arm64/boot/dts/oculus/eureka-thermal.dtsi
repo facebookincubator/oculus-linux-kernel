@@ -1948,15 +1948,15 @@
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		thermal-zones = "bq27z561-0", "pcb1-usr", "pcb3-usr", "pogo-usr", "usb-usr";
+		thermal-zones = "pcb1-usr", "pcb3-usr", "usb-usr";
 
 		coefficients {
 			charging {
-				tz-coefficients = <0 1808 5578 0 709>;
+				tz-coefficients = <1808 5578 709>;
 				intercept = <4391>;
 			};
 			discharging {
-				tz-coefficients = <0 1808 5578 0 709>;
+				tz-coefficients = <1808 5578 709>;
 				intercept = <4391>;
 			};
 		};

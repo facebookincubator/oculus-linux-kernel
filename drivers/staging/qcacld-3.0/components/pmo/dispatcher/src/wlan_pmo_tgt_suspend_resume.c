@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -296,4 +297,19 @@ QDF_STATUS pmo_tgt_psoc_send_idle_roam_monitor(struct wlan_objmgr_psoc *psoc,
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 	return pmo_tx_ops.psoc_send_idle_roam_suspend_mode(psoc, val);
+}
+
+QDF_STATUS pmo_tgt_psoc_set_wow_enable_ack_failed(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_pmo_tx_ops pmo_tx_ops;
+
+	pmo_tx_ops = GET_PMO_TX_OPS_FROM_PSOC(psoc);
+	if (!pmo_tx_ops.psoc_set_wow_enable_ack_failed) {
+		pmo_err("pmo ops is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	pmo_tx_ops.psoc_set_wow_enable_ack_failed(psoc);
+
+	return QDF_STATUS_SUCCESS;
 }

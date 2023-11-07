@@ -24,6 +24,7 @@
 #include <linux/module.h>
 #include <linux/cdev.h>
 #include <linux/list.h>
+#include <linux/arch_topology.h>
 #include <linux/hash.h>
 #include <linux/msm_ion.h>
 #include <soc/qcom/secure_buffer.h>
@@ -148,6 +149,10 @@
 #define IS_CACHE_ALIGNED(x) (((x) & ((L1_CACHE_BYTES)-1)) == 0)
 #ifndef ION_FLAG_CACHED
 #define ION_FLAG_CACHED (1)
+#endif
+
+#ifndef topology_cluster_id
+#define topology_cluster_id(cpu) topology_physical_package_id(cpu)
 #endif
 
 #define ADSP_DOMAIN_ID (0)
@@ -349,11 +354,6 @@ struct secure_vm {
 struct gid_list {
 	unsigned int *gids;
 	unsigned int gidcount;
-};
-
-struct qos_cores {
-	int *coreno;
-	int corecount;
 };
 
 struct fastrpc_file;
@@ -582,13 +582,16 @@ struct fastrpc_apps {
 	/* Non-secure subsystem like CDSP will use regular client */
 	struct wakeup_source *wake_source;
 	uint32_t duplicate_rsp_err_cnt;
-	struct qos_cores silvercores;
 	uint32_t max_size_limit;
 	struct hlist_head frpc_devices;
 	struct hlist_head frpc_drivers;
 	void *ramdump_handle;
 	bool enable_ramdump;
 	struct mutex mut_uid;
+	/* Number of lowest capacity cores for given platform */
+	unsigned int lowest_capacity_core_count;
+	/* Flag to check if PM QoS vote needs to be done for only one core */
+	bool single_core_latency_vote;
 };
 
 struct fastrpc_mmap {
@@ -2478,7 +2481,7 @@ static void fastrpc_ramdump_collection(int cid)
 		hlist_del_init(&buf->hn_init);
 
 		spin_lock(&me->hlock);
-		if (chan->buf->virt)
+		if (chan->buf && chan->buf->virt)
 			memset(chan->buf->virt, 0, MINI_DUMP_DBG_SIZE);
 		spin_unlock(&me->hlock);
 		if (fl) {
@@ -3183,6 +3186,26 @@ static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 	fastrpc_update_txmsg_buf(channel_ctx, msg, err, ns, xo_time_in_us);
  bail:
 	return err;
+}
+
+/*
+ * fastrpc_lowest_capacity_corecount - Counts number of cores corresponding
+ * to cluster id 0. If a core is defective or unavailable, skip counting
+ * that core.
+ * @me : pointer to fastrpc_apps.
+ */
+
+static void fastrpc_lowest_capacity_corecount(struct fastrpc_apps *me)
+{
+	unsigned int cpu = 0;
+
+	cpu =  cpumask_first(cpu_possible_mask);
+	for_each_cpu(cpu, cpu_possible_mask) {
+		if (topology_cluster_id(cpu) == 0)
+			me->lowest_capacity_core_count++;
+	}
+	ADSPRPC_INFO("lowest capacity core count: %u\n",
+					me->lowest_capacity_core_count);
 }
 
 static void fastrpc_init(struct fastrpc_apps *me)
@@ -3994,6 +4017,7 @@ static int fastrpc_init_create_dynamic_process(struct fastrpc_file *fl,
 	unsigned int gid = 0, one_mb = 1024*1024;
 	unsigned int dsp_userpd_memlen = 3 * one_mb;
 	struct fastrpc_buf *init_mem;
+	struct fastrpc_channel_ctx *chan = &gcinfo[fl->cid];
 
 	struct {
 		int pgid;
@@ -4037,6 +4061,14 @@ static int fastrpc_init_create_dynamic_process(struct fastrpc_file *fl,
 			goto bail;
 	}
 	inbuf.pageslen = 1;
+
+	/* Restrict Signed offload to DSP if unsigned offload is enabled except CDSP */
+	if (chan->unsigned_support && fl->cid != CDSP_DOMAIN_ID && !fl->is_unsigned_pd) {
+		err = -ECONNREFUSED;
+		ADSPRPC_ERR(
+			"Restrict signed offload for domain: %d\n", fl->cid);
+		goto bail;
+	}
 
 	/* Untrusted apps are not allowed to offload to signedPD on DSP. */
 	if (fl->untrusted_process) {
@@ -5794,7 +5826,7 @@ static int fastrpc_device_release(struct inode *inode, struct file *file)
 		return 0;
 
 	if (fl->qos_request && fl->dev_pm_qos_req) {
-		for (ii = 0; ii < me->silvercores.corecount; ii++) {
+		for (ii = 0; ii < me->lowest_capacity_core_count; ii++) {
 			if (!dev_pm_qos_request_active(&fl->dev_pm_qos_req[ii]))
 				continue;
 			dev_pm_qos_remove_request(&fl->dev_pm_qos_req[ii]);
@@ -5824,6 +5856,7 @@ static ssize_t fastrpc_debugfs_read(struct file *filp, char __user *buffer,
 	char single_line[] = "----------------";
 	char title[] = "=========================";
 	unsigned long irq_flags = 0;
+	size_t total_size = 0;
 
 	fileinfo = kzalloc(DEBUGFS_SIZE, GFP_KERNEL);
 	if (!fileinfo) {
@@ -5947,6 +5980,7 @@ static ssize_t fastrpc_debugfs_read(struct file *filp, char __user *buffer,
 				"0x%-20lX|0x%-20llX|0x%-20zu|0x%-17llX\n\n",
 				map->va, map->phys,
 				map->size, map->flags);
+			total_size += map->size;
 		}
 		mutex_unlock(&fl->map_mutex);
 		len += scnprintf(fileinfo + len, DEBUGFS_SIZE - len,
@@ -5978,6 +6012,11 @@ static ssize_t fastrpc_debugfs_read(struct file *filp, char __user *buffer,
 		}
 		mutex_unlock(&fl->map_mutex);
 		len += scnprintf(fileinfo + len, DEBUGFS_SIZE - len,
+			"\n%s %s = 0x%-20zu %s\n", single_line,
+			" Total Map size ", total_size, single_line);
+		total_size = 0;
+
+		len += scnprintf(fileinfo + len, DEBUGFS_SIZE - len,
 			"\n======%s %s %s======\n", title,
 			" LIST OF BUFS ", title);
 		spin_lock(&fl->hlock);
@@ -6008,8 +6047,11 @@ static ssize_t fastrpc_debugfs_read(struct file *filp, char __user *buffer,
 				DEBUGFS_SIZE - len,
 				"0x%-17p|0x%-17llX|%-19zu|0x%-17llX\n",
 				buf->virt, (uint64_t)buf->phys, buf->size, buf->flags);
+			total_size += buf->size;
 		}
-
+		len += scnprintf(fileinfo + len, DEBUGFS_SIZE - len,
+			"\n%s %s = 0x%-20zu %s\n", single_line,
+			" Total BUF size ", total_size, single_line);
 		len += scnprintf(fileinfo + len, DEBUGFS_SIZE - len,
 			"\n%s %s %s\n", title,
 			" LIST OF PENDING SMQCONTEXTS ", title);
@@ -6181,9 +6223,10 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 	spin_lock_irqsave(&me->hlock, irq_flags);
 	hlist_add_head(&fl->hn, &me->drivers);
 	spin_unlock_irqrestore(&me->hlock, irq_flags);
-	fl->dev_pm_qos_req = kcalloc(me->silvercores.corecount,
-				sizeof(struct dev_pm_qos_request),
-				GFP_KERNEL);
+	if (me->lowest_capacity_core_count)
+		fl->dev_pm_qos_req = kzalloc((me->lowest_capacity_core_count) *
+						sizeof(struct dev_pm_qos_request),
+							GFP_KERNEL);
 	init_completion(&fl->shutdown);
 	return 0;
 }
@@ -6372,7 +6415,7 @@ static int fastrpc_internal_control(struct fastrpc_file *fl,
 	int err = 0;
 	unsigned int latency;
 	struct fastrpc_apps *me = &gfa;
-	u32 silver_core_count = me->silvercores.corecount, ii = 0, cpu;
+	unsigned int cpu;
 
 	VERIFY(err, !IS_ERR_OR_NULL(fl) && !IS_ERR_OR_NULL(fl->apps));
 	if (err) {
@@ -6394,22 +6437,29 @@ static int fastrpc_internal_control(struct fastrpc_file *fl,
 			err = -EINVAL;
 			goto bail;
 		}
-
-		VERIFY(err, me->silvercores.coreno && fl->dev_pm_qos_req);
-		if (err)
+		VERIFY(err, (me->lowest_capacity_core_count && fl->dev_pm_qos_req));
+		if (err) {
+			ADSPRPC_INFO("Skipping PM QoS latency voting, core count: %u\n",
+						me->lowest_capacity_core_count);
+			err = -EINVAL;
 			goto bail;
+		}
+		/*
+		 * Add voting request for all possible cores corresponding to cluster
+		 * id 0. If DT property 'qcom,single-core-latency-vote' is enabled
+		 * then add voting request for only one core of cluster id 0.
+		 */
+		for (cpu = 0; cpu < me->lowest_capacity_core_count; cpu++) {
 
-		for (ii = 0; ii < silver_core_count; ii++) {
-			cpu = me->silvercores.coreno[ii];
 			if (!fl->qos_request) {
 				err = dev_pm_qos_add_request(
 						get_cpu_device(cpu),
-						&fl->dev_pm_qos_req[ii],
+						&fl->dev_pm_qos_req[cpu],
 						DEV_PM_QOS_RESUME_LATENCY,
 						latency);
 			} else {
 				err = dev_pm_qos_update_request(
-						&fl->dev_pm_qos_req[ii],
+						&fl->dev_pm_qos_req[cpu],
 						latency);
 			}
 			/* PM QoS request APIs return 0 or 1 on success */
@@ -7402,39 +7452,6 @@ bail:
 	}
 }
 
-static void init_qos_cores_list(struct device *dev, char *prop_name,
-						struct qos_cores *silvercores)
-{
-	int err = 0;
-	u32 len = 0, i = 0;
-	u32 *coreslist = NULL;
-
-	if (!of_find_property(dev->of_node, prop_name, &len))
-		goto bail;
-	if (len == 0)
-		goto bail;
-	len /= sizeof(u32);
-	VERIFY(err, NULL != (coreslist = kcalloc(len, sizeof(u32),
-						 GFP_KERNEL)));
-	if (err)
-		goto bail;
-	for (i = 0; i < len; i++) {
-		err = of_property_read_u32_index(dev->of_node, prop_name, i,
-								&coreslist[i]);
-		if (err) {
-			pr_err("adsprpc: %s: failed to read QOS cores list\n",
-								 __func__);
-			goto bail;
-		}
-	}
-	silvercores->coreno = coreslist;
-	silvercores->corecount = len;
-bail:
-	if (err) {
-		kfree(coreslist);
-	}
-}
-
 static void fastrpc_init_privileged_gids(struct device *dev, char *prop_name,
 						struct gid_list *gidlist)
 {
@@ -7568,9 +7585,14 @@ static int fastrpc_probe(struct platform_device *pdev)
 							&gcinfo[0].rhvm);
 		fastrpc_init_privileged_gids(dev, "qcom,fastrpc-gids",
 					&me->gidlist);
-		init_qos_cores_list(dev, "qcom,qos-cores",
-							&me->silvercores);
-
+		/*
+		 * Check if latency voting for only one core
+		 * is enabled for the platform
+		 */
+		me->single_core_latency_vote = of_property_read_bool(dev->of_node,
+							"qcom,single-core-latency-vote");
+		if (me->single_core_latency_vote)
+			me->lowest_capacity_core_count = 1;
 		of_property_read_u32(dev->of_node, "qcom,rpc-latency-us",
 			&me->latency);
 		if (of_get_property(dev->of_node,
@@ -7983,6 +8005,7 @@ static int __init fastrpc_device_init(void)
 		goto bus_device_register_bail;
 	}
 	me->fastrpc_bus_register = true;
+	fastrpc_lowest_capacity_corecount(me);
 	VERIFY(err, 0 == platform_driver_register(&fastrpc_driver));
 	if (err)
 		goto register_bail;

@@ -2105,15 +2105,15 @@ wmi_fill_data_synch_frame_event(struct rso_config *rso_cfg,
 	uint8_t *reassoc_req_ptr;
 
 	/* Beacon/Probe Rsp data */
-	roam_sync_ind->beaconProbeRespOffset =
+	roam_sync_ind->beacon_probe_resp_offset =
 		sizeof(struct roam_offload_synch_ind);
 	bcn_probersp_ptr = (uint8_t *)roam_sync_ind +
-		roam_sync_ind->beaconProbeRespOffset;
-	roam_sync_ind->beaconProbeRespLength =
+		roam_sync_ind->beacon_probe_resp_offset;
+	roam_sync_ind->beacon_probe_resp_length =
 		rso_cfg->roam_sync_frame_ind.bcn_probe_rsp_len;
 	qdf_mem_copy(bcn_probersp_ptr,
 		     rso_cfg->roam_sync_frame_ind.bcn_probe_rsp,
-		     roam_sync_ind->beaconProbeRespLength);
+		     roam_sync_ind->beacon_probe_resp_length);
 	qdf_mem_free(rso_cfg->roam_sync_frame_ind.bcn_probe_rsp);
 	rso_cfg->roam_sync_frame_ind.bcn_probe_rsp = NULL;
 
@@ -2121,7 +2121,7 @@ wmi_fill_data_synch_frame_event(struct rso_config *rso_cfg,
 	if (rso_cfg->roam_sync_frame_ind.link_bcn_probe_rsp) {
 		roam_sync_ind->link_beacon_probe_resp_offset =
 			sizeof(struct roam_offload_synch_ind) +
-			roam_sync_ind->beaconProbeRespLength;
+			roam_sync_ind->beacon_probe_resp_length;
 		roam_sync_ind->link_beacon_probe_resp_length =
 			rso_cfg->roam_sync_frame_ind.link_bcn_probe_rsp_len;
 		roam_sync_ind->is_link_beacon =
@@ -2136,26 +2136,26 @@ wmi_fill_data_synch_frame_event(struct rso_config *rso_cfg,
 	}
 
 	/* ReAssoc Rsp data */
-	roam_sync_ind->reassocRespOffset =
+	roam_sync_ind->reassoc_resp_offset =
 		sizeof(struct roam_offload_synch_ind) +
-		roam_sync_ind->beaconProbeRespLength +
+		roam_sync_ind->beacon_probe_resp_length +
 		roam_sync_ind->link_beacon_probe_resp_length;
-	roam_sync_ind->reassocRespLength =
+	roam_sync_ind->reassoc_resp_length =
 		rso_cfg->roam_sync_frame_ind.reassoc_rsp_len;
 	reassoc_rsp_ptr = (uint8_t *)roam_sync_ind +
-			  roam_sync_ind->reassocRespOffset;
+			  roam_sync_ind->reassoc_resp_offset;
 	qdf_mem_copy(reassoc_rsp_ptr,
 		     rso_cfg->roam_sync_frame_ind.reassoc_rsp,
-		     roam_sync_ind->reassocRespLength);
+		     roam_sync_ind->reassoc_resp_length);
 	qdf_mem_free(rso_cfg->roam_sync_frame_ind.reassoc_rsp);
 	rso_cfg->roam_sync_frame_ind.reassoc_rsp = NULL;
 
 	/* ReAssoc Req data */
 	roam_sync_ind->reassoc_req_offset =
 		sizeof(struct roam_offload_synch_ind) +
-		roam_sync_ind->beaconProbeRespLength +
+		roam_sync_ind->beacon_probe_resp_length +
 		roam_sync_ind->link_beacon_probe_resp_length +
-		roam_sync_ind->reassocRespLength;
+		roam_sync_ind->reassoc_resp_length;
 	roam_sync_ind->reassoc_req_length =
 		rso_cfg->roam_sync_frame_ind.reassoc_req_len;
 	reassoc_req_ptr = (uint8_t *)roam_sync_ind +
@@ -2192,34 +2192,34 @@ wmi_fill_data_synch_event(struct roam_offload_synch_ind *roam_sync_ind,
 	synch_event = param_buf->fixed_param;
 
 	/* Beacon/Probe Rsp data */
-	roam_sync_ind->beaconProbeRespOffset =
+	roam_sync_ind->beacon_probe_resp_offset =
 		sizeof(struct roam_offload_synch_ind);
 	bcn_probersp_ptr = (uint8_t *)roam_sync_ind +
-		roam_sync_ind->beaconProbeRespOffset;
-	roam_sync_ind->beaconProbeRespLength =
+		roam_sync_ind->beacon_probe_resp_offset;
+	roam_sync_ind->beacon_probe_resp_length =
 		synch_event->bcn_probe_rsp_len;
 	qdf_mem_copy(bcn_probersp_ptr, param_buf->bcn_probe_rsp_frame,
-		     roam_sync_ind->beaconProbeRespLength);
+		     roam_sync_ind->beacon_probe_resp_length);
 	/*
 	 * Firmware doesn't support link beacon/Probe Rsp data in roam sync
 	 * event. It's always sent in sync_frame event
 	 */
 	/* ReAssoc Rsp data */
-	roam_sync_ind->reassocRespOffset =
+	roam_sync_ind->reassoc_resp_offset =
 		sizeof(struct roam_offload_synch_ind) +
-		roam_sync_ind->beaconProbeRespLength;
-	roam_sync_ind->reassocRespLength = synch_event->reassoc_rsp_len;
+		roam_sync_ind->beacon_probe_resp_length;
+	roam_sync_ind->reassoc_resp_length = synch_event->reassoc_rsp_len;
 	reassoc_rsp_ptr = (uint8_t *)roam_sync_ind +
-			  roam_sync_ind->reassocRespOffset;
+			  roam_sync_ind->reassoc_resp_offset;
 	qdf_mem_copy(reassoc_rsp_ptr,
 		     param_buf->reassoc_rsp_frame,
-		     roam_sync_ind->reassocRespLength);
+		     roam_sync_ind->reassoc_resp_length);
 
 	/* ReAssoc Req data */
 	roam_sync_ind->reassoc_req_offset =
 		sizeof(struct roam_offload_synch_ind) +
-		roam_sync_ind->beaconProbeRespLength +
-		roam_sync_ind->reassocRespLength;
+		roam_sync_ind->beacon_probe_resp_length +
+		roam_sync_ind->reassoc_resp_length;
 	roam_sync_ind->reassoc_req_length = synch_event->reassoc_req_len;
 	reassoc_req_ptr = (uint8_t *)roam_sync_ind +
 			  roam_sync_ind->reassoc_req_offset;
@@ -2324,16 +2324,16 @@ wmi_fill_roam_sync_buffer(wmi_unified_t wmi_handle,
 	roam_sync_ind->auth_status = synch_event->auth_status;
 	roam_sync_ind->roam_reason = synch_event->roam_reason;
 	roam_sync_ind->rssi = synch_event->rssi;
-	roam_sync_ind->isBeacon = synch_event->is_beacon;
+	roam_sync_ind->is_beacon = synch_event->is_beacon;
 
 	WMI_MAC_ADDR_TO_CHAR_ARRAY(&synch_event->bssid,
 				   roam_sync_ind->bssid.bytes);
-	wmi_debug("roamedVdevId %d authStatus %d roamReason %d rssi %d isBeacon %d",
+	wmi_debug("roamed_vdev_id %d auth_status %d roam_reason %d rssi %d is_beacon %d",
 		  roam_sync_ind->roamed_vdev_id,
 		  roam_sync_ind->auth_status,
 		  roam_sync_ind->roam_reason,
 		  roam_sync_ind->rssi,
-		  roam_sync_ind->isBeacon);
+		  roam_sync_ind->is_beacon);
 
 	cdp_update_roaming_peer_in_vdev(soc, synch_event->vdev_id,
 					roam_sync_ind->bssid.bytes,
@@ -3457,6 +3457,8 @@ extract_roam_candidate_frame_tlv(wmi_unified_t wmi_handle, uint8_t *event,
 	data->vdev_id = frame_params->vdev_id;
 	data->frame_length = frame_params->frame_length;
 	data->frame = (uint8_t *)param_buf->frame;
+	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_WMI, QDF_TRACE_LEVEL_DEBUG,
+			   data->frame, data->frame_length);
 
 	return QDF_STATUS_SUCCESS;
 }

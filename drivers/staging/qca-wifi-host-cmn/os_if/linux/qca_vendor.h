@@ -673,6 +673,22 @@
  *	configure and fetch the state information of the MLO links affiliated
  *	with the STA interface. The attributes used with this command are
  *	defined in enum qca_wlan_vendor_attr_mlo_link_state.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_CONNECTED_CHANNEL_STATS: Userspace can use this
+ *	vendor subcommand to trigger channel utilization measurement on entire
+ *	channel width of the connected channel(s). For MLO connection, connected
+ *	channel utilization measurement shall be done on all the MLO links.
+ *	The driver may use regular scan or wideband energy detection feature
+ *	based on the hardware capability for connected channel(s) utilization
+ *	measurement. The driver indicates the connected channel(s) utilization
+ *	measurement completion as an asynchronous event with this command ID to
+ *	userspace. Upon receiving this event, userspace can use
+ *	%NL80211_CMD_GET_INTERFACE to determine the channel width of the current
+ *	connected channel(s) and can derive the channel utilization percentage
+ *	(CU) of each 20 MHz sub-channel of the entire connected channel using
+ *	%NL80211_CMD_GET_SURVEY response.
+ *	CU = %NL80211_SURVEY_INFO_TIME_BUSY * 100 / %NL80211_SURVEY_INFO_TIME.
+ *	This command is only used for STA mode.
  */
 
 enum qca_nl80211_vendor_subcmds {
@@ -929,6 +945,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_DOZED_AP = 224,
 	QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS = 226,
 	QCA_NL80211_VENDOR_SUBCMD_MLO_LINK_STATE = 227,
+	QCA_NL80211_VENDOR_SUBCMD_CONNECTED_CHANNEL_STATS = 228,
 };
 
 enum qca_wlan_vendor_tos {

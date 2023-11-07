@@ -2069,6 +2069,24 @@ wlan_objmgr_vdev_trace_del_ref_list(struct wlan_objmgr_vdev *vdev)
 #endif
 
 /**
+ * wlan_vdev_get_bss_peer_mac_for_pmksa() - To get bss peer mac/mld
+ * address based on association to cache/retrieve PMK.
+ * @vdev: Pointer to vdev
+ * @bss_peer_mac: Pointer to BSS peer MAC address.
+ *
+ * The PMKSA entry for an ML candaidate will be present with MLD
+ * address, whereas for non-ML candidate legacy MAC address is used
+ * to save the PMKSA. To get the right entry during lookup, this API
+ * will return MLD address if the VDEV is MLO VDEV else return
+ * MAC address of BSS peer.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_vdev_get_bss_peer_mac_for_pmksa(struct wlan_objmgr_vdev *vdev,
+				     struct qdf_mac_addr *bss_peer_mac);
+
+/**
  * wlan_vdev_get_bss_peer_mac() - to get bss peer mac address
  * @vdev: pointer to vdev
  * @bss_peer_mac: pointer to bss_peer_mac_address
@@ -2096,6 +2114,13 @@ QDF_STATUS wlan_vdev_get_bss_peer_mac(struct wlan_objmgr_vdev *vdev,
  */
 QDF_STATUS wlan_vdev_get_bss_peer_mld_mac(struct wlan_objmgr_vdev *vdev,
 					  struct qdf_mac_addr *mld_mac);
+#else
+static inline
+QDF_STATUS wlan_vdev_get_bss_peer_mld_mac(struct wlan_objmgr_vdev *vdev,
+					  struct qdf_mac_addr *mld_mac)
+{
+	return QDF_STATUS_E_INVAL;
+}
 #endif
 
 #endif /* _WLAN_OBJMGR_VDEV_OBJ_H_*/

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -441,3 +441,17 @@ QDF_STATUS target_if_pmo_psoc_send_d0wow_disable_req(
 	return QDF_STATUS_E_INVAL;
 }
 #endif
+
+void target_if_pmo_set_wow_enable_ack_failed(struct wlan_objmgr_psoc *psoc)
+{
+	wmi_unified_t wmi_handle;
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("Invalid wmi handle");
+		return;
+	}
+
+	return wmi_set_wow_enable_ack_failed(wmi_handle);
+}
+

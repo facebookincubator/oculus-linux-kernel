@@ -46,6 +46,7 @@
 
 #define SDE_PSTATES_MAX (SDE_STAGE_MAX * 4)
 #define SDE_MULTIRECT_PLANE_MAX (SDE_STAGE_MAX * 2)
+#define HW_PAIR 2
 
 struct sde_crtc_custom_events {
 	u32 event;
@@ -138,6 +139,34 @@ static inline struct sde_kms *_sde_crtc_get_kms(struct drm_crtc *crtc)
 	}
 
 	return to_sde_kms(priv->kms);
+}
+
+void sde_crtc_get_resolution(struct drm_crtc *crtc, struct drm_crtc_state *crtc_state,
+		struct drm_display_mode *mode, u32 *width, u32 *height)
+{
+	struct sde_crtc *sde_crtc;
+	struct sde_crtc_state *cstate;
+
+	*width = 0;
+	*height = 0;
+
+	if (!crtc || !crtc_state || !mode)
+		goto exit;
+
+	sde_crtc = to_sde_crtc(crtc);
+	cstate = to_sde_crtc_state(crtc_state);
+
+	if (cstate->num_ds_enabled) {
+		*width = cstate->ds_cfg[0].lm_width * cstate->num_ds_enabled;
+		*height = cstate->ds_cfg[0].lm_height;
+	} else {
+		*width = mode->hdisplay;
+		*height = mode->vdisplay;
+	}
+
+exit:
+	WARN_ON(!*width);
+	WARN_ON(!*height);
 }
 
 /**
@@ -734,6 +763,66 @@ static ssize_t fifo_trim_store(struct device *device,
 	return count;
 }
 
+static ssize_t backlight_temperature_override_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			bl_config->bl_temperature_override);
+}
+
+static ssize_t backlight_temperature_override_store(struct device *device,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	struct sde_crtc_state *cstate;
+	u32 bl_temperature_override = 0;
+	int res, i;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	res = kstrtou32(buf, 10, &bl_temperature_override);
+	if (res < 0)
+		return res;
+
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc || !sde_encoder_is_dsi_display(enc))
+			continue;
+
+		cstate = to_sde_crtc_state(crtc->state);
+		for (i = 0; i < cstate->num_connectors; i++) {
+			struct sde_connector *c_conn = to_sde_connector(
+					cstate->connectors[i]);
+			struct dsi_display *display = c_conn->display;
+
+			display->panel->bl_config.bl_temperature_override =
+					bl_temperature_override;
+		}
+	}
+
+	return count;
+}
+
 static DEVICE_ATTR_RO(vsync_event);
 static DEVICE_ATTR_RO(vsync_timing);
 static DEVICE_ATTR_RO(backlight_timing);
@@ -746,6 +835,7 @@ static DEVICE_ATTR_RW(fifo_trim);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
 static DEVICE_ATTR_RO(retire_frame_event);
+static DEVICE_ATTR_RW(backlight_temperature_override);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
@@ -760,6 +850,7 @@ static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_measured_fps.attr,
 	&dev_attr_fps_periodicity_ms.attr,
 	&dev_attr_retire_frame_event.attr,
+	&dev_attr_backlight_temperature_override.attr,
 	NULL
 };
 
@@ -1175,6 +1266,7 @@ static int _sde_crtc_set_crtc_roi(struct drm_crtc *crtc,
 	int rc;
 	bool is_crtc_roi_dirty;
 	bool is_conn_roi_dirty;
+	u32 crtc_width, crtc_height;
 
 	if (!crtc || !state)
 		return -EINVAL;
@@ -1245,9 +1337,10 @@ static int _sde_crtc_set_crtc_roi(struct drm_crtc *crtc,
 	sde_kms_rect_merge_rectangles(&crtc_state->user_roi_list, crtc_roi);
 
 	/* clear the ROI to null if it matches full screen anyways */
+	sde_crtc_get_resolution(crtc, state, &state->adjusted_mode, &crtc_width, &crtc_height);
 	if (crtc_roi->x == 0 && crtc_roi->y == 0 &&
-			crtc_roi->w == state->adjusted_mode.hdisplay &&
-			crtc_roi->h == state->adjusted_mode.vdisplay)
+			crtc_roi->w == crtc_width &&
+			crtc_roi->h == crtc_height)
 		memset(crtc_roi, 0, sizeof(*crtc_roi));
 
 	SDE_DEBUG("%s: crtc roi (%d,%d,%d,%d)\n", sde_crtc->name,
@@ -2643,10 +2736,15 @@ static void _sde_crtc_dest_scaler_setup(struct drm_crtc *crtc)
 			if (cfg->flags & SDE_DRM_DESTSCALER_ENABLE)
 				op_mode |= BIT(hw_ds->idx - DS_0);
 
-			if ((i == count-1) && hw_ds->ops.setup_opmode) {
-				op_mode |= (cstate->num_ds_enabled ==
-					CRTC_DUAL_MIXERS_ONLY) ?
-					SDE_DS_OP_MODE_DUAL : 0;
+			if (hw_ds->ops.setup_opmode) {
+				if (test_bit(SDE_DS_MERGE_CTRL, &hw_ds->scl->features) &&
+					cstate->num_ds_enabled)
+					op_mode = cfg->merge_mode;
+				else {
+					op_mode |= (cstate->num_ds_enabled ==
+							CRTC_DUAL_MIXERS_ONLY) ?
+							SDE_DS_OP_MODE_DUAL : 0;
+				}
 				hw_ds->ops.setup_opmode(hw_ds, op_mode);
 				SDE_EVT32_VERBOSE(DRMID(crtc), op_mode);
 			}
@@ -3377,6 +3475,7 @@ static int _sde_crtc_set_dest_scaler(struct sde_crtc *sde_crtc,
 		cstate->ds_cfg[i].flags = ds_cfg_usr->flags;
 		cstate->ds_cfg[i].lm_width = ds_cfg_usr->lm_width;
 		cstate->ds_cfg[i].lm_height = ds_cfg_usr->lm_height;
+		cstate->ds_cfg[i].merge_mode = ds_cfg_usr->merge_mode;
 		memset(&scaler_v2, 0, sizeof(scaler_v2));
 
 		if (ds_cfg_usr->scaler_cfg) {
@@ -3402,12 +3501,13 @@ static int _sde_crtc_set_dest_scaler(struct sde_crtc *sde_crtc,
 			scaler_v2.src_width[0], scaler_v2.src_height[0],
 			scaler_v2.dst_width, scaler_v2.dst_height);
 
-		SDE_DEBUG("ds cfg[%d]-ndx(%d) flags(%d) lm(%dx%d)\n",
+		SDE_DEBUG("ds cfg[%d]-ndx(%d) flags(%d) lm(%dx%d)\n merge_mode(%d)",
 			i, ds_cfg_usr->index, ds_cfg_usr->flags,
-			ds_cfg_usr->lm_width, ds_cfg_usr->lm_height);
+			ds_cfg_usr->lm_width, ds_cfg_usr->lm_height,
+			ds_cfg_usr->merge_mode);
 		SDE_EVT32_VERBOSE(DRMID(&sde_crtc->base), i, ds_cfg_usr->index,
 			ds_cfg_usr->flags, ds_cfg_usr->lm_width,
-			ds_cfg_usr->lm_height);
+			ds_cfg_usr->lm_height, ds_cfg_usr->merge_mode);
 	}
 
 	cstate->num_ds = count;
@@ -3532,9 +3632,6 @@ static int _sde_crtc_check_dest_scaler_validate_ds(struct drm_crtc *crtc,
 		if (!max_in_width && !max_out_width) {
 			max_in_width = hw_ds->scl->top->maxinputwidth;
 			max_out_width = hw_ds->scl->top->maxoutputwidth;
-
-			if (cstate->num_ds == CRTC_DUAL_MIXERS_ONLY)
-				max_in_width -= SDE_DS_OVERFETCH_SIZE;
 
 			SDE_DEBUG("max DS width [%d,%d] for num_ds = %d\n",
 				max_in_width, max_out_width, cstate->num_ds);
@@ -5160,21 +5257,25 @@ static int _sde_crtc_excl_dim_layer_check(struct drm_crtc_state *state,
 	const struct drm_plane_state *pstate;
 	struct sde_plane_state *sde_pstate;
 	int rc = 0, i;
+	u32 crtc_width, crtc_height;
+
+	sde_crtc_get_resolution(state->crtc, state, mode, &crtc_width, &crtc_height);
 
 	/* Check dim layer rect bounds and stage */
 	for (i = 0; i < cstate->num_dim_layers; i++) {
 		if ((CHECK_LAYER_BOUNDS(cstate->dim_layer[i].rect.y,
-			cstate->dim_layer[i].rect.h, mode->vdisplay)) ||
+			cstate->dim_layer[i].rect.h, crtc_height)) ||
 		    (CHECK_LAYER_BOUNDS(cstate->dim_layer[i].rect.x,
-			cstate->dim_layer[i].rect.w, mode->hdisplay)) ||
+			cstate->dim_layer[i].rect.w, crtc_width)) ||
 		    (cstate->dim_layer[i].stage >= SDE_STAGE_MAX) ||
 		    (!cstate->dim_layer[i].rect.w) ||
 		    (!cstate->dim_layer[i].rect.h)) {
-			SDE_ERROR("invalid dim_layer:{%d,%d,%d,%d}, stage:%d\n",
+			SDE_ERROR("invalid dim_layer:{%d,%d,%d,%d} crtc:{%d,%d} stage:%d\n",
 					cstate->dim_layer[i].rect.x,
 					cstate->dim_layer[i].rect.y,
 					cstate->dim_layer[i].rect.w,
 					cstate->dim_layer[i].rect.h,
+					crtc_width, crtc_height,
 					cstate->dim_layer[i].stage);
 			SDE_ERROR("display: %dx%d\n", mode->hdisplay,
 					mode->vdisplay);
@@ -5741,8 +5842,10 @@ static int _sde_crtc_check_plane_layout(struct drm_crtc *crtc,
 	struct drm_plane *plane;
 	struct drm_plane_state *plane_state;
 	struct sde_plane_state *pstate;
-	enum sde_layout layout;
+	struct drm_display_mode *mode;
 	int layout_split;
+	enum sde_layout layout;
+	u32 crtc_width, crtc_height;
 
 	kms = _sde_crtc_get_kms(crtc);
 
@@ -5755,6 +5858,9 @@ static int _sde_crtc_check_plane_layout(struct drm_crtc *crtc,
 			SDE_RM_TOPOLOGY_GROUP_QUADPIPE))
 		return 0;
 
+	mode = &crtc_state->adjusted_mode;
+	sde_crtc_get_resolution(crtc, crtc_state, mode, &crtc_width, &crtc_height);
+
 	drm_atomic_crtc_state_for_each_plane(plane, crtc_state) {
 		plane_state = drm_atomic_get_existing_plane_state(
 				crtc_state->state, plane);
@@ -5763,7 +5869,7 @@ static int _sde_crtc_check_plane_layout(struct drm_crtc *crtc,
 
 		pstate = to_sde_plane_state(plane_state);
 		layout = sde_plane_get_property(pstate, PLANE_PROP_LAYOUT);
-		layout_split = crtc_state->mode.hdisplay >> 1;
+		layout_split = crtc_width >> 1;
 
 		/* update layout if global coordinate is used */
 		if (layout == SDE_LAYOUT_NONE) {

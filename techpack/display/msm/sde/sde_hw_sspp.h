@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -161,6 +161,8 @@ struct sde_hw_pixel_ext {
  * @src_rect:  src ROI, caller takes into account the different operations
  *             such as decimation, flip etc to program this field
  * @dest_rect: destination ROI.
+ * @src_rect_extn: extension source rect values
+ * @dst_rect_extn: extension destination rect values
  * @ horz_decimation : horizontal decimation factor( 0, 2, 4, 8, 16)
  * @ vert_decimation : vertical decimation factor( 0, 2, 4, 8, 16)
  *              2: Read 1 line/pixel drop 1 line/pixel
@@ -172,6 +174,8 @@ struct sde_hw_pipe_cfg {
 	struct sde_hw_fmt_layout layout;
 	struct sde_rect src_rect;
 	struct sde_rect dst_rect;
+	struct sde_rect src_rect_extn;
+	struct sde_rect dst_rect_extn;
 	u8 horz_decimation;
 	u8 vert_decimation;
 };

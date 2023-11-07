@@ -339,7 +339,7 @@ QDF_STATUS
 dp_hw_cookie_conversion_attach(struct dp_soc_be *be_soc,
 			       struct dp_hw_cookie_conversion_t *cc_ctx,
 			       uint32_t num_descs,
-			       enum dp_desc_type desc_type,
+			       enum qdf_dp_desc_type desc_type,
 			       uint8_t desc_pool_id)
 {
 	struct dp_soc *soc = DP_SOC_BE_GET_SOC(be_soc);
@@ -354,7 +354,7 @@ dp_hw_cookie_conversion_attach(struct dp_soc_be *be_soc,
 					num_spt_pages : DP_CC_PPT_MAX_ENTRIES;
 	dp_info("num_spt_pages needed %d", num_spt_pages);
 
-	dp_desc_multi_pages_mem_alloc(soc, DP_HW_CC_SPT_PAGE_TYPE,
+	dp_desc_multi_pages_mem_alloc(soc, QDF_DP_HW_CC_SPT_PAGE_TYPE,
 				      &cc_ctx->page_pool, qdf_page_size,
 				      num_spt_pages, 0, false);
 	if (!cc_ctx->page_pool.dma_pages) {
@@ -397,7 +397,7 @@ dp_hw_cookie_conversion_attach(struct dp_soc_be *be_soc,
 fail_1:
 	qdf_mem_free(cc_ctx->page_desc_base);
 fail_0:
-	dp_desc_multi_pages_mem_free(soc, DP_HW_CC_SPT_PAGE_TYPE,
+	dp_desc_multi_pages_mem_free(soc, QDF_DP_HW_CC_SPT_PAGE_TYPE,
 				     &cc_ctx->page_pool, 0, false);
 
 	return QDF_STATUS_E_FAILURE;
@@ -410,7 +410,7 @@ dp_hw_cookie_conversion_detach(struct dp_soc_be *be_soc,
 	struct dp_soc *soc = DP_SOC_BE_GET_SOC(be_soc);
 
 	qdf_mem_free(cc_ctx->page_desc_base);
-	dp_desc_multi_pages_mem_free(soc, DP_HW_CC_SPT_PAGE_TYPE,
+	dp_desc_multi_pages_mem_free(soc, QDF_DP_HW_CC_SPT_PAGE_TYPE,
 				     &cc_ctx->page_pool, 0, false);
 	qdf_spinlock_destroy(&cc_ctx->cc_lock);
 
@@ -913,7 +913,7 @@ static QDF_STATUS dp_soc_attach_be(struct dp_soc *soc,
 			dp_hw_cookie_conversion_attach(be_soc,
 						       &be_soc->tx_cc_ctx[i],
 						       num_entries,
-						       DP_TX_DESC_TYPE, i);
+						       QDF_DP_TX_DESC_TYPE, i);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			goto fail;
 	}
@@ -929,7 +929,8 @@ static QDF_STATUS dp_soc_attach_be(struct dp_soc *soc,
 			dp_hw_cookie_conversion_attach(be_soc,
 						       &be_soc->rx_cc_ctx[i],
 						       num_entries,
-						       DP_RX_DESC_BUF_TYPE, i);
+						       QDF_DP_RX_DESC_BUF_TYPE,
+						       i);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status))
 			goto fail;
 	}

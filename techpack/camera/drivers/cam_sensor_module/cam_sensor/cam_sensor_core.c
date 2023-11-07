@@ -430,6 +430,7 @@ static int32_t cam_sensor_i2c_pkt_parse(struct cam_sensor_ctrl_t *s_ctrl,
 	}
 
 end:
+	cam_mem_put_cpu_buf(config.packet_handle);
 	return rc;
 }
 
@@ -719,9 +720,11 @@ int32_t cam_handle_mem_ptr(uint64_t handle, uint32_t cmd,
 				"Failed to parse the command Buffer Header");
 			goto end;
 		}
+		cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 	}
 
 end:
+	cam_mem_put_cpu_buf(handle);
 	return rc;
 }
 

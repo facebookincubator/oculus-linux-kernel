@@ -974,7 +974,8 @@ wlan_lmac_if_mlo_mgr_rx_ops_register(struct wlan_lmac_if_rx_ops *rx_ops)
 		wlan_mlo_vdev_tid_to_link_map_event;
 	rx_ops->mlo_rx_ops.process_mlo_link_state_info_event =
 		wlan_handle_ml_link_state_info_event;
-
+	rx_ops->mlo_rx_ops.mlo_link_disable_request_handler =
+		wlan_mlo_link_disable_request_handler;
 }
 #else
 static void

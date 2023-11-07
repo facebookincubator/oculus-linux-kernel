@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -333,4 +333,15 @@ QDF_STATUS
 ucfg_twt_get_peer_capabilities(struct wlan_objmgr_psoc *psoc,
 			       struct qdf_mac_addr *peer_mac,
 			       uint8_t *peer_cap);
+
+/**
+ * ucfg_twt_get_restricted_twt_supported() - Get tgt restricted-twt
+ *                                              support caps
+ * @psoc: psoc handle
+ * @val: pointer to get caps enabled/disabled
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS ucfg_twt_get_restricted_twt_supported(struct wlan_objmgr_psoc *psoc,
+						 bool *val);
 #endif /* _WLAN_TWT_UCFG_API_H_ */

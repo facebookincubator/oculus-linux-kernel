@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012, 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -595,7 +595,7 @@ hdd_wlan_fake_apps_suspend(struct wiphy *wiphy, struct net_device *dev,
 }
 #endif /* WLAN_SUSPEND_RESUME_TEST */
 
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 /**
  * wlan_hdd_rx_thread_resume() - Resume RX thread
  * @hdd_ctx: HDD context

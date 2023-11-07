@@ -1364,12 +1364,35 @@ static const struct led_flash_ops flash_ops = {
 	.timeout_set			= qti_flash_timeout_set,
 };
 
+static int qti_flash_led_node_setup(struct qti_flash_led *led, struct flash_node_data* fnode)
+{
+	int rc = 0, addr_offset;
+	u8 val, mask;
+	addr_offset = fnode->id;
+	rc = qti_flash_led_masked_write(led,
+		FLASH_LED_SAFETY_TIMER(addr_offset),
+		FLASH_LED_SAFETY_TIMER_EN_MASK, 0);
+	if (rc < 0)
+		return rc;
+
+	val = (fnode->strobe_config <<
+			FLASH_LED_STROBE_CFG_SHIFT) |
+			(fnode->strobe_sel <<
+			FLASH_LED_STROBE_SEL_SHIFT);
+	mask = FLASH_LED_STROBE_CFG_MASK | FLASH_LED_HW_SW_STROBE_SEL;
+	rc = qti_flash_led_masked_write(led,
+		FLASH_LED_STROBE_CTRL(addr_offset), mask, val);
+	if (rc < 0)
+		return rc;
+	return rc;
+}
+
 static int qti_flash_led_setup(struct qti_flash_led *led,
 				struct device_node *node)
 {
-	int rc = 0, i, addr_offset;
+	int rc = 0;
 	bool multi_strobe;
-	u8 val, mask;
+	u8 val;
 
 	rc = qti_flash_led_read(led, FLASH_LED_REVISION1, &val, 1);
 	if (rc < 0)
@@ -1382,25 +1405,6 @@ static int qti_flash_led_setup(struct qti_flash_led *led,
 		return rc;
 
 	led->subtype = val;
-
-	for (i = 0; i < led->num_fnodes; i++) {
-		addr_offset = led->fnode[i].id;
-		rc = qti_flash_led_masked_write(led,
-			FLASH_LED_SAFETY_TIMER(addr_offset),
-			FLASH_LED_SAFETY_TIMER_EN_MASK, 0);
-		if (rc < 0)
-			return rc;
-
-		val = (led->fnode[i].strobe_config <<
-				FLASH_LED_STROBE_CFG_SHIFT) |
-				(led->fnode[i].strobe_sel <<
-				FLASH_LED_STROBE_SEL_SHIFT);
-		mask = FLASH_LED_STROBE_CFG_MASK | FLASH_LED_HW_SW_STROBE_SEL;
-		rc = qti_flash_led_masked_write(led,
-			FLASH_LED_STROBE_CTRL(addr_offset), mask, val);
-		if (rc < 0)
-			return rc;
-	}
 
 	led->max_current = MAX_FLASH_CURRENT_MA;
 
@@ -1909,6 +1913,12 @@ static int qti_flash_led_register_device(struct qti_flash_led *led,
 				pr_err("Failed to register flash device %s rc=%d\n",
 					led->fnode[i].fdev.led_cdev.name, rc);
 				of_node_put(temp);
+				goto unreg_led;
+			}
+			rc = qti_flash_led_node_setup(led, &led->fnode[i]);
+			if (rc < 0) {
+				pr_err("Failed to configure flash device %s rc=%d\n",
+					led->fnode[i].fdev.led_cdev.name, rc);
 				goto unreg_led;
 			}
 			led->fnode[i++].fdev.led_cdev.dev->of_node = temp;

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _DSI_DISPLAY_H_
@@ -906,4 +906,12 @@ int dsi_display_phy_configure(void *priv, bool commit);
  * Return: Zero on Success
  */
 int dsi_display_phy_pll_toggle(void *priv, bool enable);
+
+/**
+ * is_skip_op_required() - check cont splash or trusted vm environment
+ * @display: Handle to display
+ *
+ * Return: True if continuous splash or trusted vm environment
+ */
+bool is_skip_op_required(struct dsi_display *display);
 #endif /* _DSI_DISPLAY_H_ */

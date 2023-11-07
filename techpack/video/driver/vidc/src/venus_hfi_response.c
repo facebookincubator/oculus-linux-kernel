@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/devcoredump.h>
@@ -382,6 +383,9 @@ static int handle_session_error(struct msm_vidc_inst *inst,
 		break;
 	case HFI_ERROR_FATAL:
 		error = "fatal error";
+		break;
+	case HFI_ERROR_STREAM_UNSUPPORTED:
+		error = "stream unsupported";
 		break;
 	default:
 		error = "unknown";

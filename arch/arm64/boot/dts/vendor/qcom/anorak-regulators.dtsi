@@ -191,6 +191,7 @@
 			RPMH_REGULATOR_MODE_HPM>;
 		qcom,mode-threshold-currents = <0 30000>;
 		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		proxy-supply = <&pmxr2230_l5>;
 		L5B:
 		pmxr2230_l5: regulator-pmxr2230-l5 {
 			regulator-name = "pmxr2230_l5";
@@ -199,6 +200,8 @@
 			regulator-max-microvolt = <1890000>;
 			qcom,init-voltage = <1710000>;
 			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+			qcom,proxy-consumer-enable;
+			qcom,proxy-consumer-current = <200000>;
 		};
 	};
 
@@ -566,6 +569,7 @@
 			RPMH_REGULATOR_MODE_HPM>;
 		qcom,mode-threshold-currents = <0 30000>;
 		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		proxy-supply = <&pm_v6c_l2>;
 		L2C:
 		pm_v6c_l2: regulator-pm_v6c-l2 {
 			regulator-name = "pm_v6c_l2";
@@ -574,6 +578,8 @@
 			regulator-max-microvolt = <1260000>;
 			qcom,init-voltage = <1200000>;
 			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+			qcom,proxy-consumer-enable;
+			qcom,proxy-consumer-current = <16600>;
 		};
 	};
 
@@ -615,6 +621,7 @@
 			RPMH_REGULATOR_MODE_HPM>;
 		qcom,mode-threshold-currents = <0 30000>;
 		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		proxy-supply = <&pm_v6d_l1>;
 		L1D:
 		pm_v6d_l1: regulator-pm_v6d-l1 {
 			regulator-name = "pm_v6d_l1";
@@ -623,6 +630,9 @@
 			regulator-max-microvolt = <950000>;
 			qcom,init-voltage = <880000>;
 			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+			qcom,proxy-consumer-enable;
+			qcom,proxy-consumer-current = <97800>;
+			qcom,proxy-consumer-voltage = <880000 950000>;
 		};
 	};
 

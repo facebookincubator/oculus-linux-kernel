@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -224,6 +224,7 @@ struct wlan_qmi_wfds_ipcc_map_n_cfg_req_msg {
  * @qmi_wfds_send_req_mem_msg: Callback to send WFDS request memory message
  * @qmi_wfds_send_ipcc_map_n_cfg_msg: Callback to send WFDS IPCC map and
  *  configure message
+ * @qmi_wfds_send_misc_req_msg: Callback to send WFDS misc request message
  */
 struct wlan_qmi_psoc_callbacks {
 #ifdef QMI_WFDS
@@ -235,6 +236,7 @@ struct wlan_qmi_psoc_callbacks {
 			struct wlan_qmi_wfds_mem_req_msg *src_info);
 	QDF_STATUS (*qmi_wfds_send_ipcc_map_n_cfg_msg)(
 			struct wlan_qmi_wfds_ipcc_map_n_cfg_req_msg *src_info);
+	QDF_STATUS (*qmi_wfds_send_misc_req_msg)(bool is_ssr);
 #endif
 };
 #endif

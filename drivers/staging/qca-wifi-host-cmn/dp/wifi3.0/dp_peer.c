@@ -6282,3 +6282,98 @@ bool dp_peer_find_by_id_valid(struct dp_soc *soc, uint16_t peer_id)
 }
 
 qdf_export_symbol(dp_peer_find_by_id_valid);
+
+#ifdef QCA_MULTIPASS_SUPPORT
+void dp_peer_multipass_list_remove(struct dp_peer *peer)
+{
+	struct dp_vdev *vdev = peer->vdev;
+	struct dp_txrx_peer *tpeer = NULL;
+	bool found = 0;
+
+	qdf_spin_lock_bh(&vdev->mpass_peer_mutex);
+	TAILQ_FOREACH(tpeer, &vdev->mpass_peer_list, mpass_peer_list_elem) {
+		if (tpeer == peer->txrx_peer) {
+			found = 1;
+			TAILQ_REMOVE(&vdev->mpass_peer_list, peer->txrx_peer,
+				     mpass_peer_list_elem);
+			break;
+		}
+	}
+
+	qdf_spin_unlock_bh(&vdev->mpass_peer_mutex);
+
+	if (found)
+		dp_peer_unref_delete(peer, DP_MOD_ID_TX_MULTIPASS);
+}
+
+/**
+ * dp_peer_multipass_list_add() - add to new multipass list
+ * @soc: soc handle
+ * @peer_mac: mac address
+ * @vdev_id: vdev id for peer
+ * @vlan_id: vlan_id
+ *
+ * return: void
+ */
+static void dp_peer_multipass_list_add(struct dp_soc *soc, uint8_t *peer_mac,
+				       uint8_t vdev_id, uint16_t vlan_id)
+{
+	struct dp_peer *peer =
+			dp_peer_get_tgt_peer_hash_find(soc, peer_mac, 0,
+						       vdev_id,
+						       DP_MOD_ID_TX_MULTIPASS);
+
+	if (qdf_unlikely(!peer)) {
+		qdf_err("NULL peer");
+		return;
+	}
+
+	if (qdf_unlikely(!peer->txrx_peer))
+		goto fail;
+
+	/* If peer already exists in vdev multipass list, do not add it.
+	 * This may happen if key install comes twice or re-key
+	 * happens for a peer.
+	 */
+	if (peer->txrx_peer->vlan_id) {
+		dp_debug("peer already added to vdev multipass list"
+			 "MAC: "QDF_MAC_ADDR_FMT" vlan: %d ",
+			 QDF_MAC_ADDR_REF(peer->mac_addr.raw),
+			 peer->txrx_peer->vlan_id);
+		goto fail;
+	}
+
+	/*
+	 * Ref_cnt is incremented inside dp_peer_find_hash_find().
+	 * Decrement it when element is deleted from the list.
+	 */
+	peer->txrx_peer->vlan_id = vlan_id;
+	qdf_spin_lock_bh(&peer->txrx_peer->vdev->mpass_peer_mutex);
+	TAILQ_INSERT_HEAD(&peer->txrx_peer->vdev->mpass_peer_list,
+			  peer->txrx_peer,
+			  mpass_peer_list_elem);
+	qdf_spin_unlock_bh(&peer->txrx_peer->vdev->mpass_peer_mutex);
+	return;
+
+fail:
+	dp_peer_unref_delete(peer, DP_MOD_ID_TX_MULTIPASS);
+}
+
+void dp_peer_set_vlan_id(struct cdp_soc_t *cdp_soc,
+			 uint8_t vdev_id, uint8_t *peer_mac,
+			 uint16_t vlan_id)
+{
+	struct dp_soc *soc = (struct dp_soc *)cdp_soc;
+	struct dp_vdev *vdev =
+		dp_vdev_get_ref_by_id((struct dp_soc *)soc, vdev_id,
+				      DP_MOD_ID_TX_MULTIPASS);
+
+	dp_info("vdev_id %d, vdev %pK, multipass_en %d, peer_mac " QDF_MAC_ADDR_FMT " vlan %d",
+		vdev_id, vdev, vdev ? vdev->multipass_en : 0,
+		QDF_MAC_ADDR_REF(peer_mac), vlan_id);
+	if (vdev && vdev->multipass_en) {
+		dp_peer_multipass_list_add(soc, peer_mac, vdev_id, vlan_id);
+		dp_vdev_unref_delete(soc, vdev, DP_MOD_ID_TX_MULTIPASS);
+	}
+}
+#endif /* QCA_MULTIPASS_SUPPORT */

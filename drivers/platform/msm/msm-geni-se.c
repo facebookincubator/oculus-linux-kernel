@@ -43,15 +43,19 @@
 #define CREATE_TRACE_POINTS
 #include "qup-common-trace.h"
 
+#ifdef CONFIG_MSM_GENI_SE_DEBUG
 #define GENI_LOG_DBG(log_ctx, print, dev, x...) do { \
 GENI_SE_DBG(log_ctx, print, dev, x); \
-if (dev) \
+if (dev && trace_geni_log_info_enabled()) \
 	geni_trace_log(dev, x); \
 } while (0)
+#else
+#define GENI_LOG_DBG(log_ctx, print, dev, x...) do {} while (0)
+#endif /* CONFIG_MSM_GENI_SE_DEBUG */
 
 #define GENI_LOG_ERR(log_ctx, print, dev, x...) do { \
 GENI_SE_ERR(log_ctx, print, dev, x); \
-if (dev) \
+if (dev && trace_geni_log_info_enabled()) \
 	geni_trace_log(dev, x); \
 } while (0)
 

@@ -580,6 +580,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"LITE_0",
 			},
+			.secure_mask = BIT(0),
 		},
 		{
 			.vfe_out_type  = CAM_VFE_BUS_VER3_VFE_OUT_RDI1,
@@ -595,6 +596,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"LITE_1",
 			},
+			.secure_mask = BIT(1),
 		},
 		{
 			.vfe_out_type  = CAM_VFE_BUS_VER3_VFE_OUT_RDI2,
@@ -610,6 +612,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"LITE_2",
 			},
+			.secure_mask = BIT(2),
 		},
 		{
 			.vfe_out_type  = CAM_VFE_BUS_VER3_VFE_OUT_RDI3,
@@ -625,6 +628,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"LITE_3",
 			},
+			.secure_mask = BIT(3),
 		},
 		{
 			.vfe_out_type  =
@@ -640,6 +644,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"PREPROCESS_RAW",
 			},
+			.secure_mask = BIT(4),
 		},
 		{
 			.vfe_out_type  = CAM_VFE_BUS_VER3_VFE_OUT_STATS_BG,
@@ -654,6 +659,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"STATS_BG",
 			},
+			.secure_mask = 0x0,
 		},
 		{
 			.vfe_out_type  = CAM_VFE_BUS_VER3_VFE_OUT_STATS_LITE_BHIST,
@@ -668,6 +674,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"STATS_BHIST",
 			},
+			.secure_mask = 0x0,
 		},
 		{
 			.vfe_out_type  =
@@ -683,6 +690,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"PREPROCESS_RAW1",
 			},
+			.secure_mask = BIT(7),
 		},
 		{
 			.vfe_out_type  =
@@ -698,6 +706,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.name          = {
 				"PREPROCESS_RAW2",
 			},
+			.secure_mask = BIT(8),
 		},
 	},
 	.bus_error_irq_mask = {

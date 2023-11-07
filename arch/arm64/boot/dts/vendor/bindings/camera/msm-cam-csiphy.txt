@@ -144,6 +144,12 @@ First Level Node - CSIPHY device
   Value type: <boolean>
   Definition: Specifies that the TX is an aggregator
 
+- is-phy-protect
+  Usage: optional
+  Value type: <boolean>
+  Definition: In case of secure camera usecases, Specifies that it's
+	 phy based protection and all lanes of that phy will be protected
+
 Example:
 
 cam_csiphy0: qcom,csiphy0@ace4000 {

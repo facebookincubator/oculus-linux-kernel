@@ -1060,7 +1060,8 @@ static int cam_ife_csid_ver2_rx_err_bottom_half(
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		goto unlock;
+		spin_unlock(&csid_hw->lock_state);
+		goto end;
 	}
 
 	if (irq_status) {
@@ -1181,7 +1182,7 @@ static int cam_ife_csid_ver2_rx_err_bottom_half(
 	CAM_ERR_RATE_LIMIT(CAM_ISP, "CSID[%u] Rx Status 0x%x",
 		csid_hw->hw_intf->hw_idx,
 		payload->irq_reg_val[CAM_IFE_CSID_IRQ_REG_RX]);
-
+	spin_unlock(&csid_hw->lock_state);
 	if (!csid_hw->flags.reset_awaited) {
 		if (csid_hw->flags.fatal_err_detected) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_FATAL;
@@ -1196,8 +1197,6 @@ static int cam_ife_csid_ver2_rx_err_bottom_half(
 			csid_hw->flags.reset_awaited = true;
 		}
 	}
-unlock:
-	spin_unlock(&csid_hw->lock_state);
 end:
 	cam_ife_csid_ver2_put_evt_payload(csid_hw, &payload,
 		&csid_hw->rx_free_payload_list,
@@ -1653,22 +1652,21 @@ static int cam_ife_csid_ver2_ipp_bottom_half(
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		goto unlock;
+		spin_unlock(&csid_hw->lock_state);
+		goto end;
 	}
 
 	err_type = cam_ife_csid_ver2_parse_path_irq_status(
 		csid_hw, res,
 		CAM_IFE_CSID_IRQ_REG_IPP,
 		err_mask, irq_status_ipp);
-
+	spin_unlock(&csid_hw->lock_state);
 	if (err_type)
 		cam_ife_csid_ver2_handle_event_err(csid_hw,
 			irq_status_ipp,
 			err_type,
 			false,
 			res);
-unlock:
-	spin_unlock(&csid_hw->lock_state);
 end:
 	cam_ife_csid_ver2_put_evt_payload(csid_hw, &payload,
 			&csid_hw->path_free_payload_list,
@@ -1741,20 +1739,19 @@ static int cam_ife_csid_ver2_ppp_bottom_half(
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		goto unlock;
+		spin_unlock(&csid_hw->lock_state);
+		goto end;
 	}
 	err_type = cam_ife_csid_ver2_parse_path_irq_status(
 		csid_hw, res, CAM_IFE_CSID_IRQ_REG_PPP,
 		err_mask, irq_status_ppp);
-
+	spin_unlock(&csid_hw->lock_state);
 	if (err_type)
 		cam_ife_csid_ver2_handle_event_err(csid_hw,
 			irq_status_ppp,
 			err_type,
 			false,
 			res);
-unlock:
-	spin_unlock(&csid_hw->lock_state);
 end:
 	cam_ife_csid_ver2_put_evt_payload(csid_hw, &payload,
 			&csid_hw->path_free_payload_list,

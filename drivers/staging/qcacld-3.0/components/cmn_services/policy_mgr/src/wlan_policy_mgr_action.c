@@ -414,12 +414,16 @@ QDF_STATUS policy_mgr_update_connection_info(struct wlan_objmgr_psoc *psoc,
 	policy_mgr_handle_ml_sta_links_on_vdev_up_csa(psoc,
 				policy_mgr_get_qdf_mode_from_pm(mode), vdev_id);
 
-	if (policy_mgr_is_conc_sap_present_on_sta_freq(psoc, mode, cur_freq))
-		policy_mgr_update_indoor_concurrency(psoc, vdev_id, 0,
-						     SWITCH_WITH_CONCURRENCY);
-	else
-		policy_mgr_update_indoor_concurrency(psoc, vdev_id, cur_freq,
-						     SWITCH_WITHOUT_CONCURRENCY);
+	if (policy_mgr_is_conc_sap_present_on_sta_freq(psoc, mode, cur_freq) &&
+	    policy_mgr_update_indoor_concurrency(psoc, vdev_id, 0,
+						 SWITCH_WITH_CONCURRENCY))
+		wlan_reg_recompute_current_chan_list(psoc, pm_ctx->pdev);
+	else if (policy_mgr_update_indoor_concurrency(psoc, vdev_id, cur_freq,
+						SWITCH_WITHOUT_CONCURRENCY))
+		wlan_reg_recompute_current_chan_list(psoc, pm_ctx->pdev);
+	else if (wlan_reg_get_keep_6ghz_sta_cli_connection(pm_ctx->pdev))
+		wlan_reg_recompute_current_chan_list(psoc, pm_ctx->pdev);
+
 
 	return QDF_STATUS_SUCCESS;
 }

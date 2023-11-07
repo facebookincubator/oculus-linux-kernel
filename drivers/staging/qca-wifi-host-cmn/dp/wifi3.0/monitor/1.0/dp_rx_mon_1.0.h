@@ -113,11 +113,13 @@ dp_rx_pdev_mon_buf_desc_pool_init(struct dp_pdev *pdev, uint32_t mac_id)
  *  a given mac
  * @pdev: DP pdev
  * @mac_id: mac id
+ * @force_flush: Force flush ring
  *
  * Return: None
  */
 uint32_t
-dp_mon_dest_srng_drop_for_mac(struct dp_pdev *pdev, uint32_t mac_id);
+dp_mon_dest_srng_drop_for_mac(struct dp_pdev *pdev, uint32_t mac_id,
+			      bool force_flush);
 #endif
 
 /**

@@ -436,6 +436,7 @@
 		regulator-names = "cam_vio", "cam_vana", "cam_vdig",
 			"cam_bob", "cam_v_custom1", "cam_clk";
 		rgltr-cntrl-support;
+		hw_no_probe_pw_ops;
 		pwm-switch;
 		rgltr-min-voltage  = <1800000 1800000 1200000 3608000 1200000 0>;
 		rgltr-max-voltage  = <1800000 1800000 1260000 3608000 1260000 0>;

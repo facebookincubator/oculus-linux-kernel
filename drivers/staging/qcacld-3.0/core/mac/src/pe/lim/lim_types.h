@@ -1473,6 +1473,23 @@ QDF_STATUS lim_send_delba_action_frame(struct mac_context *mac_ctx,
 
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
+ * lim_send_t2lm_action_req_frame() - Send T2LM negotiation request to peer
+ * @vdev: vdev pointer
+ * @peer_mac: Peer mac addr
+ * @args: Pointer to action frame args
+ * @ongoing_t2lm_neg: T2LM negotiation request
+ * @token: Dialog token
+ *
+ * Return: 0 for success, non-zero for failure
+ */
+QDF_STATUS
+lim_send_t2lm_action_req_frame(struct wlan_objmgr_vdev *vdev,
+			       uint8_t *peer_mac,
+			       struct wlan_action_frame_args *args,
+			       struct wlan_t2lm_onging_negotiation_info *t2lm_neg,
+			       uint8_t token);
+
+/**
  * lim_send_t2lm_action_rsp_frame() - Send T2LM negotiation response to peer
  * @mac_ctx: mac context
  * @peer_mac: Peer mac addr
@@ -1494,6 +1511,16 @@ lim_send_t2lm_action_rsp_frame(struct mac_context *mac_ctx,
 			       tSirMacAddr peer_mac,
 			       struct pe_session *session, uint8_t token,
 			       enum wlan_t2lm_resp_frm_type status_code)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+lim_send_t2lm_action_req_frame(struct wlan_objmgr_vdev *vdev,
+			       uint8_t *peer_mac,
+			       struct wlan_action_frame_args *args,
+			       struct wlan_t2lm_onging_negotiation_info *t2lm_neg,
+			       uint8_t token)
 {
 	return QDF_STATUS_SUCCESS;
 }

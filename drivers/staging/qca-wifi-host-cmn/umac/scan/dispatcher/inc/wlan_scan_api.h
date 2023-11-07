@@ -527,4 +527,20 @@ wlan_scan_get_entry_by_bssid(struct wlan_objmgr_pdev *pdev,
 void
 wlan_scan_get_last_scan_ageout_time(struct wlan_objmgr_psoc *psoc,
 				    uint32_t *last_scan_ageout_time);
+/**
+ * wlan_scan_get_mld_addr_by_link_addr() - Function to get MLD address
+ * in the scan entry from the link BSSID.
+ * @pdev: pdev object
+ * @link_addr: Link BSSID to match the scan filter
+ * @mld_mac_addr: Pointer to fill the MLD address.
+ *
+ * A wrapper API which fills @mld_mac_addr with MLD address of scan entry
+ * whose bssid field matches @link_addr.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_scan_get_mld_addr_by_link_addr(struct wlan_objmgr_pdev *pdev,
+				    struct qdf_mac_addr *link_addr,
+				    struct qdf_mac_addr *mld_mac_addr);
 #endif

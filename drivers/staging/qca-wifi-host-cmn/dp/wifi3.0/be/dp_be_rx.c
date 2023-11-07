@@ -1105,7 +1105,7 @@ QDF_STATUS dp_rx_desc_pool_init_be(struct dp_soc *soc,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	/* Only regular RX buffer desc pool use HW cookie conversion */
-	if (rx_desc_pool->desc_type == DP_RX_DESC_BUF_TYPE) {
+	if (rx_desc_pool->desc_type == QDF_DP_RX_DESC_BUF_TYPE) {
 		dp_info("rx_desc_buf pool init");
 		status = dp_rx_desc_pool_init_be_cc(soc,
 						    rx_desc_pool,
@@ -1123,7 +1123,7 @@ void dp_rx_desc_pool_deinit_be(struct dp_soc *soc,
 			       struct rx_desc_pool *rx_desc_pool,
 			       uint32_t pool_id)
 {
-	if (rx_desc_pool->desc_type == DP_RX_DESC_BUF_TYPE)
+	if (rx_desc_pool->desc_type == QDF_DP_RX_DESC_BUF_TYPE)
 		dp_rx_desc_pool_deinit_be_cc(soc, rx_desc_pool, pool_id);
 }
 

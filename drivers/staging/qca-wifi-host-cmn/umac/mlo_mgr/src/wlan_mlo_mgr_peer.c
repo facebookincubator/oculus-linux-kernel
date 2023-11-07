@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1022,6 +1022,9 @@ QDF_STATUS wlan_mlo_peer_create(struct wlan_objmgr_vdev *vdev,
 				mlo_mlme_peer_assoc_resp(assoc_peer);
 		}
 	}
+
+	if (wlan_vdev_mlme_get_opmode(vdev) == QDF_STA_MODE)
+		wlan_clear_peer_level_tid_to_link_mapping(vdev);
 
 	wlan_mlo_peer_release_ref(ml_peer);
 

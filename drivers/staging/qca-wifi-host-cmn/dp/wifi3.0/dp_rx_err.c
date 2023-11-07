@@ -552,8 +552,8 @@ dp_rx_oor_handle(struct dp_soc *soc,
 		 uint16_t peer_id,
 		 uint8_t *rx_tlv_hdr)
 {
-	uint32_t frame_mask = FRAME_MASK_IPV4_ARP | FRAME_MASK_IPV4_DHCP |
-				FRAME_MASK_IPV4_EAPOL | FRAME_MASK_IPV6_DHCP;
+	uint32_t frame_mask = wlan_cfg_get_special_frame_cfg(soc->wlan_cfg_ctx);
+
 	struct dp_txrx_peer *txrx_peer = NULL;
 	dp_txrx_ref_handle txrx_ref_handle = NULL;
 
@@ -810,11 +810,18 @@ dp_2k_jump_handle(struct dp_soc *soc,
 {
 	struct dp_peer *peer = NULL;
 	struct dp_rx_tid *rx_tid = NULL;
+	struct dp_txrx_peer *txrx_peer;
 	uint32_t frame_mask = FRAME_MASK_IPV4_ARP;
 
 	peer = dp_peer_get_ref_by_id(soc, peer_id, DP_MOD_ID_RX_ERR);
 	if (!peer) {
 		dp_rx_err_info_rl("%pK: peer not found", soc);
+		goto free_nbuf;
+	}
+
+	txrx_peer = dp_get_txrx_peer(peer);
+	if (!txrx_peer) {
+		dp_rx_err_info_rl("%pK: txrx_peer not found", soc);
 		goto free_nbuf;
 	}
 
@@ -854,7 +861,7 @@ dp_2k_jump_handle(struct dp_soc *soc,
 	}
 
 nbuf_deliver:
-	if (dp_rx_deliver_special_frame(soc, peer->txrx_peer, nbuf, frame_mask,
+	if (dp_rx_deliver_special_frame(soc, txrx_peer, nbuf, frame_mask,
 					rx_tlv_hdr)) {
 		DP_STATS_INC(soc, rx.err.rx_2k_jump_to_stack, 1);
 		dp_peer_unref_delete(peer, DP_MOD_ID_RX_ERR);
@@ -1413,6 +1420,7 @@ dp_rx_reo_err_entry_process(struct dp_soc *soc,
 	struct dp_rx_desc *rx_desc;
 	struct rx_desc_pool *rx_desc_pool;
 	qdf_nbuf_t nbuf;
+	qdf_nbuf_t next_nbuf;
 	struct hal_buf_info buf_info;
 	struct hal_rx_msdu_list msdu_list;
 	uint16_t num_msdus;
@@ -1494,13 +1502,16 @@ more_msdu_link_desc:
 		DP_RX_LIST_APPEND(head_nbuf, tail_nbuf, nbuf);
 
 		if (qdf_unlikely(msdu_list.msdu_info[i].msdu_flags &
-				 HAL_MSDU_F_MSDU_CONTINUATION))
+				 HAL_MSDU_F_MSDU_CONTINUATION)) {
+			qdf_nbuf_set_rx_chfrag_cont(nbuf, 1);
 			continue;
+		}
 
 		if (dp_rx_buffer_pool_refill(soc, head_nbuf,
 					     rx_desc_pool_id)) {
 			/* MSDU queued back to the pool */
 			msdu_dropped = true;
+			head_nbuf = NULL;
 			goto process_next_msdu;
 		}
 
@@ -1525,9 +1536,8 @@ more_msdu_link_desc:
 					/*
 					 * We do not have valid mpdu_desc_info
 					 * to process this nbuf, hence drop it.
+					 * TODO - Increment stats
 					 */
-					dp_rx_nbuf_free(nbuf);
-					/* TODO - Increment stats */
 					goto process_next_msdu;
 				}
 				/*
@@ -1542,7 +1552,6 @@ more_msdu_link_desc:
 			if (QDF_IS_STATUS_ERROR(status)) {
 				DP_STATS_INC(soc, rx.err.pn_in_dest_check_fail,
 					     1);
-				dp_rx_nbuf_free(nbuf);
 				goto process_next_msdu;
 			}
 
@@ -1560,10 +1569,20 @@ more_msdu_link_desc:
 		rx_tlv_hdr_last = qdf_nbuf_data(tail_nbuf);
 
 		if (qdf_unlikely(head_nbuf != tail_nbuf)) {
+			/*
+			 * For SG case, only the length of last skb is valid
+			 * as HW only populate the msdu_len for last msdu
+			 * in rx link descriptor, use the length from
+			 * last skb to overwrite the head skb for further
+			 * SG processing.
+			 */
+			QDF_NBUF_CB_RX_PKT_LEN(head_nbuf) =
+					QDF_NBUF_CB_RX_PKT_LEN(tail_nbuf);
 			nbuf = dp_rx_sg_create(soc, head_nbuf);
 			qdf_nbuf_set_is_frag(nbuf, 1);
 			DP_STATS_INC(soc, rx.err.reo_err_oor_sg_count, 1);
 		}
+		head_nbuf = NULL;
 
 		switch (err_code) {
 		case HAL_REO_ERR_REGULAR_FRAME_2K_JUMP:
@@ -1606,6 +1625,12 @@ more_msdu_link_desc:
 		}
 
 process_next_msdu:
+		nbuf = head_nbuf;
+		while (nbuf) {
+			next_nbuf = qdf_nbuf_next(nbuf);
+			dp_rx_nbuf_free(nbuf);
+			nbuf = next_nbuf;
+		}
 		msdu_processed++;
 		head_nbuf = NULL;
 		tail_nbuf = NULL;

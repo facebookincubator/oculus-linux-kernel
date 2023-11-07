@@ -462,8 +462,10 @@ bool cm_subst_roam_sync_event(void *ctx, uint16_t event,
 	case WLAN_CM_SM_EV_ROAM_SYNC:
 #ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
 		status = mlo_cm_roam_sync_cb(cm_ctx->vdev, data, data_len);
-		if (QDF_IS_STATUS_ERROR(status))
+		if (QDF_IS_STATUS_ERROR(status)) {
 			event_handled = false;
+			break;
+		}
 #endif
 		status = cm_fw_send_vdev_roam_event(cm_ctx, data_len, data);
 		if (QDF_IS_STATUS_ERROR(status))

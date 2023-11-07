@@ -13,7 +13,7 @@
 		#size-cells = <1>;
 
 		/* Supply */
-		iris-ctl-supply = <&video_cc_mvsc_gdsc>;
+		iris-ctl-supply = <&video_cc_mvs0c_gdsc>;
 		vcodec-supply = <&video_cc_mvs0_gdsc>;
 
 		/* Clocks */
@@ -21,14 +21,14 @@
 			"video_mvs0_axi_clk", "core_clk",
 			"vcodec_clk", "iface_clk", "video_cc_iris_clk_src";
 		clock-ids = <VIDEO_CC_MVSC_CTL_AXI_CLK VIDEO_CC_MVS0_AXI_CLK
-			VIDEO_CC_MVSC_CORE_CLK VIDEO_CC_MVS0_CORE_CLK
-			VIDEO_CC_VENUS_AHB_CLK VIDEO_CC_IRIS_CLK_SRC>;
+			VIDEO_CC_MVS0C_CLK VIDEO_CC_MVS0_CLK
+			VIDEO_CC_VENUS_AHB_CLK VIDEO_CC_MVS0_CLK_SRC>;
 		clocks = <&videocc VIDEO_CC_MVSC_CTL_AXI_CLK>,
 			<&videocc VIDEO_CC_MVS0_AXI_CLK>,
-			<&videocc VIDEO_CC_MVSC_CORE_CLK>,
-			<&videocc VIDEO_CC_MVS0_CORE_CLK>,
+			<&videocc VIDEO_CC_MVS0C_CLK>,
+			<&videocc VIDEO_CC_MVS0_CLK>,
 			<&videocc VIDEO_CC_VENUS_AHB_CLK>,
-			<&videocc VIDEO_CC_IRIS_CLK_SRC>;
+			<&videocc VIDEO_CC_MVS0_CLK_SRC>;
 		qcom,proxy-clock-names = "video_ctl_axi_clk",
 			"video_mvs0_axi_clk", "core_clk",
 			"vcodec_clk", "iface_clk", "video_cc_iris_clk_src";
@@ -45,8 +45,8 @@
 		/* Bus Interconnects */
 		interconnect-names = "venus-cnoc", "venus-ddr";
 		interconnects = <&gem_noc MASTER_APPSS_PROC
-					&cnoc2 SLAVE_VENUS_CFG>,
-				<&mmss_noc MASTER_VIDEO_P0
+					&config_noc SLAVE_VENUS_CFG>,
+				<&mmss_noc MASTER_VIDEO
 					&mc_virt SLAVE_EBI1>;
 		/* Bus BW range (low, high) for each bus */
 		qcom,bus-range-kbps = <1000 1000

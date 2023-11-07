@@ -1224,12 +1224,17 @@ int cvp_allocate_dsp_bufs(struct msm_cvp_inst *inst,
 	}
 
 	buf->smem->flags = smem_flags;
+	if (!(inst->core)) {
+        dprintk(CVP_ERR, "inst->core is NULL");
+        goto err_no_mem;
+    }
 	rc = msm_cvp_smem_alloc(buffer_size, 1, 0,
 			&(inst->core->resources), buf->smem);
 	if (rc) {
 		dprintk(CVP_ERR, "Failed to allocate ARP memory\n");
 		goto err_no_mem;
 	}
+	atomic_inc(&buf->smem->refcount);
 
 	dprintk(CVP_MEM, "%s dma_buf %pK\n", __func__, buf->smem->dma_buf);
 
@@ -1272,6 +1277,7 @@ int cvp_release_dsp_buffers(struct msm_cvp_inst *inst,
 			"%s: %x : fd %x %s size %d",
 			__func__, hash32_ptr(inst->session), buf->fd,
 			smem->dma_buf->name, buf->size);
+		atomic_dec(&smem->refcount);
 		msm_cvp_smem_free(smem);
 		kmem_cache_free(cvp_driver->smem_cache, smem);
 	} else {

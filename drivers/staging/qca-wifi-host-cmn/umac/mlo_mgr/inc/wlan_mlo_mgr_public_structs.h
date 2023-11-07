@@ -685,13 +685,15 @@ struct mlo_probereq_info {
 /**
  * struct ml_rv_partner_link_info: Partner link information of an ML reconfig IE
  * @link_id: Link id advertised by the AP
- * @is_delete_timer_p: Delete timer is present or not
- * @delete_timer: number of TBTTs of the AP
+ * @link_mac_addr: Link mac address
+ * @is_ap_removal_timer_p: AP removal timer is present or not
+ * @ap_removal_timer: number of TBTTs of the AP removal timer
  */
 struct ml_rv_partner_link_info {
 	uint8_t link_id;
-	uint8_t is_delete_timer_p;
-	uint16_t delete_timer;
+	struct qdf_mac_addr link_mac_addr;
+	uint8_t is_ap_removal_timer_p;
+	uint16_t ap_removal_timer;
 };
 
 /**
@@ -998,4 +1000,14 @@ struct mgmt_rx_mlo_link_removal_info {
 	uint16_t tbtt_count;
 };
 
+/**
+ * struct mlo_link_disable_request_evt_params - MLO link disable
+ * request params
+ * @mld_addr: disable mld address
+ * @link_id_bitmap: Disable Link id bitmap
+ */
+struct mlo_link_disable_request_evt_params {
+	struct qdf_mac_addr mld_addr;
+	uint32_t link_id_bitmap;
+};
 #endif

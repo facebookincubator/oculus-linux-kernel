@@ -1125,17 +1125,23 @@ dp_fisa_rx_get_sw_ft_entry(struct dp_rx_fst *fisa_hdl, qdf_nbuf_t nbuf,
 #ifdef DP_OFFLOAD_FRAME_WITH_SW_EXCEPTION
 /*
  * dp_rx_reo_dest_honor_check() - check if packet reo destination is changed
-				  by FW offload
+				  by FW offload and is valid
+ * @fisa_hdl: handle to FISA context
  *@nbuf: RX packet nbuf
  *@tlv_reo_dest_ind: reo_dest_ind fetched from rx_packet_tlv
  *
- * Return: QDF_STATUS_SUCCESS - reo destination not change, others - yes.
+ * Return: QDF_STATUS_SUCCESS - reo dest not change/ not valid, others - yes.
  */
 static inline QDF_STATUS
-dp_rx_reo_dest_honor_check(qdf_nbuf_t nbuf, uint32_t tlv_reo_dest_ind)
+dp_rx_reo_dest_honor_check(struct dp_rx_fst *fisa_hdl, qdf_nbuf_t nbuf,
+			   uint32_t tlv_reo_dest_ind)
 {
 	uint8_t sw_exception =
 			qdf_nbuf_get_rx_reo_dest_ind_or_sw_excpt(nbuf);
+
+	if (fisa_hdl->rx_hash_enabled &&
+	    (tlv_reo_dest_ind < HAL_REO_DEST_IND_START_OFFSET))
+		return QDF_STATUS_E_FAILURE;
 	/*
 	 * If sw_exception bit is marked, then this data packet is
 	 * re-injected by FW offload, reo destination will not honor
@@ -1145,7 +1151,8 @@ dp_rx_reo_dest_honor_check(qdf_nbuf_t nbuf, uint32_t tlv_reo_dest_ind)
 }
 #else
 static inline QDF_STATUS
-dp_rx_reo_dest_honor_check(qdf_nbuf_t nbuf, uint32_t tlv_reo_dest_ind)
+dp_rx_reo_dest_honor_check(struct dp_rx_fst *fisa_hdl, qdf_nbuf_t nbuf,
+			   uint32_t tlv_reo_dest_ind)
 {
 	uint8_t  ring_reo_dest_ind =
 			qdf_nbuf_get_rx_reo_dest_ind_or_sw_excpt(nbuf);
@@ -1156,7 +1163,9 @@ dp_rx_reo_dest_honor_check(qdf_nbuf_t nbuf, uint32_t tlv_reo_dest_ind)
 	 * skip FISA to avoid REO2SW ring mismatch issue for same flow.
 	 */
 	if (tlv_reo_dest_ind != ring_reo_dest_ind ||
-	    REO_DEST_IND_IPA_REROUTE == ring_reo_dest_ind)
+	    REO_DEST_IND_IPA_REROUTE == ring_reo_dest_ind ||
+	    (fisa_hdl->rx_hash_enabled &&
+	     (tlv_reo_dest_ind < HAL_REO_DEST_IND_START_OFFSET)))
 		return QDF_STATUS_E_FAILURE;
 
 	return QDF_STATUS_SUCCESS;
@@ -1189,7 +1198,7 @@ dp_rx_get_fisa_flow(struct dp_rx_fst *fisa_hdl, struct dp_vdev *vdev,
 	rx_tlv_hdr = qdf_nbuf_data(nbuf);
 	hal_rx_msdu_get_reo_destination_indication(hal_soc_hdl, rx_tlv_hdr,
 						   &tlv_reo_dest_ind);
-	status = dp_rx_reo_dest_honor_check(nbuf, tlv_reo_dest_ind);
+	status = dp_rx_reo_dest_honor_check(fisa_hdl, nbuf, tlv_reo_dest_ind);
 	if (QDF_IS_STATUS_ERROR(status))
 		return sw_ft_entry;
 

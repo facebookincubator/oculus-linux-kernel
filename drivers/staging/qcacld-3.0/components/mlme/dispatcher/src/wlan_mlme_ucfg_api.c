@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -363,6 +363,54 @@ ucfg_mlme_set_vdev_traffic_type(struct wlan_objmgr_psoc *psoc,
 	param.param_value = mlme_priv->vdev_traffic_type;
 	status = tgt_vdev_mgr_set_param_send(vdev_mlme, &param);
 	policy_mgr_handle_ml_sta_link_on_traffic_type_change(psoc, vdev);
+
+	return status;
+}
+
+QDF_STATUS ucfg_mlme_connected_chan_stats_request(struct wlan_objmgr_psoc *psoc,
+						  uint8_t vdev_id)
+{
+	return mlme_connected_chan_stats_request(psoc, vdev_id);
+}
+
+bool
+ucfg_mlme_is_chwidth_with_notify_supported(struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_psoc_nif_fw_ext2_cap_get(psoc,
+				WLAN_VDEV_PARAM_CHWIDTH_WITH_NOTIFY_SUPPORT);
+}
+
+QDF_STATUS
+ucfg_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
+					   uint8_t vdev_id,
+					   enum phy_ch_width ch_width)
+{
+	struct wlan_objmgr_vdev *vdev;
+	QDF_STATUS status;
+	enum QDF_OPMODE op_mode;
+	bool is_mlo_vdev;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_MLME_OBJMGR_ID);
+	if (!vdev) {
+		mlme_legacy_err("vdev %d: vdev not found", vdev_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	op_mode = wlan_vdev_mlme_get_opmode(vdev);
+	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	if (op_mode != QDF_STA_MODE || is_mlo_vdev) {
+		mlme_legacy_debug("vdev %d: op mode %d, is_mlo_vdev:%d, CW update not supported",
+				  vdev_id, op_mode, is_mlo_vdev);
+		status = QDF_STATUS_E_NOSUPPORT;
+		goto release;
+	}
+
+	status = wlan_mlme_send_ch_width_update_with_notify(psoc, vdev,
+							    vdev_id, ch_width);
+
+release:
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
 
 	return status;
 }

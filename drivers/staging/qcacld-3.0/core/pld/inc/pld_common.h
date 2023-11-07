@@ -1836,6 +1836,23 @@ const char *pld_bus_width_type_to_str(enum pld_bus_width_type level);
 int pld_get_thermal_state(struct device *dev, unsigned long *thermal_state,
 			  int mon_id);
 
+/**
+ * pld_set_tsf_sync_period() - Set TSF sync period
+ * @dev: device
+ * @val: TSF sync time value
+ *
+ * Return: void
+ */
+void pld_set_tsf_sync_period(struct device *dev, u32 val);
+
+/**
+ * pld_reset_tsf_sync_period() - Reset TSF sync period
+ * @dev: device
+ *
+ * Return: void
+ */
+void pld_reset_tsf_sync_period(struct device *dev);
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 /**
  * pld_is_ipa_offload_disabled() - Check if IPA offload is enabled or not

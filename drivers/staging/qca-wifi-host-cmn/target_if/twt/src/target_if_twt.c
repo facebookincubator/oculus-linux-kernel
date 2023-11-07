@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -230,6 +230,11 @@ target_if_twt_fill_tgt_caps(struct wlan_objmgr_psoc *psoc,
 	else
 		caps->twt_stats_enabled = false;
 
+	if (wmi_service_enabled(wmi_handle, wmi_service_restricted_twt))
+		caps->restricted_twt_support = true;
+	else
+		caps->restricted_twt_support = false;
+
 	target_if_debug("req:%d res:%d legacy_bcast_twt_support:%d",
 		caps->twt_requestor,
 		caps->twt_responder,
@@ -241,6 +246,8 @@ target_if_twt_fill_tgt_caps(struct wlan_objmgr_psoc *psoc,
 		caps->twt_nudge_enabled,
 		caps->all_twt_enabled,
 		caps->twt_stats_enabled);
+	target_if_debug("restricted_twt_support:%d",
+			caps->restricted_twt_support);
 	return QDF_STATUS_SUCCESS;
 }
 

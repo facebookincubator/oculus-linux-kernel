@@ -326,6 +326,14 @@ static inline void pld_pcie_remove_pm_qos(struct device *dev)
 {
 }
 
+static inline void pld_pcie_set_tsf_sync_period(struct device *dev, u32 val)
+{
+}
+
+static inline void pld_pcie_reset_tsf_sync_period(struct device *dev)
+{
+}
+
 static inline int pld_pcie_request_bus_bandwidth(struct device *dev,
 						 int bandwidth)
 {
@@ -743,6 +751,25 @@ static inline void pld_pcie_remove_pm_qos(struct device *dev)
 	cnss_remove_pm_qos(dev);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
+static inline void pld_pcie_set_tsf_sync_period(struct device *dev, u32 val)
+{
+	cnss_update_time_sync_period(dev, val);
+}
+
+static inline void pld_pcie_reset_tsf_sync_period(struct device *dev)
+{
+	cnss_reset_time_sync_period(dev);
+}
+#else
+static inline void pld_pcie_set_tsf_sync_period(struct device *dev, u32 val)
+{
+}
+
+static inline void pld_pcie_reset_tsf_sync_period(struct device *dev)
+{
+}
+#endif
 static inline int pld_pcie_request_bus_bandwidth(struct device *dev,
 						 int bandwidth)
 {

@@ -202,6 +202,7 @@ struct target_version_info {
  * @hw_mode_caps: HW mode caps of preferred mode
  * @mem_chunks: allocated memory blocks for FW
  * @scan_radio_caps: scan radio capabilities
+ * @msdu_idx_qtype_map: HTT msdu index to qtype mapping table
  * @device_mode: Global Device mode
  * @sbs_lower_band_end_freq: sbs lower band end frequency
  * @health_mon_params: health monitor params
@@ -238,6 +239,7 @@ struct tgt_info {
 	uint8_t pdev_id_to_phy_id_map[WLAN_UMAC_MAX_PDEVS];
 	bool is_pdevid_to_phyid_map;
 	struct wlan_psoc_host_scan_radio_caps *scan_radio_caps;
+	uint8_t *msdu_idx_qtype_map;
 	uint32_t device_mode;
 	uint32_t sbs_lower_band_end_freq;
 #ifdef HEALTH_MON_SUPPORT

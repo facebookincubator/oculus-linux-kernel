@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -147,6 +147,7 @@ static int __cam_node_handle_acquire_dev(struct cam_node *node,
 	}
 
 	ctx->last_flush_req = 0;
+	ctx->is_shutdown = FALSE;
 	rc = cam_context_handle_acquire_dev(ctx, acquire);
 	if (rc) {
 		CAM_ERR(CAM_CORE, "Acquire device failed for node %s",

@@ -35,6 +35,8 @@
 #include "wlan_psoc_mlme_api.h"
 #include "wlan_action_oui_main.h"
 #include "target_if.h"
+#include "wlan_vdev_mgr_tgt_if_tx_api.h"
+#include "wmi_unified_vdev_api.h"
 
 /* quota in milliseconds */
 #define MCC_DUTY_CYCLE 70
@@ -245,6 +247,36 @@ QDF_STATUS wlan_mlme_get_band_capability(struct wlan_objmgr_psoc *psoc,
 
 	return QDF_STATUS_SUCCESS;
 }
+
+#ifdef QCA_MULTIPASS_SUPPORT
+QDF_STATUS
+wlan_mlme_peer_config_vlan(struct wlan_objmgr_vdev *vdev,
+			   uint8_t *mac_addr)
+{
+	QDF_STATUS status;
+	wmi_unified_t wmi_handle;
+	struct peer_vlan_config_param param;
+
+	wmi_handle = get_wmi_unified_hdl_from_pdev(wlan_vdev_get_pdev(vdev));
+	if (!wmi_handle) {
+		mlme_err("unable to get wmi_handle");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	qdf_mem_set(&param, sizeof(param), 0);
+
+	param.rx_cmd = 1;
+	/* Enabling Rx_insert_inner_vlan_tag */
+	param.rx_insert_c_tag = 1;
+	param.vdev_id = wlan_vdev_get_id(vdev);
+
+	status = wmi_send_peer_vlan_config(wmi_handle, mac_addr, param);
+	if (QDF_IS_STATUS_ERROR(status))
+		return status;
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 
 QDF_STATUS wlan_mlme_set_band_capability(struct wlan_objmgr_psoc *psoc,
 					 uint32_t band_capability)
@@ -3375,8 +3407,9 @@ wlan_mlme_is_standard_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 }
 
 QDF_STATUS
-wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
-					      bool *value)
+wlan_mlme_is_disable_vlp_sta_conn_to_sp_ap_enabled(
+						struct wlan_objmgr_psoc *psoc,
+						bool *value)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
 
@@ -3384,22 +3417,7 @@ wlan_mlme_is_relaxed_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 	if (!mlme_obj)
 		return QDF_STATUS_E_FAILURE;
 
-	*value = mlme_obj->cfg.gen.relaxed_6ghz_conn_policy;
-
-	return QDF_STATUS_SUCCESS;
-}
-
-QDF_STATUS
-wlan_mlme_set_relaxed_6ghz_conn_policy(struct wlan_objmgr_psoc *psoc,
-				       bool value)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj)
-		return QDF_STATUS_E_FAILURE;
-
-	mlme_obj->cfg.gen.relaxed_6ghz_conn_policy = value;
+	*value = mlme_obj->cfg.gen.disable_vlp_sta_conn_to_sp_ap;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -6654,6 +6672,139 @@ void wlan_mlme_get_feature_info(struct wlan_objmgr_psoc *psoc,
 	wlan_mlme_get_vht_enable2x2(psoc, &mlme_feature_set->enable2x2);
 }
 #endif
+
+void wlan_mlme_chan_stats_scan_event_cb(struct wlan_objmgr_vdev *vdev,
+					struct scan_event *event, void *arg)
+{
+	bool success = false;
+
+	if (!util_is_scan_completed(event, &success))
+		return;
+
+	mlme_send_scan_done_complete_cb(event->vdev_id);
+}
+
+static QDF_STATUS
+wlan_mlme_update_vdev_chwidth_with_notify(struct wlan_objmgr_psoc *psoc,
+					  struct wlan_objmgr_vdev *vdev,
+					  uint8_t vdev_id,
+					  enum phy_ch_width ch_width)
+{
+	struct vdev_mlme_obj *vdev_mlme;
+	struct vdev_set_params param = {0};
+	QDF_STATUS status;
+
+	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
+	if (!vdev_mlme)
+		return QDF_STATUS_E_FAILURE;
+
+	param.param_id = wmi_vdev_param_chwidth_with_notify;
+	param.vdev_id = vdev_id;
+	param.param_value = ch_width;
+	status = tgt_vdev_mgr_set_param_send(vdev_mlme, &param);
+	policy_mgr_handle_ml_sta_link_on_traffic_type_change(psoc, vdev);
+
+	return status;
+}
+
+static QDF_STATUS wlan_mlme_update_ch_width(struct wlan_objmgr_vdev *vdev,
+					    uint8_t vdev_id,
+					    enum phy_ch_width ch_width)
+{
+	struct wlan_channel *des_chan;
+	struct wlan_channel *bss_chan;
+	uint16_t curr_op_freq;
+	struct ch_params ch_params = {0};
+	struct wlan_objmgr_pdev *pdev;
+
+	des_chan = wlan_vdev_mlme_get_des_chan(vdev);
+	if (!des_chan)
+		return QDF_STATUS_E_FAILURE;
+
+	bss_chan = wlan_vdev_mlme_get_bss_chan(vdev);
+	if (!bss_chan)
+		return QDF_STATUS_E_FAILURE;
+
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev) {
+		mlme_err("vdev %d: Pdev is NULL", vdev_id);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	ch_params.ch_width = ch_width;
+	curr_op_freq = des_chan->ch_freq;
+
+	wlan_reg_set_channel_params_for_pwrmode(pdev, curr_op_freq,
+						0, &ch_params,
+						REG_CURRENT_PWR_MODE);
+
+	des_chan->ch_width = ch_width;
+	des_chan->ch_freq_seg1 = ch_params.center_freq_seg0;
+	des_chan->ch_freq_seg2 = ch_params.center_freq_seg1;
+	des_chan->ch_cfreq1 = ch_params.mhz_freq_seg0;
+	des_chan->ch_cfreq2 = ch_params.mhz_freq_seg1;
+
+	qdf_mem_copy(bss_chan, des_chan, sizeof(struct wlan_channel));
+
+	mlme_legacy_debug("vdev id %d freq %d seg0 %d seg1 %d ch_width %d mhz seg0 %d mhz seg1 %d",
+			  vdev_id, curr_op_freq, ch_params.center_freq_seg0,
+			  ch_params.center_freq_seg1, ch_params.ch_width,
+			  ch_params.mhz_freq_seg0, ch_params.mhz_freq_seg1);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+wlan_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
+					   struct wlan_objmgr_vdev *vdev,
+					   uint8_t vdev_id,
+					   enum phy_ch_width ch_width)
+{
+	QDF_STATUS status;
+	enum phy_ch_width associated_ch_width;
+	struct wlan_channel *des_chan;
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv)
+		return QDF_STATUS_E_INVAL;
+
+	des_chan = wlan_vdev_mlme_get_des_chan(vdev);
+	if (!des_chan)
+		return QDF_STATUS_E_INVAL;
+
+	if (wlan_reg_is_24ghz_ch_freq(des_chan->ch_freq)) {
+		mlme_debug("vdev %d: CW:%d update not supported for freq:%d",
+			   vdev_id, ch_width, des_chan->ch_freq);
+		return QDF_STATUS_E_NOSUPPORT;
+	}
+
+	associated_ch_width =
+		mlme_priv->connect_info.chan_info_orig.ch_width_orig;
+	if (associated_ch_width == CH_WIDTH_INVALID ||
+	    ch_width > associated_ch_width) {
+		mlme_debug("vdev %d: Invalid new chwidth:%d, assoc ch_width:%d",
+			   vdev_id, ch_width, associated_ch_width);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	/* update ch width to internal host structure */
+	status = wlan_mlme_update_ch_width(vdev, vdev_id, ch_width);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		mlme_err("vdev %d: Failed to update CW:%d to host, status:%d",
+			 vdev_id, ch_width, status);
+		return status;
+	}
+
+	/* update ch width to fw */
+	status = wlan_mlme_update_vdev_chwidth_with_notify(psoc, vdev, vdev_id,
+							   ch_width);
+	if (QDF_IS_STATUS_ERROR(status))
+		mlme_err("vdev %d: Failed to update CW:%d to fw, status:%d",
+			 vdev_id, ch_width, status);
+
+	return status;
+}
 
 enum phy_ch_width wlan_mlme_convert_vht_op_bw_to_phy_ch_width(
 						uint8_t channel_width)

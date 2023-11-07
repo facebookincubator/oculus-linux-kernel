@@ -32,46 +32,55 @@
 
 		cpu0_pause: cpu0-pause {
 			qcom,cpus = <&CPU0>;
+			qcom,cdev-alias = "thermal-pause-1";
 			#cooling-cells = <2>;
 		};
 
 		cpu1_pause: cpu1-pause {
 			qcom,cpus = <&CPU1>;
+			qcom,cdev-alias = "thermal-pause-2";
 			#cooling-cells = <2>;
 		};
 
 		cpu2_pause: cpu2-pause {
 			qcom,cpus = <&CPU2>;
+			qcom,cdev-alias = "thermal-pause-4";
 			#cooling-cells = <2>;
 		};
 
 		cpu3_pause: cpu3-pause {
 			qcom,cpus = <&CPU3>;
+			qcom,cdev-alias = "thermal-pause-8";
 			#cooling-cells = <2>;
 		};
 
 		cpu4_pause: cpu4-pause {
 			qcom,cpus = <&CPU4>;
+			qcom,cdev-alias = "thermal-pause-10";
 			#cooling-cells = <2>;
 		};
 
 		cpu5_pause: cpu5-pause {
 			qcom,cpus = <&CPU5>;
+			qcom,cdev-alias = "thermal-pause-20";
 			#cooling-cells = <2>;
 		};
 
 		cpu_2_3_pause: cpu_2_3-pause {
 			qcom,cpus = <&CPU2 &CPU3>;
+			qcom,cdev-alias = "thermal-pause-C";
 			#cooling-cells = <2>;
 		};
 
 		cpu_4_5_pause: cpu_4_5-pause {
 			qcom,cpus = <&CPU4 &CPU5>;
+			qcom,cdev-alias = "thermal-pause-30";
 			#cooling-cells = <2>;
 		};
 
 		APC1_pause: apc1-pause {
 			qcom,cpus = <&CPU2 &CPU3 &CPU4 &CPU5>;
+			qcom,cdev-alias = "thermal-pause-3C";
 			#cooling-cells = <2>;
 		};
 
@@ -112,31 +121,37 @@
 
 		cpu0_hotplug: cpu0-hotplug {
 			qcom,cpu = <&CPU0>;
+			qcom,cdev-alias = "cpu-hotplug0";
 			#cooling-cells = <2>;
 		};
 
 		cpu1_hotplug: cpu1-hotplug {
 			qcom,cpu = <&CPU1>;
+			qcom,cdev-alias = "cpu-hotplug1";
 			#cooling-cells = <2>;
 		};
 
 		cpu2_hotplug: cpu2-hotplug {
 			qcom,cpu = <&CPU2>;
+			qcom,cdev-alias = "cpu-hotplug2";
 			#cooling-cells = <2>;
 		};
 
 		cpu3_hotplug: cpu3-hotplug {
 			qcom,cpu = <&CPU3>;
+			qcom,cdev-alias = "cpu-hotplug3";
 			#cooling-cells = <2>;
 		};
 
 		cpu4_hotplug: cpu4-hotplug {
 			qcom,cpu = <&CPU4>;
+			qcom,cdev-alias = "cpu-hotplug4";
 			#cooling-cells = <2>;
 		};
 
 		cpu5_hotplug: cpu5-hotplug {
 			qcom,cpu = <&CPU5>;
+			qcom,cdev-alias = "cpu-hotplug5";
 			#cooling-cells = <2>;
 		};
 	};
@@ -172,7 +187,15 @@
 
 	qcom,cpufreq-cdev {
 		compatible = "qcom,cpufreq-cdev";
-		qcom,cpus = <&CPU0 &CPU2>;
+		cpu-cluster0 {
+			qcom,cpus = <&CPU0 &CPU1>;
+		};
+
+		cpu-cluster1 {
+			qcom,cpus = <&CPU2 &CPU3 &CPU4 &CPU5>;
+		};
+
+
 	};
 };
 

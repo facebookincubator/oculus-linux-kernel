@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "msm_vidc_power.h"
@@ -195,12 +195,15 @@ int msm_vidc_scale_buses(struct msm_vidc_inst *inst)
 	struct v4l2_format *inp_f;
 	int codec = 0;
 	u32 operating_rate, frame_rate;
+	struct msm_vidc_power *power;
+	int initial_window = 0;
 
 	if (!inst || !inst->core || !inst->capabilities) {
 		d_vpr_e("%s: invalid params: %pK\n", __func__, inst);
 		return -EINVAL;
 	}
 	core = inst->core;
+	power = &inst->power;
 	if (!core->dt) {
 		i_vpr_e(inst, "%s: invalid dt params\n", __func__);
 		return -EINVAL;
@@ -208,7 +211,9 @@ int msm_vidc_scale_buses(struct msm_vidc_inst *inst)
 	vote_data = &inst->bus_data;
 
 	vote_data->power_mode = VIDC_POWER_NORMAL;
-	if (inst->power.buffer_counter < DCVS_WINDOW || is_image_session(inst))
+	initial_window = power->nom_threshold ? power->nom_threshold : DCVS_WINDOW;
+	if (inst->power.buffer_counter < min(initial_window, DCVS_WINDOW) ||
+		is_image_session(inst))
 		vote_data->power_mode = VIDC_POWER_TURBO;
 
 	if (vote_data->power_mode == VIDC_POWER_TURBO)
@@ -474,15 +479,19 @@ exit:
 
 int msm_vidc_scale_clocks(struct msm_vidc_inst *inst)
 {
-	struct msm_vidc_core* core;
+	struct msm_vidc_core *core;
+	struct msm_vidc_power *power;
+	int initial_window = 0;
 
 	if (!inst || !inst->core) {
 		d_vpr_e("%s: invalid params\n", __func__);
 		return -EINVAL;
 	}
 	core = inst->core;
+	power = &inst->power;
+	initial_window = power->nom_threshold ? power->nom_threshold : DCVS_WINDOW;
 
-	if (inst->power.buffer_counter < DCVS_WINDOW ||
+	if (inst->power.buffer_counter < min(initial_window, DCVS_WINDOW) ||
 	    is_image_session(inst) ||
 	    is_sub_state(inst, MSM_VIDC_DRC) ||
 	    is_sub_state(inst, MSM_VIDC_DRAIN)) {

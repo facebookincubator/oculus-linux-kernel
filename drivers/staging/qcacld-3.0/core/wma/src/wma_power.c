@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -334,9 +334,11 @@ void wma_set_max_tx_power(WMA_HANDLE handle,
 	tp_wma_handle wma_handle = (tp_wma_handle) handle;
 	uint8_t vdev_id;
 	QDF_STATUS ret = QDF_STATUS_E_FAILURE;
-	int8_t prev_max_power;
 	int8_t max_reg_power;
 	struct wma_txrx_node *iface;
+	int8_t max_tx_power;
+	struct wlan_channel *channel;
+	uint16_t ch_freq;
 
 	if (tx_pwr_params->dev_mode == QDF_SAP_MODE ||
 	    tx_pwr_params->dev_mode == QDF_P2P_GO_MODE) {
@@ -362,25 +364,33 @@ void wma_set_max_tx_power(WMA_HANDLE handle,
 	}
 
 	iface = &wma_handle->interfaces[vdev_id];
-	prev_max_power = mlme_get_max_reg_power(iface->vdev);
-
-	mlme_set_max_reg_power(iface->vdev, tx_pwr_params->power);
-
-	max_reg_power = mlme_get_max_reg_power(iface->vdev);
-
-	if (max_reg_power == 0) {
-		ret = QDF_STATUS_SUCCESS;
-		goto end;
+	channel = wlan_vdev_get_active_channel(iface->vdev);
+	if (channel) {
+		ch_freq = channel->ch_freq;
+	} else {
+		wma_err("Failed to get active channel");
+		qdf_mem_free(tx_pwr_params);
+		return;
 	}
-	wma_nofl_debug("TXP[W][set_max_pwr_req]: %d", max_reg_power);
+	max_reg_power = wlan_reg_get_channel_reg_power_for_freq(
+			wma_handle->mac_context->pdev, ch_freq);
+	/*
+	 * When user tx power as auto, host will configure
+	 * the tx power as max regulatory power allowed for
+	 * that channel which signifies that it will be the
+	 * upper limit for tx power used while transmission
+	 */
+	if (tx_pwr_params->power == 0)
+		max_tx_power = max_reg_power;
+	else
+		max_tx_power = QDF_MIN(tx_pwr_params->power, max_reg_power);
+
+	wma_nofl_debug("TXP[W][set_max_pwr_req]: %d", max_tx_power);
 	ret = wma_vdev_set_param(wma_handle->wmi_handle, vdev_id,
 				wmi_vdev_param_tx_pwrlimit,
-				max_reg_power);
+				max_tx_power);
 	if (ret == QDF_STATUS_SUCCESS)
-		mlme_set_tx_power(iface->vdev, max_reg_power);
-	else
-		mlme_set_max_reg_power(iface->vdev, prev_max_power);
-end:
+		mlme_set_tx_power(iface->vdev, max_tx_power);
 	qdf_mem_free(tx_pwr_params);
 	if (QDF_IS_STATUS_ERROR(ret))
 		wma_err("Failed to set vdev param wmi_vdev_param_tx_pwrlimit");

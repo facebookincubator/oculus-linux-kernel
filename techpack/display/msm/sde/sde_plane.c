@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (C) 2014-2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -2749,6 +2749,29 @@ static int sde_plane_check_cac_unpack(struct drm_plane *plane,
 	return 0;
 }
 
+static int sde_plane_check_cac_portrait_mode(struct sde_plane *psde,
+	struct sde_plane_state *pstate)
+{
+	bool is_valid_src_rect, is_valid_dst_rect;
+
+	if (msm_property_is_dirty(&psde->property_info,
+		&pstate->property_state, PLANE_PROP_SRC_RECT_EXT) &&
+		msm_property_is_dirty(&psde->property_info,
+		&pstate->property_state, PLANE_PROP_DST_RECT_EXT)) {
+		is_valid_src_rect = !sde_kms_rect_is_null(&pstate->src_rect_extn);
+		is_valid_dst_rect = !sde_kms_rect_is_null(&pstate->dst_rect_extn);
+
+		if (is_valid_src_rect && !is_valid_dst_rect) {
+			SDE_ERROR_PLANE(psde, "invalid dest rect extn params\n");
+			return -EINVAL;
+		} else if (!is_valid_src_rect && is_valid_dst_rect) {
+			SDE_ERROR_PLANE(psde, "invalid src rect extn params\n");
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
 static int _sde_plane_check_cac_mode(struct drm_plane *plane,
 	struct drm_plane_state *state)
 {
@@ -2776,12 +2799,24 @@ static int _sde_plane_check_cac_mode(struct drm_plane *plane,
 		return 0;
 	}
 
+	if (!sde_kms_rect_is_null(&pstate->excl_rect)) {
+		SDE_ERROR_PLANE(psde, "cac does not support excl rect\n");
+		return -EINVAL;
+	}
+
 	if (cac_mode != psde->pipe_sblk->cac_mode) {
 		SDE_ERROR_PLANE(psde, "invalid cac mode\n");
 		return -EINVAL;
 	}
 
 	fmt = to_sde_format(msm_framebuffer_format(state->fb));
+
+	ret = sde_plane_check_cac_portrait_mode(psde, pstate);
+
+	if (ret) {
+		SDE_ERROR_PLANE(psde, "Invalid cac portrait mode params\n");
+		return -EINVAL;
+	}
 
 	if (sde_plane_in_cac_fetch_mode(pstate))
 		ret = sde_plane_check_cac_fetch(psde, pstate, fmt);
@@ -3099,6 +3134,8 @@ static void _sde_plane_map_prop_to_dirty_bits(void)
 	plane_prop_array[PLANE_PROP_UBWC_STATS_ROI] =
 	plane_prop_array[PLANE_PROP_CAC_TYPE] =
 	plane_prop_array[PLANE_PROP_SRC_IMG_SIZE] =
+	plane_prop_array[PLANE_PROP_SRC_RECT_EXT] =
+	plane_prop_array[PLANE_PROP_DST_RECT_EXT] =
 		SDE_PLANE_DIRTY_RECTS;
 
 	plane_prop_array[PLANE_PROP_CSC_V1] =
@@ -3254,6 +3291,12 @@ static void _sde_plane_update_roi_config(struct drm_plane *plane,
 		state->src_w, state->src_h, q16_data);
 	POPULATE_RECT(&dst, state->crtc_x, state->crtc_y,
 		state->crtc_w, state->crtc_h, !q16_data);
+	POPULATE_RECT(&psde->pipe_cfg.src_rect_extn,
+		pstate->src_rect_extn.x, pstate->src_rect_extn.y,
+		pstate->src_rect_extn.w, pstate->src_rect_extn.h, false);
+	POPULATE_RECT(&psde->pipe_cfg.dst_rect_extn,
+		pstate->dst_rect_extn.x, pstate->dst_rect_extn.y,
+		pstate->dst_rect_extn.w, pstate->dst_rect_extn.h, false);
 
 	SDE_DEBUG_PLANE(psde,
 		"FB[%u] %u,%u,%ux%u->crtc%u %d,%d,%ux%u, %4.4s ubwc %d\n",
@@ -4174,6 +4217,10 @@ static void _sde_plane_install_properties(struct drm_plane *plane,
 			PLANE_PROP_CAC_TYPE);
 		msm_property_install_volatile_range(&psde->property_info,
 			"src_img_size", 0x0, 0, ~0, 0, PLANE_PROP_SRC_IMG_SIZE);
+		msm_property_install_volatile_range(&psde->property_info,
+			"src_rect_extn", 0x0, 0, ~0, 0, PLANE_PROP_SRC_RECT_EXT);
+		msm_property_install_volatile_range(&psde->property_info,
+			"dst_rect_extn", 0x0, 0, ~0, 0, PLANE_PROP_DST_RECT_EXT);
 	}
 	msm_property_install_range(&psde->property_info, "bg_alpha",
 		0x0, 0, 255, 255, PLANE_PROP_BG_ALPHA);
@@ -4510,6 +4557,66 @@ static void _sde_plane_set_img_size(struct sde_plane *psde,
 			pstate->src_img_rec.w, pstate->src_img_rec.h);
 }
 
+static void _sde_plane_set_src_rect_extn(struct sde_plane *psde,
+	struct sde_plane_state *pstate, void __user *usr_ptr)
+{
+	struct drm_clip_rect src_rect_extn;
+
+	if (!psde || !pstate) {
+		SDE_ERROR("invalid argument(s)\n");
+		return;
+	}
+
+	if (!usr_ptr) {
+		memset(&pstate->src_rect_extn, 0, sizeof(pstate->src_rect_extn));
+		return;
+	}
+
+	if (copy_from_user(&src_rect_extn, usr_ptr, sizeof(src_rect_extn))) {
+		SDE_ERROR_PLANE(psde, "failed to copy src rect extn data\n");
+		return;
+	}
+
+	pstate->src_rect_extn.x = src_rect_extn.x1;
+	pstate->src_rect_extn.y = src_rect_extn.y1;
+	pstate->src_rect_extn.w = src_rect_extn.x2 - src_rect_extn.x1;
+	pstate->src_rect_extn.h = src_rect_extn.y2 - src_rect_extn.y1;
+
+	SDE_DEBUG_PLANE(psde, "src rect extn dimensions: {%d,%d,%d,%d}\n",
+			pstate->src_rect_extn.x, pstate->src_rect_extn.y,
+			pstate->src_rect_extn.w, pstate->src_rect_extn.h);
+}
+
+static void _sde_plane_set_dst_rect_extn(struct sde_plane *psde,
+	struct sde_plane_state *pstate, void __user *usr_ptr)
+{
+	struct drm_clip_rect dst_rect_extn;
+
+	if (!psde || !pstate) {
+		SDE_ERROR("invalid argument(s)\n");
+		return;
+	}
+
+	if (!usr_ptr) {
+		memset(&pstate->dst_rect_extn, 0, sizeof(pstate->dst_rect_extn));
+		return;
+	}
+
+	if (copy_from_user(&dst_rect_extn, usr_ptr, sizeof(dst_rect_extn))) {
+		SDE_ERROR_PLANE(psde, "failed to copy dst rect extn data\n");
+		return;
+	}
+
+	pstate->dst_rect_extn.x = dst_rect_extn.x1;
+	pstate->dst_rect_extn.y = dst_rect_extn.y1;
+	pstate->dst_rect_extn.w = dst_rect_extn.x2 - dst_rect_extn.x1;
+	pstate->dst_rect_extn.h = dst_rect_extn.y2 - dst_rect_extn.y1;
+
+	SDE_DEBUG_PLANE(psde, "dst rect extn dimensions: {%d,%d,%d,%d}\n",
+			pstate->dst_rect_extn.x, pstate->dst_rect_extn.y,
+			pstate->dst_rect_extn.w, pstate->dst_rect_extn.h);
+}
+
 static void _sde_plane_set_ubwc_stats_roi(struct sde_plane *psde,
 		struct sde_plane_state *pstate, void __user *usr_ptr)
 {
@@ -4588,6 +4695,14 @@ static int sde_plane_atomic_set_property(struct drm_plane *plane,
 				break;
 			case PLANE_PROP_SRC_IMG_SIZE:
 				_sde_plane_set_img_size(psde, pstate,
+						(void *)(uintptr_t)val);
+				break;
+			case PLANE_PROP_SRC_RECT_EXT:
+				_sde_plane_set_src_rect_extn(psde, pstate,
+						(void *)(uintptr_t)val);
+				break;
+			case PLANE_PROP_DST_RECT_EXT:
+				_sde_plane_set_dst_rect_extn(psde, pstate,
 						(void *)(uintptr_t)val);
 				break;
 			default:

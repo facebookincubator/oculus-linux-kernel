@@ -1385,6 +1385,33 @@ static void wma_objmgr_set_peer_mlme_type(tp_wma_handle wma,
 }
 
 #ifdef WLAN_FEATURE_11BE_MLO
+
+#define MIN_TIMEOUT_VAL 0
+#define MAX_TIMEOUT_VAL 11
+
+#define TIMEOUT_TO_US 6
+
+/*
+ * wma_convert_trans_timeout_us() - API to convert
+ * emlsr transition timeout to microseconds. Refer Table 9-401h
+ * of IEEE802.11be specification
+ * @timeout: EMLSR transition timeout
+ *
+ * Return: Timeout value in microseconds
+ */
+static inline uint32_t
+wma_convert_trans_timeout_us(uint16_t timeout)
+{
+	uint32_t us = 0;
+
+	if (timeout > MIN_TIMEOUT_VAL && timeout < MAX_TIMEOUT_VAL) {
+		/* timeout = 1 is for 128us*/
+		us = (1 << (timeout + TIMEOUT_TO_US));
+	}
+
+	return us;
+}
+
 /**
  * wma_set_mlo_capability() - set MLO caps to the peer assoc request
  * @wma: wma handle
@@ -1427,17 +1454,15 @@ static void wma_set_mlo_capability(tp_wma_handle wma,
 		req->mlo_params.ieee_link_id = params->link_id;
 		if (req->mlo_params.emlsr_support) {
 			req->mlo_params.trans_timeout_us =
-					params->emlsr_trans_timeout;
+			wma_convert_trans_timeout_us(params->emlsr_trans_timeout);
 		}
 		req->mlo_params.msd_cap_support = params->msd_caps_present;
-		if (req->mlo_params.msd_cap_support) {
-			req->mlo_params.medium_sync_duration =
+		req->mlo_params.medium_sync_duration =
 				params->msd_caps.med_sync_duration;
-			req->mlo_params.medium_sync_ofdm_ed_thresh =
+		req->mlo_params.medium_sync_ofdm_ed_thresh =
 				params->msd_caps.med_sync_ofdm_ed_thresh;
-			req->mlo_params.medium_sync_max_txop_num =
+		req->mlo_params.medium_sync_max_txop_num =
 				params->msd_caps.med_sync_max_txop_num;
-		}
 	} else {
 		wma_debug("Peer MLO context is NULL");
 		req->mlo_params.mlo_enabled = false;
@@ -2588,6 +2613,7 @@ QDF_STATUS wma_set_ap_vdev_up(tp_wma_handle wma, uint8_t vdev_id)
 	}
 	wma_set_sap_keepalive(wma, vdev_id);
 	wma_set_vdev_mgmt_rate(wma, vdev_id);
+	wma_vdev_set_he_bss_params(wma, vdev_id, &mlme_obj->proto.he_ops_info);
 	wma_sr_update(wma, vdev_id, true);
 
 	return status;

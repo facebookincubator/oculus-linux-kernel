@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -56,30 +56,6 @@ static void cam_sensor_lite_subdev_handle_message(
 			complete(&sensor_lite_dev->complete);
 		}
 		break;
-	}
-	case CAM_SUBDEV_MESSAGE_SENSOR_SOF_NOTIFY: {
-		struct cam_req_mgr_no_crm_trigger_notify *notify = NULL;
-
-		notify = (struct cam_req_mgr_no_crm_trigger_notify *)data;
-		if (!notify) {
-			CAM_ERR(CAM_SENSOR_LITE, "invalid sof notify received");
-			break;
-		}
-
-		if (!notify->link_hdl) {
-			CAM_ERR(CAM_SENSOR_LITE, "invalid link handle ");
-			break;
-		}
-		/* Isp will send link handle same as crm provided link handle*/
-		if (sensor_lite_dev->crm_intf.link_hdl == notify->link_hdl) {
-			/* Handle this message only for no crm case */
-			mutex_lock(&sensor_lite_dev->mutex);
-			if (!sensor_lite_dev->crm_intf.enable_crm &&
-				(sensor_lite_dev->sof_notify_handler != NULL)) {
-				sensor_lite_dev->sof_notify_handler(sensor_lite_dev, notify);
-			}
-			mutex_unlock(&sensor_lite_dev->mutex);
-		}
 	}
 	default:
 		break;

@@ -88,7 +88,7 @@ typedef HFI_U32 HFI_BOOL;
 	y_buffer_height_multiple, uv_stride_multiple, \
 	uv_buffer_height_multiple, y_metadata_stride_multiple, \
 	y_metadata_buffer_height_multiple, \
-	uv_metadata_stride_multiple, uv_metadata_buffer_height_multiple) \
+	uv_metadata_stride_multiple, uv_metadata_buffer_height_multiple, binterlace) \
 	do \
 	{ \
 		HFI_U32 y_buf_size, uv_buf_size, y_meta_size, uv_meta_size;   \
@@ -121,7 +121,7 @@ typedef HFI_U32 HFI_BOOL;
 		HFI_UBWC_METADATA_PLANE_BUFFER_SIZE(uv_meta_size, stride, \
 				 _height); \
 		buf_size = (y_buf_size + uv_buf_size + y_meta_size + \
-			uv_meta_size) << 1;\
+			uv_meta_size) << binterlace;\
 	} while (0)
 
 #define HFI_YUV420_TP10_CALC_Y_STRIDE(stride, frame_width, stride_multiple) \

@@ -6829,6 +6829,8 @@ int dsi_display_get_info(struct drm_connector *connector,
 	info->lm_count = display->panel->lm_count;
 	info->ctl_op_sync = display->panel->ctl_op_sync;
 	info->is_master = display->is_master;
+	info->skewed_vsync_master = display->panel->skewed_vsync_master;
+	info->skew_offset_line = display->panel->skew_offset_line;
 error:
 	mutex_unlock(&display->display_lock);
 	return rc;

@@ -33,17 +33,6 @@
 	connectors = <&sde_dsi &sde_wb1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc0>;
 };
 
-&qupv3_se0_i2c {
-	status = "ok";
-	qcom,clk-freq-out = <100000>;
-
-	bq27z561: fuel-gauge@0x55 {
-		compatible = "ti,bq27z561";
-		reg = <0x55>;
-		status = "okay";
-	};
-};
-
 &qupv3_se2_i2c {
 	status = "ok";
 	qcom,clk-freq-out = <400000>;
@@ -59,6 +48,7 @@
 		pinctrl-0 = <&cypd3177_irq_default>;
 		cypd3177,handle-port-busy;
 		cypd3177,initial-connection-debounce-ms = <3000>;
+		cypd3177,set-icl;
 
 		cypd3177,num-5v-sink-caps = <3>;
 		cypd3177,custom-sink-caps = <5000 2330>, /* 5V @ 2.33A */
@@ -170,11 +160,6 @@
 				0x03 0x78>;
 };
 
-&wlan {
-	vdd-wlan-fem-en-supply = <&sgm62110_buck>;
-	qcom,vdd-wlan-fem-en-config = <3850000 3850000 0 0 0>;
-};
-
 &vendor {
 	charging_dock: oculus,charging_dock {
 		status = "ok";
@@ -205,5 +190,11 @@
 		rsoc-scaling;
 		rsoc-scaling-min-level = <1>;
 		rsoc-scaling-max-level = <100>;
+		otg-current-control;
 	};
+};
+
+&wlan {
+	vdd-wlan-fem-en-supply = <&sgm62110_buck>;
+	qcom,vdd-wlan-fem-en-config = <3850000 3850000 0 0 0>;
 };

@@ -290,7 +290,7 @@ uint8_t *peer_assoc_add_mlo_params(uint8_t *buf_ptr,
 	mlo_params->emlsr_trans_delay_us = req->mlo_params.emlsr_trans_delay_us;
 	mlo_params->emlsr_padding_delay_us = req->mlo_params.emlsr_pad_delay_us;
 
-	mlo_params->msd_dur_us = req->mlo_params.medium_sync_duration;
+	mlo_params->msd_dur_subfield = req->mlo_params.medium_sync_duration;
 	mlo_params->msd_ofdm_ed_thr =
 			req->mlo_params.medium_sync_ofdm_ed_thresh;
 	mlo_params->msd_max_num_txops =
@@ -826,6 +826,47 @@ extract_mgmt_rx_mlo_link_removal_info_tlv(
 		info->tbtt_count = WMI_MLO_LINK_REMOVAL_GET_TBTT_COUNT(
 					tlv_arr[tlv_idx].tbtt_info);
 	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * extract_mlo_link_disable_request_evt_param_tlv() - Extract fixed
+ * parameters TLV from the MLO link removal WMI  event
+ * @wmi_handle: wmi handle
+ * @buf: pointer to event buffer
+ * @params: MLO link removal event parameters
+ *
+ * Return: QDF_STATUS of operation
+ */
+static QDF_STATUS
+extract_mlo_link_disable_request_evt_param_tlv(
+	struct wmi_unified *wmi_handle,
+	void *buf,
+	struct mlo_link_disable_request_evt_params *params)
+{
+	WMI_MLO_LINK_DISABLE_REQUEST_EVENTID_param_tlvs *param_buf = buf;
+	wmi_mlo_link_disable_request_event_fixed_param *ev;
+
+	if (!param_buf) {
+		wmi_err_rl("Param_buf is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	if (!params) {
+		wmi_err_rl("params is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	ev = param_buf->fixed_param;
+	WMI_MAC_ADDR_TO_CHAR_ARRAY(&ev->mld_addr,
+				   params->mld_addr.bytes);
+
+	params->link_id_bitmap = ev->linkid_bitmap;
+
+	wmi_debug("Link id bitmap 0x%x MLD addr " QDF_MAC_ADDR_FMT,
+		  params->link_id_bitmap,
+		  QDF_MAC_ADDR_REF(params->mld_addr.bytes));
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1666,4 +1707,6 @@ void wmi_11be_attach_tlv(wmi_unified_t wmi_handle)
 			extract_mlo_link_removal_tbtt_update_tlv;
 	ops->extract_mgmt_rx_mlo_link_removal_info =
 			extract_mgmt_rx_mlo_link_removal_info_tlv;
+	ops->extract_mlo_link_disable_request_evt_param =
+			extract_mlo_link_disable_request_evt_param_tlv;
 }

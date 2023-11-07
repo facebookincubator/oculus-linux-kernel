@@ -1813,6 +1813,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_csiphy1: qcom,csiphy1@ace6000{
@@ -1849,6 +1850,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_csiphy2: qcom,csiphy2@ace8000{
@@ -1885,6 +1887,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_csiphy3: qcom,csiphy3@acea000{
@@ -1921,6 +1924,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_csiphy4: qcom,csiphy4@acec000{
@@ -1957,6 +1961,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_csiphy5: qcom,csiphy5@acee000{
@@ -1993,6 +1998,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_csiphy6: qcom,csiphy6@acf0000{
@@ -2028,6 +2034,7 @@
 			<480000000 0 400000000 0>,
 			<480000000 0 400000000 0>;
 		status = "ok";
+		is-phy-protect;
 	};
 
 	cam_cci0: qcom,cci0@ac15000 {
@@ -2747,7 +2754,7 @@
 			<0 0 80000000 0 0 400000000 0 400000000 0 0 0>;
 		clock-cntl-level = "suspend", "lowsvs", "svs", "svs_l1", "nominal";
 		src-clock-name = "cam_cc_camnoc_axi_clk_src";
-		clock-names-option =  "cam_cc_icp_clk";
+		clock-names-option =  "cam_icp_clk";
 		clocks-option = <&camcc CAM_CC_ICP_CLK>;
 		clock-rates-option = <400000000>;
 		control-camnoc-axi-clk;

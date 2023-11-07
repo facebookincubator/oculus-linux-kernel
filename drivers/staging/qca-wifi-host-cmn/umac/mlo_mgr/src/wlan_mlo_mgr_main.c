@@ -665,6 +665,7 @@ static inline void mlo_t2lm_ctx_init(struct wlan_mlo_dev_context *ml_dev,
 
 	t2lm->direction = WLAN_T2LM_BIDI_DIRECTION;
 	t2lm->default_link_mapping = 1;
+	t2lm->link_mapping_size = 0;
 
 	wlan_mlo_t2lm_timer_init(vdev);
 }

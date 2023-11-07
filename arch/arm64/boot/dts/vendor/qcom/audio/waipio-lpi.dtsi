@@ -1984,7 +1984,7 @@
 		config {
 			pins = "gpio7";
 			drive-strength = <2>;
-			pull-down;
+			bias-pull-down;
 			input-enable;
 		};
 	};
@@ -2038,7 +2038,7 @@
 		config {
 			pins = "gpio9";
 			drive-strength = <2>;
-			pull-down;
+			bias-pull-down;
 			input-enable;
 		};
 	};
@@ -2092,7 +2092,7 @@
 		config {
 			pins = "gpio13";
 			drive-strength = <2>;
-			pull-down;
+			bias-pull-down;
 			input-enable;
 		};
 	};
@@ -2146,7 +2146,7 @@
 		config {
 			pins = "gpio18";
 			drive-strength = <2>;
-			pull-down;
+			bias-pull-down;
 			input-enable;
 		};
 	};

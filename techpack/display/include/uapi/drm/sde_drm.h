@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -425,7 +425,7 @@ struct sde_drm_scaler_v2 {
 };
 
 /* Number of dest scalers supported */
-#define SDE_MAX_DS_COUNT 2
+#define SDE_MAX_DS_COUNT 4
 
 /*
  * Destination scaler flag config
@@ -444,6 +444,7 @@ struct sde_drm_scaler_v2 {
  * @lm_height:  Layer mixer height configuration
  * @scaler_cfg: The scaling parameters for all the mode except disable
  *              Userspace pointer to struct sde_drm_scaler_v2
+ * @merge_mode: Specify pipe merge mode for each DS block
  */
 struct sde_drm_dest_scaler_cfg {
 	__u32 flags;
@@ -451,6 +452,7 @@ struct sde_drm_dest_scaler_cfg {
 	__u32 lm_width;
 	__u32 lm_height;
 	__u64 scaler_cfg;
+	__u32 merge_mode;
 };
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -669,10 +669,11 @@ QDF_STATUS dp_direct_link_init(struct wlan_dp_psoc_context *dp_ctx);
 /**
  * dp_direct_link_deinit() - De-initializes Direct Link datapath
  * @dp_ctx: DP private context
+ * @is_ssr: true if SSR is in progress else false
  *
  * Return: None
  */
-void dp_direct_link_deinit(struct wlan_dp_psoc_context *dp_ctx);
+void dp_direct_link_deinit(struct wlan_dp_psoc_context *dp_ctx, bool is_ssr);
 
 /**
  * dp_config_direct_link: Set direct link config of vdev
@@ -694,7 +695,7 @@ QDF_STATUS dp_direct_link_init(struct wlan_dp_psoc_context *dp_ctx)
 }
 
 static inline
-void dp_direct_link_deinit(struct wlan_dp_psoc_context *dp_ctx)
+void dp_direct_link_deinit(struct wlan_dp_psoc_context *dp_ctx, bool is_ssr)
 {
 }
 

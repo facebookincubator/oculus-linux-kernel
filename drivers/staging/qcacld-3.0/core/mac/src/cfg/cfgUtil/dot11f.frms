@@ -3306,7 +3306,9 @@ IE eht_cap (EID_EXTN_ID_ELEMENT) OUI (0x6C)
 	max_a_mpdu_len_exponent_ext: 1;
 	eht_trs_support: 1;
 	txop_return_support_txop_share_m2: 1;
-	reserved: 5;
+	two_bqrs_support: 1;
+	eht_link_adaptation_support: 2;
+	reserved: 2;
     }
     {
 	reserved2: 1;
@@ -3356,7 +3358,10 @@ IE eht_cap (EID_EXTN_ID_ELEMENT) OUI (0x6C)
     {
 	rx_1k_qam_in_wider_bw_dl_ofdma: 1;
 	rx_4k_qam_in_wider_bw_dl_ofdma: 1;
-	reserved3: 6;
+	limited_cap_support_20mhz: 1;
+	triggered_mu_bf_full_bw_fb_and_dl_mumimo: 1;
+	mru_support_20mhz: 1;
+	reserved3: 3;
     }
     {
 	bw_20_rx_max_nss_for_mcs_0_to_7: 4;
@@ -4152,7 +4157,7 @@ FRAME AssocRequest                        // 7.2.3.4
     OPTIE  dh_parameter_element;
     OPTIE  eht_cap;
     OPTIE  mlo_ie;
-    OPTIE  t2lm_ie;
+    OPTIE  t2lm_ie[0..2];
 
     OPTIE  WPAOpaque;
     OPTIE  WMMCaps;
@@ -4210,7 +4215,7 @@ FRAME AssocResponse                       // 7.2.3.5
     OPTIE  eht_cap;
     OPTIE  eht_op;
     OPTIE  mlo_ie;
-    OPTIE  t2lm_ie;
+    OPTIE  t2lm_ie[0..2];
 
     OPTIE  WPA;
     OPTIE  WMMParams;
@@ -4257,7 +4262,7 @@ FRAME ReAssocRequest                      // 7.2.3.6
     OPTIE  ESECckmOpaque;
     OPTIE  eht_cap;
     OPTIE  mlo_ie;
-    OPTIE  t2lm_ie;
+    OPTIE  t2lm_ie[0..2];
 
     OPTIE  WPAOpaque;
     OPTIE  WMMCaps;
@@ -4309,7 +4314,7 @@ FRAME ReAssocResponse                     // 7.2.3.7
     OPTIE  eht_cap;
     OPTIE  eht_op;
     OPTIE  mlo_ie;
-    OPTIE  t2lm_ie;
+    OPTIE  t2lm_ie[0..2];
 
     OPTIE  WPA;
     OPTIE  WMMParams;

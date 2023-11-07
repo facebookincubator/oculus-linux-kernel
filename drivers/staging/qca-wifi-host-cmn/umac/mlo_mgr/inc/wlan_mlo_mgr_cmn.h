@@ -557,3 +557,32 @@ QDF_STATUS ml_post_get_link_state_msg(struct wlan_objmgr_vdev *vdev);
 
 #endif
 #endif
+#ifdef WLAN_FEATURE_11BE
+/**
+ * util_add_bw_ind() - Adding bandwidth indiacation element
+ * @bw_ind: pointer to bandwidth indication element
+ * @ccfs0: EHT Channel Centre Frequency Segment0 information
+ * @ccfs1: EHT Channel Centre Frequency Segment1 information
+ * @ch_width: channel width
+ * @puncture_bitmap: puncturing information
+ * @bw_ind_len: pointer to length of bandwidth indication element
+ */
+QDF_STATUS
+util_add_bw_ind(struct wlan_ie_bw_ind *bw_ind, uint8_t ccfs0,
+		uint8_t ccfs1, enum phy_ch_width ch_width,
+		uint16_t puncture_bitmap, int *bw_ind_len);
+
+/**
+ * util_parse_bw_ind() - Parsing of bandwidth indiacation element
+ * @bw_ind: pointer to bandwidth indication element
+ * @ccfs0: EHT Channel Centre Frequency Segment0 information
+ * @ccfs1: EHT Channel Centre Frequency Segment1 information
+ * @ch_width: channel width
+ * @puncture_bitmap: puncturing information
+ */
+
+QDF_STATUS
+util_parse_bw_ind(struct wlan_ie_bw_ind *bw_ind, uint8_t *ccfs0,
+		  uint8_t *ccfs1, enum phy_ch_width *ch_width,
+		  uint16_t *puncture_bitmap);
+#endif

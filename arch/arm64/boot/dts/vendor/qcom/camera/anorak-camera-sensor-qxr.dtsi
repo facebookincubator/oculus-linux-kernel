@@ -222,14 +222,16 @@
 		cam_vdig-supply = <&L1N>;
 		cam_bob-supply = <&BOB1>;
 		cam_v_custom1-supply = <&L2M>;
+		cam_v_custom2-supply = <&itof_level>;
 		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
 		regulator-names = "cam_vio", "cam_vana", "cam_vdig",
-			"cam_bob", "cam_v_custom1", "cam_clk";
+			"cam_bob", "cam_v_custom1", "cam_v_custom2", "cam_clk";
 		rgltr-cntrl-support;
+		hw_no_probe_pw_ops;
 		pwm-switch;
-		rgltr-min-voltage  = <1800000 1800000 1200000 3608000 1200000 0>;
-		rgltr-max-voltage  = <1800000 1800000 1260000 3608000 1260000 0>;
-		rgltr-load-current = <30000   30000  40000 7840000 40000 0>;
+		rgltr-min-voltage  = <1800000 1800000 1200000 3608000 1200000 3600000 0>;
+		rgltr-max-voltage  = <1800000 1800000 1260000 3608000 1260000 3600000 0>;
+		rgltr-load-current = <30000   30000  40000 7840000 40000 40000 0>;
 		gpio-no-mux = <0>;
 		pinctrl-names = "cam_default", "cam_suspend";
 		pinctrl-0 = <&cam_sensor_mclk4_active
@@ -238,17 +240,14 @@
 				 &cam_sensor_suspend_rst4>;
 		gpios = <&tlmm 24 0>,
 			<&tlmm 64 0>,
-			<&tlmm 85 0>,
-			<&tlmm 87 0>;
+			<&tlmm 85 0>;
 		gpio-reset = <1>;
 		gpio-vio = <2>;
-		gpio-vdig = <3>;
-		gpio-req-tbl-num = <0 1 2 3>;
-		gpio-req-tbl-flags = <1 0 0 0>;
+		gpio-req-tbl-num = <0 1 2>;
+		gpio-req-tbl-flags = <1 0 0>;
 		gpio-req-tbl-label = "CAMIF_MCLK4",
 					"CAM_RESET4",
-					"CAM_VIO",
-					"CAM_VDIG";
+					"CAM_VIO";
 		cci-master = <CCI_MASTER_0>;
 		clocks = <&camcc CAM_CC_MCLK4_CLK>;
 		clock-names = "cam_clk";

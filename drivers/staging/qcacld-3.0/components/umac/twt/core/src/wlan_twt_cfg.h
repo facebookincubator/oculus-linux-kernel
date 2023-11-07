@@ -190,6 +190,26 @@ QDF_STATUS
 wlan_twt_cfg_get_bcast_responder(struct wlan_objmgr_psoc *psoc, bool *val);
 
 /**
+ * wlan_twt_cfg_get_rtwt_requestor() - get rtwt requestor
+ * @psoc: Pointer to global psoc
+ * @val: pointer to output variable
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_twt_cfg_get_rtwt_requestor(struct wlan_objmgr_psoc *psoc, bool *val);
+
+/**
+ * wlan_twt_cfg_get_rtwt_responder() - get rtwt responder
+ * @psoc: Pointer to global psoc
+ * @val: pointer to output variable
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_twt_cfg_get_rtwt_responder(struct wlan_objmgr_psoc *psoc, bool *val);
+
+/**
  * wlan_twt_cfg_get_support_in_11n_mode() - Get TWT support in 11n mode
  * @psoc: Pointer to global psoc
  * @val: pointer to output variable
@@ -199,5 +219,130 @@ wlan_twt_cfg_get_bcast_responder(struct wlan_objmgr_psoc *psoc, bool *val);
 QDF_STATUS
 wlan_twt_cfg_get_support_in_11n_mode(struct wlan_objmgr_psoc *psoc,
 				     bool *val);
+/**
+ * wlan_twt_get_restricted_support() - Get rTWT support
+ * @psoc: Pointer to global psoc
+ * @val: pointer to output variable
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_twt_get_restricted_support(struct wlan_objmgr_psoc *psoc, bool *val);
+
+#else
+
+static inline QDF_STATUS wlan_twt_cfg_init(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS wlan_twt_cfg_deinit(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS wlan_twt_cfg_update(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_requestor(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_responder(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_set_responder(struct wlan_objmgr_psoc *psoc, bool val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline bool
+wlan_twt_cfg_is_twt_enabled(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_congestion_timeout(struct wlan_objmgr_psoc *psoc,
+				    uint32_t *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_set_congestion_timeout(struct wlan_objmgr_psoc *psoc,
+				    uint32_t val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_requestor_flag(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_set_requestor_flag(struct wlan_objmgr_psoc *psoc, bool val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_responder_flag(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_set_responder_flag(struct wlan_objmgr_psoc *psoc, bool val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_flex_sched(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_24ghz_enabled(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_bcast_requestor(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_bcast_responder(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_cfg_get_support_in_11n_mode(struct wlan_objmgr_psoc *psoc,
+				     bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS
+wlan_twt_get_restricted_support(struct wlan_objmgr_psoc *psoc, bool *val)
+{
+	return QDF_STATUS_SUCCESS;
+}
 #endif
 

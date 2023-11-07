@@ -3306,6 +3306,23 @@ cppflags-$(CONFIG_FEATURE_RADAR_HISTORY) += -DFEATURE_RADAR_HISTORY
 cppflags-$(CONFIG_DIRECT_BUF_RX_ENABLE) += -DDIRECT_BUF_RX_ENABLE
 cppflags-$(CONFIG_WMI_DBR_SUPPORT) += -DWMI_DBR_SUPPORT
 cppflags-$(CONFIG_WLAN_META_FEATURE_VSIE_ACTION_FRAME) += -DWLAN_META_FEATURE_VSIE_ACTION_FRAME
+
+found = $(shell if grep -qF "NL80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA" $(srctree)/include/uapi/linux/nl80211.h; then echo "yes"; else echo "no"; fi;)
+ifeq ($(findstring yes, $(found)), yes)
+ccflags-y += -DCFG80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA
+endif
+
+found = $(shell if grep -qF "NL80211_EXT_FEATURE_SECURE_NAN" $(srctree)/include/uapi/linux/nl80211.h; then echo "yes"; else echo "no"; fi;)
+ifeq ($(findstring yes, $(found)), yes)
+ccflags-y += -DCFG80211_EXT_FEATURE_SECURE_NAN
+endif
+
+
+found = $(shell if grep -qF "bool mlo_params_valid;" $(srctree)/include/net/cfg80211.h; then echo "yes" ;else echo "no" ;fi;)
+ifeq ($(findstring yes, $(found)), yes)
+ccflags-y += -DCFG80211_MLD_AP_STA_CONNECT_UPSTREAM_SUPPORT
+endif
+
 ifneq ($(CONFIG_CNSS_QCA6750), y)
 cppflags-$(CONFIG_DIRECT_BUF_RX_ENABLE) += -DDBR_MULTI_SRNG_ENABLE
 endif
@@ -3398,6 +3415,11 @@ else
 cppflags-y += -DDISABLE_MON_CONFIG
 endif
 
+ifeq ($(CONFIG_SMP), y)
+ifneq (y,$(filter y,$(CONFIG_LITHIUM) $(CONFIG_BERYLLIUM) $(CONFIG_RHINE)))
+ccflags-y += -DWLAN_DP_LEGACY_OL_RX_THREAD
+endif
+endif
 
 #Enable NL80211 test mode
 cppflags-$(CONFIG_NL80211_TESTMODE) += -DWLAN_NL80211_TESTMODE
@@ -4081,6 +4103,7 @@ cppflags-$(CONFIG_DP_TX_COMP_RING_DESC_SANITY_CHECK) += -DDP_TX_COMP_RING_DESC_S
 cppflags-$(CONFIG_RX_HASH_DEBUG) += -DRX_HASH_DEBUG
 cppflags-$(CONFIG_DP_PKT_STATS_PER_LMAC) += -DDP_PKT_STATS_PER_LMAC
 cppflags-$(CONFIG_NO_RX_PKT_HDR_TLV) += -DNO_RX_PKT_HDR_TLV
+cppflags-$(CONFIG_DP_TX_PACKET_INSPECT_FOR_ILP) += -DDP_TX_PACKET_INSPECT_FOR_ILP
 
 ifeq ($(CONFIG_QCA6290_11AX), y)
 cppflags-y += -DQCA_WIFI_QCA6290_11AX -DQCA_WIFI_QCA6290_11AX_MU_UL

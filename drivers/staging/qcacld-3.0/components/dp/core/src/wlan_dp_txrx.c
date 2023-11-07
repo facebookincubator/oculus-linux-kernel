@@ -1710,7 +1710,8 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 
 		dp_event_eapol_log(nbuf, QDF_RX);
 		qdf_dp_trace_log_pkt(dp_intf->intf_id, nbuf, QDF_RX,
-				     QDF_TRACE_DEFAULT_PDEV_ID);
+				     QDF_TRACE_DEFAULT_PDEV_ID,
+				     dp_intf->device_mode);
 
 		DPTRACE(qdf_dp_trace(nbuf,
 				     QDF_DP_TRACE_RX_PACKET_PTR_RECORD,

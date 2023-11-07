@@ -155,6 +155,7 @@ struct cam_vfe_hw_vfe_bus_rd_acquire_args {
  *                           per port feature with duplicate sensors
  * @vfe_res_out_id:          Vfe out resource id used in case of per_port feature
  *                           to acquire all supported out resources
+ * @secure_mask:             Mask for secure register to secure the resource
  */
 struct cam_vfe_hw_vfe_out_acquire_args {
 	struct cam_isp_resource_node         *rsrc_node;
@@ -169,6 +170,7 @@ struct cam_vfe_hw_vfe_out_acquire_args {
 	bool                                  use_wm_pack;
 	bool                                  disable_line_based_mode;
 	uint32_t                              vfe_res_out_id;
+	uint32_t                              secure_mask;
 };
 
 /*

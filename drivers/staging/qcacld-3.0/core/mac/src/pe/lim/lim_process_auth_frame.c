@@ -313,6 +313,42 @@ static void lim_process_auth_open_system_algo(struct mac_context *mac_ctx,
 					pe_session);
 }
 
+static QDF_STATUS
+lim_validate_mac_address_in_auth_frame(struct mac_context *mac_ctx,
+				       tpSirMacMgmtHdr mac_hdr,
+				       struct qdf_mac_addr *mld_addr)
+{
+	struct wlan_objmgr_vdev *vdev;
+
+	/* SA is same as any of the device vdev, return failure */
+	vdev = wlan_objmgr_get_vdev_by_macaddr_from_pdev(mac_ctx->pdev,
+							 mac_hdr->sa,
+							 WLAN_LEGACY_MAC_ID);
+	if (vdev) {
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
+		return QDF_STATUS_E_ALREADY;
+	}
+
+	if (mlo_mgr_ml_peer_exist_on_diff_ml_ctx(mac_hdr->sa, NULL))
+		return QDF_STATUS_E_ALREADY;
+
+	if (qdf_is_macaddr_zero(mld_addr))
+		return QDF_STATUS_SUCCESS;
+
+	vdev = wlan_objmgr_get_vdev_by_macaddr_from_pdev(mac_ctx->pdev,
+							 mld_addr->bytes,
+							 WLAN_LEGACY_MAC_ID);
+	if (vdev) {
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
+		return QDF_STATUS_E_ALREADY;
+	}
+
+	if (mlo_mgr_ml_peer_exist_on_diff_ml_ctx(mld_addr->bytes, NULL))
+		return QDF_STATUS_E_ALREADY;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 #ifdef WLAN_FEATURE_SAE
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
@@ -508,13 +544,15 @@ static QDF_STATUS lim_skip_sae_fixed_field(uint8_t *body_ptr,
 /**
  * lim_get_sta_mld_address: This API is called to get the STA MLD address
  * from SAE 1st auth frame.
+ * @vdev: vdev
  * @body_ptr: Pointer to a SAE auth frame
  * @frame_len: Length of SAE auth frame
  * @peer_mld: fill peer MLD address
  *
  * Return: void
  */
-static void lim_get_sta_mld_address(uint8_t *body_ptr, uint32_t frame_len,
+static void lim_get_sta_mld_address(struct wlan_objmgr_vdev *vdev,
+				    uint8_t *body_ptr, uint32_t frame_len,
 				    struct qdf_mac_addr *peer_mld)
 {
 	uint8_t *ie_ptr = NULL;
@@ -523,14 +561,21 @@ static void lim_get_sta_mld_address(uint8_t *body_ptr, uint32_t frame_len,
 	qdf_size_t ie_len = 0;
 	QDF_STATUS status;
 
-	status = lim_skip_sae_fixed_field(body_ptr, frame_len, &ie_ptr,
-					  &ie_len);
-	if (QDF_IS_STATUS_ERROR(status))
+	if (!wlan_cm_is_sae_auth_addr_conversion_required(vdev))
 		return;
 
-	status = util_find_mlie(ie_ptr, ie_len, &ml_ie, &ml_ie_total_len);
-	if (QDF_IS_STATUS_ERROR(status))
+	status = lim_skip_sae_fixed_field(body_ptr, frame_len, &ie_ptr,
+					  &ie_len);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		pe_debug("Failed in skip SAE field");
 		return;
+	}
+
+	status = util_find_mlie(ie_ptr, ie_len, &ml_ie, &ml_ie_total_len);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		pe_debug("ML IE not found");
+		return;
+	}
 
 	util_get_bvmlie_mldmacaddr(ml_ie, ml_ie_total_len, peer_mld);
 }
@@ -566,6 +611,10 @@ static QDF_STATUS lim_update_link_to_mld_address(struct mac_context *mac_ctx,
 		if (!pre_auth_node)
 			return QDF_STATUS_E_INVAL;
 
+		if (qdf_is_macaddr_zero(
+			(struct qdf_mac_addr *)pre_auth_node->peer_mld))
+			return QDF_STATUS_SUCCESS;
+
 		qdf_mem_copy(mac_hdr->sa, pre_auth_node->peer_mld,
 			     QDF_MAC_ADDR_SIZE);
 		qdf_mem_copy(mac_hdr->bssId, self_mld_addr->bytes,
@@ -600,7 +649,8 @@ static QDF_STATUS lim_update_link_to_mld_address(struct mac_context *mac_ctx,
 	return QDF_STATUS_SUCCESS;
 }
 #else
-static void lim_get_sta_mld_address(uint8_t *body_ptr, uint32_t frame_len,
+static void lim_get_sta_mld_address(struct wlan_objmgr_vdev *vdev,
+				    uint8_t *body_ptr, uint32_t frame_len,
 				    struct qdf_mac_addr *peer_mld)
 {
 }
@@ -648,7 +698,7 @@ static void lim_process_sae_auth_frame(struct mac_context *mac_ctx,
 
 	if (LIM_IS_AP_ROLE(pe_session)) {
 		struct tLimPreAuthNode *pre_auth_node;
-		struct qdf_mac_addr peer_mld;
+		struct qdf_mac_addr peer_mld = {0};
 
 		rx_flags = RXMGMT_FLAG_EXTERNAL_AUTH;
 		/* Add preauth node when the first SAE authentication frame
@@ -675,8 +725,16 @@ static void lim_process_sae_auth_frame(struct mac_context *mac_ctx,
 			 * For the 1st SAE RX frame,
 			 * driver does not need to convert it in mld_address.
 			 */
-			lim_get_sta_mld_address(body_ptr, frame_len,
-						&peer_mld);
+			lim_get_sta_mld_address(pe_session->vdev, body_ptr,
+						frame_len, &peer_mld);
+			status = lim_validate_mac_address_in_auth_frame(mac_ctx,
+									mac_hdr,
+									&peer_mld);
+			if (QDF_IS_STATUS_ERROR(status)) {
+				pe_debug("Drop SAE auth, duplicate entity found");
+				return;
+			}
+
 			lim_external_auth_add_pre_auth_node(mac_ctx, mac_hdr,
 						eLIM_MLM_WT_SAE_AUTH_STATE,
 						&peer_mld);
@@ -688,8 +746,11 @@ static void lim_process_sae_auth_frame(struct mac_context *mac_ctx,
 			status = lim_update_link_to_mld_address(mac_ctx,
 								pe_session->vdev,
 								mac_hdr);
-			if (QDF_IS_STATUS_ERROR(status))
+			if (QDF_IS_STATUS_ERROR(status)) {
+				pe_debug("SAE address conversion failure with status:%d",
+					 status);
 				return;
+			}
 		}
 	}
 
@@ -707,8 +768,11 @@ static void lim_process_sae_auth_frame(struct mac_context *mac_ctx,
 		status = lim_update_link_to_mld_address(mac_ctx,
 							pe_session->vdev,
 							mac_hdr);
-		if (QDF_IS_STATUS_ERROR(status))
+		if (QDF_IS_STATUS_ERROR(status)) {
+			pe_debug("SAE address conversion failure with status:%d",
+				 status);
 			return;
+		}
 
 		auth_algo = *(uint16_t *)body_ptr;
 		if (frame_len >= (SAE_AUTH_STATUS_CODE_OFFSET + 2)) {
@@ -857,41 +921,6 @@ lim_process_pasn_auth_frame(struct mac_context *mac_ctx,
 				    vdev_id, WMA_GET_RX_FREQ(rx_pkt_info),
 				    WMA_GET_RX_RSSI_NORMALIZED(rx_pkt_info),
 				    rx_flags);
-
-	return QDF_STATUS_SUCCESS;
-}
-
-static QDF_STATUS
-lim_validate_mac_address_in_auth_frame(struct mac_context *mac_ctx,
-				       tpSirMacMgmtHdr mac_hdr,
-				       tSirMacAuthFrameBody *rx_auth_frm_body)
-{
-	struct wlan_objmgr_vdev *vdev;
-
-	/* SA is same as any of the device vdev, return failure */
-	vdev = wlan_objmgr_get_vdev_by_macaddr_from_pdev(mac_ctx->pdev,
-							 mac_hdr->sa,
-							 WLAN_LEGACY_MAC_ID);
-	if (vdev) {
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
-		return QDF_STATUS_E_ALREADY;
-	}
-
-	vdev = wlan_objmgr_get_vdev_by_macaddr_from_pdev(
-					mac_ctx->pdev,
-					rx_auth_frm_body->peer_mld.bytes,
-					WLAN_LEGACY_MAC_ID);
-	if (vdev) {
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
-		return QDF_STATUS_E_ALREADY;
-	}
-
-	if (mlo_mgr_ml_peer_exist_on_diff_ml_ctx(mac_hdr->sa, NULL))
-		return QDF_STATUS_E_ALREADY;
-
-	if (mlo_mgr_ml_peer_exist_on_diff_ml_ctx(
-				rx_auth_frm_body->peer_mld.bytes, NULL))
-		return QDF_STATUS_E_ALREADY;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1054,9 +1083,11 @@ static void lim_process_auth_frame_type1(struct mac_context *mac_ctx,
 	if (lim_is_auth_algo_supported(mac_ctx,
 			(tAniAuthType) rx_auth_frm_body->authAlgoNumber,
 			pe_session)) {
-		status = lim_validate_mac_address_in_auth_frame(
-						mac_ctx, mac_hdr,
-						rx_auth_frm_body);
+		struct qdf_mac_addr *mld_addr = &rx_auth_frm_body->peer_mld;
+
+		status = lim_validate_mac_address_in_auth_frame(mac_ctx,
+								mac_hdr,
+								mld_addr);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			pe_err("Duplicate MAC address found, reject auth");
 			auth_frame->authAlgoNumber =
@@ -2166,7 +2197,7 @@ bool lim_process_sae_preauth_frame(struct mac_context *mac, uint8_t *rx_pkt)
 	}
 
 	if (QDF_IS_STATUS_ERROR(status)) {
-		pe_err("dropping the auth frame for vdev id: %d and BSSID " QDF_MAC_ADDR_FMT,
+		pe_err("dropping the auth frame for vdev id: %d and BSSID " QDF_MAC_ADDR_FMT ", SAE address conversion failure",
 		       vdev_id, QDF_MAC_ADDR_REF(dot11_hdr->bssId));
 		return false;
 	}

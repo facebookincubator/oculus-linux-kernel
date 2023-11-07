@@ -103,6 +103,10 @@ static int mux_read_raw(struct iio_dev *indio_dev,
 		ret = iio_read_channel_scale(mux->parent, val, val2);
 		break;
 
+	case IIO_CHAN_INFO_PROCESSED:
+		ret = iio_read_channel_processed(mux->parent, val);
+		break;
+
 	default:
 		ret = -EINVAL;
 	}
@@ -249,6 +253,7 @@ static int mux_configure_channel(struct device *dev, struct mux *mux,
 	chan->indexed = 1;
 	chan->output = pchan->output;
 	chan->datasheet_name = label;
+	chan->extend_name = label;
 	chan->ext_info = mux->ext_info;
 
 	ret = iio_get_channel_type(mux->parent, &chan->type);
@@ -261,9 +266,15 @@ static int mux_configure_channel(struct device *dev, struct mux *mux,
 		chan->info_mask_separate |= BIT(IIO_CHAN_INFO_RAW);
 	if (iio_channel_has_info(pchan, IIO_CHAN_INFO_SCALE))
 		chan->info_mask_separate |= BIT(IIO_CHAN_INFO_SCALE);
+	if (iio_channel_has_info(pchan, IIO_CHAN_INFO_PROCESSED))
+		chan->info_mask_separate |= BIT(IIO_CHAN_INFO_PROCESSED);
+
 
 	if (iio_channel_has_available(pchan, IIO_CHAN_INFO_RAW))
 		chan->info_mask_separate_available |= BIT(IIO_CHAN_INFO_RAW);
+	if (iio_channel_has_available(pchan, IIO_CHAN_INFO_PROCESSED))
+		chan->info_mask_separate_available |= BIT(IIO_CHAN_INFO_PROCESSED);
+
 
 	if (state >= mux_control_states(mux->control)) {
 		dev_err(dev, "too many channels\n");

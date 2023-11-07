@@ -257,7 +257,7 @@ static int dsi_display_mgr_phy_control_enable(struct dsi_display *display,
 			display_ctrl = &display->ctrl[i];
 			if (!display_ctrl)
 				continue;
-			ret = dsi_pll_program_slave(display_ctrl->phy->pll);
+			ret = dsi_pll_program_slave(display_ctrl->phy->pll, is_skip_op_required(display));
 			if (ret) {
 				DSI_ERR("failed to program slave %d\n", ret);
 				goto error_ctrl_clk_off;

@@ -551,7 +551,7 @@
 			config {
 				pins = "gpio14";
 				drive-strength = <2>;
-				bias-disable;
+				bias-pull-down;
 			};
 		};
 

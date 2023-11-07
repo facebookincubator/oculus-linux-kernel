@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
@@ -12,6 +12,7 @@
 /* Destination scaler TOP registers */
 #define DEST_SCALER_OP_MODE     0x00
 #define DEST_SCALER_HW_VERSION  0x10
+#define DEST_SCALER_MERGE_CTRL  0x0C
 
 static void sde_hw_ds_setup_opmode(struct sde_hw_ds *hw_ds,
 				u32 op_mode)
@@ -29,6 +30,14 @@ static void sde_hw_ds_setup_opmode(struct sde_hw_ds *hw_ds,
 		op_mode_val &= ~BIT(hw_ds->idx - DS_0);
 
 	SDE_REG_WRITE(hw, DEST_SCALER_OP_MODE, op_mode_val);
+}
+
+static void sde_hw_ds_merge_ctrl(struct sde_hw_ds *hw_ds,
+			u32 op_mode)
+{
+	struct sde_hw_blk_reg_map *hw = &hw_ds->hw;
+
+	SDE_REG_WRITE(hw, DEST_SCALER_MERGE_CTRL + hw_ds->scl->base, op_mode);
 }
 
 static void sde_hw_ds_setup_scaler3(struct sde_hw_ds *hw_ds,
@@ -59,7 +68,10 @@ static void sde_hw_ds_setup_scaler3(struct sde_hw_ds *hw_ds,
 
 static void _setup_ds_ops(struct sde_hw_ds_ops *ops, unsigned long features)
 {
-	ops->setup_opmode = sde_hw_ds_setup_opmode;
+	if (test_bit(SDE_DS_MERGE_CTRL, &features))
+		ops->setup_opmode = sde_hw_ds_merge_ctrl;
+	else
+		ops->setup_opmode = sde_hw_ds_setup_opmode;
 
 	if (test_bit(SDE_SSPP_SCALER_QSEED3, &features) ||
 			test_bit(SDE_SSPP_SCALER_QSEED3LITE, &features))

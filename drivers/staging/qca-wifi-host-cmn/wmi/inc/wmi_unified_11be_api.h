@@ -192,6 +192,19 @@ QDF_STATUS wmi_extract_mlo_link_state_info_event(
 			void *evt_buf,
 			struct ml_link_state_info_event *params);
 
+/**
+ * wmi_extract_mlo_link_disable_request_evt() - Extract fixed parameters TLV
+ * from the MLO link disable request WMI event
+ * @wmi: wmi handle
+ * @buf: pointer to event buffer
+ * @params: MLO link disable request event parameters
+ *
+ * Return: QDF_STATUS_SUCCESS of operation
+ */
+QDF_STATUS wmi_extract_mlo_link_disable_request_evt(
+		struct wmi_unified *wmi,
+		void *buf,
+		struct mlo_link_disable_request_evt_params *params);
 #endif /* WLAN_FEATURE_11BE */
 
 #endif /*_WMI_UNIFIED_11BE_API_H_*/

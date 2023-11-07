@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -183,6 +183,23 @@ QDF_STATUS wmi_unified_vdev_set_neighbour_rx_cmd_send(
 }
 
 qdf_export_symbol(wmi_unified_vdev_set_neighbour_rx_cmd_send);
+
+QDF_STATUS
+wmi_send_peer_vlan_config(struct wmi_unified *wmi_handle,
+			  uint8_t *macaddr,
+			  struct peer_vlan_config_param param)
+{
+	char peer_mac[QDF_MAC_ADDR_SIZE];
+
+	qdf_mem_copy(peer_mac, macaddr, QDF_MAC_ADDR_SIZE);
+
+	if (wmi_handle->ops->send_peer_vlan_config_cmd)
+		return wmi_handle->ops->send_peer_vlan_config_cmd(wmi_handle,
+								  peer_mac,
+								  &param);
+
+	return QDF_STATUS_E_FAILURE;
+}
 
 QDF_STATUS wmi_extract_multi_vdev_restart_resp_event(
 	struct wmi_unified *wmi_handle,

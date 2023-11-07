@@ -1386,8 +1386,8 @@ struct wlan_user_mcc_quota {
  * @dual_sta_policy_cfg: Dual STA policies configuration
  * @tx_retry_multiplier: TX xretry extension parameter
  * @mgmt_hw_tx_retry_count: MGMT HW tx retry count for frames
- * @relaxed_6ghz_conn_policy: 6GHz relaxed connection policy
  * @std_6ghz_conn_policy: 6GHz standard connection policy
+ * @disable_vlp_sta_conn_to_sp_ap: Disable VLP STA connection to SP AP
  * @eht_mode: EHT mode of operation
  * @t2lm_negotiation_support: T2LM negotiation supported enum value
  * @enable_emlsr_mode: 11BE eMLSR mode support
@@ -1443,8 +1443,8 @@ struct wlan_mlme_generic {
 	uint32_t tx_retry_multiplier;
 	uint8_t mgmt_hw_tx_retry_count[CFG_FRAME_TYPE_MAX];
 #ifdef CONFIG_BAND_6GHZ
-	bool relaxed_6ghz_conn_policy;
 	bool std_6ghz_conn_policy;
+	bool disable_vlp_sta_conn_to_sp_ap;
 #endif
 #ifdef WLAN_FEATURE_11BE_MLO
 	enum wlan_eht_mode eht_mode;

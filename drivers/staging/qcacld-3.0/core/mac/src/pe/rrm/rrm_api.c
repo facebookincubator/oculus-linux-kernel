@@ -277,10 +277,21 @@ rrm_process_link_measurement_request(struct mac_context *mac,
 		ap_pwr_constraint = mlme_obj->reg_tpc_obj.ap_constraint_power;
 		mlme_obj->reg_tpc_obj.ap_constraint_power =
 				pLinkReq->MaxTxPower.maxTxPower;
-		lim_calculate_tpc(mac, pe_session, true, 0, false);
+		lim_calculate_tpc(mac, pe_session, true);
 
 		LinkReport.txPower =
 			mlme_obj->reg_tpc_obj.chan_power_info[0].tx_power;
+		/** If hardware limit received from FW is non zero, use it
+		 * to limit the link tx power.
+		 */
+		if (mlme_obj->mgmt.generic.tx_pwrlimit) {
+			LinkReport.txPower =
+				QDF_MIN(LinkReport.txPower,
+					mlme_obj->mgmt.generic.tx_pwrlimit);
+			pe_debug("HW power limit: %d, Link tx power: %d",
+				 mlme_obj->mgmt.generic.tx_pwrlimit,
+				 LinkReport.txPower);
+		}
 		if (LinkReport.txPower < MIN_TX_PWR_CAP)
 			LinkReport.txPower = MIN_TX_PWR_CAP;
 		else if (LinkReport.txPower > MAX_TX_PWR_CAP)

@@ -154,40 +154,6 @@ static int cam_vfe_bus_ver3_put_evt_payload(
 	return 0;
 }
 
-static bool cam_vfe_bus_ver3_can_be_secure(uint32_t out_type)
-{
-	switch (out_type) {
-	case CAM_VFE_BUS_VER3_VFE_OUT_FULL:
-	case CAM_VFE_BUS_VER3_VFE_OUT_DS4:
-	case CAM_VFE_BUS_VER3_VFE_OUT_DS16:
-	case CAM_VFE_BUS_VER3_VFE_OUT_FD:
-	case CAM_VFE_BUS_VER3_VFE_OUT_RAW_DUMP:
-	case CAM_VFE_BUS_VER3_VFE_OUT_RDI0:
-	case CAM_VFE_BUS_VER3_VFE_OUT_RDI1:
-	case CAM_VFE_BUS_VER3_VFE_OUT_RDI2:
-	case CAM_VFE_BUS_VER3_VFE_OUT_FULL_DISP:
-	case CAM_VFE_BUS_VER3_VFE_OUT_DS4_DISP:
-	case CAM_VFE_BUS_VER3_VFE_OUT_DS16_DISP:
-		return true;
-
-	case CAM_VFE_BUS_VER3_VFE_OUT_2PD:
-	case CAM_VFE_BUS_VER3_VFE_OUT_LCR:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_HDR_BE:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_HDR_BHIST:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_TL_BG:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_BF:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_AWB_BG:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_BHIST:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_RS:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_CS:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_IHIST:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_CAF:
-	case CAM_VFE_BUS_VER3_VFE_OUT_STATS_BAYER_RS:
-	default:
-		return false;
-	}
-}
-
 static enum cam_vfe_bus_ver3_vfe_out_type
 	cam_vfe_bus_ver3_get_out_res_id_and_index(
 	struct cam_vfe_bus_ver3_priv  *bus_priv,
@@ -1947,7 +1913,6 @@ static int cam_vfe_bus_ver3_acquire_vfe_out(void *bus_priv, void *acquire_args,
 	struct cam_vfe_hw_vfe_out_acquire_args *out_acquire_args;
 	struct cam_isp_resource_node           *rsrc_node = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data   *rsrc_data = NULL;
-	uint32_t                                secure_caps = 0, mode;
 	struct cam_vfe_bus_ver3_comp_grp_acquire_args comp_acq_args = {0};
 	uint32_t       outmap_index = CAM_VFE_BUS_VER3_VFE_OUT_MAX;
 	uint32_t       out_port_res_type;
@@ -2014,33 +1979,6 @@ static int cam_vfe_bus_ver3_acquire_vfe_out(void *bus_priv, void *acquire_args,
 		rsrc_data->common_data->buf_done_controller =
 			acq_args->buf_done_controller;
 
-	secure_caps = cam_vfe_bus_ver3_can_be_secure(
-		rsrc_data->out_type);
-	mode = out_acquire_args->out_port_info->secure_mode;
-	mutex_lock(&rsrc_data->common_data->bus_mutex);
-	if (secure_caps) {
-		if (!rsrc_data->common_data->num_sec_out) {
-			rsrc_data->secure_mode = mode;
-			rsrc_data->common_data->secure_mode = mode;
-		} else {
-			if (mode == rsrc_data->common_data->secure_mode) {
-				rsrc_data->secure_mode =
-					rsrc_data->common_data->secure_mode;
-			} else {
-				rc = -EINVAL;
-				CAM_ERR_RATE_LIMIT(CAM_ISP,
-					"Mismatch: Acquire mode[%d], drvr mode[%d]",
-					rsrc_data->common_data->secure_mode,
-					mode);
-				mutex_unlock(
-					&rsrc_data->common_data->bus_mutex);
-				return -EINVAL;
-			}
-		}
-		rsrc_data->common_data->num_sec_out++;
-	}
-	mutex_unlock(&rsrc_data->common_data->bus_mutex);
-
 	ver3_bus_priv->workq_info = acq_args->workq;
 	rsrc_node->rdi_only_ctx = 0;
 	rsrc_node->res_id = out_acquire_args->out_port_info->acquired_res_type;
@@ -2091,6 +2029,9 @@ static int cam_vfe_bus_ver3_acquire_vfe_out(void *bus_priv, void *acquire_args,
 
 	rsrc_data->is_dual = out_acquire_args->is_dual;
 	rsrc_data->is_master = out_acquire_args->is_master;
+	out_acquire_args->secure_mask = rsrc_data->secure_mask;
+	if (rsrc_data->secure_mask)
+		rsrc_data->secure_mode = out_acquire_args->out_port_info->secure_mode;
 
 	rsrc_node->res_state = CAM_ISP_RESOURCE_STATE_RESERVED;
 	rsrc_node->is_per_port_acquire = is_per_port_acquire;
@@ -2113,7 +2054,6 @@ static int cam_vfe_bus_ver3_release_vfe_out(void *bus_priv, void *release_args,
 	uint32_t i;
 	struct cam_isp_resource_node          *vfe_out = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data  *rsrc_data = NULL;
-	uint32_t                               secure_caps = 0;
 
 	if (!bus_priv || !release_args) {
 		CAM_ERR(CAM_ISP, "Invalid input bus_priv %pK release_args %pK",
@@ -2147,31 +2087,7 @@ static int cam_vfe_bus_ver3_release_vfe_out(void *bus_priv, void *release_args,
 	vfe_out->cdm_ops = NULL;
 	rsrc_data->cdm_util_ops = NULL;
 
-	secure_caps = cam_vfe_bus_ver3_can_be_secure(rsrc_data->out_type);
-	mutex_lock(&rsrc_data->common_data->bus_mutex);
-	if (secure_caps) {
-		if (rsrc_data->secure_mode ==
-			rsrc_data->common_data->secure_mode) {
-			rsrc_data->common_data->num_sec_out--;
-			rsrc_data->secure_mode =
-				CAM_SECURE_MODE_NON_SECURE;
-		} else {
-			/*
-			 * The validity of the mode is properly
-			 * checked while acquiring the output port.
-			 * not expected to reach here, unless there is
-			 * some corruption.
-			 */
-			CAM_ERR(CAM_ISP, "driver[%d],resource[%d] mismatch",
-				rsrc_data->common_data->secure_mode,
-				rsrc_data->secure_mode);
-		}
-
-		if (!rsrc_data->common_data->num_sec_out)
-			rsrc_data->common_data->secure_mode =
-				CAM_SECURE_MODE_NON_SECURE;
-	}
-	mutex_unlock(&rsrc_data->common_data->bus_mutex);
+	rsrc_data->secure_mode = CAM_SECURE_MODE_NON_SECURE;
 
 	if (vfe_out->res_state == CAM_ISP_RESOURCE_STATE_RESERVED)
 		vfe_out->res_state = CAM_ISP_RESOURCE_STATE_AVAILABLE;
@@ -2583,6 +2499,7 @@ static int cam_vfe_bus_ver3_init_vfe_out_resource(uint32_t  index,
 	for (i = 0; i < CAM_VFE_BUS_VER3_MAX_MID_PER_PORT; i++)
 		rsrc_data->mid[i] = ver3_hw_info->vfe_out_hw_info[index].mid[i];
 
+	rsrc_data->secure_mask = ver3_hw_info->vfe_out_hw_info[index].secure_mask;
 
 	return 0;
 }
@@ -4246,7 +4163,6 @@ static int cam_vfe_bus_ver3_update_res_vfe_out(void *bus_priv, void *acquire_arg
 	struct cam_vfe_hw_vfe_out_acquire_args *out_acquire_args;
 	struct cam_isp_resource_node           *rsrc_node = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data   *rsrc_data = NULL;
-	uint32_t                                secure_caps = 0, mode;
 	struct cam_vfe_bus_ver3_comp_grp_acquire_args comp_acq_args = {0};
 	uint32_t       outmap_index = CAM_VFE_BUS_VER3_VFE_OUT_MAX;
 
@@ -4301,33 +4217,6 @@ static int cam_vfe_bus_ver3_update_res_vfe_out(void *bus_priv, void *acquire_arg
 		rsrc_data->common_data->buf_done_controller =
 			acq_args->buf_done_controller;
 
-	secure_caps = cam_vfe_bus_ver3_can_be_secure(
-		rsrc_data->out_type);
-	mode = out_acquire_args->out_port_info->secure_mode;
-	mutex_lock(&rsrc_data->common_data->bus_mutex);
-	if (secure_caps) {
-		if (!rsrc_data->common_data->num_sec_out) {
-			rsrc_data->secure_mode = mode;
-			rsrc_data->common_data->secure_mode = mode;
-		} else {
-			if (mode == rsrc_data->common_data->secure_mode) {
-				rsrc_data->secure_mode =
-					rsrc_data->common_data->secure_mode;
-			} else {
-				rc = -EINVAL;
-				CAM_ERR_RATE_LIMIT(CAM_ISP,
-					"Mismatch: Acquire mode[%d], drvr mode[%d]",
-					rsrc_data->common_data->secure_mode,
-					mode);
-				mutex_unlock(
-					&rsrc_data->common_data->bus_mutex);
-				return -EINVAL;
-			}
-		}
-		rsrc_data->common_data->num_sec_out++;
-	}
-	mutex_unlock(&rsrc_data->common_data->bus_mutex);
-
 	ver3_bus_priv->workq_info = acq_args->workq;
 	rsrc_node->rdi_only_ctx = 0;
 	rsrc_node->res_id = out_acquire_args->out_port_info->acquired_res_type;
@@ -4380,6 +4269,8 @@ static int cam_vfe_bus_ver3_update_res_vfe_out(void *bus_priv, void *acquire_arg
 	rsrc_node->is_per_port_acquire = false;
 	rsrc_data->is_dual = out_acquire_args->is_dual;
 	rsrc_data->is_master = out_acquire_args->is_master;
+	if (rsrc_data->secure_mask)
+		rsrc_data->secure_mode = out_acquire_args->out_port_info->secure_mode;
 
 	out_acquire_args->rsrc_node = rsrc_node;
 

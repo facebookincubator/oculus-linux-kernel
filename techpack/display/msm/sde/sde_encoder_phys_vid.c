@@ -328,15 +328,79 @@ static void programmable_fetch_config(struct sde_encoder_phys *phys_enc,
 	phys_enc->vfp_fetch_lines_cached = (f.enable == 1) ?
 			vert_total - f.fetch_start / horiz_total : 0;
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+}
 
+static void skewed_vsync_config(struct sde_encoder_phys *phys_enc,
+				      const struct intf_timing_params *timing)
+{
+	struct sde_intf_offset_cfg *cfg = &phys_enc->cfg;
+	struct drm_connector *drm_conn;
+	struct sde_connector_state *conn_state;
+	struct sde_encoder_phys_vid *vid_enc = to_sde_encoder_phys_vid(phys_enc);
+	u32 vtotal, max_skew_offset_line = 0, min_skew_offset_line = 0;
+
+	if (!(sde_encoder_phys_has_role_master_dpu_master_intf(phys_enc) ||
+		sde_encoder_phys_has_role_slave_dpu_master_intf(phys_enc))) {
+		SDE_DEBUG_VIDENC(vid_enc, "split_role:%d\n", phys_enc->split_role);
+		return;
+	}
+
+	if (!phys_enc->cfg.skew_intf_offset_en)
+		goto setup_prog_offset;
+
+	drm_conn = phys_enc->connector;
+	conn_state = to_sde_connector_state(phys_enc->connector->state);
+	vtotal = get_vertical_total(timing);
+	max_skew_offset_line = mult_frac(vtotal, MAX_SKEW_VSYNC_PERCENTAGE, 100);
+	min_skew_offset_line = mult_frac(vtotal, MIN_SKEW_VSYNC_PERCENTAGE, 100);
+	cfg->skew_offset_line = phys_enc->cached_mode.vtotal * cfg->fixed_skew_offset_line;
+	cfg->skew_offset_line = DIV_ROUND_UP(cfg->skew_offset_line, cfg->fixed_vtotal);
+
+	if (cfg->skew_offset_line > max_skew_offset_line)
+		cfg->skew_offset_line = max_skew_offset_line;
+	else if (cfg->skew_offset_line < min_skew_offset_line)
+		cfg->skew_offset_line = min_skew_offset_line;
+
+	SDE_DEBUG_VIDENC(vid_enc,
+		 "skewed_vsync offset_line curr: %d old: %d is set to: %u skew en: %d\n",
+		 cfg->skew_offset_line, cfg->fixed_skew_offset_line, cfg->skew_intf_offset_en);
+	SDE_EVT32_VERBOSE(cfg->skew_offset_line, cfg->fixed_skew_offset_line,
+			cfg->skew_intf_offset_en,
+			cfg->fps, cfg->vtotal, vtotal);
 	/**
-	 * In Dual DPU sync mode, prog_intf_offset set in Master DPU
+	 * In Dual DPU sync mode, set prog_intf_offset in Master DPU
 	 * to enable Slave DPU timing engine.
 	 */
-	if (sde_encoder_has_dpu_ctl_op_sync(phys_enc->parent) &&
-		sde_encoder_phys_has_role_master_dpu_master_intf(phys_enc) &&
-		phys_enc->hw_intf->ops.setup_dpu_sync_prog_intf_offset)
-		phys_enc->hw_intf->ops.setup_dpu_sync_prog_intf_offset(phys_enc->hw_intf, &f);
+setup_prog_offset:
+	if (phys_enc->hw_intf->ops.setup_dpu_sync_prog_skew_intf_offset &&
+		sde_encoder_phys_has_role_master_dpu_master_intf(phys_enc))
+		phys_enc->hw_intf->ops.setup_dpu_sync_prog_skew_intf_offset(
+				phys_enc->hw_intf, cfg->skew_offset_line);
+}
+
+static void sde_encoder_phys_update_skew_intf_offset_cfg(struct sde_encoder_phys *phys_enc)
+{
+	struct sde_connector_state *c_state;
+	struct sde_intf_offset_cfg *cfg;
+
+	if (!phys_enc || !phys_enc->parent) {
+		SDE_ERROR("invalid encoder parameters\n");
+		return;
+	}
+
+	if (phys_enc->connector && phys_enc->connector->state) {
+		c_state = to_sde_connector_state(phys_enc->connector->state);
+		cfg = &phys_enc->cfg;
+		/* Update skew intf offset cfg post vsync for setting skew flush windows*/
+		if (msm_is_mode_seamless_vrr(&c_state->msm_mode) && !c_state->in_vrr_modeset &&
+			!atomic_read(&phys_enc->pending_retire_fence_cnt)) {
+			cfg->fps = drm_mode_vrefresh(&phys_enc->cached_mode);
+			cfg->vtotal = phys_enc->cached_mode.vtotal;
+			SDE_EVT32(msm_is_mode_seamless_vrr(&c_state->msm_mode),
+				c_state->in_vrr_modeset, cfg->fps, cfg->vtotal,
+				atomic_read(&phys_enc->pending_retire_fence_cnt));
+		}
+	}
 }
 
 static bool sde_encoder_phys_vid_mode_fixup(
@@ -479,6 +543,7 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 	}
 
 	drm_mode_to_intf_timing_params(vid_enc, &mode, &timing_params);
+	sde_encoder_helper_skewed_vsync_config(phys_enc, &phys_enc->cfg);
 
 	vid_enc->timing_params = timing_params;
 
@@ -520,6 +585,8 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
 	}
 
+	if (sde_encoder_has_dpu_ctl_op_sync(phys_enc->parent))
+		skewed_vsync_config(phys_enc, &timing_params);
 exit:
 	if (phys_enc->parent_ops.get_qsync_fps)
 		phys_enc->parent_ops.get_qsync_fps(
@@ -579,6 +646,8 @@ static void sde_encoder_phys_vid_vblank_irq(void *arg, int irq_idx)
 			SDE_ENCODER_FRAME_EVENT_SIGNAL_RETIRE_FENCE |
 			SDE_ENCODER_FRAME_EVENT_SIGNAL_RELEASE_FENCE;
 	}
+
+	sde_encoder_phys_update_skew_intf_offset_cfg(phys_enc);
 
 not_flushed:
 	if (hw_ctl && hw_ctl->ops.get_reset)
@@ -1363,6 +1432,7 @@ exit:
 		atomic_read(&phys_enc->pending_retire_fence_cnt), phys_enc->split_role);
 	phys_enc->vfp_cached = 0;
 	phys_enc->enable_state = SDE_ENC_DISABLED;
+	phys_enc->cfg.flush_sync_window_min = phys_enc->cfg.flush_sync_window_max = 0;
 }
 
 static int sde_encoder_phys_vid_poll_for_active_region(struct sde_encoder_phys *phys_enc)
@@ -1398,6 +1468,7 @@ static void sde_encoder_phys_vid_handle_post_kickoff(
 {
 	unsigned long lock_flags;
 	struct sde_encoder_phys_vid *vid_enc;
+	struct sde_connector_state *c_state;
 	u32 avr_mode;
 	u32 ret;
 
@@ -1407,6 +1478,7 @@ static void sde_encoder_phys_vid_handle_post_kickoff(
 	}
 
 	vid_enc = to_sde_encoder_phys_vid(phys_enc);
+	c_state = to_sde_connector_state(phys_enc->connector->state);
 	SDE_DEBUG_VIDENC(vid_enc, "enable_state %d\n", phys_enc->enable_state);
 	SDE_EVT32(DRMID(phys_enc->parent), phys_enc->hw_intf->idx - INTF_0, phys_enc->split_role);
 
@@ -1444,6 +1516,13 @@ static void sde_encoder_phys_vid_handle_post_kickoff(
 				phys_enc->hw_intf->idx - INTF_0,
 				SDE_EVTLOG_FUNC_CASE9);
 	}
+
+	/*
+	 * Clear in_vrr_modeset in post_kickoff for updating
+	 * skew params in sde_intf_offset_cfg on vsync.
+	 */
+	if (msm_is_mode_seamless_vrr(&c_state->msm_mode) && c_state->in_vrr_modeset)
+		c_state->in_vrr_modeset = false;
 }
 
 static void sde_encoder_phys_vid_prepare_for_commit(

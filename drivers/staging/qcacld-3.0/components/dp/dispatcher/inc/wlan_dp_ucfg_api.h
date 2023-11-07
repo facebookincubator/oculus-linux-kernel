@@ -1358,6 +1358,32 @@ void *ucfg_dp_prealloc_get_consistent_mem_unaligned(qdf_size_t size,
  * Return: None
  */
 void ucfg_dp_prealloc_put_consistent_mem_unaligned(void *va_unaligned);
+
+/**
+ * ucfg_dp_prealloc_get_multi_pages() - gets pre-alloc DP multi-pages memory
+ * @desc_type: descriptor type
+ * @elem_size: single element size
+ * @elem_num: total number of elements should be allocated
+ * @pages: multi page information storage
+ * @cacheable: coherent memory or cacheable memory
+ *
+ * Return: None
+ */
+void ucfg_dp_prealloc_get_multi_pages(uint32_t desc_type, qdf_size_t elem_size,
+				      uint16_t elem_num,
+				      struct qdf_mem_multi_page_t *pages,
+				      bool cacheable);
+
+/**
+ * ucfg_dp_prealloc_put_multi_pages() - puts back pre-alloc DP multi-pages
+ *  memory
+ * @desc_type: descriptor type
+ * @pages: multi page information storage
+ *
+ * Return: None
+ */
+void ucfg_dp_prealloc_put_multi_pages(uint32_t desc_type,
+				      struct qdf_mem_multi_page_t *pages);
 #endif
 
 #ifdef FEATURE_DIRECT_LINK
@@ -1372,10 +1398,11 @@ QDF_STATUS ucfg_dp_direct_link_init(struct wlan_objmgr_psoc *psoc);
 /**
  * ucfg_dp_direct_link_deinit() - De-initializes Direct Link datapath
  * @psoc: psoc handle
+ * @is_ssr: true if SSR is in progress else false
  *
  * Return: None
  */
-void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc);
+void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc, bool is_ssr);
 
 /**
  * ucfg_dp_wfds_handle_request_mem_ind() - Process request memory indication
@@ -1432,7 +1459,7 @@ QDF_STATUS ucfg_dp_direct_link_init(struct wlan_objmgr_psoc *psoc)
 }
 
 static inline
-void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc)
+void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc, bool is_ssr)
 {
 }
 

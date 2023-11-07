@@ -768,7 +768,7 @@ static int cvp_populate_fences( struct eva_kmd_hfi_packet *in_pkt,
 {
 #ifdef CVP_CONFIG_SYNX_V2
 	u32 i, buf_offset;
-	struct eva_kmd_fence fences[MAX_HFI_FENCE_SIZE >> 2];
+	struct eva_kmd_fence fences[MAX_HFI_FENCE_SIZE];
 	struct cvp_fence_command *f;
 	struct cvp_hfi_cmd_session_hdr *cmd_hdr;
 	struct cvp_fence_queue *q;
@@ -1095,15 +1095,15 @@ static int adjust_bw_freqs(void)
 {
 	struct msm_cvp_core *core;
 	struct iris_hfi_device *hdev;
-	struct bus_info *bus;
+	struct bus_info *bus = NULL;
 	struct clock_set *clocks;
 	struct clock_info *cl;
 	struct allowed_clock_rates_table *tbl = NULL;
 	unsigned int tbl_size;
-	unsigned int cvp_min_rate, cvp_max_rate, max_bw, min_bw;
+	unsigned int cvp_min_rate, cvp_max_rate, max_bw = 0, min_bw = 0;
 	struct cvp_power_level rt_pwr = {0}, nrt_pwr = {0};
 	unsigned long tmp, core_sum, op_core_sum, bw_sum;
-	int i, rc = 0;
+	int i = 0, rc = 0, bus_count = 0;
 	unsigned long ctrl_freq;
 
 	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
@@ -1115,11 +1115,23 @@ static int adjust_bw_freqs(void)
 	tbl_size = core->resources.allowed_clks_tbl_size;
 	cvp_min_rate = tbl[0].clock_rate;
 	cvp_max_rate = tbl[tbl_size - 1].clock_rate;
-	bus = &core->resources.bus_set.bus_tbl[1];
-	max_bw = bus->range[1];
-	min_bw = max_bw/10;
+
+    for(bus_count = 0; bus_count < core->resources.bus_set.count; bus_count++)
+    {
+        if(!strcmp(core->resources.bus_set.bus_tbl[bus_count].name,"cvp-ddr")) {
+            bus = &core->resources.bus_set.bus_tbl[bus_count];
+            max_bw = bus->range[1];
+            min_bw = max_bw/10;
+        }
+    }
+
+    if(!bus) {
+        dprintk(CVP_ERR, "The bus node for cvp-ddr is NULL\n");
+        return -EINVAL;
+    }
 
 	aggregate_power_update(core, &nrt_pwr, &rt_pwr, cvp_max_rate);
+
 	dprintk(CVP_PROF, "PwrUpdate nrt %u %u rt %u %u\n",
 		nrt_pwr.core_sum, nrt_pwr.op_core_sum,
 		rt_pwr.core_sum, rt_pwr.op_core_sum);
@@ -1151,7 +1163,19 @@ static int adjust_bw_freqs(void)
 	bw_sum = rt_pwr.bw_sum + nrt_pwr.bw_sum;
 	bw_sum = bw_sum >> 10;
 	bw_sum = (bw_sum > max_bw) ? max_bw : bw_sum;
-	bw_sum = (bw_sum < min_bw) ? min_bw : bw_sum;
+
+    if(bw_sum) {
+        bw_sum = (bw_sum < min_bw) ? min_bw : bw_sum;
+    }
+    else {
+        /*
+        If bw_sum is 0 then vote for 1KB.
+        Need to vote for minimum DDR BW
+        at the time of stop session, otherwise
+        FW will hang indefinitely.
+        */
+        bw_sum = 1;
+    }
 
 	dprintk(CVP_PROF, "%s %lld %lld\n", __func__,
 		core_sum, bw_sum);

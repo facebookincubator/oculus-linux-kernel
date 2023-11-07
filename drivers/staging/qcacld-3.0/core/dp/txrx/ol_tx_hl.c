@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -518,7 +518,8 @@ ol_tx_hl_base(
 		/* OL_TXRX_PROT_AN_LOG(pdev->prot_an_tx_sent, msdu);*/
 
 		qdf_dp_trace_log_pkt(vdev->vdev_id, msdu, QDF_TX,
-				     QDF_TRACE_DEFAULT_PDEV_ID);
+				     QDF_TRACE_DEFAULT_PDEV_ID,
+				     vdev->qdf_opmode);
 		DPTRACE(qdf_dp_trace_data_pkt(msdu, QDF_TRACE_DEFAULT_PDEV_ID,
 					      QDF_DP_TRACE_TX_PACKET_RECORD,
 					      tx_desc->id, QDF_TX));

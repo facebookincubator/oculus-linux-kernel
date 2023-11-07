@@ -81,7 +81,7 @@ struct charging_dock_params_t {
 	u8 broadcast_period;
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
-	bool moisture_detected;
+	int moisture_detected_count;
 	enum state_of_charge_t state_of_charge;
 };
 
@@ -110,7 +110,7 @@ struct charging_dock_device_t {
 	/* VDM response wait queue */
 	wait_queue_head_t tx_waitq;
 	/* work for sending broadcast period to dock */
-	struct delayed_work dwork;
+	struct work_struct work;
 	/* VDM request parameter for which ack is received */
 	u32 ack_parameter;
 	/* Interface type as driver can support multiple interfaces */
@@ -124,9 +124,11 @@ struct charging_dock_device_t {
 	struct notifier_block nb;
 	u16 current_svid;
 	/* work for sending state of charge to dock */
-	struct delayed_work dwork_soc;
+	struct work_struct work_soc;
 	/* flag to tell if state of charge needs to be sent to dock*/
 	bool send_state_of_charge;
+	/* system-wide battery capacity (internal + external) */
+	u8 system_battery_capacity;
 };
 
 #endif /* _CHARGING_DOCK_H__ */

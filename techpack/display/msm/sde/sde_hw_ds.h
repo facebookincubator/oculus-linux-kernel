@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
@@ -13,8 +14,8 @@
 
 struct sde_hw_ds;
 
-/* Destination Scaler DUAL mode overfetch pixel count */
-#define SDE_DS_OVERFETCH_SIZE 5
+#define DEST_SCALER_DUAL_PIPE BIT(0)
+#define DEST_SCALER_QUAD_PIPE (BIT(0) | BIT(1))
 
 /* Destination scaler DUAL mode operation bit */
 #define SDE_DS_OP_MODE_DUAL BIT(16)
@@ -24,6 +25,7 @@ struct sde_hw_ds;
  * @flags        : Flag to switch between mode for DS
  * @lm_width     : Layer mixer width configuration
  * @lm_heigh     : Layer mixer height configuration
+ * @merge_mode   : Specify pipe merge mode for each DS block
  * @scl3_cfg     : Configuration data for scaler
  */
 struct sde_hw_ds_cfg {
@@ -31,6 +33,7 @@ struct sde_hw_ds_cfg {
 	int flags;
 	u32 lm_width;
 	u32 lm_height;
+	u32 merge_mode;
 	struct sde_hw_scaler3_cfg scl3_cfg;
 };
 

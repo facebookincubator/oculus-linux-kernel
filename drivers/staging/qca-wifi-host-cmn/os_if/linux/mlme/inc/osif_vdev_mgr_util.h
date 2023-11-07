@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -27,12 +27,15 @@
  * struct osif_vdev_mgr_ops - VDEV mgr legacy callbacks
  * @osif_vdev_mgr_set_mac_addr_response: Callback to indicate set MAC address
  *                                       response from FW
+ * @osif_vdev_mgr_send_scan_done_complete_cb: send scan done indication to
+ * upper layer
  */
 struct osif_vdev_mgr_ops {
 #ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
 	void (*osif_vdev_mgr_set_mac_addr_response)(uint8_t vdev_id,
 						    uint8_t resp_status);
 #endif
+	void (*osif_vdev_mgr_send_scan_done_complete_cb)(uint8_t vdev_id);
 };
 
 /**

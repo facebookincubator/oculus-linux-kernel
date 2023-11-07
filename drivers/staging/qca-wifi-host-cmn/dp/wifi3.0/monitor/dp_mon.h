@@ -606,7 +606,8 @@ struct dp_mon_ops {
 #if !defined(DISABLE_MON_CONFIG) && defined(MON_ENABLE_DROP_FOR_MAC)
 	uint32_t (*mon_drop_packets_for_mac)(struct dp_pdev *pdev,
 					     uint32_t mac_id,
-					     uint32_t quota);
+					     uint32_t quota,
+					     bool force_flush);
 #endif
 #if defined(DP_CON_MON)
 	void (*mon_service_rings)(struct  dp_soc *soc, uint32_t quota);
@@ -2548,7 +2549,7 @@ uint32_t dp_monitor_drop_packets_for_mac(struct dp_pdev *pdev,
 	}
 
 	return monitor_ops->mon_drop_packets_for_mac(pdev,
-						     mac_id, quota);
+						     mac_id, quota, false);
 }
 #else
 static inline
@@ -3704,8 +3705,8 @@ static inline void dp_monitor_vdev_delete(struct dp_soc *soc,
 		qdf_timer_sync_cancel(&soc->int_timer);
 		dp_monitor_flush_rings(soc);
 	} else if (soc->intr_mode == DP_INTR_MSI) {
-		if (dp_monitor_vdev_timer_stop(soc))
-			dp_monitor_flush_rings(soc);
+		dp_monitor_vdev_timer_stop(soc);
+		dp_monitor_flush_rings(soc);
 	}
 
 	dp_monitor_vdev_detach(vdev);

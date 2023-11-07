@@ -21,6 +21,7 @@
 #define WITH_CRM_MASK  0x1
 #define HOST_DEST_CAM  0x1
 #define SLAVE_DEST_CAM 0x2
+#define SENSOR_LITE_DEFAULT_PD 2
 
 /* This should be same as pipeline delay + 1*/
 #define MAX_APPLIED_QUEUE_DEPTH 0x2
@@ -218,22 +219,63 @@ int cam_sensor_lite_publish_dev_info(
 	return rc;
 }
 
-static int cam_sensor_lite_handle_sof(
-	struct sensor_lite_device *dev,
-	struct cam_req_mgr_no_crm_trigger_notify *notify)
+int cam_sensor_lite_no_sync_handshake(
+	struct cam_req_mgr_no_crm_handshake_data *info)
+{
+	int rc = 0;
+	struct sensor_lite_device *sensor_lite_dev = NULL;
+
+	if (!info) {
+		CAM_ERR(CAM_SENSOR_LITE,
+				"Invalid crm info handle");
+		return -EINVAL;
+	}
+
+	sensor_lite_dev = (struct sensor_lite_device *)
+		cam_get_device_no_crm_priv(info->dev_hdl);
+	if (!sensor_lite_dev) {
+		CAM_ERR(CAM_SENSOR_LITE,
+				"Device data is NULL");
+		return -EINVAL;
+	}
+
+	info->pipeline_delay = SENSOR_LITE_DEFAULT_PD;
+	info->trigger        = CAM_TRIGGER_POINT_SOF;
+	sensor_lite_dev->crm_intf.frame_skip_cb = info->frame_skip_cb;
+	sensor_lite_dev->anchor_pd = info->anchor_pd;
+
+	CAM_DBG(CAM_SENSOR_LITE, "SENSOR_LITE PD delay:%d", info->pipeline_delay);
+	return rc;
+}
+
+static int cam_sensor_lite_no_crm_apply_req(
+	struct cam_req_mgr_no_crm_apply_request *apply)
 {
 	int i = 0, rc = 0;
+	uint64_t req_id = 0;
+	int      self_pd = 2;
 	struct sensor_lite_request *req                   = NULL;
+	struct sensor_lite_device  *dev                   = NULL;
 
-	if (!dev || !notify) {
+	if (!apply) {
 		CAM_ERR(CAM_SENSOR_LITE, "Invalid arguments ");
 		return -EINVAL;
 	}
 
+	dev = (struct sensor_lite_device *)
+		cam_get_device_no_crm_priv(apply->dev_hdl);
+	if (!dev) {
+		CAM_ERR(CAM_SENSOR_LITE, "invalid sensor lite dev ctx");
+		return -EINVAL;
+	}
+
+	req_id = apply->anchor_req_id - dev->anchor_pd - self_pd;
 	CAM_DBG(CAM_SENSOR_LITE,
 				"[%d] Got notify for frame [%lld]",
 				dev->soc_info.index,
-				notify->frame_id);
+				apply->anchor_req_id - (self_pd - dev->anchor_pd));
+
+	mutex_lock(&dev->mutex);
 
 	if (!list_empty(&(dev->waiting_request_q))) {
 		req = list_first_entry(&(dev->waiting_request_q),
@@ -259,8 +301,10 @@ static int cam_sensor_lite_handle_sof(
 		CAM_INFO(CAM_SENSOR_LITE,
 				"[%d] Delay in adding request to waiting queue[%lld]",
 				dev->soc_info.index,
-				notify->frame_id);
+				apply->anchor_req_id - dev->anchor_pd - self_pd);
 	}
+	mutex_unlock(&dev->mutex);
+
 	return rc;
 }
 
@@ -285,13 +329,11 @@ int cam_sensor_lite_setup_link(
 	if (link->link_enable) {
 		sensor_lite_dev->crm_intf.link_hdl = link->link_hdl;
 		sensor_lite_dev->crm_intf.crm_cb = link->crm_cb;
-		sensor_lite_dev->sof_notify_handler = cam_sensor_lite_handle_sof;
 		CAM_INFO(CAM_SENSOR_LITE, "SENSOR_LITE[%d] CRM enable link done",
 				sensor_lite_dev->soc_info.index);
 	} else {
 		sensor_lite_dev->crm_intf.link_hdl = -1;
 		sensor_lite_dev->crm_intf.crm_cb = NULL;
-		sensor_lite_dev->sof_notify_handler = NULL;
 		CAM_INFO(CAM_SENSOR_LITE, "SENSOR_LITE[%d] CRM disable link done",
 				sensor_lite_dev->soc_info.index);
 	}
@@ -620,6 +662,8 @@ int sensor_lite_crm_intf_init(
 	sensor_lite_dev->crm_intf.ops.process_evt = cam_sensor_lite_process_crm_evt;
 	sensor_lite_dev->crm_intf.ops.dump_req = cam_sensor_lite_dump_req;
 	sensor_lite_dev->crm_intf.enable_crm = 0;
+	sensor_lite_dev->crm_intf.no_crm_ops.handshake = cam_sensor_lite_no_sync_handshake;
+	sensor_lite_dev->crm_intf.no_crm_ops.apply_req = cam_sensor_lite_no_crm_apply_req;
 
 	return 0;
 }
@@ -652,13 +696,19 @@ static int __cam_sensor_lite_handle_acquire_dev(
 	crm_intf_params.v4l2_sub_dev_flag = 0;
 	crm_intf_params.media_entity_flag = 0;
 	crm_intf_params.priv = sensor_lite_dev;
+	crm_intf_params.no_crm_priv = NULL;
 	crm_intf_params.dev_id = CAM_SENSOR_LITE;
 
 	/* add crm callbacks only in case of with crm is enabled */
 	if (acquire->info_handle & WITH_CRM_MASK) {
 		sensor_lite_dev->crm_intf.enable_crm = 1;
 		crm_intf_params.ops = &sensor_lite_dev->crm_intf.ops;
+	} else {
+		sensor_lite_dev->crm_intf.enable_crm = 0;
+		crm_intf_params.no_crm_ops = &sensor_lite_dev->crm_intf.no_crm_ops;
+		crm_intf_params.no_crm_priv = sensor_lite_dev;
 	}
+
 	sensor_lite_dev->type = HOST_DEST_CAM;
 	acquire->device_handle =
 		cam_create_device_hdl(&crm_intf_params);

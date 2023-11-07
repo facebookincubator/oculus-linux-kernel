@@ -71,7 +71,7 @@
 #define PDO_BIT10_BIT19		0xffc00
 #define PDO_VOLTAGE_UNIT	50000
 #define RDO_BIT0_BIT9		0x3ff
-#define RDO_CURRENT_UNIT	10
+#define RDO_CURRENT_UNIT	10000
 #define RESET_DEV		0x152
 #define VOLTAGE_9V		9000000
 #define VDM_ENABLE		0x1
@@ -114,6 +114,7 @@ struct cypd3177 {
 	struct iio_dev		*indio_dev;
 	struct power_supply	*psy;
 	struct power_supply	*batt_psy;
+	struct power_supply	*dc_psy;
 	struct notifier_block	 psy_nb;
 	struct delayed_work	 sink_cap_work;
 	struct wakeup_source	*cypd_ws;
@@ -140,6 +141,17 @@ struct cypd3177 {
 };
 
 static struct cypd3177 *__chip;
+
+static void dc_psy_set_icl(struct cypd3177 *chip, int icl_uA)
+{
+	union power_supply_propval val = { .intval = icl_uA };
+
+	if (!chip->dc_psy || icl_uA < 0)
+		return;
+
+	dev_dbg(&chip->client->dev, "setting ICL to %d uA", icl_uA);
+	power_supply_set_property(chip->dc_psy, POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT, &val);
+}
 
 static int cypd3177_i2c_read_reg(struct i2c_client *client, u16 data_length,
 			       u16 reg, u32 *val)
@@ -714,12 +726,14 @@ static void pd_handle_typec_disconnect_or_reset(struct cypd3177 *chip)
 	chip->typec_status = false;
 	chip->pd_attach = 0;
 	chip->sink_cap_5v = false;
+	dc_psy_set_icl(chip, 0);
 	power_supply_unreg_notifier(&chip->psy_nb);
 	power_supply_changed(chip->psy);
 }
 
 static void pd_handle_contract_complete(struct cypd3177 *chip)
 {
+	int icl_uA;
 	chip->pd_attach = 1;
 
 	/*
@@ -741,6 +755,8 @@ static void pd_handle_contract_complete(struct cypd3177 *chip)
 		 * after this second negotation.
 		 */
 		dev_dbg(&chip->client->dev, "final PD negotiation");
+		if (!cypd3177_get_current_max(chip, &icl_uA))
+			dc_psy_set_icl(chip, icl_uA);
 		power_supply_changed(chip->psy);
 	}
 }
@@ -760,15 +776,14 @@ static void pd_handle_vdm_received(struct cypd3177 *chip, int pd_raw)
 {
 	int rc, data_len = VDM_DATA_LEN(pd_raw);
 	enum pd_sop_type sop;
-	u8 *buf;
+	u8 buf[MAX_DATA_LENGTH];
 
 	dev_dbg(&chip->client->dev, "VDM received: length:%d\n", data_len);
-	if (data_len > MAX_DATA_LENGTH) {
-		dev_err(&chip->client->dev, "data length %d is > max %d supported\n",
-			data_len, MAX_DATA_LENGTH);
+	if (data_len < sizeof(u16) || data_len > MAX_DATA_LENGTH) {
+		dev_err(&chip->client->dev, "wrong data length %d\n",
+			data_len);
 		return;
 	}
-	buf = kzalloc(data_len, GFP_KERNEL);
 	rc = cypd3177_read_vdm_msg(chip, &sop, buf, data_len);
 	if (rc < 0)
 		return;
@@ -783,7 +798,6 @@ static void pd_handle_vdm_received(struct cypd3177 *chip, int pd_raw)
 	if (chip->msg_rx_cb)
 		chip->msg_rx_cb(chip->cypd, sop, buf, data_len);
 
-	kfree(buf);
 }
 
 static int dev_handle_response(struct cypd3177 *chip)
@@ -960,6 +974,7 @@ static irqreturn_t cypd3177_fault_irq_handler(int irq, void *dev_id)
 	chip->typec_status = false;
 	chip->pd_attach = 0;
 	chip->sink_cap_5v = false;
+	dc_psy_set_icl(chip, 0);
 	power_supply_unreg_notifier(&chip->psy_nb);
 	if (chip->psy)
 		power_supply_changed(chip->psy);
@@ -1157,6 +1172,15 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		return -EPROBE_DEFER;
 	}
 
+	if (device_property_read_bool(chip->dev, "cypd3177,set-icl")) {
+		chip->dc_psy = power_supply_get_by_name("wireless");
+		if (!chip->dc_psy) {
+			dev_dbg(&i2c->dev, "cypd3177 failed to get dc_psy, defer probe\n");
+			i2c_set_clientdata(i2c, NULL);
+			return -EPROBE_DEFER;
+		}
+	}
+
 	mutex_init(&chip->state_lock);
 
 	/* Create PSY */
@@ -1313,6 +1337,7 @@ static int cypd3177_resume(struct device *dev)
 		chip->pd_attach = 0;
 		chip->sink_cap_5v = false;
 
+		dc_psy_set_icl(chip, 0);
 		power_supply_changed(chip->psy);
 	} else {
 		dev_dbg(&chip->client->dev, "still online upon resume");

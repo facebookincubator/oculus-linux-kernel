@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -151,5 +152,8 @@ void target_if_pmo_register_tx_ops(struct wlan_pmo_tx_ops *pmo_tx_ops)
 		target_if_pmo_psoc_send_idle_monitor_cmd;
 	tgt_if_pmo_reg_pkt_filter_ops(pmo_tx_ops);
 	tgt_if_pmo_icmp_tx_ops(pmo_tx_ops);
+	pmo_tx_ops->psoc_set_wow_enable_ack_failed =
+		target_if_pmo_set_wow_enable_ack_failed;
+
 }
 

@@ -284,6 +284,11 @@ int32_t cam_csiphy_parse_dt_info(struct platform_device *pdev,
 	else
 		csiphy_dev->is_aggregator_rx = true;
 
+	if (of_property_read_bool(soc_info->dev->of_node, "is-phy-protect"))
+		csiphy_dev->is_phy_protect = true;
+	else
+		csiphy_dev->is_phy_protect = false;
+
 	csiphy_dev->prgm_cmn_reg_across_csiphy = (bool) is_regulator_enable_sync;
 
 	if (of_device_is_compatible(soc_info->dev->of_node,

@@ -36,6 +36,21 @@ QDF_STATUS if_mgr_connect_start(struct wlan_objmgr_vdev *vdev,
 				struct if_mgr_event_data *event_data);
 
 /**
+ * if_mgr_connect_active() - connect active event handler
+ * @vdev: vdev object
+ * @event_data: Interface mgr event data
+ *
+ * Interface manager connect active event handler, disable roaming of other
+ * sta.
+ *
+ * Context: It should run in thread context
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS if_mgr_connect_active(struct wlan_objmgr_vdev *vdev,
+				 struct if_mgr_event_data *event_data);
+
+/**
  * if_mgr_connect_complete() - connect complete event handler
  * @vdev: vdev object
  * @event_data: Interface manager complete event data

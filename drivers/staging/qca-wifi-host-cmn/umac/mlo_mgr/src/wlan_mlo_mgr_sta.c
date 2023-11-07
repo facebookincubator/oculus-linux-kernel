@@ -2235,7 +2235,7 @@ static void mlo_process_link_remove(struct wlan_objmgr_vdev *vdev,
 	/* Link delete triggered from AP,
 	 * start timer with tbtt count * beacon interval
 	 */
-	tbtt_count = link_info->delete_timer;
+	tbtt_count = link_info->ap_removal_timer;
 	bcn_int = mlo_get_bcn_interval_by_bssid(
 			wlan_vdev_get_pdev(vdev),
 			wlan_peer_get_macaddr(bss_peer));

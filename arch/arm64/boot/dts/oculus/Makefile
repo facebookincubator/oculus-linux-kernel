@@ -6,6 +6,9 @@ dtbo-$(CONFIG_OCULUS_unknown7) += \
 	unknown7-p0-overlay.dtbo \
 	unknown7-p1-overlay.dtbo \
 
+dtbo-$(CONFIG_OCULUS_unknown9) += \
+	unknown9-p0-overlay.dtbo
+
 dtbo-$(CONFIG_OCULUS_EUREKA) += \
 	eureka-dev1-overlay.dtbo \
 	eureka-p1.2-overlay.dtbo \
@@ -20,6 +23,9 @@ dtbo-$(CONFIG_OCULUS_EUREKA) += \
 	eureka-pvt1.0-overlay.dtbo \
 	eureka-pvt1.1-overlay.dtbo
 
+dtbo-$(CONFIG_OCULUS_unknown14) += \
+	unknown14-rev1-overlay.dtbo
+
 dtbo-$(CONFIG_OCULUS_unknown6) += \
 	unknown6-dev1-overlay.dtbo \
 	unknown6-p1.1-overlay.dtbo \
@@ -33,6 +39,7 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 unknown7-dev0-overlay.dtbo-base := unknown7.dtb
 unknown7-p0-overlay.dtbo-base := unknown7.dtb
 unknown7-p1-overlay.dtbo-base := unknown7.dtb
+unknown9-p0-overlay.dtbo-base := unknown9.dtb
 eureka-dev1-overlay.dtbo-base := eureka.dtb
 eureka-p1.2-overlay.dtbo-base := eureka.dtb
 eureka-evt0-overlay.dtbo-base := eureka.dtb
@@ -45,6 +52,7 @@ eureka-dvt1.0-overlay.dtbo-base := eureka.dtb
 eureka-dvt1.1-overlay.dtbo-base := eureka.dtb
 eureka-pvt1.0-overlay.dtbo-base := eureka.dtb
 eureka-pvt1.1-overlay.dtbo-base := eureka.dtb
+unknown14-rev1-overlay.dtbo-base := unknown14.dtb
 unknown6-dev1-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.1-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.2-overlay.dtbo-base := unknown6.dtb

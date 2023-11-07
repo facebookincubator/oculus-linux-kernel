@@ -3938,6 +3938,64 @@ static QDF_STATUS wlan_hdd_stats_request_needed(struct hdd_adapter *adapter)
 }
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
+/**
+ * __wlan_hdd_cfg80211_connected_chan_stats_request() - stats request for
+ * currently connected channel
+ * @wiphy: Pointer to wiphy
+ * @wdev: Pointer to wdev
+ * @data: Pointer to data
+ * @data_len: Data length
+ *
+ * Return: int
+ */
+static int
+__wlan_hdd_cfg80211_connected_chan_stats_request(struct wiphy *wiphy,
+						 struct wireless_dev *wdev,
+						 const void *data,
+						 int data_len)
+{
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	bool is_vdev_connected;
+	enum QDF_OPMODE mode;
+	QDF_STATUS status;
+
+	is_vdev_connected = hdd_cm_is_vdev_connected(adapter);
+	mode = adapter->device_mode;
+
+	if (mode != QDF_STA_MODE || !is_vdev_connected) {
+		hdd_debug("vdev %d: reject chan stats req, mode:%d, conn:%d",
+			  adapter->vdev_id, mode, is_vdev_connected);
+		return -EPERM;
+	}
+
+	status = ucfg_mlme_connected_chan_stats_request(hdd_ctx->psoc,
+					adapter->vdev_id);
+	return qdf_status_to_os_return(status);
+}
+
+int wlan_hdd_cfg80211_connected_chan_stats_req(struct wiphy *wiphy,
+					       struct wireless_dev *wdev,
+					       const void *data,
+					       int data_len)
+{
+	int errno;
+	struct osif_vdev_sync *vdev_sync;
+
+	errno = osif_vdev_sync_op_start(wdev->netdev, &vdev_sync);
+	if (errno)
+		return errno;
+
+	errno = __wlan_hdd_cfg80211_connected_chan_stats_request(wiphy, wdev,
+								 data,
+								 data_len);
+
+	osif_vdev_sync_op_stop(vdev_sync);
+
+	return errno;
+}
+
 #ifdef WLAN_FEATURE_STATS_EXT
 /**
  * __wlan_hdd_cfg80211_stats_ext_request() - ext stats request
@@ -6914,7 +6972,7 @@ static int __wlan_hdd_cfg80211_dump_survey(struct wiphy *wiphy,
 	bool filled = false;
 
 	if (idx > NUM_CHANNELS - 1)
-		return -EINVAL;
+		return -ENOENT;
 
 	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	status = wlan_hdd_validate_context(hdd_ctx);
@@ -6942,7 +7000,7 @@ static int __wlan_hdd_cfg80211_dump_survey(struct wiphy *wiphy,
 	filled = wlan_hdd_update_survey_info(wiphy, adapter, survey, idx);
 
 	if (!filled)
-		return -ENONET;
+		return -ENOENT;
 
 	return 0;
 }

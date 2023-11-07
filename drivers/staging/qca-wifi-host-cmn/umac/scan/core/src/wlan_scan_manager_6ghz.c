@@ -539,6 +539,11 @@ scm_update_6ghz_channel_list(struct scan_start_request *req,
 	    op_mode == QDF_P2P_GO_MODE)
 		return;
 
+	if (!wlan_reg_is_6ghz_band_set(pdev)) {
+		scm_debug("6 GHz band disabled.");
+		return;
+	}
+
 	scan_mode = scan_obj->scan_def.scan_mode_6g;
 	scm_debug("6g scan mode %d", scan_mode);
 

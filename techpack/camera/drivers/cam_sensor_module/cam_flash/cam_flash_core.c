@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -913,6 +914,10 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 			}
 		} else if (flash_data->opcode == CAM_PKT_NOP_OPCODE) {
 			CAM_DBG(CAM_FLASH, "NOP Packet");
+		} else if (flash_data->cmn_attr.request_id != req_id) {
+			CAM_DBG(CAM_FLASH, "Flash[%d] request not in queue %llu",
+							fctrl->soc_info.index,
+							req_id);
 		} else {
 			rc = -EINVAL;
 			CAM_ERR(CAM_FLASH, "Invalid opcode: %d req_id: %llu",
@@ -1123,6 +1128,7 @@ int cam_flash_i2c_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 
 				break;
 			}
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 		}
 		power_info = &fctrl->power_info;
 		if (!power_info) {
@@ -1282,6 +1288,7 @@ update_req_mgr:
 				add_req.req_id, add_req.trigger_eof);
 		}
 	}
+	cam_mem_put_cpu_buf(config.packet_handle);
 	return rc;
 }
 
@@ -1457,6 +1464,8 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 			rc = -EINVAL;
 			return rc;
 		}
+
+		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 		break;
 	}
 	case CAM_FLASH_PACKET_OPCODE_SET_OPS: {
@@ -1568,6 +1577,8 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 			rc = -EINVAL;
 			return rc;
 		}
+
+		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 		break;
 	}
 	case CAM_FLASH_PACKET_OPCODE_NON_REALTIME_SET_OPS: {
@@ -1715,6 +1726,7 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 			return rc;
 		}
 
+		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 		break;
 	}
 	case CAM_PKT_NOP_OPCODE: {
@@ -1754,15 +1766,27 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 
 		if ((csl_packet->header.op_code & 0xFFFFF) ==
 			CAM_FLASH_PACKET_OPCODE_SET_OPS) {
+			struct cam_req_mgr_no_crm_frame_skip_evt_data skip = {0};
 			add_req.trigger_eof = true;
+			skip.req_id  = csl_packet->header.request_id -
+					(CAM_FLASH_PIPELINE_DELAY - fctrl->anchor_pd);
 			if (flash_data->opcode == CAMERA_SENSOR_FLASH_OP_OFF) {
 				add_req.skip_at_sof = 1;
 				add_req.skip_at_eof = 1;
-			} else
+				skip.trigger =
+					CAM_TRIGGER_POINT_SOF | CAM_TRIGGER_POINT_EOF;
+			} else {
 				add_req.skip_at_sof = 1;
+				skip.trigger = CAM_TRIGGER_POINT_SOF;
+			}
+
+			if (fctrl->bridge_intf.enable_crm == 0) {
+				fctrl->bridge_intf.frame_skip_cb(&skip);
+			}
 		}
 
-		if (fctrl->bridge_intf.crm_cb &&
+		if (fctrl->bridge_intf.enable_crm &&
+			fctrl->bridge_intf.crm_cb &&
 			fctrl->bridge_intf.crm_cb->add_req) {
 			rc = fctrl->bridge_intf.crm_cb->add_req(&add_req);
 			if  (rc) {
@@ -1777,15 +1801,55 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 		}
 	}
 
+	cam_mem_put_cpu_buf(config.packet_handle);
 	return rc;
 }
 
 int cam_flash_publish_dev_info(struct cam_req_mgr_device_info *info)
 {
+	struct cam_flash_ctrl *fctrl = NULL;
+
+	fctrl = (struct cam_flash_ctrl *)
+			cam_get_device_priv(info->dev_hdl);
+	if (!fctrl) {
+		CAM_ERR(CAM_FLASH, " Device data is NULL");
+		return -EINVAL;
+	}
+
 	info->dev_id = CAM_REQ_MGR_DEVICE_FLASH;
 	strlcpy(info->name, CAM_FLASH_NAME, sizeof(info->name));
 	info->p_delay = CAM_FLASH_PIPELINE_DELAY;
 	info->trigger = CAM_TRIGGER_POINT_SOF;
+
+	CAM_DBG(CAM_FLASH, "FLASH[%d] apply-trigger-point[%d] PD[%d]",
+					fctrl->soc_info.index,
+					fctrl->apply_trigger_point,
+					info->p_delay);
+	return 0;
+}
+
+int cam_flash_no_crm_handshake(
+	struct cam_req_mgr_no_crm_handshake_data *info)
+{
+	struct cam_flash_ctrl *fctrl = NULL;
+
+	fctrl = (struct cam_flash_ctrl *)
+			cam_get_device_no_crm_priv(info->dev_hdl);
+	if (!fctrl) {
+		CAM_ERR(CAM_FLASH, " Device data is NULL");
+		return -EINVAL;
+	}
+
+	info->pipeline_delay = CAM_FLASH_PIPELINE_DELAY;
+	/* read trigger from device tree */
+	info->trigger        = fctrl->apply_trigger_point;
+	fctrl->anchor_pd     = info->anchor_pd;
+	fctrl->bridge_intf.frame_skip_cb = info->frame_skip_cb;
+
+	CAM_DBG(CAM_FLASH, "FLASH[%d] apply-trigger-point[%d] PD[%d]",
+					fctrl->soc_info.index,
+					fctrl->apply_trigger_point,
+					info->pipeline_delay);
 	return 0;
 }
 
@@ -1863,26 +1927,58 @@ void cam_flash_shutdown(struct cam_flash_ctrl *fctrl)
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
 }
 
+int cam_flash_no_crm_apply(
+	struct cam_req_mgr_no_crm_apply_request *apply)
+{
+	int rc = 0;
+	uint64_t req_id = 0;
+	int self_pd     = CAM_FLASH_PIPELINE_DELAY;
+	int anchor_pd   = CAM_FLASH_DEFAULT_ANCHOR_PD;
+	struct cam_flash_ctrl *f_ctrl = NULL;
+
+	f_ctrl = (struct cam_flash_ctrl *)
+			cam_get_device_no_crm_priv(apply->dev_hdl);
+	if (!f_ctrl)
+		return -EINVAL;
+
+	mutex_lock(&f_ctrl->flash_mutex);
+	req_id = apply->anchor_req_id - (self_pd - anchor_pd);
+	if (f_ctrl->func_tbl.apply_settings_no_crm) {
+		CAM_DBG(CAM_FLASH, "FLASH[%d] AR-%llu FR-%llu",
+						f_ctrl->soc_info.index,
+						apply->anchor_req_id,
+						req_id);
+		rc = f_ctrl->func_tbl.apply_settings_no_crm(f_ctrl, req_id);
+		if (rc)
+			CAM_ERR(CAM_FLASH, "apply_setting failed with rc=%d",
+				rc);
+	} else {
+		CAM_DBG(CAM_FLASH, "Ignore apply, Not implemented");
+	}
+	mutex_unlock(&f_ctrl->flash_mutex);
+	return rc;
+}
+
 int cam_flash_apply_request(struct cam_req_mgr_apply_request *apply)
 {
 	int rc = 0;
-	struct cam_flash_ctrl *fctrl = NULL;
+	struct cam_flash_ctrl *f_ctrl = NULL;
 
 	if (!apply)
 		return -EINVAL;
 
-	fctrl = (struct cam_flash_ctrl *) cam_get_device_priv(apply->dev_hdl);
-	if (!fctrl) {
+	f_ctrl = (struct cam_flash_ctrl *) cam_get_device_priv(apply->dev_hdl);
+	if (!f_ctrl) {
 		CAM_ERR(CAM_FLASH, "Device data is NULL");
 		return -EINVAL;
 	}
 
-	mutex_lock(&fctrl->flash_mutex);
-	rc = fctrl->func_tbl.apply_setting(fctrl, apply->request_id);
+	mutex_lock(&f_ctrl->flash_mutex);
+	rc = f_ctrl->func_tbl.apply_setting(f_ctrl, apply->request_id);
 	if (rc)
 		CAM_ERR(CAM_FLASH, "apply_setting failed with rc=%d",
 			rc);
-	mutex_unlock(&fctrl->flash_mutex);
+	mutex_unlock(&f_ctrl->flash_mutex);
 
 	return rc;
 }

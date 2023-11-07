@@ -44,6 +44,11 @@
 		qcom,sde-dspp-off = <0x55000 0x57000 0x59000 0x5b000>;
 		qcom,sde-dspp-size = <0x1800>;
 
+		qcom,sde-dest-scaler-top-off = <0x00061000>;
+		qcom,sde-dest-scaler-top-size = <0x1c>;
+		qcom,sde-dest-scaler-off = <0x0 0x1000 0x2000 0x3000>;
+		qcom,sde-dest-scaler-size = <0x800>;
+
 		qcom,sde-wb-off = <0x66000>;
 		qcom,sde-wb-size = <0x2c8>;
 		qcom,sde-wb-xin-id = <6>;
@@ -136,8 +141,10 @@
 		qcom,sde-sspp-csc-off = <0x1a00>;
 		qcom,sde-csc-type = "csc-10bit";
 		qcom,sde-qseed-sw-lib-rev = "qseedv3lite";
-		qcom,sde-qseed-scalar-version = <0x3001>;
+		qcom,sde-qseed-scalar-version = <0x3002>;
 		qcom,sde-sspp-qseed-off = <0xa00>;
+		qcom,sde-max-dest-scaler-input-linewidth = <2048>;
+		qcom,sde-max-dest-scaler-output-linewidth = <2560>;
 		qcom,sde-mixer-linewidth = <2560>;
 		qcom,sde-sspp-linewidth = <5120>;
 		qcom,sde-wb-linewidth = <4096>;
@@ -155,6 +162,7 @@
 		qcom,sde-has-src-split;
 		qcom,sde-pipe-order-version = <0x1>;
 		qcom,sde-has-dim-layer;
+		qcom,sde-has-dest-scaler;
 
 		qcom,sde-max-bw-low-kbps = <0x8 16000000>;
 		qcom,sde-max-bw-high-kbps = <0x8 16000000>;
@@ -282,6 +290,11 @@
 		qcom,sde-dspp-off = <0x55000 0x57000 0x59000 0x5b000>;
 		qcom,sde-dspp-size = <0x1800>;
 
+		qcom,sde-dest-scaler-top-off = <0x00061000>;
+		qcom,sde-dest-scaler-top-size = <0x1c>;
+		qcom,sde-dest-scaler-off = <0x0 0x1000 0x2000 0x3000>;
+		qcom,sde-dest-scaler-size = <0x800>;
+
 		qcom,sde-wb-off = <0x66000>;
 		qcom,sde-wb-size = <0x2c8>;
 		qcom,sde-wb-xin-id = <6>;
@@ -375,10 +388,13 @@
 		qcom,sde-sspp-csc-off = <0x1a00>;
 		qcom,sde-csc-type = "csc-10bit";
 		qcom,sde-qseed-sw-lib-rev = "qseedv3lite";
-		qcom,sde-qseed-scalar-version = <0x3001>;
+		qcom,sde-qseed-scalar-version = <0x3002>;
 		qcom,sde-sspp-qseed-off = <0xa00>;
 		qcom,sde-mixer-linewidth = <2560>;
 		qcom,sde-sspp-linewidth = <5120>;
+		qcom,sde-max-dest-scaler-input-linewidth = <2048>;
+		qcom,sde-max-dest-scaler-output-linewidth = <2560>;
+
 		qcom,sde-wb-linewidth = <4096>;
 		qcom,sde-wb-linewidth-linear = <5120>;
 		qcom,sde-mixer-blendstages = <0xb>;
@@ -394,6 +410,7 @@
 		qcom,sde-has-src-split;
 		qcom,sde-pipe-order-version = <0x1>;
 		qcom,sde-has-dim-layer;
+		qcom,sde-has-dest-scaler;
 
 		qcom,sde-max-bw-low-kbps = <0x8 16000000>;
 		qcom,sde-max-bw-high-kbps = <0x8 16000000>;

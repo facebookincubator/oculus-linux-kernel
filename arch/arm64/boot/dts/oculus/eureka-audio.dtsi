@@ -149,7 +149,6 @@
 	qcom,sen-mi2s-gpios = <&cdc_sen_tdm_gpios>;
 	qcom,cdc-dmic01-gpios = <&cdc_dmic01_gpios>;
 	qcom,cdc-dmic23-gpios = <&cdc_dmic23_gpios>;
-	qcom,ext-disp-audio-rx = <1>;
 	qcom,tdm-audio-intf = <1>;
 	tdm-config = <0x0 0x0 4 16 0x305>;
 

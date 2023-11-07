@@ -24,6 +24,7 @@
 #define CAM_TFE_HW_NUM_MAX       3
 #define CAM_TFE_RDI_NUM_MAX      3
 #define CAM_IFE_SCRATCH_NUM_MAX  2
+#define CAM_IFE_MAX_PHY_ID       6
 
 
 /* maximum context numbers for TFE */
@@ -143,12 +144,14 @@ enum cam_isp_hw_stop_cmd {
  * @is_internal_stop:          Stop triggered internally for reset & recovery
  * @stop_only:                 Send stop only to hw drivers. No Deinit to be
  *                             done.
+ * @is_shutdown:               Is shut down
  *
  */
 struct cam_isp_stop_args {
 	enum cam_isp_hw_stop_cmd      hw_stop_cmd;
 	bool                          is_internal_stop;
 	bool                          stop_only;
+	bool                          is_shutdown;
 };
 
 /**

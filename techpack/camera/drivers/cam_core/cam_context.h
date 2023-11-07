@@ -227,6 +227,7 @@ struct cam_ctx_ops {
  * @out_map_entries:       Out map entry
  * @mini dump cb:          Mini dump cb
  * @img_iommu_hdl:         Image IOMMU handle
+ * @is_shutdown:           Is shut down
  *
  */
 struct cam_context {
@@ -274,6 +275,7 @@ struct cam_context {
 	struct cam_hw_fence_map_entry    **out_map_entries;
 	cam_ctx_mini_dump_cb_func          mini_dump_cb;
 	int                                img_iommu_hdl;
+	bool                               is_shutdown;
 };
 
 /**

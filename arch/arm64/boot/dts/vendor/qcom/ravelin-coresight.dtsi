@@ -1435,7 +1435,7 @@
 		reg = <0x10cc4000 0x1000>;
 		reg-names = "tpda-base";
 
-		qcom,cmb-elem-size = <0 32>,
+		qcom,cmb-elem-size = <0 64>,
 				     <1 64>,
 				     <2 32>;
 		qcom,dsb-elem-size = <1 32>;

@@ -85,6 +85,7 @@ QDF_STATUS pmo_vdev_object_created_notification(struct wlan_objmgr_vdev *vdev,
 /**
  * pmo_vdev_ready() - handles vdev ready in firmware event
  * @vdev: vdev which is ready in firmware
+ * @bridgeaddr: Bridge MAC address
  *
  * Objmgr vdev_create event does not guarantee vdev creation in firmware.
  * Any logic that would normally go in the vdev_create event, but needs to
@@ -92,7 +93,8 @@ QDF_STATUS pmo_vdev_object_created_notification(struct wlan_objmgr_vdev *vdev,
  *
  * Return QDF_STATUS
  */
-QDF_STATUS pmo_vdev_ready(struct wlan_objmgr_vdev *vdev);
+QDF_STATUS pmo_vdev_ready(struct wlan_objmgr_vdev *vdev,
+			  struct qdf_mac_addr *bridgeaddr);
 
 /**
  * pmo_vdev_object_destroyed_notification(): pmo vdev delete handler
@@ -351,7 +353,7 @@ pmo_vdev_object_created_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 }
 
 static inline QDF_STATUS
-pmo_vdev_ready(struct wlan_objmgr_vdev *vdev)
+pmo_vdev_ready(struct wlan_objmgr_vdev *vdev, struct qdf_mac_addr *bridgeaddr)
 {
 	return QDF_STATUS_SUCCESS;
 }

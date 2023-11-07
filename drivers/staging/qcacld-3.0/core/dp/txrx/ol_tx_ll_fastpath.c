@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -95,20 +95,22 @@ ol_tx_ll_wrapper(ol_txrx_vdev_handle vdev, qdf_nbuf_t msdu_list)
  * @skb: skb to be traced
  * @msdu_id: msdu_id of the packet
  * @vdev_id: vdev_id of the packet
+ * @op_mode: Vdev Operation mode
  *
  * Return: None
  */
 static inline void ol_tx_trace_pkt(qdf_nbuf_t skb, uint16_t msdu_id,
-				   uint8_t vdev_id)
+				   uint8_t vdev_id, enum QDF_OPMODE op_mode)
 {
 	DPTRACE(qdf_dp_trace_ptr(skb,
 				 QDF_DP_TRACE_TXRX_FAST_PACKET_PTR_RECORD,
 				 QDF_TRACE_DEFAULT_PDEV_ID,
 				 qdf_nbuf_data_addr(skb),
 				 sizeof(qdf_nbuf_data(skb)),
-				 msdu_id, vdev_id, 0));
+				 msdu_id, vdev_id, 0, op_mode));
 
-	qdf_dp_trace_log_pkt(vdev_id, skb, QDF_TX, QDF_TRACE_DEFAULT_PDEV_ID);
+	qdf_dp_trace_log_pkt(vdev_id, skb, QDF_TX, QDF_TRACE_DEFAULT_PDEV_ID,
+			     op_mode);
 
 	DPTRACE(qdf_dp_trace_data_pkt(skb, QDF_TRACE_DEFAULT_PDEV_ID,
 				      QDF_DP_TRACE_TX_PACKET_RECORD,
@@ -444,7 +446,8 @@ ol_tx_ll_fast(ol_txrx_vdev_handle vdev, qdf_nbuf_t msdu_list)
 					qdf_nbuf_inc_users(msdu);
 
 				ol_tx_trace_pkt(msdu, tx_desc->id,
-						vdev->vdev_id);
+						vdev->vdev_id,
+						vdev->qdf_opmode);
 				/*
 				 * If debug display is enabled, show the meta
 				 * data being downloaded to the target via the
@@ -594,7 +597,8 @@ ol_tx_ll_fast(ol_txrx_vdev_handle vdev, qdf_nbuf_t msdu_list)
 				QDF_TRACE_DEFAULT_PDEV_ID,
 				qdf_nbuf_data_addr(msdu),
 				sizeof(qdf_nbuf_data(msdu)), tx_desc->id,
-				vdev->vdev_id, 0));
+				vdev->vdev_id, 0, vdev->qdf_opmode));
+
 			/*
 			 * If debug display is enabled, show the meta-data being
 			 * downloaded to the target via the HTT tx descriptor.

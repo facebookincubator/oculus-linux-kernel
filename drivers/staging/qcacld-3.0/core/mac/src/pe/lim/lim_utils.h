@@ -201,8 +201,6 @@ uint8_t lim_get_max_tx_power(struct mac_context *mac,
  * @session: PE Session Entry
  * @is_pwr_constraint_absolute: If local power constraint is an absolute
  * value or an offset value.
- * @ap_pwr_type: Ap power type for 6G
- * @ctry_code_match: check for country IE and sta programmed ctry match
  *
  * This function is used to get the maximum possible tx power from the list
  * of tx powers mentioned in @attr.
@@ -211,9 +209,7 @@ uint8_t lim_get_max_tx_power(struct mac_context *mac,
  */
 void lim_calculate_tpc(struct mac_context *mac,
 		       struct pe_session *session,
-		       bool is_pwr_constraint_absolute,
-		       uint8_t ap_pwr_type,
-		       bool ctry_code_match);
+		       bool is_pwr_constraint_absolute);
 
 /* AID pool management functions */
 
@@ -293,7 +289,7 @@ void lim_set_mlo_caps(struct mac_context *mac, struct pe_session *session,
 		      uint8_t *ie_start, uint32_t num_bytes);
 
 QDF_STATUS lim_send_mlo_caps_ie(struct mac_context *mac_ctx,
-				struct pe_session *session,
+				struct wlan_objmgr_vdev *vdev,
 				enum QDF_OPMODE device_mode,
 				uint8_t vdev_id);
 
@@ -342,7 +338,7 @@ void lim_strip_mlo_ie(struct mac_context *mac_ctx,
 
 static inline
 QDF_STATUS lim_send_mlo_caps_ie(struct mac_context *mac_ctx,
-				struct pe_session *session,
+				struct wlan_objmgr_vdev *vdev,
 				enum QDF_OPMODE device_mode,
 				uint8_t vdev_id)
 {
@@ -3225,4 +3221,18 @@ lim_is_power_change_required_for_sta(struct mac_context *mac_ctx,
  */
 void
 lim_update_tx_pwr_on_ctry_change_cb(uint8_t vdev_id);
+
+/*
+ * lim_is_chan_connected_for_mode() - Check if frequency is connected
+ *                                    for given opmode.
+ * @psoc: Pointer to psoc object
+ * @opmode: Vdev opmode
+ * @freq: Frequency
+ *
+ * Return: Return true if frequency is connected for given opmode.
+ */
+bool
+lim_is_chan_connected_for_mode(struct wlan_objmgr_psoc *psoc,
+			       enum QDF_OPMODE opmode,
+			       qdf_freq_t freq);
 #endif /* __LIM_UTILS_H */

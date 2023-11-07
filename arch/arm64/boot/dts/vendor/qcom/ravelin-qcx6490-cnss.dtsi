@@ -73,7 +73,7 @@
 		cnss-enable-self-recovery;
 		qcom,same-dt-multi-dev;
 		mboxes = <&qmp_aop 0>;
-		qcom,vreg_ipa="s3e";
+		qcom,vreg_ipa="g7i";
 		qcom,xo-clk-gpio = <&tlmm 108 0>;
 
 		vdd-wlan-aon-supply = <&S7B>;

@@ -903,6 +903,7 @@ static int cam_isp_ctx_dump_req(
 				CAM_ERR(CAM_ISP,
 					"Invalid offset exp %u actual %u",
 					req_isp->cfg[i].offset, (uint32_t)len);
+				cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
 				return -EINVAL;
 			}
 			remain_len = len - req_isp->cfg[i].offset;
@@ -913,6 +914,7 @@ static int cam_isp_ctx_dump_req(
 					"Invalid len exp %u remain_len %u",
 					req_isp->cfg[i].len,
 					(uint32_t)remain_len);
+				cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
 				return -EINVAL;
 			}
 
@@ -938,6 +940,7 @@ static int cam_isp_ctx_dump_req(
 					return rc;
 			} else
 				cam_cdm_util_dump_cmd_buf(buf_start, buf_end);
+			cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
 		}
 	}
 	return rc;
@@ -3480,7 +3483,8 @@ static int __cam_isp_ctx_handle_error(struct cam_isp_context *ctx_isp,
 	if (!ctx_isp->offline_context && !ctx_isp->independent_crm_en)
 		__cam_isp_ctx_pause_crm_timer(ctx);
 
-	if (ctx_isp->independent_crm_en) {
+	if ((ctx_isp->independent_crm_en) &&
+		(ctx_isp->independent_crm_sof_timer)) {
 		ctx_isp->independent_crm_sof_timer->pause_timer = true;
 		crm_timer_modify(ctx_isp->independent_crm_sof_timer,
 			CAM_REQ_MGR_WATCHDOG_TIMEOUT_MAX);
@@ -4698,6 +4702,7 @@ hw_dump:
 		mutex_unlock(&ctx_isp->isp_mutex);
 		CAM_WARN(CAM_ISP, "Dump buffer overshoot len %zu offset %zu",
 			buf_len, dump_info->offset);
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
 		return -ENOSPC;
 	}
 
@@ -4706,9 +4711,10 @@ hw_dump:
 		(CAM_ISP_CTX_DUMP_NUM_WORDS * sizeof(uint64_t));
 
 	if (remain_len < min_len) {
-		mutex_unlock(&ctx_isp->isp_mutex);
 		CAM_WARN(CAM_ISP, "Dump buffer exhaust remain %zu min %u",
 			remain_len, min_len);
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
+		mutex_unlock(&ctx_isp->isp_mutex);
 		return -ENOSPC;
 	}
 
@@ -4747,10 +4753,12 @@ hw_dump:
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Dump event fail %lld",
 			req->request_id);
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
 		mutex_unlock(&ctx_isp->isp_mutex);
 		return rc;
 	}
 	if (dump_only_event_record) {
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
 		mutex_unlock(&ctx_isp->isp_mutex);
 		return rc;
 	}
@@ -4759,6 +4767,7 @@ hw_dump:
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Dump Req info fail %lld",
 			req->request_id);
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
 		mutex_unlock(&ctx_isp->isp_mutex);
 		return rc;
 	}
@@ -4774,6 +4783,7 @@ hw_dump:
 			&dump_args);
 		dump_info->offset = dump_args.offset;
 	}
+	cam_mem_put_cpu_buf(dump_info->buf_handle);
 	return rc;
 }
 
@@ -5039,6 +5049,10 @@ static int __cam_isp_ctx_flush_req_in_top_state(
 		__cam_isp_ctx_trigger_reg_dump(CAM_HW_MGR_CMD_REG_DUMP_ON_FLUSH, ctx);
 
 		stop_args.ctxt_to_hw_map = ctx_isp->hw_ctx;
+		if (ctx->is_shutdown)
+			stop_isp.is_shutdown = TRUE;
+		else
+			stop_isp.is_shutdown = FALSE;
 		stop_isp.hw_stop_cmd = CAM_ISP_HW_STOP_IMMEDIATELY;
 		stop_isp.stop_only = true;
 		stop_isp.is_internal_stop = false;
@@ -5377,6 +5391,7 @@ static int __cam_isp_ctx_rdi_only_sof_in_top_state(
 	CAM_DBG(CAM_ISP, "next Substate[%s] ctx:%d",
 		__cam_isp_ctx_substate_val_to_type(
 		ctx_isp->substate_activated), ctx->ctx_id);
+	ctx_isp->last_sof_timestamp = ctx_isp->sof_timestamp_val;
 	return rc;
 }
 
@@ -5411,6 +5426,7 @@ static int __cam_isp_ctx_rdi_only_sof_in_applied_state(
 		__cam_isp_ctx_substate_val_to_type(
 		ctx_isp->substate_activated), ctx->ctx_id);
 
+	ctx_isp->last_sof_timestamp = ctx_isp->sof_timestamp_val;
 	return 0;
 }
 
@@ -5515,6 +5531,7 @@ static int __cam_isp_ctx_rdi_only_sof_in_bubble_applied(
 		__cam_isp_ctx_substate_val_to_type(
 		ctx_isp->substate_activated));
 end:
+	ctx_isp->last_sof_timestamp = ctx_isp->sof_timestamp_val;
 	return 0;
 }
 
@@ -5623,6 +5640,16 @@ static int __cam_isp_ctx_rdi_only_sof_in_bubble_state(
 			}
 			goto end;
 		}
+	}
+
+	if (ctx_isp->last_sof_timestamp ==
+		ctx_isp->sof_timestamp_val) {
+		CAM_WARN_RATE_LIMIT(CAM_ISP,
+			"Workq delay detected! Bubble frame: %lld check skipped, sof_timestamp: %lld, ctx_id: %d",
+			ctx_isp->frame_id,
+			ctx_isp->sof_timestamp_val,
+			ctx->ctx_id);
+		goto end;
 	}
 
 	/*
@@ -7750,7 +7777,10 @@ static int __cam_isp_ctx_stop_dev_in_activated_unlock(
 	/* stop hw first */
 	if (ctx_isp->hw_ctx) {
 		stop.ctxt_to_hw_map = ctx_isp->hw_ctx;
-
+		if (ctx->is_shutdown)
+			stop_isp.is_shutdown = TRUE;
+		else
+			stop_isp.is_shutdown = FALSE;
 		stop_isp.hw_stop_cmd = CAM_ISP_HW_STOP_IMMEDIATELY;
 		stop_isp.stop_only = false;
 		stop_isp.is_internal_stop = false;
@@ -8030,6 +8060,10 @@ static int __cam_isp_ctx_reset_and_recover(
 		req->request_id, ctx->ctx_id, ctx->state, ctx->link_hdl);
 
 	stop_args.ctxt_to_hw_map = ctx_isp->hw_ctx;
+	if (ctx->is_shutdown)
+			stop_isp.is_shutdown = TRUE;
+		else
+			stop_isp.is_shutdown = FALSE;
 	stop_isp.hw_stop_cmd = CAM_ISP_HW_STOP_IMMEDIATELY;
 	stop_isp.stop_only = true;
 	stop_isp.is_internal_stop = true;

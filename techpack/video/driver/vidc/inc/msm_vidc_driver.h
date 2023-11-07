@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021,, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _MSM_VIDC_DRIVER_H_
@@ -12,6 +13,7 @@
 #include "msm_vidc_internal.h"
 #include "msm_vidc_core.h"
 #include "msm_vidc_inst.h"
+#include "msm_vidc_platform.h"
 
 #define MSM_VIDC_SESSION_INACTIVE_THRESHOLD_MS 1000
 #define HEIC_GRID_DIMENSION 512
@@ -610,6 +612,6 @@ int msm_vidc_get_input_rate(struct msm_vidc_inst *inst);
 int msm_vidc_get_frame_rate(struct msm_vidc_inst *inst);
 int msm_vidc_get_operating_rate(struct msm_vidc_inst *inst);
 int msm_vidc_alloc_and_queue_input_internal_buffers(struct msm_vidc_inst *inst);
-
+int msm_vidc_get_src_clk_scaling_ratio(struct msm_vidc_core *core);
 #endif // _MSM_VIDC_DRIVER_H_
 

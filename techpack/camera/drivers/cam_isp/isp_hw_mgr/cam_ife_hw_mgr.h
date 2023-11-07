@@ -418,6 +418,8 @@ struct cam_isp_sys_cache_info {
  * @debug_cfg              debug configuration
  * @isp_bus_caps           Capability of underlying SFE/IFE bus HW
  * @path_port_map          Mapping of outport to IFE mux
+ * phy_ref_cnt             Ref count of IFE contests streamed on PHY
+ * is_phy_secure           Flag to indicate if any context connected to PHY is secure
  * @csid_camif_irq_support CSID camif IRQ support
  * @hw_pid_support         hw pid support for this target
  * @csid_rup_en            Reg update at CSID side
@@ -446,6 +448,8 @@ struct cam_ife_hw_mgr {
 	struct cam_isp_hw_path_port_map  path_port_map;
 	struct cam_isp_sys_cache_info    sys_cache_info[CAM_LLCC_MAX];
 	uint32_t                         num_caches_found;
+	uint32_t                         phy_ref_cnt[CAM_IFE_MAX_PHY_ID + 1];
+	bool                             is_phy_secure[CAM_IFE_MAX_PHY_ID + 1];
 	bool                             csid_camif_irq_support;
 	bool                             hw_pid_support;
 	bool                             csid_rup_en;

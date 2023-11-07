@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_FLASH_DEV_H_
@@ -39,6 +40,7 @@
 #define CAMX_FLASH_DEV_NAME "cam-flash-dev"
 
 #define CAM_FLASH_PIPELINE_DELAY 1
+#define CAM_FLASH_DEFAULT_ANCHOR_PD 1
 
 #define FLASH_DRIVER_I2C "cam-i2c-flash"
 
@@ -72,14 +74,20 @@ enum cam_flash_flush_type {
  * @session_hdl  : Session Handle
  * @link_hdl     : Link Handle
  * @ops          : KMD operations
+ * @no_crm_ops   : no crm kmd operations
  * @crm_cb       : Callback API pointers
+ * @frame_skip_cb: frame skip callback
+ * @enable_crm   : flag to indicated crm enabled or not
  */
 struct cam_flash_intf_params {
-	int32_t                     device_hdl;
-	int32_t                     session_hdl;
-	int32_t                     link_hdl;
-	struct cam_req_mgr_kmd_ops  ops;
-	struct cam_req_mgr_crm_cb  *crm_cb;
+	int32_t                              device_hdl;
+	int32_t                              session_hdl;
+	int32_t                              link_hdl;
+	struct cam_req_mgr_kmd_ops           ops;
+	struct cam_req_mgr_no_crm_kmd_ops    no_crm_ops;
+	struct cam_req_mgr_crm_cb           *crm_cb;
+	cam_req_mgr_no_crm_frame_skip_notify frame_skip_cb;
+	uint32_t                             enable_crm;
 };
 
 /**
@@ -159,6 +167,7 @@ struct cam_flash_func_tbl {
 	int (*power_ops)(struct cam_flash_ctrl *fctrl, bool regulator_enable);
 	int (*flush_req)(struct cam_flash_ctrl *fctrl,
 		enum cam_flash_flush_type type, uint64_t req_id);
+	int (*apply_settings_no_crm)(struct cam_flash_ctrl *fctrl, uint64_t req_id);
 };
 
 /**
@@ -188,6 +197,8 @@ struct cam_flash_func_tbl {
  * @io_master_info      : Information about the communication master
  * @i2c_data            : I2C register settings
  * @last_flush_req      : last request to flush
+ * @anchor_pd           : pipeline delay of anchor driver
+ * @apply_trigger_point : trigger point at which to apply request
  */
 struct cam_flash_ctrl {
 	char device_name[CAM_CTX_DEV_NAME_MAX_LENGTH];
@@ -208,14 +219,16 @@ struct cam_flash_ctrl {
 	uint8_t                             flash_type;
 	bool                                is_regulator_enabled;
 	struct cam_flash_func_tbl           func_tbl;
-	struct led_trigger           *flash_trigger[CAM_FLASH_MAX_LED_TRIGGERS];
-	struct led_trigger           *torch_trigger[CAM_FLASH_MAX_LED_TRIGGERS];
+	struct led_trigger                 *flash_trigger[CAM_FLASH_MAX_LED_TRIGGERS];
+	struct led_trigger                 *torch_trigger[CAM_FLASH_MAX_LED_TRIGGERS];
 /* I2C related setting */
 	enum   cci_i2c_master_t             cci_i2c_master;
 	enum   cci_device_num               cci_num;
 	struct camera_io_master             io_master_info;
 	struct i2c_data_settings            i2c_data;
 	uint32_t                            last_flush_req;
+	int                                 anchor_pd;
+	int32_t                             apply_trigger_point;
 };
 
 int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg);

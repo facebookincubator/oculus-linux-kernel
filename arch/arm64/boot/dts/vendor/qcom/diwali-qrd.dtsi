@@ -207,13 +207,13 @@
 			gpu_cdev1 {
 				trip = <&gpu_trip>;
 				/* Limit freq to 540000000 Hz*/
-				cooling-device = <&msm_gpu 0 3>;
+				cooling-device = <&msm_gpu 0 1>;
 			};
 
 			gpu_cdev2 {
 				trip = <&cx_trip>;
 				/* Limit freq to 285000000 Hz*/
-				cooling-device = <&msm_gpu 5 5>;
+				cooling-device = <&msm_gpu 1 THERMAL_NO_LIMIT>;
 			};
 
 			cdsp_cdev {

@@ -476,3 +476,39 @@ void reg_unregister_ctry_change_callback(struct wlan_objmgr_psoc *psoc,
 		psoc_priv_obj->cc_cbk.cbk = NULL;
 	qdf_spin_unlock_bh(&psoc_priv_obj->cbk_list_lock);
 }
+
+void
+reg_register_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
+					reg_is_chan_connected_callback cbk)
+{
+	struct wlan_regulatory_psoc_priv_obj *psoc_priv_obj;
+
+	psoc_priv_obj = reg_get_psoc_obj(psoc);
+	if (!psoc_priv_obj) {
+		reg_err("reg psoc private obj is NULL");
+		return;
+	}
+
+	qdf_spin_lock_bh(&psoc_priv_obj->cbk_list_lock);
+	if (!psoc_priv_obj->conn_chan_cb.cbk)
+		psoc_priv_obj->conn_chan_cb.cbk = cbk;
+	qdf_spin_unlock_bh(&psoc_priv_obj->cbk_list_lock);
+}
+
+void
+reg_unregister_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
+					  reg_is_chan_connected_callback cbk)
+{
+	struct wlan_regulatory_psoc_priv_obj *psoc_priv_obj;
+
+	psoc_priv_obj = reg_get_psoc_obj(psoc);
+	if (!psoc_priv_obj) {
+		reg_err("reg psoc private obj is NULL");
+		return;
+	}
+
+	qdf_spin_lock_bh(&psoc_priv_obj->cbk_list_lock);
+	if (psoc_priv_obj->conn_chan_cb.cbk == cbk)
+		psoc_priv_obj->conn_chan_cb.cbk = NULL;
+	qdf_spin_unlock_bh(&psoc_priv_obj->cbk_list_lock);
+}

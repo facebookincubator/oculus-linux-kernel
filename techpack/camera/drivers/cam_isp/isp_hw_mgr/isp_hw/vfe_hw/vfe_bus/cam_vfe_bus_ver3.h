@@ -248,6 +248,7 @@ struct cam_vfe_bus_ver3_vfe_out_data {
 	uint32_t                         max_height;
 	struct cam_cdm_utils_ops        *cdm_util_ops;
 	uint32_t                         secure_mode;
+	uint32_t                         secure_mask;
 	void                            *priv;
 	uint32_t                         mid[CAM_VFE_BUS_VER3_MAX_MID_PER_PORT];
 	bool                             limiter_enabled;
@@ -270,6 +271,7 @@ struct cam_vfe_bus_ver3_vfe_out_hw_info {
 	uint32_t                            bufdone_shift;
 	uint32_t                            wm_idx[PLANE_MAX];
 	uint8_t                            *name[PLANE_MAX];
+	uint32_t                            secure_mask;
 };
 
 /*

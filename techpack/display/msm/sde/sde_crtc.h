@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -674,7 +674,18 @@ static inline int sde_crtc_request_frame_reset(struct drm_crtc *crtc,
 
 	return 0;
 }
-
+/**
+ * sde_crtc_get_resolution - Get the crtc resolution based on the features enabled.
+ *     Crtc width will be same as panel width or (src_width of
+ *     destination scaler) * num_blocks.
+ * @drm_crtc: Pointer to drm crtc object
+ * @crtc_state: Pointer to drm crtc state object
+ * @mode: Pointer to drm display mode object
+ * @width: Pointer to width object populated with crtc width by this function
+ * @height: Pointer to height object populated with crtc height by this function
+ */
+void sde_crtc_get_resolution(struct drm_crtc *sde_crtc, struct drm_crtc_state *crtc_state,
+		struct drm_display_mode *mode, u32 *width, u32 *height);
 /**
  * sde_crtc_vblank - enable or disable vblanks for this crtc
  * @crtc: Pointer to drm crtc object

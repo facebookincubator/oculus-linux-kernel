@@ -111,6 +111,8 @@
 #include "wlan_vdev_mgr_tgt_if_tx_defs.h"
 #include "wlan_mlo_mgr_roam.h"
 #include "target_if_vdev_mgr_tx_ops.h"
+#include "wlan_vdev_mgr_utils_api.h"
+
 /*
  * FW only supports 8 clients in SAP/GO mode for D3 WoW feature
  * and hence host needs to hold a wake lock after 9th client connects
@@ -932,6 +934,55 @@ static void wma_handle_hidden_ssid_restart(tp_wma_handle wma,
 				      0, NULL);
 }
 
+#ifdef WLAN_FEATURE_11BE
+/**
+ * wma_get_peer_phymode() - get phy mode and eht puncture
+ * @nw_type: wlan type
+ * @old_peer_phymode: old peer phy mode
+ * @vdev_chan: vdev channel
+ * @is_eht: is eht mode
+ * @puncture_bitmap: eht puncture bitmap
+ *
+ * Return: new wlan phy mode
+ */
+static enum wlan_phymode
+wma_get_peer_phymode(tSirNwType nw_type, enum wlan_phymode old_peer_phymode,
+		     struct wlan_channel *vdev_chan, bool *is_eht,
+		     uint16_t *puncture_bitmap)
+{
+	enum wlan_phymode new_phymode;
+
+	new_phymode = wma_peer_phymode(nw_type, STA_ENTRY_PEER,
+				       IS_WLAN_PHYMODE_HT(old_peer_phymode),
+				       vdev_chan->ch_width,
+				       IS_WLAN_PHYMODE_VHT(old_peer_phymode),
+				       IS_WLAN_PHYMODE_HE(old_peer_phymode),
+				       IS_WLAN_PHYMODE_EHT(old_peer_phymode));
+	*is_eht = IS_WLAN_PHYMODE_EHT(new_phymode);
+	if (*is_eht)
+		*puncture_bitmap = vdev_chan->puncture_bitmap;
+
+	return new_phymode;
+}
+#else
+static enum wlan_phymode
+wma_get_peer_phymode(tSirNwType nw_type, enum wlan_phymode old_peer_phymode,
+		     struct wlan_channel *vdev_chan, bool *is_eht,
+		     uint16_t *puncture_bitmap)
+{
+	enum wlan_phymode new_phymode;
+
+	new_phymode = wma_peer_phymode(nw_type, STA_ENTRY_PEER,
+				       IS_WLAN_PHYMODE_HT(old_peer_phymode),
+				       vdev_chan->ch_width,
+				       IS_WLAN_PHYMODE_VHT(old_peer_phymode),
+				       IS_WLAN_PHYMODE_HE(old_peer_phymode),
+				       0);
+
+	return new_phymode;
+}
+#endif
+
 static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 				  void *object, void *arg)
 {
@@ -945,6 +996,10 @@ static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 	tp_wma_handle wma;
 	uint8_t *peer_mac_addr;
 	uint8_t vdev_id;
+	bool is_eht = false;
+	uint16_t puncture_bitmap = 0;
+	uint16_t new_puncture_bitmap = 0;
+	uint32_t bw_puncture = 0;
 
 	if (wlan_peer_get_peer_type(peer) == WLAN_PEER_SELF)
 		return;
@@ -967,22 +1022,12 @@ static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 	} else {
 		nw_type = eSIR_11A_NW_TYPE;
 	}
-#ifdef WLAN_FEATURE_11BE
-	new_phymode = wma_peer_phymode(nw_type, STA_ENTRY_PEER,
-				       IS_WLAN_PHYMODE_HT(old_peer_phymode),
-				       vdev_chan->ch_width,
-				       IS_WLAN_PHYMODE_VHT(old_peer_phymode),
-				       IS_WLAN_PHYMODE_HE(old_peer_phymode),
-				       IS_WLAN_PHYMODE_EHT(old_peer_phymode));
-#else
-	new_phymode = wma_peer_phymode(nw_type, STA_ENTRY_PEER,
-				       IS_WLAN_PHYMODE_HT(old_peer_phymode),
-				       vdev_chan->ch_width,
-				       IS_WLAN_PHYMODE_VHT(old_peer_phymode),
-				       IS_WLAN_PHYMODE_HE(old_peer_phymode),
-				       0);
-#endif
-	if (new_phymode == old_peer_phymode) {
+
+	new_phymode = wma_get_peer_phymode(nw_type, old_peer_phymode,
+					   vdev_chan, &is_eht,
+					   &puncture_bitmap);
+
+	if (!is_eht && new_phymode == old_peer_phymode) {
 		wma_debug("Ignore update as old %d and new %d phymode are same for mac "QDF_MAC_ADDR_FMT,
 			  old_peer_phymode, new_phymode,
 			  QDF_MAC_ADDR_REF(peer_mac_addr));
@@ -997,13 +1042,28 @@ static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 			   fw_phymode, vdev_id);
 
 	max_ch_width_supported =
-		wmi_get_ch_width_from_phy_mode(wma->wmi_handle, fw_phymode);
-	wma_set_peer_param(wma, peer_mac_addr, WMI_HOST_PEER_CHWIDTH,
-			   max_ch_width_supported, vdev_id);
-
-	wma_debug("FW phymode %d old phymode %d new phymode %d bw %d macaddr "QDF_MAC_ADDR_FMT,
+		wmi_get_ch_width_from_phy_mode(wma->wmi_handle,
+					       fw_phymode);
+	if (is_eht) {
+		wlan_reg_extract_puncture_by_bw(vdev_chan->ch_width,
+						puncture_bitmap,
+						vdev_chan->ch_freq,
+						vdev_chan->ch_freq_seg2,
+						max_ch_width_supported,
+						&new_puncture_bitmap);
+		QDF_SET_BITS(bw_puncture, 0, 8, max_ch_width_supported);
+		QDF_SET_BITS(bw_puncture, 8, 16, new_puncture_bitmap);
+		wlan_util_vdev_peer_set_param_send(vdev, peer_mac_addr,
+						   WLAN_MLME_PEER_BW_PUNCTURE,
+						   bw_puncture);
+	} else {
+		wma_set_peer_param(wma, peer_mac_addr, WMI_HOST_PEER_CHWIDTH,
+				   max_ch_width_supported, vdev_id);
+	}
+	wma_debug("FW phymode %d old phymode %d new phymode %d bw %d punct: %d macaddr " QDF_MAC_ADDR_FMT,
 		  fw_phymode, old_peer_phymode, new_phymode,
-		  max_ch_width_supported, QDF_MAC_ADDR_REF(peer_mac_addr));
+		  max_ch_width_supported, new_puncture_bitmap,
+		  QDF_MAC_ADDR_REF(peer_mac_addr));
 }
 
 static
@@ -1812,8 +1872,8 @@ wma_create_peer_validate_mld_address(tp_wma_handle wma,
 				status = QDF_STATUS_SUCCESS;
 			}
 		} else {
-			wma_debug("Allow ML peer on same ML dev context");
-			status = QDF_STATUS_SUCCESS;
+			wma_debug("ML Peer exists on same VDEV %d", vdev_id);
+			status = QDF_STATUS_E_ALREADY;
 		}
 	} else if (mlo_mgr_ml_peer_exist_on_diff_ml_ctx(peer_mld_addr,
 							&vdev_id)) {

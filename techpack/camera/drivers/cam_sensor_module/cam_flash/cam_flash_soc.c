@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -265,6 +266,27 @@ static int32_t cam_get_source_node_info(
 			CAM_DBG(CAM_FLASH, "TorchMaxCurrent[%d]: %d",
 				i, soc_private->torch_max_current[i]);
 		}
+	}
+
+	/* get the crm apply trigger point */
+	fctrl->apply_trigger_point = CAM_TRIGGER_POINT_EOF;
+	rc = of_property_read_u32(of_node, "default-trigger-point",
+					&fctrl->apply_trigger_point);
+	if (rc < 0) {
+		CAM_WARN(CAM_FLASH,
+			"invalid default trigger", rc);
+		fctrl->apply_trigger_point =
+				CAM_TRIGGER_POINT_EOF;
+		rc = 0;
+	}
+
+	if (fctrl->apply_trigger_point >
+				CAM_TRIGGER_MAX_POINTS) {
+		CAM_WARN(CAM_FLASH,
+			"out of bound trigger point %d",
+			fctrl->apply_trigger_point);
+		fctrl->apply_trigger_point =
+				CAM_TRIGGER_POINT_EOF;
 	}
 
 	return rc;

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CPASTOP_V636_100_H_
@@ -719,6 +719,9 @@ static struct cam_cpas_hw_errata_wa_list cam636_cpas100_errata_wa_list = {
 			.mask = 0xE0000, /* Bits 17, 18, 19 */
 			.value = 0, /* expected to be 0 */
 		},
+	},
+	.enable_icp_clk_for_qchannel = {
+		.enable = true,
 	},
 };
 

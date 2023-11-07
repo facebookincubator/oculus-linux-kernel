@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -100,6 +100,22 @@ wlan_qmi_wfds_ipcc_map_n_cfg_msg(struct wlan_objmgr_psoc *psoc,
 
 	if (qmi_ctx->qmi_cbs.qmi_wfds_send_ipcc_map_n_cfg_msg)
 		return qmi_ctx->qmi_cbs.qmi_wfds_send_ipcc_map_n_cfg_msg(src_info);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wlan_qmi_wfds_send_misc_req_msg(struct wlan_objmgr_psoc *psoc, bool is_ssr)
+{
+	struct wlan_qmi_psoc_context *qmi_ctx = qmi_psoc_get_priv(psoc);
+
+	if (!qmi_ctx) {
+		qmi_err("QMI context is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (qmi_ctx->qmi_cbs.qmi_wfds_send_misc_req_msg)
+		return qmi_ctx->qmi_cbs.qmi_wfds_send_misc_req_msg(is_ssr);
 
 	return QDF_STATUS_E_FAILURE;
 }

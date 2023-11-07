@@ -2246,3 +2246,31 @@ void wlan_minidump_remove(void *start_addr, const size_t size,
 		qdf_minidump_remove(start_addr, size, name);
 }
 qdf_export_symbol(wlan_minidump_remove);
+
+static void vdev_cac_in_progress(struct wlan_objmgr_pdev *pdev,
+				 void *object, void *arg)
+{
+	struct wlan_objmgr_vdev *vdev = (struct wlan_objmgr_vdev *)object;
+	bool *cac_is_in_progress = (bool *)arg;
+
+	if (*cac_is_in_progress)
+		return;
+
+	if (wlan_vdev_is_dfs_cac_wait(vdev) == QDF_STATUS_SUCCESS)
+		*cac_is_in_progress = true;
+}
+
+bool wlan_util_is_vdev_in_cac_wait(struct wlan_objmgr_pdev *pdev,
+				   wlan_objmgr_ref_dbgid dbg_id)
+{
+	bool cac_is_in_progress = false;
+
+	wlan_objmgr_pdev_iterate_obj_list(pdev, WLAN_VDEV_OP,
+					  vdev_cac_in_progress,
+					  &cac_is_in_progress, 0,
+					  dbg_id);
+
+	return cac_is_in_progress;
+}
+
+qdf_export_symbol(wlan_util_is_vdev_in_cac_wait);

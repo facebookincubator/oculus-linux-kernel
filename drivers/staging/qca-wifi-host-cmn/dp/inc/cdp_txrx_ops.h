@@ -1583,6 +1583,7 @@ void (*peer_send_wds_disconnect)(struct cdp_ctrl_objmgr_psoc *psoc,
  * set_bus_vote_lvl_high: The bus lvl is set to high or low based on tput
  * get_bus_vote_lvl_high: Get bus lvl to determine whether or not get
  *                        rx rate stats
+ * @evaluate_update_tx_ilp_cfg: Evaluate and update DP TX ILP configuration
  *
  * Function pointers for miscellaneous soc/pdev/vdev related operations.
  */
@@ -1684,6 +1685,11 @@ struct cdp_misc_ops {
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 	void (*set_bus_vote_lvl_high)(struct cdp_soc_t *soc_hdl, bool high);
 	bool (*get_bus_vote_lvl_high)(struct cdp_soc_t *soc_hdl);
+#endif
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+	bool (*evaluate_update_tx_ilp_cfg)(struct cdp_soc_t *soc_hdl,
+					   uint8_t num_msdu_idx_map,
+					   uint8_t *msdu_idx_map_arr);
 #endif
 };
 

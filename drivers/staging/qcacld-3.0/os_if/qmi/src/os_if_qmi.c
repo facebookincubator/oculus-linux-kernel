@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -89,10 +89,8 @@ QDF_STATUS os_if_qmi_txn_init(struct qmi_handle *qmi_hdl,
 	int ret;
 
 	ret = qmi_txn_init(qmi_hdl, qmi_txn, qmi_ei, resp);
-	if (ret < 0) {
-		osif_info("QMI transaction init failed %d", ret);
+	if (ret < 0)
 		return qdf_status_from_os_return(ret);
-	}
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -106,10 +104,8 @@ QDF_STATUS os_if_qmi_send_request(struct qmi_handle *qmi_hdl,
 	int ret;
 
 	ret = qmi_send_request(qmi_hdl, sq, qmi_txn, msg_id, len, ei, req);
-	if (ret < 0) {
-		osif_info("QMI send request failed %d", ret);
+	if (ret < 0)
 		return qdf_status_from_os_return(ret);
-	}
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -119,10 +115,8 @@ QDF_STATUS os_if_qmi_txn_wait(struct qmi_txn *qmi_txn, unsigned long timeout)
 	int ret;
 
 	ret = qmi_txn_wait(qmi_txn, timeout);
-	if (ret < 0) {
-		osif_info("QMI Failed to wait for response %d", ret);
+	if (ret < 0)
 		return qdf_status_from_os_return(ret);
-	}
 
 	return QDF_STATUS_SUCCESS;
 }

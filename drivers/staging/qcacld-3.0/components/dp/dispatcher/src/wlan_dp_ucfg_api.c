@@ -2373,6 +2373,21 @@ void ucfg_dp_prealloc_put_consistent_mem_unaligned(void *va_unaligned)
 {
 	dp_prealloc_put_consistent_mem_unaligned(va_unaligned);
 }
+
+void ucfg_dp_prealloc_get_multi_pages(uint32_t desc_type, qdf_size_t elem_size,
+				      uint16_t elem_num,
+				      struct qdf_mem_multi_page_t *pages,
+				      bool cacheable)
+{
+	dp_prealloc_get_multi_pages(desc_type, elem_size, elem_num, pages,
+				    cacheable);
+}
+
+void ucfg_dp_prealloc_put_multi_pages(uint32_t desc_type,
+				      struct qdf_mem_multi_page_t *pages)
+{
+	dp_prealloc_put_multi_pages(desc_type, pages);
+}
 #endif
 
 #if defined(WLAN_SUPPORT_RX_FISA)
@@ -2400,7 +2415,7 @@ QDF_STATUS ucfg_dp_direct_link_init(struct wlan_objmgr_psoc *psoc)
 	return dp_direct_link_init(dp_ctx);
 }
 
-void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc)
+void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc, bool is_ssr)
 {
 	struct wlan_dp_psoc_context *dp_ctx = dp_psoc_get_priv(psoc);
 
@@ -2409,7 +2424,7 @@ void ucfg_dp_direct_link_deinit(struct wlan_objmgr_psoc *psoc)
 		return;
 	}
 
-	dp_direct_link_deinit(dp_ctx);
+	dp_direct_link_deinit(dp_ctx, is_ssr);
 }
 
 void

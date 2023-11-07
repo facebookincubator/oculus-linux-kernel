@@ -2898,10 +2898,10 @@ static struct icnss_msi_config msi_config_wcn6750 = {
 };
 
 static struct icnss_msi_config msi_config_wcn6450 = {
-	.total_vectors = 10,
+	.total_vectors = 12,
 	.total_users = 1,
 	.users = (struct icnss_msi_user[]) {
-		{ .name = "CE", .num_vectors = 10, .base_vector = 0 },
+		{ .name = "CE", .num_vectors = 12, .base_vector = 0 },
 	},
 };
 
@@ -4210,8 +4210,8 @@ static int icnss_smmu_fault_handler(struct iommu_domain *domain,
 
 	icnss_trigger_recovery(&priv->pdev->dev);
 
-	/* IOMMU driver requires non-zero return value to print debug info. */
-	return -EINVAL;
+	/* IOMMU driver requires -ENOSYS return value to print debug info. */
+	return -ENOSYS;
 }
 
 static int icnss_smmu_dt_parse(struct icnss_priv *priv)

@@ -259,4 +259,29 @@
 #define WLAN_TID_LINK_MAP_SUPPORT
 #endif
 
+/*
+ * CFG80211_EXT_FEATURE_SECURE_NAN
+ * Used to indicate Linux kernel contains support to secure NAN feature
+ *
+ * This feature was introduced in Linux Kernel 6.4 via:
+ * 9b89495e479c wifi: nl80211: Allow authentication frames and set keys on NAN
+ *                             interface
+ */
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)) || \
+	(defined CFG80211_EXT_FEATURE_SECURE_NAN))
+#define WLAN_EXT_FEATURE_SECURE_NAN
+#endif
+
+/*
+ * CFG80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA
+ * Used to indicate Linux kernel contains support to auth and deauth random TA
+ *
+ * This feature was introduced in Linux Kernel 6.4 via:
+ * 6933486133ec wifi: nl80211: Add support for randomizing TA of auth and deauth
+ *                             frames
+ */
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)) || \
+	(defined CFG80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA))
+#define WLAN_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA
+#endif
 #endif

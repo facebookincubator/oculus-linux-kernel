@@ -129,7 +129,7 @@ static bool __spf_core_is_apm_ready(struct spf_core *core)
 	pkt.hdr.src_domain_id = GPR_IDS_DOMAIN_ID_APPS_V;
 	pkt.hdr.opcode = APM_CMD_GET_SPF_STATE;
 
-	dev_err(spf_core_priv->dev, "%s: send_command ret\n",	__func__);
+	dev_dbg(spf_core_priv->dev, "%s: send_command ret\n",	__func__);
 
 	rc = gpr_send_pkt(adev, &pkt);
 	if (rc < 0) {

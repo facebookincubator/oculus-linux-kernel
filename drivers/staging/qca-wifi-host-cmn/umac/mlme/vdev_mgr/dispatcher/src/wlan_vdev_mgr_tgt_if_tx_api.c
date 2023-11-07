@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -107,6 +107,7 @@ QDF_STATUS tgt_vdev_mgr_create_send(
 	vdev_info.vdev_stats_id = param->vdev_stats_id;
 	vdev_info.op_mode = wlan_util_vdev_get_cdp_txrx_opmode(vdev);
 	vdev_info.subtype = wlan_util_vdev_get_cdp_txrx_subtype(vdev);
+	vdev_info.qdf_opmode = wlan_vdev_mlme_get_opmode(vdev);
 	wlan_vdev_mgr_fill_mlo_params(&vdev_info, param);
 	pdev = wlan_vdev_get_pdev(vdev);
 
@@ -748,6 +749,7 @@ QDF_STATUS tgt_vdev_mgr_cdp_vdev_attach(struct vdev_mlme_obj *mlme_obj)
 	vdev_info.vdev_id = wlan_vdev_get_id(vdev);
 	vdev_info.op_mode = wlan_util_vdev_get_cdp_txrx_opmode(vdev);
 	vdev_info.subtype = wlan_util_vdev_get_cdp_txrx_subtype(vdev);
+	vdev_info.qdf_opmode = wlan_vdev_mlme_get_opmode(vdev);
 	tgt_vdev_mgr_fill_mlo_params(&vdev_info, vdev);
 	return cdp_vdev_attach(soc_txrx_handle,
 			       wlan_objmgr_pdev_get_pdev_id(pdev),

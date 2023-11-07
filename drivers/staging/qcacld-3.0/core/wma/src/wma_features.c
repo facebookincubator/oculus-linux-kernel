@@ -76,14 +76,15 @@
 #include "target_if_cm_roam_event.h"
 #include <wlan_mlo_mgr_cmn.h>
 #include "hif.h"
-
+#include "wlan_cmn_ieee80211.h"
+#include "wlan_mlo_mgr_cmn.h"
 /**
  * WMA_SET_VDEV_IE_SOURCE_HOST - Flag to identify the source of VDEV SET IE
  * command. The value is 0x0 for the VDEV SET IE WMI commands from mobile
  * MCL platform.
  */
 #define WMA_SET_VDEV_IE_SOURCE_HOST 0x0
-#define CH_WR_IE_MAX_LEN 20
+#define CH_WR_IE_MAX_LEN 29
 
 /*
  * Max AMPDU Tx Aggr supported size
@@ -1335,16 +1336,20 @@ int wma_unified_csa_offload_enable(tp_wma_handle wma, uint8_t vdev_id)
 #endif /* WLAN_POWER_MANAGEMENT_OFFLOAD */
 
 static uint8_t *
-wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id)
+wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id,
+			       uint8_t ie_extn_id)
 {
 	uint8_t len = 0, sub_ele_len = 0;
 	struct ie_header *ele;
+	struct extn_ie_header *extn_ie;
 
 	ele = (struct ie_header *)ch_wr_ie;
 	if (ele->ie_id != WLAN_ELEMID_CHAN_SWITCH_WRAP ||
 	    ele->ie_len == 0 || ele->ie_len > (CH_WR_IE_MAX_LEN -
-					       sizeof(struct ie_header)))
+					       sizeof(struct ie_header))) {
+		wma_debug("Invalid len: %d", ele->ie_len);
 		return NULL;
+	}
 
 	len = ele->ie_len;
 	ele = (struct ie_header *)(ch_wr_ie + sizeof(struct ie_header));
@@ -1357,14 +1362,85 @@ wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id)
 			return NULL;
 		}
 		len -= sub_ele_len;
-		if (ele->ie_id == sub_ele_id)
-			return (uint8_t *)ele;
-
+		if (ele->ie_id == sub_ele_id) {
+			if (sub_ele_id == WLAN_ELEMID_EXTN_ELEM) {
+				extn_ie = (struct extn_ie_header *)ele;
+				if (extn_ie->ie_extn_id == ie_extn_id)
+					return (uint8_t *)ele;
+			} else {
+				return (uint8_t *)ele;
+			}
+		}
 		ele = (struct ie_header *)((uint8_t *)ele + sub_ele_len);
 	}
 
 	return NULL;
 }
+
+#ifdef WLAN_FEATURE_11BE
+/**
+ * wma_parse_bw_indication_ie(): STA parse bandwidth indication IE of connected
+ * AP for channel switch or puncture update.
+ * @ie: bandwidth indication IE
+ * @tlv_len: total length of ie tlv
+ * @csa_event: struct to save channel switch info
+ *
+ * Return - QDF_STATUS.
+ */
+static
+QDF_STATUS wma_parse_bw_indication_ie(uint8_t *ie,
+				      uint8_t tlv_len,
+				      struct csa_offload_params *csa_event)
+{
+	uint16_t puncture_bitmap = 0;
+	uint8_t *sub_ie;
+	struct wlan_ie_bw_ind *bw_ind;
+	struct ie_header *ie_head;
+	uint8_t ccfs0, ccfs1;
+	enum phy_ch_width ch_width;
+	QDF_STATUS status;
+
+	ie_head = (struct ie_header *)ie;
+	if (ie_head->ie_len + sizeof(struct ie_header) > tlv_len) {
+		wma_err("Invalid ie len: %d, buffer len: %d",
+			ie_head->ie_len, tlv_len);
+		return QDF_STATUS_E_INVAL;
+	}
+	qdf_trace_hex_dump(QDF_MODULE_ID_WMA, QDF_TRACE_LEVEL_DEBUG,
+			   ie, tlv_len);
+
+	sub_ie = wma_parse_ch_switch_wrapper_ie(ie,
+						WLAN_ELEMID_EXTN_ELEM,
+						WLAN_EXTN_ELEMID_BW_IND);
+	if (!sub_ie) {
+		wma_err("Invalid ie");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	bw_ind = (struct wlan_ie_bw_ind *)sub_ie;
+
+	status = util_parse_bw_ind(bw_ind, &ccfs0, &ccfs1, &ch_width,
+				   &puncture_bitmap);
+
+	wma_debug("ch width: %d, ccfs0: %d, ccfs1: %d, puncture: %d", ch_width,
+		  ccfs0, ccfs1, puncture_bitmap);
+
+	csa_event->new_ch_width = ch_width;
+	csa_event->new_ch_freq_seg1 = ccfs0;
+	csa_event->new_ch_freq_seg2 = ccfs1;
+	csa_event->new_punct_bitmap = puncture_bitmap;
+
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static inline
+QDF_STATUS wma_parse_bw_indication_ie(uint8_t *ie,
+				      uint8_t tlv_len,
+				      struct csa_offload_params *csa_event)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+#endif
 
 /**
  * wma_csa_offload_handler() - CSA event handler
@@ -1389,6 +1465,8 @@ int wma_csa_offload_handler(void *handle, uint8_t *event, uint32_t len)
 	struct ieee80211_extendedchannelswitch_ie *xcsa_ie;
 	struct ieee80211_ie_wide_bw_switch *wb_ie;
 	struct wma_txrx_node *intr = wma->interfaces;
+	QDF_STATUS status;
+	uint8_t tlv_len;
 
 	param_buf = (WMI_CSA_HANDLING_EVENTID_param_tlvs *) event;
 
@@ -1453,6 +1531,19 @@ int wma_csa_offload_handler(void *handle, uint8_t *event, uint32_t len)
 		return -EINVAL;
 	}
 
+	if (csa_event->ies_present_flag & WMI_CSWRAP_IE_EXT_VER_2_PRESENT) {
+		wma_debug("WMI_CSWRAP_IE_EXT_VER_2 received");
+		tlv_len = csa_event->num_bytes_valid_in_cswrap_ie_ext_ver2;
+		status = wma_parse_bw_indication_ie(param_buf->cs_wrap_ie,
+						    tlv_len,
+						    csa_offload_event);
+		if (QDF_IS_STATUS_SUCCESS(status)) {
+			csa_offload_event->ies_present_flag |=
+					MLME_CSWRAP_IE_EXT_V2_PRESENT;
+			goto got_chan;
+		}
+	}
+
 	if (csa_event->ies_present_flag & WMI_WBW_IE_PRESENT) {
 		wb_ie = (struct ieee80211_ie_wide_bw_switch *)
 						(&csa_event->wb_ie[0]);
@@ -1467,7 +1558,7 @@ int wma_csa_offload_handler(void *handle, uint8_t *event, uint32_t len)
 		wb_ie = (struct ieee80211_ie_wide_bw_switch *)
 				wma_parse_ch_switch_wrapper_ie(
 				(uint8_t *)&csa_event->cswrap_ie_extended,
-				WLAN_ELEMID_WIDE_BAND_CHAN_SWITCH);
+				WLAN_ELEMID_WIDE_BAND_CHAN_SWITCH, 0);
 		if (wb_ie) {
 			csa_offload_event->new_ch_width =
 				wlan_mlme_convert_vht_op_bw_to_phy_ch_width(
@@ -1484,6 +1575,7 @@ int wma_csa_offload_handler(void *handle, uint8_t *event, uint32_t len)
 			MLME_CSWRAP_IE_EXTENDED_PRESENT;
 	}
 
+got_chan:
 	wma_debug("CSA: BSSID "QDF_MAC_ADDR_FMT" chan %d freq %d flag 0x%x width = %d freq1 = %d freq2 = %d op class = %d",
 		 QDF_MAC_ADDR_REF(csa_offload_event->bssid.bytes),
 		 csa_offload_event->channel,
@@ -5246,6 +5338,49 @@ wma_vdev_bcn_latency_event_handler(void *handle,
 }
 #endif
 
+static void
+wma_update_sacn_channel_info_buf(wmi_unified_t wmi_handle,
+				 wmi_chan_info_event_fixed_param *event,
+				 struct scan_chan_info *buf,
+				 wmi_cca_busy_subband_info *cca_info,
+				 uint32_t num_tlvs)
+{
+	uint32_t i;
+	bool is_cca_busy_info;
+
+	buf->tx_frame_count = event->tx_frame_cnt;
+	buf->clock_freq = event->mac_clk_mhz;
+	buf->cmd_flag = event->cmd_flags;
+	buf->freq = event->freq;
+	buf->noise_floor = event->noise_floor;
+	buf->cycle_count = event->cycle_count;
+	buf->rx_clear_count = event->rx_clear_count;
+
+	is_cca_busy_info = wmi_service_enabled(wmi_handle,
+				wmi_service_cca_busy_info_for_each_20mhz);
+
+	if (!is_cca_busy_info || num_tlvs == 0)
+		return;
+
+	wma_debug("is_cca_busy_info: %d, num_tlvs:%d", is_cca_busy_info,
+		  num_tlvs);
+
+	if (cca_info && num_tlvs > 0) {
+		buf->subband_info.num_chan = 0;
+		for (i = 0; i < num_tlvs && i < MAX_WIDE_BAND_SCAN_CHAN; i++) {
+			buf->subband_info.cca_busy_subband_info[i] =
+						cca_info->rx_clear_count;
+			wma_debug("cca_info->rx_clear_count:%d",
+				  cca_info->rx_clear_count);
+			buf->subband_info.num_chan++;
+			cca_info++;
+		}
+
+		buf->subband_info.is_wide_band_scan = true;
+		buf->subband_info.vdev_id = event->vdev_id;
+	}
+}
+
 int wma_chan_info_event_handler(void *handle, uint8_t *event_buf,
 				uint32_t len)
 {
@@ -5259,6 +5394,8 @@ int wma_chan_info_event_handler(void *handle, uint8_t *event_buf,
 	struct wlan_objmgr_vdev *vdev;
 	enum QDF_OPMODE mode;
 	struct scheduler_msg sme_msg = {0};
+	wmi_cca_busy_subband_info *cca_info = NULL;
+	uint32_t num_tlvs = 0;
 
 	if (wma && wma->cds_context)
 		mac = (struct mac_context *)cds_get_context(QDF_MODULE_ID_PE);
@@ -5277,24 +5414,21 @@ int wma_chan_info_event_handler(void *handle, uint8_t *event_buf,
 		return -EINVAL;
 	}
 
-	snr_monitor_enabled = wlan_scan_is_snr_monitor_enabled(mac->psoc);
-	if (snr_monitor_enabled && mac->chan_info_cb) {
-		buf.tx_frame_count = event->tx_frame_cnt;
-		buf.clock_freq = event->mac_clk_mhz;
-		buf.cmd_flag = event->cmd_flags;
-		buf.freq = event->freq;
-		buf.noise_floor = event->noise_floor;
-		buf.cycle_count = event->cycle_count;
-		buf.rx_clear_count = event->rx_clear_count;
-		mac->chan_info_cb(&buf);
-	}
-
 	/* Ignore the last channel event data whose command flag is set to 1.
 	 * It’s basically an event with empty data only to indicate scan event
 	 * completion.
 	 */
 	if (event->cmd_flags == WMI_CHAN_INFO_END_RESP)
 		return 0;
+
+	snr_monitor_enabled = wlan_scan_is_snr_monitor_enabled(mac->psoc);
+	if (snr_monitor_enabled && mac->chan_info_cb) {
+		cca_info = param_buf->cca_busy_subband_info;
+		num_tlvs  = param_buf->num_cca_busy_subband_info;
+		wma_update_sacn_channel_info_buf(wma->wmi_handle, event,
+						 &buf, cca_info, num_tlvs);
+		mac->chan_info_cb(&buf);
+	}
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(wma->psoc, event->vdev_id,
 						    WLAN_LEGACY_WMA_ID);

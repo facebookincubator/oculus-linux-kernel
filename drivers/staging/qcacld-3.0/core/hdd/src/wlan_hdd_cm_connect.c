@@ -374,7 +374,8 @@ hdd_update_action_oui_for_connect(struct hdd_context *hdd_ctx,
 		return;
 
 	usr_disable_eht = ucfg_mlme_get_usr_disable_sta_eht(hdd_ctx->psoc);
-	if (req->flags & ASSOC_REQ_DISABLE_EHT) {
+	if (req->flags & ASSOC_REQ_DISABLE_EHT ||
+	    !(req->flags & CONNECT_REQ_MLO_SUPPORT)) {
 		if (usr_disable_eht) {
 			hdd_debug("user eht is disabled already");
 			return;
@@ -698,6 +699,7 @@ int wlan_hdd_cm_connect(struct wiphy *wiphy,
 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(ndev);
 	struct hdd_context *hdd_ctx;
 	struct hdd_station_ctx *hdd_sta_ctx;
+	qdf_freq_t ch_freq = 0;
 
 	hdd_enter();
 
@@ -733,6 +735,15 @@ int wlan_hdd_cm_connect(struct wiphy *wiphy,
 	if (policy_mgr_is_hw_dbs_capable(hdd_ctx->psoc) &&
 	    !wlan_hdd_cm_handle_sap_sta_dfs_conc(hdd_ctx, req)) {
 		hdd_err("sap-sta conc will fail, can't allow sta");
+		return -EINVAL;
+	}
+
+	if (req->channel && req->channel->center_freq)
+		ch_freq = req->channel->center_freq;
+
+	if (ch_freq && wlan_reg_is_6ghz_chan_freq(ch_freq) &&
+	    !wlan_reg_is_6ghz_band_set(hdd_ctx->pdev)) {
+		hdd_err("6 GHz band disabled");
 		return -EINVAL;
 	}
 

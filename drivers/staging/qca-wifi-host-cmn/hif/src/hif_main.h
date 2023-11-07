@@ -164,16 +164,44 @@ struct hif_ce_stats {
 };
 
 #ifdef HIF_DETECTION_LATENCY_ENABLE
+/**
+ * struct hif_tasklet_running_info - running info of tasklet
+ * @sched_cpuid: id of cpu on which the tasklet was scheduled
+ * @sched_time: time when the tasklet was scheduled
+ * @exec_time: time when the tasklet was executed
+ */
+struct hif_tasklet_running_info {
+	int sched_cpuid;
+	qdf_time_t sched_time;
+	qdf_time_t exec_time;
+};
+
+#define HIF_TASKLET_IN_MONITOR CE_COUNT_MAX
+
 struct hif_latency_detect {
-	qdf_timer_t detect_latency_timer;
-	uint32_t detect_latency_timer_timeout;
+	qdf_timer_t timer;
+	uint32_t timeout;
 	bool is_timer_started;
 	bool enable_detection;
 	/* threshold when stall happens */
-	uint32_t detect_latency_threshold;
-	int ce2_tasklet_sched_cpuid;
-	qdf_time_t ce2_tasklet_sched_time;
-	qdf_time_t ce2_tasklet_exec_time;
+	uint32_t threshold;
+
+	/*
+	 * Bitmap to indicate the enablement of latency detection for
+	 * the tasklets. bit-X represents for tasklet of WLAN_CE_X,
+	 * latency detection is enabled on the corresponding tasklet
+	 * when a bit is set.
+	 * At the same time, this bitmap also indicates the validity of
+	 * elements in array 'tasklet_info', bit-X represents for index-X,
+	 * the corresponding element is valid when a bit is set.
+	 */
+	qdf_bitmap(tasklet_bmap, HIF_TASKLET_IN_MONITOR);
+
+	/*
+	 * Array to record running info of tasklets, info of tasklet
+	 * for WLAN_CE_X is stored at index-X.
+	 */
+	struct hif_tasklet_running_info tasklet_info[HIF_TASKLET_IN_MONITOR];
 	qdf_time_t credit_request_time;
 	qdf_time_t credit_report_time;
 };
@@ -373,6 +401,10 @@ struct hif_softc {
 #ifdef DP_UMAC_HW_RESET_SUPPORT
 	struct hif_umac_reset_ctx umac_reset_ctx;
 #endif
+#ifdef FEATURE_DIRECT_LINK
+	struct qdf_mem_multi_page_t dl_recv_pages;
+	int dl_recv_pipe_num;
+#endif
 };
 
 static inline
@@ -538,6 +570,35 @@ void hif_mem_free_consistent_unaligned(struct hif_softc *scn,
 				       qdf_dma_addr_t paddr,
 				       qdf_dma_context_t memctx,
 				       uint8_t is_mem_prealloc);
+
+/**
+ * hif_prealloc_get_multi_pages() - gets pre-alloc DP multi-pages memory
+ * @scn: HIF context
+ * @desc_type: descriptor type
+ * @elem_size: single element size
+ * @elem_num: total number of elements should be allocated
+ * @pages: multi page information storage
+ * @cacheable: coherent memory or cacheable memory
+ *
+ * Return: None
+ */
+void hif_prealloc_get_multi_pages(struct hif_softc *scn, uint32_t desc_type,
+				  qdf_size_t elem_size, uint16_t elem_num,
+				  struct qdf_mem_multi_page_t *pages,
+				  bool cacheable);
+
+/**
+ * hif_prealloc_put_multi_pages() - puts back pre-alloc DP multi-pages memory
+ * @scn: HIF context
+ * @desc_type: descriptor type
+ * @pages: multi page information storage
+ * @cacheable: coherent memory or cacheable memory
+ *
+ * Return: None
+ */
+void hif_prealloc_put_multi_pages(struct hif_softc *scn, uint32_t desc_type,
+				  struct qdf_mem_multi_page_t *pages,
+				  bool cacheable);
 #else
 static inline
 void *hif_mem_alloc_consistent_unaligned(struct hif_softc *scn,
@@ -562,6 +623,25 @@ void hif_mem_free_consistent_unaligned(struct hif_softc *scn,
 {
 	return qdf_mem_free_consistent(scn->qdf_dev, scn->qdf_dev->dev,
 				       size, vaddr, paddr, memctx);
+}
+
+static inline
+void hif_prealloc_get_multi_pages(struct hif_softc *scn, uint32_t desc_type,
+				  qdf_size_t elem_size, uint16_t elem_num,
+				  struct qdf_mem_multi_page_t *pages,
+				  bool cacheable)
+{
+	qdf_mem_multi_pages_alloc(scn->qdf_dev, pages,
+				  elem_size, elem_num, 0, cacheable);
+}
+
+static inline
+void hif_prealloc_put_multi_pages(struct hif_softc *scn, uint32_t desc_type,
+				  struct qdf_mem_multi_page_t *pages,
+				  bool cacheable)
+{
+	qdf_mem_multi_pages_free(scn->qdf_dev, pages, 0,
+				 cacheable);
 }
 #endif
 

@@ -40,7 +40,8 @@ static bool panel_event_notifier_tag_valid(enum panel_event_notifier_tag tag)
  * @client_handle: handle to recongnize the client registering for
  *                 notifications.
  *
- * @panel: struct drm_panel for which the panel events are requested for.
+ * @panel: optional struct drm_panel for which the panel events are requested for.
+ *         If NULL, notification will be raised for all panels.
  *
  * @handler: The handler that will be invoked when a panel event notification is
  *           received pertaining to @tag. The handler will be invoked with a
@@ -139,7 +140,7 @@ void panel_event_notification_trigger(enum panel_event_notifier_tag tag,
 	for (i = 0; i < PANEL_EVENT_NOTIFIER_CLIENT_MAX; i++) {
 		mutex_lock(&panel_event_notifier_entries_lock);
 		entry = &panel_event_notifier_entries[i];
-		if (notification->panel != entry->panel) {
+		if (entry->panel != NULL && entry->panel != notification->panel) {
 			pr_debug("invalid panel found notification_panel:0x%x entry_panel:0x%x\n",
 					notification->panel, entry->panel);
 			mutex_unlock(&panel_event_notifier_entries_lock);

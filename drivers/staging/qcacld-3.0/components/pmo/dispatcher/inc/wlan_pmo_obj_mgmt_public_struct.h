@@ -162,6 +162,7 @@ typedef int (*pmo_pld_auto_resume_cb)(void);
  * @psoc_send_idle_roam_suspend_mode: fp to send suspend mode for
  * idle roam  trigger to firmware.
  * @send_icmp_offload_req: fp to send icmp offload request
+ * @psoc_set_wow_enable_ack_failed: fp to set wow enable ack failure status
  */
 struct wlan_pmo_tx_ops {
 	QDF_STATUS (*send_arp_offload_req)(struct wlan_objmgr_vdev *vdev,
@@ -277,6 +278,7 @@ struct wlan_pmo_tx_ops {
 			struct wlan_objmgr_psoc *psoc,
 			struct pmo_icmp_offload *pmo_icmp_req);
 #endif
+	void (*psoc_set_wow_enable_ack_failed)(struct wlan_objmgr_psoc *psoc);
 };
 
 #endif /* end  of _WLAN_PMO_OBJ_MGMT_PUBLIC_STRUCT_H_ */

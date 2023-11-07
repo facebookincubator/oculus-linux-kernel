@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -133,7 +133,7 @@ void hdd_wlan_offload_event(uint8_t type, uint8_t state)
 }
 #endif
 
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 
 /* timeout in msec to wait for RX_THREAD to suspend */
 #define HDD_RXTHREAD_SUSPEND_TIMEOUT 200
@@ -172,7 +172,7 @@ int wlan_hdd_rx_thread_suspend(struct hdd_context *hdd_ctx)
 
 	return 0;
 }
-#endif /* QCA_CONFIG_SMP */
+#endif /* WLAN_DP_LEGACY_OL_RX_THREAD */
 
 /**
  * hdd_enable_gtk_offload() - enable GTK offload
@@ -2906,12 +2906,28 @@ static int wlan_hdd_set_mlo_ps(struct wlan_objmgr_psoc *psoc,
 
 	return status;
 }
+
+static bool wlan_hdd_is_ml_adapter(struct hdd_adapter *adapter)
+{
+	struct hdd_mlo_adapter_info *mlo_adapter_info;
+	bool is_ml_adapter = false;
+
+	mlo_adapter_info = &adapter->mlo_adapter_info;
+	is_ml_adapter = mlo_adapter_info->is_ml_adapter ? 1 : 0;
+
+	return is_ml_adapter;
+}
 #else
 static int wlan_hdd_set_mlo_ps(struct wlan_objmgr_psoc *psoc,
 			       struct hdd_adapter *adapter,
 			       bool allow_power_save, int timeout)
 {
 	return 0;
+}
+
+static bool wlan_hdd_is_ml_adapter(struct hdd_adapter *adapter)
+{
+	return false;
 }
 #endif
 
@@ -2933,7 +2949,7 @@ static int __wlan_hdd_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 	struct hdd_context *hdd_ctx;
 	int status;
 	struct wlan_objmgr_vdev *vdev;
-	bool is_mlo_vdev;
+	bool is_ml_adapter;
 
 	hdd_enter();
 
@@ -2972,7 +2988,7 @@ static int __wlan_hdd_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	is_ml_adapter = wlan_hdd_is_ml_adapter(adapter);
 
 	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_POWER_ID);
 
@@ -2983,7 +2999,7 @@ static int __wlan_hdd_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 	flush_work(&adapter->ipv4_notifier_work);
 	hdd_adapter_flush_ipv6_notifier_work(adapter);
 
-	if (is_mlo_vdev) {
+	if (is_ml_adapter) {
 		status = wlan_hdd_set_mlo_ps(hdd_ctx->psoc, adapter,
 					     allow_power_save, timeout);
 		goto exit;

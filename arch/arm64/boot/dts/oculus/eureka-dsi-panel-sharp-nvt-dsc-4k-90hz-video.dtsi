@@ -109,7 +109,7 @@
 				qcom,mdss-dsi-off-command = [
 					29 01 00 00 00 00 02 FF 10
 					05 01 00 00 78 00 01 28
-					05 01 00 00 78 00 01 10
+					05 01 00 00 FA 00 01 10
 				];
 
 				// before video is on, the DSI panels typically

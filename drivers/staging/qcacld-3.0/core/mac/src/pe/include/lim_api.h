@@ -274,10 +274,20 @@ void lim_send_sme_tdls_del_sta_ind(struct mac_context *mac, tpDphHashNode sta,
 				   uint16_t reasonCode);
 #endif
 
-/* / Function that checks for change in AP's capabilities on STA */
-void lim_detect_change_in_ap_capabilities(struct mac_context *,
-					  tpSirProbeRespBeacon,
-					  struct pe_session *);
+/**
+ * lim_detect_change_in_ap_capabilities() - Detect any change in AP's
+ * capabilities.
+ * @mac: Pointer to Global MAC structure
+ * @pBeacon: Pointer to parsed Beacon/probe rsp structure
+ * @session: pe session
+ * @is_bcn: if passed pointer is beacon or probe
+ *
+ * Return: void
+ */
+void lim_detect_change_in_ap_capabilities(struct mac_context *mac,
+					  tpSirProbeRespBeacon pBeacon,
+					  struct pe_session *session,
+					  bool is_bcn);
 
 QDF_STATUS lim_update_short_slot(struct mac_context *mac,
 				    tpSirProbeRespBeacon pBeacon,

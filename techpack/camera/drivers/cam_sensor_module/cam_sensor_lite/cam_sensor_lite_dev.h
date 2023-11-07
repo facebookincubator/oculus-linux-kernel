@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_SENSOR_LITE_DEV_H_
@@ -44,7 +44,9 @@ struct sensor_lite_crm_intf_params {
 	int32_t session_hdl;
 	int32_t link_hdl;
 	struct cam_req_mgr_kmd_ops ops;
+	struct cam_req_mgr_no_crm_kmd_ops no_crm_ops;
 	struct cam_req_mgr_crm_cb *crm_cb;
+	cam_req_mgr_no_crm_frame_skip_notify  frame_skip_cb;
 	uint32_t enable_crm;
 };
 
@@ -95,16 +97,13 @@ struct sensor_lite_device {
 	uint32_t                              dump_en;
 	uint32_t                              type;
 	bool                                  hw_no_ops;
+	int                                   anchor_pd;
 
 	/* Request Queue */
 	struct list_head waiting_request_q;
 	struct list_head applied_request_q;
 	int    applied_request_q_depth;
 	int    waiting_request_q_depth;
-	/* register this handler to handle sof notify */
-	int   (*sof_notify_handler)(
-		struct sensor_lite_device *dev,
-		struct cam_req_mgr_no_crm_trigger_notify *notify);
 };
 
 /**

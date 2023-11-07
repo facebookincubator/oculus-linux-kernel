@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -73,7 +73,7 @@ DECLARE_EVENT_CLASS(dp_trace_tcp_pkt_class,
 			__entry->dstport = dstport;
 			__entry->tdelta = tdelta;
 		    ),
-		    TP_printk("skb=%pK seqnum=%u acknum=%u srcport=%u dstport=%u latency(ms)=%llu",
+		    TP_printk("skb=%pK seqnum=%u acknum=%u srcport=%u dstport=%u latency(us)=%llu",
 			      __entry->skb, __entry->tcp_seq_num,
 			      __entry->tcp_ack_num, __entry->srcport,
 			      __entry->dstport, __entry->tdelta)
@@ -112,7 +112,7 @@ DECLARE_EVENT_CLASS(dp_trace_udp_pkt_class,
 			__entry->dstport = dstport;
 			__entry->tdelta = tdelta;
 		    ),
-		    TP_printk("skb=%pK ip_id=%u srcport=%u dstport=%d latency(ms)=%llu",
+		    TP_printk("skb=%pK ip_id=%u srcport=%u dstport=%d latency(us)=%llu",
 			      __entry->skb, __entry->ip_id,
 			      __entry->srcport, __entry->dstport,
 			      __entry->tdelta)
@@ -150,7 +150,7 @@ DECLARE_EVENT_CLASS(dp_trace_generic_ip_pkt_class,
 			__entry->trans_hdr_4_bytes = trans_hdr_4_bytes;
 			__entry->tdelta = tdelta;
 		    ),
-		    TP_printk("skb=%pK ip_proto=0x%x ip_id=0x%x, transport_hdr[4]:0x%08x, latency(ms)=%llu",
+		    TP_printk("skb=%pK ip_proto=0x%x ip_id=0x%x, transport_hdr[4]:0x%08x, latency(us)=%llu",
 			      __entry->skb, __entry->ip_proto,
 			      __entry->ip_id,  __entry->trans_hdr_4_bytes,
 			      __entry->tdelta)
@@ -188,7 +188,7 @@ DECLARE_EVENT_CLASS(dp_trace_pkt_class,
 			__entry->ether_type = ether_type;
 			__entry->tdelta = tdelta;
 		    ),
-		    TP_printk("skb=%pK ether_type=0x%x latency(ms)=%llu",
+		    TP_printk("skb=%pK ether_type=0x%x latency(us)=%llu",
 			      __entry->skb, __entry->ether_type,
 			      __entry->tdelta)
 );

@@ -743,12 +743,13 @@ pmo_core_enable_wow_in_fw(struct wlan_objmgr_psoc *psoc,
 	struct pmo_psoc_cfg *psoc_cfg = &psoc_ctx->psoc_cfg;
 	QDF_STATUS status;
 	void *hif_ctx;
+	uint16_t reason_code;
 
 	pmo_enter();
 
 	hif_ctx = pmo_core_psoc_get_hif_handle(psoc);
 	qdf_event_reset(&psoc_ctx->wow.target_suspend);
-	pmo_core_set_wow_nack(psoc_ctx, false);
+	pmo_core_set_wow_nack(psoc_ctx, false, 0);
 	host_credits = pmo_tgt_psoc_get_host_credits(psoc);
 	wmi_pending_cmds = pmo_tgt_psoc_get_pending_cmnds(psoc);
 	pmo_debug("Credits:%d; Pending_Cmds: %d",
@@ -856,14 +857,17 @@ pmo_core_enable_wow_in_fw(struct wlan_objmgr_psoc *psoc,
 		pmo_err("Credits:%d; Pending_Cmds: %d",
 			pmo_tgt_psoc_get_host_credits(psoc),
 			pmo_tgt_psoc_get_pending_cmnds(psoc));
-		pmo_tgt_update_target_suspend_flag(psoc, false);
-		if (!psoc_ctx->wow.target_suspend.force_set)
+		if (!psoc_ctx->wow.target_suspend.force_set) {
+			pmo_tgt_psoc_set_wow_enable_ack_failed(psoc);
 			qdf_trigger_self_recovery(psoc, QDF_SUSPEND_TIMEOUT);
+		}
+		pmo_tgt_update_target_suspend_flag(psoc, false);
 		goto out;
 	}
 
 	if (pmo_core_get_wow_nack(psoc_ctx)) {
-		pmo_err("FW not ready to WOW");
+		reason_code = pmo_core_get_wow_reason_code(psoc_ctx);
+		pmo_err("FW not ready to WOW reason code: %d", reason_code);
 		pmo_tgt_update_target_suspend_flag(psoc, false);
 		status = QDF_STATUS_E_AGAIN;
 		goto out;
@@ -1529,7 +1533,8 @@ out:
 	return status;
 }
 
-void pmo_core_psoc_target_suspend_acknowledge(void *context, bool wow_nack)
+void pmo_core_psoc_target_suspend_acknowledge(void *context, bool wow_nack,
+					      uint16_t reason_code)
 {
 	struct pmo_psoc_priv_obj *psoc_ctx;
 	struct wlan_objmgr_psoc *psoc = (struct wlan_objmgr_psoc *)context;
@@ -1550,7 +1555,7 @@ void pmo_core_psoc_target_suspend_acknowledge(void *context, bool wow_nack)
 
 	psoc_ctx = pmo_psoc_get_priv(psoc);
 
-	pmo_core_set_wow_nack(psoc_ctx, wow_nack);
+	pmo_core_set_wow_nack(psoc_ctx, wow_nack, reason_code);
 	qdf_event_set(&psoc_ctx->wow.target_suspend);
 	if (!pmo_tgt_psoc_get_runtime_pm_in_progress(psoc)) {
 		if (wow_nack)

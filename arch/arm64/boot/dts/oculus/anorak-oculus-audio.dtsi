@@ -46,6 +46,10 @@
 	};
 };
 
+&msm_audio_ion {
+	qcom,iommu-faults = "non-fatal";
+};
+
 &soc {
 	clock_audio_va_1: va_core_clk {
 		compatible = "qcom,audio-ref-clk";

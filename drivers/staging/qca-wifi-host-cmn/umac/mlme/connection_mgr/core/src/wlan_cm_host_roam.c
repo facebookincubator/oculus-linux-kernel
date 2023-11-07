@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -863,6 +863,7 @@ QDF_STATUS cm_reassoc_rsp(struct wlan_objmgr_vdev *vdev,
 	wlan_cm_id cm_id;
 	uint32_t prefix;
 	enum wlan_cm_sm_evt event;
+	struct qdf_mac_addr pmksa_mac = QDF_MAC_ADDR_ZERO_INIT;
 
 	cm_ctx = cm_get_cm_ctx(vdev);
 	if (!cm_ctx)
@@ -880,6 +881,8 @@ QDF_STATUS cm_reassoc_rsp(struct wlan_objmgr_vdev *vdev,
 		goto post_err;
 	}
 
+	cm_connect_rsp_get_mld_addr_or_bssid(resp, &pmksa_mac);
+
 	if (QDF_IS_STATUS_SUCCESS(resp->connect_status)) {
 		/*
 		 * On successful connection to sae single pmk AP,
@@ -887,7 +890,7 @@ QDF_STATUS cm_reassoc_rsp(struct wlan_objmgr_vdev *vdev,
 		 */
 		if (cm_is_cm_id_current_candidate_single_pmk(cm_ctx, cm_id))
 			wlan_crypto_selective_clear_sae_single_pmk_entries(
-					vdev, &resp->bssid);
+					vdev, &pmksa_mac);
 		event = WLAN_CM_SM_EV_REASSOC_DONE;
 	} else {
 		event = WLAN_CM_SM_EV_REASSOC_FAILURE;

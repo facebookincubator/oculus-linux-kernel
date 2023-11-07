@@ -625,7 +625,7 @@ QDF_STATUS
 dp_hw_cookie_conversion_attach(struct dp_soc_be *be_soc,
 			       struct dp_hw_cookie_conversion_t *cc_ctx,
 			       uint32_t num_descs,
-			       enum dp_desc_type desc_type,
+			       enum qdf_dp_desc_type desc_type,
 			       uint8_t desc_pool_id);
 
 void dp_reo_shared_qaddr_detach(struct dp_soc *soc);
@@ -834,17 +834,17 @@ _dp_srng_test_and_update_nf_params(struct dp_soc *soc,
 
 static inline
 uint32_t dp_desc_pool_get_cmem_base(uint8_t chip_id, uint8_t desc_pool_id,
-				    enum dp_desc_type desc_type)
+				    enum qdf_dp_desc_type desc_type)
 {
 	switch (desc_type) {
-	case DP_TX_DESC_TYPE:
+	case QDF_DP_TX_DESC_TYPE:
 		return (DP_TX_DESC_CMEM_OFFSET +
 			(desc_pool_id * DP_TX_DESC_POOL_CMEM_SIZE));
-	case DP_RX_DESC_BUF_TYPE:
+	case QDF_DP_RX_DESC_BUF_TYPE:
 		return (DP_RX_DESC_CMEM_OFFSET +
 			((chip_id * MAX_RXDESC_POOLS) + desc_pool_id) *
 			DP_RX_DESC_POOL_CMEM_SIZE);
-	case DP_TX_PPEDS_DESC_TYPE:
+	case QDF_DP_TX_PPEDS_DESC_TYPE:
 		return DP_TX_PPEDS_DESC_CMEM_OFFSET;
 	default:
 			QDF_BUG(0);

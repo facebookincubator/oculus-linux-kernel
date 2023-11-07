@@ -128,6 +128,18 @@ QDF_STATUS wmi_extract_mlo_link_state_info_event(
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_extract_mlo_link_disable_request_evt(
+		struct wmi_unified *wmi,
+		void *buf,
+		struct mlo_link_disable_request_evt_params *params)
+{
+	if (wmi->ops->extract_mlo_link_disable_request_evt_param)
+		return wmi->ops->extract_mlo_link_disable_request_evt_param(
+							wmi, buf, params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 #endif /* WLAN_FEATURE_11BE */
 
 QDF_STATUS

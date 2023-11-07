@@ -3999,16 +3999,19 @@ util_get_prvmlie_mldid(uint8_t *mlieseq, qdf_size_t mlieseqlen,
 }
 
 QDF_STATUS util_get_rvmlie_mldmacaddr(uint8_t *mlieseq, qdf_size_t mlieseqlen,
-				      struct qdf_mac_addr *mldmacaddr)
+				      struct qdf_mac_addr *mldmacaddr,
+				      bool *is_mldmacaddr_found)
 {
 	struct wlan_ie_multilink *mlie_fixed;
 	enum wlan_ml_variant variant;
 	uint16_t mlcontrol;
 	uint16_t presencebitmap;
+	qdf_size_t rv_cinfo_len;
 
-	if (!mlieseq || !mlieseqlen || !mldmacaddr)
+	if (!mlieseq || !mlieseqlen || !mldmacaddr || !is_mldmacaddr_found)
 		return QDF_STATUS_E_NULL_VALUE;
 
+	*is_mldmacaddr_found = false;
 	qdf_mem_zero(mldmacaddr, sizeof(*mldmacaddr));
 
 	if (mlieseqlen < sizeof(struct wlan_ie_multilink))
@@ -4028,18 +4031,35 @@ QDF_STATUS util_get_rvmlie_mldmacaddr(uint8_t *mlieseq, qdf_size_t mlieseqlen,
 	if (variant != WLAN_ML_VARIANT_RECONFIG)
 		return QDF_STATUS_E_INVAL;
 
+	/* ML Reconfig Common Info Length field present */
+	if ((sizeof(struct wlan_ie_multilink) + WLAN_ML_RV_CINFO_LENGTH_SIZE) >
+	    mlieseqlen)
+		return QDF_STATUS_E_PROTO;
+
+	rv_cinfo_len = *(mlieseq + sizeof(struct wlan_ie_multilink));
+
 	presencebitmap = QDF_GET_BITS(mlcontrol, WLAN_ML_CTRL_PBM_IDX,
 				      WLAN_ML_CTRL_PBM_BITS);
 
 	/* Check if MLD mac address is present */
 	if (presencebitmap & WLAN_ML_RV_CTRL_PBM_MLDMACADDR_P) {
-		if ((sizeof(struct wlan_ie_multilink) + QDF_MAC_ADDR_SIZE) >
+		/* Check if the value indicated in the Common Info Length
+		 * subfield is sufficient to access the MLD MAC address.
+		 */
+		if (rv_cinfo_len < (WLAN_ML_RV_CINFO_LENGTH_SIZE +
+				    QDF_MAC_ADDR_SIZE))
+			return QDF_STATUS_E_PROTO;
+
+		if ((sizeof(struct wlan_ie_multilink) +
+		     WLAN_ML_RV_CINFO_LENGTH_SIZE + QDF_MAC_ADDR_SIZE) >
 			mlieseqlen)
 			return QDF_STATUS_E_PROTO;
 
 		qdf_mem_copy(mldmacaddr->bytes,
-			     mlieseq + sizeof(struct wlan_ie_multilink),
+			     mlieseq + sizeof(struct wlan_ie_multilink) +
+			     WLAN_ML_RV_CINFO_LENGTH_SIZE,
 			     QDF_MAC_ADDR_SIZE);
+		*is_mldmacaddr_found = true;
 	}
 
 	return QDF_STATUS_SUCCESS;
@@ -4051,7 +4071,7 @@ util_parse_rv_multi_link_ctrl(uint8_t *mlieseqpayload,
 			      uint8_t **link_info,
 			      qdf_size_t *link_info_len)
 {
-	qdf_size_t parsed_payload_len;
+	qdf_size_t parsed_payload_len, rv_cinfo_len;
 	uint16_t mlcontrol;
 	uint16_t presence_bm;
 
@@ -4089,17 +4109,43 @@ util_parse_rv_multi_link_ctrl(uint8_t *mlieseqpayload,
 	mlcontrol = qdf_le16_to_cpu(mlcontrol);
 	parsed_payload_len += WLAN_ML_CTRL_SIZE;
 
+	if (mlieseqpayloadlen <
+			(parsed_payload_len + WLAN_ML_RV_CINFO_LENGTH_SIZE)) {
+		mlo_err_rl("ML rv seq payload len %zu insufficient for common info length size %u after parsed payload len %zu.",
+			   mlieseqpayloadlen,
+			   WLAN_ML_RV_CINFO_LENGTH_SIZE,
+			   parsed_payload_len);
+		return QDF_STATUS_E_PROTO;
+	}
+
+	rv_cinfo_len = *(mlieseqpayload + parsed_payload_len);
+	parsed_payload_len += WLAN_ML_RV_CINFO_LENGTH_SIZE;
+
 	presence_bm = QDF_GET_BITS(mlcontrol, WLAN_ML_CTRL_PBM_IDX,
 				   WLAN_ML_CTRL_PBM_BITS);
 
 	/* Check if MLD MAC address is present */
 	if (presence_bm & WLAN_ML_RV_CTRL_PBM_MLDMACADDR_P) {
+		/* Check if the value indicated in the Common Info Length
+		 * subfield is sufficient to access the MLD MAC address.
+		 * Note: In D3.0, MLD MAC address will not be present
+		 * in ML Reconfig IE. But for code completeness, we
+		 * should have below code to sanity check.
+		 */
+		if (rv_cinfo_len < (WLAN_ML_RV_CINFO_LENGTH_SIZE +
+				    QDF_MAC_ADDR_SIZE)) {
+			mlo_err_rl("ML rv Common Info Length %zu insufficient to access MLD MAC addr size %u.",
+				   rv_cinfo_len,
+				   QDF_MAC_ADDR_SIZE);
+			return QDF_STATUS_E_PROTO;
+		}
+
 		if (mlieseqpayloadlen <
 				(parsed_payload_len +
 				 QDF_MAC_ADDR_SIZE)) {
-			mlo_err_rl("ML seq payload len %zu insufficient for MLD ID size %u after parsed payload len %zu.",
+			mlo_err_rl("ML seq payload len %zu insufficient for MLD MAC size %u after parsed payload len %zu.",
 				   mlieseqpayloadlen,
-				   WLAN_ML_PRV_CINFO_MLDID_SIZE,
+				   QDF_MAC_ADDR_SIZE,
 				   parsed_payload_len);
 			return QDF_STATUS_E_PROTO;
 		}
@@ -4107,10 +4153,31 @@ util_parse_rv_multi_link_ctrl(uint8_t *mlieseqpayload,
 		parsed_payload_len += QDF_MAC_ADDR_SIZE;
 	}
 
+	/* At present, we only handle MAC address field in common info field.
+	 * To be compatible with future spec updating, if new items are added
+	 * to common info, below log will highlight the spec change.
+	 */
+	if (rv_cinfo_len != (parsed_payload_len - WLAN_ML_CTRL_SIZE))
+		mlo_debug_rl("ML rv seq common info len %zu doesn't match with expected common info len %zu",
+			     rv_cinfo_len,
+			     parsed_payload_len - WLAN_ML_CTRL_SIZE);
+
+	if (mlieseqpayloadlen < (WLAN_ML_CTRL_SIZE + rv_cinfo_len)) {
+		mlo_err_rl("ML seq payload len %zu insufficient for rv link info after parsed mutli-link control %u and indicated Common Info length %zu",
+			   mlieseqpayloadlen,
+			   WLAN_ML_CTRL_SIZE,
+			   rv_cinfo_len);
+		return QDF_STATUS_E_PROTO;
+	}
+	/* Update parsed_payload_len to reflect the actual bytes in common info
+	 * field to be compatible with future spec updating.
+	 */
+	parsed_payload_len = WLAN_ML_CTRL_SIZE + rv_cinfo_len;
+
 	if (link_info_len) {
 		*link_info_len = mlieseqpayloadlen - parsed_payload_len;
-		mlo_debug("link_info_len:%zu, parsed_payload_len:%zu",
-			  *link_info_len, parsed_payload_len);
+		mlo_debug("link_info_len:%zu, parsed_payload_len:%zu, rv_cinfo_len %zu ",
+			  *link_info_len, parsed_payload_len, rv_cinfo_len);
 	}
 
 	if (mlieseqpayloadlen == parsed_payload_len) {
@@ -4133,10 +4200,11 @@ util_parse_rvmlie_perstaprofile_stactrl(uint8_t *subelempayload,
 					uint8_t *linkid,
 					bool *is_macaddr_valid,
 					struct qdf_mac_addr *macaddr,
-					bool *is_delete_timer_valid,
-					uint16_t *delete_timer)
+					bool *is_ap_removal_timer_valid,
+					uint16_t *ap_removal_timer)
 {
-	qdf_size_t parsed_payload_len = 0;
+	qdf_size_t parsed_payload_len = 0, sta_info_len;
+	qdf_size_t parsed_sta_info_len;
 	uint16_t stacontrol;
 	uint8_t completeprofile;
 
@@ -4189,11 +4257,29 @@ util_parse_rvmlie_perstaprofile_stactrl(uint8_t *subelempayload,
 
 	if (is_macaddr_valid)
 		*is_macaddr_valid = false;
+	if (subelempayloadlen < parsed_payload_len +
+		WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_LENGTH_SIZE) {
+		mlo_err_rl("Length of subelement payload %zu octets not sufficient for sta info length of size %u octets after parsed payload length of %zu octets.",
+			   subelempayloadlen, WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_LENGTH_SIZE,
+			   parsed_payload_len);
+		return QDF_STATUS_E_PROTO;
+	}
+
+	sta_info_len = *(subelempayload + parsed_payload_len);
+	parsed_payload_len += WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_LENGTH_SIZE;
+	parsed_sta_info_len = WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_LENGTH_SIZE;
 
 	/* Check STA MAC address present bit */
 	if (QDF_GET_BITS(stacontrol,
-			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_MACADDRP_IDX,
-			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_MACADDRP_BITS)) {
+			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_STAMACADDRP_IDX,
+			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_STAMACADDRP_BITS)) {
+		if (sta_info_len < (parsed_sta_info_len + QDF_MAC_ADDR_SIZE)) {
+			mlo_err_rl("Length of sta info len %zu octets not sufficient to contain MAC address of size %u octets after parsed sta info length of %zu octets.",
+				   sta_info_len, QDF_MAC_ADDR_SIZE,
+				   parsed_sta_info_len);
+			return QDF_STATUS_E_PROTO;
+		}
+
 		if (subelempayloadlen <
 				(parsed_payload_len + QDF_MAC_ADDR_SIZE)) {
 			mlo_err_rl("Length of subelement payload %zu octets not sufficient to contain MAC address of size %u octets after parsed payload length of %zu octets.",
@@ -4214,33 +4300,56 @@ util_parse_rvmlie_perstaprofile_stactrl(uint8_t *subelempayload,
 		}
 
 		parsed_payload_len += QDF_MAC_ADDR_SIZE;
+		parsed_sta_info_len += QDF_MAC_ADDR_SIZE;
 	}
 
-	/* Check Delete timer present bit */
+	/* Check AP Removal timer present bit */
 	if (QDF_GET_BITS(stacontrol,
-			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_DELTIMERP_IDX,
-			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_DELTIMERP_BITS)) {
+			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_APREMOVALTIMERP_IDX,
+			 WLAN_ML_RV_LINFO_PERSTAPROF_STACTRL_APREMOVALTIMERP_BITS)) {
+		if (sta_info_len <
+				(parsed_sta_info_len +
+				 WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE)) {
+			mlo_err_rl("Length of sta info len %zu octets not sufficient to contain AP removal timer of size %u octets after parsed sta info length of %zu octets.",
+				   sta_info_len, WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE,
+				   parsed_sta_info_len);
+			return QDF_STATUS_E_PROTO;
+		}
+
 		if (subelempayloadlen <
 				(parsed_payload_len +
-				 WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_DELTIMER_SIZE)) {
-			mlo_err_rl("Length of subelement payload %zu octets not sufficient to contain Delete timer of size %u octets after parsed payload length of %zu octets.",
+				 WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE)) {
+			mlo_err_rl("Length of subelement payload %zu octets not sufficient to contain AP removal timer of size %u octets after parsed payload length of %zu octets.",
 				   subelempayloadlen,
-				   WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_DELTIMER_SIZE,
+				   WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE,
 				   parsed_payload_len);
 			return QDF_STATUS_E_PROTO;
 		}
 
-		if (delete_timer) {
-			qdf_mem_copy(delete_timer,
+		if (ap_removal_timer) {
+			qdf_mem_copy(ap_removal_timer,
 				     subelempayload + parsed_payload_len,
-				     WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_DELTIMER_SIZE);
+				     WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE);
 
-			if (is_delete_timer_valid)
-				*is_delete_timer_valid = true;
+			if (is_ap_removal_timer_valid)
+				*is_ap_removal_timer_valid = true;
 		}
 
-		parsed_payload_len += WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_DELTIMER_SIZE;
+		parsed_payload_len +=
+			WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE;
+		parsed_sta_info_len += WLAN_ML_RV_LINFO_PERSTAPROF_STAINFO_APREMOVALTIMER_SIZE;
 	}
+	/* At present, we only handle link MAC address field and ap removal
+	 * timer tbtt field parsing. To be compatible with future spec
+	 * updating, if new items are added to sta info, below log will
+	 * highlight the spec change.
+	 */
+	if (sta_info_len != (parsed_payload_len -
+			     WLAN_ML_BV_LINFO_PERSTAPROF_STACTRL_SIZE))
+		mlo_debug_rl("Length of sta info len %zu octets not match parsed payload length of %zu octets.",
+			     sta_info_len,
+			     parsed_payload_len -
+			     WLAN_ML_BV_LINFO_PERSTAPROF_STACTRL_SIZE);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -4261,8 +4370,8 @@ util_parse_rv_info_from_linkinfo(uint8_t *linkinfo,
 	QDF_STATUS ret;
 	struct qdf_mac_addr mac_addr;
 	bool is_macaddr_valid;
-	bool is_delete_timer_valid;
-	uint16_t delete_timer;
+	bool is_ap_removal_timer_valid;
+	uint16_t ap_removal_timer;
 
 	/* This helper function parses probe request info from the per-STA prof
 	 * present (if any) in the Link Info field in the payload of a Multi
@@ -4368,32 +4477,37 @@ util_parse_rv_info_from_linkinfo(uint8_t *linkinfo,
 		}
 
 		if (subelemid == WLAN_ML_LINFO_SUBELEMID_PERSTAPROFILE) {
+			struct ml_rv_partner_link_info *link_info;
 			is_macaddr_valid = false;
-			is_delete_timer_valid = false;
+			is_ap_removal_timer_valid = false;
 			ret = util_parse_rvmlie_perstaprofile_stactrl(linkinfo_currpos +
 								      sizeof(struct subelem_header),
 								      subelemseqpayloadlen,
 								      &linkid,
 								      &is_macaddr_valid,
 								      &mac_addr,
-								      &is_delete_timer_valid,
-								      &delete_timer);
+								      &is_ap_removal_timer_valid,
+								      &ap_removal_timer);
 			if (QDF_IS_STATUS_ERROR(ret))
 				return ret;
+			link_info =
+			&reconfig_info->link_info[reconfig_info->num_links];
+			link_info->link_id = linkid;
+			link_info->is_ap_removal_timer_p = is_ap_removal_timer_valid;
+			if (is_macaddr_valid)
+				qdf_copy_macaddr(&link_info->link_mac_addr,
+						 &mac_addr);
 
-			reconfig_info->link_info[reconfig_info->num_links].link_id = linkid;
-			reconfig_info->link_info[reconfig_info->num_links].is_delete_timer_p = is_delete_timer_valid;
-
-			if (is_delete_timer_valid)
-				reconfig_info->link_info[reconfig_info->num_links].delete_timer = delete_timer;
+			if (is_ap_removal_timer_valid)
+				link_info->ap_removal_timer = ap_removal_timer;
 			else
 				mlo_warn_rl("Delete timer not found in STA Info field of per-STA profile with link ID %u",
 					    linkid);
 
-			mlo_debug("Per-STA Profile Link ID: %u Delete timer present: %d Delete timer: %u",
-				  reconfig_info->link_info[reconfig_info->num_links].link_id,
-				  reconfig_info->link_info[reconfig_info->num_links].is_delete_timer_p,
-				  reconfig_info->link_info[reconfig_info->num_links].delete_timer);
+			mlo_debug("Per-STA Profile Link ID: %u AP removal timer present: %d AP removal timer: %u",
+				  link_info->link_id,
+				  link_info->is_ap_removal_timer_p,
+				  link_info->ap_removal_timer);
 
 			reconfig_info->num_links++;
 		}
@@ -4569,4 +4683,123 @@ QDF_STATUS util_get_rvmlie_persta_link_info(uint8_t *mlieseq,
 	return QDF_STATUS_SUCCESS;
 }
 
+#endif
+
+#ifdef WLAN_FEATURE_11BE
+
+QDF_STATUS util_add_bw_ind(struct wlan_ie_bw_ind *bw_ind, uint8_t ccfs0,
+			   uint8_t ccfs1, enum phy_ch_width ch_width,
+			   uint16_t puncture_bitmap, int *bw_ind_len)
+{
+	uint8_t bw_ind_width;
+
+	if (!bw_ind) {
+		mlo_err("Pointer to bandwidth indiaction element is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	if (!bw_ind_len) {
+		mlo_err("Length of bandwidth indaication element is Zero");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	switch (ch_width) {
+	case CH_WIDTH_20MHZ:
+		bw_ind_width = IEEE80211_11BEOP_CHWIDTH_20;
+		break;
+	case CH_WIDTH_40MHZ:
+		bw_ind_width = IEEE80211_11BEOP_CHWIDTH_40;
+		break;
+	case CH_WIDTH_80MHZ:
+		bw_ind_width = IEEE80211_11BEOP_CHWIDTH_80;
+		break;
+	case CH_WIDTH_160MHZ:
+		bw_ind_width = IEEE80211_11BEOP_CHWIDTH_160;
+		break;
+	case CH_WIDTH_320MHZ:
+		bw_ind_width = IEEE80211_11BEOP_CHWIDTH_320;
+		break;
+	default:
+		bw_ind_width = IEEE80211_11BEOP_CHWIDTH_20;
+	}
+
+	bw_ind->elem_id = WLAN_ELEMID_EXTN_ELEM;
+	*bw_ind_len = WLAN_BW_IND_IE_MAX_LEN;
+	bw_ind->elem_len = WLAN_BW_IND_IE_MAX_LEN - WLAN_IE_HDR_LEN;
+	bw_ind->elem_id_extn = WLAN_EXTN_ELEMID_BW_IND;
+	bw_ind->ccfs0 = ccfs0;
+	bw_ind->ccfs1 = ccfs1;
+	QDF_SET_BITS(bw_ind->control, BW_IND_CHAN_WIDTH_IDX,
+		     BW_IND_CHAN_WIDTH_BITS, bw_ind_width);
+
+	if (puncture_bitmap) {
+		bw_ind->disabled_sub_chan_bitmap[0] =
+			QDF_GET_BITS(puncture_bitmap, 0, 8);
+		bw_ind->disabled_sub_chan_bitmap[1] =
+			QDF_GET_BITS(puncture_bitmap, 8, 8);
+		QDF_SET_BITS(bw_ind->bw_ind_param,
+			     BW_IND_PARAM_DISABLED_SC_BITMAP_PRESENT_IDX,
+			     BW_IND_PARAM_DISABLED_SC_BITMAP_PRESENT_BITS, 1);
+	} else {
+		QDF_SET_BITS(bw_ind->bw_ind_param,
+			     BW_IND_PARAM_DISABLED_SC_BITMAP_PRESENT_IDX,
+			     BW_IND_PARAM_DISABLED_SC_BITMAP_PRESENT_BITS, 0);
+		bw_ind->elem_len -=
+			QDF_ARRAY_SIZE(bw_ind->disabled_sub_chan_bitmap);
+		*bw_ind_len -=
+			QDF_ARRAY_SIZE(bw_ind->disabled_sub_chan_bitmap);
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS util_parse_bw_ind(struct wlan_ie_bw_ind *bw_ind, uint8_t *ccfs0,
+			     uint8_t *ccfs1, enum phy_ch_width *ch_width,
+			     uint16_t *puncture_bitmap)
+{
+	uint8_t bw_ind_width;
+
+	if (!bw_ind) {
+		mlo_err("Pointer to bandwidth indiaction element is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	*ccfs0 = bw_ind->ccfs0;
+	*ccfs1 = bw_ind->ccfs1;
+	bw_ind_width = QDF_GET_BITS(bw_ind->control, BW_IND_CHAN_WIDTH_IDX,
+				    BW_IND_CHAN_WIDTH_BITS);
+
+	switch (bw_ind_width) {
+	case IEEE80211_11BEOP_CHWIDTH_20:
+		*ch_width = CH_WIDTH_20MHZ;
+		break;
+	case IEEE80211_11BEOP_CHWIDTH_40:
+		*ch_width = CH_WIDTH_40MHZ;
+		break;
+	case IEEE80211_11BEOP_CHWIDTH_80:
+		*ch_width = CH_WIDTH_80MHZ;
+		break;
+	case IEEE80211_11BEOP_CHWIDTH_160:
+		*ch_width = CH_WIDTH_160MHZ;
+		break;
+	case IEEE80211_11BEOP_CHWIDTH_320:
+		*ch_width = CH_WIDTH_320MHZ;
+		break;
+	default:
+		*ch_width = CH_WIDTH_20MHZ;
+	}
+
+	if (QDF_GET_BITS(bw_ind->bw_ind_param,
+			 BW_IND_PARAM_DISABLED_SC_BITMAP_PRESENT_IDX,
+			 BW_IND_PARAM_DISABLED_SC_BITMAP_PRESENT_BITS)) {
+		QDF_SET_BITS(*puncture_bitmap, 0, 8,
+			     bw_ind->disabled_sub_chan_bitmap[0]);
+		QDF_SET_BITS(*puncture_bitmap, 8, 8,
+			     bw_ind->disabled_sub_chan_bitmap[1]);
+	} else {
+		*puncture_bitmap = 0;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
 #endif

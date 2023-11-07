@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -631,6 +631,7 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 	uint8_t *bcn_ie = NULL;
 	uint32_t bcn_ie_len = 0;
 	uint8_t *p_ext_cap = NULL;
+	enum rateid min_rid = RATEID_DEFAULT;
 
 	if (!pe_session)
 		return;
@@ -928,12 +929,16 @@ void lim_send_reassoc_req_mgmt_frame(struct mac_context *mac,
 	lim_diag_mgmt_tx_event_report(mac, pMacHdr,
 				      pe_session, QDF_STATUS_SUCCESS,
 				      QDF_STATUS_SUCCESS);
+
+	if (pe_session->is_oui_auth_assoc_6mbps_2ghz_enable)
+		min_rid = RATEID_6MBPS;
+
 	qdf_status =
 		wma_tx_frame(mac, pPacket,
 			   (uint16_t) (sizeof(tSirMacMgmtHdr) + nPayload),
 			   TXRX_FRM_802_11_MGMT, ANI_TXDIR_TODS, 7,
 			   lim_tx_complete, pFrame, txFlag, smeSessionId, 0,
-			   RATEID_DEFAULT, 0);
+			   min_rid, 0);
 	MTRACE(qdf_trace
 		       (QDF_MODULE_ID_PE, TRACE_CODE_TX_COMPLETE,
 		       pe_session->peSessionId, qdf_status));

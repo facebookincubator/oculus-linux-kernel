@@ -7,6 +7,7 @@
 #define MSM_CVP_DSP_H
 
 #include <linux/types.h>
+#include <linux/refcount.h>
 #include "msm_cvp_debug.h"
 #include "cvp_core_hfi.h"
 
@@ -181,6 +182,7 @@ struct cvp_dsp_fastrpc_driver_entry {
 	uint32_t handle;
 	uint32_t session_cnt;
 	uint32_t driver_name_idx;
+	atomic_t refcount;
 	struct fastrpc_driver cvp_fastrpc_driver;
 	struct fastrpc_device *cvp_fastrpc_device;
 	struct completion fastrpc_probe_completion;

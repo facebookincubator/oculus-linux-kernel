@@ -131,6 +131,8 @@ dp_rx_mon_populate_cfr_ppdu_info(struct dp_pdev *pdev,
 	cdp_rx_ppdu->peer_id = peer->peer_id;
 	cdp_rx_ppdu->vdev_id = peer->vdev->vdev_id;
 	cdp_rx_ppdu->num_users = num_users;
+
+	dp_peer_unref_delete(peer, DP_MOD_ID_RX_PPDU_STATS);
 }
 
 bool

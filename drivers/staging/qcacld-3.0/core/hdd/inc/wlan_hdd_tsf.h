@@ -394,6 +394,16 @@ void hdd_capture_req_timer_expired_handler(void *arg);
 bool hdd_tsf_is_tsf64_tx_set(struct hdd_context *hdd);
 
 /**
+ * hdd_tsf_is_time_sync_enabled_cfg() - check ini configuration
+ * @hdd_ctx: pointer to hdd context
+ *
+ * This function checks tsf configuration for ptp for tsf
+ * sync period
+ * Return: true on enable, false on disable
+ */
+bool hdd_tsf_is_time_sync_enabled_cfg(struct hdd_context *hdd_ctx);
+
+/**
  * hdd_update_dynamic_tsf_sync - Configure TSF mode for vdev
  * @adapter: pointer to hdd adapter
  *
@@ -447,6 +457,12 @@ static inline
 bool hdd_tsf_is_tsf64_tx_set(struct hdd_context *hdd)
 {
 	return FALSE;
+}
+
+static inline
+bool hdd_tsf_is_time_sync_enabled_cfg(struct hdd_context *hdd_ctx)
+{
+	return false;
 }
 
 static inline

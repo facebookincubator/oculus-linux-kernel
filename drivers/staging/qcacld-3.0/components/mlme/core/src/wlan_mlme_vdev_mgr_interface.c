@@ -467,19 +467,11 @@ static QDF_STATUS ap_mlme_vdev_up_send(struct vdev_mlme_obj *vdev_mlme,
 }
 
 #ifdef WLAN_FEATURE_11BE_MLO
-void wlan_handle_emlsr_sta_concurrency(struct wlan_objmgr_vdev *vdev,
-				       bool ap_coming_up, bool sta_coming_up,
+void wlan_handle_emlsr_sta_concurrency(struct wlan_objmgr_psoc *psoc,
+				       bool conc_con_coming_up,
 				       bool emlsr_sta_coming_up)
 {
-	struct wlan_objmgr_psoc *psoc = wlan_vdev_get_psoc(vdev);
-
-	if (!psoc) {
-		mlme_legacy_debug("psoc Null");
-		return;
-	}
-
-	policy_mgr_handle_emlsr_sta_concurrency(psoc, vdev, ap_coming_up,
-						sta_coming_up,
+	policy_mgr_handle_emlsr_sta_concurrency(psoc, conc_con_coming_up,
 						emlsr_sta_coming_up);
 }
 #endif
@@ -1400,6 +1392,7 @@ QDF_STATUS vdevmgr_mlme_ext_hdl_create(struct vdev_mlme_obj *vdev_mlme)
 		return QDF_STATUS_E_NOMEM;
 
 	mlme_init_rate_config(vdev_mlme);
+	mlme_init_connect_chan_info_config(vdev_mlme);
 	vdev_mlme->ext_vdev_ptr->connect_info.fils_con_info = NULL;
 	mlme_init_wait_for_key_timer(vdev_mlme->vdev,
 				     &vdev_mlme->ext_vdev_ptr->wait_key_timer);
@@ -1668,6 +1661,47 @@ vdevmgr_vdev_stop_rsp_handle(struct vdev_mlme_obj *vdev_mlme,
 	mlme_legacy_debug("vdev id = %d ",
 			  vdev_mlme->vdev->vdev_objmgr.vdev_id);
 	return wma_vdev_stop_resp_handler(vdev_mlme, rsp);
+}
+
+/**
+ * psoc_mlme_ext_hdl_enable() - to enable mlme ext param handler
+ * @psoc: psoc object
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS psoc_mlme_ext_hdl_enable(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	mlme_obj->scan_requester_id =
+		wlan_scan_register_requester(psoc, "MLME_EXT",
+					     wlan_mlme_chan_stats_scan_event_cb,
+					     NULL);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * psoc_mlme_ext_hdl_disable() - to disable mlme ext param handler
+ * @psoc: psoc object
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS psoc_mlme_ext_hdl_disable(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return QDF_STATUS_E_FAILURE;
+
+	wlan_scan_unregister_requester(psoc, mlme_obj->scan_requester_id);
+
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -2075,6 +2109,8 @@ static struct mlme_ext_ops ext_ops = {
 	.mlme_cm_ext_vdev_down_req_cb = cm_send_vdev_down_req,
 	.mlme_cm_ext_reassoc_req_cb = cm_handle_reassoc_req,
 	.mlme_cm_ext_roam_start_ind_cb = cm_handle_roam_start,
+	.mlme_psoc_ext_hdl_enable = psoc_mlme_ext_hdl_enable,
+	.mlme_psoc_ext_hdl_disable = psoc_mlme_ext_hdl_disable,
 #ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
 	.mlme_vdev_send_set_mac_addr = vdevmgr_mlme_vdev_send_set_mac_addr,
 #endif

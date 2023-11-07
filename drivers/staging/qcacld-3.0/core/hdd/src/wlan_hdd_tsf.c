@@ -318,6 +318,17 @@ bool hdd_tsf_is_tsf64_tx_set(struct hdd_context *hdd)
 		return false;
 }
 
+bool hdd_tsf_is_time_sync_enabled_cfg(struct hdd_context *hdd_ctx)
+{
+	uint32_t tsf_ptp_options;
+
+	if (hdd_ctx && QDF_IS_STATUS_SUCCESS(
+	    ucfg_fwol_get_tsf_ptp_options(hdd_ctx->psoc, &tsf_ptp_options)))
+		return tsf_ptp_options & CFG_SET_TSF_PTP_SYNC_PERIOD;
+	else
+		return false;
+}
+
 static bool hdd_is_tsf_sync_enabled(struct hdd_context *hdd)
 {
 	bool is_tsf_sync_enable;
@@ -2258,6 +2269,9 @@ static int hdd_handle_tsf_dynamic_start(struct hdd_adapter *adapter,
 
 	tsf->dynamic_tsf_sync_interval = dynamic_tsf_sync_interval;
 	tsf->enable_dynamic_tsf_sync = true;
+	if (hdd_tsf_is_time_sync_enabled_cfg(hdd_ctx))
+		pld_set_tsf_sync_period(hdd_ctx->parent_dev,
+					dynamic_tsf_sync_interval);
 
 	return hdd_start_tsf_sync(adapter);
 }
@@ -2286,6 +2300,9 @@ static int hdd_handle_tsf_dynamic_stop(struct hdd_adapter *adapter)
 
 	adapter->tsf.enable_dynamic_tsf_sync = false;
 	adapter->tsf.dynamic_tsf_sync_interval = 0;
+	if (hdd_tsf_is_time_sync_enabled_cfg(hdd_ctx))
+		pld_reset_tsf_sync_period(hdd_ctx->parent_dev);
+
 	return hdd_stop_tsf_sync(adapter);
 }
 

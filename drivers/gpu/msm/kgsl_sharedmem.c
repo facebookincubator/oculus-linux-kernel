@@ -675,26 +675,8 @@ static int kgsl_paged_map_kernel(struct kgsl_memdesc *memdesc)
 
 	mutex_lock(&kernel_map_global_lock);
 	if ((!memdesc->hostptr) && (memdesc->pages != NULL)) {
-		pgprot_t page_prot;
-		u64 cache;
 
-		/* Determine user-side caching policy */
-		cache = kgsl_memdesc_get_cachemode(memdesc);
-		switch (cache) {
-		case KGSL_CACHEMODE_WRITETHROUGH:
-			page_prot = PAGE_KERNEL;
-			WARN_ONCE(1, "WRITETHROUGH is deprecated for arm64");
-			break;
-		case KGSL_CACHEMODE_WRITEBACK:
-			page_prot = PAGE_KERNEL;
-			break;
-		case KGSL_CACHEMODE_UNCACHED:
-		case KGSL_CACHEMODE_WRITECOMBINE:
-		default:
-			page_prot = pgprot_writecombine(PAGE_KERNEL);
-			break;
-		}
-
+		pgprot_t page_prot = kgsl_pgprot_modify(memdesc, PAGE_KERNEL);
 		memdesc->hostptr = vmap(memdesc->pages, memdesc->page_count,
 					VM_IOREMAP, page_prot);
 		if (memdesc->hostptr)

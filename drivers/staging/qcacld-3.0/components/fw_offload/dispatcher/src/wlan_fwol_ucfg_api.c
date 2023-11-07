@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -319,6 +319,21 @@ QDF_STATUS ucfg_fwol_get_ani_enabled(struct wlan_objmgr_psoc *psoc,
 	}
 
 	*ani_enabled = fwol_obj->cfg.ani_enabled;
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS ucfg_fwol_get_pcie_config(struct wlan_objmgr_psoc *psoc,
+				     bool *pcie_config)
+{
+	struct wlan_fwol_psoc_obj *fwol_obj;
+
+	fwol_obj = fwol_get_psoc_obj(psoc);
+	if (!fwol_obj) {
+		fwol_err("Failed to get FWOL obj");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	*pcie_config = fwol_obj->cfg.pcie_config;
 	return QDF_STATUS_SUCCESS;
 }
 

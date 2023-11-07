@@ -2016,10 +2016,13 @@ QDF_STATUS wlansap_channel_change_request(struct sap_context *sap_ctx,
 		  sap_ctx->chan_freq, phy_mode, ch_params->ch_width,
 		  ch_params->sec_ch_offset, ch_params->center_freq_seg0,
 		  ch_params->center_freq_seg1);
-	policy_mgr_update_indoor_concurrency(mac_ctx->psoc,
-					     wlan_vdev_get_id(sap_ctx->vdev),
-					     sap_ctx->freq_before_ch_switch,
-					     DISCONNECT_WITH_CONCURRENCY);
+	if (policy_mgr_update_indoor_concurrency(mac_ctx->psoc,
+						wlan_vdev_get_id(sap_ctx->vdev),
+						sap_ctx->freq_before_ch_switch,
+						DISCONNECT_WITH_CONCURRENCY))
+		wlan_reg_recompute_current_chan_list(mac_ctx->psoc,
+						     mac_ctx->pdev);
+
 	return status;
 }
 

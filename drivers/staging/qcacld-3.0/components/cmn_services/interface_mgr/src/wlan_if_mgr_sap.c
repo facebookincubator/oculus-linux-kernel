@@ -51,7 +51,7 @@ QDF_STATUS if_mgr_ap_start_bss(struct wlan_objmgr_vdev *vdev,
 
 	if (wlan_vdev_mlme_get_opmode(vdev) == QDF_SAP_MODE ||
 	    wlan_vdev_mlme_get_opmode(vdev) == QDF_P2P_GO_MODE)
-		wlan_handle_emlsr_sta_concurrency(vdev, true, false, false);
+		wlan_handle_emlsr_sta_concurrency(psoc, true, false);
 
 	if (policy_mgr_is_hw_mode_change_in_progress(psoc)) {
 		if (!QDF_IS_STATUS_SUCCESS(
@@ -140,7 +140,7 @@ if_mgr_ap_stop_bss_complete(struct wlan_objmgr_vdev *vdev,
 
 	if (wlan_vdev_mlme_get_opmode(vdev) == QDF_SAP_MODE ||
 	    wlan_vdev_mlme_get_opmode(vdev) == QDF_P2P_GO_MODE)
-		wlan_handle_emlsr_sta_concurrency(vdev, false, false, true);
+		wlan_handle_emlsr_sta_concurrency(psoc, false, true);
 	/*
 	 * Due to audio share glitch with P2P GO caused by
 	 * roam scan on concurrent interface, disable

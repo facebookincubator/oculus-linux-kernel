@@ -7,7 +7,9 @@ menuconfig OCULUS_MCU
 if OCULUS_MCU
 
 config OCULUS_SWD
-	bool "Oculus MCU SWD Driver"
+	tristate "Oculus MCU SWD Driver"
+	depends on OCULUS_FW_HELPERS
+	default y
 	help
 	  Oculus SWD Driver
 
@@ -20,49 +22,49 @@ config OCULUS_SWD_DEBUG
 
 config OCULUS_SWD_HUBERT
 	bool "Hubert SWD Driver"
-	select OCULUS_SWD
+	depends on OCULUS_SWD
 	default n
 	help
 	  Oculus Hubert SWD Support
 
 config OCULUS_SWD_QM35
 	bool "QM35 SWD Driver"
-	select OCULUS_SWD
+	depends on OCULUS_SWD
 	default n
 	help
 	  Oculus QM35 SWD Support
 
 config OCULUS_SWD_STM32G0
 	bool "STM32G0 SWD Driver"
-	select OCULUS_SWD
+	depends on OCULUS_SWD
 	default n
 	help
 	  Oculus STM32G0 SWD Support
 
 config OCULUS_SWD_SYNCBOSS_NRF52XXX
 	bool "Syncboss SWD Driver for NRF52XXX"
-	select OCULUS_SWD
+	depends on OCULUS_SWD
 	default y
 	help
 	  Oculus Syncboss SWD Support
 
 config OCULUS_SWD_SYNCBOSS_NRF5340
 	bool "Syncboss SWD Driver for NRF5340"
-	select OCULUS_SWD
+	depends on OCULUS_SWD
 	default n
 	help
 	  Oculus Syncboss SWD Support for NRF5340
 
 config OCULUS_SWD_STM32L4
 	bool "STM32L4 SWD Driver"
-	select OCULUS_SWD
+	depends on OCULUS_SWD
 	default n
 	help
 	  Oculus STM32L4 SWD Support
 
 config SYNCBOSS
-	bool "Syncboss SPI Driver"
-	depends on MISCFIFO && SPI
+	tristate "Syncboss SPI Driver"
+	depends on MISCFIFO && SPI && OCULUS_FW_HELPERS
 	default y
 	help
 	  Oculus Syncboss Driver
@@ -73,4 +75,11 @@ config SYNCBOSS_DEBUG
 	default y
 	help
 	  Oculus Syncboss SPI Driver Debug Facilities
+
+config OCULUS_FW_HELPERS
+	tristate "Oculus MCU Helper Utilities"
+	default y
+	help
+	  Utility functions commonly used by MCU drivers
+
 endif # OCULUS_MCU

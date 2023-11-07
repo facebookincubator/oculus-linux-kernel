@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -211,6 +211,10 @@ static void wma_convert_eht_cap(tDot11fIEeht_cap *eht_cap, uint32_t *mac_cap,
 			WMI_EHTCAP_MAC_TRS_SUPPORT_GET(mac_cap);
 	eht_cap->txop_return_support_txop_share_m2 =
 			WMI_EHTCAP_MAC_TXOP_RETURN_SUPP_IN_SHARINGMODE2_GET(mac_cap);
+	eht_cap->two_bqrs_support =
+			WMI_EHTCAP_MAC_TWO_BQRS_SUPP_GET(mac_cap);
+	eht_cap->eht_link_adaptation_support =
+			WMI_EHTCAP_MAC_EHT_LINK_ADAPTATION_SUPP_GET(mac_cap);
 
 	/* EHT PHY capabilities */
 	eht_cap->support_320mhz_6ghz = WMI_EHTCAP_PHY_320MHZIN6GHZ_GET(phy_cap);
@@ -278,6 +282,12 @@ static void wma_convert_eht_cap(tDot11fIEeht_cap *eht_cap, uint32_t *mac_cap,
 			WMI_EHTCAP_PHY_RX1024QAMWIDERBWDLOFDMA_GET(phy_cap);
 	eht_cap->rx_4k_qam_in_wider_bw_dl_ofdma =
 			WMI_EHTCAP_PHY_RX4096QAMWIDERBWDLOFDMA_GET(phy_cap);
+	eht_cap->limited_cap_support_20mhz =
+			WMI_EHTCAP_PHY_20MHZ_ONLY_CAPS_GET(phy_cap);
+	eht_cap->triggered_mu_bf_full_bw_fb_and_dl_mumimo =
+			WMI_EHTCAP_PHY_20MHZ_ONLY_TRIGGER_MUBF_FULL_BW_FB_AND_DLMUMIMO_GET(phy_cap);
+	eht_cap->mru_support_20mhz =
+			WMI_EHTCAP_PHY_20MHZ_ONLY_MRU_SUPP_GET(phy_cap);
 
 	/* TODO: MCS map and PPET */
 }
@@ -310,7 +320,10 @@ wma_update_eht_cap_support_for_320mhz(struct target_psoc_info *tgt_hdl,
 
 	eht_cap->support_320mhz_6ghz = WMI_EHTCAP_PHY_320MHZIN6GHZ_GET(
 			cap->eht_cap_phy_info_5G);
-	wma_debug("Support for 320MHz 0x%01x", eht_cap->support_320mhz_6ghz);
+	eht_cap->max_num_eht_ltf =
+		     WMI_EHTCAP_PHY_MAXNUMEHTLTF_GET(cap->eht_cap_phy_info_5G);
+	wma_debug("Support for 320MHz 0x%01x, max_num_eht_ltf %d",
+		  eht_cap->support_320mhz_6ghz, eht_cap->max_num_eht_ltf);
 }
 
 static void
@@ -502,6 +515,10 @@ void wma_print_eht_cap(tDot11fIEeht_cap *eht_cap)
 		       eht_cap->eht_trs_support);
 	wma_nofl_debug("\tTXOP Return Support in TXOP Sharing Mode 2: 0x%01x",
 		       eht_cap->txop_return_support_txop_share_m2);
+	wma_nofl_debug("\tTwo BQRs Support: 0x%01x",
+		       eht_cap->two_bqrs_support);
+	wma_nofl_debug("\tEHT Link Adaptation Support: 0x%01x",
+		       eht_cap->eht_link_adaptation_support);
 
 	/* EHT PHY Capabilities */
 	wma_nofl_debug("\t320 MHz In 6 GHz: 0x%01x",
@@ -583,6 +600,13 @@ void wma_print_eht_cap(tDot11fIEeht_cap *eht_cap)
 		       eht_cap->rx_1k_qam_in_wider_bw_dl_ofdma);
 	wma_nofl_debug("\tRx 4096-QAM in wider bandwidth DL OFDMA support: 0x%01x",
 		       eht_cap->rx_4k_qam_in_wider_bw_dl_ofdma);
+	wma_nofl_debug("\t20 MHz-Only Limited Capabilities Support: 0x%01x",
+		       eht_cap->limited_cap_support_20mhz);
+	wma_nofl_debug("\t20 MHz-Only Triggered MU Beamforming Full BW Feedback And DL MU-MIMO: 0x%01x",
+		       eht_cap->triggered_mu_bf_full_bw_fb_and_dl_mumimo);
+	wma_nofl_debug("\t20 MHz-Only M-RU Support: 0x%01x",
+		       eht_cap->mru_support_20mhz);
+
 	wma_nofl_debug("\t EHT MCS 20 rx 0-7 0x%x",
 		       eht_cap->bw_20_rx_max_nss_for_mcs_0_to_7);
 	wma_nofl_debug("\t EHT MCS 20 tx 0-7 0x%x",
@@ -724,6 +748,12 @@ void wma_print_eht_phy_cap(uint32_t *phy_cap)
 		       WMI_EHTCAP_PHY_RX1024QAMWIDERBWDLOFDMA_GET(phy_cap));
 	wma_nofl_debug("\tRx 4096-QAM in wider bandwidth DL OFDMA support: 0x%01x",
 		       WMI_EHTCAP_PHY_RX4096QAMWIDERBWDLOFDMA_GET(phy_cap));
+	wma_nofl_debug("\t20 MHz-Only Limited Capabilities Support: 0x%01x",
+		       WMI_EHTCAP_PHY_20MHZ_ONLY_CAPS_GET(phy_cap));
+	wma_nofl_debug("\t20 MHz-Only Triggered MU Beamforming Full BW Feedback And DL MU-MIMO: 0x%01x",
+		       WMI_EHTCAP_PHY_20MHZ_ONLY_TRIGGER_MUBF_FULL_BW_FB_AND_DLMUMIMO_GET(phy_cap));
+	wma_nofl_debug("\t20 MHz-Only M-RU Support: 0x%01x",
+		       WMI_EHTCAP_PHY_20MHZ_ONLY_MRU_SUPP_GET(phy_cap));
 }
 
 void wma_print_eht_mac_cap(uint32_t *mac_cap)
@@ -744,6 +774,16 @@ void wma_print_eht_mac_cap(uint32_t *mac_cap)
 		       WMI_EHTCAP_MAC_SCSTRAFFICDESC_GET(mac_cap));
 	wma_nofl_debug("\tMaximum MPDU Length: 0x%01x",
 		       WMI_EHTCAP_MAC_MAXMPDULEN_GET(mac_cap));
+	wma_nofl_debug("\tMaximum A-MPDU Length Exponent Extension: 0x%01x",
+		       WMI_EHTCAP_MAC_MAXAMPDULEN_EXP_GET(mac_cap));
+	wma_nofl_debug("\tEHT TRS Support: 0x%01x",
+		       WMI_EHTCAP_MAC_TRS_SUPPORT_GET(mac_cap));
+	wma_nofl_debug("\tOP Return Support In TXOP Sharing Mode 2: 0x%01x",
+		       WMI_EHTCAP_MAC_TXOP_RETURN_SUPP_IN_SHARINGMODE2_GET(mac_cap));
+	wma_nofl_debug("\tTwo BQRs Support: 0x%01x",
+		       WMI_EHTCAP_MAC_TWO_BQRS_SUPP_GET(mac_cap));
+	wma_nofl_debug("\tEHT Link Adaptation Support: 0x%01x",
+		       WMI_EHTCAP_MAC_EHT_LINK_ADAPTATION_SUPP_GET(mac_cap));
 }
 
 void wma_print_eht_op(tDot11fIEeht_op *eht_ops)
@@ -783,6 +823,10 @@ void wma_populate_peer_eht_cap(struct peer_assoc_params *peer,
 				       eht_cap->eht_trs_support);
 	WMI_EHTCAP_MAC_TXOP_RETURN_SUPP_IN_SHARINGMODE2_SET(mac_cap,
 				eht_cap->txop_return_support_txop_share_m2);
+	WMI_EHTCAP_MAC_TWO_BQRS_SUPP_SET(mac_cap,
+				eht_cap->two_bqrs_support);
+	WMI_EHTCAP_MAC_EHT_LINK_ADAPTATION_SUPP_SET(mac_cap,
+				eht_cap->eht_link_adaptation_support);
 
 	/* EHT PHY Capabilities */
 	WMI_EHTCAP_PHY_320MHZIN6GHZ_SET(phy_cap, eht_cap->support_320mhz_6ghz);
@@ -847,6 +891,12 @@ void wma_populate_peer_eht_cap(struct peer_assoc_params *peer,
 				eht_cap->rx_1k_qam_in_wider_bw_dl_ofdma);
 	WMI_EHTCAP_PHY_RX4096QAMWIDERBWDLOFDMA_SET(phy_cap,
 				eht_cap->rx_4k_qam_in_wider_bw_dl_ofdma);
+	WMI_EHTCAP_PHY_20MHZ_ONLY_CAPS_SET(phy_cap,
+			eht_cap->limited_cap_support_20mhz);
+	WMI_EHTCAP_PHY_20MHZ_ONLY_TRIGGER_MUBF_FULL_BW_FB_AND_DLMUMIMO_SET(phy_cap,
+			eht_cap->triggered_mu_bf_full_bw_fb_and_dl_mumimo);
+	WMI_EHTCAP_PHY_20MHZ_ONLY_MRU_SUPP_SET(phy_cap,
+			eht_cap->mru_support_20mhz);
 
 	peer->peer_eht_mcs_count = 0;
 	rates = &params->supportedRates;

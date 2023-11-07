@@ -884,7 +884,7 @@ dp_rx_pdev_mon_status_desc_pool_alloc(struct dp_pdev *pdev, uint32_t mac_id)
 
 	dp_debug("Mon RX Desc Pool[%d] entries=%u", pdev_id, num_entries);
 
-	rx_desc_pool->desc_type = DP_RX_DESC_STATUS_TYPE;
+	rx_desc_pool->desc_type = QDF_DP_RX_DESC_STATUS_TYPE;
 	return dp_rx_desc_pool_alloc(soc, num_entries + 1, rx_desc_pool);
 }
 
@@ -1284,18 +1284,18 @@ dp_mon_status_srng_drop_for_mac(struct dp_pdev *pdev, uint32_t mac_id,
 }
 
 uint32_t dp_mon_drop_packets_for_mac(struct dp_pdev *pdev, uint32_t mac_id,
-				     uint32_t quota)
+				     uint32_t quota, bool force_flush)
 {
 	uint32_t work_done;
 
 	work_done = dp_mon_status_srng_drop_for_mac(pdev, mac_id, quota);
-	dp_mon_dest_srng_drop_for_mac(pdev, mac_id);
+	dp_mon_dest_srng_drop_for_mac(pdev, mac_id, force_flush);
 
 	return work_done;
 }
 #else
 uint32_t dp_mon_drop_packets_for_mac(struct dp_pdev *pdev, uint32_t mac_id,
-				     uint32_t quota)
+				     uint32_t quota, bool force_flush)
 {
 	return 0;
 }

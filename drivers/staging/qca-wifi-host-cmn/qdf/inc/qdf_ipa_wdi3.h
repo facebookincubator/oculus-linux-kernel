@@ -564,6 +564,19 @@ static inline int qdf_ipa_wdi_opt_dpath_notify_flt_rlsd_per_inst(
 	return __qdf_ipa_wdi_opt_dpath_notify_flt_rlsd_per_inst(hdl,
 								is_success);
 }
+
+#else
+static inline int qdf_ipa_wdi_opt_dpath_notify_flt_rsvd_per_inst(
+				ipa_wdi_hdl_t hdl, bool is_success)
+{
+	return 0;
+}
+
+static inline int qdf_ipa_wdi_opt_dpath_notify_flt_rlsd_per_inst(
+				ipa_wdi_hdl_t hdl, bool is_success)
+{
+	return 0;
+}
 #endif /* IPA_OPT_WIFI_DP  */
 #endif /* IPA_OFFLOAD */
 #endif /* QDF_IPA_WDI3_H */

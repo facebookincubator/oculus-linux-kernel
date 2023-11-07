@@ -21,7 +21,7 @@ Required properties:
 
 - assigned-clock-rates: rate for the parent in Hz.
 
-- #pwm-cells: shall contain 2.
+- #pwm-cells: shall contain 3.
 
 - pwm@<num> : defines pwm instances.
 
@@ -42,7 +42,7 @@ Example:
 		clock-names = "pdm_ahb_clk", "pwm_core_clk";
 		assigned-clocks = <&gcc GCC_PWM0_XO512_CLK>;
 		assigned-clock-rates = <19200000>;
-		#pwm-cells = <2>;
+		#pwm-cells = <3>;
 
 		pwm@0{
 			frame-index = <0>;

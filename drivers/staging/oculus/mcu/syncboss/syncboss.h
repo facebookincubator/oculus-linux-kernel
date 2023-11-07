@@ -353,14 +353,14 @@ struct syncboss_dev_data {
 	/* True if we should enable the fastpath spi code path */
 	bool use_fastpath;
 
-	/* > 0 if data ready IRQ has fired but had not yet been handled */
-	atomic64_t data_ready_fired_count;
+	/* True if data ready IRQ has fired but has not yet been handled */
+	bool data_ready_fired;
 
-	/* > 0 if data ready IRQ has fired but wake reasons have not yet been queried */
-	u64 data_ready_fired_accum;
-
-	/* True if a wakeup timer has fired but had not yet been handled */
+	/* True if a wakeup timer has fired but has not yet been handled */
 	bool wake_timer_fired;
+
+	/* True if the send timer has fired but has not yet been handled */
+	bool send_timer_fired;
 
 	/*
 	 * True if MCU support IRQ-based transaction. False for

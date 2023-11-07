@@ -172,6 +172,16 @@
 				cooling-device = <&CPU4 15 THERMAL_NO_LIMIT>;
 			};
 
+			pm8450_cpu5_freq {
+				trip = <&pm8450_trip0>;
+				cooling-device = <&CPU5 15 THERMAL_NO_LIMIT>;
+			};
+
+			pm8450_cpu6_freq {
+				trip = <&pm8450_trip0>;
+				cooling-device = <&CPU6 15 THERMAL_NO_LIMIT>;
+			};
+
 			pm8450_cpu7_freq {
 				trip = <&pm8450_trip0>;
 				cooling-device = <&CPU7 15 THERMAL_NO_LIMIT>;
@@ -194,6 +204,16 @@
 			pm8350_cpu4_freq {
 				trip = <&pm8350_trip0>;
 				cooling-device = <&CPU4 15 THERMAL_NO_LIMIT>;
+			};
+
+			pm8350_cpu5_freq {
+				trip = <&pm8350_trip0>;
+				cooling-device = <&CPU5 15 THERMAL_NO_LIMIT>;
+			};
+
+			pm8350_cpu6_freq {
+				trip = <&pm8350_trip0>;
+				cooling-device = <&CPU6 15 THERMAL_NO_LIMIT>;
 			};
 
 			pm8350_cpu7_freq {
@@ -232,6 +252,16 @@
 			cpu4_freq_cdev {
 				trip = <&xo_config0>;
 				cooling-device = <&CPU4 15 THERMAL_NO_LIMIT>;
+			};
+
+			cpu5_freq_cdev {
+				trip = <&xo_config0>;
+				cooling-device = <&CPU5 15 THERMAL_NO_LIMIT>;
+			};
+
+			cpu6_freq_cdev {
+				trip = <&xo_config0>;
+				cooling-device = <&CPU6 15 THERMAL_NO_LIMIT>;
 			};
 
 			cpu7_freq_cdev {

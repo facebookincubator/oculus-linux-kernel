@@ -337,6 +337,7 @@ struct csiphy_work_queue {
  * @skip_aux_settings          : Debugfs flag to ignore calls to update aux settings
  * @preamble_enable            : To enable preamble pattern
  * @is_aggregator_rx           : Is PHY an RX for aggregator
+ * @is_phy_protect             : Is PHY based protection or lane based protection
  */
 struct csiphy_device {
 	char                           device_name[CAM_CTX_DEV_NAME_MAX_LENGTH];
@@ -374,6 +375,7 @@ struct csiphy_device {
 	bool                           skip_aux_settings;
 	uint16_t                       preamble_enable;
 	bool                           is_aggregator_rx;
+	bool                           is_phy_protect;
 };
 
 /**

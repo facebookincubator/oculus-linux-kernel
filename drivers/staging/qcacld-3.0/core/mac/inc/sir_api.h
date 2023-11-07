@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4688,6 +4688,24 @@ struct wow_pulse_mode {
  */
 QDF_STATUS umac_send_mb_message_to_mac(void *msg);
 
+/* Max supported bandwidth is 320Mhz, so max 16 subbands fo 20Mhz */
+#define MAX_WIDE_BAND_SCAN_CHAN 16
+
+/**
+ * struct wide_band_scan_chan_info - wide band scan channel info
+ * @vdev_id: vdev id
+ * @num_chan: number of channels (for each subbands fo 20Mhz)
+ * @is_wide_band_scan: wide band scan or not
+ * @cca_busy_subband_info: CCA busy for each possible 20Mhz subbands
+ * of the wideband scan channel
+ */
+struct wide_band_scan_chan_info {
+	uint32_t vdev_id;
+	uint8_t num_chan;
+	bool is_wide_band_scan;
+	uint32_t cca_busy_subband_info[MAX_WIDE_BAND_SCAN_CHAN];
+};
+
 /**
  * struct scan_chan_info - channel info
  * @freq: radio frequence
@@ -4697,6 +4715,8 @@ QDF_STATUS umac_send_mb_message_to_mac(void *msg);
  * @rx_clear_count: rx clear count
  * @tx_frame_count: TX frame count
  * @clock_freq: clock frequence MHZ
+ * @cca_busy_subband_info: CCA busy for each possible 20Mhz subbands
+ * of the wideband scan channel
  */
 struct scan_chan_info {
 	uint32_t freq;
@@ -4706,6 +4726,7 @@ struct scan_chan_info {
 	uint32_t rx_clear_count;
 	uint32_t tx_frame_count;
 	uint32_t clock_freq;
+	struct wide_band_scan_chan_info subband_info;
 };
 
 /**

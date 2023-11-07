@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __H_HFI_PROPERTY_H__
@@ -596,6 +597,8 @@ enum hfi_saliency_type {
 #define HFI_ERROR_BUFFER_NOT_SET                                0x04000006
 
 #define HFI_ERROR_DRAP_CONFIG_EXCEED                            0x04000007
+
+#define HFI_ERROR_STREAM_UNSUPPORTED                            0x04000008
 
 #define HFI_SESSION_ERROR_END                                   0x04FFFFFF
 

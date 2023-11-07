@@ -36,6 +36,7 @@ static struct poweroff_reason reasons[] = {
 	{ "kernel_panic",			0x07 },
 	{ "upgrade",			0x08 },
 	{ "shutdown,thermal",			0x9 },
+	{ "lock_device",         0x0B},
 	{}
 };
 

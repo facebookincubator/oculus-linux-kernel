@@ -159,6 +159,13 @@ bool ipa_config_is_enabled(void);
 bool ipa_config_is_uc_enabled(void);
 
 /**
+ * ipa_config_is_opt_wifi_dp_enabled() - Is IPA optional wifi dp enabled?
+ *
+ * Return: true if IPA opt wifi dp is enabled in IPA config
+ */
+bool ipa_config_is_opt_wifi_dp_enabled(void);
+
+/**
  * ipa_config_is_vlan_enabled() - Is IPA vlan config enabled?
  *
  * Return: true if IPA clan support is enabled in IPA config

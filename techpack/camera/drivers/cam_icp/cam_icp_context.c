@@ -177,6 +177,7 @@ static int __cam_icp_config_dev_in_ready(struct cam_context *ctx,
 		CAM_ERR(CAM_CTXT,
 			"Invalid offset, len: %zu cmd offset: %llu sizeof packet: %zu",
 			len, cmd->offset, sizeof(struct cam_packet));
+		cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 		return -EINVAL;
 	}
 
@@ -188,6 +189,7 @@ static int __cam_icp_config_dev_in_ready(struct cam_context *ctx,
 	if (rc) {
 		CAM_ERR(CAM_CTXT, "Invalid packet params, remain length: %zu",
 			remain_len);
+		cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 		return rc;
 	}
 
@@ -202,6 +204,7 @@ static int __cam_icp_config_dev_in_ready(struct cam_context *ctx,
 	if (rc)
 		CAM_ERR(CAM_ICP, "Failed to prepare device");
 
+	cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 	return rc;
 }
 

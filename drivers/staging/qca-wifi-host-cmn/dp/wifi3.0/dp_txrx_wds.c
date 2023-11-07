@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,10 +32,6 @@
 
 /* Generic AST entry aging timer value */
 #define DP_AST_AGING_TIMER_DEFAULT_MS	5000
-#define DP_VLAN_UNTAGGED 0
-#define DP_VLAN_TAGGED_MULTICAST 1
-#define DP_VLAN_TAGGED_UNICAST 2
-#define DP_MAX_VLAN_IDS 4096
 #define DP_INVALID_AST_IDX 0xffff
 #define DP_INVALID_FLOW_PRIORITY 0xff
 #define DP_PEER_AST0_FLOW_MASK 0x4

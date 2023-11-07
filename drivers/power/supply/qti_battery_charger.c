@@ -102,8 +102,6 @@ enum battery_property_id {
 	BATT_RESISTANCE,
 	BATT_POWER_NOW,
 	BATT_POWER_AVG,
-	BATT_CYPD_VOLTAGE_MAX,
-	BATT_CYPD_CURRENT_MAX,
 	BATT_RBLT_VALUE,
 	BATT_SMB_MASTER_TEMP,
 	BATT_PROFILE,
@@ -130,6 +128,7 @@ enum usb_property_id {
 	USB_TYPEC_POWER_ROLE,
 	USB_INPUT_SUSPEND,
 	USB_OUTPUT_CURRENT_LIMIT,
+	USB_HEALTH,
 	USB_PRESENT,
 	USB_PD_VID,
 	USB_PD_PID,
@@ -146,6 +145,10 @@ enum wireless_property_id {
 	WLS_BOOST_EN,
 	WLS_INPUT_SUSPEND,
 	WLS_PRESENT,
+	WLS_HBST_VMAX,
+	WLS_INPUT_CURR_LIMIT,
+	WLS_WIRELESS_TYPE,
+	WLS_TEMP,
 	WLS_PROP_MAX,
 };
 
@@ -264,7 +267,6 @@ struct battery_chg_dev {
 	struct work_struct		subsys_up_work;
 	struct work_struct		usb_type_work;
 	struct work_struct		battery_check_work;
-	struct work_struct		cypd_notify_work;
 	struct work_struct		charge_capacity_limit_work;
 	struct alarm			chg_capacity_limit_alarm;
 	int				fake_soc;
@@ -277,7 +279,6 @@ struct battery_chg_dev {
 	u16				wls_fw_crc;
 	u32				wls_fw_update_time_ms;
 	struct notifier_block		reboot_notifier;
-	struct notifier_block		cypd_notifier;
 	u32				thermal_fcc_ua;
 	u32				restrict_fcc_ua;
 	u32				last_fcc_ua;
@@ -291,6 +292,7 @@ struct battery_chg_dev {
 	bool				notify_en;
 	int				batt_profile;
 	int				charge_capacity_limit;
+	bool				error_prop;
 };
 
 static const int battery_prop_map[BATT_PROP_MAX] = {
@@ -331,6 +333,7 @@ static const int usb_prop_map[USB_PROP_MAX] = {
 	[USB_TYPEC_POWER_ROLE]	= POWER_SUPPLY_PROP_TYPEC_POWER_ROLE,
 	[USB_INPUT_SUSPEND]	= POWER_SUPPLY_PROP_INPUT_SUSPEND,
 	[USB_OUTPUT_CURRENT_LIMIT] = POWER_SUPPLY_PROP_OUTPUT_CURRENT_LIMIT,
+	[USB_HEALTH]		= POWER_SUPPLY_PROP_HEALTH,
 	[USB_PRESENT]		= POWER_SUPPLY_PROP_PRESENT,
 };
 
@@ -342,6 +345,7 @@ static const int wls_prop_map[WLS_PROP_MAX] = {
 	[WLS_CURR_MAX]		= POWER_SUPPLY_PROP_CURRENT_MAX,
 	[WLS_INPUT_SUSPEND]	= POWER_SUPPLY_PROP_INPUT_SUSPEND,
 	[WLS_PRESENT]		= POWER_SUPPLY_PROP_PRESENT,
+	[WLS_INPUT_CURR_LIMIT]	= POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
 };
 
 static const unsigned int bcdev_usb_extcon_cable[] = {
@@ -429,6 +433,7 @@ static int battery_chg_write(struct battery_chg_dev *bcdev, void *data,
 
 	mutex_lock(&bcdev->rw_lock);
 	reinit_completion(&bcdev->ack);
+	bcdev->error_prop = false;
 	rc = pmic_glink_write(bcdev->client, data, len);
 	if (!rc) {
 		rc = wait_for_completion_timeout(&bcdev->ack,
@@ -439,8 +444,20 @@ static int battery_chg_write(struct battery_chg_dev *bcdev, void *data,
 			mutex_unlock(&bcdev->rw_lock);
 			return -ETIMEDOUT;
 		}
-
 		rc = 0;
+
+		/*
+		 * In case the opcode used is not supported, the remote
+		 * processor might ack it immediately with a return code indicating
+		 * an error. This additional check is to check if such an error has
+		 * happened and return immediately with error in that case. This
+		 * avoids wasting time waiting in the above timeout condition for this
+		 * type of error.
+		 */
+		if (bcdev->error_prop) {
+			bcdev->error_prop = false;
+			rc = -ENODATA;
+		}
 	}
 	mutex_unlock(&bcdev->rw_lock);
 	up_read(&bcdev->state_sem);
@@ -646,8 +663,8 @@ int qti_battery_charger_set_prop(const char *name,
 }
 EXPORT_SYMBOL(qti_battery_charger_set_prop);
 
-static bool validate_message(struct battery_charger_resp_msg *resp_msg,
-				size_t len)
+static bool validate_message(struct battery_chg_dev *bcdev,
+			struct battery_charger_resp_msg *resp_msg, size_t len)
 {
 	if (len != sizeof(*resp_msg)) {
 		pr_err("Incorrect response length %zu for opcode %#x\n", len,
@@ -656,9 +673,10 @@ static bool validate_message(struct battery_charger_resp_msg *resp_msg,
 	}
 
 	if (resp_msg->ret_code) {
-		pr_err("Error in response for opcode %#x prop_id %u, rc=%d\n",
+		pr_err_ratelimited("Error in response for opcode %#x prop_id %u, rc=%d\n",
 			resp_msg->hdr.opcode, resp_msg->property_id,
 			(int)resp_msg->ret_code);
+		bcdev->error_prop = true;
 		return false;
 	}
 
@@ -692,7 +710,7 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 		}
 
 		/* Other response should be of same type as they've u32 value */
-		if (validate_message(resp_msg, len) &&
+		if (validate_message(bcdev, resp_msg, len) &&
 		    resp_msg->property_id < pst->prop_count) {
 			pst->prop[resp_msg->property_id] = resp_msg->value;
 			ack_set = true;
@@ -701,7 +719,7 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 		break;
 	case BC_USB_STATUS_GET:
 		pst = &bcdev->psy_list[PSY_TYPE_USB];
-		if (validate_message(resp_msg, len) &&
+		if (validate_message(bcdev, resp_msg, len) &&
 		    resp_msg->property_id < pst->prop_count) {
 			pst->prop[resp_msg->property_id] = resp_msg->value;
 			ack_set = true;
@@ -710,7 +728,7 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 		break;
 	case BC_WLS_STATUS_GET:
 		pst = &bcdev->psy_list[PSY_TYPE_WLS];
-		if (validate_message(resp_msg, len) &&
+		if (validate_message(bcdev, resp_msg, len) &&
 		    resp_msg->property_id < pst->prop_count) {
 			pst->prop[resp_msg->property_id] = resp_msg->value;
 			ack_set = true;
@@ -720,7 +738,7 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 	case BC_BATTERY_STATUS_SET:
 	case BC_USB_STATUS_SET:
 	case BC_WLS_STATUS_SET:
-		if (validate_message(data, len))
+		if (validate_message(bcdev, data, len))
 			ack_set = true;
 
 		break;
@@ -780,7 +798,7 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 		break;
 	}
 
-	if (ack_set)
+	if (ack_set || bcdev->error_prop)
 		complete(&bcdev->ack);
 }
 
@@ -945,42 +963,6 @@ static void battery_chg_check_status_work(struct work_struct *work)
 	kernel_power_off();
 }
 
-static void battery_chg_cypd_notify_work(struct work_struct *work)
-{
-	struct battery_chg_dev *bcdev = container_of(work,
-					struct battery_chg_dev,
-					cypd_notify_work);
-	union power_supply_propval val = {0};
-	struct power_supply *psy;
-	int rc;
-
-	psy = power_supply_get_by_name("cypd3177");
-	if (IS_ERR_OR_NULL(psy)) {
-		pr_err("failed to get cypd3177 power supply\n");
-		return;
-	}
-
-	rc = power_supply_get_property(psy, POWER_SUPPLY_PROP_VOLTAGE_MAX, &val);
-	if (rc) {
-		pr_err("get cypd voltage max failed\n");
-		return;
-	}
-	if (val.intval != 0)
-		write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
-				BATT_CYPD_VOLTAGE_MAX, val.intval);
-
-	rc = power_supply_get_property(psy, POWER_SUPPLY_PROP_CURRENT_MAX, &val);
-	if (rc) {
-		pr_err("get cypd current now failed\n");
-		return;
-	}
-	if (val.intval != 0)
-		write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
-				BATT_CYPD_CURRENT_MAX, val.intval);
-
-	power_supply_put(psy);
-}
-
 static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 				size_t len)
 {
@@ -1097,6 +1079,7 @@ static int wls_psy_set_prop(struct power_supply *psy,
 		return prop_id;
 
 	switch (prop) {
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
 		rc = write_property_id(bcdev, pst, prop_id, pval->intval);
 	default:
@@ -1126,6 +1109,7 @@ static enum power_supply_property wls_props[] = {
 	POWER_SUPPLY_PROP_CURRENT_MAX,
 	POWER_SUPPLY_PROP_INPUT_SUSPEND,
 	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
 };
 
 static const struct power_supply_desc wls_psy_desc = {
@@ -1286,6 +1270,7 @@ static enum power_supply_property usb_props[] = {
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_TYPEC_POWER_ROLE,
 	POWER_SUPPLY_PROP_OUTPUT_CURRENT_LIMIT,
+	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
 };
 
@@ -2526,21 +2511,6 @@ static enum alarmtimer_restart chg_capacity_limit_alarm_cb(struct alarm *alarm,
 	return ALARMTIMER_NORESTART;
 }
 
-static int cypd_psy_notifier(struct notifier_block *nb,
-			unsigned long ev, void *v)
-{
-	struct power_supply *psy = v;
-	struct battery_chg_dev *bcdev = container_of(nb, struct battery_chg_dev,
-							 cypd_notifier);
-
-	if (strcmp(psy->desc->name, "cypd3177") != 0)
-		return NOTIFY_OK;
-
-	schedule_work(&bcdev->cypd_notify_work);
-
-	return NOTIFY_OK;
-}
-
 static int battery_chg_ship_mode(struct notifier_block *nb, unsigned long code,
 		void *unused)
 {
@@ -2735,7 +2705,6 @@ static int battery_chg_probe(struct platform_device *pdev)
 	INIT_WORK(&bcdev->subsys_up_work, battery_chg_subsys_up_work);
 	INIT_WORK(&bcdev->usb_type_work, battery_chg_update_usb_type_work);
 	INIT_WORK(&bcdev->battery_check_work, battery_chg_check_status_work);
-	INIT_WORK(&bcdev->cypd_notify_work, battery_chg_cypd_notify_work);
 	INIT_WORK(&bcdev->charge_capacity_limit_work, battery_chg_capacity_limit_work);
 	if (alarmtimer_get_rtcdev()) {
 		alarm_init(&bcdev->chg_capacity_limit_alarm, ALARM_BOOTTIME,
@@ -2780,13 +2749,6 @@ static int battery_chg_probe(struct platform_device *pdev)
 	register_reboot_notifier(&bcdev->reboot_notifier);
 
 	bcdev->charge_capacity_limit = CHG_CAPACITY_LIMIT_DEFAULT_PCT;
-
-	bcdev->cypd_notifier.notifier_call = cypd_psy_notifier;
-	rc = power_supply_reg_notifier(&bcdev->cypd_notifier);
-	if (rc < 0) {
-		dev_err(dev, "Couldn't register cypd psy notifier rc = %d\n", rc);
-		goto error;
-	}
 
 	rc = battery_chg_parse_dt(bcdev);
 	if (rc < 0) {
@@ -2842,7 +2804,6 @@ error:
 	up_write(&bcdev->state_sem);
 
 	pmic_glink_unregister_client(bcdev->client);
-	power_supply_unreg_notifier(&bcdev->cypd_notifier);
 	cancel_work_sync(&bcdev->usb_type_work);
 	cancel_work_sync(&bcdev->subsys_up_work);
 	cancel_work_sync(&bcdev->battery_check_work);
@@ -2870,7 +2831,6 @@ static int battery_chg_remove(struct platform_device *pdev)
 	device_init_wakeup(bcdev->dev, false);
 	debugfs_remove_recursive(bcdev->debugfs_dir);
 	class_unregister(&bcdev->battery_class);
-	power_supply_unreg_notifier(&bcdev->cypd_notifier);
 	pmic_glink_unregister_client(bcdev->client);
 	cancel_work_sync(&bcdev->subsys_up_work);
 	cancel_work_sync(&bcdev->usb_type_work);

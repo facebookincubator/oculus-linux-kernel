@@ -433,6 +433,7 @@ static const uint32_t pdev_param_tlv[] = {
 		  PDEV_PARAM_CTS2SELF_FOR_P2P_GO_CONFIG),
 	PARAM_MAP(pdev_param_txpower_reason_sar, PDEV_PARAM_TXPOWER_REASON_SAR),
 	PARAM_MAP(pdev_param_default_6ghz_rate, PDEV_PARAM_DEFAULT_6GHZ_RATE),
+	PARAM_MAP(pdev_param_pcie_config, PDEV_PARAM_PCIE_CONFIG),
 };
 
 /* Populate vdev_param array whose index is host param, value is target param */
@@ -3803,6 +3804,12 @@ static inline void copy_scan_event_cntrl_flags(
 	if (param->scan_f_en_ie_allowlist_in_probe)
 		cmd->scan_ctrl_flags |=
 			WMI_SCAN_ENABLE_IE_WHTELIST_IN_PROBE_REQ;
+	if (param->scan_f_pause_home_channel)
+		cmd->scan_ctrl_flags |=
+			WMI_SCAN_FLAG_PAUSE_HOME_CHANNEL;
+	if (param->scan_f_report_cca_busy_for_each_20mhz)
+		cmd->scan_ctrl_flags |=
+			WMI_SCAN_FLAG_REPORT_CCA_BUSY_FOREACH_20MHZ;
 
 	/* for adaptive scan mode using 3 bits (21 - 23 bits) */
 	WMI_SCAN_SET_DWELL_MODE(cmd->scan_ctrl_flags,
@@ -9067,6 +9074,23 @@ void wmi_copy_afc_deployment_config(wmi_resource_config *resource_cfg,
 }
 #endif
 
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+static inline
+void wmi_copy_latency_flowq_support(wmi_resource_config *resource_cfg,
+				    target_resource_config *tgt_res_cfg)
+{
+	if (tgt_res_cfg->tx_ilp_enable)
+		WMI_RSRC_CFG_FLAGS2_LATENCY_FLOWQ_SUPPORT_SET(
+						resource_cfg->flags2, 1);
+}
+#else
+static inline
+void wmi_copy_latency_flowq_support(wmi_resource_config *resource_cfg,
+				    target_resource_config *tgt_res_cfg)
+{
+}
+#endif
+
 static
 void wmi_copy_resource_config(wmi_resource_config *resource_cfg,
 				target_resource_config *tgt_res_cfg)
@@ -9349,6 +9373,7 @@ void wmi_copy_resource_config(wmi_resource_config *resource_cfg,
 		WMI_RSRC_CFG_FLAGS2_NOTIFY_FRAME_CONFIG_ENABLE_SET(
 			resource_cfg->flags2, 1);
 
+	wmi_copy_latency_flowq_support(resource_cfg, tgt_res_cfg);
 }
 
 #ifdef FEATURE_SET
@@ -14237,11 +14262,18 @@ extract_service_ready_ext2_tlv(wmi_unified_t wmi_handle, uint8_t *event,
 
 	param->num_dbr_ring_caps = param_buf->num_dma_ring_caps;
 
-	if (param_buf->nan_cap)
+	param->num_msdu_idx_qtype_map =
+				param_buf->num_htt_msdu_idx_to_qtype_map;
+
+	if (param_buf->nan_cap) {
 		param->max_ndp_sessions =
 			param_buf->nan_cap->max_ndp_sessions;
-	else
+		param->max_nan_pairing_sessions =
+			param_buf->nan_cap->max_pairing_sessions;
+	} else {
 		param->max_ndp_sessions = 0;
+		param->max_nan_pairing_sessions = 0;
+	}
 
 	param->preamble_puncture_bw_cap = ev->preamble_puncture_bw;
 	param->num_scan_radio_caps = param_buf->num_wmi_scan_radio_caps;
@@ -14875,6 +14907,39 @@ static QDF_STATUS extract_scan_radio_cap_service_ready_ext2_tlv(
 		WMI_SCAN_RADIO_CAP_SCAN_RADIO_FLAG_GET(scan_radio_caps->flags);
 	param->dfs_en =
 		WMI_SCAN_RADIO_CAP_DFS_FLAG_GET(scan_radio_caps->flags);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS extract_msdu_idx_qtype_map_service_ready_ext2_tlv(
+			wmi_unified_t wmi_handle,
+			uint8_t *event, uint8_t idx,
+			uint8_t *msdu_qtype)
+{
+	WMI_SERVICE_READY_EXT2_EVENTID_param_tlvs *param_buf;
+	wmi_htt_msdu_idx_to_htt_msdu_qtype *msdu_idx_to_qtype;
+	uint8_t wmi_htt_msdu_idx;
+
+	param_buf = (WMI_SERVICE_READY_EXT2_EVENTID_param_tlvs *)event;
+	if (!param_buf)
+		return QDF_STATUS_E_INVAL;
+
+	if (idx >= param_buf->num_htt_msdu_idx_to_qtype_map)
+		return QDF_STATUS_E_INVAL;
+
+	msdu_idx_to_qtype = &param_buf->htt_msdu_idx_to_qtype_map[idx];
+	wmi_htt_msdu_idx =
+		WMI_HTT_MSDUQ_IDX_TO_MSDUQ_QTYPE_INDEX_GET(
+					msdu_idx_to_qtype->index_and_type);
+	if (wmi_htt_msdu_idx != idx) {
+		wmi_err("wmi_htt_msdu_idx 0x%x is not same as idx 0x%x",
+			wmi_htt_msdu_idx, idx);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*msdu_qtype =
+		WMI_HTT_MSDUQ_IDX_TO_MSDUQ_QTYPE_TYPE_GET(
+					msdu_idx_to_qtype->index_and_type);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -20356,6 +20421,8 @@ struct wmi_ops tlv_ops =  {
 				extract_dbr_ring_cap_service_ready_ext2_tlv,
 	.extract_scan_radio_cap_service_ready_ext2 =
 				extract_scan_radio_cap_service_ready_ext2_tlv,
+	.extract_msdu_idx_qtype_map_service_ready_ext2 =
+			extract_msdu_idx_qtype_map_service_ready_ext2_tlv,
 	.extract_sw_cal_ver_ext2 = extract_sw_cal_ver_ext2_tlv,
 	.extract_sar_cap_service_ready_ext =
 				extract_sar_cap_service_ready_ext_tlv,
@@ -20634,6 +20701,8 @@ static void populate_tlv_events_id_mlo(WMI_EVT_ID *event_ids)
 			WMI_MLO_LINK_REMOVAL_EVENTID;
 	event_ids[wmi_mlo_link_state_info_eventid] =
 			WMI_MLO_VDEV_LINK_INFO_EVENTID;
+	event_ids[wmi_mlo_link_disable_request_eventid] =
+			WMI_MLO_LINK_DISABLE_REQUEST_EVENTID;
 }
 #else /* WLAN_FEATURE_11BE_MLO */
 static inline void populate_tlv_events_id_mlo(WMI_EVT_ID *event_ids)
@@ -21526,6 +21595,7 @@ static void populate_tlv_service(uint32_t *wmi_service)
 			WMI_SERVICE_TWT_ALL_DIALOG_ID;
 	wmi_service[wmi_service_twt_statistics] =
 			WMI_SERVICE_TWT_STATS;
+	wmi_service[wmi_service_restricted_twt] = WMI_SERVICE_RESTRICTED_TWT;
 #endif
 	wmi_service[wmi_service_spectral_scan_disabled] =
 			WMI_SERVICE_SPECTRAL_SCAN_DISABLED;
@@ -21661,6 +21731,10 @@ static void populate_tlv_service(uint32_t *wmi_service)
 			WMI_SERVICE_WMI_SERVICE_WPA3_SHA384_ROAM_SUPPORT;
 	wmi_service[wmi_service_self_mld_roam_between_dbs_and_hbs] =
 			WMI_SERVICE_SELF_MLD_ROAM_BETWEEN_DBS_AND_HBS;
+	wmi_service[wmi_service_cca_busy_info_for_each_20mhz] =
+			WMI_SERVICE_CCA_BUSY_INFO_FOREACH_20MHZ;
+	wmi_service[wmi_service_vdev_param_chwidth_with_notify_support] =
+			WMI_SERVICE_VDEV_PARAM_CHWIDTH_WITH_NOTIFY_SUPPORT;
 }
 
 /**

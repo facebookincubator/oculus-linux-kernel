@@ -78,7 +78,7 @@
 
 			vph_gpu2 {
 				trip = <&c_bcl_lvl2>;
-				cooling-device = <&msm_gpu 3 THERMAL_NO_LIMIT>;
+				cooling-device = <&msm_gpu 2 THERMAL_NO_LIMIT>;
 			};
 		};
 	};
@@ -97,7 +97,7 @@
 
 			pm8350c_gpu {
 				trip = <&pm8350c_trip0>;
-				cooling-device = <&msm_gpu 3 THERMAL_NO_LIMIT>;
+				cooling-device = <&msm_gpu 2 THERMAL_NO_LIMIT>;
 			};
 		};
 	};
@@ -106,12 +106,22 @@
 		cooling-maps {
 			pm7325_cpu4_freq {
 				trip = <&pm7325_trip0>;
-				cooling-device = <&CPU4 10 THERMAL_NO_LIMIT>;
+				cooling-device = <&CPU4 0 THERMAL_NO_LIMIT>;
+			};
+
+			pm7325_cpu5_freq {
+				trip = <&pm7325_trip0>;
+				cooling-device = <&CPU5 10 THERMAL_NO_LIMIT>;
+			};
+
+			pm7325_cpu6_freq {
+				trip = <&pm7325_trip0>;
+				cooling-device = <&CPU6 10 THERMAL_NO_LIMIT>;
 			};
 
 			pm7325_cpu7_freq {
 				trip = <&pm7325_trip0>;
-				cooling-device = <&CPU7 12 THERMAL_NO_LIMIT>;
+				cooling-device = <&CPU7 0 THERMAL_NO_LIMIT>;
 			};
 
 			pm7325_apc1 {

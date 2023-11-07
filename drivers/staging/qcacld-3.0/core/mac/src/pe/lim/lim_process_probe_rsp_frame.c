@@ -155,7 +155,8 @@ lim_process_updated_ies_in_probe_rsp(struct mac_context *mac_ctx,
 		if (session_entry->fWaitForProbeRsp) {
 			pe_warn("Check probe resp for caps change");
 			lim_detect_change_in_ap_capabilities(mac_ctx, probe_rsp,
-							     session_entry);
+							     session_entry,
+							     false);
 		}
 	}
 }

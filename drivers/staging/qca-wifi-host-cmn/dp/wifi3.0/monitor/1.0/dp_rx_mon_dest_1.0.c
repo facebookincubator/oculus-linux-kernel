@@ -949,7 +949,8 @@ dp_rx_pdev_mon_buf_desc_pool_alloc(struct dp_pdev *pdev, uint32_t mac_id)
 
 #if !defined(DISABLE_MON_CONFIG) && defined(MON_ENABLE_DROP_FOR_MAC)
 uint32_t
-dp_mon_dest_srng_drop_for_mac(struct dp_pdev *pdev, uint32_t mac_id)
+dp_mon_dest_srng_drop_for_mac(struct dp_pdev *pdev, uint32_t mac_id,
+			      bool force_flush)
 {
 	struct dp_soc *soc = pdev->soc;
 	hal_rxdma_desc_t rxdma_dst_ring_desc;
@@ -987,8 +988,8 @@ dp_mon_dest_srng_drop_for_mac(struct dp_pdev *pdev, uint32_t mac_id)
 
 	while ((rxdma_dst_ring_desc =
 		hal_srng_dst_peek(hal_soc, mon_dst_srng)) &&
-		reap_cnt < MON_DROP_REAP_LIMIT) {
-		if (is_rxdma_dst_ring_common) {
+		(reap_cnt < MON_DROP_REAP_LIMIT || force_flush)) {
+		if (is_rxdma_dst_ring_common && !force_flush) {
 			if (QDF_STATUS_SUCCESS ==
 			    dp_rx_mon_check_n_drop_mpdu(pdev, mac_id,
 							rxdma_dst_ring_desc,

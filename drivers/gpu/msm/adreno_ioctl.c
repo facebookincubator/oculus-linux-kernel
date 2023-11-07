@@ -60,22 +60,6 @@ long adreno_ioctl_perfcounter_get(struct kgsl_device_private *dev_priv,
 	struct kgsl_perfcounter_get *get = data;
 	int result;
 
-	/* The always-on counter is *always* on. Nothing to do here. */
-	if (get->groupid == KGSL_PERFCOUNTER_GROUP_ALWAYSON) {
-		const struct adreno_perfcounters *counters =
-				ADRENO_PERFCOUNTERS(adreno_dev);
-		const struct adreno_perfcount_group *group =
-				&counters->groups[get->groupid];
-
-		/* Sanity check the countable index. */
-		if (get->countable >= group->reg_count)
-			return -EINVAL;
-
-		get->offset = group->regs[get->countable].offset;
-		get->offset_hi = group->regs[get->countable].offset_hi;
-		return 0;
-	}
-
 	mutex_lock(&device->mutex);
 
 	/*
@@ -117,10 +101,6 @@ long adreno_ioctl_perfcounter_put(struct kgsl_device_private *dev_priv,
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct kgsl_perfcounter_put *put = data;
 	int result;
-
-	/* The always-on counter is *always* on. Nothing to do here. */
-	if (put->groupid == KGSL_PERFCOUNTER_GROUP_ALWAYSON)
-		return 0;
 
 	mutex_lock(&device->mutex);
 

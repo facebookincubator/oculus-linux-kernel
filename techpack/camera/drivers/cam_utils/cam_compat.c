@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/dma-mapping.h>
@@ -12,6 +12,7 @@
 #include "cam_debug_util.h"
 #include "cam_cpas_api.h"
 #include "camera_main.h"
+#include <media/cam_isp.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 int cam_reserve_icp_fw(struct cam_fw_alloc_info *icp_fw, size_t fw_length)
@@ -75,10 +76,67 @@ int cam_ife_notify_safe_lut_scm(bool safe_trigger)
 }
 
 int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
-	bool protect, int32_t offset)
+	bool protect, int32_t offset, bool is_shutdown)
 {
 	int rc = 0;
 
+#ifdef CONFIG_SECURE_CAMERA_V3
+	if (!is_shutdown) {
+		struct smci_object client_env, sc_object;
+		struct tc_driver_sensor_info params = {0};
+
+		if (offset >= CSIPHY_MAX_INSTANCES_PER_PHY) {
+			CAM_ERR(CAM_CSIPHY, "Invalid CSIPHY offset");
+			return -EINVAL;
+		}
+
+		rc = get_client_env_object(&client_env);
+		if (rc) {
+			CAM_ERR(CAM_CSIPHY, "Failed getting mink env object, rc: %d", rc);
+			return rc;
+		}
+
+		rc = smci_clientenv_open(client_env, CTRUSTEDCAMERADRIVER_UID, &sc_object);
+		if (rc) {
+			CAM_ERR(CAM_CSIPHY, "Failed getting mink sc_object, rc: %d", rc);
+			return rc;
+		}
+
+		params.phy_lane_sel_mask = csiphy_dev->csiphy_info[offset].csiphy_cpas_cp_reg_mask;
+		params.protect = protect ? 1 : 0;
+
+		CAM_DBG(CAM_UTIL, "phy_sel_m: %d protect: %d",
+					params.phy_lane_sel_mask,
+					params.protect);
+
+		rc = trusted_camera_driver_dynamic_protect_sensor(sc_object, &params);
+		if (rc) {
+			CAM_ERR(CAM_CSIPHY, "Mink secure call failed, rc: %d", rc);
+			return rc;
+		}
+
+		rc = smci_object_release(sc_object);
+		if (rc) {
+			CAM_ERR(CAM_CSIPHY, "Failed releasing secure camera object, rc: %d", rc);
+			return rc;
+		}
+		rc = smci_object_release(client_env);
+		if (rc) {
+			CAM_ERR(CAM_CSIPHY, "Failed releasing mink env object, rc: %d", rc);
+			return rc;
+		}
+	} else {
+		if (offset >= csiphy_dev->session_max_device_support) {
+			CAM_ERR(CAM_CSIPHY, "Invalid CSIPHY offset");
+			rc = -EINVAL;
+		} else if (qcom_scm_camera_protect_phy_lanes(protect,
+				csiphy_dev->csiphy_info[offset]
+					.csiphy_cpas_cp_reg_mask)) {
+			CAM_ERR(CAM_CSIPHY, "SCM call to hypervisor failed");
+			rc = -EINVAL;
+		}
+	}
+#else
 	if (offset >= csiphy_dev->session_max_device_support) {
 		CAM_ERR(CAM_CSIPHY, "Invalid CSIPHY offset");
 		rc = -EINVAL;
@@ -88,9 +146,103 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 		CAM_ERR(CAM_CSIPHY, "SCM call to hypervisor failed");
 		rc = -EINVAL;
 	}
+#endif
 
 	return rc;
 }
+#ifdef CONFIG_SECURE_CAMERA_V3
+int cam_isp_notify_secure_unsecure_port(struct port_info *sec_unsec_port_info)
+{
+	int rc = 0;
+	struct smci_object client_env, sc_object;
+
+	rc = get_client_env_object(&client_env);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "Failed getting mink env object, rc: %d", rc);
+		return rc;
+	}
+
+	rc = smci_clientenv_open(client_env, CTRUSTEDCAMERADRIVER_UID, &sc_object);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "Failed getting mink sc_object, rc: %d", rc);
+		goto release_client;
+	}
+
+	rc = trusted_camera_driver_dynamic_configure_ports(sc_object, sec_unsec_port_info, 2);
+	if (rc) {
+		CAM_ERR(CAM_ISP,
+			"trusted_camera_driver_dynamic_configure_ports failed, rc: %d", rc);
+		goto release_sc_object;
+	}
+
+release_sc_object:
+	if (smci_object_release(sc_object)) {
+		if (!rc)
+			rc = -EINVAL;
+		CAM_ERR(CAM_ISP, "Failed releasing secure camera object, rc: %d", rc);
+	}
+
+release_client:
+	if (smci_object_release(client_env)) {
+		if (!rc)
+			rc = -EINVAL;
+		CAM_ERR(CAM_ISP, "Failed releasing mink env object, rc: %d", rc);
+	}
+
+	return rc;
+}
+
+int32_t cam_convert_hw_id_to_secure_hw_type(uint32_t hw_id)
+{
+	uint32_t hw_type = -1;
+
+	switch (hw_id) {
+	case CAM_ISP_IFE0_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE0;
+		break;
+	case CAM_ISP_IFE1_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE1;
+		break;
+	case CAM_ISP_IFE2_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE2;
+		break;
+	case CAM_ISP_IFE0_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_0;
+		break;
+	case CAM_ISP_IFE1_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_1;
+		break;
+	case CAM_ISP_IFE2_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_2;
+		break;
+	case CAM_ISP_IFE3_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_3;
+		break;
+	case CAM_ISP_IFE4_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_4;
+		break;
+	case CAM_ISP_IFE5_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_5;
+		break;
+	case CAM_ISP_IFE6_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_6;
+		break;
+	case CAM_ISP_IFE7_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_7;
+		break;
+	case CAM_ISP_IFE8_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_8;
+		break;
+	case CAM_ISP_IFE9_LITE_HW:
+		hw_type = ITRUSTEDCAMERADRIVER_IFE_LITE_9;
+		break;
+	default:
+		CAM_ERR(CAM_ISP, "Invalid hw_id 0x%x", hw_id);
+		break;
+	}
+	return hw_type;
+}
+#endif
 
 void cam_cpastop_scm_write(struct cam_cpas_hw_errata_wa *errata_wa)
 {

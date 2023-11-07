@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -607,8 +607,15 @@ static void scm_req_update_concurrency_params(struct wlan_objmgr_vdev *vdev,
 		if (!req->scan_req.scan_f_passive)
 			req->scan_req.dwell_time_active =
 				scan_obj->scan_def.conc_active_dwell;
-		req->scan_req.dwell_time_passive =
-			scan_obj->scan_def.conc_passive_dwell;
+		/*
+		 * Irrespective of any concurrency, if a scan request is
+		 * triggered to get channel utilization for the current
+		 * connected channel, passive scan dwell time should be
+		 * MLME_GET_CHAN_STATS_PASSIVE_SCAN_TIME
+		 */
+		if (!req->scan_req.scan_f_pause_home_channel)
+			req->scan_req.dwell_time_passive =
+				scan_obj->scan_def.conc_passive_dwell;
 		req->scan_req.max_rest_time =
 				scan_obj->scan_def.conc_max_rest_time;
 		req->scan_req.min_rest_time =
@@ -797,7 +804,14 @@ static void scm_req_update_concurrency_params(struct wlan_objmgr_vdev *vdev,
 	if (sta_active) {
 		req->scan_req.dwell_time_active_6g =
 				scan_obj->scan_def.active_dwell_time_6g_conc;
-		req->scan_req.dwell_time_passive_6g =
+		/*
+		 * Irrespective of any concurrency, if a scan request is
+		 * triggered to get channel utilization for the current
+		 * connected channel, 6g passive scan dwell time should be
+		 * MLME_GET_CHAN_STATS_WIDE_BAND_PASSIVE_SCAN_TIME
+		 */
+		if (!req->scan_req.scan_f_pause_home_channel)
+			req->scan_req.dwell_time_passive_6g =
 				scan_obj->scan_def.passive_dwell_time_6g_conc;
 	}
 }
@@ -1015,6 +1029,11 @@ scm_update_channel_list(struct scan_start_request *req,
 		uint32_t freq;
 
 		freq = req->scan_req.chan_list.chan[i].freq;
+		if ((wlan_reg_is_6ghz_chan_freq(freq) &&
+		     !wlan_reg_is_6ghz_band_set(pdev))) {
+			scm_nofl_debug("Skip 6 GHz freq = %d", freq);
+			continue;
+		}
 		if (skip_dfs_ch &&
 		    wlan_reg_chan_has_dfs_attribute_for_freq(pdev, freq)) {
 			scm_nofl_debug("Skip DFS freq %d", freq);
@@ -1184,7 +1203,12 @@ scm_scan_req_update_params(struct wlan_objmgr_vdev *vdev,
 	 */
 	pdev = wlan_vdev_get_pdev(vdev);
 	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
-	if (ucfg_scan_get_wide_band_scan(pdev))
+	/*
+	 * Trigger wide band scan also if
+	 * scan_f_report_cca_busy_for_each_20mhz flag is set
+	 */
+	if (ucfg_scan_get_wide_band_scan(pdev) ||
+	    req->scan_req.scan_f_report_cca_busy_for_each_20mhz)
 		req->scan_req.scan_f_wide_band = true;
 	else
 		req->scan_req.scan_f_wide_band = false;
@@ -1210,11 +1234,11 @@ static inline void scm_print_scan_req_info(struct scan_req_params *req)
 	uint32_t buff_len;
 	char *chan_buff;
 	uint32_t len = 0;
-	uint8_t idx, count = 0;
+	uint8_t buff_size, idx, count = 0;
 	struct chan_list *chan_lst;
 #define MAX_SCAN_FREQ_TO_PRINT 25
 
-	scm_nofl_debug("Scan start: scan id %d vdev %d Dwell time: act %d pass %d act_2G %d act_6G %d pass_6G %d, probe time %d n_probes %d flags %x ext_flag %x events %x policy %d wide_bw %d pri %d",
+	scm_nofl_debug("Scan start: scan id %d vdev %d Dwell time: act %d pass %d act_2G %d act_6G %d pass_6G %d, probe time %d n_probes %d flags %x ext_flag %x events %x policy %d is_wb: %d pri %d",
 		       req->scan_id, req->vdev_id, req->dwell_time_active,
 		       req->dwell_time_passive, req->dwell_time_active_2g,
 		       req->dwell_time_active_6g, req->dwell_time_passive_6g,
@@ -1232,21 +1256,39 @@ static inline void scm_print_scan_req_info(struct scan_req_params *req)
 
 	if (!chan_lst->num_chan)
 		return;
+
 	/*
-	 * Buffer of (num channel * 11) + 1  to consider the 4 char freq, 6 char
-	 * flags and 1 space after it for each channel and 1 to end the string
-	 * with NULL.
+	 * Buffer of (num channel * buff_size) + 1  to consider the 4 char freq,
+	 * 6 char flags and 1 space after it for each channel and 1 to end the
+	 * string with NULL.
+	 * In case of wide band scan extra 4 char for phymode.
 	 */
-	buff_len =
-		(QDF_MIN(MAX_SCAN_FREQ_TO_PRINT, chan_lst->num_chan) * 11) + 1;
+	if (req->scan_f_wide_band)
+		buff_size = 15;
+	else
+		buff_size = 11;
+
+	buff_len = (QDF_MIN(MAX_SCAN_FREQ_TO_PRINT,
+			    chan_lst->num_chan) * buff_size) + 1;
+
 	chan_buff = qdf_mem_malloc(buff_len);
 	if (!chan_buff)
 		return;
+
 	scm_nofl_debug("Total freq %d", chan_lst->num_chan);
 	for (idx = 0; idx < chan_lst->num_chan; idx++) {
-		len += qdf_scnprintf(chan_buff + len, buff_len - len,
-				     "%d(0x%02x) ", chan_lst->chan[idx].freq,
-				     chan_lst->chan[idx].flags);
+		if (req->scan_f_wide_band)
+			len += qdf_scnprintf(chan_buff + len, buff_len - len,
+					     "%d(0x%02x)[%d] ",
+					     chan_lst->chan[idx].freq,
+					     chan_lst->chan[idx].flags,
+					     chan_lst->chan[idx].phymode);
+		else
+			len += qdf_scnprintf(chan_buff + len, buff_len - len,
+					     "%d(0x%02x) ",
+					     chan_lst->chan[idx].freq,
+					     chan_lst->chan[idx].flags);
+
 		count++;
 		if (count >= MAX_SCAN_FREQ_TO_PRINT) {
 			/* Print the MAX_SCAN_FREQ_TO_PRINT channels */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -249,6 +249,9 @@ int __osif_vdev_sync_trans_start(struct net_device *net_dev,
 						dsc_vdev_trans_start);
 	osif_vdev_sync_unlock();
 
+	if (!errno)
+		osif_vdev_sync_wait_for_ops(*out_vdev_sync);
+
 	return errno;
 }
 
@@ -262,6 +265,9 @@ int __osif_vdev_sync_trans_start_wait(struct net_device *net_dev,
 	errno = __osif_vdev_sync_start_wait_callback(net_dev,
 						     out_vdev_sync, desc,
 						     dsc_vdev_trans_start_wait);
+
+	if (!errno)
+		osif_vdev_sync_wait_for_ops(*out_vdev_sync);
 
 	return errno;
 }

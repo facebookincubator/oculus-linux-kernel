@@ -768,14 +768,17 @@ static void ml_extract_link_state(struct wlan_objmgr_psoc *psoc,
 				  struct ml_link_state_info_event *event)
 {
 	QDF_STATUS status;
-	get_ml_link_state_cb resp_cb;
-	void *context;
+	get_ml_link_state_cb resp_cb = NULL;
+	void *context = NULL;
 	uint8_t vdev_id;
 
 	vdev_id = event->vdev_id;
 
 	status = mlo_get_link_state_context(psoc,
 					    &resp_cb, &context, vdev_id);
+
+	if (QDF_IS_STATUS_ERROR(status))
+		return;
 
 	if (resp_cb)
 		resp_cb(event, context);

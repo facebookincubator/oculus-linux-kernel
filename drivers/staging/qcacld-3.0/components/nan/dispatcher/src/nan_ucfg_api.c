@@ -887,6 +887,7 @@ post_msg:
 							NAN_DISC_DISABLED);
 				if (ucfg_is_nan_dbs_supported(psoc))
 					policy_mgr_check_n_start_opportunistic_timer(psoc);
+				nan_handle_emlsr_concurrency(psoc, false);
 
 				/*
 				 * If FW respond with NAN enable failure, then
@@ -955,7 +956,6 @@ QDF_STATUS
 ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id)
 {
 	enum nan_datapath_state curr_ndi_state;
-	struct nan_datapath_host_event *event;
 	struct nan_vdev_priv_obj *ndi_vdev_priv;
 	struct nan_datapath_end_all_ndps req = {0};
 	struct wlan_objmgr_vdev *ndi_vdev;
@@ -963,7 +963,7 @@ ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id)
 	QDF_STATUS status;
 	int err;
 	static const struct osif_request_params params = {
-		.priv_size = sizeof(struct nan_datapath_host_event),
+		.priv_size = 0,
 		.timeout_ms = 1000,
 	};
 
@@ -1022,18 +1022,11 @@ ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id)
 		goto cleanup;
 	}
 
-	event = osif_request_priv(request);
-	if (!event->ndp_termination_in_progress) {
-		nan_err("Failed to terminate NDP's on NDI");
-		status = QDF_STATUS_E_FAILURE;
-	} else {
-		/*
-		 * Host can assume NDP delete is successful and
-		 * remove policy mgr entry
-		 */
-		policy_mgr_decr_session_set_pcl(psoc, QDF_NDI_MODE,
-						ndi_vdev_id);
-	}
+	/*
+	 * Host can assume NDP delete is successful and
+	 * remove policy mgr entry
+	 */
+	policy_mgr_decr_session_set_pcl(psoc, QDF_NDI_MODE, ndi_vdev_id);
 
 cleanup:
 	/* Restore original NDI state in case of failure */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -38,12 +38,21 @@ static QDF_STATUS osif_vdev_mgr_set_mac_addr_response(uint8_t vdev_id,
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+static void osif_vdev_mgr_send_scan_done_complete_cb(uint8_t vdev_id)
+{
+	if (osif_vdev_mgr_legacy_ops &&
+	    osif_vdev_mgr_legacy_ops->osif_vdev_mgr_send_scan_done_complete_cb)
+	     osif_vdev_mgr_legacy_ops->osif_vdev_mgr_send_scan_done_complete_cb(
+								vdev_id);
+}
 
 static struct mlme_vdev_mgr_ops vdev_mgr_ops = {
 #ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
 	.mlme_vdev_mgr_set_mac_addr_response =
-					osif_vdev_mgr_set_mac_addr_response
+					osif_vdev_mgr_set_mac_addr_response,
 #endif
+	.mlme_vdev_mgr_send_scan_done_complete_cb =
+				osif_vdev_mgr_send_scan_done_complete_cb,
 };
 
 /**

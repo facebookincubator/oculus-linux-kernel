@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1047,4 +1047,31 @@ cdp_get_bus_lvl_high(ol_txrx_soc_handle soc)
 	return true;
 }
 #endif
+
+#ifdef DP_TX_PACKET_INSPECT_FOR_ILP
+/**
+ * cdp_evaluate_update_tx_ilp_cfg() - Evaluate and update DP TX
+ *                                    ILP configuration
+ * @soc: DP SOC handle
+ * @num_msdu_idx_map: Number of HTT msdu index to qtype map in array
+ * @msdu_idx_map_arr: Pointer to HTT msdu index to qtype map array
+ *
+ * Return: Final updated TX ILP enable result, true - enabled, false - not
+ */
+static inline bool
+cdp_evaluate_update_tx_ilp_cfg(ol_txrx_soc_handle soc,
+			       uint8_t num_msdu_idx_map,
+			       uint8_t *msdu_idx_map_arr)
+{
+	if (!soc || !soc->ops || !soc->ops->misc_ops ||
+	    !soc->ops->misc_ops->evaluate_update_tx_ilp_cfg) {
+		dp_cdp_debug("Invalid Instance:");
+		return false;
+	}
+
+	return soc->ops->misc_ops->evaluate_update_tx_ilp_cfg(
+						soc, num_msdu_idx_map,
+						msdu_idx_map_arr);
+}
+#endif /* DP_TX_PACKET_INSPECT_FOR_ILP */
 #endif /* _CDP_TXRX_MISC_H_ */

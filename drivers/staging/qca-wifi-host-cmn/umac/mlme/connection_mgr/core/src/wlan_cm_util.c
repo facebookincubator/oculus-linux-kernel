@@ -439,8 +439,87 @@ struct cm_req *cm_get_req_by_cm_id_fl(struct cnx_mgr *cm_ctx, wlan_cm_id cm_id,
 	return NULL;
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO
+void
+cm_connect_resp_fill_mld_addr_from_candidate(struct wlan_objmgr_vdev *vdev,
+					     struct scan_cache_entry *entry,
+					     struct wlan_cm_connect_resp *resp)
+{
+	struct qdf_mac_addr *mld_addr;
+
+	if (!entry || !vdev || !wlan_vdev_mlme_is_mlo_vdev(vdev))
+		return;
+
+	mld_addr = util_scan_entry_mldaddr(entry);
+	if (!mld_addr)
+		return;
+
+	qdf_copy_macaddr(&resp->mld_addr, mld_addr);
+}
+
+void
+cm_connect_resp_fill_mld_addr_from_cm_id(struct wlan_objmgr_vdev *vdev,
+					 wlan_cm_id cm_id,
+					 struct wlan_cm_connect_resp *rsp)
+{
+	struct cm_req *cm_req;
+	struct cnx_mgr *cm_ctx;
+	qdf_list_node_t *cur_node = NULL, *next_node = NULL;
+	struct scan_cache_entry *entry;
+
+	if (!wlan_vdev_mlme_is_mlo_vdev(vdev))
+		return;
+
+	cm_ctx = cm_get_cm_ctx(vdev);
+	if (!cm_ctx)
+		return;
+
+	cm_req_lock_acquire(cm_ctx);
+	qdf_list_peek_front(&cm_ctx->req_list, &cur_node);
+	while (cur_node) {
+		qdf_list_peek_next(&cm_ctx->req_list, cur_node, &next_node);
+		cm_req = qdf_container_of(cur_node, struct cm_req, node);
+
+		if (cm_req->cm_id != cm_id) {
+			cur_node = next_node;
+			next_node = NULL;
+			continue;
+		}
+
+		if (!cm_req->connect_req.cur_candidate ||
+		    !cm_req->connect_req.cur_candidate->entry)
+			break;
+
+		entry = cm_req->connect_req.cur_candidate->entry;
+		cm_connect_resp_fill_mld_addr_from_candidate(vdev, entry, rsp);
+		break;
+	}
+	cm_req_lock_release(cm_ctx);
+}
+
+static void
+cm_connect_resp_fill_mld_addr_from_scan_db(struct wlan_objmgr_vdev *vdev,
+					   struct qdf_mac_addr *bssid,
+					   struct wlan_cm_connect_resp *resp)
+{
+	if (!wlan_vdev_mlme_is_mlo_vdev(vdev))
+		return;
+
+	wlan_scan_get_mld_addr_by_link_addr(wlan_vdev_get_pdev(vdev), bssid,
+					    &resp->mld_addr);
+}
+#else
+static inline void
+cm_connect_resp_fill_mld_addr_from_scan_db(struct wlan_objmgr_vdev *vdev,
+					   struct qdf_mac_addr *bssid,
+					   struct wlan_cm_connect_resp *resp)
+{
+}
+#endif
+
 /**
  * cm_fill_connect_resp_from_req() - Fill connect resp from connect request
+ * @vdev: VDEV objmgr pointer
  * @resp: cm connect response
  * @cm_req: cm request
  *
@@ -449,7 +528,8 @@ struct cm_req *cm_get_req_by_cm_id_fl(struct cnx_mgr *cm_ctx, wlan_cm_id cm_id,
  * Return: void
  */
 static void
-cm_fill_connect_resp_from_req(struct wlan_cm_connect_resp *resp,
+cm_fill_connect_resp_from_req(struct wlan_objmgr_vdev *vdev,
+			      struct wlan_cm_connect_resp *resp,
 			      struct cm_req *cm_req)
 {
 	struct scan_cache_node *candidate;
@@ -457,12 +537,20 @@ cm_fill_connect_resp_from_req(struct wlan_cm_connect_resp *resp,
 
 	req = &cm_req->connect_req.req;
 	candidate = cm_req->connect_req.cur_candidate;
-	if (candidate)
+	if (candidate) {
 		qdf_copy_macaddr(&resp->bssid, &candidate->entry->bssid);
-	else if (!qdf_is_macaddr_zero(&req->bssid))
+		cm_connect_resp_fill_mld_addr_from_candidate(vdev,
+							     candidate->entry,
+							     resp);
+	} else if (!qdf_is_macaddr_zero(&req->bssid)) {
 		qdf_copy_macaddr(&resp->bssid, &req->bssid);
-	else
+		cm_connect_resp_fill_mld_addr_from_scan_db(vdev, &req->bssid,
+							   resp);
+	} else {
 		qdf_copy_macaddr(&resp->bssid, &req->bssid_hint);
+		cm_connect_resp_fill_mld_addr_from_scan_db(vdev, &req->bssid,
+							   resp);
+	}
 
 	if (candidate)
 		resp->freq = candidate->entry->channel.chan_freq;
@@ -503,7 +591,7 @@ cm_handle_connect_flush(struct cnx_mgr *cm_ctx, struct cm_req *cm_req)
 		resp->reason = CM_ABORT_DUE_TO_NEW_REQ_RECVD;
 
 	/* Get bssid and ssid and freq for the cm id from the req list */
-	cm_fill_connect_resp_from_req(resp, cm_req);
+	cm_fill_connect_resp_from_req(cm_ctx->vdev, resp, cm_req);
 
 	cm_notify_connect_complete(cm_ctx, resp, 0);
 	qdf_mem_free(resp);
@@ -681,7 +769,8 @@ cm_fill_bss_info_in_connect_rsp_by_cm_id(struct cnx_mgr *cm_ctx,
 		cm_req = qdf_container_of(cur_node, struct cm_req, node);
 
 		if (cm_req->cm_id == cm_id) {
-			cm_fill_connect_resp_from_req(resp, cm_req);
+			cm_fill_connect_resp_from_req(cm_ctx->vdev,
+						      resp, cm_req);
 			cm_req_lock_release(cm_ctx);
 			return QDF_STATUS_SUCCESS;
 		}

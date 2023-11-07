@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -166,6 +166,53 @@
 
 /*
  * <ini>
+ * rtwt_req_resp_config - To enable restricted twt requestor and responder.
+ * @Min: 0 Disable the extended twt capability
+ * @Max: 3
+ * @Default: 0
+ *
+ * This cfg is used to configure the restricted TWT requestor and responder.
+ * Bitmap for enabling the restricted twt requestor and responder.
+ * BIT 0: Enable/Disable restricted twt requestor.
+ * BIT 1: Enable/Disable restricted twt responder.
+ * BIT 2-31: Reserved
+ *
+ * Related: CFG_ENABLE_TWT
+ * Related: CFG_TWT_RESPONDER
+ * Related: CFG_TWT_REQUESTOR
+ *
+ * Supported Feature: 11AX
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+/* defines to extract the requestor/responder capabilities from cfg */
+#define RTWT_REQ_INDEX    0
+#define RTWT_REQ_BITS     1
+#define RTWT_RES_INDEX    1
+#define RTWT_RES_BITS     1
+
+#define CFG_RTWT_REQ_RESP CFG_INI_UINT( \
+		"rtwt_req_resp_config", \
+		0, \
+		3, \
+		0, \
+		CFG_VALUE_OR_DEFAULT, \
+		"RESTRICTED TWT CAPABILITY")
+
+#define CFG_GET_RTWT_REQ(_rtwt_conf) \
+	QDF_GET_BITS(_rtwt_conf, \
+		     RTWT_REQ_INDEX, \
+		     RTWT_REQ_BITS)
+
+#define CFG_GET_RTWT_RES(_rtwt_conf) \
+	QDF_GET_BITS(_rtwt_conf, \
+		     RTWT_RES_INDEX, \
+		     RTWT_RES_BITS)
+
+/*
+ * <ini>
  * enable_twt_24ghz - Enable Target wake time when STA is connected on 2.4Ghz
  * band.
  * @Min: 0
@@ -223,7 +270,8 @@
 	CFG(CFG_TWT_CONGESTION_TIMEOUT) \
 	CFG(CFG_BCAST_TWT_REQ_RESP) \
 	CFG(CFG_ENABLE_TWT_24GHZ) \
-	CFG(CFG_TWT_ENABLE_IN_11N)
+	CFG(CFG_TWT_ENABLE_IN_11N) \
+	CFG(CFG_RTWT_REQ_RESP)
 #elif !defined(WLAN_SUPPORT_TWT) && !defined(WLAN_TWT_CONV_SUPPORTED)
 #define CFG_TWT_ALL
 #endif

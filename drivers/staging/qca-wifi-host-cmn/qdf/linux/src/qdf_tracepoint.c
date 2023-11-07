@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -94,9 +94,9 @@ void qdf_trace_dp_packet(qdf_nbuf_t nbuf, enum qdf_proto_dir dir,
 	uint8_t ip_offset = QDF_NBUF_TRAC_IP_OFFSET;
 
 	if (dir == QDF_TX)
-		latency = (qdf_ktime_to_ms(qdf_ktime_real_get()) - enq_time);
+		latency = (qdf_ktime_to_us(qdf_ktime_real_get()) - enq_time);
 	else
-		latency = qdf_nbuf_get_timedelta_ms(nbuf);
+		latency = qdf_nbuf_get_timedelta_us(nbuf);
 
 	ether_type = QDF_SWAP_U16(*(uint16_t *)(data +
 						QDF_NBUF_TRAC_ETH_TYPE_OFFSET));

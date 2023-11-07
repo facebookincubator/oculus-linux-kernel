@@ -54,7 +54,8 @@ typedef void (*HTC_TARGET_FAILURE)(void *Instance, QDF_STATUS Status);
 struct htc_init_info {
 	void *pContext;         /* context for target notifications */
 	void (*TargetFailure)(void *Instance, QDF_STATUS Status);
-	void (*TargetSendSuspendComplete)(void *ctx, bool is_nack);
+	void (*TargetSendSuspendComplete)(void *ctx, bool is_nack,
+					  uint16_t reason_code);
 	void (*target_initial_wakeup_cb)(void *cb_ctx);
 	void *target_psoc;
 	uint32_t cfg_wmi_credit_cnt;

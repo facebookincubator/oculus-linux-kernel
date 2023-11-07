@@ -178,6 +178,7 @@ struct dsi_backlight_config {
 	/* Timing params */
 	u32 blu_default_duty;
 	u32 blu_max_overlap_ns;
+	u32 bl_temperature_override;
 	s32 fifo_trim;
 	u32 fifo_scanlines;
 	u32 scanline_max_offset;
@@ -314,6 +315,8 @@ struct dsi_panel {
 	bool sync_broadcast_en;
 	u32 dsc_count;
 	u32 lm_count;
+	u8 skewed_vsync_master;
+	u32 skew_offset_line;
 
 	bool ctl_op_sync;
 

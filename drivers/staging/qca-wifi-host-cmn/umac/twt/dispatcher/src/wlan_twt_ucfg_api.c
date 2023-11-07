@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -121,4 +121,10 @@ ucfg_twt_get_peer_capabilities(struct wlan_objmgr_psoc *psoc,
 			       uint8_t *peer_cap)
 {
 	return wlan_twt_get_peer_capabilities(psoc, peer_mac, peer_cap);
+}
+
+QDF_STATUS ucfg_twt_get_restricted_twt_supported(struct wlan_objmgr_psoc *psoc,
+						 bool *val)
+{
+	return wlan_twt_tgt_caps_get_restricted_support(psoc, val);
 }

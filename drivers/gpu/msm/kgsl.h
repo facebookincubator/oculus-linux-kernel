@@ -528,6 +528,8 @@ void kgsl_mmu_remove_global(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc);
 
 /* Helper functions */
+pgprot_t kgsl_pgprot_modify(struct kgsl_memdesc *memdesc, pgprot_t pgprot);
+
 int kgsl_request_irq(struct platform_device *pdev, const  char *name,
 		irq_handler_t handler, void *data);
 
@@ -641,4 +643,5 @@ static inline bool kgsl_addr_range_overlap(uint64_t gpuaddr1,
 	return !(((gpuaddr1 + size1) <= gpuaddr2) ||
 		(gpuaddr1 >= (gpuaddr2 + size2)));
 }
+
 #endif /* __KGSL_H */

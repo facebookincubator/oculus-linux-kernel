@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -115,6 +115,16 @@
 #define SSPP_TRAFFIC_SHAPER_BPC_MAX        0xFF
 #define SSPP_CLK_CTRL                      0x330
 #define SSPP_CLK_STATUS                    0x334
+
+/* SSPP_MULTIRECT_EXTN*/
+#define SSPP_OUT_SIZE_REC2                 0x300
+#define SSPP_OUT_XY_REC2                   0x304
+#define SSPP_SRC_XY_REC2                   0x308
+#define SSPP_SRC_SIZE_REC2                 0x30C
+#define SSPP_OUT_SIZE_REC3                 0x310
+#define SSPP_OUT_XY_REC3                   0x314
+#define SSPP_SRC_XY_REC3                   0x318
+#define SSPP_SRC_SIZE_REC3                 0x31C
 
 #define SSPP_CAC_CTRL                      0x328
 #define SSPP_SW_PIX_EXT_C2_LR              0x320
@@ -807,8 +817,10 @@ static void sde_hw_sspp_setup_rects(struct sde_hw_pipe *ctx,
 	struct sde_hw_blk_reg_map *c;
 	u32 src_size, src_xy, dst_size, dst_xy, ystride0, ystride1;
 	u32 src_size_off, src_xy_off, out_size_off, out_xy_off;
+	u32 src_size_ext_off, src_xy_ext_off, out_size_ext_off, out_xy_ext_off;
+	u32 src_extn_size, src_extn_xy, dst_extn_size, dst_extn_xy;
 	u32 decimation = 0;
-	u32 idx;
+	u32 idx, opmode, mask_extn = 0;
 
 	if (_sspp_subblk_offset(ctx, SDE_SSPP_SRC, &idx) || !cfg)
 		return;
@@ -874,6 +886,43 @@ static void sde_hw_sspp_setup_rects(struct sde_hw_pipe *ctx,
 	SDE_REG_WRITE(c, SSPP_SRC_YSTRIDE0 + idx, ystride0);
 	SDE_REG_WRITE(c, SSPP_SRC_YSTRIDE1 + idx, ystride1);
 	SDE_REG_WRITE(c, SSPP_DECIMATION_CONFIG + idx, decimation);
+
+	if (rect_index == SDE_SSPP_RECT_SOLO)
+		return;
+
+	src_extn_size = (cfg->src_rect_extn.h << 16) | (cfg->src_rect_extn.w);
+	dst_extn_size = (cfg->dst_rect_extn.h << 16) | (cfg->dst_rect_extn.w);
+	src_extn_xy = (cfg->src_rect_extn.y << 16) | (cfg->src_rect_extn.x);
+	dst_extn_xy = (cfg->dst_rect_extn.y << 16) | (cfg->dst_rect_extn.x);
+
+	opmode = SDE_REG_READ(c, SSPP_MULTIRECT_OPMODE + idx);
+
+	if (rect_index == SDE_SSPP_RECT_0) {
+		mask_extn = BIT(8);
+		src_size_ext_off = SSPP_SRC_SIZE_REC2;
+		src_xy_ext_off = SSPP_SRC_XY_REC2;
+		out_size_ext_off = SSPP_OUT_SIZE_REC2;
+		out_xy_ext_off = SSPP_OUT_XY_REC2;
+	} else {
+		mask_extn = BIT(9);
+		src_size_ext_off = SSPP_SRC_SIZE_REC3;
+		src_xy_ext_off = SSPP_SRC_XY_REC3;
+		out_size_ext_off = SSPP_OUT_SIZE_REC3;
+		out_xy_ext_off = SSPP_OUT_XY_REC3;
+	}
+
+	if (!src_extn_size && !dst_extn_size) {
+		opmode &= ~mask_extn;
+		SDE_REG_WRITE(c, SSPP_MULTIRECT_OPMODE + idx, opmode);
+		return;
+	}
+
+	opmode |= mask_extn;
+	SDE_REG_WRITE(c, SSPP_MULTIRECT_OPMODE + idx, opmode);
+	SDE_REG_WRITE(c, src_size_ext_off + idx, src_extn_size);
+	SDE_REG_WRITE(c, src_xy_ext_off + idx, src_extn_xy);
+	SDE_REG_WRITE(c, out_size_ext_off + idx, dst_extn_size);
+	SDE_REG_WRITE(c, out_xy_ext_off + idx, dst_extn_xy);
 }
 
 /**

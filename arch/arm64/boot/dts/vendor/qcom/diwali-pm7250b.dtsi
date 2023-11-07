@@ -196,7 +196,7 @@
 
 			vbat_gpu2 {
 				trip = <&b_bcl_lvl2>;
-				cooling-device = <&msm_gpu 3 THERMAL_NO_LIMIT>;
+				cooling-device = <&msm_gpu 2 THERMAL_NO_LIMIT>;
 			};
 		};
 	};

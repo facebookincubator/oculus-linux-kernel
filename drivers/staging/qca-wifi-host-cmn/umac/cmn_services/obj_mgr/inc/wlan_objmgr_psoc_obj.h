@@ -250,6 +250,13 @@
 /* Delete all vdev peer support */
 #define WLAN_VDEV_DELETE_ALL_PEER_SUPPORT         0x00000040
 
+/* CCA busy info for each 20Mhz subband of wideband scan channel support */
+#define WLAN_CCA_BUSY_INFO_FOREACH_20MHZ               0x00000400
+/* ch width notify support */
+#define WLAN_VDEV_PARAM_CHWIDTH_WITH_NOTIFY_SUPPORT    0x00000800
+/* Restricted TWT */
+#define WLAN_SOC_F_RESTRICTED_TWT           0x00000080
+
 /* PSOC op flags */
 
 	/* Invalid VHT cap */

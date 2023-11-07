@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -50,6 +50,7 @@
 #include "wma_api.h"
 #include "wlan_hdd_hostapd.h"
 #include "wlan_dp_ucfg_api.h"
+#include "wma.h"
 
 void hdd_handle_disassociation_event(struct hdd_adapter *adapter,
 				     struct qdf_mac_addr *peer_macaddr)
@@ -449,6 +450,75 @@ static void hdd_cm_reset_udp_qos_upgrade_config(struct hdd_adapter *adapter)
 	}
 }
 
+#ifdef WLAN_FEATURE_11BE
+static inline enum eSirMacHTChannelWidth get_max_bw(void)
+{
+	uint32_t max_bw = wma_get_eht_ch_width();
+
+	if (max_bw == WNI_CFG_EHT_CHANNEL_WIDTH_320MHZ)
+		return eHT_CHANNEL_WIDTH_320MHZ;
+	else if (max_bw == WNI_CFG_VHT_CHANNEL_WIDTH_160MHZ)
+		return eHT_CHANNEL_WIDTH_160MHZ;
+	else if (max_bw == WNI_CFG_VHT_CHANNEL_WIDTH_80_PLUS_80MHZ)
+		return eHT_CHANNEL_WIDTH_80P80MHZ;
+	else if (max_bw == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ)
+		return eHT_CHANNEL_WIDTH_80MHZ;
+	else
+		return eHT_CHANNEL_WIDTH_40MHZ;
+}
+#else
+static inline enum eSirMacHTChannelWidth get_max_bw(void)
+{
+	uint32_t max_bw = wma_get_vht_ch_width();
+
+	if (max_bw == WNI_CFG_VHT_CHANNEL_WIDTH_160MHZ)
+		return eHT_CHANNEL_WIDTH_160MHZ;
+	else if (max_bw == WNI_CFG_VHT_CHANNEL_WIDTH_80_PLUS_80MHZ)
+		return eHT_CHANNEL_WIDTH_80P80MHZ;
+	else if (max_bw == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ)
+		return eHT_CHANNEL_WIDTH_80MHZ;
+	else
+		return eHT_CHANNEL_WIDTH_40MHZ;
+}
+#endif
+
+static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
+				    struct hdd_adapter *adapter)
+{
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	struct mlme_legacy_priv *mlme_priv;
+	enum eSirMacHTChannelWidth max_bw;
+	struct wlan_channel *des_chan;
+	int ret;
+	uint8_t vdev_id = wlan_vdev_get_id(vdev);
+	enum phy_ch_width ch_width_orig;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv)
+		return;
+
+	des_chan = wlan_vdev_mlme_get_des_chan(vdev);
+	if (!des_chan)
+		return;
+
+	ch_width_orig = mlme_priv->connect_info.chan_info_orig.ch_width_orig;
+	if (!ucfg_mlme_is_chwidth_with_notify_supported(hdd_ctx->psoc) ||
+	    ch_width_orig == CH_WIDTH_INVALID)
+		return;
+
+	cm_update_associated_ch_info(vdev, false);
+
+	max_bw = get_max_bw();
+	ret = hdd_set_mac_chan_width(adapter, max_bw);
+	if (ret) {
+		hdd_err("vdev %d : fail to set max ch width", vdev_id);
+		return;
+	}
+
+	hdd_debug("vdev %d : updated ch width to: %d on disconnection", vdev_id,
+		  max_bw);
+}
+
 static QDF_STATUS
 hdd_cm_disconnect_complete_post_user_update(struct wlan_objmgr_vdev *vdev,
 					    struct wlan_cm_discon_rsp *rsp)
@@ -473,6 +543,13 @@ hdd_cm_disconnect_complete_post_user_update(struct wlan_objmgr_vdev *vdev,
 				adapter, FTM_TIME_SYNC_STA_DISCONNECTED);
 	}
 
+	/*
+	 * via the SET_MAX_BANDWIDTH command, the upper layer can update channel
+	 * width. The host should update channel bandwidth to the max supported
+	 * bandwidth on disconnection so that post disconnection DUT can
+	 * connect in max BW.
+	 */
+	hdd_cm_restore_ch_width(vdev, adapter);
 	hdd_cm_set_default_wlm_mode(adapter);
 	__hdd_cm_disconnect_handler_post_user_update(adapter, vdev);
 	wlan_twt_concurrency_update(hdd_ctx);

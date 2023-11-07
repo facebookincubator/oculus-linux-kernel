@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -100,6 +100,8 @@ ucfg_qmi_wfds_register_os_if_callbacks(struct wlan_qmi_psoc_context *qmi_ctx,
 				cb_obj->qmi_wfds_send_req_mem_msg;
 	qmi_ctx->qmi_cbs.qmi_wfds_send_ipcc_map_n_cfg_msg =
 				cb_obj->qmi_wfds_send_ipcc_map_n_cfg_msg;
+	qmi_ctx->qmi_cbs.qmi_wfds_send_misc_req_msg =
+				cb_obj->qmi_wfds_send_misc_req_msg;
 }
 #else
 static inline void

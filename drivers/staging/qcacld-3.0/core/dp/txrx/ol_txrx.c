@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1936,6 +1936,7 @@ ol_txrx_vdev_attach(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	uint8_t vdev_id = vdev_info->vdev_id;
 	enum wlan_op_mode op_mode = vdev_info->op_mode;
 	enum wlan_op_subtype subtype = vdev_info->subtype;
+	enum QDF_OPMODE qdf_opmode = vdev_info->qdf_opmode;
 
 	struct ol_txrx_vdev_t *vdev;
 	QDF_STATUS qdf_status;
@@ -1958,6 +1959,7 @@ ol_txrx_vdev_attach(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 	vdev->vdev_id = vdev_id;
 	vdev->opmode = op_mode;
 	vdev->subtype = subtype;
+	vdev->qdf_opmode = qdf_opmode;
 
 	vdev->delete.pending = 0;
 	vdev->safemode = 0;
@@ -5174,7 +5176,7 @@ void ol_rx_data_process(struct ol_txrx_peer_t *peer,
 				  "%s: failed to enqueue rx frm to cached_bufq",
 				  __func__);
 	} else {
-#ifdef QCA_CONFIG_SMP
+#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
 		/*
 		 * If the kernel is SMP, schedule rx thread to
 		 * better use multicores.
@@ -5199,9 +5201,9 @@ void ol_rx_data_process(struct ol_txrx_peer_t *peer,
 			pkt->staId = peer->local_id;
 			cds_indicate_rxpkt(sched_ctx, pkt);
 		}
-#else                           /* QCA_CONFIG_SMP */
+#else                           /* WLAN_DP_LEGACY_OL_RX_THREAD */
 		ol_rx_data_handler(pdev, rx_buf_list, peer->local_id);
-#endif /* QCA_CONFIG_SMP */
+#endif /* WLAN_DP_LEGACY_OL_RX_THREAD */
 	}
 
 	return;

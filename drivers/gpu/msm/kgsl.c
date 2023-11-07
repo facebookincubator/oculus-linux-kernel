@@ -41,18 +41,6 @@
 #include "kgsl_threadstats.h"
 #include "kgsl_trace.h"
 
-#ifndef arch_mmap_check
-#define arch_mmap_check(addr, len, flags)	(0)
-#endif
-
-#ifndef pgprot_writebackcache
-#define pgprot_writebackcache(_prot)	(_prot)
-#endif
-
-#ifndef pgprot_writethroughcache
-#define pgprot_writethroughcache(_prot)	(_prot)
-#endif
-
 #if defined(CONFIG_ARM64) || defined(CONFIG_ARM_LPAE)
 #define KGSL_DMA_BIT_MASK	DMA_BIT_MASK(64)
 #else
@@ -3912,11 +3900,10 @@ int kgsl_add_fault(struct kgsl_context *context, u32 type, void *priv)
 	return 0;
 }
 
-#ifdef CONFIG_ARM64
 static uint64_t kgsl_filter_cachemode(uint64_t flags)
 {
 	/*
-	 * WRITETHROUGH is not supported in arm64, so we tell the user that we
+	 * WRITETHROUGH is not supported on ARM64, so we change it silently to
 	 * use WRITEBACK which is the default caching policy.
 	 */
 	if (FIELD_GET(KGSL_CACHEMODE_MASK, flags) == KGSL_CACHEMODE_WRITETHROUGH) {
@@ -3925,12 +3912,6 @@ static uint64_t kgsl_filter_cachemode(uint64_t flags)
 	}
 	return flags;
 }
-#else
-static uint64_t kgsl_filter_cachemode(uint64_t flags)
-{
-	return flags;
-}
-#endif
 
 /* The largest allowable alignment for a GPU object is 32MB */
 #define KGSL_MAX_ALIGN (32 * SZ_1M)
@@ -4243,10 +4224,27 @@ static inline void kgsl_privileged_uid_list_free(struct kgsl_device *device)
 {
 	struct kgsl_privileged_uid_node *entry, *tmp;
 
+	mutex_lock(&device->uid_list_mutex);
 	list_for_each_entry_safe(entry, tmp, &device->privileged_uid_list, node) {
-		list_del_init(&entry->node);
-		kfree(entry);
+		list_del_rcu(&entry->node);
+		kfree_rcu(entry, rcu);
 	}
+	mutex_unlock(&device->uid_list_mutex);
+}
+
+bool kgsl_is_uid_privileged(struct kgsl_device *device, uid_t uid)
+{
+	struct kgsl_privileged_uid_node *entry;
+	bool privileged = false;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(entry, &device->privileged_uid_list, node)
+		if ((privileged = (entry->uid == uid)))
+			goto out;
+out:
+	rcu_read_unlock();
+
+	return privileged;
 }
 
 long kgsl_ioctl_allow_uid_high_priority(
@@ -4270,9 +4268,8 @@ long kgsl_ioctl_allow_uid_high_priority(
 	 * Allow UIDs that match the given UID to request high-priority
 	 * contexts.
 	 */
-	list_for_each_entry(entry, &device->privileged_uid_list, node)
-		if (entry->uid == param->uid)
-			return 0;
+	if (kgsl_is_uid_privileged(device, param->uid))
+		return 0;
 
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 	if (entry == NULL)
@@ -4280,7 +4277,9 @@ long kgsl_ioctl_allow_uid_high_priority(
 
 	entry->uid = param->uid;
 
-	list_add(&entry->node, &device->privileged_uid_list);
+	mutex_lock(&device->uid_list_mutex);
+	list_add_rcu(&entry->node, &device->privileged_uid_list);
+	mutex_unlock(&device->uid_list_mutex);
 
 	return 0;
 }
@@ -4429,7 +4428,7 @@ kgsl_mmap_memstore(struct file *file, struct kgsl_device *device,
 		return -EINVAL;
 	}
 
-	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+	vma->vm_page_prot = kgsl_pgprot_modify(memdesc, vma->vm_page_prot);
 	vma->vm_private_data = memdesc;
 	vma->vm_flags |= memdesc->ops->vmflags;
 	vma->vm_ops = &kgsl_memstore_vm_ops;
@@ -4729,6 +4728,29 @@ kgsl_get_unmapped_area(struct file *file, unsigned long addr,
 	return val;
 }
 
+
+pgprot_t kgsl_pgprot_modify(struct kgsl_memdesc *memdesc, pgprot_t pgprot)
+{
+	if (memdesc == NULL)
+		return pgprot_writecombine(pgprot);
+
+	switch (kgsl_memdesc_get_cachemode(memdesc)) {
+	case KGSL_CACHEMODE_UNCACHED:
+		return pgprot_noncached(pgprot);
+	case KGSL_CACHEMODE_WRITETHROUGH:
+		/* Intentional fallthrough to WB caching. */
+	case KGSL_CACHEMODE_WRITEBACK:
+		/*
+		 * Writeback caching is the default caching behavior for
+		 * ARM(64) so return `pgprot` without modification.
+		 */
+		return pgprot;
+	case KGSL_CACHEMODE_WRITECOMBINE:
+	default:
+		return pgprot_writecombine(pgprot);
+	}
+}
+
 static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	unsigned int cache;
@@ -4762,22 +4784,8 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 
 	cache = kgsl_memdesc_get_cachemode(&entry->memdesc);
 
-	switch (cache) {
-	case KGSL_CACHEMODE_WRITETHROUGH:
-		vma->vm_page_prot = pgprot_writethroughcache(vma->vm_page_prot);
-		if (pgprot_val(vma->vm_page_prot) ==
-			pgprot_val(pgprot_writebackcache(vma->vm_page_prot)))
-			WARN_ONCE(1, "WRITETHROUGH is deprecated for arm64");
-		break;
-	case KGSL_CACHEMODE_WRITEBACK:
-		vma->vm_page_prot = pgprot_writebackcache(vma->vm_page_prot);
-		break;
-	case KGSL_CACHEMODE_UNCACHED:
-	case KGSL_CACHEMODE_WRITECOMBINE:
-	default:
-		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-		break;
-	}
+	vma->vm_page_prot = kgsl_pgprot_modify(&entry->memdesc,
+			vma->vm_page_prot);
 
 	vma->vm_ops = &kgsl_gpumem_vm_ops;
 
@@ -5043,6 +5051,7 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 	 * not unintentionally elevated/restricted by default.
 	 */
 	INIT_LIST_HEAD(&device->privileged_uid_list);
+	mutex_init(&device->uid_list_mutex);
 	device->privileged_tid = -1;
 
 	device->events_wq = alloc_workqueue("kgsl-events",

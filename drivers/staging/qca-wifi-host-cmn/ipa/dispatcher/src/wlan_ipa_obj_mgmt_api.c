@@ -222,6 +222,7 @@ static void ipa_register_ready_cb(void *user_data)
 	}
 	if (ucfg_ipa_uc_ol_init(pdev, qdf_dev)) {
 		ipa_err("IPA ucfg_ipa_uc_ol_init failed");
+		ipa_obj_cleanup(ipa_obj);
 		goto out;
 	}
 
@@ -246,13 +247,6 @@ QDF_STATUS ipa_register_is_ipa_ready(struct wlan_objmgr_pdev *pdev)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	/* Acquire lock */
-	ipa_init_deinit_lock();
-	g_instances_added++;
-	ipa_info("No. of instances added for IPA is %d", g_instances_added);
-	/* Unlock */
-	ipa_init_deinit_unlock();
-
 	ret = qdf_ipa_register_ipa_ready_cb(ipa_register_ready_cb,
 					    (void *)ipa_obj);
 	if (ret == -EEXIST) {
@@ -262,6 +256,14 @@ QDF_STATUS ipa_register_is_ipa_ready(struct wlan_objmgr_pdev *pdev)
 		ipa_err("Failed to check IPA readiness %d", ret);
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	/* Acquire lock */
+	ipa_init_deinit_lock();
+	g_instances_added++;
+	ipa_info("No. of instances added for IPA is %d", g_instances_added);
+	/* Unlock */
+	ipa_init_deinit_unlock();
+
 	return QDF_STATUS_SUCCESS;
 }
 

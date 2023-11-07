@@ -96,7 +96,7 @@ int cam_jpeg_enc_init_hw(void *device_priv,
 		goto cpas_failed;
 	}
 
-	rc = cam_jpeg_enc_enable_soc_resources(soc_info, 0);
+	rc = cam_jpeg_enc_enable_soc_resources(soc_info, !core_info->is_nsp_controlled);
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "soc enable is failed %d", rc);
 		goto soc_failed;
@@ -157,7 +157,7 @@ int cam_jpeg_enc_deinit_hw(void *device_priv,
 	spin_lock_irqsave(&jpeg_enc_dev->hw_lock, flags);
 	jpeg_enc_dev->hw_state = CAM_HW_STATE_POWER_DOWN;
 	spin_unlock_irqrestore(&jpeg_enc_dev->hw_lock, flags);
-	rc = cam_jpeg_enc_disable_soc_resources(soc_info, 0);
+	rc = cam_jpeg_enc_disable_soc_resources(soc_info, !core_info->is_nsp_controlled);
 	if (rc)
 		CAM_ERR(CAM_JPEG, "soc disable failed %d", rc);
 

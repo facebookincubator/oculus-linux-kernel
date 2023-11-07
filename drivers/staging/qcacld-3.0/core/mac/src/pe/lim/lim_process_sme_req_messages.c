@@ -1872,6 +1872,13 @@ static void lim_check_oui_and_update_session(struct mac_context *mac_ctx,
 	}
 
 	if (WLAN_REG_IS_24GHZ_CH_FREQ(bss_desc->chan_freq) &&
+		wlan_action_oui_search(mac_ctx->psoc,
+				       &vendor_ap_search_attr,
+				       ACTION_OUI_AUTH_ASSOC_6MBPS_2GHZ)) {
+		session->is_oui_auth_assoc_6mbps_2ghz_enable = true;
+	}
+
+	if (WLAN_REG_IS_24GHZ_CH_FREQ(bss_desc->chan_freq) &&
 	    !mac_ctx->mlme_cfg->vht_caps.vht_cap_info.b24ghz_band &&
 	    session->dot11mode == MLME_DOT11_MODE_11AC) {
 		/* Need to disable VHT operation in 2.4 GHz band */
@@ -3001,9 +3008,7 @@ lim_fill_pe_session(struct mac_context *mac_ctx, struct pe_session *session,
 	struct ps_params *ps_param =
 				&ps_global_info->ps_params[session->vdev_id];
 	uint32_t timeout;
-	uint8_t programmed_country[REG_ALPHA2_LEN + 1];
 	enum reg_6g_ap_type power_type_6g;
-	bool ctry_code_match;
 	struct cm_roam_values_copy temp;
 	uint32_t neighbor_lookup_threshold;
 	uint32_t hi_rssi_scan_rssi_delta;
@@ -3264,19 +3269,16 @@ lim_fill_pe_session(struct mac_context *mac_ctx, struct pe_session *session,
 	if (wlan_reg_is_6ghz_chan_freq(bss_desc->chan_freq)) {
 		if (!ie_struct->Country.present)
 			pe_debug("Channel is 6G but country IE not present");
-		wlan_reg_read_current_country(mac_ctx->psoc,
-					      programmed_country);
-		status = wlan_reg_get_6g_power_type_for_ctry(
+		status = wlan_reg_get_best_6g_power_type(
 				mac_ctx->psoc, mac_ctx->pdev,
-				ie_struct->Country.country,
-				programmed_country, &power_type_6g,
-				&ctry_code_match, session->ap_power_type);
+				&power_type_6g,
+				session->ap_defined_power_type_6g,
+				bss_desc->chan_freq);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			status = QDF_STATUS_E_NOSUPPORT;
 			goto send;
 		}
-		session->ap_power_type_6g = power_type_6g;
-		session->same_ctry_code = ctry_code_match;
+		session->best_6g_power_type = power_type_6g;
 
 		lim_iterate_triplets(ie_struct->Country);
 
@@ -4394,7 +4396,7 @@ lim_cm_handle_join_req(struct cm_vdev_join_req *req)
 	}
 
 	if (!wlan_vdev_mlme_is_mlo_link_vdev(pe_session->vdev))
-		lim_send_mlo_caps_ie(mac_ctx, pe_session,
+		lim_send_mlo_caps_ie(mac_ctx, pe_session->vdev,
 				     QDF_STA_MODE,
 				     pe_session->vdev_id);
 
@@ -5586,9 +5588,7 @@ uint8_t lim_get_max_tx_power(struct mac_context *mac,
 
 void lim_calculate_tpc(struct mac_context *mac,
 		       struct pe_session *session,
-		       bool is_pwr_constraint_absolute,
-		       uint8_t ap_pwr_type,
-		       bool ctry_code_match)
+		       bool is_pwr_constraint_absolute)
 {
 	bool is_psd_power = false;
 	bool is_tpe_present = false, is_6ghz_freq = false;
@@ -5636,9 +5636,9 @@ void lim_calculate_tpc(struct mac_context *mac,
 		skip_tpe = wlan_mlme_skip_tpe(mac->psoc);
 	} else {
 		is_6ghz_freq = true;
-		/* Power mode calculation for 6G*/
-		ap_power_type_6g = session->ap_power_type;
+		/* Power mode calculation for 6 GHz STA*/
 		if (LIM_IS_STA_ROLE(session)) {
+			ap_power_type_6g = session->best_6g_power_type;
 			wlan_mlme_get_safe_mode_enable(mac->psoc,
 						       &safe_mode_enable);
 			wlan_mlme_is_rf_test_mode_enabled(mac->psoc,
@@ -5647,18 +5647,8 @@ void lim_calculate_tpc(struct mac_context *mac,
 			 * set LPI power if safe mode is enabled OR RF test
 			 * mode is enabled.
 			 */
-			if (rf_test_mode || safe_mode_enable) {
+			if (rf_test_mode || safe_mode_enable)
 				ap_power_type_6g = REG_INDOOR_AP;
-			} else {
-				if (!session->lim_join_req) {
-					if (!ctry_code_match)
-						ap_power_type_6g = ap_pwr_type;
-				} else {
-					if (!session->same_ctry_code)
-						ap_power_type_6g =
-						session->ap_power_type_6g;
-				}
-			}
 		}
 	}
 
@@ -7681,7 +7671,7 @@ static void __lim_process_sme_set_ht2040_mode(struct mac_context *mac,
 				eHT_CHANNEL_WIDTH_20MHZ : eHT_CHANNEL_WIDTH_40MHZ;
 			qdf_mem_copy(pHtOpMode->peer_mac, &sta->staAddr,
 				     sizeof(tSirMacAddr));
-			pHtOpMode->smesessionId = sessionId;
+			pHtOpMode->smesessionId = pe_session->smeSessionId;
 
 			msg.type = WMA_UPDATE_OP_MODE;
 			msg.reserved = 0;

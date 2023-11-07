@@ -500,4 +500,14 @@ QDF_STATUS
 pmo_tgt_config_icmp_offload_req(struct wlan_objmgr_psoc *psoc,
 				struct pmo_icmp_offload *pmo_icmp_req);
 #endif
+
+/**
+ * pmo_tgt_psoc_set_wow_enable_ack_failed() -set wow enable ack failure status
+ * @psoc: objmgr psoc
+ *
+ * Return: none
+ */
+QDF_STATUS
+pmo_tgt_psoc_set_wow_enable_ack_failed(struct wlan_objmgr_psoc *psoc);
+
 #endif /* end  of _WLAN_PMO_TGT_API_H_ */

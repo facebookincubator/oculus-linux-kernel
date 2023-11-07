@@ -729,6 +729,34 @@ static inline bool wmi_get_runtime_pm_inprogress(wmi_unified_t wmi_handle)
 #endif
 
 /**
+ * wmi_set_wow_enable_ack_failed() - set wow enable ack failed status
+ *     if wow enable ack failed, which means host and fw have some problem
+ *     to exchange wmi cmd. set indication here and block wmi cmds.
+ *     the cmds can be sent again after wmi re-init in subsystem recovery.
+ * @wmi_handle: wmi context
+ *
+ * return: none
+ */
+void wmi_set_wow_enable_ack_failed(wmi_unified_t wmi_handle);
+
+/**
+ * wmi_clear_wow_enable_ack_failed() - clear wow enable ack failed status
+ *     explicitly clear this status when wmi close of SSR
+ * @wmi_handle: wmi context
+ *
+ * return: none
+ */
+void wmi_clear_wow_enable_ack_failed(wmi_unified_t wmi_handle);
+
+/**
+ * wmi_has_wow_enable_ack_failed() - get wow enable ack failed status
+ * @wmi_handle: wmi context
+ *
+ * Return: true if wow enable ack already failed. other false
+ */
+bool wmi_has_wow_enable_ack_failed(wmi_unified_t wmi_handle);
+
+/**
  * wmi_unified_get_soc_handle: Get WMI SoC handle
  * @wmi_handle: WMI context got from wmi_attach
  *
@@ -3835,6 +3863,23 @@ QDF_STATUS wmi_extract_scan_radio_cap_service_ready_ext2(
 			wmi_unified_t wmi_handle,
 			uint8_t *evt_buf, uint8_t idx,
 			struct wlan_psoc_host_scan_radio_caps *param);
+
+/**
+ * wmi_extract_msdu_idx_qtype_map_service_ready_ext2: Extract HTT MSDU index
+ *                                                    to qtype map received
+ *                                                    through extended service
+ *                                                    ready2 event
+ * @wmi_handle: WMI handle
+ * @evt_buf: Event buffer
+ * @idx: HTT MSDU index in array
+ * @msdu_qtype: MSDU Qtype pointer
+ *
+ * Return: QDF status of operation
+ */
+QDF_STATUS wmi_extract_msdu_idx_qtype_map_service_ready_ext2(
+			wmi_unified_t wmi_handle,
+			uint8_t *evt_buf, uint8_t idx,
+			uint8_t *msdu_qtype);
 
 /**
  * wmi_extract_sw_cal_ver_ext2: Extract sw cal version received through

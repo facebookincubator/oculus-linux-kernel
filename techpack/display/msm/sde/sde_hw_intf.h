@@ -70,6 +70,32 @@ struct intf_avr_params {
 };
 
 /**
+ * struct sde_intf_offset_cfg: Configure interface offset parameters.
+ * @fixed_skew_offset_line: skew offset value in vertical lines from devicetree.
+ * @fixed_fps: Max fps timing node value in VFP method of DPFS.
+ * @fixed_vtotal: Max Fps vtotal value in VFP method of DFPS.
+ * @skew_offset_line: skew offset value in vertical lines
+ * @fps: Mode FPS
+ * @vtotal: Mode vtotal
+ * @flush_sync_window_min: Window min used for CTL flush programming and signal fence
+ * @flush_sync_window_max: Window max used for CTL flush programming and signal fence
+ * @skew_intf_offset_en: enable interface offset feature.
+ * @set_master_intf: Select master interface
+ */
+struct sde_intf_offset_cfg {
+	u32 fixed_skew_offset_line;
+	u32 fixed_fps;
+	u32 fixed_vtotal;
+	u32 skew_offset_line;
+	u32 fps;
+	u32 vtotal;
+	ktime_t flush_sync_window_min;
+	ktime_t flush_sync_window_max;
+	bool skew_intf_offset_en;
+	u8 set_master_intf;
+};
+
+/**
  * struct sde_hw_intf_ops : Interface to the interface Hw driver functions
  *  Assumption is these functions will be called after clocks are enabled
  * @ setup_timing_gen : programs the timing engine
@@ -243,17 +269,16 @@ struct sde_hw_intf_ops {
 	u32 (*get_intr_status)(struct sde_hw_intf *intf);
 
 	/**
-	 * Setup the Sync programmable INTF offset between two DPU's
-	 */
-	void (*setup_dpu_sync_prog_intf_offset)(struct sde_hw_intf *intf,
-			const struct intf_prog_fetch *fetch);
-
-	/**
 	 * Setup timing engine enablement for slave DPU when enabled in sync mode
 	 */
 
 	void (*enable_dpu_sync_ctrl)(struct sde_hw_intf *intf,
 			u32 timing_en_mux_sel);
+	/**
+	 * Setup the Sync programmable INTF offset between two DPU's
+	 */
+	void (*setup_dpu_sync_prog_skew_intf_offset)(struct sde_hw_intf *intf,
+			u32 curr_skew_offset_line);
 };
 
 struct sde_hw_intf {

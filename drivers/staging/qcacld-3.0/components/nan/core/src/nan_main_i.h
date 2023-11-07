@@ -61,6 +61,17 @@ struct scheduler_msg;
 #define nan_nofl_debug(params...) \
 	QDF_TRACE_DEBUG_NO_FL(QDF_MODULE_ID_NAN, params)
 
+#define nan_alert_rl(params...) \
+	QDF_TRACE_FATAL_RL(QDF_MODULE_ID_NAN, params)
+#define nan_err_rl(params...) \
+	QDF_TRACE_ERROR_RL(QDF_MODULE_ID_NAN, params)
+#define nan_warn_rl(params...) \
+	QDF_TRACE_WARN_RL(QDF_MODULE_ID_NAN, params)
+#define nan_info_rl(params...) \
+	QDF_TRACE_INFO_RL(QDF_MODULE_ID_NAN, params)
+#define nan_debug_rl(params...) \
+	QDF_TRACE_DEBUG_RL(QDF_MODULE_ID_NAN, params)
+
 /**
  * enum nan_disc_state - NAN Discovery states
  * @NAN_DISC_DISABLED: NAN Discovery is disabled

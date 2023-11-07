@@ -52,6 +52,10 @@
 #define IDLE_POWERCOLLAPSE_DURATION	(66 - 16/2)
 #define IDLE_POWERCOLLAPSE_IN_EARLY_WAKEUP (200 - 16/2)
 
+#define MIN_SKEW_VSYNC_PERCENTAGE 10
+#define MAX_SKEW_VSYNC_PERCENTAGE 75
+#define DEFAULT_SKEW_VSYNC_PERCENTAGE 50
+
 /* below this fps limit, timeouts are adjusted based on fps */
 #define DEFAULT_TIMEOUT_FPS_THRESHOLD            24
 
@@ -391,6 +395,14 @@ void sde_encoder_kickoff(struct drm_encoder *encoder, bool config_changed);
  */
 int sde_encoder_wait_for_event(struct drm_encoder *drm_encoder,
 						enum msm_event_wait event);
+
+/**
+ * sde_encoder_helper_get_skewed_vsync_status: Returns whether skewed-vsync
+ *			feature is enabled/disabled.
+ * @drm_enc:	encoder pointer
+ * Returns:	true/false if skew-vsync feature is enabled/disabled.
+ */
+bool sde_encoder_helper_get_skewed_vsync_status(struct drm_encoder *drm_enc);
 
 /**
  * sde_encoder_idle_request - request for idle request to avoid 4 vsync cycle

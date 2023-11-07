@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -41,6 +41,7 @@
  * @all_twt_enabled: all twt enabled
  * @twt_stats_enabled: twt stats enabled
  * @twt_ack_supported: twt ack supported
+ * @restricted_twt_support: Restricted TWT supported
  */
 struct twt_tgt_caps {
 	bool twt_requestor;
@@ -52,6 +53,7 @@ struct twt_tgt_caps {
 	bool all_twt_enabled;
 	bool twt_stats_enabled;
 	bool twt_ack_supported;
+	bool restricted_twt_support;
 };
 
 /**

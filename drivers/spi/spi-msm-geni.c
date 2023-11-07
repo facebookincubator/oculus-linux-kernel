@@ -108,20 +108,24 @@
 #define RX_IO_EN2CORE_EN_DELAY_SHFT	8
 #define RX_SI_EN2IO_DELAY_SHFT 12
 
+#define CREATE_TRACE_POINTS
+#include "spi-qup-trace.h"
+
+#ifdef CONFIG_MSM_GENI_SE_DEBUG
 #define SPI_LOG_DBG(log_ctx, print, dev, x...) do { \
 GENI_SE_DBG(log_ctx, print, dev, x); \
-if (dev) \
+if (dev && trace_spi_log_info_enabled()) \
 	spi_trace_log(dev, x); \
 } while (0)
+#else
+#define SPI_LOG_DBG(log_ctx, print, dev, x...) do {} while (0)
+#endif /* CONFIG_MSM_GENI_SE_DEBUG */
 
 #define SPI_LOG_ERR(log_ctx, print, dev, x...) do { \
 GENI_SE_ERR(log_ctx, print, dev, x); \
-if (dev) \
+if (dev && trace_spi_log_info_enabled()) \
 	spi_trace_log(dev, x); \
 } while (0)
-
-#define CREATE_TRACE_POINTS
-#include "spi-qup-trace.h"
 
 /* FTRACE Logging */
 void spi_trace_log(struct device *dev, const char *fmt, ...)
@@ -2343,6 +2347,7 @@ static int spi_geni_probe(struct platform_device *pdev)
 			goto spi_geni_probe_unmap;
 		}
 
+		irq_set_status_flags(geni_mas->irq, IRQ_NOAUTOEN);
 		ret = devm_request_irq(&pdev->dev, geni_mas->irq,
 			geni_spi_irq, IRQF_TRIGGER_HIGH, "spi_geni", geni_mas);
 		if (ret) {
@@ -2594,9 +2599,7 @@ exit_rt_resume:
 	if (geni_mas->gsi_mode)
 		ret = spi_geni_gpi_pause_resume(geni_mas, false);
 
-	if (geni_mas->setup)
-		enable_irq(geni_mas->irq);
-
+	enable_irq(geni_mas->irq);
 	return ret;
 }
 

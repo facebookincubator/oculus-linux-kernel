@@ -447,6 +447,7 @@ struct wlan_psoc_host_service_ext_param {
  * @num_dbr_ring_caps: Number of direct buf rx ring capabilities
  * @chwidth_num_peer_caps: Peer limit for peer_chan_width_switch WMI cmd
  * @max_ndp_sessions: Max number of ndp session fw supports
+ * @max_nan_pairing_sessions: max number of PASN pairing session allowed on NAN
  * @preamble_puncture_bw_cap: Preamble Puncturing Tx support
  * @num_scan_radio_caps: Number of scan radio capabilities
  * @max_users_dl_ofdma: Max number of users per-PPDU for Downlink OFDMA
@@ -464,6 +465,8 @@ struct wlan_psoc_host_service_ext_param {
  * @ul_mumimo_rx_5g: UL MUMIMO Rx support for 5GHz
  * @ul_mumimo_rx_6g: UL MUMIMO Rx support for 6GHz
  * @afc_dev_type: AFC deployment type
+ * @num_msdu_idx_qtype_map: Number of HTT_MSDUQ_INDEX to HTT_MSDU_QTYPE
+ *                          mapping
  */
 struct wlan_psoc_host_service_ext2_param {
 	uint8_t reg_db_version_major;
@@ -473,6 +476,7 @@ struct wlan_psoc_host_service_ext2_param {
 	uint32_t num_dbr_ring_caps;
 	uint32_t chwidth_num_peer_caps;
 	uint32_t max_ndp_sessions;
+	uint32_t max_nan_pairing_sessions;
 	uint32_t preamble_puncture_bw_cap;
 	uint8_t num_scan_radio_caps;
 	uint16_t max_users_dl_ofdma;
@@ -491,6 +495,7 @@ struct wlan_psoc_host_service_ext2_param {
 #if defined(CONFIG_AFC_SUPPORT)
 	enum reg_afc_dev_deploy_type afc_dev_type;
 #endif
+	uint32_t num_msdu_idx_qtype_map;
 };
 
 #endif /* _SERVICE_READY_PARAM_H_*/

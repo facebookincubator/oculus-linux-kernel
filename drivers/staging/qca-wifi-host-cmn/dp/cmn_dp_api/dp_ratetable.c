@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -7011,21 +7011,14 @@ int dp_get_kbps_to_mcs(int kbps_rate, int shortgi, int htflag)
 	switch (htflag) {
 	/* 11b CCK Rates */
 	case DP_11B_CCK_RATE:
-		start_index = CCK_RATE_TABLE_INDEX;
-		end_index = CCK_RATE_TABLE_END_INDEX;
-		break;
-
+		fallthrough;
 	/* 11a OFDM Rates */
 	case DP_11A_OFDM_RATE:
-		start_index = OFDM_RATE_TABLE_INDEX;
-		end_index = OFDMA_RATE_TABLE_END_INDEX;
-		break;
-
+		fallthrough;
 	/* 11g CCK/OFDM Rates */
 	case DP_11G_CCK_OFDM_RATE:
-		start_index = CCK_RATE_TABLE_INDEX;
-		end_index = OFDMA_RATE_TABLE_END_INDEX;
-		break;
+	/* These rates dont have corresponding MCS, hence return 0 */
+		return 0;
 
 	/* HT rates only */
 	case DP_HT_RATE:
