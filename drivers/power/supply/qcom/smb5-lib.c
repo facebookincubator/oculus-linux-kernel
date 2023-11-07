@@ -8615,7 +8615,6 @@ static void smblib_dc_detect_work(struct work_struct *work)
 		smblib_err(chg, "Couldn't get dc hw current max rc = %d\n", rc);
 		return;
 	}
-	val.intval = val.intval * 1000;
 
 	/*
 	 * Update the maximum DC current according to the selected dock PDO

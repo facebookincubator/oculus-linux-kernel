@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -809,6 +810,16 @@ QDF_STATUS sme_deregister_mgmt_frame(mac_handle_t mac_handle,
 				     uint8_t sessionId,
 				     uint16_t frameType, uint8_t *matchData,
 				     uint16_t matchLen);
+/**
+ * sme_change_sap_csa_count() - Set CSA count
+ * @count: CSA count to be set
+ *
+ * Routine sets CSA count in CSA IE when channel switch
+ * is triggered
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS sme_change_sap_csa_count(uint8_t count);
 #ifdef WLAN_FEATURE_EXTWOW_SUPPORT
 QDF_STATUS sme_configure_ext_wow(mac_handle_t mac_handle,
 		tpSirExtWoWParams wlanExtParams,

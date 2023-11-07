@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -115,6 +116,7 @@
 
 #include "wmi_unified_cp_stats_api.h"
 
+struct csa_offload_params;
 typedef qdf_nbuf_t wmi_buf_t;
 #define wmi_buf_data(_buf) qdf_nbuf_data(_buf)
 
@@ -4257,4 +4259,16 @@ QDF_STATUS wmi_unified_send_set_tpc_power_cmd(wmi_unified_t wmi_handle,
 					      uint8_t vdev_id,
 					      struct reg_tpc_power_info *param);
 
+/**
+ * wmi_extract_csa_ie_received_event() - extract csa IE received event
+ * @wmi_handle: wmi handle
+ * @evt_buf: pointer to event buffer
+ * @vdev_id: VDEV ID
+ * @csa_event: csa event data
+ *
+ * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
+ */
+QDF_STATUS
+wmi_extract_csa_ie_received_event(wmi_unified_t wmi_handle, void *evt_buf,
+				  struct csa_offload_params *csa_event);
 #endif /* _WMI_UNIFIED_API_H_ */

@@ -49,7 +49,6 @@ struct vdm_glink_dev {
 	struct pmic_glink_client	*client;
 
 	struct mutex			state_lock;
-	struct vdm_glink_vdm_msg	rx_vdm;
 	enum pmic_glink_state		state;
 
 	struct mutex		svid_handler_lock;
@@ -130,32 +129,30 @@ EXPORT_SYMBOL(vdm_glink_send_vdm);
 
 static int handle_vdm_glink_recv_vdm(struct vdm_glink_dev *udev, void *data, size_t len)
 {
+	struct vdm_glink_vdm_msg *rx_vdm;
 	struct glink_svid_handler *handler;
-	u16 svid;
 	u32 *vdos;
 	u32 num_vdos = 0;
 	u32 vdm_hdr;
 
-	if (len != sizeof(udev->rx_vdm)) {
+	if (len != sizeof(*rx_vdm)) {
 		dev_err(udev->dev, "Incorrect received length %zu expected %lu\n", len,
-			sizeof(udev->rx_vdm));
+			sizeof(*rx_vdm));
 		return -EINVAL;
 	}
 
-	mutex_lock(&udev->svid_handler_lock);
-	memcpy(&udev->rx_vdm, data, sizeof(udev->rx_vdm));
+	rx_vdm = data;
+	dev_dbg(udev->dev, "recv VDM: svid=0x%04x, pid=0x%04x, message size=%d",
+			rx_vdm->svid, rx_vdm->pid, rx_vdm->size);
 
 	/* set up vdm message */
-	vdm_hdr = udev->rx_vdm.data[0];
-	vdos = &(udev->rx_vdm.data[1]);
-	num_vdos = udev->rx_vdm.size - 1;
+	vdm_hdr = rx_vdm->data[0];
+	vdos = &rx_vdm->data[1];
+	num_vdos = rx_vdm->size - 1;
 
-	svid = VDMH_SVID(vdm_hdr);
-	dev_dbg(udev->dev, "recv VDM: svid=0x%04x, pid=0x%04x, message size=%d",
-			svid, udev->rx_vdm.pid, udev->rx_vdm.size);
-
+	mutex_lock(&udev->svid_handler_lock);
 	list_for_each_entry(handler, &udev->svid_handlers, entry)
-		if (svid == handler->svid && udev->rx_vdm.pid == handler->pid)
+		if (rx_vdm->svid == handler->svid && rx_vdm->pid == handler->pid)
 			handler->vdm_received(handler, vdm_hdr, vdos, num_vdos);
 	mutex_unlock(&udev->svid_handler_lock);
 

@@ -6810,6 +6810,9 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 		       soc->stats.rx.err.reo_cmd_send_fail);
 
 	DP_PRINT_STATS("Rx BAR frames:%d", soc->stats.rx.bar_frame);
+
+	DP_PRINT_STATS("Rx invalid TID count:%d",
+		       soc->stats.rx.err.rx_invalid_tid_err);
 }
 
 #ifdef FEATURE_TSO_STATS

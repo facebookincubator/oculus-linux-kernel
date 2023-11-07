@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,8 +34,10 @@
 #include "wlan_cm_roam_public_struct.h"
 #include "wlan_utility.h"
 #include "sir_types.h"
+#include "sir_api.h"
 
 struct target_psoc_info;
+struct csa_offload_params;
 
 typedef const enum policy_mgr_pcl_type
 	pm_dbs_pcl_third_connection_table_type
@@ -623,6 +626,42 @@ static inline void policy_mgr_change_sap_channel_with_csa(
 
 }
 #endif
+
+/**
+ * policy_mgr_sta_sap_dfs_scc_conc_check() - validate and Move SAP channel
+ * using (E)CSA
+ *
+ * @psoc: PSOC object information
+ * @vdev_id: Vdev id
+ * @csa_event: Pointer to CSA IE Received event data
+ *
+ * Invoke the function to change SAP channel using (E)CSA for STA+GO / SAP
+ * SCC scenario only. This function will move P2P-GO / SAP first and then STA
+ * will follow.
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+QDF_STATUS
+policy_mgr_sta_sap_dfs_scc_conc_check(struct wlan_objmgr_psoc *psoc,
+				      uint8_t vdev_id,
+				      struct csa_offload_params *csa_event);
+
+/**
+ * policy_mgr_sta_sap_dfs_enforce_scc() - validate and enforce SCC
+ * using (E)CSA upon receiving 1st beacon
+ *
+ * @psoc: PSOC object information
+ * @vdev_id: Vdev id
+ *
+ * Invoke the function to enforce SCC upon receiving 1st beacon. SAP / GO
+ * movement will be triggered using (E)CSA for STA+GO / SAP DFS scenario only.
+ * The pre-requisite for this function is SAP / GO shall already moved to new
+ * channel by policy_mgr_sta_sap_dfs_scc_conc_check() function.
+ *
+ * Return: void
+ */
+void policy_mgr_sta_sap_dfs_enforce_scc(struct wlan_objmgr_psoc *psoc,
+					uint8_t vdev_id);
 
 #ifdef WLAN_FEATURE_P2P_P2P_STA
 /**
@@ -1571,6 +1610,8 @@ typedef void (*policy_mgr_nss_update_cback)(struct wlan_objmgr_psoc *psoc,
  * @sme_change_mcc_beacon_interval: Set MCC beacon interval to FW
  * @sme_rso_start_cb: Enable roaming offload callback
  * @sme_rso_stop_cb: Disable roaming offload callback
+ * @sme_change_sap_csa_count: Change CSA count for SAP/GO, only one
+ *			      time, needs to set again if used once.
  */
 struct policy_mgr_sme_cbacks {
 	void (*sme_get_nss_for_vdev)(enum QDF_OPMODE,
@@ -1597,6 +1638,7 @@ struct policy_mgr_sme_cbacks {
 	QDF_STATUS (*sme_rso_stop_cb)(
 		mac_handle_t mac_handle, uint8_t vdev_id,
 		uint8_t reason, enum wlan_cm_rso_control_requestor requestor);
+	QDF_STATUS (*sme_change_sap_csa_count)(uint8_t count);
 };
 
 /**

@@ -74,7 +74,7 @@ static void charging_dock_send_vdm_request(
 static void charging_dock_handle_work(struct work_struct *work)
 {
 	struct charging_dock_device_t *ddev =
-		container_of(work, struct charging_dock_device_t, dwork.work);
+		container_of(work, struct charging_dock_device_t, work);
 
 	dev_dbg(ddev->dev, "%s: enter", __func__);
 
@@ -97,9 +97,8 @@ static void charging_dock_handle_work(struct work_struct *work)
 static void charging_dock_handle_work_soc(struct work_struct *work)
 {
 	struct charging_dock_device_t *ddev =
-		container_of(work, struct charging_dock_device_t, dwork_soc.work);
+		container_of(work, struct charging_dock_device_t, work_soc);
 	int result = 0;
-	union power_supply_propval capacity = {0};
 	union power_supply_propval status = {0};
 	enum state_of_charge_t soc = NOT_CHARGING;
 
@@ -121,23 +120,10 @@ static void charging_dock_handle_work_soc(struct work_struct *work)
 		goto out;
 	}
 
-	if (status.intval == POWER_SUPPLY_STATUS_FULL) {
-		/* If fully charged, no need to read battery level */
-		soc = CHARGED;
-	} else if (status.intval == POWER_SUPPLY_STATUS_CHARGING) {
-		/* Battery capacity */
-		result = power_supply_get_property(ddev->battery_psy,
-				POWER_SUPPLY_PROP_CAPACITY, &capacity);
-		if (result) {
-			/*
-			 * Log failure and return okay for this call with the hope
-			 * that we can read battery capacity next time around.
-			 */
-			dev_err(ddev->dev, "Unable to read battery capacity: %d\n", result);
-			goto out;
-		}
-		/* Determine soc from battery level to match BatteryService logic */
-		soc = (capacity.intval >= BATTERY_NEARLY_FULL_LEVEL) ? CHARGED : CHARGING;
+	if (status.intval == POWER_SUPPLY_STATUS_CHARGING ||
+		status.intval == POWER_SUPPLY_STATUS_FULL) {
+		dev_dbg(ddev->dev, "system_battery_capacity=%d\n", ddev->system_battery_capacity);
+		soc = (ddev->system_battery_capacity >= BATTERY_NEARLY_FULL_LEVEL) ? CHARGED : CHARGING;
 	}
 
 	if (soc != ddev->params.state_of_charge) {
@@ -176,7 +162,7 @@ static void vdm_connect_common(struct charging_dock_device_t *ddev,
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
-	schedule_delayed_work(&ddev->dwork, 0);
+	schedule_work(&ddev->work);
 
 	if (ddev->send_state_of_charge) {
 		ddev->params.state_of_charge = NOT_CHARGING;
@@ -239,9 +225,9 @@ static void vdm_disconnect_common(struct charging_dock_device_t *ddev, enum char
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
-	cancel_delayed_work_sync(&ddev->dwork);
+	cancel_work_sync(&ddev->work);
 	if (ddev->send_state_of_charge)
-		cancel_delayed_work_sync(&ddev->dwork_soc);
+		cancel_work_sync(&ddev->work_soc);
 }
 
 static void cypd_vdm_disconnect(struct cypd_svid_handler *hdlr)
@@ -545,7 +531,7 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 		case PARAMETER_TYPE_MOISTURE_DETECTED:
 			dev_dbg(ddev->dev, "Received moisture detected: 0x%x value=%d",
 				parameter_type, vdos[0]);
-			ddev->params.moisture_detected = vdos[0];
+			ddev->params.moisture_detected_count += vdos[0];
 			break;
 		default:
 			dev_err(ddev->dev, "Unsupported broadcast parameter 0x%x",
@@ -633,10 +619,9 @@ static ssize_t broadcast_period_store(struct device *dev,
 
 	ddev->params.broadcast_period = temp;
 
-	if (ddev->docked) {
-		cancel_delayed_work(&ddev->dwork);
-		schedule_delayed_work(&ddev->dwork, 0);
-	}
+	if (ddev->docked)
+		schedule_work(&ddev->work);
+
 	mutex_unlock(&ddev->lock);
 
 	return count;
@@ -1107,15 +1092,45 @@ static ssize_t dock_type_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(dock_type);
 
-static ssize_t moisture_detected_show(struct device *dev,
+static ssize_t moisture_detected_count_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->params.moisture_detected);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->params.moisture_detected_count);
 }
-static DEVICE_ATTR_RO(moisture_detected);
+static DEVICE_ATTR_RO(moisture_detected_count);
+
+static ssize_t system_battery_capacity_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->system_battery_capacity);
+}
+
+static ssize_t system_battery_capacity_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+	int val;
+
+	if (kstrtoint(buf, 0, &val)) {
+		dev_err(ddev->dev, "Illegal input for system battery capacity: %s", buf);
+		return -EINVAL;
+	}
+
+	if (ddev->system_battery_capacity != val) {
+		ddev->system_battery_capacity = val;
+		schedule_work(&ddev->work_soc);
+	}
+
+	return count;
+}
+static DEVICE_ATTR_RW(system_battery_capacity);
 
 static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_docked.attr,
@@ -1160,7 +1175,8 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_port_2_serial_number_system.attr,
 	&dev_attr_port_3_serial_number_system.attr,
 	&dev_attr_dock_type.attr,
-	&dev_attr_moisture_detected.attr,
+	&dev_attr_moisture_detected_count.attr,
+	&dev_attr_system_battery_capacity.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);
@@ -1195,7 +1211,7 @@ static int batt_psy_notifier_call(struct notifier_block *nb,
 	if (psy != ddev->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
 
-	schedule_delayed_work(&ddev->dwork_soc, 0);
+	schedule_work(&ddev->work_soc);
 
 	return NOTIFY_OK;
 }
@@ -1259,8 +1275,10 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->upd = devm_usbpd_get_by_phandle(&pdev->dev, "charger-usbpd");
 	if (IS_ERR_OR_NULL(ddev->upd)) {
 #if IS_ENABLED(CONFIG_USB_PD_POLICY)
-		dev_err_ratelimited(&pdev->dev, "devm_usbpd_get_by_phandle failed: %ld\n",
-				PTR_ERR(ddev->upd));
+		if (PTR_ERR(ddev->upd) != -EPROBE_DEFER)
+			dev_err(&pdev->dev,
+					"devm_usbpd_get_by_phandle failed: %ld",
+					PTR_ERR(ddev->upd));
 		return PTR_ERR(ddev->upd);
 #endif
 	}
@@ -1269,8 +1287,10 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->cpd = devm_cypd_get_by_phandle(&pdev->dev, "charger-cypd");
 	if (IS_ERR_OR_NULL(ddev->cpd)) {
 #if IS_ENABLED(CONFIG_CYPD_POLICY_ENGINE)
-		dev_err_ratelimited(&pdev->dev, "devm_cypd_get_by_phandle failed: %ld\n",
-				PTR_ERR(ddev->cpd));
+		if (PTR_ERR(ddev->cpd) != -EPROBE_DEFER)
+			dev_err(&pdev->dev,
+					"devm_cypd_get_by_phandle failed: %ld",
+					PTR_ERR(ddev->cpd));
 		return PTR_ERR(ddev->cpd);
 #endif
 	}
@@ -1279,9 +1299,10 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->gpd = devm_vdm_glink_get_by_phandle(&pdev->dev, "vdm-glink");
 	if (IS_ERR_OR_NULL(ddev->gpd)) {
 #if IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)
-		dev_err_ratelimited(&pdev->dev,
-				"devm_vdm_glink_get_by_phandle failed: %ld",
-				PTR_ERR(ddev->gpd));
+		if (PTR_ERR(ddev->gpd) != -EPROBE_DEFER)
+			dev_err(&pdev->dev,
+					"devm_vdm_glink_get_by_phandle failed: %ld",
+					PTR_ERR(ddev->gpd));
 		return PTR_ERR(ddev->gpd);
 #endif
 	}
@@ -1391,9 +1412,9 @@ static int charging_dock_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "Send state of charge=%d\n", ddev->send_state_of_charge);
 
 	mutex_init(&ddev->lock);
-	INIT_DELAYED_WORK(&ddev->dwork, charging_dock_handle_work);
+	INIT_WORK(&ddev->work, charging_dock_handle_work);
 	if (ddev->send_state_of_charge) {
-		INIT_DELAYED_WORK(&ddev->dwork_soc, charging_dock_handle_work_soc);
+		INIT_WORK(&ddev->work_soc, charging_dock_handle_work_soc);
 		ddev->params.state_of_charge = NOT_CHARGING;
 	}
 	init_waitqueue_head(&ddev->tx_waitq);
@@ -1470,10 +1491,10 @@ static int charging_dock_remove(struct platform_device *pdev)
 		list_for_each_entry(handler_info, &ddev->glink_handlers, entry)
 			vdm_glink_unregister_handler(ddev->gpd, &handler_info->handler);
 
-	cancel_delayed_work_sync(&ddev->dwork);
+	cancel_work_sync(&ddev->work);
 	if (ddev->send_state_of_charge) {
 		batt_psy_unregister_notifier(ddev);
-		cancel_delayed_work_sync(&ddev->dwork_soc);
+		cancel_work_sync(&ddev->work_soc);
 	}
 	wake_up_all(&ddev->tx_waitq);
 	mutex_destroy(&ddev->lock);

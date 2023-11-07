@@ -52,7 +52,7 @@ enum vdm_pid {
 	VDM_PID_UPA_18W = 0x2200,
 	VDM_PID_UPA_45W = 0x2103,
 	/* External batteries */
-	VDM_PID_MOLOKINI = 0xfc60,
+	VDM_PID_MOLOKINI = 0xf6c0,
 	VDM_PID_LEHUA = 0x5001,
 };
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -32,7 +33,7 @@
 #include "wmi_unified_api.h"
 #include "wmi_unified_reg_api.h"
 
-#ifdef HOST_11D_SCAN
+#ifdef TARGET_11D_SCAN
 /**
  * tgt_if_regulatory_is_11d_offloaded() - Check if reg 11d is offloaded.
  * @psoc: psoc pointer

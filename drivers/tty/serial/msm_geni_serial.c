@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/bitmap.h>
@@ -193,6 +193,15 @@ struct msm_geni_ipc_log_sysfs {
 	bool eof;
 };
 
+struct msm_geni_io_stat {
+	spinlock_t lock;
+	u64 last_rx_timestamp; /* monotonic timestamp of last Rx received in interrupt */
+	u32 last_rx_size; /* how many bytes received in last Rx */
+	u64 last_tx_timestamp; /* monotonic timestamp of last Tx confirmed sent in interrupt */
+	u32 last_tx_size; /* how many bytes sent in last Tx */
+	u32 last_tx_remaining; /* how many bytes still in tx buffer not yet sent */
+};
+
 struct msm_geni_serial_port {
 	struct uart_port uport;
 	const char *name;
@@ -264,6 +273,7 @@ struct msm_geni_serial_port {
 	int temp_start; /* temperature at first serial port startup */
 	int temp_end; /* temperature when geni_ios register becomes ready */
 #endif
+	struct msm_geni_io_stat io_stat;
 	bool allow_suspend;
 	enum uart_error_code uart_error;
 	struct work_struct work;
@@ -2064,6 +2074,10 @@ static int msm_geni_serial_handle_dma_rx(struct uart_port *uport, bool drop_rx)
 	 * change to idenetify such scenario.
 	 */
 	memset(msm_port->rx_buf, 0, rx_bytes);
+	spin_lock(&msm_port->io_stat.lock);
+	msm_port->io_stat.last_rx_timestamp = ktime_get_raw_ns();
+	msm_port->io_stat.last_rx_size = rx_bytes;
+	spin_unlock(&msm_port->io_stat.lock);
 exit_handle_dma_rx:
 
 	return ret;
@@ -2073,6 +2087,10 @@ static int msm_geni_serial_handle_dma_tx(struct uart_port *uport)
 {
 	struct msm_geni_serial_port *msm_port = GET_DEV_PORT(uport);
 	struct circ_buf *xmit = &uport->state->xmit;
+
+	spin_lock(&msm_port->io_stat.lock);
+	msm_port->io_stat.last_tx_timestamp = ktime_get_raw_ns();
+	msm_port->io_stat.last_tx_size = msm_port->xmit_size;
 
 	xmit->tail = (xmit->tail + msm_port->xmit_size) & (UART_XMIT_SIZE - 1);
 	geni_se_tx_dma_unprep(msm_port->wrapper_dev, msm_port->tx_dma,
@@ -2095,6 +2113,8 @@ static int msm_geni_serial_handle_dma_tx(struct uart_port *uport)
 		}
 		uart_write_wakeup(uport);
 	}
+	msm_port->io_stat.last_tx_remaining = CIRC_CNT(xmit->head, xmit->tail, UART_XMIT_SIZE);
+	spin_unlock(&msm_port->io_stat.lock);
 	return 0;
 }
 
@@ -2423,6 +2443,7 @@ static void set_rfr_wm(struct msm_geni_serial_port *port)
 static void msm_geni_serial_shutdown(struct uart_port *uport)
 {
 	struct msm_geni_serial_port *msm_port = GET_DEV_PORT(uport);
+	struct pinctrl_state *state;
 	int ret;
 
 	IPC_LOG_MSG(msm_port->ipc_log_misc, "%s:\n", __func__);
@@ -2460,6 +2481,20 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 			irq_set_irq_wake(msm_port->wakeup_irq, 0);
 			disable_irq(msm_port->wakeup_irq);
 			free_irq(msm_port->wakeup_irq, uport);
+			/*
+			 * At msm_geni_serial_probe, it leave the GPIO pins always connected
+			 * to the core when setup an Inband wakeup, so it needs to move the
+			 * pins to their defined "sleep" state when uart shutdown.
+			 */
+			state = pinctrl_lookup_state(msm_port->serial_rsc.geni_pinctrl,
+							PINCTRL_SLEEP);
+			if (!IS_ERR_OR_NULL(state)) {
+				ret = pinctrl_select_state(msm_port->serial_rsc.geni_pinctrl, state);
+				if (ret) {
+					IPC_LOG_MSG(msm_port->ipc_log_pwr,
+					"%s: Failed to select sleep state:%d\n", __func__, ret);
+				}
+			}
 		}
 
 		/* Reset UART error to default during port_close() */
@@ -2990,6 +3025,31 @@ static ssize_t ver_info_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(ver_info);
 
+static ssize_t io_stat_summary_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
+	unsigned long flags;
+	int res;
+	ssize_t ret = 0;
+
+	spin_lock_irqsave(&port->io_stat.lock, flags);
+	res = snprintf(buf, PAGE_SIZE,
+			"Last Rx timestamp_ms:%llu size:%u\n"
+			"Last Tx timestamp_ms:%llu size:%u remaining:%u\n",
+			port->io_stat.last_rx_timestamp / 1000000, port->io_stat.last_rx_size,
+			port->io_stat.last_tx_timestamp / 1000000, port->io_stat.last_tx_size, port->io_stat.last_tx_remaining);
+	if (res > 0)
+		ret += res;
+
+	spin_unlock_irqrestore(&port->io_stat.lock, flags);
+
+	return ret;
+}
+
+static DEVICE_ATTR_RO(io_stat_summary);
+
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 
 static ssize_t geni_ios_delay_show(struct device *dev,
@@ -3387,11 +3447,21 @@ static int ipc_seq_show(struct seq_file *sf, void *progress)
 	return ret;
 }
 
+// allow user-mode to insert a string to ipc log to annotate what user mode is currently doing
+static ssize_t ipc_log_file_write(struct kernfs_open_file *of, char *buf, size_t bytes,
+		 loff_t off)
+{
+	struct msm_geni_ipc_log_sysfs *ipc_sf = of->kn->priv;
+
+	IPC_LOG_MSG(*(ipc_sf->ptr_ipc_log_context), "USER:%s\n", buf);
+	return (ssize_t)bytes;
+}
 struct kernfs_ops ipc_ops = {
 	.seq_start = ipc_seq_start,
 	.seq_next = ipc_seq_next,
 	.seq_stop = ipc_seq_stop,
 	.seq_show = ipc_seq_show,
+	.write = ipc_log_file_write,
 };
 
 static void msm_geni_serial_create_ipc_sysfs(struct msm_geni_serial_port *msm_port,
@@ -3400,6 +3470,10 @@ static void msm_geni_serial_create_ipc_sysfs(struct msm_geni_serial_port *msm_po
 	char name[35];
 	struct kernfs_node *parent;
 
+	if (!(*ptr_ipc_log_context)) {
+		dev_dbg(msm_port->uport.dev, "%s Cannot create sysfs for %s due to no ipc logging context\n", __func__, log_name);
+		return;
+	}
 	ipc_sf->ptr_ipc_log_context = ptr_ipc_log_context;
 	scnprintf(name, sizeof(name), "ipc_log_%s", log_name);
 	parent = msm_port->uport.dev->kobj.sd;
@@ -3495,6 +3569,23 @@ static void msm_geni_serial_debug_init(struct uart_port *uport, bool console)
 	} else
 		msm_geni_serial_create_ipc_sysfs(msm_port, "console", &msm_port->console_log_sf, &msm_port->console_log, IPC_LOG_MISC_PAGES * PAGE_SIZE);
 }
+
+static ssize_t ipc_log_control_store(struct device *dev,
+		struct device_attribute *attr, const char *buf,
+		size_t size)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_geni_serial_port *msm_port = platform_get_drvdata(pdev);
+	int enable = 0;
+
+	kstrtoint(buf, 0, &enable);
+	if (enable == 1 && !msm_port->ipc_log_rx && !msm_port->is_console) {
+		msm_geni_serial_debug_init(&msm_port->uport, false);
+		IPC_LOG_MSG(msm_port->ipc_log_misc, "ipc log lazy initialization\n");
+	}
+	return size;
+}
+static DEVICE_ATTR_WO(ipc_log_control);
 
 static void msm_geni_serial_cons_pm(struct uart_port *uport,
 		unsigned int new_state, unsigned int old_state)
@@ -3871,6 +3962,8 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 	device_create_file(uport->dev, &dev_attr_loopback);
 	device_create_file(uport->dev, &dev_attr_xfer_mode);
 	device_create_file(uport->dev, &dev_attr_ver_info);
+	device_create_file(uport->dev, &dev_attr_io_stat_summary);
+	spin_lock_init(&dev_port->io_stat.lock);
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 	device_create_file(uport->dev, &dev_attr_geni_ios_delay);
 	device_create_file(uport->dev, &dev_attr_geni_ios_current);
@@ -3888,7 +3981,11 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 		}
 	}
 #endif
-	msm_geni_serial_debug_init(uport, is_console);
+	if (of_property_read_bool(pdev->dev.of_node, "ipc-logging-ondemand") && !is_console) {
+		dev_info(&pdev->dev, "%s: ipc logging initialization skipped\n", dev_port->uport.name);
+		device_create_file(uport->dev, &dev_attr_ipc_log_control);
+	} else
+		msm_geni_serial_debug_init(uport, is_console);
 	dev_port->port_setup = false;
 	dev_port->uart_error = UART_ERROR_DEFAULT;
 	ret = msm_geni_serial_get_ver_info(uport);
@@ -3943,6 +4040,7 @@ static int msm_geni_serial_remove(struct platform_device *pdev)
 
 	if (!uart_console(&port->uport)) {
 		wakeup_source_unregister(port->geni_wake);
+		port->geni_wake = NULL;
 		flush_workqueue(port->qwork);
 		destroy_workqueue(port->qwork);
 	}

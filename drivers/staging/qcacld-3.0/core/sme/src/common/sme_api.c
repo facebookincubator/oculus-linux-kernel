@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1308,6 +1308,7 @@ QDF_STATUS sme_start(mac_handle_t mac_handle)
 		sme_cbacks.sme_scan_result_purge = sme_scan_result_purge;
 		sme_cbacks.sme_rso_start_cb = sme_start_roaming;
 		sme_cbacks.sme_rso_stop_cb = sme_stop_roaming;
+		sme_cbacks.sme_change_sap_csa_count = sme_change_sap_csa_count;
 		status = policy_mgr_register_sme_cb(mac->psoc, &sme_cbacks);
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
 			sme_err("Failed to register sme cb with Policy Manager: %d",
@@ -5087,6 +5088,19 @@ QDF_STATUS sme_change_mcc_beacon_interval(uint8_t sessionId)
 		sme_release_global_lock(&mac_ctx->sme);
 	}
 	return status;
+}
+
+QDF_STATUS sme_change_sap_csa_count(uint8_t count)
+{
+	struct mac_context *mac_ctx = sme_get_mac_context();
+
+	if (!mac_ctx) {
+		sme_err("mac_ctx is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+	mac_ctx->sap.one_time_csa_count = count;
+
+	return QDF_STATUS_SUCCESS;
 }
 
 /**

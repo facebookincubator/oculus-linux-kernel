@@ -2483,6 +2483,10 @@ QDF_STATUS (*send_big_data_stats_request_cmd)(
 		wmi_unified_t wmi_handle,
 		struct stats_request_params *param);
 #endif
+
+QDF_STATUS
+(*extract_csa_ie_received_ev_params)(wmi_unified_t wmi_handle, void *evt_buf,
+				     struct csa_offload_params *csa_event);
 };
 
 /* Forward declartion for psoc*/

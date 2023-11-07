@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -3358,6 +3359,17 @@ QDF_STATUS wmi_unified_send_set_tpc_power_cmd(wmi_unified_t wmi_handle,
 		return wmi_handle->ops->send_set_tpc_power_cmd(wmi_handle,
 								   vdev_id,
 								   param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_extract_csa_ie_received_event(wmi_unified_t wmi_handle, void *evt_buf,
+				  struct csa_offload_params *csa_event)
+{
+	if (wmi_handle->ops->extract_csa_ie_received_ev_params)
+		return wmi_handle->ops->extract_csa_ie_received_ev_params
+				(wmi_handle, evt_buf, csa_event);
 
 	return QDF_STATUS_E_FAILURE;
 }

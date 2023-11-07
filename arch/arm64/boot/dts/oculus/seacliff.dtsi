@@ -193,7 +193,6 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup &syncboss_float_shared>;
 
-		oculus,swdflavor = "nrf52832";
 		oculus,syncboss-reset  = <&tlmm 5 0>;
 		oculus,syncboss-timesync = <&tlmm 68 0>;
 		oculus,syncboss-wakeup  = <&tlmm 4 0>;

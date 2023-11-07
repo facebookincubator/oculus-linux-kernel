@@ -2270,7 +2270,7 @@ static void cm710x_update_DSP_Effect_Param
 
 	dev_info(cm710x_codec->dev, "%s DSPElement = 0x%08x\n",
 					__func__, DSPElement);
-	usleep_range(10000, 15000);
+	usleep_range(30000, 35000);
 	mutex_lock(&cm710x_codec->Dsp_Access_Lock);
 	cm710x_dsp_mode_i2c_write_mem(cm710x_codec->real_regmap,
 				0x5FFC0030, (u8 *)&DSPElement, 4);

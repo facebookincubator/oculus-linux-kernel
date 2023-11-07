@@ -2632,6 +2632,10 @@ static int _sde_connector_install_properties(struct drm_device *dev,
 			0x0, 0, MAX_SKEW_VSYNC_PERCENTAGE, 50,
 			CONNECTOR_PROP_SKEW_VSYNC);
 
+	msm_property_install_range(&c_conn->property_info, "wb_cac",
+			0x0, 0, MSM_COMMIT_WB_CAC_DISABLE, 0,
+			CONNECTOR_PROP_WB_CAC);
+
 	if (connector_type == DRM_MODE_CONNECTOR_DSI) {
 		if (sde_kms->catalog->has_qsync && display_info->qsync_min_fps)
 			msm_property_install_enum(&c_conn->property_info,

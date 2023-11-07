@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -18,6 +19,13 @@
 
 #define SDE_CONNECTOR_NAME_SIZE	16
 #define SDE_CONNECTOR_DHDR_MEMPOOL_MAX_SIZE	SZ_32
+
+/* Flags used for CAC enabled commit */
+enum sde_connector_wb_cac_commit {
+	MSM_COMMIT_LEFT_CAC_EN = 1,
+	MSM_COMMIT_RIGHT_CAC_EN,
+	MSM_COMMIT_WB_CAC_DISABLE,
+};
 
 struct sde_connector;
 struct sde_connector_state;

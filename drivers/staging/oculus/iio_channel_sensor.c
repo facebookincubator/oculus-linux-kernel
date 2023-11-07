@@ -17,8 +17,6 @@
 #include <linux/thermal.h>
 #include <linux/types.h>
 
-#include "virtual_sensor_utils.h"
-
 struct iio_channel_sensor_data {
 	struct device *dev;
 	struct thermal_zone_device *tzd;
@@ -130,10 +128,8 @@ static int iio_channel_sensor_probe(struct platform_device *pdev)
 
 static int iio_channel_sensor_remove(struct platform_device *pdev)
 {
-	struct virtual_sensor_common_data *data =
-			(struct virtual_sensor_common_data *) platform_get_drvdata(pdev);
-	struct iio_channel_sensor_data *vs =
-			(struct iio_channel_sensor_data *) data->parent;
+	struct device *dev = &pdev->dev;
+	struct iio_channel_sensor_data *vs = dev_get_drvdata(dev);
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 

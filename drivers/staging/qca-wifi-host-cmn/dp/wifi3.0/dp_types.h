@@ -1033,6 +1033,8 @@ struct dp_soc_stats {
 			uint32_t peer_unauth_rx_pkt_drop;
 			/* MSDU len err count */
 			uint32_t msdu_len_err;
+			/* Rx invalid tid count */
+			uint32_t rx_invalid_tid_err;
 		} err;
 
 		/* packet count per core - per ring */

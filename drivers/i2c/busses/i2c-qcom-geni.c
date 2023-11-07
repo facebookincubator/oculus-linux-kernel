@@ -1100,6 +1100,7 @@ static int geni_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_QCOM_GENI_SE_DEBUG
 static int geni_i2c_resume_noirq(struct device *device)
 {
 	struct geni_i2c_dev *gi2c = dev_get_drvdata(device);
@@ -1107,6 +1108,7 @@ static int geni_i2c_resume_noirq(struct device *device)
 	GENI_SE_DBG(gi2c->ipcl, false, gi2c->dev, "%s\n", __func__);
 	return 0;
 }
+#endif
 
 #ifdef CONFIG_PM
 static int geni_i2c_runtime_suspend(struct device *dev)
@@ -1224,7 +1226,9 @@ static int geni_i2c_suspend_noirq(struct device *device)
 
 static const struct dev_pm_ops geni_i2c_pm_ops = {
 	.suspend_noirq		= geni_i2c_suspend_noirq,
+#ifdef CONFIG_QCOM_GENI_SE_DEBUG
 	.resume_noirq		= geni_i2c_resume_noirq,
+#endif
 	.runtime_suspend	= geni_i2c_runtime_suspend,
 	.runtime_resume		= geni_i2c_runtime_resume,
 };

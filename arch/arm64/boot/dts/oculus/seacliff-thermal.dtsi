@@ -201,14 +201,14 @@
 		coefficients {
 			charging {
 				tz-coefficients = <978 631 810 (-591) 628 2722>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
 				io-coefficients = <1174>;
 				io-slope-coefficients = <(-15500)>;
 				intercept = <6211>;
 			};
 			discharging {
 				tz-coefficients = <978 631 810 (-591) 628 2722>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
 				io-coefficients = <1174>;
 				io-slope-coefficients = <(-15500)>;
 				intercept = <6211>;

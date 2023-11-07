@@ -223,7 +223,7 @@ struct mdss_util_intf mdss_util = {
 	.mdp_probe_done = false
 };
 
-struct mdss_util_intf *mdss_get_util_intf()
+struct mdss_util_intf *mdss_get_util_intf(void)
 {
 	return &mdss_util;
 }
