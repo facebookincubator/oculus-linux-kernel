@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1593,6 +1594,40 @@ struct wlan_ext_cap_ie {
 	uint8_t ext_cap_id;
 	uint8_t ext_cap_len;
 	uint8_t ext_caps[];
+} qdf_packed;
+
+/**
+ * struct csa_ie: Channel Switch Announcement IE
+ * @id: CSA IE
+ * @len: CSA IE len
+ * @switch_mode: Channel Switch Mode
+ * @new_channel: New channel to which CSA is announced
+ * @tbtt_count: CSA count in beacon intervals
+ */
+struct csa_ie {
+	uint8_t id;
+	uint8_t len;
+	uint8_t switch_mode;
+	uint8_t new_channel;
+	uint8_t tbtt_count;
+} qdf_packed;
+
+/**
+ * struct xcsa_ie: Extended Channel Switch Announcement IE
+ * @id: CSA IE
+ * @len: CSA IE len
+ * @switch_mode: Channel Switch Mode
+ * @new_class: New operating class
+ * @new_channel: New channel to which CSA is announced
+ * @tbtt_count: CSA count in beacon intervals
+ */
+struct xcsa_ie {
+	uint8_t id;
+	uint8_t len;
+	uint8_t switch_mode;
+	uint8_t new_class;
+	uint8_t new_channel;
+	uint8_t tbtt_count;
 } qdf_packed;
 
 /**

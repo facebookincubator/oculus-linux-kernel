@@ -65,6 +65,8 @@
 #include <wmi_unified_vdev_api.h>
 #include <wmi_unified_vdev_tlv.h>
 
+#include <sir_api.h>
+
 /*
  * If FW supports WMI_SERVICE_SCAN_CONFIG_PER_CHANNEL,
  * then channel_list may fill the upper 12 bits with channel flags,
@@ -4282,6 +4284,66 @@ fail:
 	wmi_buf_free(buf);
 	wmi_err("Failed to set WMM Parameters");
 	return QDF_STATUS_E_FAILURE;
+}
+
+/**
+ * extract_csa_ie_received_ev_params_tlv() - extract csa handling event
+ * @wmi_handle: wmi handle
+ * @evt_buf: pointer to event buffer
+ * @vdev_id: VDEV ID
+ * @csa_offload_event: csa event data
+ *
+ * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
+ */
+static QDF_STATUS
+extract_csa_ie_received_ev_params_tlv(wmi_unified_t wmi_handle, void *evt_buf,
+				      struct csa_offload_params *csa_offload_event)
+{
+	WMI_CSA_IE_RECEIVED_EVENTID_param_tlvs *param_buf;
+	wmi_csa_event_fixed_param *csa_event;
+	struct csa_ie *csa_ie;
+	struct xcsa_ie *xcsa_ie;
+
+	param_buf = (WMI_CSA_IE_RECEIVED_EVENTID_param_tlvs *)evt_buf;
+	if (!param_buf) {
+		wmi_err("Invalid csa event buffer");
+		return QDF_STATUS_E_FAILURE;
+	}
+	csa_event = param_buf->fixed_param;
+	WMI_MAC_ADDR_TO_CHAR_ARRAY(&csa_event->i_addr2,
+				   &csa_offload_event->bssId[0]);
+
+	if (csa_event->ies_present_flag & WMI_CSA_IE_PRESENT) {
+		csa_ie = (struct csa_ie *)(&csa_event->csa_ie[0]);
+		csa_offload_event->channel = csa_ie->new_channel;
+		csa_offload_event->switch_mode = csa_ie->switch_mode;
+	} else if (csa_event->ies_present_flag & WMI_XCSA_IE_PRESENT) {
+		xcsa_ie = (struct xcsa_ie *)(&csa_event->xcsa_ie[0]);
+		csa_offload_event->channel = xcsa_ie->new_channel;
+		csa_offload_event->switch_mode = xcsa_ie->switch_mode;
+		csa_offload_event->new_op_class = xcsa_ie->new_class;
+	} else {
+		wmi_err("CSA Event error: No CSA IE present");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	wmi_debug("CSA IE Received: BSSID " QDF_MAC_ADDR_FMT " chan %d freq %d flag 0x%x width = %d freq1 = %d freq2 = %d op class = %d",
+		  QDF_MAC_ADDR_REF(csa_offload_event->bssId),
+		  csa_offload_event->channel,
+		  csa_offload_event->csa_chan_freq,
+		  csa_offload_event->ies_present_flag,
+		  csa_offload_event->new_ch_width,
+		  csa_offload_event->new_ch_freq_seg1,
+		  csa_offload_event->new_ch_freq_seg2,
+		  csa_offload_event->new_op_class);
+
+	if (!csa_offload_event->channel) {
+		wmi_err("CSA Event with channel %d. Ignore !!",
+			csa_offload_event->channel);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
 }
 
 /**
@@ -14890,6 +14952,8 @@ struct wmi_ops tlv_ops =  {
 	.extract_pdev_csa_switch_count_status =
 		extract_pdev_csa_switch_count_status_tlv,
 	.send_set_tpc_power_cmd = send_set_tpc_power_cmd_tlv,
+	.extract_csa_ie_received_ev_params =
+			extract_csa_ie_received_ev_params_tlv,
 };
 
 /**
@@ -15292,6 +15356,8 @@ event_ids[wmi_roam_scan_chan_list_id] =
 			WMI_CTRL_PATH_STATS_EVENTID;
 	event_ids[wmi_vdev_send_big_data_p2_eventid] =
 			WMI_VDEV_SEND_BIG_DATA_P2_EVENTID;
+	event_ids[wmi_csa_ie_received_event_id] =
+		WMI_CSA_IE_RECEIVED_EVENTID;
 }
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS

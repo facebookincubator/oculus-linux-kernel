@@ -50,9 +50,10 @@ void put_profiling_event(struct profiling_event_array *events,
 
 void dump_profiling_events(struct profiling_event_array *events)
 {
+	int i;
 	xrps_osl_spinlock_flag_t flag = osl->spin_lock(&profiling_lock);
 
-	for (int i = 0; i <= events->cur_index; ++i) {
+	for (i = 0; i <= events->cur_index; ++i) {
 		struct profiling_event *e = &events->buffer[i];
 
 		XRPS_LOG_ERR("XRPS event: %d ts: %llu\n", e->type,

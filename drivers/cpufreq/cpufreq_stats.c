@@ -21,10 +21,12 @@ struct cpufreq_stats {
 	unsigned long long last_time;
 	unsigned int max_state;
 	unsigned int state_num;
+	unsigned int ncpus;
+	unsigned int cpu;
 	unsigned int last_index;
 	u64 *time_in_state;
-	u64 *busy_time_in_state;
-	u64 *idle_time_in_state;
+	u64 **busy_time_in_state_per_cpu;
+	u64 **idle_time_in_state_per_cpu;
 	unsigned int *freq_table;
 	unsigned int *trans_table;
 };
@@ -43,8 +45,9 @@ static void cpufreq_stats_update(struct cpufreq_stats *stats)
 static void cpufreq_stats_clear_table(struct cpufreq_stats *stats)
 {
 	unsigned int count = stats->max_state;
+	unsigned int ncpus = stats->ncpus;
 
-	memset(stats->time_in_state, 0, 3 * count * sizeof(u64));
+	memset(stats->time_in_state, 0, (1 + 2 * ncpus) * count * sizeof(u64));
 	memset(stats->trans_table, 0, count * count * sizeof(int));
 	stats->last_time = get_jiffies_64();
 	stats->total_trans = 0;
@@ -59,17 +62,38 @@ static ssize_t show_time_in_state(struct cpufreq_policy *policy, char *buf)
 {
 	struct cpufreq_stats *stats = policy->stats;
 	ssize_t len = 0;
+	unsigned int cpu = 0, index = 0;
+	u64 busy_time, idle_time;
 	int i;
 
 	cpufreq_stats_update(stats);
 	for (i = 0; i < stats->state_num; i++) {
-		len += sprintf(buf + len, "%u %llu %llu %llu\n", stats->freq_table[i],
+		busy_time = 0;
+		idle_time = 0;
+		for_each_cpu(cpu, policy->related_cpus) {
+			index = cpu - stats->cpu;
+			busy_time += stats->busy_time_in_state_per_cpu[index][i];
+			idle_time += stats->idle_time_in_state_per_cpu[index][i];
+		}
+
+		len += sprintf(buf + len, "%u %llu %llu %llu", stats->freq_table[i],
 			(unsigned long long)
 			jiffies_64_to_clock_t(stats->time_in_state[i]),
 			(unsigned long long)
-			nsec_to_clock_t(stats->busy_time_in_state[i]),
+			nsec_to_clock_t(busy_time),
 			(unsigned long long)
-			nsec_to_clock_t(stats->idle_time_in_state[i]));
+			nsec_to_clock_t(idle_time));
+
+		for_each_cpu(cpu, policy->related_cpus) {
+			index = cpu - stats->cpu;
+			len += sprintf(buf + len, " %llu %llu",
+				(unsigned long long)
+				nsec_to_clock_t(stats->busy_time_in_state_per_cpu[index][i]),
+				(unsigned long long)
+				nsec_to_clock_t(stats->idle_time_in_state_per_cpu[index][i]));
+		}
+
+		len += sprintf(buf + len, "\n");
 	}
 	return len;
 }
@@ -164,6 +188,8 @@ void cpufreq_stats_free_table(struct cpufreq_policy *policy)
 
 	sysfs_remove_group(&policy->kobj, &stats_attr_group);
 	kfree(stats->time_in_state);
+	kfree(stats->busy_time_in_state_per_cpu);
+	kfree(stats->idle_time_in_state_per_cpu);
 	kfree(stats);
 	policy->stats = NULL;
 }
@@ -171,8 +197,10 @@ void cpufreq_stats_free_table(struct cpufreq_policy *policy)
 void cpufreq_stats_create_table(struct cpufreq_policy *policy)
 {
 	unsigned int i = 0, count = 0, ret = -ENOMEM;
+	unsigned int cpu = 0, ncpus = 0;
+	int index = -1;
 	struct cpufreq_stats *stats;
-	unsigned int alloc_size;
+	unsigned int alloc_size, alloc_size_per_core;
 	struct cpufreq_frequency_table *pos;
 
 	count = cpufreq_table_count_valid_entries(policy);
@@ -187,7 +215,9 @@ void cpufreq_stats_create_table(struct cpufreq_policy *policy)
 	if (!stats)
 		return;
 
-	alloc_size = count * sizeof(int) + 3 * count * sizeof(u64);
+	ncpus = cpumask_weight(policy->related_cpus);
+	alloc_size_per_core = ncpus * sizeof(u64);
+	alloc_size = count * sizeof(int) + (1 + 2 * ncpus) * count * sizeof(u64);
 
 	alloc_size += count * count * sizeof(int);
 
@@ -196,14 +226,32 @@ void cpufreq_stats_create_table(struct cpufreq_policy *policy)
 	if (!stats->time_in_state)
 		goto free_stat;
 
-	stats->busy_time_in_state = stats->time_in_state + count;
-	stats->idle_time_in_state = stats->busy_time_in_state + count;
+	stats->busy_time_in_state_per_cpu = kzalloc(alloc_size_per_core, GFP_KERNEL);
+	if (!stats->busy_time_in_state_per_cpu)
+		goto free_stat;
 
-	stats->freq_table = (unsigned int *)(stats->time_in_state + 3 * count);
+	stats->idle_time_in_state_per_cpu = kzalloc(alloc_size_per_core, GFP_KERNEL);
+	if (!stats->idle_time_in_state_per_cpu)
+		goto free_stat;
+
+	for_each_cpu(cpu, policy->related_cpus) {
+		if (index < 0) {
+			stats->cpu = cpu;
+		}
+		index = cpu - stats->cpu;
+
+		stats->busy_time_in_state_per_cpu[index] = (index != 0) ?
+			stats->idle_time_in_state_per_cpu[index - 1] + count : stats->time_in_state + count;
+		stats->idle_time_in_state_per_cpu[index] = stats->busy_time_in_state_per_cpu[index] + count;
+	}
+
+	stats->freq_table = (unsigned int *)(stats->time_in_state + (1 + 2 * ncpus) * count);
 
 	stats->trans_table = stats->freq_table + count;
 
 	stats->max_state = count;
+
+	stats->ncpus = ncpus;
 
 	/* Find valid-unique entries */
 	cpufreq_for_each_valid_entry(pos, policy->freq_table)
@@ -255,11 +303,13 @@ void cpufreq_stats_update_busy_time(struct task_struct *p, u64 cputime)
 {
 	struct cpufreq_policy *policy;
 	unsigned long flags;
+	unsigned int cpu;
 
-	policy = cpufreq_cpu_get(task_cpu(p));
+	cpu = task_cpu(p);
+	policy = cpufreq_cpu_get(cpu);
 	if (policy && policy->stats && !is_idle_task(p)) {
 		spin_lock_irqsave(&cpufreq_stats_lock, flags);
-		policy->stats->busy_time_in_state[policy->stats->last_index] += cputime;
+		policy->stats->busy_time_in_state_per_cpu[cpu - policy->stats->cpu][policy->stats->last_index] += cputime;
 		spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
 	}
 }
@@ -268,11 +318,13 @@ void cpufreq_stats_update_idle_time(u64 cputime)
 {
 	struct cpufreq_policy *policy;
 	unsigned long flags;
+	unsigned int cpu;
 
-	policy = cpufreq_cpu_get(smp_processor_id());
+	cpu = smp_processor_id();
+	policy = cpufreq_cpu_get(cpu);
 	if (policy && policy->stats) {
 		spin_lock_irqsave(&cpufreq_stats_lock, flags);
-		policy->stats->idle_time_in_state[policy->stats->last_index] += cputime;
+		policy->stats->idle_time_in_state_per_cpu[cpu - policy->stats->cpu][policy->stats->last_index] += cputime;
 		spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
 	}
 }

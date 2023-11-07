@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4352,7 +4352,8 @@ static void hdd_roam_channel_switch_handler(struct hdd_adapter *adapter,
 	mac_handle_t mac_handle = hdd_adapter_get_mac_handle(adapter);
 	struct hdd_station_ctx *sta_ctx;
 	uint8_t connected_vdev;
-	bool notify = true;
+	bool notify = true, is_sap_go_moved_before_sta;
+	struct wlan_objmgr_vdev *vdev;
 
 	/* Enable Roaming on STA interface which was disabled before CSA */
 	if (adapter->device_mode == QDF_STA_MODE)
@@ -4407,7 +4408,16 @@ static void hdd_roam_channel_switch_handler(struct hdd_adapter *adapter,
 	if (QDF_IS_STATUS_ERROR(status))
 		hdd_debug("set hw mode change not done");
 
-	policy_mgr_check_concurrent_intf_and_restart_sap(hdd_ctx->psoc);
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev)
+		return;
+
+	is_sap_go_moved_before_sta =
+		wlan_vdev_mlme_is_sap_go_move_before_sta(vdev);
+	hdd_objmgr_put_vdev(vdev);
+
+	if (!is_sap_go_moved_before_sta)
+		policy_mgr_check_concurrent_intf_and_restart_sap(hdd_ctx->psoc);
 }
 
 #ifdef WLAN_FEATURE_HOST_ROAM

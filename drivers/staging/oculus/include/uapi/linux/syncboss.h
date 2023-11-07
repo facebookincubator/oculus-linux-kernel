@@ -6,6 +6,11 @@
 
 #define SYNCBOSS_MAX_TRANSACTION_LENGTH 512
 #define SYNCBOSS_DRIVER_HEADER_VERSION_V1 1
+/**
+ * Size of the maximum data packet expected to be transferred by this driver
+ */
+#define SYNCBOSS_MAX_DATA_PKT_SIZE 255
+
 
 // An element in our history of received data from the syncboss.
 struct rx_history_elem {
@@ -32,6 +37,11 @@ struct syncboss_driver_data_header_driver_message_t {
 	uint32_t driver_message_type;
 	uint32_t driver_message_data;
 } __attribute__((packed));
+
+struct uapi_pkt_t {
+	struct syncboss_driver_data_header_t header;
+		u8 payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
+	} __attribute__((packed));
 
 /* Max number of stream events to filter */
 #define SYNCBOSS_MAX_FILTERED_TYPES 16

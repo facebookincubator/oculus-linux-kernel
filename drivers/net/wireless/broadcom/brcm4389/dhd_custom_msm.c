@@ -55,7 +55,9 @@ extern void *dhd_wlan_mem_prealloc(int section, unsigned long size);
 #define WIFI_LOAD_SWITCH_DELAY_MAX_US      200000
 
 static int wlan_reg_on = -1;
+#ifdef CONFIG_WL_LOAD_SWITCH
 static int wlan_pwr_on = -1;
+#endif
 #define DHD_DT_COMPAT_ENTRY		"android,bcmdhd_wlan"
 #define WIFI_WL_REG_ON_PROPNAME		"wlan-en-gpio"
 #define WIFI_WL_PWR_EN_PROPNAME		"wlan-pwr-en-gpio"

@@ -1,0 +1,150 @@
+#include "qrb5165.dtsi"
+#include "kona-v2.1-iot-rb5.dtsi"
+
+&tlmm {
+	cam_sensor_active_gmsl: cam_sensor_active_gmsl {
+		mux {
+			pins = "gpio999";
+		};
+
+		config {
+			pins = "gpio999";
+		};
+	};
+
+	cam_sensor_active_rst7: cam_sensor_active_rst7 {
+		/* RESET 7 */
+		mux {
+			pins = "gpio64";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio64";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	cam_sensor_suspend_rst7: cam_sensor_suspend_rst7 {
+		/* RESET 7 */
+		mux {
+			pins = "gpio64";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio64";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+
+	cam_sensor_active_rst8: cam_sensor_active_rst8 {
+		/* RESET 8 */
+		mux {
+			pins = "gpio151";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio151";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	cam_sensor_suspend_rst8: cam_sensor_suspend_rst8 {
+		/* RESET 8 */
+		mux {
+			pins = "gpio151";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio151";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+};
+
+&cam_cci0 {
+	qcom,cam-sensor12 {
+		cell-index = <12>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <4>;
+		sensor-position-roll = <90>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply = <&pm8009_l7>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_vio", "cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <1800000 0>;
+		rgltr-max-voltage = <1800000 0>;
+		rgltr-load-current = <120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk6_active
+			&cam_sensor_active_rst7>;
+		pinctrl-1 = <&cam_sensor_mclk6_suspend
+			&cam_sensor_suspend_rst7>;
+		gpios = <&tlmm 100 0>,
+			<&tlmm 64 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK6",
+			"CAM_RESET0";
+		sensor-mode = <0>;
+		cci-master = <0>;
+		status = "ok";
+		clocks = <&clock_camcc CAM_CC_MCLK6_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <24000000>;
+	};
+};
+
+&cam_cci1 {
+	qcom,cam-sensor13 {
+		cell-index = <13>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <5>;
+		sensor-position-roll = <90>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply = <&pm8009_l7>;
+		cam_clk-supply = <&titan_top_gdsc>;
+		regulator-names = "cam_vio", "cam_clk";
+		rgltr-cntrl-support;
+		pwm-switch;
+		rgltr-min-voltage = <1800000 0>;
+		rgltr-max-voltage = <1800000 0>;
+		rgltr-load-current = <120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk5_active
+			&cam_sensor_active_rst8>;
+		pinctrl-1 = <&cam_sensor_mclk5_suspend
+			&cam_sensor_suspend_rst8>;
+		gpios = <&tlmm 99 0>,
+			<&tlmm 151 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK5",
+			"CAM_RESET0";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		status = "ok";
+		clocks = <&clock_camcc CAM_CC_MCLK5_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <24000000>;
+	};
+};

@@ -58,12 +58,26 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 	coeff_data = charging ? &vs->data_charging : &vs->data_discharging;
 
 	ret = virtual_sensor_calculate_tz_temp(vs->dev, coeff_data, &tz_temp);
-	if (ret)
-		goto get_temp_unlock;
+	if (ret) {
+		/*
+		 * Unable to calculate new temp, use the last one so the function doesn't
+		 * cause the thermal subsystem to error out.
+		 */
+		tz_temp = coeff_data->tz_last_temperatures[coeff_data->tz_count - 1];
+		dev_warn(vs->dev, "%s: Unable to calcualte TZ temp, re-using last temp: %llu\n",
+				__func__, tz_temp);
+	}
 
 	ret = virtual_sensor_calculate_iio_temp(vs->dev, coeff_data, &iio_temp);
-	if (ret)
-		goto get_temp_unlock;
+	if (ret) {
+		/*
+		 * Unable to calculate new temp, use the last one so the function doesn't
+		 * cause the thermal subsystem to error out.
+		 */
+		iio_temp = coeff_data->iio_last_temperatures[coeff_data->iio_count - 1];
+		dev_warn(vs->dev, "%s: Unable to calculate IIO temp, re-using last temp: %llu\n",
+				__func__, iio_temp);
+	}
 
 	temp = div64_s64(tz_temp + iio_temp, COEFFICIENT_SCALAR);
 	temp += coeff_data->intercept;
@@ -75,12 +89,19 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 		goto get_temp_unlock;
 
 	ret = get_fallback_temp(vs, &fallback_temp);
-	if (ret != 0)
-		goto get_temp_unlock;
+	if (ret != 0) {
+		/*
+		 * Ignore fallback temp if it can't be read
+		 */
+		fallback_temp = temp;
+	}
 
 	/* If virtual sensor temp greatly differs from fallback, use fallback */
 	if (abs(temp - fallback_temp) > vs->fallback_tolerance)
 		*temperature = (int)fallback_temp;
+
+	mutex_unlock(&vs->lock);
+	return 0;
 
 get_temp_unlock:
 	mutex_unlock(&vs->lock);

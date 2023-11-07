@@ -996,14 +996,18 @@ msm_pcie_linkdown_reset_info[MAX_RC_NUM][MSM_PCIE_MAX_LINKDOWN_RESET] = {
 		{NULL, "pcie_0_link_down_reset", false},
 		{NULL, "pcie_0_phy_nocsr_com_phy_reset", false},
 	},
+#if MAX_RC_NUM > 1
 	{
 		{NULL, "pcie_1_link_down_reset", false},
 		{NULL, "pcie_1_phy_nocsr_com_phy_reset", false},
 	},
+#if MAX_RC_NUM > 2
 	{
 		{NULL, "pcie_2_link_down_reset", false},
 		{NULL, "pcie_2_phy_nocsr_com_phy_reset", false},
 	}
+#endif
+#endif
 };
 
 /* clocks */

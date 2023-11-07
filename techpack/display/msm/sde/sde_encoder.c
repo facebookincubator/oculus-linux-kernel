@@ -3715,7 +3715,7 @@ static void _sde_encoder_virt_enable_helper(struct drm_encoder *drm_enc)
 	struct sde_encoder_virt *sde_enc = NULL;
 	struct msm_drm_private *priv;
 	struct sde_kms *sde_kms;
-	int ret, i;
+	int i;
 	bool vsync_skew_en = false;
 
 	if (!drm_enc || !drm_enc->dev || !drm_enc->dev->dev_private) {

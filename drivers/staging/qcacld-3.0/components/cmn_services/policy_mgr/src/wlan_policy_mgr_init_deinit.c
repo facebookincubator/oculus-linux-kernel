@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -674,6 +675,8 @@ QDF_STATUS policy_mgr_register_sme_cb(struct wlan_objmgr_psoc *psoc,
 		sme_cbacks->sme_rso_start_cb;
 	pm_ctx->sme_cbacks.sme_rso_stop_cb =
 		sme_cbacks->sme_rso_stop_cb;
+	pm_ctx->sme_cbacks.sme_change_sap_csa_count =
+		sme_cbacks->sme_change_sap_csa_count;
 
 	return QDF_STATUS_SUCCESS;
 }

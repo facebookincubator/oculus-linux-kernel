@@ -60,6 +60,8 @@
 /* Number of dev type: Direct attach and Offload */
 #define MAX_DEV_TYPE 2
 
+struct csa_offload_params;
+
 #ifdef WIFI_POS_CONVERGED
 /* forward declarations */
 struct oem_data_req;
@@ -1869,6 +1871,9 @@ struct wlan_lmac_if_mlme_rx_ops {
 	struct vdev_response_timer *(*psoc_get_vdev_response_timer_info)(
 						struct wlan_objmgr_psoc *psoc,
 						uint8_t vdev_id);
+	QDF_STATUS (*vdev_mgr_csa_received)(struct wlan_objmgr_psoc *psoc,
+					    uint8_t vdev_id,
+					 struct csa_offload_params *csa_event);
 };
 
 #ifdef WLAN_SUPPORT_GREEN_AP

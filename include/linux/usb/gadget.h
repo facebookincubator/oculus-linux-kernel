@@ -16,6 +16,7 @@
 #ifndef __LINUX_USB_GADGET_H
 #define __LINUX_USB_GADGET_H
 
+#include <linux/configfs.h>
 #include <linux/device.h>
 #include <linux/errno.h>
 #include <linux/init.h>
@@ -901,6 +902,16 @@ struct usb_gadget_string_container {
 
 /* put descriptor for string with that id into buf (buflen >= 256) */
 int usb_gadget_get_string(const struct usb_gadget_strings *table, int id, u8 *buf);
+
+struct gadget_string {
+	struct config_item item;
+	struct list_head list;
+	char string[USB_MAX_STRING_LEN];
+	struct usb_string usb_string;
+};
+
+#define to_gadget_string(str_item)\
+container_of(str_item, struct gadget_string, item)
 
 /*-------------------------------------------------------------------------*/
 

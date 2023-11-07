@@ -176,3 +176,27 @@ int stm32g0_swd_write_chunk(struct device *dev, int addr, const u8 *data, size_t
 
 	return stm32g0_swd_get_errors(dev);
 }
+
+int stm32g0_swd_finalize(struct device *dev) {
+	u32 read;
+	read = swd_memory_read(dev, SWD_STM32G0_FLASH_ACR);
+	dev_info(dev, "FLASH_ACR = 0x%x", read);
+	if (read == 0)
+	{
+		dev_err(dev, "FLASH_ACR returned 0, something went wrong!");
+		return -1;
+	}
+
+	// now lets figure out if we need to clear the silly empty bit
+	if((read & SWD_STM32G0_FLASH_ACR_EMPTY ) == 0 ) {
+		return 0;
+	}
+
+	// We are clearing this because if the STM32 was reset while it had 0xFFFFFFFF in its
+	// first flash address it will jump into a bootloader and continue to boot there
+	// unit a POR. if we clear this empty bit that no longer happens and it will
+	// boot into user code.
+	dev_info(dev, "FLASH_ACR empty bit set, clearing...");
+	swd_memory_write(dev, SWD_STM32G0_FLASH_ACR, read & ~SWD_STM32G0_FLASH_ACR_EMPTY);
+	return 0;
+}

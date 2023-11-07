@@ -1120,11 +1120,23 @@ typedef enum {
     WMITLV_TAG_STRUC_wmi_twt_nudge_dialog_cmd_fixed_param,
     WMITLV_TAG_STRUC_wmi_twt_nudge_dialog_complete_event_fixed_param,
     WMITLV_TAG_STRUC_wmi_pdev_vendor_event_fixed_param,
+        WMITLV_TAG_STRUC_wmi_vendor_pdev_event_fixed_param =
+            WMITLV_TAG_STRUC_wmi_pdev_vendor_event_fixed_param,
     WMITLV_TAG_STRUC_wmi_pdev_vendor_cmd_fixed_param,
+        WMITLV_TAG_STRUC_wmi_vendor_pdev_cmd_fixed_param =
+            WMITLV_TAG_STRUC_wmi_pdev_vendor_cmd_fixed_param,
     WMITLV_TAG_STRUC_wmi_vdev_vendor_event_fixed_param,
+        WMITLV_TAG_STRUC_wmi_vendor_vdev_event_fixed_param =
+            WMITLV_TAG_STRUC_wmi_vdev_vendor_event_fixed_param,
     WMITLV_TAG_STRUC_wmi_vdev_vendor_cmd_fixed_param,
+        WMITLV_TAG_STRUC_wmi_vendor_vdev_cmd_fixed_param =
+            WMITLV_TAG_STRUC_wmi_vdev_vendor_cmd_fixed_param,
     WMITLV_TAG_STRUC_wmi_peer_vendor_event_fixed_param,
+        WMITLV_TAG_STRUC_wmi_vendor_peer_event_fixed_param =
+            WMITLV_TAG_STRUC_wmi_peer_vendor_event_fixed_param,
     WMITLV_TAG_STRUC_wmi_peer_vendor_cmd_fixed_param,
+        WMITLV_TAG_STRUC_wmi_vendor_peer_cmd_fixed_param =
+            WMITLV_TAG_STRUC_wmi_peer_vendor_cmd_fixed_param,
     WMITLV_TAG_STRUC_wmi_roam_msg_info_tlv_param,
     WMITLV_TAG_STRUC_wmi_vdev_set_tpc_power_cmd_fixed_param,
     WMITLV_TAG_STRUC_wmi_vdev_ch_power_info,
@@ -1357,8 +1369,19 @@ typedef enum {
     WMITLV_TAG_STRUC_wmi_pdev_set_rf_path_cmd_fixed_param,
     WMITLV_TAG_STRUC_wmi_manual_ul_ofdma_trig_rx_peer_userinfo,
     WMITLV_TAG_STRUC_wmi_manual_ul_ofdma_trig_rx_peer_userinfo_evt_fixed_param,
+    WMITLV_TAG_STRUC_wmi_cca_busy_subband_info,
+    WMITLV_TAG_STRUC_wmi_mlo_link_disable_request_event_fixed_param,
+    WMITLV_TAG_STRUC_wmi_ctrl_path_peer_stats_struct,
+    WMITLV_TAG_STRUC_wmi_vdev_pause_cmd_fixed_param,
+    WMITLV_TAG_STRUC_wmi_gpio_state_req_cmd_fixed_param,
+    WMITLV_TAG_STRUC_wmi_gpio_state_res_event_fixed_param,
+    WMITLV_TAG_STRUC_wmi_ctrl_path_vdev_stats_struct,
+    WMITLV_TAG_STRUC_wmi_pdev_set_rf_path_event_fixed_param,
+    WMITLV_TAG_STRUC_wmi_mlo_link_bss_param,
+    WMITLV_TAG_STRUC_wmi_mlo_set_link_bss_params_cmd_fixed_param,
+    WMITLV_TAG_STRUC_wmi_mlo_link_switch_req_evt_fixed_param,
+    WMITLV_TAG_STRUC_wmi_mlo_link_switch_cnf_fixed_param,
 } WMITLV_TAG_ID;
-
 /*
  * IMPORTANT: Please add _ALL_ WMI Commands Here.
  * Otherwise, these WMI TLV Functions will be process them.
@@ -1882,6 +1905,11 @@ typedef enum {
     OP(WMI_VDEV_SET_ULOFDMA_MANUAL_MU_TRIG_CMDID) \
     OP(WMI_VDEV_STANDALONE_SOUND_CMDID) \
     OP(WMI_PDEV_SET_RF_PATH_CMDID) \
+    OP(WMI_VDEV_PAUSE_CMDID) \
+    OP(WMI_GPIO_STATE_REQ_CMDID) \
+    OP(WMI_VENDOR_PDEV_CMDID) \
+    OP(WMI_VENDOR_VDEV_CMDID) \
+    OP(WMI_VENDOR_PEER_CMDID) \
     /* add new CMD_LIST elements above this line */
 
 
@@ -2187,6 +2215,13 @@ typedef enum {
     OP(WMI_MANUAL_UL_OFDMA_TRIG_FEEDBACK_EVENTID) \
     OP(WMI_VDEV_STANDALONE_SOUND_COMPLETE_EVENTID) \
     OP(WMI_MANUAL_UL_OFDMA_TRIG_RX_PEER_USERINFO_EVENTID) \
+    OP(WMI_MLO_LINK_DISABLE_REQUEST_EVENTID) \
+    OP(WMI_GPIO_STATE_RES_EVENTID) \
+    OP(WMI_VENDOR_PDEV_EVENTID) \
+    OP(WMI_VENDOR_VDEV_EVENTID) \
+    OP(WMI_VENDOR_PEER_EVENTID) \
+    OP(WMI_PDEV_SET_RF_PATH_RESP_EVENTID) \
+    OP(WMI_ROAM_SYNCH_KEY_EVENTID) \
     /* add new EVT_LIST elements above this line */
 
 
@@ -3021,6 +3056,11 @@ WMITLV_CREATE_PARAM_STRUC(WMI_GPIO_CONFIG_CMDID);
 #define WMITLV_TABLE_WMI_GPIO_OUTPUT_CMDID(id,op,buf,len) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_gpio_output_cmd_fixed_param, wmi_gpio_output_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX)
 WMITLV_CREATE_PARAM_STRUC(WMI_GPIO_OUTPUT_CMDID);
+
+/* GPIO State Req Cmd */
+#define WMITLV_TABLE_WMI_GPIO_STATE_REQ_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_gpio_state_req_cmd_fixed_param, wmi_gpio_state_req_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_GPIO_STATE_REQ_CMDID);
 
 /* Antenna Controller config Cmd */
 #define WMITLV_TABLE_WMI_ANT_CONTROLLER_CMDID(id,op,buf,len) \
@@ -4556,7 +4596,8 @@ WMITLV_CREATE_PARAM_STRUC(WMI_REQUEST_PEER_STATS_INFO_CMDID);
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, vdev_ids, WMITLV_SIZE_VAR)\
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_FIXED_STRUC, wmi_mac_addr, mac_addr_list, WMITLV_SIZE_VAR) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, twt_dialog_ids, WMITLV_SIZE_VAR) \
-    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, odd_addr_read_args, WMITLV_SIZE_VAR)
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, odd_addr_read_args, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, peer_ids, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_REQUEST_CTRL_PATH_STATS_CMDID);
 
 /* Request Halphy Stats through Ctrl Path */
@@ -5069,7 +5110,9 @@ WMITLV_CREATE_PARAM_STRUC(WMI_PDEV_ENABLE_DURATION_BASED_TX_MODE_SELECTION_CMDID
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_mlo_link_set_active_cmd_fixed_param, wmi_mlo_link_set_active_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_mlo_set_active_link_number_param, link_number_param,  WMITLV_SIZE_VAR) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, vdev_id_bitmap, WMITLV_SIZE_VAR) \
-    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, vdev_id_bitmap2, WMITLV_SIZE_VAR)
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, vdev_id_bitmap2, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, ieee_link_id_bitmap, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, ieee_link_id_bitmap2, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_MLO_LINK_SET_ACTIVE_CMDID);
 
 /* Request DPD Status */
@@ -5345,6 +5388,36 @@ WMITLV_CREATE_PARAM_STRUC(WMI_VDEV_STANDALONE_SOUND_CMDID);
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_pdev_set_rf_path_cmd_fixed_param, wmi_pdev_set_rf_path_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX)
 WMITLV_CREATE_PARAM_STRUC(WMI_PDEV_SET_RF_PATH_CMDID);
 
+/* VDEV PAUSE cmd */
+#define WMITLV_TABLE_WMI_VDEV_PAUSE_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_vdev_pause_cmd_fixed_param, wmi_vdev_pause_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_VDEV_PAUSE_CMDID);
+
+/* pdev,vdev,peer cmd messages for tunneling vendor-specific contents */
+#define WMITLV_TABLE_WMI_VENDOR_PDEV_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_pdev_vendor_cmd_fixed_param, wmi_pdev_vendor_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, opaque_vendor_var_len_data, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_VENDOR_PDEV_CMDID);
+#define WMITLV_TABLE_WMI_VENDOR_VDEV_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_vdev_vendor_cmd_fixed_param, wmi_vdev_vendor_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, opaque_vendor_var_len_data, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_VENDOR_VDEV_CMDID);
+#define WMITLV_TABLE_WMI_VENDOR_PEER_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_peer_vendor_cmd_fixed_param, wmi_peer_vendor_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, opaque_vendor_var_len_data, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_VENDOR_PEER_CMDID);
+
+/* SET MLO link BSS param */
+#define WMITLV_TABLE_WMI_MLO_LINK_SET_BSS_PARAMS_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_mlo_set_link_bss_params_cmd_fixed_param, wmi_mlo_set_link_bss_params_cmd_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_mlo_link_bss_param, link_bss_params, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_MLO_LINK_SET_BSS_PARAMS_CMDID);
+
+/* MLO link switch confirmation command to inform FW about host side status and reason code */
+#define WMITLV_TABLE_WMI_MLO_LINK_SWITCH_CONF_CMDID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_mlo_link_switch_cnf_fixed_param, wmi_mlo_link_switch_cnf_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_MLO_LINK_SWITCH_CONF_CMDID);
+
 
 
 /************************** TLV definitions of WMI events *******************************/
@@ -5526,7 +5599,8 @@ WMITLV_CREATE_PARAM_STRUC(WMI_VDEV_GET_TX_POWER_EVENTID);
 /* Channel Info Event */
 #define WMITLV_TABLE_WMI_CHAN_INFO_EVENTID(id,op,buf,len) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_chan_info_event_fixed_param, wmi_chan_info_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
-    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_scan_blanking_params_info, scan_blanking_params, WMITLV_SIZE_VAR)
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_scan_blanking_params_info, scan_blanking_params, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_cca_busy_subband_info, cca_busy_subband_info, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_CHAN_INFO_EVENTID);
 
 /* RSSI dB to dBm conversion params info event to host */
@@ -5688,6 +5762,11 @@ WMITLV_CREATE_PARAM_STRUC(WMI_ROAM_EVENTID);
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_pdev_band_to_mac, mac_freq_mapping, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_ROAM_SYNCH_EVENTID);
 
+/* Roam Synch key Event */
+#define WMITLV_TABLE_WMI_ROAM_SYNCH_KEY_EVENTID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_roam_ml_key_material_param, ml_key_material, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_ROAM_SYNCH_KEY_EVENTID);
+
 /* Roam Synch frame Event */
 #define WMITLV_TABLE_WMI_ROAM_SYNCH_FRAME_EVENTID(id,op,buf,len) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_roam_synch_frame_event_fixed_param, wmi_roam_synch_frame_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
@@ -5762,9 +5841,20 @@ WMITLV_CREATE_PARAM_STRUC(WMI_MUEDCA_PARAMS_CONFIG_EVENTID);
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_gpio_input_event_fixed_param, wmi_gpio_input_event_fixed_param, fixed_param, WMITLV_SIZE_FIX)
 WMITLV_CREATE_PARAM_STRUC(WMI_GPIO_INPUT_EVENTID);
 
+/* GPIO State Res Event */
+#define WMITLV_TABLE_WMI_GPIO_STATE_RES_EVENTID(id,op,buf,len)  \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_gpio_state_res_event_fixed_param, wmi_gpio_state_res_event_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_GPIO_STATE_RES_EVENTID);
+
+/* RF Path Res Event */
+#define WMITLV_TABLE_WMI_PDEV_SET_RF_PATH_RESP_EVENTID(id,op,buf,len)  \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_pdev_set_rf_path_event_fixed_param, wmi_pdev_set_rf_path_event_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_PDEV_SET_RF_PATH_RESP_EVENTID);
+
 /* CSA Handling Event */
 #define WMITLV_TABLE_WMI_CSA_HANDLING_EVENTID(id,op,buf,len)\
-    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_csa_event_fixed_param, wmi_csa_event_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_csa_event_fixed_param, wmi_csa_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_BYTE, A_UINT8, cs_wrap_ie, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_CSA_HANDLING_EVENTID);
 
 /* Rfkill state change Event */
@@ -6782,7 +6872,9 @@ WMITLV_CREATE_PARAM_STRUC(WMI_PEER_STATS_INFO_EVENTID);
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_pmlo_stats_struct,  ctrl_path_pmlo_stats, WMITLV_SIZE_VAR) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_cfr_stats_struct,  ctrl_path_cfr_stats, WMITLV_SIZE_VAR) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_t2lm_stats_struct,  ctrl_path_t2lm_stats, WMITLV_SIZE_VAR) \
-    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_blanking_stats_struct,  ctrl_path_blanking_stats, WMITLV_SIZE_VAR)
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_blanking_stats_struct,  ctrl_path_blanking_stats, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_peer_stats_struct,  ctrl_path_peer_stats, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_ctrl_path_vdev_stats_struct,  ctrl_path_vdev_stats, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_CTRL_PATH_STATS_EVENTID);
 
 /*
@@ -7088,7 +7180,9 @@ WMITLV_CREATE_PARAM_STRUC(WMI_TWT_SESSION_STATS_EVENTID);
 #define WMITLV_TABLE_WMI_MLO_LINK_SET_ACTIVE_RESP_EVENTID(id,op,buf,len) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_mlo_link_set_active_resp_event_fixed_param, wmi_mlo_link_set_active_resp_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, force_active_vdev_bitmap, WMITLV_SIZE_VAR) \
-    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, force_inactive_vdev_bitmap, WMITLV_SIZE_VAR)
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, force_inactive_vdev_bitmap, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, force_active_ieee_link_id_bitmap, WMITLV_SIZE_VAR) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, force_inactive_ieee_link_id_bitmap, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_MLO_LINK_SET_ACTIVE_RESP_EVENTID);
 
 /* Get DPD status Event */
@@ -7259,6 +7353,29 @@ WMITLV_CREATE_PARAM_STRUC(WMI_VDEV_STANDALONE_SOUND_COMPLETE_EVENTID);
     WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_STRUC, wmi_manual_ul_ofdma_trig_rx_peer_userinfo, rx_peer_userinfo, WMITLV_SIZE_VAR)
 WMITLV_CREATE_PARAM_STRUC(WMI_MANUAL_UL_OFDMA_TRIG_RX_PEER_USERINFO_EVENTID);
 
+/* MLO_LINK_DISABLE_REQUEST Event */
+#define WMITLV_TABLE_WMI_MLO_LINK_DISABLE_REQUEST_EVENTID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_mlo_link_disable_request_event_fixed_param, wmi_mlo_link_disable_request_event_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_MLO_LINK_DISABLE_REQUEST_EVENTID);
+
+/* pdev,vdev,peer event messages for tunneling vendor-specific contents */
+#define WMITLV_TABLE_WMI_VENDOR_PDEV_EVENTID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_pdev_vendor_event_fixed_param, wmi_pdev_vendor_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, opaque_vendor_var_len_data, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_VENDOR_PDEV_EVENTID);
+#define WMITLV_TABLE_WMI_VENDOR_VDEV_EVENTID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_vdev_vendor_event_fixed_param, wmi_vdev_vendor_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, opaque_vendor_var_len_data, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_VENDOR_VDEV_EVENTID);
+#define WMITLV_TABLE_WMI_VENDOR_PEER_EVENTID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_peer_vendor_event_fixed_param, wmi_peer_vendor_event_fixed_param, fixed_param, WMITLV_SIZE_FIX) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_ARRAY_UINT32, A_UINT32, opaque_vendor_var_len_data, WMITLV_SIZE_VAR)
+WMITLV_CREATE_PARAM_STRUC(WMI_VENDOR_PEER_EVENTID);
+
+/* link switch event */
+#define WMITLV_TABLE_WMI_MLO_LINK_SWITCH_REQUEST_EVENTID(id,op,buf,len) \
+    WMITLV_ELEM(id,op,buf,len, WMITLV_TAG_STRUC_wmi_mlo_link_switch_req_evt_fixed_param, wmi_mlo_link_switch_req_evt_fixed_param, fixed_param, WMITLV_SIZE_FIX)
+WMITLV_CREATE_PARAM_STRUC(WMI_MLO_LINK_SWITCH_REQUEST_EVENTID);
 
 
 #ifdef __cplusplus

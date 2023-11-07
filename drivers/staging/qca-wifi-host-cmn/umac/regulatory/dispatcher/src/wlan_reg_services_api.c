@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021,2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -621,6 +621,8 @@ qdf_freq_t wlan_reg_legacy_chan_to_freq(struct wlan_objmgr_pdev *pdev,
 {
 	return reg_legacy_chan_to_freq(pdev, chan_num);
 }
+
+qdf_export_symbol(wlan_reg_legacy_chan_to_freq);
 
 #ifdef CONFIG_CHAN_NUM_API
 bool wlan_reg_chan_is_49ghz(struct wlan_objmgr_pdev *pdev,
@@ -1327,6 +1329,8 @@ bool wlan_reg_is_6ghz_op_class(struct wlan_objmgr_pdev *pdev,
 {
 	return reg_is_6ghz_op_class(pdev, op_class);
 }
+
+qdf_export_symbol(wlan_reg_is_6ghz_op_class);
 
 #ifdef CONFIG_REG_CLIENT
 bool wlan_reg_is_6ghz_supported(struct wlan_objmgr_psoc *psoc)

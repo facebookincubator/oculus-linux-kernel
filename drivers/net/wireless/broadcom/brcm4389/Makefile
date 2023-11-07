@@ -583,6 +583,8 @@ DHDCFLAGS += -DXRAPI_COMMON
 #PKT_FILTER_SUPPORT and DHD_MAGIC_PKT_FILTER is exclusive
 DHDCFLAGS += -DPKT_FILTER_SUPPORT #Disable for magic filter
 
+#Disable uplink ofdma , it helps to get good latencies for our use cases
+DHDCFLAGS += -DOMI_OFDMA_SU
 #Allow DFS on P2P when STA is connected on DFS channel
 DHDCFLAGS += -DDFSPROXY_P2P
 

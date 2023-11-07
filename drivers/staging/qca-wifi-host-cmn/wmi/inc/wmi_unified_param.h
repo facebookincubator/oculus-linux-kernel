@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4687,6 +4688,7 @@ typedef enum {
 	wmi_peer_create_conf_event_id,
 	wmi_pdev_cp_fwstats_eventid,
 	wmi_vdev_send_big_data_p2_eventid,
+	wmi_csa_ie_received_event_id,
 	wmi_events_max,
 } wmi_conv_event_id;
 

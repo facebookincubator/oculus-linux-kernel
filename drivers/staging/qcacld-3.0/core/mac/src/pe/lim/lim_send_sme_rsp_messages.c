@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2151,7 +2152,8 @@ lim_process_beacon_tx_success_ind(struct mac_context *mac_ctx, uint16_t msgType,
 				  void *event)
 {
 	struct pe_session *session;
-	bool csa_tx_offload;
+	struct wlan_objmgr_vdev *vdev;
+	bool csa_tx_offload, is_sap_go_moved_before_sta = false;
 	tpSirFirstBeaconTxCompleteInd bcn_ind =
 		(tSirFirstBeaconTxCompleteInd *) event;
 
@@ -2161,18 +2163,28 @@ lim_process_beacon_tx_success_ind(struct mac_context *mac_ctx, uint16_t msgType,
 		return;
 	}
 
-	pe_debug("role: %d swIe: %d opIe: %d switch cnt:%d",
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(mac_ctx->psoc,
+						    session->vdev_id,
+						    WLAN_LEGACY_MAC_ID);
+	if (vdev) {
+		is_sap_go_moved_before_sta =
+				wlan_vdev_mlme_is_sap_go_move_before_sta(vdev);
+		wlan_vdev_mlme_set_sap_go_move_before_sta(vdev, false);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
+	}
+	pe_debug("role: %d swIe: %d opIe: %d switch cnt:%d Is SAP / GO Moved before STA: %d",
 		 GET_LIM_SYSTEM_ROLE(session),
 		 session->dfsIncludeChanSwIe,
 		 session->gLimOperatingMode.present,
-		 session->gLimChannelSwitch.switchCount);
+		 session->gLimChannelSwitch.switchCount,
+		 is_sap_go_moved_before_sta);
 
 	if (!LIM_IS_AP_ROLE(session))
 		return;
 	csa_tx_offload = wlan_psoc_nif_fw_ext_cap_get(mac_ctx->psoc,
 						WLAN_SOC_CEXT_CSA_TX_OFFLOAD);
-	if (session->dfsIncludeChanSwIe &&
-	    (session->gLimChannelSwitch.switchCount ==
+	if (session->dfsIncludeChanSwIe && (is_sap_go_moved_before_sta ||
+	    session->gLimChannelSwitch.switchCount ==
 	    mac_ctx->sap.SapDfsInfo.sap_ch_switch_beacon_cnt) &&
 	    !csa_tx_offload)
 		lim_process_ap_ecsa_timeout(session);

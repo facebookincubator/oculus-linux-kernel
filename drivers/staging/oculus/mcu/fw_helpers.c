@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/module.h>
 #include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -49,6 +50,7 @@ int fw_queue_work(struct workqueue_struct *workqueue, void *data,
 	queue_work(workqueue, &work->work);
 	return 0;
 }
+EXPORT_SYMBOL(fw_queue_work);
 
 
 #define MAX_PROP_SIZE 40
@@ -90,3 +92,6 @@ err_reg_put:
 	*reg = NULL;
 	return rc;
 }
+EXPORT_SYMBOL(devm_fw_init_regulator);
+
+MODULE_LICENSE("GPL v2");

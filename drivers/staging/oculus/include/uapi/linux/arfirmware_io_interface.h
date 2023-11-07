@@ -42,6 +42,8 @@ struct __packed ar_queue_create_req {
 	struct ar_mem_segment queue_data_segment;
 	/// Whether this queue is mirroring another one in the user space
 	bool queue_mirror;
+	/// The pid of the process which made a request for creation.
+	int pid;
 };
 
 /**
@@ -63,6 +65,16 @@ struct __packed ar_queue_debug_req {
 	uint64_t msg_count;
 	uint16_t consumer_idx;
 	uint16_t producer_idx;
+};
+
+/**
+ * Structure containing queue information: endpoints, direction, etc.
+ */
+struct __packed ar_queue_info_req {
+	int id;
+	enum ar_queue_direction direction;
+	ar_endpoint_id_t hlos_endpoint_id;
+	ar_endpoint_id_t fw_endpoint_id;
 };
 
 /**
@@ -114,3 +126,5 @@ struct __packed ar_queue_event_batch {
 #define ARFW_CONSUMED_INDEX _IO(ARFW_CHDEV_MAGIC, 4)
 #define ARFW_DEV_INFO _IOW(ARFW_CHDEV_MAGIC, 5, struct ar_device_information_req*)
 #define ARFW_QUEUE_DEBUG _IOW(ARFW_CHDEV_MAGIC, 6, struct ar_queue_debug_req*)
+#define ARFW_QUEUE_INFO _IOW(ARFW_CHDEV_MAGIC, 7, struct ar_queue_debug_req*)
+#define ARFW_QUEUE_DESTROY _IO(ARFW_CHDEV_MAGIC, 8)

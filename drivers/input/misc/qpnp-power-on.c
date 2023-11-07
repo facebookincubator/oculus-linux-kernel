@@ -491,24 +491,11 @@ static DEVICE_ATTR_RW(debounce_us);
 
 static ssize_t power_on_reason_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	ssize_t ret = 0;
-	int rc;
-	int index;
 	struct qpnp_pon *pon = (struct qpnp_pon *)dev_get_drvdata(dev);
-	unsigned int pon_sts = 0;
-	/* PON reason */
-	rc = qpnp_pon_read(pon, QPNP_PON_REASON1(pon), &pon_sts);
-	if (rc)
-		goto Leave;
 
-	index = ffs(pon_sts) - 1;
-	if (index >= ARRAY_SIZE(qpnp_pon_reason) || index < 0)
-		ret = snprintf(buf, PAGE_SIZE, "%d\n", index);
-	else
-		ret = snprintf(buf, PAGE_SIZE, "%s\n", qpnp_pon_reason[index]);
-
-Leave:
-	return ret;
+    /* Take advantage of the fact that PON reason is already read and stored in pon->pon_trigger_reason
+    when driver probed at boot. This value shouldn't change while device is running. */
+    return snprintf(buf, PAGE_SIZE, "%s\n", qpnp_pon_reason[pon->pon_trigger_reason]);
 }
 static DEVICE_ATTR_RO(power_on_reason);
 
