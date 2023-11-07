@@ -746,6 +746,7 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 {
 	int rc = 0;
 	uint32_t chipid = 0;
+	uint32_t sensor_version = 0;
 	struct cam_camera_slave_info *slave_info;
 
 	slave_info = &(s_ctrl->sensordata->slave_info);
@@ -783,8 +784,6 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		i2c_reg_array.reg_addr = 0x3200;
 		i2c_reg_array.reg_data = 1;
 		camera_io_dev_write(&(s_ctrl->io_master_info), &i2c_reg_settings, false);
-
-		uint32_t sensor_version = 0;
 
 		camera_io_dev_read(&(s_ctrl->io_master_info), 0x3206, &sensor_version, 2, 1);
 		CAM_DBG(CAM_SENSOR, "0x%x sensor_version 0x%x:", chipid, sensor_version);

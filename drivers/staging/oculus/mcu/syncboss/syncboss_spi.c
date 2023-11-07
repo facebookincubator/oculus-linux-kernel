@@ -28,7 +28,7 @@
 #include "syncboss_protocol.h"
 
 #ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
-static const struct of_device_id oculus_syncboss_table[] = {
+static const struct of_device_id syncboss_spi_table[] = {
 	{ .compatible = "oculus,syncboss" },
 	{ },
 };
@@ -105,6 +105,7 @@ static const struct of_device_id oculus_swd_match_table[] = {
 #define SPI_TX_DATA_MAGIC_NUM 0xDEFEC8ED
 #define SPI_RX_DATA_MAGIC_NUM_POLLING_MODE 0xDEFEC8ED
 #define SPI_RX_DATA_MAGIC_NUM_IRQ_MODE 0xD00D1E8D
+#define SPI_RX_DATA_MAGIC_NUM_MCU_BUSY 0xCACACACA
 
 #define SYNCBOSS_MISCFIFO_SIZE 1024
 
@@ -146,12 +147,6 @@ static const struct of_device_id oculus_swd_match_table[] = {
  */
 #define SYNCBOSS_RESET_SPI_SETTLING_TIME_MS 100
 
-
-/**
- * Size of the maximum data packet expected to be transferred by this driver
- */
-#define SYNCBOSS_MAX_DATA_PKT_SIZE 255
-
 /*
  * Maximum pending messages enqueued by syncboss_write()
  */
@@ -159,6 +154,15 @@ static const struct of_device_id oculus_swd_match_table[] = {
 
 /* The version of the header the driver is currently using */
 #define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION SYNCBOSS_DRIVER_HEADER_VERSION_V1
+
+struct transaction_context {
+	bool msg_to_send;
+	struct syncboss_msg *smsg;
+	struct syncboss_msg *prepared_smsg;
+	bool data_ready_irq_had_fired;
+	bool send_timer_had_fired;
+	bool wake_timer_had_fired;
+};
 
 static void syncboss_on_camera_probe(struct syncboss_dev_data *devdata);
 static void syncboss_on_camera_release(struct syncboss_dev_data *devdata);
@@ -179,13 +183,15 @@ static bool should_send_stream_packet(const void *context,
 	int x = 0;
 	const struct syncboss_driver_stream_type_filter *stream_type_filter =
 		context;
-	const struct syncboss_data *packet = (struct syncboss_data *)payload;
+	const struct uapi_pkt_t *uapi_pkt = (struct uapi_pkt_t *) payload;
+	const struct syncboss_data *packet;
 
 	/* Special case for when no filter is set or there's no payload */
 	if (!stream_type_filter || (stream_type_filter->num_selected == 0) ||
 	    !payload)
 		return true;
 
+	packet = (struct syncboss_data *) uapi_pkt->payload;
 	for (x = 0; x < stream_type_filter->num_selected; ++x) {
 		if (packet->type == stream_type_filter->selected_types[x])
 			return true;
@@ -894,9 +900,6 @@ void syncboss_pin_reset(struct syncboss_dev_data *devdata)
 	 */
 	devdata->eat_next_system_up_event = true;
 	devdata->last_reset_time_ms = ktime_get_ms();
-	// Any old data ready notifications no longer exist if the MCU has been reset
-	atomic64_set(&devdata->data_ready_fired_count, 0);
-	devdata->data_ready_fired_accum = 0;
 	gpio_set_value(devdata->gpio_reset, 1);
 }
 
@@ -1285,10 +1288,7 @@ static int distribute_packet(struct syncboss_dev_data *devdata,
 	int status = 0;
 	size_t payload_size = sizeof(*packet) + packet->data_len;
 
-	struct {
-		struct syncboss_driver_data_header_t header;
-		u8 payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
-	} __packed uapi_pkt;
+	struct uapi_pkt_t uapi_pkt;
 
 	if (packet->sequence_id == 0) {
 		switch (packet->type) {
@@ -1346,45 +1346,79 @@ static bool recent_reset_event(struct syncboss_dev_data *devdata)
 	return false;
 }
 
-static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata)
+static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct transaction_context *ctx)
 {
+	int status = 0;
 	const struct syncboss_transaction *trans = (struct syncboss_transaction *)devdata->rx_elem->buf;
+	u8 checksum;
+	bool bad_magic = false;
+	bool bad_checksum = false;
 
 	switch (trans->header.magic_num) {
 		case SPI_RX_DATA_MAGIC_NUM_IRQ_MODE:
 		case SPI_RX_DATA_MAGIC_NUM_POLLING_MODE:
+			checksum = calculate_checksum(trans, devdata->transaction_length);
+			bad_checksum = checksum != 0;
+			if (bad_checksum)
+				++devdata->stats.num_bad_checksums;
 			break;
 		default:
-			/*
-			* To avoid noise in the log, only log an error if we
-			* haven't recently reset the mcu
-			*/
-		       if (!recent_reset_event(devdata))
-			       dev_err_ratelimited(&devdata->spi->dev,
-						   "bad magic number detected: 0x%08x",
-						   trans->header.magic_num);
-		       ++devdata->stats.num_bad_magic_numbers;
-		       return -EIO;
+			bad_magic = true;
+			++devdata->stats.num_bad_magic_numbers;
+			break;
 	}
 
-	if (calculate_checksum(trans, devdata->transaction_length) != 0) {
-		dev_err_ratelimited(&devdata->spi->dev, "bad checksum detected");
-		++devdata->stats.num_bad_checksums;
-		return -EIO;
-	}
+	if (!bad_magic && !bad_checksum)
+		return 0;
 
-	/* If we've made it this far, the magic number and checksum
-	 * look good, so this is most likely valid data.
+	devdata->stats.num_invalid_transactions_received++;
+	/*
+	 * If we get the MCU busy magic number, we'll let the caller decide if/when
+	 * it might want to handle retries in a special way
 	 */
-	return 0;
+	if (trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_MCU_BUSY)
+		status = -EAGAIN;
+	else
+		status = -EIO;
+
+	/*
+	 * In IRQ mode, if the we perform a transaction with the MCU,
+	 * without being triggered to do so by a data ready IRQ,
+	 * the MCU may return a 'busy' value (0xcacacaca). This happens
+	 * if transaction occurs just as the MCU happens to be staging
+	 * its own message to go out. Don't log warnings in this
+	 * case. This is expected. The command will be retried.
+	 */
+	if (devdata->use_irq_mode && ctx->msg_to_send &&
+	    !ctx->data_ready_irq_had_fired &&
+	    trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_MCU_BUSY) {
+		return status;
+	}
+
+	/*
+	 * To avoid noise in the log, skip logging errors if we
+	 * have recently reset the mcu
+	 */
+	if (recent_reset_event(devdata))
+		return status;
+
+	dev_err_ratelimited(&devdata->spi->dev,
+		"bad %s from MCU (value: 0x%08x, data_ready_irq: %d, wake_timer: %d, send_timer: %d, msg_to_send: %d)",
+		bad_magic ? "magic" : (bad_checksum ? "checksum" : "message"),
+		bad_magic ? trans->header.magic_num : (bad_checksum ? checksum : 0),
+		ctx->data_ready_irq_had_fired,
+		ctx->wake_timer_had_fired,
+		ctx->send_timer_had_fired,
+		ctx->msg_to_send);
+
+	return status;
 }
 
-static void query_wake_reason(struct syncboss_dev_data *devdata, u64 times)
+static void query_wake_reason(struct syncboss_dev_data *devdata)
 {
 	u8 message_buf[sizeof(struct syncboss_data) + 1] = {};
 	struct syncboss_data *message = (struct syncboss_data *)message_buf;
 	size_t data_len;
-	u64 i;
 
 	message->type = SYNCBOSS_GET_DATA_MESSAGE_TYPE;
 	message->sequence_id = 0;
@@ -1392,15 +1426,7 @@ static void query_wake_reason(struct syncboss_dev_data *devdata, u64 times)
 	message->data[0] = SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE;
 
 	data_len = sizeof(struct syncboss_data) + message->data_len;
-	if (times > 1)
-		dev_dbg(&devdata->spi->dev, "Requesting more than 1 wake reason: %llu", times);
-	for (i = 0; i < times; i++) {
-		/*
-		 * Queue up a wake reason query for every ISR we received since the last
-		 * time we polled if we're in polling mode
-		 */
-		queue_tx_packet(devdata, message, data_len, /* from_user */ false);
-	}
+	queue_tx_packet(devdata, message, data_len, /* from_user */ false);
 }
 
 static void process_rx_data(struct syncboss_dev_data *devdata,
@@ -1412,49 +1438,6 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 	const uint8_t *trans_end;
 
 	/*
-	 * An empty transaction is still a valid transaction, so we need to update
-	 * the transaction timestamps.
-	 */
-	rx_elem->transaction_start_time_ns = timing->prev_trans_start_time_ns;
-	rx_elem->transaction_end_time_ns = timing->prev_trans_end_time_ns;
-	rx_elem->transaction_length = devdata->transaction_length;
-	rx_elem->rx_ctr = atomic64_inc_return(&devdata->transaction_ctr);
-	if (unlikely(rx_elem->rx_ctr == 1)) {
-		/*
-		 * Re-read this value, since another interrupt could have arrived between when we
-		 * read it last and now. Without doing this, it's possible that MCU resets
-		 * in-between the last read and this code could result in missing powerstate
-		 * events. Most frequently, this was happening in tests that purposely
-		 * caused MCU asserts.
-		 */
-		devdata->data_ready_fired_accum += atomic64_xchg(&devdata->data_ready_fired_count, 0);
-		/*
-		 * Check if the MCU FW supports IRQ-triggered transactions. We can detect this
-		 * based on the magic number it is using in the messages it sends.
-		 *
-		 * Older MCU FW that doesn't support IRQ mode needs to have its wakeup reason
-		 * queried explicitly also. Do that here. IRQ-mode firmware will send the
-		 * wakeup reason automatically.
-		 */
-		if (trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_IRQ_MODE) {
-			dev_info(&devdata->spi->dev, "IRQ mode supported by MCU");
-			devdata->use_irq_mode = true;
-		} else {
-			dev_info(&devdata->spi->dev, "IRQ mode not supported- falling back to polling");
-			query_wake_reason(devdata, devdata->data_ready_fired_accum);
-		}
-	}
-
-	/*
-	 * Bail if there's no data in the packet (other than the magic
-	 * number and checksum)
-	 */
-	if (trans->data.type == 0) {
-		devdata->stats.num_empty_transactions_received++;
-		return;
-	}
-
-	/*
 	 * See "logging notes" section at the top of
 	 * this file
 	 */
@@ -1464,6 +1447,34 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 			     rx_elem->buf,
 			     devdata->transaction_length);
 #endif
+
+	rx_elem->transaction_start_time_ns = timing->prev_trans_start_time_ns;
+	rx_elem->transaction_end_time_ns = timing->prev_trans_end_time_ns;
+	rx_elem->transaction_length = devdata->transaction_length;
+	rx_elem->rx_ctr = atomic64_inc_return(&devdata->transaction_ctr);
+	if (unlikely(rx_elem->rx_ctr == 1)) {
+		/*
+		 * Check if the MCU FW supports IRQ-triggered transactions. We can detect this
+		 * based on the magic number it is using in the messages it sends.
+		 *
+		 * Older MCU FW that doesn't support IRQ mode needs to have its wakeup reason
+		 * queried explicitly also. Do that here. IRQ-mode firmware will send the
+		 * wakeup reason automatically.
+		*/
+		if (trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_IRQ_MODE) {
+			dev_info(&devdata->spi->dev, "IRQ mode supported by MCU");
+			devdata->use_irq_mode = true;
+		} else {
+			dev_info(&devdata->spi->dev, "IRQ mode not supported- falling back to polling");
+			query_wake_reason(devdata);
+		}
+	}
+
+	/* There's noting to do if there's no data in the packet. */
+	if (trans->data.type == 0) {
+		devdata->stats.num_empty_transactions_received++;
+		return;
+	}
 
 	/*
 	 * Iterate over the packets and distribute them to either the
@@ -1499,9 +1510,14 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
  */
 static inline bool okay_to_transact(struct syncboss_dev_data *devdata)
 {
-	const bool data_ready_fired = atomic64_read(&devdata->data_ready_fired_count) > 0;
+	return devdata->data_ready_fired || devdata->wake_timer_fired;
+}
 
-	return data_ready_fired || devdata->wake_timer_fired;
+static inline void reset_timer_status_flags(struct syncboss_dev_data *devdata)
+{
+	devdata->data_ready_fired = false;
+	devdata->send_timer_fired = false;
+	devdata->wake_timer_fired = false;
 }
 
 static void handle_wakeup(struct syncboss_dev_data *devdata)
@@ -1538,6 +1554,8 @@ static enum hrtimer_restart send_timer_callback(struct hrtimer *timer)
 {
 	struct syncboss_dev_data *devdata =
 		container_of(timer, struct syncboss_dev_data, send_timer);
+
+	devdata->send_timer_fired = true;
 
 	if (devdata->worker)
 		wake_up_process(devdata->worker);
@@ -1685,8 +1703,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	struct spi_device *spi = (struct spi_device *)ptr;
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
-	struct syncboss_msg *smsg = NULL;
-	struct syncboss_msg *prepared_smsg = NULL;
+	struct transaction_context ctx = { 0 };
 	struct syncboss_timing timing = { 0 };
 	u32 spi_max_clk_rate = 0;
 	u16 transaction_length = 0;
@@ -1724,7 +1741,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		use_fastpath ? "yes" : "no");
 
 	while (likely(!kthread_should_stop())) {
-		if (smsg == NULL) {
+		if (ctx.smsg == NULL) {
 			/*
 			 * Optimization: use mutex_trylock() to avoid sleeping while we wait for
 			 *   for potentially low-priority userspace threads to finish enqueueing
@@ -1738,16 +1755,18 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			 *      so starvation of messages from the msg_queue_list will not occur.
 			 */
 			if (mutex_trylock(&devdata->msg_queue_lock)) {
-				smsg = list_first_entry_or_null(&devdata->msg_queue_list, struct syncboss_msg, list);
-				if (smsg) {
-					list_del(&smsg->list);
+				ctx.smsg = list_first_entry_or_null(&devdata->msg_queue_list, struct syncboss_msg, list);
+				if (ctx.smsg) {
+					list_del(&ctx.smsg->list);
 					devdata->msg_queue_item_count--;
-					smsg->tx.header.checksum = calculate_checksum(&smsg->tx, transaction_length);
+					ctx.smsg->tx.header.checksum = calculate_checksum(&ctx.smsg->tx, transaction_length);
+					ctx.msg_to_send = true;
 				}
 				mutex_unlock(&devdata->msg_queue_lock);
 			}
-			if (smsg == NULL) {
-				smsg = devdata->default_smsg;
+			if (ctx.smsg == NULL) {
+				ctx.smsg = devdata->default_smsg;
+				ctx.msg_to_send = false;
 			}
 		}
 
@@ -1756,80 +1775,85 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 * go to sleep until something is queued, this thread is woken
 		 * by a data_ready IRQ, or it is woken to be stopped.
 		 */
-		if (!devdata->is_streaming && smsg == devdata->default_smsg) {
+		if (!devdata->is_streaming && !devdata->data_ready_fired && !ctx.msg_to_send) {
 			status = sleep_if_msg_queue_empty(devdata);
 			if (status == -EINTR) {
 				dev_err(&spi->dev, "SPI thread received signal while waiting for message to send. Stopping.");
 				break;
 			}
 			/*
-			 * We may have worken up for a reason besides the send timer.
+			 * We may have woken up for a reason besides the send timer.
 			 * Try to cancel the timer to avoid it firing unnecessarily.
 			 */
 			hrtimer_try_to_cancel(&devdata->send_timer);
 
 			/* We're awake! Handle any newly queued messages. */
-			smsg = NULL;
+			ctx.smsg = NULL;
 			continue;
 		}
 
-		smsg->spi_xfer.speed_hz = spi_max_clk_rate;
-		smsg->spi_xfer.len = transaction_length;
+		ctx.smsg->spi_xfer.speed_hz = spi_max_clk_rate;
+		ctx.smsg->spi_xfer.len = transaction_length;
 
-		if (use_fastpath && smsg != devdata->default_smsg) {
-			if (prepared_smsg && smsg != prepared_smsg) {
-				status = devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
+		if (use_fastpath && ctx.msg_to_send) {
+			if (ctx.prepared_smsg && ctx.smsg != ctx.prepared_smsg) {
+				status = devdata->spi_prepare_ops.unprepare_message(spi->master, &ctx.prepared_smsg->spi_msg);
 				if (status) {
 					dev_err(&spi->dev, "failed to unprepare msg: %d", status);
 					break;
 				}
-				prepared_smsg = NULL;
+				ctx.prepared_smsg = NULL;
 			}
 
-			if (!prepared_smsg) {
-				status = devdata->spi_prepare_ops.prepare_message(spi->master, &smsg->spi_msg);
+			if (!ctx.prepared_smsg) {
+				status = devdata->spi_prepare_ops.prepare_message(spi->master, &ctx.smsg->spi_msg);
 				if (status) {
 					dev_err(&spi->dev, "failed to prepare msg: %d", status);
 					break;
 				}
-				prepared_smsg = smsg;
+				ctx.prepared_smsg = ctx.smsg;
 			}
-			spi->master->cur_msg = &smsg->spi_msg;
+			spi->master->cur_msg = &ctx.smsg->spi_msg;
 		}
 
-		status = sleep_if_mcu_not_ready(devdata, &timing, smsg != devdata->default_smsg);
+		status = sleep_if_mcu_not_ready(devdata, &timing, ctx.msg_to_send);
 		if (status == -EINTR) {
 			dev_err(&spi->dev, "SPI thread received signal while waiting for MCU ready. Stopping.");
 			break;
 		}
 
+		if (devdata->use_irq_mode && !devdata->data_ready_fired && !ctx.msg_to_send) {
+			/*
+			 * We're in IRQ mode but a data ready IRQ has not fired since our last
+			 * transaction, and we have nothing to send the MCU. This means we likely
+			 * woke up because a new message became available after smsg was set at the
+			 * top of this loop. Loop around in an attempt to grab that message.
+			 */
+			ctx.smsg = NULL;
+			continue;
+		}
+
 #if defined(CONFIG_DYNAMIC_DEBUG)
-		if (smsg != devdata->default_smsg) {
+		if (ctx.msg_to_send) {
 			/*
 			 * See "logging notes" section at the top of this
 			 * file
 			 */
 			print_hex_dump_bytes("syncboss sending: ",
-					    DUMP_PREFIX_OFFSET, &smsg->tx,
+					    DUMP_PREFIX_OFFSET, &ctx.smsg->tx,
 					    transaction_length);
 		}
 #endif
 
-		/*
-		 * data_ready_fired_count must be cleared before the SPI transfer.
-		 * If we clear it after the SPI transfer, we risk a race where the IRQ fires
-		 * between when we execute the SPI transfer and clear the value.
-		 *
-		 * As such, we need to accumulate this value locally, since we may continue
-		 * the loop before querying wake reasons if the MCU->AP transaction was invalid.
-		 */
-		devdata->data_ready_fired_accum += atomic64_xchg(&devdata->data_ready_fired_count, 0);
-		devdata->wake_timer_fired = false;
+		ctx.data_ready_irq_had_fired = devdata->data_ready_fired;
+		ctx.send_timer_had_fired = devdata->send_timer_fired;
+		ctx.wake_timer_had_fired = devdata->wake_timer_fired;
+		reset_timer_status_flags(devdata);
 		timing.prev_trans_start_time_ns = ktime_get_boottime_ns();
 		if (devdata->use_fastpath)
-			status = spi_fastpath_transfer(spi, &smsg->spi_msg);
+			status = spi_fastpath_transfer(spi, &ctx.smsg->spi_msg);
 		else
-			status = spi_sync_locked(spi, &smsg->spi_msg);
+			status = spi_sync_locked(spi, &ctx.smsg->spi_msg);
 		timing.prev_trans_end_time_ns = ktime_get_boottime_ns();
 
 		if (status != 0) {
@@ -1844,44 +1868,39 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		}
 
 		devdata->stats.num_transactions++;
-		if (smsg == devdata->default_smsg)
+		if (!ctx.msg_to_send)
 			devdata->stats.num_empty_transactions_sent++;
 
-		/* Check response was not malformed */
-		status = spi_nrf_sanity_check_trans(devdata);
-		if (status != 0) {
-			devdata->stats.num_invalid_transactions_received++;
-			if (!recent_reset_event(devdata)) {
-				dev_err_ratelimited(&devdata->spi->dev,
-						"bad response from MCU (data_ready_irq_had_fired: %llu, default_smsg: %d)",
-						devdata->data_ready_fired_accum, smsg == devdata->default_smsg);
-			}
-			/* Retry the transaction */
+		/* Check response was not malformed. Retry if so. */
+		status = spi_nrf_sanity_check_trans(devdata, &ctx);
+		if (status < 0) {
+			/*
+			 * We raced the MCU wrt issuing a transaction while it was prepping one.
+			 * Try again.
+			 */
+			if ((status == -EAGAIN) && ctx.data_ready_irq_had_fired)
+				devdata->data_ready_fired = true;
+
 			continue;
 		}
 
 		process_rx_data(devdata, &timing);
-		/*
-		 * Clear after potential use. If it wasn't used in process_rx_data, we don't
-		 * need it. If it was used, we don't want to double-send wake reason queries.
-		 */
-		devdata->data_ready_fired_accum = 0;
 
 		/* Cleanup, to prepare for the next message */
-		if (smsg != devdata->default_smsg) {
-			if (prepared_smsg) {
-				BUG_ON(smsg != prepared_smsg);
-				devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
+		if (ctx.msg_to_send) {
+			if (ctx.prepared_smsg) {
+				BUG_ON(ctx.smsg != ctx.prepared_smsg);
+				devdata->spi_prepare_ops.unprepare_message(spi->master, &ctx.prepared_smsg->spi_msg);
 				spi->master->cur_msg = NULL;
-				prepared_smsg = NULL;
+				ctx.prepared_smsg = NULL;
 			}
-			kfree(smsg);
+			kfree(ctx.smsg);
 		}
-		smsg = NULL;
+		ctx.smsg = NULL;
 	}
 
-	if (prepared_smsg) {
-		devdata->spi_prepare_ops.unprepare_message(spi->master, &prepared_smsg->spi_msg);
+	if (ctx.prepared_smsg) {
+		devdata->spi_prepare_ops.unprepare_message(spi->master, &ctx.prepared_smsg->spi_msg);
 		spi->master->cur_msg = NULL;
 	}
 
@@ -1969,8 +1988,21 @@ static void push_prox_cal_and_enable_wake(struct syncboss_dev_data *devdata,
 
 static bool is_mcu_awake(const struct syncboss_dev_data *devdata)
 {
-	if (gpio_is_valid(devdata->gpio_ready))
-		return gpio_get_value(devdata->gpio_ready) == 1;
+	if (gpio_is_valid(devdata->gpio_ready)) {
+		if (gpio_get_value(devdata->gpio_ready) == 1)
+			return true;
+
+		/*
+		 * The GPIO is low, but make sure it stays low for at
+		 * least a couple uS to be sure the MCU's GPIO isn't in
+		 * the middle of a high-low-high transition for
+		 * triggering an IRQ.
+		 */
+		udelay(5);
+		if (gpio_get_value(devdata->gpio_ready) == 0)
+			return false;
+	}
+
 	return true;
 }
 
@@ -2150,6 +2182,9 @@ static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 		"attempting to wake MCU due to mcu_awake=%d, force_pin_reset=%d",
 		mcu_awake, force_pin_reset);
 
+	/* Reset "okay to transact" flags so no transactions occur until MCU wakes */
+	reset_timer_status_flags(devdata);
+
 	/* Clear flag so that handle_wakeup() will run on next MCU wakeup */
 	devdata->wakeup_handled = false;
 
@@ -2184,6 +2219,7 @@ static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 static int start_streaming_locked(struct syncboss_dev_data *devdata)
 {
 	int status = 0;
+	struct task_struct *worker;
 
 	if (devdata->is_streaming) {
 		dev_warn(&devdata->spi->dev, "streaming already started");
@@ -2278,11 +2314,6 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		goto error_after_spi_bus_lock;
 
 	atomic64_set(&devdata->transaction_ctr, 0);
-	/*
-	 * Don't set data_ready_fired_count/accum to 0 here, since some platforms like
-	 * starlet will interrupt the AP to wake it up from suspend.
-	 */
-	devdata->wake_timer_fired = false;
 
 	if (devdata->use_fastpath) {
 		status = devdata->spi_prepare_ops.prepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
@@ -2296,21 +2327,21 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	 */
 	BUG_ON(devdata->worker != NULL);
 
-	devdata->worker = kthread_create(syncboss_spi_transfer_thread,
+	worker = kthread_create(syncboss_spi_transfer_thread,
 					 devdata->spi, "syncboss:spi_thread");
-	if (IS_ERR(devdata->worker)) {
-		status = PTR_ERR(devdata->worker);
+	if (IS_ERR(worker)) {
+		status = PTR_ERR(worker);
 		dev_err(&devdata->spi->dev, "failed to start SPI transfer kernel thread. (%d)",
 			status);
-		devdata->worker = NULL;
 		goto error_after_prepare_msg;
 	}
 
 	dev_dbg(&devdata->spi->dev, "setting SPI transfer thread cpu affinity: %*pb",
 		cpumask_pr_args(&devdata->cpu_affinity));
-	kthread_bind_mask(devdata->worker, &devdata->cpu_affinity);
+	kthread_bind_mask(worker, &devdata->cpu_affinity);
 
 	devdata->is_streaming = true;
+	devdata->worker = worker;
 	wake_up_process(devdata->worker);
 
 	push_prox_cal_and_enable_wake(devdata, devdata->powerstate_events_enabled);
@@ -2387,7 +2418,7 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 
 	if (devdata->cameras_enabled) {
 		dev_warn(&devdata->spi->dev,
-			"sameras still enabled during stream stop. forcing camera release.");
+			"cameras still enabled during stream stop. forcing camera release.");
 		syncboss_on_camera_release(devdata);
 	}
 
@@ -2528,7 +2559,7 @@ static irqreturn_t isr_data_ready(int irq, void *p)
 {
 	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
 
-	atomic64_inc(&devdata->data_ready_fired_count);
+	devdata->data_ready_fired = true;
 
 	if (!devdata->use_irq_mode) {
 		/*
@@ -2594,8 +2625,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->next_stream_settings.spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
 	devdata->poll_prio = SYNCBOSS_DEFAULT_POLL_PRIO;
 	atomic64_set(&devdata->transaction_ctr, 0);
-	atomic64_set(&devdata->data_ready_fired_count, 0);
-	devdata->data_ready_fired_accum = 0;
 
 	devdata->prox_canc = INVALID_PROX_CAL_VALUE;
 	devdata->prox_thdl = INVALID_PROX_CAL_VALUE;
@@ -3011,11 +3040,11 @@ static int syncboss_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(syncboss_pm_ops, syncboss_suspend, syncboss_resume);
 
 /* SPI Driver Info */
-struct spi_driver oculus_syncboss_driver = {
+struct spi_driver syncboss_spi_driver = {
 	.driver = {
-		.name = "oculus_syncboss",
+		.name = "syncboss_spi",
 		.owner = THIS_MODULE,
-		.of_match_table = oculus_syncboss_table,
+		.of_match_table = syncboss_spi_table,
 		.pm = &syncboss_pm_ops,
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS
 	},
@@ -3025,12 +3054,12 @@ struct spi_driver oculus_syncboss_driver = {
 
 static int __init syncboss_init(void)
 {
-	return spi_register_driver(&oculus_syncboss_driver);
+	return spi_register_driver(&syncboss_spi_driver);
 }
 
 static void __exit syncboss_exit(void)
 {
-	spi_unregister_driver(&oculus_syncboss_driver);
+	spi_unregister_driver(&syncboss_spi_driver);
 }
 
 module_init(syncboss_init);

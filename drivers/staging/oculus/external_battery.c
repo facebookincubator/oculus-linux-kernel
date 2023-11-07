@@ -248,10 +248,8 @@ void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
 	pd->params.rsoc = 0;
 	mutex_unlock(&pd->lock);
 
-	schedule_delayed_work(&pd->mount_state_work, 0);
-
-	cancel_delayed_work_sync(&pd->dock_state_dwork);
-	schedule_delayed_work(&pd->dock_state_dwork, 0);
+	schedule_work(&pd->mount_state_work);
+	schedule_work(&pd->dock_state_work);
 
 	/* Force re-evaluation */
 	ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
@@ -276,8 +274,8 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 	pd->params.rsoc = 0;
 	mutex_unlock(&pd->lock);
 
-	cancel_delayed_work_sync(&pd->mount_state_work);
-	cancel_delayed_work_sync(&pd->dock_state_dwork);
+	cancel_work_sync(&pd->mount_state_work);
+	cancel_work_sync(&pd->dock_state_work);
 
 	/* Re-enable USB input charging path if disabled */
 	set_usb_charging_state(pd, CHARGING_RESUME);
@@ -735,6 +733,7 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 	case EXT_BATT_FW_CHARGER_PLUGGED:
 		pd->params.charger_plugged = vdos[0];
 		/* Force re-evaluation on charger status update */
+		power_supply_changed(pd->usb_psy);
 		ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
 				pd->battery_psy);
 		break;
@@ -768,6 +767,7 @@ static ssize_t charger_plugged_store(struct device *dev,
 	pd->params.charger_plugged = temp;
 
 	/* Force re-evaluation */
+	power_supply_changed(pd->usb_psy);
 	ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
 			pd->battery_psy);
 	return count;
@@ -836,10 +836,9 @@ static ssize_t mount_state_store(struct device *dev,
 
 	pd->mount_state = temp;
 
-	if (pd->connected) {
-		cancel_delayed_work(&pd->mount_state_work);
-		schedule_delayed_work(&pd->mount_state_work, 0);
-	}
+	if (pd->connected)
+		schedule_work(&pd->mount_state_work);
+
 	mutex_unlock(&pd->lock);
 
 	/* Force re-evaluation */
@@ -1000,6 +999,16 @@ static ssize_t serial_battery_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%s\n", pd->params.serial_battery);
 }
 static DEVICE_ATTR_RO(serial_battery);
+
+static ssize_t serial_system_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n", pd->params.serial_system);
+}
+static DEVICE_ATTR_RO(serial_system);
 
 static ssize_t temp_fg_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1381,6 +1390,7 @@ static struct attribute *ext_batt_molokini_attrs[] = {
 	&dev_attr_charging_suspend_disable.attr,
 	&dev_attr_serial.attr,
 	&dev_attr_serial_battery.attr,
+	&dev_attr_serial_system.attr,
 	&dev_attr_temp_fg.attr,
 	&dev_attr_voltage.attr,
 	&dev_attr_icurrent.attr,
@@ -1783,6 +1793,7 @@ static DEVICE_ATTR_RO(error_drp_ovp);
 
 static struct attribute *ext_batt_lehua_attrs[] = {
 	&dev_attr_charger_plugged.attr,
+	&dev_attr_charging_suspend_disable.attr,
 	&dev_attr_connected.attr,
 	&dev_attr_mount_state.attr,
 	&dev_attr_rsoc.attr,
@@ -1791,6 +1802,7 @@ static struct attribute *ext_batt_lehua_attrs[] = {
 	&dev_attr_battery_status.attr,
 	&dev_attr_serial.attr,
 	&dev_attr_serial_battery.attr,
+	&dev_attr_serial_system.attr,
 	&dev_attr_temp_fg.attr,
 	&dev_attr_voltage.attr,
 	&dev_attr_icurrent.attr,
@@ -1995,7 +2007,7 @@ static void ext_batt_default_sysfs_values(struct ext_batt_pd *pd)
 static void ext_batt_mount_status_work(struct work_struct *work)
 {
 	struct ext_batt_pd *pd =
-		container_of(work, struct ext_batt_pd, mount_state_work.work);
+		container_of(work, struct ext_batt_pd, mount_state_work);
 	int result;
 	u32 mount_state_header = 0;
 	u32 mount_state_vdo = pd->mount_state;
@@ -2032,7 +2044,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 			msecs_to_jiffies(MOUNT_STATE_ACK_TIMEOUT_MS));
 	if (!result) {
 		dev_err(pd->dev, "Timed out waiting for mount state ACK, retrying");
-		schedule_delayed_work(&pd->mount_state_work, 0);
+		schedule_work(&pd->mount_state_work);
 	}
 
 	mutex_unlock(&pd->lock);
@@ -2041,7 +2053,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 static void ext_batt_dock_state_work(struct work_struct *work)
 {
 	struct ext_batt_pd *pd =
-		container_of(work, struct ext_batt_pd, dock_state_dwork.work);
+		container_of(work, struct ext_batt_pd, dock_state_work);
 	int rc;
 	u32 dock_state_hdr, dock_state_vdo;
 
@@ -2155,10 +2167,12 @@ static void handle_battery_capacity_change(struct ext_batt_pd *pd,
 			capacity, pd->connected, pd->mount_state,
 			pd->params.charger_plugged);
 
-	if (capacity >= ENABLE_OTG_SOC_THRESHOLD)
-		set_usb_output_current_limit(pd, OTG_CURRENT_LIMIT_UA);
-	else
-		set_usb_output_current_limit(pd, 0);
+	if (pd->otg_current_control_enabled) {
+		if (capacity >= ENABLE_OTG_SOC_THRESHOLD)
+			set_usb_output_current_limit(pd, OTG_CURRENT_LIMIT_UA);
+		else
+			set_usb_output_current_limit(pd, 0);
+	}
 
 	if ((pd->charging_suspend_disable) ||
 		(!pd->connected) ||
@@ -2224,10 +2238,8 @@ static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 	if (psy == pd->battery_psy)
 		schedule_work(&pd->psy_notifier_work);
 
-	if (pd->cypd_psy && psy == pd->cypd_psy) {
-		cancel_delayed_work(&pd->dock_state_dwork);
-		schedule_delayed_work(&pd->dock_state_dwork, 0);
-	}
+	if (pd->cypd_psy && psy == pd->cypd_psy)
+		schedule_work(&pd->dock_state_work);
 
 	return NOTIFY_OK;
 }
@@ -2363,6 +2375,10 @@ static int ext_batt_probe(struct platform_device *pdev)
 				pd->rsoc_scaling_max_level);
 	}
 
+	pd->otg_current_control_enabled = of_property_read_bool(pdev->dev.of_node,
+			"otg-current-control");
+	dev_dbg(&pdev->dev, "otg current control enabled=%d\n", pd->otg_current_control_enabled);
+
 	pd->batt_id = EXT_BATT_ID_MOLOKINI;
 	result = of_property_read_string(pdev->dev.of_node, "batt-name", &batt_name);
 	if (result < 0)
@@ -2374,7 +2390,7 @@ static int ext_batt_probe(struct platform_device *pdev)
 
 	init_completion(&pd->mount_state_ack);
 	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
-	INIT_DELAYED_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
+	INIT_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
 
 	#ifdef CONFIG_CHARGER_CYPD3177
 	pd->cypd_pd_active_chan = iio_channel_get(NULL, "cypd_pd_active");
@@ -2384,7 +2400,7 @@ static int ext_batt_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 	#endif
-	INIT_DELAYED_WORK(&pd->dock_state_dwork, ext_batt_dock_state_work);
+	INIT_WORK(&pd->dock_state_work, ext_batt_dock_state_work);
 
 	pd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, pd);
@@ -2433,8 +2449,8 @@ static int ext_batt_remove(struct platform_device *pdev)
 	mutex_lock(&pd->lock);
 	pd->connected = false;
 	mutex_unlock(&pd->lock);
-	cancel_delayed_work_sync(&pd->mount_state_work);
-	cancel_delayed_work_sync(&pd->dock_state_dwork);
+	cancel_work_sync(&pd->mount_state_work);
+	cancel_work_sync(&pd->dock_state_work);
 	set_usb_charging_state(pd, CHARGING_RESUME);
 	ext_batt_psy_unregister_notifier(pd);
 	if (pd->cypd_psy) {

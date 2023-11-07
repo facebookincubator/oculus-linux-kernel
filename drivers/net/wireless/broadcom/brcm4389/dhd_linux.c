@@ -1097,6 +1097,10 @@ static int dhd_suspend_resume_helper(struct dhd_info *dhd, int val, int force);
 static void dhd_dump_proc(struct work_struct *work_data);
 #endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
 
+#ifdef OMI_OFDMA_SU
+static void dhd_omi_ofdma_su(dhd_pub_t *dhdp);
+#endif /* OMI_OFDMA_SU */
+
 #ifdef CUSTOM_EVENT_PM_WAKE
 void
 dhd_set_excess_pm_awake(dhd_pub_t *dhd, bool suspend)
@@ -7919,6 +7923,7 @@ static dhd_if_t *
 dhd_get_ifp_by_ndev(dhd_pub_t *dhdp, struct net_device *ndev)
 {
 	dhd_if_t *ifp = NULL;
+	dhd_info_t *dhdinfo;
 #ifdef WL_STATIC_IF
 	u32 ifidx = (DHD_MAX_IFS + DHD_MAX_STATIC_IFS - 1);
 #else
@@ -7930,7 +7935,7 @@ dhd_get_ifp_by_ndev(dhd_pub_t *dhdp, struct net_device *ndev)
 		return NULL;
 	}
 
-	dhd_info_t *dhdinfo = (dhd_info_t *)dhdp->info;
+	dhdinfo = (dhd_info_t *)dhdp->info;
 	do {
 		ifp = dhdinfo->iflist[ifidx];
 		if (ifp && (ifp->net == ndev)) {
@@ -12220,6 +12225,11 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 		DHD_ERROR(("autocountry success\n"));
 	}
 #endif /* WL_AUTOCOUNTRY_DEFAULT */
+
+#ifdef OMI_OFDMA_SU
+    dhd_omi_ofdma_su(dhd);
+#endif /* OMI_OFDMA_SU */
+
 done:
 	if (iov_buf) {
 		MFREE(dhd->osh, iov_buf, WLC_IOCTL_SMLEN);
@@ -25690,3 +25700,38 @@ static void dhd_dump_proc(struct work_struct *work_data)
 	DHD_GENERAL_UNLOCK(dhdp, flags);
 }
 #endif /* DHD_FILE_DUMP_EVENT && DHD_FW_COREDUMP */
+
+#ifdef OMI_OFDMA_SU
+static void dhd_omi_ofdma_su(dhd_pub_t *dhdp)
+{
+	int ret = BCME_OK;
+	wl_omi_req_v1_t val;
+	u8 buf[WLC_IOCTL_SMLEN] = {0};
+	uint8 *pbuf = buf;
+	uint16 param_len  = sizeof(buf);
+
+	DHD_TRACE(("%s : Enter\n", __FUNCTION__));
+
+	bzero(&val, sizeof(val));
+	val.version = WL_OMI_CONFIG_VERSION_1;
+	val.len = sizeof(val.version) + sizeof(val.len);
+
+	/* set OFDMA SU mode */
+	val.config.ulmu_disable = 1;
+	val.config.dlmu_resound_rec = 0;
+	val.config.valid_bm = OMI_CONFIG_VALID_BMP_ULMU_DISABLE | OMI_CONFIG_VALID_BMP_DLMU_RSD_RCM;
+
+	/* packing parameters */
+	ret = bcm_pack_xtlv_entry(&pbuf, &param_len, WL_HE_CMD_OMI_CONFIG,
+		sizeof(val), (uint8 *)&val, BCM_XTLV_OPTION_ALIGN32);
+	if (ret != BCME_OK) {
+		DHD_ERROR(("%s : packing error (%d)\n", __FUNCTION__, ret));
+		return;
+	}
+
+	ret = dhd_iovar(dhdp, 0, "he", buf, sizeof(buf) - param_len, NULL, 0, TRUE);
+	if (ret != BCME_OK) {
+		DHD_ERROR(("%s : iovar failed (%d)\n", __FUNCTION__, ret));
+	}
+}
+#endif

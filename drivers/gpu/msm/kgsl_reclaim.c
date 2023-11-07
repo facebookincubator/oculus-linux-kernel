@@ -221,12 +221,6 @@ ssize_t kgsl_proc_max_reclaim_limit_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", kgsl_reclaim_max_page_limit);
 }
 
-static void kgsl_release_page_vec(struct pagevec *pvec)
-{
-	check_move_unevictable_pages(pvec->pages, pvec->nr);
-	__pagevec_release(pvec);
-}
-
 static int kgsl_reclaim_callback(struct notifier_block *nb,
 		unsigned long pid, void *data)
 {

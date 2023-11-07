@@ -2629,8 +2629,8 @@ error_npu_host_init:
 error_npu_debugfs_init:
 #ifdef CONFIG_DEBUG_FS
 	npu_debugfs_deinit(npu_dev);
-#endif
 error_sysfs_create_group:
+#endif
 	sysfs_remove_group(&npu_dev->device->kobj, &npu_fs_attr_group);
 error_res_init:
 	cdev_del(&npu_dev->cdev);

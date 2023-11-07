@@ -499,6 +499,15 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf);
 #endif /* TSF_GSYNC */
 
+#ifdef XRAP_POWER_OPTIMIZATION
+#define CMD_ENABLE_OCE_FILS_DISCOVERY "ENABLE_OCE_FILS_DISCOVERY"
+static int wl_android_enable_oce_fils_discovery(struct net_device *dev,
+						   char *command,
+						   int total_len);
+static int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable);
+static int wl_set_oce_fils_discovery_tx_duration(struct net_device *dev, uint8 fils_discovery_duration);
+#endif /* XRAP_POWER_OPTIMIZATION */
+
 #ifdef SIMULATE_DEGRADED_PERFORMANCE
 #define CMD_XRAPI_SIMULATE_DEGRADED_PERFORMANCE                                \
 	"XRAPI_SIMULATE_DEGRADED_PERFORMANCE"
@@ -13978,6 +13987,12 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_get_tx_power(net, command, priv_cmd.total_len);
 	}
 #endif /* TEST_TX_POWER_CONTROL */
+#ifdef XRAP_POWER_OPTIMIZATION
+	else if (strnicmp(command, CMD_ENABLE_OCE_FILS_DISCOVERY,
+		strlen(CMD_ENABLE_OCE_FILS_DISCOVERY)) == 0) {
+		bytes_written = wl_android_enable_oce_fils_discovery(net, command, priv_cmd.total_len);
+	}
+#endif /* XRAP_POWER_OPTIMIZATION */
 	else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 #ifdef CUSTOMER_HW4_DEBUG
@@ -16386,3 +16401,121 @@ static int wl_android_get_tx_rx_duration(struct net_device *dev,
 
 	return snprintf(command, total_len, "%s %d %d", CMD_GET_TX_RX_DURATION, stats->tx_dur, stats->rx_dur);
 }
+
+#ifdef XRAP_POWER_OPTIMIZATION
+static int wl_android_enable_oce_fils_discovery(struct net_device *dev,
+						   char *command,
+						   int total_len)
+{
+	int res = BCME_OK;
+	char *pos, *token;
+	uint8 enable_fils_discovery = 0;
+	int bytes_written = 0;
+
+	/* drop command */
+	pos = command;
+	token = bcmstrtok(&pos, " ", NULL);
+	/* pm_mode */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		res = BCME_BADARG;
+		goto exit;
+	}
+	enable_fils_discovery = (u8)bcm_strtoul(token, NULL, 10);
+	WL_ERR(("WL_OCE_CMD_FD_TX_DURATION enable_fils_discovery %d\n", enable_fils_discovery));
+	res = wl_enable_oce_fils_discovery(dev, enable_fils_discovery);
+
+exit:
+	// Save the status "res" to "command".
+	// Call the copy_to_user (in the caller function) to send the status back to user space.
+	bytes_written = snprintf(command, total_len, "STATUS %d", res);
+	if (unlikely(bytes_written > total_len)) {
+		WL_ERR(("WL_OCE_CMD_FD_TX_DURATION return status Error, bytes_written=%d, total_len=%d",
+			bytes_written, total_len));
+		return -EINVAL;
+	}
+
+	return bytes_written;
+
+}
+
+/*
+ * Send WL_OCE_CMD_FD_TX_DURATION cmd to enable/disable FILS Discovery
+ * FILS discovery frames are disabled  with "wl oce fd_tx_duration 0"
+ * and re-enabled with 21ms period with "wl oce fd_tx_duration 255"
+ */
+#define FILS_DISCOVERY_DURATION_FOR_DIABLE (0)
+#define FILS_DISCOVERY_DURATION_FOR_ENABLE (255)
+
+static int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable) {
+	int res = BCME_OK;
+	WL_INFORM(("enable = %d\n", enable));
+	if (enable)
+	{
+		res = wl_set_oce_fils_discovery_tx_duration(ndev, FILS_DISCOVERY_DURATION_FOR_ENABLE);
+	} else {
+		res = wl_set_oce_fils_discovery_tx_duration(ndev, FILS_DISCOVERY_DURATION_FOR_DIABLE);
+	}
+	if (res != BCME_OK) {
+		WL_ERR(("%s Fail to enable: %d fils discovery, res: %d\n", __func__, enable, res));
+	}
+	return res;
+}
+
+static int wl_set_oce_fils_discovery_tx_duration(struct net_device *dev, uint8 fils_discovery_duration)
+{
+	int res = BCME_OK;
+	uint8 *pxtlv = NULL;
+	uint16 buflen = 0, buflen_start = 0;
+	bcm_iov_buf_t *iov_buf = NULL;
+	uint8 *iov_resp = NULL;
+	uint16 iovlen = 0;
+	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+	iov_buf = (bcm_iov_buf_t *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
+	if (iov_buf == NULL) {
+		res = BCME_NOMEM;
+		WL_ERR(("iov buf memory alloc exited\n"));
+		goto exit;
+	}
+	iov_resp = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_MAXLEN);
+	if (iov_resp == NULL) {
+		res = BCME_NOMEM;
+		WL_ERR(("iov resp memory alloc exited\n"));
+		goto exit;
+	}
+
+	/* fill header */
+	iov_buf->version = WL_OCE_IOV_VERSION_1_1;
+	iov_buf->id = WL_OCE_CMD_FD_TX_DURATION;
+	buflen = buflen_start = WLC_IOCTL_SMLEN - sizeof(bcm_iov_buf_t);
+	pxtlv = (uint8 *)&iov_buf->data[0];
+	res = bcm_pack_xtlv_entry(
+		&pxtlv, &buflen, WL_OCE_XTLV_FD_TX_DURATION, sizeof(uint8),
+		(uint8*)&fils_discovery_duration,
+		BCM_XTLV_OPTION_ALIGN32);
+	if (res != BCME_OK) {
+		WL_ERR(("bcm pack err %d\n", res));
+		goto exit;
+	}
+	iov_buf->len = buflen_start - buflen;
+	iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
+	res = wldev_iovar_setbuf(dev, "oce", iov_buf, iovlen, iov_resp,
+				 WLC_IOCTL_MAXLEN, NULL);
+	if (res != BCME_OK) {
+		WL_ERR(("Fail to send WL_OCE_CMD_FD_TX_DURATION %d\n",
+			res));
+		goto exit;
+	}
+	WL_INFORM(("WL_OCE_CMD_FD_TX_DURATION sent\n"));
+
+exit:
+	if (iov_buf)
+		MFREE(cfg->osh, iov_buf, WLC_IOCTL_SMLEN);
+
+	if (iov_resp)
+		MFREE(cfg->osh, iov_resp, WLC_IOCTL_MAXLEN);
+
+	return res;
+}
+#endif /* XRAP_POWER_OPTIMIZATION */

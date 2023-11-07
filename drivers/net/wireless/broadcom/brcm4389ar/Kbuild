@@ -123,6 +123,9 @@ endif
 #########################################
 # Enable Tx Power Control
 DHDCFLAGS += -DTEST_TX_POWER_CONTROL
+# Enable XrAp power optimization by
+# disabling FILS discovery frames dynamically when xrap is connected, re-enable after disconnection
+DHDCFLAGS += -DXRAP_POWER_OPTIMIZATION
 
 ifeq ($(CONFIG_XRPS),y)
 DHDCFLAGS += -DCONFIG_XRPS
@@ -135,6 +138,14 @@ endif
 ifeq ($(CONFIG_XRPS_DHD_HOOKS),y)
 DHDCFLAGS += -DCONFIG_XRPS_DHD_HOOKS
 endif
+
+ifneq ($(CONFIG_BCMDHD_PCIE),)
+ifneq ($(CONFIG_DHD_LB_SEC_MASK_OVERRIDE_ENABLE),y)
+	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0xF0 -DDHD_LB_SECONDARY_CPUS=0x0E
+else
+	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0xF0 -DDHD_LB_SECONDARY_CPUS=CONFIG_DHD_LB_SEC_MASK_OVERRIDE
+endif #DHD_LB_SEC_MASK_OVERRIDE_ENABLE
+endif #CONFIG_BCMDHD_PCIE
 
 #################
 # Common feature
@@ -263,7 +274,8 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
   DHDCFLAGS += -DDHD_LB -DDHD_LB_RXP -DDHD_LB_TXP -DDHD_LB_STATS
 	DHDCFLAGS += -DDHD_LB_TXP_DEFAULT_ENAB
 	DHDCFLAGS += -DLB_RXP_STOP_THR=500 -DLB_RXP_STRT_THR=499
-	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0xF0 -DDHD_LB_SECONDARY_CPUS=0x0E
+# META MODIFIED, SEE "Customize for AR" above
+#	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0xF0 -DDHD_LB_SECONDARY_CPUS=0x0E
 # Enable IRQ CPU control
 	DHDCFLAGS += -DDHD_LB_HOST_CTRL
 # PCIe interrupt affinity control interface

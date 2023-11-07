@@ -3184,6 +3184,7 @@ static void cm710x_update_dsp_param(
 			0x10 | (type & 0x7) << 5 | (value & 0xFFFFF) << 8;
 	dev_dbg(cm7120_codec->dev, "%s DSPElement = 0x%08x\n", __func__,
 		 DSPElement);
+	usleep_range(30000, 35000);
 	mutex_lock(&cm7120_codec->dsp_lock);
 	cm7120_dsp_mode_i2c_write_mem(cm7120_codec->real_regmap, 0x5FFC0030,
 				      (u8 *)&DSPElement, 4);

@@ -55,11 +55,11 @@
 
 #define DUMPBUFSZ 1024
 
-#if defined(CUSTOMER_HW4_DEBUG) || defined(CUSTOMER_HW2_DEBUG)
+#if defined(CUSTOMER_HW4_DEBUG) || defined(CUSTOMER_HW2_DEBUG) || defined(WL_VENDOR_META)
 uint32 g_assert_type = 1; /* By Default not cause Kernel Panic */
 #else
 uint32 g_assert_type = 0; /* By Default Kernel Panic */
-#endif /* CUSTOMER_HW4_DEBUG || CUSTOMER_HW2_DEBUG */
+#endif /* CUSTOMER_HW4_DEBUG || CUSTOMER_HW2_DEBUG || WL_VENDOR_META */
 
 module_param(g_assert_type, int, 0);
 

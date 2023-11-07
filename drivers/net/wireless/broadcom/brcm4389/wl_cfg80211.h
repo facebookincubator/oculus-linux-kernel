@@ -169,7 +169,9 @@ typedef sta_info_v4_t wlcfg_sta_info_t;
  * define CONFIG_6GHZ_BKPORT
  */
 #if defined(WL_6G_BAND)
+#ifndef CFG80211_6G_SUPPORT
 #define CFG80211_6G_SUPPORT
+#endif
 #endif
 #endif /* CONFIG_6GHZ_BKPORT || LINUX_VER >= 5.4 */
 

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _DT_BINDINGS_CLK_QCOM_GCC_SCUBA_H
@@ -155,6 +156,7 @@
 #define GCC_VIDEO_VENUS_CLK_SRC				145
 #define GCC_VIDEO_VENUS_CTL_CLK				146
 #define GCC_VIDEO_XO_CLK				147
+#define GCC_PWM0_XO512_DIV_CLK_SRC			148
 
 /* GCC resets */
 #define GCC_CAMSS_OPE_BCR				0

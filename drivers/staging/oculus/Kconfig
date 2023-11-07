@@ -86,7 +86,6 @@ config GPIO_CAPACITOR
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
 	default n
-	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing the iio channel
 	  value of a device.
@@ -113,6 +112,13 @@ config MISCFIFO_SAMPLE
 	default n
 	help
 	  Example usage of miscfifo chardev driver
+
+config OCULUS_BLU_I2C
+	tristate "Oculus BLU I2C driver"
+	default n
+	depends on I2C
+	help
+	  Basic I2C driver for BLU hardware.
 
 config OCULUS_EXTERNAL_BATTERY
 	tristate "External battery driver"
@@ -184,7 +190,6 @@ config OCULUS_VDM_GLINK
 config OCULUS_VIRTUAL_SENSOR
 	tristate "Virtual Sensor Driver"
 	default n
-	select VIRTUAL_SENSOR_UTILS
 	help
 	  This driver implements a virtual sensor driver representing a particular
 	  component of a device that can be configured in the device tree.
@@ -279,12 +284,6 @@ config VENDOR_DT_OUTPUT_DISABLE
 	  device-trees to be built by default. Don't build them when
 	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
 	  platforms.
-
-config VIRTUAL_SENSOR_UTILS
-	tristate "Virtual Sensor Utilities"
-	default n
-	help
-	  This driver implements virtual thermal sensor helper functionality.
 
 source "drivers/staging/oculus/internal/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"

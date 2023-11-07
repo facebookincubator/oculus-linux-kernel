@@ -135,6 +135,7 @@ static struct {
 			.target_erase = stm32g0_swd_erase_app,
 			.target_program_write_chunk = stm32g0_swd_write_chunk,
 			.target_get_write_chunk_size = stm32g0_get_write_chunk_size,
+			.target_finalize = stm32g0_swd_finalize,
 		}
 	},
 #endif

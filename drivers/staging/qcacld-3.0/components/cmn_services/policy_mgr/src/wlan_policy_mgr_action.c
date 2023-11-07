@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2492,6 +2493,176 @@ void policy_mgr_change_sap_channel_with_csa(struct wlan_objmgr_psoc *psoc,
 	}
 }
 #endif
+
+QDF_STATUS
+policy_mgr_sta_sap_dfs_scc_conc_check(struct wlan_objmgr_psoc *psoc,
+				      uint8_t vdev_id,
+				      struct csa_offload_params *csa_event)
+{
+	uint8_t concur_vdev_id, i;
+	bool move_sap_go_first;
+	enum hw_mode_bandwidth bw;
+	qdf_freq_t cur_freq, new_freq;
+	struct wlan_objmgr_vdev *vdev, *conc_vdev;
+	struct wlan_objmgr_pdev *pdev;
+	struct policy_mgr_psoc_priv_obj *pm_ctx;
+	enum policy_mgr_con_mode cur_mode;
+	enum policy_mgr_con_mode concur_mode = PM_MAX_NUM_OF_MODE;
+
+	pm_ctx = policy_mgr_get_context(psoc);
+	if (!pm_ctx) {
+		policy_mgr_err("Invalid context");
+		return QDF_STATUS_E_INVAL;
+	}
+	if (!csa_event) {
+		policy_mgr_err("CSA IE Received event is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	policy_mgr_get_dfs_sta_sap_go_scc_movement(psoc, &move_sap_go_first);
+	if (!move_sap_go_first) {
+		policy_mgr_err("g_move_sap_go_1st_on_dfs_sta_csa is disabled");
+		return QDF_STATUS_E_NOSUPPORT;
+	}
+
+	cur_mode = policy_mgr_get_mode_by_vdev_id(psoc, vdev_id);
+	if (cur_mode != PM_STA_MODE) {
+		policy_mgr_err("CSA received on non-STA connection");
+		return QDF_STATUS_E_INVAL;
+	}
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_POLICY_MGR_ID);
+	if (!vdev) {
+		policy_mgr_err("vdev is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+	pdev = wlan_vdev_get_pdev(vdev);
+	cur_freq = wlan_vdev_get_active_channel(vdev)->ch_freq;
+
+	if (!wlan_reg_is_dfs_for_freq(pdev, cur_freq) &&
+	    !wlan_reg_is_freq_indoor(pdev, cur_freq)) {
+		policy_mgr_err("SAP / GO operating channel is non-DFS");
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	/* Check if there is any SAP / GO operating on the same channel or not
+	 * If yes, then get the current bandwidth and vdev_id of concurrent SAP
+	 * or GO and trigger channel switch to new channel received in CSA on
+	 * STA interface. If this new channel is DFS then trigger channel
+	 * switch to non-DFS channel. Once STA moves to this new channel and
+	 * when it receives very first beacon, it will then enforce SCC again
+	 */
+	for (i = 0; i < MAX_NUMBER_OF_CONC_CONNECTIONS; i++) {
+		if (pm_conc_connection_list[i].in_use &&
+		    pm_conc_connection_list[i].freq == cur_freq &&
+		    pm_conc_connection_list[i].vdev_id != vdev_id &&
+		    (pm_conc_connection_list[i].mode == PM_P2P_GO_MODE ||
+		     pm_conc_connection_list[i].mode == PM_SAP_MODE)) {
+			concur_mode = pm_conc_connection_list[i].mode;
+			bw = pm_conc_connection_list[i].bw;
+			concur_vdev_id = pm_conc_connection_list[i].vdev_id;
+			break;
+		}
+	}
+
+	/* If there is no concurrent SAP / GO, then return */
+	if (concur_mode == PM_MAX_NUM_OF_MODE) {
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	conc_vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, concur_vdev_id,
+							 WLAN_POLICY_MGR_ID);
+	if (!conc_vdev) {
+		policy_mgr_err("conc_vdev is NULL");
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+		return QDF_STATUS_E_INVAL;
+	}
+	wlan_vdev_mlme_set_sap_go_move_before_sta(conc_vdev, true);
+	wlan_vdev_mlme_set_sap_go_move_before_sta(vdev, true);
+	wlan_objmgr_vdev_release_ref(conc_vdev, WLAN_POLICY_MGR_ID);
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+
+	/*Change the CSA count*/
+	if (pm_ctx->sme_cbacks.sme_change_sap_csa_count)
+		/* Total 4 CSA frames are allowed so that GO / SAP
+		 * will move to new channel within 500ms
+		 */
+		pm_ctx->sme_cbacks.sme_change_sap_csa_count(4);
+	new_freq = csa_event->csa_chan_freq;
+
+	/* If the new channel is DFS or indoor, then select another channel
+	 * and switch the SAP / GO to avoid CAC. This will resume traffic on
+	 * SAP / GO interface immediately. Once STA moves to this new channel
+	 * and receives the very first beacon, then it will enforece SCC
+	 */
+	if (wlan_reg_is_dfs_for_freq(pdev, new_freq) ||
+	    wlan_reg_is_freq_indoor(pdev, new_freq)) {
+		if (wlan_reg_is_24ghz_ch_freq(new_freq)) {
+			new_freq = wlan_reg_min_24ghz_chan_freq();
+		} else if (wlan_reg_is_5ghz_ch_freq(new_freq)) {
+			new_freq = wlan_reg_min_5ghz_chan_freq();
+			/* if none of the 5G channel is non-DFS */
+			if (wlan_reg_is_dfs_for_freq(pdev, new_freq) ||
+			    wlan_reg_is_freq_indoor(pdev, new_freq))
+				new_freq = policy_mgr_get_nondfs_preferred_channel(psoc,
+										   concur_mode,
+										   true);
+		} else {
+			new_freq = wlan_reg_min_6ghz_chan_freq();
+		}
+	}
+	policy_mgr_debug("Restart vdev: %u on freq: %u",
+			 concur_vdev_id, new_freq);
+	policy_mgr_change_sap_channel_with_csa(psoc, concur_vdev_id,
+					       new_freq, bw, true);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+void policy_mgr_sta_sap_dfs_enforce_scc(struct wlan_objmgr_psoc *psoc,
+					uint8_t vdev_id)
+{
+	bool is_sap_go_moved_before_sta, move_sap_go_first;
+	struct policy_mgr_psoc_priv_obj *pm_ctx;
+	struct wlan_objmgr_vdev *vdev;
+	struct wlan_objmgr_pdev *pdev;
+	enum policy_mgr_con_mode cur_mode;
+
+	pm_ctx = policy_mgr_get_context(psoc);
+	if (!pm_ctx) {
+		policy_mgr_err("Invalid context");
+		return;
+	}
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
+						    WLAN_POLICY_MGR_ID);
+	if (!vdev) {
+		policy_mgr_err("vdev is NULL");
+		return;
+	}
+	is_sap_go_moved_before_sta =
+			wlan_vdev_mlme_is_sap_go_move_before_sta(vdev);
+	pdev = wlan_vdev_get_pdev(vdev);
+	wlan_vdev_mlme_set_sap_go_move_before_sta(vdev, false);
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+
+	policy_mgr_get_dfs_sta_sap_go_scc_movement(psoc, &move_sap_go_first);
+	if (!is_sap_go_moved_before_sta || !move_sap_go_first) {
+		policy_mgr_debug("SAP / GO moved before STA: %u INI g_move_sap_go_1st_on_dfs_sta_csa: %u",
+				 is_sap_go_moved_before_sta, move_sap_go_first);
+		return;
+	}
+
+	cur_mode = policy_mgr_get_mode_by_vdev_id(psoc, vdev_id);
+	if (cur_mode != PM_STA_MODE) {
+		policy_mgr_err("CSA received on non-STA connection");
+		return;
+	}
+
+	policy_mgr_debug("Enforce SCC");
+	policy_mgr_check_concurrent_intf_and_restart_sap(psoc);
+}
 
 #ifdef WLAN_FEATURE_P2P_P2P_STA
 void policy_mgr_do_go_plus_go_force_scc(struct wlan_objmgr_psoc *psoc,

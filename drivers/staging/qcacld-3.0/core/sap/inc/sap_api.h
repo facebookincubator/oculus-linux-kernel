@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -650,6 +651,7 @@ typedef struct tagSapStruct {
 #endif /* FEATURE_AP_MCC_CH_AVOIDANCE */
 	bool acs_with_more_param;
 	bool enable_dfs_phy_error_logs;
+	uint8_t one_time_csa_count;
 #ifdef DCS_INTERFERENCE_DETECTION
 	struct sap_dcs_info dcs_info;
 #endif

@@ -1,5 +1,6 @@
-obj-$(CONFIG_SYNCBOSS)			+= spi_fastpath.o
-obj-$(CONFIG_SYNCBOSS_DEBUG)	+= syncboss_debugfs.o
-obj-$(CONFIG_SYNCBOSS)			+= syncboss_sequence_number.o
-obj-$(CONFIG_SYNCBOSS)			+= syncboss_spi.o
-obj-$(CONFIG_SYNCBOSS)			+= syncboss_sysfs.o
+obj-$(CONFIG_SYNCBOSS)		+= syncboss.o
+syncboss-objs += spi_fastpath.o syncboss_sequence_number.o syncboss_spi.o syncboss_sysfs.o
+
+ifeq ($(CONFIG_SYNCBOSS_DEBUG),y)
+syncboss-objs += syncboss_debugfs.o
+endif

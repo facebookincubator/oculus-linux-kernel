@@ -30,7 +30,7 @@
 #include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
-#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 #include <linux/soc/qcom/panel_event_notifier.h>
 #endif
 #include <linux/sysfs.h>
@@ -38,12 +38,15 @@
 
 #include <drm/drm_panel.h>
 
-#define CLOSE_LOOP_FAN_FAILURE_TIME_MS 800
-#define MAX_FAN_RESET_TRY_COUNT 5
-#define FAN_STARTUP_TIME_MS 800
-#define MIN_PWM 15
-#define COLD_BOOT_PWM 84
-#define MAX_PWM 255
+#define RECOVERY_STEP_SIZE 50
+#define FAN_MIN_OFF_TIME_MS 400
+#define FAN_STALL_DETECT_TIME_MS 6000
+#define FAN_STALL_REPORT_TIME_MS 15000
+#define FAN_STARTUP_IRQ_IGNORE_TIME_MS 2300
+#define COLD_BOOT_PWM 84U
+#define FORCE_FAILURE_PWM 0U
+#define DEFAULT_MIN_PWM 15U
+#define DEFAULT_MAX_PWM 255U
 #define MAX_STR_LEN 10
 #define MAX_RPM_HISTORY 3
 
@@ -62,14 +65,20 @@ struct pwm_fan_ctx {
 	struct workqueue_struct *wq;
 	struct work_struct fan_work;
 	struct work_struct fan_recovery_work;
-#ifdef CONFIG_DRM
+#if IS_ENABLED(CONFIG_DRM)
+	bool use_panel_notifiers;
 	struct notifier_block fb_notif;
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 	void *notifier_cookie;
+#else
+	struct drm_panel *active_panel;
 #endif
 #endif
 	unsigned int cold_boot_pwm;
+	unsigned int min_pwm;
+	unsigned int max_pwm;
 	unsigned int pwm_value;
+	unsigned int recovery_pwm_value;
 	unsigned int pwm_fan_state;
 	unsigned int pwm_fan_max_state;
 	unsigned int *pwm_fan_cooling_levels;
@@ -77,6 +86,8 @@ struct pwm_fan_ctx {
 	unsigned int irq;
 	u64 tach_periods;
 	atomic64_t rpm;
+	ktime_t last_disable_timestamp;
+	ktime_t last_stall_detect_timestamp;
 	ktime_t last_tach_timestamp;
 	int max_rpm;
 	int rpm_value;
@@ -85,10 +96,10 @@ struct pwm_fan_ctx {
 	bool is_display_on;
 	u64 timer_ticks;
 	bool force_failure;
+	bool ignore_tach_irqs;
+	bool recovery_in_progress;
 	int reset_count;
 };
-
-static struct drm_panel *active_panel;
 
 static ktime_t get_rpm_delay(int rpm)
 {
@@ -125,22 +136,33 @@ static unsigned int get_tolerance(int rpm)
 static void reset_counters(struct pwm_fan_ctx *ctx)
 {
 	memset(ctx->rpm_history, 0, sizeof(ctx->rpm_history));
+	ctx->ignore_tach_irqs = true;
 	ctx->timer_ticks = 0;
 	ctx->tach_periods = 0;
-	ctx->last_tach_timestamp = ktime_get();
+	if (!ctx->recovery_in_progress)
+		ctx->last_tach_timestamp = ktime_get();
 }
 
 static int enable_fan(struct pwm_fan_ctx *ctx)
 {
-	int ret = pwm_enable(ctx->pwm);
+	int ret;
+	ktime_t min_enable_time;
+	s64 delay_ms;
 
+	/* Wait at least FAN_MIN_OFF_TIME_MS since last disable. */
+	min_enable_time = ktime_add_ms(ctx->last_disable_timestamp, FAN_MIN_OFF_TIME_MS);
+	delay_ms = ktime_to_ms(ktime_sub(min_enable_time, ktime_get()));
+	if (delay_ms > 0)
+		msleep(delay_ms);
+
+	ret = pwm_enable(ctx->pwm);
 	if (ret)
 		return ret;
 	reset_counters(ctx);
 	enable_irq(ctx->irq);
 	/* Allow fan enough time to start from idle */
 	hrtimer_start(&ctx->fan_timer,
-			ms_to_ktime(FAN_STARTUP_TIME_MS),
+			ms_to_ktime(FAN_STARTUP_IRQ_IGNORE_TIME_MS),
 			HRTIMER_MODE_REL);
 
 	return 0;
@@ -152,17 +174,13 @@ static void disable_fan(struct pwm_fan_ctx *ctx)
 	cancel_work_sync(&ctx->fan_work);
 	disable_irq(ctx->irq);
 	pwm_disable(ctx->pwm);
+	ctx->last_disable_timestamp = ktime_get();
 	atomic64_set(&ctx->rpm, 0);
-}
-
-static void reset_fan(struct pwm_fan_ctx *ctx)
-{
-	disable_fan(ctx);
-	enable_fan(ctx);
 }
 
 static int set_pwm_locked(struct pwm_fan_ctx *ctx, unsigned long pwm)
 {
+	unsigned long target_pwm;
 	unsigned long duty;
 	unsigned long period;
 	ssize_t ret = 0;
@@ -175,8 +193,10 @@ static int set_pwm_locked(struct pwm_fan_ctx *ctx, unsigned long pwm)
 		goto set_pwm_success;
 	}
 
+	target_pwm = ctx->force_failure ? FORCE_FAILURE_PWM : pwm;
+
 	period = ctx->pwm->args.period;
-	duty = DIV_ROUND_UP(pwm * (period - 1), MAX_PWM);
+	duty = DIV_ROUND_UP(target_pwm * (period - 1), ctx->max_pwm);
 
 	ret = pwm_config(ctx->pwm, duty, period);
 	if (ret)
@@ -215,6 +235,14 @@ static int set_rpm_locked(struct pwm_fan_ctx *ctx, unsigned long rpm)
 	return ret;
 }
 
+static void reset_fan_locked(struct pwm_fan_ctx *ctx, unsigned int pwm)
+{
+	disable_fan(ctx);
+	set_pwm_locked(ctx, pwm);
+	enable_fan(ctx);
+	ctx->reset_count++;
+}
+
 static ssize_t set_force_failure(struct device *dev, struct device_attribute *attr,
 		       const char *buf, size_t count)
 {
@@ -250,7 +278,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 	unsigned long pwm;
 	ssize_t ret;
 
-	if (kstrtoul(buf, 10, &pwm) || pwm > MAX_PWM)
+	if (kstrtoul(buf, 10, &pwm) || pwm > ctx->max_pwm)
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
@@ -345,7 +373,7 @@ static bool pwm_fan_has_failure_locked(struct pwm_fan_ctx *ctx)
 	/* Wait for a few cycles to report a failure due to PWM not causing an
 	 * activity.  The fan might take some time to ramp up.
 	 */
-	if ((pwm != 0) && (elapsed_ms > CLOSE_LOOP_FAN_FAILURE_TIME_MS))
+	if ((pwm != 0) && (elapsed_ms > FAN_STALL_DETECT_TIME_MS))
 		return true;
 
 	return false;
@@ -360,16 +388,20 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
-	if (!ctx->is_display_on)
+	if (!ctx->is_display_on) {
 		*state = 0;
-	else if (ctx->force_failure || ctx->reset_count >= MAX_FAN_RESET_TRY_COUNT)
-		/* If fan is in force_failure mode or if fan recovery failed,
-		 * set a state that exceeds the maximum to signal userspace of
-		 * fan mal-function.
-		 */
-		*state = ctx->pwm_fan_max_state + 1;
-	else
-		*state = ctx->pwm_fan_state;
+	} else {
+		s64 time_since_tach_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_tach_timestamp));
+		if (ctx->pwm_value != 0 && time_since_tach_ms > FAN_STALL_REPORT_TIME_MS) {
+			/*
+			 * If fan has not recovered, set a state that exceeds the maximum
+			 * to signal userspace of the fan malfunction.
+			 */
+			*state = ctx->pwm_fan_max_state + 1;
+		} else {
+			*state = ctx->pwm_fan_state;
+		}
+	}
 	mutex_unlock(&ctx->lock);
 
 	return 0;
@@ -412,8 +444,8 @@ static const struct thermal_cooling_device_ops pwm_fan_cooling_ops = {
 	.set_cur_state = pwm_fan_set_cur_state,
 };
 
-#ifdef CONFIG_DRM
-#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
+#if IS_ENABLED(CONFIG_DRM)
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 static void pwm_fan_panel_notifier_cb(enum panel_event_notifier_tag tag,
 		struct panel_event_notification *notification, void *client_data)
 {
@@ -496,12 +528,10 @@ static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
 {
 	struct pwm_fan_ctx *ctx = dev_id;
-	ktime_t curr_time = ktime_get();
 
 	BUG_ON(irq != ctx->irq);
 
-	/* Failures are simulated by ignoring tach interrupts from the fan. */
-	if (ctx->force_failure)
+	if (ctx->ignore_tach_irqs)
 		return IRQ_HANDLED;
 
 	ctx->tach_periods++;
@@ -514,6 +544,7 @@ static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
 	 * RPM = (tach_periods / 6) * 60 * 1000 * 1000 / (elapsed_us / 3)
 	 */
 	if ((ctx->tach_periods % 6) == 0) {
+		ktime_t curr_time = ktime_get();
 		s64 elapsed_us = ktime_to_us(ktime_sub(
 					curr_time, ctx->last_tach_timestamp));
 		ctx->last_tach_timestamp = curr_time;
@@ -529,31 +560,31 @@ static void fan_recovery_work_func(struct work_struct *work)
 {
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
 			fan_recovery_work);
-	int pwm;
+	unsigned int pwm;
 
 	mutex_lock(&ctx->lock);
 
 	pwm = ctx->pwm_value;
-
-	dev_dbg(&ctx->cdev->device, "%s: reset_count %d, pwm %d rpm_value %d\n",
-		__func__, ctx->reset_count, pwm, ctx->rpm_value);
-
-	if (ctx->reset_count == 0) {
-		reset_fan(ctx);
-		ctx->reset_count++;
-	} else if (ctx->reset_count < MAX_FAN_RESET_TRY_COUNT) {
-		/* try increasing PWM */
-		pwm += 10;
-		if (pwm > MAX_PWM)
-			pwm = MAX_PWM;
-
-		if (pwm < ctx->cold_boot_pwm)
-			pwm = ctx->cold_boot_pwm;
-
-		set_pwm_locked(ctx, pwm);
-		ctx->reset_count++;
+	if (pwm == 0) {
+		ctx->recovery_in_progress = false;
+		goto end_work_func;
 	}
 
+	dev_warn(&ctx->cdev->device, "Fan stall recovery attempt %d (force_failure: %d)\n",
+		 ctx->reset_count + 1, ctx->force_failure);
+
+	if (ctx->reset_count == 0) {
+		ctx->recovery_pwm_value = max(ctx->cold_boot_pwm, pwm);
+		reset_fan_locked(ctx, ctx->recovery_pwm_value);
+	} else {
+		/* try increasing PWM */
+		ctx->recovery_pwm_value = min(ctx->recovery_pwm_value + RECOVERY_STEP_SIZE,
+					      ctx->max_pwm);
+		set_pwm_locked(ctx, ctx->recovery_pwm_value);
+		reset_fan_locked(ctx, ctx->recovery_pwm_value);
+	}
+
+end_work_func:
 	mutex_unlock(&ctx->lock);
 }
 
@@ -562,7 +593,7 @@ static void fan_work_func(struct work_struct *work)
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
 			fan_work);
 	int rpm_mid = 0;
-	int pwm;
+	unsigned int pwm;
 	int rpm_value;
 	int rpm_history_idx = ctx->timer_ticks;
 	int tolerance;
@@ -570,6 +601,14 @@ static void fan_work_func(struct work_struct *work)
 
 	if (!mutex_trylock(&ctx->lock))
 		return;
+
+	/*
+	 * Some fans emit spurious tach interrupts during start-up even
+	 * if the fan is jammed (ex. T164964624). So that these don't
+	 * interfere with stall detection, ignore any interrupts that
+	 * come in during the first FAN_STARTUP_IRQ_IGNORE_TIME_MS.
+	 */
+	ctx->ignore_tach_irqs = false;
 
 	pwm = ctx->pwm_value;
 	rpm_value = ctx->rpm_value;
@@ -579,21 +618,25 @@ static void fan_work_func(struct work_struct *work)
 	dev_dbg(&ctx->cdev->device, "%s: force_failure %d, fan_failed %d\n",
 		__func__, ctx->force_failure, fan_failed);
 
-	if (ctx->force_failure) {
-		/* Forced fan failure, do nothing */
-		goto end_work_func;
-	}
-
 	if (fan_failed) {
-		queue_work(ctx->wq, &ctx->fan_recovery_work);
+		ktime_t now = ktime_get();
+
+		/* Attempt fan recovery just once every FAN_STALL_DETECT_TIME_MS */
+		s64 time_since_stall = ktime_to_ms(ktime_sub(now, ctx->last_stall_detect_timestamp));
+		if (time_since_stall > FAN_STALL_DETECT_TIME_MS) {
+			ctx->recovery_in_progress = true;
+			ctx->last_stall_detect_timestamp = now;
+			queue_work(ctx->wq, &ctx->fan_recovery_work);
+		}
 		goto end_work_func;
 	}
 
-	if (ctx->reset_count != 0) {
-		dev_dbg(&ctx->cdev->device, "Fan recovered after %d attempts\n",
-			ctx->reset_count);
-		ctx->reset_count = 0;
+	if (ctx->recovery_in_progress) {
+		dev_warn(&ctx->cdev->device, "Fan stall recovered after %d attempts\n",
+			 ctx->reset_count);
+		ctx->recovery_in_progress = false;
 	}
+	ctx->reset_count = 0;
 
 	/*
 	 * Record current RPM value
@@ -619,10 +662,10 @@ static void fan_work_func(struct work_struct *work)
 	 * to 200, otherwise set to 10% of set value
 	 */
 	tolerance = get_tolerance(rpm_value);
-	if (abs(rpm_mid - rpm_value) > tolerance) {
+	if (ctx->force_failure || abs(rpm_mid - rpm_value) > tolerance) {
 		pwm = (rpm_mid > rpm_value) ? (pwm - 1) : (pwm + 1);
-		/* Restrict to MIN_PWM to MAX_PWM */
-		pwm = max(min(MAX_PWM, pwm), MIN_PWM);
+		/* Restrict to PWM range */
+		pwm = max(min(ctx->max_pwm, pwm), ctx->min_pwm);
 		set_pwm_locked(ctx, pwm);
 	}
 end_work_func:
@@ -682,56 +725,69 @@ static int pwm_fan_of_get_cooling_data(struct device *dev,
 	return 0;
 }
 
-#ifdef CONFIG_DRM
-static int pwm_fan_set_active_panel(struct device_node *np)
+#if IS_ENABLED(CONFIG_DRM)
+static int count_panels(struct device_node *np)
+{
+	return of_count_phandle_with_args(np, "panel", NULL);
+}
+
+#if !IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+static struct drm_panel *pwm_fan_get_active_panel(struct device_node *np)
 {
 	int i, count;
 	struct device_node *node;
 	struct drm_panel *panel;
 
-	count = of_count_phandle_with_args(np, "panel", NULL);
+	count = count_panels(np);
 	if (count <= 0)
-		return 0;
+		return NULL;
 
 	for (i = 0; i < count; i++) {
 		node = of_parse_phandle(np, "panel", i);
 		panel = of_drm_find_panel(node);
 		of_node_put(node);
-		if (!IS_ERR(panel)) {
-			active_panel = panel;
-			return 0;
-		}
+		if (!IS_ERR(panel))
+			return panel;
 	}
 
-	return -ENODEV;
+	return ERR_PTR(-ENODEV);
 }
-#endif
+#endif /* !CONFIG_QCOM_PANEL_EVENT_NOTIFIER  */
+#endif /* CONFIG_DRM */
 
 static int pwm_fan_probe(struct platform_device *pdev)
 {
 	struct thermal_cooling_device *cdev;
 	struct device *hwmon;
 	struct pwm_fan_ctx *ctx;
-
-#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
-	void *cookie;
-#endif
-
 	int ret;
 	u32 dt_addr;
 
-#ifdef CONFIG_DRM
-	ret = pwm_fan_set_active_panel(pdev->dev.of_node);
-	if (ret) {
-		dev_warn(&pdev->dev,
-			"No active panel, deferring probe");
+#if IS_ENABLED(CONFIG_DRM)
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	void *cookie;
+#else /* !CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
+	struct drm_panel *panel;
+
+	panel = pwm_fan_get_active_panel(pdev->dev.of_node);
+	if (IS_ERR(panel)) {
+		dev_warn(&pdev->dev, "No active panel, deferring probe");
 		return -EPROBE_DEFER;
 	}
-#endif
+#endif /* CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
+#endif /* CONFIG_DRM */
+	dev_dbg(&pdev->dev, "enter pwm fan probe\n");
 
 	ctx = devm_kzalloc(&pdev->dev, sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
+
+#if IS_ENABLED(CONFIG_DRM)
+	ctx->use_panel_notifiers = (count_panels(pdev->dev.of_node) > 0);
+#if !IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	ctx->active_panel = panel;
+#endif
+#endif
 
 	ctx->wq = alloc_workqueue("fan_wq", WQ_UNBOUND, 1);
 	if (!ctx->wq) {
@@ -739,8 +795,6 @@ static int pwm_fan_probe(struct platform_device *pdev)
 				__func__);
 		return -ENOMEM;
 	}
-
-	dev_dbg(&pdev->dev, "enter pwm fan probe\n");
 
 	INIT_WORK(&ctx->fan_work, fan_work_func);
 	INIT_WORK(&ctx->fan_recovery_work, fan_recovery_work_func);
@@ -770,12 +824,12 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		goto err_tach_gpio_dir;
 	}
 
-	ret = devm_request_threaded_irq(&pdev->dev, ctx->irq,
-				  NULL, pwm_fan_irq_handler,
-				  IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+	ret = devm_request_irq(&pdev->dev, ctx->irq,
+				  pwm_fan_irq_handler,
+				  IRQF_TRIGGER_RISING,
 				  "pwm-tach-fan", ctx);
 	if (ret) {
-		dev_err(&pdev->dev, "devm_request_threaded_irq failed\n");
+		dev_err(&pdev->dev, "devm_request_irq failed\n");
 		goto err_tach_gpio_dir;
 	}
 
@@ -802,32 +856,41 @@ static int pwm_fan_probe(struct platform_device *pdev)
 
 	ctx->is_display_on = true;
 	ctx->reset_count = 0;
-#ifdef CONFIG_DRM
-#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
-	cookie = panel_event_notifier_register(
-			PANEL_EVENT_NOTIFICATION_PRIMARY,
-			PANEL_EVENT_NOTIFIER_CLIENT_FAN,
-			active_panel,
-			&pwm_fan_panel_notifier_cb,
-			&ctx->fb_notif);
-	if (!cookie)
-		goto err_tach_gpio_dir;
-	ctx->notifier_cookie = cookie;
-#else
-	ctx->fb_notif.notifier_call = pwm_fan_fb_notifier_cb;
-	if (active_panel) {
-		ret = drm_panel_notifier_register(active_panel,
+#if IS_ENABLED(CONFIG_DRM)
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	if (ctx->use_panel_notifiers) {
+		cookie = panel_event_notifier_register(
+				PANEL_EVENT_NOTIFICATION_PRIMARY,
+				PANEL_EVENT_NOTIFIER_CLIENT_FAN,
+				NULL,
+				&pwm_fan_panel_notifier_cb,
+				&ctx->fb_notif);
+		if (!cookie)
+			goto err_tach_gpio_dir;
+		ctx->notifier_cookie = cookie;
+	}
+#else /* !CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
+	if (ctx->use_panel_notifiers) {
+		ctx->fb_notif.notifier_call = pwm_fan_fb_notifier_cb;
+		ret = drm_panel_notifier_register(ctx->active_panel,
 				&ctx->fb_notif);
 		if (ret)
 			goto err_tach_gpio_dir;
 	}
-#endif
-#endif
+#endif /* CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
+#endif /* CONFIG_DRM */
+
+	ret = of_property_read_u32(pdev->dev.of_node, "oculus,min-pwm", &ctx->min_pwm);
+	if (ret)
+		ctx->min_pwm = DEFAULT_MIN_PWM;
+
+	ret = of_property_read_u32(pdev->dev.of_node, "oculus,max-pwm", &ctx->max_pwm);
+	if (ret)
+		ctx->max_pwm = DEFAULT_MAX_PWM;
 
 	ret = of_property_read_u32(pdev->dev.of_node, "oculus,cold-boot-pwm", &ctx->cold_boot_pwm);
-	if(ret) {
+	if (ret)
 		ctx->cold_boot_pwm = COLD_BOOT_PWM;
-	}
 
 	ret = of_property_read_u32(pdev->dev.of_node, "max-rpm", &ctx->max_rpm);
 	if (ret) {
@@ -875,13 +938,13 @@ static int pwm_fan_remove(struct platform_device *pdev)
 {
 	struct pwm_fan_ctx *ctx = platform_get_drvdata(pdev);
 
-#ifdef CONFIG_DRM
-#if (IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER))
-	if (active_panel && ctx->notifier_cookie)
+#if IS_ENABLED(CONFIG_DRM)
+#if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	if (ctx->notifier_cookie)
 		panel_event_notifier_unregister(&ctx->notifier_cookie);
 #else
-	if (active_panel)
-		drm_panel_notifier_unregister(active_panel, &ctx->fb_notif);
+	if (ctx->active_panel)
+		drm_panel_notifier_unregister(ctx->active_panel, &ctx->fb_notif);
 #endif
 #endif
 
@@ -896,14 +959,14 @@ static int pwm_fan_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
+#if IS_ENABLED(CONFIG_PM_SLEEP)
 static int pwm_fan_suspend(struct device *dev)
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
 	int current_rpm_value;
 	int ret = 0;
 
-	if (active_panel)
+	if (ctx->use_panel_notifiers)
 		/* On/off controlled by panel state instead */
 		return 0;
 
@@ -925,7 +988,7 @@ static int pwm_fan_resume(struct device *dev)
 	int current_rpm_value;
 	int ret = 0;
 
-	if (active_panel)
+	if (ctx->use_panel_notifiers)
 		/* On/off controlled by panel state instead */
 		return 0;
 
@@ -940,10 +1003,7 @@ end_pwm_fan_resume:
 	mutex_unlock(&ctx->lock);
 	return ret;
 }
-#else
-#define pwm_fan_suspend NULL
-#define pwm_fan_resume NULL
-#endif
+#endif /* CONFIG_PM_SLEEP */
 
 static SIMPLE_DEV_PM_OPS(pwm_fan_pm, pwm_fan_suspend, pwm_fan_resume);
 

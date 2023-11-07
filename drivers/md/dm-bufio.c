@@ -1928,8 +1928,6 @@ static void cleanup_old_buffers(void)
 	mutex_unlock(&dm_bufio_clients_lock);
 }
 
-static struct delayed_work dm_bufio_work;
-
 static void work_fn(struct work_struct *w)
 {
 	cleanup_old_buffers();

@@ -323,15 +323,13 @@ struct ext_batt_pd {
 	/* signals that a mount state update was acked */
 	struct completion mount_state_ack;
 	/* work for periodically processing HMD mount state */
-	struct delayed_work mount_state_work;
-	/* internal HMD battery state of charge */
-	u32 hmd_soc;
+	struct work_struct mount_state_work;
 	/* 0/1 for undocked/docked */
 	int dock_state;
 	/* last ACK received for dock state */
 	int last_dock_ack;
 	/* work for periodically processing HMD dock state */
-	struct delayed_work dock_state_dwork;
+	struct work_struct dock_state_work;
 	/* work for handling the power_supply notifier callback logic */
 	struct work_struct psy_notifier_work;
 	/* power supply object handle for internal HMD battery */
@@ -360,6 +358,8 @@ struct ext_batt_pd {
 	bool rsoc_scaling_enabled;
 	u32 rsoc_scaling_min_level;
 	u32 rsoc_scaling_max_level;
+	/* OTG Current Control */
+	bool otg_current_control_enabled;
 };
 
 int external_battery_register_svid_handlers(struct ext_batt_pd *pd);
