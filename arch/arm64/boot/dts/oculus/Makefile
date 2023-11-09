@@ -1,10 +1,10 @@
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 ifeq ($(CONFIG_ARCH_ANORAK),y)
 
-dtbo-$(CONFIG_OCULUS_unknown7XR2G2) += \
-	unknown7xr2g2-dev0-overlay.dtbo \
-	unknown7xr2g2-p0-overlay.dtbo \
-	unknown7xr2g2-p1-overlay.dtbo \
+dtbo-$(CONFIG_OCULUS_unknown7) += \
+	unknown7-dev0-overlay.dtbo \
+	unknown7-p0-overlay.dtbo \
+	unknown7-p1-overlay.dtbo \
 
 dtbo-$(CONFIG_OCULUS_EUREKA) += \
 	eureka-dev1-overlay.dtbo \
@@ -30,9 +30,9 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 	unknown6-p1.6-overlay.dtbo \
 	unknown6-p1.7-overlay.dtbo
 
-unknown7xr2g2-dev0-overlay.dtbo-base := unknown7xr2g2.dtb
-unknown7xr2g2-p0-overlay.dtbo-base := unknown7xr2g2.dtb
-unknown7xr2g2-p1-overlay.dtbo-base := unknown7xr2g2.dtb
+unknown7-dev0-overlay.dtbo-base := unknown7.dtb
+unknown7-p0-overlay.dtbo-base := unknown7.dtb
+unknown7-p1-overlay.dtbo-base := unknown7.dtb
 eureka-dev1-overlay.dtbo-base := eureka.dtb
 eureka-p1.2-overlay.dtbo-base := eureka.dtb
 eureka-evt0-overlay.dtbo-base := eureka.dtb
