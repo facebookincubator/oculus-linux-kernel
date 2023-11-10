@@ -360,6 +360,8 @@ struct ext_batt_pd {
 	u32 rsoc_scaling_max_level;
 	/* OTG Current Control */
 	bool otg_current_control_enabled;
+	/* flag for PR_SWAP */
+	bool recently_docked;
 };
 
 int external_battery_register_svid_handlers(struct ext_batt_pd *pd);
