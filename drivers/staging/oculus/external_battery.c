@@ -577,13 +577,18 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 			power_role.intval = vdos[0];
 
 			/*
-			 * don't send PR_SWAP to sink if the ext batt's soc is <= 1 and we haven't had
-			 * a chance to charge it (source_current is 0). On Lehua, this indicates it's
-			 * in a low power state and needs to be connected as a source to stay awake
+			 * Only attempt PR_SWAP in two cases:
+			 * - we recently docked, attempt PR_SWAP so HMD is source
+			 * - we were docked, but have since undocked, attempt PR_SWAP
+			 *   so HMD is sink
 			 */
-			if (power_role.intval == EXT_BATT_FW_UNDOCKED && pd->params.rsoc <= 1 &&
-					pd->source_current == 0)
-				return;
+			if (pd->last_dock_ack == EXT_BATT_FW_UNDOCKED) {
+				if (!pd->recently_docked)
+					return;
+
+				pd->recently_docked = false;
+			} else if (pd->last_dock_ack == EXT_BATT_FW_DOCKED)
+				pd->recently_docked = true;
 
 			dev_info(pd->dev, "Sending PR_SWAP to role=%d", power_role.intval);
 			rc = power_supply_set_property(pd->usb_psy,
