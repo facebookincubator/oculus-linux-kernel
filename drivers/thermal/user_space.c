@@ -27,6 +27,29 @@
 
 #include "thermal_core.h"
 
+struct user_space_params {
+	int last_trip;
+};
+
+static int bind_user_space(struct thermal_zone_device *tz) {
+	struct user_space_params *params;
+
+	params = kzalloc(sizeof(*params), GFP_KERNEL);
+	if (!params)
+		return -ENOMEM;
+
+	params->last_trip = -1;
+
+	tz->governor_data = params;
+
+	return 0;
+}
+
+static void unbind_user_space(struct thermal_zone_device *tz) {
+	kfree(tz->governor_data);
+	tz->governor_data = NULL;
+}
+
 /**
  * notify_user_space - Notifies user space about thermal events
  * @tz - thermal_zone_device
@@ -36,10 +59,38 @@
  */
 static int notify_user_space(struct thermal_zone_device *tz, int trip)
 {
+	struct user_space_params *params = tz->governor_data;
 	char *thermal_prop[5];
-	int i;
+	int i, trip_temp, trip_hyst = 0;
+	bool was_tripped = false;
 
 	mutex_lock(&tz->lock);
+
+	tz->ops->get_trip_temp(tz, trip, &trip_temp);
+	if (tz->ops->get_trip_hyst)
+		tz->ops->get_trip_hyst(tz, trip, &trip_hyst);
+
+	/*
+	 * Trip crossed going up
+	 */
+	if (tz->temperature >= trip_temp &&
+	    params->last_trip < trip) {
+		params->last_trip = trip;
+		was_tripped = true;
+	}
+
+	/*
+	 * Trip crossed going down
+	 */
+	if (tz->temperature < (trip_temp - trip_hyst) &&
+	    params->last_trip >= trip) {
+		params->last_trip = trip - 1;
+		was_tripped = true;
+	}
+
+	if (!was_tripped)
+		goto notify_out;
+
 	thermal_prop[0] = kasprintf(GFP_KERNEL, "NAME=%s", tz->type);
 	thermal_prop[1] = kasprintf(GFP_KERNEL, "TEMP=%d", tz->temperature);
 	thermal_prop[2] = kasprintf(GFP_KERNEL, "TRIP=%d", trip);
@@ -48,12 +99,15 @@ static int notify_user_space(struct thermal_zone_device *tz, int trip)
 	kobject_uevent_env(&tz->device.kobj, KOBJ_CHANGE, thermal_prop);
 	for (i = 0; i < 4; ++i)
 		kfree(thermal_prop[i]);
+notify_out:
 	mutex_unlock(&tz->lock);
 	return 0;
 }
 
 static struct thermal_governor thermal_gov_user_space = {
 	.name		= "user_space",
+	.bind_to_tz	= bind_user_space,
+	.unbind_from_tz	= unbind_user_space,
 	.throttle	= notify_user_space,
 };
 

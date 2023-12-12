@@ -732,6 +732,13 @@ void hpcm_notify_evt_processing(uint8_t *data, char *session,
 		return;
 	}
 
+	if (prtd->mixer_conf.sess_indx < VOICE_INDEX ||
+		prtd->mixer_conf.sess_indx >= MAX_SESSION) {
+		pr_err("%s:: Invalid session idx %d\n",
+			__func__, prtd->mixer_conf.sess_indx);
+		return;
+	}
+
 	if (notify_evt->tap_point == VSS_IVPCM_TAP_POINT_TX_DEFAULT) {
 		tp = &prtd->session[prtd->mixer_conf.sess_indx].tx_tap_point;
 		tmd = &prtd->mixer_conf.tx;

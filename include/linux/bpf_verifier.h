@@ -41,6 +41,7 @@ enum bpf_reg_liveness {
 };
 
 struct bpf_reg_state {
+	/* Ordering of fields matters.  See states_equal() */
 	enum bpf_reg_type type;
 	union {
 		/* valid when type == PTR_TO_PACKET */
@@ -51,6 +52,8 @@ struct bpf_reg_state {
 		 */
 		struct bpf_map *map_ptr;
 
+		u32 mem_size; /* for PTR_TO_MEM | PTR_TO_MEM_OR_NULL */
+
 		/* Max size from any of the above. */
 		unsigned long raw;
 	};
@@ -60,9 +63,52 @@ struct bpf_reg_state {
 	 * offset, so they can share range knowledge.
 	 * For PTR_TO_MAP_VALUE_OR_NULL this is used to share which map value we
 	 * came from, when one is tested for != NULL.
+	 * For PTR_TO_MEM_OR_NULL this is used to identify memory allocation
+	 * for the purpose of tracking that it's freed.
+	 * For PTR_TO_SOCKET this is used to share which pointers retain the
+	 * same reference to the socket, to determine proper reference freeing.
 	 */
 	u32 id;
-	/* Ordering of fields matters.  See states_equal() */
+	/* PTR_TO_SOCKET and PTR_TO_TCP_SOCK could be a ptr returned
+	 * from a pointer-cast helper, bpf_sk_fullsock() and
+	 * bpf_tcp_sock().
+	 *
+	 * Consider the following where "sk" is a reference counted
+	 * pointer returned from "sk = bpf_sk_lookup_tcp();":
+	 *
+	 * 1: sk = bpf_sk_lookup_tcp();
+	 * 2: if (!sk) { return 0; }
+	 * 3: fullsock = bpf_sk_fullsock(sk);
+	 * 4: if (!fullsock) { bpf_sk_release(sk); return 0; }
+	 * 5: tp = bpf_tcp_sock(fullsock);
+	 * 6: if (!tp) { bpf_sk_release(sk); return 0; }
+	 * 7: bpf_sk_release(sk);
+	 * 8: snd_cwnd = tp->snd_cwnd;  // verifier will complain
+	 *
+	 * After bpf_sk_release(sk) at line 7, both "fullsock" ptr and
+	 * "tp" ptr should be invalidated also.  In order to do that,
+	 * the reg holding "fullsock" and "sk" need to remember
+	 * the original refcounted ptr id (i.e. sk_reg->id) in ref_obj_id
+	 * such that the verifier can reset all regs which have
+	 * ref_obj_id matching the sk_reg->id.
+	 *
+	 * sk_reg->ref_obj_id is set to sk_reg->id at line 1.
+	 * sk_reg->id will stay as NULL-marking purpose only.
+	 * After NULL-marking is done, sk_reg->id can be reset to 0.
+	 *
+	 * After "fullsock = bpf_sk_fullsock(sk);" at line 3,
+	 * fullsock_reg->ref_obj_id is set to sk_reg->ref_obj_id.
+	 *
+	 * After "tp = bpf_tcp_sock(fullsock);" at line 5,
+	 * tp_reg->ref_obj_id is set to fullsock_reg->ref_obj_id
+	 * which is the same as sk_reg->ref_obj_id.
+	 *
+	 * From the verifier perspective, if sk, fullsock and tp
+	 * are not NULL, they are the same ptr with different
+	 * reg->type.  In particular, bpf_sk_release(tp) is also
+	 * allowed and has the same effect as bpf_sk_release(sk).
+	 */
+	u32 ref_obj_id;
 	/* For scalar types (SCALAR_VALUE), this represents our knowledge of
 	 * the actual value.
 	 * For pointer types, this represents the variable part of the offset
@@ -79,15 +125,15 @@ struct bpf_reg_state {
 	s64 smax_value; /* maximum possible (s64)value */
 	u64 umin_value; /* minimum possible (u64)value */
 	u64 umax_value; /* maximum possible (u64)value */
+	/* parentage chain for liveness checking */
+	struct bpf_reg_state *parent;
 	/* Inside the callee two registers can be both PTR_TO_STACK like
 	 * R1=fp-8 and R2=fp-8, but one of them points to this function stack
 	 * while another to the caller's stack. To differentiate them 'frameno'
 	 * is used which is an index in bpf_verifier_state->frame[] array
 	 * pointing to bpf_func_state.
-	 * This field must be second to last, for states_equal() reasons.
 	 */
 	u32 frameno;
-	/* This field must be last, for states_equal() reasons. */
 	enum bpf_reg_liveness live;
 };
 
@@ -105,12 +151,22 @@ struct bpf_stack_state {
 	u8 slot_type[BPF_REG_SIZE];
 };
 
+struct bpf_reference_state {
+	/* Track each reference created with a unique id, even if the same
+	 * instruction creates the reference multiple times (eg, via CALL).
+	 */
+	int id;
+	/* Instruction where the allocation of this reference occurred. This
+	 * is used purely to inform the user of a reference leak.
+	 */
+	int insn_idx;
+};
+
 /* state of the program:
  * type of all registers and stack info
  */
 struct bpf_func_state {
 	struct bpf_reg_state regs[MAX_BPF_REG];
-	struct bpf_verifier_state *parent;
 	/* index of call instruction that called into this func */
 	int callsite;
 	/* stack frame number of this function state from pov of
@@ -123,7 +179,9 @@ struct bpf_func_state {
 	 */
 	u32 subprogno;
 
-	/* should be second to last. See copy_func_state() */
+	/* The following fields should be last. See copy_func_state() */
+	int acquired_refs;
+	struct bpf_reference_state *refs;
 	int allocated_stack;
 	struct bpf_stack_state *stack;
 };
@@ -132,10 +190,21 @@ struct bpf_func_state {
 struct bpf_verifier_state {
 	/* call stack tracking */
 	struct bpf_func_state *frame[MAX_CALL_FRAMES];
-	struct bpf_verifier_state *parent;
 	u32 curframe;
+	u32 active_spin_lock;
 	bool speculative;
 };
+
+#define bpf_get_spilled_reg(slot, frame)				\
+	(((slot < frame->allocated_stack / BPF_REG_SIZE) &&		\
+	  (frame->stack[slot].slot_type[0] == STACK_SPILL))		\
+	 ? &frame->stack[slot].spilled_ptr : NULL)
+
+/* Iterate over 'frame', setting 'reg' to either NULL or a spilled register. */
+#define bpf_for_each_spilled_reg(iter, frame, reg)			\
+	for (iter = 0, reg = bpf_get_spilled_reg(iter, frame);		\
+	     iter < frame->allocated_stack / BPF_REG_SIZE;		\
+	     iter++, reg = bpf_get_spilled_reg(iter, frame))
 
 /* linked list of verifier states used to prune search */
 struct bpf_verifier_state_list {
@@ -227,11 +296,16 @@ __printf(2, 0) void bpf_verifier_vlog(struct bpf_verifier_log *log,
 __printf(2, 3) void bpf_verifier_log_write(struct bpf_verifier_env *env,
 					   const char *fmt, ...);
 
-static inline struct bpf_reg_state *cur_regs(struct bpf_verifier_env *env)
+static inline struct bpf_func_state *cur_func(struct bpf_verifier_env *env)
 {
 	struct bpf_verifier_state *cur = env->cur_state;
 
-	return cur->frame[cur->curframe]->regs;
+	return cur->frame[cur->curframe];
+}
+
+static inline struct bpf_reg_state *cur_regs(struct bpf_verifier_env *env)
+{
+	return cur_func(env)->regs;
 }
 
 int bpf_prog_offload_verifier_prep(struct bpf_verifier_env *env);

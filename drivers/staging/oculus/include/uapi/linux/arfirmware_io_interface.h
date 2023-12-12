@@ -107,6 +107,7 @@ struct __packed ar_queue_event {
 	union {
 		uint32_t pend_size;
 		void *payload_context;
+		enum ar_queue_shutdown_reason shutdown_reason;
 	};
 };
 

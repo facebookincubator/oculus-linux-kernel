@@ -34,6 +34,7 @@ static void xrps_rx_cb(void);
 #ifdef CONFIG_XRPS_PROFILING
 static void xrps_put_profiling_event(enum profile_event_type type);
 #endif /* CONFIG_XRPS_PROFILING */
+static void reset_flowrings(void);
 
 static struct xrps xrps = {
 	.xrps_intf = {
@@ -81,6 +82,11 @@ static bool store_flowid(int flowid)
 	xrps.flowids.flowid[xrps.flowids.next_flowid_idx] = flowid;
 	++xrps.flowids.next_flowid_idx;
 	return true;
+}
+
+static void reset_flowrings(void)
+{
+	xrps.flowids.next_flowid_idx = 0;
 }
 
 // This can be called from xrps or dhd contexts.
@@ -212,7 +218,7 @@ static void unpause_all_queues(void)
 		XRPS_LOG_DBG("xrps ringing doorbell %d", flowid);
 		xrps.drv_intf->unpause_queue(flowid);
 	}
-	xrps.flowids.next_flowid_idx = 0;
+	reset_flowrings();
 
 #ifdef CONFIG_XRPS_PROFILING
 	xrps_put_profiling_event(UNHOLD_END);
@@ -312,6 +318,27 @@ int xrps_send_eot(void)
 	return 0;
 }
 
+void xrps_pause(bool check_mode)
+{
+	if (check_mode && (xrps_get_mode() != XRPS_MODE_MASTER))
+		return;
+
+	xrps.osl_intf->stop_sysint_timer();
+	xrps_set_queue_pause(0);
+#ifdef CONFIG_XRPS_PROFILING
+	dump_profiling_events(&xrps.stats.profiling_events);
+#endif /* CONFIG_XRPS_PROFILING */
+}
+
+void xrps_resume(bool check_mode)
+{
+	if (!xrps.drv_intf->is_link_up() || (check_mode && (xrps_get_mode() != XRPS_MODE_MASTER)))
+		return;
+
+	xrps_set_queue_pause(1);
+	xrps.osl_intf->start_sysint_timer(xrps_get_sys_interval_us());
+}
+
 int xrps_get_mode(void)
 {
 	return (int)xrps.mode;
@@ -319,19 +346,28 @@ int xrps_get_mode(void)
 
 int xrps_set_mode(enum xrps_mode mode)
 {
+	xrps_osl_spinlock_flag_t flag;
+
 	if (mode < 0 || mode >= XRPS_MODE_COUNT)
 		return -EINVAL;
+
+	flag = xrps.osl_intf->spin_lock(&xrps.lock);
+	xrps.mode = mode;
+	xrps.osl_intf->spin_unlock(&xrps.lock, flag);
+
 	xrps.mode = mode;
 	switch (mode) {
 	case XRPS_MODE_DISABLED:
-		xrps.osl_intf->stop_sysint_timer();
-		xrps_set_queue_pause(0);
+		xrps_pause(false);
 		break;
 	case XRPS_MODE_MASTER:
-		xrps_set_queue_pause(1);
-		xrps.osl_intf->start_sysint_timer(xrps.sys_interval);
+		if (!xrps_is_init())
+			return -ENODEV;
+		xrps_resume(false);
 		break;
 	case XRPS_MODE_SLAVE:
+		if (!xrps_is_init())
+			return -ENODEV;
 		xrps.osl_intf->stop_sysint_timer();
 		xrps.first_rx_in_interval = true;
 		xrps_set_queue_pause(1);
@@ -339,6 +375,7 @@ int xrps_set_mode(enum xrps_mode mode)
 	default:
 		break;
 	};
+
 	return 0;
 }
 
@@ -413,7 +450,7 @@ int xrps_init(void)
 	xrps.osl_intf->spin_lock_init(&xrps.lock);
 	xrps.osl_intf->spin_lock_init(&xrps.stats.lock);
 	xrps.sys_interval = 100000;
-	xrps.flowids.next_flowid_idx = 0;
+	reset_flowrings();
 	xrps.first_rx_in_interval = true;
 #ifdef CONFIG_XRPS_PROFILING
 	xrps_init_profiling_helper();

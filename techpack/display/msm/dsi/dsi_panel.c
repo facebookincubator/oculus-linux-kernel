@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
@@ -3070,6 +3070,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		DSI_DEBUG("[%s] bl-ctrl-dcs-subtype, defautling to zero\n",
 			panel->name);
 		panel->bl_config.bl_dcs_subtype = 0;
+		rc = 0;
 	} else {
 		panel->bl_config.bl_dcs_subtype = val;
 	}
