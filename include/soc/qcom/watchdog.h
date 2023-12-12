@@ -126,7 +126,7 @@ struct msm_watchdog_data {
 	bool wakeup_irq_enable;
 	bool irq_ppi;
 	unsigned long long last_pet;
-	cpumask_t alive_mask;
+	cpumask_t ping_pending_mask;
 	struct mutex disable_lock;
 	struct msm_watchdog_data * __percpu *wdog_cpu_dd;
 	struct notifier_block panic_blk;
@@ -140,6 +140,7 @@ struct msm_watchdog_data {
 	struct task_struct *watchdog_task;
 	struct timer_list pet_timer;
 	wait_queue_head_t pet_complete;
+	wait_queue_head_t ping_complete;
 
 	bool timer_expired;
 	bool user_pet_complete;

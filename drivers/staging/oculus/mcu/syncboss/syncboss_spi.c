@@ -27,7 +27,7 @@
 #include "syncboss_sequence_number.h"
 #include "syncboss_protocol.h"
 
-#ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
+#ifdef CONFIG_OF /*Open firmware must be defined for dts usage*/
 static const struct of_device_id syncboss_spi_table[] = {
 	{ .compatible = "oculus,syncboss" },
 	{ },
@@ -1741,7 +1741,11 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		use_fastpath ? "yes" : "no");
 
 	while (likely(!kthread_should_stop())) {
-		if (ctx.smsg == NULL) {
+		/*
+		 * Find a message to send if we don't have one yet. ctx.msg_to_send may already be
+		 * true here in the event of a transaction retry.
+		 */
+		if (!ctx.msg_to_send) {
 			/*
 			 * Optimization: use mutex_trylock() to avoid sleeping while we wait for
 			 *   for potentially low-priority userspace threads to finish enqueueing
@@ -1764,10 +1768,8 @@ static int syncboss_spi_transfer_thread(void *ptr)
 				}
 				mutex_unlock(&devdata->msg_queue_lock);
 			}
-			if (ctx.smsg == NULL) {
+			if (!ctx.msg_to_send)
 				ctx.smsg = devdata->default_smsg;
-				ctx.msg_to_send = false;
-			}
 		}
 
 		/*
@@ -1788,7 +1790,6 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			hrtimer_try_to_cancel(&devdata->send_timer);
 
 			/* We're awake! Handle any newly queued messages. */
-			ctx.smsg = NULL;
 			continue;
 		}
 
@@ -1829,7 +1830,6 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			 * woke up because a new message became available after smsg was set at the
 			 * top of this loop. Loop around in an attempt to grab that message.
 			 */
-			ctx.smsg = NULL;
 			continue;
 		}
 
@@ -1896,7 +1896,9 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			}
 			kfree(ctx.smsg);
 		}
-		ctx.smsg = NULL;
+
+		/* Grab a new message on the next iteration of the loop */
+		ctx.msg_to_send = false;
 	}
 
 	if (ctx.prepared_smsg) {
@@ -1917,7 +1919,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	__set_current_state(TASK_RUNNING);
 
 	dev_dbg(&spi->dev, "SPI transfer thread stopped");
-	return status;
+	return 0;
 }
 
 static void push_prox_cal_and_enable_wake(struct syncboss_dev_data *devdata,
@@ -2634,6 +2636,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 
 	devdata->use_fastpath = of_property_read_bool(node, "oculus,syncboss-use-fastpath");
 
+	/* this will be overwritten by init through syncboss_sysfs */
 	cpumask_setall(&devdata->cpu_affinity);
 	dev_dbg(&devdata->spi->dev, "initial SPI thread cpu affinity: %*pb\n",
 		cpumask_pr_args(&devdata->cpu_affinity));

@@ -1190,7 +1190,11 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 			/* get the preferred mode from dsi display mode */
 			if (modes[i].is_preferred)
 				m->type |= DRM_MODE_TYPE_PREFERRED;
-		} else if (modes[i].mode_idx == 0) {
+		} else if (modes[i].timing.is_default_refresh) {
+			/* set the default mode based on default fps defined in dtsi flag */
+			m->type |= DRM_MODE_TYPE_PREFERRED;
+		}
+		else if (modes[i].mode_idx == 0) {
 			/* set the first mode in device tree list as preferred */
 			m->type |= DRM_MODE_TYPE_PREFERRED;
 		}

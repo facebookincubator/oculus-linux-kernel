@@ -884,7 +884,7 @@ static void _sde_hw_ctl_get_mixer_cfg(struct sde_hw_ctl *ctx,
 				stage_cfg->sspp_layout[i][j];
 			u32 mixer_value;
 
-			if (sspp_layout && (sspp_layout != lm_layout))
+			if (lm_layout >= 0 && sspp_layout && (sspp_layout != lm_layout))
 				continue;
 
 			if (!pipe || pipe >= SSPP_MAX || rect_index >= SDE_SSPP_RECT_MAX)

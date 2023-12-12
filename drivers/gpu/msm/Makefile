@@ -11,6 +11,7 @@ msm_kgsl-y = \
 	kgsl_gmu_core.o \
 	kgsl_ioctl.o \
 	kgsl_mmu.o \
+	kgsl_procfs.o \
 	kgsl_pwrctrl.o \
 	kgsl_pwrscale.o \
 	kgsl_regmap.o \

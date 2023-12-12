@@ -37,14 +37,14 @@
 typedef int (*compare_t) (const void *lhs, const void *rhs);
 static struct msm_watchdog_data *wdog_data;
 
-static void qcom_wdt_dump_cpu_alive_mask(struct msm_watchdog_data *wdog_dd)
+static void qcom_wdt_dump_cpu_ping_mask(struct msm_watchdog_data *wdog_dd)
 {
-	static char alive_mask_buf[MASK_SIZE];
+	static char ping_pending_mask_buf[MASK_SIZE];
 
-	scnprintf(alive_mask_buf, MASK_SIZE, "%*pb1", cpumask_pr_args(
-				&wdog_dd->alive_mask));
-	dev_info(wdog_dd->dev, "cpu alive mask from last pet %s\n",
-				alive_mask_buf);
+	scnprintf(ping_pending_mask_buf, MASK_SIZE, "%*pb1", cpumask_pr_args(
+				&wdog_dd->ping_pending_mask));
+	dev_info(wdog_dd->dev, "ping pending mask from last pet %s\n",
+				ping_pending_mask_buf);
 }
 
 #ifdef CONFIG_QCOM_IRQ_STAT
@@ -596,10 +596,12 @@ static void qcom_wdt_keep_alive_response(void *info)
 	struct msm_watchdog_data *wdog_dd = info;
 	int cpu = smp_processor_id();
 
-	cpumask_set_cpu(cpu, &wdog_dd->alive_mask);
+	cpumask_clear_cpu(cpu, &wdog_dd->ping_pending_mask);
 	wdog_dd->ping_end[cpu] = sched_clock();
-	/* Make sure alive mask is cleared and set in order */
+	/* Make sure pending mask is cleared and set in order */
 	smp_mb();
+
+	wake_up_interruptible(&wdog_dd->ping_complete);
 }
 
 /*
@@ -610,17 +612,23 @@ static void qcom_wdt_ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 {
 	int cpu;
 
-	cpumask_clear(&wdog_dd->alive_mask);
-	/* Make sure alive mask is cleared and set in order */
-	smp_mb();
 	for_each_cpu(cpu, cpu_online_mask) {
-		if (!wdog_dd->cpu_idle_pc_state[cpu]) {
-			wdog_dd->ping_start[cpu] = sched_clock();
-			smp_call_function_single(cpu,
-						 qcom_wdt_keep_alive_response,
-						 wdog_dd, 1);
-		}
+		if (!wdog_dd->cpu_idle_pc_state[cpu])
+			cpumask_set_cpu(cpu, &wdog_dd->ping_pending_mask);
 	}
+
+	/* Make sure pending mask is set and cleared in order */
+	smp_mb();
+
+	for_each_cpu(cpu, &wdog_dd->ping_pending_mask) {
+		wdog_dd->ping_start[cpu] = sched_clock();
+		smp_call_function_single(cpu,
+					 qcom_wdt_keep_alive_response,
+					 wdog_dd, 0);
+	}
+
+	wait_event_interruptible(wdog_dd->ping_complete,
+				 cpumask_empty(&wdog_dd->ping_pending_mask));
 }
 
 static void qcom_wdt_pet_task_wakeup(struct timer_list *t)
@@ -793,7 +801,7 @@ static irqreturn_t qcom_wdt_bark_handler(int irq, void *dev_id)
 	dev_info(wdog_dd->dev, "QCOM Apps Watchdog last pet at %lu.%06lu\n",
 			(unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
 	if (wdog_dd->do_ipi_ping)
-		qcom_wdt_dump_cpu_alive_mask(wdog_dd);
+		qcom_wdt_dump_cpu_ping_mask(wdog_dd);
 
 	if (wdog_dd->freeze_in_progress)
 		dev_info(wdog_dd->dev, "Suspend in progress\n");
@@ -877,6 +885,7 @@ static int qcom_wdt_init(struct msm_watchdog_data *wdog_dd,
 	register_restart_handler(&wdog_dd->restart_blk);
 	mutex_init(&wdog_dd->disable_lock);
 	init_waitqueue_head(&wdog_dd->pet_complete);
+	init_waitqueue_head(&wdog_dd->ping_complete);
 	wdog_dd->timer_expired = false;
 	wdog_dd->user_pet_complete = true;
 	wdog_dd->user_pet_enabled = false;
@@ -975,7 +984,7 @@ int qcom_wdt_register(struct platform_device *pdev,
 	wdog_data = wdog_dd;
 	wdog_dd->dev = &pdev->dev;
 	platform_set_drvdata(pdev, wdog_dd);
-	cpumask_clear(&wdog_dd->alive_mask);
+	cpumask_clear(&wdog_dd->ping_pending_mask);
 	wdog_dd->watchdog_task = kthread_create(qcom_wdt_kthread, wdog_dd,
 						wdog_dd_name);
 	if (IS_ERR(wdog_dd->watchdog_task)) {

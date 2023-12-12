@@ -10,7 +10,6 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#include <linux/slab.h>
 #include <linux/string.h>
 
 /* SDAM NVMEM register offsets: */
@@ -35,18 +34,7 @@ struct pmic_pon_log_entry {
 
 #define IPC_LOG_PAGES	3
 
-struct pmic_pon_log_dev {
-	struct device			*dev;
-	struct pmic_pon_log_entry	*log;
-	int				log_len;
-	int				log_max_entries;
-	void				*ipc_log;
-	struct nvmem_device		**nvmem;
-	int				nvmem_count;
-	int				sdam_fifo_count;
-	char		*power_on_reason;
-	char		*power_off_reason;
-};
+#define PON_POFF_REASON_MAX_SIZE 128
 
 enum pmic_pon_state {
 	PMIC_PON_STATE_FAULT0		= 0x0,
@@ -237,6 +225,19 @@ static const enum pmic_pon_event pmic_pon_important_events[] = {
 	PMIC_PON_EVENT_PMIC_VREG_READY_CHECK,
 };
 
+struct pmic_pon_log_dev {
+	struct device			*dev;
+	struct pmic_pon_log_entry	*log;
+	int				log_len;
+	int				log_max_entries;
+	void				*ipc_log;
+	struct nvmem_device		**nvmem;
+	int				nvmem_count;
+	int				sdam_fifo_count;
+	/* Allocate one buffer for each event in pmic_pon_important_events */
+	char        power_on_off_reason[ARRAY_SIZE(pmic_pon_important_events)][PON_POFF_REASON_MAX_SIZE];
+};
+
 static bool pmic_pon_entry_is_important(const struct pmic_pon_log_entry *entry)
 {
 	int i;
@@ -250,35 +251,59 @@ static bool pmic_pon_entry_is_important(const struct pmic_pon_log_entry *entry)
 
 static ssize_t power_on_reason_show(struct device *pdev, struct device_attribute *attr, char *buf) {
 	struct pmic_pon_log_dev *pon_dev = (struct pmic_pon_log_dev *)dev_get_drvdata(pdev);
-	if (pon_dev->power_on_reason != NULL) {
-		return snprintf(buf, PAGE_SIZE, "%s\n", pon_dev->power_on_reason);
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pon_dev->power_on_off_reason); i++) {
+		if (pmic_pon_important_events[i] == PMIC_PON_EVENT_PON_TRIGGER_RECEIVED &&
+			strlen(pon_dev->power_on_off_reason[i]) != 0) {
+			return snprintf(buf, PAGE_SIZE, "%s\n", pon_dev->power_on_off_reason[i]);
+		}
 	}
+
 	return snprintf(buf, PAGE_SIZE, "Unknown\n");
 }
 static DEVICE_ATTR_RO(power_on_reason);
 
 static ssize_t power_off_reason_show(struct device *pdev, struct device_attribute *attr, char *buf) {
-    struct pmic_pon_log_dev *pon_dev = (struct pmic_pon_log_dev *)dev_get_drvdata(pdev);
-    if (pon_dev->power_off_reason != NULL) {
-        return snprintf(buf, PAGE_SIZE, "%s\n", pon_dev->power_off_reason);
-    }
-    return snprintf(buf, PAGE_SIZE, "Unknown\n");
+	struct pmic_pon_log_dev *pon_dev = (struct pmic_pon_log_dev *)dev_get_drvdata(pdev);
+	int i;
+	bool first = true;
+	int pos = 0;
+	buf[0] = '\0';
+	
+	/* 
+	The interesting power off reason (such as UVLO) on anorak can come from a variety of FAULT events, in order to make sure 
+	we capture all the interesting events, concatenate all the data that was previously stored.
+	*/
+	for (i = 0; i < ARRAY_SIZE(pon_dev->power_on_off_reason); i++) {
+		if (pmic_pon_important_events[i] != PMIC_PON_EVENT_PON_TRIGGER_RECEIVED && 
+			strlen(pon_dev->power_on_off_reason[i]) != 0) {
+			pos += scnprintf(buf + pos, PAGE_SIZE - pos,
+					"%s%s",
+					(first ? "" : ", "), pon_dev->power_on_off_reason[i]);
+			first = false;
+		}
+	}
+
+	if (buf[0] != 0) {
+		pos += snprintf(buf+pos, PAGE_SIZE - pos, "\n");
+		return pos;
+	}
+	return snprintf(buf, PAGE_SIZE, "Unknown\n");
 }
 static DEVICE_ATTR_RO(power_off_reason);
 
-static void store_power_on_off_reasons(struct pmic_pon_log_dev *pon_dev, const char *reason, size_t size, int event) {
-	if (reason != NULL && size > 0) {
-		switch (event) {
-			case PMIC_PON_EVENT_RESET_TRIGGER_RECEIVED:
-			case PMIC_PON_EVENT_FAULT_REASON_1_2:
-			case PMIC_PON_EVENT_FAULT_REASON_3:
-				pon_dev->power_off_reason = kstrndup(reason, size, GFP_KERNEL);
-				break;
-			case PMIC_PON_EVENT_PON_TRIGGER_RECEIVED:
-				pon_dev->power_on_reason = kstrndup(reason, size, GFP_KERNEL);
-				break;
-			default:
-				break;
+static void store_power_on_off_reasons(struct pmic_pon_log_dev *pon_dev, const char *reason, int event) {
+
+	int i;
+
+	if (reason == NULL) {
+		return;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(pmic_pon_important_events); i++) {
+		if (pmic_pon_important_events[i] == event) {
+			snprintf(pon_dev->power_on_off_reason[i], PON_POFF_REASON_MAX_SIZE, "%s", reason);
 		}
 	}
 }
@@ -516,12 +541,12 @@ static int pmic_pon_log_parse_entry(const struct pmic_pon_log_entry *entry,
 		break;
 	}
 
-	store_power_on_off_reasons(pon_dev, buf, sizeof(buf), entry->event);
-
-	if (is_important)
+	if (is_important) {
+		store_power_on_off_reasons(pon_dev, buf, entry->event);
 		pr_info("PMIC PON log: %s\n", buf);
-	else
+	} else {
 		pr_debug("PMIC PON log: %s\n", buf);
+	}
 
 	if (entry->state < ARRAY_SIZE(pmic_pon_state_label))
 		ipc_log_string(pon_dev->ipc_log, "State=%s; %s\n",
@@ -785,8 +810,6 @@ static int pmic_pon_log_remove(struct platform_device *pdev)
 
 	device_remove_file(&pdev->dev, &dev_attr_power_on_reason);
 	device_remove_file(&pdev->dev, &dev_attr_power_off_reason);
-	kfree(pon_dev->power_on_reason);
-	kfree(pon_dev->power_off_reason);
 	ipc_log_context_destroy(pon_dev->ipc_log);
 
 	return 0;

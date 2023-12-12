@@ -128,11 +128,6 @@ struct cam_req_mgr_core_workq_mini_dump {
 		uint32_t               num_task;
 	} task;
 };
-/**
- * cam_req_mgr_process_workq() - main loop handling
- * @w: workqueue task pointer
- */
-void cam_req_mgr_process_workq(struct work_struct *w);
 
 /**
  * cam_req_mgr_workq_create()
@@ -144,13 +139,12 @@ void cam_req_mgr_process_workq(struct work_struct *w);
  * @in_irq   : Set to one if workq might be used in irq context
  * @flags    : Bitwise OR of Flags for workq behavior.
  *             e.g. CAM_REQ_MGR_WORKQ_HIGH_PRIORITY | CAM_REQ_MGR_WORKQ_SERIAL
- * @func     : function pointer for cam_req_mgr_process_workq wrapper function
  * This function will allocate and create workqueue and pass
  * the workq pointer to caller.
  */
 int cam_req_mgr_workq_create(char *name, int32_t num_tasks,
 	struct cam_req_mgr_core_workq **workq, enum crm_workq_context in_irq,
-	int flags, void (*func)(struct work_struct *w));
+	int flags);
 
 /**
  * cam_req_mgr_workq_destroy()

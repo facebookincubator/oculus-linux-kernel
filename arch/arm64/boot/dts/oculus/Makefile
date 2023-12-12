@@ -36,6 +36,9 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 	unknown6-p1.6-overlay.dtbo \
 	unknown6-p1.7-overlay.dtbo
 
+dtbo-$(CONFIG_OCULUS_unknown13) += \
+	unknown13-dev0-overlay.dtbo
+
 unknown7-dev0-overlay.dtbo-base := unknown7.dtb
 unknown7-p0-overlay.dtbo-base := unknown7.dtb
 unknown7-p1-overlay.dtbo-base := unknown7.dtb
@@ -61,6 +64,7 @@ unknown6-p1.4-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.5-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.6-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.7-overlay.dtbo-base := unknown6.dtb
+unknown13-dev0-overlay.dtbo-base := unknown13.dtb
 
 endif # CONFIG_ARCH_ANORAK
 endif # CONFIG_BUILD_ARM64_DT_OVERLAY

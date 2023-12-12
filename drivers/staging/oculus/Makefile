@@ -1,4 +1,4 @@
-subdir-ccflags-y += -Werror -Wall
+subdir-ccflags-y += -Werror -Wall -Wno-frame-address
 
 USERINCLUDE	+= \
 	-I$(srctree)/drivers/staging/oculus/include/uapi
@@ -22,7 +22,7 @@ obj-$(CONFIG_GPIO_CAPACITOR)		+= gpio_capacitor.o
 obj-$(CONFIG_IIO_CHANNEL_SENSOR)	+= iio_channel_sensor.o
 obj-$(CONFIG_INSTRUCTION_SAMPLER)	+= oculus_instruction_sampler.o
 obj-$(CONFIG_MISCFIFO)			+= miscfifo.o
-obj-$(CONFIG_MISCFIFO_SAMPLE)		+= miscfifo-sample.o
+obj-$(CONFIG_MISCFIFO_BENCHMARK)	+= miscfifo_benchmark.o 
 obj-$(CONFIG_NAUTILUS_RESOURCE_MANAGER)	+= nautilus.o
 obj-$(CONFIG_OCULUS_BLU_I2C)		+= blu_i2c.o
 obj-$(CONFIG_OCULUS_CHARGING_DOCK)	+= charging_dock.o

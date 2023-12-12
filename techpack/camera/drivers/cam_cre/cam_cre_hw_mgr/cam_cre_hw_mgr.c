@@ -2775,21 +2775,6 @@ compat_hw_name_failed:
 	return rc;
 }
 
-static void cam_req_mgr_process_cre_command_queue(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
-static void cam_req_mgr_process_cre_msg_queue(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
-static void cam_req_mgr_process_cre_timer_queue(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
 static int cam_cre_mgr_create_wq(void)
 {
 
@@ -2797,24 +2782,21 @@ static int cam_cre_mgr_create_wq(void)
 	int i;
 
 	rc = cam_req_mgr_workq_create("cre_command_queue", CRE_WORKQ_NUM_TASK,
-		&cre_hw_mgr->cmd_work, CRM_WORKQ_USAGE_NON_IRQ,
-		0, cam_req_mgr_process_cre_command_queue);
+		&cre_hw_mgr->cmd_work, CRM_WORKQ_USAGE_NON_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_CRE, "unable to create a command worker");
 		goto cmd_work_failed;
 	}
 
 	rc = cam_req_mgr_workq_create("cre_message_queue", CRE_WORKQ_NUM_TASK,
-		&cre_hw_mgr->msg_work, CRM_WORKQ_USAGE_IRQ, 0,
-		cam_req_mgr_process_cre_msg_queue);
+		&cre_hw_mgr->msg_work, CRM_WORKQ_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_CRE, "unable to create a message worker");
 		goto msg_work_failed;
 	}
 
 	rc = cam_req_mgr_workq_create("cre_timer_queue", CRE_WORKQ_NUM_TASK,
-		&cre_hw_mgr->timer_work, CRM_WORKQ_USAGE_IRQ, 0,
-		cam_req_mgr_process_cre_timer_queue);
+		&cre_hw_mgr->timer_work, CRM_WORKQ_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_CRE, "unable to create a timer worker");
 		goto timer_work_failed;
@@ -3046,4 +3028,3 @@ cre_ctx_bitmap_failed:
 
 	return rc;
 }
-

@@ -292,25 +292,27 @@ struct kgsl_global_memdesc {
  *  hold a single reference count, but the kernel may hold more.
  * @memdesc: description of the memory
  * @priv_data: type-specific data, such as the dma-buf attachment pointer.
+ * @priv: back pointer to the process that owns this memory
+ * @metadata: String containing user specified metadata for the entry
  * @node: rb_node for the gpu address lookup rb tree
  * @id: idr index for this entry, can be used to find memory that does not have
  *  a valid GPU address.
- * @priv: back pointer to the process that owns this memory
  * @pending_free: if !0, userspace requested that his memory be freed, but there
  *  are still references to it.
  * @dev_priv: back pointer to the device file that created this entry.
- * @metadata: String containing user specified metadata for the entry
  * @work: Work struct used to schedule a kgsl_mem_entry_put in atomic contexts
  */
 struct kgsl_mem_entry {
 	struct kref refcount;
 	struct kgsl_memdesc memdesc;
 	void *priv_data;
+	struct kgsl_process_private *priv;
+#if IS_ENABLED(CONFIG_QCOM_KGSL_ENTRY_METADATA)
+	char metadata[KGSL_GPUOBJ_ALLOC_METADATA_MAX + 1];
+#endif
 	struct rb_node node;
 	unsigned int id;
-	struct kgsl_process_private *priv;
 	int pending_free;
-	char metadata[KGSL_GPUOBJ_ALLOC_METADATA_MAX + 1];
 	struct work_struct work;
 	/**
 	 * @map_count: Count how many vmas this object is mapped in - used for

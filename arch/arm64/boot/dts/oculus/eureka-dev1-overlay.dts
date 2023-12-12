@@ -64,6 +64,10 @@
 	};
 };
 
+&fan {
+	oculus,max-pwm = <179>; /* 70% duty cycle */
+};
+
 &qupv3_se9_spi {
 	oculusnrf@0 {
 		oculus,syncboss-has-no-prox-cal;

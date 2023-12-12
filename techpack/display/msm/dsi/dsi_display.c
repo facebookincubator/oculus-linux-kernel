@@ -905,7 +905,8 @@ static int dsi_display_status_check_te(struct dsi_display *display,
 		int rechecks)
 {
 	int rc = 1, i = 0;
-	int const esd_te_timeout = msecs_to_jiffies(3*20);
+	/* 84ms = two vsyncs at 24Hz; based on QC recommendation */
+	int const esd_te_timeout = msecs_to_jiffies(84);
 
 	if (!rechecks)
 		return rc;
@@ -917,10 +918,16 @@ static int dsi_display_status_check_te(struct dsi_display *display,
 
 	for (i = 0; i < rechecks; i++) {
 		reinit_completion(&display->esd_te_gate);
+		/*
+		 * If no TE interrupt received within timeout period,
+		 * there must have been an ESD event and the panel should
+		 * be reset.
+		 */
 		if (!wait_for_completion_timeout(&display->esd_te_gate,
 					esd_te_timeout)) {
 			DSI_ERR("TE check failed\n");
 			dsi_display_change_te_irq_status(display, false);
+			dsi_display_release_te_irq(display);
 			return -EINVAL;
 		}
 	}
@@ -951,7 +958,7 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 	struct dsi_panel *panel;
 	u32 status_mode;
 	int rc = 0x1;
-	int te_rechecks = 1;
+	int te_rechecks = 5;
 
 	if (!dsi_display || !dsi_display->panel)
 		return -EINVAL;
@@ -983,8 +990,7 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 	if (te_check_override)
 		te_rechecks = MAX_TE_RECHECKS;
 
-	if ((dsi_display->trusted_vm_env) ||
-			(panel->panel_mode == DSI_OP_VIDEO_MODE))
+	if (dsi_display->trusted_vm_env)
 		te_rechecks = 0;
 
 	dsi_display_set_ctrl_esd_check_flag(dsi_display, true);
@@ -1736,12 +1742,6 @@ static ssize_t debugfs_alter_esd_check_mode(struct file *file,
 	}
 
 	if (!esd_config->esd_enabled) {
-		rc = -EINVAL;
-		goto error;
-	}
-
-	if (!strcmp(buf, "te_signal_check\n")) {
-		DSI_INFO("TE based ESD check for panels is not allowed\n");
 		rc = -EINVAL;
 		goto error;
 	}
@@ -7265,6 +7265,9 @@ int dsi_display_get_modes(struct dsi_display *display,
 			curr_refresh_rate = sub_mode->timing.refresh_rate;
 			sub_mode->timing.refresh_rate = dfps_caps.dfps_list[i];
 
+			sub_mode->timing.is_default_refresh =
+			 	(dfps_caps.panel_refresh_rate == sub_mode->timing.refresh_rate);
+
 			/* Override with qsync min fps list in dfps usecases */
 			if (qsync_caps->qsync_min_fps && qsync_caps->qsync_min_fps_list_len) {
 				sub_mode->timing.qsync_min_fps = qsync_caps->qsync_min_fps_list[i];
@@ -7926,7 +7929,6 @@ static void dsi_display_handle_fifo_overflow(struct work_struct *work)
 
 	display = container_of(work, struct dsi_display, fifo_overflow_work);
 	if (!display || !display->panel ||
-	    (display->panel->panel_mode != DSI_OP_VIDEO_MODE) ||
 	    atomic_read(&display->panel->esd_recovery_pending)) {
 		DSI_DEBUG("Invalid recovery use case\n");
 		return;
@@ -8007,7 +8009,6 @@ static void dsi_display_handle_lp_rx_timeout(struct work_struct *work)
 
 	display = container_of(work, struct dsi_display, lp_rx_timeout_work);
 	if (!display || !display->panel ||
-	    (display->panel->panel_mode != DSI_OP_VIDEO_MODE) ||
 	    atomic_read(&display->panel->esd_recovery_pending)) {
 		DSI_DEBUG("Invalid recovery use case\n");
 		return;

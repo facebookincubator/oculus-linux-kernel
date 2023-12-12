@@ -3829,21 +3829,6 @@ compat_hw_name_failed:
 	return rc;
 }
 
-static void cam_req_mgr_process_ope_command_queue(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
-static void cam_req_mgr_process_ope_msg_queue(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
-static void cam_req_mgr_process_ope_timer_queue(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
 static int cam_ope_mgr_create_wq(void)
 {
 
@@ -3851,24 +3836,21 @@ static int cam_ope_mgr_create_wq(void)
 	int i;
 
 	rc = cam_req_mgr_workq_create("ope_command_queue", OPE_WORKQ_NUM_TASK,
-		&ope_hw_mgr->cmd_work, CRM_WORKQ_USAGE_NON_IRQ,
-		0, cam_req_mgr_process_ope_command_queue);
+		&ope_hw_mgr->cmd_work, CRM_WORKQ_USAGE_NON_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_OPE, "unable to create a command worker");
 		goto cmd_work_failed;
 	}
 
 	rc = cam_req_mgr_workq_create("ope_message_queue", OPE_WORKQ_NUM_TASK,
-		&ope_hw_mgr->msg_work, CRM_WORKQ_USAGE_IRQ, 0,
-		cam_req_mgr_process_ope_msg_queue);
+		&ope_hw_mgr->msg_work, CRM_WORKQ_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_OPE, "unable to create a message worker");
 		goto msg_work_failed;
 	}
 
 	rc = cam_req_mgr_workq_create("ope_timer_queue", OPE_WORKQ_NUM_TASK,
-		&ope_hw_mgr->timer_work, CRM_WORKQ_USAGE_IRQ, 0,
-		cam_req_mgr_process_ope_timer_queue);
+		&ope_hw_mgr->timer_work, CRM_WORKQ_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_OPE, "unable to create a timer worker");
 		goto timer_work_failed;

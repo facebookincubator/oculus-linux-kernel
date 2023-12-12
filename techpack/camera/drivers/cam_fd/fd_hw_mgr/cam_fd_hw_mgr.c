@@ -1977,11 +1977,6 @@ int cam_fd_hw_mgr_deinit(struct device_node *of_node)
 	return 0;
 }
 
-static void cam_req_mgr_process_workq_cam_fd_worker(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
 int cam_fd_hw_mgr_init(struct device_node *of_node,
 	struct cam_hw_mgr_intf *hw_mgr_intf)
 {
@@ -2127,8 +2122,7 @@ int cam_fd_hw_mgr_init(struct device_node *of_node,
 	}
 
 	rc = cam_req_mgr_workq_create("cam_fd_worker", CAM_FD_WORKQ_NUM_TASK,
-		&g_fd_hw_mgr.work, CRM_WORKQ_USAGE_IRQ, 0,
-		cam_req_mgr_process_workq_cam_fd_worker);
+		&g_fd_hw_mgr.work, CRM_WORKQ_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_FD, "Unable to create a worker, rc=%d", rc);
 		goto detach_smmu;

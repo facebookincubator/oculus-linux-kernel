@@ -89,3 +89,15 @@ enum ar_queue_event_type {
 	AR_QUEUE_PAYLOAD_CONSUMED,
 	AR_QUEUE_SHUTDOWN,
 };
+
+/**
+ * The different types of shutdown reasons.
+ */
+enum ar_queue_shutdown_reason {
+	AR_QUEUE_SHUTDOWN_UNKNOWN,
+	AR_QUEUE_SHUTDOWN_POWER_STATE,
+	AR_QUEUE_SHUTDOWN_PROTOCOL_STATE,
+	AR_QUEUE_SHUTDOWN_LINK_STATE,
+	AR_QUEUE_SHUTDOWN_DRIVER_STATE,
+	AR_QUEUE_SHUTDOWN_MIRROR_STATE,
+};

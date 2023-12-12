@@ -18070,17 +18070,6 @@ end:
 	return rc;
 }
 
-static void cam_req_mgr_process_workq_cam_isp_worker(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
-static void cam_req_mgr_process_workq_cam_ife_worker(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
-
 void cam_ife_hw_mgr_populate_out_ports(struct cam_ife_hw_mgr_ctx *ctx,
 		int acquire_type, uint32_t *pkt, uint32_t *off)
 {
@@ -18534,8 +18523,7 @@ int cam_ife_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl)
 
 		rc = cam_req_mgr_workq_create("cam_isp_worker", 256,
 			&g_ife_hw_mgr.workq_pool[i],
-			CRM_WORKQ_USAGE_IRQ, CAM_WORKQ_FLAG_HIGH_PRIORITY,
-			cam_req_mgr_process_workq_cam_isp_worker);
+			CRM_WORKQ_USAGE_IRQ, CAM_WORKQ_FLAG_HIGH_PRIORITY);
 		if (rc < 0) {
 			CAM_ERR(CAM_ISP, "Unable to create isp worker");
 			goto end;
@@ -18550,8 +18538,7 @@ int cam_ife_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl)
 
 	/* Create Worker for ife_hw_mgr with 10 tasks */
 	rc = cam_req_mgr_workq_create("cam_ife_worker", 10, &g_ife_hw_mgr.workq,
-			CRM_WORKQ_USAGE_NON_IRQ, CAM_WORKQ_FLAG_HIGH_PRIORITY,
-			cam_req_mgr_process_workq_cam_ife_worker);
+			CRM_WORKQ_USAGE_NON_IRQ, CAM_WORKQ_FLAG_HIGH_PRIORITY);
 	if (rc < 0) {
 		CAM_ERR(CAM_ISP, "Unable to create worker");
 		goto end;

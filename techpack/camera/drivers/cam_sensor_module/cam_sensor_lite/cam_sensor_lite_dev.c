@@ -391,11 +391,6 @@ struct platform_driver cam_sensor_lite_driver = {
 
 static struct cam_req_mgr_core_workq *sensor_lite_rpmsg_workq;
 
-static void sensor_lite_recv_workq(struct work_struct *work)
-{
-	cam_req_mgr_process_workq(work);
-}
-
 static int sensor_lite_rpmsg_recv_worker(void *priv, void *data)
 {
 	struct cam_rpmsg_slave_payload_desc *pkt = NULL;
@@ -476,8 +471,7 @@ int32_t cam_sensor_lite_init_module(void)
 	cam_req_mgr_workq_create("cam_rpmsg_sensor_wq",
 			CAM_SENSOR_LITE_RPMSG_WORKQ_NUM_TASK,
 			&(sensor_lite_rpmsg_workq), CRM_WORKQ_USAGE_IRQ,
-			CAM_WORKQ_FLAG_HIGH_PRIORITY,
-			sensor_lite_recv_workq);
+			CAM_WORKQ_FLAG_HIGH_PRIORITY);
 
 	sensor_lite_rpmsg_cb.cookie = NULL;
 	sensor_lite_rpmsg_cb.recv   = sensor_lite_recv_irq_cb;

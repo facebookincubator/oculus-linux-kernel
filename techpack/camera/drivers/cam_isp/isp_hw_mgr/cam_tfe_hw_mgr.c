@@ -5789,11 +5789,6 @@ static inline int cam_tfe_hw_mgr_debug_register(void)
 }
 #endif
 
-static void cam_req_mgr_process_tfe_worker(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
 int cam_tfe_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl)
 {
 	int rc = -EFAULT;
@@ -5949,8 +5944,7 @@ int cam_tfe_hw_mgr_init(struct cam_hw_mgr_intf *hw_mgr_intf, int *iommu_hdl)
 
 	/* Create Worker for tfe_hw_mgr with 10 tasks */
 	rc = cam_req_mgr_workq_create("cam_tfe_worker", 10,
-		&g_tfe_hw_mgr.workq, CRM_WORKQ_USAGE_NON_IRQ, 0,
-		cam_req_mgr_process_tfe_worker);
+		&g_tfe_hw_mgr.workq, CRM_WORKQ_USAGE_NON_IRQ, 0);
 	if (rc < 0) {
 		CAM_ERR(CAM_ISP, "Unable to create worker");
 		goto end;

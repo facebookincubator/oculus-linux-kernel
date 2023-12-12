@@ -16,6 +16,10 @@
 	<5000 3000>;  /*  5V @ 3.00A */
 };
 
+&fan {
+	oculus,max-pwm = <179>; /* 70% duty cycle */
+};
+
 &wlan {
 	cal-file-prefix = "eureka_evt2.0_";
 };

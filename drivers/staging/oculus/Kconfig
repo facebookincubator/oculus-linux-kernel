@@ -107,11 +107,12 @@ config MISCFIFO
 	  Drivers using this chardev only have to call one of the
 	  send() functions to deliver events to userspace.
 
-config MISCFIFO_SAMPLE
-	tristate "miscfifo chardev driver example"
+config MISCFIFO_BENCHMARK
+	tristate "miscfifo benchmark driver"
 	default n
 	help
-	  Example usage of miscfifo chardev driver
+	  Benchmarking driver for miscfifo that allows you to measure
+	  its throughput and latency properties.
 
 config OCULUS_BLU_I2C
 	tristate "Oculus BLU I2C driver"

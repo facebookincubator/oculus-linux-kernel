@@ -1182,8 +1182,8 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 	u32 cur_bl_level;
 	struct backlight_device *bd = bl->raw_bd;
 
-	/* default the brightness level to 50% */
-	cur_bl_level = bl->bl_max_level >> 1;
+	/* default the brightness level to 100% */
+	cur_bl_level = bl->bl_max_level;
 
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
@@ -2105,7 +2105,8 @@ static int dsi_panel_parse_dfps_range(struct dsi_panel *panel)
 	int rc = 0;
 	struct dsi_dfps_capabilities *dfps_caps = &panel->dfps_caps;
 	struct dsi_parser_utils *utils = &panel->utils;
-	u32 i;
+	u32 *step_sizes;
+	u32 i, idx, refresh_rate, num_step_sizes;
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-min-refresh-rate",
 				  &dfps_caps->min_refresh_rate);
@@ -2122,27 +2123,93 @@ static int dsi_panel_parse_dfps_range(struct dsi_panel *panel)
 		return rc;
 	}
 
-	dfps_caps->dfps_list_len = dfps_caps->max_refresh_rate -
-		dfps_caps->min_refresh_rate + 1;
-	if (dfps_caps->dfps_list_len < 1) {
-		DSI_ERR("dfps invalid refresh rate range %d - %d\n",
+	num_step_sizes = utils->count_u32_elems(utils->data,
+			"qcom,mdss-dsi-refresh-rate-step-sizes");
+	if (num_step_sizes < 1) {
+		dfps_caps->dfps_list_len = dfps_caps->max_refresh_rate -
+			dfps_caps->min_refresh_rate + 1;
+		if (dfps_caps->dfps_list_len < 1) {
+			DSI_ERR("dfps invalid refresh rate range %d - %d\n",
+				dfps_caps->max_refresh_rate,
+				dfps_caps->min_refresh_rate);
+			return -EINVAL;
+		}
+
+		DSI_INFO("using full refresh rate range %d - %d\n",
 			dfps_caps->max_refresh_rate,
 			dfps_caps->min_refresh_rate);
-		return -EINVAL;
+
+		dfps_caps->dfps_list = devm_kcalloc(panel->parent,
+				dfps_caps->dfps_list_len, sizeof(u32),
+				GFP_KERNEL);
+		if (!dfps_caps->dfps_list)
+			return -ENOMEM;
+
+		dfps_caps->dfps_support = true;
+		for (i = 0; i < dfps_caps->dfps_list_len; i++)
+			dfps_caps->dfps_list[i] = dfps_caps->max_refresh_rate - i;
+	} else {
+		step_sizes = devm_kcalloc(panel->parent, num_step_sizes,
+				sizeof(u32), GFP_KERNEL);
+		if (!step_sizes)
+			return -ENOMEM;
+
+		rc = utils->read_u32_array(utils->data,
+				"qcom,mdss-dsi-refresh-rate-step-sizes",
+				step_sizes, num_step_sizes);
+		if (rc) {
+			DSI_ERR("[%s] dfps step size list parse failed\n",
+					panel->name);
+			return -EINVAL;
+		}
+
+		/*
+		 * Always guarantee having at least the minimum and maximum
+		 * refresh rates.
+		 */
+		dfps_caps->dfps_list_len = 2;
+		for (refresh_rate = dfps_caps->min_refresh_rate + 1;
+				refresh_rate < dfps_caps->max_refresh_rate;
+				refresh_rate++) {
+			for (i = 0; i < num_step_sizes; i++) {
+				if (refresh_rate % step_sizes[i] == 0) {
+					dfps_caps->dfps_list_len++;
+					break;
+				}
+			}
+		}
+
+		DSI_INFO("using stepped refresh rate range %d - %d\n",
+			dfps_caps->max_refresh_rate,
+			dfps_caps->min_refresh_rate);
+
+		dfps_caps->dfps_list = devm_kcalloc(panel->parent,
+				dfps_caps->dfps_list_len, sizeof(u32),
+				GFP_KERNEL);
+		if (!dfps_caps->dfps_list)
+			return -ENOMEM;
+
+		dfps_caps->dfps_support = true;
+		dfps_caps->dfps_list[0] = dfps_caps->max_refresh_rate;
+		dfps_caps->dfps_list[dfps_caps->dfps_list_len - 1] =
+				dfps_caps->min_refresh_rate;
+
+		idx = 1;
+		for (refresh_rate = dfps_caps->max_refresh_rate - 1;
+				refresh_rate > dfps_caps->min_refresh_rate;
+				refresh_rate--) {
+			for (i = 0; i < num_step_sizes; i++) {
+				if (refresh_rate % step_sizes[i] == 0) {
+					dfps_caps->dfps_list[idx++] =
+							refresh_rate;
+					break;
+				}
+			}
+		}
+
+		if (step_sizes)
+			devm_kfree(panel->parent, step_sizes);
 	}
-
-	DSI_INFO("using full refresh rate range %d - %d\n",
-		dfps_caps->max_refresh_rate,
-		dfps_caps->min_refresh_rate);
-
-	dfps_caps->dfps_list = kcalloc(dfps_caps->dfps_list_len, sizeof(u32),
-			GFP_KERNEL);
-	if (!dfps_caps->dfps_list)
-		return -ENOMEM;
-
-	dfps_caps->dfps_support = true;
-	for (i = 0; i < dfps_caps->dfps_list_len; i++)
-		dfps_caps->dfps_list[i] = dfps_caps->max_refresh_rate - i;
 
 	return 0;
 }
@@ -2187,6 +2254,12 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 		goto error;
 	}
 
+	rc = utils->read_u32(utils->data,
+			"qcom,mdss-dsi-panel-framerate",
+			&dfps_caps->panel_refresh_rate);
+	if (rc)
+		dfps_caps->panel_refresh_rate = 0;
+
 	list_size = utils->count_u32_elems(utils->data,
 				  "qcom,dsi-supported-dfps-list");
 	if (list_size < 1) {
@@ -2195,15 +2268,15 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 		// try to auto generate a list of refresh rates
 		rc = dsi_panel_parse_dfps_range(panel);
 		if (!rc)
-			return 0;
+			goto exit;
 
 		DSI_ERR("Failed to find or build list of refresh rates");
 		goto error;
 	}
 	dfps_caps->dfps_list_len = list_size;
 
-	dfps_caps->dfps_list = kcalloc(dfps_caps->dfps_list_len, sizeof(u32),
-			GFP_KERNEL);
+	dfps_caps->dfps_list = devm_kcalloc(panel->parent,
+			dfps_caps->dfps_list_len, sizeof(u32), GFP_KERNEL);
 	if (!dfps_caps->dfps_list) {
 		rc = -ENOMEM;
 		goto error;
@@ -2231,6 +2304,10 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 			dfps_caps->max_refresh_rate = dfps_caps->dfps_list[i];
 	}
 
+exit:
+	// if no default is specified, use the first one in the list
+	if (dfps_caps->panel_refresh_rate == 0)
+		dfps_caps->panel_refresh_rate = dfps_caps->dfps_list[0];
 error:
 	return rc;
 }
@@ -4261,13 +4338,7 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel)
 		} else if (!strcmp(string, "reg_read")) {
 			esd_config->status_mode = ESD_MODE_REG_READ;
 		} else if (!strcmp(string, "te_signal_check")) {
-			if (panel->panel_mode == DSI_OP_CMD_MODE) {
-				esd_config->status_mode = ESD_MODE_PANEL_TE;
-			} else {
-				DSI_ERR("TE-ESD not valid for video mode\n");
-				rc = -EINVAL;
-				goto error;
-			}
+			esd_config->status_mode = ESD_MODE_PANEL_TE;
 		} else if (!strcmp(string, "esd_sw_sim_success")) {
 			esd_config->status_mode = ESD_MODE_SW_SIM_SUCCESS;
 		} else {

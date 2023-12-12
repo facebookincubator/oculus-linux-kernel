@@ -18,6 +18,10 @@
 	<5000 3000>;  /*  5V @ 3.00A */
 };
 
+&fan {
+	oculus,max-pwm = <179>; /* 70% duty cycle */
+};
+
 &wlan {
 	vdd-wlan-fem-en-supply = <>;
 	qcom,vdd-wlan-fem-en-config = <>;

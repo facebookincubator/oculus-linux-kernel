@@ -369,6 +369,7 @@ bool ptrace_may_access(struct task_struct *task, unsigned int mode)
 	task_unlock(task);
 	return !err;
 }
+EXPORT_SYMBOL(ptrace_may_access);
 
 static int check_ptrace_options(unsigned long data)
 {

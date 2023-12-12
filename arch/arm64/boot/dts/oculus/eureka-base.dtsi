@@ -190,11 +190,17 @@
 		rsoc-scaling;
 		rsoc-scaling-min-level = <1>;
 		rsoc-scaling-max-level = <100>;
-		otg-current-control;
+
+		src-current-control;
+		src-current-limit-max-uA = <1500000>;
+		src-enable-soc-threshold = <95>;
 	};
 };
 
 &wlan {
 	vdd-wlan-fem-en-supply = <&sgm62110_buck>;
 	qcom,vdd-wlan-fem-en-config = <3850000 3850000 0 0 0>;
+
+	vdd-wlan-supply = <&S1B>;
+	qcom,vdd-wlan-config = <1880000 2040000 0 0 1>;
 };

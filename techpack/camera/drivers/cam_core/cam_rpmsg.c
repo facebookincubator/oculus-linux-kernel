@@ -143,11 +143,6 @@ static int cam_rpmsg_system_recv_worker(void *priv, void *data)
 	return 0;
 }
 
-static void cam_rpmsg_system_recv_workq(struct work_struct *work)
-{
-	cam_req_mgr_process_workq(work);
-}
-
 static int cam_rpmsg_system_recv_irq_cb(void *cookie, void *data, int len)
 {
 	struct crm_workq_task *task;
@@ -1147,8 +1142,7 @@ static int cam_rpmsg_slave_probe(struct rpmsg_device *rpdev)
 	rc = cam_req_mgr_workq_create("cam_rpmsg_system_wq",
 			CAM_RPMSG_WORKQ_NUM_TASK,
 			&system_data.workq, CRM_WORKQ_USAGE_IRQ,
-			CAM_WORKQ_FLAG_HIGH_PRIORITY,
-			cam_rpmsg_system_recv_workq);
+			CAM_WORKQ_FLAG_HIGH_PRIORITY);
 	if (rc) {
 		CAM_ERR(CAM_RPMSG, "Failed to create workq rc %d", rc);
 		return -EINVAL;

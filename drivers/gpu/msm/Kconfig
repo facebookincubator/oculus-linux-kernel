@@ -70,6 +70,16 @@ config QCOM_KGSL_IOCOHERENCY_DEFAULT
 	 will use I/O coherency regardless of the user flags. If not enabled
 	 the user can still selectively enable I/O coherency with a flag.
 
+config QCOM_KGSL_ENTRY_METADATA
+	bool "Enable metadata field for KGSL memory entries"
+	depends on QCOM_KGSL && DEBUG_FS
+	help
+	  Adds support for the metadata field for KGSL memory entries. This can
+	  be used by applications to specially mark entries in when dumping
+	  'mem' for a process in debugfs. This is never required for proper
+	  functioning of the driver. Say 'N' unless there is a specific need
+	  for this feature.
+
 config QCOM_KGSL_IDLE_TIMEOUT
 	int
 	depends on QCOM_KGSL

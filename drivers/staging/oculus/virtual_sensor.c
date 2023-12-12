@@ -4,7 +4,6 @@
  */
 
 #include <linux/err.h>
-#include <linux/iio/consumer.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -16,8 +15,6 @@
 #include <linux/types.h>
 
 #include "virtual_sensor_utils.h"
-
-#define COEFFICIENT_SCALAR 10000
 
 static int get_fallback_temp(struct virtual_sensor_drvdata *vs, s64 *tz_temp)
 {
@@ -36,7 +33,7 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 {
 	struct virtual_sensor_drvdata *vs = data;
 	struct virtual_sensor_common_data *coeff_data;
-	s64 tz_temp = 0, iio_temp = 0;
+	s64 tz_temp = 0;
 	s64 temp, fallback_temp = 0;
 	const bool charging = is_charging(vs->batt_psy);
 	int ret;
@@ -68,18 +65,7 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 				__func__, tz_temp);
 	}
 
-	ret = virtual_sensor_calculate_iio_temp(vs->dev, coeff_data, &iio_temp);
-	if (ret) {
-		/*
-		 * Unable to calculate new temp, use the last one so the function doesn't
-		 * cause the thermal subsystem to error out.
-		 */
-		iio_temp = coeff_data->iio_last_temperatures[coeff_data->iio_count - 1];
-		dev_warn(vs->dev, "%s: Unable to calculate IIO temp, re-using last temp: %llu\n",
-				__func__, iio_temp);
-	}
-
-	temp = div64_s64(tz_temp + iio_temp, COEFFICIENT_SCALAR);
+	temp = div64_s64(tz_temp, COEFFICIENT_SCALAR);
 	temp += coeff_data->intercept;
 
 	*temperature = (int)temp;
@@ -114,12 +100,8 @@ static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
 
 static DEVICE_ATTR_RW(tz_coefficients_discharging);
 static DEVICE_ATTR_RW(tz_slope_coefficients_discharging);
-static DEVICE_ATTR_RW(iio_coefficients_discharging);
-static DEVICE_ATTR_RW(iio_slope_coefficients_discharging);
 static DEVICE_ATTR_RW(tz_coefficients_charging);
 static DEVICE_ATTR_RW(tz_slope_coefficients_charging);
-static DEVICE_ATTR_RW(iio_coefficients_charging);
-static DEVICE_ATTR_RW(iio_slope_coefficients_charging);
 static DEVICE_ATTR_RW(intercept_charging);
 static DEVICE_ATTR_RW(intercept_discharging);
 static DEVICE_ATTR_RW(fallback_tolerance);
@@ -127,12 +109,8 @@ static DEVICE_ATTR_RW(fallback_tolerance);
 static struct attribute *virtual_sensor_attrs[] = {
 	&dev_attr_tz_coefficients_discharging.attr,
 	&dev_attr_tz_slope_coefficients_discharging.attr,
-	&dev_attr_iio_coefficients_discharging.attr,
-	&dev_attr_iio_slope_coefficients_discharging.attr,
 	&dev_attr_tz_coefficients_charging.attr,
 	&dev_attr_tz_slope_coefficients_charging.attr,
-	&dev_attr_iio_coefficients_charging.attr,
-	&dev_attr_iio_slope_coefficients_charging.attr,
 	&dev_attr_intercept_discharging.attr,
 	&dev_attr_intercept_charging.attr,
 	&dev_attr_fallback_tolerance.attr,
@@ -228,8 +206,6 @@ no_fallback:
 
 	vs->data_charging.tzd = vs->tzd;
 	vs->data_discharging.tzd = vs->tzd;
-	virtual_sensor_workqueue_register(&vs->data_charging);
-	virtual_sensor_workqueue_register(&vs->data_discharging);
 
 	ret = sysfs_create_groups(&pdev->dev.kobj, virtual_sensor_groups);
 	if (ret < 0)
@@ -242,9 +218,6 @@ static int virtual_sensor_remove(struct platform_device *pdev)
 {
 	struct virtual_sensor_drvdata *vs =
 			(struct virtual_sensor_drvdata *) platform_get_drvdata(pdev);
-
-	virtual_sensor_workqueue_unregister(&vs->data_charging);
-	virtual_sensor_workqueue_unregister(&vs->data_discharging);
 
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 

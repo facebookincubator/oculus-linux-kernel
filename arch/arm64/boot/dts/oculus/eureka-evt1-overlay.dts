@@ -18,6 +18,10 @@
 	<5000 3000>;  /*  5V @ 3.00A */
 };
 
+&fan {
+	oculus,max-pwm = <179>; /* 70% duty cycle */
+};
+
 &qupv3_se8_i2c {
 	status = "disabled";
 };

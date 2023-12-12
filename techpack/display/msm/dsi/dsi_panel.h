@@ -97,6 +97,7 @@ enum dsi_panel_physical_type {
 
 struct dsi_dfps_capabilities {
 	enum dsi_dfps_type type;
+	u32 panel_refresh_rate;
 	u32 min_refresh_rate;
 	u32 max_refresh_rate;
 	u32 *dfps_list;

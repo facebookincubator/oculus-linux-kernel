@@ -675,6 +675,8 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&fan_pwm_default &fan_tach_default>;
 		max-rpm = <8500>;
+		oculus,min-pwm = <25>;
+		oculus,max-pwm = <255>;
 		#cooling-cells = <2>;
 		cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000 8000>;
 	};

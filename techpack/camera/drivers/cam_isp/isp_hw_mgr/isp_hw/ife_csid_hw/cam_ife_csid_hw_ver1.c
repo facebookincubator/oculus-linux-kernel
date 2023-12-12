@@ -4684,12 +4684,6 @@ free_res:
 	return rc;
 }
 
-
-static void cam_req_mgr_process_workq_cam_csid_worker(struct work_struct *w)
-{
-	cam_req_mgr_process_workq(w);
-}
-
 int cam_ife_csid_hw_ver1_init(struct cam_hw_intf  *hw_intf,
 	struct cam_ife_csid_core_info *csid_core_info,
 	bool is_custom)
@@ -4768,8 +4762,7 @@ int cam_ife_csid_hw_ver1_init(struct cam_hw_intf  *hw_intf,
 	}
 
 	rc = cam_req_mgr_workq_create("cam_csid_worker",
-			256, &ife_csid_hw->workq, CRM_WORKQ_USAGE_IRQ, 0,
-			cam_req_mgr_process_workq_cam_csid_worker);
+			256, &ife_csid_hw->workq, CRM_WORKQ_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "CSID[%d] init workq failed",
 			hw_intf->hw_idx);

@@ -144,208 +144,6 @@ void kgsl_device_debugfs_close(struct kgsl_device *device)
 	debugfs_remove_recursive(device->d_debugfs);
 }
 
-static const char *memtype_str(int memtype)
-{
-	if (memtype == KGSL_MEM_ENTRY_KERNEL)
-		return "gpumem";
-	else if (memtype == KGSL_MEM_ENTRY_USER)
-		return "usermem";
-	else if (memtype == KGSL_MEM_ENTRY_ION)
-		return "ion";
-
-	return "unknown";
-}
-
-static char get_alignflag(const struct kgsl_memdesc *m)
-{
-	int align = kgsl_memdesc_get_align(m);
-
-	if (align >= ilog2(SZ_1M))
-		return 'L';
-	else if (align >= ilog2(SZ_64K))
-		return 'l';
-	return '-';
-}
-
-static char get_cacheflag(const struct kgsl_memdesc *m)
-{
-	static const char table[] = {
-		[KGSL_CACHEMODE_WRITECOMBINE] = '-',
-		[KGSL_CACHEMODE_UNCACHED] = 'u',
-		[KGSL_CACHEMODE_WRITEBACK] = 'b',
-		[KGSL_CACHEMODE_WRITETHROUGH] = 't',
-	};
-
-	return table[kgsl_memdesc_get_cachemode(m)];
-}
-
-static int print_mem_entry(void *data, void *ptr)
-{
-	struct seq_file *s = data;
-	struct kgsl_mem_entry *entry = ptr;
-	char flags[11];
-	char usage[16];
-	struct kgsl_memdesc *m = &entry->memdesc;
-	unsigned int usermem_type = kgsl_memdesc_usermem_type(m);
-	int egl_surface_count = 0, egl_image_count = 0, total_count = 0;
-	unsigned long inode_number = 0;
-	u32 map_count = atomic_read(&entry->map_count);
-
-	flags[0] = kgsl_memdesc_is_global(m) ?  'g' : '-';
-	flags[1] = '-';
-	flags[2] = !(m->flags & KGSL_MEMFLAGS_GPUREADONLY) ? 'w' : '-';
-	flags[3] = get_alignflag(m);
-	flags[4] = get_cacheflag(m);
-	flags[5] = kgsl_memdesc_use_cpu_map(m) ? 'p' : '-';
-	/* Show Y if at least one vma has this entry mapped (could be multiple) */
-	flags[6] = map_count ? 'Y' : 'N';
-	flags[7] = kgsl_memdesc_is_secured(m) ?  's' : '-';
-	flags[8] = '-';
-	flags[9] = m->flags & KGSL_MEMFLAGS_VBO ? 'v' : '-';
-	flags[10] = '\0';
-
-	kgsl_get_memory_usage(usage, sizeof(usage), m->flags);
-
-	if (usermem_type == KGSL_MEM_ENTRY_ION) {
-		kgsl_get_egl_counts(entry, &egl_surface_count,
-						&egl_image_count, &total_count);
-		inode_number = kgsl_get_dmabuf_inode_number(entry);
-	}
-
-	seq_printf(s, "%pK %pK %16llu %5d %10s %10s %16s %5d %10d %6d %6d %10lu",
-			(uint64_t *)(uintptr_t) m->gpuaddr,
-			/*
-			 * Show zero for the useraddr - we can't reliably track
-			 * that value for multiple vmas anyway
-			 */
-			NULL, m->size, entry->id, flags,
-			memtype_str(usermem_type),
-			usage, (m->sgt ? m->sgt->nents : 0), map_count,
-			egl_surface_count, egl_image_count, inode_number);
-
-	if (entry->metadata[0] != 0)
-		seq_printf(s, " %s", entry->metadata);
-
-	seq_putc(s, '\n');
-
-	return 0;
-}
-
-static struct kgsl_mem_entry *process_mem_seq_find(struct seq_file *s,
-						void *ptr, loff_t pos)
-{
-	struct kgsl_mem_entry *entry = ptr;
-	struct kgsl_process_private *private = s->private;
-	int id = 0;
-
-	loff_t temp_pos = 1;
-
-	if (entry != SEQ_START_TOKEN)
-		id = entry->id + 1;
-
-	spin_lock(&private->mem_lock);
-	for (entry = idr_get_next(&private->mem_idr, &id); entry;
-		id++, entry = idr_get_next(&private->mem_idr, &id),
-							temp_pos++) {
-		if (temp_pos == pos && kgsl_mem_entry_get(entry)) {
-			spin_unlock(&private->mem_lock);
-			goto found;
-		}
-	}
-	spin_unlock(&private->mem_lock);
-
-	entry = NULL;
-found:
-	if (ptr != SEQ_START_TOKEN)
-		kgsl_mem_entry_put(ptr);
-
-	return entry;
-}
-
-static void *process_mem_seq_start(struct seq_file *s, loff_t *pos)
-{
-	loff_t seq_file_offset = *pos;
-
-	if (seq_file_offset == 0)
-		return SEQ_START_TOKEN;
-	else
-		return process_mem_seq_find(s, SEQ_START_TOKEN,
-						seq_file_offset);
-}
-
-static void process_mem_seq_stop(struct seq_file *s, void *ptr)
-{
-	if (ptr && ptr != SEQ_START_TOKEN)
-		kgsl_mem_entry_put(ptr);
-}
-
-static void *process_mem_seq_next(struct seq_file *s, void *ptr,
-							loff_t *pos)
-{
-	++*pos;
-	return process_mem_seq_find(s, ptr, 1);
-}
-
-static int process_mem_seq_show(struct seq_file *s, void *ptr)
-{
-	if (ptr == SEQ_START_TOKEN) {
-		seq_printf(s, "%16s %16s %16s %5s %10s %10s %16s %5s %10s %6s %6s %10s\n",
-			"gpuaddr", "useraddr", "size", "id", "flags", "type",
-			"usage", "sglen", "mapcnt", "eglsrf", "eglimg", "inode");
-		return 0;
-	} else
-		return print_mem_entry(s, ptr);
-}
-
-static const struct seq_operations process_mem_seq_fops = {
-	.start = process_mem_seq_start,
-	.stop = process_mem_seq_stop,
-	.next = process_mem_seq_next,
-	.show = process_mem_seq_show,
-};
-
-static int process_mem_open(struct inode *inode, struct file *file)
-{
-	int ret;
-	pid_t pid = (pid_t) (unsigned long) inode->i_private;
-	struct seq_file *s = NULL;
-	struct kgsl_process_private *private = NULL;
-
-	private = kgsl_process_private_find(pid);
-
-	if (!private)
-		return -ENODEV;
-
-	ret = seq_open(file, &process_mem_seq_fops);
-	if (ret)
-		kgsl_process_private_put(private);
-	else {
-		s = file->private_data;
-		s->private = private;
-	}
-
-	return ret;
-}
-
-static int process_mem_release(struct inode *inode, struct file *file)
-{
-	struct kgsl_process_private *private =
-		((struct seq_file *)file->private_data)->private;
-
-	if (private)
-		kgsl_process_private_put(private);
-
-	return seq_release(inode, file);
-}
-
-static const struct file_operations process_mem_fops = {
-	.open = process_mem_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = process_mem_release,
-};
-
-
 static int print_vbo_ranges(int id, void *ptr, void *data)
 {
 	kgsl_memdesc_print_vbo_ranges(ptr, data);
@@ -383,12 +181,21 @@ static int vbo_open(struct inode *inode, struct file *file)
 	return ret;
 }
 
+static int process_vbo_release(struct inode *inode, struct file *file)
+{
+	struct kgsl_process_private *private =
+		((struct seq_file *)file->private_data)->private;
+
+	if (private)
+		kgsl_process_private_put(private);
+
+	return seq_release(inode, file);
+}
 static const struct file_operations vbo_fops = {
 	.open = vbo_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
-	/* Reuse the same release function */
-	.release = process_mem_release,
+	.release = process_vbo_release,
 };
 
 /**
@@ -415,14 +222,12 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 		return;
 	}
 
-	dentry = debugfs_create_file("mem", 0444, private->debug_root,
-		(void *) ((unsigned long) pid_nr(private->pid)), &process_mem_fops);
+	dentry = debugfs_create_file("vbos", 0444, private->debug_root,
+		(void *) ((unsigned long) pid_nr(private->pid)), &vbo_fops);
+
 
 	if (IS_ERR(dentry))
-		WARN_ONCE("Unable to create 'mem' file for %s\n", name);
-
-	debugfs_create_file("vbos", 0444, private->debug_root,
-		(void *) ((unsigned long) pid_nr(private->pid)), &vbo_fops);
+		WARN_ONCE("Unable to create 'vbos' file for %s\n", name);
 }
 
 void kgsl_core_debugfs_init(void)

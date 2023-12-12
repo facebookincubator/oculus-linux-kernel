@@ -266,6 +266,8 @@ struct ext_batt_parameters {
 	u16 fcc;
 	u16 cycle_count;
 	u8 rsoc;
+	u8 rsoc_test;
+	bool rsoc_test_enabled;
 	u8 soh;
 	u32 fw_version;
 	char device_name[16];
@@ -352,14 +354,17 @@ struct ext_batt_pd {
 	int usb_psy_charging_state;
 	/* identifier to distinguish between battery packs */
 	enum ext_batt_id batt_id;
-	/* USB output current limit */
-	u32  source_current;
 	/* RSOC Scaling Settings */
 	bool rsoc_scaling_enabled;
 	u32 rsoc_scaling_min_level;
 	u32 rsoc_scaling_max_level;
-	/* OTG Current Control */
-	bool otg_current_control_enabled;
+	/* SRC Current Control */
+	bool src_current_control_enabled;
+	u32 src_enable_soc_threshold;
+	u32 src_current_limit_max_uA;
+	u32 source_current;
+	/* first batch of broadcast data from battery pack */
+	bool first_broadcast_data_received;
 	/* flag for PR_SWAP */
 	bool recently_docked;
 };

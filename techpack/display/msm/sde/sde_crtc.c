@@ -2207,6 +2207,9 @@ static void _sde_crtc_blend_setup(struct drm_crtc *crtc,
 	struct sde_hw_ctl *ctl;
 	struct sde_hw_mixer *lm;
 	struct sde_ctl_flush_cfg cfg = {0,};
+	struct drm_plane *plane;
+	struct sde_plane_state *sde_pstate;
+	bool cac_enabled = false;
 
 	int i;
 
@@ -2253,8 +2256,17 @@ static void _sde_crtc_blend_setup(struct drm_crtc *crtc,
 	if (add_planes)
 		_sde_crtc_blend_setup_mixer(crtc, old_state, sde_crtc, mixer);
 
+	drm_atomic_crtc_for_each_plane(plane, crtc) {
+		sde_pstate = to_sde_plane_state(plane->state);
+		if (!sde_pstate)
+			continue;
+		if (sde_plane_is_cac_enabled(sde_pstate))
+			cac_enabled = true;
+	}
+
 	for (i = 0; i < sde_crtc->num_mixers; i++) {
 		const struct sde_rect *lm_roi = &sde_crtc_state->lm_roi[i];
+		int lm_layout = cac_enabled ? -1 : mixer[i].hw_lm->cfg.lm_layout;
 
 		ctl = mixer[i].hw_ctl;
 		lm = mixer[i].hw_lm;
@@ -2281,11 +2293,11 @@ static void _sde_crtc_blend_setup(struct drm_crtc *crtc,
 					sde_crtc->name, lm->idx - LM_0,
 					ctl->idx - CTL_0);
 			ctl->ops.setup_blendstage(ctl, mixer[i].hw_lm->idx,
-					mixer[i].hw_lm->cfg.lm_layout, NULL,
+					lm_layout, NULL,
 					true);
 		} else {
 			ctl->ops.setup_blendstage(ctl, mixer[i].hw_lm->idx,
-					mixer[i].hw_lm->cfg.lm_layout,
+					lm_layout,
 					&sde_crtc->stage_cfg,
 					false);
 		}

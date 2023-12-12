@@ -308,25 +308,136 @@ imported_mem_show(struct kgsl_process_private *priv,
 	return scnprintf(buf, PAGE_SIZE, "%llu\n", imported_mem);
 }
 
-static ssize_t
-gpumem_mapped_show(struct kgsl_process_private *priv,
-				int type, char *buf)
+/*
+ * Calculates size of GPU memory with and without backing physical pages (PSS).
+ * Returns zero if successful, negative errno if there is a problem. This
+ * matches the return value of the callers.
+ */
+static ssize_t gpumem_account(struct kgsl_process_private *priv, int type,
+			      int64_t *mapped, int64_t *unmapped)
 {
-	return scnprintf(buf, PAGE_SIZE, "%lld\n",
-			atomic64_read(&priv->gpumem_mapped));
+	struct kgsl_mem_entry *entry;
+	int64_t gpumem_mapped = 0;
+	int64_t gpumem_unmapped = 0;
+	int id = 0;
+	int i;
+	struct deferred_work *work = kzalloc(sizeof(struct deferred_work),
+			GFP_KERNEL);
+
+	if (!work)
+		return -ENOMEM;
+
+	/*
+	 * Take a process refcount here and put it back in a deferred manner.
+	 * This is to avoid a deadlock where we put back last reference of the
+	 * process private (via kgsl_mem_entry_put) here and end up trying to
+	 * remove sysfs kobject while we are still in the middle of reading one
+	 * of the sysfs files.
+	 */
+	if (!kgsl_process_private_get(priv)) {
+		kfree(work);
+		return -ENOENT;
+	}
+
+	work->private = priv;
+	INIT_WORK(&work->work, process_private_deferred_put);
+
+	spin_lock(&priv->mem_lock);
+	idr_for_each_entry_continue(&priv->mem_idr, entry, id) {
+		struct kgsl_memdesc *m = &entry->memdesc;
+		int64_t entry_mapped = 0;
+		int64_t entry_unmapped = m->size;
+
+		if (kgsl_memdesc_usermem_type(m) != type)
+			continue;
+
+		if (atomic_read(&entry->map_count) <= 0 ||
+				kgsl_mem_entry_get(entry) == 0) {
+			gpumem_unmapped += entry_unmapped;
+			continue;
+		}
+		spin_unlock(&priv->mem_lock);
+
+		/*
+		 * Multiple VMAs may cover this entry. Walk the backing pages
+		 * for counting PSS to match proc/smaps behavior.
+		 */
+		for (i = 0; i < m->page_count; i++) {
+			const int mapcount = page_mapcount(m->pages[i]);
+
+			if (mapcount <= 0)
+				continue;
+
+			entry_mapped += PAGE_SIZE / mapcount;
+			entry_unmapped -= PAGE_SIZE;
+		}
+
+		gpumem_mapped += entry_mapped;
+		gpumem_unmapped += entry_unmapped;
+
+		kgsl_mem_entry_put(entry);
+
+		spin_lock(&priv->mem_lock);
+	}
+	spin_unlock(&priv->mem_lock);
+
+	queue_work(kgsl_driver.mem_workqueue, &work->work);
+
+	if (mapped)
+		*mapped = gpumem_mapped;
+	if (unmapped)
+		*unmapped = gpumem_unmapped;
+
+	return 0;
 }
 
 static ssize_t
+gpumem_account_show(struct kgsl_process_private *priv,
+		    int type, char *buf)
+{
+	int64_t gpumem_mapped = 0;
+	int64_t gpumem_unmapped = 0;
+
+	ssize_t ret = gpumem_account(priv, type, &gpumem_mapped, &gpumem_unmapped);
+
+	if (ret)
+		return ret;
+
+	return scnprintf(buf, PAGE_SIZE, "%lld,%lld\n", gpumem_mapped,
+			gpumem_unmapped);
+}
+
+/**
+ * Show the allocated memory which is backed by PSS.
+ */
+static ssize_t
+gpumem_mapped_show(struct kgsl_process_private *priv,
+		   int type, char *buf)
+{
+	int64_t gpumem_mapped = 0;
+
+	ssize_t ret = gpumem_account(priv, type, &gpumem_mapped, NULL);
+
+	if (ret)
+		return ret;
+
+	return scnprintf(buf, PAGE_SIZE, "%lld\n", gpumem_mapped);
+}
+
+/**
+ * Show the allocated memory which does not have PSS.
+ */
+static ssize_t
 gpumem_unmapped_show(struct kgsl_process_private *priv, int type, char *buf)
 {
-	u64 gpumem_total = atomic64_read(&priv->stats[type].cur);
-	u64 gpumem_mapped = atomic64_read(&priv->gpumem_mapped);
+	int64_t gpumem_unmapped = 0;
 
-	if (gpumem_mapped > gpumem_total)
-		return -EIO;
+	ssize_t ret = gpumem_account(priv, type, NULL, &gpumem_unmapped);
 
-	return scnprintf(buf, PAGE_SIZE, "%llu\n",
-			gpumem_total - gpumem_mapped);
+	if (ret)
+		return ret;
+
+	return scnprintf(buf, PAGE_SIZE, "%lld\n", gpumem_unmapped);
 }
 
 /**
@@ -388,7 +499,8 @@ MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_USER, ion, mem_entry_show);
 MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_USER, ion_max, mem_entry_max_show);
 #endif
 MEM_ENTRY_ATTR(0, imported_mem, imported_mem_show);
-MEM_ENTRY_ATTR(0, gpumem_mapped, gpumem_mapped_show);
+MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_account, gpumem_account_show);
+MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_mapped, gpumem_mapped_show);
 MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_unmapped, gpumem_unmapped_show);
 
 static struct attribute *mem_entry_attrs[] = {
@@ -401,6 +513,7 @@ static struct attribute *mem_entry_attrs[] = {
 	&mem_entry_ion_max.attr.attr,
 #endif
 	&mem_entry_imported_mem.attr.attr,
+	&mem_entry_gpumem_account.attr.attr,
 	&mem_entry_gpumem_mapped.attr.attr,
 	&mem_entry_gpumem_unmapped.attr.attr,
 	NULL,

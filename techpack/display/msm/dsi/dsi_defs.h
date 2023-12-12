@@ -452,6 +452,7 @@ struct dsi_mode_info {
 	u32 v_front_porch;
 	bool v_sync_polarity;
 
+	bool is_default_refresh;
 	u32 refresh_rate;
 	u64 clk_rate_hz;
 	u64 min_dsi_clk_hz;

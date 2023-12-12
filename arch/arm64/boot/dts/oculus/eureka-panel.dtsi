@@ -2,9 +2,9 @@
 
 #include <dt-bindings/clock/qcom,dispcc-anorak.h>
 
-#include "eureka-dsi-panel-jdi-nvt-dsc-4k-90hz-video.dtsi"
+#include "unknown7-dsi-panel-jdi-nvt-dsc-2392x2560-90hz-video.dtsi"
+#include "unknown7-dsi-panel-sharp-nvt-dsc-2392x2560-90hz-video.dtsi"
 #include "eureka-dsi-panel-jdi-nvt-dsc-4k-90hz-video-pre-evt.dtsi"
-#include "eureka-dsi-panel-sharp-nvt-dsc-4k-90hz-video.dtsi"
 #include "eureka-dsi-panel-sharp-nvt-dsc-4k-90hz-video-pre-evt.dtsi"
 
 &aliases {
@@ -13,9 +13,9 @@
 };
 
 &fan {
-	panel = <&dsi_jdi_nvt_4k_90Hz_dsc_video
+	panel = <&dsi_jdi_nvt_2392x2560_90Hz_dsc_video
 		&dsi_jdi_nvt_4k_90Hz_dsc_video_pre_evt
-		&dsi_sharp_nvt_4k_90Hz_dsc_video
+		&dsi_sharp_nvt_2392x2560_90Hz_dsc_video
 		&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt>;
 };
 
@@ -27,7 +27,7 @@
 };
 
 &mdss_mdp0 {
-	qcom,sde-lineptr-scanline-advance = <500>;
+	qcom,sde-lineptr-scanline-advance = <16>;
 };
 
 &qupv3_se2_i2c {
@@ -106,7 +106,7 @@
 	disp_vsp-supply = <&disp_vsp>;
 	disp_vsn-supply = <&disp_vsn>;
 
-	qcom,dsi-default-panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video>;
+	qcom,dsi-default-panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt>;
 };
 
 &sde_dsi1 {
@@ -176,7 +176,7 @@
 	};
 };
 
-&dsi_jdi_nvt_4k_90Hz_dsc_video {
+&dsi_jdi_nvt_2392x2560_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
 	meta,blu-default-duty-cycle = <100>; /* 10% duty */
@@ -190,10 +190,7 @@
 	qcom,mdss-dsi-t-clk-pre = <0x1F>;
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
 
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve = <25000 6000>;
-	meta,thermal-zone = "pcb1-usr";
-	meta,max-blu-pulse-overlap-us = <800>;
+	meta,settling-time-target-us = <5430>;
 
 	qcom,mdss-dsi-display-timings {
 		timing@0{
@@ -220,12 +217,11 @@
 
 	meta,temperature-dependent-backlight;
 	meta,response-time-curve =
-		<10000 7330>,
 		<25000 6270>,
 		<30000 5810>,
-		<35000 5460>,
-		<45000 4850>,
-		<55000 4600>;
+		<35000 5400>,
+		<45000 4470>,
+		<55000 4090>;
 	meta,thermal-zone = "disp-virt";
 	meta,max-blu-pulse-overlap-us = <500>;
 
@@ -239,10 +235,19 @@
 			qcom,default-topology-index = <0>;
 			qcom,disable-default-pps;
 		};
+		timing@1{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 00 00 00 2A 33 0D
+				1F 0C 03 04 00 00 00
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
 	};
 };
 
-&dsi_sharp_nvt_4k_90Hz_dsc_video {
+&dsi_sharp_nvt_2392x2560_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
 	meta,blu-default-duty-cycle = <100>; /* 10% duty */
@@ -256,10 +261,7 @@
 	qcom,mdss-dsi-t-clk-pre = <0x1F>;
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
 
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve = <25000 6850>;
-	meta,thermal-zone = "pcb1-usr";
-	meta,max-blu-pulse-overlap-us = <800>;
+	meta,settling-time-target-us = <5430>;
 
 	qcom,mdss-dsi-display-timings {
 		timing@0{
@@ -297,6 +299,15 @@
 
 	qcom,mdss-dsi-display-timings {
 		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [
+				00 00 00 00 2A 33 0D
+				1F 0C 03 04 00 00 00
+			];
+			qcom,display-topology = <4 4 2>;
+			qcom,default-topology-index = <0>;
+			qcom,disable-default-pps;
+		};
+		timing@1{
 			qcom,mdss-dsi-panel-phy-timings = [
 				00 00 00 00 2A 33 0D
 				1F 0C 03 04 00 00 00
