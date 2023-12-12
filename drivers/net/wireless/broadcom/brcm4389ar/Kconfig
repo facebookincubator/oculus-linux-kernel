@@ -180,20 +180,6 @@ config 6GHZ_BKPORT
 	---help---
 	  For Backported kernels, use the config to enable 6GHz band support.
 
-config DHD_LB_SEC_MASK_OVERRIDE_ENABLE
-	bool "Override default dhd_lb secondary CPU mask."
-	depends on BCMDHD
-	default n
-	---help---
-	  Override default dhd_lb secondary CPU mask.
-
-config DHD_LB_SEC_MASK_OVERRIDE
-	hex "Set dhd_lb secondary cpu mask."
-	depends on DHD_LB_SEC_MASK_OVERRIDE_ENABLE
-	default 0x0E
-	---help---
-	  Set dhd_lb secondary cpu mask.
-
 config XRPS
 	bool "Enable XR Power Save"
 	default n
@@ -213,3 +199,10 @@ config XRPS_DHD_HOOKS
 	default n
 	help
 		Enable XR Power Save DHD hooks
+
+config DHD_LB_USE_PRIMARY_CPU
+	bool "Use primary cpus for better performance."
+	depends on BCMDHD
+	default n
+	---help---
+	  Use primary cpus for better performance.

@@ -14,8 +14,6 @@
 		thermal-zones = "battery";
 		thermal-zone-scaling-factors = <1>;
 
-		internal-polling-delay = <1000>;
-
 		coefficients {
 			charging {
 				tz-coefficients = <5061>;
@@ -30,187 +28,75 @@
 		};
 	};
 
-	display_virtual_sensor_fan: display_virtual_sensor_fan {
+	display_virtual_sensor: display_virtual_sensor {
 		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
-		io-channel-names = "pcb1_therm";
-
 		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "pogo-charger";
-
-		internal-polling-delay = <1000>;
+				"smb-usr", "pogo-charger", "pcb1-usr";
 
 		coefficients {
 			charging {
-				tz-coefficients = <633 255 304 (-376) 2302>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 1500>;
-				io-coefficients = <775>;
-				io-slope-coefficients = <(-15500)>;
+				tz-coefficients = <633 255 304 (-376) 2302 775>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 1500 (-15500)>;
 				intercept = <19771>;
 			};
 			discharging {
-				tz-coefficients = <633 255 304 (-376) 2302>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 1500>;
-				io-coefficients = <775>;
-				io-slope-coefficients = <(-15500)>;
+				tz-coefficients = <633 255 304 (-376) 2302 775>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 1500 (-15500)>;
 				intercept = <19771>;
 			};
 		};
 	};
 
-	display_virtual_sensor_usr: display_virtual_sensor_usr {
-		compatible = "oculus,virtual-sensor";
-		status = "ok";
+	iio_channel_pcb_sensor: iio_channel_pcb_sensor {
+		compatible = "oculus,iio-channel-sensor";
 		#thermal-sensor-cells = <0>;
 
 		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
 		io-channel-names = "pcb1_therm";
-
-		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "pogo-charger";
-
-		internal-polling-delay = <1000>;
-
-		coefficients {
-			charging {
-				tz-coefficients = <633 255 304 (-376) 2302>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 1500>;
-				io-coefficients = <775>;
-				io-slope-coefficients = <(-15500)>;
-				intercept = <19771>;
-			};
-			discharging {
-				tz-coefficients = <633 255 304 (-376) 2302>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 1500>;
-				io-coefficients = <775>;
-				io-slope-coefficients = <(-15500)>;
-				intercept = <19771>;
-			};
-		};
 	};
 
-	vrapi_front_panel_sensor_fan: vrapi_front_panel_sensor_fan {
+	vrapi_front_panel_sensor: vrapi_front_panel_sensor {
 		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
-		io-channel-names = "pcb1_therm";
-
 		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "ddr-usr", "pogo-charger";
-
-		internal-polling-delay = <1000>;
+				"smb-usr", "ddr-usr", "pogo-charger", "pcb1-usr";
 
 		coefficients {
 			charging {
-				tz-coefficients = <935 633 760 (-566) 612 2527>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
-				io-coefficients = <1077>;
-				io-slope-coefficients = <(-15500)>;
+				tz-coefficients = <935 633 760 (-566) 612 2527 1077>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500 (-15500)>;
 				intercept = <8825>;
 			};
 			discharging {
-				tz-coefficients = <935 633 760 (-566) 612 2527>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
-				io-coefficients = <1077>;
-				io-slope-coefficients = <(-15500)>;
+				tz-coefficients = <935 633 760 (-566) 612 2527 1077>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500 (-15500)>;
 				intercept = <8825>;
 			};
 		};
 	};
 
-	vrapi_front_panel_sensor_usr: vrapi_front_panel_sensor_usr {
+	vrapi_top_panel_sensor: vrapi_top_panel_sensor {
 		compatible = "oculus,virtual-sensor";
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
-		io-channel-names = "pcb1_therm";
-
 		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "ddr-usr", "pogo-charger";
-
-		internal-polling-delay = <1000>;
+				"smb-usr", "ddr-usr", "pogo-charger", "pcb1-usr";
 
 		coefficients {
 			charging {
-				tz-coefficients = <935 633 760 (-566) 612 2527>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
-				io-coefficients = <1077>;
-				io-slope-coefficients = <(-15500)>;
-				intercept = <8825>;
-			};
-			discharging {
-				tz-coefficients = <935 633 760 (-566) 612 2527>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
-				io-coefficients = <1077>;
-				io-slope-coefficients = <(-15500)>;
-				intercept = <8825>;
-			};
-		};
-	};
-
-	vrapi_top_panel_sensor_fan: vrapi_top_panel_sensor_fan {
-		compatible = "oculus,virtual-sensor";
-		status = "ok";
-		#thermal-sensor-cells = <0>;
-
-		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
-		io-channel-names = "pcb1_therm";
-
-		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "ddr-usr", "pogo-charger";
-
-		internal-polling-delay = <1000>;
-
-		coefficients {
-			charging {
-				tz-coefficients = <978 631 810 (-591) 628 2722>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
-				io-coefficients = <1174>;
-				io-slope-coefficients = <(-15500)>;
+				tz-coefficients = <978 631 810 (-591) 628 2722 1174>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500 (-15500)>;
 				intercept = <6211>;
 			};
 			discharging {
-				tz-coefficients = <978 631 810 (-591) 628 2722>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 500 1500>;
-				io-coefficients = <1174>;
-				io-slope-coefficients = <(-15500)>;
-				intercept = <6211>;
-			};
-		};
-	};
-
-	vrapi_top_panel_sensor_usr: vrapi_top_panel_sensor_usr {
-		compatible = "oculus,virtual-sensor";
-		status = "ok";
-		#thermal-sensor-cells = <0>;
-
-		io-channels = <&pm8150b_vadc ADC_AMUX_THM4_PU2>;
-		io-channel-names = "pcb1_therm";
-
-		thermal-zones = "rfpa-usr", "cpu-1-4-usr", "npu-usr",
-				"smb-usr", "ddr-usr", "pogo-charger";
-
-		internal-polling-delay = <1000>;
-
-		coefficients {
-			charging {
-				tz-coefficients = <978 631 810 (-591) 628 2722>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
-				io-coefficients = <1174>;
-				io-slope-coefficients = <(-15500)>;
-				intercept = <6211>;
-			};
-			discharging {
-				tz-coefficients = <978 631 810 (-591) 628 2722>;
-				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500>;
-				io-coefficients = <1174>;
-				io-slope-coefficients = <(-15500)>;
+				tz-coefficients = <978 631 810 (-591) 628 2722 1174>;
+				tz-slope-coefficients = <500 (-85) (-8500) (-5500) 500 1500 (-15500)>;
 				intercept = <6211>;
 			};
 		};
@@ -221,7 +107,7 @@
 &thermal_zones {
 	batt-virt {
 		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
 		thermal-sensors = <&battery_virtual_sensor>;
 		wake-capable-sensor;
@@ -409,9 +295,9 @@
 
 	display-virt {
 		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
-		thermal-sensors = <&display_virtual_sensor_usr>;
+		thermal-sensors = <&display_virtual_sensor>;
 		wake-capable-sensor;
 		trips {
 			active-config0 {
@@ -425,6 +311,14 @@
 				type = "passive";
 			};
 		};
+	};
+
+	pcb1-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&iio_channel_pcb_sensor>;
+		wake-capable-sensor;
 	};
 
 	pm8150_tz-usr {
@@ -495,9 +389,9 @@
 
 	vrapi-front-panel {
 		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
-		thermal-sensors = <&vrapi_front_panel_sensor_usr>;
+		thermal-sensors = <&vrapi_front_panel_sensor>;
 		wake-capable-sensor;
 		trips {
 			virt_front_trip0: virt-front-trip0 {
@@ -525,9 +419,9 @@
 
 	vrapi-top-panel {
 		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay = <1000>;
 		thermal-governor = "user_space";
-		thermal-sensors = <&vrapi_top_panel_sensor_usr>;
+		thermal-sensors = <&vrapi_top_panel_sensor>;
 		wake-capable-sensor;
 		trips {
 			virt_top_trip0: virt-top-trip0 {

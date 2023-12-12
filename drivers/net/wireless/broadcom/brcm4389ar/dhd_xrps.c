@@ -24,6 +24,7 @@
 #include "xrps.h"
 
 #ifdef __linux__
+#include <dhd_linux_priv.h>
 #include <wl_android.h>
 #elif __ZEPHYR__
 #include "wl_api.h"
@@ -35,12 +36,14 @@ static bool dhd_flowring_has_work_to_do(int flowid);
 static uint16_t get_num_queued(int flowid);
 static void dhd_xrps_unpause_queue(int flowid);
 static int xrapi_send_eot(void);
+static bool is_link_up(void);
 
 struct xrps_drv_intf xrps_drv_intf = {
 	.flowring_has_work_to_do = dhd_flowring_has_work_to_do,
 	.get_num_queued = get_num_queued,
 	.unpause_queue = dhd_xrps_unpause_queue,
 	.send_eot = xrapi_send_eot,
+	.is_link_up = is_link_up,
 };
 
 static uint16_t get_num_queued(int flowid)
@@ -100,6 +103,15 @@ static int xrapi_send_eot(void)
 	struct net_device *dev = dhd_idx2net(g_dhd_pub, ifindex);
 
 	return wl_send_txdone_indication(dev);
+}
+
+static bool is_link_up(void)
+{
+	static char *SAP_DNGL_NAME = "wl0.2";
+	int ifindex = dhd_ifname2idx(g_dhd_pub->info, SAP_DNGL_NAME);
+	dhd_if_t const *ifp = dhd_get_ifp(g_dhd_pub, ifindex);
+
+	return (list_empty(&ifp->sta_list) == 0);
 }
 
 #else

@@ -9650,7 +9650,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 
 #if defined(DHD_LB)
 #if defined(DHD_LB_HOST_CTRL)
+#if defined(DHD_LB_USE_PRIMARY_CPU)
+	dhd->permitted_primary_cpu = TRUE;
+#else
 	dhd->permitted_primary_cpu = FALSE;
+#endif
 #endif /* DHD_LB_HOST_CTRL */
 	dhd_lb_set_default_cpus(dhd);
 	DHD_LB_STATS_INIT(&dhd->pub);
@@ -9660,6 +9664,10 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 		/* Now we have the current CPU maps, run through candidacy */
 		dhd_select_cpu_candidacy(dhd);
 
+#if defined(DHD_LB_USE_PRIMARY_CPU)
+		/* use primary CPU for PCIE interrupt as well */
+		dhd_irq_set_affinity(&dhd->pub, dhd->cpumask_primary);
+#endif
 		/* Register the call backs to CPU Hotplug sub-system */
 		dhd_register_cpuhp_callback(dhd);
 
