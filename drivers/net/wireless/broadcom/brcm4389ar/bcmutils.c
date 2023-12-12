@@ -74,6 +74,10 @@
 
 #define NUMBER_OF_BITS_BYTE	8u
 
+/* **** META CUSTOM START *** */
+#include "ar/arts_priority.h"
+/* **** META CUSTOM START *** */
+
 /* TX_HISTOGRAM enable/disable state flag
  * Updated in histogram.c
  */
@@ -1096,7 +1100,12 @@ BCMFASTPATH(pktsetprio)(void *pkt, bool update_vtag)
 
 	eh = (struct ether_header *) pktdata;
 
-	if (eh->ether_type == hton16(ETHER_TYPE_8021Q)) {
+	/* **** META CUSTOM START *** */
+	/* Handle ARTS message with ETH_P_802_EX1 0x88B5*/
+	if (AR_IS_ARTS_PACKET(eh)) {
+		AR_EVAL_ARTS_PRIORITY(pktdata, priority)
+	/* **** META CUSTOM END *** */
+	} else if (eh->ether_type == hton16(ETHER_TYPE_8021Q)) {
 		uint16 vlan_tag;
 		uint vlan_prio, dscp_prio = 0;
 

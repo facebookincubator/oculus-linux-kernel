@@ -604,9 +604,9 @@ static void fan_work_func(struct work_struct *work)
 
 	/*
 	 * Some fans emit spurious tach interrupts during start-up even
-	 * if the fan is jammed (ex. T164964624). So that these don't
-	 * interfere with stall detection, ignore any interrupts that
-	 * come in during the first FAN_STARTUP_IRQ_IGNORE_TIME_MS.
+	 * if the fan is jammed (ex. Eureka's Delta fan). So that these
+	 * don't interfere with stall detection, ignore any interrupts
+	 * that come in during the first FAN_STARTUP_IRQ_IGNORE_TIME_MS.
 	 */
 	ctx->ignore_tach_irqs = false;
 

@@ -13,15 +13,15 @@
 #define DEFAULT_EXT_BATT_VID 0x2833
 #define MOUNT_WORK_DELAY_SECONDS 30
 
-#define ENABLE_OTG_SOC_THRESHOLD 95
-#define OTG_CURRENT_LIMIT_UA 1500000
+#define DEFAULT_SRC_ENABLE_SOC_THRESHOLD 95
+#define DEFAULT_SRC_CURRENT_LIMIT_MAX_UA 1500000
 
 #define STATUS_FULLY_DISCHARGED BIT(4)
 #define STATUS_FULLY_CHARGED BIT(5)
 #define STATUS_DISCHARGING BIT(6)
 
 /*
- * Period in minutes Molokini firmware will use to send VDM traffic for
+ * Period in minutes external battery firmware will use to send VDM traffic for
  * ON/OFF head mount status. 0 corresponds to the minimum period of 1 minute.
  * This parameter may be set in increments of 1 minute.
  */
@@ -244,8 +244,10 @@ void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
 
 	mutex_lock(&pd->lock);
 	pd->connected = true;
+	pd->first_broadcast_data_received = false;
 	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
 	pd->params.rsoc = 0;
+	pd->params.rsoc_test_enabled = false;
 	mutex_unlock(&pd->lock);
 
 	schedule_work(&pd->mount_state_work);
@@ -262,14 +264,15 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 
 	/*
 	 * Client notifications only occur during connect/disconnect
-	 * state transitions. This should not be called when Molokini
-	 * is already disconnected.
+	 * state transitions. This should not be called when no external
+	 * battery is connected.
 	 */
-	/* TODO(T153142293): prevent vdm_disconenct from being called if not previously connected */
-	/* WARN_ON(!pd->connected); */
+	if (!pd->connected)
+		return;
 
 	mutex_lock(&pd->lock);
 	pd->connected = false;
+	pd->first_broadcast_data_received = false;
 	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
 	pd->params.rsoc = 0;
 	mutex_unlock(&pd->lock);
@@ -721,8 +724,21 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		break;
 	case EXT_BATT_FW_LDB1 ... EXT_BATT_FW_MANUFACTURER_INFO3:
 		process_lifetime_data_blocks(pd, vdm_hdr, vdos, num_vdos);
+		/*
+		 * This is a reasonable place to set first_broadcast_data_received
+		 * as majority of fuel gauge broadcast data from the battery pack
+		 * arrives as life time data blocks. So once we start receiving these
+		 * life time data blocks, we can confidently assume that first
+		 * batch of broadcast data has been received (after connection);
+		 * so can switch back to default on/off head vdm period
+		 */
+		if (!pd->first_broadcast_data_received) {
+			pd->first_broadcast_data_received = true;
+			schedule_work(&pd->mount_state_work);
+		}
 		break;
-	/* Handle manufaturer info B data block here since this is not
+	/*
+	 * Handle manufacturer info B data block here since this is not
 	 * defined within the LDB range (for Lehua)
 	 */
 	case EXT_BATT_FW_MANUFACTURER_INFOB:
@@ -871,7 +887,9 @@ static ssize_t rsoc_show(struct device *dev,
 
 	u32 rsoc = pd->params.rsoc;
 
-	if (pd->rsoc_scaling_enabled) {
+	if (pd->params.rsoc_test_enabled)
+		rsoc = pd->params.rsoc_test;
+	else if (pd->rsoc_scaling_enabled) {
 		rsoc = scale_rsoc(rsoc,
 			pd->rsoc_scaling_min_level,
 			pd->rsoc_scaling_max_level);
@@ -879,18 +897,8 @@ static ssize_t rsoc_show(struct device *dev,
 
 	return scnprintf(buf, PAGE_SIZE, "%u\n", rsoc);
 }
-static DEVICE_ATTR_RO(rsoc);
 
-static ssize_t rsoc_raw_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct ext_batt_pd *pd =
-		(struct ext_batt_pd *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.rsoc);
-}
-
-static ssize_t rsoc_raw_store(struct device *dev,
+static ssize_t rsoc_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
@@ -905,11 +913,22 @@ static ssize_t rsoc_raw_store(struct device *dev,
 		return result;
 	}
 
-	pd->params.rsoc = temp;
+	pd->params.rsoc_test_enabled = true;
+	pd->params.rsoc_test = temp;
 
 	return count;
 }
-static DEVICE_ATTR_RW(rsoc_raw);
+static DEVICE_ATTR_RW(rsoc);
+
+static ssize_t rsoc_raw_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.rsoc);
+}
+static DEVICE_ATTR_RO(rsoc_raw);
 
 static ssize_t status_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -2016,6 +2035,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 	int result;
 	u32 mount_state_header = 0;
 	u32 mount_state_vdo = pd->mount_state;
+	u32 vdm_period = 0;
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
 
@@ -2031,10 +2051,11 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 			0, 1, 0, 1,
 			EXT_BATT_FW_HMD_MOUNTED);
 
-	if (pd->mount_state == 0)
-		mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_OFF_HEAD << 8);
+	if (pd->mount_state == 0 && pd->first_broadcast_data_received)
+		vdm_period = EXT_BATT_FW_VDM_PERIOD_OFF_HEAD;
 	else
-		mount_state_vdo |= (EXT_BATT_FW_VDM_PERIOD_ON_HEAD << 8);
+		vdm_period = EXT_BATT_FW_VDM_PERIOD_ON_HEAD;
+	mount_state_vdo |= (vdm_period << 8);
 
 	reinit_completion(&pd->mount_state_ack);
 	result = external_battery_send_vdm(pd, mount_state_header,
@@ -2172,9 +2193,9 @@ static void handle_battery_capacity_change(struct ext_batt_pd *pd,
 			capacity, pd->connected, pd->mount_state,
 			pd->params.charger_plugged);
 
-	if (pd->otg_current_control_enabled) {
-		if (capacity >= ENABLE_OTG_SOC_THRESHOLD)
-			set_usb_output_current_limit(pd, OTG_CURRENT_LIMIT_UA);
+	if (pd->src_current_control_enabled) {
+		if (capacity >= pd->src_enable_soc_threshold)
+			set_usb_output_current_limit(pd, pd->src_current_limit_max_uA);
 		else
 			set_usb_output_current_limit(pd, 0);
 	}
@@ -2289,13 +2310,13 @@ static int ext_batt_psy_init(struct ext_batt_pd *pd)
 		return -EPROBE_DEFER;
 	}
 
-	#ifdef CONFIG_CHARGER_CYPD3177
-	pd->cypd_psy = power_supply_get_by_name("cypd3177");
-	if (!pd->cypd_psy) {
-		dev_dbg(pd->dev, "Failed to get CYPD psy");
-		return -EPROBE_DEFER;
+	if (IS_ENABLED(CONFIG_CHARGER_CYPD3177)) {
+		pd->cypd_psy = power_supply_get_by_name("cypd3177");
+		if (!pd->cypd_psy) {
+			dev_dbg(pd->dev, "Failed to get CYPD psy");
+			return -EPROBE_DEFER;
+		}
 	}
-	#endif
 
 	pd->nb.notifier_call = ext_batt_psy_notifier_call;
 	ext_batt_psy_register_notifier(pd);
@@ -2380,9 +2401,24 @@ static int ext_batt_probe(struct platform_device *pdev)
 				pd->rsoc_scaling_max_level);
 	}
 
-	pd->otg_current_control_enabled = of_property_read_bool(pdev->dev.of_node,
-			"otg-current-control");
-	dev_dbg(&pdev->dev, "otg current control enabled=%d\n", pd->otg_current_control_enabled);
+	pd->src_current_control_enabled = of_property_read_bool(pdev->dev.of_node,
+			"src-current-control");
+	dev_dbg(&pdev->dev, "src current control enabled=%d\n", pd->src_current_control_enabled);
+
+	result = of_property_read_u32(pdev->dev.of_node,
+			"src-enable-soc-threshold", &pd->src_enable_soc_threshold);
+	if (result < 0) {
+		pd->src_enable_soc_threshold = DEFAULT_SRC_ENABLE_SOC_THRESHOLD;
+		result = 0;
+	}
+
+	result = of_property_read_u32(pdev->dev.of_node,
+			"src-current-limit-max-uA", &pd->src_current_limit_max_uA);
+	if (result < 0) {
+		pd->src_current_limit_max_uA = DEFAULT_SRC_CURRENT_LIMIT_MAX_UA;
+		result = 0;
+	}
+
 
 	pd->batt_id = EXT_BATT_ID_MOLOKINI;
 	result = of_property_read_string(pdev->dev.of_node, "batt-name", &batt_name);

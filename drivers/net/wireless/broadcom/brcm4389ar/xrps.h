@@ -113,6 +113,11 @@ struct xrps_drv_intf {
 	 * @return The return value from sending EOT packet.
 	 */
 	int (*send_eot)(void);
+
+	/**
+	 * @brief Return true if link state is up.
+	 */
+	bool (*is_link_up)(void);
 };
 
 // XRPS statistics
@@ -189,6 +194,20 @@ int xrps_get_sys_interval_us(void);
  * @return Error code, else 0 on success.
  */
 int xrps_set_sys_interval_us(uint32_t us);
+
+/**
+ * @brief Pause XRPS. Traffic will be allowed.
+ *
+ * @param[in] check_mode If true, XRPS mode is checked before doing pause.
+ */
+void xrps_pause(bool check_mode);
+
+/**
+ * @brief Resume XRPS.
+ *
+ * @param[in] check_mode If true, XRPS mode is checked before doing resume.
+ */
+void xrps_resume(bool check_mode);
 
 /**
  * @brief Get XRPS mode.

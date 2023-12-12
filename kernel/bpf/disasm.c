@@ -20,6 +20,11 @@ static const char * const func_id_str[] = {
 	__BPF_FUNC_MAPPER(__BPF_FUNC_STR_FN)
 	// hardcode this id to match upstream
 	[BPF_FUNC_ktime_get_boot_ns] = "bpf_ktime_get_boot_ns",
+	[BPF_FUNC_ringbuf_output] = "bpf_ringbuf_output",
+	[BPF_FUNC_ringbuf_reserve] = "bpf_ringbuf_reserve",
+	[BPF_FUNC_ringbuf_submit] = "bpf_ringbuf_submit",
+	[BPF_FUNC_ringbuf_discard] = "bpf_ringbuf_discard",
+	[BPF_FUNC_ringbuf_query] = "bpf_ringbuf_query",
 };
 #undef __BPF_FUNC_STR_FN
 

@@ -49,6 +49,7 @@ u32 btf_id(const struct btf *btf);
 bool btf_name_offset_valid(const struct btf *btf, u32 offset);
 
 bool btf_type_is_void(const struct btf_type *t);
+int btf_find_spin_lock(const struct btf *btf, const struct btf_type *t);
 
 #ifdef CONFIG_BPF_SYSCALL
 const struct btf_type *btf_type_by_id(const struct btf *btf, u32 type_id);
