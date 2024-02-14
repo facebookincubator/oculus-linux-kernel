@@ -2,20 +2,17 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
  */
-#include <linux/version.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/device.h>
 #include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/i2c.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/jiffies.h>
-#include <linux/slab.h>
-#include <linux/i2c.h>
-#include <linux/power_supply.h>
-#include <linux/iio/iio.h>
-#include <linux/iio/driver.h>
-#include <linux/iio/machine.h>
+#include <linux/module.h>
 #include <linux/of_irq.h>
+#include <linux/power_supply.h>
+#include <linux/slab.h>
+#include <linux/version.h>
 
 #include "cypd.h"
 
@@ -111,7 +108,6 @@
 struct cypd3177 {
 	struct device		*dev;
 	struct i2c_client	*client;
-	struct iio_dev		*indio_dev;
 	struct power_supply	*psy;
 	struct power_supply	*batt_psy;
 	struct power_supply	*dc_psy;
@@ -119,7 +115,6 @@ struct cypd3177 {
 	struct delayed_work	 sink_cap_work;
 	struct wakeup_source	*cypd_ws;
 	struct dentry		*dfs_root;
-	int version;
 	unsigned int hpi_irq;
 	unsigned int fault_irq;
 	bool typec_status;
@@ -402,23 +397,6 @@ static int cypd3177_get_current_max(struct cypd3177 *chip, int *val)
 	} else
 		*val = 0;
 
-	return rc;
-}
-
-static int cypd3177_get_chip_version(struct cypd3177 *chip, int *val)
-{
-	int rc;
-	int raw;
-
-	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT, SILICON_ID,
-		&raw);
-	if (rc < 0) {
-		*val = 0;
-		dev_dbg(&chip->client->dev, "read cypd3177 chip version error.\n");
-		return 0;
-	}
-
-	*val = raw;
 	return rc;
 }
 
@@ -824,14 +802,6 @@ static int dev_handle_response(struct cypd3177 *chip)
 		return rc;
 	}
 
-	/* read chip version */
-	rc = cypd3177_get_chip_version(chip, &chip->version);
-	if (rc < 0) {
-		dev_err(&chip->client->dev, "cypd3177 read chip version failed: %d\n",
-			rc);
-		return rc;
-	}
-
 	/* read and process initial typec status */
 	rc = cypd3177_i2c_read_reg(chip->client, CYPD3177_REG_32BIT,
 				TYPE_C_STATUS, &raw);
@@ -989,7 +959,8 @@ static enum power_supply_property cypd3177_psy_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX,
-	POWER_SUPPLY_PROP_CURRENT_MAX
+	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_STATUS,
 };
 
 static int cypd3177_get_prop(struct power_supply *psy,
@@ -1014,6 +985,11 @@ static int cypd3177_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
 		rc = cypd3177_get_current_max(chip, val);
 		break;
+	case POWER_SUPPLY_PROP_STATUS:
+		*val = chip->pd_attach ? POWER_SUPPLY_STATUS_CHARGING :
+				POWER_SUPPLY_STATUS_NOT_CHARGING;
+		rc = 0;
+		break;
 	default:
 		rc = -EINVAL;
 		break;
@@ -1024,98 +1000,6 @@ static int cypd3177_get_prop(struct power_supply *psy,
 		rc = -ENODATA;
 	}
 	mutex_unlock(&chip->state_lock);
-
-	return rc;
-}
-
-static const struct iio_chan_spec cypd3177_iio_channels[] = {
-	{
-		.type = IIO_INDEX,
-		.datasheet_name = "chip_version",
-		.indexed = 1,
-		.channel = CYPD_IIO_PROP_CHIP_VERSION,
-		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED)
-	},
-	{
-		.type = IIO_INDEX,
-		.datasheet_name = "pd_active",
-		.indexed = 1,
-		.channel = CYPD_IIO_PROP_PD_ACTIVE,
-		.info_mask_separate = BIT(IIO_CHAN_INFO_PROCESSED)
-	}
-};
-
-static struct iio_map cypd3177_maps[] = {
-	{
-		.consumer_channel = "cypd_chip_version",
-		.adc_channel_label = "chip_version",
-	},
-	{
-		.consumer_channel = "cypd_pd_active",
-		.adc_channel_label = "pd_active",
-	},
-	{}
-};
-
-static int cypd3177_iio_read_raw(struct iio_dev *indio_dev,
-		struct iio_chan_spec const *chan, int *val,
-		int *val2, long mask)
-{
-	struct cypd3177 *chip = iio_priv(indio_dev);
-	int rc = 0;
-
-	switch (chan->channel) {
-	case CYPD_IIO_PROP_CHIP_VERSION:
-		*val = chip->version;
-		break;
-	case CYPD_IIO_PROP_PD_ACTIVE:
-		*val = chip->pd_attach;
-		break;
-	default:
-		rc = -EINVAL;
-		break;
-	}
-
-	if (rc < 0) {
-		dev_err_ratelimited(chip->dev, "property %d unavailable: %d\n",
-				chan->channel, rc);
-		rc = -ENODATA;
-	}
-
-	return rc;
-}
-
-static const struct iio_info cypd3177_iio_info = {
-	.read_raw = cypd3177_iio_read_raw
-};
-
-static int cypd3177_init_iio_psy(struct cypd3177 *chip)
-{
-	int i, rc = 0;
-	struct iio_dev *indio_dev = chip->indio_dev;
-
-	indio_dev->name = "cypd3177-driver";
-	indio_dev->modes = INDIO_DIRECT_MODE;
-	indio_dev->info = &cypd3177_iio_info;
-	indio_dev->dev.parent = chip->dev;
-	indio_dev->dev.of_node = chip->dev->of_node;
-	indio_dev->channels = cypd3177_iio_channels;
-	indio_dev->num_channels = CYPD_IIO_PROP_MAX;
-
-	for (i = 0; i < CYPD_IIO_PROP_MAX; i++)
-		cypd3177_maps[i].consumer_dev_name = dev_name(chip->dev);
-
-	rc = iio_map_array_register(indio_dev, cypd3177_maps);
-	if (rc) {
-		dev_err(chip->dev, "Failed to register cypd3177 IIO maps, rc = %d\n", rc);
-		return rc;
-	}
-
-	rc = devm_iio_device_register(chip->dev, indio_dev);
-	if (rc) {
-		dev_err(chip->dev, "Failed to register cypd3177 IIO device, rc = %d\n", rc);
-		iio_map_array_unregister(indio_dev);
-	}
 
 	return rc;
 }
@@ -1145,7 +1029,6 @@ static int cypd3177_probe(struct i2c_client *i2c,
 {
 	int rc;
 	struct cypd3177 *chip;
-	struct iio_dev *indio_dev;
 	struct power_supply_config cfg = {0};
 	int i;
 	int pdo_voltage, pdo_current;
@@ -1155,11 +1038,10 @@ static int cypd3177_probe(struct i2c_client *i2c,
 		dev_err(&i2c->dev, "I2C functionality not supported\n");
 		return -ENODEV;
 	}
-	indio_dev = devm_iio_device_alloc(&i2c->dev, sizeof(*chip));
-	if (!indio_dev)
+
+	chip = devm_kzalloc(&i2c->dev, sizeof(*chip), GFP_KERNEL);
+	if (!chip)
 		return -ENOMEM;
-	chip = iio_priv(indio_dev);
-	chip->indio_dev = indio_dev;
 
 	chip->client = i2c;
 	chip->dev = &i2c->dev;
@@ -1242,10 +1124,6 @@ static int cypd3177_probe(struct i2c_client *i2c,
 	chip->handle_port_busy = device_property_read_bool(chip->dev,
 			"cypd3177,handle-port-busy");
 
-	rc = cypd3177_init_iio_psy(chip);
-	if (rc < 0)
-		return rc;
-
 	cypd3177_dev_reset(chip);
 
 	/* cypd could call back to us, so have reference ready */
@@ -1298,7 +1176,6 @@ static int cypd3177_remove(struct i2c_client *i2c)
 
 	wakeup_source_unregister(chip->cypd_ws);
 	power_supply_unreg_notifier(&chip->psy_nb);
-	iio_map_array_unregister(chip->indio_dev);
 	mutex_destroy(&chip->state_lock);
 	cypd_destroy(chip->cypd);
 	return 0;

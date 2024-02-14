@@ -77,7 +77,7 @@
 			(uint32_t)(((dma_addr) >> 32) & 0xFF);\
 	} while (0)
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 void hif_record_ce_srng_desc_event(struct hif_softc *scn, int ce_id,
 				   enum hif_ce_event_type type,
 				   union ce_srng_desc *descriptor,
@@ -131,7 +131,7 @@ void hif_record_ce_srng_desc_event(struct hif_softc *scn, int ce_id,
 	if (ce_hist->data_enable[ce_id])
 		hif_ce_desc_data_record(event, len);
 }
-#endif /* HIF_CONFIG_SLUB_DEBUG_ON || HIF_CE_DEBUG_DATA_BUF */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG || HIF_CE_DEBUG_DATA_BUF */
 
 static QDF_STATUS
 ce_send_nolock_srng(struct CE_handle *copyeng,

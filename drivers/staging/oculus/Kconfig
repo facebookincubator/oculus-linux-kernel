@@ -114,12 +114,12 @@ config MISCFIFO_BENCHMARK
 	  Benchmarking driver for miscfifo that allows you to measure
 	  its throughput and latency properties.
 
-config OCULUS_BLU_I2C
-	tristate "Oculus BLU I2C driver"
+config MP3314_BLU
+	tristate "MP3314 BLU I2C driver"
 	default n
 	depends on I2C
 	help
-	  Basic I2C driver for BLU hardware.
+	  Basic I2C driver for MP3314 BLU hardware.
 
 config OCULUS_EXTERNAL_BATTERY
 	tristate "External battery driver"
@@ -188,13 +188,6 @@ config OCULUS_VDM_GLINK
 	  This driver proxies USB PD VDM connections, disconnections,
 	  and messages to and from the ADSP.
 
-config OCULUS_VIRTUAL_SENSOR
-	tristate "Virtual Sensor Driver"
-	default n
-	help
-	  This driver implements a virtual sensor driver representing a particular
-	  component of a device that can be configured in the device tree.
-
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"
 	default n
@@ -234,6 +227,17 @@ config SEACLIFF_BLU
 	default n
 	help
 	  Oculus Seacliff SPI BLU Driver for the BOE panels
+
+config SENSORLOCK
+	tristate "Sensorlock GPIO Interrupt Handler"
+	default n
+	help
+	  This driver is meant to capture the sensorlock input signals.
+	  We require a kernel driver in order to capture the GPIO signal from
+	  a power button press with minimal latency to call into the sensorlock
+	  trustzone application and retrieve the GPIO value. It is responsible
+	  for communicating with the sensorlock trustzone application whenever
+	  the sensorlock input signals change.
 
 config SENSORS_PWM_TACH_FAN
 	tristate "PWM&TACH fan"
@@ -285,6 +289,13 @@ config VENDOR_DT_OUTPUT_DISABLE
 	  device-trees to be built by default. Don't build them when
 	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
 	  platforms.
+
+config VIRTUAL_SENSOR
+	tristate "Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a virtual sensor driver representing a particular
+	  component of a device that can be configured in the device tree.
 
 source "drivers/staging/oculus/internal/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"

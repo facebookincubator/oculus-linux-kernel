@@ -128,7 +128,7 @@ static int glink_ssr_ssr_cb(struct notifier_block *this,
 	if (!dev || !ssr->ept)
 		goto out;
 
-	if (code == SUBSYS_AFTER_SHUTDOWN) {
+	if (code == SUBSYS_AFTER_SHUTDOWN || code == SUBSYS_POWERUP_FAILURE) {
 		ssr->seq_num++;
 		reinit_completion(&ssr->completion);
 

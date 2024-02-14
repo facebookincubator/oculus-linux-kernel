@@ -528,6 +528,7 @@ static int q6lsm_apr_send_pkt(struct lsm_client *client, void *handle,
 	mmap_handle_p = NULL;
 	if (mmap_p && *mmap_p == 0)
 		ret = -ENOMEM;
+	mmap_handle_p = NULL;
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
 }

@@ -3,7 +3,7 @@
  * QTI Secure Execution Environment Communicator (QSEECOM) driver
  *
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "QSEECOM: %s: " fmt, __func__
@@ -375,7 +375,7 @@ struct qseecom_client_handle {
 
 struct qseecom_listener_handle {
 	u32               id;
-	bool              unregister_pending;
+	bool              register_pending;
 	bool              release_called;
 };
 
@@ -1525,6 +1525,11 @@ static int qseecom_register_listener(struct qseecom_dev_handle *data,
 	struct qseecom_registered_listener_list *new_entry;
 	struct qseecom_registered_listener_list *ptr_svc;
 
+	if (data->listener.register_pending) {
+		pr_err("Already a listner registration is in process on this FD\n");
+		return -EINVAL;
+	}
+
 	ret = copy_from_user(&rcvd_lstnr, argp, sizeof(rcvd_lstnr));
 	if (ret) {
 		pr_err("copy_from_user failed\n");
@@ -1533,6 +1538,13 @@ static int qseecom_register_listener(struct qseecom_dev_handle *data,
 	if (!access_ok(VERIFY_WRITE, (void __user *)rcvd_lstnr.virt_sb_base,
 			rcvd_lstnr.sb_size))
 		return -EFAULT;
+
+	ptr_svc = __qseecom_find_svc(data->listener.id);
+	if (ptr_svc) {
+		pr_err("Already a listener registered on this data: lid=%d\n",
+			data->listener.id);
+		return -EINVAL;
+	}
 
 	ptr_svc = __qseecom_find_svc(rcvd_lstnr.listener_id);
 	if (ptr_svc) {
@@ -1577,13 +1589,16 @@ static int qseecom_register_listener(struct qseecom_dev_handle *data,
 	new_entry->svc.listener_id = rcvd_lstnr.listener_id;
 	new_entry->sb_length = rcvd_lstnr.sb_size;
 	new_entry->user_virt_sb_base = rcvd_lstnr.virt_sb_base;
+	data->listener.register_pending = true;
 	if (__qseecom_set_sb_memory(new_entry, data, &rcvd_lstnr)) {
 		pr_err("qseecom_set_sb_memory failed for listener %d, size %d\n",
 				rcvd_lstnr.listener_id, rcvd_lstnr.sb_size);
 		__qseecom_free_tzbuf(&new_entry->sglistinfo_shm);
 		kzfree(new_entry);
+		data->listener.register_pending = false;
 		return -ENOMEM;
 	}
+	data->listener.register_pending = false;
 
 	init_waitqueue_head(&new_entry->rcv_req_wq);
 	init_waitqueue_head(&new_entry->listener_block_app_wq);
@@ -3153,6 +3168,30 @@ static int qseecom_prepare_unload_app(struct qseecom_dev_handle *data)
 	pr_debug("prepare to unload app(%d)(%s), pending %d\n",
 		data->client.app_id, data->client.app_name,
 		data->client.unload_pending);
+
+	/* For keymaster we are not going to unload so no need to add it in
+	 * unload app pending list as soon as we identify release ion buffer
+	 * and return .
+	 */
+	if (!memcmp(data->client.app_name, "keymaste", strlen("keymaste"))) {
+		if (data->client.dmabuf) {
+			/* Each client will get same KM TA loaded handle but
+			 * will allocate separate shared buffer during
+			 * loading of TA, as client can't unload KM TA so we
+			 * will only free out shared buffer and return early
+			 * to avoid any ion buffer leak.
+			 */
+			qseecom_vaddr_unmap(data->client.sb_virt,
+				data->client.sgt, data->client.attach,
+				data->client.dmabuf);
+			MAKE_NULL(data->client.sgt,
+				data->client.attach, data->client.dmabuf);
+		}
+		__qseecom_free_tzbuf(&data->sglistinfo_shm);
+		data->released = true;
+		return 0;
+	}
+
 	if (data->client.unload_pending)
 		return 0;
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);

@@ -157,3 +157,17 @@ config QCOM_KGSL_LAZY_SYSTEM_PROCESSES
 	help
 	  Enables lazy allocation for system process memory entries, such as
 	  surfaceflinger. If unsure, say 'Y'.
+
+config QCOM_KGSL_CONTEXT_DEBUG
+	bool "Log kgsl context information for all processes"
+	depends on QCOM_KGSL
+	help
+	  When enabled, total number of KGSL contexts, number of attached and
+	  detached contexts are dumped into kernel log for all the processes.
+	  This gives insight about the number of contexts held by each process.
+
+config QCOM_KGSL_DEBUG_CONTEXT_LEAK
+	bool "Log kgsl context leak extra info and forcibly crash when leak happens"
+	depends on QCOM_KGSL
+	help
+		ask vhamm

@@ -1550,7 +1550,7 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags,
 	    (unlikely(rt_task(curr)) &&
 	     (curr->nr_cpus_allowed < 2 ||
 	      curr->prio <= p->prio ||
-	      unlikely(sysctl_sched_rt_preempt_lowest)))) {
+	      likely(sysctl_sched_rt_preempt_lowest)))) {
 		int target = find_lowest_rq(p);
 
 		/*
@@ -1563,7 +1563,7 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags,
 		   (may_not_preempt ||
 		    p->prio < cpu_rq(target)->rt.highest_prio.curr))
 			cpu = target;
-	} else if (unlikely(sysctl_sched_rt_wakeup_on_idle) &&
+	} else if (likely(sysctl_sched_rt_wakeup_on_idle) &&
 			!is_idle_task(curr) && !(p->flags & PF_KTHREAD)) {
 		/* Current CPU is running a non-kthread. Try to find an idle CPU */
 		int i;

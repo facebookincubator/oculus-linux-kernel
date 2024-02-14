@@ -5444,10 +5444,10 @@ wl_chanim_stats(struct net_device *dev, u8 *chan_idle)
 	if (list->buflen == 0) {
 		list->version = 0;
 		list->count = 0;
-	} else if (list->version != WL_CHANIM_STATS_VERSION) {
+	} else if (list->version != WL_CHANIM_STATS_VERSION_3) {
 		WL_ERR(("Sorry, firmware has wl_chanim_stats version %d "
 			"but driver supports only version %d.\n",
-				list->version, WL_CHANIM_STATS_VERSION));
+				list->version, WL_CHANIM_STATS_VERSION_3));
 		list->buflen = 0;
 		list->count = 0;
 	}
@@ -5564,11 +5564,11 @@ wl_android_get_connection_stats(struct net_device *dev, char *command, int total
 #ifndef DISABLE_IF_COUNTERS
 	} else {
 		/* Populate from if_stats. */
-		if (dtoh16(if_stats->version) > WL_IF_STATS_T_VERSION) {
+		if (dtoh16(if_stats->version) > WL_IF_STATS_T_VERSION_1) {
 			WL_ERR(("wl_android_get_connection_stats: incorrect version of"
 				" wl_if_stats_t,"
 				" expected=%u got=%u\n",
-				WL_IF_STATS_T_VERSION, if_stats->version));
+				WL_IF_STATS_T_VERSION_1, if_stats->version));
 			goto error;
 		}
 

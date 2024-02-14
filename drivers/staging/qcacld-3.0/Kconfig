@@ -155,4 +155,8 @@ config WLAN_FEATURE_SARV1_TO_SARV2
 	bool "Enable conversion of SAR v1 to v2 feature"
 	default n
 
+config WLAN_EXTRA_DEBUG
+	bool "Enable debug-related features for WLAN threads"
+	default n
+
 endif # QCA_CLD_WLAN

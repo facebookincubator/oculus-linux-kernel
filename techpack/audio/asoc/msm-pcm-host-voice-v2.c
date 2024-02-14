@@ -663,6 +663,11 @@ static void hpcm_copy_playback_data_from_queue(struct dai_data *dai_data,
 				struct hpcm_buf_node, list);
 		list_del(&buf_node->list);
 		*len = buf_node->frame.len;
+		if (*len > HPCM_MAX_VOC_PKT_SIZE) {
+			pr_err("%s: Playback data len %d overflow\n",
+					__func__, *len);
+			return;
+		}
 		memcpy((u8 *)dai_data->vocpcm_ion_buffer.kvaddr,
 		       &buf_node->frame.voc_pkt[0],
 		       buf_node->frame.len);
@@ -689,6 +694,12 @@ static void hpcm_copy_capture_data_to_queue(struct dai_data *dai_data,
 
 	if (dai_data->substream == NULL)
 		return;
+
+	if (len > HPCM_MAX_VOC_PKT_SIZE) {
+		pr_err("%s: Copy capture data len %d overflow\n",
+			__func__, len);
+		return;
+	}
 
 	/* Copy out buffer packet into free_queue */
 	spin_lock_irqsave(&dai_data->dsp_lock, dsp_flags);
