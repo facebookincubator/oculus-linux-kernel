@@ -354,7 +354,7 @@ enum hif_system_pm_state {
 
 #ifdef WLAN_FEATURE_DP_EVENT_HISTORY
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG)
 /* HIF_EVENT_HIST_MAX should always be power of 2 */
 #define HIF_EVENT_HIST_MAX		512
 #define HIF_NUM_INT_CONTEXTS		HIF_MAX_GROUP
@@ -840,11 +840,11 @@ struct hif_pipe_addl_info {
 	struct hif_dl_pipe_info dl_pipe;
 };
 
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define MSG_FLUSH_NUM 16
 #else /* PERF build */
 #define MSG_FLUSH_NUM 32
-#endif /* SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 
 struct hif_bus_id;
 
@@ -1626,10 +1626,10 @@ void hif_set_initial_wakeup_cb(struct hif_opaque_softc *hif_ctx,
 			       void (*callback)(void *),
 			       void *priv);
 /*
- * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * Note: For MCL, #if defined (CONFIG_WLAN_EXTRA_DEBUG) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 ssize_t hif_dump_desc_trace_buf(struct device *dev,
 				struct device_attribute *attr, char *buf);
 ssize_t hif_input_desc_trace_buf_index(struct hif_softc *scn,
@@ -1638,7 +1638,7 @@ ssize_t hif_ce_en_desc_hist(struct hif_softc *scn,
 				const char *buf, size_t size);
 ssize_t hif_disp_ce_enable_desc_data_hist(struct hif_softc *scn, char *buf);
 ssize_t hif_dump_desc_event(struct hif_softc *scn, char *buf);
-#endif/*#if defined(HIF_CONFIG_SLUB_DEBUG_ON)||defined(HIF_CE_DEBUG_DATA_BUF)*/
+#endif/*#if defined(CONFIG_WLAN_EXTRA_DEBUG)||defined(HIF_CE_DEBUG_DATA_BUF)*/
 
 /**
  * hif_set_ce_service_max_yield_time() - sets CE service max yield time

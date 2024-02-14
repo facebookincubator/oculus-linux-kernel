@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -3907,7 +3907,7 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 		for (i = 0; i < CAM_IFE_HW_CONFIG_WAIT_MAX_TRY; i++) {
 			rem_jiffies = wait_for_completion_timeout(
 				&ctx->config_done_complete,
-				msecs_to_jiffies(300));
+				msecs_to_jiffies(1000));
 			if (rem_jiffies == 0) {
 				if (!cam_cdm_detect_hang_error(
 						ctx->cdm_handle)) {
@@ -6829,6 +6829,7 @@ static int cam_ife_mgr_dump(void *hw_mgr_priv, void *args)
 		}
 	}
 	dump_args->offset = isp_hw_dump_args.offset;
+	cam_mem_put_cpu_buf(dump_args->buf_handle);
 end:
 	CAM_DBG(CAM_ISP, "offset %u", dump_args->offset);
 	return rc;
@@ -7590,6 +7591,7 @@ static int cam_ife_hw_mgr_handle_hw_sof(
 		return 0;
 
 	memset(&sof_done_event_data, 0, sizeof(sof_done_event_data));
+	sof_done_event_data.monotonic_time = event_info->timestamp;
 
 	ife_hw_irq_sof_cb =
 		ife_hw_mgr_ctx->common.event_cb[CAM_ISP_HW_EVENT_SOF];

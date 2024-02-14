@@ -2762,7 +2762,7 @@ static inline void wmi_workqueue_watchdog_warn(uint32_t msg_type_id)
 		  __func__, msg_type_id, WMI_WQ_WD_TIMEOUT / 1000);
 }
 
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 static void wmi_workqueue_watchdog_bite(void *arg)
 {
 	struct wmi_wq_dbg_info *info = arg;

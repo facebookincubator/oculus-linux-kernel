@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <media/cam_defs.h>
@@ -117,6 +118,7 @@ static int cam_isp_update_dual_config(
 		(cmd_desc->offset >=
 		(len - sizeof(struct cam_isp_dual_config)))) {
 		CAM_ERR(CAM_ISP, "not enough buffer provided");
+		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 		return -EINVAL;
 	}
 	remain_len = len - cmd_desc->offset;
@@ -127,6 +129,7 @@ static int cam_isp_update_dual_config(
 		sizeof(struct cam_isp_dual_stripe_config)) >
 		(remain_len - offsetof(struct cam_isp_dual_config, stripes))) {
 		CAM_ERR(CAM_ISP, "not enough buffer for all the dual configs");
+		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 		return -EINVAL;
 	}
 	for (i = 0; i < dual_config->num_ports; i++) {
@@ -184,6 +187,7 @@ static int cam_isp_update_dual_config(
 	}
 
 end:
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return rc;
 }
 

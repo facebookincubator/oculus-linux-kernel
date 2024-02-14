@@ -99,7 +99,7 @@ struct msm_watchdog_data {
 	unsigned int min_slack_ticks;
 	unsigned long long min_slack_ns;
 	void *scm_regsave;
-	cpumask_t alive_mask;
+	cpumask_t ping_pending_mask;
 	struct mutex disable_lock;
 	bool irq_ppi;
 	struct msm_watchdog_data __percpu **wdog_cpu_dd;
@@ -111,6 +111,7 @@ struct msm_watchdog_data {
 	struct task_struct *watchdog_task;
 	struct timer_list pet_timer;
 	wait_queue_head_t pet_complete;
+	wait_queue_head_t ping_complete;
 
 	bool timer_expired;
 	bool user_pet_complete;
@@ -159,14 +160,14 @@ module_param(WDT_HZ, long, 0000);
 static int ipi_en = IPI_CORES_IN_LPM;
 module_param(ipi_en, int, 0444);
 
-static void dump_cpu_alive_mask(struct msm_watchdog_data *wdog_dd)
+static void dump_cpu_ping_mask(struct msm_watchdog_data *wdog_dd)
 {
-	static char alive_mask_buf[MASK_SIZE];
+	static char ping_pending_mask_buf[MASK_SIZE];
 
-	scnprintf(alive_mask_buf, MASK_SIZE, "%*pb1", cpumask_pr_args(
-				&wdog_dd->alive_mask));
-	dev_info(wdog_dd->dev, "cpu alive mask from last pet %s\n",
-				alive_mask_buf);
+	scnprintf(ping_pending_mask_buf, MASK_SIZE, "%*pb1", cpumask_pr_args(
+				&wdog_dd->ping_pending_mask));
+	dev_info(wdog_dd->dev, "ping pending mask from last pet %s\n",
+				ping_pending_mask_buf);
 }
 
 static int msm_watchdog_suspend(struct device *dev)
@@ -400,10 +401,12 @@ static void keep_alive_response(void *info)
 	int cpu = smp_processor_id();
 	struct msm_watchdog_data *wdog_dd = (struct msm_watchdog_data *)info;
 
-	cpumask_set_cpu(cpu, &wdog_dd->alive_mask);
+	cpumask_clear_cpu(cpu, &wdog_dd->ping_pending_mask);
 	wdog_dd->ping_end[cpu] = sched_clock();
-	/* Make sure alive mask is cleared and set in order */
+	/* Make sure pending mask is cleared and set in order */
 	smp_mb();
+
+	wake_up_interruptible(&wdog_dd->ping_complete);
 }
 
 /*
@@ -414,16 +417,23 @@ static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 {
 	int cpu;
 
-	cpumask_clear(&wdog_dd->alive_mask);
-	/* Make sure alive mask is cleared and set in order */
-	smp_mb();
 	for_each_cpu(cpu, cpu_online_mask) {
-		if (!cpu_idle_pc_state[cpu] && !cpu_isolated(cpu)) {
-			wdog_dd->ping_start[cpu] = sched_clock();
-			smp_call_function_single(cpu, keep_alive_response,
-						 wdog_dd, 1);
-		}
+		if (!cpu_idle_pc_state[cpu] && !cpu_isolated(cpu))
+			cpumask_set_cpu(cpu, &wdog_dd->ping_pending_mask);
 	}
+
+	/* Make sure pending mask is set and cleared in order */
+	smp_mb();
+
+	for_each_cpu(cpu, &wdog_dd->ping_pending_mask) {
+		wdog_dd->ping_start[cpu] = sched_clock();
+		smp_call_function_single(cpu,
+					 keep_alive_response,
+					 wdog_dd, 0);
+	}
+
+	wait_event_interruptible(wdog_dd->ping_complete,
+				 cpumask_empty(&wdog_dd->ping_pending_mask));
 }
 
 static void pet_task_wakeup(struct timer_list *t)
@@ -760,7 +770,7 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	dev_info(wdog_dd->dev, "Watchdog last pet at %lu.%06lu\n",
 			(unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
 	if (wdog_dd->do_ipi_ping)
-		dump_cpu_alive_mask(wdog_dd);
+		dump_cpu_ping_mask(wdog_dd);
 
 	msm_trigger_wdog_bite();
 	return IRQ_HANDLED;
@@ -904,6 +914,7 @@ static void init_watchdog_data(struct msm_watchdog_data *wdog_dd)
 				       &wdog_dd->panic_blk);
 	mutex_init(&wdog_dd->disable_lock);
 	init_waitqueue_head(&wdog_dd->pet_complete);
+	init_waitqueue_head(&wdog_dd->ping_complete);
 	wdog_dd->timer_expired = false;
 	wdog_dd->user_pet_complete = true;
 	wdog_dd->user_pet_enabled = false;
@@ -1032,7 +1043,7 @@ static int msm_watchdog_probe(struct platform_device *pdev)
 	wdog_data = wdog_dd;
 	wdog_dd->dev = &pdev->dev;
 	platform_set_drvdata(pdev, wdog_dd);
-	cpumask_clear(&wdog_dd->alive_mask);
+	cpumask_clear(&wdog_dd->ping_pending_mask);
 	wdog_dd->watchdog_task = kthread_create(watchdog_kthread, wdog_dd,
 			"msm_watchdog");
 	if (IS_ERR(wdog_dd->watchdog_task)) {

@@ -96,7 +96,7 @@ struct blu_device {
 	/* frames dropped when SPI write fails */
 	u16 dropped_frames;
 	/* load specific backlight rolloff profile */
-	u16 rolloff_en;
+	u16 bro_compensation_num;
 	/* flag to control cross-eye brightness adjustment */
 	bool ceb_en;
 
@@ -251,12 +251,12 @@ static void apply_blu_bro(struct blu_device *blu)
 	u8 *bro_profile_source;
 	int ret = 0;
 
-	if (blu->rolloff_size != 0 && blu->rolloff_en && blu->rolloff_en <= NUM_BRO_PROFILES) {
-		/* rolloff_en refers to the first, second etc so we subtract one here */
-		bro_profile_source = bro_profiles[blu->rolloff_en - 1];
+	if (blu->rolloff_size != 0 && blu->bro_compensation_num && blu->bro_compensation_num <= NUM_BRO_PROFILES) {
+		/* bro_compensation_num refers to the first, second etc so we subtract one here */
+		bro_profile_source = bro_profiles[blu->bro_compensation_num - 1];
 	} else {
-		if (blu->rolloff_en > NUM_BRO_PROFILES) {
-			dev_err(&spi->dev, "Illegal value for rolloff_en: %d, expected 0 - %d. Assuming 0", blu->rolloff_en, NUM_BRO_PROFILES);
+		if (blu->bro_compensation_num > NUM_BRO_PROFILES) {
+			dev_err(&spi->dev, "Illegal value for bro_compensation_num: %d, expected 0 - %d. Assuming 0", blu->bro_compensation_num, NUM_BRO_PROFILES);
 		}
 		/* send in default no-op rolloff values */
 		bro_profile_source = blu->bro_profile_default;
@@ -311,11 +311,6 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 
 		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
 		apply_blu_bro(blu);
-
-		usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
-		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
-		if (ret)
-			dev_err(&spi->dev, "failed to exit soft reset mode, error %d\n", ret);
 
 	} else if (blu->frame_counts == STABLE_FRAME_COUNTS) {
 		ret = spi_write(spi, blu_exit_reset_cmd, sizeof(blu_exit_reset_cmd));
@@ -534,7 +529,7 @@ static int set_brightness_calibration(struct blu_device *blu,
 {
 	int ret, scale_val;
 
-	ret = copy_from_user(&scale_val, scaler, sizeof(scaler));
+	ret = copy_from_user(&scale_val, scaler, sizeof(scale_val));
 	if (ret) {
 		dev_err(&blu->spi->dev, "Failed to copy brightness calibration value\n");
 		return -EFAULT;
@@ -621,7 +616,7 @@ static int set_bro_matrix(struct blu_device *blu, struct blu_spi_bro_matrix __us
 	ret = copy_from_user(bro_profiles[NUM_BRO_PROFILES-1], matrix_addr, bro_matrix.matrix_size*sizeof(uint8_t));
 
 	/* apply the new bro profile to the driver */
-	blu->rolloff_en = 3;
+	blu->bro_compensation_num = 3;
 	apply_blu_bro(blu);
 
 	return ret;
@@ -731,17 +726,17 @@ static ssize_t dropped_frames_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(dropped_frames);
 
-static ssize_t rolloff_en_show(struct device *dev,
+static ssize_t bro_compensation_num_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct miscdevice *miscdev = dev_get_drvdata(dev);
 	struct blu_device *blu_dev =
 		container_of(miscdev, struct blu_device, misc);
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", blu_dev->rolloff_en);
+	return snprintf(buf, PAGE_SIZE, "%d\n", blu_dev->bro_compensation_num);
 }
 
-static ssize_t rolloff_en_store(struct device *dev,
+static ssize_t bro_compensation_num_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
@@ -754,26 +749,26 @@ static ssize_t rolloff_en_store(struct device *dev,
 
 	ret = kstrtou16(buf, /* base */ 10, &temp);
 	if (ret < 0) {
-		dev_err(dev, "Illegal input for rolloff_en: %s, expected 0 - %d", buf, NUM_BRO_PROFILES);
+		dev_err(dev, "Illegal input for bro_compensation_num: %s, expected 0 - %d", buf, NUM_BRO_PROFILES);
 		return ret;
 	}
 
 	if (temp > NUM_BRO_PROFILES) {
-		dev_err(dev, "Illegal value for rolloff_en: %d, expected 0 - %d. Assuming 0", temp, NUM_BRO_PROFILES);
+		dev_err(dev, "Illegal value for bro_compensation_num: %d, expected 0 - %d. Assuming 0", temp, NUM_BRO_PROFILES);
 		temp = 0;
 	}
 
-	blu_dev->rolloff_en = temp;
+	blu_dev->bro_compensation_num = temp;
 	apply_blu_bro(blu_dev);
 	return count;
 }
-static DEVICE_ATTR_RW(rolloff_en);
+static DEVICE_ATTR_RW(bro_compensation_num);
 
 static struct attribute *blu_spi_attrs[] = {
 	&dev_attr_cross_eye_brightness_en.attr,
 	&dev_attr_debug_blu.attr,
 	&dev_attr_dropped_frames.attr,
-	&dev_attr_rolloff_en.attr,
+	&dev_attr_bro_compensation_num.attr,
 	NULL,
 };
 

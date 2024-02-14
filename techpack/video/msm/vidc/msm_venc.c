@@ -2894,7 +2894,7 @@ int msm_venc_set_frame_qp(struct msm_vidc_inst *inst)
 	 *   Enable QP types which have been set by client.
 	 * When RC is OFF:
 	 *   I_QP value must be set by client.
-	 *   If other QP value is invalid, then, assign I_QP value to it.
+	 *   If QP value is invalid, then, assign default QP.
 	 */
 	if (inst->rc_type != RATE_CONTROL_OFF) {
 		if (!(inst->client_set_ctrls & CLIENT_SET_I_QP))
@@ -2910,7 +2910,7 @@ int msm_venc_set_frame_qp(struct msm_vidc_inst *inst)
 		if (!(inst->client_set_ctrls & CLIENT_SET_I_QP)) {
 			s_vpr_e(inst->sid,
 				"%s: Client value is not valid\n", __func__);
-			return -EINVAL;
+			i_qp->val = DEFAULT_QP;
 		}
 		if (!(inst->client_set_ctrls & CLIENT_SET_P_QP))
 			p_qp->val = i_qp->val;

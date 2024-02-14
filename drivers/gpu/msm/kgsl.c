@@ -23,6 +23,7 @@
 #include <linux/proc_fs.h>
 #include <asm/cacheflush.h>
 
+#include "adreno.h"
 #include "kgsl_compat.h"
 #include "kgsl_debugfs.h"
 #include "kgsl_device.h"
@@ -69,6 +70,16 @@ static inline struct kgsl_pagetable *_get_memdesc_pagetable(
 static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry);
 
 static const struct vm_operations_struct kgsl_gpumem_vm_ops;
+
+#if defined(CONFIG_QCOM_KGSL_DEBUG_CONTEXT_LEAK)
+static const int failure_threshold_for_crash = 10; // crash the kernel when we fail to allocate a context this many times
+static const int context_threshold_for_extra_logs = 600; // start logging extra info when we get to this threshold
+atomic_t context_threshold_for_extra_logs_reached = ATOMIC_INIT(0);
+
+bool kgsl_is_extra_logging_enabled(void) {
+	return atomic_read(&context_threshold_for_extra_logs_reached) > 0;
+}
+#endif
 
 #if defined(CONFIG_QCOM_KGSL_TRACK_MEMFREE)
 /*
@@ -557,6 +568,75 @@ static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry)
 	entry->priv = NULL;
 }
 
+#ifdef CONFIG_QCOM_KGSL_CONTEXT_DEBUG
+static void kgsl_context_debug_info(struct kgsl_device *device)
+{
+	struct kgsl_context *context;
+	struct kgsl_process_private *p;
+	int next;
+	/*
+	 * Keep an interval between consecutive logging to avoid
+	 * flooding the kernel log
+	 */
+	static DEFINE_RATELIMIT_STATE(_rs, 10 * HZ, 1);
+
+	if (!__ratelimit(&_rs))
+		return;
+
+	dev_info(device->dev, "KGSL active contexts:\n");
+	dev_info(device->dev, "pid      process         total    attached   detached   refCounts\n");
+
+	spin_lock(&kgsl_driver.proclist_lock);
+	read_lock(&device->context_lock);
+
+	list_for_each_entry(p, &kgsl_driver.process_list, list) {
+		int total_contexts = 0, num_detached = 0;
+		int total_refCounts = 0;
+
+		idr_for_each_entry(&device->context_idr, context, next) {
+			if (context->proc_priv == p) {
+				total_contexts++;
+				if (kgsl_context_detached(context))
+					num_detached++;
+				total_refCounts += kref_read(&context->refcount);
+
+			}
+		}
+
+		dev_info(device->dev, "%-8u %-15.15s %-8d %-10d %-10d %-10d\n",
+				pid_nr(p->pid), p->comm, total_contexts,
+				total_contexts - num_detached, num_detached, total_refCounts);
+	}
+
+	dev_info(device->dev, "Device fault %u halt %d\n", adreno_gpu_fault(ADRENO_DEVICE(device)), adreno_gpu_halt(ADRENO_DEVICE(device)));
+
+	dev_info(device->dev, "Detached context refcounts:\n");
+	dev_info(device->dev, "pid      from_fence from_timeline from_dispatch from_event from_drawobj from_drawctxt\n");
+
+	list_for_each_entry(p, &kgsl_driver.process_list, list) {
+		idr_for_each_entry(&device->context_idr, context, next) {
+			if (context->proc_priv == p && kgsl_context_detached(context)) {
+				dev_info(device->dev, "%-8u %-10d %-10d %-10d %-10d %-10d %-10d\n",
+						pid_nr(p->pid),
+						context->refs_from_fence_event,
+						context->refs_from_timeline,
+						context->refs_from_dispatch,
+						context->refs_from_event,
+						context->refs_from_drawobj,
+						context->refs_from_drawctxt);
+			}
+		}
+	}
+
+	read_unlock(&device->context_lock);
+	spin_unlock(&kgsl_driver.proclist_lock);
+}
+#else
+static void kgsl_context_debug_info(struct kgsl_device *device)
+{
+}
+#endif
+
 /**
  * kgsl_context_dump() - dump information about a draw context
  * @device: KGSL device that owns the context
@@ -618,6 +698,9 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 	struct kgsl_device *device = dev_priv->device;
 	int ret = 0, id;
 	struct kgsl_process_private  *proc_priv = dev_priv->process_priv;
+#if defined(CONFIG_QCOM_KGSL_DEBUG_CONTEXT_LEAK)
+	static atomic_t failure_counter = ATOMIC_INIT(0);
+#endif
 
 	/*
 	 * Read and increment the context count under lock to make sure
@@ -629,10 +712,43 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 			     "Per process context limit reached for pid %u\n",
 			     pid_nr(dev_priv->process_priv->pid));
 		spin_unlock(&proc_priv->ctxt_count_lock);
+		kgsl_context_debug_info(device);
 		return -ENOSPC;
 	}
 
 	atomic_inc(&proc_priv->ctxt_count);
+
+#if defined(CONFIG_QCOM_KGSL_DEBUG_CONTEXT_LEAK)
+	{
+		int total_contexts = 0, num_detached = 0;
+		int next;
+
+		{
+			struct kgsl_context *contextIt = NULL;
+			read_lock(&device->context_lock);
+			idr_for_each_entry(&device->context_idr, contextIt, next) {
+				total_contexts++;
+				if (kgsl_context_detached(contextIt))
+					num_detached++;
+			}
+			read_unlock(&device->context_lock);
+		}
+
+		if(total_contexts > context_threshold_for_extra_logs) {
+			if(atomic_read(&context_threshold_for_extra_logs_reached) == 0) {
+				dev_warn(device->dev, "Context count exceeded threshold for extra logs\n");
+				atomic_set(&context_threshold_for_extra_logs_reached, 1);
+			}
+		}
+	}
+#endif
+
+#if defined(CONFIG_QCOM_KGSL_DEBUG_CONTEXT_LEAK)
+	if(kgsl_is_extra_logging_enabled()) {
+		dev_warn(device->dev, "[Context debug] Creating context for pid %u\n", pid_nr(dev_priv->process_priv->pid));
+	}
+#endif
+
 	spin_unlock(&proc_priv->ctxt_count_lock);
 
 	id = _kgsl_get_context_id(device);
@@ -653,6 +769,16 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 				      "cannot have more than %zu contexts due to memstore limitation\n",
 				      KGSL_MEMSTORE_MAX);
 		atomic_dec(&proc_priv->ctxt_count);
+		kgsl_context_debug_info(device);
+
+#if defined(CONFIG_QCOM_KGSL_DEBUG_CONTEXT_LEAK)
+		atomic_inc(&failure_counter);
+		if (atomic_read(&failure_counter) > failure_threshold_for_crash) {
+			dev_warn(device->dev, "Context count exceeded threshold for crashing\n");
+			BUG();
+		}
+#endif
+
 		return id;
 	}
 

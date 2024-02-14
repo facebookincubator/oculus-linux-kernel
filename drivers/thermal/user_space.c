@@ -64,7 +64,19 @@ static int notify_user_space(struct thermal_zone_device *tz, int trip)
 	int i, trip_temp, trip_hyst = 0;
 	bool was_tripped = false;
 
+	/*
+	 * Skip notifying when not yet bound to tz
+	 */
+	if (!params)
+		return -ENOMEM;
+
 	mutex_lock(&tz->lock);
+
+	/*
+	 * Skip zones which can't notify
+	 */
+	if (tz->trips == 0 || !tz->ops->get_trip_temp)
+		goto notify_out;
 
 	tz->ops->get_trip_temp(tz, trip, &trip_temp);
 	if (tz->ops->get_trip_hyst)

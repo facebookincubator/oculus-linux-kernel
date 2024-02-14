@@ -387,7 +387,6 @@ struct smb_iio {
 	struct iio_channel	*smb_temp_chan;
 	struct iio_channel	*rblt_chan;
 	struct iio_channel	*psns_chan;
-	struct iio_channel	*dc_pd_active_chan;
 };
 
 struct smb_charger {

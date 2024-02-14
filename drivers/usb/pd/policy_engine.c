@@ -346,6 +346,8 @@ static void *usbpd_ipc_log;
 #define ID_HDR_PRODUCT_PER	2
 #define ID_HDR_PRODUCT_AMA	5
 #define ID_HDR_PRODUCT_VPD	6
+#define ID_HDR_SVID(n)		((n) & 0xFFFF)
+#define ID_PRODUCT_VDO_PID(n)	(((n) >> 16) & 0xFFFF)
 
 /* params for usb_blocking_sync */
 #define STOP_USB_HOST		0
@@ -491,6 +493,8 @@ struct usbpd {
 	u32			battery_sts_dobj;
 	bool			typec_analog_audio_connected;
 	bool			request_svids;
+	u16			vid;
+	u16			pid;
 };
 
 static LIST_HEAD(_usbpd);	/* useful for debugging */
@@ -713,7 +717,8 @@ static int set_power_role(struct usbpd *pd, enum power_role pr)
 			POWER_SUPPLY_PROP_TYPEC_POWER_ROLE, &val);
 }
 
-static struct usbpd_svid_handler *find_svid_handler(struct usbpd *pd, u16 svid)
+static struct usbpd_svid_handler *find_svid_handler(struct usbpd *pd,
+		u16 svid, u16 pid)
 {
 	struct usbpd_svid_handler *handler;
 
@@ -722,11 +727,16 @@ static struct usbpd_svid_handler *find_svid_handler(struct usbpd *pd, u16 svid)
 		mutex_lock(&pd->svid_handler_lock);
 
 	list_for_each_entry(handler, &pd->svid_handlers, entry) {
-		if (svid == handler->svid) {
-			if (!in_interrupt())
-				mutex_unlock(&pd->svid_handler_lock);
-			return handler;
-		}
+		if (svid == handler->svid)
+			/*
+			 * Ignore PID for DP connections.
+			 * Treat a registered PID of 0 as a wildcard.
+			 */
+			if (svid == DP_SID || !handler->pid || pid == handler->pid) {
+				if (!in_interrupt())
+					mutex_unlock(&pd->svid_handler_lock);
+				return handler;
+			}
 	}
 
 	if (!in_interrupt())
@@ -1334,9 +1344,9 @@ static void start_src_ams(struct usbpd *pd, bool ams)
 
 int usbpd_register_svid(struct usbpd *pd, struct usbpd_svid_handler *hdlr)
 {
-	if (find_svid_handler(pd, hdlr->svid)) {
-		usbpd_err(&pd->dev, "SVID 0x%04x already registered\n",
-				hdlr->svid);
+	if (find_svid_handler(pd, hdlr->svid, hdlr->pid)) {
+		usbpd_err(&pd->dev, "SVID/PID 0x%04x/0x%04x already registered\n",
+				hdlr->svid, hdlr->pid);
 		return -EINVAL;
 	}
 
@@ -1480,6 +1490,15 @@ static void handle_vdm_resp_ack(struct usbpd *pd, u32 *vdos, u8 num_vdos,
 			break;
 		}
 
+		if (num_vdos != 0)
+			pd->vid = ID_HDR_SVID(vdos[0]);
+		/* Ensure there are at least 3 VDOs in the response before extracting pid
+		 * as not all adapters are guaranteed to return that many VDOs
+		 */
+		if (num_vdos >= 3)
+			pd->pid = ID_PRODUCT_VDO_PID(vdos[2]);
+		usbpd_dbg(&pd->dev, "vid: 0x%04x pid: 0x%04x", pd->vid, pd->pid);
+
 		pd->vdm_state = DISCOVERED_ID;
 		usbpd_send_svdm(pd, USBPD_SID,
 				USBPD_SVDM_DISCOVER_SVIDS,
@@ -1558,10 +1577,11 @@ static void handle_vdm_resp_ack(struct usbpd *pd, u32 *vdos, u8 num_vdos,
 		for (i = 0; i < pd->num_svids; i++) {
 			svid = pd->discovered_svids[i];
 			if (svid) {
-				handler = find_svid_handler(pd, svid);
+				handler = find_svid_handler(pd, svid, pd->pid);
 				if (handler && !handler->discovered) {
-					usbpd_dbg(&pd->dev, "Notify SVID: 0x%04x connect\n",
-							handler->svid);
+					usbpd_dbg(&pd->dev,
+							"Notify SVID/PID: 0x%04x/0x%04x connect\n",
+							handler->svid, handler->pid);
 					handler->connect(handler,
 							pd->peer_usb_comm);
 					handler->discovered = true;
@@ -1606,7 +1626,7 @@ static void handle_vdm_rx(struct usbpd *pd, struct rx_msg *rx_msg)
 	}
 
 	/* if it's a supported SVID, pass the message to the handler */
-	handler = find_svid_handler(pd, svid);
+	handler = find_svid_handler(pd, svid, pd->pid);
 
 	/* Unstructured VDM */
 	if (!VDM_IS_SVDM(vdm_hdr)) {
@@ -2916,9 +2936,9 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 
 		usbpd_set_state(pd, PE_SNK_READY);
 
-		if (pd->request_svids && pd->vdm_state < DISCOVERED_SVIDS)
+		if (pd->request_svids && pd->vdm_state < DISCOVERED_ID)
 			usbpd_send_svdm(pd, USBPD_SID,
-				USBPD_SVDM_DISCOVER_SVIDS,
+				USBPD_SVDM_DISCOVER_IDENTITY,
 				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
 	} else {
 		/* timed out; go to hard reset */
@@ -3559,6 +3579,8 @@ static void handle_disconnect(struct usbpd *pd)
 	pd->hard_reset_count = 0;
 	pd->requested_voltage = 0;
 	pd->requested_current = 0;
+	pd->vid = 0;
+	pd->pid = 0;
 	pd->selected_pdo = pd->requested_pdo = 0;
 	pd->peer_usb_comm = pd->peer_pr_swap = pd->peer_dr_swap = false;
 	memset(&pd->received_pdos, 0, sizeof(pd->received_pdos));
@@ -4742,6 +4764,24 @@ static ssize_t get_battery_status_show(struct device *dev,
 }
 static DEVICE_ATTR_RW(get_battery_status);
 
+static ssize_t vid_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct usbpd *pd = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->vid);
+}
+static DEVICE_ATTR_RO(vid);
+
+static ssize_t pid_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct usbpd *pd = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->pid);
+}
+static DEVICE_ATTR_RO(pid);
+
 static struct attribute *usbpd_attrs[] = {
 	&dev_attr_contract.attr,
 	&dev_attr_initial_pr.attr,
@@ -4766,6 +4806,8 @@ static struct attribute *usbpd_attrs[] = {
 	&dev_attr_get_pps_status.attr,
 	&dev_attr_get_battery_cap.attr,
 	&dev_attr_get_battery_status.attr,
+	&dev_attr_vid.attr,
+	&dev_attr_pid.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(usbpd);

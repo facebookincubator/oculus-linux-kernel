@@ -411,6 +411,13 @@ struct kgsl_context {
 	struct kgsl_mem_entry *user_ctxt_record;
 	unsigned int total_fault_count;
 	unsigned int last_faulted_cmd_ts;
+
+	atomic_t refs_from_fence_event;
+	atomic_t refs_from_timeline;
+	atomic_t refs_from_dispatch;
+	atomic_t refs_from_event;
+	atomic_t refs_from_drawobj;
+	atomic_t refs_from_drawctxt;
 };
 
 struct kgsl_thread_private {

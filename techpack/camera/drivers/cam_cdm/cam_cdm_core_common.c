@@ -474,6 +474,9 @@ int cam_cdm_process_cmd(void *hw_priv,
 		core->clients[idx] = kzalloc(sizeof(struct cam_cdm_client),
 			GFP_KERNEL);
 		if (!core->clients[idx]) {
+			CAM_ERR(CAM_CDM,
+				"Fail to allocate memory for client client=%s in hw idx=%d",
+				data->identifier, core->index);
 			mutex_unlock(&cdm_hw->hw_mutex);
 			rc = -ENOMEM;
 			break;

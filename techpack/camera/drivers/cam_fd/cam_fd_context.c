@@ -26,6 +26,8 @@ static int __cam_fd_ctx_acquire_dev_in_available(struct cam_context *ctx,
 
 	ctx->state = CAM_CTX_ACQUIRED;
 	trace_cam_context_state("FD", ctx);
+	CAM_ERR(CAM_FD, "DBG: Acquire device success next state %s",
+		cam_ctx_state_get_str(ctx->state));
 
 	return rc;
 }
@@ -44,6 +46,8 @@ static int __cam_fd_ctx_release_dev_in_acquired(struct cam_context *ctx,
 
 	ctx->state = CAM_CTX_AVAILABLE;
 	trace_cam_context_state("FD", ctx);
+	CAM_ERR(CAM_FD, "DBG: Release device success next state %s",
+		cam_ctx_state_get_str(ctx->state));
 
 	return rc;
 }
@@ -75,6 +79,9 @@ static int __cam_fd_ctx_start_dev_in_acquired(struct cam_context *ctx,
 
 	ctx->state = CAM_CTX_ACTIVATED;
 	trace_cam_context_state("FD", ctx);
+	CAM_ERR(CAM_FD, "DBG: Start device success next state %s",
+		cam_ctx_state_get_str(ctx->state));
+
 
 	return rc;
 }
@@ -93,6 +100,8 @@ static int __cam_fd_ctx_stop_dev_in_activated(struct cam_context *ctx,
 
 	ctx->state = CAM_CTX_ACQUIRED;
 	trace_cam_context_state("FD", ctx);
+	CAM_ERR(CAM_FD, "DBG: Stop device success next state %s",
+		cam_ctx_state_get_str(ctx->state));
 
 	return rc;
 }

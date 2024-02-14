@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /*
@@ -76,6 +75,7 @@ void kgsl_drawobj_destroy_object(struct kref *kref)
 	struct kgsl_drawobj *drawobj = container_of(kref,
 		struct kgsl_drawobj, refcount);
 
+	atomic_dec(&drawobj->context->refs_from_drawobj);
 	kgsl_context_put(drawobj->context);
 	drawobj->destroy_object(drawobj);
 }
@@ -802,6 +802,8 @@ static int drawobj_init(struct kgsl_device *device,
 	 */
 	if (!_kgsl_context_get(context))
 		return -ENOENT;
+
+	atomic_inc(&context->refs_from_drawobj);
 
 	kref_init(&drawobj->refcount);
 

@@ -5835,7 +5835,7 @@ static int msm_vidc_check_mbpf_supported(struct msm_vidc_inst *inst)
 	if (mbpf > core->resources.max_mbpf) {
 		s_vpr_e(inst->sid, "%s: mbpf > max\n", __func__);
 		msm_vidc_print_running_insts(inst->core);
-		return -EBUSY;
+		return -ENOMEM;
 	}
 
 	return 0;
@@ -5932,7 +5932,7 @@ int msm_comm_check_memory_supported(struct msm_vidc_inst *vidc_inst)
 			"%s: video mem overshoot - reached %llu MB, max_limit %llu MB\n",
 			__func__, total_mem_size >> 20, memory_limit_mbytes);
 		msm_comm_print_insts_info(core);
-		return -EBUSY;
+		return -ENOMEM;
 	}
 
 	if (!is_secure_session(vidc_inst)) {
@@ -5947,7 +5947,7 @@ int msm_comm_check_memory_supported(struct msm_vidc_inst *vidc_inst)
 				"%s: insufficient device addr space, required %llu, available %llu\n",
 				__func__, non_sec_mem_size, non_sec_cb_size);
 			msm_comm_print_insts_info(core);
-			return -EINVAL;
+			return -ENOMEM;
 		}
 	}
 

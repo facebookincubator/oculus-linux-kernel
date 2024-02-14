@@ -118,7 +118,7 @@ else
 CONFIG_WDI_EVENT_ENABLE := y
 endif
 
-# Features gets enabled on slub debug
+# Features gets enabled on debug debug
 CONFIG_WLAN_OBJMGR_DEBUG:= n
 CONFIG_OL_RX_INDICATION_RECORD := n
 CONFIG_TSOSEG_DEBUG := n

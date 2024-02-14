@@ -104,6 +104,7 @@ static void kgsl_sync_fence_event_cb(struct kgsl_device *device,
 	struct kgsl_sync_fence_event_priv *ev = priv;
 
 	kgsl_sync_timeline_signal(ev->context->ktimeline, ev->timestamp);
+	atomic_dec(&ev->context->refs_from_fence_event);
 	kgsl_context_put(ev->context);
 	kfree(ev);
 }
@@ -137,6 +138,8 @@ static int _add_fence_event(struct kgsl_device *device,
 		kgsl_context_put(context);
 		kfree(event);
 	}
+
+	atomic_inc(&context->refs_from_fence_event);
 
 	return ret;
 }
@@ -316,6 +319,8 @@ int kgsl_sync_timeline_create(struct kgsl_context *context)
 	if (!_kgsl_context_get(context))
 		return -ENOENT;
 
+	atomic_inc(&context->refs_from_timeline);
+
 	ktimeline = kzalloc(sizeof(*ktimeline), GFP_KERNEL);
 	if (ktimeline == NULL) {
 		kgsl_context_put(context);
@@ -379,6 +384,7 @@ void kgsl_sync_timeline_detach(struct kgsl_sync_timeline *ktimeline)
 	spin_lock_irqsave(&ktimeline->lock, flags);
 	ktimeline->context = NULL;
 	spin_unlock_irqrestore(&ktimeline->lock, flags);
+	atomic_dec(&context->refs_from_timeline);
 	kgsl_context_put(context);
 }
 
@@ -881,4 +887,3 @@ static const struct dma_fence_ops kgsl_syncsource_fence_ops = {
 
 	.fence_value_str = kgsl_syncsource_fence_value_str,
 };
-

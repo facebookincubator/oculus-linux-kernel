@@ -605,6 +605,7 @@ static void _drawctxt_switch_wait_callback(struct kgsl_device *device,
 {
 	struct adreno_context *drawctxt = (struct adreno_context *) priv;
 
+	atomic_dec(&drawctxt->base.refs_from_drawctxt);
 	kgsl_context_put(&drawctxt->base);
 }
 
@@ -649,6 +650,8 @@ int adreno_drawctxt_switch(struct adreno_device *adreno_dev,
 		if (!_kgsl_context_get(&drawctxt->base))
 			return -ENOENT;
 
+		atomic_inc(&drawctxt->base.refs_from_drawctxt);
+
 		new_pt = drawctxt->base.proc_priv->pagetable;
 	} else {
 		 /* No context - set the default pagetable and thats it. */
@@ -664,6 +667,7 @@ int adreno_drawctxt_switch(struct adreno_device *adreno_dev,
 		if (kgsl_add_event(device, &rb->events, rb->timestamp,
 			_drawctxt_switch_wait_callback,
 			rb->drawctxt_active)) {
+			atomic_dec(&rb->drawctxt_active->base.refs_from_drawctxt);
 			kgsl_context_put(&rb->drawctxt_active->base);
 		}
 	}

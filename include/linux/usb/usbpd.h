@@ -13,6 +13,7 @@ struct device;
 
 /* Standard IDs */
 #define USBPD_SID			0xff00
+#define DP_SID				0xff01
 
 /* Structured VDM Command Type */
 enum usbpd_svdm_cmd_type {
@@ -35,6 +36,7 @@ enum usbpd_svdm_cmd_type {
  */
 struct usbpd_svid_handler {
 	u16 svid;
+	u16 pid;
 
 	/* Notified when VDM session established/reset; must be implemented */
 	void (*connect)(struct usbpd_svid_handler *hdlr,

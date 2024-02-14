@@ -76,6 +76,13 @@ config SYNCBOSS_DEBUG
 	help
 	  Oculus Syncboss SPI Driver Debug Facilities
 
+config SYNCBOSS_DIRECTCHANNEL
+	bool "Syncboss SPI Driver Direct Channel Support"
+	depends on SYNCBOSS
+	default n
+	help
+	  Oculus Syncboss SPI Driver Direct Channel Support
+
 config OCULUS_FW_HELPERS
 	tristate "Oculus MCU Helper Utilities"
 	default y

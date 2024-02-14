@@ -216,7 +216,7 @@ exit:
 }
 EXPORT_SYMBOL(miscfifo_fop_open);
 
-int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
+int miscfifo_write_buf(struct miscfifo *mf, const u8 *buf, size_t len, bool *should_wake)
 {
 	struct miscfifo_client *client;
 	int rc = 0;
@@ -225,6 +225,8 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 
 	if (WARN_ON(len == 0 || len > REC_MAX_LENGTH))
 		return -EINVAL;
+
+	*should_wake = false;
 
 	down_read(&mf->clients.rw_lock);
 	list_for_each_entry(client, &mf->clients.list, node) {
@@ -237,6 +239,8 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 
 		if (skip)
 			continue;
+
+		*should_wake = true;
 
 		mutex_lock(&client->producer_lock);
 		if (kfifo_avail(&client->fifo) >= needed) {
@@ -258,10 +262,32 @@ int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len)
 	}
 	up_read(&mf->clients.rw_lock);
 
-	wake_up_interruptible(&mf->clients.wait);
+	return rc;
+}
+EXPORT_SYMBOL(miscfifo_write_buf);
+
+int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len) {
+	bool should_wake;
+	int rc = miscfifo_write_buf(mf, buf, len, &should_wake);
+
+	if (should_wake)
+		wake_up_interruptible(&mf->clients.wait);
+
 	return rc;
 }
 EXPORT_SYMBOL(miscfifo_send_buf);
+
+void miscfifo_wake_waiters(struct miscfifo *mf)
+{
+	wake_up_interruptible(&mf->clients.wait);
+}
+EXPORT_SYMBOL(miscfifo_wake_waiters);
+
+void miscfifo_wake_waiters_sync(struct miscfifo *mf)
+{
+	wake_up_interruptible_sync(&mf->clients.wait);
+}
+EXPORT_SYMBOL(miscfifo_wake_waiters_sync);
 
 void miscfifo_clear(struct miscfifo *mf)
 {

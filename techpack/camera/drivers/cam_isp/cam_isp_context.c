@@ -337,7 +337,8 @@ static int cam_isp_ctx_dump_req(
 				CAM_ERR(CAM_ISP,
 					"Invalid offset exp %u actual %u",
 					req_isp->cfg[i].offset, (uint32_t)len);
-				return rc;
+				cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
+				return -EINVAL;
 			}
 			remain_len = len - req_isp->cfg[i].offset;
 
@@ -347,7 +348,8 @@ static int cam_isp_ctx_dump_req(
 					"Invalid len exp %u remain_len %u",
 					req_isp->cfg[i].len,
 					(uint32_t)remain_len);
-				return rc;
+				cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
+				return -EINVAL;
 			}
 
 			buf_start = (uint32_t *)((uint8_t *) buf_addr +
@@ -371,6 +373,7 @@ static int cam_isp_ctx_dump_req(
 			} else {
 				cam_cdm_util_dump_cmd_buf(buf_start, buf_end);
 			}
+			cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
 		}
 	}
 	return rc;
@@ -1541,8 +1544,11 @@ static int __cam_isp_ctx_apply_req_offline(
 		goto end;
 	}
 
-	if (ctx->state != CAM_CTX_ACTIVATED)
+	if (ctx->state != CAM_CTX_ACTIVATED) {
+		CAM_ERR(CAM_ISP, "Can't offline apply req in state %s",
+			cam_ctx_state_get_str(ctx->state));
 		goto end;
+	}
 
 	if (ctx_isp->active_req_cnt >= 2)
 		goto end;
@@ -1966,6 +1972,7 @@ static int __cam_isp_ctx_sof_in_activated_state(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
 
 	__cam_isp_ctx_update_state_monitor_array(ctx_isp,
 		CAM_ISP_STATE_CHANGE_TRIGGER_SOF, request_id);
@@ -1993,7 +2000,8 @@ static int __cam_isp_ctx_reg_upd_in_sof(struct cam_isp_context *ctx_isp,
 	struct cam_context *ctx = ctx_isp->base;
 
 	if (ctx->state != CAM_CTX_ACTIVATED && ctx_isp->frame_id > 1) {
-		CAM_DBG(CAM_ISP, "invalid RUP");
+		CAM_ERR(CAM_ISP, "Req upd in SOF invalid RUP state %s frame id %lld",
+			cam_ctx_state_get_str(ctx->state), ctx_isp->frame_id);
 		goto end;
 	}
 
@@ -2161,6 +2169,7 @@ static int __cam_isp_ctx_sof_in_epoch(struct cam_isp_context *ctx_isp,
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
 
 	if (list_empty(&ctx->active_req_list))
 		ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_SOF;
@@ -2601,6 +2610,7 @@ static int __cam_isp_ctx_fs2_sof_in_sof_state(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
 
 	CAM_DBG(CAM_ISP, "frame id: %lld time stamp:0x%llx",
 		ctx_isp->frame_id, ctx_isp->sof_timestamp_val);
@@ -2710,7 +2720,8 @@ static int __cam_isp_ctx_fs2_reg_upd_in_sof(struct cam_isp_context *ctx_isp,
 	struct cam_context *ctx = ctx_isp->base;
 
 	if (ctx->state != CAM_CTX_ACTIVATED && ctx_isp->frame_id > 1) {
-		CAM_DBG(CAM_ISP, "invalid RUP");
+		CAM_ERR(CAM_ISP, "FS2 invalid RUP state %s frame id %lld",
+			cam_ctx_state_get_str(ctx->state), ctx_isp->frame_id);
 		goto end;
 	}
 
@@ -3466,6 +3477,7 @@ hw_dump:
 		spin_unlock_bh(&ctx->lock);
 		CAM_WARN(CAM_ISP, "Dump buffer overshoot len %zu offset %zu",
 			buf_len, dump_info->offset);
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
 		return -ENOSPC;
 	}
 
@@ -3477,6 +3489,7 @@ hw_dump:
 		spin_unlock_bh(&ctx->lock);
 		CAM_WARN(CAM_ISP, "Dump buffer exhaust remain %zu min %u",
 			remain_len, min_len);
+		cam_mem_put_cpu_buf(dump_info->buf_handle);
 		return -ENOSPC;
 	}
 
@@ -3515,20 +3528,17 @@ hw_dump:
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Dump event fail %lld",
 			req->request_id);
-		spin_unlock_bh(&ctx->lock);
-		return rc;
+		goto end;
 	}
-	if (dump_only_event_record) {
-		spin_unlock_bh(&ctx->lock);
-		return rc;
-	}
+	if (dump_only_event_record)
+		goto end;
+
 	rc = __cam_isp_ctx_dump_req_info(ctx, req, cpu_addr,
 		buf_len, &dump_info->offset);
 	if (rc) {
 		CAM_ERR(CAM_ISP, "Dump Req info fail %lld",
 			req->request_id);
-		spin_unlock_bh(&ctx->lock);
-		return rc;
+		goto end;
 	}
 	spin_unlock_bh(&ctx->lock);
 
@@ -3542,6 +3552,12 @@ hw_dump:
 			&dump_args);
 		dump_info->offset = dump_args.offset;
 	}
+	cam_mem_put_cpu_buf(dump_info->buf_handle);
+	return rc;
+
+end:
+	spin_unlock_bh(&ctx->lock);
+	cam_mem_put_cpu_buf(dump_info->buf_handle);
 	return rc;
 }
 
@@ -3645,7 +3661,11 @@ static int __cam_isp_ctx_flush_req_in_top_state(
 
 	if (flush_req->type == CAM_REQ_MGR_FLUSH_TYPE_ALL) {
 		if (ctx->state <= CAM_CTX_READY) {
+			CAM_ERR(CAM_ISP, "Flush Req in Top old state %s",
+				cam_ctx_state_get_str(ctx->state));
 			ctx->state = CAM_CTX_ACQUIRED;
+			CAM_ERR(CAM_ISP, "Flush Req in Top next state %s",
+				cam_ctx_state_get_str(ctx->state));
 			goto end;
 		}
 
@@ -3654,7 +3674,10 @@ static int __cam_isp_ctx_flush_req_in_top_state(
 		ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_HALT;
 		spin_unlock_bh(&ctx->lock);
 
-		CAM_INFO(CAM_ISP, "Last request id to flush is %lld",
+		CAM_ERR(CAM_ISP, "DBG: Flush Req in Top next state %s",
+				cam_ctx_state_get_str(ctx->state));
+
+		CAM_ERR(CAM_ISP, "DBG: Last request id to flush is %lld",
 			flush_req->req_id);
 		ctx->last_flush_req = flush_req->req_id;
 
@@ -3733,8 +3756,8 @@ static int __cam_isp_ctx_flush_req_in_ready(
 
 	trace_cam_context_state("ISP", ctx);
 
-	CAM_DBG(CAM_ISP, "Flush request in ready state. next state %d",
-		 ctx->state);
+	CAM_ERR(CAM_ISP, "DBG: sssFlush request in ready state. next state %s",
+		 cam_ctx_state_get_str(ctx->state));
 	return rc;
 }
 
@@ -3856,6 +3879,7 @@ static int __cam_isp_ctx_rdi_stream_handle_sof(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
 
 	CAM_DBG(CAM_ISP, "ctx %u frame id: %lld time stamp:0x%llx",
 		ctx->ctx_id, ctx_isp->frame_id, ctx_isp->sof_timestamp_val);
@@ -3895,6 +3919,7 @@ static int __cam_isp_ctx_rdi_only_sof_in_top_state(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
 
 	CAM_DBG(CAM_ISP, "frame id: %lld time stamp:%lld ctx %u",
 		ctx_isp->frame_id, ctx_isp->sof_timestamp_val, ctx->ctx_id);
@@ -3953,6 +3978,8 @@ static int __cam_isp_ctx_rdi_only_sof_in_applied_state(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
+
 	CAM_DBG(CAM_ISP, "frame id: %lld time stamp:0x%llx",
 		ctx_isp->frame_id, ctx_isp->sof_timestamp_val);
 
@@ -4033,6 +4060,8 @@ static int __cam_isp_ctx_rdi_only_sof_in_bubble_applied(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
+
 	CAM_DBG(CAM_ISP, "frame id: %lld time stamp:0x%llx",
 		ctx_isp->frame_id, ctx_isp->sof_timestamp_val);
 
@@ -4139,6 +4168,8 @@ static int __cam_isp_ctx_rdi_only_sof_in_bubble_state(
 	ctx_isp->frame_id++;
 	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
 	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
+
 	CAM_DBG(CAM_ISP, "frame id: %lld time stamp:0x%llx",
 		ctx_isp->frame_id, ctx_isp->sof_timestamp_val);
 
@@ -4738,8 +4769,8 @@ static int __cam_isp_ctx_release_hw_in_top_state(struct cam_context *ctx,
 	ctx_isp->stream_image_applied = NULL;
 
 	trace_cam_context_state("ISP", ctx);
-	CAM_DBG(CAM_ISP, "Release device success[%u] next state %d",
-		ctx->ctx_id, ctx->state);
+	CAM_ERR(CAM_ISP, "DBG: Release device success[%u] next state %s RC = %d",
+		ctx->ctx_id, cam_ctx_state_get_str(ctx->state), rc);
 	return rc;
 }
 
@@ -4801,8 +4832,8 @@ static int __cam_isp_ctx_release_dev_in_top_state(struct cam_context *ctx,
 	ctx->state = CAM_CTX_AVAILABLE;
 
 	trace_cam_context_state("ISP", ctx);
-	CAM_DBG(CAM_ISP, "Release device success[%u] next state %d",
-		ctx->ctx_id, ctx->state);
+	CAM_ERR(CAM_ISP, "DBG: Release device success[%u] next state %s RC = %d",
+		ctx->ctx_id, cam_ctx_state_get_str(ctx->state), rc);
 	return rc;
 }
 
@@ -4969,8 +5000,8 @@ static int __cam_isp_ctx_config_dev_in_top_state(
 			ctx_isp->init_received = true;
 		} else {
 			rc = -EINVAL;
-			CAM_ERR(CAM_ISP, "Recevied INIT pkt in wrong state:%d",
-				ctx->state);
+			CAM_ERR(CAM_ISP, "Recevied INIT pkt in wrong state: %s",
+				cam_ctx_state_get_str(ctx->state));
 		}
 	} else {
 		if (ctx_isp->offline_context) {
@@ -4993,8 +5024,8 @@ static int __cam_isp_ctx_config_dev_in_top_state(
 		} else {
 			rc = -EINVAL;
 			CAM_ERR(CAM_ISP,
-				"Recevied update req %lld in wrong state:%d",
-				req->request_id, ctx->state);
+				"Recevied update req %lld in wrong state:%s",
+				req->request_id, cam_ctx_state_get_str(ctx->state));
 		}
 	}
 	if (rc)
@@ -5008,6 +5039,7 @@ static int __cam_isp_ctx_config_dev_in_top_state(
 		__cam_isp_ctx_schedule_apply_req_offline(ctx_isp);
 	}
 
+	cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 	return rc;
 
 put_ref:
@@ -5019,6 +5051,7 @@ put_ref:
 free_req:
 	__cam_isp_free_request(req);
 
+	cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 	return rc;
 }
 
@@ -5172,9 +5205,10 @@ get_dev_handle:
 	ctx->state = CAM_CTX_ACQUIRED;
 
 	trace_cam_context_state("ISP", ctx);
-	CAM_DBG(CAM_ISP,
-		"Acquire success on session_hdl 0x%x num_rsrces %d ctx %u",
-		cmd->session_handle, cmd->num_resources, ctx->ctx_id);
+	CAM_ERR(CAM_ISP,
+		"DBG: Acquire success on session_hdl 0x%x num_rsrces %d ctx %u next state %s rc %d",
+		cmd->session_handle, cmd->num_resources, ctx->ctx_id,
+		cam_ctx_state_get_str(ctx->state), rc);
 
 	return rc;
 
@@ -5188,6 +5222,7 @@ free_hw:
 free_res:
 	kfree(isp_res);
 end:
+	CAM_ERR(CAM_ISP, "Config Dev in Top failed rc %d", rc);
 	return rc;
 }
 
@@ -5310,8 +5345,8 @@ static int __cam_isp_ctx_acquire_hw_v1(struct cam_context *ctx,
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
 
 	trace_cam_context_state("ISP", ctx);
-	CAM_DBG(CAM_ISP,
-		"Acquire success on session_hdl 0x%xs ctx_type %d ctx_id %u",
+	CAM_ERR(CAM_ISP,
+		"DBG: Acquire V1 success on session_hdl 0x%xs ctx_type %d ctx_id %u",
 		ctx->session_hdl, isp_hw_cmd_args.u.ctx_type, ctx->ctx_id);
 	kfree(acquire_hw_info);
 	return rc;
@@ -5324,6 +5359,7 @@ free_hw:
 free_res:
 	kfree(acquire_hw_info);
 end:
+	CAM_ERR(CAM_ISP, "Acquire V1 failed rc = %d", rc);
 	return rc;
 }
 
@@ -5477,8 +5513,8 @@ static int __cam_isp_ctx_acquire_hw_v2(struct cam_context *ctx,
 	ctx->ctxt_to_hw_map = param.ctxt_to_hw_map;
 
 	trace_cam_context_state("ISP", ctx);
-	CAM_DBG(CAM_ISP,
-		"Acquire success on session_hdl 0x%xs ctx_type %d ctx_id %u",
+	CAM_ERR(CAM_ISP,
+		"DBG: Acquire V2 success on session_hdl 0x%xs ctx_type %d ctx_id %u",
 		ctx->session_hdl, isp_hw_cmd_args.u.ctx_type, ctx->ctx_id);
 	kfree(acquire_hw_info);
 	return rc;
@@ -5491,6 +5527,7 @@ free_hw:
 free_res:
 	kfree(acquire_hw_info);
 end:
+	CAM_ERR(CAM_ISP, "Acquire V2 failed rc %d", rc);
 	return rc;
 }
 
@@ -5697,7 +5734,7 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 
 	cmd_get->images[0].image_id = stream_image->image_id;
 	cmd_get->images[0].timestamp = stream_image->capture_timestamp;
-	cmd_get->images[0].sof_timestamp = ctx_isp->boot_timestamp;
+	cmd_get->images[0].sof_timestamp = ctx_isp->monotonic_timestamp;
 	cmd_get->images[0].frame_num = stream_image->frame_num;
 	cmd_get->num_images = 1;
 
@@ -5789,7 +5826,8 @@ static int __cam_isp_ctx_config_dev_in_acquired(struct cam_context *ctx,
 		ctx->state = CAM_CTX_READY;
 		trace_cam_context_state("ISP", ctx);
 	}
-	CAM_DBG(CAM_ISP, "next state %d", ctx->state);
+	CAM_ERR(CAM_ISP, "DBG: Config Dev in Acquired next state %s RC =  %d",
+		cam_ctx_state_get_str(ctx->state), rc);
 	return rc;
 }
 
@@ -5866,7 +5904,8 @@ static int __cam_isp_ctx_link_in_acquired(struct cam_context *ctx,
 		trace_cam_context_state("ISP", ctx);
 	}
 
-	CAM_DBG(CAM_ISP, "next state %d", ctx->state);
+	CAM_ERR(CAM_ISP, "DBG: Link in Acquired next state %s RC = %d",
+		cam_ctx_state_get_str(ctx->state), rc);
 
 	return rc;
 }
@@ -5972,7 +6011,7 @@ static int __cam_isp_ctx_start_dev_in_ready(struct cam_context *ctx,
 	 * req out of pending list before hw_start and add it
 	 * back to pending list if hw_start fails.
 	 */
-	CAM_DBG(CAM_ISP, "start device success ctx %u state %u",
+	CAM_ERR(CAM_ISP, "DBG: start device success ctx %u state %u",
 		ctx->ctx_id, ctx_isp->substate_activated);
 
 	list_del_init(&req->list);
@@ -6003,6 +6042,8 @@ static int __cam_isp_ctx_start_dev_in_ready(struct cam_context *ctx,
 	 */
 	ctx->state = CAM_CTX_ACTIVATED;
 	trace_cam_context_state("ISP", ctx);
+	CAM_ERR(CAM_ISP, "DBG: Start in Ready next state %s",
+		cam_ctx_state_get_str(ctx->state));
 	rc = ctx->hw_mgr_intf->hw_start(ctx->hw_mgr_intf->hw_mgr_priv,
 		&start_isp);
 	if (rc) {
@@ -6010,13 +6051,16 @@ static int __cam_isp_ctx_start_dev_in_ready(struct cam_context *ctx,
 		CAM_ERR(CAM_ISP, "Start HW failed");
 		ctx->state = CAM_CTX_READY;
 		trace_cam_context_state("ISP", ctx);
+		CAM_ERR(CAM_ISP, "Failed to Start in Ready next state %s",
+			cam_ctx_state_get_str(ctx->state));
+
 		if (rc == -ETIMEDOUT)
 			cam_isp_ctx_dump_req(req_isp, 0, 0, NULL, false);
 		list_del_init(&req->list);
 		list_add(&req->list, &ctx->pending_req_list);
 		goto end;
 	}
-	CAM_DBG(CAM_ISP, "start device success ctx %u substate %u",
+	CAM_ERR(CAM_ISP, "DBG: start device success ctx %u substate %u",
 		ctx->ctx_id, ctx_isp->substate_activated);
 
 end:
@@ -6035,6 +6079,8 @@ static int __cam_isp_ctx_unlink_in_ready(struct cam_context *ctx,
 	ctx->ctx_crm_intf = NULL;
 	ctx->state = CAM_CTX_ACQUIRED;
 	trace_cam_context_state("ISP", ctx);
+	CAM_ERR(CAM_ISP, "DBG: Unlink in Ready next state %s",
+		cam_ctx_state_get_str(ctx->state));
 
 	return rc;
 }
@@ -6196,6 +6242,9 @@ static int __cam_isp_ctx_stop_dev_in_activated(struct cam_context *ctx,
 	ctx_isp->init_received = false;
 	ctx->state = CAM_CTX_ACQUIRED;
 	trace_cam_context_state("ISP", ctx);
+	CAM_ERR(CAM_ISP, "DBG: Stop Dev in Activated next state %s",
+		cam_ctx_state_get_str(ctx->state));
+
 	return rc;
 }
 

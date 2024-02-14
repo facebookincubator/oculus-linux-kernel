@@ -1083,7 +1083,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			ifp->stats.rx_bytes += skb->len;
 			ifp->stats.rx_packets++;
 #ifdef CONFIG_XRPS_DHD_HOOKS
-			if (xrps_is_init())
+			if (xrps_is_init() && DHD_IF_ROLE_AP(dhdp, ifidx))
 				dhdp->xrps_intf->rx_cb();
 #endif /* CONFIG_XRPS_DHD_HOOKS */
 		}

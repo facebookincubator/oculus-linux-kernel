@@ -40,6 +40,7 @@ struct ps_device {
 	int32_t hw_version;
 	int32_t fw_version;
 	int (*parse_report)(struct ps_device *dev, struct hid_report *report, u8 *data, int size);
+	void (*remove)(struct ps_device *dev);
 };
 
 /* Seed values for DualShock4 / DualSense CRC32 for different report types. */
@@ -96,6 +97,9 @@ struct ps_calibration_data {
 #define DS_STATUS_CHARGING		GENMASK(7, 4)
 #define DS_STATUS_CHARGING_SHIFT	4
 
+/* Feature version from DualSense Firmware Info report. */
+#define DS_FEATURE_VERSION(major, minor) ((major & 0xff) << 8 | (minor & 0xff))
+
 /*
 + * Status of a DualSense touch point contact.
 + * Contact IDs, with highest bit set are 'inactive'
@@ -114,6 +118,7 @@ struct ps_calibration_data {
 #define DS_OUTPUT_VALID_FLAG1_RELEASE_LEDS BIT(3)
 #define DS_OUTPUT_VALID_FLAG1_PLAYER_INDICATOR_CONTROL_ENABLE BIT(4)
 #define DS_OUTPUT_VALID_FLAG2_LIGHTBAR_SETUP_CONTROL_ENABLE BIT(1)
+#define DS_OUTPUT_VALID_FLAG2_COMPATIBLE_VIBRATION2 BIT(2)
 #define DS_OUTPUT_POWER_SAVE_CONTROL_MIC_MUTE BIT(4)
 #define DS_OUTPUT_LIGHTBAR_SETUP_LIGHT_OUT BIT(1)
 
@@ -132,6 +137,9 @@ struct dualsense {
 	struct input_dev *sensors;
 	struct input_dev *touchpad;
 
+	/* Update version is used as a feature/capability version. */
+	uint16_t update_version;
+
 	/* Calibration data for accelerometer and gyroscope. */
 	struct ps_calibration_data accel_calib_data[3];
 	struct ps_calibration_data gyro_calib_data[3];
@@ -141,6 +149,7 @@ struct dualsense {
 	uint32_t sensor_timestamp_us;
 
 	/* Compatible rumble state */
+	bool use_vibration_v2;
 	bool update_rumble;
 	uint8_t motor_left;
 	uint8_t motor_right;
@@ -162,6 +171,7 @@ struct dualsense {
 	struct led_classdev player_leds[5];
 
 	struct work_struct output_worker;
+	bool output_worker_initialized;
 	void *output_report_dmabuf;
 	uint8_t output_seq; /* Sequence number for output report. */
 };
@@ -283,6 +293,8 @@ static const struct {int x; int y; } ps_gamepad_hat_mapping[] = {
 	{0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1},
 	{0, 0},
 };
+
+static inline void dualsense_schedule_work(struct dualsense *ds);
 
 /*
  * Add a new ps_device to ps_devices if it doesn't exist.
@@ -623,6 +635,7 @@ static const struct attribute_group ps_device_attribute_group = {
 
 static int dualsense_get_calibration_data(struct dualsense *ds)
 {
+	struct hid_device *hdev = ds->base.hdev;
 	short gyro_pitch_bias, gyro_pitch_plus, gyro_pitch_minus;
 	short gyro_yaw_bias, gyro_yaw_plus, gyro_yaw_minus;
 	short gyro_roll_bias, gyro_roll_plus, gyro_roll_minus;
@@ -633,6 +646,7 @@ static int dualsense_get_calibration_data(struct dualsense *ds)
 	int speed_2x;
 	int range_2g;
 	int ret = 0;
+	int i;
 	uint8_t *buf;
 
 	buf = kzalloc(DS_FEATURE_REPORT_CALIBRATION_SIZE, GFP_KERNEL);
@@ -670,19 +684,37 @@ static int dualsense_get_calibration_data(struct dualsense *ds)
 	 */
 	speed_2x = (gyro_speed_plus + gyro_speed_minus);
 	ds->gyro_calib_data[0].abs_code = ABS_RX;
-	ds->gyro_calib_data[0].bias = gyro_pitch_bias;
+	ds->gyro_calib_data[0].bias = 0;
 	ds->gyro_calib_data[0].sens_numer = speed_2x*DS_GYRO_RES_PER_DEG_S;
-	ds->gyro_calib_data[0].sens_denom = gyro_pitch_plus - gyro_pitch_minus;
+	ds->gyro_calib_data[0].sens_denom = abs(gyro_pitch_plus - gyro_pitch_bias) +
+			abs(gyro_pitch_minus - gyro_pitch_bias);
 
 	ds->gyro_calib_data[1].abs_code = ABS_RY;
-	ds->gyro_calib_data[1].bias = gyro_yaw_bias;
+	ds->gyro_calib_data[1].bias = 0;
 	ds->gyro_calib_data[1].sens_numer = speed_2x*DS_GYRO_RES_PER_DEG_S;
-	ds->gyro_calib_data[1].sens_denom = gyro_yaw_plus - gyro_yaw_minus;
+	ds->gyro_calib_data[1].sens_denom = abs(gyro_yaw_plus - gyro_yaw_bias) +
+			abs(gyro_yaw_minus - gyro_yaw_bias);
 
 	ds->gyro_calib_data[2].abs_code = ABS_RZ;
-	ds->gyro_calib_data[2].bias = gyro_roll_bias;
+	ds->gyro_calib_data[2].bias = 0;
 	ds->gyro_calib_data[2].sens_numer = speed_2x*DS_GYRO_RES_PER_DEG_S;
-	ds->gyro_calib_data[2].sens_denom = gyro_roll_plus - gyro_roll_minus;
+	ds->gyro_calib_data[2].sens_denom = abs(gyro_roll_plus - gyro_roll_bias) +
+			abs(gyro_roll_minus - gyro_roll_bias);
+
+	/*
+	 * Sanity check gyro calibration data. This is needed to prevent crashes
+	 * during report handling of virtual, clone or broken devices not implementing
+	 * calibration data properly.
+	 */
+	for (i = 0; i < ARRAY_SIZE(ds->gyro_calib_data); i++) {
+		if (ds->gyro_calib_data[i].sens_denom == 0) {
+			hid_warn(hdev, "Invalid gyro calibration data for axis (%d), disabling calibration.",
+					ds->gyro_calib_data[i].abs_code);
+			ds->gyro_calib_data[i].bias = 0;
+			ds->gyro_calib_data[i].sens_numer = DS_GYRO_RANGE;
+			ds->gyro_calib_data[i].sens_denom = S16_MAX;
+		}
+	}
 
 	/*
 	 * Set accelerometer calibration and normalization parameters.
@@ -706,10 +738,26 @@ static int dualsense_get_calibration_data(struct dualsense *ds)
 	ds->accel_calib_data[2].sens_numer = 2*DS_ACC_RES_PER_G;
 	ds->accel_calib_data[2].sens_denom = range_2g;
 
+	/*
+	 * Sanity check accelerometer calibration data. This is needed to prevent crashes
+	 * during report handling of virtual, clone or broken devices not implementing calibration
+	 * data properly.
+	 */
+	for (i = 0; i < ARRAY_SIZE(ds->accel_calib_data); i++) {
+		if (ds->accel_calib_data[i].sens_denom == 0) {
+			hid_warn(hdev, "Invalid accelerometer calibration data for axis (%d), disabling calibration.",
+					ds->accel_calib_data[i].abs_code);
+			ds->accel_calib_data[i].bias = 0;
+			ds->accel_calib_data[i].sens_numer = DS_ACC_RANGE;
+			ds->accel_calib_data[i].sens_denom = S16_MAX;
+		}
+	}
+
 err_free:
 	kfree(buf);
 	return ret;
 }
+
 
 static int dualsense_get_firmware_info(struct dualsense *ds)
 {
@@ -729,6 +777,15 @@ static int dualsense_get_firmware_info(struct dualsense *ds)
 
 	ds->base.hw_version = get_unaligned_le32(&buf[24]);
 	ds->base.fw_version = get_unaligned_le32(&buf[28]);
+
+	/* Update version is some kind of feature version. It is distinct from
+	 * the firmware version as there can be many different variations of a
+	 * controller over time with the same physical shell, but with different
+	 * PCBs and other internal changes. The update version (internal name) is
+	 * used as a means to detect what features are available and change behavior.
+	 * Note: the version is different between DualSense and DualSense Edge.
+	 */
+	ds->update_version = get_unaligned_le16(&buf[44]);
 
 err_free:
 	kfree(buf);
@@ -798,6 +855,16 @@ static void dualsense_init_output_report(struct dualsense *ds,
 	}
 }
 
+static inline void dualsense_schedule_work(struct dualsense *ds)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&ds->base.lock, flags);
+	if (ds->output_worker_initialized)
+		schedule_work(&ds->output_worker);
+	spin_unlock_irqrestore(&ds->base.lock, flags);
+}
+
 /*
  * Helper function to send DualSense output reports. Applies a CRC
  *  at the end of a report for Bluetooth reports.
@@ -839,8 +906,10 @@ static void dualsense_output_worker(struct work_struct *work)
 	if (ds->update_rumble) {
 		/* Select classic rumble style haptics and enable it. */
 		common->valid_flag0 |= DS_OUTPUT_VALID_FLAG0_HAPTICS_SELECT;
-		common->valid_flag0 |=
-				DS_OUTPUT_VALID_FLAG0_COMPATIBLE_VIBRATION;
+		if (ds->use_vibration_v2)
+			common->valid_flag2 |= DS_OUTPUT_VALID_FLAG2_COMPATIBLE_VIBRATION2;
+		else
+			common->valid_flag0 |= DS_OUTPUT_VALID_FLAG0_COMPATIBLE_VIBRATION;
 		common->motor_left = ds->motor_left;
 		common->motor_right = ds->motor_right;
 		ds->update_rumble = false;
@@ -970,7 +1039,7 @@ static int dualsense_parse_report(struct ps_device *ps_dev,
 		spin_unlock_irqrestore(&ps_dev->lock, flags);
 
 		/* Schedule updating of microphone state at hardware level. */
-		schedule_work(&ds->output_worker);
+		dualsense_schedule_work(ds);
 	}
 	ds->last_btn_mic_state = btn_mic_state;
 
@@ -978,8 +1047,7 @@ static int dualsense_parse_report(struct ps_device *ps_dev,
 	for (i = 0; i < ARRAY_SIZE(ds_report->gyro); i++) {
 		int raw_data = (short)le16_to_cpu(ds_report->gyro[i]);
 		int calib_data = mult_frac(ds->gyro_calib_data[i].sens_numer,
-					   raw_data - ds->gyro_calib_data[i].bias,
-					   ds->gyro_calib_data[i].sens_denom);
+					   raw_data, ds->gyro_calib_data[i].sens_denom);
 
 		input_report_abs(ds->sensors, ds->gyro_calib_data[i].abs_code,
 					calib_data);
@@ -1092,8 +1160,20 @@ static int dualsense_play_effect(struct input_dev *dev,
 	ds->motor_right = effect->u.rumble.weak_magnitude / 256;
 	spin_unlock_irqrestore(&ds->base.lock, flags);
 
-	schedule_work(&ds->output_worker);
+	dualsense_schedule_work(ds);
 	return 0;
+}
+
+static void dualsense_remove(struct ps_device *ps_dev)
+{
+	struct dualsense *ds = container_of(ps_dev, struct dualsense, base);
+	unsigned long flags;
+
+	spin_lock_irqsave(&ds->base.lock, flags);
+	ds->output_worker_initialized = false;
+	spin_unlock_irqrestore(&ds->base.lock, flags);
+
+	cancel_work_sync(&ds->output_worker);
 }
 
 static int dualsense_reset_leds(struct dualsense *ds)
@@ -1128,7 +1208,7 @@ static void dualsense_set_lightbar(struct dualsense *ds, uint8_t red, uint8_t gr
 	ds->lightbar_green = green;
 	ds->lightbar_blue = blue;
 
-	schedule_work(&ds->output_worker);
+	dualsense_schedule_work(ds);
 }
 
 static void dualsense_set_player_leds(struct dualsense *ds)
@@ -1151,7 +1231,7 @@ static void dualsense_set_player_leds(struct dualsense *ds)
 
 	ds->update_player_leds = true;
 	ds->player_leds_state = player_ids[player_id];
-	schedule_work(&ds->output_worker);
+	dualsense_schedule_work(ds);
 }
 
 static struct ps_device *dualsense_create(struct hid_device *hdev)
@@ -1177,7 +1257,9 @@ static struct ps_device *dualsense_create(struct hid_device *hdev)
 	ps_dev->battery_capacity = 100; /* initial value until parse_report. */
 	ps_dev->battery_status = POWER_SUPPLY_STATUS_UNKNOWN;
 	ps_dev->parse_report = dualsense_parse_report;
+	ps_dev->remove = dualsense_remove;
 	INIT_WORK(&ds->output_worker, dualsense_output_worker);
+	ds->output_worker_initialized = true;
 	hid_set_drvdata(hdev, ds);
 
 	max_output_report_size = sizeof(struct dualsense_output_report_bt);
@@ -1197,6 +1279,21 @@ static struct ps_device *dualsense_create(struct hid_device *hdev)
 	if (ret) {
 		hid_err(hdev, "Failed to get firmware info from DualSense\n");
 		return ERR_PTR(ret);
+	}
+
+	/* Original DualSense firmware simulated classic controller rumble through
+	 * its new haptics hardware. It felt different from classic rumble users
+	 * were used to. Since then new firmwares were introduced to change behavior
+	 * and make this new 'v2' behavior default on PlayStation and other platforms.
+	 * The original DualSense requires a new enough firmware as bundled with PS5
+	 * software released in 2021. DualSense edge supports it out of the box.
+	 * Both devices also support the old mode, but it is not really used.
+	 */
+	if (hdev->product == USB_DEVICE_ID_SONY_PS5_CONTROLLER) {
+		/* Feature version 2.21 introduced new vibration method. */
+		ds->use_vibration_v2 = ds->update_version >= DS_FEATURE_VERSION(2, 21);
+	} else if (hdev->product == USB_DEVICE_ID_SONY_PS5_CONTROLLER_2) {
+		ds->use_vibration_v2 = true;
 	}
 
 	ret = ps_devices_list_add(ps_dev);
@@ -1301,7 +1398,8 @@ static int ps_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		goto err_stop;
 	}
 
-	if (hdev->product == USB_DEVICE_ID_SONY_PS5_CONTROLLER) {
+	if (hdev->product == USB_DEVICE_ID_SONY_PS5_CONTROLLER ||
+		hdev->product == USB_DEVICE_ID_SONY_PS5_CONTROLLER_2) {
 		dev = dualsense_create(hdev);
 		if (IS_ERR(dev)) {
 			hid_err(hdev, "Failed to create dualsense.\n");
@@ -1332,6 +1430,9 @@ static void ps_remove(struct hid_device *hdev)
 	ps_devices_list_remove(dev);
 	ps_device_release_player_id(dev);
 
+	if (dev->remove)
+		dev->remove(dev);
+
 	hid_hw_close(hdev);
 	hid_hw_stop(hdev);
 }
@@ -1339,6 +1440,8 @@ static void ps_remove(struct hid_device *hdev)
 static const struct hid_device_id ps_devices[] = {
 	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS5_CONTROLLER) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS5_CONTROLLER) },
+	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS5_CONTROLLER_2) },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_SONY, USB_DEVICE_ID_SONY_PS5_CONTROLLER_2) },
 	{ }
 };
 MODULE_DEVICE_TABLE(hid, ps_devices);

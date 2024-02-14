@@ -43,6 +43,23 @@ enum cam_context_state {
 	CAM_CTX_STATE_MAX            = 6,
 };
 
+static char *cam_ctx_state_str[] = {
+	[CAM_CTX_UNINIT]    = "UNINIT",
+	[CAM_CTX_AVAILABLE] = "AVAILABLE",
+	[CAM_CTX_ACQUIRED]  = "ACQUIRED",
+	[CAM_CTX_READY]     = "READY",
+	[CAM_CTX_FLUSHED]   = "FLUSHED",
+	[CAM_CTX_ACTIVATED] = "ACTIVATED"
+};
+
+static inline const char *cam_ctx_state_get_str(enum cam_context_state state)
+{
+	if (state >= CAM_CTX_STATE_MAX)
+		return "INVALID";
+	return cam_ctx_state_str[state];
+}
+
+
 /**
  * struct cam_ctx_request - Common request structure for the context
  *

@@ -1450,7 +1450,7 @@ void free_mem_ce_debug_hist_data(struct hif_softc *scn, uint32_t ce_id)
 #endif /* HIF_CE_DEBUG_DATA_BUF */
 
 #ifndef HIF_CE_DEBUG_DATA_DYNAMIC_BUF
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 struct hif_ce_desc_event hif_ce_desc_history[CE_COUNT_MAX][HIF_CE_HISTORY_MAX];
 
 /**
@@ -1505,7 +1505,7 @@ alloc_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id,
 
 static inline void
 free_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id) { }
-#endif /* (HIF_CONFIG_SLUB_DEBUG_ON) || (HIF_CE_DEBUG_DATA_BUF) */
+#endif /* (CONFIG_WLAN_EXTRA_DEBUG) || (HIF_CE_DEBUG_DATA_BUF) */
 #else
 #if defined(HIF_CE_DEBUG_DATA_BUF)
 
@@ -1557,7 +1557,7 @@ free_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id) { }
 #endif /* HIF_CE_DEBUG_DATA_BUF */
 #endif /* HIF_CE_DEBUG_DATA_DYNAMIC_BUF */
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 /**
  * reset_ce_debug_history() - reset the index and ce id used for dumping the
  * CE records on the console using sysfs.
@@ -1574,9 +1574,9 @@ static inline void reset_ce_debug_history(struct hif_softc *scn)
 	ce_hist->hist_index = 0;
 	ce_hist->hist_id = 0;
 }
-#else /* defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
+#else /* defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF) */
 static inline void reset_ce_debug_history(struct hif_softc *scn) { }
-#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
+#endif /*defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF) */
 
 void ce_enable_polling(void *cestate)
 {

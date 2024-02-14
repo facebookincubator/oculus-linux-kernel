@@ -8973,6 +8973,26 @@ BCMFASTPATH(dhd_prot_txstatus_process)(dhd_pub_t *dhd, void *msg)
 #endif /* DMAMAP_STATS */
 	pkt_fate = dhd_dbg_process_tx_status(dhd, pkt, pktid,
 		ltoh16(txstatus->compl_hdr.status) & WLFC_CTL_PKTFLAG_MASK);
+	if(!pkt_fate) {
+		switch (ltoh16(txstatus->compl_hdr.status) & WLFC_CTL_PKTFLAG_MASK) {
+		case WLFC_CTL_PKTFLAG_D11SUPPRESS:
+			DHD_ERROR(("WiFi dropped packet, D11 suppressed a packet \n"));
+			break;
+		case WLFC_CTL_PKTFLAG_WLSUPPRESS:
+			DHD_ERROR(("WiFi dropped packet, WL firmware suppressed a packet because MAC is already in PSMode (short time window) \n"));
+			break;
+		case WLFC_CTL_PKTFLAG_TOSSED_BYWLC:
+			DHD_ERROR(("WiFi dropped packet, Firmware tossed this packet \n"));
+			break;
+		case WLFC_CTL_PKTFLAG_DISCARD_NOACK:
+			DHD_ERROR(("WiFi dropped packet, Firmware tossed after retries \n"));
+			break;
+		default:
+			DHD_ERROR(("WiFi dropped packet, Unknown reason \n"));
+			break;
+		}
+	}
+
 #if defined(XRAPI) && defined(QFLUSH_LOG)
 	/* XRAPI QFlush - logging txstatus history */
 	if (dhd->d11_tx_status && dhd->flush_logging) {

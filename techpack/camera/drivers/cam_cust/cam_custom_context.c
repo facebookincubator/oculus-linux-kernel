@@ -450,8 +450,8 @@ static int __cam_custom_release_dev_in_acquired(struct cam_context *ctx,
 	spin_unlock_bh(&ctx->lock);
 	ctx->state = CAM_CTX_AVAILABLE;
 
-	CAM_DBG(CAM_CUSTOM, "Release device success[%u] next state %d",
-		ctx->ctx_id, ctx->state);
+	CAM_ERR(CAM_CUSTOM, "DBG: Release device success[%u] next state %s",
+		ctx->ctx_id, cam_ctx_state_get_str(ctx->state));
 
 	return rc;
 }

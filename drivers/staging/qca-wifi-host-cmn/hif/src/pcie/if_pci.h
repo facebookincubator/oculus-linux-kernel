@@ -36,11 +36,11 @@
 /* Register used for handshake mechanism to validate UMAC is awake */
 #define PCIE_PCIE_LOCAL_REG_PCIE_SOC_WAKE_PCIE_LOCAL_REG (0x01E00000 + 0x3004)
 /* Timeout duration to validate UMAC wake status */
-#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define FORCE_WAKE_DELAY_TIMEOUT_MS 500
 #else
 #define FORCE_WAKE_DELAY_TIMEOUT_MS 50
-#endif /* HAL_CONFIG_SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 /* Validate UMAC status every 5ms */
 #define FORCE_WAKE_DELAY_MS 5
 #endif /* FORCE_WAKE */
