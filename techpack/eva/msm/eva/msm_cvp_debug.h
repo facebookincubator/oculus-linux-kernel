@@ -86,12 +86,31 @@ extern bool cvp_kernel_fence_enabled;
 	} while (0)
 
 
+#ifdef CONFIG_DEBUG_FS
 struct dentry *msm_cvp_debugfs_init_drv(void);
 struct dentry *msm_cvp_debugfs_init_core(struct msm_cvp_core *core,
 		struct dentry *parent);
 struct dentry *msm_cvp_debugfs_init_inst(struct msm_cvp_inst *inst,
 		struct dentry *parent);
 void msm_cvp_debugfs_deinit_inst(struct msm_cvp_inst *inst);
+#else
+static inline struct dentry *msm_cvp_debugfs_init_drv(void)
+{
+	return ERR_PTR(-ENODEV);
+}
+static inline struct dentry *msm_cvp_debugfs_init_core(struct msm_cvp_core *core,
+                struct dentry *parent)
+{
+	return ERR_PTR(-ENODEV);
+}
+static inline struct dentry *msm_cvp_debugfs_init_inst(struct msm_cvp_inst *inst,
+                struct dentry *parent)
+{
+	return ERR_PTR(-ENODEV);
+}
+static inline void msm_cvp_debugfs_deinit_inst(struct msm_cvp_inst *inst)
+{ }
+#endif
 
 static inline char *get_debug_level_str(int level)
 {

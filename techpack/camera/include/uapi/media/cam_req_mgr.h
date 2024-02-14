@@ -268,6 +268,45 @@ struct cam_req_mgr_sync_mode {
 };
 
 /**
+ * struct cam_req_mgr_sync_link_desc
+ * @link_hdls:           Input Param - link handles to be in sync mode
+ * @sensor_id:           Input Param - sensor id for link
+ * @remote_sensor:       Input Param - sensor type, remote or local
+ * @reserved:            reserved for alignment
+ */
+struct cam_req_mgr_sync_link_desc {
+	__s32 link_hdl;
+	__s32 sensor_id;
+	__u32 remote_sensor;
+	__u32 reserved;
+};
+
+/**
+ * struct cam_req_mgr_sync_mode_v2
+ * @version:          Input param - version, should be set to 2 for v2
+ * @session_hdl:      Input param - Identifier for CSL session
+ * @sync_mode:        Input Param - Type of sync mode
+ * @master_link_hdl:  Input Param - To dictate which link's SOF drives system
+ *                          (Valid only when sync_mode is one of SYNC
+ *                          enabled modes)
+ * @num_links:        Input Param - Num of links in sync mode (Valid only
+ *                          when sync_mode is one of SYNC enabled modes)
+ * @reserved:         reserved for alignment
+ * @links:            Input Param - Array of link descriptors
+ *
+ * @opcode: CAM_REQ_MGR_SYNC_MODE_V2
+ */
+struct cam_req_mgr_sync_mode_v2 {
+	__u32 version;
+	__s32 num_links;
+	__s32 session_hdl;
+	__s32 sync_mode;
+	__s32 master_link_hdl;
+	__u32 reserved;
+	struct cam_req_mgr_sync_link_desc links[1];
+};
+
+/**
  * struct cam_req_mgr_link_control
  * @ops:                 Link operations: activate/deactive
  * @session_hdl:         Input param - Identifier for CSL session
@@ -309,6 +348,7 @@ struct cam_req_mgr_link_control {
 #define CAM_REQ_MGR_REQUEST_DUMP                (CAM_COMMON_OPCODE_MAX + 15)
 #define CAM_REQ_MGR_LINK_V3                     (CAM_COMMON_OPCODE_MAX + 16)
 #define CAM_REQ_MGR_EXIT_DQ_THREAD              (CAM_COMMON_OPCODE_MAX + 17)
+#define CAM_REQ_MGR_SYNC_MODE_V2                (CAM_COMMON_OPCODE_MAX + 18)
 
 /* end of cam_req_mgr opcodes */
 

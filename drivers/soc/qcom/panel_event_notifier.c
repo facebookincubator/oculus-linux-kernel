@@ -3,6 +3,7 @@
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
  *
  */
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/list.h>
 #include <linux/mutex.h>
@@ -149,7 +150,7 @@ void panel_event_notification_trigger(enum panel_event_notifier_tag tag,
 
 		/* skip client entries not subscribed to tag */
 		if (entry->tag != tag) {
-			pr_err("tag mismatch entry->tag:%d tag:%d\n", entry->tag, tag);
+			pr_debug("tag mismatch entry->tag:%d tag:%d\n", entry->tag, tag);
 			mutex_unlock(&panel_event_notifier_entries_lock);
 			continue;
 		}

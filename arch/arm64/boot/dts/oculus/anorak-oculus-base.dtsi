@@ -12,8 +12,6 @@
 #include "vendor-base/qcom/anorak.dtsi"
 #include "vendor-base/qcom/audio/anorak-audio.dtsi"
 #include "vendor-base/qcom/camera/anorak-camera.dtsi"
-#include "vendor-base/qcom/display/anorak-sde.dtsi"
-#include "vendor-base/qcom/display/anorak-sde-display.dtsi"
 #include "vendor-base/qcom/eva/anorak-eva.dtsi"
 #include "vendor-base/qcom/video/anorak-vidc.dtsi"
 
@@ -163,26 +161,6 @@
 	/delete-property/ qcom,proxy-consumer-voltage;
 };
 
-&mdss_dsi2 {
-	status = "disabled";
-};
-
-&mdss_dsi3 {
-	status = "disabled";
-};
-
-&mdss_dsi_phy2 {
-	status = "disabled";
-};
-
-&mdss_dsi_phy3 {
-	status = "disabled";
-};
-
-&mdss_mdp1 {
-	status = "disabled";
-};
-
 &msm_gpu {
 	qcom,disable-wake-on-touch;
 };
@@ -214,17 +192,6 @@
 	blue {
 		qcom,continuous-mode;
 		qcom,default-brightness = <60>;
-	};
-};
-
-/* Battery I2C */
-&qupv3_se0_i2c {
-	status = "ok";
-	qcom,clk-freq-out = <400000>;
-
-	bq27z561: fuel-gauge@0x55 {
-		compatible = "ti,bq27z561";
-		reg = <0x55>;
 	};
 };
 
@@ -267,6 +234,7 @@
 		record-size = <131072>;
 		console-size = <131072>;
 		pmsg-size = <131072>;
+		ftrace-size = <131072>;
 	};
 
 	splash_memory: splash_region {
@@ -508,7 +476,7 @@
 	 * Mark XPU-protected GPIOs are reserved, to prevent
 	 * attempted initialization at boot.
 	 */
-	qcom,gpios-reserved = <53 54 55 115 136>;
+	qcom,gpios-reserved = <54 55 115 136>;
 
 	/delete-node/ pcie1;
 	/delete-node/ pcie2;
@@ -679,5 +647,10 @@
 		oculus,max-pwm = <255>;
 		#cooling-cells = <2>;
 		cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000 8000>;
+	};
+
+	uefi_logs {
+		compatible = "meta,uefi-logs";
+		memory-region = <&uefi_log_mem>;
 	};
 };

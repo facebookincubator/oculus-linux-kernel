@@ -379,6 +379,7 @@ static const struct file_operations stability_fops = {
 	.write = trigger_stability_write,
 };
 
+#ifdef CONFIG_DEBUG_FS
 struct dentry* msm_vidc_debugfs_init_drv()
 {
 	struct dentry *dir = NULL;
@@ -712,6 +713,7 @@ void msm_vidc_debugfs_update(void *instance,
 		break;
 	}
 }
+#endif /* CONFIG_DEBUG_FS */
 
 int msm_vidc_check_ratelimit(void)
 {

@@ -163,6 +163,15 @@ QDF_STATUS wmi_send_mlo_link_removal_cmd(
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_send_mlo_vdev_pause(wmi_unified_t wmi,
+				   struct mlo_vdev_pause *info)
+{
+	if (wmi->ops->send_mlo_vdev_pause)
+		return wmi->ops->send_mlo_vdev_pause(wmi, info);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 QDF_STATUS wmi_extract_mlo_link_removal_evt_fixed_param(
 		struct wmi_unified *wmi,
 		void *buf,

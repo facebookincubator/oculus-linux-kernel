@@ -307,7 +307,7 @@ static void qdf_frag_track_prefill(void)
  * This initializes the memory manager for the frag tracking cookies. Because
  * these cookies are all the same size and only used in this feature, we can
  * use a kmem_cache to provide tracking as well as to speed up allocations.
- * To avoid the overhead of allocating and freeing the buffers (including SLUB
+ * To avoid the overhead of allocating and freeing the buffers (including Debug
  * features) a freelist is prepopulated here.
  *
  * Return: none

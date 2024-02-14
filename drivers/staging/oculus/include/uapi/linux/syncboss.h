@@ -60,6 +60,36 @@ struct syncboss_nsync_event {
 	uint32_t count;
 } __attribute__((packed));
 
+/*
+ * THIS MUST BE ALINGED LIBSYNCBOSS Struct used in fbsource hal library -
+ * fbsource/arvr/firmware/projects/libsyncboss/os_interface/syncboss_hal_impl_android_driver.c
+ */
+struct syncboss_driver_directchannel_shared_memory_config {
+	int dmabuf_fd;
+	size_t direct_channel_buffer_size; /* must be less than dma_buf_size */
+	u8 uapi_pkt_type;
+	u8 wake_epoll; /* set to true to wake up epoll when data arrives, false otherwise. */
+} __attribute__((packed));
+
+/*
+ * Direct Channel Format defined by Android
+ */
+union syncboss_direct_channel_payload {
+	float fdata[16];
+	int64_t idata[8];
+};
+
+/* Direct Channel defintion for android */
+struct syncboss_sensor_direct_channel_data {
+	int32_t		size;
+	int32_t		report_token;
+	int32_t		sensor_type;
+	uint32_t	counter;
+	int64_t		timestamp;
+	union syncboss_direct_channel_payload payload;
+	int32_t		reserved[4];
+} __attribute__((packed));
+
 #define SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG 2
 
 #define SYNCBOSS_PROX_EVENT_SYSTEM_UP 0
@@ -74,5 +104,8 @@ struct syncboss_nsync_event {
 /* ioctl used to allocate and release sequence numbers */
 #define SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL _IOR(MISC_MAJOR, 2, uint8_t)
 #define SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL _IOW(MISC_MAJOR, 3, uint8_t)
+/* Ioctl used to set dma buf for a channel */
+#define SYNCBOSS_SET_DIRECTCHANNEL_SHARED_MEMORY_IOCTL \
+_IOW(MISC_MAJOR, 4, struct syncboss_driver_directchannel_shared_memory_config)
 
  #endif

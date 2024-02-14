@@ -1698,6 +1698,7 @@ static int handle_property_fence_array(struct msm_vidc_inst *inst,
 			"%s: fence list payload size %d exceeds expected max size %d\n",
 			__func__, payload_size, sizeof(inst->hfi_frame_info.fence_id));
 		msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+		return -EINVAL;
 	}
 
 	for (i = 0; i < fence_count; i++) {

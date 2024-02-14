@@ -25,6 +25,8 @@
 #include "cam_ife_csid_hw_ver2.h"
 #include "cam_cdm_intf_api.h"
 
+struct csid_ref_time g_ref_time;
+
 const uint8_t *cam_ife_csid_irq_reg_tag[CAM_IFE_CSID_IRQ_REG_MAX] = {
 	"TOP",
 	"RX",

@@ -59,6 +59,7 @@ static struct msm_platform_core_capability core_data_anorak[] = {
 					 * which is greater than 4096x2176@120fps,
 					 * 8192x4320@48fps
 					 */
+	{MAX_ENC_MBPS, 7833600}, // same as max mbps
 	{MAX_IMAGE_MBPF, 1048576},  /* (16384x16384)/256 */
 	{MAX_MBPF_HQ, 8160}, /* ((1920x1088)/256) */
 	{MAX_MBPS_HQ, 489600}, /* ((1920x1088)/256)@60fps */

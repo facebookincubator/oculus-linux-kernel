@@ -171,24 +171,6 @@ hdd_update_wiphy_eht_caps_6ghz(struct hdd_context *hdd_ctx,
 	iftype_ap->types_mask = BIT(NL80211_IFTYPE_AP);
 }
 
-#ifdef CFG80211_RU_PUNCT_SUPPORT
-static void hdd_update_wiphy_punct_support(struct hdd_context *hdd_ctx)
-{
-	/*
-	 * ru_punct_supp_bw is the minimum BW of puncture.
-	 * If it is set to 80, then 160 and 320 puncture bandwidth will also be
-	 * supported in this case.
-	 * If it is set to 320, then only 320 puncture bandwidth is supported.
-	 */
-	hdd_ctx->wiphy->ru_punct_supp_bw = NL80211_RU_PUNCT_SUPP_BW_80;
-	hdd_debug("ru_punct_supp_bw: %d", hdd_ctx->wiphy->ru_punct_supp_bw);
-}
-#else
-static void hdd_update_wiphy_punct_support(struct hdd_context *hdd_ctx)
-{
-}
-#endif
-
 void hdd_update_wiphy_eht_cap(struct hdd_context *hdd_ctx)
 {
 	tDot11fIEeht_cap eht_cap_cfg;
@@ -214,9 +196,6 @@ void hdd_update_wiphy_eht_cap(struct hdd_context *hdd_ctx)
 	status = ucfg_mlme_cfg_get_eht_caps(hdd_ctx->psoc, &eht_cap_cfg);
 	if (QDF_IS_STATUS_ERROR(status))
 		return;
-
-	if (eht_cap_cfg.present)
-		hdd_update_wiphy_punct_support(hdd_ctx);
 
 	if (band_2g) {
 		iftype_sta = hdd_ctx->iftype_data_2g;

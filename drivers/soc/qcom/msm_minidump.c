@@ -256,7 +256,7 @@ EXPORT_SYMBOL(msm_minidump_update_region);
 
 #ifdef CONFIG_MINIDUMP_PSTORE_ONLY
 /* File names here must be in sync with register_pstore_info() in drivers/soc/qcom/minidump_log.c */
-const char *pstore_region_list[] = {"KCONSOLE", "KDMESG", "KPMSG"};
+const char *pstore_region_list[] = {"KCONSOLE", "KDMESG", "KFTRACE", "KPMSG"};
 bool msm_minidump_is_region_in_pstore(const struct md_region *entry)
 {
 	int i;
@@ -620,7 +620,7 @@ static int msm_minidump_driver_probe(struct platform_device *pdev)
 	}
 
 	/*Check global minidump support initialization */
-	if (!md_global_toc->md_toc_init) {
+	if (size < sizeof(*md_global_toc) || !md_global_toc->md_toc_init) {
 		pr_err("System Minidump TOC not initialized\n");
 		return -ENODEV;
 	}

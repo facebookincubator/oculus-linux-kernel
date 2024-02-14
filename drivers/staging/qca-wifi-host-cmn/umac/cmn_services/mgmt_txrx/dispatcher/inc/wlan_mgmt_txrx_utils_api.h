@@ -882,6 +882,16 @@ struct mlo_bcast_t2lm_info {
 	uint8_t vdev_id[MAX_AP_MLDS_PER_LINK];
 	uint32_t expected_duration[MAX_AP_MLDS_PER_LINK];
 };
+
+/**
+ * struct mlo_vdev_pause - ML vdev pause info
+ * @vdev_id: vdev id of vdev to be paused
+ * @vdev_pause_duration: vdev pause duration
+ */
+struct mlo_vdev_pause {
+	uint16_t vdev_id;
+	uint32_t vdev_pause_duration;
+};
 #endif
 
 /**

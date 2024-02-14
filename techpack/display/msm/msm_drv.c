@@ -40,6 +40,8 @@
 
 #include <linux/of_address.h>
 #include <linux/kthread.h>
+#include <linux/sync_file.h>
+#include <linux/dma-fence.h>
 #include <uapi/linux/sched/types.h>
 #include <drm/drm_of.h>
 #include <drm/drm_irq.h>
@@ -53,8 +55,10 @@
 #include "msm_gem.h"
 #include "msm_kms.h"
 #include "msm_mmu.h"
+#include "sde_crtc.h"
 #include "sde_wb.h"
 #include "sde_dbg.h"
+#include "sde_trace.h"
 
 /*
  * MSM driver version:
@@ -1751,6 +1755,113 @@ int msm_ioctl_display_hint_ops(struct drm_device *dev, void *data,
 	return 0;
 }
 
+static u64 msm_vsync_trigger_next_vsync_ns(u64 last_vsync_ns, u32 min_fps)
+{
+	u64 res;
+
+	BUG_ON(min_fps == 0);
+
+	res = 1E9;
+	do_div(res, min_fps);
+
+	return last_vsync_ns + res;
+}
+
+int msm_ioctl_vsync_trigger(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct msm_drm_private *priv = dev->dev_private;
+	struct drm_msm_vsync_trigger *args = data;
+	struct dma_fence *fence = NULL;
+	struct drm_crtc *crtc = NULL;
+	struct sde_crtc *sde_crtc = NULL;
+	int ret = 0;
+
+	SDE_ATRACE_BEGIN(__func__);
+
+	if (!priv || !args || (args->crtc_id >= priv->num_crtcs)) {
+		DRM_ERROR("invalid arguments");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	crtc = priv->crtcs[args->crtc_id];
+	if (!crtc) {
+		DRM_ERROR("could not find crtc id:%d\n", args->crtc_id);
+		ret = -ENOENT;
+		goto out;
+	}
+
+	sde_crtc = to_sde_crtc(crtc);
+	if (!sde_crtc) {
+		DRM_ERROR("could not find sde_crtc for crtc id:%d\n", args->crtc_id);
+		ret = -ENOENT;
+		goto out;
+	}
+
+	if (args->fence && sde_crtc->qsync_min_fps > 0) {
+		ktime_t last_vsync_kt = sde_crtc->vblank_last_cb_time;
+		u64 next_vsync_ns = msm_vsync_trigger_next_vsync_ns(
+			ktime_to_ns(last_vsync_kt), sde_crtc->qsync_min_fps);
+		u64 curr_ktime_ns = 0;
+		s64 fence_timeout_jf = MAX_SCHEDULE_TIMEOUT;
+		long wait_ret;
+
+		fence = sync_file_get_fence((int)args->fence);
+		if (!fence) {
+			pr_err("%s: could not get fence for fd=%d\n",
+				__func__, args->fence);
+			ret = -EBADF;
+			goto out;
+		}
+
+		curr_ktime_ns = ktime_to_ns(ktime_get());
+		if (curr_ktime_ns > next_vsync_ns) {
+			SDE_ATRACE_INT("wait_fence_expired", 0);
+			ret = -ETIMEDOUT;
+			goto out;
+		}
+
+		/* Always wait for at least one jiffies, the timer resolution
+		 * might not be high enough if the next minimal vsync is close.
+		 */
+		fence_timeout_jf = nsecs_to_jiffies(
+			next_vsync_ns - curr_ktime_ns) + 1;
+
+		SDE_ATRACE_BEGIN("wait_fence");
+		wait_ret = dma_fence_wait_timeout(fence, true,
+			fence_timeout_jf);
+		SDE_ATRACE_END("wait_fence");
+
+		if (wait_ret == -ERESTARTSYS) {
+			ret = -EINTR;
+			goto out;
+		} else if (wait_ret == 0) {
+			ret = -ETIMEDOUT;
+			goto out;
+		} else if (sde_crtc->vblank_last_cb_time != last_vsync_kt) {
+			SDE_ATRACE_INT("wait_fence_timedout_missed", 0);
+			ret = -ETIMEDOUT;
+			goto out;
+		}
+	}
+
+	ret = sde_crtc_vsync_trigger(crtc);
+	if (ret) {
+		pr_err("%s: vsync trigger failed, ret=%d\n",
+			__func__, ret);
+		goto out;
+	}
+
+	ret = 0;
+out:
+	if (fence)
+		dma_fence_put(fence);
+	SDE_ATRACE_END(__func__);
+
+	return ret;
+}
+
 static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_GEM_NEW,      msm_ioctl_gem_new,      DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_GEM_CPU_PREP, msm_ioctl_gem_cpu_prep, DRM_AUTH|DRM_RENDER_ALLOW),
@@ -1766,6 +1877,8 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 			DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_HINT, msm_ioctl_display_hint_ops,
 			DRM_UNLOCKED),
+	DRM_IOCTL_DEF_DRV(MSM_VSYNC_TRIGGER, msm_ioctl_vsync_trigger,
+		DRM_RENDER_ALLOW),
 };
 
 static const struct vm_operations_struct vm_ops = {

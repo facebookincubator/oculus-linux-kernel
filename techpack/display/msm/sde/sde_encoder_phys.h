@@ -149,6 +149,7 @@ struct sde_encoder_virt_ops {
  *                              count and underrun line count
  * @add_to_minidump:		Add this phys_enc data to minidumps
  * @disable_autorefresh:	Disable autorefresh
+ * @vsync_trigger:		Trigger a vsync for video mode panel.
  */
 
 struct sde_encoder_phys_ops {
@@ -205,6 +206,7 @@ struct sde_encoder_phys_ops {
 	u32 (*get_underrun_line_count)(struct sde_encoder_phys *phys);
 	void (*add_to_minidump)(struct sde_encoder_phys *phys);
 	void (*disable_autorefresh)(struct sde_encoder_phys *phys);
+	void (*vsync_trigger)(struct sde_encoder_phys *phys_enc);
 };
 
 /**
@@ -320,6 +322,8 @@ struct sde_encoder_irq {
  * @frame_trigger_mode:		frame trigger mode indication for command
  *				mode display
  * @recovered:			flag set to true when recovered from pp timeout
+ * @avr_post_kickoff_enabled:	Indicates vsync will be triggered at the end of
+ * 				the kickoff for video mode display
  */
 struct sde_encoder_phys {
 	struct drm_encoder *parent;
@@ -370,6 +374,7 @@ struct sde_encoder_phys {
 	int lineptr_offset_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
 	bool recovered;
+	bool avr_post_kickoff_enabled;
 };
 
 static inline int sde_encoder_phys_inc_pending(struct sde_encoder_phys *phys)

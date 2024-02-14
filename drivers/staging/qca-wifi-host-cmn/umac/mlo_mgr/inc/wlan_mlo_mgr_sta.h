@@ -682,6 +682,20 @@ void mlo_process_ml_reconfig_ie(struct wlan_objmgr_vdev *vdev,
 				uint8_t *ml_ie, qdf_size_t ml_ie_len,
 				struct mlo_partner_info *partner_info);
 /**
+ * wlan_mlo_send_vdev_pause() - send MLO vdev pause to FW
+ * @psoc: pointer to psoc
+ * @vdev: vdev pointer
+ * @session_id: session ID
+ * @vdev_pause_dur: vdev pause duration
+ *
+ * Return: None
+ */
+void wlan_mlo_send_vdev_pause(struct wlan_objmgr_psoc *psoc,
+			      struct wlan_objmgr_vdev *vdev,
+			      uint16_t session_id,
+			      uint16_t vdev_pause_dur);
+
+/**
  * mlo_allocate_and_copy_ies() - allocate and copy ies
  * @target: target connect req pointer
  * @source: source connect req pointer
@@ -893,6 +907,7 @@ void mlo_process_ml_reconfig_ie(struct wlan_objmgr_vdev *vdev,
 				uint8_t *ml_ie, qdf_size_t ml_ie_len,
 				struct mlo_partner_info *partner_info)
 { }
+
 #ifdef WLAN_FEATURE_11BE_MLO
 static inline QDF_STATUS
 mlo_get_link_state_context(struct wlan_objmgr_psoc *psoc,
@@ -902,5 +917,12 @@ mlo_get_link_state_context(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+static inline
+void wlan_mlo_send_vdev_pause(struct wlan_objmgr_psoc *psoc,
+			      struct wlan_objmgr_vdev *vdev,
+			      uint16_t session_id,
+			      uint16_t vdev_pause_dur)
+{}
 #endif
 #endif

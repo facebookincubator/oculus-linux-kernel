@@ -7093,6 +7093,7 @@ int dsi_display_get_modes(struct dsi_display *display,
 	int i, start, end, rc = -EINVAL;
 	int dsc_modes = 0, nondsc_modes = 0;
 	struct dsi_qsync_capabilities *qsync_caps;
+	bool found_default_refresh = false;
 
 	if (!display || !out_modes) {
 		DSI_ERR("Invalid params\n");
@@ -7266,7 +7267,8 @@ int dsi_display_get_modes(struct dsi_display *display,
 			sub_mode->timing.refresh_rate = dfps_caps.dfps_list[i];
 
 			sub_mode->timing.is_default_refresh =
-			 	(dfps_caps.panel_refresh_rate == sub_mode->timing.refresh_rate);
+				(dfps_caps.panel_refresh_rate == sub_mode->timing.refresh_rate);
+			found_default_refresh |= sub_mode->timing.is_default_refresh;
 
 			/* Override with qsync min fps list in dfps usecases */
 			if (qsync_caps->qsync_min_fps && qsync_caps->qsync_min_fps_list_len) {
@@ -7297,6 +7299,11 @@ int dsi_display_get_modes(struct dsi_display *display,
 
 			kfree(display_mode.priv_info);
 		}
+	}
+
+	if (!found_default_refresh && timing_mode_count) {
+		/* just in case we fail to find the default refresh */
+		display->modes[0].timing.is_default_refresh = true;
 	}
 
 	if (dsc_modes && nondsc_modes)

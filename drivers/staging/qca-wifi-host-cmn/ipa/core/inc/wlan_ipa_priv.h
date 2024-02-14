@@ -113,6 +113,8 @@
  * @WLAN_IPA_UC_OPCODE_UC_READY: IPA UC ready indication
  * @WLAN_IPA_FILTER_RSV_NOTIFY: OPT WIFI DP filter reserve notification
  * @WLAN_IPA_FILTER_REL_NOTIFY: OPT WIFI DP filter release notification
+ * @WLAN_IPA_SMMU_MAP: IPA SMMU map call
+ * @WLAN_IPA_SMMU_UNMAP: IPA SMMU unmap call
  * @WLAN_IPA_UC_OPCODE_MAX: IPA UC max operation code
  */
 enum wlan_ipa_uc_op_code {
@@ -129,6 +131,8 @@ enum wlan_ipa_uc_op_code {
 	WLAN_IPA_UC_OPCODE_UC_READY = 8,
 	WLAN_IPA_FILTER_RSV_NOTIFY = 9,
 	WLAN_IPA_FILTER_REL_NOTIFY = 10,
+	WLAN_IPA_SMMU_MAP = 11,
+	WLAN_IPA_SMMU_UNMAP = 12,
 	/* keep this last */
 	WLAN_IPA_UC_OPCODE_MAX
 };
@@ -760,6 +764,7 @@ struct wlan_ipa_priv {
 #ifdef IPA_OPT_WIFI_DP
 	struct wifi_dp_flt_setup dp_cce_super_rule_flt_param;
 	qdf_event_t ipa_flt_evnt;
+	qdf_wake_lock_t opt_dp_wake_lock;
 #endif
 };
 

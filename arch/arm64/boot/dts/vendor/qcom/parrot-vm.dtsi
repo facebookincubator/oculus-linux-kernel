@@ -1,7 +1,7 @@
 #include "waipio-vm.dtsi"
 
 / {
-	qcom,msm-id = <537 0x10000>, <583 0x10000>, <613 0x10000>;
+	qcom,msm-id = <537 0x10000>, <583 0x10000>, <613 0x10000>, <631 0x10000>;
 	interrupt-parent = <&vgic>;
 
 	gunyah-vsock {

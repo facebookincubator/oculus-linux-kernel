@@ -258,7 +258,8 @@ static void wlan_pmo_init_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_ENABLE_BUS_SUSPEND_IN_SAP_MODE);
 	psoc_cfg->is_bus_suspend_enabled_in_go_mode =
 		cfg_get(psoc, CFG_ENABLE_BUS_SUSPEND_IN_GO_MODE);
-	if (wlan_ipa_config_is_enabled()) {
+	if (wlan_ipa_config_is_enabled() &&
+	    !ipa_config_is_opt_wifi_dp_enabled()) {
 		pmo_info("ipa is enabled and hence disable sap/go d3 wow");
 		psoc_cfg->is_bus_suspend_enabled_in_sap_mode = 0;
 		psoc_cfg->is_bus_suspend_enabled_in_go_mode = 0;
@@ -571,6 +572,24 @@ QDF_STATUS pmo_set_vdev_bridge_addr(struct wlan_objmgr_vdev *vdev,
 	vdev_ctx = pmo_vdev_get_priv(vdev);
 	qdf_mem_copy(vdev_ctx->bridgeaddr, bridgeaddr->bytes,
 		     QDF_MAC_ADDR_SIZE);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS pmo_core_get_listen_interval(struct wlan_objmgr_vdev *vdev,
+					uint32_t *listen_interval)
+{
+	struct pmo_vdev_priv_obj *vdev_ctx;
+
+	if (!vdev || !listen_interval) {
+		pmo_err("vdev NULL or NULL ptr");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	vdev_ctx = pmo_vdev_get_priv(vdev);
+	qdf_spin_lock_bh(&vdev_ctx->pmo_vdev_lock);
+	*listen_interval = vdev_ctx->dyn_listen_interval;
+	qdf_spin_unlock_bh(&vdev_ctx->pmo_vdev_lock);
 
 	return QDF_STATUS_SUCCESS;
 }

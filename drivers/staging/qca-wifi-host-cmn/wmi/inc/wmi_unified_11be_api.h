@@ -77,6 +77,16 @@ QDF_STATUS wmi_send_mlo_link_removal_cmd(
 		const struct mlo_link_removal_cmd_params *param);
 
 /**
+ * wmi_send_mlo_vdev_pause() - Send WMI command for MLO vdev pause
+ * @wmi: wmi handle
+ * @info: MLO vdev pause information
+ *
+ * Return: QDF_STATUS_SUCCESS of operation
+ */
+QDF_STATUS wmi_send_mlo_vdev_pause(wmi_unified_t wmi,
+				   struct mlo_vdev_pause *info);
+
+/**
  * wmi_extract_mlo_link_removal_evt_fixed_param() - Extract fixed parameters TLV
  * from the MLO link removal WMI  event
  * @wmi_handle: wmi handle

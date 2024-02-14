@@ -151,4 +151,8 @@ config QCA_CLD_WLAN_PROFILE
 	string "WLAN configuration profile to use"
 	default "default"
 
+config WLAN_EXTRA_DEBUG
+	bool "Enable debug-related features for WLAN threads"
+	default n
+
 endif # QCA_CLD_WLAN

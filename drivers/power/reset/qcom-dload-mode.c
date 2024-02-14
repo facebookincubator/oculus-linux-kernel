@@ -52,12 +52,6 @@ MODULE_PARM_DESC(emmc_dload,
 
 static int set_download_mode(enum qcom_download_mode mode)
 {
-	if ((mode & QCOM_DOWNLOAD_MINIDUMP) && !msm_minidump_enabled()) {
-		mode &= ~QCOM_DOWNLOAD_MINIDUMP;
-		pr_warn("Minidump not enabled.\n");
-		if (!mode)
-			return -ENODEV;
-	}
 	current_download_mode = mode;
 	qcom_scm_set_download_mode(mode, 0);
 	return 0;
@@ -187,6 +181,7 @@ static ssize_t emmc_dload_store(struct kobject *kobj,
 	if (ret < 0)
 		return ret;
 
+	emmc_dload = enabled;
 	if (enabled)
 		set_download_dest(poweroff, QCOM_DOWNLOAD_DEST_EMMC);
 	else
@@ -255,13 +250,6 @@ static int qcom_dload_panic(struct notifier_block *this, unsigned long event,
 	struct qcom_dload *poweroff = container_of(this, struct qcom_dload,
 						     panic_nb);
 	poweroff->in_panic = true;
-	if (enable_dump)
-		msm_enable_dump_mode(true);
-
-	if (emmc_dload)
-		set_download_dest(poweroff, QCOM_DOWNLOAD_DEST_EMMC);
-	else
-		set_download_dest(poweroff, QCOM_DOWNLOAD_DEST_QPST);
 
 	if (current_download_mode != QCOM_DOWNLOAD_NODUMP)
 		panic_reboot_mode = REBOOT_WARM;
@@ -338,6 +326,11 @@ static int qcom_dload_probe(struct platform_device *pdev)
 	msm_enable_dump_mode(enable_dump);
 	if (!enable_dump)
 		qcom_scm_disable_sdi();
+
+	if (emmc_dload)
+		set_download_dest(poweroff, QCOM_DOWNLOAD_DEST_EMMC);
+	else
+		set_download_dest(poweroff, QCOM_DOWNLOAD_DEST_QPST);
 
 	poweroff->panic_nb.notifier_call = qcom_dload_panic;
 	poweroff->panic_nb.priority = INT_MAX;

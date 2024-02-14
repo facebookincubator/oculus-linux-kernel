@@ -453,6 +453,9 @@ struct sde_crtc {
 	u32 line_time_in_ns;
 
 	struct sde_frame_data frame_data;
+
+	/* qsync information */
+	u32 qsync_min_fps;
 };
 
 enum sde_crtc_dirty_flags {
@@ -1103,4 +1106,12 @@ void _sde_crtc_vm_release_notify(struct drm_crtc *crtc);
  * @cstate: Pointer to DRM crtc object
  */
 void sde_crtc_reset_hw_fence(struct drm_crtc *crtc, struct drm_crtc_state *crtc_state);
+
+/**
+ * sde_crtc_vsync_trigger - to trigger vsync
+ * @crtc: Pointer to drm crtc structure
+ * Returns: 0 on success, negative errno on failure
+ */
+int sde_crtc_vsync_trigger(struct drm_crtc *crtc);
+
 #endif /* _SDE_CRTC_H_ */

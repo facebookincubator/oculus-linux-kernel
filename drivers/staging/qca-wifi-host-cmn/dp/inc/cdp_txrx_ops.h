@@ -1972,6 +1972,9 @@ struct cdp_throttle_ops {
  * @ipa_tx_buf_smmu_mapping: Create SMMU mappings for Tx
  * @ipa_tx_buf_smmu_unmapping: Release SMMU mappings for Tx
  * buffers to IPA
+ * @ipa_rx_buf_smmu_pool_mapping: Create SMMU mapping for Rx
+ * @ipa_set_smmu_mapped: Set IPA SMMU mapped value
+ * @ipa_get_smmu_mapped: Get IPA SMMU mapped value
  * @ipa_rx_super_rule_setup: Setup cce super rules based on filter tuple
  * @ipa_ast_create: Create/Update ast entry
  */
@@ -2066,6 +2069,15 @@ struct cdp_ipa_ops {
 						uint8_t pdev_id,
 						const char *func,
 						uint32_t line);
+	QDF_STATUS (*ipa_rx_buf_smmu_pool_mapping)(
+					      struct cdp_soc_t *soc_hdl,
+					      uint8_t pdev_id,
+					      bool create,
+					      const char *func,
+					      uint32_t line);
+	QDF_STATUS (*ipa_set_smmu_mapped)(struct cdp_soc_t *soc_hdl, int val);
+	int (*ipa_get_smmu_mapped)(struct cdp_soc_t *soc_hdl);
+
 #ifdef IPA_OPT_WIFI_DP
 	QDF_STATUS (*ipa_rx_super_rule_setup)(struct cdp_soc_t *soc_hdl,
 					      void *flt_params);

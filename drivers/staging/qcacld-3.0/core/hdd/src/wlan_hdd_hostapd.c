@@ -1044,9 +1044,10 @@ QDF_STATUS hdd_chan_change_notify(struct hdd_adapter *adapter,
 	puncture_bitmap = wlan_hdd_get_puncture_bitmap(chan_change);
 
 	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_ID);
-	hdd_debug("notify: chan:%d width:%d freq1:%d freq2:%d",
+	hdd_debug("notify: chan:%d width:%d freq1:%d freq2:%d punct 0x%x",
 		  chandef.chan->center_freq, chandef.width,
-		  chandef.center_freq1, chandef.center_freq2);
+		  chandef.center_freq1, chandef.center_freq2,
+		  puncture_bitmap);
 
 	if (hdd_adapter_is_link_adapter(adapter)) {
 		hdd_debug("replace link adapter dev with ml adapter dev");
@@ -1748,6 +1749,8 @@ static QDF_STATUS hdd_hostapd_chan_change(struct hdd_adapter *adapter,
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	struct sap_ch_selected_s *sap_chan_selected =
 			&sap_event->sapevt.sap_ch_selected;
+	struct sap_config *sap_config =
+				&adapter->session.ap.sap_config;
 
 	sap_ch_param.ch_width = sap_chan_selected->ch_width;
 	sap_ch_param.mhz_freq_seg0 =
@@ -1755,6 +1758,8 @@ static QDF_STATUS hdd_hostapd_chan_change(struct hdd_adapter *adapter,
 	sap_ch_param.mhz_freq_seg1 =
 		sap_chan_selected->vht_seg1_center_ch_freq;
 
+	if (sap_phymode_is_eht(sap_config->SapHw_mode))
+		wlan_reg_set_create_punc_bitmap(&sap_ch_param, true);
 	wlan_reg_set_channel_params_for_pwrmode(
 		hdd_ctx->pdev,
 		sap_chan_selected->pri_ch_freq,

@@ -1820,11 +1820,23 @@ vdevmgr_vdev_peer_delete_all_rsp_handle(struct vdev_mlme_obj *vdev_mlme,
 static QDF_STATUS vdevmgr_reconfig_req_cb(struct scheduler_msg *msg)
 {
 	struct wlan_objmgr_vdev *vdev = msg->bodyptr;
+	struct wlan_objmgr_psoc *psoc;
+	uint8_t vdev_id;
 
 	if (!vdev) {
 		mlme_err("vdev null");
 		return QDF_STATUS_E_INVAL;
 	}
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		mlme_err("Failed to get psoc");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	vdev_id = wlan_vdev_get_id(vdev);
+	if (!wlan_get_vdev_link_removed_flag_by_vdev_id(psoc, vdev_id))
+		mlme_cm_osif_link_reconfig_notify(vdev);
 
 	policy_mgr_handle_link_removal_on_vdev(vdev);
 	mlo_sta_stop_reconfig_timer_by_vdev(vdev);

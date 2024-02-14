@@ -1583,6 +1583,8 @@ struct wlan_mlme_cfg_twt {
  * @obss_detection_offload_enabled:       Enable OBSS detection offload
  * @obss_color_collision_offload_enabled: Enable obss color collision
  * @bss_color_collision_det_sta: STA BSS color collision detection offload
+ * @bss_color_collision_det_tgt_support: STA BSS color collision detection
+ * target support
  */
 struct wlan_mlme_obss_ht40 {
 	uint32_t active_dwelltime;
@@ -1596,6 +1598,7 @@ struct wlan_mlme_obss_ht40 {
 	bool obss_detection_offload_enabled;
 	bool obss_color_collision_offload_enabled;
 	bool bss_color_collision_det_sta;
+	bool bss_color_collision_det_tgt_support;
 };
 
 /**
@@ -2727,6 +2730,8 @@ struct wlan_mlme_iot {
  * @connection_roaming_ini_flag: To indicate whether connection_roaming related
  * ini file is present or not.
  * @eml_cap: EML capability subfield present in ML IE common info
+ * @dynamic_nss_chains_support : intersection of host and fw capability of
+ *				 dynamic NSS chain support
  */
 struct wlan_mlme_cfg {
 	struct wlan_mlme_chainmask chainmask_cfg;
@@ -2777,6 +2782,7 @@ struct wlan_mlme_cfg {
 	struct wlan_mlme_iot iot;
 	bool connection_roaming_ini_flag;
 	struct wlan_mlme_eml_cap eml_cap;
+	bool dynamic_nss_chains_support;
 };
 
 enum pkt_origin {

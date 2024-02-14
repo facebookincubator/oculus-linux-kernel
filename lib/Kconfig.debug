@@ -2531,6 +2531,15 @@ config PANIC_ON_DATA_CORRUPTION
 	 If we do not panic immediately after corruptions have been detected,
 	 the problem context is lost in the ensuing system mayhem.
 
+config PANIC_ON_RT_THROTTLING
+	bool "Panic on RT throttling"
+	help
+	  Say Y here to enable the kernel to panic when a realtime
+	  runqueue is throttled. This may be useful for detecting
+	  and debugging RT throttling issues.
+
+	  Say N if unsure.
+
 source "Documentation/Kconfig"
 
 endmenu # "Kernel Testing and Coverage"

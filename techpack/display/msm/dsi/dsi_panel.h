@@ -65,7 +65,7 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_DCS,
 	DSI_BACKLIGHT_EXTERNAL,
 	DSI_BACKLIGHT_TOKKI_A,
-	DSI_BACKLIGHT_JDI,
+	DSI_BACKLIGHT_STARK_OLIVIA,
 	DSI_BACKLIGHT_JDI_NVT,
 	DSI_BACKLIGHT_UNKNOWN,
 	DSI_BACKLIGHT_MAX,
@@ -195,6 +195,7 @@ struct dsi_backlight_config {
 	u32 settling_time_target_us;
 
 	bool backlight_lock;
+	bool bicubic_scaling;
 };
 
 struct dsi_reset_seq {
@@ -331,6 +332,7 @@ struct dsi_panel {
 	struct dsi_panel_ops panel_ops;
 
 	atomic_t fifo_trim;
+	bool bicubic_scaling;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)

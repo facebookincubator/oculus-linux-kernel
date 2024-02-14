@@ -503,6 +503,8 @@ wlan_mgmt_rx_reo_psoc_obj_create_notification(struct wlan_objmgr_psoc *psoc)
 static inline QDF_STATUS
 wlan_mgmt_rx_reo_psoc_obj_destroy_notification(struct wlan_objmgr_psoc *psoc)
 {
+	if (!psoc)
+		return QDF_STATUS_E_FAILURE;
 	return QDF_STATUS_SUCCESS;
 }
 

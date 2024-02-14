@@ -342,6 +342,99 @@ osif_cm_disable_netif_queue(struct wlan_objmgr_vdev *vdev)
 }
 #endif
 
+#if defined(CONN_MGR_ADV_FEATURE) && defined(WLAN_FEATURE_11BE_MLO)
+/**
+ * osif_link_reconfig_notify_cb() - Link reconfig notify callback
+ * @vdev: vdev pointer
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+osif_link_reconfig_notify_cb(struct wlan_objmgr_vdev *vdev)
+{
+	struct vdev_osif_priv *osif_priv = wlan_vdev_get_ospriv(vdev);
+	struct wireless_dev *wdev;
+	uint8_t link_id;
+	uint16_t link_mask;
+	struct pdev_osif_priv *pdev_osif_priv;
+	struct wlan_objmgr_pdev *pdev;
+	uint32_t data_len;
+	struct sk_buff *vendor_event;
+	struct qdf_mac_addr ap_mld_mac;
+	QDF_STATUS status;
+
+	if (!osif_priv) {
+		osif_err("Invalid vdev osif priv");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	wdev = osif_priv->wdev;
+	if (!wdev) {
+		osif_err("wdev is null");
+		return QDF_STATUS_E_INVAL;
+	}
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev) {
+		osif_debug("null pdev");
+		return QDF_STATUS_E_INVAL;
+	}
+	pdev_osif_priv = wlan_pdev_get_ospriv(pdev);
+	if (!pdev_osif_priv || !pdev_osif_priv->wiphy) {
+		osif_debug("null wiphy");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	link_id = wlan_vdev_get_link_id(vdev);
+	link_mask = 1 << link_id;
+	osif_debug("link reconfig on vdev %d with link id %d mask 0x%x",
+		   wlan_vdev_get_id(vdev), link_id, link_mask);
+
+	status = wlan_vdev_get_bss_peer_mld_mac(vdev, &ap_mld_mac);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		osif_debug("get peer mld failed, vdev %d",
+			   wlan_vdev_get_id(vdev));
+		return status;
+	}
+	osif_debug("ap mld addr: "QDF_MAC_ADDR_FMT,
+		   QDF_MAC_ADDR_REF(ap_mld_mac.bytes));
+
+	data_len = nla_total_size(QDF_MAC_ADDR_SIZE) +
+		   nla_total_size(sizeof(uint16_t)) +
+		   NLMSG_HDRLEN;
+
+	vendor_event =
+	wlan_cfg80211_vendor_event_alloc(pdev_osif_priv->wiphy,
+					 wdev, data_len,
+					 QCA_NL80211_VENDOR_SUBCMD_LINK_RECONFIG_INDEX,
+					 GFP_KERNEL);
+	if (!vendor_event) {
+		osif_debug("wlan_cfg80211_vendor_event_alloc failed");
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	if (nla_put(vendor_event,
+		    QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AP_MLD_ADDR,
+		    QDF_MAC_ADDR_SIZE, &ap_mld_mac.bytes[0]) ||
+	    nla_put_u16(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_REMOVED_LINKS,
+			link_mask)) {
+		osif_debug("QCA_WLAN_VENDOR_ATTR put fail");
+		wlan_cfg80211_vendor_free_skb(vendor_event);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	wlan_cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static inline QDF_STATUS
+osif_link_reconfig_notify_cb(struct wlan_objmgr_vdev *vdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
 /**
  * osif_cm_disconnect_start_cb() - Disconnect start callback
  * @vdev: vdev pointer
@@ -523,6 +616,7 @@ static struct mlme_cm_ops cm_ops = {
 	.mlme_cm_roam_sync_cb = osif_cm_roam_sync_cb,
 	.mlme_cm_pmksa_candidate_notify_cb = osif_pmksa_candidate_notify_cb,
 	.mlme_cm_send_keys_cb = osif_cm_send_keys_cb,
+	.mlme_cm_link_reconfig_notify_cb = osif_link_reconfig_notify_cb,
 #endif
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 	.mlme_cm_roam_start_cb = osif_cm_roam_start_cb,

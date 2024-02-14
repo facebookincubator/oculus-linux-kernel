@@ -157,3 +157,24 @@ wlan_kiwi: qcom,cnss-kiwi@b0000000 {
 		pinctrl-0 = <&bt_en_sleep>;
 	};
 };
+
+&thermal_zones {
+	sys-therm-1 {
+		cooling-maps {
+			cnss_cdev0 {
+				trip = <&sys_therm1_config0>;
+				cooling-device = <&cnss_cdev_apss 3 3>;
+			};
+
+			cnss_cdev1 {
+				trip = <&sys_therm1_config1>;
+				cooling-device = <&cnss_cdev_apss 4 4>;
+			};
+
+			cnss_cdev2 {
+				trip = <&sys_therm1_config2>;
+				cooling-device = <&cnss_cdev_apss 5 5>;
+			};
+		};
+	};
+};

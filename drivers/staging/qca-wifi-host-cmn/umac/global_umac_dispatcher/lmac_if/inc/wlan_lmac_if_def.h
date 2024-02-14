@@ -1476,6 +1476,7 @@ struct wlan_lmac_if_son_rx_ops {
  * @shmem_local_ops: operations specific to WLAN_MLO_GLOBAL_SHMEM_SUPPORT
  * @send_tid_to_link_mapping: function to send T2LM command to FW
  * @send_link_removal_cmd: function to send MLO link removal command to FW
+ * @send_vdev_pause: function to send MLO vdev pause to FW
  */
 struct wlan_lmac_if_mlo_tx_ops {
 	QDF_STATUS (*register_events)(struct wlan_objmgr_psoc *psoc);
@@ -1494,6 +1495,8 @@ struct wlan_lmac_if_mlo_tx_ops {
 	QDF_STATUS (*send_link_removal_cmd)(
 		struct wlan_objmgr_psoc *psoc,
 		const struct mlo_link_removal_cmd_params *param);
+	QDF_STATUS (*send_vdev_pause)(struct wlan_objmgr_psoc *psoc,
+				      struct mlo_vdev_pause *info);
 };
 
 /**

@@ -124,6 +124,24 @@
 				hysteresis = <1000>;
 				type = "passive";
 			};
+
+			sys_therm1_config0: sys-therm1-config0 {
+				temperature = <54000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			sys_therm1_config1: sys-therm1-config1 {
+				temperature = <56000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			sys_therm1_config2: sys-therm1-config2 {
+				temperature = <58000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
 		};
 	};
 

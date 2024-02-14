@@ -511,7 +511,6 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		rc = cam_req_mgr_flush_requests(&flush_info);
 		}
 		break;
-
 	case CAM_REQ_MGR_SYNC_MODE: {
 		struct cam_req_mgr_sync_mode sync_info;
 
@@ -525,6 +524,46 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		}
 
 		rc = cam_req_mgr_sync_config(&sync_info);
+		}
+		break;
+	case CAM_REQ_MGR_SYNC_MODE_V2: {
+		struct cam_req_mgr_sync_mode_v2 *sync_info, tmp_sync_info;
+		int sync_size;
+
+		if (k_ioctl->size < sizeof(struct cam_req_mgr_sync_mode_v2))
+			return -EINVAL;
+
+		if (copy_from_user(&tmp_sync_info,
+			u64_to_user_ptr(k_ioctl->handle),
+			sizeof(struct cam_req_mgr_sync_mode_v2))) {
+			return -EFAULT;
+		}
+
+		if (tmp_sync_info.version != 2 || tmp_sync_info.num_links <= 0) {
+			CAM_ERR(CAM_CRM, "Invalid version (%x) or num_links (%d)",
+					tmp_sync_info.version, tmp_sync_info.num_links);
+			return -EINVAL;
+		}
+
+		sync_size = sizeof(struct cam_req_mgr_sync_mode_v2) +
+				((tmp_sync_info.num_links - 1) *
+				sizeof(struct cam_req_mgr_sync_link_desc));
+		sync_info = kzalloc(sync_size, GFP_KERNEL);
+		if (!sync_info) {
+			CAM_ERR(CAM_CRM, "Failed to allocate %d bytes", sync_size);
+			return -ENOMEM;
+		}
+
+		if (copy_from_user(sync_info,
+			u64_to_user_ptr(k_ioctl->handle), sync_size)) {
+			kfree(sync_info);
+			return -EFAULT;
+		}
+
+		rc = cam_req_mgr_sync_config_v2(sync_info);
+
+		kfree(sync_info);
+
 		}
 		break;
 	case CAM_REQ_MGR_ALLOC_BUF: {
@@ -659,6 +698,7 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		}
 		break;
 	default:
+		CAM_ERR(CAM_CRM, "Invalid ioctl command %x", k_ioctl->op_code);
 		return -ENOIOCTLCMD;
 	}
 

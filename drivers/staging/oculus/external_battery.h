@@ -3,7 +3,6 @@
 #ifndef _EXT_BATT_H__
 #define _EXT_BATT_H__
 
-#include <linux/iio/consumer.h>
 #include <linux/mutex.h>
 #include <linux/power_supply.h>
 #include <linux/usb/usbpd.h>
@@ -293,80 +292,96 @@ struct ext_batt_parameters {
 	u8 error_conditions[EXT_BATT_FW_ERROR_CONDITIONS];
 };
 
+/**
+ * struct ext_batt_pd - structure for external battery data
+ *
+ * @dev: platform device handle
+ * @intf_usbpd: usbpd interface instance
+ * @intf_glink: glink interface instance
+ * @battery_psy: power supply object handle for internal HMD battery
+ * @usb_psy: power supply object handle for USB power supply
+ * @cypd_psy: power supply object handle for CYPD power supply
+ * @nb: notifier block for handling power supply change events
+ * @usbpd_hdlr: handler to register with usbpd interface
+ * @glink_handlers: list of handlers to register with glink interface
+ * @mount_state_work: work for periodically processing HMD mount state
+ * @dock_state_work: work for periodically processing HMD dock state
+ * @psy_notifier_work: work for handling the power_supply notifier callback logic
+ * @wq: workqueue to pipe tasks into
+ * @mount_state_ack: signals that a mount state update was acked
+ * @svid: Vendor ID, needed to construct VDM messages
+ * @charging_suspend_disable: ext_batt on-demand charging suspend disable
+ * @charging_suspend_threshold: battery capacity threshold for charging suspend
+ * @charging_resume_threshold: battery capacity threshold for charging resume
+ * @rsoc_scaling_enabled: RSOC Scaling enable
+ * @rsoc_scaling_min_level: RSOC Scaling min level
+ * @rsoc_scaling_max_level: RSOC Scaling max level
+ * @src_current_control_enabled: SRC Current enable
+ * @src_enable_soc_threshold: SRC enable soc threshold
+ * @src_current_limit_max_uA: SRC Current current limix max uA
+ * @batt_id: identifier to distinguish between battery packs
+ * @params: external battery parameters
+ * @usb_psy_charging_state: USB power supply charging state, 0/1 for resume/suspend
+ * @mount_state: mount state held locally, messaged as u32 vdo
+ * @dock_state: 0/1 for undocked/docked
+ * @last_dock_ack: last ACK received for dock state
+ * @connected: ext_batt connection status
+ * @first_broadcast_data_received: first batch of broadcast data from battery pack
+ * @recently_docked: flag for PR_SWAP
+ * @source_current: SRC Current limit
+ * @lock: lock for modifying ext_batt_pd struct
+ * @debug_root: ext_batt TI fuel gauge debugfs directory
+ */
 struct ext_batt_pd {
-	/* platform device handle */
 	struct device *dev;
-
-	/* Vendor ID, needed to construct VDM messages */
-	u16 svid;
-
-	/* usbpd interface instance */
 	struct usbpd *intf_usbpd;
-	/* glink interface instance */
 	struct vdm_glink_dev *intf_glink;
 
-	/* handler to register with usbpd interface */
+	struct power_supply *battery_psy;
+	struct power_supply *usb_psy;
+	struct power_supply *cypd_psy;
+	struct notifier_block nb;
+
 	struct usbpd_svid_handler usbpd_hdlr;
-	/* list of handlers to register with glink interface */
 	struct list_head glink_handlers;
 
-	/* ext_batt connection status */
-	bool connected;
-
-	/* lock for modifying ext_batt_pd struct */
-	struct mutex lock;
-	/* ext_batt TI fuel gauge debugfs directory */
-	struct dentry *debug_root;
-
-	struct ext_batt_parameters params;
-
-	/* mount state held locally, messaged as u32 vdo */
-	u32 mount_state;
-	/* signals that a mount state update was acked */
-	struct completion mount_state_ack;
-	/* work for periodically processing HMD mount state */
 	struct work_struct mount_state_work;
-	/* 0/1 for undocked/docked */
-	int dock_state;
-	/* last ACK received for dock state */
-	int last_dock_ack;
-	/* work for periodically processing HMD dock state */
 	struct work_struct dock_state_work;
-	/* work for handling the power_supply notifier callback logic */
 	struct work_struct psy_notifier_work;
-	/* power supply object handle for internal HMD battery */
-	struct power_supply *battery_psy;
-	/* power supply object handle for USB power supply */
-	struct power_supply	*usb_psy;
-	/* power supply object handle for CYPD power supply */
-	struct power_supply	*cypd_psy;
-	/* notifier block for handling power supply change events */
-	struct notifier_block nb;
-	/* iio channel to retrieve dock state from CYPD */
-	struct iio_channel	*cypd_pd_active_chan;
-	/* ext_batt on-demand charging suspend disable */
+	struct workqueue_struct *wq;
+	struct completion mount_state_ack;
+
+	u16 svid;
 	bool charging_suspend_disable;
-	/* battery capacity threshold for charging suspend */
 	u32 charging_suspend_threshold;
-	/* battery capacity threshold for charging resume */
 	u32 charging_resume_threshold;
-	/* USB power supply charging state, 0/1 for resume/suspend */
-	int usb_psy_charging_state;
-	/* identifier to distinguish between battery packs */
-	enum ext_batt_id batt_id;
-	/* RSOC Scaling Settings */
 	bool rsoc_scaling_enabled;
 	u32 rsoc_scaling_min_level;
 	u32 rsoc_scaling_max_level;
-	/* SRC Current Control */
 	bool src_current_control_enabled;
 	u32 src_enable_soc_threshold;
 	u32 src_current_limit_max_uA;
-	u32 source_current;
-	/* first batch of broadcast data from battery pack */
+	enum ext_batt_id batt_id;
+
+	struct ext_batt_parameters params;
+	int usb_psy_charging_state;
+	u32 mount_state;
+	int dock_state;
+	int last_dock_ack;
+	bool connected;
 	bool first_broadcast_data_received;
-	/* flag for PR_SWAP */
 	bool recently_docked;
+	u32 source_current;
+	struct mutex lock;
+
+	struct dentry *debug_root;
+};
+
+struct ext_batt_pr_swap_work {
+	struct work_struct work;
+
+	struct ext_batt_pd *pd;
+	u32 vdo;
 };
 
 int external_battery_register_svid_handlers(struct ext_batt_pd *pd);

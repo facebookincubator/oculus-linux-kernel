@@ -1199,6 +1199,7 @@ config ARCH_HAS_NONLEAF_PMD_YOUNG
 	  may use this capability to reduce their search space.
 
 source "kernel/gcov/Kconfig"
+source "kernel/pgo/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"
 

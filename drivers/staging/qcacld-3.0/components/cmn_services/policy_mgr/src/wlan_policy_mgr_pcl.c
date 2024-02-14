@@ -40,6 +40,7 @@
 #include "wlan_cm_ucfg_api.h"
 #include "wlan_cm_roam_api.h"
 #include "wlan_scan_api.h"
+#include "wlan_nan_api.h"
 
 /*
  * first_connection_pcl_table - table which provides PCL for the
@@ -320,15 +321,66 @@ out:
 	return status;
 }
 
+void
+polic_mgr_send_pcl_to_fw(struct wlan_objmgr_psoc *psoc,
+			 enum QDF_OPMODE mode)
+{
+	uint32_t conn_idx = 0;
+	mac_handle_t mac_handle = cds_get_context(QDF_MODULE_ID_SME);
+	uint8_t vdev_id = WLAN_INVALID_VDEV_ID;
+	struct policy_mgr_psoc_priv_obj *pm_ctx;
+
+	pm_ctx = policy_mgr_get_context(psoc);
+	if (!pm_ctx) {
+		policy_mgr_err("Invalid Context");
+		return;
+	}
+
+	for (conn_idx = 0; conn_idx < MAX_NUMBER_OF_CONC_CONNECTIONS;
+	     conn_idx++) {
+		qdf_mutex_acquire(&pm_ctx->qdf_conc_list_lock);
+		if (!(pm_conc_connection_list[conn_idx].mode ==
+		      PM_STA_MODE &&
+		      pm_conc_connection_list[conn_idx].in_use)) {
+			qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
+			continue;
+		}
+
+		vdev_id = pm_conc_connection_list[conn_idx].vdev_id;
+		qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
+
+		/*
+		 * Avoid sending PCL when roaming is in progress. PCL
+		 * gets updated to firmware once roaming is done
+		 */
+		if (mode == QDF_SAP_MODE &&
+		    wlan_cm_roaming_in_progress(pm_ctx->pdev,
+						vdev_id)) {
+			policy_mgr_debug("Roaming is in progress, don't stop RSO for vdev_id: %d",
+					 vdev_id);
+			continue;
+		}
+
+		pm_ctx->sme_cbacks.sme_rso_stop_cb(
+				mac_handle, vdev_id,
+				REASON_DRIVER_DISABLED,
+				RSO_SET_PCL);
+
+		policy_mgr_set_pcl_for_existing_combo(pm_ctx->psoc, PM_STA_MODE,
+						      vdev_id);
+		pm_ctx->sme_cbacks.sme_rso_start_cb(
+				mac_handle, vdev_id,
+				REASON_DRIVER_ENABLED,
+				RSO_SET_PCL);
+	}
+}
+
 void policy_mgr_decr_session_set_pcl(struct wlan_objmgr_psoc *psoc,
 				     enum QDF_OPMODE mode,
 				     uint8_t session_id)
 {
 	QDF_STATUS qdf_status;
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
-	mac_handle_t mac_handle = cds_get_context(QDF_MODULE_ID_SME);
-	uint32_t conn_idx = 0;
-	uint8_t vdev_id = WLAN_INVALID_VDEV_ID;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -357,36 +409,10 @@ void policy_mgr_decr_session_set_pcl(struct wlan_objmgr_psoc *psoc,
 	 * the entry that we have saved before.
 	 */
 
-	if ((policy_mgr_mode_specific_connection_count(
-		psoc, PM_STA_MODE, NULL) > 0) && mode != QDF_STA_MODE) {
-		for (conn_idx = 0; conn_idx < MAX_NUMBER_OF_CONC_CONNECTIONS;
-		     conn_idx++) {
-			qdf_mutex_acquire(&pm_ctx->qdf_conc_list_lock);
-			if (!(pm_conc_connection_list[conn_idx].mode ==
-			      PM_STA_MODE &&
-			      pm_conc_connection_list[conn_idx].in_use)) {
-				qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
-				continue;
-			}
-
-			vdev_id = pm_conc_connection_list[conn_idx].vdev_id;
-			qdf_mutex_release(&pm_ctx->qdf_conc_list_lock);
-
-			/* Send RSO stop before sending set pcl command */
-			pm_ctx->sme_cbacks.sme_rso_stop_cb(
-						mac_handle, vdev_id,
-						REASON_DRIVER_DISABLED,
-						RSO_SET_PCL);
-
-			policy_mgr_set_pcl_for_existing_combo(psoc, PM_STA_MODE,
-							      vdev_id);
-
-			pm_ctx->sme_cbacks.sme_rso_start_cb(
-					mac_handle, vdev_id,
-					REASON_DRIVER_ENABLED,
-					RSO_SET_PCL);
-		}
-	}
+	if ((policy_mgr_mode_specific_connection_count(psoc, PM_STA_MODE,
+						       NULL) > 0) &&
+	    mode != QDF_STA_MODE)
+		polic_mgr_send_pcl_to_fw(psoc, mode);
 
 	/* do we need to change the HW mode */
 	if (!policy_mgr_is_hw_dbs_capable(psoc))
@@ -534,6 +560,7 @@ void policy_mgr_update_with_safe_channel_list(struct wlan_objmgr_psoc *psoc,
 	uint32_t safe_channel_count = 0, current_channel_count = 0;
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
 	uint8_t scc_on_lte_coex = 0;
+	uint32_t nan_2g_freq, nan_5g_freq;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -562,6 +589,11 @@ void policy_mgr_update_with_safe_channel_list(struct wlan_objmgr_psoc *psoc,
 	qdf_mem_zero(weight_list, weight_len);
 
 	policy_mgr_get_sta_sap_scc_lte_coex_chnl(psoc, &scc_on_lte_coex);
+	nan_2g_freq =
+		policy_mgr_mode_specific_get_channel(pm_ctx->psoc,
+						     PM_NAN_DISC_MODE);
+	nan_5g_freq = wlan_nan_get_disc_5g_ch_freq(pm_ctx->psoc);
+
 	for (i = 0; i < current_channel_count; i++) {
 		is_unsafe = 0;
 		for (j = 0; j < pm_ctx->unsafe_channel_count; j++) {
@@ -578,6 +610,12 @@ void policy_mgr_update_with_safe_channel_list(struct wlan_objmgr_psoc *psoc,
 		    policy_mgr_is_sta_sap_scc(psoc, current_channel_list[i])) {
 			policy_mgr_debug("CH %d unsafe ignored when STA present on it",
 					 current_channel_list[i]);
+			is_unsafe = 0;
+		} else if (is_unsafe &&
+			   (nan_2g_freq == current_channel_list[i] ||
+			    nan_5g_freq == current_channel_list[i]) &&
+			    policy_mgr_is_force_scc(pm_ctx->psoc) &&
+			 policy_mgr_get_nan_sap_scc_on_lte_coex_chnl(pm_ctx->psoc)) {
 			is_unsafe = 0;
 		}
 
@@ -994,6 +1032,7 @@ policy_mgr_modify_sap_pcl_for_6G_channels(struct wlan_objmgr_psoc *psoc,
 	qdf_freq_t sta_gc_freq = 0;
 	uint32_t ap_pwr_type_6g = 0;
 	bool indoor_ch_support = false;
+	bool keep_6ghz_sta_cli_conn;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -1041,10 +1080,12 @@ policy_mgr_modify_sap_pcl_for_6G_channels(struct wlan_objmgr_psoc *psoc,
 	policy_mgr_debug("STA power type : %d", ap_pwr_type_6g);
 
 	ucfg_mlme_get_indoor_channel_support(psoc, &indoor_ch_support);
-
+	keep_6ghz_sta_cli_conn = wlan_reg_get_keep_6ghz_sta_cli_connection(
+								pm_ctx->pdev);
 	for (i = 0; i < *pcl_len_org; i++) {
 		if (WLAN_REG_IS_6GHZ_CHAN_FREQ(pcl_list_org[i])) {
-			if (!WLAN_REG_IS_6GHZ_PSC_CHAN_FREQ(pcl_list_org[i]))
+			if (!WLAN_REG_IS_6GHZ_PSC_CHAN_FREQ(pcl_list_org[i]) ||
+			    keep_6ghz_sta_cli_conn)
 				continue;
 			if (ap_pwr_type_6g == REG_VERY_LOW_POWER_AP)
 				goto add_freq;
@@ -3713,7 +3754,7 @@ QDF_STATUS policy_mgr_get_valid_chan_weights(struct wlan_objmgr_psoc *psoc,
 			if (!policy_mgr_is_concurrency_allowed
 			    (psoc, mode, weight->saved_chan_list[i],
 			     HW_MODE_20_MHZ,
-			     policy_mgr_get_conc_ext_flags(vdev, false)))
+			     policy_mgr_get_conc_ext_flags(vdev, false), NULL))
 				continue;
 			/*
 			 * Keep weight 0 (WEIGHT_OF_DISALLOWED_CHANNELS) not

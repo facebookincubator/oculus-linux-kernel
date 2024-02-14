@@ -3807,6 +3807,34 @@ static const char *qdf_trace_wlan_modname(void)
 }
 #endif
 
+
+#ifndef WLAN_LOGGING_SOCK_SVC_ENABLE
+static void log_to_console(QDF_TRACE_LEVEL level, const char *msg)
+{
+	switch (level) {
+	case QDF_TRACE_LEVEL_FATAL:
+		pr_alert("%s\n", msg);
+		break;
+	case QDF_TRACE_LEVEL_ERROR:
+		pr_err("%s\n", msg);
+		break;
+	case QDF_TRACE_LEVEL_WARN:
+		pr_warn("%s\n", msg);
+		break;
+	case QDF_TRACE_LEVEL_INFO:
+		pr_info("%s\n", msg);
+		break;
+	case QDF_TRACE_LEVEL_INFO_HIGH:
+	case QDF_TRACE_LEVEL_INFO_MED:
+	case QDF_TRACE_LEVEL_INFO_LOW:
+	case QDF_TRACE_LEVEL_DEBUG:
+		pr_debug("%s\n", msg);
+	default:
+		break;
+	}
+}
+#endif
+
 void qdf_trace_msg_cmn(unsigned int idx,
 			QDF_MODULE_ID category,
 			QDF_TRACE_LEVEL verbose,
@@ -3878,7 +3906,7 @@ void qdf_trace_msg_cmn(unsigned int idx,
 		if (qdf_unlikely(qdf_log_dump_at_kernel_enable))
 			print_to_console(str_buffer);
 #else
-		pr_err("%s\n", str_buffer);
+		log_to_console(verbose, str_buffer);
 #endif
 	}
 }
@@ -4673,13 +4701,13 @@ int qdf_get_pidx(void)
 qdf_export_symbol(qdf_get_pidx);
 
 #ifdef PANIC_ON_BUG
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 void __qdf_bug(void)
 {
 	BUG();
 }
 qdf_export_symbol(__qdf_bug);
-#endif /* CONFIG_SLUB_DEBUG */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 #endif /* PANIC_ON_BUG */
 
 #ifdef WLAN_QCOM_VA_MINIDUMP

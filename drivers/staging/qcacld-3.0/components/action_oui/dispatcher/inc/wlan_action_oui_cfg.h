@@ -743,6 +743,68 @@
 	"", \
 	"send auth/assoc req with 6 Mbps rate on 2.4 GHz for specified APs")
 
+/*
+ * <ini>
+ * gActionOUIEnableCTS2SelfWithQoSNull - Used to enable CTS2SELF with QoS null
+ * frame for specified APs
+ *
+ * Sample OUIs: (All values in Hex)
+ * OUI 1: 000c43
+ *   OUI data Len: 04
+ *   OUI Data : 03000000
+ *   OUI data Mask: F0 - 11110000
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
+ * gActionOUIEnableCTS2SelfWithQoSNull=000c43 04 03000000 F0 01
+ *
+ * Refer to gEnableActionOUI for more detail about the format.
+ *
+ * Related: gEnableActionOUI
+ *
+ * Supported Feature: Action OUIs
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ACTION_OUI_ENABLE_CTS2SELF_WITH_QOS_NULL CFG_INI_STRING( \
+	"gActionOUIEnableCTS2SelfWithQoSNull", \
+	0, \
+	ACTION_OUI_MAX_STR_LEN, \
+	"", \
+	"Used to enable CTS2SELF with QoS null frame for specified APs")
+
+/*
+ * <ini>
+ * gActionOUISendSMPSFrameWithOMN - Used to send SMPS frame along with OMN
+ * for specified APs
+ *
+ * Sample OUIs: (All values in Hex)
+ * OUI 1: 000ce7
+ *   OUI data Len: 04
+ *   OUI Data : 88000000
+ *   OUI data Mask: F0 - 11110000
+ *   Info Mask : 01 - only OUI present in Info mask
+ *
+ * gActionOUISendSMPSFrameWithOMN=000ce7 04 88000000 F0 01
+ *
+ * Refer to gEnableActionOUI for more detail about the format.
+ *
+ * Related: gEnableActionOUI
+ *
+ * Supported Feature: Action OUIs
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN CFG_INI_STRING( \
+	"gActionOUISendSMPSFrameWithOMN", \
+	0, \
+	ACTION_OUI_MAX_STR_LEN, \
+	"", \
+	"Used to send SMPS frame along with OMN for specified APs")
+
 #define CFG_ACTION_OUI \
 	CFG(CFG_ACTION_OUI_CCKM_1X1) \
 	CFG(CFG_ACTION_OUI_CONNECT_1X1) \
@@ -759,6 +821,8 @@
 	CFG(CFG_ACTION_OUI_TAKE_ALL_BAND_INFO) \
 	CFG(CFG_ACTION_OUI_11BE_ALLOW_LIST) \
 	CFG(CFG_ACTION_OUI_DISABLE_DYNAMIC_QOS_NULL_TX_RATE) \
+	CFG(CFG_ACTION_OUI_ENABLE_CTS2SELF_WITH_QOS_NULL) \
+	CFG(CFG_ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN) \
 	CFG(CFG_ACTION_OUI_AUTH_ASSOC_6MBPS_2GHZ) \
 	CFG(CFG_ENABLE_ACTION_OUI)
 #endif

@@ -704,7 +704,7 @@ static int cam_ife_csid_ver2_disable_csi2(
 	}
 	csid_hw->flags.rx_enabled = false;
 
-	return 0;
+	return rc;
 }
 
 static int cam_ife_csid_ver2_rx_err_top_half(

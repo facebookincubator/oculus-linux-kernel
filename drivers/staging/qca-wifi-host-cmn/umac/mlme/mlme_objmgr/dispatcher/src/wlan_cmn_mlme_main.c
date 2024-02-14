@@ -585,6 +585,17 @@ QDF_STATUS mlme_cm_osif_send_keys(struct wlan_objmgr_vdev *vdev,
 
 	return ret;
 }
+
+QDF_STATUS mlme_cm_osif_link_reconfig_notify(struct wlan_objmgr_vdev *vdev)
+{
+	QDF_STATUS ret = QDF_STATUS_E_INVAL;
+
+	if (glbl_cm_ops &&
+	    glbl_cm_ops->mlme_cm_link_reconfig_notify_cb)
+		ret = glbl_cm_ops->mlme_cm_link_reconfig_notify_cb(vdev);
+
+	return ret;
+}
 #endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD

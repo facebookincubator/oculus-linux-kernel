@@ -48,6 +48,7 @@
 #include "wmi_unified_param.h"
 #include "wmi.h"
 #include "wlan_cm_roam_public_struct.h"
+#include "target_if.h"
 
 /* Platform specific configuration for max. no. of fragments */
 #define QCA_OL_11AC_TX_MAX_FRAGS            2
@@ -2627,6 +2628,15 @@ QDF_STATUS wma_post_vdev_start_setup(uint8_t vdev_id);
 QDF_STATUS wma_pre_vdev_start_setup(uint8_t vdev_id,
 				    struct bss_params *add_bss);
 
+/**
+ * wma_is_multipass_sap() - wma api to verify whether multipass sap
+ * support is present in FW
+ *
+ * @tgt_hdl: target if handler.
+ *
+ * Return: Success if multipass sap is supported.
+ */
+inline bool wma_is_multipass_sap(struct target_psoc_info *tgt_hdl);
 #ifdef FEATURE_ANI_LEVEL_REQUEST
 /**
  * wma_send_ani_level_request() - Send get ani level cmd to WMI

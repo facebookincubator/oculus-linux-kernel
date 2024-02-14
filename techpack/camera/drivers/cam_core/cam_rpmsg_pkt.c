@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "cam_rpmsg.h"
@@ -11,6 +11,17 @@ static int cam_rpmsg_system_dump_ping_payload(
 		struct cam_rpmsg_system_ping_payload *pp)
 {
 	CAM_INFO(CAM_RPMSG, "Ping Packet");
+	return 0;
+}
+
+static int cam_rpmsg_system_dump_sync_payload(
+		struct cam_rpmsg_system_sync_payload *pp)
+{
+	int i;
+
+	CAM_INFO(CAM_RPMSG, "Sync Packet Dump num_cams %d", pp->num_cams);
+	for (i = 0; i < pp->num_cams; i++)
+		CAM_INFO(CAM_RPMSG, "camera_id[%d]: %d", i, pp->camera_id[i]);
 	return 0;
 }
 
@@ -284,6 +295,13 @@ int cam_rpmsg_slave_dump_pkt(void *pkt, size_t len)
 			struct cam_rpmsg_system_ping_payload *pp =
 				(struct cam_rpmsg_system_ping_payload *)pkt;
 			return cam_rpmsg_system_dump_ping_payload(pp);
+		}
+		break;
+		case CAM_RPMSG_SLAVE_PACKET_TYPE_SYSTEM_SYNC:
+		{
+			struct cam_rpmsg_system_sync_payload *pp =
+				(struct cam_rpmsg_system_sync_payload *)pkt;
+			return cam_rpmsg_system_dump_sync_payload(pp);
 		}
 		break;
 		case CAM_RPMSG_SLAVE_PACKET_TYPE_ISP_ACQUIRE:

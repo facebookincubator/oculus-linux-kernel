@@ -4490,6 +4490,12 @@ util_parse_rv_info_from_linkinfo(uint8_t *linkinfo,
 								      &ap_removal_timer);
 			if (QDF_IS_STATUS_ERROR(ret))
 				return ret;
+			if (reconfig_info->num_links >=
+						WLAN_UMAC_MLO_MAX_VDEVS) {
+				mlo_err("num_link %d invalid",
+					reconfig_info->num_links);
+				return QDF_STATUS_E_INVAL;
+			}
 			link_info =
 			&reconfig_info->link_info[reconfig_info->num_links];
 			link_info->link_id = linkid;

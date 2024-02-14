@@ -454,12 +454,12 @@ void lim_process_beacon_eht(struct mac_context *mac_ctx,
 /**
  * lim_process_beacon_eht_op() - process beacon 11be eht op IE
  * @session: pe session
- * @eht_op: pointer to eht op IE
+ * @bcn_ptr: pointer to bcn ptr
  *
  * Return none
  */
 void lim_process_beacon_eht_op(struct pe_session *session,
-			       tDot11fIEeht_op *eht_op);
+			       struct sSirProbeRespBeacon *bcn_ptr);
 #else
 static inline
 void lim_process_beacon_eht(struct mac_context *mac_ctx,
@@ -470,7 +470,7 @@ void lim_process_beacon_eht(struct mac_context *mac_ctx,
 
 static inline
 void lim_process_beacon_eht_op(struct pe_session *session,
-			       tDot11fIEeht_op *eht_op)
+			       struct sSirProbeRespBeacon *bcn_ptr)
 {
 }
 #endif

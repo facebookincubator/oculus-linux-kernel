@@ -467,6 +467,7 @@ struct wlan_psoc_host_service_ext_param {
  * @afc_dev_type: AFC deployment type
  * @num_msdu_idx_qtype_map: Number of HTT_MSDUQ_INDEX to HTT_MSDU_QTYPE
  *                          mapping
+ * @is_multipass_sap: Multipass sap flag
  */
 struct wlan_psoc_host_service_ext2_param {
 	uint8_t reg_db_version_major;
@@ -496,6 +497,9 @@ struct wlan_psoc_host_service_ext2_param {
 	enum reg_afc_dev_deploy_type afc_dev_type;
 #endif
 	uint32_t num_msdu_idx_qtype_map;
+#ifdef QCA_MULTIPASS_SUPPORT
+	bool is_multipass_sap;
+#endif
 };
 
 #endif /* _SERVICE_READY_PARAM_H_*/

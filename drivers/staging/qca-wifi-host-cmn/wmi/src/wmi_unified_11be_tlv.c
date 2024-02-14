@@ -704,6 +704,59 @@ static QDF_STATUS send_mlo_link_removal_cmd_tlv(
 }
 
 /**
+ * send_mlo_vdev_pause_cmd_tlv() - Send WMI command for MLO vdev pause
+ * @wmi_handle: wmi handle
+ * @info: MLO vdev pause information
+ *
+ * Return: QDF_STATUS of operation
+ */
+static QDF_STATUS send_mlo_vdev_pause_cmd_tlv(wmi_unified_t wmi_handle,
+					      struct mlo_vdev_pause *info)
+{
+	wmi_vdev_pause_cmd_fixed_param *fixed_params;
+	wmi_buf_t buf;
+	uint32_t buf_len = 0;
+	QDF_STATUS ret;
+
+	if (!info) {
+		wmi_err("ML vdev pause info is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	buf_len = sizeof(*fixed_params);
+
+	buf = wmi_buf_alloc(wmi_handle, buf_len);
+	if (!buf) {
+		wmi_err("wmi buf alloc failed for vdev pause cmd: psoc (%pK) vdev(%u)",
+			wmi_handle->soc->wmi_psoc, info->vdev_id);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	/* Populate fixed params TLV */
+	fixed_params = (wmi_vdev_pause_cmd_fixed_param *)wmi_buf_data(buf);
+	WMITLV_SET_HDR(&fixed_params->tlv_header,
+		       WMITLV_TAG_STRUC_wmi_vdev_pause_cmd_fixed_param,
+		       WMITLV_GET_STRUCT_TLVLEN(wmi_vdev_pause_cmd_fixed_param));
+	fixed_params->vdev_id = info->vdev_id;
+	fixed_params->pause_dur_ms = info->vdev_pause_duration;
+	fixed_params->pause_type = WMI_VDEV_PAUSE_TYPE_MLO_LINK;
+	wmi_debug("vdev id: %d pause duration: %d pause type %d",
+		  fixed_params->vdev_id, fixed_params->pause_dur_ms,
+		  fixed_params->pause_type);
+
+	wmi_mtrace(WMI_VDEV_PAUSE_CMDID, fixed_params->vdev_id, 0);
+	ret = wmi_unified_cmd_send(wmi_handle, buf, buf_len,
+				   WMI_VDEV_PAUSE_CMDID);
+	if (QDF_IS_STATUS_ERROR(ret)) {
+		wmi_err("Failed to send vdev pause cmd: psoc (%pK) vdev(%u)",
+			wmi_handle->soc->wmi_psoc, info->vdev_id);
+		wmi_buf_free(buf);
+	}
+
+	return ret;
+}
+
+/**
  * extract_mlo_link_removal_evt_fixed_param_tlv() - Extract fixed parameters TLV
  * from the MLO link removal WMI  event
  * @wmi_handle: wmi handle
@@ -1709,4 +1762,6 @@ void wmi_11be_attach_tlv(wmi_unified_t wmi_handle)
 			extract_mgmt_rx_mlo_link_removal_info_tlv;
 	ops->extract_mlo_link_disable_request_evt_param =
 			extract_mlo_link_disable_request_evt_param_tlv;
+	ops->send_mlo_vdev_pause =
+			send_mlo_vdev_pause_cmd_tlv;
 }

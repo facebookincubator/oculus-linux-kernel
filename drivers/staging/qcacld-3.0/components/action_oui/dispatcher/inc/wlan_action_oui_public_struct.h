@@ -101,6 +101,10 @@
  * 11be mode
  * @ACTION_OUI_DISABLE_DYNAMIC_QOS_NULL_TX_RATE: Turn off FW's dynamic qos
  * null tx rate feature if specific vendor OUI received in beacon
+ * @ACTION_OUI_ENABLE_CTS2SELF_WITH_QOS_NULL: Enable CTS2SELF with QoS null
+ * frame for specified IoT APs.
+ * @ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN: Send SMPS frame along with OMN
+ * frame for specified IoT APs.
  * @ACTION_OUI_HOST_ONLY: host only action id start - placeholder.
  * New Firmware related "ACTION" needs to be added before this placeholder.
  * @ACTION_OUI_HOST_RECONN: reconnect to the same BSSID when wait for
@@ -124,6 +128,8 @@ enum action_oui_id {
 	ACTION_OUI_EXTEND_WOW_ITO = 10,
 	ACTION_OUI_11BE_OUI_ALLOW = 11,
 	ACTION_OUI_DISABLE_DYNAMIC_QOS_NULL_TX_RATE = 12,
+	ACTION_OUI_ENABLE_CTS2SELF_WITH_QOS_NULL = 13,
+	ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN = 14,
 	/* host&fw interface add above here */
 
 	ACTION_OUI_HOST_ONLY,

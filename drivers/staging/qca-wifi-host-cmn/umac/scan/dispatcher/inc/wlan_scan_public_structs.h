@@ -1402,11 +1402,11 @@ enum scan_cb_type {
 #define SCAN_PNO_DEF_SCAN_TIMER_REPEAT 20
 #define SCAN_PNO_MATCH_WAKE_LOCK_TIMEOUT         (5 * 1000)     /* in msec */
 #define SCAN_MAX_IE_LENGTH 255
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define SCAN_PNO_SCAN_COMPLETE_WAKE_LOCK_TIMEOUT (2 * 1000)     /* in msec */
 #else
 #define SCAN_PNO_SCAN_COMPLETE_WAKE_LOCK_TIMEOUT (1 * 1000)     /* in msec */
-#endif /* CONFIG_SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 
 /**
  * enum ssid_bc_type - SSID broadcast type

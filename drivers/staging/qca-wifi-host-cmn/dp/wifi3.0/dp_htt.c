@@ -43,6 +43,7 @@
 #ifdef CONFIG_SAWF_DEF_QUEUES
 #include <dp_sawf_htt.h>
 #endif
+#include <wbuff.h>
 
 #define HTT_TLV_HDR_LEN HTT_T2H_EXT_STATS_CONF_TLV_HDR_SIZE
 
@@ -674,13 +675,13 @@ int htt_srng_setup(struct htt_soc *soc, int mac_id,
 			htt_ring_type = HTT_SW_TO_SW_RING;
 #ifdef IPA_OFFLOAD
 		} else if (srng_params.ring_id ==
-		    (HAL_SRNG_WMAC1_SW2RXDMA0_BUF2 +
+		    (HAL_SRNG_WMAC1_SW2RXDMA0_BUF1 +
 		    (lmac_id * HAL_MAX_RINGS_PER_LMAC))) {
 			htt_ring_id = HTT_HOST2_TO_FW_RXBUF_RING;
 			htt_ring_type = HTT_SW_TO_SW_RING;
 #ifdef IPA_WDI3_VLAN_SUPPORT
 		} else if (srng_params.ring_id ==
-		    (HAL_SRNG_WMAC1_SW2RXDMA0_BUF3 +
+		    (HAL_SRNG_WMAC1_SW2RXDMA0_BUF2 +
 		    (lmac_id * HAL_MAX_RINGS_PER_LMAC))) {
 			htt_ring_id = HTT_HOST3_TO_FW_RXBUF_RING;
 			htt_ring_type = HTT_SW_TO_SW_RING;
@@ -694,11 +695,7 @@ int htt_srng_setup(struct htt_soc *soc, int mac_id,
 			htt_ring_type = HTT_SW_TO_HW_RING;
 #endif
 		} else if (srng_params.ring_id ==
-#ifdef IPA_OFFLOAD
-			 (HAL_SRNG_WMAC1_SW2RXDMA0_BUF1 +
-#else
 			 (HAL_SRNG_WMAC1_SW2RXDMA1_BUF +
-#endif
 			(lmac_id * HAL_MAX_RINGS_PER_LMAC))) {
 			htt_ring_id = HTT_RXDMA_HOST_BUF_RING;
 			htt_ring_type = HTT_SW_TO_HW_RING;
@@ -3508,6 +3505,20 @@ static void dp_ipa_rx_cce_super_rule_setup_done_handler(struct htt_soc *soc,
 }
 #endif
 
+#ifdef WLAN_FEATURE_CE_RX_BUFFER_REUSE
+static void dp_htt_rx_nbuf_free(qdf_nbuf_t nbuf)
+{
+	nbuf = wbuff_buff_put(nbuf);
+	if (nbuf)
+		qdf_nbuf_free(nbuf);
+}
+#else
+static inline void dp_htt_rx_nbuf_free(qdf_nbuf_t nbuf)
+{
+	return qdf_nbuf_free(nbuf);
+}
+#endif
+
 /*
  * dp_htt_t2h_msg_handler() - Generic Target to host Msg/event handler
  * @context:	Opaque context (HTT SOC handle)
@@ -3526,7 +3537,7 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 		if (pkt->Status != QDF_STATUS_E_CANCELED)
 			soc->stats.htc_err_cnt++;
 
-		qdf_nbuf_free(htt_t2h_msg);
+		dp_htt_rx_nbuf_free(htt_t2h_msg);
 		return;
 	}
 
@@ -3966,7 +3977,7 @@ static void dp_htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 
 	/* Free the indication buffer */
 	if (free_buf)
-		qdf_nbuf_free(htt_t2h_msg);
+		dp_htt_rx_nbuf_free(htt_t2h_msg);
 }
 
 /*

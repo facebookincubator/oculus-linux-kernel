@@ -4,8 +4,11 @@
 
 #include "unknown7-dsi-panel-jdi-nvt-dsc-2392x2560-90hz-video.dtsi"
 #include "unknown7-dsi-panel-sharp-nvt-dsc-2392x2560-90hz-video.dtsi"
-#include "eureka-dsi-panel-jdi-nvt-dsc-4k-90hz-video-pre-evt.dtsi"
-#include "eureka-dsi-panel-sharp-nvt-dsc-4k-90hz-video-pre-evt.dtsi"
+#include "eureka-panel-boe.dtsi"
+#include "eureka-panel-jdi.dtsi"
+#include "eureka-panel-jdi-experimental.dtsi"
+#include "eureka-panel-sharp.dtsi"
+#include "eureka-panel-sharp-experimental.dtsi"
 
 &aliases {
 	// BLU UART
@@ -14,9 +17,12 @@
 
 &fan {
 	panel = <&dsi_jdi_nvt_2392x2560_90Hz_dsc_video
-		&dsi_jdi_nvt_4k_90Hz_dsc_video_pre_evt
 		&dsi_sharp_nvt_2392x2560_90Hz_dsc_video
-		&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt>;
+		&eureka_panel_jdi
+		&eureka_panel_jdi_experimental
+		&eureka_panel_sharp
+		&eureka_panel_sharp_experimental
+		&eureka_panel_boe>;
 };
 
 &L12B {
@@ -106,7 +112,7 @@
 	disp_vsp-supply = <&disp_vsp>;
 	disp_vsn-supply = <&disp_vsn>;
 
-	qcom,dsi-default-panel = <&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt>;
+	qcom,dsi-default-panel = <&eureka_panel_sharp>;
 };
 
 &sde_dsi1 {
@@ -201,52 +207,6 @@
 	};
 };
 
-&dsi_jdi_nvt_4k_90Hz_dsc_video_pre_evt {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
-	meta,blu-default-duty-cycle = <100>; /* 10% duty */
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 108 0>;
-	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <0>;
-	qcom,mdss-dsi-sec-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve =
-		<25000 6270>,
-		<30000 5810>,
-		<35000 5400>,
-		<45000 4470>,
-		<55000 4090>;
-	meta,thermal-zone = "disp-virt";
-	meta,max-blu-pulse-overlap-us = <500>;
-
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 00 00 00 2A 33 0D
-				1F 0C 03 04 00 00 00
-			];
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
-		};
-		timing@1{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 00 00 00 2A 33 0D
-				1F 0C 03 04 00 00 00
-			];
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
-		};
-	};
-};
-
 &dsi_sharp_nvt_2392x2560_90Hz_dsc_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
@@ -272,23 +232,72 @@
 	};
 };
 
-&dsi_sharp_nvt_4k_90Hz_dsc_video_pre_evt {
+&eureka_panel_boe {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <90>; /* 9% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+
+	meta,settling-time-target-us = <4100>;
+};
+
+&eureka_panel_jdi {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 6270>,
+		<30000 5810>,
+		<35000 5400>,
+		<45000 4470>,
+		<55000 4090>;
+	meta,thermal-zone = "disp-virt";
+	meta,max-blu-pulse-overlap-us = <500>;
+};
+
+&eureka_panel_jdi_experimental {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <100>; /* 10% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 6270>,
+		<30000 5810>,
+		<35000 5400>,
+		<45000 4470>,
+		<55000 4090>;
+	meta,thermal-zone = "disp-virt";
+	meta,max-blu-pulse-overlap-us = <800>;
+};
+
+&eureka_panel_sharp {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
 	meta,blu-default-duty-cycle = <82>; /* 8.2% duty */
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <1000>;
+
 	qcom,platform-reset-gpio = <&tlmm 108 0>;
 	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <0>;
-	qcom,mdss-dsi-sec-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
 
 	meta,temperature-dependent-backlight;
 	meta,response-time-curve =
-		<10000 7330>,
 		<25000 7330>,
 		<30000 7050>,
 		<35000 6380>,
@@ -296,27 +305,27 @@
 		<55000 4220>;
 	meta,thermal-zone = "disp-virt";
 	meta,max-blu-pulse-overlap-us = <500>;
+};
 
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 00 00 00 2A 33 0D
-				1F 0C 03 04 00 00 00
-			];
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
-		};
-		timing@1{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 00 00 00 2A 33 0D
-				1F 0C 03 04 00 00 00
-			];
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
-		};
-	};
+&eureka_panel_sharp_experimental {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <82>; /* 8.2% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 7330>,
+		<30000 7050>,
+		<35000 6380>,
+		<45000 5140>,
+		<55000 4220>;
+	meta,thermal-zone = "disp-virt";
+	meta,max-blu-pulse-overlap-us = <800>;
 };
 
 &tlmm {

@@ -121,6 +121,7 @@ struct sap_avoid_channels_info {
 };
 #endif /* FEATURE_AP_MCC_CH_AVOIDANCE */
 
+#define MAX_VLAN 4
 struct sap_context {
 
 	/* Include the current channel frequency of AP */
@@ -130,9 +131,10 @@ struct sap_context {
 #ifdef DCS_INTERFERENCE_DETECTION
 	qdf_freq_t dcs_ch_freq;
 #endif
-
-	/* Include the SME(CSR) sessionId here */
-	uint8_t sessionId;
+	union {
+		uint8_t sessionId;
+		uint8_t vdev_id;
+	};
 	uint8_t sap_radar_found_status;
 
 	/* vdev object corresponding to sessionId */
@@ -253,6 +255,9 @@ struct sap_context {
  * is no AP found on these channels
  */
 	bool clean_channel_array[NUM_CHANNELS];
+#endif
+#ifdef QCA_MULTIPASS_SUPPORT
+	uint16_t vlan_map[2 * MAX_VLAN];
 #endif
 };
 

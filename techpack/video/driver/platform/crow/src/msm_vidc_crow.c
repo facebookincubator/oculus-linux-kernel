@@ -58,6 +58,7 @@ static struct msm_platform_core_capability core_data_crow_v0[] = {
 	{MAX_MBPF, 77522}, /* ((4096x2176)/256) x 2 + (1920x1088)/256 */
 	/* Concurrency: UHD@30 decode + 1080p@30 encode */
 	{MAX_MBPS, 2088960}, /* max_load 4096x2176@60fps */
+	{MAX_ENC_MBPS, 1044480}, /* max_load 4096x2176@30fps */
 	{MAX_IMAGE_MBPF, 1048576},  /* (16384x16384)/256 */
 	/* TODO (AM) : review required for HQ and B_FRAME and ALL INTRA */
 	{MAX_MBPF_HQ, 8160}, /* ((1920x1088)/256) */
@@ -109,8 +110,8 @@ static struct msm_platform_core_capability core_data_crow_v1[] = {
 	{MAX_SECURE_SESSION_COUNT, 3},
 	{MAX_RT_MBPF, 40800}, /* ((3840x2176)/256) + (1920x1088)/256 */
 	{MAX_MBPF, 42976}, /* ((4096x2176)/256) + (1920x1088)/256 */
-	/* max_load 4096x2176@30fps */
 	{MAX_MBPS, 1224000}, /* Concurrency: UHD@30 decode + 1080p@30 encode */
+	{MAX_ENC_MBPS, 1044480}, /* max_enc_load 4096x2176@30fps */
 	{MAX_IMAGE_MBPF, 1048576},  /* (16384x16384)/256 */
 	/* TODO (AM) : review required for HQ and B_FRAME and ALL INTRA */
 	{MAX_MBPF_HQ, 8160}, /* ((1920x1088)/256) */
@@ -162,8 +163,8 @@ static struct msm_platform_core_capability core_data_crow_v2[] = {
 	{MAX_SECURE_SESSION_COUNT, 3},
 	{MAX_RT_MBPF, 40800}, /* ((3840x2176)/256) + (1920x1088)/256 */
 	{MAX_MBPF, 42976}, /* ((4096x2176)/256) + (1920x1088)/256 */
-	/* max_load 4096x2176@30fps */
 	{MAX_MBPS, 1224000}, /* Concurrency: UHD@30 decode + 1080p@30 encode */
+	{MAX_ENC_MBPS, 1044480}, /* max_enc_load 4096x2176@30fps */
 	{MAX_IMAGE_MBPF, 1048576},  /* (16384x16384)/256 */
 	/* TODO (AM) : review required for HQ and B_FRAME and ALL INTRA */
 	{MAX_MBPF_HQ, 8160}, /* ((1920x1088)/256) */
@@ -6391,7 +6392,7 @@ static struct msm_vidc_ubwc_config_data ubwc_config_crow[] = {
 };
 
 static struct allowed_clock_rates_table clock_data_crow[] = {
-	{165000000 }, {270000000}, {366000000 }, {384000000}
+	{384000000}, {366000000}, {270000000}, {165000000}
 };
 
 static struct msm_vidc_efuse_data efuse_data_crow[] = {

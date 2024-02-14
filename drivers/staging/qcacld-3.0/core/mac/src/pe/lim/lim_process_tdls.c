@@ -304,7 +304,7 @@ static void populate_dot11f_tdls_offchannel_params(
 	}
 
 	op_class = wlan_reg_dmn_get_opclass_from_channel(
-		mac->scan.countryCodeCurrent,
+		reg_cc,
 		wlan_reg_freq_to_chan(mac->pdev, pe_session->curr_op_freq),
 		chanOffset);
 
@@ -323,7 +323,7 @@ static void populate_dot11f_tdls_offchannel_params(
 	}
 
 	pe_debug("countryCodeCurrent: %s, curr_op_freq: %d, htSecondaryChannelOffset: %d, chanOffset: %d op class: %d num_supportd_chan %d total opclasses %d num_supportd_opclass %d",
-		 mac->scan.countryCodeCurrent,
+		 reg_cc,
 		 pe_session->curr_op_freq,
 		 pe_session->htSecondaryChannelOffset,
 		 chanOffset, op_class, valid_count, numClasses,

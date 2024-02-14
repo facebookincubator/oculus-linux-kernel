@@ -63,6 +63,14 @@ extern "C" {
 #define       SAP_MAX_NUM_SESSION          5
 #define       SAP_MAX_OBSS_STA_CNT         1    /* max # of OBSS STA */
 #define       SAP_ACS_WEIGHT_MAX           (26664)
+/* ACS will mark non ACS channels(filtered by PCL) or channels not in
+ * ACS scan list to SAP_ACS_WEIGHT_MAX.
+ * But the filtered channel still need a reasonable weight to
+ * calculate the combined weight for ACS bw 40/80/160/320.
+ * Assign SAP_ACS_WEIGHT_ADJUSTABLE to such channels and update it
+ * with reasonable weight after all channels weight are computed.
+ */
+#define       SAP_ACS_WEIGHT_ADJUSTABLE    (SAP_ACS_WEIGHT_MAX - 1)
 
 #define SAP_DEFAULT_24GHZ_CHANNEL     (6)
 #define SAP_DEFAULT_5GHZ_CHANNEL      (40)

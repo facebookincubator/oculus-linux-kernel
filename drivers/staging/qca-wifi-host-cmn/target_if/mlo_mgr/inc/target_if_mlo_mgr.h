@@ -94,6 +94,16 @@ QDF_STATUS target_if_mlo_send_link_removal_cmd(
 		const struct mlo_link_removal_cmd_params *param);
 
 /**
+ * target_if_mlo_send_vdev_pause() - Send WMI command for MLO vdev pause
+ * @psoc: psoc pointer
+ * @info: MLO vdev pause information
+ *
+ * Return: QDF_STATUS of operation
+ */
+QDF_STATUS target_if_mlo_send_vdev_pause(struct wlan_objmgr_psoc *psoc,
+					 struct mlo_vdev_pause *info);
+
+/**
  * target_if_extract_mlo_link_removal_info_mgmt_rx() - Extract MLO link removal
  * information from MGMT Rx event
  * @wmi_handle: WMI handle

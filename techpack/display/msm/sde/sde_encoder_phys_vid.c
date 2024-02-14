@@ -1510,7 +1510,7 @@ static void sde_encoder_phys_vid_handle_post_kickoff(
 
 	avr_mode = sde_connector_get_qsync_mode(phys_enc->connector);
 
-	if (avr_mode && vid_enc->base.hw_intf->ops.avr_trigger) {
+	if (avr_mode && phys_enc->avr_post_kickoff_enabled && vid_enc->base.hw_intf->ops.avr_trigger) {
 		vid_enc->base.hw_intf->ops.avr_trigger(vid_enc->base.hw_intf);
 		SDE_EVT32(DRMID(phys_enc->parent),
 				phys_enc->hw_intf->idx - INTF_0,
@@ -1677,6 +1677,31 @@ void sde_encoder_phys_vid_add_enc_to_minidump(struct sde_encoder_phys *phys_enc)
 	sde_mini_dump_add_va_region("sde_enc_phys_vid", sizeof(*vid_enc), vid_enc);
 }
 
+static void sde_encoder_phys_vid_vsync_trigger(struct sde_encoder_phys *phys_enc)
+{
+	struct sde_encoder_phys_vid *vid_enc;
+	u32 avr_mode;
+
+	if (!phys_enc) {
+		SDE_ERROR("invalid encoder\n");
+		return;
+	}
+
+	/* T58830016: find appropriate mechanism to disable the post-kickoff
+	 * vsync trigger.
+	 */
+	phys_enc->avr_post_kickoff_enabled = false;
+
+	vid_enc = to_sde_encoder_phys_vid(phys_enc);
+	SDE_DEBUG_VIDENC(vid_enc, "enable_state %d\n", phys_enc->enable_state);
+
+	avr_mode = sde_connector_get_qsync_mode(phys_enc->connector);
+	SDE_DEBUG_VIDENC(vid_enc, "avr_mode %d\n", avr_mode);
+
+	if (avr_mode && vid_enc->base.hw_intf->ops.avr_trigger)
+		vid_enc->base.hw_intf->ops.avr_trigger(vid_enc->base.hw_intf);
+}
+
 static void sde_encoder_phys_vid_init_ops(struct sde_encoder_phys_ops *ops)
 {
 	ops->is_master = sde_encoder_phys_vid_is_master;
@@ -1708,6 +1733,7 @@ static void sde_encoder_phys_vid_init_ops(struct sde_encoder_phys_ops *ops)
 	ops->get_underrun_line_count =
 		sde_encoder_phys_vid_get_underrun_line_count;
 	ops->add_to_minidump = sde_encoder_phys_vid_add_enc_to_minidump;
+	ops->vsync_trigger = sde_encoder_phys_vid_vsync_trigger;
 }
 
 struct sde_encoder_phys *sde_encoder_phys_vid_init(
@@ -1742,6 +1768,11 @@ struct sde_encoder_phys *sde_encoder_phys_vid_init(
 	phys_enc->intf_idx = p->intf_idx;
 
 	SDE_DEBUG_VIDENC(vid_enc, "\n");
+
+	/* TODO(T58830016): Need to find a better way to initialize this
+	 * parameter.
+	 */
+	phys_enc->avr_post_kickoff_enabled = true;
 
 	sde_encoder_phys_vid_init_ops(&phys_enc->ops);
 	phys_enc->parent = p->parent;

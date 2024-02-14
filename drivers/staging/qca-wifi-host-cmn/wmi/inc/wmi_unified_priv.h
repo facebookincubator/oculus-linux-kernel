@@ -3044,6 +3044,10 @@ QDF_STATUS
 				struct mlo_link_set_active_param *param);
 
 QDF_STATUS
+(*send_mlo_vdev_pause)(wmi_unified_t wmi_handle,
+		       struct mlo_vdev_pause *info);
+
+QDF_STATUS
 (*extract_mlo_link_set_active_resp)(wmi_unified_t wmi_handle,
 				    void *evt_buf,
 				    struct mlo_link_set_active_resp *resp);

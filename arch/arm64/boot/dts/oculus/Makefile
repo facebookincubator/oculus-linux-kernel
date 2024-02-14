@@ -21,7 +21,8 @@ dtbo-$(CONFIG_OCULUS_EUREKA) += \
 	eureka-dvt1.0-overlay.dtbo \
 	eureka-dvt1.1-overlay.dtbo \
 	eureka-pvt1.0-overlay.dtbo \
-	eureka-pvt1.1-overlay.dtbo
+	eureka-pvt1.1-overlay.dtbo \
+	eureka-et1.0-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_FIJI) += \
 	fiji-rev1-overlay.dtbo
@@ -34,10 +35,18 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 	unknown6-p1.4-overlay.dtbo \
 	unknown6-p1.5-overlay.dtbo \
 	unknown6-p1.6-overlay.dtbo \
-	unknown6-p1.7-overlay.dtbo
+	unknown6-p1.7-overlay.dtbo \
+	unknown6-evt1.1-overlay.dtbo \
+	unknown6-evt1.2-overlay.dtbo \
+	unknown6-evt1.3-overlay.dtbo \
+	unknown6-evt1.4-overlay.dtbo \
+	unknown6-evt1.5-overlay.dtbo \
+	unknown6-evt1.6-overlay.dtbo \
+	unknown6-evt1.7-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_SCYLLA) += \
-	scylla-dev0-overlay.dtbo
+	scylla-dev0-overlay.dtbo \
+	scylla-poc0-overlay.dtbo
 
 unknown7-dev0-overlay.dtbo-base := unknown7.dtb
 unknown7-p0-overlay.dtbo-base := unknown7.dtb
@@ -55,6 +64,7 @@ eureka-dvt1.0-overlay.dtbo-base := eureka.dtb
 eureka-dvt1.1-overlay.dtbo-base := eureka.dtb
 eureka-pvt1.0-overlay.dtbo-base := eureka.dtb
 eureka-pvt1.1-overlay.dtbo-base := eureka.dtb
+eureka-et1.0-overlay.dtbo-base := eureka.dtb
 fiji-rev1-overlay.dtbo-base := fiji.dtb
 unknown6-dev1-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.1-overlay.dtbo-base := unknown6.dtb
@@ -64,7 +74,15 @@ unknown6-p1.4-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.5-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.6-overlay.dtbo-base := unknown6.dtb
 unknown6-p1.7-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.1-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.2-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.3-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.4-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.5-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.6-overlay.dtbo-base := unknown6.dtb
+unknown6-evt1.7-overlay.dtbo-base := unknown6.dtb
 scylla-dev0-overlay.dtbo-base := scylla.dtb
+scylla-poc0-overlay.dtbo-base := scylla.dtb
 
 endif # CONFIG_ARCH_ANORAK
 endif # CONFIG_BUILD_ARM64_DT_OVERLAY

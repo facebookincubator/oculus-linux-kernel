@@ -208,10 +208,10 @@ struct hif_latency_detect {
 #endif
 
 /*
- * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * Note: For MCL, #if defined (CONFIG_WLAN_EXTRA_DEBUG) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 
 #define HIF_CE_MAX_LATEST_HIST 2
 
@@ -242,7 +242,7 @@ void hif_record_latest_evt(struct ce_desc_hist *ce_hist,
 			   uint8_t type,
 			   int ce_id, uint64_t time,
 			   uint32_t hp, uint32_t tp);
-#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)*/
+#endif /*defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)*/
 
 /**
  * struct hif_cfg() - store ini config parameters in hif layer
@@ -352,12 +352,12 @@ struct hif_softc {
 #endif
 
 /*
- * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * Note: For MCL, #if defined (CONFIG_WLAN_EXTRA_DEBUG) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 	struct ce_desc_hist hif_ce_desc_hist;
-#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)*/
+#endif /*defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)*/
 #ifdef IPA_OFFLOAD
 	qdf_shared_mem_t *ipa_ce_ring;
 #endif
@@ -404,6 +404,9 @@ struct hif_softc {
 #ifdef FEATURE_DIRECT_LINK
 	struct qdf_mem_multi_page_t dl_recv_pages;
 	int dl_recv_pipe_num;
+#endif
+#ifdef WLAN_FEATURE_CE_RX_BUFFER_REUSE
+	struct wbuff_mod_handle *wbuff_handle;
 #endif
 };
 

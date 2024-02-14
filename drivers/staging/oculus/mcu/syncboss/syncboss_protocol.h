@@ -37,6 +37,8 @@ struct syncboss_data {
 	u8 data[];
 } __packed;
 
+#define NUM_PACKET_TYPES 256 /* Packet type is a u8. */
+
 /* The message we send to SyncBoss to set the prox calibration */
 struct prox_config_data {
 	u8 type;

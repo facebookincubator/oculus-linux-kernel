@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -106,6 +106,11 @@ static inline QDF_STATUS ipa_register_is_ipa_ready(
 
 static inline void ipa_disable_register_cb(void)
 {
+}
+
+static inline bool ipa_config_is_opt_wifi_dp_enabled(void)
+{
+	return false;
 }
 
 static inline bool wlan_ipa_config_is_enabled(void)

@@ -13,6 +13,8 @@
 #include <linux/dma-buf.h>
 #include <linux/sched/task.h>
 
+#include "cam_req_mgr.h"
+
 #define CAM_ADD_REG_VAL_PAIR(buf_array, index, offset, val)     \
         do {                                                    \
 		CAM_DBG(CAM_ISP, "idx %d offset %03x val %08x", \
@@ -138,6 +140,8 @@ struct cam_slave_pkt_hdr {
 	(CAM_RPMSG_SLAVE_PACKET_BASE_SYSTEM + 0x0)
 #define CAM_RPMSG_SLAVE_PACKET_TYPE_SYSTEM_PING       \
 	(CAM_RPMSG_SLAVE_PACKET_BASE_SYSTEM + 0x1)
+#define CAM_RPMSG_SLAVE_PACKET_TYPE_SYSTEM_SYNC       \
+	(CAM_RPMSG_SLAVE_PACKET_BASE_SYSTEM + 0x2)
 #define CAM_RPMSG_SLAVE_PACKET_TYPE_SYSTEM_MAX        \
 	(CAM_RPMSG_SLAVE_PACKET_BASE_SYSTEM + 0x19)
 
@@ -522,14 +526,23 @@ struct cam_rpmsg_isp_stop_payload {
  *
  * @hdr        : packet header
  * @phdr       : payload header
- * @version    : packet version
- * @sensor_id  : sequence
  */
 struct cam_rpmsg_system_ping_payload {
 	struct cam_slave_pkt_hdr hdr;
 	struct cam_rpmsg_slave_payload_desc phdr;
-	// uint32_t version;
-	// uint32_t sequence;
+};
+/* struct cam_rpmsg_system_sync_payload
+ *
+ * @hdr        : packet header
+ * @phdr       : payload header
+ * @num_cams   : Number of camera to sync
+ * @camera_id  : array of camera_ids of length num_cams
+ */
+struct cam_rpmsg_system_sync_payload {
+	struct cam_slave_pkt_hdr hdr;
+	struct cam_rpmsg_slave_payload_desc phdr;
+	uint32_t num_cams;
+	uint32_t camera_id[1];
 };
 
 /* struct cam_rpmsg_isp_err_payload
@@ -702,6 +715,8 @@ int cam_rpmsg_unregister_status_change_event(unsigned int handle,
  * @return zero on success, otherwise error codes
  */
 int cam_rpmsg_set_recv_cb(unsigned int handle, cam_rpmsg_recv_cb cb);
+
+int cam_rpmsg_system_send_sync(struct cam_req_mgr_sync_mode_v2 *sync_info);
 
 /**
  * @brief : API to register rpmsg to platform framework.

@@ -550,7 +550,8 @@ static int cnss_fw_mem_ready_hdlr(struct cnss_plat_data *plat_priv)
 
 	cnss_wlfw_bdf_dnld_send_sync(plat_priv, CNSS_BDF_REGDB);
 
-	cnss_wlfw_ini_file_send_sync(plat_priv, WLFW_CONN_ROAM_INI_V01);
+	if (plat_priv->conn_roaming_cfg)
+		cnss_wlfw_ini_file_send_sync(plat_priv, WLFW_CONN_ROAM_INI_V01);
 
 	ret = cnss_wlfw_bdf_dnld_send_sync(plat_priv,
 					   plat_priv->ctrl_params.bdf_type);
@@ -565,7 +566,9 @@ static int cnss_fw_mem_ready_hdlr(struct cnss_plat_data *plat_priv)
 	if (ret)
 		goto out;
 
+#if IS_ENABLED(CONFIG_CORESIGHT)
 	cnss_wlfw_qdss_dnld_send_sync(plat_priv);
+#endif
 
 	return 0;
 out:
@@ -2525,6 +2528,8 @@ int cnss_do_elf_ramdump(struct cnss_plat_data *plat_priv)
 	return ret;
 }
 #else
+
+#if IS_ENABLED(CONFIG_QCOM_CNSS_PANIC_NOTIFIER)
 static int cnss_panic_handler(struct notifier_block *nb, unsigned long action,
 			      void *data)
 {
@@ -2563,6 +2568,14 @@ void cnss_unregister_subsys(struct cnss_plat_data *plat_priv)
 	if (ret)
 		cnss_pr_err("Failed to unregister panic handler\n");
 }
+#else
+int cnss_register_subsys(struct cnss_plat_data *plat_priv)
+{
+	return 0;
+}
+void cnss_unregister_subsys(struct cnss_plat_data *plat_priv)
+{ }
+#endif /* CONFIG_QCOM_CNSS_PANIC_NOTIFIER */
 
 #if IS_ENABLED(CONFIG_QCOM_MEMORY_DUMP_V2)
 static void *cnss_create_ramdump_device(struct cnss_plat_data *plat_priv)
@@ -3770,6 +3783,13 @@ cnss_use_nv_mac(struct cnss_plat_data *plat_priv)
 				     "use-nv-mac");
 }
 
+static inline bool
+cnss_conn_roaming_cfg(struct cnss_plat_data *plat_priv)
+{
+	return of_property_read_bool(plat_priv->plat_dev->dev.of_node,
+				     "conn-roaming-cfg");
+}
+
 int cnss_set_wfc_mode(struct device *dev, struct cnss_wfc_cfg cfg)
 {
 	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
@@ -4011,6 +4031,7 @@ static int cnss_probe(struct platform_device *plat_dev)
 	plat_priv->device_id = device_id->driver_data;
 	plat_priv->bus_type = cnss_get_bus_type(plat_priv->device_id);
 	plat_priv->use_nv_mac = cnss_use_nv_mac(plat_priv);
+	plat_priv->conn_roaming_cfg = cnss_conn_roaming_cfg(plat_priv);
 	plat_priv->driver_mode = CNSS_DRIVER_MODE_MAX;
 	plat_priv->use_fw_path_with_prefix =
 		cnss_use_fw_path_with_prefix(plat_priv);

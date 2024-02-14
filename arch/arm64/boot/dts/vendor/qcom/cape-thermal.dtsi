@@ -169,7 +169,7 @@
 
 	qcom,cpu-voltage-cdev {
 		compatible = "qcom,cc-cooling-devices";
-		apc1_cluster: thermal-cluster-4-7 {
+		apc1_cluster: thermal-cluster-1-2 {
 			qcom,cluster0 = <&CPU4 &CPU5 &CPU6>;
 			qcom,cluster1 = <&CPU7>;
 			#cooling-cells = <2>;

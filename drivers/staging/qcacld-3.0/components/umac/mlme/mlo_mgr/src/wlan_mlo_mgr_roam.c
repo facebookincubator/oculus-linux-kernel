@@ -531,17 +531,17 @@ QDF_STATUS mlo_enable_rso(struct wlan_objmgr_pdev *pdev,
 
 	num_partner_links = rsp->ml_parnter_info.num_partner_links;
 
-	if (wlan_vdev_mlme_is_mlo_link_vdev(vdev) ||
-	    !num_partner_links ||
-	    num_partner_links == 1) {
-		assoc_vdev = wlan_mlo_get_assoc_link_vdev(vdev);
-		if (!assoc_vdev) {
-			mlo_err("Assoc vdev is null");
-			return QDF_STATUS_E_NULL_VALUE;
-		}
-		cm_roam_start_init_on_connect(pdev,
-					      wlan_vdev_get_id(assoc_vdev));
+	if (num_partner_links &&
+	    (!wlan_vdev_mlme_is_mlo_link_vdev(vdev) ||
+	     !mlo_check_if_all_links_up(vdev)))
+		return QDF_STATUS_SUCCESS;
+
+	assoc_vdev = wlan_mlo_get_assoc_link_vdev(vdev);
+	if (!assoc_vdev) {
+		mlo_err("Assoc vdev is null");
+		return QDF_STATUS_E_NULL_VALUE;
 	}
+	cm_roam_start_init_on_connect(pdev, wlan_vdev_get_id(assoc_vdev));
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -763,6 +763,12 @@ mlo_check_if_all_vdev_up(struct wlan_objmgr_vdev *vdev)
 		return false;
 	}
 
+	if (QDF_IS_STATUS_ERROR(wlan_vdev_is_up(vdev))) {
+		mlo_debug("Vdev id %d is not in up state",
+			  wlan_vdev_get_id(vdev));
+			return false;
+	}
+
 	mlo_dev_ctx = vdev->mlo_dev_ctx;
 	sta_ctx = mlo_dev_ctx->sta_ctx;
 	for (i = 0; i < WLAN_UMAC_MLO_MAX_VDEVS; i++) {
@@ -771,7 +777,7 @@ mlo_check_if_all_vdev_up(struct wlan_objmgr_vdev *vdev)
 
 		if (qdf_test_bit(i, sta_ctx->wlan_connected_links) &&
 		    !QDF_IS_STATUS_SUCCESS(wlan_vdev_is_up(mlo_dev_ctx->wlan_vdev_list[i]))) {
-			mlo_debug("Vdev id %d is not in connected state",
+			mlo_debug("Vdev id %d is not in up state",
 				  wlan_vdev_get_id(mlo_dev_ctx->wlan_vdev_list[i]));
 			return false;
 		}

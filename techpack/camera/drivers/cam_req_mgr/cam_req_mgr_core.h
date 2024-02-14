@@ -48,6 +48,7 @@
 #define VERSION_2  2
 #define VERSION_3  3
 #define CAM_REQ_MGR_MAX_TRIGGERS   2
+#define MAX_LINKS_PER_SESSION_V2   16
 
 /**
  * enum crm_req_eof_trigger_type
@@ -478,7 +479,7 @@ struct cam_req_mgr_core_device {
 };
 
 /**
- * struct cam_req_mgr_req_tbl
+ * struct cam_req_mgr_req_tbl_mini_dump
  * @id            : table indetifier
  * @pd            : pipeline delay of table
  * @dev_count     : num of devices having same pipeline delay
@@ -632,11 +633,18 @@ int cam_req_mgr_unlink(struct cam_req_mgr_unlink_info *unlink_info);
 int cam_req_mgr_schedule_request(struct cam_req_mgr_sched_request *sched_req);
 
 /**
- * cam_req_mgr_sync_mode_setup()
+ * cam_req_mgr_sync_config()
  * @brief: sync for links in a session
  * @sync_info: session, links info and master link info
  */
 int cam_req_mgr_sync_config(struct cam_req_mgr_sync_mode *sync_info);
+
+/**
+ * cam_req_mgr_sync_config_v2()
+ * @brief: sync for links in a session
+ * @sync_info: session, links info and master link info
+ */
+int cam_req_mgr_sync_config_v2(struct cam_req_mgr_sync_mode_v2 *sync_info);
 
 /**
  * cam_req_mgr_flush_requests()

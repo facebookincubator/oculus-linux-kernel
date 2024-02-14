@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include "anorak-oculus-base.dtsi"
+#include "anorak-oculus-display.dtsi"
 
 #include "eureka-adc.dtsi"
 #include "eureka-audio.dtsi"
@@ -8,6 +9,7 @@
 #include "eureka-panel.dtsi"
 #include "eureka-regulator.dtsi"
 #include "eureka-santana-manager.dtsi"
+#include "eureka-sensorlock.dtsi"
 #include "eureka-thermal.dtsi"
 
 &fan_pwm_default {
@@ -31,6 +33,15 @@
 
 &mdss_mdp0 {
 	connectors = <&sde_dsi &sde_wb1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc0>;
+};
+
+/* Battery I2C */
+&qupv3_se0_i2c {
+	status = "ok";
+	bq27z561: fuel-gauge@0x55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+	};
 };
 
 &qupv3_se2_i2c {

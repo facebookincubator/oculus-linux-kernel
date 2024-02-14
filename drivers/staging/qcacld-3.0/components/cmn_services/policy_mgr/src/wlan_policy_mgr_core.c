@@ -418,7 +418,9 @@ QDF_STATUS policy_mgr_get_hw_mode_from_idx(
 	for (i = 0; i < pm_ctx->num_dbs_hw_modes; i++) {
 		param = pm_ctx->hw_mode.hw_mode_list[i];
 		hw_mode_id = POLICY_MGR_HW_MODE_ID_GET(param);
-		if (hw_mode_id == idx)
+		hw_mode->emlsr_cap = POLICY_MGR_HW_MODE_EMLSR_MODE_GET(param);
+
+		if (hw_mode_id == idx || hw_mode->emlsr_cap)
 			break;
 	}
 	if (i >= pm_ctx->num_dbs_hw_modes) {
@@ -438,7 +440,6 @@ QDF_STATUS policy_mgr_get_hw_mode_from_idx(
 	hw_mode->dbs_cap = POLICY_MGR_HW_MODE_DBS_MODE_GET(param);
 	hw_mode->agile_dfs_cap = POLICY_MGR_HW_MODE_AGILE_DFS_GET(param);
 	hw_mode->sbs_cap = POLICY_MGR_HW_MODE_SBS_MODE_GET(param);
-	hw_mode->emlsr_cap = POLICY_MGR_HW_MODE_EMLSR_MODE_GET(param);
 	if (hw_mode->dbs_cap) {
 		mac0_min_ss = QDF_MIN(hw_mode->mac0_tx_ss, hw_mode->mac0_rx_ss);
 		mac1_min_ss = QDF_MIN(hw_mode->mac1_tx_ss, hw_mode->mac1_rx_ss);

@@ -17,6 +17,7 @@
  */
 
 #include <wlan_objmgr_pdev_obj.h>
+#include <wlan_dp_main.h>
 #include <wlan_dp_prealloc.h>
 #include <dp_types.h>
 #include <dp_internal.h>
@@ -386,8 +387,7 @@ static struct  dp_multi_page_prealloc g_dp_multi_page_allocs[] = {
 
 	/* DP RX DESCs BUF pools */
 	{QDF_DP_RX_DESC_BUF_TYPE, sizeof(union dp_rx_desc_list_elem_t),
-	 WLAN_CFG_RX_SW_DESC_WEIGHT_SIZE * WLAN_CFG_RXDMA_REFILL_RING_SIZE, 0,
-	 CACHEABLE, { 0 } },
+	 0, 0, CACHEABLE, { 0 } },
 
 #ifdef DISABLE_MON_CONFIG
 	/* no op */
@@ -628,10 +628,64 @@ dp_update_num_elements_by_desc_type(struct wlan_dp_prealloc_cfg *cfg,
 	case QDF_DP_TX_TSO_NUM_SEG_TYPE:
 		*num_elements = cfg->num_tx_ext_desc;
 		return;
+	case QDF_DP_RX_DESC_BUF_TYPE:
+		*num_elements = cfg->num_rx_sw_desc * WLAN_CFG_RX_SW_DESC_WEIGHT_SIZE;
+		return;
 	default:
 		return;
 	}
 }
+
+#ifdef WLAN_DP_PROFILE_SUPPORT
+static void
+wlan_dp_sync_prealloc_with_profile_cfg(struct wlan_dp_prealloc_cfg *cfg)
+{
+	struct wlan_dp_memory_profile_info *profile_info;
+	struct wlan_dp_memory_profile_ctx *profile_ctx;
+	int i;
+
+	profile_info = wlan_dp_get_profile_info();
+	if (!profile_info->is_selected)
+		return;
+
+	for (i = 0; i < profile_info->size; i++) {
+		profile_ctx = &profile_info->ctx[i];
+
+		switch (profile_ctx->param_type) {
+		case DP_TX_DESC_NUM_CFG:
+			cfg->num_tx_desc = profile_ctx->size;
+			break;
+		case DP_TX_EXT_DESC_NUM_CFG:
+			cfg->num_tx_ext_desc = profile_ctx->size;
+			break;
+		case DP_TX_RING_SIZE_CFG:
+			cfg->num_tx_ring_entries = profile_ctx->size;
+			break;
+		case DP_TX_COMPL_RING_SIZE_CFG:
+			cfg->num_tx_comp_ring_entries = profile_ctx->size;
+			break;
+		case DP_RX_SW_DESC_NUM_CFG:
+			cfg->num_rx_sw_desc = profile_ctx->size;
+			break;
+		case DP_REO_DST_RING_SIZE_CFG:
+			cfg->num_reo_dst_ring_entries = profile_ctx->size;
+			break;
+		case DP_RXDMA_BUF_RING_SIZE_CFG:
+			cfg->num_rxdma_buf_ring_entries = profile_ctx->size;
+			break;
+		case DP_RXDMA_REFILL_RING_SIZE_CFG:
+			cfg->num_rxdma_refill_ring_entries = profile_ctx->size;
+			break;
+		default:
+			break;
+		}
+	}
+}
+#else
+
+static inline void
+wlan_dp_sync_prealloc_with_profile_cfg(struct wlan_dp_prealloc_cfg *cfg) {}
+#endif
 
 QDF_STATUS dp_prealloc_init(struct cdp_ctrl_objmgr_psoc *ctrl_psoc)
 {
@@ -649,6 +703,7 @@ QDF_STATUS dp_prealloc_init(struct cdp_ctrl_objmgr_psoc *ctrl_psoc)
 	}
 
 	wlan_cfg_get_prealloc_cfg(ctrl_psoc, &cfg);
+	wlan_dp_sync_prealloc_with_profile_cfg(&cfg);
 
 	/*Context pre-alloc*/
 	for (i = 0; i < QDF_ARRAY_SIZE(g_dp_context_allocs); i++) {

@@ -544,6 +544,7 @@ struct cnss_plat_data {
 	bool cbc_enabled;
 	u8 use_pm_domain;
 	u8 use_nv_mac;
+	u8 conn_roaming_cfg;
 	u8 set_wlaon_pwr_ctrl;
 	struct cnss_tcs_info tcs_info;
 	bool fw_pcie_gen_switch;

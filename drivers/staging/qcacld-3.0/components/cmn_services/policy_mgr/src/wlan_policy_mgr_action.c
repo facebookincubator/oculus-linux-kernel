@@ -1609,6 +1609,8 @@ bool policy_mgr_is_safe_channel(struct wlan_objmgr_psoc *psoc,
 bool policy_mgr_is_sap_freq_allowed(struct wlan_objmgr_psoc *psoc,
 				    uint32_t sap_freq)
 {
+	uint32_t nan_2g_freq, nan_5g_freq;
+
 	if (policy_mgr_is_safe_channel(psoc, sap_freq))
 		return true;
 
@@ -1619,6 +1621,19 @@ bool policy_mgr_is_sap_freq_allowed(struct wlan_objmgr_psoc *psoc,
 	if (policy_mgr_sta_sap_scc_on_lte_coex_chan(psoc) &&
 	    policy_mgr_is_sta_sap_scc(psoc, sap_freq)) {
 		policy_mgr_debug("unsafe freq %d for sap is allowed", sap_freq);
+		return true;
+	}
+
+	nan_2g_freq =
+		policy_mgr_mode_specific_get_channel(psoc, PM_NAN_DISC_MODE);
+	nan_5g_freq = wlan_nan_get_disc_5g_ch_freq(psoc);
+
+	if ((WLAN_REG_IS_SAME_BAND_FREQS(nan_2g_freq, sap_freq) ||
+	     WLAN_REG_IS_SAME_BAND_FREQS(nan_5g_freq, sap_freq)) &&
+	    policy_mgr_is_force_scc(psoc) &&
+	    policy_mgr_get_nan_sap_scc_on_lte_coex_chnl(psoc)) {
+		policy_mgr_debug("NAN+SAP SCC on unsafe freq %d is allowed",
+				  sap_freq);
 		return true;
 	}
 
@@ -2068,6 +2083,10 @@ void policy_mgr_nan_sap_post_disable_conc_check(struct wlan_objmgr_psoc *psoc)
 	struct policy_mgr_conc_connection_info *sap_info = NULL;
 	uint32_t sap_freq = 0, i;
 	QDF_STATUS status;
+	uint32_t user_config_freq;
+	uint8_t band_mask = 0;
+	uint8_t chn_idx, num_chan;
+	struct regulatory_channel *channel_list;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -2086,12 +2105,47 @@ void policy_mgr_nan_sap_post_disable_conc_check(struct wlan_objmgr_psoc *psoc)
 	if (sap_freq == 0 || policy_mgr_is_safe_channel(psoc, sap_freq))
 		return;
 
+	user_config_freq = policy_mgr_get_user_config_sap_freq(
+						psoc, sap_info->vdev_id);
+
 	sap_freq = policy_mgr_get_nondfs_preferred_channel(psoc, PM_SAP_MODE,
 							   false);
 	policy_mgr_debug("User/ACS orig Freq: %d New SAP Freq: %d",
-			 policy_mgr_get_user_config_sap_freq(
-						psoc, sap_info->vdev_id),
-			 sap_freq);
+			 user_config_freq, sap_freq);
+
+	if (wlan_reg_is_enable_in_secondary_list_for_freq(pm_ctx->pdev,
+							  user_config_freq) &&
+	    policy_mgr_is_safe_channel(psoc, user_config_freq)) {
+		policy_mgr_debug("Give preference to user config freq");
+		sap_freq = user_config_freq;
+	} else {
+		channel_list = qdf_mem_malloc(
+					sizeof(struct regulatory_channel) *
+					       NUM_CHANNELS);
+		if (!channel_list)
+			return;
+
+		band_mask |= BIT(wlan_reg_freq_to_band(user_config_freq));
+		num_chan = wlan_reg_get_band_channel_list_for_pwrmode(
+						pm_ctx->pdev,
+						band_mask,
+						channel_list,
+						REG_CURRENT_PWR_MODE);
+		for (chn_idx = 0; chn_idx < num_chan; chn_idx++) {
+			if (wlan_reg_is_enable_in_secondary_list_for_freq(
+					pm_ctx->pdev,
+					channel_list[chn_idx].center_freq) &&
+			    policy_mgr_is_safe_channel(
+					psoc,
+					channel_list[chn_idx].center_freq)) {
+				policy_mgr_debug("Prefer user config band freq %d",
+						 channel_list[chn_idx].center_freq);
+				sap_freq = channel_list[chn_idx].center_freq;
+			}
+		}
+		qdf_mem_free(channel_list);
+	}
+
 	if (pm_ctx->hdd_cbacks.hdd_is_chan_switch_in_progress &&
 	    pm_ctx->hdd_cbacks.hdd_is_chan_switch_in_progress()) {
 		policy_mgr_debug("wait as channel switch is already in progress");
@@ -2543,6 +2597,7 @@ policy_mgr_valid_sap_conc_channel_check(struct wlan_objmgr_psoc *psoc,
 	bool is_6ghz_cap;
 	bool is_sta_sap_scc;
 	enum policy_mgr_con_mode con_mode;
+	uint32_t nan_2g_freq, nan_5g_freq;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -2578,6 +2633,10 @@ policy_mgr_valid_sap_conc_channel_check(struct wlan_objmgr_psoc *psoc,
 	con_mode = policy_mgr_con_mode_by_vdev_id(psoc, sap_vdev_id);
 
 	is_sta_sap_scc = policy_mgr_is_sta_sap_scc(psoc, ch_freq);
+
+	nan_2g_freq =
+		policy_mgr_mode_specific_get_channel(psoc, PM_NAN_DISC_MODE);
+	nan_5g_freq = wlan_nan_get_disc_5g_ch_freq(psoc);
 
 	sta_sap_scc_on_dfs_chan =
 		policy_mgr_is_sta_sap_scc_allowed_on_dfs_chan(psoc);
@@ -2615,7 +2674,10 @@ policy_mgr_valid_sap_conc_channel_check(struct wlan_objmgr_psoc *psoc,
 				     ch_freq);
 	} else if (!policy_mgr_is_safe_channel(psoc, ch_freq) &&
 		   !(policy_mgr_sta_sap_scc_on_lte_coex_chan(psoc) &&
-		     is_sta_sap_scc)) {
+		     is_sta_sap_scc) &&
+		   !(policy_mgr_get_nan_sap_scc_on_lte_coex_chnl(psoc) &&
+		    (WLAN_REG_IS_SAME_BAND_FREQS(nan_2g_freq, ch_freq) ||
+		     WLAN_REG_IS_SAME_BAND_FREQS(nan_5g_freq, ch_freq)))) {
 		find_alternate = true;
 		policymgr_nofl_debug("sap not capable unsafe con ch_freq %d",
 				     ch_freq);

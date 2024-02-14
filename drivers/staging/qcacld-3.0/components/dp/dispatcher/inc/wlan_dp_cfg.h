@@ -1217,6 +1217,25 @@
 	CFG_INI_BOOL("enable_direct_link_ut_cmd", false, \
 		     "enable/disable direct link unit test")
 
+/*
+ * <ini>
+ * dp_apply_mem_profile - Apply mem profile config
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used to apply DP mem profile config
+ *
+ * Supported feature: All modes
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_DP_APPLY_MEM_PROFILE \
+	CFG_INI_BOOL("dp_apply_mem_profile", false, \
+		     "enable/disable dp mem profile")
+
 /*TODO Flow control part to be moved to DP later*/
 
 #ifdef WLAN_FEATURE_DP_BUS_BANDWIDTH
@@ -1283,6 +1302,7 @@
 	CFG(CFG_DP_NUM_DP_RX_THREADS) \
 	CFG(CFG_DP_ICMP_REQ_TO_FW_MARK_INTERVAL) \
 	CFG(CFG_ENABLE_DIRECT_LINK_UT_CMD) \
+	CFG(CFG_DP_APPLY_MEM_PROFILE) \
 	CFG_DP_ENABLE_FASTPATH_ALL \
 	CFG_DP_BUS_BANDWIDTH \
 	CFG_DP_DRIVER_TCP_DELACK \

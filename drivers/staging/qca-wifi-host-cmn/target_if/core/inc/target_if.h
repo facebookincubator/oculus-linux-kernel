@@ -607,6 +607,24 @@ static inline void target_psoc_set_wlan_init_status
 	psoc_info->info.wlan_init_status = wlan_init_status;
 }
 
+#ifdef QCA_MULTIPASS_SUPPORT
+/**
+ * target_is_multipass_sap() - Get multipass sap capabilities
+ * @psoc_info: pointer to structure target_psoc_info
+ *
+ * Return: True is FW support multipass SAP.
+ */
+static inline bool target_is_multipass_sap(struct target_psoc_info *psoc_info)
+{
+	return psoc_info->info.service_ext2_param.is_multipass_sap;
+}
+#else
+static inline bool target_is_multipass_sap(struct target_psoc_info *psoc_info)
+{
+	return false;
+}
+#endif
+
 /**
  * target_psoc_get_wlan_init_status() - get info wlan_init_status
  * @psoc_info:  pointer to structure target_psoc_info
@@ -2897,4 +2915,14 @@ static inline void target_if_set_reo_shared_qref_feature(struct wlan_objmgr_psoc
 }
 #endif
 
+/**
+ * target_if_wmi_chan_width_to_phy_ch_width() - convert channel width from
+ * wmi_host_channel_width to phy_ch_width
+ *
+ * @ch_width: wmi_host_channel_width
+ *
+ * return: phy_ch_width
+ */
+enum phy_ch_width
+target_if_wmi_chan_width_to_phy_ch_width(wmi_host_channel_width ch_width);
 #endif

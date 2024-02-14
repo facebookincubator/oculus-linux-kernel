@@ -910,3 +910,9 @@ wlan_pmo_get_interval_for_pagefault_wakeup_counts(struct wlan_objmgr_psoc *psoc)
 {
 	return pmo_get_interval_for_pagefault_wakeup_counts(psoc);
 }
+
+QDF_STATUS wlan_pmo_get_listen_interval(struct wlan_objmgr_vdev *vdev,
+					uint32_t *listen_interval)
+{
+	return pmo_core_get_listen_interval(vdev, listen_interval);
+}

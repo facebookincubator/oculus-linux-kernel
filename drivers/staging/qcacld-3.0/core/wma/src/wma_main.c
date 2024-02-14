@@ -1172,6 +1172,18 @@ static inline bool wma_is_tx_chainmask_valid(int value,
 	return false;
 }
 
+#ifdef QCA_MULTIPASS_SUPPORT
+inline bool wma_is_multipass_sap(struct target_psoc_info *tgt_hdl)
+{
+	return tgt_hdl->info.service_ext2_param.is_multipass_sap;
+}
+#else
+inline bool wma_is_multipass_sap(struct target_psoc_info *tgt_hdl)
+{
+	return false;
+}
+#endif
+
 /**
  * wma_convert_ac_value() - map ac setting to the value to be used in FW.
  * @ac_value: ac value to be mapped.
@@ -7194,10 +7206,13 @@ static void wma_update_hw_mode_config(tp_wma_handle wma_handle,
 				     fw_config_bits);
 }
 
+#define MAX_GRP_KEY 16
+
 int wma_rx_service_ready_ext2_event(void *handle, uint8_t *ev, uint32_t len)
 {
 	tp_wma_handle wma_handle = (tp_wma_handle)handle;
 	struct target_psoc_info *tgt_hdl;
+	target_resource_config *wlan_res_cfg;
 	QDF_STATUS status;
 
 	wma_debug("Enter");
@@ -7210,6 +7225,12 @@ int wma_rx_service_ready_ext2_event(void *handle, uint8_t *ev, uint32_t len)
 		wma_err("target psoc info is NULL");
 		return -EINVAL;
 	}
+
+	wlan_res_cfg = target_psoc_get_wlan_res_cfg(tgt_hdl);
+
+	if (wlan_mlme_is_multipass_sap(wma_handle->psoc))
+		wlan_res_cfg->max_num_group_keys = MAX_GRP_KEY;
+
 	status = policy_mgr_update_sbs_freq(wma_handle->psoc, tgt_hdl);
 	if (QDF_IS_STATUS_ERROR(status))
 		return -EINVAL;

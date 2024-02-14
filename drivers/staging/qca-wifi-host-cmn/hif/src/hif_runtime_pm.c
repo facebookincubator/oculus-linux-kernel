@@ -121,6 +121,12 @@ static int hif_rtpm_debugfs_show(struct seq_file *s, void *data)
 	seq_printf(s, "%30s: %ps\n", "Last Busy Marker",
 		   gp_hif_rtpm_ctx->stats.last_busy_marker);
 
+	seq_printf(s, "%30s: %llu\n", "Last resume request timestamp",
+		   gp_hif_rtpm_ctx->stats.request_resume_ts);
+
+	seq_printf(s, "%30s: %d\n", "Last resume request by",
+		   gp_hif_rtpm_ctx->stats.request_resume_id);
+
 	seq_puts(s, "Rx busy marker counts:\n");
 	seq_printf(s, "%30s: %u %llu\n", hif_rtpm_id_to_string(HIF_RTPM_ID_DP),
 		   gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_DP]->last_busy_cnt,
@@ -940,16 +946,14 @@ void hif_rtpm_request_resume(void)
 void hif_rtpm_check_and_request_resume(void)
 {
 	hif_rtpm_suspend_lock();
-	if (qdf_atomic_read(&gp_hif_rtpm_ctx->pm_state) >=
-			HIF_RTPM_STATE_SUSPENDING) {
+	if (qdf_atomic_read(&gp_hif_rtpm_ctx->pm_state) ==
+			HIF_RTPM_STATE_SUSPENDED) {
 		hif_rtpm_suspend_unlock();
 		__hif_rtpm_request_resume(gp_hif_rtpm_ctx->dev);
 		gp_hif_rtpm_ctx->stats.request_resume_ts =
 						qdf_get_log_timestamp();
 		gp_hif_rtpm_ctx->stats.request_resume_id = HIF_RTPM_ID_RESERVED;
 	} else {
-		__hif_rtpm_mark_last_busy(gp_hif_rtpm_ctx->dev);
-		gp_hif_rtpm_ctx->stats.last_busy_ts = qdf_get_log_timestamp();
 		hif_rtpm_suspend_unlock();
 	}
 }

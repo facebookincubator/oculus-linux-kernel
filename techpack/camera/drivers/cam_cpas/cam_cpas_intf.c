@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of.h>
@@ -21,6 +21,7 @@
 #include "cam_cpas_hw_intf.h"
 #include "cam_cpas_soc.h"
 #include "camera_main.h"
+#include "cam_smmu_api.h"
 
 #define CAM_CPAS_DEV_NAME    "cam-cpas"
 #define CAM_CPAS_INTF_INITIALIZED() (g_cpas_intf && g_cpas_intf->probe_done)
@@ -772,6 +773,33 @@ int cam_cpas_subdev_cmd(struct cam_cpas_intf *cpas_intf,
 		if (rc)
 			break;
 
+		rc = copy_to_user(u64_to_user_ptr(cmd->handle), &query,
+			sizeof(query));
+		if (rc)
+			CAM_ERR(CAM_CPAS, "Failed in copy to user, rc=%d", rc);
+
+		break;
+	}
+	case CAM_QUERY_CAP_V4: {
+		struct cam_cpas_query_cap_v4 query;
+
+		rc = copy_from_user(&query, u64_to_user_ptr(cmd->handle),
+			sizeof(query));
+		if (rc) {
+			CAM_ERR(CAM_CPAS, "Failed in copy from user, rc=%d",
+				rc);
+			break;
+		}
+		if (query.version == 1) {
+			rc = cam_cpas_get_hw_info(&query.camera_family,
+				&query.camera_version, &query.cpas_version,
+				&query.cam_caps,
+				&query.fuse_info,
+				&query.rt_bw_voting_needed);
+			if (rc)
+				break;
+			query.coherency_mode = cam_smmu_get_coherency_mode();
+		}
 		rc = copy_to_user(u64_to_user_ptr(cmd->handle), &query,
 			sizeof(query));
 		if (rc)

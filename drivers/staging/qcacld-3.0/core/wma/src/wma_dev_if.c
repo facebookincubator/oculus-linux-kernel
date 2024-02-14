@@ -112,6 +112,7 @@
 #include "wlan_mlo_mgr_roam.h"
 #include "target_if_vdev_mgr_tx_ops.h"
 #include "wlan_vdev_mgr_utils_api.h"
+#include "target_if.h"
 
 /*
  * FW only supports 8 clients in SAP/GO mode for D3 WoW feature
@@ -1000,6 +1001,7 @@ static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 	uint16_t puncture_bitmap = 0;
 	uint16_t new_puncture_bitmap = 0;
 	uint32_t bw_puncture = 0;
+	enum phy_ch_width new_bw;
 
 	if (wlan_peer_get_peer_type(peer) == WLAN_PEER_SELF)
 		return;
@@ -1044,14 +1046,17 @@ static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 	max_ch_width_supported =
 		wmi_get_ch_width_from_phy_mode(wma->wmi_handle,
 					       fw_phymode);
+	new_bw =
+	target_if_wmi_chan_width_to_phy_ch_width(max_ch_width_supported);
+
 	if (is_eht) {
 		wlan_reg_extract_puncture_by_bw(vdev_chan->ch_width,
 						puncture_bitmap,
 						vdev_chan->ch_freq,
 						vdev_chan->ch_freq_seg2,
-						max_ch_width_supported,
+						new_bw,
 						&new_puncture_bitmap);
-		QDF_SET_BITS(bw_puncture, 0, 8, max_ch_width_supported);
+		QDF_SET_BITS(bw_puncture, 0, 8, new_bw);
 		QDF_SET_BITS(bw_puncture, 8, 16, new_puncture_bitmap);
 		wlan_util_vdev_peer_set_param_send(vdev, peer_mac_addr,
 						   WLAN_MLME_PEER_BW_PUNCTURE,
@@ -1060,7 +1065,7 @@ static void wma_peer_send_phymode(struct wlan_objmgr_vdev *vdev,
 		wma_set_peer_param(wma, peer_mac_addr, WMI_HOST_PEER_CHWIDTH,
 				   max_ch_width_supported, vdev_id);
 	}
-	wma_debug("FW phymode %d old phymode %d new phymode %d bw %d punct: %d macaddr " QDF_MAC_ADDR_FMT,
+	wma_debug("FW phymode %d old phymode %d new phymode %d bw %d punct: 0x%x macaddr " QDF_MAC_ADDR_FMT,
 		  fw_phymode, old_peer_phymode, new_phymode,
 		  max_ch_width_supported, new_puncture_bitmap,
 		  QDF_MAC_ADDR_REF(peer_mac_addr));
@@ -5236,16 +5241,17 @@ static void wma_add_sta_req_sta_mode(tp_wma_handle wma, tpAddStaParams params)
 	} else {
 		wma_debug("listen interval offload is not set");
 	}
-	iface->aid = params->assocId;
 	params->nss = iface->nss;
 out:
+	iface->aid = params->assocId;
+
 	/* Do not send add stat resp when peer assoc cnf is enabled */
 	if (peer_assoc_cnf)
 		return;
 
 	params->status = status;
 	wma_debug("vdev_id %d aid %d sta mac " QDF_MAC_ADDR_FMT " status %d",
-		  params->smesessionId, params->assocId,
+		  params->smesessionId, iface->aid,
 		  QDF_MAC_ADDR_REF(params->bssId), params->status);
 
 	/* Don't send a response during roam sync operation */

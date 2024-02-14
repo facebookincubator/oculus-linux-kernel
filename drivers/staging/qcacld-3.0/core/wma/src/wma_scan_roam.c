@@ -558,6 +558,33 @@ wma_send_roam_preauth_status(tp_wma_handle wma_handle,
 #endif
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/**
+ * wma_delete_bss_peer() Delete bss peer/s for Non ML interface
+ * @wma: Global WMA Handle
+ * @vdev_id: vdev id
+ *
+ * This function will perform cleanup of the peer corresponds
+ * to given vdev_id
+ *
+ * Return: QDF status
+ */
+static
+QDF_STATUS wma_delete_bss_peer(tp_wma_handle wma,
+			       uint8_t vdev_id)
+{
+	tDeleteStaParams *del_sta_params;
+
+	del_sta_params = qdf_mem_malloc(sizeof(*del_sta_params));
+	if (!del_sta_params)
+		return QDF_STATUS_E_NOMEM;
+
+	del_sta_params->smesessionId = vdev_id;
+	wma_delete_sta(wma, del_sta_params);
+	wma_delete_bss(wma, vdev_id);
+
+	return QDF_STATUS_SUCCESS;
+}
+
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
  * wma_delete_all_peers() - Delete all bss peer/s
@@ -580,6 +607,8 @@ wma_delete_all_peers(tp_wma_handle wma,
 	uint8_t link_vdev_id;
 	tDeleteStaParams *del_sta_params;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	struct qdf_mac_addr bssid;
+	struct qdf_mac_addr *mld_addr;
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(wma->psoc, vdev_id,
 						    WLAN_MLME_OBJMGR_ID);
@@ -590,6 +619,15 @@ wma_delete_all_peers(tp_wma_handle wma,
 
 	mlo_dev_ctx = vdev->mlo_dev_ctx;
 	if (!mlo_dev_ctx) {
+		mld_addr =
+		    (struct qdf_mac_addr *)wlan_vdev_mlme_get_mldaddr(vdev);
+		/* It's not a ML interface*/
+		if (qdf_is_macaddr_zero(mld_addr)) {
+			mlme_debug("Non-ML STA vdev_id: %d", vdev_id);
+			status = wma_delete_bss_peer(wma, vdev_id);
+			goto end;
+		}
+
 		mlme_err("mlo_dev_ctx object is NULL for vdev %d", vdev_id);
 		status = QDF_STATUS_E_NULL_VALUE;
 		goto end;
@@ -598,6 +636,15 @@ wma_delete_all_peers(tp_wma_handle wma,
 	for (i = 0; i < WLAN_UMAC_MLO_MAX_VDEVS; i++) {
 		if (!mlo_dev_ctx->wlan_vdev_list[i])
 			continue;
+
+		if (QDF_IS_STATUS_ERROR(wlan_vdev_get_bss_peer_mac(
+			mlo_dev_ctx->wlan_vdev_list[i],
+			&bssid))) {
+			pe_debug("bss peer is not present on vdev id %d, no need to cleanup",
+				 wlan_vdev_get_id(
+				 mlo_dev_ctx->wlan_vdev_list[i]));
+			continue;
+		}
 
 		del_sta_params = qdf_mem_malloc(sizeof(*del_sta_params));
 		if (!del_sta_params) {
@@ -626,7 +673,7 @@ static inline  QDF_STATUS
 wma_delete_all_peers(tp_wma_handle wma,
 		     uint8_t vdev_id)
 {
-	return QDF_STATUS_E_FAILURE;
+	return wma_delete_bss_peer(wma, vdev_id);
 }
 #endif
 /**
@@ -645,7 +692,6 @@ wma_roam_update_vdev(tp_wma_handle wma,
 		     struct roam_offload_synch_ind *roam_synch_ind_ptr,
 		     uint8_t roamed_vdev_id)
 {
-	tDeleteStaParams *del_sta_params;
 	tAddStaParams *add_sta_params;
 	uint8_t vdev_id, *bssid;
 	int32_t uc_cipher, cipher_cap;
@@ -685,22 +731,12 @@ wma_roam_update_vdev(tp_wma_handle wma,
 	 * To handle this delete all link peers,
 	 * while doing roam sync on first link.
 	 */
-	if (is_multi_link_roam(roam_synch_ind_ptr)) {
-		if (wlan_vdev_mlme_get_is_mlo_link(wma->psoc, vdev_id) ||
-		    mlo_get_single_link_ml_roaming(wma->psoc, vdev_id)) {
-			status = wma_delete_all_peers(wma, vdev_id);
-			if (QDF_IS_STATUS_ERROR(status))
-				goto end;
-		}
-	} else {
-		del_sta_params = qdf_mem_malloc(sizeof(*del_sta_params));
-		if (!del_sta_params)
+	if (!is_multi_link_roam(roam_synch_ind_ptr) ||
+	    wlan_vdev_mlme_get_is_mlo_link(wma->psoc, vdev_id) ||
+	    mlo_get_single_link_ml_roaming(wma->psoc, vdev_id)) {
+		status = wma_delete_all_peers(wma, vdev_id);
+		if (QDF_IS_STATUS_ERROR(status))
 			goto end;
-
-		qdf_mem_zero(del_sta_params, sizeof(*del_sta_params));
-		del_sta_params->smesessionId = vdev_id;
-		wma_delete_sta(wma, del_sta_params);
-		wma_delete_bss(wma, vdev_id);
 	}
 
 	add_sta_params->staType = STA_ENTRY_SELF;

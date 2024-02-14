@@ -2159,7 +2159,8 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 			if (wlan_t2lm_deliver_event(
 				session->vdev, peer,
 				WLAN_T2LM_EV_ACTION_FRAME_RX_REQ,
-				(void *)body_ptr, &token) == QDF_STATUS_SUCCESS)
+				(void *)body_ptr, frame_len,
+				&token) == QDF_STATUS_SUCCESS)
 				status_code = WLAN_T2LM_RESP_TYPE_SUCCESS;
 			else
 				status_code =
@@ -2178,13 +2179,13 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 			wlan_t2lm_deliver_event(
 					session->vdev, peer,
 					WLAN_T2LM_EV_ACTION_FRAME_RX_RESP,
-					(void *)body_ptr, &token);
+					(void *)body_ptr, frame_len, &token);
 			break;
 		case EHT_T2LM_TEARDOWN:
 			wlan_t2lm_deliver_event(
 					session->vdev, peer,
 					WLAN_T2LM_EV_ACTION_FRAME_RX_TEARDOWN,
-					(void *)body_ptr, NULL);
+					(void *)body_ptr, frame_len, NULL);
 			break;
 		default:
 			pe_err("Unhandled T2LM action frame");

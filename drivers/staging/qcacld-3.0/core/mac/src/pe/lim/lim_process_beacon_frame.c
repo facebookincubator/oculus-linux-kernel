@@ -42,6 +42,10 @@
 #include "wlan_mlo_mgr_roam.h"
 #include "lim_mlo.h"
 #include "wlan_mlo_mgr_sta.h"
+#include "wlan_cm_api.h"
+#include "wlan_mlme_api.h"
+#include "wlan_objmgr_vdev_obj.h"
+#include "wlan_reg_services_api.h"
 #ifdef WLAN_FEATURE_11BE_MLO
 #include <cds_ieee80211_common.h>
 #endif
@@ -248,7 +252,7 @@ lim_get_update_eht_bw_puncture_allow(struct pe_session *session,
 }
 
 void lim_process_beacon_eht_op(struct pe_session *session,
-			       tDot11fIEeht_op *eht_op)
+			       struct sSirProbeRespBeacon *bcn_ptr)
 {
 	uint16_t ori_punc = 0;
 	enum phy_ch_width ori_bw = CH_WIDTH_INVALID;
@@ -260,13 +264,25 @@ void lim_process_beacon_eht_op(struct pe_session *session,
 	struct wlan_objmgr_vdev *vdev;
 	struct wlan_channel *des_chan;
 	struct csa_offload_params *csa_param;
+	uint8_t             ccfs0;
+	uint8_t             ccfs1;
+	tDot11fIEeht_op *eht_op;
+	tDot11fIEhe_op *he_op;
+	uint8_t  ch_width;
+	uint8_t chan_id;
 
-	if (!session || !eht_op || !session->mac_ctx || !session->vdev) {
+	if (!bcn_ptr || !session || !session->mac_ctx || !session->vdev) {
 		pe_err("invalid input parameters");
 		return;
 	}
+
+	eht_op = &bcn_ptr->eht_op;
+	he_op = &bcn_ptr->he_op;
 	mac_ctx = session->mac_ctx;
 	vdev = session->vdev;
+
+	chan_id = wlan_reg_freq_to_chan(wlan_vdev_get_pdev(vdev),
+					bcn_ptr->chan_freq);
 
 	if (wlan_reg_is_24ghz_ch_freq(session->curr_op_freq)) {
 		if (session->force_24ghz_in_ht20)
@@ -297,34 +313,65 @@ void lim_process_beacon_eht_op(struct pe_session *session,
 	if (eht_op->eht_op_information_present) {
 		ori_bw = wlan_mlme_convert_eht_op_bw_to_phy_ch_width(
 						eht_op->channel_width);
-		status = lim_get_update_eht_bw_puncture_allow(session, ori_bw,
-							      &new_bw,
-							      &update_allow);
-		if (QDF_IS_STATUS_ERROR(status))
+		ccfs0 = eht_op->ccfs0;
+		ccfs1 = eht_op->ccfs1;
+	} else if (he_op->vht_oper_present) {
+		ch_width = he_op->vht_oper.info.chan_width;
+		ccfs0 = he_op->vht_oper.info.center_freq_seg0;
+		ccfs1 = he_op->vht_oper.info.center_freq_seg1;
+		ori_bw = wlan_mlme_convert_vht_op_bw_to_phy_ch_width(ch_width,
+								     chan_id,
+								     ccfs0,
+								     ccfs1);
+	} else if (he_op->oper_info_6g_present) {
+		ch_width = he_op->oper_info_6g.info.ch_width;
+		ccfs0 = he_op->oper_info_6g.info.center_freq_seg0;
+		ccfs1 = he_op->oper_info_6g.info.center_freq_seg1;
+		ori_bw = wlan_mlme_convert_he_6ghz_op_bw_to_phy_ch_width(ch_width,
+									 chan_id,
+									 ccfs0,
+									 ccfs1);
+	} else if (bcn_ptr->VHTOperation.present) {
+		ch_width = bcn_ptr->VHTOperation.chanWidth;
+		ccfs0 = bcn_ptr->VHTOperation.chan_center_freq_seg0;
+		ccfs1 = bcn_ptr->VHTOperation.chan_center_freq_seg1;
+		ori_bw = wlan_mlme_convert_vht_op_bw_to_phy_ch_width(ch_width,
+								     chan_id,
+								     ccfs0,
+								     ccfs1);
+	} else {
+		pe_err("Invalid operation");
+		return;
+	}
+
+	status = lim_get_update_eht_bw_puncture_allow(session, ori_bw,
+						      &new_bw,
+						      &update_allow);
+	if (QDF_IS_STATUS_ERROR(status))
+		return;
+
+	if (update_allow) {
+		wlan_cm_sta_update_bw_puncture(vdev, session->bssId,
+					       ori_punc, ori_bw,
+					       ccfs0,
+					       ccfs1,
+					       new_bw);
+	} else {
+		csa_param = qdf_mem_malloc(sizeof(*csa_param));
+		if (!csa_param) {
+			pe_err("csa_param allocation fails");
 			return;
-		if (update_allow) {
-			wlan_cm_sta_update_bw_puncture(vdev, session->bssId,
-						       ori_punc, ori_bw,
-						       eht_op->ccfs0,
-						       eht_op->ccfs1,
-						       new_bw);
-		} else {
-			csa_param = qdf_mem_malloc(sizeof(*csa_param));
-			if (!csa_param) {
-				pe_err("csa_param allocation fails");
-				return;
-			}
-			des_chan = wlan_vdev_mlme_get_des_chan(vdev);
-			csa_param->channel = des_chan->ch_ieee;
-			csa_param->csa_chan_freq = des_chan->ch_freq;
-			csa_param->new_ch_width = ori_bw;
-			csa_param->new_punct_bitmap = ori_punc;
-			csa_param->new_ch_freq_seg1 = eht_op->ccfs0;
-			csa_param->new_ch_freq_seg2 = eht_op->ccfs1;
-			qdf_copy_macaddr(&csa_param->bssid,
-					 (struct qdf_mac_addr *)session->bssId);
-			lim_handle_sta_csa_param(session->mac_ctx, csa_param);
 		}
+		des_chan = wlan_vdev_mlme_get_des_chan(vdev);
+		csa_param->channel = des_chan->ch_ieee;
+		csa_param->csa_chan_freq = des_chan->ch_freq;
+		csa_param->new_ch_width = ori_bw;
+		csa_param->new_punct_bitmap = ori_punc;
+		csa_param->new_ch_freq_seg1 = ccfs0;
+		csa_param->new_ch_freq_seg2 = ccfs1;
+		qdf_copy_macaddr(&csa_param->bssid,
+				 (struct qdf_mac_addr *)session->bssId);
+		lim_handle_sta_csa_param(session->mac_ctx, csa_param);
 	}
 }
 
@@ -348,7 +395,8 @@ void lim_process_beacon_eht(struct mac_context *mac_ctx,
 	if (!des_chan || !IS_WLAN_PHYMODE_EHT(des_chan->ch_phymode))
 		return;
 
-	lim_process_beacon_eht_op(session, &bcn_ptr->eht_op);
+	if (wlan_cm_is_vdev_connected(vdev))
+		lim_process_beacon_eht_op(session, bcn_ptr);
 
 	if (mlo_is_mld_sta(vdev))
 		/* handle beacon IE for 802.11be mlo case */

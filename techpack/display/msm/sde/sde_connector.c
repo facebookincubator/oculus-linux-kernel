@@ -2668,6 +2668,12 @@ static int sde_connector_init_debugfs(struct drm_connector *connector)
 
 		debugfs_create_bool("backlight_lock", 0600, connector->debugfs_entry,
 				&bl_config->backlight_lock);
+
+		debugfs_create_bool("bicubic_scaling", 0600, connector->debugfs_entry,
+				&display->panel->bicubic_scaling);
+		/* Use bicubic scaling on NVT DDICs by default. */
+		display->panel->bicubic_scaling = true;
+		bl_config->bicubic_scaling = true;
 	}
 
 	return 0;

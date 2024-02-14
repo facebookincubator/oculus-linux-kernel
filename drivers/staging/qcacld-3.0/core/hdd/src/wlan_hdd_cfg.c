@@ -1481,35 +1481,13 @@ static QDF_STATUS hdd_get_sta_tx_nss(struct hdd_adapter *adapter,
 				     struct wlan_objmgr_vdev *vdev,
 				     uint8_t *tx_nss)
 {
-	struct wlan_mlme_nss_chains *dynamic_cfg;
-	enum band_info operating_band;
-	uint8_t proto_generic_nss;
+	QDF_STATUS status;
 
-	proto_generic_nss = wlan_vdev_mlme_get_nss(vdev);
-	if (hdd_ctx->dynamic_nss_chains_support) {
-		dynamic_cfg = mlme_get_dynamic_vdev_config(vdev);
-		if (!dynamic_cfg) {
-			hdd_debug("nss chain dynamic config NULL");
-			return QDF_STATUS_E_INVAL;
-		}
-		operating_band = hdd_conn_get_connected_band(adapter);
-		switch (operating_band) {
-		case BAND_2G:
-			*tx_nss = dynamic_cfg->tx_nss[NSS_CHAINS_BAND_2GHZ];
-			break;
-		case BAND_5G:
-			*tx_nss = dynamic_cfg->tx_nss[NSS_CHAINS_BAND_5GHZ];
-			break;
-		default:
-			hdd_debug("Band %d Not 2G or 5G", operating_band);
-			break;
-		}
-		if (*tx_nss > proto_generic_nss)
-			*tx_nss = proto_generic_nss;
-	} else
-		*tx_nss = proto_generic_nss;
+	status = ucfg_mlme_get_sta_tx_nss(hdd_ctx->psoc, vdev, tx_nss);
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to get sta_tx_nss");
 
-	return QDF_STATUS_SUCCESS;
+	return status;
 }
 
 QDF_STATUS hdd_get_tx_nss(struct hdd_adapter *adapter, uint8_t *tx_nss)
@@ -1604,35 +1582,13 @@ static QDF_STATUS hdd_get_sta_rx_nss(struct hdd_adapter *adapter,
 				     struct wlan_objmgr_vdev *vdev,
 				     uint8_t *rx_nss)
 {
-	struct wlan_mlme_nss_chains *dynamic_cfg;
-	enum band_info operating_band;
-	uint8_t proto_generic_nss;
+	QDF_STATUS status;
 
-	proto_generic_nss = wlan_vdev_mlme_get_nss(vdev);
-	if (hdd_ctx->dynamic_nss_chains_support) {
-		dynamic_cfg = mlme_get_dynamic_vdev_config(vdev);
-		if (!dynamic_cfg) {
-			hdd_debug("nss chain dynamic config NULL");
-			return QDF_STATUS_E_INVAL;
-		}
-		operating_band = hdd_conn_get_connected_band(adapter);
-		switch (operating_band) {
-		case BAND_2G:
-			*rx_nss = dynamic_cfg->rx_nss[NSS_CHAINS_BAND_2GHZ];
-			break;
-		case BAND_5G:
-			*rx_nss = dynamic_cfg->rx_nss[NSS_CHAINS_BAND_5GHZ];
-			break;
-		default:
-			hdd_debug("Band %d Not 2G or 5G", operating_band);
-			break;
-		}
-		if (*rx_nss > proto_generic_nss)
-			*rx_nss = proto_generic_nss;
-	} else
-		*rx_nss = proto_generic_nss;
+	status = wlan_mlme_get_sta_rx_nss(hdd_ctx->psoc, vdev, rx_nss);
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to get sta_rx_nss");
 
-	return QDF_STATUS_SUCCESS;
+	return status;
 }
 
 QDF_STATUS hdd_get_rx_nss(struct hdd_adapter *adapter, uint8_t *rx_nss)

@@ -167,6 +167,7 @@ enum msm_vidc_bug_on_error {
 	MSM_VIDC_BUG_ON_WD_TIMEOUT        = BIT(2),
 };
 
+#ifdef CONFIG_DEBUG_FS
 struct dentry *msm_vidc_debugfs_init_drv(void);
 struct dentry *msm_vidc_debugfs_init_core(void *core);
 struct dentry *msm_vidc_debugfs_init_inst(void *inst,
@@ -174,6 +175,26 @@ struct dentry *msm_vidc_debugfs_init_inst(void *inst,
 void msm_vidc_debugfs_deinit_inst(void *inst);
 void msm_vidc_debugfs_update(void *inst,
 		enum msm_vidc_debugfs_event e);
+#else
+static inline struct dentry *msm_vidc_debugfs_init_drv(void)
+{
+	return ERR_PTR(-ENODEV);
+}
+static inline struct dentry *msm_vidc_debugfs_init_core(void *core)
+{
+	return ERR_PTR(-ENODEV);
+}
+static inline struct dentry *msm_vidc_debugfs_init_inst(void *inst,
+                struct dentry *parent)
+{
+	return ERR_PTR(-ENODEV);
+}
+static inline void msm_vidc_debugfs_deinit_inst(void *inst)
+{ }
+static inline void msm_vidc_debugfs_update(void *inst,
+                enum msm_vidc_debugfs_event e)
+{ }
+#endif
 int msm_vidc_check_ratelimit(void);
 void msm_vidc_show_stats(void *inst);
 

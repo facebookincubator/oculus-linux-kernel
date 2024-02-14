@@ -371,7 +371,7 @@ hdd_hif_register_shutdown_notifier(struct hif_opaque_softc *hif_ctx)
  *
  * Return: None
  */
-#if defined(CONFIG_SLUB_DEBUG_ON)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG)
 
 static void hdd_hif_set_ce_max_yield_time(struct hif_opaque_softc *hif_ctx,
 					  enum qdf_bus_type bus_type,

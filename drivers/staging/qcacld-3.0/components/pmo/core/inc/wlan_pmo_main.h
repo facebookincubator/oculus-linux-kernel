@@ -444,4 +444,17 @@ QDF_STATUS pmo_set_vdev_bridge_addr(struct wlan_objmgr_vdev *vdev,
 
 #endif /* WLAN_POWER_MANAGEMENT_OFFLOAD */
 
+/**
+ * pmo_core_get_listen_interval() - function to get configured
+ * listen interval
+ * @vdev: vdev objmgr vdev
+ * @listen_interval: Pointer variable to return listen interval
+ *
+ * This function allows get configured listen interval
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS pmo_core_get_listen_interval(struct wlan_objmgr_vdev *vdev,
+					uint32_t *listen_interval);
+
 #endif /* end  of _WLAN_PMO_MAIN_H_ */

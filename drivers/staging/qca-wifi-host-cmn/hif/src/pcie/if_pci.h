@@ -38,11 +38,11 @@
 #define PCIE_SOC_PCIE_REG_PCIE_SCRATCH_0_SOC_PCIE_REG (0x01E04000 + 0x40)
 
 /* Timeout duration to validate UMAC wake status */
-#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define FORCE_WAKE_DELAY_TIMEOUT_MS 500
 #else
 #define FORCE_WAKE_DELAY_TIMEOUT_MS 50
-#endif /* HAL_CONFIG_SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 /* Validate UMAC status every 5ms */
 #define FORCE_WAKE_DELAY_MS 5
 #endif /* FORCE_WAKE */

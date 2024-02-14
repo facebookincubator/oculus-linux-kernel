@@ -798,6 +798,7 @@ struct nan_datapath_host_event {
  * @delete_peers_by_addr: LIM callback for deleting peer by MAC address
  * @update_ndi_conn: WMA callback to update NDI's connection info
  * @nan_concurrency_update: Callback to handle nan concurrency
+ * @set_mc_list: HDD calback to set multicast peer list
  * @nan_sr_concurrency_update: Callback to handle nan SR(Spatial Reuse)
  * concurrency
  */
@@ -826,6 +827,7 @@ struct nan_callbacks {
 				      struct nan_datapath_channel_info
 								    *chan_info);
 	void (*nan_concurrency_update)(void);
+	void (*set_mc_list)(struct wlan_objmgr_vdev *vdev);
 #ifdef WLAN_FEATURE_SR
 	void (*nan_sr_concurrency_update)(struct nan_event_params *nan_evt);
 #endif

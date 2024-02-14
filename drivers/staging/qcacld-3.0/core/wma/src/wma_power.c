@@ -470,7 +470,6 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 				bool enable_ps)
 {
 	QDF_STATUS ret;
-	uint32_t cfg_data_val = 0;
 	/* get mac to access CFG data base */
 	struct mac_context *mac = cds_get_context(QDF_MODULE_ID_PE);
 	uint32_t rx_wake_policy;
@@ -478,6 +477,8 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 	uint32_t pspoll_count;
 	uint32_t inactivity_time;
 	uint32_t psmode;
+	struct wlan_objmgr_vdev *vdev;
+	u32 listen_interval = 0;
 
 	wma_debug("Set Force Sleep vdevId %d val %d", vdev_id, enable);
 
@@ -595,16 +596,28 @@ static QDF_STATUS wma_set_force_sleep(tp_wma_handle wma,
 	}
 
 	/* Set Listen Interval */
-	cfg_data_val = mac->mlme_cfg->sap_cfg.listen_interval;
-	ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
-					      wmi_vdev_param_listen_interval,
-					      cfg_data_val);
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(mac->psoc, vdev_id,
+						    WLAN_LEGACY_WMA_ID);
+	/* If user has configured listen interval already
+	 * No need to send vdev set param cmd
+	 */
+	if (vdev) {
+		ret = wlan_pmo_get_listen_interval(vdev, &listen_interval);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_WMA_ID);
+	}
+
+	if (!listen_interval || QDF_IS_STATUS_ERROR(ret)) {
+		listen_interval = mac->mlme_cfg->sap_cfg.listen_interval;
+		ret = wma_vdev_set_param(wma->wmi_handle, vdev_id,
+					 wmi_vdev_param_listen_interval,
+					 listen_interval);
+	}
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		/* Even it fails continue Fw will take default LI */
 		wma_err("Failed to Set Listen Interval vdevId %d", vdev_id);
 	}
 	wma_debug("Set Listen Interval vdevId %d Listen Intv %d",
-		 vdev_id, cfg_data_val);
+		 vdev_id, listen_interval);
 
 	return QDF_STATUS_SUCCESS;
 }

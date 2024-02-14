@@ -94,7 +94,7 @@ ifeq ($(CONFIG_REMOVE_PKT_LOG), n)
 CONFIG_PKTLOG_HAS_SPECIFIC_DATA := y
 endif
 
-ifeq ($(CONFIG_SLUB_DEBUG), y)
+ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
         PANIC_ON_BUG := y
         WLAN_WARN_ON_ASSERT := y
 else ifeq ($(CONFIG_PERF_DEBUG), y)
