@@ -602,4 +602,9 @@ static inline bool kgsl_is_compat_task(void)
 {
 	return (BITS_PER_LONG == 32) || is_compat_task();
 }
+
+#if defined(CONFIG_QCOM_KGSL_DEBUG_CONTEXT_LEAK)
+bool kgsl_is_extra_logging_enabled(void);
+#endif
+
 #endif /* __KGSL_H */

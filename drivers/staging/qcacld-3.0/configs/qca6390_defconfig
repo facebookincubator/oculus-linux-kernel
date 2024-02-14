@@ -268,8 +268,8 @@ CONFIG_LFR_SUBNET_DETECTION := y
 # Flag to enable MCC to SCC switch feature
 CONFIG_MCC_TO_SCC_SWITCH := y
 
-ifeq ($(CONFIG_SLUB_DEBUG), y)
-	# Enable Obj Mgr Degug services if slub build
+ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
+	# Enable Obj Mgr Degug services if debug build
 	CONFIG_WLAN_OBJMGR_DEBUG:= y
 	CONFIG_MPC_UT_FRAMEWORK := y
 	CONFIG_LOCK_STATS_ON:= y
@@ -316,7 +316,7 @@ ifeq ($(CONFIG_64BIT_PADDR), y)
 CONFIG_HTT_PADDR64 := y
 endif
 
-ifeq ($(CONFIG_SLUB_DEBUG_ON), y)
+ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 CONFIG_OL_RX_INDICATION_RECORD := y
 CONFIG_TSOSEG_DEBUG := y
 endif
@@ -350,16 +350,16 @@ endif
 
 # As per target team, build is done as follows:
 # Defconfig : build with default flags
-# Slub      : defconfig  + CONFIG_SLUB_DEBUG=y +
-#	      CONFIG_SLUB_DEBUG_ON=y + CONFIG_PAGE_POISONING=y
+# Debug      : defconfig  + CONFIG_WLAN_EXTRA_DEBUG=y +
+#	      CONFIG_WLAN_EXTRA_DEBUG=y + CONFIG_PAGE_POISONING=y
 # Perf      : Using appropriate msmXXXX-perf_defconfig
 #
 # Shipment builds (user variants) should not have any debug feature
-# enabled. This is identified using 'TARGET_BUILD_VARIANT'. Slub builds
-# are identified using the CONFIG_SLUB_DEBUG_ON configuration. Since
+# enabled. This is identified using 'TARGET_BUILD_VARIANT'. Debug builds
+# are identified using the CONFIG_WLAN_EXTRA_DEBUG configuration. Since
 # there is no other way to identify defconfig builds, QCOMs internal
 # representation of perf builds (identified using the string 'perf'),
-# is used to identify if the build is a slub or defconfig one. This
+# is used to identify if the build is a debug or defconfig one. This
 # way no critical debug feature will be enabled for perf and shipment
 # builds. Other OEMs are also protected using the TARGET_BUILD_VARIANT
 # config.
@@ -389,7 +389,7 @@ BUILD_DEBUG_VERSION := y
 #Enable this flag to build driver in diag version
 BUILD_DIAG_VERSION := y
 
-ifeq ($(CONFIG_SLUB_DEBUG), y)
+ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 	PANIC_ON_BUG := y
 	WLAN_WARN_ON_ASSERT := y
 else ifeq ($(CONFIG_PERF_DEBUG), y)
@@ -695,7 +695,7 @@ endif
 CONFIG_RX_OL := y
 endif
 
-ifeq ($(CONFIG_SLUB_DEBUG_ON), y)
+ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 	CONFIG_DSC_DEBUG := y
 	CONFIG_DESC_TIMESTAMP_DEBUG_INFO := y
 	CONFIG_FEATURE_UNIT_TEST_SUSPEND := y
@@ -736,7 +736,7 @@ endif
 
 ifeq ($(CONFIG_ARCH_SDXPRAIRIE), y)
 	CONFIG_FEATURE_MONITOR_MODE_SUPPORT := n
-	ifneq ($(CONFIG_SLUB_DEBUG), y)
+	ifneq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 		CONFIG_DP_TRACE := n
 	endif
 endif

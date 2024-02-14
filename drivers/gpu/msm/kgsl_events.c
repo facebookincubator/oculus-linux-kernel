@@ -41,6 +41,8 @@ static void _kgsl_event_worker(struct work_struct *work)
 
 	event->func(event->device, event->group, event->priv, event->result);
 
+	if (event->context)
+		atomic_dec(&event->context->refs_from_event);
 	kgsl_context_put(event->context);
 	kmem_cache_free(events_cache, event);
 }
@@ -259,6 +261,9 @@ int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 		kmem_cache_free(events_cache, event);
 		return -ENOENT;
 	}
+
+	if (context)
+		atomic_inc(&context->refs_from_event);
 
 	event->device = device;
 	event->context = context;

@@ -3315,6 +3315,20 @@ int sme_config_action_tx_in_tb_ppdu(mac_handle_t mac_handle, uint8_t session_id,
 				    uint8_t cfg_val);
 
 /**
+ * sme_set_ul_mu_config() - Set ULMU config
+ * @mac_handle: Pointer to mac handle
+ * @session_id: SME session id
+ * @ulmu_disable : ulmu_disable value
+ * @tx_nss : tx_nss value
+ * @rx_nss : rx_nss value
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+sme_set_ul_mu_config(mac_handle_t mac_handle, uint8_t session_id,
+		     uint8_t ulmu_disable, uint8_t tx_nss, uint8_t rx_nss);
+
+/**
  * sme_send_he_om_ctrl_update() - Send HE OM ctrl Tx cmd to FW
  * @mac_handle: Pointer to mac handle
  * @session_id: SME session id
@@ -3491,6 +3505,13 @@ static inline int sme_update_he_htc_he_supp(mac_handle_t mac_handle,
 					    bool cfg_val)
 {
 	return 0;
+}
+
+static inline QDF_STATUS
+sme_set_ul_mu_config(mac_handle_t mac_handle, uint8_t session_id,
+		     uint8_t ulmu_disable, uint8_t tx_nss, uint8_t rx_nss)
+{
+	return QDF_STATUS_SUCCESS;
 }
 
 static inline int

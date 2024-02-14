@@ -259,7 +259,7 @@ struct vdm_glink_dev *devm_vdm_glink_get_by_phandle(struct device *dev,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	vdm_glink = dev_get_drvdata(&pdev->dev);
+	vdm_glink = platform_get_drvdata(pdev);
 	if (!vdm_glink) {
 		platform_device_put(pdev);
 		return ERR_PTR(-EPROBE_DEFER);
@@ -283,9 +283,21 @@ static int vdm_glink_probe(struct platform_device *pdev)
 	if (!udev)
 		return -ENOMEM;
 
-	mutex_init(&udev->state_lock);
-
+	udev->dev = dev;
 	udev->state = PMIC_GLINK_STATE_UP;
+	mutex_init(&udev->svid_handler_lock);
+	mutex_init(&udev->state_lock);
+	INIT_LIST_HEAD(&udev->svid_handlers);
+
+	/*
+	 * Using an explicit barrier here to prevent compiler
+	 * from setting plaform data to udev before the above
+	 * values have been inited. This will indicate to callers
+	 * that all resources have been inited for this driver
+	 * to be safe to use.
+	 */
+	barrier();
+	platform_set_drvdata(pdev, udev);
 
 	client_data.id = PMIC_GLINK_MSG_OWNER_OEM;
 	client_data.name = "oculus_vdm";
@@ -301,12 +313,6 @@ static int vdm_glink_probe(struct platform_device *pdev)
 				rc);
 		return rc;
 	}
-
-	mutex_init(&udev->svid_handler_lock);
-	INIT_LIST_HEAD(&udev->svid_handlers);
-
-	platform_set_drvdata(pdev, udev);
-	udev->dev = dev;
 
 	return rc;
 }

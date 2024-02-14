@@ -2405,7 +2405,16 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 				__func__, data->payload_size);
 		break;
 	case ASM_SESSION_CMDRSP_GET_MTMX_STRTR_PARAMS_V2:
-		q6asm_process_mtmx_get_param_rsp(ac, (void *) payload);
+		payload_size = sizeof(struct asm_mtmx_strtr_get_params_cmdrsp);
+		if (data->payload_size < payload_size) {
+			pr_err("%s: insufficient payload size = %d\n",
+				__func__, data->payload_size);
+			spin_unlock_irqrestore(
+				&(session[session_id].session_lock), flags);
+			return -EINVAL;
+		}
+		q6asm_process_mtmx_get_param_rsp(ac,
+			(struct asm_mtmx_strtr_get_params_cmdrsp *) payload);
 		break;
 	case ASM_STREAM_PP_EVENT:
 	case ASM_STREAM_CMD_ENCDEC_EVENTS:

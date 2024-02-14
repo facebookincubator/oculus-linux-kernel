@@ -1404,6 +1404,7 @@ static int cam_vfe_camif_ver3_handle_irq_bottom_half(void *handler_priv,
 				payload->ts.mono_time.tv_usec;
 			}
 
+		evt_info.timestamp = payload->ts.monotonic_ns;
 		if (camif_priv->event_cb)
 			camif_priv->event_cb(camif_priv->priv,
 				CAM_ISP_HW_EVENT_SOF, (void *)&evt_info);

@@ -143,6 +143,8 @@ ifneq ($(CONFIG_AR_ARTS_SKB_PRIORITY),n)
 DHDCFLAGS += -DCONFIG_AR_ARTS_SKB_PRIORITY
 endif
 
+DHDCFLAGS += -DCONNECTION_STATISTICS
+
 #################
 # Common feature
 #################

@@ -255,16 +255,6 @@ do { \
 
 #endif /* CONFIG_PREEMPT_COUNT */
 
-#ifdef MODULE
-/*
- * Modules have no business playing preemption tricks.
- */
-#undef sched_preempt_enable_no_resched
-#undef preempt_enable_no_resched
-#undef preempt_enable_no_resched_notrace
-#undef preempt_check_resched
-#endif
-
 #define preempt_set_need_resched() \
 do { \
 	set_preempt_need_resched(); \

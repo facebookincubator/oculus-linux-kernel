@@ -141,6 +141,7 @@
 #define PCIE20_AER_ERR_SRC_ID_REG (0x134)
 
 #define PCIE20_L1SUB_CONTROL1_REG (0x204)
+#define PCIE20_L1SUB_CONTROL2_REG (0x208)
 #define PCIE20_TX_P_FC_CREDIT_STATUS_OFF (0x730)
 #define PCIE20_TX_NP_FC_CREDIT_STATUS_OFF (0x734)
 #define PCIE20_TX_CPL_FC_CREDIT_STATUS_OFF (0x738)
@@ -165,6 +166,8 @@
 #define PHY_STABILIZATION_DELAY_US_MAX (1005)
 
 #define MSM_PCIE_CRC8_POLYNOMIAL (BIT(2) | BIT(1) | BIT(0))
+#define T_POWER_ON_VALUE (BIT(7) | BIT(6) | BIT(5) | BIT(4) | BIT(3))
+#define T_POWER_ON_SCALE (BIT(1) | BIT(0))
 
 #define GEN1_SPEED (0x1)
 #define GEN2_SPEED (0x2)
@@ -767,6 +770,8 @@ struct msm_pcie_dev_t {
 	uint32_t l1_2_th_value;
 	bool common_clk_en;
 	bool clk_power_manage_en;
+	uint32_t l1ss_t_power_on_value;
+	uint32_t l1ss_t_power_on_scale;
 	bool aux_clk_sync;
 	bool aer_enable;
 	uint32_t smmu_sid_base;
@@ -4491,6 +4496,15 @@ static int msm_pcie_link_train(struct msm_pcie_dev_t *dev)
 		}
 	}
 
+	if (dev->l1ss_t_power_on_scale) {
+		msm_pcie_write_reg_field(dev->dm_core, PCIE20_L1SUB_CONTROL2_REG,
+				T_POWER_ON_SCALE, dev->l1ss_t_power_on_scale);
+	}
+	if (dev->l1ss_t_power_on_value) {
+		msm_pcie_write_reg_field(dev->dm_core, PCIE20_L1SUB_CONTROL2_REG,
+				T_POWER_ON_VALUE, dev->l1ss_t_power_on_value);
+	}
+
 	return 0;
 }
 
@@ -6291,6 +6305,16 @@ static int msm_pcie_probe(struct platform_device *pdev)
 				"qcom,clk-power-manage-en");
 	PCIE_DBG(pcie_dev, "Clock power management is %s enabled.\n",
 		pcie_dev->clk_power_manage_en ? "" : "not");
+
+	of_property_read_u32(of_node,
+				"qcom,l1ss-t-power-on-scale", &pcie_dev->l1ss_t_power_on_scale);
+	PCIE_DBG(pcie_dev, "l1ss Tpoweron scale update is %s enabled.\n",
+		pcie_dev->l1ss_t_power_on_scale ? "" : "not");
+
+	of_property_read_u32(of_node,
+				"qcom,l1ss-t-power-on-value", &pcie_dev->l1ss_t_power_on_value);
+	PCIE_DBG(pcie_dev, "l1ss Tpoweron value update is %s enabled.\n",
+		pcie_dev->l1ss_t_power_on_value ? "" : "not");
 
 	pcie_dev->aux_clk_sync = !of_property_read_bool(of_node,
 				"qcom,no-aux-clk-sync");

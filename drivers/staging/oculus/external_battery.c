@@ -63,6 +63,7 @@ struct glink_svid_handler_info {
 	struct list_head entry;
 };
 
+static void ext_batt_pr_swap(struct work_struct *work);
 static void ext_batt_mount_status_work(struct work_struct *work);
 static void ext_batt_psy_notifier_work(struct work_struct *work);
 static void ext_batt_psy_register_notifier(struct ext_batt_pd *pd);
@@ -279,6 +280,7 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 
 	cancel_work_sync(&pd->mount_state_work);
 	cancel_work_sync(&pd->dock_state_work);
+	flush_workqueue(pd->wq);
 
 	/* Re-enable USB input charging path if disabled */
 	set_usb_charging_state(pd, CHARGING_RESUME);
@@ -549,7 +551,6 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 {
 	u32 protocol_type, parameter_type, sb, high_bytes, acked;
 	int rc = 0;
-	union power_supply_propval power_role = {0};
 
 	dev_dbg(pd->dev,
 		"%s: enter: vdm_hdr=0x%x, vdos?=%d, num_vdos=%d\n",
@@ -563,46 +564,27 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		if (!acked) {
 			dev_warn(pd->dev, "NACK(ack=%d)", acked);
 		} else if (parameter_type == EXT_BATT_FW_HMD_MOUNTED) {
-			dev_info(pd->dev,
+			dev_dbg(pd->dev,
 				"Received mount status ack response code 0x%x",
 				vdos[0]);
 
 			complete(&pd->mount_state_ack);
 		} else if (parameter_type == EXT_BATT_FW_HMD_DOCKED) {
-			dev_info(pd->dev,
+			struct ext_batt_pr_swap_work *prs_work;
+
+			dev_dbg(pd->dev,
 				"Received dock status ack response code 0x%x", vdos[0]);
-			pd->last_dock_ack = vdos[0];
 
-			/*
-			 * dock_state (0=undocked, 1=docked) conveniently matches the power
-			 * role we'd like to switch to (0=sink, 1=source)
-			 */
-			power_role.intval = vdos[0];
+			prs_work = kzalloc(sizeof(*prs_work), GFP_KERNEL);
+			if (!prs_work) {
+				dev_err(pd->dev, "unable to allow prs_work");
+				return;
+			}
+			prs_work->vdo = vdos[0];
+			prs_work->pd = pd;
 
-			/*
-			 * Only attempt PR_SWAP in two cases:
-			 * - we recently docked, attempt PR_SWAP so HMD is source
-			 * - we were docked, but have since undocked, attempt PR_SWAP
-			 *   so HMD is sink
-			 */
-			if (pd->last_dock_ack == EXT_BATT_FW_UNDOCKED) {
-				if (!pd->recently_docked)
-					return;
-
-				pd->recently_docked = false;
-			} else if (pd->last_dock_ack == EXT_BATT_FW_DOCKED)
-				pd->recently_docked = true;
-
-			dev_info(pd->dev, "Sending PR_SWAP to role=%d", power_role.intval);
-			rc = power_supply_set_property(pd->usb_psy,
-					POWER_SUPPLY_PROP_TYPEC_POWER_ROLE, &power_role);
-			/* the default timeout is too short for PR_SWAP, ignore it */
-			if (rc && rc != -ETIMEDOUT)
-				dev_err(pd->dev, "Failed sending PR_SWAP: rc=%d", rc);
-
-			/* Force re-evaluation, so source current can be set correctly */
-			ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
-				pd->battery_psy);
+			INIT_WORK(&prs_work->work, ext_batt_pr_swap);
+			queue_work(pd->wq, &prs_work->work);
 		} else {
 			dev_warn(pd->dev, "Unsupported response parameter 0x%x",
 					parameter_type);
@@ -2080,20 +2062,23 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 {
 	struct ext_batt_pd *pd =
 		container_of(work, struct ext_batt_pd, dock_state_work);
+	union power_supply_propval val;
 	int rc;
 	u32 dock_state_hdr, dock_state_vdo;
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
 
 	mutex_lock(&pd->lock);
-	if (!pd->connected || !pd->cypd_pd_active_chan)
+	if (!pd->connected || !pd->cypd_psy)
 		goto out;
 
-	rc = iio_read_channel_processed(pd->cypd_pd_active_chan, &pd->dock_state);
+	rc = power_supply_get_property(pd->cypd_psy, POWER_SUPPLY_PROP_STATUS, &val);
 	if (rc < 0) {
-		dev_err(pd->dev, "couldn't read cypd pd_active: rc=%d\n", rc);
+		dev_err(pd->dev, "couldn't read cypd status: rc=%d\n", rc);
 		goto out;
 	}
+
+	pd->dock_state = (val.intval == POWER_SUPPLY_STATUS_CHARGING);
 
 	if (pd->dock_state == pd->last_dock_ack)
 		goto out;
@@ -2113,6 +2098,55 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 
 out:
 	mutex_unlock(&pd->lock);
+}
+
+static void ext_batt_pr_swap(struct work_struct *work)
+{
+	struct ext_batt_pr_swap_work *prs_work =
+		container_of(work, struct ext_batt_pr_swap_work, work);
+	struct ext_batt_pd *pd = prs_work->pd;
+	union power_supply_propval power_role = {0};
+	int rc = 0;
+
+	mutex_lock(&pd->lock);
+	pd->last_dock_ack = prs_work->vdo;
+
+	/*
+	 * dock_state (0=undocked, 1=docked) conveniently matches the power
+	 * role we'd like to switch to (0=sink, 1=source)
+	 */
+	power_role.intval = prs_work->vdo;
+	/*
+	 * Only attempt PR_SWAP in two cases:
+	 * - we recently docked, attempt PR_SWAP so HMD is source
+	 * - we were docked, but have since undocked, attempt PR_SWAP
+	 *   so HMD is sink
+	 */
+	if (pd->last_dock_ack == EXT_BATT_FW_UNDOCKED) {
+		if (!pd->recently_docked)
+			goto out;
+		pd->recently_docked = false;
+	} else if (pd->last_dock_ack == EXT_BATT_FW_DOCKED) {
+		pd->recently_docked = true;
+	}
+
+	dev_info(pd->dev, "Sending PR_SWAP to role=%d", power_role.intval);
+	rc = power_supply_set_property(pd->usb_psy,
+				       POWER_SUPPLY_PROP_TYPEC_POWER_ROLE,
+				       &power_role);
+	if (rc)
+		dev_err(pd->dev, "Failed sending PR_SWAP: rc=%d", rc);
+	mutex_unlock(&pd->lock);
+
+	/* Force re-evaluation, so source current can be set correctly */
+	ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
+				   pd->battery_psy);
+
+	kfree(prs_work);
+	return;
+out:
+	mutex_unlock(&pd->lock);
+	kfree(prs_work);
 }
 
 static inline const char *usb_charging_state(enum usb_charging_state state)
@@ -2189,9 +2223,9 @@ static void handle_battery_capacity_change(struct ext_batt_pd *pd,
 		u32 capacity)
 {
 	dev_dbg(pd->dev,
-			"Battery capacity change event. Capacity = %d, connected = %d, mount state = %d, charger plugged = %d\n",
-			capacity, pd->connected, pd->mount_state,
-			pd->params.charger_plugged);
+		"Battery capacity change event. Capacity = %d, connected = %d, mount state = %d, charger plugged = %d\n",
+		capacity, pd->connected, pd->mount_state,
+		pd->params.charger_plugged);
 
 	if (pd->src_current_control_enabled) {
 		if (capacity >= pd->src_enable_soc_threshold)
@@ -2297,7 +2331,6 @@ static void ext_batt_psy_unregister_notifier(struct ext_batt_pd *pd)
 
 static int ext_batt_psy_init(struct ext_batt_pd *pd)
 {
-	pd->nb.notifier_call = NULL;
 	pd->battery_psy = power_supply_get_by_name("battery");
 	if (IS_ERR_OR_NULL(pd->battery_psy)) {
 		dev_dbg(pd->dev, "Failed to get battery power supply\n");
@@ -2318,8 +2351,6 @@ static int ext_batt_psy_init(struct ext_batt_pd *pd)
 		}
 	}
 
-	pd->nb.notifier_call = ext_batt_psy_notifier_call;
-	ext_batt_psy_register_notifier(pd);
 	return 0;
 }
 
@@ -2432,16 +2463,15 @@ static int ext_batt_probe(struct platform_device *pdev)
 	init_completion(&pd->mount_state_ack);
 	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
 	INIT_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
-
-	#ifdef CONFIG_CHARGER_CYPD3177
-	pd->cypd_pd_active_chan = iio_channel_get(NULL, "cypd_pd_active");
-	if (IS_ERR(pd->cypd_pd_active_chan)) {
-		if (PTR_ERR(pd->cypd_pd_active_chan) != -EPROBE_DEFER)
-			dev_dbg(pd->dev, "cypd pd_active channel unavailable");
-		return -EPROBE_DEFER;
-	}
-	#endif
 	INIT_WORK(&pd->dock_state_work, ext_batt_dock_state_work);
+	INIT_WORK(&pd->psy_notifier_work, ext_batt_psy_notifier_work);
+	result = ext_batt_psy_init(pd);
+	if (result == -EPROBE_DEFER)
+		return result;
+
+	pd->wq = alloc_ordered_workqueue("ext_batt_wq", WQ_FREEZABLE);
+	if (!pd->wq)
+		return -ENOMEM;
 
 	pd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, pd);
@@ -2467,10 +2497,8 @@ static int ext_batt_probe(struct platform_device *pdev)
 		pd->svid);
 
 	/* Query power supply and register for events */
-	INIT_WORK(&pd->psy_notifier_work, ext_batt_psy_notifier_work);
-	result = ext_batt_psy_init(pd);
-	if (result == -EPROBE_DEFER)
-		return result;
+	pd->nb.notifier_call = ext_batt_psy_notifier_call;
+	ext_batt_psy_register_notifier(pd);
 
 	/* Create nodes here. */
 	ext_batt_create_sysfs(pd);
@@ -2492,12 +2520,11 @@ static int ext_batt_remove(struct platform_device *pdev)
 	mutex_unlock(&pd->lock);
 	cancel_work_sync(&pd->mount_state_work);
 	cancel_work_sync(&pd->dock_state_work);
+	destroy_workqueue(pd->wq);
 	set_usb_charging_state(pd, CHARGING_RESUME);
 	ext_batt_psy_unregister_notifier(pd);
-	if (pd->cypd_psy) {
+	if (pd->cypd_psy)
 		power_supply_put(pd->cypd_psy);
-		iio_channel_release(pd->cypd_pd_active_chan);
-	}
 	mutex_destroy(&pd->lock);
 
 	if (pd->batt_id == EXT_BATT_ID_MOLOKINI)

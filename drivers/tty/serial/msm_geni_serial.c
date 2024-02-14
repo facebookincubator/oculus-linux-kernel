@@ -201,6 +201,22 @@ struct msm_geni_io_stat {
 	u32 last_tx_size; /* how many bytes sent in last Tx */
 	u32 last_tx_remaining; /* how many bytes still in tx buffer not yet sent */
 };
+#ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
+struct msm_geni_ios_unresponsive_period {
+	ktime_t timestamp_start; /* monotonic timestamp of period start */
+	ktime_t timestamp_end; /* monotonic timestamp of period end, 0 if unknown (implying this period not closed yet) */
+	int temp_start; /* temperature of period start */
+	int temp_end; /* temperature of this period end */
+	u32 geni_ios_start; /* geni_ios register value of period start */
+	u32 geni_ios_end; /* geni_ios register value of period end */
+};
+
+enum geni_ios_monitor_purpose {
+	GENI_IOS_MONITOR_IDLE = 0,
+	GENI_IOS_MONITOR_UART_INIT = 1,
+	GENI_IOS_MONITOR_UART_CTS = 2,
+};
+#endif
 
 struct msm_geni_serial_port {
 	struct uart_port uport;
@@ -261,17 +277,18 @@ struct msm_geni_serial_port {
 	spinlock_t rx_lock;
 	bool bypass_flow_control;
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
+	bool geni_ios_monitor_enabled; /* only enable for ttyHS0 (bluetooth uart) */
 	struct work_struct geni_ios_work;
 	struct hrtimer timer_geni_ios; /* to monitor geni_ios change */
 	spinlock_t timer_geni_ios_lock;
 	struct thermal_zone_device *thermal_zone; /* nearest thermal sensor */
 	ktime_t timer_geni_ios_interval;
 	ktime_t timer_geni_ios_expire;
-	ktime_t timer_geni_ios_start; /* monotonic time of first startup if geni_ios is not expected value */
-	ktime_t timer_geni_ios_end; /* monotonic time */
-	int geni_ios_delay_ms; /* the time duration spent on waiting for geni_ios to become 0x01. -1 = unknown */
-	int temp_start; /* temperature at first serial port startup */
-	int temp_end; /* temperature when geni_ios register becomes ready */
+	spinlock_t geni_ios_monitor_lock;
+	enum geni_ios_monitor_purpose timer_geni_ios_purpose;
+	struct msm_geni_ios_unresponsive_period unresp_boot; /* first unresponsive period of this boot */
+	struct msm_geni_ios_unresponsive_period unresp_uart_init; /* unresponsive period of this uart initialization */
+	struct msm_geni_ios_unresponsive_period unresp_cts; /* unresponsive period, cts */
 #endif
 	struct msm_geni_io_stat io_stat;
 	bool allow_suspend;
@@ -585,36 +602,80 @@ static void wait_for_transfers_inflight(struct uart_port *uport)
 
 static void msm_geni_ios_handle_work(struct work_struct *work)
 {
-	struct msm_geni_serial_port *port = container_of(work, struct msm_geni_serial_port, geni_ios_work);
+	struct msm_geni_serial_port *msm_port = container_of(work, struct msm_geni_serial_port, geni_ios_work);
 
-	if (strcmp(port->uport.name, "ttyHS0") == 0 && port->thermal_zone) {
-		thermal_zone_get_temp(port->thermal_zone, &port->temp_end);
-		IPC_LOG_MSG(port->ipc_log_pwr, "%s: temperature=%d\n",
-			__func__, port->temp_end);
+	if (msm_port->geni_ios_monitor_enabled) {
+		unsigned long irq_flags;
+		int temperature = 0;
+
+		if (msm_port->thermal_zone)
+			thermal_zone_get_temp(msm_port->thermal_zone, &temperature);
+
+		spin_lock_irqsave(&msm_port->geni_ios_monitor_lock, irq_flags);
+		if (msm_port->timer_geni_ios_purpose == GENI_IOS_MONITOR_UART_INIT) {
+			msm_port->unresp_uart_init.temp_end = temperature;
+			IPC_LOG_MSG(msm_port->ipc_log_pwr, "%s: temperature=%d\n",
+				__func__, msm_port->unresp_uart_init.temp_end);
+			if (!msm_port->unresp_boot.temp_end)
+				msm_port->unresp_boot.temp_end = msm_port->unresp_uart_init.temp_end;
+
+			msm_port->timer_geni_ios_purpose = GENI_IOS_MONITOR_IDLE;
+		} else if (msm_port->timer_geni_ios_purpose == GENI_IOS_MONITOR_UART_CTS) {
+			if (!msm_port->unresp_cts.temp_start) {
+				msm_port->unresp_cts.temp_start = temperature;
+			} else {
+				msm_port->unresp_cts.temp_end = temperature;
+				msm_port->timer_geni_ios_purpose = GENI_IOS_MONITOR_IDLE;
+			}
+		}
+		spin_unlock_irqrestore(&msm_port->geni_ios_monitor_lock, irq_flags);
 	}
 }
 
 static enum hrtimer_restart msm_geni_ios_timer_callback(struct hrtimer *hrtimer)
 {
-	enum hrtimer_restart ret = HRTIMER_NORESTART;
-	struct msm_geni_serial_port *port = container_of(hrtimer, struct msm_geni_serial_port, timer_geni_ios);
-	u32 geni_ios = geni_read_reg_nolog(port->uport.membase, SE_GENI_IOS);
+	enum hrtimer_restart ret = HRTIMER_RESTART;
+	struct msm_geni_serial_port *msm_port = container_of(hrtimer, struct msm_geni_serial_port, timer_geni_ios);
+	u32 geni_ios = geni_read_reg_nolog(msm_port->uport.membase, SE_GENI_IOS);
+	int geni_ios_delay_ms;
 
-	if (geni_ios == 0x1) {
-		port->timer_geni_ios_end = ktime_get_boottime();
-		port->geni_ios_delay_ms = (port->timer_geni_ios_end - port->timer_geni_ios_start)/1000000;
-		IPC_LOG_MSG(port->ipc_log_pwr, "%s value change detected geni_ios:0x%x taking %d ms\n",
-			__func__, geni_ios, port->geni_ios_delay_ms);
-		dev_info(port->uport.dev, "%s:RX_DATA_IN delay %d ms\n", port->uport.name, port->geni_ios_delay_ms);
-		schedule_work(&port->geni_ios_work);
-	} else {
-		spin_lock(&port->timer_geni_ios_lock);
-		if (hrtimer_active(hrtimer)) {
-			hrtimer_forward(hrtimer, port->timer_geni_ios_expire, port->timer_geni_ios_interval);
-			port->timer_geni_ios_expire = ktime_add(port->timer_geni_ios_expire, port->timer_geni_ios_interval);
-			ret = HRTIMER_RESTART;
+	spin_lock(&msm_port->geni_ios_monitor_lock);
+	if (msm_port->timer_geni_ios_purpose == GENI_IOS_MONITOR_UART_INIT) { /* done when RX_DATA_IN bit is set */
+		if (geni_ios & RX_DATA_IN) {
+			msm_port->unresp_uart_init.geni_ios_end = geni_ios;
+			if (!msm_port->unresp_boot.geni_ios_end)
+				msm_port->unresp_boot.geni_ios_end = msm_port->unresp_uart_init.geni_ios_end;
+
+			msm_port->unresp_uart_init.timestamp_end = ktime_get_raw();
+			if (!msm_port->unresp_boot.timestamp_end)
+				msm_port->unresp_boot.timestamp_end = msm_port->unresp_uart_init.timestamp_end;
+
+			geni_ios_delay_ms = (msm_port->unresp_uart_init.timestamp_end - msm_port->unresp_uart_init.timestamp_start)/1000000;
+			IPC_LOG_MSG(msm_port->ipc_log_pwr, "%s value change detected geni_ios:0x%x taking %d ms\n",
+				__func__, geni_ios, geni_ios_delay_ms);
+			dev_info(msm_port->uport.dev, "%s:RX_DATA_IN delay %d ms (%d-%d)\n", msm_port->uport.name, geni_ios_delay_ms,
+					msm_port->unresp_uart_init.timestamp_end/1000000, msm_port->unresp_uart_init.timestamp_start/1000000);
+
+			ret = HRTIMER_NORESTART;
+			schedule_work(&msm_port->geni_ios_work);
 		}
-		spin_unlock(&port->timer_geni_ios_lock);
+	} else if (msm_port->timer_geni_ios_purpose == GENI_IOS_MONITOR_UART_CTS) { /* done when IO2_DATA_IN bit is cleared */
+		if (!(geni_ios & IO2_DATA_IN)) {
+			msm_port->unresp_cts.timestamp_end = ktime_get_raw();
+			msm_port->unresp_cts.geni_ios_end = geni_ios;
+			ret = HRTIMER_NORESTART;
+			schedule_work(&msm_port->geni_ios_work);
+		}
+	}
+	spin_unlock(&msm_port->geni_ios_monitor_lock);
+
+	if (ret == HRTIMER_RESTART) {
+		spin_lock(&msm_port->timer_geni_ios_lock);
+		if (hrtimer_active(hrtimer)) {
+			hrtimer_forward(hrtimer, msm_port->timer_geni_ios_expire, msm_port->timer_geni_ios_interval);
+			msm_port->timer_geni_ios_expire = ktime_add(msm_port->timer_geni_ios_expire, msm_port->timer_geni_ios_interval);
+		}
+		spin_unlock(&msm_port->timer_geni_ios_lock);
 	}
 	return ret;
 }
@@ -1381,6 +1442,8 @@ static void msm_geni_serial_start_tx(struct uart_port *uport)
 	unsigned int geni_ios;
 	static unsigned int ios_log_limit;
 
+	geni_ios = geni_read_reg_nolog(uport->membase, SE_GENI_IOS);
+
 	if (!uart_console(uport) && !pm_runtime_active(uport->dev)) {
 		IPC_LOG_MSG(msm_port->ipc_log_misc,
 				"%s.Putting in async RPM vote\n", __func__);
@@ -1393,6 +1456,36 @@ static void msm_geni_serial_start_tx(struct uart_port *uport)
 				"%s.Power on.\n", __func__);
 		pm_runtime_get(uport->dev);
 	}
+#ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
+	if (msm_port->geni_ios_monitor_enabled && (geni_ios & IO2_DATA_IN)) {
+		/* monitor how long it take for bit mask 0x02 to clear */
+		unsigned long irq_flags;
+		bool need_hrtimer_start = false;
+
+		spin_lock_irqsave(&msm_port->geni_ios_monitor_lock, irq_flags);
+		if (msm_port->timer_geni_ios_purpose == GENI_IOS_MONITOR_IDLE) {
+			// if previous unresp_cts is already closed, clear it and start a new record
+			if (msm_port->unresp_cts.timestamp_start != 0 && msm_port->unresp_cts.timestamp_end != 0)
+				memset(&msm_port->unresp_cts, 0, sizeof(msm_port->unresp_cts));
+
+			msm_port->timer_geni_ios_purpose = GENI_IOS_MONITOR_UART_CTS;
+			need_hrtimer_start = true;
+			msm_port->unresp_cts.timestamp_start = ktime_get_raw();
+			msm_port->unresp_cts.geni_ios_start = geni_ios;
+			// cannot call thermal_zone_get_temp inside this function due to atomic context
+			schedule_work(&msm_port->geni_ios_work);
+		}
+		spin_unlock_irqrestore(&msm_port->geni_ios_monitor_lock, irq_flags);
+		if (need_hrtimer_start) {
+			spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
+			msm_port->timer_geni_ios_interval = ns_to_ktime(1000000000UL / 1000); /* 1ms interval */
+			msm_port->timer_geni_ios_expire = ktime_add(msm_port->timer_geni_ios.base->get_time(), msm_port->timer_geni_ios_interval);
+			msm_port->timer_geni_ios.function = msm_geni_ios_timer_callback;
+			hrtimer_start(&msm_port->timer_geni_ios, msm_port->timer_geni_ios_expire, HRTIMER_MODE_ABS_PINNED);
+			spin_unlock_irqrestore(&msm_port->timer_geni_ios_lock, irq_flags);
+		}
+	}
+#endif
 
 	if (msm_port->xfer_mode == FIFO_MODE) {
 		geni_status = geni_read_reg_nolog(uport->membase,
@@ -2651,39 +2744,53 @@ exit_startup:
 	geni_ios = geni_read_reg_nolog(uport->membase, SE_GENI_IOS);
 	IPC_LOG_MSG(msm_port->ipc_log_misc, "%s: ret:%d geni_ios=0x%x\n", __func__, ret, geni_ios);
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
-	if (strcmp(msm_port->uport.name, "ttyHS0") == 0) {
+	if (msm_port->geni_ios_monitor_enabled) {
 		unsigned long irq_flags;
+		int temperature = 0;
 
 		// cancel previous timer if not already
-		if (msm_port->timer_geni_ios_start) {
-			spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
-			hrtimer_cancel(&msm_port->timer_geni_ios);
-			spin_unlock_irqrestore(&msm_port->timer_geni_ios_lock, irq_flags);
-		}
+		spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
+		hrtimer_cancel(&msm_port->timer_geni_ios);
+		spin_unlock_irqrestore(&msm_port->timer_geni_ios_lock, irq_flags);
 
-		/* if geni_ios is not expected value at first startup, use a timer to monitor its change */
-		if (msm_port->timer_geni_ios_start == 0 && (geni_ios & 0x1)) {
-			msm_port->geni_ios_delay_ms = 0;
-			if (msm_port->thermal_zone) {
-				thermal_zone_get_temp(msm_port->thermal_zone, &msm_port->temp_start);
-				msm_port->temp_end = msm_port->temp_start;
+		memset(&msm_port->unresp_uart_init, 0, sizeof(msm_port->unresp_uart_init));
+		if (msm_port->thermal_zone)
+			thermal_zone_get_temp(msm_port->thermal_zone, &temperature);
+
+		/* if geni_ios doesn't have RX_DATA_IN bit at uart startup, use a timer to monitor until it appears */
+		if ((geni_ios & RX_DATA_IN)) {
+			spin_lock_irqsave(&msm_port->geni_ios_monitor_lock, irq_flags);
+			msm_port->timer_geni_ios_purpose = GENI_IOS_MONITOR_IDLE;
+			msm_port->unresp_uart_init.timestamp_end = msm_port->unresp_uart_init.timestamp_start = ktime_get_raw();
+			msm_port->unresp_uart_init.geni_ios_end = msm_port->unresp_uart_init.geni_ios_start = geni_ios;
+			msm_port->unresp_uart_init.temp_end = msm_port->unresp_uart_init.temp_start = temperature;
+			if (!msm_port->unresp_boot.timestamp_start)
+				memcpy(&msm_port->unresp_boot, &msm_port->unresp_uart_init, sizeof(msm_port->unresp_boot));
+
+			spin_unlock_irqrestore(&msm_port->geni_ios_monitor_lock, irq_flags);
+		} else {
+			spin_lock_irqsave(&msm_port->geni_ios_monitor_lock, irq_flags);
+			if (!msm_port->unresp_uart_init.timestamp_start) {
+				msm_port->unresp_uart_init.timestamp_start = ktime_get_raw();
+				msm_port->unresp_uart_init.geni_ios_start = geni_ios;
 			}
-		} else if (msm_port->geni_ios_delay_ms == -1) {
+			msm_port->unresp_uart_init.temp_start = temperature;
+
+			if (!msm_port->unresp_boot.timestamp_start)
+				memcpy(&msm_port->unresp_boot, &msm_port->unresp_uart_init, sizeof(msm_port->unresp_boot));
+
+			msm_port->timer_geni_ios_purpose = GENI_IOS_MONITOR_UART_INIT;
+			spin_unlock_irqrestore(&msm_port->geni_ios_monitor_lock, irq_flags);
+
 			spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
 			msm_port->timer_geni_ios_interval = ns_to_ktime(1000000000UL / 1000); /* 1ms interval */
 			msm_port->timer_geni_ios_expire = ktime_add(msm_port->timer_geni_ios.base->get_time(), msm_port->timer_geni_ios_interval);
 			msm_port->timer_geni_ios.function = msm_geni_ios_timer_callback;
 			hrtimer_start(&msm_port->timer_geni_ios, msm_port->timer_geni_ios_expire, HRTIMER_MODE_ABS_PINNED);
-			if (!msm_port->timer_geni_ios_start)
-				msm_port->timer_geni_ios_start = ktime_get_boottime();
 			spin_unlock_irqrestore(&msm_port->timer_geni_ios_lock, irq_flags);
-			if (!msm_port->temp_start) {
-				if (msm_port->thermal_zone)
-					thermal_zone_get_temp(msm_port->thermal_zone, &msm_port->temp_start);
-			}
 		}
-		IPC_LOG_MSG(msm_port->ipc_log_pwr, "%s: %s at first startup temp=%d\n",
-			__func__, msm_port->uport.name, msm_port->temp_start);
+		IPC_LOG_MSG(msm_port->ipc_log_pwr, "%s: %s at uart startup temp=%d\n",
+			__func__, msm_port->uport.name, msm_port->unresp_uart_init.temp_start);
 	}
 #endif
 	return ret;
@@ -3052,19 +3159,48 @@ static DEVICE_ATTR_RO(io_stat_summary);
 
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 
-static ssize_t geni_ios_delay_show(struct device *dev,
+static ssize_t geni_ios_unresponsive_period_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = to_platform_device(dev);
-	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
+	struct msm_geni_serial_port *msm_port = platform_get_drvdata(pdev);
+	unsigned long irq_flags;
+	int res;
 	ssize_t ret = 0;
 
-	ret = snprintf(buf, PAGE_SIZE, "%d\n", port->geni_ios_delay_ms);
+	spin_lock_irqsave(&msm_port->geni_ios_monitor_lock, irq_flags);
+	res = snprintf(buf, PAGE_SIZE,
+			"%d %d %d %d %u %u\n"
+			"%d %d %d %d %u %u\n"
+			"%d %d %d %d %u %u\n",
+			msm_port->unresp_boot.timestamp_start / 1000000,
+			msm_port->unresp_boot.timestamp_end / 1000000,
+			msm_port->unresp_boot.temp_start,
+			msm_port->unresp_boot.temp_end,
+			msm_port->unresp_boot.geni_ios_start,
+			msm_port->unresp_boot.geni_ios_end,
+			msm_port->unresp_uart_init.timestamp_start / 1000000,
+			msm_port->unresp_uart_init.timestamp_end / 1000000,
+			msm_port->unresp_uart_init.temp_start,
+			msm_port->unresp_uart_init.temp_end,
+			msm_port->unresp_uart_init.geni_ios_start,
+			msm_port->unresp_uart_init.geni_ios_end,
+			msm_port->unresp_cts.timestamp_start / 1000000,
+			msm_port->unresp_cts.timestamp_end / 1000000,
+			msm_port->unresp_cts.temp_start,
+			msm_port->unresp_cts.temp_end,
+			msm_port->unresp_cts.geni_ios_start,
+			msm_port->unresp_cts.geni_ios_end
+			);
+	spin_unlock_irqrestore(&msm_port->geni_ios_monitor_lock, irq_flags);
+
+	if (res > 0)
+		ret += res;
 
 	return ret;
 }
 
-static DEVICE_ATTR_RO(geni_ios_delay);
+static DEVICE_ATTR_RO(geni_ios_unresponsive_period);
 
 static ssize_t geni_ios_current_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
@@ -3080,20 +3216,6 @@ static ssize_t geni_ios_current_show(struct device *dev,
 }
 
 static DEVICE_ATTR_RO(geni_ios_current);
-
-static ssize_t geni_ios_temp_show(struct device *dev,
-			struct device_attribute *attr, char *buf)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
-	ssize_t ret = 0;
-
-	ret = snprintf(buf, PAGE_SIZE, "%d %d\n", port->temp_start, port->temp_end);
-
-	return ret;
-}
-
-static DEVICE_ATTR_RO(geni_ios_temp);
 
 #endif
 
@@ -3965,12 +4087,15 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 	device_create_file(uport->dev, &dev_attr_io_stat_summary);
 	spin_lock_init(&dev_port->io_stat.lock);
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
-	device_create_file(uport->dev, &dev_attr_geni_ios_delay);
+	device_create_file(uport->dev, &dev_attr_geni_ios_unresponsive_period);
 	device_create_file(uport->dev, &dev_attr_geni_ios_current);
-	device_create_file(uport->dev, &dev_attr_geni_ios_temp);
 	hrtimer_init(&dev_port->timer_geni_ios, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	spin_lock_init(&dev_port->timer_geni_ios_lock);
-	dev_port->geni_ios_delay_ms = -1;
+	spin_lock_init(&dev_port->geni_ios_monitor_lock);
+	memset(&dev_port->unresp_boot, 0, sizeof(dev_port->unresp_boot));
+	memset(&dev_port->unresp_uart_init, 0, sizeof(dev_port->unresp_uart_init));
+	memset(&dev_port->unresp_cts, 0, sizeof(dev_port->unresp_cts));
+
 	INIT_WORK(&dev_port->geni_ios_work, msm_geni_ios_handle_work);
 	{
 		const char *thermal_zone_name = NULL;
@@ -4018,7 +4143,9 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 
 	IPC_LOG_MSG(dev_port->ipc_log_misc, "%s: port:%s irq:%d\n", __func__,
 		    uport->name, uport->irq);
-
+#ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
+	dev_port->geni_ios_monitor_enabled = !strcmp(uport->name, "ttyHS0");
+#endif
 	return 0;
 
 exit_workqueue_destroy:

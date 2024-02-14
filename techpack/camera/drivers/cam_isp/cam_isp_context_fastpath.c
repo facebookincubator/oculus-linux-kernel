@@ -806,7 +806,7 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 		mutex_lock(&ctx->mutex_list);
 		req_isp = cam_isp_fpc_get_latest_active_request(ctx);
 		if (req_isp) {
-			req_isp->timestamp = payload->data.sof.boot_time;
+			req_isp->timestamp = payload->data.sof.monotonic_time;
 			req_isp->sof_index = ctx->sof_cnt;
 			if (req_isp->state != CAM_ISP_HW_EVENT_SOF)
 				CAM_ERR(CAM_ISP, "invalid state %u in process %u", req_isp->state, ctx->num_in_processing);

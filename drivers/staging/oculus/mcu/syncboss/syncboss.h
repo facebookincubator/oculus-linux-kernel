@@ -18,6 +18,13 @@
 #include "syncboss_protocol.h"
 #include "../swd/swd.h"
 
+#define SYNCBOSS_DEVICE_NAME "syncboss0"
+#define SYNCBOSS_STREAM_DEVICE_NAME "syncboss_stream0"
+#define SYNCBOSS_CONTROL_DEVICE_NAME "syncboss_control0"
+#define SYNCBOSS_POWERSTATE_DEVICE_NAME "syncboss_powerstate0"
+#define SYNCBOSS_NSYNC_DEVICE_NAME "syncboss_nsync0"
+#define SYNCBOSS_DIRECTCHANNEL_DEVICE_NAME "syncboss_directchannel0"
+
 #define SYNCBOSS_SEQ_NUM_MIN 1
 #define SYNCBOSS_SEQ_NUM_MAX 254
 #define SYNCBOSS_SEQ_NUM_BITS (SYNCBOSS_SEQ_NUM_MAX + 1)
@@ -255,8 +262,11 @@ struct syncboss_dev_data {
 	 * NRF->AP signal and used to synchronize time between the AP
 	 * and NRF.
 	 */
-	atomic_long_t nsync_irq_timestamp;
-	u32 nsync_irq_count;
+	uint64_t nsync_irq_timestamp;
+	uint64_t nsync_irq_count;
+
+	/* Spinlock used to protect access to the nsync timestamp and count */
+	spinlock_t nsync_lock;
 
 	/* Timestamp of last TE event
 	 * This signal is driven by the display hardware's TE line to
@@ -370,6 +380,19 @@ struct syncboss_dev_data {
 
 	struct dentry *dentry;
 	struct dentry *clients_dentry;
+
+	/*
+	 * Settings for direct channel mappings per packet type
+	 */
+	dma_addr_t dma_mask;
+	/*
+	 * DMA Bufs are created and mapped per sample type and not
+	 * multiplexed as is the case for miscfifos. Each client can register
+	 * a DMABUF per sample type.
+	 */
+	struct list_head *direct_channel_data[NUM_PACKET_TYPES];
+	struct rw_semaphore direct_channel_rw_lock; /* single semaphore protecing for now, as write is very rare. */
+	struct miscdevice misc_directchannel;
 };
 
 int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata);

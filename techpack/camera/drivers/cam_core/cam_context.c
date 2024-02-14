@@ -305,8 +305,8 @@ int cam_context_handle_acquire_dev(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.acquire_dev(
 			ctx, cmd);
 	} else {
-		CAM_ERR(CAM_CORE, "No acquire device in dev %d, state %d",
-			cmd->dev_handle, ctx->state);
+		CAM_ERR(CAM_CORE, "No acquire device in dev %d, state %s",
+			cmd->dev_handle, cam_ctx_state_get_str(ctx->state));
 		rc = -EPROTO;
 	}
 
@@ -345,8 +345,8 @@ int cam_context_handle_acquire_hw(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.acquire_hw(
 			ctx, args);
 	} else {
-		CAM_ERR(CAM_CORE, "No acquire hw for dev %s, state %d",
-			ctx->dev_name, ctx->state);
+		CAM_ERR(CAM_CORE, "No acquire hw for dev %s, state %s",
+			ctx->dev_name, cam_ctx_state_get_str(ctx->state));
 		rc = -EPROTO;
 	}
 
@@ -375,8 +375,8 @@ int cam_context_handle_release_dev(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.release_dev(
 			ctx, cmd);
 	} else {
-		CAM_ERR(CAM_CORE, "No release device in dev %d, state %d",
-			ctx->dev_hdl, ctx->state);
+		CAM_ERR(CAM_CORE, "No release device in dev %d, state %s",
+			ctx->dev_hdl, cam_ctx_state_get_str(ctx->state));
 		rc = -EPROTO;
 	}
 	mutex_unlock(&ctx->ctx_mutex);
@@ -404,8 +404,8 @@ int cam_context_handle_release_hw(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.release_hw(
 			ctx, args);
 	} else {
-		CAM_ERR(CAM_CORE, "No release hw for dev %s, state %d",
-			ctx->dev_name, ctx->state);
+		CAM_ERR(CAM_CORE, "No release hw for dev %s, state %s",
+			ctx->dev_name, cam_ctx_state_get_str(ctx->state));
 		rc = -EPROTO;
 	}
 	mutex_unlock(&ctx->ctx_mutex);
@@ -433,8 +433,8 @@ int cam_context_handle_flush_dev(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.flush_dev(
 			ctx, cmd);
 	} else {
-		CAM_WARN(CAM_CORE, "No flush device in dev %d, state %d",
-			ctx->dev_hdl, ctx->state);
+		CAM_WARN(CAM_CORE, "No flush device in dev %d, state %s",
+			ctx->dev_hdl, cam_ctx_state_get_str(ctx->state));
 	}
 	mutex_unlock(&ctx->ctx_mutex);
 
@@ -461,8 +461,8 @@ int cam_context_handle_config_dev(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.config_dev(
 			ctx, cmd);
 	} else {
-		CAM_ERR(CAM_CORE, "No config device in dev %d, state %d",
-			ctx->dev_hdl, ctx->state);
+		CAM_ERR(CAM_CORE, "No config device in dev %d, state %s",
+			ctx->dev_hdl, cam_ctx_state_get_str(ctx->state));
 		rc = -EPROTO;
 	}
 	mutex_unlock(&ctx->ctx_mutex);
@@ -491,8 +491,8 @@ int cam_context_handle_start_dev(struct cam_context *ctx,
 			ctx, cmd);
 	else
 		/* start device can be optional for some driver */
-		CAM_DBG(CAM_CORE, "No start device in dev %d, state %d",
-			ctx->dev_hdl, ctx->state);
+		CAM_DBG(CAM_CORE, "No start device in dev %d, state %s",
+			ctx->dev_hdl, cam_ctx_state_get_str(ctx->state));
 
 	mutex_unlock(&ctx->ctx_mutex);
 
@@ -520,8 +520,8 @@ int cam_context_handle_stop_dev(struct cam_context *ctx,
 			ctx, cmd);
 	else
 		/* stop device can be optional for some driver */
-		CAM_WARN(CAM_CORE, "No stop device in dev %d, name %s state %d",
-			ctx->dev_hdl, ctx->dev_name, ctx->state);
+		CAM_WARN(CAM_CORE, "No stop device in dev %d, name %s state %s",
+			ctx->dev_hdl, ctx->dev_name, cam_ctx_state_get_str(ctx->state));
 
 	ctx->last_flush_req = 0;
 	mutex_unlock(&ctx->ctx_mutex);
@@ -584,8 +584,8 @@ int cam_context_handle_dump_dev(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.dump_dev(
 			ctx, cmd);
 	else
-		CAM_WARN(CAM_CORE, "No dump device in dev %d, name %s state %d",
-			ctx->dev_hdl, ctx->dev_name, ctx->state);
+		CAM_ERR(CAM_CORE, "No dump device in dev %d, name %s state %s",
+			ctx->dev_hdl, ctx->dev_name, cam_ctx_state_get_str(ctx->state));
 	mutex_unlock(&ctx->ctx_mutex);
 
 	return rc;
@@ -611,8 +611,8 @@ int cam_context_handle_set_stream_mode(struct cam_context *ctx,
 		rc = ctx->state_machine[ctx->state].ioctl_ops.set_stream_mode(
 			ctx, cmd);
 	else {
-		CAM_ERR(CAM_CORE, "No stream mode in dev %d, name %s state %d",
-			ctx->dev_hdl, ctx->dev_name, ctx->state);
+		CAM_ERR(CAM_CORE, "No stream mode in dev %d, name %s state %s",
+			ctx->dev_hdl, ctx->dev_name, cam_ctx_state_get_str(ctx->state));
 		rc = -EINVAL;
 	}
 
@@ -643,8 +643,8 @@ int cam_context_handle_stream_mode_cmd(struct cam_context *ctx,
 	else {
 		rc = -EINVAL;
 		CAM_ERR(CAM_CORE,
-			"No stream mode cmd in dev %d, name %s state %d",
-			ctx->dev_hdl, ctx->dev_name, ctx->state);
+			"No stream mode cmd in dev %d, name %s state %s",
+			ctx->dev_hdl, ctx->dev_name, cam_ctx_state_get_str(ctx->state));
 	}
 
 	mutex_unlock(&ctx->ctx_mutex);

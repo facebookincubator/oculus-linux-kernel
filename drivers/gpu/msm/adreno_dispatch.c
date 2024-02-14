@@ -535,6 +535,7 @@ static int dispatcher_queue_context(struct adreno_device *adreno_dev,
 	if (plist_node_empty(&drawctxt->pending)) {
 		/* Get a reference to the context while it sits on the list */
 		if (_kgsl_context_get(&drawctxt->base)) {
+			atomic_inc(&drawctxt->base.refs_from_dispatch);
 			trace_dispatch_queue_context(drawctxt);
 			plist_add(&drawctxt->pending, &dispatcher->pending);
 		}
@@ -887,6 +888,7 @@ static void _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 
 		if (kgsl_context_detached(&drawctxt->base) ||
 			kgsl_context_invalid(&drawctxt->base)) {
+			atomic_dec(&drawctxt->base.refs_from_dispatch);
 			kgsl_context_put(&drawctxt->base);
 			continue;
 		}
@@ -913,6 +915,7 @@ static void _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 			if (!plist_node_empty(&drawctxt->pending)) {
 				plist_del(&drawctxt->pending,
 						&dispatcher->pending);
+				atomic_dec(&drawctxt->base.refs_from_dispatch);
 				kgsl_context_put(&drawctxt->base);
 			}
 
@@ -929,6 +932,7 @@ static void _adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 			 * refcount
 			 */
 
+			atomic_dec(&drawctxt->base.refs_from_dispatch);
 			kgsl_context_put(&drawctxt->base);
 		}
 	}

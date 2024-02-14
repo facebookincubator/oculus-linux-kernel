@@ -11944,6 +11944,74 @@ sme_validate_session_for_cap_update(struct mac_context *mac_ctx,
 	return QDF_STATUS_SUCCESS;
 }
 
+QDF_STATUS
+sme_set_ul_mu_config(mac_handle_t mac_handle, uint8_t session_id,
+		     uint8_t ulmu_disable, uint8_t tx_nss, uint8_t rx_nss)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
+	struct omi_ctrl_tx omi_data = {0};
+	void *wma_handle;
+	struct csr_roam_session *session = CSR_GET_SESSION(mac_ctx, session_id);
+	uint32_t param_val = 0;
+	enum wlan_phymode peer_phymode;
+
+	wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
+	if (!wma_handle) {
+		sme_err("wma handle is NULL");
+		status = QDF_STATUS_E_INVAL;
+		return status;
+	}
+
+	status = sme_validate_session_for_cap_update(mac_ctx, session_id,
+						     session);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		sme_err("STA is not connected, Session_id: %d", session_id);
+		return status;
+	}
+
+	status = mlme_get_peer_phymode(mac_ctx->psoc,
+				       session->connectedProfile.bssid.bytes,
+				       &peer_phymode);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		sme_err("Failed to get peer phymode, Err : %d", status);
+		return status;
+	}
+
+	if (!(IS_WLAN_PHYMODE_HE(peer_phymode))) {
+		mlme_err("Invalid mode");
+		status = QDF_STATUS_E_INVAL;
+		return status;
+	}
+
+	omi_data.a_ctrl_id = A_CTRL_ID_OMI;
+	omi_data.rx_nss = rx_nss - 1;
+	omi_data.tx_nsts = tx_nss - 1;
+	omi_data.ch_bw = session->connectedProfile.vht_channel_width;
+	omi_data.ul_mu_dis = ulmu_disable;
+	omi_data.ul_mu_data_dis = 0;
+	omi_data.omi_in_vht = 0x1;
+	omi_data.omi_in_he = 0x1;
+
+	qdf_mem_copy(&param_val, &omi_data, sizeof(omi_data));
+
+	sme_debug("OMI: BW %d TxNSTS %d RxNSS %d ULMU %d, OMI_VHT %d, OMI_HE %d param val %08X, bssid:" QDF_MAC_ADDR_FMT,
+		  omi_data.ch_bw, omi_data.tx_nsts, omi_data.rx_nss,
+		  omi_data.ul_mu_dis, omi_data.omi_in_vht, omi_data.omi_in_he,
+		  param_val,
+		  QDF_MAC_ADDR_REF(session->connectedProfile.bssid.bytes));
+
+	status = wma_set_peer_param(wma_handle,
+				    session->connectedProfile.bssid.bytes,
+				    WMI_PEER_PARAM_XMIT_OMI,
+				    param_val, session_id);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		sme_err("set_peer_param_cmd returned %d", status);
+	}
+
+	return status;
+}
+
 int sme_send_he_om_ctrl_update(mac_handle_t mac_handle, uint8_t session_id)
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
