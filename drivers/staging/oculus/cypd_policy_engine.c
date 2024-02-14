@@ -4,57 +4,37 @@
  */
 
 #include <linux/cypd.h>
-#include <linux/i2c.h>
 #include <linux/hrtimer.h>
+#include <linux/i2c.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/power_supply.h>
 #include <linux/slab.h>
-#include <linux/iio/consumer.h>
+#include <linux/usb/pd.h>
+#include <linux/usb/pd_vdo.h>
 
 #include "cypd.h"
 
-#define PD_MSG_HDR(type, dr, pr, id, cnt, rev) \
-	(((type) & 0x1F) | ((dr) << 5) | (rev << 6) | \
-	 ((pr) << 8) | ((id) << 9) | ((cnt) << 12))
-#define PD_MSG_HDR_COUNT(hdr)		(((hdr) >> 12) & 7)
-#define PD_MSG_HDR_TYPE(hdr)		((hdr) & 0x1F)
-#define PD_MSG_HDR_ID(hdr)		(((hdr) >> 9) & 7)
-#define PD_MSG_HDR_REV(hdr)		(((hdr) >> 6) & 3)
-#define PD_MSG_HDR_EXTENDED		BIT(15)
-#define PD_MSG_HDR_IS_EXTENDED(hdr)	((hdr) & PD_MSG_HDR_EXTENDED)
-#define PD_MAX_MSG_ID		7
-#define PD_MAX_DATA_OBJ		7
+#define PD_MSG_HDR_IS_EXTENDED(hdr)	((hdr) & PD_HEADER_EXT_HDR)
 
 /* Timeouts */
-#define MAX_CRC_RECEIVE_TIME	9 /* ~(2 * tReceive_max(1.1ms) * # retry 4) */
-#define MAX_VDM_RESPONSE_TIME	60 /* 2 * tVDMSenderResponse_max(30ms) */
-#define MAX_VDM_BUSY_TIME	100 /* 2 * tVDMBusy (50ms) */
 #define SENDER_RESPONSE_TIME	26
-
-/* VDM header is the first 32-bit object following the 16-bit PD header */
-#define VDM_HDR_SVID(hdr)	((hdr) >> 16)
-#define VDM_IS_SVDM(hdr)	((hdr) & 0x8000)
-#define SVDM_HDR_VER(hdr)	(((hdr) >> 13) & 0x3)
-#define SVDM_HDR_OBJ_POS(hdr)	(((hdr) >> 8) & 0x7)
-#define SVDM_HDR_CMD_TYPE(hdr)	(((hdr) >> 6) & 0x3)
-#define SVDM_HDR_CMD(hdr)	((hdr) & 0x1f)
 
 #define SVDM_HDR(svid, ver, obj, cmd_type, cmd) \
 	(((svid) << 16) | (1 << 15) | ((ver) << 13) \
 	| ((obj) << 8) | ((cmd_type) << 6) | (cmd))
 #define IS_DATA(m, t) ((m) && !PD_MSG_HDR_IS_EXTENDED((m)->hdr) && \
-		PD_MSG_HDR_COUNT((m)->hdr) && \
-		(PD_MSG_HDR_TYPE((m)->hdr) == (t)))
-#define IS_CTRL(m, t) ((m) && !PD_MSG_HDR_COUNT((m)->hdr) && \
-		(PD_MSG_HDR_TYPE((m)->hdr) == (t)))
+		pd_header_cnt((m)->hdr) && \
+		(pd_header_type((m)->hdr) == (t)))
+#define IS_CTRL(m, t) ((m) && !pd_header_cnt((m)->hdr) && \
+		(pd_header_type((m)->hdr) == (t)))
 #define IS_EXT(m, t) ((m) && PD_MSG_HDR_IS_EXTENDED((m)->hdr) && \
-		(PD_MSG_HDR_TYPE((m)->hdr) == (t)))
+		(pd_header_type((m)->hdr) == (t)))
 
 struct vdm_tx {
-	u32			data[PD_MAX_DATA_OBJ];
+	u32			data[PD_MAX_PAYLOAD];
 	int			size;
 };
 
@@ -78,17 +58,6 @@ static const char * const cypd_state_strings[] = {
 	"PD_Disconnect",
 };
 
-enum cypd_control_msg_type {
-	MSG_RESERVED = 0,
-	MSG_REJECT = 0x4,
-	MSG_NOT_SUPPORTED = 0x10,
-};
-
-enum cypd_data_msg_type {
-	MSG_SOURCE_CAPABILITIES = 0x1,
-	MSG_VDM = 0xF,
-};
-
 enum vdm_state {
 	VDM_NONE,
 	DISCOVERED_ID,
@@ -96,10 +65,6 @@ enum vdm_state {
 	DISCOVERED_MODES,
 	MODE_ENTERED,
 	MODE_EXITED,
-};
-
-static const char * const cypd_iio_channel_map[] = {
-	"cypd_chip_version", "cypd_pd_active",
 };
 
 struct cypd {
@@ -113,11 +78,9 @@ struct cypd {
 	bool					pd_connected;
 	struct power_supply		*cypd_psy;
 	struct notifier_block	psy_nb;
-	struct iio_channel		*iio_channels[CYPD_IIO_PROP_MAX];
-	bool			pd_active;
-	enum data_role		current_dr;
-	enum power_role		current_pr;
-	enum pd_spec_rev	spec_rev;
+	enum typec_data_role		current_dr;
+	enum typec_role		current_pr;
+	int					spec_rev;
 	u8			tx_msgid[SOPII_MSG + 1];
 	u8			rx_msgid[SOPII_MSG + 1];
 	struct list_head	rx_q;
@@ -127,6 +90,7 @@ struct cypd {
 	enum vdm_state		vdm_state;
 	u16			*discovered_svids;
 	int			num_svids;
+	u16 pid;
 	struct vdm_tx		*vdm_tx;
 	struct vdm_tx		*vdm_tx_retry;
 	struct mutex		svid_handler_lock;
@@ -193,22 +157,17 @@ static void handle_state_unknown(struct cypd *pd, struct rx_msg *rx_msg)
 
 static void enter_state_snk_ready(struct cypd *pd)
 {
-	pd->current_dr = DR_UFP;
-	pd->current_pr = PR_SINK;
+	pd->current_dr = TYPEC_DEVICE;
+	pd->current_pr = TYPEC_SINK;
 
 	cypd_startup_common(pd);
 
 	if (pd->vdm_tx)
 		kick_sm(pd, 0);
-	else if (pd->current_dr == DR_DFP && pd->vdm_state == VDM_NONE)
-		cypd_send_svdm(pd, CYPD_SID,
-				CYPD_SVDM_DISCOVER_IDENTITY,
-				CYPD_SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
-	else if (pd->current_dr == DR_UFP && pd->vdm_state == VDM_NONE)
-		cypd_send_svdm(pd, CYPD_SID,
-				CYPD_SVDM_DISCOVER_SVIDS,
-				CYPD_SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
-
+	else if (pd->vdm_state == VDM_NONE)
+		cypd_send_svdm(pd, USB_SID_PD,
+				CMD_DISCOVER_IDENT,
+				CMDT_INIT, 0, NULL, 0);
 }
 
 static bool handle_ctrl_snk_ready(struct cypd *pd, struct rx_msg *rx_msg)
@@ -225,11 +184,11 @@ static bool handle_ext_snk_ready(struct cypd *pd, struct rx_msg *rx_msg)
 
 static bool handle_data_snk_ready(struct cypd *pd, struct rx_msg *rx_msg)
 {
-	u8 msg_type = PD_MSG_HDR_TYPE(rx_msg->hdr);
-	u8 num_objs = PD_MSG_HDR_COUNT(rx_msg->hdr);
+	u8 msg_type = pd_header_type(rx_msg->hdr);
+	u8 num_objs = pd_header_cnt(rx_msg->hdr);
 
 	switch (msg_type) {
-	case MSG_VDM:
+	case PD_DATA_VENDOR_DEF:
 		handle_vdm_rx(pd, rx_msg);
 		break;
 	default:
@@ -251,7 +210,7 @@ static void handle_state_snk_ready(struct cypd *pd, struct rx_msg *rx_msg)
 {
 	int ret;
 
-	if (rx_msg && !PD_MSG_HDR_COUNT(rx_msg->hdr) &&
+	if (rx_msg && !pd_header_cnt(rx_msg->hdr) &&
 		handle_ctrl_snk_ready(pd, rx_msg)) {
 		return;
 	} else if (rx_msg && !PD_MSG_HDR_IS_EXTENDED(rx_msg->hdr) &&
@@ -260,10 +219,10 @@ static void handle_state_snk_ready(struct cypd *pd, struct rx_msg *rx_msg)
 	} else if (rx_msg && PD_MSG_HDR_IS_EXTENDED(rx_msg->hdr) &&
 		handle_ext_snk_ready(pd, rx_msg)) {
 		/* continue to handle tx */
-	} else if (rx_msg && !IS_CTRL(rx_msg, MSG_NOT_SUPPORTED)) {
+	} else if (rx_msg && !IS_CTRL(rx_msg, PD_CTRL_NOT_SUPP)) {
 		dev_dbg(&pd->dev, "Unsupported message\n");
-		ret = pd_send_msg(pd, pd->spec_rev == PD_REV_30 ?
-				MSG_NOT_SUPPORTED : MSG_REJECT,
+		ret = pd_send_msg(pd, pd->spec_rev == PD_REV30 ?
+				PD_CTRL_NOT_SUPP : PD_CTRL_REJECT,
 				NULL, 0, SOP_MSG);
 		if (ret)
 			/* TODO : Handle return failure */
@@ -310,6 +269,7 @@ static void reset_vdm_state(struct cypd *pd)
 	pd->num_svids = 0;
 	kfree(pd->discovered_svids);
 	pd->discovered_svids = NULL;
+	pd->pid = 0;
 	pd->vdm_state = VDM_NONE;
 	kfree(pd->vdm_tx_retry);
 	pd->vdm_tx_retry = NULL;
@@ -326,8 +286,6 @@ static void enter_state_disconnect(struct cypd *pd)
 	reset_vdm_state(pd);
 
 	pd->current_state = PE_UNKNOWN;
-	pd->current_dr = DR_NONE;
-	pd->current_pr = PR_NONE;
 
 	/*
 	 * first Rx ID should be 0; set this to a sentinel of -1 so that in
@@ -343,7 +301,8 @@ static const struct cypd_state_handler state_handlers[] = {
 	[PE_DISCONNECT] = {enter_state_disconnect, NULL},
 };
 
-static struct cypd_svid_handler *find_svid_handler(struct cypd *pd, u16 svid)
+static struct cypd_svid_handler *find_svid_handler(struct cypd *pd,
+		u16 svid, u16 pid)
 {
 	struct cypd_svid_handler *handler;
 
@@ -352,11 +311,13 @@ static struct cypd_svid_handler *find_svid_handler(struct cypd *pd, u16 svid)
 		mutex_lock(&pd->svid_handler_lock);
 
 	list_for_each_entry(handler, &pd->svid_handlers, entry) {
-		if (svid == handler->svid) {
-			if (!in_interrupt())
-				mutex_unlock(&pd->svid_handler_lock);
-			return handler;
-		}
+		if (svid == handler->svid)
+			/* Treat a registered PID of 0 as a wildcard */
+			if (!handler->pid || pid == handler->pid) {
+				if (!in_interrupt())
+					mutex_unlock(&pd->svid_handler_lock);
+				return handler;
+			}
 	}
 
 	if (!in_interrupt())
@@ -370,11 +331,11 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 {
 	int i;
 	u16 svid, *psvid;
-	u8 cmd = SVDM_HDR_CMD(vdm_hdr);
+	u8 cmd = PD_VDO_CMD(vdm_hdr);
 	struct cypd_svid_handler *handler;
 
 	switch (cmd) {
-	case CYPD_SVDM_DISCOVER_IDENTITY:
+	case CMD_DISCOVER_IDENT:
 		kfree(pd->vdm_tx_retry);
 		pd->vdm_tx_retry = NULL;
 
@@ -383,19 +344,22 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 			break;
 		}
 
-		if (SVDM_HDR_OBJ_POS(vdm_hdr) != 0) {
+		if (PD_VDO_OPOS(vdm_hdr) != 0) {
 			dev_dbg(&pd->dev, "Discarding Discover ID response with incorrect object position:%d\n",
-					SVDM_HDR_OBJ_POS(vdm_hdr));
+					PD_VDO_OPOS(vdm_hdr));
 			break;
 		}
 
+		if (num_vdos >= VDO_INDEX_PRODUCT)
+			pd->pid = PD_PRODUCT_PID(vdos[VDO_INDEX_PRODUCT - 1]);
+
 		pd->vdm_state = DISCOVERED_ID;
-		cypd_send_svdm(pd, CYPD_SID,
-				CYPD_SVDM_DISCOVER_SVIDS,
-				CYPD_SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
+		cypd_send_svdm(pd, USB_SID_PD,
+				CMD_DISCOVER_SVID,
+				CMDT_INIT, 0, NULL, 0);
 		break;
 
-	case CYPD_SVDM_DISCOVER_SVIDS:
+	case CMD_DISCOVER_SVID:
 		pd->vdm_state = DISCOVERED_SVIDS;
 
 		kfree(pd->vdm_tx_retry);
@@ -456,9 +420,9 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 
 		/* if more than 12 SVIDs, resend the request */
 		if (num_vdos == 6 && vdos[5] != 0) {
-			cypd_send_svdm(pd, CYPD_SID,
-					CYPD_SVDM_DISCOVER_SVIDS,
-					CYPD_SVDM_CMD_TYPE_INITIATOR, 0,
+			cypd_send_svdm(pd, USB_SID_PD,
+					CMD_DISCOVER_SVID,
+					CMDT_INIT, 0,
 					NULL, 0);
 			break;
 		}
@@ -467,10 +431,11 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 		for (i = 0; i < pd->num_svids; i++) {
 			svid = pd->discovered_svids[i];
 			if (svid) {
-				handler = find_svid_handler(pd, svid);
+				handler = find_svid_handler(pd, svid, pd->pid);
 				if (handler) {
-					dev_dbg(&pd->dev, "Notify SVID: 0x%04x connect\n",
-							handler->svid);
+					dev_dbg(&pd->dev,
+							"Notify SVID/PID: 0x%04x/0x%04x connect\n",
+							handler->svid, pd->pid);
 					handler->connect(handler);
 					handler->discovered = true;
 				}
@@ -492,11 +457,11 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 	rx_msg->data_len >= sizeof(u32) ? ((u32 *)rx_msg->payload)[0] : 0;
 
 	u32 *vdos = (u32 *)&rx_msg->payload[sizeof(u32)];
-	u16 svid = VDM_HDR_SVID(vdm_hdr);
+	u16 svid = PD_VDO_VID(vdm_hdr);
 
-	u8 num_vdos = PD_MSG_HDR_COUNT(rx_msg->hdr) - 1;
-	u8 cmd = SVDM_HDR_CMD(vdm_hdr);
-	u8 cmd_type = SVDM_HDR_CMD_TYPE(vdm_hdr);
+	u8 num_vdos = pd_header_cnt(rx_msg->hdr) - 1;
+	u8 cmd = PD_VDO_CMD(vdm_hdr);
+	u8 cmd_type = PD_VDO_CMDT(vdm_hdr);
 	struct cypd_svid_handler *handler;
 	ktime_t recvd_time = ktime_get();
 
@@ -505,19 +470,15 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 			svid, cmd, cmd_type, vdm_hdr);
 
 	/* if it's a supported SVID, pass the message to the handler */
-	handler = find_svid_handler(pd, svid);
+	handler = find_svid_handler(pd, svid, pd->pid);
 
 	/* Unstructured VDM */
-	if (!VDM_IS_SVDM(vdm_hdr)) {
+	if (!PD_VDO_SVDM(vdm_hdr)) {
 		if (handler && handler->vdm_received)
 			handler->vdm_received(handler, vdm_hdr, vdos, num_vdos);
-		/* TODO: Handle pd->spec_rev == PD_REV_30 */
+		/* TODO: Handle pd->spec_rev == PD_REV30 */
 		return;
 	}
-
-	if (SVDM_HDR_VER(vdm_hdr) > 1)
-		dev_dbg(&pd->dev, "Received SVDM with unsupported version:%d\n",
-				SVDM_HDR_VER(vdm_hdr));
 
 	if (handler && handler->svdm_received) {
 		handler->svdm_received(handler, cmd, cmd_type, vdos, num_vdos);
@@ -529,18 +490,18 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 
 	/* Standard Discovery or unhandled messages go here */
 	switch (cmd_type) {
-	case CYPD_SVDM_CMD_TYPE_INITIATOR:
-		if (cmd != CYPD_SVDM_ATTENTION) {
-			/* TODO: Handle pd->spec_rev == PD_REV_30 */
+	case CMDT_INIT:
+		if (cmd != CMD_ATTENTION) {
+			/* TODO: Handle pd->spec_rev == PD_REV30 */
 			cypd_send_svdm(pd, svid, cmd,
-					CYPD_SVDM_CMD_TYPE_RESP_NAK,
-					SVDM_HDR_OBJ_POS(vdm_hdr),
+					CMDT_RSP_NAK,
+					PD_VDO_OPOS(vdm_hdr),
 					NULL, 0);
 		}
 		break;
 
-	case CYPD_SVDM_CMD_TYPE_RESP_ACK:
-		if (svid != CYPD_SID) {
+	case CMDT_RSP_ACK:
+		if (svid != USB_SID_PD) {
 			dev_err(&pd->dev, "unhandled ACK for SVID:0x%x\n",
 					svid);
 			break;
@@ -556,15 +517,15 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 		handle_vdm_resp_ack(pd, vdos, num_vdos, vdm_hdr);
 		break;
 
-	case CYPD_SVDM_CMD_TYPE_RESP_NAK:
+	case CMDT_RSP_NAK:
 		dev_info(&pd->dev, "VDM NAK received for SVID:0x%04x command:0x%x\n",
 				svid, cmd);
 		break;
 
-	case CYPD_SVDM_CMD_TYPE_RESP_BUSY:
+	case CMDT_RSP_BUSY:
 		switch (cmd) {
-		case CYPD_SVDM_DISCOVER_IDENTITY:
-		case CYPD_SVDM_DISCOVER_SVIDS:
+		case CMD_DISCOVER_IDENT:
+		case CMD_DISCOVER_SVID:
 			if (!pd->vdm_tx_retry) {
 				dev_err(&pd->dev, "Discover command %d VDM was unexpectedly freed\n",
 						cmd);
@@ -648,28 +609,28 @@ static void phy_msg_received(struct cypd *pd, enum pd_sop_type sop,
 	}
 
 	/* if MSGID already seen, discard */
-	if (PD_MSG_HDR_ID(header) == pd->rx_msgid[sop]) {
+	if (pd_header_msgid(header) == pd->rx_msgid[sop]) {
 		dev_dbg(&pd->dev, "MessageID already seen, discarding\n");
 		return;
 	}
 
-	pd->rx_msgid[sop] = PD_MSG_HDR_ID(header);
+	pd->rx_msgid[sop] = pd_header_msgid(header);
 
 	/* check header's count field to see if it matches len */
-	if (PD_MSG_HDR_COUNT(header) != (len / 4)) {
+	if (pd_header_cnt(header) != (len / 4)) {
 		dev_err(&pd->dev, "header count (%d) mismatch, len=%zd\n",
-				PD_MSG_HDR_COUNT(header), len);
+				pd_header_cnt(header), len);
 		return;
 	}
 
-	msg_type = PD_MSG_HDR_TYPE(header);
-	num_objs = PD_MSG_HDR_COUNT(header);
+	msg_type = pd_header_type(header);
+	num_objs = pd_header_cnt(header);
 	dev_dbg(&pd->dev, "%s type(%d) num_objs(%d)\n",
 			msg_to_string(msg_type, num_objs,
 				PD_MSG_HDR_IS_EXTENDED(header)),
 			msg_type, num_objs);
 
-	if (msg_type != MSG_VDM)
+	if (msg_type != PD_DATA_VENDOR_DEF)
 		return;
 
 	rx_msg = kzalloc(sizeof(*rx_msg) + len, GFP_ATOMIC);
@@ -703,12 +664,12 @@ static int pd_send_msg(struct cypd *pd, u8 msg_type, const u32 *data,
 	u16 hdr;
 
 	if (sop == SOP_MSG)
-		hdr = PD_MSG_HDR(msg_type, pd->current_dr, pd->current_pr,
-				pd->tx_msgid[sop], num_data, pd->spec_rev);
+		hdr = PD_HEADER(msg_type, pd->current_pr, pd->current_dr,
+				pd->spec_rev, pd->tx_msgid[sop], num_data, 0);
 	else
 		/* sending SOP'/SOP'' to a cable, PR/DR fields should be 0 */
-		hdr = PD_MSG_HDR(msg_type, 0, 0, pd->tx_msgid[sop], num_data,
-				pd->spec_rev);
+		hdr = PD_HEADER(msg_type, 0, 0, pd->spec_rev, pd->tx_msgid[sop],
+				num_data, 0);
 
 	ret = cypd_phy_write(hdr, (u8 *)data, num_data * sizeof(u32), sop);
 	if (ret) {
@@ -717,7 +678,7 @@ static int pd_send_msg(struct cypd *pd, u8 msg_type, const u32 *data,
 		return ret;
 	}
 
-	pd->tx_msgid[sop] = (pd->tx_msgid[sop] + 1) & PD_MAX_MSG_ID;
+	pd->tx_msgid[sop] = (pd->tx_msgid[sop] + 1) & PD_HEADER_ID_MASK;
 	return 0;
 }
 
@@ -735,11 +696,11 @@ static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 	/* only send one VDM at a time */
 	vdm_hdr = pd->vdm_tx->data[0];
 
-	ret = pd_send_msg(pd, MSG_VDM, pd->vdm_tx->data,
+	ret = pd_send_msg(pd, PD_DATA_VENDOR_DEF, pd->vdm_tx->data,
 			pd->vdm_tx->size, sop_type);
 	if (ret) {
 		dev_err(&pd->dev, "Error (%d) sending VDM command %d\n",
-				ret, SVDM_HDR_CMD(pd->vdm_tx->data[0]));
+				ret, PD_VDO_CMD(pd->vdm_tx->data[0]));
 
 		mutex_unlock(&pd->svid_handler_lock);
 
@@ -749,8 +710,8 @@ static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 	}
 
 	/* start tVDMSenderResponse timer */
-	if (VDM_IS_SVDM(vdm_hdr) &&
-		SVDM_HDR_CMD_TYPE(vdm_hdr) == CYPD_SVDM_CMD_TYPE_INITIATOR) {
+	if (PD_VDO_SVDM(vdm_hdr) &&
+		PD_VDO_CMDT(vdm_hdr) == CMDT_INIT) {
 		pd->svdm_start_time = ktime_get();
 	}
 
@@ -758,12 +719,12 @@ static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 	 * special case: keep initiated Discover ID/SVIDs
 	 * around in case we need to re-try when receiving BUSY
 	 */
-	if (VDM_IS_SVDM(vdm_hdr) &&
-		SVDM_HDR_CMD_TYPE(vdm_hdr) == CYPD_SVDM_CMD_TYPE_INITIATOR &&
-		SVDM_HDR_CMD(vdm_hdr) <= CYPD_SVDM_DISCOVER_SVIDS) {
+	if (PD_VDO_SVDM(vdm_hdr) &&
+		PD_VDO_CMDT(vdm_hdr) == CMDT_INIT &&
+		PD_VDO_CMD(vdm_hdr) <= CMD_DISCOVER_SVID) {
 		if (pd->vdm_tx_retry) {
 			dev_dbg(&pd->dev, "Previous Discover VDM command %d not ACKed/NAKed\n",
-				SVDM_HDR_CMD(
+				PD_VDO_CMD(
 					pd->vdm_tx_retry->data[0]));
 			kfree(pd->vdm_tx_retry);
 		}
@@ -782,7 +743,7 @@ int cypd_send_vdm(struct cypd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos)
 
 	if (pd->vdm_tx) {
 		dev_warn(&pd->dev, "Discarding previously queued VDM tx (SVID:0x%04x)\n",
-				VDM_HDR_SVID(pd->vdm_tx->data[0]));
+				PD_VDO_VID(pd->vdm_tx->data[0]));
 
 		kfree(pd->vdm_tx);
 		pd->vdm_tx = NULL;
@@ -808,14 +769,14 @@ int cypd_send_vdm(struct cypd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos)
 EXPORT_SYMBOL(cypd_send_vdm);
 
 int cypd_send_svdm(struct cypd *pd, u16 svid, u8 cmd,
-		enum cypd_svdm_cmd_type cmd_type, int obj_pos,
+		int cmd_type, int obj_pos,
 		const u32 *vdos, int num_vdos)
 {
-	u32 svdm_hdr = SVDM_HDR(svid, pd->spec_rev == PD_REV_30 ? 1 : 0,
+	u32 svdm_hdr = SVDM_HDR(svid, pd->spec_rev == PD_REV30 ? 1 : 0,
 			obj_pos, cmd_type, cmd);
 
 	dev_dbg(&pd->dev, "VDM tx: svid:%04x ver:%d obj_pos:%d cmd:%x cmd_type:%x svdm_hdr:%x\n",
-			svid, pd->spec_rev == PD_REV_30 ? 1 : 0, obj_pos,
+			svid, pd->spec_rev == PD_REV30 ? 1 : 0, obj_pos,
 			cmd, cmd_type, svdm_hdr);
 
 	return cypd_send_vdm(pd, svdm_hdr, vdos, num_vdos);
@@ -824,21 +785,22 @@ EXPORT_SYMBOL(cypd_send_svdm);
 
 int cypd_register_svid(struct cypd *pd, struct cypd_svid_handler *hdlr)
 {
-	if (find_svid_handler(pd, hdlr->svid)) {
-		dev_err(&pd->dev, "SVID 0x%04x already registered\n",
-				hdlr->svid);
+	if (find_svid_handler(pd, hdlr->svid, hdlr->pid)) {
+		dev_err(&pd->dev, "SVID/PID 0x%04x/0x%04x already registered\n",
+				hdlr->svid, hdlr->pid);
 		return -EINVAL;
 	}
 
 	/* require connect/disconnect callbacks be implemented */
 	if (!hdlr->connect || !hdlr->disconnect) {
-		dev_err(&pd->dev, "SVID 0x%04x connect/disconnect must be non-NULL\n",
-				hdlr->svid);
+		dev_err(&pd->dev,
+				"SVID/PID 0x%04x/0x%04x connect/disconnect must be non-NULL\n",
+				hdlr->svid, hdlr->pid);
 		return -EINVAL;
 	}
 
-	dev_dbg(&pd->dev, "registered handler(%pK) for SVID 0x%04x\n",
-							hdlr, hdlr->svid);
+	dev_dbg(&pd->dev, "registered handler(%pK) for SVID/PID 0x%04x/0x%04x\n",
+							hdlr, hdlr->svid, hdlr->pid);
 	mutex_lock(&pd->svid_handler_lock);
 	list_add_tail(&hdlr->entry, &pd->svid_handlers);
 	mutex_unlock(&pd->svid_handler_lock);
@@ -971,16 +933,17 @@ static int queue_vdm_close_work(struct cypd *pd)
 
 static void cypd_pe_psy_changed_work(struct work_struct *work)
 {
-	int ret, val;
+	int ret;
+	union power_supply_propval val;
 	struct cypd *pd = container_of(work, struct cypd, psy_changed_work);
 
-	ret = iio_read_channel_processed(pd->iio_channels[CYPD_IIO_PROP_PD_ACTIVE], &val);
+	ret = power_supply_get_property(pd->cypd_psy, POWER_SUPPLY_PROP_STATUS, &val);
 	if (ret < 0) {
-		dev_err(&pd->dev, "Unable to read pd_active state: %d\n", ret);
+		dev_err(&pd->dev, "Unable to read cypd STATUS: %d\n", ret);
 		return;
 	}
 
-	pd->pd_connected = val;
+	pd->pd_connected = (val.intval == POWER_SUPPLY_STATUS_CHARGING);
 
 	if (pd->pd_connected)
 		cypd_set_state(pd, PE_SNK_READY);
@@ -1092,7 +1055,7 @@ EXPORT_SYMBOL(devm_cypd_get_by_phandle);
 static void cypd_startup_common(struct cypd *pd)
 {
 	/* force spec rev to be 3.0 */
-	pd->spec_rev = PD_REV_30;
+	pd->spec_rev = PD_REV30;
 
 	/* Close first, in case it was already open */
 	queue_vdm_close_work(pd);
@@ -1115,7 +1078,6 @@ struct cypd *cypd_create(struct device *parent)
 {
 	int ret;
 	struct cypd *pd;
-	int i;
 
 	if (!cypd_class.p)
 		return ERR_PTR(-EPROBE_DEFER);
@@ -1167,17 +1129,6 @@ struct cypd *cypd_create(struct device *parent)
 	if (ret)
 		goto del_inst;
 	INIT_WORK(&pd->psy_changed_work, cypd_pe_psy_changed_work);
-
-	for (i = 0; i < CYPD_IIO_PROP_MAX; i++) {
-		pd->iio_channels[i] = devm_iio_channel_get(parent,
-						cypd_iio_channel_map[i]);
-		if (IS_ERR(pd->iio_channels[i])) {
-			dev_err(&pd->dev, "failed to get %s iio channel\n",
-						cypd_iio_channel_map[i]);
-			ret = PTR_ERR(pd->iio_channels[i]);
-			goto del_inst;
-		}
-	}
 
 	/* force read initial power_supply values */
 	psy_changed(&pd->psy_nb, PSY_EVENT_PROP_CHANGED, pd->cypd_psy);

@@ -4183,7 +4183,7 @@ static void _sde_crtc_configure_hw_fence(struct drm_crtc *crtc)
 	sde_kms = _sde_crtc_get_kms(crtc);
 	cstate = to_sde_crtc_state(crtc->state);
 
-	if (!sde_crtc) {
+	if (!sde_crtc || !sde_kms) {
 		SDE_ERROR("invalid input params\n");
 		return;
 	}
@@ -5257,6 +5257,29 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 	for (i = 0; i < cstate->num_connectors; i++) {
 		sde_connector_schedule_status_work(cstate->connectors[i], true);
 		_sde_crtc_reserve_resource(crtc, cstate->connectors[i]);
+	}
+
+	/* Cache qsync min refresh-rate */
+	sde_crtc->qsync_min_fps = 0;
+	list_for_each_entry(encoder, &crtc->dev->mode_config.encoder_list, head) {
+		u32 val;
+
+		if (encoder->crtc != crtc)
+			continue;
+
+		if (sde_encoder_get_qsync_min_fps(encoder, &val)) {
+			SDE_ERROR("could not get qsync min refresh-rate\n");
+			sde_crtc->qsync_min_fps = 0;
+			break;
+		}
+
+		if ((sde_crtc->qsync_min_fps != 0) && (sde_crtc->qsync_min_fps != val)) {
+			SDE_ERROR("mismatch qsync_min_fps in encoders");
+			sde_crtc->qsync_min_fps = 0;
+			break;
+		}
+
+		sde_crtc->qsync_min_fps = val;
 	}
 }
 
@@ -8311,4 +8334,35 @@ void _sde_crtc_vm_release_notify(struct drm_crtc *crtc)
 	uint32_t val = 1;
 
 	sde_crtc_event_notify(crtc, DRM_EVENT_VM_RELEASE, &val, sizeof(uint32_t));
+}
+
+int sde_crtc_vsync_trigger(struct drm_crtc *crtc)
+{
+	struct sde_crtc *sde_crtc;
+	struct drm_encoder *encoder;
+	struct drm_device *dev;
+	int ret;
+
+	if (!crtc) {
+		SDE_ERROR("invalid crtc\n");
+		return -EINVAL;
+	}
+
+	if (!sde_kms_power_resource_is_enabled(crtc->dev)) {
+		SDE_ERROR("power resource is not enabled\n");
+		return -EBUSY;
+	}
+
+	sde_crtc = to_sde_crtc(crtc);
+	dev = crtc->dev;
+
+	list_for_each_entry(encoder, &dev->mode_config.encoder_list, head) {
+		if (encoder->crtc != crtc)
+			continue;
+		ret = sde_encoder_vsync_trigger(encoder);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }

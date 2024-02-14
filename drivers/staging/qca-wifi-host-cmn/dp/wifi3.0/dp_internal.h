@@ -3697,6 +3697,13 @@ static inline QDF_STATUS dp_soc_swlm_detach(struct dp_soc *soc)
 }
 #endif /* !WLAN_DP_FEATURE_SW_LATENCY_MGR */
 
+#ifndef WLAN_DP_PROFILE_SUPPORT
+static inline void wlan_dp_soc_cfg_sync_profile(struct cdp_soc_t *cdp_soc) {}
+
+static inline void wlan_dp_pdev_cfg_sync_profile(struct cdp_soc_t *cdp_soc,
+						 uint8_t pdev_id) {}
+#endif
+
 /**
  * dp_get_peer_id(): function to get peer id by mac
  * @soc: Datapath soc handle

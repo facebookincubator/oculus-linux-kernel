@@ -555,6 +555,34 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_CODEL_STATS = 58,
 
+    /** HTT_DBG_ODD_PDEV_BE_TX_MU_OFDMA_STATS
+     * PARAMS:
+     *   - No Params
+     * RESP MSG:
+     *   - htt_tx_pdev_mpdu_stats_tlv
+     */
+    HTT_DBG_ODD_PDEV_BE_TX_MU_OFDMA_STATS = 59,
+
+    /** HTT_DBG_EXT_STATS_PDEV_UL_TRIGGER
+     * PARAMS:
+     *   - No Params
+     * RESP MSG:
+     *   - htt_rx_pdev_be_ul_ofdma_user_stats_tlv
+     */
+    HTT_DBG_ODD_UL_BE_OFDMA_STATS = 60,
+
+    /** HTT_DBG_ODD_BE_TXBF_OFDMA_STATS
+     */
+    HTT_DBG_ODD_BE_TXBF_OFDMA_STATS = 61,
+
+    /** HTT_DBG_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG_STATS
+     * PARAMS:
+     *   - No Params
+     * RESP MSG:
+     *   - htt_rx_pdev_be_ul_ofdma_user_stats_tlv
+     */
+    HTT_DBG_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG_STATS = 62,
+
 
     /* keep this last */
     HTT_DBG_NUM_EXT_STATS = 256,
@@ -1636,6 +1664,13 @@ typedef struct {
 #define HTT_PEER_DETAILS_ML_PEER_ID_S         1
 #define HTT_PEER_DETAILS_LINK_IDX_M           0x001fe000
 #define HTT_PEER_DETAILS_LINK_IDX_S           13
+#define HTT_PEER_DETAILS_USE_PPE_M            0x00200000
+#define HTT_PEER_DETAILS_USE_PPE_S            21
+
+
+#define HTT_PEER_DETAILS_SRC_INFO_M           0x00000fff
+#define HTT_PEER_DETAILS_SRC_INFO_S           0
+
 
 #define HTT_PEER_DETAILS_SET(word, httsym, val)  \
     do {                                         \
@@ -1664,7 +1699,11 @@ typedef struct {
     A_UINT32     ml_peer_id_valid  : 1,   /* [0:0] */
                  ml_peer_id        : 12,  /* [12:1] */
                  link_idx          : 8,   /* [20:13] */
-                 rsvd              : 11;  /* [31:21] */
+                 use_ppe           : 1,   /* [21:21] */
+                 rsvd0             : 10;  /* [31:22] */
+    /* Dword 9 */
+    A_UINT32     src_info          : 12,  /* [11:0] */
+                 rsvd1             : 20;  /* [31:12] */
 } htt_peer_details_tlv;
 
 typedef struct {
@@ -2417,6 +2456,8 @@ typedef enum {
 #define HTT_TX_NUM_MUMIMO_GRP_INVALID_WORDS \
     (HTT_STATS_MAX_MUMIMO_GRP_SZ * HTT_STATS_MAX_INVALID_REASON_CODE)
 
+#define HTT_MAX_NUM_SBT_INTR 4
+
 typedef struct {
     htt_tlv_hdr_t tlv_hdr;
 
@@ -2469,6 +2510,19 @@ typedef struct {
     /** 11AX HE MU Standalone Freq. BSRP Trigger completed with error(s) */
     A_UINT32 standalone_ax_bsr_trigger_err[HTT_NUM_AC_WMM];
 /* END DEPRECATED FIELDS */
+    /** smart_basic_trig_sch_histogram:
+     * Count how many times the interval between predictive basic triggers
+     * sent to a given STA based on analysis of that STA's traffic patterns
+     * is within a given range:
+     *
+     * smart_basic_trig_sch_histogram[0]: SBT interval <= 10 ms
+     * smart_basic_trig_sch_histogram[1]: 10 ms < SBT interval <= 20 ms
+     * smart_basic_trig_sch_histogram[2]: 20 ms < SBT interval <= 30 ms
+     * smart_basic_trig_sch_histogram[3]: 30 ms < SBT interval <= 40 ms
+     *
+     * (Smart basic triggers are only used with intervals <= 40 ms.)
+     */
+    A_UINT32 smart_basic_trig_sch_histogram[HTT_MAX_NUM_SBT_INTR];
 } htt_tx_selfgen_cmn_stats_tlv;
 
 typedef struct {
@@ -6496,11 +6550,14 @@ typedef enum {
 } htt_txbf_sound_steer_modes;
 
 typedef enum {
-    HTT_TX_AC_SOUNDING_MODE = 0,
-    HTT_TX_AX_SOUNDING_MODE = 1,
-    HTT_TX_BE_SOUNDING_MODE = 2,
+    HTT_TX_AC_SOUNDING_MODE  = 0,
+    HTT_TX_AX_SOUNDING_MODE  = 1,
+    HTT_TX_BE_SOUNDING_MODE  = 2,
     HTT_TX_CMN_SOUNDING_MODE = 3,
+    HTT_TX_CV_CORR_MODE      = 4,
 } htt_stats_sounding_tx_mode;
+
+#define HTT_TX_CV_CORR_MAX_NUM_COLUMNS 8
 
 typedef struct {
     htt_tlv_hdr_t tlv_hdr;
@@ -6614,6 +6671,65 @@ typedef struct {
     A_UINT32 adaptive_snd_kicked_in;
     /** Total number of times we switched back to normal sounding interval */
     A_UINT32 adaptive_snd_back_to_default;
+
+    /**
+     * Below are CV correlation feature related stats.
+     * This feature is used for DL MU MIMO, but is not available
+     * from certain legacy targets.
+     */
+
+    /** number of CV Correlation triggers for online mode */
+    A_UINT32 cv_corr_trigger_online_mode;
+    /** number of CV Correlation triggers for offline mode */
+    A_UINT32 cv_corr_trigger_offline_mode;
+    /** number of CV Correlation triggers for hybrid mode */
+    A_UINT32 cv_corr_trigger_hybrid_mode;
+    /** number of CV Correlation triggers with computation level 0 */
+    A_UINT32 cv_corr_trigger_computation_level_0;
+    /** number of CV Correlation triggers with computation level 1 */
+    A_UINT32 cv_corr_trigger_computation_level_1;
+    /** number of CV Correlation triggers with computation level 2 */
+    A_UINT32 cv_corr_trigger_computation_level_2;
+    /** number of users for which CV Correlation was triggered */
+    A_UINT32 cv_corr_trigger_num_users[HTT_TX_CV_CORR_MAX_NUM_COLUMNS];
+    /** number of streams for which CV Correlation was triggered */
+    A_UINT32 cv_corr_trigger_num_streams[HTT_TX_CV_CORR_MAX_NUM_COLUMNS];
+    /** number of CV Correlation buffers received through IPC tickle */
+    A_UINT32 cv_corr_upload_total_buf_received;
+    /** number of CV Correlation buffers fed back to the IPC ring */
+    A_UINT32 cv_corr_upload_total_buf_fed_back;
+    /** number of CV Correlation buffers for which processing failed */
+    A_UINT32 cv_corr_upload_total_processing_failed;
+    /**
+     * number of CV Correlation buffers for which processing failed,
+     * due to no users being present in parsed buffer
+     */
+    A_UINT32 cv_corr_upload_failed_total_users_zero;
+    /**
+     * number of CV Correlation buffers for which processing failed,
+     * due to number of users present in parsed buffer exceeded
+     * CV_CORR_MAX_NUM_COLUMNS
+     */
+    A_UINT32 cv_corr_upload_failed_total_users_exceeded;
+    /**
+     * number of CV Correlation buffers for which processing failed,
+     * due to peer pointer for parsed peer not available
+     */
+    A_UINT32 cv_corr_upload_failed_peer_not_found;
+    /**
+     * number of CV Correlation buffers for which processing encountered,
+     * Nss of peer exceeding SCHED_ALGO_MAX_SUPPORTED_MUMIMO_NSS
+     */
+    A_UINT32 cv_corr_upload_user_nss_exceeded;
+    /**
+     * number of CV Correlation buffers for which processing encountered,
+     * invalid reverse look up index for fetching CV correlation results
+     */
+    A_UINT32 cv_corr_upload_invalid_lookup_index;
+    /** number of users present in uploaded CV Correlation results buffer */
+    A_UINT32 cv_corr_upload_total_num_users[HTT_TX_CV_CORR_MAX_NUM_COLUMNS];
+    /** number of streams present in uploaded CV Correlation results buffer */
+    A_UINT32 cv_corr_upload_total_num_streams[HTT_TX_CV_CORR_MAX_NUM_COLUMNS];
 } htt_tx_sounding_stats_tlv;
 
 /* STATS_TYPE : HTT_DBG_EXT_STATS_TX_SOUNDING_INFO

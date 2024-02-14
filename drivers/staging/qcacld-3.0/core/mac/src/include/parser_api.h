@@ -512,6 +512,7 @@ typedef struct sSirAssocRsp {
 #endif
 #ifdef WLAN_FEATURE_11BE_MLO
 	struct sir_multi_link_ie mlo_ie;
+	struct wlan_t2lm_context t2lm_ctx;
 #endif
 } tSirAssocRsp, *tpSirAssocRsp;
 

@@ -1894,7 +1894,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 	csiphybase = soc_info->reg_map[0].mem_base;
 	csiphy_reg = &csiphy_dev->ctrl_reg->csiphy_reg;
 	status_reg_ptr = csiphy_reg->status_reg_params;
-	CAM_INFO(CAM_CSIPHY, "Opcode received: %d", cmd->op_code);
+	CAM_DBG(CAM_CSIPHY, "Opcode received: %d", cmd->op_code);
 	mutex_lock(&csiphy_dev->mutex);
 	switch (cmd->op_code) {
 	case CAM_ACQUIRE_DEV: {
@@ -1908,6 +1908,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			csiphy_dev->combo_mode);
 		if ((csiphy_dev->csiphy_state == CAM_CSIPHY_START) &&
 			(csiphy_dev->combo_mode == 0) &&
+			(csiphy_dev->cphy_dphy_combo_mode == 0) &&
 			(csiphy_dev->acquire_count > 0)) {
 			CAM_ERR(CAM_CSIPHY,
 				"NonComboMode does not support multiple acquire: Acquire_count: %d",
@@ -2039,7 +2040,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		if (csiphy_dev->csiphy_state == CAM_CSIPHY_INIT)
 			csiphy_dev->csiphy_state = CAM_CSIPHY_ACQUIRE;
 
-		CAM_INFO(CAM_CSIPHY,
+		CAM_DBG(CAM_CSIPHY,
 			"CAM_ACQUIRE_DEV: %u Type: %s acquire_count: %d combo: %u cphy+dphy combo: %u",
 			soc_info->index,
 			g_phy_data[soc_info->index].is_3phase ? "CPHY" : "DPHY",
@@ -2107,7 +2108,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 
 			cam_csiphy_update_lane(csiphy_dev, offset, false);
 
-			CAM_INFO(CAM_CSIPHY,
+			CAM_DBG(CAM_CSIPHY,
 				"CAM_STOP_PHYDEV: %d, Type: %s, dev_cnt: %u, slot: %d, Datarate: %llu, Settletime: %llu",
 				soc_info->index,
 				g_phy_data[soc_info->index].is_3phase ? "CPHY" : "DPHY",
@@ -2151,7 +2152,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 
 		csiphy_dev->csiphy_state = CAM_CSIPHY_ACQUIRE;
 
-		CAM_INFO(CAM_CSIPHY,
+		CAM_DBG(CAM_CSIPHY,
 			"CAM_STOP_PHYDEV: %u, Type: %s, slot: %d, Datarate: %llu, Settletime: %llu",
 			soc_info->index,
 			g_phy_data[soc_info->index].is_3phase ? "CPHY" : "DPHY",
@@ -2348,7 +2349,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 
 			csiphy_dev->start_dev_count++;
 
-			CAM_INFO(CAM_CSIPHY,
+			CAM_DBG(CAM_CSIPHY,
 				"CAM_START_PHYDEV: %d, Type: %s, dev_cnt: %u, slot: %d, combo: %u, cphy+dphy: %u, sec_mode: %d, Datarate: %llu, Settletime: %llu",
 				soc_info->index,
 				g_phy_data[soc_info->index].is_3phase ? "CPHY" : "DPHY",
@@ -2451,7 +2452,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		csiphy_dev->start_dev_count++;
 		csiphy_dev->csiphy_state = CAM_CSIPHY_START;
 
-		CAM_INFO(CAM_CSIPHY,
+		CAM_DBG(CAM_CSIPHY,
 			"CAM_START_PHYDEV: %d, Type: %s, slot: %d, sec_mode: %d, Datarate: %llu, Settletime: %llu, combo: %u, cphy+dphy: %u",
 			soc_info->index,
 			g_phy_data[soc_info->index].is_3phase ? "CPHY" : "DPHY",

@@ -932,6 +932,68 @@ lim_update_vdev_rate_set(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO
+static void
+lim_process_assoc_rsp_t2lm(struct pe_session *session,
+			   tpSirAssocRsp assoc_rsp)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct wlan_t2lm_context *t2lm_ctx;
+	struct wlan_mlo_dev_context *mlo_dev_ctx;
+
+	if (!session || !assoc_rsp) {
+		pe_err("invalid input parameters");
+		return;
+	}
+
+	vdev = session->vdev;
+	if (!vdev || !wlan_vdev_mlme_is_mlo_vdev(vdev))
+		return;
+
+	mlo_dev_ctx = vdev->mlo_dev_ctx;
+	if (!mlo_dev_ctx) {
+		pe_err("ml dev ctx is null");
+		return;
+	}
+
+	if (wlan_vdev_mlme_is_mlo_link_vdev(vdev))
+		return;
+
+	if (assoc_rsp->t2lm_ctx.upcoming_t2lm.t2lm.direction ==
+	    WLAN_T2LM_INVALID_DIRECTION &&
+	    assoc_rsp->t2lm_ctx.established_t2lm.t2lm.direction ==
+	    WLAN_T2LM_INVALID_DIRECTION) {
+		pe_debug("No t2lm IE");
+		return;
+	}
+
+	t2lm_ctx = &mlo_dev_ctx->sta_ctx->copied_t2lm_ie_assoc_rsp;
+
+	if (assoc_rsp->t2lm_ctx.established_t2lm.t2lm.expected_duration_present &&
+	    !assoc_rsp->t2lm_ctx.established_t2lm.t2lm.mapping_switch_time_present &&
+	    assoc_rsp->t2lm_ctx.established_t2lm.t2lm.direction !=
+			WLAN_T2LM_INVALID_DIRECTION) {
+		qdf_mem_copy(&t2lm_ctx->established_t2lm.t2lm,
+			     &assoc_rsp->t2lm_ctx.established_t2lm.t2lm,
+			     sizeof(struct wlan_t2lm_info));
+	}
+
+	if (assoc_rsp->t2lm_ctx.upcoming_t2lm.t2lm.mapping_switch_time_present &&
+	    assoc_rsp->t2lm_ctx.established_t2lm.t2lm.direction !=
+			WLAN_T2LM_INVALID_DIRECTION) {
+		qdf_mem_copy(&t2lm_ctx->upcoming_t2lm.t2lm,
+			     &assoc_rsp->t2lm_ctx.upcoming_t2lm.t2lm,
+			     sizeof(struct wlan_t2lm_info));
+	}
+}
+#else
+static inline void
+lim_process_assoc_rsp_t2lm(struct pe_session *session,
+			   tpSirAssocRsp assoc_rsp)
+{
+}
+#endif
+
 /**
  * lim_process_assoc_rsp_frame() - Processes assoc response
  * @mac_ctx: Pointer to Global MAC structure
@@ -1473,6 +1535,8 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 
 	lim_objmgr_update_emlsr_caps(mac_ctx->psoc, session_entry->smeSessionId,
 				     assoc_rsp);
+
+	lim_process_assoc_rsp_t2lm(session_entry, assoc_rsp);
 	/*
 	 * Extract the AP capabilities from the beacon that
 	 * was received earlier

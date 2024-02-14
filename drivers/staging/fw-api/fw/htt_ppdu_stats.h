@@ -1057,6 +1057,20 @@ typedef struct {
          ((_var) |= ((_val) << HTT_PPDU_STATS_USER_COMMON_TLV_CHAIN_ENABLE_BITS_S)); \
      } while (0)
 
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_M  0x00010000
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_S          16
+
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_M) >> \
+    HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_S)
+
+#define HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG, _val); \
+         ((_var) |= ((_val) << HTT_PPDU_STATS_USER_COMMON_TLV_IS_SMART_ULOFDMA_BASIC_TRIG_S)); \
+     } while (0)
+
+
 #define HTT_PPDU_STATS_USER_COMMON_TLV_TX_PWR_CHAINS_PER_U32 4
 #define HTT_PPDU_STATS_USER_COMMON_TLV_TX_PWR_MASK 0x000000ff
 
@@ -1194,10 +1208,15 @@ typedef struct {
      * Default value: 1
      * tx_pwr[0] value is used for all chains if chain_enable_bits field
      * is set to 1.
+     *
+     * is_smart_ulofdma_basic_trig:
+     * To check if user grouped in UL OFDMA Basic Trigger Frame is
+     * due to Smart Basic Trigger.
      */
-    A_UINT32 tx_pwr_multiplier  : 8,
-             chain_enable_bits  : 8,
-             reserved2          : 16;
+    A_UINT32 tx_pwr_multiplier          :  8,
+             chain_enable_bits          :  8,
+             is_smart_ulofdma_basic_trig:  1,
+             reserved2                  : 15;
 
     /*
      * Transmit powers (signed values packed into unsigned bitfields)
@@ -1819,6 +1838,19 @@ typedef enum HTT_PPDU_STATS_RESP_PPDU_TYPE HTT_PPDU_STATS_RESP_PPDU_TYPE;
         ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_EXTRA_EHT_LTF_S)); \
     } while (0)
 
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_M  0x00020000
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_S          17
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_M) >> \
+    HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_S)
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_SET (_var , _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_S)); \
+    } while (0)
+
 typedef enum HTT_PPDU_STATS_RU_SIZE {
     HTT_PPDU_STATS_RU_26,
     HTT_PPDU_STATS_RU_52,
@@ -2009,7 +2041,8 @@ typedef struct {
      */
     A_UINT32 punc_pattern_bitmap: 16,
              extra_eht_ltf:       1,
-             reserved4:           15;
+             is_min_rate:         1,
+             reserved4:           14;
 } htt_ppdu_stats_user_rate_tlv;
 
 #define HTT_PPDU_STATS_USR_RATE_VALID_M     0x80000000
@@ -2479,6 +2512,11 @@ typedef struct {
      * for BW supported by Smart Antenna - 320 MHZ
      */
     A_UINT32 max_rates_ext;
+
+    /* hw_prot_dur_us:
+     * hw protection frame's FES duration in micro seconds.
+     */
+    A_UINT32 hw_prot_dur_us;
 } htt_ppdu_stats_user_cmpltn_common_tlv;
 
 #define HTT_PPDU_STATS_USER_CMPLTN_BA_BITMAP_TLV_TID_NUM_M     0x000000ff

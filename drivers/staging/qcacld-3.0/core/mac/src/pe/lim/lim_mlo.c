@@ -456,8 +456,8 @@ void lim_mlo_roam_peer_disconn_del(struct wlan_objmgr_vdev *vdev)
 
 	status = wlan_vdev_get_bss_peer_mac(vdev, &bssid);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		pe_err("vdev id %d : failed to get bssid",
-		       wlan_vdev_get_id(vdev));
+		pe_debug("vdev id %d : failed to get bssid",
+			 wlan_vdev_get_id(vdev));
 		return;
 	}
 

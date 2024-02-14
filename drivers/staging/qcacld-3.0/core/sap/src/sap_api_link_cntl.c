@@ -104,6 +104,10 @@ static inline bool sap_acs_cfg_is_chwidth_320mhz(uint16_t width)
 static void sap_acs_set_puncture_bitmap(struct sap_context *sap_ctx,
 					struct ch_params *ch_params)
 {
+	sap_debug("ccfs0 %d ch_width %d, punct 0x%x",
+		  ch_params->center_freq_seg0,
+		  ch_params->ch_width,
+		  ch_params->reg_punc_bitmap);
 	sap_ctx->acs_cfg->acs_puncture_bitmap = ch_params->reg_punc_bitmap;
 }
 #else
@@ -134,7 +138,8 @@ void sap_config_acs_result(mac_handle_t mac_handle,
 	enum phy_ch_width new_ch_width;
 
 	ch_params.ch_width = sap_ctx->acs_cfg->ch_width;
-	sap_acs_set_puncture_support(sap_ctx, &ch_params);
+	if (sap_phymode_is_eht(sap_ctx->phyMode))
+		wlan_reg_set_create_punc_bitmap(&ch_params, true);
 
 	new_ch_width =
 		wlan_sap_get_concurrent_bw(mac_ctx->pdev, mac_ctx->psoc,
@@ -456,7 +461,8 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 	 * Channel change is successful. If the new channel is a DFS channel,
 	 * then we will to perform channel availability check for 60 seconds
 	 */
-	sap_nofl_debug("sapdfs: SAP CSA: freq to [%d] state %d",
+	sap_nofl_debug("sap_fsm: vdev %d: sapdfs: SAP CSA: freq %d state %d",
+		       sap_ctx->vdev_id,
 		       mac_ctx->sap.SapDfsInfo.target_chan_freq,
 		       sap_ctx->fsm_state);
 	target_chan_freq = mac_ctx->sap.SapDfsInfo.target_chan_freq;
@@ -464,8 +470,8 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 	/* If SAP is not in starting or started state don't proceed further */
 	if (sap_ctx->fsm_state == SAP_INIT ||
 	    sap_ctx->fsm_state == SAP_STOPPING) {
-		sap_info("sapdfs: state [%d] not starting SAP after channel change",
-			  sap_ctx->fsm_state);
+		sap_info("sap_fsm: vdev %d: sapdfs: state %d, not starting SAP after channel change",
+			 sap_ctx->vdev_id, sap_ctx->fsm_state);
 		return;
 	}
 
@@ -503,10 +509,11 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 	if (WLAN_REG_IS_6GHZ_CHAN_FREQ(sap_ctx->chan_freq))
 		is_ch_dfs = false;
 
+	sap_ctx->fsm_state = SAP_STARTING;
+	sap_debug("sap_fsm: vdev %d: => SAP_STARTING", sap_ctx->vdev_id);
 	sap_ctx->chan_freq = target_chan_freq;
 	/* check if currently selected channel is a DFS channel */
 	if (is_ch_dfs && wlan_pre_cac_complete_get(sap_ctx->vdev)) {
-		sap_ctx->fsm_state = SAP_STARTING;
 		sap_ctx->sap_radar_found_status = false;
 		sap_event.event = eSAP_MAC_START_BSS_SUCCESS;
 		sap_event.params = csr_roam_info;
@@ -519,14 +526,12 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 		    policy_mgr_get_dfs_master_dynamic_enabled(
 					mac_ctx->psoc,
 					sap_ctx->sessionId)) {
-			sap_ctx->fsm_state = SAP_INIT;
 			/* DFS Channel */
 			sap_event.event = eSAP_DFS_CHANNEL_CAC_START;
 			sap_event.params = csr_roam_info;
 			sap_event.u1 = 0;
 			sap_event.u2 = 0;
 		} else {
-			sap_ctx->fsm_state = SAP_STARTING;
 			sap_ctx->sap_radar_found_status = false;
 			sap_event.event = eSAP_MAC_START_BSS_SUCCESS;
 			sap_event.params = csr_roam_info;
@@ -535,7 +540,6 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 		}
 	} else {
 		/* non-DFS channel */
-		sap_ctx->fsm_state = SAP_STARTING;
 		sap_ctx->sap_radar_found_status = false;
 		sap_event.event = eSAP_MAC_START_BSS_SUCCESS;
 		sap_event.params = csr_roam_info;
@@ -594,8 +598,6 @@ wlansap_roam_process_dfs_chansw_update(mac_handle_t mac_handle,
 			  sap_ctx->fsm_state);
 		return;
 	}
-
-	sap_debug("sapdfs: from state SAP_STARTED => SAP_STOPPING");
 	sap_ctx->is_chan_change_inprogress = true;
 	/*
 	 * The associated stations have been informed to move to a different

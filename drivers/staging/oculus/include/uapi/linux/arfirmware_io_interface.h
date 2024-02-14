@@ -91,6 +91,7 @@ struct __packed ar_region_register_req {
  * Structure for pending a payload
  */
 struct __packed ar_pend_payload_req {
+	uint16_t pend_id;
 	/// External mem region id associated with this address range
 	uint16_t mem_region_id;
 	/// payload chunk count

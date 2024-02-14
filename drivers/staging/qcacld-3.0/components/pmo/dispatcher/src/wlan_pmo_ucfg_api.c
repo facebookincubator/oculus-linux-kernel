@@ -568,19 +568,7 @@ QDF_STATUS ucfg_pmo_config_listen_interval(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS ucfg_pmo_get_listen_interval(struct wlan_objmgr_vdev *vdev,
 					uint32_t *listen_interval)
 {
-	struct pmo_vdev_priv_obj *vdev_ctx;
-
-	if (!vdev)
-		return QDF_STATUS_E_INVAL;
-
-	vdev_ctx = pmo_vdev_get_priv(vdev);
-	if (!vdev_ctx)
-		return QDF_STATUS_E_INVAL;
-
-	qdf_spin_lock_bh(&vdev_ctx->pmo_vdev_lock);
-	*listen_interval = vdev_ctx->dyn_listen_interval;
-	qdf_spin_unlock_bh(&vdev_ctx->pmo_vdev_lock);
-	return QDF_STATUS_SUCCESS;
+	return pmo_core_get_listen_interval(vdev, listen_interval);
 }
 
 QDF_STATUS ucfg_pmo_config_modulated_dtim(struct wlan_objmgr_vdev *vdev,

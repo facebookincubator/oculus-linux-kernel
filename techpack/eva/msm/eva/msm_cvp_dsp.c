@@ -1630,7 +1630,7 @@ static void __dsp_cvp_power_req(struct cvp_dsp_cmd_msg *cmd)
 			dsp2cpu_cmd->session_cpu_high,
 			dsp2cpu_cmd->session_cpu_low);
 
-	if (!inst) {
+	if (!inst || !is_cvp_inst_valid(inst)) {
 		cmd->ret = -1;
 		goto dsp_fail_power_req;
 	}
@@ -1696,6 +1696,12 @@ static void __dsp_cvp_buf_register(struct cvp_dsp_cmd_msg *cmd)
 	inst = (struct msm_cvp_inst *)ptr_dsp2cpu(
 			dsp2cpu_cmd->session_cpu_high,
 			dsp2cpu_cmd->session_cpu_low);
+	if (!inst || !is_cvp_inst_valid(inst)) {
+		dprintk(CVP_ERR, "%s Failed to get inst\n",
+			__func__);
+		cmd->ret = -1;
+		goto dsp_fail_buf_reg;
+	}
 
 	kmd->type = EVA_KMD_REGISTER_BUFFER;
 	kmd_buf = (struct eva_kmd_buffer *)&(kmd->data.regbuf);
@@ -1754,6 +1760,12 @@ static void __dsp_cvp_buf_deregister(struct cvp_dsp_cmd_msg *cmd)
 	inst = (struct msm_cvp_inst *)ptr_dsp2cpu(
 			dsp2cpu_cmd->session_cpu_high,
 			dsp2cpu_cmd->session_cpu_low);
+	if (!inst || !is_cvp_inst_valid(inst)) {
+		dprintk(CVP_ERR, "%s Failed to get inst\n",
+			__func__);
+		cmd->ret = -1;
+		goto fail_dsp_buf_dereg;
+	}
 
 	kmd->type = EVA_KMD_UNREGISTER_BUFFER;
 	kmd_buf = (struct eva_kmd_buffer *)&(kmd->data.regbuf);
@@ -1811,6 +1823,11 @@ static void __dsp_cvp_mem_alloc(struct cvp_dsp_cmd_msg *cmd)
 	inst = (struct msm_cvp_inst *)ptr_dsp2cpu(
 			dsp2cpu_cmd->session_cpu_high,
 			dsp2cpu_cmd->session_cpu_low);
+	if (!inst || !is_cvp_inst_valid(inst)) {
+		dprintk(CVP_ERR, "%s Failed to get inst\n",
+			__func__);
+		goto fail_fastrpc_node;
+	}
 
 	buf = kmem_cache_zalloc(cvp_driver->buf_cache, GFP_KERNEL);
 	if (!buf)
@@ -1887,7 +1904,7 @@ static void __dsp_cvp_mem_free(struct cvp_dsp_cmd_msg *cmd)
 	inst = (struct msm_cvp_inst *)ptr_dsp2cpu(
 			dsp2cpu_cmd->session_cpu_high,
 			dsp2cpu_cmd->session_cpu_low);
-	if (!inst) {
+	if (!inst || !is_cvp_inst_valid(inst)) {
 		dprintk(CVP_ERR, "%s Failed to get inst\n",
 			__func__);
 		cmd->ret = -1;

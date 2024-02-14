@@ -398,6 +398,7 @@ struct htc_endpoint_stats {
  * @HTC_LINK_VOTE_NDP_USER_ID: ndp user id
  * @HTC_LINK_VOTE_SAP_DFS_USER_ID: sap dfs user id
  * @HTC_LINK_VOTE_STA_USER_ID: sta user id
+ * @HTC_LINK_VOTE_DIRECT_LINK_USER_ID: Direct link user ID
  * @HTC_LINK_VOTE_INVALID_MAX_USER_ID: max user id
  */
 enum htc_link_vote_user_id {
@@ -407,6 +408,7 @@ enum htc_link_vote_user_id {
 	HTC_LINK_VOTE_NDP_USER_ID = 3,
 	HTC_LINK_VOTE_SAP_DFS_USER_ID = 4,
 	HTC_LINK_VOTE_STA_USER_ID = 5,
+	HTC_LINK_VOTE_DIRECT_LINK_USER_ID = 6,
 	HTC_LINK_VOTE_INVALID_MAX_USER_ID
 };
 

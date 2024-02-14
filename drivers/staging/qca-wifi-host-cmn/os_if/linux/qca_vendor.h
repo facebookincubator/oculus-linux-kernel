@@ -689,6 +689,17 @@
  *	%NL80211_CMD_GET_SURVEY response.
  *	CU = %NL80211_SURVEY_INFO_TIME_BUSY * 100 / %NL80211_SURVEY_INFO_TIME.
  *	This command is only used for STA mode.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_LINK_RECONFIG: Notify userspace about the removal
+ *	of STA MLD setup links due to AP MLD removing the corresponding
+ *	affiliated APs with Multi-Link reconfiguration. If all the STA MLD setup
+ *	links are removed during Multi-Link reconfiguration, the driver shall
+ *	use %NL80211_CMD_DISCONNECT instead of this command since it is a
+ *	connection drop. The attributes used with this command are defined in
+ *	enum qca_wlan_vendor_attr_link_reconfig.
+ *	Note that the attribute
+ *	%QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AP_MLD_ADDR may not correspond to
+ *	the current connected AP MLD address.
  */
 
 enum qca_nl80211_vendor_subcmds {
@@ -946,6 +957,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS = 226,
 	QCA_NL80211_VENDOR_SUBCMD_MLO_LINK_STATE = 227,
 	QCA_NL80211_VENDOR_SUBCMD_CONNECTED_CHANNEL_STATS = 228,
+	QCA_NL80211_VENDOR_SUBCMD_LINK_RECONFIG = 230,
 };
 
 enum qca_wlan_vendor_tos {
@@ -5356,10 +5368,50 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_EHT_MLO_MODE = 90,
 
+	/* Nested attribute to indicate EHT MLO links to be forced active.
+	 * It contains link MAC address attributes. These nested attributes are
+	 * of the type NL80211_ATTR_MAC and are used to force enabling of the
+	 * MLO links corresponding to the indicated link MAC addresses.
+	 * Subsequently, the links corresponding to the link MAC addresses that
+	 * are not indicated are forced inactive.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_EHT_MLO_ACTIVE_LINKS = 92,
+
+	/* 8-bit unsigned value to configure EMLSR mode entry or exit.
+	 * Uses enum qca_wlan_emlsr_mode values.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_EMLSR_MODE_SWITCH = 93,
+
+	/* 8-bit unsigned value. This attribute is used to dynamically
+	 * enable/suspend trigger based UL MU transmission.
+	 * This is supported in STA mode and the device sends Operating
+	 * Mode Indication to inform the change as described in
+	 * IEEE Std 802.11ax-2021, 26.9.
+	 *
+	 * This attribute can be configured when the STA is associated
+	 * to an AP and the configuration is maintained until the current
+	 * association terminates.
+	 *
+	 * By default all UL MU transmissions are enabled.
+	 *
+	 * Uses enum qca_ul_mu_config values.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_UL_MU_CONFIG = 95,
+
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_ul_mu_config - UL MU configuration
+ * @QCA_UL_MU_SUSPEND - All trigger based UL MU transmission is suspended
+ * @QCA_UL_MU_ENABLE - All trigger based UL MU transmission is enabled
+ */
+enum qca_ul_mu_config {
+	QCA_UL_MU_SUSPEND = 0,
+	QCA_UL_MU_ENABLE = 1,
 };
 
 /**
@@ -8918,9 +8970,19 @@ enum qca_wlan_eht_mlo_mode {
 };
 
 /**
- * enum qca_wlan_vendor_attr_he_omi_tx: Represents attributes for
- * HE operating mode control transmit request. These attributes are
- * sent as part of QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_HE_OMI_TX and
+ * enum qca_wlan_emlsr_mode: Enhanced Multi-link Single Radio mode configuration
+ * @QCA_WLAN_EMLSR_MODE_ENTER: Enter EMLSR mode
+ * @QCA_WLAN_EMLSR_MODE_EXIT: Exit EMLSR mode
+ */
+enum qca_wlan_emlsr_mode {
+	QCA_WLAN_EMLSR_MODE_ENTER = 0,
+	QCA_WLAN_EMLSR_MODE_EXIT = 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_omi_tx: Represents attributes for HE and
+ * EHT operating mode control transmit request. These attributes are
+ * sent as part of QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_OMI_TX and
  * QCA_NL80211_VENDOR_SUBCMD_WIFI_TEST_CONFIGURATION.
  *
  * @QCA_WLAN_VENDOR_ATTR_HE_OMI_RX_NSS: Mandatory 8-bit unsigned value
@@ -8950,20 +9012,47 @@ enum qca_wlan_eht_mlo_mode {
  * 1 - Determine which HE TB PPDU types are allowed by the STA if UL MU disable
  * bit is not set, else UL MU Tx is suspended.
  *
+ * @QCA_WLAN_VENDOR_ATTR_EHT_OMI_RX_NSS_EXTN: 8-bit unsigned value in the EHT OM
+ * Control subfield combined with the Rx NSS subfield in the OM Control subfield
+ * indicates NSS - 1, where NSS is the maximum number of spatial streams that
+ * STA supports in reception for PPDU bandwidths less than or equal to 80 MHz.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_EHT_OMI_CH_BW_EXTN: 8-bit unsigned value indicates
+ * 320 MHz operating channel width supported by the EHT STA for both reception
+ * and transmission.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_EHT_OMI_TX_NSS_EXTN: 8-bit unsigned value in the EHT OM
+ * Control subfield combined with the Tx NSTS subfield in OM Control subfield
+ * indicates NSTS - 1, where NSTS is the maximum number of space-time streams
+ * that the STA supports in transmission for PPDU bandwidths less than or equal
+ * to 80 MHz.
  */
-enum qca_wlan_vendor_attr_he_omi_tx {
+enum qca_wlan_vendor_attr_omi_tx {
 	QCA_WLAN_VENDOR_ATTR_HE_OMI_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_HE_OMI_RX_NSS = 1,
 	QCA_WLAN_VENDOR_ATTR_HE_OMI_CH_BW = 2,
 	QCA_WLAN_VENDOR_ATTR_HE_OMI_ULMU_DISABLE = 3,
 	QCA_WLAN_VENDOR_ATTR_HE_OMI_TX_NSTS = 4,
 	QCA_WLAN_VENDOR_ATTR_HE_OMI_ULMU_DATA_DISABLE = 5,
+	QCA_WLAN_VENDOR_ATTR_EHT_OMI_RX_NSS_EXTN = 6,
+	QCA_WLAN_VENDOR_ATTR_EHT_OMI_CH_BW_EXTN = 7,
+	QCA_WLAN_VENDOR_ATTR_EHT_OMI_TX_NSS_EXTN = 8,
 
 	/* keep last */
-	QCA_WLAN_VENDOR_ATTR_HE_OMI_AFTER_LAST,
-	QCA_WLAN_VENDOR_ATTR_HE_OMI_MAX =
-	QCA_WLAN_VENDOR_ATTR_HE_OMI_AFTER_LAST - 1,
+	QCA_WLAN_VENDOR_ATTR_OMI_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_OMI_MAX =
+	QCA_WLAN_VENDOR_ATTR_OMI_AFTER_LAST - 1,
 };
+
+/* deprecated legacy names */
+#define QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_HE_OMI_TX \
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_OMI_TX
+#define qca_wlan_vendor_attr_he_omi_tx \
+	qca_wlan_vendor_attr_omi_tx
+#define QCA_WLAN_VENDOR_ATTR_HE_OMI_AFTER_LAST \
+	QCA_WLAN_VENDOR_ATTR_OMI_AFTER_LAST
+#define QCA_WLAN_VENDOR_ATTR_HE_OMI_MAX \
+	QCA_WLAN_VENDOR_ATTR_OMI_MAX
 
 /**
  * enum qca_wlan_vendor_phy_mode - Different PHY modes
@@ -9282,10 +9371,10 @@ enum qca_wlan_vendor_attr_wifi_test_config {
 	 * channel bandwidth, Tx Nsts and UL MU disable attributes.
 	 * These nested attributes are used to send HE operating mode control
 	 * with configured values.
-	 * Uses the enum qca_wlan_vendor_attr_he_omi_tx attributes.
+	 * Uses the enum qca_wlan_vendor_attr_omi_tx attributes.
 	 * This attribute is used to configure the testbed device.
 	 */
-	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_HE_OMI_TX = 33,
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_OMI_TX = 33,
 
 	/* 8-bit unsigned value to configure +HTC_HE support to indicate the
 	 * support for the reception of a frame that carries an HE variant
@@ -9569,6 +9658,46 @@ enum qca_wlan_vendor_attr_wifi_test_config {
 	 * the 1500 Mb/s and the maximum supported data rate.
 	 */
 	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_EHT_TB_SOUNDING_FB_RL = 66,
+
+	/* 8-bit unsigned value to configure the support for receiving an MPDU
+	 * that contains an EHT operating mode control subfield.
+	 * This attribute is used to configure the testbed device.
+	 * 1-enable, 0-disable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_EHT_OM_CTRL_SUPPORT = 67,
+
+	/* 8-bit unsigned value to configure the driver with EMLSR padding delay
+	 * subfield value.
+	 *
+	 * 0 - 0 us
+	 * 1 - 32 us
+	 * 2 - 64 us
+	 * 3 - 128 us
+	 * 4 - 256 us
+	 * 5-255 - Reserved
+	 *
+	 * This attribute is used for testing purposes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_EMLSR_PADDING_DELAY = 68,
+
+	/*
+	 * 8-bit unsigned value to indicate the firmware to force the active MLO
+	 * links to power save mode for the configured number of beacon periods.
+	 * This allows the firmware to suspend STA links for X beacon periods
+	 * and remain asleep even if the AP advertises TIM as opposed to regular
+	 * power save mode where STA links wake up if the AP indicates that it
+	 * has buffered data to send.
+	 * This attribute is used to configure the testbed device.
+	 */
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_FORCE_MLO_POWER_SAVE_BCN_PERIOD = 69,
+
+	/*
+	 * 8-bit unsigned value to indicate the firmware to be in STR MLMR mode
+	 * to enable simultaneous transmission of PPDUs on all active links.
+	 * 0 - Default behavior
+	 * 1 - Enter STR mode for simultaneous data transmission on all links
+	 */
+	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_EHT_MLO_STR_TX = 70,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_AFTER_LAST,
@@ -15882,4 +16011,24 @@ enum qca_wlan_vendor_attr_mlo_link_state {
 	QCA_WLAN_VENDOR_ATTR_LINK_STATE_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_link_reconfig: Definition of attributes used
+ * with %QCA_NL80211_VENDOR_SUBCMD_LINK_RECONFIG event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AP_MLD_ADDR: Required attribute.
+ * 6-byte AP MLD address of the AP which indicated the link reconfiguration.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_REMOVED_LINKS: Required u16 attribute.
+ * A bitmap of the removed setup links link IDs.
+ */
+enum qca_wlan_vendor_attr_link_reconfig {
+	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AP_MLD_ADDR = 1,
+	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_REMOVED_LINKS = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_MAX =
+	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AFTER_LAST - 1,
+};
 #endif

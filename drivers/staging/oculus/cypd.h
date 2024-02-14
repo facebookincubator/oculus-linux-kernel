@@ -11,44 +11,10 @@
 struct cypd;
 struct device;
 
-/* Standard IDs */
-#define CYPD_SID			0xff00
-
-/* Structured VDM Commands */
-#define CYPD_SVDM_DISCOVER_IDENTITY	0x1
-#define CYPD_SVDM_DISCOVER_SVIDS	0x2
-#define CYPD_SVDM_DISCOVER_MODES	0x3
-#define CYPD_SVDM_ENTER_MODE		0x4
-#define CYPD_SVDM_EXIT_MODE		0x5
-#define CYPD_SVDM_ATTENTION		0x6
-
-enum data_role {
-	DR_NONE = -1,
-	DR_UFP = 0,
-	DR_DFP = 1,
-};
-
-enum power_role {
-	PR_NONE = -1,
-	PR_SINK = 0,
-	PR_SRC = 1,
-};
-
-enum pd_spec_rev {
-	PD_REV_20 = 1,
-	PD_REV_30 = 2,
-};
-
 enum pd_sop_type {
 	SOP_MSG = 0,
 	SOPI_MSG,
 	SOPII_MSG,
-};
-
-enum cypd3177_iio_prop {
-	CYPD_IIO_PROP_CHIP_VERSION = 0,
-	CYPD_IIO_PROP_PD_ACTIVE,
-	CYPD_IIO_PROP_MAX
 };
 
 struct cypd_phy_params {

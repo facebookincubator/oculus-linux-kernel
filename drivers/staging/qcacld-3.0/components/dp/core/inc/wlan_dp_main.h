@@ -707,4 +707,45 @@ QDF_STATUS dp_config_direct_link(struct wlan_dp_intf *dp_intf,
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+#ifdef WLAN_DP_PROFILE_SUPPORT
+/**
+ * wlan_dp_get_profile_info() - Get DP memory profile info
+ *
+ * Return: None
+ */
+struct wlan_dp_memory_profile_info *wlan_dp_get_profile_info(void);
+
+/**
+ * wlan_dp_select_profile_cfg() - Select DP profile configuration
+ * @psoc: psoc context
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_dp_select_profile_cfg(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * wlan_dp_soc_cfg_sync_profile() - Sync DP soc cfg items with profile
+ * @cdp_soc: cdp soc context
+ *
+ * Return: None
+ */
+void wlan_dp_soc_cfg_sync_profile(struct cdp_soc_t *cdp_soc);
+
+/**
+ * wlan_dp_pdev_cfg_sync_profile() - Sync DP pdev cfg items with profile
+ * @cdp_soc: cdp soc context
+ * @pdev_id: pdev id
+ *
+ * Return: QDF_STATUS
+ */
+void wlan_dp_pdev_cfg_sync_profile(struct cdp_soc_t *cdp_soc, uint8_t pdev_id);
+#else
+
+static inline
+QDF_STATUS wlan_dp_select_profile_cfg(struct wlan_objmgr_psoc *psoc)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+#endif
 #endif

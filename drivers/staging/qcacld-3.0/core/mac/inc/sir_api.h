@@ -4658,6 +4658,16 @@ struct sme_sta_inactivity_timeout {
 	uint32_t sta_inactivity_timeout;
 };
 
+/**
+ * struct sme_vdev_pause - Pause vdev for a defined time interval
+ * @session_id: Session id
+ * @vdev_pause_duration: vdev pause duration
+ */
+struct sme_vdev_pause {
+	uint8_t session_id;
+	uint8_t vdev_pause_duration;
+};
+
 /*
  * struct wow_pulse_mode - WoW Pulse set cmd struct
  * @wow_pulse_enable: enable or disable this feature

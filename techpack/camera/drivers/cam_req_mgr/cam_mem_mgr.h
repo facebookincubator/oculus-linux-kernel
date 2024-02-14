@@ -62,6 +62,7 @@ struct cam_mem_buf_queue {
 	struct dma_buf *dma_buf;
 	struct mutex q_lock;
 	int32_t hdls[CAM_MEM_MMU_MAX_HANDLE];
+	dma_addr_t iova[CAM_MEM_MMU_MAX_HANDLE];
 	int32_t num_hdl;
 	int32_t fd;
 	unsigned long i_ino;
@@ -69,7 +70,6 @@ struct cam_mem_buf_queue {
 	int32_t align;
 	size_t len;
 	uint32_t flags;
-	dma_addr_t vaddr;
 	uintptr_t kmdvaddr;
 	bool active;
 	bool is_imported;

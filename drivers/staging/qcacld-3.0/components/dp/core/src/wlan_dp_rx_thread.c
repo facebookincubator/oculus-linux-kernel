@@ -35,13 +35,13 @@
 #include "qdf_net_if.h"
 
 /* Timeout in ms to wait for a DP rx thread */
-#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define DP_RX_THREAD_WAIT_TIMEOUT 4000
 #else
 #define DP_RX_THREAD_WAIT_TIMEOUT 2000
 #endif
 
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 /* number of rx pkts that thread should yield */
 #define DP_RX_THREAD_YIELD_PKT_CNT 20000
 #endif
@@ -438,7 +438,7 @@ static qdf_nbuf_t dp_rx_tm_thread_dequeue(struct dp_rx_thread *rx_thread)
 	return head;
 }
 
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 /**
  * dp_rx_thread_should_yield() - check whether rx loop should yield
  * @iter: iteration of packets received
@@ -1185,7 +1185,7 @@ QDF_STATUS dp_rx_thread_flush_by_vdev_id(struct dp_rx_thread *rx_thread,
  *
  * Return: QDF_STATUS_SUCCESS
  */
-#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 QDF_STATUS dp_rx_tm_flush_by_vdev_id(struct dp_rx_tm_handle *rx_tm_hdl,
 				     uint8_t vdev_id)
 {

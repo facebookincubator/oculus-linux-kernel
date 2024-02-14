@@ -37,6 +37,7 @@ CFLAGS_vgettimeofday.o = -O2 -include $(c-gettimeofday-y)
 endif
 
 # Disable gcov profiling for VDSO code
+PGO_PROFILE	:= n
 GCOV_PROFILE := n
 
 # Prevents link failures: __sanitizer_cov_trace_pc() is not linked in.

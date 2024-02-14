@@ -2352,6 +2352,7 @@ end:
 
 QDF_STATUS ucfg_dp_prealloc_init(struct cdp_ctrl_objmgr_psoc *ctrl_psoc)
 {
+	wlan_dp_select_profile_cfg((struct wlan_objmgr_psoc *)ctrl_psoc);
 	return dp_prealloc_init(ctrl_psoc);
 }
 

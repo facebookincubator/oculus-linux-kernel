@@ -1241,15 +1241,15 @@ static void batt_psy_unregister_notifier(struct charging_dock_device_t *ddev)
 	power_supply_unreg_notifier(&ddev->nb);
 }
 
-static void batt_psy_init(struct charging_dock_device_t *ddev)
+static int batt_psy_init(struct charging_dock_device_t *ddev)
 {
-	ddev->nb.notifier_call = NULL;
 	ddev->battery_psy = power_supply_get_by_name("battery");
-	if (IS_ERR_OR_NULL(ddev->battery_psy)) {
-		dev_err(ddev->dev, "Failed to get battery power supply, returning\n");
-		return;
-	}
+	if (IS_ERR_OR_NULL(ddev->battery_psy))
+		return PTR_ERR_OR_ZERO(ddev->battery_psy);
+
 	ddev->nb.notifier_call = batt_psy_notifier_call;
+
+	return 0;
 }
 
 static int charging_dock_probe(struct platform_device *pdev)
@@ -1266,6 +1266,14 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev = devm_kzalloc(&pdev->dev, sizeof(*ddev), GFP_KERNEL);
 	if (!ddev)
 		return -ENOMEM;
+
+	ddev->send_state_of_charge = of_property_read_bool(pdev->dev.of_node,
+			"send-state-of-charge");
+	dev_dbg(&pdev->dev, "Send state of charge=%d\n", ddev->send_state_of_charge);
+
+	if (ddev->send_state_of_charge &&
+		(batt_psy_init(ddev) || !ddev->battery_psy))
+			return -EPROBE_DEFER;
 
 	// Interface type is not known until we get a vdm_connect callback
 	ddev->intf_type = INTF_TYPE_UNKNOWN;
@@ -1407,10 +1415,6 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->params.broadcast_period = (u8)temp_val;
 	dev_dbg(&pdev->dev, "Broadcast period=%d\n", ddev->params.broadcast_period);
 
-	ddev->send_state_of_charge = of_property_read_bool(pdev->dev.of_node,
-			"send-state-of-charge");
-	dev_dbg(&pdev->dev, "Send state of charge=%d\n", ddev->send_state_of_charge);
-
 	mutex_init(&ddev->lock);
 	INIT_WORK(&ddev->work, charging_dock_handle_work);
 	if (ddev->send_state_of_charge) {
@@ -1463,13 +1467,10 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, ddev);
 
-	charging_dock_create_sysfs(ddev);
-
-	if (ddev->send_state_of_charge) {
-		/* Query power supply and register for events */
-		batt_psy_init(ddev);
+	if (ddev->send_state_of_charge)
 		batt_psy_register_notifier(ddev);
-	}
+
+	charging_dock_create_sysfs(ddev);
 
 	return result;
 }
@@ -1484,8 +1485,10 @@ static int charging_dock_remove(struct platform_device *pdev)
 	if (ddev->upd != NULL)
 		usbpd_unregister_svid(ddev->upd, &ddev->usbpd_vdm_handler);
 
-	if (ddev->cpd != NULL)
+	if (ddev->cpd != NULL) {
 		cypd_unregister_svid(ddev->cpd, &ddev->cypd_vdm_handler);
+		cypd_unregister_svid(ddev->cpd, &ddev->cypd_vdm_handler_alt);
+	}
 
 	if (ddev->gpd != NULL)
 		list_for_each_entry(handler_info, &ddev->glink_handlers, entry)

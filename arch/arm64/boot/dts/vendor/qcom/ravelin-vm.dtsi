@@ -21,6 +21,13 @@
 				status = "disabled";
 			};
 		};
+		vcpus {
+			config = "/cpus";
+			affinity = "static";
+			affinity-map = <0x0 0x0>;
+			sched-priority = <0>;       /* relative to PVM */
+			sched-timeslice = <2000>;   /* in ms */
+		};
 	};
 };
 

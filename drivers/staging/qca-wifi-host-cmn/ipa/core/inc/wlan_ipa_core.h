@@ -48,7 +48,7 @@ static inline bool wlan_ipa_uc_is_enabled(struct wlan_ipa_config *ipa_cfg)
 }
 
 /**
- * wlan_ipa_is_opt_wifi_dp_enabled() - Is IPA optional wifi dp enabled?
+ * wlan_ipa_is_opt_wifi_dp_enabled() - Is optional wifi dp enabled from WLAN
  * @ipa_cfg: IPA config
  *
  * Return: true if IPA opt wifi dp is enabled, false otherwise

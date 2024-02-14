@@ -84,10 +84,10 @@ void hif_ce_war_enable(void)
 }
 
 /*
- * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * Note: For MCL, #if defined (CONFIG_WLAN_EXTRA_DEBUG) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 
 #define CE_DEBUG_PRINT_BUF_SIZE(x) (((x) * 3) - 1)
 #define CE_DEBUG_DATA_PER_ROW 16
@@ -323,7 +323,7 @@ inline void ce_deinit_ce_desc_event_log(struct hif_softc *scn, int ce_id)
 	qdf_mutex_destroy(&ce_hist->ce_dbg_datamem_lock[ce_id]);
 }
 
-#else /* (HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
+#else /* (CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF) */
 void hif_record_ce_desc_event(struct hif_softc *scn,
 		int ce_id, enum hif_ce_event_type type,
 		union ce_desc *descriptor, void *memory,
@@ -340,7 +340,7 @@ inline void ce_init_ce_desc_event_log(struct hif_softc *scn, int ce_id,
 void ce_deinit_ce_desc_event_log(struct hif_softc *scn, int ce_id)
 {
 }
-#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
+#endif /*defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF) */
 
 #ifdef NAPI_YIELD_BUDGET_BASED
 bool hif_ce_service_should_yield(struct hif_softc *scn,
@@ -1634,10 +1634,10 @@ static uint32_t hif_dump_desc_data_buf(uint8_t *buf, ssize_t pos,
 #endif
 
 /*
- * Note: For MCL, #if defined (HIF_CONFIG_SLUB_DEBUG_ON) needs to be checked
+ * Note: For MCL, #if defined (CONFIG_WLAN_EXTRA_DEBUG) needs to be checked
  * for defined here
  */
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 static const char *ce_event_type_to_str(enum hif_ce_event_type type)
 {
 	switch (type) {
@@ -1803,7 +1803,7 @@ ssize_t hif_input_desc_trace_buf_index(struct hif_softc *scn,
 	return size;
 }
 
-#endif /*defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF) */
+#endif /*defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF) */
 
 #ifdef HIF_CE_DEBUG_DATA_BUF
 /*

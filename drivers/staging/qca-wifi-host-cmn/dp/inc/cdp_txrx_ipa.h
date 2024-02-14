@@ -743,6 +743,64 @@ cdp_ipa_tx_buf_smmu_unmapping(ol_txrx_soc_handle soc, uint8_t pdev_id,
 	return QDF_STATUS_SUCCESS;
 }
 
+/**
+ * cdp_ipa_rx_buf_smmu_pool_mapping() - Create SMMU mappings for Rx pool
+ * @soc: data path soc handle
+ * @pdev_id: pdev id
+ * @create: Map/unmap
+ * @line: line number
+ * @func: function name
+ *
+ * Create SMMU map/unmap for Rx buffers allocated to IPA
+ *
+ * return QDF_STATUS_SUCCESS
+ */
+static inline QDF_STATUS
+cdp_ipa_rx_buf_smmu_pool_mapping(ol_txrx_soc_handle soc, uint8_t pdev_id,
+				 bool create, const char *func, uint32_t line)
+{
+	if (!soc || !soc->ops || !soc->ops->ipa_ops) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
+			  "%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (soc->ops->ipa_ops->ipa_rx_buf_smmu_pool_mapping)
+		return soc->ops->ipa_ops->ipa_rx_buf_smmu_pool_mapping(soc,
+						pdev_id, create, func, line);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline QDF_STATUS cdp_ipa_set_smmu_mapped(ol_txrx_soc_handle soc,
+						 int val)
+{
+	if (!soc || !soc->ops || !soc->ops->ipa_ops) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
+			  "%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (soc->ops->ipa_ops->ipa_set_smmu_mapped)
+		return soc->ops->ipa_ops->ipa_set_smmu_mapped(soc, val);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline int cdp_ipa_get_smmu_mapped(ol_txrx_soc_handle soc)
+{
+	if (!soc || !soc->ops || !soc->ops->ipa_ops) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
+			  "%s invalid instance", __func__);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (soc->ops->ipa_ops->ipa_get_smmu_mapped)
+		return soc->ops->ipa_ops->ipa_get_smmu_mapped(soc);
+
+	return QDF_STATUS_SUCCESS;
+}
+
 #ifdef IPA_OPT_WIFI_DP
 /*
  * cdp_ipa_pcie_link_up() - Send request to hold PCIe link in L0

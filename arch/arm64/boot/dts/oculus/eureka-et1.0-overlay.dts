@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/camera/msm-camera.h>
+#include <dt-bindings/clock/qcom,camcc-anorak.h>
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	model = "Eureka (ET V1.0)";
+	compatible = "qcom,anorak", "oculus,eureka", "oculus,eureka-et1.0";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x20040 0x4>;
+};
+
+&blu {
+	status = "disabled";
+};
+
+&cam_cci0 {
+	qcom,cam-sensor6 {
+		/*
+		 * CAMERA ID = 6
+		 * name: ET_LEFT
+		 * QCOM CSI PHY = 5
+		 * QCOM MCLK = 7
+		 */
+		cell-index = <6>;
+		hw_no_io_ops;
+		hw_no_probe_pw_ops;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <5>;
+		sensor-position-roll = <0>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <0>;
+		cam_vana-supply = <&L14B>;
+		cam_vio-supply  = <&L8B>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vana", "cam_vio", "cam_clk";
+		rgltr-cntrl-support;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk7_active>;
+		pinctrl-1 = <&cam_sensor_mclk7_suspend>;
+		gpios = <&tlmm 27 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK7";
+		cci-master = <CCI_MASTER_0>;
+		clocks = <&camcc CAM_CC_MCLK7_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <19200000>;
+		status = "ok";
+	};
+
+	qcom,cam-sensor7 {
+		/*
+		 * CAMERA ID = 7
+		 * name: ET_RIGHT?
+		 * QCOM CSI PHY = 1
+		 * QCOM MCLK = 8
+		 */
+		cell-index = <7>;
+		hw_no_io_ops;
+		hw_no_probe_pw_ops;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <1>;
+		sensor-position-roll = <0>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <0>;
+		cam_vana-supply = <&L14B>;
+		cam_vio-supply  = <&L8B>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vana", "cam_vio", "cam_clk";
+		rgltr-cntrl-support;
+		rgltr-min-voltage = <2960000 1800000 0>;
+		rgltr-max-voltage = <2960000 1800000 0>;
+		rgltr-load-current = <80000 120000 0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk8_active>;
+		pinctrl-1 = <&cam_sensor_mclk8_suspend>;
+		gpios = <&tlmm 26 0>;
+		gpio-req-tbl-num = <0>;
+		gpio-req-tbl-flags = <1>;
+		gpio-req-tbl-label = "CAMIF_MCLK8";
+		cci-master = <CCI_MASTER_0>;
+		clocks = <&camcc CAM_CC_MCLK8_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <19200000>;
+		status = "ok";
+	};
+};
+
+&dsi_panel_pwr_supply_eureka {
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "mp3314_en";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <100>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "mp3314left";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+	};
+
+	qcom,panel-supply-entry@6 {
+		reg = <6>;
+		qcom,supply-name = "mp3314right";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+	};
+};
+
+&qupv3_se8_i2c {
+	mp3314_left: mp3314a@28 {
+		compatible = "meta,mp3314a";
+		reg = <0x28>;
+		regulator-name = "mp3314a";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-allow-set-load;
+		regulator-boot-on;
+		iset-ext-resistor = <36500>;
+	};
+};
+
+&qupv3_se13_i2c {
+	mp3314_right: mp3314a@28 {
+		compatible = "meta,mp3314a";
+		reg = <0x28>;
+		regulator-name = "mp3314a";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-allow-set-load;
+		regulator-boot-on;
+		iset-ext-resistor = <36500>;
+	};
+};
+
+&soc {
+	mp3314_en: mp3314_en {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "mp3314_en";
+		gpio = <&tlmm 141 0>;
+		enable-active-high;
+		regulator-boot-on;
+		pinctrl-names = "default";
+		pinctrl-0 = <&blu_reset_default>;
+	};
+};
+
+&wlan {
+	cal-file-prefix = "eureka_pvt1.0_";
+};

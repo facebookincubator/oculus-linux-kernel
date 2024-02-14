@@ -21,6 +21,7 @@
 #include <linux/power_supply.h>
 #include <linux/regmap.h>
 #include <linux/soc/qcom/battery_charger.h>
+#include <linux/stringify.h>
 
 #include "leds.h"
 
@@ -92,6 +93,13 @@
 
 #define FLASH_LED_STROBE_DEBOUNCE		0x5A
 #define  FLASH_LED_STROBE_DEBOUNCE_TIME_MASK	GENMASK(1, 0)
+
+#define FLASH_LED_FAULT_DEBOUNCE		0x5B
+#define FLASH_LED_FAULT_DEBOUNCE_TIME_MASK		GENMASK(1, 0)
+#define FLASH_LED_FAULT_DEBOUNCE_TIME_0US		0x00
+#define FLASH_LED_FAULT_DEBOUNCE_TIME_4US		0x01
+#define FLASH_LED_FAULT_DEBOUNCE_TIME_8US		0x02
+#define FLASH_LED_FAULT_DEBOUNCE_TIME_16US		0x03
 
 #define FLASH_LED_MITIGATION_SW			0x65
 #define  FLASH_LED_LMH_MITIGATION_SW_EN		BIT(0)
@@ -1387,8 +1395,35 @@ static int qti_flash_led_node_setup(struct qti_flash_led *led, struct flash_node
 	return rc;
 }
 
+static int qti_flash_led_config_fault_debounce(struct qti_flash_led *led,
+					       struct device_node *node)
+{
+	int rc = 0;
+	u8 val = 0;
+
+	rc = of_property_read_u8(node, "qcom,fault-debounce", &val);
+	if (rc == 0) {
+		u8 flash_led_debounce_time = val & FLASH_LED_FAULT_DEBOUNCE_TIME_MASK;
+		if (flash_led_debounce_time > FLASH_LED_FAULT_DEBOUNCE_TIME_16US) {
+			pr_err("Invalid value %u set for fault debounce\n", val);
+			return rc;
+		}
+		rc = qti_flash_led_write(led, FLASH_LED_FAULT_DEBOUNCE, &val, 1);
+		if (rc < 0) {
+			pr_err("Unable to write %s rc=%d\n",
+			       __stringify(FLASH_LED_FAULT_DEBOUNCE), rc);
+			return rc;
+		}
+	} else if (rc != -EINVAL) {
+		pr_err("Failed to read fault-debounce rc=%d\n", rc);
+		return rc;
+	}
+
+	return 0;
+}
+
 static int qti_flash_led_setup(struct qti_flash_led *led,
-				struct device_node *node)
+			       struct device_node *node)
 {
 	int rc = 0;
 	bool multi_strobe;
@@ -1423,10 +1458,17 @@ static int qti_flash_led_setup(struct qti_flash_led *led,
 	if (rc == 0) {
 		rc = qti_flash_led_write(led, FLASH_LED_CURRENT_DERATE_EN, &val, 1);
 		if (rc < 0) {
-			pr_err("Failed to writeFLASH_LED_CURRENT_DERATE_EN rc=%d\n", rc);
+			pr_err("Failed to write FLASH_LED_CURRENT_DERATE_EN rc=%d\n", rc);
 			return rc;
 		}
+	} else if (rc != -EINVAL) {
+		// This property is optional, so do not print error if the property does not exist
+		// i.e. EINVAL.
+		pr_err("Failed to read cur-derate-en-val rc=%d\n", rc);
+		return rc;
 	}
+
+	rc = qti_flash_led_config_fault_debounce(led, node);
 
 	return rc;
 }

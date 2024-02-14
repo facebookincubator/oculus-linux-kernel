@@ -110,7 +110,9 @@ enum band_info ucfg_cm_get_connected_band(struct wlan_objmgr_vdev *vdev)
 
 	if (wlan_reg_is_24ghz_ch_freq(sta_freq))
 		return BAND_2G;
-	else if (wlan_reg_is_5ghz_ch_freq(sta_freq))
+	else if (wlan_reg_is_5ghz_ch_freq(sta_freq) ||
+		 wlan_reg_is_6ghz_chan_freq(sta_freq))
+		/* BAND_5G covers 6 GHz frequencies as well */
 		return BAND_5G;
 	else	/* If station is not connected return as BAND_ALL */
 		return BAND_ALL;

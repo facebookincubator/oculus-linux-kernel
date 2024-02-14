@@ -18,6 +18,7 @@
 #include "cam_req_mgr_dev.h"
 #include "cam_req_mgr_debug.h"
 #include "cam_common_util.h"
+#include "cam_rpmsg.h"
 
 static struct cam_req_mgr_core_device *g_crm_core_dev;
 static struct cam_req_mgr_core_link g_links[MAXIMUM_LINKS_PER_SESSION];
@@ -3945,12 +3946,14 @@ static int __cam_req_mgr_setup_link_info(struct cam_req_mgr_core_link *link,
 {
 	int                                      rc = 0, i = 0, num_devices = 0;
 	struct cam_req_mgr_core_dev_link_setup   link_data;
-	struct cam_req_mgr_connected_device     *dev;
+	struct cam_req_mgr_connected_device     *dev = NULL;
 	struct cam_req_mgr_req_tbl              *pd_tbl;
 	enum cam_pipeline_delay                  max_delay;
 	int                                     *dev_hdls, session_hdl;
 	struct cam_req_mgr_no_crm_handshake_data handshake;
 	uint32_t num_trigger_devices = 0;
+
+	memset(&handshake, 0, sizeof(handshake));
 	if (link_info->version == VERSION_1) {
 		if (link_info->u.link_info_v1.num_devices >
 			CAM_REQ_MGR_MAX_HANDLES)
@@ -4127,10 +4130,12 @@ static int __cam_req_mgr_setup_link_info(struct cam_req_mgr_core_link *link,
 
 	/* Get anchor pipeline delay and frame_skip callback */
 	handshake.link_hdl = link->link_hdl;
-	handshake.dev_hdl = dev->dev_hdl;
-	if (i != num_devices && dev->no_crm_ops && dev->no_crm_ops->handshake)
-		dev->no_crm_ops->handshake(&handshake);
-	handshake.anchor_pd = handshake.pipeline_delay;
+	if (dev) {
+		handshake.dev_hdl = dev->dev_hdl;
+		if (i != num_devices && dev->no_crm_ops && dev->no_crm_ops->handshake)
+			dev->no_crm_ops->handshake(&handshake);
+		handshake.anchor_pd = handshake.pipeline_delay;
+	}
 
 	for (i = 0; i < num_devices; i++) {
 		dev = &link->l_dev[i];
@@ -4877,6 +4882,118 @@ int cam_req_mgr_sync_config(
 		"Sync config completed on %d links with sync_mode %d",
 		sync_info->num_links, sync_info->sync_mode);
 
+done:
+	mutex_unlock(&cam_session->lock);
+	mutex_unlock(&g_crm_core_dev->crm_lock);
+	return rc;
+}
+
+int cam_req_mgr_sync_config_v2(struct cam_req_mgr_sync_mode_v2 *sync_info)
+{
+	int                                  i, j, rc = 0;
+	int                                  sync_idx = 0;
+	struct cam_req_mgr_core_session     *cam_session;
+	struct cam_req_mgr_core_link        *link[MAX_LINKS_PER_SESSION_V2];
+
+	if (!sync_info) {
+		CAM_ERR(CAM_CRM, "NULL pointer");
+		return -EINVAL;
+	}
+
+	if ((sync_info->num_links <= 0) ||
+		(sync_info->num_links > MAX_LINKS_PER_SESSION_V2)) {
+		CAM_ERR(CAM_CRM, "Invalid num links %d, max %d", sync_info->num_links,
+				MAX_LINKS_PER_SESSION_V2);
+		return -EINVAL;
+	}
+
+	if ((sync_info->sync_mode != CAM_REQ_MGR_SYNC_MODE_SYNC) &&
+		(sync_info->sync_mode != CAM_REQ_MGR_SYNC_MODE_NO_SYNC)) {
+		CAM_ERR(CAM_CRM, "Invalid sync mode %d", sync_info->sync_mode);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < sync_info->num_links; i++) {
+		if (!sync_info->links[i].link_hdl) {
+			CAM_WARN(CAM_CRM, "Invalid link hdl %d, hdl 0x%x", i,
+					sync_info->links[i].link_hdl);
+			rc = -EINVAL;
+		}
+	}
+
+	if (rc)
+		return rc;
+
+	mutex_lock(&g_crm_core_dev->crm_lock);
+	/* session hdl's priv data is cam session struct */
+	cam_session = (struct cam_req_mgr_core_session *)
+		cam_get_device_priv(sync_info->session_hdl);
+	if (!cam_session || (cam_session->session_hdl != sync_info->session_hdl)) {
+		CAM_ERR(CAM_CRM, "session: %s, sync_info->session_hdl:%x, session->ses_hdl:%x",
+			CAM_IS_NULL_TO_STR(cam_session), sync_info->session_hdl,
+			(!cam_session) ? CAM_REQ_MGR_DEFAULT_HDL_VAL : cam_session->session_hdl);
+		mutex_unlock(&g_crm_core_dev->crm_lock);
+		return -EINVAL;
+	}
+
+	mutex_lock(&cam_session->lock);
+
+	for (i = 0; i < sync_info->num_links; i++) {
+		link[i] = cam_get_device_priv(sync_info->links[i].link_hdl);
+		if (!link[i] || (link[i]->link_hdl != sync_info->links[i].link_hdl)) {
+			CAM_ERR(CAM_CRM, "link: %s, sync_info->link_hdl:%x, link->link_hdl:%x",
+				CAM_IS_NULL_TO_STR(link), sync_info->links[i].link_hdl,
+				(!link[i]) ? CAM_REQ_MGR_DEFAULT_HDL_VAL : link[i]->link_hdl);
+			rc = -EINVAL;
+			goto done;
+		}
+
+		link[i]->sync_link_sof_skip = false;
+		link[i]->is_master = false;
+		link[i]->in_msync_mode = false;
+		link[i]->initial_sync_req = -1;
+		link[i]->num_sync_links = 0;
+
+		for (j = 0; j < sync_info->num_links - 1; j++)
+			link[i]->sync_link[j] = NULL;
+	}
+
+	if (sync_info->sync_mode == CAM_REQ_MGR_SYNC_MODE_SYNC) {
+		for (i = 0; i < sync_info->num_links; i++) {
+			j = 0;
+			sync_idx = 0;
+			CAM_DBG(CAM_REQ, "link %x adds sync link:",
+				link[i]->link_hdl);
+			while (j < sync_info->num_links) {
+				if (i != j) {
+					link[i]->sync_link[sync_idx++] =
+						link[j];
+					link[i]->num_sync_links++;
+					CAM_DBG(CAM_REQ, "sync_link[%d] : %x",
+						sync_idx-1, link[j]->link_hdl);
+				}
+				j++;
+			}
+			link[i]->initial_skip = true;
+			link[i]->sof_timestamp = 0;
+		}
+	} else {
+		for (j = 0; j < sync_info->num_links; j++) {
+			link[j]->initial_skip = true;
+			link[j]->sof_timestamp = 0;
+		}
+	}
+
+	cam_session->sync_mode = sync_info->sync_mode;
+
+	CAM_DBG(CAM_REQ,
+		"Sync config v2 completed on %d links with sync_mode %d",
+		sync_info->num_links, sync_info->sync_mode);
+	mutex_unlock(&cam_session->lock);
+	mutex_unlock(&g_crm_core_dev->crm_lock);
+
+	rc = cam_rpmsg_system_send_sync(sync_info);
+	return rc;
 done:
 	mutex_unlock(&cam_session->lock);
 	mutex_unlock(&g_crm_core_dev->crm_lock);

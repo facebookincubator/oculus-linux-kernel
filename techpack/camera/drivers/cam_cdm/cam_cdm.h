@@ -463,7 +463,7 @@ struct cam_cdm_client {
 	struct cam_cdm_acquire_data data;
 	void __iomem  *changebase_addr;
 	uint32_t stream_on;
-	uint32_t refcount;
+	atomic_t ref_count;
 	struct mutex lock;
 	spinlock_t hw_lock;
 	uint32_t handle;
@@ -564,6 +564,8 @@ struct cam_cdm {
 	struct cam_cdm_hw_mem gen_irq[CAM_CDM_BL_FIFO_MAX];
 	uint32_t cpas_handle;
 	enum cam_cdm_arbitration arbitration;
+	struct kmem_cache *req_node_mem;
+	struct kmem_cache *payload_mem;
 };
 
 /* struct cam_cdm_private_dt_data - CDM hw custom dt data */

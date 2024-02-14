@@ -88,6 +88,7 @@ KBUILD_CFLAGS := $(filter-out $(CC_FLAGS_FTRACE) $(CC_FLAGS_SCS) $(CC_FLAGS_CFI)
 # compiler instrumentation that inserts callbacks or checks into the code may
 # cause crashes. Just disable it.
 GCOV_PROFILE	:= n
+PGO_PROFILE := n
 KASAN_SANITIZE	:= n
 UBSAN_SANITIZE	:= n
 KCOV_INSTRUMENT	:= n

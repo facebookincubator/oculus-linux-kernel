@@ -631,6 +631,25 @@ QDF_STATUS target_if_mlo_send_link_removal_cmd(
 	return wmi_send_mlo_link_removal_cmd(wmi_handle, param);
 }
 
+QDF_STATUS target_if_mlo_send_vdev_pause(struct wlan_objmgr_psoc *psoc,
+					 struct mlo_vdev_pause *info)
+{
+	struct wmi_unified *wmi_handle;
+
+	if (!psoc) {
+		target_if_err("null psoc");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("null handle");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return wmi_send_mlo_vdev_pause(wmi_handle, info);
+}
+
 /**
  * target_if_mlo_register_tx_ops() - lmac handler to register mlo tx ops
  *  callback functions
@@ -664,6 +683,8 @@ target_if_mlo_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 	mlo_tx_ops->send_link_removal_cmd = target_if_mlo_send_link_removal_cmd;
 	mlo_tx_ops->request_link_state_info_cmd =
 		target_if_request_ml_link_state_info;
+	mlo_tx_ops->send_vdev_pause = target_if_mlo_send_vdev_pause;
+
 	return QDF_STATUS_SUCCESS;
 }
 

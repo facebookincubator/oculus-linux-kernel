@@ -6,6 +6,7 @@
 # architecture-specific flags and dependencies.
 #
 
+PGO_PROFILE	:= n
 GCOV_PROFILE	:= n
 
 LDFLAGS_bootp	:= --no-undefined -X \

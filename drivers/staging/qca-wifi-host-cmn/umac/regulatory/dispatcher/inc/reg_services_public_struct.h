@@ -972,6 +972,7 @@ struct get_usable_chan_req_params {
  * @psd_flag: is PSD channel or not
  * @psd_eirp: PSD power level
  * @is_static_punctured: is static punctured
+ * @power_type: channel power type
  */
 struct regulatory_channel {
 	qdf_freq_t center_freq;
@@ -994,6 +995,7 @@ struct regulatory_channel {
 #endif
 #ifdef CONFIG_REG_CLIENT
 	uint8_t is_static_punctured;
+	enum reg_6g_ap_type power_type;
 #endif
 };
 

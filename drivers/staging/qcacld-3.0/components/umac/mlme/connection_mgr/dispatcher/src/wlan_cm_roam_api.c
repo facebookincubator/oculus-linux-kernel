@@ -4163,8 +4163,7 @@ wlan_cm_add_frame_to_scan_db(struct wlan_objmgr_psoc *psoc,
 
 	extracted_ie = (uint8_t *)wlan_get_ie_ptr_from_eid(WLAN_ELEMID_SSID,
 							   ie_ptr, ie_len);
-	if (extracted_ie && extracted_ie[0] == WLAN_ELEMID_SSID &&
-	    extracted_ie[1] > MIN_IE_LEN) {
+	if (extracted_ie && extracted_ie[0] == WLAN_ELEMID_SSID) {
 		wh = (struct wlan_frame_hdr *)frame->frame;
 		WLAN_ADDR_COPY(&bssid.bytes[0], wh->i_addr2);
 

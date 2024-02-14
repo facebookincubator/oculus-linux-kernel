@@ -957,9 +957,9 @@ int hif_pci_dump_registers(struct hif_softc *hif_ctx)
 	return 0;
 }
 
-#ifdef HIF_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 
-/* worker thread to schedule wlan_tasklet in SLUB debug build */
+/* worker thread to schedule wlan_tasklet in debug build */
 static void reschedule_tasklet_work_handler(void *arg)
 {
 	struct hif_pci_softc *sc = arg;
@@ -992,7 +992,7 @@ static void hif_init_reschedule_tasklet_work(struct hif_pci_softc *sc)
 }
 #else
 static void hif_init_reschedule_tasklet_work(struct hif_pci_softc *sc) { }
-#endif /* HIF_CONFIG_SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 
 void wlan_tasklet(unsigned long data)
 {
@@ -4156,7 +4156,7 @@ release_rtpm_ref:
 
 int hif_force_wake_release(struct hif_opaque_softc *hif_handle)
 {
-	int ret;
+	int ret, status;
 	struct hif_softc *scn = (struct hif_softc *)hif_handle;
 	struct hif_pci_softc *pci_scn = HIF_GET_PCI_SOFTC(scn);
 
@@ -4167,19 +4167,19 @@ int hif_force_wake_release(struct hif_opaque_softc *hif_handle)
 	if (ret) {
 		hif_err("pld force wake release failure");
 		HIF_STATS_INC(pci_scn, mhi_force_wake_release_failure, 1);
-		return ret;
+		goto release_rtpm_ref;
 	}
 	HIF_STATS_INC(pci_scn, mhi_force_wake_release_success, 1);
-
-	/* Release runtime PM force wake */
-	ret = hif_rtpm_put(HIF_RTPM_PUT_ASYNC, HIF_RTPM_ID_FORCE_WAKE);
-	if (ret) {
-		hif_err("runtime pm put failure");
-		return ret;
-	}
-
 	HIF_STATS_INC(pci_scn, soc_force_wake_release_success, 1);
-	return 0;
+
+release_rtpm_ref:
+	/* Release runtime PM force wake */
+	status = hif_rtpm_put(HIF_RTPM_PUT_ASYNC, HIF_RTPM_ID_FORCE_WAKE);
+	if (status) {
+		hif_err("runtime pm put failure: %d", status);
+		return status;
+	}
+	return ret;
 }
 
 #else /* DEVICE_FORCE_WAKE_ENABLE */

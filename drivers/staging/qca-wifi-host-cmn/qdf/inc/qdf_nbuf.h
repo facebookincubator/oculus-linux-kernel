@@ -2279,6 +2279,14 @@ void
 qdf_nbuf_dev_kfree_list_debug(qdf_nbuf_queue_head_t *nbuf_queue_head,
 			      const char *func_name,
 			      uint32_t line_num);
+
+#define qdf_nbuf_page_frag_alloc(d, s, r, a, p) \
+	qdf_nbuf_page_frag_alloc_debug(d, s, r, a, p, __func__, __LINE__)
+
+qdf_nbuf_t
+qdf_nbuf_page_frag_alloc_debug(qdf_device_t osdev, qdf_size_t size, int reserve,
+			       int align, qdf_frag_cache_t *pf_cache,
+			       const char *func, uint32_t line);
 #else /* NBUF_MEMORY_DEBUG */
 
 static inline void qdf_net_buf_debug_init(void) {}
@@ -2421,6 +2429,19 @@ static inline void
 qdf_nbuf_dev_kfree_list(qdf_nbuf_queue_head_t *nbuf_queue_head)
 {
 	__qdf_nbuf_dev_kfree_list(nbuf_queue_head);
+}
+
+#define qdf_nbuf_page_frag_alloc(osdev, size, reserve, align, pf_cache) \
+	qdf_nbuf_page_frag_alloc_fl(osdev, size, reserve, align, pf_cache, \
+			  __func__, __LINE__)
+
+static inline qdf_nbuf_t
+qdf_nbuf_page_frag_alloc_fl(qdf_device_t osdev, qdf_size_t size, int reserve,
+			    int align, qdf_frag_cache_t *pf_cache,
+			    const char *func, uint32_t line)
+{
+	return __qdf_nbuf_page_frag_alloc(osdev, size, reserve, align, pf_cache,
+					  func, line);
 }
 #endif /* NBUF_MEMORY_DEBUG */
 
@@ -5008,6 +5029,18 @@ static inline qdf_size_t qdf_nbuf_get_end_offset(qdf_nbuf_t nbuf)
 static inline qdf_size_t qdf_nbuf_get_truesize(qdf_nbuf_t nbuf)
 {
 	return __qdf_nbuf_get_truesize(nbuf);
+}
+
+/**
+ * qdf_nbuf_get_allocsize() - Return the actual size of the skb->head
+ * excluding the header and variable data area
+ * @nbuf: qdf_nbuf_t
+ *
+ * Return: actual allocated size of network buffer
+ */
+static inline qdf_size_t qdf_nbuf_get_allocsize(qdf_nbuf_t nbuf)
+{
+	return __qdf_nbuf_get_allocsize(nbuf);
 }
 
 #ifdef NBUF_FRAG_MEMORY_DEBUG

@@ -227,7 +227,7 @@ struct htt_host_rx_desc_base {
  *    @posted: time-stamp when HTT message is received
  *    @recvd : 0x48545452584D5367 ('HTTRXMSG')
  */
-#ifdef CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define HTT_RX_RING_BUFF_DBG_LIST          (8 * 1024)
 #else
 #define HTT_RX_RING_BUFF_DBG_LIST          (4 * 1024)

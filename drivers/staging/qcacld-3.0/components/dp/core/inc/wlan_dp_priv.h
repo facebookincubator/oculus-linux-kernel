@@ -600,4 +600,52 @@ struct wlan_dp_psoc_context {
 #endif
 };
 
+#ifdef WLAN_DP_PROFILE_SUPPORT
+/**
+ * enum wlan_dp_cfg_param_type - param context type
+ * @DP_TX_DESC_NUM_CFG: Number of TX desc
+ * @DP_TX_EXT_DESC_NUM_CFG: Number of TX ext desc
+ * @DP_TX_RING_SIZE_CFG: TX ring size
+ * @DP_TX_COMPL_RING_SIZE_CFG: TX completion ring size
+ * @DP_RX_SW_DESC_NUM_CFG: Number of RX S.W descriptors
+ * @DP_REO_DST_RING_SIZE_CFG: RX ring size
+ * @DP_RXDMA_BUF_RING_SIZE_CFG: RXDMA BUF ring size
+ * @DP_RXDMA_REFILL_RING_SIZE_CFG: RXDMA refill ring size
+ * @DP_RX_REFILL_POOL_NUM_CFG: Refill buffer pool size
+ */
+enum wlan_dp_cfg_param_type {
+	DP_TX_DESC_NUM_CFG,
+	DP_TX_EXT_DESC_NUM_CFG,
+	DP_TX_RING_SIZE_CFG,
+	DP_TX_COMPL_RING_SIZE_CFG,
+	DP_RX_SW_DESC_NUM_CFG,
+	DP_REO_DST_RING_SIZE_CFG,
+	DP_RXDMA_BUF_RING_SIZE_CFG,
+	DP_RXDMA_REFILL_RING_SIZE_CFG,
+	DP_RX_REFILL_POOL_NUM_CFG,
+};
+
+/**
+ * struct wlan_dp_memory_profile_ctx - element representing DP config param info
+ * @param_type: DP config param type
+ * @size: size/length of the param to be selected
+ */
+struct wlan_dp_memory_profile_ctx {
+	enum wlan_dp_cfg_param_type param_type;
+	uint32_t size;
+};
+
+/**
+ * struct wlan_dp_memory_profile_info - Current memory profile info
+ * @is_selected: profile is selected or not
+ * @ctx: DP memory profile context
+ * @size: size of profile
+ */
+struct wlan_dp_memory_profile_info {
+	bool is_selected;
+	struct wlan_dp_memory_profile_ctx *ctx;
+	int size;
+};
+#endif
+
 #endif /* end  of _WLAN_DP_PRIV_STRUCT_H_ */

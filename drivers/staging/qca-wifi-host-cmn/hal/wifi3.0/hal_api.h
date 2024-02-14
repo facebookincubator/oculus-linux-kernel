@@ -619,7 +619,7 @@ uint32_t hal_read32_mb_cmem(struct hal_soc *hal_soc, uint32_t offset)
 /* PCIE_PCIE_TOP base addr offset */
 #define HAL_PCIE_PCIE_TOP_WRAPPER 0x01E00000
 /* Max retry attempts to read the dirty bit reg */
-#ifdef HAL_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 #define HAL_SHADOW_DIRTY_BIT_POLL_MAX 10000
 #else
 #define HAL_SHADOW_DIRTY_BIT_POLL_MAX 2000

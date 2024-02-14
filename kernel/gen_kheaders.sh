@@ -81,7 +81,9 @@ for f in $dir_list;
 done | cpio --quiet -pd $cpio_dir >/dev/null 2>&1
 
 # Remove comments except SDPX lines
-find $cpio_dir -type f -print0 |
+# Insert a cat in between find and perl editing to avoid the filesystem bug
+# where find during in-place editing could lead to infinite loop.
+find $cpio_dir -type f -print0 | cat |
 	xargs -0 -P8 -n1 perl -pi -e 'BEGIN {undef $/;}; s/\/\*((?!SPDX).)*?\*\///smg;'
 
 # Create archive and try to normalize metadata for reproducibility.

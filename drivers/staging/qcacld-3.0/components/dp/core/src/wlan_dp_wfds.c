@@ -22,6 +22,7 @@
 #include "wlan_objmgr_psoc_obj.h"
 #include <qdf_mem.h>
 #include "wlan_dp_prealloc.h"
+#include <htc_api.h>
 
 static struct dp_direct_link_wfds_context *gp_dl_wfds_ctx;
 
@@ -551,12 +552,14 @@ dp_wfds_handle_ipcc_map_n_cfg_ind(struct wlan_qmi_wfds_ipcc_map_n_cfg_ind_msg *i
 QDF_STATUS dp_wfds_new_server(void)
 {
 	struct dp_direct_link_wfds_context *dl_wfds = gp_dl_wfds_ctx;
+	void *htc_handle = cds_get_context(QDF_MODULE_ID_HTC);
 
-	if (!dl_wfds)
+	if (!dl_wfds || !htc_handle)
 		return QDF_STATUS_E_INVAL;
 
 	qdf_atomic_set(&dl_wfds->wfds_state, DP_WFDS_SVC_CONNECTED);
 
+	htc_vote_link_up(htc_handle, HTC_LINK_VOTE_DIRECT_LINK_USER_ID);
 	dp_debug("Connected to WFDS QMI service, state: 0x%x",
 		 qdf_atomic_read(&dl_wfds->wfds_state));
 
@@ -567,12 +570,13 @@ void dp_wfds_del_server(void)
 {
 	struct dp_direct_link_wfds_context *dl_wfds = gp_dl_wfds_ctx;
 	qdf_device_t qdf_ctx = dl_wfds->direct_link_ctx->dp_ctx->qdf_dev;
+	void *htc_handle = cds_get_context(QDF_MODULE_ID_HTC);
 	void *hif_ctx = cds_get_context(QDF_MODULE_ID_HIF);
 	enum dp_wfds_state dl_wfds_state;
 	uint8_t i;
 	uint16_t page_idx;
 
-	if (!dl_wfds || !qdf_ctx || !hif_ctx)
+	if (!dl_wfds || !qdf_ctx || !hif_ctx || !htc_handle)
 		return;
 
 	dp_debug("WFDS QMI server exiting");
@@ -640,6 +644,8 @@ void dp_wfds_del_server(void)
 			dl_wfds->iommu_cfg.direct_link_refill_ring_base_paddr,
 			dl_wfds->iommu_cfg.direct_link_refill_ring_map_size);
 	}
+
+	htc_vote_link_down(htc_handle, HTC_LINK_VOTE_DIRECT_LINK_USER_ID);
 }
 
 QDF_STATUS dp_wfds_init(struct dp_direct_link_context *dp_direct_link_ctx)

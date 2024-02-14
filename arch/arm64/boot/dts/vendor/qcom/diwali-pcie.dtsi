@@ -95,9 +95,9 @@
 				"pcie_aggre_noc_0_axi_clk",
 				"pcie_pipe_clk_mux",
 				"pcie_pipe_clk_ext_src";
-		max-clock-frequency-hz = <0>, <0>, <19200000>, <0>, <0>, <0>,
-					<0>, <0>, <0>, <0>, <100000000>,
-					<0>, <0>, <0>, <0>;
+		max-clock-frequency-hz = <0>, <0>, <0>, <19200000>, <0>, <0>,
+					<0>, <0>, <0>, <0>, <0>, <100000000>,
+					<0>, <0>;
 
 		resets = <&gcc GCC_PCIE_0_BCR>,
 			<&gcc GCC_PCIE_0_PHY_BCR>;

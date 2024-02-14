@@ -363,6 +363,48 @@ err:
 	return rc;
 }
 
+int cam_rpmsg_system_send_sync(struct cam_req_mgr_sync_mode_v2 *sync_info)
+{
+	int rc = 0, handle, num_remote = 0, i, j;
+	struct cam_rpmsg_system_sync_payload *pkt = NULL;
+	size_t sz = 0;
+
+	for (i = 0; i < sync_info->num_links; i++) {
+		if (sync_info->links[i].remote_sensor)
+			num_remote++;
+	}
+
+	CAM_DBG(CAM_RPMSG, "sync command num_cams:%d", num_remote);
+
+	if (!num_remote)
+		return 0;
+
+	sz = sizeof(struct cam_rpmsg_system_sync_payload) + ((num_remote - 1) * sizeof(uint32_t));
+	pkt = kzalloc(sz, GFP_KERNEL);
+	if (!pkt) {
+		CAM_ERR(CAM_RPMSG, "Failed to alloc %d bytes", sz);
+		return -ENOMEM;
+	}
+
+	pkt->num_cams = num_remote;
+	for (i = 0, j = 0; i < sync_info->num_links; i++) {
+		if (sync_info->links[i].remote_sensor)
+			pkt->camera_id[j++] = sync_info->links[i].sensor_id;
+	}
+
+	CAM_RPMSG_SLAVE_SET_PAYLOAD_TYPE(&pkt->phdr,
+		CAM_RPMSG_SLAVE_PACKET_TYPE_SYSTEM_SYNC);
+	CAM_RPMSG_SLAVE_SET_PAYLOAD_SIZE(&pkt->phdr, sz - SLAVE_PKT_HDR_SIZE);
+
+	handle = cam_rpmsg_get_handle("helios");
+	rc = cam_rpmsg_send(handle, pkt, sz);
+	if (rc)
+		CAM_ERR(CAM_RPMSG, "Failed to send sync command rc %d", rc);
+
+	kfree(pkt);
+	return rc;
+}
+
 int cam_rpmsg_isp_send_acq(uint32_t sensor_id)
 {
 	struct cam_rpmsg_isp_acq_payload pkt = {0};

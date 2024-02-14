@@ -23,6 +23,7 @@ ifeq ($(CONFIG_ARM_VIRT_EXT),y)
 OBJS		+= hyp-stub.o
 endif
 
+PGO_PROFILE	:= n
 GCOV_PROFILE		:= n
 
 # Prevents link failures: __sanitizer_cov_trace_pc() is not linked in.

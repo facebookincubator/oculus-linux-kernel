@@ -295,7 +295,8 @@ static void dp_rx_refill_buff_pool_init(struct dp_soc *soc, u8 mac_id)
 		return;
 	}
 
-	buff_pool->max_bufq_len = DP_RX_REFILL_BUFF_POOL_SIZE;
+	buff_pool->max_bufq_len =
+		wlan_cfg_get_rx_refill_buf_pool_size(soc->wlan_cfg_ctx);
 	buff_pool->dp_pdev = dp_get_pdev_for_lmac_id(soc, 0);
 	buff_pool->tail = 0;
 

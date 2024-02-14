@@ -80,8 +80,12 @@ static void msm_parse_mode_priv_info(const struct msm_display_mode *msm_mode,
 		dsi_mode->timing.clk_rate_hz = dsi_mode->priv_info->clk_rate_hz;
 		dsi_mode->timing.internal_1h_time_ns =
 				dsi_mode->priv_info->internal_1h_time_ns;
+		dsi_mode->timing.internal_vactive =
+				dsi_mode->priv_info->internal_vactive;
 		dsi_mode->timing.fifo_trim_lines =
 				dsi_mode->priv_info->fifo_trim_lines;
+		dsi_mode->timing.disable_fifo =
+				dsi_mode->priv_info->disable_fifo;
 	}
 
 	if (msm_is_mode_seamless(msm_mode))
@@ -1192,10 +1196,6 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 				m->type |= DRM_MODE_TYPE_PREFERRED;
 		} else if (modes[i].timing.is_default_refresh) {
 			/* set the default mode based on default fps defined in dtsi flag */
-			m->type |= DRM_MODE_TYPE_PREFERRED;
-		}
-		else if (modes[i].mode_idx == 0) {
-			/* set the first mode in device tree list as preferred */
 			m->type |= DRM_MODE_TYPE_PREFERRED;
 		}
 		drm_mode_probed_add(connector, m);

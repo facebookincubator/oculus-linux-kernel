@@ -305,9 +305,7 @@ static void cam_mem_put_slot(int32_t idx)
 int cam_mem_get_io_buf(int32_t buf_handle, int32_t mmu_handle,
 	dma_addr_t *iova_ptr, size_t *len_ptr, uint32_t *flags)
 {
-	int rc = 0, idx;
-
-	*len_ptr = 0;
+	int i, rc = 0, idx;
 
 	if (!atomic_read(&cam_mem_mgr_state)) {
 		CAM_ERR(CAM_MEM, "failed. mem_mgr not initialized");
@@ -328,30 +326,45 @@ int cam_mem_get_io_buf(int32_t buf_handle, int32_t mmu_handle,
 
 	mutex_lock(&tbl.bufq[idx].q_lock);
 	if (buf_handle != tbl.bufq[idx].buf_handle) {
+		CAM_ERR(CAM_MEM, "buf handle mismatch %x %x",
+			buf_handle, tbl.bufq[idx].buf_handle);
 		rc = -EINVAL;
 		goto handle_mismatch;
 	}
 
-	if (CAM_MEM_MGR_IS_SECURE_HDL(buf_handle))
-		rc = cam_smmu_get_stage2_iova(mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].dma_buf,
-			iova_ptr, len_ptr);
-	else
-		rc = cam_smmu_get_iova(mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].dma_buf,
-			iova_ptr, len_ptr);
-	if (rc) {
-		CAM_ERR(CAM_MEM,
-			"fail to map buf_hdl:0x%x, mmu_hdl: 0x%x for fd:%d i_ino:%lu",
-			buf_handle, mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino);
+	if (!iova_ptr || !len_ptr) {
+		CAM_ERR(CAM_MEM, "Error: Input pointers are invalid iova %s len_ptr %s",
+			CAM_IS_NULL_TO_STR(iova_ptr), CAM_IS_NULL_TO_STR(len_ptr));
+		rc = -EINVAL;
 		goto handle_mismatch;
 	}
 
-	if (flags)
-		*flags = tbl.bufq[idx].flags;
+	/* clean the content from clients */
+	*iova_ptr = 0;
+	*len_ptr = 0;
 
+	for (i = 0; i < CAM_MEM_MMU_MAX_HANDLE; i++) {
+		if (tbl.bufq[idx].hdls[i] == mmu_handle) {
+			*iova_ptr = tbl.bufq[idx].iova[i];
+			*len_ptr  =  tbl.bufq[idx].len;
+			if (flags)
+				*flags = tbl.bufq[idx].flags;
+			break;
+		}
+	}
+
+	if (NULL == iova_ptr) {
+		CAM_ERR(CAM_MEM,
+			"Invalid iova_ptr handle:0x%x fd:%d i_ino:%lu len_ptr:%zu",
+			mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino,
+			*len_ptr);
+		rc = -EINVAL;
+	}
+
+handle_mismatch:
 	CAM_DBG(CAM_MEM,
 		"handle:0x%x fd:%d i_ino:%lu iova_ptr:0x%llx len_ptr:%llu",
 		mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino, iova_ptr, *len_ptr);
-handle_mismatch:
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 	return rc;
 }
@@ -892,9 +905,9 @@ static int cam_mem_util_map_hw_va(uint32_t flags,
 	int32_t num_hdls,
 	int fd,
 	struct dma_buf *dmabuf,
-	dma_addr_t *hw_vaddr,
 	size_t *len,
 	enum cam_smmu_region_id region,
+	dma_addr_t *iova,
 	bool is_internal)
 {
 	int i;
@@ -922,15 +935,17 @@ static int cam_mem_util_map_hw_va(uint32_t flags,
 			region = CAM_SMMU_REGION_SHARED;
 
 		if (flags & CAM_MEM_FLAG_PROTECTED_MODE)
-			rc = cam_smmu_map_stage2_iova(mmu_hdls[i], fd, dmabuf, dir, hw_vaddr, len);
+			rc = cam_smmu_map_stage2_iova(mmu_hdls[i], fd, dmabuf,
+					dir, &iova[i], len);
 		else
 			rc = cam_smmu_map_user_iova(mmu_hdls[i], fd, dmabuf, dis_delayed_unmap, dir,
-				hw_vaddr, len, region, is_internal);
+				&iova[i], len, region, is_internal);
+
 		if (rc) {
 			CAM_ERR(CAM_MEM,
-					"Failed %s map to smmu, i=%d, fd=%d, dir=%d, mmu_hdl=%d, rc=%d",
-					(flags & CAM_MEM_FLAG_PROTECTED_MODE) ? "" : "secured",
-					i, fd, dir, mmu_hdls[i], rc);
+				"Failed %s map to smmu, i=%d, fd=%d, dir=%d, mmu_hdl=%d rc = %d",
+				(flags & CAM_MEM_FLAG_PROTECTED_MODE) ? "secured" : "non-secured" ,
+				i, fd, dir, mmu_hdls[i], rc);
 			goto multi_map_fail;
 		}
 	}
@@ -941,7 +956,9 @@ multi_map_fail:
 		if (flags & CAM_MEM_FLAG_PROTECTED_MODE)
 			cam_smmu_unmap_stage2_iova(mmu_hdls[i], fd, dmabuf);
 		else
-			cam_smmu_unmap_user_iova(mmu_hdls[i], fd, dmabuf, CAM_SMMU_REGION_IO);
+			cam_smmu_unmap_user_iova(mmu_hdls[i], fd, dmabuf, region);
+
+		iova[i] = 0;
 	}
 
 	return rc;
@@ -953,7 +970,6 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 	int32_t idx;
 	struct dma_buf *dmabuf = NULL;
 	int fd = -1;
-	dma_addr_t hw_vaddr = 0;
 	size_t len;
 	uintptr_t kvaddr = 0;
 	size_t klen;
@@ -1028,11 +1044,10 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 			cmd->num_hdl,
 			fd,
 			dmabuf,
-			&hw_vaddr,
 			&len,
 			region,
+			tbl.bufq[idx].iova,
 			true);
-
 		if (rc) {
 			CAM_ERR(CAM_MEM,
 				"Failed in map_hw_va len=%llu, flags=0x%x, fd=%d, region=%d, num_hdl=%d, rc=%d",
@@ -1070,13 +1085,13 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 		tbl.dbg_buf_idx = idx;
 
 	tbl.bufq[idx].kmdvaddr = kvaddr;
-	tbl.bufq[idx].vaddr = hw_vaddr;
 	tbl.bufq[idx].dma_buf = dmabuf;
 	tbl.bufq[idx].len = len;
 	tbl.bufq[idx].num_hdl = cmd->num_hdl;
 	cam_mem_mgr_reset_presil_params(idx);
 	memcpy(tbl.bufq[idx].hdls, cmd->mmu_hdls,
 		sizeof(int32_t) * cmd->num_hdl);
+
 	tbl.bufq[idx].is_imported = false;
 	kref_init(&tbl.bufq[idx].krefcount);
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_USER;
@@ -1139,7 +1154,6 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 	int32_t idx;
 	int rc;
 	struct dma_buf *dmabuf;
-	dma_addr_t hw_vaddr = 0;
 	size_t len = 0, klen = 0;
 	bool is_internal = false;
 	unsigned long i_ino;
@@ -1188,14 +1202,15 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 
 	if ((cmd->flags & CAM_MEM_FLAG_HW_READ_WRITE) ||
 		(cmd->flags & CAM_MEM_FLAG_PROTECTED_MODE)) {
+
 		rc = cam_mem_util_map_hw_va(cmd->flags,
 			cmd->mmu_hdls,
 			cmd->num_hdl,
 			cmd->fd,
 			dmabuf,
-			&hw_vaddr,
 			&len,
 			CAM_SMMU_REGION_IO,
+			tbl.bufq[idx].iova,
 			is_internal);
 		if (rc) {
 			CAM_ERR(CAM_MEM,
@@ -1237,17 +1252,12 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 	}
 
 	tbl.bufq[idx].kmdvaddr = kvaddr;
-
-	if (cmd->num_hdl > 0)
-		tbl.bufq[idx].vaddr = hw_vaddr;
-	else
-		tbl.bufq[idx].vaddr = 0;
-
 	tbl.bufq[idx].dma_buf = dmabuf;
 	tbl.bufq[idx].len = len;
 	tbl.bufq[idx].num_hdl = cmd->num_hdl;
 	memcpy(tbl.bufq[idx].hdls, cmd->mmu_hdls,
 		sizeof(int32_t) * cmd->num_hdl);
+
 	tbl.bufq[idx].is_imported = true;
 	tbl.bufq[idx].is_internal = is_internal;
 	kref_init(&tbl.bufq[idx].krefcount);
@@ -1385,10 +1395,11 @@ static int cam_mem_mgr_cleanup_table(void)
 		tbl.bufq[i].i_ino = 0;
 		tbl.bufq[i].flags = 0;
 		tbl.bufq[i].buf_handle = -1;
-		tbl.bufq[i].vaddr = 0;
 		tbl.bufq[i].len = 0;
 		memset(tbl.bufq[i].hdls, 0,
 			sizeof(int32_t) * tbl.bufq[i].num_hdl);
+		memset(tbl.bufq[i].iova, 0,
+			sizeof(dma_addr_t) * CAM_MEM_MMU_MAX_HANDLE);
 		tbl.bufq[i].num_hdl = 0;
 		tbl.bufq[i].dma_buf = NULL;
 		tbl.bufq[i].active = false;
@@ -1441,7 +1452,7 @@ static void cam_mem_util_unmap(struct kref *kref)
 
 	mutex_lock(&tbl.m_lock);
 	if ((!tbl.bufq[idx].active) &&
-		(tbl.bufq[idx].vaddr) == 0) {
+		(tbl.bufq[idx].iova[0]) == 0) {
 		CAM_WARN(CAM_MEM, "Buffer at idx=%d is already unmapped,",
 			idx);
 		mutex_unlock(&tbl.m_lock);
@@ -1451,7 +1462,6 @@ static void cam_mem_util_unmap(struct kref *kref)
 	/* Deactivate the buffer queue to prevent multiple unmap */
 	mutex_lock(&tbl.bufq[idx].q_lock);
 	tbl.bufq[idx].active = false;
-	tbl.bufq[idx].vaddr = 0;
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 	mutex_unlock(&tbl.m_lock);
 
@@ -1493,6 +1503,8 @@ static void cam_mem_util_unmap(struct kref *kref)
 	tbl.bufq[idx].buf_handle = -1;
 	memset(tbl.bufq[idx].hdls, 0,
 		sizeof(int32_t) * CAM_MEM_MMU_MAX_HANDLE);
+	memset(tbl.bufq[idx].iova, 0,
+		sizeof(dma_addr_t) * CAM_MEM_MMU_MAX_HANDLE);
 
 	CAM_DBG(CAM_MEM,
 		"Ion buf at idx = %d freeing fd = %d, imported %d, dma_buf %pK, i_ino %lu",
@@ -1609,13 +1621,13 @@ int cam_mem_mgr_request_mem(struct cam_mem_mgr_request_desc *inp,
 	int ion_fd = -1;
 	int rc = 0;
 	uintptr_t kvaddr;
-	dma_addr_t iova = 0;
 	size_t request_len = 0;
 	uint32_t mem_handle;
 	int32_t idx;
 	int32_t smmu_hdl = 0;
 	int32_t num_hdl = 0;
 	unsigned long i_ino = 0;
+	dma_addr_t iova = 0;
 
 	enum cam_smmu_region_id region = CAM_SMMU_REGION_SHARED;
 
@@ -1679,7 +1691,6 @@ int cam_mem_mgr_request_mem(struct cam_mem_mgr_request_desc *inp,
 		&iova,
 		&request_len,
 		region);
-
 	if (rc < 0) {
 		CAM_ERR(CAM_MEM, "SMMU mapping failed");
 		goto smmu_fail;
@@ -1704,12 +1715,11 @@ int cam_mem_mgr_request_mem(struct cam_mem_mgr_request_desc *inp,
 	tbl.bufq[idx].buf_handle = mem_handle;
 	tbl.bufq[idx].kmdvaddr = kvaddr;
 
-	tbl.bufq[idx].vaddr = iova;
-
 	tbl.bufq[idx].len = inp->size;
 	tbl.bufq[idx].num_hdl = num_hdl;
 	memcpy(tbl.bufq[idx].hdls, &smmu_hdl,
 		sizeof(int32_t));
+	tbl.bufq[idx].iova[0] = iova;
 	tbl.bufq[idx].is_imported = false;
 	kref_init(&tbl.bufq[idx].krefcount);
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_KERNEL;
@@ -1760,7 +1770,7 @@ int cam_mem_mgr_release_mem(struct cam_mem_mgr_memory_desc *inp)
 	}
 
 	if (!tbl.bufq[idx].active) {
-		if (tbl.bufq[idx].vaddr == 0) {
+		if (tbl.bufq[idx].iova[0] == 0) {
 			CAM_ERR(CAM_MEM, "buffer is released already");
 			return 0;
 		}
@@ -1845,7 +1855,6 @@ int cam_mem_mgr_reserve_memory_region(struct cam_mem_mgr_request_desc *inp,
 
 	rc = cam_smmu_reserve_buf_region(region,
 		inp->smmu_hdl, buf, &iova, &request_len);
-
 	if (rc) {
 		CAM_ERR(CAM_MEM, "Reserving secondary heap failed");
 		goto smmu_fail;
@@ -1870,12 +1879,11 @@ int cam_mem_mgr_reserve_memory_region(struct cam_mem_mgr_request_desc *inp,
 	tbl.bufq[idx].buf_handle = mem_handle;
 	tbl.bufq[idx].kmdvaddr = kvaddr;
 
-	tbl.bufq[idx].vaddr = iova;
-
 	tbl.bufq[idx].len = request_len;
 	tbl.bufq[idx].num_hdl = num_hdl;
 	memcpy(tbl.bufq[idx].hdls, &smmu_hdl,
 		sizeof(int32_t));
+	tbl.bufq[idx].iova[0] = iova;
 	tbl.bufq[idx].is_imported = false;
 	kref_init(&tbl.bufq[idx].krefcount);
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_KERNEL;
@@ -1931,7 +1939,7 @@ int cam_mem_mgr_free_memory_region(struct cam_mem_mgr_memory_desc *inp)
 	}
 
 	if (!tbl.bufq[idx].active) {
-		if (tbl.bufq[idx].vaddr == 0) {
+		if (tbl.bufq[idx].iova[0] == 0) {
 			CAM_ERR(CAM_MEM, "buffer is released already");
 			return 0;
 		}

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __UAPI_CAM_CPAS_H__
@@ -72,6 +72,10 @@
 
 #define CAM_AXI_PATH_DATA_ALL  256
 #define CAM_CPAS_FUSES_MAX     32
+
+#define CAM_NO_COHERENCY              1
+#define CAM_DMA_COHERENT              2
+#define CAM_DMA_COHERENT_HINT_CACHED  3
 
 /**
  * struct cam_cpas_fuse_value - CPAS fuse value
@@ -147,6 +151,32 @@ struct cam_cpas_query_cap_v3 {
 	struct cam_hw_version     cpas_version;
 	struct cam_cpas_fuse_info fuse_info;
 	__u32                     rt_bw_voting_needed;
+};
+
+/**
+ * struct cam_cpas_query_cap - CPAS query device capability payload
+ *
+ * @version             : Camera cpas query version
+ * @camera_family       : Camera family type
+ * @cam_caps            : Camera_capability
+ * @coherency_mode      : Coherency mode
+ * @camera_version      : Camera platform version
+ * @cpas_version        : Camera CPAS version within camera platform
+ * @fuse_info           : Camera fuse info
+ * @rt_bw_voting_needed : Rt bw voting need
+ * @reserved            : Reserved field for alignment
+ *
+ */
+struct cam_cpas_query_cap_v4 {
+	__u32                     version;
+	__u32                     camera_family;
+	__u32                     cam_caps;
+	__u32                     coherency_mode;
+	struct cam_hw_version     camera_version;
+	struct cam_hw_version     cpas_version;
+	struct cam_cpas_fuse_info fuse_info;
+	__u32                     rt_bw_voting_needed;
+	__u32                     reserved;
 };
 
 /**

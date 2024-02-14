@@ -72,6 +72,13 @@
 
 #define CAM_IFE_CSID_WIDTH_FUSE_VAL_MAX                   4
 
+/* convert qtime to boottime */
+struct csid_ref_time {
+	int64_t btime;
+	int64_t qtime;
+};
+extern struct csid_ref_time g_ref_time;
+
 /* enum for multiple mem base in some of the targets */
 enum cam_ife_csid_mem_base_id {
 	CAM_IFE_CSID_CLC_MEM_BASE_ID,

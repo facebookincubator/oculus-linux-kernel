@@ -810,6 +810,7 @@ QDF_STATUS wlansap_start_bss(struct sap_context *sap_ctx,
 	}
 
 	sap_ctx->fsm_state = SAP_INIT;
+	sap_debug("sap_fsm: vdev %d:  => SAP_INIT", sap_ctx->vdev_id);
 
 	qdf_status = wlan_set_vdev_crypto_prarams_from_ie(
 			sap_ctx->vdev,
@@ -3549,6 +3550,7 @@ qdf_freq_t wlansap_get_chan_band_restrict(struct sap_context *sap_ctx,
 	enum reg_wifi_band sap_band;
 	enum band_info band;
 	bool sta_sap_scc_on_indoor_channel;
+	struct ch_params ch_params = {0};
 
 	if (!sap_ctx) {
 		sap_err("sap_ctx NULL parameter");
@@ -3653,6 +3655,22 @@ qdf_freq_t wlansap_get_chan_band_restrict(struct sap_context *sap_ctx,
 		sap_debug("channel is unsafe");
 		*csa_reason = CSA_REASON_UNSAFE_CHANNEL;
 		return wlansap_get_safe_channel_from_pcl_and_acs_range(sap_ctx);
+	} else if (sap_band == REG_BAND_6G &&
+		   wlan_reg_get_keep_6ghz_sta_cli_connection(mac->pdev)) {
+		ch_params.ch_width = sap_ctx->ch_params.ch_width;
+		wlan_reg_set_channel_params_for_pwrmode(mac->pdev,
+						sap_ctx->chan_freq,
+						0, &ch_params,
+						REG_CURRENT_PWR_MODE);
+		if (sap_ctx->ch_params.ch_width != ch_params.ch_width) {
+			sap_debug("Bonded 6GHz channels are disabled");
+			*csa_reason = CSA_REASON_BAND_RESTRICTED;
+			return wlansap_get_safe_channel_from_pcl_and_acs_range(
+								sap_ctx);
+		} else {
+			sap_debug("No need switch SAP/Go channel");
+			return 0;
+		}
 	} else {
 		sap_debug("No need switch SAP/Go channel");
 		return 0;

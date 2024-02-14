@@ -474,6 +474,9 @@ int hif_apps_irqs_disable(struct hif_opaque_softc *hif_ctx)
 	if (!scn)
 		return -EINVAL;
 
+	if (pld_is_one_msi(scn->qdf_dev->dev))
+		return 0;
+
 	/* if the wake_irq is shared, don't disable it twice */
 	for (i = 0; i < scn->ce_count; ++i) {
 		int irq = scn->bus_ops.hif_map_ce_to_irq(scn, i);
@@ -494,6 +497,9 @@ int hif_apps_irqs_enable(struct hif_opaque_softc *hif_ctx)
 	scn = HIF_GET_SOFTC(hif_ctx);
 	if (!scn)
 		return -EINVAL;
+
+	if (pld_is_one_msi(scn->qdf_dev->dev))
+		return 0;
 
 	/* if the wake_irq is shared, don't enable it twice */
 	for (i = 0; i < scn->ce_count; ++i) {

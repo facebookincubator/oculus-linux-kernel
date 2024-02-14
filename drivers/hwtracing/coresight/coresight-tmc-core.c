@@ -423,7 +423,7 @@ static ssize_t out_mode_store(struct device *dev,
 
 	if (strlen(buf) >= 10)
 		return -EINVAL;
-	if (sscanf(buf, "%10s", str) != 1)
+	if (sscanf(buf, "%9s", str) != 1)
 		return -EINVAL;
 
 	ret = tmc_etr_switch_mode(drvdata, str);

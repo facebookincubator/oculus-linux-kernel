@@ -538,6 +538,8 @@ enum wlan_phymode {
 	((mode) == WLAN_PHYMODE_11AXG_HE40)  || \
 	((mode) == WLAN_PHYMODE_11AXG_HE40PLUS)  || \
 	((mode) == WLAN_PHYMODE_11AXG_HE40MINUS); })
+
+#define IS_WLAN_PHYMODE_EHT(_mode) 0
 #endif
 
 #define IS_WLAN_PHYMODE_HT(_mode) ({typeof(_mode) mode = (_mode); \

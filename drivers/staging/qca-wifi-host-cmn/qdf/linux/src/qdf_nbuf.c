@@ -531,6 +531,40 @@ qdf_export_symbol(qdf_nbuf_frag_count_dec);
 
 #endif
 
+static inline void
+qdf_nbuf_set_defaults(struct sk_buff *skb, int align, int reserve)
+{
+	unsigned long offset;
+
+	memset(skb->cb, 0x0, sizeof(skb->cb));
+	skb->dev = NULL;
+
+	/*
+	 * The default is for netbuf fragments to be interpreted
+	 * as wordstreams rather than bytestreams.
+	 */
+	QDF_NBUF_CB_TX_EXTRA_FRAG_WORDSTR_EFRAG(skb) = 1;
+	QDF_NBUF_CB_TX_EXTRA_FRAG_WORDSTR_NBUF(skb) = 1;
+
+	/*
+	 * XXX:how about we reserve first then align
+	 * Align & make sure that the tail & data are adjusted properly
+	 */
+
+	if (align) {
+		offset = ((unsigned long)skb->data) % align;
+		if (offset)
+			skb_reserve(skb, align - offset);
+	}
+
+	/*
+	 * NOTE:alloc doesn't take responsibility if reserve unaligns the data
+	 * pointer
+	 */
+	skb_reserve(skb, reserve);
+	qdf_nbuf_count_inc(skb);
+}
+
 #if defined(CONFIG_WIFI_EMULATION_WIFI_3_0) && defined(BUILD_X86) && \
 	!defined(QCA_WIFI_QCN9000)
 struct sk_buff *__qdf_nbuf_alloc(qdf_device_t osdev, size_t size, int reserve,
@@ -538,7 +572,6 @@ struct sk_buff *__qdf_nbuf_alloc(qdf_device_t osdev, size_t size, int reserve,
 				 uint32_t line)
 {
 	struct sk_buff *skb;
-	unsigned long offset;
 	uint32_t lowmem_alloc_tries = 0;
 
 	if (align)
@@ -576,32 +609,8 @@ skb_alloc:
 			goto realloc;
 		}
 	}
-	memset(skb->cb, 0x0, sizeof(skb->cb));
 
-	/*
-	 * The default is for netbuf fragments to be interpreted
-	 * as wordstreams rather than bytestreams.
-	 */
-	QDF_NBUF_CB_TX_EXTRA_FRAG_WORDSTR_EFRAG(skb) = 1;
-	QDF_NBUF_CB_TX_EXTRA_FRAG_WORDSTR_NBUF(skb) = 1;
-
-	/*
-	 * XXX:how about we reserve first then align
-	 * Align & make sure that the tail & data are adjusted properly
-	 */
-
-	if (align) {
-		offset = ((unsigned long)skb->data) % align;
-		if (offset)
-			skb_reserve(skb, align - offset);
-	}
-
-	/*
-	 * NOTE:alloc doesn't take responsibility if reserve unaligns the data
-	 * pointer
-	 */
-	skb_reserve(skb, reserve);
-	qdf_nbuf_count_inc(skb);
+	qdf_nbuf_set_defaults(skb, align, reserve);
 
 	return skb;
 }
@@ -612,7 +621,6 @@ struct sk_buff *__qdf_nbuf_alloc(qdf_device_t osdev, size_t size, int reserve,
 				 uint32_t line)
 {
 	struct sk_buff *skb;
-	unsigned long offset;
 	int flags = GFP_KERNEL;
 
 	if (align)
@@ -648,32 +656,7 @@ struct sk_buff *__qdf_nbuf_alloc(qdf_device_t osdev, size_t size, int reserve,
 	}
 
 skb_alloc:
-	memset(skb->cb, 0x0, sizeof(skb->cb));
-
-	/*
-	 * The default is for netbuf fragments to be interpreted
-	 * as wordstreams rather than bytestreams.
-	 */
-	QDF_NBUF_CB_TX_EXTRA_FRAG_WORDSTR_EFRAG(skb) = 1;
-	QDF_NBUF_CB_TX_EXTRA_FRAG_WORDSTR_NBUF(skb) = 1;
-
-	/*
-	 * XXX:how about we reserve first then align
-	 * Align & make sure that the tail & data are adjusted properly
-	 */
-
-	if (align) {
-		offset = ((unsigned long)skb->data) % align;
-		if (offset)
-			skb_reserve(skb, align - offset);
-	}
-
-	/*
-	 * NOTE:alloc doesn't take responsibility if reserve unaligns the data
-	 * pointer
-	 */
-	skb_reserve(skb, reserve);
-	qdf_nbuf_count_inc(skb);
+	qdf_nbuf_set_defaults(skb, align, reserve);
 
 	return skb;
 }
@@ -747,6 +730,63 @@ __qdf_nbuf_t __qdf_nbuf_clone(__qdf_nbuf_t skb)
 }
 
 qdf_export_symbol(__qdf_nbuf_clone);
+
+struct sk_buff *
+__qdf_nbuf_page_frag_alloc(qdf_device_t osdev, size_t size, int reserve,
+			   int align, __qdf_frag_cache_t *pf_cache,
+			   const char *func, uint32_t line)
+{
+	struct sk_buff *skb;
+	qdf_frag_t frag_data;
+	size_t orig_size = size;
+	int flags = GFP_KERNEL;
+
+	if (align)
+		size += (align - 1);
+
+	size += NET_SKB_PAD;
+	size += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+	size = SKB_DATA_ALIGN(size);
+
+	if (in_interrupt() || irqs_disabled() || in_atomic())
+		flags = GFP_ATOMIC;
+
+	frag_data = page_frag_alloc(pf_cache, size, flags);
+	if (!frag_data) {
+		qdf_rl_nofl_err("page frag alloc failed %zuB @ %s:%d",
+				size, func, line);
+		return __qdf_nbuf_alloc(osdev, orig_size, reserve, align, 0,
+					func, line);
+	}
+
+	skb = build_skb(frag_data, size);
+	if (skb) {
+		skb_reserve(skb, NET_SKB_PAD);
+		goto skb_alloc;
+	}
+
+	/* Free the data allocated from pf_cache */
+	page_frag_free(frag_data);
+
+	size = orig_size + align - 1;
+
+	skb = pld_nbuf_pre_alloc(size);
+	if (!skb) {
+		qdf_rl_nofl_err("NBUF alloc failed %zuB @ %s:%d",
+				size, func, line);
+		__qdf_nbuf_start_replenish_timer();
+		return NULL;
+	}
+
+	__qdf_nbuf_stop_replenish_timer();
+
+skb_alloc:
+	qdf_nbuf_set_defaults(skb, align, reserve);
+
+	return skb;
+}
+
+qdf_export_symbol(__qdf_nbuf_page_frag_alloc);
 
 #ifdef QCA_DP_TX_NBUF_LIST_FREE
 void
@@ -3345,7 +3385,7 @@ static void qdf_nbuf_track_prefill(void)
  * This initializes the memory manager for the nbuf tracking cookies.  Because
  * these cookies are all the same size and only used in this feature, we can
  * use a kmem_cache to provide tracking as well as to speed up allocations.
- * To avoid the overhead of allocating and freeing the buffers (including SLUB
+ * To avoid the overhead of allocating and freeing the buffers (including Debug
  * features) a freelist is prepopulated here.
  *
  * Return: None
@@ -4093,6 +4133,33 @@ qdf_nbuf_t qdf_nbuf_clone_debug(qdf_nbuf_t buf, const char *func, uint32_t line)
 	return cloned_buf;
 }
 qdf_export_symbol(qdf_nbuf_clone_debug);
+
+qdf_nbuf_t
+qdf_nbuf_page_frag_alloc_debug(qdf_device_t osdev, qdf_size_t size, int reserve,
+			       int align, __qdf_frag_cache_t *pf_cache,
+			       const char *func, uint32_t line)
+{
+	qdf_nbuf_t nbuf;
+
+	if (is_initial_mem_debug_disabled)
+		return __qdf_nbuf_page_frag_alloc(osdev, size, reserve, align,
+						  pf_cache, func, line);
+
+	nbuf = __qdf_nbuf_page_frag_alloc(osdev, size, reserve, align,
+					  pf_cache, func, line);
+
+	/* Store SKB in internal QDF tracking table */
+	if (qdf_likely(nbuf)) {
+		qdf_net_buf_debug_add_node(nbuf, size, func, line);
+		qdf_nbuf_history_add(nbuf, func, line, QDF_NBUF_ALLOC);
+	} else {
+		qdf_nbuf_history_add(nbuf, func, line, QDF_NBUF_ALLOC_FAILURE);
+	}
+
+	return nbuf;
+}
+
+qdf_export_symbol(qdf_nbuf_page_frag_alloc_debug);
 
 qdf_nbuf_t qdf_nbuf_copy_debug(qdf_nbuf_t buf, const char *func, uint32_t line)
 {

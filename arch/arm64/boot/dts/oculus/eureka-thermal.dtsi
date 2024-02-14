@@ -60,15 +60,24 @@
 		thermal-sensors = <&battery_virtual_sensor>;
 		trips {
 			batt_virt_limit_trip0: batt_virt_limit_trip0 {
+				temperature = <45000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			batt_virt_limit_trip1: batt_virt_limit_trip1 {
 				temperature = <58000>;
 				hysteresis = <2000>;
-				type = "active";
+				type = "passive";
 			};
 		};
 
 		cooling-maps {
 			batt_virt_limit_map0: batt_virt_limit_map0 {
 				trip = <&batt_virt_limit_trip0>;
+				cooling-device = <&CPU0 0 1>;
+			};
+			batt_virt_limit_map1: batt_virt_limit_map1 {
+				trip = <&batt_virt_limit_trip1>;
 				cooling-device = <&CPU2 0 1>;
 			};
 		};
@@ -1894,7 +1903,7 @@
 		};
 	};
 
-	usb-usr {
+	usb-conn {
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-sensors = <&pmk8550_vadc PM8550B_ADC5_GEN3_AMUX_THM4_USB_THERM_100K_PU>;
@@ -1929,7 +1938,7 @@
 		status = "ok";
 		#thermal-sensor-cells = <0>;
 
-		thermal-zones = "bq27z561-0", "pcb3-usr", "pogo-usr", "usb-usr";
+		thermal-zones = "bq27z561-0", "pcb3-usr", "pogo-usr", "usb-conn";
 
 		coefficients {
 			charging {

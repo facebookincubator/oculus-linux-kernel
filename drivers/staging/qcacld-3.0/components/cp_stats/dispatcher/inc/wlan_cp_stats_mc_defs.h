@@ -442,12 +442,25 @@ struct pmf_bcn_protect_stats {
 };
 
 /**
+ * struct vdev_summary_extd_stats - vdev summary extended stats
+ * @vdev_id: vdev_id of the event
+ * @is_mlo_vdev_active: is the mlo vdev currently active
+ * @vdev_tx_power: vdev tx power
+ */
+struct vdev_summary_extd_stats {
+	uint8_t vdev_id;
+	bool is_mlo_vdev_active;
+	uint32_t vdev_tx_power;
+};
+
+/**
  * struct vdev_mc_cp_stats - vdev specific stats
  * @cca: cca stats
  * @tx_rate_flags: tx rate flags (enum tx_rate_info)
  * @chain_rssi: chain rssi
  * @vdev_summary_stats: vdev's summary stats
  * @pmf_bcn_stats: pmf beacon protect stats
+ * @vdev_extd_stats: vdev summary extended stats
  */
 struct vdev_mc_cp_stats {
 	struct cca_stats cca;
@@ -455,6 +468,7 @@ struct vdev_mc_cp_stats {
 	int8_t chain_rssi[MAX_NUM_CHAINS];
 	struct summary_stats vdev_summary_stats;
 	struct pmf_bcn_protect_stats pmf_bcn_stats;
+	struct vdev_summary_extd_stats vdev_extd_stats;
 };
 
 /**
@@ -746,6 +760,8 @@ struct peer_stats_info_ext_event {
  * @num_peer_stats_info_ext: number of peer extended stats info
  * @peer_stats_info_ext: peer extended stats info
  * @bcn_protect_stats: pmf bcn protect stats
+ * @num_vdev_extd_stats: number of vdev extended stats
+ * @vdev_extd_stats: if populated indicates array of ext summary stats per vdev
  */
 struct stats_event {
 	uint32_t num_pdev_stats;
@@ -774,6 +790,8 @@ struct stats_event {
 	uint32_t num_peer_stats_info_ext;
 	struct peer_stats_info_ext_event *peer_stats_info_ext;
 	struct pmf_bcn_protect_stats bcn_protect_stats;
+	uint32_t num_vdev_extd_stats;
+	struct vdev_summary_extd_stats *vdev_extd_stats;
 };
 
 /**

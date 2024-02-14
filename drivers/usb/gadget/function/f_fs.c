@@ -714,6 +714,10 @@ static void ffs_epfile_io_complete(struct usb_ep *_ep, struct usb_request *req)
 	struct ffs_io_data *io_data = req->context;
 
 	ENTER();
+
+	if (WARN_ON(io_data == NULL))
+		return;
+
 	if (req->status)
 		io_data->status = req->status;
 	else
@@ -1089,6 +1093,7 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 				pr_err("%s: endpoint disabled", __func__);
 				if (ep->ep)
 					usb_ep_dequeue(ep->ep, req);
+				req->context = NULL;
 				goto error_lock;
 			}
 			/*
@@ -1103,6 +1108,7 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 			interrupted = io_data->status < 0;
 		}
 
+		req->context = NULL;
 		if (interrupted)
 			ret = -EINTR;
 		else if (io_data->read && io_data->status > 0)

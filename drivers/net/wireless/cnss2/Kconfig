@@ -96,3 +96,9 @@ config CNSS_REQ_FW_DIRECT
 	  This enables calling request_firmware_direct for firmware or
 	  configuration file to avoid 60s timeout while search file under user
 	  space failure.
+
+config QCOM_CNSS_PANIC_NOTIFIER
+	bool "Install panic notifier to dump MHI registers"
+	depends on CNSS2
+	help
+	  Install panic notifier to dump MHI registers on kernel panic.

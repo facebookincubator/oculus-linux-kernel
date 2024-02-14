@@ -220,6 +220,7 @@ typedef enum {
 	CS_SCHED_LOAD_BALANCE,
 	CS_SPREAD_PAGE,
 	CS_SPREAD_SLAB,
+	CS_SCHED_WAKE_AFFINE,
 } cpuset_flagbits_t;
 
 /* convenient tests for these bits */
@@ -261,6 +262,11 @@ static inline int is_spread_page(const struct cpuset *cs)
 static inline int is_spread_slab(const struct cpuset *cs)
 {
 	return test_bit(CS_SPREAD_SLAB, &cs->flags);
+}
+
+static inline int is_sched_wake_affine(const struct cpuset *cs)
+{
+	return test_bit(CS_SCHED_WAKE_AFFINE, &cs->flags);
 }
 
 static inline int is_partition_root(const struct cpuset *cs)
@@ -442,6 +448,15 @@ static void cpuset_update_task_spread_flag(struct cpuset *cs,
 		task_set_spread_slab(tsk);
 	else
 		task_clear_spread_slab(tsk);
+}
+
+static void cpuset_update_task_sched_wake_affine_flag(struct cpuset *cs,
+					struct task_struct *tsk)
+{
+	if (is_sched_wake_affine(cs))
+		tsk->wake_affine = true;
+	else
+		tsk->wake_affine = false;
 }
 
 /*
@@ -1917,10 +1932,10 @@ static int update_relax_domain_level(struct cpuset *cs, s64 val)
 }
 
 /**
- * update_tasks_flags - update the spread flags of tasks in the cpuset.
- * @cs: the cpuset in which each task's spread flags needs to be changed
+ * update_tasks_flags - update the flags of tasks in the cpuset.
+ * @cs: the cpuset in which each task's flags needs to be changed
  *
- * Iterate through each task of @cs updating its spread flags.  As this
+ * Iterate through each task of @cs updating its flags.  As this
  * function is called with cpuset_mutex held, cpuset membership stays
  * stable.
  */
@@ -1930,8 +1945,10 @@ static void update_tasks_flags(struct cpuset *cs)
 	struct task_struct *task;
 
 	css_task_iter_start(&cs->css, 0, &it);
-	while ((task = css_task_iter_next(&it)))
+	while ((task = css_task_iter_next(&it))) {
 		cpuset_update_task_spread_flag(cs, task);
+		cpuset_update_task_sched_wake_affine_flag(cs, task);
+	}
 	css_task_iter_end(&it);
 }
 
@@ -2260,6 +2277,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 
 		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
 		cpuset_update_task_spread_flag(cs, task);
+		cpuset_update_task_sched_wake_affine_flag(cs, task);
 	}
 
 	/*
@@ -2317,6 +2335,7 @@ typedef enum {
 	FILE_MEMORY_PRESSURE,
 	FILE_SPREAD_PAGE,
 	FILE_SPREAD_SLAB,
+	FILE_SCHED_WAKE_AFFINE,
 } cpuset_filetype_t;
 
 static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
@@ -2345,6 +2364,9 @@ static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
 		break;
 	case FILE_SCHED_LOAD_BALANCE:
 		retval = update_flag(CS_SCHED_LOAD_BALANCE, cs, val);
+		break;
+	case FILE_SCHED_WAKE_AFFINE:
+		retval = update_flag(CS_SCHED_WAKE_AFFINE, cs, val);
 		break;
 	case FILE_MEMORY_MIGRATE:
 		retval = update_flag(CS_MEMORY_MIGRATE, cs, val);
@@ -2515,6 +2537,8 @@ static u64 cpuset_read_u64(struct cgroup_subsys_state *css, struct cftype *cft)
 		return is_mem_hardwall(cs);
 	case FILE_SCHED_LOAD_BALANCE:
 		return is_sched_load_balance(cs);
+	case FILE_SCHED_WAKE_AFFINE:
+		return is_sched_wake_affine(cs);
 	case FILE_MEMORY_MIGRATE:
 		return is_memory_migrate(cs);
 	case FILE_MEMORY_PRESSURE_ENABLED:
@@ -2665,6 +2689,13 @@ static struct cftype legacy_files[] = {
 		.read_s64 = cpuset_read_s64,
 		.write_s64 = cpuset_write_s64,
 		.private = FILE_SCHED_RELAX_DOMAIN_LEVEL,
+	},
+
+	{
+		.name = "sched_wake_affine",
+		.read_u64 = cpuset_read_u64,
+		.write_u64 = cpuset_write_u64,
+		.private = FILE_SCHED_WAKE_AFFINE,
 	},
 
 	{

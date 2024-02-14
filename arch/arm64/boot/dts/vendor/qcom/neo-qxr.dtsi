@@ -101,6 +101,10 @@
 	};
 };
 
+&slim_msm {
+	status = "ok";
+};
+
 &bluetooth {
 	pinctrl-names = "default", "bt_pon_en", "bt_pon_dis", "bt_poff_en", "bt_poff_dis";
 	pinctrl-0 = <&bt_en_sleep>;

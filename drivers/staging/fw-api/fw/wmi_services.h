@@ -634,6 +634,12 @@ typedef  enum  {
     WMI_SERVICE_N_LINK_MLO_SUPPORT = 381,  /* Indicate FW supports N MLO link & vdev re-purpose between links */
     WMI_SERVICE_ATF_MAX_CLIENT_512_SUPPORT = 382, /* Indicates FW supports maximum of 512 clients when ATF is enabled */
     WMI_SERVICE_FISA_DYNAMIC_MSDU_AGGR_SIZE_SUPPORT = 383, /* Indicates FW support for FISA aggregation size up to 64 instead of only 16 */
+    WMI_SERVICE_BRIDGE_VDEV_SUPPORT = 384, /* Indicated FW supports Bridge VDEV */
+    WMI_SERVICE_MLO_MODE1_RECOVERY_SUPPORTED = 385, /* Indicate fw support for mlo mode1 recovery */
+    WMI_SERVICE_TX_PWR_PER_PPDU_STATS_SUPPORT = 386, /* FW support to check tx power stats per PPDU */
+    WMI_SERVICE_DISABLE_WDS_PEER_MAP_UNMAP_EVENT_SUPPORT = 387, /* Indicate FW support to disable wds peer map/unmap events */
+    WMI_SERVICE_PDEV_WSI_STATS_INFO_SUPPORT = 388, /* Support for WSI Stats Info. */
+    WMI_SERVICE_MULTIPLE_RF_PATH_SOC_SUPPORT = 389, /* Indicates FW supports Multiple RF Path on SOC Level */
 
     WMI_MAX_EXT2_SERVICE
 

@@ -339,6 +339,8 @@ struct kgsl_device {
 	struct list_head privileged_uid_list;
 	struct mutex uid_list_mutex;
 	pid_t privileged_tid;
+	/** @dump_all_ibs: Whether to dump all ibs in snapshot */
+	bool dump_all_ibs;
 };
 
 #define KGSL_MMU_DEVICE(_mmu) \
@@ -640,6 +642,18 @@ static inline void kgsl_regread(struct kgsl_device *device,
 				unsigned int *value)
 {
 	*value = kgsl_regmap_read(&device->regmap, offsetwords);
+}
+
+static inline void kgsl_regread64(struct kgsl_device *device,
+				u32 offsetwords_lo, u32 offsetwords_hi,
+				u64 *value)
+{
+	u32 val_lo = 0, val_hi = 0;
+
+	val_lo = kgsl_regmap_read(&device->regmap, offsetwords_lo);
+	val_hi = kgsl_regmap_read(&device->regmap, offsetwords_hi);
+
+	*value = (((u64)val_hi << 32) | val_lo);
 }
 
 static inline void kgsl_regwrite(struct kgsl_device *device,

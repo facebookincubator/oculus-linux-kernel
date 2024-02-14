@@ -1386,6 +1386,35 @@ wlan_set_tpc_update_required_for_sta(struct wlan_objmgr_vdev *vdev, bool value)
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+/**
+ * wlan_mlme_get_sta_tx_nss() - API to get station tx NSS
+ *
+ * @psoc: psoc context
+ * @vdev: pointer to vdev
+ * @tx_nss : tx_nss out parameter
+ *
+ * Return: QDF_STATUS_SUCCESS or QDF_STATUS_FAILURE
+ */
+QDF_STATUS
+wlan_mlme_get_sta_tx_nss(struct wlan_objmgr_psoc *psoc,
+			 struct wlan_objmgr_vdev *vdev,
+			 uint8_t *tx_nss);
+
+/**
+ * wlan_mlme_get_sta_rx_nss() - API to get station rx NSS
+ *
+ * @psoc: psoc context
+ * @vdev: pointer to vdev
+ * @rx_nss : rx_nss out parameter
+ *
+ * Return: QDF_STATUS_SUCCESS or QDF_STATUS_FAILURE
+ */
+QDF_STATUS
+wlan_mlme_get_sta_rx_nss(struct wlan_objmgr_psoc *psoc,
+			 struct wlan_objmgr_vdev *vdev,
+			 uint8_t *rx_nss);
+
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
  * wlan_mlme_defer_pmk_set_in_roaming() - Set the set_key pending status

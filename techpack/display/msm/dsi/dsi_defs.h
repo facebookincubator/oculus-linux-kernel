@@ -437,6 +437,8 @@ struct dsi_panel_cmd_set {
  * @roi_caps:         Panel ROI capabilities.
  * @qsync_min_fps:        Qsync min fps rate
  * @internal_1h_time_ns: Internal (TFT) 1H row time
+ * @internal_vactive: Internal (TFT) active row count
+ * @disable_fifo:     Disable DDIC FIFO buffer
  */
 struct dsi_mode_info {
 	u32 h_active;
@@ -468,7 +470,9 @@ struct dsi_mode_info {
 	u32 qsync_min_fps;
 
 	u32 internal_1h_time_ns;
+	u32 internal_vactive;
 	s32 fifo_trim_lines;
+	bool disable_fifo;
 };
 
 /**
@@ -654,6 +658,8 @@ struct dsi_host_config {
  * @disable_rsc_solver: Dynamically disable RSC solver for the timing mode.
  * @use_default_pps:      Use default PPS calculation.
  * @internal_1h_time_ns: Internal (TFT) 1H row time
+ * @internal_vactive:     Internal (TFT) active row count
+ * @disable_fifo:         Disable DDIC FIFO buffer
  */
 struct dsi_display_mode_priv_info {
 	struct dsi_panel_cmd_set cmd_sets[DSI_CMD_SET_MAX];
@@ -683,7 +689,9 @@ struct dsi_display_mode_priv_info {
 	bool use_default_pps;
 
 	u32 internal_1h_time_ns;
+	u32 internal_vactive;
 	s32 fifo_trim_lines;
+	bool disable_fifo;
 };
 
 /**

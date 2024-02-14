@@ -52,7 +52,7 @@ CONFIG_FEATURE_EPPING := y
 CONFIG_WLAN_LOG_ENTER := y
 CONFIG_WLAN_LOG_EXIT := y
 
-# Features gets enabled on slub debug
+# Features gets enabled on debug debug
 CONFIG_WLAN_OBJMGR_DEBUG:= y
 CONFIG_OL_RX_INDICATION_RECORD := y
 CONFIG_TSOSEG_DEBUG := y

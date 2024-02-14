@@ -16,7 +16,7 @@
 #define IRQSOFF_SENTINEL 0x0fffDEAD
 
 static unsigned int sysctl_preemptoff_tracing_threshold_ns = 1000000;
-static unsigned int sysctl_irqsoff_tracing_threshold_ns = 5000000;
+static unsigned int sysctl_irqsoff_tracing_threshold_ns = 1000000;
 static unsigned int sysctl_irqsoff_dmesg_output_enabled;
 static unsigned int sysctl_irqsoff_crash_sentinel_value;
 static unsigned int sysctl_irqsoff_crash_threshold_ns = 10000000;

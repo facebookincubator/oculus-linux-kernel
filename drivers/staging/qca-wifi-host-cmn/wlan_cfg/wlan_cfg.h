@@ -283,6 +283,7 @@ struct wlan_srng_cfg {
  *                           pool support
  * @is_rx_refill_buff_pool_enabled: flag to enable/disable RX refill buffer
  *                           pool support
+ * @rx_refill_buff_pool_size: RX refill buffer pool size
  * @rx_pending_high_threshold: threshold of starting pkt drop
  * @rx_pending_low_threshold: threshold of stopping pkt drop
  * @is_poll_mode_enabled:
@@ -461,6 +462,7 @@ struct wlan_cfg_dp_soc_ctxt {
 	bool pext_stats_enabled;
 	bool is_rx_buff_pool_enabled;
 	bool is_rx_refill_buff_pool_enabled;
+	int rx_refill_buff_pool_size;
 	uint32_t rx_pending_high_threshold;
 	uint32_t rx_pending_low_threshold;
 	bool is_poll_mode_enabled;
@@ -562,6 +564,7 @@ struct wlan_cfg_dp_pdev_ctxt {
  * @num_reo_exception_ring_entries: num of rx exception ring entries
  * @num_tx_desc: num of tx descriptors
  * @num_tx_ext_desc: num of tx ext descriptors
+ * @num_rx_sw_desc: number of rx sw descriptors
  * @num_reo_dst_ring_entries: Number of entries in REO destination ring
  * @num_rxdma_buf_ring_entries: Number of entries in rxdma buf ring
  * @num_rxdma_refill_ring_entries: Number of entries in rxdma refill ring
@@ -576,6 +579,7 @@ struct wlan_dp_prealloc_cfg {
 	int num_reo_exception_ring_entries;
 	int num_tx_desc;
 	int num_tx_ext_desc;
+	int num_rx_sw_desc;
 	int num_reo_dst_ring_entries;
 	int num_rxdma_buf_ring_entries;
 	int num_rxdma_refill_ring_entries;
@@ -1287,6 +1291,17 @@ int wlan_cfg_get_rx_dma_buf_ring_size(
 		struct wlan_cfg_dp_pdev_ctxt *wlan_cfg_pdev_ctx);
 
 /**
+ * wlan_cfg_set_rx_dma_buf_ring_size() - Set RxDMA buffer ring size
+ * @cfg: pdev configuration context
+ * @ring_size: rxdma buffer ring size to be set
+ *
+ * Return: None
+ */
+void
+wlan_cfg_set_rx_dma_buf_ring_size(struct wlan_cfg_dp_pdev_ctxt *cfg,
+				  int ring_size);
+
+/**
  * wlan_cfg_rx_pending_hl_threshold() - Return high threshold of rx pending
  * @cfg: pdev configuration context
  *
@@ -1491,6 +1506,16 @@ int wlan_cfg_get_p2p_checksum_offload(struct wlan_cfg_dp_soc_ctxt *cfg);
 int wlan_cfg_tx_ring_size(struct wlan_cfg_dp_soc_ctxt *cfg);
 
 /**
+ * wlan_cfg_set_tx_ring_size - Set Tx ring size
+ * @cfg: soc configuration context
+ * @ring_size: TX ring size to be set
+ *
+ * Return: None
+ */
+void wlan_cfg_set_tx_ring_size(struct wlan_cfg_dp_soc_ctxt *cfg,
+			       int ring_size);
+
+/**
  * wlan_cfg_time_control_bp - Get time for interval in bp prints
  * @cfg: soc configuration context
  *
@@ -1505,6 +1530,16 @@ int wlan_cfg_time_control_bp(struct wlan_cfg_dp_soc_ctxt *cfg);
  * Return: Tx Completion ring size
  */
 int wlan_cfg_tx_comp_ring_size(struct wlan_cfg_dp_soc_ctxt *cfg);
+
+/**
+ * wlan_cfg_set_tx_comp_ring_size - Set Tx completion ring size
+ * @cfg: soc configuration context
+ * @ring_size: TX completion ring size to be set
+ *
+ * Return: None
+ */
+void wlan_cfg_set_tx_comp_ring_size(struct wlan_cfg_dp_soc_ctxt *cfg,
+				    int ring_size);
 
 /**
  * wlan_cfg_get_dp_soc_wbm_release_ring_size - Get wbm_release_ring size
@@ -1643,6 +1678,17 @@ int
 wlan_cfg_get_dp_soc_rxdma_refill_ring_size(struct wlan_cfg_dp_soc_ctxt *cfg);
 
 /**
+ * wlan_cfg_set_dp_soc_rxdma_refill_ring_size - Set rxdma refill ring size
+ * @cfg: soc configuration context
+ * @ring_size: rxdma refill ring size to be set
+ *
+ * Return: None
+ */
+void
+wlan_cfg_set_dp_soc_rxdma_refill_ring_size(struct wlan_cfg_dp_soc_ctxt *cfg,
+					   int ring_size);
+
+/**
  * wlan_cfg_get_dp_soc_rxdma_refill_lt_disable - Get RxDMA refill LT status
  * @cfg: soc configuration context
  *
@@ -1677,6 +1723,17 @@ wlan_cfg_get_dp_soc_rx_sw_desc_weight(struct wlan_cfg_dp_soc_ctxt *cfg);
  */
 int
 wlan_cfg_get_dp_soc_rx_sw_desc_num(struct wlan_cfg_dp_soc_ctxt *cfg);
+
+/**
+ * wlan_cfg_set_dp_soc_rx_sw_desc_num - Set rx sw desc num
+ * @cfg: soc configuration context
+ * @desc_num: Number of Rx descriptors to be set
+ *
+ * Return: None
+ */
+void
+wlan_cfg_set_dp_soc_rx_sw_desc_num(struct wlan_cfg_dp_soc_ctxt *cfg,
+				   int desc_num);
 
 /**
  * wlan_cfg_get_dp_caps - Get dp capabilities
@@ -1888,6 +1945,28 @@ bool wlan_cfg_is_rx_buffer_pool_enabled(struct wlan_cfg_dp_soc_ctxt *cfg);
  */
 bool wlan_cfg_is_rx_refill_buffer_pool_enabled(struct wlan_cfg_dp_soc_ctxt *cfg);
 
+#ifdef WLAN_FEATURE_RX_PREALLOC_BUFFER_POOL
+/**
+ * wlan_cfg_get_rx_refill_buf_pool_size() - Get Rx refill buf pool size
+ *
+ * @cfg: soc configuration context
+ *
+ * Return: Rx refill buffer pool size
+ */
+int wlan_cfg_get_rx_refill_buf_pool_size(struct wlan_cfg_dp_soc_ctxt *cfg);
+
+/**
+ * wlan_cfg_set_rx_refill_buf_pool_size() - Set Rx refill buf pool size
+ *
+ * @cfg: soc configuration context
+ * @size: size of the Rx buffer pool size
+ *
+ * Return: None
+ */
+void
+wlan_cfg_set_rx_refill_buf_pool_size(struct wlan_cfg_dp_soc_ctxt *cfg,
+				     int size);
+#endif
 
 void wlan_cfg_set_tso_desc_attach_defer(struct wlan_cfg_dp_soc_ctxt *cfg,
 					bool val);

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1379,6 +1379,31 @@ target_if_phy_ch_width_to_wmi_chan_width(enum phy_ch_width ch_width)
 		return WMI_HOST_CHAN_WIDTH_320;
 	default:
 		return WMI_HOST_CHAN_WIDTH_20;
+	}
+}
+
+enum phy_ch_width
+target_if_wmi_chan_width_to_phy_ch_width(wmi_host_channel_width ch_width)
+{
+	switch (ch_width) {
+	case WMI_HOST_CHAN_WIDTH_20:
+		return CH_WIDTH_20MHZ;
+	case WMI_HOST_CHAN_WIDTH_40:
+		return CH_WIDTH_40MHZ;
+	case WMI_HOST_CHAN_WIDTH_80:
+		return CH_WIDTH_80MHZ;
+	case WMI_HOST_CHAN_WIDTH_160:
+		return CH_WIDTH_160MHZ;
+	case WMI_HOST_CHAN_WIDTH_80P80:
+		return CH_WIDTH_80P80MHZ;
+	case WMI_HOST_CHAN_WIDTH_5:
+		return CH_WIDTH_5MHZ;
+	case WMI_HOST_CHAN_WIDTH_10:
+		return CH_WIDTH_10MHZ;
+	case WMI_HOST_CHAN_WIDTH_320:
+		return CH_WIDTH_320MHZ;
+	default:
+		return CH_WIDTH_20MHZ;
 	}
 }
 

@@ -322,6 +322,9 @@ uint32_t
 wlan_pmo_get_interval_for_pagefault_wakeup_counts(
 						struct wlan_objmgr_psoc *psoc);
 
+QDF_STATUS wlan_pmo_get_listen_interval(struct wlan_objmgr_vdev *vdev,
+					uint32_t *listen_interval);
+
 #else /* WLAN_POWER_MANAGEMENT_OFFLOAD */
 
 static inline QDF_STATUS pmo_init(void)
@@ -501,6 +504,12 @@ static inline uint32_t
 wlan_pmo_get_interval_for_pagefault_wakeup_counts(struct wlan_objmgr_psoc *psoc)
 {
 	return 0;
+}
+
+static QDF_STATUS wlan_pmo_get_listen_interval(struct wlan_objmgr_vdev *vdev,
+					       uint32_t *listen_interval)
+{
+	return QDF_STATUS_SUCCESS;
 }
 
 #endif /* WLAN_POWER_MANAGEMENT_OFFLOAD */

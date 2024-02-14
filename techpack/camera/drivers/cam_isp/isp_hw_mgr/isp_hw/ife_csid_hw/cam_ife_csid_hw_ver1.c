@@ -1642,10 +1642,6 @@ static int cam_ife_csid_ver1_in_port_validate(
 	struct cam_ife_csid_ver1_hw     *csid_hw)
 {
 	int rc = 0;
-	struct cam_ife_csid_ver1_reg_info *csid_reg;
-
-	csid_reg = (struct cam_ife_csid_ver1_reg_info *)
-			csid_hw->core_info->csid_reg;
 
 	/* check in port args */
 	rc  = cam_ife_csid_check_in_port_args(reserve,
@@ -3438,8 +3434,6 @@ static int cam_ife_csid_ver1_get_time_stamp(
 	struct cam_hw_soc_info              *soc_info;
 	struct cam_csid_get_time_stamp_args *timestamp_args;
 	struct cam_ife_csid_ver1_reg_info *csid_reg;
-	uint64_t  time_delta;
-	struct timespec64 ts;
 	uint32_t curr_0_sof_addr, curr_1_sof_addr;
 
 	timestamp_args = (struct cam_csid_get_time_stamp_args *)cmd_args;
@@ -3501,19 +3495,15 @@ static int cam_ife_csid_ver1_get_time_stamp(
 		CAM_IFE_CSID_QTIMER_MUL_FACTOR,
 		CAM_IFE_CSID_QTIMER_DIV_FACTOR);
 
-	time_delta = timestamp_args->time_stamp_val -
-		csid_hw->timestamp.prev_sof_ts;
-
-	if (!csid_hw->timestamp.prev_boot_ts) {
-		ktime_get_boottime_ts64(&ts);
-		timestamp_args->boot_timestamp =
-			(uint64_t)((ts.tv_sec * 1000000000) +
-			ts.tv_nsec);
-	} else {
-		timestamp_args->boot_timestamp =
-			csid_hw->timestamp.prev_boot_ts + time_delta;
+	if (g_ref_time.btime == 0) {
+		g_ref_time.qtime = arch_timer_read_counter();
+		g_ref_time.btime = ktime_get_boottime_ns();
+		g_ref_time.qtime = mul_u64_u32_div(g_ref_time.qtime,
+				CAM_IFE_CSID_QTIMER_MUL_FACTOR, CAM_IFE_CSID_QTIMER_DIV_FACTOR);
 	}
 
+	timestamp_args->boot_timestamp = g_ref_time.btime + timestamp_args->time_stamp_val -
+		g_ref_time.qtime;
 	CAM_DBG(CAM_ISP, "timestamp:%lld",
 		timestamp_args->boot_timestamp);
 	csid_hw->timestamp.prev_sof_ts = timestamp_args->time_stamp_val;

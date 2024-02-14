@@ -430,7 +430,7 @@ static enum cam_vfe_bus_ver3_packer_format
 	case CAM_FORMAT_MIPI_RAW_20:
 		return PACKER_FMT_VER3_MIPI20;
 	case CAM_FORMAT_NV21:
-		if ((wm_index == 1) || (wm_index == 3) || (wm_index == 5))
+		if ((wm_index == 1) || (wm_index == 3) || (wm_index == 5) || (wm_index == 9))
 			return PACKER_FMT_VER3_PLAIN_8_LSB_MSB_10_ODD_EVEN;
 	case CAM_FORMAT_NV12:
 	case CAM_FORMAT_UBWC_NV12:
@@ -1256,9 +1256,10 @@ static int cam_vfe_bus_ver3_acquire_wm(
 
 	/* Set WM offset value to default */
 	rsrc_data->offset  = 0;
-	CAM_DBG(CAM_ISP, "WM:%d width %d height %d per_port_en %d",
+	CAM_DBG(CAM_ISP, "WM:%d width %d height %d per_port_en %d pack_fmt %d",
 		rsrc_data->index, rsrc_data->width,
-		rsrc_data->height, is_per_port_acquire);
+		rsrc_data->height, is_per_port_acquire,
+		rsrc_data->pack_fmt);
 
 	if (is_per_port_acquire)
 		wm_res->is_per_port_acquire = true;
@@ -4095,10 +4096,12 @@ static int cam_vfe_bus_ver3_update_res_wm(
 
 	/* Set WM offset value to default */
 	rsrc_data->offset  = 0;
-	CAM_DBG(CAM_ISP, "WM:%d width %d height %d is_per_port:%d default_line_based:%d",
+	CAM_DBG(CAM_ISP,
+		"WM:%d width %d height %d is_per_port:%d line_based:%d pack_fmt %d",
 		rsrc_data->index, rsrc_data->width,
 		rsrc_data->height, wm_res->is_per_port_acquire,
-		rsrc_data->default_line_based);
+		rsrc_data->default_line_based,
+		rsrc_data->pack_fmt);
 
 	rc = cam_vfe_bus_ver3_res_update_config_wm(ver3_bus_priv, vfe_out_res_id,
 		plane, wm_res, comp_grp_id, wm_mode, sizeof(wm_mode));

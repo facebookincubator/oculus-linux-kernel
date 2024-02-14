@@ -6438,3 +6438,38 @@ void sde_encoder_add_data_to_minidump_va(struct drm_encoder *drm_enc)
 			phys_enc->ops.add_to_minidump(phys_enc);
 	}
 }
+
+int sde_encoder_get_qsync_min_fps(struct drm_encoder *encoder, u32 *min_fps)
+{
+	struct sde_encoder_virt *sde_enc;
+
+	if (!encoder || !min_fps)
+		return -EINVAL;
+
+	sde_enc = to_sde_encoder_virt(encoder);
+	*min_fps = sde_enc->disp_info.qsync_min_fps;
+
+	return 0;
+}
+
+int sde_encoder_vsync_trigger(struct drm_encoder *encoder)
+{
+	struct sde_encoder_virt *sde_enc;
+	struct sde_encoder_phys *phys;
+	int i;
+
+	if (!encoder) {
+		SDE_ERROR("invalid drm enc\n");
+		return -EINVAL;
+	}
+
+	sde_enc = to_sde_encoder_virt(encoder);
+
+	for (i = 0; i < sde_enc->num_phys_encs; ++i) {
+		phys = sde_enc->phys_encs[i];
+		if (phys && phys->ops.vsync_trigger)
+			phys->ops.vsync_trigger(phys);
+	}
+
+	return 0;
+}

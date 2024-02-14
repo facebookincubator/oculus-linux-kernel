@@ -37,6 +37,7 @@ bool msm_cvp_dcvs_disable = !true;
 int msm_cvp_minidump_enable = !1;
 bool cvp_kernel_fence_enabled = true;
 
+#ifdef CONFIG_DEBUG_FS
 #define MAX_DBG_BUF_SIZE 4096
 
 struct cvp_core_inst_pair {
@@ -626,3 +627,4 @@ void msm_cvp_debugfs_deinit_inst(struct msm_cvp_inst *inst)
 	debugfs_remove_recursive(dentry);
 	inst->debugfs_root = NULL;
 }
+#endif /* CONFIG_DEBUG_FS */

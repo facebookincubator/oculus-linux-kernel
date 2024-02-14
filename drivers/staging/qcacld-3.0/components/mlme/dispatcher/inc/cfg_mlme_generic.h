@@ -63,6 +63,7 @@ enum wlan_wds_mode {
  * @WLAN_EHT_MODE_SLO: Single-link operation mode
  * @WLAN_EHT_MODE_MLSR: Multi-link Single-Radio mode
  * @WLAN_EHT_MODE_MLMR: Multi-link Multi-Radio mode
+ * @WLAN_EHT_MODE_EMLSR: Enhanced Multi-link Single-Radio mode
  * @WLAN_EHT_MODE_LAST: last value in enum
  * @WLAN_EHT_MODE_MAX: max value supported
  *
@@ -73,9 +74,29 @@ enum wlan_eht_mode {
 	WLAN_EHT_MODE_SLO       = 1,
 	WLAN_EHT_MODE_MLSR      = 2,
 	WLAN_EHT_MODE_MLMR      = 3,
+	WLAN_EHT_MODE_EMLSR     = 4,
 	/* keep this last */
 	WLAN_EHT_MODE_LAST,
 	WLAN_EHT_MODE_MAX = WLAN_EHT_MODE_LAST - 1,
+};
+
+/**
+ * enum wlan_emlsr_action_mode - EMLSR action mode
+ * @WLAN_EMLSR_MODE_DISABLED: EMLSR is disabled
+ * @WLAN_EMLSR_MODE_ENTER: Enter EMLSR operation mode
+ * @WLAN_EMLSR_MODE_EXIT: Exit EMLSR operation mode
+ * @WLAN_EMLSR_MODE_LAST: last value in enum
+ * @WLAN_EMLSR_MODE_MAX: max value supported
+ *
+ * This is used for 'type' values in emlsr_mode
+ */
+enum wlan_emlsr_action_mode {
+	WLAN_EMLSR_MODE_DISABLED = 0,
+	WLAN_EMLSR_MODE_ENTER    = 1,
+	WLAN_EMLSR_MODE_EXIT     = 2,
+	/* keep this last */
+	WLAN_EMLSR_MODE_LAST,
+	WLAN_EMLSR_MODE_MAX = WLAN_EMLSR_MODE_LAST - 1,
 };
 
 /**

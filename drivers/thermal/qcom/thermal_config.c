@@ -276,15 +276,21 @@ static ssize_t thermal_dbgfs_config_write(struct file *file,
 {
 	struct thermal_zone_device *tz = NULL;
 	char sensor_name[THERMAL_NAME_LENGTH] = "";
+	char *trimmed = NULL;
 
-	if (!count || (count > THERMAL_NAME_LENGTH))
+	if (!count || (count >= THERMAL_NAME_LENGTH))
 		return -EINVAL;
 
 	if (copy_from_user(sensor_name, user_buf, count))
 		return -EFAULT;
 
-	if (sscanf(sensor_name, "%20[^\n\t ]", tzone_sensor_name) != 1)
+	sensor_name[count] = '\0';
+
+	trimmed = strim(sensor_name);
+	if (trimmed[0] == '\0')
 		return -EINVAL;
+
+	strcpy(tzone_sensor_name, trimmed);
 
 	tz = thermal_zone_get_zone_by_name((const char *)tzone_sensor_name);
 	if (IS_ERR(tz)) {

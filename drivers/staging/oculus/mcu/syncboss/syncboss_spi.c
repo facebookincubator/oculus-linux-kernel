@@ -26,6 +26,7 @@
 #include "syncboss_debugfs.h"
 #include "syncboss_sequence_number.h"
 #include "syncboss_protocol.h"
+#include "syncboss_direct_channel.h"
 
 #ifdef CONFIG_OF /*Open firmware must be defined for dts usage*/
 static const struct of_device_id syncboss_spi_table[] = {
@@ -82,12 +83,6 @@ static const struct of_device_id oculus_swd_match_table[] = {
  *   http://lxr.free-electrons.com/source/Documentation/dynamic-debug-howto.txt
  */
 
-#define SYNCBOSS_DEVICE_NAME "syncboss0"
-#define SYNCBOSS_STREAM_DEVICE_NAME "syncboss_stream0"
-#define SYNCBOSS_CONTROL_DEVICE_NAME "syncboss_control0"
-#define SYNCBOSS_POWERSTATE_DEVICE_NAME "syncboss_powerstate0"
-#define SYNCBOSS_NSYNC_DEVICE_NAME "syncboss_nsync0"
-
 #define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
 #define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
 #define SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS 0
@@ -111,7 +106,7 @@ static const struct of_device_id oculus_swd_match_table[] = {
 
 #define SYNCBOSS_NSYNC_MISCFIFO_SIZE 256
 
-#define SYNCBOSS_DEFAULT_POLL_PRIO 52
+#define SYNCBOSS_DEFAULT_POLL_PRIO 51
 
 /*
  * These are SPI message types that the driver explicitly monitors and
@@ -157,11 +152,14 @@ static const struct of_device_id oculus_swd_match_table[] = {
 
 struct transaction_context {
 	bool msg_to_send;
+	bool reschedule_needed;
 	struct syncboss_msg *smsg;
 	struct syncboss_msg *prepared_smsg;
 	bool data_ready_irq_had_fired;
 	bool send_timer_had_fired;
 	bool wake_timer_had_fired;
+	bool control_fifo_wake_needed;
+	bool stream_fifo_wake_needed;
 };
 
 static void syncboss_on_camera_probe(struct syncboss_dev_data *devdata);
@@ -939,8 +937,12 @@ static int syncboss_release(struct inode *inode, struct file *f)
 static irqreturn_t isr_primary_nsync(int irq, void *p)
 {
 	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
+	unsigned long flags;
 
-	atomic_long_set(&devdata->nsync_irq_timestamp, ktime_get_ns());
+	spin_lock_irqsave(&devdata->nsync_lock, flags);
+	devdata->nsync_irq_timestamp = ktime_get_ns();
+	++devdata->nsync_irq_count;
+	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 
 	return IRQ_WAKE_THREAD;
 }
@@ -948,12 +950,16 @@ static irqreturn_t isr_primary_nsync(int irq, void *p)
 static irqreturn_t isr_thread_nsync(int irq, void *p)
 {
 	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
-	struct syncboss_nsync_event event = {
-		.timestamp = atomic_long_read(&devdata->nsync_irq_timestamp),
-		.count = ++(devdata->nsync_irq_count),
-	};
+	struct syncboss_nsync_event event;
+	unsigned long flags;
+	int status;
 
-	int status = miscfifo_send_buf(
+	spin_lock_irqsave(&devdata->nsync_lock, flags);
+	event.timestamp = devdata->nsync_irq_timestamp;
+	event.count = devdata->nsync_irq_count;
+	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
+
+	status = miscfifo_send_buf(
 			&devdata->nsync_fifo,
 			(void *)&event,
 			sizeof(event));
@@ -995,12 +1001,13 @@ static int syncboss_nsync_open(struct inode *inode, struct file *f)
 		goto decrement_ref;
 	}
 
+	devdata->nsync_irq_timestamp = 0;
 	devdata->nsync_irq_count = 0;
 	devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
 	irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
 	status = devm_request_threaded_irq(
 		&devdata->spi->dev, devdata->nsync_irq, isr_primary_nsync,
-		isr_thread_nsync, IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+		isr_thread_nsync, IRQF_TRIGGER_RISING,
 		devdata->misc_nsync.name, devdata);
 
 	if (status < 0) {
@@ -1271,7 +1278,8 @@ err:
 }
 
 static int distribute_packet(struct syncboss_dev_data *devdata,
-			     const struct syncboss_data *packet)
+		const struct syncboss_data *packet,
+		struct transaction_context *ctx)
 {
 	const struct syncboss_driver_data_header_t header = {
 		.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
@@ -1287,8 +1295,24 @@ static int distribute_packet(struct syncboss_dev_data *devdata,
 	const char *fifo_name;
 	int status = 0;
 	size_t payload_size = sizeof(*packet) + packet->data_len;
-
+	bool should_wake;
 	struct uapi_pkt_t uapi_pkt;
+
+	/*
+	 * Send to direct channel first, no need to make copies, and this will be done in the direct channel copy.
+	 * return
+	 *  0 - no error and packet not sent to direct buffer, continue to direct channel
+	 *  >0 - packet sent to at leats one direct buffer.
+	 *  -ENOTSUPP - kernel not configconfigured to support direct channel.
+	 *  All other errors are failures to send to direct channel
+	 */
+	status = syncboss_direct_channel_send_buf(devdata, packet);
+	if (status > 0) {
+		return 0; /* packet was sent on a direct channel, so don't send to miscfifo */
+	} else if (status < 0 && status != -ENOTSUPP) {
+		dev_dbg_ratelimited(&devdata->spi->dev, "direct channel distibute failed error %d", status);
+		return status;
+	}
 
 	if (packet->sequence_id == 0) {
 		switch (packet->type) {
@@ -1326,9 +1350,15 @@ static int distribute_packet(struct syncboss_dev_data *devdata,
 	uapi_pkt.header = header;
 	memcpy(uapi_pkt.payload, packet, payload_size);
 
-	status = miscfifo_send_buf(fifo_to_use,
-				  (u8 *)&uapi_pkt,
-				  sizeof(uapi_pkt.header) + payload_size);
+	status = miscfifo_write_buf(fifo_to_use, (u8 *)&uapi_pkt,
+			sizeof(uapi_pkt.header) + payload_size, &should_wake);
+
+	if (should_wake) {
+		if (fifo_to_use == &devdata->stream_fifo)
+			ctx->stream_fifo_wake_needed = true;
+		else
+			ctx->control_fifo_wake_needed = true;
+	}
 
 	if (status < 0)
 		dev_warn_ratelimited(&devdata->spi->dev, "uapi %s fifo error (%d)",
@@ -1429,8 +1459,12 @@ static void query_wake_reason(struct syncboss_dev_data *devdata)
 	queue_tx_packet(devdata, message, data_len, /* from_user */ false);
 }
 
+/*
+ * Process received data from MCU and distribute messages are appropriate.
+ */
 static void process_rx_data(struct syncboss_dev_data *devdata,
-			   const struct syncboss_timing *timing)
+			    struct transaction_context *ctx,
+			    const struct syncboss_timing *timing)
 {
 	struct rx_history_elem *rx_elem = devdata->rx_elem;
 	const struct syncboss_transaction *trans = (struct syncboss_transaction *) rx_elem->buf;
@@ -1497,10 +1531,32 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 			dev_err_ratelimited(&devdata->spi->dev, "data packet overflow");
 			break;
 		}
-		distribute_packet(devdata, current_packet);
+		distribute_packet(devdata, current_packet, ctx);
 		/* Next packet */
 		current_packet = (struct syncboss_data *)pkt_end;
 	}
+}
+
+/*
+ * Mark FIFO as runnable if new data has been written.
+ * They will wake on the next reschedule.
+ */
+static void wake_readers_sync(struct syncboss_dev_data *devdata,
+			      struct transaction_context *ctx)
+{
+	if (!ctx->stream_fifo_wake_needed && !ctx->control_fifo_wake_needed)
+		return;
+
+	preempt_disable();
+	if (ctx->stream_fifo_wake_needed) {
+		miscfifo_wake_waiters_sync(&devdata->stream_fifo);
+		ctx->stream_fifo_wake_needed = false;
+	}
+	if (ctx->control_fifo_wake_needed) {
+		miscfifo_wake_waiters_sync(&devdata->control_fifo);
+		ctx->control_fifo_wake_needed = false;
+	}
+	preempt_enable_no_resched();
 }
 
 /*
@@ -1593,7 +1649,8 @@ static u64 calc_mcu_ready_sleep_delay_ns(struct syncboss_dev_data *devdata,
  * waiting until a messages to be sent is enqueued. Must be
  * called from the spi_transfer_thread.
  */
-static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata)
+static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
+				struct transaction_context *ctx)
 {
 	mutex_lock(&devdata->msg_queue_lock);
 	if (list_empty(&devdata->msg_queue_list)) {
@@ -1613,6 +1670,7 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata)
 			__set_current_state(TASK_RUNNING);
 			return 0;
 		}
+		wake_readers_sync(devdata, ctx);
 		schedule();
 
 		if (signal_pending(current))
@@ -1624,15 +1682,18 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata)
 	return 0;
 }
 
-static int sleep_if_mcu_not_ready(struct syncboss_dev_data *devdata,
-				  const struct syncboss_timing *timing,
-				  bool msg_to_send)
+/*
+ * Wait for the MCU to be ready for its next transaction.
+ */
+static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
+				 const struct syncboss_timing *timing,
+				 struct transaction_context *ctx)
 {
 	bool send_needed, start_timer;
 	ktime_t reltime;
 
 	while (!okay_to_transact(devdata)) {
-		send_needed = msg_to_send || devdata->msg_queue_item_count > 0;
+		send_needed = ctx->msg_to_send || devdata->msg_queue_item_count > 0;
 		start_timer = false;
 
 		/*
@@ -1647,7 +1708,7 @@ static int sleep_if_mcu_not_ready(struct syncboss_dev_data *devdata,
 			u64 delay_ns;
 
 			/* Calculate how long to wait */
-			delay_ns = calc_mcu_ready_sleep_delay_ns(devdata, timing, msg_to_send);
+			delay_ns = calc_mcu_ready_sleep_delay_ns(devdata, timing, ctx->msg_to_send);
 			if (delay_ns == 0)
 				break;
 
@@ -1684,6 +1745,7 @@ static int sleep_if_mcu_not_ready(struct syncboss_dev_data *devdata,
 		}
 
 		/* ZZZzzz... */
+		wake_readers_sync(devdata, ctx);
 		schedule();
 
 		/* Cancel the hrtimer, in case it's not what woke us */
@@ -1778,11 +1840,12 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 * by a data_ready IRQ, or it is woken to be stopped.
 		 */
 		if (!devdata->is_streaming && !devdata->data_ready_fired && !ctx.msg_to_send) {
-			status = sleep_if_msg_queue_empty(devdata);
+			status = sleep_if_msg_queue_empty(devdata, &ctx);
 			if (status == -EINTR) {
 				dev_err(&spi->dev, "SPI thread received signal while waiting for message to send. Stopping.");
 				break;
 			}
+
 			/*
 			 * We may have woken up for a reason besides the send timer.
 			 * Try to cancel the timer to avoid it firing unnecessarily.
@@ -1817,7 +1880,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			spi->master->cur_msg = &ctx.smsg->spi_msg;
 		}
 
-		status = sleep_if_mcu_not_ready(devdata, &timing, ctx.msg_to_send);
+		status = sleep_or_schedule_if_needed(devdata, &timing, &ctx);
 		if (status == -EINTR) {
 			dev_err(&spi->dev, "SPI thread received signal while waiting for MCU ready. Stopping.");
 			break;
@@ -1832,6 +1895,17 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			 */
 			continue;
 		}
+
+		/*
+		 * We're about to send our next transaction. In case we've not yet woken up
+		 * miscfifo readers for the previous transaction, do so now.
+		 *
+		 * To avoid scheduling thrash, we try to avoid waking up readers until we
+		 * anyways need to sleep. That way, the woken threads won't preempt us.
+		 * Our next sleep will be while waiting for the next SPI transaction to
+		 * complete.
+		 */
+		wake_readers_sync(devdata, &ctx);
 
 #if defined(CONFIG_DYNAMIC_DEBUG)
 		if (ctx.msg_to_send) {
@@ -1884,7 +1958,8 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			continue;
 		}
 
-		process_rx_data(devdata, &timing);
+		/* Process the received data */
+		process_rx_data(devdata, &ctx, &timing);
 
 		/* Cleanup, to prepare for the next message */
 		if (ctx.msg_to_send) {
@@ -2678,6 +2753,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	}
 
 	mutex_init(&devdata->state_mutex);
+	spin_lock_init(&devdata->nsync_lock);
 
 	return 0;
 }
@@ -2798,6 +2874,14 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_control_register;
 	}
 
+#if defined(CONFIG_SYNCBOSS_DIRECTCHANNEL)
+	status = syncboss_register_direct_channel_interface(devdata,dev);
+	if (status < 0) {
+		dev_err(dev, "%s failed to register direct channel misc device, error %d",
+			__func__, status);
+		goto error_after_control_register;
+	}
+#endif /* CONFIG_SYNCBOSS_DIRECTCHANNEL */
 	/*
 	 * Configure the MCU pin reset as an output, and leave it asserted
 	 * until the syncboss device is opened by userspace.
@@ -2846,7 +2930,7 @@ static int syncboss_probe(struct spi_device *spi)
 	irq_set_irq_wake(devdata->ready_irq, /*on*/ 1);
 	status = devm_request_irq(dev, devdata->ready_irq,
 				  isr_data_ready,
-				  IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+				  IRQF_TRIGGER_RISING,
 				  devdata->misc.name, devdata);
 	if (status < 0) {
 		dev_err(dev, "failed to get data ready irq, error %d", status);
@@ -2857,7 +2941,7 @@ static int syncboss_probe(struct spi_device *spi)
 		devdata->timesync_irq = gpio_to_irq(devdata->gpio_timesync);
 		status = devm_request_irq(&spi->dev, devdata->timesync_irq,
 				timesync_irq_handler,
-				IRQF_ONESHOT | IRQF_TRIGGER_RISING,
+				IRQF_TRIGGER_RISING,
 				devdata->misc.name, devdata);
 		if (status < 0) {
 			dev_err(dev, "failed to get timesync irq, error %d", status);
@@ -2914,6 +2998,10 @@ static int syncboss_remove(struct spi_device *spi)
 	misc_deregister(&devdata->misc_control);
 	misc_deregister(&devdata->misc_powerstate);
 	misc_deregister(&devdata->misc);
+
+#if defined(CONFIG_SYNCBOSS_DIRECTCHANNEL)
+	syncboss_deregister_direct_channel_interface(devdata);
+#endif /* CONFIG_SYNCBOSS_DIRECTCHANNEL */
 
 	return 0;
 }
@@ -3007,7 +3095,7 @@ static void do_syncboss_resume_work(struct work_struct *work)
 			dev_err(dev, "%s: failed to resume streaming (%d)", __func__, status);
 	}
 
-	// Release mutex acquired by syncboss_resume()
+	 // Release mutex acquired by syncboss_resume()
 	mutex_unlock(&devdata->state_mutex);
 
 	complete_all(&devdata->pm_resume_completion);

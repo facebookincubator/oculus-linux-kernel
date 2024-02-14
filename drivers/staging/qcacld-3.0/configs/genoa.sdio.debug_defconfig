@@ -31,12 +31,12 @@ ifeq ($(CONFIG_DEBUG_FS), y)
        CONFIG_WLAN_POWER_DEBUGFS := y
 endif
 
-# Features gets enabled on slub debug
+# Features gets enabled on debug builds
 CONFIG_FEATURE_PKTLOG := y
 CONFIG_WLAN_DEBUG_CRASH_INJECT := y
 CONFIG_FEATURE_MEMDUMP_ENABLE := y
 
-ifeq ($(CONFIG_SLUB_DEBUG_ON), y)
+ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 CONFIG_WLAN_OBJMGR_DEBUG:= y
 CONFIG_FEATURE_UNIT_TEST_SUSPEND := y
 CONFIG_LEAK_DETECTION := y

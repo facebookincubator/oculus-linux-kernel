@@ -733,19 +733,17 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	struct dsi_backlight_config *bl_config;
 	u32 vactive, vtotal, internal_vtotal, frame_period_ns, external_1h_ns;
 	u32 blu_start_time_ns, blu_end_time_ns, blu_duration_ns;
-	u32 fifo_time_external_scanlines, blu_scanline_duration, blu_scanline_offset;
+	u32 blu_scanline_duration, blu_scanline_offset;
 	u32 blu_pulse1_duration, blu_pulse1_offset, blu_pulse2_duration, blu_pulse2_offset;
 	u32 guardband_internal_scanlines, guardband_margin_prior, guardband_margin_after;
-	s32 fifo_time_ns;
-	s32 fifo_trim;
+	u32 fifo_time_external_scanlines = 0;
+	s32 fifo_time_ns = 0;
+	s32 fifo_trim = 0;
 
 	u32 internal_1h_ns; /* Internal (TFT) 1H time */
 	const u32 internal_1h_error_tolerance = 98; /* Error tolerance of the internal display clock */
 	const u32 guardband_margin_thousandths = 15; /* 1.5% of frame height */
 
-	u8 fifo_set_timing_page[2] = {0xFF, 0x25};
-	u8 delay_vid_msb[2] = {0xE0, 0x00}; /* FIFO delay scanlines MSB */
-	u8 delay_vid_lsb[2] = {0xE1, 0x00}; /* FIFO delay scanlines LSB */
 	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
 	u8 blu_set_pulse_mode[2] = {0xD0, 0x01}; /* 2-pulse mode */
 	u8 blu_scanline1_msb[2] = {0xB8, 0x00}; /* BLU pulse 1 scanline offset MSB */
@@ -773,20 +771,20 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 			timing->internal_1h_time_ns : 1800; /* 1.8 us default by spec */
 	internal_vtotal = frame_period_ns / internal_1h_ns;
 
-	/* If the user-configurable FIFO trim is equal to S32_MIN, then use the default value from the device tree. */
-	fifo_trim = atomic_read(&panel->fifo_trim);
-	if (fifo_trim == S32_MIN)
-		fifo_trim = timing->fifo_trim_lines;
+	if (!timing->disable_fifo) {
+		/* If the user-configurable FIFO trim is equal to S32_MIN, then use the default value from the device tree. */
+		fifo_trim = atomic_read(&panel->fifo_trim);
+		if (fifo_trim == S32_MIN)
+			fifo_trim = timing->fifo_trim_lines;
 
-	/* FIFO time is the external frame period minus the internal frame period */
-	fifo_time_ns = clamp_t(s32, (s32)(external_1h_ns - internal_1h_ns * internal_1h_error_tolerance / 100) * vactive
-			+ fifo_trim * external_1h_ns, 0, 0x1400 * external_1h_ns);
+		/* FIFO time is the external frame period minus the internal frame period */
+		fifo_time_ns = clamp_t(s32, external_1h_ns * vactive
+				- timing->internal_vactive * internal_1h_ns * internal_1h_error_tolerance / 100
+				+ fifo_trim * external_1h_ns, 0, 0x1400 * external_1h_ns);
 
-	/* Calculate how many (external) scanlines of FIFO delay to apply. */
-	fifo_time_external_scanlines = (u32)fifo_time_ns / external_1h_ns;
-
-	delay_vid_msb[1] = (fifo_time_external_scanlines >> 8) & 0x1F;
-	delay_vid_lsb[1] = fifo_time_external_scanlines & 0xFF;
+		/* Calculate how many (external) scanlines of FIFO delay to apply. */
+		fifo_time_external_scanlines = (u32)fifo_time_ns / external_1h_ns;
+	}
 
 	/* Transform backlight level into illumination period in internal scanlines */
 	blu_scanline_duration = (internal_vtotal * bl_lvl / 1000) * bl_config->blu_default_duty / 1000;
@@ -806,8 +804,9 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	 * is set and valid).
 	 */
 	if (bl_config->settling_time_target_us < 0xFFFF) {
+		const u32 vbp = timing->v_sync_width + timing->v_back_porch;
 		const u32 blu_start_target_ns = bl_config->settling_time_target_us * 1000 +
-				(vtotal - timing->v_front_porch) * internal_1h_ns;
+				(timing->internal_vactive + vbp + 9) * internal_1h_ns;
 
 		/*
 		 * Take the minimum of the two results: at high refresh rate
@@ -879,10 +878,40 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	blu_duration2_lsb[1] = blu_pulse2_duration & 0xFF;
 
 	/* Queue the DCS writes so they can be batched together in one frame. */
-	rc = mipi_dsi_dcs_write_queue(dsi, fifo_set_timing_page, sizeof(fifo_set_timing_page),
-			MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, delay_vid_msb, sizeof(delay_vid_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, delay_vid_lsb, sizeof(delay_vid_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	if (bl_config->bicubic_scaling != panel->bicubic_scaling) {
+		u8 set_general_page[2] = {0xFF, 0x10};
+		u8 scaling_parameter[2] = {0xBF, 0x10}; /* 0x20 for bilinear, 0x20 for bicubic. */
+
+		if (panel->bicubic_scaling)
+			scaling_parameter[1] += 0x10;
+
+		rc = mipi_dsi_dcs_write_queue(dsi, set_general_page, sizeof(set_general_page),
+				MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, scaling_parameter, sizeof(scaling_parameter),
+				MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		bl_config->bicubic_scaling = panel->bicubic_scaling;
+	}
+
+	if (!timing->disable_fifo) {
+		u8 fifo_set_timing_page[2] = {0xFF, 0x25};
+		u8 delay_vid_msb[2] = {0xE0, 0x00}; /* FIFO delay scanlines MSB */
+		u8 delay_vid_lsb[2] = {0xE1, 0x00}; /* FIFO delay scanlines LSB */
+
+		/* Different registers are used for the FIFO delay when the scaler is active. */
+		if (timing->internal_vactive != vactive) {
+			delay_vid_msb[0] = 0xE2;
+			delay_vid_lsb[0] = 0xE3;
+		}
+
+		delay_vid_msb[1] = (fifo_time_external_scanlines >> 8) & 0x1F;
+		delay_vid_lsb[1] = fifo_time_external_scanlines & 0xFF;
+
+		rc = mipi_dsi_dcs_write_queue(dsi, fifo_set_timing_page, sizeof(fifo_set_timing_page),
+				MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, delay_vid_msb, sizeof(delay_vid_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, delay_vid_lsb, sizeof(delay_vid_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	}
+
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), MIPI_DSI_MSG_BATCH_COMMAND, 0);
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pulse_mode, sizeof(blu_set_pulse_mode),
 			MIPI_DSI_MSG_BATCH_COMMAND, 0);
@@ -902,7 +931,7 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	}
 
 	/* If the scanline offset is during active scanout, push the predicted time out a frame. */
-	blu_start_time_ns += fifo_time_ns + (timing->v_back_porch + 9) * internal_1h_ns;
+	blu_start_time_ns += fifo_time_ns;
 	if (blu_scanline_offset < vactive)
 		blu_start_time_ns += frame_period_ns;
 
@@ -985,7 +1014,7 @@ int dsi_panel_tokki_a_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	return rc;
 }
 
-int dsi_panel_jdi_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
+int dsi_panel_stark_olivia_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_mode_info *timing;
@@ -1013,7 +1042,7 @@ int dsi_panel_jdi_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	 * overlapping the backlight illumination with the next refresh's
 	 * scanout to the active scanlines of the panel.
 	 */
-	target_scanline = vtotal - timing->v_front_porch + bl_config->scanline_max_offset;
+	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->scanline_max_offset;
 	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
 	left_scanline = right_scanline + timing->v_active / 2;
 
@@ -1045,7 +1074,7 @@ int dsi_panel_jdi_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 
 	rc = mipi_dsi_dcs_write(dsi, reg, payload, sizeof(payload));
 	if (rc) {
-		pr_err("failed to set jdi brightness cmds, rc=%d\n", rc);
+		pr_err("failed to set Stark brightness cmds, rc=%d\n", rc);
 		goto error;
 	}
 
@@ -1064,6 +1093,7 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
 	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	bool send_vfp = false;
 
 	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
 	u8 blu_right_start_msb[2] = {0xB8, 0x00}; /* BLU right PWM start adjust MSB*/
@@ -1074,6 +1104,10 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	u8 blu_right_level_lsb[2] = {0xBB, 0x00}; /* BLU right level LSB */
 	u8 blu_left_level_msb[2] = {0xC2, 0x00}; /* BLU left level MSB */
 	u8 blu_left_level_lsb[2] = {0xC3, 0x00}; /* BLU left level LSB */
+
+	u8 blu_set_vfp_page[2] = {0xFF, 0x25};
+	u8 blu_vfp_msb[2] = {0xBE, 0x00}; /* BLU vfp MSB */
+	u8 blu_vfp_lsb[2] = {0xBF, 0x00}; /* BLU vfp LSB */
 
 	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
 		return -EINVAL;
@@ -1103,10 +1137,20 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	if (left_scanline > vtotal)
 		left_scanline -= vtotal;
 
+	if (right_scanline == vtotal - bl_lvl)
+		right_scanline -= 1;
+	if (left_scanline == vtotal - bl_lvl)
+		left_scanline -= 1;
+
 	/* NVT DDIC multiples the start pulse by 4 and pwm width by 2 by default */
 	right_scanline /= 4;
 	left_scanline /= 4;
 	bl_lvl /= 2;
+
+	send_vfp = bl_config->scanline_offset[0] != right_scanline
+				|| bl_config->scanline_offset[1] != left_scanline;
+
+
 	blu_right_start_msb[1] = right_scanline >> 8;
 	blu_right_start_lsb[1] = right_scanline & 0xff;
 	blu_left_start_msb[1] = left_scanline >> 8;
@@ -1115,6 +1159,9 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	blu_right_level_lsb[1] = bl_lvl & 0xff;
 	blu_left_level_msb[1] = bl_lvl >> 8;
 	blu_left_level_lsb[1] = bl_lvl & 0xff;
+
+	blu_vfp_msb[1] = timing->v_front_porch >> 8;
+	blu_vfp_lsb[1] = timing->v_front_porch & 0xff;
 
 	/* Queue the DCS writes so they can be batched together in one frame. */
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), MIPI_DSI_MSG_BATCH_COMMAND, 0);
@@ -1125,7 +1172,16 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_start_msb, sizeof(blu_left_start_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_start_lsb, sizeof(blu_left_start_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
 	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_msb, sizeof(blu_left_level_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_lsb, sizeof(blu_left_level_lsb), 0, 0);
+
+	if (send_vfp) {
+		/* We need to update the VFP, send last blu level without last command flag and then send VFP */
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_lsb, sizeof(blu_left_level_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_set_vfp_page, sizeof(blu_set_vfp_page), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_vfp_msb, sizeof(blu_vfp_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_vfp_lsb, sizeof(blu_vfp_lsb), 0, 0);
+	} else {
+		rc = mipi_dsi_dcs_write_queue(dsi, blu_left_level_lsb, sizeof(blu_left_level_lsb), 0, 0);
+	}
 
 	if (rc) {
 		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
@@ -1160,8 +1216,8 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	case DSI_BACKLIGHT_TOKKI_A:
 		rc = dsi_panel_tokki_a_update_backlight(panel, bl_lvl);
 		break;
-	case DSI_BACKLIGHT_JDI:
-		rc = dsi_panel_jdi_update_backlight(panel, bl_lvl);
+	case DSI_BACKLIGHT_STARK_OLIVIA:
+		rc = dsi_panel_stark_olivia_update_backlight(panel, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_JDI_NVT:
 		rc = dsi_panel_jdi_nvt_update_backlight(panel, bl_lvl);
@@ -1193,7 +1249,7 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 		break;
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_TOKKI_A:
-	case DSI_BACKLIGHT_JDI:
+	case DSI_BACKLIGHT_STARK_OLIVIA:
 	case DSI_BACKLIGHT_JDI_NVT:
 	case DSI_BACKLIGHT_EXTERNAL:
 	case DSI_BACKLIGHT_PWM:
@@ -1303,7 +1359,7 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 		break;
 	case DSI_BACKLIGHT_DCS:
 	case DSI_BACKLIGHT_TOKKI_A:
-	case DSI_BACKLIGHT_JDI:
+	case DSI_BACKLIGHT_STARK_OLIVIA:
 	case DSI_BACKLIGHT_JDI_NVT:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
@@ -1443,9 +1499,10 @@ static int dsi_panel_parse_timing(struct dsi_mode_info *mode,
 		DSI_DEBUG("qcom,mdss-dsi-h-sync-skew is not defined, rc=%d\n",
 				rc);
 
-	DSI_DEBUG("panel horz active:%d front_portch:%d back_porch:%d sync_skew:%d\n",
+	DSI_DEBUG(
+		"panel horz active:%d front_porch:%d back_porch:%d pulse_width:%d sync_skew:%d\n",
 		mode->h_active, mode->h_front_porch, mode->h_back_porch,
-		mode->h_sync_width);
+		mode->h_sync_width, mode->h_skew);
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-panel-height",
 				  &mode->v_active);
@@ -1492,14 +1549,25 @@ static int dsi_panel_parse_timing(struct dsi_mode_info *mode,
 		rc = 0;
 	}
 
-	rc = utils->read_u32(utils->data, "meta,fifo-trim-lines",
-			&display_mode->priv_info->fifo_trim_lines);
+	rc = utils->read_u32(utils->data, "meta,internal-vactive",
+			&display_mode->priv_info->internal_vactive);
 	if (rc) {
-		display_mode->priv_info->fifo_trim_lines = 0;
+		display_mode->priv_info->internal_vactive = mode->v_active;
 		rc = 0;
 	}
 
-	DSI_DEBUG("panel vert active:%d front_portch:%d back_porch:%d pulse_width:%d\n",
+	priv_info->disable_fifo = utils->read_bool(utils->data, "meta,disable-fifo");
+	if (!priv_info->disable_fifo) {
+		rc = utils->read_u32(utils->data, "meta,fifo-trim-lines",
+				&display_mode->priv_info->fifo_trim_lines);
+		if (rc) {
+			display_mode->priv_info->fifo_trim_lines = 0;
+			rc = 0;
+		}
+	}
+
+	DSI_DEBUG(
+		"panel vert active:%d front_porch:%d back_porch:%d pulse_width:%d\n",
 		mode->v_active, mode->v_front_porch, mode->v_back_porch,
 		mode->v_sync_width);
 
@@ -2106,7 +2174,8 @@ static int dsi_panel_parse_dfps_range(struct dsi_panel *panel)
 	struct dsi_dfps_capabilities *dfps_caps = &panel->dfps_caps;
 	struct dsi_parser_utils *utils = &panel->utils;
 	u32 *step_sizes;
-	u32 i, idx, refresh_rate, num_step_sizes;
+	u32 i, idx, refresh_rate;
+	int num_step_sizes;
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-min-refresh-rate",
 				  &dfps_caps->min_refresh_rate);
@@ -3262,8 +3331,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_EXTERNAL;
 	} else if (!strcmp(bl_type, "bl_ctrl_tokki_a")) {
 		panel->bl_config.type = DSI_BACKLIGHT_TOKKI_A;
-	} else if (!strcmp(bl_type, "bl_ctrl_jdi")) {
-		panel->bl_config.type = DSI_BACKLIGHT_JDI;
+	} else if (!strcmp(bl_type, "bl_ctrl_stark_olivia")) {
+		panel->bl_config.type = DSI_BACKLIGHT_STARK_OLIVIA;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi_nvt")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI_NVT;
 	} else {
@@ -3373,7 +3442,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 
 		panel->bl_config.temperature_dependent_timing =
 				dsi_panel_parse_temp_dependent_bl_config(panel);
-	} else if (panel->bl_config.type == DSI_BACKLIGHT_JDI ||
+	} else if (panel->bl_config.type == DSI_BACKLIGHT_STARK_OLIVIA ||
 			panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
 		rc = utils->read_u32(utils->data,
 			"meta,blu-default-duty-cycle", &val);
@@ -5780,8 +5849,8 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 	if (panel->bl_config.type == DSI_BACKLIGHT_TOKKI_A)
 		dsi_panel_tokki_a_update_backlight(panel, 0);
 
-	if (panel->bl_config.type == DSI_BACKLIGHT_JDI)
-		dsi_panel_jdi_update_backlight(panel, 0);
+	if (panel->bl_config.type == DSI_BACKLIGHT_STARK_OLIVIA)
+		dsi_panel_stark_olivia_update_backlight(panel, 0);
 
 	if (panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
 		dsi_panel_jdi_nvt_update_backlight(panel, 0);

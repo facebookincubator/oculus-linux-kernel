@@ -679,6 +679,93 @@
 		clock-rates = <24000000>;
 		status = "ok";
 	};
+
+    /* ET Left hw_sync*/
+	qcom,cam-sensor13 {
+		cell-index = <13>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <6>;
+		sensor-position-roll = <90>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply  = <&L8B>;
+		cam_vana-supply = <&L3M>;
+		cam_vdig-supply = <&L1M>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio", "cam_vana", "cam_vdig",
+			"cam_clk";
+		rgltr-cntrl-support;
+		hw_no_probe_pw_ops;
+		rgltr-min-voltage  = <1800000 2800000 1200000 0>;
+		rgltr-max-voltage  = <1800000 3000000 1260000 0>;
+		rgltr-load-current = <30000    46000   40000   0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk7_active
+				 &cam_sensor_active_rst7>;
+		pinctrl-1 = <&cam_sensor_mclk7_suspend
+				 &cam_sensor_suspend_rst7>;
+		gpios = <&tlmm 27 0>,
+			<&tlmm 69 0>,
+			<&tlmm 67 0>;
+		gpio-reset = <1>;
+		gpio-custom1 = <2>;
+		gpio-req-tbl-num = <0 1 2>;
+		gpio-req-tbl-flags = <1 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK7",
+					"CAM_RESET7",
+					"CAM_ET_LED_DRV_EN_LEFT";
+		cci-master = <CCI_MASTER_0>;
+		clocks = <&camcc CAM_CC_MCLK7_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <24000000>;
+		status = "ok";
+	};
+
+	/* ET Right hw_sync*/
+	qcom,cam-sensor14 {
+		cell-index = <14>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <1>;
+		sensor-position-roll = <90>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply = <&L8B>;
+		cam_vana-supply = <&L4M>;
+		cam_vdig-supply = <&L1M>;
+		cam_clk-supply = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio", "cam_vana", "cam_vdig",
+			"cam_clk";
+		rgltr-cntrl-support;
+		hw_no_probe_pw_ops;
+		rgltr-min-voltage  = <1800000 2800000 1200000  0>;
+		rgltr-max-voltage  = <1800000 3000000 1260000  0>;
+		rgltr-load-current = <30000    46000   40000    0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk8_active
+				 &cam_sensor_active_rst8>;
+		pinctrl-1 = <&cam_sensor_mclk8_suspend
+				 &cam_sensor_suspend_rst8>;
+		gpios = <&tlmm 28 0>,
+			<&tlmm 70 0>,
+			<&tlmm 67 0>;
+		gpio-reset = <1>;
+		gpio-custom1 = <2>;
+		gpio-req-tbl-num = <0 1 2>;
+		gpio-req-tbl-flags = <1 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK8",
+					"CAM_RESET8",
+					"CAM_ET_LED_DRV_EN_RIGHT";
+		cci-master = <CCI_MASTER_0>;
+		clocks = <&camcc CAM_CC_MCLK8_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <24000000>;
+		status = "ok";
+	};
+
 };
 
 &cam_cci5 {

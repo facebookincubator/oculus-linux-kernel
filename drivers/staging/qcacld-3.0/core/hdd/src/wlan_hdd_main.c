@@ -2656,6 +2656,11 @@ int hdd_update_tgt_cfg(hdd_handle_t hdd_handle, struct wma_tgt_cfg *cfg)
 			   cfg->dynamic_nss_chains_support, enable_dynamic_cfg);
 	}
 
+	status = ucfg_mlme_update_dynamic_nss_chains_support
+			(hdd_ctx->psoc, hdd_ctx->dynamic_nss_chains_support);
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("unable to set dynamic_nss_chains_support");
+
 	ucfg_mlme_get_fine_time_meas_cap(hdd_ctx->psoc, &fine_time_meas_cap);
 	fine_time_meas_cap &= cfg->fine_time_measurement_cap;
 	status = ucfg_mlme_set_fine_time_meas_cap(hdd_ctx->psoc,
@@ -2742,6 +2747,9 @@ int hdd_update_tgt_cfg(hdd_handle_t hdd_handle, struct wma_tgt_cfg *cfg)
 	if (QDF_IS_STATUS_ERROR(status))
 		hdd_err("Failed to set WNI_CFG_OBSS_COLOR_COLLISION_OFFLOAD");
 
+	ucfg_mlme_set_bss_color_collision_det_support(
+					hdd_ctx->psoc,
+					cfg->obss_color_collision_offloaded);
 	if (!cfg->obss_color_collision_offloaded) {
 		status = ucfg_mlme_set_bss_color_collision_det_sta(
 				hdd_ctx->psoc,
@@ -3762,6 +3770,8 @@ static void hdd_nan_register_callbacks(struct hdd_context *hdd_ctx)
 	cb_obj.peer_departed_ind = hdd_ndp_peer_departed_handler;
 
 	cb_obj.nan_concurrency_update = hdd_nan_concurrency_update;
+	cb_obj.set_mc_list = hdd_update_multicast_list;
+
 	hdd_register_sr_concurrency_cb(&cb_obj);
 
 	os_if_nan_register_hdd_callbacks(hdd_ctx->psoc, &cb_obj);
@@ -4364,6 +4374,135 @@ static int hdd_set_pcie_params(struct hdd_context *hdd_ctx)
 	return ret;
 }
 
+#ifdef FEATURE_SET
+#ifdef WLAN_FEATURE_11BE
+/**
+ * hdd_is_cfg_dot11_mode_11be() - Check if dot11 mode is 11 be
+ * @dot11_mode: Input dot11_mode which needs to be checked
+ *
+ * Return: True, ifinput dot11_mode is 11be dot11 mode else return false
+ */
+static bool hdd_is_cfg_dot11_mode_11be(enum hdd_dot11_mode dot11_mode)
+{
+	return (dot11_mode == eHDD_DOT11_MODE_11be ||
+		dot11_mode == eHDD_DOT11_MODE_11be_ONLY);
+}
+
+/**
+ * hdd_is_11be_supported() - Check if 11be is supported or not
+ * @hdd_ctx: Pointer to hdd context
+ *
+ * Return: True, if 11be is supported else return false
+ */
+static bool hdd_is_11be_supported(struct hdd_context *hdd_ctx)
+{
+	bool mlo_capab;
+
+	ucfg_psoc_mlme_get_11be_capab(hdd_ctx->psoc, &mlo_capab);
+	if (!mlo_capab)
+		return false;
+
+	return true;
+}
+#else
+
+static bool hdd_is_cfg_dot11_mode_11be(enum hdd_dot11_mode dot11_mode)
+{
+	return false;
+}
+
+static bool hdd_is_11be_supported(struct hdd_context *hdd_ctx)
+{
+	return false;
+}
+#endif
+
+/**
+ * hdd_get_wifi_standard() - Get wifi standard
+ * @hdd_ctx: hdd context pointer
+ * @band_capability: band capability bitmap
+ *
+ * Return: WMI_HOST_WIFI_STANDARD
+ */
+static WMI_HOST_WIFI_STANDARD hdd_get_wifi_standard(struct hdd_context *hdd_ctx,
+						    uint32_t band_capability)
+{
+	WMI_HOST_WIFI_STANDARD wifi_standard = WMI_HOST_WIFI_STANDARD_4;
+
+	if (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_AUTO) {
+		if (hdd_is_11be_supported(hdd_ctx))
+			wifi_standard = WMI_HOST_WIFI_STANDARD_7;
+		else if (band_capability & BIT(REG_BAND_6G))
+			wifi_standard = WMI_HOST_WIFI_STANDARD_6E;
+		else
+			wifi_standard = WMI_HOST_WIFI_STANDARD_6;
+	} else if (hdd_is_cfg_dot11_mode_11be(hdd_ctx->config->dot11Mode)) {
+		wifi_standard = WMI_HOST_WIFI_STANDARD_7;
+	} else if (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ax ||
+		   (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ax_ONLY)) {
+		if (band_capability & BIT(REG_BAND_6G))
+			wifi_standard = WMI_HOST_WIFI_STANDARD_6E;
+		else
+			wifi_standard = WMI_HOST_WIFI_STANDARD_6;
+	} else if ((hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ac) ||
+		   (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ac_ONLY)) {
+		wifi_standard = WMI_HOST_WIFI_STANDARD_5;
+	}
+
+	return wifi_standard;
+}
+
+/**
+ * hdd_populate_feature_set_cds_config() - Populate cds feature set config
+ * @hdd_ctx: hdd context pointer
+ *
+ * Return: None
+ */
+static void hdd_populate_feature_set_cds_config(struct hdd_context *hdd_ctx)
+{
+	struct wlan_objmgr_psoc *psoc;
+	uint32_t band_capability;
+	QDF_STATUS status;
+	struct cds_config_info *cds_cfg;
+
+	if (!hdd_ctx)
+		return;
+
+	cds_cfg = cds_get_ini_config();
+	if (!cds_cfg) {
+		hdd_err("CDS config is null.");
+		return;
+	}
+
+	psoc = hdd_ctx->psoc;
+
+	cds_cfg->get_wifi_features = hdd_ctx->config->get_wifi_features;
+
+	status = ucfg_mlme_get_band_capability(hdd_ctx->psoc, &band_capability);
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to get MLME band capability");
+
+	band_capability =
+		hdd_update_band_cap_from_dot11mode(hdd_ctx, band_capability);
+
+	cds_cfg->cds_feature_set.wifi_standard =
+				hdd_get_wifi_standard(hdd_ctx,
+						      band_capability);
+
+	cds_cfg->cds_feature_set.sap_5g_supported =
+					band_capability & BIT(REG_BAND_5G);
+
+	cds_cfg->cds_feature_set.sap_6g_supported =
+					band_capability & BIT(REG_BAND_6G);
+	cds_cfg->cds_feature_set.band_capability = band_capability;
+}
+#else
+static inline void
+hdd_populate_feature_set_cds_config(struct hdd_context *hdd_ctx)
+{
+}
+#endif
+
 int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 {
 	int ret = 0;
@@ -4373,7 +4512,6 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 	void *hif_ctx;
 	struct target_psoc_info *tgt_hdl;
 	unsigned long thermal_state = 0;
-	bool is_sched_disabled = false;
 
 	hdd_enter();
 	qdf_dev = cds_get_context(QDF_MODULE_ID_QDF_DEVICE);
@@ -4494,6 +4632,8 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 			ret = qdf_status_to_os_return(status);
 			goto psoc_close;
 		}
+
+		hdd_populate_feature_set_cds_config(hdd_ctx);
 
 		hdd_set_qmi_stats_enabled(hdd_ctx);
 
@@ -4644,16 +4784,15 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 	hdd_exit();
 
 	return 0;
-/*
- * Disable scheduler 1st so that scheduler thread doesn't send messages to fw
- * in parallel to the cleanup
- */
+
 deconfigure_cds:
-	is_sched_disabled = !dispatcher_disable();
 	hdd_deconfigure_cds(hdd_ctx);
 sched_disable:
-	if (!is_sched_disabled)
-		dispatcher_disable();
+	/*
+	 * Disable scheduler 1st so that scheduler thread doesn't send messages
+	 * to fw in parallel to the cleanup
+	 */
+	dispatcher_disable();
 	hdd_destroy_sysfs_files();
 	cds_post_disable();
 unregister_notifiers:
@@ -4677,6 +4816,7 @@ cds_txrx_free:
 	cds_dp_close(hdd_ctx->psoc);
 
 close:
+	dispatcher_disable();
 	hdd_ctx->driver_status = DRIVER_MODULES_CLOSED;
 	hdd_info("Wlan transition aborted (now CLOSED)");
 
@@ -5670,7 +5810,7 @@ hdd_set_derived_multicast_list(struct wlan_objmgr_psoc *psoc,
 
 /**
  * __hdd_set_multicast_list() - set the multicast address list
- * @dev:	Pointer to the WLAN device.
+ * @dev: Pointer to the WLAN device.
  *
  * This function sets the multicast address list.
  *
@@ -5712,6 +5852,7 @@ static void __hdd_set_multicast_list(struct net_device *dev)
 	if (!mc_list_request)
 		return;
 
+	qdf_spin_lock_bh(&adapter->mc_list_lock);
 	/* Delete already configured multicast address list */
 	if (adapter->mc_addr_list.mc_cnt > 0)
 		hdd_disable_and_flush_mc_addr_list(adapter,
@@ -5764,6 +5905,7 @@ static void __hdd_set_multicast_list(struct net_device *dev)
 	hdd_enable_mc_addr_filtering(adapter, pmo_mc_list_change_notify);
 
 free_req:
+	qdf_spin_unlock_bh(&adapter->mc_list_lock);
 	qdf_mem_free(mc_list_request);
 }
 
@@ -5783,6 +5925,33 @@ static void hdd_set_multicast_list(struct net_device *net_dev)
 	__hdd_set_multicast_list(net_dev);
 
 	osif_vdev_sync_op_stop(vdev_sync);
+}
+
+void hdd_update_multicast_list(struct wlan_objmgr_vdev *vdev)
+{
+	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	struct hdd_adapter *adapter;
+	uint8_t vdev_id = wlan_vdev_get_id(vdev);
+	struct net_device *net_dev;
+
+	if (!hdd_ctx) {
+		hdd_err("hdd_ctx is null");
+		return;
+	}
+
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	if (!adapter) {
+		hdd_err("adapter is null for vdev_id %d", vdev_id);
+		return;
+	}
+
+	net_dev = adapter->dev;
+	if (!net_dev) {
+		hdd_err("netdev is null");
+		return;
+	}
+
+	__hdd_set_multicast_list(net_dev);
 }
 
 #ifdef WLAN_FEATURE_TSF_PTP
@@ -6548,7 +6717,7 @@ static void hdd_vdev_set_ht_vht_ies(mac_handle_t mac_handle,
 }
 
 #if defined(WLAN_FEATURE_11BE_MLO) && defined(CFG80211_11BE_BASIC)
-static void
+static int
 hdd_populate_vdev_create_params(struct hdd_adapter *adapter,
 				struct wlan_vdev_create_params *vdev_params)
 {
@@ -6565,9 +6734,10 @@ hdd_populate_vdev_create_params(struct hdd_adapter *adapter,
 	    adapter->device_mode == QDF_STA_MODE) {
 		link_adapter = hdd_get_assoc_link_adapter(adapter);
 		if (link_adapter) {
-			qdf_mem_copy(vdev_params->macaddr,
-				     link_adapter->mac_addr.bytes,
-				     QDF_MAC_ADDR_SIZE);
+			qdf_ether_addr_copy(vdev_params->macaddr,
+					    link_adapter->mac_addr.bytes);
+		} else {
+			return -EINVAL;
 		}
 	} else {
 		qdf_mem_copy(vdev_params->macaddr, adapter->mac_addr.bytes,
@@ -6583,9 +6753,11 @@ hdd_populate_vdev_create_params(struct hdd_adapter *adapter,
 
 	vdev_params->size_vdev_priv = sizeof(struct vdev_osif_priv);
 	hdd_exit();
+
+	return 0;
 }
 #else
-static void
+static int
 hdd_populate_vdev_create_params(struct hdd_adapter *adapter,
 				struct wlan_vdev_create_params *vdev_params)
 {
@@ -6594,6 +6766,7 @@ hdd_populate_vdev_create_params(struct hdd_adapter *adapter,
 		     adapter->mac_addr.bytes,
 		     QDF_NET_MAC_ADDR_MAX_LEN);
 	vdev_params->size_vdev_priv = sizeof(struct vdev_osif_priv);
+	return 0;
 }
 #endif
 
@@ -6636,7 +6809,9 @@ int hdd_vdev_create(struct hdd_adapter *adapter)
 		return errno;
 	}
 
-	hdd_populate_vdev_create_params(adapter, &vdev_params);
+	errno = hdd_populate_vdev_create_params(adapter, &vdev_params);
+	if (errno)
+		return errno;
 
 	vdev = sme_vdev_create(hdd_ctx->mac_handle, &vdev_params);
 	if (!vdev) {
@@ -7138,6 +7313,7 @@ static void hdd_cleanup_adapter(struct hdd_context *hdd_ctx,
 
 	hdd_apf_context_destroy(adapter);
 	qdf_spinlock_destroy(&adapter->vdev_lock);
+	qdf_spinlock_destroy(&adapter->mc_list_lock);
 	hdd_sta_info_deinit(&adapter->sta_info_list);
 	hdd_sta_info_deinit(&adapter->cache_sta_info_list);
 
@@ -7927,6 +8103,7 @@ struct hdd_adapter *hdd_open_adapter(struct hdd_context *hdd_ctx,
 	qdf_list_create(&adapter->blocked_scan_request_q, WLAN_MAX_SCAN_COUNT);
 	qdf_mutex_create(&adapter->blocked_scan_request_q_lock);
 	qdf_event_create(&adapter->acs_complete_event);
+	qdf_spinlock_create(&adapter->mc_list_lock);
 	qdf_event_create(&adapter->peer_cleanup_done);
 	hdd_sta_info_init(&adapter->sta_info_list);
 	hdd_sta_info_init(&adapter->cache_sta_info_list);
@@ -10179,7 +10356,6 @@ void hdd_prevent_suspend_timeout(uint32_t timeout, uint32_t reason)
 QDF_STATUS hdd_set_sme_chan_list(struct hdd_context *hdd_ctx)
 {
 	return sme_init_chan_list(hdd_ctx->mac_handle,
-				  hdd_ctx->reg.alpha2,
 				  hdd_ctx->reg.cc_src);
 }
 
@@ -13469,124 +13645,6 @@ static inline void hdd_txrx_populate_cds_config(struct cds_config_info
 }
 #endif
 
-#ifdef FEATURE_SET
-#ifdef WLAN_FEATURE_11BE
-/**
- * hdd_is_cfg_dot11_mode_11be() - Check if dot11 mode is 11 be
- * @dot11_mode: Input dot11_mode which needs to be checked
- *
- * Return: True, ifinput dot11_mode is 11be dot11 mode else return false
- */
-static bool hdd_is_cfg_dot11_mode_11be(enum hdd_dot11_mode dot11_mode)
-{
-	return (dot11_mode == eHDD_DOT11_MODE_11be ||
-		dot11_mode == eHDD_DOT11_MODE_11be_ONLY);
-}
-
-/**
- * hdd_is_11be_supported() - Check if 11be is supported or not
- *
- * Return: True, if 11be is supported else return false
- */
-static bool hdd_is_11be_supported(void)
-{
-	return true;
-}
-#else
-
-static bool hdd_is_cfg_dot11_mode_11be(enum hdd_dot11_mode dot11_mode)
-{
-	return false;
-}
-
-static bool hdd_is_11be_supported(void)
-{
-	return false;
-}
-#endif
-
-/**
- * hdd_get_wifi_standard() - Get wifi standard
- * @hdd_ctx: hdd context pointer
- * @band_capability: band capability bitmap
- *
- * Return: WMI_HOST_WIFI_STANDARD
- */
-static WMI_HOST_WIFI_STANDARD hdd_get_wifi_standard(struct hdd_context *hdd_ctx,
-						    uint32_t band_capability)
-{
-	WMI_HOST_WIFI_STANDARD wifi_standard = WMI_HOST_WIFI_STANDARD_4;
-
-	if (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_AUTO) {
-		if (hdd_is_11be_supported())
-			wifi_standard = WMI_HOST_WIFI_STANDARD_7;
-		else if (band_capability & BIT(REG_BAND_6G))
-			wifi_standard = WMI_HOST_WIFI_STANDARD_6E;
-		else
-			wifi_standard = WMI_HOST_WIFI_STANDARD_6;
-	} else if (hdd_is_cfg_dot11_mode_11be(hdd_ctx->config->dot11Mode)) {
-		wifi_standard = WMI_HOST_WIFI_STANDARD_7;
-	} else if (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ax ||
-		   (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ax_ONLY)) {
-		if (band_capability & BIT(REG_BAND_6G))
-			wifi_standard = WMI_HOST_WIFI_STANDARD_6E;
-		else
-			wifi_standard = WMI_HOST_WIFI_STANDARD_6;
-	} else if ((hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ac) ||
-		   (hdd_ctx->config->dot11Mode == eHDD_DOT11_MODE_11ac_ONLY)) {
-		wifi_standard = WMI_HOST_WIFI_STANDARD_5;
-	}
-
-	return wifi_standard;
-}
-
-/**
- * hdd_populate_feature_set_cds_config() - Populate cds feature set config
- * @cds_cfg: cds config where feature set info needs to be updated
- * @hdd_ctx: hdd context pointer
- *
- * Return: None
- */
-static void hdd_populate_feature_set_cds_config(struct cds_config_info *cds_cfg,
-						struct hdd_context *hdd_ctx)
-{
-	struct wlan_objmgr_psoc *psoc;
-	uint32_t band_capability;
-	QDF_STATUS status;
-
-	if (!hdd_ctx)
-		return;
-
-	psoc = hdd_ctx->psoc;
-
-	cds_cfg->get_wifi_features = hdd_ctx->config->get_wifi_features;
-
-	status = ucfg_mlme_get_band_capability(hdd_ctx->psoc, &band_capability);
-	if (QDF_IS_STATUS_ERROR(status))
-		hdd_err("Failed to get MLME band capability");
-
-	band_capability =
-		hdd_update_band_cap_from_dot11mode(hdd_ctx, band_capability);
-
-	cds_cfg->cds_feature_set.wifi_standard =
-				hdd_get_wifi_standard(hdd_ctx,
-						      band_capability);
-
-	cds_cfg->cds_feature_set.sap_5g_supported =
-					band_capability & BIT(REG_BAND_5G);
-
-	cds_cfg->cds_feature_set.sap_6g_supported =
-					band_capability & BIT(REG_BAND_6G);
-	cds_cfg->cds_feature_set.band_capability = band_capability;
-}
-#else
-static inline void
-hdd_populate_feature_set_cds_config(struct cds_config_info *cds_cfg,
-				    struct hdd_context *hdd_ctx)
-{
-}
-#endif
-
 /**
  * hdd_update_cds_config() - API to update cds configuration parameters
  * @hdd_ctx: HDD Context
@@ -13678,7 +13736,6 @@ static int hdd_update_cds_config(struct hdd_context *hdd_ctx)
 		hdd_tsf_is_tsf64_tx_set(hdd_ctx);
 	hdd_txrx_populate_cds_config(cds_cfg, hdd_ctx);
 	hdd_lpass_populate_cds_config(cds_cfg, hdd_ctx);
-	hdd_populate_feature_set_cds_config(cds_cfg, hdd_ctx);
 	cds_init_ini_config(cds_cfg);
 	return 0;
 

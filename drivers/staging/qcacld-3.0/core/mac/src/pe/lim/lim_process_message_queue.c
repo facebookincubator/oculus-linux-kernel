@@ -1071,7 +1071,7 @@ lim_check_mgmt_registered_frames(struct mac_context *mac_ctx, uint8_t *buff_desc
 	uint8_t type, sub_type;
 	bool match = false;
 	tpSirMacActionFrameHdr action_hdr;
-	uint8_t actionID, category;
+	uint8_t actionID, category, vdev_id = WLAN_INVALID_VDEV_ID;
 	QDF_STATUS qdf_status;
 
 	hdr = WMA_GET_RX_MAC_HEADER(buff_desc);
@@ -1150,11 +1150,14 @@ lim_check_mgmt_registered_frames(struct mac_context *mac_ctx, uint8_t *buff_desc
 				}
 			}
 		}
+		if (session_entry)
+			vdev_id = session_entry->vdev_id;
+
 		/* Indicate this to SME */
 		lim_send_sme_mgmt_frame_ind(mac_ctx, hdr->fc.subType,
 			(uint8_t *) hdr,
 			WMA_GET_RX_PAYLOAD_LEN(buff_desc) +
-			sizeof(tSirMacMgmtHdr), mgmt_frame->sessionId,
+			sizeof(tSirMacMgmtHdr), vdev_id,
 			WMA_GET_RX_FREQ(buff_desc),
 			WMA_GET_RX_RSSI_NORMALIZED(buff_desc),
 			RXMGMT_FLAG_NONE);
@@ -1787,6 +1790,7 @@ static void lim_process_messages(struct mac_context *mac_ctx,
 	case WNI_SME_UPDATE_MU_EDCA_PARAMS:
 	case eWNI_SME_UPDATE_SESSION_EDCA_TXQ_PARAMS:
 	case WNI_SME_CFG_ACTION_FRM_HE_TB_PPDU:
+	case eWNI_SME_VDEV_PAUSE_IND:
 		/* These messages are from HDD.No need to respond to HDD */
 		lim_process_normal_hdd_msg(mac_ctx, msg, false);
 		break;

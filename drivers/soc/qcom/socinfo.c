@@ -64,6 +64,7 @@ enum {
 	HW_PLATFORM_unknown4 = 65,
 	HW_PLATFORM_unknown6 = 67,
 	HW_PLATFORM_unknown7 = 68,
+	HW_PLATFORM_unknown13 = 69,
 	HW_PLATFORM_INVALID
 };
 
@@ -92,6 +93,7 @@ static const char * const hw_platform[] = {
 	[HW_PLATFORM_unknown4] = "unknown4",
 	[HW_PLATFORM_unknown6] = "unknown6",
 	[HW_PLATFORM_unknown7] = "unknown7 xr2g2",
+	[HW_PLATFORM_unknown13] = "unknown13",
 };
 
 enum {
@@ -1046,6 +1048,7 @@ static const struct soc_id soc_id[] = {
 	{ 537, "PARROT" },
 	{ 583, "PARROTP" },
 	{ 613, "PARROT" },
+	{ 631, "PARROTP" },
 	{ 530, "CAPE" },
 	{ 531, "CAPEP" },
 	{ 540, "CAPE-V2" },

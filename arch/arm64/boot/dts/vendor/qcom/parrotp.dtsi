@@ -4,7 +4,7 @@
 
 	model = "Qualcomm Technologies, Inc. ParrotP";
 	compatible = "qcom,parrotp";
-	qcom,msm-id = <583 0x10000>;
+	qcom,msm-id = <583 0x10000>, <631 0x10000>;
 };
 
 &ipa_hw {

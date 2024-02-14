@@ -430,7 +430,7 @@ CFG_INI_UINT("g_sta_sap_scc_on_dfs_chan", 0, 2, 2, CFG_VALUE_OR_DEFAULT, \
  * when STA is connected on indoor channel.
  * @Min: false
  * @Max: true
- * @Default: true
+ * @Default: false
  *
  * This ini is used to allow STA+SAP SCC on indoor channel
  * 0 - Disallow STA+SAP SCC on Indoor only channel
@@ -449,7 +449,7 @@ CFG_INI_UINT("g_sta_sap_scc_on_dfs_chan", 0, 2, 2, CFG_VALUE_OR_DEFAULT, \
  */
 #define CFG_STA_SAP_SCC_ON_INDOOR_CHAN CFG_INI_BOOL(\
 			"sta_sap_scc_on_indoor_chan", \
-			true, \
+			false, \
 			"Allow STA+SAP SCC on indoor channel")
 
 /*

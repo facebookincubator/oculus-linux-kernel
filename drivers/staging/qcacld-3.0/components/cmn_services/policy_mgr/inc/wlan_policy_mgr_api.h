@@ -1125,6 +1125,21 @@ QDF_STATUS policy_mgr_decr_active_session(struct wlan_objmgr_psoc *psoc,
 void policy_mgr_decr_session_set_pcl(struct wlan_objmgr_psoc *psoc,
 		enum QDF_OPMODE mode, uint8_t session_id);
 
+/**
+ * polic_mgr_send_pcl_to_fw() - Send PCL to fw
+ * @psoc: PSOC object information
+ * @mode: Adapter mode
+ *
+ * Loop through all existing connections, stop RSO, send PCL to firmware
+ * and start RSO. If Roaming is in progress on any of the interface,
+ * avoid PCL updation as PCL gets updated post roaming.
+ *
+ * Return: None
+ */
+void
+polic_mgr_send_pcl_to_fw(struct wlan_objmgr_psoc *psoc,
+			 enum QDF_OPMODE mode);
+
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
  * policy_mgr_mlo_sta_set_link() - Set link mode for MLO STA
@@ -1207,6 +1222,17 @@ policy_mgr_ml_link_vdev_need_to_be_disabled(struct wlan_objmgr_psoc *psoc,
  * Return: QDF_STATUS
  */
 QDF_STATUS policy_mgr_wait_for_set_link_update(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * policy_mgr_get_active_vdev_bitmap() - to get active ML STA vdev bitmap
+ * @psoc: PSOC object information
+ *
+ * This API will fetch the active ML STA vdev bitmap.
+ *
+ * Return: vdev bitmap value
+ */
+uint32_t
+policy_mgr_get_active_vdev_bitmap(struct wlan_objmgr_psoc *psoc);
 #else
 static inline bool
 policy_mgr_is_ml_vdev_id(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)
@@ -1241,6 +1267,12 @@ static inline QDF_STATUS
 policy_mgr_wait_for_set_link_update(struct wlan_objmgr_psoc *psoc)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline uint32_t
+policy_mgr_get_active_vdev_bitmap(struct wlan_objmgr_psoc *psoc)
+{
+	return 0;
 }
 #endif
 
@@ -4983,5 +5015,15 @@ uint32_t policy_mgr_get_connection_count_with_ch_freq(uint32_t ch_freq);
  */
 bool policy_mgr_is_sap_allowed_on_indoor(struct wlan_objmgr_pdev *pdev,
 					 uint8_t vdev_id, qdf_freq_t ch_freq);
+
+/**
+ * policy_mgr_get_nan_sap_scc_on_lte_coex_chnl() -Get if NAN + SAP SCC on
+ * lte coex channel is allowed on lte coex channel or not
+ * @psoc: psoc pointer
+ *
+ * Return: cfg value of nan sap scc is allowed or not on lte coex channel
+ */
+
+bool policy_mgr_get_nan_sap_scc_on_lte_coex_chnl(struct wlan_objmgr_psoc *psoc);
 
 #endif /* __WLAN_POLICY_MGR_API_H */

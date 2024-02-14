@@ -37,6 +37,9 @@
 #include "sdhci-msm-scaling.h"
 #endif
 #include "sdhci-msm.h"
+#if IS_ENABLED(CONFIG_QTI_HW_KEY_MANAGER)
+#include <linux/hwkm.h>
+#endif
 
 #define CORE_MCI_VERSION		0x50
 #define CORE_VERSION_MAJOR_SHIFT	28
@@ -3868,6 +3871,15 @@ static int sdhci_msm_gcc_reset(struct device *dev, struct sdhci_host *host)
 	return ret;
 }
 
+static void sdhci_msm_hwkm_ice_init(struct sdhci_msm_host *msm_host)
+{
+	struct ice_mmio_data mmio_data;
+
+	mmio_data.ice_base_mmio = msm_host->ice_mem;
+	mmio_data.ice_hwkm_mmio = msm_host->ice_hwkm_mem;
+	qti_hwkm_ice_init_sequence(&mmio_data);
+}
+
 static void sdhci_msm_hw_reset(struct sdhci_host *host)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
@@ -3896,6 +3908,9 @@ static void sdhci_msm_hw_reset(struct sdhci_host *host)
 #if defined(CONFIG_SDC_QTI)
 	if (host->mmc->card)
 		mmc_power_cycle(host->mmc, host->mmc->card->ocr);
+#endif
+#if IS_ENABLED(CONFIG_QTI_HW_KEY_MANAGER)
+	sdhci_msm_hwkm_ice_init(msm_host);
 #endif
 	return;
 }
@@ -4961,13 +4976,6 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	/* Initialize sysfs entries */
 	sdhci_msm_init_sysfs_gating_qos(dev);
 
-	if (of_property_read_bool(node, "supports-cqe"))
-		ret = sdhci_msm_cqe_add_host(host, pdev);
-	else
-		ret = sdhci_add_host(host);
-	if (ret)
-		goto pm_runtime_disable;
-
 #if IS_ENABLED(CONFIG_MMC_SDHCI_MSM_SCALING)
 	pwrseq_scale = kzalloc(sizeof(struct mmc_pwrseq), GFP_KERNEL);
 
@@ -4979,6 +4987,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	pwrseq_scale->ops = &mmc_pwrseq_emmc_ops;
 	host->mmc->pwrseq = pwrseq_scale;
 #endif
+
+	if (of_property_read_bool(node, "supports-cqe"))
+		ret = sdhci_msm_cqe_add_host(host, pdev);
+	else
+		ret = sdhci_add_host(host);
+	if (ret)
+		goto pm_runtime_disable;
 
 	/* For SDHC v5.0.0 onwards, ICE 3.0 specific registers are added
 	 * in CQ register space, due to which few CQ registers are

@@ -2667,6 +2667,8 @@
 
 	hyp_core_ctl: qcom,hyp-core-ctl {
 		compatible = "qcom,hyp-core-ctl";
+		qcom,populate-cpus;
+		qcom,unisolate-timeout-ms = <12000>;
 		status = "ok";
 	};
 

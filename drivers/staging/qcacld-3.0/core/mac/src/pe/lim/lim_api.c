@@ -2787,15 +2787,35 @@ void lim_handle_sr_cap(struct wlan_objmgr_vdev *vdev,
 	uint8_t non_srg_pd_offset = 0;
 	uint8_t srg_max_pd_offset = 0;
 	uint8_t srg_min_pd_offset = 0;
-	uint8_t sr_ctrl;
+	uint8_t sr_ctrl, sr_enable_modes;
 	bool is_pd_threshold_present = false;
 	struct wlan_objmgr_pdev *pdev;
 	enum sr_status_of_roamed_ap sr_status;
 	enum sr_osif_operation sr_op;
+	enum QDF_OPMODE opmode;
+	struct mac_context *mac = cds_get_context(QDF_MODULE_ID_PE);
 
+	if (!mac) {
+		pe_err("mac ctx is null");
+		return;
+	}
 	pdev = wlan_vdev_get_pdev(vdev);
 	if (!pdev) {
 		pe_err("invalid pdev");
+		return;
+	}
+
+	opmode = wlan_vdev_mlme_get_opmode(vdev);
+	/* If SR is disabled in INI for the session-operating mode
+	 * Then return.
+	 */
+	wlan_mlme_get_sr_enable_modes(mac->psoc, &sr_enable_modes);
+	if (!(sr_enable_modes & (1 << opmode))) {
+		pe_debug("SR is disabled in INI for mode: %d", opmode);
+		return;
+	}
+	if (!wlan_vdev_mlme_get_he_spr_enabled(vdev)) {
+		pe_debug("SR is not enabled");
 		return;
 	}
 	non_srg_pd_offset = wlan_vdev_mlme_get_non_srg_pd_offset(vdev);
@@ -3780,7 +3800,8 @@ lim_add_bcn_probe(struct wlan_objmgr_vdev *vdev, uint8_t *bcn_probe,
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	vdev_id = wlan_vdev_get_id(vdev);
-	if (!bcn_probe || !len || (len < sizeof(*hdr))) {
+	if (!bcn_probe || !len || (len < sizeof(*hdr)) ||
+	    len > MAX_MGMT_MPDU_LEN) {
 		pe_err("bcn_probe is null or invalid len %d",
 		       len);
 		return QDF_STATUS_E_FAILURE;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -643,8 +643,6 @@ void sde_core_perf_crtc_update_uidle(struct drm_crtc *crtc,
 			 * UIDLE update, if DFPS is enabled with VFP.
 			 */
 			fps = sde_crtc_get_dfps_maxfps(tmp_crtc);
-			if (!fps)
-				fps = sde_crtc_get_fps_mode(tmp_crtc);
 
 			SDE_DEBUG("crtc=%d fps:%d wb:%d cwb:%d dis:%d en:%d\n",
 				tmp_crtc->base.id, fps,

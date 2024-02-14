@@ -573,7 +573,7 @@ int hif_get_wake_ce_id(struct hif_softc *scn, uint8_t *ce_id);
  */
 int hif_get_fw_diag_ce_id(struct hif_softc *scn, uint8_t *ce_id);
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 
 #ifndef HIF_CE_HISTORY_MAX
 #define HIF_CE_HISTORY_MAX 1024
@@ -627,7 +627,7 @@ struct hif_ce_desc_event {
 };
 #else
 struct hif_ce_desc_event;
-#endif /*#if defined(HIF_CONFIG_SLUB_DEBUG_ON)||defined(HIF_CE_DEBUG_DATA_BUF)*/
+#endif /*#if defined(CONFIG_WLAN_EXTRA_DEBUG)||defined(HIF_CE_DEBUG_DATA_BUF)*/
 
 /**
  * get_next_record_index() - get the next record index
@@ -643,7 +643,7 @@ struct hif_ce_desc_event;
  */
 int get_next_record_index(qdf_atomic_t *table_index, int array_size);
 
-#if defined(HIF_CONFIG_SLUB_DEBUG_ON) || defined(HIF_CE_DEBUG_DATA_BUF)
+#if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 /**
  * hif_record_ce_srng_desc_event() - Record data pointed by the CE descriptor
  * @scn: structure detailing a ce event
@@ -686,7 +686,7 @@ static inline
 void hif_clear_ce_desc_debug_data(struct hif_ce_desc_event *event)
 {
 }
-#endif /* HIF_CONFIG_SLUB_DEBUG_ON || HIF_CE_DEBUG_DATA_BUF */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG || HIF_CE_DEBUG_DATA_BUF */
 
 #ifdef HIF_CE_DEBUG_DATA_BUF
 /**
@@ -715,9 +715,9 @@ void hif_ce_desc_data_record(struct hif_ce_desc_event *event, int len)
 }
 #endif /*HIF_CE_DEBUG_DATA_BUF*/
 
-#ifdef HIF_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 /**
- * ce_validate_nbytes() - validate nbytes for slub builds on tx descriptors
+ * ce_validate_nbytes() - validate nbytes for debug builds on tx descriptors
  * @nbytes: nbytes value being written into a send descriptor
  * @ce_state: context of the copy engine
  *
@@ -736,7 +736,7 @@ static inline void ce_validate_nbytes(uint32_t nbytes,
 				      struct CE_state *ce_state)
 {
 }
-#endif /* HIF_CONFIG_SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 
 #if defined(HIF_RECORD_PADDR)
 /**

@@ -408,8 +408,7 @@ QDF_STATUS wlan_scan_start(struct scan_start_request *req)
 
 	if (!req || !req->vdev) {
 		scm_err("req or vdev within req is NULL");
-		if (req)
-			scm_scan_free_scan_request_mem(req);
+		scm_scan_free_scan_request_mem(req);
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
