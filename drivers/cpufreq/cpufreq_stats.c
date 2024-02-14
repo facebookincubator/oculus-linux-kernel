@@ -307,10 +307,13 @@ void cpufreq_stats_update_busy_time(struct task_struct *p, u64 cputime)
 
 	cpu = task_cpu(p);
 	policy = cpufreq_cpu_get(cpu);
-	if (policy && policy->stats && !is_idle_task(p)) {
-		spin_lock_irqsave(&cpufreq_stats_lock, flags);
-		policy->stats->busy_time_in_state_per_cpu[cpu - policy->stats->cpu][policy->stats->last_index] += cputime;
-		spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
+	if (policy) {
+		if (policy->stats && !is_idle_task(p)) {
+			spin_lock_irqsave(&cpufreq_stats_lock, flags);
+			policy->stats->busy_time_in_state_per_cpu[cpu - policy->stats->cpu][policy->stats->last_index] += cputime;
+			spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
+		}
+		cpufreq_cpu_put(policy);
 	}
 }
 
@@ -322,9 +325,12 @@ void cpufreq_stats_update_idle_time(u64 cputime)
 
 	cpu = smp_processor_id();
 	policy = cpufreq_cpu_get(cpu);
-	if (policy && policy->stats) {
-		spin_lock_irqsave(&cpufreq_stats_lock, flags);
-		policy->stats->idle_time_in_state_per_cpu[cpu - policy->stats->cpu][policy->stats->last_index] += cputime;
-		spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
+	if (policy) {
+		if (policy->stats) {
+			spin_lock_irqsave(&cpufreq_stats_lock, flags);
+			policy->stats->idle_time_in_state_per_cpu[cpu - policy->stats->cpu][policy->stats->last_index] += cputime;
+			spin_unlock_irqrestore(&cpufreq_stats_lock, flags);
+		}
+		cpufreq_cpu_put(policy);
 	}
 }

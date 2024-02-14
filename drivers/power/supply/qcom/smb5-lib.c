@@ -3254,27 +3254,21 @@ int smblib_get_prop_dc_pd_active(struct smb_charger *chg,
 			union power_supply_propval *val)
 {
 	int rc;
-
 	val->intval = 0;
-	if (!chg->iio.dc_pd_active_chan) {
-		struct iio_channel *chan = iio_channel_get(NULL, "cypd_pd_active");
 
-		if (IS_ERR(chan)) {
-			rc = PTR_ERR(chan);
-			if (rc != -EPROBE_DEFER && rc != -ENODEV)
-				smblib_err(chg, "cypd_pd_active channel unavailable rc=%d\n", rc);
+	if (!chg->wls_psy)
+		chg->wls_psy = power_supply_get_by_name(chg->wls_psy_name);
 
-			return (rc == -ENODEV) ? 0 : rc;
+	if (chg->wls_psy) {
+		rc = power_supply_get_property(chg->wls_psy,
+				POWER_SUPPLY_PROP_STATUS, val);
+		if (rc < 0) {
+			dev_err(chg->dev, "Couldn't get DC_PD_ACTIVE, rc=%d\n", rc);
+			return rc;
 		}
-
-		chg->iio.dc_pd_active_chan = chan;
 	}
 
-	rc = iio_read_channel_processed(chg->iio.dc_pd_active_chan, &val->intval);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't read DC_PD_ACTIVE channel rc=%d\n", rc);
-		return rc;
-	}
+	val->intval = (val->intval == POWER_SUPPLY_STATUS_CHARGING);
 
 	return 0;
 }
@@ -8967,8 +8961,6 @@ static void smblib_iio_deinit(struct smb_charger *chg)
 		iio_channel_release(chg->iio.skin_temp_chan);
 	if (!IS_ERR_OR_NULL(chg->iio.smb_temp_chan))
 		iio_channel_release(chg->iio.smb_temp_chan);
-	if (!IS_ERR_OR_NULL(chg->iio.dc_pd_active_chan))
-		iio_channel_release(chg->iio.dc_pd_active_chan);
 }
 
 #define CHG_CAPACITY_LIMIT_DEFAULT_PCT 100

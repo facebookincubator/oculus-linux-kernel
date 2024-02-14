@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -363,6 +364,8 @@ int32_t cam_cmd_buf_parser(struct csiphy_device *csiphy_dev,
 		csiphy_dev->csiphy_info[index].data_rate,
 		csiphy_dev->csiphy_info[index].mipi_flags);
 
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
+	cam_mem_put_cpu_buf(cfg_dev->packet_handle);
 	return rc;
 
 reset_settings:
@@ -374,7 +377,8 @@ reset_settings:
 	csiphy_dev->csiphy_info[index].mipi_flags = 0;
 	csiphy_dev->csiphy_info[index].secure_mode = 0;
 	csiphy_dev->csiphy_info[index].hdl_data.device_hdl = -1;
-
+	cam_mem_put_cpu_buf(cfg_dev->packet_handle);
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return rc;
 }
 

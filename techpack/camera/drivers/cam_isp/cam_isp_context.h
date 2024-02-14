@@ -331,6 +331,7 @@ struct cam_isp_context {
 	void                            *hw_ctx;
 	uint64_t                         sof_timestamp_val;
 	uint64_t                         boot_timestamp;
+	uint64_t                         monotonic_timestamp;
 	int32_t                          active_req_cnt;
 	int64_t                          reported_req_id;
 	uint32_t                         subscribe_event;

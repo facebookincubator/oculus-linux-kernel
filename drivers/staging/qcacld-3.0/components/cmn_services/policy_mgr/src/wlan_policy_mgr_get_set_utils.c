@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2584,11 +2585,14 @@ bool policy_mgr_is_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
 	}
 
 	if (ch_freq) {
-		chan_state = wlan_reg_get_5g_bonded_channel_state_for_freq(
+		if (wlan_reg_is_5ghz_ch_freq(ch_freq)) {
+			chan_state =
+			wlan_reg_get_5g_bonded_channel_state_for_freq(
 					pm_ctx->pdev, ch_freq,
 					policy_mgr_get_ch_width(bw));
-		if (chan_state == CHANNEL_STATE_DFS)
-			is_dfs_ch = true;
+			if (chan_state == CHANNEL_STATE_DFS)
+				is_dfs_ch = true;
+		}
 		/* don't allow 3rd home channel on same MAC
 		 * also check for single mac target which doesn't
 		 * support interbad MCC as well
@@ -2624,8 +2628,10 @@ bool policy_mgr_is_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
 		sta_sap_scc_on_dfs_chan =
 			policy_mgr_is_sta_sap_scc_allowed_on_dfs_chan(psoc);
 		go_force_scc = policy_mgr_go_scc_enforced(psoc);
-		if ((!sta_sap_scc_on_dfs_chan && mode == PM_SAP_MODE) ||
-		    (!go_force_scc && mode == PM_P2P_GO_MODE)) {
+		if ((mode == PM_SAP_MODE || mode == PM_P2P_GO_MODE) &&
+		    (!sta_sap_scc_on_dfs_chan ||
+		     !policy_mgr_is_sta_sap_scc(psoc, ch_freq) ||
+		     (!go_force_scc && mode == PM_P2P_GO_MODE))) {
 			if (is_dfs_ch)
 				match = policy_mgr_disallow_mcc(psoc,
 								ch_freq);
@@ -2737,8 +2743,9 @@ bool policy_mgr_allow_concurrency(struct wlan_objmgr_psoc *psoc,
 bool
 policy_mgr_allow_concurrency_csa(struct wlan_objmgr_psoc *psoc,
 				 enum policy_mgr_con_mode mode,
-				 uint32_t ch_freq, uint32_t vdev_id,
-				 bool forced, enum sap_csa_reason_code reason)
+				 uint32_t ch_freq, enum hw_mode_bandwidth bw,
+				 uint32_t vdev_id, bool forced,
+				 enum sap_csa_reason_code reason)
 {
 	bool allow = false;
 	struct policy_mgr_conc_connection_info
@@ -2753,8 +2760,8 @@ policy_mgr_allow_concurrency_csa(struct wlan_objmgr_psoc *psoc,
 		policy_mgr_err("Invalid Context");
 		return allow;
 	}
-	policy_mgr_debug("check concurrency_csa vdev:%d ch %d, forced %d, reason %d",
-			 vdev_id, ch_freq, forced, reason);
+	policy_mgr_debug("check concurrency_csa vdev:%d ch %d bw %d, forced %d, reason %d",
+			 vdev_id, ch_freq, bw, forced, reason);
 
 	status = policy_mgr_get_chan_by_session_id(psoc, vdev_id,
 						   &old_ch_freq);
@@ -2792,8 +2799,7 @@ policy_mgr_allow_concurrency_csa(struct wlan_objmgr_psoc *psoc,
 		policy_mgr_store_and_del_conn_info_by_vdev_id(
 			psoc, vdev_id, info, &num_cxn_del);
 
-	allow = policy_mgr_allow_concurrency(psoc, mode, ch_freq,
-					     HW_MODE_20_MHZ);
+	allow = policy_mgr_allow_concurrency(psoc, mode, ch_freq, bw);
 	/* Restore the connection entry */
 	if (num_cxn_del > 0)
 		policy_mgr_restore_deleted_conn_info(psoc, info, num_cxn_del);

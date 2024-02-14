@@ -74,6 +74,19 @@ int devm_miscfifo_register(struct device *dev, struct miscfifo *mf);
 void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
 
 /**
+ * Write a buffer to the FIFO for all clients.
+ *
+ * Use with config.header_payload = false;
+ *
+ * @param  mf           miscfifo instance
+ * @param  buf          buffer to send
+ * @param  len          length of buffer
+ * @param  should_wake  set to true if client wakeup is necessary
+ * @return              0 on success, > 0 if dropped, -errno otherwise
+ */
+int miscfifo_write_buf(struct miscfifo *mf, const u8 *buf, size_t len, bool *should_wake);
+
+/**
  * Send a buffer to all clients.
  *
  * Use with config.header_payload = false;
@@ -84,6 +97,21 @@ void devm_miscfifo_unregister(struct device *dev, struct miscfifo *mf);
  * @return      0 on success, > 0 if dropped, -errno otherwise
  */
 int miscfifo_send_buf(struct miscfifo *mf, const u8 *buf, size_t len);
+
+/**
+ * Wake any clients that may be waiting on this FIFO.
+ *
+ * @param  mf   miscfifo instance
+ */
+void miscfifo_wake_waiters(struct miscfifo *mf);
+
+/**
+ * Wake any clients that may be waiting on this FIFO,
+ * but don't trigger a reschedule.
+ *
+ * @param  mf   miscfifo instance
+ */
+void miscfifo_wake_waiters_sync(struct miscfifo *mf);
 
 /**
  * Clear any unread data from the fifo.

@@ -87,6 +87,7 @@ static struct bluetooth_power_platform_data *bt_power_pdata;
 static struct platform_device *btpdev;
 static bool previous;
 static int pwr_state;
+static u64 pwr_state_changed_ts; /* timestamp ms when it changed */
 struct class *bt_class;
 static int bt_major;
 static int soc_id;
@@ -757,6 +758,7 @@ static void bluetooth_power_rfkill_remove(struct platform_device *pdev)
 	struct rfkill *rfkill;
 
 	dev_dbg(&pdev->dev, "%s\n", __func__);
+	device_remove_file(&pdev->dev, &dev_attr_extldo);
 
 	rfkill = platform_get_drvdata(pdev);
 	if (rfkill)
@@ -1030,8 +1032,23 @@ static int bt_power_probe(struct platform_device *pdev)
 		goto free_pdata;
 
 	btpdev = pdev;
+	if (of_property_read_bool(pdev->dev.of_node,
+							"oculus,power-up-on-probe")) {
+		dev_dbg(&pdev->dev, "%s: turn on bluetooth power early\n", __func__);
+		if (!bluetooth_power(1)) {
+			pwr_state = 1;
+			pwr_state_changed_ts = (u64)ktime_get_raw() / 1000000;
+		} else {
+			dev_err(&pdev->dev, "%s: unable to turn on bluetooth power\n", __func__);
+			ret = -EPROBE_DEFER;
+			goto rfkill_remove;
+		}
+	}
 
 	return 0;
+
+rfkill_remove:
+	bluetooth_power_rfkill_remove(pdev);
 
 free_pdata:
 	kfree(bt_power_pdata);
@@ -1139,8 +1156,10 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		BT_PWR_ERR("BT_CMD_PWR_CTRL pwr_cntrl:%d", pwr_cntrl);
 		if (pwr_state != pwr_cntrl) {
 			ret = bluetooth_power(pwr_cntrl);
-			if (!ret)
+			if (!ret) {
 				pwr_state = pwr_cntrl;
+				pwr_state_changed_ts = (u64)ktime_get_raw() / 1000000;
+			}
 		} else {
 			BT_PWR_ERR("BT state already:%d no change done\n"
 				, pwr_state);
@@ -1228,6 +1247,33 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
+static ssize_t bt_power_summary_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	int res;
+#define GPIO_VALUE_IF(x) ((x > 0) ? gpio_get_value(x) : -1)
+	res = snprintf(buf, PAGE_SIZE,
+			"pwr_state:%d timestamp:%llu\n"
+			"bt_gpio_sys_rst:%d value:%d\n"
+			"bt_gpio_sw_ctrl:%d value:%d\n"
+			"wl_gpio_sys_rst:%d value:%d\n"
+			"bt_gpio_debug:%d value:%d\n"
+			"radio_blocked:%d",
+			pwr_state, pwr_state_changed_ts,
+			bt_power_pdata->bt_gpio_sys_rst, GPIO_VALUE_IF(bt_power_pdata->bt_gpio_sys_rst),
+			bt_power_pdata->bt_gpio_sw_ctrl, GPIO_VALUE_IF(bt_power_pdata->bt_gpio_sw_ctrl),
+			bt_power_pdata->wl_gpio_sys_rst, GPIO_VALUE_IF(bt_power_pdata->wl_gpio_sys_rst),
+			bt_power_pdata->bt_gpio_debug, GPIO_VALUE_IF(bt_power_pdata->bt_gpio_debug),
+			previous
+			);
+#undef GPIO_VALUE_IF
+	if (res > 0)
+		ret += res;
+	return ret;
+}
+static DEVICE_ATTR_RO(bt_power_summary);
+
 static struct platform_driver bt_power_driver = {
 	.probe = bt_power_probe,
 	.remove = bt_power_remove,
@@ -1245,6 +1291,7 @@ static const struct file_operations bt_dev_fops = {
 static int __init bluetooth_power_init(void)
 {
 	int ret;
+	struct device *dev;
 
 	ret = platform_driver_register(&bt_power_driver);
 
@@ -1260,12 +1307,13 @@ static int __init bluetooth_power_init(void)
 		goto chrdev_unreg;
 	}
 
-
-	if (device_create(bt_class, NULL, MKDEV(bt_major, 0),
-		NULL, "btpower") == NULL) {
+	dev = device_create(bt_class, NULL, MKDEV(bt_major, 0),
+		NULL, "btpower");
+	if (dev == NULL) {
 		BT_PWR_ERR("failed to allocate char dev\n");
 		goto chrdev_unreg;
 	}
+	device_create_file(dev, &dev_attr_bt_power_summary);
 	return 0;
 
 chrdev_unreg:

@@ -479,6 +479,8 @@ static int cam_vfe_rdi_handle_irq_bottom_half(void *handler_priv,
 			payload->ts.mono_time.tv_sec;
 		rdi_priv->sof_ts.tv_usec =
 			payload->ts.mono_time.tv_usec;
+
+		evt_info.timestamp = payload->ts.monotonic_ns;
 		if (rdi_priv->event_cb)
 			rdi_priv->event_cb(rdi_priv->priv,
 				CAM_ISP_HW_EVENT_SOF, (void *)&evt_info);

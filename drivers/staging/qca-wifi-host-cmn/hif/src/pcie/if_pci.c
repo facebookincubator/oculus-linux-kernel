@@ -933,9 +933,9 @@ int hif_pci_dump_registers(struct hif_softc *hif_ctx)
 	return 0;
 }
 
-#ifdef HIF_CONFIG_SLUB_DEBUG_ON
+#ifdef CONFIG_WLAN_EXTRA_DEBUG
 
-/* worker thread to schedule wlan_tasklet in SLUB debug build */
+/* worker thread to schedule wlan_tasklet in debug build */
 static void reschedule_tasklet_work_handler(void *arg)
 {
 	struct hif_pci_softc *sc = arg;
@@ -968,7 +968,7 @@ static void hif_init_reschedule_tasklet_work(struct hif_pci_softc *sc)
 }
 #else
 static void hif_init_reschedule_tasklet_work(struct hif_pci_softc *sc) { }
-#endif /* HIF_CONFIG_SLUB_DEBUG_ON */
+#endif /* CONFIG_WLAN_EXTRA_DEBUG */
 
 void wlan_tasklet(unsigned long data)
 {

@@ -3500,6 +3500,8 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 			}
 			__qdisc_run(q);
 			qdisc_run_end(q);
+		} else {
+			__netif_schedule(q);
 		}
 	}
 	spin_unlock(root_lock);
