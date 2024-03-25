@@ -147,13 +147,6 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 			rc = -EINVAL;
 			goto end;
 		}
-		if (!rc) {
-			core->bl_tag++;
-			CAM_DBG(CAM_CDM,
-				"Now commit the BL nothing for virtual");
-			if (!rc && (core->bl_tag == 63))
-				core->bl_tag = 0;
-		}
 
 		if (req->data->type == CAM_CDM_BL_CMD_TYPE_MEM_HANDLE)
 			cam_mem_put_cpu_buf(cdm_cmd->cmd[i].bl_addr.mem_handle);
@@ -174,29 +167,36 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 				rc = -ENOMEM;
 				break;
 			}
+			payload = kzalloc(sizeof(
+				struct cam_cdm_work_payload),
+				GFP_KERNEL);
+			if (!payload) {
+				rc = -ENOMEM;
+				kfree(node);
+				break;
+			}
+
+			mutex_lock(&cdm_hw->hw_mutex);
 			node->request_type = CAM_HW_CDM_BL_CB_CLIENT;
 			node->client_hdl = req->handle;
 			node->cookie = req->data->cookie;
 			node->bl_tag = core->bl_tag;
 			node->userdata = req->data->userdata;
-			mutex_lock(&cdm_hw->hw_mutex);
+
 			list_add_tail(&node->entry,
 				&core->bl_request_list);
+
+			payload->irq_status = 0x2;
+			payload->irq_data = core->bl_tag;
+			payload->hw = cdm_hw;
+			core->bl_tag++;
 			mutex_unlock(&cdm_hw->hw_mutex);
 
-			payload = kzalloc(sizeof(
-				struct cam_cdm_work_payload),
-				GFP_ATOMIC);
-			if (payload) {
-				payload->irq_status = 0x2;
-				payload->irq_data = core->bl_tag;
-				payload->hw = cdm_hw;
-				INIT_WORK((struct work_struct *)
-					&payload->work,
-					cam_virtual_cdm_work);
-				queue_work(core->work_queue,
+			INIT_WORK((struct work_struct *)
+				&payload->work,
+				cam_virtual_cdm_work);
+			queue_work(core->work_queue,
 					&payload->work);
-			}
 		}
 		break;
 	}

@@ -245,6 +245,7 @@ static inline int __bpp(enum hal_uncompressed_format f, u32 sid)
 	case HAL_COLOR_FORMAT_NV12:
 	case HAL_COLOR_FORMAT_NV21:
 	case HAL_COLOR_FORMAT_NV12_UBWC:
+	case HAL_COLOR_FORMAT_RGBA8888:
 		return 8;
 	case HAL_COLOR_FORMAT_NV12_TP10_UBWC:
 	case HAL_COLOR_FORMAT_P010:

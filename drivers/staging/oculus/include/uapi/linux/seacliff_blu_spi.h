@@ -25,6 +25,10 @@
 #define BLU_SPI_SET_BRO_IOCTL \
 	_IOW(MAGIC_NUM, 6, struct blu_spi_bro_matrix)
 
+/* ioctl used to set the backlight adjust matrix  */
+#define BLU_SPI_SET_BACKLIGHT_ADJ_IOCTL \
+	_IOW(MAGIC_NUM, 7, struct blu_spi_backlight_matrix)
+
 /* struct passed to BLU_SPI_SET_BACKLIGHT_IOCTL which is
  * used to send the backlight matrix from the LD engine
  * in the compositor to the BLU driver

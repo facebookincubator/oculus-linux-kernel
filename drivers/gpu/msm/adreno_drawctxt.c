@@ -296,9 +296,6 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 
 static inline bool _is_current_uid_privileged(struct kgsl_device *device)
 {
-	struct kgsl_privileged_uid_node *entry;
-	kuid_t uid;
-
 	/*
 	 * If the privileged UID list is empty, then all UIDs should be
 	 * considered privileged for the purposes of allowing high-priority
@@ -307,12 +304,7 @@ static inline bool _is_current_uid_privileged(struct kgsl_device *device)
 	if (list_empty(&device->privileged_uid_list))
 		return true;
 
-	uid = current_uid();
-	list_for_each_entry(entry, &device->privileged_uid_list, node)
-		if (entry->uid == uid.val)
-			return true;
-
-	return false;
+	return kgsl_is_uid_privileged(device, current_uid().val);
 }
 
 /**

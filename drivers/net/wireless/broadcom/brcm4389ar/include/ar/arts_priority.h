@@ -38,19 +38,19 @@
  **************************************************************************************************/
 #ifdef CONFIG_AR_ARTS_SKB_PRIORITY
 
-#define CONFIG_ETH_DESG_HEADROOM 16
 /* Check magic number in the packet body */
 #define ARTS_ETH_HEAD_MAGIC 0xf2ac
 
 #define AR_IS_ARTS_PACKET(eh) ((eh)->ether_type == hton16(ETH_P_802_EX1))
 
-#define AR_EVAL_ARTS_PRIORITY(pktdata, priority)                           \
-    uint8 *arts_pktbody = (pktdata) + sizeof(struct ether_header);         \
-    if (*((uint16 *)(arts_pktbody)) == hton16(ARTS_ETH_HEAD_MAGIC)) {      \
-        ARTS_header_v1_t *arts_header =                                    \
-            (ARTS_header_v1_t *)(arts_pktbody + CONFIG_ETH_DESG_HEADROOM); \
-        (priority) = (arts_header->qos << 1);                              \
-    }
+#define AR_EVAL_ARTS_PRIORITY(pktdata, priority)                          \
+    do {                                                                  \
+        uint8 *arts_pktbody = (pktdata) + sizeof(struct ether_header);    \
+        if (*((uint16 *)(arts_pktbody)) == hton16(ARTS_ETH_HEAD_MAGIC)) { \
+            ARTS_header_t *arts_header = (ARTS_header_t *)(arts_pktbody); \
+            (priority)                 = (arts_header->qos << 1);         \
+        }                                                                 \
+    } while (0)
 
 #else // CONFIG_AR_ARTS_SKB_PRIORITY
 

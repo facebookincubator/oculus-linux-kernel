@@ -218,6 +218,20 @@ struct bt_iter_data {
 	bool reserved;
 };
 
+static struct request *blk_mq_find_and_get_req(struct blk_mq_tags *tags,
+		unsigned int bitnr)
+{
+	struct request *rq;
+	unsigned long flags;
+
+	spin_lock_irqsave(&tags->lock, flags);
+	rq = tags->rqs[bitnr];
+	if (!rq || !refcount_inc_not_zero(&rq->ref))
+		rq = NULL;
+	spin_unlock_irqrestore(&tags->lock, flags);
+	return rq;
+}
+
 static bool bt_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 {
 	struct bt_iter_data *iter_data = data;
@@ -225,18 +239,23 @@ static bool bt_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 	struct blk_mq_tags *tags = hctx->tags;
 	bool reserved = iter_data->reserved;
 	struct request *rq;
+	bool ret = true;
 
 	if (!reserved)
 		bitnr += tags->nr_reserved_tags;
-	rq = tags->rqs[bitnr];
 
 	/*
 	 * We can hit rq == NULL here, because the tagging functions
 	 * test and set the bit before assining ->rqs[].
 	 */
-	if (rq && rq->q == hctx->queue)
+	rq = blk_mq_find_and_get_req(tags, bitnr);
+	if (!rq)
+		return true;
+
+	if (rq->q == hctx->queue)
 		iter_data->fn(hctx, rq, iter_data->data, reserved);
-	return true;
+	blk_mq_put_rq_ref(rq);
+	return ret;
 }
 
 static void bt_for_each(struct blk_mq_hw_ctx *hctx, struct sbitmap_queue *bt,
@@ -265,6 +284,7 @@ static bool bt_tags_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 	struct blk_mq_tags *tags = iter_data->tags;
 	bool reserved = iter_data->reserved;
 	struct request *rq;
+	bool ret = true;
 
 	if (!reserved)
 		bitnr += tags->nr_reserved_tags;
@@ -273,11 +293,13 @@ static bool bt_tags_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 	 * We can hit rq == NULL here, because the tagging functions
 	 * test and set the bit before assining ->rqs[].
 	 */
-	rq = tags->rqs[bitnr];
-	if (rq && blk_mq_request_started(rq))
+	rq = blk_mq_find_and_get_req(tags, bitnr);
+	if (!rq)
+		return true;
+	if (blk_mq_request_started(rq))
 		iter_data->fn(rq, iter_data->data, reserved);
-
-	return true;
+	blk_mq_put_rq_ref(rq);
+	return ret;
 }
 
 static void bt_tags_for_each(struct blk_mq_tags *tags, struct sbitmap_queue *bt,
@@ -389,6 +411,7 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int total_tags,
 
 	tags->nr_tags = total_tags;
 	tags->nr_reserved_tags = reserved_tags;
+	spin_lock_init(&tags->lock);
 
 	return blk_mq_init_bitmap_tags(tags, node, alloc_policy);
 }

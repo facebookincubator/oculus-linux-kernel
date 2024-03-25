@@ -37,12 +37,10 @@
 		coefficients {
 			charging {
 				tz-coefficients = <10000 0 0 0 0 0 0>;
-				tz-slope-coefficients = <0 0 0 0 0 0 0>;
 				intercept = <0>;
 			};
 			discharging {
 				tz-coefficients = <10799 5790 (-2178) (-4030) (-6841) 6364 (-899)>;
-				tz-slope-coefficients = <0 0 0 0 0 0 0>;
 				intercept = <4261>;
 			};
 		};
@@ -75,12 +73,10 @@
 		coefficients {
 			charging {
 				tz-coefficients = <14926 305 (-3087) (-8890) 13763 (-6495)>;
-				tz-slope-coefficients = <12822 (-1739) 18749 25948 3744 31148>;
 				intercept = <(-3354)>;
 			};
 			discharging {
 				tz-coefficients = <14926 305 (-3087) (-8890) 13763 (-6495)>;
-				tz-slope-coefficients = <12822 (-1739) 18749 25948 3744 31148>;
 				intercept = <(-3354)>;
 			};
 		};
@@ -113,12 +109,10 @@
 		coefficients {
 			charging {
 				tz-coefficients = <2122 (-933) 18156 (-10527) (-1730) 106>;
-				tz-slope-coefficients = <(-223) 2052 (-8703) 1796 6275 (-82)>;
 				intercept = <4440>;
 			};
 			discharging {
 				tz-coefficients = <2122 (-933) 18156 (-10527) (-1730) 106>;
-				tz-slope-coefficients = <(-223) 2052 (-8703) 1796 6275 (-82)>;
 				intercept = <2940>;
 			};
 		};

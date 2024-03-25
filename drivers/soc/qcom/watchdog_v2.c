@@ -417,6 +417,8 @@ static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 {
 	int cpu;
 
+	cpu_hotplug_disable();
+
 	for_each_cpu(cpu, cpu_online_mask) {
 		if (!cpu_idle_pc_state[cpu] && !cpu_isolated(cpu))
 			cpumask_set_cpu(cpu, &wdog_dd->ping_pending_mask);
@@ -434,6 +436,8 @@ static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 
 	wait_event_interruptible(wdog_dd->ping_complete,
 				 cpumask_empty(&wdog_dd->ping_pending_mask));
+
+	cpu_hotplug_enable();
 }
 
 static void pet_task_wakeup(struct timer_list *t)
@@ -772,7 +776,12 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	if (wdog_dd->do_ipi_ping)
 		dump_cpu_ping_mask(wdog_dd);
 
-	msm_trigger_wdog_bite();
+	/*
+	 * Trigger a kernel panic so we get some useful logs.
+	 * The watchdog bite will reboot us, even if the panic fails.
+	 */
+	panic("Panic triggered due to watchdog bark!");
+
 	return IRQ_HANDLED;
 }
 

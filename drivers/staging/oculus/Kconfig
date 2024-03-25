@@ -123,7 +123,7 @@ config MP3314_BLU
 
 config OCULUS_EXTERNAL_BATTERY
 	tristate "External battery driver"
-	depends on USB_PD_POLICY || OCULUS_VDM_GLINK
+	depends on META_USBVDM
 	default n
 	help
 	  External battery driver for sending and receiving unstructured vdm
@@ -148,7 +148,7 @@ config NAUTILUS_RESOURCE_MANAGER
 
 config OCULUS_CHARGING_DOCK
 	tristate "Oculus charging dock driver"
-	depends on USB_PD_POLICY || OCULUS_VDM_GLINK || CYPD_POLICY_ENGINE
+	depends on META_USBVDM
 	default n
 	help
 	  Oculus charging dock driver handling unstructured vdm messages between
@@ -179,14 +179,6 @@ config OCULUS_STARLET
 	select ARCH_BENGAL
 	help
 	  Enable support for the starlet device
-
-config OCULUS_VDM_GLINK
-	tristate "VDM Glink Driver"
-	depends on QTI_PMIC_GLINK
-	default n
-	help
-	  This driver proxies USB PD VDM connections, disconnections,
-	  and messages to and from the ADSP.
 
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"
@@ -299,5 +291,6 @@ config VIRTUAL_SENSOR
 
 source "drivers/staging/oculus/internal/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"
+source "drivers/staging/oculus/usbvdm/Kconfig"
 
 endif # OCULUS

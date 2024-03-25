@@ -85,6 +85,7 @@ struct vd6281_adapter {
 
 struct vd6281_spidev_data {
 	struct spi_device *pdev;
+	struct mutex spi_mutex;
 	struct miscdevice misc;
 	u8 *pbuffer;
 	int16_t *psamples;
@@ -249,6 +250,7 @@ static int vd6281_spi_ioctl_handler(struct vd6281_spidev_data *pdata, unsigned i
 	if (!pdata)
 		return -EINVAL;
 
+	mutex_lock(&pdata->spi_mutex);
 	switch (cmd) {
 	case VD6281_IOCTL_GET_SPI_INFO:
 		spi_info.chunk_size = pdata->spi_buffer_size;
@@ -259,9 +261,11 @@ static int vd6281_spi_ioctl_handler(struct vd6281_spidev_data *pdata, unsigned i
 	case VD6281_IOCTL_SET_SPI_PARAMS:
 		ret = copy_from_user(&spi_params, (void __user *)arg, sizeof(struct vd6281_spi_params));
 		if (ret != 0)
-			return ret;
-		if ((!spi_params.speed_hz) || (!spi_params.samples_nb_per_chunk) || (!spi_params.pdm_data_sample_width_in_bytes))
-			return -EINVAL;
+			break;
+		if ((!spi_params.speed_hz) || (!spi_params.samples_nb_per_chunk) || (!spi_params.pdm_data_sample_width_in_bytes)) {
+			ret = -EINVAL;
+			break;
+		}
 		pdata->spi_speed_hz = spi_params.speed_hz;
 		pdata->samples_nb_per_chunk = spi_params.samples_nb_per_chunk;
 		pdata->pdm_data_sample_width_in_bytes = spi_params.pdm_data_sample_width_in_bytes;
@@ -276,13 +280,14 @@ static int vd6281_spi_ioctl_handler(struct vd6281_spidev_data *pdata, unsigned i
 	case VD6281_IOCTL_GET_CHUNK_SAMPLES:
 		ret = vd6281_spi_chunk_transfer_and_get_samples(pdata);
 		if (ret != 0)
-			return ret;
+			break;
 		ret = copy_to_user((void __user *) arg, pdata->psamples, pdata->samples_nb_per_chunk * sizeof(int16_t));
 		break;
 
 	default:
 		ret = -EINVAL;
 	}
+	mutex_unlock(&pdata->spi_mutex);
 
 	return ret;
 }
@@ -356,6 +361,7 @@ int vd6281_spi_driver_probe(struct spi_device *pdev)
 		return -ENOMEM;
 
 	pdata->pdev = pdev;
+	mutex_init(&pdata->spi_mutex);
 	spi_set_drvdata(pdev, pdata);
 
 	vd6281_spi_parse_dt(pdata);

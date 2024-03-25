@@ -51,20 +51,19 @@
 	};
 
 	external_battery: oculus,external_battery {
-		status = "ok";
 		compatible = "oculus,external-battery";
-		svid = <0x28330000>;
-		battery-usbpd = <&pm8150b_pdphy>;
 		charging-suspend-thresh = <100>;
 		charging-resume-thresh = <95>;
+		meta,usb-id = /bits/ 16 <0x2833 0xf6c0>;	/* Molokini+*/
 	};
 
 	charging_dock: oculus,charging_dock {
-		status = "ok";
 		compatible = "oculus,charging-dock";
-		svid-usbpd = <0x2ec60000>;
-		charger-usbpd = <&pm8150b_pdphy>;
 		broadcast-period-min = <15>;
+		meta,usb-ids =
+			/bits/ 16 <0x2ec6 0x2202>,		/* Buru */
+			/bits/ 16 <0x2ec6 0x2200>,		/* UPA 18W */
+			/bits/ 16 <0x2ec6 0x2103>;		/* UPA 45W */
 	};
 
 	kona_mtp_batterydata: qcom,battery-data {
@@ -74,6 +73,11 @@
 		#include "4284132_Goertek_Hollywood_25k_3710mAh_Jan13th2020.dtsi"
 		#include "4284132_Goertek_Hollywood_50k_3710mAh_Jun9th2020.dtsi"
 		#include "4414705_Goertek_Hollywood_124k_3710mAh_Mar2nd2020.dtsi"
+	};
+
+	meta,usbvdm-qtipd {
+		compatible = "meta,usbvdm-qtipd";
+		qcom,pdphy = <&pm8150b_pdphy>;
 	};
 };
 

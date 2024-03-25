@@ -87,6 +87,7 @@ struct blu_device {
 	u8 *back_buffer;
 	u8 *brightness_buffer;
 	u8 *bro_profile_buffer;
+	u8 *brightness_buffer_adj;
 
 	/* flag to control read/write to the temp buffer */
 	atomic_t buffer_dirty;
@@ -99,6 +100,8 @@ struct blu_device {
 	u16 bro_compensation_num;
 	/* flag to control cross-eye brightness adjustment */
 	bool ceb_en;
+	/* backlight adjust matrix size */
+	int bl_matrix_adjust_size;
 
 	/* spi debug mesage */
 	struct spi_message msg;
@@ -190,9 +193,10 @@ static void blu_spi_update_backlight(struct blu_device *blu, u32 bl_lvl)
 
 static void init_buffers(struct blu_device *blu)
 {
-	blu->back_buffer = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
-	blu->brightness_buffer = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
-	blu->bro_profile_buffer = devm_kzalloc(&blu->spi->dev, blu->rolloff_size, GFP_KERNEL | GFP_DMA);
+	blu->back_buffer = devm_kmalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
+	blu->brightness_buffer = devm_kmalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
+	blu->bro_profile_buffer = devm_kmalloc(&blu->spi->dev, blu->rolloff_size, GFP_KERNEL | GFP_DMA);
+	blu->brightness_buffer_adj = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
 
 	/* ensure the correct SPI values are also in the intermediate buffers */
 	memcpy(blu->back_buffer, blu->backlight_matrix, blu->matrix_size);
@@ -224,6 +228,7 @@ static void apply_edge_masking(struct blu_device *blu)
 static void apply_blu_brightness(struct blu_device *blu)
 {
 	int i;
+	int j = 0;
 	u32 scaled_brightness = 0;
 	u32 brightness = 0;
 	u8 checksum = 0;
@@ -235,8 +240,11 @@ static void apply_blu_brightness(struct blu_device *blu)
 	for (i = MATRIX_START_INDEX; i < (blu->matrix_size - 1); i = i + 2)	{
 		brightness = (blu->backlight_matrix[i] << 8) | blu->backlight_matrix[i+1];
 		scaled_brightness = (brightness * backlight_level / 255);
+		if (blu->bl_matrix_adjust_size && j < blu->bl_matrix_adjust_size)
+			scaled_brightness = scaled_brightness * blu->brightness_buffer_adj[j++]/255;
 		blu->brightness_buffer[i] = (scaled_brightness >> 8) & 0xFF;
 		blu->brightness_buffer[i+1] = scaled_brightness & 0xFF;
+
 		if (i == MATRIX_START_INDEX)
 			checksum = blu->brightness_buffer[i] ^ blu->brightness_buffer[i+1];
 		else
@@ -540,21 +548,60 @@ static int set_brightness_calibration(struct blu_device *blu,
 	return ret;
 }
 
-static int get_backlight_matrix(struct blu_device *blu,
-		struct blu_spi_backlight_matrix __user *blm_dump)
+
+static int set_brightness_matrix_adjust(struct blu_device *blu,
+		struct blu_spi_backlight_matrix __user *blmAdj)
 {
 	int ret;
-	uint8_t *matrix_addr;
+	struct blu_spi_backlight_matrix blu_matrix;
 
-	/* copy the backlight matrix address we want to write to from user space */
-	ret = copy_from_user(&matrix_addr, blm_dump, sizeof(blu->backlight_matrix));
+	/* first get the struct from user space */
+	ret = copy_from_user(&blu_matrix, blmAdj, sizeof(blu_matrix));
 	if (ret) {
-		dev_err(&blu->spi->dev, "Failed to copy %d bytes from user space\n", ret);
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from backlight matrix struct\n", ret);
 		return -EFAULT;
 	}
 
+	/* blu adjust matrix is 1 byte per zone, while brightness buffer is 2 byte per zone + SPI header */
+	if (blu_matrix.matrix_size <= blu->matrix_size) {
+		blu->bl_matrix_adjust_size = blu_matrix.matrix_size;
+
+		/* get the matrix from the struct and place in intermediate buffer */
+		ret = copy_from_user(&blu->brightness_buffer_adj[0],
+				blu_matrix.backlight_matrix, blu_matrix.matrix_size);
+		if (ret) {
+			dev_err(&blu->spi->dev, "Failed to copy %d bytes from backlight matrix\n", ret);
+			return -EFAULT;
+		}
+	}
+	else
+		blu->bl_matrix_adjust_size = 0;
+
+
+	return ret;
+}
+static int get_backlight_matrix(struct blu_device *blu,
+		struct blu_spi_backlight_matrix __user *blm)
+{
+	int ret;
+	struct blu_spi_backlight_matrix blu_matrix;
+
+	/* first get the struct from user space */
+	ret = copy_from_user(&blu_matrix, blm, sizeof(blu_matrix));
+	if (ret) {
+		dev_err(&blu->spi->dev, "Failed to copy %d bytes from backlight matrix struct\n", ret);
+		return -EFAULT;
+	}
+
+	if (blu_matrix.matrix_size != (blu->matrix_size - MATRIX_START_INDEX)) {
+		dev_err(&blu->spi->dev, "Invalid backlight matrix size\n");
+		return -EINVAL;
+	}
+
 	/* copy the current backlight matrix back to user space */
-	ret = copy_to_user(matrix_addr, &(blu->backlight_matrix[0]), blu->matrix_size);
+	ret = copy_to_user((uint8_t *)blu_matrix.backlight_matrix,
+			   &(blu->backlight_matrix[MATRIX_START_INDEX]),
+			   blu_matrix.matrix_size);
 	if (ret) {
 		dev_err(&blu->spi->dev, "Failed to copy %d bytes to user space\n", ret);
 		return -EFAULT;
@@ -645,6 +692,9 @@ static long blu_spi_ioctl(struct file *file, unsigned int cmd,
 			(struct blu_spi_bro_matrix *)arg);
 	case BLU_SPI_SET_BRO_IOCTL:
 		return set_bro_matrix(blu, (struct blu_spi_bro_matrix *)arg);
+	case BLU_SPI_SET_BACKLIGHT_ADJ_IOCTL:
+		return set_brightness_matrix_adjust(blu,
+			(struct blu_spi_backlight_matrix *)arg);
 	default:
 		dev_err(&blu->spi->dev, "Unrecognized IOCTL %ul\n", cmd);
 		return -EINVAL;
