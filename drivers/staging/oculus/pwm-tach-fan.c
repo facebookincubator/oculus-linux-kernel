@@ -966,19 +966,21 @@ static int pwm_fan_suspend(struct device *dev)
 	int current_rpm_value;
 	int ret = 0;
 
-	if (ctx->use_panel_notifiers)
-		/* On/off controlled by panel state instead */
-		return 0;
-
 	mutex_lock(&ctx->lock);
+
+	/* Don't overwrite resume_rpm_value if already disabled */
+	if (!pwm_is_enabled(ctx->pwm))
+		goto end_pwm_fan_suspend;
+
 	current_rpm_value = ctx->rpm_value;
 	if (current_rpm_value > 0) {
 		ctx->resume_rpm_value = current_rpm_value;
 
 		ret = set_rpm_locked(ctx, 0);
 	}
-	mutex_unlock(&ctx->lock);
 
+end_pwm_fan_suspend:
+	mutex_unlock(&ctx->lock);
 	return ret;
 }
 
@@ -988,11 +990,12 @@ static int pwm_fan_resume(struct device *dev)
 	int current_rpm_value;
 	int ret = 0;
 
-	if (ctx->use_panel_notifiers)
-		/* On/off controlled by panel state instead */
-		return 0;
-
 	mutex_lock(&ctx->lock);
+
+	/* Don't resume fan while display is off */
+	if (ctx->use_panel_notifiers && !ctx->is_display_on)
+		goto end_pwm_fan_resume;
+
 	current_rpm_value = ctx->resume_rpm_value;
 	if (current_rpm_value == 0)
 		goto end_pwm_fan_resume;

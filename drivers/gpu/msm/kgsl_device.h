@@ -222,10 +222,12 @@ struct kgsl_memobj_node {
 /**
  * struct kgsl_privileged_uid_node - Descriptor for privileged process UIDs
  * @node: Local list node for the object
+ * @rcu: RCU head
  * @uid: UID of privileged process
  */
 struct kgsl_privileged_uid_node {
 	struct list_head node;
+	struct rcu_head rcu;
 	uid_t uid;
 };
 
@@ -331,6 +333,7 @@ struct kgsl_device {
 
 	/* Allow restricting high and maximum priority contexts */
 	struct list_head privileged_uid_list;
+	struct mutex uid_list_mutex;
 	pid_t privileged_tid;
 
 #if IS_ENABLED(CONFIG_QCOM_KGSL_LAZY_ALLOCATION)
@@ -741,6 +744,8 @@ long kgsl_ioctl_copy_in(unsigned int kernel_cmd, unsigned int user_cmd,
 
 long kgsl_ioctl_copy_out(unsigned int kernel_cmd, unsigned int user_cmd,
 		unsigned long arg, unsigned char *ptr);
+
+bool kgsl_is_uid_privileged(struct kgsl_device *device, uid_t uid);
 
 /**
  * kgsl_context_put() - Release context reference count

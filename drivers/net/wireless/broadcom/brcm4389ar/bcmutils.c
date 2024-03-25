@@ -1103,7 +1103,7 @@ BCMFASTPATH(pktsetprio)(void *pkt, bool update_vtag)
 	/* **** META CUSTOM START *** */
 	/* Handle ARTS message with ETH_P_802_EX1 0x88B5*/
 	if (AR_IS_ARTS_PACKET(eh)) {
-		AR_EVAL_ARTS_PRIORITY(pktdata, priority)
+		AR_EVAL_ARTS_PRIORITY(pktdata, priority);
 	/* **** META CUSTOM END *** */
 	} else if (eh->ether_type == hton16(ETHER_TYPE_8021Q)) {
 		uint16 vlan_tag;
