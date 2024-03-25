@@ -2229,6 +2229,7 @@ end:
 	return dumped_len;
 }
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 static int cam_jpeg_set_camnoc_misr_test(void *data, u64 val)
 {
 	g_jpeg_hw_mgr.camnoc_misr_test = val;
@@ -2286,6 +2287,12 @@ static int cam_jpeg_mgr_create_debugfs_entry(void)
 err:
 	return rc;
 }
+#else
+static inline int cam_jpeg_mgr_create_debugfs_entry(void)
+{
+	return 0;
+}
+#endif
 
 int cam_jpeg_hw_mgr_init(struct device_node *of_node, uint64_t *hw_mgr_hdl,
 	int *iommu_hdl, cam_jpeg_mini_dump_cb mini_dump_cb)

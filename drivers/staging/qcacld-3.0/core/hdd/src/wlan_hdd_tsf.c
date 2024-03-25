@@ -3396,29 +3396,33 @@ void wlan_hdd_tsf_init(struct hdd_context *hdd_ctx)
 	if (!hdd_ctx)
 		return;
 
-	if (qdf_atomic_inc_return(&hdd_ctx->tsf.tsf_ready_flag) > 1)
+	if (qdf_atomic_inc_return(&hdd_ctx->tsf.tsf_ready_flag) > 1) {
+		hdd_err("TSF ready flag already set");
 		return;
+	}
 
 	qdf_atomic_init(&hdd_ctx->tsf.cap_tsf_flag);
+
+	status = qdf_event_create(&tsf_sync_get_completion_evt);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("failed to create tsf_sync_get_completion_evt");
+		goto fail;
+	}
 
 	status = hdd_tsf_set_gpio(hdd_ctx);
 
 	if (QDF_STATUS_SUCCESS != status) {
-		hdd_debug("set tsf GPIO failed, status: %d", status);
+		hdd_err("set tsf GPIO failed, status: %d", status);
 		goto fail;
 	}
 
-	if (wlan_hdd_tsf_plus_init(hdd_ctx) != HDD_TSF_OP_SUCC)
+	if (wlan_hdd_tsf_plus_init(hdd_ctx) != HDD_TSF_OP_SUCC) {
+		hdd_err("TSF plus init  failed");
 		goto fail;
+	}
 
 	if (hdd_tsf_is_ptp_enabled(hdd_ctx))
 		wlan_hdd_phc_init(hdd_ctx);
-
-	status = qdf_event_create(&tsf_sync_get_completion_evt);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		hdd_debug("failed to create tsf_sync_get_completion_evt");
-		goto fail;
-	}
 
 	return;
 
@@ -3433,12 +3437,14 @@ void wlan_hdd_tsf_deinit(struct hdd_context *hdd_ctx)
 	if (!hdd_ctx)
 		return;
 
-	if (!qdf_atomic_read(&hdd_ctx->tsf.tsf_ready_flag))
-		return;
-
 	status = qdf_event_destroy(&tsf_sync_get_completion_evt);
 	if (QDF_IS_STATUS_ERROR(status))
-		hdd_debug("failed to destroy tsf_sync_get_completion_evt");
+		hdd_err("failed to destroy tsf_sync_get_completion_evt");
+
+	if (!qdf_atomic_read(&hdd_ctx->tsf.tsf_ready_flag)) {
+		hdd_err("ready flag not set");
+		return;
+	}
 
 	if (hdd_tsf_is_ptp_enabled(hdd_ctx))
 		wlan_hdd_phc_deinit(hdd_ctx);

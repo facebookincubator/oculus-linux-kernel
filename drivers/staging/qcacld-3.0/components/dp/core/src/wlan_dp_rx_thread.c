@@ -762,9 +762,9 @@ static int dp_rx_refill_thread_loop(void *arg)
 			QDF_DEBUG_PANIC("wait_event_interruptible returned -ERESTARTSYS");
 			break;
 		}
-		dp_rx_refill_thread_sub_loop(rx_thread, &shutdown);
 		qdf_atomic_clear_bit(RX_REFILL_POST_EVENT,
 				     &rx_thread->event_flag);
+		dp_rx_refill_thread_sub_loop(rx_thread, &shutdown);
 	}
 
 	/* If we get here the scheduler thread must exit */

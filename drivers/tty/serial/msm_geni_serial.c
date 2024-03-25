@@ -1272,8 +1272,7 @@ static void msm_geni_serial_console_write(struct console *co, const char *s,
 
 		msm_geni_serial_enable_interrupts(uport);
 		port->m_cmd = false;
-	} else if ((geni_status & M_GENI_CMD_ACTIVE) &&
-						!port->cur_tx_remaining) {
+	} else if (geni_status & M_GENI_CMD_ACTIVE) {
 		/* It seems we can interrupt existing transfers unless all data
 		 * has been sent, in which case we need to look for done first.
 		 */
@@ -1829,7 +1828,7 @@ static int stop_rx_sequencer(struct uart_port *uport)
 			UART_LOG_DBG(port->ipc_log_misc, uport->dev, "%s: Interrupt delay\n",
 					__func__);
 			handle_rx_dma_xfer(s_irq_status, uport);
-			if (!port->ioctl_count) {
+			if (pm_runtime_enabled(uport->dev) && !port->ioctl_count) {
 				usage_count = atomic_read(&uport->dev->power.usage_count);
 				UART_LOG_DBG(port->ipc_log_misc, uport->dev,
 					"%s: Abort Stop Rx, extend the PM timer, usage_count:%d\n",
@@ -2497,6 +2496,26 @@ static bool handle_rx_dma_xfer(u32 s_irq_status, struct uart_port *uport)
 	return ret;
 }
 
+/*
+ * msm_geni_serial_clear_irqs() - clear the IRQs if they are coming after port close
+ *
+ * @uport: pointer to uart port
+ *
+ * Return: None
+ */
+static void msm_geni_serial_clear_irqs(struct uart_port *uport)
+{
+	u32 dma_tx_status, dma_rx_status;
+
+	dma_tx_status = geni_read_reg_nolog(uport->membase, SE_DMA_TX_IRQ_STAT);
+	if (dma_tx_status)
+		geni_write_reg_nolog(dma_tx_status, uport->membase, SE_DMA_TX_IRQ_CLR);
+
+	dma_rx_status = geni_read_reg_nolog(uport->membase, SE_DMA_RX_IRQ_STAT);
+	if (dma_rx_status)
+		geni_write_reg_nolog(dma_rx_status, uport->membase, SE_DMA_RX_IRQ_CLR);
+}
+
 static void msm_geni_serial_handle_isr(struct uart_port *uport,
 				       unsigned long *flags,
 				       bool is_irq_masked)
@@ -2583,6 +2602,8 @@ static void msm_geni_serial_handle_isr(struct uart_port *uport,
 		} else {
 			UART_LOG_DBG(msm_port->ipc_log_irqstatus, uport->dev,
 				     "Port is closed!\n");
+			msm_geni_serial_clear_irqs(uport);
+
 		}
 	}
 
@@ -2757,21 +2778,14 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 		console_stop(uport->cons);
 		disable_irq(uport->irq);
 	} else {
-		msm_geni_serial_power_on(uport);
+		if (!msm_port->ioctl_count)
+			msm_geni_serial_power_on(uport);
 
 		msm_geni_serial_stop_tx(uport);
-	}
 
-	if (!uart_console(uport)) {
 		if (msm_port->ioctl_count) {
-			int i;
-
-			for (i = 0; i < msm_port->ioctl_count; i++) {
-				UART_LOG_DBG(msm_port->ipc_log_pwr, uport->dev,
-				"%s IOCTL vote present. Forcing off\n",
-								__func__);
-				msm_geni_serial_power_off(uport);
-			}
+			UART_LOG_DBG(msm_port->ipc_log_pwr, uport->dev,
+				     "%s: IOCTL vote present. Resetting ioctl count\n", __func__);
 			msm_port->ioctl_count = 0;
 		}
 
@@ -3022,20 +3036,16 @@ static void msm_geni_serial_termios_cfg(struct uart_port *uport,
 	if (termios->c_cflag & CRTSCTS) {
 		tx_trans_cfg &= ~UART_CTS_MASK;
 		uport->status |= UPSTAT_AUTOCTS;
+		msm_geni_serial_set_manual_flow(true, port);
 	} else {
 		tx_trans_cfg |= UART_CTS_MASK;
-	/* status bits to ignore */
+		msm_geni_serial_set_manual_flow(false, port);
+		/* status bits to ignore */
 	}
 
 	geni_serial_write_term_regs(uport, port->loopback, tx_trans_cfg,
 		tx_parity_cfg, rx_trans_cfg, rx_parity_cfg, bits_per_char,
 		stop_bit_len);
-
-	if (termios->c_cflag & CRTSCTS) {
-		geni_write_reg_nolog(0x0, uport->membase, SE_UART_MANUAL_RFR);
-		UART_LOG_DBG(port->ipc_log_misc, uport->dev,
-			"%s: Manual flow Disabled, HW Flow ON\n", __func__);
-	}
 
 	UART_LOG_DBG(port->ipc_log_misc, uport->dev, "Tx: trans_cfg%d parity %d\n",
 						tx_trans_cfg, tx_parity_cfg);
@@ -3319,6 +3329,7 @@ static void console_unregister(struct uart_driver *drv)
 }
 #endif /* (CONFIG_SERIAL_MSM_GENI_CONSOLE) || defined(CONFIG_CONSOLE_POLL) */
 
+#ifdef CONFIG_IPC_LOGGING
 static void msm_geni_serial_debug_init(struct uart_port *uport, bool console)
 {
 	struct msm_geni_serial_port *msm_port = GET_DEV_PORT(uport);
@@ -3397,6 +3408,7 @@ static void msm_geni_serial_debug_init(struct uart_port *uport, bool console)
 		}
 	}
 }
+#endif /* CONFIG_IPC_LOGGING */
 
 static void msm_geni_serial_cons_pm(struct uart_port *uport,
 		unsigned int new_state, unsigned int old_state)
@@ -3862,7 +3874,9 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 	device_create_file(uport->dev, &dev_attr_loopback);
 	device_create_file(uport->dev, &dev_attr_xfer_mode);
 	device_create_file(uport->dev, &dev_attr_ver_info);
+#ifdef CONFIG_IPC_LOGGING
 	msm_geni_serial_debug_init(uport, is_console);
+#endif /* CONFIG_IPC_LOGGING */
 	dev_port->port_setup = false;
 
 	dev_port->uart_error = UART_ERROR_DEFAULT;

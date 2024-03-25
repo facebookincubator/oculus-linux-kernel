@@ -1654,7 +1654,7 @@ irqreturn_t cam_hw_cdm_irq(int irq_num, void *data)
 
 			atomic_inc(&cdm_core->bl_fifo[i].work_record);
 		}
-		payload[i] = kmem_cache_zalloc(cdm_core->payload_mem, GFP_KERNEL);
+		payload[i] = kmem_cache_zalloc(cdm_core->payload_mem, GFP_ATOMIC);
 
 		if (!payload[i]) {
 			CAM_ERR(CAM_CDM, "failed to allocate memory for fifo %d payload", i);

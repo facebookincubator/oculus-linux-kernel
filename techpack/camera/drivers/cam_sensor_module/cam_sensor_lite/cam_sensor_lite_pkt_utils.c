@@ -593,6 +593,18 @@ int __dump_probe_response(struct sensor_probe_response *pr)
 	return 0;
 }
 
+void __dump_remote_flush_cmd(struct sensorlite_sys_cmd *cmd)
+{
+	CAM_INFO(CAM_SENSOR_LITE, "TAG         : %d",
+			cmd->header.tag);
+	CAM_INFO(CAM_SENSOR_LITE, "SENSOR ID   : %d",
+			cmd->sensor_id);
+	CAM_INFO(CAM_SENSOR_LITE, "SYS CMD     : %d",
+			cmd->sys_cmd);
+	CAM_INFO(CAM_SENSOR_LITE, "CMD SIZE    : %d",
+			cmd->header.size);
+}
+
 int __send_probe_pkt(
 	struct sensor_lite_device *sensor_lite_dev,
 	struct sensor_lite_header *header)
@@ -704,6 +716,10 @@ int __dump_pkt(
 		__dump_release_cmd(
 			(struct sensor_lite_release_cmd *)header);
 		break;
+	case SENSORLITE_CMD_TYPE_REMOTE_FLUSH:
+		__dump_remote_flush_cmd(
+			(struct sensorlite_sys_cmd *)header);
+		break;
 	default:
 		break;
 	}
@@ -757,6 +773,10 @@ int __send_pkt(
 	case HCM_PKT_OPCODE_SENSOR_ACQUIRE:
 		break;
 	case HCM_PKT_OPCODE_SENSOR_RELEASE:
+		break;
+	case SENSORLITE_CMD_TYPE_REMOTE_FLUSH:
+		__set_slave_pkt_headers(header,
+				HCM_PKT_OPCODE_SENSOR_SYS_CMD_FLUSH);
 		break;
 	default:
 		return -EINVAL;

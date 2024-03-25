@@ -229,7 +229,15 @@ util_parse_multi_link_ctrl(uint8_t *mlieseqpayload,
 	}
 
 	exp_cinfo_len = parsed_payload_len - WLAN_ML_CTRL_SIZE;
-	if (cinfo_len != exp_cinfo_len) {
+	if (cinfo_len >= exp_cinfo_len) {
+		/* If common info length received is greater,
+		 * skip through the additional bytes
+		 */
+		parsed_payload_len += (cinfo_len - exp_cinfo_len);
+		mlo_debug("ML seq common info len %u, parsed payload length %zu, expected common info len %u",
+			  cinfo_len, parsed_payload_len, exp_cinfo_len);
+	} else {
+		/* If cinfo_len < exp_cinfo_len return error */
 		mlo_err_rl("ML seq common info len %u doesn't match with expected common info len %u",
 			   cinfo_len, exp_cinfo_len);
 		return QDF_STATUS_E_PROTO;
@@ -3144,7 +3152,8 @@ util_get_bvmlie_bssparamchangecnt(uint8_t *mlieseq, qdf_size_t mlieseqlen,
 	uint16_t mlcontrol;
 	uint16_t presencebitmap;
 	uint8_t *commoninfo;
-	qdf_size_t commoninfolen;
+	uint8_t commoninfolen;
+	qdf_size_t mldcap_offset;
 
 	if (!mlieseq || !mlieseqlen || !bssparamchangecntfound ||
 	    !bssparamchangecnt)
@@ -3174,21 +3183,31 @@ util_get_bvmlie_bssparamchangecnt(uint8_t *mlieseq, qdf_size_t mlieseqlen,
 				      WLAN_ML_CTRL_PBM_BITS);
 
 	commoninfo = mlieseq + sizeof(struct wlan_ie_multilink);
-	commoninfolen = WLAN_ML_BV_CINFO_LENGTH_SIZE;
+	commoninfolen = *(mlieseq + sizeof(struct wlan_ie_multilink));
 
-	commoninfolen += QDF_MAC_ADDR_SIZE;
+	mldcap_offset = WLAN_ML_BV_CINFO_LENGTH_SIZE;
+
+	mldcap_offset += QDF_MAC_ADDR_SIZE;
 
 	if (presencebitmap & WLAN_ML_BV_CTRL_PBM_LINKIDINFO_P) {
-		commoninfolen += WLAN_ML_BV_CINFO_LINKIDINFO_SIZE;
+		mldcap_offset += WLAN_ML_BV_CINFO_LINKIDINFO_SIZE;
 
-		if ((sizeof(struct wlan_ie_multilink) + commoninfolen) >
+		if ((sizeof(struct wlan_ie_multilink) + mldcap_offset) >
 				mlieseqlen)
 			return QDF_STATUS_E_PROTO;
 	}
 
 	if (presencebitmap & WLAN_ML_BV_CTRL_PBM_BSSPARAMCHANGECNT_P) {
+		if (commoninfolen < (mldcap_offset +
+				     WLAN_ML_BSSPARAMCHNGCNT_SIZE))
+			return QDF_STATUS_E_PROTO;
+
+		if ((sizeof(struct wlan_ie_multilink) + mldcap_offset +
+				WLAN_ML_BSSPARAMCHNGCNT_SIZE) >
+				mlieseqlen)
+			return QDF_STATUS_E_PROTO;
 		*bssparamchangecntfound = true;
-		*bssparamchangecnt = *(commoninfo + commoninfolen);
+		*bssparamchangecnt = *(commoninfo + mldcap_offset);
 	}
 
 	return QDF_STATUS_SUCCESS;

@@ -3255,6 +3255,7 @@ static void mlme_init_btm_cfg(struct wlan_objmgr_psoc *psoc,
 	btm->abridge_flag = cfg_get(psoc, CFG_ENABLE_BTM_ABRIDGE);
 	if (btm->abridge_flag)
 		MLME_SET_BIT(btm->btm_offload_config, BTM_OFFLOAD_CONFIG_BIT_7);
+	wlan_mlme_set_btm_abridge_flag(psoc, btm->abridge_flag);
 
 	btm->btm_solicited_timeout = cfg_get(psoc, CFG_BTM_SOLICITED_TIMEOUT);
 	btm->btm_max_attempt_cnt = cfg_get(psoc, CFG_BTM_MAX_ATTEMPT_CNT);

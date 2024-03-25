@@ -1,0 +1,17 @@
+#include "parrot-sg.dtsi"
+
+/ {
+
+	model = "Qualcomm Technologies, Inc. ParrotP SG";
+	compatible = "qcom,parrotp";
+	qcom,msm-id = <634 0x10000>;
+};
+
+&ipa_hw {
+	status = "disabled";
+};
+
+&msm_gpu {
+	/delete-property/qcom,gpu-model;
+	qcom,gpu-model = "AdrenoA21v1";
+};

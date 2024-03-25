@@ -120,8 +120,8 @@ static int cam_isp_update_dual_config(
 		(cmd_desc->offset >=
 		(len - sizeof(struct cam_isp_dual_config)))) {
 		CAM_ERR(CAM_ISP, "not enough buffer provided");
-		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto end;
 	}
 	remain_len = len - cmd_desc->offset;
 	cpu_addr += (cmd_desc->offset / 4);
@@ -131,8 +131,8 @@ static int cam_isp_update_dual_config(
 		sizeof(struct cam_isp_dual_stripe_config)) >
 		(remain_len - offsetof(struct cam_isp_dual_config, stripes))) {
 		CAM_ERR(CAM_ISP, "not enough buffer for all the dual configs");
-		cam_mem_put_cpu_buf(cmd_desc->mem_handle);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto end;
 	}
 	for (i = 0; i < dual_config->num_ports; i++) {
 
@@ -189,7 +189,7 @@ static int cam_isp_update_dual_config(
 	}
 
 end:
-	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
+	cam_packet_util_put_cmd_mem_addr(cmd_desc->mem_handle);
 	return rc;
 }
 
@@ -920,10 +920,10 @@ int cam_isp_add_io_buffers(
 			CAM_DBG(CAM_ISP,
 				"configure input io with fill fence %d",
 				fill_fence);
-			in_map_entries =
-				&prepare->in_map_entries[num_in_buf];
 			if (fill_fence) {
 				if (num_in_buf < prepare->max_in_map_entries) {
+					in_map_entries =
+						&prepare->in_map_entries[num_in_buf];
 					in_map_entries->resource_handle =
 						res_type;
 					in_map_entries->sync_id =
@@ -1019,7 +1019,7 @@ int cam_isp_add_io_buffers(
 					mmu_hdl, (int)size,
 					io_addr[plane_id]+size);
 
-				if (!is_buf_secure && need_cpu_addr) {
+				if (!is_buf_secure && need_cpu_addr && out_map_entries) {
 					rc = cam_mem_get_cpu_buf(io_cfg[i].mem_handle[plane_id],
 						(uintptr_t *)&
 						out_map_entries->kernel_map_buf_addr[plane_id],
@@ -1029,6 +1029,11 @@ int cam_isp_add_io_buffers(
 							"split %d plane_id %d get cpu buf failed, mem_hdl=0x%x, wm res id:%d",
 							j, plane_id,
 							io_cfg[i].mem_handle[plane_id],res->res_id);
+					/*
+					 * We are storing buffer handles for this just to put
+					 * the buffers at the time of buf done.
+					 */
+					out_map_entries->buf_handle[plane_id] = io_cfg[i].mem_handle[plane_id];
 				} else if (out_map_entries) {
 					out_map_entries->kernel_map_buf_addr[plane_id] = NULL;
 				}

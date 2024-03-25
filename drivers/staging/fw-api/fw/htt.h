@@ -252,9 +252,12 @@
  * 3.124 Add HTT_T2H_MSG_TYPE_PEER_EXTENDED_EVENT def.
  * 3.125 Expand fisa_aggr_limit bits in fisa_control_bits_v2.
  * 3.126 Add HTT_RXDATA_ERR_INVALID_PEER def.
+ * 3.127 Add transmit_count fields in htt_tx_wbm_completion_vX structs.
+ * 3.128 Add H2T TX_LATENCY_STATS_CFG + T2H TX_LATENCY_STATS_PERIODIC_IND
+ *       msg defs
  */
 #define HTT_CURRENT_VERSION_MAJOR 3
-#define HTT_CURRENT_VERSION_MINOR 126
+#define HTT_CURRENT_VERSION_MINOR 128
 
 #define HTT_NUM_TX_FRAG_DESC  1024
 
@@ -623,16 +626,16 @@ typedef enum {
     HTT_STATS_TX_PDEV_SIFS_TAG                     = 2,  /* htt_tx_pdev_stats_sifs_tlv_v */
     HTT_STATS_TX_PDEV_FLUSH_TAG                    = 3,  /* htt_tx_pdev_stats_flush_tlv_v */
     HTT_STATS_TX_PDEV_PHY_ERR_TAG                  = 4,  /* htt_tx_pdev_stats_phy_err_tlv_v */
-    HTT_STATS_STRING_TAG = 5,                            /* htt_stats_string_tlv */
-    HTT_STATS_TX_HWQ_CMN_TAG = 6,                        /* htt_tx_hwq_stats_cmn_tlv */
+    HTT_STATS_STRING_TAG                           = 5,  /* htt_stats_string_tlv, PUBLISH_FUNC=get_sring_name_data */
+    HTT_STATS_TX_HWQ_CMN_TAG                       = 6,  /* htt_tx_hwq_stats_cmn_tlv, PUBLISH_CODE=#inbound_req->tx_hwq_id_mac_id_word = ((htt_tx_hwq_stats_cmn_tlv *)tag_buf)->mac_id__hwq_id__word;#, PUBLISH_FUNC=create_json_response_for_htt_stats_tx_hwq */
     HTT_STATS_TX_HWQ_DIFS_LATENCY_TAG              = 7,  /* htt_tx_hwq_difs_latency_stats_tlv_v */
-    HTT_STATS_TX_HWQ_CMD_RESULT_TAG                = 8,  /* htt_tx_hwq_cmd_result_stats_tlv_v */
-    HTT_STATS_TX_HWQ_CMD_STALL_TAG                 = 9,  /* htt_tx_hwq_cmd_stall_stats_tlv_v */
-    HTT_STATS_TX_HWQ_FES_STATUS_TAG                = 10, /* htt_tx_hwq_fes_result_stats_tlv_v */
+    HTT_STATS_TX_HWQ_CMD_RESULT_TAG                = 8,  /* htt_tx_hwq_cmd_result_stats_tlv_v, PUBLISH_FUNC=create_json_response_for_htt_stats_tx_hwq */
+    HTT_STATS_TX_HWQ_CMD_STALL_TAG                 = 9,  /* htt_tx_hwq_cmd_stall_stats_tlv_v, PUBLISH_FUNC=create_json_response_for_htt_stats_tx_hwq */
+    HTT_STATS_TX_HWQ_FES_STATUS_TAG                = 10, /* htt_tx_hwq_fes_result_stats_tlv_v, PUBLISH_FUNC=create_json_response_for_htt_stats_tx_hwq */
     HTT_STATS_TX_TQM_GEN_MPDU_TAG                  = 11, /* htt_tx_tqm_gen_mpdu_stats_tlv_v */
     HTT_STATS_TX_TQM_LIST_MPDU_TAG                 = 12, /* htt_tx_tqm_list_mpdu_stats_tlv_v */
     HTT_STATS_TX_TQM_LIST_MPDU_CNT_TAG             = 13, /* htt_tx_tqm_list_mpdu_cnt_tlv_v */
-    HTT_STATS_TX_TQM_CMN_TAG = 14,                       /* htt_tx_tqm_cmn_stats_tlv */
+    HTT_STATS_TX_TQM_CMN_TAG                       = 14, /* htt_tx_tqm_cmn_stats_tlv */
     HTT_STATS_TX_TQM_PDEV_TAG                      = 15, /* htt_tx_tqm_pdev_stats_tlv_v */
     HTT_STATS_TX_TQM_CMDQ_STATUS_TAG               = 16, /* htt_tx_tqm_cmdq_status_tlv */
     HTT_STATS_TX_DE_EAPOL_PACKETS_TAG              = 17, /* htt_tx_de_eapol_packets_stats_tlv */
@@ -641,11 +644,11 @@ typedef enum {
     HTT_STATS_TX_DE_CLASSIFY_STATUS_TAG            = 20, /* htt_tx_de_classify_status_stats_tlv */
     HTT_STATS_TX_DE_ENQUEUE_PACKETS_TAG            = 21, /* htt_tx_de_enqueue_packets_stats_tlv */
     HTT_STATS_TX_DE_ENQUEUE_DISCARD_TAG            = 22, /* htt_tx_de_enqueue_discard_stats_tlv */
-    HTT_STATS_TX_DE_CMN_TAG = 23,                        /* htt_tx_de_cmn_stats_tlv */
-    HTT_STATS_RING_IF_TAG = 24,                          /* htt_ring_if_stats_tlv */
+    HTT_STATS_TX_DE_CMN_TAG                        = 23, /* htt_tx_de_cmn_stats_tlv */
+    HTT_STATS_RING_IF_TAG                          = 24, /* htt_ring_if_stats_tlv */
     HTT_STATS_TX_PDEV_MU_MIMO_STATS_TAG            = 25, /* htt_tx_pdev_mu_mimo_sch_stats_tlv */
-    HTT_STATS_SFM_CMN_TAG = 26,                          /* htt_sfm_cmn_tlv */
-    HTT_STATS_SRING_STATS_TAG                      = 27, /* htt_sring_stats_tlv */
+    HTT_STATS_SFM_CMN_TAG                          = 26, /* htt_sfm_cmn_tlv */
+    HTT_STATS_SRING_STATS_TAG                      = 27, /* htt_sring_stats_tlv, PUBLISH_FUNC=create_json_response_for_sring_stats */
     HTT_STATS_RX_PDEV_FW_STATS_TAG                 = 28, /* htt_rx_pdev_fw_stats_tlv */
     HTT_STATS_RX_PDEV_FW_RING_MPDU_ERR_TAG         = 29, /* htt_rx_pdev_fw_ring_mpdu_err_tlv_v */
     HTT_STATS_RX_PDEV_FW_MPDU_DROP_TAG             = 30, /* htt_rx_pdev_fw_mpdu_drop_tlv_v */
@@ -654,16 +657,16 @@ typedef enum {
     HTT_STATS_RX_SOC_FW_REFILL_RING_NUM_REFILL_TAG = 33, /* htt_rx_soc_fw_refill_ring_num_refill_tlv_v */
     HTT_STATS_TX_PDEV_RATE_STATS_TAG               = 34, /* htt_tx_pdev_rate_stats_tlv */
     HTT_STATS_RX_PDEV_RATE_STATS_TAG               = 35, /* htt_rx_pdev_rate_stats_tlv */
-    HTT_STATS_TX_PDEV_SCHEDULER_TXQ_STATS_TAG      = 36, /* htt_tx_pdev_stats_sched_per_txq_tlv */
-    HTT_STATS_TX_SCHED_CMN_TAG                     = 37, /* htt_stats_tx_sched_cmn_tlv */
+    HTT_STATS_TX_PDEV_SCHEDULER_TXQ_STATS_TAG      = 36, /* htt_tx_pdev_stats_sched_per_txq_tlv, PUBLISH_CODE=#inbound_req->tx_sched_txq_id_mac_id_word = ((htt_tx_pdev_stats_sched_per_txq_tlv *)tag_buf)->mac_id__txq_id__word;#, PUBLISH_FUNC=create_json_response_for_htt_stats_sched_txq */
+    HTT_STATS_TX_SCHED_CMN_TAG                     = 37, /* htt_stats_tx_sched_cmn_tlv, PUBLISH_SKIP */
     HTT_STATS_TX_PDEV_MUMIMO_MPDU_STATS_TAG        = 38, /* htt_tx_pdev_mu_mimo_mpdu_stats_tlv */
-    HTT_STATS_SCHED_TXQ_CMD_POSTED_TAG             = 39, /* htt_sched_txq_cmd_posted_tlv_v */
+    HTT_STATS_SCHED_TXQ_CMD_POSTED_TAG             = 39, /* htt_sched_txq_cmd_posted_tlv_v, PUBLISH_FUNC=create_json_response_for_htt_stats_sched_txq */
     HTT_STATS_RING_IF_CMN_TAG                      = 40, /* htt_ring_if_cmn_tlv */
-    HTT_STATS_SFM_CLIENT_USER_TAG                  = 41, /* htt_sfm_client_user_tlv_v */
-    HTT_STATS_SFM_CLIENT_TAG = 42,                       /* htt_sfm_client_tlv */
+    HTT_STATS_SFM_CLIENT_USER_TAG                  = 41, /* htt_sfm_client_user_tlv_v, PUBLISH_FUNC=create_json_response_for_sfm_client */
+    HTT_STATS_SFM_CLIENT_TAG                       = 42, /* htt_sfm_client_tlv, PUBLISH_FUNC=create_json_response_for_sfm_client */
     HTT_STATS_TX_TQM_ERROR_STATS_TAG               = 43, /* htt_tx_tqm_error_stats_tlv */
-    HTT_STATS_SCHED_TXQ_CMD_REAPED_TAG             = 44, /* htt_sched_txq_cmd_reaped_tlv_v */
-    HTT_STATS_SRING_CMN_TAG = 45,                        /* htt_sring_cmn_tlv */
+    HTT_STATS_SCHED_TXQ_CMD_REAPED_TAG             = 44, /* htt_sched_txq_cmd_reaped_tlv_v, PUBLISH_FUNC=create_json_response_for_htt_stats_sched_txq */
+    HTT_STATS_SRING_CMN_TAG                        = 45, /* htt_sring_cmn_tlv */
     HTT_STATS_TX_SELFGEN_AC_ERR_STATS_TAG          = 46, /* htt_tx_selfgen_ac_err_stats_tlv */
     HTT_STATS_TX_SELFGEN_CMN_STATS_TAG             = 47, /* htt_tx_selfgen_cmn_stats_tlv */
     HTT_STATS_TX_SELFGEN_AC_STATS_TAG              = 48, /* htt_tx_selfgen_ac_stats_tlv */
@@ -672,7 +675,7 @@ typedef enum {
     HTT_STATS_TX_HWQ_MUMIMO_SCH_STATS_TAG          = 51, /* htt_tx_hwq_mu_mimo_sch_stats_tlv */
     HTT_STATS_TX_HWQ_MUMIMO_MPDU_STATS_TAG         = 52, /* htt_tx_hwq_mu_mimo_mpdu_stats_tlv */
     HTT_STATS_TX_HWQ_MUMIMO_CMN_STATS_TAG          = 53, /* htt_tx_hwq_mu_mimo_cmn_stats_tlv */
-    HTT_STATS_HW_INTR_MISC_TAG                     = 54, /* htt_hw_stats_intr_misc_tlv */
+    HTT_STATS_HW_INTR_MISC_TAG                     = 54, /* htt_hw_stats_intr_misc_tlv, PUBLISH_FUNC=create_json_response_for_hwstats_intr_misc */
     HTT_STATS_HW_WD_TIMEOUT_TAG                    = 55, /* htt_hw_stats_wd_timeout_tlv */
     HTT_STATS_HW_PDEV_ERRS_TAG                     = 56, /* htt_hw_stats_pdev_errs_tlv */
     HTT_STATS_COUNTER_NAME_TAG                     = 57, /* htt_counter_tlv */
@@ -681,18 +684,18 @@ typedef enum {
     HTT_STATS_PEER_STATS_CMN_TAG                   = 60, /* htt_peer_stats_cmn_tlv */
     HTT_STATS_PEER_DETAILS_TAG                     = 61, /* htt_peer_details_tlv */
     HTT_STATS_PEER_TX_RATE_STATS_TAG               = 62, /* htt_tx_peer_rate_stats_tlv */
-    HTT_STATS_PEER_RX_RATE_STATS_TAG               = 63, /* htt_rx_peer_rate_stats_tlv */
+    HTT_STATS_PEER_RX_RATE_STATS_TAG               = 63, /* htt_rx_peer_rate_stats_tlv, TOPIC=advanced */
     HTT_STATS_PEER_MSDU_FLOWQ_TAG                  = 64, /* htt_msdu_flow_stats_tlv */
     HTT_STATS_TX_DE_COMPL_STATS_TAG                = 65, /* htt_tx_de_compl_stats_tlv */
-    HTT_STATS_WHAL_TX_TAG = 66,                          /* htt_hw_stats_whal_tx_tlv */
+    HTT_STATS_WHAL_TX_TAG                          = 66, /* htt_hw_stats_whal_tx_tlv */
     HTT_STATS_TX_PDEV_SIFS_HIST_TAG                = 67, /* htt_tx_pdev_stats_sifs_hist_tlv_v */
     HTT_STATS_RX_PDEV_FW_STATS_PHY_ERR_TAG         = 68, /* htt_rx_pdev_fw_stats_phy_err_tlv */
     HTT_STATS_TX_TID_DETAILS_V1_TAG                = 69, /* htt_tx_tid_stats_v1_tlv */
-    HTT_STATS_PDEV_CCA_1SEC_HIST_TAG               = 70, /* htt_pdev_cca_stats_hist_tlv (for 1 sec interval stats) */
-    HTT_STATS_PDEV_CCA_100MSEC_HIST_TAG            = 71, /* htt_pdev_cca_stats_hist_tlv (for 100 msec interval stats) */
-    HTT_STATS_PDEV_CCA_STAT_CUMULATIVE_TAG         = 72, /* htt_pdev_stats_cca_stats_tlv */
-    HTT_STATS_PDEV_CCA_COUNTERS_TAG                = 73, /* htt_pdev_stats_cca_counters_tlv */
-    HTT_STATS_TX_PDEV_MPDU_STATS_TAG               = 74, /* htt_tx_pdev_mpdu_stats_tlv */
+    HTT_STATS_PDEV_CCA_1SEC_HIST_TAG               = 70, /* htt_pdev_cca_stats_hist_tlv (for 1 sec interval stats), PUBLISH_FUNC=update_htt_pdev_cca_stat_context */
+    HTT_STATS_PDEV_CCA_100MSEC_HIST_TAG            = 71, /* htt_pdev_cca_stats_hist_tlv (for 100 msec interval stats), PUBLISH_FUNC=update_htt_pdev_cca_stat_context */
+    HTT_STATS_PDEV_CCA_STAT_CUMULATIVE_TAG         = 72, /* htt_pdev_stats_cca_stats_tlv, PUBLISH_FUNC=update_htt_pdev_cca_stat_context */
+    HTT_STATS_PDEV_CCA_COUNTERS_TAG                = 73, /* htt_pdev_stats_cca_counters_tlv, PUBLISH_FUNC=create_json_response_for_htt_pdev_cca_stat */
+    HTT_STATS_TX_PDEV_MPDU_STATS_TAG               = 74, /* htt_tx_pdev_mpdu_stats_tlv, PUBLISH_FUNC=create_json_response_for_htt_tx_pdev_mpdu_stat */
     HTT_STATS_PDEV_TWT_SESSIONS_TAG                = 75, /* htt_pdev_stats_twt_sessions_tlv */
     HTT_STATS_PDEV_TWT_SESSION_TAG                 = 76, /* htt_pdev_stats_twt_session_tlv */
     HTT_STATS_RX_REFILL_RXDMA_ERR_TAG              = 77, /* htt_rx_soc_fw_refill_ring_num_rxdma_err_tlv_v */
@@ -704,24 +707,24 @@ typedef enum {
     HTT_STATS_TX_HWQ_TRIED_MPDU_CNT_HIST_TAG       = 83, /* htt_tx_hwq_tried_mpdu_cnt_hist_tlv_v */
     HTT_STATS_TX_HWQ_TXOP_USED_CNT_HIST_TAG        = 84, /* htt_tx_hwq_txop_used_cnt_hist_tlv_v */
     HTT_STATS_TX_DE_FW2WBM_RING_FULL_HIST_TAG      = 85, /* htt_tx_de_fw2wbm_ring_full_hist_tlv */
-    HTT_STATS_SCHED_TXQ_SCHED_ORDER_SU_TAG         = 86, /* htt_sched_txq_sched_order_su_tlv */
-    HTT_STATS_SCHED_TXQ_SCHED_INELIGIBILITY_TAG    = 87, /* htt_sched_txq_sched_eligibility_tlv */
+    HTT_STATS_SCHED_TXQ_SCHED_ORDER_SU_TAG         = 86, /* htt_sched_txq_sched_order_su_tlv, PUBLISH_FUNC=create_json_response_for_htt_stats_sched_txq */
+    HTT_STATS_SCHED_TXQ_SCHED_INELIGIBILITY_TAG    = 87, /* htt_sched_txq_sched_eligibility_tlv, PUBLISH_FUNC=create_json_response_for_htt_stats_sched_txq */
     HTT_STATS_PDEV_OBSS_PD_TAG                     = 88, /* htt_pdev_obss_pd_stats_tlv */
     HTT_STATS_HW_WAR_TAG                           = 89, /* htt_hw_war_stats_tlv */
-    HTT_STATS_RING_BACKPRESSURE_STATS_TAG          = 90, /* htt_ring_backpressure_stats_tlv */
-    HTT_STATS_LATENCY_PROF_STATS_TAG               = 91, /* htt_latency_prof_stats_tlv */
+    HTT_STATS_RING_BACKPRESSURE_STATS_TAG          = 90, /* htt_ring_backpressure_stats_tlv, PUBLISH_FUNC=create_json_response_for_ring_bkp_pressure_stats */
+    HTT_STATS_LATENCY_PROF_STATS_TAG               = 91, /* htt_latency_prof_stats_tlv, PUBLISH_FUNC=create_json_response_for_latency_prof_stats */
     HTT_STATS_LATENCY_CTX_TAG                      = 92, /* htt_latency_prof_ctx_tlv */
     HTT_STATS_LATENCY_CNT_TAG                      = 93, /* htt_latency_prof_cnt_tlv */
     HTT_STATS_RX_PDEV_UL_TRIG_STATS_TAG            = 94, /* htt_rx_pdev_ul_trigger_stats_tlv */
-    HTT_STATS_RX_PDEV_UL_OFDMA_USER_STATS_TAG      = 95, /* htt_rx_pdev_ul_ofdma_user_stats_tlv */
+    HTT_STATS_RX_PDEV_UL_OFDMA_USER_STATS_TAG      = 95, /* htt_rx_pdev_ul_ofdma_user_stats_tlv, PUBLISH_FUNC=create_json_response_for_htt_rx_pdev_ul_ofdma_user_stat */
     HTT_STATS_RX_PDEV_UL_MIMO_USER_STATS_TAG       = 96, /* htt_rx_pdev_ul_mimo_user_stats_tlv */
     HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_STATS_TAG     = 97, /* htt_rx_pdev_ul_mumimo_trig_stats_tlv */
     HTT_STATS_RX_FSE_STATS_TAG                     = 98, /* htt_rx_fse_stats_tlv */
-    HTT_STATS_PEER_SCHED_STATS_TAG                 = 99, /* htt_peer_sched_stats_tlv */
-    HTT_STATS_SCHED_TXQ_SUPERCYCLE_TRIGGER_TAG     = 100, /* htt_sched_txq_supercycle_triggers_tlv_v */
+    HTT_STATS_PEER_SCHED_STATS_TAG                 = 99, /* htt_peer_sched_stats_tlv, TOPIC=peer */
+    HTT_STATS_SCHED_TXQ_SUPERCYCLE_TRIGGER_TAG     = 100, /* htt_sched_txq_supercycle_triggers_tlv_v, PUBLISH_FUNC=create_json_response_for_htt_stats_sched_txq */
     HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG        = 101, /* htt_peer_ctrl_path_txrx_stats_tlv */
     HTT_STATS_PDEV_CTRL_PATH_TX_STATS_TAG          = 102, /* htt_pdev_ctrl_path_tx_stats_tlv */
-    HTT_STATS_RX_PDEV_RATE_EXT_STATS_TAG           = 103, /* htt_rx_pdev_rate_ext_stats_tlv */
+    HTT_STATS_RX_PDEV_RATE_EXT_STATS_TAG           = 103, /* htt_rx_pdev_rate_ext_stats_tlv, PUBLISH_FUNC=create_json_response_for_rx_pdev_rate_ext */
     HTT_STATS_TX_PDEV_DL_MU_MIMO_STATS_TAG         = 104, /* htt_tx_pdev_dl_mu_mimo_sch_stats_tlv */
     HTT_STATS_TX_PDEV_UL_MU_MIMO_STATS_TAG         = 105, /* htt_tx_pdev_ul_mu_mimo_sch_stats_tlv */
     HTT_STATS_TX_PDEV_DL_MU_OFDMA_STATS_TAG        = 106, /* htt_tx_pdev_dl_mu_ofdma_sch_stats_tlv */
@@ -746,54 +749,54 @@ typedef enum {
     HTT_STATS_SOC_TXRX_STATS_COMMON_TAG            = 125, /* htt_t2h_soc_txrx_stats_common_tlv */
     HTT_STATS_VDEV_TXRX_STATS_HW_STATS_TAG         = 126, /* htt_t2h_vdev_txrx_stats_hw_stats_tlv */
     HTT_STATS_VDEV_RTT_INIT_STATS_TAG              = 127, /* htt_vdev_rtt_init_stats_tlv */
-    HTT_STATS_PER_RATE_STATS_TAG                   = 128, /* htt_tx_rate_stats_per_tlv */
-    HTT_STATS_MU_PPDU_DIST_TAG                     = 129, /* htt_pdev_mu_ppdu_dist_tlv */
+    HTT_STATS_PER_RATE_STATS_TAG                   = 128, /* htt_tx_rate_stats_per_tlv, PUBLISH_FUNC=create_json_response_for_htt_tx_rate_stats_per */
+    HTT_STATS_MU_PPDU_DIST_TAG                     = 129, /* htt_pdev_mu_ppdu_dist_tlv, PUBLISH_FUNC=create_json_response_for_htt_stats_mu_ppdu */
     HTT_STATS_TX_PDEV_MUMIMO_GRP_STATS_TAG         = 130, /* htt_tx_pdev_mumimo_grp_stats_tlv */
-    HTT_STATS_TX_PDEV_BE_RATE_STATS_TAG            = 131, /* htt_tx_pdev_rate_stats_be_tlv */
+    HTT_STATS_TX_PDEV_BE_RATE_STATS_TAG            = 131, /* htt_tx_pdev_rate_stats_be_tlv, TOPIC=advanced */
     HTT_STATS_AST_ENTRY_TAG                        = 132, /* htt_ast_entry_tlv */
-    HTT_STATS_TX_PDEV_BE_DL_MU_OFDMA_STATS_TAG     = 133, /* htt_tx_pdev_dl_be_mu_ofdma_sch_stats_tlv */
-    HTT_STATS_TX_PDEV_BE_UL_MU_OFDMA_STATS_TAG     = 134, /* htt_tx_pdev_ul_be_mu_ofdma_sch_stats_tlv */
+    HTT_STATS_TX_PDEV_BE_DL_MU_OFDMA_STATS_TAG     = 133, /* htt_tx_pdev_dl_be_mu_ofdma_sch_stats_tlv, TOPIC=advanced */
+    HTT_STATS_TX_PDEV_BE_UL_MU_OFDMA_STATS_TAG     = 134, /* htt_tx_pdev_ul_be_mu_ofdma_sch_stats_tlv, TOPIC=advanced */
     HTT_STATS_TX_PDEV_RATE_STATS_BE_OFDMA_TAG      = 135, /* htt_tx_pdev_rate_stats_be_ofdma_tlv */
-    HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BE_STATS_TAG  = 136, /* htt_rx_pdev_ul_mumimo_trig_be_stats_tlv */
-    HTT_STATS_TX_SELFGEN_BE_ERR_STATS_TAG          = 137, /* htt_tx_selfgen_be_err_stats_tlv */
-    HTT_STATS_TX_SELFGEN_BE_STATS_TAG              = 138, /* htt_tx_selfgen_be_stats_tlv */
-    HTT_STATS_TX_SELFGEN_BE_SCHED_STATUS_STATS_TAG = 139, /* htt_tx_selfgen_be_sched_status_stats_tlv */
+    HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BE_STATS_TAG  = 136, /* htt_rx_pdev_ul_mumimo_trig_be_stats_tlv, TOPIC=advanced */
+    HTT_STATS_TX_SELFGEN_BE_ERR_STATS_TAG          = 137, /* htt_tx_selfgen_be_err_stats_tlv, TOPIC=advanced */
+    HTT_STATS_TX_SELFGEN_BE_STATS_TAG              = 138, /* htt_tx_selfgen_be_stats_tlv, TOPIC=advanced */
+    HTT_STATS_TX_SELFGEN_BE_SCHED_STATUS_STATS_TAG = 139, /* htt_tx_selfgen_be_sched_status_stats_tlv, TOPIC=advanced */
     HTT_STATS_TX_PDEV_BE_UL_MU_MIMO_STATS_TAG      = 140, /* htt_tx_pdev_be_ul_mu_mimo_sch_stats_tlv */
     HTT_STATS_RX_PDEV_BE_UL_MIMO_USER_STATS_TAG    = 141, /* htt_rx_pdev_be_ul_mimo_user_stats_tlv */
     HTT_STATS_RX_RING_STATS_TAG                    = 142, /* htt_rx_fw_ring_stats_tlv_v */
-    HTT_STATS_RX_PDEV_BE_UL_TRIG_STATS_TAG         = 143, /* htt_rx_pdev_be_ul_trigger_stats_tlv */
-    HTT_STATS_TX_PDEV_SAWF_RATE_STATS_TAG          = 144, /* htt_tx_pdev_rate_stats_sawf_tlv */
+    HTT_STATS_RX_PDEV_BE_UL_TRIG_STATS_TAG         = 143, /* htt_rx_pdev_be_ul_trigger_stats_tlv, TOPIC=advanced */
+    HTT_STATS_TX_PDEV_SAWF_RATE_STATS_TAG          = 144, /* htt_tx_pdev_rate_stats_sawf_tlv, TOPIC=advanced */
     HTT_STATS_STRM_GEN_MPDUS_TAG                   = 145, /* htt_stats_strm_gen_mpdus_tlv_t */
     HTT_STATS_STRM_GEN_MPDUS_DETAILS_TAG           = 146, /* htt_stats_strm_gen_mpdus_details_tlv_t */
-    HTT_STATS_TXBF_OFDMA_AX_NDPA_STATS_TAG         = 147, /* htt_txbf_ofdma_ax_ndpa_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_AX_NDP_STATS_TAG          = 148, /* htt_txbf_ofdma_ax_ndp_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_AX_BRP_STATS_TAG          = 149, /* htt_txbf_ofdma_ax_brp_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_AX_STEER_STATS_TAG        = 150, /* htt_txbf_ofdma_ax_steer_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_BE_NDPA_STATS_TAG         = 151, /* htt_txbf_ofdma_be_ndpa_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_BE_NDP_STATS_TAG          = 152, /* htt_txbf_ofdma_be_ndp_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_BE_BRP_STATS_TAG          = 153, /* htt_txbf_ofdma_be_brp_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_BE_STEER_STATS_TAG        = 154, /* htt_txbf_ofdma_be_steer_stats_tlv */
+    HTT_STATS_TXBF_OFDMA_AX_NDPA_STATS_TAG         = 147, /* htt_txbf_ofdma_ax_ndpa_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_AX_NDP_STATS_TAG          = 148, /* htt_txbf_ofdma_ax_ndp_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_AX_BRP_STATS_TAG          = 149, /* htt_txbf_ofdma_ax_brp_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_AX_STEER_STATS_TAG        = 150, /* htt_txbf_ofdma_ax_steer_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_BE_NDPA_STATS_TAG         = 151, /* htt_txbf_ofdma_be_ndpa_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_BE_NDP_STATS_TAG          = 152, /* htt_txbf_ofdma_be_ndp_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_BE_BRP_STATS_TAG          = 153, /* htt_txbf_ofdma_be_brp_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
+    HTT_STATS_TXBF_OFDMA_BE_STEER_STATS_TAG        = 154, /* htt_txbf_ofdma_be_steer_stats_tlv, PUBLISH_FUNC_FILE=create_json_response_for_txbf_ofdma_wrapper */
     HTT_STATS_DMAC_RESET_STATS_TAG                 = 155, /* htt_dmac_reset_stats_tlv */
-    HTT_STATS_RX_PDEV_BE_UL_OFDMA_USER_STATS_TAG   = 156, /* htt_rx_pdev_be_ul_ofdma_user_stats_tlv */
+    HTT_STATS_RX_PDEV_BE_UL_OFDMA_USER_STATS_TAG   = 156, /* htt_rx_pdev_be_ul_ofdma_user_stats_tlv, TOPIC=advanced */
     HTT_STATS_PHY_TPC_STATS_TAG                    = 157, /* htt_phy_tpc_stats_tlv */
     HTT_STATS_PDEV_PUNCTURE_STATS_TAG              = 158, /* htt_pdev_puncture_stats_tlv */
     HTT_STATS_ML_PEER_DETAILS_TAG                  = 159, /* htt_ml_peer_details_tlv */
     HTT_STATS_ML_PEER_EXT_DETAILS_TAG              = 160, /* htt_ml_peer_ext_details_tlv */
     HTT_STATS_ML_LINK_INFO_DETAILS_TAG             = 161, /* htt_ml_link_info_tlv */
-    HTT_STATS_TX_PDEV_PPDU_DUR_TAG                 = 162, /* htt_tx_pdev_ppdu_dur_stats_tlv */
-    HTT_STATS_RX_PDEV_PPDU_DUR_TAG                 = 163, /* htt_rx_pdev_ppdu_dur_stats_tlv */
+    HTT_STATS_TX_PDEV_PPDU_DUR_TAG                 = 162, /* htt_tx_pdev_ppdu_dur_stats_tlv, TOPIC=advanced */
+    HTT_STATS_RX_PDEV_PPDU_DUR_TAG                 = 163, /* htt_rx_pdev_ppdu_dur_stats_tlv, TOPIC=advanced */
     HTT_STATS_ODD_PDEV_MANDATORY_TAG               = 164, /* htt_odd_mandatory_pdev_stats_tlv */
-    HTT_STATS_PDEV_SCHED_ALGO_OFDMA_STATS_TAG      = 165, /* htt_pdev_sched_algo_ofdma_stats_tlv */
+    HTT_STATS_PDEV_SCHED_ALGO_OFDMA_STATS_TAG      = 165, /* htt_pdev_sched_algo_ofdma_stats_tlv, PUBLISH_FUNC=create_json_response_for_htt_pdev_sched_algo_ofdma_stats */
     HTT_DBG_ODD_MANDATORY_MUMIMO_TAG               = 166, /* htt_odd_mandatory_mumimo_pdev_stats_tlv */
     HTT_DBG_ODD_MANDATORY_MUOFDMA_TAG              = 167, /* htt_odd_mandatory_muofdma_pdev_stats_tlv */
     HTT_STATS_LATENCY_PROF_CAL_STATS_TAG           = 168, /* htt_latency_prof_cal_stats_tlv */
     HTT_STATS_TX_PDEV_MUEDCA_PARAMS_STATS_TAG      = 169, /* htt_tx_pdev_muedca_params_stats_tlv_v - DEPRECATED */
     HTT_STATS_PDEV_BW_MGR_STATS_TAG                = 170, /* htt_pdev_bw_mgr_stats_tlv */
-    HTT_STATS_TX_PDEV_AP_EDCA_PARAMS_STATS_TAG     = 171, /* htt_tx_pdev_ap_edca_params_stats_tlv_v */
-    HTT_STATS_TXBF_OFDMA_AX_STEER_MPDU_STATS_TAG   = 172, /* htt_txbf_ofdma_ax_steer_mpdu_stats_tlv */
-    HTT_STATS_TXBF_OFDMA_BE_STEER_MPDU_STATS_TAG   = 173, /* htt_txbf_ofdma_be_steer_mpdu_stats_tlv */
+    HTT_STATS_TX_PDEV_AP_EDCA_PARAMS_STATS_TAG     = 171, /* htt_tx_pdev_ap_edca_params_stats_tlv_v, TOPIC=advanced */
+    HTT_STATS_TXBF_OFDMA_AX_STEER_MPDU_STATS_TAG   = 172, /* htt_txbf_ofdma_ax_steer_mpdu_stats_tlv, TOPIC=advanced */
+    HTT_STATS_TXBF_OFDMA_BE_STEER_MPDU_STATS_TAG   = 173, /* htt_txbf_ofdma_be_steer_mpdu_stats_tlv, TOPIC=advanced */
     HTT_STATS_PEER_AX_OFDMA_STATS_TAG              = 174, /* htt_peer_ax_ofdma_stats_tlv */
-    HTT_STATS_TX_PDEV_MU_EDCA_PARAMS_STATS_TAG     = 175, /* htt_tx_pdev_mu_edca_params_stats_tlv_v */
+    HTT_STATS_TX_PDEV_MU_EDCA_PARAMS_STATS_TAG     = 175, /* htt_tx_pdev_mu_edca_params_stats_tlv_v, TOPIC=advanced */
     HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG     = 176, /* htt_pdev_mbssid_ctrl_frame_stats_tlv */
     HTT_STATS_TX_PDEV_MLO_ABORT_TAG                = 177, /* htt_tx_pdev_stats_mlo_abort_tlv_v */
     HTT_STATS_TX_PDEV_MLO_TXOP_ABORT_TAG           = 178, /* htt_tx_pdev_stats_mlo_txop_abort_tlv_v */
@@ -808,6 +811,8 @@ typedef enum {
     HTT_STATS_PDEV_TDMA_TAG                        = 187, /* htt_pdev_tdma_stats_tlv */
     HTT_STATS_CODEL_SVC_CLASS_TAG                  = 188, /* htt_codel_svc_class_stats_tlv */
     HTT_STATS_CODEL_MSDUQ_TAG                      = 189, /* htt_codel_msduq_stats_tlv */
+    HTT_STATS_MLO_SCHED_STATS_TAG                  = 190, /* htt_mlo_sched_stats_tlv */
+    HTT_STATS_PDEV_MLO_IPC_STATS_TAG               = 191, /* htt_pdev_mlo_ipc_stats_tlv */
 
 
     HTT_STATS_MAX_TAG,
@@ -880,6 +885,7 @@ enum htt_h2t_msg_type {
     HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_SOC_START_PRE_RESET = 0x22,
     HTT_H2T_MSG_TYPE_RX_CCE_SUPER_RULE_SETUP = 0x23,
     HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP = 0x24,
+    HTT_H2T_MSG_TYPE_TX_LATENCY_STATS_CFG  = 0x25,
 
     /* keep this last */
     HTT_H2T_NUM_MSGS
@@ -2877,7 +2883,8 @@ PREPACK struct htt_tx_wbm_completion_v2 {
         tx_status:              4, /* Takes enum values of htt_tx_fw2wbm_tx_status_t */
         reinject_reason:        4, /* Takes enum values of htt_tx_fw2wbm_reinject_reason_t */
         exception_frame:        1,
-        rsvd0:                 12, /* For future use */
+        transmit_count:         7, /* Refer to struct wbm_release_ring */
+        rsvd0:                  5, /* For future use */
         used_by_hw4:            1, /* wbm_internal_error bit being used by HW */
         rsvd1:                  1; /* For future use */
     A_UINT32
@@ -2903,6 +2910,8 @@ PREPACK struct htt_tx_wbm_completion_v2 {
 #define HTT_TX_WBM_COMPLETION_V2_REINJECT_REASON_S           13
 #define HTT_TX_WBM_COMPLETION_V2_EXP_FRAME_M                 0x00020000
 #define HTT_TX_WBM_COMPLETION_V2_EXP_FRAME_S                 17
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_M            0x01FC0000
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_S            18
 
 /* DWORD 3 */
 #define HTT_TX_WBM_COMPLETION_V2_TX_STATUS_GET(_var) \
@@ -2935,6 +2944,16 @@ PREPACK struct htt_tx_wbm_completion_v2 {
          ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V2_EXP_FRAME_S)); \
      } while (0)
 
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_GET(_var) \
+     (((_var) & HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_M) >> \
+    HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_S)
+
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT, _val); \
+         ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V2_TRANSMIT_COUNT_S)); \
+     } while (0)
+
 /**
  * @brief HTT TX WBM Completion from firmware to host (V3)
  * @details
@@ -2960,7 +2979,8 @@ PREPACK struct htt_tx_wbm_completion_v3 {
     A_UINT32
         reinject_reason:       4,  /* Takes enum values of htt_tx_fw2wbm_reinject_reason_t */
         exception_frame:       1,
-        rsvd0:                 27; /* For future use */
+        transmit_count:        7, /* Refer to struct wbm_release_ring */
+        rsvd0:                 20; /* For future use */
     A_UINT32
         data0:                 32; /* data0,1 and 2 changes based on tx_status type
                                     * if HTT_TX_FW2WBM_TX_STATUS_OK or HTT_TX_FW2WBM_TX_STATUS_DROP
@@ -2977,13 +2997,17 @@ PREPACK struct htt_tx_wbm_completion_v3 {
         used_by_hw4:           12; /* Refer to struct wbm_release_ring */
 } POSTPACK;
 
-
+/* DWORD 3 */
 #define HTT_TX_WBM_COMPLETION_V3_TX_STATUS_M                 0x0001E000
 #define HTT_TX_WBM_COMPLETION_V3_TX_STATUS_S                 13
+
+/* DWORD 4 */
 #define HTT_TX_WBM_COMPLETION_V3_REINJECT_REASON_M           0x0000000F
 #define HTT_TX_WBM_COMPLETION_V3_REINJECT_REASON_S           0
 #define HTT_TX_WBM_COMPLETION_V3_EXP_FRAME_M                 0x00000010
 #define HTT_TX_WBM_COMPLETION_V3_EXP_FRAME_S                 4
+#define HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_M            0x00000FE0
+#define HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_S            5
 
 
 #define HTT_TX_WBM_COMPLETION_V3_TX_STATUS_GET(_var) \
@@ -3014,6 +3038,16 @@ PREPACK struct htt_tx_wbm_completion_v3 {
      do { \
          HTT_CHECK_SET_VAL(HTT_TX_WBM_COMPLETION_V3_EXP_FRAME, _val); \
          ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V3_EXP_FRAME_S)); \
+     } while (0)
+
+#define HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_GET(_var) \
+    (((_var) & HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_M) >> \
+    HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_S)
+
+#define HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT, _val); \
+         ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V3_TRANSMIT_COUNT_S)); \
      } while (0)
 
 
@@ -3056,7 +3090,11 @@ PREPACK struct htt_tx_wbm_transmit_status {
                               * contains valid data.
                               */
        frame_type:       4,  /* holds htt_tx_wbm_status_frame_type value */
-       reserved:         4;
+       transmit_count_valid: 1, /* If this "transmit_count_valid" is set, the
+                                 * transmit_count field in struct
+                                 * htt_tx_wbm_completion_vx has valid data.
+                                 */
+       reserved:         3;
    A_UINT32
        ppdu_start_tsf:  32;  /* PPDU Start timestamp added for multicast
                               * packets in the wbm completion path
@@ -3080,6 +3118,10 @@ PREPACK struct htt_tx_wbm_transmit_status {
 #define HTT_TX_WBM_COMPLETION_V2_MCAST_S               22
 #define HTT_TX_WBM_COMPLETION_V2_MCAST_VALID_M         0x00800000
 #define HTT_TX_WBM_COMPLETION_V2_MCAST_VALID_S         23
+#define HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_M          0x0F000000
+#define HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_S          24
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_M  0x10000000
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_S  28
 
 /* DWORD 4 */
 #define HTT_TX_WBM_COMPLETION_V2_SCH_CMD_ID_GET(_var) \
@@ -3152,6 +3194,26 @@ PREPACK struct htt_tx_wbm_transmit_status {
          HTT_CHECK_SET_VAL(HTT_TX_WBM_COMPLETION_V2_MCAST_VALID, _val); \
          ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V2_MCAST_VALID_S)); \
      } while (0)
+
+#define HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_GET(_var) \
+    (((_var) & HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_M) >> \
+    HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_S)
+
+#define HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE, _val); \
+         ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V2_FRAME_TYPE_S)); \
+
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_GET(_var) \
+    (((_var) & HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_M) >> \
+    HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_S)
+
+#define HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_SET(_var, _val) \
+     do { \
+         HTT_CHECK_SET_VAL(HTT_TX_WBM_COMPLETION_V2_MCAST_VALID, _val); \
+         ((_var) |= ((_val) << HTT_TX_WBM_COMPLETION_V2_TRANSMIT_CNT_VALID_S)); \
+     } while (0)
+
 
 /**
  * @brief HTT TX WBM reinject status from firmware to host
@@ -10715,6 +10777,88 @@ typedef struct {
         } while (0)
 
 
+/**
+ * @brief host -> tgt msg to configure params for PPDU tx latency stats report
+ *
+ * MSG_TYPE => HTT_H2T_MSG_TYPE_TX_LATENCY_STATS_CFG
+ *
+ * @details
+ *    HTT_H2T_MSG_TYPE_TX_LATENCY_STATS_CFG message is sent by the host to
+ *    configure the parameters needed for FW to report PPDU tx latency stats
+ *    for latency prediction in user space.
+ *
+ *    The message would appear as follows:
+ *    |31       28|27               12|11|10    8|7            0|
+ *    |-----------+-------------------+--+-------+--------------|
+ *    |granularity| periodic interval | E|vdev ID|   msg type   |
+ *    |-----------+-------------------+--+-------+--------------|
+ * Where: E = enable
+ *
+ * The message is interpreted as follows:
+ * dword0 - b'0:7   - msg_type: This will be set to 0x25
+ *                    (HTT_H2T_MSG_TYPE_TX_LATENCY_STATS_CFG)
+ *          b'8:10  - vdev_id: Indicate which vdev is configuration is for
+ *          b'11    - enable:  Indicate this message is to enable/disable
+ *                    PPDU latency report from FW
+ *          b'12:27 - periodic_interval: Indicate the report interval in MS
+ *          b'28:31 - granularity: Indicate the granularity of the latency
+ *                    stats report, in ms
+ */
+
+/* HTT_H2T_MSG_TYPE_TX_LATENCY_STATS_CFG */
+PREPACK struct htt_h2t_tx_latency_stats_cfg {
+    A_UINT32 msg_type          :8,
+             vdev_id           :3,
+             enable            :1,
+             periodic_interval :16,
+             granularity       :4;
+} POSTPACK;
+
+#define HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_M                       0x00000700
+#define HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_S                       8
+#define HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_GET(_var) \
+        (((_var) & HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_M) >> \
+                HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_S)
+#define HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_TX_LATENCY_STATS_CFG_VDEV_ID_S)); \
+    } while (0)
+
+#define HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_M                        0x00000800
+#define HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_S                        11
+#define HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_GET(_var) \
+        (((_var) & HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_M) >> \
+                HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_S)
+#define HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_TX_LATENCY_STATS_CFG_ENABLE_S)); \
+    } while (0)
+
+#define HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_M             0x0FFFF000
+#define HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_S             12
+#define HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_GET(_var) \
+        (((_var) & HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_M) >> \
+                HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_S)
+#define HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_TX_LATENCY_STATS_CFG_PERIODIC_INTERVAL_S)); \
+    } while (0)
+
+#define HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_M                   0xF0000000
+#define HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_S                   28
+#define HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_GET(_var) \
+        (((_var) & HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_M) >> \
+                HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_S)
+#define HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_TX_LATENCY_STATS_CFG_GRANULARITY_S)); \
+    } while (0)
+
+
 
 /*=== target -> host messages ===============================================*/
 
@@ -10785,6 +10929,7 @@ enum htt_t2h_msg_type {
     HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND = 0x37,
     HTT_T2H_MSG_TYPE_PEER_AST_OVERRIDE_INDEX_IND   = 0x38,
     HTT_T2H_MSG_TYPE_PEER_EXTENDED_EVENT           = 0x39,
+    HTT_T2H_MSG_TYPE_TX_LATENCY_STATS_PERIODIC_IND = 0x3a,
 
 
     HTT_T2H_MSG_TYPE_TEST,
@@ -20456,7 +20601,9 @@ typedef struct {
      * */
     A_UINT32 inv_peers_msdu_drop_count_lo;
     A_UINT32 inv_peers_msdu_drop_count_hi;
-} htt_t2h_soc_txrx_stats_common_tlv;
+} htt_stats_soc_txrx_stats_common_tlv;
+/* preserve old name alias for new name consistent with the tag name */
+typedef htt_stats_soc_txrx_stats_common_tlv htt_t2h_soc_txrx_stats_common_tlv;
 
 /* VDEV HW Tx/Rx stats */
 typedef struct {
@@ -20510,7 +20657,10 @@ typedef struct {
     /* TQM bypass byte cnt */
     A_UINT32 tqm_bypass_byte_cnt_lo;
     A_UINT32 tqm_bypass_byte_cnt_hi;
-} htt_t2h_vdev_txrx_stats_hw_stats_tlv;
+} htt_stats_vdev_txrx_stats_hw_stats_tlv;
+/* preserve old name alias for new name consistent with the tag name */
+typedef htt_stats_vdev_txrx_stats_hw_stats_tlv
+    htt_t2h_vdev_txrx_stats_hw_stats_tlv;
 
 /*
  * MSG_TYPE => HTT_T2H_SAWF_DEF_QUEUES_MAP_REPORT_CONF
@@ -21930,6 +22080,142 @@ typedef struct {
 #define HTT_PEER_AST_OVERRIDE_DUMMY_AST2_WORD_BASE_OFFSET 12  /* bytes */
 
 #define HTT_PEER_AST_OVERRIDE_INDEX_IND_BYTES             16
+
+
+/**
+ * @brief target -> periodic report of tx latency to host
+ *
+ * MSG_TYPE => HTT_T2H_MSG_TYPE_TX_LATENCY_STATS_PERIODIC_IND
+ *
+ * @details
+ * The message starts with a message header followed by one or more
+ * htt_t2h_peer_tx_latency_stats structs, one for each peer within the vdev.
+ * After each upload, these tx latency stats will be reset.
+ *
+ *      |31        24|23        16|15 14|13 10|9 8|7        0|
+ *      +-------------------------+-----+-----+---+----------|
+ * hdr  |            |pyld elem sz|     |  GR | P | msg type |
+ *-    -|=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|
+ * pyld |                        peer ID                     |
+ *      |----------------------------------------------------|
+ *      |                   peer_tx_latency[0]               |
+ *      |----------------------------------------------------|
+ * 1st  |                   peer_tx_latency[1]               |
+ * peer |----------------------------------------------------|
+ *      |                   peer_tx_latency[2]               |
+ *      |----------------------------------------------------|
+ *      |                   peer_tx_latency[3]               |
+ *      |----------------------------------------------------|
+ *      |                      avg latency                   |
+ *      |=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|
+ *      |                        peer ID                     |
+ *      |----------------------------------------------------|
+ *      |                   peer_tx_latency[0]               |
+ *      |----------------------------------------------------|
+ * 2nd  |                   peer_tx_latency[1]               |
+ * peer |----------------------------------------------------|
+ *      |                   peer_tx_latency[2]               |
+ *      |----------------------------------------------------|
+ *      |                   peer_tx_latency[3]               |
+ *      |----------------------------------------------------|
+ *      |                      avg latency                   |
+ *      |=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-|
+ * Where:
+ *     P  = pdev ID
+ *     GR = granularity
+ *
+ * @details
+ * htt_t2h_tx_latency_stats_periodic_hdr_t:
+ *   - msg_type
+ *     Bits 7:0
+ *     Purpose: identifies this as a tx latency report message
+ *     Value: 0x3a (HTT_T2H_MSG_TYPE_TX_LATENCY_STATS_PERIODIC_IND)
+ *   - pdev_id
+ *     Bits 9:8
+ *     Purpose: Indicates which pdev this message is associated with.
+ *   - granularity
+ *     Bits 13:10
+ *     Purpose: specifies the granulairty of each tx latency bucket in MS.
+ *         There are 4 buckets in total. E.g. if granularity is set to 5 ms,
+ *         then the ranges for the 4 latency histogram buckets will be
+ *         0-5ms, 5ms-10ms, 10ms-15ms, 15ms-max, respectively.
+ *   - payload_elem_size
+ *     Bits 23:16
+ *     Purpose: specifies the size of each element within the msg's payload
+ *         In other words, this field specified the value of
+ *         sizeof(htt_t2h_peer_tx_latency_stats) based on the target's
+ *         revision of the htt_t2h_peer_tx_latency_stats definition.
+ *         If the payload_elem_size reported in the message exceeds the
+ *         sizeof(htt_t2h_peer_tx_latency_stats) based on the host's
+ *         revision of the htt_t2h_peer_tx_latency_stats definition,
+ *         the host shall ignore the excess data.
+ *         Conversely, if the payload_elem_size reported in the message is
+ *         less than sizeof(htt_t2h_peer_tx_latency_stats) based on the host's
+ *         revision of the htt_t2h_peer_tx_latency_stats definition,
+ *         the host shall use 0x0 values for the portion of the data not
+ *         provided by the target.
+ *         The host can compare the payload_elem_size to the total size of
+ *         the message minus the size of the message header to determine
+ *         how many peer payload elements are present in the message.
+ *   - sw_peer_id
+ *     Purpose: The peer to which the following stats belong
+ *   - peer_tx_latency
+ *     Purpose: tx latency histogram for this peer, with 4 buckets whose
+ *         size (in milliseconds) is specified by the granularity field
+ *   - avg_latency
+ *     Purpose: average tx latency (in ms) for this peer in this report interval
+*/
+typedef struct {
+    A_UINT32 msg_type:          8,
+             pdev_id:           2,
+             granularity:       4,
+             reserved1:         2,
+             payload_elem_size: 8,
+             reserved2:         8;
+} htt_t2h_tx_latency_stats_periodic_hdr_t;
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_HDR_SIZE \
+    (sizeof(htt_t2h_tx_latency_stats_periodic_hdr_t))
+#define HTT_PEER_TX_LATENCY_REPORT_BINS 4
+
+typedef struct _htt_tx_latency_stats {
+    A_UINT32 peer_id;
+    A_UINT32 peer_tx_latency[HTT_PEER_TX_LATENCY_REPORT_BINS];
+    A_UINT32 avg_latency;
+} htt_t2h_peer_tx_latency_stats;
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_M              0x00000300
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_S              8
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_GET(_var) \
+    (((_var) & HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_M) >> HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_S)
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_SET(_var, _val) \
+    do {                                                   \
+        HTT_CHECK_SET_VAL(HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID, _val);  \
+        ((_var) |= ((_val) << HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PDEV_ID_S)); \
+    } while (0)
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_M          0x00003C00
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_S          10
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_GET(_var) \
+    (((_var) & HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_M) >> HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_S)
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_SET(_var, _val) \
+    do {                                                   \
+        HTT_CHECK_SET_VAL(HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY, _val);  \
+        ((_var) |= ((_val) << HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_GRANULARITY_S)); \
+    } while (0)
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_M    0x00FF0000
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_S    16
+
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_GET(_var) \
+    (((_var) & HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_M) >> HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_S)
+#define HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_SET(_var, _val) \
+    do {                                                   \
+        HTT_CHECK_SET_VAL(HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE, _val);  \
+        ((_var) |= ((_val) << HTT_T2H_TX_LATENCY_STATS_PERIODIC_IND_PAYLOAD_ELEM_SIZE_S)); \
+    } while (0)
 
 
 

@@ -5149,4 +5149,21 @@ QDF_STATUS ucfg_mlme_set_ul_mu_config(struct wlan_objmgr_psoc *psoc,
 {
 	return wlan_mlme_set_ul_mu_config(psoc, vdev_id, ulmu_disable);
 }
+
+/**
+ * ucfg_mlme_assemble_rate_code - assemble rate code to be sent to FW
+ * @preamble: rate preamble
+ * @nss: number of spatial streams
+ * @rate: rate index
+ *
+ * Rate code assembling is different for targets which are 11ax capable.
+ * Check for the target support and assemble the rate code accordingly.
+ *
+ * Return: assembled rate code
+ */
+static inline uint32_t
+ucfg_mlme_assemble_rate_code(uint8_t preamble, uint8_t nss, uint8_t rate)
+{
+	return wlan_mlme_assemble_rate_code(preamble, nss, rate);
+}
 #endif /* _WLAN_MLME_UCFG_API_H_ */

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __ADRENO_GEN7_HFI_H
 #define __ADRENO_GEN7_HFI_H
@@ -128,10 +129,11 @@ int gen7_hfi_send_acd_feature_ctrl(struct adreno_device *adreno_dev);
  * gen7_hfi_send_generic_req - Send a generic hfi packet
  * @adreno_dev: Pointer to the adreno device
  * @cmd: Pointer to the hfi packet header and data
+ * @size_bytes: Size of the packet in bytes
  *
  * Return: 0 on success or negative error on failure
  */
-int gen7_hfi_send_generic_req(struct adreno_device *adreno_dev, void *cmd);
+int gen7_hfi_send_generic_req(struct adreno_device *adreno_dev, void *cmd, u32 size_bytes);
 
 /**
  * gen7_hfi_send_bcl_feature_ctrl - Send the bcl feature hfi packet
@@ -164,10 +166,11 @@ int gen7_hfi_process_queue(struct gen7_gmu_device *gmu,
  * gen7_hfi_cmdq_write - Write a command to command queue
  * @adreno_dev: Pointer to the adreno device
  * @msg: Data to be written to the queue
+ * @size_bytes: Size of the command in bytes
  *
  * Return: 0 on success or negative error on failure
  */
-int gen7_hfi_cmdq_write(struct adreno_device *adreno_dev, u32 *msg);
+int gen7_hfi_cmdq_write(struct adreno_device *adreno_dev, u32 *msg, u32 size_bytes);
 void adreno_gen7_receive_err_req(struct gen7_gmu_device *gmu, void *rcvd);
 void adreno_gen7_receive_debug_req(struct gen7_gmu_device *gmu, void *rcvd);
 #endif

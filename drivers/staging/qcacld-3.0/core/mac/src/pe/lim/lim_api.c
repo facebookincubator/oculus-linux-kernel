@@ -2217,6 +2217,7 @@ lim_roam_fill_bss_descr(struct mac_context *mac,
 	bool is_mlo_link = false;
 	uint8_t vdev_id = session->vdev_id;
 	struct element_info frame;
+	struct cm_roam_values_copy mdie_cfg = {0};
 
 	bcn_proberesp_ptr = (uint8_t *)roam_synch_ind +
 		roam_synch_ind->beacon_probe_resp_offset;
@@ -2345,11 +2346,9 @@ lim_roam_fill_bss_descr(struct mac_context *mac,
 		bss_desc_ptr->chan_freq = roam_synch_ind->chan_freq;
 	}
 
-	bss_desc_ptr->nwType = lim_get_nw_type(
-			mac,
-			bss_desc_ptr->chan_freq,
-			SIR_MAC_MGMT_FRAME,
-			parsed_frm_ptr);
+	bss_desc_ptr->nwType = lim_get_nw_type(mac, bss_desc_ptr->chan_freq,
+					       SIR_MAC_MGMT_FRAME,
+					       parsed_frm_ptr);
 
 	bss_desc_ptr->sinr = 0;
 	bss_desc_ptr->beaconInterval = parsed_frm_ptr->beaconInterval;
@@ -2373,10 +2372,18 @@ lim_roam_fill_bss_descr(struct mac_context *mac,
 		qdf_mem_copy((uint8_t *)bss_desc_ptr->mdie,
 				(uint8_t *)parsed_frm_ptr->mdie,
 				SIR_MDIE_SIZE);
+
+		mdie_cfg.bool_value = true;
+		mdie_cfg.uint_value =
+			(bss_desc_ptr->mdie[1] << 8) | (bss_desc_ptr->mdie[0]);
+
+		wlan_cm_roam_cfg_set_value(mac->psoc, vdev_id,
+					   MOBILITY_DOMAIN, &mdie_cfg);
 	}
-	pe_debug("chan: %d rssi: %d ie_len %d",
+	pe_debug("chan: %d rssi: %d ie_len %d mdie_present:%d mdie = %02x %02x %02x",
 		 bss_desc_ptr->chan_freq,
-		 bss_desc_ptr->rssi, ie_len);
+		 bss_desc_ptr->rssi, ie_len, bss_desc_ptr->mdiePresent,
+		 bss_desc_ptr->mdie[0], bss_desc_ptr->mdie[1], bss_desc_ptr->mdie[2]);
 
 	if (ie_len) {
 		qdf_mem_copy(&bss_desc_ptr->ieFields,
@@ -3143,9 +3150,17 @@ pe_roam_synch_callback(struct mac_context *mac_ctx,
 
 	/* Cleanup the old session */
 	session_ptr->limSmeState = eLIM_SME_IDLE_STATE;
+
+	/*
+	 * Delete the ml_peer only if DUT is roamed to a non-11BE candidate.
+	 * ml_peer is already cleaned up in wma_delete_all_peers() at the
+	 * beginning of roam_sync handling for 11BE candidates.
+	 */
 	if (sta_ds) {
-		lim_mlo_notify_peer_disconn(session_ptr, sta_ds);
-		lim_mlo_roam_delete_link_peer(session_ptr, sta_ds);
+		if (!wlan_vdev_mlme_is_mlo_vdev(session_ptr->vdev)) {
+			lim_mlo_notify_peer_disconn(session_ptr, sta_ds);
+			lim_mlo_roam_delete_link_peer(session_ptr, sta_ds);
+		}
 		lim_cleanup_rx_path(mac_ctx, sta_ds, session_ptr, false);
 		lim_delete_dph_hash_entry(mac_ctx, sta_ds->staAddr, aid,
 					  session_ptr);

@@ -674,6 +674,7 @@ static int cam_soc_util_get_clk_lvl(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(cam_soc_util_clk_lvl_control,
 	cam_soc_util_get_clk_lvl, cam_soc_util_set_clk_lvl, "%08llu");
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 /**
  * cam_soc_util_create_clk_lvl_debugfs()
  *
@@ -737,6 +738,15 @@ static void cam_soc_util_remove_clk_lvl_debugfs(
 	debugfs_remove_recursive(soc_info->dentry);
 	soc_info->dentry = NULL;
 }
+#else
+static inline int cam_soc_util_create_clk_lvl_debugfs(struct cam_hw_soc_info *soc_info)
+{
+	return 0;
+}
+static inline void cam_soc_util_remove_clk_lvl_debugfs(
+	struct cam_hw_soc_info *soc_info)
+{ }
+#endif
 
 int cam_soc_util_get_level_from_string(const char *string,
 	enum cam_vote_level *level)

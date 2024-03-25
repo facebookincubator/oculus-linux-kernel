@@ -665,6 +665,8 @@
 		qcom,l1-2-th-value = <150>;
 
 		qcom,pcie-phy-ver = <114>;
+		qcom,phy-aux-clk-config1-offset = <0x1450>;
+		qcom,phy-pll-clk-enable1-offset = <0x1048>;
 		qcom,phy-status-offset = <0x1214>;
 		qcom,phy-status-bit = <7>;
 		qcom,phy-power-down-offset = <0x1240>;

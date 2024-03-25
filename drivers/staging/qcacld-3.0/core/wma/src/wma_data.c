@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2690,10 +2690,9 @@ QDF_STATUS wma_tx_packet(void *wma_context, void *tx_frame, uint16_t frmLen,
 	mgmt_param.peer_rssi = peer_rssi;
 	if (iface && wlan_vdev_mlme_get_opmode(iface->vdev) == QDF_STA_MODE &&
 	    wlan_vdev_mlme_is_mlo_vdev(iface->vdev) &&
-	    frmType == TXRX_FRM_802_11_MGMT &&
+	    wma_is_vdev_up(vdev_id) && frmType == TXRX_FRM_802_11_MGMT &&
 	    pFc->subType != SIR_MAC_MGMT_PROBE_REQ &&
-	    pFc->subType != SIR_MAC_MGMT_AUTH &&
-	    pFc->subType != SIR_MAC_MGMT_ASSOC_REQ)
+	    pFc->subType != SIR_MAC_MGMT_AUTH)
 		mgmt_param.mlo_link_agnostic = true;
 
 	if (tx_flag & HAL_USE_INCORRECT_KEY_PMF)

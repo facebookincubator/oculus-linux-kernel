@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "adk3-base.dtsi"
+
+/ {
+	model = "Adk3";
+	compatible = "qcom,anorak", "meta,adk3";
+	qcom,board-id = <0x000060 0x0>;
+};

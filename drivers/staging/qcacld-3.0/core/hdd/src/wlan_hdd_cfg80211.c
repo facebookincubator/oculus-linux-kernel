@@ -795,7 +795,7 @@ static const struct ieee80211_iface_limit
 static const struct ieee80211_iface_limit
 	wlan_hdd_mon_iface_limit[] = {
 	{
-		.max = 3,
+		.max = 2,
 		.types = BIT(NL80211_IFTYPE_MONITOR),
 	},
 };
@@ -928,7 +928,7 @@ static struct ieee80211_iface_combination
 	/* Monitor */
 	{
 		.limits = wlan_hdd_mon_iface_limit,
-		.max_interfaces = 3,
+		.max_interfaces = 2,
 		.num_different_channels = 2,
 		.n_limits = ARRAY_SIZE(wlan_hdd_mon_iface_limit),
 	},
@@ -956,6 +956,103 @@ static struct ieee80211_iface_combination
 #endif /* WLAN_FEATURE_NAN */
 };
 
+/* 1 and 2 port concurrencies */
+static struct ieee80211_iface_combination
+	wlan_hdd_derived_combination[] = {
+	/* STA */
+	{
+		.limits = wlan_hdd_sta_iface_limit,
+		.num_different_channels = 2,
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_sta_iface_limit),
+	},
+	/* AP */
+	{
+		.limits = wlan_hdd_ap_iface_limit,
+		.num_different_channels = 2,
+		.max_interfaces = (QDF_MAX_NO_OF_SAP_MODE),
+		.n_limits = ARRAY_SIZE(wlan_hdd_ap_iface_limit),
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) || \
+	defined(CFG80211_BEACON_INTERVAL_BACKPORT)
+		.beacon_int_min_gcd = 1,
+#endif
+	},
+#ifndef WLAN_FEATURE_NO_P2P_CONCURRENCY
+	/* P2P */
+	{
+		.limits = wlan_hdd_p2p_iface_limit,
+		.num_different_channels = 2,
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_p2p_iface_limit),
+	},
+
+	/* SAP + P2P */
+	{
+		.limits = wlan_hdd_sap_p2p_iface_limit,
+		.num_different_channels = 2,
+		/* 1-SAP + 1-P2P */
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_sap_p2p_iface_limit),
+		.beacon_int_infra_match = true,
+	},
+	/* P2P + P2P */
+	{
+		.limits = wlan_hdd_p2p_p2p_iface_limit,
+		.num_different_channels = 2,
+		/* 2-P2P */
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_p2p_p2p_iface_limit),
+		.beacon_int_infra_match = true,
+	},
+#endif
+	/* STA + P2P */
+	{
+		.limits = wlan_hdd_sta_p2p_iface_limit,
+		.num_different_channels = 2,
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_sta_p2p_iface_limit),
+		.beacon_int_infra_match = true,
+	},
+#ifndef WLAN_FEATURE_NO_STA_SAP_CONCURRENCY
+	/* STA + SAP */
+	{
+		.limits = wlan_hdd_sta_ap_iface_limit,
+		.num_different_channels = 2,
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_sta_ap_iface_limit),
+		.beacon_int_infra_match = true,
+	},
+#endif /* WLAN_FEATURE_NO_STA_SAP_CONCURRENCY */
+	/* Monitor */
+	{
+		.limits = wlan_hdd_mon_iface_limit,
+		.max_interfaces = 2,
+		.num_different_channels = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_mon_iface_limit),
+	},
+#if defined(WLAN_FEATURE_NAN) && \
+	   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#ifndef WLAN_FEATURE_NO_STA_NAN_CONCURRENCY
+	/* NAN + STA */
+	{
+		.limits = wlan_hdd_sta_nan_iface_limit,
+		.max_interfaces = 2,
+		.num_different_channels = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_sta_nan_iface_limit),
+	},
+#endif /* WLAN_FEATURE_NO_STA_NAN_CONCURRENCY */
+#ifndef WLAN_FEATURE_NO_SAP_NAN_CONCURRENCY
+	/* NAN + SAP */
+	{
+		.limits = wlan_hdd_sap_nan_iface_limit,
+		.num_different_channels = 2,
+		.max_interfaces = 2,
+		.n_limits = ARRAY_SIZE(wlan_hdd_sap_nan_iface_limit),
+		.beacon_int_infra_match = true,
+	},
+#endif /* !WLAN_FEATURE_NO_SAP_NAN_CONCURRENCY */
+#endif /* WLAN_FEATURE_NAN */
+};
 static struct cfg80211_ops wlan_hdd_cfg80211_ops;
 
 #ifdef WLAN_NL80211_TESTMODE
@@ -8042,6 +8139,9 @@ const struct nla_policy wlan_hdd_wifi_config_policy[
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_NSS] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT] = {
 		.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO] = {.type = NLA_U16 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL] = {
+		.type = NLA_U16 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_UDP_QOS_UPGRADE] = {
 		.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_NUM_TX_CHAINS] = {.type = NLA_U8 },
@@ -8074,6 +8174,9 @@ const struct nla_policy wlan_hdd_wifi_config_policy[
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_EMLSR_MODE_SWITCH] = {
 		.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_UL_MU_CONFIG] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_COEX_TRAFFIC_SHAPING_MODE] = {
+		.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_AMPDU_CNT] = {.type = NLA_U16},
 };
 
 static const struct nla_policy
@@ -8428,12 +8531,10 @@ static int wlan_hdd_cfg80211_wifi_set_rx_blocksize(struct hdd_adapter *adapter,
 #define WINDOW_SIZE_VAL_MIN 1
 #define WINDOW_SIZE_VAL_MAX 64
 
-	if (tb[RX_BLOCKSIZE_PEER_MAC] ||
-	    tb[RX_BLOCKSIZE_WINLIMIT]) {
+	if (tb[RX_BLOCKSIZE_WINLIMIT]) {
 
 		/* if one is specified, both must be specified */
-		if (!tb[RX_BLOCKSIZE_PEER_MAC] ||
-		    !tb[RX_BLOCKSIZE_WINLIMIT]) {
+		if (!tb[RX_BLOCKSIZE_PEER_MAC]) {
 			hdd_err("Both Peer MAC and windows limit required");
 			return -EINVAL;
 		}
@@ -8512,6 +8613,67 @@ static int hdd_config_phy_mode(struct hdd_adapter *adapter,
 	vendor_phy_mode = nla_get_u32(attr);
 
 	return hdd_set_phy_mode(adapter, vendor_phy_mode);
+}
+
+/**
+ * hdd_config_peer_ampdu() - Configure peer A-MPDU count
+ * @adapter: HDD adapter
+ * @tb: nla attr sent from userspace
+ *
+ * Return: 0 on success; error number otherwise
+ */
+static int hdd_config_peer_ampdu(struct hdd_adapter *adapter,
+				 struct nlattr *tb[])
+{
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	struct nlattr *ampdu_cnt_attr =
+		tb[QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_AMPDU_CNT];
+	struct nlattr *ampdu_mac_attr =
+		tb[QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC];
+	struct qdf_mac_addr peer_macaddr;
+	struct wlan_objmgr_vdev *vdev;
+	QDF_STATUS status;
+	bool is_sap;
+	uint16_t cfg_val;
+
+	if (!ampdu_cnt_attr)
+		return 0;
+
+	if (adapter->device_mode == QDF_SAP_MODE ||
+	    adapter->device_mode == QDF_P2P_GO_MODE)
+		is_sap = true;
+	else if (adapter->device_mode == QDF_STA_MODE ||
+		 adapter->device_mode == QDF_P2P_CLIENT_MODE)
+		is_sap = false;
+	else {
+		hdd_debug("mode not support");
+		return -EINVAL;
+	}
+
+	if (is_sap) {
+		if (!ampdu_mac_attr) {
+			hdd_debug("sap must provide peer mac attr");
+			return -EINVAL;
+		}
+		nla_memcpy(&peer_macaddr, ampdu_mac_attr, QDF_MAC_ADDR_SIZE);
+	} else {
+		vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_OSIF_ID);
+		if (!vdev) {
+			hdd_debug("vdev is null");
+			return -EINVAL;
+		}
+		status = wlan_vdev_get_bss_peer_mac(vdev, &peer_macaddr);
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_ID);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			hdd_debug("fail to get bss peer mac");
+			return -EINVAL;
+		}
+	}
+	cfg_val = nla_get_u16(ampdu_cnt_attr);
+	return sme_set_peer_ampdu(hdd_ctx->mac_handle,
+				  adapter->vdev_id,
+				  &peer_macaddr,
+				  cfg_val);
 }
 
 /**
@@ -9235,20 +9397,81 @@ static int hdd_config_udp_qos_upgrade_threshold(struct hdd_adapter *adapter,
 	return hdd_set_udp_qos_upgrade_config(adapter, priority);
 }
 
+static enum powersave_mode
+hdd_vendor_opm_to_pmo_opm(enum qca_wlan_vendor_opm_mode opm_mode)
+{
+	switch (opm_mode) {
+	case QCA_WLAN_VENDOR_OPM_MODE_DISABLE:
+		return PMO_PS_ADVANCED_POWER_SAVE_DISABLE;
+	case QCA_WLAN_VENDOR_OPM_MODE_ENABLE:
+		return PMO_PS_ADVANCED_POWER_SAVE_ENABLE;
+	case QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED:
+		return PMO_PS_ADVANCED_POWER_SAVE_USER_DEFINED;
+	default:
+		hdd_debug("Invalid opm_mode: %d", opm_mode);
+		return PMO_PS_ADVANCED_POWER_SAVE_DISABLE;
+	}
+}
+
 static int hdd_config_power(struct hdd_adapter *adapter,
-			    const struct nlattr *attr)
+			    struct nlattr *tb[])
 {
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	uint8_t power;
+	struct wlan_objmgr_vdev *vdev;
+	enum qca_wlan_vendor_opm_mode opm_mode;
+	struct pmo_ps_params ps_params = {0};
+	struct nlattr *power_attr =
+		tb[QCA_WLAN_VENDOR_ATTR_CONFIG_QPOWER];
+	struct nlattr *opm_attr =
+		tb[QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT];
+	struct nlattr *ps_ito_attr =
+		tb[QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO];
+	struct nlattr *spec_wake_attr =
+		tb[QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL];
+	int ret;
+
+	if (!power_attr && !opm_attr)
+		return 0;
+
+	if (power_attr && opm_attr) {
+		hdd_err_rl("Invalid OPM set attribute");
+		return -EINVAL;
+	}
 
 	if (!ucfg_pmo_get_default_power_save_mode(hdd_ctx->psoc)) {
 		hdd_err_rl("OPM power save is disabled in ini");
 		return -EINVAL;
 	}
 
-	power = nla_get_u8(attr);
+	opm_mode = power_attr ? nla_get_u8(power_attr) : nla_get_u8(opm_attr);
+	if (opm_mode == QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED)
+		if (!ps_ito_attr || !spec_wake_attr) {
+			hdd_err_rl("Invalid User defined OPM attributes");
+			return -EINVAL;
+		}
 
-	return hdd_set_power_config(hdd_ctx, adapter, power);
+	ret = hdd_set_power_config(hdd_ctx, adapter, &opm_mode);
+	if (ret)
+		return ret;
+
+	ps_params.opm_mode = hdd_vendor_opm_to_pmo_opm(opm_mode);
+	if (opm_mode == QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED) {
+		ps_params.ps_ito = nla_get_u16(ps_ito_attr);
+		ps_params.spec_wake = nla_get_u16(spec_wake_attr);
+		ret = hdd_set_power_config_params(hdd_ctx, adapter,
+						  ps_params.ps_ito,
+						  ps_params.spec_wake);
+		if (ret)
+			return ret;
+	}
+
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_OSIF_POWER_ID);
+	if (vdev) {
+		ucfg_pmo_set_ps_params(vdev, &ps_params);
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_POWER_ID);
+	}
+
+	return 0;
 }
 
 static int hdd_config_stats_avg_factor(struct hdd_adapter *adapter,
@@ -10723,6 +10946,42 @@ static int hdd_set_wfc_state(struct hdd_adapter *adapter,
 
 }
 
+/**
+ * hdd_set_coex_traffic_shaping_mode() - Configure coex traffic
+ * shaping mode
+ * @adapter: hdd adapter
+ * @attr: pointer to nla attr
+ *
+ * Return: 0 on success, negative on failure
+ */
+
+static int
+hdd_set_coex_traffic_shaping_mode(struct hdd_adapter *adapter,
+				  const struct nlattr *attr)
+{
+	uint8_t mode;
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	int errno, ret;
+
+	errno = wlan_hdd_validate_context(hdd_ctx);
+	if (errno) {
+		hdd_err("Invalid HDD ctx, errno : %d", errno);
+		return errno;
+	}
+
+	mode = nla_get_u8(attr);
+	if (mode > QCA_COEX_TRAFFIC_SHAPING_MODE_ENABLE) {
+		hdd_err("Invalid traffic shaping mode : %d", mode);
+		return -EINVAL;
+	}
+
+	hdd_debug("Coex Traffic shaping mode : %d", mode);
+
+	ret = hdd_send_coex_traffic_shaping_mode(adapter->vdev_id, mode);
+
+	return ret;
+}
+
 #ifdef WLAN_FEATURE_11BE_MLO
 static int hdd_test_config_emlsr_mode(struct hdd_context *hdd_ctx,
 				      bool cfg_val)
@@ -11082,8 +11341,6 @@ static const struct independent_setters independent_setters[] = {
 	 hdd_config_lro},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_SCAN_ENABLE,
 	 hdd_config_scan_enable},
-	{QCA_WLAN_VENDOR_ATTR_CONFIG_QPOWER,
-	 hdd_config_power},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_STATS_AVG_FACTOR,
 	 hdd_config_stats_avg_factor},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_GUARD_TIME,
@@ -11152,8 +11409,6 @@ static const struct independent_setters independent_setters[] = {
 	 hdd_set_dynamic_bw},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_NSS,
 	 hdd_set_nss},
-	{QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT,
-	 hdd_config_power},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_UDP_QOS_UPGRADE,
 	 hdd_config_udp_qos_upgrade_threshold},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_CONCURRENT_STA_PRIMARY,
@@ -11187,6 +11442,8 @@ static const struct independent_setters independent_setters[] = {
 	 hdd_set_emlsr_mode},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_UL_MU_CONFIG,
 	 hdd_set_ul_mu_config},
+	{QCA_WLAN_VENDOR_ATTR_CONFIG_COEX_TRAFFIC_SHAPING_MODE,
+	 hdd_set_coex_traffic_shaping_mode},
 };
 
 #ifdef WLAN_FEATURE_ELNA
@@ -11914,6 +12171,8 @@ static const interdependent_setter_fn interdependent_setters[] = {
 	hdd_config_ani,
 	hdd_config_tx_rx_nss,
 	hdd_process_generic_set_cmd,
+	hdd_config_power,
+	hdd_config_peer_ampdu,
 };
 
 /**
@@ -20330,6 +20589,7 @@ void wlan_hdd_update_wiphy(struct hdd_context *hdd_ctx)
 	uint8_t allow_mcc_go_diff_bi = 0, enable_mcc = 0;
 	bool is_bigtk_supported;
 	bool is_ocv_supported;
+	uint8_t iface_num;
 
 	if (!wiphy) {
 		hdd_err("Invalid wiphy");
@@ -20397,9 +20657,17 @@ void wlan_hdd_update_wiphy(struct hdd_context *hdd_ctx)
 					beacon_int_infra_match = true;
 			}
 		}
-		wiphy->n_iface_combinations =
-			ARRAY_SIZE(wlan_hdd_iface_combination);
-		wiphy->iface_combinations = wlan_hdd_iface_combination;
+
+		if (!ucfg_policy_mgr_is_fw_supports_dbs(hdd_ctx->psoc)) {
+			wiphy->iface_combinations =
+						wlan_hdd_derived_combination;
+			iface_num = ARRAY_SIZE(wlan_hdd_derived_combination);
+		} else {
+			wiphy->iface_combinations = wlan_hdd_iface_combination;
+			iface_num = ARRAY_SIZE(wlan_hdd_iface_combination);
+		}
+
+		wiphy->n_iface_combinations = iface_num;
 	}
 
 	mac_spoofing_enabled = ucfg_scan_is_mac_spoofing_enabled(hdd_ctx->psoc);

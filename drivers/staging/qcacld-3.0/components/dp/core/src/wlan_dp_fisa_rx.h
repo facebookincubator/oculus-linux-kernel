@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -39,7 +39,7 @@
 	(FISA_MAX_SINGLE_CUMULATIVE_IP_LEN * FISA_FLOW_MAX_AGGR_COUNT)
 
 /* minimal pure UDP data length required for FISA */
-#define FISA_MIN_UDP_DATA_LEN 16
+#define FISA_MIN_UDP_DATA_LEN 64
 /* minimal length without L2/L3 header required for FISA */
 #define FISA_MIN_L4_AND_DATA_LEN \
 	(FISA_UDP_HDR_LEN + FISA_MIN_UDP_DATA_LEN)

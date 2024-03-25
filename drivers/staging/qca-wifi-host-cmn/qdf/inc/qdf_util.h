@@ -28,7 +28,7 @@
 #include <i_qdf_util.h>
 
 #ifdef QCA_CONFIG_SMP
-#define QDF_MAX_AVAILABLE_CPU	8
+#define QDF_MAX_AVAILABLE_CPU	NR_CPUS
 #else
 #define QDF_MAX_AVAILABLE_CPU	1
 #endif

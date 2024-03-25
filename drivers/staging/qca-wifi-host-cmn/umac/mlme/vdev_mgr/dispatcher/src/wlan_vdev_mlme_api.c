@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -410,26 +410,37 @@ wlan_mlme_update_sr_data(struct wlan_objmgr_vdev *vdev, int *val,
 			 int32_t srg_pd_threshold, int32_t non_srg_pd_threshold,
 			 bool is_sr_enable)
 {
-	uint8_t ap_non_srg_pd_threshold = 0;
+	int8_t ap_non_srg_pd_threshold = 0;
 	uint8_t ap_srg_min_pd_threshold_offset = 0;
 	uint8_t ap_srg_max_pd_threshold_offset = 0;
 	uint8_t sr_ctrl;
 
 	sr_ctrl = wlan_vdev_mlme_get_sr_ctrl(vdev);
-	if (!(sr_ctrl & NON_SRG_PD_SR_DISALLOWED) &&
-	    (sr_ctrl & NON_SRG_OFFSET_PRESENT)) {
-		ap_non_srg_pd_threshold =
-			wlan_vdev_mlme_get_non_srg_pd_offset(vdev) +
-			SR_PD_THRESHOLD_MIN;
+	if (!(sr_ctrl & NON_SRG_PD_SR_DISALLOWED)) {
 		/*
-		 * Update non_srg_pd_threshold with provide
+		 * Configure default non_srg_pd_threshold value for non-srg
+		 * when AP, doesn't send SRPS IE or non-srg offset value is
+		 * not present in SRPS IE.
+		 */
+		if (!sr_ctrl || !(sr_ctrl & NON_SRG_OFFSET_PRESENT))
+			ap_non_srg_pd_threshold = SR_PD_THRESHOLD_MAX;
+		else if (sr_ctrl & NON_SRG_OFFSET_PRESENT)
+			ap_non_srg_pd_threshold =
+				wlan_vdev_mlme_get_non_srg_pd_offset(vdev) +
+				SR_PD_THRESHOLD_MIN;
+
+		/*
+		 * Update non_srg_pd_threshold with provided
 		 * non_srg_pd_threshold for non-srg, if pd threshold is
-		 * with in the range else keep the same as
-		 * advertised by AP.
+		 * within the range else keep the same as advertised by AP.
 		 */
 		if (!non_srg_pd_threshold ||
 		    (non_srg_pd_threshold > ap_non_srg_pd_threshold))
 			non_srg_pd_threshold = ap_non_srg_pd_threshold;
+		else if (non_srg_pd_threshold < SR_PD_THRESHOLD_MIN)
+			non_srg_pd_threshold = SR_PD_THRESHOLD_MIN;
+		if (non_srg_pd_threshold > SR_PD_THRESHOLD_MAX)
+			non_srg_pd_threshold = SR_PD_THRESHOLD_MAX;
 
 		/* 31st BIT - Enable/Disable Non-SRG based spatial reuse. */
 		*val |= is_sr_enable << NON_SRG_SPR_ENABLE_POS;

@@ -29,6 +29,7 @@
 #include <linux/if_ether.h>
 #include <linux/inetdevice.h>
 #include <linux/wireless.h>
+#include <linux/rtnetlink.h>
 #include <net/cfg80211.h>
 #include <cdp_txrx_cmn.h>
 #include <cdp_txrx_peer_ops.h>
@@ -385,15 +386,12 @@ __osif_check_for_prio_filter_in_clsact_qdisc(struct tcf_block *block,
 	struct tcf_proto *tp_next;
 	enum qdisc_filter_status ret = QDISC_FILTER_PRIO_MISMATCH;
 
-	if (!rtnl_trylock())
-		return QDISC_FILTER_RTNL_LOCK_FAIL;
-
 	mutex_lock(&block->lock);
 	list_for_each_entry(chain, &block->chain_list, list) {
 		mutex_lock(&chain->filter_chain_lock);
 		tp = tcf_chain_dereference(chain->filter_chain, chain);
 		while (tp) {
-			tp_next = rcu_dereference_protected(tp->next, 1);
+			tp_next = rtnl_dereference(tp->next);
 			if (tp->prio == (prio << 16)) {
 				ret = QDISC_FILTER_PRIO_MATCH;
 				break;
@@ -406,7 +404,6 @@ __osif_check_for_prio_filter_in_clsact_qdisc(struct tcf_block *block,
 			break;
 	}
 	mutex_unlock(&block->lock);
-	rtnl_unlock();
 
 	return ret;
 }
@@ -484,13 +481,14 @@ osif_dp_rx_check_qdisc_configured(qdf_netdev_t ndev, uint32_t prio)
 	if (!dev->ingress_queue)
 		goto reset_wl;
 
-	rcu_read_lock();
+	if (!rtnl_trylock())
+		return QDF_STATUS_E_AGAIN;
 
-	ingress_q = rcu_dereference(dev->ingress_queue);
+	ingress_q = rtnl_dereference(dev->ingress_queue);
 	if (qdf_unlikely(!ingress_q))
 		goto reset;
 
-	ingress_qdisc = rcu_dereference(ingress_q->qdisc);
+	ingress_qdisc = rtnl_dereference(ingress_q->qdisc);
 	if (qdf_unlikely(!ingress_qdisc))
 		goto reset;
 
@@ -501,23 +499,19 @@ osif_dp_rx_check_qdisc_configured(qdf_netdev_t ndev, uint32_t prio)
 								  ingress_qdisc,
 								  prio);
 
-		if (status == QDISC_FILTER_RTNL_LOCK_FAIL) {
-			rcu_read_unlock();
-			return QDF_STATUS_E_AGAIN;
-		} else if (status == QDISC_FILTER_PRIO_MISMATCH) {
+		if (status == QDISC_FILTER_PRIO_MISMATCH)
 			goto reset;
-		}
 
 		disable_gro = true;
 	}
 
 	if (disable_gro) {
-		rcu_read_unlock();
+		rtnl_unlock();
 		return QDF_STATUS_SUCCESS;
 	}
 
 reset:
-	rcu_read_unlock();
+	rtnl_unlock();
 
 reset_wl:
 	return QDF_STATUS_E_NOSUPPORT;

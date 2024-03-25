@@ -1262,6 +1262,8 @@ struct hif_opaque_softc *hif_open(qdf_device_t qdf_ctx,
 	hif_cpuhp_register(scn);
 	hif_latency_detect_init(scn);
 	hif_init_direct_link_rcv_pipe_num(scn);
+	hif_ce_desc_history_log_register(scn);
+	hif_desc_history_log_register();
 
 out:
 	return GET_HIF_OPAQUE_HDL(scn);
@@ -1300,6 +1302,8 @@ void hif_close(struct hif_opaque_softc *hif_ctx)
 		return;
 	}
 
+	hif_desc_history_log_unregister();
+	hif_ce_desc_history_log_unregister();
 	hif_latency_detect_deinit(scn);
 
 	if (scn->athdiag_procfs_inited) {

@@ -2402,6 +2402,7 @@ lim_send_assoc_req_mgmt_frame(struct mac_context *mac_ctx,
 	uint16_t ie_buf_size;
 	uint16_t mlo_ie_len, fils_hlp_ie_len = 0;
 	uint8_t *fils_hlp_ie = NULL;
+	struct cm_roam_values_copy mdie_cfg = {0};
 #ifdef WLAN_META_FEATURE_VSIE_ACTION_FRAME
 #define META_OUI_LENGTH 12 // oui(3) + ver(1) + payload(8)
 	const uint8_t meta_ie_header[] = {WLAN_ELEMID_VENDOR,
@@ -2676,6 +2677,17 @@ lim_send_assoc_req_mgmt_frame(struct mac_context *mac_ctx,
 			(unsigned int) bssdescr->mdie[2]);
 		populate_mdie(mac_ctx, &frm->MobilityDomain,
 			pe_session->lim_join_req->bssDescription.mdie);
+		if (bssdescr->mdiePresent) {
+			mdie_cfg.bool_value = true;
+			mdie_cfg.uint_value =
+				(bssdescr->mdie[1] << 8) | (bssdescr->mdie[0]);
+		} else {
+			mdie_cfg.bool_value = false;
+			mdie_cfg.uint_value = 0;
+		}
+
+		wlan_cm_roam_cfg_set_value(mac_ctx->psoc, vdev_id,
+					   MOBILITY_DOMAIN, &mdie_cfg);
 
 		/*
 		 * IEEE80211-ai [13.2.4 FT initial mobility domain association
@@ -6081,9 +6093,12 @@ bool lim_tdls_peer_support_he(tpDphHashNode sta_ds)
 #endif
 
 QDF_STATUS lim_send_addba_response_frame(struct mac_context *mac_ctx,
-		tSirMacAddr peer_mac, uint16_t tid,
-		struct pe_session *session, uint8_t addba_extn_present,
-		uint8_t amsdu_support, uint8_t is_wep, uint16_t calc_buff_size)
+					 tSirMacAddr peer_mac, uint16_t tid,
+					 struct pe_session *session,
+					 uint8_t addba_extn_present,
+					 uint8_t amsdu_support, uint8_t is_wep,
+					 uint16_t calc_buff_size,
+					 tSirMacAddr bssid)
 {
 
 	tDot11faddba_rsp frm;
@@ -6255,7 +6270,8 @@ QDF_STATUS lim_send_addba_response_frame(struct mac_context *mac_ctx,
 
 	/* Update A3 with the BSSID */
 	mgmt_hdr = (tpSirMacMgmtHdr) frame_ptr;
-	sir_copy_mac_addr(mgmt_hdr->bssId, session->bssId);
+
+	sir_copy_mac_addr(mgmt_hdr->bssId, bssid);
 
 	/* ADDBA Response is a robust mgmt action frame,
 	 * set the "protect" (aka WEP) bit in the FC

@@ -594,7 +594,7 @@ static bool scm_ignore_ssid_check_for_owe(struct scan_filter *filter,
 		return true;
 
 	/* Dump only for hidden SSID as non-hidden are anyway rejected */
-	if (is_hidden)
+	if (is_hidden && !qdf_is_macaddr_zero(&filter->bssid_hint))
 		scm_debug(QDF_MAC_ADDR_FMT ": Ignore hidden AP as key_mgmt 0x%x is not OWE or bssid hint: "
 			  QDF_MAC_ADDR_FMT " does not match",
 			  QDF_MAC_ADDR_REF(db_entry->bssid.bytes),

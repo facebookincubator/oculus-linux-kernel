@@ -274,6 +274,11 @@ static int32_t cam_mem_get_slot(void)
 	int32_t idx;
 
 	mutex_lock(&tbl.m_lock);
+	if (!tbl.bitmap) {
+		CAM_ERR(CAM_MEM, "crm is closing and mem deinit");
+		mutex_unlock(&tbl.m_lock);
+		return -EINVAL;
+	}
 	idx = find_first_zero_bit(tbl.bitmap, tbl.bits);
 	if (idx >= CAM_MEM_BUFQ_MAX || idx <= 0) {
 		mutex_unlock(&tbl.m_lock);
@@ -292,6 +297,11 @@ static int32_t cam_mem_get_slot(void)
 static void cam_mem_put_slot(int32_t idx)
 {
 	mutex_lock(&tbl.m_lock);
+	if (!tbl.bitmap) {
+		CAM_ERR(CAM_MEM, "crm is closing and mem deinit");
+		mutex_unlock(&tbl.m_lock);
+		return;
+	}
 	mutex_lock(&tbl.bufq[idx].q_lock);
 	tbl.bufq[idx].active = false;
 	tbl.bufq[idx].is_internal = false;
@@ -442,7 +452,11 @@ int cam_mem_mgr_cache_ops(struct cam_mem_cache_ops_cmd *cmd)
 		return -EINVAL;
 
 	mutex_lock(&tbl.m_lock);
-
+	if (!tbl.bitmap) {
+		CAM_ERR(CAM_MEM, "crm is closing and mem deinit");
+		mutex_unlock(&tbl.m_lock);
+		return -EINVAL;
+	}
 	if (!test_bit(idx, tbl.bitmap)) {
 		CAM_ERR(CAM_MEM, "Buffer at idx=%d is already unmapped,",
 			idx);
@@ -1527,6 +1541,11 @@ static void cam_mem_util_unmap(struct kref *kref)
 	memset(&tbl.bufq[idx].timestamp, 0, sizeof(struct timespec64));
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 	mutex_destroy(&tbl.bufq[idx].q_lock);
+	if (!tbl.bitmap) {
+		CAM_ERR(CAM_MEM, "crm is closing and mem deinit");
+		mutex_unlock(&tbl.m_lock);
+		return;
+	}
 	clear_bit(idx, tbl.bitmap);
 	mutex_unlock(&tbl.m_lock);
 

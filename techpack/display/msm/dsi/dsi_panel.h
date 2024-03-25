@@ -236,6 +236,7 @@ struct drm_panel_esd_config {
 	u8 *return_buf;
 	u8 *status_buf;
 	u32 groups;
+	u32 max_refresh_rate;
 };
 
 struct dsi_panel_spr_info {

@@ -310,6 +310,7 @@ static int cam_sensor_lite_component_bind(struct device *dev,
 	sensor_lite_dev->release_cmd      = NULL;
 	sensor_lite_dev->start_cmd        = NULL;
 	sensor_lite_dev->stop_cmd         = NULL;
+	sensor_lite_dev->is_trigger_mode  = false;
 
 	init_completion(&(sensor_lite_dev->complete));
 

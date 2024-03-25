@@ -143,8 +143,8 @@
 
 &soc {
 	qcom,pmic_glink {
-		vdm_glink: oculus,vdm_glink {
-			compatible = "oculus,vdm_glink";
+		meta,usbvdm-glink {
+			compatible = "meta,usbvdm-glink";
 		};
 	};
 };
@@ -173,28 +173,20 @@
 
 &vendor {
 	charging_dock: oculus,charging_dock {
-		status = "ok";
 		compatible = "oculus,charging-dock";
-		svid-cypd = <0x2ec60000>;
-		svid-cypd-alt = <0x28330000>; // Meta
-		supported-devices =
-			/bits/ 16 <0x2ec6 0x2202>,	/* Buru */
-			/bits/ 16 <0x2ec6 0x5000>, 	/* Maui */
-			/bits/ 16 <0x2ec6 0x2200>,	/* UPA 18W */
-			/bits/ 16 <0x2ec6 0x2103>;	/* UPA 45W */
-		charger-cypd = <&cypd3177>;
-		vdm-glink = <&vdm_glink>;
+		meta,usb-ids =
+			/bits/ 16 <0x2ec6 0x2202>,		/* Buru */
+			/bits/ 16 <0x2ec6 0x5000>,		/* Maui */
+			/bits/ 16 <0x2833 0x5004>,		/* Moku */
+			/bits/ 16 <0x2ec6 0x2200>,		/* UPA 18W */
+			/bits/ 16 <0x2ec6 0x2103>;		/* UPA 45W */
 		broadcast-period-min = <15>;
 		send-state-of-charge;
 	};
 
 	external_battery: oculus,external_battery {
-		status = "ok";
 		compatible = "oculus,external-battery";
-		svid = <0x28330000>;
-		vdm-glink = <&vdm_glink>;
-		supported-devices =
-			/bits/ 16 <0x2833 0x5001>; /* Lehua+ */
+		meta,usb-id = /bits/ 16 <0x2833 0x5001>;	/* Lehua+ */
 		batt-name = "lehua";
 		charging-suspend-thresh = <100>;
 		charging-resume-thresh = <95>;
@@ -205,6 +197,11 @@
 		src-current-control;
 		src-current-limit-max-uA = <1500000>;
 		src-enable-soc-threshold = <95>;
+	};
+
+	meta,usbvdm_cypd {
+		compatible = "meta,usbvdm-cypd";
+		cy,cypd = <&cypd3177>;
 	};
 };
 

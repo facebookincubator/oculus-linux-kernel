@@ -9,6 +9,7 @@
 
 
 #include <linux/spinlock_types.h>
+#include <linux/atomic.h>
 #include <media/cam_isp.h>
 #include <media/cam_defs.h>
 #include <media/cam_tfe.h>
@@ -232,6 +233,39 @@ struct cam_isp_context_state_monitor {
 };
 
 /**
+ * struct cam_isp_stream_image - Frame buffer and command to configure
+ *                               the frame buffer on the hardware
+ *
+ * @list_entry:                  List entry field
+ * @image_id:                    Unique ID of this image buffer
+ * @mem_handles:                 The memory handle for each plane
+ * @num_cfg:                     Number of configs in cfg field
+ * @cfg:                         The config to program this frame to hardware
+ * @num_fence_map_out:           Number of out fences
+ * @fence_map_out:               Out fences to be signaled when frame is done
+ * @hw_update_data:              Hardware update to be applied before the req
+ * @pf_data:                     Pagefault data
+ * @capture_timestamp:           Capture time of the frame
+ * @frame_num:                   The frame number
+ * @packet_handle:               Packet handle for the frame
+ *
+ */
+struct cam_isp_stream_image {
+	struct list_head                    list_entry;
+	uint64_t                            image_id;
+	int32_t                             mem_handles[CAM_PACKET_MAX_PLANES];
+	uint32_t                            num_cfg;
+	struct cam_hw_update_entry          cfg[CAM_ISP_CTX_CFG_MAX];
+	uint32_t                            num_fence_map_out;
+	struct cam_hw_fence_map_entry       fence_map_out[CAM_ISP_CTX_RES_MAX];
+	struct cam_isp_prepare_hw_update_data hw_update_data;
+	struct cam_hw_mgr_dump_pf_data      pf_data;
+	uint64_t                            capture_timestamp;
+	int64_t                             frame_num;
+	int32_t                             packet_handle;
+};
+
+/**
  * struct cam_isp_context_req_id_info - ISP context request id
  *                     information for bufdone.
  *
@@ -328,6 +362,15 @@ struct cam_isp_context_event_record {
  * @sensor_pd_handled:         Indicate if sensor pd is handled in independent crm case
  * @additional_timeout:        Additional timeout required for last applied request
  * @frame_drop_cnt:            Count of continous frame drops
+ * @stream_image_free_list:    List of free image buffers
+ * @stream_image_ready_list:   List of image buffers that are ready
+ * @stream_image_umd_list:     List of image buffers sent to umd driver
+ * @stream_image_active_list:  List of buffers whose buf done is active
+ * @num_stream_images:         Total number of valid image buffers
+ * @stream_images:             Frame/Image buffers
+ * @stream_image_completion:   Stream images are available to send to UMD
+ * @stream_image_applied:      Frame applied to ISP
+ * @stream_image_wait:         Used to sync multiple waiters
  */
 struct cam_isp_context {
 	struct cam_context              *base;
@@ -402,6 +445,17 @@ struct cam_isp_context {
 	bool                                   sensor_pd_handled;
 	int32_t                                additional_timeout;
 	int32_t                                frame_drop_cnt;
+
+	struct list_head                      stream_image_free_list;
+	struct list_head                      stream_image_ready_list;
+	struct list_head                      stream_image_umd_list;
+	struct list_head                      stream_image_active_list;
+	uint32_t                              num_stream_images;
+	struct cam_isp_stream_image          *stream_images;
+	struct completion                     stream_image_completion;
+	struct cam_isp_stream_image          *stream_image_applied;
+	bool                                  stream_image_wait;
+	int32_t                               stream_recovery_num_frames;
 };
 
 /**

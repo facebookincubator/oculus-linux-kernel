@@ -3999,7 +3999,7 @@ static void _sde_plane_setup_capabilities_blob(struct sde_plane *psde,
 
 	format_list = psde->pipe_sblk->cac_format_list;
 	if (psde->pipe_sblk->cac_mode == SDE_CAC_UNPACK && format_list) {
-		sde_kms_info_start(info, "cac_pixel_formats");
+		sde_kms_info_start(info, "cac_supported_formats");
 		while (format_list->fourcc_format) {
 			sde_kms_info_append_format(info,
 				format_list->fourcc_format,

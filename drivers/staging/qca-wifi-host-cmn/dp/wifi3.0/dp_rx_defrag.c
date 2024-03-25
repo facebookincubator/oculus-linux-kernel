@@ -1339,11 +1339,9 @@ static QDF_STATUS dp_rx_defrag_reo_reinject(struct dp_txrx_peer *txrx_peer,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (qdf_atomic_read(&soc->ipa_mapped))
-		dp_ipa_handle_rx_buf_smmu_mapping(soc, head,
-						  rx_desc_pool->buf_size, true,
-						  __func__, __LINE__);
-
+	dp_ipa_handle_rx_buf_smmu_mapping(soc, head,
+					  rx_desc_pool->buf_size, true,
+					  __func__, __LINE__);
 	dp_audio_smmu_map(soc->osdev,
 			  qdf_mem_paddr_from_dmaaddr(soc->osdev,
 						     QDF_NBUF_CB_PADDR(head)),

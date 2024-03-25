@@ -22,6 +22,7 @@
 #include "qdf_module.h"
 #include "qdf_net_if.h"
 #include <pld_common.h>
+#include "qdf_ssr_driver_dump.h"
 
 /* mapping NAPI budget 0 to internal budget 0
  * NAPI budget 1 to internal budget [1,scaler -1]
@@ -36,6 +37,23 @@ static struct hif_exec_context *hif_exec_tasklet_create(void);
 
 #ifdef WLAN_FEATURE_DP_EVENT_HISTORY
 struct hif_event_history hif_event_desc_history[HIF_NUM_INT_CONTEXTS];
+uint32_t hif_event_hist_max = HIF_EVENT_HIST_MAX;
+
+void hif_desc_history_log_register(void)
+{
+	qdf_ssr_driver_dump_register_region("hif_event_history",
+					    hif_event_desc_history,
+					    sizeof(hif_event_desc_history));
+	qdf_ssr_driver_dump_register_region("hif_event_hist_max",
+					    &hif_event_hist_max,
+					    sizeof(hif_event_hist_max));
+}
+
+void hif_desc_history_log_unregister(void)
+{
+	qdf_ssr_driver_dump_unregister_region("hif_event_hist_max");
+	qdf_ssr_driver_dump_unregister_region("hif_event_history");
+}
 
 static inline
 int hif_get_next_record_index(qdf_atomic_t *table_index,

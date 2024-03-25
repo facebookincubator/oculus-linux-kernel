@@ -224,13 +224,12 @@ static void dp_rx_desc_nbuf_cleanup(struct dp_soc *soc,
 					    QDF_NBUF_CB_PADDR(nbuf),
 					    buf_size);
 
-		if (qdf_atomic_read(&soc->ipa_mapped)) {
-			if (dp_ipa_handle_rx_buf_smmu_mapping(
-							soc, nbuf, buf_size,
-							false, __func__,
-							__LINE__))
-				dp_info_rl("Unable to unmap nbuf: %pK", nbuf);
-		}
+		if (dp_ipa_handle_rx_buf_smmu_mapping(
+						soc, nbuf, buf_size,
+						false, __func__,
+						__LINE__))
+			dp_info_rl("Unable to unmap nbuf: %pK", nbuf);
+
 		qdf_nbuf_unmap_nbytes_single(soc->osdev, nbuf,
 					     QDF_DMA_BIDIRECTIONAL, buf_size);
 		dp_rx_nbuf_free(nbuf);

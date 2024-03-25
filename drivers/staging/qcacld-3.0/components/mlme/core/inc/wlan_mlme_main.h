@@ -1477,4 +1477,31 @@ bool wlan_vdev_is_sae_auth_type(struct wlan_objmgr_vdev *vdev);
  */
 uint16_t wlan_get_rand_from_lst_for_freq(uint16_t *freq_lst,
 					 uint8_t num_chan);
+#if defined WLAN_FEATURE_SR
+/**
+ * mlme_sr_update() - MLME sr update callback
+ * @vdev: vdev object
+ * @enable: true or false
+ *
+ * This function is called to update the SR threshold
+ */
+void mlme_sr_update(struct wlan_objmgr_vdev *vdev, bool enable);
+
+/**
+ * mlme_sr_is_enable: Check whether SR is enabled or not
+ * @vdev: object manager vdev
+ *
+ * Return: True/False
+ */
+int mlme_sr_is_enable(struct wlan_objmgr_vdev *vdev);
+#else
+static inline void mlme_sr_update(struct wlan_objmgr_vdev *vdev, bool enable)
+{
+}
+
+static inline int mlme_sr_is_enable(struct wlan_objmgr_vdev *vdev)
+{
+	return 0;
+}
+#endif /* WLAN_FEATURE_SR */
 #endif

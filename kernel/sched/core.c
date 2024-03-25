@@ -94,6 +94,7 @@ __read_mostly int scheduler_running;
  */
 int sysctl_sched_rt_runtime = 950000;
 
+#pragma clang attribute push(__nocfi, apply_to = function)
 
 /*
  * Serialization rules:
@@ -1018,7 +1019,7 @@ static inline void uclamp_idle_reset(struct rq *rq, enum uclamp_id clamp_id,
 	if (!(rq->uclamp_flags & UCLAMP_FLAG_IDLE))
 		return;
 
-	WRITE_ONCE(rq->uclamp[clamp_id].value, clamp_value);
+	uclamp_rq_set(rq, clamp_id, clamp_value);
 }
 
 static inline
@@ -1203,8 +1204,8 @@ static inline void uclamp_rq_inc_id(struct rq *rq, struct task_struct *p,
 	if (bucket->tasks == 1 || uc_se->value > bucket->value)
 		bucket->value = uc_se->value;
 
-	if (uc_se->value > READ_ONCE(uc_rq->value))
-		WRITE_ONCE(uc_rq->value, uc_se->value);
+	if (uc_se->value > uclamp_rq_get(rq, clamp_id))
+		uclamp_rq_set(rq, clamp_id, uc_se->value);
 }
 
 /*
@@ -1270,7 +1271,7 @@ static inline void uclamp_rq_dec_id(struct rq *rq, struct task_struct *p,
 	if (likely(bucket->tasks))
 		return;
 
-	rq_clamp = READ_ONCE(uc_rq->value);
+	rq_clamp = uclamp_rq_get(rq, clamp_id);
 	/*
 	 * Defensive programming: this should never happen. If it happens,
 	 * e.g. due to future modification, warn and fixup the expected value.
@@ -1278,7 +1279,7 @@ static inline void uclamp_rq_dec_id(struct rq *rq, struct task_struct *p,
 	SCHED_WARN_ON(bucket->value > rq_clamp);
 	if (bucket->value >= rq_clamp) {
 		bkt_clamp = uclamp_rq_max_value(rq, clamp_id, uc_se->value);
-		WRITE_ONCE(uc_rq->value, bkt_clamp);
+		uclamp_rq_set(rq, clamp_id, bkt_clamp);
 	}
 }
 
@@ -3041,7 +3042,7 @@ static void ttwu_queue(struct task_struct *p, int cpu, int wake_flags)
  * Return: %true if @p->state changes (an actual wakeup was done),
  *	   %false otherwise.
  */
-static int
+static int __nocfi
 try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 {
 	unsigned long flags;
@@ -3730,7 +3731,7 @@ static inline void prepare_task(struct task_struct *next)
 #endif
 }
 
-static inline void finish_task(struct task_struct *prev)
+static inline void __nocfi finish_task(struct task_struct *prev)
 {
 #ifdef CONFIG_SMP
 	/*
@@ -7527,6 +7528,10 @@ void __init sched_init(void)
 	autogroup_init(&init_task);
 #endif /* CONFIG_CGROUP_SCHED */
 
+#if defined(CONFIG_RT_THROTTLING_SYSCTL)
+	init_rt_sysctl();
+#endif /* CONFIG_RT_THROTTLING_SYSCTL */
+
 	for_each_possible_cpu(i) {
 		struct rq *rq;
 
@@ -8815,6 +8820,8 @@ static ssize_t cpu_max_write(struct kernfs_open_file *of,
 	return ret ?: nbytes;
 }
 #endif
+
+#pragma clang attribute pop
 
 static struct cftype cpu_files[] = {
 #ifdef CONFIG_FAIR_GROUP_SCHED

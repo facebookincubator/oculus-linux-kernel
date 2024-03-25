@@ -4968,4 +4968,27 @@ static inline void wlan_hdd_link_speed_update(struct wlan_objmgr_psoc *psoc,
  */
 void hdd_update_multicast_list(struct wlan_objmgr_vdev *vdev);
 
+/**
+ * hdd_set_sar_init_index() - Set SAR safety index at init.
+ * @hdd_ctx: HDD context
+ *
+ */
+#ifdef SAR_SAFETY_FEATURE
+void hdd_set_sar_init_index(struct hdd_context *hdd_ctx);
+#else
+static inline void hdd_set_sar_init_index(struct hdd_context *hdd_ctx)
+{}
+#endif
+/**
+ * hdd_send_coex_traffic_shaping_mode() - Send coex traffic shaping mode
+ * to FW
+ * @vdev_id: vdev ID
+ * @mode: traffic shaping mode
+ *
+ * This function is used to send coex traffic shaping mode to FW
+ *
+ * Return: 0 on success and -EINVAL on failure
+ */
+int hdd_send_coex_traffic_shaping_mode(uint8_t vdev_id, uint8_t mode);
+
 #endif /* end #if !defined(WLAN_HDD_MAIN_H) */

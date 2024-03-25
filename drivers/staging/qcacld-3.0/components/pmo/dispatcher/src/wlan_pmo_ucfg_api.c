@@ -594,6 +594,19 @@ ucfg_pmo_set_wow_enable(struct wlan_objmgr_psoc *psoc,
 	pmo_psoc_ctx->psoc_cfg.wow_enable = val;
 }
 
+void
+ucfg_pmo_set_ps_params(struct wlan_objmgr_vdev *vdev,
+		       struct pmo_ps_params *ps_params)
+{
+	pmo_core_vdev_set_ps_params(vdev, ps_params);
+}
+
+QDF_STATUS ucfg_pmo_get_ps_params(struct wlan_objmgr_vdev *vdev,
+				  struct pmo_ps_params *ps_params)
+{
+	return pmo_core_vdev_get_ps_params(vdev, ps_params);
+}
+
 bool
 ucfg_pmo_is_arp_offload_enabled(struct wlan_objmgr_psoc *psoc)
 {

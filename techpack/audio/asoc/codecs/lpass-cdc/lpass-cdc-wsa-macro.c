@@ -840,9 +840,16 @@ static int lpass_cdc_wsa_macro_mute_stream(struct snd_soc_dai *dai, int mute, in
 	if (!lpass_cdc_wsa_macro_get_data(component, &wsa_dev, &wsa_priv, __func__))
 		return -EINVAL;
 
-	lpass_cdc_wsa_pa_on(wsa_dev, adie_lb);
-	lpass_cdc_wsa_unmute_interpolator(dai);
-	lpass_cdc_wsa_macro_enable_vi_decimator(component);
+	switch (dai->id) {
+	case LPASS_CDC_WSA_MACRO_AIF1_PB:
+	case LPASS_CDC_WSA_MACRO_AIF_MIX1_PB:
+		lpass_cdc_wsa_pa_on(wsa_dev, adie_lb);
+		lpass_cdc_wsa_unmute_interpolator(dai);
+		lpass_cdc_wsa_macro_enable_vi_decimator(component);
+		break;
+	default:
+		break;
+	}
 	return 0;
 }
 
@@ -1477,6 +1484,8 @@ static int lpass_cdc_wsa_macro_enable_main_path(struct snd_soc_dapm_widget *w,
 		if (lpass_cdc_wsa_macro_adie_lb(component, w->shift)) {
 			adie_lb = true;
 			lpass_cdc_wsa_pa_on(wsa_dev, adie_lb);
+			snd_soc_component_update_bits(component,
+						reg, 0x10, 0x00);
 		}
 		break;
 	default:

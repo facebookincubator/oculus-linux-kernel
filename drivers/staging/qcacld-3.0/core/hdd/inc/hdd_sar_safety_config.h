@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,6 +26,16 @@
 
 #ifdef SAR_SAFETY_FEATURE
 
+/*
+ * SAR_SAFETY_DISABLED - feature disabled
+ * SAR_SAFETY_ENABLED_TIMER - SAR feature enabled with timer mechanism
+ * SAR_SAFETY_ENABLED_INIT - SAR feature enabled at init time
+ * SAR_SAFETY_ENABLED_MAX - SAR max valid value
+ */
+#define SAR_SAFETY_DISABLED        0x0
+#define SAR_SAFETY_ENABLED_TIMER   BIT(0)
+#define SAR_SAFETY_ENABLED_INIT    BIT(1)
+#define SAR_SAFETY_ENABLED_MAX     0x3
 /*
  * <ini>
  * gSarSafetyTimeout - Specify SAR safety timeout value in milliseconds
@@ -198,24 +209,30 @@
 /*
  * <ini>
  * gEnableSarSafety - Enable/Disable SAR safety feature
+ * this ini is also used to set SAR index at init time
  *
  * @Min: 0
- * @Max: 1
+ * @Max: 3
  * Default: 0
  *
  * This ini is used to enable/disable SAR safety feature
- * Value 1 of this ini enables SAR safety feature and
- * value 0 of this ini disables SAR safety feature
+ * Value 0 of this ini disables SAR safety feature and
+ * value 1 of this ini enables SAR safety feature and
+ * value 2 of this ini enable setting SAR index at init time
+ * value 3 of this enables both modes
  *
  * Usage: External
  *
  * </ini>
  */
 
-#define CFG_ENABLE_SAR_SAFETY_FEATURE CFG_INI_BOOL( \
+#define CFG_ENABLE_SAR_SAFETY_FEATURE CFG_INI_UINT( \
 			"gEnableSarSafety", \
-			0, \
-			"Enable/Disable SAR safety feature")
+			SAR_SAFETY_DISABLED, \
+			SAR_SAFETY_ENABLED_MAX, \
+			SAR_SAFETY_DISABLED, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Enable/Disable SAR safety feature type")
 
 /*
  * <ini>

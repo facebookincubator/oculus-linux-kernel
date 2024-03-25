@@ -655,6 +655,7 @@ struct dsi_host_config {
  * @pclk_scale:           pclk scale factor, target bpp to source bpp
  * @roi_caps:		  Panel ROI capabilities
  * @widebus_support       48 bit wide data bus is supported by hw
+ * @allowed_mode_switch: BIT mask to mark allowed mode switches
  * @disable_rsc_solver: Dynamically disable RSC solver for the timing mode.
  * @use_default_pps:      Use default PPS calculation.
  * @internal_1h_time_ns: Internal (TFT) 1H row time
@@ -685,6 +686,7 @@ struct dsi_display_mode_priv_info {
 	struct msm_ratio pclk_scale;
 	struct msm_roi_caps roi_caps;
 	bool widebus_support;
+	u32 allowed_mode_switch;
 	bool disable_rsc_solver;
 	bool use_default_pps;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -62,8 +62,10 @@ void wifi_pos_update_pasn_peer_count(struct wlan_objmgr_vdev *vdev,
 
 	if (is_increment)
 		vdev_pos_obj->num_pasn_peers++;
-	else
+	else if (vdev_pos_obj->num_pasn_peers)
 		vdev_pos_obj->num_pasn_peers--;
+
+	wifi_pos_debug("Pasn peer count:%d", vdev_pos_obj->num_pasn_peers);
 }
 #endif
 
@@ -153,7 +155,7 @@ void wifi_pos_add_peer_to_list(struct wlan_objmgr_vdev *vdev,
 			pasn_context->num_unsecure_peers++;
 
 		wifi_pos_debug("Added %s peer: " QDF_MAC_ADDR_FMT " at idx[%d]",
-			       (req->peer_type == WLAN_WIFI_POS_PASN_SECURE_PEER) ? "secure" : "unsecure",
+			       (req->peer_type == WLAN_WIFI_POS_PASN_SECURE_PEER) ? "secure" : "insecure",
 			       QDF_MAC_ADDR_REF(dst_entry->peer_mac.bytes), i);
 
 		break;
@@ -161,11 +163,11 @@ void wifi_pos_add_peer_to_list(struct wlan_objmgr_vdev *vdev,
 }
 
 /**
- * wifi_pos_move_peers_to_fail_list  - Move the peers in secure/unsecure list
+ * wifi_pos_move_peers_to_fail_list  - Move the peers in secure/insecure list
  * to failed peer list
  * @vdev: Vdev pointer
  * @peer_mac: Peer mac address
- * @peer_type: Secure or unsecure PASN peer
+ * @peer_type: Secure or insecure PASN peer
  *
  * Return: None
  */
@@ -212,7 +214,7 @@ void wifi_pos_move_peers_to_fail_list(struct wlan_objmgr_vdev *vdev,
 			/*
 			 * if valid entry exist in the list, set that mac
 			 * address to failed list and clear that mac from the
-			 * secure/unsecure list
+			 * secure/insecure list
 			 */
 			if (!qdf_is_macaddr_broadcast(&list[i].peer_mac)) {
 				wifi_pos_set_11az_failed_peers(
@@ -233,7 +235,7 @@ void wifi_pos_move_peers_to_fail_list(struct wlan_objmgr_vdev *vdev,
 	for (i = 0; i < WLAN_MAX_11AZ_PEERS; i++) {
 		/*
 		 * Clear the individual entry that exist for the given
-		 * mac address in secure/unsecure list
+		 * mac address in secure/insecure list
 		 */
 		if (qdf_is_macaddr_equal(peer_mac, &secure_list[i].peer_mac)) {
 			entry_to_copy = secure_list[i].peer_mac;
@@ -746,6 +748,7 @@ wifi_pos_cleanup_pasn_peers(struct wlan_objmgr_psoc *psoc,
 			    struct wlan_objmgr_vdev *vdev)
 {
 	QDF_STATUS status;
+	struct wifi_pos_vdev_priv_obj *vdev_pos_obj;
 
 	wifi_pos_debug("Iterate and delete PASN peers");
 	status = wlan_objmgr_iterate_obj_list(psoc, WLAN_PEER_OP,
@@ -753,6 +756,13 @@ wifi_pos_cleanup_pasn_peers(struct wlan_objmgr_psoc *psoc,
 					      vdev, 0, WLAN_WIFI_POS_CORE_ID);
 	if (QDF_IS_STATUS_ERROR(status))
 		wifi_pos_err("Delete objmgr peers failed");
+
+	/*
+	 * PASN Peer count should be zero here
+	 */
+	vdev_pos_obj = wifi_pos_get_vdev_priv_obj(vdev);
+	if (vdev_pos_obj)
+		vdev_pos_obj->num_pasn_peers = 0;
 
 	return status;
 }
@@ -821,7 +831,11 @@ wifi_pos_vdev_delete_all_ranging_peers_rsp(struct wlan_objmgr_psoc *psoc,
 		return status;
 	}
 
+	/*
+	 * Should have deleted all the pasn peers when we reach here
+	 */
 	vdev_pos_obj->is_delete_all_pasn_peer_in_progress = false;
+	vdev_pos_obj->num_pasn_peers = 0;
 
 	legacy_cb = wifi_pos_get_legacy_ops();
 	if (!legacy_cb || !legacy_cb->pasn_vdev_delete_resume_cb) {

@@ -880,6 +880,41 @@ config_done:
 	return rc;
 }
 
+int cam_vfe_top_ver4_mux_stop(void *stop_args, uint32_t arg_size)
+{
+	struct cam_isp_resource_node            *mux_res;
+	struct cam_vfe_mux_ver4_data            *vfe_priv;
+	struct cam_vfe_hw_stop_args             *vfe_stop;
+	unsigned long                            flags;
+	int i, rc = 0;
+
+	if (!stop_args || (arg_size != sizeof(struct cam_vfe_hw_stop_args))) {
+		CAM_ERR(CAM_ISP, "Error, Invalid input arguments");
+		return -EINVAL;
+	}
+
+	vfe_stop = stop_args;
+	mux_res = (struct cam_isp_resource_node *)vfe_stop->node_res;
+	vfe_priv = (struct cam_vfe_mux_ver4_data *)mux_res->res_priv;
+
+	rc = mux_res->stop(mux_res);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "res id:%d stop failed", mux_res->res_id);
+		return rc;
+	}
+	if (!vfe_stop->is_internal_stop) {
+		spin_lock_irqsave(&vfe_priv->spin_lock, flags);
+		INIT_LIST_HEAD(&vfe_priv->free_payload_list);
+		for (i = 0; i < CAM_VFE_CAMIF_EVT_MAX; i++) {
+			INIT_LIST_HEAD(&vfe_priv->evt_payload[i].list);
+			list_add_tail(&vfe_priv->evt_payload[i].list,
+				&vfe_priv->free_payload_list);
+		}
+		spin_unlock_irqrestore(&vfe_priv->spin_lock, flags);
+	}
+	return rc;
+}
+
 int cam_vfe_top_ver4_reserve(void *device_priv,
 	void *reserve_args, uint32_t arg_size)
 {
@@ -1031,19 +1066,22 @@ int cam_vfe_top_ver4_stop(void *device_priv,
 	struct cam_vfe_top_ver4_priv            *top_priv;
 	struct cam_isp_resource_node            *mux_res;
 	struct cam_hw_info                      *hw_info = NULL;
+	struct cam_vfe_hw_stop_args             *vfe_stop;
 	int i, rc = 0;
 
-	if (!device_priv || !stop_args) {
+	if (!device_priv || !stop_args ||
+		(arg_size != sizeof(struct cam_vfe_hw_stop_args))) {
 		CAM_ERR(CAM_ISP, "Error, Invalid input arguments");
 		return -EINVAL;
 	}
 
 	top_priv = (struct cam_vfe_top_ver4_priv   *)device_priv;
-	mux_res = (struct cam_isp_resource_node *)stop_args;
+	vfe_stop = stop_args;
+	mux_res = (struct cam_isp_resource_node *)vfe_stop->node_res;
 	hw_info = (struct cam_hw_info  *)mux_res->hw_intf->hw_priv;
 
 	if (mux_res->res_id < CAM_ISP_HW_VFE_IN_MAX) {
-		rc = mux_res->stop(mux_res);
+		rc = cam_vfe_top_ver4_mux_stop(vfe_stop, arg_size);
 	} else {
 		CAM_ERR(CAM_ISP, "Invalid res id:%d", mux_res->res_id);
 		return -EINVAL;

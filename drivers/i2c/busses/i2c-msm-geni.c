@@ -71,6 +71,8 @@
 #define GENI_SPURIOUS_IRQ	10
 #define I2C_ADDR_NACK		11
 #define I2C_DATA_NACK		12
+#define GENI_M_CMD_FAILURE	13
+#define GENI_M_CANCEL_DONE	14
 
 #define I2C_NACK		GP_IRQ1
 #define I2C_BUS_PROTO		GP_IRQ3
@@ -140,6 +142,7 @@ struct geni_i2c_dev {
 	u32 xfer_timeout;
 	struct i2c_adapter adap;
 	struct completion xfer;
+	struct completion m_cancel_cmd;
 	struct i2c_msg *cur;
 	struct se_geni_rsc i2c_rsc;
 	int cur_wr;
@@ -175,8 +178,9 @@ struct geni_i2c_dev {
 	struct dbg_buf_ctxt *dbg_buf_ptr;
 	bool is_le_vm;
 	bool req_chan;
-	bool first_resume;
+	bool first_xfer_done; /* for le-vm doing lock/unlock, after first xfer initiated. */
 	bool gpi_reset;
+	bool le_gpi_reset_done;
 	bool prev_cancel_pending; //Halt cancel till IOS in good state
 	bool is_i2c_rtl_based; /* doing pending cancel only for rtl based SE's */
 	bool bus_recovery_enable; //To be enabled by client if needed
@@ -215,6 +219,8 @@ static struct geni_i2c_err_log gi2c_log[] = {
 	[GENI_ABORT_DONE] = {-ETIMEDOUT, "Abort after timeout successful"},
 	[GENI_TIMEOUT] = {-ETIMEDOUT, "I2C TXN timed out"},
 	[GENI_SPURIOUS_IRQ] = {-EINVAL, "Received unexpected interrupt"},
+	[GENI_M_CMD_FAILURE] = {-EINVAL, "Master command failure"},
+	[GENI_M_CANCEL_DONE] = {-EINVAL, "Master cancel done"},
 };
 
 struct geni_i2c_clk_fld {
@@ -353,9 +359,9 @@ static int geni_i2c_stop_with_cancel(struct geni_i2c_dev *gi2c)
 {
 	int timeout = 0;
 
-	reinit_completion(&gi2c->xfer);
+	reinit_completion(&gi2c->m_cancel_cmd);
 	geni_cancel_m_cmd(gi2c->base);
-	timeout = wait_for_completion_timeout(&gi2c->xfer, HZ);
+	timeout = wait_for_completion_timeout(&gi2c->m_cancel_cmd, HZ);
 	if (!timeout) {
 		I2C_LOG_DBG(gi2c->ipcl, true, gi2c->dev,
 				"%s:Cancel failed\n", __func__);
@@ -511,29 +517,16 @@ static int do_pending_cancel(struct geni_i2c_dev *gi2c)
 		dmaengine_terminate_all(gi2c->tx_c);
 		gi2c->cfg_sent = 0;
 	} else {
-		reinit_completion(&gi2c->xfer);
-
 		// Issue point for e.g.: dump test bus/read test bus
 		if (gi2c->i2c_test_dev)
 			//For se4, its 5 as SE num starts from 0
 			geni_i2c_test_bus_dump(gi2c, SE_NUM_FOR_TEST_BUS);
-
-		geni_cancel_m_cmd(gi2c->base);
-		timeout = wait_for_completion_timeout(&gi2c->xfer, HZ);
-		if (!timeout) {
-			I2C_LOG_DBG(gi2c->ipcl, true, gi2c->dev,
-				"%s:Pending Cancel failed\n", __func__);
-			reinit_completion(&gi2c->xfer);
-			geni_abort_m_cmd(gi2c->base);
-			timeout = wait_for_completion_timeout(&gi2c->xfer, HZ);
-			if (!timeout)
-				I2C_LOG_DBG(gi2c->ipcl, true, gi2c->dev,
-					"%s:Abort failed\n", __func__);
-		}
+		if (geni_i2c_stop_with_cancel(gi2c))
+			I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
+				    "%s: geni_i2c_stop_with_cancel failed\n", __func__);
 	}
 	gi2c->prev_cancel_pending = false;
-	I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
-		"%s: Pending Cancel done\n", __func__);
+	I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev, "%s: Pending Cancel done\n", __func__);
 	return timeout;
 }
 
@@ -660,6 +653,8 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 {
 	struct geni_i2c_dev *gi2c = dev;
 	int i, j;
+	bool is_clear_watermark = false;
+	bool m_cancel_done = false;
 	u32 m_stat = readl_relaxed(gi2c->base + SE_GENI_M_IRQ_STATUS);
 	u32 rx_st = readl_relaxed(gi2c->base + SE_GENI_RX_FIFO_STATUS);
 	u32 dm_tx_st = readl_relaxed(gi2c->base + SE_DMA_TX_IRQ_STAT);
@@ -674,6 +669,7 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 		I2C_LOG_ERR(gi2c->ipcl, false, gi2c->dev, "Spurious irq\n");
 		geni_i2c_err(gi2c, GENI_SPURIOUS_IRQ);
 		gi2c->cmd_done = true;
+		is_clear_watermark = true;
 		goto irqret;
 	}
 
@@ -701,8 +697,14 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 			geni_i2c_err(gi2c, GENI_ILLEGAL_CMD);
 		if (m_stat & M_CMD_ABORT_EN)
 			geni_i2c_err(gi2c, GENI_ABORT_DONE);
-
+		if (m_stat & M_CMD_FAILURE_EN)
+			geni_i2c_err(gi2c, GENI_M_CMD_FAILURE);
+		if (m_stat & M_CMD_CANCEL_EN) {
+			geni_i2c_err(gi2c, GENI_M_CANCEL_DONE);
+			m_cancel_done = true;
+		}
 		gi2c->cmd_done = true;
+		is_clear_watermark = true;
 		goto irqret;
 	}
 
@@ -744,9 +746,12 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 				break;
 			}
 		}
+	} else {
+		I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
+			    "%s: m_irq_status:0x%x cur->flags:%d\n", __func__, m_stat, cur->flags);
 	}
 irqret:
-	if (!dma)
+	if (!dma && is_clear_watermark)
 		writel_relaxed(0, (gi2c->base + SE_GENI_TX_WATERMARK_REG));
 
 	if (m_stat)
@@ -756,15 +761,16 @@ irqret:
 		handle_dma_xfer(dm_tx_st, dm_rx_st, gi2c);
 		/* Ensure all writes are done before returning from ISR. */
 		wmb();
-	}
-
-	else if (m_stat & M_CMD_DONE_EN)
+	} else if (m_stat & M_CMD_DONE_EN)
 		gi2c->cmd_done = true;
 
 	if (gi2c->cmd_done) {
 		gi2c->cmd_done = false;
 		complete(&gi2c->xfer);
 	}
+
+	if (m_cancel_done)
+		complete(&gi2c->m_cancel_cmd);
 
 	return IRQ_HANDLED;
 }
@@ -1131,8 +1137,12 @@ static void geni_i2c_unlock_bus(struct geni_i2c_dev *gi2c)
 	dma_cookie_t tx_cookie;
 	bool tx_chan = true;
 
-	if (gi2c->gpi_reset)
-		goto geni_i2c_err_unlock_bus;
+	/* if gpi reset happened for levm, no need to do unlock */
+	if (gi2c->is_le_vm && gi2c->le_gpi_reset_done) {
+		I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
+			    "%s:gpi reset happened for levm, no need to do unlock\n", __func__);
+		return;
+	}
 
 	unlock_t = setup_unlock_tre(gi2c);
 	sg_init_table(gi2c->tx_sg, 1);
@@ -1161,11 +1171,10 @@ static void geni_i2c_unlock_bus(struct geni_i2c_dev *gi2c)
 	}
 
 geni_i2c_err_unlock_bus:
-	if (gi2c->gpi_reset || gi2c->err) {
+	if (gi2c->err) {
 		dmaengine_terminate_all(gi2c->tx_c);
 		gi2c->cfg_sent = 0;
 		gi2c->err = 0;
-		gi2c->gpi_reset = false;
 	}
 }
 
@@ -1182,6 +1191,18 @@ static int geni_i2c_gsi_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 		ret = geni_i2c_gsi_request_channel(gi2c);
 		if (ret)
 			return ret;
+	}
+
+	if (gi2c->is_le_vm && gi2c->le_gpi_reset_done) {
+		I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
+			    "%s doing gsi lock, due to levm gsi reset\n", __func__);
+		ret = geni_i2c_lock_bus(gi2c);
+		if (ret) {
+			I2C_LOG_ERR(gi2c->ipcl, true, gi2c->dev,
+				    "%s lock bus failed: %d\n", __func__, ret);
+			return ret;
+		}
+		gi2c->le_gpi_reset_done = false;
 	}
 
 	if (!gi2c->cfg_sent)
@@ -1352,22 +1373,13 @@ static int geni_i2c_gsi_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 
 geni_i2c_err_prep_sg:
 		if (gi2c->err || gi2c->gsi_err) {
-			if (!gi2c->is_le_vm) {
-				I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
-						"gpi_terminate\n");
-				dmaengine_terminate_all(gi2c->tx_c);
-				gi2c->cfg_sent = 0;
-			} else {
-				/* Stop channel in case of error in LE-VM */
-				ret = dmaengine_pause(gi2c->tx_c);
-				if (ret) {
-					gi2c->gpi_reset = true;
-					gi2c->err = ret;
-					I2C_LOG_ERR(gi2c->ipcl, true, gi2c->dev,
-						"Channel cancel failed\n");
-					goto geni_i2c_gsi_xfer_out;
-				}
-			}
+			ret = dmaengine_terminate_all(gi2c->tx_c);
+			if (ret)
+				I2C_LOG_ERR(gi2c->ipcl, false, gi2c->dev,
+					    "%s: gpi terminate failed\n", __func__, ret);
+			gi2c->cfg_sent = 0;
+			if (gi2c->is_le_vm)
+				gi2c->le_gpi_reset_done = true;
 		}
 
 		if (gi2c->gsi_err) {
@@ -1437,19 +1449,52 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 	if (gi2c->prev_cancel_pending) {
 		ret = do_pending_cancel(gi2c);
 		if (ret) {
-			pm_runtime_mark_last_busy(gi2c->dev);
-			pm_runtime_put_autosuspend(gi2c->dev);
+			/* for levm skip auto suspend timer */
+			if (!gi2c->is_le_vm) {
+				pm_runtime_mark_last_busy(gi2c->dev);
+				pm_runtime_put_autosuspend(gi2c->dev);
+			}
 			atomic_set(&gi2c->is_xfer_in_progress, 0);
 			return ret; //Don't perform xfer is cancel failed
 		}
 	}
 
+	if (gi2c->is_le_vm && (!gi2c->first_xfer_done)) {
+		/*
+		 * For le-vm we are doing resume operations during
+		 * the first xfer, because we are seeing probe sequence
+		 * issues from client and i2c-master driver, due to this
+		 * multiple times i2c_resume invoking and we are seeing
+		 * unclocked access. To avoid this added resume operations
+		 * here very first time.
+		 */
+		gi2c->first_xfer_done = true;
+		ret = geni_i2c_prepare(gi2c);
+		if (ret) {
+			I2C_LOG_ERR(gi2c->ipcl, true, gi2c->dev,
+				    "%s I2C prepare failed: %d\n", __func__, ret);
+			return ret;
+		}
+
+		ret = geni_i2c_lock_bus(gi2c);
+		if (ret) {
+			I2C_LOG_ERR(gi2c->ipcl, true, gi2c->dev,
+				    "%s lock failed: %d\n", __func__, ret);
+			return ret;
+		}
+		I2C_LOG_DBG(gi2c->ipcl, false, gi2c->dev,
+			    "LE-VM first xfer\n");
+	}
+
 	geni_ios = geni_read_reg_nolog(gi2c->base, SE_GENI_IOS);
 	if ((geni_ios & 0x3) != 0x3) { //SCL:b'1, SDA:b'0
 		I2C_LOG_ERR(gi2c->ipcl, true, gi2c->dev,
-			"IO lines in bad state, Power the slave\n");
-		pm_runtime_mark_last_busy(gi2c->dev);
-		pm_runtime_put_autosuspend(gi2c->dev);
+			    "IO lines in bad state, Power the slave\n");
+		/* for levm skip auto suspend timer */
+		if (!gi2c->is_le_vm) {
+			pm_runtime_mark_last_busy(gi2c->dev);
+			pm_runtime_put_autosuspend(gi2c->dev);
+		}
 		atomic_set(&gi2c->is_xfer_in_progress, 0);
 		return -ENXIO;
 	}
@@ -1575,6 +1620,12 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 						gi2c->xfer_timeout);
 		if (!timeout) {
 			u32 geni_ios = 0;
+			u32 m_stat = readl_relaxed(gi2c->base + SE_GENI_M_IRQ_STATUS);
+
+			/* clearing tx water mark and m_irq_status during delayed irq */
+			writel_relaxed(0, (gi2c->base + SE_GENI_TX_WATERMARK_REG));
+			if (m_stat)
+				writel_relaxed(m_stat, gi2c->base + SE_GENI_M_IRQ_CLEAR);
 
 			I2C_LOG_ERR(gi2c->ipcl, true, gi2c->dev,
 				"I2C xfer timeout: %d\n", gi2c->xfer_timeout);
@@ -1622,9 +1673,7 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 					do_reg68_war_for_rtl_se(gi2c);
 				}
 			}
-			reinit_completion(&gi2c->xfer);
-			geni_cancel_m_cmd(gi2c->base);
-			timeout = wait_for_completion_timeout(&gi2c->xfer, HZ);
+			geni_i2c_stop_with_cancel(gi2c);
 		}
 		gi2c->cur_wr = 0;
 		gi2c->cur_rd = 0;
@@ -1857,6 +1906,92 @@ geni_i2c_panic_notifier_callback(struct notifier_block *nb, unsigned long action
 	return NOTIFY_OK;
 }
 
+/**
+ * geni_i2c_resources_init: initialize clk, icc vote, read dt property
+ * @pdev: Platform driver handle
+ * @gi2c: geni i2c structure as a pointer
+ *
+ * Function to initialize clock and icc vote configuration and read require
+ * DTSI property.
+ *
+ * Return: 0 on success OR negative error code for failure.
+ */
+static int geni_i2c_resources_init(struct platform_device *pdev, struct geni_i2c_dev *gi2c)
+{
+	int ret;
+
+	/*
+	 * For LE, clocks, gpio and icb voting will be provided by
+	 * LA. The I2C operates in GSI mode only for LE usecase,
+	 * se irq not required. Below properties will not be present
+	 * in I2C LE dt.
+	 */
+	if (gi2c->is_le_vm)
+		return 0;
+
+	gi2c->i2c_rsc.se_clk = devm_clk_get(&pdev->dev, "se-clk");
+	if (IS_ERR(gi2c->i2c_rsc.se_clk)) {
+		ret = PTR_ERR(gi2c->i2c_rsc.se_clk);
+		dev_err(&pdev->dev, "Err getting SE Core clk %d\n", ret);
+		return ret;
+	}
+
+	gi2c->i2c_rsc.m_ahb_clk = devm_clk_get(&pdev->dev, "m-ahb");
+	if (IS_ERR(gi2c->i2c_rsc.m_ahb_clk)) {
+		ret = PTR_ERR(gi2c->i2c_rsc.m_ahb_clk);
+		dev_err(&pdev->dev, "Err getting M AHB clk %d\n", ret);
+		return ret;
+	}
+
+	gi2c->i2c_rsc.s_ahb_clk = devm_clk_get(&pdev->dev, "s-ahb");
+	if (IS_ERR(gi2c->i2c_rsc.s_ahb_clk)) {
+		ret = PTR_ERR(gi2c->i2c_rsc.s_ahb_clk);
+		dev_err(&pdev->dev, "Err getting S AHB clk %d\n", ret);
+		return ret;
+	}
+
+	ret = geni_se_resources_init(&gi2c->i2c_rsc, I2C_CORE2X_VOTE,
+				(DEFAULT_SE_CLK * DEFAULT_BUS_WIDTH));
+	if (ret) {
+		dev_err(gi2c->dev, "geni_se_resources_init\n");
+		return ret;
+	}
+
+	gi2c->i2c_rsc.geni_pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_pinctrl)) {
+		dev_err(&pdev->dev, "No pinctrl config specified\n");
+		ret = PTR_ERR(gi2c->i2c_rsc.geni_pinctrl);
+		return ret;
+	}
+	gi2c->i2c_rsc.geni_gpio_active =
+		pinctrl_lookup_state(gi2c->i2c_rsc.geni_pinctrl, PINCTRL_DEFAULT);
+	if (IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_gpio_active)) {
+		dev_err(&pdev->dev, "No default config specified\n");
+		ret = PTR_ERR(gi2c->i2c_rsc.geni_gpio_active);
+		return ret;
+	}
+	gi2c->i2c_rsc.geni_gpio_sleep =
+		pinctrl_lookup_state(gi2c->i2c_rsc.geni_pinctrl, PINCTRL_SLEEP);
+	if (IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_gpio_sleep)) {
+		dev_err(&pdev->dev, "No sleep config specified\n");
+		ret = PTR_ERR(gi2c->i2c_rsc.geni_gpio_sleep);
+		return ret;
+	}
+
+	gi2c->irq = platform_get_irq(pdev, 0);
+	if (gi2c->irq < 0)
+		return gi2c->irq;
+
+	irq_set_status_flags(gi2c->irq, IRQ_NOAUTOEN);
+	ret = devm_request_irq(gi2c->dev, gi2c->irq, geni_i2c_irq, 0, "i2c_geni", gi2c);
+	if (ret) {
+		dev_err(gi2c->dev, "Request_irq failed:%d: err:%d\n", gi2c->irq, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 static int geni_i2c_probe(struct platform_device *pdev)
 {
 	struct geni_i2c_dev *gi2c;
@@ -1901,7 +2036,7 @@ static int geni_i2c_probe(struct platform_device *pdev)
 
 	if (of_property_read_bool(pdev->dev.of_node, "qcom,le-vm")) {
 		gi2c->is_le_vm = true;
-		gi2c->first_resume = true;
+		gi2c->first_xfer_done = false;
 		dev_info(&pdev->dev, "LE-VM usecase\n");
 	}
 
@@ -1919,76 +2054,13 @@ static int geni_i2c_probe(struct platform_device *pdev)
 
 	/*
 	 * For LE, clocks, gpio and icb voting will be provided by
-	 * by LA. The I2C operates in GSI mode only for LE usecase,
+	 * LA. The I2C operates in GSI mode only for LE usecase,
 	 * se irq not required. Below properties will not be present
 	 * in I2C LE dt.
 	 */
-	if (!gi2c->is_le_vm) {
-		gi2c->i2c_rsc.se_clk = devm_clk_get(&pdev->dev, "se-clk");
-		if (IS_ERR(gi2c->i2c_rsc.se_clk)) {
-			ret = PTR_ERR(gi2c->i2c_rsc.se_clk);
-			dev_err(&pdev->dev, "Err getting SE Core clk %d\n",
-				ret);
-			return ret;
-		}
-
-		gi2c->i2c_rsc.m_ahb_clk = devm_clk_get(&pdev->dev, "m-ahb");
-		if (IS_ERR(gi2c->i2c_rsc.m_ahb_clk)) {
-			ret = PTR_ERR(gi2c->i2c_rsc.m_ahb_clk);
-			dev_err(&pdev->dev, "Err getting M AHB clk %d\n", ret);
-			return ret;
-		}
-
-		gi2c->i2c_rsc.s_ahb_clk = devm_clk_get(&pdev->dev, "s-ahb");
-		if (IS_ERR(gi2c->i2c_rsc.s_ahb_clk)) {
-			ret = PTR_ERR(gi2c->i2c_rsc.s_ahb_clk);
-			dev_err(&pdev->dev, "Err getting S AHB clk %d\n", ret);
-			return ret;
-		}
-
-		ret = geni_se_resources_init(&gi2c->i2c_rsc, I2C_CORE2X_VOTE,
-				     (DEFAULT_SE_CLK * DEFAULT_BUS_WIDTH));
-		if (ret) {
-			dev_err(gi2c->dev, "geni_se_resources_init\n");
-			return ret;
-		}
-
-		gi2c->i2c_rsc.geni_pinctrl = devm_pinctrl_get(&pdev->dev);
-		if (IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_pinctrl)) {
-			dev_err(&pdev->dev, "No pinctrl config specified\n");
-			ret = PTR_ERR(gi2c->i2c_rsc.geni_pinctrl);
-			return ret;
-		}
-		gi2c->i2c_rsc.geni_gpio_active =
-			pinctrl_lookup_state(gi2c->i2c_rsc.geni_pinctrl,
-							PINCTRL_DEFAULT);
-		if (IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_gpio_active)) {
-			dev_err(&pdev->dev, "No default config specified\n");
-			ret = PTR_ERR(gi2c->i2c_rsc.geni_gpio_active);
-			return ret;
-		}
-		gi2c->i2c_rsc.geni_gpio_sleep =
-			pinctrl_lookup_state(gi2c->i2c_rsc.geni_pinctrl,
-							PINCTRL_SLEEP);
-		if (IS_ERR_OR_NULL(gi2c->i2c_rsc.geni_gpio_sleep)) {
-			dev_err(&pdev->dev, "No sleep config specified\n");
-			ret = PTR_ERR(gi2c->i2c_rsc.geni_gpio_sleep);
-			return ret;
-		}
-
-		gi2c->irq = platform_get_irq(pdev, 0);
-		if (gi2c->irq < 0)
-			return gi2c->irq;
-
-		irq_set_status_flags(gi2c->irq, IRQ_NOAUTOEN);
-		ret = devm_request_irq(gi2c->dev, gi2c->irq, geni_i2c_irq,
-					0, "i2c_geni", gi2c);
-		if (ret) {
-			dev_err(gi2c->dev, "Request_irq failed:%d: err:%d\n",
-					   gi2c->irq, ret);
-			return ret;
-		}
-	}
+	ret = geni_i2c_resources_init(pdev, gi2c);
+	if (ret)
+		return ret;
 
 	if (of_property_read_bool(pdev->dev.of_node, "qcom,shared")) {
 		gi2c->is_shared = true;
@@ -2040,6 +2112,7 @@ static int geni_i2c_probe(struct platform_device *pdev)
 
 	gi2c->adap.algo = &geni_i2c_algo;
 	init_completion(&gi2c->xfer);
+	init_completion(&gi2c->m_cancel_cmd);
 	platform_set_drvdata(pdev, gi2c);
 	i2c_set_adapdata(&gi2c->adap, gi2c);
 	gi2c->adap.dev.parent = gi2c->dev;
@@ -2048,8 +2121,11 @@ static int geni_i2c_probe(struct platform_device *pdev)
 	strlcpy(gi2c->adap.name, "Geni-I2C", sizeof(gi2c->adap.name));
 
 	pm_runtime_set_suspended(gi2c->dev);
-	pm_runtime_set_autosuspend_delay(gi2c->dev, I2C_AUTO_SUSPEND_DELAY);
-	pm_runtime_use_autosuspend(gi2c->dev);
+	/* for levm skip auto suspend timer */
+	if (!gi2c->is_le_vm) {
+		pm_runtime_set_autosuspend_delay(gi2c->dev, I2C_AUTO_SUSPEND_DELAY);
+		pm_runtime_use_autosuspend(gi2c->dev);
+	}
 	pm_runtime_enable(gi2c->dev);
 	ret = i2c_add_adapter(&gi2c->adap);
 	if (ret) {
@@ -2171,11 +2247,8 @@ static int geni_i2c_runtime_suspend(struct device *dev)
 		}
 	}
 
-	if (gi2c->is_le_vm) {
-		if (!gi2c->first_resume)
-			geni_i2c_unlock_bus(gi2c);
-		else
-			gi2c->first_resume = false;
+	if (gi2c->is_le_vm && gi2c->first_xfer_done) {
+		geni_i2c_unlock_bus(gi2c);
 
 		/* for LE VM we are doinggpi_pause after unlocking the bus */
 		if (gi2c->se_mode == GSI_ONLY) {
@@ -2233,12 +2306,15 @@ static int geni_i2c_runtime_resume(struct device *dev)
 				return ret;
 			}
 		}
-	} else if (!gi2c->first_resume) {
+	} else if (gi2c->is_le_vm && gi2c->first_xfer_done) {
 		/*
-		 * For first resume call in le, do nothing, and in
-		 * corresponding first suspend, set the first_resume
-		 * flag to false, to enable lock/unlock per resume/suspend
-		 * session.
+		 * For le-vm we are doing resume operations during
+		 * the first xfer, because we are seeing probe
+		 * sequence issues from client and i2c-master driver,
+		 * due to thils multiple times i2c_resume invoking
+		 * and we are seeing unclocked access. To avoid this
+		 * below opeations we are doing in i2c_xfer very first
+		 * time, after first xfer below logic will continue.
 		 */
 		ret = geni_i2c_prepare(gi2c);
 		if (ret) {

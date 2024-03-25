@@ -88,6 +88,7 @@
 #endif
 #include "wlan_cm_roam_api.h"
 #include "wlan_cm_api.h"
+#include <target_if_spatial_reuse.h>
 
 /* Max debug string size for WMM in bytes */
 #define WMA_WMM_DEBUG_STRING_SIZE    512
@@ -1655,7 +1656,6 @@ QDF_STATUS wma_send_peer_assoc(tp_wma_handle wma,
 	}
 
 	if (params->ch_width) {
-		cmd->bw_40 = 1;
 		cmd->peer_rate_caps |= WMI_RC_CW40_FLAG;
 		if (params->fShortGI40Mhz)
 			cmd->peer_rate_caps |= WMI_RC_SGI_FLAG;
@@ -1663,14 +1663,23 @@ QDF_STATUS wma_send_peer_assoc(tp_wma_handle wma,
 		cmd->peer_rate_caps |= WMI_RC_SGI_FLAG;
 	}
 
-	if (params->ch_width == CH_WIDTH_80MHZ)
+	switch (params->ch_width) {
+	case CH_WIDTH_320MHZ:
+		wma_set_peer_assoc_params_bw_320(cmd, params->ch_width);
+		fallthrough;
+	case CH_WIDTH_80P80MHZ:
+	case CH_WIDTH_160MHZ:
+		cmd->bw_160 = 1;
+		fallthrough;
+	case CH_WIDTH_80MHZ:
 		cmd->bw_80 = 1;
-	else if (params->ch_width == CH_WIDTH_160MHZ)
-		cmd->bw_160 = 1;
-	else if (params->ch_width == CH_WIDTH_80P80MHZ)
-		cmd->bw_160 = 1;
-
-	wma_set_peer_assoc_params_bw_320(cmd, params->ch_width);
+		fallthrough;
+	case CH_WIDTH_40MHZ:
+		cmd->bw_40 = 1;
+		fallthrough;
+	default:
+		break;
+	}
 
 	cmd->peer_vht_caps = params->vht_caps;
 	if (params->p2pCapableSta) {
@@ -2614,7 +2623,7 @@ QDF_STATUS wma_set_ap_vdev_up(tp_wma_handle wma, uint8_t vdev_id)
 	wma_set_sap_keepalive(wma, vdev_id);
 	wma_set_vdev_mgmt_rate(wma, vdev_id);
 	wma_vdev_set_he_bss_params(wma, vdev_id, &mlme_obj->proto.he_ops_info);
-	wma_sr_update(wma, vdev_id, true);
+	mlme_sr_update(vdev, true);
 
 	return status;
 }

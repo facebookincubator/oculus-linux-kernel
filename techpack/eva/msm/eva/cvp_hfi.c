@@ -1410,10 +1410,10 @@ static int __interface_dsp_queues_init(struct iris_hfi_device *dev)
 		dprintk(CVP_ERR, "%s: failed dma allocation\n", __func__);
 		goto fail_dma_alloc;
 	}
-	cb = msm_cvp_smem_get_context_bank(dev->res, 0);
+	cb = msm_cvp_smem_get_context_bank(dev->res, SMEM_CDSP);
 	if (!cb) {
 		dprintk(CVP_ERR,
-			"%s: failed to get context bank\n", __func__);
+			"%s: failed to get DSP context bank\n", __func__);
 		goto fail_dma_map;
 	}
 	iova = dma_map_single_attrs(cb->dev, phys_to_virt(dma_handle),
@@ -2955,7 +2955,7 @@ static int __response_handler(struct iris_hfi_device *device)
 		return 0;
 	}
 
-	if (device->intr_status & CVP_FATAL_INTR_BMSK) {
+	if (device->intr_status & CVP_WRAPPER_INTR_MASK_A2HWD_BMSK) {
 		struct cvp_hfi_sfr_struct *vsfr = (struct cvp_hfi_sfr_struct *)
 			device->sfr.align_virtual_addr;
 		struct msm_cvp_cb_info info = {

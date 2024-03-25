@@ -119,11 +119,6 @@
 /* SR is disabled if NON_SRG is disallowed and SRG INFO is not present */
 #define SR_DISABLE NON_SRG_PD_SR_DISALLOWED & (~SRG_INFO_PRESENT & 0x0F)
 
-/* Length of RSNXE element ID + length + one octet of capability */
-#define RSNXE_CAP_FOR_SAE_LEN     3
-/* Position of WPA3 capabilities in the RSNX element */
-#define RSNXE_CAP_POS_0           0
-
 typedef union uPmfSaQueryTimerId {
 	struct {
 		uint8_t sessionId;
@@ -467,6 +462,18 @@ void lim_decide_sta_protection_on_assoc(struct mac_context *mac,
 		struct pe_session *pe_session);
 
 /**
+ * lim_get_cb_mode_for_freq() - Get cb mode depending on the freq
+ * @mac: pointer to Global MAC structure
+ * @pe_session: pe session
+ * @chan_freq: Freq to get cb mode for
+ *
+ * Return: cb mode allowed for the freq
+ */
+uint8_t lim_get_cb_mode_for_freq(struct mac_context *mac,
+				 struct pe_session *session,
+				 qdf_freq_t chan_freq);
+
+/**
  * lim_update_sta_run_time_ht_switch_chnl_params() - Process change in HT
  * bandwidth
  * @mac: pointer to Global MAC structure
@@ -521,11 +528,11 @@ void lim_process_channel_switch(struct mac_context *mac, uint8_t vdev_id);
  *
  * This function changes the current operating channel frequency.
  *
- * return NONE
+ * return qdf_status
  */
-void lim_switch_primary_channel(struct mac_context *mac,
-				uint32_t new_channel_freq,
-				struct pe_session *pe_session);
+QDF_STATUS lim_switch_primary_channel(struct mac_context *mac,
+				      uint32_t new_channel_freq,
+				      struct pe_session *pe_session);
 
 /**
  * lim_switch_primary_secondary_channel() - switch primary and secondary
@@ -539,10 +546,10 @@ void lim_switch_primary_channel(struct mac_context *mac,
  *  then we must set this new channel in session context and
  *  assign notify LIM of such change.
  *
- * @return NONE
+ * @return qdf_status
  */
-void lim_switch_primary_secondary_channel(struct mac_context *mac,
-					  struct pe_session *pe_session);
+QDF_STATUS lim_switch_primary_secondary_channel(struct mac_context *mac,
+						struct pe_session *pe_session);
 
 void lim_update_sta_run_time_ht_capability(struct mac_context *mac,
 		tDot11fIEHTCaps *pHTCaps);
@@ -3099,8 +3106,8 @@ void lim_update_nss(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 bool lim_update_channel_width(struct mac_context *mac_ctx,
 			      tpDphHashNode sta_ptr,
 			      struct pe_session *session,
-			      uint8_t ch_width,
-			      uint8_t *new_ch_width);
+			      enum phy_ch_width ch_width,
+			      enum phy_ch_width *new_ch_width);
 
 /**
  * lim_get_vht_ch_width() - Function to get the VHT
@@ -3235,4 +3242,16 @@ bool
 lim_is_chan_connected_for_mode(struct wlan_objmgr_psoc *psoc,
 			       enum QDF_OPMODE opmode,
 			       qdf_freq_t freq);
+
+/**
+ * lim_convert_vht_chwdith_to_phy_chwidth() - Convert VHT operation
+ * ch width into phy ch width
+ *
+ * @ch_width: VHT op channel width
+ * @is_40: is 40 MHz
+ *
+ * Return: phy chwidth
+ */
+enum phy_ch_width
+lim_convert_vht_chwdith_to_phy_chwidth(uint8_t ch_width, bool is_40);
 #endif /* __LIM_UTILS_H */

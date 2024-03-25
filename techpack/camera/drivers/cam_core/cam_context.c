@@ -220,6 +220,49 @@ int cam_context_handle_crm_notify_frame_skip(
 	return rc;
 }
 
+static inline int cam_context_get_async_tasks(struct cam_context *ctx,
+		struct cam_get_async_tasks_cmd *cmd)
+{
+	int rc = 0;
+
+	mutex_lock(&ctx->ctx_mutex);
+	if (ctx->state_machine[ctx->state].ioctl_ops.get_async_task) {
+		rc = ctx->state_machine[ctx->state].ioctl_ops.get_async_task(
+			ctx, cmd);
+	}
+	mutex_unlock(&ctx->ctx_mutex);
+
+	return rc;
+}
+
+static inline int cam_context_pause_flush_async_task(struct cam_context *ctx)
+{
+	int rc = 0;
+	struct cam_get_async_tasks_cmd async_cmd;
+
+	rc = cam_context_get_async_tasks(ctx, &async_cmd);
+
+	if (async_cmd.workq) {
+		cam_req_mgr_workq_pause(async_cmd.workq);
+		cam_req_mgr_workq_flush(async_cmd.workq);
+	}
+
+	return rc;
+}
+
+static inline int cam_context_resume_async_task(struct cam_context *ctx)
+{
+	int rc = 0;
+	struct cam_get_async_tasks_cmd async_cmd;
+
+	rc = cam_context_get_async_tasks(ctx, &async_cmd);
+
+	if (async_cmd.workq)
+		cam_req_mgr_workq_resume(async_cmd.workq);
+
+	return rc;
+}
+
 int cam_context_handle_crm_flush_req(struct cam_context *ctx,
 	struct cam_req_mgr_flush_request *flush)
 {
@@ -229,6 +272,8 @@ int cam_context_handle_crm_flush_req(struct cam_context *ctx,
 		CAM_ERR(CAM_CORE, "Context is not ready");
 		return -EINVAL;
 	}
+
+	cam_context_pause_flush_async_task(ctx);
 
 	mutex_lock(&ctx->ctx_mutex);
 	if (ctx->state != CAM_CTX_FLUSHED) {
@@ -412,49 +457,6 @@ int cam_context_handle_acquire_hw(struct cam_context *ctx,
 	}
 
 	mutex_unlock(&ctx->ctx_mutex);
-
-	return rc;
-}
-
-static inline int cam_context_get_async_tasks(struct cam_context *ctx,
-		struct cam_get_async_tasks_cmd *cmd)
-{
-	int rc = 0;
-
-	mutex_lock(&ctx->ctx_mutex);
-	if (ctx->state_machine[ctx->state].ioctl_ops.get_async_task) {
-		rc = ctx->state_machine[ctx->state].ioctl_ops.get_async_task(
-			ctx, cmd);
-	}
-	mutex_unlock(&ctx->ctx_mutex);
-
-	return rc;
-}
-
-static inline int cam_context_pause_flush_async_task(struct cam_context *ctx)
-{
-	int rc = 0;
-	struct cam_get_async_tasks_cmd async_cmd;
-
-	rc = cam_context_get_async_tasks(ctx, &async_cmd);
-
-	if (async_cmd.workq) {
-		cam_req_mgr_workq_pause(async_cmd.workq);
-		cam_req_mgr_workq_flush(async_cmd.workq);
-	}
-
-	return rc;
-}
-
-static inline int cam_context_resume_async_task(struct cam_context *ctx)
-{
-	int rc = 0;
-	struct cam_get_async_tasks_cmd async_cmd;
-
-	rc = cam_context_get_async_tasks(ctx, &async_cmd);
-
-	if (async_cmd.workq)
-		cam_req_mgr_workq_resume(async_cmd.workq);
 
 	return rc;
 }
@@ -727,6 +729,67 @@ int cam_context_handle_hw_recovery(void *priv, void *data)
 			ctx->state, ctx->ctx_id, ctx->dev_name);
 end:
 	mutex_unlock(&ctx->ctx_mutex);
+	return rc;
+}
+
+int cam_context_handle_set_stream_mode(struct cam_context *ctx,
+	struct cam_set_stream_mode *cmd)
+{
+	int rc = 0;
+
+	if (!ctx || !ctx->state_machine) {
+		CAM_ERR(CAM_CORE, "Context is not ready");
+		return -EINVAL;
+	}
+
+	if (!cmd) {
+		CAM_ERR(CAM_CORE, "Invalid set stream mode command payload");
+		return -EINVAL;
+	}
+
+	mutex_lock(&ctx->ctx_mutex);
+	if (ctx->state_machine[ctx->state].ioctl_ops.set_stream_mode)
+		rc = ctx->state_machine[ctx->state].ioctl_ops.set_stream_mode(
+			ctx, cmd);
+	else {
+		CAM_ERR(CAM_CORE, "No stream mode in dev %d, name %s state %d",
+			ctx->dev_hdl, ctx->dev_name, ctx->state);
+		rc = -EINVAL;
+	}
+
+	mutex_unlock(&ctx->ctx_mutex);
+
+	return rc;
+}
+
+int cam_context_handle_stream_mode_cmd(struct cam_context *ctx,
+	struct cam_stream_mode_cmd *cmd)
+{
+	int rc = 0;
+
+	if (!ctx || !ctx->state_machine) {
+		CAM_ERR(CAM_CORE, "Context is not ready");
+		return -EINVAL;
+	}
+
+	if (!cmd) {
+		CAM_ERR(CAM_CORE, "Invalid stop device command payload");
+		return -EINVAL;
+	}
+
+	mutex_lock(&ctx->ctx_mutex);
+	if (ctx->state_machine[ctx->state].ioctl_ops.stream_mode_cmd)
+		rc = ctx->state_machine[ctx->state].ioctl_ops.stream_mode_cmd(
+			ctx, cmd);
+	else {
+		rc = -EINVAL;
+		CAM_ERR(CAM_CORE,
+			"No stream mode cmd in dev %d, name %s state %d",
+			ctx->dev_hdl, ctx->dev_name, ctx->state);
+	}
+
+	mutex_unlock(&ctx->ctx_mutex);
+
 	return rc;
 }
 

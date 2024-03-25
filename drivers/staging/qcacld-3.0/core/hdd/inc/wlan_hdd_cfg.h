@@ -191,7 +191,7 @@ struct hdd_config {
 	uint32_t sar_safety_req_resp_retry;
 	uint32_t sar_safety_index;
 	uint32_t sar_safety_sleep_index;
-	bool enable_sar_safety;
+	uint8_t enable_sar_safety;
 	bool config_sar_safety_sleep_index;
 #endif
 	bool get_roam_chan_from_fw;

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _ADRENO_HWSCHED_H_
@@ -106,6 +106,11 @@ struct adreno_hwsched {
 	struct work_struct power_down_ws;
 	/** @power_down_timer: Timer struct to defer HW scheduler power-down. */
 	struct timer_list power_down_timer;
+	/**
+	 * @submission_seqnum: Sequence number for sending submissions to GMU context queues or
+	 * dispatch queues
+	 */
+	atomic_t submission_seqnum;
 };
 
 /*

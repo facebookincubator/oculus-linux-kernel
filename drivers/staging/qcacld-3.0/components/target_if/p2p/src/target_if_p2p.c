@@ -340,6 +340,7 @@ QDF_STATUS target_if_p2p_set_ps(struct wlan_objmgr_psoc *psoc,
 	cmd.single_noa_duration = ps_config->single_noa_duration;
 	cmd.ps_selection = ps_config->ps_selection;
 	cmd.session_id =  ps_config->vdev_id;
+	cmd.start = ps_config->start;
 
 	if (ps_config->opp_ps)
 		status = wmi_unified_set_p2pgo_oppps_req(wmi_handle,

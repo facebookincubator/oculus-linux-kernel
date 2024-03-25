@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -432,25 +432,28 @@ int cam_vfe_stop(void *hw_priv, void *stop_args, uint32_t arg_size)
 	struct cam_vfe_irq_hw_info        *irq_info = NULL;
 	struct cam_hw_info                *vfe_hw  = hw_priv;
 	struct cam_isp_resource_node      *isp_res;
+	struct cam_vfe_hw_stop_args       *vfe_stop;
 	int rc = -EINVAL;
 
 	if (!hw_priv || !stop_args ||
-		(arg_size != sizeof(struct cam_isp_resource_node))) {
+		(arg_size != sizeof(struct cam_vfe_hw_stop_args))) {
 		CAM_ERR(CAM_ISP, "Invalid input arguments");
 		return -EINVAL;
 	}
 
 	core_info = (struct cam_vfe_hw_core_info *)vfe_hw->core_info;
-	isp_res = (struct cam_isp_resource_node  *)stop_args;
+	vfe_stop = (struct cam_vfe_hw_stop_args *)stop_args;
+	isp_res = vfe_stop->node_res;
 	irq_info = core_info->vfe_hw_info->irq_hw_info;
 
 	mutex_lock(&vfe_hw->hw_mutex);
 	if (isp_res->res_type == CAM_ISP_RESOURCE_VFE_IN) {
 		rc = core_info->vfe_top->hw_ops.stop(
-			core_info->vfe_top->top_priv, isp_res,
-			sizeof(struct cam_isp_resource_node));
+			core_info->vfe_top->top_priv, vfe_stop,
+			sizeof(struct cam_vfe_hw_stop_args));
 	} else if (isp_res->res_type == CAM_ISP_RESOURCE_VFE_OUT) {
-		rc = core_info->vfe_bus->hw_ops.stop(isp_res, NULL, 0);
+		rc = core_info->vfe_bus->hw_ops.stop(NULL, vfe_stop,
+			sizeof(struct cam_vfe_hw_stop_args));
 	} else if (isp_res->res_type == CAM_ISP_RESOURCE_VFE_BUS_RD) {
 		if (core_info->vfe_rd_bus)
 			rc = core_info->vfe_rd_bus->hw_ops.stop(isp_res,

@@ -2642,11 +2642,11 @@ static int drv_cmd_set_wmmps(struct hdd_adapter *adapter,
 	return hdd_wmmps_helper(adapter, command);
 }
 
-static inline int drv_cmd_country(struct hdd_adapter *adapter,
-				  struct hdd_context *hdd_ctx,
-				  uint8_t *command,
-				  uint8_t command_len,
-				  struct hdd_priv_data *priv_data)
+static inline int __drv_cmd_country(struct hdd_adapter *adapter,
+				    struct hdd_context *hdd_ctx,
+				    uint8_t *command,
+				    uint8_t command_len,
+				    struct hdd_priv_data *priv_data)
 {
 	char *country_code;
 
@@ -2671,6 +2671,26 @@ static inline int drv_cmd_country(struct hdd_adapter *adapter,
 		return -EINVAL;
 
 	return hdd_reg_set_country(hdd_ctx, country_code);
+}
+
+static inline int drv_cmd_country(struct hdd_adapter *adapter,
+				  struct hdd_context *hdd_ctx,
+				  uint8_t *command,
+				  uint8_t command_len,
+				  struct hdd_priv_data *priv_data)
+{
+	struct osif_psoc_sync *psoc_sync;
+	int errno;
+
+	errno = osif_psoc_sync_op_start(wiphy_dev(hdd_ctx->wiphy), &psoc_sync);
+	if (errno)
+		return errno;
+	errno = __drv_cmd_country(adapter, hdd_ctx, command, command_len,
+				  priv_data);
+
+	osif_psoc_sync_op_stop(psoc_sync);
+
+	return errno;
 }
 
 /**

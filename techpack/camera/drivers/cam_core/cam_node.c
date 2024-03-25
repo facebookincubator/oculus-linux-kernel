@@ -378,6 +378,76 @@ static int __cam_node_handle_config_dev(struct cam_node *node,
 	return rc;
 }
 
+static int __cam_node_handle_set_stream_mode(struct cam_node *node,
+	struct cam_set_stream_mode *stream_mode)
+{
+	struct cam_context *ctx = NULL;
+	int rc;
+
+	if (!stream_mode)
+		return -EINVAL;
+
+	if (stream_mode->dev_handle <= 0) {
+		CAM_ERR(CAM_CORE, "Invalid device handle for context");
+		return -EINVAL;
+	}
+
+	if (stream_mode->session_handle <= 0) {
+		CAM_ERR(CAM_CORE, "Invalid session handle for context");
+		return -EINVAL;
+	}
+
+	ctx = (struct cam_context *)
+			cam_get_device_priv(stream_mode->dev_handle);
+	if (!ctx) {
+		CAM_ERR(CAM_CORE, "Can not get context for handle %d",
+			stream_mode->dev_handle);
+		return -EINVAL;
+	}
+
+	rc = cam_context_handle_set_stream_mode(ctx, stream_mode);
+	if (rc)
+		CAM_ERR(CAM_CORE, "Set stream mode failure for node %s",
+			node->name);
+
+	return rc;
+}
+
+static int __cam_node_handle_stream_mode_cmd(struct cam_node *node,
+	struct cam_stream_mode_cmd *stream_mode_cmd)
+{
+	struct cam_context *ctx = NULL;
+	int rc;
+
+	if (!stream_mode_cmd)
+		return -EINVAL;
+
+	if (stream_mode_cmd->dev_handle <= 0) {
+		CAM_ERR(CAM_CORE, "Invalid device handle for context");
+		return -EINVAL;
+	}
+
+	if (stream_mode_cmd->session_handle <= 0) {
+		CAM_ERR(CAM_CORE, "Invalid session handle for context");
+		return -EINVAL;
+	}
+
+	ctx = (struct cam_context *)
+			cam_get_device_priv(stream_mode_cmd->dev_handle);
+	if (!ctx) {
+		CAM_ERR(CAM_CORE, "Can not get context for handle %d",
+			stream_mode_cmd->dev_handle);
+		return -EINVAL;
+	}
+
+	rc = cam_context_handle_stream_mode_cmd(ctx, stream_mode_cmd);
+	if (rc)
+		CAM_DBG(CAM_CORE, "Stream mode cmd failure for node %s",
+			node->name);
+
+	return rc;
+}
+
 static int __cam_node_handle_flush_dev(struct cam_node *node,
 	struct cam_flush_dev_cmd *flush)
 {
@@ -951,6 +1021,38 @@ acquire_kfree:
 			if (rc)
 				CAM_ERR(CAM_CORE,
 					"config device failed(rc = %d)", rc);
+		}
+		break;
+	}
+	case CAM_SET_STREAM_MODE: {
+		struct cam_set_stream_mode stream_mode;
+
+		if (copy_from_user(&stream_mode, u64_to_user_ptr(cmd->handle),
+			sizeof(stream_mode)))
+			rc = -EFAULT;
+		else {
+			rc = __cam_node_handle_set_stream_mode(node,
+				&stream_mode);
+			if (rc)
+				CAM_ERR(CAM_CORE,
+					"set stream mode failed(rc = %d)", rc);
+		}
+		break;
+	}
+	case CAM_STREAM_MODE_CMD: {
+		struct cam_stream_mode_cmd stream_mode_cmd;
+
+		if (copy_from_user(&stream_mode_cmd, u64_to_user_ptr(cmd->handle),
+			sizeof(stream_mode_cmd)))
+			rc = -EFAULT;
+		else {
+			rc = __cam_node_handle_stream_mode_cmd(node,
+				&stream_mode_cmd);
+			if (rc)
+				CAM_DBG(CAM_CORE, "stream mode cmd failed(rc = %d)", rc);
+			else if (copy_to_user(u64_to_user_ptr(cmd->handle),
+					&stream_mode_cmd, sizeof(stream_mode_cmd)))
+				rc = -EFAULT;
 		}
 		break;
 	}

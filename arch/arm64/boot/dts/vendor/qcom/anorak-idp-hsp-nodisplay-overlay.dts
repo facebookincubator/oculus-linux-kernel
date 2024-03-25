@@ -1,0 +1,12 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-idp-hsp-nodisplay.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak IDP HSP with no display";
+	compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10022 0x7>;
+};
+

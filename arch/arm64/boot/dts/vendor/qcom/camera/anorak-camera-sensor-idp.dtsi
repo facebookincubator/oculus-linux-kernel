@@ -473,7 +473,7 @@
 		cell-index = <9>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <4>;
-		sensor-position-roll = <90>;
+		sensor-position-roll = <180>;
 		sensor-position-pitch = <0>;
 		sensor-position-yaw = <180>;
 		cam_vio-supply  = <&L8B>;
@@ -516,7 +516,7 @@
 		cell-index = <10>;
 		compatible = "qcom,cam-sensor";
 		csiphy-sd-index = <2>;
-		sensor-position-roll = <90>;
+		sensor-position-roll = <180>;
 		sensor-position-pitch = <0>;
 		sensor-position-yaw = <180>;
 		cam_vio-supply = <&L8B>;

@@ -2967,6 +2967,13 @@ static void sde_connector_check_status_work(struct work_struct *work)
 		return;
 	}
 
+	if (sde_encoder_has_dpu_ctl_op_sync(conn->encoder) &&
+			!sde_encoder_get_intf_status(conn->encoder)) {
+		SDE_DEBUG("timing engine not enabled\n");
+		mutex_unlock(&conn->lock);
+		return;
+	}
+
 	rc = conn->ops.check_status(&conn->base, conn->display, false);
 	mutex_unlock(&conn->lock);
 

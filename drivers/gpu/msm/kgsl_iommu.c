@@ -2102,11 +2102,13 @@ static bool iommu_addr_in_svm_ranges(struct kgsl_pagetable *pagetable,
 		return false;
 
 	if ((gpuaddr >= pagetable->compat_va_start && gpuaddr < pagetable->compat_va_end) &&
-		(end > pagetable->compat_va_start && end <= pagetable->compat_va_end))
+		(end > pagetable->compat_va_start &&
+			end <= pagetable->compat_va_end))
 		return true;
 
 	if ((gpuaddr >= pagetable->svm_start && gpuaddr < pagetable->svm_end) &&
-		(end > pagetable->svm_start && end <= pagetable->svm_end))
+		(end > pagetable->svm_start &&
+			end <= pagetable->svm_end))
 		return true;
 
 	return false;

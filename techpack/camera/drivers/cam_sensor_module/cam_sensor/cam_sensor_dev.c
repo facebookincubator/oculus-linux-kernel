@@ -10,6 +10,7 @@
 #include "cam_sensor_core.h"
 #include "camera_main.h"
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 #define SENSOR_DEBUGFS_NAME_MAX_SIZE 16
 
 static int cam_sensor_debug_register(
@@ -58,6 +59,16 @@ static void cam_sensor_debug_unregister(
 	debugfs_remove_recursive(s_ctrl->root_dentry);
 	s_ctrl->root_dentry = NULL;
 }
+#else
+static inline int cam_sensor_debug_register(
+	struct cam_sensor_ctrl_t *s_ctrl)
+{
+	return 0;
+}
+static inline void cam_sensor_debug_unregister(
+	struct cam_sensor_ctrl_t *s_ctrl)
+{ }
+#endif
 
 static int cam_sensor_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)

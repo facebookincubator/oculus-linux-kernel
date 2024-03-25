@@ -612,6 +612,20 @@ struct hif_event_history {
 };
 
 /**
+ * hif_desc_history_log_register() - Register hif_event_desc_history buffers
+ *
+ * Return: None
+ */
+void hif_desc_history_log_register(void);
+
+/**
+ * hif_desc_history_log_unregister() - Unregister hif_event_desc_history
+ *
+ * Return: None
+ */
+void hif_desc_history_log_unregister(void);
+
+/**
  * hif_hist_record_event() - Record one datapath event in history
  * @hif_ctx: HIF opaque context
  * @event: DP event entry
@@ -672,6 +686,13 @@ static inline void hif_record_event(struct hif_opaque_softc *hif_ctx,
 }
 
 #else
+static inline void hif_desc_history_log_register(void)
+{
+}
+
+static inline void hif_desc_history_log_unregister(void)
+{
+}
 
 static inline void hif_record_event(struct hif_opaque_softc *hif_ctx,
 				    uint8_t intr_grp_id,

@@ -97,6 +97,7 @@ struct sensor_lite_device {
 	uint32_t                              dump_en;
 	uint32_t                              type;
 	bool                                  hw_no_ops;
+	bool                                  is_trigger_mode;
 	int                                   anchor_pd;
 
 	/* Request Queue */

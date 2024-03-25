@@ -358,6 +358,7 @@ const char *sub_state_name(enum msm_vidc_sub_state sub_state)
 	case MSM_VIDC_DRC_LAST_BUFFER:     return "DRC_LAST_BUFFER ";
 	case MSM_VIDC_INPUT_PAUSE:         return "INPUT_PAUSE ";
 	case MSM_VIDC_OUTPUT_PAUSE:        return "OUTPUT_PAUSE ";
+	case MSM_VIDC_FIRST_IPSC:          return "FIRST_IPSC";
 	}
 
 	return "SUB_STATE_NONE";
@@ -2172,7 +2173,8 @@ int msm_vidc_process_streamon_input(struct msm_vidc_inst *inst)
 	 * input port will be resumed.
 	 */
 	if (is_sub_state(inst, MSM_VIDC_DRC) ||
-		is_sub_state(inst, MSM_VIDC_DRAIN)) {
+		is_sub_state(inst, MSM_VIDC_DRAIN) ||
+		is_sub_state(inst, MSM_VIDC_FIRST_IPSC)) {
 		if (!is_sub_state(inst, MSM_VIDC_INPUT_PAUSE)) {
 			rc = venus_hfi_session_pause(inst, INPUT_PORT);
 			if (rc)
@@ -2249,6 +2251,9 @@ int msm_vidc_process_streamon_output(struct msm_vidc_inst *inst)
 			clear_sub_state |= MSM_VIDC_INPUT_PAUSE;
 		}
 	}
+
+	if (is_sub_state(inst, MSM_VIDC_FIRST_IPSC))
+		clear_sub_state |= MSM_VIDC_FIRST_IPSC;
 
 	rc = venus_hfi_start(inst, OUTPUT_PORT);
 	if (rc)
@@ -2406,7 +2411,7 @@ int msm_vidc_state_change_input_psc(struct msm_vidc_inst *inst)
 	 */
 	if (is_state(inst, MSM_VIDC_INPUT_STREAMING) ||
 		is_state(inst, MSM_VIDC_OPEN))
-		set_sub_state = MSM_VIDC_INPUT_PAUSE;
+		set_sub_state = MSM_VIDC_INPUT_PAUSE | MSM_VIDC_FIRST_IPSC;
 	else
 		set_sub_state = MSM_VIDC_DRC | MSM_VIDC_INPUT_PAUSE;
 
@@ -2750,16 +2755,32 @@ exit:
 	return rc;
 }
 
-int msm_vidc_update_input_rate(struct msm_vidc_inst *inst, u64 time_us)
+int msm_vidc_update_input_rate(struct msm_vidc_inst *inst, struct vb2_buffer *vb2, u64 time_us)
 {
 	struct msm_vidc_input_timer *input_timer;
 	struct msm_vidc_input_timer *prev_timer = NULL;
 	u64 counter = 0;
 	u64 input_timer_sum_us = 0;
+	u32 slice_size = 0;
 
 	if (!inst || !inst->capabilities) {
 		d_vpr_e("%s: invalid params\n", __func__);
 		return -EINVAL;
+	}
+
+	if (is_decode_session(inst) && is_slice_decode_enabled(inst)) {
+		slice_size = vb2->planes[0].bytesused - vb2->planes[0].data_offset;
+		if (vb2->timestamp == inst->slice_decode.prev_ts) {
+			inst->slice_decode.slice_count++;
+			inst->slice_decode.frame_size += slice_size;
+			return 0;
+		} else { // First Slice of a Frame
+			inst->slice_decode.frame_data_size = max(inst->slice_decode.frame_size,
+					(slice_size * inst->slice_decode.slice_count));
+			inst->slice_decode.prev_ts = vb2->timestamp;
+			inst->slice_decode.slice_count = 1;
+			inst->slice_decode.frame_size = slice_size;
+		}
 	}
 
 	input_timer = msm_memory_pool_alloc(inst, MSM_MEM_POOL_BUF_TIMER);
@@ -4053,7 +4074,11 @@ int msm_vidc_get_internal_buffers(struct msm_vidc_inst *inst,
 	if (!buffers)
 		return -EINVAL;
 
-	if (buf_size <= buffers->size &&
+	if (is_split_mode_enabled(inst) && is_sub_state(inst, MSM_VIDC_FIRST_IPSC)) {
+		buffers->reuse = false;
+		buffers->size = buf_size;
+		buffers->min_count = buf_count;
+	} else if (buf_size <= buffers->size &&
 		buf_count <= buffers->min_count) {
 		buffers->reuse = true;
 	} else {
@@ -4061,6 +4086,7 @@ int msm_vidc_get_internal_buffers(struct msm_vidc_inst *inst,
 		buffers->size = buf_size;
 		buffers->min_count = buf_count;
 	}
+
 	return 0;
 }
 
@@ -6445,7 +6471,7 @@ int msm_vidc_check_core_mbps(struct msm_vidc_inst *inst)
 		/* reject encoder if all encoders mbps is greater than MAX_MBPS */
 		if (enc_mbps > core->capabilities[MAX_ENC_MBPS].value) {
 			i_vpr_e(inst, "%s: Encoder Hardware overloaded. needed %u, max %u", __func__,
-				mbps, core->capabilities[MAX_MBPS].value);
+				enc_mbps, core->capabilities[MAX_ENC_MBPS].value);
 			return -ENOMEM;
 		}
 		/*

@@ -2190,6 +2190,16 @@ void policy_mgr_check_sap_restart(struct wlan_objmgr_psoc *psoc,
 		return;
 	}
 
+	/*
+	 * Restart should be handled by sap_fsm_validate_and_change_channel(),
+	 * after SAP starts.
+	 */
+	if (pm_ctx->hdd_cbacks.hdd_is_cac_in_progress &&
+	    pm_ctx->hdd_cbacks.hdd_is_cac_in_progress()) {
+		policy_mgr_debug("DFS CAC in progress, do not restart SAP");
+		return;
+	}
+
 	if (!pm_ctx->hdd_cbacks.wlan_hdd_get_channel_for_sap_restart) {
 		policy_mgr_err("SAP restart get channel callback in NULL");
 		goto end;

@@ -54,11 +54,6 @@ struct mac_context;
 #include "wlan_mlo_mgr_public_structs.h"
 #endif
 
-/* The ini gDataInactivityTimeout is deprecated. So, definng a new macro
- * PS_DATA_INACTIVITY_TIMEOUT with the ini's default value.
- */
-#define PS_DATA_INACTIVITY_TIMEOUT (200)
-
 #define OFFSET_OF(structType, fldName)   (&((structType *)0)->fldName)
 #define WLAN_DOT11_BASIC_RATE_MASK (0x80)
 #define BITS_ON(_Field, _Bitmask)  ((_Field) |=  (_Bitmask))

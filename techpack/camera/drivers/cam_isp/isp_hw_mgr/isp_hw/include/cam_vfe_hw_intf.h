@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_VFE_HW_INTF_H_
@@ -421,6 +421,16 @@ struct cam_vfe_generic_ubwc_config {
 	uint32_t   api_version;
 	struct cam_vfe_generic_ubwc_plane_config
 		ubwc_plane_cfg[CAM_PACKET_MAX_PLANES - 1];
+};
+
+/**
+ * struct cam_vfe_hw_stop_args- stop resource
+ * @node_res :  reource pointer
+ * @is_internal_stop:  Stop triggered internally for reset & recovery
+ */
+struct cam_vfe_hw_stop_args {
+	struct cam_isp_resource_node            *node_res;
+	bool                                     is_internal_stop;
 };
 
 /*

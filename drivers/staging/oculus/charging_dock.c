@@ -17,12 +17,6 @@
  */
 #define BATTERY_NEARLY_FULL_LEVEL	98
 
-struct svid_handler_info {
-	struct charging_dock_device_t *ddev;
-	struct glink_svid_handler handler;
-	struct list_head entry;
-};
-
 static int batt_psy_notifier_call(struct notifier_block *nb,
 	unsigned long ev, void *ptr);
 
@@ -33,6 +27,7 @@ static void charging_dock_send_vdm_request(
 	u32 vdm_vdo = 0;
 	int num_vdos = 0;
 	int result = -1;
+	struct usbvdm_subscription_data *pos, *sub_data = NULL;
 
 	/* header(32) = svid(16) ack(1) proto(2) high(1) size(3) param(8) */
 	vdm_header = VDMH_CONSTRUCT(ddev->current_svid, 0, VDM_REQUEST, 0, 0, parameter);
@@ -45,13 +40,15 @@ static void charging_dock_send_vdm_request(
 		num_vdos = 1;
 	}
 
-	if (ddev->intf_type == INTF_TYPE_USBPD)
-		result = usbpd_send_vdm(ddev->upd, vdm_header, &vdm_vdo, num_vdos);
-	else if (ddev->intf_type == INTF_TYPE_CYPD)
-		result = cypd_send_vdm(ddev->cpd, vdm_header, &vdm_vdo, num_vdos);
-	else if (ddev->intf_type == INTF_TYPE_GLINK)
-		result = vdm_glink_send_vdm(ddev->gpd, vdm_header, &vdm_vdo, num_vdos);
+	list_for_each_entry(pos, &ddev->sub_list, entry) {
+		if (pos->vid == ddev->current_svid && pos->pid == ddev->current_pid)
+			sub_data = pos;
+	}
 
+	if (!sub_data)
+		return;
+
+	result = usbvdm_subscriber_vdm(sub_data->sub, vdm_header, &vdm_vdo, num_vdos);
 	if (result != 0) {
 		dev_err(ddev->dev,
 			"Error sending vdm, parameter type:%d, result:%d", parameter, result);
@@ -79,7 +76,7 @@ static void charging_dock_handle_work(struct work_struct *work)
 	dev_dbg(ddev->dev, "%s: enter", __func__);
 
 	mutex_lock(&ddev->lock);
-	if (!ddev->docked || ddev->intf_type == INTF_TYPE_UNKNOWN) {
+	if (!ddev->docked) {
 		mutex_unlock(&ddev->lock);
 		return;
 	}
@@ -105,7 +102,7 @@ static void charging_dock_handle_work_soc(struct work_struct *work)
 	dev_dbg(ddev->dev, "%s: enter", __func__);
 
 	mutex_lock(&ddev->lock);
-	if (!ddev->docked || ddev->intf_type == INTF_TYPE_UNKNOWN)
+	if (!ddev->docked)
 		goto out;
 
 	/* Battery status */
@@ -141,9 +138,11 @@ out:
 	mutex_unlock(&ddev->lock);
 }
 
-static void vdm_connect_common(struct charging_dock_device_t *ddev,
-	enum charging_dock_intf_type intf_type, u16 svid)
+static void charging_dock_usbvdm_connect(struct usbvdm_subscription *sub,
+		u16 vid, u16 pid)
 {
+	struct charging_dock_device_t *ddev = usbvdm_subscriber_get_drvdata(sub);
+
 	/*
 	 * Client notifications only occur during docked/undocked
 	 * state transitions. This should not be called when state is
@@ -156,8 +155,8 @@ static void vdm_connect_common(struct charging_dock_device_t *ddev,
 
 	mutex_lock(&ddev->lock);
 	ddev->docked = true;
-	ddev->intf_type = intf_type;
-	ddev->current_svid = svid;
+	ddev->current_svid = vid;
+	ddev->current_pid = pid;
 	mutex_unlock(&ddev->lock);
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
@@ -172,54 +171,12 @@ static void vdm_connect_common(struct charging_dock_device_t *ddev,
 	}
 }
 
-static void cypd_vdm_connect(struct cypd_svid_handler *hdlr)
+static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 {
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
-	dev_info(ddev->dev, "cypd vdm connect\n");
-	vdm_connect_common(ddev, INTF_TYPE_CYPD, hdlr->svid);
-}
-
-static void cypd_vdm_connect_alt(struct cypd_svid_handler *hdlr)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
-	dev_info(ddev->dev, "cypd vdm connect alt\n");
-	vdm_connect_common(ddev, INTF_TYPE_CYPD, hdlr->svid);
-}
-
-static void glink_vdm_connect(struct glink_svid_handler *hdlr, bool unused)
-{
-	struct svid_handler_info *handler_info =
-			container_of(hdlr, struct svid_handler_info, handler);
-	struct charging_dock_device_t *ddev = handler_info->ddev;
-
-	dev_info(ddev->dev, "glink vdm connect alt");
-	vdm_connect_common(ddev, INTF_TYPE_GLINK, hdlr->svid);
-}
-
-static void usbpd_vdm_connect(struct usbpd_svid_handler *hdlr, bool supports_usb_comm)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, usbpd_vdm_handler);
-	dev_info(ddev->dev, "usbpd vdm connect: usb_comm=%d\n", supports_usb_comm);
-	vdm_connect_common(ddev, INTF_TYPE_USBPD, hdlr->svid);
-}
-
-static void vdm_disconnect_common(struct charging_dock_device_t *ddev, enum charging_dock_intf_type intf_type)
-{
-	/*
-	 * If a disconnect callback is received from another interface, simply ignore it
-	 * as only interface type is supported at a given point in time
-	 */
-	if (ddev->intf_type == INTF_TYPE_UNKNOWN || ddev->intf_type != intf_type) {
-		dev_warn(ddev->dev, "Received disconnect from a mis-matched interface, ignoring\n");
-		return;
-	}
+	struct charging_dock_device_t *ddev = usbvdm_subscriber_get_drvdata(sub);
 
 	mutex_lock(&ddev->lock);
 	ddev->docked = false;
-	ddev->intf_type = INTF_TYPE_UNKNOWN;
 	ddev->current_svid = 0;
 	mutex_unlock(&ddev->lock);
 
@@ -228,40 +185,6 @@ static void vdm_disconnect_common(struct charging_dock_device_t *ddev, enum char
 	cancel_work_sync(&ddev->work);
 	if (ddev->send_state_of_charge)
 		cancel_work_sync(&ddev->work_soc);
-}
-
-static void cypd_vdm_disconnect(struct cypd_svid_handler *hdlr)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
-	dev_info(ddev->dev, "cypd vdm disconnect\n");
-	vdm_disconnect_common(ddev, INTF_TYPE_CYPD);
-}
-
-static void cypd_vdm_disconnect_alt(struct cypd_svid_handler *hdlr)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
-	dev_info(ddev->dev, "cypd vdm disconnect alt\n");
-	vdm_disconnect_common(ddev, INTF_TYPE_CYPD);
-}
-
-static void glink_vdm_disconnect(struct glink_svid_handler *hdlr)
-{
-	struct svid_handler_info *handler_info =
-			container_of(hdlr, struct svid_handler_info, handler);
-	struct charging_dock_device_t *ddev = handler_info->ddev;
-
-	dev_info(ddev->dev, "glink vdm disconnect");
-	vdm_disconnect_common(ddev, INTF_TYPE_GLINK);
-}
-
-static void usbpd_vdm_disconnect(struct usbpd_svid_handler *hdlr)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, usbpd_vdm_handler);
-	dev_info(ddev->dev, "usbpd vdm disconnect\n");
-	vdm_disconnect_common(ddev, INTF_TYPE_USBPD);
 }
 
 #define PORT_CONFIG_VOLTAGE_MV_CONVERSION 50
@@ -371,9 +294,10 @@ static void vdm_memcpy(struct charging_dock_device_t *ddev,
 	memcpy(dest, src, count);
 }
 
-static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr,
-		const u32 *vdos, int num_vdos)
+static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
+	struct charging_dock_device_t *ddev = usbvdm_subscriber_get_drvdata(sub);
 	u32 protocol_type, parameter_type, sb;
 	bool acked;
 	int log_chunk_size;
@@ -541,43 +465,6 @@ static void vdm_received_common(struct charging_dock_device_t *ddev, u32 vdm_hdr
 	}
 }
 
-static void cypd_vdm_received(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
-		const u32 *vdos, int num_vdos)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler);
-	dev_dbg(ddev->dev, "cypd vdm received\n");
-	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
-}
-
-static void cypd_vdm_received_alt(struct cypd_svid_handler *hdlr, u32 vdm_hdr,
-		const u32 *vdos, int num_vdos)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, cypd_vdm_handler_alt);
-	dev_dbg(ddev->dev, "cypd vdm received alt\n");
-	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
-}
-
-static void glink_vdm_received(struct glink_svid_handler *hdlr, u32 vdm_hdr,
-		const u32 *vdos, int num_vdos)
-{
-	struct svid_handler_info *handler_info =
-			container_of(hdlr, struct svid_handler_info, handler);
-	struct charging_dock_device_t *ddev = handler_info->ddev;
-
-	dev_dbg(ddev->dev, "glink vdm received\n");
-	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
-}
-
-static void usbpd_vdm_received(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
-		const u32 *vdos, int num_vdos)
-{
-	struct charging_dock_device_t *ddev =
-		container_of(hdlr, struct charging_dock_device_t, usbpd_vdm_handler);
-	vdm_received_common(ddev, vdm_hdr, vdos, num_vdos);
-}
-
 static ssize_t docked_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -587,6 +474,26 @@ static ssize_t docked_show(struct device *dev, struct device_attribute *attr,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->docked);
 }
 static DEVICE_ATTR_RO(docked);
+
+static ssize_t vid_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", ddev->current_svid);
+}
+static DEVICE_ATTR_RO(vid);
+
+static ssize_t pid_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", ddev->current_pid);
+}
+static DEVICE_ATTR_RO(pid);
 
 static ssize_t broadcast_period_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1087,8 +994,23 @@ static ssize_t dock_type_show(struct device *dev,
 {
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+	int dock_type;
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->intf_type);
+	switch (ddev->current_pid) {
+	case VDM_PID_BURU:
+	case VDM_PID_UPA_18W:
+	case VDM_PID_UPA_45W:
+		dock_type = 1;
+		break;
+	case VDM_PID_SKELLIG:
+	case VDM_PID_MAUI:
+		dock_type = 2;
+		break;
+	default:
+		dock_type = 0;
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", dock_type);
 }
 static DEVICE_ATTR_RO(dock_type);
 
@@ -1177,6 +1099,8 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_dock_type.attr,
 	&dev_attr_moisture_detected_count.attr,
 	&dev_attr_system_battery_capacity.attr,
+	&dev_attr_vid.attr,
+	&dev_attr_pid.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);
@@ -1204,8 +1128,8 @@ static int batt_psy_notifier_call(struct notifier_block *nb,
 	if (IS_ERR_OR_NULL(ddev) || IS_ERR_OR_NULL(ddev->battery_psy))
 		return NOTIFY_BAD;
 
-	/*  Only proceed if we are docked via Pogo connection */
-	if (!ddev->docked || ddev->intf_type != INTF_TYPE_CYPD)
+	/* Only proceed if we are docked to Maui */
+	if (!ddev->docked || ddev->current_pid != VDM_PID_MAUI)
 		return NOTIFY_OK;
 
 	if (psy != ddev->battery_psy || ev != PSY_EVENT_PROP_CHANGED)
@@ -1254,12 +1178,17 @@ static int batt_psy_init(struct charging_dock_device_t *ddev)
 
 static int charging_dock_probe(struct platform_device *pdev)
 {
-	int result = 0;
-	int i, num_supported;
-	u16 *supported_devices;
+	int i, result = 0;
 	struct charging_dock_device_t *ddev;
-	struct svid_handler_info *handler_info;
 	u32 temp_val = 0;
+	u16 *usb_ids = NULL;
+	int num_ids = 0;
+	struct usbvdm_subscription_data *sub_data = NULL;
+	const struct usbvdm_subscriber_ops ops = {
+		.connect = charging_dock_usbvdm_connect,
+		.disconnect = charging_dock_usbvdm_disconnect,
+		.vdm = charging_dock_usbvdm_vdm_rx
+	};
 
 	dev_dbg(&pdev->dev, "enter\n");
 
@@ -1275,134 +1204,7 @@ static int charging_dock_probe(struct platform_device *pdev)
 		(batt_psy_init(ddev) || !ddev->battery_psy))
 			return -EPROBE_DEFER;
 
-	// Interface type is not known until we get a vdm_connect callback
-	ddev->intf_type = INTF_TYPE_UNKNOWN;
 	ddev->current_svid = 0;
-
-	// usbpd: return on failure only if interface is enabled on the platform
-	ddev->upd = devm_usbpd_get_by_phandle(&pdev->dev, "charger-usbpd");
-	if (IS_ERR_OR_NULL(ddev->upd)) {
-#if IS_ENABLED(CONFIG_USB_PD_POLICY)
-		if (PTR_ERR(ddev->upd) != -EPROBE_DEFER)
-			dev_err(&pdev->dev,
-					"devm_usbpd_get_by_phandle failed: %ld",
-					PTR_ERR(ddev->upd));
-		return PTR_ERR(ddev->upd);
-#endif
-	}
-
-	// cypd: return on failure only if interface is enabled on the platform
-	ddev->cpd = devm_cypd_get_by_phandle(&pdev->dev, "charger-cypd");
-	if (IS_ERR_OR_NULL(ddev->cpd)) {
-#if IS_ENABLED(CONFIG_CYPD_POLICY_ENGINE)
-		if (PTR_ERR(ddev->cpd) != -EPROBE_DEFER)
-			dev_err(&pdev->dev,
-					"devm_cypd_get_by_phandle failed: %ld",
-					PTR_ERR(ddev->cpd));
-		return PTR_ERR(ddev->cpd);
-#endif
-	}
-
-	// glink: return on failure only if interface is enabled on the platform
-	ddev->gpd = devm_vdm_glink_get_by_phandle(&pdev->dev, "vdm-glink");
-	if (IS_ERR_OR_NULL(ddev->gpd)) {
-#if IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)
-		if (PTR_ERR(ddev->gpd) != -EPROBE_DEFER)
-			dev_err(&pdev->dev,
-					"devm_vdm_glink_get_by_phandle failed: %ld",
-					PTR_ERR(ddev->gpd));
-		return PTR_ERR(ddev->gpd);
-#endif
-	}
-
-	if (!IS_ERR_OR_NULL(ddev->upd)) {
-		ddev->usbpd_vdm_handler.connect = usbpd_vdm_connect;
-		ddev->usbpd_vdm_handler.disconnect = usbpd_vdm_disconnect;
-		ddev->usbpd_vdm_handler.vdm_received = usbpd_vdm_received;
-
-		result = of_property_read_u16(pdev->dev.of_node,
-			"svid-usbpd", &ddev->usbpd_vdm_handler.svid);
-		if (result < 0) {
-			dev_err(&pdev->dev,
-				"Charging dock usbpd SVID unavailable, failing probe, result:%d\n",
-					result);
-			return result;
-		}
-		dev_dbg(&pdev->dev, "Property svid-usbpd=%x", ddev->usbpd_vdm_handler.svid);
-	}
-
-	if (!IS_ERR_OR_NULL(ddev->cpd)) {
-		ddev->cypd_vdm_handler.connect = cypd_vdm_connect;
-		ddev->cypd_vdm_handler.disconnect = cypd_vdm_disconnect;
-		ddev->cypd_vdm_handler.vdm_received = cypd_vdm_received;
-
-		ddev->cypd_vdm_handler_alt.connect = cypd_vdm_connect_alt;
-		ddev->cypd_vdm_handler_alt.disconnect = cypd_vdm_disconnect_alt;
-		ddev->cypd_vdm_handler_alt.vdm_received = cypd_vdm_received_alt;
-
-		result = of_property_read_u16(pdev->dev.of_node,
-			"svid-cypd", &ddev->cypd_vdm_handler.svid);
-		if (result < 0) {
-			dev_err(&pdev->dev,
-				"Charging dock cypd SVID unavailable, failing probe, result:%d\n",
-				    result);
-			return result;
-		}
-		dev_dbg(&pdev->dev, "Property svid-cypd=0x%04x", ddev->cypd_vdm_handler.svid);
-
-		/* alt */
-		result = of_property_read_u16(pdev->dev.of_node,
-			"svid-cypd-alt", &ddev->cypd_vdm_handler_alt.svid);
-		if (result < 0) {
-			dev_err(&pdev->dev,
-				"Charging dock cypd SVID (alt) unavailable, not failing probe, result:%d\n",
-				    result);
-			result = 0;
-		} else {
-			dev_dbg(&pdev->dev, "Property svid-cypd-alt=0x%04x", ddev->cypd_vdm_handler_alt.svid);
-		}
-	}
-
-	if (!IS_ERR_OR_NULL(ddev->gpd)) {
-		INIT_LIST_HEAD(&ddev->glink_handlers);
-
-		num_supported = device_property_read_u16_array(&pdev->dev,
-				"supported-devices", NULL, 0);
-		if (num_supported <= 0 || (num_supported % 2) != 0) {
-			dev_err(&pdev->dev,
-					"supported-devices must be specified as a list of SVID/PID pairs, rc=%d",
-					num_supported);
-			return -EINVAL;
-		}
-
-		supported_devices = kcalloc(num_supported, sizeof(u16), GFP_KERNEL);
-		if (!supported_devices)
-			return -ENOMEM;
-
-		result = device_property_read_u16_array(&pdev->dev,
-				"supported-devices", supported_devices, num_supported);
-		if (result) {
-			dev_err(&pdev->dev,
-					"failed reading supported-devices, rc=%d num_supported=%d",
-					result, num_supported);
-			return result;
-		}
-
-		for (i = 0; i < num_supported; i += 2) {
-			handler_info = devm_kzalloc(&pdev->dev,
-					sizeof(*handler_info), GFP_KERNEL);
-			if (!handler_info)
-				return -ENOMEM;
-
-			handler_info->ddev = ddev;
-			handler_info->handler.svid = supported_devices[i];
-			handler_info->handler.pid = supported_devices[i+1];
-			handler_info->handler.connect = glink_vdm_connect;
-			handler_info->handler.disconnect = glink_vdm_disconnect;
-			handler_info->handler.vdm_received = glink_vdm_received;
-			list_add_tail(&handler_info->entry, &ddev->glink_handlers);
-		}
-	}
 
 	result = of_property_read_u32(pdev->dev.of_node,
 		"broadcast-period-min", &temp_val);
@@ -1423,49 +1225,49 @@ static int charging_dock_probe(struct platform_device *pdev)
 	}
 	init_waitqueue_head(&ddev->tx_waitq);
 
-	/* Register VDM callbacks */
-	if (!IS_ERR_OR_NULL(ddev->upd)) {
-		result = usbpd_register_svid(ddev->upd, &ddev->usbpd_vdm_handler);
-		if (result != 0) {
-			dev_err(&pdev->dev, "Failed to register usbpd vdm handler: %d(0x%x)", result, result);
-			return result;
-		}
-		dev_dbg(&pdev->dev, "Registered usbpd svid 0x%04x", ddev->usbpd_vdm_handler.svid);
-	}
-	if (!IS_ERR_OR_NULL(ddev->cpd)) {
-		result = cypd_register_svid(ddev->cpd, &ddev->cypd_vdm_handler);
-		if (result != 0) {
-			dev_err(&pdev->dev, "Failed to register cypd vdm handler: %d(0x%x)", result, result);
-			return result;
-		}
-		dev_dbg(&pdev->dev, "Registered cypd svid 0x%04x", ddev->cypd_vdm_handler.svid);
-		// alt
-		if (ddev->cypd_vdm_handler_alt.svid) {
-			result = cypd_register_svid(ddev->cpd, &ddev->cypd_vdm_handler_alt);
-			if (result != 0)
-				dev_err(&pdev->dev, "Failed to register cypd vdm handler: %d(0x%x)", result, result);
-			else
-				dev_dbg(&pdev->dev, "Registered cypd svid 0x%04x (alt)", ddev->cypd_vdm_handler_alt.svid);
-		}
-	}
-	if (!IS_ERR_OR_NULL(ddev->gpd)) {
-		/*
-		 * TODO(T156681666): clean up vdm_glink naming so it is more like the
-		 * other interfaces
-		 */
-		list_for_each_entry(handler_info, &ddev->glink_handlers, entry) {
-			result = vdm_glink_register_handler(ddev->gpd, &handler_info->handler);
-			if (result != 0) {
-				dev_err(&pdev->dev, "Failed to register glink vdm handler: %d(0x%x)", result, result);
-				return result;
-			}
-			dev_dbg(&pdev->dev, "Registered glink SVID/PID 0x%04x/0x%04x",
-					handler_info->handler.svid, handler_info->handler.pid);
-		}
-	}
-
 	ddev->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, ddev);
+
+	num_ids = device_property_read_u16_array(ddev->dev, "meta,usb-ids", NULL, 0);
+	if (num_ids <= 0) {
+		dev_err(ddev->dev, "Error reading usb-ids property: %d", num_ids);
+		return num_ids < 0 ? num_ids : -EINVAL;
+	}
+
+	usb_ids = kzalloc(sizeof(u16) * num_ids, GFP_KERNEL);
+	if (!usb_ids)
+		return -ENOMEM;
+
+	result = device_property_read_u16_array(ddev->dev, "meta,usb-ids", usb_ids, num_ids);
+	if (result < 0) {
+		dev_err(ddev->dev, "Error reading usb-ids property: %d", result);
+		kfree(usb_ids);
+		return result;
+	}
+
+	INIT_LIST_HEAD(&ddev->sub_list);
+	for (i = 0; i < num_ids; i += 2) {
+		sub_data = devm_kzalloc(ddev->dev, sizeof(*sub_data), GFP_KERNEL);
+		if (!sub_data) {
+			kfree(usb_ids);
+			return -ENOMEM;
+		}
+
+		sub_data->vid = usb_ids[i];
+		sub_data->pid = usb_ids[i + 1];
+		sub_data->sub = usbvdm_subscribe(ddev->dev, sub_data->vid, sub_data->pid, ops);
+		if (IS_ERR_OR_NULL(sub_data->sub)) {
+			dev_err(ddev->dev, "Failed to subscribe to VID/PID 0x%04x/0x%04x: %d",
+					sub_data->vid, sub_data->pid, PTR_ERR_OR_ZERO(sub_data->sub));
+			kfree(usb_ids);
+			return IS_ERR(sub_data->sub) ? PTR_ERR(sub_data) : -ENODATA;
+		}
+
+		usbvdm_subscriber_set_drvdata(sub_data->sub, ddev);
+		list_add(&sub_data->entry, &ddev->sub_list);
+	}
+
+	kfree(usb_ids);
 
 	if (ddev->send_state_of_charge)
 		batt_psy_register_notifier(ddev);
@@ -1478,27 +1280,17 @@ static int charging_dock_probe(struct platform_device *pdev)
 static int charging_dock_remove(struct platform_device *pdev)
 {
 	struct charging_dock_device_t *ddev = platform_get_drvdata(pdev);
-	struct svid_handler_info *handler_info;
+	struct usbvdm_subscription_data *pos;
 
 	dev_dbg(ddev->dev, "enter\n");
-
-	if (ddev->upd != NULL)
-		usbpd_unregister_svid(ddev->upd, &ddev->usbpd_vdm_handler);
-
-	if (ddev->cpd != NULL) {
-		cypd_unregister_svid(ddev->cpd, &ddev->cypd_vdm_handler);
-		cypd_unregister_svid(ddev->cpd, &ddev->cypd_vdm_handler_alt);
-	}
-
-	if (ddev->gpd != NULL)
-		list_for_each_entry(handler_info, &ddev->glink_handlers, entry)
-			vdm_glink_unregister_handler(ddev->gpd, &handler_info->handler);
 
 	cancel_work_sync(&ddev->work);
 	if (ddev->send_state_of_charge) {
 		batt_psy_unregister_notifier(ddev);
 		cancel_work_sync(&ddev->work_soc);
 	}
+	list_for_each_entry(pos, &ddev->sub_list, entry)
+		usbvdm_unsubscribe(pos->sub);
 	wake_up_all(&ddev->tx_waitq);
 	mutex_destroy(&ddev->lock);
 	sysfs_remove_groups(&ddev->dev->kobj, charging_dock_groups);

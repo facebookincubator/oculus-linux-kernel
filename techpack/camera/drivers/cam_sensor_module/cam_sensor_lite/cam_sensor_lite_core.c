@@ -550,6 +550,35 @@ static int cam_sensor_lite_flush_applied_q_unsafe(
 	return rc;
 }
 
+static int cam_sensor_lite_handle_remote_flush(
+	struct sensor_lite_device *dev)
+{
+	int rc = 0;
+	struct sensorlite_sys_cmd cmd;
+
+	if (!dev) {
+		CAM_ERR(CAM_SENSOR_LITE, "Invalid Argument");
+		return -EINVAL;
+	}
+
+	cmd.header.tag = SENSORLITE_CMD_TYPE_REMOTE_FLUSH;
+	cmd.header.version = 0x01;
+	cmd.header.size = sizeof(struct sensorlite_sys_cmd);
+	cmd.sensor_id = dev->soc_info.index;
+	cmd.sys_cmd = CAM_SYS_CMD_FLUSH;
+	rc = __send_pkt(dev, &cmd.header);
+
+	if (rc) {
+		CAM_ERR(CAM_SENSOR_LITE, "Failed to Send remote flush packet");
+	} else {
+		CAM_DBG(CAM_SENSOR_LITE,
+			"Remote flush command is issued for Sensor[%d]",
+			dev->soc_info.index);
+	}
+
+	return rc;
+}
+
 static int cam_sensor_lite_flush_req_unsafe(
 	struct sensor_lite_device *dev,
 	int flush_type,
@@ -560,6 +589,25 @@ static int cam_sensor_lite_flush_req_unsafe(
 	if (!dev) {
 		CAM_ERR(CAM_SENSOR_LITE, "Invalid Argument");
 		return -EINVAL;
+	}
+
+	/* Check if sensor is in TRIGGER Mode */
+	if (dev->is_trigger_mode) {
+		if (flush_type == CAM_FLUSH_TYPE_ALL) {
+			rc = cam_sensor_lite_handle_remote_flush(dev);
+		} else {
+			rc = -EINVAL;
+			CAM_ERR(CAM_SENSOR_LITE,
+				"Single req flush is not supported on remote device");
+		}
+
+		if (rc) {
+			CAM_ERR(CAM_SENSOR_LITE,
+				"SENSOR[%d]: Failed to issue remote flush command",
+				dev->soc_info.index);
+		}
+
+		return rc;
 	}
 
 	rc = cam_sensor_lite_flush_waiting_q_unsafe(
@@ -836,10 +884,13 @@ static int __cam_sensor_lite_handle_start_cmd(
 		__set_slave_pkt_headers(&cmd->header, HCM_PKT_OPCODE_SENSOR_START_DEV);
 		memcpy(sensor_lite_dev->start_cmd, cmd, cmd->header.size);
 
+		sensor_lite_dev->is_trigger_mode =
+			(sensor_lite_dev->start_cmd->start_stop_settings_size == 0) ? true : false;
+
 		CAM_DBG(CAM_SENSOR_LITE, "SENSOR_LITE[%d] start settings size: %d trigger mode:%d",
 			sensor_lite_dev->soc_info.index,
 			sensor_lite_dev->start_cmd->start_stop_settings_size,
-			(sensor_lite_dev->start_cmd->start_stop_settings_size == 0));
+			sensor_lite_dev->is_trigger_mode);
 	}
 	return rc;
 }
@@ -938,6 +989,7 @@ static int cam_sensor_lite_validate_cmd_descriptor(
 		rc = -EINVAL;
 	}
 end:
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return rc;
 }
 
@@ -1113,6 +1165,7 @@ static int cam_sensor_lite_packet_parse(
 		break;
 	}
 end:
+	cam_mem_put_cpu_buf(config->packet_handle);
 	return rc;
 }
 
@@ -1315,8 +1368,11 @@ int32_t __cam_sensor_lite_handle_probe(
 		ptr      = (void *) cmd_buf;
 		probe    = (struct probe_payload_v2 *) ptr;
 
-		if (probe->header.tag != SENSORLITE_CMD_TYPE_PROBE)
+		if (probe->header.tag != SENSORLITE_CMD_TYPE_PROBE) {
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
+			cam_mem_put_cpu_buf(handle);
 			return -EINVAL;
+		}
 		pwr_on_cmd_size = sizeof(struct sensor_lite_acquire_cmd) +
 					(sizeof(struct sensor_power_setting) *
 					probe->power_up_settings_size);
@@ -1325,6 +1381,8 @@ int32_t __cam_sensor_lite_handle_probe(
 		if (!sensor_lite_dev->acquire_cmd) {
 			CAM_ERR(CAM_SENSOR_LITE,
 					"Could not allocate the memory for acquire_cmd");
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
+			cam_mem_put_cpu_buf(handle);
 			return -ENOMEM;
 		}
 
@@ -1348,6 +1406,8 @@ int32_t __cam_sensor_lite_handle_probe(
 					"Could not allocate the memory for acquire_cmd");
 			kfree(sensor_lite_dev->acquire_cmd);
 			sensor_lite_dev->acquire_cmd = NULL;
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
+			cam_mem_put_cpu_buf(handle);
 			return -ENOMEM;
 		}
 
@@ -1389,7 +1449,7 @@ int32_t __cam_sensor_lite_handle_probe(
 				probe->power_down_settings_offset,
 				probe->power_down_settings_size,
 				probe->header.size);
-
+		cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 	}
 
 	if (ptr != NULL) {
@@ -1399,6 +1459,7 @@ int32_t __cam_sensor_lite_handle_probe(
 		rc = -EINVAL;
 	}
 end:
+	cam_mem_put_cpu_buf(handle);
 	return rc;
 }
 

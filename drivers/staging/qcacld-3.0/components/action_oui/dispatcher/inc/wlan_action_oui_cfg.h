@@ -745,6 +745,35 @@
 
 /*
  * <ini>
+ * CFG_ACTION_OUI_DISABLE_BFORMEE - Used to disable SU/MU beamformee
+ * capability for specified AP with some conditions
+ *
+ * Example OUIs: (All values in Hex)
+ * OUI 1: 000c43
+ *       OUI data Len: 04
+ *       OUI Data : 03000000
+ *       OUI data Mask: F0 - 11110000
+ *       Info Mask : 01 - only OUI present in Info mask
+ *
+ * Refer to gEnableActionOUI for more detail about the format.
+ *
+ * Related: gEnableActionOUI
+ *
+ * Supported Feature: Action OUIs
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ACTION_OUI_DISABLE_BFORMEE CFG_INI_STRING( \
+	"gActionOUIDisableBFORMEE", \
+	0, \
+	ACTION_OUI_MAX_STR_LEN, \
+	"", \
+	"disable SU/MU beamformee capability for specified AP")
+
+/*
+ * <ini>
  * gActionOUIEnableCTS2SelfWithQoSNull - Used to enable CTS2SELF with QoS null
  * frame for specified APs
  *
@@ -824,5 +853,6 @@
 	CFG(CFG_ACTION_OUI_ENABLE_CTS2SELF_WITH_QOS_NULL) \
 	CFG(CFG_ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN) \
 	CFG(CFG_ACTION_OUI_AUTH_ASSOC_6MBPS_2GHZ) \
+	CFG(CFG_ACTION_OUI_DISABLE_BFORMEE) \
 	CFG(CFG_ENABLE_ACTION_OUI)
 #endif

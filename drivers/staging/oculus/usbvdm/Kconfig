@@ -1,0 +1,35 @@
+menuconfig META_USBVDM
+	tristate "Meta USB VDM abstraction library"
+	help
+	  This library handles communication between an upper-level application
+	  drivers, such as one for an external battery, and each of the
+	  lower-level USB PD engines that may be present on the system.
+
+	  This presents a standard interface for an application driver to send
+	  and receive VDMs with a device of a particular VID/PID pairing, without
+	  concern for which particular underlying policy engine is in use.
+
+if META_USBVDM
+
+config META_USBVDM_CYPD
+	tristate "Meta USB VDM CYPD driver"
+	depends on CYPD_POLICY_ENGINE
+	help
+	  This driver provides an implementation of the engine for a USB VDM
+	  communication channel for CYPD3177 and its underlying policy engine.
+
+config META_USBVDM_GLINK
+	tristate "Meta USB VDM QTI GLINK driver"
+	depends on QTI_PMIC_GLINK
+	help
+	  This driver provides an implementation of the engine for a USB VDM
+	  communication channel for the underlying QTI GLINK.
+
+config META_USBVDM_QTIPD
+	tristate "Meta USB VDM QTI USBPD driver"
+	depends on USB_PD_POLICY
+	help
+	  This driver provides an implementation of the engine for a USB VDM
+	  communication channel for the underlying QTI USB PD policy engine.
+
+endif

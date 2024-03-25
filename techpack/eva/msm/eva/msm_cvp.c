@@ -1349,23 +1349,32 @@ static int cvp_fence_thread_stop(struct msm_cvp_inst *inst)
 	struct cvp_fence_queue *q;
 	struct cvp_session_queue *sq;
 
+	if(!inst){
+		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
 	if (!inst->prop.fthread_nr)
 		return 0;
 
 	q = &inst->fence_cmd_queue;
-
-	mutex_lock(&q->lock);
-	q->state = QUEUE_STOP;
-	mutex_unlock(&q->lock);
-
+	if(q->state == QUEUE_START){
+		mutex_lock(&q->lock);
+		q->state = QUEUE_STOP;
+		mutex_unlock(&q->lock);
+		if((q->wq.head.next)||(q->wq.head.prev)){
+			wake_up_all(&q->wq);
+		}
+	}
 	sq = &inst->session_queue_fence;
-	spin_lock(&sq->lock);
-	sq->state = QUEUE_STOP;
-	spin_unlock(&sq->lock);
 
-	wake_up_all(&q->wq);
-	wake_up_all(&sq->wq);
-
+	if(sq->state == QUEUE_START){
+		spin_lock(&sq->lock);
+		sq->state = QUEUE_STOP;
+		spin_unlock(&sq->lock);
+		if((sq->wq.head.next)||(sq->wq.head.prev)){
+			wake_up_all(&sq->wq);
+		}
+	}
 	return 0;
 }
 

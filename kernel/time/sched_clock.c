@@ -80,7 +80,7 @@ notrace int sched_clock_read_retry(unsigned int seq)
 	return read_seqcount_latch_retry(&cd.seq, seq);
 }
 
-unsigned long long notrace sched_clock(void)
+unsigned long long __nocfi notrace sched_clock(void)
 {
 	u64 cyc, res;
 	unsigned int seq;
