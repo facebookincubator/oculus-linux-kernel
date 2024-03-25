@@ -14939,7 +14939,8 @@ void dhd_detach(dhd_pub_t *dhdp)
 			MFREE(dhd->pub.osh, ifp, sizeof(*ifp));
 			ifp = NULL;
 #ifdef WL_CFG80211
-			cfg->wdev->netdev = NULL;
+			if (cfg && cfg->wdev)
+				cfg->wdev->netdev = NULL;
 #endif
 		}
 	}

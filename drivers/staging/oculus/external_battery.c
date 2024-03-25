@@ -52,17 +52,6 @@ enum usb_charging_state {
 	CHARGING_SUSPEND = 1,
 };
 
-/*
- * TODO(T158272135): This struct will be made non-specific to Glink when
- * PID-based registration is added to USBPD and CYPD, likely using a union of
- * the three handler types
- */
-struct glink_svid_handler_info {
-	struct ext_batt_pd *pd;
-	struct glink_svid_handler handler;
-	struct list_head entry;
-};
-
 static void ext_batt_pr_swap(struct work_struct *work);
 static void ext_batt_mount_status_work(struct work_struct *work);
 static void ext_batt_psy_notifier_work(struct work_struct *work);
@@ -84,152 +73,10 @@ static void convert_battery_status(struct ext_batt_pd *pd, u16 status)
 }
 
 
-static void usbpd_vdm_connect(struct usbpd_svid_handler *hdlr, bool usb_comm)
-{
-	struct ext_batt_pd *pd = container_of(hdlr, struct ext_batt_pd, usbpd_hdlr);
-
-	ext_batt_vdm_connect(pd, usb_comm);
-}
-
-static void usbpd_vdm_disconnect(struct usbpd_svid_handler *hdlr)
-{
-	struct ext_batt_pd *pd = container_of(hdlr, struct ext_batt_pd, usbpd_hdlr);
-
-	ext_batt_vdm_disconnect(pd);
-}
-
-static void usbpd_vdm_received(struct usbpd_svid_handler *hdlr,
-		u32 vdm_hdr, const u32 *vdos, int num_vdos)
-{
-	struct ext_batt_pd *pd = container_of(hdlr, struct ext_batt_pd, usbpd_hdlr);
-
-	ext_batt_vdm_received(pd, vdm_hdr, vdos, num_vdos);
-}
-
-static void glink_vdm_connect(struct glink_svid_handler *hdlr, bool usb_comm)
-{
-	struct glink_svid_handler_info *handler_info =
-			container_of(hdlr, struct glink_svid_handler_info, handler);
-
-	ext_batt_vdm_connect(handler_info->pd, usb_comm);
-}
-
-static void glink_vdm_disconnect(struct glink_svid_handler *hdlr)
-{
-	struct glink_svid_handler_info *handler_info =
-			container_of(hdlr, struct glink_svid_handler_info, handler);
-
-	ext_batt_vdm_disconnect(handler_info->pd);
-}
-
-static void glink_vdm_received(struct glink_svid_handler *hdlr,
-		u32 vdm_hdr, const u32 *vdos, int num_vdos)
-{
-	struct glink_svid_handler_info *handler_info =
-			container_of(hdlr, struct glink_svid_handler_info, handler);
-
-	ext_batt_vdm_received(handler_info->pd, vdm_hdr, vdos, num_vdos);
-}
-
-int external_battery_register_svid_handlers(struct ext_batt_pd *pd)
-{
-	int i, num_supported;
-	u16 *supported_devices;
-	struct glink_svid_handler_info *handler_info;
-	int rc;
-
-	if (IS_ENABLED(CONFIG_USB_PD_POLICY)) {
-		pd->usbpd_hdlr.svid = pd->svid;
-		pd->usbpd_hdlr.connect = usbpd_vdm_connect;
-		pd->usbpd_hdlr.disconnect = usbpd_vdm_disconnect;
-		pd->usbpd_hdlr.vdm_received = usbpd_vdm_received;
-
-		return usbpd_register_svid(pd->intf_usbpd, &pd->usbpd_hdlr);
-	}
-
-	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK)) {
-		INIT_LIST_HEAD(&pd->glink_handlers);
-
-		num_supported = device_property_read_u16_array(pd->dev,
-				"supported-devices", NULL, 0);
-		if (num_supported <= 0 || (num_supported % 2) != 0) {
-			dev_err(pd->dev,
-					"supported-devices must be specified as a list of SVID/PID pairs, rc=%d",
-					num_supported);
-			return -EINVAL;
-		}
-
-		supported_devices = kcalloc(num_supported, sizeof(u16), GFP_KERNEL);
-		if (!supported_devices)
-			return -ENOMEM;
-
-		rc = device_property_read_u16_array(pd->dev,
-				"supported-devices", supported_devices, num_supported);
-		if (rc) {
-			dev_err(pd->dev,
-					"failed reading supported-devices, rc=%d num_supported=%d",
-					rc, num_supported);
-			kfree(supported_devices);
-			return rc;
-		}
-
-		for (i = 0; i < num_supported; i += 2) {
-			handler_info = devm_kzalloc(pd->dev,
-					sizeof(*handler_info), GFP_KERNEL);
-			if (!handler_info) {
-				kfree(supported_devices);
-				return -ENOMEM;
-			}
-
-			handler_info->pd = pd;
-			handler_info->handler.svid = supported_devices[i];
-			handler_info->handler.pid = supported_devices[i+1];
-			handler_info->handler.connect = glink_vdm_connect;
-			handler_info->handler.disconnect = glink_vdm_disconnect;
-			handler_info->handler.vdm_received = glink_vdm_received;
-			list_add_tail(&handler_info->entry, &pd->glink_handlers);
-
-			rc = vdm_glink_register_handler(pd->intf_glink, &handler_info->handler);
-			if (rc != 0) {
-				dev_err(pd->dev,
-						"failed registering glink handler, SVID/PID = 0x%04x/0x%04x",
-						handler_info->handler.svid, handler_info->handler.pid);
-				kfree(supported_devices);
-				return rc;
-			}
-			dev_dbg(pd->dev, "Registered glink SVID/PID 0x%04x/0x%04x",
-					handler_info->handler.svid, handler_info->handler.pid);
-		}
-
-		kfree(supported_devices);
-		return 0;
-	}
-
-	return -EINVAL;
-}
-
-void external_battery_unregister_svid_handlers(struct ext_batt_pd *pd)
-{
-	struct glink_svid_handler_info *handler_info;
-
-	if (IS_ENABLED(CONFIG_USB_PD_POLICY))
-		usbpd_unregister_svid(pd->intf_usbpd, &pd->usbpd_hdlr);
-
-	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK))
-		list_for_each_entry(handler_info, &pd->glink_handlers, entry)
-			vdm_glink_unregister_handler(pd->intf_glink, &handler_info->handler);
-}
-
 int external_battery_send_vdm(struct ext_batt_pd *pd,
 		u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
-	if (IS_ENABLED(CONFIG_USB_PD_POLICY))
-		return usbpd_send_vdm(pd->intf_usbpd, vdm_hdr, vdos, num_vdos);
-
-	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK))
-		return vdm_glink_send_vdm(pd->intf_glink, vdm_hdr, vdos, num_vdos);
-
-	return -EINVAL;
+	return usbvdm_subscriber_vdm(pd->sub, vdm_hdr, vdos, num_vdos);
 }
 
 void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
@@ -601,7 +448,7 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		// svid, ack, proto, high, size, param
 		error_state_header =
 			VDMH_CONSTRUCT(
-				pd->svid,
+				VDM_SVID_META,
 				1, VDM_RESPONSE, 0, 1,
 				parameter_type);
 
@@ -2029,7 +1876,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 
 	mount_state_header =
 		VDMH_CONSTRUCT(
-			pd->svid,
+			VDM_SVID_META,
 			0, 1, 0, 1,
 			EXT_BATT_FW_HMD_MOUNTED);
 
@@ -2085,7 +1932,7 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 
 	dock_state_hdr =
 		VDMH_CONSTRUCT(
-			pd->svid,
+			VDM_SVID_META,
 			0, VDM_REQUEST, 0, 1,
 			EXT_BATT_FW_HMD_DOCKED);
 
@@ -2354,11 +2201,40 @@ static int ext_batt_psy_init(struct ext_batt_pd *pd)
 	return 0;
 }
 
+static void external_battery_usbvdm_connect(struct usbvdm_subscription *sub,
+		u16 vid, u16 pid)
+{
+	struct ext_batt_pd *pd = usbvdm_subscriber_get_drvdata(sub);
+
+	ext_batt_vdm_connect(pd, true);
+}
+
+static void external_battery_usbvdm_disconnect(struct usbvdm_subscription *sub)
+{
+	struct ext_batt_pd *pd = usbvdm_subscriber_get_drvdata(sub);
+
+	ext_batt_vdm_disconnect(pd);
+}
+
+static void external_battery_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
+		u32 vdm_hdr, const u32 *vdos, int num_vdos)
+{
+	struct ext_batt_pd *pd = usbvdm_subscriber_get_drvdata(sub);
+
+	ext_batt_vdm_received(pd, vdm_hdr, vdos, num_vdos);
+}
+
 static int ext_batt_probe(struct platform_device *pdev)
 {
 	int result = 0;
 	struct ext_batt_pd *pd;
 	const char *batt_name;
+	u16 usb_id[2];
+	struct usbvdm_subscriber_ops ops = {
+		.connect = external_battery_usbvdm_connect,
+		.disconnect = external_battery_usbvdm_disconnect,
+		.vdm = external_battery_usbvdm_vdm_rx,
+	};
 
 	dev_dbg(&pdev->dev, "%s: enter", __func__);
 
@@ -2366,16 +2242,6 @@ static int ext_batt_probe(struct platform_device *pdev)
 			&pdev->dev, sizeof(*pd), GFP_KERNEL);
 	if (!pd)
 		return -ENOMEM;
-
-	result = of_property_read_u16(pdev->dev.of_node,
-		"svid", &pd->svid);
-	if (result < 0) {
-		pd->svid = DEFAULT_EXT_BATT_VID;
-		dev_err(&pdev->dev,
-			"svid unavailable, defaulting to svid=%x, result:%d\n",
-			DEFAULT_EXT_BATT_VID, result);
-	}
-	dev_dbg(&pdev->dev, "Property svid=%x", pd->svid);
 
 	result = of_property_read_u32(pdev->dev.of_node,
 		"charging-suspend-thresh", &pd->charging_suspend_threshold);
@@ -2476,25 +2342,19 @@ static int ext_batt_probe(struct platform_device *pdev)
 	pd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, pd);
 
-	pd->intf_usbpd = devm_usbpd_get_by_phandle(pd->dev, "battery-usbpd");
-	if (IS_ENABLED(CONFIG_USB_PD_POLICY) && IS_ERR(pd->intf_usbpd))
-		return PTR_ERR(pd->intf_usbpd);
-
-	pd->intf_glink = devm_vdm_glink_get_by_phandle(pd->dev, "vdm-glink");
-	if (IS_ENABLED(CONFIG_OCULUS_VDM_GLINK) && IS_ERR(pd->intf_glink))
-		return PTR_ERR(pd->intf_glink);
-
-	/* Register VDM callbacks */
-	result = external_battery_register_svid_handlers(pd);
-	if (result == -EPROBE_DEFER)
-		return result;
-
-	if (result != 0) {
-		dev_err(&pdev->dev, "Failed to register vdm handler");
+	result = device_property_read_u16_array(pd->dev, "meta,usb-id", usb_id, 2);
+	if (result < 0) {
+		dev_err(pd->dev, "Couldn't read usb-id property: %d", result);
 		return result;
 	}
-	dev_dbg(&pdev->dev, "Registered svid 0x%04x",
-		pd->svid);
+
+	pd->vid = usb_id[0];
+	pd->pid = usb_id[1];
+	pd->sub = usbvdm_subscribe(pd->dev, pd->vid, pd->pid, ops);
+	if (IS_ERR_OR_NULL(pd->sub))
+		return pd->sub ? PTR_ERR(pd->sub) : -ENODEV;
+
+	usbvdm_subscriber_set_drvdata(pd->sub, pd);
 
 	/* Query power supply and register for events */
 	pd->nb.notifier_call = ext_batt_psy_notifier_call;
@@ -2513,11 +2373,10 @@ static int ext_batt_remove(struct platform_device *pdev)
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
 
-	external_battery_unregister_svid_handlers(pd);
-
 	mutex_lock(&pd->lock);
 	pd->connected = false;
 	mutex_unlock(&pd->lock);
+	usbvdm_unsubscribe(pd->sub);
 	cancel_work_sync(&pd->mount_state_work);
 	cancel_work_sync(&pd->dock_state_work);
 	destroy_workqueue(pd->wq);

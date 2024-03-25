@@ -408,13 +408,13 @@
 
 &vendor {
 	charging_dock: oculus,charging_dock {
-		status = "ok";
 		compatible = "oculus,charging-dock";
-		svid-cypd = <0x28330000>;
-		charger-cypd = <&cypd3177>;
-		svid-usbpd = <0x2ec60000>;
-		charger-usbpd = <&pm8150b_pdphy>;
 		broadcast-period-min = <15>;
+		meta,usb-ids =
+			/bits/ 16 <0x2ec6 0x2202>,		/* Buru */
+			/bits/ 16 <0x2833 0x0093>,		/* Skellig */
+			/bits/ 16 <0x2ec6 0x2200>,		/* UPA 18W */
+			/bits/ 16 <0x2ec6 0x2103>;		/* UPA 45W */
 	};
 
 	charging_thermal_controller_pogo: oculus,charging_thermal_controller_pogo {
@@ -453,5 +453,15 @@
 		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
 		#include "4759214_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Feb17th2021_PM8150B_GUI10014.dtsi"
 		#include "5133886_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Apr23rd2021_PM8150B_GUI10014.dtsi"
+	};
+
+	meta,usbvdm-qtipd {
+		compatible = "meta,usbvdm-qtipd";
+		qcom,pdphy = <&pm8150b_pdphy>;
+	};
+
+	meta,usbvdm-cypd {
+		compatible = "meta,usbvdm-cypd";
+		cy,cypd = <&cypd3177>;
 	};
 };

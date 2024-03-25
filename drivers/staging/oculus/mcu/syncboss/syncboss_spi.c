@@ -1574,6 +1574,7 @@ static inline void reset_timer_status_flags(struct syncboss_dev_data *devdata)
 	devdata->data_ready_fired = false;
 	devdata->send_timer_fired = false;
 	devdata->wake_timer_fired = false;
+	mb();
 }
 
 static void handle_wakeup(struct syncboss_dev_data *devdata)
@@ -1655,12 +1656,14 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 	mutex_lock(&devdata->msg_queue_lock);
 	if (list_empty(&devdata->msg_queue_list)) {
 		/*
-		 * queue_tx_packet holds the msg_queue_lock while
-		 * queueing a packet and waking this SPI transfer
-		 * thread. Make sure we set the task state under
-		 * the protection of that same lock, so we don't
-		 * stomp on a parallel attempt by queue_tx_packet()
-		 * to wake this thread.
+		 * Prepare to sleep.
+		 * See set_current_state() comment in sched.h explanation of this pattern.
+		 *
+		 * Regarding release of msg_queue_lock:
+		 * queue_tx_packet holds the msg_queue_lock while queueing a packet and
+		 * waking this SPI transfer thread. Make sure we set the task state under
+		 * the protection of that same lock, so we don't stomp on a parallel
+		 * attempt by queue_tx_packet() to wake this thread.
 		 */
 		set_current_state(TASK_INTERRUPTIBLE);
 		mutex_unlock(&devdata->msg_queue_lock);
@@ -1693,7 +1696,6 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 	ktime_t reltime;
 
 	while (!okay_to_transact(devdata)) {
-		send_needed = ctx->msg_to_send || devdata->msg_queue_item_count > 0;
 		start_timer = false;
 
 		/*
@@ -1704,16 +1706,21 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 		 * If using legacy polling mode, set up the wake timer for when
 		 * the next poll is due.
 		 */
+		mutex_lock(&devdata->msg_queue_lock);
+		send_needed = ctx->msg_to_send || devdata->msg_queue_item_count > 0;
 		if (send_needed || !devdata->use_irq_mode) {
 			u64 delay_ns;
 
 			/* Calculate how long to wait */
 			delay_ns = calc_mcu_ready_sleep_delay_ns(devdata, timing, ctx->msg_to_send);
-			if (delay_ns == 0)
+			if (delay_ns == 0) {
+				mutex_unlock(&devdata->msg_queue_lock);
 				break;
+			}
 
 			/* Really short delays aren't worth context switching for. */
 			if (delay_ns < SYNCBOSS_SCHEDULING_SLOP_NS) {
+				mutex_unlock(&devdata->msg_queue_lock);
 				ndelay(delay_ns);
 				break;
 			}
@@ -1725,8 +1732,16 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 		/*
 		 * Prepare to sleep.
 		 * See set_current_state() comment in sched.h explanation of this pattern.
+		 *
+		 * Regarding release of msg_queue_lock:
+		 * queue_tx_packet holds the msg_queue_lock while queueing a packet and
+		 * waking this SPI transfer thread. Make sure we set the task state under
+		 * the protection of that same lock, so we don't stomp on a parallel
+		 * attempt by queue_tx_packet() to wake this thread.
 		 */
 		set_current_state(TASK_INTERRUPTIBLE);
+		mutex_unlock(&devdata->msg_queue_lock);
+
 		if (okay_to_transact(devdata)) {
 			/* Abort sleep attempt. Data is already available to read. */
 			__set_current_state(TASK_RUNNING);
