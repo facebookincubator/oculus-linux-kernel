@@ -11265,6 +11265,8 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 	uint32 sup_wpa = 1;
 #endif /* BCMSUP_4WAY_HANDSHAKE */
 
+	uint32 amsdu_enable = 0;
+
 	uint32 frameburst = CUSTOM_FRAMEBURST_SET;
 	uint wnm_bsstrans_resp = 0;
 #ifdef DHD_BUS_MEM_ACCESS
@@ -11730,6 +11732,13 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 		goto done;
 	}
 
+	ret = dhd_iovar(dhd, 0, "amsdu", (char *)&amsdu_enable, sizeof(amsdu_enable),
+			NULL, 0, TRUE);
+	if (ret < 0) {
+		DHD_ERROR(("%s Set amsdu to %d failed  %d\n",
+			__FUNCTION__, amsdu_enable, ret));
+	}
+
 #if defined(BCMSUP_4WAY_HANDSHAKE)
 	/* Read 4-way handshake requirements */
 	if (dhd_use_idsup == 1) {
@@ -12173,6 +12182,7 @@ dhd_legacy_preinit_ioctls(dhd_pub_t *dhd)
 #if defined(CUSTOM_AMPDU_RELEASE)
 	int32 ampdu_release = 0;
 #endif
+	uint32 amsdu_enable = 0;
 #if defined(CUSTOM_AMSDU_AGGSF)
 	int32 amsdu_aggsf = 0;
 #endif
@@ -13086,6 +13096,13 @@ dhd_legacy_preinit_ioctls(dhd_pub_t *dhd)
 		}
 	}
 #endif /* CUSTOM_AMPDU_RELEASE */
+
+	ret = dhd_iovar(dhd, 0, "amsdu", (char *)&amsdu_enable, sizeof(amsdu_enable),
+			NULL, 0, TRUE);
+	if (ret < 0) {
+		DHD_ERROR(("%s Set amsdu to %d failed  %d\n",
+			__FUNCTION__, amsdu_enable, ret));
+	}
 
 #if defined(CUSTOM_AMSDU_AGGSF)
 	amsdu_aggsf = CUSTOM_AMSDU_AGGSF;

@@ -3937,10 +3937,27 @@ static inline void kgsl_privileged_uid_list_free(struct kgsl_device *device)
 {
 	struct kgsl_privileged_uid_node *entry, *tmp;
 
+	mutex_lock(&device->uid_list_mutex);
 	list_for_each_entry_safe(entry, tmp, &device->privileged_uid_list, node) {
-		list_del_init(&entry->node);
-		kfree(entry);
+		list_del_rcu(&entry->node);
+		kfree_rcu(entry, rcu);
 	}
+	mutex_unlock(&device->uid_list_mutex);
+}
+
+bool kgsl_is_uid_privileged(struct kgsl_device *device, uid_t uid)
+{
+	struct kgsl_privileged_uid_node *entry;
+	bool privileged = false;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(entry, &device->privileged_uid_list, node)
+		if ((privileged = (entry->uid == uid)))
+			goto out;
+out:
+	rcu_read_unlock();
+
+	return privileged;
 }
 
 long kgsl_ioctl_allow_uid_high_priority(
@@ -3964,9 +3981,8 @@ long kgsl_ioctl_allow_uid_high_priority(
 	 * Allow UIDs that match the given UID to request high-priority
 	 * contexts.
 	 */
-	list_for_each_entry(entry, &device->privileged_uid_list, node)
-		if (entry->uid == param->uid)
-			return 0;
+	if (kgsl_is_uid_privileged(device, param->uid))
+		return 0;
 
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 	if (entry == NULL)
@@ -3974,7 +3990,9 @@ long kgsl_ioctl_allow_uid_high_priority(
 
 	entry->uid = param->uid;
 
-	list_add(&entry->node, &device->privileged_uid_list);
+	mutex_lock(&device->uid_list_mutex);
+	list_add_rcu(&entry->node, &device->privileged_uid_list);
+	mutex_unlock(&device->uid_list_mutex);
 
 	return 0;
 }
@@ -4691,6 +4709,7 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 	 * not unintentionally elevated/restricted by default.
 	 */
 	INIT_LIST_HEAD(&device->privileged_uid_list);
+	mutex_init(&device->uid_list_mutex);
 	device->privileged_tid = -1;
 
 	status = _register_device(device);

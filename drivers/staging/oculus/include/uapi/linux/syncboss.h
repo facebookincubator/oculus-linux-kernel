@@ -40,7 +40,7 @@ struct syncboss_driver_data_header_driver_message_t {
 
 struct uapi_pkt_t {
 	struct syncboss_driver_data_header_t header;
-		u8 payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
+		uint8_t payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
 	} __attribute__((packed));
 
 /* Max number of stream events to filter */
@@ -67,8 +67,8 @@ struct syncboss_nsync_event {
 struct syncboss_driver_directchannel_shared_memory_config {
 	int dmabuf_fd;
 	size_t direct_channel_buffer_size; /* must be less than dma_buf_size */
-	u8 uapi_pkt_type;
-	u8 wake_epoll; /* set to true to wake up epoll when data arrives, false otherwise. */
+	uint8_t uapi_pkt_type;
+	uint8_t wake_epoll; /* set to true to wake up epoll when data arrives, false otherwise. */
 } __attribute__((packed));
 
 /*

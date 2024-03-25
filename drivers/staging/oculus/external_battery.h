@@ -5,10 +5,9 @@
 
 #include <linux/mutex.h>
 #include <linux/power_supply.h>
-#include <linux/usb/usbpd.h>
 #include <linux/workqueue.h>
 
-#include "vdm_glink.h"
+#include "usbvdm/subscriber.h"
 
 /* Mount states */
 enum ext_batt_fw_mount_state {
@@ -296,20 +295,18 @@ struct ext_batt_parameters {
  * struct ext_batt_pd - structure for external battery data
  *
  * @dev: platform device handle
- * @intf_usbpd: usbpd interface instance
- * @intf_glink: glink interface instance
  * @battery_psy: power supply object handle for internal HMD battery
  * @usb_psy: power supply object handle for USB power supply
  * @cypd_psy: power supply object handle for CYPD power supply
  * @nb: notifier block for handling power supply change events
- * @usbpd_hdlr: handler to register with usbpd interface
- * @glink_handlers: list of handlers to register with glink interface
  * @mount_state_work: work for periodically processing HMD mount state
  * @dock_state_work: work for periodically processing HMD dock state
  * @psy_notifier_work: work for handling the power_supply notifier callback logic
  * @wq: workqueue to pipe tasks into
  * @mount_state_ack: signals that a mount state update was acked
- * @svid: Vendor ID, needed to construct VDM messages
+ * @vid: Vendor ID, needed to construct VDM messages
+ * @pid: Product ID, identifies the specific attached device
+ * @sub: Subscription handle from USBVDM library
  * @charging_suspend_disable: ext_batt on-demand charging suspend disable
  * @charging_suspend_threshold: battery capacity threshold for charging suspend
  * @charging_resume_threshold: battery capacity threshold for charging resume
@@ -334,16 +331,11 @@ struct ext_batt_parameters {
  */
 struct ext_batt_pd {
 	struct device *dev;
-	struct usbpd *intf_usbpd;
-	struct vdm_glink_dev *intf_glink;
 
 	struct power_supply *battery_psy;
 	struct power_supply *usb_psy;
 	struct power_supply *cypd_psy;
 	struct notifier_block nb;
-
-	struct usbpd_svid_handler usbpd_hdlr;
-	struct list_head glink_handlers;
 
 	struct work_struct mount_state_work;
 	struct work_struct dock_state_work;
@@ -351,7 +343,10 @@ struct ext_batt_pd {
 	struct workqueue_struct *wq;
 	struct completion mount_state_ack;
 
-	u16 svid;
+	u16 vid;
+	u16 pid;
+	struct usbvdm_subscription *sub;
+
 	bool charging_suspend_disable;
 	u32 charging_suspend_threshold;
 	u32 charging_resume_threshold;
