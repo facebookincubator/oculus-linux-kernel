@@ -134,12 +134,12 @@
  * used to indicate the Linux kernel contains support for multi AKM connect
  * support
  *
- * This feature was backported to Android Common Kernel 5.15 via:
- * https://android-review.googlesource.com/c/kernel/common/+/2115619
+ * This feature was introduced in Linux Kernel 6.0 via:
+ * ecad3b0b99bf wifi: cfg80211: Increase akm_suites array size in
+ * cfg80211_crypto_settings.
  */
-#if (defined(__ANDROID_COMMON_KERNEL__) && \
-	(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)) && \
-	(LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0) || \
+	(defined CFG80211_MAX_NUM_AKM_SUITES))
 #define CFG80211_MULTI_AKM_CONNECT_SUPPORT 1
 #endif
 
@@ -284,4 +284,26 @@
 	(defined CFG80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA))
 #define WLAN_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA
 #endif
+
+/*
+ * WLAN_MLD_AP_STA_CONNECT_SUPPORT
+ * Used to indicate Linux Upstream Kernel supports ML connection on SAP.
+ *
+ * This feature was introduced in Linux Kernel 6.3 via:
+ * a42e59e: wifi: cfg80211: Extend cfg80211_new_sta() for MLD AP
+ * 8bb588d: wifi: cfg80211: Extend cfg80211_update_owe_info_event() for MLD AP
+ *
+ * This feature was backported to Android Common Kernel 5.15.74 via:
+ * https://android-review.googlesource.com/c/kernel/common/+/2450265
+ * https://android-review.googlesource.com/c/kernel/common/+/2450266
+ *
+ * This feature was backported to Android Common Kernel 6.1 via:
+ * https://android-review.googlesource.com/c/kernel/common/+/2470890
+ * https://android-review.googlesource.com/c/kernel/common/+/2470891
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0) || \
+	(defined CFG80211_MLD_AP_STA_CONNECT_UPSTREAM_SUPPORT))
+#define WLAN_MLD_AP_STA_CONNECT_UPSTREAM_SUPPORT 1
+#endif
+
 #endif

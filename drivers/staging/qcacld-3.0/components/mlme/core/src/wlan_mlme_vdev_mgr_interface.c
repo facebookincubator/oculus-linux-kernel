@@ -44,6 +44,7 @@
 #include <lim_mlo.h>
 #include "wlan_mlo_mgr_sta.h"
 #endif
+#include <wlan_lmac_if_def.h>
 
 static struct vdev_mlme_ops sta_mlme_ops;
 static struct vdev_mlme_ops ap_mlme_ops;
@@ -249,6 +250,171 @@ static QDF_STATUS sta_mlme_vdev_start_connection(struct vdev_mlme_obj *vdev_mlme
 	return QDF_STATUS_SUCCESS;
 }
 
+#if defined WLAN_FEATURE_SR
+int mlme_sr_is_enable(struct wlan_objmgr_vdev *vdev)
+{
+	uint8_t sr_ctrl;
+
+	sr_ctrl = wlan_vdev_mlme_get_sr_ctrl(vdev);
+	return (!sr_ctrl || !(sr_ctrl & NON_SRG_PD_SR_DISALLOWED) ||
+		(sr_ctrl & SRG_INFO_PRESENT));
+}
+
+/**
+ * mlme_sr_handle_conc(): Handle concurrency scenario i.e Single MAC
+ * concurrency is not supoprted for SR, Disable SR if it is enable on other
+ * VDEV and enable it back once the once the concurrent vdev is down.
+ *
+ * @vdev: object manager vdev
+ * @conc_vdev: cuncurrent vdev object
+ * @en_sr_curr_vdev: indicates spatial reuse enable/disable
+ *
+ */
+static void
+mlme_sr_handle_conc(struct wlan_objmgr_vdev *vdev,
+		    struct wlan_objmgr_vdev *conc_vdev, bool en_sr_curr_vdev)
+{
+	uint32_t val = 0;
+	struct wlan_objmgr_pdev *pdev;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_lmac_if_tx_ops *tx_ops;
+	struct wlan_lmac_if_spatial_reuse_tx_ops *sr_tx_ops;
+	uint8_t conc_vdev_id = wlan_vdev_get_id(conc_vdev);
+
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev) {
+		mlme_err("pdev is NULL");
+		return;
+	}
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+	if (!tx_ops) {
+		mlme_err("tx_ops is NULL");
+		return;
+	}
+
+	sr_tx_ops = &tx_ops->spatial_reuse_tx_ops;
+	if (en_sr_curr_vdev) {
+		wlan_vdev_mlme_set_sr_disable_due_conc(vdev, true);
+		wlan_vdev_mlme_set_sr_disable_due_conc(conc_vdev, true);
+
+		if (!wlan_vdev_mlme_get_he_spr_enabled(conc_vdev))
+			return;
+
+		if (mlme_sr_is_enable(conc_vdev)) {
+			if (sr_tx_ops->target_if_sr_update)
+				sr_tx_ops->target_if_sr_update
+						(pdev, conc_vdev_id, val);
+
+			wlan_spatial_reuse_osif_event(conc_vdev,
+						      SR_OPERATION_SUSPEND,
+						   SR_REASON_CODE_CONCURRENCY);
+		}
+	} else if (wlan_vdev_mlme_is_sr_disable_due_conc(conc_vdev)) {
+		wlan_vdev_mlme_set_sr_disable_due_conc(conc_vdev, false);
+
+		if (!wlan_vdev_mlme_get_he_spr_enabled(conc_vdev))
+			return;
+
+		if (mlme_sr_is_enable(conc_vdev)) {
+			wlan_mlme_update_sr_data(conc_vdev, &val, 0, 0, true);
+
+			if (sr_tx_ops->target_if_sr_update)
+				sr_tx_ops->target_if_sr_update
+						(pdev, conc_vdev_id, val);
+
+			wlan_spatial_reuse_osif_event(conc_vdev,
+						      SR_OPERATION_RESUME,
+						    SR_REASON_CODE_CONCURRENCY);
+		} else {
+			mlme_debug("SR Disabled in SR Control");
+		}
+	}
+}
+
+void mlme_sr_update(struct wlan_objmgr_vdev *vdev, bool enable)
+{
+	struct wlan_objmgr_vdev *conc_vdev;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_objmgr_pdev *pdev;
+	struct wlan_lmac_if_tx_ops *tx_ops;
+	uint32_t conc_vdev_id;
+	uint32_t val = 0;
+	uint8_t vdev_id;
+	uint8_t mac_id;
+
+	if (!vdev) {
+		mlme_err("vdev is NULL");
+		return;
+	}
+	vdev_id = wlan_vdev_get_id(vdev);
+
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev) {
+		mlme_err("pdev is NULL");
+		return;
+	}
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		mlme_err("psoc is NULL");
+		return;
+	}
+
+	policy_mgr_get_mac_id_by_session_id(psoc, vdev_id, &mac_id);
+	conc_vdev_id = policy_mgr_get_conc_vdev_on_same_mac(psoc, vdev_id,
+							    mac_id);
+	if (conc_vdev_id != WLAN_INVALID_VDEV_ID &&
+	    !policy_mgr_sr_same_mac_conc_enabled(psoc)) {
+		/*
+		 * Single MAC concurrency is not supoprted for SR,
+		 * Disable SR if it is enable on other VDEV and enable
+		 * it back once the once the concurrent vdev is down.
+		 */
+		mlme_debug("SR with concurrency is not allowed");
+		conc_vdev =
+		wlan_objmgr_get_vdev_by_id_from_psoc(psoc, conc_vdev_id,
+						     WLAN_MLME_SB_ID);
+		if (!conc_vdev) {
+			mlme_err("Can't get vdev by vdev_id:%d", conc_vdev_id);
+		} else {
+			mlme_sr_handle_conc(vdev, conc_vdev, enable);
+			wlan_objmgr_vdev_release_ref(conc_vdev,
+						     WLAN_MLME_SB_ID);
+			goto err;
+		}
+	}
+
+	if (!wlan_vdev_mlme_get_he_spr_enabled(vdev)) {
+		mlme_err("Spatial Reuse disabled for vdev_id: %d", vdev_id);
+		goto err;
+	}
+
+	if (mlme_sr_is_enable(vdev)) {
+		if (enable) {
+			wlan_mlme_update_sr_data(vdev, &val, 0, 0, true);
+		} else {
+			/* VDEV down, disable SR */
+			wlan_vdev_mlme_set_he_spr_enabled(vdev, false);
+			wlan_vdev_mlme_set_sr_ctrl(vdev, 0);
+			wlan_vdev_mlme_set_non_srg_pd_offset(vdev, 0);
+		}
+
+		mlme_debug("SR param val: %x, Enable: %x", val, enable);
+
+		tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
+		if (tx_ops && tx_ops->spatial_reuse_tx_ops.target_if_sr_update)
+			tx_ops->spatial_reuse_tx_ops.target_if_sr_update
+							(pdev, vdev_id, val);
+	} else {
+		mlme_debug("Spatial reuse is disabled in SR control");
+	}
+err:
+	return;
+}
+#endif
+
 /**
  * sta_mlme_vdev_up_send() - MLME vdev UP callback
  * @vdev_mlme: vdev mlme object
@@ -263,9 +429,16 @@ static QDF_STATUS sta_mlme_vdev_up_send(struct vdev_mlme_obj *vdev_mlme,
 					uint16_t event_data_len,
 					void *event_data)
 {
+	QDF_STATUS status;
+
 	mlme_legacy_debug("vdev id = %d ",
 			  vdev_mlme->vdev->vdev_objmgr.vdev_id);
-	return wma_sta_vdev_up_send(vdev_mlme, event_data_len, event_data);
+	status = wma_sta_vdev_up_send(vdev_mlme, event_data_len, event_data);
+
+	if (QDF_IS_STATUS_SUCCESS(status))
+		mlme_sr_update(vdev_mlme->vdev, true);
+
+	return status;
 }
 
 /**
@@ -576,9 +749,17 @@ ap_mlme_vdev_is_newchan_no_cac(struct vdev_mlme_obj *vdev_mlme)
 static QDF_STATUS vdevmgr_mlme_vdev_down_send(struct vdev_mlme_obj *vdev_mlme,
 					      uint16_t data_len, void *data)
 {
-	mlme_legacy_debug("vdev id = %d ",
-			  vdev_mlme->vdev->vdev_objmgr.vdev_id);
-	return wma_ap_mlme_vdev_down_send(vdev_mlme, data_len, data);
+	QDF_STATUS status;
+	uint8_t vdev_id;
+
+	vdev_id = wlan_vdev_get_id(vdev_mlme->vdev);
+
+	mlme_legacy_debug("vdev id = %d ", vdev_id);
+	status = wma_ap_mlme_vdev_down_send(vdev_mlme, data_len, data);
+	if (QDF_IS_STATUS_SUCCESS(status))
+		mlme_sr_update(vdev_mlme->vdev, false);
+
+	return status;
 }
 
 /**
@@ -669,6 +850,8 @@ QDF_STATUS mlme_set_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev,
 	}
 
 	mlme_priv->chan_switch_in_progress = val;
+	mlme_legacy_info("Set chan_switch_in_progress: %d vdev %d",
+			 val, wlan_vdev_get_id(vdev));
 
 	return QDF_STATUS_SUCCESS;
 }

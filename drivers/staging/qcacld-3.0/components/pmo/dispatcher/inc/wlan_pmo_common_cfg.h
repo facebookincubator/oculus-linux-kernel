@@ -250,13 +250,14 @@
  * <ini>
  * gOptimizedPowerManagement - Optimized Power Management
  * @Min: 0
- * @Max: 1
+ * @Max: 2
  * @Default: 1
  *
  * This ini is used to set Optimized Power Management configuration:
  * Current values of gOptimizedPowerManagement:
  * 0 -> Disable optimized power management
  * 1 -> Enable optimized power management
+ * 2 -> User Defined
  *
  * Related: None
  *
@@ -269,7 +270,7 @@
 #define CFG_PMO_POWERSAVE_MODE CFG_INI_UINT( \
 	"gOptimizedPowerManagement", \
 	0, \
-	1, \
+	2, \
 	1, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Optimized Power Management")
@@ -472,7 +473,8 @@
  * @Max: 255
  * @Default: 50
  *
- * This ini is used to set data inactivity timeout in wow mode.
+ * This ini is used to set data inactivity timeout in wow mode and
+ * the value is honored in firmware when User defined OPM is set
  *
  * Supported Feature: inactivity timeout in wow mode
  *
@@ -487,6 +489,29 @@
 		50, \
 		CFG_VALUE_OR_DEFAULT, \
 		"Data activity timeout in wow mode")
+/*
+ * <ini>
+ * g_wow_spec_wake_interval - OPM Speculative wake interval in wow mode.
+ * @Min: 0
+ * @Max: 255
+ * @Default: 0
+ *
+ * This ini is used to set OPM speculative wake interval in wow mode and
+ * the value is honored in firmware when User defined OPM is set
+ *
+ * Supported Feature: OPM Speculative wake interval in wow mode
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_PMO_WOW_SPEC_WAKE_INTERVAL CFG_INI_UINT( \
+		"g_wow_spec_wake_interval", \
+		0, \
+		255, \
+		0, \
+		CFG_VALUE_OR_DEFAULT, \
+		"Speculative wake interval in wow mode")
 /*
  * <ini>
  * gRArateLimitInterval - RA rate limit interval
@@ -757,6 +782,7 @@
 	CFG(CFG_PMO_ACTIVE_MODE) \
 	CFG(CFG_PMO_PWR_FAILURE) \
 	CFG(CFG_PMO_WOW_DATA_INACTIVITY_TIMEOUT) \
+	CFG(CFG_PMO_WOW_SPEC_WAKE_INTERVAL) \
 	CFG(CFG_RA_RATE_LIMIT_INTERVAL) \
 	CFG(CFG_PMO_MOD_DTIM_ON_SYS_SUSPEND) \
 	CFG(CFG_ENABLE_BUS_SUSPEND_IN_SAP_MODE) \

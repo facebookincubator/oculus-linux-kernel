@@ -189,7 +189,6 @@ spatial_reuse_set_sr_enable_disable(struct wlan_objmgr_vdev *vdev,
 				    int32_t non_srg_pd_threshold)
 {
 	uint32_t val = 0;
-	uint8_t sr_ctrl;
 	struct wlan_objmgr_psoc *psoc;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
@@ -197,43 +196,34 @@ spatial_reuse_set_sr_enable_disable(struct wlan_objmgr_vdev *vdev,
 	if (!psoc)
 		return QDF_STATUS_E_NOENT;
 
-	sr_ctrl = wlan_vdev_mlme_get_sr_ctrl(vdev);
-	if ((!(sr_ctrl & NON_SRG_PD_SR_DISALLOWED) &&
-	    (sr_ctrl & NON_SRG_OFFSET_PRESENT)) ||
-	    (sr_ctrl & SRG_INFO_PRESENT)) {
-		if (is_sr_enable) {
-			wlan_mlme_update_sr_data(vdev, &val, srg_pd_threshold,
-						 non_srg_pd_threshold,
-						 is_sr_enable);
-			wlan_vdev_obj_lock(vdev);
-			wlan_vdev_mlme_set_he_spr_enabled(vdev, true);
-			wlan_vdev_obj_unlock(vdev);
-		} else {
-			wlan_vdev_obj_lock(vdev);
-			wlan_vdev_mlme_set_he_spr_enabled(vdev, false);
-			wlan_vdev_obj_unlock(vdev);
-		}
+	if (is_sr_enable) {
+		wlan_mlme_update_sr_data(vdev, &val, srg_pd_threshold,
+					 non_srg_pd_threshold,
+					 is_sr_enable);
+		wlan_vdev_obj_lock(vdev);
+		wlan_vdev_mlme_set_he_spr_enabled(vdev, true);
+		wlan_vdev_obj_unlock(vdev);
+	} else {
+		wlan_vdev_obj_lock(vdev);
+		wlan_vdev_mlme_set_he_spr_enabled(vdev, false);
+		wlan_vdev_obj_unlock(vdev);
+	}
 
-		mlme_debug("srp param val: %u, enable: %d",
-			   val, is_sr_enable);
-		if (is_sr_enable) {
-			status = spatial_reuse_send_bss_color_bit_map(vdev,
-								      pdev);
-			if (status != QDF_STATUS_SUCCESS)
-				return status;
-			status = spatial_reuse_send_partial_bssid_bit_map(vdev,
-									  pdev);
-			if (status != QDF_STATUS_SUCCESS)
-				return status;
-		}
-		status =
-		spatial_reuse_send_pd_threshold(pdev, vdev->vdev_objmgr.vdev_id,
-						val);
+	mlme_debug("srp param val: %x, enable: %d",
+		   val, is_sr_enable);
+	if (is_sr_enable) {
+		status = spatial_reuse_send_bss_color_bit_map(vdev, pdev);
 		if (status != QDF_STATUS_SUCCESS)
 			return status;
-	} else {
-		mlme_debug("Spatial reuse not enabled");
+		status = spatial_reuse_send_partial_bssid_bit_map(vdev, pdev);
+		if (status != QDF_STATUS_SUCCESS)
+			return status;
 	}
+	status = spatial_reuse_send_pd_threshold(pdev,
+						 vdev->vdev_objmgr.vdev_id,
+						 val);
+	if (status != QDF_STATUS_SUCCESS)
+		return status;
 
 	return status;
 }
@@ -245,4 +235,6 @@ void target_if_spatial_reuse_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 					spatial_reuse_send_sr_prohibit_cfg;
 	tx_ops->spatial_reuse_tx_ops.target_if_set_sr_enable_disable =
 					spatial_reuse_set_sr_enable_disable;
+	tx_ops->spatial_reuse_tx_ops.target_if_sr_update =
+					spatial_reuse_send_pd_threshold;
 }

@@ -2924,9 +2924,10 @@ wlansap_get_max_bw_by_phymode(struct sap_context *sap_ctx)
 			ch_width = CH_WIDTH_160MHZ;
 		else
 			ch_width = CH_WIDTH_80MHZ;
-
-		ch_width = QDF_MAX(
-				wlansap_get_target_eht_phy_ch_width(),
+		if (CSR_IS_DOT11_PHY_MODE_11BE(sap_ctx->phyMode) ||
+		    CSR_IS_DOT11_PHY_MODE_11BE_ONLY(sap_ctx->phyMode))
+			ch_width =
+			QDF_MAX(wlansap_get_target_eht_phy_ch_width(),
 				ch_width);
 	} else if (sap_ctx->phyMode == eCSR_DOT11_MODE_11n ||
 		   sap_ctx->phyMode == eCSR_DOT11_MODE_11n_ONLY) {

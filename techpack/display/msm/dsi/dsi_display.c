@@ -13,6 +13,7 @@
 #include "sde_connector.h"
 #include "msm_mmu.h"
 #include "dsi_display.h"
+#include "dsi_defs.h"
 #include "dsi_panel.h"
 #include "dsi_ctrl.h"
 #include "dsi_ctrl_hw.h"
@@ -761,7 +762,6 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 	struct drm_panel_esd_config *config;
 	struct dsi_cmd_desc *cmds;
 	struct dsi_panel *panel;
-	u32 flags = 0;
 
 	if (!display->panel || !ctrl || !ctrl->ctrl)
 		return -EINVAL;
@@ -780,9 +780,10 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 	lenp = config->status_valid_params ?: config->status_cmds_rlen;
 	count = config->status_cmd.count;
 	cmds = config->status_cmd.cmds;
-	flags = DSI_CTRL_CMD_READ;
 
 	for (i = 0; i < count; ++i) {
+		bool is_read = cmds[i].msg.type == 0x06;
+
 		memset(config->status_buf, 0x0, SZ_4K);
 
 		if (config->status_cmd.state == DSI_CMD_SET_STATE_LP)
@@ -791,7 +792,7 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 		cmds[i].msg.flags |= MIPI_DSI_MSG_UNICAST_COMMAND;
 		cmds[i].msg.rx_buf = config->status_buf;
 		cmds[i].msg.rx_len = config->status_cmds_rlen[i];
-		cmds[i].ctrl_flags = flags;
+		cmds[i].ctrl_flags = is_read ? DSI_CTRL_CMD_READ : 0;
 		dsi_display_set_cmd_tx_ctrl_flags(display,&cmds[i]);
 		rc = dsi_ctrl_transfer_prepare(ctrl->ctrl, cmds[i].ctrl_flags);
 		if (rc) {
@@ -799,9 +800,17 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 			return rc;
 		}
 
+		/*
+		 *  For reads, this returns > 0 on success.
+		 *  For writes, this returns 0 on success.
+		 */
 		rc = dsi_ctrl_cmd_transfer(ctrl->ctrl, &cmds[i]);
+		if (!is_read && rc == 0)
+			rc = 1;
+
 		if (rc <= 0) {
-			DSI_ERR("rx cmd transfer failed rc=%d\n", rc);
+			const char* direction = is_read ? "rx" : "tx";
+			DSI_ERR("%s cmd transfer failed rc=%d\n", direction, rc);
 		} else {
 			memcpy(config->return_buf + start,
 				config->status_buf, lenp[i]);
@@ -967,8 +976,12 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 
 	dsi_panel_acquire_panel_lock(panel);
 
-	if (!panel->panel_initialized) {
+	if (!panel->panel_initialized || !panel->cur_mode) {
 		DSI_DEBUG("Panel not initialized\n");
+		goto release_panel_lock;
+	}
+
+	if (panel->cur_mode->timing.refresh_rate > panel->esd_config.max_refresh_rate) {
 		goto release_panel_lock;
 	}
 

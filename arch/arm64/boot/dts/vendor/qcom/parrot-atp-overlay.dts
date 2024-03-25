@@ -7,6 +7,7 @@
 / {
 	model = "Qualcomm Technologies, Inc. Parrot ATP";
 	compatible = "qcom,parrot-atp", "qcom,parrot", "qcom,atp";
-	qcom,msm-id = <537 0x10000>, <583 0x10000>, <613 0x10000>, <631 0x10000>;
+	qcom,msm-id = <537 0x10000>, <583 0x10000>, <613 0x10000>, <631 0x10000>,
+			<633 0x10000>, <634 0x10000>, <638 0x10000>;
 	qcom,board-id = <33 0>;
 };

@@ -836,7 +836,6 @@ struct wma_wlm_stats_data {
  * @vht_supp_mcs: VHT supported MCS
  * @is_fw_assert: is fw asserted
  * @ack_work_ctx: Context for deferred processing of TX ACK
- * @powersave_mode: power save mode
  * @pGetRssiReq: get RSSI request
  * @get_one_peer_info: When a "get peer info" request is active, is
  *   the request for a single peer?
@@ -962,7 +961,6 @@ typedef struct {
 	uint32_t vht_supp_mcs;
 	uint8_t is_fw_assert;
 	struct wma_tx_ack_work_ctx *ack_work_ctx;
-	uint8_t powersave_mode;
 	void *pGetRssiReq;
 	bool get_one_peer_info;
 	struct qdf_mac_addr peer_macaddr;

@@ -420,6 +420,17 @@ void dp_get_transmit_mac_addr(struct wlan_dp_intf *dp_intf,
 	bool is_mc_bc_addr = false;
 	enum nan_datapath_state state;
 
+	/* Check for VDEV validity before accessing it. Since VDEV references
+	 * are not taken in the per packet path, there is a change for VDEV
+	 * getting deleted in a parallel context. Because DP VDEV object is
+	 * protected by dp_intf::num_active_task, the chance of VDEV object
+	 * getting deleted while executing dp_start_xmit() is sparse. So, a
+	 * simple VDEV NULL check should be sufficient to handle the case of
+	 * VDEV getting destroyed first followed by dp_start_xmit().
+	 */
+	if (!dp_intf->vdev)
+		return;
+
 	switch (dp_intf->device_mode) {
 	case QDF_NDI_MODE:
 		state = wlan_nan_get_ndi_state(dp_intf->vdev);

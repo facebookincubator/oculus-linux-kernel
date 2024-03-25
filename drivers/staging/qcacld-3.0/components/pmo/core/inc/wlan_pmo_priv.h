@@ -35,6 +35,9 @@
 #include "wlan_pmo_wow_public_struct.h"
 #include "wlan_pmo_mc_addr_filtering_public_struct.h"
 
+#define PMO_PS_DATA_INACTIVITY_TIMEOUT (200)
+#define PMO_PS_DATA_SPEC_WAKE (0)
+
 /**
  * struct pmo_psoc_priv_obj - psoc related data require for pmo
  * @psoc_cfg: place holder for psoc configuration
@@ -100,6 +103,7 @@ struct wlan_pmo_ctx {
  * @addr_filter_pattern: addr filter pattern for vdev
  * @vdev_gtk_req: place holder for gtk request for vdev
  * @vdev_gtk_rsp_req: place holder for gtk response request for vdev
+ * @ps_params: OPM params
  * @gtk_err_enable: gtk error is enabled or not
  * @vdev_bpf_req: place holder for apf/bpf for vdev
  * @vdev_pkt_filter: place holder for vdev packet filter
@@ -130,6 +134,7 @@ struct pmo_vdev_priv_obj {
 	uint8_t addr_filter_pattern;
 	struct pmo_gtk_req vdev_gtk_req;
 	struct pmo_gtk_rsp_req vdev_gtk_rsp_req;
+	struct pmo_ps_params ps_params;
 	qdf_atomic_t gtk_err_enable;
 	bool magic_ptrn_enable;
 	bool ptrn_match_enable;

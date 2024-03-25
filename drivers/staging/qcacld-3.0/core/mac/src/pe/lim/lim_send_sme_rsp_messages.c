@@ -2106,6 +2106,11 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 		goto err;
 	}
 
+	if (!wlan_cm_is_vdev_connected(session_entry->vdev)) {
+		pe_info_rl("Ignore CSA, vdev is in not in conncted state");
+		goto err;
+	}
+
 	if (WLAN_REG_IS_24GHZ_CH_FREQ(csa_params->csa_chan_freq) &&
 	    session_entry->dot11mode == MLME_DOT11_MODE_11A)
 		session_entry->dot11mode = MLME_DOT11_MODE_11G;

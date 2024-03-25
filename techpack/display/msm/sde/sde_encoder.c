@@ -160,6 +160,7 @@ static void sde_encoder_set_flush_window_with_skew(struct drm_encoder *drm_enc,
 	struct sde_encoder_virt *sde_enc;
 	struct sde_encoder_phys *phys_enc;
 	struct sde_intf_offset_cfg *cfg;
+	unsigned long lock_flags;
 	u32 vrefresh, line_time_in_ns, frame_time_in_ns, vtotal;
 
 	sde_enc = to_sde_encoder_virt(drm_enc);
@@ -168,7 +169,7 @@ static void sde_encoder_set_flush_window_with_skew(struct drm_encoder *drm_enc,
 	if (!tvblank)
 		tvblank = ktime_get_ns();
 
-	spin_lock(phys_enc->enc_spinlock);
+	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	cfg = &phys_enc->cfg;
 	vrefresh = cfg->fps;
 	vtotal = cfg->vtotal;
@@ -190,30 +191,11 @@ static void sde_encoder_set_flush_window_with_skew(struct drm_encoder *drm_enc,
 				VSYNC_THRESHOLD_WINDOW_NS))
 		cfg->flush_sync_window_max = ktime_sub_ns(cfg->flush_sync_window_max,
 				VSYNC_THRESHOLD_WINDOW_NS);
-	spin_unlock(phys_enc->enc_spinlock);
+	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
 
 	SDE_EVT32(vrefresh, vtotal, ktime_to_us(cfg->flush_sync_window_min),
 		ktime_to_us(cfg->flush_sync_window_max), ktime_to_us(tvblank),
 		cfg->fixed_skew_offset_line, phys_enc->split_role);
-}
-
-bool sde_encoder_helper_get_skewed_vsync_status(struct drm_encoder *drm_enc)
-{
-	struct msm_display_info *disp_info;
-	struct sde_encoder_virt *sde_enc;
-
-	if (!drm_enc) {
-		SDE_ERROR("invalid drm encoder\n");
-		return false;
-	}
-
-	sde_enc = to_sde_encoder_virt(drm_enc);
-	disp_info = &sde_enc->disp_info;
-
-	if (disp_info->skewed_vsync_master)
-		return true;
-
-	return false;
 }
 
 ktime_t sde_encoder_calc_last_vsync_timestamp(struct drm_encoder *drm_enc)
@@ -276,7 +258,7 @@ ktime_t sde_encoder_calc_last_vsync_timestamp(struct drm_encoder *drm_enc)
 		tvblank = ktime_sub_ns(cur_time, hw_diff_ns);
 	}
 
-	if (sde_encoder_helper_get_skewed_vsync_status(drm_enc) &&
+	if ((sde_encoder_has_dpu_ctl_op_sync(drm_enc)) &&
 		sde_kms_hw_fence_enabled(cur_master->sde_kms))
 		sde_encoder_set_flush_window_with_skew(drm_enc, tvblank);
 
@@ -892,6 +874,7 @@ void sde_encoder_helper_skewed_vsync_config(
 	struct msm_display_info *disp_info;
 	struct drm_display_mode *mode;
 	u32 vfront_porch;
+	unsigned long lock_flags;
 
 	if (!phys_enc || !phys_enc->parent) {
 		SDE_ERROR("invalid arg(s), encoder %d\n", !!phys_enc);
@@ -902,21 +885,20 @@ void sde_encoder_helper_skewed_vsync_config(
 	disp_info = &sde_enc->disp_info;
 	mode = &phys_enc->cached_mode;
 
-	if (!disp_info->skewed_vsync_master) {
-		SDE_DEBUG_ENC(sde_enc, "Skewed_vsync not enabled\n");
-		return;
-	}
-
-	cfg->skew_intf_offset_en = true;
-	cfg->set_master_intf = disp_info->skewed_vsync_master;
-
-	spin_lock(phys_enc->enc_spinlock);
+	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	if (phys_enc->cont_splash_enabled || phys_enc->enable_state == SDE_ENC_DISABLED) {
 		cfg->fixed_fps = sde_encoder_get_dfps_maxfps(phys_enc->parent);
 		cfg->fps = cfg->fixed_fps;
 		vfront_porch = mode->vsync_start - mode->vdisplay;
 		cfg->fixed_vtotal = mode->vtotal - vfront_porch + phys_enc->vfp_cached;
 		cfg->vtotal = cfg->fixed_vtotal;
+
+		if (!disp_info->skewed_vsync_master) {
+			SDE_DEBUG_ENC(sde_enc, "Skewed_vsync not enabled\n");
+			goto end;
+		}
+		cfg->skew_intf_offset_en = true;
+		cfg->set_master_intf = disp_info->skewed_vsync_master;
 		if (!disp_info->skew_offset_line)
 			disp_info->skew_offset_line = mult_frac(cfg->fixed_vtotal,
 					DEFAULT_SKEW_VSYNC_PERCENTAGE, 100);
@@ -928,7 +910,8 @@ void sde_encoder_helper_skewed_vsync_config(
 				cfg->vtotal, SDE_EVTLOG_ERROR);
 		}
 	}
-	spin_unlock(phys_enc->enc_spinlock);
+end:
+	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
 }
 
 void sde_encoder_helper_split_config(
@@ -3981,16 +3964,33 @@ static void sde_encoder_phys_in_skewed_flush_window(struct sde_encoder_phys *phy
 {
 	struct sde_intf_offset_cfg *cfg = &phys_enc->cfg;
 	struct sde_encoder_virt *sde_enc;
+	struct sde_hw_ctl *ctl;
 	ktime_t cur_time, flush_sync_time_slot;
 	ktime_t flush_sync_skew_window_min, flush_sync_skew_window_max;
 	ktime_t skew_window_min_next, skew_window_max_next;
-	u32 frame_time_in_ns, vrefresh, sleep_us, i, loop_count;
+	u32 frame_time_in_ns, vrefresh, sleep_us, i, loop_count, hw_fence_ctrl = 0;
 	int retry_cnt = MAX_FLUSH_WINDOW_CHECK;
 	bool in_skew_flush_window;
+	unsigned long lock_flags;
+
+	if (!phys_enc || !phys_enc->hw_ctl) {
+		SDE_ERROR("invalid params\n");
+		return;
+	}
 
 	if (phys_enc->enable_state != SDE_ENC_ENABLED) {
 		SDE_DEBUG("physical encoder is not enabled yet state:%d\n",
 			phys_enc->enable_state);
+		return;
+	}
+
+	ctl = phys_enc->hw_ctl;
+	if (ctl->ops.get_hw_fence_ctrl)
+		hw_fence_ctrl = ctl->ops.get_hw_fence_ctrl(ctl);
+
+	if (!(hw_fence_ctrl & BIT(0))) {
+		SDE_DEBUG("hw fence not enabled for ctl:%d fence ctrl:0x%x\n",
+			ctl->idx - CTL_0, hw_fence_ctrl);
 		return;
 	}
 
@@ -4012,11 +4012,11 @@ static void sde_encoder_phys_in_skewed_flush_window(struct sde_encoder_phys *phy
 
 window_check:
 
-	spin_lock(phys_enc->enc_spinlock);
 	cur_time = ktime_get_ns();
+	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	flush_sync_skew_window_min = cfg->flush_sync_window_min;
 	flush_sync_skew_window_max = cfg->flush_sync_window_max;
-	spin_unlock(phys_enc->enc_spinlock);
+	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
 
 	in_skew_flush_window = false;
 	/* Calculate time needed to wait to reach flush window min */
@@ -4062,58 +4062,6 @@ window_check:
 
 	if (retry_cnt--)
 		goto window_check;
-}
-
-/**
- * sde_encoder_wait_for_vsync_retire - wait for vsync if line cnt falls in VSYNC_THRESHOLD_WINDOW
- * phys_enc: Pointer to physical encoder structure
- */
-static void sde_encoder_wait_for_vsync_retire(struct sde_encoder_phys *phys_enc)
-{
-	struct drm_display_mode *mode;
-	struct sde_hw_ctl *ctl;
-	u32 threshold_lines, vrefresh, line_time_in_ns, ln_cnt, hw_fence_ctrl;
-	int ret;
-
-	if (!phys_enc || !phys_enc->hw_intf || !phys_enc->hw_ctl ||
-			!phys_enc->hw_intf->ops.get_line_count) {
-		SDE_ERROR("invalid params\n");
-		return;
-	}
-
-	ctl = phys_enc->hw_ctl;
-	if (!ctl->ops.get_hw_fence_ctrl) {
-		SDE_DEBUG("hw fence feature not enabled for ctl:%d\n", ctl->idx);
-		return;
-	}
-
-	hw_fence_ctrl = ctl->ops.get_hw_fence_ctrl(ctl);
-	if (!(hw_fence_ctrl & BIT(0))) {
-		SDE_DEBUG("hw fence not enabled for ctl:%d fence ctrl:0x%x\n",
-			ctl->idx, hw_fence_ctrl);
-		return;
-	}
-
-	if (phys_enc->enable_state != SDE_ENC_ENABLED) {
-		SDE_DEBUG("physical encoder is not enabled yet state:%d\n",
-			phys_enc->enable_state);
-		return;
-	}
-
-	mode = &phys_enc->cached_mode;
-	vrefresh = drm_mode_vrefresh(mode);
-	line_time_in_ns =  DIV_ROUND_UP(1000000000, vrefresh * mode->vtotal);
-	threshold_lines = DIV_ROUND_UP(VSYNC_THRESHOLD_WINDOW_NS, line_time_in_ns);
-
-	ln_cnt = phys_enc->hw_intf->ops.get_line_count(phys_enc->hw_intf);
-
-	if (ln_cnt >= (mode->vtotal - threshold_lines)) {
-		SDE_EVT32(ln_cnt, mode->vtotal, threshold_lines, SDE_EVTLOG_FUNC_ENTRY);
-		sde_encoder_phys_inc_pending(phys_enc);
-		ret = sde_encoder_wait_for_event(phys_enc->parent, MSM_ENC_VBLANK);
-		if (ret)
-			SDE_ERROR("wait for vblank timed out\n");
-	}
 }
 
 /**
@@ -4386,12 +4334,9 @@ static void _sde_encoder_kickoff_phys(struct sde_encoder_virt *sde_enc,
 	hw_fence_enabled = sde_kms_hw_fence_enabled(sde_kms);
 	is_regdma_blocking = (is_vid_mode || _sde_encoder_is_autorefresh_enabled(sde_enc));
 
-	if (hw_fence_enabled && sde_encoder_is_built_in_display(&sde_enc->base)) {
-		if (!sde_encoder_helper_get_skewed_vsync_status(&sde_enc->base))
-			sde_encoder_wait_for_vsync_retire(sde_enc->cur_master);
-		else
-			sde_encoder_phys_in_skewed_flush_window(sde_enc->cur_master);
-	}
+	if (hw_fence_enabled && sde_encoder_is_built_in_display(&sde_enc->base) &&
+			sde_encoder_has_dpu_ctl_op_sync(&sde_enc->base))
+		sde_encoder_phys_in_skewed_flush_window(sde_enc->cur_master);
 
 	/* don't perform flush/start operations for slave encoders */
 	for (i = 0; i < sde_enc->num_phys_encs; i++) {
@@ -6437,6 +6382,30 @@ void sde_encoder_add_data_to_minidump_va(struct drm_encoder *drm_enc)
 		if(phys_enc && phys_enc->ops.add_to_minidump)
 			phys_enc->ops.add_to_minidump(phys_enc);
 	}
+}
+
+bool sde_encoder_get_intf_status(struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc;
+	struct sde_encoder_phys *cur_master;
+	struct intf_status intf_status = {0};
+
+	if (!drm_enc)
+		return false;
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+	cur_master = sde_enc->cur_master;
+
+	if (!cur_master || !cur_master->hw_intf)
+		return false;
+
+	if (cur_master->hw_intf->ops.get_status)
+		cur_master->hw_intf->ops.get_status(cur_master->hw_intf, &intf_status);
+
+	if (intf_status.is_en)
+		return true;
+
+	return false;
 }
 
 int sde_encoder_get_qsync_min_fps(struct drm_encoder *encoder, u32 *min_fps)

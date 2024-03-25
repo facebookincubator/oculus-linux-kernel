@@ -154,13 +154,16 @@ QDF_STATUS target_if_pmo_send_vdev_ps_param_req(
 	 */
 	switch (param_id) {
 	case pmo_sta_ps_enable_advanced_power:
-		param_id = WMI_STA_PS_ENABLE_QPOWER;
+		param_id = WMI_STA_PS_ENABLE_OPM;
 		break;
 	case pmo_sta_ps_param_inactivity_time:
 		param_id = WMI_STA_PS_PARAM_INACTIVITY_TIME;
 		break;
 	case pmo_sta_ps_param_ito_repeat_count:
 		param_id = WMI_STA_PS_PARAM_MAX_RESET_ITO_COUNT_ON_TIM_NO_TXRX;
+		break;
+	case pmo_sta_ps_param_spec_wake_interval:
+		param_id = WMI_STA_PS_PARAM_SPEC_WAKE_INTERVAL;
 		break;
 	default:
 		target_if_err("invalid vdev param id %d", param_id);

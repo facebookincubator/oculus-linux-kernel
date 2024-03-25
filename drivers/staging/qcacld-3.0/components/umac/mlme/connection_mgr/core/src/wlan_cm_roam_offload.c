@@ -2759,6 +2759,7 @@ cm_update_btm_offload_config(struct wlan_objmgr_psoc *psoc,
 	bool is_hs_20_ap, is_pmf_enabled, is_open_connection = false;
 	uint8_t vdev_id;
 	uint32_t mbo_oce_enabled_ap;
+	bool abridge_flag;
 
 	mlme_obj = mlme_get_psoc_ext_obj(psoc);
 	if (!mlme_obj)
@@ -2813,6 +2814,14 @@ cm_update_btm_offload_config(struct wlan_objmgr_psoc *psoc,
 
 	wlan_cm_roam_cfg_get_value(psoc, vdev_id, MBO_OCE_ENABLED_AP, &temp);
 	mbo_oce_enabled_ap = temp.uint_value;
+
+	abridge_flag = wlan_mlme_get_btm_abridge_flag(psoc);
+	if (!abridge_flag)
+		MLME_CLEAR_BIT(*btm_offload_config,
+			       BTM_OFFLOAD_CONFIG_BIT_7);
+	mlme_debug("Abridge flag: %d, btm offload: %u", abridge_flag,
+		   *btm_offload_config);
+
 	/*
 	 * If peer does not support PMF in case of OCE/MBO
 	 * Connection, Disable BTM offload to firmware.

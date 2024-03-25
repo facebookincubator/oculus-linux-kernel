@@ -381,6 +381,7 @@ static const struct v4l2_subdev_ops cci_subdev_ops = {
 
 static const struct v4l2_subdev_internal_ops cci_subdev_intern_ops;
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 static int cam_cci_get_debug(void *data, u64 *val)
 {
 	struct cci_device *cci_dev = (struct cci_device *)data;
@@ -439,6 +440,12 @@ static int cam_cci_create_debugfs_entry(struct cci_device *cci_dev)
 end:
 	return rc;
 }
+#else
+static inline int cam_cci_create_debugfs_entry(struct cci_device *cci_dev)
+{
+	return 0;
+}
+#endif
 
 static int cam_cci_component_bind(struct device *dev,
 	struct device *master_dev, void *data)

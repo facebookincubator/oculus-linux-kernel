@@ -3390,9 +3390,31 @@ int wlan_hdd_cfg80211_get_txpower(struct wiphy *wiphy,
 	return errno;
 }
 
+/**
+ * hdd_convert_opm_mode() - convert opm with equivalent wma opm
+ * @opm_mode: Optimized power management mode
+ *
+ * Return: enum wma_sta_ps_scheme_cfg
+ */
+static enum wma_sta_ps_scheme_cfg
+hdd_convert_opm_mode(enum qca_wlan_vendor_opm_mode opm_mode)
+{
+	switch (opm_mode) {
+	case QCA_WLAN_VENDOR_OPM_MODE_DISABLE:
+		return WMA_STA_PS_OPM_CONSERVATIVE;
+	case QCA_WLAN_VENDOR_OPM_MODE_ENABLE:
+		return WMA_STA_PS_OPM_AGGRESSIVE;
+	case QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED:
+		return WMA_STA_PS_USER_DEF;
+	default:
+		hdd_err("Invalid opm_mode: %d", opm_mode);
+		return WMA_STA_PS_OPM_CONSERVATIVE;
+	}
+}
+
 int hdd_set_power_config(struct hdd_context *hddctx,
 			 struct hdd_adapter *adapter,
-			 uint8_t power)
+			 enum qca_wlan_vendor_opm_mode *opm_mode)
 {
 	QDF_STATUS status;
 
@@ -3403,29 +3425,47 @@ int hdd_set_power_config(struct hdd_context *hddctx,
 		return -EINVAL;
 	}
 
-	if (power > PMO_PS_ADVANCED_POWER_SAVE_ENABLE ||
-	    power < PMO_PS_ADVANCED_POWER_SAVE_DISABLE) {
-		hdd_err("invalid power value: %d", power);
+	if (*opm_mode > QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED ||
+	    *opm_mode < QCA_WLAN_VENDOR_OPM_MODE_DISABLE) {
+		hdd_err("invalid power value: %d", *opm_mode);
 		return -EINVAL;
 	}
 
 	if (ucfg_pmo_get_max_ps_poll(hddctx->psoc)) {
 		hdd_info("Disable advanced power save since max ps poll is enabled");
-		power = PMO_PS_ADVANCED_POWER_SAVE_DISABLE;
+		*opm_mode = QCA_WLAN_VENDOR_OPM_MODE_DISABLE;
 	}
 
-	status = wma_set_power_config(adapter->vdev_id, power);
+	status = wma_set_power_config(adapter->vdev_id,
+				      hdd_convert_opm_mode(*opm_mode));
 	if (status != QDF_STATUS_SUCCESS) {
 		hdd_err("failed to configure power: %d", status);
 		return -EINVAL;
 	}
 
-	/* cache latest userspace power save config to reapply after SSR */
-	ucfg_pmo_set_power_save_mode(hddctx->psoc, power);
-
 	return 0;
 }
 
+int hdd_set_power_config_params(struct hdd_context *hddctx,
+				struct hdd_adapter *adapter,
+				uint16_t ps_ito, uint16_t spec_wake)
+{
+	QDF_STATUS status;
+
+	status = wma_set_power_config_ito(adapter->vdev_id, ps_ito);
+	if (status != QDF_STATUS_SUCCESS) {
+		hdd_err("failed to configure power ito: %d", status);
+		return -EINVAL;
+	}
+
+	status = wma_set_power_config_spec_wake(adapter->vdev_id, spec_wake);
+	if (status != QDF_STATUS_SUCCESS) {
+		hdd_err("failed to configure power spec wake: %d", status);
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 #ifdef WLAN_SUSPEND_RESUME_TEST
 static struct net_device *g_dev;

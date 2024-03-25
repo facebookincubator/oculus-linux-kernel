@@ -95,6 +95,23 @@ struct wma_caps_per_phy {
 	uint32_t rx_chain_mask_5G;
 };
 
+struct wma_ps_params {
+	enum wmi_sta_ps_scheme_cfg opm_mode;
+	uint16_t ps_ito;
+	uint16_t spec_wake;
+};
+
+/**
+ * enum wma_sta_ps_scheme_cfg - STA power save schemes
+ * @WMA_STA_PS_OPM_CONSERVATIVE - Conservative OPM mode
+ * @WMA_STA_PS_OPM_AGGRESSIVE - Aggressive OPM mode
+ * @WMA_STA_PS_USER_DEF - User defined OPM mode
+ */
+enum wma_sta_ps_scheme_cfg {
+	WMA_STA_PS_OPM_CONSERVATIVE = 0,
+	WMA_STA_PS_OPM_AGGRESSIVE = 1,
+	WMA_STA_PS_USER_DEF = 2,
+};
 
 #define VDEV_CMD 1
 #define PDEV_CMD 2
@@ -451,7 +468,26 @@ QDF_STATUS wma_send_coex_config_cmd(WMA_HANDLE wma_handle,
  *
  * Return: QDF_STATUS_SUCCESS on success, error number otherwise
  */
-QDF_STATUS wma_set_power_config(uint8_t vdev_id, enum powersave_mode power);
+QDF_STATUS wma_set_power_config(uint8_t vdev_id,
+				enum wma_sta_ps_scheme_cfg power);
+
+/**
+ * wma_set_power_config_ito() - update power save inactivity timeout
+ * @vdev_id:	the Id of the vdev to configure
+ * @ps_ito:	new power save inactivity timeout in milliseconds
+ *
+ * Return: QDF_STATUS_SUCCESS on success, error number otherwise
+ */
+QDF_STATUS wma_set_power_config_ito(uint8_t vdev_id, uint16_t ps_ito);
+
+/**
+ * wma_set_power_config_spec_wake() - update opm speculative wake interval
+ * @vdev_id:	the Id of the vdev to configure
+ * @spec_wake:	new opm speculative wake interval in milliseconds
+ *
+ * Return: QDF_STATUS_SUCCESS on success, error number otherwise
+ */
+QDF_STATUS wma_set_power_config_spec_wake(uint8_t vdev_id, uint16_t spec_wake);
 
 #ifdef FEATURE_WLAN_D0WOW
 static inline bool wma_d0_wow_is_supported(void)

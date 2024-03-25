@@ -559,6 +559,8 @@
 		qcom,bt-reset-gpio = <&tlmm 81 0>; /* BT_EN */
 		qcom,bt-sw-ctrl-gpio = <&tlmm 82 0>; /* SW_CTRL */
 		qcom,xo-clk-gpio = <&tlmm 204 0>; /* XO */
+		mboxes = <&qmp_aop 0>;
+		qcom,vreg_ipa="s3e";
 
 		qcom,bt-vdd-io-supply = <&S10B>;  /* IO */
 		qcom,bt-vdd-aon-supply = <&S11B>;
@@ -578,6 +580,10 @@
 		qcom,bt-vdd-rfa1-config = <1900000 2040000 0 1>;
 		qcom,bt-vdd-rfa2-config = <1350000 2024000 0 1>;
 		qcom,bt-vdd-asd-config = <2800000 2800000 0 1>;
+
+		/* This read as part of ipa */
+		qcom,vreg_ipa-supply=<&S3E>;
+		qcom,vreg_ipa-config= <2200000 2200000 0 1>;
 	};
 
 	intc: interrupt-controller@17100000 {
@@ -3076,6 +3082,8 @@
 		qcom,vdd-wlan-rfa2-config = <1350000 2040000 0 0 1>;
 		wlan-ant-switch-supply = <&L7E>;
 		qcom,wlan-ant-switch-config = <2800000 2800000 0 0 1>;
+		vdd-wlan-ipa-supply = <&S3E>;
+		qcom,vdd-wlan-ipa-config = <2200000 2200000 0 0 0>;
 
 		interconnects =
 		<&pcie_noc MASTER_PCIE_0 &pcie_noc SLAVE_ANOC_PCIE_GEM_NOC>,

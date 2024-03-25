@@ -987,6 +987,7 @@ populate_dot11f_ht_caps(struct mac_context *mac,
 	QDF_STATUS nSirStatus;
 	uint8_t disable_high_ht_mcs_2x2 = 0;
 	struct ch_params ch_params = {0};
+	uint8_t cb_mode;
 
 	tSirMacTxBFCapabilityInfo *pTxBFCapabilityInfo;
 	tSirMacASCapabilityInfo *pASCapabilityInfo;
@@ -1015,10 +1016,11 @@ populate_dot11f_ht_caps(struct mac_context *mac,
 		pDot11f->shortGI20MHz = ht_cap_info->short_gi_20_mhz;
 		pDot11f->shortGI40MHz = ht_cap_info->short_gi_40_mhz;
 	} else {
+		cb_mode = lim_get_cb_mode_for_freq(mac, pe_session,
+						   pe_session->curr_op_freq);
 		if (WLAN_REG_IS_24GHZ_CH_FREQ(pe_session->curr_op_freq) &&
 		    LIM_IS_STA_ROLE(pe_session) &&
-		    WNI_CFG_CHANNEL_BONDING_MODE_DISABLE !=
-		    mac->roam.configParam.channelBondingMode24GHz) {
+		    cb_mode != WNI_CFG_CHANNEL_BONDING_MODE_DISABLE) {
 			pDot11f->supportedChannelWidthSet = 1;
 			ch_params.ch_width = CH_WIDTH_40MHZ;
 			wlan_reg_set_channel_params_for_pwrmode(
@@ -1156,14 +1158,7 @@ ePhyChanBondState wlan_get_cb_mode(struct mac_context *mac,
 	uint32_t self_cb_mode;
 	struct ch_params ch_params = {0};
 
-	if (WLAN_REG_IS_24GHZ_CH_FREQ(ch_freq)) {
-		self_cb_mode =
-			mac->roam.configParam.channelBondingMode24GHz;
-	} else {
-		self_cb_mode =
-			mac->roam.configParam.channelBondingMode5GHz;
-	}
-
+	self_cb_mode = lim_get_cb_mode_for_freq(mac, pe_session, ch_freq);
 	if (self_cb_mode == WNI_CFG_CHANNEL_BONDING_MODE_DISABLE)
 		return PHY_SINGLE_CHANNEL_CENTERED;
 
@@ -5180,10 +5175,8 @@ sir_convert_beacon_frame2_t2lm_struct(tDot11fBeacon *bcn_frm,
 		     sizeof(struct wlan_t2lm_info));
 	t2lm_ctx->upcoming_t2lm.t2lm.direction = WLAN_T2LM_INVALID_DIRECTION;
 
-	if (!bcn_frm->num_t2lm_ie) {
-		pe_debug("T2LM IEs not present");
+	if (!bcn_frm->num_t2lm_ie)
 		return status;
-	}
 
 	pe_debug("Number of T2LM IEs in beacon %d", bcn_frm->num_t2lm_ie);
 	for (i = 0; i < bcn_frm->num_t2lm_ie; i++) {
@@ -5244,9 +5237,12 @@ sir_convert_beacon_frame2_mlo_struct(uint8_t *pframe, uint32_t nframe,
 					nframe - WLAN_BEACON_IES_OFFSET,
 					&ml_ie, &ml_ie_total_len);
 		if (QDF_IS_STATUS_SUCCESS(status)) {
-			util_get_bvmlie_persta_partner_info(ml_ie,
-							    ml_ie_total_len,
-							    &partner_info);
+			status = util_get_bvmlie_persta_partner_info(
+								ml_ie,
+								ml_ie_total_len,
+								&partner_info);
+			if (QDF_IS_STATUS_ERROR(status))
+				return status;
 			bcn_struct->mlo_ie.mlo_ie.num_sta_profile =
 						partner_info.num_partner_links;
 			util_get_mlie_common_info_len(ml_ie, ml_ie_total_len,
@@ -7477,24 +7473,28 @@ populate_dot11f_sr_info(struct mac_context *mac_ctx,
 	uint8_t non_srg_pd_offset;
 	uint8_t sr_ctrl = wlan_vdev_mlme_get_sr_ctrl(session->vdev);
 	bool sr_enabled = wlan_vdev_mlme_get_he_spr_enabled(session->vdev);
-	bool sr_disabled_due_conc =
-		wlan_vdev_mlme_is_sr_disable_due_conc(session->vdev);
 
-	if (!sr_enabled || !sr_ctrl || sr_disabled_due_conc ||
-	    (sr_ctrl & WLAN_HE_NON_SRG_PD_SR_DISALLOWED) ||
-	    !(sr_ctrl & WLAN_HE_NON_SRG_OFFSET_PRESENT))
+	if (!sr_enabled)
 		return QDF_STATUS_SUCCESS;
 
-	non_srg_pd_offset = wlan_vdev_mlme_get_non_srg_pd_offset(session->vdev);
 	sr_info->present = 1;
 	sr_info->psr_disallow = 1;
-	sr_info->non_srg_pd_sr_disallow = 0;
 	sr_info->srg_info_present = 0;
-	sr_info->non_srg_offset_present = 1;
-	sr_info->srg_info_present = 0;
+	sr_info->non_srg_offset_present = 0;
+	sr_info->non_srg_pd_sr_disallow = !!(sr_ctrl &
+					   WLAN_HE_NON_SRG_PD_SR_DISALLOWED);
+
+	if ((!sr_info->non_srg_pd_sr_disallow) &&
+	    (sr_ctrl & WLAN_HE_NON_SRG_OFFSET_PRESENT)) {
+		non_srg_pd_offset =
+			wlan_vdev_mlme_get_non_srg_pd_offset(session->vdev);
+		sr_info->non_srg_offset_present = 1;
+		sr_info->non_srg_offset.info.non_srg_pd_max_offset =
+							non_srg_pd_offset;
+	}
+
 	if (sr_ctrl & WLAN_HE_SIGA_SR_VAL15_ALLOWED)
 		sr_info->sr_value15_allow = 1;
-	sr_info->non_srg_offset.info.non_srg_pd_max_offset = non_srg_pd_offset;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -9688,6 +9688,9 @@ QDF_STATUS populate_dot11f_assoc_rsp_mlo_ie(struct mac_context *mac_ctx,
 	mlo_ie->num_data = p_ml_ie - mlo_ie->data;
 
 	assoc_req = session->parsedAssocReq[sta->assocId];
+	if (!assoc_req)
+		goto no_partner;
+
 	for (link = 0; link < assoc_req->mlo_info.num_partner_links; link++) {
 		lle_mode = 0;
 		sta_pro = &mlo_ie->sta_profile[num_sta_pro];
@@ -10217,6 +10220,8 @@ QDF_STATUS populate_dot11f_assoc_rsp_mlo_ie(struct mac_context *mac_ctx,
 		lim_mlo_release_vdev_ref(link_session->vdev);
 		num_sta_pro++;
 	}
+
+no_partner:
 	mlo_ie->num_sta_profile = num_sta_pro;
 	mlo_ie->mld_capab_and_op_info.max_simultaneous_link_num = num_sta_pro;
 	return QDF_STATUS_SUCCESS;

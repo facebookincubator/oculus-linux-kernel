@@ -107,7 +107,7 @@ static struct msm_platform_inst_capability instance_cap_data_anorak[] = {
 
 	{FRAME_WIDTH, DEC, CODECS_ALL, 96, 8192, 1, 1920},
 
-	{FRAME_WIDTH, DEC, VP9, 96, 4096, 1, 1920},
+	{FRAME_WIDTH, DEC, VP9, 96, 7680, 1, 1920},
 
 	{FRAME_WIDTH, ENC, CODECS_ALL, 128, 8192, 1, 1920},
 
@@ -127,7 +127,7 @@ static struct msm_platform_inst_capability instance_cap_data_anorak[] = {
 
 	{FRAME_HEIGHT, DEC, CODECS_ALL, 96, 8192, 1, 1080},
 
-	{FRAME_HEIGHT, DEC, VP9, 96, 4096, 1, 1080},
+	{FRAME_HEIGHT, DEC, VP9, 96, 7680, 1, 1080},
 
 	{FRAME_HEIGHT, ENC, CODECS_ALL, 128, 8192, 1, 1080},
 
@@ -193,8 +193,8 @@ static struct msm_platform_inst_capability instance_cap_data_anorak[] = {
 
 	{MBPF, DEC, CODECS_ALL, 36, 138240, 1, 138240},
 
-	/* (4096 * 2304) / 256 */
-	{MBPF, DEC, VP9, 36, 36864, 1, 36864},
+	/* (7680 * 4320) / 256 */
+	{MBPF, DEC, VP9, 36, 129600, 1, 129600},
 
 	/* ((8192x8192)/256) */
 	{MBPF, DEC, HEIC, 64, 262144,  1, 262144 },

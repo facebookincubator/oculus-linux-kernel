@@ -28,6 +28,28 @@
 #include <wlan_cmn.h>
 #include "sme_api.h"
 
+#define ASSEMBLE_RATECODE_V1(_pream, _nss, _rate) \
+		(((1) << 28) | ((_pream) << 8) | ((_nss) << 5) | (_rate))
+
+/* This macro is used to extract the rate from the rate_code as first four bits
+ * in rate_code represents the rate, next 3 bits represents the nss and
+ * next 2 bits represents preamble.
+ */
+#define RATECODE_V1_RIX_MASK    0xf
+
+/* This macro is used to extract preamble from the rate_code as first 4 bits
+ * in rate_code represents the rate, next 3 bits represents the nss and
+ * next 2 bits represents preamble.
+ */
+#define RATECODE_V1_PREAMBLE_OFFSET (4 + 3)
+
+/* This macro is used to extract NSS from the rate_code as first 4 bits
+ * in rate_code represents the rate, next 3 bits represents the NSS and
+ * next 2 bits represents preamble.
+ */
+#define RATECODE_V1_NSS_OFFSET  0x4
+#define RATECODE_V1_NSS_MASK    0x7
+
 #ifdef FEATURE_SET
 /**
  * wlan_mlme_get_feature_info() - Get mlme features
@@ -2750,6 +2772,31 @@ wlan_mlme_set_t2lm_negotiation_supported(struct wlan_objmgr_psoc *psoc,
 #endif
 
 /**
+ * wlan_mlme_set_btm_abridge_flag() - Set BTM abridge flag
+ * @psoc: psoc context
+ * @value: abridge flag
+ *
+ * Return: qdf status
+ *
+ * BTM abridge flag indicates whether to select candidates
+ * for BTM roam based on score.
+ */
+QDF_STATUS
+wlan_mlme_set_btm_abridge_flag(struct wlan_objmgr_psoc *psoc, bool value);
+
+/**
+ * wlan_mlme_get_btm_abridge_flag() - Get BTM abridge flag
+ * @psoc: psoc context
+ *
+ * Return: abridge flag
+ *
+ * BTM abridge flag indicates whether to select candidates
+ * for BTM roam based on score.
+ */
+bool
+wlan_mlme_get_btm_abridge_flag(struct wlan_objmgr_psoc *psoc);
+
+/**
  * wlan_mlme_get_sta_miracast_mcc_rest_time() - Get STA/MIRACAST MCC rest time
  * @psoc: pointer to psoc object
  * @value: value which needs to filled by API
@@ -4345,4 +4392,28 @@ wlan_mlme_get_src_addr_from_frame(struct element_info *frame);
 QDF_STATUS
 wlan_mlme_set_ul_mu_config(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 			   uint8_t ulmu_disable);
+
+/**
+ * wlan_mlme_get_max_bw() - Get max supported bandwidth
+ * Extract max supported bandwidth
+ *
+ * Return: enum phy_ch_width
+ *
+ */
+enum phy_ch_width wlan_mlme_get_max_bw(void);
+
+/**
+ * wlan_mlme_assemble_rate_code() - assemble rate code to be sent to FW
+ *
+ * @preamble: rate preamble
+ * @nss: number of spatial streams
+ * @rate: rate index
+ *
+ * Rate code assembling is different for targets which are 11ax capable.
+ * Check for the target support and assemble the rate code accordingly.
+ *
+ * Return: assembled rate code
+ */
+uint32_t
+wlan_mlme_assemble_rate_code(uint8_t preamble, uint8_t nss, uint8_t rate);
 #endif /* _WLAN_MLME_API_H_ */

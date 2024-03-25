@@ -40,6 +40,7 @@
 #include "ce_tasklet.h"
 #include "qdf_module.h"
 #include <wbuff.h>
+#include "qdf_ssr_driver_dump.h"
 
 #define CE_POLL_TIMEOUT 10      /* ms */
 
@@ -2111,6 +2112,7 @@ void free_mem_ce_debug_hist_data(struct hif_softc *scn, uint32_t ce_id)
 /* define below variables for crashscope parse */
 struct hif_ce_desc_event *hif_ce_desc_history[CE_COUNT_MAX];
 uint32_t hif_ce_history_max = HIF_CE_HISTORY_MAX;
+uint32_t hif_ce_count_max = CE_COUNT_MAX;
 
 /*
  * for debug build, it will enable ce history for all ce, but for
@@ -2125,8 +2127,38 @@ uint32_t hif_ce_history_max = HIF_CE_HISTORY_MAX;
 #define CE_DESC_HISTORY_BUFF_CNT  3
 #define IS_CE_DEBUG_ONLY_FOR_CRIT_CE (BIT(2) | BIT(3) | BIT(7))
 #endif
+bool hif_ce_only_for_crit = IS_CE_DEBUG_ONLY_FOR_CRIT_CE;
 struct hif_ce_desc_event
 	hif_ce_desc_history_buff[CE_DESC_HISTORY_BUFF_CNT][HIF_CE_HISTORY_MAX];
+
+static void
+__hif_ce_desc_history_log_register(struct hif_softc *scn)
+{
+	qdf_ssr_driver_dump_register_region("hif_ce_desc_history_buff",
+					    hif_ce_desc_history_buff,
+					    sizeof(hif_ce_desc_history_buff));
+	qdf_ssr_driver_dump_register_region("hif_ce_desc_hist",
+					    &scn->hif_ce_desc_hist,
+					    sizeof(scn->hif_ce_desc_hist));
+	qdf_ssr_driver_dump_register_region("hif_ce_count_max",
+					    &hif_ce_count_max,
+					    sizeof(hif_ce_count_max));
+	qdf_ssr_driver_dump_register_region("hif_ce_history_max",
+					    &hif_ce_history_max,
+					    sizeof(hif_ce_history_max));
+	qdf_ssr_driver_dump_register_region("hif_ce_only_for_crit",
+					    &hif_ce_only_for_crit,
+					    sizeof(hif_ce_only_for_crit));
+}
+
+static void __hif_ce_desc_history_log_unregister(void)
+{
+	qdf_ssr_driver_dump_unregister_region("hif_ce_only_for_crit");
+	qdf_ssr_driver_dump_unregister_region("hif_ce_history_max");
+	qdf_ssr_driver_dump_unregister_region("hif_ce_count_max");
+	qdf_ssr_driver_dump_unregister_region("hif_ce_desc_hist");
+	qdf_ssr_driver_dump_unregister_region("hif_ce_desc_history_buff");
+}
 
 static struct hif_ce_desc_event *
 	hif_ce_debug_history_buf_get(struct hif_softc *scn, unsigned int ce_id)
@@ -2212,6 +2244,14 @@ static void free_mem_ce_debug_history(struct hif_softc *scn, unsigned int ce_id)
 	ce_hist->hist_ev[ce_id] = NULL;
 }
 #else
+
+static void
+__hif_ce_desc_history_log_register(struct hif_softc *scn)
+{
+}
+
+static void __hif_ce_desc_history_log_unregister(void) { }
+
 static inline QDF_STATUS
 alloc_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id,
 			   uint32_t src_nentries)
@@ -2224,6 +2264,13 @@ free_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id) { }
 #endif /* (CONFIG_WLAN_EXTRA_DEBUG) || (HIF_CE_DEBUG_DATA_BUF) */
 #else
 #if defined(HIF_CE_DEBUG_DATA_BUF)
+
+static void
+__hif_ce_desc_history_log_register(struct hif_softc *scn)
+{
+}
+
+static void __hif_ce_desc_history_log_unregister(void) { }
 
 static QDF_STATUS
 alloc_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id,
@@ -2260,6 +2307,13 @@ static void free_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id)
 }
 
 #else
+
+static void
+__hif_ce_desc_history_log_register(struct hif_softc *scn)
+{
+}
+
+static void __hif_ce_desc_history_log_unregister(void) { }
 
 static inline QDF_STATUS
 alloc_mem_ce_debug_history(struct hif_softc *scn, unsigned int CE_id,
@@ -2530,6 +2584,11 @@ error_target_access:
 error_no_dma_mem:
 	ce_fini((struct CE_handle *)CE_state);
 	return NULL;
+}
+
+void hif_ce_desc_history_log_register(struct hif_softc *scn)
+{
+	__hif_ce_desc_history_log_register(scn);
 }
 
 /**
@@ -2822,6 +2881,11 @@ void ce_fini(struct CE_handle *copyeng)
 	qdf_spinlock_destroy(&CE_state->ce_interrupt_lock);
 #endif
 	qdf_mem_free(CE_state);
+}
+
+void hif_ce_desc_history_log_unregister(void)
+{
+	__hif_ce_desc_history_log_unregister();
 }
 
 void hif_detach_htc(struct hif_opaque_softc *hif_ctx)
@@ -3631,6 +3695,11 @@ static QDF_STATUS hif_post_recv_buffers(struct hif_softc *scn)
 	for (pipe_num = 0; pipe_num < scn->ce_count; pipe_num++) {
 		struct HIF_CE_pipe_info *pipe_info;
 
+		if (pipe_num >= CE_COUNT_MAX) {
+			A_TARGET_ACCESS_UNLIKELY(scn);
+			return QDF_STATUS_E_INVAL;
+		}
+
 		ce_state = scn->ce_id_to_state[pipe_num];
 		pipe_info = &hif_state->pipe_info[pipe_num];
 
@@ -3953,10 +4022,10 @@ static void hif_print_hal_shadow_register_cfg(struct pld_wlan_enable_cfg *cfg)
 {
 	int i;
 
-	hif_err("v3: num_config %d", cfg->num_shadow_reg_v3_cfg);
+	hif_debug("v3: num_config %d", cfg->num_shadow_reg_v3_cfg);
 
 	for (i = 0; i < cfg->num_shadow_reg_v3_cfg; i++) {
-		hif_err("i %d, val %x", i, cfg->shadow_reg_v3_cfg[i].addr);
+		hif_debug("i %d, val %x", i, cfg->shadow_reg_v3_cfg[i].addr);
 	}
 }
 
@@ -3964,11 +4033,11 @@ static void hif_print_hal_shadow_register_cfg(struct pld_wlan_enable_cfg *cfg)
 static void hif_print_hal_shadow_register_cfg(struct pld_wlan_enable_cfg *cfg)
 {
 	int i;
-	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
 		  "%s: num_config %d", __func__, cfg->num_shadow_reg_v2_cfg);
 
 	for (i = 0; i < cfg->num_shadow_reg_v2_cfg; i++) {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO,
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
 		     "%s: i %d, val %x", __func__, i,
 		     cfg->shadow_reg_v2_cfg[i].addr);
 	}

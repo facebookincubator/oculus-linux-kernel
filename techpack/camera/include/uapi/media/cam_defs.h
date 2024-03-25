@@ -24,7 +24,9 @@
 #define CAM_FLUSH_REQ                           (CAM_COMMON_OPCODE_BASE + 0x8)
 #define CAM_QUERY_CAP_V2                        (CAM_COMMON_OPCODE_BASE + 0x9)
 #define CAM_QUERY_CAP_V3                        (CAM_COMMON_OPCODE_BASE + 0xa)
-#define CAM_COMMON_OPCODE_MAX                   (CAM_COMMON_OPCODE_BASE + 0xb)
+#define CAM_SET_STREAM_MODE                     (CAM_COMMON_OPCODE_BASE + 0xb)
+#define CAM_STREAM_MODE_CMD                     (CAM_COMMON_OPCODE_BASE + 0xc)
+#define CAM_COMMON_OPCODE_MAX                   (CAM_COMMON_OPCODE_BASE + 0xd)
 
 #define CAM_COMMON_OPCODE_BASE_v2           0x150
 #define CAM_ACQUIRE_HW                      (CAM_COMMON_OPCODE_BASE_v2 + 0x1)
@@ -65,6 +67,11 @@
 #define CAM_MAX_ACQ_RES    5
 #define CAM_MAX_HW_SPLIT   3
 
+#define CAM_MAX_STREAM_MODE_HANDLES         30
+
+/* stream mode command bits */
+#define CAM_STREAM_MODE_RETURN_IMAGE (1 << 0)
+#define CAM_STREAM_MODE_GET_IMAGE (1 << 1)
 
 /**
  * enum flush_type_t - Identifies the various flush types
@@ -579,6 +586,87 @@ struct cam_acquire_dev_cmd {
 	__u32        handle_type;
 	__u32        num_resources;
 	__u64        resource_hdl;
+};
+
+/**
+ * struct cam_stream_image - Represents a frame/image buffer
+ * @mem_handles:             The memory handle of each plane
+ * @image_id:                The image id
+ * @packet_handle:           The memory handle of packet to config the frame
+ *                           into hardware
+ * @packet_offset:           The offset where packet starts
+ */
+struct cam_stream_image {
+	uint64_t        mem_handles[CAM_PACKET_MAX_PLANES];
+	uint64_t        image_id;
+	uint64_t        packet_handle;
+	uint64_t        packet_offset;
+};
+
+/**
+ * struct cam_set_stream_mode - Structure to set streaming mode
+ * @session_handle:             The session for which mode is being set
+ * @dev_handle:                 The device handle
+ * @num_images:                 Number of images being sent
+ * @stream_images:              The images
+ */
+struct cam_set_stream_mode {
+	int32_t         session_handle;
+	int32_t         dev_handle;
+	uint32_t        num_images;
+	struct cam_stream_image stream_images[CAM_MAX_STREAM_MODE_HANDLES];
+};
+
+/**
+ * struct cam_set_stream_mode_cmd_return - Structure to return images
+ * @num_images:                            Number of images to return
+ * @stream_image_ids:                      Ids of images to return
+ */
+struct cam_set_stream_mode_cmd_return {
+	uint32_t        num_images;
+	uint64_t        image_ids[CAM_MAX_STREAM_MODE_HANDLES];
+};
+
+/**
+ * struct cam_set_stream_mode_frame_params - Frame parameters
+ * @image_id:                                 Image id
+ * @timestamp:                                timestamp of image arrival
+ * @sof_timestamp:                            Start-of-Frame timestamp
+ * @frame_num:                                The frame number
+ */
+struct cam_set_stream_mode_frame_params {
+	uint64_t        image_id;
+	uint64_t        timestamp;
+	uint64_t        sof_timestamp;
+	int64_t         frame_num;
+};
+
+/**
+ * struct cam_set_stream_mode_cmd_get - Structure to get images
+ * @timeout_ms:                         Time to wait for images
+ * @num_images:                         Out parameter for number of images ready
+ * @images:                             Out parameter for Ids of images ready
+ */
+struct cam_set_stream_mode_cmd_get {
+	uint32_t        timeout_ms;
+	uint32_t        num_images;
+	struct cam_set_stream_mode_frame_params
+		images[CAM_MAX_STREAM_MODE_HANDLES];
+};
+
+/**
+ * struct cam_set_stream_cmd - Structure for stream mode command
+ * @session_handle:            The session for which mode is being set
+ * @dev_handle:                The device handle
+ * @cmd_return:                Return image struct
+ * @cmd_get:                   Get ready images struct
+ */
+struct cam_stream_mode_cmd {
+	int32_t         session_handle;
+	int32_t         dev_handle;
+	uint32_t        cmd_mode;
+	struct cam_set_stream_mode_cmd_return cmd_return;
+	struct cam_set_stream_mode_cmd_get cmd_get;
 };
 
 /*

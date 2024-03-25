@@ -42,6 +42,11 @@ int cam_packet_util_get_cmd_mem_addr(int handle, uint32_t **buf_addr,
 	return rc;
 }
 
+void cam_packet_util_put_cmd_mem_addr(int handle)
+{
+	cam_mem_put_cpu_buf(handle);
+}
+
 int cam_packet_util_validate_cmd_desc(struct cam_cmd_buf_desc *cmd_desc)
 {
 	if ((cmd_desc->length > cmd_desc->size) ||
@@ -166,7 +171,7 @@ int cam_packet_util_get_kmd_buffer(struct cam_packet *packet,
 	kmd_buf->used_bytes = 0;
 
 rel_kmd_buf:
-	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
+	cam_packet_util_put_cmd_mem_addr(cmd_desc->mem_handle);
 	return rc;
 }
 

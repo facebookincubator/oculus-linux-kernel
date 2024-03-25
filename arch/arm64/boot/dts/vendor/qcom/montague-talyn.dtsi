@@ -1,0 +1,45 @@
+#include "ravelin-idp.dtsi"
+#include "ravelin-qcx6438.dtsi"
+
+&soc {
+};
+
+&pcie0 {
+	status = "ok";
+};
+
+&pcie0_msi {
+	status = "ok";
+};
+
+&wil6210 {
+	status = "ok";
+};
+
+&icnss2 {
+	status = "disabled";
+};
+
+&wlan {
+	status = "disabled";
+};
+
+&cnss_wlan_mem {
+	status = "disabled";
+};
+
+&bluetooth {
+	status = "disabled";
+};
+
+&bluetooth_qca6490 {
+	status = "disabled";
+};
+
+&bluetooth_wcn6750 {
+	status = "disabled";
+};
+
+&wpss_pas {
+	status = "disabled";
+};

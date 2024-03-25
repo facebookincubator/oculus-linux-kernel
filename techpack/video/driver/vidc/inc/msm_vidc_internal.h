@@ -961,6 +961,13 @@ struct msm_vidc_input_timer {
 	u64                    time_us;
 };
 
+struct msm_vidc_slice_decode {
+	u64                    prev_ts;
+	u32                    slice_count;
+	u32                    frame_size;
+	u32                    frame_data_size;
+};
+
 enum msm_vidc_allow {
 	MSM_VIDC_DISALLOW = 0,
 	MSM_VIDC_ALLOW,

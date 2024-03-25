@@ -59,6 +59,11 @@
 		reg = <0x0 0x80b00000 0x0 0x100000>;
 	};
 
+	chipinfo_mem: chipinfo_region@80c00000 {
+		no-map;
+		reg = <0x0 0x80c00000 0x0 0x1000>;
+	};
+
 	wlan_fw_mem: wlan_fw_region@82a00000 {
 		no-map;
 		reg = <0x0 0x82a00000 0x0 0xc00000>;

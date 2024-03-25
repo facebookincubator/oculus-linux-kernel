@@ -903,7 +903,8 @@ static int cam_isp_ctx_dump_req(
 				CAM_ERR(CAM_ISP,
 					"Invalid offset exp %u actual %u",
 					req_isp->cfg[i].offset, (uint32_t)len);
-				cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
+
+				cam_packet_util_put_cmd_mem_addr(req_isp->cfg[i].handle);
 				return -EINVAL;
 			}
 			remain_len = len - req_isp->cfg[i].offset;
@@ -914,7 +915,7 @@ static int cam_isp_ctx_dump_req(
 					"Invalid len exp %u remain_len %u",
 					req_isp->cfg[i].len,
 					(uint32_t)remain_len);
-				cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
+				cam_packet_util_put_cmd_mem_addr(req_isp->cfg[i].handle);
 				return -EINVAL;
 			}
 
@@ -940,7 +941,7 @@ static int cam_isp_ctx_dump_req(
 					return rc;
 			} else
 				cam_cdm_util_dump_cmd_buf(buf_start, buf_end);
-			cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
+			cam_packet_util_put_cmd_mem_addr(req_isp->cfg[i].handle);
 		}
 	}
 	return rc;
@@ -1637,7 +1638,8 @@ static int __cam_isp_ctx_handle_buf_done_for_req_list(
 	struct cam_context *ctx = ctx_isp->base;
 	struct cam_sync_timestamp ev_timestamp;
 	uint32_t *kernel_buf_ptr;
-	struct cam_sync_signal_param param;
+	int32_t kernel_buf_handle;
+	struct  cam_sync_signal_param param;
 
 	req_isp = (struct cam_isp_ctx_req *) req->req_priv;
 	ctx_isp->active_req_cnt--;
@@ -1660,6 +1662,7 @@ static int __cam_isp_ctx_handle_buf_done_for_req_list(
 				ev_timestamp.sof_timestamp = ctx_isp->sof_timestamp_val;
 				ev_timestamp.boot_timestamp = ctx_isp->boot_timestamp;
 				kernel_buf_ptr = req_isp->fence_map_out[i].kernel_map_buf_addr[0];
+				kernel_buf_handle = req_isp->fence_map_out[i].buf_handle[0];
 
 				if (kernel_buf_ptr != NULL  &&
 					ctx_isp->slave_metadata_en) {
@@ -1669,6 +1672,12 @@ static int __cam_isp_ctx_handle_buf_done_for_req_list(
 						(ev_timestamp.slave_timestamp << 32) |
 						kernel_buf_ptr[CAM_ISP_SLAVE_TS_LSB_IDX];
 					ev_timestamp.tracker_id = *kernel_buf_ptr;
+					/*
+					 * Get cpu buffer for this is at the time of
+					 * add io config as soon as we get buf done for
+					 * this buffer we should put the buffer.
+					 */
+					cam_mem_put_cpu_buf(kernel_buf_handle);
 				}
 				memset(&param, 0, sizeof(param));
 				param.sync_obj = req_isp->fence_map_out[i].sync_id;
@@ -1747,6 +1756,7 @@ static int __cam_isp_ctx_handle_buf_done_for_request(
 	struct cam_sync_timestamp ev_timestamp;
 	struct cam_sync_signal_param param;
 	uint32_t *kernel_buf_ptr;
+	int32_t kernel_buf_handle;
 	trace_cam_buf_done("ISP", ctx, req);
 
 	req_isp = (struct cam_isp_ctx_req *) req->req_priv;
@@ -1843,6 +1853,7 @@ static int __cam_isp_ctx_handle_buf_done_for_request(
 			ev_timestamp.sof_timestamp = ctx_isp->sof_timestamp_val;
 			ev_timestamp.boot_timestamp = ctx_isp->boot_timestamp;
 			kernel_buf_ptr = req_isp->fence_map_out[j].kernel_map_buf_addr[0];
+			kernel_buf_handle = req_isp->fence_map_out[j].buf_handle[0];
 
 			if (kernel_buf_ptr != NULL  &&
 				ctx_isp->slave_metadata_en) {
@@ -1852,6 +1863,12 @@ static int __cam_isp_ctx_handle_buf_done_for_request(
 					(ev_timestamp.slave_timestamp << 32) |
 					kernel_buf_ptr[CAM_ISP_SLAVE_TS_LSB_IDX];
 				ev_timestamp.tracker_id = *kernel_buf_ptr;
+				/*
+				 * Get cpu buffer for this is at the time of
+				 * add io config as soon as we get buf done for
+				 * this buffer we should put the buffer.
+				 */
+				cam_mem_put_cpu_buf(kernel_buf_handle);
 			}
 			memset(&param, 0, sizeof(param));
 			param.sync_obj = req_isp->fence_map_out[j].sync_id;
@@ -1908,6 +1925,46 @@ static int __cam_isp_ctx_handle_buf_done_for_request(
 	return rc;
 }
 
+static int __cam_isp_ctx_rdi_stream_buf_done_in_activated_state(
+	struct cam_isp_context *ctx_isp,
+	void *evt_data)
+{
+	struct cam_context *ctx = ctx_isp->base;
+	struct cam_isp_stream_image *stream_image;
+
+	if (list_empty(&ctx_isp->stream_image_active_list)) {
+		CAM_ERR(CAM_ISP, "Buf done with no active request!, ctx %u",
+			ctx->ctx_id);
+		return -EINVAL;
+	}
+	stream_image = list_first_entry(&ctx_isp->stream_image_active_list,
+		struct cam_isp_stream_image, list_entry);
+	list_del_init(&stream_image->list_entry);
+	ctx_isp->active_req_cnt--;
+
+	stream_image->capture_timestamp = ctx_isp->sof_timestamp_val;
+
+	/*
+	 * only signal completion when first image is added because,
+	 * if images are already there then we do not wait on the
+	 * completion
+	 */
+	if (list_empty(&ctx_isp->stream_image_ready_list))
+	{
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_ready_list);
+		complete(&ctx_isp->stream_image_completion);
+	} else {
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_ready_list);
+	}
+
+	CAM_DBG(CAM_ISP, "Buf done received stream image %lld",
+		stream_image->image_id);
+
+	return 0;
+}
+
 static int __cam_isp_handle_deferred_buf_done(
 	struct cam_isp_context *ctx_isp,
 	struct cam_ctx_request  *req,
@@ -1922,6 +1979,7 @@ static int __cam_isp_handle_deferred_buf_done(
 	struct cam_sync_timestamp ev_timestamp;
 	struct cam_sync_signal_param param;
 	uint32_t *kernel_buf_ptr;
+	int32_t kernel_buf_handle;
 
 	CAM_DBG(CAM_ISP,
 		"ctx[%d] : Req %llu : Handling %d deferred buf_dones num_acked=%d, bubble_handling=%d",
@@ -1955,6 +2013,7 @@ static int __cam_isp_handle_deferred_buf_done(
 			ev_timestamp.sof_timestamp = ctx_isp->sof_timestamp_val;
 			ev_timestamp.boot_timestamp = ctx_isp->boot_timestamp;
 			kernel_buf_ptr = req_isp->fence_map_out[j].kernel_map_buf_addr[0];
+			kernel_buf_handle = req_isp->fence_map_out[j].buf_handle[0];
 
 			if (kernel_buf_ptr != NULL  &&
 				ctx_isp->slave_metadata_en) {
@@ -1963,6 +2022,7 @@ static int __cam_isp_handle_deferred_buf_done(
 				ev_timestamp.slave_timestamp = (ev_timestamp.slave_timestamp |
 					((uint64_t)kernel_buf_ptr[CAM_ISP_SLAVE_TS_MSB_IDX] << 32));
 				ev_timestamp.tracker_id = *kernel_buf_ptr;
+				cam_mem_put_cpu_buf(kernel_buf_handle);
 			}
 			memset(&param, 0, sizeof(param));
 			param.sync_obj = req_isp->fence_map_out[j].sync_id;
@@ -2043,6 +2103,7 @@ static int __cam_isp_ctx_handle_buf_done_for_request_verify_addr(
 	struct cam_sync_timestamp  ev_timestamp;
 	struct cam_sync_signal_param param;
 	uint32_t *kernel_buf_ptr;
+	int32_t kernel_buf_handle;
 
 	trace_cam_buf_done("ISP", ctx, req);
 
@@ -2139,16 +2200,17 @@ static int __cam_isp_ctx_handle_buf_done_for_request_verify_addr(
 			continue;
 		} else if (!req_isp->bubble_detected) {
 			CAM_DBG(CAM_ISP,
-				"Sync with success: req %lld res 0x%x fd 0x%x, ctx %u",
+				"Sync with success: req %lld res 0x%x fd 0x%x, ctx %u sof_timestamp x%llx boot timestamp 0x%llx",
 				req->request_id,
 				req_isp->fence_map_out[j].resource_handle,
 				req_isp->fence_map_out[j].sync_id,
-				ctx->ctx_id);
+				ctx->ctx_id, ctx_isp->sof_timestamp_val, ctx_isp->boot_timestamp);
 
 			memset(&ev_timestamp, 0, sizeof(ev_timestamp));
 			ev_timestamp.sof_timestamp = ctx_isp->sof_timestamp_val;
 			ev_timestamp.boot_timestamp = ctx_isp->boot_timestamp;
 			kernel_buf_ptr = req_isp->fence_map_out[j].kernel_map_buf_addr[0];
+			kernel_buf_handle = req_isp->fence_map_out[j].buf_handle[0];
 
 			if (kernel_buf_ptr != NULL  &&
 				ctx_isp->slave_metadata_en) {
@@ -2157,6 +2219,7 @@ static int __cam_isp_ctx_handle_buf_done_for_request_verify_addr(
 				ev_timestamp.slave_timestamp = (ev_timestamp.slave_timestamp |
 					((uint64_t)kernel_buf_ptr[CAM_ISP_SLAVE_TS_MSB_IDX] << 32));
 				ev_timestamp.tracker_id = *kernel_buf_ptr;
+				cam_mem_put_cpu_buf(kernel_buf_handle);
 			}
 			memset(&param, 0, sizeof(param));
 			param.sync_obj = req_isp->fence_map_out[j].sync_id;
@@ -2187,6 +2250,7 @@ static int __cam_isp_ctx_handle_buf_done_for_request_verify_addr(
 			ev_timestamp.sof_timestamp = ctx_isp->sof_timestamp_val;
 			ev_timestamp.boot_timestamp = ctx_isp->boot_timestamp;
 			kernel_buf_ptr = req_isp->fence_map_out[j].kernel_map_buf_addr[0];
+			kernel_buf_handle = req_isp->fence_map_out[j].buf_handle[0];
 
 			if (kernel_buf_ptr != NULL &&
 				ctx_isp->slave_metadata_en) {
@@ -2195,6 +2259,7 @@ static int __cam_isp_ctx_handle_buf_done_for_request_verify_addr(
 				ev_timestamp.slave_timestamp = (ev_timestamp.slave_timestamp |
 					((uint64_t)kernel_buf_ptr[CAM_ISP_SLAVE_TS_MSB_IDX] << 32));
 				ev_timestamp.tracker_id = *kernel_buf_ptr;
+				cam_mem_put_cpu_buf(kernel_buf_handle);
 			}
 			memset(&param, 0, sizeof(param));
 			param.sync_obj = req_isp->fence_map_out[j].sync_id;
@@ -3010,6 +3075,14 @@ static int __cam_isp_ctx_sof_in_activated_state(
 		ctx_isp->frame_id, ctx_isp->sof_timestamp_val, ctx->ctx_id);
 
 	return rc;
+}
+
+static int __cam_isp_ctx_rdi_stream_reg_upd_in_sof(
+	struct cam_isp_context *ctx_isp,
+	void *evt_data)
+{
+	CAM_ERR(CAM_ISP, "invalid RUP in sof state");
+	return -EINVAL;
 }
 
 static int __cam_isp_ctx_reg_upd_in_sof(struct cam_isp_context *ctx_isp,
@@ -4319,6 +4392,121 @@ static struct cam_isp_ctx_irq_ops
 	},
 };
 
+static void __cam_isp_ctx_rdi_stream_set_recovery(
+	struct cam_isp_context *ctx_isp)
+{
+	struct cam_context *ctx = ctx_isp->base;
+
+	CAM_INFO(CAM_ISP, "ctx %u entering recovery", ctx->ctx_id);
+
+	if (ctx_isp->stream_recovery_num_frames != 0) {
+		CAM_ERR(CAM_ISP, "ctx %u stream_recovery_num_frames nonzero %d",
+				ctx->ctx_id,
+				ctx_isp->stream_recovery_num_frames);
+	}
+
+	ctx_isp->active_req_cnt = 0;
+	ctx_isp->stream_recovery_num_frames = 1;
+
+	while (!list_empty(&ctx_isp->stream_image_active_list)) {
+		struct cam_isp_stream_image *stream_image =
+			list_first_entry(&ctx_isp->stream_image_active_list,
+				struct cam_isp_stream_image, list_entry);
+		list_del_init(&stream_image->list_entry);
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_free_list);
+		ctx_isp->stream_recovery_num_frames++;
+	}
+	if (ctx_isp->stream_image_applied) {
+		list_del_init(&ctx_isp->stream_image_applied->list_entry);
+		list_add_tail(&ctx_isp->stream_image_applied->list_entry,
+			&ctx_isp->stream_image_free_list);
+		ctx_isp->stream_image_applied = NULL;
+		ctx_isp->stream_recovery_num_frames++;
+	}
+
+	ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_BUBBLE;
+}
+
+static int __cam_isp_ctx_apply_stream_req_in_activated_state(
+	struct cam_context *ctx,
+	uint32_t next_state)
+{
+	struct cam_isp_stream_image *stream_image;
+	struct cam_isp_context *ctx_isp = ctx->ctx_priv;
+	struct cam_hw_config_args cfg = {0};
+	int rc;
+
+	if (ctx_isp->active_req_cnt > 2) {
+		CAM_ERR_RATE_LIMIT(CAM_ISP, "Skip apply request due to congestion ctx %u",
+			ctx->ctx_id);
+		__cam_isp_ctx_rdi_stream_set_recovery(ctx_isp);
+		return -EINVAL;
+	}
+	if (!list_empty(&ctx_isp->stream_image_free_list)) {
+		stream_image =
+			list_first_entry(&ctx_isp->stream_image_free_list,
+				struct cam_isp_stream_image,
+				list_entry);
+	} else if (!list_empty(&ctx_isp->stream_image_ready_list)) {
+		/* try to overwrite a ready image */
+		CAM_DBG(CAM_ISP, "Overwrite image from ready list %u",
+			ctx->ctx_id);
+		stream_image =
+			list_first_entry(&ctx_isp->stream_image_ready_list,
+				struct cam_isp_stream_image,
+				list_entry);
+		/*
+		 * if there is only 1 buffer in ready list then don't use it
+		 * since we may keep reusing this buffer and it may
+		 * never get sent to UMD
+		 */
+		if (stream_image ==
+			list_last_entry(&ctx_isp->stream_image_ready_list,
+				struct cam_isp_stream_image,
+				list_entry)) {
+			CAM_ERR(CAM_ISP,
+				"Don't use last ready image for ctx %u",
+				ctx->ctx_id);
+			return -EINVAL;
+		}
+	} else {
+		CAM_ERR_RATE_LIMIT(CAM_ISP,
+			"No available image for ctx %u active %d",
+			ctx->ctx_id, ctx_isp->active_req_cnt);
+		return -EINVAL;
+	}
+
+	cfg.ctxt_to_hw_map = ctx_isp->hw_ctx;
+	/* request id does not matter for streaming mode */
+	cfg.request_id = 0;
+	cfg.hw_update_entries = stream_image->cfg;
+	cfg.num_hw_update_entries = stream_image->num_cfg;
+	cfg.priv = &stream_image->hw_update_data;
+	cfg.init_packet = 0;
+	/* we do not want to reapply requests (bubble) for streaming mode */
+	cfg.reapply_type = CAM_CONFIG_REAPPLY_NONE;
+	cfg.cdm_reset_before_apply = false;
+	cfg.wait_for_request_apply = false;
+
+
+	rc = ctx->hw_mgr_intf->hw_config(ctx->hw_mgr_intf->hw_mgr_priv, &cfg);
+	if (rc) {
+		CAM_ERR(CAM_ISP, "Can not apply the configuration");
+		__cam_isp_ctx_rdi_stream_set_recovery(ctx_isp);
+		return -EINVAL;
+	} else {
+		CAM_DBG(CAM_ISP,
+			"new substate state %d, ctx %u applied stream req %lld",
+			next_state, ctx->ctx_id, stream_image->image_id);
+	}
+	ctx_isp->substate_activated = next_state;
+	list_del_init(&stream_image->list_entry);
+	ctx_isp->stream_image_applied = stream_image;
+
+	return rc;
+}
+
 static int __cam_isp_ctx_apply_req_in_activated_state(
 	struct cam_context *ctx, struct cam_req_mgr_apply_request *apply,
 	enum cam_isp_ctx_activated_substate next_state)
@@ -5323,6 +5511,40 @@ static int __cam_isp_ctx_preprocess_sof(
 	return -EINVAL;
 }
 
+static int __cam_isp_ctx_rdi_stream_handle_sof(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	struct cam_context                    *ctx = ctx_isp->base;
+	struct cam_isp_hw_sof_event_data      *sof_event_data = evt_data;
+
+	if (!evt_data) {
+		CAM_ERR(CAM_ISP, "in valid sof event data");
+		return -EINVAL;
+	}
+
+	ctx_isp->frame_id++;
+	ctx_isp->sof_timestamp_val = sof_event_data->timestamp;
+	ctx_isp->boot_timestamp = sof_event_data->boot_time;
+	ctx_isp->monotonic_timestamp = sof_event_data->monotonic_time;
+
+	CAM_DBG(CAM_ISP, "ctx %u frame id: %lld time stamp:0x%llx",
+		ctx->ctx_id, ctx_isp->frame_id, ctx_isp->sof_timestamp_val);
+
+	return 0;
+}
+
+static int __cam_isp_ctx_rdi_stream_sof_in_top_state(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	struct cam_context                    *ctx = ctx_isp->base;
+	int rc = __cam_isp_ctx_rdi_stream_handle_sof(ctx_isp, evt_data);
+
+	if (rc)
+		return rc;
+	return __cam_isp_ctx_apply_stream_req_in_activated_state(ctx,
+		CAM_ISP_CTX_ACTIVATED_APPLIED);
+}
+
 static int __cam_isp_ctx_rdi_only_sof_in_top_state(
 	struct cam_isp_context *ctx_isp, void *evt_data)
 {
@@ -5428,6 +5650,53 @@ static int __cam_isp_ctx_rdi_only_sof_in_applied_state(
 
 	ctx_isp->last_sof_timestamp = ctx_isp->sof_timestamp_val;
 	return 0;
+}
+
+static int __cam_isp_ctx_rdi_stream_sof_in_applied_state(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	int rc = __cam_isp_ctx_rdi_stream_handle_sof(ctx_isp, evt_data);
+
+	if (rc)
+		return rc;
+
+	ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_BUBBLE_APPLIED;
+	CAM_DBG(CAM_ISP, "next Substate[%s]",
+		__cam_isp_ctx_substate_val_to_type(
+		ctx_isp->substate_activated));
+
+	return 0;
+}
+
+static int __cam_isp_ctx_rdi_stream_sof_in_bubble_applied(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	struct cam_context *ctx = ctx_isp->base;
+	int rc = __cam_isp_ctx_rdi_stream_handle_sof(ctx_isp, evt_data);
+
+	if (rc)
+		return rc;
+
+	CAM_ERR(CAM_ISP, "ctx %u skipped frame %u",
+			ctx->ctx_id, ctx_isp->frame_id - 1);
+	__cam_isp_ctx_rdi_stream_set_recovery(ctx_isp);
+	return 0;
+}
+
+static int __cam_isp_ctx_rdi_stream_sof_in_recovery(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	struct cam_context *ctx = ctx_isp->base;
+
+	ctx_isp->stream_recovery_num_frames--;
+
+	CAM_DBG(CAM_ISP, "ctx %u received SOF in recovery state, %d remaining",
+		ctx->ctx_id, ctx_isp->stream_recovery_num_frames);
+
+	if (ctx_isp->stream_recovery_num_frames <= 0)
+		ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_SOF;
+
+	return __cam_isp_ctx_rdi_stream_handle_sof(ctx_isp, evt_data);
 }
 
 static int __cam_isp_ctx_rdi_only_sof_in_bubble_applied(
@@ -5713,6 +5982,52 @@ static int __cam_isp_ctx_rdi_only_reg_upd_in_bubble_state(
 	return 0;
 }
 
+static int __cam_isp_ctx_rdi_stream_reg_upd_in_bubble_applied_state(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	struct cam_context      *ctx = ctx_isp->base;
+
+	ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_SOF;
+	if (!list_empty(&ctx->wait_req_list)) {
+		/* init packet handling */
+		struct cam_ctx_request *req =
+			list_first_entry(&ctx->wait_req_list,
+				struct cam_ctx_request, list);
+		struct cam_isp_ctx_req *req_isp;
+
+		req_isp = (struct cam_isp_ctx_req *) req->req_priv;
+		if (req_isp->hw_update_data.packet_opcode_type !=
+			CAM_ISP_PACKET_INIT_DEV) {
+			CAM_ERR(CAM_ISP, "Invalid request type");
+		}
+		list_del_init(&req->list);
+	} else {
+		if (ctx_isp->stream_image_applied == NULL) {
+			CAM_ERR(CAM_ISP, "No applied request in reg update");
+			__cam_isp_ctx_rdi_stream_set_recovery(ctx_isp);
+			return -EINVAL;
+		}
+		ctx_isp->stream_image_applied->frame_num = ctx_isp->frame_id;
+		list_add_tail(&ctx_isp->stream_image_applied->list_entry,
+			&ctx_isp->stream_image_active_list);
+		ctx_isp->active_req_cnt++;
+		ctx_isp->stream_image_applied = NULL;
+	}
+
+	CAM_DBG(CAM_ISP, "next substate %d", ctx_isp->substate_activated);
+	return __cam_isp_ctx_apply_stream_req_in_activated_state(ctx,
+		CAM_ISP_CTX_ACTIVATED_APPLIED);
+}
+
+static int __cam_isp_ctx_rdi_stream_reg_upd_in_applied_state(
+	struct cam_isp_context *ctx_isp, void *evt_data)
+{
+	CAM_ERR(CAM_ISP, "rup received in applied state");
+	__cam_isp_ctx_rdi_stream_set_recovery(ctx_isp);
+	return -EINVAL;
+}
+
+
 static int __cam_isp_ctx_rdi_only_reg_upd_in_bubble_applied_state(
 	struct cam_isp_context *ctx_isp, void *evt_data)
 {
@@ -5848,6 +6163,12 @@ error:
 	__cam_isp_ctx_update_event_record(ctx_isp,
 		CAM_ISP_CTX_EVENT_RUP, NULL);
 
+	memset(ctx_isp->stream_images, 0, sizeof(ctx_isp->stream_images[0]) * ctx_isp->num_stream_images);
+	ctx_isp->num_stream_images = 0;
+	INIT_LIST_HEAD(&ctx_isp->stream_image_free_list);
+	INIT_LIST_HEAD(&ctx_isp->stream_image_ready_list);
+	INIT_LIST_HEAD(&ctx_isp->stream_image_umd_list);
+
 	/*
 	 * There is no request in the pending list, move the sub state machine
 	 * to SOF sub state
@@ -5913,6 +6234,73 @@ static struct cam_isp_ctx_irq_ops
 			NULL,
 			NULL,
 			__cam_isp_ctx_buf_done_in_bubble_applied,
+		},
+	},
+	/* HW ERROR */
+	{
+	},
+	/* HALT */
+	{
+	},
+};
+
+
+static struct cam_isp_ctx_irq_ops
+	cam_isp_ctx_rdi_stream_activated_state_machine_irq
+			[CAM_ISP_CTX_ACTIVATED_MAX] = {
+	/* SOF */
+	{
+		.irq_ops = {
+			__cam_isp_ctx_handle_error,
+			__cam_isp_ctx_rdi_stream_sof_in_top_state,
+			__cam_isp_ctx_rdi_stream_reg_upd_in_sof,
+			NULL,
+			NULL,
+			__cam_isp_ctx_rdi_stream_buf_done_in_activated_state,
+		},
+	},
+	/* APPLIED */
+	{
+		.irq_ops = {
+			__cam_isp_ctx_handle_error,
+			__cam_isp_ctx_rdi_stream_sof_in_applied_state,
+			__cam_isp_ctx_rdi_stream_reg_upd_in_applied_state,
+			NULL,
+			NULL,
+			__cam_isp_ctx_rdi_stream_buf_done_in_activated_state,
+		},
+	},
+	/* EPOCH */
+	{
+		.irq_ops = {
+			__cam_isp_ctx_handle_error,
+			__cam_isp_ctx_rdi_stream_sof_in_top_state,
+			NULL,
+			NULL,
+			NULL,
+			__cam_isp_ctx_rdi_stream_buf_done_in_activated_state,
+		},
+	},
+	/* BUBBLE*/
+	{
+		.irq_ops = {
+			__cam_isp_ctx_handle_error,
+			__cam_isp_ctx_rdi_stream_sof_in_recovery,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+		},
+	},
+	/* BUBBLE APPLIED ie PRE_BUBBLE */
+	{
+		.irq_ops = {
+		__cam_isp_ctx_handle_error,
+		__cam_isp_ctx_rdi_stream_sof_in_bubble_applied,
+		__cam_isp_ctx_rdi_stream_reg_upd_in_bubble_applied_state,
+		NULL,
+		NULL,
+		__cam_isp_ctx_rdi_stream_buf_done_in_activated_state,
 		},
 	},
 	/* HW ERROR */
@@ -6144,6 +6532,22 @@ static int __cam_isp_ctx_release_hw_in_top_state(struct cam_context *ctx,
 	cam_req_mgr_workq_destroy(&ctx_isp->workq);
 	ctx->state = CAM_CTX_ACQUIRED;
 
+	for (i = 0; i < ctx_isp->num_stream_images; i++)
+		cam_mem_put_cpu_buf((int32_t)ctx_isp->stream_images[i].packet_handle);
+
+	ctx_isp->num_stream_images = 0;
+	if (!IS_ERR_OR_NULL(ctx_isp->stream_images)) {
+		kvfree(ctx_isp->stream_images);
+		ctx_isp->stream_images = NULL;
+	}
+	INIT_LIST_HEAD(&ctx_isp->stream_image_free_list);
+	INIT_LIST_HEAD(&ctx_isp->stream_image_ready_list);
+	INIT_LIST_HEAD(&ctx_isp->stream_image_umd_list);
+	INIT_LIST_HEAD(&ctx_isp->stream_image_active_list);
+	reinit_completion(&ctx_isp->stream_image_completion);
+	ctx_isp->stream_image_wait = false;
+	ctx_isp->stream_image_applied = NULL;
+
 	trace_cam_context_state("ISP", ctx);
 	CAM_DBG(CAM_ISP, "Release device success[%u] next state %d",
 		ctx->ctx_id, ctx->state);
@@ -6271,6 +6675,7 @@ static int __cam_isp_ctx_append_user_bl(
 		slave_pkt[(*pkt_offset)++] = cfg->len;
 		*num_config += 1;
 		memcpy(slave_pkt + *pkt_offset, U64_TO_PTR(cpu_addr + cfg->offset), cfg->len);
+		cam_mem_put_cpu_buf(cfg->handle);
 		*pkt_offset += cfg->len / 4;
 	}
 err_out:
@@ -7423,6 +7828,338 @@ static int __cam_isp_ctx_acquire_hw_in_acquired(struct cam_context *ctx,
 	return rc;
 }
 
+
+static int __cam_isp_ctx_set_stream_mode_in_acquired(
+	struct cam_context *ctx,
+	struct cam_set_stream_mode *cmd)
+{
+	int rc = -EINVAL;
+	struct cam_isp_context *ctx_isp =
+		(struct cam_isp_context *) ctx->ctx_priv;
+	uint32_t i;
+	uint32_t j;
+	size_t len = 0;
+	size_t remain_len = 0;
+	struct cam_hw_cmd_args hw_cmd_args;
+	struct cam_isp_hw_cmd_args isp_hw_cmd_args;
+	struct cam_packet *packet;
+	uint32_t packet_opcode = 0;
+	uintptr_t packet_addr;
+
+	if (ctx_isp->num_stream_images != 0) {
+		CAM_ERR(CAM_ISP, "Stream mode already set for ctx %d",
+			ctx->ctx_id);
+		return rc;
+	}
+
+	if (cmd->num_images == 0 || cmd->num_images > CAM_MAX_STREAM_MODE_HANDLES) {
+		CAM_ERR(CAM_ISP, "Invalid number of stream images for ctx %d",
+			ctx->ctx_id);
+		return rc;
+	}
+
+	ctx_isp->stream_images = kvmalloc_array(cmd->num_images,
+			sizeof(struct cam_isp_stream_image),
+			GFP_KERNEL | __GFP_ZERO);
+	if (IS_ERR_OR_NULL(ctx_isp->stream_images)) {
+		CAM_ERR(CAM_ISP, "Failed to allocate stream images for ctx %d",
+			ctx->ctx_id);
+		return rc;
+	}
+
+	for (i = 0; i < cmd->num_images; i++) {
+		struct cam_hw_prepare_update_args cfg;
+		struct cam_isp_stream_image *stream_image =
+				&ctx_isp->stream_images[i];
+		int32_t packet_handle = (int32_t) cmd->stream_images[i].packet_handle;
+		size_t offset = (size_t) cmd->stream_images[i].packet_offset;
+
+		stream_image->packet_handle = packet_handle;
+		/* preprocess the configuration */
+		memset(&cfg, 0, sizeof(cfg));
+		cfg.ctxt_to_hw_map = ctx_isp->hw_ctx;
+		cfg.max_hw_update_entries = CAM_ISP_CTX_CFG_MAX;
+		cfg.hw_update_entries = stream_image->cfg;
+		cfg.max_out_map_entries = CAM_ISP_CTX_RES_MAX;
+		cfg.max_in_map_entries = 0;
+		cfg.out_map_entries = stream_image->fence_map_out;
+		cfg.in_map_entries = NULL;
+		cfg.priv  = &stream_image->hw_update_data;
+		cfg.pf_data = &(stream_image->pf_data);
+
+		CAM_DBG(CAM_ISP,
+			"try to prepare config packet for stream mode......");
+
+		rc = cam_mem_get_cpu_buf(packet_handle, &packet_addr, &len);
+		if (rc != 0) {
+			CAM_ERR(CAM_ISP, "Can not get packet address");
+			rc = -EINVAL;
+			goto fail;
+		}
+
+		remain_len = len;
+		if ((len < sizeof(struct cam_packet)) ||
+			(offset >= len - sizeof(struct cam_packet))) {
+			CAM_ERR(CAM_ISP, "invalid buff length: %zu or offset", len);
+			rc = -EINVAL;
+			goto fail;
+		}
+
+		remain_len -= offset;
+		packet = (struct cam_packet *)(packet_addr + (uint32_t) offset);
+		CAM_DBG(CAM_ISP, "pack_handle %llx", packet_handle);
+		CAM_DBG(CAM_ISP, "packet address is 0x%zx", packet_addr);
+		CAM_DBG(CAM_ISP, "packet with length %zu, offset 0x%llx",
+			len, offset);
+		CAM_DBG(CAM_ISP, "Packet request id %lld",
+			packet->header.request_id);
+		CAM_DBG(CAM_ISP, "Packet size 0x%x", packet->header.size);
+		CAM_DBG(CAM_ISP, "packet op %d", packet->header.op_code);
+
+		/* Query the packet opcode */
+		hw_cmd_args.ctxt_to_hw_map = ctx_isp->hw_ctx;
+		hw_cmd_args.cmd_type = CAM_HW_MGR_CMD_INTERNAL;
+		isp_hw_cmd_args.cmd_type = CAM_ISP_HW_MGR_GET_PACKET_OPCODE;
+		isp_hw_cmd_args.cmd_data = (void *)packet;
+		hw_cmd_args.u.internal_args = (void *)&isp_hw_cmd_args;
+		rc = ctx->hw_mgr_intf->hw_cmd(ctx->hw_mgr_intf->hw_mgr_priv,
+			&hw_cmd_args);
+		if (rc) {
+			CAM_ERR(CAM_ISP, "HW command failed");
+			goto fail;
+		}
+		packet_opcode = isp_hw_cmd_args.u.packet_op_code;
+		CAM_DBG(CAM_ISP, "packet op %d", packet_opcode);
+
+		/* preprocess the configuration */
+		cfg.packet = packet;
+		cfg.remain_len = remain_len;
+
+		/* update port mask and path irq mask for current req id */
+		hw_cmd_args.ctxt_to_hw_map = ctx_isp->hw_ctx;
+		hw_cmd_args.cmd_type = CAM_HW_MGR_CMD_INTERNAL;
+		isp_hw_cmd_args.cmd_type = CAM_ISP_HW_MGR_UPDATE_PATH_IRQ_MASK;
+		isp_hw_cmd_args.cmd_data = &cfg;
+		isp_hw_cmd_args.u.path_irq_mask = 0;
+		hw_cmd_args.u.internal_args = (void *)&isp_hw_cmd_args;
+		rc = ctx->hw_mgr_intf->hw_cmd(ctx->hw_mgr_intf->hw_mgr_priv,
+			&hw_cmd_args);
+		if (rc) {
+			CAM_ERR(CAM_ISP, "ctx:%d Updating port mask failed",
+				ctx->ctx_id);
+			goto fail;
+		}
+
+		cfg.req_stream_mask = isp_hw_cmd_args.u.path_irq_mask;
+
+		CAM_DBG(CAM_ISP, "try to prepare config packet......");
+		rc = ctx->hw_mgr_intf->hw_prepare_update(
+			ctx->hw_mgr_intf->hw_mgr_priv, &cfg);
+		if (rc != 0) {
+			CAM_ERR(CAM_ISP, "Prepare config packet failed in HW layer");
+			rc = -EFAULT;
+			goto fail;
+		}
+
+		stream_image->num_cfg = cfg.num_hw_update_entries;
+		stream_image->num_fence_map_out = cfg.num_out_map_entries;
+		if (cfg.num_in_map_entries != 0) {
+			CAM_ERR(CAM_ISP,
+				"Invalid in map entries in streaming buffer: %d",
+				cfg.num_in_map_entries);
+			rc = -EINVAL;
+			goto fail;
+		}
+		for (j = 0; j < CAM_PACKET_MAX_PLANES; j++)
+			stream_image->mem_handles[j] =
+				cmd->stream_images[i].mem_handles[j];
+		stream_image->image_id = cmd->stream_images[i].image_id;
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_free_list);
+	}
+	ctx_isp->num_stream_images = cmd->num_images;
+	CAM_INFO(CAM_ISP, "num stream images %d", ctx_isp->num_stream_images);
+	ctx_isp->substate_machine_irq =
+		cam_isp_ctx_rdi_stream_activated_state_machine_irq;
+
+	return rc;
+
+fail:
+	kvfree(ctx_isp->stream_images);
+	ctx_isp->stream_images = NULL;
+
+	return rc;
+}
+
+static int __cam_isp_ctx_stream_mode_cmd_get_image(
+	struct cam_context *ctx,
+	struct cam_set_stream_mode_cmd_get *cmd_get)
+{
+	struct cam_isp_stream_image *stream_image = NULL;
+	struct cam_isp_context *ctx_isp =
+		(struct cam_isp_context *) ctx->ctx_priv;
+	long ret;
+	int rc = 0;
+	long waittimeout = msecs_to_jiffies(cmd_get->timeout_ms);
+
+	CAM_DBG(CAM_ISP,
+		"timeout ctx %u timeout %ld",
+		ctx->ctx_id, cmd_get->timeout_ms);
+
+	if (ctx_isp->stream_image_wait) {
+		CAM_WARN(CAM_ISP,
+			"Cannot wait for image, pipeline busy ctx %u",
+			ctx->ctx_id);
+		return -EINVAL;
+	}
+	spin_lock_bh(&ctx->lock);
+	if (!list_empty(&ctx_isp->stream_image_ready_list)) {
+		stream_image = list_first_entry(
+				&ctx_isp->stream_image_ready_list,
+				struct cam_isp_stream_image,
+				list_entry);
+		list_del_init(&stream_image->list_entry);
+		if (list_empty(&ctx_isp->stream_image_ready_list))
+			init_completion(&ctx_isp->stream_image_completion);
+	} else if (list_empty(&ctx_isp->stream_image_free_list) &&
+		list_empty(&ctx_isp->stream_image_active_list) &&
+		!ctx_isp->stream_image_applied) {
+		CAM_WARN_RATE_LIMIT(CAM_ISP,
+			"ctx %u all buffers held in UMD",
+			ctx->ctx_id);
+		rc = -ENOENT;
+	}
+	spin_unlock_bh(&ctx->lock);
+	if (rc)
+		return rc;
+
+	if (!stream_image) {
+		CAM_DBG(CAM_ISP,
+			"!stream_image true, waiting for images");
+
+		ctx_isp->stream_image_wait = true;
+		mutex_unlock(&ctx->ctx_mutex);
+		ret = wait_for_completion_timeout(
+			&ctx_isp->stream_image_completion, waittimeout);
+		if (ret == 0) {
+			rc = -ETIMEDOUT;
+			CAM_ERR_RATE_LIMIT(CAM_ISP,
+				"Timedout waiting for frame ctx %u",
+				ctx->ctx_id);
+		}
+		mutex_lock(&ctx->ctx_mutex);
+		/* wait over */
+		ctx_isp->stream_image_wait = false;
+
+		if (rc)
+			return rc;
+
+		spin_lock_bh(&ctx->lock);
+		if (list_empty(
+			&ctx_isp->stream_image_ready_list)) {
+			if (ctx_isp->substate_activated ==
+				CAM_ISP_CTX_ACTIVATED_HALT)
+				CAM_WARN(CAM_ISP,
+					"Device halted, ready list empty %u",
+					ctx->ctx_id);
+			else
+				CAM_ERR(CAM_ISP,
+					"Ready list empty after completion %u",
+					ctx->ctx_id);
+			init_completion(&ctx_isp->stream_image_completion);
+			rc = -EINVAL;
+		} else {
+			stream_image = list_first_entry(
+				&ctx_isp->stream_image_ready_list,
+				struct cam_isp_stream_image,
+				list_entry);
+			list_del_init(&stream_image->list_entry);
+			if (list_empty(
+				&ctx_isp->stream_image_ready_list))
+				init_completion(
+					&ctx_isp->stream_image_completion);
+		}
+		spin_unlock_bh(&ctx->lock);
+		if (rc)
+			return rc;
+	}
+
+	cmd_get->images[0].image_id = stream_image->image_id;
+	cmd_get->images[0].timestamp = stream_image->capture_timestamp;
+	cmd_get->images[0].sof_timestamp = ctx_isp->monotonic_timestamp;
+	cmd_get->images[0].frame_num = stream_image->frame_num;
+	cmd_get->num_images = 1;
+
+	CAM_DBG(CAM_ISP, "Return image %ld frame %u timestamp %ld ctx %u",
+		cmd_get->images[0].image_id,
+		cmd_get->images[0].frame_num,
+		cmd_get->images[0].timestamp,
+		ctx->ctx_id);
+	/*
+	 * we dont hold the spin lock for stream_image_umd_list since
+	 * it's used only in this ioctl which is guarded by mutex
+	 */
+	list_add_tail(&stream_image->list_entry,
+		&ctx_isp->stream_image_umd_list);
+
+	return rc;
+}
+
+static int __cam_isp_ctx_stream_mode_cmd_ret_image(
+	struct cam_context *ctx,
+	struct cam_set_stream_mode_cmd_return *cmd_ret)
+{
+	struct cam_isp_stream_image *stream_image;
+	struct cam_isp_context *ctx_isp =
+		(struct cam_isp_context *) ctx->ctx_priv;
+	int i;
+	int rc = 0;
+
+	for (i = 0; i < cmd_ret->num_images; i++) {
+		bool found = false;
+
+		list_for_each_entry(stream_image,
+			&ctx_isp->stream_image_umd_list, list_entry) {
+			if (stream_image->image_id ==
+				cmd_ret->image_ids[i]) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			CAM_ERR(CAM_ISP, "Invalid image id: %lld",
+				cmd_ret->image_ids[i]);
+			rc = -EINVAL;
+			continue;
+		}
+		list_del_init(&stream_image->list_entry);
+		CAM_DBG(CAM_ISP,
+			"returned %ld",
+			stream_image->image_id);
+		spin_lock_bh(&ctx->lock);
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_free_list);
+		spin_unlock_bh(&ctx->lock);
+
+	}
+	return rc;
+}
+
+static int __cam_isp_ctx_stream_mode_cmd_in_activated(
+	struct cam_context *ctx,
+	struct cam_stream_mode_cmd *cmd)
+{
+	int rc = 0;
+
+	if (cmd->cmd_mode & CAM_STREAM_MODE_RETURN_IMAGE)
+		rc = __cam_isp_ctx_stream_mode_cmd_ret_image(
+			ctx, &cmd->cmd_return);
+	if (cmd->cmd_mode & CAM_STREAM_MODE_GET_IMAGE)
+		rc |= __cam_isp_ctx_stream_mode_cmd_get_image(
+			ctx, &cmd->cmd_get);
+	return rc;
+}
+
 static int __cam_isp_ctx_config_dev_in_acquired(struct cam_context *ctx,
 	struct cam_config_dev_cmd *cmd)
 {
@@ -7769,6 +8506,12 @@ static int __cam_isp_ctx_stop_dev_in_activated_unlock(
 	ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_HALT;
 	mutex_unlock(&ctx_isp->isp_mutex);
 
+	spin_lock_bh(&ctx->lock);
+	/* someone waiting and ready list empty, signal as device is stopped */
+	if (ctx_isp->stream_image_wait)
+		complete(&ctx_isp->stream_image_completion);
+	spin_unlock_bh(&ctx->lock);
+
 	/* stop hw first */
 	if (ctx_isp->hw_ctx) {
 		stop.ctxt_to_hw_map = ctx_isp->hw_ctx;
@@ -7858,6 +8601,30 @@ static int __cam_isp_ctx_stop_dev_in_activated_unlock(
 				cam_sync_signal(&param, NULL);
 			}
 		list_add_tail(&req->list, &ctx->free_req_list);
+	}
+
+	/* clear stream image list if operating in streaming mode */
+	while (!list_empty(&ctx_isp->stream_image_active_list)) {
+		struct cam_isp_stream_image *stream_image =
+			list_first_entry(&ctx_isp->stream_image_active_list,
+				struct cam_isp_stream_image, list_entry);
+		list_del_init(&stream_image->list_entry);
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_free_list);
+	}
+	if (ctx_isp->stream_image_applied) {
+		list_del_init(&ctx_isp->stream_image_applied->list_entry);
+		list_add_tail(&ctx_isp->stream_image_applied->list_entry,
+			&ctx_isp->stream_image_free_list);
+		ctx_isp->stream_image_applied = NULL;
+	}
+	while (!list_empty(&ctx_isp->stream_image_ready_list)) {
+		struct cam_isp_stream_image *stream_image =
+			list_first_entry(&ctx_isp->stream_image_ready_list,
+				struct cam_isp_stream_image, list_entry);
+		list_del_init(&stream_image->list_entry);
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_free_list);
 	}
 
 	ctx_isp->frame_id = 0;
@@ -8503,6 +9270,9 @@ struct cam_ctx_ops cam_isp_ctx_top_state_machine_no_crm[CAM_CTX_STATE_MAX] = {
 			.config_dev = __cam_isp_ctx_config_dev_in_acquired,
 			.flush_dev = __cam_isp_ctx_flush_dev_in_top_state,
 			.release_hw = __cam_isp_ctx_release_hw_in_top_state,
+			.get_async_task = __cam_isp_ctx_get_async_task_in_acquired,
+			.set_stream_mode =
+				__cam_isp_ctx_set_stream_mode_in_acquired,
 		},
 		.crm_ops = {
 			.link = __cam_isp_ctx_link_in_acquired,
@@ -8521,6 +9291,7 @@ struct cam_ctx_ops cam_isp_ctx_top_state_machine_no_crm[CAM_CTX_STATE_MAX] = {
 			.config_dev = __cam_isp_ctx_config_dev_in_top_state,
 			.flush_dev = __cam_isp_ctx_flush_dev_in_top_state,
 			.release_hw = __cam_isp_ctx_release_hw_in_top_state,
+			.get_async_task = __cam_isp_ctx_get_async_task_in_ready,
 		},
 		.crm_ops = {
 			.unlink = __cam_isp_ctx_unlink_in_ready,
@@ -8536,6 +9307,7 @@ struct cam_ctx_ops cam_isp_ctx_top_state_machine_no_crm[CAM_CTX_STATE_MAX] = {
 			.release_dev = __cam_isp_ctx_release_dev_in_activated,
 			.config_dev = __cam_isp_ctx_config_dev_in_flushed,
 			.release_hw = __cam_isp_ctx_release_hw_in_activated,
+			.get_async_task = __cam_isp_ctx_get_async_task_in_acquired,
 		},
 		.crm_ops = {
 			.unlink = __cam_isp_ctx_unlink_in_ready,
@@ -8552,6 +9324,9 @@ struct cam_ctx_ops cam_isp_ctx_top_state_machine_no_crm[CAM_CTX_STATE_MAX] = {
 			.config_dev = __cam_isp_ctx_config_dev_in_top_state,
 			.flush_dev = __cam_isp_ctx_flush_dev_in_top_state,
 			.release_hw = __cam_isp_ctx_release_hw_in_activated,
+			.get_async_task = __cam_isp_ctx_get_async_task_in_acquired,
+			.stream_mode_cmd =
+				__cam_isp_ctx_stream_mode_cmd_in_activated,
 		},
 		.crm_ops = {
 			.unlink = __cam_isp_ctx_unlink_in_ready,
@@ -8594,6 +9369,8 @@ static struct cam_ctx_ops
 			.flush_dev = __cam_isp_ctx_flush_dev_in_top_state,
 			.release_hw = __cam_isp_ctx_release_hw_in_top_state,
 			.get_async_task = __cam_isp_ctx_get_async_task_in_acquired,
+			.set_stream_mode =
+				__cam_isp_ctx_set_stream_mode_in_acquired,
 		},
 		.crm_ops = {
 			.link = __cam_isp_ctx_link_in_acquired,
@@ -8652,6 +9429,8 @@ static struct cam_ctx_ops
 			.flush_dev = __cam_isp_ctx_flush_dev_in_top_state,
 			.release_hw = __cam_isp_ctx_release_hw_in_activated,
 			.get_async_task = __cam_isp_ctx_get_async_task_in_acquired,
+			.stream_mode_cmd =
+				__cam_isp_ctx_stream_mode_cmd_in_activated,
 		},
 		.crm_ops = {
 			.unlink = __cam_isp_ctx_unlink_in_activated,
@@ -8808,6 +9587,7 @@ static int cam_isp_context_dump_requests(void *data,
 	return rc;
 }
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 static int cam_isp_context_debug_register(void)
 {
 	int rc = 0;
@@ -8838,6 +9618,12 @@ static int cam_isp_context_debug_register(void)
 end:
 	return rc;
 }
+#else
+static inline int cam_isp_context_debug_register(void)
+{
+	return 0;
+}
+#endif
 
 int cam_isp_context_set_slave_status(struct cam_context *ctx, bool status)
 {
@@ -8922,6 +9708,16 @@ int cam_isp_context_init(struct cam_isp_context *ctx,
 		ctx->req_base[i].req_priv = &ctx->req_isp[i];
 		ctx->req_isp[i].base = &ctx->req_base[i];
 	}
+
+	/* Initialize the stream mode parameters */
+	ctx->num_stream_images = 0;
+	INIT_LIST_HEAD(&ctx->stream_image_free_list);
+	INIT_LIST_HEAD(&ctx->stream_image_ready_list);
+	INIT_LIST_HEAD(&ctx->stream_image_umd_list);
+	INIT_LIST_HEAD(&ctx->stream_image_active_list);
+	init_completion(&ctx->stream_image_completion);
+	ctx->stream_image_wait = false;
+	ctx->stream_image_applied = NULL;
 
 	/* camera context setup */
 	rc = cam_context_init(ctx_base, isp_dev_name, CAM_ISP, ctx_id,

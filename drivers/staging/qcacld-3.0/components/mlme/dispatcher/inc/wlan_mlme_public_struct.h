@@ -2491,6 +2491,7 @@ struct wlan_mlme_wifi_pos_cfg {
 };
 
 #define MLME_SET_BIT(value, bit_offset) ((value) |= (1 << (bit_offset)))
+#define MLME_CLEAR_BIT(value, bit_offset) ((value) &= ~(1 << (bit_offset)))
 
 /* Mask to check if BTM offload is enabled/disabled*/
 #define BTM_OFFLOAD_ENABLED_MASK    0x01

@@ -640,6 +640,11 @@ typedef  enum  {
     WMI_SERVICE_DISABLE_WDS_PEER_MAP_UNMAP_EVENT_SUPPORT = 387, /* Indicate FW support to disable wds peer map/unmap events */
     WMI_SERVICE_PDEV_WSI_STATS_INFO_SUPPORT = 388, /* Support for WSI Stats Info. */
     WMI_SERVICE_MULTIPLE_RF_PATH_SOC_SUPPORT = 389, /* Indicates FW supports Multiple RF Path on SOC Level */
+    WMI_SERVICE_RADAR_FLAGS_SUPPORT = 390, /* Indicates FW supports radar flags, such as full bandwidth need put to NOL */
+    WMI_SERVICE_XPAN_SUPPORT = 391, /* Indicate FW support XPAN configuration */
+    WMI_SERVICE_5GHZ_HI_RSSI_ROAM_SUPPORT = 392, /* Indicate FW supports High RSSI Roam from 5 GHz Band to 6 GHz Band */
+    WMI_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT = 393, /* Support for CTL regeneration where both PSD and EIRP will be sent in 6GHZ SET_TPC WMI for SP and SP_CLIENT power modes */
+    WMI_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394, /* FW supports receiving and sending pdev_id parameter in WMI_PDEV_UTF_(CMD/EVENT) */
 
     WMI_MAX_EXT2_SERVICE
 

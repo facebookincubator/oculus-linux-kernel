@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __CAM_SENSOR_LITE_PKT_UTILS_H__
@@ -43,6 +43,9 @@ int __dump_release_cmd(
 
 void __dump_slave_pkt_headers(
 		struct sensor_lite_header *header);
+
+void __dump_remote_flush_cmd(
+		struct sensorlite_sys_cmd *cmd);
 
 int __send_pkt(
 	struct sensor_lite_device *sensor_lite_dev,

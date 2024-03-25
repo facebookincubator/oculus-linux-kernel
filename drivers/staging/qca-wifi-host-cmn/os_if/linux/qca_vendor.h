@@ -4893,7 +4893,10 @@ enum qca_wlan_vendor_attr_config {
 	/* 32-bit unsigned value to set reorder timeout for AC_BK */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_REORDER_TIMEOUT_BACKGROUND = 34,
 	/* 6-byte MAC address to point out the specific peer */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_BLOCKSIZE_PEER_MAC = 35,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC = 35,
+	/* Backward compatibility with the original name */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_BLOCKSIZE_PEER_MAC =
+		QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC,
 	/* 32-bit unsigned value to set window size for specific peer */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_BLOCKSIZE_WINLIMIT = 36,
 	/* 8-bit unsigned value to set the beacon miss threshold in 2.4 GHz */
@@ -5158,9 +5161,13 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_NSS = 70,
 
-	/*
-	 * 8-bit unsigned value to trigger Optimized Power Management:
-	 * 1-Enable, 0-Disable
+	/* 8-bit unsigned value to configure Optimized Power Management mode:
+	 * Modes are defined by enum qca_wlan_vendor_opm_mode.
+	 *
+	 * This attribute shall be configured along with
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO and
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL attributes
+	 * when its value is set to %QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT = 71,
 
@@ -5397,6 +5404,65 @@ enum qca_wlan_vendor_attr_config {
 	 * Uses enum qca_ul_mu_config values.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_UL_MU_CONFIG = 95,
+
+	/* 16-bit unsigned value to configure power save inactivity timeout in
+	 * milliseconds.
+	 *
+	 * STA enters into power save mode (PM=1) after TX/RX inactivity of time
+	 * duration specified by %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO.
+	 *
+	 * This attribute shall be configured along with
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL when
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT
+	 * is set to %QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED mode.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO = 101,
+
+	/* 16-bit unsigned value to configure speculative wake interval in
+	 * milliseconds.
+	 *
+	 * STA speculatively wakes up to look for buffered data by AP at
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL interval after
+	 * entering into power save. If configured zero, STA wakes up at
+	 * upcoming DTIM beacon.
+	 *
+	 * This attribute shall be configured along with
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO and
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT
+	 * to %QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED mode.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL = 102,
+
+	/*
+	 * 16-bit unsigned value to configure TX max A-MPDU count.
+	 *
+	 * For STA interface, this attribute is applicable only in connected
+	 * state, peer MAC address is not required to be provided.
+	 *
+	 * For AP interface, this attribute is applicable only in started
+	 * state and one of the associated peer STAs must be specified with
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC. If this is for an ML
+	 * association, the peer MAC address provided is the link address of
+	 * the non-AP MLD.
+	 *
+	 * This attribute runtime configures the TX maximum aggregation size.
+	 * The value must be in range of 1 to BA window size for the specific
+	 * peer.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_AMPDU_CNT = 103,
+
+	/* 8-bit unsigned value.
+	 *
+	 * This attribute configures a traffic shaping mode
+	 * applied during coex scenarios.
+	 * By default all coex traffic shaping modes are enabled,
+	 * i.e., shape WLAN traffic based on coex traffic pattern and priority.
+	 * To shape traffic, STA may enter in power save mode
+	 * and AP may send CTS-to-self frame.
+	 *
+	 * Uses enum qca_coex_traffic_shaping_mode values.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_COEX_TRAFFIC_SHAPING_MODE = 105,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
@@ -8977,6 +9043,16 @@ enum qca_wlan_eht_mlo_mode {
 enum qca_wlan_emlsr_mode {
 	QCA_WLAN_EMLSR_MODE_ENTER = 0,
 	QCA_WLAN_EMLSR_MODE_EXIT = 1,
+};
+
+/**
+ * enum qca_coex_traffic_shaping_mode: Coex traffic shaping mode
+ * @QCA_COEX_TRAFFIC_SHAPING_MODE_DISABLE: Coex policies disabled
+ * @QCA_COEX_TRAFFIC_SHAPING_MODE_ENABLE: All coex policies enabled
+ */
+enum qca_coex_traffic_shaping_mode {
+	QCA_COEX_TRAFFIC_SHAPING_MODE_DISABLE = 0,
+	QCA_COEX_TRAFFIC_SHAPING_MODE_ENABLE = 1,
 };
 
 /**
@@ -16030,5 +16106,23 @@ enum qca_wlan_vendor_attr_link_reconfig {
 	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_MAX =
 	QCA_WLAN_VENDOR_ATTR_LINK_RECONFIG_AFTER_LAST - 1,
+};
+
+/*
+ * enum qca_wlan_vendor_opm_mode - Modes supported by
+ * %QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT vendor attribute.
+ *
+ * @QCA_WLAN_VENDOR_OPM_MODE_DISABLE: OPM Disabled
+ * @QCA_WLAN_VENDOR_OPM_MODE_ENABLE: OPM Enabled
+ * @QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED: User defined mode which allows user
+ * 	to configure power save inactivity timeout and speculative wake up
+ * 	interval through %QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_ITO and
+ * 	%QCA_WLAN_VENDOR_ATTR_CONFIG_OPM_SPEC_WAKE_INTERVAL attributes.
+ */
+
+enum qca_wlan_vendor_opm_mode {
+	QCA_WLAN_VENDOR_OPM_MODE_DISABLE = 0,
+	QCA_WLAN_VENDOR_OPM_MODE_ENABLE = 1,
+	QCA_WLAN_VENDOR_OPM_MODE_USER_DEFINED = 2,
 };
 #endif

@@ -929,7 +929,7 @@ QDF_STATUS mlo_link_teardown_link(struct wlan_objmgr_psoc *psoc,
 				reason);
 	}
 
-	if (reason == WMI_MLO_TEARDOWN_REASON_SSR) {
+	if (reason == WMI_HOST_MLO_TEARDOWN_REASON_SSR) {
 		/* do not wait for teardown event completion here for SSR */
 		return QDF_STATUS_SUCCESS;
 	}

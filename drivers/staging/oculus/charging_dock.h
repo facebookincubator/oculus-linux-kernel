@@ -3,14 +3,13 @@
 #ifndef _CHARGING_DOCK_H__
 #define _CHARGING_DOCK_H__
 
-#include <linux/cypd.h>
+#include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/power_supply.h>
-#include <linux/usb/usbpd.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
-#include "vdm_glink.h"
+#include "usbvdm/subscriber.h"
 
 #define REQ_ACK_TIMEOUT_MS 200
 #define MAX_BROADCAST_PERIOD_MIN 60
@@ -35,13 +34,6 @@
 #define VDO_LOG_TRANSMIT_START 0x01
 
 #define NUM_CHARGING_DOCK_PORTS 4
-
-enum charging_dock_intf_type {
-	INTF_TYPE_UNKNOWN,
-	INTF_TYPE_USBPD, // USB-PD
-	INTF_TYPE_CYPD,	// CYPRESS-PD
-	INTF_TYPE_GLINK, // QTI PMIC GLINK
-};
 
 enum port_state_t {
 	NOT_CONNECTED = 0x00,
@@ -85,23 +77,17 @@ struct charging_dock_params_t {
 	enum state_of_charge_t state_of_charge;
 };
 
+struct usbvdm_subscription_data {
+	u16 vid;
+	u16 pid;
+	struct usbvdm_subscription *sub;
+
+	struct list_head entry;
+};
+
 struct charging_dock_device_t {
 	/* platform device handle */
 	struct device *dev;
-	/* usbpd protocol engine handle */
-	struct usbpd *upd;
-	/* cypd protocol engine handle */
-	struct cypd *cpd;
-	/* glink protocol engine handle */
-	struct vdm_glink_dev *gpd;
-	/* client struct to register with usbpd engine */
-	struct usbpd_svid_handler usbpd_vdm_handler;
-	/* client struct to register with cypd engine */
-	struct cypd_svid_handler cypd_vdm_handler;
-	/* client struct to register with cypd engine (alternate) */
-	struct cypd_svid_handler cypd_vdm_handler_alt;
-	/* list of client structs to register with glink engine */
-	struct list_head glink_handlers;
 	/* docked/undocked status */
 	bool docked;
 	/* lock for modifying device struct */
@@ -113,8 +99,6 @@ struct charging_dock_device_t {
 	struct work_struct work;
 	/* VDM request parameter for which ack is received */
 	u32 ack_parameter;
-	/* Interface type as driver can support multiple interfaces */
-	enum charging_dock_intf_type intf_type;
 	char *log;
 	u32 log_chunk_num;
 	bool gathering_log;
@@ -122,7 +106,10 @@ struct charging_dock_device_t {
 	struct power_supply *battery_psy;
 	/* notifier block for handling power supply change events */
 	struct notifier_block nb;
+	/* List of USBVDM subscription handles */
+	struct list_head sub_list;
 	u16 current_svid;
+	u16 current_pid;
 	/* work for sending state of charge to dock */
 	struct work_struct work_soc;
 	/* flag to tell if state of charge needs to be sent to dock*/

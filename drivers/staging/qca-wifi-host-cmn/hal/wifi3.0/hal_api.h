@@ -2110,6 +2110,34 @@ void *hal_srng_src_peek_n_get_next(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
+ * hal_srng_src_dec_hp - Decrement source srng HP to previous index
+ * @hal_soc_hdl: Opaque HAL SOC handle
+ * @hal_ring_hdl: Source ring pointer
+ *
+ * Return: None
+ */
+static inline
+void hal_srng_src_dec_hp(hal_soc_handle_t hal_soc_hdl,
+			  hal_ring_handle_t hal_ring_hdl)
+{
+	struct hal_srng *srng = (struct hal_srng *)hal_ring_hdl;
+	uint32_t hp = srng->u.src_ring.hp;
+
+	/* This HP adjustment is mostly done in error cases.
+	 * Only local HP is being decremented not the value
+	 * communicated to consumer or H.W.
+	 */
+	if (hp == srng->u.src_ring.cached_tp)
+		return;
+	else if (hp == 0)
+		hp = srng->ring_size - srng->entry_size;
+	else
+		hp = (hp - srng->entry_size) % srng->ring_size;
+
+	srng->u.src_ring.hp = hp;
+}
+
+/**
  * hal_srng_src_peek_n_get_next_next - Get next to next, i.e HP + 2 entry
  * from a ring without moving head pointer.
  *

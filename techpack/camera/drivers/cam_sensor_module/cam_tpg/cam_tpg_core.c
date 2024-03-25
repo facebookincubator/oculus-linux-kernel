@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "cam_tpg_core.h"
@@ -457,6 +457,7 @@ static int cam_tpg_validate_cmd_descriptor(
 
 	*cmd_addr = (uintptr_t)cmd_header;
 end:
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return rc;
 }
 
@@ -626,6 +627,7 @@ static int cam_tpg_packet_parse(
 		break;
 	}
 end:
+	cam_mem_put_cpu_buf(config->packet_handle);
 	return rc;
 }
 

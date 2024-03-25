@@ -15065,20 +15065,20 @@ dp_txrx_ext_stats_request(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 static void dp_rx_hw_stats_cb(struct dp_soc *soc, void *cb_ctxt,
 			      union hal_reo_status *reo_status)
 {
-	struct dp_req_rx_hw_stats_t *rx_hw_stats = cb_ctxt;
 	struct hal_reo_queue_status *queue_status = &reo_status->queue_status;
 	bool is_query_timeout;
 
 	qdf_spin_lock_bh(&soc->rx_hw_stats_lock);
-	is_query_timeout = rx_hw_stats->is_query_timeout;
+	is_query_timeout = soc->rx_hw_stats->is_query_timeout;
 	/* free the cb_ctxt if all pending tid stats query is received */
-	if (qdf_atomic_dec_and_test(&rx_hw_stats->pending_tid_stats_cnt)) {
+	if (qdf_atomic_dec_and_test(&soc->rx_hw_stats->pending_tid_stats_cnt)) {
 		if (!is_query_timeout) {
 			qdf_event_set(&soc->rx_hw_stats_event);
 			soc->is_last_stats_ctx_init = false;
 		}
 
-		qdf_mem_free(rx_hw_stats);
+		qdf_mem_free(soc->rx_hw_stats);
+		soc->rx_hw_stats = NULL;
 	}
 
 	if (queue_status->header.status != HAL_REO_CMD_SUCCESS) {
@@ -15112,10 +15112,15 @@ dp_request_rx_hw_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
 						     DP_MOD_ID_CDP);
 	struct dp_peer *peer = NULL;
 	QDF_STATUS status;
-	struct dp_req_rx_hw_stats_t *rx_hw_stats;
 	int rx_stats_sent_cnt = 0;
 	uint32_t last_rx_mpdu_received;
 	uint32_t last_rx_mpdu_missed;
+
+	if (soc->rx_hw_stats) {
+		dp_err_rl("Stats already requested");
+		status = QDF_STATUS_E_ALREADY;
+		goto out;
+	}
 
 	if (!vdev) {
 		dp_err("vdev is null for vdev_id: %u", vdev_id);
@@ -15131,9 +15136,9 @@ dp_request_rx_hw_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
 		goto out;
 	}
 
-	rx_hw_stats = qdf_mem_malloc(sizeof(*rx_hw_stats));
+	soc->rx_hw_stats = qdf_mem_malloc(sizeof(*soc->rx_hw_stats));
 
-	if (!rx_hw_stats) {
+	if (!soc->rx_hw_stats) {
 		dp_err("malloc failed for hw stats structure");
 		status = QDF_STATUS_E_INVAL;
 		goto out;
@@ -15149,17 +15154,18 @@ dp_request_rx_hw_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
 
 	dp_debug("HW stats query start");
 	rx_stats_sent_cnt =
-		dp_peer_rxtid_stats(peer, dp_rx_hw_stats_cb, rx_hw_stats);
+		dp_peer_rxtid_stats(peer, dp_rx_hw_stats_cb, soc->rx_hw_stats);
 	if (!rx_stats_sent_cnt) {
 		dp_err("no tid stats sent successfully");
-		qdf_mem_free(rx_hw_stats);
+		qdf_mem_free(soc->rx_hw_stats);
+		soc->rx_hw_stats = NULL;
 		qdf_spin_unlock_bh(&soc->rx_hw_stats_lock);
 		status = QDF_STATUS_E_INVAL;
 		goto out;
 	}
-	qdf_atomic_set(&rx_hw_stats->pending_tid_stats_cnt,
+	qdf_atomic_set(&soc->rx_hw_stats->pending_tid_stats_cnt,
 		       rx_stats_sent_cnt);
-	rx_hw_stats->is_query_timeout = false;
+	soc->rx_hw_stats->is_query_timeout = false;
 	soc->is_last_stats_ctx_init = true;
 	qdf_spin_unlock_bh(&soc->rx_hw_stats_lock);
 
@@ -15169,11 +15175,13 @@ dp_request_rx_hw_stats(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
 
 	qdf_spin_lock_bh(&soc->rx_hw_stats_lock);
 	if (status != QDF_STATUS_SUCCESS) {
-		dp_info("partial rx hw stats event collected with %d",
-			qdf_atomic_read(
-				&rx_hw_stats->pending_tid_stats_cnt));
-		if (soc->is_last_stats_ctx_init)
-			rx_hw_stats->is_query_timeout = true;
+		if (soc->rx_hw_stats) {
+			dp_info("partial rx hw stats event collected with %d",
+				qdf_atomic_read(
+				  &soc->rx_hw_stats->pending_tid_stats_cnt));
+			if (soc->is_last_stats_ctx_init)
+				soc->rx_hw_stats->is_query_timeout = true;
+		}
 		/**
 		 * If query timeout happened, use the last saved stats
 		 * for this time query.

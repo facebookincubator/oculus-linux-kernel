@@ -110,19 +110,19 @@
 
 	qcom,panel-supply-entry@5 {
 		reg = <5>;
-		qcom,supply-name = "mp3314left";
+		qcom,supply-name = "mp3314_left";
 		qcom,supply-min-voltage = <3300000>;
 		qcom,supply-max-voltage = <3300000>;
-		qcom,supply-enable-load = <857000>;
+		qcom,supply-enable-load = <45010>;
 		qcom,supply-disable-load = <0>;
 	};
 
 	qcom,panel-supply-entry@6 {
 		reg = <6>;
-		qcom,supply-name = "mp3314right";
+		qcom,supply-name = "mp3314_right";
 		qcom,supply-min-voltage = <3300000>;
 		qcom,supply-max-voltage = <3300000>;
-		qcom,supply-enable-load = <857000>;
+		qcom,supply-enable-load = <45010>;
 		qcom,supply-disable-load = <0>;
 	};
 };
@@ -131,7 +131,7 @@
 	mp3314_left: mp3314a@28 {
 		compatible = "meta,mp3314a";
 		reg = <0x28>;
-		regulator-name = "mp3314a";
+		regulator-name = "mp3314_left";
 		regulator-min-microvolt = <6000000>;
 		regulator-max-microvolt = <6000000>;
 		regulator-allow-set-load;
@@ -144,13 +144,19 @@
 	mp3314_right: mp3314a@28 {
 		compatible = "meta,mp3314a";
 		reg = <0x28>;
-		regulator-name = "mp3314a";
+		regulator-name = "mp3314_right";
 		regulator-min-microvolt = <6000000>;
 		regulator-max-microvolt = <6000000>;
 		regulator-allow-set-load;
 		regulator-boot-on;
 		iset-ext-resistor = <36500>;
 	};
+};
+
+&sde_dsi {
+	mp3314_en-supply = <&mp3314_en>;
+	mp3314_right-supply = <&mp3314_right>;
+	mp3314_left-supply = <&mp3314_left>;
 };
 
 &soc {

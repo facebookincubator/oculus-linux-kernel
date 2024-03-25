@@ -4399,6 +4399,15 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel)
 	if (!esd_config->esd_enabled)
 		return 0;
 
+	rc = utils->read_u32(utils->data,
+			"meta,esd-check-max-refresh-rate", &esd_config->max_refresh_rate);
+	if (rc) {
+		DSI_DEBUG(
+			"failed to parse esd max refresh rate, rc=%d; defaulting to UINT_MAX\n",
+			rc);
+		esd_config->max_refresh_rate = UINT_MAX;
+	}
+
 	rc = utils->read_string(utils->data,
 			"qcom,mdss-dsi-panel-status-check-mode", &string);
 	if (!rc) {

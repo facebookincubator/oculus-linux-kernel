@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -171,6 +171,7 @@ int32_t cam_csiphy_remote_cmd_buf_parser(struct csiphy_remote_device *csiphy_dev
 		CAM_ERR(CAM_CSIPHY_REMOTE,
 			"Inval cam_packet struct size: %zu, len: %zu",
 			 sizeof(struct cam_packet), len);
+		cam_mem_put_cpu_buf(cfg_dev->packet_handle);
 		rc = -EINVAL;
 		return rc;
 	}
@@ -182,6 +183,7 @@ int32_t cam_csiphy_remote_cmd_buf_parser(struct csiphy_remote_device *csiphy_dev
 	if (cam_packet_util_validate_packet(csl_packet,
 		remain_len)) {
 		CAM_ERR(CAM_CSIPHY_REMOTE, "Invalid packet params");
+		cam_mem_put_cpu_buf(cfg_dev->packet_handle);
 		rc = -EINVAL;
 		return rc;
 	}
@@ -195,6 +197,7 @@ int32_t cam_csiphy_remote_cmd_buf_parser(struct csiphy_remote_device *csiphy_dev
 	if (rc < 0) {
 		CAM_ERR(CAM_CSIPHY_REMOTE,
 			"Failed to get cmd buf Mem address : %d", rc);
+		cam_mem_put_cpu_buf(cfg_dev->packet_handle);
 		return rc;
 	}
 
@@ -203,7 +206,7 @@ int32_t cam_csiphy_remote_cmd_buf_parser(struct csiphy_remote_device *csiphy_dev
 		CAM_ERR(CAM_CSIPHY_REMOTE,
 			"Not enough buffer provided for cam_cisphy_remote_info");
 		rc = -EINVAL;
-		return rc;
+		goto end;
 	}
 
 	cmd_buf = (uint32_t *)generic_ptr;
@@ -220,7 +223,7 @@ int32_t cam_csiphy_remote_cmd_buf_parser(struct csiphy_remote_device *csiphy_dev
 
 	rc = cam_csiphy_remote_sanitize_lane_cnt(phy_info);
 	if (rc)
-		return rc;
+		goto end;
 
 	CAM_INFO(CAM_CSIPHY_REMOTE,
 		"phy version:0x%x idx:%d",
@@ -235,6 +238,9 @@ int32_t cam_csiphy_remote_cmd_buf_parser(struct csiphy_remote_device *csiphy_dev
 		phy_info->phy_id,
 		phy_info->sensor_physical_id);
 
+end:
+	cam_mem_put_cpu_buf(cfg_dev->packet_handle);
+	cam_mem_put_cpu_buf(cmd_desc->mem_handle);
 	return rc;
 }
 

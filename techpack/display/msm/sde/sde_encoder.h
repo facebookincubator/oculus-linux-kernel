@@ -397,14 +397,6 @@ int sde_encoder_wait_for_event(struct drm_encoder *drm_encoder,
 						enum msm_event_wait event);
 
 /**
- * sde_encoder_helper_get_skewed_vsync_status: Returns whether skewed-vsync
- *			feature is enabled/disabled.
- * @drm_enc:	encoder pointer
- * Returns:	true/false if skew-vsync feature is enabled/disabled.
- */
-bool sde_encoder_helper_get_skewed_vsync_status(struct drm_encoder *drm_enc);
-
-/**
  * sde_encoder_idle_request - request for idle request to avoid 4 vsync cycle
  *                            to turn off the clocks.
  * @encoder:	encoder pointer
@@ -703,6 +695,12 @@ static inline struct sde_kms *sde_encoder_get_kms(struct drm_encoder *drm_enc)
 
 	return to_sde_kms(priv->kms);
 }
+
+/**
+ * sde_encoder_get_intf_status - retrives timing engine enablement status
+ * @drm_enc:    Pointer to drm encoder structure
+ */
+bool sde_encoder_get_intf_status(struct drm_encoder *enc);
 
 /*
  * sde_encoder_is_widebus_enabled - check if widebus is enabled for current mode

@@ -84,7 +84,7 @@
 
 &reserved_memory {
 	splash_memory: splash_region {
-		reg = <0x0 0xbfc00000 0x0 0x06f00000>;
+		reg = <0x0 0xbfc00000 0x0 0x07E90000>;
 		label = "cont_splash_region";
 	};
 };

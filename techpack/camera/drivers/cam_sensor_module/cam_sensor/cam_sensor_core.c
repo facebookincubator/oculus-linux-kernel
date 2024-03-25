@@ -699,6 +699,7 @@ int32_t cam_handle_mem_ptr(uint64_t handle, uint32_t cmd,
 		if (cmd_desc[i].offset >= len) {
 			CAM_ERR(CAM_SENSOR,
 				"offset past length of buffer");
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 			rc = -EINVAL;
 			goto end;
 		}
@@ -706,6 +707,7 @@ int32_t cam_handle_mem_ptr(uint64_t handle, uint32_t cmd,
 		if (cmd_desc[i].length > remain_len) {
 			CAM_ERR(CAM_SENSOR,
 				"Not enough buffer provided for cmd");
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 			rc = -EINVAL;
 			goto end;
 		}
@@ -718,6 +720,7 @@ int32_t cam_handle_mem_ptr(uint64_t handle, uint32_t cmd,
 		if (rc < 0) {
 			CAM_ERR(CAM_SENSOR,
 				"Failed to parse the command Buffer Header");
+			cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);
 			goto end;
 		}
 		cam_mem_put_cpu_buf(cmd_desc[i].mem_handle);

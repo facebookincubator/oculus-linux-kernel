@@ -433,16 +433,15 @@ sch_bcn_update_he_ies(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 
 static void
 sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
-				struct pe_session *session, tpSchBeaconStruct bcn,
-				tpSirMacMgmtHdr mac_hdr, uint8_t cb_mode)
+			     struct pe_session *session, tpSchBeaconStruct bcn,
+			     tpSirMacMgmtHdr mac_hdr)
 {
-	bool skip_opmode_update = false;
-	uint8_t oper_mode;
-	uint32_t fw_vht_ch_wd = wma_get_vht_ch_width();
-	uint8_t ch_width = 0, ch_bw;
+	enum phy_ch_width ch_bw;
+	enum phy_ch_width ch_width = CH_WIDTH_20MHZ;
 	tDot11fIEVHTCaps *vht_caps = NULL;
 	tDot11fIEVHTOperation *vht_op = NULL;
 	uint8_t bcn_vht_chwidth = 0;
+	bool is_40 = false;
 
 	/*
 	 * Ignore opmode change during channel change The opmode will be updated
@@ -457,15 +456,6 @@ sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 		return;
 	}
 
-	if (session->vhtCapability && bcn->OperatingMode.present) {
-		pe_debug("OMN IE is present in the beacon, update NSS/Ch width");
-		lim_update_nss(mac_ctx, sta_ds, bcn->OperatingMode.rxNSS,
-			       session);
-		lim_update_channel_width(mac_ctx, sta_ds, session,
-					 bcn->OperatingMode.chanWidth, &ch_bw);
-		return;
-	}
-
 	if (bcn->VHTCaps.present) {
 		vht_caps = &bcn->VHTCaps;
 		vht_op = &bcn->VHTOperation;
@@ -473,74 +463,27 @@ sch_bcn_update_opmode_change(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
 		vht_caps = &bcn->vendor_vht_ie.VHTCaps;
 		vht_op = &bcn->vendor_vht_ie.VHTOperation;
 	}
-
-	if (!(session->vhtCapability && (vht_op && vht_op->present)))
+	if (!session->vhtCapability ||
+	    !(bcn->OperatingMode.present ||
+	      (vht_op && vht_op->present && vht_caps)))
 		return;
 
-	bcn_vht_chwidth = lim_get_vht_ch_width(&bcn->VHTCaps,
-					       &bcn->VHTOperation,
-					       &bcn->HTInfo);
+	is_40 = bcn->HTInfo.present ?
+			bcn->HTInfo.recommendedTxWidthSet : false;
 
-	oper_mode = sta_ds->vhtSupportedChannelWidthSet;
-	if ((oper_mode == WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ) &&
-	    (oper_mode < bcn_vht_chwidth))
-		skip_opmode_update = true;
-
-	if (WNI_CFG_CHANNEL_BONDING_MODE_DISABLE == cb_mode) {
-		/*
-		 * if channel bonding is disabled from INI do not
-		 * update the chan width
-		 */
-		pe_debug_rl("CB disabled skip bw update: old[%d] new[%d]",
-			    oper_mode, bcn->OperatingMode.chanWidth);
-
-		return;
+	if (bcn->OperatingMode.present) {
+		pe_debug("OMN IE is present in the beacon, update NSS/Ch width");
+		lim_update_nss(mac_ctx, sta_ds, bcn->OperatingMode.rxNSS,
+			       session);
+		ch_width = bcn->OperatingMode.chanWidth;
+	} else {
+		bcn_vht_chwidth = lim_get_vht_ch_width(vht_caps, vht_op,
+						       &bcn->HTInfo);
+		ch_width =
+			lim_convert_vht_chwdith_to_phy_chwidth(bcn_vht_chwidth,
+							       is_40);
 	}
-
-	if (!skip_opmode_update &&
-	    (oper_mode != bcn_vht_chwidth)) {
-		pe_debug("received VHTOP CHWidth %d", bcn_vht_chwidth);
-		pe_debug("MAC - %0x:%0x:%0x:%0x:%0x:%0x",
-		       mac_hdr->sa[0], mac_hdr->sa[1],
-		       mac_hdr->sa[2], mac_hdr->sa[3],
-		       mac_hdr->sa[4], mac_hdr->sa[5]);
-
-		if ((bcn_vht_chwidth >=
-			WNI_CFG_VHT_CHANNEL_WIDTH_160MHZ) &&
-			(fw_vht_ch_wd > eHT_CHANNEL_WIDTH_80MHZ)) {
-			pe_debug("Updating the CH Width to 160MHz");
-			sta_ds->vhtSupportedChannelWidthSet =
-						bcn_vht_chwidth;
-			sta_ds->htSupportedChannelWidthSet =
-				eHT_CHANNEL_WIDTH_40MHZ;
-			ch_width = eHT_CHANNEL_WIDTH_160MHZ;
-		} else if (bcn_vht_chwidth >=
-			WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ) {
-			pe_debug("Updating the CH Width to 80MHz");
-			sta_ds->vhtSupportedChannelWidthSet =
-				WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ;
-			sta_ds->htSupportedChannelWidthSet =
-				eHT_CHANNEL_WIDTH_40MHZ;
-			ch_width = eHT_CHANNEL_WIDTH_80MHZ;
-		} else if (bcn_vht_chwidth ==
-			WNI_CFG_VHT_CHANNEL_WIDTH_20_40MHZ) {
-			sta_ds->vhtSupportedChannelWidthSet =
-				WNI_CFG_VHT_CHANNEL_WIDTH_20_40MHZ;
-			if (bcn->HTCaps.supportedChannelWidthSet) {
-				pe_debug("Updating the CH Width to 40MHz");
-				sta_ds->htSupportedChannelWidthSet =
-					eHT_CHANNEL_WIDTH_40MHZ;
-				ch_width = eHT_CHANNEL_WIDTH_40MHZ;
-			} else {
-				pe_debug("Updating the CH Width to 20MHz");
-				sta_ds->htSupportedChannelWidthSet =
-					eHT_CHANNEL_WIDTH_20MHZ;
-				ch_width = eHT_CHANNEL_WIDTH_20MHZ;
-			}
-		}
-		lim_check_vht_op_mode_change(mac_ctx, session, ch_width,
-						mac_hdr->sa);
-	}
+	lim_update_channel_width(mac_ctx, sta_ds, session, ch_width, &ch_bw);
 }
 
 #ifdef WLAN_FEATURE_SR
@@ -564,29 +507,24 @@ static void lim_detect_change_in_srp(struct mac_context *mac_ctx,
 				     tpSchBeaconStruct bcn)
 {
 	tDot11fIEspatial_reuse sr_ie;
+	int32_t ret = 0;
 
 	sr_ie = sta->parsed_ies.srp_ie;
-	if (!sr_ie.present) {
-		return;
-	} else if (!bcn->srp_ie.present) {
-		pe_err_rl("SRP IE is missing in beacon, disable SR");
-	} else if (!qdf_mem_cmp(&sr_ie, &bcn->srp_ie,
-				sizeof(tDot11fIEspatial_reuse))) {
-		/* No change in beacon SRP IE */
-		return;
+	if (sr_ie.present || bcn->srp_ie.present) {
+		ret = qdf_mem_cmp(&sr_ie, &bcn->srp_ie,
+				  sizeof(tDot11fIEspatial_reuse));
+
+		if (ret) {
+			/*
+			 * If SRP IE has changes, update the new params.
+			 */
+			sta->parsed_ies.srp_ie = bcn->srp_ie;
+			lim_update_vdev_sr_elements(session, sta);
+
+			lim_handle_sr_cap(session->vdev,
+					  SR_REASON_CODE_BCN_IE_CHANGE);
+		}
 	}
-
-	/*
-	 * If SRP IE has changes, update the new params.
-	 * Else if the SRP IE is missing, disable SR
-	 */
-	sta->parsed_ies.srp_ie = bcn->srp_ie;
-	if (bcn->srp_ie.present)
-		lim_update_vdev_sr_elements(session, sta);
-	else
-		wlan_vdev_mlme_set_sr_ctrl(session->vdev, SR_DISABLE);
-
-	lim_handle_sr_cap(session->vdev, SR_REASON_CODE_BCN_IE_CHANGE);
 }
 #else
 static void lim_detect_change_in_srp(struct mac_context *mac_ctx,
@@ -607,23 +545,13 @@ sch_bcn_process_sta_opmode(struct mac_context *mac_ctx,
 {
 	tpDphHashNode sta = NULL;
 	uint16_t aid;
-	uint8_t cb_mode;
 
-	if (wlan_reg_is_24ghz_ch_freq(session->curr_op_freq)) {
-		if (session->force_24ghz_in_ht20)
-			cb_mode = WNI_CFG_CHANNEL_BONDING_MODE_DISABLE;
-		else
-			cb_mode =
-			   mac_ctx->roam.configParam.channelBondingMode24GHz;
-	} else
-		cb_mode = mac_ctx->roam.configParam.channelBondingMode5GHz;
 	/* check for VHT capability */
 	sta = dph_lookup_hash_entry(mac_ctx, pMh->sa, &aid,
 			&session->dph.dphHashTable);
 	if (!sta)
 		return;
-	sch_bcn_update_opmode_change(mac_ctx, sta, session, bcn, pMh,
-				     cb_mode);
+	sch_bcn_update_opmode_change(mac_ctx, sta, session, bcn, pMh);
 	sch_bcn_update_he_ies(mac_ctx, sta, session, bcn, pMh);
 	lim_detect_change_in_srp(mac_ctx, sta, session, bcn);
 	return;

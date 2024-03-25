@@ -70,6 +70,7 @@
 #include "wlan_mlme_ucfg_api.h"
 #include <wlan_cp_stats_mc_tgt_api.h>
 #include "wma_eht.h"
+#include <target_if_spatial_reuse.h>
 
 /* MCS Based rate table */
 /* HT MCS parameters with Nss = 1 */
@@ -4147,26 +4148,22 @@ int wma_rcpi_event_handler(void *handle, uint8_t *cmd_param_info,
 
 QDF_STATUS wma_send_vdev_down_to_fw(t_wma_handle *wma, uint8_t vdev_id)
 {
-	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct wma_txrx_node *iface = &wma->interfaces[vdev_id];
 	struct vdev_mlme_obj *vdev_mlme;
+	struct wlan_objmgr_vdev *vdev = iface->vdev;
 
 	if (!wma_is_vdev_valid(vdev_id)) {
 		wma_err("Invalid vdev id:%d", vdev_id);
-		return status;
+		return QDF_STATUS_E_FAILURE;
 	}
 
-	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(iface->vdev);
+	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
 	if (!vdev_mlme) {
 		wma_err("Failed to get vdev mlme obj for vdev id %d", vdev_id);
-		return status;
+		return QDF_STATUS_E_FAILURE;
 	}
 
-	status = vdev_mgr_down_send(vdev_mlme);
-	if (QDF_IS_STATUS_SUCCESS(status))
-		wma_sr_update(wma, vdev_id, false);
-
-	return status;
+	return vdev_mgr_down_send(vdev_mlme);
 }
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
@@ -4491,7 +4488,6 @@ QDF_STATUS wma_sta_vdev_up_send(struct vdev_mlme_obj *vdev_mlme,
 		status = QDF_STATUS_E_FAILURE;
 	} else {
 		wma_set_vdev_mgmt_rate(wma, vdev_id);
-		wma_sr_update(wma, vdev_id, true);
 		if (iface->beacon_filter_enabled)
 			wma_add_beacon_filter(
 					wma,
@@ -4600,9 +4596,7 @@ QDF_STATUS wma_ap_mlme_vdev_down_send(struct vdev_mlme_obj *vdev_mlme,
 	if (!wma)
 		return QDF_STATUS_E_INVAL;
 
-	wma_send_vdev_down(wma, data);
-
-	return QDF_STATUS_SUCCESS;
+	return wma_send_vdev_down(wma, data);
 }
 
 QDF_STATUS

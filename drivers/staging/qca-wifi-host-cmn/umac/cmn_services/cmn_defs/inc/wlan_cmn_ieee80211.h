@@ -2809,11 +2809,13 @@ struct wlan_ie_multi_link_traffic_indication {
 /**
  * struct wlan_action - Generic action frame format
  * @category: Action frame category
- * @action: action
+ * @action: action (valid values from 0 to 255)
+ *
+ * Reference IEEE Std 802.11-2020 9.4.1.11 Action field
  */
 struct wlan_action_frame {
 	int8_t category;
-	int8_t action;
+	uint8_t action;
 } __packed;
 
 /**

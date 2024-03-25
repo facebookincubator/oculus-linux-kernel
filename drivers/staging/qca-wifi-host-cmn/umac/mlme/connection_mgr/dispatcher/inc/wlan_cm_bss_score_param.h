@@ -339,6 +339,24 @@ void wlan_cm_calculate_bss_score(struct wlan_objmgr_pdev *pdev,
 				 struct qdf_mac_addr *bssid_hint,
 				 struct qdf_mac_addr *self_mac);
 
+#ifdef WLAN_FEATURE_11BE
+/**
+ * cm_is_eht_allowed_for_current_security() - checks the current security, if
+ * eht allowed or not.
+ * @scan_entry: pointer to scan cache entry
+ *
+ * Return: true if eht allowed for current security
+ **/
+bool cm_is_eht_allowed_for_current_security(
+			struct scan_cache_entry *scan_entry);
+#else
+static inline bool cm_is_eht_allowed_for_current_security(
+			struct scan_cache_entry *scan_entry)
+{
+	return false;
+}
+#endif
+
 /**
  * wlan_cm_init_score_config() - Init score INI and config
  * @psoc: pointer to psoc object

@@ -1243,6 +1243,18 @@ QDF_STATUS sme_set_idle_powersave_config(bool value);
 QDF_STATUS sme_notify_modem_power_state(mac_handle_t mac_handle,
 					uint32_t value);
 
+/**
+ * sme_set_peer_ampdu() - API to set peer A-MPDU count to target
+ * @mac_handle: mac handle
+ * @vdev_id: vdev id
+ * @peer_mac: peer mac address
+ * @cfg: A-MPDU count to configure
+ *
+ * Return: 0 if success, otherwise error code
+ */
+int sme_set_peer_ampdu(mac_handle_t mac_handle, uint8_t vdev_id,
+		       struct qdf_mac_addr *peer_mac, uint16_t cfg);
+
 /*SME API to convert convert the ini value to the ENUM used in csr and MAC*/
 ePhyChanBondState sme_get_cb_phy_state_from_cb_ini_value(uint32_t cb_ini_value);
 int sme_update_ht_config(mac_handle_t mac_handle, uint8_t sessionId,

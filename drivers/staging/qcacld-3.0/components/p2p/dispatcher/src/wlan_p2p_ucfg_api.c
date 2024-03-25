@@ -444,11 +444,12 @@ QDF_STATUS ucfg_p2p_set_ps(struct wlan_objmgr_psoc *soc,
 	struct wlan_objmgr_vdev *vdev;
 	struct p2p_ps_config go_ps_config;
 
-	p2p_debug("soc:%pK, vdev_id:%d, opp_ps:%d, ct_window:%d, count:%d, duration:%d, duration:%d, ps_selection:%d",
-		soc, ps_config->vdev_id, ps_config->opp_ps,
-		ps_config->ct_window, ps_config->count,
-		ps_config->duration, ps_config->single_noa_duration,
-		ps_config->ps_selection);
+	p2p_debug("soc:%pK, vdev_id:%d, opp_ps:%d, ct_window:%d, count:%d, interval:%d, duration:%d, start:%d, single noa duration:%d, ps_selection:%d",
+		  soc, ps_config->vdev_id, ps_config->opp_ps,
+		  ps_config->ct_window, ps_config->count,
+		  ps_config->interval, ps_config->duration,
+		  ps_config->start, ps_config->single_noa_duration,
+		  ps_config->ps_selection);
 
 	if (!soc) {
 		p2p_err("psoc context passed is NULL");

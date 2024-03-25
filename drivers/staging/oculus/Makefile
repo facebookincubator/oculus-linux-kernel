@@ -31,7 +31,6 @@ obj-$(CONFIG_MP3314_BLU)		+= mp3314.o
 obj-$(CONFIG_NAUTILUS_RESOURCE_MANAGER)	+= nautilus.o
 obj-$(CONFIG_OCULUS_CHARGING_DOCK)	+= charging_dock.o
 obj-$(CONFIG_OCULUS_EXTERNAL_BATTERY)	+= external_battery.o
-obj-$(CONFIG_OCULUS_VDM_GLINK)		+= vdm_glink.o
 obj-$(CONFIG_POWER_STATE_VIRTUAL_SENSOR)	+= power_state_virtual_sensor.o
 obj-$(CONFIG_POWERSTATE_MANAGER) += powerstate_mgr.o
 obj-$(CONFIG_REGULATOR_AW37504)		+= aw37504.o
@@ -46,3 +45,4 @@ obj-$(CONFIG_UVLO_TLV4021)		+= uvlo_tlv4021.o
 obj-$(CONFIG_VIRTUAL_SENSOR)	+= virtual_sensor.o
 
 obj-y					+= mcu/
+obj-y					+= usbvdm/

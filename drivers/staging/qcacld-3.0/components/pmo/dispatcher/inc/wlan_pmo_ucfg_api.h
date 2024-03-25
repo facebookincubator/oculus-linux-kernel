@@ -809,6 +809,27 @@ ucfg_pmo_set_wow_enable(struct wlan_objmgr_psoc *psoc,
 			enum pmo_wow_enable_type val);
 
 /**
+ * ucfg_pmo_set_ps_params() - Set vdev OPM params
+ * @vdev: pointer to vdev object
+ * @ps_params: pointer to OPM params
+ *
+ * Return: None
+ */
+void
+ucfg_pmo_set_ps_params(struct wlan_objmgr_vdev *vdev,
+		       struct pmo_ps_params *ps_params);
+
+/**
+ * ucfg_pmo_get_ps_params() - Get vdev OPM params
+ * @vdev: pointer to vdev object
+ * @ps_params: Pointer to get OPM params
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_pmo_get_ps_params(struct wlan_objmgr_vdev *vdev,
+				  struct pmo_ps_params *ps_params);
+
+/**
  * ucfg_pmo_get_gtk_rsp(): API to send gtk response request to fwr
  * @vdev: objmgr vdev handle
  * @gtk_rsp_req: pmo gtk response request

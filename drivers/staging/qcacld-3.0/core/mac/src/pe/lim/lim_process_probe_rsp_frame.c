@@ -264,10 +264,6 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 	}
 
 	frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_Packet_info);
-	pe_debug("Probe Resp(len %d): " QDF_MAC_ADDR_FMT " RSSI %d",
-		 WMA_GET_RX_PAYLOAD_LEN(rx_Packet_info),
-		 QDF_MAC_ADDR_REF(header->bssId),
-		 (uint)abs(mac_ctx->lim.bss_rssi));
 	/* Get pointer to Probe Response frame body */
 	body = WMA_GET_RX_MPDU_DATA(rx_Packet_info);
 		/* Enforce Mandatory IEs */

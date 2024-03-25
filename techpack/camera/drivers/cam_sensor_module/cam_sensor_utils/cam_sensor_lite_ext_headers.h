@@ -29,6 +29,28 @@
 
 typedef uint32_t virtual_channel;
 
+enum sensor_sys_command {
+	CAM_SYS_CMD_FLUSH  = 0,
+	CAM_SYS_CMD_STALL  = 1,
+	CAM_SYS_CMD_RESUME = 2,
+	CAM_SYS_CMD_MAX    = 3
+};
+
+enum {
+	SENSORLITE_CMD_TYPE_INVALID         = 0,
+	SENSORLITE_CMD_TYPE_PROBE           = 1,
+	SENSORLITE_CMD_TYPE_SLAVEDESTINIT   = 2,
+	SENSORLITE_CMD_TYPE_HOSTDESTINIT    = 3,
+	SENSORLITE_CMD_TYPE_EXPOSUREUPDATE  = 4,
+	SENSORLITE_CMD_TYPE_RESOLUTIONINFO  = 5,
+	SENSORLITE_CMD_TYPE_DEBUG           = 6,
+	SENSORLITE_CMD_TYPE_PERFRAME        = 7,
+	SENSORLITE_CMD_TYPE_START           = 8,
+	SENSORLITE_CMD_TYPE_STOP            = 9,
+	SENSORLITE_CMD_TYPE_REMOTE_FLUSH    = 10,
+	SENSORLITE_CMD_TYPE_MAX             = 11,
+};
+
 enum sensor_stream_type {
 	STREAM_BLOB             = 0,
 	STREAM_IMAGE            = 1,
@@ -650,18 +672,20 @@ struct host_dest_camera_init_payload_v3 {
 	uint32_t                     init_setting_count;
 } __packed;
 
-enum {
-	SENSORLITE_CMD_TYPE_INVALID         = 0,
-	SENSORLITE_CMD_TYPE_PROBE           = 1,
-	SENSORLITE_CMD_TYPE_SLAVEDESTINIT   = 2,
-	SENSORLITE_CMD_TYPE_HOSTDESTINIT    = 3,
-	SENSORLITE_CMD_TYPE_EXPOSUREUPDATE  = 4,
-	SENSORLITE_CMD_TYPE_RESOLUTIONINFO  = 5,
-	SENSORLITE_CMD_TYPE_DEBUG           = 6,
-	SENSORLITE_CMD_TYPE_PERFRAME        = 7,
-	SENSORLITE_CMD_TYPE_START           = 8,
-	SENSORLITE_CMD_TYPE_STOP            = 9,
-	SENSORLITE_CMD_TYPE_MAX             = 0xA,
-};
+/**
+ * @brief sensorlite_sys_cmd
+ *
+ * @header      : common header
+ * @sensor_id   : Sensor physical ID
+ * @sys_cmd     : system command
+ * @reserved    : reserved fields
+ *
+ */
+struct sensorlite_sys_cmd {
+	struct sensor_lite_header            header;
+	uint8_t                              sensor_id;
+	uint8_t                              sys_cmd;
+	uint16_t                             reserved;
+} __packed;
 
 #endif

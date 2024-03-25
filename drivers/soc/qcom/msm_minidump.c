@@ -284,7 +284,7 @@ int msm_minidump_add_region(const struct md_region *entry)
 #ifdef CONFIG_MINIDUMP_PSTORE_ONLY
 	if (!msm_minidump_is_region_in_pstore(entry)) {
 		spin_unlock_irqrestore(&mdt_lock, flags);
-		pr_info("Ignoring minidump region %s.\n", entry->name);
+		pr_debug("Ignoring minidump region %s.\n", entry->name);
 		return minidump_table.num_regions;
 	}
 #endif
@@ -615,7 +615,7 @@ static int msm_minidump_driver_probe(struct platform_device *pdev)
 	md_global_toc = qcom_smem_get(QCOM_SMEM_HOST_ANY, SBL_MINIDUMP_SMEM_ID,
 				      &size);
 	if (IS_ERR_OR_NULL(md_global_toc)) {
-		pr_err("SMEM is not initialized.\n");
+		dev_err_probe(&pdev->dev, PTR_ERR(md_global_toc), "SMEM is not initialized.\n");
 		return PTR_ERR(md_global_toc);
 	}
 

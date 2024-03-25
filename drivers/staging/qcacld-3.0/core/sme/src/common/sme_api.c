@@ -7613,6 +7613,71 @@ int16_t sme_get_ht_config(mac_handle_t mac_handle, uint8_t vdev_id,
 	}
 }
 
+/**
+ * sme_validate_peer_ampdu_cfg() - Function to validate peer A-MPDU configure
+ * @peer: peer object
+ * @cfg: peer A-MPDU configure value
+ *
+ * Return: true if success, otherwise false
+ */
+static bool sme_validate_peer_ampdu_cfg(struct wlan_objmgr_peer *peer,
+					uint16_t cfg)
+{
+	if (!cfg) {
+		sme_debug("peer ampdu count 0");
+		return false;
+	}
+
+	if (wlan_peer_get_peer_type(peer) == WLAN_PEER_SELF) {
+		sme_debug("self peer");
+		return false;
+	}
+
+	return true;
+}
+
+int sme_set_peer_ampdu(mac_handle_t mac_handle, uint8_t vdev_id,
+		       struct qdf_mac_addr *peer_mac, uint16_t cfg)
+{
+	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
+	struct wlan_objmgr_vdev *vdev;
+	QDF_STATUS status;
+	struct wlan_objmgr_peer *peer_obj;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(mac_ctx->psoc,
+						    vdev_id,
+						    WLAN_LEGACY_SME_ID);
+	status = wlan_vdev_is_up(vdev);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		sme_debug("vdev id %d not up", vdev_id);
+		goto release_vdev_ref;
+	}
+	peer_obj = wlan_objmgr_vdev_find_peer_by_mac(vdev,
+						     peer_mac->bytes,
+						     WLAN_LEGACY_SME_ID);
+	if (!peer_obj) {
+		sme_debug("vdev id %d peer not found "QDF_MAC_ADDR_FMT,
+			  vdev_id,
+			  QDF_MAC_ADDR_REF(peer_mac->bytes));
+		status = QDF_STATUS_E_FAILURE;
+		goto release_vdev_ref;
+	}
+
+	if (!sme_validate_peer_ampdu_cfg(peer_obj, cfg)) {
+		status = QDF_STATUS_E_INVAL;
+		goto release_peer_ref;
+	}
+	status = sme_set_peer_param(peer_mac->bytes,
+				    WMI_HOST_PEER_AMPDU,
+				    cfg,
+				    vdev_id);
+release_peer_ref:
+	wlan_objmgr_peer_release_ref(peer_obj, WLAN_LEGACY_SME_ID);
+release_vdev_ref:
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_SME_ID);
+	return qdf_status_to_os_return(status);
+}
+
 int sme_update_ht_config(mac_handle_t mac_handle, uint8_t vdev_id,
 			 uint16_t htCapab, int value)
 {
@@ -14691,33 +14756,23 @@ void sme_set_he_bw_cap(mac_handle_t mac_handle, uint8_t vdev_id,
 	mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_5 = 0;
 	mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_6 = 0;
 
+	mac_ctx->he_cap_2g.chan_width_0 = 0;
+	mac_ctx->he_cap_2g.chan_width_1 = 0;
+	mac_ctx->he_cap_2g.chan_width_2 = 0;
+	mac_ctx->he_cap_2g.chan_width_3 = 0;
+	mac_ctx->he_cap_2g.chan_width_4 = 0;
+	mac_ctx->he_cap_2g.chan_width_5 = 0;
+	mac_ctx->he_cap_2g.chan_width_6 = 0;
+
+	mac_ctx->he_cap_5g.chan_width_0 = 0;
+	mac_ctx->he_cap_5g.chan_width_1 = 0;
+	mac_ctx->he_cap_5g.chan_width_2 = 0;
+	mac_ctx->he_cap_5g.chan_width_3 = 0;
+	mac_ctx->he_cap_5g.chan_width_4 = 0;
+	mac_ctx->he_cap_5g.chan_width_5 = 0;
+	mac_ctx->he_cap_5g.chan_width_6 = 0;
+
 	switch (chwidth) {
-	case eHT_CHANNEL_WIDTH_20MHZ:
-		qdf_mem_copy(&mac_ctx->he_cap_2g,
-			     &mac_ctx->mlme_cfg->he_caps.dot11_he_cap,
-			     sizeof(tDot11fIEhe_cap));
-		qdf_mem_copy(&mac_ctx->he_cap_5g,
-			     &mac_ctx->mlme_cfg->he_caps.dot11_he_cap,
-			     sizeof(tDot11fIEhe_cap));
-		break;
-	case eHT_CHANNEL_WIDTH_40MHZ:
-		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_0 = 1;
-		qdf_mem_copy(&mac_ctx->he_cap_2g,
-			     &mac_ctx->mlme_cfg->he_caps.dot11_he_cap,
-			     sizeof(tDot11fIEhe_cap));
-		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_0 = 0;
-		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_1 = 1;
-		qdf_mem_copy(&mac_ctx->he_cap_5g,
-			     &mac_ctx->mlme_cfg->he_caps.dot11_he_cap,
-			     sizeof(tDot11fIEhe_cap));
-		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_0 = 1;
-		break;
-	case eHT_CHANNEL_WIDTH_80MHZ:
-		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_1 = 1;
-		qdf_mem_copy(&mac_ctx->he_cap_5g,
-			     &mac_ctx->mlme_cfg->he_caps.dot11_he_cap,
-			     sizeof(tDot11fIEhe_cap));
-		break;
 	case eHT_CHANNEL_WIDTH_160MHZ:
 	case eHT_CHANNEL_WIDTH_320MHZ:
 		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_1 = 1;
@@ -14726,11 +14781,28 @@ void sme_set_he_bw_cap(mac_handle_t mac_handle, uint8_t vdev_id,
 		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.rx_he_mcs_map_160) =
 		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.rx_he_mcs_map_lt_80;
 		*((uint16_t *)
+		mac_ctx->he_cap_5g.rx_he_mcs_map_160) =
+		mac_ctx->he_cap_5g.rx_he_mcs_map_lt_80;
+		*((uint16_t *)
 		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.tx_he_mcs_map_160) =
 		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.tx_he_mcs_map_lt_80;
-		qdf_mem_copy(&mac_ctx->he_cap_5g,
-			     &mac_ctx->mlme_cfg->he_caps.dot11_he_cap,
-			     sizeof(tDot11fIEhe_cap));
+		*((uint16_t *)
+		mac_ctx->he_cap_5g.tx_he_mcs_map_160) =
+		mac_ctx->he_cap_5g.tx_he_mcs_map_lt_80;
+		mac_ctx->he_cap_5g.chan_width_1 = 1;
+		mac_ctx->he_cap_5g.chan_width_2 = 1;
+		fallthrough;
+	case eHT_CHANNEL_WIDTH_80MHZ:
+		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_1 = 1;
+		mac_ctx->he_cap_5g.chan_width_1 = 1;
+		fallthrough;
+	case eHT_CHANNEL_WIDTH_40MHZ:
+		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_0 = 1;
+		mac_ctx->mlme_cfg->he_caps.dot11_he_cap.chan_width_1 = 1;
+		mac_ctx->he_cap_2g.chan_width_0 = 1;
+		mac_ctx->he_cap_5g.chan_width_1 = 1;
+		fallthrough;
+	case eHT_CHANNEL_WIDTH_20MHZ:
 		break;
 	default:
 		sme_debug("Config BW %d not handled", chwidth);
@@ -15094,6 +15166,7 @@ void sme_reset_eht_caps(mac_handle_t mac_handle, uint8_t vdev_id)
 							       &val);
 	if (QDF_IS_STATUS_SUCCESS(status))
 		ucfg_mlme_set_bss_color_collision_det_sta(mac_ctx->psoc, val);
+	wlan_mlme_set_btm_abridge_flag(mac_ctx->psoc, false);
 }
 
 void sme_update_eht_cap_nss(mac_handle_t mac_handle, uint8_t vdev_id,

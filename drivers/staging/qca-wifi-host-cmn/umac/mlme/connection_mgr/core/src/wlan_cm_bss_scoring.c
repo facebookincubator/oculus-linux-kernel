@@ -1427,6 +1427,38 @@ cm_get_band_score(uint32_t freq, struct scoring_cfg *score_config)
 }
 
 #ifdef WLAN_FEATURE_11BE
+bool cm_is_eht_allowed_for_current_security(struct scan_cache_entry *scan_entry)
+{
+	const uint8_t *rsnxe, *rsnxe_caps;
+	uint8_t cap_len;
+
+	if (!scan_entry->ie_list.rsn)
+		return false;
+
+	/* check AKM chosen for connection is PSK */
+	if (WLAN_CRYPTO_IS_AKM_WPA2_PSK(scan_entry->neg_sec_info.key_mgmt))
+		return false;
+
+	/*
+	 * check AKM chosen for connection is SAE or not
+	 * if not connect with EHT enabled for all other AKMs
+	 */
+	if (!WLAN_CRYPTO_IS_AKM_SAE(scan_entry->neg_sec_info.key_mgmt))
+		return true;
+	rsnxe = util_scan_entry_rsnxe(scan_entry);
+	if (!rsnxe)
+		return false;
+	rsnxe_caps = wlan_crypto_parse_rsnxe_ie(rsnxe, &cap_len);
+	if (!rsnxe_caps) {
+		mlme_debug("RSNXE caps not present");
+		return false;
+	}
+	/* check if H2E bit is enabled in RSNXE */
+	if (*rsnxe_caps & WLAN_CRYPTO_RSNX_CAP_SAE_H2E)
+		return true;
+	return false;
+}
+
 static int cm_calculate_eht_score(struct scan_cache_entry *entry,
 				  struct scoring_cfg *score_config,
 				  struct psoc_phy_config *phy_config,
@@ -1436,6 +1468,9 @@ static int cm_calculate_eht_score(struct scan_cache_entry *entry,
 	struct weight_cfg *weight_config;
 
 	if (!phy_config->eht_cap || !entry->ie_list.ehtcap)
+		return 0;
+
+	if (!cm_is_eht_allowed_for_current_security(entry))
 		return 0;
 
 	weight_config = &score_config->weight_config;
@@ -1988,6 +2023,55 @@ static int cm_calculate_mlo_bss_score(struct wlan_objmgr_psoc *psoc,
 }
 #endif
 
+static int cm_calculate_ml_scores(struct wlan_objmgr_psoc *psoc,
+				  struct scan_cache_entry *entry,
+				  struct scoring_cfg *score_config,
+				  struct psoc_phy_config *phy_config,
+				  qdf_list_t *scan_list,
+				  enum MLO_TYPE bss_mlo_type)
+{
+	int32_t score = 0;
+	int32_t rssi_score = 0;
+	int32_t congestion_pct = 0;
+	int32_t bandwidth_score = 0;
+	int32_t congestion_score = 0;
+	uint8_t prorated_pcnt = 0;
+	struct weight_cfg *weight_config;
+
+	weight_config = &score_config->weight_config;
+	if (bss_mlo_type == SLO || bss_mlo_type == MLSR) {
+		rssi_score =
+			cm_calculate_rssi_score(&score_config->rssi_score,
+						entry->rssi_raw,
+						weight_config->rssi_weightage);
+		prorated_pcnt =
+			cm_get_rssi_prorate_pct(&score_config->rssi_score,
+						entry->rssi_raw,
+						weight_config->rssi_weightage);
+		score += rssi_score;
+		bandwidth_score =
+			cm_get_bw_score(weight_config->chan_width_weightage,
+					cm_get_ch_width(entry, phy_config),
+					prorated_pcnt);
+		score += bandwidth_score;
+
+		congestion_score =
+			cm_calculate_congestion_score(entry,
+						      score_config,
+						      &congestion_pct, 0);
+		score += congestion_score * CM_SLO_CONGESTION_MAX_SCORE /
+			 CM_MAX_PCT_SCORE;
+		if (bss_mlo_type == MLSR)
+			score += cm_calculate_emlsr_score(weight_config);
+	} else {
+		score += cm_calculate_mlo_bss_score(psoc, entry, score_config,
+						    phy_config, scan_list,
+						    &prorated_pcnt);
+		return score;
+	}
+	return score;
+}
+
 static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 				  struct scan_cache_entry *entry,
 				  int pcl_chan_weight,
@@ -2014,7 +2098,7 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 	bool oce_subnet_id_present = 0;
 	bool sae_pk_cap_present = 0;
 	int8_t ap_tx_pwr_dbm = 0;
-	uint8_t prorated_pcnt;
+	uint8_t prorated_pcnt = 0;
 	bool is_vht = false;
 	int8_t good_rssi_threshold;
 	int8_t rssi_pref_5g_rssi_thresh;
@@ -2055,35 +2139,11 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 	}
 
 	bss_mlo_type = cm_bss_mlo_type(psoc, entry, scan_list);
-	if (bss_mlo_type == SLO || bss_mlo_type == MLSR) {
-		rssi_score =
-			cm_calculate_rssi_score(&score_config->rssi_score,
-						entry->rssi_raw,
-						weight_config->rssi_weightage);
-		prorated_pcnt =
-			cm_get_rssi_prorate_pct(&score_config->rssi_score,
-						entry->rssi_raw,
-						weight_config->rssi_weightage);
-		score += rssi_score;
-		bandwidth_score =
-			cm_get_bw_score(weight_config->chan_width_weightage,
-					cm_get_ch_width(entry, phy_config),
-					prorated_pcnt);
-		score += bandwidth_score;
 
-		congestion_score =
-			cm_calculate_congestion_score(entry,
-						      score_config,
-						      &congestion_pct, 0);
-		score += congestion_score * CM_SLO_CONGESTION_MAX_SCORE /
-			 CM_MAX_PCT_SCORE;
-		if (bss_mlo_type == MLSR)
-			score += cm_calculate_emlsr_score(weight_config);
-	} else {
-		score += cm_calculate_mlo_bss_score(psoc, entry, score_config,
-						    phy_config, scan_list,
-						    &prorated_pcnt);
-	}
+	if (cm_is_eht_allowed_for_current_security(entry))
+		score += cm_calculate_ml_scores(psoc, entry, score_config,
+						phy_config, scan_list,
+						bss_mlo_type);
 
 	pcl_score = cm_calculate_pcl_score(psoc, pcl_chan_weight,
 					   weight_config->pcl_weightage);

@@ -589,6 +589,9 @@ int msm_vidc_scale_power(struct msm_vidc_inst *inst, bool scale_buses)
 	if (!inst->max_input_data_size)
 		return 0;
 
+	if (is_slice_decode_enabled(inst) && inst->slice_decode.frame_data_size)
+		inst->max_input_data_size = inst->slice_decode.frame_data_size;
+
 	if (msm_vidc_scale_clocks(inst))
 		i_vpr_e(inst, "failed to scale clock\n");
 

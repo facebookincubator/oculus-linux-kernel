@@ -1323,24 +1323,6 @@ static inline QDF_STATUS wma_set_tsf_gpio_pin(WMA_HANDLE handle, uint32_t pin)
 }
 #endif
 
-#ifdef WLAN_FEATURE_SR
-/**
- * wma_sr_update() - enable/disable spatial reuse
- * @wma: wma handle
- * @vdev_id: vdev id
- * @enable: indicates spatial reuse enable/disable
- *
- * Return: QDF_STATUS_SUCCESS for success or error code
- */
-QDF_STATUS wma_sr_update(tp_wma_handle wma, uint8_t vdev_id, bool enable);
-#else
-static inline QDF_STATUS wma_sr_update(tp_wma_handle wma, uint8_t vdev_id,
-				       bool enable)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
-
 QDF_STATUS wma_set_wisa_params(tp_wma_handle wma, struct sir_wisa_params *wisa);
 
 #ifdef DHCP_SERVER_OFFLOAD
@@ -1736,9 +1718,9 @@ int wma_roam_scan_stats_event_handler(void *handle, uint8_t *event,
  *
  * This function sends del bss resp to upper layer
  *
- * Return: none
+ * Return: Success or Failure status
  */
-void wma_send_vdev_down(tp_wma_handle wma, struct del_bss_resp *req);
+QDF_STATUS wma_send_vdev_down(tp_wma_handle wma, struct del_bss_resp *req);
 
 /**
  * wma_cold_boot_cal_event_handler() - Cold boot cal event handler

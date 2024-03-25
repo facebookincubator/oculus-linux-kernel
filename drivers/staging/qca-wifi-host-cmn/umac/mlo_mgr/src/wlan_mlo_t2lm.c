@@ -496,7 +496,7 @@ static QDF_STATUS wlan_mlo_parse_t2lm_response_action_frame(
 	/*
 	 * T2LM response action frame
 	 *
-	 *   1-byte     1-byte     1-byte   1-byte   variable
+	 *   1-byte     1-byte     1-byte   2-byte   variable
 	 *----------------------------------------------------
 	 * |         |           |        |        |         |
 	 * | Category| Protected | Dialog | Status | T2LM IE |
@@ -508,11 +508,12 @@ static QDF_STATUS wlan_mlo_parse_t2lm_response_action_frame(
 	t2lm_action_frm = (uint8_t *)action_frm + sizeof(*action_frm);
 
 	t2lm->dialog_token = *t2lm_action_frm;
-	t2lm->t2lm_resp_type = *(t2lm_action_frm + sizeof(uint8_t));
+	t2lm->t2lm_resp_type =
+	      qdf_le16_to_cpu(*(uint16_t *)(t2lm_action_frm + sizeof(uint8_t)));
 
 	if (t2lm->t2lm_resp_type ==
 			WLAN_T2LM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING) {
-		t2lm_action_frm += sizeof(uint8_t) + sizeof(uint8_t);
+		t2lm_action_frm += sizeof(uint8_t) + sizeof(uint16_t);
 		ret_val = wlan_mlo_parse_t2lm_ie(t2lm, t2lm_action_frm,
 						 frame_len);
 	}
@@ -588,8 +589,9 @@ static uint8_t *wlan_mlo_add_t2lm_response_action_frame(
 	*frm++ = args->action;
 	/* Dialog token*/
 	*frm++ = args->arg1;
-	/* Status code */
-	*frm++ = args->arg2;
+	/* Status code (2 bytes)*/
+	*(uint16_t *)frm = htole16(args->arg2);
+	frm += sizeof(uint16_t);
 
 	t2lm_info("T2LM response frame: category:%d action:%d dialog_token:%d status_code:%d",
 		  args->category, args->action, args->arg1, args->arg2);

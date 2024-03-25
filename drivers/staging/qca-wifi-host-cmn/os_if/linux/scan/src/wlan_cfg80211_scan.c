@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1443,6 +1443,42 @@ enum scan_priority convert_nl_scan_priority_to_internal(
 	}
 }
 
+bool wlan_is_scan_allowed(struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_objmgr_pdev *pdev = wlan_vdev_get_pdev(vdev);
+	struct pdev_osif_priv *osif_priv;
+	struct wlan_objmgr_psoc *psoc;
+	enum QDF_OPMODE opmode = wlan_vdev_mlme_get_opmode(vdev);
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc) {
+		osif_err("Invalid psoc object");
+		return false;
+	}
+
+	osif_priv = wlan_pdev_get_ospriv(pdev);
+	if (!osif_priv) {
+		osif_err("Invalid osif priv object");
+		return false;
+	}
+	/*
+	 * For a non-SAP vdevs, if a scan is already going on i.e the scan queue
+	 * is not empty, and the simultaneous scan is disabled, dont allow 2nd
+	 * scan.
+	 */
+	qdf_mutex_acquire(&osif_priv->osif_scan->scan_req_q_lock);
+	if (!wlan_cfg80211_allow_simultaneous_scan(psoc) &&
+	    !qdf_list_empty(&osif_priv->osif_scan->scan_req_q) &&
+	    opmode != QDF_SAP_MODE) {
+		qdf_mutex_release(&osif_priv->osif_scan->scan_req_q_lock);
+		osif_err_rl("Simultaneous scan disabled, reject scan");
+		return false;
+	}
+	qdf_mutex_release(&osif_priv->osif_scan->scan_req_q_lock);
+
+	return true;
+}
+
 int wlan_cfg80211_scan(struct wlan_objmgr_vdev *vdev,
 		       struct cfg80211_scan_request *request,
 		       struct scan_params *params)
@@ -1474,27 +1510,14 @@ int wlan_cfg80211_scan(struct wlan_objmgr_vdev *vdev,
 	osif_debug("%s(vdev%d): mode %d", request->wdev->netdev->name,
 		   wlan_vdev_get_id(vdev), opmode);
 
-	/* Get NL global context from objmgr*/
+	if (!wlan_is_scan_allowed(vdev))
+		return -EBUSY;
+
 	osif_priv = wlan_pdev_get_ospriv(pdev);
 	if (!osif_priv) {
 		osif_err("Invalid osif priv object");
 		return -EINVAL;
 	}
-
-	/*
-	 * For a non-SAP vdevs, if a scan is already going on i.e the scan queue
-	 * is not empty, and the simultaneous scan is disabled, dont allow 2nd
-	 * scan.
-	 */
-	qdf_mutex_acquire(&osif_priv->osif_scan->scan_req_q_lock);
-	if (!wlan_cfg80211_allow_simultaneous_scan(psoc) &&
-	    !qdf_list_empty(&osif_priv->osif_scan->scan_req_q) &&
-	    opmode != QDF_SAP_MODE) {
-		qdf_mutex_release(&osif_priv->osif_scan->scan_req_q_lock);
-		osif_err("Simultaneous scan disabled, reject scan");
-		return -EBUSY;
-	}
-	qdf_mutex_release(&osif_priv->osif_scan->scan_req_q_lock);
 
 	req = qdf_mem_malloc(sizeof(*req));
 	if (!req)

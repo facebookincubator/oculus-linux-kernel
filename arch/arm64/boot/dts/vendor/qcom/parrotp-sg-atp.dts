@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "parrotp-sg.dtsi"
+#include "parrot-wcn3990.dtsi"
+#include "parrotp-sg-atp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. ParrotP SG ATP";
+	compatible = "qcom,parrotp-atp", "qcom,parrotp", "qcom,atp";
+	qcom,board-id = <33 0>;
+};

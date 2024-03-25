@@ -5255,7 +5255,11 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 
 	/* Enable ESD thread */
 	for (i = 0; i < cstate->num_connectors; i++) {
-		sde_connector_schedule_status_work(cstate->connectors[i], true);
+		struct sde_connector *c_conn = to_sde_connector(cstate->connectors[i]);
+		/* When the display first powers up, the power mode will be DRM_MODE_DPMS_ON */
+		/* but the panel status check worker will not be active */
+		if (c_conn->last_panel_power_mode == DRM_MODE_DPMS_ON)
+			sde_connector_schedule_status_work(cstate->connectors[i], true);
 		_sde_crtc_reserve_resource(crtc, cstate->connectors[i]);
 	}
 

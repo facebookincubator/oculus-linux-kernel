@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 
@@ -638,6 +638,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_0,
 			.num_wm        = 1,
 			.mid[0]        = 20,
+			.line_based    = 1,
 			.wm_idx        = {
 				4,
 			},
@@ -684,6 +685,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_0,
 			.num_wm        = 1,
 			.mid[0]        = 23,
+			.line_based    = 1,
 			.wm_idx        = {
 				7,
 			},
@@ -700,6 +702,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_0,
 			.num_wm        = 1,
 			.mid[0]        = 24,
+			.line_based    = 1,
 			.wm_idx        = {
 				8,
 			},

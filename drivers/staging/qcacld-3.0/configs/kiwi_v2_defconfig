@@ -24,6 +24,7 @@ endif
 # Enable EHT rate sysfs entry
 ifeq ($(CONFIG_WLAN_SYSFS), y)
 CONFIG_WLAN_SYSFS_EHT_RATE := y
+CONFIG_WLAN_SYSFS_BITRATES := y
 endif
 
 # Max Sta Vdev Config

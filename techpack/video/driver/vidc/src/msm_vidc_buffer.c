@@ -148,8 +148,16 @@ u32 msm_vidc_output_extra_count(struct msm_vidc_inst *inst)
 
 	if (is_decode_session(inst)) {
 		/* add dcvs buffers, if platform supports dcvs */
-		if (core->capabilities[DCVS].value)
-			count = DCVS_DEC_EXTRA_OUTPUT_BUFFERS;
+		if (core->capabilities[DCVS].value) {
+			/*
+			 * No extra buffers for low latency sw fence enabled sessions
+			 * except slice decode to avoid new buffer allocations
+			 * in userspace buffer pool implementation.
+			 */
+			if (!is_lowlatency_session(inst) || !is_meta_rx_inp_enabled(inst,
+				META_OUTBUF_FENCE) || is_slice_decode_enabled(inst))
+				count = DCVS_DEC_EXTRA_OUTPUT_BUFFERS;
+		}
 		/*
 		 * if decode batching enabled, ensure minimum batch size
 		 * count of extra output buffers added on output port

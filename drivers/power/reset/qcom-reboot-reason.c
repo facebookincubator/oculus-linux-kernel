@@ -101,7 +101,7 @@ static int qcom_reboot_reason_probe(struct platform_device *pdev)
 	register_reboot_notifier(&reboot->reboot_nb);
 
 	reboot->panic_nb.notifier_call = qcom_reboot_reason_panic;
-	reboot->reboot_nb.priority = 255;
+	reboot->panic_nb.priority = INT_MAX;
 	atomic_notifier_chain_register(&panic_notifier_list, &reboot->panic_nb);
 
 	platform_set_drvdata(pdev, reboot);

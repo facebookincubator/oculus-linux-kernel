@@ -240,6 +240,37 @@
 		};
 	};
 
+	bwprof: qcom,bwprof-ddr@19090000 {
+		compatible = "qcom,bwprof";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		qcom,bus-width = <4>;
+		ranges;
+		reg = <0x190BA050 0x10>;
+		reg-names = "mem-freq";
+
+		bwprof_0: qcom,bwprof0@19092000 {
+			compatible = "qcom,bwprof-mon";
+			reg = <0x19092000 0x1000>;
+			reg-names = "base";
+			client = "total";
+		};
+
+		bwprof_1: qcom,bwprof1@19093000 {
+			compatible = "qcom,bwprof-mon";
+			reg = <0x19093000 0x1000>;
+			reg-names = "base";
+			client = "cpu";
+		};
+
+		bwprof_2: qcom,bwprof2@19094000 {
+			compatible = "qcom,bwprof-mon";
+			reg = <0x19094000 0x1000>;
+			reg-names = "base";
+			client = "gpu";
+		};
+	};
+
 	bluetooth: bt_wcn6x5x {
 		compatible = "qcom,kiwi";
 		pinctrl-names = "default";

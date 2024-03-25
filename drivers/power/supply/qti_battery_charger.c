@@ -132,6 +132,8 @@ enum usb_property_id {
 	USB_PRESENT,
 	USB_PD_VID,
 	USB_PD_PID,
+	USB_MOISTURE_DET_SBU_KOHM,
+	USB_MOISTURE_DET_CC_KOHM,
 	USB_PROP_MAX,
 };
 
@@ -2076,6 +2078,40 @@ static ssize_t moisture_detection_status_show(struct class *c,
 }
 static CLASS_ATTR_RO(moisture_detection_status);
 
+static ssize_t moisture_detection_sbu_kohm_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_SBU_KOHM);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_MOISTURE_DET_SBU_KOHM]);
+}
+static CLASS_ATTR_RO(moisture_detection_sbu_kohm);
+
+static ssize_t moisture_detection_cc_kohm_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_CC_KOHM);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_MOISTURE_DET_CC_KOHM]);
+}
+static CLASS_ATTR_RO(moisture_detection_cc_kohm);
+
 static ssize_t resistance_show(struct class *c,
 					struct class_attribute *attr, char *buf)
 {
@@ -2286,6 +2322,8 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_flash_active.attr,
 	&class_attr_moisture_detection_status.attr,
 	&class_attr_moisture_detection_en.attr,
+	&class_attr_moisture_detection_sbu_kohm.attr,
+	&class_attr_moisture_detection_cc_kohm.attr,
 	&class_attr_wireless_boost_en.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_wireless_fw_update.attr,
@@ -2314,6 +2352,8 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_flash_active.attr,
 	&class_attr_moisture_detection_status.attr,
 	&class_attr_moisture_detection_en.attr,
+	&class_attr_moisture_detection_sbu_kohm.attr,
+	&class_attr_moisture_detection_cc_kohm.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_ship_mode_en.attr,
 	&class_attr_restrict_chg.attr,

@@ -7,12 +7,152 @@
 
 #include "pelt.h"
 
+#include <linux/kmemleak.h>
 #include <trace/hooks/sched.h>
+#include <linux/sysctl.h>
 
 int sched_rr_timeslice = RR_TIMESLICE;
 int sysctl_sched_rr_timeslice = (MSEC_PER_SEC / HZ) * RR_TIMESLICE;
 /* More than 4 hours if BW_SHIFT equals 20. */
 static const u64 max_rt_runtime = MAX_BW;
+
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+
+#define SYSCTL_NAME_LEN TASK_COMM_LEN
+#define SYSCTL_LIST_LEN ((SYSCTL_NAME_LEN + sizeof(' ')) * 8)
+
+static struct sysctl_rt_throttling_info {
+	unsigned int cpu_number;
+	unsigned int process_running_time_ns;
+	unsigned int pid;
+	unsigned int clear_data;
+	unsigned int data_latched;
+	char thread_name[SYSCTL_NAME_LEN];
+	char process_name[SYSCTL_NAME_LEN];
+	char process_list[SYSCTL_LIST_LEN];
+	raw_spinlock_t rt_lock;
+} sysctl_rt_throttling_info;
+
+static void reset_sysctl_to_defaults(void)
+{
+	sysctl_rt_throttling_info.data_latched = 0;
+	sysctl_rt_throttling_info.cpu_number = 0;
+	sysctl_rt_throttling_info.process_running_time_ns = 0;
+	sysctl_rt_throttling_info.pid = 0;
+	strcpy(sysctl_rt_throttling_info.thread_name, "");
+	strcpy(sysctl_rt_throttling_info.process_name, "");
+	strcpy(sysctl_rt_throttling_info.process_list, "");
+}
+
+static int sched_rt_clear_data_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp,
+		loff_t *ppos)
+{
+	int ret;
+
+	raw_spin_lock(&sysctl_rt_throttling_info.rt_lock);
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	if (!ret && write)
+		reset_sysctl_to_defaults();
+
+	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
+
+	return ret;
+}
+
+struct ctl_table rt_table[] = {
+	{
+		.procname	= "clear_data",
+		.data		= &sysctl_rt_throttling_info.clear_data,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0664,
+		.proc_handler	= sched_rt_clear_data_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE
+	},
+	{
+		.procname	= "data_latched",
+		.data		= &sysctl_rt_throttling_info.data_latched,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE
+	},
+	{
+		.procname	= "cpu_number",
+		.data		= &sysctl_rt_throttling_info.cpu_number,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX
+	},
+	{
+		.procname	= "pid",
+		.data		= &sysctl_rt_throttling_info.pid,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX
+	},
+	{
+		.procname	= "process_name",
+		.data		= &sysctl_rt_throttling_info.process_name,
+		.maxlen		= SYSCTL_NAME_LEN,
+		.mode		= 0444,
+		.proc_handler	= proc_dostring,
+	},
+	{
+		.procname	= "thread_name",
+		.data		= &sysctl_rt_throttling_info.thread_name,
+		.maxlen		= SYSCTL_NAME_LEN,
+		.mode		= 0444,
+		.proc_handler	= proc_dostring,
+	},
+	{
+		.procname	= "process_running_time_ns",
+		.data		= &sysctl_rt_throttling_info.process_running_time_ns,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX
+	},
+	{
+		.procname	= "process_list",
+		.data		= &sysctl_rt_throttling_info.process_list,
+		.maxlen		= SYSCTL_LIST_LEN,
+		.mode		= 0444,
+		.proc_handler	= proc_dostring,
+	},
+	{ }
+};
+
+struct ctl_table rt_base_table[] = {
+	{
+		.procname	= "sched_rt",
+		.mode		= 0555,
+		.child		= rt_table
+	},
+	{ }
+};
+
+void init_rt_sysctl(void)
+{
+	struct ctl_table_header *hdr;
+
+	hdr = register_sysctl_table(rt_base_table);
+	kmemleak_not_leak(hdr);
+
+	reset_sysctl_to_defaults();
+
+	raw_spin_lock_init(&sysctl_rt_throttling_info.rt_lock);
+}
+
+#endif /* CONFIG_RT_THROTTLING_SYSCTL */
 
 static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
 
@@ -958,10 +1098,13 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	struct rt_prio_array *array = &rt_rq->active;
 	struct sched_rt_entity *rt_se;
 	char buf[500];
+	char *process_list;
 	char *pos = buf;
 	char *end = buf + sizeof(buf);
 	int idx;
 	struct rt_bandwidth *rt_b = sched_rt_bandwidth(rt_rq);
+	char unknown_pid[] = "unknown_process";
+	char *tgid_comm = NULL;
 
 	pos += snprintf(pos, sizeof(buf),
 		"sched: RT throttling activated for cpu %d\n",
@@ -978,14 +1121,28 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 
 	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
-	if (sched_info_on())
+	if (sched_info_on()) {
+		struct task_struct *tgid_task = get_pid_task(find_vpid(current->tgid), PIDTYPE_PID);
+		if (tgid_task != NULL) {
+			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
+			if (tgid_comm) {
+				int res = get_cmdline(tgid_task, tgid_comm, PAGE_SIZE - 1);
+				tgid_comm[res] = '\0';
+			}
+		}
+
+		if (tgid_comm == NULL)
+			tgid_comm = unknown_pid;
+
 		pos += snprintf(pos, end - pos,
-				"current %s (%d) is running for %llu nsec\n",
+				"Thread %s (%d) Process %s (%d) is running for %llu nsec\n",
 				current->comm, current->pid,
+				tgid_comm,  current->tgid,
 				rq_clock(rq_of_rt_rq(rt_rq)) -
 				current->sched_info.last_arrival);
+	}
 #endif
-
+	process_list = pos;
 	idx = sched_find_first_bit(array->bitmap);
 	while (idx < MAX_RT_PRIO) {
 		list_for_each_entry(rt_se, array->queue + idx, run_list) {
@@ -1001,6 +1158,37 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 		}
 		idx = find_next_bit(array->bitmap, MAX_RT_PRIO, idx + 1);
 	}
+
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+	/* latch rt throttling info if not already */
+	raw_spin_lock(&sysctl_rt_throttling_info.rt_lock);
+	if (!sysctl_rt_throttling_info.data_latched) {
+		int n = 0;
+		int len = sizeof(sysctl_rt_throttling_info.process_list);
+		char *process;
+
+		sysctl_rt_throttling_info.cpu_number = cpu_of(rq_of_rt_rq(rt_rq));
+		sysctl_rt_throttling_info.process_running_time_ns =
+			rq_clock(rq_of_rt_rq(rt_rq)) - current->sched_info.last_arrival;
+		sysctl_rt_throttling_info.pid = current->tgid;
+
+		strscpy(sysctl_rt_throttling_info.thread_name,
+			current->comm, sizeof(sysctl_rt_throttling_info.thread_name));
+
+		if (tgid_comm != NULL)
+			strscpy(sysctl_rt_throttling_info.process_name,
+				tgid_comm, sizeof(sysctl_rt_throttling_info.process_name));
+
+		while ((process = strsep(&process_list, "\t\n")) != NULL)
+			n += scnprintf(sysctl_rt_throttling_info.process_list + n,
+					len - n, "%s ", process);
+
+		sysctl_rt_throttling_info.data_latched = 1;
+	}
+	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
+#endif /* CONFIG_RT_THROTTLING_SYSCTL */
+	if (tgid_comm != NULL && tgid_comm != unknown_pid)
+		kfree(tgid_comm);
 out:
 #ifdef CONFIG_PANIC_ON_RT_THROTTLING
 	/*
@@ -2389,7 +2577,7 @@ static void task_woken_rt(struct rq *rq, struct task_struct *p)
 			    p->nr_cpus_allowed > 1 &&
 			    (dl_task(rq->curr) || rt_task(rq->curr)) &&
 			    (rq->curr->nr_cpus_allowed < 2 ||
-			     rq->curr->prio <= p->prio) && 
+			     rq->curr->prio <= p->prio) &&
 			    !p->wake_affine;
 
 	if (need_to_push)

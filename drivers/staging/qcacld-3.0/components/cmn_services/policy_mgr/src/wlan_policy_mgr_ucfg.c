@@ -332,3 +332,8 @@ ucfg_policy_mgr_get_sta_sap_scc_on_indoor_chnl(struct wlan_objmgr_psoc *psoc)
 	return policy_mgr_get_sta_sap_scc_allowed_on_indoor_chnl(psoc) ?
 								true : false;
 }
+
+bool ucfg_policy_mgr_is_fw_supports_dbs(struct wlan_objmgr_psoc *psoc)
+{
+	return policy_mgr_find_if_fw_supports_dbs(psoc);
+}

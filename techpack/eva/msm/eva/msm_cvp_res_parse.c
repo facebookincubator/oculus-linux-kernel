@@ -1095,9 +1095,6 @@ static int msm_cvp_populate_context_bank(struct device *dev,
 		return -ENOMEM;
 	}
 
-	INIT_LIST_HEAD(&cb->list);
-	list_add_tail(&cb->list, &core->resources.context_banks);
-
 	rc = of_property_read_string(np, "label", &cb->name);
 	if (rc) {
 		dprintk(CVP_CORE,
@@ -1105,14 +1102,16 @@ static int msm_cvp_populate_context_bank(struct device *dev,
 		rc = 0;
 	}
 
+	INIT_LIST_HEAD(&cb->list);
+	list_add_tail(&cb->list, &core->resources.context_banks);
+
 	dprintk(CVP_CORE, "%s: context bank has name %s\n", __func__, cb->name);
 	rc = of_property_read_u32_array(np, "qcom,iommu-dma-addr-pool",
 			(u32 *)&cb->addr_range, 2);
 	if (rc) {
-		dprintk(CVP_ERR,
+		dprintk(CVP_CORE,
 			"Could not read addr pool for context bank : %s %d\n",
 			cb->name, rc);
-		goto err_setup_cb;
 	}
 
 	cb->is_secure = of_property_read_bool(np, "qcom,iommu-vmid");

@@ -285,6 +285,15 @@ QDF_STATUS pmo_vdev_object_created_notification(
 	vdev_ctx->pmo_psoc_ctx = psoc_ctx;
 	qdf_atomic_init(&vdev_ctx->gtk_err_enable);
 	pmo_vdev_dynamic_arp_ns_offload_init(vdev_ctx);
+	/*
+	 * Update Powersave mode
+	 * 0 - PMO_PS_ADVANCED_POWER_SAVE_DISABLE
+	 * 1 - PMO_PS_ADVANCED_POWER_SAVE_ENABLE
+	 * 2 - PMO_PS_ADVANCED_POWER_SAVE_USER_DEFINED
+	 */
+	vdev_ctx->ps_params.opm_mode = psoc_ctx->psoc_cfg.power_save_mode;
+	vdev_ctx->ps_params.ps_ito = PMO_PS_DATA_INACTIVITY_TIMEOUT;
+	vdev_ctx->ps_params.spec_wake = PMO_PS_DATA_SPEC_WAKE;
 
 out:
 	pmo_exit();
@@ -915,4 +924,16 @@ QDF_STATUS wlan_pmo_get_listen_interval(struct wlan_objmgr_vdev *vdev,
 					uint32_t *listen_interval)
 {
 	return pmo_core_get_listen_interval(vdev, listen_interval);
+}
+
+void wlan_pmo_set_ps_params(struct wlan_objmgr_vdev *vdev,
+			    struct pmo_ps_params *ps_params)
+{
+	pmo_core_vdev_set_ps_params(vdev, ps_params);
+}
+
+QDF_STATUS wlan_pmo_get_ps_params(struct wlan_objmgr_vdev *vdev,
+				  struct pmo_ps_params *ps_params)
+{
+	return pmo_core_vdev_get_ps_params(vdev, ps_params);
 }

@@ -387,4 +387,13 @@ ucfg_policy_mgr_get_indoor_chnl_marking(struct wlan_objmgr_psoc *psoc,
 
 bool
 ucfg_policy_mgr_get_sta_sap_scc_on_indoor_chnl(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_policy_mgr_is_fw_supports_dbs() - to check whether FW supports DBS or
+ * not
+ * @psoc: pointer to psoc
+ *
+ * Return: true if DBS is supported else false
+ */
+bool ucfg_policy_mgr_is_fw_supports_dbs(struct wlan_objmgr_psoc *psoc);
 #endif //__WLAN_POLICY_MGR_UCFG

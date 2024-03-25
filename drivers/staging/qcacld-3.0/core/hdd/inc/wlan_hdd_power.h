@@ -489,13 +489,26 @@ int wlan_hdd_ipv6_changed(struct notifier_block *nb,
  * hdd_set_power_config() - set power config to firmware
  * @hddctx: HDD context
  * @adapter: HDD adapter
- * @power: new power config value
+ * @opm_mode: pointer to vendor opm_mode
  *
  * Return: 0 on success; Errno on failure
  */
 int hdd_set_power_config(struct hdd_context *hddctx,
-			 struct hdd_adapter *adapter, uint8_t power);
+			 struct hdd_adapter *adapter,
+			 enum qca_wlan_vendor_opm_mode *opm_mode);
 
+/**
+ * hdd_set_power_config_params() - set power config parameters
+ * @hddctx: HDD context
+ * @adapter: HDD adapter
+ * @ps_ito: power save inactivitiy duration in ms
+ * @spec_wake: power save speculative wake duration in ms
+ *
+ * Return: 0 on success; Errno on failure
+ */
+int hdd_set_power_config_params(struct hdd_context *hddctx,
+				struct hdd_adapter *adapter,
+				uint16_t ps_ito, uint16_t spec_wake);
 #ifdef FEATURE_WLAN_DIAG_SUPPORT
 /**
  * hdd_wlan_suspend_resume_event()- send suspend/resume state

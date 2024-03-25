@@ -340,7 +340,6 @@ more_data:
 			if (qdf_unlikely(rx_desc && rx_desc->nbuf)) {
 				qdf_assert_always(!rx_desc->unmapped);
 				dp_rx_nbuf_unmap(soc, rx_desc, reo_ring_num);
-				rx_desc->unmapped = 1;
 				dp_rx_buffer_pool_nbuf_free(soc, rx_desc->nbuf,
 							    rx_desc->pool_id);
 				dp_rx_add_to_free_desc_list(
@@ -507,7 +506,6 @@ more_data:
 		 * in case double skb unmap happened.
 		 */
 		dp_rx_nbuf_unmap(soc, rx_desc, reo_ring_num);
-		rx_desc->unmapped = 1;
 		DP_RX_PROCESS_NBUF(soc, nbuf_head, nbuf_tail, ebuf_head,
 				   ebuf_tail, rx_desc);
 

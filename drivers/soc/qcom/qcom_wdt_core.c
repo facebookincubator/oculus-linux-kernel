@@ -3,6 +3,7 @@
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 #include <linux/irqdomain.h>
+#include <linux/cpu.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
@@ -612,6 +613,8 @@ static void qcom_wdt_ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 {
 	int cpu;
 
+	cpu_hotplug_disable();
+
 	for_each_cpu(cpu, cpu_online_mask) {
 		if (!wdog_dd->cpu_idle_pc_state[cpu])
 			cpumask_set_cpu(cpu, &wdog_dd->ping_pending_mask);
@@ -629,6 +632,8 @@ static void qcom_wdt_ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 
 	wait_event_interruptible(wdog_dd->ping_complete,
 				 cpumask_empty(&wdog_dd->ping_pending_mask));
+
+	cpu_hotplug_enable();
 }
 
 static void qcom_wdt_pet_task_wakeup(struct timer_list *t)
@@ -806,7 +811,11 @@ static irqreturn_t qcom_wdt_bark_handler(int irq, void *dev_id)
 	if (wdog_dd->freeze_in_progress)
 		dev_info(wdog_dd->dev, "Suspend in progress\n");
 
-	qcom_wdt_trigger_bite();
+	/*
+	 * Trigger a kernel panic so we get some useful logs.
+	 * The watchdog bite will reboot us, even if the panic fails.
+	 */
+	panic("Panic triggered due to watchdog bark!");
 
 	return IRQ_HANDLED;
 }

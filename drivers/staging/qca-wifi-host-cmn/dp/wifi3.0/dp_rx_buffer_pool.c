@@ -138,7 +138,7 @@ void dp_rx_refill_buff_pool_enqueue(struct dp_soc *soc)
 	if (tail > head)
 		total_num_refill = (tail - head - 1);
 	else
-		total_num_refill = (DP_RX_REFILL_BUFF_POOL_SIZE - head +
+		total_num_refill = (buff_pool->max_bufq_len - head +
 				    tail - 1);
 
 	while (total_num_refill) {
@@ -171,7 +171,7 @@ void dp_rx_refill_buff_pool_enqueue(struct dp_soc *soc)
 					  rx_desc_pool->buf_size);
 
 			buff_pool->buf_elem[head++] = nbuf;
-			head &= (DP_RX_REFILL_BUFF_POOL_SIZE - 1);
+			head &= (buff_pool->max_bufq_len - 1);
 			count++;
 		}
 
@@ -200,7 +200,7 @@ static inline qdf_nbuf_t dp_rx_refill_buff_pool_dequeue_nbuf(struct dp_soc *soc)
 		return NULL;
 
 	nbuf = buff_pool->buf_elem[tail++];
-	tail &= (DP_RX_REFILL_BUFF_POOL_SIZE - 1);
+	tail &= (buff_pool->max_bufq_len - 1);
 	buff_pool->tail = tail;
 
 	return nbuf;

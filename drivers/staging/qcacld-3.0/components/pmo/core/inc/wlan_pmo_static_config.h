@@ -106,6 +106,48 @@ void pmo_set_sta_wow_bitmask(uint32_t *bitmask, uint32_t wow_bitmask_size);
  */
 void pmo_set_sap_wow_bitmask(uint32_t *bitmask, uint32_t wow_bitmask_size);
 
+/**
+ * pmo_core_vdev_set_ps_params() - set vdev ps_params
+ * @vdev: objmgr vdev handle
+ * @ps_params: vdev OPM parameters
+ *
+ * Return: None
+ */
+static inline
+void pmo_core_vdev_set_ps_params(struct wlan_objmgr_vdev *vdev,
+				 struct pmo_ps_params *ps_params)
+{
+	struct pmo_vdev_priv_obj *vdev_ctx;
+
+	vdev_ctx = pmo_vdev_get_priv(vdev);
+	qdf_spin_lock_bh(&vdev_ctx->pmo_vdev_lock);
+	vdev_ctx->ps_params = *ps_params;
+	qdf_spin_unlock_bh(&vdev_ctx->pmo_vdev_lock);
+}
+
+/**
+ * pmo_core_vdev_get_ps_params() - get vdev ps_params
+ * @vdev: objmgr vdev handle
+ * @ps_params: pointer to get vdev ps_params
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS pmo_core_vdev_get_ps_params(struct wlan_objmgr_vdev *vdev,
+				       struct pmo_ps_params *ps_params)
+{
+	struct pmo_vdev_priv_obj *vdev_ctx;
+
+	vdev_ctx = pmo_vdev_get_priv(vdev);
+	if (!vdev_ctx)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	qdf_spin_lock_bh(&vdev_ctx->pmo_vdev_lock);
+	*ps_params = vdev_ctx->ps_params;
+	qdf_spin_unlock_bh(&vdev_ctx->pmo_vdev_lock);
+	return QDF_STATUS_SUCCESS;
+}
+
 #ifdef WLAN_FEATURE_NAN
 /**
  * pmo_set_ndp_wow_bitmask() - set predefined NDP wow wakeup events

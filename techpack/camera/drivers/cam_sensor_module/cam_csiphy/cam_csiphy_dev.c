@@ -12,9 +12,6 @@
 #include "camera_main.h"
 #include <dt-bindings/msm-camera.h>
 
-#define CSIPHY_DEBUGFS_NAME_MAX_SIZE 10
-static struct dentry *root_dentry;
-
 static inline void cam_csiphy_trigger_reg_dump(struct csiphy_device *csiphy_dev)
 {
 			cam_csiphy_common_status_reg_dump(csiphy_dev);
@@ -69,6 +66,10 @@ static void cam_csiphy_subdev_handle_message(struct v4l2_subdev *sd,
 	}
 }
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+#define CSIPHY_DEBUGFS_NAME_MAX_SIZE 10
+static struct dentry *root_dentry;
+
 static int cam_csiphy_debug_register(struct csiphy_device *csiphy_dev)
 {
 	struct dentry *dbgfileptr = NULL;
@@ -118,6 +119,14 @@ static void cam_csiphy_debug_unregister(void)
 	debugfs_remove_recursive(root_dentry);
 	root_dentry = NULL;
 }
+#else
+static inline int cam_csiphy_debug_register(struct csiphy_device *csiphy_dev)
+{
+	return 0;
+}
+static inline void cam_csiphy_debug_unregister(void)
+{ }
+#endif
 
 static int cam_csiphy_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)

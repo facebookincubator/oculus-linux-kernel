@@ -204,6 +204,7 @@ static const struct of_device_id msm_cam_smmu_dt_match[] = {
 	{}
 };
 
+
 struct cam_sec_buff_info {
 	struct dma_buf *buf;
 	struct dma_buf_attachment *attach;

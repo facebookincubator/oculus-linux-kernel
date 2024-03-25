@@ -130,16 +130,18 @@ static int tps65132_regulator_set_load(struct regulator_dev *rdev, int load_uA)
 				  rdev->desc->active_discharge_reg,
 				  TPS65132_REG_LOW_CURRENT_40MA, TPS65132_REG_APPS);
 		return 0;
-	}
-	else if (load_uA == TPS65132_MID_CURRENT_80MA) {
+	} else if (load_uA == TPS65132_MID_CURRENT_80MA) {
 		regmap_update_bits(rdev->regmap,
 				  rdev->desc->active_discharge_reg,
 				  TPS65132_REG_MID_CURRENT_80MA, TPS65132_REG_APPS);
 		return 0;
+	} else if (load_uA == 0) {
+		/* Ignore setting load to 0, rely on regulator_disable to turn off */
+		return 0;
 	} else {
-		dev_err(&rdev->dev, "Failed to set load because of unsupported current valuse:%d\n",
+		dev_err(&rdev->dev, "Failed to set load because of unsupported current value: %d\n",
 			load_uA);
-		return -1;
+		return -EINVAL;
 	}
 }
 

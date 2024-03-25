@@ -112,7 +112,7 @@ static void _log_buf(struct inst_snapshot *snapshot, enum smem_prop prop,
 	if (!logging)
 		return;
 	if (snapshot) {
-		if (prop == SMEM_ADSP && snapshot->dsp_index < MAX_ENTRIES) {
+		if (prop == SMEM_CDSP && snapshot->dsp_index < MAX_ENTRIES) {
 			index = snapshot->dsp_index;
 			buf = &snapshot->dsp_buf_log[index];
 			snapshot->dsp_index++;
@@ -1042,7 +1042,7 @@ void msm_cvp_print_inst_bufs(struct msm_cvp_inst *inst, bool log)
 	mutex_lock(&inst->cvpdspbufs.lock);
 	dprintk(CVP_ERR, "dsp buffer list:\n");
 	list_for_each_entry(buf, &inst->cvpdspbufs.list, list)
-		_log_buf(snap, SMEM_ADSP, inst, buf, log);
+		_log_buf(snap, SMEM_CDSP, inst, buf, log);
 	mutex_unlock(&inst->cvpdspbufs.lock);
 
 	mutex_lock(&inst->persistbufs.lock);

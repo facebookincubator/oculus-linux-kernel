@@ -137,6 +137,7 @@ void account_user_time(struct task_struct *p, u64 cputime)
 
 	/* Account power usage for user time */
 	cpufreq_acct_update_power(p, cputime);
+	cpufreq_stats_update_busy_time(p, cputime);
 }
 
 /*
@@ -184,6 +185,7 @@ void account_system_index_time(struct task_struct *p,
 
 	/* Account power usage for system time */
 	cpufreq_acct_update_power(p, cputime);
+	cpufreq_stats_update_busy_time(p, cputime);
 }
 
 /*
@@ -235,6 +237,8 @@ void account_idle_time(u64 cputime)
 		cpustat[CPUTIME_IOWAIT] += cputime;
 	else
 		cpustat[CPUTIME_IDLE] += cputime;
+
+	cpufreq_stats_update_idle_time(cputime);
 }
 
 /*

@@ -198,7 +198,7 @@ int cpuidle_enter_s2idle(struct cpuidle_driver *drv, struct cpuidle_device *dev)
  * @drv: cpuidle driver for this cpu
  * @index: index into the states table in @drv of the state to enter
  */
-int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
+int __nocfi cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
 			int index)
 {
 	int entered_state;
@@ -329,7 +329,7 @@ int cpuidle_enter_state(struct cpuidle_device *dev, struct cpuidle_driver *drv,
  * 'false' boolean value if the scheduler tick should not be stopped before
  * entering the returned state.
  */
-int cpuidle_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
+int __nocfi cpuidle_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 		   bool *stop_tick)
 {
 	return cpuidle_curr_governor->select(drv, dev, stop_tick);
@@ -345,7 +345,7 @@ int cpuidle_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
  * Returns the index in the idle state, < 0 in case of error.
  * The error code depends on the backend driver
  */
-int cpuidle_enter(struct cpuidle_driver *drv, struct cpuidle_device *dev,
+int __nocfi cpuidle_enter(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 		  int index)
 {
 	int ret = 0;
@@ -375,7 +375,7 @@ int cpuidle_enter(struct cpuidle_driver *drv, struct cpuidle_device *dev,
  * @index: the index in the idle state table
  *
  */
-void cpuidle_reflect(struct cpuidle_device *dev, int index)
+void __nocfi cpuidle_reflect(struct cpuidle_device *dev, int index)
 {
 	if (cpuidle_curr_governor->reflect && index >= 0)
 		cpuidle_curr_governor->reflect(dev, index);
@@ -486,7 +486,7 @@ void cpuidle_resume(void)
  * This function must be called between cpuidle_pause_and_lock and
  * cpuidle_resume_and_unlock when used externally.
  */
-int cpuidle_enable_device(struct cpuidle_device *dev)
+int __nocfi cpuidle_enable_device(struct cpuidle_device *dev)
 {
 	int ret;
 	struct cpuidle_driver *drv;
@@ -540,7 +540,7 @@ EXPORT_SYMBOL_GPL(cpuidle_enable_device);
  * This function must be called between cpuidle_pause_and_lock and
  * cpuidle_resume_and_unlock when used externally.
  */
-void cpuidle_disable_device(struct cpuidle_device *dev)
+void __nocfi cpuidle_disable_device(struct cpuidle_device *dev)
 {
 	struct cpuidle_driver *drv = cpuidle_get_cpu_driver(dev);
 

@@ -724,6 +724,7 @@ static int __hdd_soc_probe(struct device *dev,
 	hdd_start_complete(0);
 	hdd_thermal_mitigation_register(hdd_ctx, dev);
 
+	hdd_set_sar_init_index(hdd_ctx);
 	hdd_soc_load_unlock(dev);
 
 	return 0;

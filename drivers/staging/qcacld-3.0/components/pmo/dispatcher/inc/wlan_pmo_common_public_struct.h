@@ -102,6 +102,7 @@ enum pmo_beacon_dtim_policy {
  * @pmo_sta_ps_param_advanced_power_max_tx_before_wake: Number of TX frames
  *  before the entering the Active state
  * @pmo_sta_ps_param_ito_repeat_count: Indicates ito repeated count
+ * @pmo_sta_ps_param_spec_wake_interval: OPM speculative wake interval
  */
 enum pmo_sta_powersave_param {
 	pmo_sta_ps_param_rx_wake_policy = 0,
@@ -113,6 +114,7 @@ enum pmo_sta_powersave_param {
 	pmo_sta_ps_enable_advanced_power = 6,
 	pmo_sta_ps_param_advanced_power_max_tx_before_wake = 7,
 	pmo_sta_ps_param_ito_repeat_count = 8,
+	pmo_sta_ps_param_spec_wake_interval = 9,
 };
 
 /**
@@ -167,10 +169,12 @@ enum pmo_wow_enable_type {
  * enum powersave_mode - powersave_mode
  * @PMO_PS_ADVANCED_POWER_SAVE_DISABLE: Disable advanced power save mode
  * @PMO_PS_ADVANCED_POWER_SAVE_ENABLE: Enable power save mode
+ * @PMO_PS_ADVANCED_POWER_SAVE_USER_DEFINED: User Defined
  */
 enum powersave_mode {
 	PMO_PS_ADVANCED_POWER_SAVE_DISABLE = 0,
-	PMO_PS_ADVANCED_POWER_SAVE_ENABLE = 1
+	PMO_PS_ADVANCED_POWER_SAVE_ENABLE = 1,
+	PMO_PS_ADVANCED_POWER_SAVE_USER_DEFINED = 2
 };
 
 /**
@@ -380,6 +384,7 @@ struct pmo_icmp_offload {
  * @enable_sap_suspend: enable SoftAP suspend
  * @wow_data_inactivity_timeout: power save wow data inactivity timeout
  *  wow mode
+ * @wow_spec_wake_interval: OPM speculatvie wkae interval in wow mode
  * @active_uc_apf_mode: Setting that determines how APF is applied in active
  *	mode for uc packets
  * @active_mc_bc_apf_mode: Setting that determines how APF is applied in
@@ -465,6 +470,7 @@ struct pmo_psoc_cfg {
 #endif
 	bool enable_sap_suspend;
 	uint8_t wow_data_inactivity_timeout;
+	uint8_t wow_spec_wake_interval;
 	enum active_apf_mode active_uc_apf_mode;
 	enum active_apf_mode active_mc_bc_apf_mode;
 	uint8_t ito_repeat_count;
@@ -525,5 +531,18 @@ struct pmo_igmp_offload_req {
 	uint32_t version_support;
 	uint32_t num_grp_ip_address;
 	uint32_t grp_ip_address[MAX_MC_IP_ADDR];
+};
+
+/**
+ * struct pmo_ps_params - structure to hold OPM params
+ *
+ * @opm_mode: OPM mode
+ * @ps_ito: power save inactivity timeout
+ * @spec_wake: OPM speculative wake interval
+ */
+struct pmo_ps_params {
+	enum powersave_mode opm_mode;
+	uint16_t ps_ito;
+	uint16_t spec_wake;
 };
 #endif /* end  of _WLAN_PMO_COMMONP_STRUCT_H_ */

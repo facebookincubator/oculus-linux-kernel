@@ -6132,24 +6132,14 @@ wlan_hdd_refill_os_rateflags(struct rate_info *os_rate, uint8_t preamble)
  * wlan_hdd_refill_actual_rate() - Refill actual rates info stats
  * @sinfo: kernel station_info struct to populate
  * @adapter: STA adapter to get stats for
- * @mac_handle: opaque handle to MAC context
- * @rate_flags: indicating phy mode and bandwidth
- * @fw_mcs_index: MCS from parsing rate_flags and fw_raw_rate
- * @fw_rate: raw_rate from fw
- * @nss_max: max nss
  *
- * When rates info reported is provided by driver, this function
- * will take effect to replace the bandwidth calculated from fw.
+ * This function is to replace RX rates which was previously filled by fw.
  *
  * Return: None
  */
 static void
 wlan_hdd_refill_actual_rate(struct station_info *sinfo,
-			    struct hdd_adapter *adapter,
-			    mac_handle_t mac_handle,
-			    enum tx_rate_info rate_flags,
-			    uint8_t fw_mcs_index,
-			    uint16_t fw_rate, uint8_t nss_max)
+			    struct hdd_adapter *adapter)
 {
 	uint8_t preamble;
 
@@ -6163,16 +6153,10 @@ wlan_hdd_refill_actual_rate(struct station_info *sinfo,
 	} else if (qdf_unlikely(preamble == INVALID_PREAMBLE)) {
 		/*
 		 * If preamble is invalid, it means that DP has not received
-		 * a data frame since assoc or roaming so there is no rates
-		 * info. In this case, we report max rate with FW rates info.
+		 * a data frame since assoc or roaming so there is no rates.
+		 * In this case, using FW rates which was set previously.
 		 */
-		hdd_report_max_rate(adapter, mac_handle,
-				    &sinfo->rxrate,
-				    sinfo->signal,
-				    rate_flags,
-				    fw_mcs_index,
-				    fw_rate,
-				    nss_max);
+		hdd_debug("Driver failed to get rate, reporting FW rate");
 		return;
 	}
 
@@ -6199,11 +6183,7 @@ wlan_hdd_refill_actual_rate(struct station_info *sinfo,
 #else
 static inline void
 wlan_hdd_refill_actual_rate(struct station_info *sinfo,
-			    struct hdd_adapter *adapter,
-			    mac_handle_t mac_handle,
-			    enum tx_rate_info rate_flags,
-			    uint8_t fw_mcs_index,
-			    uint16_t fw_rate, uint8_t nss_max)
+			    struct hdd_adapter *adapter)
 {
 }
 #endif
@@ -6491,8 +6471,6 @@ static int wlan_hdd_get_sta_stats(struct wiphy *wiphy,
 					       rx_nss, rx_dcm, rx_gi);
 		}
 	} else {
-		uint8_t rx_nss_max = wlan_vdev_mlme_get_nss(vdev);
-
 		/* Fill TX stats */
 		hdd_report_actual_rate(tx_rate_flags, my_tx_rate,
 				       &sinfo->txrate, tx_mcs_index,
@@ -6504,9 +6482,7 @@ static int wlan_hdd_get_sta_stats(struct wiphy *wiphy,
 				       rx_nss, rx_dcm, rx_gi);
 
 		/* Using driver RX rate to replace the FW RX rate */
-		wlan_hdd_refill_actual_rate(sinfo, adapter, mac_handle,
-					    rx_rate_flags, rx_mcs_index,
-					    my_rx_rate, rx_nss_max);
+		wlan_hdd_refill_actual_rate(sinfo, adapter);
 	}
 
 	wlan_hdd_fill_summary_stats(&adapter->hdd_stats.summary_stat,
@@ -6546,7 +6522,7 @@ static int wlan_hdd_get_sta_stats(struct wiphy *wiphy,
 			  "[RX: Reporting MCS rate %d, flags 0x%x pkt cnt %d, nss %d, bw %d]",
 			  sinfo->txrate.mcs, sinfo->txrate.flags,
 			  sinfo->tx_packets, sinfo->txrate.nss,
-			  sinfo->rxrate.bw, sinfo->rxrate.mcs,
+			  sinfo->txrate.bw, sinfo->rxrate.mcs,
 			  sinfo->rxrate.flags, sinfo->rx_packets,
 			  sinfo->rxrate.nss, sinfo->rxrate.bw);
 	}
@@ -6615,6 +6591,7 @@ static int __wlan_hdd_cfg80211_get_station(struct wiphy *wiphy,
 
 	if (wlan_hdd_validate_vdev_id(adapter->vdev_id))
 		return -EINVAL;
+
 	if (!mac) {
 		hdd_err("Received NULL mac address");
 		return -EINVAL;
@@ -6623,6 +6600,8 @@ static int __wlan_hdd_cfg80211_get_station(struct wiphy *wiphy,
 		hdd_debug("MAC is all zero");
 		return -EINVAL;
 	}
+
+	hdd_debug("Stats request on MAC: "QDF_MAC_ADDR_FMT, QDF_MAC_ADDR_REF(mac));
 
 	if (adapter->device_mode == QDF_SAP_MODE ||
 	    adapter->device_mode == QDF_P2P_GO_MODE) {
@@ -7631,8 +7610,10 @@ void wlan_hdd_get_peer_rx_rate_stats(struct hdd_adapter *adapter)
 	soc = cds_get_context(QDF_MODULE_ID_SOC);
 
 	peer_stats = qdf_mem_malloc(sizeof(*peer_stats));
-	if (!peer_stats)
+	if (!peer_stats) {
+		hdd_err("Failed to malloc peer_stats");
 		return;
+	}
 
 	peer_mac_addr = adapter->session.station.conn_info.bssid.bytes;
 
@@ -7648,7 +7629,7 @@ void wlan_hdd_get_peer_rx_rate_stats(struct hdd_adapter *adapter)
 					 peer_stats);
 	if (qdf_unlikely(QDF_IS_STATUS_ERROR(status)) ||
 	    qdf_unlikely(peer_stats->rx.last_rx_rate == 0)) {
-		hdd_debug("No rates, reporting max rate, rx mcs=%d, status=%d",
+		hdd_debug("Driver failed to get rx rates, rx mcs=%d, status=%d",
 			  adapter->hdd_stats.class_a_stat.rx_mcs_index, status);
 		adapter->hdd_stats.class_a_stat.rx_preamble = INVALID_PREAMBLE;
 		if (adapter->hdd_stats.class_a_stat.rx_mcs_index ==

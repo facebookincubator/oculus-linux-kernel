@@ -32,6 +32,15 @@ typedef int (*cam_packet_generic_blob_handler)(void *user_data,
 	uint32_t blob_type, uint32_t blob_size, uint8_t *blob_data);
 
 /**
+ * cam_packet_util_put_cmd_mem_addr()
+ *
+ * @brief                  Put command buffer address
+ *
+ * @handle:                Command buffer memory handle
+ */
+void cam_packet_util_put_cmd_mem_addr(int handle);
+
+/**
  * cam_packet_util_get_cmd_mem_addr()
  *
  * @brief                  Get command buffer address
