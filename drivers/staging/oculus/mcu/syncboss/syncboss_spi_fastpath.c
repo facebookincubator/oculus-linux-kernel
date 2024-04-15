@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "spi_fastpath.h"
+#include "syncboss_spi_fastpath.h"
 
 static int fastpath_transfer_one_message(struct spi_master *master,
 				    struct spi_message *msg)
@@ -31,10 +31,11 @@ out:
 	return ret;
 }
 
-int spi_fastpath_transfer(struct spi_device* spi, struct spi_message* msg)
+int spi_fastpath_transfer(struct spi_device *spi, struct spi_message *msg)
 {
 	int status;
 	struct spi_master *master = spi->master;
+
 	msg->spi = spi;
 	master->cur_msg = msg;
 
@@ -44,8 +45,8 @@ int spi_fastpath_transfer(struct spi_device* spi, struct spi_message* msg)
 			"fastpath transfer_one_message failed\n");
 	}
 
-	if (!status) {
+	if (!status)
 		status = msg->status;
-	}
+
 	return status;
 }

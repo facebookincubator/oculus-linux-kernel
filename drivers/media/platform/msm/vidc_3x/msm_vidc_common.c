@@ -5030,7 +5030,37 @@ static int msm_vidc_load_supported(struct msm_vidc_inst *inst)
 	}
 	return 0;
 }
+static int msm_vidc_check_mbpf_supported(struct msm_vidc_inst *inst)
+{
+	u32 mbpf = 0;
+	struct msm_vidc_core *core;
+	struct msm_vidc_inst *temp;
+	struct msm_vidc_capability *capability;
 
+	if (!inst || !inst->core)
+		return -EINVAL;
+
+	core = inst->core;
+	capability = &inst->capability;
+	mutex_lock(&core->lock);
+	list_for_each_entry(temp, &core->instances, list) {
+		/* ignore invalid and completed session */
+		if (temp->state == MSM_VIDC_CORE_INVALID ||
+			temp->state >= MSM_VIDC_STOP_DONE)
+			continue;
+		/* ignore thumbnail session */
+		if (is_thumbnail_session(temp))
+			continue;
+			mbpf += msm_comm_get_mbs_per_frame(inst);
+	}
+	mutex_unlock(&core->lock);
+	if (mbpf > 2*capability->mbs_per_frame.max) {
+		msm_vidc_print_running_insts(inst->core);
+		return -EBUSY;
+	}
+
+	return 0;
+}
 int msm_vidc_check_scaling_supported(struct msm_vidc_inst *inst)
 {
 	u32 x_min, x_max, y_min, y_max;
@@ -5128,6 +5158,9 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 			"%s: Hardware is overloaded\n", __func__);
 		return rc;
 	}
+	rc = msm_vidc_check_mbpf_supported(inst);
+	if (rc)
+		return rc;
 
 	if (!is_thermal_permissible(core)) {
 		dprintk(VIDC_WARN,

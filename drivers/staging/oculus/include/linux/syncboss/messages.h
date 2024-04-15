@@ -3,10 +3,9 @@
 #define _SYNCBOSS_PROTOCOL_H
 
 #include <linux/kernel.h>
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#include <linux/syncboss/messages.h>
 #include <uapi/linux/sched/types.h>
-#endif
+#include <uapi/linux/syncboss.h>
 
 /*
  * The structs in this file are sent over-the-wire via SPI
@@ -39,20 +38,6 @@ struct syncboss_data {
 
 #define NUM_PACKET_TYPES 256 /* Packet type is a u8. */
 
-/* The message we send to SyncBoss to set the prox calibration */
-struct prox_config_data {
-	u8 type;
-	u16 prox_thdh;
-	u16 prox_thdl;
-	u16 prox_canc;
-} __packed;
-
-/* The message we send to SyncBoss to set the prox calibration */
-struct prox_config_version {
-	u8 type;
-	u8 config_version;
-} __packed;
-
 #define MAX_TRANSACTION_DATA_LENGTH \
 	(SYNCBOSS_MAX_TRANSACTION_LENGTH - sizeof(struct transaction_header))
 
@@ -60,18 +45,19 @@ struct prox_config_version {
 union transaction_data {
 	u8 type;
 	struct syncboss_data syncboss_data;
-	struct prox_config_data prox_data;
-	struct prox_config_version prox_config_ver;
 	u8 raw_data[MAX_TRANSACTION_DATA_LENGTH];
 };
 
 /*
- * Thehe overall structure of the SPI transaction data,
+ * The overall structure of the SPI transaction data,
  * in both directions.
  */
 struct syncboss_transaction {
 	struct transaction_header header;
 	union transaction_data data;
 } __packed;
+
+/* The version of the header used by the kernel driver */
+#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION SYNCBOSS_DRIVER_HEADER_VERSION_V1
 
 #endif

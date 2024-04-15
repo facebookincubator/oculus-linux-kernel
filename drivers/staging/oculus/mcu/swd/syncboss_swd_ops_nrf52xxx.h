@@ -21,5 +21,6 @@ bool syncboss_swd_nrf52xxx_page_is_erased(struct device *dev, u32 page);
 int syncboss_swd_nrf52xxx_finalize(struct device *dev);
 
 int syncboss_swd_nrf52832_prepare(struct device *dev);
+int syncboss_swd_nrf52833_prepare(struct device *dev);
 
 #endif

@@ -1,0 +1,168 @@
+&tlmm {
+	syncboss_float_shared: syncboss_float_shared {
+		mux {
+			pins = "gpio13", "gpio73";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio13", "gpio73";
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_float_swd: syncboss_float_swd {
+		mux {
+			pins = "gpio119", "gpio120";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio119", "gpio120";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_wakeup: syncboss_wakeup {
+		mux {
+			pins = "gpio4";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio4";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	syncboss_reset_default: syncboss_reset_default {
+		mux {
+			pins = "gpio5";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio5";
+			drive-strength = <6>;
+			output-low;
+		};
+	};
+
+	syncboss_uart_active: syncboss_uart_active {
+		mux {
+			pins = "gpio121", "gpio122";
+			function = "qup3";
+		};
+
+		config {
+			pins = "gpio121", "gpio122";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
+		mux {
+			pins = "gpio121";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio121";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
+		mux {
+			pins = "gpio122";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio122";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&qupv3_se0_spi {
+	status = "ok";
+	qcom,rt;
+
+	// nRF requires >2us after clock stop, before raising CS.
+	// By default the delay is about 800us. Add 10 cycles at
+	// 8MHz (1.25us) to get us the rest of the way.
+	qcom,set-cs-clk-delay = <10>;
+
+	syncboss_nrf@0 {
+		status = "okay";
+		compatible = "meta,syncboss-spi";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup &syncboss_float_shared>;
+
+		meta,syncboss-reset  = <&tlmm 5 0>;
+		meta,syncboss-wakeup  = <&tlmm 4 0>;
+
+		meta,syncboss-use-fastpath;
+
+		swd@0 {
+			compatible = "meta,swd";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			meta,pin-reset = <&tlmm 5 0>;
+			meta,swd-clk = <&tlmm 119 0>;
+			meta,swd-io = <&tlmm 120 0>;
+
+			meta,swd-flavor = "nrf52840";
+			meta,fw-path = "syncboss-ipl-spl-prod.bin";
+			meta,flash-block-size = <512>;
+			meta,flash-page-size = <4096>;
+			meta,flash-page-count = <128>;
+			meta,flash-page-bootloader-protected-count = <1>;
+			meta,flash-page-retained-count = <61>;
+		};
+
+		powerstate@0 {
+			compatible = "meta,syncboss-powerstate", "meta,syncboss-consumer";
+			meta,syncboss-has-prox;
+		};
+
+		miscfifo@0 {
+			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
+		};
+
+		timesync@0 {
+			compatible = "meta,syncboss-timesync", "meta,syncboss-consumer";
+
+			interrupt-parent = <&tlmm>;
+			interrupts = <68 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "timesync";
+		};
+	};
+};
+
+&qupv3_se3_2uart {
+	status = "ok";
+
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+	interrupts-extended = <&intc GIC_SPI 604 IRQ_TYPE_LEVEL_HIGH>;
+	qcom,allow-suspend;
+};
+
+

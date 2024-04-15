@@ -31,8 +31,10 @@
 };
 
 &qupv3_se19_spi {
-	oculusnrf@0 {
-		oculus,syncboss-timesync = <&tlmm 28 0>;
+	syncboss_nrf@0 {
+		timesync@0 {
+			interrupts = <28 IRQ_TYPE_EDGE_RISING>;
+		};
 	};
 };
 

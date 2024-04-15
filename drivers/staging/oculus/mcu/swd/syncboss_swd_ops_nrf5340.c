@@ -162,14 +162,15 @@ static int syncboss_nrf5340_erase_flash(struct device *dev, struct swd_mcu_data 
 	 * separately. This is to preserve the UICR, bootloader, and end of flash
 	 * where we store some data that shouldn't be touched by firmware update.
 	 */
-	for (x = flash->num_protected_bootloader_pages;
-	     x < flash_pages_to_erase; ++x) {
+	x = devdata->data_hdr->force_bootloader_update ? 0 : flash->num_protected_bootloader_pages;
+	while (x < flash_pages_to_erase) {
 		swd_memory_write(dev, x * flash->page_size,
-				 SWD_NRF5340_NVMC_ERASEPAGE_VALUE);
+				SWD_NRF5340_NVMC_ERASEPAGE_VALUE);
 		status = syncboss_swd_wait_for_nvmc_ready(dev, params->nvmc_ready_register);
 
 		if (status != 0)
 			goto error;
+		x++;
 	}
 
 	// Flash has been wiped. Leave writing enabled until the next reset

@@ -18,7 +18,6 @@
 
 #include <linux/atomic.h>
 #include <linux/delay.h>
-#include <linux/gpio.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/interrupt.h>
@@ -27,7 +26,7 @@
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 #include <linux/of.h>
-#include <linux/of_gpio.h>
+#include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
@@ -82,7 +81,6 @@ struct pwm_fan_ctx {
 	unsigned int pwm_fan_state;
 	unsigned int pwm_fan_max_state;
 	unsigned int *pwm_fan_cooling_levels;
-	int tach_gpio;
 	unsigned int irq;
 	u64 tach_periods;
 	atomic64_t rpm;
@@ -802,24 +800,9 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	hrtimer_init(&ctx->fan_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	ctx->fan_timer.function = fan_timer_func;
 
-	/* Get the tach gpio and config it to INPUT */
-	ctx->tach_gpio = of_get_named_gpio(pdev->dev.of_node,
-		"fan,tach-gpio", 0);
-	if (!gpio_is_valid(ctx->tach_gpio)) {
-		dev_err(&pdev->dev, "tach gpio is invalid\n");
-		return -EINVAL;
-	}
-	ret = devm_gpio_request_one(&pdev->dev, ctx->tach_gpio,
-		GPIOF_IN, "fan_tach_gpio");
-	if (ret) {
-		dev_err(&pdev->dev, "devm_gpio_request_one for tach_gpio failed\n");
-		goto err_tach_gpio_dir;
-	}
-
-	ctx->irq = gpio_to_irq(ctx->tach_gpio);
+	ctx->irq = platform_get_irq_byname(pdev, "fan_irq");
 	if (ctx->irq < 0) {
-		dev_err(&pdev->dev, "gpio_to_irq for ctx->irq failed %d\n",
-			ctx->irq);
+		dev_err(&pdev->dev, "fan_irq not found: %d\n", ctx->irq);
 		ret = ctx->irq;
 		goto err_tach_gpio_dir;
 	}

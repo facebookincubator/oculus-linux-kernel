@@ -936,6 +936,15 @@ config RT_GROUP_SCHED
 
 endif #CGROUP_SCHED
 
+config RT_THROTTLING_SYSCTL
+       bool "Enable creation of SysCtl nodes for RT scheduling information"
+       depends on ARM64
+       default n
+       help
+         Enable creation of SysCtl nodes for RT scheduling information
+	 that is consumed by user-space for telemetry purposes to get insight
+	 into system performance and frequency of throttling events.
+
 config UCLAMP_TASK_GROUP
 	bool "Utilization clamping per group of tasks"
 	depends on CGROUP_SCHED

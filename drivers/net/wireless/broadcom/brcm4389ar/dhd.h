@@ -2088,7 +2088,7 @@ typedef struct dhd_pkttag_fd {
 	void      *dmah;    /* dma mapper handle */
 	void      *secdma; /* secure dma sec_cma_info handle */
 #endif /* !DHD_PCIE_PKTID */
-#if defined(TX_STATUS_LATENCY_STATS) || defined(DHD_PKTTS)
+#if defined(TX_STATUS_LATENCY_STATS) || defined(DHD_PKTTS) || defined(AR_ARTS_TX_PKT_MONITOR)
 	uint64	   q_time_us; /* time when tx pkt queued to flowring */
 #endif /* TX_STATUS_LATENCY_STATS || DHD_PKTTS */
 } dhd_pkttag_fd_t;
@@ -2120,7 +2120,7 @@ typedef struct dhd_pkttag_fd {
 #define DHD_PKT_SET_SECDMA(pkt, pkt_secdma) \
 	DHD_PKTTAG_FD(pkt)->secdma = (void *)(pkt_secdma)
 
-#if defined(TX_STATUS_LATENCY_STATS) || defined(DHD_PKTTS)
+#if defined(TX_STATUS_LATENCY_STATS) || defined(DHD_PKTTS) || defined(AR_ARTS_TX_PKT_MONITOR)
 #define DHD_PKT_GET_QTIME(pkt)    ((DHD_PKTTAG_FD(pkt))->q_time_us)
 #define DHD_PKT_SET_QTIME(pkt, pkt_q_time_us) \
 	DHD_PKTTAG_FD(pkt)->q_time_us = (uint64)(pkt_q_time_us)

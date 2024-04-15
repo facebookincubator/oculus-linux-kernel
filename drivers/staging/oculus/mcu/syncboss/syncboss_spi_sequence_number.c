@@ -2,7 +2,7 @@
 #include <linux/bitops.h>
 #include <linux/list.h>
 
-#include "syncboss_sequence_number.h"
+#include "syncboss_spi_sequence_number.h"
 
 void syncboss_sequence_number_reset_locked(struct syncboss_dev_data *devdata)
 {

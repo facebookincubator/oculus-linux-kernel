@@ -1909,8 +1909,20 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	p2p_scan_purpose_t	p2p_scan_purpose = P2P_SCAN_PURPOSE_MIN;
 	u32 chan_mem = 0;
 	u32 sync_id = 0;
+	char *scan_iovar = "escan";
 
 	WL_DBG(("Enter \n"));
+
+
+#ifdef DHD_USE_SC_SCAN
+	if (strcmp(ndev->name, "wlan0") == 0) {
+		WL_SCAN(("Force using sc:escan for wlan0\n"));
+		scan_iovar = "sc:escan";
+		/* SSID filtering fails with sc:escan, investigating */
+		if (request)
+			request->n_ssids = 0;
+	}
+#endif
 
 	if (!cfg || !request) {
 		err = -EINVAL;
@@ -2042,7 +2054,7 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 #endif /* USE_INITIAL_2G_SCAN || USE_INITIAL_SHORT_DWELL_TIME */
 
 		wl_escan_set_type(cfg, WL_SCANTYPE_LEGACY);
-		if (params_size + sizeof("escan") >= WLC_IOCTL_MEDLEN) {
+		if (params_size + sizeof(scan_iovar) >= WLC_IOCTL_MEDLEN) {
 			WL_ERR(("ioctl buffer length not sufficient\n"));
 			MFREE(cfg->osh, params, params_size);
 			err = -ENOMEM;
@@ -2050,7 +2062,7 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		}
 
 		bssidx = wl_get_bssidx_by_wdev(cfg, ndev->ieee80211_ptr);
-		err = wldev_iovar_setbuf(ndev, "escan", params, params_size,
+		err = wldev_iovar_setbuf(ndev, scan_iovar, params, params_size,
 			cfg->escan_ioctl_buf, WLC_IOCTL_MEDLEN, NULL);
 		WL_INFORM_MEM(("LEGACY_SCAN sync ID: %d, bssidx: %d\n", sync_id, bssidx));
 		if (unlikely(err)) {

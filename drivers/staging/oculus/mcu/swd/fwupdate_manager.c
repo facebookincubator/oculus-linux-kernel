@@ -26,7 +26,7 @@ static struct {
 	const char *flavor;
 	struct swd_ops_params swd_ops;
 } archs_params[] = {
-#ifdef CONFIG_OCULUS_SWD_SYNCBOSS_NRF52XXX
+#ifdef CONFIG_META_SWD_SYNCBOSS_NRF52XXX
 	{
 		.flavor = "nrf52832",
 		.swd_ops = {
@@ -46,6 +46,7 @@ static struct {
 	{
 		.flavor = "nrf52833",
 		.swd_ops = {
+			.target_prepare = syncboss_swd_nrf52833_prepare,
 			.provisioning_read = syncboss_swd_nrf52xxx_provisioning_read,
 			.provisioning_write = syncboss_swd_nrf52xxx_provisioning_write,
 			.target_erase = syncboss_swd_nrf52xxx_erase_app,
@@ -72,7 +73,7 @@ static struct {
 		}
 	},
 #endif
-#ifdef CONFIG_OCULUS_SWD_SYNCBOSS_NRF5340
+#ifdef CONFIG_META_SWD_SYNCBOSS_NRF5340
 	{
 		.flavor = "nrf5340",
 		.swd_ops = {
@@ -101,7 +102,7 @@ static struct {
 		}
 	},
 #endif
-#ifdef CONFIG_OCULUS_SWD_QM35
+#ifdef CONFIG_META_SWD_QM35
 	{
 		.flavor = "qm35",
 		.swd_ops = {
@@ -113,7 +114,7 @@ static struct {
 		}
 	},
 #endif
-#ifdef CONFIG_OCULUS_SWD_HUBERT
+#ifdef CONFIG_META_SWD_HUBERT
 	{
 		.flavor = "at91samd",
 		.swd_ops = {
@@ -127,7 +128,7 @@ static struct {
 		}
 	},
 #endif
-#ifdef CONFIG_OCULUS_SWD_STM32G0
+#ifdef CONFIG_META_SWD_STM32G0
 	{
 		.flavor = "stm32g0",
 		.swd_ops = {
@@ -139,7 +140,7 @@ static struct {
 		}
 	},
 #endif
-#ifdef CONFIG_OCULUS_SWD_STM32L4
+#ifdef CONFIG_META_SWD_STM32L4
 	{
 		.flavor = "stm32l47xxx",
 		.swd_ops = {
@@ -305,7 +306,9 @@ static int fwupdate_update_write_single_app(struct device *dev, struct swd_mcu_d
 	return 0;
 }
 
-static int fwupdate_update_single_app(struct device *dev, struct swd_mcu_data *mcudata, bool erase_all)
+static int fwupdate_update_single_app(
+		struct device *dev, struct swd_mcu_data *mcudata, bool erase_all,
+		bool force_bootloader_update)
 {
 	int status;
 	size_t bytes_written = 0;
@@ -331,15 +334,19 @@ static int fwupdate_update_single_app(struct device *dev, struct swd_mcu_data *m
 		if (status)
 			return status;
 
-		while (pages_to_skip < mcudata->flash_info.num_protected_bootloader_pages) {
-			if (!mcudata->swd_ops.target_page_is_erased(dev, pages_to_skip))
-				pages_to_skip++;
-			else
-				break;
-		}
-		if (pages_to_skip > 0) {
-			dev_warn(dev, "%s: Bootloader pages are protected! Writes to them will be skipped.", mcudata->fw_path);
-			bytes_written = pages_to_skip * mcudata->flash_info.page_size;
+		if (!force_bootloader_update) {
+			while (pages_to_skip < mcudata->flash_info.num_protected_bootloader_pages) {
+				if (!mcudata->swd_ops.target_page_is_erased(dev, pages_to_skip))
+					pages_to_skip++;
+				else
+					break;
+			}
+			if (pages_to_skip > 0) {
+				dev_warn(dev, "%s: Bootloader pages are protected! Writes to them will be skipped.", mcudata->fw_path);
+				bytes_written = pages_to_skip * mcudata->flash_info.page_size;
+			}
+		} else if (mcudata->flash_info.num_protected_bootloader_pages > 0) {
+			dev_warn(dev, "%s: Ignoring bootloader page protection!", mcudata->fw_path);
 		}
 	}
 
@@ -355,13 +362,17 @@ int fwupdate_update_app(struct device *dev)
 
 	// If there are no children, must update the parent
 	if (devdata->num_children == 0) {
-		status = fwupdate_update_single_app(dev, &devdata->mcu_data, devdata->erase_all);
+		status = fwupdate_update_single_app(
+				dev, &devdata->mcu_data, devdata->erase_all,
+				devdata->data_hdr->force_bootloader_update);
 		if (status)
 			return status;
 	} else {
 		for (index = 0; index < devdata->num_children; index++) {
 			childdata = &devdata->child_mcu_data[index];
-			status = fwupdate_update_single_app(dev, childdata, devdata->erase_all);
+			status = fwupdate_update_single_app(
+				dev, childdata, devdata->erase_all,
+				devdata->data_hdr->force_bootloader_update);
 			if (status)
 				return status;
 		}
@@ -478,13 +489,13 @@ static int fwupdate_update_firmware(struct device *dev)
 
  error:
 	swd_deinit(dev);
-	kfree(devdata->provisioning);
+	kfree(devdata->data_hdr);
+	devdata->data_hdr = NULL;
 	devdata->provisioning = NULL;
 	if (devdata->swd_core && regulator_disable(devdata->swd_core))
 		dev_err(dev, "Regulator failed to disable");
 	atomic_set(&mcudata->fw_chunks_written, 0);
 	atomic_set(&mcudata->fw_chunks_to_write, 0);
-	devdata->fw_update_state = status ? FW_UPDATE_STATE_ERROR : FW_UPDATE_STATE_IDLE;
 
 	return status;
 }
@@ -522,34 +533,54 @@ ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf)
 
 static void fwupdate_swd_workqueue_fw_update(void *dev)
 {
-	fwupdate_update_firmware(dev);
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	int status = fwupdate_update_firmware(dev);
+
 	fwupdate_release_all_firmware(dev);
+	if (devdata->mcu_state_locked) {
+		devdata->mcu_state_unlock(dev);
+		devdata->mcu_state_locked = false;
+	}
+
+	mb(); /* Ensure FW update attempt is complete before allowing another to start */
+	devdata->fw_update_state = status ? FW_UPDATE_STATE_ERROR : FW_UPDATE_STATE_IDLE;
 }
 
-static int fwupdate_populate_provisioning_data(struct device *dev, const char *buf,
+static int fwupdate_populate_data(struct device *dev, const char *buf,
 				      size_t count)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	struct fwupdate_provisioning *p = (struct fwupdate_provisioning *)buf;
+	struct fwupdate_header *hdr = (struct fwupdate_header *)buf;
+	struct fwupdate_provisioning *p = devdata->swd_provisioning ? hdr->provisioning : NULL;
+	size_t expected_count = sizeof(struct fwupdate_header);
 
-	if (count < sizeof(struct fwupdate_provisioning)) {
+	if (count < sizeof(struct fwupdate_header)) {
+		dev_err(dev, "Failed to read update data header\n");
+		return -EINVAL;
+	}
+
+	if (p != NULL && count < offsetof(struct fwupdate_header, provisioning[1])) {
 		dev_err(dev, "Failed to read provisioning data header\n");
 		return -EINVAL;
 	}
 
-	if (p->format_version != 0) {
+	if (p != NULL && p->format_version != 0) {
 		dev_err(dev, "Unsupported provisioning format version\n");
 		return -EINVAL;
 	}
 
-	if (sizeof(struct fwupdate_provisioning) + p->data_length != count) {
-		dev_err(dev, "Unexpected provisioning data length\n");
-		return -EINVAL;
+	if (p != NULL) {
+		expected_count += sizeof(struct fwupdate_provisioning) + p->data_length;
+		if (expected_count != count) {
+			dev_err(dev, "Unexpected data length: e=%zu != c=%zu\n", expected_count, count);
+			return -EINVAL;
+		}
 	}
 
-	devdata->provisioning = kmemdup(buf, count, GFP_KERNEL);
-	if (!devdata->provisioning)
+	devdata->data_hdr = kmemdup(buf, expected_count, GFP_KERNEL);
+	if (!devdata->data_hdr)
 		return -ENOMEM;
+	devdata->provisioning = (p != NULL) ? devdata->data_hdr->provisioning : NULL;
 
 	return 0;
 }
@@ -652,21 +683,22 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 		status = -EINVAL;
 		goto error;
 	}
-	if (devdata->is_busy && devdata->is_busy(dev)) {
-		dev_err(dev, "Cannot update firmware while device is busy");
-		status = -EBUSY;
-		goto error;
+	if (devdata->mcu_state_lock && devdata->get_syncboss_is_streaming) {
+		devdata->mcu_state_lock(dev);
+		devdata->mcu_state_locked = true;
+		if (devdata->get_syncboss_is_streaming(dev)) {
+			dev_err(dev, "Cannot update firmware while the MCU is busy");
+			goto error;
+		}
 	}
 
 	status = fwupdate_get_firmware_images(dev, devdata);
 	if (status)
 		goto error;
 
-	if (devdata->swd_provisioning) {
-		status = fwupdate_populate_provisioning_data(dev, buf, count);
-		if (status)
-			goto error;
-	}
+	status = fwupdate_populate_data(dev, buf, count);
+	if (status)
+		goto error;
 
 	devdata->fw_update_state = FW_UPDATE_STATE_WRITING_TO_HW;
 
@@ -677,6 +709,10 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 	return count;
 
 error:
+	if (devdata->mcu_state_locked) {
+		devdata->mcu_state_unlock(dev);
+		devdata->mcu_state_locked = false;
+	}
 	mutex_unlock(&devdata->state_mutex);
 	return status;
 }

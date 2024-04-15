@@ -67,6 +67,19 @@ static bool ctrlap_approtect_is_disabled(struct device *dev)
 	return swd_ap_read(dev, SWD_NRF_APREG_APPROTECTSTATUS) == SWD_NRF_APREG_APPROTECTSTATUS_Disabled;
 }
 
+static bool approtect_is_disabled(struct device *dev)
+{
+	bool disabled;
+
+	// Check the APPROTECT status directly from the CTRL-AP.
+	swd_select_ap(dev, SWD_NRF_APSEL_CTRLAP);
+	disabled = ctrlap_approtect_is_disabled(dev);
+	swd_select_ap(dev, SWD_NRF_APSEL_MEMAP);
+
+	// Read an arbitrary value from MEM-AP as a sanity check.
+	return disabled && (syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev) == 0);
+}
+
 static bool ctrlap_try_eraseall(struct device *dev)
 {
 	static const u32 POLLING_INTERVAL_MS = 100;
@@ -145,6 +158,32 @@ int syncboss_swd_nrf52832_prepare(struct device *dev)
 	return 0;
 }
 
+int syncboss_swd_nrf52833_prepare(struct device *dev)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	/*
+	 * If bootloader update is being forced and access port protection is
+	 * enabled, we need to issue an ERASEALL to disable it first.
+	 */
+	if (devdata->data_hdr->force_bootloader_update) {
+		const u8 max_tries = 3;
+		u8 tries;
+
+		for (tries = 0; tries < max_tries; tries++) {
+			if (approtect_is_disabled(dev))
+				break;
+			usleep_range(1000, 2000);
+		}
+		if (tries == max_tries && !approtect_is_disabled(dev)) {
+			dev_warn(dev, "APPROTECT is enabled. Issuing a chip erase!");
+			syncboss_swd_nrf52xxx_chip_erase(dev);
+		}
+	}
+
+	return 0;
+}
+
 int syncboss_swd_nrf52xxx_chip_erase(struct device *dev)
 {
 	/*
@@ -206,12 +245,14 @@ int syncboss_swd_nrf52xxx_erase_app(struct device *dev)
 	if (status != 0)
 		goto error;
 
-	for (x = flash->num_protected_bootloader_pages; x < flash_pages_to_erase; ++x) {
+	x = devdata->data_hdr->force_bootloader_update ? 0 : flash->num_protected_bootloader_pages;
+	while (x < flash_pages_to_erase) {
 		swd_memory_write(dev, SWD_NRF_NVMC_ERASEPAGE,
 			x * flash->page_size);
 		status = syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			goto error;
+		x++;
 	}
 
 	// Flash has been wiped. Leave writing enabled until the next reset
@@ -368,7 +409,6 @@ int syncboss_swd_nrf52xxx_finalize(struct device *dev)
 {
 	static const int RESET_GPIO_TIME_MS = 5;
 	static const int BOOT_TIME_MS = 100;
-	bool approtect_is_disabled = false;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
 	// In GTK OS, ensure that firmware will be updateable even without ERASEALL.
@@ -394,21 +434,9 @@ int syncboss_swd_nrf52xxx_finalize(struct device *dev)
 	swd_init(dev);
 	swd_halt(dev);
 
-	// Check the APPROTECT status directly from the CTRL-AP.
-	swd_select_ap(dev, SWD_NRF_APSEL_CTRLAP);
-	approtect_is_disabled = ctrlap_approtect_is_disabled(dev);
-	swd_select_ap(dev, SWD_NRF_APSEL_MEMAP);
-	if (!approtect_is_disabled)
-		goto error;
+	if (approtect_is_disabled(dev))
+		return 0;
 
-	// Read an arbitrary value from MEM-AP as a sanity check.
-	approtect_is_disabled = (syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev) == 0);
-	if (!approtect_is_disabled)
-		goto error;
-
-	return 0;
-
-error:
 	WARN(true, "APPROTECT is enabled! Don't ship like this!");
 	return -EIO;
 }

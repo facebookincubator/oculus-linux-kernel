@@ -4,7 +4,7 @@
 #include <linux/fs.h>
 #include <linux/stat.h>
 
-#include "syncboss_debugfs.h"
+#include "syncboss_spi_debugfs.h"
 
 #define ROOT_DIR_NAME "syncboss"
 
@@ -13,26 +13,6 @@ static ssize_t eperm_fop_write(struct file *filp, const char *buff, size_t len,
 {
 	return -EPERM;
 }
-
-static ssize_t seq_num_mode_fop_read(struct file *filp, char *buff, size_t len,
-	loff_t *off)
-{
-	bool *has_seq_num_ioctl = (bool *)filp->f_inode->i_private;
-	const char *seq_num_mode_str;
-
-	if (*has_seq_num_ioctl)
-		seq_num_mode_str = "ioctl\n";
-	else
-		seq_num_mode_str = "sysfs\n";
-
-	return simple_read_from_buffer(buff, len, off, seq_num_mode_str,
-		strlen(seq_num_mode_str) + 1);
-}
-
-const struct file_operations seq_num_mode_fops = {
-	.read = seq_num_mode_fop_read,
-	.write = eperm_fop_write,
-};
 
 static ssize_t allocated_seq_num_fop_read(struct file *filp, char *buff,
 	size_t len, loff_t *off)
@@ -140,14 +120,6 @@ int syncboss_debugfs_init(struct syncboss_dev_data *devdata)
 		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
 			"/clients dir: %ld", PTR_ERR(devdata->clients_dentry));
 		return PTR_ERR(devdata->clients_dentry);
-	}
-
-	dentry = debugfs_create_file("sequence_number_mode", 0444,
-		devdata->dentry, &devdata->has_seq_num_ioctl, &seq_num_mode_fops);
-	if (IS_ERR_OR_NULL(dentry)) {
-		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
-			"/sequence_number_mode: %ld", PTR_ERR(dentry));
-		return PTR_ERR(dentry);
 	}
 
 	debugfs_create_u64("sequence_number_allocation_count",

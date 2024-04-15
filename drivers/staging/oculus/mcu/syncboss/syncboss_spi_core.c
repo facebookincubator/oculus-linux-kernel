@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/delay.h>
-#include <linux/firmware.h>
 #include <linux/gpio.h>
 #include <linux/hrtimer.h>
 #include <linux/init.h>
@@ -10,36 +9,34 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/of_gpio.h>
-#include <linux/poll.h>
 #include <linux/pm.h>
+#include <linux/regulator/consumer.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/time64.h>
+#include <linux/version.h>
 #include <linux/wait.h>
-#include <linux/regulator/consumer.h>
 
 #include "../fw_helpers.h"
 
-#include "spi_fastpath.h"
-#include "syncboss.h"
-#include "syncboss_debugfs.h"
-#include "syncboss_sequence_number.h"
-#include "syncboss_protocol.h"
-#include "syncboss_direct_channel.h"
+#include "syncboss_spi.h"
+#include "syncboss_spi_debugfs.h"
+#include "syncboss_spi_fastpath.h"
+#include "syncboss_spi_sequence_number.h"
 
-#ifdef CONFIG_OF /*Open firmware must be defined for dts usage*/
+#ifdef CONFIG_OF
 static const struct of_device_id syncboss_spi_table[] = {
-	{ .compatible = "oculus,syncboss" },
+	{ .compatible = "meta,syncboss-spi" },
 	{ },
 };
-static const struct of_device_id oculus_swd_match_table[] = {
-	{ .compatible = "oculus,swd" },
+static const struct of_device_id syncboss_subdevice_match_table[] = {
+	{ .compatible = "meta,syncboss-consumer" },
 	{ },
 };
 #else
-	#define oculus_syncboss_table NULL
-	#define oculus_swd_match_table NULL
+	#define syncboss_spi_table NULL
+	#define syncboss_subdevice_match_table NULL
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
@@ -68,218 +65,16 @@ static const struct of_device_id oculus_swd_match_table[] = {
  *     framework makes no such guarantee.
  */
 
-/*
- * Logging Notes
- *  ================
- * In order to turn on verbose logging of every non-empty packet that
- * goes back-and-forth, you must use the dyndbg mechanism to enable
- * these logs.
- *
- * The simplest way to enable all of the syncboss verbose debug prints
- * is to run:
- *   echo module syncboss +p > /sys/kernel/debug/dynamic_debug/control
- *
- * For more info, see:
- *   http://lxr.free-electrons.com/source/Documentation/dynamic-debug-howto.txt
- */
-
-#define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
-#define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
-#define SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS 0
-#define SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE 8000000
-#define SYNCBOSS_SCHEDULING_SLOP_NS 10000
-/*
- * The max amount of time we give SyncBoss to wake or enter its sleep state.
- */
-#define SYNCBOSS_SLEEP_WAKE_TIMEOUT_MS 2000
-#define SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS 5000
-
-/* The amount of time we should hold the reset line low when doing a reset. */
-#define SYNCBOSS_RESET_TIME_MS 5
-
-#define SPI_TX_DATA_MAGIC_NUM 0xDEFEC8ED
-#define SPI_RX_DATA_MAGIC_NUM_POLLING_MODE 0xDEFEC8ED
-#define SPI_RX_DATA_MAGIC_NUM_IRQ_MODE 0xD00D1E8D
-#define SPI_RX_DATA_MAGIC_NUM_MCU_BUSY 0xCACACACA
-
-#define SYNCBOSS_MISCFIFO_SIZE 1024
-
-#define SYNCBOSS_NSYNC_MISCFIFO_SIZE 256
-
-#define SYNCBOSS_DEFAULT_POLL_PRIO 51
-
-/*
- * These are SPI message types that the driver explicitly monitors and
- * sends to SyncBoss firmware. They must be kept in sync.
- */
-#define SYNCBOSS_GET_DATA_MESSAGE_TYPE 2
-#define SYNCBOSS_SET_DATA_MESSAGE_TYPE 3
-#define SYNCBOSS_CAMERA_PROBE_MESSAGE_TYPE 40
-#define SYNCBOSS_CAMERA_RELEASE_MESSAGE_TYPE 41
-#define SYNCBOSS_SHUTDOWN_MESSAGE_TYPE 90
-#define SYNCBOSS_PROX_ENABLE_MESSAGE_TYPE 203
-#define SYNCBOSS_PROX_DISABLE_MESSAGE_TYPE 204
-#define SYNCBOSS_SET_PROX_CAL_MESSAGE_TYPE 205
-#define SYNCBOSS_PROXSTATE_MESSAGE_TYPE 207
-#define SYNCBOSS_SET_PROX_CONFIG_VERSION_MESSAGE_TYPE 212
-#define SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE 244
-
-#define INVALID_PROX_CAL_VALUE -1
-#define INVALID_POWERSTATE_VALUE -1
-
-#define DEFAULT_PROX_CONFIG_VERSION_VALUE 1
-
-/*
- * The amount of time to hold the wake-lock when syncboss wakes up the
- * AP.  This allows user-space code to have time to react before the
- * system automatically goes back to sleep.
- */
-#define SYNCBOSS_WAKEUP_EVENT_DURATION_MS 2000
-
-/*
- * The amount of time to suppress spurious SPI errors after a syncboss
- * reset
- */
-#define SYNCBOSS_RESET_SPI_SETTLING_TIME_MS 100
-
-/*
- * Maximum pending messages enqueued by syncboss_write()
- */
-#define MAX_MSG_QUEUE_ITEMS 100
-
-/* The version of the header the driver is currently using */
-#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION SYNCBOSS_DRIVER_HEADER_VERSION_V1
-
-struct transaction_context {
-	bool msg_to_send;
-	bool reschedule_needed;
-	struct syncboss_msg *smsg;
-	struct syncboss_msg *prepared_smsg;
-	bool data_ready_irq_had_fired;
-	bool send_timer_had_fired;
-	bool wake_timer_had_fired;
-	bool control_fifo_wake_needed;
-	bool stream_fifo_wake_needed;
-};
-
-static void syncboss_on_camera_probe(struct syncboss_dev_data *devdata);
-static void syncboss_on_camera_release(struct syncboss_dev_data *devdata);
-static ssize_t syncboss_write(struct file *filp, const char __user *buf,
-			      size_t count, loff_t *f_pos);
 static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset);
-static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
-					bool state);
+static int start_streaming_locked(struct syncboss_dev_data *devdata);
+static void stop_streaming_locked(struct syncboss_dev_data *devdata);
 
-/*
- * This is a function that miscfifo calls to determine if it should
- * send a given packet to a given client.
- */
-static bool should_send_stream_packet(const void *context,
-				      const u8 *header, size_t header_len,
-				      const u8 *payload, size_t payload_len)
+static inline s64 ktime_get_ms(void)
 {
-	int x = 0;
-	const struct syncboss_driver_stream_type_filter *stream_type_filter =
-		context;
-	const struct uapi_pkt_t *uapi_pkt = (struct uapi_pkt_t *) payload;
-	const struct syncboss_data *packet;
-
-	/* Special case for when no filter is set or there's no payload */
-	if (!stream_type_filter || (stream_type_filter->num_selected == 0) ||
-	    !payload)
-		return true;
-
-	packet = (struct syncboss_data *) uapi_pkt->payload;
-	for (x = 0; x < stream_type_filter->num_selected; ++x) {
-		if (packet->type == stream_type_filter->selected_types[x])
-			return true;
-	}
-	return false;
+	return ktime_to_ms(ktime_get());
 }
 
-static int read_cal_int(struct syncboss_dev_data *devdata,
-			const char *cal_file_name)
-{
-	int status = 0;
-	u32 temp_parse = 0;
-	const struct firmware *fw = NULL;
-	char tempstr[16] = {0};
-
-	status = firmware_request_nowarn(&fw, cal_file_name, &devdata->spi->dev);
-	if (status != 0) {
-		dev_err(&devdata->spi->dev,
-			"firmware_request_nowarn() returned %d. Ensure %s is present",
-			status, cal_file_name);
-		return status;
-	}
-
-	if (fw->size >= sizeof(tempstr)) {
-		dev_err(&devdata->spi->dev,
-			"unexpected size for %s (size is %zd)",
-			cal_file_name, fw->size);
-		status = -EINVAL;
-		goto error;
-	}
-
-	/* Copy to temp buffer to ensure null-termination */
-	memcpy(tempstr, fw->data, fw->size);
-	tempstr[fw->size] = '\0';
-
-	status = kstrtou32(tempstr, /*base */10, &temp_parse);
-	if (status < 0) {
-		dev_err(&devdata->spi->dev, "failed to parse integer out of %s",
-			tempstr);
-		goto error;
-	}
-
-	status = temp_parse;
-
-error:
-	release_firmware(fw);
-	return status;
-}
-
-static int prox_cal_valid(struct syncboss_dev_data *devdata)
-{
-	/*
-	 * Note: There are cases in the factory where they need to
-	 * just set prox_canc without setting the other values.  Given
-	 * this use-case, we consider a prox cal "valid" if anything
-	 * is >= zero.
-	 */
-	return (devdata->prox_canc >= 0) || (devdata->prox_thdl >= 0)
-		|| (devdata->prox_thdh >= 0);
-}
-
-static void read_prox_cal(struct syncboss_dev_data *devdata)
-{
-	/* If prox doesn't require calibration, use dummy values. */
-	if (devdata->has_no_prox_cal) {
-		devdata->prox_config_version = 0;
-		devdata->prox_canc = 0;
-		devdata->prox_thdl = 0;
-		return;
-	}
-
-	devdata->prox_config_version = read_cal_int(devdata,
-						    "PROX_PS_CAL_VERSION");
-	devdata->prox_canc = read_cal_int(devdata, "PROX_PS_CANC");
-	devdata->prox_thdl = read_cal_int(devdata, "PROX_PS_THDL");
-	devdata->prox_thdh = read_cal_int(devdata, "PROX_PS_THDH");
-
-	if (!prox_cal_valid(devdata)) {
-		dev_err(&devdata->spi->dev,
-			"failed read prox calibration data (ver: %u, canc: %d, thdl: %d, thdh: %d)",
-			devdata->prox_config_version, devdata->prox_canc,
-			devdata->prox_thdl, devdata->prox_thdh);
-		return;
-	}
-
-	dev_info(&devdata->spi->dev,
-		 "prox cal read: canc: %d, thdl: %d, thdh: %d",
-		 devdata->prox_canc, devdata->prox_thdl, devdata->prox_thdh);
-}
-
+/* Increment refcount used to keep the MCU awake. */
 static void syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devdata)
 {
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
@@ -303,6 +98,7 @@ static void syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devda
 	}
 }
 
+/* Decrement refcount used to keep the MCU awake. */
 static void syncboss_dec_mcu_client_count_locked(struct syncboss_dev_data *devdata)
 {
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
@@ -314,16 +110,7 @@ static void syncboss_dec_mcu_client_count_locked(struct syncboss_dev_data *devda
 	}
 }
 
-static int start_streaming_locked(struct syncboss_dev_data *devdata);
-static void stop_streaming_locked(struct syncboss_dev_data *devdata);
-
-static bool is_busy(struct device *child)
-{
-	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
-
-	return devdata->is_streaming;
-}
-
+/* Increment refcount used to start streaming, waking the MCU if needed. */
 static int syncboss_inc_streaming_client_count_locked(struct syncboss_dev_data *devdata)
 {
 	int status = 0;
@@ -332,33 +119,25 @@ static int syncboss_inc_streaming_client_count_locked(struct syncboss_dev_data *
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 	BUG_ON(devdata->streaming_client_count < 0);
 
-	/*
-	 * The first time a client opens a handle to the driver, read
-	 * the prox sensor calibration.  We do it here as opposed to
-	 * in the SPI transfer thread because request_firmware must be
-	 * called in a user-context.  We read the calibration every
-	 * time to support the factory case where prox calibration is
-	 * being modified and we don't want to force a headset reboot
-	 * for the new calibration to take effect.
-	 */
-	if (devdata->has_prox)
-		read_prox_cal(devdata);
-
 	if (devdata->streaming_client_count == 0) {
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTING, NULL);
 		syncboss_inc_mcu_client_count_locked(devdata);
 
 		dev_dbg(&devdata->spi->dev, "starting streaming thread");
 		status = start_streaming_locked(devdata);
-		if (status)
+		if (status) {
 			syncboss_dec_mcu_client_count_locked(devdata);
+			return status;
+		}
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTED, NULL);
 	}
 
-	if (!status)
-		++devdata->streaming_client_count;
+	++devdata->streaming_client_count;
 
 	return status;
 }
 
+/* Decrement refcount used to start streaming. */
 static int syncboss_dec_streaming_client_count_locked(struct syncboss_dev_data *devdata)
 {
 	/* Note: Must be called under the state_mutex lock! */
@@ -367,6 +146,8 @@ static int syncboss_dec_streaming_client_count_locked(struct syncboss_dev_data *
 
 	--devdata->streaming_client_count;
 	if (devdata->streaming_client_count == 0) {
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STOPPING, NULL);
+
 		dev_dbg(&devdata->spi->dev, "stopping streaming thread");
 		stop_streaming_locked(devdata);
 
@@ -379,35 +160,13 @@ static int syncboss_dec_streaming_client_count_locked(struct syncboss_dev_data *
 		 * Reset the mode to allow changing modes by stopping all clients.
 		 */
 		syncboss_sequence_number_reset_locked(devdata);
+
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STOPPED, NULL);
 	}
 	return 0;
 }
 
-static int fw_update_check_busy(struct device *dev, void *data)
-{
-	struct device_node *node = dev_of_node(dev);
-
-	if (of_device_is_compatible(node, "oculus,swd")) {
-		struct swd_dev_data *devdata = dev_get_drvdata(dev);
-
-		if (!devdata) {
-			dev_err(dev, "swd device not yet available: %s", node->name);
-			return -ENODEV;
-		}
-
-		if (devdata->fw_update_state != FW_UPDATE_STATE_IDLE) {
-			return -EBUSY;
-		}
-	}
-	return 0;
-}
-
-static void client_data_init_locked(struct syncboss_dev_data *devdata)
-{
-	INIT_LIST_HEAD(&devdata->client_data_list);
-	devdata->client_data_index = 0;
-}
-
+/* Create and initialize a client_data entry */
 static int client_data_create_locked(struct syncboss_dev_data *devdata,
 		struct file *file, struct task_struct *task,
 		struct syncboss_client_data **client_data)
@@ -424,8 +183,6 @@ static int client_data_create_locked(struct syncboss_dev_data *devdata,
 	data->file = file;
 	data->task = task;
 	data->index = devdata->client_data_index++;
-	data->seq_num_allocation_count = 0;
-	bitmap_zero(data->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
 
 	data->index = devdata->client_data_index++;
 	status = syncboss_debugfs_client_add_locked(devdata, data);
@@ -440,6 +197,7 @@ static int client_data_create_locked(struct syncboss_dev_data *devdata,
 	return 0;
 }
 
+/* Retrieve a client_data entry */
 static struct syncboss_client_data *client_data_get_locked(
 	struct syncboss_dev_data *devdata, struct file *file)
 {
@@ -453,6 +211,7 @@ static struct syncboss_client_data *client_data_get_locked(
 	return NULL;
 }
 
+/* Remove and free a client_data entry */
 static void client_data_destroy_locked(struct syncboss_dev_data *devdata,
 	struct syncboss_client_data *client_data)
 {
@@ -467,59 +226,7 @@ static void client_data_destroy_locked(struct syncboss_dev_data *devdata,
 	devm_kfree(dev, client_data);
 }
 
-static int syncboss_open(struct inode *inode, struct file *f)
-{
-	int status;
-	struct syncboss_dev_data *devdata =
-	    container_of(f->private_data, struct syncboss_dev_data, misc);
-	struct device *dev = &devdata->spi->dev;
-	struct syncboss_client_data *client_data;
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status) {
-		dev_warn(&devdata->spi->dev, "syncboss open by %s (%d) aborted due to signal. status=%d",
-			current->comm, current->pid, status);
-		goto ret;
-	}
-
-	status = device_for_each_child(&devdata->spi->dev, NULL,
-				       fw_update_check_busy);
-	if (status) {
-		if (status == -EBUSY)
-			dev_err(dev, "syncboss opened by %s (%d) failed, firmware update in progress",
-				current->comm, current->pid);
-		goto unlock;
-	}
-
-	status = syncboss_inc_streaming_client_count_locked(devdata);
-	if (status) {
-		dev_err(dev, "syncboss open by %s (%d) failed to increment streaming client count (%d)",
-			current->comm, current->pid, status);
-		goto unlock;
-	}
-
-	status = client_data_create_locked(devdata, f, current, &client_data);
-	if (status) {
-		dev_err(dev, "syncboss open by %s (%d) failed to create client data (%d)",
-			current->comm, current->pid, status);
-		goto dec_streaming_client;
-	}
-
-	dev_info(dev, "syncboss opened by %s (%d), client %lld",
-		client_data->task->comm, client_data->task->pid, client_data->index);
-
-	goto unlock;
-
-dec_streaming_client:
-	syncboss_dec_streaming_client_count_locked(devdata);
-
-unlock:
-	mutex_unlock(&devdata->state_mutex);
-
-ret:
-	return status;
-}
-
+/* SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL handler */
 static long syncboss_ioctl_handle_seq_num_allocate_locked(
 	struct syncboss_dev_data *devdata, struct syncboss_client_data *client_data,
 	unsigned long arg)
@@ -528,14 +235,6 @@ static long syncboss_ioctl_handle_seq_num_allocate_locked(
 	long status;
 	long status_release;
 	uint8_t seq;
-
-	if (!devdata->has_seq_num_ioctl) {
-		dev_err_ratelimited(dev,
-			"sequence number ioctls are disabled based on device tree configuration. requested by %s (%d), client %lld",
-			client_data->task->comm, client_data->task->pid, client_data->index);
-		status = -EPERM;
-		goto ret;
-	}
 
 	status = syncboss_sequence_number_allocate_locked(devdata, client_data, &seq);
 	if (status) {
@@ -572,6 +271,7 @@ ret:
 	return status;
 }
 
+/* SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL handler */
 static long syncboss_ioctl_handle_seq_num_release_locked(
 	struct syncboss_dev_data *devdata, struct syncboss_client_data *client_data,
 	unsigned long arg)
@@ -579,13 +279,6 @@ static long syncboss_ioctl_handle_seq_num_release_locked(
 	struct device *dev = &devdata->spi->dev;
 	long status;
 	uint8_t seq;
-
-	if (!devdata->has_seq_num_ioctl) {
-		dev_err_ratelimited(dev,
-			"sequence number iocls are disabled based on device tree configuration. requested by %s (%d), client %lld",
-			client_data->task->comm, client_data->task->pid, client_data->index);
-		return -EPERM;
-	}
 
 	status = copy_from_user(&seq, (uint8_t __user *)arg, sizeof(seq));
 	if (status) {
@@ -607,537 +300,26 @@ static long syncboss_ioctl_handle_seq_num_release_locked(
 	return status;
 }
 
-static long syncboss_ioctl(struct file *file, unsigned int cmd,
-				  unsigned long arg)
+/* Check is a child SWD device is performing a FW update */
+static int fw_update_check_busy(struct device *dev, void *data)
 {
-	int status = 0;
-	struct syncboss_client_data *client_data;
-	struct syncboss_dev_data *devdata =
-		container_of(file->private_data, struct syncboss_dev_data, misc);
-	struct device *dev = &devdata->spi->dev;
+	struct device_node *node = dev_of_node(dev);
 
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		dev_warn(&devdata->spi->dev, "ioctl from %s (%d) aborted due to signal. status=%d",
-			 current->comm, current->pid, status);
-		goto ret;
-	}
+	if (of_device_is_compatible(node, "meta,swd")) {
+		struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
-	client_data = client_data_get_locked(devdata, file);
-	if (!client_data) {
-		dev_err(dev, "ioctl from %s (%d) failed to get client data)",
-			current->comm, current->pid);
-		status = -ENXIO;
-		goto unlock;
-	}
-
-	switch (cmd) {
-	case SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL:
-		status = syncboss_ioctl_handle_seq_num_allocate_locked(devdata,
-					client_data, arg);
-		break;
-	case SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL:
-		status = syncboss_ioctl_handle_seq_num_release_locked(devdata,
-					client_data, arg);
-		break;
-	default:
-		dev_err(dev, "unrecognized ioctl %d, from %s (%d), client %lld",
-			cmd, current->comm, current->pid, client_data->index);
-		status = -EINVAL;
-		break;
-	}
-
-unlock:
-	mutex_unlock(&devdata->state_mutex);
-
-ret:
-	return status;
-}
-
-static int signal_powerstate_event(struct syncboss_dev_data *devdata, int evt)
-{
-	int status = 0;
-	bool should_update_last_evt = true;
-
-	struct syncboss_driver_data_header_driver_message_t msg = {
-		.header = {
-			.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
-			.header_length = sizeof(struct syncboss_driver_data_header_driver_message_t),
-			.from_driver = true,
-		},
-		.driver_message_type = SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG,
-		.driver_message_data = evt,
-	};
-
-	if ((evt == SYNCBOSS_PROX_EVENT_SYSTEM_UP) &&
-	    devdata->eat_next_system_up_event) {
-		/* This is a manual reset, so no need to notify clients */
-		dev_info(&devdata->spi->dev, "eating prox system_up event on reset..yum!");
-		devdata->eat_next_system_up_event = false;
-		/* We don't want anyone who opens a powerstate handle to see this event. */
-		should_update_last_evt = false;
-	} else if (evt == SYNCBOSS_PROX_EVENT_PROX_ON && devdata->eat_prox_on_events) {
-		dev_info(&devdata->spi->dev, "sensor still covered. eating prox_on event..yum!");
-	} else if (devdata->silence_all_powerstate_events) {
-		dev_info(&devdata->spi->dev, "silencing powerstate event %d", evt);
-		/* We don't want anyone who opens a powerstate handle to see this event. */
-		should_update_last_evt = false;
-	} else {
-		if (evt == SYNCBOSS_PROX_EVENT_PROX_OFF && devdata->eat_prox_on_events) {
-			dev_info(&devdata->spi->dev, "prox_off received. Resuming handling of prox_on events.");
-			devdata->eat_prox_on_events = false;
+		if (!devdata) {
+			dev_err(dev, "swd device not yet available: %s", node->name);
+			return -ENODEV;
 		}
 
-		status = miscfifo_send_buf(&devdata->powerstate_fifo, (u8 *) &msg, sizeof(msg));
-		if (status < 0)
-			dev_warn_ratelimited(&devdata->spi->dev, "powerstate fifo error (%d)", status);
-	}
-
-	if (should_update_last_evt)
-		devdata->powerstate_last_evt = evt;
-
-	return status;
-}
-
-static void powerstate_enable_locked(struct syncboss_dev_data *devdata);
-static void powerstate_disable_locked(struct syncboss_dev_data *devdata);
-
-static int syncboss_powerstate_open(struct inode *inode, struct file *f)
-{
-	int status;
-	struct syncboss_dev_data *devdata =
-		container_of(f->private_data, struct syncboss_dev_data,
-			     misc_powerstate);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status) {
-		dev_warn(&devdata->spi->dev, "syncboss open by %s (%d) aborted due to signal. status=%d",
-				current->comm, current->pid, status);
-		return status;
-	}
-
-	status = miscfifo_fop_open(f, &devdata->powerstate_fifo);
-	if (status)
-		goto out;
-
-	++devdata->powerstate_client_count;
-
-	/* Send the last powerstate_event */
-	if (devdata->powerstate_last_evt != INVALID_POWERSTATE_VALUE) {
-		dev_info(&devdata->spi->dev,
-			 "signaling powerstate_last_evt (%d)",
-			 devdata->powerstate_last_evt);
-		signal_powerstate_event(devdata, devdata->powerstate_last_evt);
-	}
-
-	if (devdata->powerstate_client_count == 1) {
-		syncboss_inc_mcu_client_count_locked(devdata);
-
-		if (devdata->has_prox)
-			read_prox_cal(devdata);
-
-		dev_dbg(&devdata->spi->dev, "enabling powerstate events");
-		powerstate_enable_locked(devdata);
-	}
-
-	dev_info(&devdata->spi->dev, "powerstate opened by %s (%d)",
-		 current->comm, current->pid);
-
-out:
-	mutex_unlock(&devdata->state_mutex);
-	return status;
-}
-
-static int syncboss_powerstate_release(struct inode *inode, struct file *file)
-{
-	struct miscfifo_client *client = file->private_data;
-	struct miscfifo *mf = client->mf;
-	struct syncboss_dev_data *devdata =
-		container_of(mf, struct syncboss_dev_data,
-			     powerstate_fifo);
-
-	/*
-	 * It is unsafe to use the interruptible variant here, as the driver can get
-	 * in an inconsistent state if this lock fails. We need to make sure release
-	 * handling occurs, since we can't retry releasing the file if, e.g., the
-	 * file is released when a process is killed.
-	 */
-	mutex_lock(&devdata->state_mutex);
-
-	--devdata->powerstate_client_count;
-
-	if (devdata->powerstate_client_count == 0) {
-		dev_dbg(&devdata->spi->dev, "disabling powerstate events");
-		powerstate_disable_locked(devdata);
-		syncboss_dec_mcu_client_count_locked(devdata);
-	}
-
-	mutex_unlock(&devdata->state_mutex);
-
-	return miscfifo_fop_release(inode, file);
-}
-
-static int syncboss_stream_open(struct inode *inode, struct file *f)
-{
-	int status = 0;
-	struct syncboss_dev_data *devdata =
-		container_of(f->private_data, struct syncboss_dev_data,
-			     misc_stream);
-	dev_info(&devdata->spi->dev, "stream fifo opened by %s (%d)",
-		 current->comm, current->pid);
-
-	status = miscfifo_fop_open(f, &devdata->stream_fifo);
-	if (status != 0)
-		return status;
-
-	return status;
-}
-
-static int syncboss_set_stream_type_filter(
-	struct syncboss_dev_data *devdata,
-	struct file *file,
-	const struct syncboss_driver_stream_type_filter __user *filter)
-{
-	int status;
-	struct device *dev = &devdata->spi->dev;
-	struct syncboss_driver_stream_type_filter *new_filter = NULL;
-	struct syncboss_driver_stream_type_filter *existing_filter;
-
-	new_filter = devm_kzalloc(dev, sizeof(*new_filter), GFP_KERNEL);
-	if (!new_filter)
-		return -ENOMEM;
-
-	status = copy_from_user(new_filter, filter, sizeof(*new_filter));
-	if (status != 0) {
-		dev_err(dev, "failed to copy %d bytes from user stream filter\n",
-			status);
-		return -EFAULT;
-	}
-
-	/* Sanity check new_filter */
-	if (new_filter->num_selected > SYNCBOSS_MAX_FILTERED_TYPES) {
-		dev_err(dev, "sanity check of user stream filter failed (num_selected = %d)\n",
-			new_filter->num_selected);
-		return -EINVAL;
-	}
-
-	existing_filter = miscfifo_fop_xchg_context(file, new_filter);
-	if (existing_filter)
-		devm_kfree(dev, existing_filter);
-	return 0;
-}
-
-static long syncboss_stream_ioctl(struct file *file, unsigned int cmd,
-				  unsigned long arg)
-{
-	struct miscfifo_client *client = file->private_data;
-	struct syncboss_dev_data *devdata =
-		container_of(client->mf, struct syncboss_dev_data, stream_fifo);
-
-	switch (cmd) {
-	case SYNCBOSS_SET_STREAMFILTER_IOCTL:
-		return syncboss_set_stream_type_filter(devdata, file,
-			(struct syncboss_driver_stream_type_filter *)arg);
-	default:
-		dev_err(&devdata->spi->dev, "unrecognized stream ioctl %d from %s (%d)",
-				cmd, current->comm, current->pid);
-		return -EINVAL;
+		if (devdata->fw_update_state == FW_UPDATE_STATE_WRITING_TO_HW)
+			return -EBUSY;
 	}
 	return 0;
 }
 
-static int syncboss_stream_release(struct inode *inode, struct file *file)
-{
-	int status = 0;
-	struct miscfifo_client *client = file->private_data;
-	struct syncboss_dev_data *devdata =
-		container_of(client->mf, struct syncboss_dev_data, stream_fifo);
-	struct syncboss_driver_stream_type_filter *stream_type_filter = NULL;
-
-	stream_type_filter = miscfifo_fop_xchg_context(file, NULL);
-	if (stream_type_filter)
-		devm_kfree(&devdata->spi->dev, stream_type_filter);
-
-	status = miscfifo_fop_release(inode, file);
-	return status;
-}
-
-static int syncboss_control_open(struct inode *inode, struct file *f)
-{
-	struct syncboss_dev_data *devdata =
-		container_of(f->private_data, struct syncboss_dev_data,
-			     misc_control);
-	dev_info(&devdata->spi->dev, "control opened %s (%d)",
-		 current->comm, current->pid);
-	return miscfifo_fop_open(f, &devdata->control_fifo);
-}
-
-static s64 ktime_get_ms(void)
-{
-	return ktime_to_ms(ktime_get());
-}
-
-void syncboss_pin_reset(struct syncboss_dev_data *devdata)
-{
-	if (!gpio_is_valid(devdata->gpio_reset)) {
-		dev_err(&devdata->spi->dev,
-			"cannot pin-reset becauses reset pin was not specified in device tree");
-		return;
-	}
-
-	dev_info(&devdata->spi->dev, "pin-resetting MCU");
-
-	if (gpio_get_value(devdata->gpio_reset) == 1) {
-		gpio_set_value(devdata->gpio_reset, 0);
-		msleep(SYNCBOSS_RESET_TIME_MS);
-	}
-
-	/*
-	 * Since we're triggering a reset, no need to notify clients
-	 * when syncboss comes back up.
-	 */
-	devdata->eat_next_system_up_event = true;
-	devdata->last_reset_time_ms = ktime_get_ms();
-	gpio_set_value(devdata->gpio_reset, 1);
-}
-
-static int syncboss_release(struct inode *inode, struct file *f)
-{
-	struct syncboss_dev_data *devdata =
-		container_of(f->private_data, struct syncboss_dev_data, misc);
-	struct device *dev = &devdata->spi->dev;
-	struct syncboss_client_data *client_data;
-
-	/*
-	 * It is unsafe to use the interruptible variant here, as the driver can get
-	 * in an inconsistent state if this lock fails. We need to make sure release
-	 * handling occurs, since we can't retry releasing the file if, e.g., the
-	 * file is released when a process is killed.
-	 */
-	mutex_lock(&devdata->state_mutex);
-
-	client_data = client_data_get_locked(devdata, f);
-	BUG_ON(!client_data);
-
-	dev_info(dev, "syncboss closed by %s (%d), client %lld",
-		client_data->task->comm, client_data->task->pid, client_data->index);
-
-	/* This must be done before syncboss_dec_streaming_client_count_locked
-	 * since it will syncboss_sequence_number_reset_locked if the ref count
-	 * goes to zero and reset checks for any remaining clients. */
-	client_data_destroy_locked(devdata, client_data);
-
-	syncboss_dec_streaming_client_count_locked(devdata);
-
-	mutex_unlock(&devdata->state_mutex);
-
-	return 0;
-}
-
-static irqreturn_t isr_primary_nsync(int irq, void *p)
-{
-	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
-	unsigned long flags;
-
-	spin_lock_irqsave(&devdata->nsync_lock, flags);
-	devdata->nsync_irq_timestamp = ktime_get_ns();
-	++devdata->nsync_irq_count;
-	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
-
-	return IRQ_WAKE_THREAD;
-}
-
-static irqreturn_t isr_thread_nsync(int irq, void *p)
-{
-	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
-	struct syncboss_nsync_event event;
-	unsigned long flags;
-	int status;
-
-	spin_lock_irqsave(&devdata->nsync_lock, flags);
-	event.timestamp = devdata->nsync_irq_timestamp;
-	event.count = devdata->nsync_irq_count;
-	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
-
-	status = miscfifo_send_buf(
-			&devdata->nsync_fifo,
-			(void *)&event,
-			sizeof(event));
-	if (status < 0)
-		dev_warn_ratelimited(
-			&devdata->spi->dev,
-			"nsync fifo send failure: %d\n", status);
-
-	return IRQ_HANDLED;
-}
-
-static int syncboss_nsync_open(struct inode *inode, struct file *f)
-{
-	int status;
-	struct syncboss_dev_data *devdata =
-		container_of(f->private_data, struct syncboss_dev_data,
-			     misc_nsync);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status) {
-		dev_warn(&devdata->spi->dev, "nsync open by %s (%d) borted due to signal. status=%d",
-			       current->comm, current->pid, status);
-		return status;
-	}
-
-	if (devdata->nsync_client_count != 0) {
-		dev_err(&devdata->spi->dev, "nsync open by %s (%d) failed: nsync cannot be opened by more than one user",
-				current->comm, current->pid);
-		status = -EBUSY;
-		goto unlock;
-	}
-
-	++devdata->nsync_client_count;
-
-	status = miscfifo_fop_open(f, &devdata->nsync_fifo);
-	if (status < 0) {
-		dev_err(&devdata->spi->dev, "nsync miscfifo open by %s (%d) failed (%d)",
-			current->comm, current->pid, status);
-		goto decrement_ref;
-	}
-
-	devdata->nsync_irq_timestamp = 0;
-	devdata->nsync_irq_count = 0;
-	devdata->nsync_irq = gpio_to_irq(devdata->gpio_nsync);
-	irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
-	status = devm_request_threaded_irq(
-		&devdata->spi->dev, devdata->nsync_irq, isr_primary_nsync,
-		isr_thread_nsync, IRQF_TRIGGER_RISING,
-		devdata->misc_nsync.name, devdata);
-
-	if (status < 0) {
-		dev_err(&devdata->spi->dev, "nsync irq request by %s (%d) failed (%d)",
-			current->comm, current->pid, status);
-		goto miscfifo_release;
-	}
-
-	dev_info(&devdata->spi->dev, "nsync handle opened by %s (%d)",
-		 current->comm, current->pid);
-
-miscfifo_release:
-	if (status < 0)
-		miscfifo_fop_release(inode, f);
-decrement_ref:
-	if (status < 0)
-		--devdata->nsync_client_count;
-unlock:
-	mutex_unlock(&devdata->state_mutex);
-	return status;
-}
-
-static int syncboss_nsync_release(struct inode *inode, struct file *file)
-{
-	int status;
-	struct miscfifo_client *client = file->private_data;
-	struct syncboss_dev_data *devdata =
-		container_of(client->mf, struct syncboss_dev_data, nsync_fifo);
-
-	/*
-	 * It is unsafe to use the interruptible variant here, as the driver can get
-	 * in an inconsistent state if this lock fails. We need to make sure release
-	 * handling occurs, since we can't retry releasing the file if, e.g., the
-	 * file is released when a process is killed.
-	 */
-	mutex_lock(&devdata->state_mutex);
-
-	--devdata->nsync_client_count;
-	if (devdata->nsync_client_count == 0)
-		devm_free_irq(&devdata->spi->dev, devdata->nsync_irq, devdata);
-
-	miscfifo_clear(&devdata->nsync_fifo);
-
-	status = miscfifo_fop_release(inode, file);
-	if (status) {
-		dev_err(&devdata->spi->dev, "nsync release by %s (%d) failed with status %d",
-				current->comm, current->pid, status);
-		goto out;
-	}
-
-	dev_info(&devdata->spi->dev, "nsync released by %s (%d)",
-		 current->comm, current->pid);
-
-out:
-	mutex_unlock(&devdata->state_mutex);
-	return status;
-}
-
-static const struct file_operations fops = {
-	.open = syncboss_open,
-	.release = syncboss_release,
-	.read = NULL,
-	.write = syncboss_write,
-	.poll = NULL,
-	.unlocked_ioctl = syncboss_ioctl
-};
-
-static const struct file_operations stream_fops = {
-	.open = syncboss_stream_open,
-	.release = syncboss_stream_release,
-	.read = miscfifo_fop_read_many,
-	.poll = miscfifo_fop_poll,
-	.unlocked_ioctl = syncboss_stream_ioctl
-};
-
-static const struct file_operations control_fops = {
-	.open = syncboss_control_open,
-	.release = miscfifo_fop_release,
-	.read = miscfifo_fop_read,
-	.poll = miscfifo_fop_poll
-};
-
-static const struct file_operations powerstate_fops = {
-	.open = syncboss_powerstate_open,
-	.release = syncboss_powerstate_release,
-	.read = miscfifo_fop_read,
-	.write = NULL,
-	.poll = miscfifo_fop_poll
-};
-
-static const struct file_operations nsync_fops = {
-	.open = syncboss_nsync_open,
-	.release = syncboss_nsync_release,
-	.read = miscfifo_fop_read,
-	.write = NULL,
-	.poll = miscfifo_fop_poll
-};
-
-static inline u8 calculate_checksum(const struct syncboss_transaction *trans, size_t len)
-{
-	const u8 *buf = (u8 *)trans;
-	u8 x = 0, sum = 0;
-
-	for (x = 0; x < len; ++x)
-		sum += buf[x];
-	return 0 - sum;
-}
-
-/*
- * Snoop the write and perform any actions necessary before sending the message
- * on to the MCU.
- *
- * This *MUST* be called atomically with enqueueing the snooped packed in queue_tx_packet()
- * (ie. before releasing msg_queue_lock).
- */
-static void syncboss_snoop_write_locked(struct syncboss_dev_data *devdata, u8 packet_type)
-{
-	switch (packet_type) {
-	case SYNCBOSS_CAMERA_PROBE_MESSAGE_TYPE:
-		syncboss_on_camera_probe(devdata);
-		break;
-	case SYNCBOSS_CAMERA_RELEASE_MESSAGE_TYPE:
-		syncboss_on_camera_release(devdata);
-		break;
-	default:
-		/* Nothing to do for this message type */
-		break;
-	}
-}
-
+/* Wrapper helper to perform memcpy from either a kernel or user buffer */
 static unsigned long copy_buffer(void *dest, const void *src, size_t count, bool from_user)
 {
 	if (from_user)
@@ -1161,7 +343,6 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 	struct syncboss_msg *smsg = NULL;
 	struct spi_transfer *spi_xfer = NULL;
 	void *dest;
-	u8 packet_type;
 
 	if (count > MAX_TRANSACTION_DATA_LENGTH) {
 		dev_err(&devdata->spi->dev, "write is larger than max transaction length!\n");
@@ -1184,9 +365,6 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 				return -EINVAL;
 			}
 			smsg->transaction_bytes += count;
-
-			packet_type = ((struct syncboss_data *)dest)->type;
-			syncboss_snoop_write_locked(devdata, packet_type);
 
 			mutex_unlock(&devdata->msg_queue_lock);
 
@@ -1243,9 +421,6 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 	list_add_tail(&smsg->list, &devdata->msg_queue_list);
 	devdata->msg_queue_item_count++;
 
-	packet_type = ((struct syncboss_data *)dest)->type;
-	syncboss_snoop_write_locked(devdata, packet_type);
-
 	if (devdata->worker) {
 		if (devdata->max_msg_send_delay_ns == 0 || devdata->msg_queue_item_count > 1) {
 			/*
@@ -1277,95 +452,167 @@ err:
 	return status;
 }
 
-static int distribute_packet(struct syncboss_dev_data *devdata,
-		const struct syncboss_data *packet,
-		struct transaction_context *ctx)
+/* /dev/syncboss0 open handler */
+static int syncboss_open(struct inode *inode, struct file *f)
 {
-	const struct syncboss_driver_data_header_t header = {
-		.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
-		.header_length = sizeof(struct syncboss_driver_data_header_t),
-		.from_driver = false
-	};
+	int status;
+	struct syncboss_dev_data *devdata =
+	    container_of(f->private_data, struct syncboss_dev_data, misc);
+	struct device *dev = &devdata->spi->dev;
+	struct syncboss_client_data *client_data;
 
-	/*
-	 * Stream packets are known by their zero sequence id.  All
-	 * other packets are control packets
-	 */
-	struct miscfifo *fifo_to_use = NULL;
-	const char *fifo_name;
-	int status = 0;
-	size_t payload_size = sizeof(*packet) + packet->data_len;
-	bool should_wake;
-	struct uapi_pkt_t uapi_pkt;
-
-	/*
-	 * Send to direct channel first, no need to make copies, and this will be done in the direct channel copy.
-	 * return
-	 *  0 - no error and packet not sent to direct buffer, continue to direct channel
-	 *  >0 - packet sent to at leats one direct buffer.
-	 *  -ENOTSUPP - kernel not configconfigured to support direct channel.
-	 *  All other errors are failures to send to direct channel
-	 */
-	status = syncboss_direct_channel_send_buf(devdata, packet);
-	if (status > 0) {
-		return 0; /* packet was sent on a direct channel, so don't send to miscfifo */
-	} else if (status < 0 && status != -ENOTSUPP) {
-		dev_dbg_ratelimited(&devdata->spi->dev, "direct channel distibute failed error %d", status);
-		return status;
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status) {
+		dev_warn(&devdata->spi->dev, "syncboss open by %s (%d) aborted due to signal. status=%d",
+			current->comm, current->pid, status);
+		goto ret;
 	}
 
-	if (packet->sequence_id == 0) {
-		switch (packet->type) {
-		case SYNCBOSS_PROXSTATE_MESSAGE_TYPE:
-			signal_powerstate_event(devdata,
-					  packet->data[0] ?
-					  SYNCBOSS_PROX_EVENT_PROX_ON :
-					  SYNCBOSS_PROX_EVENT_PROX_OFF);
-			return 0;
-		case SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE:
-			signal_powerstate_event(devdata, packet->data[0]);
-			return 0;
-		default:
-			break;
-		}
-
-		fifo_to_use = &devdata->stream_fifo;
-		fifo_name = "stream";
-	} else {
-		fifo_to_use = &devdata->control_fifo;
-		fifo_name = "control";
+	status = device_for_each_child(&devdata->spi->dev, NULL,
+				       fw_update_check_busy);
+	if (status) {
+		if (status == -EBUSY)
+			dev_err(dev, "syncboss opened by %s (%d) failed, firmware update in progress",
+				current->comm, current->pid);
+		goto unlock;
 	}
 
-	if (payload_size > ARRAY_SIZE(uapi_pkt.payload)) {
-		dev_warn_ratelimited(&devdata->spi->dev,
-				     "%s rx packet is too big [id=%d seq=%d sz=%d]",
-				     fifo_name,
-				     (int) packet->type,
-				     (int) packet->sequence_id,
-				     (int) packet->data_len);
-		return -EINVAL;
+	status = syncboss_inc_streaming_client_count_locked(devdata);
+	if (status) {
+		dev_err(dev, "syncboss open by %s (%d) failed to increment streaming client count (%d)",
+			current->comm, current->pid, status);
+		goto unlock;
 	}
 
-	/* arrange |header|payload| in a single buffer */
-	uapi_pkt.header = header;
-	memcpy(uapi_pkt.payload, packet, payload_size);
-
-	status = miscfifo_write_buf(fifo_to_use, (u8 *)&uapi_pkt,
-			sizeof(uapi_pkt.header) + payload_size, &should_wake);
-
-	if (should_wake) {
-		if (fifo_to_use == &devdata->stream_fifo)
-			ctx->stream_fifo_wake_needed = true;
-		else
-			ctx->control_fifo_wake_needed = true;
+	status = client_data_create_locked(devdata, f, current, &client_data);
+	if (status) {
+		dev_err(dev, "syncboss open by %s (%d) failed to create client data (%d)",
+			current->comm, current->pid, status);
+		goto dec_streaming_client;
 	}
 
-	if (status < 0)
-		dev_warn_ratelimited(&devdata->spi->dev, "uapi %s fifo error (%d)",
-				     fifo_name, status);
+	dev_info(dev, "syncboss opened by %s (%d), client %lld",
+		client_data->task->comm, client_data->task->pid, client_data->index);
+
+	goto unlock;
+
+dec_streaming_client:
+	syncboss_dec_streaming_client_count_locked(devdata);
+
+unlock:
+	mutex_unlock(&devdata->state_mutex);
+
+ret:
 	return status;
 }
 
+
+/* /dev/syncboss0 release handler */
+static int syncboss_release(struct inode *inode, struct file *f)
+{
+	struct syncboss_dev_data *devdata =
+		container_of(f->private_data, struct syncboss_dev_data, misc);
+	struct device *dev = &devdata->spi->dev;
+	struct syncboss_client_data *client_data;
+
+	/*
+	 * It is unsafe to use the interruptible variant here, as the driver can get
+	 * in an inconsistent state if this lock fails. We need to make sure release
+	 * handling occurs, since we can't retry releasing the file if, e.g., the
+	 * file is released when a process is killed.
+	 */
+	mutex_lock(&devdata->state_mutex);
+
+	client_data = client_data_get_locked(devdata, f);
+	BUG_ON(!client_data);
+
+	dev_info(dev, "syncboss closed by %s (%d), client %lld",
+		client_data->task->comm, client_data->task->pid, client_data->index);
+
+	/*
+	 * This must be done before syncboss_dec_streaming_client_count_locked
+	 * since it will syncboss_sequence_number_reset_locked if the ref count
+	 * goes to zero and reset checks for any remaining clients.
+	 */
+	client_data_destroy_locked(devdata, client_data);
+
+	syncboss_dec_streaming_client_count_locked(devdata);
+
+	mutex_unlock(&devdata->state_mutex);
+
+	return 0;
+}
+
+/* /dev/syncboss0 write handler */
+static ssize_t syncboss_write(struct file *filp, const char __user *buf,
+			      size_t count, loff_t *f_pos)
+{
+	struct syncboss_dev_data *devdata =
+		container_of(filp->private_data, struct syncboss_dev_data,
+			     misc);
+
+	return queue_tx_packet(devdata, buf, count, /* from_user */ true);
+}
+
+/* /dev/syncboss0 ioctl handler */
+static long syncboss_ioctl(struct file *file, unsigned int cmd,
+				  unsigned long arg)
+{
+	int status = 0;
+	struct syncboss_client_data *client_data;
+	struct syncboss_dev_data *devdata =
+		container_of(file->private_data, struct syncboss_dev_data, misc);
+	struct device *dev = &devdata->spi->dev;
+
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status != 0) {
+		dev_warn(&devdata->spi->dev, "ioctl from %s (%d) aborted due to signal. status=%d",
+			 current->comm, current->pid, status);
+		goto ret;
+	}
+
+	client_data = client_data_get_locked(devdata, file);
+	if (!client_data) {
+		dev_err(dev, "ioctl from %s (%d) failed to get client data)",
+			current->comm, current->pid);
+		status = -ENXIO;
+		goto unlock;
+	}
+
+	switch (cmd) {
+	case SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL:
+		status = syncboss_ioctl_handle_seq_num_allocate_locked(devdata,
+					client_data, arg);
+		break;
+	case SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL:
+		status = syncboss_ioctl_handle_seq_num_release_locked(devdata,
+					client_data, arg);
+		break;
+	default:
+		dev_err(dev, "unrecognized ioctl %d, from %s (%d), client %lld",
+			cmd, current->comm, current->pid, client_data->index);
+		status = -EINVAL;
+		break;
+	}
+
+unlock:
+	mutex_unlock(&devdata->state_mutex);
+
+ret:
+	return status;
+}
+
+/* /dev/syncboss0 file operations */
+static const struct file_operations fops = {
+	.open = syncboss_open,
+	.release = syncboss_release,
+	.read = NULL,
+	.write = syncboss_write,
+	.poll = NULL,
+	.unlocked_ioctl = syncboss_ioctl
+};
+
+/* Return true if the MCU was reset in the last SYNCBOSS_RESET_SPI_SETTLING_TIME_MS */
 static bool recent_reset_event(struct syncboss_dev_data *devdata)
 {
 	s64 current_time_ms = ktime_get_ms();
@@ -1376,6 +623,18 @@ static bool recent_reset_event(struct syncboss_dev_data *devdata)
 	return false;
 }
 
+/* Calculate the checksum of a SPI transaction */
+static inline u8 calculate_checksum(const struct syncboss_transaction *trans, size_t len)
+{
+	const u8 *buf = (u8 *)trans;
+	u8 x = 0, sum = 0;
+
+	for (x = 0; x < len; ++x)
+		sum += buf[x];
+	return 0 - sum;
+}
+
+/* Validate the data in a SPI transaction. Return 0 if it is okay, or an error otherwise */
 static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct transaction_context *ctx)
 {
 	int status = 0;
@@ -1385,17 +644,17 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 	bool bad_checksum = false;
 
 	switch (trans->header.magic_num) {
-		case SPI_RX_DATA_MAGIC_NUM_IRQ_MODE:
-		case SPI_RX_DATA_MAGIC_NUM_POLLING_MODE:
-			checksum = calculate_checksum(trans, devdata->transaction_length);
-			bad_checksum = checksum != 0;
-			if (bad_checksum)
-				++devdata->stats.num_bad_checksums;
-			break;
-		default:
-			bad_magic = true;
-			++devdata->stats.num_bad_magic_numbers;
-			break;
+	case SPI_RX_DATA_MAGIC_NUM_IRQ_MODE:
+	case SPI_RX_DATA_MAGIC_NUM_POLLING_MODE:
+		checksum = calculate_checksum(trans, devdata->transaction_length);
+		bad_checksum = checksum != 0;
+		if (bad_checksum)
+			++devdata->stats.num_bad_checksums;
+		break;
+	default:
+		bad_magic = true;
+		++devdata->stats.num_bad_magic_numbers;
+		break;
 	}
 
 	if (!bad_magic && !bad_checksum)
@@ -1412,12 +671,11 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 		status = -EIO;
 
 	/*
-	 * In IRQ mode, if the we perform a transaction with the MCU,
-	 * without being triggered to do so by a data ready IRQ,
-	 * the MCU may return a 'busy' value (0xcacacaca). This happens
-	 * if transaction occurs just as the MCU happens to be staging
-	 * its own message to go out. Don't log warnings in this
-	 * case. This is expected. The command will be retried.
+	 * In IRQ mode, if we perform a transaction with the MCU, without being
+	 * triggered to do so by a data ready IRQ, the MCU may return a 'busy'
+	 * value (0xcacacaca). This happens if transaction occurs just as the
+	 * MCU happens to be staging its own message to go out. Don't log
+	 * warnings in this case. This is expected. The command will be retried.
 	 */
 	if (devdata->use_irq_mode && ctx->msg_to_send &&
 	    !ctx->data_ready_irq_had_fired &&
@@ -1426,8 +684,8 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 	}
 
 	/*
-	 * To avoid noise in the log, skip logging errors if we
-	 * have recently reset the mcu
+	 * To avoid noise in the log, skip logging errors if we have recently
+	 * reset the mcu.
 	 */
 	if (recent_reset_event(devdata))
 		return status;
@@ -1444,6 +702,7 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 	return status;
 }
 
+/* For polling mode only: ask the MCU why it woke up */
 static void query_wake_reason(struct syncboss_dev_data *devdata)
 {
 	u8 message_buf[sizeof(struct syncboss_data) + 1] = {};
@@ -1459,9 +718,7 @@ static void query_wake_reason(struct syncboss_dev_data *devdata)
 	queue_tx_packet(devdata, message, data_len, /* from_user */ false);
 }
 
-/*
- * Process received data from MCU and distribute messages are appropriate.
- */
+/* Process received data from MCU and distribute messages are appropriate. */
 static void process_rx_data(struct syncboss_dev_data *devdata,
 			    struct transaction_context *ctx,
 			    const struct syncboss_timing *timing)
@@ -1471,10 +728,6 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 	const struct syncboss_data *current_packet;
 	const uint8_t *trans_end;
 
-	/*
-	 * See "logging notes" section at the top of
-	 * this file
-	 */
 #if defined(CONFIG_DYNAMIC_DEBUG)
 	print_hex_dump_bytes("syncboss received: ",
 			     DUMP_PREFIX_OFFSET,
@@ -1494,7 +747,7 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 		 * Older MCU FW that doesn't support IRQ mode needs to have its wakeup reason
 		 * queried explicitly also. Do that here. IRQ-mode firmware will send the
 		 * wakeup reason automatically.
-		*/
+		 */
 		if (trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_IRQ_MODE) {
 			dev_info(&devdata->spi->dev, "IRQ mode supported by MCU");
 			devdata->use_irq_mode = true;
@@ -1531,32 +784,17 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 			dev_err_ratelimited(&devdata->spi->dev, "data packet overflow");
 			break;
 		}
-		distribute_packet(devdata, current_packet, ctx);
+		/* Deliver pack to consumers */
+		raw_notifier_call_chain(&devdata->rx_packet_event_chain, current_packet->type, (void *)current_packet);
 		/* Next packet */
 		current_packet = (struct syncboss_data *)pkt_end;
 	}
 }
 
-/*
- * Mark FIFO as runnable if new data has been written.
- * They will wake on the next reschedule.
- */
-static void wake_readers_sync(struct syncboss_dev_data *devdata,
-			      struct transaction_context *ctx)
+/* Wake userspace threads that are waiting on data to read  */
+static inline void wake_readers_sync(struct syncboss_dev_data *devdata)
 {
-	if (!ctx->stream_fifo_wake_needed && !ctx->control_fifo_wake_needed)
-		return;
-
-	preempt_disable();
-	if (ctx->stream_fifo_wake_needed) {
-		miscfifo_wake_waiters_sync(&devdata->stream_fifo);
-		ctx->stream_fifo_wake_needed = false;
-	}
-	if (ctx->control_fifo_wake_needed) {
-		miscfifo_wake_waiters_sync(&devdata->control_fifo);
-		ctx->control_fifo_wake_needed = false;
-	}
-	preempt_enable_no_resched();
+	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_WAKE_READERS, NULL);
 }
 
 /*
@@ -1569,31 +807,17 @@ static inline bool okay_to_transact(struct syncboss_dev_data *devdata)
 	return devdata->data_ready_fired || devdata->wake_timer_fired;
 }
 
+/* Reset all 'timer fired' flags */
 static inline void reset_timer_status_flags(struct syncboss_dev_data *devdata)
 {
 	devdata->data_ready_fired = false;
 	devdata->send_timer_fired = false;
 	devdata->wake_timer_fired = false;
+	/* Ensure flags are observed to be cleared before */
 	mb();
 }
 
-static void handle_wakeup(struct syncboss_dev_data *devdata)
-{
-	if (devdata->wakeup_handled)
-		return;
-
-	devdata->last_reset_time_ms = ktime_get_ms();
-
-	/*
-	 * Wake up any thread that might be waiting on power state
-	 * transitions
-	 */
-	if (devdata->has_prox)
-		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_UP);
-
-	devdata->wakeup_handled = true;
-}
-
+/* Handle wake timer expiry */
 static enum hrtimer_restart wake_timer_callback(struct hrtimer *timer)
 {
 	struct syncboss_dev_data *devdata =
@@ -1607,6 +831,7 @@ static enum hrtimer_restart wake_timer_callback(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
+/* Handle sent timer expiry */
 static enum hrtimer_restart send_timer_callback(struct hrtimer *timer)
 {
 	struct syncboss_dev_data *devdata =
@@ -1620,6 +845,7 @@ static enum hrtimer_restart send_timer_callback(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
+/* Calculate how long to sleep the SPI thread for before the next transaction. */
 static u64 calc_mcu_ready_sleep_delay_ns(struct syncboss_dev_data *devdata,
 			       const struct syncboss_timing *t,
 			       bool msg_to_send)
@@ -1646,9 +872,8 @@ static u64 calc_mcu_ready_sleep_delay_ns(struct syncboss_dev_data *devdata,
 }
 
 /*
- * Sleep the spi_transfer_thread if the message queue is empty,
- * waiting until a messages to be sent is enqueued. Must be
- * called from the spi_transfer_thread.
+ * Sleep the spi_transfer_thread if the message queue is empty, waiting until a
+ * messages to be sent is enqueued. Must be called from the spi_transfer_thread.
  */
 static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 				struct transaction_context *ctx)
@@ -1673,7 +898,7 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 			__set_current_state(TASK_RUNNING);
 			return 0;
 		}
-		wake_readers_sync(devdata, ctx);
+		wake_readers_sync(devdata);
 		schedule();
 
 		if (signal_pending(current))
@@ -1685,9 +910,7 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 	return 0;
 }
 
-/*
- * Wait for the MCU to be ready for its next transaction.
- */
+/* Wait for the MCU to be ready for its next transaction */
 static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 				 const struct syncboss_timing *timing,
 				 struct transaction_context *ctx)
@@ -1760,7 +983,7 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 		}
 
 		/* ZZZzzz... */
-		wake_readers_sync(devdata, ctx);
+		wake_readers_sync(devdata);
 		schedule();
 
 		/* Cancel the hrtimer, in case it's not what woke us */
@@ -1774,6 +997,7 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 	return 0;
 }
 
+/* Main syncboss SPI message processing thread / loop */
 static int syncboss_spi_transfer_thread(void *ptr)
 {
 	int status;
@@ -1786,13 +1010,12 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	u16 transaction_length = 0;
 	bool use_fastpath;
 	struct sched_param sched_settings = {
-		.sched_priority = devdata->poll_prio
+		.sched_priority = devdata->thread_prio
 	};
 
 	status = sched_setscheduler(devdata->worker, SCHED_FIFO, &sched_settings);
-	if (status) {
+	if (status)
 		dev_warn(&spi->dev, "failed to set SCHED_FIFO. (%d)", status);
-	}
 
 	spi_max_clk_rate = devdata->spi_max_clk_rate;
 	transaction_length = devdata->transaction_length;
@@ -1825,7 +1048,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		if (!ctx.msg_to_send) {
 			/*
 			 * Optimization: use mutex_trylock() to avoid sleeping while we wait for
-			 *   for potentially low-priority userspace threads to finish enqueueing
+			 *   potentially low-priority userspace threads to finish enqueueing
 			 *   messages. If a writer is in the process of enqueueing a message, it's
 			 *   better to send the 'default_smsg' than wait for the lock to be released.
 			 *
@@ -1913,21 +1136,17 @@ static int syncboss_spi_transfer_thread(void *ptr)
 
 		/*
 		 * We're about to send our next transaction. In case we've not yet woken up
-		 * miscfifo readers for the previous transaction, do so now.
+		 * userspace readers for the previous transaction, do so now.
 		 *
 		 * To avoid scheduling thrash, we try to avoid waking up readers until we
 		 * anyways need to sleep. That way, the woken threads won't preempt us.
 		 * Our next sleep will be while waiting for the next SPI transaction to
 		 * complete.
 		 */
-		wake_readers_sync(devdata, &ctx);
+		wake_readers_sync(devdata);
 
 #if defined(CONFIG_DYNAMIC_DEBUG)
 		if (ctx.msg_to_send) {
-			/*
-			 * See "logging notes" section at the top of this
-			 * file
-			 */
 			print_hex_dump_bytes("syncboss sending: ",
 					    DUMP_PREFIX_OFFSET, &ctx.smsg->tx,
 					    transaction_length);
@@ -2012,72 +1231,11 @@ static int syncboss_spi_transfer_thread(void *ptr)
 	return 0;
 }
 
-static void push_prox_cal_and_enable_wake(struct syncboss_dev_data *devdata,
-					  bool enable)
-{
-	u8 message_buf[sizeof(struct syncboss_data) +
-		       sizeof(struct prox_config_data)] = {};
-	struct syncboss_data *message = (struct syncboss_data *)message_buf;
-	struct prox_config_version *prox_cfg_version =
-		(struct prox_config_version *)message->data;
-	struct prox_config_data *prox_cal =
-		(struct prox_config_data *)message->data;
-	size_t data_len = 0;
-
-	if (!devdata->has_prox)
-		return;
-	else if (!prox_cal_valid(devdata)) {
-		dev_warn(&devdata->spi->dev,
-			 "not pushing prox cal since it's invalid");
-		return;
-	}
-
-	if (enable)
-		dev_info(&devdata->spi->dev,
-			 "pushing prox cal to device and enabling prox wakeup");
-	else
-		dev_info(&devdata->spi->dev, "disabling prox wakeup");
-
-	if (enable) {
-		/* Only set prox config / calibration if we're enabling prox */
-
-		/* Set prox config version */
-		message->type = SYNCBOSS_SET_DATA_MESSAGE_TYPE;
-		message->sequence_id = 0;
-		message->data_len = sizeof(*prox_cfg_version);
-
-		prox_cfg_version->type =
-			SYNCBOSS_SET_PROX_CONFIG_VERSION_MESSAGE_TYPE;
-		prox_cfg_version->config_version = devdata->prox_config_version;
-
-		data_len = sizeof(struct syncboss_data) + message->data_len;
-		queue_tx_packet(devdata, message, data_len, /* from_user */ false);
-
-		/* Set prox calibration */
-		message->type = SYNCBOSS_SET_DATA_MESSAGE_TYPE;
-		message->sequence_id = 0;
-		message->data_len = sizeof(*prox_cal);
-
-		prox_cal->type = SYNCBOSS_SET_PROX_CAL_MESSAGE_TYPE;
-		prox_cal->prox_thdh = (u16)devdata->prox_thdh;
-		prox_cal->prox_thdl = (u16)devdata->prox_thdl;
-		prox_cal->prox_canc = (u16)devdata->prox_canc;
-
-		data_len = sizeof(struct syncboss_data) + message->data_len;
-		queue_tx_packet(devdata, message, data_len, /* from_user */ false);
-
-	}
-
-	/* Enable or disable prox */
-	message->type = enable ? SYNCBOSS_PROX_ENABLE_MESSAGE_TYPE :
-		SYNCBOSS_PROX_DISABLE_MESSAGE_TYPE;
-	message->sequence_id = 0;
-	message->data_len = 0;
-
-	data_len = sizeof(struct syncboss_data) + message->data_len;
-	queue_tx_packet(devdata, message, data_len, /* from_user */ false);
-}
-
+/*
+ * Check if the MCU was woken. If the GPIO is seen to be high, assume it is
+ * awake. Require the GPIO to be low for at least 5us as an indication is
+ * asleep.
+ */
 static bool is_mcu_awake(const struct syncboss_dev_data *devdata)
 {
 	if (gpio_is_valid(devdata->gpio_ready)) {
@@ -2098,6 +1256,7 @@ static bool is_mcu_awake(const struct syncboss_dev_data *devdata)
 	return true;
 }
 
+/* Wait for the MCU to wake or shut down. */
 static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 					bool awake)
 {
@@ -2134,6 +1293,11 @@ static int wait_for_syncboss_wake_state(struct syncboss_dev_data *devdata,
 	return -ETIMEDOUT;
 }
 
+/*
+ * Initialize a 'default' message to be sent when a transaction is needed
+ * (ex. in order to read from the MCU) but there's nothing of importance to
+ * send to MCU.
+ */
 static int create_default_smsg_locked(struct syncboss_dev_data *devdata)
 {
 	struct syncboss_msg *default_smsg;
@@ -2161,12 +1325,19 @@ static int create_default_smsg_locked(struct syncboss_dev_data *devdata)
 	return 0;
 }
 
+/* Free the default message created by create_default_smsg_locked() */
 static void destroy_default_smsg_locked(struct syncboss_dev_data *devdata)
 {
 	kfree(devdata->default_smsg);
 	devdata->default_smsg = NULL;
 }
 
+/*
+ * For Wake-on-SPI devices only:
+ * Send a message to the MCU without starting streaming and discard the
+ * data that comes back. The purspose of this function is to generate a
+ * SPI CS line toggle, waking the MCU.
+ */
 static int send_dummy_smsg(struct syncboss_dev_data *devdata)
 {
 	int status;
@@ -2213,6 +1384,58 @@ error:
 	return status;
 }
 
+/* Toggle the MCU pin reset GPIO to force it to (re-)boot. */
+void syncboss_pin_reset(struct syncboss_dev_data *devdata)
+{
+	if (!gpio_is_valid(devdata->gpio_reset)) {
+		dev_err(&devdata->spi->dev,
+			"cannot pin-reset becauses reset pin was not specified in device tree");
+		return;
+	}
+
+	dev_info(&devdata->spi->dev, "pin-resetting MCU");
+
+	if (gpio_get_value(devdata->gpio_reset) == 1) {
+		gpio_set_value(devdata->gpio_reset, 0);
+		msleep(SYNCBOSS_RESET_TIME_MS);
+	}
+
+	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_PIN_RESET, NULL);
+	devdata->last_reset_time_ms = ktime_get_ms();
+	gpio_set_value(devdata->gpio_reset, 1);
+}
+
+/*
+ * For Wake-on-SPI devices only:
+ * Wake the MCU by sending it a SPI transaction, and wait for it to boot.
+ */
+static int wake_mcu_by_dummy_spi(struct syncboss_dev_data *devdata)
+{
+	int status;
+
+	dev_info(&devdata->spi->dev, "sending dummy SPI transaction to wake MCU");
+
+	status = send_dummy_smsg(devdata);
+	if (status) {
+		dev_err(&devdata->spi->dev, "failed to send dummy SPI transaction: %d", status);
+		return status;
+	}
+
+	return wait_for_syncboss_wake_state(devdata, true);
+}
+
+
+/* Wake the MCU via a pin reset, and wait for it to boot. */
+static int wake_mcu_by_pin_reset(struct syncboss_dev_data *devdata)
+{
+	syncboss_pin_reset(devdata);
+	return wait_for_syncboss_wake_state(devdata, true);
+}
+
+/*
+ * SPI framework optimization: take control of prepare/unprepare calls from the
+ * framework, so we can void calling them more than necessary.
+ */
 static void override_spi_prepare_ops(struct syncboss_dev_data *devdata)
 {
 	struct spi_device *spi = devdata->spi;
@@ -2229,6 +1452,7 @@ static void override_spi_prepare_ops(struct syncboss_dev_data *devdata)
 	spi->master->unprepare_transfer_hardware = NULL;
 }
 
+/* Undo the effects of override_spi_prepare_ops() */
 static void restore_spi_prepare_ops(struct syncboss_dev_data *devdata)
 {
 	struct spi_device *spi = devdata->spi;
@@ -2241,27 +1465,7 @@ static void restore_spi_prepare_ops(struct syncboss_dev_data *devdata)
 	spi->master->unprepare_transfer_hardware = devdata->spi_prepare_ops.unprepare_transfer_hardware;
 }
 
-static int wake_mcu_by_pin_reset(struct syncboss_dev_data *devdata)
-{
-	syncboss_pin_reset(devdata);
-	return wait_for_syncboss_wake_state(devdata, true);
-}
-
-static int wake_mcu_by_dummy_spi(struct syncboss_dev_data *devdata)
-{
-	int status;
-
-	dev_info(&devdata->spi->dev, "sending dummy SPI transaction to wake MCU");
-
-	status = send_dummy_smsg(devdata);
-	if (status) {
-		dev_err(&devdata->spi->dev, "failed to send dummy SPI transaction: %d", status);
-		return status;
-	}
-
-	return wait_for_syncboss_wake_state(devdata, true);
-}
-
+/* Wake up the MCU by whatever means it supports, and handle that wake-up one it completes. */
 static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 {
 	int status = 0;
@@ -2277,7 +1481,7 @@ static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 	/* Reset "okay to transact" flags so no transactions occur until MCU wakes */
 	reset_timer_status_flags(devdata);
 
-	/* Clear flag so that handle_wakeup() will run on next MCU wakeup */
+	/* Reset flag to indicate a wake attempt is in progress. */
 	devdata->wakeup_handled = false;
 
 	/* Assume legacy polling mode until messaging from MCU proves otherwise. */
@@ -2303,11 +1507,46 @@ static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 		return status;
 
 	/* Wake up was successful. */
-	handle_wakeup(devdata);
+	devdata->last_reset_time_ms = ktime_get_ms();
+	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_UP, NULL);
+	devdata->wakeup_handled = true;
 
 	return 0;
 }
 
+/* Shut down the MCU by issueing a SPI command, and wait for it to halt */
+static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
+{
+	int is_asleep = 0;
+	struct syncboss_data message = {
+		.type = SYNCBOSS_SHUTDOWN_MESSAGE_TYPE,
+		.sequence_id = 0,
+		.data_len = 0
+	};
+
+	/* Note: Must be called under the state_mutex lock! */
+	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
+
+	dev_dbg(&devdata->spi->dev, "telling MCU to go to sleep");
+
+	/* Send command to put the MCU to sleep */
+	queue_tx_packet(devdata, &message, sizeof(message), /* from_user */ false);
+
+	/*
+	 * Wait for shutdown. The gpio_ready line will go low when things are
+	 * fully shut down
+	 */
+	is_asleep = (wait_for_syncboss_wake_state(devdata,
+						  /*awake*/false) == 0);
+	if (!is_asleep) {
+		dev_err(&devdata->spi->dev,
+			"MCU failed to sleep within %dms. pin-reset will be forced on stream start.",
+			SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS);
+			devdata->force_reset_on_open = true;
+	}
+}
+
+/* Start the main SPI / message thread processing loop */
 static int start_streaming_locked(struct syncboss_dev_data *devdata)
 {
 	int status = 0;
@@ -2436,8 +1675,6 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	devdata->worker = worker;
 	wake_up_process(devdata->worker);
 
-	push_prox_cal_and_enable_wake(devdata, devdata->powerstate_events_enabled);
-
 	return 0;
 
 error_after_prepare_msg:
@@ -2454,44 +1691,7 @@ error:
 	return status;
 }
 
-static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
-{
-	int is_asleep = 0;
-	struct syncboss_data message = {
-		.type = SYNCBOSS_SHUTDOWN_MESSAGE_TYPE,
-		.sequence_id = 0,
-		.data_len = 0
-	};
-
-	/* Note: Must be called under the state_mutex lock! */
-	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
-
-	dev_dbg(&devdata->spi->dev, "telling MCU to go to sleep");
-
-	/* Send command to put the MCU to sleep */
-	queue_tx_packet(devdata, &message, sizeof(message), /* from_user */ false);
-
-	/*
-	 * Wait for shutdown. The gpio_ready line will go low when things are
-	 * fully shut down
-	 */
-	is_asleep = (wait_for_syncboss_wake_state(devdata,
-						  /*awake*/false) == 0);
-	if (!is_asleep) {
-		dev_err(&devdata->spi->dev,
-			"MCU failed to sleep within %dms. pin-reset will be forced on stream start.",
-			SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS);
-			devdata->force_reset_on_open = true;
-	}
-}
-
-static void syncboss_on_camera_release(struct syncboss_dev_data *devdata)
-{
-	dev_dbg(&devdata->spi->dev, "turning off cameras");
-
-	devdata->cameras_enabled = false;
-}
-
+/* Stop the main SPI thread / message processing loop */
 static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 {
 	int status;
@@ -2508,22 +1708,12 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	/* Tell syncboss to go to sleep */
 	shutdown_syncboss_mcu_locked(devdata);
 
-	if (devdata->cameras_enabled) {
-		dev_warn(&devdata->spi->dev,
-			"cameras still enabled during stream stop. forcing camera release.");
-		syncboss_on_camera_release(devdata);
-	}
-
 	kthread_stop(devdata->worker);
 	hrtimer_cancel(&devdata->wake_timer);
 	hrtimer_cancel(&devdata->send_timer);
 	devdata->worker = NULL;
-	/*
-	 * Now that device comm is totally down, signal the SYSTEM_DOWN
-	 * event
-	 */
-	if (devdata->has_prox)
-		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
+
+	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_DOWN, NULL);
 
 	if (devdata->use_fastpath)
 		devdata->spi_prepare_ops.unprepare_message(devdata->spi->master, &devdata->default_smsg->spi_msg);
@@ -2543,14 +1733,6 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	mutex_unlock(&devdata->msg_queue_lock);
 
 	destroy_default_smsg_locked(devdata);
-
-	/*
-	 * Clear any unread fifo events that userspace has not yet read, so these
-	 * don't get confused for messages from the new streaming session once
-	 * streaming is resumed.
-	 */
-	miscfifo_clear(&devdata->stream_fifo);
-	miscfifo_clear(&devdata->control_fifo);
 
 	/* Return prepare/unprepare call ownership to the kernel SPI framework. */
 	restore_spi_prepare_ops(devdata);
@@ -2601,52 +1783,7 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	}
 }
 
-static void powerstate_set_enable_locked(struct syncboss_dev_data *devdata, bool enable)
-{
-	int status = 0;
-	bool must_wake_syncboss = !devdata->is_streaming;
-
-	if (must_wake_syncboss) {
-		/*
-		 * We're about to wake up syncboss, and then shut it
-		 * down again.  If we don't silence the powerstate messages,
-		 * the user will get a confusing stream of messages
-		 * during this process.
-		 */
-		devdata->silence_all_powerstate_events = true;
-
-		status = start_streaming_locked(devdata);
-		if (status)
-			goto error;
-	}
-
-	push_prox_cal_and_enable_wake(devdata, enable);
-
-	devdata->powerstate_events_enabled = enable;
-
-error:
-	/*
-	 * Note: We can stop streaming immediately since the stop
-	 * streaming impl sends a sleep command to SyncBoss and waits
-	 * for it to sleep.  This means our prox settings are ensured
-	 * to get over as well.
-	 */
-	if (must_wake_syncboss)
-		stop_streaming_locked(devdata);
-
-	devdata->silence_all_powerstate_events = false;
-}
-
-static void powerstate_enable_locked(struct syncboss_dev_data *devdata)
-{
-	powerstate_set_enable_locked(devdata, true);
-}
-
-static void powerstate_disable_locked(struct syncboss_dev_data *devdata)
-{
-	powerstate_set_enable_locked(devdata, false);
-}
-
+/* Handle a 'data ready to be read' IRQ from the MCU */
 static irqreturn_t isr_data_ready(int irq, void *p)
 {
 	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
@@ -2681,15 +1818,155 @@ static irqreturn_t isr_data_ready(int irq, void *p)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t timesync_irq_handler(int irq, void *p)
-{
-	const u64 timestamp_ns = ktime_to_ns(ktime_get());
-	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *) p;
 
-	atomic64_set(&devdata->last_te_timestamp_ns, timestamp_ns);
-	return IRQ_HANDLED;
+/*  Consumer API: Acquire state_lock. Use with caution! */
+static void consumer_syncboss_state_lock(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	mutex_lock(&devdata->state_mutex);
 }
 
+/* Consumer API: Release state_lock. Use with caution! */
+static void consumer_syncboss_state_unlock(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	mutex_unlock(&devdata->state_mutex);
+}
+
+/* Consumer API: Get stream status */
+static bool consumer_get_is_streaming(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	return devdata->is_streaming;
+}
+
+/* Consumer API: Register for state change events */
+static int consumer_state_event_notifier_register(struct device *child, struct notifier_block *nb)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int ret;
+
+	mutex_lock(&devdata->state_mutex);
+	if (devdata->is_streaming) {
+		dev_err(&devdata->spi->dev, "notifiers can't be registered while streaming");
+		ret = -EBUSY;
+		goto out;
+	}
+	ret = raw_notifier_chain_register(&devdata->state_event_chain, nb);
+out:
+	mutex_unlock(&devdata->state_mutex);
+	return ret;
+}
+
+/* Consumer API: Unregister from change events */
+static int consumer_state_event_notifier_unregister(struct device *child, struct notifier_block *nb)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int ret;
+
+	mutex_lock(&devdata->state_mutex);
+	if (devdata->is_streaming) {
+		dev_err(&devdata->spi->dev, "notifiers can't be unregistered while streaming");
+		ret = -EBUSY;
+		goto out;
+	}
+	ret = raw_notifier_chain_unregister(&devdata->state_event_chain, nb);
+out:
+	mutex_unlock(&devdata->state_mutex);
+	return ret;
+}
+
+/* Consumer API: Register for received messages from MCU */
+static int consumer_rx_packet_notifier_register(struct device *child, struct notifier_block *nb)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int ret;
+
+	mutex_lock(&devdata->state_mutex);
+	ret = raw_notifier_chain_register(&devdata->rx_packet_event_chain, nb);
+	mutex_unlock(&devdata->state_mutex);
+
+	return ret;
+}
+
+/* Consumer API: Unregister from received messages from MCU */
+static int consumer_rx_packet_notifier_unregister(struct device *child, struct notifier_block *nb)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int ret;
+
+	mutex_lock(&devdata->state_mutex);
+	ret = raw_notifier_chain_unregister(&devdata->rx_packet_event_chain, nb);
+	mutex_unlock(&devdata->state_mutex);
+
+	return ret;
+}
+
+/* Consumer API: Vote to boot the MCU and keep it awake (refcounted) */
+static int consumer_enable_mcu(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	mutex_lock(&devdata->state_mutex);
+	syncboss_inc_mcu_client_count_locked(devdata);
+	mutex_unlock(&devdata->state_mutex);
+
+	return 0;
+}
+
+/* Consumer API: Remove vote for keeping the MCU awake (refcounted) */
+static int consumer_disable_mcu(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	mutex_lock(&devdata->state_mutex);
+	syncboss_dec_mcu_client_count_locked(devdata);
+	mutex_unlock(&devdata->state_mutex);
+
+	return 0;
+}
+
+/* Consumer API: Vote to start the SPI data stream (refcounted). Keeps MCU awake. */
+static int consumer_enable_stream(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int ret;
+
+	mutex_lock(&devdata->state_mutex);
+	ret = syncboss_inc_streaming_client_count_locked(devdata);
+	mutex_unlock(&devdata->state_mutex);
+
+	return ret;
+}
+
+/* Consumer API: Remove vote to keep the SPI data stream running (refcounted). */
+static int consumer_disable_stream(struct device *child)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int ret;
+
+	mutex_lock(&devdata->state_mutex);
+	ret = syncboss_dec_streaming_client_count_locked(devdata);
+	mutex_unlock(&devdata->state_mutex);
+
+	return ret;
+}
+
+/*
+ * Consumer API: Send a message to the MCU when it is next streaming, or immediately
+ * if streaming is active.
+ */
+static ssize_t consumer_queue_tx_packet(struct device *child, const void *buf, size_t count, bool from_user)
+{
+	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+
+	return queue_tx_packet(devdata, buf, count, from_user);
+}
+
+/* Probe helper funcion to initialize struct syncboss_dev_data members */
 static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
@@ -2699,13 +1976,13 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 
 	devdata->streaming_client_count = 0;
 
-	/* T114417103: for old sysfs sequence number mechanism */
-	devdata->next_avail_seq_num = 1;
-	/* T114417103: for new ioctl sequence number mechanism */
-	client_data_init_locked(devdata);
+	/* For ioctl sequence number mechanism */
+	INIT_LIST_HEAD(&devdata->client_data_list);
+	devdata->client_data_index = 0;
+
 	/*
-	 * syncboss_sequence_number_reset_locked does some unnecessary initilization
-	 * as devdata is zero initilized
+	 * syncboss_sequence_number_reset_locked does some unnecessary initialization
+	 * as devdata is zero initialized
 	 */
 	devdata->last_seq_num = SYNCBOSS_SEQ_NUM_MAX;
 
@@ -2715,16 +1992,11 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->next_stream_settings.max_msg_send_delay_ns =
 		SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS;
 	devdata->next_stream_settings.spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
-	devdata->poll_prio = SYNCBOSS_DEFAULT_POLL_PRIO;
+	devdata->thread_prio = SYNCBOSS_DEFAULT_THREAD_PRIO;
 	atomic64_set(&devdata->transaction_ctr, 0);
 
-	devdata->prox_canc = INVALID_PROX_CAL_VALUE;
-	devdata->prox_thdl = INVALID_PROX_CAL_VALUE;
-	devdata->prox_thdh = INVALID_PROX_CAL_VALUE;
-	devdata->prox_config_version = DEFAULT_PROX_CONFIG_VERSION_VALUE;
-	devdata->powerstate_last_evt = INVALID_POWERSTATE_VALUE;
-
-	devdata->use_fastpath = of_property_read_bool(node, "oculus,syncboss-use-fastpath");
+	devdata->has_wake_on_spi = of_property_read_bool(node, "meta,syncboss-has-wake-on-spi");
+	devdata->use_fastpath = of_property_read_bool(node, "meta,syncboss-use-fastpath");
 
 	/* this will be overwritten by init through syncboss_sysfs */
 	cpumask_setall(&devdata->cpu_affinity);
@@ -2742,37 +2014,41 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	devdata->send_timer.function = send_timer_callback;
 
 	devdata->gpio_reset = of_get_named_gpio(node,
-			"oculus,syncboss-reset", 0);
-	devdata->gpio_timesync = of_get_named_gpio(node,
-			"oculus,syncboss-timesync", 0);
+			"meta,syncboss-reset", 0);
 	devdata->gpio_ready = of_get_named_gpio(node,
-			"oculus,syncboss-wakeup", 0);
-	devdata->gpio_nsync = of_get_named_gpio(node,
-			"oculus,syncboss-nsync", 0);
-
-	devdata->has_prox = of_property_read_bool(node, "oculus,syncboss-has-prox");
-	devdata->has_no_prox_cal = of_property_read_bool(node, "oculus,syncboss-has-no-prox-cal");
-	devdata->has_wake_on_spi = of_property_read_bool(node, "oculus,syncboss-has-wake-on-spi");
-	devdata->has_seq_num_ioctl = of_property_read_bool(node, "oculus,syncboss-has-seq-num-ioctl");
+			"meta,syncboss-wakeup", 0);
 
 	dev_dbg(&devdata->spi->dev,
-		 "GPIOs: reset: %d, timesync: %d, wakeup/ready: %d, nsync: %d",
-		 devdata->gpio_reset, devdata->gpio_timesync,
-		 devdata->gpio_ready, devdata->gpio_nsync);
+		 "GPIOs: reset: %d, wakeup/ready: %d",
+		 devdata->gpio_reset, devdata->gpio_ready);
 
-	dev_dbg(&devdata->spi->dev, "has-prox: %s",
-		 devdata->has_prox ? "true" : "false");
 	if (devdata->gpio_reset < 0) {
 		dev_err(&devdata->spi->dev,
 			"reset GPIO was not specificed in the device tree. MCU reset and firmware updates will fail.");
 	}
 
+	devdata->consumer_ops.get_is_streaming = consumer_get_is_streaming;
+	devdata->consumer_ops.syncboss_state_lock = consumer_syncboss_state_lock;
+	devdata->consumer_ops.syncboss_state_unlock = consumer_syncboss_state_unlock;
+	devdata->consumer_ops.state_event_notifier_register = consumer_state_event_notifier_register;
+	devdata->consumer_ops.state_event_notifier_unregister = consumer_state_event_notifier_unregister;
+	devdata->consumer_ops.rx_packet_notifier_register = consumer_rx_packet_notifier_register;
+	devdata->consumer_ops.rx_packet_notifier_unregister = consumer_rx_packet_notifier_unregister;
+	devdata->consumer_ops.enable_mcu = consumer_enable_mcu;
+	devdata->consumer_ops.disable_mcu = consumer_disable_mcu;
+	devdata->consumer_ops.enable_stream = consumer_enable_stream;
+	devdata->consumer_ops.disable_stream = consumer_disable_stream;
+	devdata->consumer_ops.queue_tx_packet = consumer_queue_tx_packet;
+
+	RAW_INIT_NOTIFIER_HEAD(&devdata->state_event_chain);
+	RAW_INIT_NOTIFIER_HEAD(&devdata->rx_packet_event_chain);
+
 	mutex_init(&devdata->state_mutex);
-	spin_lock_init(&devdata->nsync_lock);
 
 	return 0;
 }
 
+/* Platform device initialization */
 static int syncboss_probe(struct spi_device *spi)
 {
 	struct syncboss_dev_data *devdata;
@@ -2793,8 +2069,6 @@ static int syncboss_probe(struct spi_device *spi)
 		status = -ENOMEM;
 		goto error;
 	}
-
-	devdata->swd_ops.is_busy = is_busy;
 
 	status = init_syncboss_dev_data(devdata, spi);
 	if (status < 0)
@@ -2818,7 +2092,6 @@ static int syncboss_probe(struct spi_device *spi)
 
 	dev_set_drvdata(dev, devdata);
 
-	/* misc dev stuff */
 	devdata->misc.name = SYNCBOSS_DEVICE_NAME;
 	devdata->misc.minor = MISC_DYNAMIC_MINOR;
 	devdata->misc.fops = &fops;
@@ -2830,104 +2103,17 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_devdata_init;
 	}
 
-	devdata->stream_fifo.config.kfifo_size = SYNCBOSS_MISCFIFO_SIZE;
-	devdata->stream_fifo.config.filter_fn = should_send_stream_packet;
-	status = devm_miscfifo_register(dev, &devdata->stream_fifo);
-	if (status < 0) {
-		dev_err(dev, "%s failed to register miscfifo device, error %d",
-			__func__, status);
-		goto error_after_misc_register;
-	}
-
-	devdata->misc_stream.name = SYNCBOSS_STREAM_DEVICE_NAME;
-	devdata->misc_stream.minor = MISC_DYNAMIC_MINOR;
-	devdata->misc_stream.fops = &stream_fops;
-
-	status = misc_register(&devdata->misc_stream);
-	if (status < 0) {
-		dev_err(dev, "%s failed to register misc device, error %d",
-			__func__, status);
-		goto error_after_misc_register;
-	}
-
-	devdata->control_fifo.config.kfifo_size = SYNCBOSS_MISCFIFO_SIZE;
-	status = devm_miscfifo_register(dev, &devdata->control_fifo);
-	if (status < 0) {
-		dev_err(dev, "%s failed to register miscfifo device, error %d",
-			__func__, status);
-		goto error_after_stream_register;
-	}
-
-	devdata->misc_control.name = SYNCBOSS_CONTROL_DEVICE_NAME;
-	devdata->misc_control.minor = MISC_DYNAMIC_MINOR;
-	devdata->misc_control.fops = &control_fops;
-
-	status = misc_register(&devdata->misc_control);
-	if (status < 0) {
-		dev_err(dev, "%s failed to register misc device, error %d",
-			__func__, status);
-		goto error_after_stream_register;
-	}
-
-	devdata->powerstate_fifo.config.kfifo_size = SYNCBOSS_MISCFIFO_SIZE;
-	status = devm_miscfifo_register(dev, &devdata->powerstate_fifo);
-	if (status < 0) {
-		dev_err(dev,
-			"%s failed to register miscfifo device, error %d",
-			__func__, status);
-		goto error_after_control_register;
-	}
-
-	devdata->misc_powerstate.name = SYNCBOSS_POWERSTATE_DEVICE_NAME;
-	devdata->misc_powerstate.minor = MISC_DYNAMIC_MINOR;
-	devdata->misc_powerstate.fops = &powerstate_fops;
-
-	status = misc_register(&devdata->misc_powerstate);
-	if (status < 0) {
-		dev_err(dev, "%s failed to register misc device, error %d",
-			__func__, status);
-		goto error_after_control_register;
-	}
-
-#if defined(CONFIG_SYNCBOSS_DIRECTCHANNEL)
-	status = syncboss_register_direct_channel_interface(devdata,dev);
-	if (status < 0) {
-		dev_err(dev, "%s failed to register direct channel misc device, error %d",
-			__func__, status);
-		goto error_after_control_register;
-	}
-#endif /* CONFIG_SYNCBOSS_DIRECTCHANNEL */
 	/*
 	 * Configure the MCU pin reset as an output, and leave it asserted
 	 * until the syncboss device is opened by userspace.
 	 */
 	gpio_direction_output(devdata->gpio_reset, 0);
 
-	/* Set up TE timestamp before sysfs nodes get enabled */
-	atomic64_set(&devdata->last_te_timestamp_ns, ktime_to_ns(ktime_get()));
-
-	if (gpio_is_valid(devdata->gpio_nsync)) {
-		devdata->nsync_fifo.config.kfifo_size = SYNCBOSS_NSYNC_MISCFIFO_SIZE;
-		status = devm_miscfifo_register(dev, &devdata->nsync_fifo);
-
-		devdata->misc_nsync.name = SYNCBOSS_NSYNC_DEVICE_NAME;
-		devdata->misc_nsync.minor = MISC_DYNAMIC_MINOR;
-		devdata->misc_nsync.fops = &nsync_fops;
-
-		status = misc_register(&devdata->misc_nsync);
-		if (status < 0) {
-			dev_err(dev, "failed to register nsync misc device, error %d",
-					status);
-		}
-	}
-
-	/*
-	 * Create child SWD fw-update devices, if any
-	 */
-	status = of_platform_populate(dev->of_node, oculus_swd_match_table,
+	/* Create child devices, if any */
+	status = of_platform_populate(dev->of_node, syncboss_subdevice_match_table,
 				      NULL, dev);
 	if (status < 0)
-		goto error_after_powerstate_register;
+		goto error_after_misc_reg;
 
 	status = syncboss_init_sysfs_attrs(devdata);
 	if (status < 0)
@@ -2952,18 +2138,6 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_sysfs;
 	}
 
-	if (devdata->gpio_timesync >= 0) {
-		devdata->timesync_irq = gpio_to_irq(devdata->gpio_timesync);
-		status = devm_request_irq(&spi->dev, devdata->timesync_irq,
-				timesync_irq_handler,
-				IRQF_TRIGGER_RISING,
-				devdata->misc.name, devdata);
-		if (status < 0) {
-			dev_err(dev, "failed to get timesync irq, error %d", status);
-			goto error_after_sysfs;
-		}
-	}
-
 	status = syncboss_debugfs_init(devdata);
 	if (status && -ENODEV != status) {
 		dev_err(dev, "failed to init debugfs: %d", status);
@@ -2981,13 +2155,7 @@ error_after_sysfs:
 	syncboss_deinit_sysfs_attrs(devdata);
 error_after_of_platform_populate:
 	of_platform_depopulate(&spi->dev);
-error_after_powerstate_register:
-	misc_deregister(&devdata->misc_powerstate);
-error_after_control_register:
-	misc_deregister(&devdata->misc_control);
-error_after_stream_register:
-	misc_deregister(&devdata->misc_stream);
-error_after_misc_register:
+error_after_misc_reg:
 	misc_deregister(&devdata->misc);
 error_after_devdata_init:
 	destroy_workqueue(devdata->syncboss_pm_workqueue);
@@ -2995,6 +2163,7 @@ error:
 	return status;
 }
 
+/* Platform device removal cleanup */
 static int syncboss_remove(struct spi_device *spi)
 {
 	struct syncboss_dev_data *devdata = NULL;
@@ -3009,33 +2178,9 @@ static int syncboss_remove(struct spi_device *spi)
 
 	syncboss_debugfs_deinit(devdata);
 
-	misc_deregister(&devdata->misc_stream);
-	misc_deregister(&devdata->misc_control);
-	misc_deregister(&devdata->misc_powerstate);
 	misc_deregister(&devdata->misc);
 
-#if defined(CONFIG_SYNCBOSS_DIRECTCHANNEL)
-	syncboss_deregister_direct_channel_interface(devdata);
-#endif /* CONFIG_SYNCBOSS_DIRECTCHANNEL */
-
 	return 0;
-}
-
-static void syncboss_on_camera_probe(struct syncboss_dev_data *devdata)
-{
-	dev_dbg(&devdata->spi->dev, "turning on cameras");
-
-	devdata->cameras_enabled = true;
-}
-
-static ssize_t syncboss_write(struct file *filp, const char __user *buf,
-			      size_t count, loff_t *f_pos)
-{
-	struct syncboss_dev_data *devdata =
-		container_of(filp->private_data, struct syncboss_dev_data,
-			     misc);
-
-	return queue_tx_packet(devdata, buf, count, /* from_user */ true);
 }
 
 #ifdef CONFIG_PM_SLEEP
@@ -3044,6 +2189,7 @@ struct syncboss_resume_work_data {
 	struct syncboss_dev_data *devdata;
 };
 
+/* Handle system suspend by allowing the MCU to shut down */
 static int syncboss_suspend(struct device *dev)
 {
 	struct syncboss_dev_data *devdata =
@@ -3067,27 +2213,8 @@ static int syncboss_suspend(struct device *dev)
 	}
 
 	if (devdata->streaming_client_count > 0) {
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPEND, NULL);
 		dev_info(dev, "stopping streaming for system suspend");
-
-		if (devdata->powerstate_last_evt == SYNCBOSS_PROX_EVENT_PROX_ON) {
-			/*
-			 * Handle the case where we suspend while the prox is still covered (ex. device
-			 * is put into suspend by a button press, or goes into suspend after a long period
-			 * of no motion).
-			 *
-			 * In this scenario, a PROX_ON event will be emitted when we start streaming and
-			 * re-enable MCU prox events upon resume from suspend, even if the prox sensor
-			 * state hasn't physically changed.
-			 *
-			 * To prevent such a PROX_ON from waking the whole system and turning on the
-			 * display, etc, swallow all PROX_ON events received until at least one
-			 * PROX_OFF event has been reported, indicating the persistent obstruction has
-			 * been cleared.
-			 */
-			dev_dbg(dev, "ignoring prox_on events until the next prox_off");
-			devdata->eat_prox_on_events = true;
-		}
-
 		stop_streaming_locked(devdata);
 	}
 	mutex_unlock(&devdata->state_mutex);
@@ -3095,6 +2222,7 @@ static int syncboss_suspend(struct device *dev)
 	return 0;
 }
 
+/* Deferred work from syncboss_resume, so system resume doesn't have to wait for it. */
 static void do_syncboss_resume_work(struct work_struct *work)
 {
 	struct syncboss_resume_work_data *wd = container_of(work, struct syncboss_resume_work_data, work);
@@ -3108,6 +2236,8 @@ static void do_syncboss_resume_work(struct work_struct *work)
 		status = start_streaming_locked(devdata);
 		if (status)
 			dev_err(dev, "%s: failed to resume streaming (%d)", __func__, status);
+		else
+			raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUME, NULL);
 	}
 
 	 // Release mutex acquired by syncboss_resume()
@@ -3118,6 +2248,7 @@ static void do_syncboss_resume_work(struct work_struct *work)
 	devm_kfree(dev, wd);
 }
 
+/* Handle resume from system suspend by restarting the MCU, if appropriate */
 static int syncboss_resume(struct device *dev)
 {
 	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)dev_get_drvdata(dev);
@@ -3170,5 +2301,5 @@ static void __exit syncboss_exit(void)
 
 module_init(syncboss_init);
 module_exit(syncboss_exit);
-MODULE_DESCRIPTION("SYNCBOSS");
+MODULE_DESCRIPTION("Syncboss SPI communication driver");
 MODULE_LICENSE("GPL v2");

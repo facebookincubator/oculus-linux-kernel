@@ -727,7 +727,7 @@ extern int log_print_threshold;
 #define DHD_IOVAR_LOG_CHECK(dhd_pub, ioc_cmd, ioc_msg) \
 	dhd_iovar_log_dump_check(dhd_pub, ioc_cmd, ioc_msg)
 #else
-#define DHD_IOVAR_LOG_CHECK(dhd_pub, ioc_cmd, ioc_msg) TRUE
+#define DHD_IOVAR_LOG_CHECK(dhd_pub, ioc_cmd, ioc_msg) FALSE
 #endif /* DHD_IOVAR_LOG_FILTER_DUMP */
 
 #define DHD_IOVAR_LOG(dhd_pub, ioc_cmd, ioc_msg, fmt) \
