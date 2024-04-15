@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _SYNCBOSS_SEQUENCE_NUMBER_H
-#define _SYNCBOSS_SEQUENCE_NUMBER_H
+#ifndef _SYNCBOSS_SPI_SEQUENCE_NUMBER_H
+#define _SYNCBOSS_SPI_SEQUENCE_NUMBER_H
 
-#include "syncboss.h"
+#include "syncboss_spi.h"
 
 void syncboss_sequence_number_reset_locked(struct syncboss_dev_data *devdata);
 int syncboss_sequence_number_allocate_locked(struct syncboss_dev_data *devdata,

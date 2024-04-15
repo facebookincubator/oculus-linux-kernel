@@ -3040,7 +3040,7 @@ static int cam_icp_mgr_send_pc_prep(struct cam_icp_hw_mgr *hw_mgr)
 	int rc;
 	struct cam_hw_intf *a5_dev_intf = NULL;
 	unsigned long rem_jiffies;
-	int timeout = 5000;
+	int timeout = 100;
 
 	a5_dev_intf = hw_mgr->a5_dev_intf;
 	if (!a5_dev_intf) {
@@ -3258,7 +3258,7 @@ static int cam_icp_retry_wait_for_abort(
 {
 	int retry_cnt = 1;
 	unsigned long rem_jiffies;
-	int timeout = 1000;
+	int timeout = 200;
 
 	CAM_WARN(CAM_ICP, "FW timeout in abort ctx: %u retry_left: %d",
 		ctx_data->ctx_id, retry_cnt);
@@ -3341,7 +3341,7 @@ static int cam_icp_mgr_abort_handle(
 	int rc = 0;
 	unsigned long rem_jiffies = 0;
 	size_t packet_size;
-	int timeout = 1000;
+	int timeout = 100;
 	struct hfi_cmd_ipebps_async *abort_cmd;
 
 	packet_size =
@@ -3396,7 +3396,7 @@ static int cam_icp_mgr_destroy_handle(
 	struct cam_icp_hw_ctx_data *ctx_data)
 {
 	int rc = 0;
-	int timeout = 1000;
+	int timeout = 100;
 	unsigned long rem_jiffies;
 	size_t packet_size;
 	struct hfi_cmd_ipebps_async *destroy_cmd;
@@ -3752,7 +3752,7 @@ static int cam_icp_mgr_send_fw_init(struct cam_icp_hw_mgr *hw_mgr)
 	int rc;
 	struct cam_hw_intf *a5_dev_intf = NULL;
 	unsigned long rem_jiffies;
-	int timeout = 5000;
+	int timeout = 100;
 
 	a5_dev_intf = hw_mgr->a5_dev_intf;
 	if (!a5_dev_intf) {
@@ -3987,7 +3987,7 @@ static int cam_icp_mgr_send_config_io(struct cam_icp_hw_ctx_data *ctx_data,
 	struct hfi_cmd_work_data *task_data;
 	struct hfi_cmd_ipebps_async ioconfig_cmd;
 	unsigned long rem_jiffies;
-	int timeout = 5000;
+	int timeout = 100;
 	struct crm_workq_task *task;
 	uint32_t size_in_words;
 
@@ -4403,7 +4403,7 @@ static int cam_icp_process_stream_settings(
 	size_t packet_size, map_cmd_size, len;
 	dma_addr_t iova;
 	unsigned long rem_jiffies;
-	int timeout = 5000;
+	int timeout = 100;
 	struct hfi_cmd_ipe_bps_map  *map_cmd;
 	struct hfi_cmd_ipebps_async *async_direct;
 
@@ -5174,7 +5174,7 @@ static void cam_icp_mgr_flush_info_dump(
 static int cam_icp_mgr_enqueue_abort(
 	struct cam_icp_hw_ctx_data *ctx_data)
 {
-	int timeout = 1000, rc;
+	int timeout = 100, rc;
 	unsigned long rem_jiffies = 0;
 	struct hfi_cmd_work_data *task_data;
 	struct crm_workq_task *task;
@@ -5456,7 +5456,7 @@ static int cam_icp_mgr_create_handle(uint32_t dev_type,
 	struct hfi_cmd_create_handle create_handle;
 	struct hfi_cmd_work_data *task_data;
 	unsigned long rem_jiffies;
-	int timeout = 5000;
+	int timeout = 100;
 	struct crm_workq_task *task;
 	int rc = 0;
 
@@ -5501,7 +5501,7 @@ static int cam_icp_mgr_send_ping(struct cam_icp_hw_ctx_data *ctx_data)
 	struct hfi_cmd_ping_pkt ping_pkt;
 	struct hfi_cmd_work_data *task_data;
 	unsigned long rem_jiffies;
-	int timeout = 5000;
+	int timeout = 100;
 	struct crm_workq_task *task;
 	int rc = 0;
 

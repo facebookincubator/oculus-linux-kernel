@@ -6,6 +6,7 @@
 #include <linux/of_gpio.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/slab.h>
+#include <linux/syncboss/consumer.h>
 #include <linux/sysfs.h>
 
 #include "fwupdate_debug.h"
@@ -28,35 +29,35 @@ static int swd_driver_init_flash_parameters(struct device *dev, struct swd_mcu_d
 {
 	int ret;
 
-	ret = of_property_read_u32(node, "oculus,flash-block-size",
+	ret = of_property_read_u32(node, "meta,flash-block-size",
 				   &mcudata->flash_info.block_size);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get flash-block-size: %d\n", ret);
 		return ret;
 	}
 
-	ret = of_property_read_u32(node, "oculus,flash-page-size",
+	ret = of_property_read_u32(node, "meta,flash-page-size",
 				   &mcudata->flash_info.page_size);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get flash-page-size: %d\n", ret);
 		return ret;
 	}
 
-	ret = of_property_read_u32(node, "oculus,flash-page-count",
+	ret = of_property_read_u32(node, "meta,flash-page-count",
 				   &mcudata->flash_info.num_pages);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get flash-page-count: %d\n", ret);
 		return ret;
 	}
 
-	ret = of_property_read_u32(node, "oculus,flash-page-retained-count",
+	ret = of_property_read_u32(node, "meta,flash-page-retained-count",
 				   &mcudata->flash_info.num_retained_pages);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get flash-page-retained-count: %d\n", ret);
 		return ret;
 	}
 
-	ret = of_property_read_u32(node, "oculus,flash-page-bootloader-protected-count",
+	ret = of_property_read_u32(node, "meta,flash-page-bootloader-protected-count",
 					&mcudata->flash_info.num_protected_bootloader_pages);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get flash-page-bootloader-protected-count: %d\n", ret);
@@ -64,7 +65,7 @@ static int swd_driver_init_flash_parameters(struct device *dev, struct swd_mcu_d
 	}
 
 	/* bank count is optional and will be initialized to 1 if not found */
-	ret = of_property_read_u32(node, "oculus,flash-bank-count", &mcudata->flash_info.bank_count);
+	ret = of_property_read_u32(node, "meta,flash-bank-count", &mcudata->flash_info.bank_count);
 	if (ret < 0) {
 		mcudata->flash_info.bank_count = 1;
 		ret = 0;
@@ -77,7 +78,7 @@ static int swd_driver_init_single_target(struct device *dev, struct swd_mcu_data
 {
 	int ret;
 
-	ret = of_property_read_string(node, "oculus,swd-flavor", &mcudata->target_flavor);
+	ret = of_property_read_string(node, "meta,swd-flavor", &mcudata->target_flavor);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get swdflavor: %d", ret);
 		return ret;
@@ -89,7 +90,7 @@ static int swd_driver_init_single_target(struct device *dev, struct swd_mcu_data
 	if (ret < 0)
 		return ret;
 
-	ret = of_property_read_u32(node, "oculus,swd-mem-ap", &mcudata->mem_ap);
+	ret = of_property_read_u32(node, "meta,swd-mem-ap", &mcudata->mem_ap);
 	if (ret < 0) {
 		/* If no MEMAP is specified, we will use the first one as fallback. */
 		mcudata->mem_ap = 0;
@@ -112,27 +113,29 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 
 
 	if (parent_node &&
-	    of_device_is_compatible(parent_node, "oculus,syncboss")) {
-		struct swd_ops *ops = dev_get_drvdata(dev->parent);
+	    of_device_is_compatible(parent_node, "meta,syncboss")) {
+		struct syncboss_consumer_ops *ops = dev_get_drvdata(dev->parent);
 
-		devdata->is_busy = ops->is_busy;
+		devdata->get_syncboss_is_streaming = ops->get_is_streaming;
+		devdata->mcu_state_lock = ops->syncboss_state_lock;
+		devdata->mcu_state_unlock = ops->syncboss_state_unlock;
 	}
 
 	mutex_init(&devdata->state_mutex);
 
-	ret = of_property_read_string(node, "oculus,swd-flavor", &swdflavor);
+	ret = of_property_read_string(node, "meta,swd-flavor", &swdflavor);
 	if (ret < 0) {
 		dev_err(dev, "Failed to get swdflavor: %d\n", ret);
 		return ret;
 	}
 
-	devdata->gpio_reset = of_get_named_gpio(node, "oculus,pin-reset", 0);
+	devdata->gpio_reset = of_get_named_gpio(node, "meta,pin-reset", 0);
 	if (devdata->gpio_reset == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
-	devdata->gpio_swdclk = of_get_named_gpio(node, "oculus,swd-clk", 0);
+	devdata->gpio_swdclk = of_get_named_gpio(node, "meta,swd-clk", 0);
 	if (devdata->gpio_swdclk == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
-	devdata->gpio_swdio = of_get_named_gpio(node, "oculus,swd-io", 0);
+	devdata->gpio_swdio = of_get_named_gpio(node, "meta,swd-io", 0);
 	if (devdata->gpio_swdio == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
 
@@ -141,8 +144,8 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 		return -EINVAL;
 	}
 
-	mcu_node = of_get_child_by_name(node, "oculus,mcus");
-	ret = of_property_read_string(node, "oculus,fw-path", &devdata->mcu_data.fw_path);
+	mcu_node = of_get_child_by_name(node, "meta,mcus");
+	ret = of_property_read_string(node, "meta,fw-path", &devdata->mcu_data.fw_path);
 	if (ret < 0 && !mcu_node) {
 		dev_err(dev, "Failed to get fw-path: %d\n", ret);
 		return ret;
@@ -153,8 +156,8 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 		return -EINVAL;
 	}
 
-	devdata->erase_all = of_property_read_bool(node, "oculus,flash-erase-all");
-	devdata->swd_provisioning = of_property_read_bool(node, "oculus,swd-provisioning");
+	devdata->erase_all = of_property_read_bool(node, "meta,flash-erase-all");
+	devdata->swd_provisioning = of_property_read_bool(node, "meta,swd-provisioning");
 
 	if (mcu_node) {
 		child_count = of_get_child_count(mcu_node);
@@ -167,7 +170,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 		child_index = 0;
 		for_each_child_of_node(mcu_node, child) {
 			dev_err(dev, "Name: %s", child->name);
-			of_property_read_string(child, "oculus,fw-path", &devdata->child_mcu_data[child_index].fw_path);
+			of_property_read_string(child, "meta,fw-path", &devdata->child_mcu_data[child_index].fw_path);
 			ret = swd_driver_init_single_target(dev, &devdata->child_mcu_data[child_index], child, true);
 			if (ret < 0)
 				return ret;
@@ -182,7 +185,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	if (ret < 0)
 		return ret;
 
-#ifdef CONFIG_OCULUS_SWD_DEBUG
+#ifdef CONFIG_META_SWD_DEBUG
 	ret = fwupdate_create_debugfs(dev, swdflavor);
 	if (ret < 0)
 		return ret;
@@ -250,7 +253,7 @@ static int swd_driver_remove(struct platform_device *pdev)
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
 	sysfs_remove_group(&dev->kobj, &m_swd_gr);
-#ifdef CONFIG_OCULUS_SWD_DEBUG
+#ifdef CONFIG_META_SWD_DEBUG
 	if (fwupdate_remove_debugfs(dev))
 		dev_err(dev, "Error removing debugfs nodes");
 #endif
@@ -264,26 +267,26 @@ static int swd_driver_remove(struct platform_device *pdev)
 
 
 #ifdef CONFIG_OF /*Open firmware must be defined for dts useage*/
-static const struct of_device_id oculus_swd_table[] = {
-	{ .compatible = "oculus,swd",}, /*Compatible node must match dts*/
+static const struct of_device_id meta_swd_table[] = {
+	{ .compatible = "meta,swd", }, /*Compatible node must match dts*/
 	{ },
 };
 #else
-#	 define oculus_swd_table NULL
+#	 define meta_swd_table NULL
 #endif
 
-struct platform_driver oculus_swd_driver = {
+struct platform_driver meta_swd_driver = {
 	.driver = {
-		.name = "oculus_swd",
+		.name = "meta_swd",
 		.owner = THIS_MODULE,
-		.of_match_table = oculus_swd_table
+		.of_match_table = meta_swd_table
 	},
 	.probe = swd_driver_probe,
 	.remove = swd_driver_remove,
 };
 
 static struct platform_driver * const platform_drivers[] = {
-	&oculus_swd_driver,
+	&meta_swd_driver,
 };
 
 static int __init swd_driver_init(void)
@@ -300,5 +303,5 @@ static void __exit swd_driver_exit(void)
 
 module_init(swd_driver_init);
 module_exit(swd_driver_exit);
-MODULE_DESCRIPTION("Oculus SWD FW-Update driver");
+MODULE_DESCRIPTION("Meta SWD FW-Update driver");
 MODULE_LICENSE("GPL v2");

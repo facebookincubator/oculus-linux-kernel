@@ -37,7 +37,6 @@
 		fan: pwm-tach-fan@0 {
 			reg = <0>;
 			compatible = "pwm-tach-fan";
-			fan,tach-gpio = <&tlmm 64 0x0>;
 			interrupt-parent = <&tlmm>;
 			interrupts = <64 1>;
 			interrupt-names = "fan_irq";

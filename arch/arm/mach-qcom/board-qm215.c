@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -10,6 +11,7 @@
 
 static const char *qm215_dt_match[] __initconst = {
 	"qcom,qm215",
+	"qcom,qcm2150",
 	NULL
 };
 

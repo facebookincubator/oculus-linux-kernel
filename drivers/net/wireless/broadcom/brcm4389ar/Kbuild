@@ -143,6 +143,10 @@ ifneq ($(CONFIG_AR_ARTS_SKB_PRIORITY),n)
 DHDCFLAGS += -DCONFIG_AR_ARTS_SKB_PRIORITY
 endif
 
+ifneq ($(CONFIG_AR_ARTS_TRAFFIC),n)
+DHDCFLAGS += -DAR_ARTS_TX_PKT_MONITOR
+endif
+
 DHDCFLAGS += -DCONNECTION_STATISTICS
 
 #################
@@ -272,7 +276,8 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
   DHDCFLAGS += -DDHD_LB -DDHD_LB_RXP -DDHD_LB_TXP -DDHD_LB_STATS
 	DHDCFLAGS += -DDHD_LB_TXP_DEFAULT_ENAB
 	DHDCFLAGS += -DLB_RXP_STOP_THR=500 -DLB_RXP_STRT_THR=499
-	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0xF0 -DDHD_LB_SECONDARY_CPUS=0x0E
+# USE 0x70 (CPU 4,5,6) instead of 0xF0 (CPU 4,5,6,7). 7 is busy and can starve softirq
+	DHDCFLAGS += -DDHD_LB_PRIMARY_CPUS=0x70 -DDHD_LB_SECONDARY_CPUS=0x0E
 # Enable IRQ CPU control
 	DHDCFLAGS += -DDHD_LB_HOST_CTRL
 # PCIe interrupt affinity control interface
@@ -289,6 +294,12 @@ endif
 # Prioritize high performance cpus from DHD_LB_PRIMARY_CPUS mask for CPU selection for high throughput
 ifeq ($(CONFIG_DHD_LB_USE_PRIMARY_CPU),y)
 	DHDCFLAGS += -DDHD_LB_USE_PRIMARY_CPU
+endif
+
+# Use Scan Core only for NL80211 scan API (Android use it for all impicit scans)
+# It can scan only 2.4 and 5GHz bands, no 6GHz channels will be returned in scan results
+ifeq ($(CONFIG_DHD_USE_SC_SCAN),y)
+	DHDCFLAGS += -DDHD_USE_SC_SCAN
 endif
 
 ifneq ($(CONFIG_FIB_RULES),)

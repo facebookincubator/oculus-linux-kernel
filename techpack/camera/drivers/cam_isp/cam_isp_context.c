@@ -5708,11 +5708,11 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 			if (ctx_isp->substate_activated ==
 				CAM_ISP_CTX_ACTIVATED_HALT)
 				CAM_WARN(CAM_ISP,
-					"Device halted, ready list empty %u",
+					"Device halted, ready list empty, ctx %u",
 					ctx->ctx_id);
 			else
 				CAM_ERR(CAM_ISP,
-					"Ready list empty after completion %u",
+					"Ready list empty after completion, ctx %u",
 					ctx->ctx_id);
 			init_completion(&ctx_isp->stream_image_completion);
 			rc = -EINVAL;

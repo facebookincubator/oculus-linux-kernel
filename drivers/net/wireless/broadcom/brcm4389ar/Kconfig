@@ -206,3 +206,12 @@ config DHD_LB_USE_PRIMARY_CPU
 	default n
 	---help---
 	  Use primary cpus for better performance.
+
+config DHD_USE_SC_SCAN
+	bool "Use Scan Core only for NL80211 scan API"
+	depends on BCMDHD
+	default n
+	---help---
+	  Use Scan Core only for NL80211 scan API (Android use it for all
+	  impicit scans). It can scan only 2.4 and 5GHz bands, no 6GHz channels
+	  will be returned in scan results

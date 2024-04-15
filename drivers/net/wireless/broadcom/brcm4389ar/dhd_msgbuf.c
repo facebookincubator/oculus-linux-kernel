@@ -56,6 +56,10 @@
 
 #include <dhd_flowring.h>
 
+#if defined(__linux__)
+#include <dhd_linux.h>
+#endif /* __linux__ */
+
 #include <pcie_core.h>
 #include <bcmpcie.h>
 #include <dhd_pcie.h>
@@ -8974,21 +8978,28 @@ BCMFASTPATH(dhd_prot_txstatus_process)(dhd_pub_t *dhd, void *msg)
 	pkt_fate = dhd_dbg_process_tx_status(dhd, pkt, pktid,
 		ltoh16(txstatus->compl_hdr.status) & WLFC_CTL_PKTFLAG_MASK);
 	if(!pkt_fate) {
+		char *ifname = "";
+#if defined(__linux__)
+		dhd_if_t *ifp = dhd_get_ifp(dhd, txstatus->cmn_hdr.if_id);
+		if (ifp && ifp->net && ifp->net->name[0]) {
+			ifname = ifp->net->name;
+		}
+#endif /* __linux__ */
 		switch (ltoh16(txstatus->compl_hdr.status) & WLFC_CTL_PKTFLAG_MASK) {
 		case WLFC_CTL_PKTFLAG_D11SUPPRESS:
-			DHD_ERROR(("WiFi dropped packet, D11 suppressed a packet \n"));
+			DHD_ERROR(("WiFi dropped packet, D11 suppressed a packet iface=%d:%s\n", txstatus->cmn_hdr.if_id, ifname));
 			break;
 		case WLFC_CTL_PKTFLAG_WLSUPPRESS:
-			DHD_ERROR(("WiFi dropped packet, WL firmware suppressed a packet because MAC is already in PSMode (short time window) \n"));
+			DHD_ERROR(("WiFi dropped packet, WL firmware suppressed a packet because MAC is already in PSMode (short time window) iface=%d:%s\n", txstatus->cmn_hdr.if_id, ifname));
 			break;
 		case WLFC_CTL_PKTFLAG_TOSSED_BYWLC:
-			DHD_ERROR(("WiFi dropped packet, Firmware tossed this packet \n"));
+			DHD_ERROR(("WiFi dropped packet, Firmware tossed this packet iface=%d:%s\n", txstatus->cmn_hdr.if_id, ifname));
 			break;
 		case WLFC_CTL_PKTFLAG_DISCARD_NOACK:
-			DHD_ERROR(("WiFi dropped packet, Firmware tossed after retries \n"));
+			DHD_ERROR(("WiFi dropped packet, Firmware tossed after retries. iface=%d:%s\n", txstatus->cmn_hdr.if_id, ifname));
 			break;
 		default:
-			DHD_ERROR(("WiFi dropped packet, Unknown reason \n"));
+			DHD_ERROR(("WiFi dropped packet, Unknown reason iface=%d:%s\n", txstatus->cmn_hdr.if_id, ifname));
 			break;
 		}
 	}
@@ -9921,7 +9932,7 @@ BCMFASTPATH(dhd_prot_txdata)(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 	dhd_prot_ring_write_complete(dhd, ring, txdesc, 1);
 #endif /* TXP_FLUSH_NITEMS */
 
-#ifdef TX_STATUS_LATENCY_STATS
+#if defined(TX_STATUS_LATENCY_STATS) || defined(AR_ARTS_TX_PKT_MONITOR)
 	/* set the time when pkt is queued to flowring */
 	DHD_PKT_SET_QTIME(PKTBUF, OSL_SYSUPTIME_US());
 #elif defined(DHD_PKTTS)

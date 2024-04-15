@@ -7220,6 +7220,10 @@ void __init sched_init(void)
 	autogroup_init(&init_task);
 #endif /* CONFIG_CGROUP_SCHED */
 
+#if defined(CONFIG_RT_THROTTLING_SYSCTL)
+	init_rt_sysctl();
+#endif /* CONFIG_RT_THROTTLING_SYSCTL */
+
 	for_each_possible_cpu(i) {
 		struct rq *rq;
 

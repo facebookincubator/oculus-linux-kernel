@@ -10,4 +10,9 @@ struct fwupdate_provisioning {
 	u8 data[0];
 } __packed;
 
+struct fwupdate_header {
+	u8 force_bootloader_update;
+	struct fwupdate_provisioning provisioning[0];
+} __packed;
+
 #endif /* __FWUPDATE_MANAGER_H */

@@ -103,9 +103,9 @@
 	status = "ok";
 	qcom,rt;
 
-	oculusnrf@0 {
+	syncboss_nrf@0 {
 		status = "okay";
-		compatible = "oculus,syncboss";
+		compatible = "meta,syncboss-spi";
 		reg = <0>;
 		spi-max-frequency = <8000000>;
 
@@ -115,38 +115,51 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
-		oculus,imu-core-supply = <&L7C>;
-		oculus,imu-core-voltage-level = <3000000 3000000>;
-		oculus,mag-core-supply = <&L8C>;
-		oculus,mag-core-voltage-level = <1800000 1800000>;
+		meta,imu-core-supply = <&L7C>;
+		meta,imu-core-voltage-level = <3000000 3000000>;
+		meta,mag-core-supply = <&L8C>;
+		meta,mag-core-voltage-level = <1800000 1800000>;
 
-		oculus,syncboss-reset  = <&tlmm 5 0>;
-		oculus,syncboss-timesync = <&tlmm 66 0>;
-		oculus,syncboss-wakeup  = <&tlmm 4 0>;
+		meta,syncboss-reset  = <&tlmm 5 0>;
+		meta,syncboss-wakeup  = <&tlmm 4 0>;
 
-		oculus,syncboss-has-prox;
-		oculus,syncboss-use-fastpath;
-		oculus,syncboss-has-wake-reasons;
-
-		oculus,syncboss-has-seq-num-ioctl;
+		meta,syncboss-use-fastpath;
+		meta,syncboss-has-wake-reasons;
 
 		swd@0 {
-			compatible = "oculus,swd";
+			compatible = "meta,swd";
 
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
-			oculus,pin-reset = <&tlmm 5 0>;
-			oculus,swd-clk = <&tlmm 52 0>;
-			oculus,swd-io = <&tlmm 53 0>;
+			meta,pin-reset = <&tlmm 5 0>;
+			meta,swd-clk = <&tlmm 52 0>;
+			meta,swd-io = <&tlmm 53 0>;
 
-			oculus,swd-flavor = "nrf52832";
-			oculus,fw-path = "syncboss.bin";
-			oculus,flash-block-size = <512>;
-			oculus,flash-page-size = <4096>;
-			oculus,flash-page-count = <128>;
-			oculus,flash-page-bootloader-protected-count = <0>;
-			oculus,flash-page-retained-count = <13>;
+			meta,swd-flavor = "nrf52832";
+			meta,fw-path = "syncboss.bin";
+			meta,flash-block-size = <512>;
+			meta,flash-page-size = <4096>;
+			meta,flash-page-count = <128>;
+			meta,flash-page-bootloader-protected-count = <0>;
+			meta,flash-page-retained-count = <13>;
+		};
+
+		powerstate@0 {
+			compatible = "meta,syncboss-powerstate", "meta,syncboss-consumer";
+			meta,syncboss-has-prox;
+		};
+
+		miscfifo@0 {
+			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
+		};
+
+		timesync@0 {
+			compatible = "meta,syncboss-timesync", "meta,syncboss-consumer";
+
+			interrupt-parent = <&tlmm>;
+			interrupts = <66 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "timesync";
 		};
 	};
 };

@@ -11,6 +11,7 @@
 #include "seacliff-fan.dtsi"
 #include "seacliff-pac1934.dtsi"
 #include "seacliff-panel.dtsi"
+#include "seacliff-syncboss.dtsi"
 #include "seacliff-thermal.dtsi"
 #include "seacliff-ufs.dtsi"
 
@@ -172,67 +173,6 @@
 	};
 };
 
-&qupv3_se0_spi {
-	status = "ok";
-	qcom,rt;
-
-	// nRF requires >2us after clock stop, before raising CS.
-	// By default the delay is about 800us. Add 10 cycles at
-	// 8MHz (1.25us) to get us the rest of the way.
-	qcom,set-cs-clk-delay = <10>;
-
-	oculusnrf@0 {
-		status = "okay";
-		compatible = "oculus,syncboss";
-		reg = <0>;
-		spi-max-frequency = <8000000>;
-
-		spi-cpol;
-		spi-cpha;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup &syncboss_float_shared>;
-
-		oculus,syncboss-reset  = <&tlmm 5 0>;
-		oculus,syncboss-timesync = <&tlmm 68 0>;
-		oculus,syncboss-wakeup  = <&tlmm 4 0>;
-
-		oculus,syncboss-has-prox;
-		oculus,syncboss-use-fastpath;
-		oculus,syncboss-boots-to-shutdown-state;
-
-		oculus,syncboss-has-seq-num-ioctl;
-
-		swd@0 {
-			compatible = "oculus,swd";
-
-			pinctrl-names = "default";
-			pinctrl-0 = <&syncboss_float_swd>;
-
-			oculus,pin-reset = <&tlmm 5 0>;
-			oculus,swd-clk = <&tlmm 119 0>;
-			oculus,swd-io = <&tlmm 120 0>;
-
-			oculus,swd-flavor = "nrf52840";
-			oculus,fw-path = "syncboss-ipl-spl-prod.bin";
-			oculus,flash-block-size = <512>;
-			oculus,flash-page-size = <4096>;
-			oculus,flash-page-count = <128>;
-			oculus,flash-page-bootloader-protected-count = <1>;
-			oculus,flash-page-retained-count = <61>;
-		};
-	};
-};
-
-&qupv3_se3_2uart {
-	status = "ok";
-
-	pinctrl-0 = <&syncboss_uart_active>;
-	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
-	interrupts-extended = <&intc GIC_SPI 604 IRQ_TYPE_LEVEL_HIGH>;
-	qcom,allow-suspend;
-};
-
 &qupv3_se5_2uart {
 	status = "disabled";
 };
@@ -310,98 +250,6 @@
 			pins = "gpio70", "gpio69";
 			bias-pull-up;
 			input-enable;
-		};
-	};
-
-	syncboss_float_shared: syncboss_float_shared {
-		mux {
-			pins = "gpio13", "gpio73";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio13", "gpio73";
-			bias-disable;
-			input-enable;
-		};
-	};
-
-	syncboss_float_swd: syncboss_float_swd {
-		mux {
-			pins = "gpio119", "gpio120";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio119", "gpio120";
-			drive-strength = <6>;
-			bias-disable;
-			input-enable;
-		};
-	};
-
-	syncboss_wakeup: syncboss_wakeup {
-		mux {
-			pins = "gpio4";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio4";
-			bias-pull-down;
-			input-enable;
-		};
-	};
-
-	syncboss_reset_default: syncboss_reset_default {
-		mux {
-			pins = "gpio5";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio5";
-			drive-strength = <6>;
-			output-low;
-		};
-	};
-
-	syncboss_uart_active: syncboss_uart_active {
-		mux {
-			pins = "gpio121", "gpio122";
-			function = "qup3";
-		};
-
-		config {
-			pins = "gpio121", "gpio122";
-			drive-strength = <2>;
-			bias-disable;
-		};
-	};
-
-	syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
-		mux {
-			pins = "gpio121";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio121";
-			drive-strength = <2>;
-			bias-pull-up;
-		};
-	};
-
-	syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
-		mux {
-			pins = "gpio122";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio122";
-			drive-strength = <2>;
-			bias-disable;
 		};
 	};
 };

@@ -4732,6 +4732,23 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	WL_INFORM_MEM(("[%s] Mode AP/GO. Event:%d status:%d reason:%d\n",
 		ndev->name, event, ntoh32(e->status), reason));
 
+#ifdef XRAP_POWER_OPTIMIZATION
+	if(wl_get_mode_by_netdev(cfg, ndev) == WL_MODE_AP) {
+		// Dynamically Disable FILS discovery frames when xrap is connected, re-enable after disconnection.
+		// Default: enabled it when linkup.
+		if((event == WLC_E_ASSOC_IND || event == WLC_E_REASSOC_IND) && reason == DOT11_SC_SUCCESS) {
+			WL_INFORM_MEM(("%s: Event %d indicates Associated. Disable fils\n", __FUNCTION__, event));
+			wl_enable_oce_fils_discovery(ndev, false);
+		} else if ((event == WLC_E_LINK && status == WLC_E_STATUS_SUCCESS && reason == WLC_E_REASON_INITIAL_ASSOC) ||
+			(event == WLC_E_DEAUTH_IND) ||
+		    ((event == WLC_E_DEAUTH) && (reason != DOT11_RC_RESERVED)) ||
+			 (event == WLC_E_DISASSOC_IND)) {
+			WL_INFORM_MEM(("%s: event %d inidicates Disassociated. Enable fils\n", __FUNCTION__, event));
+			wl_enable_oce_fils_discovery(ndev, true);
+		}
+	}
+#endif /* XRAP_POWER_OPTIMIZATION */
+
 #ifdef WL_CLIENT_SAE
 	if (event == WLC_E_AUTH && ntoh32(e->auth_type) == DOT11_SAE) {
 		err = wl_handle_auth_event(cfg, ndev, e, data);

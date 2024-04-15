@@ -220,6 +220,30 @@ void usbvdm_disconnect(struct usbvdm_engine *engine)
 EXPORT_SYMBOL(usbvdm_disconnect);
 
 /**
+ * usbvdm_engine_ext_msg - Notify the framework of a received Extended Message
+ * @engine: Engine instance
+ * @msg_type: Message Type as found in PD Message Header
+ * @data: Array of bytes containing raw payload
+ * @data_len: Length of @data
+ *
+ * Engine drivers should call this when an Extended Message is received from
+ * the device connected to their interface so that the framework
+ * can notify subscribers.
+ */
+void usbvdm_engine_ext_msg(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len)
+{
+	struct usbvdm_subscription *sub;
+
+	mutex_lock(&subscription_lock);
+	sub = usbvdm_find_subscription(engine->conn_svid, engine->conn_pid);
+	if (sub && sub->ops.ext_msg)
+		sub->ops.ext_msg(sub, msg_type, data, data_len);
+	mutex_unlock(&subscription_lock);
+}
+EXPORT_SYMBOL(usbvdm_engine_ext_msg);
+
+/**
  * usbvdm_engine_vdm - Notify the framework of a received VDM
  * @engine: Engine instance
  * @vdm_hdr: VDM Header
@@ -361,6 +385,39 @@ void usbvdm_unsubscribe(struct usbvdm_subscription *sub)
 	kfree(sub);
 }
 EXPORT_SYMBOL(usbvdm_unsubscribe);
+
+/**
+ * usbvdm_subscriber_ext_msg - Send an Extended Message
+ * @sub: Subscription instance
+ * @msg_type: Message Type as found in PD Message Header
+ * @data: Array of bytes containing raw payload
+ * @data_len: Length of @data
+ *
+ * Subscribers use this to send an Extended Message. The framework determines
+ * which interface it should be routed to.
+ */
+int usbvdm_subscriber_ext_msg(struct usbvdm_subscription *sub,
+		u8 msg_type, const u8 *data, size_t data_len)
+{
+	struct usbvdm_engine *engine;
+	int rc = -ENODEV;
+
+	if (!sub)
+		return -EINVAL;
+
+	mutex_lock(&engine_lock);
+	list_for_each_entry(engine, &engine_list, entry) {
+		if (engine->conn_svid == sub->svid && engine->conn_pid == sub->pid) {
+			if (engine->ops.ext_msg)
+				rc = engine->ops.ext_msg(engine, msg_type, data, data_len);
+			break;
+		}
+	}
+	mutex_unlock(&engine_lock);
+
+	return rc;
+}
+EXPORT_SYMBOL(usbvdm_subscriber_ext_msg);
 
 /**
  * usbvdm_subscriber_vdm - Send a VDM

@@ -213,3 +213,7 @@ extern int wl_android_xrapi_notify_psmode_event(struct net_device *dev,
 						const void *event_data,
 						int len);
 #endif //XRAPI_IN_USER_SPACE && XRAPI
+
+#ifdef XRAP_POWER_OPTIMIZATION
+int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable);
+#endif
