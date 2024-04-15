@@ -1898,11 +1898,11 @@ static void populate_ibs(struct adreno_device *adreno_dev,
 #define DISPQ_IRQ_BIT(_idx) BIT((_idx) + HFI_DSP_IRQ_BASE)
 
 int gen7_gmu_context_queue_write(struct adreno_device *adreno_dev,
-	struct adreno_context *drawctxt, u32 *msg, u32 size_bytes,
+	struct kgsl_memdesc *gmu_context_queue, u32 *msg, u32 size_bytes,
 	struct kgsl_drawobj *drawobj, struct adreno_submit_time *time)
 {
-	struct gmu_context_queue_header *hdr = drawctxt->gmu_context_queue.hostptr;
-	u32 *queue = drawctxt->gmu_context_queue.hostptr + sizeof(*hdr);
+	struct gmu_context_queue_header *hdr = gmu_context_queue->hostptr;
+	u32 *queue = gmu_context_queue->hostptr + sizeof(*hdr);
 	u32 i, empty_space, write_idx = hdr->write_index, read_idx = hdr->read_index;
 	u32 size_dwords = size_bytes >> 2;
 	u32 align_size = ALIGN(size_dwords, SZ_4);
@@ -1932,6 +1932,9 @@ int gen7_gmu_context_queue_write(struct adreno_device *adreno_dev,
 
 	/* Ensure packet is written out before proceeding */
 	wmb();
+
+	if (!drawobj)
+		goto done;
 
 	if (drawobj->type & SYNCOBJ_TYPE) {
 		struct kgsl_drawobj_sync *syncobj = SYNCOBJ(drawobj);
@@ -2093,7 +2096,7 @@ static int _submit_hw_fence(struct adreno_device *adreno_dev,
 	cmd->hdr = MSG_HDR_SET_SEQNUM_SIZE(cmd->hdr, seqnum, cmd_sizebytes >> 2);
 
 	write_lock_irqsave(&hfi->cmdq_lock, flags);
-	ret = gen7_gmu_context_queue_write(adreno_dev, drawctxt, (u32 *)cmd, cmd_sizebytes, drawobj, NULL);
+	ret = gen7_gmu_context_queue_write(adreno_dev, &drawctxt->gmu_context_queue, (u32 *)cmd, cmd_sizebytes, drawobj, NULL);
 	write_unlock_irqrestore(&hfi->cmdq_lock, flags);
 
 	return ret;
@@ -2297,6 +2300,9 @@ static int gen7_hfi_dispatch_queue_write(struct adreno_device *adreno_dev, u32 q
 	/* Ensure packet is written out before proceeding */
 	wmb();
 
+	if (!cmdobj)
+		goto done;
+
 	gen7_add_profile_events(adreno_dev, cmdobj, time);
 
 	/*
@@ -2307,6 +2313,7 @@ static int gen7_hfi_dispatch_queue_write(struct adreno_device *adreno_dev, u32 q
 	 */
 	adreno_profile_submit_time(time);
 
+done:
 	trace_kgsl_hfi_send(id, size_dwords, MSG_HDR_GET_SEQNUM(*msg));
 
 	hfi_update_write_idx(&hdr->write_index, write);
@@ -2397,7 +2404,7 @@ skipib:
         write_lock_irqsave(&hfi->cmdq_lock, flags);
 	if (adreno_hwsched_context_queue_enabled(adreno_dev))
 		ret = gen7_gmu_context_queue_write(adreno_dev,
-			drawctxt, (u32 *)cmd, cmd_sizebytes, drawobj, &time);
+			&drawctxt->gmu_context_queue, (u32 *)cmd, cmd_sizebytes, drawobj, &time);
 	else
 		ret = gen7_hfi_dispatch_queue_write(adreno_dev,
 			HFI_DSP_ID_0 + drawobj->context->gmu_dispatch_queue,

@@ -293,6 +293,9 @@ static int __wlan_hdd_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	const uint8_t  *assoc_resp;
 	void *ft_info;
 	struct hdd_ap_ctx *hdd_ap_ctx;
+	struct hdd_station_ctx *hdd_sta_ctx;
+	bool is_pmf_enabled;
+	struct wlan_objmgr_peer *peer = NULL;
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
@@ -309,6 +312,24 @@ static int __wlan_hdd_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	type = WLAN_HDD_GET_TYPE_FRM_FC(buf[0]);
 	sub_type = WLAN_HDD_GET_SUBTYPE_FRM_FC(buf[0]);
 	hdd_debug("type %d, sub_type %d", type, sub_type);
+
+	if ((adapter->device_mode == QDF_STA_MODE) &&
+	    (type == SIR_MAC_MGMT_FRAME) && (sub_type == SIR_MAC_MGMT_ACTION)) {
+
+		hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+		peer = wlan_objmgr_get_peer_by_mac(
+			hdd_ctx->psoc, hdd_sta_ctx->conn_info.bssid.bytes,
+			WLAN_MGMT_RX_ID);
+
+		if (peer == NULL)
+			return -EINVAL;
+
+		is_pmf_enabled = mlme_get_peer_pmf_status(peer);
+		wlan_objmgr_peer_release_ref(peer, WLAN_MGMT_RX_ID);
+
+		if (!is_pmf_enabled)
+			return -EPERM; // operation not permitted
+	}
 
 	/* When frame to be transmitted is auth mgmt, then trigger
 	 * sme_send_mgmt_tx to send auth frame without need for policy manager.

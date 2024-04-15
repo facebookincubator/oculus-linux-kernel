@@ -7014,7 +7014,7 @@ static int __maybe_unused msm_pcie_pm_suspend_noirq(struct device *dev)
 		if (pcie_dev->phy_power_down_offset)
 			msm_pcie_write_reg(pcie_dev->phy, pcie_dev->phy_power_down_offset, 0);
 
-		/* Turn off AHB clk */
+		/* Turn off AHB clk as there wont be any more register access */
 		clk_disable_unprepare(pcie_dev->ahb_clk);
 
 		/* disable the controller GDSC*/
@@ -7063,6 +7063,7 @@ static int __maybe_unused msm_pcie_pm_resume_noirq(struct device *dev)
 			return rc;
 		}
 
+		/* Turn on ahb clock first as its needed for register access */
 		clk_prepare_enable(pcie_dev->ahb_clk);
 
 		/* switch pipe clock source after gdsc-core is turned on */

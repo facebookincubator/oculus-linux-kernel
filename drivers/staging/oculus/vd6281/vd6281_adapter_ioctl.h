@@ -93,5 +93,6 @@ struct vd6281_spi_params {
 	__u16 pdm_data_sample_width_in_bytes;
 };
 
+#define MAX_CIC_STAGE (4)
 
 #endif

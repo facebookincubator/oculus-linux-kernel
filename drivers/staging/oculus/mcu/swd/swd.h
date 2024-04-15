@@ -141,11 +141,6 @@ struct swd_ops_params {
 	int (*target_finalize)(struct device *dev);
 };
 
-struct swd_ops {
-	/* Check if the device is busy */
-	bool (*is_busy)(struct device *dev);
-};
-
 struct flash_info {
 	u32 block_size;
 	u32 page_size;
@@ -206,11 +201,17 @@ struct swd_dev_data {
 	/* State of firmware update */
 	enum fw_update_state fw_update_state;
 
-	/* Called prior to updating firmware to ensure peripherial is idle. */
-	bool (*is_busy)(struct device *dev);
+	/* For ensuring the MCU is idle (ie. not streaming) during a firmware update. */
+	void (*mcu_state_lock)(struct device *dev);
+	void (*mcu_state_unlock)(struct device *dev);
+	bool (*get_syncboss_is_streaming)(struct device *dev);
+	bool mcu_state_locked;
 
 	/* Direction of current SWD transfer */
 	enum swd_direction direction;
+
+	/* Header of data passed from user space */
+	struct fwupdate_header *data_hdr;
 
 	/*
 	 * Whether provisioning data should be programmed via SWD (ex. board_id,

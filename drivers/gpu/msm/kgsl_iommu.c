@@ -1815,15 +1815,17 @@ kgsl_iommu_get_current_ttbr0(struct kgsl_mmu *mmu, struct kgsl_context *context)
 	u64 val;
 	struct kgsl_iommu *iommu = &mmu->iommu;
 	struct kgsl_iommu_context *ctx = &iommu->user_context;
+	struct kgsl_device *device = KGSL_MMU_DEVICE(mmu);
 
 	if (kgsl_context_is_lpac(context))
 		ctx = &iommu->lpac_context;
 
 	/*
-	 * We cannot enable or disable the clocks in interrupt context, this
-	 * function is called from interrupt context if there is an axi error
+	 * We cannot enable or disable the clocks in interrupt and atomic context, this
+	 * function is called from interrupt context if there is an axi error and atomic
+	 * context GPU snapshot for panic notifier callback.
 	 */
-	if (in_interrupt())
+	if (in_interrupt() || device->snapshot_atomic)
 		return 0;
 
 	if (ctx->cb_num < 0)

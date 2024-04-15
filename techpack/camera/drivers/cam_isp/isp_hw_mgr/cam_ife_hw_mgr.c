@@ -304,6 +304,10 @@ static int cam_ife_mgr_handle_reg_dump(struct cam_ife_hw_mgr_ctx *ctx,
 			"Reg dump values might be from more than one request");
 
 	for (i = 0; i < num_reg_dump_buf; i++) {
+                rc = cam_packet_util_validate_cmd_desc(&reg_dump_buf_desc[i]);
+                if (rc)
+                        return rc;
+
 		CAM_DBG(CAM_ISP, "Reg dump cmd meta data: %u req_type: %u",
 			reg_dump_buf_desc[i].meta_data, meta_type);
 		if (reg_dump_buf_desc[i].meta_data == meta_type) {
@@ -9335,7 +9339,11 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 	if (cfg->num_hw_update_entries > 0) {
 		cdm_cmd = ctx->cdm_cmd;
 		cdm_cmd->type = CAM_CDM_BL_CMD_TYPE_MEM_HANDLE;
-		cdm_cmd->flag = true;
+		if (cfg->init_packet) {
+			cdm_cmd->flag = true;
+			reinit_completion(&ctx->config_done_complete);
+		} else
+			cdm_cmd->flag = false;
 		cdm_cmd->userdata = ctx;
 		cdm_cmd->cookie = cfg->request_id;
 		cdm_cmd->gen_irq_arb = false;

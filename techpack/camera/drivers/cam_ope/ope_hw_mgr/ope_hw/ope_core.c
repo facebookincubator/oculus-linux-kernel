@@ -384,7 +384,11 @@ static int cam_ope_dev_prepare_cdm_request(
 		kmd_buf_offset;
 
 	cdm_cmd->type = CAM_CDM_BL_CMD_TYPE_MEM_HANDLE;
-	cdm_cmd->flag = true;
+	if (cfg->init_packet) {
+		cdm_cmd->flag = true;
+		reinit_completion(&ctx->config_done_complete);
+	} else
+		cdm_cmd->flag = false;
 	cdm_cmd->userdata = ctx_data;
 	cdm_cmd->cookie = req_idx;
 	cdm_cmd->gen_irq_arb = true;

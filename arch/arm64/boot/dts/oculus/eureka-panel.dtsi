@@ -242,6 +242,10 @@
 	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
 
 	meta,settling-time-target-us = <4100>;
+
+	meta,blu-pwm-gpio = <&tlmm 109 0>;
+	meta,te-gpio = <&tlmm 110 0>;
+	meta,te-active-low;
 };
 
 &eureka_panel_jdi {
@@ -263,6 +267,10 @@
 		<55000 4090>;
 	meta,thermal-zone = "disp-virt";
 	meta,max-blu-pulse-overlap-us = <500>;
+
+	meta,blu-pwm-gpio = <&tlmm 109 0>;
+	meta,te-gpio = <&tlmm 110 0>;
+	meta,te-active-low;
 };
 
 &eureka_panel_jdi_experimental {
@@ -284,6 +292,10 @@
 		<55000 4090>;
 	meta,thermal-zone = "disp-virt";
 	meta,max-blu-pulse-overlap-us = <800>;
+
+	meta,blu-pwm-gpio = <&tlmm 109 0>;
+	meta,te-gpio = <&tlmm 110 0>;
+	meta,te-active-low;
 };
 
 &eureka_panel_sharp {
@@ -305,6 +317,10 @@
 		<55000 4220>;
 	meta,thermal-zone = "disp-virt";
 	meta,max-blu-pulse-overlap-us = <500>;
+
+	meta,blu-pwm-gpio = <&tlmm 109 0>;
+	meta,te-gpio = <&tlmm 110 0>;
+	meta,te-active-low;
 };
 
 &eureka_panel_sharp_experimental {
@@ -326,6 +342,10 @@
 		<55000 4220>;
 	meta,thermal-zone = "disp-virt";
 	meta,max-blu-pulse-overlap-us = <800>;
+
+	meta,blu-pwm-gpio = <&tlmm 109 0>;
+	meta,te-gpio = <&tlmm 110 0>;
+	meta,te-active-low;
 };
 
 &tlmm {
@@ -368,6 +388,32 @@
 			drive-strength = <8>;
 			bias-disable;
 			output-high;
+		};
+	};
+
+	blu_pwm_default: blu_pwm_default {
+		mux {
+			pins = "gpio109";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio109";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	te_default: te_default {
+		mux {
+			pins = "gpio110";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio110";
+			bias-disable;
+			input-enable;
 		};
 	};
 };

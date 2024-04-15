@@ -50,7 +50,8 @@ static void osif_cm_free_wep_key_params(struct wlan_cm_connect_req *connect_req)
 	}
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0) && \
+LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
 static QDF_STATUS
 osif_cm_update_wep_seq_info(struct wlan_cm_connect_req *connect_req,
 			    const struct cfg80211_connect_params *req)

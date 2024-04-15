@@ -2133,15 +2133,20 @@ void dp_bus_bw_compute_timer_try_start(struct wlan_objmgr_psoc *psoc)
 static void __dp_bus_bw_compute_timer_stop(struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_dp_psoc_context *dp_ctx = dp_psoc_get_priv(psoc);
-	hdd_cb_handle ctx = dp_ctx->dp_ops.callback_ctx;
+	hdd_cb_handle ctx;
 	ol_txrx_soc_handle soc = cds_get_context(QDF_MODULE_ID_SOC);
 
 	struct bbm_params param = {0};
-	bool is_any_adapter_conn =
-		dp_ctx->dp_ops.dp_any_adapter_connected(ctx);
+	bool is_any_adapter_conn;
 
 	if (QDF_GLOBAL_FTM_MODE == cds_get_conparam())
 		return;
+
+	if (!dp_ctx || !soc)
+		return;
+
+	ctx = dp_ctx->dp_ops.callback_ctx;
+	is_any_adapter_conn = dp_ctx->dp_ops.dp_any_adapter_connected(ctx);
 
 	if (!qdf_periodic_work_stop_sync(&dp_ctx->bus_bw_work))
 		goto exit;

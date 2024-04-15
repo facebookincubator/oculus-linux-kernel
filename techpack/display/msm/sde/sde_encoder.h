@@ -224,7 +224,7 @@ struct sde_encoder_virt {
 	bool intfs_swapped;
 	bool qdss_status;
 
-	void (*crtc_vblank_cb)(void *data, ktime_t ts);
+	void (*crtc_vblank_cb)(void *data, ktime_t ts, ktime_t vsync_ts);
 	void *crtc_vblank_cb_data;
 
 	void (*crtc_lineptr_cb)(void *data, u64 sample_time, int vtotal,
@@ -306,7 +306,7 @@ void sde_encoder_early_wakeup(struct drm_encoder *drm_enc);
  * @data:	user data provided to callback
  */
 void sde_encoder_register_vblank_callback(struct drm_encoder *encoder,
-		void (*cb)(void *, ktime_t), void *data);
+		void (*cb)(void *, ktime_t, ktime_t), void *data);
 
 /**
  * sde_encoder_register_lineptr_callback - provide callback to encoder that
@@ -395,6 +395,14 @@ void sde_encoder_kickoff(struct drm_encoder *encoder, bool config_changed);
  */
 int sde_encoder_wait_for_event(struct drm_encoder *drm_encoder,
 						enum msm_event_wait event);
+
+/**
+ * sde_encoder_helper_get_skewed_vsync_status: Returns whether skewed-vsync
+ *			feature is enabled/disabled.
+ * @drm_enc:	encoder pointer
+ * Returns:	true/false if skew-vsync feature is enabled/disabled.
+ */
+bool sde_encoder_helper_get_skewed_vsync_status(struct drm_encoder *drm_enc);
 
 /**
  * sde_encoder_idle_request - request for idle request to avoid 4 vsync cycle
@@ -666,8 +674,10 @@ void sde_encoder_virt_reset(struct drm_encoder *drm_enc);
  *         and calculate the corresponding vsync ktime. Return ktime_get
  *         when HW support is not available
  * @drm_enc:    Pointer to drm encoder structure
+ * @vsync_ts:   Pointer to a raw vsync timestamp (ignoring programmable fetch)
  */
-ktime_t sde_encoder_calc_last_vsync_timestamp(struct drm_encoder *drm_enc);
+ktime_t sde_encoder_calc_last_vsync_timestamp(struct drm_encoder *drm_enc,
+		ktime_t *vsync_ts);
 
 /**
  * sde_encoder_cancel_delayed_work - cancel delayed off work for encoder

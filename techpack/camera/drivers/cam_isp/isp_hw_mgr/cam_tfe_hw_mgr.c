@@ -2698,11 +2698,15 @@ static int cam_tfe_mgr_config_hw(void *hw_mgr_priv,
 	cdm_cmd                       = ctx->cdm_cmd;
 	cdm_cmd->cmd_arrary_count     = cfg->num_hw_update_entries;
 	cdm_cmd->type                 = CAM_CDM_BL_CMD_TYPE_MEM_HANDLE;
-	cdm_cmd->flag                 = true;
 	cdm_cmd->userdata             = hw_update_data;
 	cdm_cmd->cookie               = cfg->request_id;
 	cdm_cmd->gen_irq_arb          = false;
 	cdm_cmd->irq_cb_intr_ctx      = false;
+	if (cfg->init_packet) {
+		cdm_cmd->flag = true;
+		reinit_completion(&ctx->config_done_complete);
+	} else
+		cdm_cmd->flag = false;
 
 	for (i = 0; i < cfg->num_hw_update_entries; i++) {
 		cmd = (cfg->hw_update_entries + i);

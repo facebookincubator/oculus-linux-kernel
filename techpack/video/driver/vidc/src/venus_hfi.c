@@ -2451,9 +2451,10 @@ static int __load_fw_to_memory(struct platform_device *pdev,
 
 	virt = memremap(phys, res_size, MEMREMAP_WC);
 	if (!virt) {
+		rc = -ENOMEM;
 		d_vpr_e("%s: failed to remap fw memory phys %pa[p]\n",
 				__func__, phys);
-		return -ENOMEM;
+		goto exit;
 	}
 
 	/* prevent system suspend during fw_load */

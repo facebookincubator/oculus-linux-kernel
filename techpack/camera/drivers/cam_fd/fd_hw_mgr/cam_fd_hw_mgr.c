@@ -79,6 +79,9 @@ static int cam_fd_mgr_util_packet_validate(struct cam_packet *packet,
 		packet->cmd_buf_offset);
 
 	for (i = 0; i < packet->num_cmd_buf; i++) {
+		rc = cam_packet_util_validate_cmd_desc(&cmd_desc[i]);
+		if (rc)
+			return rc;
 		/*
 		 * We can allow 0 length cmd buffer. This can happen in case
 		 * umd gives an empty cmd buffer as kmd buffer
@@ -805,6 +808,10 @@ static int cam_fd_mgr_util_prepare_hw_update_entries(
 		&prepare->packet->payload + prepare->packet->cmd_buf_offset);
 
 	for (i = 0; i < prepare->packet->num_cmd_buf; i++) {
+		rc = cam_packet_util_validate_cmd_desc(&cmd_desc[i]);
+		if (rc)
+			return rc;
+
 		if (!cmd_desc[i].length)
 			continue;
 

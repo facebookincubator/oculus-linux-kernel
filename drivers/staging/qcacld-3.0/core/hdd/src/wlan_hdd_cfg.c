@@ -1122,8 +1122,14 @@ hdd_set_nss_params(struct hdd_adapter *adapter,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	if (tx_nss > wlan_vdev_mlme_get_nss(vdev) ||
-	    rx_nss > wlan_vdev_mlme_get_nss(vdev)) {
+	/* For STA tx/rx nss value is updated at the time of connection,
+	 * for SAP case nss values will not get update, so can skip check
+	 * for SAP/P2P_GO mode.
+	 */
+	if (adapter->device_mode != QDF_SAP_MODE &&
+	    adapter->device_mode != QDF_P2P_GO_MODE &&
+	    (tx_nss > wlan_vdev_mlme_get_nss(vdev) ||
+	    rx_nss > wlan_vdev_mlme_get_nss(vdev))) {
 		hdd_err("Given tx nss/rx nss is greater than intersected nss = %d",
 			wlan_vdev_mlme_get_nss(vdev));
 		wlan_objmgr_vdev_release_ref(vdev, WLAN_HDD_ID_OBJ_MGR);

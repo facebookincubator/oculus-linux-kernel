@@ -18,17 +18,18 @@ static const u64 max_rt_runtime = MAX_BW;
 
 #ifdef CONFIG_RT_THROTTLING_SYSCTL
 
-#define SYSCTL_NAME_LEN TASK_COMM_LEN
-#define SYSCTL_LIST_LEN ((SYSCTL_NAME_LEN + sizeof(' ')) * 8)
+#define SYSCTL_THREAD_NAME_LEN TASK_COMM_LEN
+#define SYSCTL_PROCESS_NAME_LEN (SYSCTL_THREAD_NAME_LEN * 2)
+#define SYSCTL_LIST_LEN ((SYSCTL_THREAD_NAME_LEN + sizeof(' ')) * 8)
 
 static struct sysctl_rt_throttling_info {
 	unsigned int cpu_number;
-	unsigned int process_running_time_ns;
+	unsigned long process_running_time_ns;
 	unsigned int pid;
 	unsigned int clear_data;
 	unsigned int data_latched;
-	char thread_name[SYSCTL_NAME_LEN];
-	char process_name[SYSCTL_NAME_LEN];
+	char thread_name[SYSCTL_THREAD_NAME_LEN];
+	char process_name[SYSCTL_PROCESS_NAME_LEN];
 	char process_list[SYSCTL_LIST_LEN];
 	raw_spinlock_t rt_lock;
 } sysctl_rt_throttling_info;
@@ -101,25 +102,23 @@ struct ctl_table rt_table[] = {
 	{
 		.procname	= "process_name",
 		.data		= &sysctl_rt_throttling_info.process_name,
-		.maxlen		= SYSCTL_NAME_LEN,
+		.maxlen		= SYSCTL_PROCESS_NAME_LEN,
 		.mode		= 0444,
 		.proc_handler	= proc_dostring,
 	},
 	{
 		.procname	= "thread_name",
 		.data		= &sysctl_rt_throttling_info.thread_name,
-		.maxlen		= SYSCTL_NAME_LEN,
+		.maxlen		= SYSCTL_THREAD_NAME_LEN,
 		.mode		= 0444,
 		.proc_handler	= proc_dostring,
 	},
 	{
 		.procname	= "process_running_time_ns",
 		.data		= &sysctl_rt_throttling_info.process_running_time_ns,
-		.maxlen		= sizeof(unsigned int),
+		.maxlen		= sizeof(unsigned long),
 		.mode		= 0444,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX
+		.proc_handler	= proc_doulongvec_minmax,
 	},
 	{
 		.procname	= "process_list",

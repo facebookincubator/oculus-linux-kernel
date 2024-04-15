@@ -63,6 +63,12 @@
 (DOT11F_FF_CATEGORY_LEN + DOT11F_FF_ACTION_LEN + DOT11F_FF_TRANSACTIONID_LEN)
 #define SA_QUERY_IE_OFFSET (4)
 
+#define MIN_OCI_IE_LEN 6
+#define OCI_IE_OUI_SIZE 1
+#define OCI_IE_OP_CLS_OFFSET 3
+#define ELE_ID_EXT_LEN 1
+#define SIR_MAC_IE_LEN_OFFSET 1
+
 static last_processed_msg rrm_link_action_frm;
 
 /**-----------------------------------------------------------------
@@ -1219,16 +1225,22 @@ static bool
 lim_check_oci_match(struct mac_context *mac, struct pe_session *pe_session,
 		    uint8_t *ie, uint8_t *peer, uint32_t ie_len)
 {
-	const uint8_t *oci_ie;
-	tDot11fIEoci self_oci, *peer_oci;
+	const uint8_t *oci_ie, ext_id_param = WLAN_EXTN_ELEMID_OCI;
+	tDot11fIEoci self_oci, peer_oci = {0};
 	uint16_t peer_chan_width;
 	uint16_t local_peer_chan_width = 0;
 	uint8_t country_code[CDS_COUNTRY_CODE_LEN + 1];
+	uint32_t status = DOT11F_PARSE_SUCCESS;
 
 	if (!lim_is_self_and_peer_ocv_capable(mac, peer, pe_session))
 		return true;
 
-	oci_ie = wlan_get_ie_ptr_from_eid(DOT11F_EID_OCI, ie, ie_len);
+	if (ie_len < MIN_OCI_IE_LEN)
+		return false;
+
+	oci_ie = wlan_get_ext_ie_ptr_from_ext_id(&ext_id_param,
+						 OCI_IE_OUI_SIZE,
+						 ie, ie_len);
 	if (!oci_ie) {
 		pe_err("OCV not found OCI in SA Query frame!");
 		return false;
@@ -1242,29 +1254,35 @@ lim_check_oci_match(struct mac_context *mac, struct pe_session *pe_session,
 	 * Primary channel      : 1 byte
 	 * Freq_seg_1_ch_num    : 1 byte
 	 */
-	peer_oci = (tDot11fIEoci *)&oci_ie[2];
+	status = dot11f_unpack_ie_oci(mac,
+				      (uint8_t *)&oci_ie[OCI_IE_OP_CLS_OFFSET],
+				      oci_ie[SIR_MAC_IE_LEN_OFFSET] -
+				      ELE_ID_EXT_LEN,
+				      &peer_oci, false);
+	if (!DOT11F_SUCCEEDED(status) || !peer_oci.present)
+		return false;
 
 	wlan_reg_read_current_country(mac->psoc, country_code);
 	peer_chan_width =
 	wlan_reg_dmn_get_chanwidth_from_opclass_auto(
 			country_code,
-			peer_oci->prim_ch_num,
-			peer_oci->op_class);
+			peer_oci.prim_ch_num,
+			peer_oci.op_class);
 
 	lim_fill_oci_params(mac, pe_session, &self_oci, peer,
 			    &local_peer_chan_width);
-	if (((self_oci.op_class != peer_oci->op_class) &&
-	     (local_peer_chan_width > peer_chan_width)) ||
-	    (self_oci.prim_ch_num != peer_oci->prim_ch_num) ||
-	    (self_oci.freq_seg_1_ch_num != peer_oci->freq_seg_1_ch_num)) {
+	if ((self_oci.op_class != peer_oci.op_class &&
+	     local_peer_chan_width > peer_chan_width) ||
+	    self_oci.prim_ch_num != peer_oci.prim_ch_num ||
+	    self_oci.freq_seg_1_ch_num != peer_oci.freq_seg_1_ch_num) {
 		pe_err("OCI mismatch,self %d %d %d %d, peer %d %d %d %d",
 		       self_oci.op_class,
 		       self_oci.prim_ch_num,
 		       self_oci.freq_seg_1_ch_num,
 		       local_peer_chan_width,
-		       peer_oci->op_class,
-		       peer_oci->prim_ch_num,
-		       peer_oci->freq_seg_1_ch_num,
+		       peer_oci.op_class,
+		       peer_oci.prim_ch_num,
+		       peer_oci.freq_seg_1_ch_num,
 		       peer_chan_width);
 		return false;
 	}

@@ -6709,7 +6709,7 @@ void lim_delete_all_peers(struct pe_session *session)
 		if (!sta_ds)
 			continue;
 		lim_mlo_notify_peer_disconn(session, sta_ds);
-		status = lim_del_sta(mac_ctx, sta_ds, true, session);
+		status = lim_del_sta(mac_ctx, sta_ds, false, session);
 		if (QDF_STATUS_SUCCESS == status) {
 			lim_delete_dph_hash_entry(mac_ctx, sta_ds->staAddr,
 						  sta_ds->assocId, session);
@@ -8595,10 +8595,9 @@ bool lim_process_sme_req_messages(struct mac_context *mac,
 		break;
 
 	case eWNI_SME_ASSOC_CNF:
-		if (pMsg->type == eWNI_SME_ASSOC_CNF)
-			pe_debug("Received ASSOC_CNF message");
-			__lim_process_sme_assoc_cnf_new(mac, pMsg->type,
-							msg_buf);
+		pe_debug("Received ASSOC_CNF message");
+		__lim_process_sme_assoc_cnf_new(mac, pMsg->type,
+						msg_buf);
 		break;
 
 	case eWNI_SME_ADDTS_REQ:

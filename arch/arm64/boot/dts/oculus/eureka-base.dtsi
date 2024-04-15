@@ -32,7 +32,7 @@
 };
 
 &mdss_mdp0 {
-	connectors = <&sde_dsi &sde_wb1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc0>;
+	connectors = <&sde_dsi &sde_wb1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc0 &sde_dp>;
 };
 
 /* Battery I2C */
@@ -110,7 +110,7 @@
 };
 
 &sde_dp {
-	status = "disabled";
+	status = "ok";
 	qcom,dp-gpio-aux-switch;
 	qcom,aux-en-gpio = <&tlmm 45 0>;
 	qcom,aux-sel-gpio = <&tlmm 87 0>;
@@ -118,7 +118,7 @@
 };
 
 &sde_dp_pll {
-	status = "disabled";
+	status = "ok";
 };
 
 &sde_dsi1 {

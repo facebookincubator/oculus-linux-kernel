@@ -109,9 +109,10 @@
  * https://android-review.googlesource.com/c/kernel/common/+/2115621
  *
  */
-#if (defined(__ANDROID_COMMON_KERNEL__) && \
+#if ((defined(__ANDROID_COMMON_KERNEL__) && \
 	(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)) && \
-	(defined  IEEE80211_MLD_MAX_NUM_LINKS))
+	(defined  IEEE80211_MLD_MAX_NUM_LINKS)) || \
+	(LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)))
 #define CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT 1
 #endif
 

@@ -37,7 +37,7 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 	enum wlan_t2lm_direction dir;
 	uint8_t *t2lm_control_field;
 	uint16_t t2lm_control;
-	uint8_t link_mapping_presence_ind;
+	uint8_t link_mapping_presence_ind = 0;
 	uint8_t *link_mapping_of_tids;
 	uint8_t tid_num;
 	uint8_t *ie_ptr = NULL;

@@ -67,6 +67,7 @@
 	pinctrl-0 = <&qupv3_se3_2uart_rx_active>;
 	pinctrl-1 = <&qupv3_se3_2uart_rx_sleep>;
 	qcom,allow-suspend;
+	qcom,auto-suspend-disable;
 };
 
 &vendor {

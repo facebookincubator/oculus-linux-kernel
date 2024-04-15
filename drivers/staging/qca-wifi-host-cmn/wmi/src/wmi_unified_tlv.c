@@ -1838,10 +1838,10 @@ static QDF_STATUS send_vdev_up_cmd_tlv(wmi_unified_t wmi,
 
 	wmi_debug("VDEV_UP");
 	wmi_debug("vdev_id %d aid %d profile idx %d count %d bssid "
-		  QDF_MAC_ADDR_FMT,
+		  QDF_MAC_ADDR_FMT " trans bssid " QDF_MAC_ADDR_FMT,
 		  params->vdev_id, params->assoc_id,
 		  params->profile_idx, params->profile_num,
-		  QDF_MAC_ADDR_REF(bssid));
+		  QDF_MAC_ADDR_REF(bssid), QDF_MAC_ADDR_REF(params->trans_bssid));
 	buf = wmi_buf_alloc(wmi, len);
 	if (!buf)
 		return QDF_STATUS_E_NOMEM;
@@ -17704,7 +17704,7 @@ static QDF_STATUS extract_green_ap_ll_ps_param_tlv(
 		((uint64_t)ll_ps_event->next_tsf_high32 << 32) |
 		ll_ps_event->next_tsf_low32;
 
-	wmi_debug("cookie : %llu next_tsf %llu", ll_ps_params->dialog_token,
+	wmi_debug("cookie : %u next_tsf %llu", ll_ps_params->dialog_token,
 		  ll_ps_params->next_tsf);
 
 	return QDF_STATUS_SUCCESS;

@@ -508,6 +508,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe650x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_1,
 			.num_wm        = 1,
 			.mid[0]        = 8,
+			.line_based    = 1,
 			.wm_idx        = {
 				0,
 			},
@@ -522,6 +523,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe650x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_2,
 			.num_wm        = 1,
 			.mid[0]        = 9,
+			.line_based    = 1,
 			.wm_idx        = {
 				1,
 			},
@@ -536,6 +538,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe650x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_3,
 			.num_wm        = 1,
 			.mid[0]        = 10,
+			.line_based    = 1,
 			.wm_idx        = {
 				2,
 			},
@@ -550,6 +553,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe650x_bus_hw_info = {
 			.source_group  = CAM_VFE_BUS_VER3_SRC_GRP_4,
 			.num_wm        = 1,
 			.mid[0]        = 11,
+			.line_based    = 1,
 			.wm_idx        = {
 				3,
 			},

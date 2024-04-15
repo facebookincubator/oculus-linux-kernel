@@ -69,11 +69,14 @@
 };
 
 &qupv3_se9_spi {
-	oculusnrf@0 {
-		oculus,syncboss-has-no-prox-cal;
+	syncboss_nrf@0 {
 		swd@0 {
-			oculus,flash-page-bootloader-protected-count = <0>;
-			oculus,flash-erase-all;
+			meta,flash-page-bootloader-protected-count = <0>;
+			meta,flash-erase-all;
+		};
+
+		powerstate@0 {
+			meta,syncboss-has-no-prox-cal;
 		};
 	};
 };

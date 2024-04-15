@@ -17,9 +17,13 @@
 #define OEM_OPCODE_SEND_VDM	0x10002
 #define OEM_OPCODE_RECV_VDM	0x10003
 #define OEM_OPCODE_NOTIFY	0x10004
+#define OEM_OPCODE_SEND_EXT_MSG	0x10005
+#define OEM_OPCODE_RECV_EXT_MSG	0x10006
 
 #define OEM_NOTIFICATION_CONNECTED		0x1
 #define OEM_NOTIFICATION_DISCONNECTED	0x2
+
+#define PD_MAX_EXTENDED_MSG_LEN	260
 
 struct usbvdm_dev {
 	struct device *dev;
@@ -30,6 +34,15 @@ struct usbvdm_dev {
 	struct mutex state_lock;
 
 	struct work_struct setup_work;
+};
+
+struct ext_msg_work {
+	u8 msg_type;
+	u8 data[PD_MAX_EXTENDED_MSG_LEN];
+	u32 data_len;
+
+	struct usbvdm_dev *uv_dev;
+	struct work_struct work;
 };
 
 struct vdm_work {
@@ -53,6 +66,15 @@ struct pmic_glink_oem_notify_msg {
 };
 
 /* As defined in DSP */
+struct pmic_glink_oem_ext_msg {
+	struct pmic_glink_hdr hdr;
+
+	u8 msg_type;
+	u8 data[PD_MAX_EXTENDED_MSG_LEN];
+	u32 data_len;
+};
+
+/* As defined in DSP */
 struct pmic_glink_oem_vdm_msg {
 	struct pmic_glink_hdr hdr;
 
@@ -61,6 +83,60 @@ struct pmic_glink_oem_vdm_msg {
 	u32 data[VDO_MAX_SIZE];
 	u32 size;
 };
+
+static void usbvdm_glink_ext_msg_work(struct work_struct *work)
+{
+	struct ext_msg_work *em_work = container_of(work, struct ext_msg_work, work);
+	struct usbvdm_dev *uv_dev = em_work->uv_dev;
+	struct pmic_glink_hdr msg_hdr = {};
+	struct pmic_glink_oem_ext_msg msg = {};
+	int rc;
+
+	mutex_lock(&uv_dev->state_lock);
+
+	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
+		dev_err(uv_dev->dev, "Can't send ext msg, Glink down");
+		goto out;
+	}
+
+	msg_hdr.owner = PMIC_GLINK_MSG_OWNER_OEM;
+	msg_hdr.type = MSG_TYPE_REQ_RESP;
+	msg_hdr.opcode = OEM_OPCODE_SEND_EXT_MSG;
+
+	msg.hdr = msg_hdr;
+	msg.msg_type = em_work->msg_type;
+	memcpy(msg.data, em_work->data, em_work->data_len);
+	msg.data_len = em_work->data_len;
+
+	rc = pmic_glink_write(uv_dev->client, &msg, sizeof(msg));
+	if (rc) {
+		dev_err(uv_dev->dev, "Failed writing to pmic_glink, rc=%d", rc);
+		goto out;
+	}
+
+out:
+	mutex_unlock(&uv_dev->state_lock);
+	kfree(em_work);
+}
+
+static int usbvdm_glink_ext_msg(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len)
+{
+	struct usbvdm_dev *uv_dev = usbvdm_engine_get_drvdata(engine);
+
+	struct ext_msg_work *em_work = kzalloc(sizeof(*em_work), GFP_KERNEL);
+	if (!em_work)
+		return -ENOMEM;
+
+	INIT_WORK(&em_work->work, usbvdm_glink_ext_msg_work);
+	em_work->uv_dev = uv_dev;
+	em_work->msg_type = msg_type;
+	memcpy(em_work->data, data, data_len);
+	em_work->data_len = data_len;
+
+	schedule_work(&em_work->work);
+	return 0;
+}
 
 static void usbvdm_glink_vdm_work(struct work_struct *work)
 {
@@ -120,6 +196,7 @@ static int usbvdm_glink_vdm(struct usbvdm_engine *engine,
 }
 
 static const struct usbvdm_engine_ops usbvdm_glink_ops = {
+	.ext_msg = usbvdm_glink_ext_msg,
 	.vdm = usbvdm_glink_vdm
 };
 
@@ -171,6 +248,21 @@ static void usbvdm_glink_handle_notify(struct usbvdm_dev *uv_dev,
 	}
 }
 
+static void usbvdm_glink_handle_recv_ext_msg(struct usbvdm_dev *uv_dev,
+		void *data, size_t len)
+{
+	struct pmic_glink_oem_ext_msg *msg = data;
+
+	if (len != sizeof(*msg)) {
+		dev_err(uv_dev->dev, "Incorrect len received: %lu (exp. %lu)",
+				len, sizeof(*msg));
+		return;
+	}
+
+	usbvdm_engine_ext_msg(uv_dev->engine, msg->msg_type,
+			msg->data, msg->data_len);
+}
+
 static void usbvdm_glink_handle_recv_vdm(struct usbvdm_dev *uv_dev,
 		void *data, size_t len)
 {
@@ -206,6 +298,9 @@ static int usbvdm_glink_msg_cb(void *priv, void *data, size_t len)
 		break;
 	case OEM_OPCODE_RECV_VDM:
 		usbvdm_glink_handle_recv_vdm(uv_dev, data, len);
+		break;
+	case OEM_OPCODE_RECV_EXT_MSG:
+		usbvdm_glink_handle_recv_ext_msg(uv_dev, data, len);
 		break;
 	default:
 		dev_err(uv_dev->dev, "Unable to handle opcode %x", hdr->opcode);

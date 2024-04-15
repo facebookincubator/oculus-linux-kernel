@@ -368,6 +368,8 @@ struct sde_crtc {
 	u64 play_count;
 	ktime_t vblank_cb_time;
 	ktime_t vblank_last_cb_time;
+	ktime_t vsync_last_cb_time;
+	u64 vsync_time_ns[2];
 	u64 lineptr_last_cb_time;
 	int lineptr_last_cb_vtotal;
 	int lineptr_last_cb_offset;

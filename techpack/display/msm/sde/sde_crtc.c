@@ -498,6 +498,75 @@ static ssize_t retire_frame_event_show(struct device *device,
 			ktime_to_ns(sde_crtc->retire_frame_event_time));
 }
 
+static ssize_t active_event_show(struct device *device,
+		struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+	unsigned long flags;
+	u64 vblank_time = 0;
+	u64 te_active_edge_time[2] = {0};
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	if (bl_config->te_gpio > 0) {
+		spin_lock_irqsave(&bl_config->event_lock, flags);
+		te_active_edge_time[0] = bl_config->te_active_edge_time[0];
+		te_active_edge_time[1] = bl_config->te_active_edge_time[1];
+		vblank_time = (te_active_edge_time[0] >=
+				sde_crtc->vsync_time_ns[1]) ?
+			sde_crtc->vsync_time_ns[1] : sde_crtc->vsync_time_ns[0];
+		spin_unlock_irqrestore(&bl_config->event_lock, flags);
+	}
+
+	/* Format: <offset from Vsync ns>,<active ns>,<active duration ns> */
+	return scnprintf(buf, PAGE_SIZE, "ACTIVE=%llu,%llu,%llu\n",
+			te_active_edge_time[0] - vblank_time,
+			te_active_edge_time[0],
+			te_active_edge_time[1] - te_active_edge_time[0]);
+}
+
+static ssize_t backlight_event_show(struct device *device,
+		struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+	unsigned long flags;
+	u64 blu_settling_time_ns = 0;
+	u64 blu_last_rising_edge_time = 0;
+	u64 blu_duration_ns = 0;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	if (bl_config->blu_pwm_gpio > 0) {
+		spin_lock_irqsave(&bl_config->event_lock, flags);
+		blu_settling_time_ns = bl_config->blu_settling_time_ns;
+		blu_last_rising_edge_time = bl_config->blu_last_rising_edge_time;
+		blu_duration_ns = bl_config->blu_duration_ns;
+		spin_unlock_irqrestore(&bl_config->event_lock, flags);
+	}
+
+	/* Format: <settling time ns>,<start ns>,<duration ns> */
+	return scnprintf(buf, PAGE_SIZE, "BACKLIGHT=%llu,%llu,%llu\n",
+			blu_settling_time_ns, blu_last_rising_edge_time,
+			blu_duration_ns);
+}
 
 static ssize_t backlight_timing_show(struct device *device,
 	struct device_attribute *attr, char *buf)
@@ -825,6 +894,8 @@ static ssize_t backlight_temperature_override_store(struct device *device,
 
 static DEVICE_ATTR_RO(vsync_event);
 static DEVICE_ATTR_RO(vsync_timing);
+static DEVICE_ATTR_RO(active_event);
+static DEVICE_ATTR_RO(backlight_event);
 static DEVICE_ATTR_RO(backlight_timing);
 static DEVICE_ATTR_RO(lineptr_event);
 static DEVICE_ATTR_WO(lineptr_offset);
@@ -840,6 +911,8 @@ static DEVICE_ATTR_RW(backlight_temperature_override);
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
 	&dev_attr_vsync_timing.attr,
+	&dev_attr_active_event.attr,
+	&dev_attr_backlight_event.attr,
 	&dev_attr_backlight_timing.attr,
 	&dev_attr_lineptr_event.attr,
 	&dev_attr_lineptr_offset.attr,
@@ -3147,7 +3220,7 @@ struct drm_encoder *sde_crtc_get_src_encoder_of_clone(struct drm_crtc *crtc)
 	return NULL;
 }
 
-static void sde_crtc_vblank_cb(void *data, ktime_t ts)
+static void sde_crtc_vblank_cb(void *data, ktime_t ts, ktime_t vsync_ts)
 {
 	struct drm_crtc *crtc = (struct drm_crtc *)data;
 	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
@@ -3159,6 +3232,9 @@ static void sde_crtc_vblank_cb(void *data, ktime_t ts)
 		sde_crtc->vblank_cb_count++;
 
 	sde_crtc->vblank_last_cb_time = ts;
+	sde_crtc->vsync_time_ns[0] = sde_crtc->vsync_time_ns[1];
+	sde_crtc->vsync_time_ns[1] = ktime_to_ns(vsync_ts);
+
 	sysfs_notify_dirent(sde_crtc->vsync_event_sf);
 
 	drm_crtc_handle_vblank(crtc);
@@ -5006,8 +5082,10 @@ static void _sde_crtc_reset(struct drm_crtc *crtc)
 	sde_crtc->mixers_swapped = false;
 
 	/* disable clk & bw control until clk & bw properties are set */
-	cstate->bw_control = false;
-	cstate->bw_split_vote = false;
+	if (!crtc->state->active) {
+		cstate->bw_control = false;
+		cstate->bw_split_vote = false;
+	}
 
 	sde_crtc_static_img_control(crtc, CACHE_STATE_DISABLED, false);
 }

@@ -662,13 +662,14 @@ static uint32_t sap_weight_channel_noise_floor(struct sap_context *sap_ctx,
 	if (!channel_stat || channel_stat->channel_freq == 0)
 		return softap_nf_weight_local;
 
-	noise_floor_weight = (channel_stat->noise_floor == 0) ? 0 :
-			    (ACS_WEIGHT_COMPUTE(
-			     sap_ctx->auto_channel_select_weight,
-			     softap_nf_weight_cfg,
-			     channel_stat->noise_floor -
-			     SOFTAP_MIN_NF,
-			     SOFTAP_MAX_NF - SOFTAP_MIN_NF));
+	noise_floor_weight = is_noise_floor_invalid(channel_stat->noise_floor)
+			      ? 0 :
+			      (ACS_WEIGHT_COMPUTE(
+			      sap_ctx->auto_channel_select_weight,
+			      softap_nf_weight_cfg,
+			      channel_stat->noise_floor -
+			      SOFTAP_MIN_NF,
+			      SOFTAP_MAX_NF - SOFTAP_MIN_NF));
 
 	if (noise_floor_weight > softap_nf_weight_local)
 		noise_floor_weight = softap_nf_weight_local;

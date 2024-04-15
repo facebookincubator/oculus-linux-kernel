@@ -5180,13 +5180,17 @@ end:
 int cam_req_mgr_link_dec_open_cnt(int32_t link_hdl)
 {
 	struct cam_req_mgr_core_link  *link = cam_get_link_priv(link_hdl);
-	if (link == NULL)
+	uint32_t old_open_req_cnt;
+	if (link == NULL) {
+		CAM_ERR(CAM_CRM, "Invalid link");
 		return -EINVAL;
+	}
 	mutex_lock(&link->req.lock);
+	old_open_req_cnt = link->open_req_cnt;
 	if (link->open_req_cnt > 0)
 		link->open_req_cnt--;
 	mutex_unlock(&link->req.lock);
-	return link->open_req_cnt;
+	return old_open_req_cnt;
 }
 
 void cam_req_mgr_link_reset_open_cnt(int32_t link_hdl)

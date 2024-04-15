@@ -10,6 +10,8 @@ struct usbvdm_engine;
 struct usbvdm_engine_ops {
 	void (*subscribe)(struct usbvdm_engine *engine, u16 svid, u16 pid);
 	void (*unsubscribe)(struct usbvdm_engine *engine, u16 svid, u16 pid);
+	int (*ext_msg)(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len);
 	int (*vdm)(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos);
 };
@@ -22,6 +24,8 @@ void usbvdm_unregister(struct usbvdm_engine *engine);
 void usbvdm_connect(struct usbvdm_engine *engine,
 		u16 svid, u16 pid);
 void usbvdm_disconnect(struct usbvdm_engine *engine);
+void usbvdm_engine_ext_msg(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len);
 void usbvdm_engine_vdm(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos);
 
@@ -38,6 +42,8 @@ inline void usbvdm_unregister(struct usbvdm_engine *engine) { }
 inline void usbvdm_connect(struct usbvdm_engine *engine,
 		u16 svid, u16 pid) { }
 inline void usbvdm_disconnect(struct usbvdm_engine *engine) { }
+inline void usbvdm_engine_ext_msg(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len) { }
 inline void usbvdm_engine_vdm(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos) { }
 

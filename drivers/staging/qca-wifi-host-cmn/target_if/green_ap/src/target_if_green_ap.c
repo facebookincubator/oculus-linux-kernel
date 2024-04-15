@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -162,7 +162,7 @@ static int target_if_green_ap_ll_ps_event(ol_scn_t scn, uint8_t *evt_buf,
 	else
 		ll_ps_param->bcn_mult = 1;
 
-	green_ap_debug("Next TSF: %llu Dialog Token: %llu bcn_mult: %u",
+	green_ap_debug("Next TSF: %llu Dialog Token: %u bcn_mult: %u",
 		       ll_ps_param->next_tsf,
 		       ll_ps_param->dialog_token,
 		       ll_ps_param->bcn_mult);

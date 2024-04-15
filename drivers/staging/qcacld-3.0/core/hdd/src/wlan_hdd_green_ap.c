@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -256,7 +256,7 @@ __wlan_hdd_enter_sap_low_pwr_mode(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	hdd_debug("Cookie id received : %u", cookie_id);
+	hdd_debug("Cookie id received : %llu", cookie_id);
 
 	len = NLMSG_HDRLEN;
 	/*QCA_WLAN_VENDOR_ATTR_DOZED_AP_COOKIE*/
@@ -360,7 +360,7 @@ QDF_STATUS wlan_hdd_send_green_ap_ll_ps_event(
 		goto nla_put_failure;
 	}
 
-	hdd_debug("next_tsf : %llu, cookie: %llu beacon multiplier: %u",
+	hdd_debug("next_tsf : %llu, cookie: %u beacon multiplier: %u",
 		  ll_ps_param->next_tsf, ll_ps_param->dialog_token,
 		  ll_ps_param->bcn_mult);
 

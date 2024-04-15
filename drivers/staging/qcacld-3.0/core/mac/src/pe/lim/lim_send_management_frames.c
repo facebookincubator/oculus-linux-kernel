@@ -3447,7 +3447,7 @@ lim_send_auth_mgmt_frame(struct mac_context *mac_ctx,
 	enum rateid min_rid = RATEID_DEFAULT;
 	uint16_t ch_freq_tx_frame = 0;
 	int8_t peer_rssi = 0;
-	uint8_t *mlo_ie_buf;
+	uint8_t *mlo_ie_buf = NULL;
 	uint32_t mlo_ie_len = 0;
 
 	if (!session) {

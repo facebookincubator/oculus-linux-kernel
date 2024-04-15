@@ -8,6 +8,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/err.h>
+#include <video/mipi_display.h>
 
 #include "msm_drv.h"
 #include "sde_connector.h"
@@ -30,6 +31,10 @@
 #define MISR_BUFF_SIZE	256
 #define ESD_MODE_STRING_MAX_LEN 256
 #define ESD_TRIGGER_STRING_MAX_LEN 10
+
+#define MIPI_LONG_READ_MAX_LEN 1024
+#define DDIC_DEBUGFS_TOTAL_INPUT_LENGTH 9
+#define DDIC_DEBUGFS_BUFF_LENGTH 8
 
 #define MAX_NAME_SIZE	64
 #define MAX_TE_RECHECKS 5
@@ -1408,6 +1413,210 @@ int dsi_display_set_power(struct drm_connector *connector,
 }
 
 #ifdef CONFIG_DEBUG_FS
+static int dsi_display_read_ddic(struct dsi_display *display,
+				 char *tx_buffer, size_t read_length)
+{
+	int rc = 0;
+	struct dsi_display_ctrl *ctrl;
+	struct dsi_cmd_desc *cmds = NULL;
+	u8 *payload = NULL;
+	bool state = false;
+	struct dsi_panel *panel;
+	char *readback_buf;
+	char tx_buffer_str[3] = { tx_buffer[0], tx_buffer[1], '\0' };
+	u32 target_register = 0;
+
+	if (!display)
+		return -EINVAL;
+
+	ctrl = &display->ctrl[display->cmd_master_idx];
+	panel = display->panel;
+	readback_buf = display->mipi_dcs_rx_data.buf_rx;
+
+	if (!panel || !ctrl || !ctrl->ctrl || !readback_buf)
+		return -EINVAL;
+
+	cmds = kzalloc(1024, GFP_KERNEL);
+	if (!cmds) {
+		rc = -ENOMEM;
+		goto error_free_cmds;
+	}
+
+	rc = kstrtoint(tx_buffer_str, 16, &target_register);
+	if (rc != 0) {
+		rc = -EINVAL;
+		goto error_free_cmds;
+	}
+
+	payload = kzalloc(8 * sizeof(u8), GFP_KERNEL);
+	if (!payload) {
+		rc = -ENOMEM;
+		goto error_free_payloads;
+	}
+	payload[0] = target_register;
+
+	cmds->msg.type = MIPI_DSI_DCS_READ;
+	cmds->last_command = true;
+	cmds->msg.channel = 0;
+	cmds->msg.ctrl = 0;
+	cmds->post_wait_ms = cmds->msg.wait_ms = 0;
+	cmds->msg.tx_len = 1;
+	cmds->msg.tx_buf = payload;
+	cmds->msg.flags |= MIPI_DSI_MSG_USE_LPM;
+	cmds->msg.flags |= MIPI_DSI_MSG_UNICAST_COMMAND;
+	cmds->msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
+	cmds->msg.rx_buf = readback_buf;
+	cmds->msg.rx_len = read_length;
+	cmds->ctrl_flags = DSI_CTRL_CMD_READ;
+
+	mutex_lock(&display->display_lock);
+	rc = dsi_display_ctrl_get_host_init_state(display, &state);
+
+	// Handle initiated through sysfs when device is in suspend state
+	if (!rc && !state) {
+		pr_warn_ratelimited("Command xfer attempted while device is in suspend state\n");
+		rc = -EPERM;
+		goto error_unlock_mutex;
+	}
+
+	if (rc || !state) {
+		DSI_ERR("[DSI] Invalid host state = %d rc = %d\n", state, rc);
+		rc = -EPERM;
+		goto error_unlock_mutex;
+	}
+
+	display->cmd_master_idx = display->mipi_dcs_rx_data.num_idx;
+	rc = dsi_display_cmd_rx(display, cmds);
+
+	if (rc <= 0)
+		DSI_ERR("[DSI] Display command receive failed, rc=%d\n", rc);
+
+	display->cmd_master_idx = 0;
+
+error_unlock_mutex:
+	mutex_unlock(&display->display_lock);
+error_free_payloads:
+	kfree(cmds->msg.tx_buf);
+error_free_cmds:
+	kfree(cmds);
+	return rc;
+}
+
+/**
+ * Input Format "Register ReturnLength CtrlNum"
+ * For example: "0xbf 20 1"
+ * register 0xbf, mipi read length 20, use dsi1
+ */
+static ssize_t debugfs_mipi_dcs_rx_write(struct file *file,
+				      const char __user *user_buf,
+				      size_t user_len, loff_t *ppos)
+{
+	struct dsi_display *display = file->private_data;
+	char *buf;
+	int rc = 0;
+	size_t len;
+	char *num_buf = NULL;
+
+	if (!display)
+		return -ENODEV;
+	if (!display->panel)
+		return -EINVAL;
+	if (*ppos)
+		return 0;
+
+	buf = kzalloc(MIPI_LONG_READ_MAX_LEN, GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(buf))
+		return -ENOMEM;
+
+	len = min_t(size_t, user_len, MIPI_LONG_READ_MAX_LEN - 1);
+	if (copy_from_user(buf, user_buf, len)) {
+		rc = -EINVAL;
+		goto error;
+	}
+	// get reg, data length, dsi controller number
+	if (len >= DDIC_DEBUGFS_TOTAL_INPUT_LENGTH) {
+		num_buf = kcalloc(len, sizeof(char), GFP_KERNEL);
+		memcpy(display->mipi_dcs_rx_data.buf_tx, buf + 2, 2 * sizeof(char));
+		memcpy(num_buf, buf + 5, (len - DDIC_DEBUGFS_BUFF_LENGTH) * sizeof(char));
+		rc = kstrtoint(buf + len - 2, 10, &(display->mipi_dcs_rx_data.num_idx));
+		if (kstrtoint(num_buf, 10, &(display->mipi_dcs_rx_data.num_input)) < 0) {
+			kfree(num_buf);
+			kfree(buf);
+			return -EINVAL;
+		}
+		kfree(num_buf);
+	}
+
+	rc = len;
+
+error:
+	kfree(buf);
+	return rc;
+}
+
+static ssize_t debugfs_mipi_dcs_rx_read(struct file *file, char __user *user_buf,
+				     size_t user_len, loff_t *ppos)
+{
+	struct dsi_display *display = file->private_data;
+	char *out_buffer;
+	int rc = 0, len = 0;
+	char *cmd_tx = NULL;
+	int read_length = display->mipi_dcs_rx_data.num_input;
+	int read_total_length = read_length;
+	char *readback_buf = NULL;
+	int i = 0;
+
+	if (!display)
+		return -ENODEV;
+
+	if (*ppos)
+		return 0;
+
+	out_buffer = kzalloc(MIPI_LONG_READ_MAX_LEN, GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(out_buffer))
+		return -ENOMEM;
+
+	readback_buf = kcalloc(read_length, sizeof(char), GFP_KERNEL);
+	display->mipi_dcs_rx_data.buf_rx = readback_buf;
+	memset(readback_buf, 0, read_length);
+	len += snprintf(out_buffer + len, MIPI_LONG_READ_MAX_LEN - len,
+		       "reg addr: 0x%s, read length: %d",
+		       display->mipi_dcs_rx_data.buf_tx, read_length);
+	cmd_tx = kzalloc(2 * sizeof(char), GFP_KERNEL);
+
+	memcpy(cmd_tx, display->mipi_dcs_rx_data.buf_tx, 2 * sizeof(char));
+	rc = dsi_display_read_ddic(display, cmd_tx, read_length);
+	if (rc <= 0) {
+		len = snprintf(
+			out_buffer, MIPI_LONG_READ_MAX_LEN,
+			"\nError, suspend & resume the panel and read again\n");
+		goto error_read_reg;
+	}
+
+	len += snprintf(out_buffer + len, MIPI_LONG_READ_MAX_LEN - len, ", DSI%d\n",
+		       display->cmd_master_idx);
+	len += snprintf(out_buffer + len, MIPI_LONG_READ_MAX_LEN - len, "readBackBuffer:");
+	for (i = 0; i < read_total_length; ++i)
+		len += snprintf(out_buffer + len, MIPI_LONG_READ_MAX_LEN - len, " 0x%02x", readback_buf[i]);
+	len += snprintf(out_buffer + len, MIPI_LONG_READ_MAX_LEN - len, "\n");
+
+	if (len > user_len)
+		len = user_len;
+
+error_read_reg:
+	kfree(cmd_tx);
+	kfree(readback_buf);
+	if (copy_to_user(user_buf, out_buffer, len)) {
+		rc = -EFAULT;
+		goto error;
+	}
+	*ppos += len;
+
+error:
+	kfree(out_buffer);
+	return len;
+}
+
 static bool dsi_display_is_te_based_esd(struct dsi_display *display)
 {
 	u32 status_mode = 0;
@@ -1989,6 +2198,12 @@ static const struct file_operations dsi_command_scheduling_fops = {
 	.read = debugfs_read_cmd_scheduling_params,
 };
 
+static const struct file_operations mipi_dcs_rx_fops = {
+	.open = simple_open,
+	.write = debugfs_mipi_dcs_rx_write,
+	.read = debugfs_mipi_dcs_rx_read,
+};
+
 static int dsi_display_debugfs_init(struct dsi_display *display)
 {
 	int rc = 0;
@@ -2042,6 +2257,18 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 	if (IS_ERR_OR_NULL(dump_file)) {
 		rc = PTR_ERR(dump_file);
 		DSI_ERR("[%s] debugfs for esd check mode failed, rc=%d\n",
+		       display->name, rc);
+		goto error_remove_dir;
+	}
+
+	dump_file = debugfs_create_file("mipi_dcs_rx",
+					0644,
+					dir,
+					display,
+					&mipi_dcs_rx_fops);
+	if (IS_ERR_OR_NULL(dump_file)) {
+		rc = PTR_ERR(dump_file);
+		DSI_ERR("[%s] debugfs for mipi dcs rx failed, rc=%d\n",
 		       display->name, rc);
 		goto error_remove_dir;
 	}

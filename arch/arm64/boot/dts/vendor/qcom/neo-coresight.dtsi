@@ -1210,6 +1210,86 @@
 		};
 	};
 
+	llcc_0 {
+		compatible = "qcom,coresight-dummy";
+		coresight-name = "coresight-llcc0";
+		qcom,dummy-source;
+
+		atid = <104>;
+		out-ports {
+			port {
+				llcc_0_out_funnel_ddr1: endpoint {
+					remote-endpoint =
+					<&funnel_ddr1_in_llcc_0>;
+				};
+			};
+		};
+	};
+
+	llcc_1 {
+		compatible = "qcom,coresight-dummy";
+		coresight-name = "coresight-llcc1";
+		qcom,dummy-source;
+
+		atid = <105>;
+		out-ports {
+			port {
+				llcc_1_out_funnel_ddr1: endpoint {
+					remote-endpoint =
+					<&funnel_ddr1_in_llcc_1>;
+				};
+			};
+		};
+	};
+
+	funnel_ddr1: funnel@10d0d000 {
+		compatible = "arm,primecell";
+		arm,primecell-periphid = <0x000bb908>;
+
+		reg = <0x10d0d000 0x1000>;
+		reg-names = "funnel-base";
+
+		coresight-name = "coresight-funnel-ddr1";
+
+		clocks = <&aoss_qmp>;
+		clock-names = "apb_pclk";
+
+		in-ports {
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				funnel_ddr1_in_llcc_0: endpoint {
+					remote-endpoint =
+					<&llcc_0_out_funnel_ddr1>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+				funnel_ddr1_in_llcc_1: endpoint {
+					remote-endpoint =
+					<&llcc_1_out_funnel_ddr1>;
+				};
+			};
+		};
+
+		out-ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				funnel_ddr1_out_funnel_ddr0: endpoint {
+					remote-endpoint =
+					<&funnel_ddr0_in_funnel_ddr1>;
+				};
+			};
+		};
+	};
+
 
 	funnel_ddr0: funnel@10d03000 {
 		compatible = "arm,primecell";
@@ -1251,6 +1331,14 @@
 					<&tpdm_ddr_out_funnel_ddr0>;
 				};
 			};
+
+			port@4 {
+				reg = <4>;
+				funnel_ddr0_in_funnel_ddr1: endpoint {
+					remote-endpoint =
+					<&funnel_ddr1_out_funnel_ddr0>;
+				};
+			};
 		};
 
 		out-ports {
@@ -1281,6 +1369,14 @@
 					remote-endpoint =
 					<&tpda_dl_center_8_in_funnel_ddr0>;
 					source = <&tpdm_shrm>;
+				};
+			};
+
+			port@3 {
+				reg = <3>;
+				funnel_ddr0_out_funnel_dl_center: endpoint {
+					remote-endpoint =
+					<&funnel_dl_center_in_funnel_ddr0>;
 				};
 			};
 		};
@@ -2316,6 +2412,14 @@
 				funnel_dl_center_in_tpda_dl_center: endpoint {
 					remote-endpoint =
 					<&tpda_dl_center_out_funnel_dl_center>;
+				};
+			};
+
+			port@4 {
+				reg = <4>;
+				funnel_dl_center_in_funnel_ddr0: endpoint {
+					remote-endpoint =
+					<&funnel_ddr0_out_funnel_dl_center>;
 				};
 			};
 

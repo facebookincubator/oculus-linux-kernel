@@ -54,6 +54,8 @@
 
 #define VDEV_ALL                    0xFF
 
+#define NOISE_FLOOR_INVALID         (-128)
+
 /**
  * enum stats_req_type - enum indicating bit position of various stats type in
  * request map
@@ -850,4 +852,10 @@ typedef struct {
 	uint32_t *rx_pkt_per_mcs;
 } wmi_host_peer_stats_info;
 
+static inline bool is_noise_floor_invalid(uint32_t noise_floor)
+{
+	if (!noise_floor || noise_floor == NOISE_FLOOR_INVALID)
+		return true;
+	return false;
+}
 #endif /* __WLAN_CP_STATS_MC_DEFS_H__ */

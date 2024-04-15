@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -166,5 +166,17 @@ uint8_t dsc_vdev_get_cached_cmd(struct dsc_vdev *vdev);
  * Return: None
  */
 void dsc_vdev_cache_command(struct dsc_vdev *vdev, uint8_t cmd_id);
+
+/*
+ * dsc_vdev_wait_for_uptree_ops() - Wait for any uptree operations
+ * @vdev: The DSC vdev
+ *
+ * This function checks and waits for any uptree operations if there is any
+ * uptree operation is in progress.
+ *
+ * Return: None.
+ */
+
+void dsc_vdev_wait_for_uptree_ops(struct dsc_vdev *vdev);
 
 #endif /* __WLAN_DSC_VDEV_H */

@@ -238,6 +238,29 @@ __osif_vdev_sync_start_wait_callback(struct net_device *net_dev,
 	return 0;
 }
 
+/**
+ * osif_vdev_sync_wait_for_uptree_ops - Wait for psoc/driver operations
+ * @vdev_sync: vdev sync pointer
+ *
+ * If there are any psoc/driver operations are taking place, then vdev
+ * trans/ops should wait for these operations to be completed to avoid
+ * memory domain mismatch issues. For example, if modules are closed
+ * because of idle shutdown, memory domain will be init domain and at
+ * that time if some psoc ops starts, memory allocated as part of this
+ * ops will be allocated in init domain and if at the same time if vdev
+ * up starts which will trigger the vdev trans and will start the
+ * modules and change the memory domain to active domain, now when the
+ * memory allocated as part of psoc operation is release on psoc ops
+ * completion will be released in the active domain which leads the
+ * memory domain mismatch.
+ *
+ * Return: None.
+ */
+static void osif_vdev_sync_wait_for_uptree_ops(struct osif_vdev_sync *vdev_sync)
+{
+	dsc_vdev_wait_for_uptree_ops(vdev_sync->dsc_vdev);
+}
+
 int __osif_vdev_sync_trans_start(struct net_device *net_dev,
 				 struct osif_vdev_sync **out_vdev_sync,
 				 const char *desc)
@@ -249,8 +272,10 @@ int __osif_vdev_sync_trans_start(struct net_device *net_dev,
 						dsc_vdev_trans_start);
 	osif_vdev_sync_unlock();
 
-	if (!errno)
+	if (!errno) {
 		osif_vdev_sync_wait_for_ops(*out_vdev_sync);
+		osif_vdev_sync_wait_for_uptree_ops(*out_vdev_sync);
+	}
 
 	return errno;
 }
@@ -266,8 +291,10 @@ int __osif_vdev_sync_trans_start_wait(struct net_device *net_dev,
 						     out_vdev_sync, desc,
 						     dsc_vdev_trans_start_wait);
 
-	if (!errno)
+	if (!errno) {
 		osif_vdev_sync_wait_for_ops(*out_vdev_sync);
+		osif_vdev_sync_wait_for_uptree_ops(*out_vdev_sync);
+	}
 
 	return errno;
 }

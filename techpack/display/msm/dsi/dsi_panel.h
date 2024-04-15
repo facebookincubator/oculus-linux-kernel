@@ -194,6 +194,20 @@ struct dsi_backlight_config {
 	int num_response_time_entries;
 	u32 settling_time_target_us;
 
+	/* Hardware timing probe GPIOs */
+	int te_gpio;
+	int te_irq;
+	bool te_active_edge;
+	spinlock_t event_lock;
+	u64 te_last_active_edge_time;
+	u64 te_active_edge_time[2];
+
+	int blu_pwm_gpio;
+	int blu_pwm_irq;
+	u64 blu_last_rising_edge_time;
+	u64 blu_settling_time_ns;
+	u64 blu_duration_ns;
+
 	bool backlight_lock;
 	bool bicubic_scaling;
 };
@@ -472,4 +486,8 @@ int dsi_panel_create_cmd_packets(const char *data, u32 length, u32 count,
 void dsi_panel_destroy_cmd_packets(struct dsi_panel_cmd_set *set);
 
 void dsi_panel_dealloc_cmd_packets(struct dsi_panel_cmd_set *set);
+
+bool dsi_panel_update_temp_dependent_bl_config(
+	struct dsi_panel *panel, u32 *response_time_tbl, u32 response_time_tbl_size);
+
 #endif /* _DSI_PANEL_H_ */

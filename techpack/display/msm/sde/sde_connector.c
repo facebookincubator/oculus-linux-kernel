@@ -16,6 +16,7 @@
 #include <linux/string.h>
 #include "dsi_drm.h"
 #include "dsi_display.h"
+#include "dsi_panel.h"
 #include "sde_crtc.h"
 #include "sde_rm.h"
 #include "sde_vm.h"
@@ -23,6 +24,7 @@
 
 #define BL_NODE_NAME_SIZE 32
 #define HDR10_PLUS_VSIF_TYPE_CODE      0x81
+#define BL_TEMP_RESPONSE_TIME_CURVE_MAX 32
 
 /* Autorefresh will occur after FRAME_CNT frames. Large values are unlikely */
 #define AUTOREFRESH_MAX_FRAME_CNT 6
@@ -2416,6 +2418,75 @@ end:
 
 }
 
+static ssize_t _sde_conn_temperature_response_time_curve_write(struct file *file,
+																const char __user *p, size_t count, loff_t *ppos)
+{
+	struct drm_connector *connector = file->private_data;
+	struct sde_connector *c_conn;
+	char *input, *token, *input_copy, *input_dup = NULL;
+	const char *delim = " ";
+	struct dsi_display *display;
+	struct dsi_panel *panel;
+	u32 buf_size = 0;
+	u32 buffer[BL_TEMP_RESPONSE_TIME_CURVE_MAX];
+	int rc = 0, strtoint;
+
+	if (*ppos || !connector) {
+		SDE_ERROR("invalid argument(s), conn %d\n", connector != NULL);
+		return 0;
+	}
+
+	c_conn = to_sde_connector(connector);
+	display = c_conn->display;
+	panel = display->panel;
+	input = kzalloc(count + 1, GFP_KERNEL);
+	if (!input)
+		return -ENOMEM;
+
+	if (copy_from_user(input, p, count)) {
+		SDE_ERROR("copy from user failed\n");
+		rc = -EFAULT;
+		goto end;
+
+	}
+	input_copy = kstrdup(input, GFP_KERNEL);
+	if (!input_copy) {
+		rc = -ENOMEM;
+		goto end;
+
+	}
+
+	input_dup = input_copy;
+	token = strsep(&input_copy, delim);
+	while (token) {
+		rc = kstrtoint(token, 10, &strtoint);
+		if (rc) {
+			SDE_ERROR("input buffer conversion failed\n");
+			goto end;
+
+		}
+		if (buf_size >= BL_TEMP_RESPONSE_TIME_CURVE_MAX) {
+			SDE_ERROR("buffer size exceeding the limit %d\n",
+					  BL_TEMP_RESPONSE_TIME_CURVE_MAX);
+			goto end;
+
+		}
+		buffer[buf_size++] = strtoint;
+		token = strsep(&input_copy, delim);
+	}
+	if (!buf_size)
+		goto end;
+
+	mutex_lock(&c_conn->lock);
+	dsi_panel_update_temp_dependent_bl_config(panel, &buffer[0], buf_size);
+	mutex_unlock(&c_conn->lock);
+
+end:
+	kfree(input_dup);
+	kfree(input);
+	return count;
+}
+
 static const struct file_operations conn_cmd_tx_fops = {
 	.open =		_sde_debugfs_conn_cmd_tx_open,
 	.read =		_sde_debugfs_conn_cmd_tx_sts_read,
@@ -2430,6 +2501,11 @@ static const struct file_operations conn_dcs_cmd_fops = {
 static const struct file_operations conn_dcs_cmd_unicast_fops = {
 	.open = simple_open,
 	.write = _sde_conn_dcs_cmd_unicast_write,
+};
+
+static const struct file_operations conn_temperature_response_time_curve ={
+	.open = simple_open,
+	.write = _sde_conn_temperature_response_time_curve_write,
 };
 
 static int _sde_debugfs_conn_cmd_rx_open(struct inode *inode, struct file *file)
@@ -2656,6 +2732,12 @@ static int sde_connector_init_debugfs(struct drm_connector *connector)
 							 connector->debugfs_entry,
 							 connector, &conn_dcs_cmd_unicast_fops)) {
 		SDE_ERROR("failed to create connector cmd_tx_unicast\n");
+		return -ENOMEM;
+	}
+	if (!debugfs_create_file("temperature_response_time_curve", 0600,
+							 connector->debugfs_entry,
+							 connector, &conn_temperature_response_time_curve)) {
+		SDE_ERROR("failed to create connector temperature_response_time_curve\n");
 		return -ENOMEM;
 	}
 

@@ -423,6 +423,17 @@ interconnects:
         value type: <u32>
         Definition: Offset from PCIe PHY base to dump pcie phy status registers
 
+- qcom,phy-aux-clk-config1-offset:
+	Usage: required
+	Value type: <u32>
+	Definition: Offset from PCIe PHY aux clk config register to disable FLL
+
+- qcom,phy-pll-clk-enable1-offset:
+	Usage: required
+	Value type: <u32>
+	Definition: ffset from PCIe PHY base to enable ext clk buf mux to
+		eliminate VDDA leakage
+
 ==============
 Root port node
 ==============

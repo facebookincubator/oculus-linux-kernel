@@ -995,12 +995,38 @@ lim_process_assoc_rsp_t2lm(struct pe_session *session,
 #endif
 
 /**
+ * lim_send_join_fail() - Send join failure
+ * @mac_ctx: Pointer to Global MAC structure
+ * @session_entry: Session entry
+ * @result_code: result code to send in join result
+ *
+ * This function sends join failure when bssid of assoc/reassoc
+ * resp doesn't match with current bssid
+ */
+static
+void lim_send_join_fail(struct mac_context *mac_ctx,
+			struct pe_session *session_entry,
+			enum eSirResultCodes result_code)
+{
+	session_entry->limSmeState = eLIM_SME_JOIN_FAILURE_STATE;
+	MTRACE(mac_trace(mac_ctx, TRACE_CODE_SME_STATE,
+			 session_entry->peSessionId,
+			 session_entry->limSmeState));
+
+	/* Send Join response to Host */
+	lim_handle_sme_join_result(
+			mac_ctx, result_code, STATUS_UNSPECIFIED_FAILURE,
+			session_entry);
+}
+
+/**
  * lim_process_assoc_rsp_frame() - Processes assoc response
  * @mac_ctx: Pointer to Global MAC structure
  * @rx_packet_info    - A pointer to Rx packet info structure
  * @frame_body_length - frame body length of reassoc/assoc response frame
  * @sub_type - Indicates whether it is Association Response (=0) or
  *                   Reassociation Response (=1) frame
+ * @session_entry: Session entry
  *
  * This function is called by limProcessMessageQueue() upon
  * Re/Association Response frame reception.
@@ -1103,6 +1129,13 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 			 */
 			pe_warn("received AssocRsp from unexpected peer "QDF_MAC_ADDR_FMT,
 				QDF_MAC_ADDR_REF(hdr->sa));
+			/*
+			 * Send Assoc failure to avoid connection in
+			 * progress state.
+			 */
+
+			lim_send_join_fail(mac_ctx, session_entry,
+					   eSIR_SME_ASSOC_REFUSED);
 			qdf_mem_free(beacon);
 			return;
 		}
@@ -1117,6 +1150,12 @@ lim_process_assoc_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 			 */
 			pe_warn("received ReassocRsp from unexpected peer "QDF_MAC_ADDR_FMT,
 				QDF_MAC_ADDR_REF(hdr->sa));
+			/*
+			 * Send Reassoc failure to avoid connection in
+			 * progress state.
+			 */
+			lim_send_join_fail(mac_ctx, session_entry,
+					   eSIR_SME_REASSOC_REFUSED);
 			qdf_mem_free(beacon);
 			return;
 		}

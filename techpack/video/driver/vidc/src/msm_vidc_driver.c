@@ -6419,6 +6419,7 @@ int msm_vidc_check_core_mbps(struct msm_vidc_inst *inst)
 {
 	u32 mbps = 0, total_mbps = 0, enc_mbps = 0;
 	u32 critical_mbps = 0;
+	s32 priority = 0;
 	struct msm_vidc_core *core;
 	struct msm_vidc_inst *instance;
 
@@ -6484,8 +6485,12 @@ int msm_vidc_check_core_mbps(struct msm_vidc_inst *inst)
 				/* reduce realtime decode sessions priority */
 				if (is_decode_session(instance) && is_realtime_session(instance)) {
 					instance->adjust_priority = RT_DEC_DOWN_PRORITY_OFFSET;
-					i_vpr_h(inst, "%s: pending adjust priority by %d\n",
-						__func__, instance->adjust_priority);
+					i_vpr_h(instance, "%s: update priority database from %d -> %d explicitly\n",
+						__func__, instance->capabilities->cap[PRIORITY].value,
+                                                instance->adjust_priority);
+
+					priority = instance->capabilities->cap[PRIORITY].value + instance->adjust_priority;
+					msm_vidc_update_cap_value(instance, PRIORITY, priority, __func__);
 				}
 			}
 			core_unlock(core, __func__);
@@ -6493,8 +6498,12 @@ int msm_vidc_check_core_mbps(struct msm_vidc_inst *inst)
 	} else if (is_decode_session(inst)){
 		if (total_mbps > core->capabilities[MAX_MBPS].value) {
 			inst->adjust_priority = RT_DEC_DOWN_PRORITY_OFFSET;
-			i_vpr_h(inst, "%s: pending adjust priority by %d\n",
-				__func__, inst->adjust_priority);
+			i_vpr_h(inst, "%s: update priority database from %d -> %d explicitly\n",
+				__func__, inst->capabilities->cap[PRIORITY].value,
+                                inst->adjust_priority);
+
+			priority = inst->capabilities->cap[PRIORITY].value + inst->adjust_priority;
+			msm_vidc_update_cap_value(inst, PRIORITY, priority, __func__);
 		}
 	}
 
@@ -6854,6 +6863,20 @@ static int msm_vidc_check_max_sessions(struct msm_vidc_inst *inst)
 				continue;
 		}
 
+		/* In XR use cases with sliced height, width can be large
+		 * but the corresponding height is minimal. To support such
+		 * use cases below aspect ratio is considered. If the aspect
+		 * ratio is more than 7(based on experiments) then we skip
+		 * the resolution checks.
+		 */
+		if (is_decode_session(i)) {
+			if (width > height)
+				aspect_ratio = width / height;
+			else
+				aspect_ratio = height / width;
+			if (aspect_ratio > 7)
+				continue;
+		}
 		/*
 		 * one 8k session equals to 64 720p sessions in reality.
 		 * So for one 8k session the number of 720p sessions will

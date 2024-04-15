@@ -2018,9 +2018,11 @@ void wlan_dp_soc_cfg_sync_profile(struct cdp_soc_t *cdp_soc)
 				}
 				dp_info("current RXDMA refill ring size:%u synced with profile:%u", cur_val, profile_ctx->size);
 			}
+			break;
 		case DP_RX_REFILL_POOL_NUM_CFG:
 			wlan_dp_rx_refill_pool_cfg_sync_profile(cdp_soc,
 								profile_ctx);
+			break;
 		default:
 			dp_debug("Unknown profile param type:%u", profile_ctx->param_type);
 			break;

@@ -56,19 +56,6 @@
 		};
 	};
 
-	syncboss_timesync: syncboss_timesync {
-		mux {
-			pins = "gpio111";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio111";
-			bias-disable;
-			input-enable;
-		};
-	};
-
 	syncboss_wakeup: syncboss_wakeup {
 		mux {
 			pins = "gpio41";
@@ -151,6 +138,7 @@
 		qcom,wrapper-core = <&qupv3_1>;
 		qcom,wakeup-byte = <0xFD>;
 		qcom,allow-suspend;
+		qcom,auto-suspend-disable;
 	};
 };
 
@@ -171,9 +159,9 @@
 	// 8MHz (1.25us) to get us the rest of the way.
 	qcom,set-cs-clk-delay = <10>;
 
-	oculusnrf@0 {
+	syncboss_nrf@0 {
 		status = "okay";
-		compatible = "oculus,syncboss";
+		compatible = "meta,syncboss-spi";
 		reg = <0>;
 		spi-max-frequency = <8000000>;
 
@@ -181,41 +169,60 @@
 		spi-cpha;
 
 		pinctrl-names = "default";
-		pinctrl-0 = <&syncboss_reset_default &syncboss_timesync &syncboss_wakeup &syncboss_nsync>;
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
-		oculus,imu-core-supply = <&L6B>;
-		oculus,imu-core-voltage-level = <1800000 1800000>;
-		oculus,mag-core-supply = <&L6B>;
-		oculus,mag-core-voltage-level = <1800000 1800000>;
+		meta,imu-core-supply = <&L6B>;
+		meta,imu-core-voltage-level = <1800000 1800000>;
+		meta,mag-core-supply = <&L6B>;
+		meta,mag-core-voltage-level = <1800000 1800000>;
 
-		oculus,syncboss-reset  = <&tlmm 112 0>;
-		oculus,syncboss-timesync = <&tlmm 111 0>;
-		oculus,syncboss-wakeup  = <&tlmm 41 0>;
-		oculus,syncboss-nsync = <&tlmm 125 0>;
+		meta,syncboss-reset  = <&tlmm 112 0>;
+		meta,syncboss-wakeup  = <&tlmm 41 0>;
 
-		oculus,syncboss-has-prox;
-		oculus,syncboss-use-fastpath;
-
-		oculus,syncboss-has-seq-num-ioctl;
+		meta,syncboss-use-fastpath;
 
 		swd@0 {
-			compatible = "oculus,swd";
+			compatible = "meta,swd", "meta,syncboss-consumer";
 
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
 
-			oculus,pin-reset = <&tlmm 112 0>;
-			oculus,swd-clk = <&tlmm 80 0>;
-			oculus,swd-io = <&tlmm 79 0>;
+			meta,pin-reset = <&tlmm 112 0>;
+			meta,swd-clk = <&tlmm 80 0>;
+			meta,swd-io = <&tlmm 79 0>;
 
-			oculus,swd-flavor = "nrf52833";
-			oculus,fw-path = "syncboss.bin";
-			oculus,flash-block-size = <512>;
-			oculus,flash-page-size = <4096>;
-			oculus,flash-page-count = <128>;
-			oculus,flash-page-bootloader-protected-count = <1>;
-			oculus,flash-page-retained-count = <13>;
-			oculus,swd-provisioning;
+			meta,swd-flavor = "nrf52833";
+			meta,fw-path = "syncboss.bin";
+			meta,flash-block-size = <512>;
+			meta,flash-page-size = <4096>;
+			meta,flash-page-count = <128>;
+			meta,flash-page-bootloader-protected-count = <1>;
+			meta,flash-page-retained-count = <13>;
+			meta,swd-provisioning;
+		};
+
+		powerstate@0 {
+			compatible = "meta,syncboss-powerstate", "meta,syncboss-consumer";
+			meta,syncboss-has-prox;
+		};
+
+		nsync@0 {
+			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_nsync>;
+
+			interrupt-parent = <&tlmm>;
+			interrupts = <125 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "nsync";
+		};
+
+		directchannel@0 {
+			compatible = "meta,syncboss-direct-channel", "meta,syncboss-consumer";
+		};
+
+		miscfifo@0 {
+			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
 		};
 	};
 };

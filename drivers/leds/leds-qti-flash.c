@@ -1422,6 +1422,33 @@ static int qti_flash_led_config_fault_debounce(struct qti_flash_led *led,
 	return 0;
 }
 
+static int qti_flash_led_config_alt_ramp_dn_rate(struct qti_flash_led *led,
+						 struct device_node *node)
+{
+	int rc = 0;
+	u8 val = 0;
+
+	rc = of_property_read_u8(node, "qcom,alt-ramp-dn-rate", &val);
+	if (rc == 0) {
+		u8 flash_led_alt_ramp_dn_rate = val & FLASH_LED_ALTERNATE_DN_STEP_MASK;
+		pr_debug("alt-ramp-dn-rate: 0x%x\n",
+			 flash_led_alt_ramp_dn_rate);
+		rc = qti_flash_led_write(led, FLASH_LED_ALT_RAMP_DN_RATE, &val, 1);
+		if (rc < 0) {
+			pr_err("Unable to write %s rc=%d\n",
+			       __stringify(FLASH_LED_ALT_RAMP_DN_RATE), rc);
+			return rc;
+		}
+	} else if (rc != -EINVAL) {
+		// This property is optional, so do not return error if the property does not exist
+		// i.e. EINVAL.
+		pr_err("Failed to read alt-ramp-dn-rate rc=%d\n", rc);
+		return rc;
+	}
+
+	return 0;
+}
+
 static int qti_flash_led_setup(struct qti_flash_led *led,
 			       struct device_node *node)
 {
@@ -1469,6 +1496,16 @@ static int qti_flash_led_setup(struct qti_flash_led *led,
 	}
 
 	rc = qti_flash_led_config_fault_debounce(led, node);
+	if (rc < 0) {
+		pr_err("Failed to configure FLASH_LED_FAULT_DEBOUNCE rc=%d\n", rc);
+		return rc;
+	}
+
+	rc = qti_flash_led_config_alt_ramp_dn_rate(led, node);
+	if (rc < 0) {
+		pr_err("Failed to configure FLASH_LED_ALT_RAMP_DN_RATE rc=%d\n", rc);
+		return rc;
+	}
 
 	return rc;
 }

@@ -256,7 +256,6 @@
 			gpios = <&pm8550b_gpios 10 GPIO_ACTIVE_LOW>;
 			linux,input-type = <1>;
 			linux,code = <KEY_VOLUMEUP>;
-			gpio-key,wakeup;
 			debounce-interval = <15>;
 			linux,can-disable;
 		};
@@ -634,7 +633,6 @@
 	fan: pwm-tach-fan@0 {
 		reg = <0>;
 		compatible = "pwm-tach-fan";
-		fan,tach-gpio = <&tlmm 147 0x0>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <147 1>;
 		interrupt-names = "fan_irq";

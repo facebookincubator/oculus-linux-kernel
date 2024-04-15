@@ -2596,7 +2596,7 @@ QDF_STATUS sme_set_chip_pwr_save_fail_cb(mac_handle_t mac_handle,
  *
  * Return: 0 on success, errno on failure
  */
-int sme_cli_set_command(int vdev_id, int param_id, int sval, int vpdev);
+int sme_cli_set_command(int vdev_id, int param_id, uint32_t sval, int vpdev);
 
 /**
  * sme_set_bt_activity_info_cb - set the callback handler for bt events

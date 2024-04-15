@@ -1736,13 +1736,13 @@ static int msm_vdec_update_max_map_output_count(struct msm_vidc_inst *inst)
 	/*
 	 * adjust max map output count based on resolution
 	 * to enhance performance.
-	 * For 8K session: count = 20
+	 * For 8K session: count = 11
 	 * For 4K session: count = 32
 	 * For 1080p session: count = 48
 	 * For all remaining sessions: count = 64
 	 */
 	if (res_is_greater_than(width, height, 4096, 2160))
-		count = 20;
+		count = 11;
 	else if (res_is_greater_than(width, height, 1920, 1080))
 		count = 32;
 	else if (res_is_greater_than(width, height, 1280, 720))
@@ -2119,11 +2119,7 @@ int msm_vdec_qbuf(struct msm_vidc_inst *inst, struct vb2_buffer *vb2)
 	}
 
 	if (inst->adjust_priority) {
-		s32 priority = inst->capabilities->cap[PRIORITY].value;
-
-		priority += inst->adjust_priority;
 		inst->adjust_priority = 0;
-		msm_vidc_update_cap_value(inst, PRIORITY, priority, __func__);
 		msm_vidc_set_session_priority(inst, PRIORITY);
 	}
 

@@ -575,7 +575,11 @@ static int cam_lrme_hw_util_submit_req(struct cam_lrme_core *lrme_core,
 	if (frame_req->num_hw_update_entries > 0) {
 		cdm_cmd->cmd_arrary_count = frame_req->num_hw_update_entries;
 		cdm_cmd->type = CAM_CDM_BL_CMD_TYPE_MEM_HANDLE;
-		cdm_cmd->flag = false;
+		if (cfg->init_packet) {
+			cdm_cmd->flag = true;
+			reinit_completion(&ctx->config_done_complete);
+		} else
+			cdm_cmd->flag = false;
 		cdm_cmd->userdata = NULL;
 		cdm_cmd->cookie = 0;
 		cdm_cmd->gen_irq_arb = false;

@@ -98,12 +98,6 @@ config QCOM_KGSL_CONTEXT_DEBUG
 	  detached contexts are dumped into kernel log for all the processes.
 	  This gives insight about the number of contexts held by each process.
 
-config QCOM_KGSL_PANIC_NOTIFIER
-	bool "Collect a GPU snapshot upon kernel panics"
-	help
-	  Register a panic handler that dumps potentially-helpful state
-	  upon a kernel panic.
-
 config QCOM_KGSL_SORT_POOL
 	bool "Sort pool page list based on physical address"
 	depends on QCOM_KGSL

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -169,7 +169,7 @@ lim_validate_tspec(struct mac_context *mac,
 		retval = lim_validate_tspec_edca(mac, pTspec, pe_session);
 		if (retval != QDF_STATUS_SUCCESS)
 			pe_warn("EDCA tspec invalid");
-			break;
+		break;
 
 	case SIR_MAC_ACCESSPOLICY_HCCA:
 	case SIR_MAC_ACCESSPOLICY_BOTH:
@@ -332,7 +332,7 @@ static QDF_STATUS lim_admit_policy(struct mac_context *mac,
 							   pe_session);
 		if (retval != QDF_STATUS_SUCCESS)
 			pe_err("rejected by BWFactor policy");
-			break;
+		break;
 
 	case WNI_CFG_ADMIT_POLICY_REJECT_ALL:
 		retval = QDF_STATUS_E_FAILURE;

@@ -332,7 +332,7 @@ void *cam_get_device_no_crm_priv(int32_t dev_hdl)
 	}
 
 	type = CAM_REQ_MGR_GET_HDL_TYPE(dev_hdl);
-	if (HDL_TYPE_DEV != type && HDL_TYPE_SESSION != type) {
+	if (type != HDL_TYPE_DEV) {
 		CAM_ERR_RATE_LIMIT(CAM_CRM, "Invalid type:%d", type);
 		goto device_priv_fail;
 	}
@@ -443,7 +443,7 @@ void *cam_get_device_no_crm_ops(int32_t dev_hdl)
 	}
 
 	type = CAM_REQ_MGR_GET_HDL_TYPE(dev_hdl);
-	if (HDL_TYPE_DEV != type && HDL_TYPE_SESSION != type) {
+	if (type != HDL_TYPE_DEV) {
 		CAM_ERR(CAM_CRM, "Invalid type");
 		goto device_ops_fail;
 	}

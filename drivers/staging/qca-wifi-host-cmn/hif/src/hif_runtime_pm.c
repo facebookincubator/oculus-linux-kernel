@@ -124,7 +124,7 @@ static int hif_rtpm_debugfs_show(struct seq_file *s, void *data)
 	seq_printf(s, "%30s: %llu\n", "Last resume request timestamp",
 		   gp_hif_rtpm_ctx->stats.request_resume_ts);
 
-	seq_printf(s, "%30s: %d\n", "Last resume request by",
+	seq_printf(s, "%30s: %llu\n", "Last resume request by",
 		   gp_hif_rtpm_ctx->stats.request_resume_id);
 
 	seq_puts(s, "Rx busy marker counts:\n");

@@ -336,15 +336,18 @@ int cam_mem_get_io_buf(int32_t buf_handle, int32_t mmu_handle,
 
 	mutex_lock(&tbl.bufq[idx].q_lock);
 	if (buf_handle != tbl.bufq[idx].buf_handle) {
-		CAM_ERR(CAM_MEM, "buf handle mismatch %x %x",
-			buf_handle, tbl.bufq[idx].buf_handle);
+		CAM_ERR(CAM_MEM, "buf handle mismatch 0x%x 0x%x mmu handle 0x%x fd %d i_ino %lu",
+			buf_handle, tbl.bufq[idx].buf_handle, mmu_handle, tbl.bufq[idx].fd,
+			tbl.bufq[idx].i_ino);
 		rc = -EINVAL;
 		goto handle_mismatch;
 	}
 
 	if (!iova_ptr || !len_ptr) {
-		CAM_ERR(CAM_MEM, "Error: Input pointers are invalid iova %s len_ptr %s",
-			CAM_IS_NULL_TO_STR(iova_ptr), CAM_IS_NULL_TO_STR(len_ptr));
+		CAM_ERR(CAM_MEM, "Error: Input pointers are invalid iova %s len_ptr %s"
+			"mmu handle 0x%x fd %d i_ino %lu", CAM_IS_NULL_TO_STR(iova_ptr),
+			CAM_IS_NULL_TO_STR(len_ptr), mmu_handle, tbl.bufq[idx].fd,
+			tbl.bufq[idx].i_ino);
 		rc = -EINVAL;
 		goto handle_mismatch;
 	}
@@ -363,18 +366,18 @@ int cam_mem_get_io_buf(int32_t buf_handle, int32_t mmu_handle,
 		}
 	}
 
-	if (NULL == iova_ptr) {
+	if (0 == *iova_ptr) {
 		CAM_ERR(CAM_MEM,
 			"Invalid iova_ptr handle:0x%x fd:%d i_ino:%lu len_ptr:%zu",
-			mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino,
-			*len_ptr);
+			mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino, *len_ptr);
 		rc = -EINVAL;
 	}
 
-handle_mismatch:
 	CAM_DBG(CAM_MEM,
 		"handle:0x%x fd:%d i_ino:%lu iova_ptr:0x%llx len_ptr:%llu",
-		mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino, iova_ptr, *len_ptr);
+		mmu_handle, tbl.bufq[idx].fd, tbl.bufq[idx].i_ino, *iova_ptr, *len_ptr);
+
+handle_mismatch:
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 	return rc;
 }

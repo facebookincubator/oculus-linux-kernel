@@ -31,6 +31,7 @@ static const uint8_t arp_mask[] = {0xff, 0xff};
 static const uint8_t ns_ptrn[] = {0x86, 0xDD};
 static const uint8_t discvr_ptrn[] = {0xe0, 0x00, 0x00, 0xf8};
 static const uint8_t discvr_mask[] = {0xf0, 0x00, 0x00, 0xf8};
+static const uint8_t arp_offset = 12;
 
 void pmo_register_wow_wakeup_events(struct wlan_objmgr_vdev *vdev)
 {
@@ -139,16 +140,25 @@ static QDF_STATUS pmo_configure_wow_ap(struct wlan_objmgr_vdev *vdev)
 
 	/* Setup Bridge MAC address */
 	pmo_get_vdev_bridge_addr(vdev, &bridgeaddr);
-	if (qdf_is_macaddr_zero(&bridgeaddr))
-		return ret;
-
-	ret = pmo_tgt_send_wow_patterns_to_fw(vdev,
+	if (!qdf_is_macaddr_zero(&bridgeaddr)) {
+		ret = pmo_tgt_send_wow_patterns_to_fw(vdev,
 			pmo_get_and_increment_wow_default_ptrn(vdev_ctx),
 			bridgeaddr.bytes, QDF_MAC_ADDR_SIZE, 0, mac_mask,
 			QDF_MAC_ADDR_SIZE, false);
+		if (ret != QDF_STATUS_SUCCESS) {
+			pmo_err("Failed to add Bridge MAC address");
+			return ret;
+		}
+	}
+
+	/* Setup ARP pkt pattern */
+	ret = pmo_tgt_send_wow_patterns_to_fw(vdev,
+			pmo_get_and_increment_wow_default_ptrn(vdev_ctx),
+			arp_ptrn, sizeof(arp_ptrn), arp_offset, arp_mask,
+			sizeof(arp_mask), false);
 	if (ret != QDF_STATUS_SUCCESS) {
-		pmo_err("Failed to add Bridge MAC address");
-		return ret;
+		pmo_err("Failed to add WOW ARP pattern");
+			return ret;
 	}
 
 	return ret;
@@ -255,7 +265,6 @@ static QDF_STATUS pmo_configure_ssdp(struct wlan_objmgr_vdev *vdev)
  */
 static QDF_STATUS pmo_configure_wow_sta(struct wlan_objmgr_vdev *vdev)
 {
-	uint8_t arp_offset = 12;
 	uint8_t mac_mask[QDF_MAC_ADDR_SIZE];
 	QDF_STATUS ret = QDF_STATUS_SUCCESS;
 	struct pmo_vdev_priv_obj *vdev_ctx;

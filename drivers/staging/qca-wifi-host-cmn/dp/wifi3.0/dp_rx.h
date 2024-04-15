@@ -129,6 +129,7 @@ struct dp_rx_desc_dbg_info {
  *			steering
  * @chip_id:		chip_id indicating MLO chip_id
  *			valid or used only in case of multi-chip MLO
+ * @prev_paddr_buf_start: paddr of the prev nbuf attach to rx_desc
  * @magic:
  * @nbuf_data_addr:	VA of nbuf data posted
  * @dbg_info:
@@ -148,6 +149,7 @@ struct dp_rx_desc {
 	uint32_t magic;
 	uint8_t *nbuf_data_addr;
 	struct dp_rx_desc_dbg_info *dbg_info;
+	qdf_dma_addr_t prev_paddr_buf_start;
 #endif
 	uint8_t	in_use:1,
 		unmapped:1,
@@ -2991,6 +2993,19 @@ qdf_dma_addr_t dp_rx_nbuf_sync(struct dp_soc *dp_soc,
 	return (qdf_dma_addr_t)NULL;
 }
 
+#ifdef RX_DESC_DEBUG_CHECK
+static inline void dp_rx_desc_save_nbuf_paddr(struct dp_soc *soc,
+					      struct dp_rx_desc *rx_desc)
+{
+	rx_desc->prev_paddr_buf_start = QDF_NBUF_CB_PADDR(rx_desc->nbuf);
+}
+#else
+static inline void dp_rx_desc_save_nbuf_paddr(struct dp_soc *soc,
+					      struct dp_rx_desc *rx_desc)
+{
+}
+#endif
+
 static inline
 void dp_rx_nbuf_unmap(struct dp_soc *soc,
 		      struct dp_rx_desc *rx_desc,
@@ -3001,6 +3016,7 @@ void dp_rx_nbuf_unmap(struct dp_soc *soc,
 	rx_desc_pool = &soc->rx_desc_buf[rx_desc->pool_id];
 	dp_ipa_reo_ctx_buf_mapping_lock(soc, reo_ring_num);
 
+	dp_rx_desc_save_nbuf_paddr(soc, rx_desc);
 	dp_audio_smmu_unmap(soc->osdev,
 			    QDF_NBUF_CB_PADDR(rx_desc->nbuf),
 			    rx_desc_pool->buf_size);

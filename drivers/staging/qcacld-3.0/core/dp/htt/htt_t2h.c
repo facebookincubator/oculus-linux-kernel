@@ -18,9 +18,10 @@
  */
 
 /**
- * @file htt_t2h.c
- * @brief Provide functions to process target->host HTT messages.
- * @details
+ *  DOC: htt_t2h.c
+ *
+ *  brief Provide functions to process target->host HTT messages.
+ *  details
  *  This file contains functions related to target->host HTT messages.
  *  There are two categories of functions:
  *  1.  A function that receives a HTT message from HTC, and dispatches it
@@ -685,10 +686,10 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 				(*(msg_word + 1));
 
 			peer = ol_txrx_peer_find_by_id(pdev->txrx_pdev,
-				 peer_id);
+						       peer_id);
 			if (!peer) {
 				qdf_print("invalid peer id %d", peer_id);
-				qdf_assert(0);
+					  qdf_assert(0);
 				break;
 			}
 			vdev = peer->vdev;
@@ -705,10 +706,11 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 		default:
 		{
 			qdf_print("unhandled error type %d",
-			    HTT_RX_OFLD_PKT_ERR_MSG_SUB_TYPE_GET(*msg_word));
+			  HTT_RX_OFLD_PKT_ERR_MSG_SUB_TYPE_GET(*msg_word));
+			break;
+		}
+		}
 		break;
-		}
-		}
 	}
 #ifdef WLAN_CFR_ENABLE
 	case HTT_T2H_MSG_TYPE_CFR_DUMP_COMPL_IND:
@@ -738,7 +740,7 @@ static void htt_t2h_lp_msg_handler(void *context, qdf_nbuf_t htt_t2h_msg,
 #define HTT_TX_COMPL_HEAD_SZ			4
 #define HTT_TX_COMPL_BYTES_PER_MSDU_ID		2
 
-/**
+/*
  * Generic Target to host Msg/event  handler  for low priority messages
  * Low priority message are handler in a different handler called from
  * this function . So that the most likely success path like Rx and
@@ -1093,7 +1095,7 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 					(QDF_NBUF_CB_PADDR(_buf)),	\
 					(skb_end_pointer(_buf) -	\
 					(_buf)->data),			\
-					PCI_DMA_FROMDEVICE);		\
+					DMA_FROM_DEVICE);		\
 	} while (0)
 
 /**

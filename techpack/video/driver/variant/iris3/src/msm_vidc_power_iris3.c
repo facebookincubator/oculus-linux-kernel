@@ -233,10 +233,13 @@ u64 msm_vidc_calc_freq_iris3(struct msm_vidc_inst *inst, u32 data_size)
 	freq = max(vpp_cycles, vsp_cycles);
 	freq = max(freq, fw_cycles);
 
-	if (inst->codec == MSM_VIDC_AV1 ||
-		(inst->iframe && is_hevc_10bit_decode_session(inst))) {
+	if (inst->codec == MSM_VIDC_AV1 || (inst->iframe && is_hevc_10bit_decode_session(inst)) ||
+			(!is_realtime_session(inst))) {
 		/*
-		 * for AV1 or HEVC 10bit and iframe case only allow TURBO and
+		 * TURBO is only allowed for:
+		 *     1. AV1 decoding session.
+		 *     2. 10-bit I-Frame decoding session.
+		 *     3. NRT decoding/encoding session.
 		 * limit to NOM for all other cases
 		 */
 	} else {

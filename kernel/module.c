@@ -2285,19 +2285,30 @@ static void free_module(struct module *mod)
 void *__symbol_get(const char *symbol)
 {
 	struct module *owner;
+	enum mod_license license;
 	const struct kernel_symbol *sym;
 
 	preempt_disable();
-	sym = find_symbol(symbol, &owner, NULL, NULL, true, true);
-	if (sym && strong_try_module_get(owner))
+	sym = find_symbol(symbol, &owner, NULL, &license, true, true);
+	if (!sym)
+		goto fail;
+	if (license != GPL_ONLY) {
+		pr_warn("failing symbol_get of non-GPLONLY symbol %s.\n",
+			symbol);
+		goto fail;
+	}
+	if (strong_try_module_get(owner))
 		sym = NULL;
 	preempt_enable();
 
 	return sym ? (void *)kernel_symbol_value(sym) : NULL;
+fail:
+	preempt_enable();
+	return NULL;
 }
 EXPORT_SYMBOL_GPL(__symbol_get);
 
-static bool module_init_layout_section(const char *sname)
+bool module_init_layout_section(const char *sname)
 {
 #ifndef CONFIG_MODULE_UNLOAD
 	if (module_exit_section(sname))
@@ -4271,6 +4282,47 @@ static const char *kallsyms_symbol_name(struct mod_kallsyms *kallsyms, unsigned 
 	return kallsyms->strtab + kallsyms->symtab[symnum].st_name;
 }
 
+static bool cleanup_symbol_name(char *s)
+{
+	char *res;
+
+	if (!IS_ENABLED(CONFIG_LTO_CLANG))
+		return false;
+
+	/*
+	 * LLVM appends various suffixes for local functions and variables that
+	 * must be promoted to global scope as part of LTO.  This can break
+	 * hooking of static functions with kprobes. '.' is not a valid
+	 * character in an identifier in C. Suffixes observed:
+	 * - foo.llvm.[0-9a-f]+
+	 * - foo.[0-9a-f]+
+	 * - foo.[0-9a-f]+.cfi_jt
+	 */
+	res = strchr(s, '.');
+	if (res) {
+		*res = '\0';
+		return true;
+	}
+
+	if (!IS_ENABLED(CONFIG_CFI_CLANG) ||
+	    !IS_ENABLED(CONFIG_LTO_CLANG_THIN) ||
+	    CONFIG_CLANG_VERSION >= 130000)
+		return false;
+
+	/*
+	 * Prior to LLVM 13, the following suffixes were observed when thinLTO
+	 * and CFI are both enabled:
+	 * - foo$[0-9]+
+	 */
+	res = strrchr(s, '$');
+	if (res) {
+		*res = '\0';
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * Given a module and address, find the corresponding symbol and return its name
  * while providing its size and offset if needed.
@@ -4449,12 +4501,21 @@ static unsigned long find_kallsyms_symbol_value(struct module *mod, const char *
 {
 	unsigned int i;
 	struct mod_kallsyms *kallsyms = rcu_dereference_sched(mod->kallsyms);
+	char namebuf[KSYM_NAME_LEN];
+
+	namebuf[KSYM_NAME_LEN - 1] = 0;
+	namebuf[0] = 0;
 
 	for (i = 0; i < kallsyms->num_symtab; i++) {
 		const Elf_Sym *sym = &kallsyms->symtab[i];
+		const char *iname = kallsyms_symbol_name(kallsyms, i);
 
-		if (strcmp(name, kallsyms_symbol_name(kallsyms, i)) == 0 &&
-		    sym->st_shndx != SHN_UNDEF)
+		if (strcmp(name, iname) == 0 && sym->st_shndx != SHN_UNDEF)
+			return kallsyms_symbol_value(sym);
+
+		strscpy(namebuf, iname, sizeof(namebuf));
+		if (cleanup_symbol_name(namebuf) &&
+		    strcmp(name, namebuf) == 0 && sym->st_shndx != SHN_UNDEF)
 			return kallsyms_symbol_value(sym);
 	}
 	return 0;

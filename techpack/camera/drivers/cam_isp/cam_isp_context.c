@@ -37,6 +37,7 @@ static struct cam_isp_ctx_debug isp_ctx_debug;
 #define CAM_ISP_MAX_APPLY_COUNT2 2
 #define CAM_ISP_MAX_TRIGGER_APPLY_COUNT3 3
 #define CAM_ISP_FIRST_OUT_PORT_EVENT 1
+#define CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS 100
 
 static int __cam_isp_ctx_no_crm_apply(struct cam_isp_context *ctx_isp,
 	bool check_applied_state, int *applied_req, int res_id, uint64_t sof_irq_ts);
@@ -612,6 +613,8 @@ static int __cam_isp_ctx_notify_trigger_util(
 	struct cam_req_mgr_no_crm_trigger_notify  sof_notify;
 	struct cam_req_mgr_no_crm_trigger_notify  *sof_notify_payload;
 	struct crm_workq_task            *task = NULL;
+	uint64_t now = ktime_get_ns();
+	int sof_now_latency_ms;
 
 	/* Trigger type not supported, return */
 	if (!(ctx_isp->subscribe_event & trigger_type)) {
@@ -640,6 +643,12 @@ static int __cam_isp_ctx_notify_trigger_util(
 	notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 	notify.trigger_id = ctx_isp->trigger_id;
 	notify.curr_req_id = request_id;
+
+	sof_now_latency_ms = (now - ctx_isp->sof_timestamp_val) / 1000000;
+	if (sof_now_latency_ms > CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS) {
+		CAM_WARN(CAM_ISP, "sof->now latency ms %d exceeded threshold %lld",
+			sof_now_latency_ms, CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS);
+	}
 
 	if (ctx_isp->independent_crm_en) {
 		if (trigger_type != CAM_TRIGGER_POINT_SOF)
@@ -1467,8 +1476,14 @@ static void __cam_isp_ctx_send_sof_timestamp(
 	}
 	ctx_isp->reported_frame_id = ctx_isp->frame_id;
 
-	if (request_id)
+	if (request_id) {
 		ctx_isp->reported_req_id = request_id;
+		if (sof_event_status == CAM_REQ_MGR_SOF_EVENT_SUCCESS) {
+			CAM_DBG(CAM_ISP, "Skip SOF notification for valid request %lld ctx %d",
+				request_id, ctx_isp->base->ctx_id);
+			return;
+		}
+	}
 
 	if ((ctx_isp->v4l2_event_sub_ids & (1 << V4L_EVENT_CAM_REQ_MGR_SOF_UNIFIED_TS))
 		&& !ctx_isp->use_frame_header_ts) {
@@ -8001,6 +8016,8 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 	long ret;
 	int rc = 0;
 	long waittimeout = msecs_to_jiffies(cmd_get->timeout_ms);
+    /* in case of error, we may return invalid number */
+	cmd_get->num_images = 0;
 
 	CAM_DBG(CAM_ISP,
 		"timeout ctx %u timeout %ld",
@@ -8012,7 +8029,7 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 			ctx->ctx_id);
 		return -EINVAL;
 	}
-	spin_lock_bh(&ctx->lock);
+	mutex_lock(&ctx_isp->isp_mutex);
 	if (!list_empty(&ctx_isp->stream_image_ready_list)) {
 		stream_image = list_first_entry(
 				&ctx_isp->stream_image_ready_list,
@@ -8029,7 +8046,7 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 			ctx->ctx_id);
 		rc = -ENOENT;
 	}
-	spin_unlock_bh(&ctx->lock);
+	mutex_unlock(&ctx_isp->isp_mutex);
 	if (rc)
 		return rc;
 
@@ -8051,10 +8068,10 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 		/* wait over */
 		ctx_isp->stream_image_wait = false;
 
-		if (rc)
+		if (rc || (ctx_isp->substate_activated == CAM_ISP_CTX_ACTIVATED_HALT))
 			return rc;
 
-		spin_lock_bh(&ctx->lock);
+		mutex_lock(&ctx_isp->isp_mutex);
 		if (list_empty(
 			&ctx_isp->stream_image_ready_list)) {
 			if (ctx_isp->substate_activated ==
@@ -8079,7 +8096,7 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 				init_completion(
 					&ctx_isp->stream_image_completion);
 		}
-		spin_unlock_bh(&ctx->lock);
+		mutex_unlock(&ctx_isp->isp_mutex);
 		if (rc)
 			return rc;
 	}
@@ -8123,23 +8140,23 @@ static int __cam_isp_ctx_stream_mode_cmd_ret_image(
 			if (stream_image->image_id ==
 				cmd_ret->image_ids[i]) {
 				found = true;
-				break;
+				break; /* list_for_each_entry */
 			}
 		}
 		if (!found) {
 			CAM_ERR(CAM_ISP, "Invalid image id: %lld",
 				cmd_ret->image_ids[i]);
 			rc = -EINVAL;
-			continue;
+			continue; /* for i = 0 ..*/
 		}
-		list_del_init(&stream_image->list_entry);
 		CAM_DBG(CAM_ISP,
 			"returned %ld",
 			stream_image->image_id);
-		spin_lock_bh(&ctx->lock);
+		mutex_lock(&ctx_isp->isp_mutex);
+		list_del_init(&stream_image->list_entry);
 		list_add_tail(&stream_image->list_entry,
 			&ctx_isp->stream_image_free_list);
-		spin_unlock_bh(&ctx->lock);
+		mutex_unlock(&ctx_isp->isp_mutex);
 
 	}
 	return rc;
@@ -8504,13 +8521,11 @@ static int __cam_isp_ctx_stop_dev_in_activated_unlock(
 	/* Mask off all the incoming hardware events */
 	mutex_lock(&ctx_isp->isp_mutex);
 	ctx_isp->substate_activated = CAM_ISP_CTX_ACTIVATED_HALT;
-	mutex_unlock(&ctx_isp->isp_mutex);
 
-	spin_lock_bh(&ctx->lock);
 	/* someone waiting and ready list empty, signal as device is stopped */
 	if (ctx_isp->stream_image_wait)
 		complete(&ctx_isp->stream_image_completion);
-	spin_unlock_bh(&ctx->lock);
+	mutex_unlock(&ctx_isp->isp_mutex);
 
 	/* stop hw first */
 	if (ctx_isp->hw_ctx) {

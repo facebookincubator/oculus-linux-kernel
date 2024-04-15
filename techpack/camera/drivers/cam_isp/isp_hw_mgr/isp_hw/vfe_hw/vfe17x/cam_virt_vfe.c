@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -19,6 +19,7 @@
 #include "cam_rpmsg.h"
 
 #define CAM_VIRT_CSID_DRV_NAME "virtual-ife"
+#define CAM_VIRT_VFE_WM_CFG    0x10001
 
 extern struct cam_isp_hw_intf_data cam_vfe_hw_list[CAM_VFE_HW_NUM_MAX];
 
@@ -154,9 +155,11 @@ int cam_virt_vfe_populate_wm(
 		CAM_ADD_REG_VAL_PAIR(reg_payload, *idx,
 			rsrc_data->hw_regs->mmu_prefetch_max_offset, 0xFFFFFFFF);
 	}
-	/* Enable WM */
-	CAM_ADD_REG_VAL_PAIR(reg_payload, *idx,
-		rsrc_data->hw_regs->cfg, rsrc_data->en_cfg);
+	/*
+	 * Enable WM and configure WM mode to frame based, since slave
+	 * works in frame based mode only.
+	 */
+	CAM_ADD_REG_VAL_PAIR(reg_payload, *idx, rsrc_data->hw_regs->cfg, CAM_VIRT_VFE_WM_CFG);
 
 	/* Enable constraint error detection */
 	CAM_ADD_REG_VAL_PAIR(reg_payload, *idx,

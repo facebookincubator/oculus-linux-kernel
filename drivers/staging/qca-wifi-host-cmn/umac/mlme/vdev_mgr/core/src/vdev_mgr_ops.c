@@ -41,6 +41,7 @@
 #include <wlan_mlo_mgr_ap.h>
 #endif
 #include <wlan_vdev_mgr_utils_api.h>
+#include <wlan_vdev_mgr_api.h>
 
 #ifdef QCA_VDEV_STATS_HW_OFFLOAD_SUPPORT
 /**
@@ -610,11 +611,17 @@ static QDF_STATUS vdev_mgr_up_param_update(
 {
 	struct vdev_mlme_mbss_11ax *mbss;
 	struct wlan_objmgr_vdev *vdev;
+	uint8_t bssid[QDF_MAC_ADDR_SIZE];
 
 	vdev = mlme_obj->vdev;
 	param->vdev_id = wlan_vdev_get_id(vdev);
 	param->assoc_id = mlme_obj->proto.sta.assoc_id;
+
 	mbss = &mlme_obj->mgmt.mbss_11ax;
+	wlan_vdev_mgr_get_param_bssid(vdev, bssid);
+	if (qdf_mem_cmp(bssid, mbss->non_trans_bssid, QDF_MAC_ADDR_SIZE))
+		return QDF_STATUS_SUCCESS;
+
 	param->profile_idx = mbss->profile_idx;
 	param->profile_num = mbss->profile_num;
 	qdf_mem_copy(param->trans_bssid, mbss->trans_bssid, QDF_MAC_ADDR_SIZE);

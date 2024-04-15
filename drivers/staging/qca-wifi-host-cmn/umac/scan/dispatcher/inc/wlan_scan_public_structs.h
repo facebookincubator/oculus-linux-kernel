@@ -364,6 +364,7 @@ struct security_info {
  * @profile_num: profile number
  * @profile_count: total profile count
  * @trans_bssid: TX BSSID address
+ * @non_trans_bssid: non TX BSSID address
  * @split_profile: Indicates if next MBSSID tag has the other part
  *                 of the non tx profile
  * @prof_residue: Set prof_residue to true, if the first non TX
@@ -380,6 +381,7 @@ struct scan_mbssid_info {
 	uint8_t profile_num;
 	uint8_t profile_count;
 	uint8_t trans_bssid[QDF_MAC_ADDR_SIZE];
+	uint8_t non_trans_bssid[QDF_MAC_ADDR_SIZE];
 	bool split_profile;
 	bool prof_residue;
 	bool split_prof_continue;
@@ -417,6 +419,7 @@ struct non_inheritance_ie {
 	bool non_inh_ie_found;
 };
 
+#define TBTT_BSS_PARAM_TRANS_BSSID_BIT 0x08
 /**
  * struct rnr_bss_info - Reduced Neighbor Report BSS information
  * @neighbor_ap_tbtt_offset: Neighbor AP TBTT offset

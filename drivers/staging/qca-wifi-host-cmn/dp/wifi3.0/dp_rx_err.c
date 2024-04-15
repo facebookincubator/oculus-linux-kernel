@@ -2871,13 +2871,6 @@ dp_rx_wbm_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 			dp_info_rl("Rx error Nbuf %pk sanity check failure!",
 				   nbuf);
 			rx_desc->in_err_state = 1;
-			rx_desc->unmapped = 1;
-			rx_bufs_reaped[rx_desc->chip_id][rx_desc->pool_id]++;
-
-			dp_rx_add_to_free_desc_list(
-				&head[rx_desc->chip_id][rx_desc->pool_id],
-				&tail[rx_desc->chip_id][rx_desc->pool_id],
-				rx_desc);
 			continue;
 		}
 

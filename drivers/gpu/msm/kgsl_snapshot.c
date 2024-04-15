@@ -528,7 +528,6 @@ err:
 	device->force_panic = false;
 }
 
-#ifdef CONFIG_QCOM_KGSL_PANIC_NOTIFIER
 static void kgsl_device_snapshot_atomic(struct kgsl_device *device)
 {
 	struct kgsl_snapshot *snapshot;
@@ -607,7 +606,6 @@ static void kgsl_device_snapshot_atomic(struct kgsl_device *device)
 	dev_err(device->dev, "Atomic GPU snapshot created at pa %llx++0x%zx\n",
 			atomic_snapshot_phy_addr(device), snapshot->size);
 }
-#endif
 
 /**
  * kgsl_snapshot() - construct a device snapshot
@@ -1066,7 +1064,6 @@ static const struct attribute *snapshot_attrs[] = {
 	NULL,
 };
 
-#ifdef CONFIG_QCOM_KGSL_PANIC_NOTIFIER
 static int kgsl_panic_notifier_callback(struct notifier_block *nb,
 		unsigned long action, void *unused)
 {
@@ -1079,7 +1076,6 @@ static int kgsl_panic_notifier_callback(struct notifier_block *nb,
 
 	return NOTIFY_OK;
 }
-#endif
 
 void kgsl_device_snapshot_probe(struct kgsl_device *device, u32 size)
 {
@@ -1109,7 +1105,10 @@ void kgsl_device_snapshot_probe(struct kgsl_device *device, u32 size)
 	device->force_panic = false;
 	device->snapshot_crashdumper = true;
 	device->snapshot_legacy = false;
+
 	device->snapshot_atomic = false;
+	device->panic_nb.notifier_call = kgsl_panic_notifier_callback;
+	device->panic_nb.priority = 1;
 	device->snapshot_ctxt_record_size = 64 * 1024;
 
 	/*
@@ -1125,13 +1124,8 @@ void kgsl_device_snapshot_probe(struct kgsl_device *device, u32 size)
 
 	WARN_ON(sysfs_create_bin_file(&device->snapshot_kobj, &snapshot_attr));
 	WARN_ON(sysfs_create_files(&device->snapshot_kobj, snapshot_attrs));
-
-#ifdef CONFIG_QCOM_KGSL_PANIC_NOTIFIER
-	device->panic_nb.notifier_call = kgsl_panic_notifier_callback;
-	device->panic_nb.priority = 1;
 	atomic_notifier_chain_register(&panic_notifier_list,
 			&device->panic_nb);
-#endif
 }
 
 /**
@@ -1149,10 +1143,8 @@ void kgsl_device_snapshot_close(struct kgsl_device *device)
 	kgsl_remove_from_minidump("GPU_SNAPSHOT", (u64) device->snapshot_memory.ptr,
 			snapshot_phy_addr(device), device->snapshot_memory.size);
 
-#ifdef CONFIG_QCOM_KGSL_PANIC_NOTIFIER
 	atomic_notifier_chain_unregister(&panic_notifier_list,
 					 &device->panic_nb);
-#endif
 
 	sysfs_remove_bin_file(&device->snapshot_kobj, &snapshot_attr);
 	sysfs_remove_files(&device->snapshot_kobj, snapshot_attrs);

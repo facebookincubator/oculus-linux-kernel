@@ -975,6 +975,9 @@ void dsi_conn_set_submode_blob_info(struct drm_connector *conn,
 		if (topo_name)
 			sde_kms_info_add_keystr(info, "topology", topo_name);
 
+		sde_kms_info_add_keyint(info, "pixel_clk_khz",
+				dsi_mode->pixel_clk_khz);
+
 		if (!dsi_mode->priv_info->bit_clk_list.count)
 			continue;
 

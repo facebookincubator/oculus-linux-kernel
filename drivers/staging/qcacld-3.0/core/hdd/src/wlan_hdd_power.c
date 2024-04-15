@@ -1260,7 +1260,9 @@ int wlan_hdd_pm_qos_notify(struct notifier_block *nb, unsigned long curr_val,
 	return NOTIFY_DONE;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+/** cpuidle_governor_latency_req() is not exported by upstream kernel **/
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && \
+	defined(__ANDROID_COMMON_KERNEL__))
 bool wlan_hdd_is_cpu_pm_qos_in_progress(struct hdd_context *hdd_ctx)
 {
 	long long curr_val_ns;

@@ -855,7 +855,7 @@ static void tgt_mc_cp_stats_extract_vdev_summary_stats(
 					struct wlan_objmgr_psoc *psoc,
 					struct stats_event *ev)
 {
-	uint8_t i, vdev_id;
+	uint8_t i, vdev_id = WLAN_INVALID_VDEV_ID;
 	QDF_STATUS status;
 	struct wlan_objmgr_peer *peer = NULL;
 	struct request_info last_req = {0};
@@ -887,6 +887,9 @@ static void tgt_mc_cp_stats_extract_vdev_summary_stats(
 		cp_stats_debug("vdev_id %d not found", vdev_id);
 		return;
 	}
+
+	if (vdev_id == WLAN_INVALID_VDEV_ID)
+		return;
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
 						    WLAN_CP_STATS_ID);

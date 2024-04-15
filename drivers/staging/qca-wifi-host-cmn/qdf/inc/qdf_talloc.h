@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -158,7 +158,7 @@ static inline void *__qdf_talloc_fl(const void *parent, const size_t size,
 static inline void
 __qdf_tfree_fl(void *ptr, const char *func, const uint16_t line)
 {
-	__free(ptr);
+	__k_free(ptr);
 }
 
 static inline void

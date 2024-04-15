@@ -1659,6 +1659,9 @@ static int a6xx_hfi_dispatch_queue_write(struct adreno_device *adreno_dev, uint3
 	/* Ensure packet is written out before proceeding */
 	wmb();
 
+	if (!cmdobj)
+		goto done;
+
 	a6xx_add_profile_events(adreno_dev, cmdobj, time);
 
 	/*
@@ -1669,6 +1672,7 @@ static int a6xx_hfi_dispatch_queue_write(struct adreno_device *adreno_dev, uint3
 	 */
 	adreno_profile_submit_time(time);
 
+done:
 	trace_kgsl_hfi_send(id, size_dwords, MSG_HDR_GET_SEQNUM(*msg));
 
 	hfi_update_write_idx(&hdr->write_index, write);

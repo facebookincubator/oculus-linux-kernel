@@ -6520,24 +6520,6 @@ void __qdf_nbuf_add_rx_frag(__qdf_frag_t buf, __qdf_nbuf_t nbuf,
 
 qdf_export_symbol(__qdf_nbuf_add_rx_frag);
 
-void __qdf_nbuf_ref_frag(__qdf_frag_t buf)
-{
-	struct page *page;
-	skb_frag_t frag = {0};
-
-	page = virt_to_head_page(buf);
-	__skb_frag_set_page(&frag, page);
-
-	/*
-	 * since __skb_frag_ref() just use page to increase ref
-	 * we just decode page alone
-	 */
-	qdf_frag_count_inc(QDF_NBUF_FRAG_DEBUG_COUNT_ONE);
-	__skb_frag_ref(&frag);
-}
-
-qdf_export_symbol(__qdf_nbuf_ref_frag);
-
 #ifdef NBUF_FRAG_MEMORY_DEBUG
 
 QDF_STATUS qdf_nbuf_move_frag_page_offset_debug(qdf_nbuf_t nbuf, uint8_t idx,

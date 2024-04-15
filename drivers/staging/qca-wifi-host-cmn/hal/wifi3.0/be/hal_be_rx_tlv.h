@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -786,6 +786,11 @@ struct rx_mon_pkt_tlvs {
 
 #define HAL_RX_REO_QUEUE_DESC_ADDR_39_32_GET(_rx_pkt_tlv)	\
 	HAL_RX_MPDU_START(_rx_pkt_tlv).rx_reo_queue_desc_addr_39_32
+
+#ifdef WLAN_FEATURE_MARK_FIRST_WAKEUP_PACKET
+#define HAL_RX_TLV_FIRST_WAKEUP_PKT_GET(_rx_pkt_tlv)	\
+	HAL_RX_MSDU_END(_rx_pkt_tlv).reserved_1a
+#endif
 
 /* used by monitor mode for parsing from full TLV */
 #define HAL_RX_MON_GET_FC_VALID(_rx_mpdu_start)	\

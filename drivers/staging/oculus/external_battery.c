@@ -863,6 +863,26 @@ static ssize_t serial_system_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(serial_system);
 
+static ssize_t pid_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->pid);
+}
+static DEVICE_ATTR_RO(pid);
+
+static ssize_t vid_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->vid);
+}
+static DEVICE_ATTR_RO(vid);
+
 static ssize_t temp_fg_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1244,6 +1264,8 @@ static struct attribute *ext_batt_molokini_attrs[] = {
 	&dev_attr_serial.attr,
 	&dev_attr_serial_battery.attr,
 	&dev_attr_serial_system.attr,
+	&dev_attr_pid.attr,
+	&dev_attr_vid.attr,
 	&dev_attr_temp_fg.attr,
 	&dev_attr_voltage.attr,
 	&dev_attr_icurrent.attr,
@@ -1656,6 +1678,8 @@ static struct attribute *ext_batt_lehua_attrs[] = {
 	&dev_attr_serial.attr,
 	&dev_attr_serial_battery.attr,
 	&dev_attr_serial_system.attr,
+	&dev_attr_pid.attr,
+	&dev_attr_vid.attr,
 	&dev_attr_temp_fg.attr,
 	&dev_attr_voltage.attr,
 	&dev_attr_icurrent.attr,

@@ -19,6 +19,7 @@
 #include "dsi_parser.h"
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
+#include "sde_trace.h"
 #include "sde_vdc_helper.h"
 
 /**
@@ -1000,6 +1001,56 @@ static void dsi_panel_temp_dependent_bl_task_tokki_a(struct work_struct *work)
 	mod_delayed_work(system_wq, &bl_config->bl_temp_dwork, HZ);
 
 	mutex_unlock(&panel->panel_lock);
+}
+
+bool dsi_panel_update_temp_dependent_bl_config(
+	struct dsi_panel *panel, u32 *response_time_tbl, u32 response_time_tbl_size)
+{
+	int tbl_size = 0;
+	u32 *data;
+	u32 *tmp = NULL;
+
+	if (response_time_tbl_size <= 0 || response_time_tbl_size & 1) {
+		DSI_ERR("missing/malformed response time curve, len = %d\n", response_time_tbl_size);
+		return false;
+	}
+
+	/* If temperature dependent response time table is not present, or the size is not matching the new table */
+	if (panel->bl_config.response_time == NULL||
+		response_time_tbl_size != panel->bl_config.num_response_time_entries) {
+
+		tbl_size = panel->bl_config.num_response_time_entries == 0 ?
+			response_time_tbl_size : (response_time_tbl_size < panel->bl_config.num_response_time_entries*2 ) ?
+			response_time_tbl_size : panel->bl_config.num_response_time_entries*2;
+		data = devm_kcalloc(panel->parent, tbl_size, sizeof(u32), GFP_KERNEL);
+	}
+	else {
+		data = panel->bl_config.response_time;
+		tbl_size = panel->bl_config.num_response_time_entries*2;
+	}
+
+	memcpy(data, response_time_tbl, tbl_size*sizeof(u32));
+
+	if (data != panel->bl_config.response_time) {
+		panel->bl_config.num_response_time_entries = tbl_size / 2;
+		if (panel->bl_config.response_time)
+			tmp = panel->bl_config.response_time;
+		panel->bl_config.response_time = data;
+		if (tmp)
+			devm_kfree(panel->parent, tmp);
+	}
+
+	panel->bl_config.settling_time_target_us = panel->bl_config.response_time[1];
+
+	if (panel->bl_config.type == DSI_BACKLIGHT_TOKKI_A)
+		INIT_DELAYED_WORK(&panel->bl_config.bl_temp_dwork,
+				dsi_panel_temp_dependent_bl_task_tokki_a);
+	else {
+		DSI_ERR("unsupported backlight type %d\n", panel->bl_config.type);
+		return false;
+	}
+
+	return true;
 }
 
 int dsi_panel_tokki_a_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
@@ -3303,6 +3354,56 @@ static bool dsi_panel_parse_temp_dependent_bl_config(struct dsi_panel *panel)
 	return true;
 }
 
+static irqreturn_t blu_pwm_irq_handler(int irq, void *p)
+{
+	struct dsi_backlight_config *bl_config = (struct dsi_backlight_config *) p;
+	unsigned long flags;
+	const u64 event_time = ktime_get_ns();
+	const int gpio_value = gpio_get_value(bl_config->blu_pwm_gpio);
+	bool update_rising_edge = bl_config->blu_last_rising_edge_time <
+			bl_config->te_active_edge_time[1];
+
+	sde_atrace('C', NULL, "BLU", gpio_value);
+
+	spin_lock_irqsave(&bl_config->event_lock, flags);
+	if (gpio_value) {
+		/* Defer update of sysfs node to after active scanout. */
+		if (update_rising_edge) {
+			bl_config->blu_last_rising_edge_time = event_time;
+			bl_config->blu_settling_time_ns = event_time -
+					bl_config->te_active_edge_time[1];
+		}
+	} else if (!update_rising_edge)
+		bl_config->blu_duration_ns = event_time -
+				bl_config->blu_last_rising_edge_time;
+	spin_unlock_irqrestore(&bl_config->event_lock, flags);
+
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t te_edge_irq_handler(int irq, void *p)
+{
+	struct dsi_backlight_config *bl_config = (struct dsi_backlight_config *) p;
+	unsigned long flags;
+	const u64 event_time = ktime_get_ns();
+	const int gpio_value = gpio_get_value(bl_config->te_gpio);
+
+	sde_atrace('C', NULL, "TE", gpio_value);
+
+	spin_lock_irqsave(&bl_config->event_lock, flags);
+	if (gpio_value == (int)bl_config->te_active_edge) {
+		/* Defer update of sysfs node to after active scanout. */
+		bl_config->te_last_active_edge_time = event_time;
+	} else {
+		bl_config->te_active_edge_time[0] =
+				bl_config->te_last_active_edge_time;
+		bl_config->te_active_edge_time[1] = event_time;
+	}
+	spin_unlock_irqrestore(&bl_config->event_lock, flags);
+
+	return IRQ_HANDLED;
+}
+
 static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -3442,6 +3543,52 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 
 		panel->bl_config.temperature_dependent_timing =
 				dsi_panel_parse_temp_dependent_bl_config(panel);
+
+		panel->bl_config.te_gpio = utils->get_named_gpio(utils->data,
+				"meta,te-gpio", 0);
+		if (gpio_is_valid(panel->bl_config.te_gpio)) {
+			panel->bl_config.te_irq = gpio_to_irq(
+					panel->bl_config.te_gpio);
+			rc = devm_request_irq(panel->parent,
+					panel->bl_config.te_irq,
+					te_edge_irq_handler,
+					IRQF_ONESHOT | IRQF_TRIGGER_RISING |
+					IRQF_TRIGGER_FALLING,
+					"te-edge-isr", &panel->bl_config);
+			if (rc) {
+				DSI_ERR("[%s] failed to assign TE edge irq handler, rc=%d\n",
+						panel->name, rc);
+				panel->bl_config.te_gpio = 0;
+				panel->bl_config.te_irq = 0;
+				goto error;
+			}
+
+			panel->bl_config.te_active_edge = !utils->read_bool(
+					utils->data, "meta,te-active-low");
+
+			spin_lock_init(&panel->bl_config.event_lock);
+		} else
+			goto no_irq;
+
+		panel->bl_config.blu_pwm_gpio = utils->get_named_gpio(
+				utils->data, "meta,blu-pwm-gpio", 0);
+		if (gpio_is_valid(panel->bl_config.blu_pwm_gpio)) {
+			panel->bl_config.blu_pwm_irq = gpio_to_irq(
+					panel->bl_config.blu_pwm_gpio);
+			rc = devm_request_irq(panel->parent,
+					panel->bl_config.blu_pwm_irq,
+					blu_pwm_irq_handler,
+					IRQF_ONESHOT | IRQF_TRIGGER_RISING |
+					IRQF_TRIGGER_FALLING,
+					"blu-pwm-isr", &panel->bl_config);
+			if (rc) {
+				DSI_ERR("[%s] failed to assign BLU PWM irq handler, rc=%d\n",
+						panel->name, rc);
+				panel->bl_config.blu_pwm_gpio = 0;
+				panel->bl_config.blu_pwm_irq = 0;
+				goto error;
+			}
+		}
 	} else if (panel->bl_config.type == DSI_BACKLIGHT_STARK_OLIVIA ||
 			panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
 		rc = utils->read_u32(utils->data,
@@ -3465,6 +3612,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		}
 	}
 
+no_irq:
 	panel->bl_config.en_gpio = utils->get_named_gpio(utils->data,
 					      "qcom,platform-bklight-en-gpio",
 					      0);

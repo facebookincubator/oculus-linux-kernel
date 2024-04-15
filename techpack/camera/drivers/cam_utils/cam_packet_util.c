@@ -617,6 +617,10 @@ send_cmd_buffers:
 	cmd_desc = (struct cam_cmd_buf_desc *) ((uint8_t *)&packet->payload +
 		packet->cmd_buf_offset);
 	for (i = 0; i < packet->num_cmd_buf; i++) {
+		rc = cam_packet_util_validate_cmd_desc(&cmd_desc[i]);
+		if (rc)
+			return rc;
+
 		CAM_DBG(CAM_PRESIL, "Adding CMD buffer:%d", cmd_desc[i].mem_handle);
 		cam_presil_add_unique_buf_hdl_to_list(cmd_desc[i].mem_handle,
 				unique_cmd_buffers, &num_cmd_handles, CAM_PRESIL_UNIQUE_HDL_MAX);

@@ -133,6 +133,13 @@ struct dsi_display_ext_bridge {
 	struct drm_bridge_funcs bridge_funcs;
 };
 
+struct dsi_display_mipi_dcs_rx_data {
+	int num_input;
+	int num_idx;
+	char buf_tx[2];
+	char *buf_rx;
+};
+
 /**
  * struct dsi_display - dsi display information
  * @pdev:             Pointer to platform device.
@@ -301,6 +308,8 @@ struct dsi_display {
 
 	int tx_cmd_buf_ndx;
 	struct dsi_panel_cmd_set cmd_set;
+
+	struct dsi_display_mipi_dcs_rx_data mipi_dcs_rx_data;
 
 	bool enabled;
 };

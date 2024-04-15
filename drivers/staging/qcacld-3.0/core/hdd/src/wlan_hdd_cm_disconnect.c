@@ -492,6 +492,7 @@ static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
 	int ret;
 	uint8_t vdev_id = wlan_vdev_get_id(vdev);
 	enum phy_ch_width ch_width_orig;
+	uint32_t cb_mode;
 
 	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
 	if (!mlme_priv)
@@ -508,7 +509,12 @@ static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
 
 	cm_update_associated_ch_info(vdev, false);
 
-	max_bw = get_max_bw();
+	wlan_mlme_get_channel_bonding_5ghz(hdd_ctx->psoc, &cb_mode);
+	if (cb_mode == 0 && !wlan_reg_is_24ghz_ch_freq(des_chan->ch_freq))
+		max_bw = cb_mode;
+	else
+		max_bw = get_max_bw();
+
 	ret = hdd_set_mac_chan_width(adapter, max_bw);
 	if (ret) {
 		hdd_err("vdev %d : fail to set max ch width", vdev_id);

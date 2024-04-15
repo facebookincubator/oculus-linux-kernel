@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -673,9 +673,9 @@ void ol_rx_defrag_waitlist_flush(struct ol_txrx_pdev_t *pdev)
 
 /**
  * ol_rx_frag_gcmp_decap() - Remove GCMP header from fragment
- * @pdev - data path pdev handle
- * @nbuf - network buffer
- * @hdrlen - MAC header len
+ * @pdev : data path pdev handle
+ * @nbuf : network buffer
+ * @hdrlen : MAC header len
  *
  * Return: OL_RX_DEFRAG_OK on success else failure code
  */
@@ -713,9 +713,9 @@ ol_rx_frag_gcmp_decap(ol_txrx_pdev_handle pdev,
 
 /**
  * ol_rx_frag_gcmp_demic() - Remove MIC info from GCMP fragment
- * @pdev - data path pdev handle
- * @nbuf - network buffer
- * @hdrlen - MAC header len
+ * @pdev : data path pdev handle
+ * @nbuf : network buffer
+ * @hdrlen : MAC header len
  *
  * Return: OL_RX_DEFRAG_OK on success else failure code
  */
@@ -814,6 +814,7 @@ ol_rx_defrag(ol_txrx_pdev_handle pdev,
 	switch (peer->security[index].sec_type) {
 	case htt_sec_type_tkip:
 		tkip_demic = 1;
+		fallthrough;
 	/* fall-through to rest of tkip ops */
 	case htt_sec_type_tkip_nomic:
 		while (cur) {
