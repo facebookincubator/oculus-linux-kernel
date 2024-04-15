@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "syncboss.h"
+#include "syncboss_spi.h"
 
 #define CONTROL_GROUP_NAME "control"
-
-/* Valid sequence numbers are from [1, 254] */
-#define SYNCBOSS_MIN_SEQ_NUM 1
-#define SYNCBOSS_MAX_SEQ_NUM 254
 
 static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
@@ -89,52 +85,6 @@ static ssize_t transaction_length_store(struct device *dev,
 
 	mutex_unlock(&devdata->state_mutex);
 	return count;
-}
-
-static int next_seq_num(int current_seq)
-{
-	int next_seq = current_seq + 1;
-
-	BUG_ON((current_seq < SYNCBOSS_MIN_SEQ_NUM) ||
-	       (current_seq > SYNCBOSS_MAX_SEQ_NUM));
-
-	if (next_seq > SYNCBOSS_MAX_SEQ_NUM)
-		next_seq = SYNCBOSS_MIN_SEQ_NUM;
-	return next_seq;
-}
-
-static ssize_t next_avail_seq_num_show(struct device *dev,
-				       struct device_attribute *attr,
-				       char *buf)
-{
-	int status = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
-		goto ret;
-	}
-
-	if (devdata->has_seq_num_ioctl) {
-		dev_err_ratelimited(dev,
-			"sequence number sysfs node is disabled based on device tree configuration. Requested by %s (%d)",
-			current->comm, current->pid);
-		status = -EPERM;
-		goto unlock;
-	}
-
-	status = scnprintf(buf, PAGE_SIZE, "%d\n",
-				devdata->next_avail_seq_num);
-
-	devdata->next_avail_seq_num = next_seq_num(devdata->next_avail_seq_num);
-
-unlock:
-	mutex_unlock(&devdata->state_mutex);
-
-ret:
-	return status;
 }
 
 static ssize_t cpu_affinity_show(struct device *dev,
@@ -511,7 +461,7 @@ static ssize_t poll_prio_show(struct device *dev,
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->poll_prio);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->thread_prio);
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;
@@ -542,7 +492,7 @@ static ssize_t poll_prio_store(struct device *dev,
 		return status;
 	}
 
-	devdata->poll_prio = temp_priority;
+	devdata->thread_prio = temp_priority;
 
 	if (devdata->is_streaming) {
 		dev_info(dev,
@@ -552,16 +502,6 @@ static ssize_t poll_prio_store(struct device *dev,
 
 	mutex_unlock(&devdata->state_mutex);
 	return count;
-}
-
-static ssize_t te_timestamp_show(struct device *dev,
-				   struct device_attribute *attr, char *buf)
-{
-	struct syncboss_dev_data *devdata =
-	(struct syncboss_dev_data *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%lld\n",
-			(s64)atomic64_read(&devdata->last_te_timestamp_ns));
 }
 
 static ssize_t enable_fastpath_show(struct device *dev,
@@ -638,8 +578,7 @@ static ssize_t streaming_show(
  * ================
  * Note: If you add a new attribute, make sure you also set the
  *       correct ownership and permissions in the corresponding init
- *       script (such as
- *       device/oculus/monterey/rootdir/etc/init.monterey.rc)
+ *       scripts and selinux policies..
  *
  * For most of these settings, the stream will have to be stopped/started again
  * for the settings to take effect.  So either set these before creating a
@@ -661,8 +600,6 @@ static ssize_t streaming_show(
  * stats - show various driver stats, write "reset" to clear
  * update_firmware - write 1 to do a firmware update (firmware must be under
  *      /vendor/firmware/syncboss.bin)
- * next_avail_seq_num - the next available sequence number for control calls
- * te_timestamp - timestamp of the last TE event
  * enable_fastpath - enable or disable faspath
  */
 static DEVICE_ATTR_WO(reset);
@@ -674,8 +611,6 @@ static DEVICE_ATTR_RW(transaction_length);
 static DEVICE_ATTR_RW(cpu_affinity);
 static DEVICE_ATTR_RW(stats);
 static DEVICE_ATTR_RW(poll_prio);
-static DEVICE_ATTR_RO(next_avail_seq_num);
-static DEVICE_ATTR_RO(te_timestamp);
 static DEVICE_ATTR_RW(enable_fastpath);
 static DEVICE_ATTR_RO(streaming);
 
@@ -689,7 +624,6 @@ static struct attribute *syncboss_attrs[] = {
 	&dev_attr_cpu_affinity.attr,
 	&dev_attr_stats.attr,
 	&dev_attr_poll_prio.attr,
-	&dev_attr_te_timestamp.attr,
 	&dev_attr_enable_fastpath.attr,
 	&dev_attr_streaming.attr,
 	NULL
@@ -704,7 +638,7 @@ static int create_swd_sysfs_symlink(struct device *dev, void *kobj)
 {
 	struct device_node *node = dev_of_node(dev);
 
-	if (of_device_is_compatible(node, "oculus,swd")) {
+	if (of_device_is_compatible(node, "meta,swd")) {
 		return sysfs_create_link((struct kobject *)kobj, &dev->kobj,
 					 node->name);
 	}
@@ -716,7 +650,7 @@ static int remove_swd_sysfs_symlink(struct device *dev, void *kobj)
 {
 	struct device_node *node = dev_of_node(dev);
 
-	if (of_device_is_compatible(node, "oculus,swd"))
+	if (of_device_is_compatible(node, "meta,swd"))
 		sysfs_remove_link((struct kobject *)kobj, node->name);
 
 	return 0;
@@ -731,15 +665,6 @@ int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata)
 	if (ret) {
 		dev_err(spi_dev, "sysfs_create_group failed: error %d\n", ret);
 		return ret;
-	}
-
-	if (!devdata->has_seq_num_ioctl) {
-		ret = sysfs_add_file_to_group(&spi_dev->kobj,
-			&dev_attr_next_avail_seq_num.attr, CONTROL_GROUP_NAME);
-		if (ret) {
-			dev_err(spi_dev, "sysfs_add_file_to_group failed: error %d\n", ret);
-			return ret;
-		}
 	}
 
 	ret = sysfs_create_link(&devdata->misc.this_device->kobj,

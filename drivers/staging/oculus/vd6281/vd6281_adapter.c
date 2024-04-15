@@ -94,6 +94,14 @@ struct vd6281_spidev_data {
 	u32 spi_speed_hz;
 	u16 samples_nb_per_chunk;
 	u16 pdm_data_sample_width_in_bytes;
+	// CIC filter internal registers
+	// max CIC stage is 4
+	// integrate registers
+	int32_t integrate_register[MAX_CIC_STAGE];
+	// difference registers
+	int32_t difference_register[MAX_CIC_STAGE];
+	// CIC compensation filter registers
+	int32_t compensation_register[2];
 };
 
 #ifdef CONFIG_PM_SLEEP
@@ -173,11 +181,11 @@ static ssize_t vd6281_spi_read(struct file *file, char __user *buf, size_t count
 
 static int vd6281_spi_open(struct inode *inode, struct file *file)
 {
+	int i;
 	struct vd6281_spidev_data *pdata = container_of(file->private_data,
 		struct vd6281_spidev_data, misc);
 
 	if (!pdata->pbuffer) {
-
 		if (pdata->spi_buffer_size != 0) {
 			pdata->pbuffer = kmalloc(pdata->spi_buffer_size, GFP_KERNEL);
 			if (!pdata->pbuffer)
@@ -187,23 +195,178 @@ static int vd6281_spi_open(struct inode *inode, struct file *file)
 		}
 	}
 
+	//reset the internal status
+	for (i = 0; i < MAX_CIC_STAGE; i++) {
+		pdata->difference_register[i] = 0;
+		pdata->integrate_register[i] = 0;
+	}
+	pdata->compensation_register[0] = 0;
+	pdata->compensation_register[1] = 0;
+
 	return 0;
+}
+
+//Q15 format. 15 bits for decimal part.
+//in should be in [0, 1)
+static inline int16_t convert_to_Q15_format(float in)
+{
+  return (int16_t)((float)(1<<15) * in);
+}
+
+/*
+structure of a CIC filter
+The folowing shows a M = 3 stage, CIC filter with the downsample rate D.
+z^-1 is a delay block
+                                                                  ----------------
+------> + ----------------> + ---------------> + --------------->| downsample D |  ---------------> + -----------------> + -----------------> + ---->
+        ^           |       ^           |      ^           |      ----------------    |             ^ (-)  |             ^ (-)  |             ^ (-)
+    |           |       |           |      |           |                          |             |      |             |      |             |
+    |<--|z^-1|<-|       |<--|z^-1|<-|      |<--|z^-1|<-|                          |-->|z^-1|--->|      |-->|z^-1|--->|      |-->|z^-1|--->|
+        integration registers                                                        decimation registers
+ref:
+https://www.dsprelated.com/showarticle/1337.php
+*/
+
+static inline int update_integration_registers(int32_t* p_integrate_register, int number_of_stages, int32_t input)
+{
+  // partial sum of the registers
+  int sum_integrate_buffer = 0;
+  int j;
+  int sum_data = 0;
+
+  // update the CIC integration registers
+  for (j = 0; j < number_of_stages; j++) {
+    // partial sum, sum of the registers up to the curent register
+    sum_integrate_buffer += p_integrate_register[j];
+    // update the curent register with partial sum and new input counts.
+    p_integrate_register[j] = sum_integrate_buffer + input;
+  }
+  // sum of all registers plus the new input counts.
+  sum_data = sum_integrate_buffer + input;
+  return sum_data;
+}
+
+static inline void update_difference_registers(int32_t* p_difference_register, int number_of_stages, int32_t sum_data)
+{
+  int j;
+  int cumsum_diff = 0;
+  int tmp;
+  for (j = 0; j < number_of_stages; j++) {
+    // make a copy of the current register
+    tmp = p_difference_register[j];
+    // update the current register
+    p_difference_register[j] = sum_data - cumsum_diff;
+    cumsum_diff += tmp;
+  }
+}
+
+// perform
+// 1. sum of 8 bits
+// 2. multi-stage CIC with downsample
+// 3. compensation filter
+static void downsample8_cic_compensae(
+  int downsample_ratio,
+  int input_PDM_size,
+  uint8_t* p_input,
+  int16_t* p_output,
+  int32_t* p_integrate_register,
+  int32_t* p_difference_register,
+  int32_t* p_compensation_register,
+  int32_t number_of_stages)
+{
+  int32_t internal_ds;
+  int32_t gain = 1;
+  int32_t i, j, s;
+  int32_t bit_shift;
+  int32_t count1s;
+  int32_t sum_data, sum_diff;
+  int32_t cic_output;
+  int64_t comp_filter_output;
+  int32_t compensate_gain;
+  int16_t inverse_gain_Q15;
+
+  // internal downsampling ratio = downsample_ratio / 8
+  internal_ds = downsample_ratio >> 3;
+
+  // CIC adds gains to the output data.
+  // gain = D^M, M is the number of stages, D is the downsampling ratio
+  for (i = 0; i < number_of_stages; i++) {
+    gain *= internal_ds;
+  }
+
+  // bits to shift the output to keep a unit gain
+  bit_shift = sizeof(int32_t) * 8 - 1 - __builtin_clz(gain);
+  bit_shift = gain > 0 ? bit_shift : 0;
+
+  // if we shift right the CIC output with bit_shift
+  // we should get a unit gain on average
+  // The input to the CIC is a byte, so we can have at most 8 1's per byte.
+  // 4bit is enough for 8 1's.
+  // So we have up to 11 bits (15-4) to shift for float to int16.
+  bit_shift = bit_shift - 11;
+    if (bit_shift < 0) {
+      bit_shift = 0;
+  }
+
+  // coefficients for the high-pass 2 order, FIR compensation filter
+  if (number_of_stages == 3) {
+    compensate_gain = -10;
+  } else {
+    compensate_gain = -6;
+  }
+
+  // max gain for the compensation filter is 2 + abs(compensate_gain).
+  // need to remove this gain from the compensation filter output.
+  // to keep unit gain on average
+  // convert the inverse of the compensation filter gain to Q15 format.
+  inverse_gain_Q15 = convert_to_Q15_format(1.0f / (2.0f - compensate_gain));
+
+  s = 0;
+  for (i = 0; i < input_PDM_size; i++) {
+    // count number of 1s in a byte (downsample by 8)
+    count1s = __builtin_popcount(p_input[i]);
+    sum_data = update_integration_registers(p_integrate_register, number_of_stages, count1s);
+    // downsample stage
+    if ((i + 1) % internal_ds == 0) {
+      sum_diff = 0;
+      // sum of difference registers
+      for (j = 0; j < number_of_stages; j++) {
+        sum_diff += p_difference_register[j];
+      }
+      update_difference_registers(p_difference_register, number_of_stages, sum_data);
+
+      // CIC output
+      cic_output = sum_data - sum_diff;
+
+      // apply compensation filter, a second orfer FIR filter
+      // y(n) = x(n) + compensate_gain * x(n-1) + x(n-2)
+      comp_filter_output = (int64_t)cic_output + (int64_t)p_compensation_register[0] * (int64_t)compensate_gain + (int64_t)p_compensation_register[1];
+
+      //update compensation register
+      p_compensation_register[0] = cic_output;
+      p_compensation_register[1] = p_compensation_register[0];
+
+      // normalize the output to unit gain and then shift bits
+      // for float to int16
+	  // instead of shift 15bits for Q15 , we need to shift bit_shift more bits
+      p_output[s] = -1 * (int16_t)((comp_filter_output * inverse_gain_Q15) >> (bit_shift + 15));
+      s++;
+    }
+  }
+
 }
 
 static int vd6281_spi_chunk_transfer_and_get_samples(struct vd6281_spidev_data *pdata)
 {
-	int i, s;
-	uint16_t index;
-	uint32_t d;
 
 	ssize_t status = 0;
+	int input_PDM_size;
 
 	struct spi_transfer t = {
 			.rx_buf = pdata->pbuffer,
 			.len	= pdata->spi_buffer_size,
 		};
 	struct spi_message m;
-
 
 	// set the speed set by user, or the max_frequency one if not set by user
 	t.speed_hz = pdata->spi_speed_hz;
@@ -221,25 +384,18 @@ static int vd6281_spi_chunk_transfer_and_get_samples(struct vd6281_spidev_data *
 		return -EFAULT;
 	}
 
-	for (s = 0; s < pdata->samples_nb_per_chunk ; s++) {
-		// example : SPI frequency = 5*1024*1204 Hz. sampling rate = 2048.
-		// ==> pdm_sample_width in bytes = 320 = 8*40
-		// i = 0,8,16, ..... 312. ==> each __builtin_popcountll is applied on 8 bytes = 64 bits
-		pdata->psamples[s] = 0;
-		index = s*pdata->pdm_data_sample_width_in_bytes;
-		for (i = 0; i < pdata->pdm_data_sample_width_in_bytes; i += 4) {
-			d = 0;
-			d += (((uint32_t)pdata->pbuffer[index+i])&0xFF);
-			d += (((uint32_t)pdata->pbuffer[index+i+1])&0xFF)<<8;
-			d += (((uint32_t)pdata->pbuffer[index+i+2])&0xFF)<<16;
-			d += (((uint32_t)pdata->pbuffer[index+i+3])&0xFF)<<24;
-			pdata->psamples[s] +=  __builtin_popcountl(d);
-		}
-	}
-
+	input_PDM_size = pdata->samples_nb_per_chunk * pdata->pdm_data_sample_width_in_bytes;
+	downsample8_cic_compensae(
+		pdata->pdm_data_sample_width_in_bytes * 8,
+		input_PDM_size,
+		pdata->pbuffer,
+		pdata->psamples,
+		pdata->integrate_register,
+		pdata->difference_register,
+		pdata->compensation_register,
+		MAX_CIC_STAGE);
 	return 0;
 }
-
 
 static int vd6281_spi_ioctl_handler(struct vd6281_spidev_data *pdata, unsigned int cmd, unsigned long arg)
 {

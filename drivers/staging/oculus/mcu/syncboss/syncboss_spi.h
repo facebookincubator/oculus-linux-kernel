@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _SYNCBOSS_H
-#define _SYNCBOSS_H
+#ifndef _SYNCBOSS_SPI_H
+#define _SYNCBOSS_SPI_H
 
 #include <linux/debugfs.h>
 #include <linux/kernel.h>
@@ -8,28 +8,69 @@
 #include <linux/miscfifo.h>
 #include <linux/of_platform.h>
 #include <linux/spi/spi.h>
-#include <linux/syncboss.h>
+#include <linux/syncboss/consumer.h>
+#include <linux/syncboss/messages.h>
 #include <linux/types.h>
-#include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 #include <uapi/linux/sched/types.h>
-#endif
+#include <uapi/linux/syncboss.h>
 
-#include "syncboss_protocol.h"
 #include "../swd/swd.h"
 
 #define SYNCBOSS_DEVICE_NAME "syncboss0"
-#define SYNCBOSS_STREAM_DEVICE_NAME "syncboss_stream0"
-#define SYNCBOSS_CONTROL_DEVICE_NAME "syncboss_control0"
-#define SYNCBOSS_POWERSTATE_DEVICE_NAME "syncboss_powerstate0"
-#define SYNCBOSS_NSYNC_DEVICE_NAME "syncboss_nsync0"
-#define SYNCBOSS_DIRECTCHANNEL_DEVICE_NAME "syncboss_directchannel0"
 
+/* Sequence number settings */
 #define SYNCBOSS_SEQ_NUM_MIN 1
 #define SYNCBOSS_SEQ_NUM_MAX 254
 #define SYNCBOSS_SEQ_NUM_BITS (SYNCBOSS_SEQ_NUM_MAX + 1)
 
-/* Device stats */
+/* SPI Thread Performance Tuning */
+#define SYNCBOSS_DEFAULT_THREAD_PRIO 51
+#define SYNCBOSS_SCHEDULING_SLOP_NS 10000
+
+/*
+ * Default for SPI transacton cadence and speed
+ * Maybe changed at runtime via sysfs
+ */
+#define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
+#define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
+#define SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS 0
+#define SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE 8000000
+
+/* Max amount of time we give the MCU to wake or enter its sleep state */
+#define SYNCBOSS_SLEEP_WAKE_TIMEOUT_MS 2000
+#define SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS 5000
+
+/* The amount of time we should hold the reset line low when doing a reset. */
+#define SYNCBOSS_RESET_TIME_MS 5
+
+/* SPI data magic numbers used to identify message validity and protocol versions */
+#define SPI_TX_DATA_MAGIC_NUM 0xDEFEC8ED
+#define SPI_RX_DATA_MAGIC_NUM_POLLING_MODE 0xDEFEC8ED
+#define SPI_RX_DATA_MAGIC_NUM_IRQ_MODE 0xD00D1E8D
+#define SPI_RX_DATA_MAGIC_NUM_MCU_BUSY 0xCACACACA
+
+/*
+ * The amount of time to hold the wake-lock when syncboss wakes up the
+ * AP.  This allows user-space code to have time to react before the
+ * system automatically goes back to sleep.
+ */
+#define SYNCBOSS_WAKEUP_EVENT_DURATION_MS 2000
+
+/* The amount of time to suppress spurious SPI errors after a syncboss reset */
+#define SYNCBOSS_RESET_SPI_SETTLING_TIME_MS 100
+
+/* Maximum egress messages that may be enqueued */
+#define MAX_MSG_QUEUE_ITEMS 100
+
+/*
+ * These are SPI message types that the driver explicitly monitors and
+ * sends to MCU firmware. They must be kept in sync with the MCU values.
+ */
+#define SYNCBOSS_GET_DATA_MESSAGE_TYPE 2
+#define SYNCBOSS_SHUTDOWN_MESSAGE_TYPE 90
+#define SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE 244
+
+/* Device stats (informational) */
 struct syncboss_stats {
 	u32 num_bad_magic_numbers;
 	u32 num_bad_checksums;
@@ -52,7 +93,7 @@ struct syncboss_msg {
 };
 
 /*
- * A struct of fn pointers for SPI operations synboss will opt to call
+ * A struct of fn pointers for SPI operations syncboss will opt to call
  * manually, rather than having the kernel SPI framework call them as
  * part of spi_sync()
  */
@@ -65,6 +106,7 @@ struct spi_prepare_ops {
 				 struct spi_message *message);
 };
 
+/* A set of SPI thread settings to apply */
 struct syncboss_stream_settings {
 	/*
 	 * The desired interval of polled SPI transactions, when using
@@ -82,7 +124,7 @@ struct syncboss_stream_settings {
 
 	/*
 	 * Maximum amount of time to delay sending of a message while
-	 * waiting for a full transactions's worth of data.
+	 * waiting for a full transaction's worth of data.
 	 */
 	u32 max_msg_send_delay_ns;
 
@@ -93,7 +135,15 @@ struct syncboss_stream_settings {
 	u32 spi_max_clk_rate;
 };
 
-/* Data related to clients */
+/* SPI thread timing parameters */
+struct syncboss_timing {
+	u64 prev_trans_start_time_ns;
+	u64 prev_trans_end_time_ns;
+	u64 min_time_between_trans_ns;
+	u64 trans_period_ns; /* used only for legacy polling mode */
+};
+
+/* Data related to userspace clients of this driver */
 struct syncboss_client_data {
 	struct list_head list_entry;
 	struct file *file;
@@ -105,21 +155,25 @@ struct syncboss_client_data {
 	struct dentry *dentry;
 };
 
-struct syncboss_timing {
-	u64 prev_trans_start_time_ns;
-	u64 prev_trans_end_time_ns;
-	u64 min_time_between_trans_ns;
-	u64 trans_period_ns; /* used only for legacy polling mode */
+/* Per-transaction state */
+struct transaction_context {
+	bool msg_to_send;
+	bool reschedule_needed;
+	struct syncboss_msg *smsg;
+	struct syncboss_msg *prepared_smsg;
+	bool data_ready_irq_had_fired;
+	bool send_timer_had_fired;
+	bool wake_timer_had_fired;
 };
 
 /* Device state */
 struct syncboss_dev_data {
 	/*
-	 * NOTE: swd_ops MUST be the first member of this structure.
+	 * NOTE: consumer_ops MUST be the first member of this structure.
 	 * It is retrieved by child devices that expect it to be at
 	 * the start of this (parent) device's drvdata.
 	 */
-	struct swd_ops swd_ops;
+	struct syncboss_consumer_ops consumer_ops;
 
 	/* Order does not matter for the internal properties below... */
 
@@ -129,57 +183,24 @@ struct syncboss_dev_data {
 	/* The parent SPI device */
 	struct spi_device *spi;
 
-	/* This driver uses the kernel's "misc driver" feature.  This
-	 * device is used for sending data to the SyncBoss
-	 */
+	/* Primary misc device (ex. /dev/syncboss0) */
 	struct miscdevice misc;
 
 	/* Data related to clients */
 	u64 client_data_index;
 	struct list_head client_data_list;
 
-	/* In the new stream interface, we have a separate misc device
-	 * just for reading stream data from the SyncBoss
-	 */
-	struct miscdevice misc_stream;
-	/* FIFO to help push stream data from the SyncBoss to the
-	 * misc_stream device.
-	 */
-	struct miscfifo stream_fifo;
+	/* Notifier chain for MCU and streaming state changes. */
+	struct raw_notifier_head state_event_chain;
 
-	/* In the new stream interface, we have a separate misc device
-	 * just for reading control data from the SyncBoss
-	 */
-	struct miscdevice misc_control;
-	/* FIFO to help push control data from the SyncBoss to the
-	 * misc_stream device.
-	 */
-	struct miscfifo control_fifo;
-
-	/* Device to convey power state events and reasons
-	 */
-	struct miscdevice misc_powerstate;
-	/* FIFO to help push state event data from the SyncBoss to the
-	 * misc_powerstate device.
-	 */
-	struct miscfifo powerstate_fifo;
-
-	/* Misc device for NSYNC
-	 */
-	struct miscdevice misc_nsync;
-	struct miscfifo nsync_fifo;
+	/* Notifier chain for subscribing to received packets. */
+	struct raw_notifier_head rx_packet_event_chain;
 
 	/* MCU power reference count */
 	int mcu_client_count;
 
 	/* Streaming client reference count */
 	int streaming_client_count;
-
-	/* nsync event client reference count */
-	int nsync_client_count;
-
-	/* Powertate event client reference count */
-	int powerstate_client_count;
 
 	/* Settings to use for next streaming session */
 	struct syncboss_stream_settings next_stream_settings;
@@ -233,7 +254,7 @@ struct syncboss_dev_data {
 	struct rx_history_elem *rx_elem;
 
 	/*
-	 * The total number of SPI transactions that have ocurred
+	 * The total number of SPI transactions that have occurred
 	 * since the MCU booted.
 	 */
 	atomic64_t transaction_ctr;
@@ -243,37 +264,10 @@ struct syncboss_dev_data {
 
 	/* GPIO line for pin reset */
 	int gpio_reset;
-	/* GPIO line for time sync */
-	int gpio_timesync;
-	/* Time sync IRQ */
-	int timesync_irq;
 	/* Data ready / wakeup line  */
 	int gpio_ready;
 	/* IRQ signaling the MCU is ready for a transaction */
 	int ready_irq;
-
-	/* GPIO NSYNC */
-	int gpio_nsync;
-	/* NSYNC IRQ */
-	int nsync_irq;
-
-	/* Timestamp of the last NSYNC event
-	 * This signal is driven by the NRF using an otherwise unused
-	 * NRF->AP signal and used to synchronize time between the AP
-	 * and NRF.
-	 */
-	uint64_t nsync_irq_timestamp;
-	uint64_t nsync_irq_count;
-
-	/* Spinlock used to protect access to the nsync timestamp and count */
-	spinlock_t nsync_lock;
-
-	/* Timestamp of last TE event
-	 * This signal is driven by the display hardware's TE line to
-	 * the both NRF and AP. This is used to synchronize time between
-	 * the AP and NRF.
-	 */
-	atomic64_t last_te_timestamp_ns;
 
 	/* Regulator for the nRF */
 	struct regulator *mcu_core;
@@ -296,14 +290,8 @@ struct syncboss_dev_data {
 	/* Various statistics */
 	struct syncboss_stats stats;
 
-	/* Real-Time priority to use for spi polling thread */
-	int poll_prio;
-
-	/* Sequence number interface selection: ioctl if true, sysfs otherwise */
-	bool has_seq_num_ioctl;
-
-	/* The next sequence number available for a control call (sysfs) */
-	int next_avail_seq_num;
+	/* Real-Time priority to use for spi thread */
+	int thread_prio;
 
 	/* The last sequence number used for a control call (ioctl) */
 	int last_seq_num;
@@ -313,40 +301,8 @@ struct syncboss_dev_data {
 
 	u64 seq_num_allocation_count;
 
-	/* True if the syncboss controlls a prox sensor */
-	bool has_prox;
-
-	/* True if prox calibration data is not required for prox to work */
-	bool has_no_prox_cal;
-
 	/* True if the MCU can be woken from shutdown via a SPI transaction (CS toggle) */
 	bool has_wake_on_spi;
-
-	/* prox calibration values */
-	int prox_canc;
-	int prox_thdl;
-	int prox_thdh;
-
-	/* prox config version */
-	u8 prox_config_version;
-
-	/* The most recent power state event */
-	int powerstate_last_evt;
-
-	/* True if the cameras are in-use */
-	bool cameras_enabled;
-
-	/* True if we should refrain from sending the next system_up event. */
-	bool eat_next_system_up_event;
-
-	/* True if we should refrain from sending the prox_on events. */
-	bool eat_prox_on_events;
-
-	/* True if we should not send any power state events to the user */
-	bool silence_all_powerstate_events;
-
-	/* True if power state events are enabled */
-	bool powerstate_events_enabled;
 
 	/* True if streaming is running */
 	bool is_streaming;
@@ -378,21 +334,9 @@ struct syncboss_dev_data {
 	 */
 	bool use_irq_mode;
 
+	/* DebugFS nodes */
 	struct dentry *dentry;
 	struct dentry *clients_dentry;
-
-	/*
-	 * Settings for direct channel mappings per packet type
-	 */
-	dma_addr_t dma_mask;
-	/*
-	 * DMA Bufs are created and mapped per sample type and not
-	 * multiplexed as is the case for miscfifos. Each client can register
-	 * a DMABUF per sample type.
-	 */
-	struct list_head *direct_channel_data[NUM_PACKET_TYPES];
-	struct rw_semaphore direct_channel_rw_lock; /* single semaphore protecing for now, as write is very rare. */
-	struct miscdevice misc_directchannel;
 };
 
 int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata);

@@ -61,7 +61,7 @@ struct syncboss_nsync_event {
 } __attribute__((packed));
 
 /*
- * THIS MUST BE ALINGED LIBSYNCBOSS Struct used in fbsource hal library -
+ * THIS MUST BE ALINGED TO LIBSYNCBOSS Struct used in fbsource hal library -
  * fbsource/arvr/firmware/projects/libsyncboss/os_interface/syncboss_hal_impl_android_driver.c
  */
 struct syncboss_driver_directchannel_shared_memory_config {
@@ -69,6 +69,14 @@ struct syncboss_driver_directchannel_shared_memory_config {
 	size_t direct_channel_buffer_size; /* must be less than dma_buf_size */
 	uint8_t uapi_pkt_type;
 	uint8_t wake_epoll; /* set to true to wake up epoll when data arrives, false otherwise. */
+} __attribute__((packed));
+/*
+ * THIS MUST BE ALINGED TO LIBSYNCBOSS Struct used in fbsource hal library -
+ * fbsource/arvr/firmware/projects/libsyncboss/os_interface/syncboss_hal_impl_android_driver.c
+ */
+struct syncboss_driver_directchannel_shared_memory_clear_config {
+	int dmabuf_fd;
+	uint8_t uapi_pkt_type;
 } __attribute__((packed));
 
 /*
@@ -107,5 +115,6 @@ struct syncboss_sensor_direct_channel_data {
 /* Ioctl used to set dma buf for a channel */
 #define SYNCBOSS_SET_DIRECTCHANNEL_SHARED_MEMORY_IOCTL \
 _IOW(MISC_MAJOR, 4, struct syncboss_driver_directchannel_shared_memory_config)
-
+#define SYNCBOSS_CLEAR_DIRECTCHANNEL_SHARED_MEMORY_IOCTL \
+_IOW(MISC_MAJOR, 5, struct syncboss_driver_directchannel_shared_memory_clear_config)
  #endif

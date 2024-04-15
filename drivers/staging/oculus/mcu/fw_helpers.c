@@ -62,7 +62,7 @@ int devm_fw_init_regulator(struct device *dev, struct regulator **reg,
 	struct device_node *of = dev->of_node;
 	char prop_name[MAX_PROP_SIZE] = {0};
 
-	snprintf(prop_name, MAX_PROP_SIZE, "oculus,%s", reg_name);
+	snprintf(prop_name, MAX_PROP_SIZE, "meta,%s", reg_name);
 	*reg = devm_regulator_get(dev, prop_name);
 	if (IS_ERR(*reg)) {
 		rc = PTR_ERR(*reg);
@@ -71,7 +71,7 @@ int devm_fw_init_regulator(struct device *dev, struct regulator **reg,
 		return -EINVAL;
 	}
 
-	snprintf(prop_name, MAX_PROP_SIZE, "oculus,%s-voltage-level", reg_name);
+	snprintf(prop_name, MAX_PROP_SIZE, "meta,%s-voltage-level", reg_name);
 	rc = of_property_read_u32_array(of, prop_name, voltage, 2);
 	if (rc) {
 		dev_err(dev, "%s: Failed to get voltage range: %d\n",

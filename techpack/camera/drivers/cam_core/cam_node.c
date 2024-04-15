@@ -966,7 +966,7 @@ int cam_node_stream_mode_cmd(struct cam_node *node, struct cam_control *cmd)
 		rc = __cam_node_handle_stream_mode_cmd(node,
 			&stream_mode_cmd);
 		if (rc)
-			CAM_DBG(CAM_CORE, "stream mode cmd failed(rc = %d)", rc);
+			CAM_ERR(CAM_CORE, "stream mode cmd failed(rc = %d)", rc);
 		else if (copy_to_user(u64_to_user_ptr(cmd->handle),
 				&stream_mode_cmd, sizeof(stream_mode_cmd)))
 			rc = -EFAULT;

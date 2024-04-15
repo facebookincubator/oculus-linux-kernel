@@ -155,8 +155,8 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 		client_idx = CAM_CDM_GET_CLIENT_IDX(node->client_hdl);
 		client = core->clients[client_idx];
 		if ((!client) || (client->handle != node->client_hdl)) {
-			CAM_ERR(CAM_CDM, "Invalid client %pK hdl=%x", client,
-				node->client_hdl);
+			CAM_ERR(CAM_CDM, "Invalid client %p hdl=%x client hdl 0x%x",
+				client, node->client_hdl, (!client) ? (-1) : client->handle);
 			return;
 		}
 		cam_cdm_get_client_refcount(client);
@@ -422,8 +422,8 @@ int cam_cdm_process_cmd(void *hw_priv,
 		idx = CAM_CDM_GET_CLIENT_IDX(req->handle);
 		client = core->clients[idx];
 		if ((!client) || (req->handle != client->handle)) {
-			CAM_ERR(CAM_CDM, "Invalid client %pK hdl=%x", client,
-				req->handle);
+			CAM_ERR(CAM_CDM, "Invalid client %p handle=0x%X hdl=0x%X",
+				client, (!client) ? (-1) : client->handle, req->handle);
 			break;
 		}
 		cam_cdm_get_client_refcount(client);
@@ -545,6 +545,21 @@ int cam_cdm_process_cmd(void *hw_priv,
 			mutex_unlock(&cdm_hw->hw_mutex);
 			break;
 		}
+
+{
+	struct cam_cdm_bl_cb_request_entry *node;
+
+	list_for_each_entry(node, &core->bl_request_list, entry) {
+		if (node->client_hdl == client->handle)
+			CAM_ERR(CAM_CDM, "CAM_CDM_HW_INTF_CMD_RELEASE:"
+			" Found active records for handle 0x%X Core[%d] ID %d",
+			client->handle,
+			core->index,
+			core->id
+			);
+	}
+}
+
 		core->clients[idx] = NULL;
 		kfree(client);
 		mutex_unlock(&cdm_hw->hw_mutex);

@@ -173,6 +173,7 @@
 #include <wl_android.h>
 #endif
 
+#include "ar/arts_xmt_trace.h"
 #ifdef ENABLE_PERFORMANCE_DEBUG
 #include <performance_custom.h>
 #endif
@@ -210,6 +211,7 @@ BCMFASTPATH(__dhd_sendpkt)(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 	unsigned long flags;
 	uint datalen;
 
+    arts_xmt_send(pktbuf, PKTDATA(dhdp->osh, pktbuf));
 #ifdef ENABLE_PERFORMANCE_DEBUG
 	latency_event_mark(DHD_SEND_PKT, NULL);
 #endif
@@ -776,6 +778,7 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 		goto done;
 	}
 
+    arts_xmt_start(pktbuf, PKTDATA(dhd->pub.osh, pktbuf));
 #ifdef ENABLE_PERFORMANCE_DEBUG
 	if (ntoh16(skb->protocol) == ETHERTYPE_FACEBOOK_USB) {
 		latency_event_mark(DHD_START_XMIT, PKTDATA(dhd->pub.osh, pktbuf));
@@ -1060,6 +1063,7 @@ dhd_txcomplete(dhd_pub_t *dhdp, void *txp, bool success)
 		atomic_dec(&dhd->pend_8021x_cnt);
 	}
 
+    arts_xmt_complete(txp, PKTDATA(dhdp->osh, txp), success);
 #ifdef ENABLE_PERFORMANCE_DEBUG
 	if (type == ETHERTYPE_FACEBOOK_USB) {
 		latency_event_mark(DHD_TXCOMPLETE, PKTDATA(dhdp->osh, txp));

@@ -61,7 +61,6 @@
 		fan_0: pwm-tach-fan@0 {
 			reg = <0>;
 			compatible = "pwm-tach-fan";
-			fan,tach-gpio = <&tlmm 71 0x0>;
 			interrupt-parent = <&tlmm>;
 			interrupts = <71 1>;
 			interrupt-names = "fan_irq";
@@ -80,9 +79,8 @@
 		fan_1: pwm-tach-fan@1 {
 			reg = <1>;
 			compatible = "pwm-tach-fan";
-			fan,tach-gpio = <&tlmm 83 0x0>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <72 1>;
+			interrupts = <83 1>;
 			interrupt-names = "fan_irq";
 			panel = <&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/

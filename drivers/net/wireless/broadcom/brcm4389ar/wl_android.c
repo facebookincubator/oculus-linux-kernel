@@ -485,6 +485,7 @@ static int64_t g_offset_systemtime_vs_dhdtime = 0;
 #define CMD_XRAPI_TXDONE_INDICATION "XRAPI_TXDONE_INDICATION"
 #define CMD_XRAPI_GET_STATS "XRAPI_GET_STATS"
 #define CMD_XRAPI_SET_PSMODE "XRAPI_SET_PSMODE"
+#define CMD_XRAPI_WAKE_PKT "XRAPI_WAKE_PKT"
 static int wl_android_xrapi_send_proberesp(struct net_device *dev,
 					   char *command, int total_length);
 static int wl_android_request_tsync(struct net_device *dev, char *command,
@@ -497,6 +498,7 @@ static int wl_android_get_xrapi_stats(struct net_device *dev);
 static int wl_android_request_ps_mode_change(struct net_device *dev,
 					     char *command, int total_len);
 static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf);
+static int wl_android_wake_pkt(struct net_device *dev);
 #endif /* TSF_GSYNC */
 
 #ifdef XRAP_POWER_OPTIMIZATION
@@ -504,7 +506,7 @@ static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf);
 static int wl_android_enable_oce_fils_discovery(struct net_device *dev,
 						   char *command,
 						   int total_len);
-static int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable);
+int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable);
 static int wl_set_oce_fils_discovery_tx_duration(struct net_device *dev, uint8 fils_discovery_duration);
 #endif /* XRAP_POWER_OPTIMIZATION */
 
@@ -13937,7 +13939,10 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			    strlen(CMD_XRAPI_SET_PSMODE)) == 0) {
 		bytes_written = wl_android_request_ps_mode_change(
 			net, command, priv_cmd.total_len);
-	}
+	} else if (strnicmp(command, CMD_XRAPI_WAKE_PKT, 
+                strlen(CMD_XRAPI_WAKE_PKT)) == 0) {
+        bytes_written = wl_android_wake_pkt(net);
+    }
 #endif
 #ifdef SIMULATE_DEGRADED_PERFORMANCE
 	else if (strnicmp(command, CMD_XRAPI_SIMULATE_DEGRADED_PERFORMANCE,
@@ -15772,7 +15777,11 @@ static int wl_android_request_tsync(struct net_device *dev, char *command,
 	uint16 buflen = 0, buflen_start = 0;
 	bcm_iov_buf_t *iov_buf = NULL;
 	uint8 *iov_resp = NULL;
-	uint32 req_id = 0;
+	enum tsync_type {
+		UCODE = 0, // Pauses MAC to get TSF from microcode
+		FWMODE = 1, // Does not pause MAC, but TSF may be less accurate
+	};
+	uint32 req_id = FWMODE;
 	uint16 iovlen = 0;
 	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
 	int bytes_written = 0;
@@ -16022,6 +16031,54 @@ exit:
 }
 
 /*
+ * Sends the Wake Packet
+ */
+static int wl_android_wake_pkt(struct net_device *dev)
+{
+    int res = BCME_OK;
+    bcm_iov_buf_t *iov_buf = NULL;
+    uint8 *iov_resp = NULL;
+    uint16 iovlen = 0;
+    struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
+
+    iov_buf = (bcm_iov_buf_t *)MALLOCZ(cfg->osh, WLC_IOCTL_SMLEN);
+    if (iov_buf == NULL) {
+        res = BCME_NOMEM;
+        WL_ERR(("iov buf memory alloc exited\n"));
+        goto exit;
+    }
+    iov_resp = (uint8 *)MALLOCZ(cfg->osh, WLC_IOCTL_MAXLEN);
+    if (iov_resp == NULL) {
+        res = BCME_NOMEM;
+        WL_ERR(("iov resp memory alloc exited\n"));
+        goto exit;
+    }
+
+    /* fill header */
+    iov_buf->version = WL_XRAPI_IOV_VERSION_1_1;
+    iov_buf->id = WL_XRAPI_CMD_SEND_WAKE_PKT;
+    iov_buf->len = 0;
+    iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
+    res = wldev_iovar_setbuf(dev, "xrapi", iov_buf, iovlen, iov_resp,
+                 WLC_IOCTL_MAXLEN, NULL);
+    if (res != BCME_OK) {
+        WL_ERR(("Fail to send WL_XRAPI_CMD_SEND_WAKE_PKT %d\n",
+            res));
+        goto exit;
+    }
+    WL_DBG(("WL_XRAPI_CMD_SEND_WAKE_PKT sent\n"));
+
+exit:
+    if (iov_buf)
+        MFREE(cfg->osh, iov_buf, WLC_IOCTL_SMLEN);
+
+    if (iov_resp)
+        MFREE(cfg->osh, iov_resp, WLC_IOCTL_MAXLEN);
+
+    return res;
+}
+
+/*
  * Send WL_XRAPI_CMD_STATS cmd t0 vendor to get last API cycles and reports sleep duration.
  */
 static int wl_android_get_xrapi_stats(struct net_device *dev)
@@ -16123,8 +16180,16 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 
 	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x system_interval_us = %d us\n", pm_mode, system_interval_us));
 #ifdef CONFIG_XRPS_DHD_HOOKS
-	xrps_set_sys_interval_us(system_interval_us);
-	xrps_set_mode(pm_mode);
+	res = xrps_set_sys_interval_us(system_interval_us);
+	if (res != 0) {
+		WL_ERR(("Failed to set system interval %d us: %d\n", system_interval_us, res));
+		goto exit;
+	}
+	res = xrps_set_mode(pm_mode);
+	if (res != 0) {
+		WL_ERR(("Failed to set mode %d us: %d\n", pm_mode, res));
+		goto exit;
+	}
 #endif
 
 exit:
@@ -16411,7 +16476,6 @@ static int wl_android_enable_oce_fils_discovery(struct net_device *dev,
 	char *pos, *token;
 	uint8 enable_fils_discovery = 0;
 	int bytes_written = 0;
-
 	/* drop command */
 	pos = command;
 	token = bcmstrtok(&pos, " ", NULL);
@@ -16422,7 +16486,6 @@ static int wl_android_enable_oce_fils_discovery(struct net_device *dev,
 		goto exit;
 	}
 	enable_fils_discovery = (u8)bcm_strtoul(token, NULL, 10);
-	WL_ERR(("WL_OCE_CMD_FD_TX_DURATION enable_fils_discovery %d\n", enable_fils_discovery));
 	res = wl_enable_oce_fils_discovery(dev, enable_fils_discovery);
 
 exit:
@@ -16447,14 +16510,14 @@ exit:
 #define FILS_DISCOVERY_DURATION_FOR_DIABLE (0)
 #define FILS_DISCOVERY_DURATION_FOR_ENABLE (255)
 
-static int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable) {
+int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable) {
 	int res = BCME_OK;
 	WL_INFORM(("enable = %d\n", enable));
 	if (enable)
 	{
-		res = wl_set_oce_fils_discovery_tx_duration(ndev, FILS_DISCOVERY_DURATION_FOR_ENABLE);
+			res = wl_set_oce_fils_discovery_tx_duration(ndev, FILS_DISCOVERY_DURATION_FOR_ENABLE);
 	} else {
-		res = wl_set_oce_fils_discovery_tx_duration(ndev, FILS_DISCOVERY_DURATION_FOR_DIABLE);
+			res = wl_set_oce_fils_discovery_tx_duration(ndev, FILS_DISCOVERY_DURATION_FOR_DIABLE);
 	}
 	if (res != BCME_OK) {
 		WL_ERR(("%s Fail to enable: %d fils discovery, res: %d\n", __func__, enable, res));

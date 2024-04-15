@@ -13,9 +13,9 @@
 };
 
 &qupv3_se0_spi {
-	oculusnrf@0 {
+	syncboss_nrf@0 {
 		swd@0 {
-			oculus,fw-path = "syncboss-ipl-spl.bin";
+			meta,fw-path = "syncboss-ipl-spl.bin";
 		};
 	};
 };

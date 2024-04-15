@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _SYNCBOSS_DEBUGFS_H
-#define _SYNCBOSS_DEBUGFS_H
+#ifndef _SYNCBOSS_SPI_DEBUGFS_H
+#define _SYNCBOSS_SPI_DEBUGFS_H
 
-#include "syncboss.h"
+#include "syncboss_spi.h"
 
 #ifdef CONFIG_DEBUG_FS
 int syncboss_debugfs_init(struct syncboss_dev_data *devdata);
