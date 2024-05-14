@@ -8241,6 +8241,8 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	wl_rate_info_t *rates = NULL;
 #endif /* WL_RATE_INFO */
 	u8 *curmacp = NULL;
+	chanspec_t chspec;
+	u8 width = 0;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0)) || defined(WL_COMPAT_WIRELESS)
 	s8 eabuf[ETHER_ADDR_STR_LEN];
@@ -8436,6 +8438,17 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 				sinfo->filled |= STA_INFO_BIT(INFO_TX_BITRATE);
 				sinfo->txrate.legacy = rate * 5;
 				WL_DBG(("Tx rate %d Mbps\n", (rate / 2)));
+				chspec = wl_cfg80211_get_shared_freq(wiphy);
+				width = wl_chanspec_to_host_bw_map(chspec);
+				if (width == WIFI_CHAN_WIDTH_20) {
+					sinfo->txrate.bw = RATE_INFO_BW_20;
+				} else if (width == WIFI_CHAN_WIDTH_40) {
+					sinfo->txrate.bw = RATE_INFO_BW_40;
+				} else if (width == WIFI_CHAN_WIDTH_80) {
+					sinfo->txrate.bw = RATE_INFO_BW_80;
+				} else if (width == WIFI_CHAN_WIDTH_160) {
+					sinfo->txrate.bw = RATE_INFO_BW_160;
+				}
 #if defined(USE_DYNAMIC_MAXPKT_RXGLOM)
 				rxpktglom = ((rate/2) > 150) ? 20 : 10;
 

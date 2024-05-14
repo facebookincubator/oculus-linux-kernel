@@ -1,0 +1,11 @@
+config USB_PDFU
+    tristate "USB Power Delivery Firmware Update"
+    depends on META_USBVDM
+    help
+        The USB Power Delivery Firmware Update (PDFU) Specification defines a
+        common method for updating the firmware in a USB Power Delivery capable
+        device.
+
+        Enable this configuration option if you have USB PD capabilities in
+        your system and want to be able to update partner devices that can
+        act as a PDFU Responder.

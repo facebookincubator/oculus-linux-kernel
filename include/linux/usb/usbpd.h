@@ -47,6 +47,10 @@ struct usbpd_svid_handler {
 	int (*request_usb_ss_lane)(struct usbpd *pd,
 			struct usbpd_svid_handler *hdlr);
 
+	/* Extended Message */
+	void (*ext_msg_received)(struct usbpd_svid_handler *hdlr,
+			u8 msg_type, const u8 *data, size_t data_len);
+
 	/* Unstructured VDM */
 	void (*vdm_received)(struct usbpd_svid_handler *hdlr, u32 vdm_hdr,
 			const u32 *vdos, int num_vdos);
@@ -81,6 +85,12 @@ struct usbpd *devm_usbpd_get_by_phandle(struct device *dev,
 int usbpd_register_svid(struct usbpd *pd, struct usbpd_svid_handler *hdlr);
 
 void usbpd_unregister_svid(struct usbpd *pd, struct usbpd_svid_handler *hdlr);
+
+/*
+ * Transmit an Extended Message.
+ */
+int usbpd_send_ext_msg(struct usbpd *pd, u8 msg_type,
+		const u8 *data, size_t data_len);
 
 /*
  * Transmit a VDM message.

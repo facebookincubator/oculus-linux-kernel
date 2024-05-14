@@ -561,7 +561,12 @@ static int gmu_dcvs_set(struct kgsl_device *device,
 			adreno_set_gpu_fault(adreno_dev, ADRENO_GMU_FAULT);
 			adreno_set_gpu_fault(adreno_dev,
 				ADRENO_GMU_FAULT_SKIP_SNAPSHOT);
+
+#if IS_ENABLED(CONFIG_QCOM_KGSL_PANIC_ON_GMU_FAULT)
+			BUG();
+#else
 			adreno_dispatcher_schedule(device);
+#endif
 		}
 	}
 

@@ -41,21 +41,23 @@ int submit_eot_work(void)
 
 static enum hrtimer_restart sysint_timer_cb(struct hrtimer *timer)
 {
-	ktime_t delay;
-
-	delay = ktime_set(0, xrps_get_sys_interval_us() * NSEC_PER_USEC);
-	hrtimer_forward(timer, timer->base->get_time(), delay);
+	uint64_t next;
+	int ret;
 	schedule_work(&xrps_linux.sysint_work);
+	ret = xrps_get_next_sysint(&next);
+	if (ret != 0) {
+		pr_err("Failed to get next sysint, timer not restarted\n");
+		return HRTIMER_NORESTART;
+	}
+
+	hrtimer_set_expires(&xrps_linux.sysint_timer, ns_to_ktime(next));
 	return HRTIMER_RESTART;
 }
 
-int start_sysint_timer(int interval_us)
+int start_sysint_timer(uint64_t time)
 {
-	/* Setup and start periodic sys interval timer */
-	hrtimer_start(&xrps_linux.sysint_timer,
-		      ns_to_ktime(interval_us * NSEC_PER_USEC),
-		      CLOCK_MONOTONIC);
-	pr_info("XR Start timer for %d us\n", interval_us);
+	hrtimer_start(&xrps_linux.sysint_timer, ns_to_ktime(time), HRTIMER_MODE_ABS);
+	pr_info("XR Start timer at ns %llu\n", time);
 	return 0;
 }
 
@@ -141,58 +143,13 @@ static ssize_t stats_store(struct kobject *kobj, struct kobj_attribute *attr,
 	return count;
 }
 
-static ssize_t enable_show(struct kobject *kobj, struct kobj_attribute *attr,
-			   char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE - 1, "%u\n", xrps_linux.xrps->mode);
-}
-
-static ssize_t si_store(struct kobject *kobj, struct kobj_attribute *attr,
-			const char *buf, size_t count)
-{
-	int ret;
-	unsigned int val;
-
-	ret = kstrtouint(buf, 10, &val);
-	if (ret < 0)
-		return ret;
-	ret = xrps_set_sys_interval_us(val);
-	if (ret < 0)
-		return ret;
-	return count;
-}
-
-static ssize_t si_show(struct kobject *kobj, struct kobj_attribute *attr,
-		       char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE - 1, "%u\n",
-			 xrps_linux.xrps->sys_interval);
-}
-
-static ssize_t enable_store(struct kobject *kobj, struct kobj_attribute *attr,
-			    const char *buf, size_t count)
-{
-	int ret, val;
-
-	ret = kstrtoint(buf, 10, &val);
-	if (ret < 0)
-		return ret;
-	ret = xrps_set_mode(val);
-	if (ret < 0)
-		return ret;
-	return count;
-}
-
 static struct kobj_attribute queue_pause_attr = __ATTR_RW(queue_pause);
 static struct kobj_attribute send_eot_attr = __ATTR_WO(send_eot);
 static struct kobj_attribute stats_attr = __ATTR_RW(stats);
-static struct kobj_attribute enable_attr = __ATTR_RW(enable);
-static struct kobj_attribute si_attr = __ATTR_RW(si);
 
 // Create attribute group
 static struct attribute *xrps_attrs[] = {
-	&queue_pause_attr.attr, &send_eot_attr.attr, &stats_attr.attr,
-	&enable_attr.attr,	&si_attr.attr,	     NULL,
+	&queue_pause_attr.attr, &send_eot_attr.attr, &stats_attr.attr, NULL,
 };
 
 static struct attribute_group xrps_attr_group = {
@@ -240,8 +197,7 @@ int xrps_init_linux(struct xrps *xrps)
 	xrps_linux.xrps = xrps;
 
 	hrtimer_init(&xrps_linux.sysint_timer, CLOCK_MONOTONIC,
-		     HRTIMER_MODE_REL);
-
+		     HRTIMER_MODE_ABS);
 	xrps_linux.sysint_timer.function = sysint_timer_cb;
 
 	INIT_WORK(&xrps_linux.sysint_work, wq_sysint_fn);

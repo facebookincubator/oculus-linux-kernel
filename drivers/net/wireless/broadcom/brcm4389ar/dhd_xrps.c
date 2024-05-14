@@ -48,8 +48,17 @@ struct xrps_drv_intf xrps_drv_intf = {
 
 static uint16_t get_num_queued(int flowid)
 {
-	flow_ring_node_t *flow_ring_node = DHD_FLOW_RING(g_dhd_pub, flowid);
-	flow_queue_t *queue = &flow_ring_node->queue;
+	flow_ring_node_t *flow_ring_node;
+	flow_queue_t *queue;
+
+	if (g_dhd_pub->flow_ring_table == NULL)
+		return 0;
+
+	flow_ring_node = DHD_FLOW_RING(g_dhd_pub, flowid);
+	if (flow_ring_node == NULL)
+		return 0;
+
+	queue = &flow_ring_node->queue;
 
 	return queue->len;
 }
@@ -76,6 +85,11 @@ static bool dhd_flowring_has_work_to_do(int flowid)
 static void dhd_xrps_unpause_queue(int flowid)
 {
 	int ret;
+
+	// There will usually be work to do, but there may not if executed in the non-tx path,
+	// in which case, flow rings may be invalid.
+	if (!dhd_flowring_has_work_to_do(flowid))
+		return;
 
 	ret = dhd_bus_schedule_queue(g_dhd_pub->bus, flowid, FALSE, 0, NULL);
 	if (ret != BCME_OK) {

@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _SYNCBOSS_CONSUMER_PRIORITIES_H
+#define _SYNCBOSS_CONSUMER_PRIORITIES_H
+
+/* Message processing order. Higher values run first. */
+enum syncboss_packet_consumer_priorities {
+	SYNCBOSS_PACKET_CONSUMER_PRIORITY_MISCFIFO,
+	SYNCBOSS_PACKET_CONSUMER_PRIORITY_DIRECTCHANNEL,
+	SYNCBOSS_PACKET_CONSUMER_PRIORITY_NSYNC,
+	SYNCBOSS_PACKET_CONSUMER_PRIORITY_POWERSTATE,
+};
+
+/* State event processing order. Higher values run first. */
+enum syncboss_state_consumer_priorities {
+	SYNCBOSS_STATE_CONSUMER_PRIORITY_POWERSTATE,
+	SYNCBOSS_STATE_CONSUMER_PRIORITY_NSYNC,
+	SYNCBOSS_STATE_CONSUMER_PRIORITY_MISCFIFO,
+};
+
+#endif

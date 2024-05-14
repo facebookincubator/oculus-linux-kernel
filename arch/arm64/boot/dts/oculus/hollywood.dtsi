@@ -75,6 +75,11 @@
 		#include "4414705_Goertek_Hollywood_124k_3710mAh_Mar2nd2020.dtsi"
 	};
 
+	meta,pdfu_initiator {
+		compatible = "meta,pdfu-initiator";
+		usb,product-id = /bits/ 16 <0x5006>;
+	};
+
 	meta,usbvdm-qtipd {
 		compatible = "meta,usbvdm-qtipd";
 		qcom,pdphy = <&pm8150b_pdphy>;
@@ -131,7 +136,6 @@
 &pm8150b_pdphy {
 	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
 		<9000 3000>; /* 9V @ 3A */
-	qcom,discovery-svids-request;
 };
 
 &pm8150l_rgb_led {

@@ -13,6 +13,7 @@
 
 #include <uapi/linux/syncboss.h>
 
+#include "syncboss_consumer_priorities.h"
 #include "syncboss_direct_channel.h"
 #include "syncboss_direct_channel_mcu_defs.h"
 
@@ -83,13 +84,13 @@ static int syncboss_directchannel_release(struct inode *inode, struct file *f)
 /* Update the direct channel buffer with IMU data. */
 static int direct_channel_distribute_spi_payload(struct direct_channel_dev_data *devdata,
 				   struct channel_client_entry *client_data,
-				   const struct syncboss_data *packet)
+				   const struct rx_packet_info *packet_info)
 {
 	int status = 0;
 	struct device *dev = devdata->dev;
+	const struct syncboss_data *packet = packet_info->data;
 	struct syncboss_sensor_direct_channel_data *current_ptr;
 	struct direct_channel_data *channel_data;
-	void *spi_data_addr;
 	struct dma_buf *dma_buffer;
 
 	channel_data = &client_data->channel_data;
@@ -102,7 +103,6 @@ static int direct_channel_distribute_spi_payload(struct direct_channel_dev_data 
 		return -EIO;
 	}
 
-	spi_data_addr = (void *)(&packet->data[0]);
 	dma_buffer = client_data->dma_buf_info.dma_buf;
 
 	if (packet->data_len > SYNCBOSS_DIRECT_CHANNEL_MAX_SENSOR_DATA_SIZE) {
@@ -119,8 +119,7 @@ static int direct_channel_distribute_spi_payload(struct direct_channel_dev_data 
 
 	/* size/report_token and sensor_type are fixed values and added at init time */
 	current_ptr->timestamp = ktime_get_ns();
-	memcpy(&(current_ptr->payload.idata[0]), spi_data_addr,
-	       packet->data_len);
+	memcpy(current_ptr->payload.idata, packet->data, packet->data_len);
 
 	channel_data->counter++;
 	if (channel_data->counter == 0)
@@ -512,19 +511,19 @@ static const struct file_operations directchannel_fops = {
 	.unlocked_ioctl = syncboss_directchannel_ioctl
 };
 
-static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *p)
+static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
 	struct direct_channel_dev_data *devdata = container_of(nb, struct direct_channel_dev_data, rx_packet_nb);
-	struct syncboss_data *packet = p;
+	const struct rx_packet_info *packet_info = pi;
 	int ret = NOTIFY_DONE;
 	struct channel_client_entry *client_data;
 
 	/* Acquire Read Lock for Direct Channel Clients - writer is rare. */
 	down_read(&devdata->direct_channel_rw_lock);
 
-	if (devdata->direct_channel_data[packet->type]) {
-		list_for_each_entry(client_data, devdata->direct_channel_data[packet->type], list_entry) {
-			int status = (*client_data->direct_channel_distribute) (devdata, client_data, packet);
+	if (devdata->direct_channel_data[type]) {
+		list_for_each_entry(client_data, devdata->direct_channel_data[type], list_entry) {
+			int status = (*client_data->direct_channel_distribute) (devdata, client_data, packet_info);
 
 			if (status >= 0) {
 				/* We have delivered to at least one client. */
@@ -576,7 +575,7 @@ static int syncboss_direct_channel_probe(struct platform_device *pdev)
 	init_rwsem(&devdata->direct_channel_rw_lock);
 
 	devdata->rx_packet_nb.notifier_call = rx_packet_handler;
-	devdata->rx_packet_nb.priority = 1; /* directchannel should run before miscfifo handler */
+	devdata->rx_packet_nb.priority = SYNCBOSS_PACKET_CONSUMER_PRIORITY_DIRECTCHANNEL;
 	ret = devdata->syncboss_ops->rx_packet_notifier_register(dev, &devdata->rx_packet_nb);
 	if (ret < 0) {
 		dev_err(dev, "failed to register rx packet notifier, error %d", ret);

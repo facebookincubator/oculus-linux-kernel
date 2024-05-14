@@ -6481,14 +6481,16 @@ wl_handle_assoc_hints(struct bcm_cfg80211 *cfg, struct net_device *dev,
 		WL_ERR(("ssid cpy failed\n"));
 		return -EINVAL;
 	}
-
+	WL_INFORM(("dhd add targeted BSSID %p, %p\n", sme->bssid, sme->bssid_hint));
 	/* Handle incoming BSSID and Channel info */
 	if (sme->bssid && !ETHER_ISBCAST(sme->bssid)) {
 		/* Use user space requested BSSID and channel */
 		info->targeted_join = true;
 		(void)memcpy_s(info->bssid, ETH_ALEN, sme->bssid, ETH_ALEN);
+
 		if (sme->channel && ((chspec =
 			wl_freq_to_chanspec(sme->channel->center_freq)) != INVCHANSPEC)) {
+			WL_INFORM(("dhd targeted freq %d\n", sme->channel->center_freq));
 			info->chan_cnt = 1;
 			info->chanspecs[0] = chspec;
 			/* Skip p2p connection on 6G */

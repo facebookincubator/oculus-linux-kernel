@@ -65,13 +65,62 @@ static void set_usb_charging_state(struct ext_batt_pd *pd,
 static void convert_battery_status(struct ext_batt_pd *pd, u16 status)
 {
 	if (!(status & STATUS_FULLY_DISCHARGED) && (status & STATUS_DISCHARGING))
-		strcpy(pd->params.battery_status, battery_status_text[NOT_CHARGING]);
+		strncpy(pd->params.battery_status, battery_status_text[NOT_CHARGING], sizeof(pd->params.battery_status));
 	else if ((status & STATUS_FULLY_CHARGED) || !(status & STATUS_DISCHARGING))
-		strcpy(pd->params.battery_status, battery_status_text[CHARGING]);
+		strncpy(pd->params.battery_status, battery_status_text[CHARGING], sizeof(pd->params.battery_status));
 	else
-		strcpy(pd->params.battery_status, battery_status_text[UNKNOWN]);
+		strncpy(pd->params.battery_status, battery_status_text[UNKNOWN], sizeof(pd->params.battery_status));
 }
 
+static void ext_batt_reset(struct ext_batt_pd *pd)
+{
+	mutex_lock(&pd->lock);
+	pd->connected = false;
+	pd->first_broadcast_data_received = false;
+	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
+	pd->params.charger_plugged = 0;
+	pd->params.cycle_count = 0;
+	pd->params.fcc = 0;
+	pd->params.fw_version = 0;
+	pd->params.icurrent = 0;
+	pd->params.remaining_capacity = 0;
+	pd->params.rsoc = 0;
+	pd->params.soh = 0;
+	pd->params.temp_fg = 0;
+	pd->params.voltage = 0;
+	pd->params.batt_status = 0x0000;
+
+	snprintf(pd->params.battery_status, sizeof(pd->params.battery_status), "%s", battery_status_text[UNKNOWN]);
+	snprintf(pd->params.device_name, sizeof(pd->params.device_name), "");
+	snprintf(pd->params.pack_assembly_pn, sizeof(pd->params.pack_assembly_pn), "");
+	snprintf(pd->params.serial_battery, sizeof(pd->params.serial_battery), "");
+
+	/* Set default values for lifetime data blocks common across lehua and molokini*/
+	snprintf(pd->params.manufacturer_info_a.data, sizeof(pd->params.manufacturer_info_a.data), "");
+	snprintf(pd->params.manufacturer_info_b.data, sizeof(pd->params.manufacturer_info_b.data), "");
+	snprintf(pd->params.manufacturer_info_c.data, sizeof(pd->params.manufacturer_info_c.data), "");
+	memset(&pd->params.lifetime1.values, 0, sizeof(pd->params.lifetime1.values));
+	memset(pd->params.error_conditions, 0, sizeof(pd->params.error_conditions));
+
+	/* Set default values for temp zones based on the batt_id*/
+	switch (pd->batt_id) {
+	case EXT_BATT_ID_LEHUA:
+		memset(pd->params.temp_zones.tz_lehua, 0, sizeof(pd->params.temp_zones.tz_lehua));
+		memset(&pd->params.lifetime2.values, 0, sizeof(pd->params.lifetime2.values));
+		memset(&pd->params.lifetime7.values, 0, sizeof(pd->params.lifetime7.values));
+		memset(&pd->params.lifetime8.values, 0, sizeof(pd->params.lifetime8.values));
+		break;
+
+	case EXT_BATT_ID_MOLOKINI:
+		memset(pd->params.temp_zones.tz_molokini, 0, sizeof(pd->params.temp_zones.tz_molokini));
+		memset(&pd->params.lifetime4.values, 0, sizeof(pd->params.lifetime4.values));
+		break;
+
+	default:
+		break;
+	}
+	mutex_unlock(&pd->lock);
+}
 
 int external_battery_send_vdm(struct ext_batt_pd *pd,
 		u32 vdm_hdr, const u32 *vdos, int num_vdos)
@@ -118,12 +167,7 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 	if (!pd->connected)
 		return;
 
-	mutex_lock(&pd->lock);
-	pd->connected = false;
-	pd->first_broadcast_data_received = false;
-	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
-	pd->params.rsoc = 0;
-	mutex_unlock(&pd->lock);
+	ext_batt_reset(pd);
 
 	cancel_work_sync(&pd->mount_state_work);
 	cancel_work_sync(&pd->dock_state_work);
@@ -1876,11 +1920,6 @@ static void ext_batt_create_sysfs(struct ext_batt_pd *pd)
 		dev_err(pd->dev, "Error creating sysfs entries: %d\n", result);
 }
 
-static void ext_batt_default_sysfs_values(struct ext_batt_pd *pd)
-{
-	strcpy(pd->params.battery_status, battery_status_text[UNKNOWN]);
-}
-
 static void ext_batt_mount_status_work(struct work_struct *work)
 {
 	struct ext_batt_pd *pd =
@@ -2386,7 +2425,7 @@ static int ext_batt_probe(struct platform_device *pdev)
 
 	/* Create nodes here. */
 	ext_batt_create_sysfs(pd);
-	ext_batt_default_sysfs_values(pd);
+	ext_batt_reset(pd);
 
 	return result;
 }

@@ -69,7 +69,7 @@ int dhd_tsf_gsync_handler(dhd_pub_t *dhd, const wl_event_msg_t *event, void *eve
 			return -EINVAL;
 		}
 
-		DHD_ERROR(("%s: ReqID=%d TSF=0x%016llx TS_BCN=0x%016llx LOCAL_TSF_BCN=0x%016llx\n",
+		DHD_INFO(("%s: ReqID=%d TSF=0x%016llx TS_BCN=0x%016llx LOCAL_TSF_BCN=0x%016llx\n",
 			__func__, result->req_id,
 			((uint64)result->tsf.tsf_h << 32u)|(result->tsf.tsf_l),
 			((uint64)result->ts_bcn.tsf_h << 32u)|(result->ts_bcn.tsf_l),

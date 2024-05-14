@@ -155,7 +155,6 @@
 	otg_boost-supply = <&smb5_otg_boost>;
 	qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
 		<9000 3000>; /* 9V @ 3A */
-	qcom,discovery-svids-request;
 };
 
 &pm8150l_rgb_led {
@@ -301,6 +300,11 @@
 		#include "4203348_Goertek_Hollywood_100k_3636mAh_Oct21st2019.dtsi"
 		#include "4759214_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Feb17th2021_PM8150B_GUI10014.dtsi"
 		#include "5133886_Facebook_Seacliff_5348mAH_averaged_MasterSlave_Apr23rd2021_PM8150B_GUI10014.dtsi"
+	};
+
+	meta,pdfu_initiator {
+		compatible = "meta,pdfu-initiator";
+		usb,product-id = /bits/ 16 <0x5006>;
 	};
 
 	meta,usbvdm-qtipd {

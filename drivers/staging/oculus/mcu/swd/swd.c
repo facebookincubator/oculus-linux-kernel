@@ -400,10 +400,10 @@ static bool swd_mode_switch(struct device *dev)
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPACK);
 		req = (1<<SWD_VAL_CTRLSTAT_CSYSPWRUPREQ) |
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPREQ);
-		while ((swd_dp_read(dev, SWD_DP_REG_RW_CTRLSTAT) & ack)
-		       != ack) {
+		do {
 			swd_dp_write(dev, SWD_DP_REG_RW_CTRLSTAT, req);
-		}
+		} while ((swd_dp_read(dev, SWD_DP_REG_RW_CTRLSTAT) & ack)
+			 != ack);
 
 		swd_dp_write(dev,
 			     SWD_DP_REG_WO_ABORT,

@@ -11,27 +11,25 @@
 #include <linux/syncboss/consumer.h>
 #include <linux/syncboss/messages.h>
 
+#include "syncboss_consumer_priorities.h"
 #include "syncboss_miscfifo.h"
 
 #define MISCFIFO_SIZE 1024
 #define STREAM_DEVICE_NAME "syncboss_stream0"
 #define CONTROL_DEVICE_NAME "syncboss_control0"
 
-static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *p)
+static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
 	struct miscfifo_dev_data *devdata = container_of(nb, struct miscfifo_dev_data, rx_packet_nb);
-	struct syncboss_data *packet = p;
+	const struct rx_packet_info *packet_info = pi;
+	const struct syncboss_driver_data_header_t *header = &packet_info->header;
+	const struct syncboss_data *packet = packet_info->data;
 	struct miscfifo *fifo_to_use;
 	struct uapi_pkt_t uapi_pkt;
 	const char *fifo_name;
 	bool should_wake;
 	int status;
 	size_t payload_size = sizeof(*packet) + packet->data_len;
-	const struct syncboss_driver_data_header_t header = {
-		.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
-		.header_length = sizeof(struct syncboss_driver_data_header_t),
-		.from_driver = false
-	};
 
 	if (packet->sequence_id == 0) {
 		fifo_to_use = &devdata->stream_fifo;
@@ -52,7 +50,7 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 	}
 
 	/* arrange |header|payload| in a single buffer */
-	uapi_pkt.header = header;
+	memcpy(&uapi_pkt.header, header, sizeof(uapi_pkt.header));
 	memcpy(uapi_pkt.payload, packet, payload_size);
 
 	status = miscfifo_write_buf(fifo_to_use, (u8 *)&uapi_pkt,
@@ -327,7 +325,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 	}
 
 	devdata->syncboss_state_nb.notifier_call = syncboss_state_handler;
-	devdata->syncboss_state_nb.priority = 1; /* Bumped for faster SYNCBOSS_EVENT_WAKE_READERS handling */
+	devdata->syncboss_state_nb.priority = SYNCBOSS_STATE_CONSUMER_PRIORITY_MISCFIFO;
 	ret = devdata->syncboss_ops->state_event_notifier_register(dev, &devdata->syncboss_state_nb);
 	if (ret < 0) {
 		dev_err(dev, "failed to register state event notifier, error %d", ret);
@@ -335,6 +333,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 	}
 
 	devdata->rx_packet_nb.notifier_call = rx_packet_handler;
+	devdata->rx_packet_nb.priority = SYNCBOSS_PACKET_CONSUMER_PRIORITY_MISCFIFO;
 	ret = devdata->syncboss_ops->rx_packet_notifier_register(dev, &devdata->rx_packet_nb);
 	if (ret < 0) {
 		dev_err(dev, "failed to register rx packet notifier, error %d", ret);

@@ -779,13 +779,25 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 		 * within the rx buffer and doesn't overflow
 		 */
 		const uint8_t *pkt_end = current_packet->data + current_packet->data_len;
+		struct rx_packet_info packet_info;
 
 		if (pkt_end > trans_end) {
 			dev_err_ratelimited(&devdata->spi->dev, "data packet overflow");
 			break;
 		}
+
+		packet_info = (struct rx_packet_info) {
+			.header = {
+				.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
+				.header_length = sizeof(struct syncboss_driver_data_header_t),
+				.from_driver = false,
+				.nsync_offset_status = NSYNC_OFFSET_INVALID,
+			},
+			.data = current_packet
+		};
+
 		/* Deliver pack to consumers */
-		raw_notifier_call_chain(&devdata->rx_packet_event_chain, current_packet->type, (void *)current_packet);
+		raw_notifier_call_chain(&devdata->rx_packet_event_chain, current_packet->type, (void *)&packet_info);
 		/* Next packet */
 		current_packet = (struct syncboss_data *)pkt_end;
 	}
@@ -2213,9 +2225,10 @@ static int syncboss_suspend(struct device *dev)
 	}
 
 	if (devdata->streaming_client_count > 0) {
-		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPEND, NULL);
 		dev_info(dev, "stopping streaming for system suspend");
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPENDING, NULL);
 		stop_streaming_locked(devdata);
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPENDED, NULL);
 	}
 	mutex_unlock(&devdata->state_mutex);
 
@@ -2233,11 +2246,12 @@ static void do_syncboss_resume_work(struct work_struct *work)
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 	if (devdata->streaming_client_count > 0) {
 		dev_info(dev, "resuming streaming after system suspend");
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUMING, NULL);
 		status = start_streaming_locked(devdata);
 		if (status)
 			dev_err(dev, "%s: failed to resume streaming (%d)", __func__, status);
 		else
-			raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUME, NULL);
+			raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUMED, NULL);
 	}
 
 	 // Release mutex acquired by syncboss_resume()

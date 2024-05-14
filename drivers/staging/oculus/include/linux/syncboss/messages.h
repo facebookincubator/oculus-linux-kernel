@@ -57,7 +57,4 @@ struct syncboss_transaction {
 	union transaction_data data;
 } __packed;
 
-/* The version of the header used by the kernel driver */
-#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION SYNCBOSS_DRIVER_HEADER_VERSION_V1
-
 #endif

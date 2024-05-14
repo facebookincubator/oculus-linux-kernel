@@ -193,6 +193,14 @@ config XRPS_PROFILING
 	help
 		Debug print significant events with their timestamps
 
+config XRPS_HEARTBEAT_EXPIRE_THRESHOLD_MS
+	int "The threshold, in milliseconds, at which the difference between the current time and heartbeat timestamp is considered to be expired"
+	depends on XRPS
+	default 1500
+	help
+		The threshold, in milliseconds, at which the difference between the current time and heartbeat timestamp is considered to be expired
+
+
 config XRPS_DHD_HOOKS
 	bool "Enable XR Power Save DHD hooks"
 	depends on XRPS && BCMDHD
