@@ -461,6 +461,10 @@ struct kgsl_thread_private {
 
 	uint64_t stats[KGSL_THREADSTATS_MAX];
 	struct kernfs_node *event_sd[KGSL_THREADSTATS_EVENT_MAX];
+
+	spinlock_t history_lock;
+	struct list_head history_list;
+	struct kgsl_threadstats_history_node history_entries[KGSL_THREADSTATS_HISTORY_LENGTH];
 };
 
 #define _context_comm(_c) \

@@ -88,10 +88,10 @@ struct cam_ctx_request {
 };
 
 /**
- * struct cam_context_dump_header - Get workq tasks from subdev
+ * struct cam_context_dump_header - Get worker tasks from subdev
  */
 struct cam_get_async_tasks_cmd {
-	struct cam_req_mgr_core_workq *workq;
+	struct cam_req_mgr_core_worker *worker;
 };
 
 /**

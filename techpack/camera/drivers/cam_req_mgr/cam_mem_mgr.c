@@ -1398,8 +1398,12 @@ static int cam_mem_mgr_cleanup_table(void)
 			continue;
 		} else {
 			CAM_WARN(CAM_MEM,
-			"Active buffer at idx=%d, possible leak needs unmapping",
-			i);
+			"Active buffer idx=%d TS=%dus len=%lld flags=0x%x fd=%d, i_ino=%lu int/imp %d/%d , possible leak needs unmapping",
+			i, tbl.bufq[i].timestamp.tv_sec * 1000000 + tbl.bufq[i].timestamp.tv_nsec/1000,
+			tbl.bufq[i].len, tbl.bufq[i].flags,
+			tbl.bufq[i].fd, tbl.bufq[i].i_ino,
+			tbl.bufq[i].is_internal, tbl.bufq[i].is_imported);
+
 			cam_mem_mgr_unmap_active_buf(i);
 		}
 

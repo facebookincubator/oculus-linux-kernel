@@ -162,8 +162,8 @@ int cam_common_modify_timer(struct timer_list *timer, int32_t timeout_val);
  *
  * @brief                  Detect if there is any scheduling delay
  *
- * @token:                 String identifier to print workq name or tasklet
- * @scheduled_time:        Time when workq or tasklet was scheduled
+ * @token:                 String identifier to print worker name or tasklet
+ * @scheduled_time:        Time when worker or tasklet was scheduled
  * @threshold:             Threshold time
  *
  */

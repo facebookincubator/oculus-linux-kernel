@@ -3096,7 +3096,7 @@ static BQ27XXX_ATTR(soh, 0444,
 			bq27xxx_show, NULL, SOH, 0, 0);
 static BQ27XXX_ATTR(inter_temp, 0444,
 			bq27xxx_show, NULL, INTER_TEMP, 0, 0);
-static BQ27XXX_ATTR(remaining_capacity, 0444,
+static BQ27XXX_ATTR(bq_remaining_capacity, 0444,
 			bq27xxx_show, NULL, REMAINING_CAPACITY, 0, 0);
 static BQ27XXX_ATTR(manufacturer_info_a, 0444,
 			bq27xxx_show, NULL, MFG_INFO_A, 0, 0);
@@ -3209,7 +3209,7 @@ static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_t_ot_rsoc_h.dattr.attr,
 	&bq27xxx_attr_soh.dattr.attr,
 	&bq27xxx_attr_inter_temp.dattr.attr,
-	&bq27xxx_attr_remaining_capacity.dattr.attr,
+	&bq27xxx_attr_bq_remaining_capacity.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_a.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_b.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_c.dattr.attr,

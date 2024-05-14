@@ -26,7 +26,7 @@
 #include "cam_jpeg_hw_mgr.h"
 #include "cam_smmu_api.h"
 #include "cam_mem_mgr.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_mem_mgr.h"
 #include "cam_cdm_intf_api.h"
 #include "cam_debug_util.h"
@@ -364,7 +364,7 @@ static int cam_jpeg_mgr_bottom_half_irq(void *priv, void *data)
 	struct cam_jpeg_set_irq_cb                               irq_cb;
 	struct cam_jpeg_irq_cb_data                             *irq_cb_data;
 	struct cam_jpeg_hw_cfg_req                              *p_cfg_req = NULL;
-	struct crm_workq_task                                   *task;
+	struct crm_worker_task                                   *task;
 	struct cam_jpeg_process_frame_work_data_t               *wq_task_data;
 	struct cam_jpeg_request_data                            *jpeg_req;
 	struct cam_req_mgr_message                               v4l2_msg = {0};
@@ -527,9 +527,9 @@ exit:
 	g_jpeg_hw_mgr.device_in_use[dev_type][0] = false;
 	g_jpeg_hw_mgr.dev_hw_cfg_args[dev_type][0] = NULL;
 
-	task = cam_req_mgr_workq_get_task(g_jpeg_hw_mgr.work_process_frame);
-	if (!task) {
-		CAM_ERR(CAM_JPEG, "no empty task");
+	task = cam_req_mgr_worker_get_task(g_jpeg_hw_mgr.work_process_frame);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_JPEG, "no empty task = %d", PTR_ERR(task));
 		rc = -EINVAL;
 		goto err;
 	}
@@ -545,7 +545,7 @@ exit:
 	wq_task_data->request_id = 0;
 	wq_task_data->type = CAM_JPEG_WORKQ_TASK_CMD_TYPE;
 	task->process_cb = cam_jpeg_mgr_process_hw_update_entries;
-	rc = cam_req_mgr_workq_enqueue_task(task, &g_jpeg_hw_mgr,
+	rc = cam_req_mgr_worker_enqueue_task(task, &g_jpeg_hw_mgr,
 		CRM_TASK_PRIORITY_0);
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "could not enque task %d", rc);
@@ -562,13 +562,13 @@ static int cam_jpeg_hw_mgr_sched_bottom_half(uint32_t irq_status, int32_t irq_da
 {
 	int32_t rc;
 	unsigned long flags;
-	struct crm_workq_task *task;
+	struct crm_worker_task *task;
 	struct cam_jpeg_process_irq_work_data_t *task_data;
 
 	spin_lock_irqsave(&g_jpeg_hw_mgr.hw_mgr_lock, flags);
-	task = cam_req_mgr_workq_get_task(g_jpeg_hw_mgr.work_process_irq_cb);
-	if (!task) {
-		CAM_ERR(CAM_JPEG, "no empty task");
+	task = cam_req_mgr_worker_get_task(g_jpeg_hw_mgr.work_process_irq_cb);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_JPEG, "no empty task = %d", PTR_ERR(task));
 		spin_unlock_irqrestore(&g_jpeg_hw_mgr.hw_mgr_lock, flags);
 		return -ENOMEM;
 	}
@@ -580,7 +580,7 @@ static int cam_jpeg_hw_mgr_sched_bottom_half(uint32_t irq_status, int32_t irq_da
 	task_data->type = CAM_JPEG_WORKQ_TASK_MSG_TYPE;
 	task->process_cb = cam_jpeg_mgr_bottom_half_irq;
 
-	rc = cam_req_mgr_workq_enqueue_task(task, &g_jpeg_hw_mgr,
+	rc = cam_req_mgr_worker_enqueue_task(task, &g_jpeg_hw_mgr,
 		CRM_TASK_PRIORITY_0);
 	spin_unlock_irqrestore(&g_jpeg_hw_mgr.hw_mgr_lock, flags);
 
@@ -853,7 +853,7 @@ static int cam_jpeg_mgr_config_hw(void *hw_mgr_priv, void *config_hw_args)
 	struct cam_jpeg_hw_ctx_data                        *ctx_data = NULL;
 	struct cam_jpeg_request_data                       *jpeg_req;
 	struct cam_hw_update_entry                         *hw_update_entries;
-	struct crm_workq_task                              *task;
+	struct crm_worker_task                              *task;
 	struct cam_jpeg_process_frame_work_data_t          *task_data;
 	struct cam_jpeg_hw_cfg_req                         *p_cfg_req = NULL;
 	int                                                 rc;
@@ -898,9 +898,9 @@ static int cam_jpeg_mgr_config_hw(void *hw_mgr_priv, void *config_hw_args)
 	hw_update_entries = config_args->hw_update_entries;
 	CAM_DBG(CAM_JPEG, "req_id: %u, dev_type: %d",
 		p_cfg_req->req_id, ctx_data->jpeg_dev_acquire_info.dev_type);
-	task = cam_req_mgr_workq_get_task(g_jpeg_hw_mgr.work_process_frame);
-	if (!task) {
-		CAM_ERR(CAM_JPEG, "no empty task");
+	task = cam_req_mgr_worker_get_task(g_jpeg_hw_mgr.work_process_frame);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_JPEG, "no empty task = %d", PTR_ERR(task));
 		mutex_unlock(&hw_mgr->hw_mgr_mutex);
 		rc = -ENOMEM;
 		goto err_after_dq_free_list;
@@ -926,7 +926,7 @@ static int cam_jpeg_mgr_config_hw(void *hw_mgr_priv, void *config_hw_args)
 	task_data->type = CAM_JPEG_WORKQ_TASK_CMD_TYPE;
 	task->process_cb = cam_jpeg_mgr_process_hw_update_entries;
 
-	rc = cam_req_mgr_workq_enqueue_task(task, &g_jpeg_hw_mgr,
+	rc = cam_req_mgr_worker_enqueue_task(task, &g_jpeg_hw_mgr,
 		CRM_TASK_PRIORITY_0);
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "failed to enqueue task %d", rc);
@@ -1636,25 +1636,25 @@ copy_error:
 	return rc;
 }
 
-static int cam_jpeg_setup_workqs(void)
+static int cam_jpeg_setup_workers(void)
 {
 	int rc, i;
 
-	rc = cam_req_mgr_workq_create(
+	rc = cam_req_mgr_worker_create(
 		"jpeg_command_queue",
 		CAM_JPEG_WORKQ_NUM_TASK,
 		&g_jpeg_hw_mgr.work_process_frame,
-		CRM_WORKQ_USAGE_NON_IRQ, 0);
+		CRM_WORKER_USAGE_NON_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "unable to create a worker %d", rc);
 		goto work_process_frame_failed;
 	}
 
-	rc = cam_req_mgr_workq_create(
+	rc = cam_req_mgr_worker_create(
 		"jpeg_message_queue",
 		CAM_JPEG_WORKQ_NUM_TASK,
 		&g_jpeg_hw_mgr.work_process_irq_cb,
-		CRM_WORKQ_USAGE_IRQ, 0);
+		CRM_WORKER_USAGE_NON_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "unable to create a worker %d", rc);
 		goto work_process_irq_cb_failed;
@@ -1697,9 +1697,9 @@ static int cam_jpeg_setup_workqs(void)
 work_process_irq_cb_data_failed:
 	kfree(g_jpeg_hw_mgr.process_frame_work_data);
 work_process_frame_data_failed:
-	cam_req_mgr_workq_destroy(&g_jpeg_hw_mgr.work_process_irq_cb);
+	cam_req_mgr_worker_destroy(&g_jpeg_hw_mgr.work_process_irq_cb);
 work_process_irq_cb_failed:
-	cam_req_mgr_workq_destroy(&g_jpeg_hw_mgr.work_process_frame);
+	cam_req_mgr_worker_destroy(&g_jpeg_hw_mgr.work_process_frame);
 work_process_frame_failed:
 
 	return rc;
@@ -2377,7 +2377,7 @@ int cam_jpeg_hw_mgr_init(struct device_node *of_node, uint64_t *hw_mgr_hdl,
 
 	g_jpeg_hw_mgr.mini_dump_cb = mini_dump_cb;
 
-	rc = cam_jpeg_setup_workqs();
+	rc = cam_jpeg_setup_workers();
 	if (rc) {
 		CAM_ERR(CAM_JPEG, "setup work qs failed  %d", rc);
 		goto cdm_iommu_failed;

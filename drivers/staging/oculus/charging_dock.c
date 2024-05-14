@@ -465,6 +465,39 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 	}
 }
 
+static ssize_t reboot_into_bootloader_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+	int result;
+	bool send_command;
+
+	if (kstrtobool(buf, &send_command))
+		return -EINVAL;
+
+	if (!send_command)
+		return count;
+
+	result = mutex_lock_interruptible(&ddev->lock);
+	if (result != 0) {
+		dev_warn(dev, "%s failed to grab lock, try again. status=%d", __func__, result);
+		return result;
+	}
+
+	if (!ddev->docked) {
+		mutex_unlock(&ddev->lock);
+		return count;
+	}
+
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_REBOOT_INTO_BOOTLOADER, 0);
+
+	mutex_unlock(&ddev->lock);
+
+	return count;
+}
+static DEVICE_ATTR_WO(reboot_into_bootloader);
+
 static ssize_t docked_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -1047,7 +1080,9 @@ static ssize_t system_battery_capacity_store(struct device *dev,
 
 	if (ddev->system_battery_capacity != val) {
 		ddev->system_battery_capacity = val;
-		schedule_work(&ddev->work_soc);
+
+		if (ddev->send_state_of_charge)
+			schedule_work(&ddev->work_soc);
 	}
 
 	return count;
@@ -1101,6 +1136,7 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_system_battery_capacity.attr,
 	&dev_attr_vid.attr,
 	&dev_attr_pid.attr,
+	&dev_attr_reboot_into_bootloader.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);

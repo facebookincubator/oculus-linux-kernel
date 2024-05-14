@@ -15,7 +15,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/pm_qos.h>
 #include <linux/sched/idle.h>
-#include <linux/sched/walt.h>
 #include <linux/smp.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -25,6 +24,10 @@
 #include <trace/events/ipi.h>
 #include <trace/events/power.h>
 #include <trace/hooks/cpuidle.h>
+
+#if IS_ENABLED(CONFIG_SCHED_WALT)
+#include <linux/sched/walt.h>
+#endif
 
 #include "qcom-lpm.h"
 #define CREATE_TRACE_POINTS
@@ -58,11 +61,24 @@ static inline bool check_cpu_isactive(int cpu)
 	return cpu_active(cpu);
 }
 
-static bool lpm_disallowed(s64 sleep_ns, int cpu)
+#if IS_ENABLED(CONFIG_SCHED_WALT)
+static bool lpm_sched_walt_disallowed(int cpu)
 {
 	struct lpm_cpu *cpu_gov = per_cpu_ptr(&lpm_cpu_data, cpu);
 	uint64_t bias_time = 0;
 
+	if (!sched_lpm_disallowed_time(cpu, &bias_time)) {
+		cpu_gov->last_idx = 0;
+		cpu_gov->bias = bias_time;
+		return true;
+	}
+
+	return false;
+}
+#endif
+
+static bool lpm_disallowed(s64 sleep_ns, int cpu)
+{
 	if (suspend_in_progress)
 		return true;
 
@@ -72,11 +88,10 @@ static bool lpm_disallowed(s64 sleep_ns, int cpu)
 	if ((sleep_disabled || sleep_ns < 0))
 		return true;
 
-	if (!sched_lpm_disallowed_time(cpu, &bias_time)) {
-		cpu_gov->last_idx = 0;
-		cpu_gov->bias = bias_time;
+#if IS_ENABLED(CONFIG_SCHED_WALT)
+	if (lpm_sched_walt_disallowed(cpu))
 		return true;
-	}
+#endif
 
 	return false;
 }

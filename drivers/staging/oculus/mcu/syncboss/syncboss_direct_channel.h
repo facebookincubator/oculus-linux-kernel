@@ -57,8 +57,8 @@ struct channel_client_entry {
 	struct file *file;
 	u8 wake_epoll;
 	int (*direct_channel_distribute)(struct direct_channel_dev_data *devdata,
-					  struct channel_client_entry *client_data,
-					  const struct syncboss_data *packet);
+					 struct channel_client_entry *client_data,
+					 const struct rx_packet_info *packet_info);
 };
 
 #endif /* _SYNCBOSS_DIRECT_CHANNEL_H */

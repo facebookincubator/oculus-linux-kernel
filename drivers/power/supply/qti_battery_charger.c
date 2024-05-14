@@ -24,6 +24,7 @@
 #include <linux/soc/qcom/pmic_glink.h>
 #include <linux/soc/qcom/battery_charger.h>
 #include <linux/soc/qcom/panel_event_notifier.h>
+#include <linux/thermal.h>
 #include "qti_typec_class.h"
 
 #define MSG_OWNER_BC			32778
@@ -134,6 +135,7 @@ enum usb_property_id {
 	USB_PD_PID,
 	USB_MOISTURE_DET_SBU_KOHM,
 	USB_MOISTURE_DET_CC_KOHM,
+	USB_CC_ENABLED,
 	USB_PROP_MAX,
 };
 
@@ -251,6 +253,7 @@ struct battery_chg_dev {
 	struct pmic_glink_client	*client;
 	struct typec_role_class		*typec_class;
 	struct mutex			rw_lock;
+	struct mutex			cdev_lock;
 	struct rw_semaphore		state_sem;
 	struct completion		ack;
 	struct completion		fw_buf_ack;
@@ -260,6 +263,8 @@ struct battery_chg_dev {
 	void				*notifier_cookie;
 	/* extcon for VBUS/ID notification for USB for micro USB */
 	struct extcon_dev		*extcon;
+	struct thermal_cooling_device	*cdev;
+	int				cur_state;
 	u32				*thermal_levels;
 	const char			*wls_fw_name;
 	int				curr_thermal_level;
@@ -354,6 +359,19 @@ static const unsigned int bcdev_usb_extcon_cable[] = {
 	EXTCON_USB,
 	EXTCON_USB_HOST,
 	EXTCON_NONE,
+};
+
+static int battery_chg_get_max_state(struct thermal_cooling_device *cdev,
+		unsigned long *state);
+static int battery_chg_get_cur_state(struct thermal_cooling_device *cdev,
+		unsigned long *state);
+static int battery_chg_set_cur_state(struct thermal_cooling_device *cdev,
+		unsigned long state);
+
+static const struct thermal_cooling_device_ops battery_chg_cdev_ops = {
+	.get_max_state = battery_chg_get_max_state,
+	.get_cur_state = battery_chg_get_cur_state,
+	.set_cur_state = battery_chg_set_cur_state,
 };
 
 /* Standard usb_type definitions similar to power_supply_sysfs.c */
@@ -1757,6 +1775,52 @@ static int execute_charge_capacity_limit(struct battery_chg_dev *bcdev, int limi
 	return 0;
 }
 
+static int battery_chg_get_max_state(struct thermal_cooling_device *cdev,
+		unsigned long *state)
+{
+	*state = 1;
+	return 0;
+}
+
+static int battery_chg_get_cur_state(struct thermal_cooling_device *cdev,
+		unsigned long *state)
+{
+	struct battery_chg_dev *bcdev = cdev->devdata;
+
+	if (!bcdev)
+		return -EINVAL;
+
+	mutex_lock(&bcdev->cdev_lock);
+	*state = bcdev->cur_state;
+	mutex_unlock(&bcdev->cdev_lock);
+
+	return 0;
+}
+
+static int battery_chg_set_cur_state(struct thermal_cooling_device *cdev,
+		unsigned long state)
+{
+	struct battery_chg_dev *bcdev = cdev->devdata;
+	int val = state, rc;
+
+	if (!bcdev || state > 1)
+		return -EINVAL;
+
+	mutex_lock(&bcdev->cdev_lock);
+	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_USB],
+					USB_CC_ENABLED, !val);
+	if (rc < 0) {
+		dev_err(bcdev->dev, "Failed to change CC enable value, rc=%d", rc);
+		mutex_unlock(&bcdev->cdev_lock);
+		return rc;
+	}
+
+	bcdev->cur_state = val;
+	mutex_unlock(&bcdev->cdev_lock);
+
+	return 0;
+}
+
 static ssize_t wireless_fw_update_time_ms_store(struct class *c,
 				struct class_attribute *attr,
 				const char *buf, size_t count)
@@ -2738,6 +2802,7 @@ static int battery_chg_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	mutex_init(&bcdev->rw_lock);
+	mutex_init(&bcdev->cdev_lock);
 	init_rwsem(&bcdev->state_sem);
 	init_completion(&bcdev->ack);
 	init_completion(&bcdev->fw_buf_ack);
@@ -2758,6 +2823,12 @@ static int battery_chg_probe(struct platform_device *pdev)
 	rc = battery_chg_register_panel_notifier(bcdev);
 	if (rc < 0)
 		return rc;
+
+	bcdev->cdev = devm_thermal_of_cooling_device_register(dev, dev->of_node,
+			"battery_charger", bcdev, &battery_chg_cdev_ops);
+	if (IS_ERR(bcdev->cdev))
+		dev_warn(dev, "Failed to register as cooling device, rc=%d",
+				PTR_ERR(bcdev->cdev));
 
 	client_data.id = MSG_OWNER_BC;
 	client_data.name = "battery_charger";

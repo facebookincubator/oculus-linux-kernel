@@ -38,7 +38,7 @@
 #include "cpastop_v165_100.h"
 #include "cpastop_v780_100.h"
 #include "cpastop_v640_200.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_common_util.h"
 
 struct cam_camnoc_info *camnoc_info;
@@ -628,7 +628,7 @@ static void cam_cpastop_notify_clients(struct cam_cpas *cpas_core,
 	}
 }
 
-static void cam_cpastop_work(struct work_struct *work)
+static int cam_cpastop_work(void *priv, void *data)
 {
 	struct cam_cpas_work_payload *payload;
 	struct cam_hw_info *cpas_hw;
@@ -638,16 +638,11 @@ static void cam_cpastop_work(struct work_struct *work)
 	enum cam_camnoc_hw_irq_type irq_type;
 	struct cam_cpas_irq_data irq_data;
 
-	payload = container_of(work, struct cam_cpas_work_payload, work);
+	payload = (struct cam_cpas_work_payload *) data;
 	if (!payload) {
 		CAM_ERR(CAM_CPAS, "NULL payload");
-		return;
+		return 0;
 	}
-
-	cam_common_util_thread_switch_delay_detect(
-		"CPAS workq schedule",
-		payload->workq_scheduled_ts,
-		CAM_WORKQ_SCHEDULE_TIME_THRESHOLD);
 
 	cpas_hw = payload->hw;
 	cpas_core = (struct cam_cpas *) cpas_hw->core_info;
@@ -655,7 +650,7 @@ static void cam_cpastop_work(struct work_struct *work)
 
 	if (!atomic_inc_not_zero(&cpas_core->irq_count)) {
 		CAM_ERR(CAM_CPAS, "CPAS off");
-		return;
+		return 0;
 	}
 
 	for (i = 0; i < camnoc_info->irq_err_size; i++) {
@@ -715,6 +710,7 @@ static void cam_cpastop_work(struct work_struct *work)
 			payload->irq_status);
 
 	kfree(payload);
+	return 0;
 }
 
 static irqreturn_t cam_cpastop_handle_irq(int irq_num, void *data)
@@ -724,6 +720,7 @@ static irqreturn_t cam_cpastop_handle_irq(int irq_num, void *data)
 	struct cam_hw_soc_info *soc_info = &cpas_hw->soc_info;
 	int camnoc_index = cpas_core->regbase_index[CAM_CPAS_REG_CAMNOC];
 	struct cam_cpas_work_payload *payload;
+	struct crm_worker_task            *task = NULL;
 
 	if (!atomic_inc_not_zero(&cpas_core->irq_count)) {
 		CAM_ERR(CAM_CPAS, "CPAS off");
@@ -741,12 +738,18 @@ static irqreturn_t cam_cpastop_handle_irq(int irq_num, void *data)
 	CAM_DBG(CAM_CPAS, "IRQ callback, irq_status=0x%x", payload->irq_status);
 
 	payload->hw = cpas_hw;
-	INIT_WORK((struct work_struct *)&payload->work, cam_cpastop_work);
 
 	cam_cpastop_reset_irq(cpas_hw);
 
-	payload->workq_scheduled_ts = ktime_get();
-	queue_work(cpas_core->work_queue, &payload->work);
+	task = cam_req_mgr_worker_get_task(cpas_core->worker);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_CPAS, "Failed to get task = %d", PTR_ERR(task));
+		cam_cpastop_work(cpas_hw, payload);
+	} else {
+		task->payload = payload;
+		task->process_cb = cam_cpastop_work;
+		cam_req_mgr_worker_enqueue_task(task, NULL, CRM_TASK_PRIORITY_0);
+	}
 done:
 	atomic_dec(&cpas_core->irq_count);
 	wake_up(&cpas_core->irq_count_wq);

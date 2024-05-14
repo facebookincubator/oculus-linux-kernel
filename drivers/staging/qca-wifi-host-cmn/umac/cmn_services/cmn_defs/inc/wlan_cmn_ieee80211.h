@@ -342,6 +342,9 @@ enum qcn_attribute_id {
 #define WLAN_HEOP_OUI_TYPE                       "\x24"
 #define WLAN_HEOP_OUI_SIZE                       1
 
+#define WLAN_MIN_HECAP_IE_LEN                    22
+#define WLAN_MAX_HECAP_IE_LEN                    55
+
 /* HT capability flags */
 #define WLAN_HTCAP_C_ADVCODING             0x0001
 #define WLAN_HTCAP_C_CHWIDTH40             0x0002

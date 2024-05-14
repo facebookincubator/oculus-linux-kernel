@@ -1198,6 +1198,7 @@ static const struct dev_pm_ops ak09973_i2c_pops = {
 
 static const struct i2c_device_id ak09973_id[] = {
 	{ "ak09973", 0 },
+	{ "ak09973_flip", 1 },
 	{ }
 };
 
@@ -1205,6 +1206,7 @@ MODULE_DEVICE_TABLE(i2c, ak09973_id);
 
 static const struct of_device_id ak09973_of_match[] = {
 	{ .compatible = "akm,ak09973"},
+	{ .compatible = "akm,ak09973_flip"},
 	{}
 };
 MODULE_DEVICE_TABLE(of, ak09973_of_match);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/platform_device.h>
@@ -16,7 +17,7 @@
 #include "cam_lrme_hw_core.h"
 #include "cam_lrme_hw_soc.h"
 #include "cam_lrme_hw_reg.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_lrme_hw_mgr.h"
 #include "cam_mem_mgr_api.h"
 #include "cam_smmu_api.h"
@@ -115,11 +116,11 @@ static int cam_lrme_hw_dev_component_bind(struct device *dev,
 	init_completion(&lrme_hw->hw_complete);
 	init_completion(&lrme_core->reset_complete);
 
-	rc = cam_req_mgr_workq_create("cam_lrme_hw_worker",
+	rc = cam_req_mgr_worker_create("cam_lrme_hw_worker",
 		CAM_LRME_HW_WORKQ_NUM_TASK,
-		&lrme_core->work, CRM_WORKQ_USAGE_IRQ, 0);
+		&lrme_core->work, CRM_WORKER_USAGE_IRQ, 0);
 	if (rc) {
-		CAM_ERR(CAM_LRME, "Unable to create a workq, rc=%d", rc);
+		CAM_ERR(CAM_LRME, "Unable to create a worker, rc=%d", rc);
 		goto free_memory;
 	}
 
@@ -224,7 +225,7 @@ deinit_platform_res:
 		CAM_ERR(CAM_LRME, "Failed in soc deinit");
 	mutex_destroy(&lrme_hw->hw_mutex);
 destroy_workqueue:
-	cam_req_mgr_workq_destroy(&lrme_core->work);
+	cam_req_mgr_worker_destroy(&lrme_core->work);
 free_memory:
 	mutex_destroy(&lrme_hw->hw_mutex);
 	kfree(lrme_hw);

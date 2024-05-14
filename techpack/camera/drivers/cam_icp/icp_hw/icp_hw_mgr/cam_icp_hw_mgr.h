@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef CAM_ICP_HW_MGR_H
@@ -15,7 +16,7 @@
 #include "cam_a5_hw_intf.h"
 #include "hfi_session_defs.h"
 #include "hfi_intf.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_mem_mgr.h"
 #include "cam_smmu_api.h"
 #include "cam_soc_util.h"
@@ -385,9 +386,9 @@ struct cam_icp_hw_mgr {
 	int32_t iommu_hdl;
 	int32_t iommu_sec_hdl;
 	struct icp_hfi_mem_info hfi_mem;
-	struct cam_req_mgr_core_workq *cmd_work;
-	struct cam_req_mgr_core_workq *msg_work;
-	struct cam_req_mgr_core_workq *timer_work;
+	struct cam_req_mgr_core_worker *cmd_work;
+	struct cam_req_mgr_core_worker *msg_work;
+	struct cam_req_mgr_core_worker *timer_work;
 	uint32_t msg_buf[ICP_MSG_BUF_SIZE];
 	uint32_t dbg_buf[ICP_DBG_BUF_SIZE];
 	struct completion icp_complete;

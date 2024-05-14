@@ -12,7 +12,7 @@
 #include "cam_debug_util.h"
 #include "cam_sfe_soc.h"
 #include "cam_sfe_core.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 struct cam_sfe_core_cfg {
 	uint32_t   mode_sel;
@@ -1107,7 +1107,7 @@ int cam_sfe_top_reserve(void *device_priv,
 				acquire_args->res_id);
 
 			top_priv->in_rsrc[i].cdm_ops = acquire_args->cdm_ops;
-			top_priv->in_rsrc[i].workq_info = args->workq;
+			top_priv->in_rsrc[i].worker_info = args->worker;
 			top_priv->in_rsrc[i].res_state =
 				CAM_ISP_RESOURCE_STATE_RESERVED;
 			acquire_args->rsrc_node =
@@ -1152,7 +1152,7 @@ int cam_sfe_top_release(void *device_priv,
 
 	in_res->res_state = CAM_ISP_RESOURCE_STATE_AVAILABLE;
 	in_res->cdm_ops = NULL;
-	in_res->workq_info = NULL;
+	in_res->worker_info = NULL;
 	if (top_priv->reserve_cnt)
 		top_priv->reserve_cnt--;
 
@@ -1614,8 +1614,8 @@ int cam_sfe_top_start(
 			top_priv,
 			cam_sfe_top_handle_err_irq_top_half,
 			cam_sfe_top_handle_err_irq_bottom_half,
-			sfe_res->workq_info,
-			&workq_bh_api,
+			sfe_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 
 		if (top_priv->error_irq_handle < 1) {
@@ -1641,8 +1641,8 @@ int cam_sfe_top_start(
 				sfe_res,
 				cam_sfe_top_handle_irq_top_half,
 				cam_sfe_top_handle_irq_bottom_half,
-				sfe_res->workq_info,
-				&workq_bh_api,
+				sfe_res->worker_info,
+				&worker_bh_api,
 				CAM_IRQ_EVT_GROUP_0);
 
 			if (path_data->sof_eof_handle < 1) {

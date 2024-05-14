@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -17,7 +17,7 @@
 #include "cam_vfe_camif_lite_ver2.h"
 #include "cam_debug_util.h"
 #include "cam_cdm_util.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 struct cam_vfe_mux_camif_lite_data {
 	void __iomem                                *mem_base;
@@ -297,8 +297,8 @@ static int cam_vfe_camif_lite_resource_start(
 			camif_lite_res,
 			cam_vfe_camif_lite_err_irq_top_half,
 			camif_lite_res->bottom_half_handler,
-			camif_lite_res->workq_info,
-			&workq_bh_api,
+			camif_lite_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 		if (rsrc_data->irq_err_handle < 1) {
 			CAM_ERR(CAM_ISP, "Error IRQ handle subscribe failure");

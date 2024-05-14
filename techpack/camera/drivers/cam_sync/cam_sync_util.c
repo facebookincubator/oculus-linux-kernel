@@ -5,7 +5,7 @@
  */
 
 #include "cam_sync_util.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_common_util.h"
 
 extern struct sync_uid_info sync_uid_access;
@@ -474,20 +474,15 @@ int cam_sync_reinit_object(struct sync_table_row *table, uint32_t sync_var)
 	return 0;
 }
 
-void cam_sync_util_cb_dispatch(struct work_struct *cb_dispatch_work)
+int cam_sync_util_cb_dispatch(void *priv, void *data)
 {
-	struct sync_callback_info *cb_info = container_of(cb_dispatch_work,
-		struct sync_callback_info,
-		cb_dispatch_work);
+	struct sync_callback_info *cb_info = (struct sync_callback_info *) data;
 	sync_callback sync_data = cb_info->callback_func;
 
-	cam_common_util_thread_switch_delay_detect(
-		"CAM-SYNC workq schedule",
-		cb_info->workq_scheduled_ts,
-		CAM_WORKQ_SCHEDULE_TIME_THRESHOLD);
 	sync_data(cb_info->sync_obj, cb_info->status, cb_info->cb_data);
 
 	kfree(cb_info);
+	return 0;
 }
 
 void cam_sync_util_dispatch_signaled_cb(struct cam_sync_signal_param *param,
@@ -500,6 +495,7 @@ void cam_sync_util_dispatch_signaled_cb(struct cam_sync_signal_param *param,
 	struct sync_user_payload   *temp_payload_info;
 	uint32_t                    sync_obj;
 	uint16_t                    sync_uid;
+	struct crm_worker_task     *task = NULL;
 
 	sync_obj = (uint32_t)(param->sync_obj) & sync_uid_access.fenceIdMask;
 	sync_uid = (uint32_t)(param->sync_obj) >> sync_uid_access.uidShift;
@@ -517,9 +513,15 @@ void cam_sync_util_dispatch_signaled_cb(struct cam_sync_signal_param *param,
 		temp_sync_cb, &signalable_row->callback_list, list) {
 		sync_cb->status = param->status;
 		list_del_init(&sync_cb->list);
-		sync_cb->workq_scheduled_ts = ktime_get();
-		queue_work(sync_dev->work_queue,
-			&sync_cb->cb_dispatch_work);
+		task = cam_req_mgr_worker_get_task(sync_dev->worker);
+		if (IS_ERR_OR_NULL(task)) {
+			CAM_ERR(CAM_RPMSG, "Failed to get task = %d", PTR_ERR(task));
+			kfree(sync_cb);
+		} else {
+			task->payload = sync_cb;
+			task->process_cb = cam_sync_util_cb_dispatch;
+			cam_req_mgr_worker_enqueue_task(task, NULL, CRM_TASK_PRIORITY_0);
+		}
 	}
 
 	/* Dispatch user payloads if any were registered earlier */

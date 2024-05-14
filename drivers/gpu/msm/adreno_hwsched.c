@@ -18,6 +18,10 @@
 
 #include <uapi/linux/sched/types.h>
 
+#if IS_ENABLED(CONFIG_GPU_ERROR_SYSCTL)
+#include <linux/log_gpu_error.h>
+#endif /* CONFIG_GPU_ERROR_SYSCTL */
+
 /* This structure represents inflight command object */
 struct cmd_list_obj {
 	/** @drawobj: Handle to the draw object */
@@ -1185,7 +1189,7 @@ void adreno_hwsched_retire_cmdobj(struct adreno_hwsched *hwsched,
 	drawobj = DRAWOBJ(cmdobj);
 	if (drawobj->flags & KGSL_DRAWOBJ_END_OF_FRAME)
 		atomic64_inc(&drawobj->context->proc_priv->frame_count);
-	
+
 	entry = cmdobj->profiling_buf_entry;
 	if (entry) {
 		profile_buffer = kgsl_gpuaddr_to_vaddr(&entry->memdesc,
@@ -1612,6 +1616,25 @@ static void do_fault_header(struct adreno_device *adreno_dev,
 	drawctxt = ADRENO_CONTEXT(drawobj->context);
 	drawobj->context->last_faulted_cmd_ts = drawobj->timestamp;
 	drawobj->context->total_fault_count++;
+
+
+	#if IS_ENABLED(CONFIG_GPU_ERROR_SYSCTL)
+	{
+		char error[MAX_GPU_ERROR_LEN + 1];
+		size_t len = 0;
+
+		len = snprintf(error, MAX_GPU_ERROR_LEN,
+			"ctx %u ctx_type %s ts %u dispatch_queue=%d",
+			drawobj->context->id,
+			kgsl_context_type(drawctxt->type), drawobj->timestamp,
+			drawobj->context->gmu_dispatch_queue);
+
+		log_gpu_error(error, len,
+			pid_nr(drawobj->context->proc_priv->pid),
+			drawctxt->base.proc_priv->cmdline,
+			strlen(drawctxt->base.proc_priv->cmdline));
+	}
+	#endif /* CONFIG_GPU_ERROR_SYSCTL */
 
 	pr_context(device, drawobj->context,
 		"ctx %u ctx_type %s ts %u status %8.8X dispatch_queue=%d rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",

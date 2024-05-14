@@ -80,7 +80,9 @@ static int syncboss_timesync_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
-	return sysfs_create_file(&dev->kobj, &dev_attr_te_timestamp.attr);
+	sysfs_remove_file(&dev->kobj, &dev_attr_te_timestamp.attr);
+
+	return 0;
 }
 
 #ifdef CONFIG_OF

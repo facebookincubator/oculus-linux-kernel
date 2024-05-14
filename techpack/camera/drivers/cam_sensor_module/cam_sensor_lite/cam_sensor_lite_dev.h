@@ -91,7 +91,7 @@ struct sensor_lite_device {
 	struct sensor_lite_start_stop_cmd     *stop_cmd;
 
 	struct completion                     complete;
-	struct cam_req_mgr_core_workq         *workq;
+	struct cam_req_mgr_core_worker        *worker;
 	struct sensor_probe_response          probe_info;
 	uint32_t                              phy_id;
 	uint32_t                              dump_en;

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_FD_HW_MGR_H_
@@ -15,7 +16,7 @@
 #include "cam_cpas_api.h"
 #include "cam_debug_util.h"
 #include "cam_hw_mgr_intf.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_fd_hw_intf.h"
 
 #define CAM_FD_HW_MAX            1
@@ -181,7 +182,7 @@ struct cam_fd_hw_mgr {
 	uint32_t                           supported_modes;
 	struct cam_fd_hw_mgr_ctx           ctx_pool[CAM_CTX_MAX];
 	struct cam_fd_mgr_frame_request    frame_req[CAM_CTX_REQ_MAX];
-	struct cam_req_mgr_core_workq     *work;
+	struct cam_req_mgr_core_worker     *work;
 	struct cam_fd_mgr_work_data        *work_data;
 	struct cam_fd_query_cap_cmd        fd_caps;
 	uint32_t                           num_pending_frames;

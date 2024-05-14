@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef CAM_OPE_HW_MGR_H
@@ -12,7 +13,7 @@
 #include "ope_hw.h"
 #include "cam_hw_mgr_intf.h"
 #include "cam_hw_intf.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_mem_mgr.h"
 #include "cam_smmu_api.h"
 #include "cam_soc_util.h"
@@ -544,9 +545,9 @@ struct cam_ope_hw_mgr {
 	struct ope_query_cap_cmd ope_caps;
 	uint64_t last_callback_time;
 
-	struct cam_req_mgr_core_workq *cmd_work;
-	struct cam_req_mgr_core_workq *msg_work;
-	struct cam_req_mgr_core_workq *timer_work;
+	struct cam_req_mgr_core_worker *cmd_work;
+	struct cam_req_mgr_core_worker *msg_work;
+	struct cam_req_mgr_core_worker *timer_work;
 	struct ope_cmd_work_data *cmd_work_data;
 	struct ope_msg_work_data *msg_work_data;
 	struct ope_clk_work_data *timer_work_data;

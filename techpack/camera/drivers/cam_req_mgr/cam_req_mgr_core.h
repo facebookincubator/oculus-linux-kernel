@@ -9,7 +9,7 @@
 #include <linux/spinlock_types.h>
 #include "cam_req_mgr_interface.h"
 #include "cam_req_mgr_core_defs.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_req_mgr_timer.h"
 
 #define CAM_REQ_MGR_MAX_LINKED_DEV     16
@@ -351,7 +351,7 @@ struct cam_req_mgr_connected_device {
  * @num_devs             : num of connected devices to this link
  * @max_delay            : Max of pipeline delay of all connected devs
  * @min_delay            : Min of pipeline delay of all connected devs
- * @workq                : Pointer to handle workq related jobs
+ * @worker               : Pointer to handle worker related jobs
  * @pd_mask              : each set bit indicates the device with pd equal to
  *                          bit position is available.
  * - List of connected devices
@@ -361,12 +361,12 @@ struct cam_req_mgr_connected_device {
  * - Timer
  * @watchdog             : watchdog timer to recover from sof freeze
  * - Link private data
- * @workq_comp           : conditional variable to block user thread for workq
+ * @worker_comp          : conditional variable to block user thread for worker
  *                          to finish schedule request processing
  * @state                : link state machine
  * @parent               : pvt data - link's parent is session
  * @lock                 : mutex lock to guard link data operations
- * @link_state_spin_lock : spin lock to protect link state variable
+ * @link_state_mutex_lock: mutex lock to protect link state variable
  * @sync_link            : array of pointer to the sync link for synchronization
  * @num_sync_links       : num of links sync associated with this link
  * @sync_link_sof_skip   : flag determines if a pkt is not available for a given
@@ -405,16 +405,16 @@ struct cam_req_mgr_core_link {
 	int32_t                              num_devs;
 	enum cam_pipeline_delay              max_delay;
 	enum cam_pipeline_delay              min_delay;
-	struct cam_req_mgr_core_workq       *workq;
+	struct cam_req_mgr_core_worker       *worker;
 	int32_t                              pd_mask;
 	struct cam_req_mgr_connected_device *l_dev;
 	struct cam_req_mgr_req_data          req;
 	struct cam_req_mgr_timer            *watchdog;
-	struct completion                    workq_comp;
+	struct completion                    worker_comp;
 	enum cam_req_mgr_link_state          state;
 	void                                *parent;
 	struct mutex                         lock;
-	spinlock_t                           link_state_spin_lock;
+	struct mutex                         link_state_mutex_lock;
 	struct cam_req_mgr_core_link
 			*sync_link[MAXIMUM_LINKS_PER_SESSION - 1];
 	int32_t                              num_sync_links;
@@ -520,7 +520,7 @@ struct cam_req_mgr_req_data_mini_dump {
 
 /**
  * struct cam_req_mgr_core_link_mini_dump
- * @workq                : Work q information
+ * @worker               : worker information
  * @req                  : req data holder.
  * @initial_sync_req     : The initial req which is required to sync with the
  * @prev_sof_timestamp   : Previous SOF timestamp value
@@ -548,7 +548,7 @@ struct cam_req_mgr_req_data_mini_dump {
  * @wq_congestion        : Indicates if WQ congestion is detected or not
  */
 struct cam_req_mgr_core_link_mini_dump {
-	struct cam_req_mgr_core_workq_mini_dump  workq;
+	struct cam_req_mgr_core_worker_mini_dump  worker;
 	struct cam_req_mgr_req_data_mini_dump    req;
 	int64_t                   initial_sync_req;
 	uint32_t                  last_flush_id;

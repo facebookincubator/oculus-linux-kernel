@@ -5,12 +5,11 @@
 #include <linux/types.h>
 
 #define SYNCBOSS_MAX_TRANSACTION_LENGTH 512
-#define SYNCBOSS_DRIVER_HEADER_VERSION_V1 1
+
 /**
  * Size of the maximum data packet expected to be transferred by this driver
  */
 #define SYNCBOSS_MAX_DATA_PKT_SIZE 255
-
 
 // An element in our history of received data from the syncboss.
 struct rx_history_elem {
@@ -26,10 +25,21 @@ struct rx_history_elem {
 	uint8_t buf[SYNCBOSS_MAX_TRANSACTION_LENGTH];
 } __attribute__((packed));
 
+/* The version of struct syncboss_driver_data_header_t kernel drivers */
+#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION 2
+
+enum nsync_offset_status {
+	NSYNC_OFFSET_INVALID = 0,
+	NSYNC_OFFSET_VALID,
+	NSYNC_OFFSET_ERROR,
+};
+
 struct syncboss_driver_data_header_t {
 	uint8_t header_version;
 	uint8_t header_length;
 	bool from_driver;
+	uint8_t nsync_offset_status; // See enum nsync_offset_status
+	int64_t nsync_offset_us;
 } __attribute__((packed));
 
 struct syncboss_driver_data_header_driver_message_t {
@@ -40,8 +50,8 @@ struct syncboss_driver_data_header_driver_message_t {
 
 struct uapi_pkt_t {
 	struct syncboss_driver_data_header_t header;
-		uint8_t payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
-	} __attribute__((packed));
+	uint8_t payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
+} __attribute__((packed));
 
 /* Max number of stream events to filter */
 #define SYNCBOSS_MAX_FILTERED_TYPES 16
@@ -59,6 +69,8 @@ struct syncboss_nsync_event {
 	uint64_t timestamp;
 	uint32_t count;
 } __attribute__((packed));
+#define SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE 85
+#define SYNCBOSS_NSYNC_FRAME_MESSAGE_TYPE 27
 
 /*
  * THIS MUST BE ALINGED TO LIBSYNCBOSS Struct used in fbsource hal library -

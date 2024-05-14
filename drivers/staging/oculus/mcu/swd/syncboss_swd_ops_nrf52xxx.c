@@ -166,7 +166,9 @@ int syncboss_swd_nrf52833_prepare(struct device *dev)
 	 * If bootloader update is being forced and access port protection is
 	 * enabled, we need to issue an ERASEALL to disable it first.
 	 */
-	if (devdata->data_hdr->force_bootloader_update) {
+	if (!devdata->erase_all &&
+	    (devdata->data_hdr->enable_noaccess_recovery ||
+	     devdata->data_hdr->force_bootloader_update)) {
 		const u8 max_tries = 3;
 		u8 tries;
 
@@ -178,6 +180,18 @@ int syncboss_swd_nrf52833_prepare(struct device *dev)
 		if (tries == max_tries && !approtect_is_disabled(dev)) {
 			dev_warn(dev, "APPROTECT is enabled. Issuing a chip erase!");
 			syncboss_swd_nrf52xxx_chip_erase(dev);
+			/*
+			 * We just wiped the chip. Lets make sure the bootloader is
+			 * reflashed.
+			 */
+			devdata->data_hdr->force_bootloader_update = true;
+			/*
+			 * Make sure the previous write to the flag is complete
+			 * before proceeding with the update.
+			 */
+			mb();
+		} else {
+			dev_info(dev, "APPROTECT is disabled. Recovery not needed.");
 		}
 	}
 

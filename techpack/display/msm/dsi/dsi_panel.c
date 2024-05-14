@@ -1177,7 +1177,7 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	* overlapping the backlight illumination with the next refresh's
 	* scanout to the active scanlines of the panel.
 	*/
-	target_scanline = vtotal - timing->v_front_porch + bl_config->scanline_max_offset;
+	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->scanline_max_offset;
 	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
 	left_scanline = right_scanline + timing->v_active / 2;
 

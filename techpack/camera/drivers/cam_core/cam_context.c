@@ -242,9 +242,9 @@ static inline int cam_context_pause_flush_async_task(struct cam_context *ctx)
 
 	rc = cam_context_get_async_tasks(ctx, &async_cmd);
 
-	if (async_cmd.workq) {
-		cam_req_mgr_workq_pause(async_cmd.workq);
-		cam_req_mgr_workq_flush(async_cmd.workq);
+	if (async_cmd.worker) {
+		cam_req_mgr_worker_pause(async_cmd.worker);
+		cam_req_mgr_worker_flush(async_cmd.worker);
 	}
 
 	return rc;
@@ -257,8 +257,8 @@ static inline int cam_context_resume_async_task(struct cam_context *ctx)
 
 	rc = cam_context_get_async_tasks(ctx, &async_cmd);
 
-	if (async_cmd.workq)
-		cam_req_mgr_workq_resume(async_cmd.workq);
+	if (async_cmd.worker)
+		cam_req_mgr_worker_resume(async_cmd.worker);
 
 	return rc;
 }

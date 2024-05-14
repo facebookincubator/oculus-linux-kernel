@@ -390,7 +390,7 @@ struct platform_driver cam_sensor_lite_driver = {
 	},
 };
 
-static struct cam_req_mgr_core_workq *sensor_lite_rpmsg_workq;
+static struct cam_req_mgr_core_worker *sensor_lite_rpmsg_workq;
 
 static int sensor_lite_rpmsg_recv_worker(void *priv, void *data)
 {
@@ -431,7 +431,7 @@ exit_1:
 
 static int sensor_lite_recv_irq_cb(void *cookie, void *data, int len)
 {
-	struct crm_workq_task *task;
+	struct crm_worker_task *task;
 	void *payload;
 	int rc = 0;
 
@@ -443,15 +443,16 @@ static int sensor_lite_recv_irq_cb(void *cookie, void *data, int len)
 	}
 	memcpy(payload, data, len);
 
-	task = cam_req_mgr_workq_get_task(sensor_lite_rpmsg_workq);
-	if (task == NULL) {
+	task = cam_req_mgr_worker_get_task(sensor_lite_rpmsg_workq);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_RPMSG, "Failed to get task = %d", PTR_ERR(task));
 		rc = -EINVAL;
 		goto err_exit1;
 	}
 
 	task->payload = payload;
 	task->process_cb = sensor_lite_rpmsg_recv_worker;
-	rc = cam_req_mgr_workq_enqueue_task(task, NULL, CRM_TASK_PRIORITY_0);
+	rc = cam_req_mgr_worker_enqueue_task(task, NULL, CRM_TASK_PRIORITY_0);
 	if (rc) {
 		CAM_ERR(CAM_RPMSG, "failed to enqueue task rc %d", rc);
 		goto err_exit1;
@@ -469,10 +470,10 @@ int32_t cam_sensor_lite_init_module(void)
 
 	struct cam_rpmsg_slave_cbs sensor_lite_rpmsg_cb;
 
-	cam_req_mgr_workq_create("cam_rpmsg_sensor_wq",
-			CAM_SENSOR_LITE_RPMSG_WORKQ_NUM_TASK,
-			&(sensor_lite_rpmsg_workq), CRM_WORKQ_USAGE_IRQ,
-			CAM_WORKQ_FLAG_HIGH_PRIORITY);
+	cam_req_mgr_worker_create("cam_rpmsg_sensor_wq",
+ 			CAM_SENSOR_LITE_RPMSG_WORKQ_NUM_TASK,
+			&(sensor_lite_rpmsg_workq), CRM_WORKER_USAGE_IRQ,
+			CAM_WORKER_FLAG_HIGH_PRIORITY);
 
 	sensor_lite_rpmsg_cb.cookie = NULL;
 	sensor_lite_rpmsg_cb.recv   = sensor_lite_recv_irq_cb;

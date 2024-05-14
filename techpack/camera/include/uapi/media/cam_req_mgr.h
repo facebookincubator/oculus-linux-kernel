@@ -329,6 +329,30 @@ struct cam_req_mgr_link_control {
 };
 
 /**
+ * struct cam_req_mgr_thread_prop_control
+ * @version:       UAPI Version
+ * @session_hdl:   Identifier for CSL session
+ * @link_hdl:      Identifier for CSL link
+ * @dev_hdl:       device handle
+ * @policy:        Scheduling Policy
+ * @priority:      Scheduling Priority
+ * @priority:      nice value for scheduling
+ * @affinity:      Core Affinity
+ *
+ * @opcode: CAM_REQ_MGR_THREAD_PROP_CONTROL
+ */
+struct cam_req_mgr_thread_prop_control {
+	__u32                          version;
+	__s32                          session_hdl;
+	__s32                          link_hdl;
+	__s32                          dev_hdl;
+	__u32                          policy;
+	__s32                          priority;
+	__s32                          nice;
+	__u32                          affinity;
+};
+
+/**
  * cam_req_mgr specific opcode ids
  */
 #define CAM_REQ_MGR_CREATE_DEV_NODES            (CAM_COMMON_OPCODE_MAX + 1)
@@ -349,6 +373,7 @@ struct cam_req_mgr_link_control {
 #define CAM_REQ_MGR_LINK_V3                     (CAM_COMMON_OPCODE_MAX + 16)
 #define CAM_REQ_MGR_EXIT_DQ_THREAD              (CAM_COMMON_OPCODE_MAX + 17)
 #define CAM_REQ_MGR_SYNC_MODE_V2                (CAM_COMMON_OPCODE_MAX + 18)
+#define CAM_REQ_MGR_THREAD_PROP_CONTROL         (CAM_COMMON_OPCODE_MAX + 19)
 
 /* end of cam_req_mgr opcodes */
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/iopoll.h>
@@ -23,7 +23,7 @@
 #include "cam_isp_hw_mgr_intf.h"
 #include "cam_common_util.h"
 #include "cam_subdev.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 #define IFE_CSID_TIMEOUT                               1000
 
@@ -2843,7 +2843,7 @@ static int cam_ife_csid_ver1_disable_hw(
 	struct cam_hw_soc_info                   *soc_info;
 	int rc = 0;
 	unsigned long                             flags;
-	struct cam_req_mgr_core_workq            *workq;
+	struct cam_req_mgr_core_worker            *worker;
 
 	/* Check for refcount */
 	if (!csid_hw->hw_info->open_count) {
@@ -2867,9 +2867,9 @@ static int cam_ife_csid_ver1_disable_hw(
 	cam_io_w_mb(0, soc_info->reg_map[0].mem_base +
 		csid_reg->cmn_reg->top_irq_mask_addr);
 
-	/* Flush workq */
-	workq = (struct cam_req_mgr_core_workq *)csid_hw->workq;
-	cam_req_mgr_workq_flush(workq);
+	/* Flush worker */
+	worker = (struct cam_req_mgr_core_worker *)csid_hw->worker;
+	cam_req_mgr_worker_flush(worker);
 
 	rc = cam_ife_csid_disable_soc_resources(soc_info);
 	if (rc)
@@ -4427,7 +4427,7 @@ static irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 	struct cam_ife_csid_ver1_reg_info     *csid_reg;
 	struct cam_ife_csid_ver1_hw           *csid_hw;
 	struct cam_hw_soc_info                *soc_info;
-	struct crm_workq_task                  *bh_cmd = NULL;
+	struct crm_worker_task                  *bh_cmd = NULL;
 	unsigned long                          flags;
 	uint32_t                               status[CAM_IFE_CSID_IRQ_REG_MAX];
 	uint32_t                               need_rx_bh = 0;
@@ -4494,20 +4494,20 @@ static irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 		&csid_hw->free_payload_list);
 
 	if (!evt_payload) {
-		CAM_ERR_RATE_LIMIT(CAM_ISP, "CSID[%u], no free workq",
+		CAM_ERR_RATE_LIMIT(CAM_ISP, "CSID[%u], no free worker",
 			csid_hw->hw_intf->hw_idx);
 		return IRQ_HANDLED;
 	}
 
 
-	bh_cmd = cam_req_mgr_workq_get_task(csid_hw->workq);
+	bh_cmd = cam_req_mgr_worker_get_task(csid_hw->worker);
 
-	if (!bh_cmd) {
+	if (IS_ERR_OR_NULL(bh_cmd)) {
 		cam_ife_csid_ver1_put_evt_payload(csid_hw, &evt_payload,
 			&csid_hw->free_payload_list);
 		CAM_ERR_RATE_LIMIT(CAM_ISP,
-			"CSID[%d] Can not get cmd for workq, status %x",
-			csid_hw->hw_intf->hw_idx,
+			"CSID[%d] Can not get cmd %d for worker, status %x",
+			csid_hw->hw_intf->hw_idx, PTR_ERR(bh_cmd),
 			status[CAM_IFE_CSID_IRQ_REG_TOP]);
 		return IRQ_HANDLED;
 	}
@@ -4521,7 +4521,7 @@ static irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 	for (i = 0; i < CAM_IFE_CSID_IRQ_REG_MAX; i++)
 		evt_payload->irq_status[i] = status[i];
 
-	cam_req_mgr_workq_enqueue_task(bh_cmd, csid_hw, 0);
+	cam_req_mgr_worker_enqueue_task(bh_cmd, csid_hw, 0);
 
 	return IRQ_HANDLED;
 
@@ -4751,10 +4751,10 @@ int cam_ife_csid_hw_ver1_init(struct cam_hw_intf  *hw_intf,
 		return rc;
 	}
 
-	rc = cam_req_mgr_workq_create("cam_csid_worker",
-			256, &ife_csid_hw->workq, CRM_WORKQ_USAGE_IRQ, 0);
+	rc = cam_req_mgr_worker_create("cam_csid_worker",
+			256, &ife_csid_hw->worker, CRM_WORKER_USAGE_IRQ, 0);
 	if (rc) {
-		CAM_ERR(CAM_ISP, "CSID[%d] init workq failed",
+		CAM_ERR(CAM_ISP, "CSID[%d] init worker failed",
 			hw_intf->hw_idx);
 		goto err;
 	}

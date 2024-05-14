@@ -15,7 +15,7 @@
 #include "cam_compat.h"
 #include "cam_sync_api.h"
 #include "cam_smmu_api.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_custom_hw_mgr.h"
 #include "cam_packet_util.h"
 #include "cam_debug_util.h"

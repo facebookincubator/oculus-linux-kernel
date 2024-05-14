@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CPAS_HW_H_
@@ -269,7 +269,7 @@ struct cam_cpas_monitor {
  * @axi_port: AXI port info for a specific axi index
  * @camnoc_axi_port: CAMNOC AXI port info for a specific camnoc axi index
  * @internal_ops: CPAS HW internal ops
- * @work_queue: Work queue handle
+ * @worker: Worker handle
  * @irq_count: atomic irq count
  * @irq_count_wq: wait variable to ensure all irq's are handled
  * @dentry: debugfs file entry
@@ -296,7 +296,7 @@ struct cam_cpas {
 	struct cam_cpas_axi_port axi_port[CAM_CPAS_MAX_AXI_PORTS];
 	struct cam_cpas_axi_port camnoc_axi_port[CAM_CPAS_MAX_AXI_PORTS];
 	struct cam_cpas_internal_ops internal_ops;
-	struct workqueue_struct *work_queue;
+	struct cam_req_mgr_core_worker *worker;
 	atomic_t irq_count;
 	wait_queue_head_t irq_count_wq;
 	struct dentry *dentry;

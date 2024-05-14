@@ -3050,9 +3050,11 @@ int cam_cpas_hw_probe(struct platform_device *pdev,
 	cpas_hw_intf->hw_ops.write = NULL;
 	cpas_hw_intf->hw_ops.process_cmd = cam_cpas_hw_process_cmd;
 
-	cpas_core->work_queue = alloc_workqueue(CAM_CPAS_WORKQUEUE_NAME,
-		WQ_UNBOUND | WQ_MEM_RECLAIM, CAM_CPAS_INFLIGHT_WORKS);
-	if (!cpas_core->work_queue) {
+	cam_req_mgr_worker_create("cpas_worker", CAM_CPAS_INFLIGHT_WORKS,
+		&cpas_core->worker, CRM_WORKER_USAGE_IRQ,
+		0);
+
+	if (!cpas_core->worker) {
 		rc = -ENOMEM;
 		goto release_mem;
 	}
@@ -3156,8 +3158,8 @@ client_cleanup:
 deinit_platform_res:
 	cam_cpas_soc_deinit_resources(&cpas_hw->soc_info);
 release_workq:
-	flush_workqueue(cpas_core->work_queue);
-	destroy_workqueue(cpas_core->work_queue);
+	cam_req_mgr_worker_flush(cpas_core->worker);
+	cam_req_mgr_worker_destroy(&cpas_core->worker);
 release_mem:
 	mutex_destroy(&cpas_hw->hw_mutex);
 	kfree(cpas_core);
@@ -3192,8 +3194,8 @@ int cam_cpas_hw_remove(struct cam_hw_intf *cpas_hw_intf)
 	cam_cpas_soc_deinit_resources(&cpas_hw->soc_info);
 	debugfs_remove_recursive(cpas_core->dentry);
 	cpas_core->dentry = NULL;
-	flush_workqueue(cpas_core->work_queue);
-	destroy_workqueue(cpas_core->work_queue);
+	cam_req_mgr_worker_flush(cpas_core->worker);
+	cam_req_mgr_worker_destroy(&cpas_core->worker);
 	mutex_destroy(&cpas_hw->hw_mutex);
 	kfree(cpas_core);
 	kfree(cpas_hw);

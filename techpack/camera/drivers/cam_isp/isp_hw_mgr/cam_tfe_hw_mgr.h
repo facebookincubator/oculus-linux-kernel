@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_TFE_HW_MGR_H_
@@ -153,7 +153,7 @@ struct cam_tfe_hw_mgr_ctx {
  */
 struct cam_tfe_hw_mgr {
 	struct cam_isp_hw_mgr          mgr_common;
-	struct cam_req_mgr_core_workq *workq_pool[CAM_CTX_MAX];
+	struct cam_req_mgr_core_worker *workq_pool[CAM_CTX_MAX];
 	struct cam_hw_intf            *csid_devices[CAM_TFE_CSID_HW_NUM_MAX];
 	struct cam_isp_hw_intf_data   *tfe_devices[CAM_TFE_HW_NUM_MAX];
 	struct cam_soc_reg_map        *cdm_reg_map[CAM_TFE_HW_NUM_MAX];
@@ -166,7 +166,7 @@ struct cam_tfe_hw_mgr {
 	struct cam_tfe_csid_hw_caps    tfe_csid_dev_caps[
 						CAM_TFE_CSID_HW_NUM_MAX];
 	struct cam_tfe_hw_get_hw_cap   tfe_dev_caps[CAM_TFE_HW_NUM_MAX];
-	struct cam_req_mgr_core_workq *workq;
+	struct cam_req_mgr_core_worker *worker;
 	struct cam_tfe_hw_mgr_debug    debug_cfg;
 	bool                           support_consumed_addr;
 	spinlock_t                     ctx_lock;

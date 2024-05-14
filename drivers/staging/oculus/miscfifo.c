@@ -5,9 +5,8 @@
 #include <linux/slab.h>
 #include <linux/version.h>
 
-#define REC_MAX_LENGTH	0xff
-#define REC_SIZE	1
-#define MIN_FIFO_SIZE	(REC_MAX_LENGTH + REC_SIZE)
+#define REC_MAX_LENGTH	0xffff
+#define REC_SIZE	2
 #define CLIENT_NAME_SIZE 64
 
 ssize_t miscfifo_fop_read(struct file *file,
@@ -310,14 +309,6 @@ EXPORT_SYMBOL(miscfifo_clear);
 
 static int miscfifo_register(struct device *dev, struct miscfifo *mf)
 {
-	/* these min sizes are required to reliably put (max length) data
-	 * in to the fifo */
-
-	if (mf->config.kfifo_size < MIN_FIFO_SIZE) {
-		dev_warn(dev, "expect min fifo size: %d", MIN_FIFO_SIZE);
-		mf->config.kfifo_size = MIN_FIFO_SIZE;
-	}
-
 	if (!try_module_get(THIS_MODULE))
 		return -ENODEV;
 

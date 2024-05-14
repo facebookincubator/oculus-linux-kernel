@@ -71,6 +71,10 @@ struct lpass_cdc_priv {
 	int core_hw_vote_count;
 	int core_audio_vote_count;
 
+	struct cdc_regulator *p_dmic_regulator;
+	int	num_supplies;
+	struct regulator_bulk_data *p_supplies;
+
 	/* Entry for version info */
 	struct snd_info_entry *entry;
 	struct snd_info_entry *version_entry;

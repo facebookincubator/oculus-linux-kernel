@@ -32,7 +32,7 @@
 #include "cam_cci_hwreg.h"
 #include "cam_soc_util.h"
 #include "cam_debug_util.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_common_util.h"
 
 #define CCI_I2C_QUEUE_0_SIZE 128
@@ -297,7 +297,7 @@ struct cci_write_async {
 	struct cam_cci_ctrl c_ctrl;
 	enum cci_i2c_queue_t queue;
 	struct work_struct work;
-	ktime_t workq_scheduled_ts;
+	ktime_t worker_scheduled_ts;
 	enum cci_i2c_sync sync_en;
 };
 

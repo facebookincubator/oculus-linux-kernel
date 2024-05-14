@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_LRME_HW_MGR_H_
@@ -15,7 +16,7 @@
 #include "cam_cpas_api.h"
 #include "cam_debug_util.h"
 #include "cam_hw_mgr_intf.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_lrme_hw_intf.h"
 #include "cam_context.h"
 
@@ -81,7 +82,7 @@ struct cam_lrme_device {
 	struct cam_hw_intf             hw_intf;
 	uint32_t                       num_context;
 	bool                           valid;
-	struct cam_req_mgr_core_workq *work;
+	struct cam_req_mgr_core_worker *work;
 	struct cam_lrme_mgr_work_data  work_data[CAM_LRME_WORKQ_NUM_TASK];
 	struct list_head               frame_pending_list_high;
 	struct list_head               frame_pending_list_normal;

@@ -19,6 +19,7 @@
 #include "lpass-cdc.h"
 #include "internal.h"
 #include "lpass-cdc-clk-rsc.h"
+#include <asoc/msm-cdc-supply.h>
 #include <linux/qti-regmap-debugfs.h>
 
 #define DRV_NAME "lpass-cdc"
@@ -490,6 +491,7 @@ int lpass_cdc_dmic_clk_enable(struct snd_soc_component *component,
 	u8 *dmic_clk_div = NULL;
 	u8 freq_change_mask = 0;
 	u8 clk_div = 0;
+	int ret = 0;
 
 	dev_dbg(component->dev, "%s: enable: %d, tx_mode:%d, dmic: %d\n",
 		__func__, enable, tx_mode, dmic);
@@ -534,6 +536,14 @@ int lpass_cdc_dmic_clk_enable(struct snd_soc_component *component,
 		clk_div = lpass_cdc_dmic_clk_div_get(component, tx_mode);
 		(*dmic_clk_cnt)++;
 		if (*dmic_clk_cnt == 1) {
+			ret = msm_cdc_enable_ondemand_supply(priv->dev,
+												priv->p_supplies,
+												priv->p_dmic_regulator,
+												priv->num_supplies,
+												"cdc-vdd-dmic");
+			if (ret)
+				dev_err(priv->dev, "%s: dmic power supply enbl failed\n", __func__);
+
 			snd_soc_component_update_bits(component,
 					LPASS_CDC_VA_TOP_CSR_DMIC_CFG,
 					0x80, 0x00);
@@ -564,6 +574,17 @@ int lpass_cdc_dmic_clk_enable(struct snd_soc_component *component,
 			clk_div = 0;
 			snd_soc_component_update_bits(component, dmic_clk_reg,
 							0x0E, clk_div << 0x1);
+
+			ret = msm_cdc_disable_ondemand_supply(priv->dev,
+												priv->p_supplies,
+												priv->p_dmic_regulator,
+												priv->num_supplies,
+												"cdc-vdd-dmic");
+
+			if (ret) {
+				dev_err(priv->dev, "%s: dmic power supply disable failed\n",
+						__func__);
+			}
 		} else {
 			clk_div = lpass_cdc_dmic_clk_div_get(component, tx_mode);
 			if (*dmic_clk_div > clk_div) {
@@ -1304,6 +1325,18 @@ static int lpass_cdc_probe(struct platform_device *pdev)
 	}
 
 	devm_regmap_qti_debugfs_register(priv->dev, priv->regmap);
+
+	ret = msm_cdc_get_ondemand_power_supplies(priv->dev, &priv->p_dmic_regulator,
+											  &priv->num_supplies);
+
+	if (ret == 0 && priv->num_supplies > 0) {
+		ret = msm_cdc_init_supplies_v2(priv->dev, &priv->p_supplies,
+									   priv->p_dmic_regulator,
+									   priv->num_supplies,
+									   true);
+		if (!priv->p_supplies)
+			dev_err(priv->dev, "%s: Could not init dmic power\n", __func__);
+	}
 
 	priv->read_dev = __lpass_cdc_reg_read;
 	priv->write_dev = __lpass_cdc_reg_write;

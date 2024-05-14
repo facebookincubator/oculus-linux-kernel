@@ -16,7 +16,7 @@
 
 #include "cam_context.h"
 #include "cam_isp_hw_mgr_intf.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 #define CAM_IFE_QTIMER_MUL_FACTOR        10000
 #define CAM_IFE_QTIMER_DIV_FACTOR        192
@@ -339,7 +339,7 @@ struct cam_isp_context_event_record {
  * @isp_device_type:           ISP device type
  * @rxd_epoch:                 Indicate whether epoch has been received. Used to
  *                             decide whether to apply request in offline ctx
- * @workq:                     Worker thread for offline ife
+ * @worker:                    Worker thread for offline ife
  * @trigger_id:                ID provided by CRM for each ctx on the link
  * @last_bufdone_err_apply_req_id:  last bufdone error apply request id
  * @v4l2_event_sub_ids         contains individual bits representing subscribed v4l2 ids
@@ -350,7 +350,7 @@ struct cam_isp_context_event_record {
  * @slave_metadata_en:         flag to indicate if slave metadata is enabled
  * @stream_type:               value for sensor mode streaming type
  * @independent_crm_sof_timer: watchdog timer to check SOF freeze in independent CRM case
- * @hw_mgr_workq:              associated hw_mgr workq
+ * @hw_mgr_worker:             associated hw_mgr worker
  * @no_crm_mutex:              mutex for no_crm apply
  * @waitlist_req_cnt           Counter for the request in waitlist
  * @fifo_depth                 Max fifo depth supported
@@ -420,7 +420,7 @@ struct cam_isp_context {
 	unsigned int                          init_timestamp;
 	uint32_t                              isp_device_type;
 	atomic_t                              rxd_epoch;
-	struct cam_req_mgr_core_workq        *workq;
+	struct cam_req_mgr_core_worker        *worker;
 	int32_t                               trigger_id;
 	int64_t                               last_bufdone_err_apply_req_id;
 	uint32_t                              v4l2_event_sub_ids;
@@ -433,7 +433,7 @@ struct cam_isp_context {
 	bool                                  slave_metadata_en;
 	int8_t                                stream_type;
 	struct cam_req_mgr_timer              *independent_crm_sof_timer;
-	struct cam_req_mgr_core_workq         *hw_mgr_workq;
+	struct cam_req_mgr_core_worker         *hw_mgr_worker;
 	struct mutex                           no_crm_mutex;
 	uint32_t                               waitlist_req_cnt;
 	uint32_t                               fifo_depth;

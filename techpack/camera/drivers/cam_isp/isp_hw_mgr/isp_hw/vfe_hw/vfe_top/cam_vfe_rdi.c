@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -14,7 +14,7 @@
 #include "cam_debug_util.h"
 #include "cam_cdm_util.h"
 #include "cam_irq_controller.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 struct cam_vfe_mux_rdi_data {
 	void __iomem                                *mem_base;
@@ -321,8 +321,8 @@ static int cam_vfe_rdi_resource_start(
 			rdi_res,
 			cam_vfe_rdi_err_irq_top_half,
 			rdi_res->bottom_half_handler,
-			rdi_res->workq_info,
-			&workq_bh_api,
+			rdi_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 		if (rsrc_data->irq_err_handle < 1) {
 			CAM_ERR(CAM_ISP, "Error IRQ handle subscribe failure");
@@ -350,8 +350,8 @@ static int cam_vfe_rdi_resource_start(
 			rdi_res,
 			rdi_res->top_half_handler,
 			rdi_res->bottom_half_handler,
-			rdi_res->workq_info,
-			&workq_bh_api,
+			rdi_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 		if (rsrc_data->irq_handle < 1) {
 			CAM_ERR(CAM_ISP, "IRQ handle subscribe failure");

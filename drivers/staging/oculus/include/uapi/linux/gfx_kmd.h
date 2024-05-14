@@ -16,13 +16,26 @@
 
 #include <linux/ioctl.h>
 
+// Upper bound on how many sg list elements per
+// buffer we support - for simplicity for now not variable.
+#define GFX_KMD_BUFFER_CHUNKS_MAX 10
+
+// If possible client should specify the direction
+// for the buffer dma operations. For speeds.
 enum gfx_kmd_buffer_direction {
 	GFX_KMD_BUFFER_BIDIRECTIONAL,
 	GFX_KMD_BUFFER_TO_DEVICE,
 	GFX_KMD_BUFFER_FROM_DEVICE,
 };
 
-// We need to return bus address for the buffer here because
+// One buffer might result in a number of dma
+// mappings (sg list elements), this represents one of them.
+struct __packed gfx_kmd_buffer_chunk {
+	uint64_t addr;
+	uint64_t size;
+};
+
+// We need to return bus addresses for the buffer here because
 // there is no control queue as in Janus to send them outside of
 // user-space ring buffer. So user-space is responsible for communicating it.
 struct __packed gfx_kmd_ioct_register_buffer_req {
@@ -30,9 +43,12 @@ struct __packed gfx_kmd_ioct_register_buffer_req {
 	uint64_t in_fd;
 	uint64_t in_size;
 	uint32_t out_id;
-	uint64_t out_addr;
+	struct gfx_kmd_buffer_chunk out_chunks[GFX_KMD_BUFFER_CHUNKS_MAX];
+	uint32_t out_chunks_count;
 };
 
+// When done with a buffer let the kernel know it's safe to clean up.
+// This should not be done with in-flight dma or we all crash.
 struct __packed gfx_kmd_ioct_unregister_buffer_req {
 	uint32_t id;
 };

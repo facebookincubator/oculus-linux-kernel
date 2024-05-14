@@ -620,6 +620,70 @@ err_supply:
 EXPORT_SYMBOL(msm_cdc_init_supplies_v2);
 
 /*
+ * msm_cdc_get_ondemand_power_supplies:
+ *	Get codec on demand power supplies from device tree.
+ *	Allocate memory to hold regulator data for
+ *	ondemand power supplies.
+ *
+ * @dev: pointer to codec device
+ * @cdc_vreg: pointer to codec regulator
+ * @total_num_supplies: total number of on demand supplies read from DT
+ *
+ * Return error code if supply cant be parsed in device tree
+ */
+int msm_cdc_get_ondemand_power_supplies(struct device *dev,
+					struct cdc_regulator **cdc_vreg,
+					int *total_num_supplies)
+{
+	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
+	int ond_sup_cnt = 0;
+	struct cdc_regulator *cdc_reg;
+	int rc;
+
+	if (!dev) {
+		pr_err("%s: device pointer is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	*total_num_supplies = 0;
+	ond_sup_cnt = of_property_count_strings(dev->of_node, ond_prop_name);
+	if (ond_sup_cnt < 0) {
+		dev_err(dev, "%s: Failed to get on demand power supplies(%d)\n",
+			__func__, ond_sup_cnt);
+		rc = ond_sup_cnt;
+		goto err_supply_cnt;
+	}
+
+	cdc_reg = devm_kcalloc(dev, ond_sup_cnt,
+					sizeof(struct cdc_regulator),
+					GFP_KERNEL);
+	if (!cdc_reg) {
+		rc = -ENOMEM;
+		goto err_mem_alloc;
+	}
+
+	rc = msm_cdc_parse_supplies(dev, cdc_reg, ond_prop_name,
+					ond_sup_cnt, true);
+	if (rc) {
+		dev_err(dev, "%s: failed to parse ondemand supplies(%d)\n",
+				__func__, rc);
+		goto err_sup;
+	}
+
+	*cdc_vreg = cdc_reg;
+	*total_num_supplies = ond_sup_cnt;
+
+	return 0;
+
+err_sup:
+	devm_kfree(dev, cdc_reg);
+err_supply_cnt:
+err_mem_alloc:
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_get_ondemand_power_supplies);
+
+/*
  * msm_cdc_get_power_supplies:
  *	Get codec power supplies from device tree.
  *	Allocate memory to hold regulator data for

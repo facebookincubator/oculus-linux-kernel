@@ -414,7 +414,7 @@ struct cam_isp_sys_cache_info {
  * @ctx_pool:              context storage
  * @csid_hw_caps           csid hw capability stored per core
  * @ife_dev_caps           ife device capability per core
- * @work q                 work queue for IFE hw manager
+ * @worker                 worker for IFE hw manager
  * @debug_cfg              debug configuration
  * @isp_bus_caps           Capability of underlying SFE/IFE bus HW
  * @path_port_map          Mapping of outport to IFE mux
@@ -428,7 +428,7 @@ struct cam_isp_sys_cache_info {
  */
 struct cam_ife_hw_mgr {
 	struct cam_isp_hw_mgr          mgr_common;
-	struct cam_req_mgr_core_workq *workq_pool[CAM_IFE_CTX_MAX];
+	struct cam_req_mgr_core_worker *workq_pool[CAM_IFE_CTX_MAX];
 	struct cam_hw_intf            *csid_devices[CAM_IFE_CSID_HW_NUM_MAX];
 	struct cam_isp_hw_intf_data   *ife_devices[CAM_IFE_HW_NUM_MAX];
 	struct cam_isp_hw_intf_data   *sfe_devices[CAM_SFE_HW_NUM_MAX];
@@ -443,7 +443,7 @@ struct cam_ife_hw_mgr {
 	struct cam_ife_csid_hw_caps      csid_hw_caps[
 						CAM_IFE_CSID_HW_NUM_MAX];
 	struct cam_vfe_hw_get_hw_cap     ife_dev_caps[CAM_IFE_HW_NUM_MAX];
-	struct cam_req_mgr_core_workq   *workq;
+	struct cam_req_mgr_core_worker   *worker;
 	struct cam_ife_hw_mgr_debug      debug_cfg;
 	struct cam_isp_bus_hw_caps       isp_bus_caps;
 	struct cam_isp_hw_path_port_map  path_port_map;

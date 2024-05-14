@@ -17,7 +17,7 @@
 #include "cam_irq_controller.h"
 #include "cam_cdm_intf_api.h"
 #include "cam_rpmsg.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 #define CAM_SHIFT_TOP_CORE_VER_4_CFG_DSP_EN            8
 #define CAM_VFE_CAMIF_IRQ_SOF_DEBUG_CNT_MAX            2
@@ -212,8 +212,8 @@ static int cam_vfe_top_ver4_update_res(struct cam_vfe_top_ver4_priv *top_priv,
 					break;
 			}
 
-			top_priv->top_common.mux_rsrc[i].workq_info =
-				args->workq;
+			top_priv->top_common.mux_rsrc[i].worker_info =
+				args->worker;
 			top_priv->top_common.mux_rsrc[i].is_per_port_acquire =
 				false;
 
@@ -282,8 +282,8 @@ static int cam_vfe_top_ver4_enable_irq(
 			vfe_res,
 			vfe_res->top_half_handler,
 			vfe_res->bottom_half_handler,
-			vfe_res->workq_info,
-			&workq_bh_api,
+			vfe_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 
 		if (rsrc_data->frame_irq_handle < 1) {
@@ -320,8 +320,8 @@ enable_err:
 			vfe_res,
 			cam_vfe_ver4_err_irq_top_half,
 			vfe_res->bottom_half_handler,
-			vfe_res->workq_info,
-			&workq_bh_api,
+			vfe_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 
 		if (rsrc_data->irq_err_handle < 1) {
@@ -958,8 +958,8 @@ int cam_vfe_top_ver4_reserve(void *device_priv,
 
 			top_priv->top_common.mux_rsrc[i].cdm_ops =
 				acquire_args->cdm_ops;
-			top_priv->top_common.mux_rsrc[i].workq_info =
-				args->workq;
+			top_priv->top_common.mux_rsrc[i].worker_info =
+				args->worker;
 			top_priv->top_common.mux_rsrc[i].res_state =
 				CAM_ISP_RESOURCE_STATE_RESERVED;
 			if (acquire_args->in_port->per_port_en && args->per_port_acquire)
@@ -1736,8 +1736,8 @@ skip_core_cfg:
 			vfe_res,
 			vfe_res->top_half_handler,
 			vfe_res->bottom_half_handler,
-			vfe_res->workq_info,
-			&workq_bh_api,
+			vfe_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 
 		if (rsrc_data->frame_irq_handle < 1) {
@@ -1757,8 +1757,8 @@ subscribe_err:
 			vfe_res,
 			cam_vfe_ver4_err_irq_top_half,
 			vfe_res->bottom_half_handler,
-			vfe_res->workq_info,
-			&workq_bh_api,
+			vfe_res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 
 		if (rsrc_data->irq_err_handle < 1) {

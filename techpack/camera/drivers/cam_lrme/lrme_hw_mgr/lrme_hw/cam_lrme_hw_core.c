@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/timer.h>
@@ -1305,7 +1305,7 @@ irqreturn_t cam_lrme_hw_irq(int irq_num, void *data)
 	struct cam_lrme_core *lrme_core;
 	struct cam_hw_soc_info *soc_info;
 	struct cam_lrme_hw_info   *hw_info;
-	struct crm_workq_task *task;
+	struct crm_worker_task *task;
 	struct cam_lrme_hw_work_data *work_data;
 	uint32_t top_irq_status, fe_irq_status, we_irq_status0, we_irq_status1;
 	int rc;
@@ -1370,9 +1370,9 @@ irqreturn_t cam_lrme_hw_irq(int irq_num, void *data)
 
 	if (top_irq_status || fe_irq_status ||
 		we_irq_status0 || we_irq_status1) {
-		task = cam_req_mgr_workq_get_task(lrme_core->work);
-		if (!task) {
-			CAM_ERR(CAM_LRME, "no empty task available");
+		task = cam_req_mgr_worker_get_task(lrme_core->work);
+		if (IS_ERR_OR_NULL(task)) {
+			CAM_ERR(CAM_LRME, "no empty task = %d available", PTR_ERR(task));
 			return IRQ_NONE;
 		}
 		work_data = (struct cam_lrme_hw_work_data *)task->payload;
@@ -1381,7 +1381,7 @@ irqreturn_t cam_lrme_hw_irq(int irq_num, void *data)
 		work_data->we_irq_status[0] = we_irq_status0;
 		work_data->we_irq_status[1] = we_irq_status1;
 		task->process_cb = cam_lrme_hw_process_irq;
-		rc = cam_req_mgr_workq_enqueue_task(task, data,
+		rc = cam_req_mgr_worker_enqueue_task(task, data,
 			CRM_TASK_PRIORITY_0);
 		if (rc)
 			CAM_ERR(CAM_LRME,

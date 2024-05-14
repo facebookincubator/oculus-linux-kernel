@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_ISP_HW_MGR_H_
@@ -20,7 +20,7 @@
 /**
  * struct cam_isp_hw_mgr_ctx - common acquired context for managers
  *
- * @workq_info:            associated workq
+ * @worker_info:            associated worker
  * @event_cb:              call back interface to ISP context. Set during
  *                         acquire device
  * @cb_priv:               first argument for the call back function
@@ -30,7 +30,7 @@
  *
  */
 struct cam_isp_hw_mgr_ctx {
-	void                                  *workq_info;
+	void                                  *worker_info;
 	cam_hw_event_cb_func                   event_cb;
 	void                                  *cb_priv;
 	cam_ctx_mini_dump_cb_func              mini_dump_cb;

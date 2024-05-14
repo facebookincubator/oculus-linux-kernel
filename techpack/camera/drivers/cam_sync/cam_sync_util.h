@@ -82,12 +82,13 @@ int cam_sync_deinit_object(struct sync_table_row *table, uint32_t idx);
 /**
  * @brief: Function to dispatch a kernel callback for a sync callback
  *
- * @param cb_dispatch_work : Pointer to the work_struct that needs to be
- *                           dispatched
+ * @param priv : Pointer private data
+ * @param data : Pointer to sync callback info
  *
  * @return None
  */
-void cam_sync_util_cb_dispatch(struct work_struct *cb_dispatch_work);
+int cam_sync_util_cb_dispatch(void *priv, void *data);
+
 
 /**
  * @brief: Function to dispatch callbacks for a signaled sync object

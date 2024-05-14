@@ -84,7 +84,7 @@ camera-y := \
 	drivers/cam_req_mgr/cam_req_mgr_dev.o \
 	drivers/cam_req_mgr/cam_req_mgr_util.o \
 	drivers/cam_req_mgr/cam_mem_mgr.o \
-	drivers/cam_req_mgr/cam_req_mgr_workq.o \
+	drivers/cam_req_mgr/cam_req_mgr_worker_wrapper.o \
 	drivers/cam_req_mgr/cam_req_mgr_timer.o \
 	drivers/cam_req_mgr/cam_req_mgr_debug.o \
 	drivers/cam_req_mgr/cam_fastrpc.o \

@@ -38,6 +38,22 @@ enum {
 	KGSL_THREADSTATS_EVENT_MAX
 };
 
+struct kgsl_threadstats_entry {
+	u64 timestamp;
+	u64 queued;
+	u64 submitted;
+	u64 consumed;
+	u64 retired;
+	u64 active;
+};
+
+struct kgsl_threadstats_history_node {
+	struct list_head node;
+	struct kgsl_threadstats_entry entry;
+};
+
+#define KGSL_THREADSTATS_HISTORY_LENGTH 8
+
 struct kgsl_device;
 struct kgsl_thread_private;
 

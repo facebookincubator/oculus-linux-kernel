@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_LRME_HW_CORE_H_
@@ -19,7 +20,7 @@
 #include "cam_cdm_intf_api.h"
 #include "cam_lrme_hw_intf.h"
 #include "cam_lrme_hw_soc.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 #define CAM_LRME_HW_RESET_TIMEOUT 3000
 
@@ -127,7 +128,7 @@ struct cam_lrme_core {
 	struct cam_lrme_dev_cap           hw_caps;
 	enum cam_lrme_core_state          state;
 	struct completion                 reset_complete;
-	struct cam_req_mgr_core_workq    *work;
+	struct cam_req_mgr_core_worker    *work;
 	struct cam_lrme_hw_work_data      work_data[CAM_LRME_HW_WORKQ_NUM_TASK];
 	struct cam_lrme_hw_cmd_set_cb     hw_mgr_cb;
 	struct cam_lrme_frame_request    *req_proc;

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#define pr_fmt(fmt) "USBVDM: " fmt
+
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -168,6 +170,9 @@ void usbvdm_connect(struct usbvdm_engine *engine,
 	if (!engine)
 		return;
 
+	pr_debug("%s: Engine '%s' received connection, SVID=0x%02x PID=0x%02x",
+			__func__, dev_name(engine->dev), svid, pid);
+
 	mutex_lock(&engine_lock);
 	engine->conn_svid = svid;
 	engine->conn_pid = pid;
@@ -176,11 +181,14 @@ void usbvdm_connect(struct usbvdm_engine *engine,
 	mutex_lock(&subscription_lock);
 	sub = usbvdm_find_subscription(svid, pid);
 
-	if (sub && sub->ops.connect)
+	if (sub && sub->ops.connect) {
+		pr_debug("%s: Notifying sub '%s' of connection, SVID=0x%02x PID=0x%02x",
+				__func__, dev_name(sub->dev), svid, pid);
 		/*
 		 * TODO(T171134119): Implement failure handling
 		 */
 		sub->ops.connect(sub, svid, pid);
+	}
 
 	mutex_unlock(&subscription_lock);
 }
@@ -208,12 +216,18 @@ void usbvdm_disconnect(struct usbvdm_engine *engine)
 	engine->conn_pid = 0x0;
 	mutex_unlock(&engine_lock);
 
+	pr_debug("%s: Engine '%s' received disconnection, SVID=0x%02x PID=0x%02x",
+			__func__, dev_name(engine->dev), svid, pid);
+
 	mutex_lock(&subscription_lock);
 	sub = usbvdm_find_subscription(svid, pid);
 
-	if (sub && sub->ops.disconnect)
+	if (sub && sub->ops.disconnect) {
+		pr_debug("%s: Notifying sub '%s' of disconnection, SVID=0x%02x PID=0x%02x",
+				__func__, dev_name(sub->dev), svid, pid);
 		/* TODO(T171134119): Implement failure handling */
 		sub->ops.disconnect(sub);
+	}
 
 	mutex_unlock(&subscription_lock);
 }
@@ -235,10 +249,16 @@ void usbvdm_engine_ext_msg(struct usbvdm_engine *engine,
 {
 	struct usbvdm_subscription *sub;
 
+	pr_debug("%s: Engine '%s' received ExtMsg, MsgType=0x%02x Len=%lu",
+			__func__, dev_name(engine->dev), msg_type, data_len);
+
 	mutex_lock(&subscription_lock);
 	sub = usbvdm_find_subscription(engine->conn_svid, engine->conn_pid);
-	if (sub && sub->ops.ext_msg)
+	if (sub && sub->ops.ext_msg) {
+		pr_debug("%s: Notifying sub '%s' of ExtMsg, MsgType=0x%02x Len=%lu",
+				__func__, dev_name(sub->dev), msg_type, data_len);
 		sub->ops.ext_msg(sub, msg_type, data, data_len);
+	}
 	mutex_unlock(&subscription_lock);
 }
 EXPORT_SYMBOL(usbvdm_engine_ext_msg);
@@ -259,10 +279,16 @@ void usbvdm_engine_vdm(struct usbvdm_engine *engine,
 {
 	struct usbvdm_subscription *sub;
 
+	pr_debug("%s: Engine '%s' received VDM, vdm_hdr=0x%04x num_vdos=%d",
+			__func__, dev_name(engine->dev), vdm_hdr, num_vdos);
+
 	mutex_lock(&subscription_lock);
 	sub = usbvdm_find_subscription(engine->conn_svid, engine->conn_pid);
-	if (sub && sub->ops.vdm)
+	if (sub && sub->ops.vdm) {
+		pr_debug("%s: Notifying sub '%s' of VDM, vdm_hdr=0x%04x num_vdos=%d",
+				__func__, dev_name(sub->dev), vdm_hdr, num_vdos);
 		sub->ops.vdm(sub, vdm_hdr, vdos, num_vdos);
+	}
 	mutex_unlock(&subscription_lock);
 }
 EXPORT_SYMBOL(usbvdm_engine_vdm);
@@ -405,11 +431,17 @@ int usbvdm_subscriber_ext_msg(struct usbvdm_subscription *sub,
 	if (!sub)
 		return -EINVAL;
 
+	pr_debug("%s: Sub '%s' sending ExtMsg, MsgType=0x%02x Len=%lu",
+			__func__, dev_name(sub->dev), msg_type, data_len);
+
 	mutex_lock(&engine_lock);
 	list_for_each_entry(engine, &engine_list, entry) {
 		if (engine->conn_svid == sub->svid && engine->conn_pid == sub->pid) {
-			if (engine->ops.ext_msg)
+			if (engine->ops.ext_msg) {
+				pr_debug("%s: Notifying engine '%s' to send ExtMsg, MsgType=0x%02x Len=%lu",
+						__func__, dev_name(engine->dev), msg_type, data_len);
 				rc = engine->ops.ext_msg(engine, msg_type, data, data_len);
+			}
 			break;
 		}
 	}
@@ -438,11 +470,17 @@ int usbvdm_subscriber_vdm(struct usbvdm_subscription *sub,
 	if (!sub)
 		return -EINVAL;
 
+	pr_debug("%s: Sub '%s' sending VDM, vdm_hdr=0x%04x, num_vdos=%d",
+			__func__, dev_name(sub->dev), vdm_hdr, num_vdos);
+
 	mutex_lock(&engine_lock);
 	list_for_each_entry(engine, &engine_list, entry) {
 		if (engine->conn_svid == sub->svid && engine->conn_pid == sub->pid) {
-			if (engine->ops.vdm)
+			if (engine->ops.vdm) {
+				pr_debug("%s: Notifying engine '%s' to send VDM, vdm_hdr=0x%04x, num_vdos=%d",
+						__func__, dev_name(engine->dev), vdm_hdr, num_vdos);
 				rc = engine->ops.vdm(engine, vdm_hdr, vdos, num_vdos);
+			}
 			break;
 		}
 	}

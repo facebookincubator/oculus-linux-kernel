@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_SFE_CORE_H_
@@ -34,7 +34,7 @@ struct cam_sfe_hw_core_info {
 	struct cam_sfe_bus                 *sfe_bus_wr;
 	struct cam_sfe_bus                 *sfe_bus_rd;
 	void                               *sfe_irq_controller;
-	void                               *workq_info;
+	void                               *worker_info;
 	spinlock_t                          spin_lock;
 };
 

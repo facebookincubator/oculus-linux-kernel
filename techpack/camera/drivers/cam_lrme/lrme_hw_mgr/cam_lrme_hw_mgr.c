@@ -465,12 +465,12 @@ static int cam_lrme_mgr_util_schedule_frame_req(
 	struct cam_lrme_hw_mgr *hw_mgr, struct cam_lrme_device *hw_device)
 {
 	int rc = 0;
-	struct crm_workq_task *task;
+	struct crm_worker_task *task;
 	struct cam_lrme_mgr_work_data *work_data;
 
-	task = cam_req_mgr_workq_get_task(hw_device->work);
-	if (!task) {
-		CAM_ERR(CAM_LRME, "Can not get task for worker");
+	task = cam_req_mgr_worker_get_task(hw_device->work);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_LRME, "Can not get task = %d for worker", PTR_ERR(task));
 		return -ENOMEM;
 	}
 
@@ -479,7 +479,7 @@ static int cam_lrme_mgr_util_schedule_frame_req(
 
 	task->process_cb = cam_lrme_mgr_util_submit_req;
 	CAM_DBG(CAM_LRME, "enqueue submit task");
-	rc = cam_req_mgr_workq_enqueue_task(task, hw_mgr, CRM_TASK_PRIORITY_0);
+	rc = cam_req_mgr_worker_enqueue_task(task, hw_mgr, CRM_TASK_PRIORITY_0);
 
 	return rc;
 }
@@ -1078,10 +1078,10 @@ int cam_lrme_mgr_register_device(
 
 	rc = snprintf(buf, sizeof(buf), "cam_lrme_device_submit_worker%d",
 		lrme_hw_intf->hw_idx);
-	CAM_DBG(CAM_LRME, "Create submit workq for %s", buf);
-	rc = cam_req_mgr_workq_create(buf,
+	CAM_DBG(CAM_LRME, "Create submit worker for %s", buf);
+	rc = cam_req_mgr_worker_create(buf,
 		CAM_LRME_WORKQ_NUM_TASK,
-		&hw_device->work, CRM_WORKQ_USAGE_NON_IRQ, 0);
+		&hw_device->work, CRM_WORKER_USAGE_NON_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_LRME,
 			"Unable to create a worker, rc=%d", rc);
@@ -1132,7 +1132,7 @@ int cam_lrme_mgr_register_device(
 	return 0;
 
 destroy_workqueue:
-	cam_req_mgr_workq_destroy(&hw_device->work);
+	cam_req_mgr_worker_destroy(&hw_device->work);
 
 	return rc;
 }
@@ -1142,7 +1142,7 @@ int cam_lrme_mgr_deregister_device(int device_index)
 	struct cam_lrme_device *hw_device;
 
 	hw_device = &g_lrme_hw_mgr.hw_device[device_index];
-	cam_req_mgr_workq_destroy(&hw_device->work);
+	cam_req_mgr_worker_destroy(&hw_device->work);
 	memset(hw_device, 0x0, sizeof(struct cam_lrme_device));
 	g_lrme_hw_mgr.device_count--;
 

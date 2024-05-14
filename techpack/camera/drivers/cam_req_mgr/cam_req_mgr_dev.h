@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_REQ_MGR_DEV_H_
@@ -32,7 +33,7 @@ struct cam_req_mgr_device {
 	uint32_t v4l2_sub_ids;
 	struct mutex cam_lock;
 	struct v4l2_fh *cam_eventq;
-	spinlock_t cam_eventq_lock;
+	struct mutex cam_eventq_lock;
 	bool shutdown_state;
 };
 

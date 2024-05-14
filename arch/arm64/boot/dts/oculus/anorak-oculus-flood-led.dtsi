@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.<0>
+
+&ext_flash_default {
+	bias-pull-down;
+	/delete-property/ bias-high-impedance;
+};
+
+&pmxr2230_flash {
+	status = "ok";
+	/delete-property/ qcom,external-led;
+	qcom,multi-strobe;
+	qcom,hw-strobe-gpios = <&pmxr2230_gpios 1 0>;
+};
+
+&pmxr2230_torch2 {
+	qcom,strobe-sel = <1>;    /* HW Stobe */
+	qcom,strobe-config = <0>; /* GPIO 1 */
+	qcom,max-current-ma = <140>;
+	qcom,default-led-trigger = "default-on";
+};
+
+&pmxr2230_torch3 {
+	qcom,strobe-sel = <1>;    /* HW Strobe */
+	qcom,strobe-config = <0>; /* GPIO 1 */
+	qcom,max-current-ma = <140>;
+	qcom,default-led-trigger = "default-on";
+};
+
+&pmxr2230_switch0 {
+	qcom,led-mask = <0xC>; /* Channels 3 & 4 */
+	qcom,default-led-trigger = "default-on";
+};
+
+/delete-node/ &pmxr2230_flash0;
+/delete-node/ &pmxr2230_flash1;
+/delete-node/ &pmxr2230_flash2;
+/delete-node/ &pmxr2230_flash3;
+/delete-node/ &pmxr2230_torch0;
+/delete-node/ &pmxr2230_torch1;
+/delete-node/ &pmxr2230_switch1;
+/delete-node/ &pmxr2230_switch2;

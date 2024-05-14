@@ -263,12 +263,14 @@ static int copy_station_stats_to_adapter(struct hdd_adapter *adapter,
 			stats->vdev_summary_stats[0].stats.rx_discard_cnt;
 	adapter->hdd_stats.summary_stat.rx_error_cnt =
 			stats->vdev_summary_stats[0].stats.rx_error_cnt;
-	adapter->hdd_stats.peer_stats.rx_count =
+	if (stats->peer_adv_stats) {
+		adapter->hdd_stats.peer_stats.rx_count =
 			stats->peer_adv_stats->rx_count;
-	adapter->hdd_stats.peer_stats.rx_bytes =
+		adapter->hdd_stats.peer_stats.rx_bytes =
 			stats->peer_adv_stats->rx_bytes;
-	adapter->hdd_stats.peer_stats.fcs_count =
+		adapter->hdd_stats.peer_stats.fcs_count =
 			stats->peer_adv_stats->fcs_count;
+	}
 	/* Copy vdev status info sent by FW */
 	if (stats->vdev_extd_stats)
 		adapter->is_mlo_vdev_active =

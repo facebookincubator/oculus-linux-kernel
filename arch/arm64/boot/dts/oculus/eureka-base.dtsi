@@ -72,6 +72,25 @@
 	};
 };
 
+// Bluetooth UART
+&qupv3_se5_4uart {
+  meta,nearest-thermal-sensor = "cam5-usr";
+  meta,geni_ios_monitor_enabled;
+  meta,io_stat_enabled;
+};
+
+&qupv3_se9_spi {
+	syncboss_nrf@0 {
+		nsync@0 {
+			/*
+			 * T182999318: temporary overrride to allow gradual deprecation
+			 * of the legacy nsync userspace interface.
+			 */
+			meta,disable-legacy-nsync;
+		};
+	};
+};
+
 &qupv3_se10_spi {
 	status = "ok";
 	vd6283@0 {
@@ -202,6 +221,11 @@
 	meta,usbvdm_cypd {
 		compatible = "meta,usbvdm-cypd";
 		cy,cypd = <&cypd3177>;
+	};
+
+	meta,pdfu_initiator {
+		compatible = "meta,pdfu-initiator";
+		usb,product-id = /bits/ 16 <0x5006>;
 	};
 };
 

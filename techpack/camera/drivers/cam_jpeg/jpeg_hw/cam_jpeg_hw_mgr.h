@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef CAM_JPEG_HW_MGR_H
@@ -15,7 +15,7 @@
 #include "cam_jpeg_hw_mgr_intf.h"
 #include "cam_hw_mgr_intf.h"
 #include "cam_hw_intf.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_mem_mgr.h"
 
 #define CAM_JPEG_WORKQ_NUM_TASK             30
@@ -156,8 +156,8 @@ struct cam_jpeg_hw_mgr {
 	struct cam_jpeg_query_cap_cmd jpeg_caps;
 	int32_t iommu_hdl;
 	int32_t iommu_sec_hdl;
-	struct cam_req_mgr_core_workq *work_process_frame;
-	struct cam_req_mgr_core_workq *work_process_irq_cb;
+	struct cam_req_mgr_core_worker *work_process_frame;
+	struct cam_req_mgr_core_worker *work_process_irq_cb;
 	struct cam_jpeg_process_frame_work_data_t *process_frame_work_data;
 	struct cam_jpeg_process_irq_work_data_t *process_irq_cb_work_data;
 	int cdm_iommu_hdl;

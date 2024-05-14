@@ -787,11 +787,8 @@ KBUILD_CFLAGS	+= $(call cc-disable-warning, format-overflow)
 KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
 
 # Meta Specific: Enables sample profile guided optimization for the kernel.
-# This should only be enable if LTO is enabled.
-ifdef CONFIG_LTO_CLANG
 ifdef CONFIG_META_SAMPLE_PGO
 KBUILD_CFLAGS	+= -gline-tables-only -fprofile-sample-use=$(srctree)/vmlinux.profdata 
-endif
 endif
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE

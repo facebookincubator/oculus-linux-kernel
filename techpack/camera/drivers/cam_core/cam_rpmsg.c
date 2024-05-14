@@ -32,7 +32,7 @@ static struct cam_rpmsg_jpeg_pvt jpeg_private;
 struct cam_rpmsg_jpeg_payload {
 	struct rpmsg_device *rpdev;
 	struct cam_jpeg_dsp2cpu_cmd_msg *rsp;
-	ktime_t workq_scheduled_ts;
+	ktime_t worker_scheduled_ts;
 	struct work_struct work;
 };
 
@@ -40,7 +40,7 @@ struct cam_rpmsg_jpeg_payload {
 
 struct cam_rpmsg_system_data {
 	struct completion complete;
-	struct cam_req_mgr_core_workq *workq;
+	struct cam_req_mgr_core_worker *worker;
 };
 
 struct cam_rpmsg_system_data system_data;
@@ -145,7 +145,7 @@ static int cam_rpmsg_system_recv_worker(void *priv, void *data)
 
 static int cam_rpmsg_system_recv_irq_cb(void *cookie, void *data, int len)
 {
-	struct crm_workq_task *task;
+	struct crm_worker_task *task;
 	void *payload;
 	int rc = 0;
 
@@ -155,17 +155,17 @@ static int cam_rpmsg_system_recv_irq_cb(void *cookie, void *data, int len)
 		CAM_ERR(CAM_RPMSG, "Failed to alloc payload");
 		return -ENOMEM;
 	}
-	CAM_DBG(CAM_RPMSG, "Send %d bytes to workq", len);
+	CAM_DBG(CAM_RPMSG, "Send %d bytes to worker", len);
 	memcpy(payload, data, len);
 
-	task = cam_req_mgr_workq_get_task(system_data.workq);
-	if (!task) {
-		CAM_ERR(CAM_RPMSG, "Failed to dequeue task");
+	task = cam_req_mgr_worker_get_task(system_data.worker);
+	if (IS_ERR_OR_NULL(task)) {
+		CAM_ERR(CAM_RPMSG, "Failed to dequeue task = %d", PTR_ERR(task));
 		return -EINVAL;
 	}
 	task->payload = payload;
 	task->process_cb = cam_rpmsg_system_recv_worker;
-	rc = cam_req_mgr_workq_enqueue_task(task, NULL, CRM_TASK_PRIORITY_0);
+	rc = cam_req_mgr_worker_enqueue_task(task, NULL, CRM_TASK_PRIORITY_0);
 	if (rc) {
 		CAM_ERR(CAM_RPMSG, "failed to enqueue task rc %d", rc);
 	}
@@ -973,7 +973,7 @@ static int cam_rpmsg_jpeg_cb(struct rpmsg_device *rpdev, void *data, int len,
 
 		INIT_WORK((struct work_struct *)&payload->work,
 			handle_jpeg_cb);
-		payload->workq_scheduled_ts = ktime_get();
+		payload->worker_scheduled_ts = ktime_get();
 
 		work_status = queue_work(
 			jpeg_private.jpeg_work_queue,
@@ -1181,12 +1181,12 @@ static int cam_rpmsg_slave_probe(struct rpmsg_device *rpdev)
 
 	cam_rpmsg_set_recv_cb(handle, cam_rpmsg_slave_cb);
 
-	rc = cam_req_mgr_workq_create("cam_rpmsg_system_wq",
+	rc = cam_req_mgr_worker_create("cam_rpmsg_system_wq",
 			CAM_RPMSG_WORKQ_NUM_TASK,
-			&system_data.workq, CRM_WORKQ_USAGE_IRQ,
-			CAM_WORKQ_FLAG_HIGH_PRIORITY);
+			&system_data.worker, CRM_WORKER_USAGE_IRQ,
+			CAM_WORKER_FLAG_HIGH_PRIORITY);
 	if (rc) {
-		CAM_ERR(CAM_RPMSG, "Failed to create workq rc %d", rc);
+		CAM_ERR(CAM_RPMSG, "Failed to create worker rc %d", rc);
 		return -EINVAL;
 	}
 	/* set system recv */

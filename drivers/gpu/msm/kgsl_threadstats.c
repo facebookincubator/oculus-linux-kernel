@@ -64,6 +64,7 @@ kgsl_thread_private_new(struct kgsl_device *device)
 	const struct adreno_perfcount_group *group;
 	struct kgsl_thread_private *private;
 	pid_t tid = task_pid_nr(current);
+	int i;
 
 	list_for_each_entry(private, &kgsl_driver.thread_list, list) {
 		if (private->tid == tid) {
@@ -90,6 +91,11 @@ kgsl_thread_private_new(struct kgsl_device *device)
 		private->alwayson_reg = (group && group->reg_count > 0) ?
 				&group->regs[0] : NULL;
 	}
+
+	spin_lock_init(&private->history_lock);
+	INIT_LIST_HEAD(&private->history_list);
+	for (i = 0; i < KGSL_THREADSTATS_HISTORY_LENGTH; i++)
+		INIT_LIST_HEAD(&private->history_entries[i].node);
 
 	return private;
 }
@@ -167,9 +173,43 @@ static struct kobj_type ktype_threadstat = {
 	.sysfs_ops = &threadstat_sysfs_ops,
 };
 
+static ssize_t history_bin_show(struct file *filep, struct kobject *kobj,
+	struct bin_attribute *attr, char *buf, loff_t off,
+	size_t count)
+{
+	struct kgsl_thread_private *private;
+	struct kgsl_threadstats_history_node *node;
+	struct kgsl_threadstats_entry *output = (struct kgsl_threadstats_entry *)buf;
+	unsigned long flags;
+
+	private = kobj ? container_of(kobj, struct kgsl_thread_private, kobj) :
+		      NULL;
+	if (!private)
+		return -EIO;
+
+	memset(buf, 0, count);
+
+	/* Dump the history entries in list order in binary format. */
+	spin_lock_irqsave(&private->history_lock, flags);
+	list_for_each_entry(node, &private->history_list, node)
+		memcpy(output++, &node->entry, sizeof(struct kgsl_threadstats_entry));
+	spin_unlock_irqrestore(&private->history_lock, flags);
+
+	return count;
+}
+
+static struct bin_attribute threadstat_history_attr = {
+	.attr.name = "history_bin",
+	.attr.mode = 0444,
+	.size = sizeof(struct kgsl_threadstats_entry) * KGSL_THREADSTATS_HISTORY_LENGTH,
+	.read = history_bin_show
+};
+
 void kgsl_thread_uninit_sysfs(struct kgsl_thread_private *private)
 {
 	int i;
+
+	sysfs_remove_bin_file(&private->kobj, &threadstat_history_attr);
 
 	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++) {
 		sysfs_put(private->event_sd[i]);
@@ -207,6 +247,9 @@ void kgsl_thread_init_sysfs(struct kgsl_device *device,
 		private->event_sd[i] = sysfs_get_dirent(
 			private->kobj.sd, threadstat_attrs[i].attr.name);
 	}
+
+	if (sysfs_create_bin_file(&private->kobj, &threadstat_history_attr))
+		WARN(1, "Couldn't create threadstat history file\n");
 }
 
 void kgsl_thread_private_close(struct kgsl_thread_private *private)
@@ -261,13 +304,34 @@ static void _notify_event(struct kernfs_node *kn)
 void kgsl_thread_queue_cmdobj(struct kgsl_thread_private *thread,
 		uint32_t timestamp)
 {
+	struct kgsl_threadstats_history_node *node;
+	struct kgsl_threadstats_entry *entry;
+	uint64_t count, ktime;
+	unsigned long flags;
+
 	if (IS_ERR_OR_NULL(thread))
 		return;
 
 	/* Get the kernel monotonic clock */
-	thread->stats[KGSL_THREADSTATS_QUEUED] = ktime_get_ns();
+	ktime = ktime_get_ns();
+
+	spin_lock_irqsave(&thread->history_lock, flags);
+
+	thread->stats[KGSL_THREADSTATS_QUEUED] = ktime;
 	thread->stats[KGSL_THREADSTATS_QUEUED_ID] = timestamp;
-	thread->stats[KGSL_THREADSTATS_QUEUED_COUNT]++;
+	count = thread->stats[KGSL_THREADSTATS_QUEUED_COUNT]++;
+
+	node = &thread->history_entries[count % KGSL_THREADSTATS_HISTORY_LENGTH];
+	list_del_init(&node->node);
+	list_add(&node->node, &thread->history_list);
+
+	/* Initialize the history entry. */
+	entry = &node->entry;
+	memset(entry, 0, sizeof(struct kgsl_threadstats_entry));
+	entry->timestamp = (uint64_t)timestamp;
+	entry->queued = ktime;
+
+	spin_unlock_irqrestore(&thread->history_lock, flags);
 
 	_notify_event(thread->event_sd[KGSL_THREADSTATS_QUEUED_EVENT]);
 }
@@ -275,7 +339,9 @@ void kgsl_thread_queue_cmdobj(struct kgsl_thread_private *thread,
 void kgsl_thread_submit_cmdobj(struct kgsl_thread_private *thread,
 		uint32_t timestamp, u64 ktime, u64 ticks)
 {
+	struct kgsl_threadstats_history_node *node;
 	uint64_t alwayson_value;
+	unsigned long flags;
 
 	if (IS_ERR_OR_NULL(thread))
 		return;
@@ -297,6 +363,21 @@ void kgsl_thread_submit_cmdobj(struct kgsl_thread_private *thread,
 	thread->stats[KGSL_THREADSTATS_SYNC_DELTA] = thread->sync_ktime -
 			(thread->sync_ticks + alwayson_value) * 10000 / 192;
 
+	/*
+	 * Look this entry up in the history and update its submitted time if
+	 * found.
+	 */
+	spin_lock_irqsave(&thread->history_lock, flags);
+	list_for_each_entry(node, &thread->history_list, node) {
+		struct kgsl_threadstats_entry *entry = &node->entry;
+
+		if (entry->timestamp == timestamp) {
+			entry->submitted = ktime;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&thread->history_lock, flags);
+
 	_notify_event(thread->event_sd[KGSL_THREADSTATS_SUBMITTED_EVENT]);
 }
 
@@ -307,15 +388,43 @@ void kgsl_thread_retire_cmdobj(struct kgsl_thread_private *thread,
 		return;
 
 	if ((active != 0 || start != 0) && end != 0) {
+		struct kgsl_threadstats_history_node *node;
+		uint64_t consumed_ktime = 0;
+		uint64_t retired_ktime;
+		uint64_t active_ktime;
+		unsigned long flags;
+
 		/*
 		 * Calculate the time delta from the sync in nsecs by converting
 		 * from GPU ticks (which operates on a 19.2 MHz timer) and
 		 * add that to the sync ktime.
 		 */
-		thread->stats[KGSL_THREADSTATS_RETIRED] = thread->sync_ktime +
+		retired_ktime = thread->sync_ktime +
 				(end - thread->sync_ticks) * 10000 / 192;
-		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] +=
-				(active ? active : (end - start)) * 10000 / 192;
+		active_ktime = (active ? active : (end - start)) * 10000 / 192;
+		thread->stats[KGSL_THREADSTATS_RETIRED] = retired_ktime;
+		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] += active_ktime;
+
+		if (start != 0)
+			consumed_ktime = thread->sync_ktime +
+					(start - thread->sync_ticks) * 10000 / 192;
+
+		/*
+		 * Look this entry up in the history and update its consumed,
+		 * retired, and active times if found.
+		 */
+		spin_lock_irqsave(&thread->history_lock, flags);
+		list_for_each_entry(node, &thread->history_list, node) {
+			struct kgsl_threadstats_entry *entry = &node->entry;
+
+			if (entry->timestamp == timestamp) {
+				entry->consumed = consumed_ktime;
+				entry->retired = retired_ktime;
+				entry->active = active_ktime;
+				break;
+			}
+		}
+		spin_unlock_irqrestore(&thread->history_lock, flags);
 	}
 
 	thread->stats[KGSL_THREADSTATS_RETIRED_ID] = timestamp;

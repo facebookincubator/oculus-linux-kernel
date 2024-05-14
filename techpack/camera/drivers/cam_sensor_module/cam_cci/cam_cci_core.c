@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
 #include "cam_cci_core.h"
 #include "cam_cci_dev.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_common_util.h"
 
 static int32_t cam_cci_convert_type_to_num_bytes(
@@ -1549,9 +1550,9 @@ static void cam_cci_write_async_helper(struct work_struct *work)
 	struct cam_cci_master_info *cci_master_info;
 
 	cam_common_util_thread_switch_delay_detect(
-		"CCI workq schedule",
-		write_async->workq_scheduled_ts,
-		CAM_WORKQ_SCHEDULE_TIME_THRESHOLD);
+		"CCI worker schedule",
+		write_async->worker_scheduled_ts,
+		CAM_WORKER_SCHEDULE_TIME_THRESHOLD);
 	cci_dev = write_async->cci_dev;
 	i2c_msg = &write_async->c_ctrl.cfg.cci_i2c_write_cfg;
 	master = write_async->c_ctrl.cci_info->cci_i2c_master;
@@ -1623,7 +1624,7 @@ static int32_t cam_cci_i2c_write_async(struct v4l2_subdev *sd,
 	cci_i2c_write_cfg_w->size = cci_i2c_write_cfg->size;
 	cci_i2c_write_cfg_w->delay = cci_i2c_write_cfg->delay;
 
-	write_async->workq_scheduled_ts = ktime_get();
+	write_async->worker_scheduled_ts = ktime_get();
 	queue_work(cci_dev->write_wq[write_async->queue], &write_async->work);
 
 	return rc;

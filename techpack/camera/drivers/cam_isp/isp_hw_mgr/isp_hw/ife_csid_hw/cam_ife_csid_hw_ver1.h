@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_IFE_CSID_HW_VER1_H_
@@ -402,7 +402,7 @@ struct cam_ife_csid_ver1_tpg_cfg  {
  * @hw_intf:              hw intf
  * @hw_info:              hw info
  * @core_info:            csid core info
- * @workq:                workq to handle csid errors
+ * @worker:                worker to handle csid errors
  * @token:                private data to be sent with callback
  * @counters:             counters used in csid hw
  * @path_res:             array of path resources
@@ -424,7 +424,7 @@ struct cam_ife_csid_ver1_hw {
 	struct cam_hw_intf                            *hw_intf;
 	struct cam_hw_info                            *hw_info;
 	struct cam_ife_csid_core_info                 *core_info;
-	struct cam_req_mgr_core_workq                 *workq;
+	struct cam_req_mgr_core_worker                 *worker;
 	void                                          *token;
 	struct cam_ife_csid_hw_counters                counters;
 	struct cam_ife_csid_ver1_tpg_cfg               tpg_cfg;

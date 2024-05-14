@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 ccflags-y += -I$(src)
 
+ifdef CONFIG_GPU_ERROR_SYSCTL
+	ccflags-y += -I$(srctree)/drivers/staging/oculus/include
+endif
+
 obj-$(CONFIG_QCOM_KGSL) += msm_kgsl.o
 
 msm_kgsl-y = \

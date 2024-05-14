@@ -83,6 +83,14 @@ config GPIO_CAPACITOR
 	  sudden high current. And disabled when not in use (EG: Standby) since the
 	  circuit has some leakage to prevent excessive power drain.
 
+config GPU_ERROR_SYSCTL
+	tristate "Enable creation of SysCtl nodes for GPU Error Logs"
+	default n
+	help
+		Enable creation of SysCtl nodes for GPU Error Logs that is
+		consumed by user-space for telemetry purposes to get insight
+		into GPU Errors.
+
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
 	default n
@@ -291,6 +299,7 @@ config VIRTUAL_SENSOR
 
 
 source "drivers/staging/oculus/mcu/Kconfig"
+source "drivers/staging/oculus/pdfu/Kconfig"
 source "drivers/staging/oculus/usbvdm/Kconfig"
 
 endif # OCULUS

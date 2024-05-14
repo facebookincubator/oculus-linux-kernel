@@ -25,7 +25,7 @@
 #include "cam_cdm_util.h"
 #include "cam_common_util.h"
 #include "cam_subdev.h"
-#include "cam_req_mgr_workq.h"
+#include "cam_req_mgr_worker_wrapper.h"
 
 /* CSIPHY TPG VC/DT values */
 #define CAM_IFE_CPHY_TPG_VC_VAL                         0x0
@@ -554,7 +554,7 @@ static int cam_ife_csid_ver2_discard_sof_pix_bottom_half(
 	CAM_DBG(CAM_ISP, "CSID[%u] Discard frame on %s path, num SOFs: %u",
 		csid_hw->hw_intf->hw_idx, res->res_name, path_cfg->sof_cnt);
 
-	spin_lock(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
@@ -577,7 +577,7 @@ static int cam_ife_csid_ver2_discard_sof_pix_bottom_half(
 		cam_ife_csid_ver2_reset_discard_frame_cfg(res->res_name, csid_hw, path_cfg);
 	}
 end:
-	spin_unlock(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	return 0;
 }
 
@@ -615,7 +615,7 @@ static int cam_ife_csid_ver2_discard_sof_rdi_bottom_half(
 	CAM_DBG(CAM_ISP, "CSID[%u] Discard frame on %s path, num SOFs: %u",
 		csid_hw->hw_intf->hw_idx, res->res_name, path_cfg->sof_cnt);
 
-	spin_lock(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
@@ -635,7 +635,7 @@ static int cam_ife_csid_ver2_discard_sof_rdi_bottom_half(
 		cam_ife_csid_ver2_reset_discard_frame_cfg(res->res_name, csid_hw, path_cfg);
 	}
 end:
-	spin_unlock(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	return 0;
 }
 
@@ -1056,11 +1056,11 @@ static int cam_ife_csid_ver2_rx_err_bottom_half(
 		goto end;
 	}
 
-	spin_lock(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		spin_unlock(&csid_hw->lock_state);
+		mutex_unlock(&csid_hw->lock_state);
 		goto end;
 	}
 
@@ -1182,7 +1182,7 @@ static int cam_ife_csid_ver2_rx_err_bottom_half(
 	CAM_ERR_RATE_LIMIT(CAM_ISP, "CSID[%u] Rx Status 0x%x",
 		csid_hw->hw_intf->hw_idx,
 		payload->irq_reg_val[CAM_IFE_CSID_IRQ_REG_RX]);
-	spin_unlock(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	if (!csid_hw->flags.reset_awaited) {
 		if (csid_hw->flags.fatal_err_detected) {
 			event_type |= CAM_ISP_HW_ERROR_CSID_FATAL;
@@ -1656,11 +1656,11 @@ static int cam_ife_csid_ver2_ipp_bottom_half(
 		csid_hw->event_cb(token, CAM_ISP_HW_EVENT_EPOCH, (void *)&evt_info);
 
 	err_mask = path_reg->fatal_err_mask | path_reg->non_fatal_err_mask;
-	spin_lock(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		spin_unlock(&csid_hw->lock_state);
+		mutex_unlock(&csid_hw->lock_state);
 		goto end;
 	}
 
@@ -1668,7 +1668,7 @@ static int cam_ife_csid_ver2_ipp_bottom_half(
 		csid_hw, res,
 		CAM_IFE_CSID_IRQ_REG_IPP,
 		err_mask, irq_status_ipp);
-	spin_unlock(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	if (err_type)
 		cam_ife_csid_ver2_handle_event_err(csid_hw,
 			irq_status_ipp,
@@ -1743,17 +1743,17 @@ static int cam_ife_csid_ver2_ppp_bottom_half(
 		goto end;
 	}
 
-	spin_lock(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		spin_unlock(&csid_hw->lock_state);
+		mutex_unlock(&csid_hw->lock_state);
 		goto end;
 	}
 	err_type = cam_ife_csid_ver2_parse_path_irq_status(
 		csid_hw, res, CAM_IFE_CSID_IRQ_REG_PPP,
 		err_mask, irq_status_ppp);
-	spin_unlock(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	if (err_type)
 		cam_ife_csid_ver2_handle_event_err(csid_hw,
 			irq_status_ppp,
@@ -1842,11 +1842,11 @@ static int cam_ife_csid_ver2_rdi_bottom_half(
 	err_mask = rdi_reg->non_fatal_err_mask |
 		rdi_reg->fatal_err_mask;
 
-	spin_lock(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	if (csid_hw->hw_info->hw_state != CAM_HW_STATE_POWER_UP) {
 		CAM_ERR(CAM_ISP, "CSID[%d] powered down state",
 			csid_hw->hw_intf->hw_idx);
-		spin_unlock(&csid_hw->lock_state);
+		mutex_unlock(&csid_hw->lock_state);
 		goto end;
 	}
 
@@ -1854,7 +1854,7 @@ static int cam_ife_csid_ver2_rdi_bottom_half(
 		path_cfg->irq_reg_idx,
 		err_mask, irq_status_rdi);
 
-	spin_unlock(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	if (err_type) {
 
 		cam_ife_csid_ver2_handle_event_err(csid_hw,
@@ -2823,8 +2823,8 @@ int cam_ife_csid_ver2_reserve(void *hw_priv,
 	res->res_state = CAM_ISP_RESOURCE_STATE_RESERVED;
 	res->is_per_port_acquire = is_per_port_acquire;
 	csid_hw->event_cb = reserve->event_cb;
-	csid_hw->workq  = reserve->workq;
-	res->workq_info  = reserve->workq;
+	csid_hw->worker  = reserve->worker;
+	res->worker_info  = reserve->worker;
 	reserve->buf_done_controller = csid_hw->buf_done_irq_controller;
 	res->cdm_ops = reserve->cdm_ops;
 	csid_hw->flags.sfe_en = reserve->sfe_en;
@@ -3450,8 +3450,8 @@ static inline int cam_ife_csid_ver2_subscribe_sof_for_discard(
 		res,
 		top_half_handler,
 		bottom_half_handler,
-		res->workq_info,
-		&workq_bh_api,
+		res->worker_info,
+		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
 
 	if (path_cfg->discard_irq_handle < 1) {
@@ -3579,8 +3579,8 @@ static int cam_ife_csid_ver2_program_rdi_path(
 		res,
 		cam_ife_csid_ver2_path_top_half,
 		cam_ife_csid_ver2_rdi_bottom_half,
-		res->workq_info,
-		&workq_bh_api,
+		res->worker_info,
+		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
 
 	if (path_cfg->irq_handle < 1) {
@@ -3606,8 +3606,8 @@ static int cam_ife_csid_ver2_program_rdi_path(
 			res,
 			cam_ife_csid_ver2_path_err_top_half,
 			cam_ife_csid_ver2_rdi_bottom_half,
-			res->workq_info,
-			&workq_bh_api,
+			res->worker_info,
+			&worker_bh_api,
 			CAM_IRQ_EVT_GROUP_0);
 
 	if (path_cfg->err_irq_handle < 1) {
@@ -3713,8 +3713,8 @@ static int cam_ife_csid_ver2_program_ipp_path(
 				    res,
 				    cam_ife_csid_ver2_path_top_half,
 				    cam_ife_csid_ver2_ipp_bottom_half,
-				    res->workq_info,
-				    &workq_bh_api,
+				    res->worker_info,
+				    &worker_bh_api,
 				    CAM_IRQ_EVT_GROUP_0);
 
 	if (path_cfg->irq_handle < 1) {
@@ -3740,8 +3740,8 @@ static int cam_ife_csid_ver2_program_ipp_path(
 		res,
 		cam_ife_csid_ver2_path_err_top_half,
 		cam_ife_csid_ver2_ipp_bottom_half,
-		res->workq_info,
-		&workq_bh_api,
+		res->worker_info,
+		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
 
 	if (path_cfg->err_irq_handle < 1) {
@@ -3940,8 +3940,8 @@ static int cam_ife_csid_ver2_program_ppp_path(
 				csid_hw,
 				cam_ife_csid_ver2_path_top_half,
 				cam_ife_csid_ver2_ppp_bottom_half,
-				res->workq_info,
-				&workq_bh_api,
+				res->worker_info,
+				&worker_bh_api,
 				CAM_IRQ_EVT_GROUP_0);
 
 
@@ -3968,8 +3968,8 @@ static int cam_ife_csid_ver2_program_ppp_path(
 					res,
 					cam_ife_csid_ver2_path_err_top_half,
 					cam_ife_csid_ver2_ipp_bottom_half,
-					res->workq_info,
-					&workq_bh_api,
+					res->worker_info,
+					&worker_bh_api,
 					CAM_IRQ_EVT_GROUP_0);
 
 	if (path_cfg->err_irq_handle < 1) {
@@ -4143,8 +4143,8 @@ static int cam_ife_csid_ver2_enable_csi2(struct cam_ife_csid_ver2_hw *csid_hw)
 				    csid_hw,
 				    cam_ife_csid_ver2_rx_err_top_half,
 				    cam_ife_csid_ver2_rx_err_bottom_half,
-				    csid_hw->workq,
-				    &workq_bh_api,
+				    csid_hw->worker,
+				    &worker_bh_api,
 				    CAM_IRQ_EVT_GROUP_0);
 
 	if (csid_hw->rx_cfg.err_irq_handle < 1) {
@@ -4398,8 +4398,8 @@ static int cam_ife_csid_ver2_enable_hw(
 		csid_hw,
 		cam_ife_csid_ver2_top_err_irq_top_half,
 		cam_ife_csid_ver2_top_err_irq_bottom_half,
-		csid_hw->workq,
-		&workq_bh_api,
+		csid_hw->worker,
+		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
 
 	if (csid_hw->top_err_irq_handle < 1) {
@@ -4532,11 +4532,11 @@ static int cam_ife_csid_ver2_disable_core(
 			top_reg->dual_csid_cfg0_addr[csid_hw->hw_intf->hw_idx]);
 	}
 
-	spin_lock_bh(&csid_hw->lock_state);
+	mutex_lock(&csid_hw->lock_state);
 	csid_hw->flags.device_enabled = false;
 	csid_hw->hw_info->hw_state = CAM_HW_STATE_POWER_DOWN;
 	csid_hw->flags.rdi_lcr_en = false;
-	spin_unlock_bh(&csid_hw->lock_state);
+	mutex_unlock(&csid_hw->lock_state);
 	rc = cam_ife_csid_disable_soc_resources(soc_info);
 	if (rc)
 		CAM_ERR(CAM_ISP, "CSID:%d Disable CSID SOC failed",
@@ -5597,8 +5597,8 @@ static int cam_ife_csid_ver2_update_res_data(struct cam_ife_csid_ver2_hw *csid_h
 		}
 	}
 
-	csid_hw->workq  = reserve->workq;
-	res->workq_info  = reserve->workq;
+	csid_hw->worker  = reserve->worker;
+	res->worker_info  = reserve->worker;
 	csid_hw->event_cb = reserve->event_cb;
 	res->cdm_ops = reserve->cdm_ops;
 
@@ -5675,8 +5675,8 @@ static int cam_ife_csid_ver2_subscribe_path_irqs(
 		res,
 		cam_ife_csid_ver2_path_top_half,
 		bh_handler,
-		res->workq_info,
-		&workq_bh_api,
+		res->worker_info,
+		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
 	if (path_cfg->irq_handle < 1) {
 		CAM_ERR(CAM_ISP, "CSID[%d] Subscribe res id %d Irq fail",
@@ -5699,8 +5699,8 @@ static int cam_ife_csid_ver2_subscribe_path_irqs(
 		res,
 		cam_ife_csid_ver2_path_err_top_half,
 		bh_handler,
-		res->workq_info,
-		&workq_bh_api,
+		res->worker_info,
+		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
 	if (path_cfg->err_irq_handle < 1) {
 		CAM_ERR(CAM_ISP, "CSID[%d] Subscribe Err Irq fail %d",
@@ -6256,7 +6256,7 @@ int cam_ife_csid_hw_ver2_init(struct cam_hw_intf *hw_intf,
 	csid_hw->hw_info->hw_state = CAM_HW_STATE_POWER_DOWN;
 	mutex_init(&csid_hw->hw_info->hw_mutex);
 	spin_lock_init(&csid_hw->hw_info->hw_lock);
-	spin_lock_init(&csid_hw->lock_state);
+	mutex_init(&csid_hw->lock_state);
 	init_completion(&csid_hw->hw_info->hw_complete);
 	atomic_set(&csid_hw->discard_frame_per_path, 0);
 
