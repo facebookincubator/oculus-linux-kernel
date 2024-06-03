@@ -37,7 +37,7 @@ UNUSUAL_DEV(  0x04e6, 0x0005, 0x0100, 0x0208,
 		0),
 
 UNUSUAL_DEV(  0x066b, 0x0105, 0x0100, 0x0100,
-		"unknown2",
+		"Olympus",
 		"Camedia MAUSB-2",
 		USB_SC_SCSI, USB_PR_EUSB_SDDR09, usb_stor_sddr09_init,
 		0),
