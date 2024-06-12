@@ -132,10 +132,10 @@ config USB_STORAGE_JUMPSHOT
 	  If this driver is compiled as a module, it will be named ums-jumpshot.
 
 config USB_STORAGE_ALAUDA
-	tristate "unknown2 MAUSB-10/Fuji DPC-R1 support"
+	tristate "Olympus MAUSB-10/Fuji DPC-R1 support"
 	depends on USB_STORAGE
 	help
-	  Say Y here to include additional code to support the unknown2 MAUSB-10
+	  Say Y here to include additional code to support the Olympus MAUSB-10
 	  and Fujifilm DPC-R1 USB Card reader/writer devices.
 
 	  These devices are based on the Alauda chip and support both
