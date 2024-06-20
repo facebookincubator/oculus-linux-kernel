@@ -118,15 +118,15 @@ static const struct driver_info	zaurus_pxa_info = {
 };
 #define	ZAURUS_PXA_INFO		((unsigned long)&zaurus_pxa_info)
 
-static const struct driver_info	unknown2_mxl_info = {
-	.description =	"unknown2 R1000",
+static const struct driver_info	olympus_mxl_info = {
+	.description =	"Olympus R1000",
 	.flags =	FLAG_POINTTOPOINT | FLAG_FRAMING_Z,
 	.check_connect = always_connected,
 	.bind =		zaurus_bind,
 	.unbind =	usbnet_cdc_unbind,
 	.tx_fixup =	zaurus_tx_fixup,
 };
-#define	unknown2_MXL_INFO	((unsigned long)&unknown2_mxl_info)
+#define	OLYMPUS_MXL_INFO	((unsigned long)&olympus_mxl_info)
 
 
 /* Some more recent products using Lineo/Belcarra code will wrongly claim
@@ -346,7 +346,7 @@ static const struct usb_device_id	products [] = {
 	.driver_info = (unsigned long) &bogus_mdlm_info,
 },
 
-/* unknown2 has some models with a Zaurus-compatible option.
+/* Olympus has some models with a Zaurus-compatible option.
  * R-1000 uses a FreeScale i.MXL cpu (ARMv4T)
  */
 {
@@ -355,7 +355,7 @@ static const struct usb_device_id	products [] = {
 	.idVendor               = 0x07B4,
 	.idProduct              = 0x0F02,	/* R-1000 */
 	ZAURUS_MASTER_INTERFACE,
-	.driver_info = unknown2_MXL_INFO,
+	.driver_info = OLYMPUS_MXL_INFO,
 },
 
 /* Logitech Harmony 900 - uses the pseudo-MDLM (BLAN) driver */
