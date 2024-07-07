@@ -44,7 +44,6 @@ obj-$(CONFIG_SPI_STP)			+= stp/
 obj-$(CONFIG_ST_VD6281_ADAPTER)		+= vd6281/
 obj-$(CONFIG_UVLO_TLV4021)		+= uvlo_tlv4021.o
 obj-$(CONFIG_VIRTUAL_SENSOR)	+= virtual_sensor.o
-
 obj-y					+= mcu/
 obj-y					+= pdfu/
 obj-y					+= usbvdm/

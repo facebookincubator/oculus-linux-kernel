@@ -1,3 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * TEE driver for goodix fingerprint sensor
+ * Copyright (C) 2016 Goodix
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
 #include "gf_common.h"
 #include "gf_spi.h"
 
@@ -14,8 +30,8 @@ static void gf_spi_complete(void *arg)
 }
 #endif
 
-int gf_spi_read_bytes(struct gf_dev* gf_dev, unsigned short addr, unsigned short data_len,
-		unsigned char* rx_buf)
+int gf_spi_read_bytes(struct gf_dev *gf_dev, unsigned short addr, unsigned short data_len,
+		unsigned char *rx_buf)
 {
 #ifdef SPI_ASYNC
 	DECLARE_COMPLETION_ONSTACK(write_done);
@@ -25,10 +41,8 @@ int gf_spi_read_bytes(struct gf_dev* gf_dev, unsigned short addr, unsigned short
 	int ret = 0;
 
 	xfer = kzalloc(sizeof(*xfer)*2, GFP_KERNEL);
-	if(xfer == NULL) {
-		gf_dbg("%s, No memory for command.\n",__func__);
+	if (xfer == NULL)
 		return -ENOMEM;
-	}
 
 	/*send gf command to device.*/
 	spi_message_init(&msg);
@@ -62,26 +76,25 @@ int gf_spi_read_bytes(struct gf_dev* gf_dev, unsigned short addr, unsigned short
 	spin_lock_irq(&gf_dev->spi_lock);
 	ret = spi_async(gf_dev->spi, &msg);
 	spin_unlock_irq(&gf_dev->spi_lock);
-	if(ret == 0) {
+	if (ret == 0) {
 		wait_for_completion(&write_done);
-		if(msg.status == 0)
+		if (msg.status == 0)
 			ret = msg.actual_length - 1;
 	}
 #else
 	ret = spi_sync(gf_dev->spi, &msg);
-	if(ret == 0) {
+	if (ret == 0)
 		ret = msg.actual_length - 1;
-	}
 #endif
 	kfree(xfer);
-	if(xfer != NULL)
+	if (xfer != NULL)
 		xfer = NULL;
 
 	return 0;
 }
 
-int gf_spi_write_bytes(struct gf_dev* gf_dev, unsigned short addr, unsigned short data_len,
-		unsigned char* tx_buf)
+int gf_spi_write_bytes(struct gf_dev *gf_dev, unsigned short addr, unsigned short data_len,
+		unsigned char *tx_buf)
 {
 #ifdef SPI_ASYNC
 	DECLARE_COMPLETION_ONSTACK(read_done);
@@ -91,10 +104,8 @@ int gf_spi_write_bytes(struct gf_dev* gf_dev, unsigned short addr, unsigned shor
 	int ret = 0;
 
 	xfer = kzalloc(sizeof(*xfer), GFP_KERNEL);
-	if( xfer == NULL) {
-		gf_dbg("%s, No memory for command.\n",__func__);
+	if (xfer == NULL)
 		return -ENOMEM;
-	}
 
 	/*send gf command to device.*/
 	spi_message_init(&msg);
@@ -111,41 +122,40 @@ int gf_spi_write_bytes(struct gf_dev* gf_dev, unsigned short addr, unsigned shor
 	spin_lock_irq(&gf_dev->spi_lock);
 	ret = spi_async(gf_dev->spi, &msg);
 	spin_unlock_irq(&gf_dev->spi_lock);
-	if(ret == 0) {
+	if (ret == 0) {
 		wait_for_completion(&read_done);
-		if(msg.status == 0)
+		if (msg.status == 0)
 			ret = msg.actual_length - GF_WDATA_OFFSET;
 	}
 #else
 	ret = spi_sync(gf_dev->spi, &msg);
-	if(ret == 0) {
+	if (ret == 0)
 		ret = msg.actual_length - GF_WDATA_OFFSET;
-	}
 #endif
 	kfree(xfer);
-	if(xfer != NULL)
+	if (xfer != NULL)
 		xfer = NULL;
-
-	//return ret-2;// ret-2: because have 2 bytes represent for length.
-
 	return 0;
 }
 
-int gf_spi_read_word(struct gf_dev* gf_dev, unsigned short addr, unsigned short* value)
+int gf_spi_read_word(struct gf_dev *gf_dev, unsigned short addr, unsigned short *value)
 {
 	int status = 0;
-	u8* buf = NULL;
+	u8 *buf = NULL;
+
 	mutex_lock(&gf_dev->buf_lock);
 	status = gf_spi_read_bytes(gf_dev, addr, 2, gf_dev->gBuffer);
 	buf = gf_dev->gBuffer + GF_RDATA_OFFSET;
 	*value = ((unsigned short)(buf[0]<<8)) | buf[1];
 	mutex_unlock(&gf_dev->buf_lock);
+
 	return status;
 }
 
-int gf_spi_write_word(struct gf_dev* gf_dev, unsigned short addr, unsigned short value)
+int gf_spi_write_word(struct gf_dev *gf_dev, unsigned short addr, unsigned short value)
 {
 	int status = 0;
+
 	mutex_lock(&gf_dev->buf_lock);
 	gf_dev->gBuffer[GF_WDATA_OFFSET] = 0x00;
 	gf_dev->gBuffer[GF_WDATA_OFFSET+1] = 0x01;
@@ -157,24 +167,24 @@ int gf_spi_write_word(struct gf_dev* gf_dev, unsigned short addr, unsigned short
 	return status;
 }
 
-void endian_exchange(int len, unsigned char* buf)
+void endian_exchange(int len, unsigned char *buf)
 {
-    int i = 0;
-    int32_t size = len & 0xFFFFFFFE;
+	int i = 0;
+	int32_t size = len & 0xFFFFFFFE;
 
-    if (NULL == buf || len <= 0)
-    {
-        return;
-    }
-    for (i = 0; i < size; i += 2)
-    {
-        uint8_t buf_tmp = buf[i + 1];
-        buf[i + 1] = buf[i];
-        buf[i] = buf_tmp;
-    }
+	if (NULL == buf ||  0 >= len)
+		return;
+
+	for (i = 0; i < size; i += 2) {
+		uint8_t buf_tmp = buf[i + 1];
+
+		buf[i + 1] = buf[i];
+		buf[i] = buf_tmp;
+	}
+
 }
 
-int gf_spi_read_data(struct gf_dev* gf_dev, unsigned short addr, int len, unsigned char* value)
+int gf_spi_read_data(struct gf_dev *gf_dev, unsigned short addr, int len, unsigned char *value)
 {
 	int status;
 
@@ -186,7 +196,8 @@ int gf_spi_read_data(struct gf_dev* gf_dev, unsigned short addr, int len, unsign
 	return status;
 }
 
-int gf_spi_read_data_bigendian(struct gf_dev* gf_dev, unsigned short addr,int len, unsigned char* value)
+int gf_spi_read_data_bigendian(struct gf_dev *gf_dev, unsigned short addr, int len,
+	unsigned char *value)
 {
 	int status;
 
@@ -195,33 +206,31 @@ int gf_spi_read_data_bigendian(struct gf_dev* gf_dev, unsigned short addr,int le
 	memcpy(value, gf_dev->gBuffer+GF_RDATA_OFFSET, len);
 	mutex_unlock(&gf_dev->buf_lock);
 
-	endian_exchange(len,value);
+	endian_exchange(len, value);
 	return status;
 }
 
-int gf_spi_write_data(struct gf_dev* gf_dev, unsigned short addr, int len, unsigned char* value)
+int gf_spi_write_data(struct gf_dev *gf_dev, unsigned short addr, int len, unsigned char *value)
 {
-	int status =0;
+	int status = 0;
 	unsigned short addr_len = 0;
-	unsigned char* buf = NULL;
+	unsigned char *buf = NULL;
 
 	if (len > 1024 * 10) {
-		gf_dbg("%s length is large.\n",__func__);
-		return -1;
+		gf_dbg("%s length is large.\n", __func__);
+		return -EPERM;
 	}
 
 	addr_len = len / 2;
 
 	buf = kzalloc(len + 2, GFP_KERNEL);
-	if (buf == NULL) {
-		gf_dbg("%s, No memory for gBuffer.\n",__func__);
+	if (buf == NULL)
 		return -ENOMEM;
-	}
 
 	buf[0] = (unsigned char) ((addr_len & 0xFF00) >> 8);
 	buf[1] = (unsigned char) (addr_len & 0x00FF);
 	memcpy(buf+2, value, len);
-	endian_exchange(len,buf+2);
+	endian_exchange(len, buf+2);
 
 	mutex_lock(&gf_dev->buf_lock);
 	memcpy(gf_dev->gBuffer+GF_WDATA_OFFSET, buf, len+2);
@@ -233,7 +242,7 @@ int gf_spi_write_data(struct gf_dev* gf_dev, unsigned short addr, int len, unsig
 	return status;
 }
 
-int gf_spi_send_cmd(struct gf_dev* gf_dev, unsigned char* cmd, int len)
+int gf_spi_send_cmd(struct gf_dev *gf_dev, unsigned char *cmd, int len)
 {
 	struct spi_message msg;
 	struct spi_transfer *xfer;
@@ -241,17 +250,16 @@ int gf_spi_send_cmd(struct gf_dev* gf_dev, unsigned char* cmd, int len)
 
 	spi_message_init(&msg);
 	xfer = kzalloc(sizeof(*xfer), GFP_KERNEL);
-	if( xfer == NULL) {
-		gf_dbg("%s, No memory for command.\n",__func__);
+	if (xfer == NULL)
 		return -ENOMEM;
-	}
+
 	xfer->tx_buf = cmd;
 	xfer->len = len;
 	spi_message_add_tail(xfer, &msg);
 //	ret = spi_sync(gf_dev->spi, &msg);
 
 	kfree(xfer);
-	if(xfer != NULL)
+	if (xfer != NULL)
 		xfer = NULL;
 
 	return ret;

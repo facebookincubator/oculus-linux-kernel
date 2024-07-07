@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 
+#include <linux/completion.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
@@ -23,6 +24,7 @@
 #define OEM_NOTIFICATION_CONNECTED		0x1
 #define OEM_NOTIFICATION_DISCONNECTED	0x2
 
+#define GLINK_WAIT_TIME_MS	1000
 #define PD_MAX_EXTENDED_MSG_LEN	260
 
 struct usbvdm_dev {
@@ -33,25 +35,9 @@ struct usbvdm_dev {
 	enum pmic_glink_state state;
 	struct mutex state_lock;
 
+	struct completion ack_complete;
+
 	struct work_struct setup_work;
-};
-
-struct ext_msg_work {
-	u8 msg_type;
-	u8 data[PD_MAX_EXTENDED_MSG_LEN];
-	u32 data_len;
-
-	struct usbvdm_dev *uv_dev;
-	struct work_struct work;
-};
-
-struct vdm_work {
-	u32 vdm_hdr;
-	u32 vdos[VDO_MAX_SIZE];
-	u32 num_vdos;
-
-	struct usbvdm_dev *uv_dev;
-	struct work_struct work;
 };
 
 /* As defined in DSP */
@@ -84,18 +70,26 @@ struct pmic_glink_oem_vdm_msg {
 	u32 size;
 };
 
-static void usbvdm_glink_ext_msg_work(struct work_struct *work)
+/* As defined in DSP */
+struct pmic_glink_generic_resp_msg {
+	struct pmic_glink_hdr header;
+
+	u32 ret_code;
+};
+
+static int usbvdm_glink_ext_msg(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len)
 {
-	struct ext_msg_work *em_work = container_of(work, struct ext_msg_work, work);
-	struct usbvdm_dev *uv_dev = em_work->uv_dev;
+	struct usbvdm_dev *uv_dev = usbvdm_engine_get_drvdata(engine);
 	struct pmic_glink_hdr msg_hdr = {};
 	struct pmic_glink_oem_ext_msg msg = {};
-	int rc;
+	int rc = 0;
 
 	mutex_lock(&uv_dev->state_lock);
 
 	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
 		dev_err(uv_dev->dev, "Can't send ext msg, Glink down");
+		rc = -ENODEV;
 		goto out;
 	}
 
@@ -104,95 +98,77 @@ static void usbvdm_glink_ext_msg_work(struct work_struct *work)
 	msg_hdr.opcode = OEM_OPCODE_SEND_EXT_MSG;
 
 	msg.hdr = msg_hdr;
-	msg.msg_type = em_work->msg_type;
-	memcpy(msg.data, em_work->data, em_work->data_len);
-	msg.data_len = em_work->data_len;
+	msg.msg_type = msg_type;
+	memcpy(msg.data, data, data_len);
+	msg.data_len = data_len;
 
+	reinit_completion(&uv_dev->ack_complete);
 	rc = pmic_glink_write(uv_dev->client, &msg, sizeof(msg));
 	if (rc) {
 		dev_err(uv_dev->dev, "Failed writing to pmic_glink, rc=%d", rc);
 		goto out;
 	}
 
-out:
-	mutex_unlock(&uv_dev->state_lock);
-	kfree(em_work);
-}
-
-static int usbvdm_glink_ext_msg(struct usbvdm_engine *engine,
-		u8 msg_type, const u8 *data, size_t data_len)
-{
-	struct usbvdm_dev *uv_dev = usbvdm_engine_get_drvdata(engine);
-
-	struct ext_msg_work *em_work = kzalloc(sizeof(*em_work), GFP_KERNEL);
-	if (!em_work)
-		return -ENOMEM;
-
-	INIT_WORK(&em_work->work, usbvdm_glink_ext_msg_work);
-	em_work->uv_dev = uv_dev;
-	em_work->msg_type = msg_type;
-	memcpy(em_work->data, data, data_len);
-	em_work->data_len = data_len;
-
-	schedule_work(&em_work->work);
-	return 0;
-}
-
-static void usbvdm_glink_vdm_work(struct work_struct *work)
-{
-	struct vdm_work *vwork = container_of(work, struct vdm_work, work);
-	struct usbvdm_dev *uv_dev = vwork->uv_dev;
-	struct pmic_glink_hdr msg_hdr = {};
-	struct pmic_glink_oem_vdm_msg msg = {};
-	u32 vdm_hdr = vwork->vdm_hdr;
-	u32 *vdos = vwork->vdos;
-	int num_vdos = vwork->num_vdos;
-	int rc;
-
-	mutex_lock(&uv_dev->state_lock);
-
-	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
-		dev_err(uv_dev->dev, "Can't send vdm, Glink down");
+	if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_WAIT_TIME_MS)) {
+		rc = -ETIMEDOUT;
+		dev_err(uv_dev->dev,
+				"Timed out waiting for glink ACK for ExtMsgType=0x%02x",
+				msg_type);
 		goto out;
 	}
 
-	msg_hdr.owner = PMIC_GLINK_MSG_OWNER_OEM;
-	msg_hdr.type = MSG_TYPE_REQ_RESP;
-	msg_hdr.opcode = OEM_OPCODE_SEND_VDM;
-
-	msg.hdr = msg_hdr;
-	msg.data[0] = vdm_hdr;
-	memcpy(&msg.data[1], vdos, num_vdos * sizeof(*vdos));
-	msg.size = num_vdos + 1;
-
-	rc = pmic_glink_write(uv_dev->client, &msg, sizeof(msg));
-	if (rc) {
-		dev_err(uv_dev->dev, "Failed writing to pmic_glink, rc=%d", rc);
-		goto out;
-	}
+	dev_dbg(uv_dev->dev, "Received glink ACK for ExtMsgType=%02x", msg_type);
 
 out:
 	mutex_unlock(&uv_dev->state_lock);
-	kfree(vwork);
+	return rc;
 }
 
 static int usbvdm_glink_vdm(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos)
 {
 	struct usbvdm_dev *uv_dev = usbvdm_engine_get_drvdata(engine);
+	struct pmic_glink_hdr hdr = {};
+	struct pmic_glink_oem_vdm_msg msg = {};
+	int rc = 0;
 
-	struct vdm_work *vwork = kzalloc(sizeof(*vwork), GFP_KERNEL);
-	if (!vwork)
-		return -ENOMEM;
+	mutex_lock(&uv_dev->state_lock);
 
-	INIT_WORK(&vwork->work, usbvdm_glink_vdm_work);
-	vwork->uv_dev = uv_dev;
-	vwork->vdm_hdr = vdm_hdr;
-	memcpy(vwork->vdos, vdos, num_vdos * sizeof(*vdos));
-	vwork->num_vdos = num_vdos;
+	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
+		dev_err(uv_dev->dev, "Can't send vdm, Glink down");
+		rc = -ENODEV;
+		goto out;
+	}
 
-	schedule_work(&vwork->work);
-	return 0;
+	hdr.owner = PMIC_GLINK_MSG_OWNER_OEM;
+	hdr.type = MSG_TYPE_REQ_RESP;
+	hdr.opcode = OEM_OPCODE_SEND_VDM;
+
+	msg.hdr = hdr;
+	msg.data[0] = vdm_hdr;
+	memcpy(&msg.data[1], vdos, num_vdos * sizeof(*vdos));
+	msg.size = num_vdos + 1;
+
+	reinit_completion(&uv_dev->ack_complete);
+	rc = pmic_glink_write(uv_dev->client, &msg, sizeof(msg));
+	if (rc) {
+		dev_err(uv_dev->dev, "Failed writing to pmic_glink, rc=%d", rc);
+		goto out;
+	}
+
+	if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_WAIT_TIME_MS)) {
+		rc = -ETIMEDOUT;
+		dev_err(uv_dev->dev,
+				"Timed out waiting for glink ACK for VDM, vdm_hdr=0x%04x",
+				vdm_hdr);
+		goto out;
+	}
+
+	dev_dbg(uv_dev->dev, "Received glink ACK for VDM, vdm_hdr=%04x", vdm_hdr);
+
+out:
+	mutex_unlock(&uv_dev->state_lock);
+	return rc;
 }
 
 static const struct usbvdm_engine_ops usbvdm_glink_ops = {
@@ -282,6 +258,21 @@ static void usbvdm_glink_handle_recv_vdm(struct usbvdm_dev *uv_dev,
 	usbvdm_engine_vdm(uv_dev->engine, vdm_hdr, vdos, num_vdos);
 }
 
+static void usbvdm_glink_handle_ack(struct usbvdm_dev *uv_dev,
+		void *data, size_t len)
+{
+	const size_t exp_len = sizeof(struct pmic_glink_generic_resp_msg);
+
+	if (len != exp_len) {
+		dev_err(uv_dev->dev,
+				"Glink ACK has unexpected len=%lu (exp. %lu)",
+				len, exp_len);
+		return;
+	}
+
+	complete(&uv_dev->ack_complete);
+}
+
 static int usbvdm_glink_msg_cb(void *priv, void *data, size_t len)
 {
 	struct usbvdm_dev *uv_dev = priv;
@@ -301,6 +292,10 @@ static int usbvdm_glink_msg_cb(void *priv, void *data, size_t len)
 		break;
 	case OEM_OPCODE_RECV_EXT_MSG:
 		usbvdm_glink_handle_recv_ext_msg(uv_dev, data, len);
+		break;
+	case OEM_OPCODE_SEND_EXT_MSG:
+	case OEM_OPCODE_SEND_VDM:
+		usbvdm_glink_handle_ack(uv_dev, data, len);
 		break;
 	default:
 		dev_err(uv_dev->dev, "Unable to handle opcode %x", hdr->opcode);
@@ -349,6 +344,7 @@ static int usbvdm_glink_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	INIT_WORK(&uv_dev->setup_work, usbvdm_glink_setup_work);
+	init_completion(&uv_dev->ack_complete);
 	mutex_init(&uv_dev->state_lock);
 	uv_dev->state = PMIC_GLINK_STATE_DOWN;
 

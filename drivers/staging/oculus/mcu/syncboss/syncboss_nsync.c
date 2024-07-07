@@ -28,6 +28,7 @@ static irqreturn_t isr_primary_nsync(int irq, void *p)
 	devdata->nsync_irq_timestamp_ns = ktime_to_ns(kt);
 	devdata->nsync_irq_timestamp_us = ktime_to_us(kt);
 	++devdata->nsync_irq_count;
+	devdata->nsync_irq_fired = true;
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 
 	return IRQ_WAKE_THREAD;
@@ -36,7 +37,7 @@ static irqreturn_t isr_primary_nsync(int irq, void *p)
 static irqreturn_t isr_thread_nsync(int irq, void *p)
 {
 	struct nsync_dev_data *devdata = (struct nsync_dev_data *)p;
-	struct syncboss_nsync_event event;
+	struct syncboss_display_event event;
 	unsigned long flags;
 	int status;
 
@@ -66,19 +67,25 @@ static void reset_nsync_values(struct nsync_dev_data *devdata)
 	unsigned long flags;
 
 	spin_lock_irqsave(&devdata->nsync_lock, flags);
+	devdata->nsync_irq_fired = false;
 	devdata->nsync_irq_timestamp_ns = 0;
 	devdata->nsync_irq_count = 0;
 
 	devdata->nsync_irq_timestamp_us = 0;
 	devdata->nsync_offset_us = 0;
 	devdata->prev_mcu_timestamp_us = 0;
-	devdata->nsync_offset_status = NSYNC_OFFSET_INVALID;
+	devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID;
 
 	devdata->consecutive_drift_limit_count = 0;
 	devdata->consecutive_drift_limit_max = 0;
 	devdata->drift_limit_count = 0;
 	devdata->drift_sum_us = 0;
 	devdata->stream_start_time = ktime_get();
+
+#ifdef CONFIG_SYNCBOSS_PERIPHERAL
+	devdata->remote_offset_us = 0;
+	devdata->remote_offset_status = SYNCBOSS_TIME_OFFSET_INVALID;
+#endif
 
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 }
@@ -92,7 +99,7 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 	case SYNCBOSS_EVENT_STREAMING_STARTING:
 		status = devm_request_threaded_irq(
 			devdata->dev, devdata->nsync_irq, isr_primary_nsync,
-			isr_thread_nsync, IRQF_TRIGGER_RISING,
+			isr_thread_nsync, IRQF_TRIGGER_RISING | IRQF_SHARED,
 			devdata->misc_nsync.name, devdata);
 		if (status < 0)
 			dev_err(devdata->dev, "nsync irq registration failed");
@@ -111,23 +118,30 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 	}
 }
 
-static void update_nsync_offset(struct nsync_dev_data *devdata, struct syncboss_nsync_event *nsync)
+static int handle_display_event(struct nsync_dev_data *devdata, const struct syncboss_data *packet)
 {
-	int64_t mcu_timestamp_us = (int64_t)nsync->timestamp;
+	struct syncboss_display_event *dfevent = (struct syncboss_display_event *)packet->data;
+	int64_t mcu_timestamp_us = (int64_t)dfevent->timestamp;
 	int64_t offset_us, drift_us;
 	int64_t drift_limit_us = S64_MAX;
 	unsigned long flags;
-
-	if (devdata->nsync_irq_timestamp_us <= 0) {
-		dev_err_ratelimited(devdata->dev, "Dropping nsync message received before nsync IRQ\n");
-		return;
-	}
+	int ret = 0;
 
 	spin_lock_irqsave(&devdata->nsync_lock, flags);
+
+	if (!devdata->nsync_irq_fired) {
+		dev_err_ratelimited(devdata->dev,
+				"Ignoring display frame event message without matching IRQ. Last nsync_irq_timestamp_us was %lld\n",
+				devdata->nsync_irq_timestamp_us);
+		ret = -EPERM;
+		goto out;
+	}
+	devdata->nsync_irq_fired = false;
+
 	offset_us = devdata->nsync_irq_timestamp_us - mcu_timestamp_us;
 	drift_us = offset_us - devdata->nsync_offset_us;
 
-	if (likely(devdata->nsync_offset_status != NSYNC_OFFSET_INVALID)) {
+	if (likely(devdata->nsync_offset_status != SYNCBOSS_TIME_OFFSET_INVALID)) {
 		devdata->drift_sum_us += drift_us;
 
 		/*
@@ -145,7 +159,7 @@ static void update_nsync_offset(struct nsync_dev_data *devdata, struct syncboss_
 	 *
 	 * Keep some counters for diagnostics and error logging.
 	 */
-	devdata->nsync_offset_status = NSYNC_OFFSET_VALID;
+	devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_VALID;
 	if (drift_us > drift_limit_us) {
 		devdata->drift_limit_count++;
 		devdata->consecutive_drift_limit_count++;
@@ -154,7 +168,7 @@ static void update_nsync_offset(struct nsync_dev_data *devdata, struct syncboss_
 			devdata->consecutive_drift_limit_max = devdata->consecutive_drift_limit_count;
 
 		if (devdata->consecutive_drift_limit_count > MAX_CONSECUTIVE_LIMITED_DRIFTS) {
-			devdata->nsync_offset_status = NSYNC_OFFSET_ERROR;
+			devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_ERROR;
 			dev_err_ratelimited(devdata->dev,
 					"nsync offset drift has exceeded limit %d consecutive times\n",
 					devdata->consecutive_drift_limit_count);
@@ -172,8 +186,29 @@ static void update_nsync_offset(struct nsync_dev_data *devdata, struct syncboss_
 	devdata->nsync_offset_us += drift_us;
 	devdata->prev_mcu_timestamp_us = mcu_timestamp_us;
 
+out:
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
+	return ret;
 }
+
+#ifdef CONFIG_SYNCBOSS_PERIPHERAL
+static void handle_nsync_event(struct nsync_dev_data *devdata, const struct syncboss_data *packet)
+{
+	struct syncboss_nsync_event *nevent = (struct syncboss_nsync_event *)packet->data;
+	int ret;
+
+	/* Start by handling the fields that are common to SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE */
+	ret = handle_display_event(devdata, packet);
+	if (ret < 0)
+		return;
+
+	/* Handle the additional fields that are specific to SYNCBOSS_NSYNC_FRAME_MESSAGE_TYPE */
+	if (nevent->offset_valid) {
+		devdata->remote_offset_us = nevent->offset_us;
+		devdata->remote_offset_status = SYNCBOSS_TIME_OFFSET_VALID;
+	}
+}
+#endif
 
 static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
@@ -184,25 +219,32 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 	int ret;
 
 	/*
-	 * SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE: used for HMDs. Userspace doesn't need
-	 * these messages since we attach nsync_offset_us to all streaming messages.
+	 * SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE: used for HMDs.
+	 * SYNCBOSS_NSYNC_FRAME_MSG_TYPE: used for starlet only.
+	 * Userspace doesn't need either of these messages unless using
+	 * legacy (userspace) nsync mode.
 	 *
-	 * SYNCBOSS_NSYNC_FRAME_MSG_TYPE: used for starlet only. We must pass this
-	 * message on to userspace because it contains fields in addition to
-	 * nsync_offset_us that userspace also needs.
-	 *
-	 * For all other message types, pass the nsync_offset_us and continue
-	 * with delivery to userspace.
+	 * For all other message types, add the nsync offset fields and
+	 * continue with delivery to userspace.
 	 */
 	switch (type) {
-	case SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE:
+#ifdef CONFIG_SYNCBOSS_PERIPHERAL
 	case SYNCBOSS_NSYNC_FRAME_MESSAGE_TYPE:
-		update_nsync_offset(devdata, (struct syncboss_nsync_event *)packet->data);
+		handle_nsync_event(devdata, packet);
+		ret = devdata->disable_legacy_nsync ? NOTIFY_STOP : NOTIFY_OK;
+		break;
+#endif
+	case SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE:
+		handle_display_event(devdata, packet);
 		ret = devdata->disable_legacy_nsync ? NOTIFY_STOP : NOTIFY_OK;
 		break;
 	default:
 		header->nsync_offset_us = devdata->nsync_offset_us;
 		header->nsync_offset_status = devdata->nsync_offset_status;
+#ifdef CONFIG_SYNCBOSS_PERIPHERAL
+		header->remote_offset_us = devdata->remote_offset_us;
+		header->remote_offset_status = devdata->remote_offset_status;
+#endif
 		ret = NOTIFY_OK;
 		break;
 	}
@@ -245,7 +287,7 @@ static int syncboss_nsync_open(struct inode *inode, struct file *f)
 
 	devdata->nsync_irq_timestamp_us = 0;
 	devdata->nsync_offset_us = 0;
-	devdata->nsync_offset_status = NSYNC_OFFSET_INVALID;
+	devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID;
 
 	irq_set_status_flags(devdata->nsync_irq, IRQ_DISABLE_UNLAZY);
 

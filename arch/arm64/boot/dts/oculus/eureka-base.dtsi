@@ -201,6 +201,7 @@
 			/bits/ 16 <0x2ec6 0x2103>;		/* UPA 45W */
 		broadcast-period-min = <15>;
 		send-state-of-charge;
+		req-ack-timeout-ms = <1000>;
 	};
 
 	external_battery: oculus,external_battery {
@@ -227,6 +228,10 @@
 		compatible = "meta,pdfu-initiator";
 		usb,product-id = /bits/ 16 <0x5006>;
 	};
+};
+
+&bluetooth {
+	vdd-bt-fem-en-supply = <&sgm62110_buck>;
 };
 
 &wlan {

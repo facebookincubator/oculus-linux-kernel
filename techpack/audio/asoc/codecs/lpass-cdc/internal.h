@@ -72,7 +72,7 @@ struct lpass_cdc_priv {
 	int core_audio_vote_count;
 
 	struct cdc_regulator *p_dmic_regulator;
-	int	num_supplies;
+	int num_supplies;
 	struct regulator_bulk_data *p_supplies;
 
 	/* Entry for version info */

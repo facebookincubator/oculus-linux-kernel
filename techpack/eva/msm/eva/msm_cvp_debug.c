@@ -35,6 +35,7 @@ bool msm_cvp_mmrm_enabled = !true;
 #endif
 bool msm_cvp_dcvs_disable = !true;
 int msm_cvp_minidump_enable = !1;
+int msm_cvp_hw_wd_recovery = 1;
 bool cvp_kernel_fence_enabled = true;
 
 #ifdef CONFIG_DEBUG_FS
@@ -337,7 +338,7 @@ DEFINE_DEBUGFS_ATTRIBUTE(clk_rate_fops, _clk_rate_get, _clk_rate_set, "%llu\n");
 static int _dsp_dbg_set(void *data, u64 val)
 {
 
-	if (val == 0 || val >= (1 << (EVA_MEM_DEBUG_ON + 1))) {
+	if (val == 0 || val >= (1 << (EVA_UMD_MAX_DEBUG + 1))) {
 		dprintk(CVP_WARN, "DSP debug mask cannot be %llx\n", val);
 		return 0;
 	}
@@ -458,6 +459,8 @@ struct dentry *msm_cvp_debugfs_init_core(struct msm_cvp_core *core,
 		dprintk(CVP_ERR, "debugfs_create: ssr_stall fail\n");
 		goto failed_create_dir;
 	}
+	debugfs_create_u32("hw_wd_recovery", 0644, dir,
+		&msm_cvp_hw_wd_recovery);
 failed_create_dir:
 	return dir;
 }

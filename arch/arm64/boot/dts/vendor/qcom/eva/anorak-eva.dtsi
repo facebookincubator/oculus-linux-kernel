@@ -3,7 +3,7 @@
 		compatible = "qcom,msm-cvp", "qcom,halliday-cvp";
 		status = "ok";
 		reg = <0xab00000 0x100000>;
-		interrupts = <GIC_SPI 234 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <GIC_SPI 234 IRQ_TYPE_LEVEL_HIGH>, <GIC_SPI 235 IRQ_TYPE_LEVEL_HIGH>;
 
 		/* LLCC Cache */
 		cache-slice-names = "cvp";

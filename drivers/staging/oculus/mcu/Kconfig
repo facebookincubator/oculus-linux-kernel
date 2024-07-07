@@ -104,12 +104,21 @@ config SYNCBOSS_MISCFIFO
 	help
 	  Syncboss MiscFIFO event notification driver
 
-config SYNCBOSS_TIMESYNC
-	tristate "Syncboss TimeSync Interface Support"
-	depends on SYNCBOSS_SPI
-	default n
+choice
+	prompt "Syncboss driver mode"
+	default SYNCBOSS_STANDALONE
+
+config SYNCBOSS_STANDALONE
+	bool "Stand-alone"
 	help
-	  Syncboss TimeSync event notification driver
+	  Build syncboss drivers for a stand-alone device (ex. HMD)
+
+config SYNCBOSS_PERIPHERAL
+	bool "Peripheral"
+	help
+	  Build syncboss drivers for a peripheral (ex. Controler)
+
+endchoice
 
 config META_FW_HELPERS
 	tristate "Meta MCU Helper Utilities"

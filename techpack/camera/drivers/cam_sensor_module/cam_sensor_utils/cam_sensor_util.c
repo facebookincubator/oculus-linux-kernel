@@ -606,6 +606,41 @@ int cam_sensor_i2c_command_parser(
 				byte_cnt += cmd_length_in_bytes;
 				break;
 			}
+			case CAMERA_SENSOR_CMD_TYPE_I2C_NOP: {
+				uint32_t cmd_length_in_bytes   = 0;
+				struct cam_cmd_i2c_random_wr
+					*cam_cmd_i2c_random_wr =
+					(struct cam_cmd_i2c_random_wr *)cmd_buf;
+
+				if ((remain_len - byte_cnt) <
+					sizeof(struct cam_cmd_i2c_random_wr)) {
+					CAM_ERR(CAM_SENSOR,
+						"Not enough buffer provided");
+					rc = -EINVAL;
+					goto end;
+				}
+				tot_size = sizeof(struct i2c_rdwr_header) +
+					(sizeof(struct i2c_random_wr_payload) *
+					cam_cmd_i2c_random_wr->header.count);
+
+				if (tot_size > (remain_len - byte_cnt)) {
+					CAM_ERR(CAM_SENSOR,
+						"Not enough buffer provided");
+					rc = -EINVAL;
+					goto end;
+				}
+
+				cmd_length_in_bytes =
+					(sizeof(struct i2c_rdwr_header) +
+					sizeof(struct i2c_random_wr_payload) *
+					(cam_cmd_i2c_random_wr->header.count));
+
+				cmd_buf  += cmd_length_in_bytes /
+					sizeof(uint32_t);
+				byte_cnt += cmd_length_in_bytes;
+				CAM_DBG(CAM_SENSOR, "NOP command received");
+				break;
+			}
 			case CAMERA_SENSOR_CMD_TYPE_I2C_CONT_WR: {
 				uint32_t cmd_length_in_bytes   = 0;
 				struct cam_cmd_i2c_continuous_wr
@@ -873,6 +908,10 @@ int cam_sensor_util_i2c_apply_setting(
 		}
 	break;
 	}
+	case CAM_SENSOR_I2C_NOP: {
+		CAM_DBG(CAM_SENSOR, "Skip i2c Nop packet.");
+		break;
+    }
 	default:
 		CAM_ERR(CAM_SENSOR, "Wrong Opcode: %d", i2c_list->op_code);
 		rc = -EINVAL;

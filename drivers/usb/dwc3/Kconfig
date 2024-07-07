@@ -51,6 +51,13 @@ config USB_DWC3_DUAL_ROLE
 
 endchoice
 
+config USB_DWC3_AUTO_RECOVERY
+	bool "Control DWC3 Auto Recovery In Case of Failures"
+	depends on USB_DWC3
+	help
+	If enabled, dwc3-msm-core will kick off automatic retries in case of usb failures
+	during initial connection.
+
 comment "Platform Glue Driver Support"
 
 config USB_DWC3_OMAP

@@ -66,6 +66,7 @@ enum ext_batt_fw_dock_state {
 #define EXT_BATT_FW_SERIAL_SYSTEM 0x81
 #define EXT_BATT_FW_CHARGER_PLUGGED 0x82
 #define EXT_BATT_FW_HMD_DOCKED 0x84
+#define EXT_BATT_FW_REBOOT_INTO_BOOTLOADER 0xF0
 
 /* Error conditions reported to HMD */
 #define EXT_BATT_FW_ERROR_CONDITIONS 10

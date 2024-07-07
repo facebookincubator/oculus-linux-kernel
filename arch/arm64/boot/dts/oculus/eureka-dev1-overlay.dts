@@ -107,6 +107,10 @@
 	vdd-supply = <&L7B>;
 };
 
+&bluetooth {
+	vdd-bt-fem-en-supply = <>;
+};
+
 &wlan {
 	vdd-wlan-fem-en-supply = <>;
 	qcom,vdd-wlan-fem-en-config = <>;

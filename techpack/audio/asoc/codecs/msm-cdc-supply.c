@@ -655,8 +655,8 @@ int msm_cdc_get_ondemand_power_supplies(struct device *dev,
 	}
 
 	cdc_reg = devm_kcalloc(dev, ond_sup_cnt,
-					sizeof(struct cdc_regulator),
-					GFP_KERNEL);
+				sizeof(struct cdc_regulator),
+				GFP_KERNEL);
 	if (!cdc_reg) {
 		rc = -ENOMEM;
 		goto err_mem_alloc;

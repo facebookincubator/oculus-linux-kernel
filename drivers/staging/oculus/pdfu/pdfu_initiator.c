@@ -46,6 +46,9 @@ struct pdfu_data {
 	struct work_struct state_machine_work;
 
 	struct mutex rx_lock;
+	struct mutex state_lock;
+	bool connected;
+
 	struct completion rx_complete;
 	struct pdfu_message *rx_msg;
 
@@ -279,7 +282,6 @@ static int handle_state_transfer(struct pdfu_data *pdfu)
 			PDFU_DATA_BLOCK_MAX_SIZE) - 1;
 	/* TODO(T180734326) Determine acceptable timing parameters */
 	const unsigned int timeout = 5000;
-	const unsigned int buffer = 200;
 	int rc = 0;
 
 	while (prev_db != final_db && wait_time != PDFU_WAIT_TIME_DONE) {
@@ -296,7 +298,7 @@ static int handle_state_transfer(struct pdfu_data *pdfu)
 
 			--num_nr;
 			++next_db;
-			msleep(PDFU_T_NEXT_REQUEST_SENT + buffer);
+			msleep(PDFU_T_NEXT_REQUEST_SENT);
 		}
 
 		reinit_completion(&pdfu->rx_complete);
@@ -386,9 +388,9 @@ static inline void advance_state(struct pdfu_data *pdfu)
 		pdfu->state += 1;
 }
 
-static void run_state_machine(struct pdfu_data *pdfu)
+static int run_state_machine(struct pdfu_data *pdfu)
 {
-	int rc;
+	int rc = 0;
 
 	dev_info(pdfu->dev, "Launching PDFU state machine");
 
@@ -416,6 +418,8 @@ static void run_state_machine(struct pdfu_data *pdfu)
 	pdfu->fw = NULL;
 	kfree(pdfu->fw_path);
 	pdfu->fw_path = NULL;
+
+	return rc;
 }
 
 static void state_machine_work_fn(struct work_struct *work)
@@ -424,6 +428,39 @@ static void state_machine_work_fn(struct work_struct *work)
 			state_machine_work);
 
 	run_state_machine(pdfu);
+}
+
+static void pdfu_usbvdm_connect(struct usbvdm_subscription *sub,
+		u16 vid, u16 pid)
+{
+	struct pdfu_data *pdfu = usbvdm_subscriber_get_drvdata(sub);
+
+	if (pdfu->connected) {
+		dev_warn(pdfu->dev, "Already connected: ignoring connect callback\n");
+		return;
+	}
+
+	mutex_lock(&pdfu->state_lock);
+	pdfu->connected = true;
+	mutex_unlock(&pdfu->state_lock);
+
+	sysfs_notify(&pdfu->dev->kobj, NULL, "connected");
+}
+
+static void pdfu_usbvdm_disconnect(struct usbvdm_subscription *sub)
+{
+	struct pdfu_data *pdfu = usbvdm_subscriber_get_drvdata(sub);
+
+	if (!pdfu->connected) {
+		dev_warn(pdfu->dev, "Already disconnected: ignoring disconnect callback\n");
+		return;
+	}
+
+	mutex_lock(&pdfu->state_lock);
+	pdfu->connected = false;
+	mutex_unlock(&pdfu->state_lock);
+
+	sysfs_notify(&pdfu->dev->kobj, NULL, "connected");
 }
 
 static void pdfu_rx_ext_msg(struct usbvdm_subscription *sub,
@@ -464,8 +501,19 @@ static void pdfu_rx_ext_msg(struct usbvdm_subscription *sub,
 }
 
 static const struct usbvdm_subscriber_ops ops = {
+	.connect = pdfu_usbvdm_connect,
+	.disconnect = pdfu_usbvdm_disconnect,
 	.ext_msg = pdfu_rx_ext_msg,
 };
+
+static ssize_t connected_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct pdfu_data *pdfu = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", pdfu->connected);
+}
+static DEVICE_ATTR_RO(connected);
 
 static ssize_t fw_path_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -508,30 +556,42 @@ static ssize_t responder_fw_version_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(responder_fw_version);
 
-static ssize_t start_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t start_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
 	struct pdfu_data *pdfu = dev_get_drvdata(dev);
-	bool start;
-
-	if (kstrtobool(buf, &start))
-		return -EINVAL;
+	int rc;
 
 	if (pdfu->sm_running)
 		return -EBUSY;
 
-	if (!start)
-		return count;
+	rc = run_state_machine(pdfu);
+	if (rc)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "PDFU update completed successfully\n");
+}
+static DEVICE_ATTR_RO(start);
+
+static ssize_t start_async_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct pdfu_data *pdfu = dev_get_drvdata(dev);
+
+	if (pdfu->sm_running)
+		return -EBUSY;
 
 	schedule_work(&pdfu->state_machine_work);
-	return count;
+	return scnprintf(buf, PAGE_SIZE, "Started PDFU update asynchronously\n");
 }
-static DEVICE_ATTR_WO(start);
+static DEVICE_ATTR_RO(start_async);
 
 static struct attribute *pdfu_initiator_attrs[] = {
+	&dev_attr_connected.attr,
 	&dev_attr_fw_path.attr,
 	&dev_attr_responder_fw_version.attr,
 	&dev_attr_start.attr,
+	&dev_attr_start_async.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(pdfu_initiator);
@@ -553,6 +613,7 @@ static int pdfu_initiator_probe(struct platform_device *pdev)
 	INIT_WORK(&pdfu->state_machine_work, state_machine_work_fn);
 	init_completion(&pdfu->rx_complete);
 	mutex_init(&pdfu->rx_lock);
+	mutex_init(&pdfu->state_lock);
 
 	rc = device_property_read_u16(dev, "usb,product-id", &pid);
 	if (rc < 0)

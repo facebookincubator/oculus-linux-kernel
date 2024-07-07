@@ -1092,6 +1092,37 @@ static inline int rt_se_prio(struct sched_rt_entity *rt_se)
 	return rt_task_of(rt_se)->prio;
 }
 
+#ifdef CONFIG_SCHED_INFO
+static int get_cmdline_nofault(struct task_struct *task, char *buffer, int buflen)
+{
+	int res = 0;
+	unsigned int len;
+	struct mm_struct *mm = get_task_mm(task);
+	unsigned long arg_start, arg_end;
+	if (!mm)
+		goto out;
+	if (!mm->arg_end)
+		goto out_mm;    /* Shh! No looking before we're done */
+
+	spin_lock(&mm->arg_lock);
+	arg_start = mm->arg_start;
+	arg_end = mm->arg_end;
+	spin_unlock(&mm->arg_lock);
+
+	len = arg_end - arg_start;
+
+	if (len > buflen)
+		len = buflen;
+
+	res = access_process_vm(task, arg_start, buffer, len, FOLL_FORCE | FOLL_NOFAULT);
+
+out_mm:
+	mmput(mm);
+out:
+	return res;
+}
+#endif
+
 static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 {
 	struct rt_prio_array *array = &rt_rq->active;
@@ -1125,8 +1156,12 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 		if (tgid_task != NULL) {
 			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
 			if (tgid_comm) {
-				int res = get_cmdline(tgid_task, tgid_comm, PAGE_SIZE - 1);
-				tgid_comm[res] = '\0';
+				int res = get_cmdline_nofault(tgid_task, tgid_comm, PAGE_SIZE - 1);
+				if (res > 0) {
+					tgid_comm[res] = '\0';
+				} else {
+					strcpy(tgid_comm, "unavailable");
+				}
 			}
 		}
 
@@ -1636,7 +1671,7 @@ static inline bool should_honor_rt_sync(struct rq *rq, struct task_struct *p,
 	 * and force it to run for a likely small time after the RT wakee is
 	 * done. So, only honor RT sync wakeups from RT wakers.
 	 */
-	return sync && task_has_rt_policy(rq->curr) &&
+	return (sync || p->wake_affine) && task_has_rt_policy(rq->curr) &&
 		p->prio <= rq->rt.highest_prio.next &&
 		rq->rt.rt_nr_running <= 2;
 }

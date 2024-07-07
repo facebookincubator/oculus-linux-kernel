@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <stp/common/stp_pipeline.h>
 #include <stp/common/stp_common.h>
 #include <stp/common/stp_logging.h>

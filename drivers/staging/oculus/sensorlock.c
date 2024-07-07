@@ -253,15 +253,33 @@ static void sensorlock_work_handler(struct work_struct *work)
 
 static int __init sensorlock_probe(struct platform_device *pdev)
 {
+	int i;
 	int rc = 0;
-	unsigned int sensorlock_power_irq = 0;
-	unsigned int sensorlock_voltage_sense_irq = 0;
+	int irq_count = 0;
+	int sensorlock_irq = 0;
+	const char **irq_names;
 	struct sensorlock_dev_data *dev_data = NULL;
 	struct device *dev = &pdev->dev;
 
 	dev_data = devm_kzalloc(dev, sizeof(struct sensorlock_dev_data), GFP_KERNEL);
 	if (!dev_data)
 		return -ENOMEM;
+
+	irq_count = of_property_count_strings(dev->of_node, "interrupt-names");
+	if (irq_count < 0) {
+		dev_err(dev, "Unable to find sensorlock IRQs");
+		return -EINVAL;
+	}
+
+	irq_names = devm_kcalloc(dev, irq_count, sizeof(*irq_names), GFP_KERNEL);
+	if (!irq_names)
+		return -ENOMEM;
+
+	rc = of_property_read_string_array(dev->of_node, "interrupt-names", irq_names, irq_count);
+	if (!rc) {
+		dev_err(dev, "Unable to read sensorlock IRQ names");
+		return -EINVAL;
+	}
 
 	dev_data->dev = dev;
 	dev_data->is_app_connected = false;
@@ -288,38 +306,23 @@ static int __init sensorlock_probe(struct platform_device *pdev)
 		goto error_trustzone;
 	}
 
-	sensorlock_power_irq = platform_get_irq_byname(pdev, "sensorlock_power_irq");
-	if (sensorlock_power_irq < 0) {
-		dev_err(dev, "Unable to find sensorlock power button IRQ");
-		rc = -EINVAL;
-		goto error_trustzone;
-	}
+	for (i = 0; i < irq_count; i++) {
+		sensorlock_irq = platform_get_irq_byname(pdev, irq_names[i]);
+		if (sensorlock_irq < 0) {
+			dev_err(dev, "Unable to find %s IRQ", irq_names[i]);
+			rc = -EINVAL;
+			goto error_trustzone;
+		}
 
-	sensorlock_voltage_sense_irq = platform_get_irq_byname(pdev, "sensorlock_voltage_sense_irq");
-	if (sensorlock_voltage_sense_irq < 0) {
-		dev_err(dev, "Unable to find sensorlock voltage sense IRQ");
-		rc = -EINVAL;
-		goto error_trustzone;
-	}
-
-	rc = devm_request_threaded_irq(dev,
-				sensorlock_power_irq,
-				NULL, sensorlock_irq_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-				"sensorlock_power_irq", dev_data);
-	if (rc) {
-		dev_err(dev, "failed to set sensorlock power irq handler");
-		goto error_trustzone;
-	}
-
-	rc = devm_request_threaded_irq(dev,
-				sensorlock_voltage_sense_irq,
-				NULL, sensorlock_irq_handler,
-				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-				"sensorlock_voltage_sense_irq", dev_data);
-	if (rc) {
-		dev_err(dev, "failed to set sensorlock voltage sense irq handler");
-		goto error_trustzone;
+		rc = devm_request_irq(dev,
+					sensorlock_irq,
+					sensorlock_irq_handler,
+					IRQF_ONESHOT,
+					irq_names[i], dev_data);
+		if (rc) {
+			dev_err(dev, "failed to set %s handler", irq_names[i]);
+			goto error_trustzone;
+		}
 	}
 
 	return 0;

@@ -1755,6 +1755,66 @@ int msm_ioctl_display_hint_ops(struct drm_device *dev, void *data,
 	return 0;
 }
 
+/**
+ * msm_ioctl_brightness_scalar_control_ops - Brightness scalar control value
+ * @dev: drm device for the ioctl
+ * @data: data pointer for the ioctl
+ * @file_priv: drm file for the ioctl call
+ */
+int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_backlight_scale *display_brightness_scalar = data;
+	struct msm_drm_private *priv;
+	struct msm_kms *kms;
+	struct drm_connector *connector;
+	struct sde_connector *c_conn;
+	int counter = 0;
+
+	priv = dev->dev_private;
+	kms = priv->kms;
+
+	if (unlikely(!display_brightness_scalar)) {
+		DRM_ERROR("invalid ioctl data\n");
+		return -EINVAL;
+	}
+
+	SDE_EVT32(display_brightness_scalar->bl_scale_percent_value);
+
+	/* Validate the range of brightness scalar. */
+	if ((display_brightness_scalar->bl_scale_percent_value < 1) ||
+		(display_brightness_scalar->bl_scale_percent_value > 100)) {
+		DSI_ERR("Brightness Scalar: Input value out of range.\n");
+		return -EINVAL;
+	}
+
+	for (counter = 0; counter < priv->num_connectors; counter++) {
+		connector = priv->connectors[counter];
+		if (!connector) {
+			continue;
+		}
+		c_conn = to_sde_connector(connector);
+
+		/* Check if the connector supports backlight device. */
+		if (c_conn && c_conn->ops.set_backlight) {
+			struct dsi_display *display;
+			struct dsi_backlight_config *bl_config;
+
+			display = (struct dsi_display *) c_conn->display;
+			if (display) {
+				bl_config = &display->panel->bl_config;
+				if (bl_config)
+					bl_config->bl_scale_brightness = display_brightness_scalar->bl_scale_percent_value;
+			}
+
+			if (c_conn->bl_device)
+				backlight_update_status(c_conn->bl_device);
+		}
+	}
+
+	return 0;
+}
+
 static u64 msm_vsync_trigger_next_vsync_ns(u64 last_vsync_ns, u32 min_fps)
 {
 	u64 res;
@@ -1879,6 +1939,8 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 			DRM_UNLOCKED),
 	DRM_IOCTL_DEF_DRV(MSM_VSYNC_TRIGGER, msm_ioctl_vsync_trigger,
 		DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_BACKLIGHT_SCALE, msm_ioctl_brightness_scalar_control_ops,
+			DRM_AUTH|DRM_RENDER_ALLOW),
 };
 
 static const struct vm_operations_struct vm_ops = {

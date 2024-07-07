@@ -136,6 +136,7 @@ enum usb_property_id {
 	USB_MOISTURE_DET_SBU_KOHM,
 	USB_MOISTURE_DET_CC_KOHM,
 	USB_CC_ENABLED,
+	USB_TYPEC_DAM_STATUS,
 	USB_PROP_MAX,
 };
 
@@ -1807,6 +1808,12 @@ static int battery_chg_set_cur_state(struct thermal_cooling_device *cdev,
 		return -EINVAL;
 
 	mutex_lock(&bcdev->cdev_lock);
+	if (state == bcdev->cur_state) {
+		mutex_unlock(&bcdev->cdev_lock);
+		dev_dbg(bcdev->dev, "%s: state unchanged, nothing to do", __func__);
+		return 0;
+	}
+
 	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_USB],
 					USB_CC_ENABLED, !val);
 	if (rc < 0) {
@@ -2142,6 +2149,23 @@ static ssize_t moisture_detection_status_show(struct class *c,
 }
 static CLASS_ATTR_RO(moisture_detection_status);
 
+static ssize_t usb_typec_debug_access_mode_status_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_TYPEC_DAM_STATUS);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_TYPEC_DAM_STATUS]);
+}
+static CLASS_ATTR_RO(usb_typec_debug_access_mode_status);
+
 static ssize_t moisture_detection_sbu_kohm_show(struct class *c,
 					struct class_attribute *attr, char *buf)
 {
@@ -2406,6 +2430,7 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_charge_capacity_limit.attr,
 	&class_attr_usb_pd_vid.attr,
 	&class_attr_usb_pd_pid.attr,
+	&class_attr_usb_typec_debug_access_mode_status.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class);
@@ -2430,6 +2455,7 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_charge_capacity_limit.attr,
 	&class_attr_usb_pd_vid.attr,
 	&class_attr_usb_pd_pid.attr,
+	&class_attr_usb_typec_debug_access_mode_status.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class_no_wls);

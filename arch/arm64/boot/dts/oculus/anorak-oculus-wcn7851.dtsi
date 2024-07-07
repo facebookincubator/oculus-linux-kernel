@@ -9,6 +9,7 @@
 };
 
 &bluetooth {
+	vdd-bt-fem-en-supply = <>;
 	status = "disabled";
 };
 

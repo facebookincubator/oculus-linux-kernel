@@ -1262,8 +1262,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		CAM_CONVERT_TIMESTAMP_FORMAT(ts, hrs, min, sec, ms);
 
 		CAM_INFO(CAM_SENSOR,
-			"%llu:%llu:%llu.%llu CAM_START_DEV Success for %s sensor_id:0x%x,sensor_slave_addr:0x%x",
+			"%llu:%llu:%llu.%llu CAM_START_DEV[%d] Success for %s sensor_id:0x%x,sensor_slave_addr:0x%x",
 			hrs, min, sec, ms,
+			s_ctrl->soc_info.index,
 			s_ctrl->sensor_name,
 			s_ctrl->sensordata->slave_info.sensor_id,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr);

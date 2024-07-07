@@ -397,11 +397,14 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
 
-	rc = dsi_pwr_enable_regulator(&panel->power_info, true);
-	if (rc) {
-		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
-				panel->name, rc);
-		goto exit;
+	if ((!panel->ctl_op_sync) || (strcmp(panel->type, "secondary") == 0))
+	{
+		rc = dsi_pwr_enable_regulator(&panel->power_info, true);
+		if (rc) {
+			DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
+					panel->name, rc);
+			goto exit;
+		}
 	}
 
 	rc = dsi_panel_set_pinctrl_state(panel, true);
@@ -1193,14 +1196,13 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	if (left_scanline == vtotal - bl_lvl)
 		left_scanline -= 1;
 
+	send_vfp = bl_config->scanline_offset[0] != right_scanline
+				|| bl_config->scanline_offset[1] != left_scanline;
+
 	/* NVT DDIC multiples the start pulse by 4 and pwm width by 2 by default */
 	right_scanline /= 4;
 	left_scanline /= 4;
 	bl_lvl /= 2;
-
-	send_vfp = bl_config->scanline_offset[0] != right_scanline
-				|| bl_config->scanline_offset[1] != left_scanline;
-
 
 	blu_right_start_msb[1] = right_scanline >> 8;
 	blu_right_start_lsb[1] = right_scanline & 0xff;
@@ -1238,9 +1240,9 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 		pr_err("failed to set nvt brightness cmds, rc=%d\n", rc);
 		goto error;
 	}
-	bl_config->scanline_duration = bl_lvl;
-	bl_config->scanline_offset[0] = right_scanline;
-	bl_config->scanline_offset[1] = left_scanline;
+	bl_config->scanline_duration = bl_lvl << 1;
+	bl_config->scanline_offset[0] = right_scanline << 2;
+	bl_config->scanline_offset[1] = left_scanline << 2;
 
 error:
 	return rc;
@@ -3192,6 +3194,7 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 		mode_set_gpio_name = "qcom,panel-mode-gpio";
 	} else {
 		reset_gpio_name = "qcom,platform-sec-reset-gpio";
+		sec_reset_gpio_name = "qcom,panel-sec-reset-gpio";
 		mode_set_gpio_name = "qcom,panel-sec-mode-gpio";
 	}
 

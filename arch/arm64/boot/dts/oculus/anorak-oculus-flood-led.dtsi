@@ -28,7 +28,7 @@
 
 &pmxr2230_switch0 {
 	qcom,led-mask = <0xC>; /* Channels 3 & 4 */
-	qcom,default-led-trigger = "default-on";
+	qcom,default-led-trigger = "default-off";
 };
 
 /delete-node/ &pmxr2230_flash0;

@@ -6,5 +6,5 @@ ccflags-y += -Idrivers/misc/
 
 obj-$(CONFIG_GW39A1)  += gw39a1.o
 ifeq ($(CONFIG_GW39A1),m)
-gw39a1-objs += gf_spi.o platform.o netlink.o gf_common.o
+gw39a1-objs += gf_spi.o platform.o gf_common.o
 endif

@@ -37,6 +37,12 @@ struct nsync_dev_data {
 	int64_t nsync_irq_timestamp_us;
 	uint64_t nsync_irq_count;
 
+	/*
+	 * Indicates whether the nsync IRQ has fired since the last nsync
+	 * message from the MCU was consumed.
+	 */
+	bool nsync_irq_fired;
+
 	/* Timestamp from the last nsync message */
 	int64_t prev_mcu_timestamp_us;
 
@@ -45,7 +51,12 @@ struct nsync_dev_data {
 	 * and a flag indicating the value can be trusted.
 	 */
 	int64_t nsync_offset_us;
-	enum nsync_offset_status nsync_offset_status;
+	enum syncboss_time_offset_status nsync_offset_status;
+
+#ifdef CONFIG_SYNCBOSS_PERIPHERAL
+	int64_t remote_offset_us;
+	enum syncboss_time_offset_status remote_offset_status;
+#endif
 
 	/* Counters used for detecting warning or error conditions. */
 	int consecutive_drift_limit_count;

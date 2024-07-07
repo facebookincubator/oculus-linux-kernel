@@ -110,6 +110,9 @@ enum power_src_pos {
 	 */
 	BT_VDD_SMPS,
 	BT_VDD_SMPS_CURRENT,
+	/* BT RF Front End Module */
+	BT_VDD_FEM_BUCK,
+	BT_VDD_FEM_BUCK_CURRENT,
 	/* New entries need to be added before PWR_SRC_SIZE.
 	 * Its hold the max size of power sources states.
 	 */
@@ -147,6 +150,8 @@ static struct bt_power_vreg_data bt_vregs_info_qca6xx0[] = {
 		{BT_VDD_ASD_LDO, BT_VDD_ASD_LDO_CURRENT}},
 	{NULL, "qcom,bt-vdd-ipa-2p2",  2200000, 2210000, 0, false, true,
 		{BT_VDD_IPA_2p2, BT_VDD_IPA_2p2_CURRENT}},
+	{NULL, "vdd-bt-fem-en",  3850000, 3850000, 0, false, false,
+		{BT_VDD_FEM_BUCK, BT_VDD_FEM_BUCK_CURRENT}},
 };
 
 

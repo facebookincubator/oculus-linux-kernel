@@ -194,6 +194,7 @@ struct msm_cvp_platform_resources {
 	uint32_t ipcc_reg_size;
 	uint32_t gcc_reg_size;
 	uint32_t irq;
+	uint32_t irq_wd;
 	uint32_t sku_version;
 	struct allowed_clock_rates_table *allowed_clks_tbl;
 	u32 allowed_clks_tbl_size;

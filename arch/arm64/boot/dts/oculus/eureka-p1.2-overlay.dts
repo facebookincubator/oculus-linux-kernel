@@ -22,6 +22,10 @@
 	oculus,max-pwm = <179>; /* 70% duty cycle */
 };
 
+&bluetooth {
+	vdd-bt-fem-en-supply = <>;
+};
+
 &wlan {
 	vdd-wlan-fem-en-supply = <>;
 	qcom,vdd-wlan-fem-en-config = <>;

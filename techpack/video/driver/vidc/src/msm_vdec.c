@@ -2731,7 +2731,6 @@ int msm_vdec_inst_init(struct msm_vidc_inst *inst)
 	}
 	core = inst->core;
 
-	INIT_DELAYED_WORK(&inst->decode_batch.work, msm_vidc_batch_handler);
 	if (core->capabilities[DECODE_BATCH].value) {
 		inst->decode_batch.enable = true;
 		inst->decode_batch.size = MAX_DEC_BATCH_SIZE;

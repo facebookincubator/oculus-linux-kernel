@@ -4,6 +4,7 @@ ifeq ($(CONFIG_ARCH_ANORAK),y)
 dtbo-$(CONFIG_META_unknown12) += \
 	unknown12-dev0-overlay.dtbo \
 	unknown12-pocb-overlay.dtbo \
+	unknown12-nff-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_unknown7) += \
 	unknown7-dev0-overlay.dtbo \
@@ -57,13 +58,18 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 	unknown6-evt1.8-overlay.dtbo \
 	unknown6-evt2.1-overlay.dtbo \
 	unknown6-evt2.2-overlay.dtbo \
-	unknown6-evt2.3-overlay.dtbo
+	unknown6-evt2.3-overlay.dtbo \
+	unknown6-dvt1.1-overlay.dtbo \
+	unknown6-dvt1.2-overlay.dtbo \
+	unknown6-dvt1.3-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_unknown13) += \
 	unknown13-dev0-overlay.dtbo \
 	unknown13-poc0-overlay.dtbo
 
 unknown12-dev0-overlay.dtbo-base := unknown12.dtb
+unknown12-pocb-overlay.dtbo-base := unknown12.dtb
+unknown12-nff-overlay.dtbo-base := unknown12.dtb
 unknown7-dev0-overlay.dtbo-base := unknown7.dtb
 unknown7-dev0.5-overlay.dtbo-base := unknown7.dtb
 unknown7-p0-overlay.dtbo-base := unknown7.dtb
@@ -107,6 +113,9 @@ unknown6-evt1.8-overlay.dtbo-base := unknown6.dtb
 unknown6-evt2.1-overlay.dtbo-base := unknown6.dtb
 unknown6-evt2.2-overlay.dtbo-base := unknown6.dtb
 unknown6-evt2.3-overlay.dtbo-base := unknown6.dtb
+unknown6-dvt1.1-overlay.dtbo-base := unknown6.dtb
+unknown6-dvt1.2-overlay.dtbo-base := unknown6.dtb
+unknown6-dvt1.3-overlay.dtbo-base := unknown6.dtb
 unknown13-dev0-overlay.dtbo-base := unknown13.dtb
 unknown13-poc0-overlay.dtbo-base := unknown13.dtb
 

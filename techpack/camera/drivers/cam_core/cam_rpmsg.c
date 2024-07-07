@@ -789,13 +789,11 @@ ack:
 			if (jpeg_private.status == CAM_JPEG_DSP_POWEROFF) {
 				CAM_WARN(CAM_RPMSG,
 					"JPEG DSP powered off Cannot register/Alloc buffer");
-				mutex_unlock(&jpeg_private.jpeg_mutex);
 				cmd_msg.cmd_msg_type = CAM_DSP2CPU_MEM_ALLOC;
 				cmd_msg.buf_info.ipa_addr = 0;
 				cmd_msg.ret_val = -1;
 				goto send_ack;
 			}
-			mutex_unlock(&jpeg_private.jpeg_mutex);
 
 			rc = cam_mem_mgr_alloc_and_map(&alloc_cmd);
 			if (rc) {
@@ -823,6 +821,7 @@ ack:
 				jpeg_private.dmabuf_f_op = (const struct file_operations *)dbuf->file->f_op;
 			}
 send_ack:
+			mutex_unlock(&jpeg_private.jpeg_mutex);
 			CAM_DBG(CAM_RPMSG, "ALLOC_OUT fd %d ipa 0x%x iova 0x%x buf_handle %x",
 				cmd_msg.buf_info.fd, cmd_msg.buf_info.ipa_addr,
 				cmd_msg.buf_info.iova, cmd_msg.buf_info.buf_handle);

@@ -39,7 +39,7 @@
 		qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
 
 		qcom,panel-cphy-mode;
-		qcom,mdss-dms-vid-type = "dms-vid-non-seamless";
+		qcom,mdss-dms-vid-type = "dms-vid-seamless";
 		qcom,mdss-dsi-display-timings {
 			timing@0{
 				qcom,mdss-dsi-panel-width = <2064>;

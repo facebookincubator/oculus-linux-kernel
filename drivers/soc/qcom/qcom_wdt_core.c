@@ -492,6 +492,26 @@ static ssize_t qcom_wdt_disable_set(struct device *dev,
 
 static DEVICE_ATTR(disable, 0600, qcom_wdt_disable_get, qcom_wdt_disable_set);
 
+static ssize_t qcom_wdt_apps_wd_trigger_set(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	qcom_wdt_trigger_bite();
+	return count;
+}
+
+static DEVICE_ATTR(apps_wd_trigger, 0200, NULL, qcom_wdt_apps_wd_trigger_set);
+
+static ssize_t qcom_wdt_sec_wd_trigger_set(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	qcom_scm_sec_wdog_trigger();
+	return count;
+}
+
+static DEVICE_ATTR(sec_wd_trigger, 0200, NULL, qcom_wdt_sec_wd_trigger_set);
+
 /*
  * Userspace Watchdog Support:
  * Write 1 to the "user_pet_enabled" file to enable hw support for a
@@ -748,6 +768,8 @@ int qcom_wdt_remove(struct platform_device *pdev)
 
 	mutex_unlock(&wdog_dd->disable_lock);
 	device_remove_file(wdog_dd->dev, &dev_attr_disable);
+	device_remove_file(wdog_dd->dev, &dev_attr_apps_wd_trigger);
+	device_remove_file(wdog_dd->dev, &dev_attr_sec_wd_trigger);
 	if (wdog_dd->irq_ppi)
 		free_percpu((void __percpu *)wdog_dd->wdog_cpu_dd);
 	irq_dispose_mapping(wdog_dd->bark_irq);
@@ -833,6 +855,8 @@ static int qcom_wdt_init_sysfs(struct msm_watchdog_data *wdog_dd)
 	int error = 0;
 
 	error |= device_create_file(wdog_dd->dev, &dev_attr_disable);
+	error |= device_create_file(wdog_dd->dev, &dev_attr_apps_wd_trigger);
+	error |= device_create_file(wdog_dd->dev, &dev_attr_sec_wd_trigger);
 	error |= device_create_file(wdog_dd->dev, &dev_attr_wakeup_enable);
 	if (QCOM_WATCHDOG_USERSPACE_PET) {
 		error |= device_create_file(wdog_dd->dev, &dev_attr_pet_time);

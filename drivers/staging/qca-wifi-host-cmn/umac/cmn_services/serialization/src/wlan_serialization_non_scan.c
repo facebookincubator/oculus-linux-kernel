@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -233,7 +233,7 @@ wlan_ser_move_non_scan_pending_to_active(
 	struct wlan_serialization_command cmd_to_remove;
 	enum wlan_serialization_status status = WLAN_SER_CMD_DENIED_UNSPECIFIED;
 	struct wlan_serialization_pdev_queue *pdev_queue;
-	struct wlan_serialization_vdev_queue *vdev_queue;
+	struct wlan_serialization_vdev_queue *vdev_queue = NULL;
 
 	struct wlan_ser_vdev_obj *ser_vdev_obj;
 
@@ -254,20 +254,22 @@ wlan_ser_move_non_scan_pending_to_active(
 
 	pdev_queue = &ser_pdev_obj->pdev_q[SER_PDEV_QUEUE_COMP_NON_SCAN];
 
-	ser_vdev_obj = wlan_serialization_get_vdev_obj(vdev);
+	if (vdev) {
+		ser_vdev_obj = wlan_serialization_get_vdev_obj(vdev);
+		if (!ser_vdev_obj) {
+			ser_err("Can't find ser_vdev_obj");
+			goto error;
+		}
 
-	if (!ser_vdev_obj) {
-		ser_err("Can't find ser_vdev_obj");
-		goto error;
+		vdev_queue =
+			&ser_vdev_obj->vdev_q[SER_VDEV_QUEUE_COMP_NON_SCAN];
 	}
-
-	vdev_queue = &ser_vdev_obj->vdev_q[SER_VDEV_QUEUE_COMP_NON_SCAN];
 
 	wlan_serialization_acquire_lock(&pdev_queue->pdev_queue_lock);
 
 	blocking_cmd_waiting = pdev_queue->blocking_cmd_waiting;
 
-	if (!blocking_cmd_removed && !blocking_cmd_waiting) {
+	if (!blocking_cmd_removed && !blocking_cmd_waiting && vdev_queue) {
 		pending_queue = &vdev_queue->pending_list;
 		vdev_queue_lookup = true;
 	} else {
@@ -736,6 +738,17 @@ wlan_ser_cancel_non_scan_cmd(
 	}
 
 	wlan_serialization_release_lock(&pdev_q->pdev_queue_lock);
+
+	if (is_active_queue && wlan_serialization_list_empty(pdev_queue) &&
+	    !wlan_serialization_any_vdev_cmd_active(pdev_q)) {
+		/*
+		 * Try to do reactive pdev pending list command to active list
+		 * since all active list commands are already canceled and no
+		 * active vdev commands.
+		 */
+		wlan_ser_move_non_scan_pending_to_active(ser_pdev_obj,
+							 NULL, false);
+	}
 
 	return status;
 }

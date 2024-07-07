@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 
+&battery_charger {
+	#cooling-cells = <2>;
+};
+
 &fan {
 	cooling-levels = <0 3700 4500 5000 5500>;
 };
@@ -1907,6 +1911,19 @@
 		polling-delay-passive = <0>;
 		polling-delay = <0>;
 		thermal-sensors = <&pmk8550_vadc PM8550B_ADC5_GEN3_AMUX_THM4_USB_THERM_100K_PU>;
+		trips {
+			usb_disable_trip: usb_disable_trip {
+				temperature = <60000>;
+				hysteresis = <25000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			usb_disable_map {
+				trip = <&usb_disable_trip>;
+				cooling-device = <&battery_charger 1 1>;
+			};
+		};
 	};
 };
 

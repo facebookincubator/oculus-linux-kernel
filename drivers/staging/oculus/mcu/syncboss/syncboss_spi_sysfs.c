@@ -141,62 +141,6 @@ static ssize_t cpu_affinity_store(struct device *dev,
 	return count;
 }
 
-static ssize_t transaction_period_us_show(struct device *dev,
-					  struct device_attribute *attr,
-					  char *buf)
-{
-	int status = 0;
-	int retval = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
-		return status;
-	}
-
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n",
-			   devdata->next_stream_settings.trans_period_ns / 1000);
-
-	mutex_unlock(&devdata->state_mutex);
-	return retval;
-}
-
-static ssize_t transaction_period_us_store(struct device *dev,
-					   struct device_attribute *attr,
-					   const char *buf, size_t count)
-{
-	int status = 0;
-	u32 temp_transaction_period_us = 0;
-	struct syncboss_dev_data *devdata =
-		(struct syncboss_dev_data *)dev_get_drvdata(dev);
-
-	status = kstrtou32(buf, /*base */10, &temp_transaction_period_us);
-	if (status < 0) {
-		dev_err(dev, "failed to parse integer out of %s", buf);
-		return -EINVAL;
-	}
-
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		dev_warn(&devdata->spi->dev, "%s aborted due to signal. status=%d", __func__, status);
-		return status;
-	}
-
-	devdata->next_stream_settings.trans_period_ns = temp_transaction_period_us * 1000;
-	status = count;
-
-	if (devdata->is_streaming) {
-		dev_info(dev,
-			 "transaction period changed while streaming.\n"
-			 "this change will not take effect until the stream is stopped and restarted");
-	}
-
-	mutex_unlock(&devdata->state_mutex);
-	return status;
-}
-
 static ssize_t minimum_time_between_transactions_us_show(struct device *dev,
 						  struct device_attribute *attr,
 						  char *buf)
@@ -585,8 +529,7 @@ static ssize_t streaming_show(
  * syncboss handle, or close/re-open the syncboss handle after changing these
  * settings.
  *
- * transaction_length - set the fixed size of the periodic SPI transaction
- * transaction_period_us - set the period of the SPI polling (legacy polling mode only)
+ * transaction_length - set the fixed size of the SPI transaction
  * minimum_time_between_transactions_us - set the minimum amount of time we
  *     should wait between SPI transactions
  * maximum_send_delay_us - set the maximum amount of time we should wait for more data
@@ -604,7 +547,6 @@ static ssize_t streaming_show(
  */
 static DEVICE_ATTR_WO(reset);
 static DEVICE_ATTR_RW(spi_max_clk_rate);
-static DEVICE_ATTR_RW(transaction_period_us);
 static DEVICE_ATTR_RW(minimum_time_between_transactions_us);
 static DEVICE_ATTR_RW(maximum_send_delay_us);
 static DEVICE_ATTR_RW(transaction_length);
@@ -617,7 +559,6 @@ static DEVICE_ATTR_RO(streaming);
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_spi_max_clk_rate.attr,
-	&dev_attr_transaction_period_us.attr,
 	&dev_attr_minimum_time_between_transactions_us.attr,
 	&dev_attr_maximum_send_delay_us.attr,
 	&dev_attr_transaction_length.attr,

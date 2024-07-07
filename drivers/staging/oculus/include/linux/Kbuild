@@ -1,5 +1,4 @@
 header-y += cypd.h
-header-y += d4xx.h
 header-y += log_gpu_error.h
 header-y += lkm_utils.h
 header-y += jtag_bitbang.h

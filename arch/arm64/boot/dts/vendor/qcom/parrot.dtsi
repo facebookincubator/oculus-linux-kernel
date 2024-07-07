@@ -2077,6 +2077,8 @@
 		qcom,vmid = <50>;
 		qcom,firmware-name = "cpusys_vm";
 		memory-region = <&cpusys_vm_mem>;
+		ext-region = <&chipinfo_mem>;
+		ext-label = <0x7>;
 	};
 
 	trust_ui_vm: qcom,trust_ui_vm@e55fc000 {
@@ -2952,7 +2954,7 @@
 				<0x146A8000 0x146A8000 0x2000>;
 			qcom,iommu-dma = "atomic";
 			dma-coherent;
-			qcom,ipa-q6-smem-size = <36864>;
+			qcom,ipa-q6-smem-size = <45056>;
 		};
 
 		ipa_smmu_wlan: ipa_smmu_wlan {

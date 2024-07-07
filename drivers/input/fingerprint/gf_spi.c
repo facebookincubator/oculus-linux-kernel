@@ -1,8 +1,7 @@
-/*Simple synchronous userspace interface to SPI devices
- *
- * Copyright (C) 2006 SWAPP
- *     Andrea Paterniani <a.paterniani@swapp-eng.it>
- * Copyright (C) 2007 David Brownell (simplification, cleanup)
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * TEE driver for goodix fingerprint sensor
+ * Copyright (C) 2016 Goodix
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -13,11 +12,8 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/ioctl.h>
@@ -32,7 +28,7 @@
 #include <linux/slab.h>
 #include <linux/compat.h>
 #include <linux/delay.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/ktime.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -53,6 +49,8 @@
 
 #include <linux/async.h>
 
+#define GF_DRIVER_VER "goodix,V01"
+
 #define GF_SPIDEV_NAME     "goodix,gw39a1"
 /*device name after register in charater*/
 #define GF_DEV_NAME         "goodix_fp"
@@ -68,24 +66,23 @@
 #define GF_CHIP_ID_HI				0x0002
 #define GF_VENDOR_ID				0x0006
 #define MILAN_REG_CHIP_STATE		0x000e
-#define GF_IRQ_CTRL1 				0x0120 // LGE_CHANGES - for pin check test
+#define GF_IRQ_CTRL1				0x0120 // LGE_CHANGES - for pin check test
 #define GF_IRQ_CTRL2				0x0124
 #define GF_IRQ_CTRL3				0x0126
-#define GF_IRQ_CTRL4 				0x0128 // LGE_CHANGES - for pin check test
+#define GF_IRQ_CTRL4				0x0128 // LGE_CHANGES - for pin check test
 
 /*GF input keys*/
-struct gf_key_map key_map[] =
-{
-	{  "POWER",  KEY_POWER  },
-	{  "HOME" ,  KEY_HOME   },
-	{  "MENU" ,  KEY_MENU   },
-	{  "BACK" ,  KEY_BACK   },
-	{  "UP"   ,  KEY_UP     },
-	{  "DOWN" ,  KEY_DOWN   },
-	{  "LEFT" ,  KEY_LEFT   },
-	{  "RIGHT",  KEY_RIGHT  },
-	{  "FORCE",  KEY_F9     },
-	{  "CLICK",  KEY_F19    },
+struct gf_key_map key_map[] = {
+	{  "POWER",	KEY_POWER  },
+	{  "HOME",	KEY_HOME   },
+	{  "MENU",	KEY_MENU   },
+	{  "BACK",	KEY_BACK   },
+	{  "UP",	KEY_UP     },
+	{  "DOWN",	KEY_DOWN   },
+	{  "LEFT",	KEY_LEFT   },
+	{  "RIGHT",	KEY_RIGHT  },
+	{  "FORCE",	KEY_F9     },
+	{  "CLICK",	KEY_F19    },
 };
 
 /**************************debug******************************/
@@ -105,7 +102,7 @@ static unsigned int bufsiz = 22180;
 static unsigned int gf_spi_speed[GF_SPI_KEEP_SPEED] = {4800000, 4800000};
 static struct class *gf_class;
 static struct spi_driver gf_driver;
-static int gf_probe_fail = 0;
+static int gf_probe_fail;
 
 
 /******************* Enable/Disable IRQ Start ****************/
@@ -139,9 +136,8 @@ static void gf_disable_irq(struct gf_dev *gf_dev)
 static int gf_get_hw_id(struct gf_dev *gf_dev)
 {
 	int i;
-	for(i = 0;i < MAX_RETRY_HW_CHECK_COUNT;i++)
-	{
 
+	for (i = 0; i < MAX_RETRY_HW_CHECK_COUNT; i++) {
 		gf_spi_read_data(gf_dev, 0x0000, 4, gf_dev->gBuffer);
 		gf_dbg_len(gf_dev->gBuffer, 4);
 	}
@@ -155,49 +151,48 @@ static int gf_check_irq(struct gf_dev *gf_dev)
 	int gpio_status_prev = 0;
 	int gpio_status = 0;
 	int result = -GF_PERM_ERROR;
-	for(i = 0 ; i < MAX_REST_RETRY_COUNT ; i++) {
+
+	for (i = 0 ; i < MAX_REST_RETRY_COUNT ; i++) {
 		gpio_status_prev = gpio_get_value(gf_dev->irq_gpio);
 		gf_dbg("irq_gpio_prev status [%d]", gpio_status_prev);
 
-		gf_spi_write_word(gf_dev,GF_IRQ_CTRL1,0xFFFF); // GF_IRQ_CTRL1 set irq high time
-		gf_spi_write_word(gf_dev,GF_IRQ_CTRL4,0x0002);
+		gf_spi_write_word(gf_dev, GF_IRQ_CTRL1, 0xFFFF); // GF_IRQ_CTRL1 set irq high time
+		gf_spi_write_word(gf_dev, GF_IRQ_CTRL4, 0x0002);
 		gpio_status = gpio_get_value(gf_dev->irq_gpio);
 
-		if(gpio_status_prev == 0 && gpio_status == 0) {
-			gf_dbg("start irq pin check.... irq_gpio status [%d]", gpio_status);
-			for(j = 0 ; j < MAX_IRQ_PIN_CHECK_RETRY_COUNT ; j++) {
+		if (gpio_status_prev == 0 && gpio_status == 0) {
+			gf_dbg("start irq pin check.... irq_gpio status[%d]", gpio_status);
+			for (j = 0 ; j < MAX_IRQ_PIN_CHECK_RETRY_COUNT ; j++) {
 				mdelay(10);
 				gpio_status = gpio_get_value(gf_dev->irq_gpio);
-				if(gpio_status == 1) {
-					gf_dbg("irq_gpio status high..... [%d] %d round", gpio_status, j);
-					break;
+				if (gpio_status == 1) {
+					gf_dbg("irq_gpio status high[%d] %d round", gpio_status, j);
+					result = GF_NO_ERROR;
 				}
 			}
-			if(gpio_status_prev == 0 && gpio_status == 1) {
+			if (gpio_status_prev == 0 && gpio_status == 1) {
 				gf_dbg("[pass] finish irq_gpio check");
 				result = GF_NO_ERROR;
-				break;
 			} else {
 				gf_dbg("reset and retry irq_gpio check");
-				gf_hw_reset(gf_dev,5);
+				gf_hw_reset(gf_dev, 5);
 				continue;
 			}
-		} else if(gpio_status_prev == 0 && gpio_status == 1) {
-			gf_dbg("irq_gpio status high..... [%d] w/o delay\n", gpio_status);
+		} else if (gpio_status_prev == 0 && gpio_status == 1) {
+			gf_dbg("irq_gpio status high [%d] w/o delay\n", gpio_status);
 			gf_dbg("[pass] finish irq_gpio check");
 			result = GF_NO_ERROR;
-			break;
 		} else {
-			gf_dbg("irq_gpio_prev status was high..... irq_gpio_ status [%d]", gpio_status);
-			gf_hw_reset(gf_dev,5);
+			gf_dbg("irq_gpio_prev status was high irq_gpio_status[%d]", gpio_status);
+			gf_hw_reset(gf_dev, 5);
 			continue;
 		}
 	}
 
-	gf_spi_write_word(gf_dev,GF_IRQ_CTRL2,0xFFFF); // GF_IRQ_CTRL2 set irq clear
+	gf_spi_write_word(gf_dev, GF_IRQ_CTRL2, 0xFFFF); // GF_IRQ_CTRL2 set irq clear
 	gpio_status = gpio_get_value(gf_dev->irq_gpio);
 	mdelay(10);
-	if(gpio_status == 0) {
+	if (gpio_status == 0) {
 		gf_dbg("irq_gpio clear success\n");
 	} else {
 		gf_dbg("irq_gpio clear fail\n");
@@ -209,8 +204,8 @@ static int gf_check_irq(struct gf_dev *gf_dev)
 
 void gf_spi_setup(struct gf_dev *gf_dev, enum gf_spi_transfer_speed speed)
 {
-
 	int ret = 0;
+
 	if (speed == GF_SPI_KEEP_SPEED)
 		return;
 	gf_dev->spi->chip_select = 0;
@@ -221,27 +216,26 @@ void gf_spi_setup(struct gf_dev *gf_dev, enum gf_spi_transfer_speed speed)
 	gf_dbg("%s spi_setup ret = %d", __func__, ret);
 }
 
-static int gf_setup_spi_context(struct gf_dev* gf_dev, struct spi_device *spi) {
-
+static int gf_setup_spi_context(struct gf_dev *gf_dev, struct spi_device *spi)
+{
 	gf_spi_setup(gf_dev, GF_SPI_HIGH_SPEED);
 	spi_set_drvdata(spi, gf_dev);
 	return GF_NO_ERROR;
 }
 
-static int gf_run_oem_test(struct gf_dev* gf_dev){
+static int gf_run_oem_test(struct gf_dev *gf_dev)
+{
 	int ret = GF_NO_ERROR;
 
 	ret = gf_get_hw_id(gf_dev);
-	if(ret)
-	{
-		gf_dbg("%s gf_get_hw_id failed,probe failed!\n",__func__);
+	if (ret) {
+		gf_dbg("%s gf_get_hw_id failed,probe failed!\n", __func__);
 		return -GF_PERM_ERROR;
 	}
 
 	ret = gf_check_irq(gf_dev);
-	if(ret)
-	{
-		gf_dbg("%s gf_check_irq failed,probe failed!\n",__func__);
+	if (ret) {
+		gf_dbg("%s gf_check_irq failed,probe failed!\n", __func__);
 		return -GF_PERM_ERROR;
 	}
 
@@ -255,77 +249,77 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	struct gf_dev *gf_dev = &gf;
 	struct gf_key gf_key = { 0 };
 	int retval = 0;
+
 	FUNC_ENTRY();
+
 	if (_IOC_TYPE(cmd) != GF_IOC_MAGIC)
 		return -ENODEV;
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
-		retval = !access_ok((void __user *)arg, _IOC_SIZE(cmd));//kernel5.0 maybe use this 2 params
+		retval = !access_ok((void __user *)arg, _IOC_SIZE(cmd));
 	if ((retval == 0) && (_IOC_DIR(cmd) & _IOC_WRITE))
-		retval = !access_ok((void __user *)arg, _IOC_SIZE(cmd));//kernel5.0 maybe use this 2 params
+		retval = !access_ok((void __user *)arg, _IOC_SIZE(cmd));
 	if (retval)
 		return -EFAULT;
 
-	if(gf_dev->device_available == GF_DEVICE_NOT_AVAILABLE)
-	{
-		if((cmd == GF_IOC_POWER_ON) || (cmd == GF_IOC_POWER_OFF))
-		{
+	if (gf_dev->device_available == GF_DEVICE_NOT_AVAILABLE) {
+		if ((cmd == GF_IOC_POWER_ON) || (cmd == GF_IOC_POWER_OFF)) {
 			gf_dbg("power cmd\n");
-		}
-		else
-		{
-			gf_dbg("Sensor is power off currently. \n");
+		} else {
+			gf_dbg("Sensor is power off currently.\n");
 			return -ENODEV;
 		}
 	}
 
 	switch (cmd) {
-		case GF_IOC_DISABLE_IRQ:
-			gf_dbg("GF_IOC_DISABLE_IRQ");
-			gf_disable_irq(gf_dev);
-			break;
-		case GF_IOC_ENABLE_IRQ:
-			gf_dbg("GF_IOC_ENABLE_IRQ");
-			gf_enable_irq(gf_dev);
-			break;
+	case GF_IOC_DISABLE_IRQ:
+		gf_dbg("GF_IOC_DISABLE_IRQ");
+		gf_disable_irq(gf_dev);
+		break;
+	case GF_IOC_ENABLE_IRQ:
+		gf_dbg("GF_IOC_ENABLE_IRQ");
+		gf_enable_irq(gf_dev);
+		break;
 
-		case GF_IOC_RESET:
-			gf_dbg("GF_IOC_RESET");
-			gf_hw_reset(gf_dev, 1);
-			break;
+	case GF_IOC_RESET:
+		gf_dbg("GF_IOC_RESET");
+		gf_hw_reset(gf_dev, 1);
+		break;
 
-		case GF_IOC_SENDKEY:
-			gf_dbg("GF_IOC_SENDKEY");
-			if (copy_from_user
-					(&gf_key, (struct gf_key *)arg, sizeof(struct gf_key))) {
-				gf_dbg("Failed to copy data from user space.\n");
-				retval = -EFAULT;
-				break;
-			}
-			gf_dbg("KEY=%d, gf_key.value = %d", KEY_PROGRAM, gf_key.value);
-			input_report_key(gf_dev->input, KEY_PROGRAM, gf_key.value);
-			input_sync(gf_dev->input);
+	case GF_IOC_SENDKEY:
+		gf_dbg("GF_IOC_SENDKEY");
+		if (copy_from_user
+				(&gf_key, (struct gf_key *)arg, sizeof(struct gf_key))) {
+			gf_dbg("Failed to copy data from user space.\n");
+			retval = -EFAULT;
 			break;
+		}
+		gf_dbg("KEY=%d, gf_key.value = %d", KEY_PROGRAM, gf_key.value);
+		input_report_key(gf_dev->input, KEY_PROGRAM, gf_key.value);
+		input_sync(gf_dev->input);
+		break;
 
-		case GF_IOC_POWER_ON:
-			gf_dbg("GF_IOC_POWER_ON");
-			if(gf_dev->device_available == GF_DEVICE_AVAILABLE)
-				gf_dbg("Sensor has already powered-on.\n");
-			else
-				gf_power_on(gf_dev);
-			gf_dev->device_available = GF_DEVICE_AVAILABLE;
-			break;
-		case GF_IOC_POWER_OFF:
-			gf_dbg("GF_IOC_POWER_OFF");
-			if(gf_dev->device_available == GF_DEVICE_NOT_AVAILABLE)
-				gf_dbg("Sensor has already powered-off.\n");
-			else
-				gf_power_off(gf_dev);
-			gf_dev->device_available = GF_DEVICE_NOT_AVAILABLE;
-			break;
-		default:
-			gf_dbg("Unsupport cmd:0x%x\n", cmd);
-			break;
+	case GF_IOC_POWER_ON:
+		gf_dbg("GF_IOC_POWER_ON");
+		if (gf_dev->device_available == GF_DEVICE_AVAILABLE)
+			gf_dbg("Sensor has already powered-on.\n");
+		else
+			gf_power_on(gf_dev);
+		gf_dev->device_available = GF_DEVICE_AVAILABLE;
+		break;
+
+	case GF_IOC_POWER_OFF:
+		gf_dbg("GF_IOC_POWER_OFF");
+		if (gf_dev->device_available == GF_DEVICE_NOT_AVAILABLE)
+			gf_dbg("Sensor has already powered-off.\n");
+		else
+			gf_power_off(gf_dev);
+		gf_dev->device_available = GF_DEVICE_NOT_AVAILABLE;
+		break;
+
+	default:
+		gf_dbg("Unsupport cmd:0x%x\n", cmd);
+		break;
 	}
 
 	FUNC_EXIT();
@@ -336,7 +330,7 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 static irqreturn_t gf_irq(int irq, void *handle)
 {
 	/* TBD */
-	gf_dbg("gf_irq \n");
+	gf_dbg("%s\n", __func__);
 
 	return IRQ_HANDLED;
 }
@@ -347,7 +341,6 @@ static int gf_open(struct inode *inode, struct file *filp)
 	int status = -ENXIO;
 
 	FUNC_ENTRY();
-
 	mutex_lock(&device_list_lock);
 
 	list_for_each_entry(gf_dev, &device_list, device_entry) {
@@ -432,25 +425,53 @@ static const struct file_operations gf_fops = {
 	.release = gf_release,
 };
 
-
 static void gf_reg_key_kernel(struct gf_dev *gf_dev)
 {
 	set_bit(EV_KEY, gf_dev->input->evbit);
 	set_bit(KEY_PROGRAM, gf_dev->input->keybit);
 }
-static ssize_t gf_show_qup_id(struct device *dev, struct device_attribute *attr, char *buf)
+
+/* SysNode */
+static ssize_t gf_hw_id_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct gf_dev *gf_dev = dev_get_drvdata(dev);
+	int ret;
+	ssize_t len = 0;
+
+	len += sprintf(buf + len, "ic:%s\n", GF_SPIDEV_NAME);
+	ret = gf_get_hw_id(gf_dev);
+	if (ret == GF_NO_ERROR) {
+		len += sprintf(buf + len, "hw:%02X%02X%02X%02X\n",
+			gf_dev->gBuffer[0], gf_dev->gBuffer[1],
+			gf_dev->gBuffer[2], gf_dev->gBuffer[3]);
+		len += sprintf(buf + len, "spi(r/w):ok\n");
+	} else {
+		len += sprintf(buf + len, "spi(r/w):fail\n");
+	}
+
+	ret = gf_check_irq(gf_dev);
+	if (ret == GF_NO_ERROR)
+		len += sprintf(buf + len, "int:ok\n");
+	else
+		len += sprintf(buf + len, "int:fail\n");
+
+	return len;
+}
+
+static DEVICE_ATTR_RO(gf_hw_id);
+
+static ssize_t qup_id_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct gf_dev *gf_dev = dev_get_drvdata(dev);
 // just for debug, for sdm845
-	gf_dev->qup_id =0;
+	gf_dev->qup_id = 0;
 	return sprintf(buf, "%d\n", gf_dev->qup_id);
 }
 
-static DEVICE_ATTR(qup_id, S_IRUGO,
-		gf_show_qup_id, NULL);
+static DEVICE_ATTR_RO(qup_id);
 
 /* -------------------------------------------------------------------- */
-static ssize_t gf_store_spi_prepare_set(struct device *dev,
+static ssize_t gf_spi_prepare_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 
@@ -458,41 +479,37 @@ static ssize_t gf_store_spi_prepare_set(struct device *dev,
 	int res = 0;
 	bool to_tz;
 
-	if(*buf == '1')
+	if (*buf == '1')
 		to_tz = true;
-	else if(*buf == '0')
+	else if (*buf == '0')
 		to_tz = false;
 	else
 		return -EINVAL;
 
-#if 0	// moved to TZ
-	res = spi_set_prepare(ix, to_tz);
-#else
 	/* set spi ownership flag */
 	gf_dev->pipe_owner = to_tz;
-#endif
 
 	return res ? res : count;
 }
 
-static ssize_t gf_show_spi_prepare(struct device *dev,
+static ssize_t gf_spi_prepare_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct gf_dev *gf_dev = dev_get_drvdata(dev);
 
-	if(gf_dev->pipe_owner)
-		return sprintf(buf, "%d \n", TZBSP_TZ_ID);
+	if (gf_dev->pipe_owner)
+		return sprintf(buf, "%d\n", TZBSP_TZ_ID);
 	else
-		return sprintf(buf, "%d \n", TZBSP_APSS_ID);
+		return sprintf(buf, "%d\n", TZBSP_APSS_ID);
 }
 
-static DEVICE_ATTR(spi_prepare, S_IRUGO | S_IWUSR,
-		gf_show_spi_prepare, gf_store_spi_prepare_set);
+static DEVICE_ATTR_RW(gf_spi_prepare);
 
 
 static struct attribute *gf_attributes[] = {
+	&dev_attr_gf_hw_id.attr,
 	&dev_attr_qup_id.attr,
-	&dev_attr_spi_prepare.attr,
+	&dev_attr_gf_spi_prepare.attr,
 	NULL
 };
 
@@ -501,10 +518,11 @@ static const struct attribute_group gf_attr_group = {
 };
 
 
-static int gf_initialize_device_data(struct gf_dev* gf_dev, struct spi_device *spi) {
+static int gf_initialize_device_data(struct gf_dev *gf_dev, struct spi_device *spi)
+{
 	/* Initialize the driver data */
 	INIT_LIST_HEAD(&gf_dev->device_entry);
-    gf_dev->spi = spi;
+	gf_dev->spi = spi;
 	gf_dev->irq_gpio = -EINVAL;
 	gf_dev->reset_gpio = -EINVAL;
 	gf_dev->pwr_gpio = -EINVAL;
@@ -517,11 +535,10 @@ static int gf_initialize_device_data(struct gf_dev* gf_dev, struct spi_device *s
 	device_init_wakeup(&gf_dev->spi->dev, true);
 
 	return GF_NO_ERROR;
-
 }
 
-static int gf_setup_input_device(struct gf_dev* gf_dev){
-
+static int gf_setup_input_device(struct gf_dev *gf_dev)
+{
 	/*input device subsystem */
 	gf_dev->input = input_allocate_device();
 	if (gf_dev->input == NULL) {
@@ -542,15 +559,17 @@ static int gf_setup_input_device(struct gf_dev* gf_dev){
 	return GF_NO_ERROR;
 }
 
-static int gf_setup_irq_pin(struct gf_dev* gf_dev){
+static int gf_setup_irq_pin(struct gf_dev *gf_dev)
+{
 	int ret;
+
 	gf_dev->irq = gf_irq_num(gf_dev);
 	gf_dbg("gf_dev->irq: %d\n", gf_dev->irq);
 	ret = request_threaded_irq(gf_dev->irq, NULL, gf_irq,
 			IRQF_TRIGGER_RISING | IRQF_ONESHOT,
 			"gf", gf_dev);
 	if (!ret) {
-		gf_dbg("%s called enable_irq_wake.\n",__func__);
+		gf_dbg("%s called enable_irq_wake.\n", __func__);
 		disable_irq(gf_dev->irq);
 		enable_irq(gf_dev->irq);
 
@@ -558,13 +577,12 @@ static int gf_setup_irq_pin(struct gf_dev* gf_dev){
 		enable_irq_wake(gf_dev->irq);
 		gf_disable_irq(gf_dev);
 	}
-	return ret;
 
+	return ret;
 }
 
-
-static int gf_make_device_node(struct gf_dev* gf_dev) {
-
+static int gf_make_device_node(struct gf_dev *gf_dev)
+{
 	int status = GF_NO_ERROR;
 	unsigned long minor;
 
@@ -597,66 +615,90 @@ static int gf_make_device_node(struct gf_dev* gf_dev) {
 
 }
 
-static int gf_get_alloc_gbuffer(struct gf_dev* gf_dev) {
+static int gf_get_alloc_gbuffer(struct gf_dev *gf_dev)
+{
 	gf_dev->gBuffer = kzalloc(bufsiz + GF_RDATA_OFFSET, GFP_KERNEL);
-	if(gf_dev->gBuffer == NULL) {
+	if (gf_dev->gBuffer == NULL)
 		return -ENOMEM;
-	}
+
 	return GF_NO_ERROR;
 }
 
+static int gf_setup_lge_input_device(struct gf_dev *gf_dev)
+{
+	int status = GF_NO_ERROR;
+
+	/* register input device */
+	gf_dev->lge_input = input_allocate_device();
+	if (!gf_dev->lge_input) {
+		gf_dbg("[ERROR] input_allocate_device failed.\n");
+		return -ENOMEM;
+	}
+
+	gf_dev->lge_input->name = "fingerprint";
+	gf_dev->lge_input->dev.init_name = "lge_fingerprint";
+
+	input_set_drvdata(gf_dev->lge_input, gf_dev);
+	status = input_register_device(gf_dev->lge_input);
+	if (status) {
+		gf_dbg("[ERROR] nput_register_device failed.\n");
+		input_free_device(gf_dev->lge_input);
+		return -ENOMEM;
+	}
+	if (sysfs_create_group(&gf_dev->lge_input->dev.kobj, &gf_attr_group)) {
+		gf_dbg("[ERROR] sysfs_create_group failed.\n");
+		input_unregister_device(gf_dev->lge_input);
+		return -ENOMEM;
+	}
+	return status;
+}
 
 static int gf_probe(struct spi_device *spi)
 {
 	struct gf_dev *gf_dev = &gf;
 
 	FUNC_ENTRY();
-
-
-	if(gf_initialize_device_data(gf_dev, spi)) {
+	gf_dbg("GF Probe ver:%s\n", GF_DRIVER_VER);
+	if (gf_initialize_device_data(gf_dev, spi))
 		goto error;
-	}
 
-	if (gf_parse_dts(gf_dev))
-	{
+	if (gf_parse_dts(gf_dev)) {
 		gf_dbg("gf_parse_dts error!");
 		goto error_parse_dts;
 	}
 
-	if(gf_make_device_node(gf_dev)) {
+	if (gf_make_device_node(gf_dev))
 		goto error_make_device_node;
-	}
 
-	if(gf_get_alloc_gbuffer(gf_dev)) {
+	if (gf_get_alloc_gbuffer(gf_dev))
 		goto error_get_alloc_gbuffer;
-	}
 
-	if(gf_setup_input_device(gf_dev)) {
+	if (gf_setup_input_device(gf_dev))
 		goto error_setup_input_device;
-	}
+
+	if (gf_setup_lge_input_device(gf_dev))
+		goto error_setup_lge_input_device;
 
 	gf_reg_key_kernel(gf_dev);
 
 #if DEVICE_SPI_TEST
-	if(gf_setup_spi_context(gf_dev, spi)) {
+	if (gf_setup_spi_context(gf_dev, spi))
 		goto error_setup_spi_context;
-	}
 #endif
 
-	if(gf_setup_irq_pin(gf_dev)) {
+	if (gf_setup_irq_pin(gf_dev))
 		goto error_setup_irq_pin;
-	}
 
 	/* power sequence */
 	gpio_direction_output(gf_dev->pwr_gpio, 1);
-	msleep(10);
+	msleep_interruptible(10);
 	gf_hw_reset(gf_dev, 0);
 
 #if DEVICE_SPI_TEST
 	/* Test code */
 	/* check spi interface to FP */
 	gf_run_oem_test(gf_dev);
-	gf_spi_write_word(gf_dev,GF_IRQ_CTRL2,0xFFFF);
+	gf_spi_write_word(gf_dev, GF_IRQ_CTRL2, 0xFFFF);
 #endif
 
 	FUNC_EXIT();
@@ -672,11 +714,14 @@ error_setup_spi_context:
 		input_unregister_device(gf_dev->lge_input);
 	}
 #endif
+error_setup_lge_input_device:
+	if (gf_dev->input != NULL)
+		input_unregister_device(gf_dev->input);
 
 error_setup_input_device:
-	if(gf_dev->gBuffer != NULL) {
+	if (gf_dev->gBuffer != NULL)
 		kfree(gf_dev->gBuffer);
-	}
+
 error_get_alloc_gbuffer:
 	gf_dbg("device_destroy....");
 	mutex_lock(&device_list_lock);
@@ -698,6 +743,7 @@ error:
 static int gf_remove(struct spi_device *spi)
 {
 	struct gf_dev *gf_dev = &gf;
+
 	FUNC_ENTRY();
 
 	/* make sure ops on existing fds can abort cleanly */
@@ -717,13 +763,10 @@ static int gf_remove(struct spi_device *spi)
 		gf_cleanup(gf_dev);
 	gf_dev->device_available = GF_DEVICE_NOT_AVAILABLE;
 
-	if (gf_dev->users == 0) {
-		if(gf_dev->gBuffer)
-			kfree(gf_dev->gBuffer);
-	}
-	else {
+	if (gf_dev->users == 0)
+		kfree(gf_dev->gBuffer);
+	else
 		gf_dbg("Not free_pages.\n");
-	}
 
 	mutex_unlock(&device_list_lock);
 
@@ -731,7 +774,7 @@ static int gf_remove(struct spi_device *spi)
 	return 0;
 }
 
-static struct of_device_id gx_match_table[] = {
+static const struct of_device_id gx_match_table[] = {
 	{.compatible = GF_SPIDEV_NAME},
 	{}
 };
@@ -791,7 +834,7 @@ module_init(gf_init);
 static void __exit gf_exit(void)
 {
 	FUNC_ENTRY();
-    spi_unregister_driver(&gf_driver);
+	spi_unregister_driver(&gf_driver);
 	class_destroy(gf_class);
 	unregister_chrdev(SPIDEV_MAJOR, gf_driver.driver.name);
 	FUNC_EXIT();

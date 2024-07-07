@@ -225,7 +225,7 @@ static int signal_powerstate_event(struct powerstate_dev_data *devdata, int evt)
 			.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
 			.header_length = sizeof(struct syncboss_driver_data_header_t),
 			.from_driver = true,
-			.nsync_offset_status = NSYNC_OFFSET_INVALID,
+			.nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID,
 		},
 		.driver_message_type = SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG,
 		.driver_message_data = evt,

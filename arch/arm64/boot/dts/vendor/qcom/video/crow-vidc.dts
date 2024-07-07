@@ -10,6 +10,6 @@
 / {
 	model = "Qualcomm Technologies, Inc. Crow";
 	compatible = "qcom,crow";
-	qcom,msm-id = <608 0x10000>;
+	qcom,msm-id = <608 0x10000>, <644 0x10000>;
 	qcom,board-id = <0 0>;
 };

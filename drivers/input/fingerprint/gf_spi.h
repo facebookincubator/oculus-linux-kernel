@@ -1,3 +1,19 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * TEE driver for goodix fingerprint sensor
+ * Copyright (C) 2016 Goodix
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __GF_SPI_H
 #define __GF_SPI_H
 
@@ -24,8 +40,8 @@ enum gf_error_type {
 #define NETLINK_TEST 25
 
 /****************Chip Specific***********************/
-#define GF_W          	0xF0
-#define GF_R          	0xF1
+#define GF_W	0xF0
+#define GF_R	0xF1
 #define GF_WDATA_OFFSET	(0x3)
 #define GF_RDATA_OFFSET	(0x4)
 
@@ -76,9 +92,7 @@ struct gf_ioc_chip_info {
 
 #define DEVICE_SPI_TEST 1
 
-#define gf_dbg(fmt, args...) do { \
-	pr_warn("[goodix]:" fmt, ##args);\
-} while (0)
+#define gf_dbg(fmt, args...) pr_warn("[goodix]:" fmt, ##args)
 
 #define gf_dbg_len(buffer, len) do { \
 	char log_buf[256] = {0}; \
@@ -103,7 +117,7 @@ struct gf_ioc_transfer {
 	unsigned char reserve;
 	unsigned short addr;
 	unsigned int len;
-	unsigned char* buf;
+	unsigned char *buf;
 };
 
 struct gf_key {
@@ -111,17 +125,17 @@ struct gf_key {
 	int value;
 };
 
-struct gf_key_map
-{
+struct gf_key_map {
 	char *name;
 	unsigned short val;
 };
 
 struct gf_dev {
 	dev_t devt;
-	spinlock_t   spi_lock;
+	spinlock_t	spi_lock;
 	struct list_head device_entry;
-    struct spi_device *spi;
+	struct spi_device *spi;
+
 	struct clk *core_clk;
 	struct clk *iface_clk;
 
@@ -133,7 +147,7 @@ struct gf_dev {
 	u32 vddio_uV;
 	bool pipe_owner;
 	bool power_on;
-	unsigned users;
+	int users;
 	int irq_gpio;
 	int reset_gpio;
 	int cs_gpio;
@@ -148,19 +162,17 @@ struct gf_dev {
 	struct mutex frame_lock;
 };
 
-int  gf_parse_dts(struct gf_dev* gf_dev);
+int  gf_parse_dts(struct gf_dev *gf_dev);
 void gf_cleanup(struct gf_dev *gf_dev);
 
-int  gf_power_on(struct gf_dev *gf_dev);
-int  gf_power_off(struct gf_dev *gf_dev);
+int gf_power_on(struct gf_dev *gf_dev);
+int gf_power_off(struct gf_dev *gf_dev);
 
-int  gf_hw_reset(struct gf_dev *gf_dev, unsigned int delay_ms);
-int  gf_irq_num(struct gf_dev *gf_dev);
-
+int gf_hw_reset(struct gf_dev *gf_dev, unsigned int delay_ms);
+int gf_irq_num(struct gf_dev *gf_dev);
 
 void sendnlmsg(char *message);
 int netlink_init(void);
 void netlink_exit(void);
-
 
 #endif /*__GF_SPI_H*/

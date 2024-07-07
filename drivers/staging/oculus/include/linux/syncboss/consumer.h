@@ -68,6 +68,18 @@ struct syncboss_consumer_ops {
 	ssize_t (*queue_tx_packet)(struct device *dev, const void *buf, size_t count, bool from_user);
 };
 
+#ifdef CONFIG_SYNCBOSS_STANDALONE
+#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION 2
+#define syncboss_driver_data_header_t syncboss_driver_data_header_v2_t
+#define syncboss_driver_data_header_driver_message_t syncboss_driver_data_header_driver_message_v2_t
+#define uapi_pkt_t uapi_pkt_v2_t
+#elif CONFIG_SYNCBOSS_PERIPHERAL
+#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION 3
+#define syncboss_driver_data_header_t syncboss_driver_data_header_v3_t
+#define syncboss_driver_data_header_driver_message_t syncboss_driver_data_header_driver_message_v3_t
+#define uapi_pkt_t uapi_pkt_v3_t
+#endif
+
 struct rx_packet_info {
 	struct syncboss_driver_data_header_t header;
 	const struct syncboss_data *data;

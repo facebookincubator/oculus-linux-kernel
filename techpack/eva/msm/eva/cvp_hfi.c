@@ -32,6 +32,7 @@
 #include "msm_cvp_dsp.h"
 #include "msm_cvp_clocks.h"
 #include "cvp_dump.h"
+#include "msm_cvp_common.h"
 #ifndef HALLIDAY_DISABLE
 #include "msm_gpu_eva.h"
 #endif
@@ -3060,7 +3061,7 @@ exit:
 	return packet_count;
 }
 
-static void iris_hfi_core_work_handler(struct work_struct *work)
+irqreturn_t iris_hfi_core_work_handler(int irq, void *data)
 {
 	struct msm_cvp_core *core;
 	struct iris_hfi_device *device;
@@ -3072,7 +3073,7 @@ static void iris_hfi_core_work_handler(struct work_struct *work)
 	if (core)
 		device = core->device->hfi_device_data;
 	else
-		return;
+		return IRQ_HANDLED;
 
 	mutex_lock(&device->lock);
 
@@ -3134,20 +3135,54 @@ err_no_work:
 	if (!(intr_status & CVP_WRAPPER_INTR_STATUS_A2HWD_BMSK))
 		enable_irq(device->cvp_hal_data->irq);
 
-	/*
-	 * XXX: Don't add any code beyond here.  Reacquiring locks after release
-	 * it above doesn't guarantee the atomicity that we're aiming for.
-	 */
+	return IRQ_HANDLED;
+}
+irqreturn_t iris_hfi_isr(int irq, void *dev)
+{
+	disable_irq_nosync(irq);
+	return IRQ_WAKE_THREAD;
+}
+/*
+ * When the watchdog timer expires, the device is crashed and a dump is collected.
+ * This dump provides the current state of the device, which can be used for debugging.
+ */
+static void iris_hfi_wd_work_handler(struct work_struct *work)
+{
+	struct msm_cvp_core *core;
+	struct iris_hfi_device *device;
+	struct msm_cvp_cb_cmd_done response  = {0};
+	enum hal_command_response cmd = HAL_SYS_WATCHDOG_TIMEOUT;
+
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	if (core)
+	{
+		device = core->device->hfi_device_data;
+	}
+	else
+	{
+		return;
+	}
+
+	if (msm_cvp_hw_wd_recovery) {
+		dprintk(CVP_ERR, "Cleaning up as HW WD recovery is enable %d\n", msm_cvp_hw_wd_recovery);
+		response.device_id = device->device_id;
+		handle_sys_error(cmd, (void *) &response);
+		enable_irq(device->cvp_hal_data->irq_wd);
+	}
+	else {
+		dprintk(CVP_ERR, "Crashing the device as HW WD recovery is disable %d\n", msm_cvp_hw_wd_recovery);
+		BUG_ON(1);
+	}
 }
 
-static DECLARE_WORK(iris_hfi_work, iris_hfi_core_work_handler);
+static DECLARE_WORK(iris_hfi_wd_work, iris_hfi_wd_work_handler);
 
-static irqreturn_t iris_hfi_isr(int irq, void *dev)
+static irqreturn_t iris_hfi_isr_wd(int irq, void *dev)
 {
 	struct iris_hfi_device *device = dev;
-
+	dprintk(CVP_ERR, "Got HW WDOG IRQ! \n");
 	disable_irq_nosync(irq);
-	queue_work(device->cvp_workq, &iris_hfi_work);
+	queue_work(device->cvp_workq, &iris_hfi_wd_work);
 	return IRQ_HANDLED;
 }
 
@@ -3174,6 +3209,7 @@ static int __init_regs_and_interrupts(struct iris_hfi_device *device,
 	}
 
 	hal->irq = res->irq;
+	hal->irq_wd = res->irq_wd;
 	hal->firmware_base = res->firmware_base;
 	hal->register_base = devm_ioremap(&res->pdev->dev,
 			res->register_base, res->register_size);
@@ -3196,10 +3232,17 @@ static int __init_regs_and_interrupts(struct iris_hfi_device *device,
 	}
 
 	device->cvp_hal_data = hal;
-	rc = request_irq(res->irq, iris_hfi_isr, IRQF_TRIGGER_HIGH,
-			"msm_cvp", device);
+	rc = request_threaded_irq(res->irq, iris_hfi_isr, iris_hfi_core_work_handler,
+					IRQF_TRIGGER_HIGH, "msm_cvp", device);
 	if (unlikely(rc)) {
 		dprintk(CVP_ERR, "() :request_irq failed\n");
+		goto error_irq_fail;
+	}
+
+	rc = request_irq(res->irq_wd, iris_hfi_isr_wd, IRQF_TRIGGER_HIGH,
+			"msm_cvp", device);
+	if (unlikely(rc)) {
+		dprintk(CVP_ERR, "() :request_irq for WD failed\n");
 		goto error_irq_fail;
 	}
 
@@ -3833,6 +3876,13 @@ static void interrupt_init_iris2(struct iris_hfi_device *device)
 	__write_register(device, CVP_WRAPPER_INTR_MASK, mask_val);
 	dprintk(CVP_REG, "Init irq: reg: %x, mask value %x\n",
 		CVP_WRAPPER_INTR_MASK, mask_val);
+
+	mask_val = 0;
+	mask_val = __read_register(device, CVP_SS_IRQ_MASK);
+	mask_val &= ~(CVP_SS_INTR_BMASK);
+	__write_register(device, CVP_SS_IRQ_MASK, mask_val);
+	dprintk(CVP_REG, "Init irq_wd: reg: %x, mask value %x\n",
+		CVP_SS_IRQ_MASK, mask_val);
 }
 
 static void setup_dsp_uc_memmap_vpu5(struct iris_hfi_device *device)

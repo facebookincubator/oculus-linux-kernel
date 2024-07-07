@@ -669,7 +669,7 @@ int dsi_display_mgr_panel_post_unprepare(struct dsi_display *display)
 	display->panel->powered = false;
 
 	if (!m_display->panel->powered && !s_display->panel->powered)
-		rc = dsi_panel_post_unprepare(m_display->panel);
+		rc = dsi_panel_post_unprepare(s_display->panel);
 
 error_display_get:
 	mutex_unlock(&disp_mgr.disp_mgr_mutex);

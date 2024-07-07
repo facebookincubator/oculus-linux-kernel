@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -591,6 +592,11 @@ struct dwc3_msm {
 	enum dp_lane		dp_state;
 
 	bool			force_disconnect;
+
+#if IS_ENABLED(CONFIG_USB_DWC3_AUTO_RECOVERY)
+#define USB_STATE_CHECK_TIME		10000 /* in ms */
+	struct delayed_work usb_state_check;
+#endif
 };
 
 #define USB_HSPHY_3P3_VOL_MIN		3050000 /* uV */
@@ -4247,6 +4253,40 @@ static int dwc3_msm_get_clk_gdsc(struct dwc3_msm *mdwc)
 	return 0;
 }
 
+#if (IS_ENABLED(CONFIG_USB_DWC3_AUTO_RECOVERY))
+int usb_restart_retry = 0;
+static void check_for_usb_state(struct work_struct *w)
+{
+	struct dwc3_msm *mdwc =
+		container_of(w, struct dwc3_msm, usb_state_check.work);
+	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
+	u32 reg;
+
+	dev_info(mdwc->dev, "%s: enter usb_restart_retry is:%d\n",
+			__func__, usb_restart_retry);
+	dbg_event(0xFF, "cfg_check 1", mdwc->vbus_active);
+	if ((!mdwc->vbus_active) || (usb_restart_retry > 3))
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+
+	dbg_event(0xFF, "cfg_check 2", dwc->gadget->state);
+	/* Check USB state is not changed */
+	if (dwc->gadget->state < USB_STATE_DEFAULT &&
+			DWC3_DSTS_USBLNKST(reg) != DWC3_LINK_STATE_CMPLY) {
+		dbg_event(0xFF, "Q Restart CFG CHK", mdwc->vbus_active);
+		schedule_work(&mdwc->restart_usb_work);
+		usb_restart_retry++;
+	} else {
+		usb_restart_retry = 0;
+	}
+
+	dbg_event(0xFF, "cfg_check 3", 0xFF);
+	dev_info(mdwc->dev, "%s: exit usb_restart_retry is:%d reg:0x%x\n",
+			__func__, usb_restart_retry, reg);
+}
+#endif
+
 static int dwc3_msm_id_notifier(struct notifier_block *nb,
 	unsigned long event, void *ptr)
 {
@@ -4279,6 +4319,7 @@ static int dwc3_msm_id_notifier(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
+static void dwc3_override_vbus_status(struct dwc3_msm *mdwc, bool vbus_present);
 static int dwc3_msm_vbus_notifier(struct notifier_block *nb,
 	unsigned long event, void *ptr)
 {
@@ -4321,6 +4362,11 @@ static int dwc3_msm_vbus_notifier(struct notifier_block *nb,
 		 */
 		if (dwc && dwc->gadget && dwc->gadget->speed >= USB_SPEED_SUPER && !spoof)
 			return NOTIFY_DONE;
+
+		if (!spoof && mdwc->drd_state != DRD_STATE_UNDEFINED) {
+			dwc3_override_vbus_status(mdwc, !!event);
+			return NOTIFY_DONE;
+		}
 
 		mdwc->check_eud_state = true;
 	} else {
@@ -5424,6 +5470,9 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	INIT_WORK(&mdwc->restart_usb_work, dwc3_restart_usb_work);
 	INIT_DELAYED_WORK(&mdwc->sm_work, dwc3_otg_sm_work);
 	INIT_DELAYED_WORK(&mdwc->perf_vote_work, msm_dwc3_perf_vote_work);
+#if (IS_ENABLED(CONFIG_USB_DWC3_AUTO_RECOVERY))
+	INIT_DELAYED_WORK(&mdwc->usb_state_check, check_for_usb_state);
+#endif
 
 #ifdef CONFIG_IPC_LOGGING
 	dwc3_msm_debug_init(mdwc);
@@ -6228,8 +6277,8 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 		/*
 		 * Check udc->driver to find out if we are bound to udc or not.
 		 */
-		if ((mdwc->force_disconnect) && (dwc->gadget->udc->driver) &&
-			(!vdwc->softconnect)) {
+		if ((mdwc->force_disconnect) && (!vdwc->softconnect) &&
+			(dwc->gadget) && (dwc->gadget->udc->driver)) {
 			dbg_event(0xFF, "Force Pullup", 0);
 			usb_gadget_connect(dwc->gadget);
 		}
@@ -6260,7 +6309,7 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 		 * disable), and retry suspend again.
 		 */
 		ret = pm_runtime_put_sync(&mdwc->dwc3->dev);
-		if (ret < 0) {
+		if (!pm_runtime_suspended(&mdwc->dwc3->dev)) {
 			while (--timeout && dwc->connected)
 				msleep(20);
 			dbg_event(0xFF, "StopGdgt connected", dwc->connected);
@@ -6390,6 +6439,12 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 			}
 		} else if (test_bit(B_SESS_VLD, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "b_sess_vld\n");
+#if (IS_ENABLED(CONFIG_USB_DWC3_AUTO_RECOVERY))
+			dbg_event(0xFF, "QW cfg_check", mdwc->inputs);
+			queue_delayed_work(mdwc->dwc3_wq,
+					&mdwc->usb_state_check,
+					msecs_to_jiffies(USB_STATE_CHECK_TIME));
+#endif
 			/*
 			 * Increment pm usage count upon cable connect. Count
 			 * is decremented in DRD_STATE_PERIPHERAL state on
@@ -6409,6 +6464,9 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				!test_bit(ID, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "!id || !bsv\n");
 			mdwc->drd_state = DRD_STATE_IDLE;
+#if (IS_ENABLED(CONFIG_USB_DWC3_AUTO_RECOVERY))
+			cancel_delayed_work_sync(&mdwc->usb_state_check);
+#endif
 			dwc3_otg_start_peripheral(mdwc, 0);
 			/*
 			 * Decrement pm usage count upon cable disconnect
@@ -6441,6 +6499,9 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 		if (!test_bit(B_SESS_VLD, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "BSUSP: !bsv\n");
 			mdwc->drd_state = DRD_STATE_IDLE;
+#if (IS_ENABLED(CONFIG_USB_DWC3_AUTO_RECOVERY))
+			cancel_delayed_work_sync(&mdwc->usb_state_check);
+#endif
 			dwc3_otg_start_peripheral(mdwc, 0);
 		} else if (!test_bit(B_SUSPEND, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "BSUSP !susp\n");

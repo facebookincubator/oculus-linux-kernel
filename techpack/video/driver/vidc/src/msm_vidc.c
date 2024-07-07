@@ -963,14 +963,15 @@ void *msm_vidc_open(void *vidc_core, u32 session_type)
 	for (i = 0; i < MAX_SIGNAL; i++)
 		init_completion(&inst->completions[i]);
 
+	INIT_DELAYED_WORK(&inst->stats_work, msm_vidc_stats_handler);
+	INIT_WORK(&inst->stability_work, msm_vidc_stability_handler);
+	INIT_DELAYED_WORK(&inst->decode_batch.work, msm_vidc_batch_handler);
+
 	inst->workq = create_singlethread_workqueue("workq");
 	if (!inst->workq) {
 		i_vpr_e(inst, "%s: create workq failed\n", __func__);
 		goto error;
 	}
-
-	INIT_DELAYED_WORK(&inst->stats_work, msm_vidc_stats_handler);
-	INIT_WORK(&inst->stability_work, msm_vidc_stability_handler);
 
 	rc = msm_vidc_vmem_alloc(sizeof(struct msm_vidc_inst_capability),
 		(void **)&inst->capabilities, "inst capability");
