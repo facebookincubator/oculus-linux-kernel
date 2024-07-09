@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef STP_PIPELINE_H
 #define STP_PIPELINE_H
 

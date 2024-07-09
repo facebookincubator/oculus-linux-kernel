@@ -760,6 +760,7 @@ int cam_icp_fastpath_config_dev(void *hnd, struct cam_config_dev_cmd *cmd)
 		CAM_ERR(CAM_ICP,
 			"Invalid offset, len: %zu offset: %llu max_size: %zu",
 			len, cmd->offset, sizeof(struct cam_packet));
+		cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 		return -EINVAL;
 	}
 
@@ -771,6 +772,7 @@ int cam_icp_fastpath_config_dev(void *hnd, struct cam_config_dev_cmd *cmd)
 	if (rc) {
 		CAM_ERR(CAM_ICP, "Invalid packet params, remain length: %zu",
 			remain_len);
+		cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 		return rc;
 	}
 
@@ -801,6 +803,7 @@ int cam_icp_fastpath_config_dev(void *hnd, struct cam_config_dev_cmd *cmd)
 		CAM_ERR(CAM_ICP, "Failed to prepare/config device %x  %d",
 			packet->header.op_code, rc);
 
+	cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 	return rc;
 }
 

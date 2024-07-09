@@ -297,7 +297,6 @@ config VIRTUAL_SENSOR
 	  This driver implements a virtual sensor driver representing a particular
 	  component of a device that can be configured in the device tree.
 
-source "drivers/staging/oculus/internal/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"
 source "drivers/staging/oculus/pdfu/Kconfig"
 source "drivers/staging/oculus/usbvdm/Kconfig"

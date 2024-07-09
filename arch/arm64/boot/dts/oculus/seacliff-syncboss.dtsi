@@ -146,12 +146,14 @@
 			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
 		};
 
-		timesync@0 {
-			compatible = "meta,syncboss-timesync", "meta,syncboss-consumer";
+		nsync@0 {
+			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
+
+			meta,disable-legacy-nsync;
 
 			interrupt-parent = <&tlmm>;
 			interrupts = <68 IRQ_TYPE_EDGE_RISING>;
-			interrupt-names = "timesync";
+			interrupt-names = "nsync";
 		};
 	};
 };

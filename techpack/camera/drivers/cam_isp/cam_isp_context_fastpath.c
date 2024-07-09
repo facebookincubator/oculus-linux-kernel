@@ -367,6 +367,7 @@ static int cam_isp_fpc_get_packet(struct cam_isp_fastpath_context *ctx,
 		(offset >= len - sizeof(struct cam_packet))) {
 		CAM_ERR(CAM_ISP, "invalid buff length: %zu or offset",
 			len);
+		cam_mem_put_cpu_buf((int32_t)packet_handle);
 		rc = -EINVAL;
 		return rc;
 	}
@@ -397,7 +398,7 @@ static int cam_isp_fpc_get_packet(struct cam_isp_fastpath_context *ctx,
 		(*packet)->header.request_id);
 	CAM_DBG(CAM_ISP, "Packet size 0x%x", (*packet)->header.size);
 	CAM_DBG(CAM_ISP, "packet op %d", (*packet)->header.op_code);
-
+	cam_mem_put_cpu_buf((int32_t)packet_handle);
 	return rc;
 }
 

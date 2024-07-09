@@ -83,6 +83,8 @@
 #include <802.11ah.h>
 #endif /* WL_TWT */
 
+#include <dhd_linux_priv.h>
+
 #ifdef CUSTOMER_HW4
 #ifdef DHD_PCIE_RUNTIMEPM
 #include <dhd_bus.h>
@@ -401,6 +403,7 @@ static android_custom_dwell_time_t custom_scan_dwell[] =
 #define CMD_INTERFACE_CREATE			"INTERFACE_CREATE"
 #define CMD_INTERFACE_DELETE			"INTERFACE_DELETE"
 #define CMD_GET_LINK_STATUS			"GETLINKSTATUS"
+#define CMD_DHD_SET_ASPM			"DHD_ENABLE_ASPM"
 
 #if defined(DHD_ENABLE_BIGDATA_LOGGING)
 #define CMD_GET_BSS_INFO            "GETBSSINFO"
@@ -9217,6 +9220,15 @@ static int wl_android_set_wfdie_resp(struct net_device *dev, int only_resp_wfdsr
 }
 #endif /* P2PRESP_WFDIE_SRC */
 
+static int wl_android_set_dhd_aspm(struct net_device *dev, const char* string_num) {
+	dhd_info_t *dhd = DHD_DEV_INFO(dev);
+	bool doEnable = (bool)(bcm_atoi(string_num));
+
+	dhd_bus_aspm_enable_rc_ep(dhd->pub.bus, doEnable ? TRUE : FALSE);
+
+	return 0;
+}
+
 static int wl_android_get_link_status(struct net_device *dev, char *command,
 	int total_len)
 {
@@ -13430,6 +13442,10 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	}
 	else if (strnicmp(command, CMD_GET_LINK_STATUS, strlen(CMD_GET_LINK_STATUS)) == 0) {
 		bytes_written = wl_android_get_link_status(net, command, priv_cmd.total_len);
+	}
+	else if (strnicmp(command, CMD_DHD_SET_ASPM, strlen(CMD_DHD_SET_ASPM)) == 0) {
+		int skip = strlen(CMD_DHD_SET_ASPM) + 1;
+		bytes_written = wl_android_set_dhd_aspm(net, (const char*)command+skip);
 	}
 #ifdef P2PRESP_WFDIE_SRC
 	else if (strnicmp(command, CMD_P2P_SET_WFDIE_RESP,

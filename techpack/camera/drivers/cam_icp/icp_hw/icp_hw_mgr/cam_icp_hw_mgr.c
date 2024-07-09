@@ -3987,7 +3987,7 @@ static int cam_icp_mgr_send_config_io(struct cam_icp_hw_ctx_data *ctx_data,
 	struct hfi_cmd_work_data *task_data;
 	struct hfi_cmd_ipebps_async ioconfig_cmd;
 	unsigned long rem_jiffies;
-	int timeout = 300;
+	int timeout = 600;
 	struct crm_workq_task *task;
 	uint32_t size_in_words;
 
@@ -5174,7 +5174,7 @@ static void cam_icp_mgr_flush_info_dump(
 static int cam_icp_mgr_enqueue_abort(
 	struct cam_icp_hw_ctx_data *ctx_data)
 {
-	int timeout = 400, rc;
+	int timeout = 800, rc;
 	unsigned long rem_jiffies = 0;
 	struct hfi_cmd_work_data *task_data;
 	struct crm_workq_task *task;
@@ -5501,7 +5501,7 @@ static int cam_icp_mgr_send_ping(struct cam_icp_hw_ctx_data *ctx_data)
 	struct hfi_cmd_ping_pkt ping_pkt;
 	struct hfi_cmd_work_data *task_data;
 	unsigned long rem_jiffies;
-	int timeout = 500;
+	int timeout = 1000;
 	struct crm_workq_task *task;
 	int rc = 0;
 

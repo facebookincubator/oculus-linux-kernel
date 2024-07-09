@@ -757,7 +757,7 @@ static void wl_cfg80211_clear_parent_dev(void);
  */
 static s32 wl_set_frag(struct net_device *dev, u32 frag_threshold);
 static s32 wl_set_rts(struct net_device *dev, u32 frag_threshold);
-static s32 wl_set_retry(struct net_device *dev, u32 retry, bool l);
+s32 wl_set_retry(struct net_device *dev, u32 retry, bool l);
 
 /*
  * cfg profile utilities
@@ -3258,7 +3258,7 @@ static s32 wl_set_frag(struct net_device *dev, u32 frag_threshold)
 	return err;
 }
 
-static s32 wl_set_retry(struct net_device *dev, u32 retry, bool l)
+s32 wl_set_retry(struct net_device *dev, u32 retry, bool l)
 {
 	s32 err = 0;
 	u32 cmd = (l ? WLC_SET_LRL : WLC_SET_SRL);

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef STP_COMMON_PUBLIC_H
 #define STP_COMMON_PUBLIC_H
 

@@ -713,6 +713,11 @@ static int cpu_power_select(struct cpuidle_device *dev,
 		if (!lpm_cpu_mode_allow(dev->cpu, i, true))
 			continue;
 
+		if (dev->states_usage[i].disable) {
+			// Skip disabled state
+			continue;
+		}
+
 		pwr_params = &cpu->levels[i].pwr;
 		lvl_latency_us = pwr_params->exit_latency;
 		min_residency = pwr_params->min_residency;

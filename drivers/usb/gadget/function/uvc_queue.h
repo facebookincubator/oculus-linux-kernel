@@ -36,6 +36,7 @@ struct uvc_buffer {
 	void *mem;
 	unsigned int length;
 	unsigned int bytesused;
+	unsigned long queue_time;
 };
 
 #define UVC_QUEUE_DISCONNECTED		(1 << 0)
@@ -88,7 +89,7 @@ void uvcg_queue_cancel(struct uvc_video_queue *queue, int disconnect);
 
 int uvcg_queue_enable(struct uvc_video_queue *queue, int enable);
 
-struct uvc_buffer *uvcg_queue_next_buffer(struct uvc_video_queue *queue,
+void uvcg_complete_buffer(struct uvc_video_queue *queue,
 					  struct uvc_buffer *buf);
 
 struct uvc_buffer *uvcg_queue_head(struct uvc_video_queue *queue);

@@ -153,6 +153,8 @@ endif
 
 DHDCFLAGS += -DCONNECTION_STATISTICS
 
+# Add cutomized short_retry limit for task T181358333
+DHDCFLAGS += -DCUSTOM_SHORT_RETRY_LIMIT=14
 #################
 # Common feature
 #################

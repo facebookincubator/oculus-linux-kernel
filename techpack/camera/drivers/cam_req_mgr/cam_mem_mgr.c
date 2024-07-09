@@ -143,6 +143,31 @@ err:
 	return -ENOMEM;
 }
 
+static inline void cam_mem_mgr_dump_table(void)
+{
+	int idx, cnt = 0;
+
+	mutex_lock(&tbl.m_lock);
+	for (idx = 0; idx < CAM_MEM_BUFQ_MAX; idx++) {
+		if (!tbl.bufq[idx].active) {
+			CAM_DBG(CAM_MEM,
+				"Buffer inactive at idx=%d, continuing", idx);
+			continue;
+		} else {
+			CAM_WARN(CAM_MEM, "[%3d] Active buffer at idx=%d, fd=%d, flags=0x%x, "
+				"dma %p, handle=%x, vaddr=%p, len=%zu, num_hdl=%d, mmu_hdl[0]=%x",
+			cnt++, idx,
+			tbl.bufq[idx].fd,
+			tbl.bufq[idx].flags,
+			tbl.bufq[idx].dma_buf,
+			tbl.bufq[idx].buf_handle,
+			tbl.bufq[idx].vaddr, tbl.bufq[idx].len,
+			tbl.bufq[idx].num_hdl, tbl.bufq[idx].hdls[0]);
+		}
+	}
+	mutex_unlock(&tbl.m_lock);
+}
+
 int cam_mem_mgr_init(void)
 {
 	int i;
@@ -659,6 +684,7 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 	idx = cam_mem_get_slot();
 	if (idx < 0) {
 		CAM_ERR(CAM_MEM, "Failed in getting mem slot, idx=%d", idx);
+		cam_mem_mgr_dump_table();
 		rc = -ENOMEM;
 		goto slot_fail;
 	}
@@ -937,9 +963,21 @@ static int cam_mem_mgr_cleanup_table(void)
 				"Buffer inactive at idx=%d, continuing", i);
 			continue;
 		} else {
-			CAM_DBG(CAM_MEM,
+			CAM_ERR(CAM_MEM,
 			"Active buffer at idx=%d, possible leak needs unmapping",
 			i);
+
+			CAM_WARN(CAM_MEM,
+				"Destroy active buffer at idx=%d, fd=%d, flags=0x%x, "
+				"dma %p, handle=%x, vaddr=%p, len=%zu, num_hdl=%d, mmu_hdl[0]=%x",
+				i,
+				tbl.bufq[i].fd,
+				tbl.bufq[i].flags,
+				tbl.bufq[i].dma_buf,
+				tbl.bufq[i].buf_handle,
+				tbl.bufq[i].vaddr, tbl.bufq[i].len,
+				tbl.bufq[i].num_hdl, tbl.bufq[i].hdls[0]);
+
 			cam_mem_mgr_unmap_active_buf(i);
 		}
 

@@ -9,4 +9,3 @@ obj-$(CONFIG_SYNCBOSS_POWERSTATE) += syncboss_powerstate.o
 obj-$(CONFIG_SYNCBOSS_NSYNC) += syncboss_nsync.o
 obj-$(CONFIG_SYNCBOSS_MISCFIFO) += syncboss_miscfifo.o
 obj-$(CONFIG_SYNCBOSS_DIRECTCHANNEL) += syncboss_direct_channel.o
-obj-$(CONFIG_SYNCBOSS_TIMESYNC) += syncboss_timesync.o

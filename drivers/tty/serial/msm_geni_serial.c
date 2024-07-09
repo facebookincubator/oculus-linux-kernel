@@ -278,6 +278,7 @@ struct msm_geni_serial_port {
 	bool bypass_flow_control;
 #ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
 	bool geni_ios_monitor_enabled; /* only enable for ttyHS0 (bluetooth uart) */
+	bool is_active; /* between msm_geni_serial_startup and msm_geni_serial_shutdown*/
 	struct work_struct geni_ios_work;
 	struct hrtimer timer_geni_ios; /* to monitor geni_ios change */
 	spinlock_t timer_geni_ios_lock;
@@ -2540,6 +2541,10 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 	int ret;
 
 	IPC_LOG_MSG(msm_port->ipc_log_misc, "%s:\n", __func__);
+#ifdef CONFIG_SERIAL_MSM_GENI_IOS_DELAY_MONITOR
+	if (msm_port->geni_ios_monitor_enabled)
+		msm_port->is_active = false;
+#endif
 	/* Stop the console before stopping the current tx */
 	if (uart_console(uport)) {
 		console_stop(uport->cons);
@@ -2748,6 +2753,7 @@ exit_startup:
 		unsigned long irq_flags;
 		int temperature = 0;
 
+		msm_port->is_active = true;
 		// cancel previous timer if not already
 		spin_lock_irqsave(&msm_port->timer_geni_ios_lock, irq_flags);
 		hrtimer_cancel(&msm_port->timer_geni_ios);
@@ -3210,7 +3216,7 @@ static ssize_t geni_ios_current_show(struct device *dev,
 	u32 geni_ios;
 	ssize_t ret = 0;
 
-	geni_ios = geni_read_reg_nolog(port->uport.membase, SE_GENI_IOS);
+	geni_ios = (port->is_active) ? geni_read_reg_nolog(port->uport.membase, SE_GENI_IOS) : -1;
 	ret = snprintf(buf, PAGE_SIZE, "%d\n", geni_ios);
 	return ret;
 }

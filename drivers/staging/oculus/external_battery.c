@@ -877,6 +877,46 @@ static ssize_t charging_suspend_disable_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(charging_suspend_disable);
 
+static ssize_t reboot_into_bootloader_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct ext_batt_pd *pd = dev_get_drvdata(dev);
+	u32 vdm_hdr;
+	bool send_command;
+	int rc;
+
+	if (kstrtobool(buf, &send_command))
+		return -EINVAL;
+
+	if (!send_command)
+		return count;
+
+	rc = mutex_lock_interruptible(&pd->lock);
+	if (rc != 0) {
+		dev_warn(dev, "%s: failed to grab lock, rc=%d", __func__, rc);
+		return rc;
+	}
+
+	if (!pd->connected) {
+		mutex_unlock(&pd->lock);
+		return count;
+	}
+
+	vdm_hdr = VDMH_CONSTRUCT(VDM_SVID_META, 0, 1, 0, 1,
+			EXT_BATT_FW_REBOOT_INTO_BOOTLOADER);
+	rc = external_battery_send_vdm(pd, vdm_hdr, NULL, 0);
+	if (rc) {
+		dev_err(dev, "%s: failed to send vdm, rc=%d", __func__, rc);
+		mutex_unlock(&pd->lock);
+		return rc;
+	}
+
+	mutex_unlock(&pd->lock);
+
+	return count;
+}
+static DEVICE_ATTR_WO(reboot_into_bootloader);
+
 static ssize_t serial_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1715,6 +1755,7 @@ static struct attribute *ext_batt_lehua_attrs[] = {
 	&dev_attr_charging_suspend_disable.attr,
 	&dev_attr_connected.attr,
 	&dev_attr_mount_state.attr,
+	&dev_attr_reboot_into_bootloader.attr,
 	&dev_attr_rsoc.attr,
 	&dev_attr_rsoc_raw.attr,
 	&dev_attr_status.attr,
