@@ -27,8 +27,8 @@
 #include "xrps_profiling.h"
 #endif /* CONFIG_XRPS_PROFILING */
 
-#define XRPS_MIN_SYS_INT_MS 15
-#define XRPS_MAX_SYS_INT_MS 10000
+#define XRPS_MIN_FREQ_HZ 1
+#define XRPS_MAX_FREQ_HZ 200 //< Based on minimum sleep time of 5ms
 
 #define MAX_TX_FLOW_RINGS 40
 
@@ -154,7 +154,7 @@ struct xrps {
 	xrps_osl_spinlock_t lock;
 	enum xrps_mode mode;
 	uint8_t queue_pause;
-	uint32_t sys_interval;
+	uint32_t freq_hz;
 	struct flowids flowids;
 	struct xrps_stats stats;
 	/**
@@ -162,6 +162,8 @@ struct xrps {
 	 * An interval is completed by EOT received.
 	 */
 	bool first_rx_in_interval;
+	uint64_t heartbeat_timestamp;
+	uint64_t sysint_ns;
 };
 
 /**
@@ -182,18 +184,18 @@ int xrps_init(void);
 void xrps_cleanup(void);
 
 /**
- * @brief Get XRPS system interval in us.
+ * @brief Get XRPS frequency in Hz.
  */
-int xrps_get_sys_interval_us(void);
+int xrps_get_freq_hz(void);
 
 /**
- * @brief Set XRPS system interval in us.
+ * @brief Set XRPS frequency in Hz.
  *
- * @param[in] us The new system interval
+ * @param[in] Hz The new frequency
  *
  * @return Error code, else 0 on success.
  */
-int xrps_set_sys_interval_us(uint32_t us);
+int xrps_set_freq_hz(uint32_t hz);
 
 /**
  * @brief Pause XRPS. Traffic will be allowed.
@@ -222,6 +224,25 @@ int xrps_get_mode(void);
  * @return Error code, else 0 on success.
  */
 int xrps_set_mode(enum xrps_mode mode);
+
+ /**
+  * @brief Notify XRPS of the heartbeat timestamp and period.
+  *
+  * @param[in] time_ns The heartbeat timestamp
+  * @param[in] period_ns The heartbeat period
+  *
+  * @return Error code, else 0 on success
+  */
+int xrps_heartbeat(uint64_t time_ns, uint64_t period_ns);
+
+/**
+ * @brief Get the next system interval timestamp from now.
+ *
+ * @param[out] time The next system interval timestamp.
+ *
+ * @return Error code, else 0 on success. The timestamp is only valid if success.
+ */
+int xrps_get_next_sysint(uint64_t *time);
 
 /**
  * @brief Get queue pause.

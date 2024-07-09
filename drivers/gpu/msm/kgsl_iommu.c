@@ -27,6 +27,10 @@
 #include "kgsl_sharedmem.h"
 #include "kgsl_trace.h"
 
+#if IS_ENABLED(CONFIG_GPU_ERROR_SYSCTL)
+#include <linux/log_gpu_error.h>
+#endif /* CONFIG_GPU_ERROR_SYSCTL */
+
 #define _IOMMU_PRIV(_mmu) (&((_mmu)->priv.iommu))
 
 #define KGSL_IOMMU_SPLIT_TABLE_BASE 0x0001ff8000000000ULL
@@ -756,6 +760,19 @@ static void _print_pagefault_log(struct work_struct *work)
 		comm = log->private->comm;
 
 	console_lock();
+
+	#if IS_ENABLED(CONFIG_GPU_ERROR_SYSCTL)
+		{
+			char error[MAX_GPU_ERROR_LEN + 1];
+			size_t len = 0;
+
+			len = snprintf(error, MAX_GPU_ERROR_LEN,
+			"GPU PAGE FAULT: pid=%d name=%s contextidr=%d",
+			log->ptname, comm, log->contextidr);
+
+			log_gpu_error(error, len, log->ptname, comm, strlen(comm));
+		}
+	#endif /* CONFIG_GPU_ERROR_SYSCTL */
 
 	dev_crit(device->dev, "GPU PAGE FAULT: addr=0x%lx pid=%d name=%s contextidr=%d\n",
 			log->addr, log->ptname, comm, log->contextidr);

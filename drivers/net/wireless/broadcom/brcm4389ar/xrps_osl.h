@@ -65,7 +65,7 @@ struct xrps_osl_intf {
 	int64_t (*get_ktime)(void);
 	uint64_t (*ktime_to_us)(int64_t ktime);
 	void (*cleanup_osl)(struct xrps *xrps);
-	int (*start_sysint_timer)(int interval_us);
+	int (*start_sysint_timer)(uint64_t time);
 	int (*stop_sysint_timer)(void);
 	int (*submit_eot_work)(void);
 	void (*spin_lock_init)(xrps_osl_spinlock_t *lock);

@@ -162,10 +162,10 @@ enum usbpd_ext_msg_type {
 
 static const char * const usbpd_ext_msg_strings[] = {
 	"", "Source_Capabilities_Extended", "Status", "Get_Battery_Cap",
-	"Get_Battery_Status", "Get_Manufacturer_Info", "Manufacturer_Info",
-	"Security_Request", "Security_Response", "Firmware_Update_Request",
-	"Firmware_Update_Response", "PPS_Status", "Country_Info",
-	"Country_Codes",
+	"Get_Battery_Status", "Battery_Capabilities", "Get_Manufacturer_Info",
+	"Manufacturer_Info", "Security_Request", "Security_Response",
+	"Firmware_Update_Request", "Firmware_Update_Response", "PPS_Status",
+	"Country_Info", "Country_Codes",
 };
 
 static inline const char *msg_to_string(u8 id, bool is_data, bool is_ext)
@@ -471,6 +471,7 @@ struct usbpd {
 	struct list_head	svid_handlers;
 	ktime_t			svdm_start_time;
 	bool			vdm_in_suspend;
+	bool			vdm_supported;
 
 	struct list_head	instance;
 
@@ -491,8 +492,10 @@ struct usbpd {
 	u8			get_battery_status_db;
 	bool			send_get_battery_status;
 	u32			battery_sts_dobj;
+	bool			send_fw_update_req;
+	u8			fw_update_req_db[PD_MAX_EXT_MSG_LEN];
+	size_t			fw_update_req_db_len;
 	bool			typec_analog_audio_connected;
-	bool			request_svids;
 	u16			vid;
 	u16			pid;
 };
@@ -517,6 +520,7 @@ static void handle_state_snk_wait_for_capabilities(struct usbpd *pd,
 	struct rx_msg *rx_msg);
 static void handle_state_prs_snk_src_source_on(struct usbpd *pd,
 	struct rx_msg *rx_msg);
+static int trigger_tx_msg(struct usbpd *pd, bool *msg_tx_flag);
 
 static const struct usbpd_state_handler state_handlers[];
 
@@ -830,6 +834,7 @@ static int pd_send_ext_msg(struct usbpd *pd, u8 msg_type,
 
 		num_objs = DIV_ROUND_UP(chunk_len + sizeof(u16), sizeof(u32));
 		len_remain -= chunk_len;
+		data += chunk_len;
 
 		reinit_completion(&pd->tx_chunk_request);
 		hdr = PD_MSG_HDR(msg_type, pd->current_dr, pd->current_pr,
@@ -1394,6 +1399,34 @@ void usbpd_unregister_svid(struct usbpd *pd, struct usbpd_svid_handler *hdlr)
 }
 EXPORT_SYMBOL(usbpd_unregister_svid);
 
+int usbpd_send_ext_msg(struct usbpd *pd, u8 msg_type,
+		const u8 *data, size_t data_len)
+{
+	int ret = 0;
+	bool *msg_tx_flag = NULL;
+
+	if (pd->spec_rev == USBPD_REV_20)
+		return -EINVAL;
+
+	switch (msg_type) {
+	case MSG_FIRMWARE_UPDATE_REQUEST:
+		pd->fw_update_req_db_len = data_len;
+		memcpy(pd->fw_update_req_db, data, data_len);
+		msg_tx_flag = &pd->send_fw_update_req;
+		break;
+	default:
+		// not supported
+		return -EINVAL;
+	}
+
+	ret = trigger_tx_msg(pd, msg_tx_flag);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+EXPORT_SYMBOL(usbpd_send_ext_msg);
+
 int usbpd_send_vdm(struct usbpd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
 	struct vdm_tx *vdm_tx;
@@ -1817,6 +1850,7 @@ static void reset_vdm_state(struct usbpd *pd)
 	pd->vdm_tx = NULL;
 	pd->ss_lane_svid = 0x0;
 	pd->vdm_in_suspend = false;
+	pd->vdm_supported = true;
 	mutex_unlock(&pd->svid_handler_lock);
 }
 
@@ -1948,6 +1982,16 @@ send:
 	ret = pd_send_msg(pd, MSG_BATTERY_STATUS, &bsdo, 1, SOP_MSG);
 	if (ret)
 		usbpd_set_state(pd, PE_SEND_SOFT_RESET);
+}
+
+static void handle_firmware_update_response(struct usbpd *pd,
+		struct rx_msg *rx_msg)
+{
+	struct usbpd_svid_handler *hdlr = find_svid_handler(pd, pd->vid, pd->pid);
+
+	if (hdlr && hdlr->ext_msg_received)
+		hdlr->ext_msg_received(hdlr, PD_MSG_HDR_TYPE(rx_msg->hdr),
+			rx_msg->payload, rx_msg->data_len);
 }
 
 static void dr_swap(struct usbpd *pd)
@@ -2541,6 +2585,9 @@ static void handle_state_src_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 		handle_get_battery_cap(pd, rx_msg);
 	} else if (IS_EXT(rx_msg, MSG_GET_BATTERY_STATUS)) {
 		handle_get_battery_status(pd, rx_msg);
+	} else if (IS_EXT(rx_msg, MSG_FIRMWARE_UPDATE_RESPONSE)) {
+		handle_firmware_update_response(pd, rx_msg);
+		return;
 	} else if (IS_CTRL(rx_msg, MSG_ACCEPT) ||
 		   IS_CTRL(rx_msg, MSG_REJECT) ||
 		   IS_CTRL(rx_msg, MSG_WAIT)) {
@@ -2577,6 +2624,15 @@ static void handle_state_src_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 		kick_sm(pd, SENDER_RESPONSE_TIME);
 	} else if (pd->vdm_tx) {
 		handle_vdm_tx(pd, SOP_MSG);
+	} else if (pd->send_fw_update_req) {
+		pd->send_fw_update_req = false;
+		ret = pd_send_ext_msg(pd, MSG_FIRMWARE_UPDATE_REQUEST,
+				pd->fw_update_req_db, pd->fw_update_req_db_len, SOP_MSG);
+		if (ret) {
+			usbpd_set_state(pd, PE_SEND_SOFT_RESET);
+			return;
+		}
+		complete(&pd->is_ready);
 	} else {
 		start_src_ams(pd, false);
 	}
@@ -2935,11 +2991,6 @@ static void handle_state_snk_transition_sink(struct usbpd *pd,
 				POWER_SUPPLY_PROP_PD_CURRENT_MAX, &val);
 
 		usbpd_set_state(pd, PE_SNK_READY);
-
-		if (pd->request_svids && pd->vdm_state < DISCOVERED_ID)
-			usbpd_send_svdm(pd, USBPD_SID,
-				USBPD_SVDM_DISCOVER_IDENTITY,
-				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
 	} else {
 		/* timed out; go to hard reset */
 		usbpd_set_state(pd, PE_SNK_HARD_RESET);
@@ -2952,7 +3003,7 @@ static void enter_state_snk_ready(struct usbpd *pd)
 
 	if (pd->vdm_tx)
 		kick_sm(pd, 0);
-	else if (pd->current_dr == DR_DFP && pd->vdm_state == VDM_NONE)
+	else if (pd->vdm_state == VDM_NONE && pd->vdm_supported)
 		usbpd_send_svdm(pd, USBPD_SID,
 				USBPD_SVDM_DISCOVER_IDENTITY,
 				SVDM_CMD_TYPE_INITIATOR, 0, NULL, 0);
@@ -3153,6 +3204,9 @@ static bool handle_ext_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 	case MSG_GET_BATTERY_STATUS:
 		handle_get_battery_status(pd, rx_msg);
 		break;
+	case MSG_FIRMWARE_UPDATE_RESPONSE:
+		handle_firmware_update_response(pd, rx_msg);
+		break;
 	default:
 		return false;
 	}
@@ -3231,6 +3285,15 @@ static void handle_snk_ready_tx(struct usbpd *pd, struct rx_msg *rx_msg)
 
 		pd->current_state = PE_DRS_SEND_DR_SWAP;
 		kick_sm(pd, SENDER_RESPONSE_TIME);
+	} else if (pd->send_fw_update_req) {
+		pd->send_fw_update_req = false;
+		ret = pd_send_ext_msg(pd, MSG_FIRMWARE_UPDATE_REQUEST,
+				pd->fw_update_req_db, pd->fw_update_req_db_len, SOP_MSG);
+		if (ret) {
+			usbpd_set_state(pd, PE_SEND_SOFT_RESET);
+			return;
+		}
+		complete(&pd->is_ready);
 	} else {
 		handle_vdm_tx(pd, SOP_MSG);
 	}
@@ -3257,6 +3320,21 @@ static void handle_state_snk_ready(struct usbpd *pd, struct rx_msg *rx_msg)
 		if (ret)
 			usbpd_set_state(pd, PE_SEND_SOFT_RESET);
 		return;
+	} else if (rx_msg && IS_CTRL(rx_msg, MSG_NOT_SUPPORTED) &&
+			pd->vdm_tx_retry &&
+			VDM_IS_SVDM(pd->vdm_tx_retry->data[0]) &&
+			SVDM_HDR_CMD_TYPE(pd->vdm_tx_retry->data[0])
+				== SVDM_CMD_TYPE_INITIATOR &&
+			SVDM_HDR_CMD(pd->vdm_tx_retry->data[0])
+				== USBPD_SVDM_DISCOVER_IDENTITY) {
+		/*
+		 * Some UPA respond with NOT_SUPPORTED to
+		 * DISCOVER_IDENTITY requests. If this occurs,
+		 * prevent policy engine from re-attempting.
+		 */
+		kfree(pd->vdm_tx_retry);
+		pd->vdm_tx_retry = NULL;
+		pd->vdm_supported = false;
 	}
 
 	if (is_sink_tx_ok(pd))
@@ -4606,8 +4684,8 @@ static int trigger_tx_msg(struct usbpd *pd, bool *msg_tx_flag)
 {
 	int ret = 0;
 
-	/* Only allowed if we are already in explicit sink contract */
-	if (pd->current_state != PE_SNK_READY) {
+	/* Only allowed if we are already in explicit contract */
+	if (pd->current_state != PE_SNK_READY && pd->current_state != PE_SRC_READY) {
 		usbpd_err(&pd->dev, "Cannot send msg\n");
 		ret = -EBUSY;
 		goto out;
@@ -5058,6 +5136,7 @@ struct usbpd *usbpd_create(struct device *parent)
 	pd->typec_caps.pr_set = usbpd_typec_pr_set;
 	pd->typec_caps.port_type_set = usbpd_typec_port_type_set;
 	pd->partner_desc.identity = &pd->partner_identity;
+	pd->vdm_supported = true;
 
 	ret = get_connector_type(pd);
 	if (ret < 0)
@@ -5074,9 +5153,6 @@ struct usbpd *usbpd_create(struct device *parent)
 
 	pd->pps_disabled = device_property_read_bool(parent,
 				"qcom,pps-disabled");
-	/* Send Discovery SVIDs request after PD Contract */
-	pd->request_svids = device_property_read_bool(parent,
-			"qcom,discovery-svids-request");
 
 	pd->current_pr = PR_NONE;
 	pd->current_dr = DR_NONE;

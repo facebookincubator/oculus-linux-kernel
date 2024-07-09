@@ -17,28 +17,32 @@
  */
 #define BATTERY_NEARLY_FULL_LEVEL	98
 
+struct charging_dock_request_work_item {
+	struct work_struct work;
+	u32 parameter;
+	u32 vdo;
+	int num_vdos;
+	struct charging_dock_device_t *ddev;
+};
+
 static int batt_psy_notifier_call(struct notifier_block *nb,
 	unsigned long ev, void *ptr);
 
 static void charging_dock_send_vdm_request(
-	struct charging_dock_device_t *ddev, u32 parameter, u32 vdo)
+	struct charging_dock_device_t *ddev, u32 parameter, u32 vdo, int num_vdos)
 {
 	u32 vdm_header = 0;
-	u32 vdm_vdo = 0;
-	int num_vdos = 0;
 	int result = -1;
 	struct usbvdm_subscription_data *pos, *sub_data = NULL;
 
+	if (num_vdos > 1) {
+		dev_err(ddev->dev,
+			"Error: send_vdm_request only supports a max of 1 VDO");
+		return;
+	}
+
 	/* header(32) = svid(16) ack(1) proto(2) high(1) size(3) param(8) */
 	vdm_header = VDMH_CONSTRUCT(ddev->current_svid, 0, VDM_REQUEST, 0, 0, parameter);
-
-	if (parameter == PARAMETER_TYPE_BROADCAST_PERIOD ||
-			parameter == PARAMETER_TYPE_STATE_OF_CHARGE ||
-			parameter == PARAMETER_TYPE_LOG_TRANSMIT ||
-			parameter == PARAMETER_TYPE_LOG_CHUNK) {
-		vdm_vdo = vdo;
-		num_vdos = 1;
-	}
 
 	list_for_each_entry(pos, &ddev->sub_list, entry) {
 		if (pos->vid == ddev->current_svid && pos->pid == ddev->current_pid)
@@ -48,7 +52,9 @@ static void charging_dock_send_vdm_request(
 	if (!sub_data)
 		return;
 
-	result = usbvdm_subscriber_vdm(sub_data->sub, vdm_header, &vdm_vdo, num_vdos);
+	reinit_completion(&ddev->rx_complete);
+
+	result = usbvdm_subscriber_vdm(sub_data->sub, vdm_header, &vdo, num_vdos);
 	if (result != 0) {
 		dev_err(ddev->dev,
 			"Error sending vdm, parameter type:%d, result:%d", parameter, result);
@@ -59,13 +65,50 @@ static void charging_dock_send_vdm_request(
 			vdm_header, num_vdos, vdo);
 
 	ddev->ack_parameter = PARAMETER_TYPE_UNKNOWN;
-	result = wait_event_interruptible_hrtimeout(ddev->tx_waitq,
-		ddev->ack_parameter == parameter, ms_to_ktime(REQ_ACK_TIMEOUT_MS));
-	if (result) {
-		dev_err(ddev->dev, "%s: failed to receive ack, ret = %d\n", __func__,
-			result);
+
+	result = wait_for_completion_timeout(&ddev->rx_complete, msecs_to_jiffies(ddev->req_ack_timeout_ms));
+
+	if (!result || (result && ddev->ack_parameter != parameter)) {
+		dev_err(ddev->dev, "%s: failed to receive ack, ret=%d ack_param=%d sent_param=%d\n", __func__,
+			result, ddev->ack_parameter, parameter);
 		return;
 	}
+}
+
+static void charging_dock_handle_queued_request_work(struct work_struct *work)
+{
+	struct charging_dock_request_work_item *devwork =
+		container_of(work, struct charging_dock_request_work_item, work);
+
+	dev_dbg(devwork->ddev->dev, "%s: enter", __func__);
+
+	mutex_lock(&devwork->ddev->lock);
+	if (!devwork->ddev->docked) {
+		mutex_unlock(&devwork->ddev->lock);
+		return;
+	}
+
+	charging_dock_send_vdm_request(devwork->ddev, devwork->parameter, devwork->vdo, devwork->num_vdos);
+
+	mutex_unlock(&devwork->ddev->lock);
+
+	kfree(devwork);
+}
+
+static void charging_dock_queue_vdm_request(struct charging_dock_device_t *ddev, u32 parameter, u32 vdo, int num_vdos)
+{
+	struct charging_dock_request_work_item *work = kzalloc(sizeof(*work), GFP_KERNEL);
+
+	dev_dbg(ddev->dev, "%s: enter", __func__);
+
+	work->parameter = parameter;
+	work->vdo = vdo;
+	work->num_vdos = num_vdos;
+	work->ddev = ddev;
+
+	INIT_WORK(&work->work, charging_dock_handle_queued_request_work);
+
+	queue_work(ddev->workqueue, &work->work);
 }
 
 static void charging_dock_handle_work(struct work_struct *work)
@@ -81,12 +124,12 @@ static void charging_dock_handle_work(struct work_struct *work)
 		return;
 	}
 
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_FW_VERSION_NUMBER, 0);
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_MLB, 0);
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 0);
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM, 0);
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_FW_VERSION_NUMBER, 0, 0);
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_MLB, 0, 0);
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 0, 0);
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM, 0, 0);
 	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_BROADCAST_PERIOD,
-		ddev->params.broadcast_period);
+		ddev->broadcast_period, 1);
 
 	mutex_unlock(&ddev->lock);
 }
@@ -123,19 +166,42 @@ static void charging_dock_handle_work_soc(struct work_struct *work)
 		soc = (ddev->system_battery_capacity >= BATTERY_NEARLY_FULL_LEVEL) ? CHARGED : CHARGING;
 	}
 
-	if (soc != ddev->params.state_of_charge) {
-		ddev->params.state_of_charge = soc;
+	if (soc != ddev->state_of_charge) {
+		ddev->state_of_charge = soc;
 
 		/* Send State of Charge only if charging or fully charged */
 		if (soc != NOT_CHARGING) {
 			dev_info(ddev->dev, "Sending SOC = 0x%x\n", soc);
 			charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_STATE_OF_CHARGE,
-				ddev->params.state_of_charge);
+				ddev->state_of_charge, 1);
 		}
 	}
 
 out:
 	mutex_unlock(&ddev->lock);
+}
+
+static void charging_dock_queue_initial_requests(struct charging_dock_device_t *ddev)
+{
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_FW_VERSION_NUMBER, 0, 0);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_MLB, 0, 0);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM, 0, 0);
+	/* request temperature for each port (0=UPA, 1=HMD, 2/3=Controller) */
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 0, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 1, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 2, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 3, 1);
+	/* request port config for each port (0=UPA, 2/3=Controller) */
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_PORT_CONFIGURATION, 0, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_PORT_CONFIGURATION, 2, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_PORT_CONFIGURATION, 3, 1);
+	/* request connected devices info for port 0 */
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_CONNECTED_DEVICES, (0 << 8) | PARAMETER_TYPE_FW_VERSION_NUMBER, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_CONNECTED_DEVICES, (0 << 8) | PARAMETER_TYPE_SERIAL_NUMBER_MLB, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_CONNECTED_DEVICES, (0 << 8) | PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM, 1);
+	/* request moisture each USBC port (0=UPA and 1=HMD) */
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_MOISTURE_DETECTED, 0, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_MOISTURE_DETECTED, 1, 1);
 }
 
 static void charging_dock_usbvdm_connect(struct usbvdm_subscription *sub,
@@ -161,13 +227,17 @@ static void charging_dock_usbvdm_connect(struct usbvdm_subscription *sub,
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
-	schedule_work(&ddev->work);
+	if (pid == VDM_PID_MOKU_APP) {
+		charging_dock_queue_initial_requests(ddev);
+	} else {
+		schedule_work(&ddev->work);
 
-	if (ddev->send_state_of_charge) {
-		ddev->params.state_of_charge = NOT_CHARGING;
-		/* Force re-evaluation */
-		batt_psy_notifier_call(&ddev->nb, PSY_EVENT_PROP_CHANGED,
-				ddev->battery_psy);
+		if (ddev->send_state_of_charge) {
+			ddev->state_of_charge = NOT_CHARGING;
+			/* Force re-evaluation */
+			batt_psy_notifier_call(&ddev->nb, PSY_EVENT_PROP_CHANGED,
+					ddev->battery_psy);
+		}
 	}
 }
 
@@ -178,6 +248,7 @@ static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 	mutex_lock(&ddev->lock);
 	ddev->docked = false;
 	ddev->current_svid = 0;
+	memset(&ddev->params, 0, sizeof(ddev->params));
 	mutex_unlock(&ddev->lock);
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
@@ -351,19 +422,19 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 				vdos, sizeof(ddev->params.serial_number_system));
 			break;
 		case PARAMETER_TYPE_BROADCAST_PERIOD:
-			if (vdos[0] != ddev->params.broadcast_period)
+			if (vdos[0] != ddev->broadcast_period)
 				dev_err(ddev->dev,
 				"Error: Broadcast period received: %d != sent: %d\n",
 				vdos[0],
-				ddev->params.broadcast_period);
+				ddev->broadcast_period);
 			break;
 		case PARAMETER_TYPE_STATE_OF_CHARGE:
 			dev_dbg(ddev->dev, "Received State of Charge: 0x%x value=0x%02x",
 				parameter_type, vdos[0]);
-			if ((vdos[0] & 0x01) != ddev->params.state_of_charge)
+			if ((vdos[0] & 0x01) != ddev->state_of_charge)
 				dev_err(ddev->dev,
 					"Error: State-of-Charge received: %d != sent: %d\n",
-					(vdos[0] & 0x01), ddev->params.state_of_charge);
+					(vdos[0] & 0x01), ddev->state_of_charge);
 		case PARAMETER_TYPE_LOG_TRANSMIT:
 			/* Receiving a response to one of two messages
 			 * - TRANSMIT_STOP
@@ -434,7 +505,7 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		}
 
 		ddev->ack_parameter = parameter_type;
-		wake_up(&ddev->tx_waitq);
+		complete(&ddev->rx_complete);
 
 	} else if (protocol_type == VDM_BROADCAST) {
 
@@ -464,6 +535,25 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		}
 	}
 }
+
+static ssize_t reboot_into_bootloader_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+	bool send_command;
+
+	if (kstrtobool(buf, &send_command))
+		return -EINVAL;
+
+	if (!send_command)
+		return count;
+
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_REBOOT_INTO_BOOTLOADER, 0, 0);
+
+	return count;
+}
+static DEVICE_ATTR_WO(reboot_into_bootloader);
 
 static ssize_t docked_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
@@ -501,7 +591,7 @@ static ssize_t broadcast_period_show(struct device *dev,
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->params.broadcast_period);
+	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->broadcast_period);
 }
 
 static ssize_t broadcast_period_store(struct device *dev,
@@ -524,7 +614,7 @@ static ssize_t broadcast_period_store(struct device *dev,
 		return result;
 	}
 
-	ddev->params.broadcast_period = temp;
+	ddev->broadcast_period = temp;
 
 	if (ddev->docked)
 		schedule_work(&ddev->work);
@@ -583,7 +673,7 @@ static ssize_t log_store(struct device *dev,
 		goto log_store_unlock;
 	}
 
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_TRANSMIT, VDO_LOG_TRANSMIT_START);
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_TRANSMIT, VDO_LOG_TRANSMIT_START, 1);
 
 	/* we likely didn't get a response to TRANSMIT_START or the log_size was 0 */
 	if (!ddev->gathering_log) {
@@ -598,10 +688,10 @@ static ssize_t log_store(struct device *dev,
 			break;
 		}
 		last_log_chunk = ddev->log_chunk_num;
-		charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_CHUNK, ddev->log_chunk_num);
+		charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_CHUNK, ddev->log_chunk_num, 1);
 	}
 
-	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_TRANSMIT, VDO_LOG_TRANSMIT_STOP);
+	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_TRANSMIT, VDO_LOG_TRANSMIT_STOP, 1);
 
 log_store_unlock:
 	ddev->gathering_log = false;
@@ -1047,7 +1137,9 @@ static ssize_t system_battery_capacity_store(struct device *dev,
 
 	if (ddev->system_battery_capacity != val) {
 		ddev->system_battery_capacity = val;
-		schedule_work(&ddev->work_soc);
+
+		if (ddev->send_state_of_charge)
+			schedule_work(&ddev->work_soc);
 	}
 
 	return count;
@@ -1101,6 +1193,7 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_system_battery_capacity.attr,
 	&dev_attr_vid.attr,
 	&dev_attr_pid.attr,
+	&dev_attr_reboot_into_bootloader.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);
@@ -1214,16 +1307,32 @@ static int charging_dock_probe(struct platform_device *pdev)
 			result);
 		return result;
 	}
-	ddev->params.broadcast_period = (u8)temp_val;
-	dev_dbg(&pdev->dev, "Broadcast period=%d\n", ddev->params.broadcast_period);
+	ddev->broadcast_period = (u8)temp_val;
+	dev_dbg(&pdev->dev, "Broadcast period=%d\n", ddev->broadcast_period);
+
+	result = of_property_read_u32(pdev->dev.of_node,
+		"req-ack-timeout-ms", &temp_val);
+	if (result < 0) {
+		dev_dbg(&pdev->dev,
+			"req-ack-timeout-ms not defined, using default: %d\n",
+			result);
+		temp_val = REQ_ACK_TIMEOUT_MS;
+	}
+	ddev->req_ack_timeout_ms = temp_val;
+	dev_dbg(&pdev->dev, "Req ack timeout ms=%d\n", ddev->req_ack_timeout_ms);
 
 	mutex_init(&ddev->lock);
 	INIT_WORK(&ddev->work, charging_dock_handle_work);
+
+	ddev->workqueue = alloc_ordered_workqueue("charging_dock_request_wq", WQ_FREEZABLE | WQ_HIGHPRI);
+	if (!ddev->workqueue)
+		return -ENOMEM;
+
 	if (ddev->send_state_of_charge) {
 		INIT_WORK(&ddev->work_soc, charging_dock_handle_work_soc);
-		ddev->params.state_of_charge = NOT_CHARGING;
+		ddev->state_of_charge = NOT_CHARGING;
 	}
-	init_waitqueue_head(&ddev->tx_waitq);
+	init_completion(&ddev->rx_complete);
 
 	ddev->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, ddev);
@@ -1291,9 +1400,12 @@ static int charging_dock_remove(struct platform_device *pdev)
 	}
 	list_for_each_entry(pos, &ddev->sub_list, entry)
 		usbvdm_unsubscribe(pos->sub);
-	wake_up_all(&ddev->tx_waitq);
 	mutex_destroy(&ddev->lock);
 	sysfs_remove_groups(&ddev->dev->kobj, charging_dock_groups);
+
+	/* wake up sleeping threads */
+	complete_all(&ddev->rx_complete);
+	destroy_workqueue(ddev->workqueue);
 
 	return 0;
 }

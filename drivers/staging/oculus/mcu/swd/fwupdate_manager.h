@@ -12,6 +12,7 @@ struct fwupdate_provisioning {
 
 struct fwupdate_header {
 	u8 force_bootloader_update;
+	u8 enable_noaccess_recovery;
 	struct fwupdate_provisioning provisioning[0];
 } __packed;
 

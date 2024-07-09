@@ -4,6 +4,7 @@
 
 #include <linux/kernel.h>
 #include <linux/notifier.h>
+#include <uapi/linux/syncboss.h>
 
 enum syncboss_state_event_types {
 	SYNCBOSS_EVENT_MCU_UP,
@@ -13,8 +14,10 @@ enum syncboss_state_event_types {
 	SYNCBOSS_EVENT_STREAMING_STARTED,
 	SYNCBOSS_EVENT_STREAMING_STOPPING,
 	SYNCBOSS_EVENT_STREAMING_STOPPED,
-	SYNCBOSS_EVENT_STREAMING_SUSPEND,
-	SYNCBOSS_EVENT_STREAMING_RESUME,
+	SYNCBOSS_EVENT_STREAMING_SUSPENDING,
+	SYNCBOSS_EVENT_STREAMING_SUSPENDED,
+	SYNCBOSS_EVENT_STREAMING_RESUMING,
+	SYNCBOSS_EVENT_STREAMING_RESUMED,
 	SYNCBOSS_EVENT_WAKE_READERS,
 };
 
@@ -63,6 +66,23 @@ struct syncboss_consumer_ops {
 	 * Pass true for from_user if the buffer is a __user memory pointer.
 	 */
 	ssize_t (*queue_tx_packet)(struct device *dev, const void *buf, size_t count, bool from_user);
+};
+
+#ifdef CONFIG_SYNCBOSS_STANDALONE
+#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION 2
+#define syncboss_driver_data_header_t syncboss_driver_data_header_v2_t
+#define syncboss_driver_data_header_driver_message_t syncboss_driver_data_header_driver_message_v2_t
+#define uapi_pkt_t uapi_pkt_v2_t
+#elif CONFIG_SYNCBOSS_PERIPHERAL
+#define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION 3
+#define syncboss_driver_data_header_t syncboss_driver_data_header_v3_t
+#define syncboss_driver_data_header_driver_message_t syncboss_driver_data_header_driver_message_v3_t
+#define uapi_pkt_t uapi_pkt_v3_t
+#endif
+
+struct rx_packet_info {
+	struct syncboss_driver_data_header_t header;
+	const struct syncboss_data *data;
 };
 
 #endif

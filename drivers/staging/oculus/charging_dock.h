@@ -29,6 +29,7 @@
 #define PARAMETER_TYPE_LOG_CHUNK 0x87
 #define PARAMETER_TYPE_STATE_OF_CHARGE 0x88
 #define PARAMETER_TYPE_MOISTURE_DETECTED 0xA0
+#define PARAMETER_TYPE_REBOOT_INTO_BOOTLOADER 0xF0
 
 #define VDO_LOG_TRANSMIT_STOP 0x00
 #define VDO_LOG_TRANSMIT_START 0x01
@@ -64,17 +65,15 @@ enum state_of_charge_t {
 	NOT_CHARGING
 };
 
+/* Items reported by the dock */
 struct charging_dock_params_t {
 	u32 fw_version;
 	char serial_number_mlb[16];
 	u16 board_temp;
 	char serial_number_system[16];
-	/* Duration in mins at which charging dock should send broadcast VDM */
-	u8 broadcast_period;
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
 	int moisture_detected_count;
-	enum state_of_charge_t state_of_charge;
 };
 
 struct usbvdm_subscription_data {
@@ -85,37 +84,62 @@ struct usbvdm_subscription_data {
 	struct list_head entry;
 };
 
+/**
+ * struct charging_dock_device_t - structure for charging dock data
+ *
+ * @dev: platform device handle
+ * @sub_list: list of USBVDM subscription handles
+ * @current_svid: USB Standard or Vendor ID of connected dock
+ * @current_pid: USB Product ID of connected dock
+ * @docked: docked/undocked status
+ * @broadcast_period: duration in mins at which charging dock should send broadcast VDM
+ * @work: work for sending broadcast period to dock
+ * @workqueue: workqueue for @work
+ * @ack_parameter: VDM request parameter for which ack is received
+ * @req_ack_timeout_ms: duration to wait for an ACK from the dock
+ * @rx_complete: VDM response completion
+ * @params: items reported by the dock
+ * @log: buffer for dock log
+ * @log_chunk_num: current log chunk being received
+ * @gathering_log: flag for whether log is being received
+ * @battery_psy: power supply object handle for internal HMD battery
+ * @nb: notifier block for handling power supply change events
+ * @system_battery_capacity: system-wide battery capacity (internal + external)
+ * @send_state_of_charge: flag to tell if state of charge needs to be sent to dock
+ * @state_of_charge: current system state of charge
+ * @work_soc: work for sending state of charge to dock
+ * @lock: lock for modifying device struct
+ */
 struct charging_dock_device_t {
-	/* platform device handle */
 	struct device *dev;
-	/* docked/undocked status */
+	struct list_head sub_list;
+
+	u16 current_svid;
+	u16 current_pid;
 	bool docked;
-	/* lock for modifying device struct */
-	struct mutex lock;
-	struct charging_dock_params_t params;
-	/* VDM response wait queue */
-	wait_queue_head_t tx_waitq;
-	/* work for sending broadcast period to dock */
+
+	u8 broadcast_period;
 	struct work_struct work;
-	/* VDM request parameter for which ack is received */
+	struct workqueue_struct	*workqueue;
+
 	u32 ack_parameter;
+	u32 req_ack_timeout_ms;
+	struct completion rx_complete;
+	struct charging_dock_params_t params;
+
 	char *log;
 	u32 log_chunk_num;
 	bool gathering_log;
-	/* power supply object handle for internal HMD battery */
+
 	struct power_supply *battery_psy;
-	/* notifier block for handling power supply change events */
 	struct notifier_block nb;
-	/* List of USBVDM subscription handles */
-	struct list_head sub_list;
-	u16 current_svid;
-	u16 current_pid;
-	/* work for sending state of charge to dock */
-	struct work_struct work_soc;
-	/* flag to tell if state of charge needs to be sent to dock*/
-	bool send_state_of_charge;
-	/* system-wide battery capacity (internal + external) */
+
 	u8 system_battery_capacity;
+	bool send_state_of_charge;
+	enum state_of_charge_t state_of_charge;
+	struct work_struct work_soc;
+
+	struct mutex lock;
 };
 
 #endif /* _CHARGING_DOCK_H__ */

@@ -171,3 +171,9 @@ config QCOM_KGSL_DEBUG_CONTEXT_LEAK
 	depends on QCOM_KGSL
 	help
 		ask vhamm
+
+config QCOM_KGSL_PANIC_ON_GMU_FAULT
+	bool "Force kernel panic on GMU fault"
+	depends on QCOM_KGSL
+	help
+	  When enabled, force a kernel panic when a GMU fault is encountered.

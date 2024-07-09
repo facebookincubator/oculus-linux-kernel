@@ -113,7 +113,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 
 
 	if (parent_node &&
-	    of_device_is_compatible(parent_node, "meta,syncboss")) {
+	    of_device_is_compatible(parent_node, "meta,syncboss-spi")) {
 		struct syncboss_consumer_ops *ops = dev_get_drvdata(dev->parent);
 
 		devdata->get_syncboss_is_streaming = ops->get_is_streaming;

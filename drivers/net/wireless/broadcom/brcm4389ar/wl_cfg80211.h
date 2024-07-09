@@ -3685,6 +3685,8 @@ int wl_cfg80211_set_roam_params(struct net_device *dev, uint32 *data, uint16 dat
 extern void wl_cfg80211_wdev_lock(struct wireless_dev *wdev);
 extern void wl_cfg80211_wdev_unlock(struct wireless_dev *wdev);
 
+extern s32 wl_set_retry(struct net_device *dev, u32 retry, bool l);
+
 /* Added wl_reassoc_params_cvt_v1 due to mis-sync between DHD and FW
  * Because Dongle use wl_reassoc_params_v1_t for WLC_REASSOC
  * Legacy FW use wl_reassoc_params_t

@@ -5611,7 +5611,7 @@ static int __cam_isp_ctx_set_stream_mode_in_acquired(
 			CAM_ERR(CAM_ISP, "Failed to prepare hw config");
 			goto fail;
 		}
-
+		cam_mem_put_cpu_buf((int32_t) cmd->stream_images[i].packet_handle);
 		stream_image->num_cfg = cfg.num_hw_update_entries;
 		stream_image->num_fence_map_out = cfg.num_out_map_entries;
 		if (cfg.num_in_map_entries != 0) {

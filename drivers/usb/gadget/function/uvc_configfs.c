@@ -3474,9 +3474,65 @@ UVC_ATTR(f_uvc_opts_, cname, aname)
 UVCG_OPTS_ATTR(streaming_interval, streaming_interval, 16);
 UVCG_OPTS_ATTR(streaming_maxpacket, streaming_maxpacket, 3072);
 UVCG_OPTS_ATTR(streaming_maxburst, streaming_maxburst, 15);
+UVCG_OPTS_ATTR(streaming_maxpayload, streaming_maxpayload, 65536);
 
 #undef UVCG_OPTS_ATTR
 
+static ssize_t f_uvc_opts_streaming_transfer_show(
+	struct config_item *item, char *page)
+{
+	struct f_uvc_opts *opts = to_f_uvc_opts(item);
+	int result;
+	char *str;
+
+	mutex_lock(&opts->lock);
+	switch (opts->streaming_transfer) {
+	case USB_ENDPOINT_XFER_BULK:
+		str = "bulk";
+		break;
+	case USB_ENDPOINT_XFER_ISOC | USB_ENDPOINT_SYNC_ASYNC:
+		str = "isoc";
+		break;
+	default:
+		str = "unknown";
+		break;
+	}
+	result = sprintf(page, "%s\n", str);
+	mutex_unlock(&opts->lock);
+
+	return result;
+}
+
+static ssize_t
+f_uvc_opts_streaming_transfer_store(struct config_item *item,
+			   const char *page, size_t len)
+{
+	struct f_uvc_opts *opts = to_f_uvc_opts(item);
+	int ret = 0;
+
+	mutex_lock(&opts->lock);
+	if (opts->refcnt) {
+		ret = -EBUSY;
+		goto end;
+	}
+
+	if (!strncmp(page, "bulk", 4))
+		opts->streaming_transfer = USB_ENDPOINT_XFER_BULK;
+	else if (!strncmp(page, "isoc", 4))
+		opts->streaming_transfer = USB_ENDPOINT_XFER_ISOC | USB_ENDPOINT_SYNC_ASYNC;
+	else {
+		ret = -EINVAL;
+		goto end;
+	}
+
+	ret = len;
+
+end:
+	mutex_unlock(&opts->lock);
+	return ret;
+}
+
+UVC_ATTR(f_uvc_opts_, streaming_transfer, streaming_transfer);
 
 #define UVCG_OPTS_STRING_ATTR(cname, aname)				\
 static ssize_t f_uvc_opts_string_##cname##_show(struct config_item *item,\
@@ -3522,6 +3578,8 @@ static struct configfs_attribute *uvc_attrs[] = {
 	&f_uvc_opts_attr_streaming_interval,
 	&f_uvc_opts_attr_streaming_maxpacket,
 	&f_uvc_opts_attr_streaming_maxburst,
+	&f_uvc_opts_attr_streaming_maxpayload,
+	&f_uvc_opts_attr_streaming_transfer,
 	&f_uvc_opts_string_attr_function_name,
 	NULL,
 };

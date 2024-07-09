@@ -688,6 +688,7 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 		devdata->mcu_state_locked = true;
 		if (devdata->get_syncboss_is_streaming(dev)) {
 			dev_err(dev, "Cannot update firmware while the MCU is busy");
+			status = -EBUSY;
 			goto error;
 		}
 	}

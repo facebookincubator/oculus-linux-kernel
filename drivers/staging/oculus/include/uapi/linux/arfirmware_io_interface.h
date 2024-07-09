@@ -75,6 +75,8 @@ struct __packed ar_queue_info_req {
 	enum ar_queue_direction direction;
 	ar_endpoint_id_t hlos_endpoint_id;
 	ar_endpoint_id_t fw_endpoint_id;
+	uint16_t depth;
+	bool mirror;
 };
 
 /**

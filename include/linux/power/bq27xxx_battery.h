@@ -64,8 +64,8 @@ struct bq27xxx_reg_cache {
 #define BQ27XXX_NUM_TEMP_ZONE 7
 #define BQ27XXX_TEMP_ZONE_LEN 8
 struct bq27xxx_reg_lifetime_blocks {
-	u16 lifetime1_lower[BQ27XXX_LIFETIME_1_LOWER_LEN];
-	u8 lifetime1_higher[BQ27XXX_LIFETIME_1_HIGHER_LEN];
+	s16 lifetime1_lower[BQ27XXX_LIFETIME_1_LOWER_LEN];
+	s8 lifetime1_higher[BQ27XXX_LIFETIME_1_HIGHER_LEN];
 	u32 lifetime3;
 	u16 lifetime4[BQ27XXX_LIFETIME_4_LEN];
 	u32 temp_zones[BQ27XXX_NUM_TEMP_ZONE][BQ27XXX_TEMP_ZONE_LEN];

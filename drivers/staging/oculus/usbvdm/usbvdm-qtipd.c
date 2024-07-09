@@ -40,6 +40,14 @@ void usbvdm_qtipd_disconnect(struct usbpd_svid_handler *hdlr)
 	usbvdm_disconnect(hdlr_data->uv_dev->engine);
 }
 
+void usbvdm_qtipd_ext_msg_received(struct usbpd_svid_handler *hdlr,
+		u8 msg_type, const u8 *data, size_t data_len)
+{
+	struct usbpd_svid_handler_data *hdlr_data = to_handler_data(hdlr);
+
+	usbvdm_engine_ext_msg(hdlr_data->uv_dev->engine, msg_type, data, data_len);
+}
+
 void usbvdm_qtipd_vdm_received(struct usbpd_svid_handler *hdlr,
 		u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
@@ -57,6 +65,7 @@ void usbvdm_qtipd_subscribe(struct usbvdm_engine *engine, u16 svid, u16 pid)
 		.pid = pid,
 		.connect = usbvdm_qtipd_connect,
 		.disconnect = usbvdm_qtipd_disconnect,
+		.ext_msg_received = usbvdm_qtipd_ext_msg_received,
 		.vdm_received = usbvdm_qtipd_vdm_received
 	};
 
@@ -100,6 +109,14 @@ void usbvdm_qtipd_unsubscribe(struct usbvdm_engine *engine, u16 svid, u16 pid)
 	dev_dbg(uv_dev->dev, "Unsubscribed SVID/PID: 0x%04x/0x%04x", svid, pid);
 }
 
+static int usbvdm_qtipd_ext_msg(struct usbvdm_engine *engine,
+		u8 msg_type, const u8 *data, size_t data_len)
+{
+	struct usbvdm_dev *uv_dev = usbvdm_engine_get_drvdata(engine);
+
+	return usbpd_send_ext_msg(uv_dev->usbpd, msg_type, data, data_len);
+}
+
 int usbvdm_qtipd_vdm(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos)
 {
@@ -111,6 +128,7 @@ int usbvdm_qtipd_vdm(struct usbvdm_engine *engine,
 static const struct usbvdm_engine_ops usbvdm_qtipd_ops = {
 	.subscribe = usbvdm_qtipd_subscribe,
 	.unsubscribe = usbvdm_qtipd_unsubscribe,
+	.ext_msg = usbvdm_qtipd_ext_msg,
 	.vdm = usbvdm_qtipd_vdm
 };
 

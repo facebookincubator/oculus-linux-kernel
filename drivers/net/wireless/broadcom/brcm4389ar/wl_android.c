@@ -83,6 +83,8 @@
 #include <802.11ah.h>
 #endif /* WL_TWT */
 
+#include <dhd_linux_priv.h>
+
 #ifdef CUSTOMER_HW4
 #ifdef DHD_PCIE_RUNTIMEPM
 #include <dhd_bus.h>
@@ -401,6 +403,7 @@ static android_custom_dwell_time_t custom_scan_dwell[] =
 #define CMD_INTERFACE_CREATE			"INTERFACE_CREATE"
 #define CMD_INTERFACE_DELETE			"INTERFACE_DELETE"
 #define CMD_GET_LINK_STATUS			"GETLINKSTATUS"
+#define CMD_DHD_SET_ASPM			"DHD_ENABLE_ASPM"
 
 #if defined(DHD_ENABLE_BIGDATA_LOGGING)
 #define CMD_GET_BSS_INFO            "GETBSSINFO"
@@ -470,7 +473,7 @@ static android_custom_dwell_time_t custom_scan_dwell[] =
 #if defined(TSF_GSYNC)
 /* Add a define to mark the new logic added
  to calucate the dhd and our system time offset */
-#define CALCULATE_TIME_OFFSET
+// #define CALCULATE_TIME_OFFSET
 
 #ifdef CALCULATE_TIME_OFFSET
 #define TIMESPEC64_TO_US(ts)  (((ts).tv_sec * USEC_PER_SEC) + \
@@ -486,6 +489,8 @@ static int64_t g_offset_systemtime_vs_dhdtime = 0;
 #define CMD_XRAPI_GET_STATS "XRAPI_GET_STATS"
 #define CMD_XRAPI_SET_PSMODE "XRAPI_SET_PSMODE"
 #define CMD_XRAPI_WAKE_PKT "XRAPI_WAKE_PKT"
+#define CMD_XRAPI_HEARTBEAT "XRAPI_HEARTBEAT"
+
 static int wl_android_xrapi_send_proberesp(struct net_device *dev,
 					   char *command, int total_length);
 static int wl_android_request_tsync(struct net_device *dev, char *command,
@@ -497,6 +502,7 @@ static int wl_android_send_txdone_indication(struct net_device *dev,
 static int wl_android_get_xrapi_stats(struct net_device *dev);
 static int wl_android_request_ps_mode_change(struct net_device *dev,
 					     char *command, int total_len);
+static int wl_android_xrps_heartbeat(struct net_device *dev, char *command, int total_len);
 static int wl_set_nextwakeup(struct net_device *dev, wl_tsf_t *wakeup_tsf);
 static int wl_android_wake_pkt(struct net_device *dev);
 #endif /* TSF_GSYNC */
@@ -9214,6 +9220,15 @@ static int wl_android_set_wfdie_resp(struct net_device *dev, int only_resp_wfdsr
 }
 #endif /* P2PRESP_WFDIE_SRC */
 
+static int wl_android_set_dhd_aspm(struct net_device *dev, const char* string_num) {
+	dhd_info_t *dhd = DHD_DEV_INFO(dev);
+	bool doEnable = (bool)(bcm_atoi(string_num));
+
+	dhd_bus_aspm_enable_rc_ep(dhd->pub.bus, doEnable ? TRUE : FALSE);
+
+	return 0;
+}
+
 static int wl_android_get_link_status(struct net_device *dev, char *command,
 	int total_len)
 {
@@ -13428,6 +13443,10 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 	else if (strnicmp(command, CMD_GET_LINK_STATUS, strlen(CMD_GET_LINK_STATUS)) == 0) {
 		bytes_written = wl_android_get_link_status(net, command, priv_cmd.total_len);
 	}
+	else if (strnicmp(command, CMD_DHD_SET_ASPM, strlen(CMD_DHD_SET_ASPM)) == 0) {
+		int skip = strlen(CMD_DHD_SET_ASPM) + 1;
+		bytes_written = wl_android_set_dhd_aspm(net, (const char*)command+skip);
+	}
 #ifdef P2PRESP_WFDIE_SRC
 	else if (strnicmp(command, CMD_P2P_SET_WFDIE_RESP,
 		strlen(CMD_P2P_SET_WFDIE_RESP)) == 0) {
@@ -13939,10 +13958,14 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			    strlen(CMD_XRAPI_SET_PSMODE)) == 0) {
 		bytes_written = wl_android_request_ps_mode_change(
 			net, command, priv_cmd.total_len);
-	} else if (strnicmp(command, CMD_XRAPI_WAKE_PKT, 
+	} else if (strnicmp(command, CMD_XRAPI_WAKE_PKT,
                 strlen(CMD_XRAPI_WAKE_PKT)) == 0) {
         bytes_written = wl_android_wake_pkt(net);
-    }
+	} else if (strnicmp(command, CMD_XRAPI_HEARTBEAT,
+				strlen(CMD_XRAPI_HEARTBEAT)) == 0) {
+		bytes_written = wl_android_xrps_heartbeat(
+			net, command, priv_cmd.total_len);
+	}
 #endif
 #ifdef SIMULATE_DEGRADED_PERFORMANCE
 	else if (strnicmp(command, CMD_XRAPI_SIMULATE_DEGRADED_PERFORMANCE,
@@ -16157,7 +16180,7 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 	int res = BCME_OK;
 	char *pos, *token;
 	uint8 pm_mode = 0;
-	u32 system_interval_us = 0;
+	u32 freq_hz = 0;
 	int bytes_written = 0;
 
 	/* drop command */
@@ -16170,24 +16193,72 @@ static int wl_android_request_ps_mode_change(struct net_device *dev,
 		goto exit;
 	}
 	pm_mode = (u8)bcm_strtoul(token, NULL, 10);
-	/* get system interval after enable */
+	/* get frequency after enable */
 	token = bcmstrtok(&pos, " ", NULL);
 	if (!token) {
 		res = BCME_BADARG;
 		goto exit;
 	}
-	system_interval_us = (u32)bcm_strtoul(token, NULL, 10);
+	freq_hz = (u32)bcm_strtoul(token, NULL, 10);
 
-	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x system_interval_us = %d us\n", pm_mode, system_interval_us));
+	WL_ERR(("WL_XRAPI_CMD_PSMODE pm_mode 0x%x freq_hz = %d\n", pm_mode, freq_hz));
 #ifdef CONFIG_XRPS_DHD_HOOKS
-	res = xrps_set_sys_interval_us(system_interval_us);
+	res = xrps_set_freq_hz(freq_hz);
 	if (res != 0) {
-		WL_ERR(("Failed to set system interval %d us: %d\n", system_interval_us, res));
+		WL_ERR(("Failed to set system interval: %d\n", res));
 		goto exit;
 	}
 	res = xrps_set_mode(pm_mode);
 	if (res != 0) {
-		WL_ERR(("Failed to set mode %d us: %d\n", pm_mode, res));
+		WL_ERR(("Failed to set mode %d: %d\n", pm_mode, res));
+		goto exit;
+	}
+#endif
+
+exit:
+	// Save the status "res" to "command".
+	// Call the copy_to_user (in the caller function) to send the status back to user space.
+	bytes_written = snprintf(command, total_len, "STATUS %d", res);
+	if (unlikely(bytes_written > total_len))
+		WL_ERR(("%s return status Error, bytes_written=%d, total_len=%d", __func__,
+			bytes_written, total_len));
+
+	return bytes_written;
+}
+
+static int wl_android_xrps_heartbeat(struct net_device *dev, char *command, int total_len)
+{
+	int res = BCME_OK;
+	char *pos, *token;
+	u64 period_ns = 0;
+	u64 time_ns = 0;
+	int bytes_written = 0;
+
+	/* drop command */
+	pos = command;
+	token = bcmstrtok(&pos, " ", NULL);
+	/* time_ns */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		res = BCME_BADARG;
+		goto exit;
+	}
+	time_ns = (u64)bcm_strtoull(token, NULL, 10);
+
+	/* period_ns */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		res = BCME_BADARG;
+		goto exit;
+	}
+	period_ns = (u64)bcm_strtoull(token, NULL, 10);
+
+	WL_ERR(("WL_XRAPI_CMD_HEARTBEAT time_ns %llu period_ns %llu\n", time_ns, period_ns));
+
+#ifdef CONFIG_XRPS_DHD_HOOKS
+	res = xrps_heartbeat(time_ns, period_ns);
+	if (res != 0) {
+		WL_ERR(("Failed XRPS heartbeat: %d\n", res));
 		goto exit;
 	}
 #endif
@@ -16235,10 +16306,10 @@ int wl_android_xrapi_notify_time_sync_event(struct net_device *dev,
 	systs = ktime_to_us(ktime_get_boottime());
 	dhdts = ((uint64)result->tsf.tsf_h << 32u)|(result->tsf.tsf_l);
 	g_offset_systemtime_vs_dhdtime = OFFSET_OF_SYSTEMTIME_VS_DHDTIME(systs, dhdts);
-	DHD_ERROR(("%s: systs=0x%016llx\n dhdts=0x%016llx offset=0x%016llx\n", __func__, systs, dhdts, g_offset_systemtime_vs_dhdtime));
+	DHD_INFO(("%s: systs=0x%016llx\n dhdts=0x%016llx offset=0x%016llx\n", __func__, systs, dhdts, g_offset_systemtime_vs_dhdtime));
 #endif
 
-	WL_ERR(("BRCM_VENDOR_EVENT_XRAPI_TIME_SYNC sent %d\n",
+	WL_INFORM(("BRCM_VENDOR_EVENT_XRAPI_TIME_SYNC sent %d\n",
 		NL80211_CMD_VENDOR));
 
 	wl_cfgvendor_send_async_event(

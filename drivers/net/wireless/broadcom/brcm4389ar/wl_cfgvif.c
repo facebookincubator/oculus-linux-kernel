@@ -4749,6 +4749,23 @@ wl_notify_connect_status_ap(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	}
 #endif /* XRAP_POWER_OPTIMIZATION */
 
+	if(wl_get_mode_by_netdev(cfg, ndev) == WL_MODE_AP) {
+		// Increase the mac layer retry
+		if((event == WLC_E_ASSOC_IND || event == WLC_E_REASSOC_IND) && reason == DOT11_SC_SUCCESS) {
+			WL_INFORM_MEM(("%s: Event %d indicates Associated. Disable fils\n", __FUNCTION__, event));
+#ifdef CUSTOM_LONG_RETRY_LIMIT
+			if (wl_set_retry(ndev, CUSTOM_LONG_RETRY_LIMIT, 1) < 0) {
+				WL_ERR(("CUSTOM_LONG_RETRY_LIMIT set fail!\n"));
+			}
+#endif /* CUSTOM_LONG_RETRY_LIMIT */
+#ifdef CUSTOM_SHORT_RETRY_LIMIT
+			if (wl_set_retry(ndev, CUSTOM_SHORT_RETRY_LIMIT, 0) < 0) {
+				WL_ERR(("CUSTOM_SHORT_RETRY_LIMIT set fail!\n"));
+			}
+#endif
+		}
+	}
+
 #ifdef WL_CLIENT_SAE
 	if (event == WLC_E_AUTH && ntoh32(e->auth_type) == DOT11_SAE) {
 		err = wl_handle_auth_event(cfg, ndev, e, data);

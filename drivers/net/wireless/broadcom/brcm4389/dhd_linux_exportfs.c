@@ -1430,7 +1430,7 @@ static struct dhd_attr dhd_attr_memdump =
  */
 #define ASSERTINFO PLATFORM_PATH".assert.info"
 
-int
+static int
 get_assert_val_from_file(void)
 {
 	struct file *fp = NULL;
@@ -1443,7 +1443,7 @@ get_assert_val_from_file(void)
 	 * 0: Trigger Kernel crash by panic()
 	 * 1: Print out the logs and don't trigger Kernel panic. (default)
 	 * 2: Trigger Kernel crash by BUG()
-	 * File doesn't exist: Keep default value (1).
+	 * File doesn't exist: return <0 error
 	 */
 	fp = dhd_filp_open(filepath, O_RDONLY, 0);
 	if (IS_ERR(fp) || (fp == NULL)) {
@@ -1461,11 +1461,6 @@ get_assert_val_from_file(void)
 		dhd_filp_close(fp, NULL);
 	}
 
-#ifdef CUSTOMER_HW4_DEBUG
-	mem_val = (mem_val >= 0) ? mem_val : 1;
-#else
-	mem_val = (mem_val >= 0) ? mem_val : 0;
-#endif /* CUSTOMER_HW4_DEBUG */
 	return mem_val;
 }
 
@@ -1476,7 +1471,9 @@ void dhd_get_assert_info(dhd_pub_t *dhd)
 
 	mem_val = get_assert_val_from_file();
 
-	g_assert_type = mem_val;
+	if (mem_val >= 0) {
+		g_assert_type = mem_val;
+	}
 #endif /* !DHD_EXPORT_CNTL_FILE */
 }
 

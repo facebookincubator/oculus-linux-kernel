@@ -127,6 +127,7 @@
 	qcom,chg-term-current-ma = <(-300)>;
 	qcom,typec-dam-enable;
 	qcom,disable-dc-online-prop;
+	qcom,moisture-detection-resistance-threshold = <1300000>;
 };
 
 &pm8150_vadc {

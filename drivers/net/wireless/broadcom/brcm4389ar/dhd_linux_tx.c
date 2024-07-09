@@ -940,7 +940,11 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 	 * else send directly from here.
 	 */
 #if defined(DHD_LB_TXP)
-	ret = dhd_lb_sendpkt(dhd, net, ifidx, pktbuf);
+	if (AR_IS_ARTS_PACKET((struct ether_header *)PKTDATA(dhd->pub.osh, pktbuf))) {
+		ret = __dhd_sendpkt(&dhd->pub, ifidx, pktbuf);
+	} else {
+		ret = dhd_lb_sendpkt(dhd, net, ifidx, pktbuf);
+ 	}
 #else
 	ret = __dhd_sendpkt(&dhd->pub, ifidx, pktbuf);
 #endif

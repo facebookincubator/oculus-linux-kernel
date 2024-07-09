@@ -11,6 +11,7 @@
 #include <linux/syncboss/consumer.h>
 #include <linux/syncboss/messages.h>
 
+#include "syncboss_consumer_priorities.h"
 #include "syncboss_powerstate.h"
 
 /*
@@ -222,8 +223,9 @@ static int signal_powerstate_event(struct powerstate_dev_data *devdata, int evt)
 	struct syncboss_driver_data_header_driver_message_t msg = {
 		.header = {
 			.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
-			.header_length = sizeof(struct syncboss_driver_data_header_driver_message_t),
+			.header_length = sizeof(struct syncboss_driver_data_header_t),
 			.from_driver = true,
+			.nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID,
 		},
 		.driver_message_type = SYNCBOSS_DRIVER_MESSAGE_POWERSTATE_MSG,
 		.driver_message_data = evt,
@@ -368,7 +370,7 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 		 */
 		devdata->eat_next_system_up_event = true;
 		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_STREAMING_SUSPEND:
+	case SYNCBOSS_EVENT_STREAMING_SUSPENDING:
 		if (devdata->powerstate_last_evt == SYNCBOSS_PROX_EVENT_PROX_ON) {
 			/*
 			 * Handle the case where we suspend while the prox is still covered (ex. device
@@ -388,7 +390,10 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 			devdata->eat_prox_on_events = true;
 		}
 		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_STREAMING_RESUME:
+	case SYNCBOSS_EVENT_STREAMING_SUSPENDED:
+	case SYNCBOSS_EVENT_STREAMING_RESUMING:
+		return NOTIFY_DONE;
+	case SYNCBOSS_EVENT_STREAMING_RESUMED:
 		push_prox_cal_and_enable_wake(devdata, devdata->powerstate_events_enabled);
 		return NOTIFY_OK;
 
@@ -417,10 +422,11 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 	}
 }
 
-static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *p)
+static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
 	struct powerstate_dev_data *devdata = container_of(nb, struct powerstate_dev_data, rx_packet_nb);
-	struct syncboss_data *packet = p;
+	struct rx_packet_info *packet_info = pi;
+	const struct syncboss_data *packet = packet_info->data;
 
 	switch (type) {
 	case SYNCBOSS_PROXSTATE_MESSAGE_TYPE:
@@ -486,6 +492,7 @@ static int syncboss_powerstate_probe(struct platform_device *pdev)
 	}
 
 	devdata->syncboss_state_nb.notifier_call = syncboss_state_handler;
+	devdata->syncboss_state_nb.priority = SYNCBOSS_STATE_CONSUMER_PRIORITY_POWERSTATE;
 	ret = devdata->syncboss_ops->state_event_notifier_register(dev, &devdata->syncboss_state_nb);
 	if (ret < 0) {
 		dev_err(dev, "failed to register state event notifier, error %d", ret);
@@ -493,7 +500,7 @@ static int syncboss_powerstate_probe(struct platform_device *pdev)
 	}
 
 	devdata->rx_packet_nb.notifier_call = rx_packet_handler;
-	devdata->rx_packet_nb.priority = 2; /* intercept messages before they go to miscfifo/directchannel */
+	devdata->rx_packet_nb.priority = SYNCBOSS_PACKET_CONSUMER_PRIORITY_POWERSTATE;
 	ret = devdata->syncboss_ops->rx_packet_notifier_register(dev, &devdata->rx_packet_nb);
 	if (ret < 0) {
 		dev_err(dev, "failed to register rx packet notifier, error %d", ret);

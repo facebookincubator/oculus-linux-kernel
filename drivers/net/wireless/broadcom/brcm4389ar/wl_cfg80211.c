@@ -757,7 +757,7 @@ static void wl_cfg80211_clear_parent_dev(void);
  */
 static s32 wl_set_frag(struct net_device *dev, u32 frag_threshold);
 static s32 wl_set_rts(struct net_device *dev, u32 frag_threshold);
-static s32 wl_set_retry(struct net_device *dev, u32 retry, bool l);
+s32 wl_set_retry(struct net_device *dev, u32 retry, bool l);
 
 /*
  * cfg profile utilities
@@ -3258,7 +3258,7 @@ static s32 wl_set_frag(struct net_device *dev, u32 frag_threshold)
 	return err;
 }
 
-static s32 wl_set_retry(struct net_device *dev, u32 retry, bool l)
+s32 wl_set_retry(struct net_device *dev, u32 retry, bool l)
 {
 	s32 err = 0;
 	u32 cmd = (l ? WLC_SET_LRL : WLC_SET_SRL);
@@ -6481,14 +6481,16 @@ wl_handle_assoc_hints(struct bcm_cfg80211 *cfg, struct net_device *dev,
 		WL_ERR(("ssid cpy failed\n"));
 		return -EINVAL;
 	}
-
+	WL_INFORM(("dhd add targeted BSSID %p, %p\n", sme->bssid, sme->bssid_hint));
 	/* Handle incoming BSSID and Channel info */
 	if (sme->bssid && !ETHER_ISBCAST(sme->bssid)) {
 		/* Use user space requested BSSID and channel */
 		info->targeted_join = true;
 		(void)memcpy_s(info->bssid, ETH_ALEN, sme->bssid, ETH_ALEN);
+
 		if (sme->channel && ((chspec =
 			wl_freq_to_chanspec(sme->channel->center_freq)) != INVCHANSPEC)) {
+			WL_INFORM(("dhd targeted freq %d\n", sme->channel->center_freq));
 			info->chan_cnt = 1;
 			info->chanspecs[0] = chspec;
 			/* Skip p2p connection on 6G */

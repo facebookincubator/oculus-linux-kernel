@@ -11278,7 +11278,11 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 	char buf[WLC_IOCTL_SMLEN];
 	char *ptr;
 #ifdef ROAM_ENABLE
+#ifdef DISABLE_BUILTIN_ROAM
+	uint roamvar = 1;
+#else
 	uint roamvar = 0;
+#endif
 #ifdef ROAM_AP_ENV_DETECTION
 	int roam_env_mode = 0;
 #endif /* ROAM_AP_ENV_DETECTION */

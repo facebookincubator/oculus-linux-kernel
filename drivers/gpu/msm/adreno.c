@@ -34,6 +34,10 @@
 /* Include the master list of GPU cores that are supported */
 #include "adreno-gpulist.h"
 
+#if IS_ENABLED(CONFIG_GPU_ERROR_SYSCTL)
+#include <linux/log_gpu_error.h>
+#endif /* CONFIG_GPU_ERROR_SYSCTL */
+
 static void adreno_input_work(struct work_struct *work);
 static unsigned int counter_delta(struct kgsl_device *device,
 	unsigned int reg, unsigned int *counter);
@@ -613,6 +617,13 @@ void adreno_irqctrl(struct adreno_device *adreno_dev, int state)
  */
 void adreno_hang_int_callback(struct adreno_device *adreno_dev, int bit)
 {
+	#if IS_ENABLED(CONFIG_GPU_ERROR_SYSCTL)
+		char *error = "MISC: GPU hang detected";
+		size_t len = strlen(error);
+
+		log_gpu_error(error, len, -1, NULL, 0);
+	#endif /* CONFIG_GPU_ERROR_SYSCTL */
+
 	dev_crit_ratelimited(KGSL_DEVICE(adreno_dev)->dev,
 				"MISC: GPU hang detected\n");
 	adreno_irqctrl(adreno_dev, 0);

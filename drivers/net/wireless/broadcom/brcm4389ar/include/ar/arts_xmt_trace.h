@@ -102,9 +102,10 @@ inline static void arts_xmt_send(void *pkt, uint8 *pktdata) {
 
 inline static void arts_xmt_complete(void *pkt, uint8 *pktdata, bool success) {
     ARTS_header_t *arts_header = NULL;
+    uint64 elapsed = 0;
 #if defined(AR_ARTS_TX_PKT_MONITOR)
     uint64 ts =  OSL_SYSUPTIME_US();
-    uint64 elapsed = ts - DHD_PKT_GET_QTIME(pkt);
+    elapsed = ts - DHD_PKT_GET_QTIME(pkt);
     if (elapsed > ARTS_HIGH_TX_XMIT_THRESHOLD_US) {
         arts_header = arts_check_get_header(pktdata);
         if (arts_header) {
@@ -132,7 +133,8 @@ inline static void arts_xmt_complete(void *pkt, uint8 *pktdata, bool success) {
     }
     if (arts_header) {
         DHD_ERROR((
-            "WiFi:ERROR TX ARTS pkt dropped. 0x%X->0x%X seqnum=%hhu size=%hu offset=%u tsize=%u ts=%u [%p]\n",
+            "WiFi:ERROR TX ARTS pkt dropped after %llu us. 0x%X->0x%X seqnum=%hhu size=%hu offset=%u tsize=%u ts=%u [%p]\n",
+            elapsed,
             arts_header->src,
             arts_header->dst,
             arts_header->seq_number,

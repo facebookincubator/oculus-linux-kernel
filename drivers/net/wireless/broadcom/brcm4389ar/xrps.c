@@ -25,6 +25,8 @@
 
 #ifdef CONFIG_XRPS
 
+#define NSEC_PER_MSEC 1000000
+
 XRPS_LOG_DECLARE();
 
 static bool xrps_handle_flowring(int flowid);
@@ -320,6 +322,8 @@ int xrps_send_eot(void)
 
 void xrps_pause(bool check_mode)
 {
+	XRPS_LOG_DBG("%s", __func__);
+
 	if (check_mode && (xrps_get_mode() != XRPS_MODE_MASTER))
 		return;
 
@@ -332,11 +336,21 @@ void xrps_pause(bool check_mode)
 
 void xrps_resume(bool check_mode)
 {
+	uint64_t time;
+	int err;
+
+	XRPS_LOG_DBG("%s", __func__);
+
 	if (!xrps.drv_intf->is_link_up() || (check_mode && (xrps_get_mode() != XRPS_MODE_MASTER)))
 		return;
 
-	xrps_set_queue_pause(1);
-	xrps.osl_intf->start_sysint_timer(xrps_get_sys_interval_us());
+	err = xrps_get_next_sysint(&time);
+	if (err == 0) {
+		xrps_set_queue_pause(1);
+		xrps.osl_intf->start_sysint_timer(time);
+	} else {
+		XRPS_LOG_WRN("Failed to get next sysint: %d", err);
+	}
 }
 
 int xrps_get_mode(void)
@@ -379,17 +393,79 @@ int xrps_set_mode(enum xrps_mode mode)
 	return 0;
 }
 
-int xrps_get_sys_interval_us(void)
+static int xrps_get_sys_interval_ns(void)
 {
-	return xrps.sys_interval;
+	return xrps.sysint_ns;
 }
 
-int xrps_set_sys_interval_us(uint32_t us)
+static int xrps_set_sys_interval_ns(uint32_t ns)
 {
-	if ((us / 1000U) < XRPS_MIN_SYS_INT_MS ||
-	    (us / 1000U) > XRPS_MAX_SYS_INT_MS)
+	xrps.sysint_ns = ns;
+	return 0;
+}
+
+int xrps_heartbeat(uint64_t time_ns, uint64_t period_ns)
+{
+	int err = 0;
+
+	XRPS_LOG_DBG("Heartbeat time %llu period %llu\n", time_ns, period_ns);
+	err = xrps_set_sys_interval_ns(period_ns);
+	if (err != 0)
+		return err;
+
+	xrps.heartbeat_timestamp = time_ns;
+	xrps_resume(true);
+	return err;
+}
+
+int xrps_get_next_sysint(uint64_t *time)
+{
+	uint64_t now;
+	uint64_t next;
+	uint64_t distance_to_prev_sysint;
+	uint64_t period_ns = xrps_get_sys_interval_ns();
+
+	if (xrps.heartbeat_timestamp == 0) {
+		XRPS_LOG_ERR("No heartbeat timestamp");
+		return -1;
+	}
+
+	now = xrps.osl_intf->get_ktime();
+	if (now > xrps.heartbeat_timestamp) {
+		/**
+		 * Given periodic sysints
+		 *
+		 *      x----x----x--o-X----x
+		 *
+		 * where
+		 *    x = sysint
+		 *    o = now
+		 *    X = next sysint
+		 *
+		 * The next sysint is one sysint ahead of now minus the distance to the previous sysint.
+		 */
+
+		distance_to_prev_sysint = ((now - xrps.heartbeat_timestamp) % period_ns);
+		next = (now + period_ns - distance_to_prev_sysint);
+	} else {
+		next = xrps.heartbeat_timestamp;
+	}
+
+	XRPS_LOG_DBG("Next sysint %llu", next);
+	*time = next;
+	return 0;
+}
+
+int xrps_get_freq_hz(void)
+{
+	return xrps.freq_hz;
+}
+
+int xrps_set_freq_hz(uint32_t hz)
+{
+	if (hz < XRPS_MIN_FREQ_HZ || hz > XRPS_MAX_FREQ_HZ)
 		return -EINVAL;
-	xrps.sys_interval = us;
+	xrps.freq_hz = hz;
 	return 0;
 }
 
@@ -415,10 +491,21 @@ void xrps_clear_stats(void)
 void xrps_sysint_handler(void)
 {
 	xrps_osl_spinlock_flag_t flag;
+	int64_t time_since_heartbeat;
+
 	XRPS_LOG_DBG("%s", __func__);
 	flag = xrps.osl_intf->spin_lock(&xrps.stats.lock);
 	xrps.stats.sys_ints++;
 	xrps.osl_intf->spin_unlock(&xrps.stats.lock, flag);
+
+	// Must perform the expiration check here -- cannot perform dhd operations in IRQ (timer callback).
+	time_since_heartbeat = ((int64_t)(xrps.osl_intf->get_ktime() - xrps.heartbeat_timestamp) / NSEC_PER_MSEC);
+	if (time_since_heartbeat > CONFIG_XRPS_HEARTBEAT_EXPIRE_THRESHOLD_MS) {
+		XRPS_LOG_ERR("Stale heartbeat_ts %lld delta_ms = %lld", xrps.heartbeat_timestamp, time_since_heartbeat);
+		xrps_pause(true);
+		return;
+	}
+
 	unpause_pause_and_send_eot(false);
 }
 
@@ -449,7 +536,8 @@ int xrps_init(void)
 
 	xrps.osl_intf->spin_lock_init(&xrps.lock);
 	xrps.osl_intf->spin_lock_init(&xrps.stats.lock);
-	xrps.sys_interval = 100000;
+	xrps.freq_hz = 45;
+	xrps.heartbeat_timestamp = 0;
 	reset_flowrings();
 	xrps.first_rx_in_interval = true;
 #ifdef CONFIG_XRPS_PROFILING

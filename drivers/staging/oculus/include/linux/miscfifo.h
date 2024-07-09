@@ -46,7 +46,7 @@ struct miscfifo_client {
 	struct mutex consumer_lock; // hold while reading from the fifo, in case of multiple consumers
 	struct mutex producer_lock; // hold while writing to the fifo, in case of multiple producers
 	struct mutex context_lock;  // hold while accessing 'context'
-	struct kfifo_rec_ptr_1 fifo;
+	struct kfifo_rec_ptr_2 fifo;
 	bool logged_fifo_full;
 	struct list_head node;
 	void *context;

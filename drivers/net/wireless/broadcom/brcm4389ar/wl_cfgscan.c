@@ -1914,21 +1914,35 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	WL_DBG(("Enter \n"));
 
 
-#ifdef DHD_USE_SC_SCAN
-	if (strcmp(ndev->name, "wlan0") == 0) {
-		WL_SCAN(("Force using sc:escan for wlan0\n"));
-		scan_iovar = "sc:escan";
-		/* SSID filtering fails with sc:escan, investigating */
-		if (request)
-			request->n_ssids = 0;
-	}
-#endif
 
 	if (!cfg || !request) {
 		err = -EINVAL;
 		WL_ERR(("invalid escan parameter\n"));
 		goto exit;
 	}
+
+#ifdef DHD_USE_SC_SCAN
+	if (cfg->active_scan == PASSIVE_SCAN) {
+		WL_SCAN(("Force using sc:escan\n"));
+		scan_iovar = "sc:escan";
+		/* SSID filtering fails with sc:escan, investigating */
+		request->n_ssids = 0;
+
+		/* temp workaround to avoid FW trap when scanning only channels,
+		   overlapping with currently active channels
+		   Adding channels 1 and 11 to scan request is sufficient to avoid
+		   this situation
+		*/
+		if (request->n_channels > 0) {
+			static struct ieee80211_channel sc_escan_chans[] = {
+				{ .center_freq = 2412, .band = IEEE80211_BAND_2GHZ, .flags = 0 },
+				{ .center_freq = 2462, .band = IEEE80211_BAND_2GHZ, .flags = 0 },
+			};
+			request->channels[request->n_channels++] = &sc_escan_chans[0];
+			request->channels[request->n_channels++] = &sc_escan_chans[1];
+		}
+	}
+#endif
 
 	if (IS_SCAN_PARAMS_V3_V2(cfg)) {
 		params_size = (WL_SCAN_PARAMS_V3_FIXED_SIZE +

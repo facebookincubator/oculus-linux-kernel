@@ -645,7 +645,6 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 
 	switch (trans->header.magic_num) {
 	case SPI_RX_DATA_MAGIC_NUM_IRQ_MODE:
-	case SPI_RX_DATA_MAGIC_NUM_POLLING_MODE:
 		checksum = calculate_checksum(trans, devdata->transaction_length);
 		bad_checksum = checksum != 0;
 		if (bad_checksum)
@@ -671,14 +670,13 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 		status = -EIO;
 
 	/*
-	 * In IRQ mode, if we perform a transaction with the MCU, without being
-	 * triggered to do so by a data ready IRQ, the MCU may return a 'busy'
-	 * value (0xcacacaca). This happens if transaction occurs just as the
-	 * MCU happens to be staging its own message to go out. Don't log
-	 * warnings in this case. This is expected. The command will be retried.
+	 * If we perform a transaction with the MCU, without being triggered to do
+	 * so by a data ready IRQ, the MCU may return a 'busy' value (0xcacacaca).
+	 * This happens if transaction occurs just as the MCU happens to be staging
+	 * its own message to go out. Don't log warnings in this case. This is
+	 * expected. The command will be retried.
 	 */
-	if (devdata->use_irq_mode && ctx->msg_to_send &&
-	    !ctx->data_ready_irq_had_fired &&
+	if (ctx->msg_to_send && !ctx->data_ready_irq_had_fired &&
 	    trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_MCU_BUSY) {
 		return status;
 	}
@@ -702,22 +700,6 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 	return status;
 }
 
-/* For polling mode only: ask the MCU why it woke up */
-static void query_wake_reason(struct syncboss_dev_data *devdata)
-{
-	u8 message_buf[sizeof(struct syncboss_data) + 1] = {};
-	struct syncboss_data *message = (struct syncboss_data *)message_buf;
-	size_t data_len;
-
-	message->type = SYNCBOSS_GET_DATA_MESSAGE_TYPE;
-	message->sequence_id = 0;
-	message->data_len = 1;
-	message->data[0] = SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE;
-
-	data_len = sizeof(struct syncboss_data) + message->data_len;
-	queue_tx_packet(devdata, message, data_len, /* from_user */ false);
-}
-
 /* Process received data from MCU and distribute messages are appropriate. */
 static void process_rx_data(struct syncboss_dev_data *devdata,
 			    struct transaction_context *ctx,
@@ -739,23 +721,6 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 	rx_elem->transaction_end_time_ns = timing->prev_trans_end_time_ns;
 	rx_elem->transaction_length = devdata->transaction_length;
 	rx_elem->rx_ctr = atomic64_inc_return(&devdata->transaction_ctr);
-	if (unlikely(rx_elem->rx_ctr == 1)) {
-		/*
-		 * Check if the MCU FW supports IRQ-triggered transactions. We can detect this
-		 * based on the magic number it is using in the messages it sends.
-		 *
-		 * Older MCU FW that doesn't support IRQ mode needs to have its wakeup reason
-		 * queried explicitly also. Do that here. IRQ-mode firmware will send the
-		 * wakeup reason automatically.
-		 */
-		if (trans->header.magic_num == SPI_RX_DATA_MAGIC_NUM_IRQ_MODE) {
-			dev_info(&devdata->spi->dev, "IRQ mode supported by MCU");
-			devdata->use_irq_mode = true;
-		} else {
-			dev_info(&devdata->spi->dev, "IRQ mode not supported- falling back to polling");
-			query_wake_reason(devdata);
-		}
-	}
 
 	/* There's noting to do if there's no data in the packet. */
 	if (trans->data.type == 0) {
@@ -779,13 +744,25 @@ static void process_rx_data(struct syncboss_dev_data *devdata,
 		 * within the rx buffer and doesn't overflow
 		 */
 		const uint8_t *pkt_end = current_packet->data + current_packet->data_len;
+		struct rx_packet_info packet_info;
 
 		if (pkt_end > trans_end) {
 			dev_err_ratelimited(&devdata->spi->dev, "data packet overflow");
 			break;
 		}
+
+		packet_info = (struct rx_packet_info) {
+			.header = {
+				.header_version = SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION,
+				.header_length = sizeof(struct syncboss_driver_data_header_t),
+				.from_driver = false,
+				.nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID,
+			},
+			.data = current_packet
+		};
+
 		/* Deliver pack to consumers */
-		raw_notifier_call_chain(&devdata->rx_packet_event_chain, current_packet->type, (void *)current_packet);
+		raw_notifier_call_chain(&devdata->rx_packet_event_chain, current_packet->type, (void *)&packet_info);
 		/* Next packet */
 		current_packet = (struct syncboss_data *)pkt_end;
 	}
@@ -851,7 +828,6 @@ static u64 calc_mcu_ready_sleep_delay_ns(struct syncboss_dev_data *devdata,
 			       bool msg_to_send)
 {
 	u64 setup_requirement_ns = 0;
-	u64 polling_requirement_ns = 0;
 	u64 now_ns;
 	u64 time_since_prev_trans_end_ns;
 
@@ -861,14 +837,7 @@ static u64 calc_mcu_ready_sleep_delay_ns(struct syncboss_dev_data *devdata,
 	if (time_since_prev_trans_end_ns < t->min_time_between_trans_ns)
 		setup_requirement_ns = t->min_time_between_trans_ns - time_since_prev_trans_end_ns;
 
-	if (!devdata->use_irq_mode && !msg_to_send) {
-		u64 time_since_prev_trans_start_ns = now_ns - t->prev_trans_start_time_ns;
-
-		if (time_since_prev_trans_start_ns < t->trans_period_ns)
-			polling_requirement_ns = t->trans_period_ns - time_since_prev_trans_start_ns;
-	}
-
-	return max(setup_requirement_ns, polling_requirement_ns);
+	return setup_requirement_ns;
 }
 
 /*
@@ -931,7 +900,7 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 		 */
 		mutex_lock(&devdata->msg_queue_lock);
 		send_needed = ctx->msg_to_send || devdata->msg_queue_item_count > 0;
-		if (send_needed || !devdata->use_irq_mode) {
+		if (send_needed) {
 			u64 delay_ns;
 
 			/* Calculate how long to wait */
@@ -1124,12 +1093,12 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			break;
 		}
 
-		if (devdata->use_irq_mode && !devdata->data_ready_fired && !ctx.msg_to_send) {
+		if (!devdata->data_ready_fired && !ctx.msg_to_send) {
 			/*
-			 * We're in IRQ mode but a data ready IRQ has not fired since our last
-			 * transaction, and we have nothing to send the MCU. This means we likely
-			 * woke up because a new message became available after smsg was set at the
-			 * top of this loop. Loop around in an attempt to grab that message.
+			 * The data ready IRQ has not fired since our last transaction, and we
+			 * have nothing to send the MCU. This means we likely woke up because
+			 * a new message became available after smsg was set at the top of this
+			 * loop. Loop around in an attempt to grab that message.
 			 */
 			continue;
 		}
@@ -1484,9 +1453,6 @@ static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 	/* Reset flag to indicate a wake attempt is in progress. */
 	devdata->wakeup_handled = false;
 
-	/* Assume legacy polling mode until messaging from MCU proves otherwise. */
-	devdata->use_irq_mode = false;
-
 	/*
 	 * If supported, attempt to wake the MCU by sending it a dummy SPI
 	 * transaction. The MCU will wake on CS toggle.
@@ -1789,15 +1755,6 @@ static irqreturn_t isr_data_ready(int irq, void *p)
 	struct syncboss_dev_data *devdata = (struct syncboss_dev_data *)p;
 
 	devdata->data_ready_fired = true;
-
-	if (!devdata->use_irq_mode) {
-		/*
-		 * When using legacy polling mode, this ISR will only fire if the
-		 * MCU has rebooted. Reset the transaction counter to 0 so that
-		 * process_rx_data() will query the wake-up reason again.
-		 */
-		atomic64_set(&devdata->transaction_ctr, 0);
-	}
 
 	if (unlikely(!devdata->wakeup_handled)) {
 		/* MCU just woke up, so set the last_reset_time_ms */
@@ -2213,9 +2170,10 @@ static int syncboss_suspend(struct device *dev)
 	}
 
 	if (devdata->streaming_client_count > 0) {
-		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPEND, NULL);
 		dev_info(dev, "stopping streaming for system suspend");
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPENDING, NULL);
 		stop_streaming_locked(devdata);
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_SUSPENDED, NULL);
 	}
 	mutex_unlock(&devdata->state_mutex);
 
@@ -2233,11 +2191,12 @@ static void do_syncboss_resume_work(struct work_struct *work)
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 	if (devdata->streaming_client_count > 0) {
 		dev_info(dev, "resuming streaming after system suspend");
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUMING, NULL);
 		status = start_streaming_locked(devdata);
 		if (status)
 			dev_err(dev, "%s: failed to resume streaming (%d)", __func__, status);
 		else
-			raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUME, NULL);
+			raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUMED, NULL);
 	}
 
 	 // Release mutex acquired by syncboss_resume()

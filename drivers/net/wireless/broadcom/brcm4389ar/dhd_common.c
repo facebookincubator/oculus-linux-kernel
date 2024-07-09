@@ -4818,8 +4818,7 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 
 	case WLC_E_ASSOC_IND:
 	case WLC_E_REASSOC_IND:
-
-		DHD_EVENT(("MACEVENT: %s, MAC %s\n", event_name, eabuf));
+		DHD_EVENT(("MACEVENT: %s, MAC %s, reason %d\n", event_name, eabuf, (int)reason));
 #ifdef REPORT_FATAL_TIMEOUTS
 		if (status != WLC_E_STATUS_SUCCESS) {
 			dhd_clear_join_error(dhd_pub, WLC_SSID_MASK | WLC_WPA_MASK);
@@ -6211,8 +6210,8 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 				del_sta = FALSE;
 			}
 #endif /* WL_CFG80211 */
-			DHD_EVENT(("%s: Link event %d, flags %x, status %x, role %d, del_sta %d\n",
-				__FUNCTION__, type, flags, status, role, del_sta));
+			DHD_EVENT(("%s: Link event %d, flags %x, status %x, role %d, del_sta %d, reason %d\n",
+				__FUNCTION__, type, flags, status, role, del_sta, reason));
 
 			if (del_sta) {
 				DHD_EVENT(("%s: Deleting STA " MACDBG "\n",

@@ -4,8 +4,11 @@ KernelVersion:	4.0
 Description:	UVC function directory
 
 		streaming_maxburst	- 0..15 (ss only)
-		streaming_maxpacket	- 1..1023 (fs), 1..3072 (hs/ss)
-		streaming_interval	- 1..16
+		streaming_maxpacket	- isoc: 1..1023 (fs), 1..3072 (hs/ss)
+					  bulk: 8/16/32/64 (fs), 512 (hs), 1024 (ss)
+		streaming_interval	- 1..16 (isoc only)
+		streaming_transfer	- isoc/bulk
+		streaming_maxpayload 	- 1024..65536 (bulk only)
 
 What:		/config/usb-gadget/gadget/functions/uvc.name/control
 Date:		Dec 2014

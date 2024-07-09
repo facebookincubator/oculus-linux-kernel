@@ -45,7 +45,6 @@
 
 /* SPI data magic numbers used to identify message validity and protocol versions */
 #define SPI_TX_DATA_MAGIC_NUM 0xDEFEC8ED
-#define SPI_RX_DATA_MAGIC_NUM_POLLING_MODE 0xDEFEC8ED
 #define SPI_RX_DATA_MAGIC_NUM_IRQ_MODE 0xD00D1E8D
 #define SPI_RX_DATA_MAGIC_NUM_MCU_BUSY 0xCACACACA
 
@@ -66,9 +65,7 @@
  * These are SPI message types that the driver explicitly monitors and
  * sends to MCU firmware. They must be kept in sync with the MCU values.
  */
-#define SYNCBOSS_GET_DATA_MESSAGE_TYPE 2
 #define SYNCBOSS_SHUTDOWN_MESSAGE_TYPE 90
-#define SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE 244
 
 /* Device stats (informational) */
 struct syncboss_stats {
@@ -327,12 +324,6 @@ struct syncboss_dev_data {
 
 	/* True if the send timer has fired but has not yet been handled */
 	bool send_timer_fired;
-
-	/*
-	 * True if MCU support IRQ-based transaction. False for
-	 * legacy polling mode.
-	 */
-	bool use_irq_mode;
 
 	/* DebugFS nodes */
 	struct dentry *dentry;

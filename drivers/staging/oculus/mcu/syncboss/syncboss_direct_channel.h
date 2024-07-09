@@ -5,11 +5,9 @@
 
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
+#include <linux/dma-fence.h>
 #include <linux/list.h>
 #include <linux/syncboss/messages.h>
-
-/* This is the max size of data payload for sensor direct channel. */
-#define SYNCBOSS_DIRECT_CHANNEL_MAX_SENSOR_DATA_SIZE (16 * sizeof(float))
 
 struct direct_channel_dev_data {
 	/* Pointer to this device's on device struct, for convenience */
@@ -35,6 +33,11 @@ struct direct_channel_dev_data {
 	/* Notifier blocks for syncboss state changes and received packets */
 	struct notifier_block syncboss_state_nb;
 	struct notifier_block rx_packet_nb;
+
+#ifdef CONFIG_DEBUG_FS
+	/* DebugFS nodes */
+	struct dentry *dentry;
+#endif
 };
 
 struct channel_dma_buf_info {
@@ -50,15 +53,36 @@ struct direct_channel_data {
 	u32 counter;
 };
 
+struct channel_client_entry;
+
+struct syncboss_dma_fence {
+	struct dma_fence fence;
+	struct channel_client_entry *client;
+
+	/* We use a read side fence to enable readers of the direct
+	 * channel dma-buf fd to wait for new data.
+	 *
+	 * The write side fence is used to rearm the read side fence -
+	 * waiting on the write side fence will cause a new unsignaled
+	 * read side fence to be created - which marks the dma_buf's
+	 * file descriptor as not having any read data.
+	 */
+	bool read;
+};
+
 struct channel_client_entry {
 	struct list_head list_entry;
 	struct channel_dma_buf_info dma_buf_info;
 	struct direct_channel_data channel_data;
+	struct direct_channel_dev_data *devdata;
 	struct file *file;
 	u8 wake_epoll;
+	spinlock_t fence_lock;
+	struct syncboss_dma_fence *active_fence;
+	atomic_t reader_waiting;
 	int (*direct_channel_distribute)(struct direct_channel_dev_data *devdata,
-					  struct channel_client_entry *client_data,
-					  const struct syncboss_data *packet);
+					 struct channel_client_entry *client_data,
+					 const struct rx_packet_info *packet_info);
 };
 
 #endif /* _SYNCBOSS_DIRECT_CHANNEL_H */
