@@ -1,0 +1,10 @@
+/dts-v1/;
+/plugin/;
+
+#include "starlet-proto.dtsi"
+
+/ {
+	model = "Starlet Dev2";
+	compatible = "qcom,bengal", "oculus,starlet", "oculus,starlet-dev2";
+	qcom,board-id = <34 0x0d>, <34 0x0e>;
+};

@@ -1,0 +1,28 @@
+#include <dt-bindings/iio/qcom,spmi-vadc.h>
+
+// This file contains overides applicable to early starlet protypes and dev
+// boards: Dev2 and Proto2, but not EVT or beyond.
+
+&tlmm {
+	syncboss_nrf {
+		syncboss_reset_proto_default: syncboss_reset_proto_default {
+			mux {
+				pins = "gpio65";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio65";
+				drive-strength = <6>;
+				// No external pull-down on starlet-proto devices
+				bias-pull-down;
+			};
+		};
+	};
+};
+
+&qupv3_se0_spi {
+	syncboss_nrf@0 {
+		pinctrl-0 = <&syncboss_reset_proto_default &syncboss_wakeup>;
+	};
+};

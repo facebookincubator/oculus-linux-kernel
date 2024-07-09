@@ -1,0 +1,169 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/delete-node/ &adsp_loader;
+/delete-node/ &adsp_mem;
+/delete-node/ &afe;
+/delete-node/ &afe_loopback_tx;
+/delete-node/ &audio_apr;
+/delete-node/ &bcl_sensor;
+/delete-node/ &bcl_soc;
+/delete-node/ &cdsp_sec_mem;
+/delete-node/ &compr;
+/delete-node/ &compress;
+/delete-node/ &cont_splash_memory;
+/delete-node/ &cpu0_cpu_ddr_lat;
+/delete-node/ &cpu0_cpu_ddr_latfloor;
+/delete-node/ &cpu0_memlat_cpugrp;
+/delete-node/ &cpu4_cpu_ddr_lat;
+/delete-node/ &cpu4_cpu_ddr_latfloor;
+/delete-node/ &cpu4_memlat_cpugrp;
+/delete-node/ &dai_dp;
+/delete-node/ &dai_dp1;
+/delete-node/ &dai_pri_auxpcm;
+/delete-node/ &dai_pri_spdif_rx;
+/delete-node/ &dai_pri_spdif_tx;
+/delete-node/ &dai_sec_auxpcm;
+/delete-node/ &dai_sec_spdif_rx;
+/delete-node/ &dai_sec_spdif_tx;
+/delete-node/ &dai_tert_auxpcm;
+/delete-node/ &dai_quat_auxpcm;
+/delete-node/ &dai_quin_auxpcm;
+/delete-node/ &dai_sen_auxpcm;
+/delete-node/ &dfps_data_memory;
+/delete-node/ &disp_rdump_memory;
+/delete-node/ &dispcc;
+/delete-node/ &gpubw;
+/delete-node/ &gpucc;
+/delete-node/ &hdmi_dba;
+/delete-node/ &hostless;
+/delete-node/ &ipa_hw;
+/delete-node/ &ipa_smmu_ap;
+/delete-node/ &ipa_smmu_uc;
+/delete-node/ &ipa_smmu_wlan;
+/delete-node/ &jtag_mm0;
+/delete-node/ &jtag_mm1;
+/delete-node/ &jtag_mm2;
+/delete-node/ &jtag_mm3;
+/delete-node/ &jtag_mm4;
+/delete-node/ &jtag_mm5;
+/delete-node/ &jtag_mm6;
+/delete-node/ &jtag_mm7;
+/delete-node/ &kgsl_msm_iommu;
+/delete-node/ &kgsl_smmu;
+/delete-node/ &loopback;
+/delete-node/ &loopback1;
+/delete-node/ &lsm;
+/delete-node/ &mdss_dsi_phy0;
+/delete-node/ &mdss_dsi0;
+/delete-node/ &mdss_dsi0_pll;
+/delete-node/ &mdss_mdp;
+/delete-node/ &mdss_rotator;
+/delete-node/ &msm_dai_mi2s;
+/delete-node/ &msm_dai_cdc_dma;
+/delete-node/ &msm_gpu;
+/delete-node/ &msm_vidc;
+/delete-node/ &pcm0;
+/delete-node/ &pcm1;
+/delete-node/ &pcm2;
+/delete-node/ &pcm_dtmf;
+/delete-node/ &pcm_noirq;
+/delete-node/ &pil_adsp;
+/delete-node/ &pil_adsp_mem;
+/delete-node/ &pil_gpu;
+/delete-node/ &pil_gpu_mem;
+/delete-node/ &pil_ipa;
+/delete-node/ &pil_ipa_fw_mem;
+/delete-node/ &pil_ipa_gsi_mem;
+/delete-node/ &pil_video;
+/delete-node/ &pil_video_mem;
+/delete-node/ &pm8008_8;
+/delete-node/ &pm8008_9;
+/delete-node/ &pmi632_vib;
+/delete-node/ &qmi_tmd_devices;
+/delete-node/ &qupv3_se0_i2c;
+/delete-node/ &qupv3_se1_i2c;
+/delete-node/ &qupv3_se1_spi;
+/delete-node/ &qupv3_se2_i2c;
+/delete-node/ &qupv3_se3_4uart;
+/delete-node/ &qupv3_se5_spi;
+/delete-node/ &rmnet_ipa;
+/delete-node/ &routing;
+/delete-node/ &secure_cdsp_heap;
+/delete-node/ &secure_display_heap;
+/delete-node/ &secure_display_memory;
+/delete-node/ &stub_codec;
+/delete-node/ &tdm_pri_rx;
+/delete-node/ &tdm_pri_tx;
+/delete-node/ &tdm_sec_rx;
+/delete-node/ &tdm_sec_tx;
+/delete-node/ &tdm_tert_rx;
+/delete-node/ &tdm_tert_tx;
+/delete-node/ &tdm_quat_rx;
+/delete-node/ &tdm_quat_tx;
+/delete-node/ &tdm_quin_rx;
+/delete-node/ &tdm_quin_tx;
+/delete-node/ &tdm_sen_rx;
+/delete-node/ &tdm_sen_tx;
+/delete-node/ &trans_loopback;
+/delete-node/ &user_contig_mem;
+/delete-node/ &user_contig_heap;
+/delete-node/ &voice;
+/delete-node/ &voip;
+
+/ {
+	aliases {
+		/delete-property/ swr0;
+		/delete-property/ swr1;
+	};
+};
+
+&debugcc {
+	/delete-property/ qcom,dispcc;
+	/delete-property/ qcom,gpucc;
+};
+
+&pm6125_adc_tm_iio {
+	/delete-node/ camera_flash_therm;
+};
+
+&pm6125_vadc {
+	/delete-node/ camera_flash_therm;
+};
+
+&pmi632_adc_tm {
+	/delete-node/ skin_therm;
+};
+
+&soc {
+	/delete-node/ kgsl_iommu_test_device;
+	/delete-node/ qcom,msm-adsprpc-mem;
+	/delete-node/ qcom,msm-dai-fe;
+	/delete-node/ qcom,msm-dai-q6;
+
+	mdss_mdp: qcom,mdss_mdp {
+		// Empty entry to keep 'bengal-thermal-overlay.dtsi' happy after deleting
+		// it above.
+	};
+};
+
+&thermal_zones {
+	/delete-node/ cdsp-hvx-step;
+	/delete-node/ gpu-step;
+	/delete-node/ mdm-0-step;
+	/delete-node/ mdm-1-step;
+	/delete-node/ quiet-therm-step;
+
+	camera-lowf {
+		cooling-maps {
+			/delete-node/ adsp_vdd_cdev;
+			/delete-node/ modem_vdd_cdev;
+		};
+	};
+
+	mapss-lowf {
+		cooling-maps {
+			/delete-node/ adsp_vdd_cdev;
+			/delete-node/ modem_vdd_cdev;
+		};
+	};
+};

@@ -1,0 +1,14 @@
+/dts-v1/;
+/plugin/;
+
+#include "starlet-proto.dtsi"
+
+/ {
+	model = "Starlet Dev2 (SOM)";
+	compatible = "qcom,bengal", "oculus,starlet", "oculus,starlet-dev2";
+	qcom,board-id = <34 0x0b>, <34 0x0c>;
+};
+
+&pmi632_qg {
+	qcom,debug-batt-id-range = <45000 60000>;
+};

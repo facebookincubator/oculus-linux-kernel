@@ -1,0 +1,139 @@
+============================
+Oculus Virtual Sensor Driver
+============================
+
+This driver implements a virtual temperature sensor. It estimates the temperature of
+a region of a device without a physical thermistor via a linear combination of present
+physical thermistors.
+
+The driver registers with the thermal framework as a thermal sensor and can
+be configured as the sensor associated with a thermal zone defined in the device
+tree.
+
+The driver can support alternate calculations based on whether the device is charging
+or not via the defining of separate sets of values for each case.
+
+It has an optional fault detection feature that can detect a faulty component thermistor and
+replace the reading with an estimate generated using a highly correlated thermistor. The estimate
+is created by a coefficient-intercept calculation similar to how the main calculation is performed.
+
+Virtual Sensor Calculation
+--------------------------
+
+The virtual sensor temperature at time t is a linear combination of
+the intercept constant, sensor temperatures at time t, and the
+slope of sensor temperatures. Where the slope is defined as
+sensor(t) - sensor(t-1)
+
+VirtualSensor(t) = intercept + sensor1_coefficient*sensor1(t) + ...
+  + sensorN_coefficient*(t) +
+  sensor1_slopeCoefficient*( sensor1(t) - sensor1(t-1) ) + ...
+  + sensorN_slopeCoefficient*( sensorN(t) - sensorN(t-1) )
+
+Virtual Sensor Node
+-------------------
+
+Required properties:
+- compatible : Should be "oculus,virtual-sensor".
+- #thermal-sensor-cells : Required by thermal framework, should be 0.
+
+- thermal-zones : String list of the names of component thermal zones.
+
+- coefficients : Child node with holding the "charging" and "discharging" blocks.
+  - charging : Child node representing the values to be used when the device is charging.
+        - tz-coefficients : List of numerical values to multiply the thermal zone readings by.
+                Must align with `thermal-zones`.
+        - (optional) tz-slope-coefficients : List of numerical values to multiply the
+                previously gathered thermal zone readings by. Must align with `thermal-zones`.
+                Default 0 if not defined.
+        - intercept : Value to add to the final calculation.
+  - discharging : Child node representing the values to be used when the device is discharging.
+        - tz-coefficients : List of numerical values to multiply the thermal zone readings by.
+                Must align with `thermal-zones`.
+        - (optional) tz-slope-coefficients : List of numerical values to multiply the
+                previously gathered thermal zone readings by. Must align with `thermal-zones`.
+                Default 0 if not defined.
+        - intercept : Value to add to the final calculation.
+
+Optional properties:
+- thermal-zone-scaling-factors : List of values to multiply the readings returned from component
+        thermal zones by before use, in order to assure unit coherence. Default 1 if not defined.
+
+- fallback-thermal-zone : A thermal zone to use in lieu of the virtual sensor calculation in case
+        the calculation varies too widely from this zone. Not used if undefined.
+- fallback-thermal-zone-scaling-factor : Value to multiply the reading returned by
+        `fallback-thermal-zone` in order to assure unit coherence. Default 1 if not defined.
+        Requires definition of `fallback-thermal-zone`.
+- fallback-tolerance : Gap between the calculation and reading returned by `fallback-thermal-zone`
+        considered acceptable. Gaps exceeding this value in either direction will return the
+        reading from `fallback-thermal-zone` rather than the calculated value. Requires definition
+        of `fallback-thermal-zone`.
+
+- thermal-zone-fault-estimator-bounds : Length-2 list of values representing the range in which
+        a component thermistor should be considered functional. If a component thermal zone returns
+        a reading outside this range, it will be replaced with an estimate as configured by
+        `thermal-zone-fault-estimator-zones` and `thermal-zone-fault-estimator-values`. Definition
+        enables fault detection feature and requires definition of the aforementioned properties.
+- thermal-zone-fault-estimator-zones : String list of the names of thermal zones to be used as
+        estimators in the case where the associated thermal zone is considered faulty. Estimator
+        zones are considered associated with the zones they align with in the `thermal-zones`
+        property. If the feature is enabled, but a component zone will not use an estimator, the
+        list entry should be "NA". Requires definition of `thermal-zone-estimator-bounds` and
+        `thermal-zone-fault-estimator-values`.
+- thermal-zone-fault-estimator-values : List of length-2 lists of values representing
+        coefficient-intercept pairs for each estimator zone. Must align with `thermal-zones` and
+        `thermal-zone-fault-estimator-zones`. Requires definition of `thermal-zone-estimator-bounds`
+        and `thermal-zone-fault-estimator-values`.
+
+Example:
+
+&thermal_zones {
+        batt-virt-fan {
+                polling-delay = <1000>;
+                polling-delay-passive = <0>;
+                thermal-sensors = <&battery_virtual_sensor>;
+        };
+};
+
+battery_virtual_sensor: battery_virtual_sensor {
+        compatible = "oculus,virtual-sensor";
+        status = "ok";
+        #thermal-sensor-cells = <0>;
+
+        thermal-zones = "batt-usr", "pcb3-usr", "pcb2-usr", "pcb1-usr",
+                        "rfpa-usr", "imu-usr";
+        thermal-zone-scaling-factors = <100 1 1 1 1 1>;
+
+        thermal-zone-fault-estimator-bounds = <(-40000) 125000>;
+        thermal-zone-fault-estimator-zones =
+                        "NA",
+                        "rfpa-usr",
+                        "imu-usr",
+                        "imu-usr",
+                        "pcb3-usr",
+                        "pcb2-usr";
+        thermal-zone-fault-estimator-values =
+                        <0 0>,
+                        <9712 721>,
+                        <9926 313>,
+                        <10186 (-477)>,
+                        <10271 (-662)>,
+                        <10005 (-102)>;
+
+        fallback-thermal-zone = "batt-usr";
+        fallback-thermal-zone-scaling-factor = <100>;
+        fallback-tolerance = <8000>;
+
+        coefficients {
+                charging {
+                        tz-coefficients = <10000 0 0 0 0 0>;
+                        tz-slope-coefficients = <0 0 0 0 0 0>;
+                        intercept = <0>;
+                };
+                discharging {
+                        tz-coefficients = <10799 5790 (-2178) (-4030) (-6841) 6364>;
+                        tz-slope-coefficients = <100 200 300 400 500 600>;
+                        intercept = <4261>;
+                };
+        };
+};

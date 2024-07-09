@@ -1,0 +1,56 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/iio/qcom,spmi-vadc.h>
+
+/ {
+	model = "Daedalus";
+	compatible = "qcom,bengal", "oculus,starlet", "oculus,starlet-daedalus";
+	qcom,board-id = <34 0xF1>;
+};
+
+&pmi632_charger {
+	qcom,fv-max-uv = <4450000>;
+};
+
+&pmi632_qg {
+	io-channels = <&pmi632_vadc ADC_BAT_THERM_PU2>,
+					<&pmi632_vadc ADC_BAT_ID_PU2>;
+};
+
+&pmi632_vadc {
+	bat_therm_30k {
+		qcom,lut-index = <0>;
+	};
+};
+
+&L5A {
+	regulator-always-on;
+	qcom,init-voltage = <2960000>;
+};
+
+&soc {
+	battery_data: qcom,battery-data {
+		qcom,batt-id-range-pct = <15>;
+		#include "qg-batterydata-starlet-MAGPIE-1387mAH-PMI632.dtsi"
+	};
+
+	meta,hubert-swd {
+		compatible = "meta,swd";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&hubert_float_swd>;
+
+		meta,swd-flavor = "stm32l47xxx";
+		meta,fw-path = "daedalus.bin";
+		meta,swd-clk = <&tlmm 82 0>;
+		meta,swd-io  = <&tlmm 83 0>;
+		meta,swd-core-supply = <&pm6125_l13>;
+		meta,swd-core-voltage-level = <1808000 1808000>;
+		meta,flash-block-size = <256>;
+		meta,flash-page-size = <2048>;
+		meta,flash-page-count = <256>;
+		meta,flash-page-retained-count = <1>;
+		meta,flash-page-bootloader-protected-count = <0>;
+		meta,flash-bank-count = <2>;
+	};
+};

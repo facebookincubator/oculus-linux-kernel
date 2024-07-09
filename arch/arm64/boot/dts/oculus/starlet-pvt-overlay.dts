@@ -1,0 +1,8 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	model = "Starlet PVT";
+	compatible = "qcom,bengal", "oculus,starlet", "oculus,starlet-pvt";
+	qcom,board-id = <34 0x23>, <34 0x24>, <34 0x25>, <34 0x26>;
+};

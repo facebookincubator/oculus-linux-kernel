@@ -1,0 +1,129 @@
+menuconfig META_MCU
+	bool "Meta MCU drivers"
+	default y
+	help
+	  Enable support for Meta MCU drivers and features
+
+if META_MCU
+
+config META_SWD
+	tristate "Meta MCU SWD Driver"
+	depends on META_FW_HELPERS
+	default y
+	help
+	  Meta SWD Driver
+
+config META_SWD_DEBUG
+	bool "Meta MCU SWD Debug support"
+	depends on DEBUG_FS && META_SWD
+	default n
+	help
+	  Meta SWD Debug support
+
+config META_SWD_HUBERT
+	bool "Hubert SWD Driver"
+	depends on META_SWD
+	default n
+	help
+	  Meta Hubert SWD Support
+
+config META_SWD_QM35
+	bool "QM35 SWD Driver"
+	depends on META_SWD
+	default n
+	help
+	  Meta QM35 SWD Support
+
+config META_SWD_STM32G0
+	bool "STM32G0 SWD Driver"
+	depends on META_SWD
+	default n
+	help
+	  Meta STM32G0 SWD Support
+
+config META_SWD_SYNCBOSS_NRF52XXX
+	bool "Syncboss SWD Driver for NRF52XXX"
+	depends on META_SWD
+	default y
+	help
+	  Meta Syncboss SWD Support
+
+config META_SWD_SYNCBOSS_NRF5340
+	bool "Syncboss SWD Driver for NRF5340"
+	depends on META_SWD
+	default n
+	help
+	  Meta Syncboss SWD Support for NRF5340
+
+config META_SWD_STM32L4
+	bool "STM32L4 SWD Driver"
+	depends on META_SWD
+	default n
+	help
+	  Meta STM32L4 SWD Support
+
+config SYNCBOSS_SPI
+	tristate "Syncboss SPI Driver"
+	depends on MISCFIFO && SPI && META_FW_HELPERS
+	default y
+	help
+	  Meta Syncboss Driver
+
+config SYNCBOSS_DEBUG
+	bool "Syncboss SPI Driver Debug Facilities"
+	depends on SYNCBOSS_SPI && DEBUG_FS
+	default y
+	help
+	  Meta Syncboss SPI Driver Debug Facilities
+
+config SYNCBOSS_DIRECTCHANNEL
+	tristate "Syncboss SPI Driver Direct Channel Support"
+	depends on SYNCBOSS_SPI
+	default n
+	help
+	  Meta Syncboss SPI Driver Direct Channel Support
+
+config SYNCBOSS_POWERSTATE
+	tristate "Syncboss PowerState Interface Support"
+	depends on SYNCBOSS_SPI
+	default n
+	help
+	  Syncboss powerstate and prox sensor notification driver
+
+config SYNCBOSS_NSYNC
+	tristate "Syncboss Nsync Interface Support"
+	depends on SYNCBOSS_SPI
+	default n
+	help
+	  Syncboss Nsync event notification driver
+
+config SYNCBOSS_MISCFIFO
+	tristate "Syncboss MiscFIFO Interface Support"
+	depends on SYNCBOSS_SPI
+	default n
+	help
+	  Syncboss MiscFIFO event notification driver
+
+choice
+	prompt "Syncboss driver mode"
+	default SYNCBOSS_STANDALONE
+
+config SYNCBOSS_STANDALONE
+	bool "Stand-alone"
+	help
+	  Build syncboss drivers for a stand-alone device (ex. HMD)
+
+config SYNCBOSS_PERIPHERAL
+	bool "Peripheral"
+	help
+	  Build syncboss drivers for a peripheral (ex. Controler)
+
+endchoice
+
+config META_FW_HELPERS
+	tristate "Meta MCU Helper Utilities"
+	default y
+	help
+	  Utility functions commonly used by MCU drivers
+
+endif # META_MCU

@@ -1,0 +1,312 @@
+&tlmm {
+	syncboss_nrf {
+		// 82 = SWDCLK
+		// 83 = SWDIO
+		hubert_float_swd: hubert_float_swd {
+			mux {
+				pins = "gpio82", "gpio83";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio82", "gpio83";
+				drive-strength = <6>;
+				bias-disable;
+				input-enable;
+			};
+		};
+
+		// 67 = SWDIO
+		// 65 = RESET
+		// 66 = SWDCLK
+		syncboss_float_swd: syncboss_float_swd {
+			mux {
+				pins = "gpio67", "gpio66";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio67", "gpio66";
+				drive-strength = <6>;
+				bias-disable;
+				input-enable;
+			};
+		};
+
+		syncboss_reset_default: syncboss_reset_default {
+			mux {
+				pins = "gpio65";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio65";
+				drive-strength = <6>;
+				bias-disable;
+				output-low;
+			};
+		};
+
+		syncboss_spi_csn_active: syncboss_spi_csn_active {
+			mux {
+				pins = "gpio3";
+				function = "qup0";
+			};
+
+			config {
+				pins = "gpio3";
+				drive-strength = <6>;
+				bias-pull-up;
+			};
+		};
+
+		syncboss_spi_csn_sleep: syncboss_spi_csn_sleep {
+			mux {
+				pins = "gpio3";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio3";
+				drive-strength = <6>;
+				bias-pull-up;
+			};
+		};
+
+		syncboss_spi_tx_rx_active: syncboss_spi_tx_rx_active {
+			mux {
+				pins = "gpio0", "gpio1", "gpio2";
+				function = "qup0";
+			};
+
+			config {
+				pins = "gpio0", "gpio1", "gpio2";
+				drive-strength = <6>;
+				bias-disable;
+			};
+		};
+
+		syncboss_spi_tx_rx_sleep: syncboss_spi_tx_rx_sleep {
+			mux {
+				pins = "gpio0", "gpio1", "gpio2";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio0", "gpio1", "gpio2";
+				drive-strength = <6>;
+				bias-disable;
+			};
+		};
+
+		syncboss_uart_active: syncboss_uart_active {
+			mux {
+				pins = "gpio69", "gpio70";
+				function = "qup1";
+			};
+
+			config {
+				pins = "gpio69", "gpio70";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		syncboss_uart_sleep_tx: syncboss_uart_sleep_tx {
+			mux {
+				pins = "gpio69";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio69";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+
+		syncboss_uart_sleep_rx: syncboss_uart_sleep_rx {
+			mux {
+				pins = "gpio70";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio70";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		syncboss_nsync: syncboss_nsync {
+			mux {
+				pins = "gpio18";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio18";
+				drive-strength = <6>;
+				bias-disable;
+				input-enable;
+			};
+		};
+
+		syncboss_wakeup: syncboss_wakeup {
+			mux {
+				pins = "gpio34";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio34";
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
+		hubert_uart_active: hubert_uart_active {
+			mux {
+				pins = "gpio16", "gpio17";
+				function = "qup5";
+			};
+
+			config {
+				pins = "gpio16", "gpio17";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		hubert_uart_sleep_tx: hubert_uart_sleep_tx {
+			mux {
+				pins = "gpio16";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio16";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+
+		hubert_uart_sleep_rx: hubert_uart_sleep_rx {
+			mux {
+				pins = "gpio17";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio17";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+	};
+};
+
+&qupv3_se0_spi {
+	status = "okay";
+
+	// Bump up priority to get better latency
+	qcom,rt;
+
+	// nRF requires >2us after clock stop, before raising CS.
+	// By default the delay is about 800us. Add 10 cycles at
+	// 8MHz (1.25us) to get us the rest of the way.
+	qcom,set-cs-clk-delay = <10>;
+
+	// Override default pinctrl to allow PUP on CSn
+	pinctrl-0 = <&syncboss_spi_csn_active>, <&syncboss_spi_tx_rx_active>;
+	pinctrl-1 = <&syncboss_spi_csn_sleep>, <&syncboss_spi_tx_rx_sleep>;
+
+	syncboss_nrf@0 {
+		compatible = "meta,syncboss-spi";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
+
+		meta,syncboss-reset  = <&tlmm 65 0>;
+		meta,syncboss-wakeup = <&tlmm 34 0>;
+		meta,hall-sensor-supply = <&pm6125_l5>;
+		meta,hall-sensor-voltage-level = <2960000 2960000>;
+		meta,mcu-core-supply = <&pm6125_l13>;
+		meta,mcu-core-voltage-level = <1808000 1808000>;
+		meta,imu-core-supply = <&pm6125_l13>;
+		meta,imu-core-voltage-level = <1808000 1808000>;
+		meta,mag-core-supply = <&pm6125_l13>;
+		meta,mag-core-voltage-level = <1808000 1808000>;
+		meta,rf-amp-supply = <&pm6125_l21>;
+		meta,rf-amp-voltage-level = <2952000 2952000>;
+
+		meta,syncboss-has-wake-on-spi;
+
+		swd@0 {
+			compatible = "meta,swd", "meta,syncboss-consumer";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			meta,swd-flavor = "nrf52832";
+			meta,fw-path = "syncboss-ipl-spl.bin";
+			meta,pin-reset = <&tlmm 65 0>;
+			meta,swd-clk = <&tlmm 66 0>;
+			meta,swd-io  = <&tlmm 67 0>;
+			meta,swd-core-supply = <&pm6125_l13>;
+			meta,swd-core-voltage-level = <1808000 1808000>;
+			meta,flash-block-size = <512>;
+			meta,flash-page-size = <4096>;
+			meta,flash-page-count = <128>;
+			meta,flash-page-bootloader-protected-count = <0>;
+			meta,flash-page-retained-count = <21>;
+
+			meta,swd-provisioning;
+		};
+
+		powerstate@0 {
+			compatible = "meta,syncboss-powerstate", "meta,syncboss-consumer";
+		};
+
+		nsync@0 {
+			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_nsync>;
+
+			interrupt-parent = <&tlmm>;
+			interrupts = <18 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "nsync";
+		};
+
+		miscfifo@0 {
+			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
+		};
+	};
+};
+
+/* Syncboss HS UART Instance */
+&qupv3_se1_4uart {
+	status = "okay";
+
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&syncboss_uart_active>;
+	pinctrl-1 = <&syncboss_uart_sleep_tx &syncboss_uart_sleep_rx>;
+	interrupts-extended = <&intc GIC_SPI 328 IRQ_TYPE_LEVEL_HIGH>;
+	qcom,allow-suspend;
+};
+
+/* ATSAM HS UART QUP5 */
+&qupv3_se5_4uart {
+	status = "okay";
+
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&hubert_uart_active>;
+	pinctrl-1 = <&hubert_uart_sleep_tx &hubert_uart_sleep_rx>;
+	interrupts-extended = <&intc GIC_SPI 332 IRQ_TYPE_LEVEL_HIGH>;
+	qcom,allow-suspend;
+};
