@@ -118,7 +118,8 @@ static ssize_t debugfs_state_info_read(struct file *file,
 	/* Dump clock information */
 	len += snprintf((buf + len), (SZ_4K - len), "\nClock Info:\n");
 	len += snprintf((buf + len), (SZ_4K - len),
-			"\tBYTE_CLK = %u, PIXEL_CLK = %u, ESC_CLK = %u\n",
+			"\tBIT_CLK = %u, BYTE_CLK = %u, PIXEL_CLK = %u, ESC_CLK = %u\n",
+			dsi_ctrl->host_config.bit_clk_rate_hz,
 			dsi_ctrl->clk_freq.byte_clk_rate,
 			dsi_ctrl->clk_freq.pix_clk_rate,
 			dsi_ctrl->clk_freq.esc_clk_rate);

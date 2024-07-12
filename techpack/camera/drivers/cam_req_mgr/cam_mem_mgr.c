@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -257,6 +257,9 @@ int cam_mem_mgr_init(void)
 
 	atomic_set(&cam_mem_mgr_state, CAM_MEM_MGR_INITIALIZED);
 
+	mutex_init(&tbl.eb_tbl.eb_mutex);
+	hash_init(tbl.eb_tbl.eb_map);
+
 	cam_mem_mgr_create_debug_fs();
 	cam_common_register_mini_dump_cb(cam_mem_mgr_mini_dump_cb,
 		"cam_mem");
@@ -269,9 +272,28 @@ put_heaps:
 	return rc;
 }
 
-static int32_t cam_mem_get_slot(void)
+static int32_t cam_mem_get_slot_for_dmabuf(struct dma_buf *dmabuf, bool *exist)
 {
 	int32_t idx;
+	struct cam_mem_buf_queue *priv;
+
+	if (!dmabuf)
+		return -EINVAL;
+
+	if (dmabuf && exist) {
+		mutex_lock(&tbl.eb_tbl.eb_mutex);
+		hash_for_each_possible(tbl.eb_tbl.eb_map, priv, hlist, PTR_TO_U64(dmabuf)) {
+			if (dmabuf == priv->dma_buf) {
+				idx = priv->bufq_idx;
+				*exist = true;
+				mutex_unlock(&tbl.eb_tbl.eb_mutex);
+				CAM_DBG(CAM_MEM, "is_internal %d index %d dmabuf %pK",
+					tbl.bufq[idx].is_internal, idx, dmabuf);
+				return idx;
+			}
+		}
+		mutex_unlock(&tbl.eb_tbl.eb_mutex);
+	}
 
 	mutex_lock(&tbl.m_lock);
 	if (!tbl.bitmap) {
@@ -981,6 +1003,38 @@ multi_map_fail:
 	return rc;
 }
 
+static int cam_mem_add_buf_to_eb(int index)
+{
+	if ((index >= CAM_MEM_BUFQ_MAX) || (index <= 0)) {
+		CAM_ERR(CAM_MEM, "index %d", index);
+		return -EINVAL;
+	}
+
+	mutex_lock(&tbl.eb_tbl.eb_mutex);
+	hash_add(tbl.eb_tbl.eb_map, &tbl.bufq[index].hlist, PTR_TO_U64(tbl.bufq[index].dma_buf));
+	tbl.bufq[index].bufq_idx = index;
+	mutex_unlock(&tbl.eb_tbl.eb_mutex);
+
+	CAM_DBG(CAM_MEM, "existing buf table index %d dmabuf %pK", index, tbl.bufq[index].dma_buf);
+
+	return 0;
+}
+
+static void cam_mem_remove_buf_from_eb(int index)
+{
+	if ((index <= 0) || (index >= CAM_MEM_BUFQ_MAX)) {
+		CAM_ERR(CAM_MEM, "Invalid input index %d", index);
+		return;
+	}
+
+	mutex_lock(&tbl.eb_tbl.eb_mutex);
+	hash_del(&tbl.bufq[index].hlist);
+	tbl.bufq[index].bufq_idx = 0;
+	mutex_unlock(&tbl.eb_tbl.eb_mutex);
+
+	CAM_DBG(CAM_MEM, "remove buf from index %d", index);
+}
+
 int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 {
 	int rc;
@@ -1033,7 +1087,7 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 		return rc;
 	}
 
-	idx = cam_mem_get_slot();
+	idx = cam_mem_get_slot_for_dmabuf(dmabuf, NULL);
 	if (idx < 0) {
 		CAM_ERR(CAM_MEM, "Failed in getting mem slot, idx=%d", idx);
 		rc = -ENOMEM;
@@ -1094,6 +1148,7 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 		if (rc) {
 			CAM_ERR(CAM_MEM, "dmabuf: %pK mapping failed: %d",
 				dmabuf, rc);
+			mutex_unlock(&tbl.bufq[idx].q_lock);
 			goto map_kernel_fail;
 		}
 	}
@@ -1112,6 +1167,15 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 	tbl.bufq[idx].is_imported = false;
 	kref_init(&tbl.bufq[idx].krefcount);
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_USER;
+
+	rc = cam_mem_add_buf_to_eb(idx);
+	if (rc < 0) {
+		CAM_ERR(CAM_MEM, "add buf to existing buf table failed dma_buf %pK idx %d",
+			tbl.bufq[idx].dma_buf, idx);
+		mutex_unlock(&tbl.bufq[idx].q_lock);
+		goto map_kernel_fail;
+	}
+
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 
 	cmd->out.buf_handle = tbl.bufq[idx].buf_handle;
@@ -1138,9 +1202,9 @@ int cam_mem_mgr_alloc_and_map(struct cam_mem_mgr_alloc_cmd *cmd)
 
 	return rc;
 
-map_kernel_fail:
-	mutex_unlock(&tbl.bufq[idx].q_lock);
 fastrpc_map_fail:
+	cam_mem_remove_buf_from_eb(idx);
+map_kernel_fail:
 	cam_mem_mgr_unmap_active_buf(idx);
 map_hw_fail:
 	cam_mem_put_slot(idx);
@@ -1149,30 +1213,14 @@ slot_fail:
 	return rc;
 }
 
-static bool cam_mem_util_is_map_internal(int32_t fd, unsigned i_ino)
-{
-	uint32_t i;
-	bool is_internal = false;
-
-	mutex_lock(&tbl.m_lock);
-	for_each_set_bit(i, tbl.bitmap, tbl.bits) {
-		if ((tbl.bufq[i].fd == fd) && (tbl.bufq[i].i_ino == i_ino)) {
-			is_internal = tbl.bufq[i].is_internal;
-			break;
-		}
-	}
-	mutex_unlock(&tbl.m_lock);
-
-	return is_internal;
-}
-
 int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 {
-	int32_t idx;
+	int32_t idx, i, mmu_hdl_idx = 0;
 	int rc;
 	struct dma_buf *dmabuf;
 	size_t len = 0, klen = 0;
 	bool is_internal = false;
+	bool is_exist = false;
 	unsigned long i_ino;
 	uintptr_t kvaddr = 0;
 
@@ -1207,14 +1255,26 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 
 	i_ino = file_inode(dmabuf->file)->i_ino;
 
-	is_internal = cam_mem_util_is_map_internal(cmd->fd, i_ino);
-
-	idx = cam_mem_get_slot();
+	idx = cam_mem_get_slot_for_dmabuf(dmabuf, &is_exist);
 	if (idx < 0) {
-		CAM_ERR(CAM_MEM, "Failed in getting mem slot, idx=%d, fd=%d",
-			idx, cmd->fd);
+		CAM_ERR(CAM_MEM, "Failed in getting mem slot, idx=%d, fd=%d", idx, cmd->fd);
 		rc = -ENOMEM;
 		goto slot_fail;
+	}
+
+	is_internal = tbl.bufq[idx].is_internal;
+
+	if (is_exist) {
+		CAM_DBG(CAM_MEM,
+			"buf map existed in queue, use the same slot index=%d fd=%d flags=0x%x num_hdl=%d buf handle=%x, len=%zu, i_ino=%lu is_internal=%d",
+			idx, cmd->fd, tbl.bufq[idx].flags, tbl.bufq[idx].num_hdl,
+			tbl.bufq[idx].buf_handle, tbl.bufq[idx].len, tbl.bufq[idx].i_ino,
+			is_internal);
+		for (i = 0; i < tbl.bufq[idx].num_hdl; i++)
+			CAM_DBG(CAM_MEM, "index %d mmu handle 0x%x iova_ptr:0x%lx",
+				i, tbl.bufq[idx].hdls[i], tbl.bufq[idx].iova[i]);
+
+		mmu_hdl_idx = tbl.bufq[idx].num_hdl;
 	}
 
 	if ((cmd->flags & CAM_MEM_FLAG_HW_READ_WRITE) ||
@@ -1227,7 +1287,7 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 			dmabuf,
 			&len,
 			CAM_SMMU_REGION_IO,
-			tbl.bufq[idx].iova,
+			&tbl.bufq[idx].iova[mmu_hdl_idx],
 			is_internal);
 		if (rc) {
 			CAM_ERR(CAM_MEM,
@@ -1271,19 +1331,37 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 	tbl.bufq[idx].kmdvaddr = kvaddr;
 	tbl.bufq[idx].dma_buf = dmabuf;
 	tbl.bufq[idx].len = len;
-	tbl.bufq[idx].num_hdl = cmd->num_hdl;
-	memcpy(tbl.bufq[idx].hdls, cmd->mmu_hdls,
+	tbl.bufq[idx].num_hdl = mmu_hdl_idx + cmd->num_hdl;
+	memcpy(&tbl.bufq[idx].hdls[mmu_hdl_idx], cmd->mmu_hdls,
 		sizeof(int32_t) * cmd->num_hdl);
 
 	tbl.bufq[idx].is_imported = true;
 	tbl.bufq[idx].is_internal = is_internal;
-	kref_init(&tbl.bufq[idx].krefcount);
+
+	if (!is_exist) {
+		kref_init(&tbl.bufq[idx].krefcount);
+	} else {
+		kref_get(&tbl.bufq[idx].krefcount);
+		dma_buf_put(dmabuf);
+	}
+
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_USER;
+
+	if (!is_exist) {
+		rc = cam_mem_add_buf_to_eb(idx);
+		if (rc < 0) {
+			CAM_ERR(CAM_MEM, "add buf to existing buf table failed dma_buf %pK idx %d",
+				tbl.bufq[idx].dma_buf, idx);
+			goto map_kernel_fail;
+		}
+	}
+
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 
 	cmd->out.buf_handle = tbl.bufq[idx].buf_handle;
 	cmd->out.vaddr = 0;
 	cmd->out.size = (uint32_t)len;
+
 	CAM_DBG(CAM_MEM,
 		"fd=%d, flags=0x%x, num_hdl=%d, idx=%d, buf handle=%x, len=%zu, i_ino=%lu",
 		cmd->fd, cmd->flags, cmd->num_hdl, idx, cmd->out.buf_handle,
@@ -1412,6 +1490,9 @@ static int cam_mem_mgr_cleanup_table(void)
 			dma_buf_put(tbl.bufq[i].dma_buf);
 			tbl.bufq[i].dma_buf = NULL;
 		}
+
+		cam_mem_remove_buf_from_eb(i);
+
 		tbl.bufq[i].fd = -1;
 		tbl.bufq[i].i_ino = 0;
 		tbl.bufq[i].flags = 0;
@@ -1535,6 +1616,8 @@ static void cam_mem_util_unmap(struct kref *kref)
 	if (tbl.bufq[idx].dma_buf)
 		dma_buf_put(tbl.bufq[idx].dma_buf);
 
+	cam_mem_remove_buf_from_eb(idx);
+
 	tbl.bufq[idx].fd = -1;
 	tbl.bufq[idx].i_ino = 0;
 	tbl.bufq[idx].dma_buf = NULL;
@@ -1613,8 +1696,8 @@ int cam_mem_mgr_release(struct cam_mem_mgr_release_cmd *cmd)
 
 	idx = CAM_MEM_MGR_GET_HDL_IDX(cmd->buf_handle);
 	if (idx >= CAM_MEM_BUFQ_MAX || idx <= 0) {
-		CAM_ERR(CAM_MEM, "Incorrect index %d extracted from mem handle",
-			idx);
+		CAM_ERR(CAM_MEM, "Incorrect index %d extracted from mem handle 0x%x",
+			idx, cmd->buf_handle);
 		return -EINVAL;
 	}
 
@@ -1725,7 +1808,7 @@ int cam_mem_mgr_request_mem(struct cam_mem_mgr_request_desc *inp,
 	smmu_hdl = inp->smmu_hdl;
 	num_hdl = 1;
 
-	idx = cam_mem_get_slot();
+	idx = cam_mem_get_slot_for_dmabuf(buf, NULL);
 	if (idx < 0) {
 		CAM_ERR(CAM_MEM, "Failed in getting mem slot, idx=%d", idx);
 		rc = -ENOMEM;
@@ -1749,6 +1832,14 @@ int cam_mem_mgr_request_mem(struct cam_mem_mgr_request_desc *inp,
 	tbl.bufq[idx].is_imported = false;
 	kref_init(&tbl.bufq[idx].krefcount);
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_KERNEL;
+
+	rc = cam_mem_add_buf_to_eb(idx);
+	if (rc < 0) {
+		CAM_ERR(CAM_MEM, "add buf to existing buf table failed dma_buf %pK idx %d",
+			tbl.bufq[idx].dma_buf, idx);
+		mutex_unlock(&tbl.bufq[idx].q_lock);
+		goto add_eb_fail;
+	}
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 
 	out->kva = kvaddr;
@@ -1762,6 +1853,9 @@ int cam_mem_mgr_request_mem(struct cam_mem_mgr_request_desc *inp,
 		idx, buf, i_ino, inp->flags, mem_handle);
 
 	return rc;
+
+add_eb_fail:
+	cam_mem_put_slot(idx);
 slot_fail:
 	cam_smmu_unmap_kernel_iova(inp->smmu_hdl,
 		buf, region);
@@ -1889,7 +1983,7 @@ int cam_mem_mgr_reserve_memory_region(struct cam_mem_mgr_request_desc *inp,
 	smmu_hdl = inp->smmu_hdl;
 	num_hdl = 1;
 
-	idx = cam_mem_get_slot();
+	idx = cam_mem_get_slot_for_dmabuf(buf, NULL);
 	if (idx < 0) {
 		CAM_ERR(CAM_MEM, "Failed in getting mem slot, idx=%d", idx);
 		rc = -ENOMEM;
@@ -1913,6 +2007,14 @@ int cam_mem_mgr_reserve_memory_region(struct cam_mem_mgr_request_desc *inp,
 	tbl.bufq[idx].is_imported = false;
 	kref_init(&tbl.bufq[idx].krefcount);
 	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_KERNEL;
+
+	rc = cam_mem_add_buf_to_eb(idx);
+	if (rc < 0) {
+		CAM_ERR(CAM_MEM, "add buf to existing buf table failed dma_buf %pK idx %d",
+			tbl.bufq[idx].dma_buf, idx);
+		mutex_unlock(&tbl.bufq[idx].q_lock);
+		goto add_eb_fail;
+	}
 	mutex_unlock(&tbl.bufq[idx].q_lock);
 
 	out->kva = kvaddr;
@@ -1924,6 +2026,8 @@ int cam_mem_mgr_reserve_memory_region(struct cam_mem_mgr_request_desc *inp,
 
 	return rc;
 
+add_eb_fail:
+	cam_mem_put_slot(idx);
 slot_fail:
 	cam_smmu_release_buf_region(region, smmu_hdl);
 smmu_fail:

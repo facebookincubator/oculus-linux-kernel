@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -139,12 +139,14 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 }
 
 QDF_STATUS wlan_mlo_parse_bcn_prbresp_t2lm_ie(
-		struct wlan_t2lm_context *t2lm_ctx, uint8_t *ie)
+		struct wlan_t2lm_context *t2lm_ctx, uint8_t *ie,
+		uint32_t frame_len)
 {
 	struct wlan_t2lm_info t2lm = {0};
 	struct extn_ie_header *ext_ie_hdr;
 	QDF_STATUS retval;
 	int i = 0;
+	uint32_t ie_len_parsed = 0;
 
 	qdf_mem_zero(&t2lm_ctx->established_t2lm,
 		     sizeof(struct wlan_mlo_t2lm_ie));
@@ -154,9 +156,18 @@ QDF_STATUS wlan_mlo_parse_bcn_prbresp_t2lm_ie(
 	t2lm_ctx->upcoming_t2lm.t2lm.direction = WLAN_T2LM_INVALID_DIRECTION;
 
 	for (i = 0; i < WLAN_MAX_T2LM_IE; i++) {
-		if (!ie) {
-			t2lm_err("ie is null");
+		if (!ie || !frame_len) {
+			t2lm_debug("ie is null or len is 0");
 			return QDF_STATUS_E_NULL_VALUE;
+		}
+
+		if (frame_len == ie_len_parsed)
+			return QDF_STATUS_SUCCESS;
+
+		if (frame_len < (ie_len_parsed +
+				 sizeof(struct extn_ie_header))) {
+			t2lm_debug("Frame length is lesser than parsed T2LM IE header length");
+			continue;
 		}
 
 		ext_ie_hdr = (struct extn_ie_header *)ie;
@@ -164,6 +175,12 @@ QDF_STATUS wlan_mlo_parse_bcn_prbresp_t2lm_ie(
 		if (!(ext_ie_hdr->ie_id == WLAN_ELEMID_EXTN_ELEM &&
 		      ext_ie_hdr->ie_extn_id == WLAN_EXTN_ELEMID_T2LM))
 			continue;
+
+		ie_len_parsed += ext_ie_hdr->ie_len + sizeof(struct ie_header);
+		if (frame_len < ie_len_parsed) {
+			t2lm_debug("Frame length is lesser than parsed T2LM IE length");
+			continue;
+		}
 
 		t2lm.direction = WLAN_T2LM_INVALID_DIRECTION;
 		retval = wlan_mlo_parse_t2lm_info(ie, &t2lm);
@@ -206,8 +223,16 @@ QDF_STATUS wlan_mlo_parse_t2lm_ie(
 			return QDF_STATUS_E_NULL_VALUE;
 		}
 
-		if (frame_len < (ie_len_parsed + sizeof(struct ie_header))) {
-			t2lm_err("Frame length is lesser than parsed T2LM IE header length");
+		if (frame_len == ie_len_parsed) {
+			t2lm_debug("Received T2LM IEs are parsed successfully");
+			return QDF_STATUS_SUCCESS;
+		}
+
+		if (frame_len < (ie_len_parsed +
+				 sizeof(struct extn_ie_header))) {
+			t2lm_err("Frame length %d is lesser than parsed T2LM IE header length %zu",
+				 frame_len,
+				 ie_len_parsed + sizeof(struct extn_ie_header));
 			return QDF_STATUS_E_PROTO;
 		}
 
@@ -449,6 +474,7 @@ static QDF_STATUS wlan_mlo_parse_t2lm_request_action_frame(
 		enum wlan_t2lm_category category)
 {
 	uint8_t *t2lm_action_frm;
+	uint32_t ie_len_parsed;
 
 	t2lm->category = category;
 
@@ -464,13 +490,20 @@ static QDF_STATUS wlan_mlo_parse_t2lm_request_action_frame(
 	 *-------------------------------------------
 	 */
 
+	ie_len_parsed = sizeof(*action_frm) + sizeof(uint8_t);
+
+	if (frame_len < ie_len_parsed) {
+		t2lm_err("Action frame length %d too short", frame_len);
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	t2lm_action_frm = (uint8_t *)action_frm + sizeof(*action_frm);
 
 	t2lm->dialog_token = *t2lm_action_frm;
 
 	return wlan_mlo_parse_t2lm_ie(t2lm,
 				      t2lm_action_frm + sizeof(uint8_t),
-				      frame_len);
+				      frame_len - ie_len_parsed);
 }
 
 /**
@@ -491,6 +524,7 @@ static QDF_STATUS wlan_mlo_parse_t2lm_response_action_frame(
 {
 	uint8_t *t2lm_action_frm;
 	QDF_STATUS ret_val = QDF_STATUS_SUCCESS;
+	uint32_t ie_len_parsed;
 
 	t2lm->category = WLAN_T2LM_CATEGORY_RESPONSE;
 	/*
@@ -505,6 +539,14 @@ static QDF_STATUS wlan_mlo_parse_t2lm_response_action_frame(
 	 *----------------------------------------------------
 	 */
 
+	ie_len_parsed = sizeof(*action_frm) + sizeof(uint8_t) +
+			sizeof(uint16_t);
+
+	if (frame_len < ie_len_parsed) {
+		t2lm_err("Action frame length %d too short", frame_len);
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	t2lm_action_frm = (uint8_t *)action_frm + sizeof(*action_frm);
 
 	t2lm->dialog_token = *t2lm_action_frm;
@@ -515,7 +557,7 @@ static QDF_STATUS wlan_mlo_parse_t2lm_response_action_frame(
 			WLAN_T2LM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING) {
 		t2lm_action_frm += sizeof(uint8_t) + sizeof(uint16_t);
 		ret_val = wlan_mlo_parse_t2lm_ie(t2lm, t2lm_action_frm,
-						 frame_len);
+						 frame_len - ie_len_parsed);
 	}
 
 	return ret_val;

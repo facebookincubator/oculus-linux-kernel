@@ -1,0 +1,7 @@
+#include "anorak.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. AnorakP";
+	compatible = "qcom,anorakp";
+	qcom,msm-id = <649 0x10000>;
+};

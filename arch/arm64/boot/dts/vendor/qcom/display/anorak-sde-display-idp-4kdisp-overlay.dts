@@ -5,7 +5,7 @@
 
 / {
 	model = "Qualcomm Technologies, Inc. Anorak IDP 4K display";
-	compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp";
-	qcom,msm-id = <549 0x10000>;
+	compatible = "qcom,anorak-idp", "qcom,anorakp-idp", "qcom,anorak", "qcom,idp";
+	qcom,msm-id = <549 0x10000>, <649 0x10000>;
 	qcom,board-id = <0x10022 0x5>, <0x10022 0x6>;
 };

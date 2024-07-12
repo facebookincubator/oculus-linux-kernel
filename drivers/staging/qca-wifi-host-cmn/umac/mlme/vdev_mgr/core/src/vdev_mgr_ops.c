@@ -619,7 +619,12 @@ static QDF_STATUS vdev_mgr_up_param_update(
 
 	mbss = &mlme_obj->mgmt.mbss_11ax;
 	wlan_vdev_mgr_get_param_bssid(vdev, bssid);
-	if (qdf_mem_cmp(bssid, mbss->non_trans_bssid, QDF_MAC_ADDR_SIZE))
+	mlme_debug("trans BSSID "QDF_MAC_ADDR_FMT"non-trans BSSID"QDF_MAC_ADDR_FMT"profile_num %d, profile_idx %d",
+		   QDF_MAC_ADDR_REF(mbss->trans_bssid),
+		   QDF_MAC_ADDR_REF(mbss->non_trans_bssid),
+		  mbss->profile_idx, mbss->profile_num);
+	if ((qdf_mem_cmp(bssid, mbss->trans_bssid, QDF_MAC_ADDR_SIZE)) &&
+	    (qdf_mem_cmp(bssid, mbss->non_trans_bssid, QDF_MAC_ADDR_SIZE)))
 		return QDF_STATUS_SUCCESS;
 
 	param->profile_idx = mbss->profile_idx;

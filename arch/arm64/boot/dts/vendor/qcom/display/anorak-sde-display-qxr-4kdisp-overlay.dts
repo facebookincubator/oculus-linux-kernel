@@ -5,7 +5,7 @@
 
 / {
 	model = "Qualcomm Technologies, Inc. Anorak QXR HMT UFS REF + 4K Display";
-	compatible = "qcom,anorak-qxr", "qcom,anorak";
-	qcom,msm-id = <549 0x10000>;
+	compatible = "qcom,anorak-qxr", "qcom,anorakp-qxr", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>, <649 0x10000>;
 	qcom,board-id = <0x10126 0x3>;
 };

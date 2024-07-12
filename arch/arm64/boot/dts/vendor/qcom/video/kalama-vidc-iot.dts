@@ -11,5 +11,5 @@
 	model = "Qualcomm Technologies, Inc. Kalama";
 	compatible = "qcom,kalama", "qcom,kalamap";
 	qcom,msm-id = <603 0x20000>, <604 0x20000>;
-	qcom,board-id = <0 0>;
+	qcom,board-id = <0 0>, <0x01001f 0x04>, <0x01001f 0x05>;
 };

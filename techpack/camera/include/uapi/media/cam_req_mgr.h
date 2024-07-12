@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __UAPI_LINUX_CAM_REQ_MGR_H
@@ -72,6 +72,7 @@
 #define V4L_EVENT_CAM_REQ_MGR_SLAVE_STATUS                              6
 #define V4L_EVENT_CAM_REQ_MGR_SLAVE_ERROR                               7
 #define V4L_EVENT_CAM_REQ_MGR_EXIT                                      8
+#define V4L_EVENT_CAM_REQ_MGR_SOF_UNIFIED_TS_FRAME_DROP                 9
 
 /* Slave status */
 #define CAM_REQ_MGR_SLAVE_UNKNOWN               0

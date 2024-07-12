@@ -3406,7 +3406,7 @@
 				<0x146A8000 0x146A8000 0x2000>;
 			qcom,iommu-dma = "fastmap";
 			dma-coherent;
-			qcom,ipa-q6-smem-size = <36864>;
+			qcom,ipa-q6-smem-size = <45056>;
 		};
 
 		ipa_smmu_wlan: ipa_smmu_wlan {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -318,6 +318,7 @@ static int cam_subscribe_event(struct v4l2_fh *fh,
 	case V4L_EVENT_CAM_REQ_MGR_CUSTOM_EVT:
 	case V4L_EVENT_CAM_REQ_MGR_NODE_EVENT:
 	case V4L_EVENT_CAM_REQ_MGR_SOF_UNIFIED_TS:
+	case V4L_EVENT_CAM_REQ_MGR_SOF_UNIFIED_TS_FRAME_DROP:
 	case V4L_EVENT_CAM_REQ_MGR_SLAVE_STATUS:
 	case V4L_EVENT_CAM_REQ_MGR_SLAVE_ERROR:
 	case V4L_EVENT_CAM_REQ_MGR_EXIT:

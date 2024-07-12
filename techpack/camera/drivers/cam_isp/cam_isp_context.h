@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_ISP_CONTEXT_H_
@@ -62,6 +62,8 @@
 
 #define CAM_ISP_SLAVE_TS_LSB_IDX      4
 #define CAM_ISP_SLAVE_TS_MSB_IDX      5
+
+#define CAM_ISP_GET_SENSOR_REQ_ID(a, b, c)  (a - ((b - 1)*c))
 
 /* forward declaration */
 struct cam_isp_context;
@@ -130,12 +132,41 @@ enum cam_isp_ctx_flush_event {
 };
 
 /**
+ * enum cam_isp_ctx_pause_resume_event - Different types of pause/resume event
+ * sent in case of frame drop handling
+ *
+ */
+enum cam_isp_ctx_pause_resume_event {
+	CAM_ISP_CTX_PRE_PAUSE_CMD,
+	CAM_ISP_CTX_PAUSE_CMD,
+	CAM_ISP_CTX_RESUME_CMD,
+	CAM_ISP_CTX_PAUSE_RESUME_EVENT_MAX
+};
+
+/**
+ * struct cam_isp_ctx_pause_resume_event_info -  pause/resume event info
+ *
+ * @dropped_req:              Reference to the dropped request storage
+ * @request_id:               Dropped request_id
+ * @is_impacted_per_port_ctx: Indicates if call is from impacted per port ctx or not.
+ * @event_cmd:                pause/resume event cmd
+ *
+ */
+struct cam_isp_ctx_pause_resume_event_info {
+	struct cam_ctx_request  *dropped_req;
+	uint64_t                 request_id;
+	bool                     is_impacted_per_port_ctx;
+	enum cam_isp_ctx_pause_resume_event event_cmd;
+};
+
+/**
  * struct cam_isp_ctx_debug -  Contains debug parameters
  *
  * @dentry:                     Debugfs entry
  * @enable_state_monitor_dump:  Enable isp state monitor dump
  * @enable_cdm_cmd_buff_dump:   Enable CDM Command buffer dump
  * @disable_internal_recovery:  Disable internal kernel recovery
+ * @enable_frame_drop_recovery: Enable frame drop recovery
  *
  */
 struct cam_isp_ctx_debug {
@@ -143,6 +174,7 @@ struct cam_isp_ctx_debug {
 	uint32_t        enable_state_monitor_dump;
 	uint8_t         enable_cdm_cmd_buff_dump;
 	bool            disable_internal_recovery;
+	bool            enable_frame_drop_recovery;
 };
 
 /**
@@ -153,6 +185,34 @@ struct cam_isp_ctx_debug {
  */
 struct cam_isp_ctx_irq_ops {
 	cam_isp_hw_event_cb_func         irq_ops[CAM_ISP_HW_EVENT_MAX];
+};
+
+/**
+ * struct cam_isp_req_irq_mask - ISP context request irq mask info
+ *
+ * @sof_irq_mask:      Updates which all paths sof is received
+ * @reg_up_irq_mask:   Updates which all paths reg_up is received
+ * @epoch_irq_mask:    Updates which all paths epoch is received
+ *
+ */
+struct cam_isp_req_irq_mask {
+	uint64_t           sof_irq_mask;
+	uint64_t           reg_up_irq_mask;
+	uint64_t           epoch_irq_mask;
+};
+
+/**
+ * struct cam_isp_ctx_sensor_req_info - ISP context sensor request object
+ *
+ * @last_applied_req:  last applied req received from sensor.
+ * @prev_applied_req:  request before last applied request value.
+ * @correction:        difference between last and previous sensor req_id.
+ *
+ */
+struct cam_isp_ctx_sensor_req_info {
+	uint64_t   last_applied_req;
+	uint64_t   prev_applied_req;
+	uint64_t   correction;
 };
 
 /**
@@ -180,12 +240,11 @@ struct cam_isp_ctx_irq_ops {
  * @hw_update_data:            HW update data for this request
  * @reapply_type:              Determines type of settings to be re-applied
  * @event_timestamp:           Timestamp for different stage of request
- * @req_port_mask:             Bit is set if port is requested in request
  * @cdm_reset_before_apply:    For bubble re-apply when buf done not coming set
  *                             to True
- * @sof_cnt                    Indicates sof event received for this request
- * @eof_cnt                    Indicates eof event received for this request
- * @rup_cnt                    Indicates rup event received for this request
+ * @path_irq_mask              Bit is set if port is requested in request
+ * @intermediate_irq_mask      Indicates which path irq is received at a new time for current req
+ * @sensor_req_id              Indicates sensor request applied for this request
  *
  */
 struct cam_isp_ctx_req {
@@ -198,18 +257,16 @@ struct cam_isp_ctx_req {
 	uint32_t                              num_fence_map_in;
 	uint32_t                              num_acked;
 	uint32_t                              num_deferred_acks;
-	uint32_t                  deferred_fence_map_index[CAM_ISP_CTX_RES_MAX];
+	uint32_t                              deferred_fence_map_index[CAM_ISP_CTX_RES_MAX];
 	int32_t                               bubble_report;
 	struct cam_isp_prepare_hw_update_data hw_update_data;
 	enum cam_hw_config_reapply_type       reapply_type;
-	ktime_t                               event_timestamp
-		[CAM_ISP_CTX_EVENT_MAX];
-	uint64_t                              req_port_mask;
+	ktime_t                               event_timestamp[CAM_ISP_CTX_EVENT_MAX];
 	bool                                  bubble_detected;
 	bool                                  cdm_reset_before_apply;
-	uint32_t                              sof_cnt;
-	uint32_t                              eof_cnt;
-	uint32_t                              rup_cnt;
+	uint64_t                              path_irq_mask;
+	struct cam_isp_req_irq_mask           intermediate_irq_mask;
+	uint64_t                              sensor_req_id;
 };
 
 /**
@@ -361,16 +418,18 @@ struct cam_isp_context_event_record {
  * @rdi_stats_context:         Indicate whether context is for rdi and stats
  * @sensor_pd_handled:         Indicate if sensor pd is handled in independent crm case
  * @additional_timeout:        Additional timeout required for last applied request
- * @frame_drop_cnt:            Count of continous frame drops
- * @stream_image_free_list:    List of free image buffers
- * @stream_image_ready_list:   List of image buffers that are ready
- * @stream_image_umd_list:     List of image buffers sent to umd driver
- * @stream_image_active_list:  List of buffers whose buf done is active
- * @num_stream_images:         Total number of valid image buffers
- * @stream_images:             Frame/Image buffers
- * @stream_image_completion:   Stream images are available to send to UMD
- * @stream_image_applied:      Frame applied to ISP
- * @stream_image_wait:         Used to sync multiple waiters
+ * @debug_frame_drop_cnt:      Count of continuous frame drops with no requests in pending list
+ * @sensor_req_info:           Info regarding sensor last and previous applied requests.
+ * @frame_drop:                indicates if frame drop is seen.
+ * @mcu_enable:                Indicates if availability of mcu
+ * @pause_apply_req:           Indicates if request can be applied or not at the given time frame.
+ * @frame_drop_detected:       Indicates frame drop detected for this ctx at a given time.
+ * @check_rup_status:          Indicates whether Rup is recived for proper request applied.
+ * @vcdt:                      Structure to hold vc dt combination
+ * @csid_rup_aup_mask:         Mask created for all the acquired ports in streaming case.
+ *                             for trigger case it is same as path_irq mask
+ * @path_irq_mask:             mask created from requested ports, out param
+ * @frame_drop_cnt             Count of continuous frame drops
  */
 struct cam_isp_context {
 	struct cam_context              *base;
@@ -444,7 +503,17 @@ struct cam_isp_context {
 	bool                                   rdi_stats_context;
 	bool                                   sensor_pd_handled;
 	int32_t                                additional_timeout;
-	int32_t                                frame_drop_cnt;
+	int32_t                                debug_frame_drop_cnt;
+	struct cam_isp_ctx_sensor_req_info     sensor_req_info;
+	bool                                   frame_drop;
+	uint32_t                               mcu_enable;
+	atomic_t                               pause_apply_req;
+	bool                                   frame_drop_detected;
+	bool                                   check_rup_status;
+	struct cam_isp_ctx_wait_last_stream_sof_info  vcdt;
+	uint64_t                               csid_rup_aup_mask;
+	uint64_t                               path_irq_mask;
+	uint32_t                               frame_drop_cnt;
 
 	struct list_head                      stream_image_free_list;
 	struct list_head                      stream_image_ready_list;

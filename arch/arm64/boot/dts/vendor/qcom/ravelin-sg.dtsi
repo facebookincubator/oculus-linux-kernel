@@ -1,0 +1,13 @@
+#include "ravelin.dtsi"
+
+/ {
+
+	model = "Qualcomm Technologies, Inc. Ravelin SG";
+	compatible = "qcom,ravelin";
+	qcom,msm-id = <653 0x10000>;
+};
+
+&msm_gpu {
+	/delete-property/qcom,gpu-model;
+	qcom,gpu-model = "AdrenoA12v1";
+};

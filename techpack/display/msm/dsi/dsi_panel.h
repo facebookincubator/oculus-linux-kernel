@@ -72,6 +72,14 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_MAX,
 };
 
+enum dsi_ddic_family {
+	DSI_DDIC_UNKNOWN = 0,
+	DSI_DDIC_STARK,
+	DSI_DDIC_NVT,
+	DSI_DDIC_EOS,
+	DSI_DDIC_MAX,
+};
+
 enum bl_update_flag {
 	BL_UPDATE_DELAY_UNTIL_FIRST_FRAME,
 	BL_UPDATE_NONE,
@@ -159,6 +167,7 @@ struct dsi_backlight_config {
 	u32 bl_scale_brightness;
 	u32 bl_dcs_subtype;
 	bool bl_inverted_dbv;
+	u32 backlight_changes_blocked;
 	/* digital dimming backlight LUT */
 	struct drm_msm_dimming_bl_lut *dimming_bl_lut;
 	u32 dimming_min_bl;
@@ -184,9 +193,12 @@ struct dsi_backlight_config {
 	u32 bl_temperature_override;
 	s32 fifo_trim;
 	u32 fifo_scanlines;
+	u32 max_blu_stereo_offset_ns;
 	u32 scanline_max_offset;
 	u32 scanline_duration;
 	u32 scanline_offset[2];
+	u32 settling_time_us[2];
+	u32 blu_default_duty_override;
 
 	/* Temperature-dependent timing */
 	bool temperature_dependent_timing;
@@ -350,6 +362,7 @@ struct dsi_panel {
 
 	atomic_t fifo_trim;
 	bool bicubic_scaling;
+	enum dsi_ddic_family ddic_family;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)

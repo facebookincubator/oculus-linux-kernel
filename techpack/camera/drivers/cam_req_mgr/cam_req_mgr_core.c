@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -3790,6 +3790,83 @@ end:
 	return rc;
 }
 
+static int cam_req_mgr_no_crm_pause_cb(
+	struct cam_req_mgr_no_crm_pause_evt_data *pause_evt_data)
+{
+	int rc = -EINVAL, i;
+	struct cam_req_mgr_core_link *link;
+	struct cam_req_mgr_connected_device *dev;
+
+	link = cam_get_link_priv(pause_evt_data->link_hdl);
+	if (!link) {
+		CAM_ERR(CAM_CRM, "Failed to get link priv from %08x", pause_evt_data->link_hdl);
+		goto end;
+	}
+
+	for (i = 0; i < link->num_devs; i++) {
+		dev = &link->l_dev[i];
+		if (!dev->no_crm_ops || !dev->no_crm_ops->pause_cb) {
+			CAM_DBG(CAM_CRM, "No pause_cb for %s", dev->dev_info.name);
+			continue;
+		}
+
+		CAM_DBG(CAM_CRM, "%d pause_cb \"%s\" for req %lld", i, dev->dev_info.name,
+			pause_evt_data->anchor_dropped_req);
+		pause_evt_data->dev_hdl = dev->dev_hdl;
+		rc = dev->no_crm_ops->pause_cb(pause_evt_data);
+		if (rc) {
+			CAM_ERR(CAM_CRM,
+				"Failed no-crm pause for \"%s\" link_hdl %x dev_hdl %x req %llx",
+				dev->dev_info.name, pause_evt_data->link_hdl, dev->dev_hdl,
+				pause_evt_data->anchor_dropped_req);
+			rc = 0;
+		}
+	}
+
+end:
+	return rc;
+}
+
+static int cam_req_mgr_no_crm_resume_cb(
+	struct cam_req_mgr_no_crm_resume_evt_data *resume_evt_data, uint64_t *sensor_applied_req)
+{
+	int rc = -EINVAL, i;
+	struct cam_req_mgr_core_link *link;
+	struct cam_req_mgr_connected_device *dev;
+
+	link = cam_get_link_priv(resume_evt_data->link_hdl);
+	if (!link) {
+		CAM_ERR(CAM_CRM, "Failed to get link priv from %08x", resume_evt_data->link_hdl);
+		goto end;
+	}
+
+	for (i = 0; i < link->num_devs; i++) {
+		dev = &link->l_dev[i];
+		if (!dev->no_crm_ops || !dev->no_crm_ops->resume_cb) {
+			CAM_DBG(CAM_CRM, "No resume_cb for %s", dev->dev_info.name);
+			continue;
+		}
+
+		CAM_DBG(CAM_CRM, "%d resume_cb \"%s\" for req %lld", i, dev->dev_info.name,
+			resume_evt_data->anchor_applied_req);
+		resume_evt_data->dev_hdl = dev->dev_hdl;
+		rc = dev->no_crm_ops->resume_cb(resume_evt_data);
+		if (rc) {
+			CAM_ERR(CAM_CRM,
+				"Failed no-crm resume for \"%s\" link_hdl %x dev_hdl %x req %llx",
+				dev->dev_info.name, resume_evt_data->link_hdl, dev->dev_hdl,
+				resume_evt_data->anchor_applied_req);
+			rc = 0;
+		}
+		if (dev->dev_info.dev_id == CAM_REQ_MGR_DEVICE_SENSOR ||
+				dev->dev_info.dev_id == CAM_REQ_MGR_DEVICE_SENSOR_LITE)
+			*sensor_applied_req = resume_evt_data->applied_req_id;
+	}
+
+end:
+	return rc;
+}
+
 /**
  * cam_req_mgr_cb_notify_trigger()
  *
@@ -3931,6 +4008,8 @@ static struct cam_req_mgr_crm_cb cam_req_mgr_ops = {
 	.notify_timer    = cam_req_mgr_cb_notify_timer,
 	.notify_stop     = cam_req_mgr_cb_notify_stop,
 	.no_crm_trigger  = cam_req_mgr_no_crm_trigger_cb,
+	.no_crm_pause    = cam_req_mgr_no_crm_pause_cb,
+	.no_crm_resume   = cam_req_mgr_no_crm_resume_cb,
 };
 
 /**

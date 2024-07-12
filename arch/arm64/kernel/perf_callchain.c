@@ -8,6 +8,7 @@
 #include <linux/perf_event.h>
 #include <linux/uaccess.h>
 
+#include <asm/insn.h>
 #include <asm/pointer_auth.h>
 #include <asm/stacktrace.h>
 
@@ -204,7 +205,7 @@ size_t perf_instruction_data(u8 *buf, size_t sz_buf, struct pt_regs *regs)
 	if (perf_guest_cbs && perf_guest_cbs->is_in_guest())
 		goto out;
 
-	if (sz_buf < 4)
+	if (sz_buf < AARCH64_INSN_SIZE + sizeof(regs->pstate))
 		goto out;
 
 	addr = instruction_pointer(regs);
@@ -217,7 +218,7 @@ size_t perf_instruction_data(u8 *buf, size_t sz_buf, struct pt_regs *regs)
 		 * regardless of thumb vs arm mode, since the thumb decoder will need all 32 bits to
 		 * determine the length of the instruction
 		 */
-		addr -= 4;
+		addr -= AARCH64_INSN_SIZE;
 		addr &= (compat_thumb_mode(regs) ? ~1 : ~3);
 	} else {
 		addr &= ~3;
@@ -228,14 +229,14 @@ size_t perf_instruction_data(u8 *buf, size_t sz_buf, struct pt_regs *regs)
 
 	if (!user_mode(regs)) {
 		if (virt_addr_valid(addr) || is_vmalloc_addr((void *)addr) || (__module_address(addr) != NULL)) {
-			memcpy(buf, (void *)addr, 4);
-			copied = 4;
+			memcpy(buf, (void *)addr, AARCH64_INSN_SIZE);
+			copied = AARCH64_INSN_SIZE;
 		}
 		goto out;
 	}
 
 	/* executed in hrtimer irq context, so sleeping isn't allowed */
-	for (i = 0, locked = 0; i < 4 && !locked; i++) {
+	for (i = 0, locked = 0; i < AARCH64_INSN_SIZE && !locked; i++) {
 		locked = down_read_trylock(&mm->mmap_lock);
 		if (!locked)
 			cpu_relax();
@@ -248,15 +249,15 @@ size_t perf_instruction_data(u8 *buf, size_t sz_buf, struct pt_regs *regs)
 	addr &= PAGE_MASK;
 
 	vma = find_vma(mm, addr);
-	if (!vma || vma->vm_end < addr + offset + 4)
+	if (!vma || vma->vm_end < addr + offset + AARCH64_INSN_SIZE)
 		goto out_locked;
 
 	/* 32-bit thumb instructions create an edge case where instructions may span 2 pages. */
-	nr_pages = 1 + !!(PAGE_SIZE - offset < 4);
+	nr_pages = 1 + !!(PAGE_SIZE - offset < AARCH64_INSN_SIZE);
 
 	for (i = 0; i < nr_pages; i++, offset = 0, addr += PAGE_SIZE) {
 		struct page *page = follow_page(vma, addr, FOLL_FORCE | FOLL_NOWAIT);
-		size_t bytes = min(4UL, PAGE_SIZE - offset) - copied;
+		size_t bytes = min((unsigned long)AARCH64_INSN_SIZE, PAGE_SIZE - offset) - copied;
 		void *maddr;
 
 		if (IS_ERR_OR_NULL(page))
@@ -276,6 +277,14 @@ size_t perf_instruction_data(u8 *buf, size_t sz_buf, struct pt_regs *regs)
  out_locked:
 	up_read(&mm->mmap_lock);
  out:
+	if (copied == AARCH64_INSN_SIZE) {
+		/*
+		 * user-space instruction disassembly needs to know the processor state to
+		 * determine whether compat-mode applications were executing in thumb mode
+		 */
+		memcpy(buf + AARCH64_INSN_SIZE, &regs->pstate, sizeof(regs->pstate));
+		copied += sizeof(regs->pstate);
+	}
 	return copied;
 }
 

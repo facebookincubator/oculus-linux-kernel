@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,6 +26,7 @@
 #define __qdf_ht_entry hlist_node
 #define __qdf_ht_declare(name, bits) DECLARE_HASHTABLE(name, bits)
 #define __qdf_ht_init(table) hash_init(table)
+#define __qdf_hl_init(ht) INIT_HLIST_HEAD(ht)
 #define __qdf_ht_deinit(table) do { } while (false)
 #define __qdf_ht_empty(table) hash_empty(table)
 #define __qdf_ht_add(table, entry, key) hash_add(table, entry, key)
@@ -49,5 +51,17 @@ do { \
 
 #define __qdf_ht_for_each_safe(table, i, tmp, cursor, entry_field) \
 	hash_for_each_safe(table, i, tmp, cursor, entry_field)
+
+#define __qdf_hl_for_each_entry_safe(pos, n, head, member) \
+	hlist_for_each_entry_safe(pos, n, head, member)
+
+#define __qdf_hl_for_each_entry_rcu(pos, head, member) \
+	hlist_for_each_entry_rcu(pos, head, member)
+
+#define __qdf_hl_add_head_rcu(n, ht) \
+	hlist_add_head_rcu(n, ht)
+
+#define __qdf_hl_del_rcu(n) \
+	hlist_del_rcu(n)
 
 #endif /* __I_QDF_HASHTABLE_H */

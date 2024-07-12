@@ -1,0 +1,89 @@
+&mdss_mdp0 {
+	dsi_sony_dual_dsc_1776x1920_90hz_video: qcom,mdss_dsi_sony_dual_dsc_1776x1920_90hz_video {
+		qcom,mdss-dsi-panel-name =
+			"sony amoled video mode panel with DSC";
+		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+		qcom,mdss-dsi-panel-physical-type = "oled";
+		qcom,mdss-dsi-virtual-channel-id = <0>;
+		qcom,mdss-dsi-stream = <0>;
+		qcom,mdss-dsi-bpp = <24>;
+		qcom,mdss-dsi-border-color = <0>;
+		qcom,dsi-ctrl-num = <0 1>;
+		qcom,dsi-phy-num = <0 1>;
+		qcom,dsi-sec-ctrl-num = <0 1>;
+		qcom,dsi-sec-phy-num = <0 1>;
+		qcom,mdss-dsi-traffic-mode = "non_burst_sync_event";
+		qcom,mdss-dsi-bllp-eof-power-mode;
+		qcom,mdss-dsi-bllp-power-mode;
+		qcom,mdss-dsi-lane-0-state;
+		qcom,mdss-dsi-lane-1-state;
+		qcom,mdss-dsi-lane-2-state;
+		qcom,mdss-dsi-lane-3-state;
+		qcom,mdss-dsi-dma-trigger = "trigger_sw";
+		qcom,mdss-dsi-mdp-trigger = "none";
+		qcom,mdss-dsi-reset-sequence = <1 10>, <0 10>, <1 20>;
+		qcom,mdss-dsi-panel-xr;
+		qcom,mdss-dsi-panel-skip-pps-update;
+
+		qcom,mdss-dsi-wr-mem-start = <0x2c>;
+		qcom,mdss-dsi-wr-mem-continue = <0x3c>;
+		qcom,mdss-dsi-display-timings {
+			timing@0 {
+				cell-index = <0>;
+				qcom,mdss-dsi-panel-framerate = <90>;
+				qcom,mdss-dsi-panel-width = <888>;
+				qcom,mdss-dsi-panel-height = <1920>;
+				qcom,mdss-dsi-h-front-porch = <28>;
+				qcom,mdss-dsi-h-back-porch = <16>;
+				qcom,mdss-dsi-h-pulse-width = <12>;
+				qcom,mdss-dsi-h-sync-skew = <0>;
+				qcom,mdss-dsi-v-back-porch = <6>;
+				qcom,mdss-dsi-v-front-porch = <17>;
+				qcom,mdss-dsi-v-pulse-width = <1>;
+				qcom,mdss-dsi-h-left-border = <0>;
+				qcom,mdss-dsi-h-right-border = <0>;
+				qcom,mdss-dsi-v-top-border = <0>;
+				qcom,mdss-dsi-v-bottom-border = <0>;
+
+				qcom,mdss-dsi-on-command = [
+					15 01 00 00 00 00 02 03 11
+					39 01 00 00 00 00 5F F6 11 00 00 89 30
+					80 07 80 06 F0 00 30 01 BC 01 BC 02
+					   00 00 1E 00 20 04 30 00 06 00 0C 02
+					   0B 02 94 18 00 10 F0 03 0C 20 00 06
+					   0B 0B 33 0E 1C 2A 38 46 54 62 69 70
+					   77 79 7B 7D 7E 01 02 01 00 09 40 09
+					   BE 19 FC 19 FA 19 F8 1A 38 1A 78 1A
+					   B6 2A F6 2B 34 2B 74 3B 74 6B F4 00
+					   00 00 00 00 00
+					39 01 00 00 00 00 0F 3B 00 06 00 11 00
+					   00 06 17 05 9F 04 C7 03 A7
+					39 01 00 00 00 00 03 51 0F FF
+					15 01 00 00 00 00 02 53 20
+					15 01 00 00 00 00 02 26 01
+					15 01 00 00 00 00 02 65 B0
+					15 01 00 00 00 00 02 36 03
+					05 01 00 00 64 00 01 11
+					05 01 00 00 14 00 01 29
+				];
+
+				qcom,mdss-dsi-off-command = [
+					05 01 00 00 00 00 01 28
+					05 01 00 00 64 00 01 10
+				];
+				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+				qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
+				qcom,mdss-dsi-timing-switch-command-state =
+					"dsi_lp_mode";
+				qcom,mdss-dsi-h-sync-pulse = <0>;
+				qcom,compression-mode = "dsc";
+				qcom,mdss-dsc-slice-height = <48>;
+				qcom,mdss-dsc-slice-width = <444>;
+				qcom,mdss-dsc-slice-per-pkt = <1>;
+				qcom,mdss-dsc-bit-per-component = <8>;
+				qcom,mdss-dsc-bit-per-pixel = <8>;
+				qcom,mdss-dsc-block-prediction-enable;
+			};
+		};
+	};
+};

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -301,6 +301,22 @@ bool csr_is_conn_state_wds(struct mac_context *mac, uint32_t sessionId)
 {
 	return csr_is_conn_state_connected_wds(mac, sessionId) ||
 	       csr_is_conn_state_disconnected_wds(mac, sessionId);
+}
+
+uint16_t cm_csr_get_vdev_dot11_mode(uint8_t vdev_id)
+{
+	mac_handle_t mac_handle;
+	struct mac_context *mac_ctx;
+	enum csr_cfgdot11mode curr_dot11_mode;
+
+	mac_handle = cds_get_context(QDF_MODULE_ID_SME);
+	mac_ctx = MAC_CONTEXT(mac_handle);
+	if (!mac_ctx)
+		return eCSR_CFG_DOT11_MODE_AUTO;
+
+	curr_dot11_mode = mac_ctx->roam.configParam.uCfgDot11Mode;
+
+	return csr_get_vdev_dot11_mode(mac_ctx, vdev_id, curr_dot11_mode);
 }
 
 enum csr_cfgdot11mode

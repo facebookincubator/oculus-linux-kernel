@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_SENSOR_DEV_H_
@@ -66,11 +66,28 @@ struct sensor_intf_params {
 };
 
 /**
+ * struct cam_sensor_dev_res_info
+ *
+ * @res_index        : The resolution index that gets updated
+ *                     during a mode switch
+ * @feature_mask     : Feature mask
+ * request_id        : Request Id
+ */
+struct cam_sensor_dev_res_info {
+	uint16_t   vc;
+	uint16_t   dt;
+	uint64_t   frame_duration;
+	uint64_t   req_id;
+	uint16_t   feature_mask;
+};
+
+/**
  * struct cam_sensor_ctrl_t: Camera control structure
  * @device_name: Sensor device name
  * @pdev: Platform device
  * @cam_sensor_mutex: Sensor mutex
  * @sensordata: Sensor board Information
+ * @sensor_res: Sensor resolution information
  * @cci_i2c_master: I2C structure
  * @io_master_info: Information about the communication master
  * @sensor_state: Sensor states
@@ -95,6 +112,10 @@ struct sensor_intf_params {
  * @sof_notify_handler: handler for sof notification
  * @en_perframe_reg_dump: enable perframe register dump flag
  * @last_applied_req: last applied request to detech skip in apply
+ * @vc: vc
+ * @dt: dt
+ * @frame_duration: frame_duration
+ * @pause_state: is sensor in pause state
  * @root_dentry: root directory entry
  */
 struct cam_sensor_ctrl_t {
@@ -104,6 +125,7 @@ struct cam_sensor_ctrl_t {
 	struct cam_hw_soc_info         soc_info;
 	struct mutex                   cam_sensor_mutex;
 	struct cam_sensor_board_info  *sensordata;
+	struct cam_sensor_dev_res_info sensor_res;
 	enum cci_i2c_master_t          cci_i2c_master;
 	enum cci_device_num            cci_num;
 	struct camera_io_master        io_master_info;
@@ -132,6 +154,9 @@ struct cam_sensor_ctrl_t {
 	int                            anchor_pd;
 	bool                           en_perframe_reg_dump;
 	uint64_t                       last_applied_req;
+	uint16_t                       vc;
+	uint16_t                       dt;
+	uint64_t                       frame_duration;
 	bool                           pause_state;
 	struct dentry                  *root_dentry;
 

@@ -38,6 +38,7 @@
 /* Battery I2C */
 &qupv3_se0_i2c {
 	status = "ok";
+	qcom,bus-recovery;
 	bq27z561: fuel-gauge@0x55 {
 		compatible = "ti,bq27z561";
 		reg = <0x55>;
@@ -77,18 +78,6 @@
   meta,nearest-thermal-sensor = "cam5-usr";
   meta,geni_ios_monitor_enabled;
   meta,io_stat_enabled;
-};
-
-&qupv3_se9_spi {
-	syncboss_nrf@0 {
-		nsync@0 {
-			/*
-			 * T182999318: temporary overrride to allow gradual deprecation
-			 * of the legacy nsync userspace interface.
-			 */
-			meta,disable-legacy-nsync;
-		};
-	};
 };
 
 &qupv3_se10_spi {
@@ -226,7 +215,9 @@
 
 	meta,pdfu_initiator {
 		compatible = "meta,pdfu-initiator";
-		usb,product-id = /bits/ 16 <0x5006>;
+		usb,product-ids =
+			/bits/ 16 <0x5006>,		 /* Moku */
+			/bits/ 16 <0x500f>;		 /* Lehua+ */
 	};
 };
 

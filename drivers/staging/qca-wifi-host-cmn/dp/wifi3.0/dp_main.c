@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -57,7 +57,6 @@
 #ifdef QCA_MULTIPASS_SUPPORT
 #include <enet.h>
 #endif
-
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 #include "cdp_txrx_flow_ctrl_v2.h"
 #else
@@ -104,6 +103,9 @@ cdp_dump_flow_pool_info(struct cdp_soc_t *soc)
 #endif
 #ifdef WLAN_FEATURE_PEER_TXQ_FLUSH_CONF
 #include <target_if_dp.h>
+#endif
+#ifdef WLAN_SUPPORT_LAPB
+#include <wlan_dp_lapb_flow.h>
 #endif
 
 #ifdef WLAN_FEATURE_STATS_EXT
@@ -6631,6 +6633,7 @@ static void dp_soc_detach(struct cdp_soc_t *txrx_soc)
 	dp_runtime_deinit();
 
 	dp_sysfs_deinitialize_stats(soc);
+	wlan_dp_lapb_flow_detach(soc);
 	dp_soc_swlm_detach(soc);
 	dp_soc_tx_desc_sw_pools_free(soc);
 	dp_soc_srng_free(soc);
@@ -8357,12 +8360,6 @@ QDF_STATUS dp_peer_mlo_setup(
 
 	dp_cfg_event_record_peer_setup_evt(soc, DP_CFG_EVENT_MLO_SETUP,
 					   peer, NULL, vdev_id, setup_info);
-	dp_info("link peer: " QDF_MAC_ADDR_FMT "mld peer: " QDF_MAC_ADDR_FMT
-		"first_link %d, primary_link %d",
-		QDF_MAC_ADDR_REF(peer->mac_addr.raw),
-		QDF_MAC_ADDR_REF(setup_info->mld_peer_mac),
-		setup_info->is_first_link,
-		setup_info->is_primary_link);
 
 	/* if this is the first link peer */
 	if (setup_info->is_first_link)
@@ -8377,6 +8374,14 @@ QDF_STATUS dp_peer_mlo_setup(
 	mld_peer = dp_mld_peer_find_hash_find(soc,
 					      setup_info->mld_peer_mac,
 					      0, vdev_id, DP_MOD_ID_CDP);
+
+	dp_info("Peer %pK MAC " QDF_MAC_ADDR_FMT " mld peer %pK MAC "
+		QDF_MAC_ADDR_FMT " first_link %d, primary_link %d", peer,
+		QDF_MAC_ADDR_REF(peer->mac_addr.raw), mld_peer,
+		QDF_MAC_ADDR_REF(setup_info->mld_peer_mac),
+		peer->first_link,
+		peer->primary_link);
+
 	if (mld_peer) {
 		if (setup_info->is_first_link) {
 			/* assign rx_tid to mld peer */
@@ -15892,6 +15897,7 @@ dp_soc_attach(struct cdp_ctrl_objmgr_psoc *ctrl_psoc,
 		dp_sysfs_deinitialize_stats(soc);
 	}
 
+	wlan_dp_lapb_flow_attach(soc);
 	dp_soc_swlm_attach(soc);
 	dp_soc_set_interrupt_mode(soc);
 	dp_soc_set_def_pdev(soc);

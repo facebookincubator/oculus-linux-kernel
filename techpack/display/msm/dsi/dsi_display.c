@@ -2178,6 +2178,67 @@ error:
 
 }
 
+static ssize_t debugfs_ddic_family_read(struct file *file,
+				 char __user *user_buf,
+				 size_t user_len,
+				 loff_t *ppos)
+{
+	struct dsi_display *display = file->private_data;
+	struct dsi_panel *panel;
+	char *buf;
+	char *ddic_family;
+	u32 len = 0;
+	int rc = 0;
+	size_t max_len = min_t(size_t, user_len, SZ_4K);
+
+	if (!display || !display->panel)
+		return -ENODEV;
+
+	panel = display->panel;
+
+	if (*ppos)
+		return 0;
+
+	buf = kzalloc(max_len, GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(buf))
+		return -ENOMEM;
+
+	switch (panel->ddic_family) {
+	case DSI_DDIC_STARK:
+		ddic_family = "stark";
+		break;
+	case DSI_DDIC_NVT:
+		ddic_family = "nvt";
+		break;
+	case DSI_DDIC_EOS:
+		ddic_family = "eos";
+		break;
+	default:
+		ddic_family = "unknown";
+		break;
+	}
+
+	len += scnprintf(buf, max_len, "%s\n", ddic_family);
+
+	if (len > max_len)
+		len = max_len;
+
+	if (copy_to_user(user_buf, buf, len)) {
+		rc = -EFAULT;
+		goto error;
+	}
+
+	*ppos += len;
+
+error:
+	kfree(buf);
+
+	if (rc < 0)
+		return rc;
+
+	return len;
+}
+
 static const struct file_operations dump_info_fops = {
 	.open = simple_open,
 	.read = debugfs_dump_info_read,
@@ -2212,10 +2273,16 @@ static const struct file_operations mipi_dcs_rx_fops = {
 	.read = debugfs_mipi_dcs_rx_read,
 };
 
+static const struct file_operations ddic_family_fops = {
+	.open = simple_open,
+	.read = debugfs_ddic_family_read,
+};
+
+
 static int dsi_display_debugfs_init(struct dsi_display *display)
 {
 	int rc = 0;
-	struct dentry *dir, *dump_file, *misr_data;
+	struct dentry *dir, *dump_file, *misr_data, *ddic_family;
 	char name[MAX_NAME_SIZE];
 	char panel_name[SEC_PANEL_NAME_MAX_LEN];
 	char secondary_panel_str[] = "_secondary";
@@ -2349,6 +2416,23 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 	}
 
 	debugfs_create_u32("clk_gating_config", 0600, dir, &display->clk_gating_config);
+
+	debugfs_create_u32("max_blu_stereo_offset_ns", 0600, dir, &display->panel->bl_config.max_blu_stereo_offset_ns);
+
+	debugfs_create_u32("settling_time_right_us", 0400, dir, &display->panel->bl_config.settling_time_us[0]);
+
+	debugfs_create_u32("settling_time_left_us", 0400, dir, &display->panel->bl_config.settling_time_us[1]);
+
+	debugfs_create_u32("override_default_duty", 0600, dir, &display->panel->bl_config.blu_default_duty_override);
+
+	ddic_family = debugfs_create_file("ddic_family", 0400, dir, display,
+					  &ddic_family_fops);
+	if (IS_ERR_OR_NULL(ddic_family)) {
+		rc = PTR_ERR(ddic_family);
+		DSI_ERR("[%s] debugfs create ddic_family file failed, rc=%d\n",
+			display->name, rc);
+		goto error_remove_dir;
+	}
 
 	display->root = dir;
 	dsi_parser_dbg_init(display->parser, dir);
@@ -8903,7 +8987,8 @@ int dsi_display_enable(struct dsi_display *display)
 	if ((mode->priv_info->dsc_enabled ||
 			mode->priv_info->vdc_enabled) &&
 			mode->priv_info->use_default_pps &&
-		!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS_FPS)) {
+		!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS_FPS) &&
+		!(display->panel->host_config.skip_pps_update)) {
 		rc = dsi_panel_update_pps(display->panel);
 		if (rc) {
 			DSI_ERR("[%s] panel pps cmd update failed, rc=%d\n",

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_REQ_MGR_INTERFACE_H
@@ -28,17 +28,22 @@ struct cam_req_mgr_no_crm_trigger_notify;
 struct cam_req_mgr_no_crm_frame_skip_evt_data;
 struct cam_req_mgr_no_crm_handshake_data;
 struct cam_req_mgr_no_crm_apply_request;
+struct cam_req_mgr_no_crm_pause_evt_data;
+struct cam_req_mgr_no_crm_resume_evt_data;
 
 /* Request Manager -- camera device driver interface */
 /**
  * @brief: camera kernel drivers to cam req mgr communication
  *
- * @cam_req_mgr_notify_trigger : for device which generates trigger to inform CRM
- * @cam_req_mgr_no_crm_trigger : for device which generates trigger for no-crm
- * @cam_req_mgr_notify_err     : device use this to inform about different errors
- * @cam_req_mgr_add_req        : to info CRM about new rqeuest received from
- *                               userspace
- * @cam_req_mgr_notify_timer   : start the timer
+ * @cam_req_mgr_notify_trigger       : for device which generates trigger to inform CRM
+ * @cam_req_mgr_no_crm_trigger       : for device which generates trigger for no-crm
+ * @cam_req_mgr_notify_err           : device use this to inform about different errors
+ * @cam_req_mgr_add_req              : to info CRM about new rqeuest received from
+ *                                     userspace
+ * @cam_req_mgr_notify_timer         : start the timer
+ * @cam_req_mgr_notify_stop          : stop the timer
+ * @cam_req_mgr_no_crm_notify_pause  : for device which generates trigger for no-crm pause
+ * @cam_req_mgr_no_crm_notify_resume : for device which generates trigger for no-crm resume
  */
 typedef int (*cam_req_mgr_notify_trigger)(struct cam_req_mgr_trigger_notify *,
 	struct cam_req_mgr_core_worker *);
@@ -47,6 +52,9 @@ typedef int (*cam_req_mgr_notify_err)(struct cam_req_mgr_error_notify *);
 typedef int (*cam_req_mgr_add_req)(struct cam_req_mgr_add_request *);
 typedef int (*cam_req_mgr_notify_timer)(struct cam_req_mgr_timer_notify *);
 typedef int (*cam_req_mgr_notify_stop)(struct cam_req_mgr_notify_stop *);
+typedef int (*cam_req_mgr_no_crm_notify_pause)(struct cam_req_mgr_no_crm_pause_evt_data *);
+typedef int (*cam_req_mgr_no_crm_notify_resume)(struct cam_req_mgr_no_crm_resume_evt_data *,
+	uint64_t *);
 
 /**
  * @brief: cam req mgr to camera device drivers
@@ -57,11 +65,13 @@ typedef int (*cam_req_mgr_notify_stop)(struct cam_req_mgr_notify_stop *);
  * @cam_req_mgr_notify_frame_skip: CRM asks device to apply setting for
  *                                 frame skip
  * @cam_req_mgr_flush_req        : Flush or cancel request
- * cam_req_mgr_process_evt       : generic events
+ * @cam_req_mgr_process_evt      : generic events
  * @cam_req_mgr_dump_req         : dump request
  * @cam_req_mgr_no_crm_frame_skip_notify : frame skip notify cb from anchor driver
  * @cam_req_mgr_no_crm_handshake_device  : no_crm handshake callback type
  * @cam_req_mgr_no_crm_apply_req         : no_crm apply request callback type
+ * @cam_req_mgr_no_crm_pause             : no_crm pause apply request callback type
+ * @cam_req_mgr_no_crm_resume            : no_crm resume apply request callback type
  */
 typedef int (*cam_req_mgr_get_dev_info) (struct cam_req_mgr_device_info *);
 typedef int (*cam_req_mgr_link_setup)(struct cam_req_mgr_core_dev_link_setup *);
@@ -75,6 +85,8 @@ typedef int (*cam_req_mgr_no_crm_frame_skip_notify)(
 	struct cam_req_mgr_no_crm_frame_skip_evt_data *);
 typedef int (*cam_req_mgr_no_crm_handshake_device)(struct cam_req_mgr_no_crm_handshake_data *);
 typedef int (*cam_req_mgr_no_crm_apply_req)(struct cam_req_mgr_no_crm_apply_request *);
+typedef int (*cam_req_mgr_no_crm_pause)(struct cam_req_mgr_no_crm_pause_evt_data *);
+typedef int (*cam_req_mgr_no_crm_resume)(struct cam_req_mgr_no_crm_resume_evt_data *);
 
 /**
  * @brief          : cam_req_mgr_crm_cb - func table
@@ -85,14 +97,18 @@ typedef int (*cam_req_mgr_no_crm_apply_req)(struct cam_req_mgr_no_crm_apply_requ
  * @notify_timer   : payload for timer start event
  * @notify_stop    : payload to inform stop event
  * @no_crm_trigger : payload for trigger indication event in no-crm useacases
+ * @no_crm_pause   : payload for pause event in no-crm useacases
+ * @no_crm_resume  : payload for resume event in no-crm useacases
  */
 struct cam_req_mgr_crm_cb {
-	cam_req_mgr_notify_trigger  notify_trigger;
-	cam_req_mgr_notify_err      notify_err;
-	cam_req_mgr_add_req         add_req;
-	cam_req_mgr_notify_timer    notify_timer;
-	cam_req_mgr_notify_stop     notify_stop;
-	cam_req_mgr_no_crm_trigger  no_crm_trigger;
+	cam_req_mgr_notify_trigger       notify_trigger;
+	cam_req_mgr_notify_err           notify_err;
+	cam_req_mgr_add_req              add_req;
+	cam_req_mgr_notify_timer         notify_timer;
+	cam_req_mgr_notify_stop          notify_stop;
+	cam_req_mgr_no_crm_trigger       no_crm_trigger;
+	cam_req_mgr_no_crm_notify_pause  no_crm_pause;
+	cam_req_mgr_no_crm_notify_resume no_crm_resume;
 };
 
 /**
@@ -121,10 +137,14 @@ struct cam_req_mgr_kmd_ops {
  *
  * @handshake    : Handshake method, exchange data b/w drivers
  * @apply_req    : apply request callback for drivers
+ * @pause_cb     : pause apply request callback for drivers
+ * @resume_cb    : resume apply request callback for drivers
  */
 struct cam_req_mgr_no_crm_kmd_ops {
 	cam_req_mgr_no_crm_handshake_device handshake;
-	cam_req_mgr_no_crm_apply_req apply_req;
+	cam_req_mgr_no_crm_apply_req        apply_req;
+	cam_req_mgr_no_crm_pause            pause_cb;
+	cam_req_mgr_no_crm_resume           resume_cb;
 };
 
 /**
@@ -270,16 +290,30 @@ struct cam_req_mgr_trigger_notify {
 /**
  * struct cam_req_mgr_no_crm_trigger_notify
  * @link_hdl : link identifier
+ * @res_id   : resource id
  * @frame_id : frame id for internal tracking
- * @request_id : Request id applied by isp
- * @sof_irq_ts : CSID SOF timestamp in IRQ
+ * @ife_applied_req_id    : Request id applied by isp
+ * @sensor_applied_req_id : Request id applied by sensor
+ * @sof_irq_ts            : CSID SOF timestamp in IRQ
  */
 struct cam_req_mgr_no_crm_trigger_notify {
 	int32_t link_hdl;
 	int32_t res_id;
 	int64_t frame_id;
-	int64_t request_id;
+	uint64_t ife_applied_req_id;
+	uint64_t sensor_applied_req_id;
 	uint64_t sof_irq_ts;
+};
+
+/**
+ * struct sensor_query_mcu
+ * @link_hdl:             link identifier
+ * @is_sensor_no_hw_ops:  will be true if external
+ *                      processor(fpga/mcu/helios) is present.
+ */
+struct sensor_query_mcu {
+	uint32_t link_hdl;
+	bool is_sensor_no_hw_ops;
 };
 
 /**
@@ -430,6 +464,40 @@ struct cam_req_mgr_no_crm_apply_request {
 	uint64_t anchor_req_id;
 	uint64_t sof_irq_ts;
 	uint64_t last_apply_req;
+};
+
+/**
+ * struct cam_req_mgr_no_crm_pause_evt_data
+ * @link_hdl           : link identifier
+ * @dev_hdl            : device handle for cross check
+ * @anchor_dropped_req : isp dropped request id
+ * @last_applied_reqi  : Last applied req by sensor
+ * @frame_duration     : frame duration considering all streams in a req
+ * @last_stream_vc     : last stream vc for last applied sensor req
+ * @last_stream_dt     : last stream dt for last applied sensor req
+ */
+struct cam_req_mgr_no_crm_pause_evt_data {
+	uint32_t link_hdl;
+	uint32_t dev_hdl;
+	uint64_t anchor_dropped_req;
+	uint64_t last_applied_req;
+	uint64_t frame_duration;
+	uint32_t last_stream_vc;
+	uint32_t last_stream_dt;
+};
+
+/**
+ * struct cam_req_mgr_no_crm_resume_evt_data
+ * @link_hdl              : link identifier
+ * @dev_hdl               : device handle for cross check
+ * @anchor_applied_req    : ife applied req Id in recovery
+ * @sensor_applied_req_id : last applied sensor req id
+ */
+struct cam_req_mgr_no_crm_resume_evt_data {
+	uint32_t link_hdl;
+	uint32_t dev_hdl;
+	uint64_t anchor_applied_req;
+	uint64_t applied_req_id;
 };
 
 /**

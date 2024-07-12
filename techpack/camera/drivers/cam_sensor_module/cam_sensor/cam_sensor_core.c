@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -112,6 +112,68 @@ static void cam_sensor_release_per_frame_resource(
 	}
 }
 
+static int cam_sensor_handle_res_info(struct cam_sensor_res_info *res_info,
+	struct cam_sensor_ctrl_t *s_ctrl)
+{
+	int rc = 0;
+
+	if (!s_ctrl || !res_info) {
+		CAM_ERR(CAM_SENSOR, "Invalid params: res_info: %s, s_ctrl: %s",
+			CAM_IS_NULL_TO_STR(res_info),
+			CAM_IS_NULL_TO_STR(s_ctrl));
+		return -EINVAL;
+	}
+
+	s_ctrl->vc = res_info->vc;
+	s_ctrl->dt = res_info->dt;
+	s_ctrl->frame_duration = res_info->frame_duration;
+
+	/* If request id is 0, it will be during an initial config/acquire */
+	CAM_DBG(CAM_SENSOR,
+		"Sensor[%s] reqId: %llu vc: %d dt: %d FD: %llu ",
+		s_ctrl->sensor_name,
+		res_info->req_id,
+		s_ctrl->vc,
+		s_ctrl->dt,
+		s_ctrl->frame_duration);
+
+	return rc;
+}
+
+static int32_t cam_sensor_generic_blob_handler(void *user_data,
+	uint32_t blob_type, uint32_t blob_size, uint8_t *blob_data)
+{
+	int rc = 0;
+	struct cam_sensor_ctrl_t *s_ctrl =
+		(struct cam_sensor_ctrl_t *) user_data;
+
+	if (!blob_data || !blob_size) {
+		CAM_ERR(CAM_SENSOR, "Invalid blob info %pK %u", blob_data,
+			blob_size);
+		return -EINVAL;
+	}
+
+	switch (blob_type) {
+	case CAM_SENSOR_GENERIC_BLOB_RES_INFO: {
+		struct cam_sensor_res_info *res_info =
+			(struct cam_sensor_res_info *) blob_data;
+
+		if (blob_size < sizeof(struct cam_sensor_res_info)) {
+			CAM_ERR(CAM_SENSOR, "Invalid blob size expected: 0x%x actual: 0x%x",
+				sizeof(struct cam_sensor_res_info), blob_size);
+			return -EINVAL;
+		}
+
+		rc = cam_sensor_handle_res_info(res_info, s_ctrl);
+		break;
+	}
+	default:
+		CAM_WARN(CAM_SENSOR, "Invalid blob type %d", blob_type);
+		break;
+	}
+
+	return rc;
+}
 
 static int32_t cam_sensor_handle_config_no_io(struct cam_sensor_ctrl_t *s_ctrl,
 				void *arg)
@@ -247,6 +309,10 @@ static int32_t cam_sensor_i2c_pkt_parse(struct cam_sensor_ctrl_t *s_ctrl,
 	csl_packet = (struct cam_packet *)(generic_ptr +
 		(uint32_t)config.offset);
 
+	offset = (uint32_t *)&csl_packet->payload;
+	offset += csl_packet->cmd_buf_offset / 4;
+	cmd_desc = (struct cam_cmd_buf_desc *)(offset);
+
 	if (cam_packet_util_validate_packet(csl_packet,
 		remain_len)) {
 		CAM_ERR(CAM_SENSOR, "Invalid packet params");
@@ -373,6 +439,16 @@ static int32_t cam_sensor_i2c_pkt_parse(struct cam_sensor_ctrl_t *s_ctrl,
 			csl_packet->header.request_id);
 		break;
 	}
+	case CAM_SENSOR_PACKET_OPCODE_SENSOR_RESCONFIG: {
+		CAM_DBG(CAM_SENSOR, "Received Resolution Config Buffer Cmd");
+		rc = cam_packet_util_process_generic_cmd_buffer(cmd_desc,
+			cam_sensor_generic_blob_handler, s_ctrl);
+
+		if (rc)
+			CAM_ERR(CAM_SENSOR, "Processing Generic Blob Handler Failure");
+		goto end;
+
+	}
 	case CAM_SENSOR_PACKET_OPCODE_SENSOR_NOP: {
 		if ((s_ctrl->sensor_state == CAM_SENSOR_INIT) ||
 			(s_ctrl->sensor_state == CAM_SENSOR_ACQUIRE)) {
@@ -396,13 +472,9 @@ static int32_t cam_sensor_i2c_pkt_parse(struct cam_sensor_ctrl_t *s_ctrl,
 	default:
 		CAM_ERR(CAM_SENSOR, "Invalid Packet Header opcode: %d",
 			csl_packet->header.op_code & 0xFFFFFF);
-		rc = -EINVAL;
+		rc = 0;
 		goto end;
 	}
-
-	offset = (uint32_t *)&csl_packet->payload;
-	offset += csl_packet->cmd_buf_offset / 4;
-	cmd_desc = (struct cam_cmd_buf_desc *)(offset);
 
 	rc = cam_sensor_i2c_command_parser(&s_ctrl->io_master_info,
 			i2c_reg_settings, cmd_desc, 1, io_cfg);
@@ -1119,8 +1191,11 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			goto release_mutex;
 		}
 
-		s_ctrl->sensor_state = CAM_SENSOR_ACQUIRE;
+		s_ctrl->sensor_state   = CAM_SENSOR_ACQUIRE;
 		s_ctrl->last_flush_req = 0;
+		s_ctrl->vc             = 0;
+		s_ctrl->dt             = 0;
+		s_ctrl->frame_duration = 0;
 		CAM_INFO(CAM_SENSOR,
 			"CAM_ACQUIRE_DEV Success for %s id:0x%x,slave-addr:0x%x crm:[%d]",
 			s_ctrl->sensor_name,
@@ -1294,6 +1369,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		s_ctrl->last_flush_req = 0;
 		s_ctrl->last_applied_req = 0;
 		s_ctrl->sensor_state = CAM_SENSOR_ACQUIRE;
+		s_ctrl->vc = 0;
+		s_ctrl->dt = 0;
+		s_ctrl->frame_duration = 0;
 
 		CAM_GET_TIMESTAMP(ts);
 		CAM_CONVERT_TIMESTAMP_FORMAT(ts, hrs, min, sec, ms);
@@ -1406,11 +1484,11 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		break;
 	case CAM_FLUSH_REQ: {
 		CAM_DBG(CAM_SENSOR,
-				"Invalid Flush request for %s slot: %d, sensor_id:0x%x, slave_addr:0x%x. ",
-				s_ctrl->sensor_name,
-				s_ctrl->soc_info.index,
-				s_ctrl->sensordata->slave_info.sensor_id,
-				s_ctrl->sensordata->slave_info.sensor_slave_addr);
+			"Invalid Flush request for %s slot: %d, sensor_id:0x%x, slave_addr:0x%x. ",
+			s_ctrl->sensor_name,
+			s_ctrl->soc_info.index,
+			s_ctrl->sensordata->slave_info.sensor_id,
+			s_ctrl->sensordata->slave_info.sensor_slave_addr);
 	}
 		break;
 	default:
@@ -1611,6 +1689,7 @@ static int cam_sensor_apply_settings_no_crm(
 					opcode);
 			if (!rc) {
 				s_ctrl->last_applied_req = new_req_id;
+				notify->last_apply_req = new_req_id;
 				CAM_ERR(CAM_SENSOR,
 							"slot[%d] skiped apply[%llu]",
 							s_ctrl->soc_info.index,
@@ -1638,12 +1717,86 @@ static int cam_sensor_apply_settings_no_crm(
 						opcode);
 			if (!rc) {
 				s_ctrl->last_applied_req = sensor_req_id;
+				notify->last_apply_req = sensor_req_id;
 				CAM_DBG(CAM_SENSOR, "slot[%d] apply[%llu]",
 								s_ctrl->soc_info.index,
 								s_ctrl->last_applied_req);
 			}
 		}
 	}
+	return rc;
+}
+
+int cam_sensor_no_crm_pause_apply(
+	struct cam_req_mgr_no_crm_pause_evt_data *pause)
+{
+	int rc = 0;
+	struct cam_sensor_ctrl_t *s_ctrl = NULL;
+
+	s_ctrl = cam_get_device_no_crm_priv(pause->dev_hdl);
+	mutex_lock(&s_ctrl->cam_sensor_mutex);
+	s_ctrl->pause_state     = true;
+	pause->last_applied_req = s_ctrl->last_applied_req;
+	pause->frame_duration   = s_ctrl->frame_duration;
+	pause->last_stream_vc   = s_ctrl->vc;
+	pause->last_stream_dt   = s_ctrl->dt;
+	mutex_unlock(&s_ctrl->cam_sensor_mutex);
+	CAM_INFO(CAM_SENSOR, "pause slot[%d] link 0x%x sensor_req %llu pause_state:%d "
+				"vc[%d] dt: [%d] frame_duration %llu ",
+				s_ctrl->soc_info.index,
+				pause->link_hdl,
+				pause->last_applied_req,
+				s_ctrl->pause_state,
+				pause->last_stream_vc,
+				pause->last_stream_dt,
+				pause->frame_duration);
+
+	return rc;
+}
+
+int cam_sensor_no_crm_resume_apply(
+	struct cam_req_mgr_no_crm_resume_evt_data *resume)
+{
+	int rc = 0;
+	struct cam_sensor_ctrl_t *s_ctrl = NULL;
+	struct cam_req_mgr_no_crm_apply_request apply = {0};
+
+	s_ctrl = cam_get_device_no_crm_priv(resume->dev_hdl);
+	apply.link_hdl  = resume->link_hdl;
+	apply.dev_hdl   = resume->dev_hdl;
+
+	if (!resume) {
+		CAM_ERR(CAM_SENSOR, "Invalid resume received");
+		return -EINVAL;
+	}
+
+	if (s_ctrl->bridge_intf.link_hdl == resume->link_hdl) {
+		mutex_lock(&s_ctrl->cam_sensor_mutex);
+		if (!s_ctrl->bridge_intf.enable_crm) {
+			s_ctrl->pause_state = false;
+			apply.anchor_req_id = resume->anchor_applied_req;
+
+			if (resume->anchor_applied_req != 0 && apply.dev_hdl != -1 &&
+				s_ctrl->bridge_intf.no_crm_ops.apply_req != NULL) {
+				mutex_unlock(&s_ctrl->cam_sensor_mutex);
+				s_ctrl->bridge_intf.no_crm_ops.apply_req(&apply);
+				mutex_lock(&s_ctrl->cam_sensor_mutex);
+			}
+
+			resume->applied_req_id = s_ctrl->last_applied_req;
+
+		}
+		mutex_unlock(&s_ctrl->cam_sensor_mutex);
+
+		CAM_INFO(CAM_SENSOR, "resume_sensor slot[%d] link: 0x%x ife_req: %llu "
+					" sensor_req: %llu pause_state: %d",
+					s_ctrl->soc_info.index,
+					resume->link_hdl,
+					resume->anchor_applied_req,
+					resume->applied_req_id,
+					s_ctrl->pause_state);
+	}
+
 	return rc;
 }
 
@@ -1654,6 +1807,7 @@ int cam_sensor_no_crm_apply_req(
 	struct cam_sensor_ctrl_t *s_ctrl = NULL;
 
 	s_ctrl = cam_get_device_no_crm_priv(apply->dev_hdl);
+
 	if (!s_ctrl) {
 		CAM_ERR(CAM_SENSOR, "Invalid private data req[%llu]", apply->anchor_req_id);
 		return -EINVAL;
@@ -1674,12 +1828,14 @@ int cam_sensor_establish_link(struct cam_req_mgr_core_dev_link_setup *link)
 
 	s_ctrl = (struct cam_sensor_ctrl_t *)
 		cam_get_device_priv(link->dev_hdl);
+
 	if (!s_ctrl) {
 		CAM_ERR(CAM_SENSOR, "Device data is NULL");
 		return -EINVAL;
 	}
 
 	mutex_lock(&s_ctrl->cam_sensor_mutex);
+
 	if (link->link_enable) {
 		s_ctrl->bridge_intf.link_hdl = link->link_hdl;
 		s_ctrl->bridge_intf.crm_cb = link->crm_cb;

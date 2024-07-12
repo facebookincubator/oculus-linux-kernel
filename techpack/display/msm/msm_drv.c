@@ -94,6 +94,17 @@
 
 static DEFINE_MUTEX(msm_release_lock);
 
+static void msm_drm_bl_scale_worker(struct work_struct *work)
+{
+	struct msm_drm_bl_scale_work_data *work_data = container_of(work, struct msm_drm_bl_scale_work_data, work.work);
+
+	if (work_data->bl_config && work_data->bl_device) {
+		DRM_DEBUG("Setting bl_scale_brightness to: %d\n", __LINE__, work_data->bl_scale);
+		work_data->bl_config->bl_scale_brightness = work_data->bl_scale;
+		backlight_update_status(work_data->bl_device);
+	}
+}
+
 static void msm_fb_output_poll_changed(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = NULL;
@@ -940,6 +951,16 @@ static int msm_drm_component_init(struct device *dev)
 	}
 
 	drm_kms_helper_poll_init(ddev);
+
+	/* Initialize the global brightness work struct. */
+	INIT_DELAYED_WORK(&(priv->bl_scale_work).work, msm_drm_bl_scale_worker);
+
+	/* Create a new workqueue to process the work immediately. */
+	priv->bl_scale_work.work_queue = create_singlethread_workqueue("bl_scale");
+	if (!priv->bl_scale_work.work_queue) {
+		pr_err("Failed to create bl_scale workqueue.\n");
+		goto fail;
+	}
 
 	return 0;
 
@@ -1803,12 +1824,16 @@ int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
 			display = (struct dsi_display *) c_conn->display;
 			if (display) {
 				bl_config = &display->panel->bl_config;
-				if (bl_config)
-					bl_config->bl_scale_brightness = display_brightness_scalar->bl_scale_percent_value;
-			}
+				if (bl_config && c_conn->bl_device) {
+					/* Update the parameters for work struct. */
+					priv->bl_scale_work.bl_device = c_conn->bl_device;
+					priv->bl_scale_work.bl_config = bl_config;
+					priv->bl_scale_work.bl_scale = display_brightness_scalar->bl_scale_percent_value;
 
-			if (c_conn->bl_device)
-				backlight_update_status(c_conn->bl_device);
+					/* Schedule the delayed work to start immediately. */
+					queue_delayed_work(priv->bl_scale_work.work_queue, &(priv->bl_scale_work).work, 0);
+				}
+			}
 		}
 	}
 

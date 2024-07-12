@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CSID_HW_INTF_H_
@@ -352,14 +352,15 @@ struct cam_csid_hw_stop_args {
  * @is_internal_start:  Start triggered internally for reset & recovery
  * @is_per_port_start:  Indicates if start Hw is called on real start call or
  *                      on per port enabled start call.
+ * @is_frame_drop:      Start triggered internally during frame drop recovery
  */
 struct cam_csid_hw_start_args {
 	struct cam_isp_resource_node            **node_res;
 	uint32_t                                  num_res;
 	bool                                      is_internal_start;
 	bool                                      is_per_port_start;
+	bool                                      is_frame_drop;
 };
-
 
 /**
  * enum cam_ife_csid_reset_type - Specify the reset type
@@ -373,11 +374,13 @@ enum cam_ife_csid_reset_type {
 /**
  * struct cam_ife_csid_reset_cfg-  csid reset configuration
  * @ reset_type : Global reset or path reset
+ * @reset_during_stop: Indicates if reset is issued during stop
  * @res_node :   resource need to be reset
  *
  */
 struct cam_csid_reset_cfg_args {
 	enum cam_ife_csid_reset_type   reset_type;
+	bool                           reset_during_stop;
 	struct cam_isp_resource_node  *node_res;
 };
 

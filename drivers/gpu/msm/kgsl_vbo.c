@@ -223,7 +223,7 @@ static int kgsl_memdesc_add_range(struct kgsl_mem_entry *target,
 	return ret;
 
 error:
-	bind_range_destroy(cur);
+	bind_range_destroy(range);
 	mutex_unlock(&memdesc->ranges_lock);
 	return ret;
 }

@@ -147,6 +147,10 @@ config WLAN_FEATURE_SARV1_TO_SARV2
 	bool "Enable conversion of SAR v1 to v2 feature"
 	default n
 
+config WLAN_SYSFS_RF_TEST_MODE
+	bool "enable CONFIG_WLAN_SYSFS_RF_TEST_MODE"
+	default n
+
 config QCA_CLD_WLAN_PROFILE
 	string "WLAN configuration profile to use"
 	default "default"

@@ -69,6 +69,28 @@
 	qcom,platform-reset-gpio = <&tlmm 108 0>;
 };
 
+&dsi_sony_dual_dsc_2664x2880_90hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,panel-sec-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-sec-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,mdss-brightness-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+};
+
+&dsi_sony_dual_dsc_1776x1920_90hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,panel-sec-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-sec-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,mdss-brightness-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+};
+
 &sde_dsi {
 	qcom,dsi-default-panel = <&dsi_sy103_dual_dsc_2544p_75hz_video>;
 };

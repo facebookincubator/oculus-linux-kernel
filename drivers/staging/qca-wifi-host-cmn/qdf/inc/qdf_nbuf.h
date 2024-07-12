@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1071,7 +1071,12 @@ enum cb_ftype {
 typedef __qdf_nbuf_t qdf_nbuf_t;
 
 /**
- * @qdf_nbuf_shared_info_t- Platform independent shared info
+ * typedef qdf_flow_keys_t - Platform independent packet abstraction
+ */
+typedef __qdf_flow_keys_t qdf_flow_keys_t;
+
+/**
+ * typedef qdf_nbuf_shared_info_t - Platform independent shared info
  */
 typedef __qdf_nbuf_shared_info_t qdf_nbuf_shared_info_t;
 
@@ -3130,6 +3135,157 @@ static inline qdf_nbuf_tx_cksum_t qdf_nbuf_get_tx_cksum(qdf_nbuf_t buf)
 }
 
 /**
+ * qdf_nbuf_set_tx_ip_cksum() - re-calculate and set tx ip cksum
+ * @buf: Network buffer
+ *
+ * Return: none
+ */
+static inline void qdf_nbuf_set_tx_ip_cksum(qdf_nbuf_t buf)
+{
+	__qdf_nbuf_set_tx_ip_cksum(buf);
+}
+
+/**
+ * qdf_nbuf_flow_dissect_flow_keys() - extract the flow_keys struct and return
+ * @buf: Network buffer
+ * @flow: list of flow keys
+ *
+ * Return: true if successful else false
+ */
+static inline bool qdf_nbuf_flow_dissect_flow_keys(qdf_nbuf_t buf,
+						   qdf_flow_keys_t *flow)
+{
+	return __qdf_nbuf_flow_dissect_flow_keys(buf, flow);
+}
+
+/**
+ * qdf_flow_is_frag() - check if fragmented packet
+ * @flow: list of flow keys
+ *
+ * Return: true if frag else false
+ */
+static inline bool qdf_flow_is_frag(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_is_frag(flow);
+}
+
+/**
+ * qdf_flow_is_first_frag() - check if first fragmented packet
+ * @flow: list of flow keys
+ *
+ * Return: true if first frag else false
+ */
+static inline bool qdf_flow_is_first_frag(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_is_first_frag(flow);
+}
+
+/**
+ * qdf_flow_get_proto() - get proto from flow
+ * @flow: list of flow keys
+ *
+ * Return: protocol
+ */
+static inline qdf_be16_t qdf_flow_get_proto(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_get_proto(flow);
+}
+
+/**
+ * qdf_flow_get_flow_label() - get flow_label from flow
+ * @flow: list of flow keys
+ *
+ * Return: IPv6 flow label
+ */
+static inline unsigned int qdf_flow_get_flow_label(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_get_flow_label(flow);
+}
+
+/**
+ * qdf_flow_get_ipv4_src_addr() - get ipv4 src ip addr
+ * @flow: list of flow keys
+ *
+ * Return: ipv4 src address
+ */
+static inline unsigned int qdf_flow_get_ipv4_src_addr(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_get_ipv4_src_addr(flow);
+}
+
+/**
+ * qdf_flow_get_ipv4_dst_addr() - get ipv4 dst ip addr
+ * @flow: list of flow keys
+ *
+ * Return: ipv4 dst address
+ */
+static inline unsigned int qdf_flow_get_ipv4_dst_addr(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_get_ipv4_dst_addr(flow);
+}
+
+/**
+ * qdf_flow_get_ipv6_src_addr() - get ipv6 src ip addr
+ * @flow: list of flow keys
+ * @buf: ipv6 addr buffer
+ *
+ * Return: none
+ */
+static inline void qdf_flow_get_ipv6_src_addr(qdf_flow_keys_t *flow,
+					      void *buf)
+{
+	__qdf_flow_get_ipv6_src_addr(flow, buf);
+}
+
+/**
+ * qdf_flow_get_ipv6_dst_addr() - get ipv6 dst ip addr
+ * @flow: list of flow keys
+ * @buf: ipv6 addr buffer
+ *
+ * Return: none
+ */
+static inline void qdf_flow_get_ipv6_dst_addr(qdf_flow_keys_t *flow,
+					      void *buf)
+{
+	__qdf_flow_get_ipv6_dst_addr(flow, buf);
+}
+
+/**
+ * qdf_nbuf_flow_get_ports() - extract the upper layer ports
+ * @buf: Network buffer
+ * @flow: list of flow keys
+ *
+ * Return: none
+ */
+static inline void qdf_nbuf_flow_get_ports(qdf_nbuf_t buf,
+					   qdf_flow_keys_t *flow)
+{
+	__qdf_nbuf_flow_get_ports(buf, flow);
+}
+
+/**
+ * qdf_flow_parse_src_port() - parse src port from flow keys
+ * @flow: list of flow keys
+ *
+ * Return: src port
+ */
+static inline unsigned short qdf_flow_parse_src_port(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_parse_src_port(flow);
+}
+
+/**
+ * qdf_flow_parse_dst_port() - parse dst port from flow keys
+ * @flow: list of flow keys
+ *
+ * Return: dst port
+ */
+static inline unsigned short qdf_flow_parse_dst_port(qdf_flow_keys_t *flow)
+{
+	return __qdf_flow_parse_dst_port(flow);
+}
+
+/**
  * qdf_nbuf_set_rx_cksum() - drivers that support hw checksumming use this to
  *			indicate checksum info to the stack.
  * @buf: Network buffer
@@ -3528,6 +3684,48 @@ static inline
 bool qdf_nbuf_data_is_ipv4_pkt(uint8_t *data)
 {
 	return __qdf_nbuf_data_is_ipv4_pkt(data);
+}
+
+/**
+ * qdf_nbuf_sock_is_ipv4_pkt() - check if it is a ipv4 sock
+ * @buf: Network buffer
+ *
+ * This api is for Tx packets.
+ *
+ * Return: true if it is a ipv4 sock
+ */
+static inline
+bool qdf_nbuf_sock_is_ipv4_pkt(qdf_nbuf_t buf)
+{
+	return __qdf_nbuf_sock_is_ipv4_pkt(buf);
+}
+
+/**
+ * qdf_nbuf_sock_is_udp_pkt() - check if it is a udp sock
+ * @buf: Network buffer
+ *
+ * This api is for Tx packets.
+ *
+ * Return: true if it is a udp sock
+ */
+static inline
+bool qdf_nbuf_sock_is_udp_pkt(qdf_nbuf_t buf)
+{
+	return __qdf_nbuf_sock_is_udp_pkt(buf);
+}
+
+/**
+ * qdf_nbuf_sock_is_tcp_pkt() - check if it is a tcp sock
+ * @buf: Network buffer
+ *
+ * This api is for Tx packets.
+ *
+ * Return: true if it is a tcp sock
+ */
+static inline
+bool qdf_nbuf_sock_is_tcp_pkt(qdf_nbuf_t buf)
+{
+	return __qdf_nbuf_sock_is_tcp_pkt(buf);
 }
 
 /**
@@ -3993,6 +4191,19 @@ static inline
 bool qdf_nbuf_is_ipv6_pkt(qdf_nbuf_t buf)
 {
 	return __qdf_nbuf_data_is_ipv6_pkt(qdf_nbuf_data(buf));
+}
+
+/**
+ * qdf_nbuf_sock_is_ipv6_pkt() - check if it is a ipv6 sock
+ * @buf: Network buffer
+ *
+ * Return: TRUE if it is a ipv6 sock
+ *         FALSE if not
+ */
+static inline
+bool qdf_nbuf_sock_is_ipv6_pkt(qdf_nbuf_t buf)
+{
+	return __qdf_nbuf_sock_is_ipv6_pkt(buf);
 }
 
 static inline

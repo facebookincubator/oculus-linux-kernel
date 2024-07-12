@@ -111,6 +111,21 @@ static void charging_dock_queue_vdm_request(struct charging_dock_device_t *ddev,
 	queue_work(ddev->workqueue, &work->work);
 }
 
+static void charging_dock_queue_periodic_requests(struct work_struct *work)
+{
+	struct charging_dock_device_t *ddev =
+		container_of(work, struct charging_dock_device_t, periodic_work.work);
+
+	dev_dbg(ddev->dev, "%s: enter", __func__);
+
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 0, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 1, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 2, 1);
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_BOARD_TEMPERATURE, 3, 1);
+
+	schedule_delayed_work(&ddev->periodic_work, msecs_to_jiffies(ddev->broadcast_period * 60 * 1000));
+}
+
 static void charging_dock_handle_work(struct work_struct *work)
 {
 	struct charging_dock_device_t *ddev =
@@ -229,6 +244,7 @@ static void charging_dock_usbvdm_connect(struct usbvdm_subscription *sub,
 
 	if (pid == VDM_PID_MOKU_APP) {
 		charging_dock_queue_initial_requests(ddev);
+		schedule_delayed_work(&ddev->periodic_work, msecs_to_jiffies(ddev->broadcast_period * 60 * 1000));
 	} else {
 		schedule_work(&ddev->work);
 
@@ -254,6 +270,8 @@ static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
 	cancel_work_sync(&ddev->work);
+	cancel_delayed_work_sync(&ddev->periodic_work);
+
 	if (ddev->send_state_of_charge)
 		cancel_work_sync(&ddev->work_soc);
 }
@@ -370,6 +388,7 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 {
 	struct charging_dock_device_t *ddev = usbvdm_subscriber_get_drvdata(sub);
 	u32 protocol_type, parameter_type, sb;
+	u32 attn_param, attn_param_data;
 	bool acked;
 	int log_chunk_size;
 	int log_chunk_offset;
@@ -378,6 +397,33 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 	dev_dbg(ddev->dev,
 		"enter: vdm_hdr=0x%x, vdos?=%d, num_vdos=%d\n",
 		vdm_hdr, vdos != NULL, num_vdos);
+
+	if (VDM_TYPE(vdm_hdr) == VDM_TYPE_STRUCTURED) {
+		if (SVDM_COMMAND(vdm_hdr) != SVDM_COMMAND_ATTENTION) {
+			dev_err(ddev->dev, "SVDM is not attention\n");
+			return;
+		}
+
+		if (num_vdos == 0) {
+			dev_err(ddev->dev, "No VDOs included in attention message\n");
+			return;
+		}
+
+		attn_param_data = (vdos[0] >> 8) & 0xFF;
+		attn_param = vdos[0] & 0xFF;
+
+		dev_dbg(ddev->dev, "Attention received vdo[0]=0x%x attn_param=0x%x attn_param_data=0x%x\n",
+				vdos[0], attn_param, attn_param_data);
+
+		if (attn_param != PARAMETER_TYPE_CONNECTED_DEVICES &&
+				attn_param != PARAMETER_TYPE_MOISTURE_DETECTED &&
+				attn_param != PARAMETER_TYPE_PORT_CONFIGURATION) {
+			dev_err(ddev->dev, "Attention received with invalid parameter: %d", attn_param);
+			return;
+		}
+		charging_dock_queue_vdm_request(ddev, attn_param, attn_param_data, 1);
+		return;
+	}
 
 	protocol_type = VDMH_PROTOCOL(vdm_hdr);
 	parameter_type = VDMH_PARAMETER(vdm_hdr);
@@ -396,143 +442,144 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		return;
 	}
 
-	if (protocol_type == VDM_RESPONSE) {
-		acked = VDMH_ACK(vdm_hdr);
-		if (!acked) {
-			dev_warn(ddev->dev, "Unsupported request parameter 0x%x or NACK",
-				parameter_type);
-			return;
-		}
+	if (!(protocol_type == VDM_RESPONSE || protocol_type == VDM_BROADCAST)) {
+		dev_err(ddev->dev, "Error: invalid protocol_type: %d", protocol_type);
+		return;
+	}
 
-		switch (parameter_type) {
-		case PARAMETER_TYPE_FW_VERSION_NUMBER:
-			ddev->params.fw_version = vdos[0];
-			break;
-		case PARAMETER_TYPE_SERIAL_NUMBER_MLB:
-			vdm_memcpy(ddev, parameter_type, num_vdos,
-				ddev->params.serial_number_mlb,
-				vdos, sizeof(ddev->params.serial_number_mlb));
-			break;
-		case PARAMETER_TYPE_BOARD_TEMPERATURE:
-			ddev->params.board_temp = vdos[0];
-			break;
-		case PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM:
-			vdm_memcpy(ddev, parameter_type, num_vdos,
-				ddev->params.serial_number_system,
-				vdos, sizeof(ddev->params.serial_number_system));
-			break;
-		case PARAMETER_TYPE_BROADCAST_PERIOD:
-			if (vdos[0] != ddev->broadcast_period)
-				dev_err(ddev->dev,
-				"Error: Broadcast period received: %d != sent: %d\n",
-				vdos[0],
-				ddev->broadcast_period);
-			break;
-		case PARAMETER_TYPE_STATE_OF_CHARGE:
-			dev_dbg(ddev->dev, "Received State of Charge: 0x%x value=0x%02x",
-				parameter_type, vdos[0]);
-			if ((vdos[0] & 0x01) != ddev->state_of_charge)
-				dev_err(ddev->dev,
-					"Error: State-of-Charge received: %d != sent: %d\n",
-					(vdos[0] & 0x01), ddev->state_of_charge);
-		case PARAMETER_TYPE_LOG_TRANSMIT:
-			/* Receiving a response to one of two messages
-			 * - TRANSMIT_STOP
-			 *   - log size will be 0
-			 * - TRANSMIT_START
-			 *   - log size will be >= 0
-			 */
+	acked = VDMH_ACK(vdm_hdr);
+	if (protocol_type == VDM_RESPONSE && !acked) {
+		dev_warn(ddev->dev, "Unsupported request parameter 0x%x or NACK",
+			parameter_type);
+		return;
+	}
 
-			new_log_size = vdos[0];
-			if (new_log_size > MAX_LOG_SIZE) {
-				dev_err(ddev->dev,
-						"Error: log size is greater than 4KB: %d\n",
-						new_log_size);
-				break;
-			}
-
-			/* this is either a response to TRANSMIT_START, stating there is no log
-			 * to gather, or a response to TRANSMIT_STOP, which always is size 0
-			 */
-			if (new_log_size == 0)
-				break;
-
-			/* Reset to start receiving new log */
-			if (ddev->log)
-				devm_kfree(ddev->dev, ddev->log);
-			ddev->log = NULL;
-
-			ddev->log = devm_kzalloc(ddev->dev, new_log_size, GFP_KERNEL);
-			if (!ddev->log)
-				break;
-
-			ddev->params.log_size = new_log_size;
-			ddev->gathering_log = true;
-			ddev->log_chunk_num = 0;
-			break;
-		case PARAMETER_TYPE_LOG_CHUNK:
-			if (!ddev->gathering_log) {
-				dev_err(ddev->dev,
-						"Error: log chunk received, but gathering_log is false\n");
-				break;
-			}
-			log_chunk_offset = ddev->log_chunk_num * MAX_VDO_SIZE;
-			if (ddev->params.log_size - log_chunk_offset <= MAX_VDO_SIZE) {
-				/* last log chunk */
-				log_chunk_size = ddev->params.log_size - log_chunk_offset;
-				/* send end logging message */
-				ddev->gathering_log = false;
+	switch (parameter_type) {
+	case PARAMETER_TYPE_FW_VERSION_NUMBER:
+		if (ddev->current_pid == VDM_PID_MOKU_APP) {
+			if (num_vdos != 2) {
+				dev_err(ddev->dev, "Error: expected 2 VDOs for Moku FW Version but received %d", num_vdos);
 			} else {
-				/* standard log chunk */
-				log_chunk_size = MAX_VDO_SIZE;
-				ddev->log_chunk_num++;
+				ddev->params.fw_version = (((u64) vdos[0]) << 32) | vdos[1];
 			}
-			if (log_chunk_size > (num_vdos * sizeof(vdos[0]))) {
-				ddev->gathering_log = false;
-				dev_err(ddev->dev, "Error: less log chunk data: %lu than expected %d",
-						num_vdos * sizeof(vdos[0]),
-						log_chunk_size);
-				break;
-			}
-			vdm_memcpy(ddev, parameter_type, num_vdos,
-					ddev->log + log_chunk_offset,
-					vdos, log_chunk_size);
-			break;
-		default:
-			dev_err(ddev->dev, "Unsupported response parameter 0x%x",
-				parameter_type);
+		} else {
+			ddev->params.legacy_fw_version = vdos[0];
+		}
+		break;
+	case PARAMETER_TYPE_SERIAL_NUMBER_MLB:
+		vdm_memcpy(ddev, parameter_type, num_vdos,
+			ddev->params.serial_number_mlb,
+			vdos, sizeof(ddev->params.serial_number_mlb));
+		break;
+	case PARAMETER_TYPE_BOARD_TEMPERATURE:
+		ddev->params.board_temp = vdos[0];
+		break;
+	case PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM:
+		vdm_memcpy(ddev, parameter_type, num_vdos,
+			ddev->params.serial_number_system,
+			vdos, sizeof(ddev->params.serial_number_system));
+		break;
+	case PARAMETER_TYPE_BROADCAST_PERIOD:
+		if (vdos[0] != ddev->broadcast_period)
+			dev_err(ddev->dev,
+			"Error: Broadcast period received: %d != sent: %d\n",
+			vdos[0],
+			ddev->broadcast_period);
+		break;
+	case PARAMETER_TYPE_STATE_OF_CHARGE:
+		dev_dbg(ddev->dev, "Received State of Charge: 0x%x value=0x%02x",
+			parameter_type, vdos[0]);
+		if ((vdos[0] & 0x01) != ddev->state_of_charge)
+			dev_err(ddev->dev,
+				"Error: State-of-Charge received: %d != sent: %d\n",
+				(vdos[0] & 0x01), ddev->state_of_charge);
+	case PARAMETER_TYPE_LOG_TRANSMIT:
+		/* Receiving a response to one of two messages
+		 * - TRANSMIT_STOP
+		 *   - log size will be 0
+		 * - TRANSMIT_START
+		 *   - log size will be >= 0
+		 */
+
+		new_log_size = vdos[0];
+		if (new_log_size > MAX_LOG_SIZE) {
+			dev_err(ddev->dev,
+					"Error: log size is greater than 4KB: %d\n",
+					new_log_size);
 			break;
 		}
 
+		/* this is either a response to TRANSMIT_START, stating there is no log
+		 * to gather, or a response to TRANSMIT_STOP, which always is size 0
+		 */
+		if (new_log_size == 0)
+			break;
+
+		/* Reset to start receiving new log */
+		if (ddev->log)
+			devm_kfree(ddev->dev, ddev->log);
+		ddev->log = NULL;
+
+		ddev->log = devm_kzalloc(ddev->dev, new_log_size, GFP_KERNEL);
+		if (!ddev->log)
+			break;
+
+		ddev->params.log_size = new_log_size;
+		ddev->gathering_log = true;
+		ddev->log_chunk_num = 0;
+		break;
+	case PARAMETER_TYPE_LOG_CHUNK:
+		if (!ddev->gathering_log) {
+			dev_err(ddev->dev,
+					"Error: log chunk received, but gathering_log is false\n");
+			break;
+		}
+		log_chunk_offset = ddev->log_chunk_num * MAX_VDO_SIZE;
+		if (ddev->params.log_size - log_chunk_offset <= MAX_VDO_SIZE) {
+			/* last log chunk */
+			log_chunk_size = ddev->params.log_size - log_chunk_offset;
+			/* send end logging message */
+			ddev->gathering_log = false;
+		} else {
+			/* standard log chunk */
+			log_chunk_size = MAX_VDO_SIZE;
+			ddev->log_chunk_num++;
+		}
+		if (log_chunk_size > (num_vdos * sizeof(vdos[0]))) {
+			ddev->gathering_log = false;
+			dev_err(ddev->dev, "Error: less log chunk data: %lu than expected %d",
+					num_vdos * sizeof(vdos[0]),
+					log_chunk_size);
+			break;
+		}
+		vdm_memcpy(ddev, parameter_type, num_vdos,
+				ddev->log + log_chunk_offset,
+				vdos, log_chunk_size);
+		break;
+	case PARAMETER_TYPE_PORT_CONFIGURATION:
+		dev_dbg(ddev->dev, "Received port configuration: 0x%x",
+			parameter_type);
+		parse_port_config(ddev, vdos, num_vdos);
+		break;
+	case PARAMETER_TYPE_CONNECTED_DEVICES:
+		dev_dbg(ddev->dev, "Received connected devices: 0x%x",
+			parameter_type);
+		parse_connected_devices(ddev, vdos, num_vdos);
+		break;
+	case PARAMETER_TYPE_MOISTURE_DETECTED:
+		dev_dbg(ddev->dev, "Received moisture detected: 0x%x value=%d",
+			parameter_type, vdos[0]);
+		ddev->params.moisture_detected_count += vdos[0];
+		break;
+	default:
+		dev_err(ddev->dev, "Unsupported parameter 0x%x",
+			parameter_type);
+		break;
+	}
+
+	if (protocol_type == VDM_RESPONSE) {
 		ddev->ack_parameter = parameter_type;
 		complete(&ddev->rx_complete);
-
-	} else if (protocol_type == VDM_BROADCAST) {
-
-		switch (parameter_type) {
-		case PARAMETER_TYPE_BOARD_TEMPERATURE:
-			ddev->params.board_temp = vdos[0];
-			break;
-		case PARAMETER_TYPE_PORT_CONFIGURATION:
-			dev_dbg(ddev->dev, "Received port configuration: 0x%x",
-				parameter_type);
-			parse_port_config(ddev, vdos, num_vdos);
-			break;
-		case PARAMETER_TYPE_CONNECTED_DEVICES:
-			dev_dbg(ddev->dev, "Received connected devices: 0x%x",
-				parameter_type);
-			parse_connected_devices(ddev, vdos, num_vdos);
-			break;
-		case PARAMETER_TYPE_MOISTURE_DETECTED:
-			dev_dbg(ddev->dev, "Received moisture detected: 0x%x value=%d",
-				parameter_type, vdos[0]);
-			ddev->params.moisture_detected_count += vdos[0];
-			break;
-		default:
-			dev_err(ddev->dev, "Unsupported broadcast parameter 0x%x",
-				parameter_type);
-			break;
-		}
 	}
 }
 
@@ -706,7 +753,11 @@ static ssize_t fw_version_show(struct device *dev,
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->params.fw_version);
+	if (ddev->current_pid == VDM_PID_MOKU_APP) {
+		return scnprintf(buf, PAGE_SIZE, "%llu\n", ddev->params.fw_version);
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", (u32) ddev->params.legacy_fw_version);
 }
 static DEVICE_ATTR_RO(fw_version);
 
@@ -1327,6 +1378,8 @@ static int charging_dock_probe(struct platform_device *pdev)
 	ddev->workqueue = alloc_ordered_workqueue("charging_dock_request_wq", WQ_FREEZABLE | WQ_HIGHPRI);
 	if (!ddev->workqueue)
 		return -ENOMEM;
+
+	INIT_DELAYED_WORK(&ddev->periodic_work, charging_dock_queue_periodic_requests);
 
 	if (ddev->send_state_of_charge) {
 		INIT_WORK(&ddev->work_soc, charging_dock_handle_work_soc);

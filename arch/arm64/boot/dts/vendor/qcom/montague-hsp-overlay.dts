@@ -16,3 +16,11 @@
 		reg = <0x0 0x82a00000 0x0 0x0>;
 	};
 };
+
+&pcie0 {
+
+	qcom,config-recovery;
+	qcom,drv-supported;
+
+};
+

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -2006,6 +2006,74 @@ void cam_flash_shutdown(struct cam_flash_ctrl *fctrl)
 		CAM_ERR(CAM_FLASH, "Release failed rc: %d", rc);
 
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
+	fctrl->pause_state = false;
+	fctrl->last_applied_req = 0;
+}
+
+int cam_flash_no_crm_pause_apply(
+	struct cam_req_mgr_no_crm_pause_evt_data *pause)
+{
+	int rc = 0;
+	struct cam_flash_ctrl *f_ctrl = NULL;
+
+	f_ctrl = cam_get_device_no_crm_priv(pause->dev_hdl);
+	mutex_lock(&f_ctrl->flash_mutex);
+	f_ctrl->pause_state     = true;
+	pause->last_applied_req = f_ctrl->last_applied_req;
+	mutex_unlock(&f_ctrl->flash_mutex);
+	CAM_INFO(CAM_FLASH, "pause slot[%d] link 0x%x flash_req %llu pause_state: %d ",
+						f_ctrl->soc_info.index,
+						pause->link_hdl,
+						pause->last_applied_req,
+						f_ctrl->pause_state);
+
+	return rc;
+}
+
+int cam_flash_no_crm_resume_apply(
+	struct cam_req_mgr_no_crm_resume_evt_data *resume)
+{
+	int rc = 0;
+	struct cam_flash_ctrl *f_ctrl = NULL;
+	struct cam_req_mgr_no_crm_apply_request apply = {0};
+
+	f_ctrl = cam_get_device_no_crm_priv(resume->dev_hdl);
+
+	apply.link_hdl  = resume->link_hdl;
+	apply.dev_hdl   = resume->dev_hdl;
+
+	if (!resume) {
+		CAM_ERR(CAM_SENSOR, "Invalid resume received");
+		return -EINVAL;
+	}
+
+	if (f_ctrl->bridge_intf.link_hdl == resume->link_hdl) {
+		mutex_lock(&f_ctrl->flash_mutex);
+		if (!f_ctrl->bridge_intf.enable_crm) {
+			f_ctrl->pause_state = false;
+			apply.anchor_req_id = resume->anchor_applied_req;
+
+			if (resume->anchor_applied_req != 0 && apply.dev_hdl != -1 &&
+				f_ctrl->bridge_intf.no_crm_ops.apply_req != NULL) {
+				mutex_unlock(&f_ctrl->flash_mutex);
+				f_ctrl->bridge_intf.no_crm_ops.apply_req(&apply);
+				mutex_lock(&f_ctrl->flash_mutex);
+			}
+
+			resume->applied_req_id = f_ctrl->last_applied_req;
+		}
+		mutex_unlock(&f_ctrl->flash_mutex);
+
+		CAM_INFO(CAM_SENSOR,
+			 "resume_sensor slot[%d] link: 0x%x ife_req: %llu sensor_req: %llu pause_state: %d",
+					f_ctrl->soc_info.index,
+					resume->link_hdl,
+					resume->anchor_applied_req,
+					resume->applied_req_id,
+					f_ctrl->pause_state);
+	}
+
+	return rc;
 }
 
 int cam_flash_no_crm_apply(
@@ -2033,6 +2101,8 @@ int cam_flash_no_crm_apply(
 		if (rc)
 			CAM_ERR(CAM_FLASH, "apply_setting failed with rc=%d",
 				rc);
+		else
+			f_ctrl->last_applied_req = req_id;
 	} else {
 		CAM_DBG(CAM_FLASH, "Ignore apply, Not implemented");
 	}

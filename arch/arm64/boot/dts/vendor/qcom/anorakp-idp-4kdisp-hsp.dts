@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "anorakp.dtsi"
+#include "anorakp-idp-4kdisp-hsp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. AnorakP IDP 4K display + HSP";
+	compatible = "qcom,anorakp-idp", "qcom,anorakp", "qcom,idp";
+	qcom,board-id = <0x10022 0x5>;
+};

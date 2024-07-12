@@ -1,0 +1,14 @@
+ST Embedded Secure Element (eSE) GPIO
+
+Required properties:
+ - compatible: "st,st54spi_gpio"
+ - gpio-power_nreset: GPIO pin for reset.
+
+Example:
+
+	st54spi_gpio {
+		status = "ok";
+		compatible = "st,st54spi_gpio";
+		/* gpio used as SE_nRESET */
+		gpio-power_nreset = <&tlmm 48 0x00>;
+	};

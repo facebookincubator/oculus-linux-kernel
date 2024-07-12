@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,6 +54,14 @@
 #define qdf_ht_init(table) __qdf_ht_init(table)
 
 /**
+ * qdf_hl_init() - initialize a hash list instance
+ * @ht: a pointer qdf_ht instance to initialize
+ *
+ * Return: none
+ */
+#define qdf_hl_init(ht) __qdf_hl_init(ht)
+
+/**
  * qdf_ht_deinit() - de-initialize a qdf_ht instance
  * @table: a non-pointer qdf_ht instance to de-initialize
  *
@@ -79,12 +88,29 @@
 #define qdf_ht_add(table, entry, key) __qdf_ht_add(table, entry, key)
 
 /**
+ * qdf_hl_add_head_rcu() - add an entry to a hash list instance
+ * @n: pointer to a qdf_ht_entry instance to add to @ht
+ * @ht: a pointer qdf_ht instance to add an entry to
+ *
+ * Return: none
+ */
+#define qdf_hl_add_head_rcu(n, ht) __qdf_hl_add_head_rcu(n, ht)
+
+/**
  * qdf_ht_remove() - remove and entry from a qdf_ht instance
  * @entry: pointer to a qdf_ht_entry instance to remove
  *
  * Return: none
  */
 #define qdf_ht_remove(entry) __qdf_ht_remove(entry)
+
+/**
+ * qdf_hl_del_rcu() - delete entry from a hash list instance
+ * @n: pointer to a qdf_ht_entry instance to remove
+ *
+ * Return: none
+ */
+#define qdf_hl_del_rcu(n) __qdf_hl_del_rcu(n)
 
 /**
  * qdf_ht_for_each() - iterate all entries in @table
@@ -128,6 +154,26 @@
  */
 #define qdf_ht_for_each_match(table, cursor, entry_field, key, key_field) \
 	__qdf_ht_for_each_match(table, cursor, entry_field, key, key_field)
+
+/**
+ * qdf_hl_for_each_entry_rcu() - iterates through each entry
+ * @pos: container struct pointer populated with each iteration
+ * @head: pointer to qdf_ht
+ * @member: name of the entry field in the entry container struct
+ */
+#define qdf_hl_for_each_entry_rcu(pos, head, member) \
+		__qdf_hl_for_each_entry_rcu(pos, head, member)
+
+/**
+ * qdf_hl_for_each_entry_safe() - iterate over list of given type safe
+ *				  against removal of list entry
+ * @pos: container struct pointer populated with each iteration
+ * @n: qdf_ht_entry to use as temporary storage
+ * @head: pointer to qdf_ht
+ * @member: name of the entry field in the entry container struct
+ */
+#define qdf_hl_for_each_entry_safe(pos, n, head, member) \
+		__qdf_hl_for_each_entry_safe(pos, n, head, member)
 
 /**
  * qdf_ht_get() - get the first entry with a key matching @key

@@ -9,6 +9,7 @@ dtbo-$(CONFIG_META_unknown12) += \
 dtbo-$(CONFIG_OCULUS_unknown7) += \
 	unknown7-dev0-overlay.dtbo \
 	unknown7-dev0.5-overlay.dtbo \
+	unknown7-dev0.6-overlay.dtbo \
 	unknown7-p0-overlay.dtbo \
 	unknown7-p1-overlay.dtbo
 
@@ -67,11 +68,15 @@ dtbo-$(CONFIG_OCULUS_unknown13) += \
 	unknown13-dev0-overlay.dtbo \
 	unknown13-poc0-overlay.dtbo
 
+dtbo-$(CONFIG_OCULUS_unknown11XR2G2) += \
+	unknown11xr2g2-dev0-overlay.dtbo
+
 unknown12-dev0-overlay.dtbo-base := unknown12.dtb
 unknown12-pocb-overlay.dtbo-base := unknown12.dtb
 unknown12-nff-overlay.dtbo-base := unknown12.dtb
 unknown7-dev0-overlay.dtbo-base := unknown7.dtb
 unknown7-dev0.5-overlay.dtbo-base := unknown7.dtb
+unknown7-dev0.6-overlay.dtbo-base := unknown7.dtb
 unknown7-p0-overlay.dtbo-base := unknown7.dtb
 unknown7-p1-overlay.dtbo-base := unknown7.dtb
 unknown9-p0-overlay.dtbo-base := unknown9.dtb
@@ -118,6 +123,7 @@ unknown6-dvt1.2-overlay.dtbo-base := unknown6.dtb
 unknown6-dvt1.3-overlay.dtbo-base := unknown6.dtb
 unknown13-dev0-overlay.dtbo-base := unknown13.dtb
 unknown13-poc0-overlay.dtbo-base := unknown13.dtb
+unknown11xr2g2-dev0-overlay.dtbo-base := unknown11xr2g2.dtb
 
 endif # CONFIG_ARCH_ANORAK
 endif # CONFIG_BUILD_ARM64_DT_OVERLAY

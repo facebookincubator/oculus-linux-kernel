@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -318,16 +318,13 @@ uint32_t scm_get_last_scan_time_per_channel(struct wlan_objmgr_vdev *vdev,
  * @pdev: pdev info
  * @bssid: BSSID of the bcn/probe response to be fetched from scan db
  * @freq: freq for scan filter
- * @cache_entry: cache entry to be filled from scan info
  *
- * Return: QDF_STATUS_SUCCESS if scan entry is present in scan db
+ * Return: scan entry if found, else NULL
  */
-QDF_STATUS
+struct scan_cache_entry *
 scm_scan_get_scan_entry_by_mac_freq(struct wlan_objmgr_pdev *pdev,
 				    struct qdf_mac_addr *bssid,
-				    uint16_t freq,
-				    struct scan_cache_entry
-				    *cache_entry);
+				    uint16_t freq);
 
 /**
  * scm_scan_get_entry_by_mac_addr() - Get bcn/probe rsp from scan db

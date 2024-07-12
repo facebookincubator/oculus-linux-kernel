@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1946,6 +1946,40 @@ wlan_cm_get_assoc_btm_cap(struct wlan_objmgr_vdev *vdev);
  * Return: bool, true: self mld roam supported
  */
 bool wlan_cm_is_self_mld_roam_supported(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * wlan_cm_set_force_20mhz_in_24ghz() - Sets the config to (dis)allow
+ * the 40 MHz connection in 2.4 GHz
+ *
+ * @vdev: pointer to vdev
+ * @is_40mhz_cap: is 40 MHz supported
+ *
+ * Return: None
+ */
+void
+wlan_cm_set_force_20mhz_in_24ghz(struct wlan_objmgr_vdev *vdev,
+				 bool is_40mhz_cap);
+
+/**
+ * wlan_cm_get_force_20mhz_in_24ghz - Gets the 40 MHz (dis)allowed on 2.4 GHz
+ * config
+ * @vdev: pointer to vdev
+ *
+ * Return: 40 MHz allowed on 2.4 GHz
+ */
+bool
+wlan_cm_get_force_20mhz_in_24ghz(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * cm_send_ies_for_roam_invoke - Send IEs to firmware based on the reassoc
+ * req received from the userspace
+ * @vdev: vdev
+ * @dot11_mode: dot11 mode
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+cm_send_ies_for_roam_invoke(struct wlan_objmgr_vdev *vdev, uint16_t dot11_mode);
 
 #ifdef WLAN_FEATURE_11BE_MLO
 /**

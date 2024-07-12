@@ -4625,6 +4625,7 @@ int hdd_wlan_start_modules(struct hdd_context *hdd_ctx, bool reinit)
 			ret = qdf_status_to_os_return(status);
 			goto psoc_close;
 		}
+		ucfg_dp_svc_init(hdd_ctx->psoc);
 
 		hdd_populate_feature_set_cds_config(hdd_ctx);
 
@@ -15466,6 +15467,7 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 			QDF_ASSERT(0);
 		}
 
+		ucfg_dp_svc_deinit(hdd_ctx->psoc);
 		qdf_status = cds_close(hdd_ctx->psoc);
 		if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 			hdd_warn("Failed to stop CDS: %d", qdf_status);

@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelinp-sg.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. RavelinP SG SoC";
+	compatible = "qcom,ravelinp";
+	qcom,board-id = <0 0>;
+};
+

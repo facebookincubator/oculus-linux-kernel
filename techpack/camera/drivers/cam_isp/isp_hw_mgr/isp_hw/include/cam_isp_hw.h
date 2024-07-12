@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_ISP_HW_H_
@@ -216,6 +216,8 @@ enum cam_isp_hw_cmd_type {
 	CAM_ISP_HW_CMD_UPDATE_CSID_RES_IRQ_MASK,
 	CAM_ISP_HW_CMD_UPDATE_VFE_SRC_RES_IRQ_MASK,
 	CAM_ISP_HW_CMD_UPDATE_VFE_OUT_RES_IRQ_MASK,
+	CAM_ISP_HW_CMD_WAIT_LAST_STREAM_SOF,
+	CAM_ISP_HW_CMD_CHECK_RUP_FOR_APPLIED_REQ,
 	CAM_ISP_HW_CMD_MAX,
 };
 

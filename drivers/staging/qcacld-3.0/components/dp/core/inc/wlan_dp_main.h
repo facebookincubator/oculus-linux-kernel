@@ -26,6 +26,10 @@
 #include "wlan_dp_public_struct.h"
 #include "wlan_dp_priv.h"
 #include "wlan_dp_objmgr.h"
+#ifdef WLAN_SUPPORT_FLOW_PRIORTIZATION
+#include "wlan_fpm_table.h"
+#include "wlan_dp_fim.h"
+#endif
 
 #define NUM_RX_QUEUES 5
 
@@ -746,6 +750,41 @@ static inline
 QDF_STATUS wlan_dp_select_profile_cfg(struct wlan_objmgr_psoc *psoc)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+#endif
+
+#ifdef WLAN_SUPPORT_FLOW_PRIORTIZATION
+
+/**
+ * dp_flow_priortization_init() - Initialize FPM and FIM modules
+ * @dp_intf: DP interface handle
+ *
+ * Return: void
+ */
+static inline void dp_flow_priortization_init(struct wlan_dp_intf *dp_intf)
+{
+	dp_fpm_init(dp_intf);
+	dp_fim_init(dp_intf);
+}
+
+/**
+ * dp_flow_priortization_deinit() - Deinitialize FPM and FIM modules
+ * @dp_intf: DP interface handle
+ *
+ * Return: void
+ */
+static inline void dp_flow_priortization_deinit(struct wlan_dp_intf *dp_intf)
+{
+	dp_fim_deinit(dp_intf);
+	dp_fpm_deinit(dp_intf);
+}
+#else
+static inline void dp_flow_priortization_init(struct wlan_dp_intf *dp_intf)
+{
+}
+
+static inline void dp_flow_priortization_deinit(struct wlan_dp_intf *dp_intf)
+{
 }
 #endif
 #endif

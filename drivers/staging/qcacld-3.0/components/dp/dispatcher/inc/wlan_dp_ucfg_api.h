@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1530,5 +1530,274 @@ QDF_STATUS ucfg_dp_txrx_ext_dump_stats(ol_txrx_soc_handle soc,
  */
 QDF_STATUS ucfg_dp_txrx_set_cpu_mask(ol_txrx_soc_handle soc,
 				     qdf_cpu_mask *new_mask);
+
+#ifdef WLAN_SUPPORT_SERVICE_CLASS
+/*
+ * ucfg_dp_svc_init() - Initialize svc
+ * @psoc: psoc handle
+ *
+ * Return: None
+ */
+void ucfg_dp_svc_init(struct wlan_objmgr_psoc *psoc);
+
+/*
+ * ucfg_dp_svc_deinit() - Deinitialize svc
+ * @psoc: psoc handle
+ *
+ * Return: None
+ */
+void ucfg_dp_svc_deinit(struct wlan_objmgr_psoc *psoc);
+
+/*
+ * ucfg_dp_svc_add() - Add service class
+ * @data: pointer to svc data
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS ucfg_dp_svc_add(struct dp_svc_data *data);
+
+/*
+ * ucfg_dp_svc_remove() - Remove service class
+ * @svc_id: service class id
+ *
+ * Return: Zero in case of successful deletion
+ */
+QDF_STATUS ucfg_dp_svc_remove(uint8_t svc_id);
+
+/*
+ * ucfg_dp_svc_get() - Get service class
+ * @svc_id: service class id
+ * @svc_table: pointer to service claass table
+ * @table_size: size of svc table
+ *
+ * Return: number of service class in a svc table
+ */
+uint8_t ucfg_dp_svc_get(uint8_t svc_id,	struct dp_svc_data *svc_table,
+			uint16_t table_size);
+
+#else
+static inline
+void ucfg_dp_svc_init(struct wlan_objmgr_psoc *psoc)
+{
+}
+
+static inline
+void ucfg_dp_svc_deinit(struct wlan_objmgr_psoc *psoc)
+{
+}
+
+static inline QDF_STATUS
+ucfg_dp_svc_add(struct dp_svc_data *data)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS
+ucfg_dp_svc_remove(uint8_t svc_id)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline uint8_t
+ucfg_dp_svc_get(uint8_t svc_id, struct dp_svc_data *svc_table,
+		uint16_t table_size)
+{
+	return 0;
+}
+#endif
+
+#ifdef WLAN_SUPPORT_FLOW_PRIORTIZATION
+/*
+ * ucfg_dp_fim_update_metadata() - Update skb with metadata
+ * @nbuf: skb
+ * @vdev:vdev
+ *
+ * Return: QDF_STATUS_SUCCESS if skb marked with valid metadata
+ */
+QDF_STATUS ucfg_dp_fim_update_metadata(qdf_nbuf_t nbuf,
+				       struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_dp_fim_display_hash_table() - Display FIM node from hash table
+ * @vdev: vdev
+ *
+ * Return: None
+ */
+void ucfg_dp_fim_display_hash_table(struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_dp_fim_clear_hash_table() - Clear FIM nodes from hash table
+ * @vdev: vdev
+ *
+ * Return: None
+ */
+void ucfg_dp_fim_clear_hash_table(struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_dp_fim_display_stats() - Display FIM stats
+ * @vdev: vdev
+ *
+ * Return: None
+ */
+void ucfg_dp_fim_display_stats(struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_dp_fim_clear_stats() - Clear FIM stats
+ * @vdev: vdev
+ *
+ * Return: None
+ */
+void ucfg_dp_fim_clear_stats(struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_dp_fpm_check_tid_override_tagged() - Check skb marked with tid override
+ * @nbuf: skb
+ *
+ * Return: True if skb marked with tid override
+ */
+bool ucfg_dp_fpm_check_tid_override_tagged(qdf_nbuf_t nbuf);
+
+/*
+ * ucfg_dp_fpm_display_policy() - Display FPM policies
+ * @vdev: vdev
+ *
+ * Return: None
+ */
+void ucfg_dp_fpm_display_policy(struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_fpm_policy_get_ctx_by_vdev() - Fet FPM context from vdev
+ * @vdev: vdev
+ *
+ * Return: Return fpm context
+ */
+struct fpm_table *
+ucfg_fpm_policy_get_ctx_by_vdev(struct wlan_objmgr_vdev *vdev);
+
+/*
+ * ucfg_fpm_policy_add() - Add FPM policy
+ * @fpm: FPM context
+ * @policy: Flow policy
+ *
+ * Return: 0 if FPM policy added successfully
+ */
+QDF_STATUS ucfg_fpm_policy_add(struct fpm_table *fpm, struct dp_policy *policy);
+
+/*
+ * ucfg_fpm_policy_update() - Update FPM policy
+ * @fpm: FPM context
+ * @policy: Flow policy
+ *
+ * Return: 0 if FPM policy updated successfully
+ */
+QDF_STATUS ucfg_fpm_policy_update(struct fpm_table *fpm,
+				  struct dp_policy *policy);
+
+/*
+ * ucfg_fpm_policy_rem() - Remove FPM policy
+ * @fpm: FPM context
+ * @cookie: Cookie to get associated policy
+ *
+ * Return: 0 if FPM policy removed successfully
+ */
+QDF_STATUS ucfg_fpm_policy_rem(struct fpm_table *fpm, uint64_t cookie);
+
+/*
+ * ucfg_fpm_policy_get() - Get FPM policy array
+ * @fpm: FPM context
+ * @policy: Flow policy array to be filled
+ *
+ * Return: Policy count
+ */
+uint8_t ucfg_fpm_policy_get(struct fpm_table *fpm, struct dp_policy *policy,
+			    uint8_t max_count);
+#else
+static inline
+QDF_STATUS ucfg_dp_fim_update_metadata(qdf_nbuf_t nbuf,
+				       struct wlan_objmgr_vdev *vdev)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline
+void ucfg_dp_fim_display_hash_table(struct wlan_objmgr_vdev *vdev)
+{
+}
+
+static inline
+void ucfg_dp_fim_clear_hash_table(struct wlan_objmgr_vdev *vdev)
+{
+}
+
+static inline
+void ucfg_dp_fim_display_stats(struct wlan_objmgr_vdev *vdev)
+{
+}
+
+static inline
+void ucfg_dp_fim_clear_stats(struct wlan_objmgr_vdev *vdev)
+{
+}
+
+static inline
+bool ucfg_dp_fpm_check_tid_override_tagged(qdf_nbuf_t nbuf)
+{
+	return false;
+}
+
+static inline
+void ucfg_dp_fpm_display_policy(struct wlan_objmgr_vdev *vdev)
+{
+}
+
+static inline
+struct fpm_table *ucfg_fpm_policy_get_ctx_by_vdev(struct wlan_objmgr_vdev *vdev)
+{
+	return NULL;
+}
+
+static inline
+QDF_STATUS ucfg_fpm_policy_add(struct fpm_table *fpm, struct dp_policy *policy)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+QDF_STATUS ucfg_fpm_policy_update(struct fpm_table *fpm,
+				  struct dp_policy *policy)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+QDF_STATUS ucfg_fpm_policy_rem(struct fpm_table *fpm, uint64_t cookie)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+uint8_t ucfg_fpm_policy_get(struct fpm_table *fpm, struct dp_policy *policy,
+			    uint8_t max_count)
+{
+	return 0;
+}
+#endif
+
+#ifdef WLAN_SUPPORT_LAPB
+/*
+ * ucfg_dp_lapb_handle_app_ind() - Handle LAPB application traffic end
+ *				   indication
+ * @nbuf: skb
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS ucfg_dp_lapb_handle_app_ind(qdf_nbuf_t nbuf);
+#else
+static inline
+QDF_STATUS ucfg_dp_lapb_handle_app_ind(qdf_nbuf_t nbuf)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+#endif
 
 #endif /* _WLAN_DP_UCFGi_API_H_ */

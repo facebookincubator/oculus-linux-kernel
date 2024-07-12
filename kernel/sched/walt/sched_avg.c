@@ -11,6 +11,7 @@
 #include <linux/hrtimer.h>
 #include <linux/sched.h>
 #include <linux/math64.h>
+#include <trace/hooks/walt.h>
 
 #include "walt.h"
 #include "trace.h"
@@ -269,21 +270,27 @@ unsigned int sched_get_cpu_util(int cpu)
 	return busy;
 }
 
-int sched_lpm_disallowed_time(int cpu, u64 *timeout)
+static void android_vh_walt_sched_lpm_disallowed_time(void *unused, int cpu, u64 *timeout, int *ret)
 {
 	u64 now = sched_clock();
 	u64 bias_end_time = atomic64_read(&per_cpu(busy_hyst_end_time, cpu));
 
 	if (unlikely(is_reserved(cpu))) {
 		*timeout = 10 * NSEC_PER_MSEC;
-		return 0; /* shallowest c-state */
+		*ret = 0;
+		return; /* shallowest c-state */
 	}
 
 	if (now < bias_end_time) {
 		*timeout = bias_end_time - now;
-		return 0; /* shallowest c-state */
+		*ret = 0;
+		return; /* shallowest c-state */
 	}
 
-	return INT_MAX; /* don't care */
+	*ret = INT_MAX; /* don't care */
 }
-EXPORT_SYMBOL(sched_lpm_disallowed_time);
+
+void sched_avg_init(void)
+{
+	register_trace_android_vh_walt_sched_lpm_disallowed_time(android_vh_walt_sched_lpm_disallowed_time, NULL);
+}

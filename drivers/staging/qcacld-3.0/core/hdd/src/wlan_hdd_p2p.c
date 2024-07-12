@@ -285,7 +285,7 @@ static int __wlan_hdd_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	struct wlan_objmgr_vdev *vdev;
-	uint8_t type, sub_type;
+	uint8_t type, sub_type, cat_code;
 	uint16_t auth_algo;
 	QDF_STATUS qdf_status;
 	int ret;
@@ -311,24 +311,35 @@ static int __wlan_hdd_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	type = WLAN_HDD_GET_TYPE_FRM_FC(buf[0]);
 	sub_type = WLAN_HDD_GET_SUBTYPE_FRM_FC(buf[0]);
-	hdd_debug("type %d, sub_type %d", type, sub_type);
 
 	if ((adapter->device_mode == QDF_STA_MODE) &&
 	    (type == SIR_MAC_MGMT_FRAME) && (sub_type == SIR_MAC_MGMT_ACTION)) {
 
-		hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-		peer = wlan_objmgr_get_peer_by_mac(
-			hdd_ctx->psoc, hdd_sta_ctx->conn_info.bssid.bytes,
-			WLAN_MGMT_RX_ID);
+		/*
+		* If the frame is SCS Action Frame, then check if PMF enabled
+		* Index 18 is where the category code is stored in the action frame
+		* Int val 19 is 0x13 which is the category code for SCS Action Frame types
+		**/
+		cat_code = buf[18];
+		if (cat_code == 19) {
+			hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+			peer = wlan_objmgr_get_peer_by_mac(
+				hdd_ctx->psoc, hdd_sta_ctx->conn_info.bssid.bytes,
+				WLAN_MGMT_RX_ID);
 
-		if (peer == NULL)
-			return -EINVAL;
+			if (peer == NULL) {
+				hdd_err("SCS Action Frame not sent due to no peer");
+				return -EINVAL;
+			}
 
-		is_pmf_enabled = mlme_get_peer_pmf_status(peer);
-		wlan_objmgr_peer_release_ref(peer, WLAN_MGMT_RX_ID);
+			is_pmf_enabled = mlme_get_peer_pmf_status(peer);
+			wlan_objmgr_peer_release_ref(peer, WLAN_MGMT_RX_ID);
 
-		if (!is_pmf_enabled)
-			return -EPERM; // operation not permitted
+			if (!is_pmf_enabled) {
+				hdd_err("SCS Action Frame not sent due to PMF disabled.");
+				return -EPERM; // operation not permitted
+			}
+		}
 	}
 
 	/* When frame to be transmitted is auth mgmt, then trigger

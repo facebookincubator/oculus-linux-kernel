@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2016-2021, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __UAPI_CAM_SYNC_H__
@@ -18,6 +18,7 @@
 #define CAM_SYNC_V4L_EVENT                       (V4L2_EVENT_PRIVATE_START + 0)
 #define CAM_SYNC_V4L_EVENT_V2                    (V4L2_EVENT_PRIVATE_START + 1)
 #define CAM_SYNC_V4L_EVENT_V3                    (V4L2_EVENT_PRIVATE_START + 2)
+#define CAM_SYNC_V4L_EVENT_V4                    (V4L2_EVENT_PRIVATE_START + 3)
 
 /* Specific event ids to get notified in user space */
 #define CAM_SYNC_V4L_EVENT_ID_CB_TRIG            0
@@ -46,6 +47,12 @@
 
 #define CAM_SYNC_GET_PAYLOAD_PTR_V3(ev, type)       \
 	(type *)((char *)ev.u.data + sizeof(struct cam_sync_ev_header_v3))
+
+#define CAM_SYNC_GET_HEADER_PTR_V4(ev)              \
+	((struct cam_sync_ev_header_v4 *)ev.u.data)
+
+#define CAM_SYNC_GET_PAYLOAD_PTR_V4(ev, type)       \
+	((type *)((char *)ev.u.data + sizeof(struct cam_sync_ev_header_v4)))
 
 #define CAM_SYNC_STATE_INVALID                   0
 #define CAM_SYNC_STATE_ACTIVE                    1
@@ -80,6 +87,8 @@
 #define CAM_SYNC_ISP_EVENT_CSID_RX_ERROR             (CAM_SYNC_ISP_EVENT_START + 10)
 #define CAM_SYNC_ISP_EVENT_CSID_SENSOR_SWITCH_ERROR  (CAM_SYNC_ISP_EVENT_START + 11)
 #define CAM_SYNC_ISP_EVENT_APPLY_DELAY               (CAM_SYNC_ISP_EVENT_START + 12)
+#define CAM_SYNC_ISP_EVENT_FRAME_DROP                (CAM_SYNC_ISP_EVENT_START + 13)
+#define CAM_SYNC_ISP_EVENT_IMPACTED_CTX_FRAME_DROP   (CAM_SYNC_ISP_EVENT_START + 14)
 #define CAM_SYNC_ISP_EVENT_END                       (CAM_SYNC_ISP_EVENT_START + 50)
 
 /* ICP Sync event reason types */
@@ -208,6 +217,41 @@ struct cam_sync_ev_header_v3 {
 	__s32 status;
 	uint32_t version;
 	uint32_t evt_param[CAM_SYNC_EVENTV3_CNT];
+};
+
+/**
+ * struct cam_sync_event_info - Event param data
+ *
+ * @event_cause              : Sync success/failure event cause types
+ * @tracker_id               : Tracker_id
+ * @sof_timestamp            : Captured time stamp value at sof hw event
+ * @boot_timestamp           : Boot time stamp for a given req_id
+ * @slave_timestamp          : Slave(Helios) timestamp
+ * @request_id               : Sensor req_id applied on current frame
+ */
+struct cam_sync_event_info {
+	__u32         event_cause;
+	__u32         tracker_id;
+	__u64         sof_timestamp;
+	__u64         boot_timestamp;
+	__u64         slave_timestamp;
+	__u64         request_id;
+};
+
+/**
+ * struct cam_sync_ev_header_v4 - Event header for sync event notification
+ *
+ * @sync_obj:    Sync object
+ * @status:      Status of the object
+ * @version:     sync driver version
+ * @evt_param:   event parameter
+ */
+struct cam_sync_ev_header_v4 {
+	__s32   sync_obj;
+	__s8    status;
+	__u8    version;
+	__s16   reserved;
+	struct cam_sync_event_info evt_param;
 };
 
 /**

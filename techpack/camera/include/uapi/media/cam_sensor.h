@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __UAPI_CAM_SENSOR_H__
@@ -21,6 +21,12 @@
 #define PREAMBLE_PATTEN_CAL_MASK  BIT(2)
 
 #define CAM_SENSOR_GET_QUERY_CAP_V2
+
+/* Sensor Driver cmd buffer meta type */
+#define CAM_SENSOR_PACKET_GENERIC_BLOB             1
+
+/* Sensor Res Blob Type */
+#define CAM_SENSOR_GENERIC_BLOB_RES_INFO           0
 
 enum camera_sensor_cmd_type {
 	CAMERA_SENSOR_CMD_TYPE_INVALID,
@@ -101,6 +107,7 @@ enum cam_sensor_packet_opcodes {
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_READ,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_FRAME_SKIP_UPDATE,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_PROBE_V2,
+	CAM_SENSOR_PACKET_OPCODE_SENSOR_RESCONFIG = 126,
 	CAM_SENSOR_PACKET_OPCODE_SENSOR_NOP = 127
 };
 
@@ -990,6 +997,33 @@ struct cam_flash_query_cap_info {
 	__u32    max_duration_flash[CAM_FLASH_MAX_LED_TRIGGERS];
 	__u32    max_current_torch[CAM_FLASH_MAX_LED_TRIGGERS];
 } __attribute__ ((packed));
+
+/**
+ * struct cam_cmd_sensor_res_info - Contains sensor res info
+ *
+ * vc/dt is the key property, it specifies the
+ * combinations of other properties enclosed in this
+ * structure.
+ *
+ * @version           : Version to indicate the change
+ * @vc                : Virtual channel
+ * @dt                : Data type
+ * @frame_duration    : Frame duraton
+ * @req_id            : Request Id
+ * @num_valid_params  : Number of valid params
+ * @valid_param_mask  : Valid param mask
+ * @params            : params
+ */
+struct cam_sensor_res_info {
+	__u32 version;
+	__u16 vc;
+	__u16 dt;
+	__u64 frame_duration;
+	__u64 req_id;
+	__u32 num_valid_params;
+	__u32 valid_param_mask;
+	__u16 params[4];
+} __attribute__((packed));
 
 #define VIDIOC_MSM_CCI_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 23, struct cam_cci_ctrl)

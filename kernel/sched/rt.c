@@ -1163,6 +1163,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 					strcpy(tgid_comm, "unavailable");
 				}
 			}
+			put_task_struct(tgid_task);
 		}
 
 		if (tgid_comm == NULL)

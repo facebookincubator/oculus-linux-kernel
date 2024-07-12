@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2743,6 +2743,31 @@ wlan_soc_mlo_cfg_attach(struct cdp_ctrl_objmgr_psoc *psoc,
 }
 #endif
 
+#ifdef WLAN_SUPPORT_LAPB
+static void
+wlan_soc_lapb_cfg_attach(struct cdp_ctrl_objmgr_psoc *psoc,
+			 struct wlan_cfg_dp_soc_ctxt *wlan_cfg_ctx)
+{
+	wlan_cfg_ctx->is_lapb_enabled = cfg_get(psoc, CFG_WLAN_SUPPORT_LAPB);
+}
+
+bool wlan_cfg_is_lapb_enabled(struct wlan_cfg_dp_soc_ctxt *cfg)
+{
+	return cfg->is_lapb_enabled;
+}
+#else
+static void
+wlan_soc_lapb_cfg_attach(struct cdp_ctrl_objmgr_psoc *psoc,
+			 struct wlan_cfg_dp_soc_ctxt *wlan_cfg_ctx)
+{
+}
+
+bool wlan_cfg_is_lapb_enabled(struct wlan_cfg_dp_soc_ctxt *cfg)
+{
+	return false;
+}
+#endif
+
 #ifdef QCA_VDEV_STATS_HW_OFFLOAD_SUPPORT
 /**
  * wlan_soc_vdev_hw_stats_cfg_attach() - Update hw vdev stats config in dp soc
@@ -3091,6 +3116,7 @@ wlan_cfg_soc_attach(struct cdp_ctrl_objmgr_psoc *psoc)
 	wlan_cfg_ctx->pointer_num_threshold_rx =
 			cfg_get(psoc, CFG_DP_POINTER_NUM_THRESHOLD_RX);
 	wlan_soc_tx_packet_inspect_attach(psoc, wlan_cfg_ctx);
+	wlan_soc_lapb_cfg_attach(psoc, wlan_cfg_ctx);
 	wlan_cfg_ctx->special_frame_msk =
 			cfg_get(psoc, CFG_SPECIAL_FRAME_MSK);
 

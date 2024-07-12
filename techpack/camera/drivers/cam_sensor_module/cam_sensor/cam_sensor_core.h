@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2018,2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_SENSOR_CORE_H_
@@ -90,6 +90,20 @@ int cam_sensor_no_crm_handshake(
  * This API establishes link with sensor subdevice with req mgr
  */
 int cam_sensor_establish_link(struct cam_req_mgr_core_dev_link_setup *link);
+
+/**
+ * @pause: pause event data
+ *
+ * This API pauses the request apply in to the sensor
+ */
+int cam_sensor_no_crm_pause_apply(struct cam_req_mgr_no_crm_pause_evt_data *pause);
+
+/**
+ * @resume: resume event data.
+ *
+ * This API resumes request apply to the sensor
+ */
+int cam_sensor_no_crm_resume_apply(struct cam_req_mgr_no_crm_resume_evt_data *resume);
 
 /**
  * @s_ctrl: Sensor ctrl structure

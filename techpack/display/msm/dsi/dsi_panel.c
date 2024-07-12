@@ -743,6 +743,7 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	u32 fifo_time_external_scanlines = 0;
 	s32 fifo_time_ns = 0;
 	s32 fifo_trim = 0;
+	u32 blu_default_duty;
 
 	u32 internal_1h_ns; /* Internal (TFT) 1H time */
 	const u32 internal_1h_error_tolerance = 98; /* Error tolerance of the internal display clock */
@@ -764,6 +765,8 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 
 	dsi = &panel->mipi_device;
 	bl_config = &panel->bl_config;
+
+	if (bl_config->backlight_changes_blocked) return rc;
 
 	/* Current mode timings */
 	timing = &panel->cur_mode->timing;
@@ -791,7 +794,8 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	}
 
 	/* Transform backlight level into illumination period in internal scanlines */
-	blu_scanline_duration = (internal_vtotal * bl_lvl / 1000) * bl_config->blu_default_duty / 1000;
+	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	blu_scanline_duration = (internal_vtotal * bl_lvl / 1000) * blu_default_duty / 1000;
 
 	/* Don't let the backlight duration be shorter than the guardband at the end of the frame. */
 	guardband_internal_scanlines = guardband_margin_thousandths * vtotal / 1000;
@@ -944,137 +948,23 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	bl_config->scanline_duration = blu_duration_ns / external_1h_ns;
 	bl_config->scanline_offset[0] = bl_config->scanline_offset[1] = blu_start_time_ns /
 			external_1h_ns;
+	bl_config->settling_time_us[0] = ((blu_start_time_ns - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * external_1h_ns / 1000);
+	bl_config->settling_time_us[1] = bl_config->settling_time_us[0];
 
 error:
 	return rc;
 }
 
-static u32 dsi_panel_calculate_settling_time(
-		struct dsi_backlight_config *bl_config, int temp)
-{
-	const int *response_time = (int *)bl_config->response_time;
-	int i, temp_delta;
-
-	if (temp <= response_time[0])
-		return (u32)response_time[1];
-
-	for (i = 0; i < (bl_config->num_response_time_entries - 1) * 2; i += 2) {
-		if (temp > response_time[i + 2])
-			continue;
-
-		temp_delta = temp - response_time[i];
-		return (u32)(response_time[i + 1] + temp_delta *
-				(response_time[i + 3] - response_time[i + 1]) /
-				(response_time[i + 2] - response_time[i]));
-	}
-
-	return (u32)response_time[i + 1];
-}
-
-static void dsi_panel_temp_dependent_bl_task_tokki_a(struct work_struct *work)
-{
-	struct dsi_backlight_config *bl_config = container_of(work,
-			struct dsi_backlight_config, bl_temp_dwork.work);
-	struct dsi_panel *panel = container_of(bl_config, struct dsi_panel,
-			bl_config);
-	int ret = 0, temp = 0;
-
-	mutex_lock(&panel->panel_lock);
-
-	if (thermal_zone_device_is_enabled(bl_config->bl_temp_tz)) {
-		/* Read the thermistor and calculate the desired settling time. */
-
-		if (bl_config->bl_temperature_override > 0) {
-			temp = bl_config->bl_temperature_override;
-		} else {
-			ret = thermal_zone_get_temp(bl_config->bl_temp_tz, &temp);
-		}
-
-		bl_config->settling_time_target_us =
-				dsi_panel_calculate_settling_time(bl_config,
-						(ret < 0) ? INT_MIN : temp);
-
-		DSI_DEBUG("temp: %d, settling time: %d us\n", temp,
-				bl_config->settling_time_target_us);
-	}
-
-	/* Unconditionally update the backlight timing. */
-	dsi_panel_handle_dfps_pwm_fifo_tokki_a(panel, bl_config->bl_level);
-
-	mod_delayed_work(system_wq, &bl_config->bl_temp_dwork, HZ);
-
-	mutex_unlock(&panel->panel_lock);
-}
-
-bool dsi_panel_update_temp_dependent_bl_config(
-	struct dsi_panel *panel, u32 *response_time_tbl, u32 response_time_tbl_size)
-{
-	int tbl_size = 0;
-	u32 *data;
-	u32 *tmp = NULL;
-
-	if (response_time_tbl_size <= 0 || response_time_tbl_size & 1) {
-		DSI_ERR("missing/malformed response time curve, len = %d\n", response_time_tbl_size);
-		return false;
-	}
-
-	/* If temperature dependent response time table is not present, or the size is not matching the new table */
-	if (panel->bl_config.response_time == NULL||
-		response_time_tbl_size != panel->bl_config.num_response_time_entries) {
-
-		tbl_size = panel->bl_config.num_response_time_entries == 0 ?
-			response_time_tbl_size : (response_time_tbl_size < panel->bl_config.num_response_time_entries*2 ) ?
-			response_time_tbl_size : panel->bl_config.num_response_time_entries*2;
-		data = devm_kcalloc(panel->parent, tbl_size, sizeof(u32), GFP_KERNEL);
-	}
-	else {
-		data = panel->bl_config.response_time;
-		tbl_size = panel->bl_config.num_response_time_entries*2;
-	}
-
-	memcpy(data, response_time_tbl, tbl_size*sizeof(u32));
-
-	if (data != panel->bl_config.response_time) {
-		panel->bl_config.num_response_time_entries = tbl_size / 2;
-		if (panel->bl_config.response_time)
-			tmp = panel->bl_config.response_time;
-		panel->bl_config.response_time = data;
-		if (tmp)
-			devm_kfree(panel->parent, tmp);
-	}
-
-	panel->bl_config.settling_time_target_us = panel->bl_config.response_time[1];
-
-	if (panel->bl_config.type == DSI_BACKLIGHT_TOKKI_A)
-		INIT_DELAYED_WORK(&panel->bl_config.bl_temp_dwork,
-				dsi_panel_temp_dependent_bl_task_tokki_a);
-	else {
-		DSI_ERR("unsupported backlight type %d\n", panel->bl_config.type);
-		return false;
-	}
-
-	return true;
-}
-
-int dsi_panel_tokki_a_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
-{
-	int rc = 0;
-
-	if (panel->bl_config.temperature_dependent_timing && bl_lvl > 0)
-		mod_delayed_work(system_wq, &panel->bl_config.bl_temp_dwork, 0);
-	else
-		rc = dsi_panel_handle_dfps_pwm_fifo_tokki_a(panel, bl_lvl);
-
-	return rc;
-}
-
-int dsi_panel_stark_olivia_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
+static int dsi_panel_stark_olivia_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
-	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	u32 vtotal, target_scanline, left_scanline, right_scanline, settling_time_scanlines, max_stereo_offset_scanlines;
+	u32 panel_1h_ns, guardband_margin_scanlines;
+	u32 left_settle, right_settle;
+	u32 blu_default_duty;
 
 	u8 reg = 0xB9; /* BLU adjust command */
 	u8 payload[16] = {0}; /* BLU adjust payload */
@@ -1085,25 +975,48 @@ int dsi_panel_stark_olivia_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	dsi = &panel->mipi_device;
 	bl_config = &panel->bl_config;
 
+	if (bl_config->backlight_changes_blocked) return rc;
+
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
+	panel_1h_ns = 1000000000 / (vtotal * timing->refresh_rate);
+	guardband_margin_scanlines = 15;
 
 	/* Transform backlight level into illumination period in scanlines */
-	bl_lvl = (bl_lvl * vtotal * bl_config->blu_default_duty) / 1000000;
+	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	bl_lvl = (bl_lvl * vtotal * blu_default_duty) / 1000000;
 
 	/*
 	 * Calculate the last scanline to start on for each BLU without
 	 * overlapping the backlight illumination with the next refresh's
 	 * scanout to the active scanlines of the panel.
 	 */
-	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->scanline_max_offset;
-	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
-	left_scanline = right_scanline + timing->v_active / 2;
+
+	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
+	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
+	if (bl_config->settling_time_target_us < 0xFFFF) {
+		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
+	} else {
+		// Default to 4ms settling time
+		settling_time_scanlines = 4000000 / panel_1h_ns;
+	}
+
+	/*
+	 * We fix the flash time for the left BLU to be at the earliest possible time (just after the settling
+	 * time, plus the active scan time), then the right BLU will flash after the right eye settling time has
+	 * passed, but before the end of the frame. We choose the earliest possible time that satisfies these
+	 * requirements and isn't more than max_stereo_offset_scanlines lines away from the left BLU flash.
+	 */
+	left_scanline = timing->v_back_porch + timing->v_sync_width + timing->v_active + settling_time_scanlines;
+	right_scanline = clamp_t(u32, left_scanline - max_stereo_offset_scanlines, left_scanline - timing->v_active / 2, vtotal - guardband_margin_scanlines);
 
 	right_scanline = min(target_scanline, right_scanline);
+	left_scanline = min(target_scanline, left_scanline);
+	left_settle = (left_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * panel_1h_ns / 1000;
+	right_settle = (right_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active / 2)) * panel_1h_ns / 1000;
+
 	if (right_scanline > vtotal)
 		right_scanline -= vtotal;
-	left_scanline = min(target_scanline, left_scanline);
 	if (left_scanline > vtotal)
 		left_scanline -= vtotal;
 
@@ -1135,19 +1048,24 @@ int dsi_panel_stark_olivia_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	bl_config->scanline_duration = bl_lvl;
 	bl_config->scanline_offset[0] = right_scanline;
 	bl_config->scanline_offset[1] = left_scanline;
+	bl_config->settling_time_us[0] = right_settle;
+	bl_config->settling_time_us[1] = left_settle;
 
 error:
 	return rc;
 }
 
-int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
+int dsi_panel_jdi_nvt_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
-	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	u32 vtotal, target_scanline, left_scanline, right_scanline, settling_time_scanlines, max_stereo_offset_scanlines;
+	u32 left_settle, right_settle;
+	u32 panel_1h_ns, guardband_margin_scanlines;
 	bool send_vfp = false;
+	u32 blu_default_duty;
 
 	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
 	u8 blu_right_start_msb[2] = {0xB8, 0x00}; /* BLU right PWM start adjust MSB*/
@@ -1169,32 +1087,58 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	dsi = &panel->mipi_device;
 	bl_config = &panel->bl_config;
 
+	if (bl_config->backlight_changes_blocked) return rc;
+
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
+	panel_1h_ns = 1000000000 / (vtotal * timing->refresh_rate);
+	guardband_margin_scanlines = 15;
 
 	/* Transform backlight level into illumination period in scanlines */
-	bl_lvl = (bl_lvl * vtotal * bl_config->blu_default_duty) / 1000000;
+	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	bl_lvl = (bl_lvl * vtotal * blu_default_duty) / 1000000;
 
 	/*
-	* Calculate the last scanline to start on for each BLU without
-	* overlapping the backlight illumination with the next refresh's
-	* scanout to the active scanlines of the panel.
-	*/
-	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->scanline_max_offset;
-	right_scanline = vtotal + timing->v_sync_width + timing->v_back_porch - bl_lvl;
-	left_scanline = right_scanline + timing->v_active / 2;
+	 * Calculate the last scanline to start on for each BLU without
+	 * overlapping the backlight illumination with the next refresh's
+	 * scanout to the active scanlines of the panel.
+	 */
+
+	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
+	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
+	if (bl_config->settling_time_target_us < 0xFFFF) {
+		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
+	} else {
+		// Default to 4ms settling time
+		settling_time_scanlines = 4000000 / panel_1h_ns;
+	}
+
+	/*
+	 * We fix the flash time for the left BLU to be at the earliest possible time (just after the settling
+	 * time, plus the active scan time), then the right BLU will flash after the right eye settling time has
+	 * passed, but before the end of the frame. We choose the earliest possible time that satisfies these
+	 * requirements and isn't more than max_stereo_offset_scanlines lines away from the left BLU flash.
+	 */
+	left_scanline = timing->v_back_porch + timing->v_sync_width + timing->v_active + settling_time_scanlines;
+	right_scanline = clamp_t(u32, left_scanline - max_stereo_offset_scanlines, left_scanline - timing->v_active / 2, vtotal - guardband_margin_scanlines);
 
 	right_scanline = min(target_scanline, right_scanline);
-	if (right_scanline > vtotal)
-		right_scanline -= vtotal;
 	left_scanline = min(target_scanline, left_scanline);
-	if (left_scanline > vtotal)
-		left_scanline -= vtotal;
 
-	if (right_scanline == vtotal - bl_lvl)
-		right_scanline -= 1;
-	if (left_scanline == vtotal - bl_lvl)
-		left_scanline -= 1;
+	if (right_scanline + bl_lvl >= vtotal - guardband_margin_scanlines &&
+		right_scanline + bl_lvl < vtotal + guardband_margin_scanlines)
+		right_scanline = vtotal - guardband_margin_scanlines - bl_lvl - 1;
+	if (left_scanline + bl_lvl >= vtotal - guardband_margin_scanlines &&
+		left_scanline + bl_lvl < vtotal + guardband_margin_scanlines)
+		left_scanline = vtotal - guardband_margin_scanlines - bl_lvl - 1;
+
+	left_settle = (left_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * panel_1h_ns / 1000;
+	right_settle = (right_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active / 2)) * panel_1h_ns / 1000;
+
+	if (right_scanline >= vtotal)
+		right_scanline -= vtotal;
+	if (left_scanline >= vtotal)
+		left_scanline -= vtotal;
 
 	send_vfp = bl_config->scanline_offset[0] != right_scanline
 				|| bl_config->scanline_offset[1] != left_scanline;
@@ -1243,8 +1187,164 @@ int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	bl_config->scanline_duration = bl_lvl << 1;
 	bl_config->scanline_offset[0] = right_scanline << 2;
 	bl_config->scanline_offset[1] = left_scanline << 2;
+	bl_config->settling_time_us[0] = right_settle;
+	bl_config->settling_time_us[1] = left_settle;
 
 error:
+	return rc;
+}
+
+static u32 dsi_panel_calculate_settling_time(
+		struct dsi_backlight_config *bl_config, int temp)
+{
+	const int *response_time = (int *)bl_config->response_time;
+	int i, temp_delta;
+
+	if (temp <= response_time[0])
+		return (u32)response_time[1];
+
+	for (i = 0; i < (bl_config->num_response_time_entries - 1) * 2; i += 2) {
+		if (temp > response_time[i + 2])
+			continue;
+
+		temp_delta = temp - response_time[i];
+		return (u32)(response_time[i + 1] + temp_delta *
+				(response_time[i + 3] - response_time[i + 1]) /
+				(response_time[i + 2] - response_time[i]));
+	}
+
+	return (u32)response_time[i + 1];
+}
+
+static void dsi_panel_temp_dependent_bl_task(struct work_struct *work)
+{
+	struct dsi_backlight_config *bl_config = container_of(work,
+			struct dsi_backlight_config, bl_temp_dwork.work);
+	struct dsi_panel *panel = container_of(bl_config, struct dsi_panel,
+			bl_config);
+	int ret = 0, temp = 0;
+
+	mutex_lock(&panel->panel_lock);
+
+	if (thermal_zone_device_is_enabled(bl_config->bl_temp_tz)) {
+		/* Read the thermistor and calculate the desired settling time. */
+
+		if (bl_config->bl_temperature_override > 0)
+			temp = bl_config->bl_temperature_override;
+		else
+			ret = thermal_zone_get_temp(bl_config->bl_temp_tz, &temp);
+
+		bl_config->settling_time_target_us =
+				dsi_panel_calculate_settling_time(bl_config,
+						(ret < 0) ? INT_MIN : temp);
+	}
+
+	/* Unconditionally update the backlight timing. */
+	switch (bl_config->type) {
+	case DSI_BACKLIGHT_TOKKI_A:
+		dsi_panel_handle_dfps_pwm_fifo_tokki_a(panel, bl_config->bl_level);
+		break;
+	case DSI_BACKLIGHT_STARK_OLIVIA:
+		dsi_panel_stark_olivia_set_pwm(panel, bl_config->bl_level);
+		break;
+	case DSI_BACKLIGHT_JDI_NVT:
+		dsi_panel_jdi_nvt_set_pwm(panel, bl_config->bl_level);
+		break;
+	default:
+		DSI_ERR("Backlight type %d does not support temperature-dependent backlight control\n",
+			bl_config->type);
+		break;
+	}
+
+	mod_delayed_work(system_wq, &bl_config->bl_temp_dwork, HZ);
+
+	mutex_unlock(&panel->panel_lock);
+}
+
+bool dsi_panel_update_temp_dependent_bl_config(
+	struct dsi_panel *panel, u32 *response_time_tbl, u32 response_time_tbl_size)
+{
+	int tbl_size = 0;
+	u32 *data;
+	u32 *tmp = NULL;
+
+	if (response_time_tbl_size <= 0 || response_time_tbl_size & 1) {
+		DSI_ERR("missing/malformed response time curve, len = %d\n", response_time_tbl_size);
+		return false;
+	}
+
+	/* If temperature dependent response time table is not present, or the size is not matching the new table */
+	if (panel->bl_config.response_time == NULL ||
+		response_time_tbl_size != panel->bl_config.num_response_time_entries) {
+
+		tbl_size = panel->bl_config.num_response_time_entries == 0 ?
+			response_time_tbl_size : (response_time_tbl_size < panel->bl_config.num_response_time_entries * 2) ?
+			response_time_tbl_size : panel->bl_config.num_response_time_entries*2;
+		data = devm_kcalloc(panel->parent, tbl_size, sizeof(u32), GFP_KERNEL);
+	} else {
+		data = panel->bl_config.response_time;
+		tbl_size = panel->bl_config.num_response_time_entries*2;
+	}
+
+	memcpy(data, response_time_tbl, tbl_size*sizeof(u32));
+
+	if (data != panel->bl_config.response_time) {
+		panel->bl_config.num_response_time_entries = tbl_size / 2;
+		if (panel->bl_config.response_time)
+			tmp = panel->bl_config.response_time;
+		panel->bl_config.response_time = data;
+		if (tmp)
+			devm_kfree(panel->parent, tmp);
+	}
+
+	panel->bl_config.settling_time_target_us = panel->bl_config.response_time[1];
+
+	if (panel->bl_config.type == DSI_BACKLIGHT_TOKKI_A ||
+		panel->bl_config.type == DSI_BACKLIGHT_STARK_OLIVIA ||
+		panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
+		INIT_DELAYED_WORK(&panel->bl_config.bl_temp_dwork,
+				dsi_panel_temp_dependent_bl_task);
+	else {
+		DSI_ERR("unsupported backlight type %d\n", panel->bl_config.type);
+		return false;
+	}
+
+	return true;
+}
+
+int dsi_panel_tokki_a_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
+{
+	int rc = 0;
+
+	if (panel->bl_config.temperature_dependent_timing && bl_lvl > 0)
+		mod_delayed_work(system_wq, &panel->bl_config.bl_temp_dwork, 0);
+	else
+		rc = dsi_panel_handle_dfps_pwm_fifo_tokki_a(panel, bl_lvl);
+
+	return rc;
+}
+
+int dsi_panel_stark_olivia_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
+{
+	int rc = 0;
+
+	if (panel->bl_config.temperature_dependent_timing && bl_lvl > 0)
+		mod_delayed_work(system_wq, &panel->bl_config.bl_temp_dwork, 0);
+	else
+		rc = dsi_panel_stark_olivia_set_pwm(panel, bl_lvl);
+
+	return rc;
+}
+
+int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel, u32 bl_lvl)
+{
+	int rc = 0;
+
+	if (panel->bl_config.temperature_dependent_timing && bl_lvl > 0)
+		mod_delayed_work(system_wq, &panel->bl_config.bl_temp_dwork, 0);
+	else
+		rc = dsi_panel_jdi_nvt_set_pwm(panel, bl_lvl);
+
 	return rc;
 }
 
@@ -1890,6 +1990,10 @@ static int dsi_panel_parse_misc_host_config(struct dsi_host_common_cfg *host,
 
 	DSI_DEBUG("[%s] DMA scheduling parameters Line: %d Window: %d\n", name,
 			host->dma_sched_line, host->dma_sched_window);
+
+	host->skip_pps_update = utils->read_bool(utils->data,
+					"qcom,mdss-dsi-panel-skip-pps-update");
+
 	return 0;
 }
 
@@ -3346,9 +3450,11 @@ static bool dsi_panel_parse_temp_dependent_bl_config(struct dsi_panel *panel)
 	config->num_response_time_entries = len / 2;
 	config->settling_time_target_us = config->response_time[1];
 
-	if (config->type == DSI_BACKLIGHT_TOKKI_A)
+	if (config->type == DSI_BACKLIGHT_TOKKI_A ||
+		config->type == DSI_BACKLIGHT_STARK_OLIVIA ||
+		config->type == DSI_BACKLIGHT_JDI_NVT)
 		INIT_DELAYED_WORK(&config->bl_temp_dwork,
-				dsi_panel_temp_dependent_bl_task_tokki_a);
+				dsi_panel_temp_dependent_bl_task);
 	else {
 		DSI_ERR("unsupported backlight type %d\n", config->type);
 		return false;
@@ -3407,6 +3513,30 @@ static irqreturn_t te_edge_irq_handler(int irq, void *p)
 	return IRQ_HANDLED;
 }
 
+static int dsi_panel_parse_ddic_family(struct dsi_panel *panel)
+{
+	const char *ddic_name = "meta,ddic-family";
+	const char *ddic_family = NULL;
+	struct dsi_parser_utils *utils = &panel->utils;
+
+	ddic_family = utils->get_property(utils->data, ddic_name, NULL);
+	if (!ddic_family)
+		panel->ddic_family = DSI_DDIC_UNKNOWN;
+	else if (!strcmp(ddic_family, "ddic_family_stark"))
+		panel->ddic_family = DSI_DDIC_STARK;
+	else if (!strcmp(ddic_family, "ddic_family_nvt"))
+		panel->ddic_family = DSI_DDIC_NVT;
+	else if (!strcmp(ddic_family, "ddic_family_eos"))
+		panel->ddic_family = DSI_DDIC_EOS;
+	else {
+		DSI_ERR("[%s] ddic-family unknown-%s\n",
+			 panel->name, ddic_family);
+		panel->ddic_family = DSI_DDIC_UNKNOWN;
+	}
+
+	return 0;
+}
+
 static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -3461,6 +3591,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	panel->bl_config.dimming_min_bl = 0;
 	panel->bl_config.dimming_status = DIMMING_ENABLE;
 	panel->bl_config.user_disable_notification = false;
+	panel->bl_config.blu_default_duty_override = 0;
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-bl-min-level", &val);
 	if (rc) {
@@ -3547,6 +3678,9 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.temperature_dependent_timing =
 				dsi_panel_parse_temp_dependent_bl_config(panel);
 
+		// we start blocked, will unblock when bootanim is done
+		panel->bl_config.backlight_changes_blocked = 1;
+
 		panel->bl_config.te_gpio = utils->get_named_gpio(utils->data,
 				"meta,te-gpio", 0);
 		if (gpio_is_valid(panel->bl_config.te_gpio)) {
@@ -3604,15 +3738,28 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 			panel->bl_config.blu_default_duty = val;
 		}
 
-		rc = utils->read_u32(utils->data,
-			"qcom,mdss-dsi-default-max-scanline-offset", &val);
+		rc = utils->read_u32(utils->data, "meta,max-blu-pulse-overlap-us",
+				&val);
 		if (rc) {
-			DSI_DEBUG("[%s] jdi-default-max-scanline-offset unspecified, rc=%d\n",
-				panel->name, rc);
-			goto error;
-		} else {
-			panel->bl_config.scanline_max_offset = val;
-		}
+			/*
+			 * If unspecified, assume overlap is not allowed by
+			 * default. This can be overridden via sysfs.
+			 */
+			panel->bl_config.blu_max_overlap_ns = 0;
+			rc = 0;
+		} else
+			panel->bl_config.blu_max_overlap_ns = val * 1000;
+
+		rc = utils->read_u32(utils->data, "meta,max-blu-stereo-offset-us",
+				&val);
+		if (rc) {
+			panel->bl_config.max_blu_stereo_offset_ns = 0;
+			rc = 0;
+		} else
+			panel->bl_config.max_blu_stereo_offset_ns = val * 1000;
+
+		panel->bl_config.temperature_dependent_timing =
+				dsi_panel_parse_temp_dependent_bl_config(panel);
 	}
 
 no_irq:
@@ -4765,6 +4912,10 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 		if (rc == -EPROBE_DEFER)
 			goto error;
 	}
+
+	rc = dsi_panel_parse_ddic_family(panel);
+	if (rc)
+		DSI_ERR("failed to parse ddic family, rc=%d\n", rc);
 
 	rc = dsi_panel_parse_misc_features(panel);
 	if (rc)

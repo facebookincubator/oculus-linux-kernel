@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_VFE_HW_INTF_H_
@@ -246,6 +246,17 @@ struct cam_vfe_resource_update {
 	struct cam_isp_hw_mgr_res           *res;
 	struct cam_vfe_acquire_args         *vfe_acquire;
 	bool                                 disable_line_based_mode;
+};
+
+/**
+ * struct cam_vfe_resource_data_fifo_count
+ * @out_port_res_type:            out port resource type
+ * @rup_for_applied_req:          Indicates if Rup received for proper applied req
+ *
+ */
+struct cam_vfe_resource_data_fifo_count {
+	uint32_t out_port_res_type;
+	bool     rup_for_applied_req;
 };
 
 /**

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1427,17 +1427,50 @@ cm_get_band_score(uint32_t freq, struct scoring_cfg *score_config)
 }
 
 #ifdef WLAN_FEATURE_11BE
-bool cm_is_eht_allowed_for_current_security(struct scan_cache_entry *scan_entry)
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+bool wlan_cm_is_eht_allowed_for_current_security(
+			struct wlan_objmgr_psoc *psoc,
+			struct scan_cache_entry *scan_entry)
 {
 	const uint8_t *rsnxe, *rsnxe_caps;
 	uint8_t cap_len;
+	bool rf_test_mode = false;
+	QDF_STATUS status;
 
-	if (!scan_entry->ie_list.rsn)
+	status = wlan_mlme_is_rf_test_mode_enabled(psoc,
+						   &rf_test_mode);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		mlme_err("Get rf test mode failed");
 		return false;
+	}
+	if (rf_test_mode) {
+		mlme_debug("rf test mode is enabled, ignore setting");
+		return true;
+	}
 
-	/* check AKM chosen for connection is PSK */
-	if (WLAN_CRYPTO_IS_AKM_WPA2_PSK(scan_entry->neg_sec_info.key_mgmt))
+	if (!scan_entry->ie_list.rsn) {
+		mlme_debug(QDF_MAC_ADDR_FMT ": RSN IE not present",
+			   QDF_MAC_ADDR_REF(scan_entry->bssid.bytes));
 		return false;
+	}
+
+	if (!(scan_entry->neg_sec_info.rsn_caps &
+	      WLAN_CRYPTO_RSN_CAP_MFP_ENABLED)) {
+		mlme_debug(QDF_MAC_ADDR_FMT " MFPC bit of RSN IE not present",
+			   QDF_MAC_ADDR_REF(scan_entry->bssid.bytes));
+		return false;
+	}
+
+	if (WLAN_CRYPTO_IS_AKM_ENTERPRISE(scan_entry->neg_sec_info.key_mgmt))
+		return true;
+
+	/* Return from here if none of AKM in list is WPA3 AKM */
+	if (!WLAN_CRYPTO_IS_WPA3(scan_entry->neg_sec_info.key_mgmt)) {
+		mlme_debug(QDF_MAC_ADDR_FMT ": AKM 0x%x not valid",
+			   QDF_MAC_ADDR_REF(scan_entry->bssid.bytes),
+			   scan_entry->neg_sec_info.key_mgmt);
+		return false;
+	}
 
 	/*
 	 * check AKM chosen for connection is SAE or not
@@ -1445,9 +1478,14 @@ bool cm_is_eht_allowed_for_current_security(struct scan_cache_entry *scan_entry)
 	 */
 	if (!WLAN_CRYPTO_IS_AKM_SAE(scan_entry->neg_sec_info.key_mgmt))
 		return true;
+
 	rsnxe = util_scan_entry_rsnxe(scan_entry);
-	if (!rsnxe)
+	if (!rsnxe) {
+		mlme_debug(QDF_MAC_ADDR_FMT ":RSNXE not present, AKM 0x%x",
+			   QDF_MAC_ADDR_REF(scan_entry->bssid.bytes),
+					    scan_entry->neg_sec_info.key_mgmt);
 		return false;
+	}
 	rsnxe_caps = wlan_crypto_parse_rsnxe_ie(rsnxe, &cap_len);
 	if (!rsnxe_caps) {
 		mlme_debug("RSNXE caps not present");
@@ -1456,10 +1494,15 @@ bool cm_is_eht_allowed_for_current_security(struct scan_cache_entry *scan_entry)
 	/* check if H2E bit is enabled in RSNXE */
 	if (*rsnxe_caps & WLAN_CRYPTO_RSNX_CAP_SAE_H2E)
 		return true;
+
+	mlme_debug(QDF_MAC_ADDR_FMT ": RSNXE caps (0x%x) dont have H2E support",
+		   QDF_MAC_ADDR_REF(scan_entry->bssid.bytes), *rsnxe_caps);
 	return false;
 }
+#endif
 
-static int cm_calculate_eht_score(struct scan_cache_entry *entry,
+static int cm_calculate_eht_score(struct wlan_objmgr_psoc *psoc,
+				  struct scan_cache_entry *entry,
 				  struct scoring_cfg *score_config,
 				  struct psoc_phy_config *phy_config,
 				  uint8_t prorated_pcnt)
@@ -1470,7 +1513,7 @@ static int cm_calculate_eht_score(struct scan_cache_entry *entry,
 	if (!phy_config->eht_cap || !entry->ie_list.ehtcap)
 		return 0;
 
-	if (!cm_is_eht_allowed_for_current_security(entry))
+	if (!wlan_cm_is_eht_allowed_for_current_security(psoc, entry))
 		return 0;
 
 	weight_config = &score_config->weight_config;
@@ -1514,10 +1557,11 @@ static bool cm_get_su_beam_former(struct scan_cache_entry *entry)
 	return false;
 }
 #else
-static int cm_calculate_eht_score(struct scan_cache_entry *entry,
+static int cm_calculate_eht_score(struct wlan_objmgr_psoc *psoc,
+				  struct scan_cache_entry *entry,
 				  struct scoring_cfg *score_config,
 				  struct psoc_phy_config *phy_config,
-				uint8_t prorated_pcnt)
+				  uint8_t prorated_pcnt)
 {
 	return 0;
 }
@@ -2139,8 +2183,7 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 	}
 
 	bss_mlo_type = cm_bss_mlo_type(psoc, entry, scan_list);
-
-	if (cm_is_eht_allowed_for_current_security(entry))
+	if (wlan_cm_is_eht_allowed_for_current_security(psoc, entry))
 		score += cm_calculate_ml_scores(psoc, entry, score_config,
 						phy_config, scan_list,
 						bss_mlo_type);
@@ -2271,7 +2314,8 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 						     entry->neg_sec_info);
 	score += security_score;
 
-	eht_score = cm_calculate_eht_score(entry, score_config, phy_config,
+	eht_score = cm_calculate_eht_score(psoc, entry, score_config,
+					   phy_config,
 					   prorated_pcnt);
 	score += eht_score;
 

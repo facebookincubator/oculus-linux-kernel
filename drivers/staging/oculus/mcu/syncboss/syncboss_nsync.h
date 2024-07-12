@@ -3,8 +3,6 @@
 #define _SYNCBOSS_NSYNC_H
 
 #include <linux/kernel.h>
-#include <linux/miscdevice.h>
-#include <linux/miscfifo.h>
 #include <linux/notifier.h>
 #include <linux/of_platform.h>
 #include <linux/syncboss/consumer.h>
@@ -16,14 +14,6 @@ struct nsync_dev_data {
 	/* Syncboss SPI driver consumer APIs */
 	struct syncboss_consumer_ops *syncboss_ops;
 
-	/* Device to convey power nsync events to userspace */
-	struct mutex miscdevice_mutex;
-	struct miscdevice misc_nsync;
-	struct miscfifo nsync_fifo;
-
-	/* Nsync client reference count */
-	int nsync_client_count;
-
 	/* Nsync IRQ */
 	int nsync_irq;
 
@@ -33,9 +23,7 @@ struct nsync_dev_data {
 	 * NRF->AP signal and used to synchronize time between the AP
 	 * and NRF.
 	 */
-	int64_t nsync_irq_timestamp_ns;
 	int64_t nsync_irq_timestamp_us;
-	uint64_t nsync_irq_count;
 
 	/*
 	 * Indicates whether the nsync IRQ has fired since the last nsync
@@ -71,12 +59,6 @@ struct nsync_dev_data {
 	/* Notifier blocks for syncboss state changes and received packets */
 	struct notifier_block syncboss_state_nb;
 	struct notifier_block rx_packet_nb;
-
-	/*
-	 * T182999318: temporary property to allow gradual deprecation of the
-	 * legacy nsync userspace interface.
-	 */
-	bool disable_legacy_nsync;
 };
 
 /*

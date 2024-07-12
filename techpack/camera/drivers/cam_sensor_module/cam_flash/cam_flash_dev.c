@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -60,6 +60,8 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 			goto release_mutex;
 		}
 
+		fctrl->last_applied_req = 0;
+		fctrl->pause_state = false;
 		bridge_params.session_hdl = flash_acq_dev.session_handle;
 		bridge_params.ops = &fctrl->bridge_intf.ops;
 		bridge_params.v4l2_sub_dev_flag = 0;
@@ -518,6 +520,8 @@ static int cam_flash_component_bind(struct device *dev,
 	fctrl->bridge_intf.ops.flush_req = cam_flash_flush_request;
 	fctrl->bridge_intf.no_crm_ops.handshake = cam_flash_no_crm_handshake;
 	fctrl->bridge_intf.no_crm_ops.apply_req = cam_flash_no_crm_apply;
+	fctrl->bridge_intf.no_crm_ops.pause_cb  = cam_flash_no_crm_pause_apply;
+	fctrl->bridge_intf.no_crm_ops.resume_cb = cam_flash_no_crm_resume_apply;
 	fctrl->last_flush_req = 0;
 
 	mutex_init(&(fctrl->flash_mutex));

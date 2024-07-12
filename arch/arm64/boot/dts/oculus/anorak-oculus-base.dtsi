@@ -195,6 +195,14 @@
 	};
 };
 
+&qupv3_0 {
+	qcom,iommu-faults = "non-fatal";
+};
+
+&qupv3_1 {
+	qcom,iommu-faults = "non-fatal";
+};
+
 &qupv3_se13_i2c_sda_active {
 	mux {
 		pins = "gpio103";
@@ -565,6 +573,14 @@
 	status = "ok";
 };
 
+&tmc_etr {
+	qcom,iommu-faults = "non-fatal";
+};
+
+&tmc_etr1 {
+	qcom,iommu-faults = "non-fatal";
+};
+
 &ufshc_mem {
 	clocks =
 		<&gcc GCC_UFS_PHY_AXI_CLK>,
@@ -586,6 +602,8 @@
 
 	qcom,vddp-ref-clk-supply = <&L3B>;
 	qcom,vddp-ref-clk-max-microamp = <100>;
+
+	qcom,iommu-faults = "non-fatal";
 
 	spm-level = <3>;
 	status = "ok";

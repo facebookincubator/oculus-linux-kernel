@@ -155,7 +155,7 @@ static struct {
 #endif
 };
 
-static int fwupdate_check_swd_ops(struct device *dev)
+int fwupdate_check_swd_ops(struct device *dev)
 {
 	bool parent_has_op;
 	bool child_has_op = false;
@@ -169,6 +169,11 @@ static int fwupdate_check_swd_ops(struct device *dev)
 
 	if (parent_has_op && child_has_op) {
 		dev_err(dev, "Both parent and child may not have a target_erase!");
+		return -EINVAL;
+	}
+
+	if (!parent_has_op && !child_has_op) {
+		dev_err(dev, "At least one of the parent or child must have a target_erase!");
 		return -EINVAL;
 	}
 

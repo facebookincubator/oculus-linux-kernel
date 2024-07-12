@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_MEM_MGR_H_
@@ -14,6 +14,7 @@
 #endif
 #include <media/cam_req_mgr.h>
 #include "cam_mem_mgr_api.h"
+#include <linux/hashtable.h>
 
 /* Enum for possible mem mgr states */
 enum cam_mem_mgr_state {
@@ -57,6 +58,8 @@ struct cam_presil_dmabuf_params {
  *                  mapped and in use
  * @smmu_mapping_client: Client buffer (User or kernel)
  * @presil_params:  Parameters specific to presil environment
+ * @hlist:          Hash node
+ * @bufq_idx:       Existing buf table index
  */
 struct cam_mem_buf_queue {
 	struct dma_buf *dma_buf;
@@ -82,6 +85,20 @@ struct cam_mem_buf_queue {
 #ifdef CONFIG_CAM_PRESIL
 	struct cam_presil_dmabuf_params presil_params;
 #endif
+	struct hlist_node hlist;
+	int bufq_idx;
+};
+
+/**
+ * struct cam_mem_existing_buf_table
+ *
+ * @eb_mutex:       mutex lock for existing buf table
+ * @eb_map:         hash table list
+ * @privs:          existing buf table privs
+ */
+struct cam_mem_existing_buf_table {
+	struct mutex eb_mutex;
+	DECLARE_HASHTABLE(eb_map, 10);
 };
 
 /**
@@ -120,7 +137,7 @@ struct cam_mem_table {
 	struct dma_heap *camera_uncached_heap;
 	struct dma_heap *secure_display_heap;
 #endif
-
+	struct cam_mem_existing_buf_table eb_tbl;
 };
 
 /**

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -41,7 +41,6 @@
  * struct cm_vdev_join_req - connect req from legacy CM to vdev manager
  * @vdev_id: vdev id
  * @cm_id: Connect manager id
- * @force_24ghz_in_ht20: force 24ghz_in ht20
  * @force_rsne_override: force the arbitrary rsne received in connect req to be
  * used with out validation, used for the scenarios where the device is used
  * as a testbed device with special functionality and not recommended
@@ -58,8 +57,7 @@
 struct cm_vdev_join_req {
 	uint8_t vdev_id;
 	wlan_cm_id cm_id;
-	uint8_t force_24ghz_in_ht20:1,
-		force_rsne_override:1,
+	uint8_t	force_rsne_override:1,
 		is_wps_connection:1,
 		is_osen_connection:1;
 	struct element_info assoc_ie;
@@ -298,6 +296,15 @@ QDF_STATUS cm_get_rssi_snr_by_bssid(struct wlan_objmgr_pdev *pdev,
  */
 void cm_csr_send_set_ie(struct wlan_objmgr_vdev *vdev);
 
+/**
+ * cm_csr_get_vdev_dot11_mode() - Wrapper for CM to get the dot11mode for
+ * the vdev id
+ * @vdev_id: vdev id
+ *
+ * Return: dot11 mode
+ */
+uint16_t cm_csr_get_vdev_dot11_mode(uint8_t vdev_id);
+
 static inline QDF_STATUS
 cm_ext_hdl_create(struct wlan_objmgr_vdev *vdev, cm_ext_t **ext_cm_ptr)
 {
@@ -353,7 +360,8 @@ QDF_STATUS cm_csr_handle_join_req(struct wlan_objmgr_vdev *vdev,
 				  bool reassoc);
 
 /**
- * cm_handle_connect_req() - Connection manager ext connect request to start
+ * cm_handle_connect_req() - Connection manager ext connect request to
+ * start vdev and peer assoc state machine
  * vdev and peer assoc state machine
  * @vdev: VDEV object
  * @req: Vdev connect request
@@ -503,7 +511,7 @@ cm_disconnect_complete_ind(struct wlan_objmgr_vdev *vdev,
 			   struct wlan_cm_discon_rsp *rsp);
 
 /**
- * cm_csr_diconnect_done_ind() - Connection manager call to csr to update
+ * cm_csr_disconnect_done_ind() - Connection manager call to csr to update
  * legacy structures on disconnect complete
  * @vdev: VDEV object
  * @rsp: Connection manager disconnect response
@@ -515,8 +523,8 @@ cm_disconnect_complete_ind(struct wlan_objmgr_vdev *vdev,
  * Return: QDF_STATUS
  */
 QDF_STATUS
-cm_csr_diconnect_done_ind(struct wlan_objmgr_vdev *vdev,
-			  struct wlan_cm_discon_rsp *rsp);
+cm_csr_disconnect_done_ind(struct wlan_objmgr_vdev *vdev,
+			   struct wlan_cm_discon_rsp *rsp);
 
 /**
  * cm_send_vdev_down_req() - Connection manager ext req to send vdev down
@@ -749,5 +757,20 @@ cm_send_rso_stop(struct wlan_objmgr_vdev *vdev)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
+#endif
+
+#ifdef WLAN_FEATURE_11BE_MLO
+/**
+ * cm_get_ml_partner_info() - Fill ML partner info from scan entry
+ * @pdev: PDEV object
+ * @scan_entry: Scan entry
+ * @partner_info: Partner info to be filled
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+cm_get_ml_partner_info(struct wlan_objmgr_pdev *pdev,
+		       struct scan_cache_entry *scan_entry,
+		       struct mlo_partner_info *partner_info);
 #endif
 #endif /* __WLAN_CM_VDEV_API_H__ */

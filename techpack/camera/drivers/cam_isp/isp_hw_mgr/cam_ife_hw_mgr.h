@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_IFE_HW_MGR_H_
@@ -302,6 +302,7 @@ struct cam_ife_virtual_rdi_mapping {
  * @num_processed:          number of config_dev processed in virtual acquire
  * @mapping_table:          mapping between virtual rdi and acquired rdi
  * @slave_status:           slave status indicating if it is in running state
+ * @primary_rdi_out_res:    Indicates primary rdi resource
  */
 struct cam_ife_hw_mgr_ctx {
 	struct list_head                     list;
@@ -368,6 +369,7 @@ struct cam_ife_hw_mgr_ctx {
 	uint32_t                             num_processed;
 	struct cam_ife_virtual_rdi_mapping   mapping_table;
 	bool                                 is_slave_down;
+	uint32_t                             primary_rdi_out_res;
 };
 
 /**
@@ -508,24 +510,25 @@ struct cam_ife_hw_mgr_sensor_stream_config {
 /**
  * struct cam_ife_hw_mgr_stream_grp_config  -  camera sensor stream group configurations
  *
- * @res_type                    : input resource type
- * @lane_type                   : lane type: c-phy or d-phy.
- * @lane_num                    : active lane number
- * @lane_cfg                    : lane configurations: 4 bits per lane
- * @feature_mask                : feature flag
- * @acquire_cnt                 : count of number of acquire calls
- * @stream_cfg_cnt              : number of sensor configurations for pxl and rdi paths
- * @rdi_stream_cfg_cnt          : number of sensor configurations for only rdi path
- * @stream_on_cnt               : count of number of streamon calls for this ife device
- * @res_ife_csid_list           : CSID resource list
- * @res_ife_src_list            : IFE input resource list
- * @res_list_ife_out            : IFE output resources array
- * @lock                        : mutex lock
- * @free_res_list               : Free resources list for the branch node
- * @acquired_hw_idx             : Index of acquired HW
- * @res_pool                    : memory storage for the free resource list
- * @mapping_table               : mapping table between UMd and KMD RDI resources
- * @stream_cfg                  : stream config data
+ * @res_type                      : input resource type
+ * @lane_type                     : lane type: c-phy or d-phy.
+ * @lane_num                      : active lane number
+ * @lane_cfg                      : lane configurations: 4 bits per lane
+ * @feature_mask                  : feature flag
+ * @acquire_cnt                   : count of number of acquire calls
+ * @stream_cfg_cnt                : number of sensor configurations for pxl and rdi paths
+ * @rdi_stream_cfg_cnt            : number of sensor configurations for only rdi path
+ * @stream_on_cnt                 : count of number of streamon calls for this ife device
+ * @res_ife_csid_list             : CSID resource list
+ * @res_ife_src_list              : IFE input resource list
+ * @res_list_ife_out              : IFE output resources array
+ * @lock                          : mutex lock
+ * @free_res_list                 : Free resources list for the branch node
+ * @acquired_hw_idx               : Index of acquired HW
+ * @res_pool                      : memory storage for the free resource list
+ * @mapping_table                 : mapping table between UMd and KMD RDI resources
+ * @stream_cfg                    : stream config data
+ * @recovery_in_progress          : Indicates if ife is process of frame drop recovery
  */
 struct cam_ife_hw_mgr_stream_grp_config {
 	uint32_t                                      res_type;
@@ -536,7 +539,7 @@ struct cam_ife_hw_mgr_stream_grp_config {
 	uint32_t                                      acquire_cnt;
 	uint32_t                                      stream_cfg_cnt;
 	uint32_t                                      rdi_stream_cfg_cnt;
-	uint32_t                                      stream_on_cnt;
+	int32_t                                       stream_on_cnt;
 	struct list_head                              res_ife_csid_list;
 	struct list_head                              res_ife_src_list;
 	struct cam_isp_hw_mgr_res                    *res_list_ife_out;
@@ -545,6 +548,7 @@ struct cam_ife_hw_mgr_stream_grp_config {
 	uint32_t                                      acquired_hw_idx;
 	struct cam_isp_hw_mgr_res                     res_pool[CAM_IFE_HW_STREAM_GRP_RES_POOL_MAX];
 	struct cam_ife_hw_mgr_sensor_stream_config    stream_cfg[CAM_ISP_STREAM_CFG_MAX];
+	bool                                          recovery_in_progress;
 };
 
 /**

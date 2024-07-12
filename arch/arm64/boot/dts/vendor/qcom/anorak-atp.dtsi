@@ -166,34 +166,6 @@
 	status = "disabled";
 };
 
-&cnss_pins {
-	cnss_host_sol_default: cnss_host_sol_default {
-		mux {
-			pins = "gpio124";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio124";
-			drive-strength = <4>;
-			bias-pull-down;
-		};
-	};
-
-	cnss_dev_sol_default: cnss_dev_sol_default {
-		mux {
-			pins = "gpio123";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio123";
-			drive-strength = <4>;
-			bias-pull-down;
-		};
-	};
-};
-
 &soc {
 
 	wlan_kiwi: qcom,cnss-kiwi@b0000000 {
@@ -201,13 +173,10 @@
 		reg = <0xb0000000 0x10000>;
 		reg-names = "smmu_iova_ipa";
 		wlan-en-gpio = <&tlmm 120 0>;
-		wlan-host-sol-gpio = <&tlmm 124 0>;
-		wlan-dev-sol-gpio = <&tlmm 123 0>;
 
-		pinctrl-names = "wlan_en_active", "wlan_en_sleep", "sol_default";
+		pinctrl-names = "wlan_en_active", "wlan_en_sleep";
 		pinctrl-0 = <&cnss_wlan_en_active>;
 		pinctrl-1 = <&cnss_wlan_en_sleep>;
-		pinctrl-2 = <&cnss_host_sol_default &cnss_dev_sol_default>;
 		qcom,wlan;
 		qcom,wlan-rc-num = <0>;
 		qcom,wlan-ramdump-dynamic = <0x780000>;

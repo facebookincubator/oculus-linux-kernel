@@ -39,6 +39,12 @@
 #include <qdf_net_stats.h>
 #include "wlan_dp_prealloc.h"
 #include "wlan_dp_rx_thread.h"
+#ifdef WLAN_SUPPORT_SERVICE_CLASS
+#include "wlan_dp_svc.h"
+#endif
+#ifdef WLAN_SUPPORT_LAPB
+#include "wlan_dp_lapb_flow.h"
+#endif
 
 #ifdef FEATURE_DIRECT_LINK
 /**
@@ -2114,6 +2120,32 @@ void ucfg_dp_reset_cont_txtimeout_cnt(struct wlan_objmgr_vdev *vdev)
 	dp_intf->dp_stats.tx_rx_stats.cont_txtimeout_cnt = 0;
 }
 
+#ifdef WLAN_SUPPORT_SERVICE_CLASS
+void ucfg_dp_svc_init(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_dp_psoc_context *dp_ctx = dp_psoc_get_priv(psoc);
+
+	if (!dp_ctx) {
+		dp_err("DP ctx is NULL");
+		return;
+	}
+
+	wlan_dp_svc_init(dp_ctx);
+}
+
+void ucfg_dp_svc_deinit(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_dp_psoc_context *dp_ctx = dp_psoc_get_priv(psoc);
+
+	if (!dp_ctx) {
+		dp_err("DP ctx is NULL");
+		return;
+	}
+
+	wlan_dp_svc_deinit(dp_ctx);
+}
+#endif
+
 void ucfg_dp_set_rx_thread_affinity(struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_dp_psoc_context *dp_ctx = dp_psoc_get_priv(psoc);
@@ -2488,3 +2520,10 @@ QDF_STATUS ucfg_dp_txrx_set_cpu_mask(ol_txrx_soc_handle soc,
 {
 	return dp_txrx_set_cpu_mask(soc, new_mask);
 }
+
+#ifdef WLAN_SUPPORT_LAPB
+QDF_STATUS ucfg_dp_lapb_handle_app_ind(qdf_nbuf_t nbuf)
+{
+	return wlan_dp_lapb_handle_app_ind(nbuf);
+}
+#endif

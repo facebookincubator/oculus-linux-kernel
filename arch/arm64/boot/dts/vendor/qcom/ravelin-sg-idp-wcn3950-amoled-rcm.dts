@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelin-sg.dtsi"
+#include "ravelin-sg-idp-wcn3950-amoled-rcm.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin SG WCN3950 IDP + AMOLED + RCM";
+	compatible = "qcom,ravelin-idp", "qcom,ravelin", "qcom,idp";
+	qcom,board-id = <34 2>;
+};

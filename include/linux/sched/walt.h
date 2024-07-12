@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/spinlock_types.h>
 #include <linux/cpumask.h>
+#include <trace/hooks/walt.h>
 
 #if IS_ENABLED(CONFIG_SCHED_WALT)
 
@@ -149,7 +150,6 @@ static inline void set_wake_up_idle(bool wake_up_idle)
 	wts->wake_up_idle = wake_up_idle;
 }
 
-extern int sched_lpm_disallowed_time(int cpu, u64 *timeout);
 extern int set_task_boost(int boost, u64 period);
 
 struct notifier_block;
@@ -159,10 +159,6 @@ extern int core_ctl_set_boost(bool boost);
 extern int walt_pause_cpus(struct cpumask *cpus);
 extern int walt_resume_cpus(struct cpumask *cpus);
 #else
-static inline int sched_lpm_disallowed_time(int cpu, u64 *timeout)
-{
-	return INT_MAX;
-}
 static inline int set_task_boost(int boost, u64 period)
 {
 	return 0;
@@ -204,5 +200,13 @@ inline int walt_resume_cpus(struct cpumask *cpus)
 	return 0;
 }
 #endif
+
+static inline int sched_lpm_disallowed_time(int cpu, u64 *timeout)
+{
+	int ret = INT_MAX;
+
+	trace_android_vh_walt_sched_lpm_disallowed_time(cpu, timeout, &ret);
+	return ret;
+}
 
 #endif /* _LINUX_SCHED_WALT_H */
