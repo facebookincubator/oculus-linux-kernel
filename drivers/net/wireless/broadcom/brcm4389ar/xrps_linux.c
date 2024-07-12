@@ -143,13 +143,35 @@ static ssize_t stats_store(struct kobject *kobj, struct kobj_attribute *attr,
 	return count;
 }
 
+static ssize_t eot_disabled_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE - 1, "%d\n",
+			 xrps_get_eot_disabled());
+}
+
+static ssize_t eot_disabled_store(struct kobject *kobj,
+				 struct kobj_attribute *attr, const char *buf,
+				 size_t count)
+{
+	int ret;
+	int disabled;
+
+	ret = kstrtoint(buf, 10, &disabled);
+	if (ret < 0)
+		return ret;
+	xrps_set_eot_disabled(disabled);
+	return count;
+}
+
 static struct kobj_attribute queue_pause_attr = __ATTR_RW(queue_pause);
 static struct kobj_attribute send_eot_attr = __ATTR_WO(send_eot);
 static struct kobj_attribute stats_attr = __ATTR_RW(stats);
+static struct kobj_attribute eot_disabled_attr = __ATTR_RW(eot_disabled);
 
 // Create attribute group
 static struct attribute *xrps_attrs[] = {
-	&queue_pause_attr.attr, &send_eot_attr.attr, &stats_attr.attr, NULL,
+	&queue_pause_attr.attr, &send_eot_attr.attr, &stats_attr.attr, &eot_disabled_attr.attr, NULL,
 };
 
 static struct attribute_group xrps_attr_group = {

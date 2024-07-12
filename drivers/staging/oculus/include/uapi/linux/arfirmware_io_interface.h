@@ -117,8 +117,8 @@ struct __packed ar_queue_event {
 #define AR_QUEUE_EVENT_BATCH_MAX 20
 
 struct __packed ar_queue_event_batch {
-	struct ar_queue_event events[AR_QUEUE_EVENT_BATCH_MAX];
 	uint16_t size;
+	struct ar_queue_event events[AR_QUEUE_EVENT_BATCH_MAX];
 };
 
 /// Magic number for ARFW device ioctls

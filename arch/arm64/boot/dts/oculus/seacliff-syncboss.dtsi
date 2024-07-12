@@ -149,8 +149,6 @@
 		nsync@0 {
 			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
 
-			meta,disable-legacy-nsync;
-
 			interrupt-parent = <&tlmm>;
 			interrupts = <68 IRQ_TYPE_EDGE_RISING>;
 			interrupt-names = "nsync";

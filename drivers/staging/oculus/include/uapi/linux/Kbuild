@@ -1,3 +1,4 @@
+header-y += amem_kmd.h
 header-y += arfirmware_io_interface.h
 header-y += arfirmware_types.h
 header-y += babel.h

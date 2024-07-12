@@ -13644,6 +13644,8 @@ wl_cfgvendor_simple_hang_event(struct net_device *dev, u16 reason)
 #ifdef DHD_COREDUMP
 	dhd_pub_t *dhd;
 	char hang_reason_str[DHD_MEMDUMP_LONGSTR_LEN];
+#elif defined(DHD_DUMP_HANG_REASON)
+	char hang_reason_str[DHD_MEMDUMP_LONGSTR_LEN];
 #endif
 	WL_ERR(("0x%x\n", reason));
 
@@ -13659,9 +13661,9 @@ wl_cfgvendor_simple_hang_event(struct net_device *dev, u16 reason)
 		return;
 	}
 
-#ifdef DHD_COREDUMP
+#if defined(DHD_COREDUMP) || defined(DHD_DUMP_HANG_REASON)
 	hang_event_len = DHD_MEMDUMP_LONGSTR_LEN;
-#endif
+#endif /* DHD_COREDUMP || DHD_DUMP_HANG_REASON */
 
 	/* Allocate the skb for vendor event */
 	msg = CFG80211_VENDOR_EVENT_ALLOC(wiphy, ndev_to_wdev(dev),
@@ -13679,7 +13681,10 @@ wl_cfgvendor_simple_hang_event(struct net_device *dev, u16 reason)
 	} else {
 		dhd_convert_hang_reason_to_str(reason, hang_reason_str, DHD_MEMDUMP_LONGSTR_LEN);
 	}
-
+	WL_ERR(("hang reason: %s\n", hang_reason_str));
+	nla_put(msg, DEBUG_ATTRIBUTE_HANG_REASON, DHD_MEMDUMP_LONGSTR_LEN, hang_reason_str);
+#elif defined(DHD_DUMP_HANG_REASON)
+	dhd_convert_hang_reason_to_str(reason, hang_reason_str, DHD_MEMDUMP_LONGSTR_LEN);
 	WL_ERR(("hang reason: %s\n", hang_reason_str));
 	nla_put(msg, DEBUG_ATTRIBUTE_HANG_REASON, DHD_MEMDUMP_LONGSTR_LEN, hang_reason_str);
 #endif

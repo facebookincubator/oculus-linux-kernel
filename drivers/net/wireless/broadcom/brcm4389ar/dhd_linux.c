@@ -4024,7 +4024,7 @@ dhd_dpc_tasklet_dispatcher_work(struct work_struct * work)
 
 	DHD_INFO(("%s:\n", __FUNCTION__));
 
-	tasklet_schedule(&dhd->tasklet);
+	tasklet_hi_schedule(&dhd->tasklet);
 }
 
 void
@@ -5208,7 +5208,7 @@ dhd_dpc(ulong data)
 		DHD_LB_STATS_INCR(dhd->dhd_dpc_cnt);
 #endif /* DHD_LB_STATS && PCIE_FULL_DONGLE */
 		if (dhd_bus_dpc(dhd->pub.bus)) {
-			tasklet_schedule(&dhd->tasklet);
+			tasklet_hi_schedule(&dhd->tasklet);
 			dhd_plat_report_bh_sched(dhd->pub.plat_info, 1);
 		} else {
 			dhd_plat_report_bh_sched(dhd->pub.plat_info, 0);
@@ -5237,7 +5237,7 @@ dhd_sched_dpc(dhd_pub_t *dhdp)
 		}
 		return;
 	} else {
-		tasklet_schedule(&dhd->tasklet);
+		tasklet_hi_schedule(&dhd->tasklet);
 	}
 }
 #endif /* BCMDBUS */
@@ -11313,6 +11313,7 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 	char customer_clm_file_name[MAX_FILE_LEN] = {0, };
 #endif /* SUPPORT_MULTIPLE_CLMBLOB */
 	char* apply_clm;
+	uint32_t return_to_sleep_time = 10;
 
 #ifdef PKT_FILTER_SUPPORT
 	dhd_pkt_filter_enable = TRUE;
@@ -11653,6 +11654,13 @@ dhd_optimised_preinit_ioctls(dhd_pub_t * dhd)
 	sec_control_pm(dhd, &power_mode);
 #endif /* CUSTOMER_HW10 */
 #endif /* DHD_PM_CONTROL_FROM_FILE */
+
+	ret = dhd_iovar(dhd, 0, "pm2_sleep_ret",
+			(char *)&return_to_sleep_time,
+			sizeof(return_to_sleep_time), NULL, 0, TRUE);
+	if (ret < 0) {
+		DHD_ERROR(("%s: set pm2_sleep_ret 0 fail (error=%d)\n", __FUNCTION__, ret));
+	}
 
 #ifdef MIMO_ANT_SETTING
 	dhd_sel_ant_from_file(dhd);
@@ -12190,6 +12198,7 @@ dhd_legacy_preinit_ioctls(dhd_pub_t *dhd)
 #if defined(CUSTOM_AMSDU_AGGSF)
 	int32 amsdu_aggsf = 0;
 #endif
+	uint32_t return_to_sleep_time = 10;
 
 #if defined(BCMSDIO) || defined(BCMDBUS)
 #ifdef PROP_TXSTATUS
@@ -12592,6 +12601,13 @@ dhd_legacy_preinit_ioctls(dhd_pub_t *dhd)
 				__FUNCTION__, ret));
 		}
 #endif /* SOFTAP_UAPSD_OFF */
+
+	ret = dhd_iovar(dhd, 0, "pm2_sleep_ret",
+			(char *)&return_to_sleep_time,
+			sizeof(return_to_sleep_time), NULL, 0, TRUE);
+	if (ret < 0) {
+		DHD_ERROR(("%s: set pm2_sleep_ret 0 fail (error=%d)\n", __FUNCTION__, ret));
+	}
 
 		/* set AP flag for specific country code of SOFTAP */
 #if defined(CUSTOM_COUNTRY_CODE)

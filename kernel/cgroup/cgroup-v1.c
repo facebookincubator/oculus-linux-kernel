@@ -507,19 +507,29 @@ static ssize_t __cgroup1_procs_write(struct kernfs_open_file *of,
 				     char *buf, size_t nbytes, loff_t off,
 				     bool threadgroup)
 {
-	struct cgroup *cgrp;
+	struct cgroup *dest_cgrp, *src_cgrp;
 	struct task_struct *task;
 	const struct cred *cred, *tcred;
 	ssize_t ret;
 
-	cgrp = cgroup_kn_lock_live(of->kn, false);
-	if (!cgrp)
+	dest_cgrp = cgroup_kn_lock_live(of->kn, false);
+	if (!dest_cgrp)
 		return -ENODEV;
 
 	task = cgroup_procs_write_start(buf, threadgroup);
 	ret = PTR_ERR_OR_ZERO(task);
 	if (ret)
 		goto out_unlock;
+
+	lockdep_assert_held(&cgroup_mutex);
+	spin_lock_irq(&css_set_lock);
+	src_cgrp = task_cgroup_from_root(task, dest_cgrp->root);
+	spin_unlock_irq(&css_set_lock);
+
+	if (test_bit(CGRP_PINNED, &src_cgrp->flags)) {
+		ret = -EPERM;
+		goto out_finish;
+	}
 
 	/*
 	 * Even if we're attaching all tasks in the thread group, we only
@@ -536,7 +546,7 @@ static ssize_t __cgroup1_procs_write(struct kernfs_open_file *of,
 	if (ret)
 		goto out_finish;
 
-	ret = cgroup_attach_task(cgrp, task, threadgroup);
+	ret = cgroup_attach_task(dest_cgrp, task, threadgroup);
 
 out_finish:
 	cgroup_procs_write_finish(task);
@@ -625,6 +635,23 @@ static int cgroup_clone_children_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+static u64 cgroup_pinned_read(struct cgroup_subsys_state *css,
+						struct cftype *cft)
+{
+	return test_bit(CGRP_PINNED, &css->cgroup->flags);
+}
+
+static int cgroup_pinned_write(struct cgroup_subsys_state *css,
+				       struct cftype *cft, u64 val)
+{
+	if (val)
+		set_bit(CGRP_PINNED, &css->cgroup->flags);
+	else
+		clear_bit(CGRP_PINNED, &css->cgroup->flags);
+
+	return 0;
+}
+
 /* cgroup core interface files for the legacy hierarchies */
 struct cftype cgroup1_base_files[] = {
 	{
@@ -666,6 +693,11 @@ struct cftype cgroup1_base_files[] = {
 		.seq_show = cgroup_release_agent_show,
 		.write = cgroup_release_agent_write,
 		.max_write_len = PATH_MAX - 1,
+	},
+	{
+		.name = "cgroup.pinned",
+		.read_u64 = cgroup_pinned_read,
+		.write_u64 = cgroup_pinned_write,
 	},
 	{ }	/* terminate */
 };

@@ -784,6 +784,8 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
 	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	u32 left_settle, right_settle;
+	u32 panel_1h_ns;
 
 	u8 reg = 0xB9; /* BLU adjust command */
 	u8 payload[16] = {0}; /* BLU adjust payload */
@@ -796,6 +798,7 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
+	panel_1h_ns = 1000000000 / (vtotal * timing->refresh_rate);
 
 	/* Transform backlight level into illumination period in scanlines */
 	bl_lvl = (bl_lvl * vtotal * bl_config->jdi_blu_default_duty) / 1000000;
@@ -810,6 +813,10 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 	left_scanline = right_scanline + timing->v_active / 2;
 
 	right_scanline = min(target_scanline, right_scanline);
+
+	left_settle = (left_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * panel_1h_ns / 1000;
+	right_settle = (right_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active / 2)) * panel_1h_ns / 1000;
+
 	if (right_scanline > vtotal)
 		right_scanline -= vtotal;
 	left_scanline = min(target_scanline, left_scanline);
@@ -844,6 +851,8 @@ static int dsi_panel_jdi_update_backlight(struct dsi_panel *panel,
 	bl_config->jdi_scanline_duration = bl_lvl;
 	bl_config->jdi_scanline_offset[0] = right_scanline;
 	bl_config->jdi_scanline_offset[1] = left_scanline;
+	bl_config->settling_time_us[0] = right_settle;
+	bl_config->settling_time_us[1] = left_settle;
 
 error:
 	return rc;
@@ -857,6 +866,8 @@ static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
 	u32 vtotal, target_scanline, left_scanline, right_scanline;
+	u32 left_settle, right_settle;
+	u32 panel_1h_ns;
 	bool send_vfp = false;
 
 	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
@@ -881,6 +892,7 @@ static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
 
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
+	panel_1h_ns = 1000000000 / (vtotal * timing->refresh_rate);
 
 	/* Transform backlight level into illumination period in scanlines */
 	bl_lvl = (bl_lvl * vtotal * bl_config->jdi_blu_default_duty) / 1000000;
@@ -895,6 +907,10 @@ static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
 	left_scanline = right_scanline + timing->v_active / 2;
 
 	right_scanline = min(target_scanline, right_scanline);
+
+	left_settle = (left_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * panel_1h_ns / 1000;
+	right_settle = (right_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active / 2)) * panel_1h_ns / 1000;
+
 	if (right_scanline > vtotal)
 		right_scanline -= vtotal;
 	left_scanline = min(target_scanline, left_scanline);
@@ -953,6 +969,8 @@ static int dsi_panel_jdi_nvt_update_backlight(struct dsi_panel *panel,
 	bl_config->jdi_scanline_duration = bl_lvl;
 	bl_config->jdi_scanline_offset[0] = right_scanline;
 	bl_config->jdi_scanline_offset[1] = left_scanline;
+	bl_config->settling_time_us[0] = right_settle;
+	bl_config->settling_time_us[1] = left_settle;
 
 error:
 	return rc;

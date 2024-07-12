@@ -2707,11 +2707,9 @@ void dhd_intr_poll_pkt_thresholds(dhd_pub_t *dhd);
 #ifdef DHD_DEBUG
 void dhd_convert_memdump_type_to_str(uint32 type, char *buf, size_t buf_len, int substr_type);
 #endif /* DHD_DEBUG */
-
-#ifdef DHD_COREDUMP
+#if defined(DHD_COREDUMP) || defined(DHD_DUMP_HANG_REASON)
 void dhd_convert_hang_reason_to_str(uint32 reason, char *buf, size_t buf_len);
-#endif /* DHD_COREDUMP */
-
+#endif /* DHD_COREDUMP || DHD_DUMP_HANG_REASON */
 extern void
 dhd_pcie_dump_core_regs(dhd_pub_t * pub, uint32 index, uint32 first_addr, uint32 last_addr);
 extern void wl_dhdpcie_dump_regs(void * context);

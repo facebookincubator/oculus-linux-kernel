@@ -67,7 +67,8 @@ enum state_of_charge_t {
 
 /* Items reported by the dock */
 struct charging_dock_params_t {
-	u32 fw_version;
+	u64 fw_version;
+	u32 legacy_fw_version;
 	char serial_number_mlb[16];
 	u16 board_temp;
 	char serial_number_system[16];
@@ -95,6 +96,7 @@ struct usbvdm_subscription_data {
  * @broadcast_period: duration in mins at which charging dock should send broadcast VDM
  * @work: work for sending broadcast period to dock
  * @workqueue: workqueue for @work
+ * @periodic_work: delayed work queue for sending periodic requests
  * @ack_parameter: VDM request parameter for which ack is received
  * @req_ack_timeout_ms: duration to wait for an ACK from the dock
  * @rx_complete: VDM response completion
@@ -121,7 +123,7 @@ struct charging_dock_device_t {
 	u8 broadcast_period;
 	struct work_struct work;
 	struct workqueue_struct	*workqueue;
-
+	struct delayed_work periodic_work;
 	u32 ack_parameter;
 	u32 req_ack_timeout_ms;
 	struct completion rx_complete;

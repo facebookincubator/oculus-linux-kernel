@@ -11789,7 +11789,7 @@ int dhd_set_ap_powersave(dhd_pub_t *dhdp, int ifidx, int enable)
 	return 0;
 }
 #endif /* SUPPORT_AP_POWERSAVE */
-#ifdef DHD_COREDUMP
+#if defined(DHD_COREDUMP) || defined(DHD_DUMP_HANG_REASON)
 void
 dhd_convert_hang_reason_to_str(uint32 reason, char *buf, size_t buf_len)
 {
@@ -11866,7 +11866,7 @@ dhd_convert_hang_reason_to_str(uint32 reason, char *buf, size_t buf_len)
 
 	strlcpy(buf, type_str, buf_len);
 }
-#endif /* DHD_COREDUMP */
+#endif /* DHD_COREDUMP || DHD_DUMP_HANG_REASON */
 #ifdef DHD_CUSTOM_CONFIG_RTS_IN_SUSPEND
 int dhd_config_rts_in_suspend(dhd_pub_t *dhdp, bool suspend)
 {

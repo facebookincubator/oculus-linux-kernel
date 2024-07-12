@@ -1653,6 +1653,10 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 		goto error_remove_dir;
 	}
 
+	debugfs_create_u32("settling_time_right_us", 0400, dir, &display->panel->bl_config.settling_time_us[0]);
+
+	debugfs_create_u32("settling_time_left_us", 0400, dir, &display->panel->bl_config.settling_time_us[1]);
+
 	display->root = dir;
 	dsi_parser_dbg_init(display->parser, dir);
 

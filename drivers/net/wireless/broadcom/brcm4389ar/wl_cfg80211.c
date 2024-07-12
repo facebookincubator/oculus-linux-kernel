@@ -6352,7 +6352,7 @@ wl_fillup_assoc_params_v1(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	ext_join_params->ssid.SSID_len = htod32(info->ssid_len);
 
 	/* Use increased dwell for targeted join case to take care of noisy env */
-	join_scan_active_time = (info->targeted_join && !info->bssid_hint) ?
+	join_scan_active_time = (info->targeted_join) ?
 		WL_SCAN_JOIN_ACTIVE_DWELL_TIME_MS : WL_BCAST_SCAN_JOIN_ACTIVE_DWELL_TIME_MS;
 	ext_join_params->scan.active_time = chan_cnt ? join_scan_active_time : -1;
 	ext_join_params->scan.passive_time = chan_cnt ? WL_SCAN_JOIN_PASSIVE_DWELL_TIME_MS : -1;
@@ -6411,7 +6411,7 @@ wl_fillup_assoc_params_v0(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	ext_join_params->ssid.SSID_len = htod32(info->ssid_len);
 
 	/* Use increased dwell for targeted join case to take care of noisy env */
-	join_scan_active_time = (info->targeted_join && !info->bssid_hint) ?
+	join_scan_active_time = (info->targeted_join) ?
 		WL_SCAN_JOIN_ACTIVE_DWELL_TIME_MS : WL_BCAST_SCAN_JOIN_ACTIVE_DWELL_TIME_MS;
 	ext_join_params->scan.active_time = chan_cnt ? join_scan_active_time : -1;
 	ext_join_params->scan.passive_time = chan_cnt ? WL_SCAN_JOIN_PASSIVE_DWELL_TIME_MS : -1;
