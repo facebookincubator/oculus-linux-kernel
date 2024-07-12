@@ -542,6 +542,11 @@ static int wl_android_get_tx_rx_duration(struct net_device *dev,
 						   char *command,
 						   int total_len);
 
+#if defined(SUPPORT_AP_INIT_BWCONF)
+#define CMD_SET_SOFTAP_BANDWIDTH "SET_SOFTAP_BANDWIDTH"
+static int wl_android_set_wl_softap_bw(struct net_device *dev, char *command, int total_len);
+#endif
+
 #define BUFSZ 8
 #define BUFSZN	BUFSZ + 1
 
@@ -14021,6 +14026,12 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_enable_oce_fils_discovery(net, command, priv_cmd.total_len);
 	}
 #endif /* XRAP_POWER_OPTIMIZATION */
+#if defined(SUPPORT_AP_INIT_BWCONF)
+	else if (strnicmp(command, CMD_SET_SOFTAP_BANDWIDTH,
+		strlen(CMD_SET_SOFTAP_BANDWIDTH)) == 0) {
+		bytes_written = wl_android_set_wl_softap_bw(net, command, priv_cmd.total_len);
+	}
+#endif
 	else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 #ifdef CUSTOMER_HW4_DEBUG
@@ -16653,3 +16664,50 @@ exit:
 	return res;
 }
 #endif /* XRAP_POWER_OPTIMIZATION */
+
+#if defined(SUPPORT_AP_INIT_BWCONF)
+static int wl_android_set_wl_softap_bw(struct net_device *dev, char *command, int total_len)
+{
+	int res = BCME_OK;
+	char *pcmd = command;
+	char *str = NULL;
+	uint32 val;
+	int bytes_written = 0;
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
+
+	if (!command) {
+		res = BCME_BADARG;
+		goto exit;
+	}
+	WL_DBG(("set softap bandwidth cmd received: %s\n", command));
+
+	/* acquire parameters */
+	/* drop command */
+	str = bcmstrtok(&pcmd, " ", NULL);
+	if (!str) {
+		res = BCME_BADARG;
+		goto exit;
+	}
+
+	/* bandwidth*/
+	str = bcmstrtok(&pcmd, " ", NULL);
+	if (!str) {
+		WL_ERR(("Invalid parameter : %s\n", pcmd));
+		res = -EINVAL;
+		goto exit;
+	}
+	val = bcm_atoi(str);
+	dhdp->wl_softap_bw = val;
+	DHD_ERROR(("%s: wl_softap_bw: %d\n", __FUNCTION__, dhdp->wl_softap_bw));
+
+exit:
+	// Save the status "res" to "command".
+	// Call the copy_to_user (in the caller function) to send the status back to user space.
+	bytes_written = snprintf(command, total_len, "STATUS %d", res);
+	if (unlikely(bytes_written > total_len))
+		WL_ERR(("%s return status Error, bytes_written=%d, total_len=%d", __func__,
+			bytes_written, total_len));
+
+	return bytes_written;
+}
+#endif

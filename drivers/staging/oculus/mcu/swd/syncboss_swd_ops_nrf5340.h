@@ -7,7 +7,6 @@
 
 #include "swd.h"
 
-int syncboss_swd_nrf5340_preswd(struct device *dev);
 int syncboss_swd_nrf5340_chip_erase(struct device *dev);
 int syncboss_swd_nrf5340_erase_app(struct device *dev);
 int syncboss_swd_nrf5340_erase_net(struct device *dev);

@@ -147,6 +147,7 @@ struct dsi_backlight_config {
 	u32 jdi_scanline_max_offset;
 	u32 jdi_scanline_duration;
 	u32 jdi_scanline_offset[2];
+	u32 settling_time_us[2];
 
 	/* Local dimming params */
 	struct backlight_device **ld_dev;

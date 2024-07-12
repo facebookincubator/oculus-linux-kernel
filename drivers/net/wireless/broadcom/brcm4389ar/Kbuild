@@ -126,6 +126,8 @@ DHDCFLAGS += -DTEST_TX_POWER_CONTROL
 # Enable XrAp power optimization by
 # disabling FILS discovery frames dynamically when xrap is connected, re-enable after disconnection
 DHDCFLAGS += -DXRAP_POWER_OPTIMIZATION
+# Enable hang reason code to enable auto recovery after fw trap
+DHDCFLAGS += -DDHD_DUMP_HANG_REASON
 
 ifeq ($(CONFIG_XRPS),y)
 DHDCFLAGS += -DCONFIG_XRPS

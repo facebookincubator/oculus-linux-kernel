@@ -16,6 +16,9 @@
 #include "../usbvdm.h"
 #include "../usbvdm/subscriber.h"
 
+#define MAX_DEVICES_SUPPORTED	8
+#define MAX_FW_PATH_LEN 20
+
 enum pdfu_state {
 	ENUMERATION,
 	ACQUISITION,
@@ -38,7 +41,9 @@ static const char * const pdfu_states[] = {
 
 struct pdfu_data {
 	struct device *dev;
-	struct usbvdm_subscription *sub;
+	struct usbvdm_subscription *conn_sub;
+	struct usbvdm_subscription *subs[MAX_DEVICES_SUPPORTED];
+	u16 pid;
 
 	enum pdfu_state state;
 	enum pdfu_state prev_state;
@@ -52,7 +57,8 @@ struct pdfu_data {
 	struct completion rx_complete;
 	struct pdfu_message *rx_msg;
 
-	char *fw_path;
+	char fw_path[MAX_FW_PATH_LEN];
+	bool fw_manual_override;
 	const struct firmware *fw;
 
 	u16 fw_version1;
@@ -91,7 +97,7 @@ static int transmit_pdfu_message(struct pdfu_data *pdfu,
 	msg.header.msg_type = msg_type;
 	memcpy(&msg.payload, payload, payload_len);
 
-	return usbvdm_subscriber_ext_msg(pdfu->sub, PD_EXT_FW_UPDATE_REQUEST,
+	return usbvdm_subscriber_ext_msg(pdfu->conn_sub, PD_EXT_FW_UPDATE_REQUEST,
 			(u8 *)&msg, payload_len + sizeof(struct pdfu_header));
 }
 
@@ -196,9 +202,16 @@ static int handle_state_acquisition(struct pdfu_data *pdfu)
 {
 	int rc = 0;
 
-	if (!pdfu->fw_path) {
-		dev_err(pdfu->dev, "fw_path is null");
-		return -EINVAL;
+	if (!pdfu->fw_manual_override) {
+		if (pdfu->pid == VDM_PID_MOKU_BOOTLOADER) {
+			/* TODO(T186537706) Replace with parsing function */
+			sprintf(pdfu->fw_path, "moku.bin");
+		} else if (pdfu->pid == VDM_PID_LEHUA_BOOTLOADER) {
+			sprintf(pdfu->fw_path, "lehua.bin");
+		} else {
+			dev_err(pdfu->dev, "fw_path is null");
+			return -EINVAL;
+		}
 	}
 
 	rc = request_firmware(&pdfu->fw, pdfu->fw_path, pdfu->dev);
@@ -416,8 +429,7 @@ static int run_state_machine(struct pdfu_data *pdfu)
 	pdfu->rx_msg = NULL;
 	pdfu->sm_running = false;
 	pdfu->fw = NULL;
-	kfree(pdfu->fw_path);
-	pdfu->fw_path = NULL;
+	pdfu->fw_manual_override = false;
 
 	return rc;
 }
@@ -442,7 +454,11 @@ static void pdfu_usbvdm_connect(struct usbvdm_subscription *sub,
 
 	mutex_lock(&pdfu->state_lock);
 	pdfu->connected = true;
+	pdfu->conn_sub = sub;
+	pdfu->pid = pid;
 	mutex_unlock(&pdfu->state_lock);
+
+	pm_stay_awake(pdfu->dev);
 
 	sysfs_notify(&pdfu->dev->kobj, NULL, "connected");
 }
@@ -458,7 +474,11 @@ static void pdfu_usbvdm_disconnect(struct usbvdm_subscription *sub)
 
 	mutex_lock(&pdfu->state_lock);
 	pdfu->connected = false;
+	pdfu->conn_sub = NULL;
+	pdfu->pid = 0;
 	mutex_unlock(&pdfu->state_lock);
+
+	pm_relax(pdfu->dev);
 
 	sysfs_notify(&pdfu->dev->kobj, NULL, "connected");
 }
@@ -515,27 +535,15 @@ static ssize_t connected_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(connected);
 
-static ssize_t fw_path_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct pdfu_data *pdfu = dev_get_drvdata(dev);
-
-	if (!pdfu->fw_path)
-		return -EINVAL;
-
-	return scnprintf(buf, PAGE_SIZE, "%s\n", pdfu->fw_path);
-}
-
 static ssize_t fw_path_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct pdfu_data *pdfu = dev_get_drvdata(dev);
 
-	kfree(pdfu->fw_path);
+	if (count > MAX_FW_PATH_LEN)
+		return -EINVAL;
 
-	pdfu->fw_path = kzalloc(count + 1, GFP_KERNEL);
-	if (!pdfu->fw_path)
-		return -ENOMEM;
+	pdfu->fw_manual_override = true;
 
 	strncpy(pdfu->fw_path, buf, count);
 
@@ -543,7 +551,7 @@ static ssize_t fw_path_store(struct device *dev,
 
 	return count;
 }
-static DEVICE_ATTR_RW(fw_path);
+static DEVICE_ATTR_WO(fw_path);
 
 static ssize_t responder_fw_version_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -600,8 +608,9 @@ static int pdfu_initiator_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct pdfu_data *pdfu = NULL;
-	u16 pid;
-	int rc = 0;
+	const char *pids_prop = "usb,product-ids";
+	u16 pids[MAX_DEVICES_SUPPORTED];
+	int i, num_pids, rc = 0;
 
 	pdfu = devm_kzalloc(dev, sizeof(struct pdfu_data), GFP_KERNEL);
 	if (!pdfu)
@@ -615,15 +624,23 @@ static int pdfu_initiator_probe(struct platform_device *pdev)
 	mutex_init(&pdfu->rx_lock);
 	mutex_init(&pdfu->state_lock);
 
-	rc = device_property_read_u16(dev, "usb,product-id", &pid);
+	rc = num_pids = device_property_count_u16(dev, pids_prop);
+	if (rc < 0)
+		return rc;
+	else if (num_pids > MAX_DEVICES_SUPPORTED)
+		return -EINVAL;
+
+	rc = device_property_read_u16_array(dev, pids_prop, pids, num_pids);
 	if (rc < 0)
 		return rc;
 
-	pdfu->sub = usbvdm_subscribe(dev, VDM_SVID_META, pid, ops);
-	if (IS_ERR_OR_NULL(pdfu->sub))
-		return IS_ERR(pdfu->sub) ? PTR_ERR(pdfu) : -ENODEV;
+	for (i = 0; i < num_pids; i++) {
+		pdfu->subs[i] = usbvdm_subscribe(dev, VDM_SVID_META, pids[i], ops);
+		if (IS_ERR_OR_NULL(pdfu->subs[i]))
+			return IS_ERR(pdfu->subs[i]) ? PTR_ERR(pdfu) : -ENODEV;
 
-	usbvdm_subscriber_set_drvdata(pdfu->sub, pdfu);
+		usbvdm_subscriber_set_drvdata(pdfu->subs[i], pdfu);
+	}
 
 	rc = sysfs_create_groups(&dev->kobj, pdfu_initiator_groups);
 	if (rc)
@@ -635,8 +652,10 @@ static int pdfu_initiator_probe(struct platform_device *pdev)
 static int pdfu_initiator_remove(struct platform_device *pdev)
 {
 	struct pdfu_data *pdfu = platform_get_drvdata(pdev);
+	int i;
 
-	usbvdm_unsubscribe(pdfu->sub);
+	for (i = 0; i < MAX_DEVICES_SUPPORTED; i++)
+		usbvdm_unsubscribe(pdfu->subs[i]);
 	kfree(pdfu->fw_path);
 	kfree(pdfu->rx_msg);
 	release_firmware(pdfu->fw);

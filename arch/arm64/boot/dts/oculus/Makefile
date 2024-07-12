@@ -7,8 +7,7 @@ dtbo-$(CONFIG_OCULUS_HOLLYWOOD) += \
 	hollywood-evt1-overlay.dtbo \
 	hollywood-evt2-overlay.dtbo \
 	hollywood-dvt-overlay.dtbo \
-	hollywood-pvt-b-overlay.dtbo \
-	hollywood-crimson-overlay.dtbo
+	hollywood-pvt-b-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_SEACLIFF) += \
 	seacliff-dev2.5-overlay.dtbo \
@@ -39,8 +38,6 @@ hollywood-evt1-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1
 hollywood-evt2-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-dvt-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 hollywood-pvt-b-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-hollywood-comet-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
-hollywood-crimson-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-dev2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-p2.5-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb
 seacliff-dev3-overlay.dtbo-base := kona-oculus.dtb kona-v2-oculus.dtb kona-v2.1-oculus.dtb

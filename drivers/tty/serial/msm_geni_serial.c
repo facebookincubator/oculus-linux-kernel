@@ -3216,7 +3216,9 @@ static ssize_t geni_ios_current_show(struct device *dev,
 	u32 geni_ios;
 	ssize_t ret = 0;
 
+	pm_runtime_get_sync(dev);
 	geni_ios = (port->is_active) ? geni_read_reg_nolog(port->uport.membase, SE_GENI_IOS) : -1;
+	pm_runtime_put_sync(dev);
 	ret = snprintf(buf, PAGE_SIZE, "%d\n", geni_ios);
 	return ret;
 }

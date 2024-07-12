@@ -164,6 +164,7 @@ struct xrps {
 	bool first_rx_in_interval;
 	uint64_t heartbeat_timestamp;
 	uint64_t sysint_ns;
+	int eot_disabled;
 };
 
 /**
@@ -255,6 +256,18 @@ int xrps_get_queue_pause(void);
  * @param[in] en The new setting
  */
 void xrps_set_queue_pause(int en);
+
+/**
+ * @brief Get EOT disabled.
+ */
+int xrps_get_eot_disabled(void);
+
+/**
+ * @brief Set EOT disabled.
+ *
+ * @param[in] disabled The new setting
+ */
+void xrps_set_eot_disabled(int disabled);
 
 /**
  * @brief Get XRPS stats.

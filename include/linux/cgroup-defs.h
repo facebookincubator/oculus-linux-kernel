@@ -71,6 +71,9 @@ enum {
 
 	/* Cgroup is frozen. */
 	CGRP_FROZEN,
+
+	/* Cgroup is pinned. */
+	CGRP_PINNED,
 };
 
 /* cgroup_root->flags */

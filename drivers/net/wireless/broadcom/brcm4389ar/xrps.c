@@ -147,6 +147,9 @@ static void unpause_pause_and_send_eot(bool eot_workq)
 		xrps_set_queue_pause(1);
 	}
 
+	if (xrps_get_eot_disabled())
+		return;
+
 	if (eot_workq) {
 #ifdef CONFIG_XRPS_PROFILING
 		xrps_put_profiling_event(EOT_SUBMIT);
@@ -290,6 +293,19 @@ void xrps_set_queue_pause(int en)
 		// Grabbing lock in here results in deadlock due to dhd invocation of handle_flowring.
 		unpause_all_queues();
 	}
+}
+
+int xrps_get_eot_disabled(void)
+{
+	return xrps.eot_disabled;
+}
+
+void xrps_set_eot_disabled(int disabled)
+{
+	if (disabled)
+		xrps.eot_disabled = 1;
+	else
+		xrps.eot_disabled = 0;
 }
 
 int xrps_send_eot(void)
@@ -540,6 +556,7 @@ int xrps_init(void)
 	xrps.heartbeat_timestamp = 0;
 	reset_flowrings();
 	xrps.first_rx_in_interval = true;
+	xrps_set_eot_disabled(true);
 #ifdef CONFIG_XRPS_PROFILING
 	xrps_init_profiling_helper();
 #endif /* CONFIG_XRPS_PROFILING */
