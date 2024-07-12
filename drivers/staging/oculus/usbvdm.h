@@ -9,6 +9,12 @@
 /* Vendor Defined Objects Macros */
 #define VDO_ACK_STATUS(v) (v & 0xFF)
 
+/* SVDM Header */
+#define VDM_TYPE(h) ((h & 0x8000) > 15)
+#define VDM_TYPE_STRUCTURED 1
+#define SVDM_COMMAND(h) (h & 0x1F)
+#define SVDM_COMMAND_ATTENTION 6
+
 /* Vendor Defined Message Header Macros */
 #define VDMH_SVID(h) ((h) >> 16)
 #define VDMH_PARAMETER(h) (h & 0xFF)
@@ -52,9 +58,11 @@ enum vdm_pid {
 	VDM_PID_UPA_18W = 0x2200,
 	VDM_PID_UPA_45W = 0x2103,
 	VDM_PID_MOKU_APP = 0x5004,
+	VDM_PID_MOKU_BOOTLOADER = 0x5006,
 	/* External batteries */
 	VDM_PID_MOLOKINI = 0xf6c0,
 	VDM_PID_LEHUA = 0x5001,
+	VDM_PID_LEHUA_BOOTLOADER = 0x500f,
 };
 
 #endif /* __USBVDM_H */

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "msm_v4l2_private.h"
@@ -59,14 +60,14 @@ static int _get_fence_pkt_hdr_from_user(struct cvp_kmd_arg __user *up,
 /* Size is in unit of u32 */
 static int _copy_pkt_from_user(struct cvp_kmd_arg *kp,
 		struct cvp_kmd_arg __user *up,
-		unsigned int size)
+		unsigned int start, unsigned int size)
 {
 	struct cvp_kmd_hfi_packet *k, *u;
 	int i;
 
 	k = &kp->data.hfi_pkt;
 	u = &up->data.hfi_pkt;
-	for (i = 0; i < size; i++)
+	for (i = start; i < size; i++)
 		if (get_user(k->pkt_data[i], &u->pkt_data[i]))
 			return -EFAULT;
 
@@ -105,13 +106,13 @@ static int _copy_sysprop_from_user(struct cvp_kmd_arg *kp,
 	if (get_user(k->prop_num, &u->prop_num))
 		return -EFAULT;
 
-	if (k->prop_num < 1 || k->prop_num > 32) {
+	if (k->prop_num < 1 || k->prop_num > MAX_KMD_PROP_NUM_PER_PACKET) {
 		dprintk(CVP_ERR, "Num of prop out of range %d\n", k->prop_num);
 		return -EFAULT;
 	}
 
-	return _copy_pkt_from_user(kp, up,
-		(k->prop_num*((sizeof(struct cvp_kmd_sys_property)>>2)+1)));
+	return _copy_pkt_from_user(kp, up, 1,
+		(k->prop_num * ((sizeof(struct cvp_kmd_sys_property) >> 2))));
 }
 
 static int _copy_pkt_to_user(struct cvp_kmd_arg *kp,
@@ -364,7 +365,7 @@ static int convert_from_user(struct cvp_kmd_arg *kp,
 			return -EFAULT;
 		}
 
-		rc = _copy_pkt_from_user(kp, up, (pkt_hdr.size >> 2));
+		rc = _copy_pkt_from_user(kp, up, 0, (pkt_hdr.size >> 2));
 		break;
 	}
 	case CVP_KMD_SEND_FENCE_CMD_PKT:

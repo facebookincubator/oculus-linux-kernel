@@ -40,15 +40,19 @@ static ssize_t swd_debug_reset_write(struct file *fp,
 
 	if (!gpio_is_valid(devdata->gpio_reset)) {
 		dev_err(dev, "Reset gpio not valid");
-		return -ENODEV;
+		status =  -ENODEV;
+		goto exit_debug_reset;
 	}
 
-	if (copy_from_user(&buf, user_buffer, 2))
-		return -EFAULT;
+	if (copy_from_user(&buf, user_buffer, 2)) {
+		status = -EFAULT;
+		goto exit_debug_reset;
+    }
 
 	if (count != 2 || (buf[0] != '1' && buf[0] != '0')) {
 		dev_err(dev, "Specify `1` or `0`\n ex. `echo 0 > reset`");
-		return -EINVAL;
+		status = -EINVAL;
+		goto exit_debug_reset;
 	}
 
 	if (buf[0] == '0')
@@ -114,6 +118,12 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 	const int kMcuResetMs = 5;
 	struct device *dev = fp->private_data;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	status = fwupdate_check_swd_ops(dev);
+	if (status) {
+		dev_err(dev, "Invalid SWD Ops");
+		return status;
+	}
 
 	if (!mutex_trylock(&devdata->state_mutex)) {
 		dev_err(dev, "Failed to get state mutex");
