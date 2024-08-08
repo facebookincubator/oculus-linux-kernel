@@ -385,3 +385,33 @@ int dhd_xrapi_enable_wake_pkt_filter(dhd_pub_t *dhd, bool enable)
 	return ret;
 }
 #endif /* DHD_MAGIC_PKT_FILTER */
+
+#if defined(NOTIFY_CALIBRATION_EVENT)
+int dhd_phy_calibration_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event)
+{
+	int reason;
+	reason = ntoh32(event->reason);
+	DHD_TRACE(("%s: reason = %d \n", __FUNCTION__, reason));
+#ifdef XRAPI_IN_USER_SPACE
+		wl_android_notify_phy_calibration_event(
+			dhd_linux_get_primary_netdev(dhd), &reason,
+			sizeof(uint32));
+#endif //XRAPI_IN_USER_SPACE
+
+	return BCME_OK;
+}
+
+int dhd_scan_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event)
+{
+	int reason;
+	reason = ntoh32(event->reason);
+	DHD_INFO(("%s: reason = %d", __FUNCTION__, reason));
+#ifdef XRAPI_IN_USER_SPACE
+		wl_android_notify_scan_event(
+			dhd_linux_get_primary_netdev(dhd), &reason,
+			sizeof(uint32));
+#endif //XRAPI_IN_USER_SPACE
+
+	return BCME_OK;
+}
+#endif /* NOTIFY_CALIBRATION_EVENT */

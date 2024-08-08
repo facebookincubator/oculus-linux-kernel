@@ -51,6 +51,10 @@
 	connectors = <&sde_wb &sde_dsi &sde_dsi1 &sde_rscc>;
 };
 
+&msm_audio_ion {
+	qcom,iommu-faults = "non-fatal";
+};
+
 &msm_cvp {
 	cvp_non_secure_cb {
 		qcom,iommu-faults = "non-fatal";
@@ -63,6 +67,10 @@
 	cvp_secure_pixel_cb {
 		qcom,iommu-faults = "non-fatal";
 	};
+};
+
+&msm_npu {
+	qcom,iommu-faults = "non-fatal";
 };
 
 &npu_llcc_ddr_bw {
@@ -90,6 +98,18 @@
 		reg = <0x198 0x4>;
 		bits = <0 28>;
 	};
+};
+
+&qupv3_0 {
+	qcom,iommu-faults = "non-fatal";
+};
+
+&qupv3_1 {
+	qcom,iommu-faults = "non-fatal";
+};
+
+&qupv3_2 {
+	qcom,iommu-faults = "non-fatal";
 };
 
 &removed_mem {
@@ -120,6 +140,10 @@
 
 &sde_dsi1 {
 	qcom,platform-te-gpio = <>;
+};
+
+&slim_aud {
+	qcom,iommu-faults = "non-fatal";
 };
 
 &soc {

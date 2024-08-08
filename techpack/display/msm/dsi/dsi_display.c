@@ -1659,6 +1659,7 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 
 	display->root = dir;
 	dsi_parser_dbg_init(display->parser, dir);
+	dsi_panel_dbg_init(display->panel, dir);
 
 	return rc;
 error_remove_dir:

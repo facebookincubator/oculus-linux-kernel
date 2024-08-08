@@ -4623,6 +4623,10 @@ static struct cam_isp_ctx_irq_ops
 	},
 	/* HW ERROR */
 	{
+		.irq_ops = {
+			__cam_isp_ctx_handle_error,
+			__cam_isp_ctx_rdi_stream_sof_in_bubble_applied,
+		}
 	},
 	/* HALT */
 	{

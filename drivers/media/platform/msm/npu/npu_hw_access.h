@@ -86,7 +86,4 @@ void npu_disable_sys_cache(struct npu_device *npu_dev);
 void *subsystem_get_local(char *sub_system);
 void subsystem_put_local(void *sub_system_handle);
 
-void npu_process_log_message(struct npu_device *npu_dev, uint32_t *msg,
-	uint32_t size);
-
 #endif /* _NPU_HW_ACCESS_H*/

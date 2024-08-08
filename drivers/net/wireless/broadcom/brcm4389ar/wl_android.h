@@ -217,3 +217,11 @@ extern int wl_android_xrapi_notify_psmode_event(struct net_device *dev,
 #ifdef XRAP_POWER_OPTIMIZATION
 int wl_enable_oce_fils_discovery(struct net_device *ndev, bool enable);
 #endif
+
+#if defined(NOTIFY_CALIBRATION_EVENT)
+extern int wl_android_notify_phy_calibration_event(struct net_device *dev,
+						const void *event_data,
+						int len);
+extern int wl_android_notify_scan_event(struct net_device *dev,
+					 const void *event_data, int len);
+#endif // NOTIFY_CALIBRATION_EVENT

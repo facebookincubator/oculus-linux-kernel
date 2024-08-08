@@ -6947,6 +6947,8 @@ static int cam_ife_mgr_process_recovery_cb(void *priv, void *data)
 		CAM_DBG(CAM_ISP, "RESET: CSID PATH");
 		for (i = 0; i < recovery_data->no_of_context; i++) {
 			ctx = recovery_data->affected_ctx[i];
+			CAM_WARN(CAM_ISP, "RESET: CSID PATH hw ctx %d VFE core %d",
+					ctx->ctx_index, recovery_data->affected_core[i]);
 			list_for_each_entry(hw_mgr_res, &ctx->res_list_ife_csid,
 				list) {
 				rc = cam_ife_hw_mgr_reset_csid_res(hw_mgr_res);
@@ -7931,7 +7933,7 @@ static int cam_ife_hw_mgr_debug_register(void)
 		goto err;
 	}
 
-	g_ife_hw_mgr.debug_cfg.enable_recovery = 0;
+	g_ife_hw_mgr.debug_cfg.enable_recovery = 1;
 
 	return 0;
 

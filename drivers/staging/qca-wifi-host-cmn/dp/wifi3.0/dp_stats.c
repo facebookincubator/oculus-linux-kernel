@@ -6792,6 +6792,9 @@ dp_print_soc_rx_stats(struct dp_soc *soc)
 	DP_PRINT_STATS("bar handle update fail count: %d",
 		       soc->stats.rx.err.bar_handle_fail_count);
 
+	DP_PRINT_STATS("Rx err msdu continuation err: %d",
+		       soc->stats.rx.err.msdu_continuation_err);
+
 	for (i = 0; i < HAL_RXDMA_ERR_MAX; i++) {
 		index += qdf_snprint(&rxdma_error[index],
 				DP_RXDMA_ERR_LENGTH - index,

@@ -54,7 +54,7 @@
 		compatible = "oculus,external-battery";
 		charging-suspend-thresh = <100>;
 		charging-resume-thresh = <95>;
-		meta,usb-id = /bits/ 16 <0x2833 0xf6c0>;	/* Molokini+*/
+		meta,usb-ids = /bits/ 16 <0x2833 0xf6c0>;	/* Molokini+ */
 	};
 
 	charging_dock: oculus,charging_dock {

@@ -16711,3 +16711,63 @@ exit:
 	return bytes_written;
 }
 #endif
+
+#if defined(NOTIFY_CALIBRATION_EVENT)
+int wl_android_notify_phy_calibration_event(struct net_device *dev,
+					 const void *event_data, int len)
+{
+	int res = BCME_OK;
+	struct bcm_cfg80211 *cfg;
+	struct wiphy *wiphy;
+
+	cfg = wl_cfg80211_get_bcmcfg();
+	if (!cfg || !cfg->wdev) {
+		WL_ERR(("cfg is NULL\n"));
+		res = BCME_BADARG;
+		return res;
+	}
+
+	wiphy = bcmcfg_to_wiphy(cfg);
+	if (!wiphy) {
+		WL_ERR(("wiphy is NULL\n"));
+		res = BCME_BADARG;
+		return res;
+	}
+
+	WL_INFORM(("BRCM_VENDOR_EVENT_PHY_CALIBRATION event sent %d\n",
+		NL80211_CMD_VENDOR));
+
+	wl_cfgvendor_send_async_event(
+		wiphy, dev, BRCM_VENDOR_EVENT_PHY_CALIBRATION, event_data, len);
+	return res;
+}
+
+int wl_android_notify_scan_event(struct net_device *dev,
+					 const void *event_data, int len)
+{
+	int res = BCME_OK;
+	struct bcm_cfg80211 *cfg;
+	struct wiphy *wiphy;
+
+	cfg = wl_cfg80211_get_bcmcfg();
+	if (!cfg || !cfg->wdev) {
+		WL_ERR(("cfg is NULL\n"));
+		res = BCME_BADARG;
+		return res;
+	}
+
+	wiphy = bcmcfg_to_wiphy(cfg);
+	if (!wiphy) {
+		WL_ERR(("wiphy is NULL\n"));
+		res = BCME_BADARG;
+		return res;
+	}
+
+	WL_INFORM(("BRCM_VENDOR_EVENT_SCAN event sent %d\n",
+		NL80211_CMD_VENDOR));
+
+	wl_cfgvendor_send_async_event(
+		wiphy, dev, BRCM_VENDOR_EVENT_SCAN, event_data, len);
+	return res;
+}
+#endif // XRAPI && XRAPI_IN_USER_SPACE

@@ -58,4 +58,8 @@ extern int
 dhd_xrapi_validate_pkt_filter(dhd_pub_t *dhd);
 #endif /* DHD_MAGIC_PKT_FILTER */
 
+#if defined(NOTIFY_CALIBRATION_EVENT)
+extern int dhd_phy_calibration_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event);
+extern int dhd_scan_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event);
+#endif /* NOTIFY_CALIBRATION_EVENT */
 #endif  /* _dhd_xrapi_h_ */

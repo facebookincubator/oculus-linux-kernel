@@ -14,12 +14,6 @@
 #include "npu_common.h"
 
 /* -------------------------------------------------------------------------
- * Defines
- * -------------------------------------------------------------------------
- */
-#define NPU_LOG_BUF_SIZE 4096
-
-/* -------------------------------------------------------------------------
  * Function Prototypes
  * -------------------------------------------------------------------------
  */
@@ -32,8 +26,6 @@ static ssize_t npu_debug_reg_read(struct file *file,
 static ssize_t npu_debug_off_write(struct file *file,
 		const char __user *user_buf, size_t count, loff_t *ppos);
 static ssize_t npu_debug_off_read(struct file *file,
-		char __user *user_buf, size_t count, loff_t *ppos);
-static ssize_t npu_debug_log_read(struct file *file,
 		char __user *user_buf, size_t count, loff_t *ppos);
 static ssize_t npu_debug_ctrl_write(struct file *file,
 		const char __user *user_buf, size_t count, loff_t *ppos);
@@ -55,13 +47,6 @@ static const struct file_operations npu_off_fops = {
 	.release = npu_debug_release,
 	.read = npu_debug_off_read,
 	.write = npu_debug_off_write,
-};
-
-static const struct file_operations npu_log_fops = {
-	.open = npu_debug_open,
-	.release = npu_debug_release,
-	.read = npu_debug_log_read,
-	.write = NULL,
 };
 
 static const struct file_operations npu_ctrl_fops = {
@@ -249,48 +234,6 @@ static ssize_t npu_debug_off_read(struct file *file,
 }
 
 /* -------------------------------------------------------------------------
- * Function Implementations - DebugFS Log
- * -------------------------------------------------------------------------
- */
-static ssize_t npu_debug_log_read(struct file *file,
-			char __user *user_buf, size_t count, loff_t *ppos)
-{
-	size_t len = 0;
-	struct npu_device *npu_dev = file->private_data;
-	struct npu_debugfs_ctx *debugfs;
-
-	NPU_DBG("npu_dev %pK %pK\n", npu_dev, g_npu_dev);
-	npu_dev = g_npu_dev;
-	debugfs = &npu_dev->debugfs_ctx;
-
-	/* mutex log lock */
-	mutex_lock(&debugfs->log_lock);
-
-	if (debugfs->log_num_bytes_buffered != 0) {
-		len = min(debugfs->log_num_bytes_buffered,
-			debugfs->log_buf_size - debugfs->log_read_index);
-		len = min(count, len);
-		if (copy_to_user(user_buf, (debugfs->log_buf +
-			debugfs->log_read_index), len)) {
-			NPU_ERR("failed to copy to user\n");
-			mutex_unlock(&debugfs->log_lock);
-			return -EFAULT;
-		}
-		debugfs->log_read_index += len;
-		if (debugfs->log_read_index == debugfs->log_buf_size)
-			debugfs->log_read_index = 0;
-
-		debugfs->log_num_bytes_buffered -= len;
-		*ppos += len;
-	}
-
-	/* mutex log unlock */
-	mutex_unlock(&debugfs->log_lock);
-
-	return len;
-}
-
-/* -------------------------------------------------------------------------
  * Function Implementations - DebugFS Control
  * -------------------------------------------------------------------------
  */
@@ -373,12 +316,6 @@ int npu_debugfs_init(struct npu_device *npu_dev)
 		goto err;
 	}
 
-	if (!debugfs_create_file("log", 0644, debugfs->root,
-		npu_dev, &npu_log_fops)) {
-		NPU_ERR("debugfs_create_file log fail\n");
-		goto err;
-	}
-
 	if (!debugfs_create_file("ctrl", 0644, debugfs->root,
 		npu_dev, &npu_ctrl_fops)) {
 		NPU_ERR("debugfs_create_file ctrl fail\n");
@@ -421,15 +358,6 @@ int npu_debugfs_init(struct npu_device *npu_dev)
 		goto err;
 	}
 
-	debugfs->log_num_bytes_buffered = 0;
-	debugfs->log_read_index = 0;
-	debugfs->log_write_index = 0;
-	debugfs->log_buf_size = NPU_LOG_BUF_SIZE;
-	debugfs->log_buf = kzalloc(debugfs->log_buf_size, GFP_KERNEL);
-	if (!debugfs->log_buf)
-		goto err;
-	mutex_init(&debugfs->log_lock);
-
 	return 0;
 
 err:
@@ -440,12 +368,6 @@ err:
 void npu_debugfs_deinit(struct npu_device *npu_dev)
 {
 	struct npu_debugfs_ctx *debugfs = &npu_dev->debugfs_ctx;
-
-	debugfs->log_num_bytes_buffered = 0;
-	debugfs->log_read_index = 0;
-	debugfs->log_write_index = 0;
-	debugfs->log_buf_size = 0;
-	kfree(debugfs->log_buf);
 
 	if (!IS_ERR_OR_NULL(debugfs->root)) {
 		debugfs_remove_recursive(debugfs->root);

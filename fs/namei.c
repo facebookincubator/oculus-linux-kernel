@@ -1819,6 +1819,8 @@ static int pick_link(struct nameidata *nd, struct path *link,
 		path_to_nameidata(link, nd);
 		return -ELOOP;
 	}
+	if (unlikely(link->mnt->mnt_flags & MNT_NOSYMFOLLOW))
+		return -ELOOP;
 	if (!(nd->flags & LOOKUP_RCU)) {
 		if (link->mnt == nd->path.mnt)
 			mntget(link->mnt);

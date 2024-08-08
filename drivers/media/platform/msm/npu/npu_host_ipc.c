@@ -31,15 +31,16 @@
 struct npu_queue_tuple {
 	uint32_t size;
 	uint32_t hdr;
+	uint32_t start_offset;
 };
 
-static const struct npu_queue_tuple npu_q_setup[6] = {
-	{ 1024, IPC_QUEUE_CMD_HIGH_PRIORITY | TX_HDR_TYPE | RX_HDR_TYPE },
-	{ 4096, IPC_QUEUE_APPS_EXEC         | TX_HDR_TYPE | RX_HDR_TYPE },
-	{ 4096, IPC_QUEUE_DSP_EXEC          | TX_HDR_TYPE | RX_HDR_TYPE },
-	{ 4096, IPC_QUEUE_APPS_RSP          | TX_HDR_TYPE | RX_HDR_TYPE },
-	{ 4096, IPC_QUEUE_DSP_RSP           | TX_HDR_TYPE | RX_HDR_TYPE },
-	{ 1024, IPC_QUEUE_LOG               | TX_HDR_TYPE | RX_HDR_TYPE },
+static struct npu_queue_tuple npu_q_setup[6] = {
+	{ 1024, IPC_QUEUE_CMD_HIGH_PRIORITY | TX_HDR_TYPE | RX_HDR_TYPE, 0},
+	{ 4096, IPC_QUEUE_APPS_EXEC         | TX_HDR_TYPE | RX_HDR_TYPE, 0},
+	{ 4096, IPC_QUEUE_DSP_EXEC          | TX_HDR_TYPE | RX_HDR_TYPE, 0},
+	{ 4096, IPC_QUEUE_APPS_RSP          | TX_HDR_TYPE | RX_HDR_TYPE, 0},
+	{ 4096, IPC_QUEUE_DSP_RSP           | TX_HDR_TYPE | RX_HDR_TYPE, 0},
+	{ 1024, IPC_QUEUE_LOG               | TX_HDR_TYPE | RX_HDR_TYPE, 0},
 };
 
 /* -------------------------------------------------------------------------
@@ -111,6 +112,7 @@ static int npu_host_ipc_init_hfi(struct npu_device *npu_dev)
 		/* queue is active */
 		q_hdr->qhdr_status = 0x01;
 		q_hdr->qhdr_start_offset = cur_start_offset;
+		npu_q_setup[q_idx].start_offset = cur_start_offset;
 		q_size = npu_q_setup[q_idx].size;
 		q_hdr->qhdr_type = npu_q_setup[q_idx].hdr;
 		/* in bytes */
@@ -217,6 +219,18 @@ static int ipc_queue_read(struct npu_device *npu_dev,
 	/* Read the queue */
 	MEMR(npu_dev, (void *)((size_t)offset), (uint8_t *)&queue,
 		HFI_QUEUE_HEADER_SIZE);
+
+	if (queue.qhdr_type != npu_q_setup[target_que].hdr ||
+		queue.qhdr_q_size != npu_q_setup[target_que].size ||
+		queue.qhdr_read_idx >= queue.qhdr_q_size ||
+		queue.qhdr_write_idx >= queue.qhdr_q_size ||
+		queue.qhdr_start_offset !=
+			npu_q_setup[target_que].start_offset) {
+		NPU_ERR("Invalid Queue header\n");
+		status = -EIO;
+		goto exit;
+	}
+
 	/* check if queue is empty */
 	if (queue.qhdr_read_idx == queue.qhdr_write_idx) {
 		/*
@@ -314,6 +328,18 @@ static int ipc_queue_write(struct npu_device *npu_dev,
 
 	MEMR(npu_dev, (void *)((size_t)offset), (uint8_t *)&queue,
 		HFI_QUEUE_HEADER_SIZE);
+
+	if (queue.qhdr_type != npu_q_setup[target_que].hdr ||
+		queue.qhdr_q_size != npu_q_setup[target_que].size ||
+		queue.qhdr_read_idx >= queue.qhdr_q_size ||
+		queue.qhdr_write_idx >= queue.qhdr_q_size ||
+		queue.qhdr_start_offset !=
+			npu_q_setup[target_que].start_offset) {
+		NPU_ERR("Invalid Queue header\n");
+		status = -EIO;
+		goto exit;
+	}
+
 	packet_size = (*(uint32_t *)packet);
 	if (packet_size == 0) {
 		/* assign failed status and return */

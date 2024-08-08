@@ -136,7 +136,11 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 		goto exit_debug_write;
 	}
 
-	fwupdate_get_firmware_images(dev, devdata);
+	status = fwupdate_get_firmware_images(dev, devdata);
+	if (status) {
+		dev_err(dev, "Invalid firmware image");
+		goto exit_debug_write;
+	}
 
 	if (gpio_is_valid(devdata->gpio_reset)) {
 		gpio_direction_output(devdata->gpio_reset, 1);

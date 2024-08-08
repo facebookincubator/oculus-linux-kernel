@@ -1921,6 +1921,14 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		goto exit;
 	}
 
+#if defined(NOTIFY_CALIBRATION_EVENT)
+	// Notify the active scan Start event
+	if (cfg->active_scan == ACTIVE_SCAN && !cfg->scan_suppressed) {
+    	int reason = WL_SCAN_START;
+		wl_android_notify_scan_event(ndev, &reason, sizeof(uint32));
+	}
+#endif
+
 #ifdef DHD_USE_SC_SCAN
 	if (cfg->active_scan == PASSIVE_SCAN) {
 		WL_SCAN(("Force using sc:escan\n"));
@@ -2160,6 +2168,13 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	}
 exit:
 	if (unlikely(err)) {
+#if defined(NOTIFY_CALIBRATION_EVENT)
+	// Notify the active scan Start event
+	if (cfg->active_scan == ACTIVE_SCAN && !cfg->scan_suppressed) {
+    	int reason = WL_SCAN_END;
+		wl_android_notify_scan_event(ndev, &reason, sizeof(uint32));
+	}
+#endif
 		/* Don't print Error incase of Scan suppress */
 		if ((err == BCME_EPERM) && cfg->scan_suppressed)
 			WL_DBG(("Escan failed: Scan Suppressed \n"));
@@ -2911,6 +2926,14 @@ wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 		err = BCME_ERROR;
 		goto out;
 	}
+
+#if defined(NOTIFY_CALIBRATION_EVENT)
+	// Notify the active scan Start event
+	if (cfg->active_scan == ACTIVE_SCAN && !cfg->scan_suppressed) {
+    	int reason = WL_SCAN_END;
+		wl_android_notify_scan_event(ndev, &reason, sizeof(uint32));
+	}
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)) && \
 	defined(SUPPORT_RANDOM_MAC_SCAN) && !defined(WL_USE_RANDOMIZED_SCAN)

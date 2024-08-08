@@ -16,6 +16,12 @@ config AS5510
 	  Here is spec sheet:
 	  http://www.mouser.com/ds/2/588/AS5510_Datasheet_EN_v3-272817.pdf
 
+config AW8646_MOTOR
+    tristate "Step motor driver for awinic AW8646"
+	default n
+	help
+	  Enable motor driver for awinic AW8646.
+
 config BLU_FW
 	tristate "Support BLU FW Updates"
 	default n

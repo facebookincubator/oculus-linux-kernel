@@ -153,15 +153,21 @@ cam_icp_fpc_print_patch_iocfg(struct cam_buf_io_cfg *io_cfg,
 }
 
 static int
-cam_icp_fpc_update_patch_map(struct cam_buf_io_cfg *io_cfg,
-			     unsigned int num_io_cfgs,
-			     struct cam_patch_desc *patch_desc,
-			     unsigned int num_patches,
-			     struct cam_icp_fastpath_io_patch_map *patch_map)
+cam_icp_fpc_create_patch_map(struct cam_icp_fastpath_packet *fp_packet)
 {
 	unsigned int num_maps = 0;
 	unsigned int io_idx;
 	unsigned int p_idx;
+
+	struct cam_packet *packet = fp_packet->packet;
+	struct cam_icp_fastpath_io_patch_map *patch_map =
+		&fp_packet->io_patch_map;
+	struct cam_buf_io_cfg *io_cfg = (struct cam_buf_io_cfg *)
+		((uint8_t *) &packet->payload + packet->io_configs_offset);
+	unsigned int num_io_cfgs = packet->num_io_configs;
+	struct cam_patch_desc *patch_desc = (struct cam_patch_desc *)
+		((uint8_t *) &packet->payload + packet->patch_offset);
+	unsigned int num_patches = packet->num_patches;
 
 	for (p_idx = 0; p_idx < num_patches; p_idx++) {
 		for (io_idx = 0; io_idx < num_io_cfgs; io_idx++) {
@@ -314,13 +320,9 @@ cam_icp_fpc_update_packet_bufs(struct cam_icp_fastpath_context *ctx,
 	if (buffer_set->request_id == fp_packet->request_id) {
 		/* Update patch map only once */
 		if (!fp_packet->io_patch_map.num_maps) {
-			rc = cam_icp_fpc_update_patch_map(io_cfg,
-				packet->num_io_configs,
-				patch_desc,
-				packet->num_patches,
-				&fp_packet->io_patch_map);
-			if (rc < 0)
-				return rc;
+			CAM_ERR(CAM_CORE, "Can not find valid patch map! Req:  %llu",
+				buffer_set->request_id);
+			return -EINVAL;
 		}
 	} else {
 		struct cam_icp_fastpath_io_patch_map *patch_map =
@@ -360,7 +362,7 @@ static int cam_icp_fpc_alloc_packet_queue(struct cam_icp_fastpath_context *ctx,
 		return -ENOMEM;
 
 	mutex_lock(&ctx->packet_lock);
-
+	memset(ctx->packets_mem, 0, sizeof(*ctx->packets_mem) * num_packets);
 	INIT_LIST_HEAD(&ctx->packet_free_queue);
 	INIT_LIST_HEAD(&ctx->packet_pending_queue);
 
@@ -409,6 +411,8 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 		fp_pck = list_entry(pos, struct cam_icp_fastpath_packet, list);
 
 		list_del(&fp_pck->list);
+		cam_mem_put_cpu_buf((int32_t) fp_pck->fp_packet_handle);
+		fp_pck->fp_packet_handle = 0;
 		list_add_tail(&fp_pck->list, &ctx->packet_free_queue);
 		complete_all(&fp_pck->done);
 	}
@@ -420,6 +424,7 @@ static int cam_icp_fpc_flush_packet_queue(struct cam_icp_fastpath_context *ctx)
 }
 
 static int cam_icp_fpc_enqueue_packet(struct cam_icp_fastpath_context *ctx,
+				    __u64 packet_handle,
 				    struct cam_packet *packet,
 				    size_t remain_len)
 {
@@ -437,8 +442,6 @@ static int cam_icp_fpc_enqueue_packet(struct cam_icp_fastpath_context *ctx,
 				struct cam_icp_fastpath_packet, list);
 	}
 
-	list_del(&fp_pck->list);
-
 	/*
 	 * Store original request id. The request id from header will be
 	 * updated with the one from the processed buffer set.
@@ -447,6 +450,18 @@ static int cam_icp_fpc_enqueue_packet(struct cam_icp_fastpath_context *ctx,
 	fp_pck->packet = packet;
 	fp_pck->remain_len = remain_len;
 	fp_pck->io_patch_map.num_maps = 0;
+	if (cam_icp_fpc_create_patch_map(fp_pck)) {
+		CAM_ERR(CAM_CORE, "Failed to create patch map!");
+		// we haven't delete fp_pck from queue, so in case of error we
+		// can try to reuse it in next call
+		mutex_unlock(&ctx->packet_lock);
+		return -EINVAL;
+	}
+	if (fp_pck->fp_packet_handle)
+		cam_mem_put_cpu_buf((int32_t) fp_pck->fp_packet_handle);
+
+	fp_pck->fp_packet_handle = packet_handle;
+	list_del(&fp_pck->list);
 	list_add_tail(&fp_pck->list, &ctx->packet_pending_queue);
 
 	/* New enqueued packets should be completed */
@@ -491,6 +506,8 @@ cam_icp_fpc_get_packet_and_discard_oldest(struct cam_icp_fastpath_context *ctx, 
 
 		/* Move old packets from pending to free queue */
 		list_del(&fp_pck->list);
+		cam_mem_put_cpu_buf((int32_t) fp_pck->fp_packet_handle);
+		fp_pck->fp_packet_handle = 0;
 		list_add_tail(&fp_pck->list, &ctx->packet_free_queue);
 		CAM_DBG(CAM_ICP, "Free packet %llu for request id %llu!",
 			fp_pck->request_id, request_id);
@@ -534,18 +551,6 @@ static int cam_icp_fpc_try_to_process(struct cam_icp_fastpath_context *ctx)
 		CAM_ERR(CAM_ICP, "Ouch! Packet received but not available!");
 		rc = -EINVAL;
 		goto error_release_buffer_set;
-	}
-
-	/* If packet is reused wait to finish first */
-	if (buffer_set->request_id != fp_packet->request_id) {
-		long wait_rc = wait_for_completion_timeout(&fp_packet->done,
-			msecs_to_jiffies(CAM_ICP_FPC_PROCESS_TIMEOUT_MS));
-		if (wait_rc < 1) {
-			CAM_ERR(CAM_ICP, "Wait for completion timeout %d", rc);
-			return wait_rc ? wait_rc : -ETIMEDOUT;
-		}
-		CAM_DBG(CAM_ICP, "Packet process wait done %d request id %llu",
-			wait_rc, buffer_set->request_id);
 	}
 
 	rc = cam_icp_fpc_update_packet_bufs(ctx, buffer_set, fp_packet);
@@ -789,7 +794,9 @@ int cam_icp_fastpath_config_dev(void *hnd, struct cam_config_dev_cmd *cmd)
 		CAM_DBG(CAM_ICP, "New packet received %llu!",
 			packet->header.request_id);
 
-		cam_icp_fpc_enqueue_packet(ctx, packet, remain_len);
+		cam_icp_fpc_enqueue_packet(ctx,
+			cmd->packet_handle,
+			packet, remain_len);
 
 		/* To to process new packet if buffers are available */
 		rc = cam_icp_fpc_try_to_process(ctx);
@@ -803,7 +810,6 @@ int cam_icp_fastpath_config_dev(void *hnd, struct cam_config_dev_cmd *cmd)
 		CAM_ERR(CAM_ICP, "Failed to prepare/config device %x  %d",
 			packet->header.op_code, rc);
 
-	cam_mem_put_cpu_buf((int32_t) cmd->packet_handle);
 	return rc;
 }
 

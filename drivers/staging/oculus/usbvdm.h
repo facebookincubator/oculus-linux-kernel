@@ -62,6 +62,7 @@ enum vdm_pid {
 	/* External batteries */
 	VDM_PID_MOLOKINI = 0xf6c0,
 	VDM_PID_LEHUA = 0x5001,
+	VDM_PID_LEHUA_V2 = 0x5015,
 	VDM_PID_LEHUA_BOOTLOADER = 0x500f,
 };
 
