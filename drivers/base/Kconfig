@@ -154,6 +154,12 @@ config DEBUG_TEST_DRIVER_REMOVE
 	  unusable. You should say N here unless you are explicitly looking to
 	  test this functionality.
 
+config RUNTIME_ISOLCPU
+	bool "Enable runtime update to isolcpu"
+	default n
+	help
+	  This option enables the runtime update of boot-time configuration isolcpu.
+
 source "drivers/base/test/Kconfig"
 
 config SYS_HYPERVISOR

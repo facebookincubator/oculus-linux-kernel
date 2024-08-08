@@ -48,6 +48,22 @@ bool housekeeping_test_cpu(int cpu, enum hk_flags flags)
 }
 EXPORT_SYMBOL_GPL(housekeeping_test_cpu);
 
+#ifdef CONFIG_RUNTIME_ISOLCPU
+bool housekeeping_set_cpu(bool isol, int cpu, enum hk_flags flags)
+{
+	if (static_branch_unlikely(&housekeeping_overriden))
+		if (housekeeping_flags & flags) {
+			if (isol)
+				cpumask_clear_cpu(cpu, housekeeping_mask);
+			else
+				cpumask_set_cpu(cpu, housekeeping_mask);
+			return true;
+		}
+	return false;
+}
+EXPORT_SYMBOL(housekeeping_set_cpu);
+#endif
+
 void __init housekeeping_init(void)
 {
 	if (!housekeeping_flags)

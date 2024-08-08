@@ -264,6 +264,7 @@ static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 	mutex_lock(&ddev->lock);
 	ddev->docked = false;
 	ddev->current_svid = 0;
+	ddev->current_pid = 0;
 	memset(&ddev->params, 0, sizeof(ddev->params));
 	mutex_unlock(&ddev->lock);
 
@@ -274,6 +275,57 @@ static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 
 	if (ddev->send_state_of_charge)
 		cancel_work_sync(&ddev->work_soc);
+}
+static void parse_port_board_temp(struct charging_dock_device_t *ddev, const u32 vdo)
+{
+	int port_num;
+	u16 board_temp;
+
+	switch (ddev->current_pid) {
+	case VDM_PID_MOKU_APP:
+		// Format: byte 0: port_num, byte 1: board temp
+		port_num = (vdo & 0xff);
+		board_temp = (vdo >> 8) & 0xff;
+		break;
+	default:
+		// Format: bytes[1:0]: board_temp
+		port_num = 0;
+		board_temp = (vdo & 0xffff);
+		break;
+	}
+
+	if (port_num < 0 || port_num >= NUM_CHARGING_DOCK_PORTS) {
+		dev_err(ddev->dev, "Error parsing port board temp: invalid port_num: %d", port_num);
+		return;
+	}
+	ddev->params.port_board_temp[port_num] = board_temp;
+	dev_dbg(ddev->dev, "Board temperature: port_num=%d value=%d(0x%x) vdo=0x%04x", port_num, board_temp, board_temp, vdo);
+}
+
+static void parse_port_moisture_detection(struct charging_dock_device_t *ddev, const u32 vdo)
+{
+	int port_num;
+	int moisture_detected;
+
+	switch (ddev->current_pid) {
+	case VDM_PID_MOKU_APP:
+		// Format: byte 0: port_num, byte 1: moisture_detected (0/1)
+		port_num = (vdo & 0xff);
+		moisture_detected = (vdo >> 8) & 0xff;
+		break;
+	default:
+		// Format: byte 0: moisture detected (0/1)
+		port_num = 0;
+		moisture_detected = (vdo & 0xff);
+		break;
+	}
+
+	if (port_num < 0 || port_num >= NUM_MOISTURE_DETECTION_PORTS) {
+		dev_err(ddev->dev, "Error parsing port moisture detection: invalid port_num: %d", port_num);
+		return;
+	}
+	ddev->params.moisture_detected_counts[port_num] += moisture_detected;
+	dev_dbg(ddev->dev, "Moisture detected: port_num=%d value=%d", port_num, moisture_detected);
 }
 
 #define PORT_CONFIG_VOLTAGE_MV_CONVERSION 50
@@ -472,7 +524,10 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 			vdos, sizeof(ddev->params.serial_number_mlb));
 		break;
 	case PARAMETER_TYPE_BOARD_TEMPERATURE:
-		ddev->params.board_temp = vdos[0];
+		if (num_vdos == 1)
+			parse_port_board_temp(ddev, vdos[0]);
+		else
+			dev_err(ddev->dev, "Port board temp: wrong number of vdos: %d", num_vdos);
 		break;
 	case PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM:
 		vdm_memcpy(ddev, parameter_type, num_vdos,
@@ -567,9 +622,12 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		parse_connected_devices(ddev, vdos, num_vdos);
 		break;
 	case PARAMETER_TYPE_MOISTURE_DETECTED:
-		dev_dbg(ddev->dev, "Received moisture detected: 0x%x value=%d",
+		dev_dbg(ddev->dev, "Received moisture detected: 0x%x vdo=0x%04x",
 			parameter_type, vdos[0]);
-		ddev->params.moisture_detected_count += vdos[0];
+		if (num_vdos == 1)
+			parse_port_moisture_detection(ddev, vdos[0]);
+		else
+			dev_err(ddev->dev, "Moisture detection: wrong number of vdos: %d", num_vdos);
 		break;
 	default:
 		dev_err(ddev->dev, "Unsupported parameter 0x%x",
@@ -773,16 +831,6 @@ static ssize_t serial_number_mlb_show(struct device *dev,
 	return result;
 }
 static DEVICE_ATTR_RO(serial_number_mlb);
-
-static ssize_t board_temp_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct charging_dock_device_t *ddev =
-		(struct charging_dock_device_t *) dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->params.board_temp);
-}
-static DEVICE_ATTR_RO(board_temp);
 
 static ssize_t serial_number_system_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1139,6 +1187,7 @@ static ssize_t dock_type_show(struct device *dev,
 
 	switch (ddev->current_pid) {
 	case VDM_PID_BURU:
+	case VDM_PID_MOKU_APP:
 	case VDM_PID_UPA_18W:
 	case VDM_PID_UPA_45W:
 		dock_type = 1;
@@ -1155,15 +1204,25 @@ static ssize_t dock_type_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(dock_type);
 
-static ssize_t moisture_detected_count_show(struct device *dev,
+static ssize_t port_0_moisture_detected_count_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->params.moisture_detected_count);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->params.moisture_detected_counts[0]);
 }
-static DEVICE_ATTR_RO(moisture_detected_count);
+static DEVICE_ATTR_RO(port_0_moisture_detected_count);
+
+static ssize_t port_1_moisture_detected_count_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", ddev->params.moisture_detected_counts[1]);
+}
+static DEVICE_ATTR_RO(port_1_moisture_detected_count);
 
 static ssize_t system_battery_capacity_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1197,12 +1256,49 @@ static ssize_t system_battery_capacity_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(system_battery_capacity);
 
+static ssize_t port_board_temp(struct device *dev,
+		char *buf, int port_num)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+		ddev->params.port_board_temp[port_num]);
+}
+
+static ssize_t port_0_board_temp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return port_board_temp(dev, buf, 0);
+}
+static DEVICE_ATTR_RO(port_0_board_temp);
+
+static ssize_t port_1_board_temp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return port_board_temp(dev, buf, 1);
+}
+static DEVICE_ATTR_RO(port_1_board_temp);
+
+static ssize_t port_2_board_temp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return port_board_temp(dev, buf, 2);
+}
+static DEVICE_ATTR_RO(port_2_board_temp);
+
+static ssize_t port_3_board_temp_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return port_board_temp(dev, buf, 3);
+}
+static DEVICE_ATTR_RO(port_3_board_temp);
+
 static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_docked.attr,
 	&dev_attr_broadcast_period.attr,
 	&dev_attr_fw_version.attr,
 	&dev_attr_serial_number_mlb.attr,
-	&dev_attr_board_temp.attr,
 	&dev_attr_serial_number_system.attr,
 	&dev_attr_log.attr,
 	&dev_attr_log_size.attr,
@@ -1239,8 +1335,13 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_port_1_serial_number_system.attr,
 	&dev_attr_port_2_serial_number_system.attr,
 	&dev_attr_port_3_serial_number_system.attr,
+	&dev_attr_port_0_board_temp.attr,
+	&dev_attr_port_1_board_temp.attr,
+	&dev_attr_port_2_board_temp.attr,
+	&dev_attr_port_3_board_temp.attr,
 	&dev_attr_dock_type.attr,
-	&dev_attr_moisture_detected_count.attr,
+	&dev_attr_port_0_moisture_detected_count.attr,
+	&dev_attr_port_1_moisture_detected_count.attr,
 	&dev_attr_system_battery_capacity.attr,
 	&dev_attr_vid.attr,
 	&dev_attr_pid.attr,

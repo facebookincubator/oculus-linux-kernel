@@ -5463,7 +5463,6 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 			event_name, event_type, (int)status, (int)reason));
 		break;
 #endif /* XRAPI */
-
 	default:
 		DHD_INFO(("MACEVENT: %s %d, MAC %s, status %d, reason %d, auth %d\n",
 		       event_name, event_type, eabuf, (int)status, (int)reason,
@@ -6174,6 +6173,14 @@ wl_process_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata, uint pktlen
 		dhd_xrapi_softap_psmode_handler(dhd_pub, event);
 		break;
 #endif /* XRAPI */
+#if defined(NOTIFY_CALIBRATION_EVENT)
+	case WLC_E_PHY_CAL:
+		dhd_phy_calibration_event_handler(dhd_pub, event);
+		break;
+	case WLC_E_SCAN:
+		// dhd_scan_event_handler(dhd_pub, event);
+		break;
+#endif /* NOTIFY_CALIBRATION_EVENT */
 
 	case WLC_E_LINK:
 #ifdef PCIE_FULL_DONGLE

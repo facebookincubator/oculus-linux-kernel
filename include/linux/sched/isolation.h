@@ -23,6 +23,10 @@ extern void housekeeping_affine(struct task_struct *t, enum hk_flags flags);
 extern bool housekeeping_test_cpu(int cpu, enum hk_flags flags);
 extern void __init housekeeping_init(void);
 
+#ifdef CONFIG_RUNTIME_ISOLCPU
+extern bool housekeeping_set_cpu(bool isol, int cpu, enum hk_flags flags);
+#endif
+
 #else
 
 static inline int housekeeping_any_cpu(enum hk_flags flags)

@@ -4,6 +4,7 @@
  * Copyright (c) 2016-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/gpio.h>
@@ -5392,5 +5393,426 @@ int dsi_panel_post_unprepare(struct dsi_panel *panel)
 	}
 error:
 	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
+static int dump_cmd_packets_to_buffer(struct dsi_cmd_desc *cmd,
+				      uint32_t cmd_count, char *buf,
+				      u32 buf_size)
+{
+	int i, j, len = 0;
+
+#define PRINT_HEX(i) \
+	(len += scnprintf(buf + len, buf_size - len, "%02X ", (i)))
+
+	for (i = 0; i < cmd_count; i++) {
+		PRINT_HEX(cmd[i].msg.type);
+		PRINT_HEX(cmd[i].last_command ? 1 : 0);
+		PRINT_HEX(cmd[i].msg.channel);
+		PRINT_HEX(cmd[i].msg.flags);
+		PRINT_HEX(cmd[i].post_wait_ms);
+		PRINT_HEX((cmd[i].msg.tx_len >> 8) & 0xff);
+		PRINT_HEX(cmd[i].msg.tx_len & 0xff);
+		for (j = 0; j < cmd[i].msg.tx_len; j++)
+			PRINT_HEX(((u8 *)cmd[i].msg.tx_buf)[j]);
+
+		len += scnprintf(buf + len, buf_size - len, "\n");
+	}
+
+#undef PRINT_HEX
+
+	if (len >= buf_size)
+		return -EINVAL;
+
+	return len;
+}
+
+static int parse_hex_dump_to_raw_buffer(const char *dump, u32 dump_size,
+					u8 *buf, u32 buf_size)
+{
+	int i = 0;
+	int buf_idx = 0;
+	int bytes_read = 0;
+	u8 value;
+
+	while (i < dump_size && dump[i] != '\0') {
+		// Skip whitespace
+		if (isspace(dump[i])) {
+			i++;
+			continue;
+		}
+
+		// Skip comments
+		if (i + 1 < dump_size && dump[i] == '/' && dump[i + 1] == '/') {
+			i += 2;
+			// Skip line contents
+			while (i < dump_size && dump[i++] != '\n')
+				;
+
+			continue;
+		}
+
+		if (sscanf(dump + i, "%2hhx%n", &value, &bytes_read) != 1)
+			return -EINVAL;
+
+		buf[buf_idx++] = value;
+		if (buf_idx > buf_size)
+			return -ENOMEM;
+
+		i += bytes_read;
+	}
+
+	return buf_idx;
+}
+
+static ssize_t dsi_panel_dbg_read_cmd(struct file *file, char __user *user_buf,
+				      size_t user_len, loff_t *ppos)
+{
+	const int BUF_SIZE = SZ_64K;
+	struct dsi_panel *panel = file->private_data;
+	const char *filename = file->f_path.dentry->d_name.name;
+	char *buf;
+	int len = 0;
+	int rc = 0;
+	// Panel
+	struct dsi_display_mode *mode;
+	int type;
+	struct dsi_cmd_desc *cmds;
+	u32 cmd_count;
+
+	if (!panel)
+		return -ENODEV;
+
+	if (*ppos)
+		return 0;
+
+	mode = panel->cur_mode;
+	if (!mode)
+		return -EINVAL;
+
+	// Lookup dsi_cmd_set_type using filename
+	for (type = 0; type < DSI_CMD_SET_MAX; type++) {
+		if (strcmp(cmd_set_prop_map[type], filename) == 0)
+			break;
+	}
+
+	if (type == DSI_CMD_SET_MAX)
+		return -ENOENT;
+
+	buf = kzalloc(BUF_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	cmds = mode->priv_info->cmd_sets[type].cmds;
+	cmd_count = mode->priv_info->cmd_sets[type].count;
+
+	len = dump_cmd_packets_to_buffer(cmds, cmd_count, buf, BUF_SIZE);
+	if (len < 0) {
+		rc = -ERANGE;
+		goto error;
+	}
+
+	if (len > user_len)
+		len = user_len;
+
+	if (copy_to_user(user_buf, buf, len)) {
+		rc = -EFAULT;
+		goto error;
+	}
+
+	*ppos += len;
+	rc = len;
+
+error:
+	kfree(buf);
+	return rc;
+}
+
+static ssize_t dsi_panel_dbg_write_cmd(struct file *file,
+				       const char __user *user_buf,
+				       size_t user_len, loff_t *ppos)
+{
+	const int BUF_SIZE = SZ_64K;
+	struct dsi_panel *panel = file->private_data;
+	const char *filename = file->f_path.dentry->d_name.name;
+	char *buf = NULL; /* user provided ascii hex values in ascii */
+	int rc = 0;
+	size_t len;
+	// panel
+	struct dsi_display_mode *mode;
+	int type; /* type of command, taken from filename */
+	u8 *data = NULL; /* parsed hex values */
+	int data_len = 0;
+	u32 packet_count = 0;
+	struct dsi_panel_cmd_set *cmd_set;
+
+	if (!panel)
+		return -ENODEV;
+
+	if (*ppos)
+		return 0;
+
+	mode = panel->cur_mode;
+	if (!mode)
+		return -EINVAL;
+
+	// Lookup dsi_cmd_set_type using filename
+	for (type = 0; type < DSI_CMD_SET_MAX; type++) {
+		if (strcmp(cmd_set_prop_map[type], filename) == 0)
+			break;
+	}
+
+	if (type == DSI_CMD_SET_MAX)
+		return -ENOENT;
+
+	cmd_set = &mode->priv_info->cmd_sets[type];
+
+	buf = kzalloc(BUF_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	/* leave room for termination char */
+	len = min_t(size_t, user_len, BUF_SIZE - 1);
+	if (copy_from_user(buf, user_buf, len)) {
+		rc = -EINVAL;
+		goto error;
+	}
+	buf[len] = '\0';
+
+	// Convert hexdump to raw data
+	data = kzalloc(BUF_SIZE, GFP_KERNEL);
+	if (!data) {
+		rc = -ENOMEM;
+		goto error;
+	}
+
+	data_len = parse_hex_dump_to_raw_buffer(buf, len, data, BUF_SIZE);
+	if (data_len < 0) {
+		rc = data_len;
+		goto error;
+	}
+
+	rc = dsi_panel_get_cmd_pkt_count(data, data_len, &packet_count);
+	if (rc) {
+		DSI_ERR("dsi_panel_get_cmd_pkt_count failed, rc=%d\n", rc);
+		goto error;
+	}
+
+	mutex_lock(&panel->panel_lock);
+
+	dsi_panel_destroy_cmd_packets(cmd_set);
+	dsi_panel_dealloc_cmd_packets(cmd_set);
+
+	rc = dsi_panel_alloc_cmd_packets(cmd_set, packet_count);
+	if (rc) {
+		DSI_ERR("failed to allocate cmd packets, rc=%d\n", rc);
+		goto unlock;
+	}
+
+	rc = dsi_panel_create_cmd_packets(data, data_len, packet_count,
+					  cmd_set->cmds);
+	if (rc) {
+		DSI_ERR("failed to create cmd packets, rc=%d\n", rc);
+		goto unlock;
+	}
+
+	rc = user_len;
+unlock:
+	mutex_unlock(&panel->panel_lock);
+error:
+	kfree(data);
+	kfree(buf);
+	return rc;
+}
+
+static ssize_t dsi_panel_dbg_read_cmd_state(struct file *file,
+					    char __user *user_buf,
+					    size_t user_len, loff_t *ppos)
+{
+	const int BUF_SIZE = SZ_4K;
+	struct dsi_panel *panel = file->private_data;
+	const char *filename = file->f_path.dentry->d_name.name;
+	char *buf;
+	int len = 0;
+	int rc = 0;
+	// Panel
+	struct dsi_display_mode *mode;
+	int type;
+	enum dsi_cmd_set_state state;
+
+	if (!panel)
+		return -ENODEV;
+
+	if (*ppos)
+		return 0;
+
+	mode = panel->cur_mode;
+	if (!mode)
+		return -EINVAL;
+
+	for (type = 0; type < DSI_CMD_SET_MAX; type++) {
+		if (strcmp(cmd_set_state_map[type], filename) == 0)
+			break;
+	}
+
+	if (type == DSI_CMD_SET_MAX)
+		return -ENOENT;
+
+	buf = kzalloc(BUF_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	state = mode->priv_info->cmd_sets[type].state;
+
+	if (state == DSI_CMD_SET_STATE_LP) {
+		len += scnprintf(buf + len, BUF_SIZE - len, "dsi_lp_mode\n");
+	} else if (state == DSI_CMD_SET_STATE_HS) {
+		len += scnprintf(buf + len, BUF_SIZE - len, "dsi_hs_mode\n");
+	} else {
+		rc = -EINVAL;
+		goto error;
+	}
+
+	if (len > user_len)
+		len = user_len;
+
+	if (copy_to_user(user_buf, buf, len)) {
+		rc = -EFAULT;
+		goto error;
+	}
+
+	*ppos += len;
+	rc = len;
+
+error:
+	kfree(buf);
+	return rc;
+}
+
+static ssize_t dsi_panel_dbg_write_cmd_state(struct file *file,
+					     const char __user *user_buf,
+					     size_t user_len, loff_t *ppos)
+{
+	const int BUF_SIZE = SZ_4K;
+	struct dsi_panel *panel = file->private_data;
+	const char *filename = file->f_path.dentry->d_name.name;
+	char *buf = NULL; /* user provided ascii hex values in ascii */
+	int rc = 0;
+	size_t len;
+	// panel
+	struct dsi_display_mode *mode;
+	int type; /* type of command, taken from filename */
+	enum dsi_cmd_set_state new_state;
+
+	if (!panel)
+		return -ENODEV;
+
+	if (*ppos)
+		return 0;
+
+	mode = panel->cur_mode;
+	if (!mode)
+		return -EINVAL;
+
+	for (type = 0; type < DSI_CMD_SET_MAX; type++) {
+		if (strcmp(cmd_set_state_map[type], filename) == 0)
+			break;
+	}
+
+	if (type == DSI_CMD_SET_MAX)
+		return -ENOENT;
+
+	buf = kzalloc(BUF_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	/* leave room for termination char */
+	len = min_t(size_t, user_len, BUF_SIZE - 1);
+	if (copy_from_user(buf, user_buf, len)) {
+		rc = -EINVAL;
+		goto error;
+	}
+	buf[len] = '\0';
+
+	if (!strncmp(buf, "dsi_lp_mode", 11)) {
+		new_state = DSI_CMD_SET_STATE_LP;
+	} else if (!strncmp(buf, "dsi_hs_mode", 11)) {
+		new_state = DSI_CMD_SET_STATE_HS;
+	} else {
+		rc = -EINVAL;
+		goto error;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	mode->priv_info->cmd_sets[type].state = new_state;
+	mutex_unlock(&panel->panel_lock);
+
+	rc = user_len;
+error:
+	kfree(buf);
+	return rc;
+}
+
+static const struct file_operations dsi_panel_cmd_fops = {
+	.open = simple_open,
+	.read = dsi_panel_dbg_read_cmd,
+	.write = dsi_panel_dbg_write_cmd,
+};
+
+static const struct file_operations dsi_panel_cmd_state_fops = {
+	.open = simple_open,
+	.read = dsi_panel_dbg_read_cmd_state,
+	.write = dsi_panel_dbg_write_cmd_state,
+};
+
+int dsi_panel_dbg_init(struct dsi_panel *panel, struct dentry *parent_dir)
+{
+	int rc = 0, type;
+	const char *name;
+	struct dentry *dir, *file;
+
+	if (!panel || !parent_dir) {
+		DSI_ERR("invalid input\n");
+		return rc;
+	}
+
+	dir = debugfs_create_dir("cmds", parent_dir);
+	if (IS_ERR_OR_NULL(dir)) {
+		rc = PTR_ERR(dir);
+
+		DSI_ERR("failed to create cmds debugfs\n");
+		return rc;
+	}
+
+	for (type = 0; type < DSI_CMD_SET_MAX; type++) {
+		name = cmd_set_prop_map[type];
+		if (strstr(name, "generated dynamically") != NULL)
+			continue;
+
+		file = debugfs_create_file(name, 0644, dir, panel,
+					   &dsi_panel_cmd_fops);
+		if (IS_ERR_OR_NULL(file)) {
+			rc = PTR_ERR(file);
+			goto error;
+		}
+	}
+
+	for (type = 0; type < DSI_CMD_SET_MAX; type++) {
+		name = cmd_set_state_map[type];
+		if (strstr(name, "generated dynamically") != NULL)
+			continue;
+
+		file = debugfs_create_file(name, 0644, dir, panel,
+					   &dsi_panel_cmd_state_fops);
+		if (IS_ERR_OR_NULL(file)) {
+			rc = PTR_ERR(file);
+			goto error;
+		}
+	}
+
+	return 0;
+
+error:
+	debugfs_remove_recursive(dir);
 	return rc;
 }

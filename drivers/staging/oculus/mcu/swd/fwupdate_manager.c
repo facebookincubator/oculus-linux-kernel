@@ -364,12 +364,16 @@ int fwupdate_update_app(struct device *dev)
 	int status;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	struct swd_mcu_data *childdata;
+	bool force_bootloader_update = false;
+
+	if (devdata->data_hdr)
+		force_bootloader_update = devdata->data_hdr->force_bootloader_update;
 
 	// If there are no children, must update the parent
 	if (devdata->num_children == 0) {
 		status = fwupdate_update_single_app(
 				dev, &devdata->mcu_data, devdata->erase_all,
-				devdata->data_hdr->force_bootloader_update);
+				force_bootloader_update);
 		if (status)
 			return status;
 	} else {
@@ -377,7 +381,7 @@ int fwupdate_update_app(struct device *dev)
 			childdata = &devdata->child_mcu_data[index];
 			status = fwupdate_update_single_app(
 				dev, childdata, devdata->erase_all,
-				devdata->data_hdr->force_bootloader_update);
+				force_bootloader_update);
 			if (status)
 				return status;
 		}

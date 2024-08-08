@@ -191,14 +191,56 @@ static ssize_t isolate_show(struct device *dev,
 	struct cpu *cpu = container_of(dev, struct cpu, dev);
 	ssize_t rc;
 	int cpuid = cpu->dev.id;
+#ifdef CONFIG_RUNTIME_ISOLCPU
+	unsigned int isolated = !housekeeping_test_cpu(cpuid, HK_FLAG_DOMAIN);
+#else
 	unsigned int isolated = cpu_isolated(cpuid);
+#endif /* CONFIG_RUNTIME_ISOLCPU */
 
 	rc = snprintf(buf, PAGE_SIZE-2, "%d\n", isolated);
 
 	return rc;
 }
 
-static DEVICE_ATTR_RO(isolate);
+static ssize_t isolate_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	int err;
+	bool isolate;
+#ifndef CONFIG_RUNTIME_ISOLCPU
+	bool curr;
+#endif
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	int cpuid = cpu->dev.id;
+
+	err = kstrtobool(buf, &isolate);
+	if (err)
+		return err;
+
+#ifdef CONFIG_RUNTIME_ISOLCPU
+	// Can not isolate/unisolate an online CPU
+	if (cpu_online(cpuid))
+		return -EBUSY;
+
+	if (housekeeping_set_cpu(isolate, cpuid, HK_FLAG_DOMAIN))
+		return count;
+
+	// Fail to set. The FLAG is wrong
+	return -EBADR;
+#else
+	curr = cpu_isolated(cpuid);
+
+	if (isolate && !curr)
+		return sched_isolate_cpu(cpuid);
+	else if (!isolate && curr)
+		return sched_unisolate_cpu(cpuid);
+	else
+		return count;
+#endif /* CONFIG_RUNTIME_ISOLCPU */
+}
+
+static DEVICE_ATTR_RW(isolate);
 
 static struct attribute *cpu_isolated_attrs[] = {
 	&dev_attr_isolate.attr,

@@ -1035,6 +1035,8 @@ struct dp_soc_stats {
 			uint32_t msdu_len_err;
 			/* Rx invalid tid count */
 			uint32_t rx_invalid_tid_err;
+			/* Incorrect msdu continuation bit in MSDU desc */
+			uint32_t msdu_continuation_err;
 		} err;
 
 		/* packet count per core - per ring */

@@ -36,6 +36,7 @@ struct cam_icp_fastpath_packet {
 	size_t remain_len;
 	struct cam_icp_fastpath_io_patch_map io_patch_map;
 	struct completion done;
+	__u64  fp_packet_handle;
 };
 
 struct cam_icp_fastpath_context {

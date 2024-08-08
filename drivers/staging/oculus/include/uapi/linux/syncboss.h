@@ -150,6 +150,8 @@ struct syncboss_sensor_direct_channel_data {
 /* ioctl used to set per-client stream filter */
 #define SYNCBOSS_SET_STREAMFILTER_IOCTL \
 	_IOW(MISC_MAJOR, 1, struct syncboss_driver_stream_type_filter)
+#define SYNCBOSS_CANCEL_STREAM_IOCTL \
+	_IOW(MISC_MAJOR, 2, int)
 
 /* ioctl used to allocate and release sequence numbers */
 #define SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL _IOR(MISC_MAJOR, 2, uint8_t)

@@ -7799,6 +7799,13 @@ int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr, void *user,
 			break;
 		}
 
+		if (!dev) {
+			PCIE_ERR(&msm_pcie_dev[rc_idx],
+				"PCIe: RC%d: requested to suspend when device isn't enumerated.\n",
+				rc_idx);
+			break;
+		}
+
 		if (msm_pcie_dev[rc_idx].pending_ep_reg) {
 			PCIE_DBG(&msm_pcie_dev[rc_idx],
 				"PCIe: RC%d: request to suspend the link is rejected\n",
@@ -7841,6 +7848,13 @@ int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr, void *user,
 			PCIE_ERR(&msm_pcie_dev[rc_idx],
 				"PCIe: RC%d: requested to resume when link is already powered on. Number of active EP(s): %d\n",
 				rc_idx, msm_pcie_dev[rc_idx].num_active_ep);
+			break;
+		}
+
+		if (!dev) {
+			PCIE_ERR(&msm_pcie_dev[rc_idx],
+				"PCIe: RC%d: requested to resume when device isn't enumerated.\n",
+				rc_idx);
 			break;
 		}
 
