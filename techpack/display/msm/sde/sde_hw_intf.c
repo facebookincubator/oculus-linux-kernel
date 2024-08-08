@@ -251,7 +251,8 @@ static u64 sde_hw_intf_get_vsync_timestamp(struct sde_hw_intf *ctx)
 	return timestamp;
 }
 
-static int sde_hw_intf_set_lineptr_value(struct sde_hw_intf *ctx, int offset)
+static int sde_hw_intf_set_lineptr_value(struct sde_hw_intf *ctx, int offset,
+		const struct intf_timing_params *p)
 {
 	struct sde_hw_blk_reg_map *c;
 	u32 hsync_period, vsync_period, hsync_skew, pixel_offset;
@@ -262,9 +263,17 @@ static int sde_hw_intf_set_lineptr_value(struct sde_hw_intf *ctx, int offset)
 
 	c = &ctx->hw;
 
-	hsync_period = SDE_REG_READ(c, INTF_HSYNC_CTL) >> 16;
-	vsync_period = SDE_REG_READ(c, INTF_VSYNC_PERIOD_F0) / hsync_period;
-	hsync_skew = SDE_REG_READ(c, INTF_HSYNC_SKEW);
+	if (!p) {
+		hsync_period = SDE_REG_READ(c, INTF_HSYNC_CTL) >> 16;
+		vsync_period = SDE_REG_READ(c, INTF_VSYNC_PERIOD_F0) / hsync_period;
+		hsync_skew = SDE_REG_READ(c, INTF_HSYNC_SKEW);
+	} else {
+		hsync_period = p->hsync_pulse_width + p->h_back_porch + p->width +
+				p->h_front_porch;
+		vsync_period = p->vsync_pulse_width + p->v_back_porch + p->height +
+				p->v_front_porch;
+		hsync_skew = p->hsync_skew;
+	}
 
 	row_offset = offset;
 	while (row_offset < 0)

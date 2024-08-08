@@ -1840,6 +1840,62 @@ int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
 	return 0;
 }
 
+/**
+ * msm_ioctl_display_cac_control_ops - Control parameter for DDIC CAC
+ * @dev: drm device for the ioctl
+ * @data: data pointer for the ioctl
+ * @file_priv: drm file for the ioctl call
+ */
+int msm_ioctl_display_cac_control_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_display_cac *display_cac = data;
+	struct msm_drm_private *priv;
+	struct msm_kms *kms;
+	struct drm_connector *connector;
+	struct sde_connector *c_conn;
+	int counter = 0;
+
+	priv = dev->dev_private;
+	kms = priv->kms;
+
+	if (unlikely(!display_cac)) {
+		DRM_ERROR("invalid ioctl data\n");
+		return -EINVAL;
+	}
+
+	SDE_EVT32(display_cac->flags);
+	DSI_DEBUG("DDIC CAC: Value passed to enable/disable is: %d\n", display_cac->flags);
+
+	/* Validate the value of the control flag. */
+	if ((display_cac->flags != 1) &&
+		(display_cac->flags != 0)) {
+		DSI_ERR("Control DDIC CAC: Input value should either be 0 or 1.\n");
+		return -EINVAL;
+	}
+
+	for (counter = 0; counter < priv->num_connectors; counter++) {
+		connector = priv->connectors[counter];
+		if (!connector)
+			continue;
+
+		c_conn = to_sde_connector(connector);
+
+		/* Check if the connector supports backlight device. */
+		if (c_conn && c_conn->ops.set_backlight) {
+			struct dsi_display *display;
+
+			display = (struct dsi_display *) c_conn->display;
+			if (display) {
+				if (display->panel && c_conn->bl_device)
+					dsi_panel_control_ddic_cac(display->panel, display_cac->flags);
+			}
+		}
+	}
+
+	return 0;
+}
+
 static u64 msm_vsync_trigger_next_vsync_ns(u64 last_vsync_ns, u32 min_fps)
 {
 	u64 res;
@@ -1965,6 +2021,8 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_VSYNC_TRIGGER, msm_ioctl_vsync_trigger,
 		DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_BACKLIGHT_SCALE, msm_ioctl_brightness_scalar_control_ops,
+			DRM_AUTH|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_CAC, msm_ioctl_display_cac_control_ops,
 			DRM_AUTH|DRM_RENDER_ALLOW),
 };
 

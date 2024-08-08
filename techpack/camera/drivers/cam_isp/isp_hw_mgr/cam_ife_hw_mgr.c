@@ -17400,6 +17400,7 @@ static int cam_ife_hw_mgr_handle_csid_camif_sof(
 				// results in inaccurate SOF timestamps and can break
 				// metadata matching
 				sof_done_event_data.monotonic_time = *(uint64_t *)event_info->event_data2;
+				sof_done_event_data.boot_time = *(uint64_t *)event_info->event_data2;
 			}
 		}
 

@@ -2436,6 +2436,7 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 
 	display->root = dir;
 	dsi_parser_dbg_init(display->parser, dir);
+	dsi_panel_dbg_init(display->panel, dir);
 
 	return rc;
 error_remove_dir:
@@ -4548,6 +4549,7 @@ static int dsi_display_res_init(struct dsi_display *display)
 	int rc = 0;
 	int i;
 	struct dsi_display_ctrl *ctrl;
+	struct dsi_ctrl *ctrl_refs[MAX_DSI_CTRLS_PER_DISPLAY] = {0};
 
 	display_for_each_ctrl(i, display) {
 		ctrl = &display->ctrl[i];
@@ -4567,6 +4569,7 @@ static int dsi_display_res_init(struct dsi_display *display)
 			ctrl->phy = NULL;
 			goto error_ctrl_put;
 		}
+		ctrl_refs[i] = ctrl->ctrl;
 	}
 
 	display->panel = dsi_panel_get(&display->pdev->dev,
@@ -4574,7 +4577,9 @@ static int dsi_display_res_init(struct dsi_display *display)
 				display->parser_node,
 				display->display_type,
 				display->cmdline_topology,
-				display->trusted_vm_env);
+				display->trusted_vm_env,
+				ctrl_refs,
+				display->ctrl_count);
 	if (IS_ERR_OR_NULL(display->panel)) {
 		rc = PTR_ERR(display->panel);
 		DSI_ERR("failed to get panel, rc=%d\n", rc);
@@ -4658,14 +4663,14 @@ static int dsi_display_res_deinit(struct dsi_display *display)
 	int i;
 	struct dsi_display_ctrl *ctrl;
 
+	if (display->panel)
+		dsi_panel_put(display->panel);
+
 	display_for_each_ctrl(i, display) {
 		ctrl = &display->ctrl[i];
 		dsi_phy_put(ctrl->phy);
 		dsi_ctrl_put(ctrl->ctrl);
 	}
-
-	if (display->panel)
-		dsi_panel_put(display->panel);
 
 	return rc;
 }

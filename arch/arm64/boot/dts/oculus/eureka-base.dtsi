@@ -80,6 +80,7 @@
   meta,io_stat_enabled;
 };
 
+/* Flicker SPI */
 &qupv3_se10_spi {
 	status = "ok";
 	vd6283@0 {
@@ -195,7 +196,9 @@
 
 	external_battery: oculus,external_battery {
 		compatible = "oculus,external-battery";
-		meta,usb-id = /bits/ 16 <0x2833 0x5001>;	/* Lehua+ */
+		meta,usb-ids =
+			/bits/ 16 <0x2833 0x5001>,		/* Lehua+ */
+			/bits/ 16 <0x2833 0x5015>;		/* Lehua+ v2 */
 		batt-name = "lehua";
 		charging-suspend-thresh = <100>;
 		charging-resume-thresh = <95>;

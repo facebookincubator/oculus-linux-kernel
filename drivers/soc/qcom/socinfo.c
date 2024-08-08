@@ -65,6 +65,7 @@ enum {
 	HW_PLATFORM_unknown6 = 67,
 	HW_PLATFORM_unknown7 = 68,
 	HW_PLATFORM_unknown13 = 69,
+	HW_PLATFORM_unknown11_XR2G2 = 70,
 	HW_PLATFORM_INVALID
 };
 
@@ -94,6 +95,7 @@ static const char * const hw_platform[] = {
 	[HW_PLATFORM_unknown6] = "unknown6",
 	[HW_PLATFORM_unknown7] = "unknown7 xr2g2",
 	[HW_PLATFORM_unknown13] = "unknown13",
+	[HW_PLATFORM_unknown11_XR2G2] = "unknown11 xr2g2",
 };
 
 enum {

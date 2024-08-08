@@ -1125,9 +1125,13 @@ out:
 
 static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 {
+	struct task_struct *curr = rq_of_rt_rq(rt_rq)->curr;
 	struct rt_prio_array *array = &rt_rq->active;
 	struct sched_rt_entity *rt_se;
 	char buf[500];
+#ifdef CONFIG_PANIC_ON_RT_THROTTLING
+	char blame_buf[128];
+#endif
 	char *process_list;
 	char *pos = buf;
 	char *end = buf + sizeof(buf);
@@ -1143,7 +1147,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos,
 			"rt_period_timer: expires=%lld now=%llu rt_time=%llu runtime=%llu period=%llu\n",
 			hrtimer_get_expires_ns(&rt_b->rt_period_timer),
-			ktime_get_ns(), task_rq(current)->rt.rt_time, sched_rt_runtime(rt_rq),
+			ktime_get_ns(), rt_rq->rt_time, sched_rt_runtime(rt_rq),
 			sched_rt_period(rt_rq));
 
 	if (bitmap_empty(array->bitmap, MAX_RT_PRIO))
@@ -1152,7 +1156,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
 	if (sched_info_on()) {
-		struct task_struct *tgid_task = get_pid_task(find_vpid(current->tgid), PIDTYPE_PID);
+		struct task_struct *tgid_task = get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID);
 		if (tgid_task != NULL) {
 			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
 			if (tgid_comm) {
@@ -1171,10 +1175,10 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 
 		pos += snprintf(pos, end - pos,
 				"Thread %s (%d) Process %s (%d) is running for %llu nsec\n",
-				current->comm, current->pid,
-				tgid_comm,  current->tgid,
+				curr->comm, curr->pid,
+				tgid_comm, curr->tgid,
 				rq_clock(rq_of_rt_rq(rt_rq)) -
-				current->sched_info.last_arrival);
+				curr->sched_info.last_arrival);
 	}
 #endif
 	process_list = pos;
@@ -1204,11 +1208,11 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 
 		sysctl_rt_throttling_info.cpu_number = cpu_of(rq_of_rt_rq(rt_rq));
 		sysctl_rt_throttling_info.process_running_time_ns =
-			rq_clock(rq_of_rt_rq(rt_rq)) - current->sched_info.last_arrival;
-		sysctl_rt_throttling_info.pid = current->tgid;
+			rq_clock(rq_of_rt_rq(rt_rq)) - curr->sched_info.last_arrival;
+		sysctl_rt_throttling_info.pid = curr->tgid;
 
 		strscpy(sysctl_rt_throttling_info.thread_name,
-			current->comm, sizeof(sysctl_rt_throttling_info.thread_name));
+			curr->comm, sizeof(sysctl_rt_throttling_info.thread_name));
 
 		if (tgid_comm != NULL)
 			strscpy(sysctl_rt_throttling_info.process_name,
@@ -1222,6 +1226,16 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	}
 	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
+
+#ifdef CONFIG_PANIC_ON_RT_THROTTLING
+	/*
+	 * For lack of a better method to blame offending threads, at least
+	 * report which one is being throttled.
+	 */
+	snprintf(blame_buf, sizeof(blame_buf), "Throttled thread \"%s\" process \"%s\"",
+			curr->comm, tgid_comm ?: unknown_pid);
+#endif
+
 	if (tgid_comm != NULL && tgid_comm != unknown_pid)
 		kfree(tgid_comm);
 out:
@@ -1231,7 +1245,7 @@ out:
 	 * not get flushed and deadlock is not a concern.
 	 */
 	pr_err("%s\n", buf);
-	BUG();
+	panic("%s\n", blame_buf);
 #else
 	printk_deferred("%s\n", buf);
 #endif

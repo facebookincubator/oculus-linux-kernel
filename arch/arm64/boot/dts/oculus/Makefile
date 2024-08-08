@@ -13,12 +13,6 @@ dtbo-$(CONFIG_OCULUS_unknown7) += \
 	unknown7-p0-overlay.dtbo \
 	unknown7-p1-overlay.dtbo
 
-
-dtbo-$(CONFIG_OCULUS_unknown9) += \
-	unknown9-p0-overlay.dtbo \
-	unknown9-p1-overlay.dtbo \
-	unknown9-p1.1-overlay.dtbo
-
 dtbo-$(CONFIG_OCULUS_EUREKA) += \
 	eureka-dev1-overlay.dtbo \
 	eureka-p1.2-overlay.dtbo \
@@ -62,11 +56,15 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 	unknown6-evt2.3-overlay.dtbo \
 	unknown6-dvt1.1-overlay.dtbo \
 	unknown6-dvt1.2-overlay.dtbo \
-	unknown6-dvt1.3-overlay.dtbo
+	unknown6-dvt1.3-overlay.dtbo \
+	unknown6-pvt1.1-overlay.dtbo \
+	unknown6-pvt1.2-overlay.dtbo \
+	unknown6-pvt1.3-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_unknown13) += \
 	unknown13-dev0-overlay.dtbo \
-	unknown13-poc0-overlay.dtbo
+	unknown13-poc0-overlay.dtbo \
+	unknown13-poc1.0-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_unknown11XR2G2) += \
 	unknown11xr2g2-dev0-overlay.dtbo
@@ -79,9 +77,6 @@ unknown7-dev0.5-overlay.dtbo-base := unknown7.dtb
 unknown7-dev0.6-overlay.dtbo-base := unknown7.dtb
 unknown7-p0-overlay.dtbo-base := unknown7.dtb
 unknown7-p1-overlay.dtbo-base := unknown7.dtb
-unknown9-p0-overlay.dtbo-base := unknown9.dtb
-unknown9-p1-overlay.dtbo-base := unknown9.dtb
-unknown9-p1.1-overlay.dtbo-base := unknown9.dtb
 eureka-dev1-overlay.dtbo-base := eureka.dtb
 eureka-p1.2-overlay.dtbo-base := eureka.dtb
 eureka-evt0-overlay.dtbo-base := eureka.dtb
@@ -121,8 +116,12 @@ unknown6-evt2.3-overlay.dtbo-base := unknown6.dtb
 unknown6-dvt1.1-overlay.dtbo-base := unknown6.dtb
 unknown6-dvt1.2-overlay.dtbo-base := unknown6.dtb
 unknown6-dvt1.3-overlay.dtbo-base := unknown6.dtb
+unknown6-pvt1.1-overlay.dtbo-base := unknown6.dtb
+unknown6-pvt1.2-overlay.dtbo-base := unknown6.dtb
+unknown6-pvt1.3-overlay.dtbo-base := unknown6.dtb
 unknown13-dev0-overlay.dtbo-base := unknown13.dtb
 unknown13-poc0-overlay.dtbo-base := unknown13.dtb
+unknown13-poc1.0-overlay.dtbo-base := unknown13.dtb
 unknown11xr2g2-dev0-overlay.dtbo-base := unknown11xr2g2.dtb
 
 endif # CONFIG_ARCH_ANORAK

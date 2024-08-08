@@ -12,6 +12,14 @@
 	qcom,hw-strobe-gpios = <&pmxr2230_gpios 1 0>;
 };
 
+&pmxr2230_torch0 {
+	status = "disabled";
+};
+
+&pmxr2230_torch1 {
+	status = "disabled";
+};
+
 &pmxr2230_torch2 {
 	qcom,strobe-sel = <1>;    /* HW Stobe */
 	qcom,strobe-config = <0>; /* GPIO 1 */
@@ -31,11 +39,15 @@
 	qcom,default-led-trigger = "default-off";
 };
 
+&pmxr2230_switch1 {
+	status = "disabled";
+};
+
+&pmxr2230_switch2 {
+	status = "disabled";
+};
+
 /delete-node/ &pmxr2230_flash0;
 /delete-node/ &pmxr2230_flash1;
 /delete-node/ &pmxr2230_flash2;
 /delete-node/ &pmxr2230_flash3;
-/delete-node/ &pmxr2230_torch0;
-/delete-node/ &pmxr2230_torch1;
-/delete-node/ &pmxr2230_switch1;
-/delete-node/ &pmxr2230_switch2;

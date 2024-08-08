@@ -55,11 +55,14 @@ struct cam_presil_dmabuf_params {
  * @is_internal:    Flag indicating kernel allocated buffer
  * @timestamp:      Timestamp at which this entry in tbl was made
  * @krefcount:      Reference counter to track whether the buffer is
- *                  mapped and in use
+ *                  mapped and in use by kmd
  * @smmu_mapping_client: Client buffer (User or kernel)
  * @presil_params:  Parameters specific to presil environment
  * @hlist:          Hash node
  * @bufq_idx:       Existing buf table index
+ * @urefcount:      Reference counter to track whether the buffer is
+ *                  mapped and in use by umd
+ * @ref_lock:       Mutex lock for refcount
  */
 struct cam_mem_buf_queue {
 	struct dma_buf *dma_buf;
@@ -87,6 +90,8 @@ struct cam_mem_buf_queue {
 #endif
 	struct hlist_node hlist;
 	int bufq_idx;
+	struct kref urefcount;
+	struct mutex ref_lock;
 };
 
 /**

@@ -28,13 +28,16 @@
 /delete-node/ &msm_sdexpress;
 /delete-node/ &pcie1;
 /delete-node/ &pcie2;
-/delete-node/ &pdm_pwm0;
 /delete-node/ &pm8010_m;
 /delete-node/ &pm8010_n;
 
 /delete-node/ &ipa_fw_mem;
 /delete-node/ &ipa_gsi_mem;
 /delete-node/ &ramoops_mem;
+
+&pdm_pwm0 {
+	status = "disabled";
+};
 
 &apps_rsc {
 	/delete-node/ rpmh-regulator-ldom1;
@@ -252,7 +255,7 @@
 };
 
 &soc {
-	gpio_keys {
+	gpio_keys: gpio_keys {
 		compatible = "gpio-keys";
 		label = "gpio-keys";
 
@@ -642,7 +645,7 @@
 		pinctrl-0 = <&privacy_led_default>;
 		pinctrl-1 = <&privacy_led_sleep>;
 
-		led0 {
+		led0: led0 {
 			color = <LED_COLOR_ID_WHITE>;
 			default-state = "off";
 			function = LED_FUNCTION_INDICATOR;

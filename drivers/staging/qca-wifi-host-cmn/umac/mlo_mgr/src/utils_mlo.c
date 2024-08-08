@@ -125,6 +125,16 @@ util_parse_multi_link_ctrl(uint8_t *mlieseqpayload,
 	}
 
 	cinfo_len = *(mlieseqpayload + parsed_payload_len);
+
+	if (cinfo_len >
+			(mlieseqpayloadlen - parsed_payload_len)) {
+		mlo_err_rl("ML seq common info len %u larger than ML seq payload len %zu after parsed payload len %zu.",
+			   cinfo_len,
+			   mlieseqpayloadlen,
+			   parsed_payload_len);
+		return QDF_STATUS_E_PROTO;
+	}
+
 	parsed_payload_len += WLAN_ML_BV_CINFO_LENGTH_SIZE;
 
 	if (mlieseqpayloadlen <

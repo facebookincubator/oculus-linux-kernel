@@ -44,6 +44,7 @@
 #define FAN_STARTUP_IRQ_IGNORE_TIME_MS 2300
 #define COLD_BOOT_PWM 84U
 #define FORCE_FAILURE_PWM 0U
+#define DEFAULT_RPM_PER_SEC 0U /* 0 = instant ramp */
 #define DEFAULT_MIN_PWM 15U
 #define DEFAULT_MAX_PWM 255U
 #define MAX_STR_LEN 10
@@ -78,6 +79,7 @@ struct pwm_fan_ctx {
 	unsigned int max_pwm;
 	unsigned int pwm_value;
 	unsigned int recovery_pwm_value;
+	unsigned int rpm_per_sec;
 	unsigned int pwm_fan_state;
 	unsigned int pwm_fan_max_state;
 	unsigned int *pwm_fan_cooling_levels;
@@ -87,8 +89,10 @@ struct pwm_fan_ctx {
 	ktime_t last_disable_timestamp;
 	ktime_t last_stall_detect_timestamp;
 	ktime_t last_tach_timestamp;
+	ktime_t last_rpm_update_timestamp;
 	int max_rpm;
 	int rpm_value;
+	int target_rpm_value;
 	int rpm_history[MAX_RPM_HISTORY];
 	int resume_rpm_value;
 	bool is_display_on;
@@ -214,20 +218,30 @@ set_pwm_success:
 static int set_rpm_locked(struct pwm_fan_ctx *ctx, unsigned long rpm)
 {
 	ssize_t ret = 0;
-	int current_rpm_value = 0;
+	int prev_target_rpm_value = ctx->target_rpm_value;
+	int prev_rpm_value = ctx->rpm_value;
 
-	current_rpm_value = ctx->rpm_value;
-	ctx->rpm_value = rpm;
+	ctx->target_rpm_value = rpm;
 
-	if (rpm == 0)
+	if (rpm == 0) {
+		/* Disable immediately, without ramping from target */
+		ctx->rpm_value = 0;
+
 		/* Setting PWM to 0 always returns 0 */
 		return set_pwm_locked(ctx, 0);
+	}
 
-	if (current_rpm_value == 0) {
+	/* rpm_per_sec of 0 means the ramp should be instantaneous. */
+	if (ctx->rpm_per_sec == 0)
+		ctx->rpm_value = ctx->target_rpm_value;
+
+	if (prev_target_rpm_value == 0) {
 		/* Start fan at "cold boot" speed so it can start */
 		ret = set_pwm_locked(ctx, ctx->cold_boot_pwm);
-		if (ret)
-			ctx->rpm_value = current_rpm_value;
+		if (ret) {
+			ctx->target_rpm_value = prev_target_rpm_value;
+			ctx->rpm_value = prev_rpm_value;
+		}
 	}
 
 	return ret;
@@ -329,6 +343,30 @@ static ssize_t show_rpm(struct device *dev,
 	return snprintf(buf, MAX_STR_LEN, "%lld\n", (s64)atomic64_read(&ctx->rpm));
 }
 
+static ssize_t set_rpm_per_sec(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
+	unsigned long rpm_per_sec;
+
+	if (kstrtoul(buf, 10, &rpm_per_sec))
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	ctx->rpm_per_sec = rpm_per_sec;
+	mutex_unlock(&ctx->lock);
+
+	return count;
+}
+
+static ssize_t show_rpm_per_sec(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
+
+	return snprintf(buf, MAX_STR_LEN, "%u\n", ctx->rpm_per_sec);
+}
+
 /*
  * create sys node in sys/class/hwmon/hwmon2/
  * pwm & rpm
@@ -336,11 +374,13 @@ static ssize_t show_rpm(struct device *dev,
 static SENSOR_DEVICE_ATTR(force_failure, 0600, show_force_failure, set_force_failure, 0);
 static SENSOR_DEVICE_ATTR(pwm, 0644, show_pwm, set_pwm, 0);
 static SENSOR_DEVICE_ATTR(rpm, 0644, show_rpm, set_rpm, 0);
+static SENSOR_DEVICE_ATTR(rpm_per_sec, 0644, show_rpm_per_sec, set_rpm_per_sec, 0);
 
 static struct attribute *pwm_fan_attrs[] = {
 	&sensor_dev_attr_force_failure.dev_attr.attr,
 	&sensor_dev_attr_pwm.dev_attr.attr,
 	&sensor_dev_attr_rpm.dev_attr.attr,
+	&sensor_dev_attr_rpm_per_sec.dev_attr.attr,
 	NULL,
 };
 
@@ -460,7 +500,7 @@ static void pwm_fan_panel_notifier_cb(enum panel_event_notifier_tag tag,
 	case DRM_PANEL_EVENT_BLANK_LP:
 		if (!ctx->is_display_on)
 			break;
-		current_rpm_value = ctx->rpm_value;
+		current_rpm_value = ctx->target_rpm_value;
 		if (current_rpm_value != 0)
 			set_rpm_locked(ctx, 0);
 		ctx->resume_rpm_value = current_rpm_value;
@@ -558,12 +598,10 @@ static void fan_recovery_work_func(struct work_struct *work)
 {
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
 			fan_recovery_work);
-	unsigned int pwm;
 
 	mutex_lock(&ctx->lock);
 
-	pwm = ctx->pwm_value;
-	if (pwm == 0) {
+	if (ctx->pwm_value == 0) {
 		ctx->recovery_in_progress = false;
 		goto end_work_func;
 	}
@@ -572,7 +610,7 @@ static void fan_recovery_work_func(struct work_struct *work)
 		 ctx->reset_count + 1, ctx->force_failure);
 
 	if (ctx->reset_count == 0) {
-		ctx->recovery_pwm_value = max(ctx->cold_boot_pwm, pwm);
+		ctx->recovery_pwm_value = max(ctx->cold_boot_pwm, ctx->pwm_value);
 		reset_fan_locked(ctx, ctx->recovery_pwm_value);
 	} else {
 		/* try increasing PWM */
@@ -586,13 +624,23 @@ end_work_func:
 	mutex_unlock(&ctx->lock);
 }
 
+static unsigned long calc_rpm_step(struct pwm_fan_ctx *ctx)
+{
+	s64 delta_us;
+
+	if (ktime_before(ctx->last_rpm_update_timestamp, ctx->last_disable_timestamp))
+		return ctx->rpm_per_sec;
+
+	delta_us = ktime_us_delta(ktime_get(), ctx->last_rpm_update_timestamp);
+
+	return (ctx->rpm_per_sec * delta_us) / USEC_PER_SEC;
+}
+
 static void fan_work_func(struct work_struct *work)
 {
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
 			fan_work);
 	int rpm_mid = 0;
-	unsigned int pwm;
-	int rpm_value;
 	int rpm_history_idx = ctx->timer_ticks;
 	int tolerance;
 	bool fan_failed;
@@ -608,8 +656,18 @@ static void fan_work_func(struct work_struct *work)
 	 */
 	ctx->ignore_tach_irqs = false;
 
-	pwm = ctx->pwm_value;
-	rpm_value = ctx->rpm_value;
+	if (ctx->rpm_value != ctx->target_rpm_value) {
+		int rpm_step = calc_rpm_step(ctx);
+
+		if (rpm_step > 0) {
+			if (ctx->rpm_value < ctx->target_rpm_value)
+				ctx->rpm_value = min(ctx->rpm_value + rpm_step, ctx->target_rpm_value);
+			else if (ctx->rpm_value > ctx->target_rpm_value)
+				ctx->rpm_value = max(ctx->rpm_value - rpm_step, ctx->target_rpm_value);
+
+			ctx->last_rpm_update_timestamp = ktime_get();
+		}
+	}
 
 	fan_failed = pwm_fan_has_failure_locked(ctx);
 
@@ -659,12 +717,14 @@ static void fan_work_func(struct work_struct *work)
 	 * If set value is greater than 2000, tolerance set
 	 * to 200, otherwise set to 10% of set value
 	 */
-	tolerance = get_tolerance(rpm_value);
-	if (ctx->force_failure || abs(rpm_mid - rpm_value) > tolerance) {
-		pwm = (rpm_mid > rpm_value) ? (pwm - 1) : (pwm + 1);
+	tolerance = get_tolerance(ctx->rpm_value);
+	if (ctx->force_failure || abs(rpm_mid - ctx->rpm_value) > tolerance) {
+		unsigned int pwm = (rpm_mid > ctx->rpm_value) ? (ctx->pwm_value - 1) : (ctx->pwm_value + 1);
 		/* Restrict to PWM range */
 		pwm = max(min(ctx->max_pwm, pwm), ctx->min_pwm);
 		set_pwm_locked(ctx, pwm);
+
+		ctx->last_rpm_update_timestamp = ktime_get();
 	}
 end_work_func:
 	mutex_unlock(&ctx->lock);
@@ -820,6 +880,8 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	disable_irq(ctx->irq);
 	reset_counters(ctx);
 
+	ctx->last_disable_timestamp = ktime_get();
+
 	ctx->pwm = devm_of_pwm_get(&pdev->dev, pdev->dev.of_node, NULL);
 	if (IS_ERR(ctx->pwm)) {
 		ret = PTR_ERR(ctx->pwm);
@@ -862,6 +924,10 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	}
 #endif /* CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
 #endif /* CONFIG_DRM */
+
+	ret = of_property_read_u32(pdev->dev.of_node, "oculus,rpm-per-sec", &ctx->rpm_per_sec);
+	if (ret)
+		ctx->rpm_per_sec = DEFAULT_RPM_PER_SEC;
 
 	ret = of_property_read_u32(pdev->dev.of_node, "oculus,min-pwm", &ctx->min_pwm);
 	if (ret)
@@ -946,7 +1012,6 @@ static int pwm_fan_remove(struct platform_device *pdev)
 static int pwm_fan_suspend(struct device *dev)
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
-	int current_rpm_value;
 	int ret = 0;
 
 	mutex_lock(&ctx->lock);
@@ -955,9 +1020,8 @@ static int pwm_fan_suspend(struct device *dev)
 	if (!pwm_is_enabled(ctx->pwm))
 		goto end_pwm_fan_suspend;
 
-	current_rpm_value = ctx->rpm_value;
-	if (current_rpm_value > 0) {
-		ctx->resume_rpm_value = current_rpm_value;
+	if (ctx->rpm_value > 0) {
+		ctx->resume_rpm_value = ctx->rpm_value;
 
 		ret = set_rpm_locked(ctx, 0);
 	}
@@ -970,7 +1034,6 @@ end_pwm_fan_suspend:
 static int pwm_fan_resume(struct device *dev)
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
-	int current_rpm_value;
 	int ret = 0;
 
 	mutex_lock(&ctx->lock);
@@ -979,11 +1042,10 @@ static int pwm_fan_resume(struct device *dev)
 	if (ctx->use_panel_notifiers && !ctx->is_display_on)
 		goto end_pwm_fan_resume;
 
-	current_rpm_value = ctx->resume_rpm_value;
-	if (current_rpm_value == 0)
+	if (ctx->resume_rpm_value == 0)
 		goto end_pwm_fan_resume;
 
-	ret = set_rpm_locked(ctx, current_rpm_value);
+	ret = set_rpm_locked(ctx, ctx->resume_rpm_value);
 
 end_pwm_fan_resume:
 	mutex_unlock(&ctx->lock);

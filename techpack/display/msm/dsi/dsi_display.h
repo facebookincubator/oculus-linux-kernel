@@ -21,7 +21,7 @@
 #include "dsi_phy.h"
 #include "dsi_panel.h"
 
-#define MAX_DSI_CTRLS_PER_DISPLAY             2
+#define MAX_DSI_CTRLS_PER_DISPLAY             MAX_DSI_CTRLS_PER_PANEL
 #define DSI_CLIENT_NAME_SIZE		20
 #define MAX_CMDLINE_PARAM_LEN	 512
 #define MAX_CMD_PAYLOAD_SIZE	256
