@@ -35,6 +35,7 @@
 #define VDO_LOG_TRANSMIT_START 0x01
 
 #define NUM_CHARGING_DOCK_PORTS 4
+#define NUM_MOISTURE_DETECTION_PORTS 2
 
 enum port_state_t {
 	NOT_CONNECTED = 0x00,
@@ -70,11 +71,11 @@ struct charging_dock_params_t {
 	u64 fw_version;
 	u32 legacy_fw_version;
 	char serial_number_mlb[16];
-	u16 board_temp;
+	u16 port_board_temp[NUM_CHARGING_DOCK_PORTS];
 	char serial_number_system[16];
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
-	int moisture_detected_count;
+	int moisture_detected_counts[NUM_MOISTURE_DETECTION_PORTS];
 };
 
 struct usbvdm_subscription_data {

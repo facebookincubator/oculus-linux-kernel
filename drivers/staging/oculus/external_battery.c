@@ -3,12 +3,15 @@
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
+#include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/slab.h>
 
-#include "external_battery.h"
 #include "usbvdm.h"
+#include "usbvdm/subscriber.h"
+
+#include "external_battery.h"
 
 #define DEFAULT_EXT_BATT_VID 0x2833
 #define MOUNT_WORK_DELAY_SECONDS 30
@@ -32,8 +35,8 @@
 #define HR_TO_SECONDS			3600
 #define TWO_HRS_TO_SECONDS		7200
 
-/* Wait time before considering a mount state VDM unreceived */
-#define MOUNT_STATE_ACK_TIMEOUT_MS 2000
+/* Wait time before considering a Request VDM unreceived */
+#define REQUEST_ACK_TIMEOUT_MS 2000
 
 static const char * const battery_status_text[] = {
 	"Not charging",
@@ -81,11 +84,15 @@ static void ext_batt_reset(struct ext_batt_pd *pd)
 	pd->params.charger_plugged = 0;
 	pd->params.cycle_count = 0;
 	pd->params.fcc = 0;
+	pd->params.bootloader_version = 0;
 	pd->params.fw_version = 0;
+	pd->params.fw_version_legacy = 0;
 	pd->params.icurrent = 0;
 	pd->params.remaining_capacity = 0;
 	pd->params.rsoc = 0;
 	pd->params.soh = 0;
+	pd->params.temp_board = 0;
+	pd->params.temp_battery = 0;
 	pd->params.temp_fg = 0;
 	pd->params.voltage = 0;
 	pd->params.batt_status = 0x0000;
@@ -125,7 +132,19 @@ static void ext_batt_reset(struct ext_batt_pd *pd)
 int external_battery_send_vdm(struct ext_batt_pd *pd,
 		u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
-	return usbvdm_subscriber_vdm(pd->sub, vdm_hdr, vdos, num_vdos);
+	struct usbvdm_subscription_data *pos, *sub_data = NULL;
+
+	list_for_each_entry(pos, &pd->sub_list, entry) {
+		if (pos->vid == pd->current_vid && pos->pid == pd->current_pid) {
+			sub_data = pos;
+			break;
+		}
+	}
+
+	if (!sub_data)
+		return -ENODEV;
+
+	return usbvdm_subscriber_vdm(sub_data->sub, vdm_hdr, vdos, num_vdos);
 }
 
 void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
@@ -147,8 +166,14 @@ void ext_batt_vdm_connect(struct ext_batt_pd *pd, bool usb_comm)
 	pd->params.rsoc_test_enabled = false;
 	mutex_unlock(&pd->lock);
 
-	schedule_work(&pd->mount_state_work);
-	schedule_work(&pd->dock_state_work);
+	sysfs_notify(&pd->dev->kobj, NULL, "connected");
+
+	if (pd->current_pid == VDM_PID_LEHUA_V2) {
+		queue_work(pd->wq, &pd->fw_version_work);
+		queue_work(pd->wq, &pd->bootloader_version_work);
+	}
+	queue_work(pd->wq, &pd->mount_state_work);
+	queue_work(pd->wq, &pd->dock_state_work);
 
 	/* Force re-evaluation */
 	ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
@@ -168,6 +193,7 @@ void ext_batt_vdm_disconnect(struct ext_batt_pd *pd)
 		return;
 
 	ext_batt_reset(pd);
+	sysfs_notify(&pd->dev->kobj, NULL, "connected");
 
 	cancel_work_sync(&pd->mount_state_work);
 	cancel_work_sync(&pd->dock_state_work);
@@ -459,7 +485,7 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 				"Received mount status ack response code 0x%x",
 				vdos[0]);
 
-			complete(&pd->mount_state_ack);
+			complete(&pd->request_ack);
 		} else if (parameter_type == EXT_BATT_FW_HMD_DOCKED) {
 			struct ext_batt_pr_swap_work *prs_work;
 
@@ -476,6 +502,22 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 
 			INIT_WORK(&prs_work->work, ext_batt_pr_swap);
 			queue_work(pd->wq, &prs_work->work);
+		} else if (parameter_type == EXT_BATT_FW_BOOTLOADER_VERSION) {
+			if (num_vdos < 2) {
+				dev_err(pd->dev, "Too few VDOs for bootloader_version vdm");
+				return;
+			}
+			/* Bootloader version is 6 bytes */
+			pd->params.bootloader_version =
+				(((u64)vdos[0] << 16) | (vdos[1] & 0xffff));
+			complete(&pd->request_ack);
+		} else if (parameter_type == EXT_BATT_FW_VERSION_NUMBER) {
+			if (num_vdos < 2) {
+				dev_err(pd->dev, "Too few VDOs for fw_version vdm");
+				return;
+			}
+			pd->params.fw_version = ((u64)vdos[0] << 32) | vdos[1];
+			complete(&pd->request_ack);
 		} else {
 			dev_warn(pd->dev, "Unsupported response parameter 0x%x",
 					parameter_type);
@@ -534,7 +576,7 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 	high_bytes = VDMH_HIGH(vdm_hdr);
 	switch (parameter_type) {
 	case EXT_BATT_FW_VERSION_NUMBER:
-		pd->params.fw_version = vdos[0];
+		pd->params.fw_version_legacy = vdos[0];
 		break;
 	case EXT_BATT_FW_SERIAL:
 		vdm_memcpy(pd, parameter_type, num_vdos,
@@ -550,6 +592,16 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		vdm_memcpy(pd, parameter_type, num_vdos,
 			pd->params.serial_system,
 			vdos, sizeof(pd->params.serial_system));
+		break;
+	case EXT_BATT_FW_TEMP_BOARD:
+		pd->params.temp_board = vdos[0];
+		break;
+	case EXT_BATT_FW_TEMP_BATT:
+		/* "temp_battery" and "temp_fg" might report
+		 * identical value but are stored separately here
+		 * because accessory FW reports them that way
+		*/
+		pd->params.temp_battery = vdos[0];
 		break;
 	case EXT_BATT_FW_TEMP_FG:
 		pd->params.temp_fg = vdos[0];
@@ -607,7 +659,7 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		 */
 		if (!pd->first_broadcast_data_received) {
 			pd->first_broadcast_data_received = true;
-			schedule_work(&pd->mount_state_work);
+			queue_work(pd->wq, &pd->mount_state_work);
 		}
 		break;
 	/*
@@ -731,7 +783,7 @@ static ssize_t mount_state_store(struct device *dev,
 	pd->mount_state = temp;
 
 	if (pd->connected)
-		schedule_work(&pd->mount_state_work);
+		queue_work(pd->wq, &pd->mount_state_work);
 
 	mutex_unlock(&pd->lock);
 
@@ -953,7 +1005,7 @@ static ssize_t pid_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->pid);
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->current_pid);
 }
 static DEVICE_ATTR_RO(pid);
 
@@ -963,9 +1015,29 @@ static ssize_t vid_show(struct device *dev,
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->vid);
+	return scnprintf(buf, PAGE_SIZE, "0x%04x\n", pd->current_vid);
 }
 static DEVICE_ATTR_RO(vid);
+
+static ssize_t temp_board_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_board);
+}
+static DEVICE_ATTR_RO(temp_board);
+
+static ssize_t temp_battery_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.temp_battery);
+}
+static DEVICE_ATTR_RO(temp_battery);
 
 static ssize_t temp_fg_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1057,15 +1129,99 @@ static ssize_t soh_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(soh);
 
-static ssize_t fw_version_show(struct device *dev,
+static ssize_t bootloader_version_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+	int result;
+	bool temp;
+	u32 hdr;
+
+	result = kstrtobool(buf, &temp);
+	if (result < 0) {
+		dev_err(dev, "Illegal input for bootloader_version: %s", buf);
+		return result;
+	}
+
+	hdr =
+		VDMH_CONSTRUCT(
+			VDM_SVID_META,
+			0, VDM_REQUEST, 0, 0,
+			EXT_BATT_FW_BOOTLOADER_VERSION);
+
+	external_battery_send_vdm(pd, hdr, NULL, 0);
+
+	return count;
+}
+
+static ssize_t bootloader_version_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct ext_batt_pd *pd =
 		(struct ext_batt_pd *) dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.fw_version);
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", pd->params.bootloader_version);
 }
-static DEVICE_ATTR_RO(fw_version);
+static DEVICE_ATTR_RW(bootloader_version);
+
+bool uses_legacy_fw_version(u16 pid)
+{
+	switch (pid) {
+	case VDM_PID_MOLOKINI:
+	case VDM_PID_LEHUA:
+		return true;
+	}
+
+	return false;
+}
+
+static ssize_t fw_version_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+	int result;
+	bool temp;
+	u32 hdr;
+
+	if (uses_legacy_fw_version(pd->current_pid))
+		return -EINVAL;
+
+	result = kstrtobool(buf, &temp);
+	if (result < 0) {
+		dev_err(dev, "Illegal input for fw_version: %s", buf);
+		return result;
+	}
+
+	hdr =
+		VDMH_CONSTRUCT(
+			VDM_SVID_META,
+			0, VDM_REQUEST, 0, 0,
+			EXT_BATT_FW_VERSION_NUMBER);
+
+	external_battery_send_vdm(pd, hdr, NULL, 0);
+
+	return count;
+}
+
+static ssize_t fw_version_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ext_batt_pd *pd =
+		(struct ext_batt_pd *) dev_get_drvdata(dev);
+	int ret;
+
+	if (uses_legacy_fw_version(pd->current_pid))
+		ret = scnprintf(buf, PAGE_SIZE, "%u\n", pd->params.fw_version_legacy);
+	else
+		ret = scnprintf(buf, PAGE_SIZE, "%llu\n", pd->params.fw_version);
+
+	return ret;
+}
+static DEVICE_ATTR_RW(fw_version);
 
 static ssize_t device_name_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1765,6 +1921,8 @@ static struct attribute *ext_batt_lehua_attrs[] = {
 	&dev_attr_serial_system.attr,
 	&dev_attr_pid.attr,
 	&dev_attr_vid.attr,
+	&dev_attr_temp_board.attr,
+	&dev_attr_temp_battery.attr,
 	&dev_attr_temp_fg.attr,
 	&dev_attr_voltage.attr,
 	&dev_attr_icurrent.attr,
@@ -1773,6 +1931,7 @@ static struct attribute *ext_batt_lehua_attrs[] = {
 	&dev_attr_pack_assembly_pn.attr,
 	&dev_attr_cycle_count.attr,
 	&dev_attr_soh.attr,
+	&dev_attr_bootloader_version.attr,
 	&dev_attr_fw_version.attr,
 	&dev_attr_device_name.attr,
 
@@ -1961,28 +2120,60 @@ static void ext_batt_create_sysfs(struct ext_batt_pd *pd)
 		dev_err(pd->dev, "Error creating sysfs entries: %d\n", result);
 }
 
+static void ext_batt_send_vdm_request(struct ext_batt_pd *pd,
+		u16 param, const u32 *vdos, int num_vdos)
+{
+	u32 hdr;
+	int result;
+
+	mutex_lock(&pd->lock);
+	if (!pd->connected)
+		goto out;
+
+	hdr = VDMH_CONSTRUCT(VDM_SVID_META, 0, VDM_REQUEST, 0, num_vdos, param);
+
+	reinit_completion(&pd->request_ack);
+	result = external_battery_send_vdm(pd, hdr, vdos, num_vdos);
+	if (result != 0) {
+		dev_err(pd->dev, "Error sending 0x%02x request: %d", param, result);
+		goto out;
+	}
+
+	result = wait_for_completion_timeout(&pd->request_ack,
+			msecs_to_jiffies(REQUEST_ACK_TIMEOUT_MS));
+	if (!result) {
+		dev_err(pd->dev, "Timed out waiting for 0x%02x ACK", param);
+		goto out;
+	}
+
+out:
+	mutex_unlock(&pd->lock);
+}
+
+static void ext_batt_fw_version_work(struct work_struct *work)
+{
+	struct ext_batt_pd *pd =
+		container_of(work, struct ext_batt_pd, fw_version_work);
+
+	ext_batt_send_vdm_request(pd, EXT_BATT_FW_VERSION_NUMBER, NULL, 0);
+}
+
+static void ext_batt_bootloader_version_work(struct work_struct *work)
+{
+	struct ext_batt_pd *pd =
+		container_of(work, struct ext_batt_pd, bootloader_version_work);
+
+	ext_batt_send_vdm_request(pd, EXT_BATT_FW_BOOTLOADER_VERSION, NULL, 0);
+}
+
 static void ext_batt_mount_status_work(struct work_struct *work)
 {
 	struct ext_batt_pd *pd =
 		container_of(work, struct ext_batt_pd, mount_state_work);
-	int result;
-	u32 mount_state_header = 0;
 	u32 mount_state_vdo = pd->mount_state;
 	u32 vdm_period = 0;
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
-
-	mutex_lock(&pd->lock);
-	if (!pd->connected) {
-		mutex_unlock(&pd->lock);
-		return;
-	}
-
-	mount_state_header =
-		VDMH_CONSTRUCT(
-			VDM_SVID_META,
-			0, 1, 0, 1,
-			EXT_BATT_FW_HMD_MOUNTED);
 
 	if (pd->mount_state == 0 && pd->first_broadcast_data_received)
 		vdm_period = EXT_BATT_FW_VDM_PERIOD_OFF_HEAD;
@@ -1990,23 +2181,7 @@ static void ext_batt_mount_status_work(struct work_struct *work)
 		vdm_period = EXT_BATT_FW_VDM_PERIOD_ON_HEAD;
 	mount_state_vdo |= (vdm_period << 8);
 
-	reinit_completion(&pd->mount_state_ack);
-	result = external_battery_send_vdm(pd, mount_state_header,
-		&mount_state_vdo, 1);
-	if (result != 0) {
-		dev_err(pd->dev, "Error sending HMD mount request: %d", result);
-		mutex_unlock(&pd->lock);
-		return;
-	}
-
-	result = wait_for_completion_timeout(&pd->mount_state_ack,
-			msecs_to_jiffies(MOUNT_STATE_ACK_TIMEOUT_MS));
-	if (!result) {
-		dev_err(pd->dev, "Timed out waiting for mount state ACK, retrying");
-		schedule_work(&pd->mount_state_work);
-	}
-
-	mutex_unlock(&pd->lock);
+	ext_batt_send_vdm_request(pd, EXT_BATT_FW_HMD_MOUNTED, &mount_state_vdo, 1);
 }
 
 static void ext_batt_dock_state_work(struct work_struct *work)
@@ -2247,10 +2422,10 @@ static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 		return NOTIFY_OK;
 
 	if (psy == pd->battery_psy)
-		schedule_work(&pd->psy_notifier_work);
+		queue_work(pd->wq, &pd->psy_notifier_work);
 
 	if (pd->cypd_psy && psy == pd->cypd_psy)
-		schedule_work(&pd->dock_state_work);
+		queue_work(pd->wq, &pd->dock_state_work);
 
 	return NOTIFY_OK;
 }
@@ -2310,12 +2485,18 @@ static void external_battery_usbvdm_connect(struct usbvdm_subscription *sub,
 {
 	struct ext_batt_pd *pd = usbvdm_subscriber_get_drvdata(sub);
 
+	pd->current_vid = vid;
+	pd->current_pid = pid;
+
 	ext_batt_vdm_connect(pd, true);
 }
 
 static void external_battery_usbvdm_disconnect(struct usbvdm_subscription *sub)
 {
 	struct ext_batt_pd *pd = usbvdm_subscriber_get_drvdata(sub);
+
+	pd->current_vid = 0;
+	pd->current_pid = 0;
 
 	ext_batt_vdm_disconnect(pd);
 }
@@ -2330,10 +2511,12 @@ static void external_battery_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 
 static int ext_batt_probe(struct platform_device *pdev)
 {
-	int result = 0;
+	int i, result = 0;
 	struct ext_batt_pd *pd;
 	const char *batt_name;
-	u16 usb_id[2];
+	u16 *usb_ids = NULL;
+	int num_ids = 0;
+	struct usbvdm_subscription_data *sub_data = NULL;
 	struct usbvdm_subscriber_ops ops = {
 		.connect = external_battery_usbvdm_connect,
 		.disconnect = external_battery_usbvdm_disconnect,
@@ -2430,8 +2613,10 @@ static int ext_batt_probe(struct platform_device *pdev)
 
 	mutex_init(&pd->lock);
 
-	init_completion(&pd->mount_state_ack);
+	init_completion(&pd->request_ack);
 	pd->last_dock_ack = EXT_BATT_FW_DOCK_STATE_UNKNOWN;
+	INIT_WORK(&pd->fw_version_work, ext_batt_fw_version_work);
+	INIT_WORK(&pd->bootloader_version_work, ext_batt_bootloader_version_work);
 	INIT_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
 	INIT_WORK(&pd->dock_state_work, ext_batt_dock_state_work);
 	INIT_WORK(&pd->psy_notifier_work, ext_batt_psy_notifier_work);
@@ -2446,19 +2631,46 @@ static int ext_batt_probe(struct platform_device *pdev)
 	pd->dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, pd);
 
-	result = device_property_read_u16_array(pd->dev, "meta,usb-id", usb_id, 2);
+	num_ids = device_property_read_u16_array(pd->dev, "meta,usb-ids", NULL, 0);
+	if (num_ids <= 0) {
+		dev_err(pd->dev, "Error reading usb-ids property: %d", num_ids);
+		return num_ids < 0 ? num_ids : -EINVAL;
+	}
+
+	usb_ids = kzalloc(sizeof(u16) * num_ids, GFP_KERNEL);
+	if (!usb_ids)
+		return -ENOMEM;
+
+	result = device_property_read_u16_array(pd->dev, "meta,usb-ids", usb_ids, num_ids);
 	if (result < 0) {
-		dev_err(pd->dev, "Couldn't read usb-id property: %d", result);
+		dev_err(pd->dev, "Error reading usb-ids property: %d", result);
+		kfree(usb_ids);
 		return result;
 	}
 
-	pd->vid = usb_id[0];
-	pd->pid = usb_id[1];
-	pd->sub = usbvdm_subscribe(pd->dev, pd->vid, pd->pid, ops);
-	if (IS_ERR_OR_NULL(pd->sub))
-		return pd->sub ? PTR_ERR(pd->sub) : -ENODEV;
+	INIT_LIST_HEAD(&pd->sub_list);
+	for (i = 0; i < num_ids; i += 2) {
+		sub_data = devm_kzalloc(pd->dev, sizeof(*sub_data), GFP_KERNEL);
+		if (!sub_data) {
+			kfree(usb_ids);
+			return -ENOMEM;
+		}
 
-	usbvdm_subscriber_set_drvdata(pd->sub, pd);
+		sub_data->vid = usb_ids[i];
+		sub_data->pid = usb_ids[i + 1];
+		sub_data->sub = usbvdm_subscribe(pd->dev, sub_data->vid, sub_data->pid, ops);
+		if (IS_ERR_OR_NULL(sub_data->sub)) {
+			dev_err(pd->dev, "Failed to subscribe to VID/PID 0x%04x/0x%04x: %d",
+					sub_data->vid, sub_data->pid, PTR_ERR_OR_ZERO(sub_data->sub));
+			kfree(usb_ids);
+			return IS_ERR(sub_data->sub) ? PTR_ERR(sub_data) : -ENODATA;
+		}
+
+		usbvdm_subscriber_set_drvdata(sub_data->sub, pd);
+		list_add(&sub_data->entry, &pd->sub_list);
+	}
+
+	kfree(usb_ids);
 
 	/* Query power supply and register for events */
 	pd->nb.notifier_call = ext_batt_psy_notifier_call;
@@ -2474,13 +2686,15 @@ static int ext_batt_probe(struct platform_device *pdev)
 static int ext_batt_remove(struct platform_device *pdev)
 {
 	struct ext_batt_pd *pd = platform_get_drvdata(pdev);
+	struct usbvdm_subscription_data *pos;
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
 
 	mutex_lock(&pd->lock);
 	pd->connected = false;
 	mutex_unlock(&pd->lock);
-	usbvdm_unsubscribe(pd->sub);
+	list_for_each_entry(pos, &pd->sub_list, entry)
+		usbvdm_unsubscribe(pos->sub);
 	cancel_work_sync(&pd->mount_state_work);
 	cancel_work_sync(&pd->dock_state_work);
 	destroy_workqueue(pd->wq);
