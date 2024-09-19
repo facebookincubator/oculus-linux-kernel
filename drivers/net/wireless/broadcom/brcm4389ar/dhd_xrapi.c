@@ -30,6 +30,7 @@
 #include <dhd_dbg.h>
 #include <wlioctl.h>
 #include <dhd_xrapi.h>
+#include <bcmiov.h>
 #include <wl_android.h>
 #ifdef CONFIG_XRPS_DHD_HOOKS
 #include "xrps.h"
@@ -415,3 +416,165 @@ int dhd_scan_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event)
 	return BCME_OK;
 }
 #endif /* NOTIFY_CALIBRATION_EVENT */
+
+static int
+dhd_xrapi_cbfn(void *ctx, const uint8 *data, uint16 type, uint16 len)
+{
+	BCM_REFERENCE(ctx);
+	BCM_REFERENCE(len);
+
+	if (data == NULL) {
+		DHD_ERROR(("%s: bad argument !!!\n", __FUNCTION__));
+		return BCME_BADARG;
+	}
+
+	switch (type) {
+		case WL_XRAPI_XTLV_RESCHED_SCN_CTRL:
+			{
+			uint8 *pmode = (uint8 *)ctx;
+			*pmode = (uint8)*data;
+			DHD_LOG_MEM(("resched scan mode %d\n", *pmode));
+			break;
+			}
+		default:
+			DHD_LOG_MEM(("%s: unknown tlv %u\n", __FUNCTION__, type));
+			break;
+	}
+
+	return BCME_OK;
+}
+
+static int
+dhd_xrapi_iov_resp_buf(void *ctx, bcm_iov_buf_t *iov_resp, uint16 cmd_id,
+		bcm_xtlv_unpack_cbfn_t cbfn)
+{
+	int ret = BCME_OK;
+
+	/* check for version */
+	if (iov_resp->version != WL_XRAPI_IOV_VERSION_1_1) {
+		return BCME_VERSION;
+	}
+
+	if ((iov_resp->id == cmd_id) && (cbfn != NULL)) {
+		ret = bcm_unpack_xtlv_buf(ctx, (uint8 *)iov_resp->data, iov_resp->len,
+			BCM_XTLV_OPTION_ALIGN32, cbfn);
+	}
+
+	return ret;
+}
+
+uint32
+dhd_xrapi_get_resched_scn_ctrl(dhd_pub_t *dhdp, uint8 *pmode)
+{
+	int ret = BCME_OK;
+	bcm_iov_buf_t *iov_buf = NULL;
+	bcm_iov_buf_t *iov_resp = NULL;
+	uint16 iovlen = 0;
+	bcm_xtlv_t *pxtlv = NULL;
+	uint16 xtlv_buflen_start;
+	uint16 xtlv_buflen;
+
+	iov_buf = (bcm_iov_buf_t *)MALLOCZ(dhdp->osh, WLC_IOCTL_SMLEN);
+
+	if (iov_buf  == NULL) {
+		ret = -ENOMEM;
+		DHD_ERROR(("iov buf memory alloc failed\n"));
+		goto exit;
+	}
+
+	iov_resp = (bcm_iov_buf_t *)MALLOCZ(dhdp->osh, WLC_IOCTL_SMLEN);
+
+	if (iov_resp == NULL) {
+		DHD_ERROR(("iov buf memory alloc failed\n"));
+		ret = BCME_NOMEM;
+		goto exit;
+	}
+
+	/* fill header */
+	iov_buf->version = WL_XRAPI_IOV_VERSION_1_1;
+	iov_buf->id = WL_XRAPI_CMD_RESCHED_SCN_CTRL;
+	pxtlv = (bcm_xtlv_t *)&iov_buf->data[0];
+	xtlv_buflen = xtlv_buflen_start = WLC_IOCTL_SMLEN - sizeof(bcm_iov_buf_t);
+	iov_buf->len = xtlv_buflen_start - xtlv_buflen;
+	iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
+
+	ret = dhd_iovar(dhdp, 0, "xrapi", (char *)iov_buf, iovlen, (char *)iov_resp,
+		WLC_IOCTL_SMLEN, FALSE);
+	if (ret) {
+		DHD_ERROR(("%s: failed to get resched_scn_ctrl mode to %d, ret = %d\n",
+			__FUNCTION__, *pmode, ret));
+	} else {
+		ret = dhd_xrapi_iov_resp_buf(pmode, iov_resp, WL_XRAPI_CMD_RESCHED_SCN_CTRL,
+			dhd_xrapi_cbfn);
+		if (ret != BCME_OK) {
+			DHD_ERROR(("%s: failed to parse resched_scn_ctrl mode to %d, ret = %d\n",
+			__FUNCTION__, *pmode, ret));
+		}
+		DHD_LOG_MEM(("%s: successfully get resched_scn_ctrl mode to %d\n",
+			__FUNCTION__, *pmode));
+	}
+
+exit:
+	if (iov_buf) {
+		MFREE(dhdp->osh, iov_buf, WLC_IOCTL_SMLEN);
+	}
+	if (iov_resp) {
+		MFREE(dhdp->osh, iov_resp, WLC_IOCTL_SMLEN);
+	}
+
+	DHD_LOG_MEM(("%s: Rescheduling scan mode is %d\n", __FUNCTION__, *pmode));
+	return ret;
+}
+
+uint32
+dhd_xrapi_set_resched_scn_ctrl(dhd_pub_t *dhdp, uint32 mode)
+{
+	int ret = BCME_OK;
+	bcm_iov_buf_t *iov_buf = NULL;
+	uint16 iovlen = 0;
+	bcm_xtlv_t *pxtlv = NULL;
+	uint16 xtlv_buflen_start;
+	uint16 xtlv_buflen;
+
+	mode = mode ? 1 : 0;
+	iov_buf = (bcm_iov_buf_t *)MALLOCZ(dhdp->osh, WLC_IOCTL_SMLEN);
+
+	if (iov_buf  == NULL) {
+		ret = -ENOMEM;
+		DHD_ERROR(("iov buf memory alloc failed\n"));
+		goto exit;
+	}
+
+	/* fill header */
+	iov_buf->version = WL_XRAPI_IOV_VERSION_1_1;
+	iov_buf->id = WL_XRAPI_CMD_RESCHED_SCN_CTRL;
+
+	pxtlv = (bcm_xtlv_t *)&iov_buf->data[0];
+	xtlv_buflen = xtlv_buflen_start = WLC_IOCTL_SMLEN - sizeof(bcm_iov_buf_t);
+
+	ret = bcm_pack_xtlv_entry((uint8**)&pxtlv, &xtlv_buflen, WL_XRAPI_XTLV_RESCHED_SCN_CTRL,
+			sizeof(mode), (uint8 *)&mode, BCM_XTLV_OPTION_ALIGN32);
+	if (ret != BCME_OK) {
+		ret = -EINVAL;
+		DHD_ERROR(("%s failed to pack resched_scn_ctrl, err: %s\n",
+			__FUNCTION__, bcmerrorstr(ret)));
+		goto exit;
+	}
+	iov_buf->len = xtlv_buflen_start - xtlv_buflen;
+	iovlen = sizeof(bcm_iov_buf_t) + iov_buf->len;
+
+	ret = dhd_iovar(dhdp, 0, "xrapi", (char *)iov_buf, iovlen, NULL, 0, TRUE);
+	if (ret) {
+		DHD_ERROR(("%s: failed to set resched_scn_ctrl mode to %d, ret = %d\n",
+			__FUNCTION__, mode, ret));
+	} else {
+		DHD_LOG_MEM(("%s: successfully set resched_scn_ctrl mode to %d\n",
+			__FUNCTION__, mode));
+	}
+
+exit:
+	if (iov_buf) {
+		MFREE(dhdp->osh, iov_buf, WLC_IOCTL_SMLEN);
+	}
+	return ret;
+}

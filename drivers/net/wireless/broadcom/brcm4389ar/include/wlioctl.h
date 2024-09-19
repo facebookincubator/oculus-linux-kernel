@@ -28697,7 +28697,15 @@ enum wl_xrapi_cmd_ids {
 	/* Set scan/roam event enable */
 	WL_XRAPI_CMD_SCAN_EVT_EN	= 14u,
 	/* Rx coalesce control */
-	WL_XRAPI_CMD_RX_COALESCE	= 15u
+	WL_XRAPI_CMD_RX_COALESCE	= 15u,
+	/* AR Beacon ID */
+	WL_XRAPI_CMD_AR_BEACON_ID	= 16u,
+	/* FW Stats log level */
+	WL_XRAPI_CMD_FW_STATS		= 17u,
+	/* Interference Optimization */
+	WL_XRAPI_CMD_RTS_CTS_BURST_CTRL	= 18u,
+	/* lowpower scan reschduling ctrl */
+	WL_XRAPI_CMD_RESCHED_SCN_CTRL	= 19u
 };
 
 enum wl_xrapi_xtlv_id {
@@ -28715,7 +28723,12 @@ enum wl_xrapi_xtlv_id {
 	WL_XRAPI_XTLV_TSYNC_STATS		= 11u,	/* GPIO TSync status */
 	WL_XRAPI_XTLV_BCN_TBTT			= 12u,	/* next beacon TBTT */
 	WL_XRAPI_XTLV_SCAN_EVT_EN		= 13u,	/* Scan/Roam evt enable */
-	WL_XRAPI_XTLV_RX_COALESCE		= 14u	/* Rx coalesce control */
+	WL_XRAPI_XTLV_RX_COALESCE		= 14u,	/* Rx coalesce control */
+	WL_XRAPI_XTLV_AR_BEACON_ID		= 15u,	/* AR Beacon ID */
+	WL_XRAPI_XTLV_FW_STATS			= 16u,	/* FW Stats log level */
+	WL_XRAPI_XTLV_RTS_CTS_BURST_CTRL	= 17u,	/* Interference Optimization */
+	/* Restrict scan rescheduing for lowpower scan */
+	WL_XRAPI_XTLV_RESCHED_SCN_CTRL		= 18u
 };
 
 typedef struct wl_xrapi_sleep_hist {

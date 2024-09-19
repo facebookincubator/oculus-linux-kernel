@@ -4,7 +4,13 @@ menuconfig OCULUS
 	help
 	  Enable support for Oculus drivers and features
 
-if OCULUS
+menuconfig META
+	bool "Meta feature support"
+	default y
+	help
+	  Enable support for Meta drivers and features
+
+if OCULUS || META
 
 config AS5510
 	tristate "AS5510 Hall Effect Sensor i2c driver"

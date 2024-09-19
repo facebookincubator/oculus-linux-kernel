@@ -113,9 +113,12 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup &syncboss_float_shared>;
 
+		meta,syncboss-supply = <&L8C>;
+
 		meta,syncboss-reset  = <&tlmm 5 0>;
 		meta,syncboss-wakeup  = <&tlmm 4 0>;
 
+		meta,min-time-between-trans-ns = <500000>;
 		meta,syncboss-use-fastpath;
 
 		swd@0 {
@@ -123,6 +126,8 @@
 
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
+
+			meta,swd-core-supply = <&L8C>;
 
 			meta,pin-reset = <&tlmm 5 0>;
 			meta,swd-clk = <&tlmm 119 0>;

@@ -91,6 +91,10 @@
 #endif /* DHD_PCIE_RUNTIMEPM */
 #endif /* CUSTOMER_HW4 */
 
+#if defined(XRAPI_COMMON)
+#include <dhd_xrapi.h>
+#endif /* XRAPI_COMMON */
+
 #ifdef WL_STATIC_IF
 #define WL_BSSIDX_MAX	16
 #endif /* WL_STATIC_IF */
@@ -946,6 +950,11 @@ static struct genl_multicast_group wl_genl_mcast = {
 #define NUMBER_SEQUENTIAL_PRIVCMD_ERRORS	7
 static int priv_cmd_errors = 0;
 #endif /* DHD_SEND_HANG_PRIVCMD_ERRORS */
+
+#if defined(XRAPI_COMMON)
+#define CMD_SET_RESCHED_SCN_CTRL "SET_RESCHED_SCN_CTRL"
+#define CMD_GET_RESCHED_SCN_CTRL "GET_RESCHED_SCN_CTRL"
+#endif /* XRAPI_COMMON */
 
 /**
  * Extern function declarations (TODO: move them to dhd_linux.h)
@@ -12919,6 +12928,72 @@ wl_android_set_wsec_info(struct net_device *dev, char *command)
 	return  error;
 }
 
+#if defined(XRAPI_COMMON)
+static int
+wl_android_set_resched_scn_ctrl(struct net_device *ndev, char *command)
+{
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(ndev);
+	uint32 mode;
+	char *pos = command;
+	char *token = NULL;
+	int err = BCME_OK;
+
+	/* drop command */
+	token = bcmstrtok(&pos, " ", NULL);
+
+	/* Get setting mode */
+	token = bcmstrtok(&pos, " ", NULL);
+	if (!token) {
+		WL_ERR(("Invalid arguments\n"));
+		err = BCME_ERROR;
+		goto done;
+	}
+
+	mode = bcm_atoi(token);
+	err = dhd_xrapi_set_resched_scn_ctrl(dhdp, mode);
+
+done:
+	return err;
+}
+
+static int
+wl_android_get_resched_scn_ctrl(struct net_device *ndev, char *command, int total_len)
+{
+	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(ndev);
+	int err = BCME_OK;
+	uint8 mode;
+	char *input_command = NULL;
+	int rem_len = 0, bytes_written = 0;
+	rem_len = total_len;
+	input_command = command;
+	err = dhd_xrapi_get_resched_scn_ctrl(dhdp, &mode);
+	if (err != BCME_OK) {
+		goto done;
+	}
+	WL_INFORM_MEM(("Configured mode is %d \n", mode));
+	CHECK_SCNPRINTF_RET_VAL(bytes_written);
+	command += bytes_written;
+	rem_len -= bytes_written;
+	bytes_written = scnprintf(command, rem_len, "%d \n", mode);
+	if ((total_len - rem_len) >= 0) {
+		err = total_len - rem_len;
+		WL_INFORM_MEM(("True slice rescheduling scan mode: %s \n", input_command));
+	} else {
+		err = BCME_ERROR;
+		goto done;
+	}
+
+done:
+	if (err != BCME_OK) {
+		WL_ERR(("wl_android_get_resched_scn_ctrl failed: %i\n", err));
+		return err;
+	}
+
+	CHECK_SCNPRINTF_RET_VAL(bytes_written);
+	return bytes_written;
+}
+#endif /* XRAPI_COMMON */
+
 int
 wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 {
@@ -14032,6 +14107,16 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		bytes_written = wl_android_set_wl_softap_bw(net, command, priv_cmd.total_len);
 	}
 #endif
+#if defined(XRAPI_COMMON)
+	else if (strnicmp(command, CMD_SET_RESCHED_SCN_CTRL,
+		strlen(CMD_SET_RESCHED_SCN_CTRL)) == 0) {
+		bytes_written = wl_android_set_resched_scn_ctrl(net, command);
+	} else if (strnicmp(command, CMD_GET_RESCHED_SCN_CTRL,
+		strlen(CMD_GET_RESCHED_SCN_CTRL)) == 0) {
+		bytes_written = wl_android_get_resched_scn_ctrl(net, command,
+			priv_cmd.total_len);
+	}
+#endif /* XRAPI_COMMON */
 	else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 #ifdef CUSTOMER_HW4_DEBUG

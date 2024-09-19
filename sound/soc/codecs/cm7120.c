@@ -4044,6 +4044,7 @@ static int cm7120_parse_dt_hp_det(struct cm7120_priv *cm7120_codec)
 		goto error;
 	}
 
+	INIT_DELAYED_WORK(&cm7120_codec->hp_det_dwork, cm7120_hp_det_report);
 	for (i = 0; i < cm7120_codec->hp_count; i++) {
 		rc = of_get_named_gpio(np, "cm7120,headphone-det-gpios", i);
 		if (!gpio_is_valid(rc)) {
@@ -4091,7 +4092,6 @@ static int cm7120_parse_dt_hp_det(struct cm7120_priv *cm7120_codec)
 		}
 	}
 
-	INIT_DELAYED_WORK(&cm7120_codec->hp_det_dwork, cm7120_hp_det_report);
 	rc = snd_soc_card_jack_new(cm7120_codec->card, "CM7120 Headphone",
 		CM7120_JACK_MASK, &cm7120_codec->jack, NULL, 0);
 	if (rc < 0) {

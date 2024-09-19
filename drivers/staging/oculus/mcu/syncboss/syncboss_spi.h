@@ -28,11 +28,10 @@
 #define SYNCBOSS_SCHEDULING_SLOP_NS 10000
 
 /*
- * Default for SPI transacton cadence and speed
- * Maybe changed at runtime via sysfs
+ * Default driver setting if not otherwise configured via devicetree
+ * or sysfs.
  */
-#define SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS 0
-#define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 0
+#define SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS 500000
 #define SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS 0
 #define SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE 8000000
 
@@ -106,12 +105,6 @@ struct spi_prepare_ops {
 /* A set of SPI thread settings to apply */
 struct syncboss_stream_settings {
 	/*
-	 * The desired interval of polled SPI transactions, when using
-	 * legacy SPI polling mode.
-	 */
-	u32 trans_period_ns;
-
-	/*
 	 * The minimum time to wait between the end of a SPI
 	 * transaction and the start of the next SPI transaction.
 	 * Transactions triggered by data ready IRQs are not affected
@@ -137,7 +130,6 @@ struct syncboss_timing {
 	u64 prev_trans_start_time_ns;
 	u64 prev_trans_end_time_ns;
 	u64 min_time_between_trans_ns;
-	u64 trans_period_ns; /* used only for legacy polling mode */
 };
 
 /* Data related to userspace clients of this driver */
@@ -266,20 +258,10 @@ struct syncboss_dev_data {
 	/* IRQ signaling the MCU is ready for a transaction */
 	int ready_irq;
 
-	/* Regulator for the nRF */
-	struct regulator *mcu_core;
-
-	/* Regulator for IMU */
-	struct regulator *imu_core;
-
-	/* Regulator for Magnetometer */
-	struct regulator *mag_core;
-
-	/* RF Power Amplifier */
-	struct regulator *rf_amp;
-
-	/* Hall Sensor Power  */
-	struct regulator *hall_sensor;
+	/* Regulator consumers for MCU and its peripherals */
+	struct regulator_bulk_data *reg_consumers;
+	/* Number of regulator consumers */
+	int reg_count;
 
 	/* CPU cores used to schedule SPI transactions */
 	struct cpumask cpu_affinity;

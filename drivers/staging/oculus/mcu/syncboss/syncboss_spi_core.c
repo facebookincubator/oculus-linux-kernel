@@ -18,8 +18,6 @@
 #include <linux/version.h>
 #include <linux/wait.h>
 
-#include "../fw_helpers.h"
-
 #include "syncboss_spi.h"
 #include "syncboss_spi_debugfs.h"
 #include "syncboss_spi_fastpath.h"
@@ -77,10 +75,16 @@ static inline s64 ktime_get_ms(void)
 /* Increment refcount used to keep the MCU awake. */
 static void syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devdata)
 {
+	int status;
+
 	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
 	BUG_ON(devdata->mcu_client_count < 0);
 
 	if (devdata->mcu_client_count++ == 0) {
+		status = regulator_bulk_enable(devdata->reg_count, devdata->reg_consumers);
+		if (status)
+			dev_err(&devdata->spi->dev, "failed to enable syncboss regulators: err=%d", status);
+
 		/*
 		 * Wake the MCU by pin reset.
 		 *
@@ -107,6 +111,7 @@ static void syncboss_dec_mcu_client_count_locked(struct syncboss_dev_data *devda
 	if (--devdata->mcu_client_count == 0) {
 		dev_info(&devdata->spi->dev, "asserting MCU reset");
 		gpio_set_value(devdata->gpio_reset, 0);
+		regulator_bulk_disable(devdata->reg_count, devdata->reg_consumers);
 	}
 }
 
@@ -988,7 +993,6 @@ static int syncboss_spi_transfer_thread(void *ptr)
 
 	spi_max_clk_rate = devdata->spi_max_clk_rate;
 	transaction_length = devdata->transaction_length;
-	timing.trans_period_ns = devdata->next_stream_settings.trans_period_ns;
 	timing.min_time_between_trans_ns =
 		devdata->next_stream_settings.min_time_between_trans_ns;
 	devdata->max_msg_send_delay_ns =
@@ -1004,8 +1008,6 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		timing.min_time_between_trans_ns / 1000);
 	dev_dbg(&spi->dev, "  Max command send delay      : %d us",
 		devdata->max_msg_send_delay_ns / 1000);
-	dev_dbg(&spi->dev, "  Trans period for legacy mode: %llu us",
-		timing.trans_period_ns / 1000);
 	dev_dbg(&spi->dev, "  Fastpath enabled            : %s",
 		use_fastpath ? "yes" : "no");
 
@@ -1523,56 +1525,6 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		return 0;
 	}
 
-	if (devdata->hall_sensor) {
-		status = regulator_enable(devdata->hall_sensor);
-		if (status < 0) {
-			dev_err(&devdata->spi->dev,
-					"failed to enable hall sensor power: %d",
-					status);
-			goto error;
-		}
-	}
-
-	if (devdata->mcu_core) {
-		status = regulator_enable(devdata->mcu_core);
-		if (status < 0) {
-			dev_err(&devdata->spi->dev,
-					"failed to enable MCU power: %d",
-					status);
-			goto error;
-		}
-	}
-
-	if (devdata->imu_core) {
-		status = regulator_enable(devdata->imu_core);
-		if (status < 0) {
-			dev_err(&devdata->spi->dev,
-					"failed to enable IMU power: %d",
-					status);
-			goto error;
-		}
-	}
-
-	if (devdata->mag_core) {
-		status = regulator_enable(devdata->mag_core);
-		if (status < 0) {
-			dev_err(&devdata->spi->dev,
-					"failed to enable mag power: %d",
-					status);
-			goto error;
-		}
-	}
-
-	if (devdata->rf_amp) {
-		status = regulator_enable(devdata->rf_amp);
-		if (status < 0) {
-			dev_err(&devdata->spi->dev,
-					"failed to enable rf amp power: %d",
-					status);
-			goto error;
-		}
-	}
-
 	/*
 	 * Take ownership of calling prepare/unprepare away from the SPI
 	 * framework, so can manage calls more efficiently for our usecase.
@@ -1653,14 +1605,12 @@ error_after_spi_bus_lock:
 	destroy_default_smsg_locked(devdata);
 error_after_spi_ops_update:
 	restore_spi_prepare_ops(devdata);
-error:
 	return status;
 }
 
 /* Stop the main SPI thread / message processing loop */
 static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 {
-	int status;
 	struct syncboss_msg *smsg, *temp_smsg;
 
 	if (!devdata->is_streaming) {
@@ -1702,51 +1652,6 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 
 	/* Return prepare/unprepare call ownership to the kernel SPI framework. */
 	restore_spi_prepare_ops(devdata);
-
-	if (devdata->rf_amp) {
-		status = regulator_disable(devdata->rf_amp);
-		if (status < 0) {
-			dev_warn(&devdata->spi->dev,
-					"failed to disable rf amp power: %d",
-					status);
-		}
-	}
-
-	if (devdata->mcu_core) {
-		status = regulator_disable(devdata->mcu_core);
-		if (status < 0) {
-			dev_warn(&devdata->spi->dev,
-					"failed to disable MCU power: %d",
-					status);
-		}
-	}
-
-	if (devdata->imu_core) {
-		status = regulator_disable(devdata->imu_core);
-		if (status < 0) {
-			dev_warn(&devdata->spi->dev,
-					"failed to disable IMU power: %d",
-					status);
-		}
-	}
-
-	if (devdata->mag_core) {
-		status = regulator_disable(devdata->mag_core);
-		if (status < 0) {
-			dev_warn(&devdata->spi->dev,
-					"failed to disable mag power: %d",
-					status);
-		}
-	}
-
-	if (devdata->hall_sensor) {
-		status = regulator_disable(devdata->hall_sensor);
-		if (status < 0) {
-			dev_warn(&devdata->spi->dev,
-					"failed to disable hall sensor power: %d",
-					status);
-		}
-	}
 }
 
 /* Handle a 'data ready to be read' IRQ from the MCU */
@@ -1928,6 +1833,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 				   struct spi_device *spi)
 {
 	struct device_node *node = spi->dev.of_node;
+	int ret;
 
 	devdata->spi = spi;
 
@@ -1943,14 +1849,18 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	 */
 	devdata->last_seq_num = SYNCBOSS_SEQ_NUM_MAX;
 
-	devdata->next_stream_settings.trans_period_ns = SYNCBOSS_DEFAULT_TRANSACTION_PERIOD_NS;
-	devdata->next_stream_settings.min_time_between_trans_ns =
-		SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
 	devdata->next_stream_settings.max_msg_send_delay_ns =
 		SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS;
 	devdata->next_stream_settings.spi_max_clk_rate = SYNCBOSS_DEFAULT_SPI_MAX_CLK_RATE;
 	devdata->thread_prio = SYNCBOSS_DEFAULT_THREAD_PRIO;
 	atomic64_set(&devdata->transaction_ctr, 0);
+
+	ret = of_property_read_u32(node, "meta,min-time-between-trans-ns",
+		&devdata->next_stream_settings.min_time_between_trans_ns);
+	if (ret < 0) {
+		devdata->next_stream_settings.min_time_between_trans_ns =
+			SYNCBOSS_DEFAULT_MIN_TIME_BETWEEN_TRANSACTIONS_NS;
+	}
 
 	devdata->has_wake_on_spi = of_property_read_bool(node, "meta,syncboss-has-wake-on-spi");
 	devdata->use_fastpath = of_property_read_bool(node, "meta,syncboss-use-fastpath");
@@ -2031,21 +1941,22 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		goto error;
 
+	/* Get all regulators listen in device tree node */
+	devdata->reg_count = of_regulator_bulk_get_all(dev, dev->of_node, &devdata->reg_consumers);
+	if (devdata->reg_count < 0) {
+		dev_err(dev, "Failed to get regulators err=%d\n", devdata->reg_count);
+		goto error_after_devdata_init;
+	}
+
 	devdata->rx_elem = devm_kzalloc(dev, sizeof(*devdata->rx_elem),
 					GFP_KERNEL | GFP_DMA);
 	if (!devdata->rx_elem) {
 		status = -ENOMEM;
-		goto error_after_devdata_init;
+		goto error_after_regulator_get;
 	}
 
 	mutex_init(&devdata->msg_queue_lock);
 	INIT_LIST_HEAD(&devdata->msg_queue_list);
-
-	devm_fw_init_regulator(dev, &devdata->hall_sensor, "hall-sensor");
-	devm_fw_init_regulator(dev, &devdata->mcu_core, "mcu-core");
-	devm_fw_init_regulator(dev, &devdata->imu_core, "imu-core");
-	devm_fw_init_regulator(dev, &devdata->mag_core, "mag-core");
-	devm_fw_init_regulator(dev, &devdata->rf_amp, "rf-amp");
 
 	dev_set_drvdata(dev, devdata);
 
@@ -2057,7 +1968,7 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0) {
 		dev_err(dev, "%s failed to register misc device, error %d",
 			__func__, status);
-		goto error_after_devdata_init;
+		goto error_after_regulator_get;
 	}
 
 	/*
@@ -2114,6 +2025,8 @@ error_after_of_platform_populate:
 	of_platform_depopulate(&spi->dev);
 error_after_misc_reg:
 	misc_deregister(&devdata->misc);
+error_after_regulator_get:
+	regulator_bulk_free(devdata->reg_count, devdata->reg_consumers);
 error_after_devdata_init:
 	destroy_workqueue(devdata->syncboss_pm_workqueue);
 error:
@@ -2136,6 +2049,8 @@ static int syncboss_remove(struct spi_device *spi)
 	syncboss_debugfs_deinit(devdata);
 
 	misc_deregister(&devdata->misc);
+
+	regulator_bulk_free(devdata->reg_count, devdata->reg_consumers);
 
 	return 0;
 }

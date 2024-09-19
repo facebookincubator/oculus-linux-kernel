@@ -88,15 +88,24 @@
 	qcom,allow-suspend;
 };
 
+&S4A {
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
+};
+
 &L7C {
+	regulator-min-microvolt = <3000000>;
+	regulator-max-microvolt = <3000000>;
 	qcom,init-voltage = <3000000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-	regulator-always-on;
 };
 
 &L8C {
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
 	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-	regulator-always-on;
 };
 
 &qupv3_se19_spi {
@@ -115,14 +124,14 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
-		meta,imu-core-supply = <&L7C>;
-		meta,imu-core-voltage-level = <3000000 3000000>;
-		meta,mag-core-supply = <&L8C>;
-		meta,mag-core-voltage-level = <1800000 1800000>;
+		meta,syncboss-supply = <&S4A>;
+		meta,imu-supply = <&L7C>;
+		meta,mag-supply = <&L8C>;
 
 		meta,syncboss-reset  = <&tlmm 5 0>;
 		meta,syncboss-wakeup  = <&tlmm 4 0>;
 
+		meta,min-time-between-trans-ns = <500000>;
 		meta,syncboss-use-fastpath;
 		meta,syncboss-has-wake-reasons;
 
@@ -131,6 +140,8 @@
 
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
+
+			meta,swd-core-supply = <&S4A>;
 
 			meta,pin-reset = <&tlmm 5 0>;
 			meta,swd-clk = <&tlmm 52 0>;

@@ -495,6 +495,8 @@ static const struct of_device_id match_table[] = {
 		.data = &mp3314_data},
 	{ .compatible = "meta,mp3314a",
 		.data = &mp3314a_data},
+	{ .compatible = "meta,mp3317",
+		.data = &mp3314_data},
 	{ }
 };
 

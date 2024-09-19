@@ -87,6 +87,9 @@
 #ifdef WL_CELLULAR_CHAN_AVOID
 #include <wl_cfg_cellavoid.h>
 #endif /* WL_CELLULAR_CHAN_AVOID */
+#ifdef DHD_USE_SC_SCAN
+#include <dhd_xrapi.h>
+#endif /* DHD_USE_SC_SCAN */
 
 #define ACTIVE_SCAN 1
 #define PASSIVE_SCAN 0
@@ -1717,6 +1720,9 @@ wl_scan_prep(struct bcm_cfg80211 *cfg, void *scan_params, u32 len,
 	if (cfg->active_scan == PASSIVE_SCAN) {
 		WL_INFORM_MEM(("Enforcing passive scan\n"));
 		scan_type = WL_SCANFLAGS_PASSIVE;
+#ifdef DHD_USE_SC_SCAN
+		scan_type |= WL_SCANFLAGS_LOW_POWER_SCAN;
+#endif /* DHD_USE_SC_SCAN */
 	}
 
 	WL_DBG(("Preparing Scan request\n"));
@@ -1909,7 +1915,6 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	p2p_scan_purpose_t	p2p_scan_purpose = P2P_SCAN_PURPOSE_MIN;
 	u32 chan_mem = 0;
 	u32 sync_id = 0;
-	char *scan_iovar = "escan";
 
 	WL_DBG(("Enter \n"));
 
@@ -1931,11 +1936,6 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 
 #ifdef DHD_USE_SC_SCAN
 	if (cfg->active_scan == PASSIVE_SCAN) {
-		WL_SCAN(("Force using sc:escan\n"));
-		scan_iovar = "sc:escan";
-		/* SSID filtering fails with sc:escan, investigating */
-		request->n_ssids = 0;
-
 		/* temp workaround to avoid FW trap when scanning only channels,
 		   overlapping with currently active channels
 		   Adding channels 1 and 11 to scan request is sufficient to avoid
@@ -2076,7 +2076,7 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 #endif /* USE_INITIAL_2G_SCAN || USE_INITIAL_SHORT_DWELL_TIME */
 
 		wl_escan_set_type(cfg, WL_SCANTYPE_LEGACY);
-		if (params_size + sizeof(scan_iovar) >= WLC_IOCTL_MEDLEN) {
+		if (params_size + sizeof("escan") >= WLC_IOCTL_MEDLEN) {
 			WL_ERR(("ioctl buffer length not sufficient\n"));
 			MFREE(cfg->osh, params, params_size);
 			err = -ENOMEM;
@@ -2084,7 +2084,7 @@ wl_run_escan(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		}
 
 		bssidx = wl_get_bssidx_by_wdev(cfg, ndev->ieee80211_ptr);
-		err = wldev_iovar_setbuf(ndev, scan_iovar, params, params_size,
+		err = wldev_iovar_setbuf(ndev, "escan", params, params_size,
 			cfg->escan_ioctl_buf, WLC_IOCTL_MEDLEN, NULL);
 		WL_INFORM_MEM(("LEGACY_SCAN sync ID: %d, bssidx: %d\n", sync_id, bssidx));
 		if (unlikely(err)) {
@@ -5114,8 +5114,14 @@ void wl_cfg80211_set_passive_scan(struct net_device *dev, char *command)
 		cfg->active_scan = 1;
 	} else if (strcmp(command, "SCAN-PASSIVE") == 0) {
 		cfg->active_scan = 0;
-	} else
+	} else {
 		WL_ERR(("Unknown command \n"));
+		return;
+	}
+#ifdef DHD_USE_SC_SCAN
+	if (dhd_xrapi_set_resched_scn_ctrl(cfg->pub, !cfg->active_scan) != 0)
+		WL_ERR(("Failed to set resched scan control\n"));
+#endif /* DHD_USE_SC_SCAN */
 	return;
 }
 

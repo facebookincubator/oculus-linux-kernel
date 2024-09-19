@@ -593,7 +593,6 @@ static void verity_prefetch_io(struct work_struct *work)
 		container_of(work, struct dm_verity_prefetch_work, work);
 	struct dm_verity *v = pw->v;
 	int i;
-	sector_t prefetch_size;
 
 	for (i = v->levels - 2; i >= 0; i--) {
 		sector_t hash_block_start;
@@ -616,14 +615,8 @@ static void verity_prefetch_io(struct work_struct *work)
 				hash_block_end = v->hash_blocks - 1;
 		}
 no_prefetch_cluster:
-		// for emmc, it is more efficient to send bigger read
-		prefetch_size = max((sector_t)CONFIG_DM_VERITY_HASH_PREFETCH_MIN_SIZE,
-			hash_block_end - hash_block_start + 1);
-		if ((hash_block_start + prefetch_size) >= (v->hash_start + v->hash_blocks)) {
-			prefetch_size = hash_block_end - hash_block_start + 1;
-		}
 		dm_bufio_prefetch(v->bufio, hash_block_start,
-				  prefetch_size);
+				  hash_block_end - hash_block_start + 1);
 	}
 
 	kfree(pw);
@@ -631,7 +624,21 @@ no_prefetch_cluster:
 
 static void verity_submit_prefetch(struct dm_verity *v, struct dm_verity_io *io)
 {
+	sector_t block = io->block;
+	unsigned int n_blocks = io->n_blocks;
 	struct dm_verity_prefetch_work *pw;
+
+	if (v->validated_blocks) {
+		while (n_blocks && test_bit(block, v->validated_blocks)) {
+			block++;
+			n_blocks--;
+		}
+		while (n_blocks && test_bit(block + n_blocks - 1,
+					    v->validated_blocks))
+			n_blocks--;
+		if (!n_blocks)
+			return;
+	}
 
 	pw = kmalloc(sizeof(struct dm_verity_prefetch_work),
 		GFP_NOIO | __GFP_NORETRY | __GFP_NOMEMALLOC | __GFP_NOWARN);
@@ -641,8 +648,8 @@ static void verity_submit_prefetch(struct dm_verity *v, struct dm_verity_io *io)
 
 	INIT_WORK(&pw->work, verity_prefetch_io);
 	pw->v = v;
-	pw->block = io->block;
-	pw->n_blocks = io->n_blocks;
+	pw->block = block;
+	pw->n_blocks = n_blocks;
 	queue_work(v->verify_wq, &pw->work);
 }
 
