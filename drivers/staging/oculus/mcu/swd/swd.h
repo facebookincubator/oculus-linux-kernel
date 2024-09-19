@@ -166,11 +166,11 @@ struct swd_mcu_data {
 	/* Address of MEM-AP. Defaults to using the first AP (address 0). */
 	u32 mem_ap;
 
-	/* Number of firwmare chunks written (if any) */
-	atomic_t fw_chunks_written;
+	/* Number of firwmare update steps completed */
+	atomic_t fw_update_steps_done;
 
-	/* Number of firwmare chunks to be written (if any) */
-	atomic_t fw_chunks_to_write;
+	/* Total number of firwmare steps update to be completed */
+	atomic_t fw_update_steps_total;
 
 	/* SWD operations implementation */
 	struct swd_ops_params swd_ops;

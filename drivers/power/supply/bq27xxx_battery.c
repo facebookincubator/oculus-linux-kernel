@@ -185,6 +185,8 @@ enum bq27xxx_reg_index {
 	BQ27XXX_REG_CYCT,	/* Cycle Count */
 	BQ27XXX_REG_AE,		/* Available Energy */
 	BQ27XXX_REG_SOC,	/* State-of-Charge */
+	BQ27XXX_REG_TSU,	/* TimeStamp Upper */
+	BQ27XXX_REG_TSL,	/* TimeStamp Lower */
 	BQ27XXX_REG_DCAP,	/* Design Capacity */
 	BQ27XXX_REG_AP,		/* Average Power */
 	BQ27XXX_DM_CTRL,	/* Block Data Control */
@@ -220,6 +222,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x0b,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x76,
 		[BQ27XXX_REG_AP] = 0x24,
 		[BQ27XXX_DM_CTRL] = INVALID_REG_ADDR,
@@ -244,6 +248,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x0b,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x76,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		[BQ27XXX_DM_CTRL] = INVALID_REG_ADDR,
@@ -268,6 +274,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		BQ27XXX_DM_REG_ROWS,
@@ -290,6 +298,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -312,6 +322,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x1e,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x20,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x2e,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		BQ27XXX_DM_REG_ROWS,
@@ -332,6 +344,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -352,6 +366,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -372,6 +388,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -392,6 +410,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x1e,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x20,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		BQ27XXX_DM_REG_ROWS,
@@ -412,6 +432,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = INVALID_REG_ADDR,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		[BQ27XXX_DM_CTRL] = INVALID_REG_ADDR,
@@ -436,6 +458,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -457,6 +481,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -480,6 +506,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -500,6 +528,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x1c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x18,
 		BQ27XXX_DM_REG_ROWS,
@@ -525,6 +555,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = 0x36,
+		[BQ27XXX_REG_TSL] = 0x38,
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x22,
 		BQ27XXX_DM_REG_ROWS,
@@ -545,6 +577,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x22,
 		BQ27XXX_DM_REG_ROWS,
@@ -565,6 +599,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2c,
 		[BQ27XXX_REG_AE] = 0x24,
 		[BQ27XXX_REG_SOC] = 0x02,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x22,
 		BQ27XXX_DM_REG_ROWS,
@@ -1181,6 +1217,7 @@ enum {
 	MFG_INFO_A,
 	MFG_INFO_B,
 	MFG_INFO_C,
+	BQ_TIMESTAMP,
 };
 
 /**
@@ -2420,6 +2457,20 @@ static int bq27z561_get_soh(struct bq27xxx_device_info *di)
 	return reg_data;
 }
 
+static int bq27xxx_get_bqtimestamp(struct bq27xxx_device_info *di)
+{
+	int reg_data = 0, reg_data_u, reg_data_l;
+
+	reg_data_u = bq27xxx_read(di, BQ27XXX_REG_TSU, false);
+	reg_data_l = bq27xxx_read(di, BQ27XXX_REG_TSL, false);
+	if (reg_data_u < 0 || reg_data_l < 0)
+		dev_err(di->dev, "get bqtimestamp error\n");
+	else
+		reg_data = (((u32) reg_data_l << 16) | ((u32) reg_data_u & 0xFFFF));
+
+	return reg_data;
+}
+
 static int bq27z561_get_inter_temp(struct bq27xxx_device_info *di)
 {
 	int reg_data;
@@ -2885,6 +2936,10 @@ static ssize_t bq27xxx_show(struct device *dev,
 		buf[write_count] = '\0';
 		strlcat(buf, "\n", PAGE_SIZE);
 		break;
+	case BQ_TIMESTAMP:
+		val = bq27xxx_get_bqtimestamp(di);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
 	}
 
 	return count;
@@ -3104,6 +3159,8 @@ static BQ27XXX_ATTR(manufacturer_info_b, 0444,
 			bq27xxx_show, NULL, MFG_INFO_B, 0, 0);
 static BQ27XXX_ATTR(manufacturer_info_c, 0444,
 			bq27xxx_show, NULL, MFG_INFO_C, 0, 0);
+static BQ27XXX_ATTR(bq_timestamp, 0444,
+			bq27xxx_show, NULL, BQ_TIMESTAMP, 0, 0);
 
 static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_address.dattr.attr,
@@ -3213,6 +3270,7 @@ static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_manufacturer_info_a.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_b.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_c.dattr.attr,
+	&bq27xxx_attr_bq_timestamp.dattr.attr,
 	NULL
 };
 

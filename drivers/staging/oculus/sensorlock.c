@@ -251,7 +251,7 @@ static void sensorlock_work_handler(struct work_struct *work)
 	mutex_unlock(&dev_data->lock);
 }
 
-static int __init sensorlock_probe(struct platform_device *pdev)
+static int sensorlock_probe(struct platform_device *pdev)
 {
 	int i;
 	int rc = 0;

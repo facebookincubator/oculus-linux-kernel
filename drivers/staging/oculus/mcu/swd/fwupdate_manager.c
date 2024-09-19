@@ -287,7 +287,6 @@ static int fwupdate_update_write_single_app(struct device *dev, struct swd_mcu_d
 
 	chunk_size = mcudata->swd_ops.target_get_write_chunk_size(dev);
 	BUG_ON((bytes_to_skip % chunk_size) != 0);
-	atomic_set(&mcudata->fw_chunks_to_write, DIV_ROUND_UP(fw->size, chunk_size));
 
 	// Write the chunks last to first so that an incomplete firmware image is unbootable.
 	bytes_to_write = fw->size % chunk_size;
@@ -305,9 +304,35 @@ static int fwupdate_update_write_single_app(struct device *dev, struct swd_mcu_d
 			return status;
 
 		bytes_to_write = chunk_size;
-		atomic_inc(&mcudata->fw_chunks_written);
+		atomic_inc(&mcudata->fw_update_steps_done);
 	}
 
+	return 0;
+}
+
+static int fwupdate_get_num_flash_pages_to_erase(
+		struct device *dev, struct swd_mcu_data *mcudata, bool erase_all,
+		bool force_bootloader_update)
+{
+	struct flash_info *flash = &mcudata->flash_info;
+	int pgs_to_skip = 0;
+
+	/* 
+	 * If the entire flash is erased, then we dont erase pg by pg, which is
+	 * a lot quicker, therefore return 0 
+	 */
+	if (erase_all)
+		return 0;
+
+	pgs_to_skip = flash->num_retained_pages;
+	pgs_to_skip += force_bootloader_update ? 0 : 
+			flash->num_protected_bootloader_pages;
+
+	if (pgs_to_skip < flash->num_pages) {
+		return flash->num_pages - pgs_to_skip;
+	}
+
+	dev_err(dev, "flash pages to skip exceeds flash size! %d", pgs_to_skip);
 	return 0;
 }
 
@@ -318,7 +343,11 @@ static int fwupdate_update_single_app(
 	int status;
 	size_t bytes_written = 0;
 	size_t pages_to_skip = 0;
+	size_t chunk_size;
 	const struct firmware *fw = mcudata->fw;
+
+	if (!mcudata->swd_ops.target_get_write_chunk_size)
+		return -ENOENT;
 
 	if (!fw) {
 		dev_err(dev, "%s: No firmware for flavor", mcudata->fw_path);
@@ -332,6 +361,15 @@ static int fwupdate_update_single_app(
 	print_hex_dump_bytes("Firmware binary to write: ", DUMP_PREFIX_OFFSET,
 			     fw->data, fw->size);
 #endif
+	chunk_size = mcudata->swd_ops.target_get_write_chunk_size(dev);
+	/* 
+	 * Need to erase pages and write chunks. Approximate a page erase op as
+	 * equal to a chunk write to report progres
+	 */
+	atomic_set(&mcudata->fw_update_steps_total,
+			DIV_ROUND_UP(fw->size, chunk_size) +
+			fwupdate_get_num_flash_pages_to_erase(dev, mcudata, erase_all,
+				force_bootloader_update));
 
 	if (!erase_all) {
 		dev_info(dev, "%s: Erasing firmware app", mcudata->fw_path);
@@ -503,8 +541,8 @@ static int fwupdate_update_firmware(struct device *dev)
 	devdata->provisioning = NULL;
 	if (devdata->swd_core && regulator_disable(devdata->swd_core))
 		dev_err(dev, "Regulator failed to disable");
-	atomic_set(&mcudata->fw_chunks_written, 0);
-	atomic_set(&mcudata->fw_chunks_to_write, 0);
+	atomic_set(&mcudata->fw_update_steps_done, 0);
+	atomic_set(&mcudata->fw_update_steps_total, 0);
 
 	return status;
 }
@@ -527,8 +565,8 @@ ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf)
 		retval = scnprintf(buf, PAGE_SIZE,
 				   FW_UPDATE_STATE_WRITING_STR
 				   " %i/%i\n",
-				   atomic_read(&devdata->mcu_data.fw_chunks_written),
-				   atomic_read(&devdata->mcu_data.fw_chunks_to_write));
+				   atomic_read(&devdata->mcu_data.fw_update_steps_done),
+				   atomic_read(&devdata->mcu_data.fw_update_steps_total));
 	} else if (devdata->fw_update_state == FW_UPDATE_STATE_ERROR) {
 		retval = scnprintf(buf, PAGE_SIZE, FW_UPDATE_STATE_ERROR_STR "\n");
 	} else {

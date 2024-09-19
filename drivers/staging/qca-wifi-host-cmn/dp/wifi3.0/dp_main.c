@@ -5155,13 +5155,13 @@ static QDF_STATUS dp_lro_hash_setup(struct dp_soc *soc, struct dp_pdev *pdev)
 		lro_hash.tcp_flag_mask);
 
 	dp_info("toeplitz_hash_ipv4:");
-	qdf_trace_hex_dump(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO,
+	qdf_trace_hex_dump(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO_HIGH,
 			   lro_hash.toeplitz_hash_ipv4,
 			   (sizeof(lro_hash.toeplitz_hash_ipv4[0]) *
 			   LRO_IPV4_SEED_ARR_SZ));
 
 	dp_info("toeplitz_hash_ipv6:");
-	qdf_trace_hex_dump(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO,
+	qdf_trace_hex_dump(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_INFO_HIGH,
 			   lro_hash.toeplitz_hash_ipv6,
 			   (sizeof(lro_hash.toeplitz_hash_ipv6[0]) *
 			   LRO_IPV6_SEED_ARR_SZ));

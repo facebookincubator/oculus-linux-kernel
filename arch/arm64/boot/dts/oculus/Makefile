@@ -64,6 +64,7 @@ dtbo-$(CONFIG_OCULUS_unknown6) += \
 dtbo-$(CONFIG_OCULUS_unknown13) += \
 	unknown13-dev0-overlay.dtbo \
 	unknown13-poc0-overlay.dtbo \
+	unknown13-poc0.1-overlay.dtbo \
 	unknown13-poc1.0-overlay.dtbo
 
 dtbo-$(CONFIG_OCULUS_unknown11XR2G2) += \
@@ -121,6 +122,7 @@ unknown6-pvt1.2-overlay.dtbo-base := unknown6.dtb
 unknown6-pvt1.3-overlay.dtbo-base := unknown6.dtb
 unknown13-dev0-overlay.dtbo-base := unknown13.dtb
 unknown13-poc0-overlay.dtbo-base := unknown13.dtb
+unknown13-poc0.1-overlay.dtbo-base := unknown13.dtb
 unknown13-poc1.0-overlay.dtbo-base := unknown13.dtb
 unknown11xr2g2-dev0-overlay.dtbo-base := unknown11xr2g2.dtb
 

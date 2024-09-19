@@ -3828,7 +3828,7 @@ static void log_to_console(QDF_TRACE_LEVEL level, const char *msg)
 	case QDF_TRACE_LEVEL_INFO_MED:
 	case QDF_TRACE_LEVEL_INFO_LOW:
 	case QDF_TRACE_LEVEL_DEBUG:
-		printk(KERN_DEBUG "%s\n", msg);
+		pr_debug("%s\n", msg);
 	default:
 		break;
 	}

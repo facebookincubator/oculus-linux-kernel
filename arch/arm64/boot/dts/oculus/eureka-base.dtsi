@@ -16,6 +16,11 @@
 	pins = "gpio8";
 };
 
+&fan {
+	oculus,rpm-per-sec = <100>;
+	oculus,silent-rpm = <4000>;
+};
+
 &L21B {
 	/* HALL sensor/IPD 3.0V */
 	status = "ok";
@@ -88,7 +93,7 @@
 		reg = <0>;
 		spi-cpha;
 		spi-max-frequency = <10000000>;
-		chunk-size = <32768>;
+		chunk-size = <262144>;
 		status = "ok";
 	};
 };
@@ -158,7 +163,24 @@
 	};
 };
 
+&syncboss_nrf {
+	meta,prox-ir-supply = <&L20B>;
+	meta,mag-supply = <&L20B>;
+};
+
 &tlmm {
+	/*
+	 * Mark XPU-protected GPIOs are reserved, to prevent
+	 * attempted initialization at boot.
+	 * GPIO  5: SGPIO5_TZ_AUD_SW (mic_enable)
+	 * GPIO 14: SGPIO14_TZ_CAM_L8B_LS_EN (cam_enable)
+	 * GPIO 43: SGPIO43_TZ_L8B_VSNS_IN (voltage_sense)
+	 * GPIO 54: SGPIO54_SAFETYBOSS_SWDIO (santana_manager_swd_io)
+	 * GPIO 55: SGPIO55_SAFETYBOSS_SWDCLK (santana_manager_swd_clk)
+	 * GPIO115: SGPIO115_SAFETYBOSS_RESET (santana_manager_swd_reset)
+	 * GPIO136: SGPIO136_SAFETYBOSS_UART_TX (santana_manager_uart)
+	 */
+	qcom,gpios-reserved = <5 14 43 54 55 115 136>;
 	cypd3177_irq_default: cypd3177_irq_default {
 		mux {
 			pins = "gpio42", "gpio175";

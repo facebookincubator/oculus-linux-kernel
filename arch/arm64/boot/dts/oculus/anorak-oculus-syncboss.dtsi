@@ -142,12 +142,6 @@
 	};
 };
 
-&L6B {
-	/* nRF 1.8 */
-	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
-	regulator-always-on;
-};
-
 &qupv3_se9_spi {
 	status = "ok";
 	qcom,rt;
@@ -159,7 +153,7 @@
 	// 8MHz (1.25us) to get us the rest of the way.
 	qcom,set-cs-clk-delay = <10>;
 
-	syncboss_nrf@0 {
+	syncboss_nrf: syncboss_nrf@0 {
 		status = "okay";
 		compatible = "meta,syncboss-spi";
 		reg = <0>;
@@ -171,14 +165,12 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
-		meta,imu-core-supply = <&L6B>;
-		meta,imu-core-voltage-level = <1800000 1800000>;
-		meta,mag-core-supply = <&L6B>;
-		meta,mag-core-voltage-level = <1800000 1800000>;
+		meta,syncboss-supply = <&L6B>;
 
 		meta,syncboss-reset  = <&tlmm 112 0>;
 		meta,syncboss-wakeup  = <&tlmm 41 0>;
 
+		meta,min-time-between-trans-ns = <150000>;
 		meta,syncboss-use-fastpath;
 
 		swd@0 {
@@ -186,6 +178,8 @@
 
 			pinctrl-names = "default";
 			pinctrl-0 = <&syncboss_float_swd>;
+
+			meta,swd-core-supply = <&L6B>;
 
 			meta,pin-reset = <&tlmm 112 0>;
 			meta,swd-clk = <&tlmm 80 0>;
