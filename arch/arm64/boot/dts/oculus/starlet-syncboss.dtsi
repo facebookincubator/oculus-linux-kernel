@@ -233,17 +233,12 @@
 
 		meta,syncboss-reset  = <&tlmm 65 0>;
 		meta,syncboss-wakeup = <&tlmm 34 0>;
-		meta,hall-sensor-supply = <&pm6125_l5>;
-		meta,hall-sensor-voltage-level = <2960000 2960000>;
-		meta,mcu-core-supply = <&pm6125_l13>;
-		meta,mcu-core-voltage-level = <1808000 1808000>;
-		meta,imu-core-supply = <&pm6125_l13>;
-		meta,imu-core-voltage-level = <1808000 1808000>;
-		meta,mag-core-supply = <&pm6125_l13>;
-		meta,mag-core-voltage-level = <1808000 1808000>;
-		meta,rf-amp-supply = <&pm6125_l21>;
-		meta,rf-amp-voltage-level = <2952000 2952000>;
 
+		meta,syncboss-supply = <&pm6125_l13>;
+		meta,hall-supply = <&pm6125_l5>;
+		meta,rf-amp-supply = <&pm6125_l21>;
+
+		meta,min-time-between-trans-ns = <500000>;
 		meta,syncboss-has-wake-on-spi;
 
 		swd@0 {
@@ -258,7 +253,6 @@
 			meta,swd-clk = <&tlmm 66 0>;
 			meta,swd-io  = <&tlmm 67 0>;
 			meta,swd-core-supply = <&pm6125_l13>;
-			meta,swd-core-voltage-level = <1808000 1808000>;
 			meta,flash-block-size = <512>;
 			meta,flash-page-size = <4096>;
 			meta,flash-page-count = <128>;

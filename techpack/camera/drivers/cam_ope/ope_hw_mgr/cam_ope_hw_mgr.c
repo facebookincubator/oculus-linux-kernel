@@ -3585,7 +3585,7 @@ static int cam_ope_mgr_hw_open_u(void *hw_priv, void *fw_download_args)
 	return rc;
 }
 
-static cam_ope_mgr_hw_close_u(void *hw_priv, void *hw_close_args)
+static int cam_ope_mgr_hw_close_u(void *hw_priv, void *hw_close_args)
 {
 	struct cam_ope_hw_mgr *hw_mgr;
 	int rc = 0;

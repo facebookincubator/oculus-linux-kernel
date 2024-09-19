@@ -6,14 +6,26 @@
 #include "starlet-syncboss.dtsi"
 #include "vendor-base/qcom/bengal-thermal-overlay.dtsi"
 
-&L13A {
-	// TODO: T69508688: investigate potential for future power savings
-	regulator-always-on;
+&pm6125_l5 {
+	/* Hall sensor 2.96V */
+	regulator-min-microvolt = <2960000>;
+	regulator-max-microvolt = <2960000>;
+	qcom,init-voltage = <2960000>;
+};
+
+&pm6125_l13 {
+	/* nRF, Input MCU, IMU, VCM, LRA, Pinch, Grip, Index 1.8V */
+	regulator-min-microvolt = <1808000>;
+	regulator-max-microvolt = <1808000>;
 	qcom,init-voltage = <1808000>;
 };
 
-&L21A {
+&pm6125_l21 {
+	/* nRF Power Amp 2.952V */
 	regulator-always-on;
+	regulator-min-microvolt = <2952000>;
+	regulator-max-microvolt = <2952000>;
+	qcom,init-voltage = <2952000>;
 };
 
 &reserved_memory {
