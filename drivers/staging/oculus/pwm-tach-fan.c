@@ -40,11 +40,12 @@
 #define RECOVERY_STEP_SIZE 50
 #define FAN_MIN_OFF_TIME_MS 400
 #define FAN_STALL_DETECT_TIME_MS 6000
-#define FAN_STALL_REPORT_TIME_MS 15000
+#define FAN_STALL_REPORT_TIME_MS 9000 /* starting after stall detection */
 #define FAN_STARTUP_IRQ_IGNORE_TIME_MS 2300
 #define COLD_BOOT_PWM 84U
 #define FORCE_FAILURE_PWM 0U
 #define DEFAULT_RPM_PER_SEC 0U /* 0 = instant ramp */
+#define DEFAULT_SILENT_RPM 0 /* below this, fan is considered inaudible */
 #define DEFAULT_MIN_PWM 15U
 #define DEFAULT_MAX_PWM 255U
 #define MAX_STR_LEN 10
@@ -80,6 +81,7 @@ struct pwm_fan_ctx {
 	unsigned int pwm_value;
 	unsigned int recovery_pwm_value;
 	unsigned int rpm_per_sec;
+	unsigned int silent_rpm;
 	unsigned int pwm_fan_state;
 	unsigned int pwm_fan_max_state;
 	unsigned int *pwm_fan_cooling_levels;
@@ -87,6 +89,8 @@ struct pwm_fan_ctx {
 	u64 tach_periods;
 	atomic64_t rpm;
 	ktime_t last_disable_timestamp;
+	ktime_t last_enable_timestamp;
+	ktime_t last_stall_start_timestamp;
 	ktime_t last_stall_detect_timestamp;
 	ktime_t last_tach_timestamp;
 	ktime_t last_rpm_update_timestamp;
@@ -99,7 +103,7 @@ struct pwm_fan_ctx {
 	u64 timer_ticks;
 	bool force_failure;
 	bool ignore_tach_irqs;
-	bool recovery_in_progress;
+	bool fan_stalled;
 	int reset_count;
 };
 
@@ -141,11 +145,9 @@ static void reset_counters(struct pwm_fan_ctx *ctx)
 	ctx->ignore_tach_irqs = true;
 	ctx->timer_ticks = 0;
 	ctx->tach_periods = 0;
-	if (!ctx->recovery_in_progress)
-		ctx->last_tach_timestamp = ktime_get();
 }
 
-static int enable_fan(struct pwm_fan_ctx *ctx)
+static int enable_fan_notimestamp(struct pwm_fan_ctx *ctx)
 {
 	int ret;
 	ktime_t min_enable_time;
@@ -170,14 +172,30 @@ static int enable_fan(struct pwm_fan_ctx *ctx)
 	return 0;
 }
 
-static void disable_fan(struct pwm_fan_ctx *ctx)
+static int enable_fan(struct pwm_fan_ctx *ctx)
+{
+	int ret;
+
+	ret = enable_fan_notimestamp(ctx);
+	if (!ret)
+		ctx->last_enable_timestamp = ktime_get();
+
+	return ret;
+}
+
+static void disable_fan_notimestamp(struct pwm_fan_ctx *ctx)
 {
 	hrtimer_cancel(&ctx->fan_timer);
 	cancel_work_sync(&ctx->fan_work);
 	disable_irq(ctx->irq);
 	pwm_disable(ctx->pwm);
-	ctx->last_disable_timestamp = ktime_get();
 	atomic64_set(&ctx->rpm, 0);
+}
+
+static void disable_fan(struct pwm_fan_ctx *ctx)
+{
+	disable_fan_notimestamp(ctx);
+	ctx->last_disable_timestamp = ktime_get();
 }
 
 static int set_pwm_locked(struct pwm_fan_ctx *ctx, unsigned long pwm)
@@ -249,9 +267,13 @@ static int set_rpm_locked(struct pwm_fan_ctx *ctx, unsigned long rpm)
 
 static void reset_fan_locked(struct pwm_fan_ctx *ctx, unsigned int pwm)
 {
-	disable_fan(ctx);
+	/*
+	 * Toggle fan off and back on. Do this without updating the disable timestamp,
+	 * so fan failure state isn't reset.
+	 */
+	disable_fan_notimestamp(ctx);
 	set_pwm_locked(ctx, pwm);
-	enable_fan(ctx);
+	enable_fan_notimestamp(ctx);
 	ctx->reset_count++;
 }
 
@@ -367,6 +389,30 @@ static ssize_t show_rpm_per_sec(struct device *dev,
 	return snprintf(buf, MAX_STR_LEN, "%u\n", ctx->rpm_per_sec);
 }
 
+static ssize_t set_silent_rpm(struct device *dev, struct device_attribute *attr,
+		       const char *buf, size_t count)
+{
+	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
+	unsigned long silent_rpm;
+
+	if (kstrtoul(buf, 10, &silent_rpm))
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	ctx->silent_rpm = silent_rpm;
+	mutex_unlock(&ctx->lock);
+
+	return count;
+}
+
+static ssize_t show_silent_rpm(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
+
+	return snprintf(buf, MAX_STR_LEN, "%u\n", ctx->silent_rpm);
+}
+
 /*
  * create sys node in sys/class/hwmon/hwmon2/
  * pwm & rpm
@@ -375,12 +421,14 @@ static SENSOR_DEVICE_ATTR(force_failure, 0600, show_force_failure, set_force_fai
 static SENSOR_DEVICE_ATTR(pwm, 0644, show_pwm, set_pwm, 0);
 static SENSOR_DEVICE_ATTR(rpm, 0644, show_rpm, set_rpm, 0);
 static SENSOR_DEVICE_ATTR(rpm_per_sec, 0644, show_rpm_per_sec, set_rpm_per_sec, 0);
+static SENSOR_DEVICE_ATTR(silent_rpm, 0644, show_silent_rpm, set_silent_rpm, 0);
 
 static struct attribute *pwm_fan_attrs[] = {
 	&sensor_dev_attr_force_failure.dev_attr.attr,
 	&sensor_dev_attr_pwm.dev_attr.attr,
 	&sensor_dev_attr_rpm.dev_attr.attr,
 	&sensor_dev_attr_rpm_per_sec.dev_attr.attr,
+	&sensor_dev_attr_silent_rpm.dev_attr.attr,
 	NULL,
 };
 
@@ -402,19 +450,24 @@ static int pwm_fan_get_max_state(struct thermal_cooling_device *cdev,
 /* Return true iff the fan is in a failure state. */
 static bool pwm_fan_has_failure_locked(struct pwm_fan_ctx *ctx)
 {
-	s64 elapsed_ms;
-	u32 pwm;
+	s64 delta_ms;
+	ktime_t now = ktime_get();
 
-	elapsed_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_tach_timestamp));
-	pwm = ctx->pwm_value;
+	/* Fan is disabled? Not failed. */
+	if (ctx->pwm_value == 0)
+		return false;
 
-	/* Wait for a few cycles to report a failure due to PWM not causing an
-	 * activity.  The fan might take some time to ramp up.
-	 */
-	if ((pwm != 0) && (elapsed_ms > FAN_STALL_DETECT_TIME_MS))
-		return true;
+	/* Tach activity in last FAN_STALL_DETECT_TIME_MS? Not failed. */
+	delta_ms = ktime_to_ms(ktime_sub(now, ctx->last_tach_timestamp));
+	if (delta_ms < FAN_STALL_DETECT_TIME_MS)
+		return false;
 
-	return false;
+	/* Fan has not been enabled for at least FAN_STALL_DETECT_TIME_MS? Not failed. */
+	delta_ms = ktime_to_ms(ktime_sub(now, ctx->last_enable_timestamp));
+	if (delta_ms < FAN_STALL_DETECT_TIME_MS)
+		return false;
+
+	return true;
 }
 
 static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
@@ -426,20 +479,33 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
+
+	/* Always report fan as off if the display is off */
 	if (!ctx->is_display_on) {
 		*state = 0;
-	} else {
-		s64 time_since_tach_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_tach_timestamp));
-		if (ctx->pwm_value != 0 && time_since_tach_ms > FAN_STALL_REPORT_TIME_MS) {
+		goto end_get_cur_state;
+	}
+
+	/*
+	 * Report fan malfunction if fan has been stalled for
+	 * at least FAN_STALL_REPORT_TIME_MS.
+	 */
+	if (ctx->fan_stalled) {
+		s64 time_since_stall_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_stall_start_timestamp));
+		if (time_since_stall_ms > FAN_STALL_REPORT_TIME_MS) {
 			/*
 			 * If fan has not recovered, set a state that exceeds the maximum
 			 * to signal userspace of the fan malfunction.
 			 */
 			*state = ctx->pwm_fan_max_state + 1;
-		} else {
-			*state = ctx->pwm_fan_state;
+			goto end_get_cur_state;
 		}
 	}
+
+	/* Otherwise, report currently set state.  */
+	*state = ctx->pwm_fan_state;
+
+end_get_cur_state:
 	mutex_unlock(&ctx->lock);
 
 	return 0;
@@ -602,7 +668,7 @@ static void fan_recovery_work_func(struct work_struct *work)
 	mutex_lock(&ctx->lock);
 
 	if (ctx->pwm_value == 0) {
-		ctx->recovery_in_progress = false;
+		ctx->fan_stalled = false;
 		goto end_work_func;
 	}
 
@@ -628,7 +694,7 @@ static unsigned long calc_rpm_step(struct pwm_fan_ctx *ctx)
 {
 	s64 delta_us;
 
-	if (ktime_before(ctx->last_rpm_update_timestamp, ctx->last_disable_timestamp))
+	if (ktime_after(ctx->last_disable_timestamp, ctx->last_rpm_update_timestamp))
 		return ctx->rpm_per_sec;
 
 	delta_us = ktime_us_delta(ktime_get(), ctx->last_rpm_update_timestamp);
@@ -657,16 +723,25 @@ static void fan_work_func(struct work_struct *work)
 	ctx->ignore_tach_irqs = false;
 
 	if (ctx->rpm_value != ctx->target_rpm_value) {
-		int rpm_step = calc_rpm_step(ctx);
+		int prev_rpm = ctx->rpm_value;
 
-		if (rpm_step > 0) {
+		if (prev_rpm <= ctx->silent_rpm && ctx->target_rpm_value <= ctx->silent_rpm) {
+			/*
+			 * If a silent RPM threshold has been configured and both the new and previous
+			 * RPM values are below that, jump directly to the new speed without stepping.
+			 */
+			ctx->rpm_value = ctx->target_rpm_value;
+		} else {
+			/* Else, ramp towards target rate one step at a time. */
+			int rpm_step = calc_rpm_step(ctx);
+
 			if (ctx->rpm_value < ctx->target_rpm_value)
 				ctx->rpm_value = min(ctx->rpm_value + rpm_step, ctx->target_rpm_value);
 			else if (ctx->rpm_value > ctx->target_rpm_value)
 				ctx->rpm_value = max(ctx->rpm_value - rpm_step, ctx->target_rpm_value);
-
-			ctx->last_rpm_update_timestamp = ktime_get();
 		}
+
+		ctx->last_rpm_update_timestamp = ktime_get();
 	}
 
 	fan_failed = pwm_fan_has_failure_locked(ctx);
@@ -680,17 +755,20 @@ static void fan_work_func(struct work_struct *work)
 		/* Attempt fan recovery just once every FAN_STALL_DETECT_TIME_MS */
 		s64 time_since_stall = ktime_to_ms(ktime_sub(now, ctx->last_stall_detect_timestamp));
 		if (time_since_stall > FAN_STALL_DETECT_TIME_MS) {
-			ctx->recovery_in_progress = true;
 			ctx->last_stall_detect_timestamp = now;
+			if (!ctx->fan_stalled) {
+				ctx->last_stall_start_timestamp = now;
+				ctx->fan_stalled = true;
+			}
 			queue_work(ctx->wq, &ctx->fan_recovery_work);
 		}
 		goto end_work_func;
 	}
 
-	if (ctx->recovery_in_progress) {
+	if (ctx->fan_stalled) {
 		dev_warn(&ctx->cdev->device, "Fan stall recovered after %d attempts\n",
 			 ctx->reset_count);
-		ctx->recovery_in_progress = false;
+		ctx->fan_stalled = false;
 	}
 	ctx->reset_count = 0;
 
@@ -820,6 +898,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	struct pwm_fan_ctx *ctx;
 	int ret;
 	u32 dt_addr;
+	ktime_t now;
 
 #if IS_ENABLED(CONFIG_DRM)
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
@@ -880,7 +959,11 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	disable_irq(ctx->irq);
 	reset_counters(ctx);
 
-	ctx->last_disable_timestamp = ktime_get();
+	now = ktime_get();
+	ctx->last_disable_timestamp = now;
+	ctx->last_stall_detect_timestamp = now;
+	ctx->last_tach_timestamp = now;
+	ctx->last_rpm_update_timestamp = now;
 
 	ctx->pwm = devm_of_pwm_get(&pdev->dev, pdev->dev.of_node, NULL);
 	if (IS_ERR(ctx->pwm)) {
@@ -928,6 +1011,10 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(pdev->dev.of_node, "oculus,rpm-per-sec", &ctx->rpm_per_sec);
 	if (ret)
 		ctx->rpm_per_sec = DEFAULT_RPM_PER_SEC;
+
+	ret = of_property_read_u32(pdev->dev.of_node, "oculus,silent-rpm", &ctx->silent_rpm);
+	if (ret)
+		ctx->rpm_per_sec = DEFAULT_SILENT_RPM;
 
 	ret = of_property_read_u32(pdev->dev.of_node, "oculus,min-pwm", &ctx->min_pwm);
 	if (ret)

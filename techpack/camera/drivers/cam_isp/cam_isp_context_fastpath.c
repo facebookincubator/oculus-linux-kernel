@@ -889,9 +889,60 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 
 		mutex_unlock(&ctx->mutex_list);
 		break;
+
+	case CAM_ISP_HW_EVENT_ERROR:
+		CAM_ERR(CAM_ISP, "HW Error event received. Cleanup");
+
+		mutex_lock(&ctx->mutex_list);
+
+		while (!list_empty(&ctx->active_req_list)) {
+			req_isp = list_first_entry(&ctx->active_req_list,
+				struct cam_isp_fastpath_ctx_req, list);
+
+			CAM_ERR(CAM_ISP,
+					"Recycling Active req %llu, sof_idx %u ts %llu WAIT %u from %u",
+					req_isp->request_id,
+					req_isp->sof_index,
+					req_isp->timestamp,
+					req_isp->num_acked,
+					req_isp->num_fence_map_out);
+
+			cam_fp_queue_buffer_set_done(&ctx->fp_queue,
+				req_isp->request_id, req_isp->timestamp,
+				CAM_FP_BUFFER_STATUS_ERROR, req_isp->sof_index);
+
+			list_del_init(&req_isp->list);
+			kmem_cache_free(ctx->request_cache, req_isp);
+		}
+
+		while (!list_empty(&ctx->process_req_list)) {
+			req_isp = list_first_entry(&ctx->process_req_list,
+				struct cam_isp_fastpath_ctx_req, list);
+
+			CAM_ERR(CAM_ISP,
+					"Recycling in processing req %llu, sof_idx %u ts %llu WAIT %u from %u",
+					req_isp->request_id,
+					req_isp->sof_index,
+					req_isp->timestamp,
+					req_isp->num_acked,
+					req_isp->num_fence_map_out);
+
+			cam_fp_queue_buffer_set_done(&ctx->fp_queue,
+				req_isp->request_id, req_isp->timestamp,
+				CAM_FP_BUFFER_STATUS_ERROR, req_isp->sof_index);
+
+			list_del_init(&req_isp->list);
+			kmem_cache_free(ctx->request_cache, req_isp);
+		}
+
+		ctx->num_in_active = 0;
+		ctx->num_in_processing = 0;
+
+		mutex_unlock(&ctx->mutex_list);
+		break;
+
 	case CAM_ISP_HW_EVENT_EOF:
 	case CAM_ISP_HW_EVENT_REG_UPDATE:
-	case CAM_ISP_HW_EVENT_ERROR:
 	default:
 		CAM_ERR(CAM_ISP, "Unhandled event!");
 		break;
@@ -913,6 +964,7 @@ static int cam_isp_fpc_handle_irq(void *context, uint32_t evt_id,
 	case CAM_ISP_HW_EVENT_SOF:
 	case CAM_ISP_HW_EVENT_EPOCH:
 	case CAM_ISP_HW_EVENT_DONE:
+	case CAM_ISP_HW_EVENT_ERROR:
 		/* Those events will be processed */
 		break;
 	default:

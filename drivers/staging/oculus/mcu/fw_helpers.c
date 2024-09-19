@@ -52,46 +52,4 @@ int fw_queue_work(struct workqueue_struct *workqueue, void *data,
 }
 EXPORT_SYMBOL(fw_queue_work);
 
-
-#define MAX_PROP_SIZE 40
-int devm_fw_init_regulator(struct device *dev, struct regulator **reg,
-		      const char *reg_name)
-{
-	int rc = 0;
-	u32 voltage[2] = {0};
-	struct device_node *of = dev->of_node;
-	char prop_name[MAX_PROP_SIZE] = {0};
-
-	snprintf(prop_name, MAX_PROP_SIZE, "meta,%s", reg_name);
-	*reg = devm_regulator_get(dev, prop_name);
-	if (IS_ERR(*reg)) {
-		rc = PTR_ERR(*reg);
-		dev_warn(dev, "%s: Failed to get regulator: %d\n",
-			reg_name, rc);
-		return -EINVAL;
-	}
-
-	snprintf(prop_name, MAX_PROP_SIZE, "meta,%s-voltage-level", reg_name);
-	rc = of_property_read_u32_array(of, prop_name, voltage, 2);
-	if (rc) {
-		dev_err(dev, "%s: Failed to get voltage range: %d\n",
-			reg_name, rc);
-		goto err_reg_put;
-	}
-
-	rc = regulator_set_voltage(*reg, voltage[0], voltage[1]);
-	if (rc) {
-		dev_err(dev, "%s: Failed to set voltage: %d\n", reg_name, rc);
-		goto err_reg_put;
-	}
-
-	return 0;
-
-err_reg_put:
-	devm_regulator_put(*reg);
-	*reg = NULL;
-	return rc;
-}
-EXPORT_SYMBOL(devm_fw_init_regulator);
-
 MODULE_LICENSE("GPL v2");

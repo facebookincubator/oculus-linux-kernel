@@ -549,7 +549,7 @@ static s32 wl_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 	s32 timeout);
 static int wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	struct cfg80211_connect_params *sme);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) && !defined(DISABLE_BUILTIN_ROAM)
 static int wl_cfg80211_update_connect_params(struct wiphy *wiphy, struct net_device *dev,
 	struct cfg80211_connect_params *sme, u32 changed);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0) */
@@ -5951,7 +5951,7 @@ wl_fils_add_hlp_container(struct bcm_cfg80211 *cfg, struct net_device *dev,
 }
 #endif /* WL_FILS */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) && !defined(DISABLE_BUILTIN_ROAM)
 #define UPDATE_ASSOC_IES	BIT(0)
 #ifndef UPDATE_FILS_ERP_INFO
 #define UPDATE_FILS_ERP_INFO	BIT(1)
@@ -11484,7 +11484,7 @@ static struct cfg80211_ops wl_cfg80211_ops = {
 #ifdef WL_CLIENT_SAE
 	.external_auth = wl_cfg80211_external_auth,
 #endif /* WL_CLIENT_SAE */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)) && !defined(DISABLE_BUILTIN_ROAM)
 	/* This should be enabled from kernel version which supports this */
 	.update_connect_params = wl_cfg80211_update_connect_params,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0) */
@@ -11946,7 +11946,7 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 		WIPHY_FLAG_SUPPORTS_SEPARATE_DEFAULT_KEYS |
 #endif
 		WIPHY_FLAG_4ADDR_STATION;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)) && !defined(DISABLE_BUILTIN_ROAM)
 	/*
 	 * If FW ROAM flag is advertised, upper layer doesn't provide the
 	 * bssid & freq in the connect command. However, kernel ver >= 3.15,

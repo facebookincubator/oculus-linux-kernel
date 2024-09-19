@@ -185,16 +185,6 @@ static int vd6281_spi_open(struct inode *inode, struct file *file)
 	struct vd6281_spidev_data *pdata = container_of(file->private_data,
 		struct vd6281_spidev_data, misc);
 
-	if (!pdata->pbuffer) {
-		if (pdata->spi_buffer_size != 0) {
-			pdata->pbuffer = kmalloc(pdata->spi_buffer_size, GFP_KERNEL);
-			if (!pdata->pbuffer)
-				return -ENOMEM;
-		} else {
-			return -EFAULT;
-		}
-	}
-
 	//reset the internal status
 	for (i = 0; i < MAX_CIC_STAGE; i++) {
 		pdata->difference_register[i] = 0;
@@ -426,8 +416,6 @@ static int vd6281_spi_ioctl_handler(struct vd6281_spidev_data *pdata, unsigned i
 		pdata->samples_nb_per_chunk = spi_params.samples_nb_per_chunk;
 		pdata->pdm_data_sample_width_in_bytes = spi_params.pdm_data_sample_width_in_bytes;
 
-		kfree(pdata->psamples);
-		pdata->psamples = kmalloc_array(pdata->samples_nb_per_chunk, sizeof(int16_t), GFP_KERNEL);
 		pr_info("vd6281 : spi speed set : %d", pdata->spi_speed_hz);
 		pr_info("vd6281 : nb of samples per chunk  : %d", pdata->samples_nb_per_chunk);
 		pr_info("vd6281 : sample width in bytes: %d", pdata->pdm_data_sample_width_in_bytes);
@@ -454,20 +442,11 @@ static long vd6281_spi_ioctl(struct file *file, unsigned int cmd, unsigned long 
 	struct vd6281_spidev_data *pdata = container_of(file->private_data,
 		struct vd6281_spidev_data, misc);
 
-return vd6281_spi_ioctl_handler(pdata, cmd, arg);
+	return vd6281_spi_ioctl_handler(pdata, cmd, arg);
 }
 
 static int vd6281_spi_release(struct inode *inode, struct file *file)
 {
-	struct vd6281_spidev_data *pdata = container_of(file->private_data,
-		struct vd6281_spidev_data, misc);
-
-	kfree(pdata->pbuffer);
-	pdata->pbuffer = NULL;
-
-	kfree(pdata->psamples);
-	pdata->psamples = NULL;
-
 	return 0;
 }
 
@@ -507,10 +486,12 @@ static const struct file_operations vd6281_spi_fops = {
 	.unlocked_ioctl	= vd6281_spi_ioctl
 };
 
+#define MIN_BIT_WIDTH 3
 int vd6281_spi_driver_probe(struct spi_device *pdev)
 {
 	int ret = 0;
 	struct vd6281_spidev_data *pdata;
+	size_t max_samples_per_chunk, sample_size;
 
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
@@ -521,6 +502,23 @@ int vd6281_spi_driver_probe(struct spi_device *pdev)
 	spi_set_drvdata(pdev, pdata);
 
 	vd6281_spi_parse_dt(pdata);
+
+	if (pdata->spi_buffer_size != 0) {
+		pdata->pbuffer = devm_kmalloc(&pdev->dev, pdata->spi_buffer_size, GFP_KERNEL);
+		if (!pdata->pbuffer)
+			return -ENOMEM;
+	} else {
+		return -EFAULT;
+	}
+	// Allocate memory for samples. 16-bit per sample.
+	// Minimum sample bit_width results maximum sample/chunk.
+	// So maximum samples/chunk is spi_buffer_size / pdm_data_sample_width_in_bytes
+	// , where pdm_data_sample_width_in_bytes = 1 << (bit_width - 3)
+	max_samples_per_chunk = pdata->spi_buffer_size / (1 << (MIN_BIT_WIDTH - 3));
+	sample_size = max_samples_per_chunk * sizeof(int16_t);
+	pdata->psamples = devm_kmalloc(&pdev->dev, sample_size, GFP_KERNEL);
+	if (!pdata->psamples)
+		return -ENOMEM;
 
 	//pr_info("[%s] spi mode=%d, cs=%d, bits_per_word=%d, speed=%d, csgpio=%d, modalias=%s",
 	//	___func__, pdev->mode, pdev->chip_select, pdev->bits_per_word,

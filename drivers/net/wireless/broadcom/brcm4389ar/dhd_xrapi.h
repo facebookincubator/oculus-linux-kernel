@@ -62,4 +62,10 @@ dhd_xrapi_validate_pkt_filter(dhd_pub_t *dhd);
 extern int dhd_phy_calibration_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event);
 extern int dhd_scan_event_handler(dhd_pub_t *dhd, const wl_event_msg_t *event);
 #endif /* NOTIFY_CALIBRATION_EVENT */
+
+extern uint32
+dhd_xrapi_get_resched_scn_ctrl(dhd_pub_t *dhdp, uint8 *pmode);
+extern uint32
+dhd_xrapi_set_resched_scn_ctrl(dhd_pub_t *dhdp, uint32 mode);
+
 #endif  /* _dhd_xrapi_h_ */
