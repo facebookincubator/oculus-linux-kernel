@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,camcc-anorak.h>
+#include "eureka-nonpor-blu-uart-overrides.dtsi"
+
+/ {
+	model = "Eureka (Dev1)";
+	compatible = "qcom,anorak", "oculus,eureka", "oculus,eureka-dev1";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10040 0x0>;
+};
+
+&cam_cci0 {
+	qcom,cam-sensor0 {
+		/*
+		 * CAMERA ID = 0
+		 * name: CAM_OG_LEFT
+		 * QCOM CSI PHY = 4
+		 * QCOM MCLK = 2
+		 */
+		csiphy-sd-index = <4>;
+	};
+
+	qcom,cam-sensor2 {
+		/*
+		 * CAMERA ID = 2
+		 * name = CAM_OV7251_LEFT
+		 * QCOM CSI PHY = 5
+		 * QCOM MCLK = 1
+		 */
+		csiphy-sd-index = <5>;
+	};
+
+	qcom,cam-sensor4 {
+		/*
+		 * CAMERA ID = 4
+		 * name: CAM_RGB_LEFT
+		 * QCOM CSI PHY = 0
+		 * QCOM MCLK = 6
+		 */
+		csiphy-sd-index = <0>;
+		pinctrl-0 = <&cam_sensor_mclk6_active>;
+		pinctrl-1 = <&cam_sensor_mclk6_suspend>;
+		gpios = <&tlmm 26 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK6";
+		clocks = <&camcc CAM_CC_MCLK6_CLK>;
+	};
+
+	qcom,cam-sensor5 {
+		/*
+		 * CAMERA ID = 5
+		 * name: CAM_RGB_RIGHT
+		 * QCOM CSI PHY = 3
+		 * QCOM MCLK = 0
+		 */
+		pinctrl-0 = <&cam_sensor_mclk0_active>;
+		pinctrl-1 = <&cam_sensor_mclk0_suspend>;
+		gpios = <&tlmm 20 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK0";
+		clocks = <&camcc CAM_CC_MCLK0_CLK>;
+	};
+};
+
+&fan {
+	oculus,max-pwm = <179>; /* 70% duty cycle */
+};
+
+&qupv3_se9_spi {
+	syncboss_nrf@0 {
+		swd@0 {
+			meta,flash-page-bootloader-protected-count = <0>;
+			meta,flash-erase-all;
+		};
+
+		powerstate@0 {
+			meta,syncboss-has-no-prox-cal;
+		};
+	};
+};
+
+/* JTAG Header VTREF */
+&L17B {
+	qcom,init-enable = <1>;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	regulator-always-on;
+};
+
+&cypd3177 {
+       cypd3177,custom-sink-caps = <5000 2330>, /* 5V @ 2.33A */
+       <5000 2600>,  /*  5V @ 2.60A */
+       <5000 3000>;  /*  5V @ 3.00A */
+};
+
+/*
+ * The VD6283's SPI PDM interface is not connected to this QUP (or any other
+ * AP-accessible QUP) on Dev1.
+ */
+&qupv3_se10_spi {
+	status = "disabled";
+};
+
+&vd6283 {
+	vdd-supply = <&L7B>;
+};
+
+&bluetooth {
+	vdd-bt-fem-en-supply = <>;
+};
+
+&wlan {
+	vdd-wlan-fem-en-supply = <>;
+	qcom,vdd-wlan-fem-en-config = <>;
+};

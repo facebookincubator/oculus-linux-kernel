@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "panther-base.dtsi"
+
+/ {
+	model = "Panther";
+	compatible = "qcom,anorak", "oculus,panther";
+	qcom,board-id = <0x000043 0x0>;
+};

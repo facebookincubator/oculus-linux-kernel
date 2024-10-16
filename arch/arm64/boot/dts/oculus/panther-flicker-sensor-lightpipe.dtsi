@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/* Flicker SPI */
+&qupv3_se10_spi {
+	status = "disabled";
+};
+
+&qupv3_se3_spi {
+	status = "ok";
+	pinctrl-0 = <&qupv3_se3_spi_miso_active>,<&qupv3_se3_spi_clk_active>;
+
+	vd6281@0 {
+		compatible = "st,vd6281_spi";
+		reg = <0>;
+		spi-cpha;
+		spi-max-frequency = <10000000>;
+		chunk-size = <32768>;
+		status = "ok";
+	};
+};
+
+&qupv3_se3_spi_sleep {
+	mux {
+		pins = "gpio134", "gpio136";
+	};
+	config {
+		pins = "gpio134", "gpio136";
+	};
+};
+
+/* Flicker I2C */
+&qupv3_se13_i2c {
+	vd6281: vd6281@0x20 {
+		status = "disabled";
+	};
+};
+
+&qupv3_se2_i2c {
+	vd6281@0x20 {
+		compatible = "st,vd6281_adapter";
+		reg = <0x20>;
+		sid = <0x40>;
+		status = "ok";
+		vdd-supply = <&L6B>;
+	};
+};

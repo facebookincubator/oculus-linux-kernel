@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/clock/qcom,camcc-anorak.h>
+
+/dts-v1/;
+/plugin/;
+
+#include "panther-panel-blu.dtsi"
+
+/ {
+	model = "Panther (Dev1)";
+	compatible = "qcom,anorak", "oculus,panther", "oculus,panther-dev1";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10043 0x0>;
+};
+
+&dsi_panel_pwr_supply_panther {
+	qcom,panel-supply-entry@4 {
+		reg = <4>;
+		qcom,supply-name = "mp5087_en";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <50>;
+	};
+
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "mp3314_en";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <857000>;
+		qcom,supply-disable-load = <0>;
+		qcom,supply-post-on-sleep = <100>;
+	};
+
+	qcom,panel-supply-entry@6 {
+		reg = <6>;
+		qcom,supply-name = "mp3314right";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <45010>;
+		qcom,supply-disable-load = <0>;
+	};
+
+	qcom,panel-supply-entry@7 {
+		reg = <7>;
+		qcom,supply-name = "mp3314left";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <45010>;
+		qcom,supply-disable-load = <0>;
+	};
+};
+
+&fan_pwm_default {
+	pins = "gpio8";
+};
+
+&mp3314a {
+	compatible = "meta,mp3314";
+};
+
+&pmxr2230_flash {
+	qcom,cur-derate-en-val = /bits/ 8 <0x5>; /* OPEN_DET_EN disabled */
+};
+
+&qupv3_se13_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+	mp3314r:mp3314r@28 {
+		compatible = "meta,mp3314";
+		reg = <0x28>;
+		regulator-name = "mp3314r";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-allow-set-load;
+		regulator-boot-on;
+		iset-ext-resistor = <36500>;
+	};
+
+	ipd: as5510@0x56 {
+		reg = <0x56>;
+		compatible = "ams,as5510";
+		power-supply = <&L21B>;
+	};
+};
+
+&qupv3_se13_i2c_sda_active {
+	config {
+		drive-strength = <16>;
+	};
+};
+
+&qupv3_se13_i2c_scl_active {
+	config {
+		drive-strength = <16>;
+	};
+};
+
+&sde_dsi {
+	mp3314left-supply = <&mp3314a>;
+	mp3314right-supply = <&mp3314r>;
+};
+
+/* request from EE team specifically for Dev1 */
+&S1B {
+	qcom,init-voltage = <1950000>;
+};
+
+/* request from EE team specifically for Dev1 */
+&S3B {
+	qcom,init-voltage = <1050000>;
+};
+
+&wlan {
+	cal-file-prefix = "panther_dev1_";
+};
+
+/* Wifi FEM I2C */
+&qupv3_se8_i2c {
+	status = "ok";
+};
+
+&spf_core_platform {
+	cdc_dmic01_gpios: cdc_dmic01_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic01_clk_active &cdc_dmic01_data_active>;
+		pinctrl-1 = <&cdc_dmic01_clk_sleep &cdc_dmic01_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+};
+
+&waipio_snd {
+	qcom,model = "anorak-max98388-rev1-snd-card";
+	qcom,cdc-dmic01-gpios = <&cdc_dmic01_gpios>;
+};
+
+&hall {
+	gpios = <>;
+	pinctrl-names = "";
+	pinctrl-0 = <>;
+};
+
+/* BLU */
+&L12B {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3544000>;
+	qcom,init-voltage = <3300000>;
+	regulator-boot-on;
+};
+
+&L21B {
+	/* HALL sensor/IPD 3.0V */
+	status = "ok";
+	qcom,init-voltage = <3000000>;
+	regulator-always-on;
+};

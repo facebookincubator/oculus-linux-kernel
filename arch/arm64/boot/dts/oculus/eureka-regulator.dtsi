@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: GPL-2.<0>
+
+&L8B {
+	qcom,init-voltage = <1800000>;
+};
+
+&L9B {
+	qcom,init-enable = <0>;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+};
+
+&L11B {
+	qcom,init-enable = <0>;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+};
+
+&L14B {
+	qcom,init-enable = <0>;
+	regulator-min-microvolt = <2700000>;
+};
+
+&L16B {
+	qcom,init-enable = <0>;
+};
+
+&L17B {
+	qcom,init-enable = <0>;
+};
+
+&L18B {
+	qcom,init-enable = <0>;
+};
+
+&L19B {
+	qcom,init-enable = <0>;
+};
+
+&L20B {
+	/* PROX AND MAG 3.0V */
+	status = "ok";
+	qcom,init-voltage = <3000000>;
+	regulator-always-on;
+};
+
+&L21B {
+	qcom,init-enable = <0>;
+};
+
+&L23B {
+	qcom,init-enable = <0>;
+};
+
+&qupv3_se8_i2c {
+	status = "okay";
+
+	sgm62110@75 {
+		reg = <0x75>;
+		compatible = "sgm,sgm62110";
+		enable-gpios = <&tlmm 0 0>;
+		status = "okay";
+
+		sgm62110_buck: buck {
+			regulator-name = "sgm62110-buck";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <4200000>;
+		};
+	};
+};

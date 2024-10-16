@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: GPL-2.0
+// JDI-NVT-LCD CPHY panels, DSC, 2064*2208
+
+&mdss_mdp0 {
+	eureka_panel_jdi: meta,eureka_panel_jdi {
+		qcom,mdss-dsi-panel-name = "JDI novatek dual video mode dsi panel with dsc";
+		qcom,mdss-dsi-panel-type = "dsi_video_mode";
+		qcom,dsi-ctrl-num = <0 1>;
+		qcom,dsi-phy-num = <0 1>;
+		qcom,mdss-dsi-bpp = <24>;
+
+		qcom,mdss-dsi-virtual-channel-id = <0>;
+		qcom,mdss-dsi-traffic-mode = "burst_mode";
+		qcom,mdss-dsi-bllp-eof-power-mode;
+		qcom,mdss-dsi-bllp-power-mode;
+		qcom,mdss-dsi-lane-0-state;
+		qcom,mdss-dsi-lane-1-state;
+		qcom,mdss-dsi-lane-2-state;
+		qcom,mdss-dsi-dma-trigger = "trigger_sw";
+		qcom,mdss-dsi-mdp-trigger = "none";
+		qcom,mdss-dsi-reset-sequence = <0 20>, <1 20>;
+		qcom,mdss-dsi-reset-off-delay = <0>;
+		qcom,mdss-dsi-sec-reset-off-delay = <30>;
+		qcom,mdss-dsi-t-clk-post = <0x0F>;
+		qcom,mdss-dsi-t-clk-pre = <0x1F>;
+		qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+		qcom,mdss-dsi-pan-enable-dynamic-fps;
+		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+		qcom,mdss-dsi-refresh-rate-step-sizes = <5 24>;
+		qcom,mdss-dsi-min-refresh-rate = <72>;
+		qcom,mdss-dsi-max-refresh-rate = <120>;
+		qcom,mdss-dsi-panel-framerate = <90>; // default initial fps
+		qcom,mdss-dsi-lp11-init;
+		qcom,mdss-dsi-tx-eot-append;
+		qcom,cmd-sync-wait-broadcast;
+		meta,cont-splash-handoff;
+
+		qcom,qsync-enable;
+		qcom,mdss-dsi-qsync-min-refresh-rate = <60>;
+
+		qcom,panel-cphy-mode;
+		qcom,mdss-dms-vid-type = "dms-vid-seamless";
+		qcom,mdss-dsi-display-timings {
+			timing@0{
+				qcom,mdss-dsi-panel-width = <2064>;
+				qcom,mdss-dsi-panel-height = <2208>;
+				qcom,mdss-dsi-h-front-porch = <38>;
+				qcom,mdss-dsi-h-back-porch = <54>;
+				qcom,mdss-dsi-h-pulse-width = <20>;
+				qcom,mdss-dsi-h-sync-skew = <0>;
+				qcom,mdss-dsi-v-front-porch = <2918>;
+				qcom,mdss-dsi-v-back-porch = <30>;
+				qcom,mdss-dsi-v-pulse-width = <2>;
+				qcom,mdss-dsi-h-sync-pulse = <0>;
+				qcom,mdss-dsi-panel-framerate = <90>;
+				meta,fifo-trim-lines = <40>;
+
+				qcom,mdss-dsi-bpp = <24>;
+
+				qcom,mdss-dsi-pre-on-command = [
+					29 01 00 00 00 00 02 FF D0
+					29 01 00 00 00 00 02 97 04
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF E0
+					29 01 00 00 00 00 02 23 05
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF F0
+					29 01 00 00 00 00 02 A4 40
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF 20
+					29 01 00 00 00 00 02 7F 04
+					29 01 00 00 00 00 02 FB 01
+
+					// Backlight - set to 100%
+					29 01 00 00 00 00 02 FF 23
+					29 01 00 00 00 00 02 D0 01
+					29 01 00 00 00 00 02 B8 00
+					29 01 00 00 00 00 02 B9 00
+					29 01 00 00 00 00 02 BA 00
+					29 01 00 00 00 00 02 BB 25
+					29 01 00 00 00 00 02 BC 06
+					29 01 00 00 00 00 02 BD A3
+					29 01 00 00 00 00 02 BE 1F
+					29 01 00 00 00 00 02 BF FF
+					29 01 00 00 00 00 02 FB 01
+
+					29 01 00 00 00 00 02 FF 24
+					29 01 00 00 00 00 02 CA 30
+					29 01 00 00 00 00 02 CB 33
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF 25
+					29 01 00 00 00 00 02 07 02
+					29 01 00 00 00 00 02 09 10
+					29 01 00 00 00 00 02 0A 00
+					29 01 00 00 00 00 02 0C 01
+					29 01 00 00 00 00 02 0D 05
+					29 01 00 00 00 00 02 0E 0C
+					29 01 00 00 00 00 02 0F 06
+					29 01 00 00 00 00 02 10 90
+					29 01 00 00 00 00 02 11 09
+					29 01 00 00 00 00 02 12 0C
+					29 01 00 00 00 00 02 13 00
+					29 01 00 00 00 00 02 14 01
+					29 01 00 00 00 00 02 15 01
+					29 01 00 00 00 00 02 25 20
+					29 01 00 00 00 00 02 2F 20
+					29 01 00 00 00 00 02 38 04
+					29 01 00 00 00 00 02 E0 02
+					29 01 00 00 00 00 02 E1 5B
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF 10
+					39 01 00 00 00 00 02 03 01
+					39 01 00 00 00 00 02 35 00
+					39 01 00 00 00 00 03 51 FF FF
+					39 01 00 00 00 00 02 53 24
+					39 01 00 00 00 00 02 55 00
+					39 01 00 00 00 00 02 C0 03
+					39 01 00 00 00 00 11 C1 89 28 00 20 C2 00 03 04 04 10 00 0E 03 19 01 AA
+					29 01 00 00 00 00 03 C2 10 F0
+					15 01 00 00 00 00 02 FB 01
+				];
+
+				qcom,mdss-dsi-on-command = [
+					29 01 00 00 00 00 02 FF 10
+					05 01 00 00 78 00 01 11
+					05 01 00 00 78 00 01 29
+				];
+
+				meta,mdss-dsi-post-primary-panel-on-command = [
+					29 01 00 00 00 00 02 FF 2B
+					29 01 00 00 00 00 02 40 00
+					29 01 00 00 00 00 02 41 0F
+					29 01 00 00 00 00 02 42 F1
+					29 01 00 00 00 00 02 43 10
+					29 01 00 00 00 00 02 44 1C
+					29 01 00 00 00 00 02 45 0F
+					29 01 00 00 00 00 02 46 F1
+					29 01 00 00 00 00 02 47 10
+					29 01 00 00 00 00 02 48 1C
+					29 01 00 00 00 00 02 49 01
+					29 01 00 00 00 00 02 4A 05
+					29 01 00 00 00 00 02 4B 05
+					29 01 00 00 00 00 02 4C 09
+					29 01 00 00 00 00 02 4D 0D
+					29 01 00 00 00 00 02 4E 11
+					29 01 00 00 00 00 02 57 01
+					29 01 00 00 00 00 02 58 05
+					29 01 00 00 00 00 02 59 0D
+					29 01 00 00 00 00 02 4F 00
+					29 01 00 00 00 00 02 50 00
+					29 01 00 00 00 00 02 51 00
+					29 01 00 00 00 00 02 52 00
+					29 01 00 00 00 00 02 53 07
+					29 01 00 00 00 00 02 54 F5
+					29 01 00 00 00 00 02 55 0B
+					29 01 00 00 00 00 02 56 3D
+					29 01 00 00 00 00 02 40 80
+				];
+
+				meta,mdss-dsi-post-secondary-panel-on-command = [
+					29 01 00 00 00 00 02 FF 2B
+					29 01 00 00 00 00 02 40 00
+					29 01 00 00 00 00 02 41 0F
+					29 01 00 00 00 00 02 42 F1
+					29 01 00 00 00 00 02 43 10
+					29 01 00 00 00 00 02 44 1C
+					29 01 00 00 00 00 02 45 0F
+					29 01 00 00 00 00 02 46 F1
+					29 01 00 00 00 00 02 47 10
+					29 01 00 00 00 00 02 48 1C
+					29 01 00 00 00 00 02 49 01
+					29 01 00 00 00 00 02 4A 05
+					29 01 00 00 00 00 02 4B 04
+					29 01 00 00 00 00 02 4C 09
+					29 01 00 00 00 00 02 4D 0A
+					29 01 00 00 00 00 02 4E 11
+					29 01 00 00 00 00 02 57 01
+					29 01 00 00 00 00 02 58 04
+					29 01 00 00 00 00 02 59 0A
+					29 01 00 00 00 00 02 4F 00
+					29 01 00 00 00 00 02 50 00
+					29 01 00 00 00 00 02 51 00
+					29 01 00 00 00 00 02 52 00
+					29 01 00 00 00 00 02 53 06
+					29 01 00 00 00 00 02 54 18
+					29 01 00 00 00 00 02 55 0B
+					29 01 00 00 00 00 02 56 3D
+					29 01 00 00 00 00 02 40 80
+				];
+
+				qcom,mdss-dsi-off-command = [
+					05 01 00 00 78 00 01 28
+					05 01 00 00 00 00 01 34
+					05 01 00 00 FA 00 01 10
+				];
+
+				// before video is on, the DSI panels typically
+				// accept either hs or lp, but lp is prefered.
+				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+				// once video is on, the DSI panels typically
+				// only accept hs mode commands
+				qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
+				qcom,compression-mode = "dsc";
+				qcom,mdss-dsc-slice-height = <32>;
+				qcom,mdss-dsc-slice-width = <1032>;
+				qcom,mdss-dsc-slice-per-pkt = <2>;
+				qcom,mdss-dsc-bit-per-component = <8>;
+				qcom,mdss-dsc-bit-per-pixel = <8>;
+				qcom,mdss-dsc-block-prediction-enable;
+
+				qcom,mdss-dsi-panel-phy-timings = [
+					00 00 00 00 2A 33 0D
+					1F 0C 03 04 00 00 00
+				];
+				qcom,display-topology = <4 4 2>;
+				qcom,default-topology-index = <0>;
+				qcom,disable-default-pps;
+			};
+			timing@1{
+				// 1.33x DDIC scaling
+				qcom,mdss-dsi-panel-width = <1552>;
+				qcom,mdss-dsi-panel-height = <1664>;
+				qcom,mdss-dsi-h-front-porch = <38>;
+				qcom,mdss-dsi-h-back-porch = <54>;
+				qcom,mdss-dsi-h-pulse-width = <20>;
+				qcom,mdss-dsi-h-sync-skew = <0>;
+				qcom,mdss-dsi-v-front-porch = <2956>;
+				qcom,mdss-dsi-v-back-porch = <30>;
+				qcom,mdss-dsi-v-pulse-width = <2>;
+				qcom,mdss-dsi-h-sync-pulse = <0>;
+				qcom,mdss-dsi-panel-framerate = <90>;
+				meta,internal-1h-time-ns = <1800>;
+				meta,internal-vactive = <2208>;
+				meta,disable-fifo;
+
+				qcom,mdss-dsi-bpp = <24>;
+
+				qcom,mdss-dsi-pre-on-command = [
+					29 01 00 00 00 00 02 FF D0
+					29 01 00 00 00 00 02 97 04
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF E0
+					29 01 00 00 00 00 02 23 05
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF F0
+					29 01 00 00 00 00 02 A4 40
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF 20
+					29 01 00 00 00 00 02 7F 04
+					29 01 00 00 00 00 02 FB 01
+
+					// Backlight - set to 100%
+					29 01 00 00 00 00 02 FF 23
+					29 01 00 00 00 00 02 D0 01
+					29 01 00 00 00 00 02 B8 00
+					29 01 00 00 00 00 02 B9 00
+					29 01 00 00 00 00 02 BA 00
+					29 01 00 00 00 00 02 BB 25
+					29 01 00 00 00 00 02 BC 06
+					29 01 00 00 00 00 02 BD A3
+					29 01 00 00 00 00 02 BE 1F
+					29 01 00 00 00 00 02 BF FF
+					29 01 00 00 00 00 02 FB 01
+
+					29 01 00 00 00 00 02 FF 24
+					29 01 00 00 00 00 02 CA 30
+					29 01 00 00 00 00 02 CB 33
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF 25
+					29 01 00 00 00 00 02 25 00
+					29 01 00 00 00 00 02 2F 00
+					29 01 00 00 00 00 02 38 04
+					29 01 00 00 00 00 02 FB 01
+					29 01 00 00 00 00 02 FF 10
+					39 01 00 00 00 00 02 03 01
+					39 01 00 00 00 00 02 35 00
+					39 01 00 00 00 00 03 51 FF FF
+					39 01 00 00 00 00 02 53 24
+					39 01 00 00 00 00 02 55 00
+					39 01 00 00 00 00 02 BB 03
+					39 01 00 00 00 00 02 BF 20
+					39 01 00 00 00 00 02 C0 33
+					39 01 00 00 00 00 11 C1 89 28 00 20 C2 00 02 85 03 A4 00 0A 03 19 02 32
+					29 01 00 00 00 00 03 C2 10 E0
+					15 01 00 00 00 00 02 FB 01
+				];
+
+				qcom,mdss-dsi-on-command = [
+					29 01 00 00 00 00 02 FF 10
+					05 01 00 00 78 00 01 11
+					05 01 00 00 78 00 01 29
+				];
+
+				meta,mdss-dsi-post-primary-panel-on-command = [
+					29 01 00 00 00 00 02 FF 2B
+					29 01 00 00 00 00 02 40 00
+					29 01 00 00 00 00 02 41 0F
+					29 01 00 00 00 00 02 42 F1
+					29 01 00 00 00 00 02 43 10
+					29 01 00 00 00 00 02 44 1C
+					29 01 00 00 00 00 02 45 0F
+					29 01 00 00 00 00 02 46 F1
+					29 01 00 00 00 00 02 47 10
+					29 01 00 00 00 00 02 48 1C
+					29 01 00 00 00 00 02 49 01
+					29 01 00 00 00 00 02 4A 05
+					29 01 00 00 00 00 02 4B 05
+					29 01 00 00 00 00 02 4C 09
+					29 01 00 00 00 00 02 4D 0D
+					29 01 00 00 00 00 02 4E 11
+					29 01 00 00 00 00 02 57 01
+					29 01 00 00 00 00 02 58 05
+					29 01 00 00 00 00 02 59 0D
+					29 01 00 00 00 00 02 4F 00
+					29 01 00 00 00 00 02 50 00
+					29 01 00 00 00 00 02 51 00
+					29 01 00 00 00 00 02 52 00
+					29 01 00 00 00 00 02 53 07
+					29 01 00 00 00 00 02 54 F5
+					29 01 00 00 00 00 02 55 0B
+					29 01 00 00 00 00 02 56 3D
+					29 01 00 00 00 00 02 40 80
+				];
+
+				meta,mdss-dsi-post-secondary-panel-on-command = [
+					29 01 00 00 00 00 02 FF 2B
+					29 01 00 00 00 00 02 40 00
+					29 01 00 00 00 00 02 41 0F
+					29 01 00 00 00 00 02 42 F1
+					29 01 00 00 00 00 02 43 10
+					29 01 00 00 00 00 02 44 1C
+					29 01 00 00 00 00 02 45 0F
+					29 01 00 00 00 00 02 46 F1
+					29 01 00 00 00 00 02 47 10
+					29 01 00 00 00 00 02 48 1C
+					29 01 00 00 00 00 02 49 01
+					29 01 00 00 00 00 02 4A 05
+					29 01 00 00 00 00 02 4B 04
+					29 01 00 00 00 00 02 4C 09
+					29 01 00 00 00 00 02 4D 0A
+					29 01 00 00 00 00 02 4E 11
+					29 01 00 00 00 00 02 57 01
+					29 01 00 00 00 00 02 58 04
+					29 01 00 00 00 00 02 59 0A
+					29 01 00 00 00 00 02 4F 00
+					29 01 00 00 00 00 02 50 00
+					29 01 00 00 00 00 02 51 00
+					29 01 00 00 00 00 02 52 00
+					29 01 00 00 00 00 02 53 06
+					29 01 00 00 00 00 02 54 18
+					29 01 00 00 00 00 02 55 0B
+					29 01 00 00 00 00 02 56 3D
+					29 01 00 00 00 00 02 40 80
+				];
+
+				qcom,mdss-dsi-off-command = [
+					05 01 00 00 78 00 01 28
+					05 01 00 00 00 00 01 34
+					05 01 00 00 FA 00 01 10
+				];
+
+				// before video is on, the DSI panels typically
+				// accept either hs or lp, but lp is prefered.
+				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
+				// once video is on, the DSI panels typically
+				// only accept hs mode commands
+				qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
+				qcom,compression-mode = "dsc";
+				qcom,mdss-dsc-slice-height = <32>;
+				qcom,mdss-dsc-slice-width = <776>;
+				qcom,mdss-dsc-slice-per-pkt = <2>;
+				qcom,mdss-dsc-bit-per-component = <8>;
+				qcom,mdss-dsc-bit-per-pixel = <8>;
+				qcom,mdss-dsc-block-prediction-enable;
+
+				qcom,mdss-dsi-panel-phy-timings = [
+					00 00 00 00 2A 33 0D
+					1F 0C 03 04 00 00 00
+				];
+				qcom,display-topology = <4 4 2>;
+				qcom,default-topology-index = <0>;
+				qcom,disable-default-pps;
+			};
+		};
+	};
+};

@@ -1,0 +1,1840 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&fan {
+	cooling-levels = <0 5045 6136 6818 7500>;
+};
+
+&thermal_zones {
+	/delete-node/ sys-therm-1;
+	/delete-node/ sys-therm-2;
+	/delete-node/ sys-therm-3;
+	/delete-node/ sys-therm-4;
+	/delete-node/ sys-therm-5;
+	/delete-node/ sys-therm-6;
+
+	batt-virt-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&battery_virtual_sensor>;
+		trips {
+			batt_virt_fan_trip0: batt_virt_fan_trip0 {
+				temperature = <45000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+			batt_virt_fan_trip1: batt_virt_fan_trip1 {
+				temperature = <49000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+			batt_virt_fan_trip2: batt_virt_fan_trip2 {
+				temperature = <53000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			batt_virt_fan_map0: batt_virt_fan_map0 {
+				trip = <&batt_virt_fan_trip0>;
+				cooling-device = <&fan 2 2>;
+			};
+			batt_virt_fan_map1: batt_virt_fan_map1 {
+				trip = <&batt_virt_fan_trip1>;
+				cooling-device = <&fan 3 3>;
+			};
+			batt_virt_fan_map2: batt_virt_fan_map2 {
+				trip = <&batt_virt_fan_trip2>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	batt-virt-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&battery_virtual_sensor>;
+		trips {
+			batt_virt_limit_trip0: batt_virt_limit_trip0 {
+				temperature = <58000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			batt_virt_limit_map0: batt_virt_limit_map0 {
+				trip = <&batt_virt_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	batt-virt-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&battery_virtual_sensor>;
+		trips {
+			batt_virt_usr_trip0: batt_virt_usr_trip0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			batt_virt_usr_trip1: batt_virt_usr_trip1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			batt_virt_usr_trip2: batt_virt_usr_trip2 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			batt_virt_usr_trip3: batt_virt_usr_trip3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cam0-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX4_GPIO10_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cam1-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX_THM6_GPIO2_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cam2-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX_THM4_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cam3-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX1_GPIO3_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cam4-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX_THM1_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cam5-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX2_GPIO4_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	chg-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PM8550B_ADC5_GEN3_AMUX4_GPIO12_100K_PU>;
+	};
+
+	cpu-0-0-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 3>;
+		trips {
+			cpu_0_0_0_fan_trip0: cpu_0_0_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_0_0_fan_trip1: cpu_0_0_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_0_0_fan_trip2: cpu_0_0_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_0_0_fan_trip3: cpu_0_0_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_0_0_0_fan_map0: cpu_0_0_0_fan_map0 {
+				trip = <&cpu_0_0_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_0_0_0_fan_map1: cpu_0_0_0_fan_map1 {
+				trip = <&cpu_0_0_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_0_0_0_fan_map2: cpu_0_0_0_fan_map2 {
+				trip = <&cpu_0_0_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_0_0_0_fan_map3: cpu_0_0_0_fan_map3 {
+				trip = <&cpu_0_0_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-0-0-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 4>;
+		trips {
+			cpu_0_0_1_fan_trip0: cpu_0_0_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_0_1_fan_trip1: cpu_0_0_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_0_1_fan_trip2: cpu_0_0_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_0_1_fan_trip3: cpu_0_0_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_0_0_1_fan_map0: cpu_0_0_1_fan_map0 {
+				trip = <&cpu_0_0_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_0_0_1_fan_map1: cpu_0_0_1_fan_map1 {
+				trip = <&cpu_0_0_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_0_0_1_fan_map2: cpu_0_0_1_fan_map2 {
+				trip = <&cpu_0_0_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_0_0_1_fan_map3: cpu_0_0_1_fan_map3 {
+				trip = <&cpu_0_0_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-0-1-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 5>;
+		trips {
+			cpu_0_1_0_fan_trip0: cpu_0_1_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_1_0_fan_trip1: cpu_0_1_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_1_0_fan_trip2: cpu_0_1_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_1_0_fan_trip3: cpu_0_1_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_0_1_0_fan_map0: cpu_0_1_0_fan_map0 {
+				trip = <&cpu_0_1_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_0_1_0_fan_map1: cpu_0_1_0_fan_map1 {
+				trip = <&cpu_0_1_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_0_1_0_fan_map2: cpu_0_1_0_fan_map2 {
+				trip = <&cpu_0_1_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_0_1_0_fan_map3: cpu_0_1_0_fan_map3 {
+				trip = <&cpu_0_1_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-0-1-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 6>;
+		trips {
+			cpu_0_1_1_fan_trip0: cpu_0_1_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_1_1_fan_trip1: cpu_0_1_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_1_1_fan_trip2: cpu_0_1_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_0_1_1_fan_trip3: cpu_0_1_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_0_1_1_fan_map0: cpu_0_1_1_fan_map0 {
+				trip = <&cpu_0_1_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_0_1_1_fan_map1: cpu_0_1_1_fan_map1 {
+				trip = <&cpu_0_1_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_0_1_1_fan_map2: cpu_0_1_1_fan_map2 {
+				trip = <&cpu_0_1_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_0_1_1_fan_map3: cpu_0_1_1_fan_map3 {
+				trip = <&cpu_0_1_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-0-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 7>;
+		trips {
+			cpu_1_0_0_fan_trip0: cpu_1_0_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_0_0_fan_trip1: cpu_1_0_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_0_0_fan_trip2: cpu_1_0_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_0_0_fan_trip3: cpu_1_0_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_0_0_fan_map0: cpu_1_0_0_fan_map0 {
+				trip = <&cpu_1_0_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_0_0_fan_map1: cpu_1_0_0_fan_map1 {
+				trip = <&cpu_1_0_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_0_0_fan_map2: cpu_1_0_0_fan_map2 {
+				trip = <&cpu_1_0_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_0_0_fan_map3: cpu_1_0_0_fan_map3 {
+				trip = <&cpu_1_0_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-0-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 8>;
+		trips {
+			cpu_1_0_1_fan_trip0: cpu_1_0_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_0_1_fan_trip1: cpu_1_0_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_0_1_fan_trip2: cpu_1_0_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_0_1_fan_trip3: cpu_1_0_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_0_1_fan_map0: cpu_1_0_1_fan_map0 {
+				trip = <&cpu_1_0_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_0_1_fan_map1: cpu_1_0_1_fan_map1 {
+				trip = <&cpu_1_0_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_0_1_fan_map2: cpu_1_0_1_fan_map2 {
+				trip = <&cpu_1_0_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_0_1_fan_map3: cpu_1_0_1_fan_map3 {
+				trip = <&cpu_1_0_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-1-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 9>;
+		trips {
+			cpu_1_1_0_fan_trip0: cpu_1_1_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_1_0_fan_trip1: cpu_1_1_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_1_0_fan_trip2: cpu_1_1_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_1_0_fan_trip3: cpu_1_1_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_1_0_fan_map0: cpu_1_1_0_fan_map0 {
+				trip = <&cpu_1_1_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_1_0_fan_map1: cpu_1_1_0_fan_map1 {
+				trip = <&cpu_1_1_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_1_0_fan_map2: cpu_1_1_0_fan_map2 {
+				trip = <&cpu_1_1_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_1_0_fan_map3: cpu_1_1_0_fan_map3 {
+				trip = <&cpu_1_1_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-1-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 10>;
+		trips {
+			cpu_1_1_1_fan_trip0: cpu_1_1_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_1_1_fan_trip1: cpu_1_1_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_1_1_fan_trip2: cpu_1_1_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_1_1_fan_trip3: cpu_1_1_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_1_1_fan_map0: cpu_1_1_1_fan_map0 {
+				trip = <&cpu_1_1_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_1_1_fan_map1: cpu_1_1_1_fan_map1 {
+				trip = <&cpu_1_1_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_1_1_fan_map2: cpu_1_1_1_fan_map2 {
+				trip = <&cpu_1_1_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_1_1_fan_map3: cpu_1_1_1_fan_map3 {
+				trip = <&cpu_1_1_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-2-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 11>;
+		trips {
+			cpu_1_2_0_fan_trip0: cpu_1_2_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_2_0_fan_trip1: cpu_1_2_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_2_0_fan_trip2: cpu_1_2_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_2_0_fan_trip3: cpu_1_2_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_2_0_fan_map0: cpu_1_2_0_fan_map0 {
+				trip = <&cpu_1_2_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_2_0_fan_map1: cpu_1_2_0_fan_map1 {
+				trip = <&cpu_1_2_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_2_0_fan_map2: cpu_1_2_0_fan_map2 {
+				trip = <&cpu_1_2_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_2_0_fan_map3: cpu_1_2_0_fan_map3 {
+				trip = <&cpu_1_2_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-2-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 12>;
+		trips {
+			cpu_1_2_1_fan_trip0: cpu_1_2_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_2_1_fan_trip1: cpu_1_2_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_2_1_fan_trip2: cpu_1_2_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_2_1_fan_trip3: cpu_1_2_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_2_1_fan_map0: cpu_1_2_1_fan_map0 {
+				trip = <&cpu_1_2_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_2_1_fan_map1: cpu_1_2_1_fan_map1 {
+				trip = <&cpu_1_2_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_2_1_fan_map2: cpu_1_2_1_fan_map2 {
+				trip = <&cpu_1_2_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_2_1_fan_map3: cpu_1_2_1_fan_map3 {
+				trip = <&cpu_1_2_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-3-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 13>;
+		trips {
+			cpu_1_3_0_fan_trip0: cpu_1_3_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_3_0_fan_trip1: cpu_1_3_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_3_0_fan_trip2: cpu_1_3_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_3_0_fan_trip3: cpu_1_3_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_3_0_fan_map0: cpu_1_3_0_fan_map0 {
+				trip = <&cpu_1_3_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_3_0_fan_map1: cpu_1_3_0_fan_map1 {
+				trip = <&cpu_1_3_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_3_0_fan_map2: cpu_1_3_0_fan_map2 {
+				trip = <&cpu_1_3_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_3_0_fan_map3: cpu_1_3_0_fan_map3 {
+				trip = <&cpu_1_3_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-3-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 14>;
+		trips {
+			cpu_1_3_1_fan_trip0: cpu_1_3_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_3_1_fan_trip1: cpu_1_3_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_3_1_fan_trip2: cpu_1_3_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpu_1_3_1_fan_trip3: cpu_1_3_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpu_1_3_1_fan_map0: cpu_1_3_1_fan_map0 {
+				trip = <&cpu_1_3_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpu_1_3_1_fan_map1: cpu_1_3_1_fan_map1 {
+				trip = <&cpu_1_3_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpu_1_3_1_fan_map2: cpu_1_3_1_fan_map2 {
+				trip = <&cpu_1_3_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpu_1_3_1_fan_map3: cpu_1_3_1_fan_map3 {
+				trip = <&cpu_1_3_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpu-1-0-0-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 7>;
+		trips {
+			cpu_1_0_0_limit_trip0: cpu_1_0_0_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_0_0_limit_map0: cpu_1_0_0_limit_map0 {
+				trip = <&cpu_1_0_0_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-0-1-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 8>;
+		trips {
+			cpu_1_0_1_limit_trip0: cpu_1_0_1_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_0_1_limi_map0: cpu_1_0_1_limi_map0 {
+				trip = <&cpu_1_0_1_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-1-0-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 9>;
+		trips {
+			cpu_1_1_0_limit_trip0: cpu_1_1_0_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_1_0_limit_map0: cpu_1_1_0_limit_map0 {
+				trip = <&cpu_1_1_0_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-1-1-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 10>;
+		trips {
+			cpu_1_1_1_limit_trip0: cpu_1_1_1_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_1_1_limit_map0: cpu_1_1_1_limit_map0 {
+				trip = <&cpu_1_1_1_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-2-0-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 11>;
+		trips {
+			cpu_1_2_0_limit_trip0: cpu_1_2_0_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_2_0_limit_map0: cpu_1_2_0_limit_map0 {
+				trip = <&cpu_1_2_0_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-2-1-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 12>;
+		trips {
+			cpu_1_2_1_limit_trip0: cpu_1_2_1_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_2_1_limit_map0: cpu_1_2_1_limit_map0 {
+				trip = <&cpu_1_2_1_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-3-0-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 13>;
+		trips {
+			cpu_1_3_0_limit_trip0: cpu_1_3_0_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_3_0_limit_map0: cpu_1_3_0_limit_map0 {
+				trip = <&cpu_1_3_0_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpu-1-3-1-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 14>;
+		trips {
+			cpu_1_3_1_limit_trip0: cpu_1_3_1_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			cpu_1_3_1_limit_map0: cpu_1_3_1_limit_map0 {
+				trip = <&cpu_1_3_1_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	cpuss-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 1>;
+		trips {
+			cpuss_0_fan_trip0: cpuss_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpuss_0_fan_trip1: cpuss_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpuss_0_fan_trip2: cpuss_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpuss_0_fan_trip3: cpuss_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpuss_0_fan_map0: cpuss_0_fan_map0 {
+				trip = <&cpuss_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpuss_0_fan_map1: cpuss_0_fan_map1 {
+				trip = <&cpuss_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpuss_0_fan_map2: cpuss_0_fan_map2 {
+				trip = <&cpuss_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpuss_0_fan_map3: cpuss_0_fan_map3 {
+				trip = <&cpuss_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpuss-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 2>;
+		trips {
+			cpuss_1_fan_trip0: cpuss_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpuss_1_fan_trip1: cpuss_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpuss_1_fan_trip2: cpuss_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			cpuss_1_fan_trip3: cpuss_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			cpuss_1_fan_map0: cpuss_1_fan_map0 {
+				trip = <&cpuss_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			cpuss_1_fan_map1: cpuss_1_fan_map1 {
+				trip = <&cpuss_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			cpuss_1_fan_map2: cpuss_1_fan_map2 {
+				trip = <&cpuss_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			cpuss_1_fan_map3: cpuss_1_fan_map3 {
+				trip = <&cpuss_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	cpuss-0 {
+		trips {
+			// 2 trip points are defined in anorak-thermal.dtsi
+			usr3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			usr4 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	cpuss-1 {
+		trips {
+			// 2 trip points are defined in anorak-thermal.dtsi
+			usr3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			usr4 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	disp-virt {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&display_virtual_sensor>;
+	};
+
+	gpuss-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 7>;
+
+		trips {
+			gpuss_0_fan_trip0: gpuss_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_0_fan_trip1: gpuss_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_0_fan_trip2: gpuss_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_0_fan_trip3: gpuss_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_0_fan_map0: gpuss_0_fan_map0 {
+				trip = <&gpuss_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_0_fan_map1: gpuss_0_fan_map1 {
+				trip = <&gpuss_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_0_fan_map2: gpuss_0_fan_map2 {
+				trip = <&gpuss_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_0_fan_map3: gpuss_0_fan_map3 {
+				trip = <&gpuss_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 8>;
+
+		trips {
+			gpuss_1_fan_trip0: gpuss_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_1_fan_trip1: gpuss_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_1_fan_trip2: gpuss_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_1_fan_trip3: gpuss_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_1_fan_map0: gpuss_1_fan_map0 {
+				trip = <&gpuss_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_1_fan_map1: gpuss_1_fan_map1 {
+				trip = <&gpuss_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_1_fan_map2: gpuss_1_fan_map2 {
+				trip = <&gpuss_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_1_fan_map3: gpuss_1_fan_map3 {
+				trip = <&gpuss_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-2-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 9>;
+
+		trips {
+			gpuss_2_fan_trip0: gpuss_2_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_2_fan_trip1: gpuss_2_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_2_fan_trip2: gpuss_2_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_2_fan_trip3: gpuss_2_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_2_fan_map0: gpuss_2_fan_map0 {
+				trip = <&gpuss_2_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_2_fan_map1: gpuss_2_fan_map1 {
+				trip = <&gpuss_2_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_2_fan_map2: gpuss_2_fan_map2 {
+				trip = <&gpuss_2_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_2_fan_map3: gpuss_2_fan_map3 {
+				trip = <&gpuss_2_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-3-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 10>;
+
+		trips {
+			gpuss_3_fan_trip0: gpuss_3_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_3_fan_trip1: gpuss_3_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_3_fan_trip2: gpuss_3_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_3_fan_trip3: gpuss_3_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_3_fan_map0: gpuss_3_fan_map0 {
+				trip = <&gpuss_3_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_3_fan_map1: gpuss_3_fan_map1 {
+				trip = <&gpuss_3_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_3_fan_map2: gpuss_3_fan_map2 {
+				trip = <&gpuss_3_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_3_fan_map3: gpuss_3_fan_map3 {
+				trip = <&gpuss_3_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-4-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 11>;
+
+		trips {
+			gpuss_4_fan_trip0: gpuss_4_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_4_fan_trip1: gpuss_4_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_4_fan_trip2: gpuss_4_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_4_fan_trip3: gpuss_4_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_4_fan_map0: gpuss_4_fan_map0 {
+				trip = <&gpuss_4_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_4_fan_map1: gpuss_4_fan_map1 {
+				trip = <&gpuss_4_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_4_fan_map2: gpuss_4_fan_map2 {
+				trip = <&gpuss_4_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_4_fan_map3: gpuss_4_fan_map3 {
+				trip = <&gpuss_4_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-5-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 12>;
+
+		trips {
+			gpuss_5_fan_trip0: gpuss_5_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_5_fan_trip1: gpuss_5_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_5_fan_trip2: gpuss_5_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_5_fan_trip3: gpuss_5_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_5_fan_map0: gpuss_5_fan_map0 {
+				trip = <&gpuss_5_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_5_fan_map1: gpuss_5_fan_map1 {
+				trip = <&gpuss_5_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_5_fan_map2: gpuss_5_fan_map2 {
+				trip = <&gpuss_5_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_5_fan_map3: gpuss_5_fan_map3 {
+				trip = <&gpuss_5_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-6-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 13>;
+
+		trips {
+			gpuss_6_fan_trip0: gpuss_6_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_6_fan_trip1: gpuss_6_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_6_fan_trip2: gpuss_6_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_6_fan_trip3: gpuss_6_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_6_fan_map0: gpuss_6_fan_map0 {
+				trip = <&gpuss_6_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_6_fan_map1: gpuss_6_fan_map1 {
+				trip = <&gpuss_6_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_6_fan_map2: gpuss_6_fan_map2 {
+				trip = <&gpuss_6_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_6_fan_map3: gpuss_6_fan_map3 {
+				trip = <&gpuss_6_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	gpuss-7-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 14>;
+
+		trips {
+			gpuss_7_fan_trip0: gpuss_7_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_7_fan_trip1: gpuss_7_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_7_fan_trip2: gpuss_7_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			gpuss_7_fan_trip3: gpuss_7_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			gpuss_7_fan_map0: gpuss_7_fan_map0 {
+				trip = <&gpuss_7_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			gpuss_7_fan_map1: gpuss_7_fan_map1 {
+				trip = <&gpuss_7_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			gpuss_7_fan_map2: gpuss_7_fan_map2 {
+				trip = <&gpuss_7_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			gpuss_7_fan_map3: gpuss_7_fan_map3 {
+				trip = <&gpuss_7_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	nspss-0-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 1>;
+
+		trips {
+			nspss_0_fan_trip0: nspss_0_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_0_fan_trip1: nspss_0_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_0_fan_trip2: nspss_0_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_0_fan_trip3: nspss_0_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			nspss_0_fan_map0: nspss_0_fan_map0 {
+				trip = <&nspss_0_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			nspss_0_fan_map1: nspss_0_fan_map1 {
+				trip = <&nspss_0_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			nspss_0_fan_map2: nspss_0_fan_map2 {
+				trip = <&nspss_0_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			nspss_0_fan_map3: nspss_0_fan_map3 {
+				trip = <&nspss_0_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	nspss-1-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 2>;
+
+		trips {
+			nspss_1_fan_trip0: nspss_1_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_1_fan_trip1: nspss_1_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_1_fan_trip2: nspss_1_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_1_fan_trip3: nspss_1_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			nspss_1_fan_map0: nspss_1_fan_map0 {
+				trip = <&nspss_1_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			nspss_1_fan_map1: nspss_1_fan_map1 {
+				trip = <&nspss_1_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			nspss_1_fan_map2: nspss_1_fan_map2 {
+				trip = <&nspss_1_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			nspss_1_fan_map3: nspss_1_fan_map3 {
+				trip = <&nspss_1_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	nspss-2-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 3>;
+
+		trips {
+			nspss_2_fan_trip0: nspss_2_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_2_fan_trip1: nspss_2_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_2_fan_trip2: nspss_2_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			nspss_2_fan_trip3: nspss_2_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			nspss_2_fan_map0: nspss_2_fan_map0 {
+				trip = <&nspss_2_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			nspss_2_fan_map1: nspss_2_fan_map1 {
+				trip = <&nspss_2_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			nspss_2_fan_map2: nspss_2_fan_map2 {
+				trip = <&nspss_2_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			nspss_2_fan_map3: nspss_2_fan_map3 {
+				trip = <&nspss_2_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	pcb1-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMXR2230_ADC5_GEN3_AMUX_THM5_100K_PU>;
+	};
+
+	pcb2-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMK8550_ADC5_GEN3_AMUX_THM2_GPIO1_100K_PU>;
+	};
+
+	surf1-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PMK8550_ADC5_GEN3_AMUX_THM3_GPIO2_100K_PU>;
+	};
+
+	surf2-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PM8550B_ADC5_GEN3_AMUX2_GPIO5_100K_PU>;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	soc-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 1>;
+
+		trips {
+			soc_fan_trip0: soc_fan_trip0 {
+				temperature = <60000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			soc_fan_trip1: soc_fan_trip1 {
+				temperature = <75000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			soc_fan_trip2: soc_fan_trip2 {
+				temperature = <80000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+			soc_fan_trip3: soc_fan_trip3 {
+				temperature = <85000>;
+				hysteresis = <3000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			soc_fan_map0: soc_fan_map0 {
+				trip = <&soc_fan_trip0>;
+				cooling-device = <&fan 1 1>;
+			};
+			soc_fan_map1: soc_fan_map1 {
+				trip = <&soc_fan_trip1>;
+				cooling-device = <&fan 2 2>;
+			};
+			soc_fan_map2: soc_fan_map2 {
+				trip = <&soc_fan_trip2>;
+				cooling-device = <&fan 3 3>;
+			};
+			soc_fan_map3: soc_fan_map3 {
+				trip = <&soc_fan_trip3>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	soc-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 1>;
+		trips {
+			soc_limit_trip0: soc_limit_trip0 {
+				temperature = <89000>;
+				hysteresis = <3000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			soc_limit_map0: soc_limit_map0 {
+				trip = <&soc_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	soc-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens0 1>;
+		trips {
+			soc_trip0: soc_trip0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			soc_trip1: soc_trip1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			soc_trip2: soc_trip2 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			soc_trip3: soc_trip3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	surf-virt-fan {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&surface_virtual_sensor>;
+		trips {
+			surf_virt_fan_trip0: surf_virt_fan_trip0 {
+				temperature = <42000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+			surf_virt_fan_trip1: surf_virt_fan_trip1 {
+				temperature = <44000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+			surf_virt_fan_trip2: surf_virt_fan_trip2 {
+				temperature = <46000>;
+				hysteresis = <2000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			surf_virt_fan_map0: surf_virt_fan_map0 {
+				trip = <&surf_virt_fan_trip0>;
+				cooling-device = <&fan 2 2>;
+			};
+			surf_virt_fan_map1: surf_virt_fan_map1 {
+				trip = <&surf_virt_fan_trip1>;
+				cooling-device = <&fan 3 3>;
+			};
+			surf_virt_fan_map2: surf_virt_fan_map2 {
+				trip = <&surf_virt_fan_trip2>;
+				cooling-device = <&fan 4 4>;
+			};
+		};
+	};
+
+	surf-virt-limit {
+		polling-delay-passive = <1000>;
+		polling-delay = <1000>;
+		thermal-sensors = <&surface_virtual_sensor>;
+		trips {
+			surf_virt_limit_trip0: surf_virt_limit_trip0 {
+				temperature = <48000>;
+				hysteresis = <1000>;
+				type = "active";
+			};
+		};
+
+		cooling-maps {
+			surf_virt_limit_map0: surf_virt_limit_map0 {
+				trip = <&surf_virt_limit_trip0>;
+				cooling-device = <&CPU2 0 1>;
+			};
+		};
+	};
+
+	surf-virt-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <1000>;
+		thermal-sensors = <&surface_virtual_sensor>;
+		trips {
+			surf_virt_usr_trip0: surf_virt_usr_trip0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			surf_virt_usr_trip1: surf_virt_usr_trip1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			surf_virt_usr_trip2: surf_virt_usr_trip2 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			surf_virt_usr_trip3: surf_virt_usr_trip3 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	usb-conn {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&pmk8550_vadc PM8550B_ADC5_GEN3_AMUX_THM4_USB_THERM_100K_PU>;
+	};
+};
+
+&vendor {
+	battery_virtual_sensor: battery_virtual_sensor {
+		compatible = "oculus,virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		thermal-zones = "bq27z561-0", "sys-therm-7", "usb";
+
+		fallback-thermal-zone = "bq27z561-0";
+		fallback-tolerance = <25000>;
+
+		coefficients {
+			charging {
+				tz-coefficients = <10000 0 0>;
+				intercept = <0>;
+			};
+			discharging {
+				tz-coefficients = <6654 11175 412>;
+				intercept = <(-24963)>;
+			};
+		};
+	};
+
+	display_virtual_sensor: display_virtual_sensor {
+		compatible = "oculus,virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		thermal-zones = "bq27z561-0", "surf1-usr";
+
+		coefficients {
+			charging {
+				tz-coefficients = <645 14601>;
+				intercept = <(-15485)>;
+			};
+			discharging {
+				tz-coefficients = <645 14601>;
+				intercept = <(-15485)>;
+			};
+		};
+	};
+
+	surface_virtual_sensor: surface_virtual_sensor {
+		compatible = "oculus,virtual-sensor";
+		status = "ok";
+		#thermal-sensor-cells = <0>;
+
+		thermal-zones = "pcb1-usr", "soc-usr", "surf1-usr", "surf2-usr";
+
+		coefficients {
+			charging {
+				tz-coefficients = <1334 1860 2714 3480>;
+				intercept = <(-137)>;
+			};
+			discharging {
+				tz-coefficients = <1334 1860 2714 3480>;
+				intercept = <(-137)>;
+			};
+		};
+	};
+};

@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "panther-p1-common.dtsi"
+
+/ {
+	model = "Panther (P1.1)";
+	compatible = "oculus,panther-p1.1", "oculus,panther", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10143 0x1>;
+};
+
+&dsi_panel_pwr_supply_panther {
+	qcom,panel-supply-entry@5 {
+		reg = <5>;
+		qcom,supply-name = "mp3314right";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <45010>;
+		qcom,supply-disable-load = <0>;
+	};
+
+	qcom,panel-supply-entry@6 {
+		reg = <6>;
+		qcom,supply-name = "mp3314left";
+		qcom,supply-min-voltage = <3300000>;
+		qcom,supply-max-voltage = <3300000>;
+		qcom,supply-enable-load = <45010>;
+		qcom,supply-disable-load = <0>;
+	};
+};
+
+&mp3314a {
+	compatible = "meta,mp3314";
+};
+
+&qupv3_se13_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+	mp3314l:mp3314l@28 {
+		compatible = "meta,mp3314";
+		reg = <0x28>;
+		regulator-name = "mp3314l";
+		regulator-min-microvolt = <6000000>;
+		regulator-max-microvolt = <6000000>;
+		regulator-allow-set-load;
+		regulator-boot-on;
+		iset-ext-resistor = <36500>;
+	};
+};
+
+&qupv3_se13_i2c_sda_active {
+	config {
+		drive-strength = <16>;
+	};
+};
+
+&qupv3_se13_i2c_scl_active {
+	config {
+		drive-strength = <16>;
+	};
+};
+
+&sde_dsi {
+	mp3314right-supply = <&mp3314a>;
+	mp3314left-supply = <&mp3314l>;
+};
+
+&wlan {
+	cal-file-prefix = "panther_p1.1_";
+};

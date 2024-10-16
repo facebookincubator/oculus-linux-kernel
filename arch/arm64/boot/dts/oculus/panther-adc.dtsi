@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/iio/qcom,spmi-adc5-gen3-pm8550b.h>
+#include <dt-bindings/iio/qcom,spmi-adc5-gen3-pmxr2230.h>
+#include <dt-bindings/iio/qcom,spmi-adc5-gen3-pmk8550.h>
+
+&pmk8550_vadc {
+	pinctrl-0 = <&pmxr2230_sd_card_therm_default &pmxr2230_optics_therm_default
+		     &pmxr2230_glacier_therm_default &pm8550b_therm_gpio_default
+		     &pmk8550_therm_gpio_default>;
+
+	/delete-node/ pmxr2230_heatsink_therm;
+	/delete-node/ pmxr2230_optics_therm;
+	/delete-node/ pmxr2230_sd_card_therm;
+	/delete-node/ pmxr2230_skin_therm;
+	/delete-node/ pmxr2230_soc_therm;
+	/delete-node/ pmxr2230_wlan_therm;
+	/delete-node/ smb139x_1_smb_temp;
+	/delete-node/ smb139x_1_iin_smb;
+	/delete-node/ smb139x_1_ichg_smb;
+	/delete-node/ smb139x_2_smb_temp;
+	/delete-node/ smb139x_2_iin_smb;
+	/delete-node/ smb139x_2_ichg_smb;
+
+	canyon2FL_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX_THM4_100K_PU>;
+		label = "canyon2FL_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	canyon2FR_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX1_GPIO3_100K_PU>;
+		label = "canyon2FR_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	chg_therm {
+		reg = <PM8550B_ADC5_GEN3_AMUX4_GPIO12_100K_PU>;
+		label = "chg_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	canyon2BL_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX4_GPIO10_100K_PU>;
+		label = "canyon2BL_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	canyon2BR_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX_THM6_GPIO2_100K_PU>;
+		label = "canyon2BR_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	jacksonFR_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX_THM1_100K_PU>;
+		label = "jacksonFR_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	jacksonFL_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX2_GPIO4_100K_PU>;
+		label = "jacksonFL_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	pcb1_therm {
+		reg = <PMXR2230_ADC5_GEN3_AMUX_THM5_100K_PU>;
+		label = "pcb1_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	pcb2_therm {
+		reg = <PMK8550_ADC5_GEN3_AMUX_THM2_GPIO1_100K_PU>;
+		label = "pcb2_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	surf1_therm {
+		reg = <PMK8550_ADC5_GEN3_AMUX_THM3_GPIO2_100K_PU>;
+		label = "surf1_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+
+	surf2_therm {
+		reg = <PM8550B_ADC5_GEN3_AMUX2_GPIO5_100K_PU>;
+		label = "surf2_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+		qcom,adc-tm-type = <1>;
+	};
+};
+
+&pmk8550_gpios {
+	pmk8550_therm_gpio {
+		pmk8550_therm_gpio_default: pmk8550_therm_gpio_default {
+			pins = "gpio1","gpio2";
+			bias-high-impedance;
+		};
+	};
+};
+
+&pmxr2230_gpios {
+	pmxr2230_glacier_therm {
+		pmxr2230_glacier_therm_default: pmxr2230_glacier_therm_default {
+			pins = "gpio2","gpio10";
+			bias-high-impedance;
+		};
+	};
+};
+
+&pm8550b_gpios {
+	pm8550b_therm_gpio {
+		pm8550b_therm_gpio_default: pm8550b_therm_gpio_default {
+			pins = "gpio5","gpio12";
+			bias-high-impedance;
+		};
+	};
+};

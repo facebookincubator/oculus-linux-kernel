@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&dsi_boe_4k_90Hz_dsc_video {
+	meta,blu-default-duty-cycle = <52>; /* 5.2% duty */
+};
+
+&dsi_jdi_nvt_4k_90Hz_dsc_video {
+	meta,blu-default-duty-cycle = <65>; /* 6.5% duty */
+};
+
+&dsi_sharp_4k_90Hz_dsc_dvt_video {
+	meta,blu-default-duty-cycle = <52>; /* 5.2% duty */
+};
+
+&dsi_boe_eos_4k_90Hz_dsc_video {
+	meta,blu-default-duty-cycle = <52>; /* 5.2% duty */
+};
+
+&dsi_sharp_eos_4k_90Hz_dsc_video {
+	meta,blu-default-duty-cycle = <52>; /* 5.2% duty */
+};
+
+&dsi_panel_pwr_supply_panther {
+	qcom,panel-supply-entry@5 {
+		qcom,supply-enable-load = <70710>;
+	};
+};
+
+&mp3314a {
+	iset-ext-resistor = <24900>;
+};
+

@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&tlmm {
+	sensorlock_pins: sensorlock_pins {
+		mux {
+			pins = "gpio106";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio106";
+			input-enable;
+		};
+	};
+};
+
+&vendor {
+	sensorlock: sensorlock {
+		status = "ok";
+		compatible = "meta,sensorlock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&sensorlock_pins>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <106 IRQ_TYPE_EDGE_FALLING>;
+		interrupt-names = "sensorlock_power_irq";
+	};
+};
