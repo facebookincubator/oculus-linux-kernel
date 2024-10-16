@@ -1,0 +1,9 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-sde.dtsi"
+
+/ {
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0 0>;
+};

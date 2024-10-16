@@ -1,0 +1,306 @@
+#include "cape.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee SoC";
+	compatible = "qcom,ukee";
+	qcom,msm-id = <591 0x10000>;
+};
+
+&msm_gpu {
+	qcom,initial-pwrlevel = <5>;
+
+	/delete-property/qcom,gpu-model;
+	qcom,gpu-model = "Adreno725v1";
+
+	nvmem-cells = <&gpu_speed_bin>;
+	nvmem-cell-names = "speed_bin";
+
+	/delete-node/qcom,gpu-pwrlevels;
+
+	/* Power levels */
+	qcom,gpu-pwrlevels {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "qcom,gpu-pwrlevels";
+
+		qcom,gpu-pwrlevel@0 {
+			reg = <0>;
+			qcom,gpu-freq = <580000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_SVS_L0>;
+
+			qcom,bus-freq = <11>;
+			qcom,bus-min = <7>;
+			qcom,bus-max = <11>;
+
+			qcom,acd-level = <0x882e5ffd>;
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+		};
+
+		qcom,gpu-pwrlevel@1 {
+			reg = <1>;
+			qcom,gpu-freq = <515000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_SVS>;
+
+			qcom,bus-freq = <6>;
+			qcom,bus-min = <6>;
+			qcom,bus-max = <8>;
+
+			qcom,acd-level = <0x882e5ffd>;
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_SVS>;
+		};
+
+		qcom,gpu-pwrlevel@2 {
+			reg = <2>;
+			qcom,gpu-freq = <439000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_L2>;
+
+			qcom,bus-freq = <6>;
+			qcom,bus-min = <3>;
+			qcom,bus-max = <8>;
+
+			qcom,acd-level = <0xc0285ffd>;
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_SVS>;
+		};
+
+		qcom,gpu-pwrlevel@3 {
+			reg = <3>;
+			qcom,gpu-freq = <364000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_L1>;
+
+			qcom,bus-freq = <3>;
+			qcom,bus-min = <1>;
+			qcom,bus-max = <6>;
+
+			qcom,acd-level = <0xc0285ffd>;
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_SVS>;
+		};
+
+		qcom,gpu-pwrlevel@4 {
+			reg = <4>;
+			qcom,gpu-freq = <324000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+
+			qcom,bus-freq = <2>;
+			qcom,bus-min = <1>;
+			qcom,bus-max = <6>;
+
+			qcom,acd-level = <0xc02a5ffd>;
+
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+		};
+
+		qcom,gpu-pwrlevel@5 {
+			reg = <5>;
+			qcom,gpu-freq = <285000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
+
+			qcom,bus-freq = <2>;
+			qcom,bus-min = <1>;
+			qcom,bus-max = <5>;
+
+			qcom,acd-level = <0xc02c5ffd>;
+
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+		};
+
+		qcom,gpu-pwrlevel@6 {
+			reg = <6>;
+			qcom,gpu-freq = <220000000>;
+			qcom,level = <RPMH_REGULATOR_LEVEL_MIN_SVS>;
+
+			qcom,bus-freq = <2>;
+			qcom,bus-min = <1>;
+			qcom,bus-max = <5>;
+
+			qcom,acd-level = <0xc8285ffd>;
+
+			qcom,cx-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+		};
+	};
+};
+
+&gcc_pcie_1_gdsc {
+	status =  "disabled";
+};
+
+&clock_gcc {
+	protected-clocks = <GCC_PCIE_1_AUX_CLK>, <GCC_PCIE_1_AUX_CLK_SRC>,
+			<GCC_PCIE_1_CFG_AHB_CLK>, <GCC_PCIE_1_CLKREF_EN>,
+			<GCC_PCIE_1_MSTR_AXI_CLK>, <GCC_PCIE_1_PHY_AUX_CLK>,
+			<GCC_PCIE_1_PHY_AUX_CLK_SRC>, <GCC_PCIE_1_PHY_RCHNG_CLK>,
+			<GCC_PCIE_1_PHY_RCHNG_CLK_SRC>, <GCC_PCIE_1_PIPE_CLK>,
+			<GCC_PCIE_1_PIPE_CLK_SRC>, <GCC_PCIE_1_SLV_AXI_CLK>,
+			<GCC_PCIE_1_SLV_Q2A_AXI_CLK>;
+};
+
+&qcom_memlat {
+	ddr {
+		silver {
+			qcom,cpufreq-memfreq-tbl =
+				< 1132800  547000 >,
+				< 1440000  768000 >,
+				< 1670400 1555000 >;
+		};
+
+		gold {
+			qcom,cpufreq-memfreq-tbl =
+				<  883200  547000 >,
+				< 1113600  768000 >,
+				< 1324800 1555000 >,
+				< 1881600 2092000 >,
+				< 2227200 2736000 >,
+				< 2400000 3196000 >;
+		};
+
+		prime {
+			qcom,cpufreq-memfreq-tbl =
+				<  787200  547000 >,
+				< 1036800  768000 >,
+				< 1286400 1555000 >,
+				< 1881600 2092000 >,
+				< 2131200 2736000 >,
+				< 2400000 3196000 >;
+		};
+
+		gold-compute {
+			qcom,cpufreq-memfreq-tbl =
+				< 1881600  547000 >,
+				< 2400000 1555000 >;
+		};
+
+		prime-latfloor {
+			qcom,cpufreq-memfreq-tbl =
+				< 2131200  547000 >,
+				< 2400000 3196000 >;
+		};
+	};
+
+	llcc {
+		silver {
+			qcom,cpufreq-memfreq-tbl =
+				<  556800  300000 >,
+				< 1440000  466000 >,
+				< 1804800  600000 >;
+		};
+
+		gold {
+			qcom,cpufreq-memfreq-tbl =
+				<  633600  300000 >,
+				< 1113600  466000 >,
+				< 1324800  600000 >,
+				< 1881600  806000 >,
+				< 2227200  933000 >,
+				< 2400000 1066000 >;
+		};
+
+		gold-compute {
+			qcom,cpufreq-memfreq-tbl =
+				< 1881600  300000 >,
+				< 2400000  600000 >;
+		};
+	};
+
+	l3 {
+		silver {
+			qcom,cpufreq-memfreq-tbl =
+				<  300000  300000 >,
+				<  441600  403200 >,
+				<  556800  518400 >,
+				<  691200  710400 >,
+				<  806400  806400 >,
+				<  940800  902400 >,
+				< 1056000  998400 >,
+				< 1132800 1075200 >,
+				< 1324800 1267200 >,
+				< 1440000 1478400 >,
+				< 1670400 1593600 >,
+				< 1804800 1708800 >;
+		};
+
+		gold {
+			qcom,cpufreq-memfreq-tbl =
+				<  633600  518400 >,
+				<  883200  614400 >,
+				< 1113600  902400 >,
+				< 1324800  998400 >,
+				< 1651200 1267200 >,
+				< 1996800 1478400 >,
+				< 2227200 1593600 >,
+				< 2400000 1708800 >;
+		};
+
+		prime {
+			qcom,cpufreq-memfreq-tbl =
+				<  787200  518400 >,
+				<  921600  614400 >,
+				< 1171200  902400 >,
+				< 1401600  998400 >,
+				< 1651200 1267200 >,
+				< 1996800 1478400 >,
+				< 2131200 1593600 >,
+				< 2400000 1708800 >;
+		};
+
+		prime-compute {
+			qcom,cpufreq-memfreq-tbl =
+				< 1996800  300000 >,
+				< 2400000 1708800 >;
+		};
+	};
+
+	ddrqos {
+		gold {
+			qcom,cpufreq-memfreq-tbl =
+				< 1881600 0 >,
+				< 2400000 1 >;
+		};
+
+		prime-latfloor {
+			qcom,cpufreq-memfreq-tbl =
+				< 1996800 0 >,
+				< 2400000 1 >;
+		};
+	};
+};
+
+&soc {
+	remoteproc-spss@1880000 {
+		status = "disabled";
+	};
+
+	cache-controller@19200000 {
+		compatible = "qcom,ukee-llcc", "qcom,llcc-v21";
+	};
+
+	ssc_sensors: qcom,msm-ssc-sensors {
+		compatible = "qcom,msm-ssc-sensors";
+		status = "ok";
+		qcom,firmware-name = "slpi2.mdt";
+		qcom,rproc-handle = <&slpi_pas>;
+	};
+
+	qfprom: qfprom@221c8000 {
+		compatible = "qcom,qfprom";
+		reg = <0x221c8000 0x1000>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		read-only;
+		ranges;
+
+		gpu_speed_bin: gpu_speed_bin@119 {
+			reg = <0x119 0x2>;
+			bits = <5 8>;
+		};
+	};
+
+	qfprom_sys: qfprom@0 {
+		compatible = "qcom,qfprom-sys";
+	};
+};
+
+&ufshc_mem
+{
+	qcom,prime-mask = <0x70>;
+	qcom,silver-mask = <0x0f>;
+};

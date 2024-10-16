@@ -1,0 +1,10 @@
+/dts-v1/;
+/plugin/;
+
+#include "cape-audio-atp.dtsi"
+ / {
+	model = "Qualcomm Technologies, Inc. Cape ATP";
+	compatible = "qcom,cape", "qcom,cape-atp", "qcom,atp";
+	qcom,msm-id = <530 0x10000>, <531 0x10000>, <540 0x10000>;
+	qcom,board-id = <0x10021 0>;
+};

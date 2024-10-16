@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/*
+ * Dev1, P1.2, PreEVT, and EVT1.x have non-POR BLU UART interface
+ * connectivity, without a level shifter on SoC RX, and with an external
+ * pull-up on that signal. Don't apply the UART GPIO control rules from
+ * eureka-panel.dtsi to these targets.
+ */
+&qupv3_se12_2uart_tx_active {
+	config {
+		bias-disable;
+	};
+};
+
+&qupv3_se12_2uart_rx_active {
+	config {
+		bias-disable;
+	};
+};

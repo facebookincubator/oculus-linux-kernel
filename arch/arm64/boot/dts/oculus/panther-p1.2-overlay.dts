@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "panther-p1-common.dtsi"
+
+/ {
+	model = "Panther (P1.2)";
+	compatible = "oculus,panther-p1.2", "oculus,panther", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10243 0x1>;
+};
+
+&wlan {
+	cal-file-prefix = "panther_p1.2_";
+};

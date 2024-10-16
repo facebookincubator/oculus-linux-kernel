@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ukee-vm.dtsi"
+#include "ukee-vm-mtp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee SVM MTP";
+	compatible = "qcom,ukee-mtp", "qcom,ukee", "qcom,mtp";
+	qcom,board-id = <0x10008 0>;
+};

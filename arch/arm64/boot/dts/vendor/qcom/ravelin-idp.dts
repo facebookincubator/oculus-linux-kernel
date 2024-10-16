@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "ravelin.dtsi"
+#include "ravelin-adrastea.dtsi"
+#include "ravelin-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin IDP";
+	compatible = "qcom,ravelin-idp", "qcom,ravelin", "qcom,idp";
+	qcom,board-id = <34 0>;
+};

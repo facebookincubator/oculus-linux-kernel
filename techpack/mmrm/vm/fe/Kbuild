@@ -1,0 +1,15 @@
+
+ifeq ($(CONFIG_MSM_MMRM_VM), y)
+obj-m += mmrm_vm_fe.o
+
+ifeq ($(CONFIG_ARCH_KALAMA), y)
+ifeq ($(CONFIG_ARCH_QTI_VM), y)
+	mmrm_vm_fe-objs := \
+	src/mmrm_vm_fe_main.o \
+	src/mmrm_vm_fe_frontend.o \
+	src/mmrm_vm_fe_msgq.o \
+	src/mmrm_vm_fe_api.o \
+	../common/src/mmrm_vm_debug.o
+endif
+endif
+endif

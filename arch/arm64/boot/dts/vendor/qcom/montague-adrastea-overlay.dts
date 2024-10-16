@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "montague-adrastea.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague Adrastea IDP";
+	compatible = "qcom,montague-idp", "qcom,montague", "qcom,idp";
+	qcom,msm-id = <581 0x10000>, <582 0x10000>;
+	qcom,board-id = <0x10022 0x0>;
+};

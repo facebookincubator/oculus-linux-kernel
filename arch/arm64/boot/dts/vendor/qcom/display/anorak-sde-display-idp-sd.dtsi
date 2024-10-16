@@ -1,0 +1,65 @@
+#include "anorak-sde-display-idp.dtsi"
+
+&mdss_mdp1 {
+	status = "disabled";
+};
+
+&mdss_dsi2 {
+	status = "disabled";
+};
+
+&mdss_dsi3 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy2 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy3 {
+	status = "disabled";
+};
+
+&sde_dsi1 {
+	status = "disabled";
+};
+
+&smmu_sde_sec1 {
+	status = "disabled";
+};
+
+&smmu_sde_unsec1 {
+	status = "disabled";
+};
+
+&sde_rscc1 {
+	status = "disabled";
+};
+
+&sde_dp {
+	status = "ok";
+};
+
+&sde_dp_pll {
+	status = "ok";
+};
+
+&dsi_sharp_qhd_plus_dsc_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_sy103_dual_dsc_1920p_90hz_video>;
+};
+
+&battery_charger {
+	qcom,display-panels = <&dsi_sy103_dual_dsc_1920p_90hz_video>;
+};
+
+&mdss_mdp0 {
+	connectors = <&sde_dsi &smmu_sde_unsec &smmu_sde_sec &sde_dp &sde_rscc0 &sde_wb1>;
+};

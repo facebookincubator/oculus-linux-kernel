@@ -1,0 +1,69 @@
+EVA_ROOT := $(srctree)/techpack/eva
+
+LINUXINCLUDE    += -I$(EVA_ROOT)/include \
+                   -I$(EVA_ROOT)/include/uapi
+
+ccflags-y += -I$(srctree)/drivers/media/platform/msm/synx/
+
+# add flag to compile mmrm actual implementatio instead of stub version.
+# to follow up with mmrm team if techpack users need to define this for long term?
+KBUILD_CPPFLAGS += -DCONFIG_MSM_MMRM
+
+# ported from Android.mk
+
+ifeq ($(CONFIG_ARCH_WAIPIO), y)
+# include $(EVA_ROOT)/config/waipio.mk
+KBUILD_CPPFLAGS += -DCONFIG_EVA_WAIPIO=1
+ccflags-y += -DCONFIG_EVA_WAIPIO=1
+endif
+
+ifeq ($(CONFIG_ARCH_KALAMA), y)
+# include $(EVA_ROOT)/config/waipio.mk
+KBUILD_CPPFLAGS += -DCONFIG_EVA_KALAMA=1
+ccflags-y += -DCONFIG_EVA_KALAMA=1
+endif
+
+ifeq ($(CONFIG_ARCH_NEO), y)
+# include $(EVA_ROOT)/config/neoeva.conf
+# LINUXINCLUDE    += -include $(EVA_ROOT)/config/neoevaconf.h
+
+$(info within KBUILD file CONFIG_ARCH_NEO = $(CONFIG_ARCH_NEO))
+# include $(EVA_ROOT)/config/waipio.mk
+KBUILD_CPPFLAGS += -DCONFIG_EVA_NEO=1
+ccflags-y += -DCONFIG_EVA_NEO=1
+endif
+
+ifeq ($(CONFIG_ARCH_ANORAK), y)
+# include $(EVA_ROOT)/config/neoeva.conf
+# LINUXINCLUDE    += -include $(EVA_ROOT)/config/neoevaconf.h
+
+$(info within KBUILD file CONFIG_ARCH_ANORAK = $(CONFIG_ARCH_ANORAK))
+# include $(EVA_ROOT)/config/waipio.mk
+KBUILD_CPPFLAGS += -DCONFIG_EVA_ANORAK=1 -DCVP_CONFIG_SYNX_V2=1
+ccflags-y += -DCONFIG_EVA_ANORAK=1 -DCVP_CONFIG_SYNX_V2=1
+endif
+
+KBUILD_CPPFLAGS += -DHALLIDAY_DISABLE=1
+KBUILD_CPPFLAGS += -DHALLIDAY_BRINGUP=1
+
+msm-eva-objs := eva/cvp.o \
+        eva/msm_cvp_ioctl.o \
+        eva/msm_cvp_platform.o \
+        eva/msm_cvp_common.o \
+        eva/msm_cvp_core.o \
+        eva/msm_cvp.o \
+        eva/msm_smem.o \
+        eva/msm_cvp_debug.o \
+        eva/msm_cvp_res_parse.o \
+        eva/cvp_dump.o \
+        eva/cvp_hfi.o \
+        eva/hfi_response_handler.o \
+        eva/hfi_packetization.o \
+        eva/cvp_core_hfi.o \
+        eva/msm_cvp_clocks.o\
+        eva/msm_cvp_dsp.o \
+        eva/msm_cvp_buf.o \
+        eva/msm_cvp_synx.o \
+		eva/cvp_fw_load.o
+obj-m += msm-eva.o
+

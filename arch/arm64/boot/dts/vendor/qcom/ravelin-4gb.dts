@@ -1,0 +1,9 @@
+/dts-v1/;
+
+#include "ravelin-4gb.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin 4Gb SoC";
+	compatible = "qcom,ravelin";
+	qcom,board-id = <0 0x600>;
+};

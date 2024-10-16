@@ -1,0 +1,656 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/ {
+	vendor: vendor {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 0 0 0xffffffff>;
+		compatible = "simple-bus";
+	};
+};
+
+#include "vendor-base/qcom/anorak.dtsi"
+#include "vendor-base/qcom/audio/anorak-audio.dtsi"
+#include "vendor-base/qcom/camera/anorak-camera.dtsi"
+#include "vendor-base/qcom/eva/anorak-eva.dtsi"
+#include "vendor-base/qcom/video/anorak-vidc.dtsi"
+
+#include "vendor-base/qcom/anorak-pmic-overlay.dtsi"
+
+#include "anorak-oculus-audio.dtsi"
+#include "anorak-oculus-syncboss.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+
+/delete-node/ &fancontroller;
+/delete-node/ &msm_sdexpress;
+/delete-node/ &pcie1;
+/delete-node/ &pcie2;
+/delete-node/ &pdm_pwm0;
+/delete-node/ &pm8010_m;
+/delete-node/ &pm8010_n;
+
+/delete-node/ &ipa_fw_mem;
+/delete-node/ &ipa_gsi_mem;
+/delete-node/ &ramoops_mem;
+
+&apps_rsc {
+	/delete-node/ rpmh-regulator-ldom1;
+	/delete-node/ rpmh-regulator-ldom2;
+	/delete-node/ rpmh-regulator-ldom3;
+	/delete-node/ rpmh-regulator-ldom4;
+	/delete-node/ rpmh-regulator-ldom5;
+	/delete-node/ rpmh-regulator-ldom6;
+	/delete-node/ rpmh-regulator-ldon1;
+	/delete-node/ rpmh-regulator-ldon2;
+	/delete-node/ rpmh-regulator-ldon3;
+	/delete-node/ rpmh-regulator-ldon4;
+	/delete-node/ rpmh-regulator-ldon5;
+	/delete-node/ rpmh-regulator-ldon7;
+
+	rpmh-regulator-ldob16 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldob16";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 10000>;
+		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		L16B:
+		pmxr2230_l16: regulator-pmxr2230-l16 {
+			regulator-name = "pmxr2230_l16";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <3000000>;
+			regulator-max-microvolt = <3600000>;
+			qcom,init-voltage = <3300000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+
+	rpmh-regulator-ldob17 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldob17";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 10000>;
+		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		L17B:
+		pmxr2230_l17: regulator-pmxr2230-l17 {
+			regulator-name = "pmxr2230_l17";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <1504000>;
+			regulator-max-microvolt = <3544000>;
+			qcom,init-voltage = <2500000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+
+	rpmh-regulator-ldob19 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldob19";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 10000>;
+		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		L19B:
+		pmxr2230_l19: regulator-pmxr2230-l19 {
+			regulator-name = "pmxr2230_l19";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <1504000>;
+			regulator-max-microvolt = <3544000>;
+			qcom,init-voltage = <2800000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+
+	rpmh-regulator-ldoc3 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldoc3";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 30000>;
+		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		L3C:
+		pm_v6c_l3: regulator-pm_v6c-l3 {
+			regulator-name = "pm_v6c_l3";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <320000>;
+			regulator-max-microvolt = <1800000>;
+			qcom,init-voltage = <1050000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+
+	rpmh-regulator-ldod3 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldod3";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 30000>;
+		qcom,disable-mode = <RPMH_REGULATOR_MODE_LPM>;
+		L3D:
+		pm_v6d_l3: regulator-pm_v6d-l3 {
+			regulator-name = "pm_v6d_l3";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <320000>;
+			regulator-max-microvolt = <1800000>;
+			qcom,init-voltage = <1200000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+};
+
+&chosen {
+	bootargs = "loglevel=6 kernel.panic_on_rcu_stall=1 loop.max_part=7 pcie_ports=compat service_locator.enable=1 msm_rtb.filter=0x237 allow_mismatched_32bit_el0 kasan=off rcupdate.rcu_expedited=1 rcu_nocbs=0-5 ftrace_dump_on_oops pstore.compress=none kpti=off swiotlb=noforce cgroup.memory=nokmem,nosocket allow_file_spec_access can.stats_timer=0 disable_dma32=on cpufreq.default_governor=performance";
+};
+
+&L1D {
+	/delete-property/ qcom,proxy-consumer-enable;
+	/delete-property/ qcom,proxy-consumer-current;
+	/delete-property/ qcom,proxy-consumer-voltage;
+};
+
+&msm_gpu {
+	qcom,disable-wake-on-touch;
+};
+
+&pmxr2230_gpios {
+	fan_pwm {
+		fan_pwm_default: fan_pwm_default {
+			function = "func1";
+			bias-disable;
+			power-source = <1>;
+			output-low;
+			qcom,drive-strength = <3>;
+			drive-push-pull;
+		};
+	};
+};
+
+&pmxr2230_rgb {
+	red {
+		qcom,continuous-mode;
+		qcom,default-brightness = <40>;
+	};
+
+	green {
+		qcom,continuous-mode;
+		qcom,default-brightness = <60>;
+	};
+
+	blue {
+		qcom,continuous-mode;
+		qcom,default-brightness = <60>;
+	};
+};
+
+&qupv3_se13_i2c_sda_active {
+	mux {
+		pins = "gpio103";
+		function = "qup1_se6_l0_mirb";
+	};
+
+	config {
+		pins = "gpio103";
+	};
+};
+
+&qupv3_se13_i2c_scl_active {
+	mux {
+		pins = "gpio104";
+		function = "qup1_se6_l1_mirb";
+	};
+
+	config {
+		pins = "gpio104";
+	};
+};
+
+&qupv3_se13_i2c_sleep {
+	mux {
+		pins = "gpio103", "gpio104";
+	};
+
+	config {
+		pins = "gpio103", "gpio104";
+	};
+};
+
+&reserved_memory {
+	ramoops: ramoops@bfa00000 {
+		compatible = "ramoops";
+		reg = <0 0xbfa00000 0 0x00090000>;
+		record-size = <131072>;
+		console-size = <131072>;
+		pmsg-size = <131072>;
+		ftrace-size = <131072>;
+	};
+
+	splash_memory: splash_region {
+		reg = <0x0 0xbfc00000 0x0 0x06f00000>;
+		label = "cont_splash_region";
+	};
+};
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&key_vol_up_default>;
+
+		vol_up: vol_up {
+			label = "volume_up";
+			gpios = <&pm8550b_gpios 10 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEUP>;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+
+	qcom,cpu-pause {
+		compatible = "qcom,thermal-pause";
+		status = "disabled";
+	};
+
+	qcom,cpu-hotplug {
+		compatible = "qcom,cpu-hotplug";
+		status = "disabled";
+	};
+
+	qupv3_se12_2uart: qcom,qup_uart@a94000 {
+		compatible = "qcom,msm-geni-serial-hs";
+		reg = <0xa94000 0x4000>;
+		reg-names = "se_phys";
+		interrupts = <GIC_SPI 358 IRQ_TYPE_LEVEL_HIGH>;
+		clock-names = "se-clk", "m-ahb", "s-ahb";
+		clocks = <&gcc GCC_QUPV3_WRAP1_S5_CLK>,
+			<&gcc GCC_QUPV3_WRAP_1_M_AHB_CLK>,
+			<&gcc GCC_QUPV3_WRAP_1_S_AHB_CLK>;
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&qupv3_se12_2uart_tx_active>, <&qupv3_se12_2uart_rx_active>;
+		pinctrl-1 = <&qupv3_se12_2uart_sleep>;
+		qcom,wrapper-core = <&qupv3_1>;
+		status = "disabled";
+	};
+
+	usb_audio_qmi_dev {
+		compatible = "qcom,usb-audio-qmi-dev";
+		iommus = <&apps_smmu 0x280f 0x0>;
+		qcom,iommu-dma = "disabled";
+		qcom,usb-audio-stream-id = <0xf>;
+		qcom,usb-audio-intr-num = <2>;
+	};
+};
+
+&spmi_bus {
+	qcom,pm8550b@7 {
+		/delete-node/ pm8550b_bcl;
+		/delete-node/ bcl_soc;
+	};
+
+	qcom,pmxr2230@1 {
+		/delete-node/ pmxr2230_bcl;
+	};
+};
+
+&thermal_zones {
+	/delete-node/ pm8010m_tz;
+	/delete-node/ pm8010n_tz;
+	/delete-node/ socd;
+
+	// cpu-pause CDEV driver is not present, and we reuse these CPU thermal zones
+	// for userspace management, so disable the cooling via cpu-pause
+	cpu-0-1-0 {
+		cooling-maps {
+			/delete-node/ cpu010_cdev;
+		};
+	};
+	cpu-0-1-1 {
+		cooling-maps {
+			/delete-node/ cpu011_cdev;
+		};
+	};
+	cpu-1-0-0 {
+		cooling-maps {
+			/delete-node/ cpu100_cdev;
+		};
+	};
+	cpu-1-0-1 {
+		cooling-maps {
+			/delete-node/ cpu101_cdev;
+		};
+	};
+	cpu-1-1-0 {
+		cooling-maps {
+			/delete-node/ cpu110_cdev;
+		};
+	};
+	cpu-1-1-1 {
+		cooling-maps {
+			/delete-node/ cpu111_cdev;
+		};
+	};
+	cpu-1-2-0 {
+		cooling-maps {
+			/delete-node/ cpu120_cdev;
+		};
+	};
+	cpu-1-2-1 {
+		cooling-maps {
+			/delete-node/ cpu121_cdev;
+		};
+	};
+	cpu-1-3-0 {
+		cooling-maps {
+			/delete-node/ cpu130_cdev;
+		};
+	};
+	cpu-1-3-1 {
+		cooling-maps {
+			/delete-node/ cpu131_cdev;
+		};
+	};
+
+	// We reuse these CPU thermal zones for userspace management, and define our
+	// own passive cooling, so disable QC's passive cooling.
+	gpuss-0 {
+		cooling-maps {
+			/delete-node/ gpu0_cdev;
+		};
+	};
+	gpuss-1 {
+		cooling-maps {
+			/delete-node/ gpu1_cdev;
+		};
+	};
+	gpuss-2 {
+		cooling-maps {
+			/delete-node/ gpu2_cdev;
+		};
+	};
+	gpuss-3 {
+		cooling-maps {
+			/delete-node/ gpu3_cdev;
+		};
+	};
+	gpuss-4 {
+		cooling-maps {
+			/delete-node/ gpu4_cdev;
+		};
+	};
+	gpuss-5 {
+		cooling-maps {
+			/delete-node/ gpu5_cdev;
+		};
+	};
+	gpuss-6 {
+		cooling-maps {
+			/delete-node/ gpu6_cdev;
+		};
+	};
+	gpuss-7 {
+		cooling-maps {
+			/delete-node/ gpu7_cdev;
+		};
+	};
+	nspss-0 {
+		cooling-maps {
+			/delete-node/ nsp_cdev;
+		};
+	};
+	nspss-1 {
+		cooling-maps {
+			/delete-node/ nsp_cdev;
+		};
+	};
+	nspss-2 {
+		cooling-maps {
+			/delete-node/ nsp_cdev;
+		};
+	};
+
+	pm8550b-bcl-lvl0 {
+		cooling-maps {
+			/delete-node/ lbat_cpu_2_3;
+			/delete-node/ lbat_cdsp0;
+			/delete-node/ lbat_gpu0;
+		};
+	};
+
+	pm8550b-bcl-lvl1 {
+		cooling-maps {
+			/delete-node/ lbat_cpu_4_5;
+			/delete-node/ lbat_cdsp1;
+			/delete-node/ lbat_gpu1;
+		};
+	};
+
+	pm8550b-bcl-lvl2 {
+		cooling-maps {
+			/delete-node/ lbat_cdsp2;
+			/delete-node/ lbat_gpu2;
+		};
+	};
+
+	pmxr2230-bcl-lvl0 {
+		cooling-maps {
+			/delete-node/ vph_cpu_2_3;
+			/delete-node/ vph_cdsp0;
+			/delete-node/ vph_gpu0;
+		};
+	};
+
+	pmxr2230-bcl-lvl1 {
+		cooling-maps {
+			/delete-node/ vph_cpu_4_5;
+			/delete-node/ vph_cdsp1;
+			/delete-node/ vph_gpu1;
+		};
+	};
+
+	pmxr2230-bcl-lvl2 {
+		cooling-maps {
+			/delete-node/ vph_cdsp2;
+			/delete-node/ vph_gpu2;
+		};
+	};
+};
+
+&tlmm {
+	/*
+	 * Mark XPU-protected GPIOs are reserved, to prevent
+	 * attempted initialization at boot.
+	 */
+	qcom,gpios-reserved = <54 55 115 136>;
+
+	/delete-node/ pcie1;
+	/delete-node/ pcie2;
+
+	fan_tach_default: fan_tach_default {
+		mux {
+			pins = "gpio147";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio147";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	privacy_led_pins: privacy_led_pins {
+		privacy_led_default: privacy_led_default {
+			mux {
+				pins = "gpio133";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio133";
+				output-high;
+				bias-disable;
+			};
+		};
+
+		privacy_led_sleep: privacy_led_sleep {
+			mux {
+				pins = "gpio133";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio133";
+				bias-pull-down;
+				input-enable;
+			};
+		};
+	};
+
+	qupv3_se12_2uart_pins: qupv3_se12_2uart_pins {
+		qupv3_se12_2uart_tx_active: qupv3_se12_2uart_tx_active {
+			mux {
+				pins = "gpio90";
+				function = "qup1_se5_l2";
+			};
+
+			config {
+				pins = "gpio90";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se12_2uart_rx_active: qupv3_se12_2uart_rx_active {
+			mux {
+				pins = "gpio91";
+				function = "qup1_se5_l3";
+			};
+
+			config {
+				pins = "gpio91";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se12_2uart_sleep: qupv3_se12_2uart_sleep {
+			mux {
+				pins = "gpio90", "gpio91";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio90", "gpio91";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+};
+
+// SoC Debug UART (ie. serial console)
+&qupv3_se6_2uart {
+	status = "ok";
+};
+
+&ufshc_mem {
+	clocks =
+		<&gcc GCC_UFS_PHY_AXI_CLK>,
+		<&gcc GCC_AGGRE_UFS_PHY_AXI_CLK>,
+		<&gcc GCC_UFS_PHY_AHB_CLK>,
+		<&gcc GCC_UFS_PHY_UNIPRO_CORE_CLK>,
+		<&gcc GCC_UFS_PHY_ICE_CORE_CLK>,
+		<&rpmhcc RPMH_LN_BB_CLK8>,
+		<&gcc GCC_UFS_PHY_TX_SYMBOL_0_CLK>,
+		<&gcc GCC_UFS_PHY_RX_SYMBOL_0_CLK>,
+		<&gcc GCC_UFS_PHY_RX_SYMBOL_1_CLK>;
+	vdd-hba-supply = <&gcc_ufs_phy_gdsc>;
+
+	vcc-supply = <&L13B>;
+	vcc-max-microamp = <1300000>;
+
+	vccq-supply = <&L3B>;
+	vccq-max-microamp = <1200000>;
+
+	qcom,vddp-ref-clk-supply = <&L3B>;
+	qcom,vddp-ref-clk-max-microamp = <100>;
+
+	spm-level = <3>;
+	status = "ok";
+};
+
+&ufsphy_mem {
+	compatible = "qcom,ufs-phy-qmp-v4-anarok";
+
+	vdda-phy-supply = <&L2F>;
+	vdda-pll-supply = <&L2C>;
+	vdda-phy-max-microamp = <138000>;
+	vdda-pll-max-microamp = <18300>;
+
+	status = "ok";
+};
+
+&usb0 {
+#ifndef CONFIG_QCOM_EUD
+	/* extcon property must be removed if extcon device (ie. eud) will not be probed */
+	/delete-property/ extcon;
+#endif
+
+	dwc3@a600000 {
+		qcom,iommu-faults = "non-fatal";
+		maximum-speed = "super-speed";
+		snps,usb2-lpm-disable;
+		snps,usb2-gadget-lpm-disable;
+	};
+};
+
+&vendor {
+	gpio-leds {
+		compatible = "gpio-leds";
+
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&privacy_led_default>;
+		pinctrl-1 = <&privacy_led_sleep>;
+
+		led0 {
+			color = <LED_COLOR_ID_WHITE>;
+			default-state = "off";
+			function = LED_FUNCTION_INDICATOR;
+			gpios = <&tlmm 133 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	fan: pwm-tach-fan@0 {
+		reg = <0>;
+		compatible = "pwm-tach-fan";
+		interrupt-parent = <&tlmm>;
+		interrupts = <147 1>;
+		interrupt-names = "fan_irq";
+		/*25KHz -> 40000ns*/
+		pwms = <&pmxr2230_pwm_2 0 40000>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fan_pwm_default &fan_tach_default>;
+		max-rpm = <8500>;
+		oculus,min-pwm = <51>;
+		oculus,max-pwm = <255>;
+		#cooling-cells = <2>;
+		cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000 8000>;
+	};
+
+	uefi_logs {
+		compatible = "meta,uefi-logs";
+		memory-region = <&uefi_log_mem>;
+	};
+};

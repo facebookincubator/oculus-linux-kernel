@@ -1,0 +1,17 @@
+#include "anorak-sde-display-idp.dtsi"
+
+&dsi_sy103_1280p_90hz_video {
+	/delete-property/ qcom,esd-check-enabled;
+};
+
+&dsi_sy103_dual_1280p_90hz_video {
+	/delete-property/ qcom,esd-check-enabled;
+};
+
+&dsi_sy103_dsc_2544p_75hz_video {
+	/delete-property/ qcom,esd-check-enabled;
+};
+
+&dsi_sy103_dual_dsc_2544p_75hz_video {
+	/delete-property/ qcom,esd-check-enabled;
+};

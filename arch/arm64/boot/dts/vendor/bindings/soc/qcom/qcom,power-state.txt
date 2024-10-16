@@ -1,0 +1,28 @@
+* Qualcomm Technologies, Inc. Power State Driver
+
+This binding describes the Qualcomm Technologies, Inc. Power State Driver. Power
+State creates power_state device node for user space communication. User space
+client can open device node for communication and driver accordingly handles the
+request.
+
+Required Properties:
+
+- compatible:
+	Usage: required
+	Value type: <string>
+	Definition: must be "qcom,power-state"
+- subsys-name:
+	Usage: required
+	Value type: <string>
+	Description: subsystem names supported
+- rproc-handle:
+	Usage: required
+	Description: phandle to subsys defined in subsys-name.
+
+Example:
+
+	qcom,power-state {
+		compatible = "qcom,power-state";
+		qcom,subsys-name = "adsp", "modem";
+		qcom,rproc-handle = <&adsp_pas>, <&modem_pas>;
+	};

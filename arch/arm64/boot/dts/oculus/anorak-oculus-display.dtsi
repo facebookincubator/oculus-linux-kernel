@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "vendor-base/qcom/display/anorak-sde.dtsi"
+#include "vendor-base/qcom/display/anorak-sde-display.dtsi"
+
+&mdss_dsi2 {
+	status = "disabled";
+};
+
+&mdss_dsi3 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy2 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy3 {
+	status = "disabled";
+};
+
+&mdss_mdp1 {
+	status = "disabled";
+};

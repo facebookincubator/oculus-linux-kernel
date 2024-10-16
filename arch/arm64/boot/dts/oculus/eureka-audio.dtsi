@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&qupv3_se1_i2c {
+	status = "ok";
+
+	max98388_left: max98388@39 {
+		device-name = "max98388_left_codec";
+		status = "ok";
+		compatible = "adi,max98388";
+		reg = <0x39>;
+		sound-name-prefix = "LeftSpk";
+		vdd-supply = <&L11B>;
+		reset-gpio = <&tlmm 86 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&max98388_reset_default>;
+		adi,vmon-slot-no = <0>;
+		adi,imon-slot-no = <2>;
+
+		tdm-config = <0x0 0x1 4 16 0x305>;
+	};
+
+	max98388_right: max98388@38 {
+		device-name = "max98388_right_codec";
+		status = "ok";
+		compatible = "adi,max98388";
+		reg = <0x38>;
+		sound-name-prefix = "RightSpk";
+		vdd-supply = <&L11B>;
+		adi,vmon-slot-no = <4>;
+		adi,imon-slot-no = <6>;
+
+		tdm-config = <0x0 0x2 4 16 0x305>;
+	};
+
+	ak4333: ak4333@10 {
+		status = "ok";
+		compatible = "akm,ak4333";
+		reg = <0x10>;
+
+		ak4333,avdd-core-supply = <&L11B>;
+		ak4333,avdd-voltage = <1800000 1800000>;
+		ak4333,avdd-current = <300000>;
+		ak4333,vdd-supply = <&L2C>;
+		ak4333,vdd-voltage = <1200000 1200000>;
+		ak4333,vdd-current = <19000>;
+		ak4333,pdn-gpio = <&tlmm 189 0>;
+		pinctrl-names = "default";
+		ak4333,headset-det-gpio = <&tlmm 40 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&ak4333_intr_default &ak4333_pdn_default>;
+	};
+};
+
+&spf_core_platform {
+	cc_pri_mi2s_gpios: cc_pinctrl_pri {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&pri_mi2s_sck_active &pri_mi2s_ws_active
+				&pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+
+		pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep
+				&pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
+		qcom,lpi-gpios;
+	};
+
+	cdc_sen_tdm_gpios: sen_tdm_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&lpi_tdm2_sck_active &lpi_tdm2_ws_active
+				&lpi_tdm2_sd0_active &lpi_tdm2_sd1_active>;
+		pinctrl-1 = <&lpi_tdm2_sck_sleep &lpi_tdm2_ws_sleep
+				&lpi_tdm2_sd0_sleep &lpi_tdm2_sd1_sleep>;
+		qcom,lpi-gpios;
+	};
+
+	cdc_dmic01_gpios: cdc_dmic01_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic01_clk_active &cdc_dmic01_data_active>;
+		pinctrl-1 = <&cdc_dmic01_clk_sleep &cdc_dmic01_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+
+	cdc_dmic23_gpios: cdc_dmic23_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic23_clk_active &cdc_dmic23_data_active>;
+		pinctrl-1 = <&cdc_dmic23_clk_sleep &cdc_dmic23_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+};
+
+&tlmm {
+	ak4333_intr {
+		ak4333_intr_default: ak4333_intr_default {
+			mux {
+				pins = "gpio40";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio40";
+				drive-strength = <2>; /* 2 mA */
+				bias-pull-up; /* pull up */
+				input-enable;
+			};
+		};
+	};
+
+	ak4333_pdn {
+		ak4333_pdn_default: ak4333_pdn_default {
+			mux {
+				pins = "gpio189";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio189";
+				drive-strength = <16>; /* 16 mA */
+				bias-disable; /* no pull */
+				output-low;
+				qcom,apps;
+			};
+		};
+	};
+
+	max98388_reset_default: max98388_reset_default {
+		mux {
+			pins = "gpio86";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio86";
+			drive-strength = <16>; /* 16 mA */
+			bias-disable; /* no pull */
+			output-low;
+		};
+	};
+};
+
+&waipio_snd {
+	asoc-codec  = <&stub_codec>, <&max98388_left>,
+		<&max98388_right>, <&lpass_cdc>, <&ak4333>;
+	asoc-codec-names = "msm-stub-codec.1", "max98388_left_codec",
+		"max98388_right_codec", "lpass-cdc", "ak4333";
+	qcom,pri-mi2s-gpios = <&cc_pri_mi2s_gpios>;
+	qcom,sen-mi2s-gpios = <&cdc_sen_tdm_gpios>;
+	qcom,cdc-dmic01-gpios = <&cdc_dmic01_gpios>;
+	qcom,cdc-dmic23-gpios = <&cdc_dmic23_gpios>;
+	qcom,ext-disp-audio-rx = <1>;
+	qcom,tdm-audio-intf = <1>;
+	tdm-config = <0x0 0x0 4 16 0x305>;
+
+	qcom,audio-routing =
+		"TX DMIC0", "Digital Mic0",
+		"TX DMIC1", "Digital Mic1",
+		"TX DMIC2", "Digital Mic2",
+		"TX DMIC3", "Digital Mic3";
+};

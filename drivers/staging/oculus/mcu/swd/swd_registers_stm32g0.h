@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _SWD_REGISTERS_STM32G0_H
+#define _SWD_REGISTERS_STM32G0_H
+
+#define SWD_STM32G0_FLASH_MEM_START_ADDR  0x08000000
+
+#define SWD_STM32G0_DBG_BASE              0x40015800
+#define SWD_STM32G0_DBG_IDCODE            (SWD_STM32G0_DBG_BASE + 0x00)
+#define SWD_STM32G0_DBG_IDCODE_DEVID_MASK (0xfff)
+
+#define SWD_STM32G0_FLASH_BASE            0x40022000
+#define SWD_STM32G0_FLASH_ACR             (SWD_STM32G0_FLASH_BASE + 0x00)
+#define SWD_STM32G0_FLASH_KEYR            (SWD_STM32G0_FLASH_BASE + 0x08)
+#define SWD_STM32G0_FLASH_SR              (SWD_STM32G0_FLASH_BASE + 0x10)
+#define SWD_STM32G0_FLASH_CR              (SWD_STM32G0_FLASH_BASE + 0x14)
+
+#define SWD_STM32G0_FLASH_ERR_OP          (1<<1)
+#define SWD_STM32G0_FLASH_ERR_PROG        (1<<3)
+#define SWD_STM32G0_FLASH_ERR_WRP         (1<<4)
+#define SWD_STM32G0_FLASH_ERR_PGA         (1<<5)
+#define SWD_STM32G0_FLASH_ERR_SIZ         (1<<6)
+#define SWD_STM32G0_FLASH_ERR_PGS         (1<<7)
+#define SWD_STM32G0_FLASH_ERR_MISS        (1<<8)
+#define SWD_STM32G0_FLASH_ERR_FAST        (1<<9)
+#define SWD_STM32G0_FLASH_ERR_RD          (1<<14)
+#define SWD_STM32G0_FLASH_ERR_OPTV        (1<<15)
+
+#define SWD_STM32G0_FLASH_ERR_Mask     \
+        (SWD_STM32G0_FLASH_ERR_OP    | \
+         SWD_STM32G0_FLASH_ERR_PROG  | \
+         SWD_STM32G0_FLASH_ERR_WRP   | \
+         SWD_STM32G0_FLASH_ERR_PGA   | \
+         SWD_STM32G0_FLASH_ERR_SIZ   | \
+         SWD_STM32G0_FLASH_ERR_PGS   | \
+         SWD_STM32G0_FLASH_ERR_MISS  | \
+         SWD_STM32G0_FLASH_ERR_FAST  | \
+         SWD_STM32G0_FLASH_ERR_RD    | \
+         SWD_STM32G0_FLASH_ERR_OPTV)
+
+#define SWD_STM32G0_FLASH_SR_BUSY1        (1<<16)
+#define SWD_STM32G0_FLASH_SR_CFGBSY       (1<<18)
+
+#define SWD_STM32G0_FLASH_ACR_EMPTY       (1<<16)
+
+#define SWD_STM32G0_FLASH_CR_PG           (1<<0)
+#define SWD_STM32G0_FLASH_CR_PER          (1<<1)
+#define SWD_STM32G0_FLASH_CR_STRT         (1<<16)
+#define SWD_STM32G0_FLASH_CR_FSTPG        (1<<18)
+#define SWD_STM32G0_FLASH_CR_LOCK         (1<<31)
+#define SWD_STM32G0_FLASH_CR_PNB_Pos      (3)
+#define SWD_STM32G0_FLASH_CR_PNB_Mask     (0x3FF<<SWD_STM32G0_FLASH_CR_PNB_Pos)
+
+#define SWD_STM32G0_FLASH_KEYR_Key1        0x45670123
+#define SWD_STM32G0_FLASH_KEYR_Key2        0xCDEF89AB
+
+#endif // _SWD_REGISTERS_STM32G0_H

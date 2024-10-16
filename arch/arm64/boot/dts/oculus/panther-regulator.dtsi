@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: GPL-2.<0>
+
+&L4B {
+	qcom,init-enable = <0>;
+};
+
+&L8B {
+	qcom,init-enable = <0>;
+	qcom,init-voltage = <1800000>;
+};
+
+&L9B {
+	qcom,init-enable = <0>;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+};
+
+&L11B {
+	qcom,init-enable = <0>;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+};
+
+&L12B {
+	qcom,init-enable = <0>;
+	regulator-boot-on;
+};
+
+/* Jackson/Canyon Cam AVDD */
+&L14B {
+	qcom,init-enable = <0>;
+	regulator-min-microvolt = <2700000>;
+};
+
+/* Not connected */
+&L16B {
+	qcom,init-enable = <0>;
+};
+
+&L17B {
+	qcom,init-enable = <0>;
+};
+
+/* Not connected */
+&L18B {
+	qcom,init-enable = <0>;
+};
+
+/* Not connected */
+&L19B {
+	qcom,init-enable = <0>;
+};
+
+/* Disconnected (prox sensor not populated) */
+&L20B {
+	qcom,init-enable = <0>;
+};
+
+&L21B {
+	qcom,init-enable = <0>;
+};
+
+&L22B {
+	qcom,init-enable = <0>;
+};
+
+&L23B {
+	qcom,init-enable = <0>;
+};
+
