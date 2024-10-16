@@ -1,0 +1,5 @@
+header-y += arfirmware_io_interface.h
+header-y += arfirmware_types.h
+header-y += babel.h
+header-y += seacliff_blu_spi.h
+header-y += syncboss.h

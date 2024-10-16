@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&qupv3_se1_i2c {
+	status = "ok";
+
+	max98388_left: max98388@39 {
+		device-name = "max98388_left_codec";
+		status = "ok";
+		compatible = "adi,max98388";
+		reg = <0x39>;
+		sound-name-prefix = "LeftSpk";
+		vdd-supply = <&L7B>;
+		reset-gpio = <&tlmm 86 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&max98388_reset_default>;
+		adi,vmon-slot-no = <0>;
+		adi,imon-slot-no = <2>;
+
+		tdm-config = <0x0 0x1 4 16 0x305>;
+	};
+
+	max98388_right: max98388@38 {
+		device-name = "max98388_right_codec";
+		status = "ok";
+		compatible = "adi,max98388";
+		reg = <0x38>;
+		sound-name-prefix = "RightSpk";
+		vdd-supply = <&L7B>;
+		adi,vmon-slot-no = <4>;
+		adi,imon-slot-no = <6>;
+
+		tdm-config = <0x0 0x2 4 16 0x305>;
+	};
+};
+
+&spf_core_platform {
+	cc_pri_mi2s_gpios: cc_pinctrl_pri {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&pri_mi2s_sck_active &pri_mi2s_ws_active
+				&pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+
+		pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep
+				&pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
+		qcom,lpi-gpios;
+	};
+
+	cdc_sen_tdm_gpios: sen_tdm_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&lpi_tdm2_sck_active &lpi_tdm2_ws_active
+				&lpi_tdm2_sd0_active &lpi_tdm2_sd1_active>;
+		pinctrl-1 = <&lpi_tdm2_sck_sleep &lpi_tdm2_ws_sleep
+				&lpi_tdm2_sd0_sleep &lpi_tdm2_sd1_sleep>;
+		qcom,lpi-gpios;
+	};
+
+	cdc_dmic23_gpios: cdc_dmic23_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic23_clk_active &cdc_dmic23_data_active>;
+		pinctrl-1 = <&cdc_dmic23_clk_sleep &cdc_dmic23_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+};
+
+&tlmm {
+
+	max98388_reset_default: max98388_reset_default {
+		mux {
+			pins = "gpio86";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio86";
+			drive-strength = <16>; /* 16 mA */
+			bias-disable; /* no pull */
+			output-low;
+		};
+	};
+};
+
+&waipio_snd {
+	qcom,model = "anorak-max98388-rev2-snd-card";
+	asoc-codec  = <&stub_codec>, <&max98388_left>,
+		<&max98388_right>, <&lpass_cdc>;
+	asoc-codec-names = "msm-stub-codec.1", "max98388_left_codec",
+		"max98388_right_codec", "lpass-cdc";
+	qcom,pri-mi2s-gpios = <&cc_pri_mi2s_gpios>;
+	qcom,sen-mi2s-gpios = <&cdc_sen_tdm_gpios>;
+	qcom,cdc-dmic01-gpios = <>;
+	qcom,cdc-dmic23-gpios = <&cdc_dmic23_gpios>;
+	qcom,tdm-audio-intf = <1>;
+	tdm-config = <0x0 0x0 4 16 0x305>;
+
+	qcom,audio-routing =
+		"TX DMIC0", "Digital Mic0",
+		"TX DMIC1", "Digital Mic1",
+		"TX DMIC2", "Digital Mic2",
+		"TX DMIC3", "Digital Mic3";
+};
+
+&lpass_cdc {
+    cdc-vdd-dmic-supply = <&L11B>;
+    qcom,cdc-vdd-dmic-voltage = <1800000 1800000>;
+    qcom,cdc-vdd-dmic-current = <300000>;
+    qcom,cdc-on-demand-supplies = "cdc-vdd-dmic";
+
+    /* T182912645: Temporary fake regulator to control DMIC clock buffer */
+    cdc-vdd-dmic-supply = <&dmic_clk_en_regulator>;
+};
+
+&tlmm {
+	dmic_clk_en_default: dmic_clk_en_default {
+		mux {
+			pins = "gpio5";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio5";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+};
+
+&vendor {
+	/* T182912645: Temporary fake regulator to control DMIC clock buffer */
+	dmic_clk_en_regulator: dmic_clk_en_regulator {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "dmic_clk_en";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-min-microamp = <300000>;
+		regulator-max-microamp = <300000>;
+		gpio = <&tlmm 5 0>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&dmic_clk_en_default>;
+		vin-supply = <&L11B>;
+	};
+};

@@ -1,0 +1,313 @@
+#include "neo_la.dtsi"
+#include "neo-pm8008.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO LUNA-V2";
+	qcom,msm-id = <579 0x10000>;
+};
+
+&kgsl_smmu {
+	status = "ok";
+};
+
+&wlan_kiwi {
+	/delete-property/ vdd-wlan-supply;
+	/delete-property/ qcom,pdc_init_table;
+	/delete-property/ qcom,vreg_pdc_map;
+	/delete-property/ qcom,pmu_vreg_map;
+};
+
+&apps_rsc {
+	/* Delete S2A VRM for WLAN on neo_luna-v2*/
+	/delete-node/ rpmh-regulator-smpa2;
+
+	rpmh-regulator-mxclvl {
+		VDD_MXC_GFX_VOTER_LEVEL: VDD_GFX_MXC_VOTER_LEVEL:
+		regulator-pm8150-s8-gfx-voter-level {
+			regulator-name = "pm8150_s8_gfx_voter_level";
+			pm8150_s8_gfx_voter_level-parent-supply =
+				<&VDD_GFX_LEVEL>;
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt =
+				<RPMH_REGULATOR_LEVEL_MIN_SVS>;
+			regulator-max-microvolt =
+				<RPMH_REGULATOR_LEVEL_MAX>;
+			qcom,init-voltage-level =
+				<RPMH_REGULATOR_LEVEL_MIN_SVS>;
+		};
+	};
+
+	rpmh-regulator-gfxlvl {
+		compatible = "qcom,rpmh-arc-regulator";
+		qcom,resource-name = "gfx.lvl";
+		VDD_GFX_LEVEL: S2A_LEVEL:
+		pm8150_s2_level: regulator-pm8150-s2-level {
+			regulator-name = "pm8150_s2_level";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt =
+				<RPMH_REGULATOR_LEVEL_RETENTION>;
+			regulator-max-microvolt =
+				<RPMH_REGULATOR_LEVEL_MAX>;
+			qcom,init-voltage-level =
+				<RPMH_REGULATOR_LEVEL_RETENTION>;
+		};
+	};
+};
+
+&gpu_cc_gx_gdsc {
+	parent-supply = <&VDD_GFX_MXC_VOTER_LEVEL>;
+};
+
+&mdp_0_tbu {
+	status = "ok";
+};
+
+&mdp_1_tbu {
+	status = "ok";
+};
+
+&gpucc {
+	status = "ok";
+};
+
+&dispcc {
+	status = "ok";
+};
+
+&debugcc {
+	qcom,gpucc = <&gpucc>;
+	qcom,dispcc = <&dispcc>;
+	clock-names = "xo_clk_src",
+			"gcc",
+			"videocc",
+			"dispcc",
+			"camcc",
+			"gpucc";
+	clocks = <&rpmhcc RPMH_CXO_CLK>,
+		<&gcc 0>,
+		<&videocc 0>,
+		<&dispcc 0>,
+		<&camcc 0>,
+		<&gpucc 0>;
+};
+
+&gpu_cc_cx_gdsc {
+	status = "ok";
+};
+
+&gpu_cc_gx_gdsc {
+	status = "ok";
+};
+
+&disp_cc_mdss_core_gdsc {
+	status = "ok";
+};
+
+&disp_cc_mdss_core_int2_gdsc {
+	status = "ok";
+};
+
+&msm_gpu {
+	status = "ok";
+
+	/* Enable context aware freq. scaling */
+	qcom,enable-ca-jump;
+
+	/* Context aware jump busy penalty in us */
+	qcom,ca-busy-penalty = <12000>;
+
+	/delete-node/ qcom,gpu-pwrlevel-bins;
+
+	/*
+	 * Speed-bin zero is default speed bin.
+	 * For rest of the speed bins, speed-bin value
+	 * is calculated as FMAX/4.8 MHz round up to zero
+	 * decimal places plus two margin to account for
+	 * clock jitters.
+	 */
+	qcom,gpu-pwrlevel-bins {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "qcom,gpu-pwrlevel-bins";
+
+		qcom,gpu-pwrlevels-0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			qcom,speed-bin = <0>;
+
+			qcom,initial-pwrlevel = <6>;
+			qcom,ca-target-pwrlevel = <5>;
+
+			/* TURBO_L1 */
+			qcom,gpu-pwrlevel@0 {
+				reg = <0>;
+				qcom,gpu-freq = <843000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_TURBO_L1>;
+				qcom,bus-freq = <11>;
+				qcom,bus-min = <10>;
+				qcom,bus-max = <11>;
+
+				qcom,acd-level = <0xA82E5FFD>;
+			};
+
+			/* TURBO */
+			qcom,gpu-pwrlevel@1 {
+				reg = <1>;
+				qcom,gpu-freq = <780000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_TURBO>;
+				qcom,bus-freq = <10>;
+				qcom,bus-min = <9>;
+				qcom,bus-max = <11>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* NOM */
+			qcom,gpu-pwrlevel@2 {
+				reg = <2>;
+				qcom,gpu-freq = <644000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_NOM>;
+				qcom,bus-freq = <9>;
+				qcom,bus-min = <7>;
+				qcom,bus-max = <11>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* SVS_L1 */
+			qcom,gpu-pwrlevel@3 {
+				reg = <3>;
+				qcom,gpu-freq = <570000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+				qcom,bus-freq = <7>;
+				qcom,bus-min = <5>;
+				qcom,bus-max = <10>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* SVS */
+			qcom,gpu-pwrlevel@4 {
+				reg = <4>;
+				qcom,gpu-freq = <450000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_SVS>;
+				qcom,bus-freq = <6>;
+				qcom,bus-min = <3>;
+				qcom,bus-max = <8>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* LOW SVS */
+			qcom,gpu-pwrlevel@5 {
+				reg = <5>;
+				qcom,gpu-freq = <320000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+				qcom,bus-freq = <3>;
+				qcom,bus-min = <2>;
+				qcom,bus-max = <6>;
+			};
+
+			/* LOW SVS_D1 */
+			qcom,gpu-pwrlevel@6 {
+				reg = <6>;
+				qcom,gpu-freq = <235000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
+				qcom,bus-freq = <3>;
+				qcom,bus-min = <2>;
+				qcom,bus-max = <6>;
+			};
+		};
+
+		qcom,gpu-pwrlevels-1 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			qcom,speed-bin = <137>;
+
+			qcom,initial-pwrlevel = <4>;
+			qcom,ca-target-pwrlevel = <3>;
+
+			/* NOM */
+			qcom,gpu-pwrlevel@0 {
+				reg = <0>;
+				qcom,gpu-freq = <644000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_NOM>;
+				qcom,bus-freq = <11>;
+				qcom,bus-min = <8>;
+				qcom,bus-max = <11>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* SVS_L1 */
+			qcom,gpu-pwrlevel@1 {
+				reg = <1>;
+				qcom,gpu-freq = <570000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_SVS_L1>;
+				qcom,bus-freq = <7>;
+				qcom,bus-min = <5>;
+				qcom,bus-max = <10>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* SVS */
+			qcom,gpu-pwrlevel@2 {
+				reg = <2>;
+				qcom,gpu-freq = <450000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_SVS>;
+				qcom,bus-freq = <6>;
+				qcom,bus-min = <3>;
+				qcom,bus-max = <8>;
+
+				qcom,acd-level = <0xC0285FFD>;
+			};
+
+			/* LOW SVS */
+			qcom,gpu-pwrlevel@3 {
+				reg = <3>;
+				qcom,gpu-freq = <320000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+				qcom,bus-freq = <3>;
+				qcom,bus-min = <2>;
+				qcom,bus-max = <6>;
+			};
+
+			/* LOW SVS_D1 */
+			qcom,gpu-pwrlevel@4 {
+				reg = <4>;
+				qcom,gpu-freq = <235000000>;
+				qcom,level = <RPMH_REGULATOR_LEVEL_LOW_SVS_D1>;
+				qcom,bus-freq = <3>;
+				qcom,bus-min = <2>;
+				qcom,bus-max = <6>;
+			};
+		};
+	};
+};
+
+&kgsl_msm_iommu {
+	status = "ok";
+};
+
+&gmu {
+	status = "ok";
+};
+
+&mc_virt {
+	qcom,bcm-voter-names = "hlos", "disp";
+	qcom,bcm-voters = <&apps_bcm_voter>, <&disp_bcm_voter>;
+};
+
+&mmss_noc {
+	qcom,bcm-voter-names = "hlos", "disp";
+	qcom,bcm-voters = <&apps_bcm_voter>, <&disp_bcm_voter>;
+};
+
+&gem_noc {
+	qcom,bcm-voter-names = "hlos", "disp";
+	qcom,bcm-voters = <&apps_bcm_voter>, <&disp_bcm_voter>;
+};

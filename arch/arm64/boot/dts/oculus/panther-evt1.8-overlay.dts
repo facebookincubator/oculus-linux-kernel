@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include "panther-evt1-common.dtsi"
+#include "panther-evt1-mr-button.dtsi"
+
+/ {
+	model = "Panther (EVT1.8)";
+	compatible = "oculus,panther-evt1.8", "oculus,panther", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10843 0x2>;  // board-id = <(major)(minor)(product) (subtype)>
+
+};
+
+&wlan {
+	cal-file-prefix = "panther_evt1.8_";
+};
+

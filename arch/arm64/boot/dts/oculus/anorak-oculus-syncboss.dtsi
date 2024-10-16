@@ -1,0 +1,228 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&aliases {
+	// nRF UART
+	hsuart14 = &qupv3_se7_2uart; /* /dev/ttyHS14 */
+};
+
+&tlmm {
+	syncboss_spi_tx_rx_sleep: syncboss_spi_tx_rx_sleep {
+		mux {
+			pins = "gpio69", "gpio70", "gpio71";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio69", "gpio70", "gpio71";
+			bias-disable;
+		};
+	};
+
+	syncboss_spi_cs_sleep: syncboss_spi_cs_sleep {
+		mux {
+			pins = "gpio72";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio72";
+			bias-pull-up;
+		};
+	};
+
+	syncboss_float_swd: syncboss_float_swd {
+		mux {
+			pins = "gpio79", "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio79", "gpio80";
+			drive-strength = <6>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	syncboss_nsync: syncboss_nsync {
+		mux {
+			pins = "gpio125";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio125";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	syncboss_wakeup: syncboss_wakeup {
+		mux {
+			pins = "gpio41";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio41";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	syncboss_reset_default: syncboss_reset_default {
+		mux {
+			pins = "gpio112";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio112";
+			drive-strength = <6>;
+			output-low;
+		};
+	};
+
+	syncboss_uart_tx_active: syncboss_uart_tx_active {
+		mux {
+			pins = "gpio59";
+			function = "qup1_se0_l2";
+		};
+
+		config {
+			pins = "gpio59";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_rx_active: syncboss_uart_rx_active {
+		mux {
+			pins = "gpio60";
+			function = "qup1_se0_l3_mira";
+		};
+
+		config {
+			pins = "gpio60";
+			bias-disable;
+		};
+	};
+
+	syncboss_uart_sleep: syncboss_uart_sleep {
+		mux {
+			pins = "gpio59", "gpio60";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio59", "gpio60";
+			input-enable;
+			bias-pull-down;
+		};
+	};
+};
+
+&soc {
+	qupv3_se7_2uart: qcom,qup_uart@a80000 {
+		compatible = "qcom,msm-geni-serial-hs";
+		reg = <0xa80000 0x4000>;
+		reg-names = "se_phys";
+		interrupts = <GIC_SPI 353 IRQ_TYPE_LEVEL_HIGH>;
+		clock-names = "se-clk", "m-ahb", "s-ahb";
+		clocks = <&gcc GCC_QUPV3_WRAP1_S0_CLK>,
+			<&gcc GCC_QUPV3_WRAP_1_M_AHB_CLK>,
+			<&gcc GCC_QUPV3_WRAP_1_S_AHB_CLK>;
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&syncboss_uart_tx_active &syncboss_uart_rx_active>;
+		pinctrl-1 = <&syncboss_uart_sleep>;
+
+		qcom,wrapper-core = <&qupv3_1>;
+		qcom,wakeup-byte = <0xFD>;
+		qcom,allow-suspend;
+		qcom,auto-suspend-disable;
+	};
+};
+
+&L6B {
+	/* nRF 1.8 */
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	regulator-always-on;
+};
+
+&qupv3_se9_spi {
+	status = "ok";
+	qcom,rt;
+
+	pinctrl-1 = <&syncboss_spi_tx_rx_sleep &syncboss_spi_cs_sleep>;
+
+	// nRF requires >2us after clock stop, before raising CS.
+	// By default the delay is about 814us. Add 10 cycles at
+	// 8MHz (1.25us) to get us the rest of the way.
+	qcom,set-cs-clk-delay = <10>;
+
+	syncboss_nrf@0 {
+		status = "okay";
+		compatible = "meta,syncboss-spi";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+
+		spi-cpol;
+		spi-cpha;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
+
+		meta,imu-core-supply = <&L6B>;
+		meta,imu-core-voltage-level = <1800000 1800000>;
+		meta,mag-core-supply = <&L6B>;
+		meta,mag-core-voltage-level = <1800000 1800000>;
+
+		meta,syncboss-reset  = <&tlmm 112 0>;
+		meta,syncboss-wakeup  = <&tlmm 41 0>;
+
+		meta,syncboss-use-fastpath;
+
+		swd@0 {
+			compatible = "meta,swd", "meta,syncboss-consumer";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_float_swd>;
+
+			meta,pin-reset = <&tlmm 112 0>;
+			meta,swd-clk = <&tlmm 80 0>;
+			meta,swd-io = <&tlmm 79 0>;
+
+			meta,swd-flavor = "nrf52833";
+			meta,fw-path = "syncboss.bin";
+			meta,flash-block-size = <512>;
+			meta,flash-page-size = <4096>;
+			meta,flash-page-count = <128>;
+			meta,flash-page-bootloader-protected-count = <1>;
+			meta,flash-page-retained-count = <13>;
+			meta,swd-provisioning;
+		};
+
+		powerstate@0 {
+			compatible = "meta,syncboss-powerstate", "meta,syncboss-consumer";
+			meta,syncboss-has-prox;
+		};
+
+		nsync@0 {
+			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&syncboss_nsync>;
+
+			interrupt-parent = <&tlmm>;
+			interrupts = <125 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "nsync";
+		};
+
+		directchannel@0 {
+			compatible = "meta,syncboss-direct-channel", "meta,syncboss-consumer";
+		};
+
+		miscfifo@0 {
+			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
+		};
+	};
+};

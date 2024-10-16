@@ -1,0 +1,304 @@
+menuconfig OCULUS
+	bool "Oculus feature support"
+	default y
+	help
+	  Enable support for Oculus drivers and features
+
+if OCULUS
+
+config AS5510
+	tristate "AS5510 Hall Effect Sensor i2c driver"
+	default n
+	help
+	  This driver sets up a regmap to read sensor values.
+
+	  With this sensor, can measure IPD. Look at regs 0x0-0x1.
+	  Here is spec sheet:
+	  http://www.mouser.com/ds/2/588/AS5510_Datasheet_EN_v3-272817.pdf
+
+config BLU_FW
+	tristate "Support BLU FW Updates"
+	default n
+	help
+	  Allow automatic/OTA FW updates for the backlight MCU.
+
+config CAM_FSYNC
+	bool "Oculus Camera FSYNC Timestamp driver"
+	depends on OCULUS
+	default n
+	help
+	  Enable Camera FSYNC Timestamp driver
+
+config CHARGER_CYPD3177
+	tristate "CONFIG_CYPD3177 support"
+	default n
+	help
+	  Say Y here to enable support for batteries with CYPD3177 chips connected
+	  over an I2C bus. This driver registers with the power supply class and
+	  advertises itself as a wireless power supply. CYPD3177 controller takes
+	  care of PD contract negotiation and advertises state changes via GPIO
+	  interrupts.
+
+config CHARGING_THERMAL_CONTROLLER
+	tristate "Charging Thermal Controller Driver"
+	default n
+	help
+	  This driver votes on a device tree defined pmic votable when trip points
+	  associated with a cooling device are passed. There are three states:
+	  0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
+	  these levels are also device tree defined.
+
+config CYPD_POLICY_ENGINE
+	tristate "Cypress Power Delivery Policy Engine"
+	depends on CHARGER_CYPD3177
+	default n
+	help
+	  Say Y here to enable CYPD policy engine. This driver implements policy
+	  for handling power delivery messages. This is based on the USB Power
+	  Delivery protocol with some CYPD3177 BCR specific behavior such as
+	  defaulting to sink only mode. This driver depends on a CYPD 3177
+	  controller device driver in order to transmit and receive PD messages
+	  on its behalf.
+
+config FPGA_AGGREGATOR
+	tristate "FPGA Aggregator Kernel Driver"
+	default n
+	help
+	  FPGA aggregator kernel module that controls the regulators
+	  for the FPGA hardware.
+
+config GENERIC_VIRTUAL_SENSOR
+	tristate "Generic Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a generic virtual sensor driver which
+	  can be configured through userspace.
+
+config GPIO_CAPACITOR
+	tristate "Cap Hold Up Circuit controlled by GPIO"
+	default n
+	help
+	  Cap Hold-Up circuit along with AP suspend so that this circuit is active
+	  when the system is active (busy and capable of high power peaks) to avoid
+	  sudden high current. And disabled when not in use (EG: Standby) since the
+	  circuit has some leakage to prevent excessive power drain.
+
+config GPU_ERROR_SYSCTL
+	tristate "Enable creation of SysCtl nodes for GPU Error Logs"
+	default n
+	help
+		Enable creation of SysCtl nodes for GPU Error Logs that is
+		consumed by user-space for telemetry purposes to get insight
+		into GPU Errors.
+
+config IIO_CHANNEL_SENSOR
+	tristate "IIO Channel Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a virtual sensor driver representing the iio channel
+	  value of a device.
+
+config INSTRUCTION_SAMPLER
+	tristate "Periodic instruction sampler"
+	depends on EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
+	help
+	  Provides support for periodic instruction sampling of processes
+	  running on the system.
+
+config MISCFIFO
+	tristate "miscfifo chardev driver"
+	default n
+	help
+	  Like seqfile, this driver provides file operations to
+	  easily implement a chardev backed by a kfifo.
+
+	  Drivers using this chardev only have to call one of the
+	  send() functions to deliver events to userspace.
+
+config MISCFIFO_BENCHMARK
+	tristate "miscfifo benchmark driver"
+	default n
+	help
+	  Benchmarking driver for miscfifo that allows you to measure
+	  its throughput and latency properties.
+
+config MP3314_BLU
+	tristate "MP3314 BLU I2C driver"
+	default n
+	depends on I2C
+	help
+	  Basic I2C driver for MP3314 BLU hardware.
+
+config OCULUS_EXTERNAL_BATTERY
+	tristate "External battery driver"
+	depends on META_USBVDM
+	default n
+	help
+	  External battery driver for sending and receiving unstructured vdm
+	  messages. Messages will be sent with host device acting as a source and
+	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
+	  external battery parameters.
+
+config POWERSTATE_MANAGER
+	tristate "Powerstate manager driver"
+	default n
+	help
+	  Driver for allowing services to prevent AP suspend. Specifically useful
+	  for vendor services, which cannot talk to the PowerManager service and
+	  have no other robust way to acquire wakelocks.
+
+config NAUTILUS_RESOURCE_MANAGER
+	tristate "Nautilus resource manager kernel driver"
+	default n
+	help
+	  Enable support for controlling the nautilus-related resources, such
+	  as power rails and clocks.
+
+config OCULUS_CHARGING_DOCK
+	tristate "Oculus charging dock driver"
+	depends on META_USBVDM
+	default n
+	help
+	  Oculus charging dock driver handling unstructured vdm messages between
+	  host device and a dock that acts as a USB PD source.
+	  The custom VDM protocol allows messages to be sent both the source and
+	  the sink with acknowledgement built in to the protocol itself.
+	  This driver also creates sysfs nodes to advertise dock parameters which
+	  can be queried from user-space for gathering required dock telemetry.
+
+config OCULUS_HOLLYWOOD
+	bool "Enable support for hollywood device"
+	default n
+	select ARCH_KONA
+	help
+	  Enable support for the hollywood device
+
+config OCULUS_SEACLIFF
+	bool "Enable support for seacliff device"
+	default n
+	select ARCH_KONA
+	help
+	  Enable support for the seacliff device
+
+config OCULUS_STARLET
+	bool "Enable support for starlet device"
+	default n
+	depends on OCULUS
+	select ARCH_BENGAL
+	help
+	  Enable support for the starlet device
+
+config POWER_STATE_VIRTUAL_SENSOR
+	tristate "SN Power State Driver"
+	default n
+	help
+	  This driver is built as a virtual sensor and plugged into the
+	  thermal HAL to provide power state that will be used for
+	  hammerhead power management.
+
+config REGULATOR_AW37504
+	tristate "AW37504 Kernel Driver"
+	default n
+	depends on I2C
+	help
+	  AW37504 Kernel Driver to control the Seacliff BOE panels.
+	  This driver sets the positive and negative voltage and the current
+	  for the panels.
+
+config REGULATOR_SGM62110
+	tristate "SGM62110 Kernel Driver"
+	default n
+	depends on I2C
+	help
+	  SGM62110 Kernel Driver to control the Eureka Wlan FEM power.
+	  This driver sets FEM VCC voltage for QM45391/QM45392.
+
+config RT600_CTRL
+	tristate "Oculus RT600 control driver"
+	default n
+	help
+	  Enable RT600 control driver. This driver controls RT600 state
+	  for flashing and reset. RT600 state needs to be modified via
+	  sysfs to enable testing of different state transitions and also
+	  to ensure RT600 is in the correct state for flashing.
+
+config SEACLIFF_BLU
+	tristate "Oculus Seacliff SPI BLU Driver"
+	default n
+	help
+	  Oculus Seacliff SPI BLU Driver for the BOE panels
+
+config SENSORLOCK
+	tristate "Sensorlock GPIO Interrupt Handler"
+	default n
+	help
+	  This driver is meant to capture the sensorlock input signals.
+	  We require a kernel driver in order to capture the GPIO signal from
+	  a power button press with minimal latency to call into the sensorlock
+	  trustzone application and retrieve the GPIO value. It is responsible
+	  for communicating with the sensorlock trustzone application whenever
+	  the sensorlock input signals change.
+
+config SENSORS_PWM_TACH_FAN
+	tristate "PWM&TACH fan"
+	depends on (PWM && OF) || COMPILE_TEST
+	help
+	  If you say yes here you get support for fans connected to PWM lines.
+	  Tach connected to SoC gpio to read fan rpm.
+	  The driver uses the generic PWM interface, thus it will work on a
+	  variety of SoCs.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called pwm-tach-fan.
+
+config SPI_STP
+	tristate "STP SPI driver"
+	depends on SPI
+	default n
+	help
+	  Enable STP SPI driver for data transfer between SoC (master) and slave.
+	  This driver implements the STP protocol on top of the SPI bus,
+	  to facilitate communication between MCU and SoC. Driver supports up to 32
+	  pre-configured STP channels. Each STP channel is exposed as a dedicated
+	  character device, interfaceable through syscalls
+
+config ST_VD6281_ADAPTER
+	tristate "ST VD6281 Driver"
+	default n
+	depends on I2C
+	help
+	  This driver controls the ST VD6281 sensor. This sensor is both a
+	  flicker and an ambient light sensor (ALS). The sensor has an I2C
+	  interface for ALS data and configuration and uses SPI for obtaining
+	  raw flicker data.
+
+config UVLO_TLV4021
+	tristate "uvlo tlv4021 driver"
+	default n
+	depends on OCULUS
+	help
+	  Driver implementing uvlo device for detecting the interrupt captured
+	  by TLV4021 and report it through sysfs node.
+	  If you say yes here you get support for the uvlo driver.
+
+config VENDOR_DT_OUTPUT_DISABLE
+	bool "Disable building of device trees for test platforms"
+	default y
+	help
+	  Building Qualcomm kernels with default flags causes serveral unrelated
+	  device-trees to be built by default. Don't build them when
+	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
+	  platforms.
+
+config VIRTUAL_SENSOR
+	tristate "Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a virtual sensor driver representing a particular
+	  component of a device that can be configured in the device tree.
+
+source "drivers/staging/oculus/mcu/Kconfig"
+source "drivers/staging/oculus/pdfu/Kconfig"
+source "drivers/staging/oculus/usbvdm/Kconfig"
+
+endif # OCULUS

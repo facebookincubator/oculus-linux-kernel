@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "ravelinp.dtsi"
+#include "ravelinp-qrd.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. RavelinP QRD";
+	compatible = "qcom,ravelinp-qrd", "qcom,ravelinp", "qcom,qrd";
+	qcom,board-id = <0x1000B 0>;
+};
+

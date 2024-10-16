@@ -1,0 +1,17 @@
+#
+# Fingerprints driver configuration
+#
+menuconfig INPUT_FINGERPRINT
+	bool "FingerPrints"
+	help
+	  Say Y here, and a list of supported fingerprints will be displayed.
+	  This option doesn't affect the kernel.
+
+	  If unsure, say Y.
+
+config GW39A1
+        tristate "Goodix GW39A1 fingerprint drvier support"
+		depends on SPI
+	help
+          Say Y here to enable goodix fingerprint driver support
+

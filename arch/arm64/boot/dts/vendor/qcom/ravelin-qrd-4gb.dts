@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelin-4gb.dtsi"
+#include "ravelin-qrd-4gb.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin QRD 4GB DDR";
+	compatible = "qcom,ravelin-qrd", "qcom,ravelin", "qcom,qrd";
+	qcom,board-id = <0x1000B 0x600>;
+};

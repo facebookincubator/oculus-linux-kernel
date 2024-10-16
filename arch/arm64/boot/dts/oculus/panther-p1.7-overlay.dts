@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "panther-p1-common.dtsi"
+
+/ {
+	model = "Panther (P1.7)";
+	compatible = "oculus,panther-p1.7", "oculus,panther", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10743 0x1>;
+};
+
+&wlan {
+	cal-file-prefix = "panther_p1.7_";
+};
+
+&cam_sensor_mclk0_active {
+    config {
+        drive-strength = <6>; /* 6 MA */
+    };
+};
+
+&cam_sensor_mclk0_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+    	};
+};
+
+&cam_sensor_mclk1_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk1_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk2_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk2_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk3_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+    	};
+};
+
+&cam_sensor_mclk3_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk5_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk5_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk6_active {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+
+&cam_sensor_mclk6_suspend {
+	config {
+		drive-strength = <6>; /* 6 MA */
+	};
+};
+

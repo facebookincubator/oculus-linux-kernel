@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "panther-evt1-common.dtsi"
+#include "panther-flicker-sensor-lightpipe.dtsi"
+#include "panther-evt1-mr-button.dtsi"
+
+/ {
+	model = "Panther (EVT1.2)";
+	compatible = "oculus,panther-evt1.2", "oculus,panther", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10243 0x2>;  // board-id = <(major)(minor)(product) (subtype)>
+
+};
+
+&wlan {
+	cal-file-prefix = "panther_evt1.2_";
+};

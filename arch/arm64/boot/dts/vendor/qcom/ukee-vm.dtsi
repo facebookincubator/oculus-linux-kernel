@@ -1,0 +1,7 @@
+#include "cape-vm.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee SVM";
+	compatible = "qcom,ukee";
+	qcom,msm-id = <591 0x10000>;
+};

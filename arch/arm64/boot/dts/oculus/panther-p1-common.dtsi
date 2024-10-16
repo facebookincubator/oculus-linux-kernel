@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&pmxr2230_flash {
+	qcom,cur-derate-en-val = /bits/ 8 <0x5>; /* OPEN_DET_EN disabled */
+};
+
+&waipio_snd {
+	qcom,model = "anorak-max98388-rev1-snd-card";
+};

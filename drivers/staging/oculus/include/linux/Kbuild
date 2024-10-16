@@ -1,0 +1,6 @@
+header-y += cypd.h
+header-y += log_gpu_error.h
+header-y += lkm_utils.h
+header-y += jtag_bitbang.h
+header-y += miscfifo.h
+header-y += rt600-ctrl.h

@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&pmxr2230_flash {
+	qcom,fault-debounce = /bits/ 8 <0x3>; /* FAULT_DEBOUNCE */
+};

@@ -1,0 +1,9 @@
+# CLANG(D) generated folders
+.clangd
+
+# VSCODE
+*.code-workspace
+
+# VIM & NVIM
+.vim*
+.nvim*

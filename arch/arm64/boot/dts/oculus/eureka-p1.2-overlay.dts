@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "eureka-nonpor-blu-uart-overrides.dtsi"
+
+/ {
+	model = "Eureka (P1.2)";
+	compatible = "qcom,anorak", "oculus,eureka", "oculus,eureka-p1.2";
+	qcom,msm-id = <549 0x10000>;
+	qcom,board-id = <0x10240 0x1>;
+};
+
+&cypd3177 {
+	cypd3177,custom-sink-caps = <5000 2330>, /* 5V @ 2.33A */
+	<5000 2600>,  /*  5V @ 2.60A */
+	<5000 3000>;  /*  5V @ 3.00A */
+};
+
+&fan {
+	oculus,max-pwm = <179>; /* 70% duty cycle */
+};
+
+&bluetooth {
+	vdd-bt-fem-en-supply = <>;
+};
+
+&wlan {
+	vdd-wlan-fem-en-supply = <>;
+	qcom,vdd-wlan-fem-en-config = <>;
+};

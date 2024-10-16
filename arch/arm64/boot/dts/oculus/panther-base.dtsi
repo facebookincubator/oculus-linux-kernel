@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "anorak-oculus-base.dtsi"
+#include "anorak-oculus-display.dtsi"
+#include "anorak-oculus-flood-led.dtsi"
+
+#include "panther-camera.dtsi"
+#include "panther-adc.dtsi"
+#include "panther-audio.dtsi"
+#include "panther-panel.dtsi"
+#include "panther-regulator.dtsi"
+#include "panther-sensorlock.dtsi"
+#include "panther-thermal.dtsi"
+
+&aliases {
+	// BLU UART
+	hsuart13 = &qupv3_se12_2uart; /* /dev/ttyHS13 */
+	i2c0 = &qupv3_se0_i2c;
+	i2c1 = &qupv3_se1_i2c;
+	i2c2 = &qupv3_se2_i2c;
+	i2c3 = &qupv3_se13_i2c;
+};
+
+&fan_pwm_default {
+	pins = "gpio9";
+};
+
+&mdss_dsi_phy0 {
+	/delete-property/ qcom,dsi-pll-ssc-en;
+};
+
+&mdss_dsi_phy1 {
+	/delete-property/ qcom,dsi-pll-ssc-en;
+};
+
+&mdss_mdp0 {
+	connectors = <&sde_dsi &sde_wb1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc0 &sde_dp>;
+};
+
+/* Battery I2C */
+&qupv3_se0_i2c {
+	status = "ok";
+	qcom,bus-recovery;
+	bq27z561: fuel-gauge@0x55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+	};
+};
+
+/* Apps I2C */
+&qupv3_se2_i2c {
+	status = "ok";
+};
+
+/* WCN UART */
+&qupv3_se5_4uart {
+	status = "ok";
+};
+
+/* SXR UART */
+&qupv3_se6_2uart {
+	status = "ok";
+};
+
+/* NRF SPI */
+&qupv3_se9_spi {
+	status = "ok";
+	syncboss_nrf@0 {
+		nsync@0 {
+			/*
+			 * T182999318: temporary override to allow gradual deprecation
+			 * of the legacy nsync userspace interface.
+			 */
+			meta,disable-legacy-nsync;
+		};
+
+		powerstate@0 {
+			/delete-property/ meta,syncboss-has-prox;
+		};
+	};
+};
+
+/* Flicker SPI */
+&qupv3_se10_spi {
+	status = "ok";
+	vd6281@0 {
+		compatible = "st,vd6281_spi";
+		reg = <0>;
+		spi-cpha;
+		spi-max-frequency = <10000000>;
+		chunk-size = <32768>;
+		status = "ok";
+	};
+};
+
+/* IPD/Flicker I2C */
+&qupv3_se13_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <100000>;
+
+	vd6281: vd6281@0x20 {
+		compatible = "st,vd6281_adapter";
+		reg = <0x20>;
+		sid = <0x40>;
+		status = "ok";
+		vdd-supply = <&L6B>;
+	};
+
+	hall: ak09973@0x10 {
+		compatible = "akm,ak09973";
+		reg = <0x10>;
+		vdd-supply = <&L7B>;
+		status = "ok";
+		gpios = <&tlmm 40 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&hall_ak09973_int>;
+	};
+};
+
+&sde_dp {
+	status = "ok";
+	qcom,dp-gpio-aux-switch;
+	qcom,aux-en-gpio = <&tlmm 45 0>;
+	qcom,aux-sel-gpio = <&tlmm 87 0>;
+	qcom,usbplug-cc-gpio = <&tlmm 160 0>;
+	qcom,ext-disp = <>;
+};
+
+&sde_dp_pll {
+	status = "ok";
+};
+
+&sde_dsi1 {
+	status = "disabled";
+};
+
+&sde_rscc1 {
+	status = "disabled";
+};
+
+&sde_wb1 {
+	status = "ok";
+};
+
+&smmu_sde_sec1 {
+	status = "disabled";
+};
+
+&smmu_sde_unsec1 {
+	status = "disabled";
+};
+
+&soc {
+	gpio_keys {
+		pinctrl-0 = <&key_vol_up_default &mr_toggle_default>;
+
+		mr_toggle: mr_toggle {
+			label = "mr_toggle";
+			gpios = <&tlmm 110 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_SWITCHVIDEOMODE>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+
+	qcom,pmic_glink {
+		meta,usbvdm-glink {
+			compatible = "meta,usbvdm-glink";
+		};
+	};
+};
+
+&tlmm {
+	 /*
+	 * Mark XPU-protected GPIOs are reserved, to prevent
+	 * attempted initialization at boot.
+     * GPIO  3: SGPIO3_TZ_ENTER_PRVCY_MODE (tz_enter_privacy_mode)
+     * GPIO  7: SGPIO7_TZ_CAM_L14B_LS_EN (cam_l14b_enable)
+     * GPIO 11: SGPIO110_TER_BUTTON_TZ (ter_button)
+     * GPIO 43: SGPIO43_TZ_L8B_VSNS_IN (l8b_voltage_sense)
+     * GPIO 44: SGPIO44_TZ_L14B_VSNS_IN (l14b_voltage_sense)
+	 */
+	qcom,gpios-reserved = <3 7 11 43 44>;
+	hall_ak09973_int: hall_ak09973_int {
+		mux {
+			pins = "gpio40";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio40";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	mr_toggle_default: mr_toggle_default {
+		mux {
+			pins = "gpio110";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio110";
+			bias-disable;
+			input-enable;
+		};
+	};
+};
+
+&usb2_phy0 {
+	qcom,param-override-seq = <0x83 0x6c
+				0x8b 0x70
+				0x14 0x74
+				0x03 0x78>;
+};
+
+&vendor {
+	charging_dock: oculus,charging_dock {
+		compatible = "oculus,charging-dock";
+		meta,usb-ids =
+			/bits/ 16 <0x2ec6 0x2202>,		/* Buru */
+			/bits/ 16 <0x2833 0x5004>,		/* Moku */
+			/bits/ 16 <0x2ec6 0x2200>,		/* UPA 18W */
+			/bits/ 16 <0x2ec6 0x2103>;		/* UPA 45W */
+		broadcast-period-min = <15>;
+		req-ack-timeout-ms = <1000>;
+	};
+
+	external_battery: oculus,external_battery {
+		compatible = "oculus,external-battery";
+		meta,usb-id = /bits/ 16 <0x2833 0x5001>;	/* Lehua+ */
+		batt-name = "lehua";
+		charging-suspend-thresh = <100>;
+		charging-resume-thresh = <95>;
+		rsoc-scaling;
+		rsoc-scaling-min-level = <1>;
+		rsoc-scaling-max-level = <100>;
+		otg-current-control;
+	};
+
+	meta,pdfu_initiator {
+		compatible = "meta,pdfu-initiator";
+		usb,product-id = /bits/ 16 <0x5006>;
+	};
+};
+
+&bluetooth {
+	vdd-bt-fem-en-supply = <>;
+};
+
+&wlan {
+	vdd-wlan-fem-en-supply = <>;
+	qcom,vdd-wlan-fem-en-config = <>;
+
+	vdd-wlan-supply = <&S4F>;
+	qcom,vdd-wlan-config = <2200000 2200000 0 0 1>;
+};

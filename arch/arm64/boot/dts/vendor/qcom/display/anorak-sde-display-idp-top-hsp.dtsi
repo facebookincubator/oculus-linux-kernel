@@ -1,0 +1,85 @@
+#include "anorak-sde-display.dtsi"
+
+&mdss_mdp1 {
+	status = "disabled";
+};
+
+&mdss_dsi0 {
+	status = "disabled";
+};
+
+&mdss_dsi1 {
+	status = "disabled";
+};
+
+&mdss_dsi2 {
+	status = "disabled";
+};
+
+&mdss_dsi3 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy0 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy1 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy2 {
+	status = "disabled";
+};
+
+&mdss_dsi_phy3 {
+	status = "disabled";
+};
+
+&sde_dsi {
+	status = "disabled";
+};
+
+&sde_dsi1 {
+	status = "disabled";
+};
+
+&sde_edp {
+	status = "ok";
+	qcom,dp-low-power-hw-hpd;
+	pinctrl-names = "mdss_dp_hpd_active", "mdss_dp_hpd_tlmm", "mdss_dp_hpd_ctrl", "mdss_dp_active", "mdss_dp_sleep";
+	pinctrl-0 = <&edp_hpd_ctrl>;
+	pinctrl-1 = <&edp_hpd_ctrl>;
+	pinctrl-2 = <&edp_hpd_ctrl>;
+	pinctrl-3 = <&edp_hpd_ctrl>;
+	pinctrl-4 = <&edp_hpd_ctrl>;
+	qcom,dp-hpd-gpio = <&tlmm 104 0>;
+	qcom,edp-vcc-en-gpio = <&tlmm 100 0>;
+	qcom,edp-backlight-pwr-gpio = <&tlmm 102 0>;
+	qcom,edp-pwm-en-gpio = <&tlmm 108 0>;
+	qcom,edp-backlight-en-gpio = <&tlmm 110 0>;
+};
+
+&tlmm {
+	edp_hpd_ctrl: hpd_ctrl@104 {
+		mux {
+			pins = "gpio104";
+			function = "edp0_hot_plug";
+		};
+
+		config {
+			pins = "gpio104";
+			bias-disable;
+			input-enable;
+			drive-strength = <2>;
+		};
+	};
+};
+
+&sde_edp_pll {
+	status = "ok";
+};
+
+&mdss_mdp0 {
+	connectors = <&sde_edp &smmu_sde_unsec &smmu_sde_sec &sde_dp &sde_rscc0 &sde_wb1>;
+};

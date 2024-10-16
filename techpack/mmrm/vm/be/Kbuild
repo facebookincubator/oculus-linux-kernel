@@ -1,0 +1,9 @@
+ifeq ($(CONFIG_MSM_MMRM_VM),y)
+LINUXINCLUDE += -I$(MMRM_ROOT)/vm/be/src -I$(MMRM_ROOT)/driver/src
+
+obj-m += mmrm_vm_be.o
+mmrm_vm_be-objs := src/mmrm_vm_be_main.o \
+		src/mmrm_vm_be_dispatch.o \
+		src/mmrm_vm_be_msgq.o \
+		../common/src/mmrm_vm_debug.o
+endif

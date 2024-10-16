@@ -1,0 +1,42 @@
+/dts-v1/;
+/plugin/;
+
+#include "neo-qxr-hmt.dtsi"
+#include "neo-pm8008.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO QXR HMT";
+	compatible = "qcom,neo", "qcom,neo-qxr";
+	qcom,msm-id = <525 0x10000>;
+	qcom,board-id = <0x10026 0x1>;
+};
+
+&L1I {
+	regulator-min-microvolt = <1000000>;
+	regulator-max-microvolt = <1260000>;
+};
+
+&L3I {
+	regulator-min-microvolt = <1792000>;
+	regulator-max-microvolt = <1900000>;
+};
+
+&L4I {
+	regulator-min-microvolt = <1792000>;
+	regulator-max-microvolt = <1900000>;
+};
+
+&L5I {
+	regulator-min-microvolt = <1504000>;
+	regulator-max-microvolt = <3544000>;
+};
+
+&L6I {
+	regulator-min-microvolt = <2700000>;
+	regulator-max-microvolt = <3000000>;
+};
+
+&L7I {
+	regulator-min-microvolt = <2700000>;
+	regulator-max-microvolt = <3000000>;
+};
