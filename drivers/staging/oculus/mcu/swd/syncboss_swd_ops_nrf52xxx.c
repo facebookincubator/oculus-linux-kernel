@@ -263,6 +263,8 @@ int syncboss_swd_nrf52xxx_erase_app(struct device *dev)
 	while (x < flash_pages_to_erase) {
 		swd_memory_write(dev, SWD_NRF_NVMC_ERASEPAGE,
 			x * flash->page_size);
+		/* update the progress made */
+		atomic_inc(&devdata->mcu_data.fw_update_steps_done);
 		status = syncboss_swd_nrf52xxx_wait_for_nvmc_ready(dev);
 		if (status != 0)
 			goto error;

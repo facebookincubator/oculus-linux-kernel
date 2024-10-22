@@ -598,3 +598,66 @@ Example
 			qcom,iommu-cfg = <0x3> /* SMMU PRESENT. SET S1 BYPASS */
 			qcom,iommu-range = <0x0 0x10000000 0x0 0x40000000>;
 		};
+
+==============
+i2c child node
+==============
+
+- compatible:
+	Usage: required
+	Value type: <stringlist>
+	Definition: Compatible list, contains
+		- "qcom,pcie-i2c-ntn3" for NTN3 switch attached to Root port 0
+
+- reg:
+	Usage: required
+	Value type: <u16>
+	Definition: i2c slave id
+
+- gpio-config-reg:
+	Usage: optional
+	Value type: <u32>
+	Definition: Slave GPIO configuration register address
+
+- ep-reset-reg:
+	Usage: optional
+	Value type: <u32>
+	Definition: Slave endpoint reset register address
+
+- ep-reset-gpio-mask:
+	Usage: optional
+	Value type: <u32>
+	Definition: Slave GPIO number as 32-bit mask
+
+- dump-regs:
+	Usage: optional
+	Value Type: Array of <u32>
+	Definition: List of slave registers to dump by i2c read
+
+- version-reg:
+	Usage: optional
+	Value type: <u32>
+	Definition: Register to find ntn3 switch version
+
+- force-i2c-setting:
+		Usage: optional
+		Value type: <bool>
+		Definition: If force-i2c-setting flag is set
+			then de_emphasis settings are updated
+			irrespective of the chip version via i2c_writes
+=======
+Example
+=======
+
+&i2c_5 {
+	pcie_i2c_ctrl: pcie_i2c_ctrl {
+		compatible = "qcom,pcie-i2c-ntn3";
+		reg = <0x77>;
+		gpio-config-reg = <0x801208>;
+		ep-reset-reg = <0x801210>;
+		ep-reset-gpio-mask = <0xf>;
+		dump-regs = <0x801330 0x801350 0x801370>;
+		version-reg = <0x800000>;
+		force-i2c-setting;
+	};
+};

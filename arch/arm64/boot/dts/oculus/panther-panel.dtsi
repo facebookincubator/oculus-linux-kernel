@@ -28,7 +28,8 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
 	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <1200>;
+	meta,max-blu-pulse-overlap-us = <4591>;
+	meta,max-blu-stereo-offset-us = <2300>;
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <1000>;
 	qcom,platform-reset-gpio = <&tlmm 140 0>;
@@ -40,6 +41,14 @@
 	qcom,esd-check-enabled;
 	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
 	meta,esd-check-max-refresh-rate = <90>;
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 4500>,
+		<35000 3500>,
+		<45000 2500>,
+		<55000 2000>;
+	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_stark";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [
@@ -56,7 +65,8 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi_nvt";//TODO
 	meta,blu-default-duty-cycle = <100>; /* 10.0% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <2036>;
+	meta,max-blu-pulse-overlap-us = <4591>;
+	meta,max-blu-stereo-offset-us = <2300>;
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <1000>;
 	qcom,platform-reset-gpio = <&tlmm 140 0>;
@@ -65,6 +75,14 @@
 	qcom,mdss-dsi-t-clk-pre = <0x1F>;
 	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 4500>,
+		<35000 3300>,
+		<45000 2300>,
+		<55000 1800>;
+	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_nvt";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [
@@ -132,7 +150,8 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
 	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <1200>;
+	meta,max-blu-pulse-overlap-us = <4591>;
+	meta,max-blu-stereo-offset-us = <2300>;
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <1000>;
 	qcom,platform-reset-gpio = <&tlmm 140 0>;
@@ -144,6 +163,14 @@
 	qcom,esd-check-enabled;
 	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
 	meta,esd-check-max-refresh-rate = <90>;
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 4500>,
+		<35000 3300>,
+		<45000 2300>,
+		<55000 1800>;
+	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_stark";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [
@@ -160,7 +187,8 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
 	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <1200>;
+	meta,max-blu-pulse-overlap-us = <4591>;
+	meta,max-blu-stereo-offset-us = <2300>;
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <1000>;
 	qcom,platform-reset-gpio = <&tlmm 140 0>;
@@ -169,6 +197,14 @@
 	qcom,mdss-dsi-t-clk-pre = <0x20>;
 	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 4500>,
+		<35000 3500>,
+		<45000 2500>,
+		<55000 2000>;
+	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_eos";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [
@@ -185,7 +221,8 @@
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
 	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <1200>;
+	meta,max-blu-pulse-overlap-us = <4591>;
+	meta,max-blu-stereo-offset-us = <2300>;
 	qcom,mdss-dsi-bl-min-level = <0>;
 	qcom,mdss-dsi-bl-max-level = <1000>;
 	qcom,platform-reset-gpio = <&tlmm 140 0>;
@@ -194,6 +231,14 @@
 	qcom,mdss-dsi-t-clk-pre = <0x1F>;
 	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
+	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 4500>,
+		<35000 3300>,
+		<45000 2300>,
+		<55000 1800>;
+	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_eos";
 	qcom,mdss-dsi-display-timings {
 		timing@0{
 			qcom,mdss-dsi-panel-phy-timings = [

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1916,6 +1916,74 @@ bool __qdf_nbuf_data_is_ipv4_pkt(uint8_t *data)
 		return false;
 }
 qdf_export_symbol(__qdf_nbuf_data_is_ipv4_pkt);
+
+/**
+ * __qdf_nbuf_sock_is_ipv4_pkt() - check if it is a ipv4 sock
+ * @skb: Pointer to network buffer
+ *
+ * User needs to take care for NULL sk pointer.
+ *
+ * Return: true if it is ipv4 sock
+ *	   false otherwise or in case of NULL sk
+ */
+bool __qdf_nbuf_sock_is_ipv4_pkt(struct sk_buff *skb)
+{
+	if (skb->sk && skb->sk->sk_family == AF_INET)
+		return true;
+	else
+		return false;
+}
+qdf_export_symbol(__qdf_nbuf_sock_is_ipv4_pkt);
+
+/**
+ * __qdf_nbuf_sock_is_ipv6_pkt() - check if it is a ipv6 sock
+ * @skb: Pointer to network buffer
+ *
+ * User needs to take care for NULL sk pointer.
+ *
+ * Return: true if it is a ipv6 sock
+ *	   false otherwise or in case of NULL sk
+ */
+bool __qdf_nbuf_sock_is_ipv6_pkt(struct sk_buff *skb)
+{
+	if (skb->sk && skb->sk->sk_family == AF_INET6)
+		return true;
+	else
+		return false;
+}
+qdf_export_symbol(__qdf_nbuf_sock_is_ipv6_pkt);
+
+/**
+ * __qdf_nbuf_sock_is_udp_pkt() - check if it is a udp sock
+ * @skb: Pointer to network buffer
+ *
+ * Return: true if it is a udp sock
+ *	   false otherwise
+ */
+bool __qdf_nbuf_sock_is_udp_pkt(struct sk_buff *skb)
+{
+	if (skb->sk->sk_protocol == QDF_NBUF_TRAC_UDP_TYPE)
+		return true;
+	else
+		return false;
+}
+qdf_export_symbol(__qdf_nbuf_sock_is_udp_pkt);
+
+/**
+ * __qdf_nbuf_sock_is_tcp_pkt() - check if it is a tcp sock
+ * @skb: Pointer to network buffer
+ *
+ * Return: true if it is a tcp sock
+ *	   false otherwise
+ */
+bool __qdf_nbuf_sock_is_tcp_pkt(struct sk_buff *skb)
+{
+	if (skb->sk->sk_protocol == QDF_NBUF_TRAC_TCP_TYPE)
+		return true;
+	else
+		return false;
+}
+qdf_export_symbol(__qdf_nbuf_sock_is_tcp_pkt);
 
 /**
  * __qdf_nbuf_data_is_ipv4_dhcp_pkt() - check if skb data is a dhcp packet

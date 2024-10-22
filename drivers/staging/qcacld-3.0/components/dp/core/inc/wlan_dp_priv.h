@@ -376,6 +376,8 @@ struct direct_link_info {
  * @qdf_sta_eap_frm_done_event: EAP frame event management
  * @traffic_end_ind: store traffic end indication info
  * @direct_link_config: direct link configuration parameters
+ * @fpm_ctx: Flow policy manager context
+ * @fim_ctx: Flow identification manager context
  */
 struct wlan_dp_intf {
 	struct wlan_dp_psoc_context *dp_ctx;
@@ -437,6 +439,10 @@ struct wlan_dp_intf {
 	struct dp_traffic_end_indication traffic_end_ind;
 #ifdef FEATURE_DIRECT_LINK
 	struct direct_link_info direct_link_config;
+#endif
+#ifdef WLAN_SUPPORT_FLOW_PRIORTIZATION
+	struct fpm_table *fpm_ctx;
+	struct fim_vdev_ctx *fim_ctx;
 #endif
 };
 
@@ -521,6 +527,7 @@ struct dp_direct_link_context {
  * @arp_connectivity_map: ARP connectiviy map
  * @rx_wake_lock: rx wake lock
  * @ol_enable: Enable/Disable offload
+ * @svc_ctx: service class context
  */
 struct wlan_dp_psoc_context {
 	struct wlan_objmgr_psoc *psoc;
@@ -597,6 +604,9 @@ struct wlan_dp_psoc_context {
 #ifdef FEATURE_DIRECT_LINK
 	qdf_mutex_t dp_direct_link_lock;
 	struct dp_direct_link_context *dp_direct_link_ctx;
+#endif
+#ifdef WLAN_SUPPORT_SERVICE_CLASS
+	struct dp_svc_ctx *svc_ctx;
 #endif
 };
 

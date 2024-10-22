@@ -94,6 +94,17 @@
 
 static DEFINE_MUTEX(msm_release_lock);
 
+static void msm_drm_bl_scale_worker(struct work_struct *work)
+{
+	struct msm_drm_bl_scale_work_data *work_data = container_of(work, struct msm_drm_bl_scale_work_data, work.work);
+
+	if (work_data->bl_config && work_data->bl_device) {
+		DRM_DEBUG("Setting bl_scale_brightness to: %d\n", __LINE__, work_data->bl_scale);
+		work_data->bl_config->bl_scale_brightness = work_data->bl_scale;
+		backlight_update_status(work_data->bl_device);
+	}
+}
+
 static void msm_fb_output_poll_changed(struct drm_device *dev)
 {
 	struct msm_drm_private *priv = NULL;
@@ -940,6 +951,16 @@ static int msm_drm_component_init(struct device *dev)
 	}
 
 	drm_kms_helper_poll_init(ddev);
+
+	/* Initialize the global brightness work struct. */
+	INIT_DELAYED_WORK(&(priv->bl_scale_work).work, msm_drm_bl_scale_worker);
+
+	/* Create a new workqueue to process the work immediately. */
+	priv->bl_scale_work.work_queue = create_singlethread_workqueue("bl_scale");
+	if (!priv->bl_scale_work.work_queue) {
+		pr_err("Failed to create bl_scale workqueue.\n");
+		goto fail;
+	}
 
 	return 0;
 
@@ -1803,12 +1824,72 @@ int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
 			display = (struct dsi_display *) c_conn->display;
 			if (display) {
 				bl_config = &display->panel->bl_config;
-				if (bl_config)
-					bl_config->bl_scale_brightness = display_brightness_scalar->bl_scale_percent_value;
-			}
+				if (bl_config && c_conn->bl_device) {
+					/* Update the parameters for work struct. */
+					priv->bl_scale_work.bl_device = c_conn->bl_device;
+					priv->bl_scale_work.bl_config = bl_config;
+					priv->bl_scale_work.bl_scale = display_brightness_scalar->bl_scale_percent_value;
 
-			if (c_conn->bl_device)
-				backlight_update_status(c_conn->bl_device);
+					/* Schedule the delayed work to start immediately. */
+					queue_delayed_work(priv->bl_scale_work.work_queue, &(priv->bl_scale_work).work, 0);
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * msm_ioctl_display_cac_control_ops - Control parameter for DDIC CAC
+ * @dev: drm device for the ioctl
+ * @data: data pointer for the ioctl
+ * @file_priv: drm file for the ioctl call
+ */
+int msm_ioctl_display_cac_control_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_display_cac *display_cac = data;
+	struct msm_drm_private *priv;
+	struct msm_kms *kms;
+	struct drm_connector *connector;
+	struct sde_connector *c_conn;
+	int counter = 0;
+
+	priv = dev->dev_private;
+	kms = priv->kms;
+
+	if (unlikely(!display_cac)) {
+		DRM_ERROR("invalid ioctl data\n");
+		return -EINVAL;
+	}
+
+	SDE_EVT32(display_cac->flags);
+	DSI_DEBUG("DDIC CAC: Value passed to enable/disable is: %d\n", display_cac->flags);
+
+	/* Validate the value of the control flag. */
+	if ((display_cac->flags != 1) &&
+		(display_cac->flags != 0)) {
+		DSI_ERR("Control DDIC CAC: Input value should either be 0 or 1.\n");
+		return -EINVAL;
+	}
+
+	for (counter = 0; counter < priv->num_connectors; counter++) {
+		connector = priv->connectors[counter];
+		if (!connector)
+			continue;
+
+		c_conn = to_sde_connector(connector);
+
+		/* Check if the connector supports backlight device. */
+		if (c_conn && c_conn->ops.set_backlight) {
+			struct dsi_display *display;
+
+			display = (struct dsi_display *) c_conn->display;
+			if (display) {
+				if (display->panel && c_conn->bl_device)
+					dsi_panel_control_ddic_cac(display->panel, display_cac->flags);
+			}
 		}
 	}
 
@@ -1940,6 +2021,8 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_VSYNC_TRIGGER, msm_ioctl_vsync_trigger,
 		DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_BACKLIGHT_SCALE, msm_ioctl_brightness_scalar_control_ops,
+			DRM_AUTH|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_CAC, msm_ioctl_display_cac_control_ops,
 			DRM_AUTH|DRM_RENDER_ALLOW),
 };
 

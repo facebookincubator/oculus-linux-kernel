@@ -6,6 +6,7 @@
 /plugin/;
 
 #include "panther-panel-blu.dtsi"
+#include "panther-surf-virt-sensor-legacy.dtsi"
 
 / {
 	model = "Panther (Dev1)";

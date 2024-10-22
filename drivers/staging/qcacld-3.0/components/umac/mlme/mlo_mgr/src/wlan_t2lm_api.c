@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -458,7 +458,8 @@ wlan_t2lm_validate_candidate(struct cnx_mgr *cm_ctx,
 	if ((wlan_vdev_mlme_get_opmode(vdev) == QDF_STA_MODE) &&
 	    scan_entry->ie_list.t2lm[0]) {
 		status = wlan_mlo_parse_bcn_prbresp_t2lm_ie(&t2lm_ctx,
-						scan_entry->ie_list.t2lm[0]);
+						util_scan_entry_t2lm(scan_entry),
+						util_scan_entry_t2lm_len(scan_entry));
 		if (QDF_IS_STATUS_ERROR(status))
 			goto end;
 

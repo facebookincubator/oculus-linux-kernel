@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "anorakp.dtsi"
+#include "anorakp-atp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. AnorakP ATP";
+	compatible = "qcom,anorakp-atp", "qcom,anorakp", "qcom,atp";
+	qcom,board-id = <0x10021 0x0>;
+};

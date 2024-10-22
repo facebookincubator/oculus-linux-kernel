@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/bitops.h>
@@ -540,7 +541,7 @@ static void hfi_process_sys_get_prop_image_version(
 	int req_bytes;
 
 	req_bytes = pkt->size - sizeof(*pkt);
-	if (req_bytes < version_string_size ||
+	if (req_bytes < (signed int)version_string_size ||
 			!pkt->rg_property_data[1] ||
 			pkt->num_properties > 1) {
 		dprintk(CVP_ERR, "%s: bad_pkt: %d\n", __func__, req_bytes);

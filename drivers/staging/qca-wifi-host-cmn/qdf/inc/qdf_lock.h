@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -249,6 +249,18 @@ typedef struct qdf_spinlock qdf_spinlock_t;
 typedef __qdf_semaphore_t qdf_semaphore_t;
 typedef __qdf_mutex_t qdf_mutex_t;
 
+#define qdf_rcu_head_t __qdf_rcu_head_t
+#define qdf_rcu_callback_t __qdf_rcu_callback_t
+#define qdf_rcu_dereference(p) __qdf_rcu_dereference(p)
+#define qdf_rcu_dereference_protected(p, c) \
+		__qdf_rcu_dereference_protected(p, c)
+#define qdf_rcu_assign_pointer(p, v) __qdf_rcu_assign_pointer(p, v)
+
+static inline bool qdf_lockdep_is_held(qdf_spinlock_t *lock)
+{
+	return __qdf_lockdep_is_held(&lock->lock);
+}
+
 /* function Declaration */
 QDF_STATUS qdf_mutex_create(qdf_mutex_t *m, const char *func, int line);
 #define qdf_mutex_create(m) qdf_mutex_create(m, __func__, __LINE__)
@@ -430,6 +442,40 @@ static inline void qdf_spin_lock_irqsave(qdf_spinlock_t *lock, const char *func)
 	AFTER_LOCK(lock, func);
 }
 #define qdf_spin_lock_irqsave(lock) qdf_spin_lock_irqsave(lock, __func__)
+
+/**
+ * qdf_rcu_read_lock_bh() - mark the beginning of an RCU-bh critical section
+ *
+ * Return: none
+ */
+static inline void qdf_rcu_read_lock_bh(void)
+{
+	__qdf_rcu_read_lock_bh();
+}
+
+/**
+ * qdf_rcu_read_unlock_bh() - marks the end of a softirq-only RCU critical
+ * section
+ *
+ * Return: none
+ */
+static inline void qdf_rcu_read_unlock_bh(void)
+{
+	__qdf_rcu_read_unlock_bh();
+}
+
+/**
+ * qdf_call_rcu() - Marks the end of updater code and the beginning of
+ * reclaimer code
+ * @head: function parameter for func
+ * @func: function to be executed after grace period is over
+ *
+ * Return: none
+ */
+static inline void qdf_call_rcu(qdf_rcu_head_t *head, qdf_rcu_callback_t func)
+{
+	__qdf_call_rcu(head, func);
+}
 
 /**
  * qdf_spin_unlock_irqrestore() - Unlock the spinlock and enables the

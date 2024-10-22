@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -1182,34 +1182,6 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 					continue;
 				}
 			}
-
-			if (req->data->flag && (i == (req->data->cmd_arrary_count - 1))) {
-
-				if (write_count == 0) {
-					write_count =
-						cam_hw_cdm_wait_for_bl_fifo(cdm_hw, 1, fifo_idx);
-					if (write_count < 0) {
-						CAM_ERR(CAM_CDM, "wait for bl fifo failed %d:%d",
-							i, req->data->cmd_arrary_count);
-						rc = -EIO;
-						break;
-					}
-				}
-
-				if (core->arbitration == CAM_CDM_ARBITRATION_PRIORITY_BASED)
-					cdm_cmd->gen_irq_arb = true;
-				else
-					cdm_cmd->gen_irq_arb = false;
-
-				rc = cam_hw_cdm_submit_gen_irq(cdm_hw, req, fifo_idx,
-					cdm_cmd->gen_irq_arb);
-				if (!rc) {
-					CAM_DBG(CAM_CDM, "Commit success for GenIRQ_BL, Tag: %d",
-						core->bl_fifo[fifo_idx].bl_tag);
-					core->bl_fifo[fifo_idx].bl_tag++;
-					core->bl_fifo[fifo_idx].bl_tag %= (bl_fifo->bl_depth - 1);
-				}
-			}
 		} else {
 			CAM_ERR(CAM_CDM,
 				"Sanity check failed for cdm_cmd: %d, Hdl: 0x%x, len: %zu, offset: 0x%x, num_cmds: %d",
@@ -1217,6 +1189,33 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 				req->data->cmd_arrary_count);
 			rc = -EINVAL;
 			break;
+		}
+	}
+
+	if (!rc && req->data->gen_irq_bl_done && (i == req->data->cmd_arrary_count)) {
+
+		if (write_count == 0) {
+			write_count =
+				cam_hw_cdm_wait_for_bl_fifo(cdm_hw, 1, fifo_idx);
+			if (write_count < 0) {
+				CAM_ERR(CAM_CDM, "wait for bl fifo failed %d:%d",
+					i, req->data->cmd_arrary_count);
+				rc = -EIO;
+			}
+		}
+
+		if (core->arbitration == CAM_CDM_ARBITRATION_PRIORITY_BASED)
+			cdm_cmd->gen_irq_arb = true;
+		else
+			cdm_cmd->gen_irq_arb = false;
+
+		rc = cam_hw_cdm_submit_gen_irq(cdm_hw, req, fifo_idx,
+			cdm_cmd->gen_irq_arb);
+		if (!rc) {
+			CAM_DBG(CAM_CDM, "Commit success for GenIRQ_BL, Tag: %d",
+				core->bl_fifo[fifo_idx].bl_tag);
+			core->bl_fifo[fifo_idx].bl_tag++;
+			core->bl_fifo[fifo_idx].bl_tag %= (bl_fifo->bl_depth - 1);
 		}
 	}
 	mutex_unlock(&client->lock);

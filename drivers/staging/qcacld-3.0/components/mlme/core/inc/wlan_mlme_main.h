@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -396,6 +396,7 @@ struct connect_chan_info {
  * @ext_cap_ie: Ext CAP IE
  * @assoc_btm_cap: BSS transition management cap used in (re)assoc req
  * @chan_info_orig: store channel info at the time of association
+ * @force_20mhz_in_24ghz: Only 20 MHz BW allowed in 2.4 GHz
  */
 struct mlme_connect_info {
 	uint8_t timing_meas_cap;
@@ -422,6 +423,7 @@ struct mlme_connect_info {
 	uint8_t ext_cap_ie[DOT11F_IE_EXTCAP_MAX_LEN + 2];
 	bool assoc_btm_cap;
 	struct connect_chan_info chan_info_orig;
+	bool force_20mhz_in_24ghz;
 };
 
 /** struct wait_for_key_timer - wait for key timer object

@@ -105,7 +105,7 @@ SoCs:
   compatible = "qcom,parrot", "qcom,parrotp"
 
 - ANORAK
-  compatible = "qcom,anorak"
+  compatible = "qcom,anorak", "qcom,anorakp"
 
 - RAVELIN
   compatible = "qcom,ravelin", "qcom,ravelinp"
@@ -314,6 +314,9 @@ compatible = "qcom,anorak-rumi"
 compatible = "qcom,anorak-idp"
 compatible = "qcom,anorak-qxr"
 compatible = "qcom,anorak-atp"
+compatible = "qcom,anorakp-idp"
+compatible = "qcom,anorakp-qxr"
+compatible = "qcom,anorakp-atp"
 compatible = "qcom,ravelin-rumi"
 compatible = "qcom,ravelin-atp"
 compatible = "qcom,ravelin-idp"

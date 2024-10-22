@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -640,6 +640,22 @@ typedef QDF_STATUS
 		     uint8_t session_id, uint8_t reason,
 		     enum wlan_cm_rso_control_requestor requestor);
 
+/**
+ * typedef set_ies_fn_t - Set IEs routine pointer
+ * @mac_ctx: Global MAC context
+ * @vdev_id: vdev id
+ * @dot11_mode: dot11 mode
+ * @opmode: device opmode
+ *
+ * This type is for callbacks registered with WMA to set the IEs for a
+ * given vdev id to the firmware.
+ *
+ * Return: Success or Failure
+ */
+typedef QDF_STATUS
+(*set_ies_fn_t)(struct mac_context *mac_ctx, uint8_t vdev_id,
+		uint16_t dot11_mode, enum QDF_OPMODE device_mode);
+
 /* / Definition for indicating all modules ready on STA */
 struct sme_ready_req {
 	uint16_t messageType;   /* eWNI_SME_SYS_READY_IND */
@@ -657,6 +673,7 @@ struct sme_ready_req {
 					uint8_t *deauth_disassoc_frame,
 					uint16_t deauth_disassoc_frame_len,
 					uint16_t reason_code);
+	set_ies_fn_t pe_roam_set_ie_cb;
 };
 
 /**

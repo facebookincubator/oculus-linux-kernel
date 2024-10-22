@@ -125,7 +125,14 @@ static int virtual_sensor_thermal_zone_get_temp_scaled(
 	return 0;
 }
 
-static int virtual_sensor_estimate_tz_if_faulty(
+static bool tz_is_faulty(
+		const struct thermal_zone_info *tz_info,
+		int temp)
+{
+	return (temp < tz_info->fault_lb) || (temp > tz_info->fault_ub);
+}
+
+static int virtual_sensor_estimate_faulty_tz(
 		const struct thermal_zone_info *tz_info,
 		int *temp)
 {
@@ -134,9 +141,6 @@ static int virtual_sensor_estimate_tz_if_faulty(
 
 	if (!tz_info->tz_estimator)
 		return -EINVAL;
-
-	if (tz_info->fault_lb <= *temp && *temp <= tz_info->fault_ub)
-		return 0;
 
 	ret = virtual_sensor_thermal_zone_get_temp_scaled(tz_info->tz_estimator,
 			tz_info->tz_estimator_scaling_factor, &tz_temp);
@@ -185,20 +189,20 @@ static int virtual_sensor_calculate_tz_temp(struct device *dev,
 	for (i = 0; i < data->tz_count; i++) {
 		ret = virtual_sensor_thermal_zone_get_temp_scaled(data->tzs[i].tz,
 				data->tz_scaling_factors[i], &temp);
-		if (ret) {
-			dev_err(dev, "%s: error getting temp: %d", data->tzs[i].tz->type, ret);
+		if (ret)
+			dev_err_ratelimited(dev, "%s: error getting temp: %d",
+					data->tzs[i].tz->type, ret);
+
+		if (data->tzs[i].fault_handling &&
+				(ret < 0 || tz_is_faulty(&data->tzs[i], temp))) {
+			ret = virtual_sensor_estimate_faulty_tz(&data->tzs[i], &temp);
+			if (ret)
+				dev_err(dev, "%s: couldn't estimate faulty tz %s: %d",
+						__func__, data->tzs[i].tz->type, ret);
+		}
+
+		if (ret)
 			return ret;
-		}
-
-		if (data->tzs[i].fault_handling) {
-			ret = virtual_sensor_estimate_tz_if_faulty(&data->tzs[i], &temp);
-			if (ret) {
-				dev_err(dev, "%s: couldn't estimate faulty tz %s: %d", __func__,
-						data->tzs[i].tz->type, ret);
-				return ret;
-			}
-		}
-
 
 		data->tz_accum_temperatures[i] += (s64)temp;
 

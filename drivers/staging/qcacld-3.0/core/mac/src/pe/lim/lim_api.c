@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1407,7 +1407,8 @@ void pe_register_callbacks_with_wma(struct mac_context *mac,
 	status = wma_register_roaming_callbacks(
 			ready_req->csr_roam_auth_event_handle_cb,
 			ready_req->pe_roam_synch_cb,
-			ready_req->pe_disconnect_cb);
+			ready_req->pe_disconnect_cb,
+			ready_req->pe_roam_set_ie_cb);
 	if (status != QDF_STATUS_SUCCESS)
 		pe_err("Registering roaming callbacks with WMA failed");
 }
@@ -3184,6 +3185,19 @@ roam_sync_fail:
 	pe_delete_session(mac_ctx, ft_session_ptr);
 	return status;
 }
+
+QDF_STATUS
+pe_set_ie_for_roam_invoke(struct mac_context *mac_ctx, uint8_t vdev_id,
+			  uint16_t dot11_mode, enum QDF_OPMODE opmode)
+{
+	QDF_STATUS status;
+
+	if (!mac_ctx)
+		return QDF_STATUS_E_FAILURE;
+
+	status = lim_send_ies_per_band(mac_ctx, vdev_id, dot11_mode, opmode);
+	return status;
+}
 #endif
 
 static bool lim_is_beacon_miss_scenario(struct mac_context *mac,
@@ -3978,7 +3992,7 @@ lim_check_scan_db_for_join_req_partner_info(struct pe_session *session_entry,
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct mlo_partner_info *partner_info;
 	uint16_t join_req_freq = 0;
-	struct scan_cache_entry cache_entry;
+	struct scan_cache_entry *cache_entry;
 
 	if (!session_entry) {
 		pe_err("session entry is NULL");
@@ -4014,19 +4028,19 @@ lim_check_scan_db_for_join_req_partner_info(struct pe_session *session_entry,
 
 	join_req_freq = lim_join_req->bssDescription.chan_freq;
 
-	status = wlan_scan_get_scan_entry_by_mac_freq(pdev,
-						      &qdf_bssid,
-						      join_req_freq,
-						      &cache_entry);
-
-	if (!QDF_IS_STATUS_SUCCESS(status)) {
+	cache_entry = wlan_scan_get_scan_entry_by_mac_freq(pdev,
+							   &qdf_bssid,
+							   join_req_freq);
+	if (!cache_entry) {
 		pe_err("failed to get partner link info by mac addr");
 		status = QDF_STATUS_E_FAILURE;
 		goto free_mem;
 	}
 
-	qdf_mem_copy(partner_link, cache_entry.ml_info.link_info,
+	qdf_mem_copy(partner_link, cache_entry->ml_info.link_info,
 		     sizeof(struct partner_link_info) * (MLD_MAX_LINKS - 1));
+
+	util_scan_free_cache_entry(cache_entry);
 
 	partner_info = &lim_join_req->partner_info;
 
@@ -4043,6 +4057,46 @@ free_mem:
 	qdf_mem_free(partner_link);
 	return status;
 }
+
+static QDF_STATUS
+lim_update_mlo_mgr_info(struct mac_context *mac_ctx,
+			struct qdf_mac_addr *link_addr,
+			uint16_t freq)
+{
+	struct wlan_objmgr_pdev *pdev;
+	struct scan_cache_entry *cache_entry;
+	bool is_security_allowed;
+
+	pdev = mac_ctx->pdev;
+	if (!pdev) {
+		pe_err("pdev is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	cache_entry = wlan_scan_get_scan_entry_by_mac_freq(pdev, link_addr,
+							   freq);
+	if (!cache_entry)
+		return QDF_STATUS_E_FAILURE;
+
+	/**
+	 * Reject all the partner link if any partner link  doesn’t pass the
+	 * security check and proceed connection with single link.
+	 */
+	is_security_allowed =
+		wlan_cm_is_eht_allowed_for_current_security(
+					wlan_pdev_get_psoc(mac_ctx->pdev),
+					cache_entry);
+
+	util_scan_free_cache_entry(cache_entry);
+
+	if (!is_security_allowed) {
+		mlme_debug("current security is not valid for partner link link_addr:" QDF_MAC_ADDR_FMT,
+			   QDF_MAC_ADDR_REF(link_addr->bytes));
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
 #else
 static inline void
 lim_clear_ml_partner_info(struct pe_session *session_entry)
@@ -4055,6 +4109,14 @@ lim_check_db_for_join_req_partner_info(struct pe_session *session_entry,
 {
 
 	return QDF_STATUS_E_FAILURE;
+}
+
+static inline QDF_STATUS
+lim_update_mlo_mgr_info(struct mac_context *mac_ctx,
+			struct qdf_mac_addr *link_addr,
+			uint16_t freq)
+{
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 
@@ -4213,6 +4275,16 @@ lim_gen_link_specific_probe_rsp(struct mac_context *mac_ctx,
 					session_entry, mac_ctx);
 				if (QDF_IS_STATUS_ERROR(status))
 				       lim_clear_ml_partner_info(session_entry);
+
+				goto end;
+			}
+
+			status = lim_update_mlo_mgr_info(mac_ctx,
+							 &link_info->link_addr,
+							 link_info->chan_freq);
+			if (QDF_IS_STATUS_ERROR(status)) {
+				pe_err("failed to update mlo_mgr %d", status);
+				lim_clear_ml_partner_info(session_entry);
 
 				goto end;
 			}

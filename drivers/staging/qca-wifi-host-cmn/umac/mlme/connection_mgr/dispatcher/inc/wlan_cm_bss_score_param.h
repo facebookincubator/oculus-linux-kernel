@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -340,17 +340,29 @@ void wlan_cm_calculate_bss_score(struct wlan_objmgr_pdev *pdev,
 				 struct qdf_mac_addr *self_mac);
 
 #ifdef WLAN_FEATURE_11BE
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
 /**
- * cm_is_eht_allowed_for_current_security() - checks the current security, if
- * eht allowed or not.
+ * wlan_cm_is_eht_allowed_for_current_security() - checks the current security,
+ * if eht allowed or not.
+ * @psoc: psoc context
  * @scan_entry: pointer to scan cache entry
  *
  * Return: true if eht allowed for current security
  **/
-bool cm_is_eht_allowed_for_current_security(
+bool wlan_cm_is_eht_allowed_for_current_security(
+			struct wlan_objmgr_psoc *psoc,
 			struct scan_cache_entry *scan_entry);
 #else
-static inline bool cm_is_eht_allowed_for_current_security(
+static inline bool wlan_cm_is_eht_allowed_for_current_security(
+			struct wlan_objmgr_psoc *psoc,
+			struct scan_cache_entry *scan_entry)
+{
+	return true;
+}
+#endif
+#else
+static inline bool wlan_cm_is_eht_allowed_for_current_security(
+			struct wlan_objmgr_psoc *psoc,
 			struct scan_cache_entry *scan_entry)
 {
 	return false;

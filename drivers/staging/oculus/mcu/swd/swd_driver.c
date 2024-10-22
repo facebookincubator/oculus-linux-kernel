@@ -179,7 +179,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	}
 
 	/* Regulator is optional and will be initialized to NULL if not found */
-	devm_fw_init_regulator(dev, &devdata->swd_core, "swd-core");
+	devdata->swd_core = devm_regulator_get(dev, "meta,swd-core");
 
 	ret = swd_driver_init_single_target(dev, &devdata->mcu_data, node, !mcu_node);
 	if (ret < 0)

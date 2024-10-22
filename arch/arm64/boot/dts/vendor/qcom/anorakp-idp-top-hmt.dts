@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "anorakp.dtsi"
+#include "anorakp-idp-top-hmt.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. AnorakP IDP Topanga Hamilton";
+	compatible = "qcom,anorakp-idp", "qcom,anorakp", "qcom,idp";
+	qcom,board-id = <0x10022 0x3>;
+};

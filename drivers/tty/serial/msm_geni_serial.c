@@ -892,15 +892,16 @@ static int msm_geni_serial_ioctl(struct uart_port *uport, unsigned int cmd,
 	int ret = -ENOIOCTLCMD;
 	enum uart_error_code uart_error;
 
-	if (port->pm_auto_suspend_disable)
-		return ret;
-
 	switch (cmd) {
 	case MSM_GENI_SERIAL_TIOCPMGET: {
+		if (port->pm_auto_suspend_disable)
+			break;
 		ret = vote_clock_on(uport);
 		break;
 	}
 	case MSM_GENI_SERIAL_TIOCPMPUT: {
+		if (port->pm_auto_suspend_disable)
+			break;
 		ret = vote_clock_off(uport);
 		break;
 	}
@@ -3583,7 +3584,9 @@ static ssize_t geni_ios_current_show(struct device *dev,
 	u32 geni_ios;
 	ssize_t ret = 0;
 
+	pm_runtime_get_sync(dev);
 	geni_ios = (port->is_active) ? geni_read_reg_nolog(port->uport.membase, SE_GENI_IOS) : -1;
+	pm_runtime_put_sync(dev);
 	ret = snprintf(buf, PAGE_SIZE, "%d\n", geni_ios);
 	return ret;
 }

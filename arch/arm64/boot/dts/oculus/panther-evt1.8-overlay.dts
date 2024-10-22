@@ -6,6 +6,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include "panther-evt1-common.dtsi"
 #include "panther-evt1-mr-button.dtsi"
+#include "panther-surf-virt-sensor-legacy.dtsi"
 
 / {
 	model = "Panther (EVT1.8)";

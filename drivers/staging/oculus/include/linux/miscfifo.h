@@ -1,6 +1,7 @@
 #ifndef _LINUX_MISCFIFO_H
 #define _LINUX_MISCFIFO_H
 
+#include <linux/atomic.h>
 #include <linux/kfifo.h>
 #include <linux/list.h>
 #include <linux/miscdevice.h>
@@ -52,6 +53,7 @@ struct miscfifo_client {
 	void *context;
 	struct file *file;
 	char *name;
+	atomic_t cancel;
 };
 
 /**
@@ -182,5 +184,13 @@ ssize_t miscfifo_fop_read_many(struct file *file,
  * @param  context   context
  */
 void *miscfifo_fop_xchg_context(struct file *file, void *context);
+
+/**
+ * Cancel the current or next miscfifo_read* operation.
+ * Using file handle to be consistent with the miscfifo_read* operations.
+ *
+ * @param file file handle
+ */
+void miscfifo_cancel(struct file *file);
 
 #endif

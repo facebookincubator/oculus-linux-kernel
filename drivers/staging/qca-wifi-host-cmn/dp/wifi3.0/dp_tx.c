@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,6 +52,9 @@
 #include "cdp_txrx_cmn_reg.h"
 #ifdef CONFIG_SAWF
 #include <dp_sawf.h>
+#endif
+#ifdef WLAN_SUPPORT_LAPB
+#include "wlan_dp_lapb_flow.h"
 #endif
 
 /* Flag to skip CCE classify when mesh or tid override enabled */
@@ -1609,6 +1612,67 @@ dp_tx_check_and_flush_hp(struct dp_soc *soc,
 			(msdu_info->tx_queue.ring_id & DP_TX_QUEUE_MASK));
 	}
 }
+#elif defined(WLAN_SUPPORT_LAPB)
+/**
+ * dp_tx_update_stats() - Update soc level tx stats
+ * @soc: DP soc handle
+ * @tx_desc: TX descriptor reference
+ * @ring_id: TCL ring id
+ *
+ * Returns: none
+ */
+void dp_tx_update_stats(struct dp_soc *soc,
+			struct dp_tx_desc_s *tx_desc,
+			uint8_t ring_id)
+{
+	uint32_t stats_len = dp_tx_get_pkt_len(tx_desc);
+
+	DP_STATS_INC_PKT(soc, tx.egress[ring_id], 1, stats_len);
+}
+
+void
+dp_tx_ring_access_end(struct dp_soc *soc, hal_ring_handle_t hal_ring_hdl,
+		      int coalesce)
+{
+	if (coalesce)
+		dp_tx_hal_ring_access_end_reap(soc, hal_ring_hdl);
+	else
+		dp_tx_hal_ring_access_end(soc, hal_ring_hdl);
+}
+
+int
+dp_tx_attempt_coalescing(struct dp_soc *soc, struct dp_vdev *vdev,
+			 struct dp_tx_desc_s *tx_desc,
+			 uint8_t tid,
+			 struct dp_tx_msdu_info_s *msdu_info,
+			 uint8_t ring_id)
+{
+	int coalesce = 0;
+
+	if (!soc->lapb.is_init)
+		return coalesce;
+
+	soc->lapb.ops->wlan_dp_lapb_handle_frame(soc, tx_desc->nbuf,
+						 &coalesce, msdu_info);
+
+	return coalesce;
+}
+
+static inline void
+dp_tx_is_hp_update_required(uint32_t i, struct dp_tx_msdu_info_s *msdu_info)
+{
+	if (((i + 1) < msdu_info->num_seg))
+		msdu_info->skip_hp_update = 1;
+	else
+		msdu_info->skip_hp_update = 0;
+}
+
+static inline void
+dp_tx_check_and_flush_hp(struct dp_soc *soc,
+			 QDF_STATUS status,
+			 struct dp_tx_msdu_info_s *msdu_info)
+{
+}
 #else
 static inline void
 dp_tx_is_hp_update_required(uint32_t i, struct dp_tx_msdu_info_s *msdu_info)
@@ -1842,6 +1906,7 @@ static inline void dp_tx_classify_tid(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
 				      struct dp_tx_msdu_info_s *msdu_info)
 {
 	DP_TX_TID_OVERRIDE(msdu_info, nbuf);
+	DP_FLOW_TX_TID_OVERRIDE(msdu_info, nbuf);
 
 	/*
 	 * skip_sw_tid_classification flag will set in below cases-

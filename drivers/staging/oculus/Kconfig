@@ -4,7 +4,13 @@ menuconfig OCULUS
 	help
 	  Enable support for Oculus drivers and features
 
-if OCULUS
+menuconfig META
+	bool "Meta feature support"
+	default y
+	help
+	  Enable support for Meta drivers and features
+
+if OCULUS || META
 
 config AS5510
 	tristate "AS5510 Hall Effect Sensor i2c driver"
@@ -15,6 +21,12 @@ config AS5510
 	  With this sensor, can measure IPD. Look at regs 0x0-0x1.
 	  Here is spec sheet:
 	  http://www.mouser.com/ds/2/588/AS5510_Datasheet_EN_v3-272817.pdf
+
+config AW8646_MOTOR
+    tristate "Step motor driver for awinic AW8646"
+	default n
+	help
+	  Enable motor driver for awinic AW8646.
 
 config BLU_FW
 	tristate "Support BLU FW Updates"

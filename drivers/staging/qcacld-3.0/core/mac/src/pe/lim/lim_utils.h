@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1011,15 +1011,11 @@ void lim_set_protected_bit(struct mac_context *mac,
 	struct pe_session *pe_session,
 	tSirMacAddr peer, tpSirMacMgmtHdr pMacHdr);
 
-void lim_set_ht_caps(struct mac_context *p_mac,
-		struct pe_session *p_session_ntry,
-		uint8_t *p_ie_start,
-		uint32_t num_bytes);
+void lim_set_ht_caps(struct mac_context *p_mac, uint8_t *p_ie_start,
+		     uint32_t num_bytes);
 
-void lim_set_vht_caps(struct mac_context *p_mac,
-		struct pe_session *p_session_entry,
-		uint8_t *p_ie_start,
-		uint32_t num_bytes);
+void lim_set_vht_caps(struct mac_context *p_mac, uint8_t *p_ie_start,
+		      uint32_t num_bytes);
 bool lim_validate_received_frame_a1_addr(struct mac_context *mac_ctx,
 		tSirMacAddr a1, struct pe_session *session);
 void lim_set_stads_rtt_cap(tpDphHashNode sta_ds, struct s_ext_cap *ext_cap,
@@ -1034,7 +1030,6 @@ QDF_STATUS lim_send_ext_cap_ie(struct mac_context *mac_ctx, uint32_t session_id,
  * lim_send_ies_per_band() - gets ht and vht capability and send to firmware via
  * wma
  * @mac_ctx: global mac context
- * @session: pe session. This can be NULL. In that case self cap will be sent
  * @vdev_id: vdev for which IE is targeted
  * @dot11_mode: vdev dot11 mode
  * @device_mode: device mode
@@ -1044,7 +1039,7 @@ QDF_STATUS lim_send_ext_cap_ie(struct mac_context *mac_ctx, uint32_t session_id,
  * Return: status of operation
  */
 QDF_STATUS lim_send_ies_per_band(struct mac_context *mac_ctx,
-				 struct pe_session *session, uint8_t vdev_id,
+				 uint8_t vdev_id,
 				 enum csr_cfgdot11mode dot11_mode,
 				 enum QDF_OPMODE device_mode);
 
@@ -1508,20 +1503,18 @@ void lim_update_session_he_capable_chan_switch(struct mac_context *mac,
 /**
  * lim_set_he_caps() - update HE caps to be sent to FW as part of scan IE
  * @mac: pointer to MAC
- * @session: pointer to PE session
  * @ie_start: pointer to start of IE buffer
  * @num_bytes: length of IE buffer
  * @band: 2g or 5g band
  *
  * Return: None
  */
-void lim_set_he_caps(struct mac_context *mac, struct pe_session *session,
-		     uint8_t *ie_start, uint32_t num_bytes, uint8_t band);
+void lim_set_he_caps(struct mac_context *mac, uint8_t *ie_start,
+		     uint32_t num_bytes, uint8_t band);
 
 /**
  * lim_send_he_caps_ie() - gets HE capability and send to firmware via wma
  * @mac_ctx: global mac context
- * @session: pe session. This can be NULL. In that case self cap will be sent
  * @device_mode: VDEV op mode
  * @vdev_id: vdev for which IE is targeted
  *
@@ -1530,7 +1523,6 @@ void lim_set_he_caps(struct mac_context *mac, struct pe_session *session,
  * Return: QDF_STATUS
  */
 QDF_STATUS lim_send_he_caps_ie(struct mac_context *mac_ctx,
-			       struct pe_session *session,
 			       enum QDF_OPMODE device_mode,
 			       uint8_t vdev_id);
 
@@ -1754,7 +1746,6 @@ static inline void lim_set_he_caps(struct mac_context *mac, struct pe_session *s
 }
 
 static inline QDF_STATUS lim_send_he_caps_ie(struct mac_context *mac_ctx,
-					     struct pe_session *session,
 					     enum QDF_OPMODE device_mode,
 					     uint8_t vdev_id)
 {
@@ -2021,20 +2012,19 @@ void lim_log_eht_cap(struct mac_context *mac, tDot11fIEeht_cap *eht_cap);
 /**
  * lim_set_eht_caps() - update EHT caps to be sent to FW as part of scan IE
  * @mac: pointer to MAC
- * @session: pointer to PE session
  * @ie_start: pointer to start of IE buffer
  * @num_bytes: length of IE buffer
  * @band: 2g or 5g band
+ * @vdev_id: vdev id
  *
  * Return: None
  */
-void lim_set_eht_caps(struct mac_context *mac, struct pe_session *session,
-		      uint8_t *ie_start, uint32_t num_bytes, uint8_t band);
+void lim_set_eht_caps(struct mac_context *mac, uint8_t *ie_start,
+		      uint32_t num_bytes, uint8_t band, uint8_t vdev_id);
 
 /**
  * lim_send_eht_caps_ie() - gets EHT capability and send to firmware via wma
  * @mac_ctx: global mac context
- * @session: pe session. This can be NULL. In that case self cap will be sent
  * @device_mode: VDEV op mode
  * @vdev_id: vdev for which IE is targeted
  *
@@ -2043,7 +2033,6 @@ void lim_set_eht_caps(struct mac_context *mac, struct pe_session *session,
  * Return: QDF_STATUS
  */
 QDF_STATUS lim_send_eht_caps_ie(struct mac_context *mac_ctx,
-				struct pe_session *session,
 				enum QDF_OPMODE device_mode,
 				uint8_t vdev_id);
 /**
@@ -2236,13 +2225,13 @@ lim_log_eht_cap(struct mac_context *mac, tDot11fIEeht_cap *eht_cap)
 }
 
 static inline void
-lim_set_eht_caps(struct mac_context *mac, struct pe_session *session,
-		 uint8_t *ie_start, uint32_t num_bytes, uint8_t band)
+lim_set_eht_caps(struct mac_context *mac, uint8_t *ie_start,
+		 uint32_t num_bytes, uint8_t band, uint8_t vdev_id)
 {
 }
 
 static inline QDF_STATUS
-lim_send_eht_caps_ie(struct mac_context *mac_ctx, struct pe_session *session,
+lim_send_eht_caps_ie(struct mac_context *mac_ctx,
 		     enum QDF_OPMODE device_mode, uint8_t vdev_id)
 {
 	return QDF_STATUS_SUCCESS;
@@ -2345,7 +2334,6 @@ lim_extract_msd_caps(struct mac_context *mac_ctx,
 /**
  * lim_send_he_6g_band_caps_ie() - Send HE 6ghz band caps to FW
  * @mac_ctx: Global MAC context
- * @session: session ptr
  * @vdev_id: vdev id
  *
  * Send HE 6ghz band capabilities IE to firmware
@@ -2353,12 +2341,10 @@ lim_extract_msd_caps(struct mac_context *mac_ctx,
  * Return: QDF_STATUS_SUCCESS on success
  */
 QDF_STATUS lim_send_he_6g_band_caps_ie(struct mac_context *mac_ctx,
-				       struct pe_session *session,
 				       uint8_t vdev_id);
 #else
 static inline
 QDF_STATUS lim_send_he_6g_band_caps_ie(struct mac_context *mac_ctx,
-				       struct pe_session *session,
 				       uint8_t vdev_id)
 {
 	return QDF_STATUS_SUCCESS;

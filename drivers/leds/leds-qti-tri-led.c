@@ -329,15 +329,9 @@ static int qpnp_tri_led_set_brightness(struct led_classdev *led_cdev,
 	if (brightness > LED_FULL)
 		brightness = LED_FULL;
 
-	if (brightness == led->led_setting.brightness &&
-			!led->blinking && !led->breathing) {
-		goto unlock;
-	}
-
 	led->led_setting.brightness = brightness;
 
 	rc = qpnp_tri_led_set_brightness_locked(led_cdev);
-unlock:
 	mutex_unlock(&led->lock);
 
 	return rc;

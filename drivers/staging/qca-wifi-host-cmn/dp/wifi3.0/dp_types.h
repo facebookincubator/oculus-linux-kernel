@@ -46,6 +46,7 @@
 #include <hal_api_mon.h>
 #include "hal_rx.h"
 //#include "hal_rx_flow.h"
+#include <qdf_hrtimer.h>
 
 #define MAX_BW 8
 #define MAX_RETRIES 4
@@ -2070,6 +2071,30 @@ struct ipa_dp_rx_rsc {
 #endif
 
 struct dp_tx_msdu_info_s;
+
+#ifdef WLAN_SUPPORT_LAPB
+struct wlan_lapb_ops {
+	void (*wlan_dp_lapb_handle_frame)(struct dp_soc *soc, qdf_nbuf_t  nbuf,
+					  int *coalesce,
+					  struct dp_tx_msdu_info_s *msdu_info);
+};
+
+struct wlan_lapb_stats {
+	uint32_t pkt_recvd;
+	uint32_t timer_expired;
+	uint32_t app_spcl_ind_recvd;
+};
+
+struct wlan_lapb {
+	bool is_init;
+	uint8_t ring_id;
+	struct wlan_lapb_ops *ops;
+	struct dp_soc *soc;
+	qdf_hrtimer_data_t lapb_flow_timer;
+	struct wlan_lapb_stats stats;
+};
+#endif
+
 /**
  * enum dp_context_type- DP Context Type
  * @DP_CONTEXT_TYPE_SOC: Context type DP SOC
@@ -2886,6 +2911,10 @@ struct dp_soc {
 
 #ifdef WLAN_DP_FEATURE_SW_LATENCY_MGR
 	struct dp_swlm swlm;
+#endif
+
+#ifdef WLAN_SUPPORT_LAPB
+	struct wlan_lapb lapb;
 #endif
 
 #ifdef FEATURE_RUNTIME_PM

@@ -57,6 +57,14 @@ static int dsi_pwr_parse_supply_node(struct dsi_parser_utils *utils,
 		}
 		regs->vregs[i].enable_load = tmp;
 
+		if (utils->read_bool(node, "meta,enable-load-panel-override")) {
+			rc = utils->read_u32(utils->data, "meta,panel-enable-load", &tmp);
+			if (!rc && tmp) {
+				regs->vregs[i].enable_load = tmp;
+				DSI_DEBUG("overriding with a panel specific enable load");
+			}
+		}
+
 		rc = utils->read_u32(node, "qcom,supply-disable-load", &tmp);
 		if (rc) {
 			DSI_ERR("failed to read disable load, rc = %d\n", rc);

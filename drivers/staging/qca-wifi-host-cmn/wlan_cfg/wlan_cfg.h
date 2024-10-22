@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -333,6 +333,8 @@ struct wlan_srng_cfg {
  * @pointer_timer_threshold_rx: RX REO2SW ring pointer update timer threshold
  * @pointer_num_threshold_rx: RX REO2SW ring pointer update entries threshold
  * @special_frame_msk: Special frame mask
+ * @is_lapb_enabled: LAPB feature enable flag.
+ *
  */
 struct wlan_cfg_dp_soc_ctxt {
 	int num_int_ctxts;
@@ -529,6 +531,9 @@ struct wlan_cfg_dp_soc_ctxt {
 	uint16_t pointer_timer_threshold_rx;
 	uint8_t pointer_num_threshold_rx;
 	uint32_t special_frame_msk;
+#ifdef WLAN_SUPPORT_LAPB
+	bool is_lapb_enabled;
+#endif
 };
 
 /**
@@ -2455,6 +2460,15 @@ wlan_cfg_get_tx_capt_max_mem(struct wlan_cfg_dp_soc_ctxt *cfg)
 	return cfg->tx_capt_max_mem_allowed;
 }
 #endif /* WLAN_TX_PKT_CAPTURE_ENH */
+
+/**
+ * wlan_cfg_is_lapb_enabled() - Get lapb enable flag
+ * @cfg: soc configuration context
+ *
+ * Return: true if enabled, false otherwise.
+ */
+bool
+wlan_cfg_is_lapb_enabled(struct wlan_cfg_dp_soc_ctxt *cfg);
 
 #ifdef DP_TX_PACKET_INSPECT_FOR_ILP
 /**

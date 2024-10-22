@@ -800,8 +800,19 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 			int status = (*client_data->direct_channel_distribute) (devdata, client_data, packet_info);
 
 			if (status >= 0) {
-				/* We have delivered to at least one client. */
-				ret = NOTIFY_STOP;
+				/* If we return NOTIFY_STOP the packet will only get delivered to direct channel
+				   clients; if we return NOTIFY_DONE it will also get delivered to the sensor service
+				   for processing.  We need to let any changes to nsync status go to the sensor service;
+				   but otherwise we want to only deliver IMU data to direct clients. */
+				const struct syncboss_driver_data_header_t *header = &packet_info->header;
+				if ((header->nsync_offset_us != devdata->last_nsync_offset_us) ||
+				    (header->nsync_offset_status != devdata->last_nsync_offset_status)) {
+					devdata->last_nsync_offset_us = header->nsync_offset_us;
+					devdata->last_nsync_offset_status = header->nsync_offset_status;
+					ret = NOTIFY_DONE;
+				} else {
+					ret = NOTIFY_STOP;
+				}
 			} else {
 				dev_dbg(devdata->dev, "direct channel distibute failed error %d", status);
 				break;

@@ -67,6 +67,7 @@ enum ext_batt_fw_dock_state {
 #define EXT_BATT_FW_CHARGER_PLUGGED 0x82
 #define EXT_BATT_FW_HMD_DOCKED 0x84
 #define EXT_BATT_FW_REBOOT_INTO_BOOTLOADER 0xF0
+#define EXT_BATT_FW_BOOTLOADER_VERSION 0xF1
 
 /* Error conditions reported to HMD */
 #define EXT_BATT_FW_ERROR_CONDITIONS 10
@@ -256,6 +257,8 @@ struct ext_batt_parameters {
 	char serial_system[16];
 
 	/* Standard parameters */
+	u16 temp_board;
+	u16 temp_battery;
 	u16 temp_fg;
 	u16 voltage;
 	char battery_status[16];
@@ -268,7 +271,9 @@ struct ext_batt_parameters {
 	u8 rsoc_test;
 	bool rsoc_test_enabled;
 	u8 soh;
-	u32 fw_version;
+	u64 bootloader_version;
+	u64 fw_version;
+	u32 fw_version_legacy;
 	char device_name[16];
 	bool charger_plugged;
 	char pack_assembly_pn[12];
@@ -292,6 +297,14 @@ struct ext_batt_parameters {
 	u8 error_conditions[EXT_BATT_FW_ERROR_CONDITIONS];
 };
 
+struct usbvdm_subscription_data {
+	u16 vid;
+	u16 pid;
+	struct usbvdm_subscription *sub;
+
+	struct list_head entry;
+};
+
 /**
  * struct ext_batt_pd - structure for external battery data
  *
@@ -300,14 +313,16 @@ struct ext_batt_parameters {
  * @usb_psy: power supply object handle for USB power supply
  * @cypd_psy: power supply object handle for CYPD power supply
  * @nb: notifier block for handling power supply change events
+ * @fw_version_work: work for requesting app firmware version
+ * @bootloader_version_work: work for requesting bootloader version
  * @mount_state_work: work for periodically processing HMD mount state
  * @dock_state_work: work for periodically processing HMD dock state
  * @psy_notifier_work: work for handling the power_supply notifier callback logic
  * @wq: workqueue to pipe tasks into
- * @mount_state_ack: signals that a mount state update was acked
- * @vid: Vendor ID, needed to construct VDM messages
- * @pid: Product ID, identifies the specific attached device
- * @sub: Subscription handle from USBVDM library
+ * @request_ack: signals that a request requiring a response was acked
+ * @current_vid: Vendor ID of currently attached device
+ * @current_pid: Product ID of currently attached device
+ * @sub_list: List of USBVDM subscription handles
  * @charging_suspend_disable: ext_batt on-demand charging suspend disable
  * @charging_suspend_threshold: battery capacity threshold for charging suspend
  * @charging_resume_threshold: battery capacity threshold for charging resume
@@ -338,15 +353,17 @@ struct ext_batt_pd {
 	struct power_supply *cypd_psy;
 	struct notifier_block nb;
 
+	struct work_struct fw_version_work;
+	struct work_struct bootloader_version_work;
 	struct work_struct mount_state_work;
 	struct work_struct dock_state_work;
 	struct work_struct psy_notifier_work;
 	struct workqueue_struct *wq;
-	struct completion mount_state_ack;
+	struct completion request_ack;
 
-	u16 vid;
-	u16 pid;
-	struct usbvdm_subscription *sub;
+	u16 current_vid;
+	u16 current_pid;
+	struct list_head sub_list;
 
 	bool charging_suspend_disable;
 	u32 charging_suspend_threshold;

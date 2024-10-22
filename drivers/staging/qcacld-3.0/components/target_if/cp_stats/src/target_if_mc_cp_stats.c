@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1667,6 +1667,31 @@ static QDF_STATUS target_if_cp_stats_send_stats_req(
 }
 
 /**
+ * target_if_set_pdev_stats_update_period(): API to set pdev stats update
+ * period to FW
+ * @psoc: pointer to psoc object
+ * @pdev_id: pdev id
+ * @val: pdev stats update period, 0: disabled periodical stats report.
+ *
+ * Return: status of operation
+ */
+static QDF_STATUS
+target_if_set_pdev_stats_update_period(struct wlan_objmgr_psoc *psoc,
+				       uint8_t pdev_id, uint32_t val)
+{
+	struct wmi_unified *wmi_handle;
+	struct pdev_params pdev_param = {0};
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+
+	pdev_param.param_id = wmi_pdev_param_pdev_stats_update_period;
+	pdev_param.param_value = val;
+	return wmi_unified_pdev_param_send(wmi_handle,
+					   &pdev_param,
+					   pdev_id);
+}
+
+/**
  * target_if_mc_cp_stats_unregister_handlers() - Unregisters wmi event handlers
  * of control plane stats & twt session stats info
  * @psoc: PSOC object
@@ -1758,6 +1783,8 @@ target_if_mc_cp_stats_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 	cp_stats_tx_ops->inc_wake_lock_stats =
 		target_if_cp_stats_inc_wake_lock_stats;
 	cp_stats_tx_ops->send_req_stats = target_if_cp_stats_send_stats_req;
+	cp_stats_tx_ops->set_pdev_stats_update_period =
+			target_if_set_pdev_stats_update_period;
 	cp_stats_tx_ops->send_req_peer_stats =
 		target_if_cp_stats_send_peer_stats_req;
 
@@ -1785,6 +1812,7 @@ target_if_mc_cp_stats_unregister_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 	target_if_big_data_stats_unregister_tx_ops(cp_stats_tx_ops);
 	cp_stats_tx_ops->inc_wake_lock_stats = NULL;
 	cp_stats_tx_ops->send_req_stats = NULL;
+	cp_stats_tx_ops->set_pdev_stats_update_period = NULL;
 	cp_stats_tx_ops->send_req_peer_stats = NULL;
 
 	return QDF_STATUS_SUCCESS;

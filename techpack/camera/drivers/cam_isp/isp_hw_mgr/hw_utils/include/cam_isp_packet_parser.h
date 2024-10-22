@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_ISP_HW_PARSER_H_
@@ -21,6 +21,7 @@ enum cam_isp_cdm_bl_type {
 	CAM_ISP_COMMON_CFG_BL,
 	CAM_ISP_IQ_BL,
 	CAM_ISP_IOCFG_BL,
+	CAM_ISP_RUP_BL,
 	CAM_ISP_BL_MAX,
 };
 

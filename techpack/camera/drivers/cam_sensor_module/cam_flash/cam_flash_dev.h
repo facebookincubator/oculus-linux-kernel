@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_FLASH_DEV_H_
@@ -229,6 +229,8 @@ struct cam_flash_ctrl {
 	uint32_t                            last_flush_req;
 	int                                 anchor_pd;
 	int32_t                             apply_trigger_point;
+	bool                                pause_state;
+	uint64_t                            last_applied_req;
 };
 
 int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg);

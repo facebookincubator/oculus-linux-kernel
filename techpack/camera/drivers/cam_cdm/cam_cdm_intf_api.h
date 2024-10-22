@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_CDM_API_H_
@@ -132,8 +132,8 @@ struct cam_cdm_bl_cmd {
 /**
  * struct cam_cdm_bl_request - Cam CDM HW base & length (BL) request
  *
- * @flag : 1 for callback needed and 0 for no callback when this BL
- *            request is done
+ * @gen_irq_bl_done : true for callback needed and false for no callback when this
+ *                    BL request is done
  * @gen_irq_arb : enum for setting arbitration in gen_irq
  * @userdata :Input private data which will be returned as part
  *             of callback if request for this bl request in flags.
@@ -147,7 +147,7 @@ struct cam_cdm_bl_cmd {
  *
  */
 struct cam_cdm_bl_request {
-	bool flag;
+	bool gen_irq_bl_done;
 	bool gen_irq_arb;
 	void *userdata;
 	enum cam_cdm_bl_cmd_addr_type type;

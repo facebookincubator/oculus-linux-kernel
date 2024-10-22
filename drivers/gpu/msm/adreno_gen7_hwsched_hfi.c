@@ -849,6 +849,7 @@ int gen7_hwsched_hfi_init(struct adreno_device *adreno_dev)
 			return PTR_ERR(hfi->hfi_mem);
 		init_queues(hfi, adreno_dev->lpac_enabled);
 	}
+	rwlock_init(&hfi->cmdq_lock);
 
 	return 0;
 }

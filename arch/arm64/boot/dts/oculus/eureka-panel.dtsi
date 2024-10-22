@@ -266,6 +266,7 @@
 		<45000 4470>,
 		<55000 4090>;
 	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_nvt";
 	meta,max-blu-pulse-overlap-us = <500>;
 
 	meta,blu-pwm-gpio = <&tlmm 109 0>;
@@ -291,6 +292,7 @@
 		<45000 4470>,
 		<55000 4090>;
 	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_nvt";
 	meta,max-blu-pulse-overlap-us = <800>;
 
 	meta,blu-pwm-gpio = <&tlmm 109 0>;
@@ -316,6 +318,7 @@
 		<45000 5140>,
 		<55000 4220>;
 	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_nvt";
 	meta,max-blu-pulse-overlap-us = <500>;
 
 	meta,blu-pwm-gpio = <&tlmm 109 0>;
@@ -341,6 +344,7 @@
 		<45000 5140>,
 		<55000 4220>;
 	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_nvt";
 	meta,max-blu-pulse-overlap-us = <800>;
 
 	meta,blu-pwm-gpio = <&tlmm 109 0>;

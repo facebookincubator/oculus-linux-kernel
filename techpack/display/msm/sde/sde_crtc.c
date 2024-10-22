@@ -892,6 +892,80 @@ static ssize_t backlight_temperature_override_store(struct device *device,
 	return count;
 }
 
+static ssize_t backlight_changes_blocked_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	struct sde_crtc_state *cstate;
+	struct dsi_display *display = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc || !sde_encoder_is_dsi_display(enc))
+			continue;
+
+		cstate = to_sde_crtc_state(crtc->state);
+		if (cstate->num_connectors > 0) {
+			struct sde_connector *c_conn = to_sde_connector(
+					cstate->connectors[0]);
+			display = c_conn->display;
+			break;
+		}
+	}
+
+	if (!display)
+		return -EINVAL;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			display->panel->bl_config.backlight_changes_blocked);
+}
+
+static ssize_t backlight_changes_blocked_store(struct device *device,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	struct sde_crtc_state *cstate;
+	u32 backlight_changes_blocked = 0;
+	int res, i;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	res = kstrtou32(buf, 10, &backlight_changes_blocked);
+	if (res < 0)
+		return res;
+
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc || !sde_encoder_is_dsi_display(enc))
+			continue;
+
+		cstate = to_sde_crtc_state(crtc->state);
+		for (i = 0; i < cstate->num_connectors; i++) {
+			struct sde_connector *c_conn = to_sde_connector(
+					cstate->connectors[i]);
+			struct dsi_display *display = c_conn->display;
+
+			display->panel->bl_config.backlight_changes_blocked =
+					backlight_changes_blocked;
+		}
+	}
+
+	return count;
+}
+
 static DEVICE_ATTR_RO(vsync_event);
 static DEVICE_ATTR_RO(vsync_timing);
 static DEVICE_ATTR_RO(active_event);
@@ -907,6 +981,7 @@ static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(fps_periodicity_ms);
 static DEVICE_ATTR_RO(retire_frame_event);
 static DEVICE_ATTR_RW(backlight_temperature_override);
+static DEVICE_ATTR_RW(backlight_changes_blocked);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
@@ -924,6 +999,7 @@ static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_fps_periodicity_ms.attr,
 	&dev_attr_retire_frame_event.attr,
 	&dev_attr_backlight_temperature_override.attr,
+	&dev_attr_backlight_changes_blocked.attr,
 	NULL
 };
 

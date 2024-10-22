@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1848,6 +1848,27 @@
 #define CFG_TX_PKT_INSPECT_FOR_ILP_CFG
 #endif
 
+#ifdef WLAN_SUPPORT_LAPB
+/*
+ * <ini>
+ * TX packet LAPB flow - Enable/Disable
+ *
+ * @Default: false
+ *
+ * This ini enable/disables TX packet LAPB flow
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_WLAN_SUPPORT_LAPB \
+	CFG_INI_BOOL("dp_enable_lapb", false, \
+	"Enable/Disable WLAN LAPB flow")
+#define CFG_WLAN_SUPPORT_LAPB_CFG CFG(CFG_WLAN_SUPPORT_LAPB)
+#else
+#define CFG_WLAN_SUPPORT_LAPB_CFG
+#endif
+
 /*
  * <ini>
  * special_frame_msk - frame mask to mark special frame type
@@ -1994,5 +2015,6 @@
 		CFG_TX_PKT_INSPECT_FOR_ILP_CFG \
 		CFG(CFG_DP_POINTER_TIMER_THRESHOLD_RX) \
 		CFG(CFG_DP_POINTER_NUM_THRESHOLD_RX) \
-		CFG(CFG_SPECIAL_FRAME_MSK)
+		CFG(CFG_SPECIAL_FRAME_MSK) \
+		CFG_WLAN_SUPPORT_LAPB_CFG
 #endif /* _CFG_DP_H_ */
