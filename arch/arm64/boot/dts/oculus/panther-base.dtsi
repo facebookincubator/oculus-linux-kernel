@@ -25,6 +25,11 @@
 	pins = "gpio9";
 };
 
+&fan {
+	oculus,rpm-per-sec = <150>;
+	oculus,silent-rpm = <5000>;
+};
+
 &mdss_dsi_phy0 {
 	/delete-property/ qcom,dsi-pll-ssc-en;
 };
@@ -63,20 +68,11 @@
 };
 
 /* NRF SPI */
-&qupv3_se9_spi {
-	status = "ok";
-	syncboss_nrf@0 {
-		nsync@0 {
-			/*
-			 * T182999318: temporary override to allow gradual deprecation
-			 * of the legacy nsync userspace interface.
-			 */
-			meta,disable-legacy-nsync;
-		};
+&syncboss_nrf {
+	meta,min-time-between-trans-ns = <500000>;
 
-		powerstate@0 {
-			/delete-property/ meta,syncboss-has-prox;
-		};
+	powerstate@0 {
+		/delete-property/ meta,syncboss-has-prox;
 	};
 };
 
@@ -88,7 +84,7 @@
 		reg = <0>;
 		spi-cpha;
 		spi-max-frequency = <10000000>;
-		chunk-size = <32768>;
+		chunk-size = <262144>;
 		status = "ok";
 	};
 };
@@ -231,19 +227,22 @@
 
 	external_battery: oculus,external_battery {
 		compatible = "oculus,external-battery";
-		meta,usb-id = /bits/ 16 <0x2833 0x5001>;	/* Lehua+ */
+		meta,usb-ids =
+			/bits/ 16 <0x2833 0x5001>,		/* Lehua+ */
+			/bits/ 16 <0x2833 0x5015>;		/* Lehua+ v2 */
 		batt-name = "lehua";
 		charging-suspend-thresh = <100>;
 		charging-resume-thresh = <95>;
 		rsoc-scaling;
 		rsoc-scaling-min-level = <1>;
 		rsoc-scaling-max-level = <100>;
-		otg-current-control;
 	};
 
 	meta,pdfu_initiator {
 		compatible = "meta,pdfu-initiator";
-		usb,product-id = /bits/ 16 <0x5006>;
+		usb,product-ids =
+			/bits/ 16 <0x5006>,		 /* Moku */
+			/bits/ 16 <0x500f>;		 /* Lehua+ */
 	};
 };
 
@@ -255,6 +254,6 @@
 	vdd-wlan-fem-en-supply = <>;
 	qcom,vdd-wlan-fem-en-config = <>;
 
-	vdd-wlan-supply = <&S4F>;
-	qcom,vdd-wlan-config = <2200000 2200000 0 0 1>;
+	vdd-wlan-ipa-supply = <&S4F>;
+	qcom,vdd-wlan-ipa-config = <2200000 2200000 0 0 1>;
 };

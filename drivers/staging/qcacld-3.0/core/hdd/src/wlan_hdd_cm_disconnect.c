@@ -509,8 +509,12 @@ static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
 
 	cm_update_associated_ch_info(vdev, false);
 
-	wlan_mlme_get_channel_bonding_5ghz(hdd_ctx->psoc, &cb_mode);
-	if (cb_mode == 0 && !wlan_reg_is_24ghz_ch_freq(des_chan->ch_freq))
+	if (wlan_reg_is_24ghz_ch_freq(des_chan->ch_freq))
+		ucfg_mlme_get_channel_bonding_24ghz(hdd_ctx->psoc, &cb_mode);
+	else
+		ucfg_mlme_get_channel_bonding_5ghz(hdd_ctx->psoc, &cb_mode);
+
+	if (cb_mode == 0)
 		max_bw = cb_mode;
 	else
 		max_bw = get_max_bw();

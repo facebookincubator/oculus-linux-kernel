@@ -6,6 +6,6 @@
 / {
 	model = "Qualcomm Technologies, Inc. Ravelin ATP";
 	compatible = "qcom,ravelin-atp", "qcom,ravelin", "qcom,atp";
-	qcom,msm-id = <568 0x10000>, <602 0x10000>;
+	qcom,msm-id = <568 0x10000>, <602 0x10000>, <653 0x10000>, <654 0x10000>;
 	qcom,board-id = <33 0>;
 };

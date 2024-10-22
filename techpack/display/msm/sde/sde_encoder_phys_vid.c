@@ -547,6 +547,18 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 
 	vid_enc->timing_params = timing_params;
 
+	if (phys_enc->hw_intf->cap->type == INTF_DSI)
+		programmable_fetch_config(phys_enc, &timing_params);
+
+	if (phys_enc->hw_intf->ops.set_lineptr_value) {
+		spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
+		phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
+				phys_enc->lineptr_offset_cached -
+				phys_enc->vfp_fetch_lines_cached,
+				&timing_params);
+		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+	}
+
 	if (phys_enc->cont_splash_enabled) {
 		SDE_DEBUG_VIDENC(vid_enc,
 			"skipping intf programming since cont splash is enabled\n");
@@ -574,16 +586,6 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 				&intf_cfg);
 	}
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
-	if (phys_enc->hw_intf->cap->type == INTF_DSI)
-		programmable_fetch_config(phys_enc, &timing_params);
-
-	if (phys_enc->hw_intf->ops.set_lineptr_value) {
-		spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
-		phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
-				phys_enc->lineptr_offset_cached -
-				phys_enc->vfp_fetch_lines_cached);
-		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
-	}
 
 	if (sde_encoder_has_dpu_ctl_op_sync(phys_enc->parent))
 		skewed_vsync_config(phys_enc, &timing_params);
@@ -946,7 +948,7 @@ static int sde_encoder_phys_vid_set_lineptr_value(
 
 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
 	rc = phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
-			offset - phys_enc->vfp_fetch_lines_cached);
+			offset - phys_enc->vfp_fetch_lines_cached, NULL);
 	if (!rc)
 		phys_enc->lineptr_offset_cached = offset;
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
@@ -1037,6 +1039,8 @@ static void sde_encoder_phys_vid_enable(struct sde_encoder_phys *phys_enc)
 		!sde_encoder_phys_vid_is_master(phys_enc))
 		goto skip_flush;
 
+	ctl->ops.update_bitmask(ctl, SDE_HW_FLUSH_INTF, intf->idx, 1);
+
 	/**
 	 * skip flushing intf during cont. splash handoff since bootloader
 	 * has already enabled the hardware and is single buffered.
@@ -1046,8 +1050,6 @@ static void sde_encoder_phys_vid_enable(struct sde_encoder_phys *phys_enc)
 		"skipping intf flush bit set as cont. splash is enabled\n");
 		goto skip_flush;
 	}
-
-	ctl->ops.update_bitmask(ctl, SDE_HW_FLUSH_INTF, intf->idx, 1);
 
 	if (phys_enc->hw_pp->merge_3d)
 		ctl->ops.update_bitmask(ctl, SDE_HW_FLUSH_MERGE_3D,

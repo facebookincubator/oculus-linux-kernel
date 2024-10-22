@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -157,7 +157,7 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 			CAM_DBG(CAM_CDM,
 				"write BL success for cnt=%d with tag=%d",
 				i, core->bl_tag);
-			if (req->data->flag && (i == req->data->cmd_arrary_count)) {
+			if (req->data->gen_irq_bl_done && (i == req->data->cmd_arrary_count)) {
 				struct cam_cdm_bl_cb_request_entry *node;
 
 				node = kzalloc(sizeof(

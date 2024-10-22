@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -813,7 +813,7 @@ static int cam_sync_handle_register_user_payload(
 
 		cam_sync_util_send_v4l2_event(CAM_SYNC_V4L_EVENT_ID_CB_TRIG,
 			sync_obj,
-			row->state,
+			row->state, 0,
 			user_payload_kernel->payload_data,
 			CAM_SYNC_USER_PAYLOAD_SIZE * sizeof(__u64),
 			CAM_SYNC_COMMON_REG_PAYLOAD_EVENT, NULL);
@@ -1100,6 +1100,14 @@ static void cam_sync_event_queue_notify_error(const struct v4l2_event *old,
 			"Fail to notify event id %d fence %d status %d reason %u",
 			old->id, ev_header->sync_obj, ev_header->status,
 			ev_header->evt_param[0]);
+	} else if (sync_dev->version == CAM_SYNC_V4L_EVENT_V4) {
+		struct cam_sync_ev_header_v4 *ev_header;
+
+		ev_header = CAM_SYNC_GET_HEADER_PTR_V4((*old));
+		CAM_ERR(CAM_CRM,
+			"Fail to notify event id %d fence %d status %d reason %u",
+			old->id, ev_header->sync_obj, ev_header->status,
+			ev_header->evt_param.event_cause);
 	} else {
 		struct cam_sync_ev_header *ev_header;
 
@@ -1121,6 +1129,7 @@ int cam_sync_subscribe_event(struct v4l2_fh *fh,
 	case CAM_SYNC_V4L_EVENT:
 	case CAM_SYNC_V4L_EVENT_V2:
 	case CAM_SYNC_V4L_EVENT_V3:
+	case CAM_SYNC_V4L_EVENT_V4:
 		break;
 	default:
 		CAM_ERR(CAM_SYNC, "Non supported event type 0x%x", sub->type);
@@ -1149,6 +1158,7 @@ int cam_sync_unsubscribe_event(struct v4l2_fh *fh,
 	case CAM_SYNC_V4L_EVENT:
 	case CAM_SYNC_V4L_EVENT_V2:
 	case CAM_SYNC_V4L_EVENT_V3:
+	case CAM_SYNC_V4L_EVENT_V4:
 		break;
 	default:
 		CAM_ERR(CAM_SYNC, "Non supported event type 0x%x", sub->type);

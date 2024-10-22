@@ -1091,44 +1091,26 @@ static void aggregate_power_update(struct msm_cvp_core *core,
  *
  * Ensure caller acquires clk_lock!
  */
-static int adjust_bw_freqs(void)
+static int adjust_bw_freqs(unsigned int max_bw, unsigned int min_bw)
 {
 	struct msm_cvp_core *core;
 	struct iris_hfi_device *hdev;
-	struct bus_info *bus = NULL;
-	struct clock_set *clocks;
-	struct clock_info *cl;
 	struct allowed_clock_rates_table *tbl = NULL;
 	unsigned int tbl_size;
-	unsigned int cvp_min_rate, cvp_max_rate, max_bw = 0, min_bw = 0;
+	unsigned int cvp_min_rate, cvp_max_rate;
 	struct cvp_power_level rt_pwr = {0}, nrt_pwr = {0};
 	unsigned long tmp, core_sum, op_core_sum, bw_sum;
-	int i = 0, rc = 0, bus_count = 0;
+	int i = 0;
 	unsigned long ctrl_freq;
 
 	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
 
 	hdev = core->device->hfi_device_data;
-	clocks = &core->resources.clock_set;
-	cl = &clocks->clock_tbl[clocks->count - 1];
 	tbl = core->resources.allowed_clks_tbl;
 	tbl_size = core->resources.allowed_clks_tbl_size;
 	cvp_min_rate = tbl[0].clock_rate;
 	cvp_max_rate = tbl[tbl_size - 1].clock_rate;
 
-    for(bus_count = 0; bus_count < core->resources.bus_set.count; bus_count++)
-    {
-        if(!strcmp(core->resources.bus_set.bus_tbl[bus_count].name,"cvp-ddr")) {
-            bus = &core->resources.bus_set.bus_tbl[bus_count];
-            max_bw = bus->range[1];
-            min_bw = max_bw/10;
-        }
-    }
-
-    if(!bus) {
-        dprintk(CVP_ERR, "The bus node for cvp-ddr is NULL\n");
-        return -EINVAL;
-    }
 
 	aggregate_power_update(core, &nrt_pwr, &rt_pwr, cvp_max_rate);
 
@@ -1179,22 +1161,10 @@ static int adjust_bw_freqs(void)
 
 	dprintk(CVP_PROF, "%s %lld %lld\n", __func__,
 		core_sum, bw_sum);
-	if (!cl->has_scaling) {
-		dprintk(CVP_ERR, "Cannot scale CVP clock\n");
-		return -EINVAL;
-	}
 
 	tmp = core->curr_freq;
 	core->curr_freq = core_sum;
-	core->orig_core_sum = core_sum;
-	rc = msm_cvp_set_clocks(core);
-	if (rc) {
-		dprintk(CVP_ERR,
-			"Failed to set clock rate %u %s: %d %s\n",
-			core_sum, cl->name, rc, __func__);
-		core->curr_freq = tmp;
-		return rc;
-	}
+	core->orig_core_sum = tmp;
 
 	ctrl_freq = (core->curr_freq*3)>>1;
 	core->dyn_clk.conf_freq = core->curr_freq;
@@ -1206,9 +1176,9 @@ static int adjust_bw_freqs(void)
 	}
 
 	hdev->clk_freq = core->curr_freq;
-	rc = msm_cvp_set_bw(bus, bw_sum);
+	core->bw_sum = bw_sum;
 
-	return rc;
+	return 0;
 }
 
 int msm_cvp_update_power(struct msm_cvp_inst *inst)
@@ -1216,6 +1186,11 @@ int msm_cvp_update_power(struct msm_cvp_inst *inst)
 	int rc = 0;
 	struct msm_cvp_core *core;
 	struct msm_cvp_inst *s;
+	struct bus_info *bus = NULL;
+	struct clock_set *clocks;
+	struct clock_info *cl;
+	int bus_count = 0;
+	unsigned int max_bw = 0, min_bw = 0;
 
 	if (!inst) {
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
@@ -1227,10 +1202,51 @@ int msm_cvp_update_power(struct msm_cvp_inst *inst)
 		return -ECONNRESET;
 
 	core = inst->core;
+	if (!core || core->state == CVP_CORE_UNINIT) {
+		rc = -ECONNRESET;
+		goto adjust_exit;
+	}
+
+	clocks = &core->resources.clock_set;
+	cl = &clocks->clock_tbl[clocks->count - 1];
+	if (!cl->has_scaling) {
+		dprintk(CVP_ERR, "Cannot scale CVP clock\n");
+		rc = -EINVAL;
+		goto adjust_exit;
+	}
+
+	for (bus_count = 0; bus_count < core->resources.bus_set.count; bus_count++) {
+		if(!strcmp(core->resources.bus_set.bus_tbl[bus_count].name,"cvp-ddr")) {
+			bus = &core->resources.bus_set.bus_tbl[bus_count];
+			max_bw = bus->range[1];
+			min_bw = max_bw/10;
+		}
+	}
+
+	if(!bus) {
+		dprintk(CVP_ERR, "The bus node for cvp-ddr is NULL\n");
+		rc = -EINVAL;
+		goto adjust_exit;
+	}
+
 
 	mutex_lock(&core->clk_lock);
-	rc = adjust_bw_freqs();
+	rc = adjust_bw_freqs(max_bw, min_bw);
 	mutex_unlock(&core->clk_lock);
+	if (rc)
+		goto adjust_exit;
+
+	rc = msm_cvp_set_clocks(core);
+	if (rc) {
+		dprintk(CVP_ERR,
+			"Failed to set clock rate %u %s: %d %s\n",
+			core->curr_freq, cl->name, rc, __func__);
+		core->curr_freq = core->orig_core_sum;
+		goto adjust_exit;
+	}
+	rc = msm_cvp_set_bw(bus, core->bw_sum);
+
+adjust_exit:
 	cvp_put_inst(s);
 
 	return rc;

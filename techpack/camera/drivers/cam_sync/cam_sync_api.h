@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __CAM_SYNC_API_H__
@@ -25,11 +25,16 @@ typedef void (*sync_callback)(int32_t sync_obj, int status, void *data);
  * @status         Status of the signaling. Can be either SYNC_SIGNAL_ERROR or
  *                 SYNC_SIGNAL_SUCCESS.
  * @event_cause	   Event parameter
+ * @request_id     Request id. This is valid only for IFE fences,
+ *                 for other drivers it should be zero.
+ * @fh             File handle
  */
 struct cam_sync_signal_param {
 	uint32_t   sync_obj;
 	uint32_t   status;
 	uint32_t   event_cause;
+	uint64_t   request_id;
+	void       *fh;
 };
 
 /**

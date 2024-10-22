@@ -370,7 +370,7 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 		 */
 		devdata->eat_next_system_up_event = true;
 		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_STREAMING_SUSPENDED:
+	case SYNCBOSS_EVENT_STREAMING_SUSPENDING:
 		if (devdata->powerstate_last_evt == SYNCBOSS_PROX_EVENT_PROX_ON) {
 			/*
 			 * Handle the case where we suspend while the prox is still covered (ex. device
@@ -390,7 +390,7 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 			devdata->eat_prox_on_events = true;
 		}
 		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_STREAMING_SUSPENDING:
+	case SYNCBOSS_EVENT_STREAMING_SUSPENDED:
 	case SYNCBOSS_EVENT_STREAMING_RESUMING:
 		return NOTIFY_DONE;
 	case SYNCBOSS_EVENT_STREAMING_RESUMED:

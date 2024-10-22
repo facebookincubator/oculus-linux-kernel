@@ -4,6 +4,7 @@
 /plugin/;
 
 #include "panther-evt1-common.dtsi"
+#include "panther-surf-virt-sensor-legacy.dtsi"
 
 / {
 	model = "Panther (EVT1.7)";

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -74,6 +74,13 @@ typedef struct sk_buff_head __qdf_nbuf_queue_head_t;
  */
 typedef struct skb_shared_info *__qdf_nbuf_shared_info_t;
 
+/*
+ * typedef __qdf_flow_keys_t for flow_keys linux struct
+ *
+ * Contains flow dissector input and output arguments
+ */
+typedef struct flow_keys __qdf_flow_keys_t;
+
 #define QDF_NBUF_CB_TX_MAX_OS_FRAGS 1
 
 #define QDF_SHINFO_SIZE    SKB_DATA_ALIGN(sizeof(struct skb_shared_info))
@@ -113,6 +120,7 @@ typedef struct skb_shared_info *__qdf_nbuf_shared_info_t;
 #define QDF_NBUF_PKT_TCPOP_FIN_ACK		0x11
 #define QDF_NBUF_PKT_TCPOP_RST			0x04
 
+#define QDF_NBUF_TRAC_IPV4_OFFSET		14
 /*
  * Make sure that qdf_dma_addr_t in the cb block is always 64 bit aligned
  */
@@ -989,6 +997,10 @@ void __qdf_nbuf_data_set_ipv4_tos(uint8_t *data, uint8_t tos);
 void __qdf_nbuf_data_set_ipv6_tc(uint8_t *data, uint8_t tc);
 bool __qdf_nbuf_is_ipv4_last_fragment(struct sk_buff *skb);
 bool __qdf_nbuf_is_ipv4_v6_pure_tcp_ack(struct sk_buff *skb);
+bool __qdf_nbuf_sock_is_ipv4_pkt(struct sk_buff *skb);
+bool __qdf_nbuf_sock_is_ipv6_pkt(struct sk_buff *skb);
+bool __qdf_nbuf_sock_is_udp_pkt(struct sk_buff *skb);
+bool __qdf_nbuf_sock_is_tcp_pkt(struct sk_buff *skb);
 
 #ifdef QDF_NBUF_GLOBAL_COUNT
 int __qdf_nbuf_count_get(void);
@@ -1155,6 +1167,169 @@ static inline void __qdf_nbuf_trim_tail(struct sk_buff *skb, size_t size)
 	return skb_trim(skb, skb->len - size);
 }
 
+/**
+ * __qdf_nbuf_set_tx_ip_cksum() - re-calculate and set tx ip cksum
+ * @skb: Pointer to network buffer
+ *
+ * Return: none
+ */
+static inline void __qdf_nbuf_set_tx_ip_cksum(struct sk_buff *skb)
+{
+	struct iphdr *iph = NULL;
+
+	iph = (struct iphdr *)(skb->data + QDF_NBUF_TRAC_IPV4_OFFSET);
+	ip_send_check(iph);
+}
+
+/**
+ * __qdf_nbuf_flow_dissect_flow_keys() - extract the flow_keys struct and return
+ * @skb: Pointer to network buffer
+ * @flow: list of flow keys
+ *
+ * Return: true if successful else false
+ */
+static inline bool __qdf_nbuf_flow_dissect_flow_keys(const struct sk_buff *skb,
+						     struct flow_keys *flow)
+{
+	return skb_flow_dissect_flow_keys(skb, flow,
+					  FLOW_DISSECTOR_F_PARSE_1ST_FRAG);
+}
+
+/**
+ * __qdf_flow_is_frag() - check if fragmented packet
+ * @flow: list of flow keys
+ *
+ * Return: true if frag else false
+ */
+static inline unsigned int __qdf_flow_is_frag(struct flow_keys *flow)
+{
+	if (flow->control.flags & FLOW_DIS_IS_FRAGMENT)
+		return true;
+	else
+		return false;
+}
+
+/**
+ * __qdf_flow_is_first_frag() - check if first fragmented packet
+ * @flow: list of flow keys
+ *
+ * Return: true if first frag else false
+ */
+static inline unsigned int __qdf_flow_is_first_frag(struct flow_keys *flow)
+{
+	unsigned int flags = FLOW_DIS_FIRST_FRAG | FLOW_DIS_IS_FRAGMENT;
+
+	if ((flow->control.flags & flags) == flags)
+		return true;
+	else
+		return false;
+}
+
+/**
+ * __qdf_flow_get_proto() - get proto from flow
+ * @flow: list of flow keys
+ *
+ * Return: protocol
+ */
+static inline qdf_be16_t __qdf_flow_get_proto(struct flow_keys *flow)
+{
+	return flow->basic.ip_proto;
+}
+
+/**
+ * __qdf_flow_get_flow_label() - get flow_label from flow
+ * @flow: list of flow keys
+ *
+ * Return: IPv6 flow label
+ */
+static inline unsigned int  __qdf_flow_get_flow_label(struct flow_keys *flow)
+{
+	return flow->tags.flow_label;
+}
+
+/**
+ * __qdf_flow_get_ipv4_src_addr() - get ipv4 src ip addr
+ * @flow: list of flow keys
+ *
+ * Return: ipv4 src address
+ */
+static inline unsigned int __qdf_flow_get_ipv4_src_addr(struct flow_keys *flow)
+{
+	return flow->addrs.v4addrs.src;
+}
+
+/**
+ * __qdf_flow_get_ipv4_dst_addr() - get ipv4 dst ip addr
+ * @flow: list of flow keys
+ *
+ * Return: ipv4 dst address
+ */
+static inline unsigned int __qdf_flow_get_ipv4_dst_addr(struct flow_keys *flow)
+{
+	return flow->addrs.v4addrs.dst;
+}
+
+/**
+ * __qdf_flow_get_ipv6_src_addr() - get ipv6 src ip addr
+ * @flow: list of flow keys
+ * @buf: ipv6 addr buffer
+ *
+ * Return: none
+ */
+static inline void __qdf_flow_get_ipv6_src_addr(struct flow_keys *flow,
+						void *buf)
+{
+	memcpy(buf, &flow->addrs.v6addrs.src, sizeof(flow->addrs.v6addrs.src));
+}
+
+/**
+ * __qdf_flow_get_ipv6_dst_addr() - get ipv6 dst ip addr
+ * @flow: list of flow keys
+ * @buf: ipv6 addr buffer
+ *
+ * Return: none
+ */
+static inline void __qdf_flow_get_ipv6_dst_addr(struct flow_keys *flow,
+						void *buf)
+{
+	memcpy(buf, &flow->addrs.v6addrs.dst, sizeof(flow->addrs.v6addrs.dst));
+}
+
+/**
+ * __qdf_nbuf_flow_get_ports() - extract the upper layer ports
+ * @skb: Pointer to network buffer
+ * @flow: list of flow keys
+ *
+ * Return: none
+ */
+static inline void __qdf_nbuf_flow_get_ports(const struct sk_buff *skb,
+					     struct flow_keys *flow)
+{
+	flow->ports.ports = skb_flow_get_ports(skb, flow->control.thoff,
+				  flow->basic.ip_proto);
+}
+
+/**
+ * __qdf_flow_parse_src_port() - parse src port from flow keys
+ * @flow: list of flow keys
+ *
+ * Return: src port
+ */
+static inline unsigned short __qdf_flow_parse_src_port(struct flow_keys *flow)
+{
+	return flow->ports.src;
+}
+
+/**
+ * __qdf_flow_parse_dst_port() - parse dst port from flow keys
+ * @flow: list of flow keys
+ *
+ * Return: dst port
+ */
+static inline unsigned short __qdf_flow_parse_dst_port(struct flow_keys *flow)
+{
+	return flow->ports.dst;
+}
 
 /*
  * prototypes. Implemented in qdf_nbuf.c

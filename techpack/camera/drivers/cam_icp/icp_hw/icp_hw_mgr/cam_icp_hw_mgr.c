@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -1334,7 +1334,7 @@ static bool cam_icp_update_bw(struct cam_icp_hw_mgr *hw_mgr,
 	return true;
 }
 
-static bool cam_icp_check_clk_update(struct cam_icp_hw_mgr *hw_mgr,
+static int cam_icp_check_clk_update(struct cam_icp_hw_mgr *hw_mgr,
 	struct cam_icp_hw_ctx_data *ctx_data, int idx)
 {
 	bool busy, rc = false;
@@ -1343,6 +1343,7 @@ static bool cam_icp_check_clk_update(struct cam_icp_hw_mgr *hw_mgr,
 	struct hfi_frame_process_info *frame_info;
 	uint64_t req_id;
 	struct cam_icp_clk_info *hw_mgr_clk_info;
+	int i;
 
 	cam_icp_ctx_timer_reset(ctx_data);
 	if (ctx_data->icp_dev_acquire_info->dev_type == CAM_ICP_RES_TYPE_BPS) {
@@ -1373,11 +1374,21 @@ static bool cam_icp_check_clk_update(struct cam_icp_hw_mgr *hw_mgr,
 	/* Override base clock to max or calculate base clk rate */
 	if (!ctx_data->clk_info.rt_flag &&
 		(ctx_data->icp_dev_acquire_info->dev_type !=
-		CAM_ICP_RES_TYPE_BPS))
-		base_clk = ctx_data->clk_info.clk_rate[CAM_MAX_VOTE-1];
-	else
+		CAM_ICP_RES_TYPE_BPS)) {
+		for (i = CAM_MAX_VOTE - 1; i >= 0; i--) {
+			if (ctx_data->clk_info.clk_rate[i] > 0)
+				break;
+		}
+		if (i >= 0) {
+			base_clk = ctx_data->clk_info.clk_rate[i];
+		} else {
+			CAM_ERR(CAM_PERF, "No find valid clk rate");
+			return -EINVAL;
+		}
+	} else {
 		base_clk = cam_icp_mgr_calc_base_clk(clk_info->frame_cycles,
-				clk_info->budget_ns);
+			clk_info->budget_ns);
+	}
 
 	if (busy)
 		rc = cam_icp_update_clk_busy(hw_mgr, ctx_data,
@@ -1652,8 +1663,13 @@ static int cam_icp_mgr_ipe_bps_clk_update(struct cam_icp_hw_mgr *hw_mgr,
 {
 	int rc = 0;
 
-	if (cam_icp_check_clk_update(hw_mgr, ctx_data, idx))
+	rc = cam_icp_check_clk_update(hw_mgr, ctx_data, idx);
+	if (rc > 0) {
 		rc = cam_icp_update_clk_rate(hw_mgr, ctx_data);
+	} else if (rc < 0) {
+		CAM_ERR(CAM_PERF, "ctx_id %u check clk update failed", ctx_data->ctx_id);
+		return rc;
+	}
 
 	if (cam_icp_check_bw_update(hw_mgr, ctx_data, idx))
 		rc |= cam_icp_update_cpas_vote(hw_mgr, ctx_data);
@@ -4398,7 +4414,14 @@ static int cam_icp_mgr_config_hw(void *hw_mgr_priv, void *config_hw_args)
 			hw_mgr->iommu_hdl);
 	}
 
-	cam_icp_mgr_ipe_bps_clk_update(hw_mgr, ctx_data, idx);
+	rc = cam_icp_mgr_ipe_bps_clk_update(hw_mgr, ctx_data, idx);
+	if (rc) {
+		mutex_unlock(&ctx_data->ctx_mutex);
+		mutex_unlock(&hw_mgr->hw_mgr_mutex);
+		CAM_ERR(CAM_ICP, "ctx id :%u clk update failed", ctx_data->ctx_id);
+		return -EINVAL;
+	}
+
 	ctx_data->hfi_frame_process.fw_process_flag[idx] = true;
 	ctx_data->hfi_frame_process.submit_timestamp[idx] = ktime_get();
 

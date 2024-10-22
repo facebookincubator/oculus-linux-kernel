@@ -4,6 +4,13 @@
 	qcom,init-enable = <0>;
 };
 
+&L6B {
+	qcom,init-mode = <4>; /* RPMH_REGULATOR_MODE_HPM */
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
+};
+
 &L8B {
 	qcom,init-enable = <0>;
 	qcom,init-voltage = <1800000>;

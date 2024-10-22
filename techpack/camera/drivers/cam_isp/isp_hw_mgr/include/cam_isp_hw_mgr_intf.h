@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_ISP_HW_MGR_INTF_H_
@@ -138,10 +138,25 @@ enum cam_isp_hw_stop_cmd {
 };
 
 /**
+ * struct cam_isp_ctx_wait_last_stream_sof_info - last stream vc/dt info
+ *
+ * @vc:              Virtual channel number
+ * @dt:              Data type of incoming data
+ * @frame_duration   frame duration considering all streams in a req
+ *
+ */
+struct cam_isp_ctx_wait_last_stream_sof_info {
+	uint32_t      vc;
+	uint32_t      dt;
+	uint64_t      frame_duration;
+};
+
+/**
  * struct cam_isp_stop_args - hardware stop arguments
  *
  * @hw_stop_cmd:               Hardware stop command type information
  * @is_internal_stop:          Stop triggered internally for reset & recovery
+ * @reset_cdm:                 Indicates if cdm reset is required or not
  * @stop_only:                 Send stop only to hw drivers. No Deinit to be
  *                             done.
  * @is_shutdown:               Is shut down
@@ -150,6 +165,7 @@ enum cam_isp_hw_stop_cmd {
 struct cam_isp_stop_args {
 	enum cam_isp_hw_stop_cmd      hw_stop_cmd;
 	bool                          is_internal_stop;
+	bool                          reset_cdm;
 	bool                          stop_only;
 	bool                          is_shutdown;
 };
@@ -391,7 +407,11 @@ enum cam_isp_hw_mgr_command {
 	CAM_ISP_HW_MGR_GET_HW_CTX,
 	CAM_ISP_HW_MGR_CMD_GET_SLAVE_STATE,
 	CAM_ISP_HW_MGR_CMD_SET_SLAVE_STATE,
-	CAM_ISP_HW_MGR_UPDATE_PATH_IRQ_MASK,
+	CAM_ISP_HW_MGR_UPDATE_PATH_MASK,
+	CAM_ISP_HW_MGR_WAIT_LAST_STREAM_SOF,
+	CAM_ISP_HW_MGR_WAIT_CONFIG_DONE,
+	CAM_ISP_HW_MGR_UPDATE_FRAMEDROP_RECOVERY_PROGRESS,
+	CAM_HW_MGR_CMD_CHECK_RUP_APPLIED_REQ,
 	CAM_ISP_HW_MGR_CMD_MAX,
 };
 
@@ -420,6 +440,11 @@ enum cam_isp_ctx_type {
  * @out_port_id:           out resource id
  * @ptr:                   void pointer out param
  * @path_irq_mask:         mask created from requested ports, out param
+ * @csid_rup_aup_mask:     mask created from acquired ports, out param
+ * @dropped_ife_req:       dropped ife request id
+ * @recovery_already_in_progress: Indiates if current ife is
+ *                          process for frame drop recovery
+ * @rup_for_applied_req:   Check if rup is received for proper applied req
  */
 struct cam_isp_hw_cmd_args {
 	uint32_t                          cmd_type;
@@ -445,7 +470,13 @@ struct cam_isp_hw_cmd_args {
 		bool                          enable;
 		uint32_t                      out_port_id;
 		void                         *ptr;
-		uint64_t                      path_irq_mask;
+		struct {
+			uint64_t                path_irq_mask;
+			uint64_t                csid_rup_aup_mask;
+		} path_mask;
+		uint64_t                      dropped_ife_req;
+		bool                          recovery_already_in_progress;
+		bool                          rup_for_applied_req;
 	} u;
 };
 
@@ -468,6 +499,8 @@ struct cam_isp_hw_active_hw_ctx {
  * @is_internal_start:         Start triggered internally for reset & recovery
  * @start_only                 Send start only to hw drivers. No init to
  *                             be done.
+ * @frame_drop:                Indicates start hw is called as part of frame drop recovery
+ *                             not to call config Hw from start hw.
  * @is_trigger_type:           Indicate if usecase is trigger type or not
  *
  */
@@ -475,6 +508,7 @@ struct cam_isp_start_args {
 	struct cam_hw_config_args hw_config;
 	bool                      is_internal_start;
 	bool                      start_only;
+	bool                      frame_drop;
 	int8_t                    is_trigger_type;
 };
 

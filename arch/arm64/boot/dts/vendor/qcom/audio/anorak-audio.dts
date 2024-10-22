@@ -11,6 +11,6 @@
 / {
 	model = "Qualcomm Technologies, Inc. Anorak SoC";
 	compatible = "qcom,anorak";
-	qcom,msm-id = <549 0x10000>;
+	qcom,msm-id = <549 0x10000>,<649 0x10000>;
 	qcom,board-id = <0 0>;
 };

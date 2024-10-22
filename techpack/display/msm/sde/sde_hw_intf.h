@@ -139,7 +139,8 @@ struct sde_hw_intf_ops {
 	/**
 	 * set lineptr scanline offset
 	 */
-	int (*set_lineptr_value)(struct sde_hw_intf *intf, int offset);
+	int (*set_lineptr_value)(struct sde_hw_intf *intf, int offset,
+			const struct intf_timing_params *p);
 
 	/**
 	 * returns the current scan line count of the display

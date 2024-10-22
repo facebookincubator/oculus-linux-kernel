@@ -1295,6 +1295,7 @@ int32_t cam_csiphy_config_dev(struct csiphy_device *csiphy_dev,
 			}
 		}
 	}
+	csiphy_dev->lanes_enabled = lane_enable;
 
 	if (csiphy_dev->preamble_enable)
 		__cam_csiphy_prgm_bist_reg(csiphy_dev, is_3phase);
@@ -1368,6 +1369,7 @@ void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 		}
 	}
 
+	csiphy_dev->lanes_enabled = 0x0;
 	csiphy_dev->ref_count = 0;
 	csiphy_dev->acquire_count = 0;
 	csiphy_dev->start_dev_count = 0;
@@ -1447,6 +1449,7 @@ static int cam_csiphy_update_lane(
 	else
 		lane_enable &= ~csiphy->csiphy_info[index].lane_enable;
 
+	csiphy->lanes_enabled = lane_enable;
 	CAM_DBG(CAM_CSIPHY, "lane_assign: 0x%x, lane_enable: 0x%x",
 		lane_assign, lane_enable);
 
@@ -2297,7 +2300,9 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		}
 
 		if (csiphy_dev->start_dev_count) {
-			if (csiphy_dev->is_aggregator_rx) {
+			if (csiphy_dev->is_aggregator_rx &&
+				((csiphy_dev->lanes_enabled & csiphy_dev->csiphy_info[offset].lane_enable)
+				 == csiphy_dev->csiphy_info[offset].lane_enable)) {
 				csiphy_dev->start_dev_count++;
 				CAM_INFO(CAM_CSIPHY,
 					"CAM_START_PHYDEV: %d dev_cnt: %u, slot: %d",

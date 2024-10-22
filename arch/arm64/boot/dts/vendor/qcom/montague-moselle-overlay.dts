@@ -10,3 +10,11 @@
 	qcom,board-id = <0x10022 3>;
 };
 
+&pcie0 {
+
+	qcom,config-recovery;
+	qcom,drv-supported;
+
+};
+
+

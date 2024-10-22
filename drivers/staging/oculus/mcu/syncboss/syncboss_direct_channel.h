@@ -34,6 +34,9 @@ struct direct_channel_dev_data {
 	struct notifier_block syncboss_state_nb;
 	struct notifier_block rx_packet_nb;
 
+	uint8_t last_nsync_offset_status;
+	int64_t last_nsync_offset_us;
+
 #ifdef CONFIG_DEBUG_FS
 	/* DebugFS nodes */
 	struct dentry *dentry;

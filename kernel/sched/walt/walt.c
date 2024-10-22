@@ -4282,6 +4282,7 @@ static void walt_init(struct work_struct *work)
 	walt_rt_init();
 	walt_cfs_init();
 	walt_pause_init();
+	sched_avg_init();
 
 	stop_machine(walt_init_stop_handler, NULL, NULL);
 

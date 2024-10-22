@@ -3,7 +3,7 @@
 #ifndef __LINUX_USB_PDFU_H
 #define __LINUX_USB_PDFU_H
 
-#define PD_MAX_EXT_MSG_LEN	260
+#define PD_MAX_EXT_MSG_LEN 260
 
 /*
  * PDFU header
@@ -11,16 +11,14 @@
  * Byte 0 :: ProtocolVersion
  * Byte 1 :: MessageType
  */
-#define PDFU_HEADER(rev, type)	\
-	(((rev) & 0xff) |			\
-	((((type) & 0xff) << 8)))
+#define PDFU_HEADER(rev, type) (((rev) & 0xff) | ((((type) & 0xff) << 8)))
 
 struct pdfu_header {
 	u8 protocol_version;
 	u8 msg_type;
 } __packed;
 
-#define PDFU_REV10	0x01
+#define PDFU_REV10 0x01
 
 /* Firmware Update Message Request Types */
 enum pdfu_req_msg_type {
@@ -75,9 +73,9 @@ struct get_fw_id_response_payload {
 	u8 flags4;
 } __packed;
 
-#define PDFU_DATA_BLOCK_MAX_SIZE	256
-#define PDFU_WAIT_TIME_DONE			255 /* in context of PDFU_DATA */
-#define PDFU_WAIT_TIME_ERROR		255 /* in all other contexts */
+#define PDFU_DATA_BLOCK_MAX_SIZE 256
+#define PDFU_WAIT_TIME_DONE 255 /* in context of PDFU_DATA */
+#define PDFU_WAIT_TIME_ERROR 255 /* in all other contexts */
 
 struct pdfu_data_request_payload {
 	u16 data_block_index;
@@ -111,12 +109,12 @@ struct pdfu_validate_response_payload {
 } __packed;
 
 /* PDFU timers and counters */
-#define PDFU_T_NEXT_REQUEST_SENT		27 /* in ms */
-#define PDFU_T_RESPONSE_RECVD_UNCHUNKED	60 /* in ms */
-#define PDFU_T_RESPONSE_RECVD_CHUNKED	30 /* in ms, per exchanged chunk */
+#define PDFU_T_NEXT_REQUEST_SENT 27 /* in ms */
+#define PDFU_T_RESPONSE_RECVD_UNCHUNKED 60 /* in ms */
+#define PDFU_T_RESPONSE_RECVD_CHUNKED 30 /* in ms, per exchanged chunk */
 
-#define PDFU_N_ENUMERATE_RESEND		10
-#define PDFU_N_RECONFIGURE_RESEND	3
-#define PDFU_N_VALIDATE_RESEND		3
+#define PDFU_N_ENUMERATE_RESEND 10
+#define PDFU_N_RECONFIGURE_RESEND 3
+#define PDFU_N_VALIDATE_RESEND 3
 
 #endif /* __LINUX_USB_PDFU_H  */

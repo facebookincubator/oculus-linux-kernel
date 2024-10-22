@@ -1935,7 +1935,17 @@
 
 		thermal-zones = "bq27z561-0", "pcb3-usr", "pogo-usr";
 
-		fallback-thermal-zone = "bq27z561-0";
+		thermal-zone-fault-estimator-bounds = <(-40000) 125000>;
+		thermal-zone-fault-estimator-zones =
+				"battery",
+				"NA",
+				"NA";
+		thermal-zone-fault-estimator-values =
+				<10000 0>,
+				<0 0>,
+				<0 0>;
+
+		fallback-thermal-zone = "battery";
 		fallback-tolerance = <25000>;
 
 		coefficients {
@@ -1957,6 +1967,18 @@
 
 		thermal-zones = "bq27z561-0", "pcb3-usr", "pogo-usr", "usb-conn";
 
+		thermal-zone-fault-estimator-bounds = <(-40000) 125000>;
+		thermal-zone-fault-estimator-zones =
+				"battery",
+				"NA",
+				"NA",
+				"NA";
+		thermal-zone-fault-estimator-values =
+				<10000 0>,
+				<0 0>,
+				<0 0>,
+				<0 0>;
+
 		coefficients {
 			charging {
 				tz-coefficients = <2648 5076 243 6303>;
@@ -1975,6 +1997,20 @@
 		#thermal-sensor-cells = <0>;
 
 		thermal-zones = "bq27z561-0", "pcb1-usr", "pcb3-usr", "pogo-usr", "soc-usr";
+
+		thermal-zone-fault-estimator-bounds = <(-40000) 125000>;
+		thermal-zone-fault-estimator-zones =
+				"battery",
+				"NA",
+				"NA",
+				"NA",
+				"NA";
+		thermal-zone-fault-estimator-values =
+				<10000 0>,
+				<0 0>,
+				<0 0>,
+				<0 0>,
+				<0 0>;
 
 		coefficients {
 			charging {

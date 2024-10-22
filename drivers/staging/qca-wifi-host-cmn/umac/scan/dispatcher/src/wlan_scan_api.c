@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -884,13 +884,10 @@ wlan_scan_get_mld_addr_by_link_addr(struct wlan_objmgr_pdev *pdev,
 	return scm_get_mld_addr_by_link_addr(pdev, link_addr, mld_mac_addr);
 }
 
-QDF_STATUS
+struct scan_cache_entry *
 wlan_scan_get_scan_entry_by_mac_freq(struct wlan_objmgr_pdev *pdev,
 				     struct qdf_mac_addr *bssid,
-				     uint16_t freq,
-				     struct scan_cache_entry
-				     *cache_entry)
+				     uint16_t freq)
 {
-	return scm_scan_get_scan_entry_by_mac_freq(pdev, bssid, freq,
-						   cache_entry);
+	return scm_scan_get_scan_entry_by_mac_freq(pdev, bssid, freq);
 }

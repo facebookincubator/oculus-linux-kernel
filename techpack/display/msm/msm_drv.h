@@ -931,6 +931,15 @@ struct msm_drm_thread {
 	struct kthread_worker worker;
 };
 
+/* Struct to pass on the parameters to the handler function. */
+struct msm_drm_bl_scale_work_data {
+	struct backlight_device *bl_device;
+	struct dsi_backlight_config *bl_config;
+	int bl_scale;
+	struct delayed_work work;
+	struct workqueue_struct *work_queue;
+};
+
 struct msm_drm_private {
 
 	struct drm_device *dev;
@@ -1062,6 +1071,9 @@ struct msm_drm_private {
 
 	struct mutex vm_client_lock;
 	struct list_head vm_client_list;
+
+	/* update the flag when msm driver receives shutdown notification */
+	struct msm_drm_bl_scale_work_data bl_scale_work;
 };
 
 /* get struct msm_kms * from drm_device * */

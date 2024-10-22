@@ -206,6 +206,17 @@ static long syncboss_stream_ioctl(struct file *file, unsigned int cmd,
 		ret = syncboss_set_stream_type_filter(devdata, file,
 			(struct syncboss_driver_stream_type_filter *)arg);
 		break;
+	case SYNCBOSS_CANCEL_STREAM_IOCTL:
+		if (arg != 0) {
+			miscfifo_cancel(file);
+			miscfifo_wake_waiters(client->mf);
+		}
+		/*
+		 * else this was just a probe so userspace can see if this ioctl is
+		 * supported or not
+		 */
+		ret = 0;
+		break;
 	default:
 		dev_err(devdata->dev, "unrecognized stream ioctl %d from %s (%d)",
 				cmd, current->comm, current->pid);

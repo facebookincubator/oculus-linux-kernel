@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "cam_sensor_dev.h"
@@ -187,6 +187,35 @@ static const struct v4l2_subdev_internal_ops cam_sensor_internal_ops = {
 	.close = cam_sensor_subdev_close,
 };
 
+int32_t get_dev_hdl_from_link_hdl(
+	int32_t link_hdl)
+{
+	int32_t dev_hdl = -1;
+	struct cam_req_mgr_core_link *link = NULL;
+	struct cam_req_mgr_connected_device *dev = NULL;
+	int    i = 0;
+
+	link = (struct cam_req_mgr_core_link *)
+			cam_get_device_priv(link_hdl);
+
+	if (!link) {
+		CAM_ERR(CAM_CRM, "Invalid Link");
+		return dev_hdl;
+	}
+
+	for (i = 0; i < link->num_devs; i++) {
+		dev = &link->l_dev[i];
+		if (dev == NULL)
+			continue;
+
+		if (dev->dev_info.dev_id == CAM_REQ_MGR_DEVICE_SENSOR) {
+			dev_hdl = dev->dev_hdl;
+			break;
+		}
+	}
+	return dev_hdl;
+}
+
 static void cam_sensor_subdev_handle_message(
 	struct v4l2_subdev *sd,
 	enum cam_subdev_message_type_t message_type,
@@ -194,7 +223,21 @@ static void cam_sensor_subdev_handle_message(
 {
 	struct cam_sensor_ctrl_t *s_ctrl = v4l2_get_subdevdata(sd);
 
+	if (!s_ctrl) {
+		CAM_ERR(CAM_SENSOR, "invalid params");
+		return;
+	}
+
 	switch (message_type) {
+		case CAM_SUBDEV_MESSAGE_SENSOR_QUERY_MCU: {
+			struct sensor_query_mcu *query_mcu = NULL;
+
+			query_mcu = (struct sensor_query_mcu *)data;
+
+			if (s_ctrl->bridge_intf.link_hdl == query_mcu->link_hdl) {
+				query_mcu->is_sensor_no_hw_ops = s_ctrl->hw_no_ops;
+			}
+		}
 		default: {
 			CAM_DBG(CAM_SENSOR, "sensor[%d] invalid message: %d ",
 							s_ctrl->soc_info.index, message_type);
@@ -317,6 +360,8 @@ static int cam_sensor_i2c_component_bind(struct device *dev,
 
 	s_ctrl->bridge_intf.no_crm_ops.handshake = cam_sensor_no_crm_handshake;
 	s_ctrl->bridge_intf.no_crm_ops.apply_req = cam_sensor_no_crm_apply_req;
+	s_ctrl->bridge_intf.no_crm_ops.pause_cb  = cam_sensor_no_crm_pause_apply;
+	s_ctrl->bridge_intf.no_crm_ops.resume_cb = cam_sensor_no_crm_resume_apply;
 
 	s_ctrl->sensordata->power_info.dev = soc_info->dev;
 	cam_sensor_debug_register(s_ctrl);
@@ -481,6 +526,8 @@ static int cam_sensor_component_bind(struct device *dev,
 	s_ctrl->bridge_intf.ops.flush_req = cam_sensor_flush_request;
 	s_ctrl->bridge_intf.no_crm_ops.handshake = cam_sensor_no_crm_handshake;
 	s_ctrl->bridge_intf.no_crm_ops.apply_req = cam_sensor_no_crm_apply_req;
+	s_ctrl->bridge_intf.no_crm_ops.pause_cb  = cam_sensor_no_crm_pause_apply;
+	s_ctrl->bridge_intf.no_crm_ops.resume_cb = cam_sensor_no_crm_resume_apply;
 
 	s_ctrl->sensordata->power_info.dev = &pdev->dev;
 	platform_set_drvdata(pdev, s_ctrl);

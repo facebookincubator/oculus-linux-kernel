@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_FLASH_CORE_H_
@@ -21,5 +21,7 @@ int cam_flash_flush_request(struct cam_req_mgr_flush_request *flush);
 int cam_flash_led_prepare(struct led_trigger *trigger, int options,
 	int *max_current, bool is_wled);
 
+int cam_flash_no_crm_pause_apply(struct cam_req_mgr_no_crm_pause_evt_data *pause);
+int cam_flash_no_crm_resume_apply(struct cam_req_mgr_no_crm_resume_evt_data *resume);
 
 #endif /*_CAM_FLASH_CORE_H_*/

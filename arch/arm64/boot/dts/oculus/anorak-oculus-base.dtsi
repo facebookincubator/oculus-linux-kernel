@@ -28,13 +28,16 @@
 /delete-node/ &msm_sdexpress;
 /delete-node/ &pcie1;
 /delete-node/ &pcie2;
-/delete-node/ &pdm_pwm0;
 /delete-node/ &pm8010_m;
 /delete-node/ &pm8010_n;
 
 /delete-node/ &ipa_fw_mem;
 /delete-node/ &ipa_gsi_mem;
 /delete-node/ &ramoops_mem;
+
+&pdm_pwm0 {
+	status = "disabled";
+};
 
 &apps_rsc {
 	/delete-node/ rpmh-regulator-ldom1;
@@ -195,6 +198,14 @@
 	};
 };
 
+&qupv3_0 {
+	qcom,iommu-faults = "non-fatal";
+};
+
+&qupv3_1 {
+	qcom,iommu-faults = "non-fatal";
+};
+
 &qupv3_se13_i2c_sda_active {
 	mux {
 		pins = "gpio103";
@@ -244,7 +255,7 @@
 };
 
 &soc {
-	gpio_keys {
+	gpio_keys: gpio_keys {
 		compatible = "gpio-keys";
 		label = "gpio-keys";
 
@@ -565,6 +576,14 @@
 	status = "ok";
 };
 
+&tmc_etr {
+	qcom,iommu-faults = "non-fatal";
+};
+
+&tmc_etr1 {
+	qcom,iommu-faults = "non-fatal";
+};
+
 &ufshc_mem {
 	clocks =
 		<&gcc GCC_UFS_PHY_AXI_CLK>,
@@ -586,6 +605,8 @@
 
 	qcom,vddp-ref-clk-supply = <&L3B>;
 	qcom,vddp-ref-clk-max-microamp = <100>;
+
+	qcom,iommu-faults = "non-fatal";
 
 	spm-level = <3>;
 	status = "ok";
@@ -624,7 +645,7 @@
 		pinctrl-0 = <&privacy_led_default>;
 		pinctrl-1 = <&privacy_led_sleep>;
 
-		led0 {
+		led0: led0 {
 			color = <LED_COLOR_ID_WHITE>;
 			default-state = "off";
 			function = LED_FUNCTION_INDICATOR;

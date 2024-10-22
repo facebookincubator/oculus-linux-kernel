@@ -5,7 +5,7 @@
 
 / {
         model = "Qualcomm Technologies, Inc. Anorak IDP";
-        compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp", "qcom,anorak-atp", "qcom,atp";
-        qcom,msm-id = <549 0x10000>;
+        compatible = "qcom,anorak-idp", "qcom,anorakp-idp", "qcom,anorak", "qcom,idp", "qcom,anorak-atp", "qcom,atp";
+        qcom,msm-id = <549 0x10000>,<649 0x10000>;
         qcom,board-id = <0x10022 0x0>, <0x10022 0x2>, <0x10022 0x1>, <0x10022 0x3>, <0x10021 0x0>, <0x10022 0x4>, <0x10022 0x5>, <0x10022 0x6>, <0x10022 0x7>;
 };

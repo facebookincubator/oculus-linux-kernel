@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,6 +33,8 @@
 #include "cdp_txrx_ops.h"
 #include <qdf_defer.h>
 #include <qdf_types.h>
+#include <qdf_hashtable.h>
+#include <qdf_notifier.h>
 #include "wlan_dp_rx_thread.h"
 
 #define DP_MAX_SUBTYPES_TRACKED	4
@@ -770,4 +772,121 @@ struct dp_traffic_end_indication {
 	uint8_t def_dscp;
 	uint8_t spl_dscp;
 };
+
+#define DP_SVC_INVALID_ID 0xFF
+#define DP_MAX_SVC 32
+#define DP_SVC_ARRAY_SIZE DP_MAX_SVC
+
+#define DP_SVC_FLAGS_BUFFER_LATENCY_TOLERANCE   BIT(0)
+#define DP_SVC_FLAGS_APP_IND_DEF_DSCP           BIT(1)
+#define DP_SVC_FLAGS_APP_IND_SPL_DSCP           BIT(2)
+#define DP_SVC_FLAGS_SVC_ID			BIT(3)
+
+/* struct dp_svc_data - service class node
+ * @node: list node
+ * @svc_id: service class id
+ * @policy_ref_count: number of policies associated
+ * @buffer_latency_tolerance: buffer latency tolarence in ms
+ * @app_ind_default_dscp: default dscp
+ * @app_ind_special_dscp: special dscp to override with default dscp
+ */
+struct dp_svc_data {
+	qdf_list_node_t node;
+	uint8_t svc_id;
+	uint8_t policy_ref_count;
+	uint32_t buffer_latency_tolerance;
+	uint8_t app_ind_default_dscp;
+	uint8_t app_ind_special_dscp;
+	uint32_t flags;
+};
+
+#define DP_FLOW_PRIO_MAX 8
+#define DP_MAX_POLICY 32
+#define DP_INVALID_ID 0xFF
+#define DP_FLOW_HASH_MASK 0xFF
+#define DP_FLOW_PRIO_DEF 3
+#define MAX_TID 8
+
+/*
+ * Flow tuple related flags
+ */
+#define DP_FLOW_TUPLE_FLAGS_IPV4	BIT(0)
+#define DP_FLOW_TUPLE_FLAGS_IPV6	BIT(1)
+#define DP_FLOW_TUPLE_FLAGS_SRC_IP	BIT(2)
+#define DP_FLOW_TUPLE_FLAGS_DST_IP	BIT(3)
+#define DP_FLOW_TUPLE_FLAGS_SRC_PORT	BIT(4)
+#define DP_FLOW_TUPLE_FLAGS_DST_PORT	BIT(5)
+#define DP_FLOW_TUPLE_FLAGS_PROTO	BIT(6)
+
+/*
+ * Flow policy related flags
+ */
+#define DP_POLICY_TO_TID_MAP	BIT(0)
+#define DP_POLICY_TO_SVC_MAP	BIT(1)
+#define DP_POLICY_UPDATE_PRIO	BIT(2)
+
+/*
+ * struct flow_info - Structure used for defining flow
+ * @proto: Flow proto
+ * @src_port: Source port
+ * @dst_port: Destination port
+ * @flags: Flags indicating available attributes of a flow
+ * @src_ip: Source IP (IPv4/IPv6)
+ * @dst_ip: Destination IP (IPv4/IPv6)
+ * @flow_label: Flow label if IPv6 is used for src_ip/dst_ip
+ */
+struct flow_info {
+	uint8_t proto;
+	uint16_t src_port;
+	uint16_t dst_port;
+	uint32_t flags;
+	union {
+		uint32_t ipv4_addr;             /* IPV4 address */
+		uint32_t ipv6_addr[4];          /* IPV6 address */
+	} src_ip;
+	union {
+		uint32_t ipv4_addr;             /* IPV4 address */
+		uint32_t ipv6_addr[4];          /* IPV6 address */
+	} dst_ip;
+	uint32_t flow_label;
+};
+
+/* struct dp_policy - Structure used for defining flow policy.
+ * @node: dp_policy node used in constructing hlist.
+ * @rcu: Protect dp_policy with rcu
+ * @prio: Priority of defined flow
+ * @policy_id: Unique policy ID
+ * @flow: Flow tuble
+ * @flags: Flags indication policy mapping
+ * @target_tid: Target TID for TID override
+ * @svc_id: Service class ID
+ * @is_used: Is in use
+ */
+struct dp_policy {
+	struct qdf_ht_entry node;
+	qdf_rcu_head_t rcu;
+	uint8_t prio;
+	uint64_t policy_id;
+	struct flow_info flow;
+	uint32_t flags;
+	uint8_t target_tid;
+	uint8_t svc_id;
+	bool is_used;
+};
+
+/* struct fpm_table - Flow Policy Table
+ * @lock: Spin lock to protect Flow policy Table
+ * @policy_tab: Policy Table
+ * @policy_id_bitmap: Bitmap used to derive unique policy ID
+ * @policy_count: Policy counter
+ * @fpm_policy_event_notif_head: List of registered notifiers
+ */
+struct fpm_table {
+	qdf_spinlock_t lock;
+	struct qdf_ht policy_tab[DP_FLOW_PRIO_MAX];
+	uint32_t policy_id_bitmap;
+	uint8_t policy_count;
+	qdf_atomic_notif_head fpm_policy_event_notif_head;
+};
+
 #endif /* end  of _WLAN_DP_PUBLIC_STRUCT_H_ */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -12522,28 +12522,15 @@ void sme_set_cal_failure_event_cb(
 void sme_set_vdev_ies_per_band(mac_handle_t mac_handle, uint8_t vdev_id,
 			       enum QDF_OPMODE device_mode)
 {
-	struct sir_set_vdev_ies_per_band *p_msg;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct mac_context *mac_ctx = MAC_CONTEXT(mac_handle);
-	enum csr_cfgdot11mode curr_dot11_mode =
-				mac_ctx->roam.configParam.uCfgDot11Mode;
 
-	p_msg = qdf_mem_malloc(sizeof(*p_msg));
-	if (!p_msg)
-		return;
-
-
-	p_msg->vdev_id = vdev_id;
-	p_msg->device_mode = device_mode;
-	p_msg->dot11_mode = csr_get_vdev_dot11_mode(mac_ctx, vdev_id,
-						    curr_dot11_mode);
-	p_msg->msg_type = eWNI_SME_SET_VDEV_IES_PER_BAND;
-	p_msg->len = sizeof(*p_msg);
-	sme_debug("SET_VDEV_IES_PER_BAND: vdev_id %d dot11mode %d dev_mode %d",
-		  vdev_id, p_msg->dot11_mode, device_mode);
-	status = umac_send_mb_message_to_mac(p_msg);
-	if (QDF_STATUS_SUCCESS != status)
-		sme_err("Send eWNI_SME_SET_VDEV_IES_PER_BAND fail");
+	status = sme_acquire_global_lock(&mac_ctx->sme);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		csr_set_vdev_ies_per_band(mac_handle, vdev_id,
+					  device_mode);
+		sme_release_global_lock(&mac_ctx->sme);
+	}
 }
 
 /**

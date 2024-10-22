@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -78,6 +78,7 @@ static QDF_STATUS pmo_core_cache_ns_in_vdev_priv(
 	struct pmo_vdev_priv_obj *vdev_ctx;
 	struct pmo_ns_offload_params *request;
 	struct wlan_objmgr_peer *peer;
+	uint8_t *self_addr, *peer_addr;
 
 	vdev_ctx = pmo_vdev_get_priv(vdev);
 
@@ -91,9 +92,6 @@ static QDF_STATUS pmo_core_cache_ns_in_vdev_priv(
 
 	request->enable = PMO_OFFLOAD_ENABLE;
 	request->is_offload_applied = false;
-	qdf_mem_copy(&request->self_macaddr.bytes,
-		     wlan_vdev_mlme_get_macaddr(vdev),
-		     QDF_MAC_ADDR_SIZE);
 
 	/* set number of ns offload address count */
 	request->num_ns_offload_count = ns_req->count;
@@ -104,11 +102,23 @@ static QDF_STATUS pmo_core_cache_ns_in_vdev_priv(
 		status = QDF_STATUS_E_INVAL;
 		goto out;
 	}
+
+	if (wlan_vdev_mlme_is_mlo_vdev(vdev)) {
+		self_addr = wlan_vdev_mlme_get_mldaddr(vdev);
+		peer_addr = wlan_peer_mlme_get_mldaddr(peer);
+	} else {
+		self_addr = wlan_vdev_mlme_get_macaddr(vdev);
+		peer_addr = wlan_peer_get_macaddr(peer);
+	}
+
 	pmo_debug("vdev self mac addr: "QDF_MAC_ADDR_FMT" bss peer mac addr: "QDF_MAC_ADDR_FMT,
-		QDF_MAC_ADDR_REF(wlan_vdev_mlme_get_macaddr(vdev)),
-		QDF_MAC_ADDR_REF(wlan_peer_get_macaddr(peer)));
+		QDF_MAC_ADDR_REF(self_addr),
+		QDF_MAC_ADDR_REF(peer_addr));
+
+	qdf_mem_copy(&request->self_macaddr.bytes, self_addr,
+		     QDF_MAC_ADDR_SIZE);
 	/* get peer and peer mac accdress aka ap mac address */
-	qdf_mem_copy(&request->bssid, wlan_peer_get_macaddr(peer),
+	qdf_mem_copy(&request->bssid, peer_addr,
 		     QDF_MAC_ADDR_SIZE);
 	wlan_objmgr_peer_release_ref(peer, WLAN_PMO_ID);
 	/* cache ns request */

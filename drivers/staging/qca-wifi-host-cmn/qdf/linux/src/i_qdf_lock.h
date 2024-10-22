@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2018, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -99,6 +99,22 @@ struct hif_pm_runtime_lock;
 typedef struct qdf_runtime_lock {
 	struct hif_pm_runtime_lock *lock;
 } qdf_runtime_lock_t;
+
+typedef struct rcu_head __qdf_rcu_head_t;
+
+#define __qdf_rcu_callback_t rcu_callback_t
+#define __qdf_rcu_dereference(p) rcu_dereference(p)
+#define __qdf_rcu_dereference_protected(p, c) rcu_dereference_protected(p, c)
+#define __qdf_rcu_assign_pointer(p, v) rcu_assign_pointer(p, v)
+
+static inline bool __qdf_lockdep_is_held(__qdf_spinlock_t *lock)
+{
+#ifdef CONFIG_LOCKDEP
+	return lockdep_is_held(&lock->spinlock);
+#else
+	return true;
+#endif
+}
 
 #define LINUX_LOCK_COOKIE 0x12345678
 
@@ -338,6 +354,41 @@ static inline bool __qdf_spinlock_irq_exec(qdf_handle_t hdl,
 	spin_unlock_irqrestore(&lock->spinlock, flags);
 
 	return ret;
+}
+
+/**
+ * __qdf_rcu_read_lock_bh() - mark the beginning of an RCU-bh critical section
+ *
+ * Return: none
+ */
+static inline void __qdf_rcu_read_lock_bh(void)
+{
+	rcu_read_lock_bh();
+}
+
+/**
+ * __qdf_rcu_read_unlock_bh() - marks the end of a softirq-only RCU critical
+ * section
+ *
+ * Return: none
+ */
+static inline void __qdf_rcu_read_unlock_bh(void)
+{
+	rcu_read_unlock_bh();
+}
+
+/**
+ * __qdf_call_rcu() - Marks the end of updater code and the beginning of
+ * reclaimer code
+ * @head: function parameter for func
+ * @func: function to be executed after grace period is over
+ *
+ * Return: none
+ */
+static inline
+void __qdf_call_rcu(__qdf_rcu_head_t *head, __qdf_rcu_callback_t func)
+{
+	call_rcu(head, func);
 }
 
 /**

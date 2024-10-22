@@ -142,6 +142,7 @@ static int syncboss_nrf5340_erase_flash(struct device *dev, struct swd_mcu_data 
 {
 	int status = 0;
 	int x;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	struct flash_info *flash = &mcudata->flash_info;
 	int flash_pages_to_erase = flash->num_pages - flash->num_retained_pages;
 

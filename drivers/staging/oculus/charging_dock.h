@@ -35,6 +35,7 @@
 #define VDO_LOG_TRANSMIT_START 0x01
 
 #define NUM_CHARGING_DOCK_PORTS 4
+#define NUM_MOISTURE_DETECTION_PORTS 2
 
 enum port_state_t {
 	NOT_CONNECTED = 0x00,
@@ -67,13 +68,14 @@ enum state_of_charge_t {
 
 /* Items reported by the dock */
 struct charging_dock_params_t {
-	u32 fw_version;
+	u64 fw_version;
+	u32 legacy_fw_version;
 	char serial_number_mlb[16];
-	u16 board_temp;
+	u16 port_board_temp[NUM_CHARGING_DOCK_PORTS];
 	char serial_number_system[16];
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
-	int moisture_detected_count;
+	int moisture_detected_counts[NUM_MOISTURE_DETECTION_PORTS];
 };
 
 struct usbvdm_subscription_data {
@@ -95,6 +97,7 @@ struct usbvdm_subscription_data {
  * @broadcast_period: duration in mins at which charging dock should send broadcast VDM
  * @work: work for sending broadcast period to dock
  * @workqueue: workqueue for @work
+ * @periodic_work: delayed work queue for sending periodic requests
  * @ack_parameter: VDM request parameter for which ack is received
  * @req_ack_timeout_ms: duration to wait for an ACK from the dock
  * @rx_complete: VDM response completion
@@ -121,7 +124,7 @@ struct charging_dock_device_t {
 	u8 broadcast_period;
 	struct work_struct work;
 	struct workqueue_struct	*workqueue;
-
+	struct delayed_work periodic_work;
 	u32 ack_parameter;
 	u32 req_ack_timeout_ms;
 	struct completion rx_complete;

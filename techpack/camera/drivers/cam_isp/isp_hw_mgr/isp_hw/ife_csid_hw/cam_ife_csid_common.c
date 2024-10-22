@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/iopoll.h>
@@ -25,7 +25,9 @@
 #include "cam_ife_csid_hw_ver2.h"
 #include "cam_cdm_intf_api.h"
 
-struct csid_ref_time g_ref_time;
+struct csid_ref_time g_ref_time = {
+	.lock = __MUTEX_INITIALIZER(g_ref_time.lock),
+};
 
 const uint8_t *cam_ife_csid_irq_reg_tag[CAM_IFE_CSID_IRQ_REG_MAX] = {
 	"TOP",

@@ -371,6 +371,7 @@ struct msm_cvp_core {
 	bool trigger_ssr;
 	unsigned long curr_freq;
 	unsigned long orig_core_sum;
+	unsigned long bw_sum;
 	struct cvp_cycle_info dyn_clk;
 	atomic64_t kernel_trans_id;
 	struct cvp_debug_log log;

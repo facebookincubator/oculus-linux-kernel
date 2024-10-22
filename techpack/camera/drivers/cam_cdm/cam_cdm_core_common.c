@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -487,7 +487,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 			break;
 		}
 		cam_cdm_get_client_refcount(client);
-		if (req->data->flag &&
+		if (req->data->gen_irq_bl_done &&
 			(!client->data.cam_cdm_callback)) {
 			CAM_ERR(CAM_CDM,
 				"CDM request cb without registering cb");

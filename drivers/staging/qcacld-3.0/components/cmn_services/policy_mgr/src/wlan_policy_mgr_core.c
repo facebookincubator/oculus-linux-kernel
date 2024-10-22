@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4292,8 +4292,7 @@ void policy_mgr_check_scc_sbs_channel(struct wlan_objmgr_psoc *psoc,
 	}
 
 	/* Always do force SCC on non-DBS platforms */
-	if (!policy_mgr_is_hw_dbs_capable(psoc) &&
-	    cc_mode !=  QDF_MCC_TO_SCC_WITH_PREFERRED_BAND)
+	if (!policy_mgr_is_hw_dbs_capable(psoc))
 		return;
 
 	sta_count = policy_mgr_mode_specific_connection_count(psoc, PM_STA_MODE,

@@ -15,6 +15,7 @@ LINUXINCLUDE	+= \
 	-I$(srctree)/drivers/staging/oculus/include
 
 obj-$(CONFIG_AS5510)			+= as5510.o
+obj-$(CONFIG_AW8646_MOTOR)		+= aw8646.o
 obj-$(CONFIG_BLU_FW)			+= blu_fw_driver.o
 obj-$(CONFIG_CAM_FSYNC)			+= cam-fsync.o
 obj-$(CONFIG_CHARGER_CYPD3177)		+= cypd3177.o

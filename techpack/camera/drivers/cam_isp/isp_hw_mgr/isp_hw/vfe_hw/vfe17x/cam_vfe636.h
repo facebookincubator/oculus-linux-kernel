@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_VFE636_H_
@@ -2249,6 +2249,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636_bus_hw_info = {
 	.max_bw_counter_limit  = 0xFF,
 	.support_tunneling = false,
 	.fifo_depth = 2,
+	.image_addr_fifo_cnt_mask = 0x7,
 };
 
 static struct cam_vfe_irq_hw_info vfe636_irq_hw_info = {

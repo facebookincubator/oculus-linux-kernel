@@ -9,6 +9,27 @@
 #define REC_SIZE	2
 #define CLIENT_NAME_SIZE 64
 
+void miscfifo_cancel(struct file *file)
+{
+	struct miscfifo_client *client = file->private_data;
+
+	atomic_set(&client->cancel, 1);
+}
+EXPORT_SYMBOL(miscfifo_cancel);
+
+static bool read_is_ready(struct miscfifo_client *client, ssize_t *rc)
+{
+	int cancel = atomic_xchg(&client->cancel, 0);
+
+	if (cancel) {
+		*rc = -ECANCELED;
+		return true;
+	}
+
+	*rc = 0;
+	return !kfifo_is_empty(&client->fifo);
+}
+
 ssize_t miscfifo_fop_read(struct file *file,
 	char __user *buf, size_t len, loff_t *off)
 {
@@ -18,16 +39,25 @@ ssize_t miscfifo_fop_read(struct file *file,
 
 	mutex_lock(&client->consumer_lock);
 	if (kfifo_is_empty(&client->fifo)) {
+		ssize_t rc_ready;
+
 		if (file->f_flags & O_NONBLOCK) {
-			rc = -EAGAIN;
+			/* Prioritize cancellation over "try again" */
+			if (atomic_xchg(&client->cancel, 0))
+				rc = -ECANCELED;
+			else
+				rc = -EAGAIN;
+
 			goto exit_unlock;
 		}
 
 		mutex_unlock(&client->consumer_lock);
 		rc = wait_event_interruptible(client->mf->clients.wait,
-					      !kfifo_is_empty(&client->fifo));
+					      read_is_ready(client, &rc_ready));
 		if (rc)
 			return rc;
+		if (rc_ready)
+			return rc_ready;
 		mutex_lock(&client->consumer_lock);
 	}
 
@@ -52,16 +82,25 @@ ssize_t miscfifo_fop_read_many(struct file *file,
 
 	mutex_lock(&client->consumer_lock);
 	if (kfifo_is_empty(&client->fifo)) {
+		ssize_t rc_ready;
+
 		if (file->f_flags & O_NONBLOCK) {
-			rc = -EAGAIN;
+			/* Prioritize cancellation over "try again" */
+			if (atomic_xchg(&client->cancel, 0))
+				rc = -ECANCELED;
+			else
+				rc = -EAGAIN;
+
 			goto exit_unlock;
 		}
 
 		mutex_unlock(&client->consumer_lock);
 		rc = wait_event_interruptible(client->mf->clients.wait,
-					      !kfifo_is_empty(&client->fifo));
+					      read_is_ready(client, &rc_ready));
 		if (rc)
 			return rc;
+		if (rc_ready)
+			return rc_ready;
 		mutex_lock(&client->consumer_lock);
 	}
 
@@ -108,12 +147,20 @@ unsigned int miscfifo_fop_poll(struct file *file,
 	unsigned int mask = 0;
 	struct miscfifo_client *client = file->private_data;
 
-	if (kfifo_len(&client->fifo))
+	if (atomic_read(&client->cancel)) {
+		/*
+		 * Process cancellations in read*. Breaking out of poll here allows callers
+		 * to call read*. The same applies below.
+		 */
+		mask |= POLLIN;
+	} else if (kfifo_len(&client->fifo))
 		mask |= POLLIN;
 
 	if (!mask) {
 		poll_wait(file, &client->mf->clients.wait, pt);
-		if (kfifo_len(&client->fifo))
+		if (atomic_read(&client->cancel))
+			mask |= POLLIN;
+		else if (kfifo_len(&client->fifo))
 			mask |= POLLIN;
 	}
 
@@ -180,6 +227,9 @@ int miscfifo_fop_open(struct file *file, struct miscfifo *mf)
 		rc = -ENOMEM;
 		goto exit;
 	}
+
+	/* Let's not assume anything about how atomics are implemented. */
+	atomic_set(&client->cancel, 0);
 
 	client->mf = mf;
 	rc = kfifo_alloc(&client->fifo, mf->config.kfifo_size, GFP_KERNEL);
@@ -299,6 +349,7 @@ void miscfifo_clear(struct miscfifo *mf)
 
 		kfifo_reset(&client->fifo);
 		client->logged_fifo_full = false;
+		atomic_set(&client->cancel, 0);
 
 		mutex_unlock(&client->producer_lock);
 		mutex_unlock(&client->consumer_lock);

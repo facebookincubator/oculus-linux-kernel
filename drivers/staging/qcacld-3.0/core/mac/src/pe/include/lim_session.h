@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -623,7 +623,6 @@ struct wlan_mlo_ie_info {
  * @deauth_retry:
  * @enable_bcast_probe_rsp:
  * @ht_client_cnt:
- * @force_24ghz_in_ht20:
  * @ch_switch_in_progress:
  * @he_with_wep_tkip:
  * @fils_info:
@@ -949,7 +948,6 @@ struct pe_session {
 	struct deauth_retry_params deauth_retry;
 	bool enable_bcast_probe_rsp;
 	uint8_t ht_client_cnt;
-	bool force_24ghz_in_ht20;
 	bool ch_switch_in_progress;
 	bool he_with_wep_tkip;
 #ifdef WLAN_FEATURE_FILS_SK

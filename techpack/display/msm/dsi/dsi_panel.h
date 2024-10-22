@@ -17,6 +17,7 @@
 #include <drm/msm_drm_pp.h>
 
 #include "dsi_defs.h"
+#include "dsi_ctrl.h"
 #include "dsi_ctrl_hw.h"
 #include "dsi_clk.h"
 #include "dsi_pwr.h"
@@ -29,6 +30,7 @@
 #define SV_BL_SCALE_CAP (MAX_SV_BL_SCALE_LEVEL * 4)
 #define DSI_CMD_PPS_SIZE 135
 #define MAX_BL_SCALE_LEVEL_BRIGHTNESS 100
+#define MAX_DSI_CTRLS_PER_PANEL 2
 
 #define DSI_CMD_PPS_HDR_SIZE 7
 #define DSI_MODE_MAX 32
@@ -70,6 +72,14 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_JDI_NVT,
 	DSI_BACKLIGHT_UNKNOWN,
 	DSI_BACKLIGHT_MAX,
+};
+
+enum dsi_ddic_family {
+	DSI_DDIC_UNKNOWN = 0,
+	DSI_DDIC_STARK,
+	DSI_DDIC_NVT,
+	DSI_DDIC_EOS,
+	DSI_DDIC_MAX,
 };
 
 enum bl_update_flag {
@@ -159,6 +169,7 @@ struct dsi_backlight_config {
 	u32 bl_scale_brightness;
 	u32 bl_dcs_subtype;
 	bool bl_inverted_dbv;
+	u32 backlight_changes_blocked;
 	/* digital dimming backlight LUT */
 	struct drm_msm_dimming_bl_lut *dimming_bl_lut;
 	u32 dimming_min_bl;
@@ -184,14 +195,18 @@ struct dsi_backlight_config {
 	u32 bl_temperature_override;
 	s32 fifo_trim;
 	u32 fifo_scanlines;
+	u32 max_blu_stereo_offset_ns;
 	u32 scanline_max_offset;
 	u32 scanline_duration;
 	u32 scanline_offset[2];
+	u32 settling_time_us[2];
+	u32 blu_default_duty_override;
 
 	/* Temperature-dependent timing */
 	bool temperature_dependent_timing;
 	struct thermal_zone_device *bl_temp_tz;
 	struct delayed_work bl_temp_dwork;
+	struct delayed_work bl_temp_read_thermal_zone_dwork;
 	u32 *response_time;
 	int num_response_time_entries;
 	u32 settling_time_target_us;
@@ -350,6 +365,10 @@ struct dsi_panel {
 
 	atomic_t fifo_trim;
 	bool bicubic_scaling;
+	enum dsi_ddic_family ddic_family;
+
+	struct dsi_ctrl *ctrls[MAX_DSI_CTRLS_PER_PANEL];
+	u32 ctrl_count;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -382,7 +401,9 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 				struct device_node *parser_node,
 				const char *type,
 				int topology_override,
-				bool trusted_vm_env);
+				bool trusted_vm_env,
+				struct dsi_ctrl **ctrls,
+				u32 ctrl_count);
 
 void dsi_panel_put(struct dsi_panel *panel);
 
@@ -491,5 +512,9 @@ void dsi_panel_dealloc_cmd_packets(struct dsi_panel_cmd_set *set);
 
 bool dsi_panel_update_temp_dependent_bl_config(
 	struct dsi_panel *panel, u32 *response_time_tbl, u32 response_time_tbl_size);
+
+int dsi_panel_dbg_init(struct dsi_panel *panel, struct dentry *parent_dir);
+
+int dsi_panel_control_ddic_cac(struct dsi_panel *panel, bool enable);
 
 #endif /* _DSI_PANEL_H_ */

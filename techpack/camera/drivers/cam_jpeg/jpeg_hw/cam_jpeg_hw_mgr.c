@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/uaccess.h>
@@ -254,7 +254,7 @@ static int cam_jpeg_process_next_hw_update(void *priv, void *data,
 
 	cdm_cmd = ctx_data->cdm_cmd;
 	cdm_cmd->type = CAM_CDM_BL_CMD_TYPE_MEM_HANDLE;
-	cdm_cmd->flag = false;
+	cdm_cmd->gen_irq_bl_done = false;
 	cdm_cmd->userdata = NULL;
 	cdm_cmd->cookie = 0;
 	cdm_cmd->cmd_arrary_count = 0;

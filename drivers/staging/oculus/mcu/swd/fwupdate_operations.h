@@ -5,6 +5,7 @@
 #include <linux/platform_device.h>
 #include "swd.h"
 
+int fwupdate_check_swd_ops(struct device *dev);
 int fwupdate_preupdate_operations(struct device *dev);
 void fwupdate_release_all_firmware(struct device *dev);
 int fwupdate_update_app(struct device *dev);

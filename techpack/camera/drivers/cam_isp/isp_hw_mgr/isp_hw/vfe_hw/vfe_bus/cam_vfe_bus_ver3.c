@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 
@@ -3335,6 +3335,7 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 	uint32_t frame_inc = 0, val;
 	uint32_t iova_addr, iova_offset, image_buf_offset = 0, stride, slice_h;
 	dma_addr_t iova;
+	int ret = 0;
 
 	bus_priv = (struct cam_vfe_bus_ver3_priv  *) priv;
 	update_buf = (struct cam_isp_hw_get_cmd_update *) cmd_args;
@@ -3355,6 +3356,7 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 		return -EINVAL;
 	}
 
+	mutex_lock(&vfe_out_data->common_data->bus_mutex);
 	reg_val_pair = &vfe_out_data->common_data->io_buf_update[0];
 	if (update_buf->use_scratch_cfg) {
 		CAM_DBG(CAM_ISP, "Using scratch for IFE out_type: %u",
@@ -3373,7 +3375,8 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 			CAM_ERR(CAM_ISP,
 				"reg_val_pair %d exceeds the array limit %zu",
 				j, MAX_REG_VAL_PAIR_SIZE);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto end;
 		}
 
 		wm_data = vfe_out_data->wm_res[i].res_priv;
@@ -3460,7 +3463,8 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 			if (!wm_data->hw_regs->ubwc_regs) {
 				CAM_ERR(CAM_ISP,
 					"No UBWC register to configure.");
-				return -EINVAL;
+				ret = -EINVAL;
+				goto end;
 			}
 			if (wm_data->ubwc_updated) {
 				wm_data->ubwc_updated = false;
@@ -3565,7 +3569,8 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 			else {
 				CAM_ERR(CAM_ISP,
 					"Tunnel enabled with zero Tunnel_id, for wm:%d res_id %d", wm_data->index);
-				return -EINVAL;
+				ret = -EINVAL;
+				goto end;
 			}
 		}
 	}
@@ -3580,7 +3585,8 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 			CAM_ERR(CAM_ISP,
 				"Failed! Buf size:%d insufficient, expected size:%d",
 				update_buf->cmd.size, size);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto end;
 		}
 
 		cdm_util_ops->cdm_write_regrandom(
@@ -3595,8 +3601,9 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 			vfe_out_data->num_wm);
 		update_buf->cmd.used_bytes = 0;
 	}
-
-	return 0;
+end:
+	mutex_unlock(&vfe_out_data->common_data->bus_mutex);
+	return ret;
 }
 
 static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
@@ -3611,6 +3618,7 @@ static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
 	uint32_t *reg_val_pair;
 	uint32_t num_regval_pairs = 0;
 	uint32_t  i, j, size = 0;
+	int rc = 0;
 
 	bus_priv = (struct cam_vfe_bus_ver3_priv  *) priv;
 	update_hfr =  (struct cam_isp_hw_get_cmd_update *) cmd_args;
@@ -3624,6 +3632,7 @@ static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
 	}
 
 	cdm_util_ops = vfe_out_data->cdm_util_ops;
+	mutex_lock(&vfe_out_data->common_data->bus_mutex);
 	reg_val_pair = &vfe_out_data->common_data->io_buf_update[0];
 	hfr_cfg = (struct cam_isp_port_hfr_config *)update_hfr->data;
 
@@ -3632,7 +3641,8 @@ static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
 			CAM_ERR(CAM_ISP,
 				"reg_val_pair %d exceeds the array limit %zu",
 				j, MAX_REG_VAL_PAIR_SIZE);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto end;
 		}
 
 		wm_data = vfe_out_data->wm_res[i].res_priv;
@@ -3643,7 +3653,8 @@ static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
 			CAM_ERR(CAM_ISP,
 				"RDI doesn't support irq subsample period %d",
 				hfr_cfg->subsample_period);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto end;
 		}
 
 		if ((wm_data->framedrop_pattern !=
@@ -3705,7 +3716,8 @@ static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
 			CAM_ERR(CAM_ISP,
 				"Failed! Buf size:%d insufficient, expected size:%d",
 				update_hfr->cmd.size, size);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto end;
 		}
 
 		cdm_util_ops->cdm_write_regrandom(
@@ -3720,8 +3732,9 @@ static int cam_vfe_bus_ver3_update_hfr(void *priv, void *cmd_args,
 			"No reg val pairs. num_wms: %u",
 			vfe_out_data->num_wm);
 	}
-
-	return 0;
+end:
+	mutex_unlock(&vfe_out_data->common_data->bus_mutex);
+	return rc;
 }
 
 static int cam_vfe_bus_ver3_update_ubwc_config_v2(void *cmd_args)
@@ -4011,6 +4024,7 @@ static int cam_vfe_bus_update_bw_limiter(
 	uint32_t                                 *reg_val_pair, num_regval_pairs = 0;
 	uint32_t                                  i, j, size = 0;
 	bool                                      limiter_enabled = false;
+	int rc = 0;
 
 	bus_priv         = (struct cam_vfe_bus_ver3_priv  *) priv;
 	wm_config_update = (struct cam_isp_hw_get_cmd_update *) cmd_args;
@@ -4025,13 +4039,15 @@ static int cam_vfe_bus_update_bw_limiter(
 	}
 
 	cdm_util_ops = vfe_out_data->cdm_util_ops;
+	mutex_lock(&vfe_out_data->common_data->bus_mutex);
 	reg_val_pair = &vfe_out_data->common_data->io_buf_update[0];
 	for (i = 0, j = 0; i < vfe_out_data->num_wm; i++) {
 		if (j >= (MAX_REG_VAL_PAIR_SIZE - (MAX_BUF_UPDATE_REG_NUM * 2))) {
 			CAM_ERR(CAM_ISP,
 				"reg_val_pair %d exceeds the array limit %zu for WM idx %d",
 				j, MAX_REG_VAL_PAIR_SIZE, i);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto end;
 		}
 
 		/* Num WMs needs to match max planes */
@@ -4047,7 +4063,8 @@ static int cam_vfe_bus_update_bw_limiter(
 			CAM_ERR(CAM_ISP,
 				"WM: %d %s has no support for bw limiter",
 				wm_data->index, vfe_out_data->wm_res[i].res_name);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto end;
 		}
 
 		counter_limit = wm_bw_limit_cfg->counter_limit[i];
@@ -4091,7 +4108,8 @@ add_reg_pair:
 			CAM_ERR(CAM_ISP,
 				"Failed! Buf size:%d insufficient, expected size:%d",
 				wm_config_update->cmd.size, size);
-			return -ENOMEM;
+			rc = -ENOMEM;
+			goto end;
 		}
 
 		cdm_util_ops->cdm_write_regrandom(
@@ -4108,7 +4126,9 @@ add_reg_pair:
 	}
 
 	vfe_out_data->limiter_enabled = limiter_enabled;
-	return 0;
+end:
+	mutex_unlock(&vfe_out_data->common_data->bus_mutex);
+	return rc;
 }
 
 static int cam_vfe_bus_ver3_update_res_wm(
@@ -4205,6 +4225,54 @@ static int cam_vfe_bus_ver3_update_res_comp_grp(
 	rsrc_data->composite_mask |= comp_acq_args->composite_mask;
 	*comp_grp = comp_grp_local;
 	comp_grp_local->is_per_port_acquire = false;
+
+	return 0;
+}
+
+static int cam_vfe_bus_ver3_check_rup_applied_req(void *bus_priv, void *cmd_args,
+	uint32_t args_size)
+{
+	struct cam_vfe_bus_ver3_priv               *ver3_bus_priv = bus_priv;
+	struct cam_vfe_resource_data_fifo_count    *res_args;
+	enum cam_vfe_bus_ver3_vfe_out_type          vfe_out_res_id;
+	struct cam_isp_resource_node               *vfe_out = NULL;
+	struct cam_vfe_bus_ver3_vfe_out_data       *vfe_out_data = NULL;
+	struct cam_vfe_bus_ver3_wm_resource_data   *rsrc_data = NULL;
+	uint32_t   outmap_index = CAM_VFE_BUS_VER3_VFE_OUT_MAX;
+	uint32_t fifo_count;
+
+	res_args =  (struct cam_vfe_resource_data_fifo_count *)cmd_args;
+	if (!res_args) {
+		CAM_ERR(CAM_ISP, "Invalid arguments");
+		return -EINVAL;
+	}
+
+	vfe_out_res_id = cam_vfe_bus_ver3_get_out_res_id_and_index(
+				ver3_bus_priv,
+				res_args->out_port_res_type,
+				&outmap_index);
+	if ((vfe_out_res_id == CAM_VFE_BUS_VER3_VFE_OUT_MAX) ||
+		(outmap_index >= ver3_bus_priv->num_out)) {
+		CAM_WARN(CAM_ISP,
+			"target does not support req res id :0x%x outtype:%d index:%d num: %d",
+			res_args->out_port_res_type,
+			vfe_out_res_id, outmap_index, ver3_bus_priv->num_out);
+		return -ENODEV;
+	}
+
+	vfe_out = &ver3_bus_priv->vfe_out[outmap_index];
+	vfe_out_data = vfe_out->res_priv;
+
+	/* check for any one wm client */
+	rsrc_data = vfe_out_data->wm_res[0].res_priv;
+
+	fifo_count = cam_io_r_mb(rsrc_data->common_data->mem_base +
+		rsrc_data->hw_regs->addr_status_2);
+
+	if (fifo_count & rsrc_data->common_data->image_addr_fifo_cnt_mask)
+		res_args->rup_for_applied_req = false;
+	else
+		res_args->rup_for_applied_req = true;
 
 	return 0;
 }
@@ -4689,6 +4757,9 @@ static int cam_vfe_bus_ver3_process_cmd(
 	case CAM_ISP_HW_CMD_UPDATE_VFE_OUT_RES_IRQ_MASK:
 		rc = cam_vfe_bus_ver3_enable_irq_vfe_out(priv, cmd_args);
 		break;
+	case CAM_ISP_HW_CMD_CHECK_RUP_FOR_APPLIED_REQ:
+		rc = cam_vfe_bus_ver3_check_rup_applied_req(priv, cmd_args, arg_size);
+		break;
 	default:
 		CAM_ERR_RATE_LIMIT(CAM_ISP, "Invalid camif process command:%d",
 			cmd_type);
@@ -4787,6 +4858,8 @@ int cam_vfe_bus_ver3_init(
 		ver3_hw_info->max_bw_counter_limit;
 	bus_priv->num_cons_err = ver3_hw_info->num_cons_err;
 	bus_priv->constraint_error_list = ver3_hw_info->constraint_error_list;
+	bus_priv->common_data.image_addr_fifo_cnt_mask =
+		ver3_hw_info->image_addr_fifo_cnt_mask;
 
 	if (bus_priv->num_out >= CAM_VFE_BUS_VER3_VFE_OUT_MAX) {
 		CAM_ERR(CAM_ISP, "number of vfe out:%d more than max value:%d ",
