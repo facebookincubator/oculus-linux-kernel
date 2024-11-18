@@ -1685,6 +1685,7 @@ struct sde_perf_cfg {
  * @has_vbif_clk_split: VBIF clock split supported
  * @mdss_hw_block_size  Max offset of MDSS_HW block (0 offset), used for debug
  * @swap_mixers   indicates if swapping mixers
+ * @freerun_histogram   indicates if the DSPP histogram is free-running
  * @inline_rot_formats formats supported by the inline rotator feature
  * @irq_offset_list     list of sde_intr_irq_offsets to initialize irq table
  * @rc_count	number of rounded corner hardware instances
@@ -1790,6 +1791,7 @@ struct sde_mdss_cfg {
 	u32 mdss_hw_block_size;
 
 	bool swap_mixers;
+	bool freerun_histogram;
 
 	u32 mdss_count;
 	struct sde_mdss_base_cfg mdss[MAX_BLOCKS];

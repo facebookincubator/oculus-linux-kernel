@@ -161,14 +161,20 @@ int syncboss_swd_nrf52832_prepare(struct device *dev)
 int syncboss_swd_nrf52833_prepare(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	bool force_bootloader_update = false;
+	bool enable_noaccess_recovery = false;
+
+	if (devdata->data_hdr) {
+		enable_noaccess_recovery = devdata->data_hdr->enable_noaccess_recovery;
+		force_bootloader_update = devdata->data_hdr->force_bootloader_update;
+	}
 
 	/*
 	 * If bootloader update is being forced and access port protection is
 	 * enabled, we need to issue an ERASEALL to disable it first.
 	 */
 	if (!devdata->erase_all &&
-	    (devdata->data_hdr->enable_noaccess_recovery ||
-	     devdata->data_hdr->force_bootloader_update)) {
+	    (enable_noaccess_recovery || force_bootloader_update)) {
 		const u8 max_tries = 3;
 		u8 tries;
 
@@ -184,7 +190,8 @@ int syncboss_swd_nrf52833_prepare(struct device *dev)
 			 * We just wiped the chip. Lets make sure the bootloader is
 			 * reflashed.
 			 */
-			devdata->data_hdr->force_bootloader_update = true;
+			if (devdata->data_hdr)
+				devdata->data_hdr->force_bootloader_update = true;
 			/*
 			 * Make sure the previous write to the flag is complete
 			 * before proceeding with the update.
@@ -244,6 +251,10 @@ int syncboss_swd_nrf52xxx_erase_app(struct device *dev)
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	struct flash_info *flash = &devdata->mcu_data.flash_info;
 	int flash_pages_to_erase = flash->num_pages - flash->num_retained_pages;
+	bool force_bootloader_update = false;
+
+	if (devdata->data_hdr)
+		force_bootloader_update = devdata->data_hdr->force_bootloader_update;
 
 	BUG_ON(flash_pages_to_erase < 0);
 
@@ -259,7 +270,7 @@ int syncboss_swd_nrf52xxx_erase_app(struct device *dev)
 	if (status != 0)
 		goto error;
 
-	x = devdata->data_hdr->force_bootloader_update ? 0 : flash->num_protected_bootloader_pages;
+	x = force_bootloader_update ? 0 : flash->num_protected_bootloader_pages;
 	while (x < flash_pages_to_erase) {
 		swd_memory_write(dev, SWD_NRF_NVMC_ERASEPAGE,
 			x * flash->page_size);

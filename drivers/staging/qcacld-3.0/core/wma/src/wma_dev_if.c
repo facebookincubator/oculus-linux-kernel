@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1308,7 +1308,7 @@ QDF_STATUS wma_vdev_start_resp_handler(struct vdev_mlme_obj *vdev_mlme,
 	}
 
 	if (wma_is_vdev_in_ap_mode(wma, rsp->vdev_id))
-		tgt_dfs_radar_enable(wma->pdev, 0, 0, true);
+		policy_mgr_update_dfs_master_dynamic_enabled(psoc, true);
 
 	iface = &wma->interfaces[rsp->vdev_id];
 	if (!iface->vdev) {
@@ -5034,7 +5034,7 @@ static void wma_add_sta_req_sta_mode(tp_wma_handle wma, tpAddStaParams params)
 	}
 
 	if (cdp_peer_state_get(soc, params->smesessionId,
-			       params->bssId) == OL_TXRX_PEER_STATE_DISC) {
+			       params->bssId, true) == OL_TXRX_PEER_STATE_DISC) {
 		/*
 		 * This is the case for reassociation.
 		 * peer state update and peer_assoc is required since it

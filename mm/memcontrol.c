@@ -2929,7 +2929,8 @@ static void commit_charge(struct page *page, struct mem_cgroup *memcg)
  * Moreover, it should not come from DMA buffer and is not readily
  * reclaimable. So those GFP bits should be masked off.
  */
-#define OBJCGS_CLEAR_MASK	(__GFP_DMA | __GFP_RECLAIMABLE | __GFP_ACCOUNT)
+#define OBJCGS_CLEAR_MASK	(__GFP_DMA | __GFP_RECLAIMABLE | \
+				 __GFP_ACCOUNT | __GFP_NOFAIL)
 
 int memcg_alloc_page_obj_cgroups(struct page *page, struct kmem_cache *s,
 				 gfp_t gfp)
@@ -3602,6 +3603,23 @@ static int mem_cgroup_hierarchy_write(struct cgroup_subsys_state *css,
 		retval = -EINVAL;
 
 	return retval;
+}
+
+static u64 mem_cgroup_minttl_read(struct cgroup_subsys_state *css,
+				     struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	
+	return (u64)READ_ONCE(memcg->min_ttl);
+}
+
+static int mem_cgroup_minttl_write(struct cgroup_subsys_state *css,
+				      struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	WRITE_ONCE(memcg->min_ttl, val);
+	return 0;
 }
 
 static unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
@@ -5098,6 +5116,11 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write_u64 = mem_cgroup_move_charge_write,
 	},
 	{
+		.name = "min_ttl",
+		.write_u64 = mem_cgroup_minttl_write,
+		.read_u64 = mem_cgroup_minttl_read,
+	},
+	{
 		.name = "oom_control",
 		.seq_show = mem_cgroup_oom_control_read,
 		.write_u64 = mem_cgroup_oom_control_write,
@@ -5364,6 +5387,7 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	INIT_LIST_HEAD(&memcg->event_list);
 	spin_lock_init(&memcg->event_list_lock);
 	memcg->socket_pressure = jiffies;
+	memcg->min_ttl = 0;
 #ifdef CONFIG_MEMCG_KMEM
 	memcg->kmemcg_id = -1;
 	INIT_LIST_HEAD(&memcg->objcg_list);
@@ -5416,6 +5440,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		page_counter_init(&memcg->tcpmem, NULL);
 	} else if (parent->use_hierarchy) {
 		memcg->use_hierarchy = true;
+		memcg->min_ttl = parent->min_ttl;
 		page_counter_init(&memcg->memory, &parent->memory);
 		page_counter_init(&memcg->swap, &parent->swap);
 		page_counter_init(&memcg->kmem, &parent->kmem);

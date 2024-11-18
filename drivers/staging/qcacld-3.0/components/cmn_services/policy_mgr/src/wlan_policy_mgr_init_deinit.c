@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -494,6 +494,10 @@ QDF_STATUS policy_mgr_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	qdf_mem_zero(pm_conc_connection_list, sizeof(pm_conc_connection_list));
 	policy_mgr_memzero_disabled_ml_list();
 	policy_mgr_clear_concurrent_session_count(psoc);
+
+	/* reset dynamic dfs master flag */
+	pm_ctx->dynamic_dfs_master_disabled = false;
+
 	/* init dbs_opportunistic_timer */
 	status = qdf_mc_timer_init(&pm_ctx->dbs_opportunistic_timer,
 				QDF_TIMER_TYPE_SW,

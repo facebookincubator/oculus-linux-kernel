@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include "anorak-oculus-base.dtsi"
-#include "anorak-oculus-display.dtsi"
+#include "../anorak-oculus-base.dtsi"
+#include "../anorak-oculus-display.dtsi"
 
 #include "eureka-adc.dtsi"
 #include "eureka-audio.dtsi"

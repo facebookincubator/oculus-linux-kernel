@@ -181,6 +181,24 @@ TRACE_EVENT(cam_log_debug,
 	TP_printk("%s", __get_str(msg))
 );
 
+TRACE_EVENT(cam_log_meta_trace,
+	TP_PROTO(const char *string, uint64_t val),
+	TP_ARGS(string, val),
+	TP_STRUCT__entry(
+		__string(trace_name, string)
+		__field(uint64_t, sof_timestamp)
+	),
+	TP_fast_assign(
+		__assign_str(trace_name, string);
+		__entry->sof_timestamp = val;
+	),
+	TP_printk(
+		"%s val=%llu",
+			__get_str(trace_name),
+			__entry->sof_timestamp
+	)
+);
+
 
 TRACE_EVENT(cam_icp_fw_dbg,
 	TP_PROTO(char *dbg_message, uint64_t timestamp),
@@ -241,6 +259,47 @@ TRACE_EVENT(cam_apply_req,
 			__get_str(entity), __entry->id, __entry->req_id, __entry->link_hdl
 	)
 );
+
+TRACE_EVENT(cam_ul_fastpath_bufdone,
+	TP_PROTO(const char *entity, uint32_t id, uint64_t ts),
+	TP_ARGS(entity, id, ts),
+	TP_STRUCT__entry(
+		__string(entity, entity)
+		__field(uint32_t, id)
+		__field(uint64_t, ts)
+	),
+	TP_fast_assign(
+		__assign_str(entity, entity);
+		__entry->id = id;
+		__entry->ts = ts;
+	),
+	TP_printk(
+		"%8s: Ctx=%u ts=0x%x",
+			__get_str(entity), __entry->id, __entry->ts
+	)
+);
+
+TRACE_EVENT(cam_ul_fastpath_retrieve,
+	TP_PROTO(const char *entity, uint32_t id, uint32_t setting, uint64_t ts),
+	TP_ARGS(entity, id, setting, ts),
+	TP_STRUCT__entry(
+		__string(entity, entity)
+		__field(uint32_t, id)
+		__field(uint32_t, setting)
+		__field(uint64_t, ts)
+	),
+	TP_fast_assign(
+		__assign_str(entity, entity);
+		__entry->id = id;
+		__entry->setting = setting;
+		__entry->ts = ts;
+	),
+	TP_printk(
+		"%8s: Ctx=%u setting=%u ts=0x%x",
+			__get_str(entity), __entry->id, __entry->setting, __entry->ts
+	)
+);
+
 
 TRACE_EVENT(cam_notify_frame_skip,
 	TP_PROTO(const char *entity, uint64_t req_id),

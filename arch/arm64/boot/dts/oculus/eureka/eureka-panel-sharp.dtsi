@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
-// Sharp-NVT-LCD CPHY panels, DSC, 2064*2208 (experimental settings)
+// Sharp-NVT-LCD CPHY panels, DSC, 2064*2208
 
 &mdss_mdp0 {
-	eureka_panel_sharp_experimental: meta,eureka_panel_sharp_experimental {
-		qcom,mdss-dsi-panel-name = "Sharp novatek dual video mode dsi panel with dsc (experimental settings)";
+	eureka_panel_sharp: meta,eureka_panel_sharp {
+		qcom,mdss-dsi-panel-name = "Sharp novatek dual video mode dsi panel with dsc";
 		qcom,mdss-dsi-panel-type = "dsi_video_mode";
 		qcom,dsi-ctrl-num = <0 1>;
 		qcom,dsi-phy-num = <0 1>;
@@ -26,9 +26,8 @@
 		qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
 		qcom,mdss-dsi-pan-enable-dynamic-fps;
 		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
-		qcom,mdss-dsi-refresh-rate-step-sizes = <5 24>;
 		qcom,mdss-dsi-min-refresh-rate = <72>;
-		qcom,mdss-dsi-max-refresh-rate = <240>;
+		qcom,mdss-dsi-max-refresh-rate = <120>;
 		qcom,mdss-dsi-panel-framerate = <90>; // default initial fps
 		qcom,mdss-dsi-lp11-init;
 		qcom,mdss-dsi-tx-eot-append;

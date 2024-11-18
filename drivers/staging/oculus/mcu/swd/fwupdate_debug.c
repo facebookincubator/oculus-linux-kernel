@@ -65,6 +65,70 @@ exit_debug_reset:
 	return status ? status : count;
 }
 
+static ssize_t swd_debug_erase_app_write(struct file *fp,
+					  const char __user *user_buffer,
+					  size_t count, loff_t *position)
+{
+	int status = 0;
+	int index = 0;
+	static const int reset_gpio_time_ms = 5;
+	struct device *dev = fp->private_data;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct swd_mcu_data *childdata;
+
+	if (!mutex_trylock(&devdata->state_mutex)) {
+		dev_err(dev, "Failed to get state mutex");
+		return -EBUSY;
+	}
+
+	if (devdata->fw_update_state == FW_UPDATE_STATE_WRITING_TO_HW) {
+		dev_err(dev, "Update in progress, skipping");
+		status = -EBUSY;
+		goto exit_debug_erase_app;
+	}
+
+	if (!devdata->mcu_data.swd_ops.target_erase) {
+		dev_err(dev, "target_erase is NULL!");
+		status = -EOPNOTSUPP;
+		goto exit_debug_erase_app;
+	}
+
+	if (gpio_is_valid(devdata->gpio_reset)) {
+		gpio_set_value(devdata->gpio_reset, 1);
+		msleep(reset_gpio_time_ms);
+	}
+
+	swd_init(dev);
+	swd_halt(dev);
+
+	// If there are no children, must update the parent
+	if (devdata->num_children == 0) {
+		status = devdata->mcu_data.swd_ops.target_erase(dev);
+		if (status) {
+			dev_err(dev, "Parent app erase failed!");
+			goto exit_debug_erase_app_init;
+		}
+	} else {
+		for (index = 0; index < devdata->num_children; index++) {
+			childdata = &devdata->child_mcu_data[index];
+			status = childdata->swd_ops.target_erase(dev);
+			if (status) {
+				dev_err(dev, "Child %d app erase failed!", index);
+				goto exit_debug_erase_app_init;
+			}
+		}
+	}
+
+	dev_info(dev, "Manual chip erase complete");
+
+exit_debug_erase_app_init:
+	swd_deinit(dev);
+
+exit_debug_erase_app:
+	mutex_unlock(&devdata->state_mutex);
+	return status ? status : count;
+}
+
 static ssize_t swd_debug_erase_chip_write(struct file *fp,
 					  const char __user *user_buffer,
 					  size_t count, loff_t *position)
@@ -152,18 +216,19 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 
 	if (fwupdate_update_prepare(dev)) {
 		dev_err(dev, "Failed app prepare");
-		goto exit_debug_write;
+		goto exit_debug_write_swd_init;
 	}
 
 	if (fwupdate_update_app(dev))
 		dev_err(dev, "Failed app update");
 
-	swd_deinit(dev);
-
 	if (gpio_is_valid(devdata->gpio_reset))
 		gpio_set_value(devdata->gpio_reset, 0);
 
 	dev_info(dev, "Manual app update complete");
+
+exit_debug_write_swd_init:
+	swd_deinit(dev);
 
 exit_debug_write:
 	fwupdate_release_all_firmware(dev);
@@ -175,6 +240,12 @@ static const struct file_operations swd_debug_reset_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
 	.write = swd_debug_reset_write,
+};
+
+static const struct file_operations swd_debug_erase_app_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = swd_debug_erase_app_write,
 };
 
 static const struct file_operations swd_debug_erase_chip_fops = {
@@ -220,6 +291,13 @@ int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
 
 	entry = debugfs_create_file("reset", 0644, devdata->debug_entry, dev,
 				&swd_debug_reset_fops);
+	if (!entry) {
+		status = -ENOMEM;
+		goto exit_error;
+	}
+
+	entry = debugfs_create_file("erase_app", 0644, devdata->debug_entry, dev,
+				&swd_debug_erase_app_fops);
 	if (!entry) {
 		status = -ENOMEM;
 		goto exit_error;

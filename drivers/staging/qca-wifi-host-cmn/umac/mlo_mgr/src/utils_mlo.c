@@ -2121,16 +2121,14 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 					       mlieseqpayload_copy,
 					       mlieseqpayloadlen,
 					       &defragpayload_len);
-		if (QDF_IS_STATUS_ERROR(ret)) {
-			qdf_mem_free(mlieseqpayload_copy);
-			return ret;
-		}
+		if (QDF_IS_STATUS_ERROR(ret))
+			goto mem_free;
 
 		if (defragpayload_len != mlieseqpayloadlen) {
 			mlo_err_rl("Length of de-fragmented payload %zu octets is not equal to length of Multi-Link element fragment sequence payload %zu octets",
 				   defragpayload_len, mlieseqpayloadlen);
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_FAILURE;
+			ret = QDF_STATUS_E_FAILURE;
+			goto mem_free;
 		}
 	} else {
 		qdf_mem_copy(mlieseqpayload_copy,
@@ -2145,10 +2143,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 					 mlieseqpayloadlen,
 					 &link_info,
 					 &link_info_len);
-	if (QDF_IS_STATUS_ERROR(ret)) {
-		qdf_mem_free(mlieseqpayload_copy);
-		return ret;
-	}
+	if (QDF_IS_STATUS_ERROR(ret))
+		goto mem_free;
 
 	/* As per the standard, the sender must include Link Info for
 	 * association request/response. Throw an error if we are unable to
@@ -2156,8 +2152,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 	 */
 	if (!link_info) {
 		mlo_err_rl("Unable to successfully obtain Link Info");
-		qdf_mem_free(mlieseqpayload_copy);
-		return QDF_STATUS_E_PROTO;
+		ret = QDF_STATUS_E_PROTO;
+		goto mem_free;
 	}
 
 	mlo_debug("Dumping hex of link info after parsing Multi-Link element control");
@@ -2181,8 +2177,7 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		mlo_err_rl("Per STA profile not found for link id %d",
 			   req_link_id);
-		qdf_mem_free(mlieseqpayload_copy);
-		return ret;
+		goto mem_free;
 	}
 
 	sta_prof_remlen = 0;
@@ -2207,14 +2202,13 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 						      true,
 						      &sta_prof_currpos,
 						      &sta_prof_remlen);
-	if (QDF_IS_STATUS_ERROR(ret)) {
-		qdf_mem_free(mlieseqpayload_copy);
-		return ret;
-	}
+	if (QDF_IS_STATUS_ERROR(ret))
+		goto mem_free;
 
 	if (subtype == WLAN_FC0_STYPE_PROBE_RESP && !is_completeprofile) {
 		mlo_err("Complete profile information is not present in per-STA profile of probe response frame");
-		return QDF_STATUS_E_NOSUPPORT;
+		ret = QDF_STATUS_E_NOSUPPORT;
+		goto mem_free;
 	}
 
 	/* We double check for a NULL STA Profile, though the helper function
@@ -2224,8 +2218,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 	 */
 	if (!sta_prof_currpos) {
 		mlo_err_rl("STA profile is NULL");
-		qdf_mem_free(mlieseqpayload_copy);
-		return QDF_STATUS_E_PROTO;
+		ret = QDF_STATUS_E_PROTO;
+		goto mem_free;
 	}
 
 	/* As per the standard, the sender sets the MAC address in the per-STA
@@ -2234,8 +2228,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 	 */
 	if (!is_reportedmacaddr_valid) {
 		mlo_err_rl("Unable to get MAC address from per-STA profile");
-		qdf_mem_free(mlieseqpayload_copy);
-		return QDF_STATUS_E_PROTO;
+		ret = QDF_STATUS_E_PROTO;
+		goto mem_free;
 	}
 
 	link_frame_currpos = link_frame;
@@ -2246,8 +2240,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 		mlo_err("Insufficient space in link specific frame for 802.11 header. Required: %u octets, available: %zu octets",
 			WLAN_MAC_HDR_LEN_3A, link_frame_maxsize);
 
-		qdf_mem_free(mlieseqpayload_copy);
-		return QDF_STATUS_E_NOMEM;
+		ret = QDF_STATUS_E_NOMEM;
+		goto mem_free;
 	}
 
 	link_frame_currpos += WLAN_MAC_HDR_LEN_3A;
@@ -2262,8 +2256,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				   sta_prof_remlen,
 				   WLAN_CAPABILITYINFO_LEN);
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 
 		/* Capability information is specific to the link. Copy this
@@ -2276,8 +2270,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_CAPABILITYINFO_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		qdf_mem_copy(link_frame_currpos, sta_prof_currpos,
@@ -2300,8 +2294,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_LISTENINTERVAL_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		qdf_mem_copy(link_frame_currpos,
@@ -2323,8 +2317,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 					(link_frame_maxsize -
 						link_frame_currlen));
 
-				qdf_mem_free(mlieseqpayload_copy);
-				return QDF_STATUS_E_NOMEM;
+				ret = QDF_STATUS_E_NOMEM;
+				goto mem_free;
 			}
 
 			qdf_mem_copy(link_frame_currpos,
@@ -2348,8 +2342,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				   WLAN_CAPABILITYINFO_LEN +
 					WLAN_STATUSCODE_LEN);
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 
 		/* Capability information and Status Code are specific to the
@@ -2362,8 +2356,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_CAPABILITYINFO_LEN + WLAN_STATUSCODE_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		qdf_mem_copy(link_frame_currpos, sta_prof_currpos,
@@ -2389,8 +2383,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_AID_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		qdf_mem_copy(link_frame_currpos,
@@ -2411,8 +2405,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_TIMESTAMP_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		/* Per spec 11be_D2.1.1, the TSF Offset subfield of the STA Info
@@ -2433,8 +2427,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 
 		if (!is_beaconinterval_valid) {
 			mlo_err_rl("Beacon interval information not present in STA info field of per-STA profile");
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 
 		/* Beacon Interval information copy this from
@@ -2446,8 +2440,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_BEACONINTERVAL_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		qdf_mem_copy(link_frame_currpos, &beaconinterval,
@@ -2462,8 +2456,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				   sta_prof_remlen,
 				   WLAN_CAPABILITYINFO_LEN);
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 
 		/* Capability information is specific to the link. Copy this
@@ -2476,8 +2470,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				WLAN_CAPABILITYINFO_LEN,
 				(link_frame_maxsize - link_frame_currlen));
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		qdf_mem_copy(link_frame_currpos, sta_prof_currpos,
@@ -2506,10 +2500,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 				       &ninherit_elemlist_len,
 				       &ninherit_elemextlist,
 				       &ninherit_elemextlist_len);
-	if (QDF_IS_STATUS_ERROR(ret)) {
-		qdf_mem_free(mlieseqpayload_copy);
-		return ret;
-	}
+	if (QDF_IS_STATUS_ERROR(ret))
+		goto mem_free;
 
 	/* Go through IEs of the reporting STA, and those in STA profile, merge
 	 * them into link_frame (except for elements in the Non-Inheritance
@@ -2531,8 +2523,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 		 */
 		if (!reportingsta_ie) {
 			mlo_err_rl("SSID element not found in reporting STA of the frame.");
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 	} else {
 		/* This is a (re)association response. Sanity check that the
@@ -2541,8 +2533,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 		 */
 		if (reportingsta_ie) {
 			mlo_err_rl("SSID element found for reporting STA for (re)association response. It should not be present.");
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 
 		sta_prof_ie = util_find_eid(WLAN_ELEMID_SSID,
@@ -2551,8 +2543,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 
 		if (sta_prof_ie) {
 			mlo_err_rl("SSID element found in STA profile for (re)association response. It should not be present.");
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_PROTO;
+			ret = QDF_STATUS_E_PROTO;
+			goto mem_free;
 		}
 	}
 
@@ -2560,10 +2552,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 
 	ret = util_validate_reportingsta_ie(reportingsta_ie, frame_iesection,
 					    frame_iesection_len);
-	if (QDF_IS_STATUS_ERROR(ret)) {
-		qdf_mem_free(mlieseqpayload_copy);
-		return ret;
-	}
+	if (QDF_IS_STATUS_ERROR(ret))
+		goto mem_free;
 
 	reportingsta_ie_size = reportingsta_ie[TAG_LEN_POS] + MIN_IE_LEN;
 
@@ -2586,20 +2576,16 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 					&link_frame_currlen,
 					link_frame_maxsize,
 					linkid);
-				if (QDF_IS_STATUS_ERROR(ret)) {
-					qdf_mem_free(mlieseqpayload_copy);
-					return ret;
-				}
+				if (QDF_IS_STATUS_ERROR(ret))
+					goto mem_free;
 			}
 			reportingsta_ie += reportingsta_ie_size;
 
 			ret = util_validate_reportingsta_ie(reportingsta_ie,
 							    frame_iesection,
 							    frame_iesection_len);
-			if (QDF_IS_STATUS_ERROR(ret)) {
-				qdf_mem_free(mlieseqpayload_copy);
-				return ret;
-			}
+			if (QDF_IS_STATUS_ERROR(ret))
+				goto mem_free;
 
 			reportingsta_ie_size = reportingsta_ie[TAG_LEN_POS] +
 				MIN_IE_LEN;
@@ -2638,10 +2624,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 							     ninherit_elemextlist_len,
 							     &is_in_noninheritlist);
 
-			if (QDF_IS_STATUS_ERROR(ret)) {
-				qdf_mem_free(mlieseqpayload_copy);
-				return ret;
-			}
+			if (QDF_IS_STATUS_ERROR(ret))
+				goto mem_free;
 
 			if (!is_in_noninheritlist) {
 				if ((link_frame_currpos +
@@ -2682,8 +2666,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 							   link_frame_currlen);
 					}
 
-					qdf_mem_free(mlieseqpayload_copy);
-					return QDF_STATUS_E_NOMEM;
+					ret = QDF_STATUS_E_NOMEM;
+					goto mem_free;
 				}
 			} else {
 				if (reportingsta_ie[ID_POS] == WLAN_ELEMID_EXTN_ELEM) {
@@ -2714,10 +2698,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 			ret = util_validate_sta_prof_ie(sta_prof_ie,
 							sta_prof_iesection,
 							sta_prof_iesection_len);
-			if (QDF_IS_STATUS_ERROR(ret)) {
-				qdf_mem_free(mlieseqpayload_copy);
-				return ret;
-			}
+			if (QDF_IS_STATUS_ERROR(ret))
+				goto mem_free;
 
 			sta_prof_ie_size = sta_prof_ie[TAG_LEN_POS] +
 				MIN_IE_LEN;
@@ -2780,8 +2762,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 							   link_frame_currlen);
 					}
 
-					qdf_mem_free(mlieseqpayload_copy);
-					return QDF_STATUS_E_NOMEM;
+					ret = QDF_STATUS_E_NOMEM;
+					goto mem_free;
 				}
 			}
 		}
@@ -2795,10 +2777,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 		ret = util_validate_reportingsta_ie(reportingsta_ie,
 						    frame_iesection,
 						    frame_iesection_len);
-		if (QDF_IS_STATUS_ERROR(ret)) {
-			qdf_mem_free(mlieseqpayload_copy);
-			return ret;
-		}
+		if (QDF_IS_STATUS_ERROR(ret))
+			goto mem_free;
 
 		reportingsta_ie_size = reportingsta_ie[TAG_LEN_POS] +
 			MIN_IE_LEN;
@@ -2821,10 +2801,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 		ret = util_validate_sta_prof_ie(sta_prof_ie,
 						sta_prof_iesection_currpos,
 						sta_prof_iesection_remlen);
-		if (QDF_IS_STATUS_ERROR(ret)) {
-			qdf_mem_free(mlieseqpayload_copy);
-			return ret;
-		}
+		if (QDF_IS_STATUS_ERROR(ret))
+			goto mem_free;
 
 		sta_prof_ie_size = sta_prof_ie[TAG_LEN_POS] + MIN_IE_LEN;
 
@@ -2875,8 +2853,8 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 					   link_frame_currlen);
 			}
 
-			qdf_mem_free(mlieseqpayload_copy);
-			return QDF_STATUS_E_NOMEM;
+			ret = QDF_STATUS_E_NOMEM;
+			goto mem_free;
 		}
 
 		sta_prof_iesection_currpos += sta_prof_ie_size;
@@ -2930,11 +2908,12 @@ QDF_STATUS util_gen_link_reqrsp_cmn(uint8_t *frame, qdf_size_t frame_len,
 
 	/* Seq num not used so not populated */
 
-	qdf_mem_free(mlieseqpayload_copy);
-
 	*link_frame_len = link_frame_currlen;
+	ret = QDF_STATUS_SUCCESS;
 
-	return QDF_STATUS_SUCCESS;
+mem_free:
+	qdf_mem_free(mlieseqpayload_copy);
+	return ret;
 }
 
 QDF_STATUS

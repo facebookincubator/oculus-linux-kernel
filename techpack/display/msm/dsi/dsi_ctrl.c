@@ -2238,10 +2238,11 @@ int dsi_ctrl_get_io_resources(struct msm_io_res *io_res)
 		if (rc) {
 			DSI_CTRL_ERR(dsi_ctrl->ctrl,
 					"failed to get io mem, rc = %d\n", rc);
-			return rc;
+			goto error;
 		}
 	}
 
+error:
 	mutex_unlock(&dsi_ctrl_list_lock);
 
 	return rc;

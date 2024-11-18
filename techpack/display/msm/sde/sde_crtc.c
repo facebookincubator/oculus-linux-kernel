@@ -4204,8 +4204,10 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 	struct sde_kms *sde_kms;
 	struct sde_splash_display *splash_display;
 	struct sde_crtc_state *cstate;
+	struct msm_drm_private *priv;
 	bool cont_splash_enabled = false;
 	size_t i;
+	bool is_built_in = false;
 
 	if (!crtc) {
 		SDE_ERROR("invalid crtc\n");
@@ -4251,6 +4253,9 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 		sde_encoder_trigger_rsc_state_change(encoder);
 		/* encoder will trigger pending mask now */
 		sde_encoder_trigger_kickoff_pending(encoder);
+
+		if (sde_encoder_is_built_in_display(encoder))
+			is_built_in = true;
 	}
 
 	if (!cstate->rsc_update) {
@@ -4298,8 +4303,21 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 			cont_splash_enabled = true;
 	}
 
-	if (sde_kms_is_cp_operation_allowed(sde_kms))
+	if (is_built_in && sde_kms_is_cp_operation_allowed(sde_kms)) {
+		priv = crtc->dev->dev_private;
+		if (sde_kms->catalog->freerun_histogram &&
+				priv->cp_property[SDE_CP_CRTC_DSPP_HIST_CTRL] &&
+				priv->cp_property[SDE_CP_CRTC_DSPP_HIST_IRQ]) {
+			sde_cp_crtc_set_property(crtc, crtc->state,
+					priv->cp_property[SDE_CP_CRTC_DSPP_HIST_CTRL],
+					1);
+			sde_cp_crtc_set_property(crtc, crtc->state,
+					priv->cp_property[SDE_CP_CRTC_DSPP_HIST_IRQ],
+					1);
+		}
+
 		sde_cp_crtc_apply_properties(crtc);
+	}
 
 	if (!sde_crtc->enabled)
 		sde_cp_crtc_mark_features_dirty(crtc);

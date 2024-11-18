@@ -272,6 +272,12 @@
 		};
 	};
 
+	qcom,cam_smmu {
+		msm_cam_smmu_icp {
+			qcom,iommu-faults = "non-fatal";
+		};
+	};
+
 	qcom,cpu-pause {
 		compatible = "qcom,thermal-pause";
 		status = "disabled";
@@ -661,11 +667,13 @@
 		interrupt-names = "fan_irq";
 		/*25KHz -> 40000ns*/
 		pwms = <&pmxr2230_pwm_2 0 40000>;
+		vdd-supply = <&BOB1>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&fan_pwm_default &fan_tach_default>;
 		max-rpm = <8500>;
 		oculus,min-pwm = <51>;
 		oculus,max-pwm = <255>;
+		oculus,vdd-to-pwm-delay-ms = <100>;
 		#cooling-cells = <2>;
 		cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000 8000>;
 	};

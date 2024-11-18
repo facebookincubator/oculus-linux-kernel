@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -43,6 +43,8 @@
 #define MAX_TE_SOURCE_ID  2
 
 #define SEC_PANEL_NAME_MAX_LEN  256
+
+#define MDP_MAX 2
 
 u8 dbgfs_tx_cmd_buf[SZ_4K];
 static char dsi_display_primary[MAX_CMDLINE_PARAM_LEN];
@@ -1919,7 +1921,7 @@ static ssize_t debugfs_esd_trigger_check(struct file *file,
 		rc = panel->panel_ops.trigger_esd_attack(panel);
 		if (rc) {
 			DSI_ERR("Failed to trigger ESD attack\n");
-			goto error;
+			goto unlock;
 		}
 	}
 
@@ -4522,7 +4524,9 @@ static void dsi_display_check_sync_mode(struct dsi_display *display)
 	int num_sec_clk;
 	const char *m_clk[2] = {"pll_byte_mclk", "pll_dsi_mclk"};
 	const char *sec_clk[2];
-	int i;
+	struct device_node *of_node = display->pdev->dev.of_node;
+	struct of_phandle_iterator it;
+	int i, mdp_count;
 
 	num_sec_clk = dsi_display_get_clocks_count(display, dsi_sec_clock_name);
 
@@ -4537,6 +4541,17 @@ static void dsi_display_check_sync_mode(struct dsi_display *display)
 		if (strcmp(m_clk[i], sec_clk[i])) {
 			display->panel->ctl_op_sync = false;
 			return;
+		}
+	}
+
+	mdp_count = of_property_count_u32_elems(of_node, "qcom,mdp");
+	if (mdp_count == MDP_MAX) {
+		of_phandle_iterator_init(&it, of_node, "qcom,mdp", NULL, 0);
+		while (of_phandle_iterator_next(&it) == 0) {
+			if (!of_device_is_available(it.node)) {
+				display->panel->ctl_op_sync = false;
+				return;
+			}
 		}
 	}
 
@@ -6324,7 +6339,7 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 {
 	struct dsi_display *display = NULL;
 	struct device_node *node = NULL, *panel_node = NULL, *mdp_node = NULL;
-	int rc = 0, index = DSI_PRIMARY;
+	int rc = 0, index = DSI_PRIMARY, mdp_count;
 	bool firm_req = false;
 	struct dsi_display_boot_param *boot_disp = NULL;
 
@@ -6348,7 +6363,23 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 		goto end;
 	}
 
-	mdp_node = of_parse_phandle(pdev->dev.of_node, "qcom,mdp", 0);
+	/* initialize panel id to UINT64_MAX */
+	display->panel_id = ~0x0;
+
+	display->display_type = of_get_property(pdev->dev.of_node,
+				"label", NULL);
+	if (!display->display_type)
+		display->display_type = "primary";
+
+	if (!strcmp(display->display_type, "secondary"))
+		index = DSI_SECONDARY;
+
+	mdp_count = of_property_count_u32_elems(pdev->dev.of_node, "qcom,mdp");
+	if (mdp_count == MDP_MAX)
+		mdp_node = of_parse_phandle(pdev->dev.of_node, "qcom,mdp", index);
+	else
+		mdp_node = of_parse_phandle(pdev->dev.of_node, "qcom,mdp", 0);
+
 	if (!mdp_node) {
 		DSI_ERR("mdp_node not found\n");
 		rc = -ENODEV;
@@ -6360,16 +6391,6 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 	if (display->trusted_vm_env)
 		DSI_INFO("Display enabled with trusted vm path\n");
 
-	/* initialize panel id to UINT64_MAX */
-	display->panel_id = ~0x0;
-
-	display->display_type = of_get_property(pdev->dev.of_node,
-				"label", NULL);
-	if (!display->display_type)
-		display->display_type = "primary";
-
-	if (!strcmp(display->display_type, "secondary"))
-		index = DSI_SECONDARY;
 
 	boot_disp = &boot_displays[index];
 	node = pdev->dev.of_node;

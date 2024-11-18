@@ -32,4 +32,5 @@ int wait_for_sess_signal_receipt(struct msm_cvp_inst *inst,
 int cvp_comm_set_arp_buffers(struct msm_cvp_inst *inst);
 int cvp_comm_release_persist_buffers(struct msm_cvp_inst *inst);
 int msm_cvp_noc_error_info(struct msm_cvp_core *core);
+unsigned long long get_aon_time(void);
 #endif

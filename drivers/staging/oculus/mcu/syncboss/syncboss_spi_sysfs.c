@@ -425,7 +425,7 @@ static ssize_t poll_prio_store(struct device *dev,
 		dev_err(dev, "failed to parse integer out of %s", buf);
 		return -EINVAL;
 	} else if (temp_priority < 1 ||
-		   temp_priority > (MAX_USER_RT_PRIO - 1)) {
+		   temp_priority > (MAX_RT_PRIO - 1)) {
 		dev_err(dev, "invalid real time priority");
 		return -EINVAL;
 	}

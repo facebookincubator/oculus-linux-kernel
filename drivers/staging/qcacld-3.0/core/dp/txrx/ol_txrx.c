@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2715,11 +2715,12 @@ static int ol_txrx_get_opmode(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
  * @soc_hdl: datapath soc handle
  * @vdev_id: virtual interface id
  * @peer_mac: peer mac addr
+ * @slowpath: called from slow path or not
  *
  * Return: return peer state
  */
 static int ol_txrx_get_peer_state(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
-				  uint8_t *peer_mac)
+				  uint8_t *peer_mac, bool slowpath)
 {
 	struct ol_txrx_soc_t *soc = cdp_soc_t_to_ol_txrx_soc_t(soc_hdl);
 	ol_txrx_pdev_handle pdev =

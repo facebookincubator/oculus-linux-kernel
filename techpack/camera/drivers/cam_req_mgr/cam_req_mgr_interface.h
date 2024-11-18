@@ -87,6 +87,11 @@ typedef int (*cam_req_mgr_no_crm_handshake_device)(struct cam_req_mgr_no_crm_han
 typedef int (*cam_req_mgr_no_crm_apply_req)(struct cam_req_mgr_no_crm_apply_request *);
 typedef int (*cam_req_mgr_no_crm_pause)(struct cam_req_mgr_no_crm_pause_evt_data *);
 typedef int (*cam_req_mgr_no_crm_resume)(struct cam_req_mgr_no_crm_resume_evt_data *);
+typedef int (*cam_req_mgr_no_crm_add_req)(int32_t dev_hdl, struct cam_packet *packet,
+	struct port_pattern_period *port_enable_pattern_period);
+typedef int (*cam_req_mgr_no_crm_setup)(int32_t dev_hdl, struct cam_packet *packet,
+	struct port_pattern_period *port_enable_pattern_period);
+typedef int (*cam_req_mgr_no_crm_retrieve)(int32_t dev_hdl, struct ul_cam_packet *ul_packet);
 
 /**
  * @brief          : cam_req_mgr_crm_cb - func table
@@ -145,6 +150,9 @@ struct cam_req_mgr_no_crm_kmd_ops {
 	cam_req_mgr_no_crm_apply_req        apply_req;
 	cam_req_mgr_no_crm_pause            pause_cb;
 	cam_req_mgr_no_crm_resume           resume_cb;
+	cam_req_mgr_no_crm_add_req          add_req;
+	cam_req_mgr_no_crm_setup            setup;
+	cam_req_mgr_no_crm_retrieve         retrieve;
 };
 
 /**
@@ -464,6 +472,7 @@ struct cam_req_mgr_no_crm_apply_request {
 	uint64_t anchor_req_id;
 	uint64_t sof_irq_ts;
 	uint64_t last_apply_req;
+	uint64_t setting_id;
 };
 
 /**

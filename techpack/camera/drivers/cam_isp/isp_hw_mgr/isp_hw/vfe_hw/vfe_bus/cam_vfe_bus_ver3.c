@@ -81,6 +81,10 @@ struct cam_vfe_bus_ver3_priv {
 	void                               *worker_info;
 	uint32_t                            max_out_res;
 	uint32_t                            num_cons_err;
+	struct {
+		void                           *data;
+		cam_isp_ctx_update_fastpath_result handler_cb;
+	} fastpath_notifier;
 	struct cam_vfe_constraint_error_info      *constraint_error_list;
 };
 
@@ -1384,10 +1388,6 @@ static int cam_vfe_bus_ver3_start_wm(struct cam_isp_resource_node *wm_res)
 			rsrc_data->index);
 	}
 
-	/* Enable WM */
-	cam_io_w_mb(rsrc_data->en_cfg, common_data->mem_base +
-		rsrc_data->hw_regs->cfg);
-
 	/* Enable constraint error detection */
 	cam_io_w_mb(enable_debug_status_1,
 		common_data->mem_base +
@@ -1751,7 +1751,6 @@ skip_comp_cfg:
 		bus_irq_reg_mask[CAM_VFE_BUS_VER3_IRQ_REG0]);
 
 	comp_grp->res_state = CAM_ISP_RESOURCE_STATE_STREAMING;
-
 	return rc;
 }
 
@@ -2100,13 +2099,51 @@ static int cam_vfe_bus_ver3_release_vfe_out(void *bus_priv, void *release_args,
 	return 0;
 }
 
+static int cam_vfe_bus_ver3_handle_vfe_out_done_faster_th(
+	uint32_t evt_id, struct cam_irq_th_payload *th_payload)
+{
+	uint32_t last_consumed;
+	struct cam_isp_resource_node *vfe_out = NULL;
+	struct cam_vfe_bus_ver3_vfe_out_data *rsrc_data = NULL;
+	struct cam_vfe_bus_ver3_wm_resource_data *wm_rsrc_data;
+	struct cam_vfe_bus_ver3_priv *bus_priv;
+	struct cam_isp_resource_node *comp_grp;
+	struct cam_vfe_bus_ver3_comp_grp_data *comp_data;
+
+	vfe_out = th_payload->handler_priv;
+	if (!vfe_out) {
+		CAM_ERR_RATE_LIMIT(CAM_ISP, "Not a valid resource");
+		return -ENODEV;
+	}
+
+	rsrc_data = vfe_out->res_priv;
+	comp_grp = rsrc_data->comp_grp;
+	comp_data = comp_grp->res_priv;
+	wm_rsrc_data = rsrc_data->wm_res[PLANE_Y].res_priv;
+	bus_priv = rsrc_data->bus_priv;
+	last_consumed =  cam_io_r(wm_rsrc_data->common_data->mem_base +
+		wm_rsrc_data->hw_regs->addr_status_0);
+
+	bus_priv->fastpath_notifier.handler_cb(bus_priv->fastpath_notifier.data,
+		 last_consumed);
+
+	CAM_DBG(CAM_ISP, "VFE:%d comp_grp:%d done with last_consumed: 0x%x",
+		rsrc_data->common_data->core_index, comp_data->comp_grp_type,
+		last_consumed);
+
+	return 0;
+}
+
 static int cam_vfe_bus_ver3_start_vfe_out(
 	struct cam_isp_resource_node          *vfe_out)
 {
 	int rc = 0, i;
+	struct cam_vfe_bus_ver3_priv *bus_priv = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data  *rsrc_data = NULL;
 	struct cam_vfe_bus_ver3_common_data   *common_data = NULL;
 	uint32_t source_group = 0;
+	CAM_IRQ_HANDLER_TOP_HALF th = NULL;
+	CAM_IRQ_HANDLER_BOTTOM_HALF bh = NULL;
 
 	if (!vfe_out) {
 		CAM_ERR(CAM_ISP, "Invalid input");
@@ -2114,6 +2151,7 @@ static int cam_vfe_bus_ver3_start_vfe_out(
 	}
 
 	rsrc_data = vfe_out->res_priv;
+	bus_priv = rsrc_data->bus_priv;
 	common_data = rsrc_data->common_data;
 	source_group = rsrc_data->source_group;
 
@@ -2138,8 +2176,10 @@ static int cam_vfe_bus_ver3_start_vfe_out(
 	for (i = 0; i < rsrc_data->num_wm; i++)
 		rc = cam_vfe_bus_ver3_start_wm(&rsrc_data->wm_res[i]);
 
-	rc = cam_vfe_bus_ver3_start_comp_grp(rsrc_data,
-		rsrc_data->stored_irq_masks[CAM_VFE_BUS_VER3_BUF_DONE_MASK]);
+	if ((!bus_priv->common_data.buf_done_evt_control) ||
+		(bus_priv->common_data.buf_done_evt_control && rsrc_data->primary_port_en))
+		rc = cam_vfe_bus_ver3_start_comp_grp(rsrc_data,
+			rsrc_data->stored_irq_masks[CAM_VFE_BUS_VER3_BUF_DONE_MASK]);
 
 	if (rsrc_data->is_dual && !rsrc_data->is_master)
 		goto end;
@@ -2149,13 +2189,20 @@ static int cam_vfe_bus_ver3_start_vfe_out(
 		goto end;
 	}
 
+	if (bus_priv->common_data.buf_done_evt_control &&
+		bus_priv->fastpath_notifier.handler_cb) {
+		th = cam_vfe_bus_ver3_handle_vfe_out_done_faster_th;
+	} else {
+		th = vfe_out->top_half_handler;
+		bh = vfe_out->bottom_half_handler;
+	}
+
 	vfe_out->irq_handle = cam_irq_controller_subscribe_irq(
 		common_data->buf_done_controller,
 		CAM_IRQ_PRIORITY_1,
 		rsrc_data->stored_irq_masks[CAM_VFE_BUS_VER3_BUF_DONE_MASK],
 		vfe_out,
-		vfe_out->top_half_handler,
-		vfe_out->bottom_half_handler,
+		th, bh,
 		vfe_out->worker_info,
 		&worker_bh_api,
 		CAM_IRQ_EVT_GROUP_0);
@@ -2207,11 +2254,11 @@ end:
 }
 
 static int cam_vfe_bus_ver3_stop_vfe_out(
-	struct cam_isp_resource_node          *vfe_out)
+	struct cam_isp_resource_node *vfe_out)
 {
 	int rc = 0, i;
+	struct cam_vfe_bus_ver3_common_data   *common_data;
 	struct cam_vfe_bus_ver3_vfe_out_data  *rsrc_data = NULL;
-	struct cam_vfe_bus_ver3_common_data   *common_data = NULL;
 
 	if (!vfe_out) {
 		CAM_ERR(CAM_ISP, "Invalid input");
@@ -2229,7 +2276,7 @@ static int cam_vfe_bus_ver3_stop_vfe_out(
 		return rc;
 	}
 
-	rc = cam_vfe_bus_ver3_stop_comp_grp(rsrc_data->comp_grp);
+	cam_vfe_bus_ver3_stop_comp_grp(rsrc_data->comp_grp);
 
 	for (i = 0; i < rsrc_data->num_wm; i++)
 		rc = cam_vfe_bus_ver3_stop_wm(&rsrc_data->wm_res[i]);
@@ -2252,6 +2299,7 @@ static int cam_vfe_bus_ver3_stop_vfe_out(
 		cam_vfe_bus_ver3_unsubscribe_init_irq(rsrc_data->bus_priv);
 
 	vfe_out->res_state = CAM_ISP_RESOURCE_STATE_RESERVED;
+
 	return rc;
 }
 
@@ -2304,6 +2352,14 @@ static int cam_vfe_bus_ver3_stop_vfe_out_wrapper(
 		CAM_ERR(CAM_ISP, "Stop VFE:%d out_type:0x%X failed",
 			rsrc_data->common_data->core_index, rsrc_data->out_type);
 	}
+
+	if (!vfe_stop->is_internal_stop) {
+		rsrc_data->bus_priv->common_data.buf_done_evt_control = false;
+		rsrc_data->primary_port_en = false;
+		rsrc_data->bus_priv->fastpath_notifier.data = NULL;
+		rsrc_data->bus_priv->fastpath_notifier.handler_cb = NULL;
+	}
+
 	return rc;
 }
 
@@ -2416,8 +2472,10 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_bottom_half(
 	uint64_t                               comp_mask = 0;
 	uint32_t                               out_list[CAM_VFE_BUS_VER3_VFE_OUT_MAX];
 
-	rc = cam_vfe_bus_ver3_handle_comp_done_bottom_half(
-		rsrc_data, evt_payload_priv, &comp_mask);
+	//TO-DO this can be optimized for single callback per comp group?
+	rc = cam_vfe_bus_ver3_handle_comp_done_bottom_half(rsrc_data,
+		evt_payload_priv, &comp_mask);
+
 	CAM_DBG(CAM_ISP, "VFE:%d out_type:0x%X comp_mask: 0x%lx rc:%d",
 		rsrc_data->common_data->core_index, rsrc_data->out_type, comp_mask, rc);
 
@@ -3319,6 +3377,72 @@ static int cam_vfe_bus_ver3_config_wm(void *priv, void *cmd_args,
 	return 0;
 }
 
+static int cam_vfe_bus_ver3_update_wm_for_virtual_frame(
+	struct cam_isp_hw_get_cmd_update *update_buf,
+	struct cam_vfe_bus_ver3_vfe_out_data *vfe_out_data)
+{
+	int i, j, rc = 0;
+	uint32_t *reg_val_pair;
+	uint32_t num_regval_pairs = 0, en_cfg = 0, size;
+	struct cam_cdm_utils_ops *cdm_util_ops;
+	struct cam_vfe_bus_ver3_wm_resource_data *wm_data = NULL;
+
+	mutex_lock(&vfe_out_data->common_data->bus_mutex);
+	cdm_util_ops = vfe_out_data->cdm_util_ops;
+	reg_val_pair = &vfe_out_data->common_data->io_buf_update[0];
+
+	for (i = 0, j = 0; i < vfe_out_data->num_wm; i++) {
+		if (j >= (MAX_REG_VAL_PAIR_SIZE - MAX_BUF_UPDATE_REG_NUM * 2)) {
+			CAM_ERR(CAM_ISP, "reg_val_pair %d exceeds the array limit %zu",
+				j, MAX_REG_VAL_PAIR_SIZE);
+			rc = -ENOMEM;
+			goto end;
+		}
+
+		wm_data = vfe_out_data->wm_res[i].res_priv;
+		en_cfg = wm_data->en_cfg | BIT(vfe_out_data->common_data->virtual_frame_en_shift);
+
+		/*
+		 * Trigger a dummy entry into bus addr FIFO,
+		 * since virtual frame is enabled addr is dropped
+		 */
+		CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
+			wm_data->hw_regs->image_addr, 0x0);
+		CAM_VFE_ADD_REG_VAL_PAIR(reg_val_pair, j,
+			wm_data->hw_regs->cfg, en_cfg);
+	}
+
+	num_regval_pairs = j / 2;
+	if (num_regval_pairs) {
+		size = cdm_util_ops->cdm_required_size_reg_random(
+			num_regval_pairs);
+
+		/* cdm util returns dwords, need to convert to bytes */
+		if ((size * 4) > update_buf->cmd.size) {
+			CAM_ERR(CAM_ISP,
+				"Failed! Buf size:%d insufficient, expected size:%d",
+				update_buf->cmd.size, size);
+			rc = -ENOMEM;
+			goto end;
+		}
+
+		cdm_util_ops->cdm_write_regrandom(
+			update_buf->cmd.cmd_buf_addr,
+			num_regval_pairs, reg_val_pair);
+
+		/* cdm util returns dwords, need to convert to bytes */
+		update_buf->cmd.used_bytes = size * 4;
+	} else {
+		CAM_DBG(CAM_ISP, "No reg val pairs updated for out_type: %u num_wms: %u",
+			vfe_out_data->out_type, vfe_out_data->num_wm);
+		update_buf->cmd.used_bytes = 0;
+	}
+
+end:
+	mutex_unlock(&vfe_out_data->common_data->bus_mutex);
+	return rc;
+}
+
 static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 	uint32_t arg_size)
 {
@@ -3346,6 +3470,10 @@ static int cam_vfe_bus_ver3_update_wm(void *priv, void *cmd_args,
 		CAM_ERR(CAM_ISP, "Invalid data");
 		return -EINVAL;
 	}
+
+	/* Virtual Frame Programming */
+	if (update_buf->wm_update->en_virtual_frame)
+		return cam_vfe_bus_ver3_update_wm_for_virtual_frame(update_buf, vfe_out_data);
 
 	cdm_util_ops = vfe_out_data->cdm_util_ops;
 	if ((update_buf->wm_update->num_buf != vfe_out_data->num_wm) &&
@@ -4131,6 +4259,35 @@ end:
 	return rc;
 }
 
+static int cam_vfe_bus_ver3_update_primary_port_config(
+	struct cam_vfe_bus_ver3_priv *bus_priv, void *cmd_args)
+{
+	struct cam_isp_hw_get_cmd_update            *primary_port_config;
+	struct cam_vfe_bus_ver3_vfe_out_data        *vfe_out_data = NULL;
+
+	if (!cmd_args) {
+		CAM_ERR(CAM_ISP, "Invalid args");
+		return -EINVAL;
+	}
+
+	primary_port_config = cmd_args;
+	vfe_out_data = primary_port_config->res->res_priv;
+
+	if (!vfe_out_data) {
+		CAM_ERR(CAM_ISP, "Invalid args vfe_out_data[%pK]", vfe_out_data);
+		return -EINVAL;
+	}
+
+	bus_priv->common_data.buf_done_evt_control = true;
+	vfe_out_data->primary_port_en = true;
+
+	CAM_DBG(CAM_ISP, "Res: 0x%x selected as primary port on VFE: %u",
+		vfe_out_data->wm_res->res_id, vfe_out_data->common_data->hw_intf->hw_idx);
+
+	return 0;
+}
+
+
 static int cam_vfe_bus_ver3_update_res_wm(
 	struct cam_vfe_bus_ver3_priv           *ver3_bus_priv,
 	struct cam_vfe_hw_vfe_out_acquire_args *out_acq_args,
@@ -4760,6 +4917,22 @@ static int cam_vfe_bus_ver3_process_cmd(
 	case CAM_ISP_HW_CMD_CHECK_RUP_FOR_APPLIED_REQ:
 		rc = cam_vfe_bus_ver3_check_rup_applied_req(priv, cmd_args, arg_size);
 		break;
+	case CAM_ISP_HW_CMD_PRIMARY_PORT_CONFIG:
+		bus_priv = (struct cam_vfe_bus_ver3_priv  *)priv;
+		rc = cam_vfe_bus_ver3_update_primary_port_config(bus_priv, cmd_args);
+		break;
+	case CAM_ISP_HW_CMD_FAST_RESULT_NOTIFIER_CFG: {
+		struct cam_isp_hw_fast_result_notifier_cfg *notifier_cfg;
+
+		bus_priv = (struct cam_vfe_bus_ver3_priv  *) priv;
+		notifier_cfg = (struct cam_isp_hw_fast_result_notifier_cfg *)cmd_args;
+		if (notifier_cfg->data && notifier_cfg->handler_cb) {
+			bus_priv->fastpath_notifier.data = notifier_cfg->data;
+			bus_priv->fastpath_notifier.handler_cb = notifier_cfg->handler_cb;
+			rc = 0;
+		}
+	}
+		break;
 	default:
 		CAM_ERR_RATE_LIMIT(CAM_ISP, "Invalid camif process command:%d",
 			cmd_type);
@@ -4846,12 +5019,15 @@ int cam_vfe_bus_ver3_init(
 		ver3_hw_info->no_tunnelingId_shift;
 	bus_priv->common_data.tunneling_overflow_shift =
 		ver3_hw_info->tunneling_overflow_shift;
+	bus_priv->common_data.virtual_frame_en_shift =
+		ver3_hw_info->virtual_frame_en_shift;
 	bus_priv->common_data.disable_ubwc_comp = false;
 	bus_priv->common_data.supported_irq      = ver3_hw_info->supported_irq;
 	bus_priv->common_data.comp_config_needed =
 		ver3_hw_info->comp_cfg_needed;
 	bus_priv->common_data.init_irq_subscribed = false;
 	bus_priv->common_data.disable_mmu_prefetch = false;
+	bus_priv->common_data.buf_done_evt_control = false;
 	bus_priv->common_data.pack_align_shift =
 		ver3_hw_info->pack_align_shift;
 	bus_priv->common_data.max_bw_counter_limit =

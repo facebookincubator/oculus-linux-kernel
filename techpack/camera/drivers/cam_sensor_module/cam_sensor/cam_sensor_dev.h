@@ -153,6 +153,7 @@ struct cam_sensor_ctrl_t {
 	bool                           hw_no_probe_pw_ops;
 	int                            anchor_pd;
 	bool                           en_perframe_reg_dump;
+	bool                           is_setting_id_valid;
 	uint64_t                       last_applied_req;
 	uint16_t                       vc;
 	uint16_t                       dt;

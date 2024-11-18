@@ -1033,6 +1033,7 @@ enum udp_qos_upgrade {
  * @ctw: stores CT Window value once we receive Opps command from
  *       wpa_supplicant then using CT Window value we need to Enable
  *       Opportunistic Power Save
+ * @allow_power_save: STA/CLI powersave enable/disable from userspace
  * @mac_addr: Current MAC Address for the adapter
  * @mld_addr: MLD address for adapter
  * @event_flags: a bitmap of hdd_adapter_flags
@@ -1182,6 +1183,7 @@ struct hdd_adapter {
 
 	uint8_t ops;
 	uint32_t ctw;
+	bool allow_power_save;
 
 	struct qdf_mac_addr mac_addr;
 	struct qdf_mac_addr mld_addr;

@@ -54,6 +54,13 @@
 	(dp->state &= ~(x)); \
 	dp_display_state_log("remove "#x); }
 
+#define DP_DISPLAY_MAX_HACTIVE_4K		4096
+#define DP_DISPLAY_MAX_HACTIVE_2K		2048
+#define DP_DISPLAY_MAX_HACTIVE_1080P	1920
+#define DP_DISPLAY_MAX_VACTIVE			2160
+#define DP_DISPLAY_MAX_VACTIVE_1080P	1080
+#define DP_DISPLAY_MAX_VREFRESH			60
+
 enum dp_display_states {
 	DP_STATE_DISCONNECTED           = 0,
 	DP_STATE_CONFIGURED             = BIT(0),
@@ -2132,6 +2139,10 @@ static int dp_init_sub_modules(struct dp_display_private *dp)
 		goto error_catalog;
 	}
 
+	dp->dp_display.max_hdisplay = DP_DISPLAY_MAX_HACTIVE_1080P;
+	dp->dp_display.max_vdisplay = DP_DISPLAY_MAX_VACTIVE_1080P;
+	dp->dp_display.max_vrefresh = DP_DISPLAY_MAX_VREFRESH;
+
 	dp->catalog->hpd.set_edp_mode(&dp->catalog->hpd, dp->dp_display.is_edp);
 	dp_core_revision = dp_catalog_get_dp_core_version(dp->catalog);
 
@@ -3109,6 +3120,21 @@ static int dp_display_validate_topology(struct dp_display_private *dp,
 	return 0;
 }
 
+static int dp_display_validate_limits(struct dp_display *dp_display,
+		struct drm_display_mode *mode, struct dp_display_mode *dp_mode)
+{
+	u32 vrefresh = dp_mode->timing.refresh_rate;
+
+	if (mode->hdisplay > dp_display->max_hdisplay || mode->vdisplay > dp_display->max_vdisplay
+			|| vrefresh > dp_display->max_vrefresh) {
+		DP_DEBUG("mode %sx%dx%dx%d has been limited by throttle\n",
+				mode->name, mode->hdisplay, mode->vdisplay, vrefresh);
+		return -E2BIG;
+	}
+
+	return 0;
+}
+
 static enum drm_mode_status dp_display_validate_mode(
 		struct dp_display *dp_display,
 		void *panel, struct drm_display_mode *mode,
@@ -3157,6 +3183,10 @@ static enum drm_mode_status dp_display_validate_mode(
 		goto end;
 
 	rc = dp_display_validate_pixel_clock(dp_mode, dp_display->max_pclk_khz);
+	if (rc)
+		goto end;
+
+	rc = dp_display_validate_limits(dp_display, mode, &dp_mode);
 	if (rc)
 		goto end;
 

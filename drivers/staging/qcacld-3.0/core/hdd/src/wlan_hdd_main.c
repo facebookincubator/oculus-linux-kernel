@@ -6781,6 +6781,21 @@ hdd_set_vdev_mlo_external_sae_auth_conversion(struct wlan_objmgr_vdev *vdev,
 }
 #endif
 
+static void
+hdd_vdev_configure_usr_ps_params(struct hdd_context *hdd_ctx,
+				 struct wlan_objmgr_vdev *vdev,
+				 struct hdd_adapter *adapter)
+{
+	enum QDF_OPMODE opmode = wlan_vdev_mlme_get_opmode(vdev);
+
+	if (cds_get_conparam() == QDF_GLOBAL_FTM_MODE || !adapter)
+		return;
+	if (opmode != QDF_STA_MODE && opmode != QDF_P2P_CLIENT_MODE)
+		return;
+	ucfg_mlme_set_user_ps(hdd_ctx->psoc, wlan_vdev_get_id(vdev),
+			      adapter->allow_power_save);
+}
+
 int hdd_vdev_create(struct hdd_adapter *adapter)
 {
 	QDF_STATUS status;
@@ -6892,6 +6907,8 @@ int hdd_vdev_create(struct hdd_adapter *adapter)
 	/* Configure vdev params */
 	ucfg_fwol_configure_vdev_params(hdd_ctx->psoc, hdd_ctx->pdev,
 					adapter->device_mode, adapter->vdev_id);
+
+	hdd_vdev_configure_usr_ps_params(hdd_ctx, vdev, adapter);
 
 	hdd_nofl_debug("vdev %d created successfully", adapter->vdev_id);
 
@@ -10036,18 +10053,45 @@ out:
 }
 
 #ifdef SHUTDOWN_WLAN_IN_SYSTEM_SUSPEND
-static QDF_STATUS
-hdd_shutdown_wlan_in_suspend_prepare(struct hdd_context *hdd_ctx)
+static bool
+hdd_shutdown_wlan_is_applicable(struct hdd_context *hdd_ctx, unsigned long evt)
 {
-#define SHUTDOWN_IN_SUSPEND_RETRY 10
+	enum pmo_suspend_mode mode;
+
+	if (evt == PM_HIBERNATION_PREPARE)
+		return true;
+
+	mode = ucfg_pmo_get_suspend_mode(hdd_ctx->psoc);
+	hdd_debug("suspend mode is %d", mode);
+
+	if (mode == PMO_SUSPEND_SHUTDOWN)
+		return true;
+
+	if (mode == PMO_SUSPEND_WOW && !hdd_is_any_interface_open(hdd_ctx))
+		return true;
+
+	return false;
+}
+
+static QDF_STATUS
+hdd_shutdown_wlan_in_suspend_prepare(struct hdd_context *hdd_ctx,
+				     unsigned long event)
+{
+#define SHUTDOWN_IN_SUSPEND_RETRY 30
 
 	int count = 0;
 
-	if (ucfg_pmo_get_suspend_mode(hdd_ctx->psoc) != PMO_SUSPEND_SHUTDOWN) {
-		hdd_debug("shutdown in suspend not supported");
+	if (hdd_ctx->driver_status != DRIVER_MODULES_ENABLED) {
+		hdd_debug("Driver Modules not Enabled ");
 		return 0;
 	}
 
+	if (!hdd_shutdown_wlan_is_applicable(hdd_ctx, event)) {
+		hdd_debug("needn't shutdown in suspend");
+		return 0;
+	}
+
+	/*try to wait interface down for PMO_SUSPEND_SHUTDOWN mode*/
 	while (hdd_is_any_interface_open(hdd_ctx) &&
 	       count < SHUTDOWN_IN_SUSPEND_RETRY) {
 		count++;
@@ -10058,8 +10102,6 @@ hdd_shutdown_wlan_in_suspend_prepare(struct hdd_context *hdd_ctx)
 		hdd_err("some adapters not stopped");
 		return -EBUSY;
 	}
-
-	hdd_debug("call pld idle shutdown directly");
 	return pld_idle_shutdown(hdd_ctx->parent_dev, hdd_psoc_idle_shutdown);
 }
 
@@ -10077,7 +10119,7 @@ static int hdd_pm_notify(struct notifier_block *b,
 	switch (event) {
 	case PM_SUSPEND_PREPARE:
 	case PM_HIBERNATION_PREPARE:
-		if (0 != hdd_shutdown_wlan_in_suspend_prepare(hdd_ctx))
+		if (0 != hdd_shutdown_wlan_in_suspend_prepare(hdd_ctx, event))
 			return NOTIFY_STOP;
 		break;
 	case PM_POST_SUSPEND:

@@ -1238,6 +1238,7 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 	bool is_exist = false;
 	unsigned long i_ino;
 	uintptr_t kvaddr = 0;
+	int32_t map_fd = 0;
 
 	if (!atomic_read(&cam_mem_mgr_state)) {
 		CAM_ERR(CAM_MEM, "failed. mem_mgr not initialized");
@@ -1290,6 +1291,9 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 				i, tbl.bufq[idx].hdls[i], tbl.bufq[idx].iova[i]);
 
 		mmu_hdl_idx = tbl.bufq[idx].num_hdl;
+		map_fd = tbl.bufq[idx].fd;
+	} else {
+		map_fd = cmd->fd;
 	}
 
 	if ((cmd->flags & CAM_MEM_FLAG_HW_READ_WRITE) ||
@@ -1298,7 +1302,7 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 		rc = cam_mem_util_map_hw_va(cmd->flags,
 			cmd->mmu_hdls,
 			cmd->num_hdl,
-			cmd->fd,
+			map_fd,
 			dmabuf,
 			&len,
 			CAM_SMMU_REGION_IO,
@@ -1325,11 +1329,12 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 		tbl.bufq[idx].is_nsp_buf = true;
 	}
 
-	tbl.bufq[idx].fd = cmd->fd;
+	tbl.bufq[idx].fd = map_fd;
 	tbl.bufq[idx].i_ino = i_ino;
 	tbl.bufq[idx].dma_buf = NULL;
-	tbl.bufq[idx].flags = cmd->flags;
-	tbl.bufq[idx].buf_handle = GET_MEM_HANDLE(idx, cmd->fd);
+	tbl.bufq[idx].flags |= cmd->flags;
+	tbl.bufq[idx].buf_handle = GET_MEM_HANDLE(idx, map_fd);
+
 	if (cmd->flags & CAM_MEM_FLAG_PROTECTED_MODE)
 		CAM_MEM_MGR_SET_SECURE_HDL(tbl.bufq[idx].buf_handle, true);
 
@@ -1341,36 +1346,32 @@ int cam_mem_mgr_map(struct cam_mem_mgr_map_cmd *cmd)
 					dmabuf, rc);
 			goto map_kernel_fail;
 		}
+		tbl.bufq[idx].kmdvaddr = kvaddr;
 	}
 
-	tbl.bufq[idx].kmdvaddr = kvaddr;
 	tbl.bufq[idx].dma_buf = dmabuf;
 	tbl.bufq[idx].len = len;
 	tbl.bufq[idx].num_hdl = mmu_hdl_idx + cmd->num_hdl;
 	memcpy(&tbl.bufq[idx].hdls[mmu_hdl_idx], cmd->mmu_hdls,
 		sizeof(int32_t) * cmd->num_hdl);
 
-	tbl.bufq[idx].is_imported = true;
 	tbl.bufq[idx].is_internal = is_internal;
+	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_USER;
 
 	if (!is_exist) {
 		if (cmd->flags & CAM_MEM_FLAG_KMD_ACCESS)
 			kref_init(&tbl.bufq[idx].krefcount);
 		kref_init(&tbl.bufq[idx].urefcount);
-	} else {
-		kref_get(&tbl.bufq[idx].urefcount);
-		dma_buf_put(dmabuf);
-	}
-
-	tbl.bufq[idx].smmu_mapping_client = CAM_SMMU_MAPPING_USER;
-
-	if (!is_exist) {
 		rc = cam_mem_add_buf_to_eb(idx);
 		if (rc < 0) {
 			CAM_ERR(CAM_MEM, "add buf to existing buf table failed dma_buf %pK idx %d",
 				tbl.bufq[idx].dma_buf, idx);
 			goto map_kernel_fail;
 		}
+		tbl.bufq[idx].is_imported = true;
+	} else {
+		kref_get(&tbl.bufq[idx].urefcount);
+		dma_buf_put(dmabuf);
 	}
 
 	mutex_unlock(&tbl.bufq[idx].q_lock);

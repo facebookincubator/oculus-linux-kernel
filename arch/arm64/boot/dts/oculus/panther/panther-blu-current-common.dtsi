@@ -21,6 +21,27 @@
 	meta,blu-default-duty-cycle = <58>; /* 5.8% duty */
 };
 
+&panther_panel_boe {
+	meta,blu-default-duty-cycle = <58>; /* 5.8% duty */
+};
+
+&panther_panel_jdi_nvt {
+	meta,blu-default-duty-cycle = <111>; /* 11.1% duty */
+	meta,panel-enable-load = <43000>;
+};
+
+&panther_panel_sharp {
+	meta,blu-default-duty-cycle = <58>; /* 5.8% duty */
+};
+
+&panther_panel_boe_eos {
+	meta,blu-default-duty-cycle = <58>; /* 5.8% duty */
+};
+
+&panther_panel_sharp_eos {
+	meta,blu-default-duty-cycle = <58>; /* 5.8% duty */
+};
+
 &dsi_panel_pwr_supply_panther {
 	qcom,panel-supply-entry@5 {
 		qcom,supply-enable-load = <70710>;
@@ -31,4 +52,3 @@
 &mp3314a {
 	iset-ext-resistor = <24900>;
 };
-

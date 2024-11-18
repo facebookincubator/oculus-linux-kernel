@@ -242,7 +242,9 @@ typedef enum {
 	CS_SCHED_LOAD_BALANCE,
 	CS_SPREAD_PAGE,
 	CS_SPREAD_SLAB,
+#ifdef CONFIG_META_WAKE_AFFINE
 	CS_SCHED_WAKE_AFFINE,
+#endif
 } cpuset_flagbits_t;
 
 /* convenient tests for these bits */
@@ -286,10 +288,12 @@ static inline int is_spread_slab(const struct cpuset *cs)
 	return test_bit(CS_SPREAD_SLAB, &cs->flags);
 }
 
+#ifdef CONFIG_META_WAKE_AFFINE
 static inline int is_sched_wake_affine(const struct cpuset *cs)
 {
 	return test_bit(CS_SCHED_WAKE_AFFINE, &cs->flags);
 }
+#endif
 
 static inline int is_partition_root(const struct cpuset *cs)
 {
@@ -483,6 +487,7 @@ static void cpuset_update_task_spread_flag(struct cpuset *cs,
 		task_clear_spread_slab(tsk);
 }
 
+#ifdef CONFIG_META_WAKE_AFFINE
 static void cpuset_update_task_sched_wake_affine_flag(struct cpuset *cs,
 					struct task_struct *tsk)
 {
@@ -491,6 +496,7 @@ static void cpuset_update_task_sched_wake_affine_flag(struct cpuset *cs,
 	else
 		tsk->wake_affine = false;
 }
+#endif /* CONFIG_META_WAKE_AFFINE */
 
 /*
  * is_cpuset_subset(p, q) - Is cpuset p a subset of cpuset q?
@@ -1983,7 +1989,9 @@ static void update_tasks_flags(struct cpuset *cs)
 	css_task_iter_start(&cs->css, 0, &it);
 	while ((task = css_task_iter_next(&it))) {
 		cpuset_update_task_spread_flag(cs, task);
+#ifdef CONFIG_META_WAKE_AFFINE
 		cpuset_update_task_sched_wake_affine_flag(cs, task);
+#endif
 	}
 	css_task_iter_end(&it);
 }
@@ -2357,7 +2365,9 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 
 		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
 		cpuset_update_task_spread_flag(cs, task);
+#ifdef CONFIG_META_WAKE_AFFINE
 		cpuset_update_task_sched_wake_affine_flag(cs, task);
+#endif
 	}
 
 	/*
@@ -2421,7 +2431,9 @@ typedef enum {
 	FILE_MEMORY_PRESSURE,
 	FILE_SPREAD_PAGE,
 	FILE_SPREAD_SLAB,
+#ifdef CONFIG_META_WAKE_AFFINE
 	FILE_SCHED_WAKE_AFFINE,
+#endif
 } cpuset_filetype_t;
 
 static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
@@ -2451,9 +2463,11 @@ static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
 	case FILE_SCHED_LOAD_BALANCE:
 		retval = update_flag(CS_SCHED_LOAD_BALANCE, cs, val);
 		break;
+#ifdef CONFIG_META_WAKE_AFFINE
 	case FILE_SCHED_WAKE_AFFINE:
 		retval = update_flag(CS_SCHED_WAKE_AFFINE, cs, val);
 		break;
+#endif
 	case FILE_MEMORY_MIGRATE:
 		retval = update_flag(CS_MEMORY_MIGRATE, cs, val);
 		break;
@@ -2623,8 +2637,10 @@ static u64 cpuset_read_u64(struct cgroup_subsys_state *css, struct cftype *cft)
 		return is_mem_hardwall(cs);
 	case FILE_SCHED_LOAD_BALANCE:
 		return is_sched_load_balance(cs);
+#ifdef CONFIG_META_WAKE_AFFINE
 	case FILE_SCHED_WAKE_AFFINE:
 		return is_sched_wake_affine(cs);
+#endif
 	case FILE_MEMORY_MIGRATE:
 		return is_memory_migrate(cs);
 	case FILE_MEMORY_PRESSURE_ENABLED:
@@ -2777,12 +2793,14 @@ static struct cftype legacy_files[] = {
 		.private = FILE_SCHED_RELAX_DOMAIN_LEVEL,
 	},
 
+#ifdef CONFIG_META_WAKE_AFFINE
 	{
 		.name = "sched_wake_affine",
 		.read_u64 = cpuset_read_u64,
 		.write_u64 = cpuset_write_u64,
 		.private = FILE_SCHED_WAKE_AFFINE,
 	},
+#endif
 
 	{
 		.name = "memory_migrate",

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 
-#include "anorak-oculus-base.dtsi"
-#include "anorak-oculus-display.dtsi"
-#include "anorak-oculus-flood-led.dtsi"
+#include "../anorak-oculus-base.dtsi"
+#include "../anorak-oculus-display.dtsi"
+#include "../anorak-oculus-flood-led.dtsi"
 
 #include "panther-camera.dtsi"
 #include "panther-adc.dtsi"
@@ -69,8 +69,6 @@
 
 /* NRF SPI */
 &syncboss_nrf {
-	meta,min-time-between-trans-ns = <500000>;
-
 	powerstate@0 {
 		/delete-property/ meta,syncboss-has-prox;
 	};
@@ -172,13 +170,15 @@
 	 /*
 	 * Mark XPU-protected GPIOs are reserved, to prevent
 	 * attempted initialization at boot.
-     * GPIO  3: SGPIO3_TZ_ENTER_PRVCY_MODE (tz_enter_privacy_mode)
-     * GPIO  7: SGPIO7_TZ_CAM_L14B_LS_EN (cam_l14b_enable)
-     * GPIO 11: SGPIO110_TER_BUTTON_TZ (ter_button)
-     * GPIO 43: SGPIO43_TZ_L8B_VSNS_IN (l8b_voltage_sense)
-     * GPIO 44: SGPIO44_TZ_L14B_VSNS_IN (l14b_voltage_sense)
+	 * GPIO  3: SGPIO3_TZ_ENTER_PRVCY_MODE (tz_enter_privacy_mode)
+	 * GPIO  5: SGPIO5_TZ_AUD_SW (dmic_enable)
+	 * GPIO  7: SGPIO7_TZ_CAM_L14B_LS_EN (cam_l14b_enable)
+	 * GPIO 10: SGPIO10_TZ_LED_3SEC (cam_on_led_enable)
+	 * GPIO 11: SGPIO110_TER_BUTTON_TZ (ter_button)
+	 * GPIO 43: SGPIO43_TZ_L8B_VSNS_IN (l8b_voltage_sense)
+	 * GPIO 44: SGPIO44_TZ_L14B_VSNS_IN (l14b_voltage_sense)
 	 */
-	qcom,gpios-reserved = <3 7 11 43 44>;
+	qcom,gpios-reserved = <3 5 7 10 11 43 44>;
 	hall_ak09973_int: hall_ak09973_int {
 		mux {
 			pins = "gpio40";

@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config META_WAKE_AFFINE
+	bool "Allows tasks to wake affine inside a cpuset."
+	select CPUSETS
+

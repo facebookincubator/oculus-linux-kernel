@@ -99,6 +99,14 @@ int cam_sensor_establish_link(struct cam_req_mgr_core_dev_link_setup *link);
 int cam_sensor_no_crm_pause_apply(struct cam_req_mgr_no_crm_pause_evt_data *pause);
 
 /**
+ * @add: Add request to the per frame queue
+ *
+ * This API add the request to the sensor queue
+ */
+int cam_sensor_no_crm_add_req(int32_t dev_hdl, struct cam_packet *packet,
+	struct port_pattern_period *port_enable_pattern_period);
+
+/**
  * @resume: resume event data.
  *
  * This API resumes request apply to the sensor

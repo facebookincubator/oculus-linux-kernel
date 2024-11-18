@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -1059,26 +1059,37 @@ static int cam_csiphy_program_secure_mode(struct csiphy_device *csiphy_dev,
 
 	if (csiphy_dev->is_phy_protect) {
 
-		uint32_t do_scm_call = 1;
-		uint32_t phy_mask_len = 0;
-		uint32_t adj_lane_mask = 0;
-		int i =  0;
+		uint8_t  do_scm_call = 0;
 
-		for(i = 0; i < csiphy_dev->acquire_count; i++) {
-			if ((i != offset) && csiphy_dev->csiphy_info[i].secure_mode) {
-				do_scm_call = 0;
+		do_scm_call = csiphy_dev->csiphy_info[offset].secure_mode;
+
+		if (do_scm_call &&
+				(protect == CAM_SECURE_MODE_NON_SECURE) &&
+				((csiphy_dev->scm_ref_count > 1) ||
+				(csiphy_dev->scm_ref_count == 0)))
+			do_scm_call = 0;
+
+		if (do_scm_call && (protect != csiphy_dev->scm_mode)) {
+			rc = cam_csiphy_notify_secure_mode(csiphy_dev, protect, offset, is_shutdown);
+			if (rc == 0)
+				csiphy_dev->scm_mode = protect;
+		}
+
+		if (rc == 0) {
+			if (protect == CAM_SECURE_MODE_SECURE) {
+				csiphy_dev->scm_ref_count++;
+			} else if ((protect == CAM_SECURE_MODE_NON_SECURE) &&
+						(csiphy_dev->scm_ref_count > 0)) {
+				csiphy_dev->scm_ref_count--;
 			}
 		}
 
-		if (do_scm_call) {
-			rc = cam_csiphy_notify_secure_mode(csiphy_dev, protect, offset, is_shutdown);
-		}
-
-		CAM_DBG(CAM_CSIPHY, "PHY protect : csi phy idx:%d, cp_reg_mask:0x%lx adj:%x phy_mask_len: %d",
+		CAM_DBG(CAM_CSIPHY, "PHY protect:csi phy idx:%d, cp_reg_mask:0x%lx",
 		csiphy_dev->soc_info.index,
-		csiphy_dev->csiphy_info[offset].csiphy_cpas_cp_reg_mask,
-		adj_lane_mask,
-		phy_mask_len);
+		csiphy_dev->csiphy_info[offset].csiphy_cpas_cp_reg_mask);
+		CAM_DBG(CAM_CSIPHY, "PHY protect: scm_mode %d, scm_ref_count %d",
+		csiphy_dev->scm_mode,
+		csiphy_dev->scm_ref_count);
 	} else {
 		rc = cam_csiphy_notify_secure_mode(csiphy_dev, protect, offset, is_shutdown);
 	}
@@ -1374,6 +1385,8 @@ void cam_csiphy_shutdown(struct csiphy_device *csiphy_dev)
 	csiphy_dev->acquire_count = 0;
 	csiphy_dev->start_dev_count = 0;
 	csiphy_dev->csiphy_state = CAM_CSIPHY_INIT;
+	csiphy_dev->scm_mode = false;
+	csiphy_dev->scm_ref_count = 0;
 }
 
 static int32_t cam_csiphy_external_cmd(struct csiphy_device *csiphy_dev,

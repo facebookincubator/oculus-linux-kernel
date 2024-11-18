@@ -9,8 +9,11 @@
 
 #include "sde_hw_util.h"
 #include "sde_hw_catalog.h"
+#include "sde_hw_ctl.h"
 #include "sde_hw_dspp.h"
 #include "sde_hw_sspp.h"
+
+struct drm_msm_hist;
 
 /**
  * reg_dmav1_init_dspp_op_v4() - initialize the dspp feature op for sde v4
@@ -321,5 +324,19 @@ void reg_dmav1_setup_spr_pu_cfgv1(struct sde_hw_dspp *ctx, void *cfg);
  * @cfg: pointer to struct sde_hw_cp_cfg
  */
 void reg_dmav1_setup_demurav1(struct sde_hw_dspp *ctx, void *cfg);
+
+/**
+ * reg_dmav1_trigger_read_dspp_histv17() - function to trigger a hist v1_7 read
+ * @ctx: dspp ctx info
+ * @ctl: pointer to struct sde_hw_ctl
+ */
+void reg_dmav1_trigger_read_dspp_histv17(struct sde_hw_dspp *ctx, struct sde_hw_ctl *ctl);
+
+/**
+ * reg_dmav1_copy_data_dspp_histv17() - function to trigger a hist v1_7 read
+ * @ctx: dspp ctx info
+ * @data: pointer to struct drm_msm_hist
+ */
+void reg_dmav1_copy_data_dspp_histv17(struct sde_hw_dspp *ctx, struct drm_msm_hist *data);
 
 #endif /* _SDE_HW_REG_DMA_V1_COLOR_PROC_H */
