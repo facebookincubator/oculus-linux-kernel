@@ -134,7 +134,286 @@ unsigned int normalized_sysctl_sched_wakeup_granularity	= 1000000UL;
 const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
 DEFINE_PER_CPU_READ_MOSTLY(int, sched_load_boost);
 
+
+/**
+ * struct shared_runq - Per-LLC queue structure for enqueuing and migrating
+ * runnable tasks within an LLC.
+ *
+ * WHAT
+ * ====
+ *
+ * This structure enables the scheduler to be more aggressively work
+ * conserving, by placing waking tasks on a per-LLC FIFO queue that can then be
+ * pulled from when another core in the LLC is going to go idle.
+ *
+ * struct rq stores a pointer to its LLC's shared_runq via struct cfs_rq.
+ * Waking tasks are enqueued in the calling CPU's struct shared_runq in
+ * __enqueue_entity(), and are opportunistically pulled from the shared_runq
+ * in newidle_balance(). Tasks enqueued in a shared_runq may be scheduled prior
+ * to being pulled from the shared_runq, in which case they're simply dequeued
+ * from the shared_runq in __dequeue_entity().
+ *
+ * There is currently no task-stealing between shared_runqs in different LLCs,
+ * which means that shared_runq is not fully work conserving. This could be
+ * added at a later time, with tasks likely only being stolen across
+ * shared_runqs on the same NUMA node to avoid violating NUMA affinities.
+ *
+ * HOW
+ * ===
+ *
+ * A shared_runq is comprised of a list, and a spinlock for synchronization.
+ * Given that the critical section for a shared_runq is typically a fast list
+ * operation, and that the shared_runq is localized to a single LLC, the
+ * spinlock will typically only be contended on workloads that do little else
+ * other than hammer the runqueue.
+ *
+ * WHY
+ * ===
+ *
+ * As mentioned above, the main benefit of shared_runq is that it enables more
+ * aggressive work conservation in the scheduler. This can benefit workloads
+ * that benefit more from CPU utilization than from L1/L2 cache locality.
+ *
+ * shared_runqs are segmented across LLCs both to avoid contention on the
+ * shared_runq spinlock by minimizing the number of CPUs that could contend on
+ * it, as well as to strike a balance between work conservation, and L3 cache
+ * locality.
+ */
+struct shared_runq {
+	struct list_head list;
+	raw_spinlock_t lock;
+} ____cacheline_aligned;
+
 #ifdef CONFIG_SMP
+
+static DEFINE_PER_CPU(struct shared_runq, shared_runqs);
+DEFINE_STATIC_KEY_FALSE(__shared_runq_enabled);
+
+static bool shared_runq_enabled(void)
+{
+	/*
+	 * Use a static branch that's toggled from the swqueue sysctl to track
+	 * whether the swqueue feature is enabled. This is necessary because we
+	 * want to be able to force CPUs to stop enqueueing tasks in shared
+	 * runqueues on the feature toggle path, so that we can drain the
+	 * runqueues without any races.
+	 */
+	return static_branch_likely(&__shared_runq_enabled);
+}
+
+static struct shared_runq *rq_shared_runq(struct rq *rq)
+{
+	return rq->cfs.shared_runq;
+}
+
+static void __shared_runq_drain(struct shared_runq *shared_runq)
+{
+	struct task_struct *p, *tmp;
+	unsigned long flags;
+
+	/*
+	 * Disable IRQs to ensure that we don't recurse into the scheduler when
+	 * we take an IRQ, causing a deadlock.
+	 */
+	raw_spin_lock_irqsave(&shared_runq->lock, flags);
+	list_for_each_entry_safe(p, tmp, &shared_runq->list, shared_runq_node)
+		list_del_init(&p->shared_runq_node);
+	raw_spin_unlock_irqrestore(&shared_runq->lock, flags);
+}
+
+static void shared_runq_toggle(bool enabling)
+{
+	int cpu;
+
+	if (enabling) {
+		static_branch_enable_cpuslocked(&__shared_runq_enabled);
+		return;
+	}
+
+	/* Avoid racing with hotplug. */
+	lockdep_assert_cpus_held();
+
+	static_branch_disable_cpuslocked(&__shared_runq_enabled);
+
+	/* Ensure all cores have stopped enqueueing / dequeuing tasks. */
+	synchronize_rcu();
+
+	for_each_possible_cpu(cpu) {
+		int sd_id;
+
+		sd_id = per_cpu(sd_llc_id, cpu);
+		if (cpu == sd_id)
+			__shared_runq_drain(rq_shared_runq(cpu_rq(cpu)));
+	}
+}
+
+static DEFINE_MUTEX(swqueue_toggle_mutex);
+__read_mostly unsigned int sysctl_sched_swqueue;
+
+int sysctl_swqueue_toggle(struct ctl_table *table, int write,
+			  void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	bool was_enabled, enabling;
+
+	mutex_lock(&swqueue_toggle_mutex);
+	was_enabled = !!sysctl_sched_swqueue;
+	ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	if (ret || !write) {
+		mutex_unlock(&swqueue_toggle_mutex);
+		return ret;
+	}
+
+	/*
+	 * sysctl_sched_swqueue is set above by proc_dointvec(), so we can
+	 * check the value of the sysctl to determine if the user wanted to
+	 * enable or disable the feature. If there was no change, we can just
+	 * return without doing anything.
+	 */
+	enabling = !!sysctl_sched_swqueue;
+	if (was_enabled == enabling) {
+		mutex_unlock(&swqueue_toggle_mutex);
+		return 0;
+	}
+
+	cpus_read_lock();
+	shared_runq_toggle(enabling);
+	cpus_read_unlock();
+	mutex_unlock(&swqueue_toggle_mutex);
+
+	return 0;
+}
+
+static struct task_struct *shared_runq_pop_task(struct rq *rq)
+{
+	struct task_struct *p;
+	bool found = false;
+	int i, my_cpu = cpu_of(rq);
+
+	/* Always start with our LLC's shared_runq */
+	my_cpu = per_cpu(sd_llc_id, my_cpu);
+
+	for_each_possible_cpu(i) {
+		int sd_id, cpu = (i + my_cpu) % nr_cpu_ids;
+
+		sd_id = per_cpu(sd_llc_id, cpu);
+		if (cpu == sd_id) {
+			struct shared_runq *shared_runq;
+
+			shared_runq = rq_shared_runq(cpu_rq(cpu));
+			if (list_empty(&shared_runq->list))
+				continue;
+
+			raw_spin_lock(&shared_runq->lock);
+			list_for_each_entry(p, &shared_runq->list, shared_runq_node) {
+				if (is_cpu_allowed(p, cpu_of(rq))) {
+					list_del_init(&p->shared_runq_node);
+					found = true;
+					break;
+				}
+			}
+			raw_spin_unlock(&shared_runq->lock);
+		}
+
+		if (found)
+			break;
+	}
+
+	return found ? p : NULL;
+}
+
+static void shared_runq_push_task(struct rq *rq, struct task_struct *p)
+{
+	struct shared_runq *shared_runq;
+
+	shared_runq = rq_shared_runq(rq);
+	raw_spin_lock(&shared_runq->lock);
+	list_add_tail(&p->shared_runq_node, &shared_runq->list);
+	raw_spin_unlock(&shared_runq->lock);
+}
+
+static void shared_runq_enqueue_task(struct rq *rq, struct task_struct *p)
+{
+	/*
+	 * Only enqueue the task in the shared runqueue if:
+	 *
+	 * - swqueue is enabled
+	 * - The task isn't pinned to a specific CPU
+	 * - The rq is empty, meaning the task will be picked next anyways.
+	 */
+	if (!shared_runq_enabled() ||
+	    p->nr_cpus_allowed == 1 ||
+	    rq->nr_running < 1)
+		return;
+
+	shared_runq_push_task(rq, p);
+}
+
+static int shared_runq_pick_next_task(struct rq *rq, struct rq_flags *rf)
+{
+	struct task_struct *p = NULL;
+	struct rq *src_rq;
+	struct rq_flags src_rf;
+	int ret = 0, cpu;
+
+	p = shared_runq_pop_task(rq);
+	if (!p)
+		return 0;
+
+	rq_unpin_lock(rq, rf);
+	raw_spin_unlock(&rq->lock);
+
+	src_rq = task_rq_lock(p, &src_rf);
+
+	cpu = cpu_of(rq);
+	if (task_on_rq_queued(p) && !task_running(src_rq, p) &&
+	    likely(is_cpu_allowed(p, cpu))) {
+		update_rq_clock(src_rq);
+		src_rq = move_queued_task(src_rq, &src_rf, p, cpu);
+		p->n_srq_migrations++;
+		rq->cfs.n_srq_pulled++;
+		ret = 1;
+	}
+
+	if (src_rq != rq) {
+		task_rq_unlock(src_rq, p, &src_rf);
+		raw_spin_lock(&rq->lock);
+	} else {
+		rq_unpin_lock(rq, &src_rf);
+		raw_spin_unlock_irqrestore(&p->pi_lock, src_rf.flags);
+	}
+	rq_repin_lock(rq, rf);
+
+	if (rq->nr_running != rq->cfs.h_nr_running)
+		ret = -1;
+
+	return ret;
+}
+
+static void shared_runq_dequeue_task(struct task_struct *p)
+{
+	struct shared_runq *shared_runq;
+
+	/*
+	 * Always dequeue a task, regardless of whether shared_runq is enabled.
+	 * While we could only dequeue when the feature is enabled, we elect to
+	 * always dequeue to avoid having to worry about accidentally leaving a
+	 * task in the list when it should have been removed. For example, to
+	 * prevent a task from exiting and staying in the list, potentially
+	 * causing a UAF.
+	 *
+	 * The overhead of doing this should be essentially negligible, as we
+	 * don't take a lock when the list is empty.
+	 */
+	if (!list_empty(&p->shared_runq_node)) {
+		shared_runq = rq_shared_runq(task_rq(p));
+		raw_spin_lock(&shared_runq->lock);
+		if (likely(!list_empty(&p->shared_runq_node)))
+			list_del_init(&p->shared_runq_node);
+		raw_spin_unlock(&shared_runq->lock);
+	}
+}
+
 /*
  * For asym packing, by default the lower numbered CPU has higher priority.
  */
@@ -142,6 +421,14 @@ int __weak arch_asym_cpu_priority(int cpu)
 {
 	return -cpu;
 }
+#else
+static void shared_runq_enqueue_task(struct rq *rq, struct task_struct *p)
+{}
+
+static void shared_runq_dequeue_task(struct task_struct *p)
+{}
+
+static bool shared_runq_enabled(void) { return false; }
 #endif
 
 #ifdef CONFIG_CFS_BANDWIDTH
@@ -614,6 +901,9 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	struct sched_entity *entry;
 	bool leftmost = true;
 
+	if (entity_is_task(se))
+		shared_runq_enqueue_task(rq_of(cfs_rq), task_of(se));
+
 	/*
 	 * Find the right place in the rbtree:
 	 */
@@ -640,6 +930,8 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
+	if (entity_is_task(se))
+		shared_runq_dequeue_task(task_of(se));
 }
 
 struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq)
@@ -1020,7 +1312,6 @@ update_stats_enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			}
 
 			trace_sched_stat_blocked(tsk, delta);
-			trace_sched_blocked_reason(tsk);
 
 			/*
 			 * Blocking time is in units of nanosecs, so shift by
@@ -8052,6 +8343,7 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 
 static void task_dead_fair(struct task_struct *p)
 {
+	WARN_ON_ONCE(!list_empty(&p->shared_runq_node));
 	remove_entity_load_avg(&p->se);
 }
 #endif /* CONFIG_SMP */
@@ -11857,9 +12149,20 @@ static int idle_balance(struct rq *this_rq, struct rq_flags *rf)
 				sysctl_sched_force_lb_enable &&
 				(atomic_read(&this_rq->nr_iowait) == 0));
 
-
 	if (cpu_isolated(this_cpu))
 		return 0;
+
+	/*
+	 * Do not pull tasks towards !active CPUs...
+	 */
+	if (!cpu_active(this_cpu))
+		return 0;
+
+	if (shared_runq_enabled()) {
+		pulled_task = shared_runq_pick_next_task(this_rq, rf);
+		if (pulled_task)
+			return pulled_task;
+	}
 
 	/*
 	 * We must set idle_stamp _before_ calling idle_balance(), such that we
@@ -11867,11 +12170,6 @@ static int idle_balance(struct rq *this_rq, struct rq_flags *rf)
 	 */
 	this_rq->idle_stamp = rq_clock(this_rq);
 
-	/*
-	 * Do not pull tasks towards !active CPUs...
-	 */
-	if (!cpu_active(this_cpu))
-		return 0;
 
 	if (force_lb || prefer_spread)
 		avg_idle = ULLONG_MAX;
@@ -12252,6 +12550,9 @@ static void attach_task_cfs_rq(struct task_struct *p)
 
 static void switched_from_fair(struct rq *rq, struct task_struct *p)
 {
+#ifdef CONFIG_SMP
+	WARN_ON_ONCE(!list_empty(&p->shared_runq_node));
+#endif
 	detach_task_cfs_rq(p);
 }
 
@@ -12624,6 +12925,29 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 #endif /* CONFIG_NUMA_BALANCING */
 #endif /* CONFIG_SCHED_DEBUG */
 
+__init void init_cfs_swqueue(void)
+{
+#ifdef CONFIG_SMP
+	int i;
+	struct shared_runq *shared_runq;
+
+	for_each_possible_cpu(i) {
+		shared_runq = &per_cpu(shared_runqs, i);
+		INIT_LIST_HEAD(&shared_runq->list);
+		raw_spin_lock_init(&shared_runq->lock);
+	}
+
+	/* 
+	 * Start by having everyone share the same shared runq.
+	 * The shared runqs will be reset later when the topology domains
+	 * are initialized.
+	 */
+	shared_runq = &per_cpu(shared_runqs, 0);
+	for_each_possible_cpu(i) {
+		cpu_rq(i)->cfs.shared_runq = shared_runq;
+	}
+#endif
+}
 __init void init_sched_fair_class(void)
 {
 #ifdef CONFIG_SMP
@@ -12636,6 +12960,31 @@ __init void init_sched_fair_class(void)
 #endif
 #endif /* SMP */
 
+}
+
+__init void init_sched_fair_class_late(void)
+{
+#ifdef CONFIG_SMP
+	int i;
+
+	BUG_ON(static_branch_unlikely(&__shared_runq_enabled));
+
+	for_each_possible_cpu(i) {
+		struct rq_flags rf;
+		struct shared_runq *shared_runq;
+		struct rq *rq;
+
+		shared_runq = &per_cpu(shared_runqs, per_cpu(sd_llc_id, i));
+		rq = cpu_rq(i);
+
+		rq_lock_irq(rq, &rf);
+		rq->cfs.shared_runq = shared_runq;
+		rq_unlock_irq(rq, &rf);
+	}
+
+	if (sysctl_sched_swqueue)
+		static_branch_enable_cpuslocked(&__shared_runq_enabled);
+#endif
 }
 
 /* WALT sched implementation begins here */

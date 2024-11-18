@@ -20,7 +20,6 @@ static irqreturn_t isr_primary_nsync(int irq, void *p)
 
 	spin_lock_irqsave(&devdata->nsync_lock, flags);
 	devdata->nsync_irq_timestamp_us = ktime_to_us(kt);
-	devdata->nsync_irq_fired = true;
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 
 	return IRQ_HANDLED;
@@ -31,11 +30,13 @@ static void reset_nsync_values(struct nsync_dev_data *devdata)
 	unsigned long flags;
 
 	spin_lock_irqsave(&devdata->nsync_lock, flags);
-	devdata->nsync_irq_fired = false;
 	devdata->nsync_irq_timestamp_us = 0;
+	devdata->prev_nsync_irq_timestamp_us = 0;
 	devdata->nsync_offset_us = 0;
 	devdata->prev_mcu_timestamp_us = 0;
+	devdata->prev_mcu_timestamp_delta_us = 0;
 	devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID;
+	devdata->event_backlog_len = 0;
 
 	devdata->consecutive_drift_limit_count = 0;
 	devdata->consecutive_drift_limit_max = 0;
@@ -63,7 +64,7 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 			IRQF_TRIGGER_RISING | IRQF_SHARED , dev_name(devdata->dev), devdata);
 		if (status < 0)
 			dev_err(devdata->dev, "nsync irq registration failed");
-		// Fall through
+		fallthrough;
 	case SYNCBOSS_EVENT_STREAMING_RESUMING:
 		reset_nsync_values(devdata);
 		return NOTIFY_OK;
@@ -77,27 +78,12 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 	}
 }
 
-static int handle_display_event(struct nsync_dev_data *devdata, const struct syncboss_data *packet)
+static void compute_offset_locked(struct nsync_dev_data *devdata, const int64_t mcu_timestamp_us)
 {
-	struct syncboss_display_event *dfevent = (struct syncboss_display_event *)packet->data;
-	int64_t mcu_timestamp_us = (int64_t)dfevent->timestamp;
 	int64_t offset_us, drift_us;
 	int64_t drift_limit_us = S64_MAX;
-	unsigned long flags;
-	int ret = 0;
 
-	spin_lock_irqsave(&devdata->nsync_lock, flags);
-
-	if (!devdata->nsync_irq_fired) {
-		dev_err_ratelimited(devdata->dev,
-				"Ignoring display frame event message without matching IRQ. Last nsync_irq_timestamp_us was %lld\n",
-				devdata->nsync_irq_timestamp_us);
-		ret = -EPERM;
-		goto out;
-	}
-	devdata->nsync_irq_fired = false;
-
-	offset_us = devdata->nsync_irq_timestamp_us - mcu_timestamp_us;
+	offset_us = devdata->prev_nsync_irq_timestamp_us - devdata->prev_mcu_timestamp_us;
 	drift_us = offset_us - devdata->nsync_offset_us;
 
 	if (likely(devdata->nsync_offset_status != SYNCBOSS_TIME_OFFSET_INVALID)) {
@@ -107,8 +93,23 @@ static int handle_display_event(struct nsync_dev_data *devdata, const struct syn
 		 * Calculate upper-bound for a plausible clock drift based on rate of nsync events.
 		 * Add one to cover for any truncation due to division.
 		 */
-		drift_limit_us = (((mcu_timestamp_us - devdata->prev_mcu_timestamp_us) *
-				 OFFSET_DRIFT_PPM_LIMIT) / 1000000) + 1;
+		drift_limit_us = ((devdata->prev_mcu_timestamp_delta_us *
+				   OFFSET_DRIFT_PPM_LIMIT) / 1000000) + 1;
+	}
+
+	/*
+	 * In some cases, especially on vsync enabled platforms, we are seeing
+	 * that the system seems to have missed an IRQ. This results in a newer
+	 * mcu timestamp being compared with a previous irq timestamp. This can
+	 * lead to a large negative drift, which will result in excessive drift
+	 * continusouly until we hit the offset error case below. Avoid this
+	 * situation by dropping the event in such cases.
+	 */
+	if (devdata->event_backlog_len > 1) {
+		dev_warn_ratelimited(devdata->dev,
+			"Display frames are backlogged; dropping %d frames.",
+			devdata->event_backlog_len);
+		drift_us = 0;
 	}
 
 	/*
@@ -143,9 +144,36 @@ static int handle_display_event(struct nsync_dev_data *devdata, const struct syn
 	 * common case (where OFFSET_DRIFT_PPM_LIMIT is not exceeded).
 	 */
 	devdata->nsync_offset_us += drift_us;
-	devdata->prev_mcu_timestamp_us = mcu_timestamp_us;
+	devdata->prev_nsync_irq_timestamp_us = devdata->nsync_irq_timestamp_us;
+	devdata->prev_mcu_timestamp_delta_us = 0;
+}
 
-out:
+static int handle_display_event(struct nsync_dev_data *devdata, const struct syncboss_data *packet)
+{
+	struct syncboss_display_event *dfevent = (struct syncboss_display_event *)packet->data;
+	int64_t mcu_timestamp_us = (int64_t)dfevent->timestamp;
+	unsigned long flags;
+	int ret = 0;
+	bool backlog_event = true;
+
+	spin_lock_irqsave(&devdata->nsync_lock, flags);
+
+	if (likely(devdata->prev_nsync_irq_timestamp_us != devdata->nsync_irq_timestamp_us)) {
+		if (unlikely(devdata->nsync_offset_status == SYNCBOSS_TIME_OFFSET_INVALID)) {
+			devdata->prev_nsync_irq_timestamp_us = devdata->nsync_irq_timestamp_us;
+			devdata->prev_mcu_timestamp_us = mcu_timestamp_us;
+			backlog_event = false;
+		}
+		compute_offset_locked(devdata, mcu_timestamp_us);
+		devdata->event_backlog_len = 0;
+	}
+
+	if (likely(backlog_event)) {
+		devdata->event_backlog_len++;
+		devdata->prev_mcu_timestamp_delta_us += mcu_timestamp_us - devdata->prev_mcu_timestamp_us;
+		devdata->prev_mcu_timestamp_us = mcu_timestamp_us;
+	}
+
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 	return ret;
 }

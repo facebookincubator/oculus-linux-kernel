@@ -216,7 +216,6 @@ static int wlan_set_def_pre_cac_chan(struct hdd_context *hdd_ctx,
 
 	return 0;
 }
-
 /**
  * __wlan_hdd_request_pre_cac() - Start pre CAC in the driver
  * @hdd_ctx: the HDD context to operate against

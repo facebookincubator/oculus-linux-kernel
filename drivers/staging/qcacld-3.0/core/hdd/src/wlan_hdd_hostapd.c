@@ -1117,7 +1117,7 @@ static void __wlan_hdd_sap_pre_cac_success(struct hdd_adapter *adapter)
 	}
 
 	pre_cac_ch_width = wlansap_get_chan_width(
-		WLAN_HDD_GET_SAP_CTX_PTR(adapter));
+				WLAN_HDD_GET_SAP_CTX_PTR(adapter));
 
 	hdd_stop_adapter(hdd_ctx, adapter);
 

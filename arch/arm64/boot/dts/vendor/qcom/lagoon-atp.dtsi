@@ -112,6 +112,8 @@
 	vcc-max-microamp = <800000>;
 	vccq2-max-microamp = <800000>;
 	vccq2-pwr-collapse-sup;
+	qcom,vccq2-parent-supply = <&pm6350_s2>;
+	qcom,vccq2-parent-max-microamp = <210000>;
 
 	qcom,vddp-ref-clk-supply = <&L22A>;
 	qcom,vddp-ref-clk-max-microamp = <100>;

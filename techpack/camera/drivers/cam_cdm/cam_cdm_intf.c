@@ -345,7 +345,7 @@ int cam_cdm_reset_hw(uint32_t handle)
 					sizeof(handle));
 			if (rc < 0)
 				CAM_ERR(CAM_CDM,
-					"CDM hw release failed for handle=%x",
+					"CDM hw reset failed for handle=%x",
 					handle);
 		} else {
 			CAM_ERR(CAM_CDM, "hw idx %d doesn't have release ops",

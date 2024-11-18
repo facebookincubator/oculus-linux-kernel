@@ -1878,11 +1878,16 @@ dp_rx_err_process(struct dp_intr *int_ctx, struct dp_soc *soc,
 		 */
 		qdf_assert_always((cookie >> LINK_DESC_ID_SHIFT) &
 							LINK_DESC_ID_START);
+		if (qdf_unlikely(!((cookie >> LINK_DESC_ID_SHIFT) &
+							LINK_DESC_ID_START))) {
+			DP_STATS_INC(soc, rx.err.invalid_cookie, 1);
+			goto next_entry;
+		}
 
 		status = dp_rx_link_cookie_check(ring_desc);
 		if (qdf_unlikely(QDF_IS_STATUS_ERROR(status))) {
 			DP_STATS_INC(soc, rx.err.invalid_link_cookie, 1);
-			break;
+			goto next_entry;
 		}
 
 		/*

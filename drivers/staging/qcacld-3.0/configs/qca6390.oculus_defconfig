@@ -345,8 +345,8 @@ CONFIG_WLAN_FW_OFFLOAD := y
 CONFIG_WLAN_FEATURE_ELNA := y
 
 # Conditionally enable/disable features if the kernel is for production or if
-# it is an "eng" build (which includes many more debug features)
-ifeq ($(TARGET_BUILD_VARIANT),eng)
+# it is not a "user" build (which is distributed to end users)
+ifneq ($(TARGET_BUILD_VARIANT),user)
 	#Enable this flag to build driver in diag version
 	BUILD_DIAG_VERSION := y
 
@@ -363,7 +363,7 @@ ifeq ($(TARGET_BUILD_VARIANT),eng)
 	CONFIG_WLAN_LOGGING_SOCK_SVC := y
 	CONFIG_WMI_INTERFACE_EVENT_LOGGING := y
 
-	# Enable non-fatal log messages on eng kernels
+	# Enable non-fatal log messages on non-user kernels
 	CONFIG_WLAN_LOG_ERROR := y
 	CONFIG_WLAN_LOG_WARN := y
 	CONFIG_WLAN_LOG_INFO := y

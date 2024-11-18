@@ -358,6 +358,7 @@ struct ext_batt_pd {
 	struct work_struct mount_state_work;
 	struct work_struct dock_state_work;
 	struct work_struct psy_notifier_work;
+	struct work_struct low_battery_detection_work;
 	struct workqueue_struct *wq;
 	struct completion request_ack;
 

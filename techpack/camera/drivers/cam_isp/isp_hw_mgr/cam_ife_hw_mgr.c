@@ -6983,6 +6983,17 @@ static int cam_ife_mgr_process_recovery_cb(void *priv, void *data)
 			}
 			CAM_DBG(CAM_ISP, "Started resources rc (%d)", rc);
 		}
+
+		for (i = 0; i < recovery_data->no_of_context; i++) {
+			ctx =  recovery_data->affected_ctx[i];
+			rc = cam_cdm_reset_hw(ctx->cdm_handle);
+			if (rc) {
+				CAM_ERR_RATE_LIMIT(CAM_ISP, "CDM reset unsuccessful", rc);
+				ctx->last_cdm_done_req = 0;
+			}
+			ctx->last_cdm_done_req = 0;
+		}
+
 		CAM_DBG(CAM_ISP, "Recovery Done rc (%d)", rc);
 
 		break;

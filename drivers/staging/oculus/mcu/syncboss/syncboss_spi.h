@@ -235,7 +235,7 @@ struct syncboss_dev_data {
 	struct syncboss_msg *default_smsg;
 
 	/* Queue of messages to send and related state. */
-	struct mutex msg_queue_lock;
+	spinlock_t  msg_queue_lock;
 	int msg_queue_item_count;
 	struct list_head msg_queue_list;
 

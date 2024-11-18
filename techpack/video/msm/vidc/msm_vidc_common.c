@@ -5835,7 +5835,7 @@ static int msm_vidc_check_mbpf_supported(struct msm_vidc_inst *inst)
 	if (mbpf > core->resources.max_mbpf) {
 		s_vpr_e(inst->sid, "%s: mbpf > max\n", __func__);
 		msm_vidc_print_running_insts(inst->core);
-		return -ENOMEM;
+		return -EBUSY;
 	}
 
 	return 0;

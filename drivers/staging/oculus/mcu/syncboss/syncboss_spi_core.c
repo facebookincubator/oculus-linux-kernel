@@ -324,16 +324,6 @@ static int fw_update_check_busy(struct device *dev, void *data)
 	return 0;
 }
 
-/* Wrapper helper to perform memcpy from either a kernel or user buffer */
-static unsigned long copy_buffer(void *dest, const void *src, size_t count, bool from_user)
-{
-	if (from_user)
-		return copy_from_user(dest, src, count);
-
-	memcpy(dest, src, count);
-	return 0;
-}
-
 /*
  * Queue a packet for transmission to the MCU.
  * Packets queued before the kthread has been created will be queued until it has been.
@@ -342,7 +332,7 @@ static unsigned long copy_buffer(void *dest, const void *src, size_t count, bool
  * Responses to any command packets will not be received until the thread is woken (ex.
  * streaming is started).
  */
-static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *buf, size_t count, bool from_user)
+static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *buf, size_t count)
 {
 	int status = 0;
 	struct syncboss_msg *smsg = NULL;
@@ -358,26 +348,22 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 	 * Combine this command in the same transaction as the previous one
 	 * if there is room.
 	 */
-	mutex_lock(&devdata->msg_queue_lock);
+	spin_lock(&devdata->msg_queue_lock);
 	if (!list_empty(&devdata->msg_queue_list)) {
 		smsg = list_last_entry(&devdata->msg_queue_list, struct syncboss_msg, list);
 		if (smsg->transaction_bytes + count <= devdata->transaction_length) {
 			dest = smsg->tx.data.raw_data + smsg->transaction_bytes
 					- sizeof(struct transaction_header);
-			if (copy_buffer(dest, buf, count, from_user)) {
-				dev_err(&devdata->spi->dev, "copy_buffer to existing smsg failed!\n");
-				mutex_unlock(&devdata->msg_queue_lock);
-				return -EINVAL;
-			}
+			memcpy(dest, buf, count);
 			smsg->transaction_bytes += count;
 
-			mutex_unlock(&devdata->msg_queue_lock);
+			spin_unlock(&devdata->msg_queue_lock);
 
 			return count;
 		}
 		smsg = NULL;
 	}
-	mutex_unlock(&devdata->msg_queue_lock);
+	spin_unlock(&devdata->msg_queue_lock);
 
 	/*
 	 * If we're here, we can't combine transactions. Create a new one, in
@@ -396,11 +382,7 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 	}
 
 	dest = &smsg->tx.data.raw_data;
-	if (copy_buffer(dest, buf, count, from_user)) {
-		dev_err(&devdata->spi->dev, "copy_buffer failed!\n");
-		status = -EINVAL;
-		goto err;
-	}
+	memcpy(dest, buf, count);
 	smsg->transaction_bytes = sizeof(smsg->tx.header) + count;
 	smsg->tx.header.magic_num = SPI_TX_DATA_MAGIC_NUM;
 
@@ -416,7 +398,7 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 	smsg->spi_msg.spi = devdata->spi;
 
 	/* Enqueue the new message */
-	mutex_lock(&devdata->msg_queue_lock);
+	spin_lock(&devdata->msg_queue_lock);
 	/* Check the count again, this time under the lock in case it changed. */
 	if (devdata->msg_queue_item_count > MAX_MSG_QUEUE_ITEMS) {
 		dev_warn(&devdata->spi->dev, "msg queue is now full\n");
@@ -446,12 +428,12 @@ static ssize_t queue_tx_packet(struct syncboss_dev_data *devdata, const void *bu
 		}
 	}
 
-	mutex_unlock(&devdata->msg_queue_lock);
+	spin_unlock(&devdata->msg_queue_lock);
 
 	return count;
 
 err_locked:
-	mutex_unlock(&devdata->msg_queue_lock);
+	spin_unlock(&devdata->msg_queue_lock);
 err:
 	kfree(smsg);
 	return status;
@@ -552,11 +534,28 @@ static int syncboss_release(struct inode *inode, struct file *f)
 static ssize_t syncboss_write(struct file *filp, const char __user *buf,
 			      size_t count, loff_t *f_pos)
 {
+	int status;
+	char *kbuf;
 	struct syncboss_dev_data *devdata =
 		container_of(filp->private_data, struct syncboss_dev_data,
 			     misc);
+	struct device *dev = &devdata->spi->dev;
 
-	return queue_tx_packet(devdata, buf, count, /* from_user */ true);
+	kbuf = kmalloc(count, GFP_KERNEL);
+	if (!kbuf)
+		return -ENOMEM;
+
+	status = copy_from_user(kbuf, buf, count);
+	if (status) {
+		dev_err(dev, "%s failed in copy_from_user(): err %d", __func__, status);
+		kfree(kbuf);
+		return -EFAULT;
+	}
+
+	status = queue_tx_packet(devdata, kbuf, count);
+	kfree(kbuf);
+
+	return status;
 }
 
 /* /dev/syncboss0 ioctl handler */
@@ -852,7 +851,7 @@ static u64 calc_mcu_ready_sleep_delay_ns(struct syncboss_dev_data *devdata,
 static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 				struct transaction_context *ctx)
 {
-	mutex_lock(&devdata->msg_queue_lock);
+	spin_lock(&devdata->msg_queue_lock);
 	if (list_empty(&devdata->msg_queue_list)) {
 		/*
 		 * Prepare to sleep.
@@ -865,7 +864,7 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 		 * attempt by queue_tx_packet() to wake this thread.
 		 */
 		set_current_state(TASK_INTERRUPTIBLE);
-		mutex_unlock(&devdata->msg_queue_lock);
+		spin_unlock(&devdata->msg_queue_lock);
 
 		if (okay_to_transact(devdata)) {
 			/* Abort sleep attempt. It's time for a transaction. */
@@ -878,7 +877,7 @@ static int sleep_if_msg_queue_empty(struct syncboss_dev_data *devdata,
 		if (signal_pending(current))
 			return -EINTR;
 	} else {
-		mutex_unlock(&devdata->msg_queue_lock);
+		spin_unlock(&devdata->msg_queue_lock);
 	}
 
 	return 0;
@@ -903,7 +902,7 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 		 * If using legacy polling mode, set up the wake timer for when
 		 * the next poll is due.
 		 */
-		mutex_lock(&devdata->msg_queue_lock);
+		spin_lock(&devdata->msg_queue_lock);
 		send_needed = ctx->msg_to_send || devdata->msg_queue_item_count > 0;
 		if (send_needed) {
 			u64 delay_ns;
@@ -911,13 +910,13 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 			/* Calculate how long to wait */
 			delay_ns = calc_mcu_ready_sleep_delay_ns(devdata, timing, ctx->msg_to_send);
 			if (delay_ns == 0) {
-				mutex_unlock(&devdata->msg_queue_lock);
+				spin_unlock(&devdata->msg_queue_lock);
 				break;
 			}
 
 			/* Really short delays aren't worth context switching for. */
 			if (delay_ns < SYNCBOSS_SCHEDULING_SLOP_NS) {
-				mutex_unlock(&devdata->msg_queue_lock);
+				spin_unlock(&devdata->msg_queue_lock);
 				ndelay(delay_ns);
 				break;
 			}
@@ -937,7 +936,7 @@ static int sleep_or_schedule_if_needed(struct syncboss_dev_data *devdata,
 		 * attempt by queue_tx_packet() to wake this thread.
 		 */
 		set_current_state(TASK_INTERRUPTIBLE);
-		mutex_unlock(&devdata->msg_queue_lock);
+		spin_unlock(&devdata->msg_queue_lock);
 
 		if (okay_to_transact(devdata)) {
 			/* Abort sleep attempt. Data is already available to read. */
@@ -1018,10 +1017,9 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 */
 		if (!ctx.msg_to_send) {
 			/*
-			 * Optimization: use mutex_trylock() to avoid sleeping while we wait for
-			 *   potentially low-priority userspace threads to finish enqueueing
-			 *   messages. If a writer is in the process of enqueueing a message, it's
-			 *   better to send the 'default_smsg' than wait for the lock to be released.
+			 * Optimization: use spin_trylock() to avoid waiting for a message to finish
+			 *   enqueueing. It's better to perform the transaction promptly with a
+			 *   'default_smsg' than wait for the lock to be released.
 			 *
 			 * Assumptions:
 			 *   1) Low SPI read latency and consistent periodicity is more important
@@ -1029,7 +1027,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 			 *   2) Writes (messages from the msg_queue_list) are relatively infrequent,
 			 *      so starvation of messages from the msg_queue_list will not occur.
 			 */
-			if (mutex_trylock(&devdata->msg_queue_lock)) {
+			if (spin_trylock(&devdata->msg_queue_lock)) {
 				ctx.smsg = list_first_entry_or_null(&devdata->msg_queue_list, struct syncboss_msg, list);
 				if (ctx.smsg) {
 					list_del(&ctx.smsg->list);
@@ -1037,7 +1035,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 					ctx.smsg->tx.header.checksum = calculate_checksum(&ctx.smsg->tx, transaction_length);
 					ctx.msg_to_send = true;
 				}
-				mutex_unlock(&devdata->msg_queue_lock);
+				spin_unlock(&devdata->msg_queue_lock);
 			}
 			if (!ctx.msg_to_send)
 				ctx.smsg = devdata->default_smsg;
@@ -1498,7 +1496,7 @@ static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
 	dev_dbg(&devdata->spi->dev, "telling MCU to go to sleep");
 
 	/* Send command to put the MCU to sleep */
-	queue_tx_packet(devdata, &message, sizeof(message), /* from_user */ false);
+	queue_tx_packet(devdata, &message, sizeof(message));
 
 	/*
 	 * Wait for shutdown. The gpio_ready line will go low when things are
@@ -1590,6 +1588,15 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	kthread_bind_mask(worker, &devdata->cpu_affinity);
 
 	devdata->is_streaming = true;
+
+	/*
+	 * Hint that the syncboss worker thread should attempt to wake
+	 * up on the same core as its wakee the irq handler.
+	 */
+#ifdef CONFIG_META_WAKE_AFFINE
+	worker->wake_affine = 1;
+#endif
+
 	devdata->worker = worker;
 	wake_up_process(devdata->worker);
 
@@ -1639,14 +1646,14 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	spi_bus_unlock(devdata->spi->master);
 
 	/* Discard and free and pending messages that were to be sent */
-	mutex_lock(&devdata->msg_queue_lock);
+	spin_lock(&devdata->msg_queue_lock);
 	list_for_each_entry_safe(smsg, temp_smsg, &devdata->msg_queue_list, list) {
 		list_del(&smsg->list);
 		--devdata->msg_queue_item_count;
 		kfree(smsg);
 	}
 	BUG_ON(devdata->msg_queue_item_count != 0);
-	mutex_unlock(&devdata->msg_queue_lock);
+	spin_unlock(&devdata->msg_queue_lock);
 
 	destroy_default_smsg_locked(devdata);
 
@@ -1821,11 +1828,11 @@ static int consumer_disable_stream(struct device *child)
  * Consumer API: Send a message to the MCU when it is next streaming, or immediately
  * if streaming is active.
  */
-static ssize_t consumer_queue_tx_packet(struct device *child, const void *buf, size_t count, bool from_user)
+static ssize_t consumer_queue_tx_packet(struct device *child, const void *buf, size_t count)
 {
 	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
 
-	return queue_tx_packet(devdata, buf, count, from_user);
+	return queue_tx_packet(devdata, buf, count);
 }
 
 /* Probe helper funcion to initialize struct syncboss_dev_data members */
@@ -1926,10 +1933,9 @@ static int syncboss_probe(struct spi_device *spi)
 	dev_dbg(dev, "probing");
 	dev_dbg(
 		dev,
-		"name: %s, max speed: %d, cs: %d, bits/word: %d, mode: 0x%x, irq: %d, modalias: %s, cs_gpio: %d",
+		"name: %s, max speed: %d, cs: %d, bits/word: %d, mode: 0x%x, irq: %d, modalias: %s",
 		dev_name(dev), spi->max_speed_hz, spi->chip_select,
-		spi->bits_per_word, spi->mode, spi->irq, spi->modalias,
-		spi->cs_gpio);
+		spi->bits_per_word, spi->mode, spi->irq, spi->modalias);
 
 	devdata = devm_kzalloc(dev, sizeof(*devdata), GFP_KERNEL);
 	if (!devdata) {
@@ -1955,7 +1961,7 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_regulator_get;
 	}
 
-	mutex_init(&devdata->msg_queue_lock);
+	spin_lock_init(&devdata->msg_queue_lock);
 	INIT_LIST_HEAD(&devdata->msg_queue_list);
 
 	dev_set_drvdata(dev, devdata);
@@ -2034,7 +2040,7 @@ error:
 }
 
 /* Platform device removal cleanup */
-static int syncboss_remove(struct spi_device *spi)
+static void _syncboss_remove(struct spi_device *spi)
 {
 	struct syncboss_dev_data *devdata = NULL;
 
@@ -2051,9 +2057,16 @@ static int syncboss_remove(struct spi_device *spi)
 	misc_deregister(&devdata->misc);
 
 	regulator_bulk_free(devdata->reg_count, devdata->reg_consumers);
-
+}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+static int syncboss_remove(struct spi_device *spi)
+{
+	_syncboss_remove(spi);
 	return 0;
 }
+#else
+#define syncboss_remove _syncboss_remove
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 struct syncboss_resume_work_data {

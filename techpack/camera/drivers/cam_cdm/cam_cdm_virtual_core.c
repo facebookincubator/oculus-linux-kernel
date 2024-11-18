@@ -76,7 +76,9 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 	int i, rc = -EINVAL;
 	struct cam_cdm_bl_request *cdm_cmd = req->data;
 	struct cam_cdm *core = (struct cam_cdm *)cdm_hw->core_info;
+	unsigned long flags;
 
+	spin_lock_irqsave(&client->client_spin_lock, flags);
 	cam_cdm_get_client_refcount(client);
 	for (i = 0; i < req->data->cmd_arrary_count ; i++) {
 		uintptr_t vaddr_ptr = 0;
@@ -92,9 +94,13 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 			break;
 		}
 		if (req->data->type == CAM_CDM_BL_CMD_TYPE_MEM_HANDLE) {
+			// cam_mem_get_io_buf calls mutex_lock() that is forbidden
+			// with disabled preemption
+			spin_unlock_irqrestore(&client->client_spin_lock, flags);
 			rc = cam_mem_get_cpu_buf(
 				cdm_cmd->cmd[i].bl_addr.mem_handle, &vaddr_ptr,
 				&len);
+			spin_lock_irqsave(&client->client_spin_lock, flags);
 		} else if (req->data->type ==
 			CAM_CDM_BL_CMD_TYPE_KERNEL_IOVA) {
 			rc = 0;
@@ -201,6 +207,7 @@ int cam_virtual_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		break;
 	}
 	cam_cdm_put_client_refcount(client);
+	spin_unlock_irqrestore(&client->client_spin_lock, flags);
 	return rc;
 
 end:
@@ -208,6 +215,7 @@ end:
 		cam_mem_put_cpu_buf(cdm_cmd->cmd[i].bl_addr.mem_handle);
 
 	cam_cdm_put_client_refcount(client);
+	spin_unlock_irqrestore(&client->client_spin_lock, flags);
 	return rc;
 
 }

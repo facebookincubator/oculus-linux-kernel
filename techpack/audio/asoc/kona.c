@@ -9432,8 +9432,8 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	if (soc_find_component(NULL, "soc:qcom,msm-pcm-voice") == NULL ||
-		soc_find_component(NULL, "soc:qcom,msm-voip-dsp") == NULL) {
+	if (soc_find_component_locked(NULL, "soc:qcom,msm-pcm-voice") == NULL ||
+		soc_find_component_locked(NULL, "soc:qcom,msm-voip-dsp") == NULL) {
 		dev_err(&pdev->dev,
 			"%s: can not find voice/voip component, probe later\n",
 			__func__);

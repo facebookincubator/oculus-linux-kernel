@@ -50,14 +50,14 @@ static unsigned long nsec_low(unsigned long long nsec)
 
 #define SPLIT_NS(x) nsec_high(x), nsec_low(x)
 
-#define SCHED_FEAT(name, enabled)	\
+#define SCHED_FEAT_CALLBACK(name, enabled, cb)	\
 	#name ,
 
 static const char * const sched_feat_names[] = {
 #include "features.h"
 };
 
-#undef SCHED_FEAT
+#undef SCHED_FEAT_CALLBACK
 
 static int sched_feat_show(struct seq_file *m, void *v)
 {
@@ -78,22 +78,32 @@ static int sched_feat_show(struct seq_file *m, void *v)
 #define jump_label_key__true  STATIC_KEY_INIT_TRUE
 #define jump_label_key__false STATIC_KEY_INIT_FALSE
 
-#define SCHED_FEAT(name, enabled)	\
+#define SCHED_FEAT_CALLBACK(name, enabled, cb)	\
 	jump_label_key__##enabled ,
 
 struct static_key sched_feat_keys[__SCHED_FEAT_NR] = {
 #include "features.h"
 };
 
-#undef SCHED_FEAT
+#undef SCHED_FEAT_CALLBACK
+
+#define SCHED_FEAT_CALLBACK(name, enabled, cb) cb,
+static const sched_feat_change_f sched_feat_cbs[__SCHED_FEAT_NR] = {
+#include "features.h"
+};
+#undef SCHED_FEAT_CALLBACK
 
 static void sched_feat_disable(int i)
 {
+  if (sched_feat_cbs[i])
+    sched_feat_cbs[i](false);
 	static_key_disable_cpuslocked(&sched_feat_keys[i]);
 }
 
 static void sched_feat_enable(int i)
 {
+  if (sched_feat_cbs[i])
+    sched_feat_cbs[i](true);
 	static_key_enable_cpuslocked(&sched_feat_keys[i]);
 }
 #else

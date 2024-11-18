@@ -484,12 +484,6 @@ static int mp3314_probe(struct i2c_client *i2c,
 	return 0;
 }
 
-static int mp3314_remove(struct i2c_client *i2c)
-{
-	dev_dbg(&i2c->dev, "mp3314 remove\n");
-	return 0;
-}
-
 static const struct of_device_id match_table[] = {
 	{ .compatible = "meta,mp3314",
 		.data = &mp3314_data},
@@ -506,7 +500,6 @@ static struct i2c_driver mp3314 = {
 		.of_match_table = match_table,
 	},
 	.probe = mp3314_probe,
-	.remove = mp3314_remove,
 };
 
 module_i2c_driver(mp3314);

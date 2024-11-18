@@ -598,9 +598,10 @@ static int msm_hsphy_dpdm_regulator_enable(struct regulator_dev *rdev)
 	dev_dbg(phy->phy.dev, "%s dpdm_enable:%d\n",
 				__func__, phy->dpdm_enable);
 
+	msm_hsphy_enable_clocks(phy, true);
 	if (phy->eud_enable_reg && readl_relaxed(phy->eud_enable_reg)) {
 		dev_err(phy->phy.dev, "eud is enabled\n");
-		return 0;
+		goto exit;
 	}
 
 	mutex_lock(&phy->phy_lock);
@@ -608,10 +609,8 @@ static int msm_hsphy_dpdm_regulator_enable(struct regulator_dev *rdev)
 		ret = msm_hsphy_enable_power(phy, true);
 		if (ret) {
 			mutex_unlock(&phy->phy_lock);
-			return ret;
+			goto exit;
 		}
-
-		msm_hsphy_enable_clocks(phy, true);
 
 		msm_hsphy_reset(phy);
 
@@ -628,11 +627,11 @@ static int msm_hsphy_dpdm_regulator_enable(struct regulator_dev *rdev)
 					UTMI_PHY_DATAPATH_CTRL_OVERRIDE_EN,
 					UTMI_PHY_DATAPATH_CTRL_OVERRIDE_EN);
 
-		msm_hsphy_enable_clocks(phy, false);
 		phy->dpdm_enable = true;
 	}
 	mutex_unlock(&phy->phy_lock);
-
+exit:
+	msm_hsphy_enable_clocks(phy, false);
 	return ret;
 }
 

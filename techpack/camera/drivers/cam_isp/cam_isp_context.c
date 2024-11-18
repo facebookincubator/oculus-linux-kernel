@@ -1017,9 +1017,15 @@ static int __cam_isp_ctx_rdi_stream_buf_done_in_activated_state(
 	 * completion
 	 */
 	if (list_empty(&ctx_isp->stream_image_ready_list))
+	{
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_ready_list);
 		complete(&ctx_isp->stream_image_completion);
-	list_add_tail(&stream_image->list_entry,
-		&ctx_isp->stream_image_ready_list);
+	} else {
+		list_add_tail(&stream_image->list_entry,
+			&ctx_isp->stream_image_ready_list);
+	}
+
 	CAM_DBG(CAM_ISP, "Buf done received stream image %lld",
 		stream_image->image_id);
 

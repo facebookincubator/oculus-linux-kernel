@@ -67,6 +67,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/spi/spi.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 
 #include "vd6281_adapter_ioctl.h"
 
@@ -538,19 +539,28 @@ int vd6281_spi_driver_probe(struct spi_device *pdev)
 }
 
 
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 int vd6281_spi_driver_remove(struct spi_device *pdev)
+#else
+void vd6281_spi_driver_remove(struct spi_device *pdev)
+#endif
 {
 	struct vd6281_spidev_data *pdata;
 
 	pdata = spi_get_drvdata(pdev);
 	if (!pdata) {
 		pr_err("[%s] can't remove %p", __func__, pdev);
-		return 0;
+		goto spi_remove_out;
 	}
 
 	misc_deregister(&pdata->misc);
 
+spi_remove_out:
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 	return 0;
+#else
+	return;
+#endif
 }
 
 static int vd6281_read_reg8(struct vd6281_adapter *adp, void __user *p)
@@ -776,7 +786,11 @@ static int vd6281_adapter_i2c_probe(struct i2c_client *client,
 	return ret;
 }
 
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 static int vd6281_adapter_i2c_remove(struct i2c_client *client)
+#else
+static void vd6281_adapter_i2c_remove(struct i2c_client *client)
+#endif
 {
 	struct vd6281_adapter *adp;
 
@@ -789,11 +803,12 @@ static int vd6281_adapter_i2c_remove(struct i2c_client *client)
 
 		if (ret < 0) {
 			dev_err(&client->dev, "vdd regulator disable failed: %d\n", ret);
-			return ret;
 		}
 	}
 
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 	return 0;
+#endif
 }
 
 static const struct of_device_id vd6281_adapter_dt_ids[] = {
