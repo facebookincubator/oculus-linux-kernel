@@ -6,6 +6,7 @@
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
 #include <linux/dma-fence.h>
+#include <linux/kref.h>
 #include <linux/list.h>
 #include <linux/syncboss/messages.h>
 
@@ -33,9 +34,6 @@ struct direct_channel_dev_data {
 	/* Notifier blocks for syncboss state changes and received packets */
 	struct notifier_block syncboss_state_nb;
 	struct notifier_block rx_packet_nb;
-
-	uint8_t last_nsync_offset_status;
-	int64_t last_nsync_offset_us;
 
 #ifdef CONFIG_DEBUG_FS
 	/* DebugFS nodes */
@@ -75,6 +73,7 @@ struct syncboss_dma_fence {
 
 struct channel_client_entry {
 	struct list_head list_entry;
+	struct kref kref;
 	struct channel_dma_buf_info dma_buf_info;
 	struct direct_channel_data channel_data;
 	struct direct_channel_dev_data *devdata;

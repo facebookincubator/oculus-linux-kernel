@@ -548,9 +548,11 @@ extern int sched_group_set_shares(struct task_group *tg, unsigned long shares);
 #ifdef CONFIG_SMP
 extern void set_task_rq_fair(struct sched_entity *se,
 			     struct cfs_rq *prev, struct cfs_rq *next);
+extern void sched_update_domains(void);
 #else /* !CONFIG_SMP */
 static inline void set_task_rq_fair(struct sched_entity *se,
 			     struct cfs_rq *prev, struct cfs_rq *next) { }
+static inline void sched_update_domains(void) {}
 #endif /* CONFIG_SMP */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
@@ -589,6 +591,8 @@ struct cfs_rq {
 #endif
 
 #ifdef CONFIG_SMP
+	struct shared_runq	*shared_runq;
+	unsigned long		n_srq_pulled;
 	/*
 	 * CFS load tracking
 	 */
@@ -1428,6 +1432,9 @@ init_numa_balancing(unsigned long clone_flags, struct task_struct *p)
 extern int migrate_swap(struct task_struct *p, struct task_struct *t,
 			int cpu, int scpu);
 
+extern struct rq *move_queued_task(struct rq *rq, struct rq_flags *rf,
+				   struct task_struct *p, int new_cpu);
+
 #ifdef CONFIG_SMP
 
 static inline void
@@ -1661,6 +1668,8 @@ static inline void __set_task_cpu(struct task_struct *p, unsigned int cpu)
 #endif
 }
 
+#define SCHED_FEAT(name, enabled) SCHED_FEAT_CALLBACK(name, enabled, NULL)
+
 /*
  * Tunables that become constants when CONFIG_SCHED_DEBUG is off:
  */
@@ -1671,7 +1680,7 @@ static inline void __set_task_cpu(struct task_struct *p, unsigned int cpu)
 # define const_debug const
 #endif
 
-#define SCHED_FEAT(name, enabled)	\
+#define SCHED_FEAT_CALLBACK(name, enabled, cb)	\
 	__SCHED_FEAT_##name ,
 
 enum {
@@ -1679,7 +1688,7 @@ enum {
 	__SCHED_FEAT_NR,
 };
 
-#undef SCHED_FEAT
+#undef SCHED_FEAT_CALLBACK
 
 #ifdef CONFIG_SCHED_DEBUG
 
@@ -1690,14 +1699,14 @@ enum {
 extern const_debug unsigned int sysctl_sched_features;
 
 #ifdef CONFIG_JUMP_LABEL
-#define SCHED_FEAT(name, enabled)					\
+#define SCHED_FEAT_CALLBACK(name, enabled, cb)					\
 static __always_inline bool static_branch_##name(struct static_key *key) \
 {									\
 	return static_key_##enabled(key);				\
 }
 
 #include "features.h"
-#undef SCHED_FEAT
+#undef SCHED_FEAT_CALLBACK
 
 extern struct static_key sched_feat_keys[__SCHED_FEAT_NR];
 #define sched_feat(x) (static_branch_##x(&sched_feat_keys[__SCHED_FEAT_##x]))
@@ -1715,16 +1724,18 @@ extern struct static_key sched_feat_keys[__SCHED_FEAT_NR];
  * constants propagation at compile time and compiler optimization based on
  * features default.
  */
-#define SCHED_FEAT(name, enabled)	\
+#define SCHED_FEAT_CALLBACK(name, enabled, cb)	\
 	(1UL << __SCHED_FEAT_##name) * enabled |
 static const_debug __maybe_unused unsigned int sysctl_sched_features =
 #include "features.h"
 	0;
-#undef SCHED_FEAT
+#undef SCHED_FEAT_CALLBACK
 
 #define sched_feat(x) !!(sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
 
 #endif /* SCHED_DEBUG */
+
+typedef void (*sched_feat_change_f)(bool enabling);
 
 extern struct static_key_false sched_numa_balancing;
 extern struct static_key_false sched_schedstats;
@@ -1866,6 +1877,7 @@ struct sched_class {
 
 	void (*rq_online)(struct rq *rq);
 	void (*rq_offline)(struct rq *rq);
+	void (*update_domains)(void);
 #endif
 
 	void (*set_curr_task)(struct rq *rq);
@@ -1999,6 +2011,7 @@ extern void update_max_interval(void);
 extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
+extern void init_sched_fair_class_late(void);
 
 extern void reweight_task(struct task_struct *p, int prio);
 
@@ -2481,6 +2494,8 @@ extern void init_rt_sysctl(void);
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
+
+extern void init_cfs_swqueue(void);
 
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);
@@ -3240,3 +3255,32 @@ struct sched_avg_stats {
 	int nr_scaled;
 };
 extern void sched_get_nr_running_avg(struct sched_avg_stats *stats);
+
+#ifdef CONFIG_SMP
+
+static inline bool is_per_cpu_kthread(struct task_struct *p)
+{
+	if (!(p->flags & PF_KTHREAD))
+		return false;
+
+	if (p->nr_cpus_allowed != 1)
+		return false;
+
+	return true;
+}
+
+/*
+ * Per-CPU kthreads are allowed to run on !actie && online CPUs, see
+ * __set_cpus_allowed_ptr() and select_fallback_rq().
+ */
+static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
+{
+	if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
+		return false;
+
+	if (is_per_cpu_kthread(p))
+		return cpu_online(cpu);
+
+	return cpu_active(cpu);
+}
+#endif

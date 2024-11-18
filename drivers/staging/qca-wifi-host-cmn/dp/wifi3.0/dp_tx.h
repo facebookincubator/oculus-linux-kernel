@@ -67,7 +67,7 @@ do {                                                           \
 #define DP_TX_QUEUE_MASK 0x3
 
 /* number of dwords for htt_tx_msdu_desc_ext2_t */
-#define DP_TX_MSDU_INFO_META_DATA_DWORDS 7
+#define DP_TX_MSDU_INFO_META_DATA_DWORDS 9
 
 /**
  * struct dp_tx_frag_info_s

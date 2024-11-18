@@ -393,6 +393,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 	struct cam_hw_info *cdm_hw = hw_priv;
 	struct cam_hw_soc_info *soc_data = NULL;
 	struct cam_cdm *core = NULL;
+	unsigned long flags;
 	int rc = -EINVAL;
 
 	if ((!hw_priv) || (!cmd_args) ||
@@ -532,9 +533,11 @@ int cam_cdm_process_cmd(void *hw_priv,
 		idx = CAM_CDM_GET_CLIENT_IDX(*handle);
 		mutex_lock(&cdm_hw->hw_mutex);
 		client = core->clients[idx];
+		spin_lock_irqsave(&client->client_spin_lock, flags);
 		if ((!client) || (*handle != client->handle)) {
 			CAM_ERR(CAM_CDM, "Invalid client %pK hdl=%x",
 				client, *handle);
+			spin_unlock_irqrestore(&client->client_spin_lock, flags);
 			mutex_unlock(&cdm_hw->hw_mutex);
 			break;
 		}
@@ -542,33 +545,42 @@ int cam_cdm_process_cmd(void *hw_priv,
 			CAM_ERR(CAM_CDM, "CDM Client refcount not zero %d",
 					refcount_read(&client->refcount));
 			rc = -EPERM;
+			spin_unlock_irqrestore(&client->client_spin_lock, flags);
 			mutex_unlock(&cdm_hw->hw_mutex);
 			break;
 		}
 
-{
-	struct cam_cdm_bl_cb_request_entry *node;
+		{
+			struct cam_cdm_bl_cb_request_entry *node;
 
-	list_for_each_entry(node, &core->bl_request_list, entry) {
-		if (node->client_hdl == client->handle)
-			CAM_ERR(CAM_CDM, "CAM_CDM_HW_INTF_CMD_RELEASE:"
-			" Found active records for handle 0x%X Core[%d] ID %d",
-			client->handle,
-			core->index,
-			core->id
-			);
-	}
-}
+			list_for_each_entry(node, &core->bl_request_list, entry) {
+				if (node->client_hdl == client->handle)
+					CAM_ERR(CAM_CDM, "CAM_CDM_HW_INTF_CMD_RELEASE:"
+					" Found active records for handle 0x%X Core[%d] ID %d",
+					client->handle,
+					core->index,
+					core->id
+					);
+			}
+		}
 
 		core->clients[idx] = NULL;
+		spin_unlock_irqrestore(&client->client_spin_lock, flags);
 		kfree(client);
 		mutex_unlock(&cdm_hw->hw_mutex);
 		rc = 0;
 		break;
 	}
 	case CAM_CDM_HW_INTF_CMD_RESET_HW: {
-		CAM_ERR(CAM_CDM, "CDM HW reset not supported for handle =%x",
-			*((uint32_t *)cmd_args));
+		CAM_WARN(CAM_CDM, "CDM HW reset for handle =%x coreId %d",
+			*((uint32_t *)cmd_args), core->id);
+		if (core->id != CAM_CDM_VIRTUAL)
+		{
+			mutex_lock(&cdm_hw->hw_mutex);
+			cam_hw_cdm_core_reset_hw(cdm_hw);
+			mutex_unlock(&cdm_hw->hw_mutex);
+		}
+		rc = 0;
 		break;
 	}
 	case CAM_CDM_HW_INTF_CMD_HANG_DETECT: {

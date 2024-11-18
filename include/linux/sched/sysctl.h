@@ -34,6 +34,11 @@ extern unsigned int sysctl_sched_child_runs_first;
 extern unsigned int sysctl_sched_rt_wakeup_on_idle;
 extern unsigned int sysctl_sched_rt_preempt_lowest;
 extern unsigned int sysctl_sched_force_lb_enable;
+#ifdef CONFIG_SMP
+extern unsigned int sysctl_sched_shared_runq;
+int sysctl_swqueue_toggle(struct ctl_table *table, int write, void *buffer,
+			  size_t *lenp, loff_t *ppos);
+#endif
 #ifdef CONFIG_SCHED_WALT
 extern unsigned int sysctl_sched_capacity_margin_up[MAX_MARGIN_LEVELS];
 extern unsigned int sysctl_sched_capacity_margin_down[MAX_MARGIN_LEVELS];
@@ -105,6 +110,7 @@ extern unsigned int sysctl_numa_balancing_scan_size;
 #ifdef CONFIG_SCHED_DEBUG
 extern __read_mostly unsigned int sysctl_sched_migration_cost;
 extern __read_mostly unsigned int sysctl_sched_nr_migrate;
+extern __read_mostly unsigned int sysctl_sched_swqueue;
 
 int sched_proc_update_handler(struct ctl_table *table, int write,
 		void __user *buffer, size_t *length,

@@ -396,6 +396,7 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 	struct cam_cdm *core = (struct cam_cdm *)cdm_hw->core_info;
 	uint32_t pending_bl = 0;
 	int write_count = 0;
+	unsigned long flags;
 
 	if (req->data->cmd_arrary_count > CAM_CDM_HWFIFO_SIZE) {
 		pr_info("requested BL more than max size, cnt=%d max=%d",
@@ -406,11 +407,13 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		return -EIO;
 
 	mutex_lock(&cdm_hw->hw_mutex);
+	spin_lock_irqsave(&client->client_spin_lock, flags);
 	cam_cdm_get_client_refcount(client);
 	rc = cam_hw_cdm_bl_fifo_pending_bl_rb(cdm_hw, &pending_bl);
 	if (rc) {
 		CAM_ERR(CAM_CDM, "Cannot read the current BL depth");
 		cam_cdm_put_client_refcount(client);
+		spin_unlock_irqrestore(&client->client_spin_lock, flags);
 		mutex_unlock(&cdm_hw->hw_mutex);
 		return rc;
 	}
@@ -450,10 +453,14 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		}
 
 		if (req->data->type == CAM_CDM_BL_CMD_TYPE_MEM_HANDLE) {
+			// cam_mem_get_io_buf calls mutex_lock() that is forbidden
+			// with disabled preemption
+			spin_unlock_irqrestore(&client->client_spin_lock, flags);
 			rc = cam_mem_get_io_buf(
 				cdm_cmd->cmd[i].bl_addr.mem_handle,
 				core->iommu_hdl.non_secure, &hw_vaddr_ptr,
 				&len);
+			spin_lock_irqsave(&client->client_spin_lock, flags);
 		} else if (req->data->type == CAM_CDM_BL_CMD_TYPE_HW_IOVA) {
 			if (!cdm_cmd->cmd[i].bl_addr.hw_iova) {
 				CAM_ERR(CAM_CDM,
@@ -539,6 +546,7 @@ int cam_hw_cdm_submit_bl(struct cam_hw_info *cdm_hw,
 		}
 	}
 	cam_cdm_put_client_refcount(client);
+	spin_unlock_irqrestore(&client->client_spin_lock, flags);
 	mutex_unlock(&cdm_hw->hw_mutex);
 	return rc;
 
@@ -605,7 +613,8 @@ static void cam_hw_cdm_work(struct work_struct *work)
 		if (payload->irq_status &
 			CAM_CDM_IRQ_STATUS_ERROR_INV_CMD_MASK) {
 			CAM_ERR_RATE_LIMIT(CAM_CDM,
-				"Invalid command IRQ, Need HW reset\n");
+				"Invalid command IRQ, Need HW reset CDM %s ID %d\n",
+				core->name, core->id);
 			atomic_inc(&core->error);
 			cam_hw_cdm_dump_core_debug_registers(cdm_hw);
 		}
@@ -772,6 +781,61 @@ int cam_hw_cdm_release_genirq_mem(void *hw_priv)
 
 	return rc;
 }
+
+int cam_hw_cdm_core_reset_hw(struct cam_hw_info *cdm_hw)
+{
+	int rc = 0;
+	struct cam_cdm *cdm_core;
+	long time_left;
+
+	if (!cdm_hw) {
+		CAM_ERR(CAM_CDM, "Invalid CDM HW");
+		return -EINVAL;
+	}
+	cdm_core = (struct cam_cdm *)cdm_hw->core_info;
+	CAM_WARN(CAM_CDM, "RESET CDM HW %s Error state %d", cdm_core->name, atomic_read(&cdm_core->error));
+	// if there is an error, we need to reset the CDM HW to get it back to a known state
+	if (atomic_read(&cdm_core->error))
+	{
+		/* Before triggering the reset to HW, clear the reset complete */
+		reinit_completion(&cdm_core->reset_complete);
+		reinit_completion(&cdm_core->bl_complete);
+
+		atomic_set(&cdm_core->error, 0);
+
+		if (cam_cdm_write_hw_reg(cdm_hw, CDM_IRQ_MASK, 0x70003)) {
+			rc = -EIO;
+			CAM_ERR(CAM_CDM, "Failed to Write CDM HW IRQ mask");
+			goto err_return;
+		}
+		if (cam_cdm_write_hw_reg(cdm_hw, CDM_CFG_RST_CMD, 0x9)) {
+			rc = -EIO;
+			CAM_ERR(CAM_CDM, "Failed to Write CDM HW reset");
+			goto err_return;
+		}
+
+		CAM_DBG(CAM_CDM, "Waiting for CDM HW resetdone");
+		time_left = wait_for_completion_timeout(&cdm_core->reset_complete,
+			msecs_to_jiffies(CAM_CDM_HW_RESET_TIMEOUT));
+
+		if (time_left <= 0) {
+			CAM_ERR(CAM_CDM, "CDM HW reset Wait failed rc=%d", rc);
+			rc = -EIO;
+		} else {
+			CAM_INFO(CAM_CDM, "CDM reset success");
+			cdm_hw->hw_state = CAM_HW_STATE_POWER_UP;
+			cam_cdm_write_hw_reg(cdm_hw, CDM_IRQ_MASK, 0x70003);
+		}
+
+		atomic_set(&cdm_core->work_record, 0);
+		atomic_set(&cdm_core->error, 0);
+		atomic_set(&cdm_core->bl_done, 0);
+		CAM_WARN(CAM_CDM, "RESET CDM HW %s Complete!", cdm_core->name);
+	}
+err_return:	
+	return rc;
+}
+
 
 int cam_hw_cdm_init(void *hw_priv,
 	void *init_hw_args, uint32_t arg_size)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * drivers/mmc/host/sdhci-msm.c - Qualcomm Technologies, Inc. MSM SDHCI Platform
  * driver source file
@@ -5042,6 +5042,44 @@ static int sdhci_msm_notify_load(struct sdhci_host *host, enum mmc_load state)
 	return 0;
 }
 
+static int sdhci_msm_gcc_reset(struct device *dev, struct sdhci_host *host)
+{
+
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	struct reset_control *reset = msm_host->core_reset;
+	int ret = -EOPNOTSUPP;
+
+	if (!reset) {
+		dev_err(dev, "unable to acquire core_reset\n");
+		goto out;
+	}
+
+	ret = reset_control_assert(reset);
+	if (ret) {
+		dev_err(dev, "core_reset assert failed %d\n", ret);
+		goto out;
+	}
+
+	/*
+	 * The hardware requirement for delay between assert/deassert
+	 * is at least 3-4 sleep clock (32.7KHz) cycles, which comes to
+	 * ~125us (4/32768). To be on the safe side add 200us delay.
+	 */
+	usleep_range(200, 210);
+
+	ret = reset_control_deassert(reset);
+	if (ret) {
+		dev_err(dev, "core_reset deassert failed %d\n", ret);
+		goto out;
+	}
+
+	usleep_range(200, 210);
+
+out:
+	return ret;
+}
+
 static void sdhci_msm_hw_reset(struct sdhci_host *host)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
@@ -5063,28 +5101,10 @@ static void sdhci_msm_hw_reset(struct sdhci_host *host)
 		host->mmc->cqe_enabled = false;
 	}
 
-	ret = reset_control_assert(msm_host->core_reset);
-	if (ret) {
-		dev_err(&pdev->dev, "%s: core_reset assert failed, err = %d\n",
-				__func__, ret);
-		goto out;
-	}
-
-	/*
-	 * The hardware requirement for delay between assert/deassert
-	 * is at least 3-4 sleep clock (32.7KHz) cycles, which comes to
-	 * ~125us (4/32768). To be on the safe side add 200us delay.
-	 */
-	usleep_range(200, 210);
-
-	ret = reset_control_deassert(msm_host->core_reset);
-	if (ret)
-		dev_err(&pdev->dev, "%s: core_reset deassert failed, err = %d\n",
-				__func__, ret);
-
+	sdhci_msm_gcc_reset(&pdev->dev, host);
 	sdhci_msm_registers_restore(host);
 	msm_host->reg_store = false;
-out:
+
 	return;
 }
 
@@ -5411,6 +5431,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		goto pltfm_free;
 	}
 
+	sdhci_msm_gcc_reset(&pdev->dev, host);
 	/* Setup Clocks */
 
 	/* Setup SDCC bus voter clock. */

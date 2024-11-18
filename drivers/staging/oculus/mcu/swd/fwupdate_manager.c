@@ -11,6 +11,7 @@
 #include "swd.h"
 #include "syncboss_swd_ops_nrf52xxx.h"
 #include "syncboss_swd_ops_nrf5340.h"
+#include "syncboss_swd_ops_nrf54l15.h"
 #include "stm32g0_swd_ops.h"
 #include "qm35xxx_swd_ops.h"
 #include "stm32l47xxx_swd_ops.h"
@@ -99,6 +100,21 @@ static struct {
 			.target_program_write_chunk = syncboss_swd_nrf5340_net_write_chunk,
 			.target_get_write_chunk_size = syncboss_nrf5340_get_net_write_chunk_size,
 			.target_program_read = syncboss_swd_nrf5340_read,
+		}
+	},
+#endif
+#ifdef CONFIG_META_SWD_SYNCBOSS_NRF54L15
+	{
+		.flavor = "nrf54l15",
+		.swd_ops = {
+			.provisioning_read = syncboss_swd_nrf54l15_provisioning_read,
+			.provisioning_write = syncboss_swd_nrf54l15_provisioning_write,
+			.target_erase = syncboss_swd_nrf54l15_erase_app,
+			.target_page_is_erased = syncboss_swd_nrf54l15_page_is_erased,
+			.target_program_write_chunk = syncboss_swd_nrf54l15_write_chunk,
+			.target_get_write_chunk_size = syncboss_swd_nrf54l15_get_write_chunk_size,
+			.target_program_read = syncboss_swd_nrf54l15_read,
+			.target_chip_erase = syncboss_swd_nrf54l15_chip_erase,
 		}
 	},
 #endif
@@ -638,15 +654,15 @@ static int fwupdate_get_single_firmware_image(struct device *dev, struct swd_mcu
 	struct flash_info *flash = &mcudata->flash_info;
 	size_t max_fw_size = (flash->num_pages * flash->bank_count - flash->num_retained_pages) * flash->page_size;
 
-	status = request_firmware(&mcudata->fw, mcudata->fw_path, dev);
+	status = firmware_request_nowarn(&mcudata->fw, mcudata->fw_path, dev);
 	if (status != 0) {
 		if (mcudata->fw_path != NULL) {
 			dev_err(dev,
-				"request_firmware: %d, Please ensure %s is present.",
+				"firmware_request_nowarn: %d, Please ensure %s is present.",
 				status, mcudata->fw_path);
 		} else {
 			dev_err(dev,
-				"request_firmware: %d, fw_path is null",
+				"firmware_request_nowarn: %d, fw_path is null",
 				status);
 		}
 		return status;

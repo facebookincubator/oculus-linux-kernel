@@ -155,6 +155,7 @@ struct cam_cdm_client {
 	void __iomem  *changebase_addr;
 	uint32_t stream_on;
 	refcount_t refcount;
+	spinlock_t client_spin_lock;
 	uint32_t handle;
 };
 

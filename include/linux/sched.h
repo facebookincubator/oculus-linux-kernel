@@ -839,6 +839,8 @@ struct task_struct {
 	unsigned int			wakee_flips;
 	unsigned long			wakee_flip_decay_ts;
 	struct task_struct		*last_wakee;
+	struct list_head		shared_runq_node;
+	u64				n_srq_migrations;
 
 	/*
 	 * recent_used_cpu is initially set as the last CPU used by a task

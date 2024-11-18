@@ -132,7 +132,7 @@ QDF_STATUS dp_rx_desc_sanity(struct dp_soc *soc, hal_soc_handle_t hal_soc,
 			     hal_ring_desc_t ring_desc,
 			     struct dp_rx_desc *rx_desc)
 {
-	return QDF_STATUS_SUCCESS;
+	return rx_desc ? QDF_STATUS_SUCCESS : QDF_STATUS_E_NULL_VALUE;
 }
 #endif
 

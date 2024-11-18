@@ -38,12 +38,12 @@ DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
  * sysctl_sched_features, defined in sched.h, to allow constants propagation
  * at compile time and compiler optimization based on features default.
  */
-#define SCHED_FEAT(name, enabled)	\
+#define SCHED_FEAT_CALLBACK(name, enabled, cb)	\
 	(1UL << __SCHED_FEAT_##name) * enabled |
 const_debug unsigned int sysctl_sched_features =
 #include "features.h"
 	0;
-#undef SCHED_FEAT
+#undef SCHED_FEAT_CALLBACK
 #endif
 
 /*
@@ -1475,32 +1475,6 @@ void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 
 #ifdef CONFIG_SMP
 
-static inline bool is_per_cpu_kthread(struct task_struct *p)
-{
-	if (!(p->flags & PF_KTHREAD))
-		return false;
-
-	if (p->nr_cpus_allowed != 1)
-		return false;
-
-	return true;
-}
-
-/*
- * Per-CPU kthreads are allowed to run on !actie && online CPUs, see
- * __set_cpus_allowed_ptr() and select_fallback_rq().
- */
-static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
-{
-	if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
-		return false;
-
-	if (is_per_cpu_kthread(p))
-		return cpu_online(cpu);
-
-	return cpu_active(cpu);
-}
-
 /*
  * This is how migration works:
  *
@@ -1520,7 +1494,7 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
  *
  * Returns (locked) new rq. Old rq's lock is released.
  */
-static struct rq *move_queued_task(struct rq *rq, struct rq_flags *rf,
+struct rq *move_queued_task(struct rq *rq, struct rq_flags *rf,
 				   struct task_struct *p, int new_cpu)
 {
 	lockdep_assert_held(&rq->lock);
@@ -2686,6 +2660,9 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 	if (p->on_rq && ttwu_remote(p, wake_flags))
 		goto stat;
 
+	if (p->state & TASK_UNINTERRUPTIBLE)
+		trace_sched_blocked_reason(p);
+
 #ifdef CONFIG_SMP
 	/*
 	 * Ensure we load p->on_cpu _after_ p->on_rq, otherwise it would be
@@ -2893,6 +2870,12 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 #ifdef CONFIG_COMPACTION
 	p->capture_control = NULL;
 #endif
+
+#ifdef CONFIG_SMP
+	INIT_LIST_HEAD(&p->shared_runq_node);
+	p->n_srq_migrations = 0;
+#endif
+
 	init_numa_balancing(clone_flags, p);
 }
 
@@ -7037,6 +7020,16 @@ int sched_cpu_deactivate(unsigned int cpu)
 	sched_domains_numa_masks_clear(cpu);
 	return 0;
 }
+	
+void sched_update_domains(void)
+{
+	const struct sched_class *class;
+
+	for_each_class(class) {
+		if (class->update_domains)
+			class->update_domains();
+	}
+}
 
 static void sched_rq_cpu_starting(unsigned int cpu)
 {
@@ -7113,6 +7106,11 @@ void __init sched_init_smp(void)
 	cpumask_copy(&current->cpus_requested, cpu_possible_mask);
 	sched_init_granularity();
 
+	/*
+	 * Must come after sched_init_domains() above so that the per-cpu llc
+	 * ID values can be queried when initializing shared runqueue pointers
+	 */
+	init_sched_fair_class_late();
 	init_sched_rt_class();
 	init_sched_dl_class();
 
@@ -7298,6 +7296,7 @@ void __init sched_init(void)
 		hrtick_rq_init(rq);
 		atomic_set(&rq->nr_iowait, 0);
 	}
+	init_cfs_swqueue();
 
 	BUG_ON(alloc_related_thread_groups());
 

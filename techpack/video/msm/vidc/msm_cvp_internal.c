@@ -432,6 +432,7 @@ static int msm_cvp_unregister_buffer(struct msm_vidc_inst *inst,
 	}
 	if (!found) {
 		print_client_buffer(VIDC_ERR, "invalid", inst, buf);
+		mutex_unlock(&inst->cvpbufs.lock);
 		return -EINVAL;
 	}
 

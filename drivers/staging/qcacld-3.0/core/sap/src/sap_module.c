@@ -1274,7 +1274,7 @@ wlansap_get_csa_chanwidth_from_phymode(struct sap_context *sap_context,
 		       chan_freq, ch_width,
 		       sap_context->csr_roamProfile.phyMode,
 		       concurrent_bw,
-			   tgt_ch_params ? tgt_ch_params->ch_width : CH_WIDTH_MAX);
+		       tgt_ch_params ? tgt_ch_params->ch_width : CH_WIDTH_MAX);
 
 	return ch_width;
 }
