@@ -252,6 +252,7 @@ struct cam_vfe_bus_ver3_vfe_out_data {
 	void                            *priv;
 	uint32_t                         mid[CAM_VFE_BUS_VER3_MAX_MID_PER_PORT];
 	bool                             limiter_enabled;
+	bool                             primary_port_en;
 	uint32_t   stored_irq_masks[CAM_VFE_BUS_VER3_MAX_STORED_MASKS][CAM_VFE_BUS_VER3_IRQ_MAX];
 };
 
@@ -299,6 +300,7 @@ struct cam_vfe_bus_ver3_vfe_out_hw_info {
  * @tunneling_overflow_shift: Mask shift for tunneling overflow irq
  * @image_addr_fifo_cnt_mask: Mask for image address fifo count
  * @support_tunneling:        Indicate if bus support tunneling feature
+ * @virtual_frame_en_shift:   Virtual frame enable shift
  * @fifo_depth:               Max fifo depth
  */
 struct cam_vfe_bus_ver3_hw_info {
@@ -325,6 +327,7 @@ struct cam_vfe_bus_ver3_hw_info {
 	uint32_t no_tunnelingId_shift;
 	uint32_t tunneling_overflow_shift;
 	uint32_t image_addr_fifo_cnt_mask;
+	uint32_t virtual_frame_en_shift;
 	bool support_tunneling;
 	uint32_t fifo_depth;
 };
@@ -453,6 +456,7 @@ struct cam_vfe_bus_ver3_common_data {
 	bool                                        init_irq_subscribed;
 	bool                                        disable_mmu_prefetch;
 	bool                                        support_tunneling;
+	bool                                        buf_done_evt_control;
 	cam_hw_mgr_event_cb_func                    event_cb;
 	int                                         rup_irq_handle[
 		CAM_VFE_BUS_VER3_SRC_GRP_MAX];
@@ -461,6 +465,7 @@ struct cam_vfe_bus_ver3_common_data {
 	uint32_t                                    no_tunnelingId_shift;
 	uint32_t                                    tunneling_overflow_shift;
 	uint32_t                                    image_addr_fifo_cnt_mask;
+	uint32_t                                    virtual_frame_en_shift;
 	uint32_t                                    out_fifo_depth;
 };
 

@@ -197,8 +197,10 @@ struct cvp_hal_data {
 	phys_addr_t firmware_base;
 	u8 __iomem *register_base;
 	u8 __iomem *gcc_reg_base;
+	u8 __iomem *aon_reg_base;
 	u32 register_size;
 	u32 gcc_reg_size;
+	u32 aon_reg_size;
 };
 
 struct iris_resources {
@@ -279,4 +281,5 @@ int cvp_iris_hfi_initialize(struct cvp_hfi_device *hdev, u32 device_id,
 
 int load_cvp_fw_impl(struct iris_hfi_device *device);
 int unload_cvp_fw_impl(struct iris_hfi_device *device);
+uint64_t __read_aon_time(struct iris_hfi_device *device);
 #endif

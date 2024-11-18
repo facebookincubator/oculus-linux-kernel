@@ -2921,6 +2921,11 @@ sir_convert_probe_frame2_t2lm_struct(tDot11fProbeResponse *pr,
 		qdf_trace_hex_dump(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 				   &ie[0], pr->t2lm_ie[i].num_data + 3);
 
+		if (ie[TAG_LEN_POS] + 2 > DOT11F_IE_T2LM_IE_MAX_LEN + 3) {
+			pe_debug("Invalid T2LM IE length");
+			return QDF_STATUS_E_PROTO;
+		}
+
 		status = wlan_mlo_parse_t2lm_info(&ie[0], &t2lm);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			pe_debug("Parse T2LM IE fail");
@@ -3866,6 +3871,12 @@ sir_convert_assoc_resp_frame2_t2lm_struct(struct mac_context *mac,
 			     ar->t2lm_ie[i].num_data);
 		qdf_trace_hex_dump(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 				   &ie[0], ar->t2lm_ie[i].num_data + 3);
+
+		if (ie[TAG_LEN_POS] + 2 > DOT11F_IE_T2LM_IE_MAX_LEN + 3) {
+			pe_debug("Invalid T2LM IE length");
+			return QDF_STATUS_E_PROTO;
+		}
+
 		status = wlan_mlo_parse_t2lm_info(&ie[0], &t2lm);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			pe_debug("Parse T2LM IE fail");
@@ -5189,6 +5200,12 @@ sir_convert_beacon_frame2_t2lm_struct(tDot11fBeacon *bcn_frm,
 			     bcn_frm->t2lm_ie[i].num_data);
 		qdf_trace_hex_dump(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
 				   &ie[0], bcn_frm->t2lm_ie[i].num_data + 3);
+
+		if (ie[TAG_LEN_POS] + 2 > DOT11F_IE_T2LM_IE_MAX_LEN + 3) {
+			pe_debug("Invalid T2LM IE length");
+			return QDF_STATUS_E_PROTO;
+		}
+
 		status = wlan_mlo_parse_t2lm_info(&ie[0], &t2lm);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			pe_debug("Parse T2LM IE fail");

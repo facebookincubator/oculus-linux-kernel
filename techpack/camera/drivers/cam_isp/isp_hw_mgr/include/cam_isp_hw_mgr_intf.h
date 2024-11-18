@@ -12,6 +12,8 @@
 #include <linux/list.h>
 #include <media/cam_isp.h>
 #include "cam_hw_mgr_intf.h"
+#include "cam_packet_util.h"
+#include "cam_isp_hw.h"
 
 /* MAX IFE instance */
 #define CAM_IFE_HW_NUM_MAX       16
@@ -45,6 +47,7 @@
 #define CAM_IFE_CTX_AEB_EN             BIT(5)
 #define CAM_IFE_CTX_INDEPENDENT_CRM_EN BIT(6)
 #define CAM_IFE_CTX_SLAVE_METADTA_EN   BIT(7)
+#define CAM_IFE_CTX_UL_PATH            BIT(8)
 
 /*
  * Maximum configuration entry size  - This is based on the
@@ -61,6 +64,10 @@
 /* ctx get virtual rdi mapping callback function type */
 typedef int (*cam_hw_get_virtual_rdi_mapping_cb_func)(void *context,
 	uint32_t out_port, bool is_virtual_rdi);
+
+/* Update result info for fastpath */
+typedef void (*cam_isp_ctx_update_fastpath_result)(void *data,
+	uint32_t value);
 
 /**
  *  enum cam_isp_hw_event_type - Collection of the ISP hardware events
@@ -149,6 +156,44 @@ struct cam_isp_ctx_wait_last_stream_sof_info {
 	uint32_t      vc;
 	uint32_t      dt;
 	uint64_t      frame_duration;
+};
+
+struct cam_isp_ul_resource_update_entry {
+	int                            resource_type;
+	int                            buf_count;
+	struct cam_hw_update_entry     hw_update_entries[MAX_IO_PACKETS];
+	struct cam_hw_fence_map_entry  out_map_entries[MAX_IO_PACKETS];
+	int                            curr_buf_index;
+};
+
+struct cam_isp_ul_change_base_cmd {
+	bool is_valid;
+	struct cam_hw_update_entry    change_base_cmd[CAM_ISP_HW_TYPE_MAX][CAM_IFE_HW_NUM_MAX];
+};
+
+struct cam_isp_ul_rup_aup_cmd {
+	bool is_valid;
+	int num_rup_aup_cmd;
+	struct cam_hw_update_entry    rup_aup_cmd[4];
+};
+
+struct cam_isp_ul_primary_port_update_entry {
+	int                            resource_type;
+	struct cam_hw_update_entry     hw_update_entries;
+	bool                           is_valid;
+};
+
+/**
+ * sturct cam_isp_ctx_ul_data
+*/
+struct cam_isp_ctx_ul_data {
+	struct port_pattern_period pattern_period[MAX_IO_RESOURCES];
+	uint64_t curr_index_period;
+	struct cam_kmd_buf_info    kmd_buf;
+	struct cam_isp_ul_resource_update_entry     resource_data[MAX_IO_RESOURCES];
+	struct cam_isp_ul_primary_port_update_entry primary_port_data;
+	struct cam_isp_ul_change_base_cmd   change_base;
+	struct cam_isp_ul_rup_aup_cmd         rup_aup_cmd;
 };
 
 /**
@@ -247,23 +292,26 @@ struct cam_isp_bw_clk_config_info {
 /**
  * struct cam_isp_prepare_hw_update_data - hw prepare data
  *
- * @isp_mgr_ctx:              ISP HW manager Context for current request
- * @packet_opcode_type:       Packet header opcode in the packet header
- *                            this opcode defines, packet is init packet or
- *                            update packet
- * @frame_header_cpu_addr:    Frame header cpu addr
- * @frame_header_iova:        Frame header iova
- * @frame_header_res_id:      Out port res_id corresponding to frame header
- * @bw_clk_config:            BW and clock config info
- * @reg_dump_buf_desc:       cmd buffer descriptors for reg dump
- * @num_reg_dump_buf:        Count of descriptors in reg_dump_buf_desc
- * @packet:                  CSL packet from user mode driver
- * @mup_val:                 MUP value if configured
- * @num_exp:                 Num of exposures
- * @mup_en:                  Flag if dynamic sensor switch is enabled
- * @virtual_rdi_mapping_cb:  virtual rdi mapping cb function for
- *                           respective sensor via ife_ctx
- * @per_port_enable:         Indicates if perport feature is enabled or not
+ * @isp_mgr_ctx:               ISP HW manager Context for current request
+ * @packet_opcode_type:        Packet header opcode in the packet header
+ *                             this opcode defines, packet is init packet or
+ *                             update packet
+ * @frame_header_cpu_addr:     Frame header cpu addr
+ * @frame_header_iova:         Frame header iova
+ * @frame_header_res_id:       Out port res_id corresponding to frame header
+ * @bw_clk_config:             BW and clock config info
+ * @reg_dump_buf_desc:         cmd buffer descriptors for reg dump
+ * @num_reg_dump_buf:          Count of descriptors in reg_dump_buf_desc
+ * @packet:                    CSL packet from user mode driver
+ * @mup_val:                   MUP value if configured
+ * @num_exp:                   Num of exposures
+ * @primary_port_entry_index:  Primary port hw entry index for ease of access
+ *                             into output map entries
+ * @mup_en:                    Flag if dynamic sensor switch is enabled
+ * @virtual_rdi_mapping_cb:    virtual rdi mapping cb function for
+ *                             respective sensor via ife_ctx
+ * @per_port_enable:           Indicates if perport feature is enabled or not
+ * @virtual_frame_en:          Indicates if virtual frame is enabled
  *
  */
 struct cam_isp_prepare_hw_update_data {
@@ -279,9 +327,14 @@ struct cam_isp_prepare_hw_update_data {
 	struct cam_packet                    *packet;
 	uint32_t                              mup_val;
 	uint32_t                              num_exp;
+	uint32_t                              primary_port_entry_index;
 	cam_hw_get_virtual_rdi_mapping_cb_func virtual_rdi_mapping_cb;
 	bool                                  per_port_enable;
 	bool                                  mup_en;
+	struct cam_isp_ctx_ul_data           *ul_data;
+	bool                                  is_ul_setup;
+	bool                                  is_ul_update;
+	bool                                  virtual_frame_en;
 };
 
 
@@ -412,6 +465,8 @@ enum cam_isp_hw_mgr_command {
 	CAM_ISP_HW_MGR_WAIT_CONFIG_DONE,
 	CAM_ISP_HW_MGR_UPDATE_FRAMEDROP_RECOVERY_PROGRESS,
 	CAM_HW_MGR_CMD_CHECK_RUP_APPLIED_REQ,
+	CAM_ISP_HW_MGR_GET_PRIMARY_PORT_INFO,
+	CAM_ISP_HW_MGR_FAST_RESULT_NOTIFIER_CFG,
 	CAM_ISP_HW_MGR_CMD_MAX,
 };
 
@@ -441,7 +496,11 @@ enum cam_isp_ctx_type {
  * @ptr:                   void pointer out param
  * @path_irq_mask:         mask created from requested ports, out param
  * @csid_rup_aup_mask:     mask created from acquired ports, out param
+ * @num_ports:             Number of primary ports, out param
+ * @primary_port_cfg:      Primary port config info
+ * @use_primary_port_cfg:  Stream is using primary ports for buf done handling
  * @dropped_ife_req:       dropped ife request id
+ * @fastpath_result_handler: Fastpath result handler
  * @recovery_already_in_progress: Indiates if current ife is
  *                          process for frame drop recovery
  * @rup_for_applied_req:   Check if rup is received for proper applied req
@@ -474,7 +533,13 @@ struct cam_isp_hw_cmd_args {
 			uint64_t                path_irq_mask;
 			uint64_t                csid_rup_aup_mask;
 		} path_mask;
+		struct {
+			uint32_t                num_ports;
+			void                   *primary_port_cfg;
+			bool                    use_primary_port_config;
+		} primary_port_info;
 		uint64_t                      dropped_ife_req;
+		cam_isp_ctx_update_fastpath_result fastpath_result_handler;
 		bool                          recovery_already_in_progress;
 		bool                          rup_for_applied_req;
 	} u;
@@ -522,6 +587,28 @@ struct cam_isp_start_args {
 struct cam_isp_lcr_rdi_cfg_args {
 	struct cam_isp_lcr_rdi_config *rdi_lcr_cfg;
 	bool                           is_init;
+};
+
+/** struct cam_isp_primary_port_info - Primary port config info
+ *
+ * @res_id : res_id of the primary/leading port
+ */
+struct cam_isp_primary_port_info {
+	uint32_t res_id;
+};
+
+/**
+ * struct cam_isp_hw_fast_result_notifier_cfg:
+ *
+ * @brief:              Structure to pass fastpath result notifier
+ *
+ * @data:               Priv data expected by the notifier
+ * @handler_cb:         Fastpath notifier handler
+ *
+ */
+struct cam_isp_hw_fast_result_notifier_cfg {
+	void *data;
+	cam_isp_ctx_update_fastpath_result handler_cb;
 };
 
 /**

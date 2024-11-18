@@ -26,6 +26,7 @@
 #include "cam_common_util.h"
 #include "cam_subdev.h"
 #include "cam_req_mgr_worker_wrapper.h"
+#include "cam_trace.h"
 
 /* CSIPHY TPG VC/DT values */
 #define CAM_IFE_CPHY_TPG_VC_VAL                         0x0
@@ -411,6 +412,13 @@ static int cam_ife_csid_ver2_path_top_half(
 	path_cfg = (struct cam_ife_csid_ver2_path_cfg *)res->res_priv;
 	path_reg = csid_reg->path_reg[res->res_id];
 	csid_mem_base = csid_hw->hw_info->soc_info.reg_map[CAM_IFE_CSID_CLC_MEM_BASE_ID].mem_base;
+
+	if (strcmp("IPP", res->res_name) == 0) {
+		CAM_DBG(CAM_ISP,
+		"CameraId %u on %s path and sof Time %llu",
+		csid_hw->rx_cfg.phy_sel, res->res_name, ap_monotonic_ts);
+		trace_cam_log_meta_trace("cam_rgb_capture_sof_to_res_begin", ap_monotonic_ts);
+	}
 
 	rc  = cam_ife_csid_ver2_get_evt_payload(csid_hw, &evt_payload,
 			&csid_hw->path_free_payload_list,

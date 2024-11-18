@@ -976,7 +976,7 @@ static int queue_write(struct bow_context *bc, struct bio *bio)
 					| __GFP_NOMEMALLOC | __GFP_NOWARN);
 	if (!ww) {
 		DMERR("Failed to allocate write_work");
-		return -ENOMEM;
+		return DM_MAPIO_KILL;
 	}
 
 	INIT_WORK(&ww->work, bow_write);

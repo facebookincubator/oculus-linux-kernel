@@ -12,6 +12,12 @@ menuconfig META
 
 if OCULUS || META
 
+config META_DTS_DIR
+	string "Name of subdirectory containing device trees"
+	help
+	  Subdirectory within arch/arm64/boot/dts/meta to include device
+	  trees from.
+
 config AS5510
 	tristate "AS5510 Hall Effect Sensor i2c driver"
 	default n
@@ -21,12 +27,6 @@ config AS5510
 	  With this sensor, can measure IPD. Look at regs 0x0-0x1.
 	  Here is spec sheet:
 	  http://www.mouser.com/ds/2/588/AS5510_Datasheet_EN_v3-272817.pdf
-
-config AW8646_MOTOR
-    tristate "Step motor driver for awinic AW8646"
-	default n
-	help
-	  Enable motor driver for awinic AW8646.
 
 config BLU_FW
 	tristate "Support BLU FW Updates"
@@ -178,28 +178,6 @@ config OCULUS_CHARGING_DOCK
 	  This driver also creates sysfs nodes to advertise dock parameters which
 	  can be queried from user-space for gathering required dock telemetry.
 
-config OCULUS_HOLLYWOOD
-	bool "Enable support for hollywood device"
-	default n
-	select ARCH_KONA
-	help
-	  Enable support for the hollywood device
-
-config OCULUS_SEACLIFF
-	bool "Enable support for seacliff device"
-	default n
-	select ARCH_KONA
-	help
-	  Enable support for the seacliff device
-
-config OCULUS_STARLET
-	bool "Enable support for starlet device"
-	default n
-	depends on OCULUS
-	select ARCH_BENGAL
-	help
-	  Enable support for the starlet device
-
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"
 	default n
@@ -253,7 +231,7 @@ config SENSORLOCK
 
 config SENSORS_PWM_TACH_FAN
 	tristate "PWM&TACH fan"
-	depends on (PWM && OF) || COMPILE_TEST
+	depends on (HWMON && PWM && OF) || COMPILE_TEST
 	help
 	  If you say yes here you get support for fans connected to PWM lines.
 	  Tach connected to SoC gpio to read fan rpm.

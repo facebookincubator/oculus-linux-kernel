@@ -989,7 +989,8 @@ static int dsi_panel_stark_olivia_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	dsi = &panel->mipi_device;
 	bl_config = &panel->bl_config;
 
-	if (bl_config->backlight_changes_blocked) return rc;
+	if (bl_config->backlight_changes_blocked)
+		return rc;
 
 	timing = &panel->cur_mode->timing;
 	vtotal = (u32)DSI_V_TOTAL(timing);
@@ -1107,6 +1108,91 @@ static int dsi_panel_stark_olivia_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 			mutex_unlock(&ctrl->ctrl_lock);
 		}
 	}
+
+error:
+	return rc;
+}
+
+static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
+{
+	int rc = 0;
+	struct dsi_mode_info *timing;
+	struct mipi_dsi_device *dsi;
+	struct dsi_backlight_config *bl_config;
+	u32 vtotal, latest_scanline, start_scanline, settling_time_scanlines, max_stereo_offset_scanlines,
+	panel_1h_ns, guardband_margin_scanlines, settle_time_us, blu_default_duty;
+
+	u8 reg = 0xB9; /* BLU adjust command */
+	u8 payload[4] = {0}; /* BLU adjust payload */
+
+	if (!panel || !panel->cur_mode || (bl_lvl > 0xffff))
+		return -EINVAL;
+
+	dsi = &panel->mipi_device;
+	bl_config = &panel->bl_config;
+
+	if (bl_config->backlight_changes_blocked)
+		return rc;
+
+	timing = &panel->cur_mode->timing;
+	vtotal = (u32)DSI_V_TOTAL(timing);
+	panel_1h_ns = 1000000000 / (vtotal * timing->refresh_rate);
+	guardband_margin_scanlines = 15;
+
+	/* Transform backlight level into illumination period in scanlines */
+	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	bl_lvl = (bl_lvl * vtotal * blu_default_duty) / 1000000;
+
+	/*
+	 * Calculate the last scanline to start on without overlapping
+	 * the backlight illumination with the next refresh's
+	 * scanout to the active scanlines of the panel.
+	 */
+
+	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
+	latest_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
+	if (bl_config->settling_time_target_us < 0xFFFF) {
+		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
+	} else {
+		// Default to 4ms settling time
+		settling_time_scanlines = 4000000 / panel_1h_ns;
+	}
+
+	/*
+	 * We fix the flash time for the BLU to be at the earliest possible time (just after the settling
+	 * time, plus the active scan time)
+	 */
+	start_scanline = timing->v_back_porch + timing->v_sync_width + timing->v_active + settling_time_scanlines;
+
+	// Keep the left scanline out of the guardband region; necessary when MIPI reads are performed
+	if (start_scanline > vtotal - guardband_margin_scanlines && start_scanline <= vtotal)
+		start_scanline = vtotal - guardband_margin_scanlines;
+
+	start_scanline = min(latest_scanline, start_scanline);
+	settle_time_us = (start_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * panel_1h_ns / 1000;
+
+	if (start_scanline > vtotal)
+		start_scanline -= vtotal;
+
+	/*
+	 * Payload is two 16-bit LE values:
+	 * parameter 0: Start scanline for backlight flash
+	 * parameter 1: Flash period in scanlines
+	 */
+	payload[0] = start_scanline >> 8;
+	payload[1] = start_scanline & 0xff;
+	payload[2] = bl_lvl >> 8;
+	payload[3] = bl_lvl & 0xff;
+
+	rc = mipi_dsi_dcs_write(dsi, reg, payload, sizeof(payload));
+	if (rc) {
+		pr_err("failed to set LXS brightness cmds, rc=%d\n", rc);
+		goto error;
+	}
+
+	bl_config->scanline_duration = bl_lvl;
+	bl_config->scanline_offset[0] = bl_config->scanline_offset[1] = start_scanline;
+	bl_config->settling_time_us[0] = bl_config->settling_time_us[1] = settle_time_us;
 
 error:
 	return rc;
@@ -1311,6 +1397,9 @@ static void dsi_panel_temp_dependent_bl_task(struct work_struct *work)
 	case DSI_BACKLIGHT_STARK_OLIVIA:
 		dsi_panel_stark_olivia_set_pwm(panel, bl_config->bl_level);
 		break;
+	case DSI_BACKLIGHT_LXS:
+		dsi_panel_lxs_set_pwm(panel, bl_config->bl_level);
+		break;
 	case DSI_BACKLIGHT_JDI_NVT:
 		dsi_panel_jdi_nvt_set_pwm(panel, bl_config->bl_level);
 		break;
@@ -1444,6 +1533,9 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_update_pwm_backlight(panel, bl_lvl);
 		break;
+	case DSI_BACKLIGHT_LXS:
+		rc = dsi_panel_lxs_set_pwm(panel, bl_lvl);
+		break;
 	default:
 		DSI_ERR("Backlight type(%d) not supported\n", bl->type);
 		rc = -ENOTSUPP;
@@ -1481,6 +1573,7 @@ static u32 dsi_panel_get_brightness(struct dsi_backlight_config *bl)
 	case DSI_BACKLIGHT_TOKKI_A:
 	case DSI_BACKLIGHT_STARK_OLIVIA:
 	case DSI_BACKLIGHT_JDI_NVT:
+	case DSI_BACKLIGHT_LXS:
 	case DSI_BACKLIGHT_EXTERNAL:
 	case DSI_BACKLIGHT_PWM:
 	default:
@@ -1591,6 +1684,7 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_TOKKI_A:
 	case DSI_BACKLIGHT_STARK_OLIVIA:
 	case DSI_BACKLIGHT_JDI_NVT:
+	case DSI_BACKLIGHT_LXS:
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
@@ -3650,6 +3744,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		panel->bl_config.type = DSI_BACKLIGHT_STARK_OLIVIA;
 	} else if (!strcmp(bl_type, "bl_ctrl_jdi_nvt")) {
 		panel->bl_config.type = DSI_BACKLIGHT_JDI_NVT;
+	} else if (!strcmp(bl_type, "bl_ctrl_lxs")) {
+		panel->bl_config.type = DSI_BACKLIGHT_LXS;
 	} else {
 		DSI_DEBUG("[%s] bl-pmic-control-type unknown-%s\n",
 			 panel->name, bl_type);
@@ -3767,6 +3863,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 		if (gpio_is_valid(panel->bl_config.te_gpio)) {
 			panel->bl_config.te_irq = gpio_to_irq(
 					panel->bl_config.te_gpio);
+			spin_lock_init(&panel->bl_config.event_lock);
 			rc = devm_request_irq(panel->parent,
 					panel->bl_config.te_irq,
 					te_edge_irq_handler,
@@ -3783,8 +3880,6 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 
 			panel->bl_config.te_active_edge = !utils->read_bool(
 					utils->data, "meta,te-active-low");
-
-			spin_lock_init(&panel->bl_config.event_lock);
 		} else
 			goto no_irq;
 
@@ -3808,7 +3903,8 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 			}
 		}
 	} else if (panel->bl_config.type == DSI_BACKLIGHT_STARK_OLIVIA ||
-			panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT) {
+			panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT ||
+			panel->bl_config.type == DSI_BACKLIGHT_LXS) {
 		rc = utils->read_u32(utils->data,
 			"meta,blu-default-duty-cycle", &val);
 		if (rc) {
@@ -6258,6 +6354,9 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 	if (panel->bl_config.type == DSI_BACKLIGHT_JDI_NVT)
 		dsi_panel_jdi_nvt_update_backlight(panel, 0);
 
+	if (panel->bl_config.type == DSI_BACKLIGHT_LXS)
+		dsi_panel_lxs_set_pwm(panel, 0);
+
 	if (gpio_is_valid(panel->bl_config.en_gpio))
 		gpio_set_value(panel->bl_config.en_gpio, 0);
 
@@ -6789,12 +6888,21 @@ int dsi_panel_control_ddic_cac(struct dsi_panel *panel, bool enable)
 	u8 cac_enable_command[2]  = {0x40, 0x80};
 	u8 cac_disable_command[2] = {0x40, 0x00};
 
-	if (!panel || !panel->panel_initialized)
+	if (!panel)
 		return -EINVAL;
 
+	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized) {
+		DSI_WARN("DDIC CAC: Failed to set cac flag, panel not initilized\n");
+		rc = -EINVAL;
+		goto error;
+	}
 	dsi = &panel->mipi_device;
-	if (!dsi)
-		return -EINVAL;
+	if (!dsi) {
+		DSI_ERR("DDIC CAC: Failed to set cac flag, no dsi\n");
+		rc = -EINVAL;
+		goto error;
+	}
 
 	rc = mipi_dsi_dcs_write_queue(dsi, select_cac_page, sizeof(select_cac_page), MIPI_DSI_MSG_BATCH_COMMAND, 0);
 
@@ -6808,5 +6916,7 @@ int dsi_panel_control_ddic_cac(struct dsi_panel *panel, bool enable)
 	if (rc)
 		DSI_ERR("DDIC CAC: [%s] Failed to set %d flag, rc=%d\n", panel->name, enable, rc);
 
+error:
+	mutex_unlock(&panel->panel_lock);
 	return rc;
 }

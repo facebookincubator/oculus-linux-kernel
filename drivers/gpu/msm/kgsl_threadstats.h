@@ -50,9 +50,14 @@ struct kgsl_threadstats_entry {
 struct kgsl_threadstats_history_node {
 	struct list_head node;
 	struct kgsl_threadstats_entry entry;
+
+	uint64_t sync_ktime;
+	uint64_t sync_ticks;
 };
 
-#define KGSL_THREADSTATS_HISTORY_LENGTH 8
+#define KGSL_THREADSTATS_HISTORY_LENGTH 16
+#define KGSL_THREADSTATS_HISTORY_SIZE \
+	(sizeof(struct kgsl_threadstats_entry) * KGSL_THREADSTATS_HISTORY_LENGTH)
 
 struct kgsl_device;
 struct kgsl_thread_private;

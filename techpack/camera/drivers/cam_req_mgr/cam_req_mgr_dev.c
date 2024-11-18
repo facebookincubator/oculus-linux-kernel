@@ -728,6 +728,21 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		}
 		}
 		break;
+	case CAM_REQ_MGR_BATCH_REQ: {
+		struct cam_batch_config_dev_cmd cmd;
+		if (k_ioctl->size != sizeof(cmd))
+			return -EINVAL;
+		if (copy_from_user(&cmd,
+			u64_to_user_ptr(k_ioctl->handle),
+			sizeof(struct cam_batch_config_dev_cmd))) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = cam_req_mgr_batch_request(&cmd);
+		if (rc)
+			CAM_ERR(CAM_CORE, "Batch request failed");
+		}
+		break;
 	default:
 		CAM_ERR(CAM_CRM, "Invalid ioctl command %x", k_ioctl->op_code);
 		return -ENOIOCTLCMD;

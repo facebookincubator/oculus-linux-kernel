@@ -179,7 +179,6 @@ static ssize_t history_bin_show(struct file *filep, struct kobject *kobj,
 {
 	struct kgsl_thread_private *private;
 	struct kgsl_threadstats_history_node *node;
-	struct kgsl_threadstats_entry *output = (struct kgsl_threadstats_entry *)buf;
 	unsigned long flags;
 
 	private = kobj ? container_of(kobj, struct kgsl_thread_private, kobj) :
@@ -187,13 +186,39 @@ static ssize_t history_bin_show(struct file *filep, struct kobject *kobj,
 	if (!private)
 		return -EIO;
 
-	memset(buf, 0, count);
+	/*
+	 * Don't allow seeking, since there's no guarantee that the history is
+	 * consistent between calls and this would also complicate the list
+	 * handling.
+	 */
+	if (off != 0)
+		return -ESPIPE;
+
+	/*
+	 * Callers should generally read the full history buffer, but in case
+	 * they don't, at least make sure that they're reading some multiple of
+	 * the threadstats entry structure size. If they're not they're probably
+	 * misusing this attribute.
+	 */
+	if (count == 0 || count > KGSL_THREADSTATS_HISTORY_SIZE ||
+			count % sizeof(struct kgsl_threadstats_entry) != 0)
+		return -EINVAL;
 
 	/* Dump the history entries in list order in binary format. */
 	spin_lock_irqsave(&private->history_lock, flags);
-	list_for_each_entry(node, &private->history_list, node)
-		memcpy(output++, &node->entry, sizeof(struct kgsl_threadstats_entry));
+	list_for_each_entry(node, &private->history_list, node) {
+		memcpy(buf + off, &node->entry,
+				sizeof(struct kgsl_threadstats_entry));
+
+		off += sizeof(struct kgsl_threadstats_entry);
+		if (off >= count)
+			break;
+	}
 	spin_unlock_irqrestore(&private->history_lock, flags);
+
+	/* Zero out any remaining entries in the output buffer. */
+	if (off < count)
+		memset(buf + off, 0, count - off);
 
 	return count;
 }
@@ -201,7 +226,7 @@ static ssize_t history_bin_show(struct file *filep, struct kobject *kobj,
 static struct bin_attribute threadstat_history_attr = {
 	.attr.name = "history_bin",
 	.attr.mode = 0444,
-	.size = sizeof(struct kgsl_threadstats_entry) * KGSL_THREADSTATS_HISTORY_LENGTH,
+	.size = KGSL_THREADSTATS_HISTORY_SIZE,
 	.read = history_bin_show
 };
 
@@ -326,6 +351,9 @@ void kgsl_thread_queue_cmdobj(struct kgsl_thread_private *thread,
 	list_add(&node->node, &thread->history_list);
 
 	/* Initialize the history entry. */
+	node->sync_ktime = 0;
+	node->sync_ticks = 0;
+
 	entry = &node->entry;
 	memset(entry, 0, sizeof(struct kgsl_threadstats_entry));
 	entry->timestamp = (uint64_t)timestamp;
@@ -335,6 +363,13 @@ void kgsl_thread_queue_cmdobj(struct kgsl_thread_private *thread,
 
 	_notify_event(thread->event_sd[KGSL_THREADSTATS_QUEUED_EVENT]);
 }
+
+/*
+ * Calculate the time delta from the sync in nsecs by converting from GPU ticks
+ * (which operates on a 19.2 MHz timer) and add that to the sync ktime.
+ */
+#define SYNC_TICKS(ticks) \
+	(node->sync_ktime + (int64_t)((ticks) - node->sync_ticks) * 10000 / 192)
 
 void kgsl_thread_submit_cmdobj(struct kgsl_thread_private *thread,
 		uint32_t timestamp, u64 ktime, u64 ticks)
@@ -346,23 +381,6 @@ void kgsl_thread_submit_cmdobj(struct kgsl_thread_private *thread,
 	if (IS_ERR_OR_NULL(thread))
 		return;
 
-	thread->sync_ktime = ktime;
-	thread->sync_ticks = ticks;
-	thread->stats[KGSL_THREADSTATS_SUBMITTED] = ktime;
-	thread->stats[KGSL_THREADSTATS_SUBMITTED_ID] = timestamp;
-	thread->stats[KGSL_THREADSTATS_SUBMITTED_COUNT]++;
-
-	/*
-	 * Update the thread-local time sync. This can be used to adjust
-	 * the ALWAYSON performance counter output back to the kernel's
-	 * monotonic clock. Add any value stored in the perfcounter register
-	 * structure to the sync ticks to match the query behavior.
-	 */
-	alwayson_value = (thread->alwayson_reg) ?
-			READ_ONCE(thread->alwayson_reg->value) : 0;
-	thread->stats[KGSL_THREADSTATS_SYNC_DELTA] = thread->sync_ktime -
-			(thread->sync_ticks + alwayson_value) * 10000 / 192;
-
 	/*
 	 * Look this entry up in the history and update its submitted time if
 	 * found.
@@ -372,6 +390,25 @@ void kgsl_thread_submit_cmdobj(struct kgsl_thread_private *thread,
 		struct kgsl_threadstats_entry *entry = &node->entry;
 
 		if (entry->timestamp == timestamp) {
+			node->sync_ktime = ktime;
+			node->sync_ticks = ticks;
+
+			/*
+			 * Update the thread-local time sync. This can be used
+			 * to adjust the ALWAYSON performance counter output
+			 * back to the kernel's monotonic clock. Add any value
+			 * stored in the perfcounter register structure to the
+			 * sync ticks to match the query behavior.
+			 */
+			alwayson_value = (thread->alwayson_reg) ?
+					READ_ONCE(thread->alwayson_reg->value) : 0;
+			thread->stats[KGSL_THREADSTATS_SYNC_DELTA] =
+					SYNC_TICKS(alwayson_value);
+
+			thread->stats[KGSL_THREADSTATS_SUBMITTED] = ktime;
+			thread->stats[KGSL_THREADSTATS_SUBMITTED_ID] = timestamp;
+			thread->stats[KGSL_THREADSTATS_SUBMITTED_COUNT]++;
+
 			entry->submitted = ktime;
 			break;
 		}
@@ -394,20 +431,9 @@ void kgsl_thread_retire_cmdobj(struct kgsl_thread_private *thread,
 		uint64_t active_ktime;
 		unsigned long flags;
 
-		/*
-		 * Calculate the time delta from the sync in nsecs by converting
-		 * from GPU ticks (which operates on a 19.2 MHz timer) and
-		 * add that to the sync ktime.
-		 */
-		retired_ktime = thread->sync_ktime +
-				(end - thread->sync_ticks) * 10000 / 192;
+		/* GPU ticks are on a 19.2 MHz timer. */
 		active_ktime = (active ? active : (end - start)) * 10000 / 192;
-		thread->stats[KGSL_THREADSTATS_RETIRED] = retired_ktime;
 		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] += active_ktime;
-
-		if (start != 0)
-			consumed_ktime = thread->sync_ktime +
-					(start - thread->sync_ticks) * 10000 / 192;
 
 		/*
 		 * Look this entry up in the history and update its consumed,
@@ -418,6 +444,16 @@ void kgsl_thread_retire_cmdobj(struct kgsl_thread_private *thread,
 			struct kgsl_threadstats_entry *entry = &node->entry;
 
 			if (entry->timestamp == timestamp) {
+				retired_ktime = SYNC_TICKS(end);
+				if (start != 0)
+					consumed_ktime = SYNC_TICKS(start);
+
+				thread->stats[KGSL_THREADSTATS_RETIRED] =
+						retired_ktime;
+				thread->stats[KGSL_THREADSTATS_RETIRED_ID] =
+						timestamp;
+				thread->stats[KGSL_THREADSTATS_RETIRED_COUNT]++;
+
 				entry->consumed = consumed_ktime;
 				entry->retired = retired_ktime;
 				entry->active = active_ktime;
@@ -426,9 +462,6 @@ void kgsl_thread_retire_cmdobj(struct kgsl_thread_private *thread,
 		}
 		spin_unlock_irqrestore(&thread->history_lock, flags);
 	}
-
-	thread->stats[KGSL_THREADSTATS_RETIRED_ID] = timestamp;
-	thread->stats[KGSL_THREADSTATS_RETIRED_COUNT]++;
 
 	_notify_event(thread->event_sd[KGSL_THREADSTATS_RETIRED_EVENT]);
 	_notify_event(thread->event_sd[KGSL_THREADSTATS_ACTIVE_TIME_EVENT]);

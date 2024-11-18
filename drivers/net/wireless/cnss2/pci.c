@@ -712,6 +712,7 @@ static int cnss_pci_reg_read(struct cnss_pci_data *pci_priv,
 {
 	int ret;
 	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
+	unsigned long flags;
 
 	if (!in_interrupt() && !irqs_disabled()) {
 		ret = cnss_pci_check_link_status(pci_priv);
@@ -734,11 +735,11 @@ static int cnss_pci_reg_read(struct cnss_pci_data *pci_priv,
 		*val = readl_relaxed(pci_priv->bar + WINDOW_START +
 				     (offset & WINDOW_RANGE_MASK));
 	} else {
-		spin_lock_bh(&pci_reg_window_lock);
+		spin_lock_irqsave(&pci_reg_window_lock, flags);
 		cnss_pci_select_window(pci_priv, offset);
 		*val = readl_relaxed(pci_priv->bar + WINDOW_START +
 				     (offset & WINDOW_RANGE_MASK));
-		spin_unlock_bh(&pci_reg_window_lock);
+		spin_unlock_irqrestore(&pci_reg_window_lock, flags);
 	}
 
 	return 0;
@@ -749,6 +750,7 @@ static int cnss_pci_reg_write(struct cnss_pci_data *pci_priv, u32 offset,
 {
 	int ret;
 	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
+	unsigned long flags;
 
 	if (!in_interrupt() && !irqs_disabled()) {
 		ret = cnss_pci_check_link_status(pci_priv);
@@ -768,11 +770,11 @@ static int cnss_pci_reg_write(struct cnss_pci_data *pci_priv, u32 offset,
 		writel_relaxed(val, pci_priv->bar + WINDOW_START +
 			  (offset & WINDOW_RANGE_MASK));
 	} else {
-		spin_lock_bh(&pci_reg_window_lock);
+		spin_lock_irqsave(&pci_reg_window_lock, flags);
 		cnss_pci_select_window(pci_priv, offset);
 		writel_relaxed(val, pci_priv->bar + WINDOW_START +
 			  (offset & WINDOW_RANGE_MASK));
-		spin_unlock_bh(&pci_reg_window_lock);
+		spin_unlock_irqrestore(&pci_reg_window_lock, flags);
 	}
 
 	return 0;
@@ -2101,7 +2103,7 @@ static int cnss_pci_start_time_sync_update(struct cnss_pci_data *pci_priv)
 		return -EINVAL;
 	}
 
-	cnss_pci_time_sync_work_hdlr(&pci_priv->time_sync_work.work);
+	schedule_delayed_work(&pci_priv->time_sync_work, 0);
 
 	return 0;
 }

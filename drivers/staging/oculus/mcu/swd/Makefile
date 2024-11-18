@@ -1,5 +1,5 @@
 obj-$(CONFIG_META_SWD)		+= meta_swd.o
-meta_swd-objs += fwupdate_manager.o swd.o swd_driver.o
+meta_swd-objs += fwupdate_manager.o swd.o swd_driver.o syncboss_swd_common_ops.o
 
 ifeq ($(CONFIG_META_SWD_DEBUG),y)
 meta_swd-objs += fwupdate_debug.o
@@ -27,4 +27,8 @@ endif
 
 ifeq ($(CONFIG_META_SWD_SYNCBOSS_NRF5340),y)
 meta_swd-objs += syncboss_swd_ops_nrf5340.o
+endif
+
+ifeq ($(CONFIG_META_SWD_SYNCBOSS_NRF54L15),y)
+meta_swd-objs += syncboss_swd_ops_nrf54l15.o
 endif

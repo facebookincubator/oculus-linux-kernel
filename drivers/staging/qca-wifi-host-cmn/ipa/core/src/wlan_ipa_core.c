@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -437,7 +437,7 @@ static inline
 bool wlan_ipa_get_peer_state(struct cdp_soc_t *soc, uint8_t vdev_id,
 			     uint8_t *peer_mac)
 {
-	if (cdp_peer_state_get(soc, vdev_id, peer_mac) ==
+	if (cdp_peer_state_get(soc, vdev_id, peer_mac, false) ==
 	    OL_TXRX_PEER_STATE_AUTH)
 		return true;
 

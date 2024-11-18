@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -460,7 +460,7 @@ static QDF_STATUS dp_softap_validate_peer_state(struct wlan_dp_intf *dp_intf,
 	QDF_BUG(soc);
 	dp_wds_replace_peer_mac(soc, dp_intf, mac_addr.bytes);
 	peer_state = cdp_peer_state_get(soc, dp_intf->intf_id,
-					mac_addr.bytes);
+					mac_addr.bytes, false);
 
 	if (peer_state == OL_TXRX_PEER_STATE_INVALID) {
 		dp_debug_rl("Failed to find right station");

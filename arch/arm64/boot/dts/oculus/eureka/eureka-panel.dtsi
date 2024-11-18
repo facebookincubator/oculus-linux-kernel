@@ -2,8 +2,8 @@
 
 #include <dt-bindings/clock/qcom,dispcc-anorak.h>
 
-#include "unknown7-dsi-panel-jdi-nvt-dsc-2392x2560-90hz-video.dtsi"
-#include "unknown7-dsi-panel-sharp-nvt-dsc-2392x2560-90hz-video.dtsi"
+#include "../unknown7/unknown7-dsi-panel-jdi-nvt-dsc-2392x2560-90hz-video.dtsi"
+#include "../unknown7/unknown7-dsi-panel-sharp-nvt-dsc-2392x2560-90hz-video.dtsi"
 #include "eureka-panel-boe.dtsi"
 #include "eureka-panel-jdi.dtsi"
 #include "eureka-panel-jdi-experimental.dtsi"

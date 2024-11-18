@@ -45,6 +45,7 @@ enum sde_reg_dma_read_sel {
  * enum sde_reg_dma_features - defines features supported by reg dma
  * @QSEED: qseed feature
  * @GAMUT: gamut feature
+ * @HIST: DSPP histogram
  * @IGC: inverse gamma correction
  * @PCC: polynomical color correction
  * @VLUT: PA vlut
@@ -67,6 +68,7 @@ enum sde_reg_dma_read_sel {
 enum sde_reg_dma_features {
 	QSEED,
 	GAMUT,
+	HIST,
 	IGC,
 	PCC,
 	VLUT,

@@ -137,7 +137,6 @@
 
 		qcom,wrapper-core = <&qupv3_1>;
 		qcom,wakeup-byte = <0xFD>;
-		qcom,allow-suspend;
 		qcom,auto-suspend-disable;
 	};
 };

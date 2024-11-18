@@ -19,6 +19,10 @@
 #define MAX_DEVICES_SUPPORTED 8
 #define MAX_FW_PATH_LEN 20
 
+#define ASCII_BYTE_LEN 2
+#define PREFIX_VERSION_LEN (2 * ASCII_BYTE_LEN)
+#define PREFIX_VERSION_START_IDX 30
+
 enum pdfu_state {
 	ENUMERATION,
 	ACQUISITION,
@@ -43,6 +47,7 @@ struct pdfu_data {
 	struct device *dev;
 	struct usbvdm_subscription *conn_sub;
 	struct usbvdm_subscription *subs[MAX_DEVICES_SUPPORTED];
+	u16 vid;
 	u16 pid;
 
 	enum pdfu_state state;
@@ -85,6 +90,43 @@ static pdfu_state_handler state_handlers[] = {
 	[MANIFESTATION] = handle_state_manifestation,
 };
 
+static u16 parse_version_from_prefix(const u8 *version_raw)
+{
+	char lsB_str[ASCII_BYTE_LEN + 1] = { 0 };
+	char msB_str[ASCII_BYTE_LEN + 1] = { 0 };
+	u8 lsB = 0, msB = 0;
+	int rc = 0;
+
+	if (!version_raw)
+		return 0;
+
+	memcpy(lsB_str, version_raw, ASCII_BYTE_LEN);
+	memcpy(msB_str, version_raw + ASCII_BYTE_LEN, ASCII_BYTE_LEN);
+
+	rc = kstrtou8(lsB_str, 16, &lsB);
+	rc |= kstrtou8(msB_str, 16, &msB);
+	if (rc)
+		return 0;
+
+	return ((msB << 8) | lsB);
+}
+
+static void populate_version_from_prefix(struct pdfu_data *pdfu,
+		struct pdfu_initiate_request_payload *payload)
+{
+	const u8 *version_raw = NULL;
+
+	if (!pdfu || !pdfu->fw || !pdfu->fw->data || !payload)
+		return;
+
+	version_raw = (pdfu->fw->data + PREFIX_VERSION_START_IDX);
+
+	payload->fw_version1 = parse_version_from_prefix(version_raw);
+	payload->fw_version2 = parse_version_from_prefix(version_raw + PREFIX_VERSION_LEN);
+	payload->fw_version3 = parse_version_from_prefix(version_raw + (2 * PREFIX_VERSION_LEN));
+	payload->fw_version4 = parse_version_from_prefix(version_raw + (3 * PREFIX_VERSION_LEN));
+}
+
 static int transmit_pdfu_message(struct pdfu_data *pdfu, u8 *payload,
 				 size_t payload_len,
 				 enum pdfu_req_msg_type msg_type)
@@ -96,27 +138,37 @@ static int transmit_pdfu_message(struct pdfu_data *pdfu, u8 *payload,
 
 	msg.header.protocol_version = PDFU_REV10;
 	msg.header.msg_type = msg_type;
-	memcpy(&msg.payload, payload, payload_len);
+	if (payload)
+		memcpy(&msg.payload, payload, payload_len);
 
 	return usbvdm_subscriber_ext_msg(
 		pdfu->conn_sub, PD_EXT_FW_UPDATE_REQUEST, (u8 *)&msg,
 		payload_len + sizeof(struct pdfu_header));
 }
 
+static void transmit_abort_if_connected(struct pdfu_data *pdfu)
+{
+	mutex_lock(&pdfu->state_lock);
+	if (pdfu->connected)
+		transmit_pdfu_message(pdfu, NULL, 0, REQ_PDFU_ABORT);
+	mutex_unlock(&pdfu->state_lock);
+}
+
 static int transmit_data_block(struct pdfu_data *pdfu, u16 db_index, bool is_nr)
 {
 	struct pdfu_data_request_payload payload = { 0 };
 	size_t db_len;
-	const struct firmware *fw = pdfu->fw;
 	const size_t fw_index = db_index * PDFU_DATA_BLOCK_MAX_SIZE;
+	const size_t fw_size = (pdfu->fw->size - PDFU_PREFIX_LEN);
+	const u8 *const fw_start = (pdfu->fw->data + PDFU_PREFIX_LEN);
 
-	if (fw_index >= fw->size)
+	if (fw_index >= fw_size)
 		return -EINVAL;
 
-	db_len = min((size_t)PDFU_DATA_BLOCK_MAX_SIZE, fw->size - fw_index);
+	db_len = min((size_t)PDFU_DATA_BLOCK_MAX_SIZE, fw_size - fw_index);
 
 	payload.data_block_index = db_index;
-	memcpy(&payload.data_block, &fw->data[fw_index], db_len);
+	memcpy(&payload.data_block, &fw_start[fw_index], db_len);
 
 	dev_info(pdfu->dev, "Transmitting DataBlockNum=%d, isNR=%d", db_index,
 		 is_nr);
@@ -126,11 +178,12 @@ static int transmit_data_block(struct pdfu_data *pdfu, u16 db_index, bool is_nr)
 				     is_nr ? REQ_PDFU_DATA_NR : REQ_PDFU_DATA);
 }
 
-static int pdfu_await_response(struct pdfu_data *pdfu, unsigned int timeout_ms,
+static int pdfu_await_response(struct pdfu_data *pdfu,
 			       enum pdfu_resp_msg_type msg_type, u8 *payload,
 			       size_t payload_len)
 {
-	const unsigned long timeout_j = msecs_to_jiffies(timeout_ms);
+	const unsigned long timeout_j = msecs_to_jiffies(
+		PDFU_T_RESPONSE_RECVD_CHUNKED * PD_MAX_NUM_CHUNKS);
 	struct pdfu_message response = { 0 };
 
 	if (payload_len > sizeof(response.payload))
@@ -165,8 +218,6 @@ static int handle_state_enumeration(struct pdfu_data *pdfu)
 {
 	struct get_fw_id_response_payload resp_payload = { 0 };
 	int i, rc;
-	/* TODO(T180734326) Determine acceptable timing parameters */
-	const unsigned int timeout = 1000;
 
 	for (i = 0; i < PDFU_N_ENUMERATE_RESEND; i++) {
 		msleep(PDFU_T_NEXT_REQUEST_SENT);
@@ -176,9 +227,9 @@ static int handle_state_enumeration(struct pdfu_data *pdfu)
 		if (rc)
 			return rc;
 
-		rc = pdfu_await_response(pdfu, timeout, RESP_GET_FW_ID,
-					 (u8 *)&resp_payload,
-					 sizeof(resp_payload));
+		rc = pdfu_await_response(pdfu, RESP_GET_FW_ID,
+				(u8 *)&resp_payload,
+				sizeof(resp_payload));
 		if (!rc)
 			break;
 		else if (rc != -ETIMEDOUT)
@@ -208,18 +259,14 @@ static int handle_state_acquisition(struct pdfu_data *pdfu)
 	int rc = 0;
 
 	if (!pdfu->fw_manual_override) {
-		if (pdfu->pid == VDM_PID_MOKU_BOOTLOADER) {
-			/* TODO(T186537706) Replace with parsing function */
-			sprintf(pdfu->fw_path, "moku.bin");
-		} else if (pdfu->pid == VDM_PID_LEHUA_BOOTLOADER) {
-			sprintf(pdfu->fw_path, "lehua.bin");
-		} else {
-			dev_err(pdfu->dev, "fw_path is null");
-			return -EINVAL;
-		}
+		memset(pdfu->fw_path, 0, sizeof(pdfu->fw_path));
+		rc = snprintf(pdfu->fw_path, MAX_FW_PATH_LEN, "%04x-%04x.pdfu",
+			      pdfu->vid, pdfu->pid);
+		if (rc < 0)
+			return rc;
 	}
 
-	rc = request_firmware(&pdfu->fw, pdfu->fw_path, pdfu->dev);
+	rc = firmware_request_nowarn(&pdfu->fw, pdfu->fw_path, pdfu->dev);
 	if (rc) {
 		dev_err(pdfu->dev, "Failed to get fw for '%s': %d",
 			pdfu->fw_path, rc);
@@ -238,16 +285,12 @@ static int handle_state_reconfiguration(struct pdfu_data *pdfu)
 	u8 wait_time = 0;
 	u32 max_image_size;
 	int i, rc;
-	/* TODO(T180734326) Determine acceptable timing parameters */
-	const unsigned int timeout = 1000;
+
+	populate_version_from_prefix(pdfu, &req_payload);
 
 	for (i = 0; i < PDFU_N_RECONFIGURE_RESEND; i++) {
 		msleep(wait_time + PDFU_T_NEXT_REQUEST_SENT);
 
-		/*
-		 * TODO(T181477675) include the FW version. Will this come from
-		 * userspace or should the driver parse the PDFU File Prefix?
-		 */
 		reinit_completion(&pdfu->rx_complete);
 		rc = transmit_pdfu_message(pdfu, (u8 *)&req_payload,
 					   sizeof(req_payload),
@@ -255,7 +298,7 @@ static int handle_state_reconfiguration(struct pdfu_data *pdfu)
 		if (rc)
 			return rc;
 
-		rc = pdfu_await_response(pdfu, timeout, RESP_PDFU_INITIATE,
+		rc = pdfu_await_response(pdfu, RESP_PDFU_INITIATE,
 					 (u8 *)&resp_payload,
 					 sizeof(resp_payload));
 		if (rc == -ETIMEDOUT)
@@ -299,11 +342,9 @@ static int handle_state_transfer(struct pdfu_data *pdfu)
 	u8 wait_time = 0;
 	u8 num_nr = 0;
 	u16 prev_db = 0, next_db = 0;
-	const u16 final_db =
-		DIV_ROUND_UP(pdfu->fw->size, PDFU_DATA_BLOCK_MAX_SIZE) - 1;
-	/* TODO(T180734326) Determine acceptable timing parameters */
-	const unsigned int timeout = 5000;
-	int rc = 0;
+	const u16 final_db = DIV_ROUND_UP(pdfu->fw->size - PDFU_PREFIX_LEN,
+			PDFU_DATA_BLOCK_MAX_SIZE) - 1;
+	int i = 0, rc = 0;
 
 	while (prev_db != final_db && wait_time != PDFU_WAIT_TIME_DONE) {
 		msleep(PDFU_T_NEXT_REQUEST_SENT + wait_time);
@@ -322,17 +363,27 @@ static int handle_state_transfer(struct pdfu_data *pdfu)
 			msleep(PDFU_T_NEXT_REQUEST_SENT);
 		}
 
-		reinit_completion(&pdfu->rx_complete);
-		rc = transmit_data_block(pdfu, next_db, false);
-		if (rc)
-			return rc;
+		for (i = 0; i < PDFU_N_DATA_RESEND; i++) {
+			reinit_completion(&pdfu->rx_complete);
+			rc = transmit_data_block(pdfu, next_db, false);
+			if (rc)
+				return rc;
 
-		rc = pdfu_await_response(pdfu, timeout, RESP_PDFU_DATA,
-					 (u8 *)&response, sizeof(response));
-		if (rc)
-			/* TODO(T181477573) Implement retries */
-			// Supposed to retry on timeout here, but just quit
-			return rc;
+			rc = pdfu_await_response(pdfu, RESP_PDFU_DATA,
+						 (u8 *)&response,
+						 sizeof(response));
+			if (!rc)
+				break;
+			else if (rc != -ETIMEDOUT)
+				return rc;
+
+			msleep(PDFU_T_NEXT_REQUEST_SENT);
+		}
+
+		if (i == PDFU_N_DATA_RESEND) {
+			dev_err(pdfu->dev, "No response after max PDFU_DATA attempts");
+			return -ENOMSG;
+		}
 
 		if (response.status != 0) {
 			dev_err(pdfu->dev,
@@ -356,8 +407,6 @@ static int handle_state_validation(struct pdfu_data *pdfu)
 	struct pdfu_validate_response_payload resp_payload = { 0 };
 	u8 wait_time = 0;
 	int i, rc;
-	/* TODO(T180734326) Determine acceptable timing parameters */
-	const unsigned int timeout = 1000;
 
 	for (i = 0; i < PDFU_N_VALIDATE_RESEND; i++) {
 		msleep(PDFU_T_NEXT_REQUEST_SENT + wait_time);
@@ -367,7 +416,7 @@ static int handle_state_validation(struct pdfu_data *pdfu)
 		if (rc)
 			return rc;
 
-		rc = pdfu_await_response(pdfu, timeout, RESP_PDFU_VALIDATE,
+		rc = pdfu_await_response(pdfu, RESP_PDFU_VALIDATE,
 					 (u8 *)&resp_payload,
 					 sizeof(resp_payload));
 		if (rc == -ETIMEDOUT)
@@ -433,9 +482,11 @@ static int run_state_machine(struct pdfu_data *pdfu)
 			 pdfu_states[pdfu->state]);
 	} while (pdfu->state < COMPLETE);
 
+	if (rc)
+		transmit_abort_if_connected(pdfu);
+
 	dev_info(pdfu->dev, "Exiting PDFU state machine, rc=%d", rc);
 
-	/* TODO(T181477454) create a reset function */
 	kfree(pdfu->rx_msg);
 	release_firmware(pdfu->fw);
 	pdfu->rx_msg = NULL;
@@ -468,6 +519,7 @@ static void pdfu_usbvdm_connect(struct usbvdm_subscription *sub, u16 vid,
 	mutex_lock(&pdfu->state_lock);
 	pdfu->connected = true;
 	pdfu->conn_sub = sub;
+	pdfu->vid = vid;
 	pdfu->pid = pid;
 	mutex_unlock(&pdfu->state_lock);
 
@@ -490,6 +542,7 @@ static void pdfu_usbvdm_disconnect(struct usbvdm_subscription *sub)
 	mutex_lock(&pdfu->state_lock);
 	pdfu->connected = false;
 	pdfu->conn_sub = NULL;
+	pdfu->vid = 0;
 	pdfu->pid = 0;
 	mutex_unlock(&pdfu->state_lock);
 
@@ -564,6 +617,7 @@ static ssize_t fw_path_store(struct device *dev, struct device_attribute *attr,
 
 	pdfu->fw_manual_override = true;
 
+	memset(pdfu->fw_path, 0, sizeof(pdfu->fw_path));
 	strncpy(pdfu->fw_path, buf, count);
 
 	dev_info(pdfu->dev, "Updated fw_path to '%s'", pdfu->fw_path);

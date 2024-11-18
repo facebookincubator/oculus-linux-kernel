@@ -152,7 +152,7 @@ static void push_prox_cal_and_enable_wake(struct powerstate_dev_data *devdata, b
 		prox_cfg_version->config_version = devdata->prox_config_version;
 
 		data_len = sizeof(struct syncboss_data) + message->data_len;
-		ops->queue_tx_packet(devdata->dev, message, data_len, false);
+		ops->queue_tx_packet(devdata->dev, message, data_len);
 
 		/* Set prox calibration */
 		message->type = SYNCBOSS_SET_DATA_MESSAGE_TYPE;
@@ -165,7 +165,7 @@ static void push_prox_cal_and_enable_wake(struct powerstate_dev_data *devdata, b
 		prox_cal->prox_canc = (u16)devdata->prox_canc;
 
 		data_len = sizeof(struct syncboss_data) + message->data_len;
-		ops->queue_tx_packet(devdata->dev, message, data_len, false);
+		ops->queue_tx_packet(devdata->dev, message, data_len);
 	}
 
 	/* Enable or disable prox */
@@ -174,7 +174,7 @@ static void push_prox_cal_and_enable_wake(struct powerstate_dev_data *devdata, b
 	message->data_len = 0;
 
 	data_len = sizeof(struct syncboss_data) + message->data_len;
-	ops->queue_tx_packet(devdata->dev, message, data_len, false);
+	ops->queue_tx_packet(devdata->dev, message, data_len);
 }
 
 static void powerstate_set_enable(struct powerstate_dev_data *devdata, bool enable)

@@ -379,7 +379,6 @@ struct msm_geni_serial_port {
 	struct msm_geni_io_stat io_stat;
 	bool shutdown_in_progress;
 	bool pm_auto_suspend_disable;
-	bool allow_suspend;
 };
 
 static const struct uart_ops msm_geni_serial_pops;
@@ -4084,9 +4083,6 @@ static int msm_geni_serial_read_dtsi(struct platform_device *pdev,
 		return ret;
 	}
 
-	dev_port->allow_suspend = of_property_read_bool(pdev->dev.of_node,
-						    "qcom,allow-suspend");
-
 	/* RUMI specific */
 	dev_port->rumi_platform = of_property_read_bool(pdev->dev.of_node,
 				"qcom,rumi_platform");
@@ -4470,16 +4466,13 @@ static int msm_geni_serial_runtime_resume(struct device *dev)
 	 * wake source is activated by the wakeup isr.
 	 */
 	__pm_relax(port->geni_wake);
-	if (port->allow_suspend)
-		__pm_wakeup_event(port->geni_wake, WAKEBYTE_TIMEOUT_MSEC);
-	else
-		__pm_stay_awake(port->geni_wake);
+	__pm_stay_awake(port->geni_wake);
 	/*
 	 * check for wakeup_enabled before disabling the wakeup_irq as
 	 * this might be disabled from shutdown as well.
 	 */
 	if (port->wakeup_irq > 0 && port->wakeup_enabled &&
-	    port->uport.state->port.tty && !port->allow_suspend) {
+	    port->uport.state->port.tty) {
 		ret = irq_set_irq_wake(port->wakeup_irq, 0);
 		if (unlikely(ret))
 			dev_err(dev, "%s:Failed to unset IRQ wake:%d\n",
@@ -4533,8 +4526,6 @@ static int msm_geni_serial_sys_suspend(struct device *dev)
 		uart_suspend_port((struct uart_driver *)uport->private_data,
 					uport);
 		IPC_LOG_MSG(port->console_log, "%s\n", __func__);
-	} else if (port->allow_suspend) {
-		pm_runtime_force_suspend(dev);
 	} else {
 		struct uart_state *state = uport->state;
 		struct tty_port *tty_port = &state->port;

@@ -160,7 +160,7 @@ static void charging_dock_handle_work_soc(struct work_struct *work)
 	dev_dbg(ddev->dev, "%s: enter", __func__);
 
 	mutex_lock(&ddev->lock);
-	if (!ddev->docked)
+	if (!ddev->docked || ddev->current_pid != VDM_PID_MAUI)
 		goto out;
 
 	/* Battery status */

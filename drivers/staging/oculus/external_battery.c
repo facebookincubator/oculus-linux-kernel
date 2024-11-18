@@ -58,6 +58,7 @@ enum usb_charging_state {
 static void ext_batt_pr_swap(struct work_struct *work);
 static void ext_batt_mount_status_work(struct work_struct *work);
 static void ext_batt_psy_notifier_work(struct work_struct *work);
+static void ext_batt_low_battery_detection_work(struct work_struct *work);
 static void ext_batt_psy_register_notifier(struct ext_batt_pd *pd);
 static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 		unsigned long ev, void *ptr);
@@ -2189,8 +2190,8 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 	struct ext_batt_pd *pd =
 		container_of(work, struct ext_batt_pd, dock_state_work);
 	union power_supply_propval val;
+	u32 dock_state_vdo;
 	int rc;
-	u32 dock_state_hdr, dock_state_vdo;
 
 	dev_dbg(pd->dev, "%s: enter", __func__);
 
@@ -2209,18 +2210,9 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 	if (pd->dock_state == pd->last_dock_ack)
 		goto out;
 
-	dock_state_hdr =
-		VDMH_CONSTRUCT(
-			VDM_SVID_META,
-			0, VDM_REQUEST, 0, 1,
-			EXT_BATT_FW_HMD_DOCKED);
-
 	dock_state_vdo = pd->dock_state;
-
-	dev_dbg(pd->dev, "sending dock VDM: dock_state=%d", dock_state_vdo);
-	rc = external_battery_send_vdm(pd, dock_state_hdr, &dock_state_vdo, 1);
-	if (rc < 0)
-		dev_err(pd->dev, "error sending dock VDM: rc=%d", rc);
+	mutex_unlock(&pd->lock);
+	ext_batt_send_vdm_request(pd, EXT_BATT_FW_HMD_DOCKED, &dock_state_vdo, 1);
 
 out:
 	mutex_unlock(&pd->lock);
@@ -2403,6 +2395,62 @@ static void ext_batt_psy_notifier_work(struct work_struct *work)
 	handle_battery_capacity_change(pd, val.intval);
 }
 
+static void ext_batt_low_battery_detection_work(struct work_struct *work)
+{
+	struct ext_batt_pd *pd =
+		container_of(work, struct ext_batt_pd, low_battery_detection_work);
+
+	int rc;
+	union power_supply_propval power_role_val, dock_state_val;
+
+	mutex_lock(&pd->lock);
+	if (!pd->connected) {
+		mutex_unlock(&pd->lock);
+		return;
+	}
+	mutex_unlock(&pd->lock);
+
+	if (pd->usb_psy != NULL) {
+		rc = power_supply_get_property(pd->usb_psy,
+					       POWER_SUPPLY_PROP_TYPEC_POWER_ROLE,
+					       &power_role_val);
+		if (rc < 0) {
+			dev_err(pd->dev, "couldn't read typec power role: rc=%d\n", rc);
+			return;
+		}
+	} else {
+		dev_err(pd->dev, "usb_psy is uninitialized");
+		return;
+	}
+
+	if (pd->cypd_psy != NULL) {
+		rc = power_supply_get_property(pd->cypd_psy,
+					       POWER_SUPPLY_PROP_STATUS,
+					       &dock_state_val);
+		if (rc < 0) {
+			dev_err(pd->dev, "couldn't read cypd status: rc=%d\n", rc);
+			return;
+		}
+	} else {
+		dev_dbg(pd->dev, "cypd_psy not initialized");
+		dock_state_val.intval = POWER_SUPPLY_STATUS_UNKNOWN;
+	}
+
+	/* If we're not docked and in source mode on USBC */
+	if (dock_state_val.intval != POWER_SUPPLY_STATUS_CHARGING &&
+			power_role_val.intval == 1) {
+		pd->params.icurrent = 0;
+		pd->params.remaining_capacity = 0;
+		pd->params.rsoc = 0;
+		pd->params.soh = 0;
+		pd->params.temp_board = 0;
+		pd->params.temp_battery = 0;
+		pd->params.temp_fg = 0;
+		pd->params.voltage = 0;
+		pd->params.batt_status = 0x0000;
+	}
+}
+
 static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 		unsigned long ev, void *ptr)
 {
@@ -2420,6 +2468,10 @@ static int ext_batt_psy_notifier_call(struct notifier_block *nb,
 
 	if (ev != PSY_EVENT_PROP_CHANGED)
 		return NOTIFY_OK;
+
+	if (psy == pd->usb_psy && (pd->current_pid == VDM_PID_LEHUA_V2 ||
+			pd->current_pid == VDM_PID_LEHUA))
+		queue_work(pd->wq, &pd->low_battery_detection_work);
 
 	if (psy == pd->battery_psy)
 		queue_work(pd->wq, &pd->psy_notifier_work);
@@ -2620,6 +2672,8 @@ static int ext_batt_probe(struct platform_device *pdev)
 	INIT_WORK(&pd->mount_state_work, ext_batt_mount_status_work);
 	INIT_WORK(&pd->dock_state_work, ext_batt_dock_state_work);
 	INIT_WORK(&pd->psy_notifier_work, ext_batt_psy_notifier_work);
+	INIT_WORK(&pd->low_battery_detection_work, ext_batt_low_battery_detection_work);
+
 	result = ext_batt_psy_init(pd);
 	if (result == -EPROBE_DEFER)
 		return result;

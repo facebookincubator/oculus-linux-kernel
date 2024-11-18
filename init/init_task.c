@@ -75,6 +75,10 @@ struct task_struct init_task
 	.stack		= init_stack,
 	.usage		= REFCOUNT_INIT(2),
 	.flags		= PF_KTHREAD,
+#ifdef CONFIG_SMP
+	.shared_runq_node = LIST_HEAD_INIT(init_task.shared_runq_node),
+	.n_srq_migrations = 0,
+#endif
 	.prio		= MAX_PRIO - 20,
 	.static_prio	= MAX_PRIO - 20,
 	.normal_prio	= MAX_PRIO - 20,

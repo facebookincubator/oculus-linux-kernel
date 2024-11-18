@@ -4317,9 +4317,6 @@ long kgsl_ioctl_allow_uid_high_priority(
 	struct kgsl_device *device = dev_priv->device;
 	struct kgsl_privileged_uid_node *entry;
 
-	if (!capable(CAP_SYS_NICE))
-		return -EPERM;
-
 	/* If the requested UID is -1, clear the list and return. */
 	if (param->uid == -1) {
 		kgsl_privileged_uid_list_free(device);
@@ -4352,9 +4349,6 @@ long kgsl_ioctl_allow_tid_maximum_priority(
 {
 	struct kgsl_allow_tid_maximum_priority *param = data;
 	struct kgsl_device *device = dev_priv->device;
-
-	if (!capable(CAP_SYS_NICE))
-		return -EPERM;
 
 	/*
 	 * Elevate high-priority context requests from the given TID to

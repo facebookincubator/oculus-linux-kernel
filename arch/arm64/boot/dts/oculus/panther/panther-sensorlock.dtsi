@@ -22,5 +22,12 @@
 		interrupt-parent = <&tlmm>;
 		interrupts = <106 IRQ_TYPE_EDGE_FALLING>;
 		interrupt-names = "sensorlock_power_irq";
+
+		regulators {
+			dmic_clk_en_regulator: dmic {
+				regulator-name = "dmic-sensorlock";
+				vin-supply = <&L11B>;
+			};
+		};
 	};
 };

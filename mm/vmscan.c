@@ -72,6 +72,7 @@
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(mm_vmscan_direct_reclaim_begin);
 EXPORT_TRACEPOINT_SYMBOL_GPL(mm_vmscan_direct_reclaim_end);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_vmscan_kswapd_wake);
 
 struct scan_control {
 	/* How many pages shrink_list() should reclaim */
@@ -4040,7 +4041,10 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 {
 	struct mem_cgroup *memcg;
 	bool success = false;
+	bool ttl_applied = false;
 	unsigned long min_ttl = READ_ONCE(lru_gen_min_ttl);
+	unsigned long cgroup_ttl;
+	unsigned long applied_ttl;
 
 	VM_WARN_ON_ONCE(!current_is_kswapd());
 
@@ -4062,8 +4066,15 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 	memcg = mem_cgroup_iter(NULL, NULL, NULL);
 	do {
 		struct lruvec *lruvec = mem_cgroup_lruvec(memcg, pgdat);
+	
+		/* Use the cgroup TTL if set, otherwise use the system-wide TTL. */
+		cgroup_ttl = READ_ONCE(memcg->min_ttl);
+		applied_ttl = cgroup_ttl ? cgroup_ttl : min_ttl;
 
-		if (age_lruvec(lruvec, sc, min_ttl))
+		if (applied_ttl)
+			ttl_applied = true;
+
+		if (age_lruvec(lruvec, sc, applied_ttl))
 			success = true;
 
 		cond_resched();
@@ -4072,7 +4083,7 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 	clear_mm_walk();
 
 	/* check the order to exclude compaction-induced reclaim */
-	if (success || !min_ttl || sc->order)
+	if (success || !ttl_applied || sc->order)
 		return;
 
 	/*
@@ -6828,6 +6839,8 @@ kswapd_try_sleep:
 						alloc_order);
 		reclaim_order = balance_pgdat(pgdat, alloc_order,
 						highest_zoneidx);
+		trace_android_vh_vmscan_kswapd_done(pgdat->node_id, highest_zoneidx,
+						alloc_order, reclaim_order);
 		if (reclaim_order < alloc_order)
 			goto kswapd_try_sleep;
 	}

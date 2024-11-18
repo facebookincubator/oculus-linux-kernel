@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -41,6 +41,18 @@ QDF_STATUS
 ucfg_user_space_enable_disable_rso(struct wlan_objmgr_pdev *pdev,
 				   uint8_t vdev_id,
 				   const bool is_fast_roam_enabled);
+
+/**
+ * ucfg_clear_user_disabled_roaming() - clear user/wpa_supplicant
+ * disabled_roaming flag in driver
+ * @psoc: Pointer to pdev
+ * @vdev_id: vdev id
+ *
+ * Return: void
+ */
+void
+ucfg_clear_user_disabled_roaming(struct wlan_objmgr_psoc *psoc,
+				 uint8_t vdev_id);
 
 /**
  * ucfg_is_rso_enabled() - Check if rso is enabled

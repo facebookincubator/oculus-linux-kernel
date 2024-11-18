@@ -93,12 +93,14 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 		rc = get_client_env_object(&client_env);
 		if (rc) {
 			CAM_ERR(CAM_CSIPHY, "Failed getting mink env object, rc: %d", rc);
+			rc = -EINVAL;
 			return rc;
 		}
 
 		rc = smci_clientenv_open(client_env, CTRUSTEDCAMERADRIVER_UID, &sc_object);
 		if (rc) {
 			CAM_ERR(CAM_CSIPHY, "Failed getting mink sc_object, rc: %d", rc);
+			rc = -EINVAL;
 			return rc;
 		}
 
@@ -112,17 +114,20 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 		rc = trusted_camera_driver_dynamic_protect_sensor(sc_object, &params);
 		if (rc) {
 			CAM_ERR(CAM_CSIPHY, "Mink secure call failed, rc: %d", rc);
+			rc = -EINVAL;
 			return rc;
 		}
 
 		rc = smci_object_release(sc_object);
 		if (rc) {
 			CAM_ERR(CAM_CSIPHY, "Failed releasing secure camera object, rc: %d", rc);
+			rc = -EINVAL;
 			return rc;
 		}
 		rc = smci_object_release(client_env);
 		if (rc) {
 			CAM_ERR(CAM_CSIPHY, "Failed releasing mink env object, rc: %d", rc);
+			rc = -EINVAL;
 			return rc;
 		}
 	} else {

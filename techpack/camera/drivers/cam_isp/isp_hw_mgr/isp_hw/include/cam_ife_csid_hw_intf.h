@@ -163,6 +163,7 @@ struct cam_isp_in_port_generic_info {
 	bool                            independent_crm_mode;
 	bool                            slave_metadata_en;
 	bool                            per_port_en;
+	bool                            ul_path_mode;
 	struct cam_isp_out_port_generic_info    *data;
 };
 

@@ -455,8 +455,6 @@ struct kgsl_thread_private {
 	char comm[TASK_COMM_LEN];
 	int fd_count;
 
-	uint64_t sync_ktime;
-	uint64_t sync_ticks;
 	struct adreno_perfcount_register *alwayson_reg;
 
 	uint64_t stats[KGSL_THREADSTATS_MAX];

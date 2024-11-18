@@ -194,7 +194,16 @@ static void dspp_dither(struct sde_hw_dspp *c)
 
 static void dspp_hist(struct sde_hw_dspp *c)
 {
+	int ret = 0;
+
 	if (c->cap->sblk->hist.version == (SDE_COLOR_PROCESS_VER(0x1, 0x7))) {
+		ret = reg_dmav1_init_dspp_op_v4(SDE_DSPP_HIST, c);
+		DRM_INFO("reg_dmav1_init_dspp_op_v4(SDE_DSPP_HIST) - ret: %d\n", ret);
+		if (!ret) {
+			c->ops.trigger_histogram_read = reg_dmav1_trigger_read_dspp_histv17;
+			c->ops.copy_histogram_data = reg_dmav1_copy_data_dspp_histv17;
+		}
+
 		c->ops.setup_histogram = sde_setup_dspp_hist_v1_7;
 		c->ops.read_histogram = sde_read_dspp_hist_v1_7;
 		c->ops.lock_histogram = sde_lock_dspp_hist_v1_7;
