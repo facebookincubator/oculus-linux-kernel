@@ -91,6 +91,7 @@ struct cam_hw_update_entry {
  * @image_buf_addr:        Image buffer address array
  * @kernel_map_buf_addr:   Kernel map buffer address array
  * @buf_handle:            respective buffer headers for kernel maps
+ * @virtual_frame_enabled: Virtual Frame enabled
  */
 struct cam_hw_fence_map_entry {
 	uint32_t           resource_handle;
@@ -98,6 +99,7 @@ struct cam_hw_fence_map_entry {
 	dma_addr_t         image_buf_addr[CAM_PACKET_MAX_PLANES];
 	uint32_t          *kernel_map_buf_addr[CAM_PACKET_MAX_PLANES];
 	int32_t            buf_handle[CAM_PACKET_MAX_PLANES];
+	bool               virtual_frame_enabled;
 };
 
 /**

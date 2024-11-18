@@ -2738,8 +2738,21 @@ static char elf_type(const Elf_Sym *sym, const struct load_info *info)
 	return '?';
 }
 
+/*
+ * This ignores the intensely annoying "mapping symbols" found
+ * in ARM ELF files: $a, $t and $d.
+ */
+static inline int is_arm_mapping_symbol(const char *str)
+{
+	if (str[0] == '.' && str[1] == 'L')
+		return true;
+	return str[0] == '$' && strchr("axtd", str[1])
+	       && (str[2] == '\0' || str[2] == '.');
+}
+
 static bool is_core_symbol(const Elf_Sym *src, const Elf_Shdr *sechdrs,
-			unsigned int shnum, unsigned int pcpundx)
+			unsigned int shnum, unsigned int pcpundx,
+			const char *strtab)
 {
 	const Elf_Shdr *sec;
 
@@ -2759,6 +2772,9 @@ static bool is_core_symbol(const Elf_Sym *src, const Elf_Shdr *sechdrs,
 	    || !(sec->sh_flags & SHF_EXECINSTR)
 #endif
 	    || (sec->sh_entsize & INIT_OFFSET_MASK))
+		return false;
+
+	if (is_arm_mapping_symbol(&strtab[src->st_name]))
 		return false;
 
 	return true;
@@ -2791,7 +2807,7 @@ static void layout_symtab(struct module *mod, struct load_info *info)
 	for (ndst = i = 0; i < nsrc; i++) {
 		if (i == 0 || is_livepatch_module(mod) ||
 		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum,
-				   info->index.pcpu)) {
+				   info->index.pcpu, info->strtab)) {
 			strtab_size += strlen(&info->strtab[src[i].st_name])+1;
 			ndst++;
 		}
@@ -2855,7 +2871,7 @@ static void add_kallsyms(struct module *mod, const struct load_info *info)
 		mod->kallsyms->typetab[i] = elf_type(src + i, info);
 		if (i == 0 || is_livepatch_module(mod) ||
 		    is_core_symbol(src+i, info->sechdrs, info->hdr->e_shnum,
-				   info->index.pcpu)) {
+				   info->index.pcpu, mod->kallsyms->strtab)) {
 			mod->core_kallsyms.typetab[ndst] =
 			    mod->kallsyms->typetab[i];
 			dst[ndst] = src[i];
@@ -4260,18 +4276,6 @@ static inline int within(unsigned long addr, void *start, unsigned long size)
 }
 
 #ifdef CONFIG_KALLSYMS
-/*
- * This ignores the intensely annoying "mapping symbols" found
- * in ARM ELF files: $a, $t and $d.
- */
-static inline int is_arm_mapping_symbol(const char *str)
-{
-	if (str[0] == '.' && str[1] == 'L')
-		return true;
-	return str[0] == '$' && strchr("axtd", str[1])
-	       && (str[2] == '\0' || str[2] == '.');
-}
-
 static inline int is_cfi_typeid_symbol(const char *str)
 {
 	return !strncmp(str, "__typeid__", 10);

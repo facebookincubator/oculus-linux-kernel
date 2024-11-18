@@ -185,6 +185,7 @@ struct cam_ife_hw_mgr_sfe_info {
  * @slave_metadata_en:        Flag to indicate if metadata is enabled in RDI path
  * @per_port_en               Indicates if per port feature is enabled or not
  * @is_trigger_type           Context type trigger
+ * @is_ul_path                Ultra lite path context
  */
 struct cam_ife_hw_mgr_ctx_flags {
 	bool   ctx_in_use;
@@ -212,6 +213,7 @@ struct cam_ife_hw_mgr_ctx_flags {
 	bool   slave_metadata_en;
 	bool   per_port_en;
 	bool   is_trigger_type;
+	bool   is_ul_path;
 };
 
 /**
@@ -239,7 +241,6 @@ struct cam_ife_virtual_rdi_mapping {
 	uint32_t   virtual_rdi[CAM_ISP_STREAM_CFG_MAX];
 	uint32_t   acquired_rdi[CAM_ISP_STREAM_CFG_MAX];
 };
-
 
 /**
  * struct cam_ife_hw_mgr_ctx - IFE HW manager Context object
@@ -303,6 +304,9 @@ struct cam_ife_virtual_rdi_mapping {
  * @mapping_table:          mapping between virtual rdi and acquired rdi
  * @slave_status:           slave status indicating if it is in running state
  * @primary_rdi_out_res:    Indicates primary rdi resource
+ * @num_primary_ports:      Number of primary port configs
+ * @primary_port_info:      Primary port configs array
+ * @primary_port_cfg_done:  Primary port config exists for this stream
  */
 struct cam_ife_hw_mgr_ctx {
 	struct list_head                     list;
@@ -370,6 +374,9 @@ struct cam_ife_hw_mgr_ctx {
 	struct cam_ife_virtual_rdi_mapping   mapping_table;
 	bool                                 is_slave_down;
 	uint32_t                             primary_rdi_out_res;
+	uint32_t                             num_primary_ports;
+	struct cam_isp_primary_port_info    *primary_port_info;
+	bool                                 primary_port_cfg_done;
 };
 
 /**
@@ -501,7 +508,7 @@ struct cam_ife_hw_mgr_sensor_stream_config {
 	uint32_t                                   decode_format;
 	uint32_t                                   rdi_vc_dt_updated;
 	bool                                       pxl_vc_dt_updated;
-	uint32_t                                   lcr_vc_dt_updated;
+	bool                                       lcr_vc_dt_updated;
 	bool                                       ppp_vc_dt_updated;
 	bool                                       acquired;
 	bool                                       is_streamon;
@@ -663,6 +670,11 @@ void cam_ife_hw_mgr_populate_regs(struct cam_ife_hw_mgr_ctx *ctx, int acquire_ty
  */
 void cam_ife_hw_mgr_populate_out_ports(struct cam_ife_hw_mgr_ctx *ctx,
 		int acquire_type, uint32_t *pkt, uint32_t *off);
+
+int cam_ife_hw_mgr_ul_setup_change_base(struct cam_isp_ctx_ul_data *ul_data,
+	void                    *priv);
+
+
 
 /**
  * cam_ife_hw_mgr_init()

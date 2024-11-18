@@ -26,13 +26,18 @@ struct nsync_dev_data {
 	int64_t nsync_irq_timestamp_us;
 
 	/*
-	 * Indicates whether the nsync IRQ has fired since the last nsync
-	 * message from the MCU was consumed.
+	 * Timestamp of the previous nsync IRQ.
+	 *
+	 * This helps in determining if we've switched to a new nsync
+	 * period and need to compute a new offset.
 	 */
-	bool nsync_irq_fired;
+	int64_t prev_nsync_irq_timestamp_us;
 
 	/* Timestamp from the last nsync message */
 	int64_t prev_mcu_timestamp_us;
+
+	/* MCU timestamp delta for the last nsync message */
+	int64_t prev_mcu_timestamp_delta_us;
 
 	/*
 	 * Calculated delta between MCU nsync timestamp and IRQ timestamp,
@@ -51,6 +56,7 @@ struct nsync_dev_data {
 	int consecutive_drift_limit_max;
 	int drift_limit_count;
 	int drift_sum_us;
+	int event_backlog_len;
 	ktime_t stream_start_time;
 
 	/* Spinlock used to protect access to the nsync timestamp and count */

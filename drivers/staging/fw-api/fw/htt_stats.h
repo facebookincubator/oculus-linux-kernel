@@ -333,7 +333,9 @@ enum htt_dbg_ext_stats_type {
      *  PARAMS:
      *
      *  RESP MSG:
-     *    - htt_soc_latency_prof_t
+     *    - htt_latency_prof_stats_tlv showing latency profile stats for
+     *      high-level (pdev or vdev level) events such as tx/rx suspend
+     *      or resume, or UMAC, DMAC, or PMAC reset.
      */
     HTT_DBG_EXT_STATS_LATENCY_PROF_STATS = 25,
 
@@ -655,6 +657,24 @@ enum htt_dbg_ext_stats_type {
      *    -  htt_stats_pdev_rtt_hw_stats_tlv
      */
     HTT_DBG_EXT_PDEV_RTT_INITIATOR_STATS = 66,
+
+    /** HTT_DBG_EXT_STATS_LATENCY_PROF_STATS_LO
+     *  PARAMS:
+     *
+     *  RESP MSG:
+     *    - htt_latency_prof_stats_tlv showing latency profile stats for
+     *      finer-grained events than HTT_DBG_EXT_STATS_LATENCY_PROF_STATS,
+     *      such as individual steps within a larger pdev or vdev event.
+     */
+    HTT_DBG_EXT_STATS_LATENCY_PROF_STATS_LO = 67,
+
+    /** HTT_DBG_GTX_STATS
+     * PARAMS:
+     *    - No Params
+     * RESP MSG:
+     *    - htt_pdev_gtx_stats_tlv
+     */
+    HTT_DBG_GTX_STATS = 68,
 
 
     /* keep this last */
@@ -1944,6 +1964,7 @@ typedef enum {
 
 #define HTT_TX_PEER_STATS_NUM_MCS_COUNTERS 12 /* 0-11 */
 #define HTT_TX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS 2 /* 12, 13 */
+#define HTT_TX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS 2 /* 14, 15 */
 /* HTT_TX_PEER_STATS_NUM_GI_COUNTERS:
  * GI Index 0:  WHAL_GI_800
  * GI Index 1:  WHAL_GI_400
@@ -2025,12 +2046,15 @@ typedef struct _htt_tx_peer_rate_stats_tlv {
     A_UINT32 tx_gi_ext[HTT_TX_PEER_STATS_NUM_GI_COUNTERS][HTT_TX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS];
     A_UINT32 reduced_tx_bw[HTT_TX_PEER_STATS_NUM_REDUCED_CHAN_TYPES][HTT_TX_PEER_STATS_NUM_BW_COUNTERS];
     A_UINT32 tx_bw_320mhz;
+    /* MCS 14,15 */
+    A_UINT32 tx_mcs_ext_2[HTT_TX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS];
 } htt_stats_peer_tx_rate_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_peer_tx_rate_stats_tlv htt_tx_peer_rate_stats_tlv;
 
 #define HTT_RX_PEER_STATS_NUM_MCS_COUNTERS 12 /* 0-11 */
 #define HTT_RX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS 2 /* 12, 13 */
+#define HTT_RX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS 2 /* 14, 15 */
 #define HTT_RX_PEER_STATS_NUM_GI_COUNTERS 4
 #define HTT_RX_PEER_STATS_NUM_DCM_COUNTERS 5
 #define HTT_RX_PEER_STATS_NUM_BW_COUNTERS 4
@@ -2105,6 +2129,9 @@ typedef struct _htt_rx_peer_rate_stats_tlv {
     A_UINT32 rx_gi_ext[HTT_RX_PEER_STATS_NUM_GI_COUNTERS][HTT_RX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS];
     A_UINT32 reduced_rx_bw[HTT_RX_PEER_STATS_NUM_REDUCED_CHAN_TYPES][HTT_RX_PEER_STATS_NUM_BW_COUNTERS];
     A_INT8   rx_per_chain_rssi_in_dbm_ext[HTT_RX_PEER_STATS_NUM_SPATIAL_STREAMS][HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS];
+    A_UINT32 rx_bw_320mhz;
+    /* MCS 14,15 */
+    A_UINT32 rx_mcs_ext_2[HTT_RX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS];
 } htt_stats_peer_rx_rate_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_peer_rx_rate_stats_tlv htt_rx_peer_rate_stats_tlv;
@@ -4371,6 +4398,9 @@ typedef struct {
     A_UINT32 sched_udp_notify2;
     A_UINT32 sched_nonudp_notify1;
     A_UINT32 sched_nonudp_notify2;
+    A_UINT32 tqm_enqueue_msdu_count;
+    A_UINT32 tqm_dropped_msdu_count;
+    A_UINT32 tqm_dequeue_msdu_count;
 } htt_stats_tx_tqm_pdev_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_tqm_pdev_tlv htt_tx_tqm_pdev_stats_tlv_v;
@@ -4561,6 +4591,18 @@ typedef struct {
     A_UINT32 eapol_start_packets;
     A_UINT32 eapol_logoff_packets;
     A_UINT32 eapol_encap_asf_packets;
+    A_UINT32 m1_success;
+    A_UINT32 m1_compl_fail;
+    A_UINT32 m2_success;
+    A_UINT32 m2_compl_fail;
+    A_UINT32 m3_success;
+    A_UINT32 m3_compl_fail;
+    A_UINT32 m4_success;
+    A_UINT32 m4_compl_fail;
+    A_UINT32 g1_success;
+    A_UINT32 g1_compl_fail;
+    A_UINT32 g2_success;
+    A_UINT32 g2_compl_fail;
 } htt_stats_tx_de_eapol_packets_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_de_eapol_packets_tlv htt_tx_de_eapol_packets_stats_tlv;
@@ -5561,6 +5603,8 @@ typedef struct {
     A_UINT32 extra_eht_ltf;
     /** Counter for Extra EHT LTFs in OFDMA sequences */
     A_UINT32 extra_eht_ltf_ofdma;
+    /** 11AX HE UL_BA RU Size stats */
+    A_UINT32 ofdma_ba_ru_size[HTT_TX_PDEV_STATS_NUM_AX_RU_SIZE_COUNTERS];
 } htt_stats_tx_pdev_rate_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_pdev_rate_stats_tlv htt_tx_pdev_rate_stats_tlv;
@@ -5649,6 +5693,7 @@ typedef struct {
     A_UINT32 be_ofdma_tx_ru_size[HTT_TX_PDEV_STATS_NUM_BE_RU_SIZE_COUNTERS];
     /** 11BE EHT DL MU OFDMA EHT-SIG MCS stats */
     A_UINT32 be_ofdma_eht_sig_mcs[HTT_TX_PDEV_STATS_NUM_EHT_SIG_MCS_COUNTERS];
+    A_UINT32 be_ofdma_ba_ru_size[HTT_TX_PDEV_STATS_NUM_BE_RU_SIZE_COUNTERS];
 } htt_stats_tx_pdev_rate_stats_be_ofdma_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_pdev_rate_stats_be_ofdma_tlv
@@ -8571,6 +8616,82 @@ typedef struct {
 } htt_pdev_rtt_init_stats_t;
 #endif /* ATH_TARGET */
 
+enum {
+    HTT_STATS_WIFI_RADAR_CAL_TYPE_NONE = 0,
+    HTT_STATS_WIFI_RADAR_CAL_TYPE_GAIN_BINARY_SEARCH = 1,
+    HTT_STATS_WIFI_RADAR_CAL_TYPE_TX_GAIN_BINARY_SEARCH = 2,
+    HTT_STATS_WIFI_RADAR_CAL_TYPE_RECAL_GAIN_VALIDATION = 3,
+    HTT_STATS_WIFI_RADAR_CAL_TYPE_RECAL_GAIN_BINARY_SEARCH = 4,
+    /* the value 5 is reserved for future use */
+
+    HTT_STATS_NUM_WIFI_RADAR_CAL_TYPES = 6
+};
+
+enum {
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_NONE = 0,
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_DPD_ABORT = 1,
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_CONVERGENCE = 2,
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_TX_EXCEEDS_RETRY = 3,
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_CAPTURE = 4,
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_NEW_CHANNEL_CHANGE = 5,
+    HTT_STATS_WIFI_RADAR_CAL_FAILURE_NEW_CAL_REQ = 6,
+    /* the values 7-9 are reserved for future use */
+
+    HTT_STATS_NUM_WIFI_RADAR_CAL_FAILURE_REASONS = 10
+};
+
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+    A_UINT32 capture_in_progress;
+    A_UINT32 calibration_in_progress;
+    /* Capture time interval, in ms */
+    A_UINT32 periodicity;
+    /* Last user request timestamp, in ms */
+    A_UINT32 latest_req_timestamp;
+    /* Last target res timestamp, in ms */
+    A_UINT32 latest_resp_timestamp;
+    /* Time taken by last calibration to end, in ms */
+    A_UINT32 latest_calibration_timing;
+    /* Time taken by last calibration to end, in ms for each chain */
+    A_UINT32 calibration_timing_per_chain[HTT_STATS_MAX_CHAINS];
+    /* To log user request count */
+    A_UINT32 wifi_radar_req_count;
+    /* Total packet success count */
+    A_UINT32 num_wifi_radar_pkt_success;
+    /* Total packet queued count */
+    A_UINT32 num_wifi_radar_pkt_queued;
+    /* Total packet success count during latest calibration alone */
+    A_UINT32 num_wifi_radar_cal_pkt_success;
+    /* Tx Gain Calibration Output - Initial Tx Gain index*/
+    A_UINT32 wifi_radar_cal_init_tx_gain;
+    /* Last Calibration Type, refer to HTT_STATS_WIFI_RADAR_CAL_TYPE_ consts */
+    A_UINT32 latest_wifi_radar_cal_type;
+    /* Calibration Type counters */
+    A_UINT32 wifi_radar_cal_type_counts[HTT_STATS_NUM_WIFI_RADAR_CAL_TYPES];
+    /*
+     * Last Calibration Fail Reason,
+     * refer to HTT_STATS_WIFI_RADAR_CAL_FAILURE_ consts
+     */
+    A_UINT32 latest_wifi_radar_cal_fail_reason;
+    /* Calibration Fail Reason counters */
+    A_UINT32 wifi_radar_cal_fail_reason_counts[HTT_STATS_NUM_WIFI_RADAR_CAL_FAILURE_REASONS];
+    /* WiFi Radar Licensed for SKU: 0 - No; 1 - Yes */
+    A_UINT32 wifi_radar_licensed;
+    /*
+     * cmd result to show failure count of CTS2SELF across MAX_CMD_RESULT
+     * reasons
+     */
+    A_UINT32 cmd_results_cts2self[HTT_STATS_MAX_SCH_CMD_RESULT];
+    /*
+     * cmd result to show failure count of wifi radar across MAX_CMD_RESULT
+     * reasons
+     */
+    A_UINT32 cmd_results_wifi_radar[HTT_STATS_MAX_SCH_CMD_RESULT];
+    /* Tx gain index from gain table obtained/used for calibration */
+    A_UINT32 wifi_radar_tx_gains[HTT_STATS_MAX_CHAINS];
+    /* Rx gain index from gain table obtained/used from calibration */
+    A_UINT32 wifi_radar_rx_gains[HTT_STATS_MAX_CHAINS][HTT_STATS_MAX_CHAINS];
+} htt_stats_tx_pdev_wifi_radar_tlv;
 
 /* STATS_TYPE : HTT_DBG_EXT_PKTLOG_AND_HTT_RING_STATS
  * TLV_TAGS:
@@ -10445,6 +10566,7 @@ typedef struct _htt_odd_mandatory_muofdma_pdev_stats_tlv {
     A_UINT32 ax_mu_brp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
     A_UINT32 be_mu_brp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
     A_UINT32 ofdma_tx_ru_size[HTT_TX_PDEV_STATS_NUM_AX_RU_SIZE_COUNTERS];
+    A_UINT32 ofdma_ba_ru_size[HTT_TX_PDEV_STATS_NUM_AX_RU_SIZE_COUNTERS];
 } htt_dbg_odd_mandatory_muofdma_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_dbg_odd_mandatory_muofdma_tlv
@@ -11685,5 +11807,15 @@ static INLINE A_UINT8 *htt_ctrl_path_cal_type_id_to_name(A_UINT32 cal_type_id)
 }
 #endif /* HTT_CTRL_PATH_STATS_CAL_TYPE_STRINGS */
 
+/*===================== Start GTX stats ====================*/
+#define HTT_NUM_MCS_PER_NSS 16
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+    A_UINT32 gtx_enabled; /* shows whether Green Tx feature is enabled */
+    A_INT32 mcs_tpc_min[HTT_NUM_MCS_PER_NSS]; /* shows current MCS's minimum TPC in 0.25dBm units */
+    A_INT32 mcs_tpc_max[HTT_NUM_MCS_PER_NSS]; /* shows current MCS's maximum TPC in 0.25dBm units */
+    A_UINT32 mcs_tpc_diff[HTT_NUM_MCS_PER_NSS]; /* shows current MCS's difference between maximum and minimum TPC in 0.25dB unit*/
+} htt_stats_gtx_tlv;
+/*===================== End GTX stats ====================*/
 
 #endif /* __HTT_STATS_H__ */

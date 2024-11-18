@@ -133,10 +133,13 @@ enum usb_property_id {
 	USB_PRESENT,
 	USB_PD_VID,
 	USB_PD_PID,
-	USB_MOISTURE_DET_SBU_KOHM,
-	USB_MOISTURE_DET_CC_KOHM,
+	USB_MOISTURE_DET_SBU1_KOHM,
+	USB_MOISTURE_DET_CC1_KOHM,
 	USB_CC_ENABLED,
 	USB_TYPEC_DAM_STATUS,
+	USB_MOISTURE_DET_SBU2_KOHM,
+	USB_MOISTURE_DET_CC2_KOHM,
+	USB_CABLE_DISCOVERY_EN,
 	USB_PROP_MAX,
 };
 
@@ -2166,7 +2169,7 @@ static ssize_t usb_typec_debug_access_mode_status_show(struct class *c,
 }
 static CLASS_ATTR_RO(usb_typec_debug_access_mode_status);
 
-static ssize_t moisture_detection_sbu_kohm_show(struct class *c,
+static ssize_t moisture_detection_sbu1_kohm_show(struct class *c,
 					struct class_attribute *attr, char *buf)
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
@@ -2174,16 +2177,16 @@ static ssize_t moisture_detection_sbu_kohm_show(struct class *c,
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
 	int rc;
 
-	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_SBU_KOHM);
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_SBU1_KOHM);
 	if (rc < 0)
 		return rc;
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n",
-			pst->prop[USB_MOISTURE_DET_SBU_KOHM]);
+			pst->prop[USB_MOISTURE_DET_SBU1_KOHM]);
 }
-static CLASS_ATTR_RO(moisture_detection_sbu_kohm);
+static CLASS_ATTR_RO(moisture_detection_sbu1_kohm);
 
-static ssize_t moisture_detection_cc_kohm_show(struct class *c,
+static ssize_t moisture_detection_sbu2_kohm_show(struct class *c,
 					struct class_attribute *attr, char *buf)
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
@@ -2191,14 +2194,85 @@ static ssize_t moisture_detection_cc_kohm_show(struct class *c,
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
 	int rc;
 
-	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_CC_KOHM);
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_SBU2_KOHM);
 	if (rc < 0)
 		return rc;
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n",
-			pst->prop[USB_MOISTURE_DET_CC_KOHM]);
+			pst->prop[USB_MOISTURE_DET_SBU2_KOHM]);
 }
-static CLASS_ATTR_RO(moisture_detection_cc_kohm);
+static CLASS_ATTR_RO(moisture_detection_sbu2_kohm);
+
+static ssize_t moisture_detection_cc1_kohm_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_CC1_KOHM);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_MOISTURE_DET_CC1_KOHM]);
+}
+static CLASS_ATTR_RO(moisture_detection_cc1_kohm);
+
+static ssize_t moisture_detection_cc2_kohm_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_CC2_KOHM);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_MOISTURE_DET_CC2_KOHM]);
+}
+static CLASS_ATTR_RO(moisture_detection_cc2_kohm);
+
+static ssize_t cable_discovery_en_store(struct class *c,
+					struct class_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc;
+	bool val;
+
+	if (kstrtobool(buf, &val))
+		return -EINVAL;
+
+	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_USB],
+				USB_CABLE_DISCOVERY_EN, val);
+	if (rc < 0)
+		return rc;
+
+	return count;
+}
+
+static ssize_t cable_discovery_en_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_CABLE_DISCOVERY_EN);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_CABLE_DISCOVERY_EN]);
+}
+static CLASS_ATTR_RW(cable_discovery_en);
 
 static ssize_t resistance_show(struct class *c,
 					struct class_attribute *attr, char *buf)
@@ -2410,8 +2484,10 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_flash_active.attr,
 	&class_attr_moisture_detection_status.attr,
 	&class_attr_moisture_detection_en.attr,
-	&class_attr_moisture_detection_sbu_kohm.attr,
-	&class_attr_moisture_detection_cc_kohm.attr,
+	&class_attr_moisture_detection_sbu1_kohm.attr,
+	&class_attr_moisture_detection_sbu2_kohm.attr,
+	&class_attr_moisture_detection_cc1_kohm.attr,
+	&class_attr_moisture_detection_cc2_kohm.attr,
 	&class_attr_wireless_boost_en.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_wireless_fw_update.attr,
@@ -2431,6 +2507,7 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_usb_pd_vid.attr,
 	&class_attr_usb_pd_pid.attr,
 	&class_attr_usb_typec_debug_access_mode_status.attr,
+	&class_attr_cable_discovery_en.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class);
@@ -2441,8 +2518,10 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_flash_active.attr,
 	&class_attr_moisture_detection_status.attr,
 	&class_attr_moisture_detection_en.attr,
-	&class_attr_moisture_detection_sbu_kohm.attr,
-	&class_attr_moisture_detection_cc_kohm.attr,
+	&class_attr_moisture_detection_sbu1_kohm.attr,
+	&class_attr_moisture_detection_sbu2_kohm.attr,
+	&class_attr_moisture_detection_cc1_kohm.attr,
+	&class_attr_moisture_detection_cc2_kohm.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_ship_mode_en.attr,
 	&class_attr_restrict_chg.attr,
@@ -2456,6 +2535,7 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_usb_pd_vid.attr,
 	&class_attr_usb_pd_pid.attr,
 	&class_attr_usb_typec_debug_access_mode_status.attr,
+	&class_attr_cable_discovery_en.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class_no_wls);

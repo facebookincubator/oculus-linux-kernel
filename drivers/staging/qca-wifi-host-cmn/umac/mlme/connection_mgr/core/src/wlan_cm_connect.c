@@ -460,19 +460,19 @@ void cm_set_vdev_link_id(struct cnx_mgr *cm_ctx,
 	}
 }
 
-static void cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
-					struct cm_connect_req *req)
+static QDF_STATUS cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
+					      struct cm_connect_req *req)
 {
 	struct qdf_mac_addr *mac;
 	bool eht_capab;
 
 	if (wlan_vdev_mlme_get_opmode(cm_ctx->vdev) != QDF_STA_MODE)
-		return;
+		return QDF_STATUS_SUCCESS;
 
 	wlan_psoc_mlme_get_11be_capab(wlan_vdev_get_psoc(cm_ctx->vdev),
 				      &eht_capab);
 	if (!eht_capab)
-		return;
+		return QDF_STATUS_SUCCESS;
 
 	mac = (struct qdf_mac_addr *)wlan_vdev_mlme_get_mldaddr(cm_ctx->vdev);
 
@@ -489,6 +489,12 @@ static void cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
 		wlan_vdev_mlme_set_mlo_vdev(cm_ctx->vdev);
 		mlme_debug("set link address for ML connection");
 	} else {
+		if (wlan_vdev_mlme_is_mlo_link_vdev(cm_ctx->vdev)) {
+			mlme_debug("MLIE is not present for partner" QDF_MAC_ADDR_FMT,
+				   QDF_MAC_ADDR_REF(mac->bytes));
+			return QDF_STATUS_E_INVAL;
+		}
+
 		/* Use net_dev address for non-ML connection */
 		if (!qdf_is_macaddr_zero(mac)) {
 			wlan_vdev_obj_lock(cm_ctx->vdev);
@@ -501,6 +507,8 @@ static void cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
 		wlan_vdev_mlme_clear_mlo_vdev(cm_ctx->vdev);
 		mlme_debug("clear MLO cap for non-ML connection");
 	}
+
+	return QDF_STATUS_SUCCESS;
 }
 #else
 static inline
@@ -508,9 +516,10 @@ void cm_set_vdev_link_id(struct cnx_mgr *cm_ctx,
 			 struct cm_connect_req *req)
 { }
 
-static void cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
-					struct cm_connect_req *req)
+static QDF_STATUS cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
+					      struct cm_connect_req *req)
 {
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 /**
@@ -561,9 +570,10 @@ void cm_set_vdev_link_id(struct cnx_mgr *cm_ctx,
 			 struct cm_connect_req *req)
 { }
 
-static void cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
-					struct cm_connect_req *req)
+static QDF_STATUS cm_update_vdev_mlme_macaddr(struct cnx_mgr *cm_ctx,
+					      struct cm_connect_req *req)
 {
+	return QDF_STATUS_SUCCESS;
 }
 
 static struct qdf_mac_addr *cm_get_bss_peer_mld_addr(struct cm_connect_req *req)
@@ -1994,7 +2004,10 @@ QDF_STATUS cm_try_next_candidate(struct cnx_mgr *cm_ctx,
 	 */
 	if (status == QDF_STATUS_E_NOSUPPORT) {
 		/* Update vdev mlme mac address based on connection type */
-		cm_update_vdev_mlme_macaddr(cm_ctx, &cm_req->connect_req);
+		status = cm_update_vdev_mlme_macaddr(cm_ctx,
+						     &cm_req->connect_req);
+		if (QDF_IS_STATUS_ERROR(status))
+			goto connect_err;
 
 		cm_create_bss_peer(cm_ctx, &cm_req->connect_req);
 	} else if (QDF_IS_STATUS_ERROR(status)) {
@@ -2088,7 +2101,10 @@ QDF_STATUS cm_connect_active(struct cnx_mgr *cm_ctx, wlan_cm_id *cm_id)
 	 */
 	if (status == QDF_STATUS_E_NOSUPPORT) {
 		/* Update vdev mlme mac address based on connection type */
-		cm_update_vdev_mlme_macaddr(cm_ctx, &cm_req->connect_req);
+		status = cm_update_vdev_mlme_macaddr(cm_ctx,
+						     &cm_req->connect_req);
+		if (QDF_IS_STATUS_ERROR(status))
+			goto connect_err;
 
 		cm_create_bss_peer(cm_ctx, &cm_req->connect_req);
 	} else if (QDF_IS_STATUS_ERROR(status)) {

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1748,7 +1748,7 @@ struct cdp_peer_ops {
 	QDF_STATUS (*register_ocb_peer)(uint8_t *mac_addr);
 	uint8_t * (*peer_get_peer_mac_addr)(void *peer);
 	int (*get_peer_state)(struct cdp_soc_t *soc, uint8_t vdev_id,
-			      uint8_t *peer_mac);
+			      uint8_t *peer_mac, bool slowpath);
 	struct cdp_vdev * (*get_vdev_for_peer)(void *peer);
 	int16_t (*update_ibss_add_peer_num_of_vdev)(struct cdp_soc_t *soc,
 						    uint8_t vdev_id,

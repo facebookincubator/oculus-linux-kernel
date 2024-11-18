@@ -226,6 +226,7 @@ enum sde_prop {
 	DPU_DST_CLIENT_IPC_ID,
 	IPCC_PROTOCOL_ID,
 	SWAP_MIXERS,
+	FREERUN_HISTOGRAM,
 	SDE_PROP_MAX,
 };
 
@@ -625,6 +626,7 @@ static struct sde_prop_type sde_prop[] = {
 	{DPU_DST_CLIENT_IPC_ID, "qcom,sde-ipcc-dst-dpu-client-id", false, PROP_TYPE_U32},
 	{IPCC_PROTOCOL_ID, "qcom,sde-ipcc-protocol-id", false, PROP_TYPE_U32},
 	{SWAP_MIXERS, "meta,swap-mixers", false, PROP_TYPE_BOOL},
+	{FREERUN_HISTOGRAM, "meta,freerun-histogram", false, PROP_TYPE_BOOL},
 };
 
 static struct sde_prop_type sde_perf_prop[] = {
@@ -4093,6 +4095,9 @@ static void _sde_top_parse_dt_helper(struct sde_mdss_cfg *cfg,
 
 	cfg->swap_mixers =
 		PROP_VALUE_ACCESS(props->values, SWAP_MIXERS, 0);
+
+	cfg->freerun_histogram =
+		PROP_VALUE_ACCESS(props->values, FREERUN_HISTOGRAM, 0);
 
 	if (props->exists[SEC_SID_MASK]) {
 		cfg->sec_sid_mask_count = props->counts[SEC_SID_MASK];

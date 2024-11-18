@@ -9,7 +9,6 @@
 	status = "ok";
 	/delete-property/ qcom,external-led;
 	qcom,multi-strobe;
-	qcom,hw-strobe-gpios = <&pmxr2230_gpios 1 0>;
 };
 
 &pmxr2230_torch0 {

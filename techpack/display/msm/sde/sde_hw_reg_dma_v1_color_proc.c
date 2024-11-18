@@ -49,6 +49,8 @@
 #define GAMUT_SCALE_OFF_LEN (GAMUT_3D_SCALE_OFF_SZ * sizeof(u32))
 #define GAMUT_SCALE_OFF_LEN_12 (GAMUT_3D_SCALEB_OFF_SZ * sizeof(u32))
 
+#define HIST_MEM_SIZE ((sizeof(struct drm_msm_hist)) + 2 * sizeof(u32))
+
 #define GC_LUT_MEM_SIZE ((sizeof(struct drm_msm_pgc_lut)) + \
 		REG_DMA_HEADERS_BUFFER_SZ)
 
@@ -144,7 +146,7 @@ static u32 feature_map[SDE_DSPP_MAX] = {
 	/* SPR can be mapped to SPR_INIT & SPR_PU_CFG */
 	[SDE_DSPP_SPR] = SPR_INIT,
 	[SDE_DSPP_DITHER] = REG_DMA_FEATURES_MAX,
-	[SDE_DSPP_HIST] = REG_DMA_FEATURES_MAX,
+	[SDE_DSPP_HIST] = HIST,
 	[SDE_DSPP_AD] = REG_DMA_FEATURES_MAX,
 	[SDE_DSPP_RC] = RC_DATA,
 	[SDE_DSPP_DEMURA] = DEMURA_CFG,
@@ -168,6 +170,7 @@ static u32 ltm_feature_map[SDE_LTM_MAX] = {
 static u32 feature_reg_dma_sz[SDE_DSPP_MAX] = {
 	[SDE_DSPP_VLUT] = VLUT_MEM_SIZE,
 	[SDE_DSPP_GAMUT] = GAMUT_LUT_MEM_SIZE,
+	[SDE_DSPP_HIST] = HIST_MEM_SIZE,
 	[SDE_DSPP_GC] = GC_LUT_MEM_SIZE,
 	[SDE_DSPP_IGC] = IGC_LUT_MEM_SIZE,
 	[SDE_DSPP_PCC] = PCC_MEM_SIZE,
@@ -5726,4 +5729,69 @@ void reg_dmav1_setup_demurav1(struct sde_hw_dspp *ctx, void *cfx)
 	if (rc)
 		DRM_ERROR("failed to kick off ret %d\n", rc);
 
+}
+
+void reg_dmav1_trigger_read_dspp_histv17(struct sde_hw_dspp *ctx, struct sde_hw_ctl *hw_ctl)
+{
+	struct sde_hw_reg_dma_ops *dma_ops;
+	struct sde_reg_dma_kickoff_cfg kick_off;
+	struct sde_reg_dma_setup_ops_cfg dma_read_cfg;
+	int dspp_idx, blk, rc;
+
+	if (!ctx || !hw_ctl || !dspp_buf[HIST][ctx->idx][ctx->dpu_idx]) {
+		DRM_ERROR("invalid parameters ctx %pK hw_ctl %pK", ctx, hw_ctl);
+		return;
+	}
+
+	dma_ops = sde_reg_dma_get_ops(ctx->dpu_idx);
+	if (IS_ERR_OR_NULL(dma_ops))
+		return;
+
+	dspp_idx = ctx->idx - DSPP_0;
+	blk = DSPP0 << dspp_idx;
+
+	dma_ops->reset_reg_dma_buf(dspp_buf[HIST][ctx->idx][ctx->dpu_idx]);
+	REG_DMA_INIT_OPS(dma_read_cfg, blk, HIST,
+			dspp_buf[HIST][ctx->idx][ctx->dpu_idx]);
+
+	REG_DMA_SETUP_OPS(dma_read_cfg, 0, NULL, 0, HW_BLK_SELECT, 0, 0, 0);
+	rc = dma_ops->setup_payload(&dma_read_cfg);
+	if (rc) {
+		DRM_ERROR("histogram read decode select failed ret %d\n", rc);
+		return;
+	}
+
+	REG_DMA_SETUP_KICKOFF(kick_off, hw_ctl, dspp_buf[HIST][ctx->idx][ctx->dpu_idx],
+			REG_DMA_READ, DMA_CTL_QUEUE0, WRITE_IMMEDIATE, HIST);
+	kick_off.block_select = dspp_idx;
+	rc = dma_ops->kick_off(&kick_off, ctx->dpu_idx);
+	if (rc)
+		DRM_ERROR("histogram read failed to kick off ret %d\n", rc);
+
+}
+
+void reg_dmav1_copy_data_dspp_histv17(struct sde_hw_dspp *ctx, struct drm_msm_hist *data)
+{
+	struct drm_msm_hist *dma_buffer;
+	u32 i;
+
+	if (!ctx || !data) {
+		DRM_ERROR("invalid parameters ctx %pK data %pK", ctx, data);
+		return;
+	}
+
+	if (!dspp_buf[HIST][ctx->idx][ctx->dpu_idx]) {
+		DRM_ERROR("invalid histogram buffer for DSPP %d, DPU %d", ctx->idx, ctx->dpu_idx);
+		return;
+	}
+
+	dma_buffer = (struct drm_msm_hist *)
+			(dspp_buf[HIST][ctx->idx][ctx->dpu_idx]->vaddr + 2 * sizeof(u32));
+	/* Track the frame count in the histogram flags field (which is unused) */
+	data->flags = max_t(u64, *(u32 *)dspp_buf[HIST][ctx->idx][ctx->dpu_idx]->vaddr, data->flags);
+	for (i = 0; i < HIST_V_SIZE; i++)
+		data->data[i] += dma_buffer->data[i];
+
+	/* Unlock histogram buffer */
+	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->hist.base + 0x4 /* PA_HIST_CTRL_DSPP_OFF */, 0);
 }

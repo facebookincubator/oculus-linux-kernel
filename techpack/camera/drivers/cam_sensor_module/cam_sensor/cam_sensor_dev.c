@@ -362,6 +362,7 @@ static int cam_sensor_i2c_component_bind(struct device *dev,
 	s_ctrl->bridge_intf.no_crm_ops.apply_req = cam_sensor_no_crm_apply_req;
 	s_ctrl->bridge_intf.no_crm_ops.pause_cb  = cam_sensor_no_crm_pause_apply;
 	s_ctrl->bridge_intf.no_crm_ops.resume_cb = cam_sensor_no_crm_resume_apply;
+	s_ctrl->bridge_intf.no_crm_ops.add_req   = cam_sensor_no_crm_add_req;
 
 	s_ctrl->sensordata->power_info.dev = soc_info->dev;
 	cam_sensor_debug_register(s_ctrl);
@@ -528,6 +529,7 @@ static int cam_sensor_component_bind(struct device *dev,
 	s_ctrl->bridge_intf.no_crm_ops.apply_req = cam_sensor_no_crm_apply_req;
 	s_ctrl->bridge_intf.no_crm_ops.pause_cb  = cam_sensor_no_crm_pause_apply;
 	s_ctrl->bridge_intf.no_crm_ops.resume_cb = cam_sensor_no_crm_resume_apply;
+	s_ctrl->bridge_intf.no_crm_ops.add_req   = cam_sensor_no_crm_add_req;
 
 	s_ctrl->sensordata->power_info.dev = &pdev->dev;
 	platform_set_drvdata(pdev, s_ctrl);

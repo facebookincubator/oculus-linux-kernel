@@ -16,6 +16,13 @@
 #include <linux/thermal.h>
 #include <linux/types.h>
 
+/*
+ * How long it takes to fully transition between charging/discharging
+ * calculations, in seconds
+*/
+#define CHARGING_SMOOTHING_PERIOD_SEC 10
+#define CHARGING_SMOOTHING_FACTOR_MAX 100
+
 #define COEFFICIENT_SCALAR 10000
 #define THERMAL_MAX_VIRT_SENSORS 10
 
@@ -99,6 +106,9 @@ struct virtual_sensor_drvdata {
 	int fallback_tz_scaling_factor;
 	int fallback_tolerance;
 
+	int charging_smoothing_factor;
+	ktime_t last_inc_smoothing_factor_time;
+	s64 last_temperature;
 	bool was_charging;
 	struct power_supply *batt_psy;
 };
@@ -275,14 +285,34 @@ static int get_fallback_temp(struct virtual_sensor_drvdata *vs, s64 *tz_temp)
 	return 0;
 }
 
+static int virtual_sensor_calculate_temp_for_coeffs(
+	struct virtual_sensor_drvdata *vs,
+	struct virtual_sensor_common_data *coeff_data, s64 *tz_temp)
+{
+	int ret = 0;
+
+	if (!vs || !vs->dev || !coeff_data || !tz_temp)
+		return -EINVAL;
+
+	ret = virtual_sensor_calculate_tz_temp(vs->dev, coeff_data, tz_temp);
+	if (ret)
+		return ret;
+
+	*tz_temp = div64_s64(*tz_temp, COEFFICIENT_SCALAR);
+	*tz_temp += coeff_data->intercept;
+
+	return 0;
+}
+
 static int virtual_sensor_get_temp(void *data, int *temperature)
 {
 	struct virtual_sensor_drvdata *vs = data;
-	struct virtual_sensor_common_data *coeff_data;
-	s64 tz_temp = 0;
-	s64 temp, fallback_temp = 0;
 	const bool charging = is_charging(vs->batt_psy);
-	int ret;
+	const ktime_t curr_ktime = ktime_get_boottime();
+	const bool should_inc_smoothing_factor =
+		ktime_ms_delta(curr_ktime, vs->last_inc_smoothing_factor_time) > (1 * MSEC_PER_SEC);
+	s64 temp = 0, temp_charging = 0, temp_discharging = 0, fallback_temp = 0;
+	int ret = 0;
 
 	if (!temperature)
 		return -EINVAL;
@@ -296,26 +326,44 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 		virtual_sensor_reset_history(&vs->data_charging);
 		virtual_sensor_reset_history(&vs->data_discharging);
 	}
+
+	if (should_inc_smoothing_factor) {
+		if (charging) {
+			vs->charging_smoothing_factor += (CHARGING_SMOOTHING_FACTOR_MAX / CHARGING_SMOOTHING_PERIOD_SEC);
+			vs->charging_smoothing_factor = min(vs->charging_smoothing_factor, CHARGING_SMOOTHING_FACTOR_MAX);
+		} else {
+			vs->charging_smoothing_factor -= (CHARGING_SMOOTHING_FACTOR_MAX / CHARGING_SMOOTHING_PERIOD_SEC);
+			vs->charging_smoothing_factor = max(vs->charging_smoothing_factor, 0);
+		}
+
+		vs->last_inc_smoothing_factor_time = curr_ktime;
+	}
 	vs->was_charging = charging;
 
-	coeff_data = charging ? &vs->data_charging : &vs->data_discharging;
-
-	ret = virtual_sensor_calculate_tz_temp(vs->dev, coeff_data, &tz_temp);
+	ret = virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_charging, &temp_charging);
+	ret |= virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_discharging, &temp_discharging);
 	if (ret) {
 		/*
 		 * Unable to calculate new temp, use the last one so the function doesn't
 		 * cause the thermal subsystem to error out.
 		 */
-		tz_temp = coeff_data->tz_last_temperatures[coeff_data->tz_count - 1];
-		dev_warn(vs->dev, "%s: Unable to calcualte TZ temp, re-using last temp: %llu\n",
-				__func__, tz_temp);
+		dev_warn(vs->dev,
+			"%s: Unable to calcualte TZ temp, re-using last temp: %llu\n",
+			__func__, vs->last_temperature);
+
+		*temperature = vs->last_temperature;
+		goto get_temp_unlock;
 	}
 
-	temp = div64_s64(tz_temp, COEFFICIENT_SCALAR);
-	temp += coeff_data->intercept;
-
+	temp = (temp_charging * vs->charging_smoothing_factor) +
+	       (temp_discharging * (CHARGING_SMOOTHING_FACTOR_MAX - vs->charging_smoothing_factor));
+	temp = div64_s64(temp, CHARGING_SMOOTHING_FACTOR_MAX);
 	*temperature = (int)temp;
-	ret = 0;
+
+	dev_dbg(vs->dev,
+		"[%s]: temp[%lld] = (temp_charging[%lld] * mult[%d/100]) + (temp_discharging[%lld] * (1-mult)[%d/100])",
+		vs->tzd->type, temp, temp_charging, vs->charging_smoothing_factor,
+		temp_discharging, (CHARGING_SMOOTHING_FACTOR_MAX - vs->charging_smoothing_factor));
 
 	if (!vs->fallback_tzd)
 		goto get_temp_unlock;
@@ -332,12 +380,10 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 	if (abs(temp - fallback_temp) > vs->fallback_tolerance)
 		*temperature = (int)fallback_temp;
 
+get_temp_unlock:
+	vs->last_temperature = *temperature;
 	mutex_unlock(&vs->lock);
 	return 0;
-
-get_temp_unlock:
-	mutex_unlock(&vs->lock);
-	return ret;
 }
 
 static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
@@ -1016,17 +1062,7 @@ static struct platform_driver virtual_sensor_driver = {
 	},
 };
 
-static int __init virtual_sensor_init(void)
-{
-	return platform_driver_register(&virtual_sensor_driver);
-}
-late_initcall(virtual_sensor_init);
-
-static void __exit virtual_sensor_deinit(void)
-{
-	platform_driver_unregister(&virtual_sensor_driver);
-}
-module_exit(virtual_sensor_deinit);
+module_platform_driver(virtual_sensor_driver);
 
 MODULE_ALIAS("virtual_sensor");
 MODULE_LICENSE("GPL v2");

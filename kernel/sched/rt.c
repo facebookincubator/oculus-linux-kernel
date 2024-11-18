@@ -1156,7 +1156,8 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
 	if (sched_info_on()) {
-		struct task_struct *tgid_task = get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID);
+		struct task_struct *tgid_task = curr->tgid ?
+			get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID) : NULL;
 		if (tgid_task != NULL) {
 			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
 			if (tgid_comm) {
@@ -1686,7 +1687,7 @@ static inline bool should_honor_rt_sync(struct rq *rq, struct task_struct *p,
 	 * and force it to run for a likely small time after the RT wakee is
 	 * done. So, only honor RT sync wakeups from RT wakers.
 	 */
-	return (sync || p->wake_affine) && task_has_rt_policy(rq->curr) &&
+	return (sync || meta_task_wake_affined(p)) && task_has_rt_policy(rq->curr) &&
 		p->prio <= rq->rt.highest_prio.next &&
 		rq->rt.rt_nr_running <= 2;
 }
@@ -2627,7 +2628,7 @@ static void task_woken_rt(struct rq *rq, struct task_struct *p)
 			    (dl_task(rq->curr) || rt_task(rq->curr)) &&
 			    (rq->curr->nr_cpus_allowed < 2 ||
 			     rq->curr->prio <= p->prio) &&
-			    !p->wake_affine;
+			    !meta_task_wake_affined(p);
 
 	if (need_to_push)
 		push_rt_tasks(rq);

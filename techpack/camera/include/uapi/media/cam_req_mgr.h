@@ -375,6 +375,7 @@ struct cam_req_mgr_thread_prop_control {
 #define CAM_REQ_MGR_EXIT_DQ_THREAD              (CAM_COMMON_OPCODE_MAX + 17)
 #define CAM_REQ_MGR_SYNC_MODE_V2                (CAM_COMMON_OPCODE_MAX + 18)
 #define CAM_REQ_MGR_THREAD_PROP_CONTROL         (CAM_COMMON_OPCODE_MAX + 19)
+#define CAM_REQ_MGR_BATCH_REQ                   (CAM_COMMON_OPCODE_MAX + 20)
 
 /* end of cam_req_mgr opcodes */
 

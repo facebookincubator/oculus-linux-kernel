@@ -15,7 +15,8 @@
 #include "msm_cvp_debug.h"
 #include "cvp_hfi.h"
 #include "msm_cvp_common.h"
-
+#include "cvp_core_hfi.h"
+#include "msm_cvp_events.h"
 extern struct msm_cvp_drv *cvp_driver;
 
 static enum cvp_status hfi_map_err_status(u32 hfi_err)
@@ -510,6 +511,22 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 		"%s: Received msg %x cmd_done.status=%d sessionid=%x\n",
 		__func__, pkt->packet_type,
 		hfi_map_err_status(get_msg_errorcode(pkt)), session_id);
+	if(( (msm_cvp_debug & CVP_TRACE) == CVP_TRACE ) &&
+		(pkt->packet_type > HFI_MSG_SESSION_CVP_START) &&
+		(pkt->size >= sizeof(struct cvp_hfi_msg_session_hdr)))
+	{
+		u64 aon_cycles = 0;
+		u32 pkt_id = 0;
+		u32 stream_id = 0;
+		u32 t_id =0;
+		aon_cycles  = get_aon_time();
+		session_id   = pkt->session_id;
+		pkt_id    = pkt->packet_type;
+		stream_id = pkt->stream_idx;
+		t_id      =  pkt->client_data.transaction_id;
+		trace_tracing_eva_frame_from_sw(aon_cycles,"EVA_KMD_REV_BEGIN",session_id,stream_id,pkt_id,t_id);
+	}
+
 
 	spin_lock(&sq->lock);
 	if (sq->msg_count >= MAX_NUM_MSGS_PER_SESSION) {

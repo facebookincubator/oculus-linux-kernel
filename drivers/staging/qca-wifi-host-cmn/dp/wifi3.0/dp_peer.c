@@ -810,9 +810,17 @@ void dp_peer_find_id_to_obj_add(struct dp_soc *soc,
 		/* Peer map event came for peer_id which
 		 * is already mapped, this is not expected
 		 */
-		dp_err("peer %pK(" QDF_MAC_ADDR_FMT ")map failed, id %d mapped to peer %pK",
+		dp_err("peer %pK(" QDF_MAC_ADDR_FMT ")map failed, id %d mapped "
+		       "to peer %pK, Stats: peer(map %u unmap %u "
+		       "invalid unmap %u) mld per(map %u unmap %u)",
 		       peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw), peer_id,
-		       soc->peer_id_to_obj_map[peer_id]);
+		       soc->peer_id_to_obj_map[peer_id],
+		       soc->stats.t2h_msg_stats.peer_map,
+		       (soc->stats.t2h_msg_stats.peer_unmap -
+			soc->stats.t2h_msg_stats.ml_peer_unmap),
+		       soc->stats.t2h_msg_stats.invalid_peer_unmap,
+		       soc->stats.t2h_msg_stats.ml_peer_map,
+		       soc->stats.t2h_msg_stats.ml_peer_unmap);
 		dp_peer_unref_delete(peer, DP_MOD_ID_CONFIG);
 		qdf_assert_always(0);
 	}
@@ -2956,6 +2964,7 @@ dp_rx_mlo_peer_map_handler(struct dp_soc *soc, uint16_t peer_id,
 		soc, peer_id, ml_peer_id,
 		QDF_MAC_ADDR_REF(peer_mac_addr));
 
+	DP_STATS_INC(soc, t2h_msg_stats.ml_peer_map, 1);
 	/* Get corresponding vdev ID for the peer based
 	 * on chip ID obtained from mlo peer_map event
 	 */
@@ -3110,6 +3119,7 @@ dp_rx_peer_map_handler(struct dp_soc *soc, uint16_t peer_id,
 	dp_info("peer_map_event (soc:%pK): peer_id %d, hw_peer_id %d, peer_mac "QDF_MAC_ADDR_FMT", vdev_id %d",
 		soc, peer_id, hw_peer_id,
 		QDF_MAC_ADDR_REF(peer_mac_addr), vdev_id);
+	DP_STATS_INC(soc, t2h_msg_stats.peer_map, 1);
 
 	/* Peer map event for WDS ast entry get the peer from
 	 * obj map
@@ -3247,6 +3257,8 @@ dp_rx_peer_unmap_handler(struct dp_soc *soc, uint16_t peer_id,
 	struct dp_peer *peer;
 	struct dp_vdev *vdev = NULL;
 
+	DP_STATS_INC(soc, t2h_msg_stats.peer_unmap, 1);
+
 	/*
 	 * If FW AST offload is enabled and host AST DB is enabled,
 	 * the AST entries are created during peer map from FW.
@@ -3266,6 +3278,7 @@ dp_rx_peer_unmap_handler(struct dp_soc *soc, uint16_t peer_id,
 	if (!peer) {
 		dp_err("Received unmap event for invalid peer_id %u",
 		       peer_id);
+		DP_STATS_INC(soc, t2h_msg_stats.invalid_peer_unmap, 1);
 		return;
 	}
 
@@ -3356,6 +3369,7 @@ void dp_rx_mlo_peer_unmap_handler(struct dp_soc *soc, uint16_t peer_id)
 					       0, 0, vdev_id);
 	dp_info("MLO peer_unmap_event (soc:%pK) peer_id %d",
 		soc, peer_id);
+	DP_STATS_INC(soc, t2h_msg_stats.ml_peer_unmap, 1);
 
 	dp_rx_peer_unmap_handler(soc, ml_peer_id, vdev_id,
 				 mac_addr, is_wds,
@@ -5724,7 +5738,7 @@ uint8_t *dp_peer_get_peer_mac_addr(void *peer_handle)
 }
 
 int dp_get_peer_state(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
-		      uint8_t *peer_mac)
+		      uint8_t *peer_mac, bool slowpath)
 {
 	enum ol_txrx_peer_state peer_state;
 	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
@@ -5743,12 +5757,13 @@ int dp_get_peer_state(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 	tgt_peer = dp_get_tgt_peer_from_peer(peer);
 	peer_state = tgt_peer->state;
 
-	dp_peer_debug("peer %pK tgt_peer: %pK peer MAC "
-		     QDF_MAC_ADDR_FMT " tgt peer MAC "
-		     QDF_MAC_ADDR_FMT " tgt peer state %d",
-		     peer, tgt_peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw),
-		     QDF_MAC_ADDR_REF(tgt_peer->mac_addr.raw),
-		     tgt_peer->state);
+	if (slowpath)
+		dp_peer_info("peer %pK tgt_peer: %pK peer MAC "
+			    QDF_MAC_ADDR_FMT " tgt peer MAC "
+			    QDF_MAC_ADDR_FMT " tgt peer state %d",
+			    peer, tgt_peer, QDF_MAC_ADDR_REF(peer->mac_addr.raw),
+			    QDF_MAC_ADDR_REF(tgt_peer->mac_addr.raw),
+			    tgt_peer->state);
 
 	dp_peer_unref_delete(peer, DP_MOD_ID_CDP);
 

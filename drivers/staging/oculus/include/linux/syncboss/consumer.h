@@ -62,10 +62,8 @@ struct syncboss_consumer_ops {
 	/*
 	 * Queue a packet to be sent to the MCU. If streaming has not been started,
 	 * the packet will be held until it has been.
-	 *
-	 * Pass true for from_user if the buffer is a __user memory pointer.
 	 */
-	ssize_t (*queue_tx_packet)(struct device *dev, const void *buf, size_t count, bool from_user);
+	ssize_t (*queue_tx_packet)(struct device *dev, const void *buf, size_t count);
 };
 
 #ifdef CONFIG_SYNCBOSS_STANDALONE

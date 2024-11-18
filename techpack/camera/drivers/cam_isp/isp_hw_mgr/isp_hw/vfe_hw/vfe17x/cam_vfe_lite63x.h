@@ -722,6 +722,7 @@ static struct cam_vfe_bus_ver3_hw_info vfe636x_bus_hw_info = {
 	.top_irq_shift   = 0,
 	.max_out_res = CAM_ISP_IFE_OUT_RES_BASE + 47,
 	.support_tunneling = true,
+	.virtual_frame_en_shift = 1,
 	.tunneling_overflow_shift = 0x1A,
 	.no_tunnelingId_shift = 0x1B,
 	.fifo_depth = 2,

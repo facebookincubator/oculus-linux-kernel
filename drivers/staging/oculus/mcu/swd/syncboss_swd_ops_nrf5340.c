@@ -5,6 +5,7 @@
 
 #include "swd.h"
 #include "swd_registers_nrf5340.h"
+#include "syncboss_swd_common_ops.h"
 #include "syncboss_swd_ops_nrf5340.h"
 
 struct swd_core_parameters {
@@ -23,36 +24,6 @@ static void ready_network_core(struct device *dev)
 		swd_memory_write(dev,
 				 SWD_NRF5340_RESET_APP_SECURE_NETWORK_FORCEOFF,
 				 SWD_NRF5340_RESET_NETWORK_FORCEOFF_Release);
-}
-
-static int syncboss_swd_wait_reg_value(struct device *dev, u32 reg, u32 value,
-				       u64 timeout)
-{
-	u64 timeout_time_ns = 0;
-
-	timeout_time_ns = ktime_get_ns() + (timeout * NSEC_PER_MSEC);
-
-	while (ktime_get_ns() < timeout_time_ns) {
-		if (swd_memory_read(dev, reg) == value)
-			return 0;
-
-		/*
-		 * From the datasheet, page erase operations take 87.5ms.
-		 */
-		usleep_range(1000, 2000);
-	}
-
-	/*
-	 * Try once more, just in case we were preempted at an unlucky time
-	 * after calculating timeout_time_ns
-	 */
-	if (swd_memory_read(dev, reg) == value)
-		return 0;
-
-	dev_err(dev, "SyncBoss SWD register %08x not %08x after %llums", reg,
-		value, timeout);
-
-	return -ETIMEDOUT;
 }
 
 static int syncboss_swd_wait_for_nvmc_ready(struct device *dev, int nvmc_ready_register)

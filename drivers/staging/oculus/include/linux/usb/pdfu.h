@@ -3,7 +3,12 @@
 #ifndef __LINUX_USB_PDFU_H
 #define __LINUX_USB_PDFU_H
 
-#define PD_MAX_EXT_MSG_LEN 260
+#include <linux/types.h>
+
+#define PD_MAX_EXT_MSG_LEN	260
+#define PD_MAX_NUM_CHUNKS	(PD_MAX_EXT_MSG_LEN / PD_EXT_MAX_CHUNK_DATA)
+
+#define PDFU_PREFIX_LEN	48
 
 /*
  * PDFU header
@@ -49,11 +54,12 @@ enum pdfu_resp_msg_type {
 	/* 0x80 - 0xFF Only used by Requests */
 };
 
-/* TODO(T181477506) Use a union for payload types) */
+#define PDFU_MAX_PAYLOAD_LEN (PD_MAX_EXT_MSG_LEN - sizeof(struct pdfu_header))
+
 /* PDFU Messages */
 struct pdfu_message {
 	struct pdfu_header header;
-	u8 payload[PD_MAX_EXT_MSG_LEN - sizeof(struct pdfu_header)];
+	u8 payload[PDFU_MAX_PAYLOAD_LEN];
 } __packed;
 
 struct get_fw_id_response_payload {
@@ -115,6 +121,7 @@ struct pdfu_validate_response_payload {
 
 #define PDFU_N_ENUMERATE_RESEND 10
 #define PDFU_N_RECONFIGURE_RESEND 3
+#define PDFU_N_DATA_RESEND 3
 #define PDFU_N_VALIDATE_RESEND 3
 
 #endif /* __LINUX_USB_PDFU_H  */

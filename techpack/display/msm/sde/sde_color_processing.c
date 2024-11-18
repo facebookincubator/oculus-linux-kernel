@@ -3289,10 +3289,13 @@ static void _dspp_hist_install_property(struct drm_crtc *crtc)
 {
 	struct sde_kms *kms = NULL;
 	struct sde_mdss_cfg *catalog = NULL;
+	struct sde_crtc *sde_crtc;
+	struct msm_property_info *info;
 	u32 version;
 
 	kms = get_kms(crtc);
 	catalog = kms->catalog;
+	sde_crtc = to_sde_crtc(crtc);
 
 	version = catalog->dspp[0].sblk->hist.version >> 16;
 	switch (version) {
@@ -3302,6 +3305,17 @@ static void _dspp_hist_install_property(struct drm_crtc *crtc)
 			ARRAY_SIZE(sde_hist_modes), "SDE_DSPP_HIST_CTRL_V1");
 		_sde_cp_crtc_install_range_property(crtc, "SDE_DSPP_HIST_IRQ_V1",
 			SDE_CP_CRTC_DSPP_HIST_IRQ, 0, U16_MAX, 0);
+
+		if (catalog->freerun_histogram && sde_crtc->hist_blob) {
+			info = &sde_crtc->property_info;
+
+			msm_property_install_blob(info, "freerun_histogram",
+					DRM_MODE_PROP_IMMUTABLE,
+					CRTC_PROP_FREERUN_HISTOGRAM);
+			drm_object_property_set_value(info->base,
+					info->property_array[CRTC_PROP_FREERUN_HISTOGRAM],
+					sde_crtc->hist_blob->base.id);
+		}
 		break;
 	default:
 		DRM_ERROR("version %d not supported\n", version);
@@ -3698,6 +3712,7 @@ static void _sde_cp_hist_interrupt_cb(void *arg, int irq_idx)
 static void _sde_cp_notify_hist_event(struct drm_crtc *crtc_drm, void *arg)
 {
 	struct sde_hw_dspp *hw_dspp = NULL;
+	struct sde_hw_ctl *hw_ctl = NULL;
 	struct sde_crtc *crtc;
 	struct drm_event event;
 	struct drm_msm_hist *hist_data;
@@ -3706,6 +3721,7 @@ static void _sde_cp_notify_hist_event(struct drm_crtc *crtc_drm, void *arg)
 	unsigned long flags, state_flags;
 	int ret, irq_idx;
 	u32 i, lock_hist = 0;
+	bool has_regdma = false;
 
 	if (!crtc_drm || !arg) {
 		DRM_ERROR("invalid drm crtc %pK or arg %pK\n", crtc_drm, arg);
@@ -3749,6 +3765,11 @@ static void _sde_cp_notify_hist_event(struct drm_crtc *crtc_drm, void *arg)
 	}
 
 	irq_idx = *(int *)arg;
+
+	/* If the histogram is free-running then don't disable the IRQ yet. */
+	if (kms->catalog->freerun_histogram)
+		goto freerun;
+
 	spin_lock_irqsave(&node->state_lock, state_flags);
 	if (node->state == IRQ_ENABLED) {
 		ret = sde_core_irq_disable_nolock(kms, irq_idx);
@@ -3777,6 +3798,8 @@ static void _sde_cp_notify_hist_event(struct drm_crtc *crtc_drm, void *arg)
 		node->state = IRQ_DISABLED;
 	}
 	spin_unlock_irqrestore(&node->state_lock, state_flags);
+
+freerun:
 	spin_unlock_irqrestore(&crtc->spin_lock, flags);
 
 	if (!crtc->hist_blob)
@@ -3792,15 +3815,38 @@ static void _sde_cp_notify_hist_event(struct drm_crtc *crtc_drm, void *arg)
 	/* read histogram data into blob */
 	hist_data = (struct drm_msm_hist *)crtc->hist_blob->data;
 	memset(hist_data->data, 0, sizeof(hist_data->data));
+
+	/* Try to use regdma to read the histogram */
 	for (i = 0; i < crtc->num_mixers; i++) {
 		hw_dspp = crtc->mixers[i].hw_dspp;
-		if (!hw_dspp || !hw_dspp->ops.read_histogram) {
+		if (!hw_dspp || !(hw_dspp->ops.trigger_histogram_read &&
+				hw_dspp->ops.copy_histogram_data))
+			continue;
+
+		hw_ctl = crtc->mixers[i].hw_ctl;
+		hw_dspp->ops.trigger_histogram_read(hw_dspp, hw_ctl);
+
+		has_regdma = true;
+	}
+
+	/* Flush regdma operations on the final trigger call (if applicable) */
+	if (has_regdma && hw_ctl && hw_ctl->ops.reg_dma_flush)
+		hw_ctl->ops.reg_dma_flush(hw_ctl, true);
+
+	for (i = 0; i < crtc->num_mixers; i++) {
+		hw_dspp = crtc->mixers[i].hw_dspp;
+		if (!hw_dspp || !(hw_dspp->ops.read_histogram ||
+				hw_dspp->ops.copy_histogram_data)) {
 			DRM_ERROR("invalid dspp %pK or read_histogram func\n",
 				hw_dspp);
 			pm_runtime_put_sync(kms->dev->dev);
 			return;
 		}
-		hw_dspp->ops.read_histogram(hw_dspp, hist_data);
+
+		if (has_regdma && hw_dspp->ops.copy_histogram_data)
+			hw_dspp->ops.copy_histogram_data(hw_dspp, hist_data);
+		else
+			hw_dspp->ops.read_histogram(hw_dspp, hist_data);
 	}
 
 	pm_runtime_put_sync(kms->dev->dev);

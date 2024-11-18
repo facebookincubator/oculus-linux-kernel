@@ -55,6 +55,13 @@ config META_SWD_SYNCBOSS_NRF5340
 	help
 	  Meta Syncboss SWD Support for NRF5340
 
+config META_SWD_SYNCBOSS_NRF54L15
+	bool "Syncboss SWD Driver for NRF54L15"
+	depends on META_SWD
+	default n
+	help
+	  Meta Syncboss SWD Support for NRF54L15
+
 config META_SWD_STM32L4
 	bool "STM32L4 SWD Driver"
 	depends on META_SWD

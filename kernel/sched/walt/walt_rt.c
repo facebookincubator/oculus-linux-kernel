@@ -134,7 +134,7 @@ static inline bool walt_rt_task_fits_capacity(struct task_struct *p, int cpu)
 static inline bool walt_should_honor_rt_sync(struct rq *rq, struct task_struct *p,
 					     bool sync)
 {
-	return p->wake_affine || (sync &&
+	return meta_task_wake_affined(p) || (sync &&
 		p->prio <= rq->rt.highest_prio.next &&
 		rq->rt.rt_nr_running <= 2);
 }

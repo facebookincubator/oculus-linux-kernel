@@ -35,8 +35,18 @@
 
 /* Jackson/Canyon Cam AVDD */
 &L14B {
-	qcom,init-enable = <0>;
+	qcom,init-enable = <1>;
 	regulator-min-microvolt = <2700000>;
+};
+
+&vendor {
+	l14b_userspace_consumer {
+		compatible = "reg-userspace-consumer";
+		regulator-name = "l14b-userspace";
+		regulator-boot-on;
+		regulator-supplies = "l14b";
+		l14b-supply = <&L14B>;
+	};
 };
 
 /* Not connected */

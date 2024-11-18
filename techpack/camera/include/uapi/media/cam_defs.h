@@ -11,6 +11,16 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
+#define UL_MAX_DEVICES                     8
+#define MAX_IO_PACKETS                     16
+#define MAX_SETTING_PACKETS                16
+#define MAX_IO_RESOURCES                   16
+
+#define BATCH_PACKET_TYPE_SETUP            0
+#define BATCH_PACKET_TYPE_UPDATE           1
+#define BATCH_PACKET_TYPE_UPDATE_RETREIVE           2
+#define BATCH_PACKET_TYPE_RETREIVE           3
+
 
 /* camera op codes */
 #define CAM_COMMON_OPCODE_BASE                  0x100
@@ -511,6 +521,121 @@ struct cam_packet {
 	__u32                        kmd_cmd_buf_offset;
 	__u64                        payload[1];
 
+};
+
+/**
+ * struct packet_info - Structure for packet info in Ultra lite path
+ *
+ * @packet_offset:              packet offset in buffer
+ * @packet_hdl    :             Packet buffer handle
+ */
+struct packet_info
+{
+	__s32 packet_hdl;
+	__u32 packet_offset;
+};
+
+/**
+ * struct port_pattern_period - Structure for packet pattern and period in Ultra lite path
+ *
+ * @resource_type:              resource type
+ * @pattern:                    resource enablement pattern
+ * @period:                     Resource enablement period
+ */
+struct port_pattern_period
+{
+	__u32 resource_type;
+	__u32 pattern;
+	__u32 period;
+};
+
+/**
+ * struct setting_pattern_period - Structure for packet pattern and period in Ultra lite path
+ *
+ * @period:                                Settings period
+ * @pattern:                               Settings pattern
+ */
+struct setting_pattern_period
+{
+	__u32 period;
+	__u32 reserve;
+	__u32 pattern[MAX_SETTING_PACKETS];
+};
+
+/**
+ * struct response_buffer - Structure for settings pattern and period in Ultra lite path
+ *
+ * @num_buffer:                   Number of buffers
+ * @setting_id:                   setting id
+ * @status:                       result status
+ * @sof_timestamp:                Captured time stamp value at sof hw event
+ * @boot_timestamp:               Boot time stamp for a given req_id
+ * @buffer_hdl:                   Handle of buffer
+ */
+struct response_buffer
+{
+	__u32 num_buffer;
+	__u32 setting_id;
+	__u32 status;
+	__u32 reserve;
+	__u64 sof_timestamp;
+	__u64 boot_timestamp;
+	__s32 buffer_hdl[MAX_IO_RESOURCES];
+};
+
+/**
+ * struct ul_cam_packet - Structure for Ultra lite path packet
+ *
+ * @batch_packet_type:                                    Packet type. ie: SETUP or UPDATE
+ * @link_hdl:                                             Link handle
+ * @number_devices:                                       number of devices
+ * @num_setting_packets:                                  number of setting packets per device
+ * @update_port_patern_period:                            Flag to show if port pattern is updated
+ * @bubble_handling:                                      Type of bubble handling, (SETUP packet only)
+ * @is_setting_sticky:                                    Flag to show if settings are sticky
+ * @num_responses:                                        Number of results
+ * @device_type:                                          typeOfDevices
+ * @device_hdl:                                           Device handles
+ * @num_io_packets:                                       num of IO packets per device
+ * @io_packet:                                            IO packets per device (SETUP packet Only)
+ * @setting_packets:                                      Setting packets per device
+ * @port_enable_pattern_period:                           port enable pattern period per device
+ * @setting_pattern_period:                               setting pattern period per device
+ * @rsp:                                                  Responses
+ */
+struct  ul_cam_packet
+{
+	__u32                            batch_packet_type;
+	__s32                            link_hdl;
+	__u32                            number_devices;
+	__u32                            num_setting_packets;
+	__u32                            update_port_patern_period;
+	__u32                            bubble_handling;
+	__u32                            is_setting_sticky;
+	__u32                            num_responses;
+	__u32                            device_type[UL_MAX_DEVICES];
+	__s32                            device_hdl[UL_MAX_DEVICES];
+	__u32                            num_io_packets[UL_MAX_DEVICES];
+	struct packet_info               io_packet[UL_MAX_DEVICES][MAX_IO_PACKETS];
+	struct packet_info               setting_packets[UL_MAX_DEVICES][MAX_SETTING_PACKETS];
+	struct port_pattern_period       port_enable_pattern_period[UL_MAX_DEVICES][MAX_IO_RESOURCES];
+	struct setting_pattern_period    setting_pattern_period;
+	struct response_buffer           rsp[MAX_IO_PACKETS];
+};
+
+/**
+ * struct cam_batch_config_dev_cmd - Command payload for batch configure device
+ *
+ * @session_handle:             Session handle for the command
+ * @offset:                     Offset byte in the packet handle.
+ * @ul_packet_handle:           Packet memory handle for the actual packet:
+ *                              struct ul_cam_packet.
+ *
+ */
+struct cam_batch_config_dev_cmd {
+	__s32                session_handle;
+	__u64                offset;
+	__u64                ul_packet_handle;
 };
 
 /**

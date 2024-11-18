@@ -2021,7 +2021,7 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_VSYNC_TRIGGER, msm_ioctl_vsync_trigger,
 		DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_BACKLIGHT_SCALE, msm_ioctl_brightness_scalar_control_ops,
-			DRM_AUTH|DRM_RENDER_ALLOW),
+			DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_CAC, msm_ioctl_display_cac_control_ops,
 			DRM_AUTH|DRM_RENDER_ALLOW),
 };

@@ -825,6 +825,8 @@ typedef enum {
     HTT_STATS_PDEV_RTT_HW_STATS_TAG                 = 196, /* htt_stats_pdev_rtt_hw_stats_tlv */
     HTT_STATS_PDEV_RTT_TBR_SELFGEN_QUEUED_STATS_TAG = 197, /* htt_stats_pdev_rtt_tbr_selfgen_queued_stats_tlv */
     HTT_STATS_PDEV_RTT_TBR_CMD_RESULT_STATS_TAG     = 198, /* htt_stats_pdev_rtt_tbr_cmd_result_stats_tlv */
+    HTT_STATS_GTX_TAG                               = 199, /* htt_stats_gtx_tlv */
+    HTT_STATS_TX_PDEV_WIFI_RADAR_TAG                = 200, /* htt_stats_tx_pdev_wifi_radar_tlv */
 
 
     HTT_STATS_MAX_TAG,
@@ -899,7 +901,7 @@ enum htt_h2t_msg_type {
     HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP = 0x24,
     HTT_H2T_MSG_TYPE_TX_LATENCY_STATS_CFG  = 0x25,
     HTT_H2T_MSG_TYPE_TX_LCE_SUPER_RULE_SETUP = 0x26,
-    HTT_H2T_MSG_TYPE_MSDUQ_RECFG_REQ       = 0x27,
+    HTT_H2T_MSG_TYPE_SDWF_MSDUQ_RECFG_REQ  = 0x27,
 
     /* keep this last */
     HTT_H2T_NUM_MSGS
@@ -7171,33 +7173,35 @@ PREPACK struct htt_rx_ring_selection_cfg_t {
  *
  *    The message would appear as follows:
  *
- *    |31    26|25|24|23 22|21|20|19|18 16|15|14|13|12|11|10|9|8|7|6|5|4|3|2  0|
- *    |--------+--+--+-----+--+--+--+-----+--+--+--+--+--+--+-+-+-+-+-+-+-+----|
- *    | rsvd1  |PS|SS|       ring_id      |        pdev_id      |   msg_type   |
- *    |-----------+--------+--------+-----+------------------------------------|
- *    |   rsvd2   |  DATA  |  CTRL  | MGMT|            ring_buffer_size        |
- *    |--------------------------------------+--+--+--+--+--+-+-+-+-+-+-+-+----|
- *    |                                      | M| M| M| M| M|M|M|M|M|M|M|M|    |
- *    |                                      | S| S| S| P| P|P|S|S|S|P|P|P|    |
- *    |                                      | E| E| E| E| E|E|S|S|S|S|S|S|    |
- *    |                  rsvd3               | D| C| M| D| C|M|D|C|M|D|C|M|  E |
- *    |------------------------------------------------------------------------|
- *    |                            tlv_filter_mask_in0                         |
- *    |------------------------------------------------------------------------|
- *    |                            tlv_filter_mask_in1                         |
- *    |------------------------------------------------------------------------|
- *    |                            tlv_filter_mask_in2                         |
- *    |------------------------------------------------------------------------|
- *    |                            tlv_filter_mask_in3                         |
- *    |-----------------+-----------------+---------------------+--------------|
- *    | tx_msdu_start_wm| tx_queue_ext_wm |  tx_peer_entry_wm   |tx_fes_stup_wm|
- *    |------------------------------------------------------------------------|
- *    |                       pcu_ppdu_setup_word_mask                         |
- *    |--------------------+--+--+--+-----+---------------------+--------------|
- *    |       rsvd4        | D| C| M|  PT |   rxpcu_usrsetp_wm  |tx_mpdu_srt_wm|
- *    |------------------------------------------------------------------------|
+ * |31 28|27|26|25|24|23 22|21|20|19|18 16|15|14|13|12|11|10|9|8|7|6|5|4|3|2  0|
+ * |-----+--+--+--+--+-----+--+--+--+-----+--+--+--+--+--+--+-+-+-+-+-+-+-+----|
+ * |rsvd1|MF|TM|PS|SS|       ring_id      |        pdev_id      |   msg_type   |
+ * |--------------+--------+--------+-----+------------------------------------|
+ * |    rsvd2     |  DATA  |  CTRL  | MGMT|            ring_buffer_size        |
+ * |-----------------------------------------+--+--+--+--+--+-+-+-+-+-+-+-+----|
+ * |                                         | M| M| M| M| M|M|M|M|M|M|M|M|    |
+ * |                                         | S| S| S| P| P|P|S|S|S|P|P|P|    |
+ * |                                         | E| E| E| E| E|E|S|S|S|S|S|S|    |
+ * |                     rsvd3               | D| C| M| D| C|M|D|C|M|D|C|M|  E |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in0                         |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in1                         |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in2                         |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in3                         |
+ * |--------------------+-----------------+---------------------+--------------|
+ * |  tx_msdu_start_wm  | tx_queue_ext_wm |  tx_peer_entry_wm   |tx_fes_stup_wm|
+ * |---------------------------------------------------------------------------|
+ * |                          pcu_ppdu_setup_word_mask                         |
+ * |-----------------------+--+--+--+-----+---------------------+--------------|
+ * |         rsvd4         | D| C| M|  PT |   rxpcu_usrsetp_wm  |tx_mpdu_srt_wm|
+ * |---------------------------------------------------------------------------|
  *
  * Where:
+ *     MF = MAC address filtering enable
+ *     TM = tx monitor global enable
  *     PS = pkt_swap
  *     SS = status_swap
  * The message is interpreted as follows:
@@ -7216,7 +7220,9 @@ PREPACK struct htt_rx_ring_selection_cfg_t {
  *                    e.g. wmac_top_reg_seq_hwioreg.h
  *          b'26    - tx_mon_global_en: Enable/Disable global register
  *                    configuration in Tx monitor module.
- *          b'27:31 - rsvd1:  reserved for future use
+ *          b'27    - mac_addr_filter_en:
+ *                    Enable/Disable Mac Address based filter.
+ *          b'28:31 - rsvd1:  reserved for future use
  * dword1 - b'0:15  - ring_buffer_size: size of bufferes referenced by rx ring,
  *                    in byte units.
  *                    Valid only for HW_TO_SW_RING and SW_TO_HW_RING
@@ -7362,7 +7368,8 @@ PREPACK struct htt_tx_monitor_cfg_t {
              status_swap:                            1,
              pkt_swap:                               1,
              tx_mon_global_en:                       1,
-             rsvd1:                                  5;
+             mac_addr_filter_en:                     1,
+             rsvd1:                                  4;
     A_UINT32 ring_buffer_size:                      16,
              config_length_mgmt:                     3,
              config_length_ctrl:                     3,
@@ -7463,6 +7470,17 @@ PREPACK struct htt_tx_monitor_cfg_t {
             do { \
                 HTT_CHECK_SET_VAL(HTT_TX_MONITOR_CFG_TX_MON_GLOBAL_EN, _val); \
                 ((_var) |= ((_val) << HTT_TX_MONITOR_CFG_TX_MON_GLOBAL_EN_S)); \
+            } while (0)
+
+#define HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_M         0x08000000
+#define HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_S         27
+#define HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_GET(_var) \
+            (((_var) & HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_M) >> \
+                    HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_S)
+#define HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_SET(_var, _val) \
+            do { \
+                HTT_CHECK_SET_VAL(HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN, _val); \
+                ((_var) |= ((_val) << HTT_TX_MONITOR_CFG_MAC_ADDR_FILTER_EN_S)); \
             } while (0)
 
 #define HTT_TX_MONITOR_CFG_RING_BUFFER_SIZE_M           0x0000ffff
@@ -11222,13 +11240,13 @@ PREPACK struct htt_h2t_tx_latency_stats_cfg {
 /**
  * @brief host -> tgt msg to reconfigure params for a MSDU queue
  *
- * MSG_TYPE => HTT_H2T_MSG_TYPE_MSDUQ_RECFG_REQ
+ * MSG_TYPE => HTT_H2T_MSG_TYPE_SDWF_MSDUQ_RECFG_REQ
  *
  * @details
- *    HTT_H2T_MSG_TYPE_MSDUQ_RECFG_REQ message is sent by the host to
+ *    HTT_H2T_MSG_TYPE_SDWF_MSDUQ_RECFG_REQ message is sent by the host to
  *    update the configuration of the identified MSDU.
  *    This message supports the following MSDU queue reconfigurations:
- *    1.  Pausing or resuming the MSDU queue.
+ *    1.  Deactivating or reactivating the MSDU queue.
  *    2.  Moving the MSDU queue from its current service class to a
  *        different service class.
  *        The new service class needs to be within the same TID as the
@@ -11240,73 +11258,96 @@ PREPACK struct htt_h2t_tx_latency_stats_cfg {
  *    Also, the concurrent combination of reconfigurations 1+2 is supported.
  *
  * The message format is as follows:
- *     |31                                         8|7               0|
+ *     |31                 24|23                 9|8|7               0|
  *     |--------------------------------------------------------------|
  *     |              tgt_opaque_msduq_id           |     msg type    |
  *     |--------------------------------------------------------------|
- *     |                   reserved               |P|  svc_class_id   |
+ *     |    request_cookie   |      reserved      |D|  svc_class_id   |
  *     |--------------------------------------------------------------|
- * Where: P = pause_type
+ * Where: D = deactivate flag
  *
  * The message is interpreted as follows:
  * dword0 - b'0:7   - msg_type: This will be set to 0x27
- *                    (HTT_H2T_MSG_TYPE_MSDUQ_RECFG_REQ)
+ *                    (HTT_H2T_MSG_TYPE_SDWF_MSDUQ_RECFG_REQ)
  *          b'8:31  - tgt_opaque_msduq_id: tx flow number that uniquely
  *                    identifies the MSDU queue
  * dword1 - b'0:7   - svc_class_id:  ID of the SAWF service class to which
  *                    the MSDU queue should be associated.
- *                    On un-pause requests, svc_class_id may be set to the
- *                    same service class ID as before the pause or it may
- *                     be set to a different service class ID.
- *          b'8:8   - pause: Whether the MSDU queue should be paused or unpaused
- *          b'9:31  - reserved
+ *                    On reactivate requests, svc_class_id may be set to the
+ *                    same service class ID as before the deactivate or it may
+ *                    be set to a different service class ID.
+ *          b'8:8   - deactivate: Whether the MSDU queue should be deactivated
+ *                    or reactivated (refer to HTT_MSDUQ_DEACTIVATE_E)
+ *          b'9:23  - reserved
+ *          b'31:24 - request_cookie: Identifier for FW to use in the
+ *                    completion indication (T2H SDWF_MSDU_CFG_IND) to call
+ *                    out this specific request.  The host shall avoid using
+ *                    a value of 0xFF (COOKIE_INVALID) here, so that a
+ *                    0xFF / COOKIE_INVALID value can be used in any T2H
+ *                    SDWF_MSDUQ_CFG_IND messages that the target sends
+ *                    autonomously rather than in response to a H2T
+ *                    SDWF_MSDUQ_RECFG_REQ.
  */
 
-/* HTT_H2T_MSG_TYPE_MSDUQ_RECFG_REQ */
+/* HTT_H2T_MSG_TYPE_SDWF_MSDUQ_RECFG_REQ */
 typedef enum {
-    HTT_MSDUQ_UNPAUSE = 0,
-    HTT_MSDUQ_PAUSE   = 1,
-} HTT_MSDUQ_PAUSE_E;
+    HTT_MSDUQ_REACTIVATE = 0,
+    HTT_MSDUQ_DEACTIVATE = 1,
+} HTT_MSDUQ_DEACTIVATE_E;
 
-PREPACK struct htt_h2t_msduq_acm_req {
+PREPACK struct htt_h2t_sdwf_msduq_recfg_req {
     A_UINT32 msg_type            :8,  /* bits  7:0  */
              tgt_opaque_msduq_id :24; /* bits 31:8  */
     A_UINT32 svc_class_id        :8,  /* bits  7:0  */
-             pause               :1,  /* bits  8:8  */
-             reserved            :23; /* bits 31:9  */
+             deactivate          :1,  /* bits  8:8  */
+             reserved            :15, /* bits 23:9  */
+             request_cookie      :8;  /* bits 31:24 */
 } POSTPACK;
 
-#define HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_M  0xFFFFFF00
-#define HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_S  8
-#define HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_GET(_var) \
-        (((_var) & HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_M) >> \
-                HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_S)
-#define HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_SET(_var, _val) \
+#define HTT_MSDUQ_CFG_REG_COOKIE_INVALID 0xFF
+
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_M  0xFFFFFF00
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_S  8
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_GET(_var) \
+        (((_var) & HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_M) >> \
+                HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_S)
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_SET(_var, _val) \
     do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID, _val);  \
-        ((_var) |= ((_val) << HTT_H2T_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_S)); \
+        HTT_CHECK_SET_VAL(HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_SDWF_MSDUQ_RECFG_REQ_TGT_OPAQUE_MSDUQ_ID_S)); \
     } while (0)
 
-#define HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_M  0x000000FF
-#define HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_S  0
-#define HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_GET(_var) \
-        (((_var) & HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_M) >> \
-                HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_S)
-#define HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_SET(_var, _val) \
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_M  0x000000FF
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_S  0
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_GET(_var) \
+        (((_var) & HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_M) >> \
+                HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_S)
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_SET(_var, _val) \
     do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID, _val);  \
-        ((_var) |= ((_val) << HTT_H2T_MSDUQ_RECFG_REQ_SVC_CLASS_ID_S)); \
+        HTT_CHECK_SET_VAL(HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_SDWF_MSDUQ_RECFG_REQ_SVC_CLASS_ID_S)); \
     } while (0)
 
-#define HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_M  0x00000100
-#define HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_S  8
-#define HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_GET(_var) \
-        (((_var) & HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_M) >> \
-                HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_S)
-#define HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_SET(_var, _val) \
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_M  0x00000100
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_S  8
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_GET(_var) \
+        (((_var) & HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_M) >> \
+                HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_S)
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_SET(_var, _val) \
     do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_H2T_MSDUQ_RECFG_REQ_PAUSE, _val);  \
-        ((_var) |= ((_val) << HTT_H2T_MSDUQ_RECFG_REQ_PAUSE_S)); \
+        HTT_CHECK_SET_VAL(HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_SDWF_MSDUQ_RECFG_REQ_DEACTIVATE_S)); \
+    } while (0)
+
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_M  0xFF000000
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_S  24
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_GET(_var) \
+        (((_var) & HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_M) >> \
+                HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_S)
+#define HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_SET(_var, _val) \
+    do {                                                     \
+        HTT_CHECK_SET_VAL(HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE, _val);  \
+        ((_var) |= ((_val) << HTT_H2T_SDWF_MSDUQ_RECFG_REQUEST_COOKIE_S)); \
     } while (0)
 
 
@@ -11382,7 +11423,7 @@ enum htt_t2h_msg_type {
     HTT_T2H_MSG_TYPE_PEER_EXTENDED_EVENT           = 0x39,
     HTT_T2H_MSG_TYPE_TX_LATENCY_STATS_PERIODIC_IND = 0x3a,
     HTT_T2H_MSG_TYPE_TX_LCE_SUPER_RULE_SETUP_DONE  = 0x3b,
-    HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND                 = 0x3c,
+    HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND            = 0x3c,
 
 
     HTT_T2H_MSG_TYPE_TEST,
@@ -21351,7 +21392,7 @@ PREPACK struct htt_t2h_sawf_msduq_event {
 #define HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID_M              0x00FFFFFF
 #define HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID_S                       0
 #define HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID_GET(_var) \
-    (((_var) & HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID) >> \
+    (((_var) & HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID_M) >> \
      HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID_S)
 #define HTT_T2H_SAWF_MSDUQ_INFO_HTT_TGT_OPAQUE_ID_SET(_var, _val) \
     do { \
@@ -22831,7 +22872,7 @@ typedef struct _htt_tx_latency_stats {
 /**
  * @brief target -> host report showing MSDU queue configuration
  *
- * MSG_TYPE => HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND
+ * MSG_TYPE => HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND
  *
  * @details
  *
@@ -22841,7 +22882,7 @@ typedef struct _htt_tx_latency_stats {
  * |----------------+----------------+--+-----+--+---+----------+-----------|
  * |    error_code  |  svc_class_id  | R| AST | F|WHO| hlos_tid | remap_tid |
  * |----------------+----------------+--+-----+--+---+----------+-----------|
- * |    reserved    |                 tgt_opaque_msduq_id                   |
+ * | request_cookie |                 tgt_opaque_msduq_id                   |
  * |------------------------------------------------------------------------|
  * Where WHO = who_classify_info_sel
  *       F   = flow_override
@@ -22849,11 +22890,12 @@ typedef struct _htt_tx_latency_stats {
  *       R   = reserved
  *
  * @details
- * htt_t2h_msg_type_msduq_acm_ind_t:
+ * htt_t2h_msg_type_sdwf_msduq_cfg_ind_t:
  *
  * The message is interpreted as follows:
  * dword0 - b'7:0   - msg_type: Identifies this as a MSDU queue cfg indication
- *                    This will be set to 0x3c (HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND)
+ *                    This will be set to 0x3c
+ *                    (HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND)
  *          b'15:8  - HTT qtype (refer to HTT_MSDU_QTYPE)
  *          b'31:16 - peer ID
  *
@@ -22883,7 +22925,12 @@ typedef struct _htt_tx_latency_stats {
  *
  * dword2 - b'23:0  - tgt_opaque_msduq_id: tx flow number that uniquely
  *                    identifies the MSDU queue
- *          b'24:31 - reserved1
+ *          b'24:31 - request_cookie: Identifies which H2T SDWF_MSDUQ_RECFG_REQ
+ *                    request triggered this indication.
+ *                    This will be set to HTT_MSDUQ_CFG_REG_COOKIE_INVALID
+ *                    (0xFF) in any cases when the FW generates this
+ *                    indication autonomously rather than in response to
+ *                    a SDWF_MSDUQ_RECFG_REQ message from the host.
  *
  * The behavior of this indication is as follows:
  *   - svc_class_id is set to the service class that the specified MSDUQ is
@@ -22892,15 +22939,20 @@ typedef struct _htt_tx_latency_stats {
  *     Otherwise a value of 0x00 (ERROR_NONE) indicates success.
  */
 
-/* HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND */
+/* HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND */
 typedef enum {
-    HTT_MSDUQ_CFG_IND_ERROR_NONE = 0x00,
-    HTT_MSDUQ_CFG_IND_ERROR_PEER_DELETE_IN_PROG = 0x01,
-    HTT_MSDUQ_CFG_IND_ERROR_SW_MSDUQ_NULL = 0x02,
-    HTT_MSDUQ_CFG_IND_ERROR_MSDUQ_LOCATE_ERROR = 0x03,
-} HTT_MSDUQ_CFG_IND_ERROR_CODE_E;
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_NONE                = 0x00,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_PEER_DELETE_IN_PROG = 0x01,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_SW_MSDUQ_NULL       = 0x02,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_MSDUQ_LOCATE_ERROR  = 0x03,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_QPEER_NULL          = 0x04,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_DEACTIVATED_MSDUQ   = 0x05,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_REACTIVATED_MSDUQ   = 0x06,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_INVALID_SVC_CLASS   = 0x07,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_TIDQ_LOCATE_ERROR   = 0x08,
+} HTT_SDWF_MSDUQ_CFG_IND_ERROR_CODE_E;
 
-PREPACK struct htt_t2h_sawf_msduq_pause_event {
+PREPACK struct htt_t2h_sdwf_msduq_cfg_ind {
     A_UINT32 msg_type:               8,  /* bits 7:0   */
              htt_qtype:              8,  /* bits 15:8  */
              peer_id:                16; /* bits 31:16 */
@@ -22913,117 +22965,128 @@ PREPACK struct htt_t2h_sawf_msduq_pause_event {
              svc_class_id:           8,  /* bits 23:16 */
              error_code:             8;  /* bits 31:24 */
     A_UINT32 tgt_opaque_msduq_id:    24, /* bits 23:0  */
-             reserved1:              8;  /* bits 31:24 */
+             request_cookie:         8;  /* bits 31:24 */
 } POSTPACK;
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_M  0x0000FF00
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_S  8
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HTT_QTYPE_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_M  0x0000FF00
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_S  8
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HTT_QTYPE_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_M  0xFFFF0000
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_S  16
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_PEER_ID_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_M  0xFFFF0000
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_S  16
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_PEER_ID_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_M  0x0000000F
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_S  0
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_REMAP_TID_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_M  0x0000000F
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_S  0
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REMAP_TID_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID_M  0x000000F0
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID_S  4
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IN_DHLOS_TID_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_HLOS_TID_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_M  0x000000F0
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_S  4
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_HLOS_TID_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_M  0x00000300
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_S  8
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_M  0x00000300
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_S  8
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_WHO_CLASSIFY_INFO_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_M  0x00000400
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_S  10
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_FLOW_OVERRIDE_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_M  0x00000400
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_S  10
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_FLOW_OVERRIDE_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_M  0x00007800
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_S  11
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_AST_LIST_IDX_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_M  0x00007800
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_S  11
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_AST_LIST_IDX_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_M  0x00FF0000
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_S  16
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_SVC_CLASS_ID_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_M  0x00FF0000
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_S  16
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_SVC_CLASS_ID_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_M  0xFF000000
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_S  24
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_ERROR_CODE_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_M  0xFF000000
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_S  24
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_ERROR_CODE_S)); \
     } while (0)
 
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_M  0x00FFFFFF
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_S  0
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_GET(_var) \
-        (((_var) & HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_M) >> \
-                HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_S)
-#define HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_SET(_var, _val) \
-    do {                                                     \
-        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID, _val);  \
-        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_S)); \
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_M  0x00FFFFFF
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_S  0
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_TGT_OPAQUE_MSDUQ_ID_S)); \
+    } while (0)
+
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_M  0xFF000000
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_S  24
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_GET(_var) \
+        (((_var) & HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_M) >> \
+                HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_S)
+#define HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE, _val); \
+        ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND_REQUEST_COOKIE_S)); \
     } while (0)
 
 

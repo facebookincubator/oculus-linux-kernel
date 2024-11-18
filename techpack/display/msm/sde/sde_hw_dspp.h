@@ -10,6 +10,8 @@
 #include "sde_hw_blk.h"
 
 struct sde_hw_dspp;
+struct sde_hw_ctl;
+struct drm_msm_hist;
 
 /**
  * struct sde_hw_dspp_ops - interface to the dspp hardware driver functions
@@ -23,6 +25,20 @@ struct sde_hw_dspp_ops {
 	 * @cfg: Pointer to configuration
 	 */
 	void (*setup_histogram)(struct sde_hw_dspp *ctx, void *cfg);
+
+	/**
+	 * trigger_histogram_read - setup dspp histogram
+	 * @ctx: Pointer to dspp context
+	 * @ctl: Pointer to HW controls
+	 */
+	void (*trigger_histogram_read)(struct sde_hw_dspp *ctx, struct sde_hw_ctl *ctl);
+
+	/**
+	 * copy_histogram_data - copy dspp histogram data into structure
+	 * @ctx: Pointer to dspp context
+	 * @data: Pointer to histogram data
+	 */
+	void (*copy_histogram_data)(struct sde_hw_dspp *ctx, struct drm_msm_hist *data);
 
 	/**
 	 * read_histogram - read dspp histogram

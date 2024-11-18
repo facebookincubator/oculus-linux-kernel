@@ -2139,6 +2139,8 @@ int sched_init_domains(const struct cpumask *cpu_map)
 		doms_cur = &fallback_doms;
 	cpumask_and(doms_cur[0], cpu_map, housekeeping_cpumask(HK_FLAG_DOMAIN));
 	err = build_sched_domains(doms_cur[0], NULL);
+	if (!err)
+		sched_update_domains();
 	register_sched_domain_sysctl();
 
 	return err;
@@ -2305,6 +2307,7 @@ match3:
 	dattr_cur = dattr_new;
 	ndoms_cur = ndoms_new;
 
+	sched_update_domains();
 	register_sched_domain_sysctl();
 }
 

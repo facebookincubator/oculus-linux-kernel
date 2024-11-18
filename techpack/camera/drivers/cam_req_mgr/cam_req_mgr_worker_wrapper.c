@@ -152,13 +152,15 @@ int cam_req_mgr_kthread_set_thread_prop(struct cam_kthread_data *kthread_data) {
 	}
 	if (g_cam_kthread_info.affinity) {
 		temp = g_cam_kthread_info.affinity;
+		cpumask_clear(&cpu_affinity);
 		while (temp) {
 			if (temp & 0x1)
 				cpumask_set_cpu(i, &cpu_affinity);
 			temp >>= 1;
 			i++;
 		}
-		kthread_bind_mask(kthread_data->kthread_worker->task, &cpu_affinity);
+
+		rc = set_cpus_allowed_ptr(kthread_data->kthread_worker->task, &cpu_affinity);
 	}
 end:
 	return rc;
@@ -507,6 +509,10 @@ inline int cam_req_mgr_set_thread_prop(struct cam_req_mgr_thread_prop_control *t
 	g_cam_kthread_info.policy   = thread_prop->policy;
 	g_cam_kthread_info.priority = thread_prop->priority;
 	g_cam_kthread_info.nice     = thread_prop->nice;
+	CAM_INFO(CAM_CRM, "affinity 0x%08x policy %d priority %d nice %d",
+			g_cam_kthread_info.affinity, g_cam_kthread_info.policy,
+			g_cam_kthread_info.priority, g_cam_kthread_info.nice);
+
 	list_for_each_entry(kthread_data, &g_cam_kthread_info.kthread_list, list) {
 		cam_req_mgr_kthread_set_thread_prop(kthread_data);
 		if(rc)

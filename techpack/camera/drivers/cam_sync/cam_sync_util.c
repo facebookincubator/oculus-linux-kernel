@@ -20,8 +20,10 @@ int cam_sync_util_send_exit_poll_event(void)
 		event.type = CAM_SYNC_V4L_EVENT_V2;
 	else if (sync_dev->version == CAM_SYNC_V4L_EVENT_V3)
 		event.type = CAM_SYNC_V4L_EVENT_V3;
+#ifdef CAM_SYNC_V4L_EVENT_V4
 	else if (sync_dev->version == CAM_SYNC_V4L_EVENT_V4)
 		event.type = CAM_SYNC_V4L_EVENT_V4;
+#endif
 	else
 		event.type = CAM_SYNC_V4L_EVENT;
 
@@ -615,6 +617,7 @@ void cam_sync_util_send_v4l2_event(uint32_t id,
 			ev_header->evt_param[CAM_SYNC_EVENT_SLAVE_TIMESTAMP + 1] =
 				(time_stamp->slave_timestamp >> 32) & 0xFFFFFFFF;
 		}
+#ifdef CAM_SYNC_V4L_EVENT_V4
 	} else if (sync_dev->version == CAM_SYNC_V4L_EVENT_V4) {
 		struct cam_sync_ev_header_v4 *ev_header = NULL;
 
@@ -649,6 +652,7 @@ void cam_sync_util_send_v4l2_event(uint32_t id,
 			sync_dev->version, ev_header->sync_obj, ev_header->status,
 			ev_header->evt_param.event_cause, ev_header->evt_param.request_id,
 			ev_header->evt_param.tracker_id, ev_header->evt_param.sof_timestamp);
+#endif
 	} else {
 		struct cam_sync_ev_header *ev_header = NULL;
 

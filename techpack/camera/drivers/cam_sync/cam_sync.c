@@ -1100,6 +1100,7 @@ static void cam_sync_event_queue_notify_error(const struct v4l2_event *old,
 			"Fail to notify event id %d fence %d status %d reason %u",
 			old->id, ev_header->sync_obj, ev_header->status,
 			ev_header->evt_param[0]);
+#ifdef CAM_SYNC_V4L_EVENT_V4
 	} else if (sync_dev->version == CAM_SYNC_V4L_EVENT_V4) {
 		struct cam_sync_ev_header_v4 *ev_header;
 
@@ -1108,6 +1109,7 @@ static void cam_sync_event_queue_notify_error(const struct v4l2_event *old,
 			"Fail to notify event id %d fence %d status %d reason %u",
 			old->id, ev_header->sync_obj, ev_header->status,
 			ev_header->evt_param.event_cause);
+#endif
 	} else {
 		struct cam_sync_ev_header *ev_header;
 
@@ -1129,7 +1131,9 @@ int cam_sync_subscribe_event(struct v4l2_fh *fh,
 	case CAM_SYNC_V4L_EVENT:
 	case CAM_SYNC_V4L_EVENT_V2:
 	case CAM_SYNC_V4L_EVENT_V3:
+#ifdef CAM_SYNC_V4L_EVENT_V4
 	case CAM_SYNC_V4L_EVENT_V4:
+#endif
 		break;
 	default:
 		CAM_ERR(CAM_SYNC, "Non supported event type 0x%x", sub->type);
@@ -1158,7 +1162,9 @@ int cam_sync_unsubscribe_event(struct v4l2_fh *fh,
 	case CAM_SYNC_V4L_EVENT:
 	case CAM_SYNC_V4L_EVENT_V2:
 	case CAM_SYNC_V4L_EVENT_V3:
+#ifdef CAM_SYNC_V4L_EVENT_V4
 	case CAM_SYNC_V4L_EVENT_V4:
+#endif
 		break;
 	default:
 		CAM_ERR(CAM_SYNC, "Non supported event type 0x%x", sub->type);

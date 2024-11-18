@@ -231,6 +231,9 @@ struct mem_cgroup {
 
 	unsigned long soft_limit;
 
+	/* Min TTL for page to last before being evicted. */
+	unsigned long min_ttl;			/* v1 and v2 */
+
 	/* vmpressure notifications */
 	struct vmpressure vmpressure;
 

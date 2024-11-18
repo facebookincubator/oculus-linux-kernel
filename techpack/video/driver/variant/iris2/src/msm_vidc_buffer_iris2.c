@@ -486,6 +486,39 @@ static u32 msm_vidc_encoder_vpss_size_iris2(struct msm_vidc_inst* inst)
 	return size;
 }
 
+static u32 msm_vidc_encoder_output_size_iris2(struct msm_vidc_inst *inst)
+{
+	u32 frame_size;
+	struct v4l2_format *f;
+	bool is_ten_bit = false;
+	int bitrate_mode, frame_rc;
+	u32 hfi_rc_type = HFI_RC_VBR_CFR;
+
+	if (!inst || !inst->capabilities) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	f = &inst->fmts[OUTPUT_PORT];
+	if (f->fmt.pix_mp.pixelformat == V4L2_PIX_FMT_HEVC ||
+	    f->fmt.pix_mp.pixelformat == V4L2_PIX_FMT_HEIC)
+		is_ten_bit = true;
+
+	bitrate_mode = inst->capabilities->cap[BITRATE_MODE].value;
+	frame_rc = inst->capabilities->cap[FRAME_RC_ENABLE].value;
+	if (!frame_rc && !is_image_session(inst))
+		hfi_rc_type = HFI_RC_OFF;
+	else if (bitrate_mode == V4L2_MPEG_VIDEO_BITRATE_MODE_CQ)
+		hfi_rc_type = HFI_RC_CQ;
+
+	HFI_BUFFER_BITSTREAM_ENC(frame_size, f->fmt.pix_mp.width,
+				 f->fmt.pix_mp.height, hfi_rc_type, is_ten_bit);
+
+	frame_size = msm_vidc_enc_delivery_mode_based_output_buf_size(inst, frame_size);
+
+	return frame_size;
+}
+
 struct msm_vidc_buf_type_handle {
 	enum msm_vidc_buffer_type type;
 	u32 (*handle)(struct msm_vidc_inst *inst);
@@ -511,7 +544,7 @@ int msm_buffer_size_iris2(struct msm_vidc_inst *inst,
 	};
 	static const struct msm_vidc_buf_type_handle enc_buf_type_handle[] = {
 		{MSM_VIDC_BUF_INPUT,           msm_vidc_encoder_input_size              },
-		{MSM_VIDC_BUF_OUTPUT,          msm_vidc_encoder_output_size             },
+		{MSM_VIDC_BUF_OUTPUT,          msm_vidc_encoder_output_size_iris2       },
 		{MSM_VIDC_BUF_INPUT_META,      msm_vidc_encoder_input_meta_size         },
 		{MSM_VIDC_BUF_OUTPUT_META,     msm_vidc_encoder_output_meta_size        },
 		{MSM_VIDC_BUF_BIN,             msm_vidc_encoder_bin_size_iris2          },
