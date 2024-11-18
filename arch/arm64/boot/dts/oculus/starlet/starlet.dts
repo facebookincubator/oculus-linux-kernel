@@ -1,6 +1,6 @@
 /dts-v1/;
 
-#include "vendor-base/qcom/bengal.dtsi"
+#include "../vendor-base/qcom/bengal.dtsi"
 #include "starlet-prune.dtsi"
 #include "starlet-base.dtsi"
 

@@ -19,29 +19,6 @@
 #include "cam_cdm_soc.h"
 #include "cam_cdm_core_common.h"
 
-static void cam_cdm_get_client_refcount(struct cam_cdm_client *client)
-{
-	mutex_lock(&client->lock);
-	CAM_DBG(CAM_CDM, "CDM client get refcount=%d",
-		client->refcount);
-	client->refcount++;
-	mutex_unlock(&client->lock);
-}
-
-static void cam_cdm_put_client_refcount(struct cam_cdm_client *client)
-{
-	mutex_lock(&client->lock);
-	CAM_DBG(CAM_CDM, "CDM client put refcount=%d",
-		client->refcount);
-	if (client->refcount > 0) {
-		client->refcount--;
-	} else {
-		CAM_ERR(CAM_CDM, "Refcount put when zero");
-		WARN_ON(1);
-	}
-	mutex_unlock(&client->lock);
-}
-
 bool cam_cdm_set_cam_hw_version(
 	uint32_t ver, struct cam_hw_version *cam_version)
 {
@@ -188,7 +165,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 			return;
 		}
 		cam_cdm_get_client_refcount(client);
-		mutex_lock(&client->lock);
 		if (client->data.cam_cdm_callback) {
 			CAM_DBG(CAM_CDM, "Calling client=%s cb cookie=%d",
 				client->data.identifier, node->cookie);
@@ -201,7 +177,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 			CAM_ERR(CAM_CDM, "No cb registered for client hdl=%x",
 				node->client_hdl);
 		}
-		mutex_unlock(&client->lock);
 		cam_cdm_put_client_refcount(client);
 		return;
 	} else if (status == CAM_CDM_CB_STATUS_HW_RESET_DONE ||
@@ -221,7 +196,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 			return;
 		}
 		cam_cdm_get_client_refcount(client);
-		mutex_lock(&client->lock);
 		if (client->data.cam_cdm_callback) {
 			client->data.cam_cdm_callback(
 				client->handle,
@@ -233,7 +207,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 				"No cb registered for client: name %s, hdl=%x",
 				client->data.identifier, client->handle);
 		}
-		mutex_unlock(&client->lock);
 		cam_cdm_put_client_refcount(client);
 		return;
 	}
@@ -242,7 +215,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 		if (core->clients[i] != NULL) {
 			client = core->clients[i];
 			cam_cdm_get_client_refcount(client);
-			mutex_lock(&client->lock);
 			CAM_DBG(CAM_CDM, "Found client slot %d", i);
 			if (client->data.cam_cdm_callback) {
 				if (status == CAM_CDM_CB_STATUS_PAGEFAULT) {
@@ -260,7 +232,6 @@ void cam_cdm_notify_clients(struct cam_hw_info *cdm_hw,
 					"No cb registered for client hdl=%x",
 					client->handle);
 			}
-			mutex_unlock(&client->lock);
 			cam_cdm_put_client_refcount(client);
 		}
 	}
@@ -588,9 +559,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 			break;
 		}
 
-		mutex_unlock(&cdm_hw->hw_mutex);
 		client = core->clients[idx];
-		mutex_init(&client->lock);
 		data->ops = core->ops;
 		if (core->id == CAM_CDM_VIRTUAL) {
 			data->cdm_version.major = 1;
@@ -600,8 +569,6 @@ int cam_cdm_process_cmd(void *hw_priv,
 			data->ops = cam_cdm_get_ops(0,
 					&data->cdm_version, true);
 			if (!data->ops) {
-				mutex_destroy(&client->lock);
-				mutex_lock(&cdm_hw->hw_mutex);
 				kfree(core->clients[idx]);
 				core->clients[idx] = NULL;
 				mutex_unlock(
@@ -614,8 +581,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 			data->cdm_version = core->version;
 		}
 
-		cam_cdm_get_client_refcount(client);
-		mutex_lock(&client->lock);
+		refcount_set(&client->refcount, 1);
 		memcpy(&client->data, data,
 			sizeof(struct cam_cdm_acquire_data));
 		client->handle = CAM_CDM_CREATE_CLIENT_HANDLE(
@@ -626,7 +592,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 		data->handle = client->handle;
 		CAM_DBG(CAM_CDM, "Acquired client=%s in hwidx=%d",
 			data->identifier, core->index);
-		mutex_unlock(&client->lock);
+		mutex_unlock(&cdm_hw->hw_mutex);
 		rc = 0;
 		break;
 	}
@@ -650,19 +616,14 @@ int cam_cdm_process_cmd(void *hw_priv,
 			mutex_unlock(&cdm_hw->hw_mutex);
 			break;
 		}
-		cam_cdm_put_client_refcount(client);
-		mutex_lock(&client->lock);
-		if (client->refcount != 0) {
+		if (!refcount_dec_and_test(&client->refcount)) {
 			CAM_ERR(CAM_CDM, "CDM Client refcount not zero %d",
-				client->refcount);
+					refcount_read(&client->refcount));
 			rc = -EPERM;
-			mutex_unlock(&client->lock);
 			mutex_unlock(&cdm_hw->hw_mutex);
 			break;
 		}
 		core->clients[idx] = NULL;
-		mutex_unlock(&client->lock);
-		mutex_destroy(&client->lock);
 		kfree(client);
 		mutex_unlock(&cdm_hw->hw_mutex);
 		rc = 0;

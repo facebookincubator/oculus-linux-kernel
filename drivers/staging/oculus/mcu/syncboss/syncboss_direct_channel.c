@@ -11,12 +11,26 @@
 #include <linux/of_platform.h>
 #include <linux/syncboss/consumer.h>
 #include <linux/time64.h>
+#include <linux/version.h>
 
 #include <uapi/linux/syncboss.h>
 
 #include "syncboss_consumer_priorities.h"
 #include "syncboss_direct_channel.h"
 #include "syncboss_direct_channel_mcu_defs.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
+#define DMA_RESV_USAGE_WRITE 1
+#define DMA_RESV_USAGE_READ 2
+#define dma_resv_add_fence(obj, fence, usage) \
+do { \
+	if ((usage) == DMA_RESV_USAGE_WRITE) \
+		dma_resv_add_excl_fence((obj), (fence)); \
+	else if ((usage) == DMA_RESV_USAGE_READ) \
+		dma_resv_add_shared_fence((obj), (fence)); \
+} while (0)
+#define dma_resv_reserve_fences dma_resv_reserve_shared
+#endif
 
 #define SYNCBOSS_DIRECTCHANNEL_DEVICE_NAME "syncboss_directchannel0"
 
@@ -39,6 +53,46 @@ static int syncboss_directchannel_open(struct inode *inode, struct file *f)
 	return 0;
 }
 
+static void syncboss_client_entry_release(struct kref *client_entry_kref)
+{
+	struct channel_client_entry *client_data = container_of(
+		client_entry_kref, struct channel_client_entry, kref);
+	struct device *dev = client_data->devdata->dev;
+
+	devm_kfree(dev, client_data);
+}
+
+static void syncboss_client_entry_cleanup(struct channel_client_entry *client_data)
+{
+	struct syncboss_dma_fence *active_fence = NULL;
+	struct channel_dma_buf_info *c_dma_buf_info;
+	struct dma_buf *c_dma_buf;
+	unsigned long flags;
+
+	spin_lock_irqsave(&client_data->fence_lock, flags);
+	// Ensure no code that runs after this for this client will add any more fences.
+	client_data->wake_epoll = false;
+	active_fence = client_data->active_fence;
+	client_data->active_fence = NULL;
+	spin_unlock_irqrestore(&client_data->fence_lock, flags);
+
+	if (active_fence) {
+		dma_fence_signal(&active_fence->fence);
+		dma_fence_put(&active_fence->fence);
+		atomic_dec(&syncboss_directchannel_active_rd_fences);
+	}
+	client_data->channel_data.channel_current_ptr =	 NULL;
+	c_dma_buf_info = &client_data->dma_buf_info;
+	c_dma_buf = c_dma_buf_info->dma_buf;
+	dma_resv_lock(c_dma_buf->resv, NULL);
+	dma_resv_add_fence(c_dma_buf->resv, NULL, DMA_RESV_USAGE_WRITE);
+	dma_buf_vunmap(c_dma_buf, c_dma_buf_info->k_virtptr);
+	dma_resv_unlock(c_dma_buf->resv);
+	dma_buf_put(c_dma_buf); /* decrement ref count */
+
+	kref_put(&client_data->kref, syncboss_client_entry_release);
+}
+
 static int syncboss_directchannel_release(struct inode *inode, struct file *f)
 {
 	int status = 0;
@@ -46,8 +100,6 @@ static int syncboss_directchannel_release(struct inode *inode, struct file *f)
 		f->private_data, struct direct_channel_dev_data, misc_directchannel);
 	struct device *dev = devdata->dev;
 	struct channel_client_entry *client_data, *tmp_list_node;
-	struct channel_dma_buf_info *c_dma_buf_info;
-	struct dma_buf *c_dma_buf;
 	int i;
 
 	dev_dbg(dev, "releasing direct channel file : %p)", f);
@@ -68,22 +120,8 @@ static int syncboss_directchannel_release(struct inode *inode, struct file *f)
 			if (client_data->file != f)
 				continue;
 
-			if (client_data->active_fence) {
-				dma_fence_signal(&client_data->active_fence->fence);
-				dma_fence_put(&client_data->active_fence->fence);
-				atomic_dec(&syncboss_directchannel_active_rd_fences);
-				client_data->active_fence = NULL;
-			}
-			client_data->channel_data.channel_current_ptr =  NULL;
-			c_dma_buf_info = &client_data->dma_buf_info;
-			c_dma_buf = c_dma_buf_info->dma_buf;
-			dma_resv_lock(c_dma_buf->resv, NULL);
-			dma_resv_add_excl_fence(c_dma_buf->resv, NULL);
-			dma_buf_vunmap(c_dma_buf, c_dma_buf_info->k_virtptr);
-			dma_resv_unlock(c_dma_buf->resv);
-			dma_buf_put(c_dma_buf); /* decrement ref count */
 			list_del(&client_data->list_entry);
-			devm_kfree(dev, client_data);
+			syncboss_client_entry_cleanup(client_data);
 
 			if (list_empty(client_list)) {
 				devdata->direct_channel_data[i] = NULL;
@@ -215,6 +253,7 @@ static void syncboss_fence_free_rcu(struct rcu_head *head)
 	struct dma_fence *fence = container_of(head, struct dma_fence, rcu);
 	struct syncboss_dma_fence *sb_fence = container_of(fence, struct syncboss_dma_fence, fence);
 
+	kref_put(&sb_fence->client->kref, syncboss_client_entry_release);
 	kmem_cache_free(syncboss_dma_fence_cache, sb_fence);
 	atomic_dec(&syncboss_directchannel_allocd_fences);
 }
@@ -228,6 +267,7 @@ static void syncboss_directchannel_prepare_fence(struct channel_client_entry *cl
 	new_fence = kmem_cache_alloc(syncboss_dma_fence_cache, GFP_KERNEL);
 	atomic_inc(&syncboss_directchannel_allocd_fences);
 	dma_fence_init(&new_fence->fence, &syncboss_fence_ops, &client_data->fence_lock, 0, 0);
+	kref_get(&client_data->kref);
 	new_fence->client = client_data;
 	new_fence->read = read;
 
@@ -241,12 +281,12 @@ static void syncboss_directchannel_prepare_fence(struct channel_client_entry *cl
 	dma_resv_lock(dma_buffer->resv, NULL);
 	if (read) {
 		// Readers wait for DMA writers, which go in the exclusive slot
-		dma_resv_add_excl_fence(dma_buffer->resv, &new_fence->fence);
+		dma_resv_add_fence(dma_buffer->resv, &new_fence->fence, DMA_RESV_USAGE_WRITE);
 	} else {
 		// Writers wait for DMA readers, which go in the shared slot
 		int err;
 
-		err = dma_resv_reserve_shared(dma_buffer->resv, 1);
+		err = dma_resv_reserve_fences(dma_buffer->resv, 1);
 		if (err) {
 			// This means we will not be able to rearm the
 			// read side, and it will continue to be
@@ -255,7 +295,7 @@ static void syncboss_directchannel_prepare_fence(struct channel_client_entry *cl
 				"%s failed to reserve dma buf shared reservation fence space",
 				__func__);
 		} else {
-			dma_resv_add_shared_fence(dma_buffer->resv, &new_fence->fence);
+			dma_resv_add_fence(dma_buffer->resv, &new_fence->fence, DMA_RESV_USAGE_READ);
 		}
 	}
 	dma_resv_unlock(dma_buffer->resv);
@@ -296,6 +336,8 @@ static signed long syncboss_fence_wait(struct dma_fence *fence,
 	struct syncboss_dma_fence *sb_fence =
 		container_of(fence, struct syncboss_dma_fence, fence);
 	signed long wait_result;
+	u8 wake_epoll;
+	unsigned long flags;
 
 	/* See the comment above that starts with "syncboss direct
 	 * channel dma_fence support" for an explanation of the logic
@@ -312,7 +354,14 @@ static signed long syncboss_fence_wait(struct dma_fence *fence,
 
 	wait_result = dma_fence_default_wait(fence, intr, timeout);
 
-	syncboss_directchannel_prepare_fence(sb_fence->client, true);
+	// Check that the client is still live
+	spin_lock_irqsave(&sb_fence->client->fence_lock, flags);
+	wake_epoll = sb_fence->client->wake_epoll;
+	spin_unlock_irqrestore(&sb_fence->client->fence_lock, flags);
+
+	if (wake_epoll) {
+		syncboss_directchannel_prepare_fence(sb_fence->client, true);
+	}
 
 	return wait_result;
 }
@@ -343,6 +392,8 @@ static int direct_channel_distribute_spi_payload(struct direct_channel_dev_data 
 	const struct syncboss_driver_data_header_t *header = &packet_info->header;
 	struct syncboss_sensor_direct_channel_data *current_ptr;
 	struct direct_channel_data *channel_data;
+	struct syncboss_dma_fence *active_fence = NULL;
+	unsigned long flags;
 
 	channel_data = &client_data->channel_data;
 	current_ptr = (struct syncboss_sensor_direct_channel_data *)
@@ -393,20 +444,21 @@ static int direct_channel_distribute_spi_payload(struct direct_channel_dev_data 
 
 	// Signal any active DMA fence to wake up waiters if epoll
 	// support enabled and there are any active waiters.
+	spin_lock_irqsave(&client_data->fence_lock, flags);
 	if ((client_data->wake_epoll) &&
 	    (atomic_read(&client_data->reader_waiting) != 0) &&
 	    (client_data->active_fence != NULL)) {
-		struct syncboss_dma_fence *active_fence = client_data->active_fence;
-		unsigned long flags;
+		// Stash a copy of this active fence under the lock,
+		// and remove it from the client.
+		active_fence = client_data->active_fence;
+		client_data->active_fence = NULL;
 
 		// Disarm so we don't wake up again until requested
 		atomic_set(&client_data->reader_waiting, 0);
+	}
+	spin_unlock_irqrestore(&client_data->fence_lock, flags);
 
-		// Remove this fence from active before we wake up waiters
-		spin_lock_irqsave(&client_data->fence_lock, flags);
-		client_data->active_fence = NULL;
-		spin_unlock_irqrestore(&client_data->fence_lock, flags);
-
+	if (active_fence) {
 		// Signal this read-side fence
 		dma_fence_signal(&active_fence->fence);
 		dma_fence_put(&active_fence->fence);
@@ -423,6 +475,28 @@ static int direct_channel_distribute_spi_payload(struct direct_channel_dev_data 
 	return status;
 }
 
+static void *dma_buf_vmap_helper(struct device *dev __maybe_unused, struct dma_buf *dmabuf)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0))
+	return dma_buf_vmap(dmabuf);
+#else
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0))
+	struct dma_buf_map map;
+#else
+	struct iosys_map map;
+#endif
+	void *dma_map;
+	int err;
+
+	err = dma_buf_vmap(dmabuf, &map);
+	dma_map = err ? NULL : map.vaddr;
+	if (!dma_map)
+		dev_err(dev, "dma_buf_vmap failed. err: %d\n", err);
+
+	return dma_map;
+#endif
+}
+
 static int init_client_entry_instance(struct channel_client_entry *channel_client_entry_list,
 			struct dma_buf *dma_buffer,
 			int num_channel_entries,
@@ -434,13 +508,8 @@ static int init_client_entry_instance(struct channel_client_entry *channel_clien
 	void *k_virt_addr;
 
 	dma_resv_lock(dma_buffer->resv, NULL);
-	k_virt_addr = dma_buf_vmap(dma_buffer);
+	k_virt_addr = dma_buf_vmap_helper(devdata->dev, dma_buffer);
 	if (IS_ERR_OR_NULL(k_virt_addr)) {
-		dev_err(
-			devdata->dev,
-			"%s :dma_buf_vmap failed %p",
-			__func__,
-			k_virt_addr);
 		dma_resv_unlock(dma_buffer->resv);
 		status = -EFAULT;
 		goto err;
@@ -457,6 +526,7 @@ static int init_client_entry_instance(struct channel_client_entry *channel_clien
 	channel_client_entry_list->channel_data.channel_end_ptr =
 		k_virt_addr + (num_channel_entries * sizeof(struct syncboss_sensor_direct_channel_data));
 	channel_client_entry_list->channel_data.counter = 0;
+	kref_init(&channel_client_entry_list->kref);
 	channel_client_entry_list->devdata = devdata;
 	channel_client_entry_list->file = file;
 	channel_client_entry_list->wake_epoll = new_config->wake_epoll;
@@ -645,8 +715,6 @@ static int syncboss_clear_directchannel_sm(
 	struct syncboss_driver_directchannel_shared_memory_clear_config *new_config = NULL;
 	struct channel_client_entry *client_data, *tmp_list_node;
 	struct list_head *client_list;
-	struct channel_dma_buf_info *c_dma_buf_info;
-	struct dma_buf *c_dma_buf;
 	struct dma_buf *dma_buffer;
 
 	new_config = kzalloc(sizeof(*new_config), GFP_KERNEL);
@@ -710,22 +778,9 @@ static int syncboss_clear_directchannel_sm(
 			continue;
 
 		status = 0;
-		if (client_data->active_fence) {
-			dma_fence_signal(&client_data->active_fence->fence);
-			dma_fence_put(&client_data->active_fence->fence);
-			atomic_dec(&syncboss_directchannel_active_rd_fences);
-			client_data->active_fence = NULL;
-		}
-		client_data->channel_data.channel_current_ptr =  NULL;
-		c_dma_buf_info = &client_data->dma_buf_info;
-		c_dma_buf = c_dma_buf_info->dma_buf;
-		dma_resv_lock(c_dma_buf->resv, NULL);
-		dma_resv_add_excl_fence(c_dma_buf->resv, NULL);
-		dma_buf_vunmap(c_dma_buf, c_dma_buf_info->k_virtptr);
-		dma_resv_unlock(c_dma_buf->resv);
-		dma_buf_put(c_dma_buf); /* decrement ref count */
+
 		list_del(&client_data->list_entry);
-		devm_kfree(dev, client_data);
+		syncboss_client_entry_cleanup(client_data);
 
 		if (list_empty(client_list)) {
 			devdata->direct_channel_data[new_config->uapi_pkt_type] = NULL;
@@ -800,19 +855,7 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 			int status = (*client_data->direct_channel_distribute) (devdata, client_data, packet_info);
 
 			if (status >= 0) {
-				/* If we return NOTIFY_STOP the packet will only get delivered to direct channel
-				   clients; if we return NOTIFY_DONE it will also get delivered to the sensor service
-				   for processing.  We need to let any changes to nsync status go to the sensor service;
-				   but otherwise we want to only deliver IMU data to direct clients. */
-				const struct syncboss_driver_data_header_t *header = &packet_info->header;
-				if ((header->nsync_offset_us != devdata->last_nsync_offset_us) ||
-				    (header->nsync_offset_status != devdata->last_nsync_offset_status)) {
-					devdata->last_nsync_offset_us = header->nsync_offset_us;
-					devdata->last_nsync_offset_status = header->nsync_offset_status;
-					ret = NOTIFY_DONE;
-				} else {
-					ret = NOTIFY_STOP;
-				}
+				ret = NOTIFY_STOP;
 			} else {
 				dev_dbg(devdata->dev, "direct channel distibute failed error %d", status);
 				break;
@@ -985,3 +1028,4 @@ module_init(syncboss_direct_channel_init);
 module_exit(syncboss_direct_channel_exit);
 MODULE_DESCRIPTION("Syncboss Direct Channel Interface Driver");
 MODULE_LICENSE("GPL v2");
+MODULE_IMPORT_NS(DMA_BUF);
