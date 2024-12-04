@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&surface_virtual_sensor {
+	thermal-zones = "pcb1-usr", "soc-usr", "surf1-usr", "surf2-usr";
+
+	coefficients {
+		charging {
+			tz-coefficients = <1334 1860 2714 3480>;
+			intercept = <(-137)>;
+		};
+		discharging {
+			tz-coefficients = <1334 1860 2714 3480>;
+			intercept = <(-137)>;
+		};
+	};
+};
+
