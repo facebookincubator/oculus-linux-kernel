@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&pmxr2230_flash {
+	qcom,alt-ramp-dn-rate = /bits/ 8 <0x1>; /* ALT RAMP DOWN RATE */
+	qcom,fault-debounce = /bits/ 8 <0x3>; /* FAULT_DEBOUNCE */
+};

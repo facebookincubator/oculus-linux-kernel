@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/gpio/gpio.h>
+
+// The MR button on EVT 1.x units (except EVT1.7)
+// is connected to GPIO 137.
+// On EVT1.7 and future units, the MR button is
+// connected to GPIO110 (default).
+
+&mr_toggle_default {
+	mux {
+		pins = "gpio137";
+		function = "gpio";
+	};
+	config {
+		pins = "gpio137";
+		bias-disable;
+		input-enable;
+	};
+};
+
+&mr_toggle {
+	gpios = <&tlmm 137 GPIO_ACTIVE_LOW>;
+};
