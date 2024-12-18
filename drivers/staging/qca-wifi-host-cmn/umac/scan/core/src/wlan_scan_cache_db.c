@@ -754,6 +754,8 @@ scm_copy_info_from_dup_entry(struct wlan_objmgr_pdev *pdev,
 {
 	struct scan_cache_entry *scan_entry;
 	uint64_t time_gap;
+	uint8_t *he_ops;
+	struct he_oper_6g_param *he_6g_params;
 
 	scan_entry = scan_node->entry;
 
@@ -824,6 +826,32 @@ scm_copy_info_from_dup_entry(struct wlan_objmgr_pdev *pdev,
 	    (scan_params->rssi_raw  < ADJACENT_CHANNEL_RSSI_THRESHOLD)) {
 		scan_params->channel.chan_freq = scan_entry->channel.chan_freq;
 		scan_params->channel_mismatch = true;
+	}
+
+	/*
+	 * An AP that is transmitting Beacon frame as non-HT DUP PPDU, will be
+	 * transmitting the Beacon across the BW on the AP.
+	 * Case where duplicate beacon is received on a different channel can
+	 * have fluctuation in RSSI values. Considering best RSSI in this case.
+	 * Check RSSI reported in the scan result and mark mismatch if RSSI
+	 * reported is lower than RSSI stored in scan entry for the same BSS.
+	 * This is done considering this scan result is because of leaked signal
+	 */
+	if ((scan_params->frm_subtype == MGMT_SUBTYPE_BEACON ||
+	     scan_params->frm_subtype == MGMT_SUBTYPE_PROBE_RESP) &&
+	     (scan_params->recv_freq !=
+	      scan_entry->channel.chan_freq) &&
+	     (time_gap < WLAN_RSSI_AVERAGING_TIME)) {
+		he_ops = util_scan_entry_heop(scan_params);
+		if (he_ops) {
+			he_6g_params = util_scan_get_he_6g_params(he_ops);
+			if (he_6g_params && he_6g_params->duplicate_beacon &&
+			    (scan_params->rssi_raw < scan_entry->rssi_raw)) {
+				scan_params->channel.chan_freq =
+					scan_entry->channel.chan_freq;
+				scan_params->channel_mismatch = true;
+			}
+		}
 	}
 
 	/* Use old value for rssi if beacon was heard on adjacent channel. */

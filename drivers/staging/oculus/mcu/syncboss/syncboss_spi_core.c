@@ -18,10 +18,11 @@
 #include <linux/version.h>
 #include <linux/wait.h>
 
-#include "syncboss_spi.h"
-#include "syncboss_spi_debugfs.h"
+#include "syncboss_devfs_clients.h"
+#include "syncboss_debugfs.h"
 #include "syncboss_spi_fastpath.h"
-#include "syncboss_spi_sequence_number.h"
+#include "syncboss_sequence_number.h"
+#include "syncboss_spi.h"
 
 #ifdef CONFIG_OF
 static const struct of_device_id syncboss_spi_table[] = {
@@ -164,76 +165,16 @@ static int syncboss_dec_streaming_client_count_locked(struct syncboss_dev_data *
 		 * leaking for some reason.
 		 * Reset the mode to allow changing modes by stopping all clients.
 		 */
-		syncboss_sequence_number_reset_locked(devdata);
+		syncboss_sequence_number_reset_locked(&devdata->seq, &devdata->clients.client_data_list);
 
 		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STOPPED, NULL);
 	}
 	return 0;
 }
 
-/* Create and initialize a client_data entry */
-static int client_data_create_locked(struct syncboss_dev_data *devdata,
-		struct file *file, struct task_struct *task,
-		struct syncboss_client_data **client_data)
-{
-	struct device *dev = &devdata->spi->dev;
-		struct syncboss_client_data *data;
-	int status;
-
-	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-
-	INIT_LIST_HEAD(&data->list_entry);
-	data->file = file;
-	data->task = task;
-	data->index = devdata->client_data_index++;
-
-	data->index = devdata->client_data_index++;
-	status = syncboss_debugfs_client_add_locked(devdata, data);
-	if (status && -ENODEV != status)
-		dev_warn(dev, "failed to add client data to debugfs for %d: %d",
-			data->task->pid, status);
-
-	list_add_tail(&data->list_entry, &devdata->client_data_list);
-
-	*client_data = data;
-
-	return 0;
-}
-
-/* Retrieve a client_data entry */
-static struct syncboss_client_data *client_data_get_locked(
-	struct syncboss_dev_data *devdata, struct file *file)
-{
-	struct syncboss_client_data *data;
-
-	list_for_each_entry(data, &devdata->client_data_list, list_entry) {
-		if (data->file == file)
-			return data;
-	}
-
-	return NULL;
-}
-
-/* Remove and free a client_data entry */
-static void client_data_destroy_locked(struct syncboss_dev_data *devdata,
-	struct syncboss_client_data *client_data)
-{
-	struct device *dev = &devdata->spi->dev;
-
-	syncboss_debugfs_client_remove_locked(devdata, client_data);
-
-	list_del(&client_data->list_entry);
-
-	syncboss_sequence_number_release_client_locked(devdata, client_data);
-
-	devm_kfree(dev, client_data);
-}
-
 /* SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL handler */
 static long syncboss_ioctl_handle_seq_num_allocate_locked(
-	struct syncboss_dev_data *devdata, struct syncboss_client_data *client_data,
+	struct syncboss_dev_data *devdata, struct syncboss_devfs_client *client,
 	unsigned long arg)
 {
 	struct device *dev = &devdata->spi->dev;
@@ -241,12 +182,12 @@ static long syncboss_ioctl_handle_seq_num_allocate_locked(
 	long status_release;
 	uint8_t seq;
 
-	status = syncboss_sequence_number_allocate_locked(devdata, client_data, &seq);
+	status = syncboss_sequence_number_allocate_locked(&devdata->seq, client->seq, &seq);
 	if (status) {
 		dev_err(dev,
 			"failed to allocate sequence number: %ld. requested by %s (%d), client %lld",
-			status, client_data->task->comm, client_data->task->pid,
-			client_data->index);
+			status, client->task->comm, client->task->pid,
+			client->index);
 		goto ret;
 	}
 
@@ -254,8 +195,8 @@ static long syncboss_ioctl_handle_seq_num_allocate_locked(
 	if (status) {
 		dev_err(dev,
 			"failed to copy sequence number %d to user: %ld. requested by %s (%d), client %lld",
-			seq, status, client_data->task->comm, client_data->task->pid,
-			client_data->index);
+			seq, status, client->task->comm, client->task->pid,
+			client->index);
 		status = -EFAULT;
 		goto seq_num_release;
 	}
@@ -264,12 +205,12 @@ static long syncboss_ioctl_handle_seq_num_allocate_locked(
 
 seq_num_release:
 	/* Don't clobber the original error */
-	status_release = syncboss_sequence_number_release_locked(devdata, client_data, seq);
+	status_release = syncboss_sequence_number_release_locked(&devdata->seq, client->seq, seq);
 	if (status_release) {
 		dev_err(dev,
 			"leaking sequence number %d due to failure to release on error: %ld. requested by %s (%d), client %lld",
-			seq, status_release, client_data->task->comm, client_data->task->pid,
-			client_data->index);
+			seq, status_release, client->task->comm, client->task->pid,
+			client->index);
 	}
 
 ret:
@@ -278,7 +219,7 @@ ret:
 
 /* SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL handler */
 static long syncboss_ioctl_handle_seq_num_release_locked(
-	struct syncboss_dev_data *devdata, struct syncboss_client_data *client_data,
+	struct syncboss_dev_data *devdata, struct syncboss_devfs_client *client,
 	unsigned long arg)
 {
 	struct device *dev = &devdata->spi->dev;
@@ -289,16 +230,16 @@ static long syncboss_ioctl_handle_seq_num_release_locked(
 	if (status) {
 		dev_err(dev,
 			"failed to copy sequence number from user: %ld. requested by %s (%d), client %lld",
-			status, client_data->task->comm, client_data->task->pid, client_data->index);
+			status, client->task->comm, client->task->pid, client->index);
 		return -EFAULT;
 	}
 
-	status = syncboss_sequence_number_release_locked(devdata, client_data, seq);
+	status = syncboss_sequence_number_release_locked(&devdata->seq, client->seq, seq);
 	if (status) {
 		dev_err(dev,
 			"leaking sequence number %d due to failure to release: %ld. requested by %s (%d), client %lld",
-			seq, status, client_data->task->comm, client_data->task->pid,
-			client_data->index);
+			seq, status, client->task->comm, client->task->pid,
+			client->index);
 		return status;
 	}
 
@@ -446,11 +387,20 @@ static int syncboss_open(struct inode *inode, struct file *f)
 	struct syncboss_dev_data *devdata =
 	    container_of(f->private_data, struct syncboss_dev_data, misc);
 	struct device *dev = &devdata->spi->dev;
-	struct syncboss_client_data *client_data;
+	struct syncboss_devfs_client *client;
+
+	status = wait_for_completion_interruptible(&devdata->pm_resume_completion);
+	if (status) {
+		dev_warn(&devdata->spi->dev,
+			"syncboss open by %s (%d) aborted by signal while waiting on resume. status=%d",
+			current->comm, current->pid, status);
+		goto ret;
+	}
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status) {
-		dev_warn(&devdata->spi->dev, "syncboss open by %s (%d) aborted due to signal. status=%d",
+		dev_warn(&devdata->spi->dev,
+			"syncboss open by %s (%d) aborted by signal while waiting on lock. status=%d",
 			current->comm, current->pid, status);
 		goto ret;
 	}
@@ -471,7 +421,8 @@ static int syncboss_open(struct inode *inode, struct file *f)
 		goto unlock;
 	}
 
-	status = client_data_create_locked(devdata, f, current, &client_data);
+	status = syncboss_devfs_client_create_locked(&devdata->clients, f, current,
+		&client);
 	if (status) {
 		dev_err(dev, "syncboss open by %s (%d) failed to create client data (%d)",
 			current->comm, current->pid, status);
@@ -479,7 +430,7 @@ static int syncboss_open(struct inode *inode, struct file *f)
 	}
 
 	dev_info(dev, "syncboss opened by %s (%d), client %lld",
-		client_data->task->comm, client_data->task->pid, client_data->index);
+		client->task->comm, client->task->pid, client->index);
 
 	goto unlock;
 
@@ -500,7 +451,9 @@ static int syncboss_release(struct inode *inode, struct file *f)
 	struct syncboss_dev_data *devdata =
 		container_of(f->private_data, struct syncboss_dev_data, misc);
 	struct device *dev = &devdata->spi->dev;
-	struct syncboss_client_data *client_data;
+	struct syncboss_devfs_client *client;
+
+	wait_for_completion(&devdata->pm_resume_completion);
 
 	/*
 	 * It is unsafe to use the interruptible variant here, as the driver can get
@@ -510,18 +463,18 @@ static int syncboss_release(struct inode *inode, struct file *f)
 	 */
 	mutex_lock(&devdata->state_mutex);
 
-	client_data = client_data_get_locked(devdata, f);
-	BUG_ON(!client_data);
+	client = syncboss_devfs_client_get_locked(&devdata->clients, f);
+	BUG_ON(!client);
 
 	dev_info(dev, "syncboss closed by %s (%d), client %lld",
-		client_data->task->comm, client_data->task->pid, client_data->index);
+		client->task->comm, client->task->pid, client->index);
 
 	/*
 	 * This must be done before syncboss_dec_streaming_client_count_locked
 	 * since it will syncboss_sequence_number_reset_locked if the ref count
 	 * goes to zero and reset checks for any remaining clients.
 	 */
-	client_data_destroy_locked(devdata, client_data);
+	syncboss_devfs_client_destroy_locked(&devdata->clients, client);
 
 	syncboss_dec_streaming_client_count_locked(devdata);
 
@@ -563,20 +516,29 @@ static long syncboss_ioctl(struct file *file, unsigned int cmd,
 				  unsigned long arg)
 {
 	int status = 0;
-	struct syncboss_client_data *client_data;
+	struct syncboss_devfs_client *client;
 	struct syncboss_dev_data *devdata =
 		container_of(file->private_data, struct syncboss_dev_data, misc);
 	struct device *dev = &devdata->spi->dev;
 
-	status = mutex_lock_interruptible(&devdata->state_mutex);
-	if (status != 0) {
-		dev_warn(&devdata->spi->dev, "ioctl from %s (%d) aborted due to signal. status=%d",
-			 current->comm, current->pid, status);
+	status = wait_for_completion_interruptible(&devdata->pm_resume_completion);
+	if (status) {
+		dev_warn(&devdata->spi->dev,
+			"ioctl by %s (%d) aborted by signal while waiting on resume. status=%d",
+			current->comm, current->pid, status);
 		goto ret;
 	}
 
-	client_data = client_data_get_locked(devdata, file);
-	if (!client_data) {
+	status = mutex_lock_interruptible(&devdata->state_mutex);
+	if (status) {
+		dev_warn(&devdata->spi->dev,
+			"ioctl by %s (%d) aborted by signal while waiting on lock. status=%d",
+			current->comm, current->pid, status);
+		goto ret;
+	}
+
+	client = syncboss_devfs_client_get_locked(&devdata->clients, file);
+	if (!client) {
 		dev_err(dev, "ioctl from %s (%d) failed to get client data)",
 			current->comm, current->pid);
 		status = -ENXIO;
@@ -586,15 +548,15 @@ static long syncboss_ioctl(struct file *file, unsigned int cmd,
 	switch (cmd) {
 	case SYNCBOSS_SEQUENCE_NUMBER_ALLOCATE_IOCTL:
 		status = syncboss_ioctl_handle_seq_num_allocate_locked(devdata,
-					client_data, arg);
+					client, arg);
 		break;
 	case SYNCBOSS_SEQUENCE_NUMBER_RELEASE_IOCTL:
 		status = syncboss_ioctl_handle_seq_num_release_locked(devdata,
-					client_data, arg);
+					client, arg);
 		break;
 	default:
 		dev_err(dev, "unrecognized ioctl %d, from %s (%d), client %lld",
-			cmd, current->comm, current->pid, client_data->index);
+			cmd, current->comm, current->pid, client->index);
 		status = -EINVAL;
 		break;
 	}
@@ -1846,15 +1808,9 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 
 	devdata->streaming_client_count = 0;
 
-	/* For ioctl sequence number mechanism */
-	INIT_LIST_HEAD(&devdata->client_data_list);
-	devdata->client_data_index = 0;
+	syncboss_sequence_number_init(&devdata->seq, &spi->dev);
 
-	/*
-	 * syncboss_sequence_number_reset_locked does some unnecessary initialization
-	 * as devdata is zero initialized
-	 */
-	devdata->last_seq_num = SYNCBOSS_SEQ_NUM_MAX;
+	syncboss_devfs_clients_init(&devdata->clients, &spi->dev, &devdata->seq, &devdata->debugfs);
 
 	devdata->next_stream_settings.max_msg_send_delay_ns =
 		SYNCBOSS_DEFAULT_MAX_MSG_SEND_DELAY_NS;
@@ -2012,10 +1968,11 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_sysfs;
 	}
 
-	status = syncboss_debugfs_init(devdata);
+	status = syncboss_debugfs_init(&devdata->debugfs, dev, &devdata->seq, 
+		SYNCBOSS_DEVICE_NAME);
 	if (status && -ENODEV != status) {
 		dev_err(dev, "failed to init debugfs: %d", status);
-		return status;
+		goto error_after_sysfs;
 	}
 	/*
 	 * Init device as a wakeup source (so wake interrupts can hold
@@ -2052,7 +2009,7 @@ static void _syncboss_remove(struct spi_device *spi)
 	of_platform_depopulate(&spi->dev);
 	syncboss_deinit_sysfs_attrs(devdata);
 
-	syncboss_debugfs_deinit(devdata);
+	syncboss_debugfs_deinit(&devdata->debugfs);
 
 	misc_deregister(&devdata->misc);
 
@@ -2116,7 +2073,7 @@ static void do_syncboss_resume_work(struct work_struct *work)
 	struct device *dev = &devdata->spi->dev;
 	int status;
 
-	BUG_ON(!mutex_is_locked(&devdata->state_mutex));
+	mutex_lock(&devdata->state_mutex);
 	if (devdata->streaming_client_count > 0) {
 		dev_info(dev, "resuming streaming after system suspend");
 		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUMING, NULL);
@@ -2126,10 +2083,7 @@ static void do_syncboss_resume_work(struct work_struct *work)
 		else
 			raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_RESUMED, NULL);
 	}
-
-	 // Release mutex acquired by syncboss_resume()
 	mutex_unlock(&devdata->state_mutex);
-
 	complete_all(&devdata->pm_resume_completion);
 
 	devm_kfree(dev, wd);
@@ -2150,11 +2104,6 @@ static int syncboss_resume(struct device *dev)
 	wd->devdata = devdata;
 	INIT_WORK(&wd->work, do_syncboss_resume_work);
 
-	/*
-	 * Hold mutex until do_syncboss_resume_work completes to prevent userspace
-	 * from changing state before then.
-	 */
-	mutex_lock(&devdata->state_mutex);
 	queue_work(devdata->syncboss_pm_workqueue, &wd->work);
 
 	return 0;

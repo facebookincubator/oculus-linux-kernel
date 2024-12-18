@@ -1375,7 +1375,7 @@ static int lpass_cdc_rx_macro_mclk_enable(
 		}
 	}
 exit:
-	trace_printk("%s: mclk_enable = %u, dapm = %d clk_users= %d\n",
+	pr_debug("%s: mclk_enable = %u, dapm = %d clk_users= %d\n",
 		__func__, mclk_enable, dapm, rx_priv->rx_mclk_users);
 	mutex_unlock(&rx_priv->mclk_lock);
 	return ret;
@@ -1462,7 +1462,7 @@ static int lpass_cdc_rx_macro_event_handler(struct snd_soc_component *component,
 		lpass_cdc_rx_macro_wcd_clsh_imped_config(component, data, false);
 		break;
 	case LPASS_CDC_MACRO_EVT_SSR_DOWN:
-		trace_printk("%s, enter SSR down\n", __func__);
+		pr_debug("%s, enter SSR down\n", __func__);
 		rx_priv->pre_dev_up = false;
 		rx_priv->dev_up = false;
 		if (rx_priv->swr_ctrl_data) {
@@ -1504,7 +1504,7 @@ static int lpass_cdc_rx_macro_event_handler(struct snd_soc_component *component,
 		lpass_cdc_rx_macro_core_vote(rx_priv, false);
 		break;
 	case LPASS_CDC_MACRO_EVT_SSR_UP:
-		trace_printk("%s, enter SSR up\n", __func__);
+		pr_debug("%s, enter SSR up\n", __func__);
 		rx_priv->dev_up = true;
 		/* reset swr after ssr/pdr */
 		rx_priv->reset_swr = true;
@@ -4329,8 +4329,6 @@ static int rx_swrm_clock(void *handle, bool enable)
 
 	mutex_lock(&rx_priv->swr_clk_lock);
 
-	trace_printk("%s: swrm clock %s\n",
-			__func__, (enable ? "enable" : "disable"));
 	dev_dbg(rx_priv->dev, "%s: swrm clock %s\n",
 		__func__, (enable ? "enable" : "disable"));
 	if (enable) {
@@ -4397,8 +4395,6 @@ static int rx_swrm_clock(void *handle, bool enable)
 			}
 		}
 	}
-	trace_printk("%s: swrm clock users %d\n",
-		__func__, rx_priv->swr_clk_users);
 	dev_dbg(rx_priv->dev, "%s: swrm clock users %d\n",
 		__func__, rx_priv->swr_clk_users);
 exit:

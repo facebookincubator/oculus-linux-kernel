@@ -13,7 +13,6 @@
 #include "cam_debug_util.h"
 #include "cam_cdm_util.h"
 #include "cam_hw_intf.h"
-#include "cam_ife_hw_mgr.h"
 #include "cam_vfe_hw_intf.h"
 #include "cam_irq_controller.h"
 #include "cam_vfe_bus.h"
@@ -81,10 +80,6 @@ struct cam_vfe_bus_ver3_priv {
 	void                               *worker_info;
 	uint32_t                            max_out_res;
 	uint32_t                            num_cons_err;
-	struct {
-		void                           *data;
-		cam_isp_ctx_update_fastpath_result handler_cb;
-	} fastpath_notifier;
 	struct cam_vfe_constraint_error_info      *constraint_error_list;
 };
 
@@ -2106,7 +2101,6 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_faster_th(
 	struct cam_isp_resource_node *vfe_out = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data *rsrc_data = NULL;
 	struct cam_vfe_bus_ver3_wm_resource_data *wm_rsrc_data;
-	struct cam_vfe_bus_ver3_priv *bus_priv;
 	struct cam_isp_resource_node *comp_grp;
 	struct cam_vfe_bus_ver3_comp_grp_data *comp_data;
 
@@ -2120,12 +2114,11 @@ static int cam_vfe_bus_ver3_handle_vfe_out_done_faster_th(
 	comp_grp = rsrc_data->comp_grp;
 	comp_data = comp_grp->res_priv;
 	wm_rsrc_data = rsrc_data->wm_res[PLANE_Y].res_priv;
-	bus_priv = rsrc_data->bus_priv;
 	last_consumed =  cam_io_r(wm_rsrc_data->common_data->mem_base +
 		wm_rsrc_data->hw_regs->addr_status_0);
 
-	bus_priv->fastpath_notifier.handler_cb(bus_priv->fastpath_notifier.data,
-		 last_consumed);
+	rsrc_data->fastpath_notifier.handler_cb(rsrc_data->fastpath_notifier.data,
+		last_consumed);
 
 	CAM_DBG(CAM_ISP, "VFE:%d comp_grp:%d done with last_consumed: 0x%x",
 		rsrc_data->common_data->core_index, comp_data->comp_grp_type,
@@ -2155,8 +2148,9 @@ static int cam_vfe_bus_ver3_start_vfe_out(
 	common_data = rsrc_data->common_data;
 	source_group = rsrc_data->source_group;
 
-	CAM_DBG(CAM_ISP, "Start VFE:%d out_type:0x%X",
-		rsrc_data->common_data->core_index, rsrc_data->out_type);
+	CAM_DBG(CAM_ISP, "Start VFE:%d out_type:0x%X primary_en: %u",
+		rsrc_data->common_data->core_index, rsrc_data->out_type,
+		rsrc_data->primary_port_en);
 
 	if (vfe_out->res_state != CAM_ISP_RESOURCE_STATE_RESERVED) {
 		CAM_ERR(CAM_ISP,
@@ -2190,7 +2184,7 @@ static int cam_vfe_bus_ver3_start_vfe_out(
 	}
 
 	if (bus_priv->common_data.buf_done_evt_control &&
-		bus_priv->fastpath_notifier.handler_cb) {
+		rsrc_data->fastpath_notifier.handler_cb) {
 		th = cam_vfe_bus_ver3_handle_vfe_out_done_faster_th;
 	} else {
 		th = vfe_out->top_half_handler;
@@ -2299,7 +2293,6 @@ static int cam_vfe_bus_ver3_stop_vfe_out(
 		cam_vfe_bus_ver3_unsubscribe_init_irq(rsrc_data->bus_priv);
 
 	vfe_out->res_state = CAM_ISP_RESOURCE_STATE_RESERVED;
-
 	return rc;
 }
 
@@ -2356,8 +2349,8 @@ static int cam_vfe_bus_ver3_stop_vfe_out_wrapper(
 	if (!vfe_stop->is_internal_stop) {
 		rsrc_data->bus_priv->common_data.buf_done_evt_control = false;
 		rsrc_data->primary_port_en = false;
-		rsrc_data->bus_priv->fastpath_notifier.data = NULL;
-		rsrc_data->bus_priv->fastpath_notifier.handler_cb = NULL;
+		rsrc_data->fastpath_notifier.data = NULL;
+		rsrc_data->fastpath_notifier.handler_cb = NULL;
 	}
 
 	return rc;
@@ -4282,7 +4275,7 @@ static int cam_vfe_bus_ver3_update_primary_port_config(
 	vfe_out_data->primary_port_en = true;
 
 	CAM_DBG(CAM_ISP, "Res: 0x%x selected as primary port on VFE: %u",
-		vfe_out_data->wm_res->res_id, vfe_out_data->common_data->hw_intf->hw_idx);
+		vfe_out_data->out_type, vfe_out_data->common_data->hw_intf->hw_idx);
 
 	return 0;
 }
@@ -4562,14 +4555,35 @@ static int cam_vfe_bus_ver3_update_res_vfe_out(void *bus_priv, void *acquire_arg
 	return rc;
 }
 
+static bool cam_vfe_bus_ver3_check_for_fastpath_client(
+	struct cam_csid_res_irq_info *irq_args)
+{
+	int i;
+	struct cam_isp_resource_node *vfe_out;
+	struct cam_vfe_bus_ver3_vfe_out_data *rsrc_data = NULL;
+
+	for (i = 0; i < irq_args->num_res; i++) {
+		vfe_out = irq_args->node_res[i];
+		rsrc_data = vfe_out->res_priv;
+		if (rsrc_data->primary_port_en && rsrc_data->fastpath_notifier.handler_cb)
+			return true;
+	}
+
+	return false;
+}
+
 static int cam_vfe_bus_ver3_enable_irq_vfe_out(void *bus_priv, void *res_irq_mask)
 {
 	int rc = 0, i;
+	struct cam_vfe_bus_ver3_priv *bus_private = NULL;
 	struct cam_vfe_bus_ver3_vfe_out_data  *rsrc_data = NULL;
 	struct cam_vfe_bus_ver3_common_data   *common_data = NULL;
 	uint32_t source_group = 0;
 	struct cam_isp_resource_node          *vfe_out;
 	struct cam_csid_res_irq_info          *irq_args;
+	CAM_IRQ_HANDLER_TOP_HALF th = NULL;
+	CAM_IRQ_HANDLER_BOTTOM_HALF bh = NULL;
+	bool is_fastpath = false;
 
 	if (!res_irq_mask) {
 		CAM_ERR(CAM_ISP, "Invalid input");
@@ -4577,26 +4591,45 @@ static int cam_vfe_bus_ver3_enable_irq_vfe_out(void *bus_priv, void *res_irq_mas
 	}
 
 	irq_args = (struct cam_csid_res_irq_info *)res_irq_mask;
+	is_fastpath = cam_vfe_bus_ver3_check_for_fastpath_client(irq_args);
+
 	for (i = 0; i < irq_args->num_res; i++) {
 		vfe_out = irq_args->node_res[i];
 		rsrc_data = vfe_out->res_priv;
 		common_data = rsrc_data->common_data;
 		source_group = rsrc_data->source_group;
+		bus_private = rsrc_data->bus_priv;
 
-		CAM_DBG(CAM_ISP, "Start VFE:%d out_type:0x%X",
-			rsrc_data->common_data->core_index, rsrc_data->out_type);
+		CAM_DBG(CAM_ISP, "Start VFE:%d out_type:0x%X is_fastpath: %s",
+			rsrc_data->common_data->core_index, rsrc_data->out_type,
+			CAM_BOOL_TO_YESNO(is_fastpath));
 
 		if (rsrc_data->is_dual && !rsrc_data->is_master)
 			goto end;
 
-		if (!vfe_out->irq_handle && !vfe_out->is_per_port_start) {
+		if (!vfe_out->irq_handle && !vfe_out->is_per_port_start  && irq_args->enable_irq) {
+			if (is_fastpath && !rsrc_data->primary_port_en)
+				continue;
+
+			if (is_fastpath && rsrc_data->primary_port_en) {
+				CAM_DBG(CAM_ISP, "Enabling fastpath on VFE:%d out_type:0x%x",
+					rsrc_data->common_data->core_index, rsrc_data->out_type);
+				th = cam_vfe_bus_ver3_handle_vfe_out_done_faster_th;
+			} else {
+				CAM_DBG(CAM_ISP,
+					"Enabling regular buf done on VFE:%d out_type:0x%x",
+					rsrc_data->common_data->core_index,
+					rsrc_data->out_type);
+					th = vfe_out->top_half_handler;
+					bh = vfe_out->bottom_half_handler;
+			}
+
 			vfe_out->irq_handle = cam_irq_controller_subscribe_irq(
 				common_data->buf_done_controller,
 				CAM_IRQ_PRIORITY_1,
 				rsrc_data->stored_irq_masks[CAM_VFE_BUS_VER3_BUF_DONE_MASK],
 				vfe_out,
-				vfe_out->top_half_handler,
-				vfe_out->bottom_half_handler,
+				th, bh,
 				vfe_out->worker_info,
 				&worker_bh_api,
 				CAM_IRQ_EVT_GROUP_0);
@@ -4605,11 +4638,6 @@ static int cam_vfe_bus_ver3_enable_irq_vfe_out(void *bus_priv, void *res_irq_mas
 					vfe_out->res_id);
 				vfe_out->irq_handle = 0;
 				return -EFAULT;
-			}
-
-			if ((common_data->is_lite || source_group > CAM_VFE_BUS_VER3_SRC_GRP_0)
-				&& !vfe_out->rdi_only_ctx) {
-				goto end;
 			}
 
 			if ((common_data->supported_irq & CAM_VFE_HW_IRQ_CAP_RUP) &&
@@ -4926,9 +4954,13 @@ static int cam_vfe_bus_ver3_process_cmd(
 
 		bus_priv = (struct cam_vfe_bus_ver3_priv  *) priv;
 		notifier_cfg = (struct cam_isp_hw_fast_result_notifier_cfg *)cmd_args;
-		if (notifier_cfg->data && notifier_cfg->handler_cb) {
-			bus_priv->fastpath_notifier.data = notifier_cfg->data;
-			bus_priv->fastpath_notifier.handler_cb = notifier_cfg->handler_cb;
+		if (notifier_cfg->data && notifier_cfg->handler_cb && notifier_cfg->res) {
+			struct cam_vfe_bus_ver3_vfe_out_data *vfe_out_data;
+
+			vfe_out_data = notifier_cfg->res->res_priv;
+
+			vfe_out_data->fastpath_notifier.data = notifier_cfg->data;
+			vfe_out_data->fastpath_notifier.handler_cb = notifier_cfg->handler_cb;
 			rc = 0;
 		}
 	}

@@ -3,6 +3,7 @@
 #include "../anorak-oculus-base.dtsi"
 #include "../anorak-oculus-display.dtsi"
 #include "../anorak-oculus-flood-led.dtsi"
+#include "../anorak-oculus-syncboss-glink.dtsi"
 
 #include "panther-camera.dtsi"
 #include "panther-adc.dtsi"
@@ -11,6 +12,8 @@
 #include "panther-regulator.dtsi"
 #include "panther-sensorlock.dtsi"
 #include "panther-thermal.dtsi"
+
+/delete-node/ &pcie2;
 
 &aliases {
 	// BLU UART
@@ -204,6 +207,8 @@
 			input-enable;
 		};
 	};
+
+	/delete-node/ pcie2;
 };
 
 &usb2_phy0 {

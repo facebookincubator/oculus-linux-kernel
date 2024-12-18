@@ -291,6 +291,242 @@ static ssize_t mem_used_max_store(struct device *dev,
 	return len;
 }
 
+#ifdef CONFIG_ZRAM_IDLE_HISTOGRAM
+static void zram_init_stats(struct zram *zram)
+{
+	int index;
+
+	for (index = 0; index < IDLE_AGE_HISTOGRAM_SZ; index++)
+		zram->stats.idle_pg_histo[index] = 0;
+
+	for (index = 0; index < IDLE_CLUSTER_HISTOGRAM_SZ; index++)
+		zram->stats.idle_cluster_sz_histo[index] = 0;
+}
+
+static ssize_t idlehisto_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct zram *zram = dev_to_zram(dev);
+	ssize_t ret = 0;
+	int i = 0;
+
+	down_read(&zram->init_lock);
+	down_read(&zram->stats.idle_histo_lock);
+
+	for (i = 0; i < IDLE_AGE_HISTOGRAM_SZ; i++) {
+		int chars_printed = scnprintf(buf, PAGE_SIZE,
+			"%8d ",
+			zram->stats.idle_pg_histo[i]
+			);
+		buf += chars_printed;
+		ret += chars_printed;
+	}
+	up_read(&zram->stats.idle_histo_lock);
+	up_read(&zram->init_lock);
+
+	return ret;
+}
+
+static ssize_t idle_cluster_sz_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct zram *zram = dev_to_zram(dev);
+	ssize_t ret = 0;
+	int i = 0;
+
+	down_read(&zram->init_lock);
+	down_read(&zram->stats.idle_histo_lock);
+
+	for (i = 0; i < IDLE_CLUSTER_HISTOGRAM_SZ; i++) {
+		int chars_printed = scnprintf(buf, PAGE_SIZE,
+			"%8d ",
+			zram->stats.idle_cluster_sz_histo[i]
+			);
+		buf += chars_printed;
+		ret += chars_printed;
+	}
+	up_read(&zram->stats.idle_histo_lock);
+	up_read(&zram->init_lock);
+
+	return ret;
+}
+
+static inline void update_idle_cluster_sz_histo(struct zram *zram,
+						unsigned int idle_seq_sz)
+{
+	int bucket = 0;
+
+	/*
+	 * Idle cluster sz histo with exponential bucket size.
+	 * Bucket 0 counts seq_sz [0-3],
+	 * Bucket 1 counts seq_sz [4-15],
+	 * Bucket 2 counts seq_sz [16-63], etc.
+	 */
+	while (idle_seq_sz >>= 2)
+		bucket++;
+
+	/* Value of bucket >= 0 and < IDLE_CLUSTER_HISTOGRAM_SZ(32) */
+	zram->stats.idle_cluster_sz_histo[bucket]++;
+}
+
+static inline void update_idle_age_histo(
+	struct zram *zram,
+	ktime_t now,
+	ktime_t ac_time,
+	u32 bucket_sz_sec)
+{
+	int bucket = 0;
+	s64 pg_idle_time = ktime_to_ns(ktime_sub(now, ac_time)) /
+					(NSEC_PER_SEC * bucket_sz_sec);
+
+	/*
+	 * Idle age histo with exponential bucket size.
+	 * Bucket 0 counts age [0-2) bucket_sz_sec,
+	 * Bucket 1 counts age [2-4) bucket_sz_sec,
+	 * Bucket 2 counts age [4-8) bucket_sz_sec, etc.
+	 */
+	if (pg_idle_time > 0) {
+		while (pg_idle_time >>= 1)
+			bucket++;
+	}
+
+	/* Value of bucket is >= 0 and < IDLE_AGE_HISTOGRAM_SZ(64) */
+	zram->stats.idle_pg_histo[bucket]++;
+}
+
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+static inline void update_simulated_bd_writes_for_idle_pg(
+	struct zram *zram,
+	int index,
+	uint64_t *simulated_bd_count,
+	uint64_t *simulated_bd_write
+)
+{
+	/* An Idle page will be written to bdev, update pg count in bdev */
+	(*simulated_bd_count)++;
+
+	/*
+	 * Lock the slot only when writing to shared state. This will cause
+	 * minor inaccuracies in our write counts but increase speed and
+	 * prevent any interference with zram operation.
+	 */
+	if (!zram_test_flag(zram, index, ZRAM_SIM_WB)) {
+		zram_slot_lock(zram, index);
+		zram_set_flag(zram, index, ZRAM_SIM_WB);
+		zram_slot_unlock(zram, index);
+		(*simulated_bd_write)++;
+	}
+}
+#endif
+
+static void calculate_idle_pg_stats(
+	struct zram *zram,
+	ktime_t cutoff,
+	u32 bucket_sz_sec)
+{
+	bool is_idle = 1;
+	unsigned long nr_pages = zram->disksize >> PAGE_SHIFT;
+	int index;
+	ktime_t now = ktime_get_boottime();
+	bool last_pg_idle = false;
+	unsigned int idle_seq = 0;
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+	uint64_t simulated_bd_count = 0;
+	uint64_t simulated_bd_writes = 0;
+#endif
+	zram_init_stats(zram);
+
+	/*
+	 * No locks are taken in this loop. The loop does not modify a
+	 * zram_table_entry in any way, only reads the flags for each entry.
+	 * If the status of a slot changes while this loop is executing, we may
+	 * count a page as IDLE when its really not (or the other way round).
+	 * But this is a very low probability event, and the small inaccuracy is
+	 * worth the gain in processing speed and not interfering with actual
+	 * zram swap activity.
+	 */
+	for (index = 0; index < nr_pages; index++) {
+		if (zram_allocated(zram, index)) {
+			is_idle = ktime_after(cutoff, zram->table[index].ac_time);
+			/* Update histogram for IDLE page cluster size */
+			if (is_idle) {
+				idle_seq++;
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+				update_simulated_bd_writes_for_idle_pg(
+						zram,
+						index,
+						&simulated_bd_count,
+						&simulated_bd_writes);
+#endif
+			} else if (last_pg_idle) {
+				update_idle_cluster_sz_histo(zram, idle_seq);
+				idle_seq = 0;
+			}
+			last_pg_idle = is_idle;
+
+			update_idle_age_histo(zram, now,
+				zram->table[index].ac_time,
+				bucket_sz_sec);
+		}
+	}
+
+	if (idle_seq != 0)
+		update_idle_cluster_sz_histo(zram, idle_seq);
+
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+	atomic64_set(&zram->stats.simulated_bd_stats_time,
+		     ktime_to_us(ktime_sub(ktime_get_boottime(), now)));
+	atomic64_set(&zram->stats.simulated_bd_count, simulated_bd_count);
+	atomic64_add(simulated_bd_writes, &zram->stats.simulated_bd_writes);
+#endif
+}
+
+static ssize_t calculate_idle_pg_stats_store(
+	struct device *dev,
+	struct device_attribute *attr,
+	const char *buf,
+	size_t len)
+{
+	struct zram *zram = dev_to_zram(dev);
+	ktime_t cutoff_time = 0;
+	ssize_t rv = -EINVAL;
+	u32 bucket_sz_sec;
+	u64 age_sec;
+
+	/*
+	 * Parse the bucket size for calculating the page age histogram.
+	 * Parse the IDLE age at which pages will be flushed to backing device.
+	 */
+	if (sscanf(buf, "%u%lu", &bucket_sz_sec, &age_sec) == 2) {
+		age_sec = age_sec == 0 ? 1 : age_sec;
+		bucket_sz_sec = bucket_sz_sec == 0 ? 1 : bucket_sz_sec;
+
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+		zram->idle_age_nsec = age_sec * NSEC_PER_SEC;
+#endif
+		cutoff_time = ktime_sub(ktime_get_boottime(),
+				ns_to_ktime(age_sec * NSEC_PER_SEC));
+	} else {
+		goto out;
+	}
+
+	down_read(&zram->init_lock);
+	down_write(&zram->stats.idle_histo_lock);
+
+	if (!init_done(zram))
+		goto out_unlock;
+
+	calculate_idle_pg_stats(zram, cutoff_time, bucket_sz_sec);
+	rv = len;
+
+out_unlock:
+	up_write(&zram->stats.idle_histo_lock);
+	up_read(&zram->init_lock);
+out:
+	return rv;
+}
+#endif
+
 static ssize_t idle_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t len)
 {
@@ -963,6 +1199,21 @@ static void zram_debugfs_unregister(struct zram *zram)
 #else
 static void zram_debugfs_create(void) {};
 static void zram_debugfs_destroy(void) {};
+
+#if defined(CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS) || \
+    defined(CONFIG_ZRAM_IDLE_HISTOGRAM)
+static void zram_simulate_access(struct zram *zram, u32 index, bool is_read)
+{
+	ktime_t now = ktime_get_boottime();
+
+	if (is_read) {
+		if (zram_test_flag(zram, index, ZRAM_SIM_WB))
+			atomic64_inc(&zram->stats.simulated_bd_reads);
+	}
+
+	zram->table[index].ac_time = now;
+}
+#endif
 static void zram_accessed(struct zram *zram, u32 index)
 {
 	zram_clear_flag(zram, index, ZRAM_IDLE);
@@ -1103,8 +1354,8 @@ static ssize_t mm_stat_show(struct device *dev,
 	return ret;
 }
 
-#ifdef CONFIG_ZRAM_WRITEBACK
 #define FOUR_K(x) ((x) * (1 << (PAGE_SHIFT - 12)))
+#ifdef CONFIG_ZRAM_WRITEBACK
 static ssize_t bd_stat_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1117,6 +1368,26 @@ static ssize_t bd_stat_show(struct device *dev,
 			FOUR_K((u64)atomic64_read(&zram->stats.bd_count)),
 			FOUR_K((u64)atomic64_read(&zram->stats.bd_reads)),
 			FOUR_K((u64)atomic64_read(&zram->stats.bd_writes)));
+	up_read(&zram->init_lock);
+
+	return ret;
+}
+#endif
+
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+static ssize_t simulated_bd_stat_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct zram *zram = dev_to_zram(dev);
+	ssize_t ret;
+
+	down_read(&zram->init_lock);
+	ret = scnprintf(buf, PAGE_SIZE,
+			"%8llu %8llu %8llu %12llu\n",
+			FOUR_K((u64)atomic64_read(&zram->stats.simulated_bd_count)),
+			FOUR_K((u64)atomic64_read(&zram->stats.simulated_bd_reads)),
+			FOUR_K((u64)atomic64_read(&zram->stats.simulated_bd_writes)),
+			FOUR_K((u64)atomic64_read(&zram->stats.simulated_bd_stats_time)));
 	up_read(&zram->init_lock);
 
 	return ret;
@@ -1190,7 +1461,7 @@ static void zram_free_page(struct zram *zram, size_t index)
 {
 	unsigned long handle;
 
-#ifdef CONFIG_ZRAM_MEMORY_TRACKING
+#if defined(CONFIG_ZRAM_IDLE_HISTOGRAM) || defined(CONFIG_ZRAM_MEMORY_TRACKING)
 	zram->table[index].ac_time = 0;
 #endif
 	if (zram_test_flag(zram, index, ZRAM_IDLE))
@@ -1207,6 +1478,12 @@ static void zram_free_page(struct zram *zram, size_t index)
 		goto out;
 	}
 
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+	if (zram_test_flag(zram, index, ZRAM_SIM_WB)) {
+		zram_clear_flag(zram, index, ZRAM_SIM_WB);
+		atomic64_dec(&zram->stats.simulated_bd_count);
+	}
+#endif
 	/*
 	 * No memory is allocated for same element filled pages.
 	 * Simply clear same page flag.
@@ -1546,6 +1823,9 @@ static int zram_bvec_rw(struct zram *zram, struct bio_vec *bvec, u32 index,
 
 	zram_slot_lock(zram, index);
 	zram_accessed(zram, index);
+	#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+	zram_simulate_access(zram, index, !op_is_write(op));
+	#endif
 	zram_slot_unlock(zram, index);
 
 	if (unlikely(ret < 0)) {
@@ -1849,6 +2129,14 @@ static const struct block_device_operations zram_wb_devops = {
 	.owner = THIS_MODULE
 };
 
+#ifdef CONFIG_ZRAM_IDLE_HISTOGRAM
+static DEVICE_ATTR_WO(calculate_idle_pg_stats);
+static DEVICE_ATTR_RO(idle_cluster_sz);
+static DEVICE_ATTR_RO(idlehisto);
+#endif
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+static DEVICE_ATTR_RO(simulated_bd_stat);
+#endif
 static DEVICE_ATTR_WO(compact);
 static DEVICE_ATTR_RW(disksize);
 static DEVICE_ATTR_RO(initstate);
@@ -1887,6 +2175,14 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_bd_stat.attr,
 #endif
 	&dev_attr_debug_stat.attr,
+#ifdef CONFIG_ZRAM_IDLE_HISTOGRAM
+	&dev_attr_calculate_idle_pg_stats.attr,
+	&dev_attr_idlehisto.attr,
+	&dev_attr_idle_cluster_sz.attr,
+#endif
+#ifdef CONFIG_ZRAM_SIMULATE_WRITEBACK_STATS
+	&dev_attr_simulated_bd_stat.attr,
+#endif
 	NULL,
 };
 
@@ -1912,6 +2208,11 @@ static int zram_add(void)
 	zram = kzalloc(sizeof(struct zram), GFP_KERNEL);
 	if (!zram)
 		return -ENOMEM;
+
+#ifdef CONFIG_ZRAM_IDLE_HISTOGRAM
+	zram_init_stats(zram);
+	init_rwsem(&zram->stats.idle_histo_lock);
+#endif
 
 	ret = idr_alloc(&zram_index_idr, zram, 0, 0, GFP_KERNEL);
 	if (ret < 0)

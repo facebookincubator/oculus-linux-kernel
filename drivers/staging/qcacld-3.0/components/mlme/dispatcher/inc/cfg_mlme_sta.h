@@ -656,12 +656,39 @@
 			"supported mlo link band")
 
 #define CFG_MLO_SUPPORT_LINK_BAND_CFG CFG(CFG_MLO_SUPPORT_LINK_BAND)
+/*
+ * <cfg>
+ * RoamCommon_Mlo_TpPrefer - percentage to boost mlo scoring
+ *
+ * @Min: -20
+ * @Max: +20
+ * @Default: 10
+ *
+ * This cfg is used to boost/reduce the mlo weightage with configured
+ * value.
+ *
+ * Supported Feature: STA
+ *
+ * Usage: External
+ *
+ * </cfg>
+ */
+#define CFG_MLO_PREFER_PERCENTAGE CFG_INI_INT(\
+			"RoamCommon_Mlo_TpPrefer", \
+			-20, \
+			20, \
+			10,\
+			CFG_VALUE_OR_DEFAULT, \
+			"mlo prefer percentage")
+
+#define CFG_MLO_PREFER_PERCENTAGE_CFG CFG(CFG_MLO_PREFER_PERCENTAGE)
+
 #else
 #define CFG_MLO_SUPPORT_LINK_NUM_CFG
 #define CFG_MLO_SUPPORT_LINK_BAND_CFG
 #define CFG_MLO_MAX_SIMULTANEOUS_LINKS_CFG
+#define CFG_MLO_PREFER_PERCENTAGE_CFG
 #endif
-
 #define CFG_STA_ALL \
 	CFG(CFG_INFRA_STA_KEEP_ALIVE_PERIOD) \
 	CFG(CFG_STA_BSS_MAX_IDLE_PERIOD) \
@@ -685,6 +712,7 @@
 	CFG(CFG_MAX_LI_MODULATED_DTIM_MS) \
 	CFG_MLO_SUPPORT_LINK_NUM_CFG \
 	CFG_MLO_MAX_SIMULTANEOUS_LINKS_CFG \
-	CFG_MLO_SUPPORT_LINK_BAND_CFG
+	CFG_MLO_SUPPORT_LINK_BAND_CFG \
+	CFG_MLO_PREFER_PERCENTAGE_CFG
 
 #endif /* CFG_MLME_STA_H__ */

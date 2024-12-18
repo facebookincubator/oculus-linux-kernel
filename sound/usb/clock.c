@@ -72,9 +72,11 @@ static bool validate_clock_multiplier_v3(void *p, int id)
 }
 
 #define DEFINE_FIND_HELPER(name, obj, validator, type)		\
-static obj *name(struct usb_host_interface *iface, int id)	\
+static obj *name(struct snd_usb_audio *chip, int id, const struct audioformat *fmt)	\
 {								\
-	return find_uac_clock_desc(iface, id, validator, type);	\
+	struct usb_host_interface *ctrl_intf =	\
+		snd_usb_find_ctrl_interface(chip, fmt->iface); \
+	return find_uac_clock_desc(ctrl_intf, id, validator, type);	\
 }
 
 DEFINE_FIND_HELPER(snd_usb_find_clock_source,
@@ -98,16 +100,18 @@ DEFINE_FIND_HELPER(snd_usb_find_clock_multiplier_v3,
 		   struct uac3_clock_multiplier_descriptor,
 		   validate_clock_multiplier_v3, UAC3_CLOCK_MULTIPLIER);
 
-static int uac_clock_selector_get_val(struct snd_usb_audio *chip, int selector_id)
+static int uac_clock_selector_get_val(struct snd_usb_audio *chip, int selector_id, int iface_no)
 {
+	struct usb_host_interface *ctrl_intf;
 	unsigned char buf;
 	int ret;
 
+	ctrl_intf = snd_usb_find_ctrl_interface(chip, iface_no);
 	ret = snd_usb_ctl_msg(chip->dev, usb_rcvctrlpipe(chip->dev, 0),
 			      UAC2_CS_CUR,
 			      USB_RECIP_INTERFACE | USB_TYPE_CLASS | USB_DIR_IN,
 			      UAC2_CX_CLOCK_SELECTOR << 8,
-			      snd_usb_ctrl_intf(chip) | (selector_id << 8),
+			      snd_usb_ctrl_intf(ctrl_intf) | (selector_id << 8),
 			      &buf, sizeof(buf));
 
 	if (ret < 0)
@@ -117,15 +121,17 @@ static int uac_clock_selector_get_val(struct snd_usb_audio *chip, int selector_i
 }
 
 static int uac_clock_selector_set_val(struct snd_usb_audio *chip, int selector_id,
-					unsigned char pin)
+					unsigned char pin, int iface_no)
 {
+	struct usb_host_interface *ctrl_intf;
 	int ret;
 
+	ctrl_intf = snd_usb_find_ctrl_interface(chip, iface_no);
 	ret = snd_usb_ctl_msg(chip->dev, usb_sndctrlpipe(chip->dev, 0),
 			      UAC2_CS_CUR,
 			      USB_RECIP_INTERFACE | USB_TYPE_CLASS | USB_DIR_OUT,
 			      UAC2_CX_CLOCK_SELECTOR << 8,
-			      snd_usb_ctrl_intf(chip) | (selector_id << 8),
+			      snd_usb_ctrl_intf(ctrl_intf) | (selector_id << 8),
 			      &pin, sizeof(pin));
 	if (ret < 0)
 		return ret;
@@ -137,7 +143,7 @@ static int uac_clock_selector_set_val(struct snd_usb_audio *chip, int selector_i
 		return -EINVAL;
 	}
 
-	ret = uac_clock_selector_get_val(chip, selector_id);
+	ret = uac_clock_selector_get_val(chip, selector_id, iface_no);
 	if (ret < 0)
 		return ret;
 
@@ -159,10 +165,13 @@ static bool uac_clock_source_is_valid_quirk(struct snd_usb_audio *chip,
 	int count;
 	unsigned char data;
 	struct usb_device *dev = chip->dev;
+	struct usb_host_interface *ctrl_intf;
+
+	ctrl_intf = snd_usb_find_ctrl_interface(chip, fmt->iface);
 
 	if (fmt->protocol == UAC_VERSION_2) {
 		struct uac_clock_source_descriptor *cs_desc =
-			snd_usb_find_clock_source(chip->ctrl_intf, source_id);
+			snd_usb_find_clock_source(chip, source_id, fmt);
 
 		if (!cs_desc)
 			return false;
@@ -197,7 +206,7 @@ static bool uac_clock_source_is_valid_quirk(struct snd_usb_audio *chip,
 			err = snd_usb_ctl_msg(dev, usb_rcvctrlpipe(dev, 0), UAC2_CS_CUR,
 					      USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_IN,
 					      UAC2_CS_CONTROL_CLOCK_VALID << 8,
-					      snd_usb_ctrl_intf(chip) | (source_id << 8),
+					      snd_usb_ctrl_intf(ctrl_intf) | (source_id << 8),
 					      &data, sizeof(data));
 			if (err < 0) {
 				dev_warn(&dev->dev,
@@ -222,17 +231,19 @@ static bool uac_clock_source_is_valid(struct snd_usb_audio *chip,
 	unsigned char data;
 	struct usb_device *dev = chip->dev;
 	u32 bmControls;
+	struct usb_host_interface *ctrl_intf;
 
+	ctrl_intf = snd_usb_find_ctrl_interface(chip, fmt->iface);
 	if (fmt->protocol == UAC_VERSION_3) {
 		struct uac3_clock_source_descriptor *cs_desc =
-			snd_usb_find_clock_source_v3(chip->ctrl_intf, source_id);
+			snd_usb_find_clock_source_v3(chip, source_id, fmt);
 
 		if (!cs_desc)
 			return false;
 		bmControls = le32_to_cpu(cs_desc->bmControls);
 	} else { /* UAC_VERSION_1/2 */
 		struct uac_clock_source_descriptor *cs_desc =
-			snd_usb_find_clock_source(chip->ctrl_intf, source_id);
+			snd_usb_find_clock_source(chip, source_id, fmt);
 
 		if (!cs_desc)
 			return false;
@@ -247,7 +258,7 @@ static bool uac_clock_source_is_valid(struct snd_usb_audio *chip,
 	err = snd_usb_ctl_msg(dev, usb_rcvctrlpipe(dev, 0), UAC2_CS_CUR,
 			      USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_IN,
 			      UAC2_CS_CONTROL_CLOCK_VALID << 8,
-			      snd_usb_ctrl_intf(chip) | (source_id << 8),
+			      snd_usb_ctrl_intf(ctrl_intf) | (source_id << 8),
 			      &data, sizeof(data));
 
 	if (err < 0) {
@@ -281,7 +292,7 @@ static int __uac_clock_find_source(struct snd_usb_audio *chip,
 	}
 
 	/* first, see if the ID we're looking for is a clock source already */
-	source = snd_usb_find_clock_source(chip->ctrl_intf, entity_id);
+	source = snd_usb_find_clock_source(chip, entity_id, fmt);
 	if (source) {
 		entity_id = source->bClockID;
 		if (validate && !uac_clock_source_is_valid(chip, fmt,
@@ -294,13 +305,13 @@ static int __uac_clock_find_source(struct snd_usb_audio *chip,
 		return entity_id;
 	}
 
-	selector = snd_usb_find_clock_selector(chip->ctrl_intf, entity_id);
+	selector = snd_usb_find_clock_selector(chip, entity_id, fmt);
 	if (selector) {
 		int ret, i, cur, err;
 
 		/* the entity ID we are looking for is a selector.
 		 * find out what it currently selects */
-		ret = uac_clock_selector_get_val(chip, selector->bClockID);
+		ret = uac_clock_selector_get_val(chip, selector->bClockID, fmt->iface);
 		if (ret < 0)
 			return ret;
 
@@ -325,7 +336,7 @@ static int __uac_clock_find_source(struct snd_usb_audio *chip,
 			 */
 			if (chip->usb_id == USB_ID(0x04e8, 0xa051))
 				return ret;
-			err = uac_clock_selector_set_val(chip, entity_id, cur);
+			err = uac_clock_selector_set_val(chip, entity_id, cur, fmt->iface);
 			if (err < 0)
 				return err;
 		}
@@ -344,7 +355,7 @@ static int __uac_clock_find_source(struct snd_usb_audio *chip,
 			if (ret < 0)
 				continue;
 
-			err = uac_clock_selector_set_val(chip, entity_id, i);
+			err = uac_clock_selector_set_val(chip, entity_id, i, fmt->iface);
 			if (err < 0)
 				continue;
 
@@ -358,7 +369,7 @@ static int __uac_clock_find_source(struct snd_usb_audio *chip,
 	}
 
 	/* FIXME: multipliers only act as pass-thru element for now */
-	multiplier = snd_usb_find_clock_multiplier(chip->ctrl_intf, entity_id);
+	multiplier = snd_usb_find_clock_multiplier(chip, entity_id, fmt);
 	if (multiplier)
 		return __uac_clock_find_source(chip, fmt,
 					       multiplier->bCSourceID,
@@ -385,7 +396,7 @@ static int __uac3_clock_find_source(struct snd_usb_audio *chip,
 	}
 
 	/* first, see if the ID we're looking for is a clock source already */
-	source = snd_usb_find_clock_source_v3(chip->ctrl_intf, entity_id);
+	source = snd_usb_find_clock_source_v3(chip, entity_id, fmt);
 	if (source) {
 		entity_id = source->bClockID;
 		if (validate && !uac_clock_source_is_valid(chip, fmt,
@@ -398,13 +409,13 @@ static int __uac3_clock_find_source(struct snd_usb_audio *chip,
 		return entity_id;
 	}
 
-	selector = snd_usb_find_clock_selector_v3(chip->ctrl_intf, entity_id);
+	selector = snd_usb_find_clock_selector_v3(chip, entity_id, fmt);
 	if (selector) {
 		int ret, i, cur, err;
 
 		/* the entity ID we are looking for is a selector.
 		 * find out what it currently selects */
-		ret = uac_clock_selector_get_val(chip, selector->bClockID);
+		ret = uac_clock_selector_get_val(chip, selector->bClockID, fmt->iface);
 		if (ret < 0)
 			return ret;
 
@@ -423,7 +434,7 @@ static int __uac3_clock_find_source(struct snd_usb_audio *chip,
 					       selector->baCSourceID[ret - 1],
 					       visited, validate);
 		if (ret > 0) {
-			err = uac_clock_selector_set_val(chip, entity_id, cur);
+			err = uac_clock_selector_set_val(chip, entity_id, cur, fmt->iface);
 			if (err < 0)
 				return err;
 		}
@@ -444,7 +455,7 @@ static int __uac3_clock_find_source(struct snd_usb_audio *chip,
 			if (ret < 0)
 				continue;
 
-			err = uac_clock_selector_set_val(chip, entity_id, i);
+			err = uac_clock_selector_set_val(chip, entity_id, i, fmt->iface);
 			if (err < 0)
 				continue;
 
@@ -458,8 +469,8 @@ static int __uac3_clock_find_source(struct snd_usb_audio *chip,
 	}
 
 	/* FIXME: multipliers only act as pass-thru element for now */
-	multiplier = snd_usb_find_clock_multiplier_v3(chip->ctrl_intf,
-						      entity_id);
+	multiplier = snd_usb_find_clock_multiplier_v3(chip,
+						      entity_id, fmt);
 	if (multiplier)
 		return __uac3_clock_find_source(chip, fmt,
 						multiplier->bCSourceID,
@@ -567,11 +578,13 @@ static int get_sample_rate_v2v3(struct snd_usb_audio *chip, int iface,
 	struct usb_device *dev = chip->dev;
 	__le32 data;
 	int err;
+	struct usb_host_interface *ctrl_intf;
 
+	ctrl_intf = snd_usb_find_ctrl_interface(chip, iface);
 	err = snd_usb_ctl_msg(dev, usb_rcvctrlpipe(dev, 0), UAC2_CS_CUR,
 			      USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_IN,
 			      UAC2_CS_CONTROL_SAM_FREQ << 8,
-			      snd_usb_ctrl_intf(chip) | (clock << 8),
+			      snd_usb_ctrl_intf(ctrl_intf) | (clock << 8),
 			      &data, sizeof(data));
 	if (err < 0) {
 		dev_warn(&dev->dev, "%d:%d: cannot get freq (v2/v3): err %d\n",
@@ -592,6 +605,9 @@ static int set_sample_rate_v2v3(struct snd_usb_audio *chip, int iface,
 	int clock;
 	bool writeable;
 	u32 bmControls;
+	struct usb_host_interface *ctrl_intf;
+
+	ctrl_intf = snd_usb_find_ctrl_interface(chip, iface);
 
 	/* First, try to find a valid clock. This may trigger
 	 * automatic clock selection if the current clock is not
@@ -617,12 +633,12 @@ static int set_sample_rate_v2v3(struct snd_usb_audio *chip, int iface,
 	if (fmt->protocol == UAC_VERSION_3) {
 		struct uac3_clock_source_descriptor *cs_desc;
 
-		cs_desc = snd_usb_find_clock_source_v3(chip->ctrl_intf, clock);
+		cs_desc = snd_usb_find_clock_source_v3(chip, clock, fmt);
 		bmControls = le32_to_cpu(cs_desc->bmControls);
 	} else {
 		struct uac_clock_source_descriptor *cs_desc;
 
-		cs_desc = snd_usb_find_clock_source(chip->ctrl_intf, clock);
+		cs_desc = snd_usb_find_clock_source(chip, clock, fmt);
 		bmControls = cs_desc->bmControls;
 	}
 
@@ -633,7 +649,7 @@ static int set_sample_rate_v2v3(struct snd_usb_audio *chip, int iface,
 		err = snd_usb_ctl_msg(dev, usb_sndctrlpipe(dev, 0), UAC2_CS_CUR,
 				      USB_TYPE_CLASS | USB_RECIP_INTERFACE | USB_DIR_OUT,
 				      UAC2_CS_CONTROL_SAM_FREQ << 8,
-				      snd_usb_ctrl_intf(chip) | (clock << 8),
+				      snd_usb_ctrl_intf(ctrl_intf) | (clock << 8),
 				      &data, sizeof(data));
 		if (err < 0) {
 			usb_audio_err(chip,
@@ -702,4 +718,3 @@ int snd_usb_init_sample_rate(struct snd_usb_audio *chip, int iface,
 		return set_sample_rate_v2v3(chip, iface, alts, fmt, rate);
 	}
 }
-

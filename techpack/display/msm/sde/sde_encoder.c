@@ -28,6 +28,7 @@
 #include "sde_kms.h"
 #include <drm/drm_crtc.h>
 #include <drm/drm_probe_helper.h>
+#include <drm/drm_property.h>
 #include "sde_hwio.h"
 #include "sde_hw_catalog.h"
 #include "sde_hw_intf.h"
@@ -5596,13 +5597,118 @@ static void _sde_encoder_destroy_debugfs(struct drm_encoder *drm_enc)
 }
 #endif
 
+static ssize_t missed_events_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct drm_encoder *drm_enc;
+	struct sde_encoder_virt *sde_enc;
+	int len = 0, i;
+	static const char *const msm_wait_str[] = {
+		"commit_done",
+		"tx_complete",
+		"vblank",
+		"active_region"
+	};
+
+	if (!dev)
+		return -EINVAL;
+
+	drm_enc = dev_get_drvdata(dev);
+	sde_enc = to_sde_encoder_virt(drm_enc);
+
+	for (i = 0; i < MSM_ENC_WAIT_MAX; ++i) {
+		int bytes_emitted = sysfs_emit_at(buf, len, "%s: %u\n", msm_wait_str[i], sde_enc->missed_event_count[i]);
+
+		if (bytes_emitted <= 0) {
+			dev_err(dev, "sde_kms: sysfs_emit_at failed: %d bytes emitted\n", bytes_emitted);
+			break;
+		}
+		len += bytes_emitted;
+	}
+
+	return len;
+}
+
+static DEVICE_ATTR_RO(missed_events);
+
+static struct attribute *sde_encoder_dev_attrs[] = {
+	&dev_attr_missed_events.attr,
+	NULL
+};
+
+static const struct attribute_group sde_encoder_attr_group = {
+	.attrs = sde_encoder_dev_attrs,
+};
+
+static const struct attribute_group *sde_encoder_attr_groups[] = {
+	&sde_encoder_attr_group,
+	NULL,
+};
+
+static int _sde_encoder_init_sysfs(struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc;
+	struct drm_device *dev;
+	int rc = 0;
+
+	if (!drm_enc || !drm_enc->dev || !drm_enc->dev->dev) {
+		SDE_ERROR("invalid encoder\n");
+		return -EINVAL;
+	}
+
+	dev = drm_enc->dev;
+	sde_enc = to_sde_encoder_virt(drm_enc);
+
+	sde_enc->sysfs_dev = device_create_with_groups(
+		dev->primary->kdev->class, dev->primary->kdev, 0, drm_enc,
+		sde_encoder_attr_groups, "card%d-sde-enc-%d", dev->primary->index, drm_enc->index);
+	if (IS_ERR_OR_NULL(sde_enc->sysfs_dev)) {
+		SDE_ERROR("enc:%d sysfs create failed rc:%ld\n", drm_enc->index,
+			PTR_ERR(sde_enc->sysfs_dev));
+		if (!sde_enc->sysfs_dev)
+			rc = -EINVAL;
+		else
+			rc = PTR_ERR(sde_enc->sysfs_dev);
+	}
+
+	if (rc)
+		SDE_ERROR("failed to create encoder sysfs: %d\n", rc);
+
+	return rc;
+}
+
+static int _sde_encoder_destroy_sysfs(struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc;
+
+	if (!drm_enc) {
+		SDE_ERROR("invalid encoder\n");
+		return -EINVAL;
+	}
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+
+	if (sde_enc->sysfs_dev)
+		device_unregister(sde_enc->sysfs_dev);
+
+	return 0;
+}
+
 static int sde_encoder_late_register(struct drm_encoder *encoder)
 {
-	return _sde_encoder_init_debugfs(encoder);
+	int rc = _sde_encoder_init_debugfs(encoder);
+
+	if (rc) {
+		SDE_ERROR("failed to init encoder debugfs\n");
+		return rc;
+	}
+
+	return _sde_encoder_init_sysfs(encoder);
 }
 
 static void sde_encoder_early_unregister(struct drm_encoder *encoder)
 {
+	_sde_encoder_destroy_sysfs(encoder);
 	_sde_encoder_destroy_debugfs(encoder);
 }
 
@@ -6004,8 +6110,10 @@ int sde_encoder_wait_for_event(struct drm_encoder *drm_enc,
 			SDE_ATRACE_BEGIN(atrace_buf);
 			ret = fn_wait(phys);
 			SDE_ATRACE_END(atrace_buf);
-			if (ret)
+			if (ret) {
+				sde_enc->missed_event_count[event] += ret == -EWOULDBLOCK ? 0 : 1;
 				return ret;
+			}
 		}
 	}
 

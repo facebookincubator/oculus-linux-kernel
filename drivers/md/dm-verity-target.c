@@ -64,6 +64,22 @@ struct buffer_aux {
 	int hash_verified;
 };
 
+static void verity_debug_dump(const struct dm_verity * const v)
+{
+	loff_t block_dev_size;
+
+	pr_emerg(".data_start=%lld .hash_start=%lld", v->data_start, v->hash_start);
+	pr_emerg(".data_blocks=%lld .hash_blocks=%lld", v->data_blocks, v->hash_blocks);
+	pr_emerg(".data_dev_block_bits=%d hash_dev_block_bits=%d .hash_per_block_bits=%d",
+			v->data_dev_block_bits, v->hash_dev_block_bits, v->hash_per_block_bits);
+	pr_emerg(".levels=%d", v->levels);
+	block_dev_size = i_size_read(v->hash_dev->bdev->bd_inode);
+	pr_emerg(".hash_dev name=%s bdev size=%llu (%llu sectors %llu blocks)",
+			v->hash_dev->name, block_dev_size, block_dev_size >> SECTOR_SHIFT, block_dev_size >> v->hash_dev_block_bits);
+	pr_emerg(".bufio block_size=%llu bytes device_size=%llu blocks",
+			dm_bufio_get_block_size(v->bufio), dm_bufio_get_device_size(v->bufio));
+}
+
 /*
  * Initialize struct buffer_aux for a freshly created buffer.
  */
@@ -1216,6 +1232,7 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	}
 
 	if (dm_bufio_get_device_size(v->bufio) < v->hash_blocks) {
+		verity_debug_dump(v);
 		ti->error = "Hash device is too small";
 		r = -E2BIG;
 		goto bad;

@@ -1326,6 +1326,22 @@ QDF_STATUS wlan_mlme_set_sta_mlo_conn_band_bmp(struct wlan_objmgr_psoc *psoc,
 
 	return QDF_STATUS_SUCCESS;
 }
+
+void
+wlan_mlme_get_mlo_prefer_percentage(struct wlan_objmgr_psoc *psoc,
+				    int8_t *mlo_prefer_percentage)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		mlme_legacy_err("invalid mlo object");
+		return;
+	}
+
+	*mlo_prefer_percentage = mlme_obj->cfg.sta.mlo_prefer_percentage;
+	mlme_legacy_debug("mlo_prefer_percentage %d", *mlo_prefer_percentage);
+}
 #endif
 
 QDF_STATUS wlan_mlme_get_num_11b_tx_chains(struct wlan_objmgr_psoc *psoc,

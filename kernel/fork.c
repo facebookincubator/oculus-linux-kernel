@@ -97,6 +97,7 @@
 #include <linux/scs.h>
 #include <linux/io_uring.h>
 #include <linux/cpufreq_times.h>
+#include <linux/orchestrator.h>
 
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
@@ -2400,6 +2401,9 @@ static __latent_entropy struct task_struct *copy_process(
 	sched_post_fork(p);
 	cgroup_post_fork(p, args);
 	perf_event_fork(p);
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+	orchestrator_post_clone(p, current);
+#endif
 
 	trace_task_newtask(p, clone_flags);
 	uprobe_copy_process(p, clone_flags);

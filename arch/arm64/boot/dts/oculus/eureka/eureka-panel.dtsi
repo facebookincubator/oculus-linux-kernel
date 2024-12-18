@@ -15,14 +15,24 @@
 	hsuart13 = &qupv3_se12_2uart; /* /dev/ttyHS13 */
 };
 
+&vendor {
+	display_panels: display_panels {
+		panels = <&dsi_jdi_nvt_2392x2560_90Hz_dsc_video
+			&dsi_sharp_nvt_2392x2560_90Hz_dsc_video
+			&eureka_panel_jdi
+			&eureka_panel_jdi_experimental
+			&eureka_panel_sharp
+			&eureka_panel_sharp_experimental
+			&eureka_panel_boe>;
+	};
+};
+
 &fan {
-	panel = <&dsi_jdi_nvt_2392x2560_90Hz_dsc_video
-		&dsi_sharp_nvt_2392x2560_90Hz_dsc_video
-		&eureka_panel_jdi
-		&eureka_panel_jdi_experimental
-		&eureka_panel_sharp
-		&eureka_panel_sharp_experimental
-		&eureka_panel_boe>;
+	panels = <&display_panels>;
+};
+
+&nsync {
+	panels = <&display_panels>;
 };
 
 &L12B {

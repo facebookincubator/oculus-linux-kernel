@@ -454,6 +454,7 @@ struct cam_req_mgr_core_link {
 	struct setting_pattern_period        setting_period_packet;
 	int                                  curr_seting_idx;
 	bool                                 is_setting_period_valid;
+	bool                                 is_setting_sticky;
 };
 
 /**
@@ -708,7 +709,7 @@ int cam_req_mgr_dump_request(struct cam_dump_req_cmd *dump_req);
  */
 int cam_req_mgr_link_dec_open_cnt(int32_t link_hdl);
 
-int cam_req_mgr_get_setting_id(int link_hdl, int pd);
+int cam_req_mgr_get_setting_id(int link_hdl);
 
 int cam_req_mgr_increase_setting_idx(int link_hdl);
 

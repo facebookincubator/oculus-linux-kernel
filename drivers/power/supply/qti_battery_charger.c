@@ -140,6 +140,9 @@ enum usb_property_id {
 	USB_MOISTURE_DET_SBU2_KOHM,
 	USB_MOISTURE_DET_CC2_KOHM,
 	USB_CABLE_DISCOVERY_EN,
+	USB_CABLE_MAX_SPEED,
+	USB_CABLE_VID,
+	USB_CABLE_PID,
 	USB_PROP_MAX,
 };
 
@@ -2274,6 +2277,57 @@ static ssize_t cable_discovery_en_show(struct class *c,
 }
 static CLASS_ATTR_RW(cable_discovery_en);
 
+static ssize_t cable_max_speed_show(struct class *c,
+						struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_CABLE_MAX_SPEED);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_CABLE_MAX_SPEED]);
+}
+static CLASS_ATTR_RO(cable_max_speed);
+
+static ssize_t cable_vid_show(struct class *c,
+						struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_CABLE_VID);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_CABLE_VID]);
+}
+static CLASS_ATTR_RO(cable_vid);
+
+static ssize_t cable_pid_show(struct class *c,
+						struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_CABLE_PID);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_CABLE_PID]);
+}
+static CLASS_ATTR_RO(cable_pid);
+
 static ssize_t resistance_show(struct class *c,
 					struct class_attribute *attr, char *buf)
 {
@@ -2508,6 +2562,9 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_usb_pd_pid.attr,
 	&class_attr_usb_typec_debug_access_mode_status.attr,
 	&class_attr_cable_discovery_en.attr,
+	&class_attr_cable_max_speed.attr,
+	&class_attr_cable_vid.attr,
+	&class_attr_cable_pid.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class);
@@ -2536,6 +2593,9 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_usb_pd_pid.attr,
 	&class_attr_usb_typec_debug_access_mode_status.attr,
 	&class_attr_cable_discovery_en.attr,
+	&class_attr_cable_max_speed.attr,
+	&class_attr_cable_vid.attr,
+	&class_attr_cable_pid.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class_no_wls);

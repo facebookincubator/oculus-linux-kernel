@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/bitops.h>
+#include <linux/debugfs.h>
 #include <linux/err.h>
-#include <linux/fs.h>
 #include <linux/stat.h>
 
-#include "syncboss_spi_debugfs.h"
+#include "syncboss_debugfs.h"
 
-#define ROOT_DIR_NAME "syncboss"
+#include "syncboss_devfs_clients.h"
+#include "syncboss_sequence_number.h"
 
 static ssize_t eperm_fop_write(struct file *filp, const char *buff, size_t len,
 	loff_t *off)
@@ -36,10 +37,10 @@ static struct dentry *create_allocated_sequence_numbers_dentry(
 		parent, allocated_seq_num, &allocated_seq_num_fops);
 }
 
-int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
-	struct syncboss_client_data *client_data)
+int syncboss_debugfs_devfs_client_add_locked(struct syncboss_debugfs *debugfs,
+	struct syncboss_devfs_client *client_data)
 {
-	struct device *dev = &devdata->spi->dev;
+	struct device *dev = debugfs->dev;
 	struct dentry *dentry;
 	char i_str[sizeof(client_data->index) * 3 + 1];
 	int status;
@@ -57,11 +58,10 @@ int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
 	 * than I want to deal with right now. Use an incrementing index for the dir
 	 * name and make the pid available within.
 	 */
-	client_data->dentry = debugfs_create_dir(i_str, devdata->clients_dentry);
+	client_data->dentry = debugfs_create_dir(i_str, debugfs->clients_dentry);
 	if (IS_ERR_OR_NULL(client_data->dentry)) {
-		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
-			"/clients/%s dir: %ld", i_str,
-			PTR_ERR(devdata->clients_dentry));
+		dev_err(dev, "failed to create debugfs %s/clients/%s dir: %ld", 
+			debugfs->name, i_str, PTR_ERR(debugfs->clients_dentry));
 		return PTR_ERR(client_data->dentry);
 	}
 
@@ -71,31 +71,29 @@ int syncboss_debugfs_client_add_locked(struct syncboss_dev_data *devdata,
 			0444, client_data->dentry,
 			&client_data->task->pid);
 	} else {
-		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
-			"/clients/%s/pid: unhandled pid size: %zu", i_str,
-			sizeof(client_data->task->pid));
+		dev_err(dev, "failed to create debugfs %s/clients/%s/pid: unhandled pid size: %zu", 
+			debugfs->name, i_str, sizeof(client_data->task->pid));
 			return -EIO;
 	}
 
 	debugfs_create_u64("sequence_number_allocation_count",
 		0444, client_data->dentry,
-		&client_data->seq_num_allocation_count);
+		&client_data->seq->seq_num_allocation_count);
 
 	dentry = create_allocated_sequence_numbers_dentry(client_data->dentry,
-		client_data->allocated_seq_num);
+		client_data->seq->allocated_seq_num);
 	if (IS_ERR_OR_NULL(dentry)) {
 		dev_err(dev,
-			"failed to create debugfs " ROOT_DIR_NAME
-			"/clients/%s/allocated_sequence_numbers: %ld", i_str,
-			PTR_ERR(dentry));
+			"failed to create debugfs %s/clients/%s/allocated_sequence_numbers: %ld", 
+				debugfs->name, i_str, PTR_ERR(dentry));
 		return PTR_ERR(dentry);
 	}
 
 	return 0;
 }
 
-void syncboss_debugfs_client_remove_locked(struct syncboss_dev_data *devdata,
-	struct syncboss_client_data *client_data)
+void syncboss_debugfs_devfs_client_remove_locked(struct syncboss_debugfs *debugfs,
+	struct syncboss_devfs_client *client_data)
 {
 	if (!IS_ERR_OR_NULL(client_data->dentry)) {
 		debugfs_remove_recursive(client_data->dentry);
@@ -103,44 +101,49 @@ void syncboss_debugfs_client_remove_locked(struct syncboss_dev_data *devdata,
 	}
 }
 
-int syncboss_debugfs_init(struct syncboss_dev_data *devdata)
+int syncboss_debugfs_init(struct syncboss_debugfs *debugfs, struct device *dev,
+	struct syncboss_seq *seq, const char *name)
 {
-	struct device *dev = &devdata->spi->dev;
 	struct dentry *dentry;
 
-	devdata->dentry = debugfs_create_dir(ROOT_DIR_NAME, NULL);
-	if (IS_ERR_OR_NULL(devdata->dentry)) {
-		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
-			" dir: %ld", PTR_ERR(devdata->dentry));
-		return PTR_ERR(devdata->dentry);
+	debugfs->dev = dev;
+	debugfs->seq = seq;
+	debugfs->name = name;
+
+	debugfs->dentry = debugfs_create_dir(debugfs->name, NULL);
+	if (IS_ERR_OR_NULL(debugfs->dentry)) {
+		dev_err(dev, "failed to create debugfs %s dir: %ld", 
+			debugfs->name, PTR_ERR(debugfs->dentry));
+		return PTR_ERR(debugfs->dentry);
 	}
 
-	devdata->clients_dentry = debugfs_create_dir("clients", devdata->dentry);
-	if (IS_ERR_OR_NULL(devdata->clients_dentry)) {
-		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
-			"/clients dir: %ld", PTR_ERR(devdata->clients_dentry));
-		return PTR_ERR(devdata->clients_dentry);
+	debugfs->clients_dentry = debugfs_create_dir("clients", debugfs->dentry);
+	if (IS_ERR_OR_NULL(debugfs->clients_dentry)) {
+		dev_err(dev, "failed to create debugfs %s/clients dir: %ld", 
+			debugfs->name, PTR_ERR(debugfs->clients_dentry));
+		return PTR_ERR(debugfs->clients_dentry);
 	}
 
 	debugfs_create_u64("sequence_number_allocation_count",
-		0444, devdata->dentry,
-		&devdata->seq_num_allocation_count);
+		0444, debugfs->dentry,
+		&debugfs->seq->seq_num_allocation_count);
 
-	dentry = create_allocated_sequence_numbers_dentry(devdata->dentry,
-		devdata->allocated_seq_num);
+	dentry = create_allocated_sequence_numbers_dentry(debugfs->dentry,
+		debugfs->seq->allocated_seq_num);
 	if (IS_ERR_OR_NULL(dentry)) {
-		dev_err(dev, "failed to create debugfs " ROOT_DIR_NAME
-			"/allocated_sequence_numbers: %ld", PTR_ERR(dentry));
+		dev_err(dev, "failed to create debugfs %s/allocated_sequence_numbers: %ld", 
+			debugfs->name, PTR_ERR(dentry));
 		return PTR_ERR(dentry);
 	}
 
 	return 0;
 }
 
-void syncboss_debugfs_deinit(struct syncboss_dev_data *devdata)
+void syncboss_debugfs_deinit(struct syncboss_debugfs *debugfs)
 {
-	if (!IS_ERR_OR_NULL(devdata->dentry)) {
-		debugfs_remove_recursive(devdata->dentry);
-		devdata->dentry = NULL;
+	if (!IS_ERR_OR_NULL(debugfs->dentry)) {
+		debugfs_remove_recursive(debugfs->dentry);
+		debugfs->dentry = NULL;
+		debugfs->clients_dentry = NULL;
 	}
 }

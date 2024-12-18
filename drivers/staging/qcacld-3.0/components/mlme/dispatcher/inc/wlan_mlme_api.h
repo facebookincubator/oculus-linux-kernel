@@ -2713,6 +2713,17 @@ wlan_mlme_get_t2lm_negotiation_supported(struct wlan_objmgr_psoc *psoc);
 QDF_STATUS
 wlan_mlme_set_t2lm_negotiation_supported(struct wlan_objmgr_psoc *psoc,
 					 uint8_t value);
+
+/*
+ * wlan_mlme_get_mlo_prefer_percentage() - get MLO preference percentage
+ * @psoc: pointer to psoc object
+ *
+ * Return: void
+ */
+void
+wlan_mlme_get_mlo_prefer_percentage(
+				struct wlan_objmgr_psoc *psoc,
+				int8_t *mlo_prefer_percentage);
 #else
 static inline QDF_STATUS
 wlan_mlme_get_eht_mode(struct wlan_objmgr_psoc *psoc, enum wlan_eht_mode *value)
@@ -2769,6 +2780,12 @@ wlan_mlme_set_t2lm_negotiation_supported(struct wlan_objmgr_psoc *psoc,
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
+
+static inline void
+wlan_mlme_get_mlo_prefer_percentage(
+				struct wlan_objmgr_psoc *psoc,
+				int8_t *mlo_prefer_percentage)
+{}
 #endif
 
 /**

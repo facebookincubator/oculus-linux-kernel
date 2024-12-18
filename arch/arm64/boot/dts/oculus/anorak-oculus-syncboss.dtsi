@@ -199,7 +199,7 @@
 			meta,syncboss-has-prox;
 		};
 
-		nsync@0 {
+		nsync: nsync@0 {
 			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
 
 			pinctrl-names = "default";

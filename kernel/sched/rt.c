@@ -22,12 +22,19 @@ static const u64 max_rt_runtime = MAX_BW;
 #define SYSCTL_PROCESS_NAME_LEN (SYSCTL_THREAD_NAME_LEN * 2)
 #define SYSCTL_LIST_LEN ((SYSCTL_THREAD_NAME_LEN + sizeof(' ')) * 8)
 
+#ifdef CONFIG_PANIC_ON_RT_THROTTLING_DEFAULT_ON
+#define PANIC_ON_THROTTLE_DEFAULT 1U
+#else
+#define PANIC_ON_THROTTLE_DEFAULT 0U
+#endif
+
 static struct sysctl_rt_throttling_info {
 	unsigned int cpu_number;
 	unsigned long process_running_time_ns;
 	unsigned int pid;
 	unsigned int clear_data;
 	unsigned int data_latched;
+	unsigned int panic_on_throttle;
 	char thread_name[SYSCTL_THREAD_NAME_LEN];
 	char process_name[SYSCTL_PROCESS_NAME_LEN];
 	char process_list[SYSCTL_LIST_LEN];
@@ -40,6 +47,7 @@ static void reset_sysctl_to_defaults(void)
 	sysctl_rt_throttling_info.cpu_number = 0;
 	sysctl_rt_throttling_info.process_running_time_ns = 0;
 	sysctl_rt_throttling_info.pid = 0;
+	sysctl_rt_throttling_info.panic_on_throttle = PANIC_ON_THROTTLE_DEFAULT;
 	strcpy(sysctl_rt_throttling_info.thread_name, "");
 	strcpy(sysctl_rt_throttling_info.process_name, "");
 	strcpy(sysctl_rt_throttling_info.process_list, "");
@@ -126,6 +134,15 @@ struct ctl_table rt_table[] = {
 		.maxlen		= SYSCTL_LIST_LEN,
 		.mode		= 0444,
 		.proc_handler	= proc_dostring,
+	},
+	{
+		.procname	= "panic_on_throttle",
+		.data		= &sysctl_rt_throttling_info.panic_on_throttle,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0664,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE
 	},
 	{ }
 };
@@ -1129,9 +1146,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	struct rt_prio_array *array = &rt_rq->active;
 	struct sched_rt_entity *rt_se;
 	char buf[500];
-#ifdef CONFIG_PANIC_ON_RT_THROTTLING
 	char blame_buf[128];
-#endif
 	char *process_list;
 	char *pos = buf;
 	char *end = buf + sizeof(buf);
@@ -1228,28 +1243,26 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
 
-#ifdef CONFIG_PANIC_ON_RT_THROTTLING
 	/*
 	 * For lack of a better method to blame offending threads, at least
-	 * report which one is being throttled.
+	 * report which one triggered the throttling.
 	 */
-	snprintf(blame_buf, sizeof(blame_buf), "Throttled thread \"%s\" process \"%s\"",
+	snprintf(blame_buf, sizeof(blame_buf), "Throttling triggered by thread \"%s\" process \"%s\"",
 			curr->comm, tgid_comm ?: unknown_pid);
-#endif
 
 	if (tgid_comm != NULL && tgid_comm != unknown_pid)
 		kfree(tgid_comm);
 out:
-#ifdef CONFIG_PANIC_ON_RT_THROTTLING
-	/*
-	 * Use pr_err() in the BUG() case since printk_sched() will
-	 * not get flushed and deadlock is not a concern.
-	 */
-	pr_err("%s\n", buf);
-	panic("%s\n", blame_buf);
-#else
+	if (sysctl_rt_throttling_info.panic_on_throttle) {
+		/*
+		 * Use pr_err() in the BUG() case since printk_sched() will
+		 * not get flushed and deadlock is not a concern.
+		 */
+		pr_err("%s\n", buf);
+		panic("%s\n", blame_buf);
+	}
 	printk_deferred("%s\n", buf);
-#endif
+	printk_deferred("%s\n", blame_buf);
 }
 
 static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)

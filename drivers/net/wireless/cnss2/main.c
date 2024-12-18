@@ -1067,8 +1067,10 @@ int cnss_idle_restart(struct device *dev)
 				     CNSS_EVENT_SYNC_UNINTERRUPTIBLE, NULL);
 	if (ret == -EINTR && plat_priv->device_id != QCA6174_DEVICE_ID)
 		cnss_pr_err("Idle restart has been interrupted but device power up is still in progress");
-	else if (ret)
+	else if (ret) {
+		cnss_pr_err("Idle restart error: %d, exiting\n", ret);
 		goto out;
+	}
 
 	if (plat_priv->device_id == QCA6174_DEVICE_ID) {
 		ret = cnss_bus_call_driver_probe(plat_priv);

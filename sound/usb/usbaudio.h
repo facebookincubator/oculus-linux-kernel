@@ -23,6 +23,11 @@ struct media_intf_devnode;
 
 #define MAX_CARD_INTERFACES	16
 
+struct snd_intf_to_ctrl {
+	u8 interface;
+	struct usb_host_interface *ctrl_intf;
+};
+
 struct snd_usb_audio {
 	int index;
 	struct usb_device *dev;
@@ -66,6 +71,9 @@ struct snd_usb_audio {
 	struct mutex dev_lock;  /* to protect any race with disconnect */
 	int card_num;	/* cache pcm card number to use upon disconnect */
 	void (*disconnect_cb)(struct snd_usb_audio *chip);
+
+	unsigned int num_intf_to_ctrl;
+	struct snd_intf_to_ctrl intf_to_ctrl[MAX_CARD_INTERFACES];
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);

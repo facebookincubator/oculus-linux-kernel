@@ -148,7 +148,11 @@
 #define BQ27Z561_MAC_CMD_MS 0x0057		//ManufacturingStatus
 #define BQ27Z561_MAC_CMD_LDB1 0x0060		//Lifetime Data Block 1
 #define BQ27Z561_MAC_CMD_MI_A 0x0070		//Manufacture info A
-
+#define BQ27Z561_MAC_CMD_DASTATUS1 0x0071	//DAStatus 1
+#define BQ27Z561_MAC_CMD_DASTATUS2 0x0072	//DAStatus 2
+#define BQ27Z561_MAC_CMD_ITSTATUS1 0x0073	//ITStatus 1
+#define BQ27Z561_MAC_CMD_ITSTATUS2 0x0074	//ITStatus 2
+#define BQ27Z561_MAC_CMD_ITSTATUS3 0x0075	//ITStatus 3
 #define BQ27Z561_MAC_CMD_MI_B 0x007A		//Manufacture info B
 #define BQ27Z561_MAC_CMD_MI_C 0x007B		//Manufacture info C
 
@@ -159,6 +163,28 @@
 
 #define BQ27Z561_MAC_LEN	128
 #define BQ27Z561_SUB_LEN	4	//2-byte command, 1-byte checksum and 1-byte length
+
+/* [TI FG] MAC command definitions for read back data - bq27z561  */
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_LO 0
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_HI 1
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_LO 12
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_HI 13
+
+#define BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_LO 18
+#define BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_HI 19
+
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO 10
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI 11
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_LO 12
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_HI 13
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_LO 14
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_HI 15
+
+#define BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_LO 0
+#define BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_HI 1
+#define BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_LO 12
+#define BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_HI 13
+
 
 static const char * const bq27z561_sealed_status_str[] = {
 	"Reserved", "Full Access", "Unsealed", "Sealed"};
@@ -1218,6 +1244,15 @@ enum {
 	MFG_INFO_B,
 	MFG_INFO_C,
 	BQ_TIMESTAMP,
+	DOD0_0,
+	DOD0_PASSEDQ,
+	DOD0_PASSEDE,
+	QMAX0_0,
+	RAW_DOD0,
+	CELL1_COMPRES,
+	CELL1_VOLTAGE,
+	CELL1_CURRENT,
+	GAUGING_STATUS_FC,
 };
 
 /**
@@ -2763,6 +2798,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 	u32 val2 = attr->val2;
 	char mac_buf[40];
 	char tmp_str[5];
+	s16 stemp;
+	s32 itemp;
 
 	switch (id) {
 	case ADDRESS:
@@ -2938,6 +2975,70 @@ static ssize_t bq27xxx_show(struct device *dev,
 		break;
 	case BQ_TIMESTAMP:
 		val = bq27xxx_get_bqtimestamp(di);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case DOD0_0:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
+			mac_buf, sizeof(mac_buf));
+		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI]  << 8);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case DOD0_PASSEDQ:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
+		break;
+	case DOD0_PASSEDE:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
+		break;
+	case QMAX0_0:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS3,
+			mac_buf, sizeof(mac_buf));
+		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_HI]  << 8);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case RAW_DOD0:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS3,
+			mac_buf, sizeof(mac_buf));
+		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_HI]  << 8);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case CELL1_COMPRES:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS1,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
+		break;
+	case CELL1_VOLTAGE:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_DASTATUS1,
+			mac_buf, sizeof(mac_buf));
+		val = (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_LO] | (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_HI]  << 8)) * 1000;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case CELL1_CURRENT:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_DASTATUS1,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_LO] | (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_HI]  << 8));
+		itemp = (s32)stemp * 1000;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", itemp);
+		break;
+	case GAUGING_STATUS_FC:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_GS,
+			mac_buf, sizeof(mac_buf));
+		val = (mac_buf[0] & 0x02) ? 1 : 0;
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
 		break;
 	}
@@ -3161,6 +3262,24 @@ static BQ27XXX_ATTR(manufacturer_info_c, 0444,
 			bq27xxx_show, NULL, MFG_INFO_C, 0, 0);
 static BQ27XXX_ATTR(bq_timestamp, 0444,
 			bq27xxx_show, NULL, BQ_TIMESTAMP, 0, 0);
+static BQ27XXX_ATTR(dod0_0, 0444,
+			bq27xxx_show, NULL, DOD0_0, 0, 0);
+static BQ27XXX_ATTR(dod0_passedq, 0444,
+			bq27xxx_show, NULL, DOD0_PASSEDQ, 0, 0);
+static BQ27XXX_ATTR(dod0_passede, 0444,
+			bq27xxx_show, NULL, DOD0_PASSEDE, 0, 0);
+static BQ27XXX_ATTR(qmax, 0444,
+			bq27xxx_show, NULL, QMAX0_0, 0, 0);
+static BQ27XXX_ATTR(raw_dod0, 0444,
+			bq27xxx_show, NULL, RAW_DOD0, 0, 0);
+static BQ27XXX_ATTR(compres, 0444,
+			bq27xxx_show, NULL, CELL1_COMPRES, 0, 0);
+static BQ27XXX_ATTR(voltage_simul, 0444,
+			bq27xxx_show, NULL, CELL1_VOLTAGE, 0, 0);
+static BQ27XXX_ATTR(current_simul, 0444,
+			bq27xxx_show, NULL, CELL1_CURRENT, 0, 0);
+static BQ27XXX_ATTR(gauging_status_fc, 0444,
+			bq27xxx_show, NULL, GAUGING_STATUS_FC, 0, 0);
 
 static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_address.dattr.attr,
@@ -3271,6 +3390,15 @@ static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_manufacturer_info_b.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_c.dattr.attr,
 	&bq27xxx_attr_bq_timestamp.dattr.attr,
+	&bq27xxx_attr_dod0_0.dattr.attr,
+	&bq27xxx_attr_dod0_passedq.dattr.attr,
+	&bq27xxx_attr_dod0_passede.dattr.attr,
+	&bq27xxx_attr_qmax.dattr.attr,
+	&bq27xxx_attr_raw_dod0.dattr.attr,
+	&bq27xxx_attr_compres.dattr.attr,
+	&bq27xxx_attr_voltage_simul.dattr.attr,
+	&bq27xxx_attr_current_simul.dattr.attr,
+	&bq27xxx_attr_gauging_status_fc.dattr.attr,
 	NULL
 };
 
