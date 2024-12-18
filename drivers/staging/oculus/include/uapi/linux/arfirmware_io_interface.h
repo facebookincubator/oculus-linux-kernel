@@ -38,8 +38,6 @@ struct __packed ar_queue_create_req {
 	 * producer + consumer + guard page.
 	 */
 	struct ar_mem_segment queue_segment;
-	/// Where the queue data segment resides, if it is disjoint.
-	struct ar_mem_segment queue_data_segment;
 	/// Whether this queue is mirroring another one in the user space
 	bool queue_mirror;
 	/// The pid of the process which made a request for creation.
@@ -123,12 +121,16 @@ struct __packed ar_queue_event_batch {
 
 /// Magic number for ARFW device ioctls
 #define ARFW_CHDEV_MAGIC 0xc5
-#define ARFW_QUEUE_CREATE _IOR(ARFW_CHDEV_MAGIC, 0, struct ar_queue_create_req*)
-#define ARFW_REGISTER_REGION _IOR(ARFW_CHDEV_MAGIC, 1, struct ar_region_register_req*)
+#define ARFW_QUEUE_CREATE \
+	_IOR(ARFW_CHDEV_MAGIC, 0, struct ar_queue_create_req *)
+#define ARFW_REGISTER_REGION \
+	_IOR(ARFW_CHDEV_MAGIC, 1, struct ar_region_register_req *)
 #define ARFW_UNREGISTER_REGION _IOR(ARFW_CHDEV_MAGIC, 2, long)
-#define ARFW_PEND_PAYLOAD _IOR(ARFW_CHDEV_MAGIC, 3, struct ar_pend_payload_req*)
+#define ARFW_PEND_PAYLOAD \
+	_IOR(ARFW_CHDEV_MAGIC, 3, struct ar_pend_payload_req *)
 #define ARFW_CONSUMED_INDEX _IO(ARFW_CHDEV_MAGIC, 4)
-#define ARFW_DEV_INFO _IOW(ARFW_CHDEV_MAGIC, 5, struct ar_device_information_req*)
-#define ARFW_QUEUE_DEBUG _IOW(ARFW_CHDEV_MAGIC, 6, struct ar_queue_debug_req*)
-#define ARFW_QUEUE_INFO _IOW(ARFW_CHDEV_MAGIC, 7, struct ar_queue_debug_req*)
+#define ARFW_DEV_INFO \
+	_IOW(ARFW_CHDEV_MAGIC, 5, struct ar_device_information_req *)
+#define ARFW_QUEUE_DEBUG _IOW(ARFW_CHDEV_MAGIC, 6, struct ar_queue_debug_req *)
+#define ARFW_QUEUE_INFO _IOW(ARFW_CHDEV_MAGIC, 7, struct ar_queue_debug_req *)
 #define ARFW_QUEUE_DESTROY _IO(ARFW_CHDEV_MAGIC, 8)

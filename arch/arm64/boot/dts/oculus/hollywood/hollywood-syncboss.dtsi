@@ -165,7 +165,7 @@
 			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
 		};
 
-		nsync@0 {
+		nsync: nsync@0 {
 			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
 
 			interrupt-parent = <&tlmm>;

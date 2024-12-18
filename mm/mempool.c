@@ -448,6 +448,9 @@ void mempool_free(void *element, mempool_t *pool)
 	if (unlikely(element == NULL))
 		return;
 
+	if (WARN_ON(!mempool_initialized(pool)))
+		return;
+
 	/*
 	 * Paired with the wmb in mempool_alloc().  The preceding read is
 	 * for @element and the following @pool->curr_nr.  This ensures

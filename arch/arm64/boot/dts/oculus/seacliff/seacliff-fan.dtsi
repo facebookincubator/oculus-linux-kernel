@@ -64,7 +64,6 @@
 			interrupt-parent = <&tlmm>;
 			interrupts = <71 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 0 40000>;
 			vdd-supply = <&BOB>;
@@ -84,7 +83,6 @@
 			interrupt-parent = <&tlmm>;
 			interrupts = <83 1>;
 			interrupt-names = "fan_irq";
-			panel = <&dsi_dual_boe_90hz_dsc>;
 			/*25KHz -> 40000ns*/
 			pwms = <&pm8150l_pwm 1 40000>;
 			vdd-supply = <&BOB>;

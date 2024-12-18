@@ -71,8 +71,8 @@ config META_SWD_STM32L4
 
 config SYNCBOSS_SPI
 	tristate "Syncboss SPI Driver"
-	depends on MISCFIFO && SPI && META_FW_HELPERS
-	default y
+	depends on SPI && META_FW_HELPERS
+	default n
 	help
 	  Meta Syncboss Driver
 
@@ -106,7 +106,7 @@ config SYNCBOSS_NSYNC
 
 config SYNCBOSS_MISCFIFO
 	tristate "Syncboss MiscFIFO Interface Support"
-	depends on SYNCBOSS_SPI
+	depends on SYNCBOSS_SPI && MISCFIFO
 	default n
 	help
 	  Syncboss MiscFIFO event notification driver

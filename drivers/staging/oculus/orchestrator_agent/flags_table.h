@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright (C) 2024 Meta Platforms, Inc. and affiliates
+ */
+
+ORCHESTRATOR_FLAG(ALLOW_RT)
+ORCHESTRATOR_FLAG(IS_SERVICE)

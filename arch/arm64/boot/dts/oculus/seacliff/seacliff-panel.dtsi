@@ -466,3 +466,21 @@
 		};
 	};
 };
+
+&vendor {
+	display_panels: display_panels {
+		panels = <&dsi_dual_boe_90hz_dsc>;
+	};
+};
+
+&fan_0 {
+	panels = <&display_panels>;
+};
+
+&fan_1 {
+	panels = <&display_panels>;
+};
+
+&nsync {
+	panels = <&display_panels>;
+};

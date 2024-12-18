@@ -108,7 +108,11 @@ struct __packed ar_user_pend_req {
  * Magic number for the ar-user-ctl device ioctls
  */
 #define AR_USER_CTL_MAGIC 0xc6
-#define AR_USER_CTL_REGISTER _IOR(AR_USER_CTL_MAGIC, 0, struct ar_user_register_req*)
-#define AR_USER_CTL_UNREGISTER _IOR(AR_USER_CTL_MAGIC, 1, struct ar_user_unregister_req*)
-#define AR_USER_CTL_QUEUE_INFO _IOW(AR_USER_CTL_MAGIC, 4, struct ar_user_queue_info_req*)
-#define AR_USER_CTL_REQUEST_PEND _IOW(AR_USER_CTL_MAGIC, 5, struct ar_user_pend_req*)
+#define AR_USER_CTL_REGISTER \
+	_IOR(AR_USER_CTL_MAGIC, 0, struct ar_user_register_req *)
+#define AR_USER_CTL_UNREGISTER \
+	_IOR(AR_USER_CTL_MAGIC, 1, struct ar_user_unregister_req *)
+#define AR_USER_CTL_QUEUE_INFO \
+	_IOW(AR_USER_CTL_MAGIC, 4, struct ar_user_queue_info_req *)
+#define AR_USER_CTL_REQUEST_PEND \
+	_IOW(AR_USER_CTL_MAGIC, 5, struct ar_user_pend_req *)

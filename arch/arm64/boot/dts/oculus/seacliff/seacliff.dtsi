@@ -10,8 +10,8 @@
 #include "seacliff-camera.dtsi"
 #include "seacliff-fan.dtsi"
 #include "seacliff-pac1934.dtsi"
-#include "seacliff-panel.dtsi"
 #include "seacliff-syncboss.dtsi"
+#include "seacliff-panel.dtsi"
 #include "seacliff-thermal.dtsi"
 #include "seacliff-ufs.dtsi"
 

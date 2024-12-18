@@ -6,9 +6,9 @@
 #include "hollywood-audio.dtsi"
 #include "hollywood-camera.dtsi"
 #include "hollywood-fan.dtsi"
+#include "hollywood-syncboss.dtsi"
 #include "hollywood-panel.dtsi"
 #include "hollywood-qca6390.dtsi"
-#include "hollywood-syncboss.dtsi"
 #include "hollywood-thermal.dtsi"
 #include "hollywood-ufs.dtsi"
 

@@ -57,6 +57,7 @@ struct __packed gfx_kmd_ioct_unregister_buffer_req {
 #define GFX_KMD_IOCTL_REGISTER_BUFFER \
 	_IOWR(GFX_KMD_IOCTL_MAGIC, 0, struct gfx_kmd_ioct_register_buffer_req *)
 #define GFX_KMD_IOCTL_UNREGISTER_BUFFER \
-	_IOW(GFX_KMD_IOCTL_MAGIC, 1, struct gfx_kmd_ioct_unregister_buffer_req *)
+	_IOW(GFX_KMD_IOCTL_MAGIC, 1,    \
+	     struct gfx_kmd_ioct_unregister_buffer_req *)
 
 #endif // !GFX_KMD_H
