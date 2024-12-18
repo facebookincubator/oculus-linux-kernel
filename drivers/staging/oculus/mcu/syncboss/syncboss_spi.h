@@ -2,7 +2,6 @@
 #ifndef _SYNCBOSS_SPI_H
 #define _SYNCBOSS_SPI_H
 
-#include <linux/debugfs.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/miscfifo.h>
@@ -15,13 +14,11 @@
 #include <uapi/linux/syncboss.h>
 
 #include "../swd/swd.h"
+#include "syncboss_devfs_clients.h"
+#include "syncboss_debugfs.h"
+#include "syncboss_sequence_number.h"
 
 #define SYNCBOSS_DEVICE_NAME "syncboss0"
-
-/* Sequence number settings */
-#define SYNCBOSS_SEQ_NUM_MIN 1
-#define SYNCBOSS_SEQ_NUM_MAX 254
-#define SYNCBOSS_SEQ_NUM_BITS (SYNCBOSS_SEQ_NUM_MAX + 1)
 
 /* SPI Thread Performance Tuning */
 #define SYNCBOSS_DEFAULT_THREAD_PRIO 51
@@ -132,18 +129,6 @@ struct syncboss_timing {
 	u64 min_time_between_trans_ns;
 };
 
-/* Data related to userspace clients of this driver */
-struct syncboss_client_data {
-	struct list_head list_entry;
-	struct file *file;
-	struct task_struct *task;
-	u64 index;
-	u64 seq_num_allocation_count;
-	/* Bitmap of allocated sequence numbers (ioctl) */
-	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
-	struct dentry *dentry;
-};
-
 /* Per-transaction state */
 struct transaction_context {
 	bool msg_to_send;
@@ -176,8 +161,7 @@ struct syncboss_dev_data {
 	struct miscdevice misc;
 
 	/* Data related to clients */
-	u64 client_data_index;
-	struct list_head client_data_list;
+	struct syncboss_devfs_clients clients;
 
 	/* Notifier chain for MCU and streaming state changes. */
 	struct raw_notifier_head state_event_chain;
@@ -272,13 +256,7 @@ struct syncboss_dev_data {
 	/* Real-Time priority to use for spi thread */
 	int thread_prio;
 
-	/* The last sequence number used for a control call (ioctl) */
-	int last_seq_num;
-
-	/* Bitmap of allocated sequence numbers (ioctl) */
-	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
-
-	u64 seq_num_allocation_count;
+	struct syncboss_seq seq;
 
 	/* True if the MCU can be woken from shutdown via a SPI transaction (CS toggle) */
 	bool has_wake_on_spi;
@@ -307,9 +285,7 @@ struct syncboss_dev_data {
 	/* True if the send timer has fired but has not yet been handled */
 	bool send_timer_fired;
 
-	/* DebugFS nodes */
-	struct dentry *dentry;
-	struct dentry *clients_dentry;
+	struct syncboss_debugfs debugfs;
 };
 
 int syncboss_init_sysfs_attrs(struct syncboss_dev_data *devdata);

@@ -1934,22 +1934,16 @@ static void __lim_process_channel_switch_timeout(struct pe_session *pe_session)
 		}
 
 		/*
-		 * If the channel-list that AP is asking us to switch is invalid
-		 * then we cannot switch the channel. Just disassociate from AP.
-		 * We will find a better AP !!!
+		 * The channel switch request received from AP is carrying
+		 * invalid channel. It's ok to ignore this channel switch
+		 * request as it might be from spoof AP. If it's from genuine
+		 * AP, it may lead to heart beat failure and result in
+		 * disconnection. DUT can go ahead and reconnect to it/any
+		 * other AP once it disconnects.
 		 */
-		if ((pe_session->limMlmState ==
-		   eLIM_MLM_LINK_ESTABLISHED_STATE) &&
-		   (pe_session->limSmeState != eLIM_SME_WT_DISASSOC_STATE) &&
-		   (pe_session->limSmeState != eLIM_SME_WT_DEAUTH_STATE)) {
-			pe_err("Invalid channel! Disconnect");
-			lim_tear_down_link_with_ap(mac,
-					   mac->lim.lim_timers.
-					   gLimChannelSwitchTimer.sessionId,
-					   eSIR_MAC_UNSUPPORTED_CHANNEL_CSA,
-					   eLIM_LINK_MONITORING_DISASSOC);
-			return;
-		}
+		pe_err("Invalid channel freq %u Ignore CSA request",
+		       channel_freq);
+		return;
 	}
 	switch (pe_session->gLimChannelSwitch.state) {
 	case eLIM_CHANNEL_SWITCH_PRIMARY_ONLY:

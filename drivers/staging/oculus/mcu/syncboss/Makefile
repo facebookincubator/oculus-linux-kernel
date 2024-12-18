@@ -1,8 +1,8 @@
 obj-$(CONFIG_SYNCBOSS_SPI) += syncboss_spi.o
-syncboss_spi-objs += syncboss_spi_core.o syncboss_spi_sequence_number.o syncboss_spi_sysfs.o syncboss_spi_fastpath.o
+syncboss_spi-objs += syncboss_spi_core.o syncboss_sequence_number.o syncboss_spi_sysfs.o syncboss_spi_fastpath.o syncboss_devfs_clients.o
 
 ifeq ($(CONFIG_SYNCBOSS_DEBUG),y)
-syncboss_spi-objs += syncboss_spi_debugfs.o
+syncboss_spi-objs += syncboss_debugfs.o
 endif
 
 obj-$(CONFIG_SYNCBOSS_POWERSTATE) += syncboss_powerstate.o
