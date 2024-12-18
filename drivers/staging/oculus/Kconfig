@@ -21,6 +21,7 @@ config META_DTS_DIR
 config AS5510
 	tristate "AS5510 Hall Effect Sensor i2c driver"
 	default n
+	depends on I2C
 	help
 	  This driver sets up a regmap to read sensor values.
 
@@ -44,6 +45,7 @@ config CAM_FSYNC
 config CHARGER_CYPD3177
 	tristate "CONFIG_CYPD3177 support"
 	default n
+	depends on I2C
 	help
 	  Say Y here to enable support for batteries with CYPD3177 chips connected
 	  over an I2C bus. This driver registers with the power supply class and
@@ -54,6 +56,7 @@ config CHARGER_CYPD3177
 config CHARGING_THERMAL_CONTROLLER
 	tristate "Charging Thermal Controller Driver"
 	default n
+	depends on THERMAL
 	help
 	  This driver votes on a device tree defined pmic votable when trip points
 	  associated with a cooling device are passed. There are three states:
@@ -82,6 +85,7 @@ config FPGA_AGGREGATOR
 config GENERIC_VIRTUAL_SENSOR
 	tristate "Generic Virtual Sensor Driver"
 	default n
+	depends on THERMAL
 	help
 	  This driver implements a generic virtual sensor driver which
 	  can be configured through userspace.
@@ -106,6 +110,7 @@ config GPU_ERROR_SYSCTL
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
 	default n
+	depends on IIO && THERMAL
 	help
 	  This driver implements a virtual sensor driver representing the iio channel
 	  value of a device.
@@ -130,6 +135,7 @@ config MISCFIFO
 config MISCFIFO_BENCHMARK
 	tristate "miscfifo benchmark driver"
 	default n
+	depends on MISCFIFO
 	help
 	  Benchmarking driver for miscfifo that allows you to measure
 	  its throughput and latency properties.
@@ -215,12 +221,14 @@ config RT600_CTRL
 config SEACLIFF_BLU
 	tristate "Oculus Seacliff SPI BLU Driver"
 	default n
+	depends on SPI
 	help
 	  Oculus Seacliff SPI BLU Driver for the BOE panels
 
 config SENSORLOCK
 	tristate "Sensorlock GPIO Interrupt Handler"
 	default n
+	depends on QCOM_SMCINVOKE
 	help
 	  This driver is meant to capture the sensorlock input signals.
 	  We require a kernel driver in order to capture the GPIO signal from
@@ -283,9 +291,18 @@ config VENDOR_DT_OUTPUT_DISABLE
 config VIRTUAL_SENSOR
 	tristate "Virtual Sensor Driver"
 	default n
+	depends on THERMAL
 	help
 	  This driver implements a virtual sensor driver representing a particular
 	  component of a device that can be configured in the device tree.
+
+config ORCHESTRATOR_AGENT
+	bool "Orchestrator Agent subsystem"
+	default n
+	help
+		Enables the Orchestrator Agent subsystem, which is used to
+		implement Meta-specific kernel policies for the orchestrator
+		service.
 
 source "drivers/staging/oculus/mcu/Kconfig"
 source "drivers/staging/oculus/pdfu/Kconfig"

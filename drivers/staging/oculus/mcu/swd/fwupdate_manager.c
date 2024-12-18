@@ -171,6 +171,13 @@ static struct {
 #endif
 };
 
+// Data struct to pass user input into workqueue thread
+struct fwupdate_swd_workqueue_data {
+	struct device *dev;
+	const char *buf;
+	size_t count;
+};
+
 int fwupdate_check_swd_ops(struct device *dev)
 {
 	bool parent_has_op;
@@ -594,21 +601,6 @@ ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf)
 	return retval;
 }
 
-static void fwupdate_swd_workqueue_fw_update(void *dev)
-{
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	int status = fwupdate_update_firmware(dev);
-
-	fwupdate_release_all_firmware(dev);
-	if (devdata->mcu_state_locked) {
-		devdata->mcu_state_unlock(dev);
-		devdata->mcu_state_locked = false;
-	}
-
-	mb(); /* Ensure FW update attempt is complete before allowing another to start */
-	devdata->fw_update_state = status ? FW_UPDATE_STATE_ERROR : FW_UPDATE_STATE_IDLE;
-}
-
 static int fwupdate_populate_data(struct device *dev, const char *buf,
 				      size_t count)
 {
@@ -646,6 +638,65 @@ static int fwupdate_populate_data(struct device *dev, const char *buf,
 	devdata->provisioning = (p != NULL) ? devdata->data_hdr->provisioning : NULL;
 
 	return 0;
+}
+
+static void fwupdate_swd_workqueue_fw_update(void *data)
+{
+	struct fwupdate_swd_workqueue_data *d = (struct fwupdate_swd_workqueue_data *)data;
+	struct device *dev = d->dev;
+	const char *buf = d->buf;
+	size_t count = d->count;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	int status = 0;
+	bool validation_complete = false;
+
+	mutex_lock(&devdata->state_mutex);
+	if (devdata->mcu_state_lock && devdata->get_syncboss_is_streaming) {
+		devdata->mcu_state_lock(dev);
+		devdata->mcu_state_locked = true;
+		if (devdata->get_syncboss_is_streaming(dev)) {
+			dev_err(dev, "Cannot update firmware while the MCU is busy");
+			status = -EBUSY;
+			goto cleanup_update;
+		}
+	}
+
+	status = fwupdate_get_firmware_images(dev, devdata);
+	if (status)
+		goto cleanup_update;
+
+	status = fwupdate_populate_data(dev, buf, count);
+	if (status)
+		goto cleanup_update;
+
+	devdata->fw_update_state = FW_UPDATE_STATE_WRITING_TO_HW;
+	// Signal user thread here so that it can be released
+	validation_complete = true;
+	complete_all(&devdata->fw_update_validation_complete);
+
+	// Unlock to give progress bar a chance to update in the show method
+	mutex_unlock(&devdata->state_mutex);
+	status = fwupdate_update_firmware(dev);
+
+cleanup_update:
+	fwupdate_release_all_firmware(dev);
+	if (devdata->mcu_state_locked) {
+		devdata->mcu_state_unlock(dev);
+		devdata->mcu_state_locked = false;
+	}
+
+	kfree(d->buf);
+	kfree(data);
+
+	if (!validation_complete) {
+		mutex_unlock(&devdata->state_mutex);
+		devdata->fw_update_validation_status = status;
+		complete_all(&devdata->fw_update_validation_complete);
+	} else {
+		mb(); /* Ensure FW update attempt is complete before allowing another to start */
+		devdata->fw_update_state = status ? FW_UPDATE_STATE_ERROR : FW_UPDATE_STATE_IDLE;
+	}
+	mutex_unlock(&devdata->state_mutex);
 }
 
 static int fwupdate_get_single_firmware_image(struct device *dev, struct swd_mcu_data *mcudata)
@@ -727,12 +778,34 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 {
 	int status = 0;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct fwupdate_swd_workqueue_data *update_data;
+	char *buf_copy = NULL;
+	bool work_queued = false;
+
+	if (!mutex_trylock(&devdata->write_mutex))
+		return -EBUSY;
+
+	update_data = kmalloc(sizeof(*update_data), GFP_KERNEL);
+	buf_copy = kmemdup(buf, count, GFP_KERNEL);
+	if (!update_data || !buf_copy) {
+		status = -ENOMEM;
+		goto error;
+	}
+
+	update_data->dev = dev;
+	update_data->count = count;
+	update_data->buf = buf_copy;
 
 	status = mutex_lock_interruptible(&devdata->state_mutex);
 	if (status != 0) {
 		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, status);
+		kfree(buf_copy);
+		kfree(update_data);
 		return status;
 	}
+
+	devdata->fw_update_validation_status = 0;
+	reinit_completion(&devdata->fw_update_validation_complete);
 
 	if ((devdata->gpio_swdclk < 0) || (devdata->gpio_swdio < 0)) {
 		dev_err(dev,
@@ -746,39 +819,24 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 		status = -EINVAL;
 		goto error;
 	}
-	if (devdata->mcu_state_lock && devdata->get_syncboss_is_streaming) {
-		devdata->mcu_state_lock(dev);
-		devdata->mcu_state_locked = true;
-		if (devdata->get_syncboss_is_streaming(dev)) {
-			dev_err(dev, "Cannot update firmware while the MCU is busy");
-			status = -EBUSY;
+
+	work_queued = !fw_queue_work(devdata->workqueue, update_data, fwupdate_swd_workqueue_fw_update, NULL);
+	if (work_queued) {
+		mutex_unlock(&devdata->state_mutex);
+		status = wait_for_completion_interruptible(&devdata->fw_update_validation_complete);
+		if (status)
 			goto error;
-		}
+		status = devdata->fw_update_validation_status;
 	}
-
-	status = fwupdate_get_firmware_images(dev, devdata);
-	if (status)
-		goto error;
-
-	status = fwupdate_populate_data(dev, buf, count);
-	if (status)
-		goto error;
-
-	devdata->fw_update_state = FW_UPDATE_STATE_WRITING_TO_HW;
-
-	fw_queue_work(devdata->workqueue, dev, fwupdate_swd_workqueue_fw_update, NULL);
-
-	mutex_unlock(&devdata->state_mutex);
-
-	return count;
 
 error:
-	if (devdata->mcu_state_locked) {
-		devdata->mcu_state_unlock(dev);
-		devdata->mcu_state_locked = false;
+	if (!work_queued) {
+		mutex_unlock(&devdata->state_mutex);
+		kfree(buf_copy);
+		kfree(update_data);
 	}
-	mutex_unlock(&devdata->state_mutex);
-	return status;
+	mutex_unlock(&devdata->write_mutex);
+	return status ? status : count;
 }
 
 int fwupdate_init_swd_ops(struct device *dev, struct swd_mcu_data *mcudata)

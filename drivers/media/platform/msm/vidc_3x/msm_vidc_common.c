@@ -843,9 +843,7 @@ static void handle_sys_init_done(enum hal_command_response cmd, void *data)
 	core->dec_codec_supported = sys_init_msg->dec_codec_supported;
 
 	/* This should come from sys_init_done */
-	core->resources.max_inst_count =
-		sys_init_msg->max_sessions_supported ? :
-		MAX_SUPPORTED_INSTANCES;
+	core->resources.max_inst_count = 16;
 
 	core->resources.max_secure_inst_count =
 		core->resources.max_secure_inst_count ? :
@@ -5051,7 +5049,8 @@ static int msm_vidc_check_mbpf_supported(struct msm_vidc_inst *inst)
 		/* ignore thumbnail session */
 		if (is_thumbnail_session(temp))
 			continue;
-			mbpf += msm_comm_get_mbs_per_frame(inst);
+		 mbpf += NUM_MBS_PER_FRAME(inst->prop.width[OUTPUT_PORT],
+				inst->prop.height[OUTPUT_PORT]);
 	}
 	mutex_unlock(&core->lock);
 	if (mbpf > 2*capability->mbs_per_frame.max) {

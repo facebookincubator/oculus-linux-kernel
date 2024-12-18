@@ -505,6 +505,7 @@ int cam_cdm_process_cmd(void *hw_priv,
 			data->cdm_version = core->version;
 		}
 
+		spin_lock_init(&client->client_spin_lock);
 		refcount_set(&client->refcount, 1);
 		memcpy(&client->data, data,
 			sizeof(struct cam_cdm_acquire_data));

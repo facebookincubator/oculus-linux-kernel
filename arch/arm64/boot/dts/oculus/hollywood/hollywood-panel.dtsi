@@ -486,28 +486,38 @@
 	status = "disabled";
 };
 
+&vendor {
+	display_panels: display_panels {
+		panels = <&dsi_boe_4k_72Hz_dsc_video
+			&dsi_boe_4k_80Hz_dsc_video
+			&dsi_boe_4k_90Hz_dsc_video
+			&dsi_boe_4k_120Hz_dsc_video
+			&dsi_jdi_nvt_4k_dsc_video
+			&dsi_jdi_nvt_4k_80Hz_dsc_video
+			&dsi_jdi_nvt_4k_90Hz_dsc_video
+			&dsi_jdi_nvt_4k_120Hz_dsc_video
+			&dsi_jdi_4k_dsc_video
+			&dsi_jdi_4k_80Hz_dsc_video
+			&dsi_jdi_4k_90Hz_dsc_video
+			&dsi_jdi_4k_120Hz_dsc_video
+			&dsi_sharp_4k_72Hz_dsc_video
+			&dsi_sharp_4k_90Hz_dsc_video
+			&dsi_sharp_4k_120Hz_dsc_video
+			&dsi_sharp_4k_72Hz_dsc_evt2_video
+			&dsi_sharp_4k_90Hz_dsc_evt2_video
+			&dsi_sharp_4k_120Hz_dsc_evt2_video
+			&dsi_sharp_4k_72Hz_dsc_dvt_video
+			&dsi_sharp_4k_90Hz_dsc_dvt_video
+			&dsi_sharp_4k_120Hz_dsc_dvt_video>;
+	};
+};
+
 &fan {
-	panel = <&dsi_boe_4k_72Hz_dsc_video
-		&dsi_boe_4k_80Hz_dsc_video
-		&dsi_boe_4k_90Hz_dsc_video
-		&dsi_boe_4k_120Hz_dsc_video
-		&dsi_jdi_nvt_4k_dsc_video
-		&dsi_jdi_nvt_4k_80Hz_dsc_video
-		&dsi_jdi_nvt_4k_90Hz_dsc_video
-		&dsi_jdi_nvt_4k_120Hz_dsc_video
-		&dsi_jdi_4k_dsc_video
-		&dsi_jdi_4k_80Hz_dsc_video
-		&dsi_jdi_4k_90Hz_dsc_video
-		&dsi_jdi_4k_120Hz_dsc_video
-		&dsi_sharp_4k_72Hz_dsc_video
-		&dsi_sharp_4k_90Hz_dsc_video
-		&dsi_sharp_4k_120Hz_dsc_video
-		&dsi_sharp_4k_72Hz_dsc_evt2_video
-		&dsi_sharp_4k_90Hz_dsc_evt2_video
-		&dsi_sharp_4k_120Hz_dsc_evt2_video
-		&dsi_sharp_4k_72Hz_dsc_dvt_video
-		&dsi_sharp_4k_90Hz_dsc_dvt_video
-		&dsi_sharp_4k_120Hz_dsc_dvt_video>;
+	panels = <&display_panels>;
+};
+
+&nsync {
+	panels = <&display_panels>;
 };
 
 &pm8150a_amoled {

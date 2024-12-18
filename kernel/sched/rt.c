@@ -28,12 +28,19 @@ unsigned int sysctl_sched_rt_preempt_lowest __read_mostly;
 #define SYSCTL_PROCESS_NAME_LEN (SYSCTL_THREAD_NAME_LEN * 2)
 #define SYSCTL_LIST_LEN ((SYSCTL_THREAD_NAME_LEN + sizeof(' ')) * 8)
 
+#ifdef CONFIG_PANIC_ON_RT_THROTTLING_DEFAULT_ON
+#define PANIC_ON_THROTTLE_DEFAULT 1U
+#else
+#define PANIC_ON_THROTTLE_DEFAULT 0U
+#endif
+
 static struct sysctl_rt_throttling_info {
 	unsigned int cpu_number;
 	unsigned long process_running_time_ns;
 	unsigned int pid;
 	unsigned int clear_data;
 	unsigned int data_latched;
+	unsigned int panic_on_throttle;
 	char thread_name[SYSCTL_THREAD_NAME_LEN];
 	char process_name[SYSCTL_PROCESS_NAME_LEN];
 	char process_list[SYSCTL_LIST_LEN];
@@ -46,6 +53,7 @@ static void reset_sysctl_to_defaults(void)
 	sysctl_rt_throttling_info.cpu_number = 0;
 	sysctl_rt_throttling_info.process_running_time_ns = 0;
 	sysctl_rt_throttling_info.pid = 0;
+	sysctl_rt_throttling_info.panic_on_throttle = PANIC_ON_THROTTLE_DEFAULT;
 	strcpy(sysctl_rt_throttling_info.thread_name, "");
 	strcpy(sysctl_rt_throttling_info.process_name, "");
 	strcpy(sysctl_rt_throttling_info.process_list, "");
@@ -132,6 +140,15 @@ struct ctl_table rt_table[] = {
 		.maxlen		= SYSCTL_LIST_LEN,
 		.mode		= 0444,
 		.proc_handler	= proc_dostring,
+	},
+	{
+		.procname	= "panic_on_throttle",
+		.data		= &sysctl_rt_throttling_info.panic_on_throttle,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0664,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE
 	},
 	{ }
 };
@@ -1057,11 +1074,44 @@ static inline int rt_se_prio(struct sched_rt_entity *rt_se)
 	return rt_task_of(rt_se)->prio;
 }
 
+#ifdef CONFIG_SCHED_INFO
+static int get_cmdline_nofault(struct task_struct *task, char *buffer, int buflen)
+{
+	int res = 0;
+	unsigned int len;
+	struct mm_struct *mm = get_task_mm(task);
+	unsigned long arg_start, arg_end;
+	if (!mm)
+		goto out;
+	if (!mm->arg_end)
+		goto out_mm;    /* Shh! No looking before we're done */
+
+	spin_lock(&mm->arg_lock);
+	arg_start = mm->arg_start;
+	arg_end = mm->arg_end;
+	spin_unlock(&mm->arg_lock);
+
+	len = arg_end - arg_start;
+
+	if (len > buflen)
+		len = buflen;
+
+	res = access_process_vm(task, arg_start, buffer, len, FOLL_FORCE | FOLL_NOFAULT);
+
+out_mm:
+	mmput(mm);
+out:
+	return res;
+}
+#endif
+
 static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 {
+	struct task_struct *curr = rq_of_rt_rq(rt_rq)->curr;
 	struct rt_prio_array *array = &rt_rq->active;
 	struct sched_rt_entity *rt_se;
 	char buf[500];
+	char blame_buf[128];
 	char *process_list;
 	char *pos = buf;
 	char *end = buf + sizeof(buf);
@@ -1077,7 +1127,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos,
 			"rt_period_timer: expires=%lld now=%llu rt_time=%llu runtime=%llu period=%llu\n",
 			hrtimer_get_expires_ns(&rt_b->rt_period_timer),
-			ktime_get_ns(), task_rq(current)->rt.rt_time, sched_rt_runtime(rt_rq),
+			ktime_get_ns(), rt_rq->rt_time, sched_rt_runtime(rt_rq),
 			sched_rt_period(rt_rq));
 
 	if (bitmap_empty(array->bitmap, MAX_RT_PRIO))
@@ -1086,13 +1136,19 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
 	if (sched_info_on()) {
-		struct task_struct *tgid_task = get_pid_task(find_vpid(current->tgid), PIDTYPE_PID);
+		struct task_struct *tgid_task = curr->tgid ?
+			get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID) : NULL;
 		if (tgid_task != NULL) {
 			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
 			if (tgid_comm) {
-				int res = get_cmdline(tgid_task, tgid_comm, PAGE_SIZE - 1);
-				tgid_comm[res] = '\0';
+				int res = get_cmdline_nofault(tgid_task, tgid_comm, PAGE_SIZE - 1);
+				if (res > 0) {
+					tgid_comm[res] = '\0';
+				} else {
+					strcpy(tgid_comm, "unavailable");
+				}
 			}
+			put_task_struct(tgid_task);
 		}
 
 		if (tgid_comm == NULL)
@@ -1100,10 +1156,10 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 
 		pos += snprintf(pos, end - pos,
 				"Thread %s (%d) Process %s (%d) is running for %llu nsec\n",
-				current->comm, current->pid,
-				tgid_comm,  current->tgid,
+				curr->comm, curr->pid,
+				tgid_comm, curr->tgid,
 				rq_clock(rq_of_rt_rq(rt_rq)) -
-				current->sched_info.last_arrival);
+				curr->sched_info.last_arrival);
 	}
 #endif
 	process_list = pos;
@@ -1133,11 +1189,11 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 
 		sysctl_rt_throttling_info.cpu_number = cpu_of(rq_of_rt_rq(rt_rq));
 		sysctl_rt_throttling_info.process_running_time_ns =
-			rq_clock(rq_of_rt_rq(rt_rq)) - current->sched_info.last_arrival;
-		sysctl_rt_throttling_info.pid = current->tgid;
+			rq_clock(rq_of_rt_rq(rt_rq)) - curr->sched_info.last_arrival;
+		sysctl_rt_throttling_info.pid = curr->tgid;
 
 		strscpy(sysctl_rt_throttling_info.thread_name,
-			current->comm, sizeof(sysctl_rt_throttling_info.thread_name));
+			curr->comm, sizeof(sysctl_rt_throttling_info.thread_name));
 
 		if (tgid_comm != NULL)
 			strscpy(sysctl_rt_throttling_info.process_name,
@@ -1151,19 +1207,27 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	}
 	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
+
+	/*
+	 * For lack of a better method to blame offending threads, at least
+	 * report which one triggered the throttling.
+	 */
+	snprintf(blame_buf, sizeof(blame_buf), "Throttling triggered by thread \"%s\" process \"%s\"",
+			curr->comm, tgid_comm ?: unknown_pid);
+
 	if (tgid_comm != NULL && tgid_comm != unknown_pid)
 		kfree(tgid_comm);
 out:
-#ifdef CONFIG_PANIC_ON_RT_THROTTLING
-	/*
-	 * Use pr_err() in the BUG() case since printk_sched() will
-	 * not get flushed and deadlock is not a concern.
-	 */
-	pr_err("%s\n", buf);
-	BUG();
-#else
+	if (sysctl_rt_throttling_info.panic_on_throttle) {
+		/*
+		 * Use pr_err() in the BUG() case since printk_sched() will
+		 * not get flushed and deadlock is not a concern.
+		 */
+		pr_err("%s\n", buf);
+		panic("%s\n", blame_buf);
+	}
 	printk_deferred("%s\n", buf);
-#endif
+	printk_deferred("%s\n", blame_buf);
 }
 
 static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)

@@ -122,6 +122,9 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	}
 
 	mutex_init(&devdata->state_mutex);
+	mutex_init(&devdata->write_mutex);
+	init_completion(&devdata->fw_update_validation_complete);
+	devdata->fw_update_validation_status = 0;
 
 	ret = of_property_read_string(node, "meta,swd-flavor", &swdflavor);
 	if (ret < 0) {

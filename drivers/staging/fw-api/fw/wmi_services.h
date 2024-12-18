@@ -666,6 +666,10 @@ typedef  enum  {
     WMI_SERVICE_EPM = 412, /* FW supports enhanced power management */
     WMI_SERVICE_CHIPSET_LOGGING_SUPPORT = 413, /* FW supports chipset logging feature */
     WMI_SERVICE_SUPPORT_AP_SUSPEND_RESUME = 414, /* FW supports SAP suspend feature */
+    WMI_SERVICE_STA_P2P_NDP_CONCURRENCY_SUPPORT = 415, /* FW supports STA + P2P + NAN concurrency */
+    WMI_SERVICE_USE_STA_VDEV_FOR_P2P_DEVICE = 416, /* FW supports use of sta vdev to be repurposed for p2p device */
+    WMI_SERVICE_AP_ASSISTED_DFS_CHAN_P2P_SESSION = 417, /* FW supports P2P session on DFS chan enabled by DFS master AP */
+    WMI_SERVICE_MLO_SAP_EMLSR_SUPPORT = 418, /* Indicates FW MLO SAP supports EMLSR Mode */
 
 
     WMI_MAX_EXT2_SERVICE

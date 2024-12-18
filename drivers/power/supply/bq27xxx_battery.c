@@ -157,7 +157,11 @@
 #define BQ27Z561_MAC_CMD_MS 0x0057		//ManufacturingStatus
 #define BQ27Z561_MAC_CMD_LDB1 0x0060		//Lifetime Data Block 1
 #define BQ27Z561_MAC_CMD_MI_A 0x0070		//Manufacture info A
-
+#define BQ27Z561_MAC_CMD_DASTATUS1 0x0071	//DAStatus 1
+#define BQ27Z561_MAC_CMD_DASTATUS2 0x0072	//DAStatus 2
+#define BQ27Z561_MAC_CMD_ITSTATUS1 0x0073	//ITStatus 1
+#define BQ27Z561_MAC_CMD_ITSTATUS2 0x0074	//ITStatus 2
+#define BQ27Z561_MAC_CMD_ITSTATUS3 0x0075	//ITStatus 3
 #define BQ27Z561_MAC_CMD_MI_B 0x007A		//Manufacture info B
 #define BQ27Z561_MAC_CMD_MI_C 0x007B		//Manufacture info C
 
@@ -168,6 +172,28 @@
 
 #define BQ27Z561_MAC_LEN	128
 #define BQ27Z561_SUB_LEN	4	//2-byte command, 1-byte checksum and 1-byte length
+
+/* [TI FG] MAC command definitions for read back data - bq27z561  */
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_LO 0
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_HI 1
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_LO 12
+#define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_HI 13
+
+#define BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_LO 18
+#define BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_HI 19
+
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO 10
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI 11
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_LO 12
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_HI 13
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_LO 14
+#define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_HI 15
+
+#define BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_LO 0
+#define BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_HI 1
+#define BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_LO 12
+#define BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_HI 13
+
 
 static const char * const bq27z561_sealed_status_str[] = {
 	"Reserved", "Full Access", "Unsealed", "Sealed"};
@@ -193,6 +219,8 @@ enum bq27xxx_reg_index {
 	BQ27XXX_REG_CYCT,	/* Cycle Count */
 	BQ27XXX_REG_AE,		/* Available Energy */
 	BQ27XXX_REG_SOC,	/* State-of-Charge */
+	BQ27XXX_REG_TSU,	/* TimeStamp Upper */
+	BQ27XXX_REG_TSL,	/* TimeStamp Lower */
 	BQ27XXX_REG_DCAP,	/* Design Capacity */
 	BQ27XXX_REG_AP,		/* Average Power */
 	BQ27XXX_DM_CTRL,	/* Block Data Control */
@@ -228,6 +256,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x0b,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x76,
 		[BQ27XXX_REG_AP] = 0x24,
 		[BQ27XXX_DM_CTRL] = INVALID_REG_ADDR,
@@ -252,6 +282,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x0b,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x76,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		[BQ27XXX_DM_CTRL] = INVALID_REG_ADDR,
@@ -276,6 +308,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		BQ27XXX_DM_REG_ROWS,
@@ -298,6 +332,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -320,6 +356,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x1e,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x20,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x2e,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		BQ27XXX_DM_REG_ROWS,
@@ -340,6 +378,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -360,6 +400,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -380,6 +422,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = 0x22,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -400,6 +444,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x1e,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x20,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		BQ27XXX_DM_REG_ROWS,
@@ -420,6 +466,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = INVALID_REG_ADDR,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = INVALID_REG_ADDR,
 		[BQ27XXX_DM_CTRL] = INVALID_REG_ADDR,
@@ -444,6 +492,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -465,6 +515,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x22,
 		BQ27XXX_DM_REG_ROWS,
@@ -472,7 +524,6 @@ static u8
 #define bq27542_regs bq27541_regs
 #define bq27546_regs bq27541_regs
 #define bq27742_regs bq27541_regs
-#define bq27z561_regs bq27541_regs
 	bq27545_regs[BQ27XXX_REG_MAX] = {
 		[BQ27XXX_REG_CTRL] = 0x00,
 		[BQ27XXX_REG_TEMP] = 0x06,
@@ -489,6 +540,8 @@ static u8
 		[BQ27XXX_REG_CYCT] = 0x2a,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AP] = 0x24,
 		BQ27XXX_DM_REG_ROWS,
@@ -509,14 +562,38 @@ static u8
 		[BQ27XXX_REG_CYCT] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_AE] = INVALID_REG_ADDR,
 		[BQ27XXX_REG_SOC] = 0x1c,
+		[BQ27XXX_REG_TSU] = INVALID_REG_ADDR, /* Update needed with correct address */
+		[BQ27XXX_REG_TSL] = INVALID_REG_ADDR, /* Update needed with correct address */
 		[BQ27XXX_REG_DCAP] = 0x3c,
 		[BQ27XXX_REG_AP] = 0x18,
 		BQ27XXX_DM_REG_ROWS,
-	};
+	},
 #define bq27425_regs bq27421_regs
 #define bq27426_regs bq27421_regs
 #define bq27441_regs bq27421_regs
 #define bq27621_regs bq27421_regs
+	bq27z561_regs[BQ27XXX_REG_MAX] = {
+		[BQ27XXX_REG_CTRL] = 0x00,
+		[BQ27XXX_REG_TEMP] = 0x06,
+		[BQ27XXX_REG_INT_TEMP] = INVALID_REG_ADDR,
+		[BQ27XXX_REG_VOLT] = 0x08,
+		[BQ27XXX_REG_AI] = 0x14,
+		[BQ27XXX_REG_FLAGS] = 0x0a,
+		[BQ27XXX_REG_TTE] = 0x16,
+		[BQ27XXX_REG_TTF] = 0x18,
+		[BQ27XXX_REG_TTES] = INVALID_REG_ADDR,
+		[BQ27XXX_REG_TTECP] = INVALID_REG_ADDR,
+		[BQ27XXX_REG_NAC] = INVALID_REG_ADDR,
+		[BQ27XXX_REG_FCC] = 0x12,
+		[BQ27XXX_REG_CYCT] = 0x2a,
+		[BQ27XXX_REG_AE] = 0x22,
+		[BQ27XXX_REG_SOC] = 0x2c,
+		[BQ27XXX_REG_TSU] = 0x36,
+		[BQ27XXX_REG_TSL] = 0x38,
+		[BQ27XXX_REG_DCAP] = 0x3c,
+		[BQ27XXX_REG_AP] = 0x22,
+		BQ27XXX_DM_REG_ROWS,
+	};
 
 static enum power_supply_property bq27000_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
@@ -1026,6 +1103,16 @@ enum {
 	MFG_INFO_A,
 	MFG_INFO_B,
 	MFG_INFO_C,
+	BQ_TIMESTAMP,
+	DOD0_0,
+	DOD0_PASSEDQ,
+	DOD0_PASSEDE,
+	QMAX0_0,
+	RAW_DOD0,
+	CELL1_COMPRES,
+	CELL1_VOLTAGE,
+	CELL1_CURRENT,
+	GAUGING_STATUS_FC,
 };
 
 /**
@@ -2381,6 +2468,20 @@ static int bq27z561_get_soh(struct bq27xxx_device_info *di,
 	return 0;
 }
 
+static int bq27xxx_get_bqtimestamp(struct bq27xxx_device_info *di)
+{
+	int reg_data = 0, reg_data_u, reg_data_l;
+
+	reg_data_u = bq27xxx_read(di, BQ27XXX_REG_TSU, false);
+	reg_data_l = bq27xxx_read(di, BQ27XXX_REG_TSL, false);
+	if (reg_data_u < 0 || reg_data_l < 0)
+		dev_err(di->dev, "get bqtimestamp error\n");
+	else
+		reg_data = (((u32) reg_data_l << 16) | ((u32) reg_data_u & 0xFFFF));
+
+	return reg_data;
+}
+
 static int bq27z561_get_inter_temp(struct bq27xxx_device_info *di,
 				union power_supply_propval *val)
 {
@@ -2688,6 +2789,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 	u32 val2 = attr->val2;
 	char mac_buf[40];
 	char tmp_str[5];
+	s16 stemp;
+	s32 itemp;
 
 	switch (id) {
 	case ADDRESS:
@@ -2858,6 +2961,74 @@ static ssize_t bq27xxx_show(struct device *dev,
 		}
 		buf[write_count] = '\0';
 		strlcat(buf, "\n", PAGE_SIZE);
+		break;
+	case BQ_TIMESTAMP:
+		val = bq27xxx_get_bqtimestamp(di);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case DOD0_0:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
+			mac_buf, sizeof(mac_buf));
+		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI]  << 8);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case DOD0_PASSEDQ:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
+		break;
+	case DOD0_PASSEDE:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
+		break;
+	case QMAX0_0:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS3,
+			mac_buf, sizeof(mac_buf));
+		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_HI]  << 8);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case RAW_DOD0:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS3,
+			mac_buf, sizeof(mac_buf));
+		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_HI]  << 8);
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case CELL1_COMPRES:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS1,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
+		break;
+	case CELL1_VOLTAGE:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_DASTATUS1,
+			mac_buf, sizeof(mac_buf));
+		val = (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_LO] | (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_HI]  << 8)) * 1000;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		break;
+	case CELL1_CURRENT:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_DASTATUS1,
+			mac_buf, sizeof(mac_buf));
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_LO] | (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_HI]  << 8));
+		itemp = (s32)stemp * 1000;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", itemp);
+		break;
+	case GAUGING_STATUS_FC:
+		memset(mac_buf, '\0', sizeof(mac_buf));
+		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_GS,
+			mac_buf, sizeof(mac_buf));
+		val = (mac_buf[0] & 0x02) ? 1 : 0;
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
 		break;
 	}
 
@@ -3076,6 +3247,26 @@ static BQ27XXX_ATTR(manufacturer_info_b, 0444,
 			bq27xxx_show, NULL, MFG_INFO_B, 0, 0);
 static BQ27XXX_ATTR(manufacturer_info_c, 0444,
 			bq27xxx_show, NULL, MFG_INFO_C, 0, 0);
+static BQ27XXX_ATTR(bq_timestamp, 0444,
+			bq27xxx_show, NULL, BQ_TIMESTAMP, 0, 0);
+static BQ27XXX_ATTR(dod0_0, 0444,
+			bq27xxx_show, NULL, DOD0_0, 0, 0);
+static BQ27XXX_ATTR(dod0_passedq, 0444,
+			bq27xxx_show, NULL, DOD0_PASSEDQ, 0, 0);
+static BQ27XXX_ATTR(dod0_passede, 0444,
+			bq27xxx_show, NULL, DOD0_PASSEDE, 0, 0);
+static BQ27XXX_ATTR(qmax, 0444,
+			bq27xxx_show, NULL, QMAX0_0, 0, 0);
+static BQ27XXX_ATTR(raw_dod0, 0444,
+			bq27xxx_show, NULL, RAW_DOD0, 0, 0);
+static BQ27XXX_ATTR(compres, 0444,
+			bq27xxx_show, NULL, CELL1_COMPRES, 0, 0);
+static BQ27XXX_ATTR(voltage_simul, 0444,
+			bq27xxx_show, NULL, CELL1_VOLTAGE, 0, 0);
+static BQ27XXX_ATTR(current_simul, 0444,
+			bq27xxx_show, NULL, CELL1_CURRENT, 0, 0);
+static BQ27XXX_ATTR(gauging_status_fc, 0444,
+			bq27xxx_show, NULL, GAUGING_STATUS_FC, 0, 0);
 
 static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_address.dattr.attr,
@@ -3184,6 +3375,16 @@ static struct attribute *bq27xxx_attrs[] = {
 	&bq27xxx_attr_manufacturer_info_a.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_b.dattr.attr,
 	&bq27xxx_attr_manufacturer_info_c.dattr.attr,
+	&bq27xxx_attr_bq_timestamp.dattr.attr,
+	&bq27xxx_attr_dod0_0.dattr.attr,
+	&bq27xxx_attr_dod0_passedq.dattr.attr,
+	&bq27xxx_attr_dod0_passede.dattr.attr,
+	&bq27xxx_attr_qmax.dattr.attr,
+	&bq27xxx_attr_raw_dod0.dattr.attr,
+	&bq27xxx_attr_compres.dattr.attr,
+	&bq27xxx_attr_voltage_simul.dattr.attr,
+	&bq27xxx_attr_current_simul.dattr.attr,
+	&bq27xxx_attr_gauging_status_fc.dattr.attr,
 	NULL
 };
 

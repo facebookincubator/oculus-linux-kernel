@@ -53,7 +53,7 @@ static int syncboss_directchannel_open(struct inode *inode, struct file *f)
 	return 0;
 }
 
-static void syncboss_client_entry_release(struct kref *client_entry_kref)
+static void syncboss_devfs_client_entry_release(struct kref *client_entry_kref)
 {
 	struct channel_client_entry *client_data = container_of(
 		client_entry_kref, struct channel_client_entry, kref);
@@ -62,7 +62,7 @@ static void syncboss_client_entry_release(struct kref *client_entry_kref)
 	devm_kfree(dev, client_data);
 }
 
-static void syncboss_client_entry_cleanup(struct channel_client_entry *client_data)
+static void syncboss_devfs_client_entry_cleanup(struct channel_client_entry *client_data)
 {
 	struct syncboss_dma_fence *active_fence = NULL;
 	struct channel_dma_buf_info *c_dma_buf_info;
@@ -90,7 +90,7 @@ static void syncboss_client_entry_cleanup(struct channel_client_entry *client_da
 	dma_resv_unlock(c_dma_buf->resv);
 	dma_buf_put(c_dma_buf); /* decrement ref count */
 
-	kref_put(&client_data->kref, syncboss_client_entry_release);
+	kref_put(&client_data->kref, syncboss_devfs_client_entry_release);
 }
 
 static int syncboss_directchannel_release(struct inode *inode, struct file *f)
@@ -121,7 +121,7 @@ static int syncboss_directchannel_release(struct inode *inode, struct file *f)
 				continue;
 
 			list_del(&client_data->list_entry);
-			syncboss_client_entry_cleanup(client_data);
+			syncboss_devfs_client_entry_cleanup(client_data);
 
 			if (list_empty(client_list)) {
 				devdata->direct_channel_data[i] = NULL;
@@ -253,7 +253,7 @@ static void syncboss_fence_free_rcu(struct rcu_head *head)
 	struct dma_fence *fence = container_of(head, struct dma_fence, rcu);
 	struct syncboss_dma_fence *sb_fence = container_of(fence, struct syncboss_dma_fence, fence);
 
-	kref_put(&sb_fence->client->kref, syncboss_client_entry_release);
+	kref_put(&sb_fence->client->kref, syncboss_devfs_client_entry_release);
 	kmem_cache_free(syncboss_dma_fence_cache, sb_fence);
 	atomic_dec(&syncboss_directchannel_allocd_fences);
 }
@@ -780,7 +780,7 @@ static int syncboss_clear_directchannel_sm(
 		status = 0;
 
 		list_del(&client_data->list_entry);
-		syncboss_client_entry_cleanup(client_data);
+		syncboss_devfs_client_entry_cleanup(client_data);
 
 		if (list_empty(client_list)) {
 			devdata->direct_channel_data[new_config->uapi_pkt_type] = NULL;

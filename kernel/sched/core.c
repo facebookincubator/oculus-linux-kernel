@@ -12,6 +12,7 @@
 #include <linux/kcov.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
+#include <linux/orchestrator.h>
 #include <linux/scs.h>
 
 #include <asm/switch_to.h>
@@ -5024,6 +5025,14 @@ recheck:
 		if (retval)
 			return retval;
 	}
+
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+	if (!(p->flags & PF_KTHREAD)) {
+		retval = orchestrator_task_setscheduler(p, attr);
+		if (retval)
+			return retval;
+	}
+#endif
 
 	/* Update task specific "requested" clamps */
 	if (attr->sched_flags & SCHED_FLAG_UTIL_CLAMP) {
