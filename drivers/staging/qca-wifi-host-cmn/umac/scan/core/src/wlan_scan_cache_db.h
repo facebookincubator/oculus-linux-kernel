@@ -377,4 +377,19 @@ scm_get_mld_addr_by_link_addr(struct wlan_objmgr_pdev *pdev,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
+#ifdef CONFIG_BAND_6GHZ
+/**
+ * util_scan_get_he_6g_params() - Function provides HE 6GHz params from HE ops
+ * @he_ops: HE ops
+ *
+ * Return: HE 6GHz params
+ */
+struct he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops);
+#else
+static inline struct
+he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops)
+{
+ return NULL;
+}
+#endif
 #endif

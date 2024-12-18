@@ -27,7 +27,6 @@
 /delete-node/ &fancontroller;
 /delete-node/ &msm_sdexpress;
 /delete-node/ &pcie1;
-/delete-node/ &pcie2;
 /delete-node/ &pm8010_m;
 /delete-node/ &pm8010_n;
 
@@ -495,7 +494,6 @@
 	qcom,gpios-reserved = <54 55 115 136>;
 
 	/delete-node/ pcie1;
-	/delete-node/ pcie2;
 
 	fan_tach_default: fan_tach_default {
 		mux {

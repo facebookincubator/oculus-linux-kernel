@@ -4958,7 +4958,7 @@ static int __hdd_open(struct net_device *dev)
 
 	ret = hdd_trigger_psoc_idle_restart(hdd_ctx);
 	if (ret) {
-		hdd_err("Failed to start WLAN modules return");
+		hdd_err("Failed to start WLAN modules return: %d", ret);
 		return ret;
 	}
 

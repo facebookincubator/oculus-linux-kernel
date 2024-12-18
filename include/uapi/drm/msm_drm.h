@@ -333,10 +333,10 @@ struct drm_msm_vsync_trigger {
 };
 /**
  * struct drm_msm_backlight_scale: Payload for brightness scalar control
- * @scale_percent_value:  brightness scalar value in percentage.
+ * @scale_value:  brightness scalar value in [0 - 65535].
  */
 struct drm_msm_backlight_scale {
-	__u32 bl_scale_percent_value;
+	__u32 bl_scale_value;
 };
 /**
  * struct drm_msm_display_cac: Control DDIC CAC
@@ -344,6 +344,14 @@ struct drm_msm_backlight_scale {
  */
 struct drm_msm_display_cac {
 	__u32 flags;
+};
+
+/**
+ * struct drm_msm_settle_time_scale: Apply settle time scaling factor
+ * @settle_time_scale_factor: scaling factor, in 1/10000 increments.
+ */
+struct drm_msm_settle_time_scale {
+	__u32 settle_time_scale_factor;
 };
 
 #define DRM_MSM_GET_PARAM              0x00
@@ -366,6 +374,7 @@ struct drm_msm_display_cac {
 #define DRM_MSM_VSYNC_TRIGGER          0x0D
 #define DRM_MSM_BACKLIGHT_SCALE        0x0E
 #define DRM_MSM_DISPLAY_CAC            0x0F
+#define DRM_MSM_SETTLE_TIME_SCALE      0x10
 
 #define DRM_IOCTL_MSM_GET_PARAM        DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_GET_PARAM, struct drm_msm_param)
 #define DRM_IOCTL_MSM_GEM_NEW          DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_GEM_NEW, struct drm_msm_gem_new)
@@ -378,9 +387,10 @@ struct drm_msm_display_cac {
 #define DRM_IOCTL_MSM_SUBMITQUEUE_NEW    DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_SUBMITQUEUE_NEW, struct drm_msm_submitqueue)
 #define DRM_IOCTL_MSM_SUBMITQUEUE_CLOSE  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_SUBMITQUEUE_CLOSE, __u32)
 #define DRM_IOCTL_MSM_SUBMITQUEUE_QUERY  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_SUBMITQUEUE_QUERY, struct drm_msm_submitqueue_query)
-#define DRM_IOCTL_MSM_VSYNC_TRIGGER    DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_VSYNC_TRIGGER, struct drm_msm_vsync_trigger)
-#define DRM_IOCTL_MSM_BACKLIGHT_SCALE     DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_BACKLIGHT_SCALE,  struct drm_msm_backlight_scale)
-#define DRM_IOCTL_MSM_DISPLAY_CAC     DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DISPLAY_CAC,  struct drm_msm_display_cac)
+#define DRM_IOCTL_MSM_VSYNC_TRIGGER      DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_VSYNC_TRIGGER, struct drm_msm_vsync_trigger)
+#define DRM_IOCTL_MSM_BACKLIGHT_SCALE    DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_BACKLIGHT_SCALE, struct drm_msm_backlight_scale)
+#define DRM_IOCTL_MSM_DISPLAY_CAC        DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DISPLAY_CAC, struct drm_msm_display_cac)
+#define DRM_IOCTL_MSM_SETTLE_TIME_SCALE  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_SETTLE_TIME_SCALE, struct drm_msm_settle_time_scale)
 
 #if defined(__cplusplus)
 }

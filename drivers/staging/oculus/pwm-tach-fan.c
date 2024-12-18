@@ -228,7 +228,7 @@ static int set_pwm_locked(struct pwm_fan_ctx *ctx, int32_t pwm)
 	int32_t period;
 	ssize_t ret = 0;
 
-	if (ctx->pwm_value == pwm)
+	if (ctx->pwm_value == pwm && !ctx->fan_stalled)
 		return ret;
 
 	if (pwm == 0) {
@@ -883,9 +883,22 @@ static int pwm_fan_of_get_cooling_data(struct device *dev,
 }
 
 #if IS_ENABLED(CONFIG_DRM)
-static int count_panels(struct device_node *np)
+static int count_panels(struct device_node *np, const char **panels_prop_name)
 {
-	return of_count_phandle_with_args(np, "panel", NULL);
+	const char *prop_name = "panels";
+
+	/*
+	 * TODO (T204416818): Remove support for deprecated dts definitions
+	 *
+	 * For now lets support both the old and the new dts nodes. Once all
+	 * platforms have moved to the new model, we can get rid of this.
+	 */
+	if (!of_property_read_bool(np, prop_name))
+		prop_name = "panel";
+
+	if (panels_prop_name)
+		*panels_prop_name = prop_name;
+	return of_count_phandle_with_args(np, prop_name, NULL);
 }
 
 #if !IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
@@ -894,13 +907,14 @@ static struct drm_panel *pwm_fan_get_active_panel(struct device_node *np)
 	int i, count;
 	struct device_node *node;
 	struct drm_panel *panel;
+	const char *panels_prop_name = NULL;
 
-	count = count_panels(np);
+	count = count_panels(np, &panels_prop_name);
 	if (count <= 0)
 		return NULL;
 
 	for (i = 0; i < count; i++) {
-		node = of_parse_phandle(np, "panel", i);
+		node = of_parse_phandle(np, panels_prop_name, i);
 		panel = of_drm_find_panel(node);
 		of_node_put(node);
 		if (!IS_ERR(panel))
@@ -920,25 +934,36 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	int ret;
 	u32 dt_addr;
 	ktime_t now;
-
 #if IS_ENABLED(CONFIG_DRM)
+	struct device_node *panels_np = NULL;
+	struct device_node *np = pdev->dev.of_node;
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 	void *cookie;
-#else /* !CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
+#else
 	struct drm_panel *panel;
+#endif /* CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
+#endif /* CONFIG_DRM */
 
-	panel = pwm_fan_get_active_panel(pdev->dev.of_node);
+#if IS_ENABLED(CONFIG_DRM)
+	panels_np = of_parse_phandle(np, "panels", 0);
+	if (panels_np)
+		np = panels_np;
+#if !IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+	panel = pwm_fan_get_active_panel(np);
 	if (IS_ERR(panel)) {
 		dev_warn(&pdev->dev, "No active panel, deferring probe");
-		return -EPROBE_DEFER;
+		ret = -EPROBE_DEFER;
+		goto err_exit;
 	}
 #endif /* CONFIG_QCOM_PANEL_EVENT_NOTIFIER */
 #endif /* CONFIG_DRM */
 	dev_dbg(&pdev->dev, "enter pwm fan probe\n");
 
 	ctx = devm_kzalloc(&pdev->dev, sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
+	if (!ctx) {
+		ret = -ENOMEM;
+		goto err_exit;
+	}
 
 	ctx->vdd_supply = devm_regulator_get(&pdev->dev, "vdd");
 	if (IS_ERR(ctx->vdd_supply)) {
@@ -947,7 +972,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	}
 
 #if IS_ENABLED(CONFIG_DRM)
-	ctx->use_panel_notifiers = (count_panels(pdev->dev.of_node) > 0);
+	ctx->use_panel_notifiers = (count_panels(np, NULL) > 0);
 #if !IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 	ctx->active_panel = panel;
 #endif
@@ -957,7 +982,8 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	if (!ctx->wq) {
 		dev_err(&pdev->dev, "%s: could not create workqueue\n",
 				__func__);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto err_exit;
 	}
 
 	INIT_WORK(&ctx->fan_work, fan_work_func);
@@ -1072,7 +1098,9 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_tach_gpio_dir;
 
-	ctx->pwm_fan_state = ctx->pwm_fan_max_state;
+	// During probe, set the default state to 0 so that any non-zero vote is honored.
+	ctx->pwm_fan_state = 0;
+
 	if (IS_ENABLED(CONFIG_THERMAL)) {
 		char cdev_name[THERMAL_NAME_LENGTH] = "";
 
@@ -1096,6 +1124,11 @@ static int pwm_fan_probe(struct platform_device *pdev)
 err_tach_gpio_dir:
 	if (!IS_ERR(ctx->pwm))
 		pwm_disable(ctx->pwm);
+err_exit:
+#if IS_ENABLED(CONFIG_DRM)
+	if (panels_np)
+		of_node_put(panels_np);
+#endif // CONFIG_DRM
 	return ret;
 }
 

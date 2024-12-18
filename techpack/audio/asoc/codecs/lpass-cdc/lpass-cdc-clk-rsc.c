@@ -138,7 +138,6 @@ int lpass_cdc_rsc_clk_reset(struct device *dev, int clk_id)
 	dev_dbg(priv->dev,
 		"%s: clock reset after ssr, count %d\n", __func__, count);
 
-	trace_printk("%s: clock reset after ssr, count %d\n", __func__, count);
 	while (count--) {
 		clk_prepare_enable(priv->clk[clk_id]);
 	}
@@ -257,7 +256,7 @@ static int lpass_cdc_clk_rsc_mux1_clk_request(struct lpass_cdc_clk_rsc *priv,
 				if (priv->dev_up_gfmux) {
 					iowrite32(0x1, clk_muxsel);
 					muxsel = ioread32(clk_muxsel);
-					trace_printk("%s: muxsel value after enable: %d\n",
+					pr_debug("%s: muxsel value after enable: %d\n",
 							__func__, muxsel);
 				}
 				lpass_cdc_clk_rsc_mux0_clk_request(priv, default_clk_id,
@@ -287,7 +286,7 @@ static int lpass_cdc_clk_rsc_mux1_clk_request(struct lpass_cdc_clk_rsc *priv,
 				if (!ret && priv->dev_up_gfmux) {
 					iowrite32(0x0, clk_muxsel);
 					muxsel = ioread32(clk_muxsel);
-					trace_printk("%s: muxsel value after disable: %d\n",
+					pr_debug("%s: muxsel value after disable: %d\n",
 						__func__, muxsel);
 				}
 			}
@@ -502,7 +501,7 @@ int lpass_cdc_clk_rsc_request_clock(struct device *dev,
 	if (!priv->dev_up && enable) {
 		dev_err_ratelimited(priv->dev, "%s: SSR is in progress..\n",
 				__func__);
-		trace_printk("%s: SSR is in progress..\n", __func__);
+		pr_debug("%s: SSR is in progress..\n", __func__);
 		ret = -EINVAL;
 		goto err;
 	}
@@ -530,9 +529,6 @@ int lpass_cdc_clk_rsc_request_clock(struct device *dev,
 		goto err;
 
 	dev_dbg(priv->dev, "%s: clk_cnt: %d for requested clk: %d, enable: %d\n",
-		__func__,  priv->clk_cnt[clk_id_req], clk_id_req,
-		enable);
-	trace_printk("%s: clk_cnt: %d for requested clk: %d, enable: %d\n",
 		__func__,  priv->clk_cnt[clk_id_req], clk_id_req,
 		enable);
 

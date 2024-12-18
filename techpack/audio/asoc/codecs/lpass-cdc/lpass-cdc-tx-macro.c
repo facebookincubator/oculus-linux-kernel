@@ -330,7 +330,7 @@ static int lpass_cdc_tx_macro_event_handler(struct snd_soc_component *component,
 
 	switch (event) {
 	case LPASS_CDC_MACRO_EVT_SSR_DOWN:
-		trace_printk("%s, enter SSR down\n", __func__);
+		pr_debug("%s, enter SSR down\n", __func__);
 		if ((!pm_runtime_enabled(tx_dev) ||
 		     !pm_runtime_suspended(tx_dev))) {
 			ret = lpass_cdc_runtime_suspend(tx_dev);
@@ -342,7 +342,7 @@ static int lpass_cdc_tx_macro_event_handler(struct snd_soc_component *component,
 		}
 		break;
 	case LPASS_CDC_MACRO_EVT_SSR_UP:
-		trace_printk("%s, enter SSR up\n", __func__);
+		pr_debug("%s, enter SSR up\n", __func__);
 		break;
 	case LPASS_CDC_MACRO_EVT_CLK_RESET:
 		lpass_cdc_rsc_clk_reset(tx_dev, TX_CORE_CLK);

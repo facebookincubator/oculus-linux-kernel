@@ -1012,7 +1012,7 @@ static int wsa_macro_event_handler(struct snd_soc_component *component,
 
 	switch (event) {
 	case BOLERO_MACRO_EVT_SSR_DOWN:
-		trace_printk("%s, enter SSR down\n", __func__);
+		pr_debug("%s, enter SSR down\n", __func__);
 		if (wsa_priv->swr_ctrl_data) {
 			swrm_wcd_notify(
 				wsa_priv->swr_ctrl_data[0].wsa_swr_pdev,
@@ -1045,7 +1045,7 @@ static int wsa_macro_event_handler(struct snd_soc_component *component,
 		wsa_macro_core_vote(wsa_priv, false);
 		break;
 	case BOLERO_MACRO_EVT_SSR_UP:
-		trace_printk("%s, enter SSR up\n", __func__);
+		pr_debug("%s, enter SSR up\n", __func__);
 		/* reset swr after ssr/pdr */
 		wsa_priv->reset_swr = true;
 		if (wsa_priv->swr_ctrl_data)
@@ -2920,9 +2920,6 @@ static int wsa_swrm_clock(void *handle, bool enable)
 
 	mutex_lock(&wsa_priv->swr_clk_lock);
 
-	trace_printk("%s: %s swrm clock %s\n",
-		dev_name(wsa_priv->dev), __func__,
-		(enable ? "enable" : "disable"));
 	dev_dbg(wsa_priv->dev, "%s: swrm clock %s\n",
 		__func__, (enable ? "enable" : "disable"));
 	if (enable) {
@@ -2988,7 +2985,7 @@ static int wsa_swrm_clock(void *handle, bool enable)
 			}
 		}
 	}
-	trace_printk("%s: %s swrm clock users: %d\n",
+	pr_debug("%s: %s swrm clock users: %d\n",
 		dev_name(wsa_priv->dev), __func__,
 		wsa_priv->swr_clk_users);
 	dev_dbg(wsa_priv->dev, "%s: swrm clock users %d\n",

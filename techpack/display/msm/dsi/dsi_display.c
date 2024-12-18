@@ -5262,8 +5262,10 @@ static int dsi_display_dfps_update(struct dsi_display *display,
 	 */
 	panel_mode->dsi_mode_flags = 0;
 	/* Resetting the brightness here for pwm driven backlights*/
+	dsi_panel_acquire_panel_lock(display->panel);
 	dsi_panel_set_backlight(display->panel,
 		display->panel->bl_config.bl_level);
+	dsi_panel_release_panel_lock(display->panel);
 
 error:
 	SDE_EVT32(SDE_EVTLOG_FUNC_EXIT);

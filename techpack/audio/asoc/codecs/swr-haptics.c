@@ -664,7 +664,7 @@ static int swr_haptics_suspend(struct device *dev)
 		dev_err(dev, "%s: no data for swr_hap\n", __func__);
 		return -ENODEV;
 	}
-	trace_printk("%s: suspended\n", __func__);
+	pr_debug("%s: suspended\n", __func__);
 
 	return rc;
 }
@@ -679,7 +679,7 @@ static int swr_haptics_resume(struct device *dev)
 		dev_err(dev, "%s: no data for swr_hap\n", __func__);
 		return -ENODEV;
 	}
-	trace_printk("%s: resumed\n", __func__);
+	pr_debug("%s: resumed\n", __func__);
 
 	return rc;
 }

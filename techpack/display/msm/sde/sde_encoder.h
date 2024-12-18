@@ -272,6 +272,9 @@ struct sde_encoder_virt {
 	bool delay_kickoff;
 	bool autorefresh_solver_disable;
 	bool dpu_ctl_op_sync;
+
+	struct device *sysfs_dev;
+	u32 missed_event_count[MSM_ENC_WAIT_MAX];
 };
 
 #define to_sde_encoder_virt(x) container_of(x, struct sde_encoder_virt, base)

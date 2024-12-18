@@ -998,42 +998,6 @@ int cam_isp_ul_parse_io_config(struct cam_isp_ctx_ul_data *ul_data,
 			ul_data->resource_data[j].buf_count++;
 			break;
 		}
-		if (io_cfg[i].resource_type == primary_res_id && !ul_data->primary_port_data.is_valid) {
-			ul_data->primary_port_data.resource_type = primary_res_id;
-			wm_update.en_virtual_frame = true;
-			update_buf.cmd.cmd_buf_addr = kmd_buf_info->cpu_addr +
-				kmd_buf_info->used_bytes/4;
-			if (kmd_buf_info->used_bytes < kmd_buf_info->size) {
-				kmd_buf_remain_size = kmd_buf_info->size -
-					kmd_buf_info->used_bytes ;
-			} else {
-				CAM_ERR(CAM_ISP, "no free kmd memory for base");
-				rc = -ENOMEM;
-				return rc;
-			}
-			update_buf.cmd.size = kmd_buf_remain_size;
-			rc = res->hw_intf->hw_ops.process_cmd(
-				res->hw_intf->hw_priv,
-				CAM_ISP_HW_CMD_GET_BUF_UPDATE, &update_buf,
-				sizeof(struct cam_isp_hw_get_cmd_update));
-
-			if (rc) {
-				CAM_ERR(CAM_ISP, "get buf cmd error:%d for primary virtual",
-					res->res_id);
-				rc = -ENOMEM;
-				return rc;
-			}
-			hw_update_entry = &ul_data->primary_port_data.hw_update_entries;
-			hw_update_entry->handle = kmd_buf_info->handle;
-			hw_update_entry->offset = kmd_buf_info->offset;
-			hw_update_entry->len    = update_buf.cmd.used_bytes;
-			hw_update_entry->flags = CAM_ISP_IOCFG_BL;
-
-			kmd_buf_info->used_bytes += update_buf.cmd.used_bytes;
-			kmd_buf_info->offset     += update_buf.cmd.used_bytes;
-
-			ul_data->primary_port_data.is_valid = true;
-		}
 	}
 	return rc;
 }

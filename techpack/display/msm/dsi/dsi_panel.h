@@ -29,7 +29,7 @@
 #define MAX_SV_BL_SCALE_LEVEL 65535
 #define SV_BL_SCALE_CAP (MAX_SV_BL_SCALE_LEVEL * 4)
 #define DSI_CMD_PPS_SIZE 135
-#define MAX_BL_SCALE_LEVEL_BRIGHTNESS 100
+#define MAX_BL_SCALE_LEVEL_BRIGHTNESS 65535
 #define MAX_DSI_CTRLS_PER_PANEL 2
 
 #define DSI_CMD_PPS_HDR_SIZE 7
@@ -168,6 +168,7 @@ struct dsi_backlight_config {
 	u32 bl_scale;
 	u32 bl_scale_sv;
 	u32 bl_scale_brightness;
+	u32 bl_scale_settle_time;
 	u32 bl_dcs_subtype;
 	bool bl_inverted_dbv;
 	u32 backlight_changes_blocked;

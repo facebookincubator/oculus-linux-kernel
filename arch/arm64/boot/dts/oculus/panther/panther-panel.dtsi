@@ -2,264 +2,32 @@
 
 #include <dt-bindings/clock/qcom,dispcc-anorak.h>
 
-#include "panther-dsi-panel-boe-dsc-4k-90Hz-video.dtsi"
-#include "panther-dsi-panel-boe-eos-dsc-4k-90Hz-video.dtsi"
-#include "panther-dsi-panel-jdi-nvt-dsc-4k-90Hz-video.dtsi"
-#include "panther-dsi-panel-sharp-dsc-4k-90Hz-video.dtsi"
-#include "panther-dsi-panel-sharp-dsc-4k-90Hz-evt2-video.dtsi"
-#include "panther-dsi-panel-sharp-dsc-4k-90Hz-dvt-video.dtsi"
-#include "panther-dsi-panel-sharp-eos-dsc-4k-90Hz-video.dtsi"
-
 #include "panther-panel-boe.dtsi"
 #include "panther-panel-boe-eos.dtsi"
 #include "panther-panel-jdi-nvt.dtsi"
 #include "panther-panel-sharp.dtsi"
 #include "panther-panel-sharp-eos.dtsi"
 
+&vendor {
+	display_panels: display_panels {
+		panels = <&panther_panel_boe
+			&panther_panel_boe_eos
+			&panther_panel_jdi_nvt
+			&panther_panel_sharp
+			&panther_panel_sharp_eos>;
+	};
+};
+
 &fan {
-	panel = <&dsi_boe_4k_90Hz_dsc_video
-		&dsi_boe_eos_4k_90Hz_dsc_video
-		&dsi_jdi_nvt_4k_90Hz_dsc_video
-		&dsi_sharp_4k_90Hz_dsc_video
-		&dsi_sharp_4k_90Hz_dsc_evt2_video
-		&dsi_sharp_4k_90Hz_dsc_dvt_video
-		&dsi_sharp_eos_4k_90Hz_dsc_video
-		&panther_panel_boe
-		&panther_panel_boe_eos
-		&panther_panel_jdi_nvt
-		&panther_panel_sharp
-		&panther_panel_sharp_eos>;
+	panels = <&display_panels>;
+};
+
+&nsync {
+	panels = <&display_panels>;
 };
 
 &mdss_mdp0 {
 	qcom,sde-lineptr-scanline-advance = <16>;
-};
-
-&dsi_boe_4k_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
-	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	meta,max-blu-pulse-overlap-us = <4591>;
-	meta,max-blu-stereo-offset-us = <2300>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x20>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	qcom,esd-check-enabled;
-	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
-	meta,esd-check-max-refresh-rate = <90>;
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve =
-		<25000 4500>,
-		<35000 3500>,
-		<45000 2500>,
-		<55000 2000>;
-	meta,thermal-zone = "disp-virt";
-	meta,ddic-family = "ddic_family_stark";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
-&dsi_jdi_nvt_4k_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_jdi_nvt";//TODO
-	meta,blu-default-duty-cycle = <100>; /* 10.0% duty */
-	meta,max-blu-pulse-overlap-us = <4591>;
-	meta,max-blu-stereo-offset-us = <2300>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve =
-		<25000 4500>,
-		<35000 3300>,
-		<45000 2300>,
-		<55000 1800>;
-	meta,thermal-zone = "disp-virt";
-	meta,ddic-family = "ddic_family_nvt";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
-		};
-	};
-};
-
-&dsi_sharp_4k_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
-	meta,blu-default-duty-cycle = <108>; /* 10.8% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <1200>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
-&dsi_sharp_4k_90Hz_dsc_evt2_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
-	meta,blu-default-duty-cycle = <78>; /* 7.8% duty */
-	qcom,mdss-dsi-default-max-scanline-offset = <1200>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
-&dsi_sharp_4k_90Hz_dsc_dvt_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
-	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	meta,max-blu-pulse-overlap-us = <4591>;
-	meta,max-blu-stereo-offset-us = <2300>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	qcom,esd-check-enabled;
-	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
-	meta,esd-check-max-refresh-rate = <90>;
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve =
-		<25000 4500>,
-		<35000 3300>,
-		<45000 2300>,
-		<55000 1800>;
-	meta,thermal-zone = "disp-virt";
-	meta,ddic-family = "ddic_family_stark";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
-&dsi_boe_eos_4k_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
-	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	meta,max-blu-pulse-overlap-us = <4591>;
-	meta,max-blu-stereo-offset-us = <2300>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x20>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve =
-		<25000 4500>,
-		<35000 3500>,
-		<45000 2500>,
-		<55000 2000>;
-	meta,thermal-zone = "disp-virt";
-	meta,ddic-family = "ddic_family_eos";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
-};
-
-&dsi_sharp_eos_4k_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_panther>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_stark_olivia";
-	meta,blu-default-duty-cycle = <80>; /* 8.0% duty */
-	meta,max-blu-pulse-overlap-us = <4591>;
-	meta,max-blu-stereo-offset-us = <2300>;
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,mdss-dsi-qsync-min-refresh-rate = <72>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-	meta,temperature-dependent-backlight;
-	meta,response-time-curve =
-		<25000 4500>,
-		<35000 3300>,
-		<45000 2300>,
-		<55000 1800>;
-	meta,thermal-zone = "disp-virt";
-	meta,ddic-family = "ddic_family_eos";
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,mdss-dsi-panel-phy-timings = [
-				00 25 0A 0A 1B 25 0A
-				0A 0A 02 04 00 1F 0F
-			];
-			qcom,display-topology = <2 2 2>;
-			qcom,default-topology-index = <0>;
-		};
-	};
 };
 
 &panther_panel_boe {

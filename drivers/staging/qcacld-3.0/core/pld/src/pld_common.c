@@ -2481,6 +2481,9 @@ int pld_idle_restart(struct device *dev,
 		break;
 	}
 
+	if (errno)
+		pr_err("Error on idle restart type %d errno %d\n", type, errno);
+
 	return errno;
 }
 

@@ -824,8 +824,9 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	 * is set and valid).
 	 */
 	if (bl_config->settling_time_target_us < 0xFFFF) {
+		const u32 scaled_settle_time_ns = bl_config->settling_time_target_us * bl_config->bl_scale_settle_time / 10000;
 		const u32 vbp = timing->v_sync_width + timing->v_back_porch;
-		const u32 blu_start_target_ns = bl_config->settling_time_target_us * 1000 +
+		const u32 blu_start_target_ns = scaled_settle_time_ns * 1000 +
 				(timing->internal_vactive + vbp + 9) * internal_1h_ns;
 
 		/*
@@ -960,7 +961,7 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	bl_config->scanline_duration = blu_duration_ns / external_1h_ns;
 	bl_config->scanline_offset[0] = bl_config->scanline_offset[1] = blu_start_time_ns /
 			external_1h_ns;
-	bl_config->settling_time_us[0] = ((blu_start_time_ns - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * external_1h_ns / 1000);
+	bl_config->settling_time_us[0] = (blu_start_time_ns - (timing->v_back_porch + timing->v_sync_width + timing->v_active) * external_1h_ns) / 1000;
 	bl_config->settling_time_us[1] = bl_config->settling_time_us[0];
 
 error:
@@ -3769,6 +3770,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	panel->bl_config.dimming_status = DIMMING_ENABLE;
 	panel->bl_config.user_disable_notification = false;
 	panel->bl_config.blu_default_duty_override = 0;
+	panel->bl_config.bl_scale_settle_time = 10000;
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-bl-min-level", &val);
 	if (rc) {

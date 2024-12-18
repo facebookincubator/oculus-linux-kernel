@@ -2302,6 +2302,8 @@ static void mlme_init_sta_mlo_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_default(CFG_MLO_SUPPORT_LINK_BAND);
 	sta->mlo_max_simultaneous_links =
 		cfg_default(CFG_MLO_MAX_SIMULTANEOUS_LINKS);
+	sta->mlo_prefer_percentage =
+		cfg_get(psoc, CFG_MLO_PREFER_PERCENTAGE);
 }
 
 static bool

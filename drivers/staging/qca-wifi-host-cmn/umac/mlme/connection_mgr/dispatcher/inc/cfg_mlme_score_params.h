@@ -171,14 +171,13 @@
  * calculate best candidate
  * @Min: 0
  * @Max: 100
- * @Default: 2
+ * @Default: 3
  *
  * This ini is used to increase/decrease Channel Band Preference weightage
- * in best candidate selection. 5GHZ AP get this additional boost compare to
- * 2GHZ AP before   rssi_pref_5g_rssi_thresh and 2.4Ghz get weightage after
- * rssi_pref_5g_rssi_thresh.
+ * in best candidate selection. 5/6 GHz AP get additional boost compare to
+ * 2 GHz AP.
  *
- * Related: rssi_pref_5g_rssi_thresh, band_weight_per_index
+ * Related: band_weight_per_index
  *
  * Supported Feature: STA Candidate selection
  *
@@ -190,7 +189,7 @@
 	"chan_band_weightage", \
 	0, \
 	100, \
-	2, \
+	3, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Channel Band Weightage")
 
@@ -768,20 +767,14 @@
  * band_weight_per_index - percentage as per band
  * @Min: 0x00000000
  * @Max: 0x64646464
- * @Default: 0x0000644B
- *
- * This INI give percentage value of chan_band_weightage to be used as per band.
- * If RSSI is greater than rssi_pref_5g_rssi_thresh preference is given for 5Ghz
- * else, it's given for 2.4Ghz.
+ * @Default: 0x00644300
  *
  * Indexes are defined in this way.
- *     0 Index (BITS 0-7): 2.4GHz - Def 10%
- *     1 Index (BITS 8-15): 5GHz - Def 20%
+ *     0 Index (BITS 0-7): 2.4GHz - Def 0%
+ *     1 Index (BITS 8-15): 5GHz - Def 67%
  *     2 Index (BITS 16-23): 6Ghz - Def - 100%
  *     3 Index (BITS 24-31): Reserved
- * These percentage values are stored in HEX. For any index max value, can be 64
- *
- * Related: chan_band_weightage, rssi_pref_5g_rssi_thresh
+ * These percentage values are stored in HEX. For any index max value is 0x64
  *
  * Supported Feature: STA Candidate selection
  *
@@ -793,7 +786,7 @@
 	"band_weight_per_index", \
 	0x00000000, \
 	0x64646464, \
-	0x00644B32, \
+	0x00644300, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Band weight per index")
 

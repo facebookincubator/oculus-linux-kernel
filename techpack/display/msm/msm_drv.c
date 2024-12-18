@@ -100,7 +100,11 @@ static void msm_drm_bl_scale_worker(struct work_struct *work)
 
 	if (work_data->bl_config && work_data->bl_device) {
 		DRM_DEBUG("Setting bl_scale_brightness to: %d\n", __LINE__, work_data->bl_scale);
-		work_data->bl_config->bl_scale_brightness = work_data->bl_scale;
+		if (work_data->dirty & MSM_BL_SCALE_MASK_BRIGHTNESSS)
+			work_data->bl_config->bl_scale_brightness = work_data->bl_scale;
+		if (work_data->dirty & MSM_BL_SCALE_MASK_SETTLE_TIME)
+			work_data->bl_config->bl_scale_settle_time = work_data->settle_time_scale;
+		work_data->dirty = 0;
 		backlight_update_status(work_data->bl_device);
 	}
 }
@@ -1777,6 +1781,72 @@ int msm_ioctl_display_hint_ops(struct drm_device *dev, void *data,
 }
 
 /**
+ * msm_ioctl_settle_time_scalar_control_ops - Settle time scalar control value
+ * @dev: drm device for the ioctl
+ * @data: data pointer for the ioctl
+ * @file_priv: drm file for the ioctl call
+ */
+int msm_ioctl_settle_time_scalar_control_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_settle_time_scale *display_settle_time_scalar = data;
+	struct msm_drm_private *priv;
+	struct msm_kms *kms;
+	struct drm_connector *connector;
+	struct sde_connector *c_conn;
+	int i = 0;
+
+	priv = dev->dev_private;
+	kms = priv->kms;
+
+	if (unlikely(!display_settle_time_scalar)) {
+		DRM_ERROR("invalid ioctl data\n");
+		return -EINVAL;
+	}
+
+	SDE_EVT32(display_settle_time_scalar->settle_time_scale_factor);
+
+	// We permit a scaling range from 0.01% to 200%.
+	if ((display_settle_time_scalar->settle_time_scale_factor < 1) ||
+		(display_settle_time_scalar->settle_time_scale_factor > 20000)) {
+		DSI_ERR("settle time scaling factor out of range; expected 1 to 20000, got %u\n", display_settle_time_scalar->settle_time_scale_factor);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < priv->num_connectors; i++) {
+		connector = priv->connectors[i];
+		if (!connector)
+			continue;
+
+		c_conn = to_sde_connector(connector);
+
+		/* Check if the connector supports backlight device. */
+		if (c_conn && c_conn->ops.set_backlight) {
+			struct dsi_display *display;
+			struct dsi_backlight_config *bl_config;
+
+			display = (struct dsi_display *) c_conn->display;
+			if (display) {
+				bl_config = &display->panel->bl_config;
+				if (bl_config && c_conn->bl_device) {
+					/* Update the parameters for work struct. */
+					priv->bl_scale_work.bl_device = c_conn->bl_device;
+					priv->bl_scale_work.bl_config = bl_config;
+					priv->bl_scale_work.settle_time_scale = display_settle_time_scalar->settle_time_scale_factor;
+					priv->bl_scale_work.dirty |= MSM_BL_SCALE_MASK_SETTLE_TIME;
+
+					/* Schedule the delayed work to start immediately. */
+					queue_delayed_work(priv->bl_scale_work.work_queue, &(priv->bl_scale_work).work, 0);
+				}
+			}
+		}
+	}
+
+	return 0;
+
+}
+
+/**
  * msm_ioctl_brightness_scalar_control_ops - Brightness scalar control value
  * @dev: drm device for the ioctl
  * @data: data pointer for the ioctl
@@ -1800,11 +1870,11 @@ int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
 		return -EINVAL;
 	}
 
-	SDE_EVT32(display_brightness_scalar->bl_scale_percent_value);
+	SDE_EVT32(display_brightness_scalar->bl_scale_value);
 
 	/* Validate the range of brightness scalar. */
-	if ((display_brightness_scalar->bl_scale_percent_value < 1) ||
-		(display_brightness_scalar->bl_scale_percent_value > 100)) {
+	if ((display_brightness_scalar->bl_scale_value < 1) ||
+		(display_brightness_scalar->bl_scale_value > MAX_BL_SCALE_LEVEL_BRIGHTNESS)) {
 		DSI_ERR("Brightness Scalar: Input value out of range.\n");
 		return -EINVAL;
 	}
@@ -1828,7 +1898,8 @@ int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
 					/* Update the parameters for work struct. */
 					priv->bl_scale_work.bl_device = c_conn->bl_device;
 					priv->bl_scale_work.bl_config = bl_config;
-					priv->bl_scale_work.bl_scale = display_brightness_scalar->bl_scale_percent_value;
+					priv->bl_scale_work.bl_scale = display_brightness_scalar->bl_scale_value;
+					priv->bl_scale_work.dirty |= MSM_BL_SCALE_MASK_BRIGHTNESSS;
 
 					/* Schedule the delayed work to start immediately. */
 					queue_delayed_work(priv->bl_scale_work.work_queue, &(priv->bl_scale_work).work, 0);
@@ -2024,6 +2095,8 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 			DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_CAC, msm_ioctl_display_cac_control_ops,
 			DRM_AUTH|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_SETTLE_TIME_SCALE, msm_ioctl_settle_time_scalar_control_ops,
+			DRM_RENDER_ALLOW),
 };
 
 static const struct vm_operations_struct vm_ops = {

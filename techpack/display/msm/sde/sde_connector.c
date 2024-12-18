@@ -2346,14 +2346,16 @@ static ssize_t _sde_conn_dcs_cmd_unicast_write(struct file *file,
 {
 	struct drm_connector *connector = file->private_data;
 	struct sde_connector *c_conn;
-	char *input, *token, *input_copy, *input_dup, *payload = NULL;
+	char *input, *line_token, *token, *input_copy, *input_dup, *payload = NULL;
 	const char *delim = " ";
+	const char *line_delim = "\n";
 	struct dsi_display *display;
 	struct mipi_dsi_device *dsi;
-	u32 buf_size = 0, payload_size = 0, ctrl;
+	u32 payload_size = 0, ctrl;
 	u8 buffer[MAX_CMD_PAYLOAD_SIZE];
 	char reg;
 	int rc = 0, strtoint;
+	int line_count = 0;
 
 	if (*ppos || !connector) {
 		SDE_ERROR("invalid argument(s), conn %d\n", connector != NULL);
@@ -2382,40 +2384,55 @@ static ssize_t _sde_conn_dcs_cmd_unicast_write(struct file *file,
 	}
 
 	input_dup = input_copy;
-	token = strsep(&input_copy, delim);
-	while (token) {
-		rc = kstrtoint(token, 16, &strtoint);
-		if (rc) {
-			SDE_ERROR("input buffer conversion failed\n");
+	/* Tokenize the file contents into lines using strsep */
+	line_token = strsep(&input_copy, line_delim);
+	while (line_token != NULL) {
+		u32 buf_size = 0;
+		/* Tokenize the line into words using strsep */
+		token = strsep(&line_token, delim);
+		if (strlen(token) == 0) {
 			goto end;
-
 		}
-		if (buf_size >= MAX_CMD_PAYLOAD_SIZE) {
-			SDE_ERROR("buffer size exceeding the limit %d\n",
-					  MAX_CMD_PAYLOAD_SIZE);
+		line_count++;
+		while (token) {
+			rc = kstrtoint(token, 16, &strtoint);
+			if (rc) {
+				SDE_ERROR("input buffer conversion failed\n");
+				goto end;
+			}
+			if (buf_size >= MAX_CMD_PAYLOAD_SIZE) {
+				SDE_ERROR(
+					"buffer size exceeding the limit %d\n",
+					MAX_CMD_PAYLOAD_SIZE);
+				goto end;
+			}
+			buffer[buf_size++] = (strtoint & 0xff);
+			token = strsep(&line_token, delim);
+		}
+		if (!buf_size)
 			goto end;
+		ctrl = buffer[0];
+		reg = buffer[1];
+		/* This sleep is necessary to avoid crashes in the kernel somewhere */
+		msleep(5);
+		mutex_lock(&c_conn->lock);
+		payload = buf_size > 2 ? buffer + 2 : NULL;
+		payload_size = buf_size - 1;
+		rc = mipi_dsi_dcs_write_unicast(dsi, reg, payload, payload_size,
+						ctrl);
+		mutex_unlock(&c_conn->lock);
 
-		}
-		buffer[buf_size++] = (strtoint & 0xff);
-		token = strsep(&input_copy, delim);
-
+		// Get the next line token
+		line_token = strsep(&input_copy, line_delim);
 	}
-	if (!buf_size)
-		goto end;
-	ctrl = buffer[0];
-	reg = buffer[1];
-	mutex_lock(&c_conn->lock);
-	payload = buf_size > 2 ? buffer + 2 : NULL;
-	payload_size = buf_size - 1;
-	rc = mipi_dsi_dcs_write_unicast(dsi, reg, payload,
-									payload_size, ctrl);
-	mutex_unlock(&c_conn->lock);
+	if (line_count > 1) {
+		SDE_INFO("Unicast %d dcs commands\n", line_count);
+	}
 
 end:
 	kfree(input_dup);
 	kfree(input);
 	return count;
-
 }
 
 static ssize_t _sde_conn_temperature_response_time_curve_write(struct file *file,

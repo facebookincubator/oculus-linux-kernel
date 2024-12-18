@@ -183,6 +183,9 @@ struct swd_dev_data {
 	/* Mutex that protects the state of this structure */
 	struct mutex state_mutex;
 
+	/* Mutex to allow a single writer to the file write fops */
+	struct mutex write_mutex;
+
 	/* workqueue associated with device */
 	struct workqueue_struct *workqueue;
 
@@ -206,6 +209,10 @@ struct swd_dev_data {
 	void (*mcu_state_unlock)(struct device *dev);
 	bool (*get_syncboss_is_streaming)(struct device *dev);
 	bool mcu_state_locked;
+
+	/* Signals between update work thread and user thread */
+	int fw_update_validation_status;
+	struct completion fw_update_validation_complete;
 
 	/* Direction of current SWD transfer */
 	enum swd_direction direction;

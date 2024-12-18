@@ -84,6 +84,11 @@ struct msm_gem_vma;
 
 #define TEARDOWN_DEADLOCK_RETRY_MAX 5
 
+#define MAX_BL_SCALE_LEVEL_BRIGHTNESS 65535
+
+#define MSM_BL_SCALE_MASK_BRIGHTNESSS 0x1
+#define MSM_BL_SCALE_MASK_SETTLE_TIME 0x2
+
 struct msm_file_private {
 	rwlock_t queuelock;
 	struct list_head submitqueues;
@@ -374,6 +379,7 @@ enum msm_event_wait {
 	MSM_ENC_TX_COMPLETE,
 	MSM_ENC_VBLANK,
 	MSM_ENC_ACTIVE_REGION,
+	MSM_ENC_WAIT_MAX
 };
 
 /**
@@ -936,7 +942,9 @@ struct msm_drm_thread {
 struct msm_drm_bl_scale_work_data {
 	struct backlight_device *bl_device;
 	struct dsi_backlight_config *bl_config;
+	uint8_t dirty;
 	int bl_scale;
+	int settle_time_scale;
 	struct delayed_work work;
 	struct workqueue_struct *work_queue;
 };

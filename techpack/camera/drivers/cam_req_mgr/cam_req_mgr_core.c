@@ -3964,15 +3964,18 @@ int cam_req_mgr_batch_request(struct cam_batch_config_dev_cmd *cmd) {
 			return -EINVAL;
 		}
 		for (i = 0; i < ul_packet->number_devices; i++) {
-			if (!ul_packet->num_io_packets[i])
-				continue;
 			for (j = 0; j < link->num_devs; j++) {
 				if (link->l_dev[j].dev_hdl == ul_packet->device_hdl[i]) {
-					if (!link->l_dev[j].no_crm_ops->setup) {
+					if (!link->l_dev[j].no_crm_ops) {
+						CAM_INFO(CAM_ISP, "noCRM ops not applicable for dev_hdl 0x%x %s",
+							link->l_dev[j].dev_hdl, link->l_dev[j].dev_info.name);
+						continue;
+					}
+					if (!link->l_dev[j].no_crm_ops->setup && ul_packet->num_io_packets[i]) {
 						CAM_ERR(CAM_CRM, "setup not supported for dev_hdl 0x%x type %d %s",
 							link->l_dev[j].dev_hdl, link->l_dev[j].dev_info.dev_id, link->l_dev[j].dev_info.name);
-						break;
-					} else {
+						return -EINVAL;
+					} else if (ul_packet->num_io_packets[i]){
 						if (ul_packet->update_port_patern_period)
 							port_enable_pattern_period = ul_packet->port_enable_pattern_period[i];
 						for (k = 0; k < ul_packet->num_io_packets[i]; k++) {
@@ -3985,21 +3988,25 @@ int cam_req_mgr_batch_request(struct cam_batch_config_dev_cmd *cmd) {
 							link->l_dev[j].no_crm_ops->setup(ul_packet->device_hdl[i], packet, port_enable_pattern_period);
 							port_enable_pattern_period = NULL;
 						}
-						for (k = 0; k < ul_packet->num_setting_packets; k++) {
-							packet = cam_req_mgr_get_cam_packet(ul_packet->setting_packets[i][k].packet_hdl,
-								ul_packet->setting_packets[i][k].packet_offset);
-							if (IS_ERR_OR_NULL(packet)) {
-								CAM_ERR(CAM_CRM, "Unable to fetch packet");
-								return -EINVAL;
-							}
-							link->l_dev[j].no_crm_ops->add_req(ul_packet->device_hdl[i], packet, port_enable_pattern_period);
-							port_enable_pattern_period = NULL;
+					}
+
+					for (k = 0; k < ul_packet->num_setting_packets; k++) {
+						packet = cam_req_mgr_get_cam_packet(ul_packet->setting_packets[i][k].packet_hdl,
+							ul_packet->setting_packets[i][k].packet_offset);
+						if (IS_ERR_OR_NULL(packet)) {
+							CAM_ERR(CAM_CRM, "Unable to fetch packet");
+							return -EINVAL;
 						}
-						memcpy(&link->setting_period_packet, &ul_packet->setting_pattern_period, sizeof(struct setting_pattern_period));
-						link->curr_seting_idx = 0;
-						link->is_setting_period_valid = true;
+						link->l_dev[j].no_crm_ops->add_req(ul_packet->device_hdl[i], packet, port_enable_pattern_period);
+						port_enable_pattern_period = NULL;
 					}
 				}
+			}
+			if (ul_packet->num_setting_packets) {
+				memcpy(&link->setting_period_packet, &ul_packet->setting_pattern_period, sizeof(struct setting_pattern_period));
+				link->curr_seting_idx = 0;
+				link->is_setting_sticky = ul_packet->is_setting_sticky;
+				link->is_setting_period_valid = true;
 			}
 			link->ul_state = CAM_CRM_UL_LINK_STATE_READY;
 		}
@@ -4012,10 +4019,15 @@ int cam_req_mgr_batch_request(struct cam_batch_config_dev_cmd *cmd) {
 		for (i = 0; i < ul_packet->number_devices; i++) {
 			for (j = 0; j < link->num_devs; j++) {
 				if (link->l_dev[j].dev_hdl == ul_packet->device_hdl[i]) {
+					if (!link->l_dev[j].no_crm_ops) {
+						CAM_INFO(CAM_ISP, "noCRM ops not applicable for dev_hdl 0x%x %s",
+							link->l_dev[j].dev_hdl, link->l_dev[j].dev_info.name);
+						continue;
+					}
 					if (!link->l_dev[j].no_crm_ops->add_req) {
 						CAM_ERR(CAM_CRM, "add req not supported for dev_hdl 0x%x type %d %s",
 							link->l_dev[j].dev_hdl, link->l_dev[j].dev_info.dev_id, link->l_dev[j].dev_info.name);
-						break;
+						return -EINVAL;
 					} else {
 						if (ul_packet->update_port_patern_period)
 							port_enable_pattern_period = ul_packet->port_enable_pattern_period[i];
@@ -4032,10 +4044,11 @@ int cam_req_mgr_batch_request(struct cam_batch_config_dev_cmd *cmd) {
 					}
 				}
 			}
-			memcpy(&link->setting_period_packet, &ul_packet->setting_pattern_period, sizeof(struct setting_pattern_period));
-			link->curr_seting_idx = 0;
-			link->is_setting_period_valid = true;
 		}
+		memcpy(&link->setting_period_packet, &ul_packet->setting_pattern_period, sizeof(struct setting_pattern_period));
+		link->curr_seting_idx = 0;
+		link->is_setting_sticky = ul_packet->is_setting_sticky;
+		link->is_setting_period_valid = true;
 	}
 	if (ul_packet->batch_packet_type == BATCH_PACKET_TYPE_UPDATE_RETREIVE ||
 		ul_packet->batch_packet_type == BATCH_PACKET_TYPE_RETREIVE) {
@@ -4055,20 +4068,21 @@ int cam_req_mgr_batch_request(struct cam_batch_config_dev_cmd *cmd) {
 	return 0;
 }
 
-int cam_req_mgr_get_setting_id(int link_hdl, int pd) {
+int cam_req_mgr_get_setting_id(int link_hdl) {
 	struct cam_req_mgr_core_link    *link = cam_get_link_priv(link_hdl);
+
 	if (!link->is_setting_period_valid)
 		return -1;
-	if (pd <= 0) {
-		CAM_ERR(CAM_ISP, "PD not valid %d", pd);
-		return -1;
-	}
-	return link->setting_period_packet.pattern[(link->curr_seting_idx + pd -1) % link->setting_period_packet.period];
+
+	return link->setting_period_packet.pattern[link->curr_seting_idx]; 
 }
 
 int cam_req_mgr_increase_setting_idx(int link_hdl) {
 	struct cam_req_mgr_core_link    *link = cam_get_link_priv(link_hdl);
-	link->curr_seting_idx = (link->curr_seting_idx + 1) % link->setting_period_packet.period;
+	
+	if (!link->is_setting_sticky || ((link->curr_seting_idx + 1) != link->setting_period_packet.period))
+		link->curr_seting_idx = (link->curr_seting_idx + 1) % link->setting_period_packet.period;
+
 	return link->curr_seting_idx;
 }
 

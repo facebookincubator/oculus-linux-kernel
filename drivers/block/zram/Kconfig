@@ -37,3 +37,20 @@ config ZRAM_MEMORY_TRACKING
 	  /sys/kernel/debug/zram/zramX/block_state.
 
 	  See Documentation/admin-guide/blockdev/zram.rst for more information.
+
+config ZRAM_SIMULATE_WRITEBACK_STATS
+	bool "Generate Write Back statistics as if write back device configured."
+	depends on ZRAM
+	help
+	  With this feature, the module shall generate backing device
+	  read/write/count statistics, as if a backing device were present.
+	  The statistics are generated with no backing device present and
+	  data is not being written to it.
+
+config ZRAM_IDLE_HISTOGRAM
+	bool "Generate Idle page Histograms"
+	depends on ZRAM
+	help
+	  Generates histograms related to idle pages age distribution, and the
+	  cluster size in which idle pages occur. This is useful in figuring out
+	  a swapping strategy.

@@ -12,6 +12,8 @@
 #include "eureka-sensorlock.dtsi"
 #include "eureka-thermal.dtsi"
 
+/delete-node/ &pcie2;
+
 &fan_pwm_default {
 	pins = "gpio8";
 };
@@ -193,6 +195,8 @@
 			input-enable;
 		};
 	};
+
+	/delete-node/ pcie2;
 };
 
 &usb2_phy0 {

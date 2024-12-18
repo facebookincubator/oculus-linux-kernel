@@ -1668,11 +1668,6 @@ int cam_sensor_no_crm_add_req(
 		return -EINVAL;
 	}
 
-	CAM_DBG(CAM_SENSOR, "slot[%d] Add Req %d, num_cmd_buf %d, num_io_configs %d ",
-			s_ctrl->soc_info.index,
-			packet->header.request_id,
-			packet->num_cmd_buf, packet->num_io_configs);
-
 	offset = (uint32_t *)&packet->payload;
 	offset += packet->cmd_buf_offset / 4;
 	cmd_desc = (struct cam_cmd_buf_desc *)(offset);
@@ -1683,6 +1678,11 @@ int cam_sensor_no_crm_add_req(
 		CAM_ERR(CAM_SENSOR, "Device data is NULL");
 		return -EINVAL;
 	}
+
+	CAM_DBG(CAM_SENSOR, "slot[%d] Add Req %d, num_cmd_buf %d, num_io_configs %d ",
+			s_ctrl->soc_info.index,
+			packet->header.request_id,
+			packet->num_cmd_buf, packet->num_io_configs);
 
 	i2c_data = &(s_ctrl->i2c_data);
 	if ((packet->header.op_code & 0xFFFFFF) == CAM_SENSOR_PACKET_OPCODE_SENSOR_UPDATE) {
