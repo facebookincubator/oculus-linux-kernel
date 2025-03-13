@@ -14,6 +14,8 @@ struct usbvdm_subscriber_ops {
 		u32 vdm_hdr, const u32 *vdos, int num_vdos);
 	void (*ext_msg)(struct usbvdm_subscription *sub,
 		u8 msg_type, const u8 *data, size_t data_len);
+	void (*transfer_firmware)(struct usbvdm_subscription *sub,
+		int progress);
 };
 
 #if IS_ENABLED(CONFIG_META_USBVDM)
@@ -24,6 +26,9 @@ int usbvdm_subscriber_vdm(struct usbvdm_subscription *sub,
 		u32 vdm_hdr, const u32 *vdos, int num_vdos);
 int usbvdm_subscriber_ext_msg(struct usbvdm_subscription *sub,
 		u8 msg_type, const u8 *data, size_t data_len);
+int usbvdm_subscriber_transfer_firmware(struct usbvdm_subscription *sub,
+		const u8 *data, size_t data_len);
+
 void usbvdm_subscriber_set_drvdata(struct usbvdm_subscription *sub, void *priv);
 void *usbvdm_subscriber_get_drvdata(struct usbvdm_subscription *sub);
 #else

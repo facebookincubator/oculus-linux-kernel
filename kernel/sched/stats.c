@@ -2,7 +2,6 @@
 /*
  * /proc/schedstat implementation
  */
-#include "sched.h"
 
 /*
  * Current schedstat API version.

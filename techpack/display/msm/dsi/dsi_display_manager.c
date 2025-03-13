@@ -629,10 +629,12 @@ int dsi_display_mgr_panel_pre_prepare(struct dsi_display *display)
 	}
 
 	rc = dsi_panel_pre_prepare(m_display->panel);
-	if (rc) {
-		mutex_unlock(&disp_mgr.disp_mgr_mutex);
-		return rc;
-	}
+	if (rc)
+		goto done;
+
+	rc = dsi_panel_pre_prepare(s_display->panel);
+	if (rc)
+		goto done;
 
 	m_display->panel->powered = true;
 	s_display->panel->powered = true;
@@ -668,8 +670,10 @@ int dsi_display_mgr_panel_post_unprepare(struct dsi_display *display)
 
 	display->panel->powered = false;
 
-	if (!m_display->panel->powered && !s_display->panel->powered)
-		rc = dsi_panel_post_unprepare(s_display->panel);
+	if (!m_display->panel->powered && !s_display->panel->powered) {
+		(void)dsi_panel_post_unprepare(s_display->panel);
+		(void)dsi_panel_post_unprepare(m_display->panel);
+	}
 
 error_display_get:
 	mutex_unlock(&disp_mgr.disp_mgr_mutex);

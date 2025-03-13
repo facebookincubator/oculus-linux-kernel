@@ -5100,7 +5100,8 @@ static int binder_thread_release(struct binder_proc *proc,
 			     "release %d:%d transaction %d %s, still active\n",
 			      proc->pid, thread->pid,
 			     t->debug_id,
-			     (t->to_thread == thread) ? "in" : "out");
+			     (t->to_thread == thread) ? "in" :
+			     (t->from == thread) ? "out" : "bad");
 
 		if (t->to_thread == thread) {
 			thread->proc->outstanding_txns--;
@@ -5115,7 +5116,7 @@ static int binder_thread_release(struct binder_proc *proc,
 			t->from = NULL;
 			t = t->from_parent;
 		} else
-			BUG();
+			t = NULL;
 		spin_unlock(&last_t->lock);
 		if (t)
 			spin_lock(&t->lock);

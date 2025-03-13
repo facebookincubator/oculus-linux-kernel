@@ -2331,6 +2331,7 @@ static int dp_debug_init_configs(struct dp_debug_private *debug,
 {
 	int rc = 0;
 	struct dentry *file;
+	struct drm_connector *connector = *debug->connector;
 
 	file = debugfs_create_ulong("connect_notification_delay_ms", 0644, dir,
 		&debug->dp_debug.connect_notification_delay_ms);
@@ -2350,6 +2351,8 @@ static int dp_debug_init_configs(struct dp_debug_private *debug,
 	debugfs_create_u32("max_hdisplay", 0644, dir, &debug->display->max_hdisplay);
 	debugfs_create_u32("max_vdisplay", 0644, dir, &debug->display->max_vdisplay);
 	debugfs_create_u32("max_vrefresh", 0644, dir, &debug->display->max_vrefresh);
+
+	debugfs_create_bool("edid_prefer_large", 0644, dir, &connector->edid_prefer_large);
 
 	return rc;
 

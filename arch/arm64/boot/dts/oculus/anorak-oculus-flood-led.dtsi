@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.<0>
 
 &ext_flash_default {
+	pins = "gpio1";
 	bias-pull-down;
-	/delete-property/ bias-high-impedance;
+	/delete-property/ bias-disable;
 };
 
 &pmxr2230_flash {

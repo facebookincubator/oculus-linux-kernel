@@ -173,7 +173,11 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 		child_index = 0;
 		for_each_child_of_node(mcu_node, child) {
 			dev_err(dev, "Name: %s", child->name);
-			of_property_read_string(child, "meta,fw-path", &devdata->child_mcu_data[child_index].fw_path);
+			ret = of_property_read_string(child, "meta,fw-path", &devdata->child_mcu_data[child_index].fw_path);
+			if (ret < 0) {
+				dev_err(dev, "Failed to get fw-path: %d\n", ret);
+				return ret;
+			}
 			ret = swd_driver_init_single_target(dev, &devdata->child_mcu_data[child_index], child, true);
 			if (ret < 0)
 				return ret;

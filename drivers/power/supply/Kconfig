@@ -252,6 +252,14 @@ config BATTERY_BQ27XXX
 	help
 	  Say Y here to enable support for batteries with BQ27xxx chips.
 
+config BATTERY_BQ27XXX_FCT
+	bool "BQ27xxx based FCT support"
+	depends on BATTERY_BQ27XXX
+	depends on QTI_BATTERY_CHARGER
+	default n
+	help
+	  Say Y here to enable support for FCT charge profile reduction on batteries with BQ27xxx chips
+
 config BATTERY_BQ27XXX_I2C
 	tristate "BQ27xxx I2C support"
 	depends on BATTERY_BQ27XXX

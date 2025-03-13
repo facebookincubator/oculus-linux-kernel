@@ -580,6 +580,7 @@ struct cam_isp_context {
 	struct cam_isp_stream_image          *stream_image_applied;
 	bool                                  stream_image_wait;
 	int32_t                               stream_recovery_num_frames;
+	int                                   stream_consecutive_frame_drop_cnt;
 };
 
 /**

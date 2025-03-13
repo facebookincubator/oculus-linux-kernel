@@ -24,10 +24,6 @@
  *  Author: Vincent Guittot <vincent.guittot@linaro.org>
  */
 
-#include <linux/sched.h>
-#include "sched.h"
-#include "pelt.h"
-
 int pelt_load_avg_period = PELT32_LOAD_AVG_PERIOD;
 int pelt_load_avg_max = PELT32_LOAD_AVG_MAX;
 const u32 *pelt_runnable_avg_yN_inv = pelt32_runnable_avg_yN_inv;

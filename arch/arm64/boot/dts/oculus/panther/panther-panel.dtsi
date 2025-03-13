@@ -22,10 +22,6 @@
 	panels = <&display_panels>;
 };
 
-&nsync {
-	panels = <&display_panels>;
-};
-
 &mdss_mdp0 {
 	qcom,sde-lineptr-scanline-advance = <16>;
 };

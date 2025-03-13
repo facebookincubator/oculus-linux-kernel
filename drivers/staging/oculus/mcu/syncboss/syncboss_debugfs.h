@@ -5,6 +5,8 @@
 #include <linux/device.h>
 #include <linux/fs.h>
 
+#include "syncboss_sequence_number.h"
+
 struct syncboss_devfs_client;
 struct syncboss_seq;
 
@@ -21,6 +23,10 @@ int syncboss_debugfs_init(struct syncboss_debugfs *debugfs, struct device *dev,
 	struct syncboss_seq *seq, const char *name);
 void syncboss_debugfs_deinit(struct syncboss_debugfs *debugfs);
 
+struct dentry *syncboss_debugfs_create_seq_allocations_dir(
+	struct syncboss_debugfs *debugfs, struct dentry *parent_dentry,
+	struct syncboss_seq_allocations *seq_allocaitons, const char *name);
+
 int syncboss_debugfs_devfs_client_add_locked(struct syncboss_debugfs *debugfs,
 	struct syncboss_devfs_client *client_data);
 void syncboss_debugfs_devfs_client_remove_locked(struct syncboss_debugfs *debugfs,
@@ -33,6 +39,13 @@ static inline int syncboss_debugfs_init(struct syncboss_debugfs *debugfs,
 	struct device *dev, struct syncboss_seq *seq, const char *name)
 {
 	return -ENODEV;
+}
+
+static inline struct dentry *syncboss_debugfs_create_seq_allocations_dir(
+	struct syncboss_debugfs *debugfs, struct dentry *parent_dentry,
+	struct syncboss_seq_allocations *seq_allocations, const char *name)
+{
+	return  ERR_PTR(-ENODEV);
 }
 
 static inline void syncboss_debugfs_deinit(struct syncboss_debugfs *debugfs)

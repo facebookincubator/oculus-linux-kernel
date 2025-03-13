@@ -23,6 +23,8 @@
 #define PREFIX_VERSION_LEN (2 * ASCII_BYTE_LEN)
 #define PREFIX_VERSION_START_IDX 30
 
+#define PROGRESS_UPDATE_TIMEOUT_MS 5000
+
 enum pdfu_state {
 	ENUMERATION,
 	ACQUISITION,
@@ -58,6 +60,10 @@ struct pdfu_data {
 	struct mutex rx_lock;
 	struct mutex state_lock;
 	bool connected;
+
+	bool engine_driven_transfer;
+	struct completion progress_complete;
+	int progress;
 
 	struct completion rx_complete;
 	struct pdfu_message *rx_msg;
@@ -336,7 +342,38 @@ static int handle_state_reconfiguration(struct pdfu_data *pdfu)
 	return 0;
 }
 
-static int handle_state_transfer(struct pdfu_data *pdfu)
+static int do_transfer_engine_driven(struct pdfu_data *pdfu)
+{
+	const unsigned long timeout_j = msecs_to_jiffies(PROGRESS_UPDATE_TIMEOUT_MS);
+	int rc = 0;
+
+	dev_dbg(pdfu->dev, "Initiating firmware transfer to engine");
+	rc = usbvdm_subscriber_transfer_firmware(pdfu->conn_sub,
+			pdfu->fw->data + PDFU_PREFIX_LEN,
+			pdfu->fw->size - PDFU_PREFIX_LEN);
+	if (rc)
+		return rc;
+	dev_dbg(pdfu->dev, "Successfully transmitted firmware to engine");
+
+	do {
+		reinit_completion(&pdfu->progress_complete);
+		if (!wait_for_completion_timeout(&pdfu->progress_complete, timeout_j)) {
+			dev_err(pdfu->dev, "Did not receive a timely PDFU Transfer progress update, aborting");
+			return -ENOMSG;
+		}
+
+		dev_info(pdfu->dev, "PDFU Transfer progress: %d%%", pdfu->progress);
+	} while (pdfu->progress >= 0 && pdfu->progress < 100);
+
+	if (pdfu->progress < 0) {
+		dev_err(pdfu->dev, "Progress update indicated an error, aborting");
+		return pdfu->progress;
+	}
+
+	return 0;
+}
+
+static int do_transfer(struct pdfu_data *pdfu)
 {
 	struct pdfu_data_response_payload response;
 	u8 wait_time = 0;
@@ -400,6 +437,11 @@ static int handle_state_transfer(struct pdfu_data *pdfu)
 	}
 
 	return 0;
+}
+
+static int handle_state_transfer(struct pdfu_data *pdfu)
+{
+	return pdfu->engine_driven_transfer ? do_transfer_engine_driven(pdfu) : do_transfer(pdfu);
 }
 
 static int handle_state_validation(struct pdfu_data *pdfu)
@@ -592,10 +634,21 @@ static void pdfu_rx_ext_msg(struct usbvdm_subscription *sub, u8 msg_type,
 	dev_info(dev, "Received FW_Update msg");
 }
 
+static void pdfu_firmware_progress_update(struct usbvdm_subscription *sub, int progress)
+{
+	struct pdfu_data *pdfu = usbvdm_subscriber_get_drvdata(sub);
+
+	dev_dbg(pdfu->dev, "Received progress update (%d%%)", progress);
+
+	pdfu->progress = progress;
+	complete(&pdfu->progress_complete);
+}
+
 static const struct usbvdm_subscriber_ops ops = {
 	.connect = pdfu_usbvdm_connect,
 	.disconnect = pdfu_usbvdm_disconnect,
 	.ext_msg = pdfu_rx_ext_msg,
+	.transfer_firmware = pdfu_firmware_progress_update,
 };
 
 static ssize_t connected_show(struct device *dev, struct device_attribute *attr,
@@ -696,9 +749,12 @@ static int pdfu_initiator_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, pdfu);
 
 	INIT_WORK(&pdfu->state_machine_work, state_machine_work_fn);
+	init_completion(&pdfu->progress_complete);
 	init_completion(&pdfu->rx_complete);
 	mutex_init(&pdfu->rx_lock);
 	mutex_init(&pdfu->state_lock);
+
+	pdfu->engine_driven_transfer = device_property_read_bool(dev, "engine-driven-transfer");
 
 	rc = num_pids = device_property_count_u16(dev, pids_prop);
 	if (rc < 0)

@@ -671,6 +671,7 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 	u16 changed_flags;
 	u64 command;
 	int ret;
+	char *emarker_detected[2] = { "TYPEC_CABLE_EMARKER_DETECTED", NULL };
 
 	mutex_lock(&con->lock);
 
@@ -812,6 +813,12 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 			ucsi_unregister_partner(con);
 
 		ucsi_port_psy_changed(con);
+
+		if (UCSI_CONSTAT_CABLE_MAX_SPEED(con->status.flags) != 0) {
+			dev_info(ucsi->dev, "con:%d: TypeC eMarker with USB3 Gen2 or higher detected\n", con->num);
+			kobject_uevent_env(&(ucsi->dev->kobj), KOBJ_CHANGE, emarker_detected);
+			goto out_unlock;
+		}
 
 		/* Only notify USB controller if partner supports USB data */
 		if (!(UCSI_CONSTAT_PARTNER_FLAGS(con->status.flags) &

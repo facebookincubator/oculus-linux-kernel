@@ -254,9 +254,10 @@ struct ucsi_connector_status {
 #define   UCSI_CONSTAT_PWR_OPMODE_TYPEC3_0	5
 #define UCSI_CONSTAT_CONNECTED			BIT(3)
 #define UCSI_CONSTAT_PWR_DIR			BIT(4)
-#define UCSI_CONSTAT_PARTNER_FLAGS(_f_)		(((_f_) & GENMASK(12, 5)) >> 5)
+#define UCSI_CONSTAT_PARTNER_FLAGS(_f_)		(((_f_) & GENMASK(7, 5)) >> 5)
 #define   UCSI_CONSTAT_PARTNER_FLAG_USB		1
 #define   UCSI_CONSTAT_PARTNER_FLAG_ALT_MODE	2
+#define UCSI_CONSTAT_CABLE_MAX_SPEED(_f_)	(((_f_) & GENMASK(12, 8)) >> 8)
 #define UCSI_CONSTAT_PARTNER_TYPE(_f_)		(((_f_) & GENMASK(15, 13)) >> 13)
 #define   UCSI_CONSTAT_PARTNER_TYPE_DFP		1
 #define   UCSI_CONSTAT_PARTNER_TYPE_UFP		2

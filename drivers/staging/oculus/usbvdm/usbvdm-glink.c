@@ -20,6 +20,8 @@
 #define OEM_OPCODE_NOTIFY	0x10004
 #define OEM_OPCODE_SEND_EXT_MSG	0x10005
 #define OEM_OPCODE_RECV_EXT_MSG	0x10006
+#define OEM_OPCODE_TRANSFER_FIRMWARE	0x10007
+#define OEM_OPCODE_TRANSFER_FIRMWARE_PROGRESS	0x10008
 
 #define OEM_NOTIFICATION_CONNECTED		0x1
 #define OEM_NOTIFICATION_DISCONNECTED	0x2
@@ -68,6 +70,16 @@ struct pmic_glink_oem_vdm_msg {
 	u16 pid;
 	u32 data[VDO_MAX_SIZE];
 	u32 size;
+};
+
+/* As defined in DSP */
+struct pmic_glink_oem_firmware_msg {
+	struct pmic_glink_hdr hdr;
+
+	s32 progress;
+	u32 size_total;
+	u32 size_chunk;
+	u8 data[];
 };
 
 /* As defined in DSP */
@@ -171,9 +183,82 @@ out:
 	return rc;
 }
 
+int usbvdm_glink_transfer_firmware(struct usbvdm_engine *engine,
+		const u8 *data, size_t data_len)
+{
+	struct usbvdm_dev *uv_dev = usbvdm_engine_get_drvdata(engine);
+	struct pmic_glink_oem_firmware_msg *msg = NULL;
+	size_t msg_len = 0;
+	int left_size = 0, chunk_size = 0;
+	int rc = 0;
+
+	if (!engine || !data)
+		return -EINVAL;
+
+	mutex_lock(&uv_dev->state_lock);
+
+	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
+		dev_err(uv_dev->dev, "Can't transfer firmware, Glink down");
+		rc = -ENODEV;
+		goto unlock;
+	}
+
+	/*
+	 * We are doing this awful chunking logic to work around apparent synchronization issues
+	 * inside the Glink core that crop up when sending large packets. Per Qualcomm
+	 * recommendation, clients should chunk their messages to 8K to avoid having the Glink core
+	 * do any chunking itself.
+	 */
+	left_size = data_len;
+	while (left_size > 0) {
+		chunk_size = min(left_size, SZ_8K);
+
+		msg_len = sizeof(struct pmic_glink_oem_firmware_msg) + chunk_size;
+		msg = kzalloc(msg_len, GFP_KERNEL);
+		if (!msg) {
+			rc = -ENOMEM;
+			goto unlock;
+		}
+
+		msg->hdr.owner = PMIC_GLINK_MSG_OWNER_OEM;
+		msg->hdr.type = MSG_TYPE_REQ_RESP;
+		msg->hdr.opcode = OEM_OPCODE_TRANSFER_FIRMWARE;
+
+		msg->size_total = data_len;
+		msg->size_chunk = chunk_size;
+		memcpy(msg->data, data, chunk_size);
+
+		reinit_completion(&uv_dev->ack_complete);
+		rc = pmic_glink_write(uv_dev->client, msg, msg_len);
+		if (rc) {
+			dev_err(uv_dev->dev, "Failed writing to pmic_glink, rc=%d", rc);
+			kfree(msg);
+			goto unlock;
+		}
+
+		if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_WAIT_TIME_MS)) {
+			rc = -ETIMEDOUT;
+			dev_err(uv_dev->dev, "Timed out waiting for glink ACK for transferring firmware");
+			kfree(msg);
+			goto unlock;
+		}
+
+		dev_dbg(uv_dev->dev, "Received glink ACK for transferring firmware");
+
+		kfree(msg);
+		left_size -= chunk_size;
+		data = (void *)((char *)data + chunk_size);
+	}
+
+unlock:
+	mutex_unlock(&uv_dev->state_lock);
+	return rc;
+}
+
 static const struct usbvdm_engine_ops usbvdm_glink_ops = {
 	.ext_msg = usbvdm_glink_ext_msg,
-	.vdm = usbvdm_glink_vdm
+	.vdm = usbvdm_glink_vdm,
+	.transfer_firmware = usbvdm_glink_transfer_firmware,
 };
 
 static int usbvdm_glink_setup(struct usbvdm_dev *uv_dev)
@@ -258,6 +343,22 @@ static void usbvdm_glink_handle_recv_vdm(struct usbvdm_dev *uv_dev,
 	usbvdm_engine_vdm(uv_dev->engine, vdm_hdr, vdos, num_vdos);
 }
 
+static void usbvdm_glink_handle_fw_progress_update(struct usbvdm_dev *uv_dev,
+		void *data, size_t len)
+{
+	struct pmic_glink_oem_firmware_msg *msg = data;
+
+	if (len != sizeof(*msg)) {
+		dev_err(uv_dev->dev, "Incorrect len received: %lu (exp. %lu)",
+				len, sizeof(*msg));
+		return;
+	}
+
+	dev_dbg(uv_dev->dev, "Received FW transfer progress update: %d%%", msg->progress);
+
+	usbvdm_engine_transfer_firmware(uv_dev->engine, msg->progress);
+}
+
 static void usbvdm_glink_handle_ack(struct usbvdm_dev *uv_dev,
 		void *data, size_t len)
 {
@@ -293,8 +394,12 @@ static int usbvdm_glink_msg_cb(void *priv, void *data, size_t len)
 	case OEM_OPCODE_RECV_EXT_MSG:
 		usbvdm_glink_handle_recv_ext_msg(uv_dev, data, len);
 		break;
+	case OEM_OPCODE_TRANSFER_FIRMWARE_PROGRESS:
+		usbvdm_glink_handle_fw_progress_update(uv_dev, data, len);
+		break;
 	case OEM_OPCODE_SEND_EXT_MSG:
 	case OEM_OPCODE_SEND_VDM:
+	case OEM_OPCODE_TRANSFER_FIRMWARE:
 		usbvdm_glink_handle_ack(uv_dev, data, len);
 		break;
 	default:

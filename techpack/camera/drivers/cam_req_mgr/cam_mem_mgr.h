@@ -62,7 +62,6 @@ struct cam_presil_dmabuf_params {
  * @bufq_idx:       Existing buf table index
  * @urefcount:      Reference counter to track whether the buffer is
  *                  mapped and in use by umd
- * @ref_lock:       Mutex lock for refcount
  */
 struct cam_mem_buf_queue {
 	struct dma_buf *dma_buf;
@@ -91,7 +90,6 @@ struct cam_mem_buf_queue {
 	struct hlist_node hlist;
 	int bufq_idx;
 	struct kref urefcount;
-	struct mutex ref_lock;
 };
 
 /**

@@ -85,6 +85,8 @@
 #define EDID_QUIRK_FORCE_10BPC			(1 << 11)
 /* Non desktop display (i.e. HMD) */
 #define EDID_QUIRK_NON_DESKTOP			(1 << 12)
+/* Prefer largest mode, ignoring fps */
+#define EDID_QUIRK_PREFER_LARGE			(1 << 13)
 
 struct detailed_mode_closure {
 	struct drm_connector *connector;
@@ -2167,6 +2169,7 @@ static void edid_fixup_preferred(struct drm_connector *connector,
 	struct drm_display_mode *t, *cur_mode, *preferred_mode;
 	int target_refresh = 0;
 	int cur_vrefresh, preferred_vrefresh;
+	bool ignore_fps = quirks & EDID_QUIRK_PREFER_LARGE;
 
 	if (list_empty(&connector->probed_modes))
 		return;
@@ -2194,7 +2197,7 @@ static void edid_fixup_preferred(struct drm_connector *connector,
 		/* At a given size, try to get closest to target refresh */
 		if ((MODE_SIZE(cur_mode) == MODE_SIZE(preferred_mode)) &&
 		    MODE_REFRESH_DIFF(cur_vrefresh, target_refresh) <
-		    MODE_REFRESH_DIFF(preferred_vrefresh, target_refresh)) {
+		    MODE_REFRESH_DIFF(preferred_vrefresh, target_refresh) && !ignore_fps) {
 			preferred_mode = cur_mode;
 		}
 	}
@@ -5342,6 +5345,9 @@ int drm_add_edid_modes(struct drm_connector *connector, struct edid *edid)
 	 */
 	quirks = drm_add_display_info(connector, edid);
 
+	if (connector->edid_prefer_large)
+		quirks |= EDID_QUIRK_PREFER_LARGE;
+
 	/*
 	 * EDID spec says modes should be preferred in this order:
 	 * - preferred detailed mode
@@ -5366,7 +5372,7 @@ int drm_add_edid_modes(struct drm_connector *connector, struct edid *edid)
 	if (edid->features & DRM_EDID_FEATURE_DEFAULT_GTF)
 		num_modes += add_inferred_modes(connector, edid);
 
-	if (quirks & (EDID_QUIRK_PREFER_LARGE_60 | EDID_QUIRK_PREFER_LARGE_75))
+	if (quirks & (EDID_QUIRK_PREFER_LARGE_60 | EDID_QUIRK_PREFER_LARGE_75 | EDID_QUIRK_PREFER_LARGE))
 		edid_fixup_preferred(connector, quirks);
 
 	if (quirks & EDID_QUIRK_FORCE_6BPC)

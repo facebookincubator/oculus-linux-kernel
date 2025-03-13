@@ -174,6 +174,7 @@
 	/*
 	 * Mark XPU-protected GPIOs are reserved, to prevent
 	 * attempted initialization at boot.
+	 * GPIO  3: SGPIO3_TZ_ENTER_PRVCY_MODE (tz_enter_privacy_mode)
 	 * GPIO  5: SGPIO5_TZ_AUD_SW (mic_enable)
 	 * GPIO 14: SGPIO14_TZ_CAM_L8B_LS_EN (cam_enable)
 	 * GPIO 43: SGPIO43_TZ_L8B_VSNS_IN (voltage_sense)
@@ -182,7 +183,7 @@
 	 * GPIO115: SGPIO115_SAFETYBOSS_RESET (santana_manager_swd_reset)
 	 * GPIO136: SGPIO136_SAFETYBOSS_UART_TX (santana_manager_uart)
 	 */
-	qcom,gpios-reserved = <5 14 43 54 55 115 136>;
+	qcom,gpios-reserved = <3 5 14 43 54 55 115 136>;
 	cypd3177_irq_default: cypd3177_irq_default {
 		mux {
 			pins = "gpio42", "gpio175";
@@ -244,6 +245,7 @@
 
 	meta,pdfu_initiator {
 		compatible = "meta,pdfu-initiator";
+		engine-driven-transfer;
 		usb,product-ids =
 			/bits/ 16 <0x5006>,		 /* Moku */
 			/bits/ 16 <0x500f>;		 /* Lehua+ */

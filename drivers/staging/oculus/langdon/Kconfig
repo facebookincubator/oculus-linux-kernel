@@ -1,0 +1,5 @@
+config PCI_LANGDON_FPGA_MISC
+	tristate "Langdon FPGA DMA driver"
+	default n
+	help
+		This driver adds DMA support for the Langdon FPGA board

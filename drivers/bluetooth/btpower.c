@@ -1188,7 +1188,7 @@ int btpower_register_slimdev(struct device *dev)
 {
 	pr_debug("%s\n", __func__);
 	if (!bt_power_pdata || (dev == NULL)) {
-		pr_err("%s: Failed to allocate memory\n", __func__);
+		pr_debug("%s: Failed to allocate memory\n", __func__);
 		return -EINVAL;
 	}
 	bt_power_pdata->slim_dev = dev;

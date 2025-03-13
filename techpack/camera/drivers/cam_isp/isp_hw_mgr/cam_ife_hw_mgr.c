@@ -1210,8 +1210,7 @@ static inline bool cam_ife_hw_mgr_is_ife_out_port(uint32_t res_id)
 	bool is_ife_out = false;
 
 	if ((res_id >= CAM_ISP_IFE_OUT_RES_BASE) &&
-		(res_id <= (CAM_ISP_IFE_OUT_RES_BASE +
-		max_ife_out_res)))
+		(res_id < (CAM_ISP_IFE_OUT_RES_BASE + max_ife_out_res)))
 		is_ife_out = true;
 
 	return is_ife_out;
@@ -13598,7 +13597,6 @@ static int cam_isp_blob_ife_process_primary_port_configs(
 	struct cam_isp_primary_port_config *port_config)
 {
 	int i, rc, res_id;
-	unsigned long comp_grp_mask = 0;
 	struct cam_isp_hw_mgr_res *isp_out_res;
 	struct cam_isp_resource_node *isp_res;
 	struct cam_isp_primary_port_grp_info *grp_info = NULL;
@@ -13640,12 +13638,6 @@ static int cam_isp_blob_ife_process_primary_port_configs(
 	for (i = 0; i < port_config->num_ports; i++) {
 		grp_info = &port_config->port_info[i];
 		res_id = grp_info->res_id & 0xFF;
-
-		if (test_and_set_bit(grp_info->comp_grp, &comp_grp_mask)) {
-			CAM_ERR(CAM_ISP, "Comp group: %u already configured with a resource",
-				grp_info->comp_grp);
-			goto err;
-		}
 
 		if (cam_ife_hw_mgr_is_virtual_rdi_res(grp_info->res_id) &&
 			hw_mgr_ctx->flags.per_port_en) {
@@ -15335,7 +15327,8 @@ static int cam_ife_mgr_isp_add_reg_update(struct cam_ife_hw_mgr_ctx *ctx,
 }
 
 int cam_ife_hw_mgr_ul_setup_change_base(struct cam_isp_ctx_ul_data *ul_data,
-	void                    *priv) {
+	void                    *priv)
+{
 	struct cam_ife_hw_mgr_ctx               *ctx = (struct cam_ife_hw_mgr_ctx *)priv;
 	struct cam_isp_change_base_args          change_base_info = {0};
 	struct list_head                        *res_list = NULL;
@@ -15381,18 +15374,22 @@ int cam_ife_hw_mgr_ul_setup_change_base(struct cam_isp_ctx_ul_data *ul_data,
 				if (rc)
 					return rc;
 
-				ul_data->change_base.change_base_cmd[hw_type][base_idx].handle = ul_data->kmd_buf.handle;
-				ul_data->change_base.change_base_cmd[hw_type][base_idx].len    = get_base.cmd.used_bytes;
-				ul_data->change_base.change_base_cmd[hw_type][base_idx].offset = ul_data->kmd_buf.offset;
+				ul_data->change_base.change_base_cmd[hw_type][base_idx].handle =
+					ul_data->kmd_buf.handle;
+				ul_data->change_base.change_base_cmd[hw_type][base_idx].len    =
+					get_base.cmd.used_bytes;
+				ul_data->change_base.change_base_cmd[hw_type][base_idx].offset =
+					ul_data->kmd_buf.offset;
 
 				/* Marking change base as COMMON_CFG */
-				ul_data->change_base.change_base_cmd[hw_type][base_idx].flags  = CAM_ISP_COMMON_CFG_BL;
+				ul_data->change_base.change_base_cmd[hw_type][base_idx].flags  =
+					CAM_ISP_COMMON_CFG_BL;
 				CAM_DBG(CAM_ISP,
 					"hw_type %d base=%d handle=0x%x, len=%u, offset=%u",
 					hw_type, i,
-					ul_data->change_base.change_base_cmd[hw_type][base_idx].handle,
-					ul_data->change_base.change_base_cmd[hw_type][base_idx].len,
-					ul_data->change_base.change_base_cmd[hw_type][base_idx].offset);
+					ul_data->kmd_buf.handle,
+					get_base.cmd.used_bytes,
+					ul_data->kmd_buf.offset);
 
 				ul_data->kmd_buf.used_bytes += get_base.cmd.used_bytes;
 				ul_data->kmd_buf.offset     += get_base.cmd.used_bytes;
@@ -15613,15 +15610,15 @@ int cam_ife_mgr_prepare_ul_hw_update(void *hw_mgr_priv,
 			goto end;
 		}
 	}
-	for(i = 0; i < ctx->num_base; i++) {
-		if (ctx->base[i].hw_type == CAM_ISP_HW_TYPE_VFE) {
-			num_ent = prepare->num_hw_update_entries;
-			memcpy(&prepare->hw_update_entries[num_ent],
-				&ul_data->change_base.change_base_cmd[CAM_ISP_HW_TYPE_VFE][ctx->base[i].idx],
-				sizeof(struct cam_hw_update_entry));
-			prepare->num_hw_update_entries++;
-			break;
-		}
+	for (i = 0; i < ctx->num_base; i++) {
+		if (ctx->base[i].hw_type != CAM_ISP_HW_TYPE_VFE)
+			continue;
+		num_ent = prepare->num_hw_update_entries;
+		memcpy(&prepare->hw_update_entries[num_ent],
+		&ul_data->change_base.change_base_cmd[CAM_ISP_HW_TYPE_VFE][ctx->base[i].idx],
+		sizeof(struct cam_hw_update_entry));
+		prepare->num_hw_update_entries++;
+		break;
 	}
 
 	/*
@@ -15710,9 +15707,8 @@ int cam_ife_hw_mgr_prepare_ul_io(void *hw_mgr_priv,
 			break;
 		}
 	}
-	if (!ul_data->change_base.is_valid) {
+	if (!ul_data->change_base.is_valid)
 		cam_ife_hw_mgr_ul_setup_change_base(ul_data, (void *) ctx);
-	}
 
 	return rc;
 }
