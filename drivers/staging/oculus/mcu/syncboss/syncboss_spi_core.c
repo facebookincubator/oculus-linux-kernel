@@ -42,6 +42,10 @@ static const struct of_device_id syncboss_subdevice_match_table[] = {
 #define ktime_get_boottime_ns ktime_get_boot_ns
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+#define irq_set_affinity_and_hint irq_set_affinity_hint
+#endif
+
 /*
  * Fastpath Notes
  * ==============
@@ -126,7 +130,23 @@ static int syncboss_inc_streaming_client_count_locked(struct syncboss_dev_data *
 	BUG_ON(devdata->streaming_client_count < 0);
 
 	if (devdata->streaming_client_count == 0) {
-		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTING, NULL);
+		struct syncboss_state_data event_data;
+		int irq_cpu;
+
+		/*
+		 * Set affinity of ready IRQ to match first CPU of thread mask.
+		 * Pass this with SYNCBOSS_EVENT_STREAMING_STARTING to clients.
+		 */
+		irq_cpu = cpumask_first(&devdata->cpu_affinity);
+		cpumask_clear(&event_data.irq_affinity);
+		cpumask_set_cpu(irq_cpu, &event_data.irq_affinity);
+		if (irq_cpu >= nr_cpu_ids ||
+		    irq_set_affinity_and_hint(devdata->ready_irq, &event_data.irq_affinity)) {
+			dev_err(&devdata->spi->dev, "failed to set ready IRQ affinity");
+			return -EINVAL;
+		}
+
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTING, &event_data);
 		syncboss_inc_mcu_client_count_locked(devdata);
 
 		dev_dbg(&devdata->spi->dev, "starting streaming thread");
@@ -1961,7 +1981,7 @@ static int syncboss_probe(struct spi_device *spi)
 	irq_set_irq_wake(devdata->ready_irq, /*on*/ 1);
 	status = devm_request_irq(dev, devdata->ready_irq,
 				  isr_data_ready,
-				  IRQF_TRIGGER_RISING,
+				  IRQF_NOBALANCING | IRQF_TRIGGER_RISING,
 				  devdata->misc.name, devdata);
 	if (status < 0) {
 		dev_err(dev, "failed to get data ready irq, error %d", status);

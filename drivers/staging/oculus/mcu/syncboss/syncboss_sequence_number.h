@@ -12,11 +12,16 @@
 #define SYNCBOSS_SEQ_NUM_MAX 254
 #define SYNCBOSS_SEQ_NUM_BITS (SYNCBOSS_SEQ_NUM_MAX + 1)
 
+struct syncboss_seq_allocations {
+	u64 count;
+
+	/* Bitmap of allocated sequence numbers (ioctl) */
+	DECLARE_BITMAP(bitmap, SYNCBOSS_SEQ_NUM_BITS);
+};
+
 struct syncboss_seq_client {
 	struct task_struct *task;
-	u64 seq_num_allocation_count;
-	/* Bitmap of allocated sequence numbers (ioctl) */
-	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+	struct syncboss_seq_allocations allocations;
 };
 
 struct syncboss_seq {
@@ -24,11 +29,8 @@ struct syncboss_seq {
 
 	/* The last sequence number used for a control call (ioctl) */
 	int last_seq_num;
-
-	/* Bitmap of allocated sequence numbers (ioctl) */
-	DECLARE_BITMAP(allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
-
-	u64 seq_num_allocation_count;
+	
+	struct syncboss_seq_allocations allocations;
 };
 
 int syncboss_sequence_number_client_create_locked(struct syncboss_seq *seq,

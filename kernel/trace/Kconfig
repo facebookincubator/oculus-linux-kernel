@@ -504,7 +504,7 @@ config KPROBE_EVENTS
 config KPROBE_EVENTS_ON_NOTRACE
 	bool "Do NOT protect notrace function from kprobe events"
 	depends on KPROBE_EVENTS
-	depends on KPROBES_ON_FTRACE
+	depends on DYNAMIC_FTRACE
 	default n
 	help
 	  This is only for the developers who want to debug ftrace itself
@@ -545,6 +545,9 @@ config BPF_EVENTS
 	default y
 	help
 	  This allows the user to attach BPF programs to kprobe events.
+
+config DYNAMIC_EVENTS
+	def_bool n
 
 config PROBE_EVENTS
 	def_bool n
@@ -658,6 +661,7 @@ config HIST_TRIGGERS
 	depends on ARCH_HAVE_NMI_SAFE_CMPXCHG
 	select TRACING_MAP
 	select TRACING
+	select DYNAMIC_EVENTS
 	default n
 	help
 	  Hist triggers allow one or more arbitrary trace event fields

@@ -478,6 +478,7 @@ static struct platform_driver axp288_extcon_driver = {
 };
 
 static struct device_connection axp288_extcon_role_sw_conn = {
+	.fwnode = NULL,
 	.endpoint[0] = "axp288_extcon",
 	.endpoint[1] = "intel_xhci_usb_sw-role-switch",
 	.id = "usb-role-switch",

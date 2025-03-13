@@ -21,22 +21,13 @@
 #include "rcar_du_drv.h"
 #include "rcar_du_encoder.h"
 #include "rcar_du_kms.h"
+#include "rcar_lvds.h"
 
 /* -----------------------------------------------------------------------------
  * Encoder
  */
 
-static void rcar_du_encoder_mode_set(struct drm_encoder *encoder,
-				     struct drm_crtc_state *crtc_state,
-				     struct drm_connector_state *conn_state)
-{
-	struct rcar_du_encoder *renc = to_rcar_encoder(encoder);
-
-	rcar_du_crtc_route_output(crtc_state->crtc, renc->output);
-}
-
 static const struct drm_encoder_helper_funcs encoder_helper_funcs = {
-	.atomic_mode_set = rcar_du_encoder_mode_set,
 };
 
 static const struct drm_encoder_funcs encoder_funcs = {
@@ -45,8 +36,7 @@ static const struct drm_encoder_funcs encoder_funcs = {
 
 int rcar_du_encoder_init(struct rcar_du_device *rcdu,
 			 enum rcar_du_output output,
-			 struct device_node *enc_node,
-			 struct device_node *con_node)
+			 struct device_node *enc_node)
 {
 	struct rcar_du_encoder *renc;
 	struct drm_encoder *encoder;
@@ -68,6 +58,21 @@ int rcar_du_encoder_init(struct rcar_du_device *rcdu,
 	if (!bridge) {
 		ret = -EPROBE_DEFER;
 		goto done;
+	}
+
+	if (output == RCAR_DU_OUTPUT_LVDS0 ||
+	    output == RCAR_DU_OUTPUT_LVDS1)
+		rcdu->lvds[output - RCAR_DU_OUTPUT_LVDS0] = bridge;
+
+	/*
+	 * On Gen3 skip the LVDS1 output if the LVDS1 encoder is used as a
+	 * companion for LVDS0 in dual-link mode.
+	 */
+	if (rcdu->info->gen >= 3 && output == RCAR_DU_OUTPUT_LVDS1) {
+		if (rcar_lvds_dual_link(bridge)) {
+			ret = -ENOLINK;
+			goto done;
+		}
 	}
 
 	ret = drm_encoder_init(rcdu->ddev, encoder, &encoder_funcs,

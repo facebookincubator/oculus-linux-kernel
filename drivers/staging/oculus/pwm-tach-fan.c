@@ -27,6 +27,7 @@
 #include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
@@ -50,6 +51,7 @@
 #define DEFAULT_SILENT_RPM 0 /* below this, fan is considered inaudible */
 #define DEFAULT_MIN_PWM 15U
 #define DEFAULT_MAX_PWM 255U
+#define MAX_HW_PWM 255U
 #define MAX_STR_LEN 10
 #define MAX_RPM_HISTORY 3
 
@@ -63,6 +65,9 @@ struct pwm_fan_ctx {
 	 */
 	struct mutex lock;
 	struct pwm_device *pwm;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *active_state;
+	struct pinctrl_state *idle_state;
 	struct hrtimer fan_timer;
 	struct thermal_cooling_device *cdev;
 	struct regulator *vdd_supply;
@@ -179,6 +184,15 @@ static int enable_fan_notimestamp(struct pwm_fan_ctx *ctx)
 	ret = pwm_enable(ctx->pwm);
 	if (ret)
 		return ret;
+
+	if (ctx->active_state) {
+		ret = pinctrl_select_state(ctx->pinctrl, ctx->active_state);
+		if (ret < 0) {
+			dev_err(&ctx->cdev->device, "failed to apply active pin state: %d\n", ret);
+			return ret;
+		}
+	}
+
 	reset_counters(ctx);
 	enable_irq(ctx->irq);
 	/* Allow fan enough time to start from idle */
@@ -202,9 +216,16 @@ static int enable_fan(struct pwm_fan_ctx *ctx)
 
 static void disable_fan_notimestamp(struct pwm_fan_ctx *ctx)
 {
+	int rc;
+
 	hrtimer_cancel(&ctx->fan_timer);
 	cancel_work_sync(&ctx->fan_work);
 	disable_irq(ctx->irq);
+	if (ctx->idle_state) {
+		rc = pinctrl_select_state(ctx->pinctrl, ctx->idle_state);
+		if (rc < 0)
+			dev_err(&ctx->cdev->device, "failed to apply idle pin state: %d\n", rc);
+	}
 	pwm_disable(ctx->pwm);
 	atomic64_set(&ctx->rpm, 0);
 
@@ -239,7 +260,7 @@ static int set_pwm_locked(struct pwm_fan_ctx *ctx, int32_t pwm)
 	target_pwm = ctx->force_failure ? FORCE_FAILURE_PWM : pwm;
 
 	period = ctx->pwm->args.period;
-	duty = DIV_ROUND_UP(target_pwm * (period - 1), ctx->max_pwm);
+	duty = DIV_ROUND_UP(target_pwm * (period - 1), MAX_HW_PWM);
 
 	ret = pwm_config(ctx->pwm, duty, period);
 	if (ret)
@@ -992,12 +1013,12 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	hrtimer_init(&ctx->fan_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	ctx->fan_timer.function = fan_timer_func;
 
-	ctx->irq = platform_get_irq_byname(pdev, "fan_irq");
-	if (ctx->irq < 0) {
-		dev_err(&pdev->dev, "fan_irq not found: %d\n", ctx->irq);
-		ret = ctx->irq;
+	ret = platform_get_irq_byname(pdev, "fan_irq");
+	if (ret < 0) {
+		dev_err(&pdev->dev, "fan_irq not found: %d\n", ret);
 		goto err_tach_gpio_dir;
 	}
+	ctx->irq = ret;
 
 	ret = devm_request_irq(&pdev->dev, ctx->irq,
 				  pwm_fan_irq_handler,
@@ -1040,9 +1061,18 @@ static int pwm_fan_probe(struct platform_device *pdev)
 #if IS_ENABLED(CONFIG_DRM)
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
 	if (ctx->use_panel_notifiers) {
+		uint32_t fan_id = 0;
+
+		of_property_read_u32(pdev->dev.of_node, "reg", &fan_id);
+		if (fan_id > 1) {
+			dev_err(&pdev->dev, "Fan ID %d is unsupported\n", fan_id);
+			ret = -EINVAL;
+			goto err_tach_gpio_dir;
+		}
+
 		cookie = panel_event_notifier_register(
 				PANEL_EVENT_NOTIFICATION_PRIMARY,
-				PANEL_EVENT_NOTIFIER_CLIENT_FAN,
+				fan_id == 1 ? PANEL_EVENT_NOTIFIER_CLIENT_FAN1 : PANEL_EVENT_NOTIFIER_CLIENT_FAN0,
 				NULL,
 				&pwm_fan_panel_notifier_cb,
 				&ctx->fb_notif);
@@ -1089,6 +1119,18 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Property 'max-rpm' cannot be read!\n");
 		goto err_tach_gpio_dir;
 	}
+
+	ctx->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR_OR_NULL(ctx->pinctrl))
+		goto err_tach_gpio_dir;
+
+	ctx->active_state = pinctrl_lookup_state(ctx->pinctrl, "active");
+	if (IS_ERR(ctx->active_state))
+		ctx->active_state = NULL;
+
+	ctx->idle_state = pinctrl_lookup_state(ctx->pinctrl, "idle");
+	if (IS_ERR(ctx->idle_state))
+		ctx->idle_state = NULL;
 
 	ret = pwm_fan_of_get_cooling_data(&pdev->dev, ctx);
 	if (ret)

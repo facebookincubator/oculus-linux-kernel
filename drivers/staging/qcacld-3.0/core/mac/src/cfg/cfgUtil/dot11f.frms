@@ -367,7 +367,7 @@ FF SMPowerModeSet (1)				//7.3.1.25
      }
 }
 
-FF TSInfo (3)                             // 7.3.2.30
+FF TSInfo (4)                             // 7.3.2.30
 {
     {
         traffic_type:    1;

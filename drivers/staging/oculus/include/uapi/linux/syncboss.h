@@ -26,6 +26,7 @@ struct rx_history_elem {
 } __attribute__((packed));
 
 enum syncboss_time_offset_status {
+	/* Invalid must be 0 because we depend on kzalloc() */
 	SYNCBOSS_TIME_OFFSET_INVALID = 0,
 	SYNCBOSS_TIME_OFFSET_VALID,
 	SYNCBOSS_TIME_OFFSET_ERROR,

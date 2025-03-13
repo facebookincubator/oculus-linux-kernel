@@ -706,7 +706,7 @@ err:
 }
 
 static int syncboss_clear_directchannel_sm(
-	struct direct_channel_dev_data *devdata, struct file *file,
+	struct direct_channel_dev_data *devdata, const struct file *file,
 	const struct syncboss_driver_directchannel_shared_memory_clear_config __user
 		*config)
 {

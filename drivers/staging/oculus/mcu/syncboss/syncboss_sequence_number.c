@@ -23,8 +23,8 @@ int syncboss_sequence_number_client_create_locked(struct syncboss_seq *seq,
 void syncboss_sequence_number_client_destroy_locked(
 	struct syncboss_seq *seq, struct syncboss_seq_client *client_seq)
 {
-	bitmap_andnot(seq->allocated_seq_num, seq->allocated_seq_num,
-		client_seq->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+	bitmap_andnot(seq->allocations.bitmap, seq->allocations.bitmap,
+		client_seq->allocations.bitmap, SYNCBOSS_SEQ_NUM_BITS);
 
 	devm_kfree(seq->dev, client_seq);
 }
@@ -38,15 +38,15 @@ void syncboss_sequence_number_init(struct syncboss_seq *seq, struct device *dev)
 void syncboss_sequence_number_reset_locked(struct syncboss_seq *seq,
 	struct list_head *client_data_list)
 {
-	if (!list_empty(client_data_list))
+	if (client_data_list && !list_empty(client_data_list))
 		dev_err(seq->dev, "resetting sequence numbers while clients exist");
 
 	seq->last_seq_num = SYNCBOSS_SEQ_NUM_MAX;
-	if (!bitmap_empty(seq->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS)) {
+	if (!bitmap_empty(seq->allocations.bitmap, SYNCBOSS_SEQ_NUM_BITS)) {
 		dev_err(seq->dev, "resetting sequence numbers with non-zero bitmap");
-		bitmap_zero(seq->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+		bitmap_zero(seq->allocations.bitmap, SYNCBOSS_SEQ_NUM_BITS);
 	}
-	seq->seq_num_allocation_count = 0;
+	seq->allocations.count = 0;
 }
 
 int syncboss_sequence_number_allocate_locked(struct syncboss_seq *seq,
@@ -65,28 +65,34 @@ int syncboss_sequence_number_allocate_locked(struct syncboss_seq *seq,
 	if (next_seq > SYNCBOSS_SEQ_NUM_MAX)
 		next_seq = SYNCBOSS_SEQ_NUM_MIN;
 
-	next_seq_avail = find_next_zero_bit(seq->allocated_seq_num,
+	next_seq_avail = find_next_zero_bit(seq->allocations.bitmap,
 						SYNCBOSS_SEQ_NUM_BITS, /* size */
 						next_seq /* offset */);
 	if (next_seq_avail >= SYNCBOSS_SEQ_NUM_BITS) {
 		/* Search only through bits we didn't already look through. */
-		next_seq_avail = find_next_zero_bit(seq->allocated_seq_num,
+		next_seq_avail = find_next_zero_bit(seq->allocations.bitmap,
 							next_seq, /* size (end) */
 							SYNCBOSS_SEQ_NUM_MIN /* offset (start) */);
 		if (next_seq_avail >= next_seq) {
-			dev_warn(seq->dev,
-				"no sequence numbers available for %s (%d)",
-				client_seq->task->comm, client_seq->task->pid);
+			if (client_seq)
+				dev_warn(seq->dev,
+					"no sequence numbers available for %s (%d)",
+					client_seq->task->comm, client_seq->task->pid);
+			else
+				dev_warn(seq->dev,
+					"no sequence numbers available");
 			return -EAGAIN;
 		}
 	}
 	next_seq = next_seq_avail;
 
-	set_bit(next_seq, seq->allocated_seq_num);
-	set_bit(next_seq, client_seq->allocated_seq_num);
+	set_bit(next_seq, seq->allocations.bitmap);
+	if (client_seq)
+		set_bit(next_seq, client_seq->allocations.bitmap);
 
-	seq->seq_num_allocation_count++;
-	client_seq->seq_num_allocation_count++;
+	seq->allocations.count++;
+	if (client_seq)
+		client_seq->allocations.count++;
 
 	seq->last_seq_num = next_seq;
 
@@ -107,15 +113,17 @@ int syncboss_sequence_number_release_locked(struct syncboss_seq *seq,
 		return -EINVAL;
 	}
 
-	client_had_seq_num = test_and_clear_bit(seq_num, client_seq->allocated_seq_num);
-	if (!client_had_seq_num) {
-		dev_warn(seq->dev,
-			"%s (%d) attempted to release a sequence number that was not allocated to them: %d",
-			client_seq->task->comm, client_seq->task->pid, seq_num);
-		return -EACCES;
+	if (client_seq) {
+		client_had_seq_num = test_and_clear_bit(seq_num, client_seq->allocations.bitmap);
+		if (!client_had_seq_num) {
+			dev_warn(seq->dev,
+				"%s (%d) attempted to release a sequence number that was not allocated to them: %d",
+				client_seq->task->comm, client_seq->task->pid, seq_num);
+			return -EACCES;
+		}
 	}
 
-	clear_bit(seq_num, seq->allocated_seq_num);
+	clear_bit(seq_num, seq->allocations.bitmap);
 
 	return 0;
 }
@@ -123,6 +131,6 @@ int syncboss_sequence_number_release_locked(struct syncboss_seq *seq,
 void syncboss_sequence_number_release_client_locked(struct syncboss_seq *seq,
 	struct syncboss_seq_client *client_seq)
 {
-	bitmap_andnot(seq->allocated_seq_num, seq->allocated_seq_num,
-		client_seq->allocated_seq_num, SYNCBOSS_SEQ_NUM_BITS);
+	bitmap_andnot(seq->allocations.bitmap, seq->allocations.bitmap,
+		client_seq->allocations.bitmap, SYNCBOSS_SEQ_NUM_BITS);
 }

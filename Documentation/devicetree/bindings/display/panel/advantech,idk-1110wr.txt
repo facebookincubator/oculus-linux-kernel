@@ -1,0 +1,45 @@
+Advantech IDK-1110WR 10.1" WSVGA LVDS Display Panel
+===================================================
+
+The Advantech IDK-1110WR is a 10.1" industrial grade LCD display with
+4-wire resistive touch.
+
+These DT bindings follow the LVDS panel bindings defined in panel-lvds.txt
+with the following device-specific properties.
+
+Required properties:
+
+- compatible: Shall contain "advantech,idk-1110wr" and "panel-lvds", in that
+  order.
+
+
+Example
+-------
+
+panel {
+	compatible = "advantech,idk-1110wr", "panel-lvds";
+
+	width-mm = <223>;
+	height-mm = <125>;
+
+	data-mapping = "jeida-24";
+
+	panel-timing {
+		/* 1024x600 @60Hz */
+		clock-frequency = <51200000>;
+		hactive = <1024>;
+		vactive = <600>;
+		hsync-len = <240>;
+		hfront-porch = <40>;
+		hback-porch = <40>;
+		vsync-len = <10>;
+		vfront-porch = <15>;
+		vback-porch = <10>;
+	};
+
+	port {
+		panel_in: endpoint {
+			remote-endpoint = <&lvds_encoder>;
+		};
+	};
+};
