@@ -1078,13 +1078,13 @@ EXPORT_SYMBOL(cnss_pci_is_device_down);
 
 void cnss_pci_lock_reg_window(struct device *dev, unsigned long *flags)
 {
-	spin_lock_bh(&pci_reg_window_lock);
+	spin_lock_irqsave(&pci_reg_window_lock, *flags);
 }
 EXPORT_SYMBOL(cnss_pci_lock_reg_window);
 
 void cnss_pci_unlock_reg_window(struct device *dev, unsigned long *flags)
 {
-	spin_unlock_bh(&pci_reg_window_lock);
+	spin_unlock_irqrestore(&pci_reg_window_lock, *flags);
 }
 EXPORT_SYMBOL(cnss_pci_unlock_reg_window);
 

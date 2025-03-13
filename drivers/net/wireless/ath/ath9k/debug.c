@@ -1236,8 +1236,11 @@ static ssize_t write_file_nf_override(struct file *file,
 
 	ah->nf_override = val;
 
-	if (ah->curchan)
+	if (ah->curchan) {
+		ath9k_ps_wakeup(sc);
 		ath9k_hw_loadnf(ah, ah->curchan);
+		ath9k_ps_restore(sc);
+	}
 
 	return count;
 }
@@ -1294,7 +1297,7 @@ void ath9k_get_et_strings(struct ieee80211_hw *hw,
 			  u32 sset, u8 *data)
 {
 	if (sset == ETH_SS_STATS)
-		memcpy(data, *ath9k_gstrings_stats,
+		memcpy(data, ath9k_gstrings_stats,
 		       sizeof(ath9k_gstrings_stats));
 }
 

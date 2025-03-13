@@ -169,8 +169,10 @@
 			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
 
 			interrupt-parent = <&tlmm>;
-			interrupts = <66 IRQ_TYPE_EDGE_RISING>;
+			interrupts = <66 IRQ_TYPE_EDGE_FALLING>;
 			interrupt-names = "nsync";
+
+			meta,is-vsync;
 		};
 	};
 };

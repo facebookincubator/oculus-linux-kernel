@@ -157,7 +157,10 @@ static inline bool is_encode_session(struct msm_vidc_inst *inst)
 {
 	return inst->session_type == MSM_VIDC_ENCODER;
 }
-
+static inline bool is_supported_session(struct msm_vidc_inst *inst)
+{
+	return inst->supported;
+}
 static inline bool is_primary_output_mode(struct msm_vidc_inst *inst)
 {
 	return inst->stream_output_mode == HAL_VIDEO_DECODER_PRIMARY;

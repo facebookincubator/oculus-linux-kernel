@@ -115,13 +115,6 @@ config IIO_CHANNEL_SENSOR
 	  This driver implements a virtual sensor driver representing the iio channel
 	  value of a device.
 
-config INSTRUCTION_SAMPLER
-	tristate "Periodic instruction sampler"
-	depends on EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
-	help
-	  Provides support for periodic instruction sampling of processes
-	  running on the system.
-
 config MISCFIFO
 	tristate "miscfifo chardev driver"
 	default n
@@ -304,6 +297,7 @@ config ORCHESTRATOR_AGENT
 		implement Meta-specific kernel policies for the orchestrator
 		service.
 
+source "drivers/staging/oculus/langdon/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"
 source "drivers/staging/oculus/pdfu/Kconfig"
 source "drivers/staging/oculus/usbvdm/Kconfig"

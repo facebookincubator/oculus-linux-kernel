@@ -249,6 +249,9 @@ config ARCH_HAS_FORTIFY_SOURCE
 config ARCH_HAS_SET_MEMORY
 	bool
 
+config ARCH_HAS_CPU_FINALIZE_INIT
+	bool
+
 # Select if arch init_task must go in the __init_task_data section
 config ARCH_TASK_STRUCT_ON_STACK
        bool
@@ -995,6 +998,9 @@ config PANIC_ON_REFCOUNT_ERROR
 	  has detected any type of error (e.g. potential use-after-free
 	  or potential memory-leaks) with an object associated with that
 	  reference counter.
+
+config ARCH_USE_MEMREMAP_PROT
+	bool
 
 # Select if the architecture has support for applying RELR relocations.
 config ARCH_HAS_RELR

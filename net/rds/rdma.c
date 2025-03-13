@@ -278,6 +278,9 @@ static int __rds_rdma_map(struct rds_sock *rs, struct rds_get_mr_args *args,
 			put_page(sg_page(&sg[i]));
 		kfree(sg);
 		ret = PTR_ERR(trans_private);
+		/* Trigger connection so that its ready for the next retry */
+		if (ret == -ENODEV && cp)
+			rds_conn_connect_if_down(cp->cp_conn);
 		goto out;
 	}
 
@@ -530,6 +533,9 @@ int rds_rdma_extra_size(struct rds_rdma_args *args,
 
 	if (args->nr_local == 0)
 		return -EINVAL;
+
+	if (args->nr_local > UIO_MAXIOV)
+		return -EMSGSIZE;
 
 	iov->iov = kcalloc(args->nr_local,
 			   sizeof(struct rds_iovec),

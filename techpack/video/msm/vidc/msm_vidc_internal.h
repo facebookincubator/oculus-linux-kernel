@@ -577,6 +577,7 @@ struct msm_vidc_inst {
 	int full_range;
 	u64 last_qbuf_time_ns;
 	bool active;
+	bool supported;
 };
 
 extern struct msm_vidc_drv *vidc_driver;

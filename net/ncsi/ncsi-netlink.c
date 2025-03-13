@@ -71,8 +71,8 @@ static int ncsi_write_channel_info(struct sk_buff *skb,
 	if (ndp->force_channel == nc)
 		nla_put_flag(skb, NCSI_CHANNEL_ATTR_FORCED);
 
-	nla_put_u32(skb, NCSI_CHANNEL_ATTR_VERSION_MAJOR, nc->version.version);
-	nla_put_u32(skb, NCSI_CHANNEL_ATTR_VERSION_MINOR, nc->version.alpha2);
+	nla_put_u32(skb, NCSI_CHANNEL_ATTR_VERSION_MAJOR, nc->version.major);
+	nla_put_u32(skb, NCSI_CHANNEL_ATTR_VERSION_MINOR, nc->version.minor);
 	nla_put_string(skb, NCSI_CHANNEL_ATTR_VERSION_STR, nc->version.fw_name);
 
 	vid_nest = nla_nest_start(skb, NCSI_CHANNEL_ATTR_VLAN_LIST);
@@ -397,24 +397,8 @@ static struct genl_family ncsi_genl_family __ro_after_init = {
 	.n_ops = ARRAY_SIZE(ncsi_ops),
 };
 
-int ncsi_init_netlink(struct net_device *dev)
+static int __init ncsi_init_netlink(void)
 {
-	int rc;
-
-	rc = genl_register_family(&ncsi_genl_family);
-	if (rc)
-		netdev_err(dev, "ncsi: failed to register netlink family\n");
-
-	return rc;
+	return genl_register_family(&ncsi_genl_family);
 }
-
-int ncsi_unregister_netlink(struct net_device *dev)
-{
-	int rc;
-
-	rc = genl_unregister_family(&ncsi_genl_family);
-	if (rc)
-		netdev_err(dev, "ncsi: failed to unregister netlink family\n");
-
-	return rc;
-}
+subsys_initcall(ncsi_init_netlink);

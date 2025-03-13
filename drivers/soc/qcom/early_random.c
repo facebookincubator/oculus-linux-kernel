@@ -3,6 +3,7 @@
  * Copyright (c) 2013-2014, 2016-2018, The Linux Foundation. All rights
  */
 
+#include <linux/random.h>
 #include <linux/kernel.h>
 #include <linux/hw_random.h>
 #include <linux/io.h>
@@ -48,8 +49,7 @@ void __init init_random_pool(void)
 						RANDOM_BUFFER_SIZE);
 		bytes_received = (bytes_received <= RANDOM_BUFFER_SIZE) ?
 					bytes_received : RANDOM_BUFFER_SIZE;
-		add_hwgenerator_randomness(random_buffer, bytes_received,
-					   bytes_received << 3);
+		add_bootloader_randomness(random_buffer, bytes_received);
 	}
 }
 

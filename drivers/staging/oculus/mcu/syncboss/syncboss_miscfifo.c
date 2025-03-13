@@ -14,7 +14,8 @@
 #include "syncboss_consumer_priorities.h"
 #include "syncboss_miscfifo.h"
 
-#define MISCFIFO_SIZE 1024
+/* One-byte elements */
+#define MISCFIFO_SIZE 2048
 
 /* Default names to use if none are specified in the devicetree */
 #define STREAM_DEVICE_NAME_PROPERTY "meta,stream-dev-name"

@@ -143,9 +143,12 @@ static void install_bp_hardening_cb(bp_hardening_cb_t fn,
 		__copy_hyp_vect_bpi(slot, hyp_vecs_start, hyp_vecs_end);
 	}
 
-	__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
-	__this_cpu_write(bp_hardening_data.fn, fn);
-	__this_cpu_write(bp_hardening_data.template_start, hyp_vecs_start);
+	if (fn != __this_cpu_read(bp_hardening_data.fn)) {
+		__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
+		__this_cpu_write(bp_hardening_data.fn, fn);
+		__this_cpu_write(bp_hardening_data.template_start,
+				 hyp_vecs_start);
+	}
 	spin_unlock(&bp_lock);
 }
 #else
@@ -732,6 +735,15 @@ static const struct midr_range arm64_workaround_845719_cpus[] = {
 
 #endif
 
+#ifdef CONFIG_ARM64_ERRATUM_1742098
+static struct midr_range broken_aarch32_aes[] = {
+	MIDR_RANGE(MIDR_CORTEX_A57, 0, 1, 0xf, 0xf),
+	MIDR_ALL_VERSIONS(MIDR_CORTEX_A72),
+	{},
+};
+#endif
+
+
 const struct arm64_cpu_capabilities arm64_errata[] = {
 #if	defined(CONFIG_ARM64_ERRATUM_826319) || \
 	defined(CONFIG_ARM64_ERRATUM_827319) || \
@@ -946,6 +958,14 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		.cpu_enable = cpu_enable_trap_ctr_access,
 	},
 #endif
+#ifdef CONFIG_ARM64_ERRATUM_1742098
+	{
+		.desc = "ARM erratum 1742098",
+		.capability = ARM64_WORKAROUND_1742098,
+		CAP_MIDR_RANGE_LIST(broken_aarch32_aes),
+		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
+	},
+#endif
 	{
 	}
 };
@@ -957,7 +977,6 @@ ssize_t cpu_show_spectre_v1(struct device *dev, struct device_attribute *attr,
 }
 
 static const char *get_bhb_affected_string(enum mitigation_state bhb_state)
-
 {
 	switch (bhb_state) {
 	case SPECTRE_UNAFFECTED:
@@ -994,6 +1013,23 @@ ssize_t cpu_show_spectre_v2(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "Vulnerable\n");
 }
 
+ssize_t cpu_show_spec_store_bypass(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	if (__ssb_safe)
+		return sprintf(buf, "Not affected\n");
+
+	switch (ssbd_state) {
+	case ARM64_SSBD_KERNEL:
+	case ARM64_SSBD_FORCE_ENABLE:
+		if (IS_ENABLED(CONFIG_ARM64_SSBD))
+			return sprintf(buf,
+			    "Mitigation: Speculative Store Bypass disabled via prctl\n");
+	}
+
+	return sprintf(buf, "Vulnerable\n");
+}
+
 /*
  * We try to ensure that the mitigation state can never change as the result of
  * onlining a late CPU.
@@ -1022,7 +1058,6 @@ static void update_mitigation_state(enum mitigation_state *oldp,
  *   software mitigation in the vectors is needed.
  * - Has CSV2.3, so is unaffected.
  */
-
 static enum mitigation_state spectre_bhb_state;
 
 enum mitigation_state arm64_get_spectre_bhb_state(void)
@@ -1092,7 +1127,7 @@ static enum mitigation_state spectre_bhb_get_cpu_fw_mitigation_state(void)
 		break;
 
 	case PSCI_CONDUIT_SMC:
-	arm_smccc_1_1_smc(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
+		arm_smccc_1_1_smc(ARM_SMCCC_ARCH_FEATURES_FUNC_ID,
 				  ARM_SMCCC_ARCH_WORKAROUND_3, &res);
 		break;
 
@@ -1197,21 +1232,22 @@ static const char *kvm_bhb_get_vecs_end(const char *start)
 		return __smccc_workaround_3_smc_end;
 	else if (start == __spectre_bhb_loop_k8_start)
 		return __spectre_bhb_loop_k8_end;
-else if (start == __spectre_bhb_loop_k24_start)
+	else if (start == __spectre_bhb_loop_k24_start)
 		return __spectre_bhb_loop_k24_end;
-else if (start == __spectre_bhb_loop_k32_start)
+	else if (start == __spectre_bhb_loop_k32_start)
 		return __spectre_bhb_loop_k32_end;
-else if (start == __spectre_bhb_clearbhb_start)
+	else if (start == __spectre_bhb_clearbhb_start)
 		return __spectre_bhb_clearbhb_end;
-	return NULL;
 
+	return NULL;
+}
 
 static void kvm_setup_bhb_slot(const char *hyp_vecs_start)
 {
 	int cpu, slot = -1;
 	const char *hyp_vecs_end;
 
-if (!IS_ENABLED(CONFIG_KVM) || !is_hyp_mode_available())
+	if (!IS_ENABLED(CONFIG_KVM) || !is_hyp_mode_available())
 		return;
 
 	hyp_vecs_end = kvm_bhb_get_vecs_end(hyp_vecs_start);
@@ -1232,8 +1268,11 @@ if (!IS_ENABLED(CONFIG_KVM) || !is_hyp_mode_available())
 		__copy_hyp_vect_bpi(slot, hyp_vecs_start, hyp_vecs_end);
 	}
 
-	__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
-	__this_cpu_write(bp_hardening_data.template_start, hyp_vecs_start);
+	if (hyp_vecs_start != __this_cpu_read(bp_hardening_data.template_start)) {
+		__this_cpu_write(bp_hardening_data.hyp_vectors_slot, slot);
+		__this_cpu_write(bp_hardening_data.template_start,
+				 hyp_vecs_start);
+	}
 	spin_unlock(&bp_lock);
 }
 #else
@@ -1245,23 +1284,6 @@ if (!IS_ENABLED(CONFIG_KVM) || !is_hyp_mode_available())
 
 static void kvm_setup_bhb_slot(const char *hyp_vecs_start) { };
 #endif
-
-ssize_t cpu_show_spec_store_bypass(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	if (__ssb_safe)
-		return sprintf(buf, "Not affected\n");
-
-	switch (ssbd_state) {
-	case ARM64_SSBD_KERNEL:
-	case ARM64_SSBD_FORCE_ENABLE:
-		if (IS_ENABLED(CONFIG_ARM64_SSBD))
-			return sprintf(buf,
-			    "Mitigation: Speculative Store Bypass disabled via prctl\n");
-	}
-
-	return sprintf(buf, "Vulnerable\n");
-}
 
 void spectre_bhb_enable_mitigation(const struct arm64_cpu_capabilities *entry)
 {
@@ -1281,11 +1303,18 @@ void spectre_bhb_enable_mitigation(const struct arm64_cpu_capabilities *entry)
 	} else if (supports_clearbhb(SCOPE_LOCAL_CPU)) {
 		kvm_setup_bhb_slot(__spectre_bhb_clearbhb_start);
 		this_cpu_set_vectors(EL1_VECTOR_BHB_CLEAR_INSN);
+
 		state = SPECTRE_MITIGATED;
 	} else if (spectre_bhb_loop_affected(SCOPE_LOCAL_CPU)) {
 		switch (spectre_bhb_loop_affected(SCOPE_SYSTEM)) {
 		case 8:
-			kvm_setup_bhb_slot(__spectre_bhb_loop_k8_start);
+			/*
+			 * A57/A72-r0 will already have selected the
+			 * spectre-indirect vector, which is sufficient
+			 * for BHB too.
+			 */
+			if (!__this_cpu_read(bp_hardening_data.fn))
+				kvm_setup_bhb_slot(__spectre_bhb_loop_k8_start);
 			break;
 		case 24:
 			kvm_setup_bhb_slot(__spectre_bhb_loop_k24_start);
