@@ -4,7 +4,6 @@
  *
  * membarrier system call
  */
-#include "sched.h"
 
 /*
  * Bitmask made from a "or" of all commands within enum membarrier_cmd,

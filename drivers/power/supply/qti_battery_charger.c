@@ -28,6 +28,7 @@
 #include "qti_typec_class.h"
 
 #define MSG_OWNER_BC			32778
+#define MSG_OWNER_OEM			32782
 #define MSG_TYPE_REQ_RESP		1
 #define MSG_TYPE_NOTIFY			2
 
@@ -59,6 +60,8 @@
 #define WLS_FW_UPDATE_TIME_MS		1000
 #define WLS_FW_BUF_SIZE			128
 #define DEFAULT_RESTRICT_FCC_UA		1000000
+#define OEM_OPCODE_WRITE_BUFFER    0x10001
+#define MAX_OEM_PROPERTY_DATA_SIZE   16  // 16x uint32 for oem property data size
 
 enum usb_connector_type {
 	USB_CONNECTOR_TYPE_TYPEC,
@@ -106,6 +109,9 @@ enum battery_property_id {
 	BATT_RBLT_VALUE,
 	BATT_SMB_MASTER_TEMP,
 	BATT_PROFILE,
+	BATT_FCT,
+	BATT_FCT_STATE,
+	BATT_RBLT_STATE,
 	BATT_PROP_MAX,
 };
 
@@ -187,6 +193,20 @@ struct battery_charger_req_msg {
 	u32			battery_id;
 	u32			property_id;
 	u32			value;
+};
+
+/* As defined in DSP */
+struct oem_write_buffer_req_msg {
+	struct pmic_glink_hdr	hdr;
+	u32 oem_property_id;
+	u32 data_buffer[MAX_OEM_PROPERTY_DATA_SIZE];
+	u32 data_size;
+};
+
+/* As defined in DSP */
+struct batt_mngr_generic_resp_msg {
+	struct pmic_glink_hdr header;
+	u32 ret_code;
 };
 
 struct battery_charger_resp_msg {
@@ -492,6 +512,21 @@ static int battery_chg_write(struct battery_chg_dev *bcdev, void *data,
 	return rc;
 }
 
+static int write_buffer(struct battery_chg_dev *bcdev,
+			u32 prop_id, const u32 *data, u32 size)
+{
+	struct oem_write_buffer_req_msg req_msg = { { 0 } };
+
+	req_msg.oem_property_id = prop_id;
+	memcpy(req_msg.data_buffer, data, sizeof(u32)*size);
+	req_msg.data_size = size;
+	req_msg.hdr.owner = MSG_OWNER_OEM;
+	req_msg.hdr.type = MSG_TYPE_REQ_RESP;
+	req_msg.hdr.opcode = OEM_OPCODE_WRITE_BUFFER;
+
+	return battery_chg_write(bcdev, &req_msg, sizeof(req_msg));
+}
+
 static int write_property_id(struct battery_chg_dev *bcdev,
 			struct psy_state *pst, u32 prop_id, u32 val)
 {
@@ -604,6 +639,54 @@ static void battery_chg_state_cb(void *priv, enum pmic_glink_state state)
 	else if (state == PMIC_GLINK_STATE_DOWN)
 		bcdev->notify_en = false;
 }
+
+/**
+ * qti_battery_charger_set_buffer() - writes buffer to property
+ *
+ * @name: Power supply name
+ * @prop_id: Property id to be set
+ * @data: Pointer to data that needs to be updated
+ * @size: Size of buffer
+ *
+ * Return: 0 if success, negative on error.
+ */
+int qti_battery_charger_set_buffer(const char *name,
+				enum oem_property_id prop_id, u32 *data, u32 size)
+{
+	struct power_supply *psy;
+	struct battery_chg_dev *bcdev;
+	int rc = 0;
+
+	if (size < 0 || size > sizeof(u32)*MAX_OEM_PROPERTY_DATA_SIZE)
+		return -EINVAL;
+
+	if (prop_id >= BATTMAN_OEM_PROPERTY_MAX || prop_id < 0)
+		return -EINVAL;
+
+	if (strcmp(name, "battery"))
+		return -EINVAL;
+
+	psy = power_supply_get_by_name(name);
+	if (!psy)
+		return -ENODEV;
+
+	bcdev = power_supply_get_drvdata(psy);
+	power_supply_put(psy);
+	if (!bcdev)
+		return -ENODEV;
+
+	switch (prop_id) {
+	case BATTMAN_OEM_FCT_LIFETIMES:
+		rc = write_buffer(bcdev, BATTMAN_OEM_FCT_LIFETIMES, data, size);
+		break;
+	default:
+		rc = -EINVAL;
+		break;
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(qti_battery_charger_set_buffer);
 
 /**
  * qti_battery_charger_get_prop() - Gets the property being requested
@@ -820,6 +903,13 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 				len);
 		}
 		break;
+	case OEM_OPCODE_WRITE_BUFFER:
+		if (len == sizeof(struct batt_mngr_generic_resp_msg)) {
+			ack_set = true;
+		} else {
+			pr_err("Received OEM_OPCODE_WRITE_BUFFER error from charger\n");
+		}
+	break;
 	default:
 		pr_err("Unknown opcode: %u\n", resp_msg->hdr.opcode);
 		break;
@@ -2344,6 +2434,54 @@ static ssize_t resistance_show(struct class *c,
 }
 static CLASS_ATTR_RO(resistance);
 
+static ssize_t fct_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, BATT_FCT);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pst->prop[BATT_FCT]);
+}
+static CLASS_ATTR_RO(fct);
+
+static ssize_t fct_state_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, BATT_FCT_STATE);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pst->prop[BATT_FCT_STATE]);
+}
+static CLASS_ATTR_RO(fct_state);
+
+static ssize_t rblt_state_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, BATT_RBLT_STATE);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", pst->prop[BATT_RBLT_STATE]);
+}
+static CLASS_ATTR_RO(rblt_state);
+
 static ssize_t flash_active_show(struct class *c,
 					struct class_attribute *attr, char *buf)
 {
@@ -2557,6 +2695,9 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_rblt.attr,
 	&class_attr_smb_master_temp.attr,
 	&class_attr_batt_profile.attr,
+	&class_attr_fct.attr,
+	&class_attr_fct_state.attr,
+	&class_attr_rblt_state.attr,
 	&class_attr_charge_capacity_limit.attr,
 	&class_attr_usb_pd_vid.attr,
 	&class_attr_usb_pd_pid.attr,
@@ -2588,6 +2729,9 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_rblt.attr,
 	&class_attr_smb_master_temp.attr,
 	&class_attr_batt_profile.attr,
+	&class_attr_fct.attr,
+	&class_attr_fct_state.attr,
+	&class_attr_rblt_state.attr,
 	&class_attr_charge_capacity_limit.attr,
 	&class_attr_usb_pd_vid.attr,
 	&class_attr_usb_pd_pid.attr,

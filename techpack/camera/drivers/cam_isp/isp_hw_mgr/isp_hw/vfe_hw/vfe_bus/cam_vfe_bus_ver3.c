@@ -1967,6 +1967,7 @@ static int cam_vfe_bus_ver3_acquire_vfe_out(void *bus_priv, void *acquire_args,
 	rsrc_data->priv = acq_args->priv;
 	rsrc_data->bus_priv = ver3_bus_priv;
 	rsrc_data->limiter_enabled = false;
+	rsrc_data->stored_irq_masks[CAM_VFE_BUS_VER3_BUF_DONE_MASK][CAM_VFE_BUS_VER3_IRQ_REG0] = 0;
 	comp_acq_args.composite_mask = (1ULL << vfe_out_res_id);
 
 	/* for some hw versions, buf done is not received from vfe but

@@ -2191,6 +2191,14 @@ static int cam_ope_mgr_process_cmd_buf_req(struct cam_ope_hw_mgr *hw_mgr,
 						hw_mgr->iommu_hdl);
 					goto end;
 				}
+				if ((len <= frame_process->cmd_buf[i][j].offset) ||
+					(frame_process->cmd_buf[i][j].size <
+					frame_process->cmd_buf[i][j].length) ||
+					((len - frame_process->cmd_buf[i][j].offset) <
+					 frame_process->cmd_buf[i][j].length)) {
+					CAM_ERR(CAM_OPE, "Invalid offset.");
+					return -EINVAL;
+				}
 				cpu_addr = cpu_addr +
 					frame_process->cmd_buf[i][j].offset;
 				CAM_DBG(CAM_OPE, "Hdl %x size %d len %d off %d",
@@ -2239,6 +2247,10 @@ static int cam_ope_mgr_process_cmd_buf_req(struct cam_ope_hw_mgr *hw_mgr,
 				uint32_t s_idx = 0;
 
 				s_idx = cmd_buf->stripe_idx;
+				if (s_idx < 0 || s_idx >= OPE_MAX_STRIPES) {
+					CAM_ERR(CAM_OPE, "Invalid index.");
+					return -EINVAL;
+				}
 				num_cmd_bufs =
 				ope_request->num_stripe_cmd_bufs[i][s_idx];
 

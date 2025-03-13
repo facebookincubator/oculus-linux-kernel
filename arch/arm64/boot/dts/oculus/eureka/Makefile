@@ -14,7 +14,8 @@ dtbo-y += \
 	eureka-dvt1.0-overlay.dtbo \
 	eureka-dvt1.1-overlay.dtbo \
 	eureka-pvt1.0-overlay.dtbo \
-	eureka-pvt1.1-overlay.dtbo
+	eureka-pvt1.1-overlay.dtbo \
+	eureka-sloane-overlay.dtbo
 
 eureka-dev1-overlay.dtbo-base := $(BOARD_BASE_DTB)
 eureka-p1.2-overlay.dtbo-base := $(BOARD_BASE_DTB)
@@ -28,6 +29,7 @@ eureka-dvt1.0-overlay.dtbo-base := $(BOARD_BASE_DTB)
 eureka-dvt1.1-overlay.dtbo-base := $(BOARD_BASE_DTB)
 eureka-pvt1.0-overlay.dtbo-base := $(BOARD_BASE_DTB)
 eureka-pvt1.1-overlay.dtbo-base := $(BOARD_BASE_DTB)
+eureka-sloane-overlay.dtbo-base := $(BOARD_BASE_DTB)
 endif # CONFIG_BUILD_ARM64_DT_OVERLAY
 
 always		:= $(dtb-y)

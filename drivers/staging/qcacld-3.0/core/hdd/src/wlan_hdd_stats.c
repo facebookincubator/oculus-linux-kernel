@@ -1363,7 +1363,8 @@ static void hdd_llstats_post_radio_stats(struct hdd_adapter *adapter,
 		goto failure;
 	}
 
-	if (radiostat->total_num_tx_power_levels) {
+	if (radiostat->total_num_tx_power_levels &&
+	    radiostat->tx_time_per_power_level) {
 		ret =
 		    nla_put(vendor_event,
 			    QCA_WLAN_VENDOR_ATTR_LL_STATS_RADIO_TX_TIME_PER_LEVEL,

@@ -2943,6 +2943,13 @@ int cam_ife_csid_ver2_release(void *hw_priv,
 
 	path_cfg = (struct cam_ife_csid_ver2_path_cfg *)res->res_priv;
 
+	if (path_cfg->cid >= CAM_IFE_CSID_CID_MAX) {
+		CAM_ERR(CAM_ISP, "CSID:%d Invalid cid:%d",
+				csid_hw->hw_intf->hw_idx, path_cfg->cid);
+		rc = -EINVAL;
+		goto end;
+	}
+
 	cam_ife_csid_cid_release(&csid_hw->cid_data[path_cfg->cid],
 		csid_hw->hw_intf->hw_idx,
 		path_cfg->cid);

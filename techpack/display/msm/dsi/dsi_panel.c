@@ -409,14 +409,11 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
 
-	if ((!panel->ctl_op_sync) || (strcmp(panel->type, "secondary") == 0))
-	{
-		rc = dsi_pwr_enable_regulator(&panel->power_info, true);
-		if (rc) {
-			DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
-					panel->name, rc);
-			goto exit;
-		}
+	rc = dsi_pwr_enable_regulator(&panel->power_info, true);
+	if (rc) {
+		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
+				panel->name, rc);
+		goto exit;
 	}
 
 	rc = dsi_panel_set_pinctrl_state(panel, true);
@@ -824,7 +821,8 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	 * is set and valid).
 	 */
 	if (bl_config->settling_time_target_us < 0xFFFF) {
-		const u32 scaled_settle_time_ns = bl_config->settling_time_target_us * bl_config->bl_scale_settle_time / 10000;
+		const u32 scaled_settle_time_ns = bl_config->settling_time_target_us *
+				bl_config->bl_scale_settle_time / MAX_BL_SCALE_LEVEL_SETTLE_TIME;
 		const u32 vbp = timing->v_sync_width + timing->v_back_porch;
 		const u32 blu_start_target_ns = scaled_settle_time_ns * 1000 +
 				(timing->internal_vactive + vbp + 9) * internal_1h_ns;
@@ -1011,7 +1009,8 @@ static int dsi_panel_stark_olivia_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
 	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
 	if (bl_config->settling_time_target_us < 0xFFFF) {
-		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
+		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns *
+				bl_config->bl_scale_settle_time / MAX_BL_SCALE_LEVEL_SETTLE_TIME;
 	} else {
 		// Default to 4ms settling time
 		settling_time_scanlines = 4000000 / panel_1h_ns;
@@ -1120,7 +1119,7 @@ static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
-	u32 vtotal, latest_scanline, start_scanline, settling_time_scanlines, max_stereo_offset_scanlines,
+	u32 vtotal, latest_scanline, start_scanline, settling_time_scanlines,
 	panel_1h_ns, guardband_margin_scanlines, settle_time_us, blu_default_duty;
 
 	u8 reg = 0xB9; /* BLU adjust command */
@@ -1150,7 +1149,6 @@ static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	 * scanout to the active scanlines of the panel.
 	 */
 
-	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
 	latest_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
 	if (bl_config->settling_time_target_us < 0xFFFF) {
 		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
@@ -1165,7 +1163,7 @@ static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	 */
 	start_scanline = timing->v_back_porch + timing->v_sync_width + timing->v_active + settling_time_scanlines;
 
-	// Keep the left scanline out of the guardband region; necessary when MIPI reads are performed
+	// Keep the start scanline out of the guardband region; necessary when MIPI reads are performed
 	if (start_scanline > vtotal - guardband_margin_scanlines && start_scanline <= vtotal)
 		start_scanline = vtotal - guardband_margin_scanlines;
 
@@ -1251,7 +1249,8 @@ int dsi_panel_jdi_nvt_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
 	target_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
 	if (bl_config->settling_time_target_us < 0xFFFF) {
-		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
+		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns *
+				bl_config->bl_scale_settle_time / MAX_BL_SCALE_LEVEL_SETTLE_TIME;
 	} else {
 		// Default to 4ms settling time
 		settling_time_scanlines = 4000000 / panel_1h_ns;
@@ -3770,7 +3769,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	panel->bl_config.dimming_status = DIMMING_ENABLE;
 	panel->bl_config.user_disable_notification = false;
 	panel->bl_config.blu_default_duty_override = 0;
-	panel->bl_config.bl_scale_settle_time = 10000;
+	panel->bl_config.bl_scale_settle_time = MAX_BL_SCALE_LEVEL_SETTLE_TIME;
 
 	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-bl-min-level", &val);
 	if (rc) {

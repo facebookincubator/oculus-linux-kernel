@@ -41,8 +41,26 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 	uint8_t *link_mapping_of_tids;
 	uint8_t tid_num;
 	uint8_t *ie_ptr = NULL;
+	uint32_t ie_len_parsed = 0;
+	uint32_t ie_len = 0;
+
+	if (!ie || !t2lm) {
+		t2lm_err("IE buffer is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
 
 	t2lm_ie = (struct wlan_ie_tid_to_link_mapping *)ie;
+	ie_len = t2lm_ie->elem_len;
+
+	/* Minimum IE length is 2 bytes:
+	 *	elem_id_extn is 1 byte
+	 *	t2lm_control_field can be of minimum 1 byte
+	 */
+	if (ie_len < WLAN_T2LM_CTRL_SIZE) {
+		t2lm_debug("T2LM IE min length (%u) is invalid", ie_len);
+		return QDF_STATUS_E_PROTO;
+	}
+	ie_len_parsed++;
 
 	t2lm_control_field = t2lm_ie->data;
 	if (!t2lm_control_field) {
@@ -50,7 +68,9 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	t2lm_control = qdf_le16_to_cpu(*(uint16_t *)t2lm_control_field);
+	t2lm_control = *t2lm_control_field;
+	if (ie_len > WLAN_T2LM_CTRL_SIZE)
+		t2lm_control = qdf_le16_to_cpu(*(uint16_t *)t2lm_control_field);
 
 	dir = QDF_GET_BITS(t2lm_control, WLAN_T2LM_CONTROL_DIRECTION_IDX,
 			   WLAN_T2LM_CONTROL_DIRECTION_BITS);
@@ -87,8 +107,20 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 		    t2lm->link_mapping_size);
 
 	if (t2lm->default_link_mapping) {
+		if (ie_len < (ie_len_parsed + sizeof(uint8_t))) {
+			t2lm_rl_debug("Failed to parse Default link mapping=1");
+			return QDF_STATUS_E_PROTO;
+		}
+		ie_len_parsed += sizeof(uint8_t);
+
 		ie_ptr = t2lm_control_field + sizeof(uint8_t);
 	} else {
+		if (ie_len < (ie_len_parsed + sizeof(t2lm_control))) {
+			t2lm_rl_debug("Failed to parse Default link mapping=0");
+			return QDF_STATUS_E_PROTO;
+		}
+		ie_len_parsed += sizeof(t2lm_control);
+
 		link_mapping_presence_ind =
 			QDF_GET_BITS(t2lm_control,
 				     WLAN_T2LM_CONTROL_LINK_MAPPING_PRESENCE_INDICATOR_IDX,
@@ -97,12 +129,25 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 	}
 
 	if (t2lm->mapping_switch_time_present) {
+		if (ie_len < (ie_len_parsed + sizeof(uint16_t))) {
+			t2lm_rl_debug("Failed to parse Mapping switch time");
+			return QDF_STATUS_E_PROTO;
+		}
+		ie_len_parsed += sizeof(uint16_t);
+
 		t2lm->mapping_switch_time =
 			qdf_le16_to_cpu(*(uint16_t *)ie_ptr);
 		ie_ptr += sizeof(uint16_t);
 	}
 
 	if (t2lm->expected_duration_present) {
+		if (ie_len <
+		    (ie_len_parsed + WLAN_T2LM_EXPECTED_DURATION_SIZE)) {
+			t2lm_rl_debug("Failed to parse Expected duration");
+			return QDF_STATUS_E_PROTO;
+		}
+		ie_len_parsed += WLAN_T2LM_EXPECTED_DURATION_SIZE;
+
 		qdf_mem_copy(&t2lm->expected_duration, ie_ptr,
 			     WLAN_T2LM_EXPECTED_DURATION_SIZE *
 			     (sizeof(uint8_t)));
@@ -112,8 +157,16 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 	t2lm_debug("mapping_switch_time:%d expected_duration:%d",
 		   t2lm->mapping_switch_time, t2lm->expected_duration);
 
-	if (t2lm->default_link_mapping)
+	if (t2lm->default_link_mapping) {
+		/* With default link mapping set to 1, there is no
+		 * `Link Mapping of Tid n` field present.
+		 */
+		if (ie_len > ie_len_parsed) {
+			t2lm_rl_debug("Link mapping of TID present when default link mapping is set");
+			return QDF_STATUS_E_PROTO;
+		}
 		return QDF_STATUS_SUCCESS;
+	}
 
 	link_mapping_of_tids = ie_ptr;
 
@@ -122,10 +175,22 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 			continue;
 
 		if (!t2lm->link_mapping_size) {
+			if (ie_len < (ie_len_parsed + sizeof(uint16_t))) {
+				t2lm_rl_debug("Failed to parse Link mapping for tid=%u", tid_num);
+				return QDF_STATUS_E_PROTO;
+			}
+			ie_len_parsed += sizeof(uint16_t);
+
 			t2lm->ieee_link_map_tid[tid_num] =
 				qdf_le16_to_cpu(*(uint16_t *)link_mapping_of_tids);
 			link_mapping_of_tids += sizeof(uint16_t);
 		} else {
+			if (ie_len < (ie_len_parsed + sizeof(uint8_t))) {
+				t2lm_rl_debug("Failed to parse Link mapping for tid=%u", tid_num);
+				return QDF_STATUS_E_PROTO;
+			}
+			ie_len_parsed += sizeof(uint8_t);
+
 			t2lm->ieee_link_map_tid[tid_num] =
 				*(uint8_t *)link_mapping_of_tids;
 			link_mapping_of_tids += sizeof(uint8_t);
@@ -133,6 +198,11 @@ QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 
 		t2lm_rl_debug("link mapping of TID%d is %x", tid_num,
 			      t2lm->ieee_link_map_tid[tid_num]);
+	}
+
+	if (ie_len > ie_len_parsed) {
+		t2lm_rl_debug("More data present at the end of T2LM element");
+		return QDF_STATUS_E_PROTO;
 	}
 
 	return QDF_STATUS_SUCCESS;

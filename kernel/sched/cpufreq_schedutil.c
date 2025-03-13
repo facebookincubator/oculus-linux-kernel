@@ -6,14 +6,6 @@
  * Author: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
-#include "sched.h"
-
-#include <linux/sched/cpufreq.h>
-#include <trace/events/power.h>
-#include <trace/hooks/sched.h>
-
 #if defined(CONFIG_SMP) && defined(CONFIG_PERF_EVENTS)
 #define SUGOV_SMP_CALL
 #endif

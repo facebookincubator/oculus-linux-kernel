@@ -1334,11 +1334,15 @@ struct cam_ife_hybrid_sensor_data {
  * struct cam_isp_primary_port_grp_info - Client info to be considered primary
  *
  * @res_id                   : Output port resource ID
- * @comp_grp                 : Composite group if known
+ * @num_grps                 : Number of composite groups linked to this primary
+ *                             port
+ * @comp_grp                 : Array holding different comp group IDs linked
+ *                             to this primary port
  */
 struct cam_isp_primary_port_grp_info {
 	__u32                                   res_id;
-	__u32                                   comp_grp;
+	__u32                                   num_grps;
+	__u64                                   comp_grps[];
 };
 
 /**
@@ -1348,7 +1352,8 @@ struct cam_isp_primary_port_grp_info {
  *
  * @version                  : Struct version
  * @reserved                 : Reserved for padding
- * @single_primary_for_all   : Use one port as final buffer done for all groups
+ * @single_primary_for_all   : Boolean to indicate using one port as final buffer done
+ *                             for all groups
  * @num_ports                : Number of output ports, if single_primary_for_all is set
  *                             num_ports is expected to be 1
  * @port_info                : Port info array to obtain primary port resource IDs

@@ -4920,7 +4920,8 @@ static int __hdd_open(struct net_device *dev)
 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	int ret;
-
+	int init_failed_count = 0;
+#define MAX_INIT_FAILED_COUNT 3
 	hdd_enter_dev(dev);
 
 	qdf_mtrace(QDF_MODULE_ID_HDD, QDF_MODULE_ID_HDD,
@@ -4956,12 +4957,27 @@ static int __hdd_open(struct net_device *dev)
 		return ret;
 	}
 
-	ret = hdd_trigger_psoc_idle_restart(hdd_ctx);
+	while (init_failed_count <= MAX_INIT_FAILED_COUNT) {
+		ret = hdd_trigger_psoc_idle_restart(hdd_ctx);
+		if (!ret)
+			break;
+
+		hdd_err("(%d)Failed to start the wlan driver error (%d)", init_failed_count, ret);
+		/* in cnss_idle_restart function we may sleep for 100 msec for power up sequence to finish
+		 * so to avoid any interference with power up
+		 * activity we should go to sleep more than that for every attempt of restart ,
+		 * so choosing minimimum of 110 msec which will increase to 140 for 3rd attempt
+		 */
+		qdf_sleep(110 + init_failed_count * 10);
+		init_failed_count++;
+	}
+
 	if (ret) {
-		hdd_err("Failed to start WLAN modules return: %d", ret);
+		hdd_err("Failed to start WLAN modules return: %d Giving up !!", ret);
 		return ret;
 	}
 
+#undef MAX_INIT_FAILED_COUNT
 	if (!test_bit(SME_SESSION_OPENED, &adapter->event_flags)) {
 		ret = hdd_start_adapter(adapter);
 		if (ret) {

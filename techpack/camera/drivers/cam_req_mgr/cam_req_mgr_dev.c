@@ -730,6 +730,7 @@ static long cam_private_ioctl(struct file *file, void *fh,
 		break;
 	case CAM_REQ_MGR_BATCH_REQ: {
 		struct cam_batch_config_dev_cmd cmd;
+
 		if (k_ioctl->size != sizeof(cmd))
 			return -EINVAL;
 		if (copy_from_user(&cmd,

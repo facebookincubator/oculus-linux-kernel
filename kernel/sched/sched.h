@@ -3,6 +3,23 @@
  * Scheduler internal types and methods:
  */
 #include <linux/sched.h>
+#include <linux/cpumask.h>
+#include <linux/cgroup.h>
+#include <linux/topology.h>
+#include <linux/prctl.h>
+#include <linux/ptrace.h>
+#include <linux/gfp.h>
+#include <linux/posix-timers.h>
+#include <linux/sched/clock.h>
+#include <linux/workqueue.h>
+#include <linux/thread_info.h>
+#include <linux/tick.h>
+#include <linux/swait.h>
+#include <linux/hashtable.h>
+#include <linux/cpufreq.h>
+#include <linux/utsname.h>
+
+#include <asm/irq_regs.h>
 
 #include <linux/sched/autogroup.h>
 #include <linux/sched/clock.h>
@@ -31,6 +48,7 @@
 #include <linux/sched/topology.h>
 #include <linux/sched/user.h>
 #include <linux/sched/wake_q.h>
+#include <linux/sched/walt.h>
 #include <linux/sched/xacct.h>
 
 #include <uapi/linux/sched/types.h>
@@ -69,7 +87,7 @@
 #include <linux/android_kabi.h>
 
 #include <asm/tlb.h>
-#include <asm-generic/vmlinux.lds.h>
+#include <linux/hrtimer.h>
 
 #ifdef CONFIG_PARAVIRT
 # include <asm/paravirt.h>
@@ -79,12 +97,53 @@
 #include "cpudeadline.h"
 
 #include <trace/events/sched.h>
+#include <trace/hooks/psi.h>
+#include <trace/hooks/sched.h>
 
 #ifdef CONFIG_SCHED_DEBUG
 # define SCHED_WARN_ON(x)	WARN_ONCE(x, #x)
 #else
 # define SCHED_WARN_ON(x)	({ (void)(x), 0; })
 #endif
+
+#include <linux/bitmap.h>
+#include <linux/capability.h>
+#include <linux/cgroup.h>
+#include <linux/cpufreq.h>
+#include <linux/cpufreq_times.h>
+#include <linux/cpumask.h>
+#include <linux/ctype.h>
+#include <linux/file.h>
+#include <linux/interrupt.h>
+#include <linux/jiffies.h>
+#include <linux/kref.h>
+#include <linux/ktime.h>
+#include <linux/lockdep.h>
+#include <linux/module.h>
+#include <linux/mutex.h>
+#include <linux/poll.h>
+#include <linux/proc_fs.h>
+#include <linux/psi.h>
+#include <linux/sched.h>
+#include <linux/sched/loadavg.h>
+#include <linux/sched/mm.h>
+#include <linux/seq_file.h>
+#include <linux/seqlock.h>
+#include <linux/sched/signal.h>
+#include <linux/seq_file.h>
+#include <linux/seqlock.h>
+#include <linux/spinlock.h>
+#include <linux/syscalls.h>
+#include <linux/topology.h>
+#include <linux/types.h>
+#include <linux/u64_stats_sync.h>
+#include <linux/uaccess.h>
+#include <linux/wait.h>
+#include <linux/workqueue.h>
+
+#include <trace/events/power.h>
+
+#include "../workqueue_internal.h"
 
 struct rq;
 struct cpuidle_state;
@@ -1889,6 +1948,8 @@ struct sched_class {
 	 */
 	void (*switched_from)(struct rq *this_rq, struct task_struct *task);
 	void (*switched_to)  (struct rq *this_rq, struct task_struct *task);
+	void (*reweight_task)(struct rq *this_rq, struct task_struct *task,
+			      int newprio);
 	void (*prio_changed) (struct rq *this_rq, struct task_struct *task,
 			      int oldprio);
 
@@ -1903,7 +1964,7 @@ struct sched_class {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_change_group)(struct task_struct *p, int type);
 #endif
-} __aligned(STRUCT_ALIGNMENT); /* STRUCT_ALIGN(), vmlinux.lds.h */
+};
 
 static inline void __nocfi put_prev_task(struct rq *rq, struct task_struct *prev)
 {
@@ -1917,18 +1978,33 @@ static inline void __nocfi set_next_task(struct rq *rq, struct task_struct *next
 	next->sched_class->set_next_task(rq, next, false);
 }
 
-/* Defined in include/asm-generic/vmlinux.lds.h */
-extern struct sched_class __begin_sched_classes[];
-extern struct sched_class __end_sched_classes[];
 
-#define sched_class_highest (__end_sched_classes - 1)
-#define sched_class_lowest  (__begin_sched_classes - 1)
+/*
+ * Helper to define a sched_class instance; each one is placed in a separate
+ * section which is ordered by the linker script:
+ *
+ *   include/asm-generic/vmlinux.lds.h
+ *
+ * *CAREFUL* they are laid out in *REVERSE* order!!!
+ *
+ * Also enforce alignment on the instance, not the type, to guarantee layout.
+ */
+#define DEFINE_SCHED_CLASS(name) \
+const struct sched_class name##_sched_class \
+	__aligned(__alignof__(struct sched_class)) \
+	__section("__" #name "_sched_class")
+
+/* Defined in include/asm-generic/vmlinux.lds.h */
+extern struct sched_class __sched_class_highest[];
+extern struct sched_class __sched_class_lowest[];
 
 #define for_class_range(class, _from, _to) \
-	for (class = (_from); class != (_to); class--)
+	for (class = (_from); class < (_to); class++)
 
 #define for_each_class(class) \
-	for_class_range(class, sched_class_highest, sched_class_lowest)
+	for_class_range(class, __sched_class_highest, __sched_class_lowest)
+
+#define sched_class_above(_a, _b)	((_a) < (_b))
 
 extern const struct sched_class stop_sched_class;
 extern const struct sched_class dl_sched_class;
@@ -2005,8 +2081,6 @@ extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 extern void init_sched_fair_class_late(void);
-
-extern void reweight_task(struct task_struct *p, int prio);
 
 extern void resched_curr(struct rq *rq);
 extern void resched_cpu(int cpu);

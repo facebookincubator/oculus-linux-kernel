@@ -2,9 +2,6 @@
 /*
  * Scheduler topology setup/handling methods
  */
-#include "sched.h"
-
-#include <trace/hooks/sched.h>
 
 DEFINE_MUTEX(sched_domains_mutex);
 #ifdef CONFIG_LOCKDEP

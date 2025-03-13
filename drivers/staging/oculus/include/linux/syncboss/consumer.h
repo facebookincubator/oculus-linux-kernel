@@ -66,6 +66,10 @@ struct syncboss_consumer_ops {
 	ssize_t (*queue_tx_packet)(struct device *dev, const void *buf, size_t count);
 };
 
+struct syncboss_state_data {
+	struct cpumask irq_affinity;
+};
+
 #ifdef CONFIG_SYNCBOSS_STANDALONE
 #define SYNCBOSS_DRIVER_HEADER_CURRENT_VERSION 2
 #define syncboss_driver_data_header_t syncboss_driver_data_header_v2_t

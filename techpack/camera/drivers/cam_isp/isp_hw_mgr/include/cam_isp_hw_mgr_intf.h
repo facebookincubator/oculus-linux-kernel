@@ -164,6 +164,9 @@ struct cam_isp_ul_resource_update_entry {
 	struct cam_hw_update_entry     hw_update_entries[MAX_IO_PACKETS];
 	struct cam_hw_fence_map_entry  out_map_entries[MAX_IO_PACKETS];
 	int                            curr_buf_index;
+	int32_t                        producer_q_hdl;
+	uintptr_t                      producer_q_kmdvaddr;
+	bool                           is_producer_q_valid;
 };
 
 struct cam_isp_ul_change_base_cmd {
@@ -185,7 +188,7 @@ struct cam_isp_ul_primary_port_update_entry {
 
 /**
  * sturct cam_isp_ctx_ul_data
-*/
+ */
 struct cam_isp_ctx_ul_data {
 	struct port_pattern_period                  pattern_period[MAX_IO_RESOURCES];
 	struct cam_kmd_buf_info                     kmd_buf;

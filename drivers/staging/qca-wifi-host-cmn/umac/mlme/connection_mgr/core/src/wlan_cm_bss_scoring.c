@@ -2236,6 +2236,7 @@ cm_sort_vendor_algo_mlo_bss_entry(struct wlan_objmgr_psoc *psoc,
  * @bss_mlo_type: Bss MLO type
  * @pcl_chan_weight:  PCL channel weight
  * @rssi_prorated_pct: RSSI prorated pencentage
+ * @rssi_score: Calculated RSSI
  *
  * For MLO AP, consider partner link to calculate combined score,
  * For legacy/SLO AP or link, get total score of RSSI, bandwidth,
@@ -2250,10 +2251,10 @@ static int cm_calculate_ml_scores(struct wlan_objmgr_psoc *psoc,
 				  qdf_list_t *scan_list, uint8_t ml_flag,
 				  enum MLO_TYPE bss_mlo_type,
 				  int pcl_chan_weight,
-				  uint8_t *rssi_prorated_pct)
+				  uint8_t *rssi_prorated_pct,
+				  int32_t *rssi_score)
 {
 	int32_t score = 0;
-	int32_t rssi_score = 0;
 	int32_t congestion_pct = 0;
 	int32_t bandwidth_score = 0;
 	int32_t congestion_score = 0;
@@ -2265,7 +2266,7 @@ static int cm_calculate_ml_scores(struct wlan_objmgr_psoc *psoc,
 	if (IS_LINK_SCORE(ml_flag) || bss_mlo_type == SLO ||
 	    bss_mlo_type == MLSR ||
 	    !wlan_cm_is_eht_allowed_for_current_security(psoc, entry)) {
-		rssi_score =
+		*rssi_score =
 			cm_calculate_rssi_score(&score_config->rssi_score,
 						entry->rssi_raw,
 						weight_config->rssi_weightage);
@@ -2273,7 +2274,7 @@ static int cm_calculate_ml_scores(struct wlan_objmgr_psoc *psoc,
 			cm_get_rssi_prorate_pct(&score_config->rssi_score,
 						entry->rssi_raw,
 						weight_config->rssi_weightage);
-		score += rssi_score;
+		score += *rssi_score;
 		bandwidth_score =
 			cm_get_bw_score(weight_config->chan_width_weightage,
 					cm_get_ch_width(entry, phy_config),
@@ -2407,7 +2408,8 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 					   phy_config, scan_list,
 					   ml_flag, bss_mlo_type,
 					   pcl_chan_weight,
-					   &prorated_pcnt);
+					   &prorated_pcnt,
+					   &rssi_score);
 	score += ml_score;
 
 	pcl_score = cm_calculate_pcl_score(psoc, pcl_chan_weight,

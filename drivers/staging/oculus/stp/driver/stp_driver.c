@@ -162,7 +162,7 @@ static ssize_t stp_log_channel_data_store(
 		return len;
 	}
 
-	if (channel < 0 || channel >= STP_TOTAL_NUM_CHANNELS) {
+	if (channel >= STP_TOTAL_NUM_CHANNELS) {
 		STP_DRV_LOG_ERR("stp_log_channel_data: Incorrect channel ID");
 		return len;
 	}

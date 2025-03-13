@@ -10,6 +10,7 @@
 #include <linux/kprobes.h>
 
 #include <asm/ptrace.h>
+#include <asm/traps.h>
 
 #include "simulate-insn.h"
 
@@ -198,4 +199,10 @@ simulate_ldrsw_literal(u32 opcode, long addr, struct pt_regs *regs)
 	set_x_reg(regs, xn, *load_addr);
 
 	instruction_pointer_set(regs, instruction_pointer(regs) + 4);
+}
+
+void __kprobes
+simulate_nop(u32 opcode, long addr, struct pt_regs *regs)
+{
+	arm64_skip_faulting_instruction(regs, AARCH64_INSN_SIZE);
 }

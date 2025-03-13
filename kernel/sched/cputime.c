@@ -2,9 +2,6 @@
 /*
  * Simple CPU accounting cgroup controller
  */
-#include <linux/cpufreq_times.h>
-#include "sched.h"
-#include <trace/hooks/sched.h>
 
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 

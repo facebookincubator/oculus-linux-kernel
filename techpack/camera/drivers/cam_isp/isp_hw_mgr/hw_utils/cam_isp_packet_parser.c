@@ -939,7 +939,7 @@ int cam_isp_ul_parse_io_config(struct cam_isp_ctx_ul_data *ul_data,
 
 			if (kmd_buf_info->used_bytes < kmd_buf_info->size) {
 				kmd_buf_remain_size = kmd_buf_info->size -
-					kmd_buf_info->used_bytes ;
+					kmd_buf_info->used_bytes;
 			} else {
 				CAM_ERR(CAM_ISP, "no free kmd memory for base");
 				rc = -ENOMEM;
@@ -982,7 +982,7 @@ int cam_isp_ul_parse_io_config(struct cam_isp_ctx_ul_data *ul_data,
 		for (j = 0; j < MAX_IO_RESOURCES; j++) {
 			if (ul_data->resource_data[j].resource_type != 0 &&
 				ul_data->resource_data[j].resource_type != io_cfg[i].resource_type)
-			continue;
+				continue;
 
 			ul_data->resource_data[j].resource_type = io_cfg[i].resource_type;
 			buf_count = ul_data->resource_data[j].buf_count;

@@ -2233,7 +2233,7 @@ static bool qdf_log_dhcp_pkt(uint8_t vdev_id, struct sk_buff *skb,
 
 	subtype = qdf_nbuf_get_dhcp_subtype(skb);
 
-	if (dp_dhcp_event && dir == QDF_RX) {
+	if (dp_dhcp_event && dir == QDF_RX && subtype != QDF_PROTO_DHCP_DISCOVER) {
 		qdf_dp_log_proto_pkt_info(skb->data + QDF_NBUF_SRC_MAC_OFFSET,
 					  skb->data + QDF_NBUF_DEST_MAC_OFFSET,
 					  QDF_PROTO_TYPE_DHCP, subtype, dir,

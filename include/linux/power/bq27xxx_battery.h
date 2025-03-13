@@ -101,6 +101,10 @@ struct bq27xxx_device_info {
 	struct bq27xxx_reg_lifetime_blocks lifetime_blocks;
 	u8 reg_addr;
 	u16 reg_data;
+	struct work_struct fct_check_work;
+	unsigned long fct_last_update;
+	u32 fake_fct;
+	bool fct_en;
 };
 
 void bq27xxx_battery_update(struct bq27xxx_device_info *di);

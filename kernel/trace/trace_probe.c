@@ -752,9 +752,6 @@ int traceprobe_parse_probe_arg(struct trace_probe *tp, int i, char *arg,
 	struct probe_arg *parg = &tp->args[i];
 	char *body;
 
-	/* Increment count for freeing args in error case */
-	tp->nr_args++;
-
 	body = strchr(arg, '=');
 	if (body) {
 		if (body - arg > MAX_ARG_NAME_LEN) {
@@ -987,7 +984,7 @@ void trace_probe_cleanup(struct trace_probe *tp)
 }
 
 int trace_probe_init(struct trace_probe *tp, const char *event,
-		     const char *group, bool alloc_filter)
+		     const char *group, bool alloc_filter, int nargs)
 {
 	struct trace_event_call *call;
 	size_t size = sizeof(struct trace_probe_event);
@@ -1022,6 +1019,11 @@ int trace_probe_init(struct trace_probe *tp, const char *event,
 		ret = -ENOMEM;
 		goto error;
 	}
+
+	tp->nr_args = nargs;
+	/* Make sure pointers in args[] are NULL */
+	if (nargs)
+		memset(tp->args, 0, sizeof(tp->args[0]) * nargs);
 
 	return 0;
 

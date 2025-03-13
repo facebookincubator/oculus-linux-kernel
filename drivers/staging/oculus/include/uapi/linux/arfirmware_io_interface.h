@@ -119,6 +119,9 @@ struct __packed ar_queue_event_batch {
 	struct ar_queue_event events[AR_QUEUE_EVENT_BATCH_MAX];
 };
 
+// aperture allocation size must be a multiple of this
+#define ARFW_APERTURE_ALLOC_CHUNK_SIZE (1 * 1024 * 1024)
+
 /// Magic number for ARFW device ioctls
 #define ARFW_CHDEV_MAGIC 0xc5
 #define ARFW_QUEUE_CREATE \

@@ -245,6 +245,7 @@
 
 	meta,pdfu_initiator {
 		compatible = "meta,pdfu-initiator";
+		engine-driven-transfer;
 		usb,product-ids =
 			/bits/ 16 <0x5006>,		 /* Moku */
 			/bits/ 16 <0x500f>;		 /* Lehua+ */
