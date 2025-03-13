@@ -1623,6 +1623,7 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 	hlist_add_head(&ctx->hn, &clst->pending);
 	if (!(fl->cid >= ADSP_DOMAIN_ID && fl->cid < NUM_CHANNELS)) {
 		err = -ECHRNG;
+		spin_unlock(&fl->hlock);
 		goto bail;
 	}
 	cid = fl->cid;

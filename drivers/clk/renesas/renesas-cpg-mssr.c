@@ -313,6 +313,11 @@ static void __init cpg_mssr_register_core_clk(const struct cpg_core_clk *core,
 		}
 		break;
 
+	case CLK_TYPE_FR:
+		clk = clk_register_fixed_rate(NULL, core->name, NULL, 0,
+					      core->mult);
+		break;
+
 	default:
 		if (info->cpg_clk_register)
 			clk = info->cpg_clk_register(dev, core, info,
@@ -372,15 +377,7 @@ static void __init cpg_mssr_register_mod_clk(const struct mssr_mod_clk *mod,
 
 	init.name = mod->name;
 	init.ops = &cpg_mstp_clock_ops;
-	init.flags = CLK_IS_BASIC | CLK_SET_RATE_PARENT;
-	for (i = 0; i < info->num_crit_mod_clks; i++)
-		if (id == info->crit_mod_clks[i]) {
-			dev_dbg(dev, "MSTP %s setting CLK_IS_CRITICAL\n",
-				mod->name);
-			init.flags |= CLK_IS_CRITICAL;
-			break;
-		}
-
+	init.flags = CLK_SET_RATE_PARENT;
 	parent_name = __clk_get_name(parent);
 	init.parent_names = &parent_name;
 	init.num_parents = 1;
@@ -388,6 +385,15 @@ static void __init cpg_mssr_register_mod_clk(const struct mssr_mod_clk *mod,
 	clock->index = id - priv->num_core_clks;
 	clock->priv = priv;
 	clock->hw.init = &init;
+
+	for (i = 0; i < info->num_crit_mod_clks; i++)
+		if (id == info->crit_mod_clks[i] &&
+		    cpg_mstp_clock_is_enabled(&clock->hw)) {
+			dev_dbg(dev, "MSTP %s setting CLK_IS_CRITICAL\n",
+				mod->name);
+			init.flags |= CLK_IS_CRITICAL;
+			break;
+		}
 
 	clk = clk_register(NULL, &clock->hw);
 	if (IS_ERR(clk))
@@ -406,7 +412,6 @@ fail:
 
 struct cpg_mssr_clk_domain {
 	struct generic_pm_domain genpd;
-	struct device_node *np;
 	unsigned int num_core_pm_clks;
 	unsigned int core_pm_clks[0];
 };
@@ -418,7 +423,7 @@ static bool cpg_mssr_is_pm_clk(const struct of_phandle_args *clkspec,
 {
 	unsigned int i;
 
-	if (clkspec->np != pd->np || clkspec->args_count != 2)
+	if (clkspec->np != pd->genpd.dev.of_node || clkspec->args_count != 2)
 		return false;
 
 	switch (clkspec->args[0]) {
@@ -469,16 +474,12 @@ found:
 		return PTR_ERR(clk);
 
 	error = pm_clk_create(dev);
-	if (error) {
-		dev_err(dev, "pm_clk_create failed %d\n", error);
+	if (error)
 		goto fail_put;
-	}
 
 	error = pm_clk_add_clk(dev, clk);
-	if (error) {
-		dev_err(dev, "pm_clk_add_clk %pC failed %d\n", clk, error);
+	if (error)
 		goto fail_destroy;
-	}
 
 	return 0;
 
@@ -508,7 +509,6 @@ static int __init cpg_mssr_add_clk_domain(struct device *dev,
 	if (!pd)
 		return -ENOMEM;
 
-	pd->np = np;
 	pd->num_core_pm_clks = num_core_pm_clks;
 	memcpy(pd->core_pm_clks, core_pm_clks, pm_size);
 
@@ -646,6 +646,30 @@ static const struct of_device_id cpg_mssr_match[] = {
 	{
 		.compatible = "renesas,r8a77470-cpg-mssr",
 		.data = &r8a77470_cpg_mssr_info,
+	},
+#endif
+#ifdef CONFIG_CLK_R8A774A1
+	{
+		.compatible = "renesas,r8a774a1-cpg-mssr",
+		.data = &r8a774a1_cpg_mssr_info,
+	},
+#endif
+#ifdef CONFIG_CLK_R8A774B1
+	{
+		.compatible = "renesas,r8a774b1-cpg-mssr",
+		.data = &r8a774b1_cpg_mssr_info,
+	},
+#endif
+#ifdef CONFIG_CLK_R8A774C0
+	{
+		.compatible = "renesas,r8a774c0-cpg-mssr",
+		.data = &r8a774c0_cpg_mssr_info,
+	},
+#endif
+#ifdef CONFIG_CLK_R8A774E1
+	{
+		.compatible = "renesas,r8a774e1-cpg-mssr",
+		.data = &r8a774e1_cpg_mssr_info,
 	},
 #endif
 #ifdef CONFIG_CLK_R8A7790

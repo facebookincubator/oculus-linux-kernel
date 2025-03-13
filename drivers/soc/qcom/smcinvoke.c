@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "smcinvoke: %s: " fmt, __func__
@@ -1672,8 +1672,11 @@ static long process_accept_req(struct file *filp, unsigned int cmd,
 		}
 	} while (!cb_txn);
 out:
-	if (server_info)
+	if (server_info) {
+		mutex_lock(&g_smcinvoke_lock);
 		kref_put(&server_info->ref_cnt, destroy_cb_server);
+		mutex_unlock(&g_smcinvoke_lock);
+	}
 
 	if (ret && ret != -ERESTARTSYS)
 		pr_err("accept thread returning with ret: %d\n", ret);

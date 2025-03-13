@@ -14,6 +14,8 @@ struct usbvdm_engine_ops {
 		u8 msg_type, const u8 *data, size_t data_len);
 	int (*vdm)(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos);
+	int (*transfer_firmware)(struct usbvdm_engine *engine,
+		const u8 *data, size_t data_len);
 };
 
 #if IS_ENABLED(CONFIG_META_USBVDM)
@@ -28,6 +30,8 @@ void usbvdm_engine_ext_msg(struct usbvdm_engine *engine,
 		u8 msg_type, const u8 *data, size_t data_len);
 void usbvdm_engine_vdm(struct usbvdm_engine *engine,
 		u32 vdm_hdr, const u32 *vdos, u32 num_vdos);
+void usbvdm_engine_transfer_firmware(struct usbvdm_engine *engine,
+		int progress);
 
 void usbvdm_engine_set_drvdata(struct usbvdm_engine *engine, void *priv);
 void *usbvdm_engine_get_drvdata(struct usbvdm_engine *engine);

@@ -225,11 +225,6 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
 		hook_head = rcu_dereference(net->nf.hooks_bridge[hook]);
 #endif
 		break;
-#if IS_ENABLED(CONFIG_DECNET)
-	case NFPROTO_DECNET:
-		hook_head = rcu_dereference(net->nf.hooks_decnet[hook]);
-		break;
-#endif
 	default:
 		WARN_ON_ONCE(1);
 		break;
@@ -300,7 +295,7 @@ NF_HOOK_LIST(uint8_t pf, unsigned int hook, struct net *net, struct sock *sk,
 
 	INIT_LIST_HEAD(&sublist);
 	list_for_each_entry_safe(skb, next, head, list) {
-		list_del(&skb->list);
+		skb_list_del_init(skb);
 		if (nf_hook(pf, hook, net, sk, skb, in, out, okfn) == 1)
 			list_add_tail(&skb->list, &sublist);
 	}

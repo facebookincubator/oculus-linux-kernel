@@ -844,18 +844,21 @@ compose_entry_fh(struct nfsd3_readdirres *cd, struct svc_fh *fhp,
 	if (isdotent(name, namlen)) {
 		if (namlen == 2) {
 			dchild = dget_parent(dparent);
-			/* filesystem root - cannot return filehandle for ".." */
+			/*
+			 * Don't return filehandle for ".." if we're at
+			 * the filesystem or export root:
+			 */
 			if (dchild == dparent)
+				goto out;
+			if (dparent == exp->ex_path.dentry)
 				goto out;
 		} else
 			dchild = dget(dparent);
 	} else
-		dchild = lookup_one_len_unlocked(name, dparent, namlen);
+		dchild = lookup_positive_unlocked(name, dparent, namlen);
 	if (IS_ERR(dchild))
 		return rv;
 	if (d_mountpoint(dchild))
-		goto out;
-	if (d_really_is_negative(dchild))
 		goto out;
 	if (dchild->d_inode->i_ino != ino)
 		goto out;

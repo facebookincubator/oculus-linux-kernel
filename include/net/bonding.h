@@ -170,6 +170,11 @@ struct slave {
 	struct rtnl_link_stats64 slave_stats;
 };
 
+static inline struct slave *to_slave(struct kobject *kobj)
+{
+	return container_of(kobj, struct slave, kobj);
+}
+
 struct bond_up_slave {
 	unsigned int	count;
 	struct rcu_head rcu;
@@ -670,37 +675,14 @@ static inline struct slave *bond_slave_has_mac(struct bonding *bond,
 }
 
 /* Caller must hold rcu_read_lock() for read */
-static inline struct slave *bond_slave_has_mac_rcu(struct bonding *bond,
-					       const u8 *mac)
+static inline bool bond_slave_has_mac_rcu(struct bonding *bond, const u8 *mac)
 {
 	struct list_head *iter;
 	struct slave *tmp;
 
 	bond_for_each_slave_rcu(bond, tmp, iter)
 		if (ether_addr_equal_64bits(mac, tmp->dev->dev_addr))
-			return tmp;
-
-	return NULL;
-}
-
-/* Caller must hold rcu_read_lock() for read */
-static inline bool bond_slave_has_mac_rx(struct bonding *bond, const u8 *mac)
-{
-	struct list_head *iter;
-	struct slave *tmp;
-	struct netdev_hw_addr *ha;
-
-	bond_for_each_slave_rcu(bond, tmp, iter)
-		if (ether_addr_equal_64bits(mac, tmp->dev->dev_addr))
 			return true;
-
-	if (netdev_uc_empty(bond->dev))
-		return false;
-
-	netdev_for_each_uc_addr(ha, bond->dev)
-		if (ether_addr_equal_64bits(mac, ha->addr))
-			return true;
-
 	return false;
 }
 
@@ -732,6 +714,9 @@ extern struct bond_parm_tbl ad_select_tbl[];
 
 /* exported from bond_netlink.c */
 extern struct rtnl_link_ops bond_link_ops;
+
+/* exported from bond_sysfs_slave.c */
+extern const struct sysfs_ops slave_sysfs_ops;
 
 static inline void bond_tx_drop(struct net_device *dev, struct sk_buff *skb)
 {

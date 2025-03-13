@@ -294,6 +294,33 @@ void usbvdm_engine_vdm(struct usbvdm_engine *engine,
 EXPORT_SYMBOL(usbvdm_engine_vdm);
 
 /**
+ * usbvdm_engine_transfer_firmware - Notify subscribers of firmware transfer progress updates
+ * @engine: Engine instance
+ * @progress: Progress of the firmware transfer, interpreted as a percentage
+ *
+ * Engine drivers should call this when progress updates of the ongoing firmware transfer are
+ * received so that they may be shared with subscribers.
+ */
+void usbvdm_engine_transfer_firmware(struct usbvdm_engine *engine,
+		int progress)
+{
+	struct usbvdm_subscription *sub;
+
+	pr_debug("%s: Engine '%s' received firmware transfer progress update, progress=%d%%",
+			__func__, dev_name(engine->dev), progress);
+
+	mutex_lock(&subscription_lock);
+	sub = usbvdm_find_subscription(engine->conn_svid, engine->conn_pid);
+	if (sub && sub->ops.transfer_firmware) {
+		pr_debug("%s: Notifying sub '%s' of firmware transfer progress update, progress=%d%%",
+				__func__, dev_name(sub->dev), progress);
+		sub->ops.transfer_firmware(sub, progress);
+	}
+	mutex_unlock(&subscription_lock);
+}
+EXPORT_SYMBOL(usbvdm_engine_transfer_firmware);
+
+/**
  * usbvdm_engine_set_drvdata - Set driver private data
  * @engine: Engine instance
  * @priv: Private data
@@ -489,6 +516,44 @@ int usbvdm_subscriber_vdm(struct usbvdm_subscription *sub,
 	return rc;
 }
 EXPORT_SYMBOL(usbvdm_subscriber_vdm);
+
+/**
+ * usbvdm_subscriber_transfer_firmware - Initiate a firmware transfer
+ * @sub: Subscription instance
+ * @data: Firmware data to be transferred
+ * @data_len: Size of @data
+ *
+ * Subscribers may call this to begin engine-driven firmware transfers. The engine will report
+ * progress updates back to the subscriber via the subscriber's `transfer_firmware` handler.
+ */
+int usbvdm_subscriber_transfer_firmware(struct usbvdm_subscription *sub,
+		const u8 *data, size_t data_len)
+{
+	struct usbvdm_engine *engine;
+	int rc = -ENODEV;
+
+	if (!sub)
+		return -EINVAL;
+
+	pr_debug("%s: Sub '%s' transferring firmware of size %lu",
+			__func__, dev_name(sub->dev), data_len);
+
+	mutex_lock(&engine_lock);
+	list_for_each_entry(engine, &engine_list, entry) {
+		if (engine->conn_svid == sub->svid && engine->conn_pid == sub->pid) {
+			if (engine->ops.transfer_firmware) {
+				pr_debug("%s: Transferring firmware of size %lu to engine '%s'",
+						__func__, data_len, dev_name(engine->dev));
+				rc = engine->ops.transfer_firmware(engine, data, data_len);
+			}
+			break;
+		}
+	}
+	mutex_unlock(&engine_lock);
+
+	return rc;
+}
+EXPORT_SYMBOL(usbvdm_subscriber_transfer_firmware);
 
 /**
  * usbvdm_subscriber_set_drvdata - Set driver private data

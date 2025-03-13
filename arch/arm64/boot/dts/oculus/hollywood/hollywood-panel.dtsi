@@ -516,10 +516,6 @@
 	panels = <&display_panels>;
 };
 
-&nsync {
-	panels = <&display_panels>;
-};
-
 &pm8150a_amoled {
 	status = "disabled";
 };

@@ -5,6 +5,7 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/kthread.h>
+#include <linux/ktime.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
@@ -24,6 +25,7 @@
 #define SENSORLOCK_CMDS_VERSION 1
 #define SENSORLOCK_CMD_CHECK_SIGNAL 0
 #define SENSORLOCK_CMD_TOGGLE_MIC 3
+#define SENSORLOCK_EVENT_TIMEOUT_MS 5000
 #define SENSORLOCK_APP_NAME "sensorlock64"
 #define SENSORLOCK_FIRMWARE_NAME "sensorlock64.mbn"
 
@@ -61,9 +63,11 @@ struct sensorlock_dev_data {
 	struct miscdevice misc;
 	struct smci_object sensorlock_app;
 	struct kthread_worker *kworker;
+	struct mutex event_lock;
 	wait_queue_head_t sensorlock_wait_queue;
-	atomic_t waiting_for_event;
-	atomic_t state;
+	atomic_t event_available;
+	ktime_t event_timestamp;
+	enum sensorlock_state state;
 	int app_load_status;
 	bool is_app_connected;
 	int sensorlock_irq;
@@ -83,6 +87,37 @@ struct sensorlock_work {
 	enum sensorlock_work_action action;
 };
 
+static void sensorlock_set_event(struct sensorlock_dev_data *dev_data, enum sensorlock_state state)
+{
+	mutex_lock(&dev_data->event_lock);
+	dev_data->state = state;
+	dev_data->event_timestamp = ktime_get_boottime();
+	atomic_set(&dev_data->event_available, 1);
+
+	mutex_unlock(&dev_data->event_lock);
+	wake_up_all(&dev_data->sensorlock_wait_queue);
+}
+
+static int sensorlock_get_event(struct sensorlock_dev_data *dev_data, enum sensorlock_state *state)
+{
+	int rc = 0;
+	s64 delta_ms;
+
+	mutex_lock(&dev_data->event_lock);
+	delta_ms = ktime_ms_delta(ktime_get_boottime(), dev_data->event_timestamp);
+	if (delta_ms > SENSORLOCK_EVENT_TIMEOUT_MS) {
+		dev_err(dev_data->dev, "expired request called after %lldms\n", delta_ms);
+		rc = -ETIME;
+		goto timeout;
+	}
+
+	*state = dev_data->state;
+timeout:
+	atomic_set(&dev_data->event_available, 0);
+	mutex_unlock(&dev_data->event_lock);
+	return rc;
+}
+
 /* Character device read operation blocks until a signal has been sent to the Trustzone application */
 static ssize_t sensorlock_read(struct file *filp, char __user *buf, size_t len, loff_t *off)
 {
@@ -95,14 +130,18 @@ static ssize_t sensorlock_read(struct file *filp, char __user *buf, size_t len, 
 		return -EINVAL;
 	}
 
-	atomic_set(&dev_data->waiting_for_event, 1);
-	rc = wait_event_interruptible(dev_data->sensorlock_wait_queue, !atomic_read(&dev_data->waiting_for_event));
+	rc = wait_event_interruptible(dev_data->sensorlock_wait_queue, atomic_read(&dev_data->event_available));
 	if (rc) {
-		dev_warn_ratelimited(dev_data->dev, "%s aborted due to signal", __func__);
+		dev_warn_ratelimited(dev_data->dev, "%s aborted due to signal. rc: %d", __func__, rc);
 		return rc;
 	}
 
-	state = atomic_read(&dev_data->state);
+	rc = sensorlock_get_event(dev_data, &state);
+	if (rc) {
+		dev_err(dev_data->dev, "failed to get sensorlock event. rc: %d", rc);
+		return rc;
+	}
+
 	if (copy_to_user(buf, &state, sizeof(enum sensorlock_state))) {
 		dev_err(dev_data->dev, "could not copy sensorlock state to userspace");
 		return -EFAULT;
@@ -162,7 +201,7 @@ static int sensorlock_try_connect(struct device *dev)
 	int rc;
 
 	if (dev_data->is_app_connected)
-	       return 0;
+		return 0;
 
 	rc = sensorlock_app_connect(dev);
 	if (rc)
@@ -307,9 +346,7 @@ static void sensorlock_check_signals(struct device *dev)
 		return;
 	}
 
-	atomic_set(&dev_data->state, state);
-	atomic_set(&dev_data->waiting_for_event, 0);
-	wake_up_all(&dev_data->sensorlock_wait_queue);
+	sensorlock_set_event(dev_data, state);
 }
 
 static void sensorlock_work_handler(struct kthread_work *work)
@@ -444,7 +481,7 @@ static int sensorlock_regulator_init(struct platform_device *pdev)
 
 	ret = devm_regulator_debug_register(dev, rdev);
 	if (ret) {
-		dev_err(dev, "failed to register debug regulato; %d\n", ret);
+		dev_err(dev, "failed to register debug regulator: %d\n", ret);
 		return ret;
 	}
 
@@ -482,7 +519,8 @@ static int sensorlock_probe(struct platform_device *pdev)
 	}
 
 	dev_data->dev = dev;
-	atomic_set(&dev_data->waiting_for_event, 0);
+	mutex_init(&dev_data->event_lock);
+	atomic_set(&dev_data->event_available, 0);
 	SMCI_OBJECT_ASSIGN_NULL(dev_data->sensorlock_app);
 	init_waitqueue_head(&dev_data->sensorlock_wait_queue);
 	dev_set_drvdata(dev, dev_data);
@@ -491,21 +529,10 @@ static int sensorlock_probe(struct platform_device *pdev)
 	dev_data->misc.minor = MISC_DYNAMIC_MINOR;
 	dev_data->misc.fops = &fops;
 
-	rc = sensorlock_regulator_init(pdev);
-	if (rc) {
-		dev_err(dev, "regulator init failed: %d\n", rc);
-		return rc;
-	}
-
-	rc = misc_register(&dev_data->misc);
-	if (rc) {
-		dev_err(dev, "error creating misc device");
-		goto error_misc;
-	}
-
 	dev_data->kworker = kthread_create_worker(0, "sensorlock");
 	if (IS_ERR(dev_data->kworker)) {
-		dev_err(dev, "failed to create kworkder\n");
+		dev_err(dev, "failed to create kworker\n");
+		rc = PTR_ERR(dev_data->kworker);
 		goto error_kworker;
 	}
 
@@ -516,8 +543,9 @@ static int sensorlock_probe(struct platform_device *pdev)
 	sl_work = devm_kmalloc(dev, sizeof(*sl_work), GFP_KERNEL);
 	if (sl_work == NULL) {
 		rc = -ENOMEM;
-		goto error_kworker;
+		goto error_app_load;
 	}
+
 	sl_work->dev_data = dev_data;
 	sl_work->action = WORK_ACT_LOAD;
 	kthread_init_work(&sl_work->kthread_work, sensorlock_work_handler);
@@ -525,7 +553,22 @@ static int sensorlock_probe(struct platform_device *pdev)
 	sl_work = NULL; /* sl_work is not safe to access after queuing */
 	kthread_flush_worker(dev_data->kworker);
 	if (dev_data->app_load_status) {
-		rc = dev_data->app_load_status;
+		dev_err(dev, "Failed to load TrustZone application: %d\n", dev_data->app_load_status);
+
+		// Only retry when the TrustZone app fails to load with SMCI_OBJECT_ERROR
+		rc = dev_data->app_load_status == SMCI_OBJECT_ERROR ? -EPROBE_DEFER : -EINVAL;
+		goto error_app_load;
+	}
+
+	rc = sensorlock_regulator_init(pdev);
+	if (rc) {
+		dev_err(dev, "regulator init failed: %d\n", rc);
+		goto error_app_load;
+	}
+
+	rc = misc_register(&dev_data->misc);
+	if (rc) {
+		dev_err(dev, "error creating misc device");
 		goto error_app_load;
 	}
 
@@ -534,7 +577,7 @@ static int sensorlock_probe(struct platform_device *pdev)
 		if (dev_data->sensorlock_irq < 0) {
 			dev_err(dev, "Unable to find %s IRQ", irq_names[i]);
 			rc = -EINVAL;
-			goto error_app_load;
+			goto error_irq;
 		}
 
 		rc = devm_request_irq(dev,
@@ -544,17 +587,17 @@ static int sensorlock_probe(struct platform_device *pdev)
 					irq_names[i], dev_data);
 		if (rc) {
 			dev_err(dev, "failed to set %s handler", irq_names[i]);
-			goto error_app_load;
+			goto error_irq;
 		}
 	}
 
 	return 0;
 
+error_irq:
+	misc_deregister(&dev_data->misc);
 error_app_load:
 	kthread_destroy_worker(dev_data->kworker);
 error_kworker:
-	misc_deregister(&dev_data->misc);
-error_misc:
 	return rc;
 }
 

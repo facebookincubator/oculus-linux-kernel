@@ -480,7 +480,3 @@
 &fan_1 {
 	panels = <&display_panels>;
 };
-
-&nsync {
-	panels = <&display_panels>;
-};

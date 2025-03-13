@@ -174,14 +174,17 @@
 #define BQ27Z561_SUB_LEN	4	//2-byte command, 1-byte checksum and 1-byte length
 
 /* [TI FG] MAC command definitions for read back data - bq27z561  */
+#define BQ27Z561_MAC_CMD_DASTATUS1_LEN 32
 #define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_LO 0
 #define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_HI 1
 #define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_LO 12
 #define BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_HI 13
 
+#define BQ27Z561_MAC_CMD_ITSTATUS1_LEN 20
 #define BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_LO 18
 #define BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_HI 19
 
+#define BQ27Z561_MAC_CMD_ITSTATUS2_LEN 20
 #define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO 10
 #define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI 11
 #define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_LO 12
@@ -189,6 +192,7 @@
 #define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_LO 14
 #define BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_HI 15
 
+#define BQ27Z561_MAC_CMD_ITSTATUS3_LEN 14
 #define BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_LO 0
 #define BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_HI 1
 #define BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_LO 12
@@ -1003,6 +1007,7 @@ static struct {
 };
 
 static DEFINE_MUTEX(bq27xxx_list_lock);
+static DEFINE_MUTEX(bq27xxx_update_lock);
 static LIST_HEAD(bq27xxx_battery_devices);
 
 #define BQ27XXX_MSLEEP(i) usleep_range((i)*1000, (i)*1000+500)
@@ -1157,10 +1162,8 @@ static int poll_interval_param_set(const char *val, const struct kernel_param *k
 		return ret;
 
 	mutex_lock(&bq27xxx_list_lock);
-	list_for_each_entry(di, &bq27xxx_battery_devices, list) {
-		cancel_delayed_work_sync(&di->work);
-		schedule_delayed_work(&di->work, 0);
-	}
+	list_for_each_entry(di, &bq27xxx_battery_devices, list)
+		mod_delayed_work(system_wq, &di->work, 0);
 	mutex_unlock(&bq27xxx_list_lock);
 
 	return ret;
@@ -1316,7 +1319,9 @@ static int bq27xxx_battery_seal(struct bq27xxx_device_info *di)
 {
 	int ret;
 
+	mutex_lock(&di->lock);
 	ret = bq27xxx_write(di, BQ27XXX_REG_CTRL, BQ27XXX_SEALED, false);
+	mutex_unlock(&di->lock);
 	if (ret < 0) {
 		dev_err(di->dev, "bus error on seal: %d\n", ret);
 		return ret;
@@ -1334,6 +1339,7 @@ static int bq27xxx_battery_unseal(struct bq27xxx_device_info *di)
 		return -EINVAL;
 	}
 
+	mutex_lock(&di->lock);
 	ret = bq27xxx_write(di, BQ27XXX_REG_CTRL, (u16)(di->unseal_key >> 16), false);
 	if (ret < 0)
 		goto out;
@@ -1342,9 +1348,11 @@ static int bq27xxx_battery_unseal(struct bq27xxx_device_info *di)
 	if (ret < 0)
 		goto out;
 
+	mutex_unlock(&di->lock);
 	return 0;
 
 out:
+	mutex_unlock(&di->lock);
 	dev_err(di->dev, "bus error on unseal: %d\n", ret);
 	return ret;
 }
@@ -1372,6 +1380,7 @@ static int bq27xxx_battery_read_dm_block(struct bq27xxx_device_info *di,
 
 	buf->has_data = false;
 
+	mutex_lock(&di->lock);
 	ret = bq27xxx_write(di, BQ27XXX_DM_CLASS, buf->class, true);
 	if (ret < 0)
 		goto out;
@@ -1395,12 +1404,14 @@ static int bq27xxx_battery_read_dm_block(struct bq27xxx_device_info *di,
 		goto out;
 	}
 
+	mutex_unlock(&di->lock);
 	buf->has_data = true;
 	buf->dirty = false;
 
 	return 0;
 
 out:
+	mutex_unlock(&di->lock);
 	dev_err(di->dev, "bus error reading chip memory: %d\n", ret);
 	return ret;
 }
@@ -1655,26 +1666,33 @@ static int bq27xxx_battery_cfgupdate_priv(struct bq27xxx_device_info *di, bool a
 	u16 cmd = active ? BQ27XXX_SET_CFGUPDATE : BQ27XXX_SOFT_RESET;
 	int ret, try = limit;
 
+	mutex_lock(&di->lock);
 	ret = bq27xxx_write(di, BQ27XXX_REG_CTRL, cmd, false);
 	if (ret < 0)
-		return ret;
+		goto out;
 
 	do {
 		BQ27XXX_MSLEEP(25);
 		ret = bq27xxx_read(di, BQ27XXX_REG_FLAGS, false);
 		if (ret < 0)
-			return ret;
+			goto out;
 	} while (!!(ret & BQ27XXX_FLAG_CFGUP) != active && --try);
 
 	if (!try && di->chip != BQ27425) { // 425 has a bug
 		dev_err(di->dev, "timed out waiting for cfgupdate flag %d\n", active);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
+	mutex_unlock(&di->lock);
 
 	if (limit - try > 3)
 		dev_warn(di->dev, "cfgupdate %d, retries %d\n", active, limit - try);
 
 	return 0;
+
+out:
+	mutex_unlock(&di->lock);
+	return ret;
 }
 
 static inline int bq27xxx_battery_set_cfgupdate(struct bq27xxx_device_info *di)
@@ -1710,6 +1728,7 @@ static int bq27xxx_battery_write_dm_block(struct bq27xxx_device_info *di,
 			return ret;
 	}
 
+	mutex_lock(&di->lock);
 	ret = bq27xxx_write(di, BQ27XXX_DM_CTRL, 0, true);
 	if (ret < 0)
 		goto out;
@@ -1733,6 +1752,7 @@ static int bq27xxx_battery_write_dm_block(struct bq27xxx_device_info *di,
 	if (ret < 0)
 		goto out;
 
+	mutex_unlock(&di->lock);
 	/* DO NOT read BQ27XXX_DM_CKSUM here to verify it! That may cause NVM
 	 * corruption on the '425 chip (and perhaps others), which can damage
 	 * the chip.
@@ -1752,6 +1772,7 @@ static int bq27xxx_battery_write_dm_block(struct bq27xxx_device_info *di,
 	return 0;
 
 out:
+	mutex_unlock(&di->lock);
 	if (cfgup)
 		bq27xxx_battery_soft_reset(di);
 
@@ -1798,7 +1819,9 @@ static void bq27xxx_battery_set_config(struct bq27xxx_device_info *di,
 	bq27xxx_battery_seal(di);
 
 	if (updated && !(di->opts & BQ27XXX_O_CFGUP)) {
+		mutex_lock(&di->lock);
 		bq27xxx_write(di, BQ27XXX_REG_CTRL, BQ27XXX_RESET, false);
+		mutex_unlock(&di->lock);
 		BQ27XXX_MSLEEP(300); /* reset time is not documented */
 	}
 	/* assume bq27xxx_battery_update() is called hereafter */
@@ -1864,10 +1887,12 @@ static int bq27xxx_battery_read_soc(struct bq27xxx_device_info *di)
 {
 	int soc;
 
+	mutex_lock(&di->lock);
 	if (di->opts & BQ27XXX_O_ZERO)
 		soc = bq27xxx_read(di, BQ27XXX_REG_SOC, true);
 	else
 		soc = bq27xxx_read(di, BQ27XXX_REG_SOC, false);
+	mutex_unlock(&di->lock);
 
 	if (soc < 0)
 		dev_dbg(di->dev, "error reading State-of-Charge\n");
@@ -1883,7 +1908,9 @@ static int bq27xxx_battery_read_charge(struct bq27xxx_device_info *di, u8 reg)
 {
 	int charge;
 
+	mutex_lock(&di->lock);
 	charge = bq27xxx_read(di, reg, false);
+	mutex_unlock(&di->lock);
 	if (charge < 0) {
 		dev_dbg(di->dev, "error reading charge register %02x: %d\n",
 			reg, charge);
@@ -1907,7 +1934,9 @@ static inline int bq27xxx_battery_read_nac(struct bq27xxx_device_info *di)
 	int flags;
 
 	if (di->opts & BQ27XXX_O_ZERO) {
+		mutex_lock(&di->lock);
 		flags = bq27xxx_read(di, BQ27XXX_REG_FLAGS, true);
+		mutex_unlock(&di->lock);
 		if (flags >= 0 && (flags & BQ27000_FLAG_CI))
 			return -ENODATA;
 	}
@@ -1932,10 +1961,12 @@ static int bq27xxx_battery_read_dcap(struct bq27xxx_device_info *di)
 {
 	int dcap;
 
+	mutex_lock(&di->lock);
 	if (di->opts & BQ27XXX_O_ZERO)
 		dcap = bq27xxx_read(di, BQ27XXX_REG_DCAP, true);
 	else
 		dcap = bq27xxx_read(di, BQ27XXX_REG_DCAP, false);
+	mutex_unlock(&di->lock);
 
 	if (dcap < 0) {
 		dev_dbg(di->dev, "error reading initial last measured discharge\n");
@@ -1958,7 +1989,9 @@ static int bq27xxx_battery_read_energy(struct bq27xxx_device_info *di)
 {
 	int ae;
 
+	mutex_lock(&di->lock);
 	ae = bq27xxx_read(di, BQ27XXX_REG_AE, false);
+	mutex_unlock(&di->lock);
 	if (ae < 0) {
 		dev_dbg(di->dev, "error reading available energy\n");
 		return ae;
@@ -1980,7 +2013,9 @@ static int bq27xxx_battery_read_temperature(struct bq27xxx_device_info *di)
 {
 	int temp;
 
+	mutex_lock(&di->lock);
 	temp = bq27xxx_read(di, BQ27XXX_REG_TEMP, false);
+	mutex_unlock(&di->lock);
 	if (temp < 0) {
 		dev_err(di->dev, "error reading temperature\n");
 		return temp;
@@ -2000,7 +2035,9 @@ static int bq27xxx_battery_read_cyct(struct bq27xxx_device_info *di)
 {
 	int cyct;
 
+	mutex_lock(&di->lock);
 	cyct = bq27xxx_read(di, BQ27XXX_REG_CYCT, false);
+	mutex_unlock(&di->lock);
 	if (cyct < 0)
 		dev_err(di->dev, "error reading cycle count total\n");
 
@@ -2015,7 +2052,9 @@ static int bq27xxx_battery_read_time(struct bq27xxx_device_info *di, u8 reg)
 {
 	int tval;
 
+	mutex_lock(&di->lock);
 	tval = bq27xxx_read(di, reg, false);
+	mutex_unlock(&di->lock);
 	if (tval < 0) {
 		dev_dbg(di->dev, "error reading time register %02x: %d\n",
 			reg, tval);
@@ -2026,27 +2065,6 @@ static int bq27xxx_battery_read_time(struct bq27xxx_device_info *di, u8 reg)
 		return -ENODATA;
 
 	return tval * 60;
-}
-
-/*
- * Read an average power register.
- * Return < 0 if something fails.
- */
-static int bq27xxx_battery_read_pwr_avg(struct bq27xxx_device_info *di)
-{
-	int tval;
-
-	tval = bq27xxx_read(di, BQ27XXX_REG_AP, false);
-	if (tval < 0) {
-		dev_err(di->dev, "error reading average power register  %02x: %d\n",
-			BQ27XXX_REG_AP, tval);
-		return tval;
-	}
-
-	if (di->opts & BQ27XXX_O_ZERO)
-		return (tval * BQ27XXX_POWER_CONSTANT) / BQ27XXX_RS;
-	else
-		return tval;
 }
 
 /*
@@ -2093,7 +2111,9 @@ static int bq27xxx_battery_read_health(struct bq27xxx_device_info *di)
 	int flags;
 	bool has_singe_flag = di->opts & BQ27XXX_O_ZERO;
 
+	mutex_lock(&di->lock);
 	flags = bq27xxx_read(di, BQ27XXX_REG_FLAGS, has_singe_flag);
+	mutex_unlock(&di->lock);
 	if (flags < 0) {
 		dev_err(di->dev, "error reading flag register:%d\n", flags);
 		return flags;
@@ -2110,7 +2130,7 @@ static int bq27xxx_battery_read_health(struct bq27xxx_device_info *di)
 	return POWER_SUPPLY_HEALTH_GOOD;
 }
 
-void bq27xxx_battery_update(struct bq27xxx_device_info *di)
+static void bq27xxx_battery_update_unlocked(struct bq27xxx_device_info *di)
 {
 	struct bq27xxx_reg_cache cache = {0, };
 	bool has_ci_flag = di->opts & BQ27XXX_O_ZERO;
@@ -2118,7 +2138,9 @@ void bq27xxx_battery_update(struct bq27xxx_device_info *di)
 
 	int rc;
 
+	mutex_lock(&di->lock);
 	cache.flags = bq27xxx_read(di, BQ27XXX_REG_FLAGS, has_singe_flag);
+	mutex_unlock(&di->lock);
 	if ((cache.flags & 0xff) == 0xff)
 		cache.flags = -1; /* read error */
 	if (cache.flags >= 0) {
@@ -2147,8 +2169,6 @@ void bq27xxx_battery_update(struct bq27xxx_device_info *di)
 		}
 		if (di->regs[BQ27XXX_REG_CYCT] != INVALID_REG_ADDR)
 			cache.cycle_count = bq27xxx_battery_read_cyct(di);
-		if (di->regs[BQ27XXX_REG_AP] != INVALID_REG_ADDR)
-			cache.power_avg = bq27xxx_battery_read_pwr_avg(di);
 
 		/* We only have to read charge design full once */
 		if (di->charge_design_full <= 0)
@@ -2177,6 +2197,16 @@ void bq27xxx_battery_update(struct bq27xxx_device_info *di)
 		di->cache = cache;
 
 	di->last_update = jiffies;
+
+	if (!di->removed && poll_interval > 0)
+		mod_delayed_work(system_wq, &di->work, poll_interval * HZ);
+}
+
+void bq27xxx_battery_update(struct bq27xxx_device_info *di)
+{
+	mutex_lock(&bq27xxx_update_lock);
+	bq27xxx_battery_update_unlocked(di);
+	mutex_unlock(&bq27xxx_update_lock);
 }
 EXPORT_SYMBOL_GPL(bq27xxx_battery_update);
 
@@ -2187,9 +2217,6 @@ static void bq27xxx_battery_poll(struct work_struct *work)
 				     work.work);
 
 	bq27xxx_battery_update(di);
-
-	if (poll_interval > 0)
-		schedule_delayed_work(&di->work, poll_interval * HZ);
 }
 
 /*
@@ -2203,14 +2230,18 @@ static int bq27xxx_battery_current(struct bq27xxx_device_info *di,
 	int curr;
 	int flags;
 
+	mutex_lock(&di->lock);
 	curr = bq27xxx_read(di, BQ27XXX_REG_AI, false);
+	mutex_unlock(&di->lock);
 	if (curr < 0) {
 		dev_err(di->dev, "error reading current\n");
 		return curr;
 	}
 
 	if (di->opts & BQ27XXX_O_ZERO) {
+		mutex_lock(&di->lock);
 		flags = bq27xxx_read(di, BQ27XXX_REG_FLAGS, true);
+		mutex_unlock(&di->lock);
 		if (flags & BQ27000_FLAG_CHGS) {
 			dev_dbg(di->dev, "negative current!\n");
 			curr = -curr;
@@ -2221,6 +2252,34 @@ static int bq27xxx_battery_current(struct bq27xxx_device_info *di,
 		/* Other gauges return signed value */
 		val->intval = (int)((s16)curr) * 1000;
 	}
+
+	return 0;
+}
+
+/*
+ * Get the average power in µW
+ * Return < 0 if something fails.
+ */
+static int bq27xxx_battery_pwr_avg(struct bq27xxx_device_info *di,
+				   union power_supply_propval *val)
+{
+	int power;
+
+	mutex_lock(&di->lock);
+	power = bq27xxx_read(di, BQ27XXX_REG_AP, false);
+	mutex_unlock(&di->lock);
+	if (power < 0) {
+		dev_err(di->dev,
+			"error reading average power register %02x: %d\n",
+			BQ27XXX_REG_AP, power);
+		return power;
+	}
+
+	if (di->opts & BQ27XXX_O_ZERO)
+		val->intval = (power * BQ27XXX_POWER_CONSTANT) / BQ27XXX_RS;
+	else
+		/* Other gauges return a signed value in units of 10mW */
+		val->intval = (int)((s16)power) * 10000;
 
 	return 0;
 }
@@ -2301,7 +2360,9 @@ static int bq27xxx_battery_voltage(struct bq27xxx_device_info *di,
 {
 	int volt;
 
+	mutex_lock(&di->lock);
 	volt = bq27xxx_read(di, BQ27XXX_REG_VOLT, false);
+	mutex_unlock(&di->lock);
 	if (volt < 0) {
 		dev_err(di->dev, "error reading voltage\n");
 		return volt;
@@ -2378,6 +2439,8 @@ static int bq27z561_battery_read_mac_block(struct bq27xxx_device_info *di,
 		return ret;
 	}
 
+	mutex_lock(&di->lock);
+
 	ret = bq27z561_write_block(di, BQ27Z561_MAC_CMD_ADDR, command, 2);
 	if (ret < 0)
 		goto out;
@@ -2408,9 +2471,11 @@ static int bq27z561_battery_read_mac_block(struct bq27xxx_device_info *di,
 		goto out;
 	}
 
+	mutex_unlock(&di->lock);
 	return lens - BQ27Z561_SUB_LEN;
 
 out:
+	mutex_unlock(&di->lock);
 	dev_err(di->dev, "error reading MAC block memory: %d\n", ret);
 	return ret;
 }
@@ -2420,6 +2485,7 @@ static int bq27z561_battery_read_reg(struct bq27xxx_device_info *di,
 {
 	int ret;
 
+	mutex_lock(&di->lock);
 	if (reg_addr == BQ27Z561_SET_TEMP_HI ||
 		reg_addr == BQ27Z561_CLEAR_TEMP_HI ||
 		reg_addr == BQ27Z561_SET_TEMP_LO ||
@@ -2427,6 +2493,7 @@ static int bq27z561_battery_read_reg(struct bq27xxx_device_info *di,
 		ret = bq27z561_read(di, reg_addr, true);
 	else
 		ret = bq27z561_read(di, reg_addr, false);
+	mutex_unlock(&di->lock);
 	return ret;
 }
 
@@ -2436,6 +2503,7 @@ static int bq27z561_battery_write_reg(struct bq27xxx_device_info *di,
 	int ret;
 	u8 command[2];
 
+	mutex_lock(&di->lock);
 	if (reg_addr == BQ27Z561_MAC_CMD_ADDR) {
 		command[0] = value & 0x00FF;
 		command[1] = (value & 0xFF00) >> 8;
@@ -2450,6 +2518,7 @@ static int bq27z561_battery_write_reg(struct bq27xxx_device_info *di,
 		ret = bq27z561_write(di, reg_addr, value, true);
 	else
 		ret = bq27z561_write(di, reg_addr, value, false);
+	mutex_unlock(&di->lock);
 	return ret;
 }
 
@@ -2472,8 +2541,10 @@ static int bq27xxx_get_bqtimestamp(struct bq27xxx_device_info *di)
 {
 	int reg_data = 0, reg_data_u, reg_data_l;
 
+	mutex_lock(&di->lock);
 	reg_data_u = bq27xxx_read(di, BQ27XXX_REG_TSU, false);
 	reg_data_l = bq27xxx_read(di, BQ27XXX_REG_TSL, false);
+	mutex_unlock(&di->lock);
 	if (reg_data_u < 0 || reg_data_l < 0)
 		dev_err(di->dev, "get bqtimestamp error\n");
 	else
@@ -2520,12 +2591,10 @@ static int bq27xxx_battery_get_property(struct power_supply *psy,
 	int ret = 0;
 	struct bq27xxx_device_info *di = power_supply_get_drvdata(psy);
 
-	mutex_lock(&di->lock);
-	if (time_is_before_jiffies(di->last_update + 5 * HZ)) {
-		cancel_delayed_work_sync(&di->work);
-		bq27xxx_battery_poll(&di->work.work);
-	}
-	mutex_unlock(&di->lock);
+	mutex_lock(&bq27xxx_update_lock);
+	if (time_is_before_jiffies(di->last_update + 5 * HZ))
+		bq27xxx_battery_update_unlocked(di);
+	mutex_unlock(&bq27xxx_update_lock);
 
 	if (psp != POWER_SUPPLY_PROP_PRESENT && di->cache.flags < 0)
 		return -ENODEV;
@@ -2589,7 +2658,7 @@ static int bq27xxx_battery_get_property(struct power_supply *psy,
 		ret = bq27xxx_simple_value(di->cache.energy, val);
 		break;
 	case POWER_SUPPLY_PROP_POWER_AVG:
-		ret = bq27xxx_simple_value(di->cache.power_avg, val);
+		ret = bq27xxx_battery_pwr_avg(di, val);
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		ret = bq27xxx_simple_value(di->cache.health, val);
@@ -2617,8 +2686,8 @@ static void bq27xxx_external_power_changed(struct power_supply *psy)
 {
 	struct bq27xxx_device_info *di = power_supply_get_drvdata(psy);
 
-	cancel_delayed_work_sync(&di->work);
-	schedule_delayed_work(&di->work, 0);
+	/* After charger plug in/out wait 0.5s for things to stabilize */
+	mod_delayed_work(system_wq, &di->work, HZ / 2);
 }
 
 static ssize_t default_reg_data_read_file(struct bq27xxx_device_info *di,
@@ -2765,8 +2834,10 @@ static ssize_t bq27xxx_store(struct device *dev,
 		break;
 	}
 	if (has_command) {
+		mutex_lock(&di->lock);
 		ret = bq27z561_write_block(di, BQ27Z561_MAC_CMD_ADDR,
 						command, 2);
+		mutex_unlock(&di->lock);
 		if (ret < 0)
 			return ret;
 	}
@@ -2970,13 +3041,17 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
 			mac_buf, sizeof(mac_buf));
-		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI]  << 8);
-		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		if (count != BQ27Z561_MAC_CMD_ITSTATUS2_LEN)
+			goto out;
+		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_0_HI]  << 8));
+		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
 		break;
 	case DOD0_PASSEDQ:
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_ITSTATUS2_LEN)
+			goto out;
 		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDQ_HI]  << 8));
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
 		break;
@@ -2984,6 +3059,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS2,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_ITSTATUS2_LEN)
+			goto out;
 		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS2_DOD0_PASSEDE_HI]  << 8));
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
 		break;
@@ -2991,6 +3068,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS3,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_ITSTATUS3_LEN)
+			goto out;
 		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_QMAX_0_HI]  << 8);
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
 		break;
@@ -2998,6 +3077,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS3,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_ITSTATUS3_LEN)
+			goto out;
 		val = mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS3_RAW_DOD0_1_HI]  << 8);
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
 		break;
@@ -3005,6 +3086,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_ITSTATUS1,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_ITSTATUS1_LEN)
+			goto out;
 		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_LO] | (mac_buf[BQ27Z561_MAC_CMD_ITSTATUS1_CELL1_COMPRES_HI]  << 8));
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", stemp);
 		break;
@@ -3012,6 +3095,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_DASTATUS1,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_DASTATUS1_LEN)
+			goto out;
 		val = (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_LO] | (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_VOLTAGE_HI]  << 8)) * 1000;
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
 		break;
@@ -3019,6 +3104,8 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_DASTATUS1,
 			mac_buf, sizeof(mac_buf));
+		if (count != BQ27Z561_MAC_CMD_DASTATUS1_LEN)
+			goto out;
 		stemp = (s16)(mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_LO] | (mac_buf[BQ27Z561_MAC_CMD_DASTATUS1_CELL1_CURRENT_HI]  << 8));
 		itemp = (s32)stemp * 1000;
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", itemp);
@@ -3027,11 +3114,19 @@ static ssize_t bq27xxx_show(struct device *dev,
 		memset(mac_buf, '\0', sizeof(mac_buf));
 		count = bq27z561_battery_read_mac_block(di, BQ27Z561_MAC_CMD_GS,
 			mac_buf, sizeof(mac_buf));
+		if (count < 0)
+			goto out;
 		val = (mac_buf[0] & 0x02) ? 1 : 0;
 		count = scnprintf(buf, PAGE_SIZE, "%d\n", val);
 		break;
 	}
 
+	return count;
+
+out:
+	count = 0;
+	strlcat(buf, "\n", PAGE_SIZE);
+	dev_err(di->dev, "Invalid i2c read\n");
 	return count;
 }
 
@@ -3463,26 +3558,21 @@ EXPORT_SYMBOL_GPL(bq27xxx_battery_setup);
 
 void bq27xxx_battery_teardown(struct bq27xxx_device_info *di)
 {
-	/*
-	 * power_supply_unregister call bq27xxx_battery_get_property which
-	 * call bq27xxx_battery_poll.
-	 * Make sure that bq27xxx_battery_poll will not call
-	 * schedule_delayed_work again after unregister (which cause OOPS).
-	 */
-	poll_interval = 0;
-
-	cancel_delayed_work_sync(&di->work);
-
-	power_supply_unregister(di->bat);
-
-	kfree(di->mac_buf);
-
-	bq27z561_remove_sysfs(di);
-
 	mutex_lock(&bq27xxx_list_lock);
 	list_del(&di->list);
 	mutex_unlock(&bq27xxx_list_lock);
 
+	/* Set removed to avoid bq27xxx_battery_update() re-queuing the work */
+	mutex_lock(&di->lock);
+	di->removed = true;
+	mutex_unlock(&di->lock);
+
+	cancel_delayed_work_sync(&di->work);
+
+	power_supply_unregister(di->bat);
+	kfree(di->mac_buf);
+
+	bq27z561_remove_sysfs(di);
 	mutex_destroy(&di->lock);
 }
 EXPORT_SYMBOL_GPL(bq27xxx_battery_teardown);

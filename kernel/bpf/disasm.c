@@ -19,7 +19,6 @@
 static const char * const func_id_str[] = {
 	__BPF_FUNC_MAPPER(__BPF_FUNC_STR_FN)
 	// hardcode this id to match upstream
-	[BPF_FUNC_ktime_get_boot_ns] = "bpf_ktime_get_boot_ns",
 	[BPF_FUNC_ringbuf_output] = "bpf_ringbuf_output",
 	[BPF_FUNC_ringbuf_reserve] = "bpf_ringbuf_reserve",
 	[BPF_FUNC_ringbuf_submit] = "bpf_ringbuf_submit",
@@ -178,15 +177,17 @@ void print_bpf_insn(const struct bpf_insn_cbs *cbs,
 		else
 			verbose(cbs->private_data, "BUG_%02x\n", insn->code);
 	} else if (class == BPF_ST) {
-		if (BPF_MODE(insn->code) != BPF_MEM) {
+		if (BPF_MODE(insn->code) == BPF_MEM) {
+			verbose(cbs->private_data, "(%02x) *(%s *)(r%d %+d) = %d\n",
+				insn->code,
+				bpf_ldst_string[BPF_SIZE(insn->code) >> 3],
+				insn->dst_reg,
+				insn->off, insn->imm);
+		} else if (BPF_MODE(insn->code) == 0xc0 /* BPF_NOSPEC, no UAPI */) {
+			verbose(cbs->private_data, "(%02x) nospec\n", insn->code);
+		} else {
 			verbose(cbs->private_data, "BUG_st_%02x\n", insn->code);
-			return;
 		}
-		verbose(cbs->private_data, "(%02x) *(%s *)(r%d %+d) = %d\n",
-			insn->code,
-			bpf_ldst_string[BPF_SIZE(insn->code) >> 3],
-			insn->dst_reg,
-			insn->off, insn->imm);
 	} else if (class == BPF_LDX) {
 		if (BPF_MODE(insn->code) != BPF_MEM) {
 			verbose(cbs->private_data, "BUG_ldx_%02x\n", insn->code);

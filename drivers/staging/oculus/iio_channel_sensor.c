@@ -16,6 +16,7 @@
 #include <linux/sysfs.h>
 #include <linux/thermal.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 struct iio_channel_sensor_data {
 	struct device *dev;
@@ -24,9 +25,15 @@ struct iio_channel_sensor_data {
 	struct mutex lock;
 };
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 static int iio_channel_get_temp(void *data, int *temperature)
 {
 	struct iio_channel_sensor_data *d = data;
+#else
+static int iio_channel_get_temp(struct thermal_zone_device *tz, int *temperature)
+{
+	struct iio_channel_sensor_data *d = tz->devdata;
+#endif
 	int iio_temp = 0, ret;
 
 	if (!temperature)
@@ -49,7 +56,11 @@ get_temp_unlock:
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 static const struct thermal_zone_of_device_ops iio_channel_thermal_ops = {
+#else
+static const struct thermal_zone_device_ops iio_channel_thermal_ops = {
+#endif
 	.get_temp = iio_channel_get_temp,
 };
 
@@ -107,8 +118,13 @@ static int iio_channel_sensor_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	tzd = thermal_zone_of_sensor_register(&pdev->dev, 0, d,
 			&iio_channel_thermal_ops);
+#else
+	tzd = devm_thermal_of_zone_register(&pdev->dev, 0, d,
+			&iio_channel_thermal_ops);
+#endif
 	if (IS_ERR(tzd)) {
 		ret = PTR_ERR(tzd);
 		dev_err(&pdev->dev, "Sensor register error: %d\n",
@@ -131,7 +147,11 @@ static int iio_channel_sensor_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct iio_channel_sensor_data *vs = dev_get_drvdata(dev);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
+#else
+	devm_thermal_of_zone_unregister(&pdev->dev, vs->tzd);
+#endif
 
 	sysfs_remove_groups(&pdev->dev.kobj, iio_channel_sensor_groups);
 

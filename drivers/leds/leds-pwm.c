@@ -41,9 +41,8 @@ struct led_pwm_data {
 	struct pwm_device	*pwm;
 	struct pwm_setting	pwm_setting;
 	struct led_setting	led_setting;
+	struct pwm_state	pwmstate;
 	unsigned int		active_low;
-	unsigned int		period;
-	int			duty;
 	bool			blinking;
 };
 
@@ -156,38 +155,25 @@ static int led_pwm_blink_set(struct led_classdev *led_cdev,
 	return rc;
 }
 
-static void __led_pwm_set(struct led_pwm_data *led_data)
-{
-	int new_duty = led_data->duty;
-
-	pwm_config(led_data->pwm, new_duty, led_data->period);
-
-	if (new_duty == 0)
-		pwm_disable(led_data->pwm);
-	else
-		pwm_enable(led_data->pwm);
-}
-
 static int led_pwm_set(struct led_classdev *led_cdev,
 		       enum led_brightness brightness)
 {
 	struct led_pwm_data *led_data =
 		container_of(led_cdev, struct led_pwm_data, cdev);
 	unsigned int max = led_data->cdev.max_brightness;
-	unsigned long long duty =  led_data->period;
+	unsigned long long duty = led_data->pwmstate.period;
 
 	duty *= brightness;
 	do_div(duty, max);
 
 	if (led_data->active_low)
-		duty = led_data->period - duty;
+		duty = led_data->pwmstate.period - duty;
 
-	led_data->duty = duty;
+	led_data->pwmstate.duty_cycle = duty;
+	led_data->pwmstate.enabled = true;
 	led_data->blinking = false;
 
-	__led_pwm_set(led_data);
-
-	return 0;
+	return pwm_apply_state(led_data->pwm, &led_data->pwmstate);
 }
 
 static inline size_t sizeof_pwm_leds_priv(int num_leds)
@@ -206,7 +192,6 @@ static int led_pwm_add(struct device *dev, struct led_pwm_priv *priv,
 		       struct led_pwm *led, struct device_node *child)
 {
 	struct led_pwm_data *led_data = &priv->leds[priv->num_leds];
-	struct pwm_args pargs;
 	int ret;
 
 	led_data->active_low = led->active_low;
@@ -232,17 +217,10 @@ static int led_pwm_add(struct device *dev, struct led_pwm_priv *priv,
 	led_data->cdev.brightness_set_blocking = led_pwm_set;
 	led_data->cdev.blink_set = led_pwm_blink_set;
 
-	/*
-	 * FIXME: pwm_apply_args() should be removed when switching to the
-	 * atomic PWM API.
-	 */
-	pwm_apply_args(led_data->pwm);
+	pwm_init_state(led_data->pwm, &led_data->pwmstate);
 
-	pwm_get_args(led_data->pwm, &pargs);
-
-	led_data->period = pargs.period;
-	if (!led_data->period && (led->pwm_period_ns > 0))
-		led_data->period = led->pwm_period_ns;
+	if (!led_data->pwmstate.period)
+		led_data->pwmstate.period = led->pwm_period_ns;
 
 	ret = led_classdev_register(dev, &led_data->cdev);
 	if (ret == 0) {
