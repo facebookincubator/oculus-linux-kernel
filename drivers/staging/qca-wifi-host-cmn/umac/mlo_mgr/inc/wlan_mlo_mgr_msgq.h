@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -47,6 +47,8 @@ struct ctxt_switch_mgr {
  * @MLO_PEER_DISCONNECT:  Partner peer Disconnect
  * @MLO_PEER_DEAUTH:  Initiate Deauth for ML connection
  * @MLO_PEER_PENDING_AUTH:  Initiate process of pending auth
+ * @MLO_BRIDGE_PEER_CREATE:   Bridge peer create
+ * @MLO_PEER_REASSOC:  Partner peer reassoc
  */
 enum mlo_msg_type {
 	MLO_PEER_CREATE,
@@ -55,6 +57,8 @@ enum mlo_msg_type {
 	MLO_PEER_DISCONNECT,
 	MLO_PEER_DEAUTH,
 	MLO_PEER_PENDING_AUTH,
+	MLO_BRIDGE_PEER_CREATE,
+	MLO_PEER_REASSOC,
 };
 
 /*

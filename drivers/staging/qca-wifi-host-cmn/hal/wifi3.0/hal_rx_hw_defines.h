@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021,2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,19 +32,6 @@
 #define HAL_RX_USER_TLV32_USERID_OFFSET		0x00000000
 #define HAL_RX_USER_TLV32_USERID_LSB		26
 #define HAL_RX_USER_TLV32_USERID_MASK		0xFC000000
-
-/* Unified 64-bit desc fields */
-#define HAL_RX_USER_TLV64_TYPE_OFFSET		0x0000000000000000
-#define HAL_RX_USER_TLV64_TYPE_LSB		1
-#define HAL_RX_USER_TLV64_TYPE_MASK		0x00000000000003FE
-
-#define HAL_RX_USER_TLV64_LEN_OFFSET		0x0000000000000000
-#define HAL_RX_USER_TLV64_LEN_LSB		10
-#define HAL_RX_USER_TLV64_LEN_MASK		0x00000000003FFC00
-
-#define HAL_RX_USER_TLV64_USERID_OFFSET		0x0000000000000000
-#define HAL_RX_USER_TLV64_USERID_LSB		26
-#define HAL_RX_USER_TLV64_USERID_MASK		0x00000000FC000000
 
 /* rx mpdu desc info */
 #define HAL_RX_MPDU_DESC_INFO_MSDU_COUNT_OFFSET		0x0

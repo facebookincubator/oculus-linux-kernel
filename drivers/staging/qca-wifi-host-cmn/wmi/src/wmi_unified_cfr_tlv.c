@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -281,7 +282,127 @@ extract_cfr_phase_param_tlv(wmi_unified_t wmi_handle,
 
 	return QDF_STATUS_SUCCESS;
 }
-#endif
+
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static QDF_STATUS
+extract_cfr_enh_phase_fixed_param_tlv
+		(wmi_unified_t wmi_handle,
+		 void *evt_buf,
+		 struct wmi_cfr_enh_phase_delta_param *param)
+{
+	WMI_PDEV_ENHANCED_AOA_PHASEDELTA_EVENTID_param_tlvs *ev_buf;
+	wmi_pdev_enhanced_aoa_phasedelta_evt_fixed_param *fixed_param;
+
+	ev_buf = (WMI_PDEV_ENHANCED_AOA_PHASEDELTA_EVENTID_param_tlvs *)evt_buf;
+	if (!ev_buf) {
+		wmi_err("Invalid cfr enh aoa phase delta event buffer");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	fixed_param = ev_buf->fixed_param;
+	if (!fixed_param) {
+		wmi_err("cfr enh aoa event fixed_param is NULL");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	param->freq = fixed_param->freq;
+	param->pdev_id = wmi_handle->ops->convert_pdev_id_target_to_host
+				(wmi_handle, fixed_param->pdev_id);
+
+	param->max_chains =
+		WMI_AOA_MAX_SUPPORTED_CHAINS_GET(fixed_param->chain_info);
+	param->data_for_chainmask =
+		WMI_AOA_SUPPORTED_CHAINMASK_GET(fixed_param->chain_info);
+	param->xbar_config = fixed_param->xbar_config;
+
+	if (sizeof(param->ibf_cal_val) <
+			sizeof(fixed_param->per_chain_ibf_cal_val)) {
+		wmi_err("ibf_cal_val can not hold all values from event data");
+		return QDF_STATUS_E_RANGE;
+	}
+
+	qdf_mem_copy(param->ibf_cal_val, fixed_param->per_chain_ibf_cal_val,
+		     QDF_MIN(sizeof(param->ibf_cal_val),
+			     sizeof(fixed_param->per_chain_ibf_cal_val)));
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS
+populate_enhanced_aoa_data(uint32_t *dst_array, uint32_t *src_array,
+			   wmi_enhanced_aoa_gain_phase_data_hdr *data_hdr,
+			   uint32_t offset, uint32_t dst_size)
+{
+	uint32_t src_size = WMI_AOA_NUM_ENTIRES_GET(data_hdr->data_info) *
+				sizeof(uint32_t);
+
+	if (src_size > dst_size) {
+		wmi_err("the amount of data can not fit in the host array");
+		return QDF_STATUS_E_RANGE;
+	}
+
+	qdf_mem_copy(dst_array, src_array + offset, src_size);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS
+extract_cfr_enh_phase_data_tlv(wmi_unified_t wmi_handle,
+			       void *evt_buf,
+			       struct wmi_cfr_enh_phase_delta_param *param)
+{
+	WMI_PDEV_ENHANCED_AOA_PHASEDELTA_EVENTID_param_tlvs *ev_buf;
+	wmi_enhanced_aoa_gain_phase_data_hdr *data_hdr;
+	QDF_STATUS status;
+	uint32_t *dst_array = NULL;
+	uint32_t i, offset = 0;
+	uint8_t data_type;
+
+	ev_buf = (WMI_PDEV_ENHANCED_AOA_PHASEDELTA_EVENTID_param_tlvs *)evt_buf;
+
+	if (!ev_buf) {
+		wmi_err("Invalid cfr enh aoa phase delta event buffer");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (!ev_buf->aoa_data_hdr) {
+		wmi_err("data headers NULL.. investigate");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	if (!ev_buf->aoa_data_buf) {
+		wmi_err("data bufs NULL.. investigate");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	for (i = 0; i < ev_buf->num_aoa_data_hdr; i++) {
+		data_hdr = &ev_buf->aoa_data_hdr[i];
+		data_type = WMI_AOA_DATA_TYPE_GET(data_hdr->data_info);
+
+		if (data_type == WMI_PHASE_DELTA_ARRAY) {
+			dst_array = param->enh_phase_delta_array;
+		} else if (data_type == WMI_GAIN_GROUP_STOP_ARRAY) {
+			dst_array = param->gain_stop_index_array;
+		} else {
+			wmi_err("invalid aoa data type received");
+			return QDF_STATUS_E_INVAL;
+		}
+
+		status = populate_enhanced_aoa_data
+				(dst_array, ev_buf->aoa_data_buf,
+				 data_hdr, offset, param->array_size);
+		if (status) {
+			wmi_err("error in populating aoa data");
+			return status;
+		}
+
+		offset += WMI_AOA_NUM_ENTIRES_GET(data_hdr->data_info);
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+#endif /* WLAN_ENH_CFR_ENABLE */
 
 static QDF_STATUS send_peer_cfr_capture_cmd_tlv(wmi_unified_t wmi_handle,
 						struct peer_cfr_params *param)
@@ -333,6 +454,19 @@ static inline void wmi_enh_cfr_attach_tlv(wmi_unified_t wmi_handle)
 }
 #endif
 
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static void wmi_cfr_attach_enh_aoa_tlv(struct wmi_ops *ops)
+{
+	ops->extract_cfr_enh_phase_data = extract_cfr_enh_phase_data_tlv;
+	ops->extract_cfr_enh_phase_fixed_param =
+		extract_cfr_enh_phase_fixed_param_tlv;
+}
+#else
+static void wmi_cfr_attach_enh_aoa_tlv(struct wmi_ops *ops)
+{
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
 void wmi_cfr_attach_tlv(wmi_unified_t wmi_handle)
 {
 	struct wmi_ops *ops = wmi_handle->ops;
@@ -341,6 +475,7 @@ void wmi_cfr_attach_tlv(wmi_unified_t wmi_handle)
 	ops->extract_cfr_peer_tx_event_param =
 		extract_cfr_peer_tx_event_param_tlv;
 	ops->extract_cfr_phase_param = extract_cfr_phase_param_tlv;
+	wmi_cfr_attach_enh_aoa_tlv(ops);
 	wmi_enh_cfr_attach_tlv(wmi_handle);
 }
 #endif /* WLAN_CFR_ENABLE */

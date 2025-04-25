@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -271,7 +271,7 @@
 /*
  * <ini>
  * sae_auth_failure_timeout - SAE Auth failure timeout value in msec
- * @Min: 500
+ * @Min: 100
  * @Max: 1000
  * @Default: 1000
  *
@@ -283,7 +283,7 @@
  */
 #define CFG_SAE_AUTH_FAILURE_TIMEOUT CFG_INI_UINT( \
 		"sae_auth_failure_timeout", \
-		500, \
+		100, \
 		1000, \
 		1000, \
 		CFG_VALUE_OR_DEFAULT, \

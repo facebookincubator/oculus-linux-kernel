@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2002-2006, Atheros Communications Inc.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -38,7 +38,7 @@
 #define DISABLE_NOL_FW 0
 
 #ifndef WLAN_DFS_STATIC_MEM_ALLOC
-/*
+/**
  * dfs_alloc_wlan_dfs() - allocate wlan_dfs buffer
  *
  * Return: buffer, null on failure.
@@ -48,7 +48,7 @@ static inline struct wlan_dfs *dfs_alloc_wlan_dfs(void)
 	return qdf_mem_malloc(sizeof(struct wlan_dfs));
 }
 
-/*
+/**
  * dfs_free_wlan_dfs() - Free wlan_dfs buffer
  * @dfs: wlan_dfs buffer pointer
  *
@@ -59,7 +59,7 @@ static inline void dfs_free_wlan_dfs(struct wlan_dfs *dfs)
 	qdf_mem_free(dfs);
 }
 
-/*
+/**
  * dfs_alloc_dfs_curchan() - allocate dfs_channel buffer
  *
  * Return: buffer, null on failure.
@@ -74,7 +74,7 @@ static inline struct dfs_channel *dfs_alloc_dfs_prevchan(void)
 	return qdf_mem_malloc(sizeof(struct dfs_channel));
 }
 
-/*
+/**
  * dfs_free_dfs_chan() - Free dfs_channel buffer
  * @dfs_chan: dfs_channel buffer pointer
  *
@@ -116,12 +116,15 @@ static inline void dfs_free_dfs_chan(struct dfs_channel *dfs_chan)
 }
 #endif
 
-/**
+/*
  * dfs_testtimer_task() - Sends CSA in the current channel.
  *
  * When the user sets usenol to 0 and inject the RADAR, AP does not mark the
  * channel as RADAR and does not add the channel to NOL. It sends the CSA in
  * the current channel.
+ *
+ * NB: not using kernel-doc format since the kernel-doc script doesn't
+ *     handle the os_timer_func() macro
  */
 #ifdef CONFIG_CHAN_FREQ_API
 static os_timer_func(dfs_testtimer_task)
@@ -184,6 +187,36 @@ int dfs_create_object(struct wlan_dfs **dfs)
 	return 0;
 }
 
+#if defined(QCA_DFS_BW_PUNCTURE)
+#if defined(CONFIG_REG_CLIENT)
+static void dfs_puncture_init(struct wlan_dfs *dfs)
+{
+	/*
+	 * Enable sub chan DFS type if QCA_DFS_BW_PUNCTURE defined, or all
+	 * bonded operation freq will be affected and disabled for nol,
+	 * puncture can't work, always need to switch freq.
+	 */
+	dfs_set_nol_subchannel_marking(dfs, true);
+	dfs->dfs_use_puncture = true;
+}
+#else
+static void dfs_puncture_init(struct wlan_dfs *dfs)
+{
+	uint8_t i;
+	struct dfs_punc_obj *dfs_punc_obj;
+
+	for (i = 0 ; i < N_MAX_PUNC_SM; i++) {
+		dfs_punc_obj = &dfs->dfs_punc_lst.dfs_punc_arr[i];
+		dfs_punc_cac_timer_attach(dfs, dfs_punc_obj);
+	}
+}
+#endif
+#else
+static inline void dfs_puncture_init(struct wlan_dfs *dfs)
+{
+}
+#endif
+
 int dfs_attach(struct wlan_dfs *dfs)
 {
 	int ret;
@@ -214,6 +247,9 @@ int dfs_attach(struct wlan_dfs *dfs)
 	 * and full offload, indicating test mode timer initialization for both.
 	 */
 	dfs_main_task_testtimer_init(dfs);
+
+	dfs_puncture_init(dfs);
+
 	return 0;
 }
 
@@ -258,6 +294,7 @@ void dfs_reset(struct wlan_dfs *dfs)
 void dfs_timer_detach(struct wlan_dfs *dfs)
 {
 	dfs_cac_timer_detach(dfs);
+	dfs_puncture_cac_timer_detach(dfs);
 	dfs_zero_cac_timer_detach(dfs->dfs_soc_obj);
 
 	if (!dfs->dfs_is_offload_enabled) {
@@ -703,6 +740,7 @@ dfs_is_chan_punc_same_as_given_punc(struct dfs_channel *dfs_curchan,
  * @dfs_ch_flagext: New curchan's channel flags extension.
  * @dfs_ch_vhtop_ch_freq_seg1: New curchan's primary centre IEEE.
  * @dfs_ch_vhtop_ch_freq_seg2: New curchan's secondary centre IEEE.
+ * @dfs_chan_punc_pattern: Channel puncture pattern
  *
  * Return: True if curchan has the same channel parameters of the given channel,
  * else false.
@@ -797,6 +835,8 @@ void dfs_set_current_channel_for_freq(struct wlan_dfs *dfs,
 
 	if (is_channel_updated)
 		*is_channel_updated = true;
+	if (dfs->dfs_use_puncture)
+		dfs_handle_dfs_puncture_unpuncture(dfs);
 }
 #endif
 
@@ -847,6 +887,11 @@ bool dfs_is_true_160mhz_supported(struct wlan_dfs *dfs)
 	if (tgt_tx_ops->tgt_is_tgt_type_qcn9160 &&
 	    tgt_tx_ops->tgt_is_tgt_type_qcn9160(target_type))
 		return true;
+
+	if (tgt_tx_ops->tgt_is_tgt_type_qcn6432 &&
+	    tgt_tx_ops->tgt_is_tgt_type_qcn6432(target_type))
+		return true;
+
 	return false;
 }
 
@@ -865,7 +910,7 @@ uint8_t dfs_get_agile_detector_id(struct wlan_dfs *dfs)
 #endif
 
 /**
- * dfs_chan_to_ch_width: Outputs the channel width in MHz of the given input
+ * dfs_chan_to_ch_width() - Outputs the channel width in MHz of the given input
  * dfs_channel.
  * @chan: Pointer to the input dfs_channel structure.
  *

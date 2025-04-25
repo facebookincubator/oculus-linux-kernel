@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -41,6 +41,10 @@
 #include <qdf_debugfs.h>
 #include "wmi_filtered_logging.h"
 #include <wmi_hang_event.h>
+
+#ifdef DP_UMAC_HW_RESET_SUPPORT
+#include <cdp_txrx_ctrl.h>
+#endif
 
 /* This check for CONFIG_WIN temporary added due to redeclaration compilation
 error in MCL. Error is caused due to inclusion of wmi.h in wmi_unified_api.h
@@ -755,6 +759,53 @@ wmi_print_cmd_log_buffer(struct wmi_log_buf_t *log_buffer, uint32_t count,
 }
 
 /**
+ * wmi_dump_last_cmd_rec_info() - last wmi command tx completion time print
+ * @wmi_handle: wmi handle
+ *
+ * Return: None
+ */
+static void
+wmi_dump_last_cmd_rec_info(wmi_unified_t wmi_handle) {
+	uint32_t idx, idx_tx_cmp, cmd_tmp_log, cmd_tmp_tx_cmp;
+	uint64_t secs, secs_tx_cmp, usecs, usecs_tx_cmp;
+	struct wmi_command_debug *cmd_log;
+	struct wmi_command_debug *cmd_log_tx_cmp;
+	struct wmi_log_buf_t *log_buf =
+		&wmi_handle->log_info.wmi_command_log_buf_info;
+	struct wmi_log_buf_t *log_buf_tx_cmp =
+		&wmi_handle->log_info.wmi_command_tx_cmp_log_buf_info;
+
+	qdf_spin_lock_bh(&wmi_handle->log_info.wmi_record_lock);
+
+	(*log_buf->p_buf_tail_idx == 0) ? (idx = log_buf->size) :
+		(idx = *log_buf->p_buf_tail_idx - 1);
+	idx %= log_buf->size;
+
+	(*log_buf_tx_cmp->p_buf_tail_idx == 0) ? (idx_tx_cmp =
+		log_buf_tx_cmp->size) : (idx_tx_cmp =
+		*log_buf_tx_cmp->p_buf_tail_idx - 1);
+	idx_tx_cmp %= log_buf_tx_cmp->size;
+	cmd_log = &((struct wmi_command_debug *)log_buf->buf)[idx];
+	cmd_log_tx_cmp = &((struct wmi_command_debug *)log_buf_tx_cmp->buf)
+		[idx_tx_cmp];
+	cmd_tmp_log = cmd_log->command;
+	cmd_tmp_tx_cmp = cmd_log_tx_cmp->command;
+	qdf_log_timestamp_to_secs(cmd_log->time, &secs, &usecs);
+	qdf_log_timestamp_to_secs(cmd_log_tx_cmp->time, &secs_tx_cmp,
+				  &usecs_tx_cmp);
+
+	qdf_spin_unlock_bh(&wmi_handle->log_info.wmi_record_lock);
+
+	wmi_nofl_err("Last wmi command Time (s) = % 8lld.%06lld ",
+		     secs, usecs);
+	wmi_nofl_err("Last wmi Cmd_Id = (0x%06x) ", cmd_tmp_log);
+	wmi_nofl_err("Last wmi command tx completion Time (s) = % 8lld.%06lld",
+		     secs_tx_cmp, usecs_tx_cmp);
+	wmi_nofl_err("Last wmi command tx completion Cmd_Id = (0x%06x) ",
+		     cmd_tmp_tx_cmp);
+}
+
+/**
  * wmi_print_cmd_cmp_log_buffer() - wmi command completion log printer
  * @log_buffer: the command completion log buffer metadata of the buffer to print
  * @count: the maximum number of entries to print
@@ -1400,6 +1451,7 @@ void wmi_mgmt_cmd_record(wmi_unified_t wmi_handle, uint32_t cmd,
 static inline void wmi_log_buffer_free(struct wmi_unified *wmi_handle) { }
 static void wmi_minidump_detach(struct wmi_unified *wmi_handle) { }
 static void wmi_minidump_attach(struct wmi_unified *wmi_handle) { }
+static void wmi_dump_last_cmd_rec_info(wmi_unified_t wmi_handle) { }
 #endif /*WMI_INTERFACE_EVENT_LOGGING */
 qdf_export_symbol(wmi_mgmt_cmd_record);
 
@@ -2029,6 +2081,42 @@ static inline void wmi_set_system_pm_pkt_tag(uint16_t *htc_tag, wmi_buf_t buf,
 }
 #endif
 
+#ifdef DP_UMAC_HW_RESET_SUPPORT
+/**
+ * wmi_unified_is_max_pending_commands_reached() - API to check if WMI max
+ * pending commands are reached.
+ * @wmi_handle: Pointer to WMI handle
+ *
+ * Return: If umac reset is in progress and max wmi pending commands are reached
+ * then return false. The reason is FW will not reap the WMI commands from CE
+ * ring when umac reset is in progress. Hence, all the pending WMI command to
+ * host SW ring.
+ */
+static inline bool
+wmi_unified_is_max_pending_commands_reached(wmi_unified_t wmi_handle)
+{
+	ol_txrx_soc_handle soc_txrx_handle;
+
+	soc_txrx_handle = (ol_txrx_soc_handle)wlan_psoc_get_dp_handle(
+			wmi_handle->soc->wmi_psoc);
+	if (!soc_txrx_handle) {
+		wmi_err("psoc handle is NULL");
+		return false;
+	}
+
+	return ((qdf_atomic_read(&wmi_handle->pending_cmds) >=
+			wmi_handle->wmi_max_cmds) &&
+		!cdp_umac_reset_is_inprogress(soc_txrx_handle));
+}
+#else
+static inline bool
+wmi_unified_is_max_pending_commands_reached(wmi_unified_t wmi_handle)
+{
+	return (qdf_atomic_read(&wmi_handle->pending_cmds) >=
+			wmi_handle->wmi_max_cmds);
+}
+#endif
+
 QDF_STATUS wmi_unified_cmd_send_fl(wmi_unified_t wmi_handle, wmi_buf_t buf,
 				   uint32_t len, uint32_t cmd_id,
 				   const char *func, uint32_t line)
@@ -2085,8 +2173,8 @@ QDF_STATUS wmi_unified_cmd_send_fl(wmi_unified_t wmi_handle, wmi_buf_t buf,
 	WMI_SET_FIELD(qdf_nbuf_data(buf), WMI_CMD_HDR, COMMANDID, cmd_id);
 
 	qdf_atomic_inc(&wmi_handle->pending_cmds);
-	if (qdf_atomic_read(&wmi_handle->pending_cmds) >=
-			wmi_handle->wmi_max_cmds) {
+	if (wmi_unified_is_max_pending_commands_reached(wmi_handle)) {
+		wmi_dump_last_cmd_rec_info(wmi_handle);
 		wmi_nofl_err("hostcredits = %d",
 			     wmi_get_host_credits(wmi_handle));
 		htc_dump_counter_info(wmi_handle->htc_handle);
@@ -3044,11 +3132,6 @@ static void wmi_runtime_pm_init(struct wmi_unified *wmi_handle)
 }
 #endif
 
-void *wmi_unified_get_soc_handle(struct wmi_unified *wmi_handle)
-{
-	return wmi_handle->soc;
-}
-
 void wmi_set_wow_enable_ack_failed(wmi_unified_t wmi_handle)
 {
 	qdf_atomic_set(&wmi_handle->is_wow_enable_ack_failed, 1);
@@ -3062,6 +3145,11 @@ void wmi_clear_wow_enable_ack_failed(wmi_unified_t wmi_handle)
 bool wmi_has_wow_enable_ack_failed(wmi_unified_t wmi_handle)
 {
 	return qdf_atomic_read(&wmi_handle->is_wow_enable_ack_failed);
+}
+
+void *wmi_unified_get_soc_handle(struct wmi_unified *wmi_handle)
+{
+	return wmi_handle->soc;
 }
 
 /**
@@ -3148,7 +3236,6 @@ void *wmi_unified_get_pdev_handle(struct wmi_soc *soc, uint32_t pdev_idx)
 		wmi_handle->cmd_phy_id_map = soc->cmd_phy_id_map;
 		wmi_handle->evt_phy_id_map = soc->evt_phy_id_map;
 		wmi_interface_logging_init(wmi_handle, pdev_idx);
-		qdf_atomic_init(&wmi_handle->pending_cmds);
 		qdf_atomic_init(&wmi_handle->is_target_suspended);
 		qdf_atomic_init(&wmi_handle->is_wow_enable_ack_failed);
 		wmi_handle->target_type = soc->target_type;
@@ -3163,6 +3250,7 @@ void *wmi_unified_get_pdev_handle(struct wmi_soc *soc, uint32_t pdev_idx)
 	} else
 		wmi_handle = soc->wmi_pdev[pdev_idx];
 
+	qdf_atomic_init(&wmi_handle->pending_cmds);
 	wmi_handle->wmi_stopinprogress = 0;
 	wmi_handle->wmi_endpoint_id = soc->wmi_endpoint_id[pdev_idx];
 	wmi_handle->htc_handle = soc->htc_handle;
@@ -3351,7 +3439,10 @@ void wmi_unified_detach(struct wmi_unified *wmi_handle)
 						&soc->wmi_pdev[i]->event_queue);
 			}
 
-			qdf_flush_work(&soc->wmi_pdev[i]->rx_diag_event_work);
+			qdf_flush_workqueue(0,
+				soc->wmi_pdev[i]->wmi_rx_diag_work_queue);
+			qdf_destroy_workqueue(0,
+				soc->wmi_pdev[i]->wmi_rx_diag_work_queue);
 			buf = qdf_nbuf_queue_remove(
 					&soc->wmi_pdev[i]->diag_event_queue);
 			while (buf) {
@@ -3475,6 +3566,11 @@ static void wmi_htc_tx_complete(void *ctx, HTC_PACKET *htc_pkt)
 			WMI_MGMT_COMMAND_TX_CMP_RECORD(wmi_handle, cmd_id,
 						       offset_ptr);
 		} else {
+			if (wmi_handle->ops->is_force_fw_hang_cmd(cmd_id)) {
+				wmi_info("Tx completion received for WMI_FORCE_FW_HANG_CMDID, current_time:%ld",
+					 qdf_mc_timer_get_system_time());
+			}
+
 			WMI_COMMAND_TX_CMP_RECORD(wmi_handle, cmd_id,
 						  offset_ptr, dma_addr,
 						  phy_addr);
@@ -3765,6 +3861,11 @@ wmi_flush_endpoint(wmi_unified_t wmi_handle)
 		wmi_handle->wmi_endpoint_id, 0);
 }
 qdf_export_symbol(wmi_flush_endpoint);
+
+HTC_ENDPOINT_ID wmi_get_endpoint(wmi_unified_t wmi_handle)
+{
+	return wmi_handle->wmi_endpoint_id;
+}
 
 void wmi_pdev_id_conversion_enable(wmi_unified_t wmi_handle,
 				   uint32_t *pdev_id_map,

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -108,4 +109,18 @@ QDF_STATUS if_mgr_disconnect_complete(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS if_mgr_validate_candidate(struct wlan_objmgr_vdev *vdev,
 				     struct if_mgr_event_data *event_data);
 
+/**
+ * if_mgr_sta_csa_complete() - CSA event complete handler
+ * @vdev: vdev object
+ * @event_data: Interface mgr event data
+ *
+ * Interface manager csa complete event handler
+ *
+ * Context: It should run in thread context
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+if_mgr_sta_csa_complete(struct wlan_objmgr_vdev *vdev,
+			struct if_mgr_event_data *event_data);
 #endif

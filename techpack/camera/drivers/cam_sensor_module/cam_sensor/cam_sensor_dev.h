@@ -174,4 +174,8 @@ int cam_sensor_driver_init(void);
  */
 void cam_sensor_driver_exit(void);
 
+/**
+ * @brief : API to remove SENSOR I2C component
+ */
+void cam_sensor_i2c_driver_remove(struct i2c_client *client);
 #endif /* _CAM_SENSOR_DEV_H_ */

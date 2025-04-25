@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -273,6 +273,12 @@ void dfs_mlme_nol_timeout_notification(struct wlan_objmgr_pdev *pdev)
 	if (global_dfs_to_mlme.mlme_nol_timeout_notification)
 		global_dfs_to_mlme.mlme_nol_timeout_notification(
 				pdev);
+}
+
+void dfs_mlme_set_tx_flag(struct wlan_objmgr_pdev *pdev, bool is_tx_allowed)
+{
+	if (global_dfs_to_mlme.mlme_set_tx_flag)
+		global_dfs_to_mlme.mlme_set_tx_flag(pdev, is_tx_allowed);
 }
 
 void dfs_mlme_clist_update(struct wlan_objmgr_pdev *pdev,

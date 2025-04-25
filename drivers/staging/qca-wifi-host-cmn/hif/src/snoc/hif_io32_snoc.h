@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,7 +40,7 @@ static inline void ce_enable_irq_in_individual_register(struct hif_softc *scn,
 
 	offset = HOST_IE_ADDRESS + CE_BASE_ADDRESS(ce_id);
 	if (!TARGET_REGISTER_ACCESS_ALLOWED(scn)) {
-		hif_err_rl("%s: target access is not allowed", __func__);
+		hif_err_rl("Target access is not allowed");
 		return;
 	}
 	hif_write32_mb(scn, scn->mem + offset, 1);
@@ -52,13 +53,13 @@ static inline void ce_disable_irq_in_individual_register(struct hif_softc *scn,
 
 	offset = HOST_IE_ADDRESS + CE_BASE_ADDRESS(ce_id);
 	if (!TARGET_REGISTER_ACCESS_ALLOWED(scn)) {
-		hif_err_rl("%s: target access is not allowed", __func__);
+		hif_err_rl("Target access is not allowed");
 		return;
 	}
 	hif_write32_mb(scn, scn->mem + offset, 0);
 
 	if (!TARGET_REGISTER_ACCESS_ALLOWED(scn)) {
-		hif_err_rl("%s: target access is not allowed", __func__);
+		hif_err_rl("Target access is not allowed");
 		return;
 	}
 	hif_read32_mb(scn, scn->mem + offset);

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012 - 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -109,7 +109,7 @@
  * gSetBtLowRssiThreshold - Set BT low RSSI threshold for BTC mode switching
  * @Min: -100
  * @Max: 0
- * @Default: -80
+ * @Default: -65
  *
  * Usage: External
  *
@@ -119,7 +119,7 @@
 			"gSetBtLowRssiThreshold", \
 			-100, \
 			0, \
-			-80, \
+			-65, \
 			CFG_VALUE_OR_DEFAULT, \
 			"BT Low RSSI Threshold")
 

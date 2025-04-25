@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -72,9 +72,9 @@ qdf_list_t *util_scan_unpack_beacon_frame(
 /**
  * util_scan_add_hidden_ssid() - func to add hidden ssid
  * @pdev: pdev pointer
- * @frame: beacon buf
+ * @bcnbuf: beacon buf
  *
- * Return:
+ * Return: QDF_STATUS_SUCCESS on success, otherwise a QDF_STATUS error
  */
 #ifdef WLAN_DFS_CHAN_HIDDEN_SSID
 QDF_STATUS
@@ -99,7 +99,7 @@ const char *util_scan_get_ev_type_name(enum scan_event_type event);
 
 /**
  * util_scan_get_ev_reason_name() - converts enum reason to printable string
- * @reason      enum of scan completion reason
+ * @reason: enum of scan completion reason
  *
  * API, converts enum event to printable character string
  *
@@ -430,7 +430,7 @@ static inline bool util_is_bss_type_match(enum wlan_bss_type bss_type,
 /**
  * util_country_code_match() - to check if country match
  * @country: country code pointer
- * @country_ie: country IE in beacon
+ * @cc: country IE in beacon
  *
  * Return: true if country match
  */
@@ -610,6 +610,9 @@ util_scan_entry_frame_ptr(struct scan_cache_entry *scan_entry)
 /**
  * util_scan_entry_copy_ie_data() - function to get a copy of all tagged IEs
  * @scan_entry: scan entry
+ * @iebuf: destination IE buffer. May be NULL if only the
+ * @ie_len: pointer to the ie buffer length. On input must hold the size of
+ *          @iebuf. On output it will be filled with the length of the IEs.
  *
  * API, function to get a copy of all tagged IEs in passed memory
  *
@@ -786,6 +789,7 @@ util_scan_copy_beacon_data(struct scan_cache_entry *new_entry,
 /**
  * util_scan_get_ml_partner_info() - Get partner links info of an ML connection
  * @scan_entry: scan entry
+ * @partner_info: partner link info
  *
  * API, function to get partner link information from an ML scan cache entry
  *
@@ -1519,12 +1523,12 @@ util_scan_entry_get_extcap(struct scan_cache_entry *scan_entry,
 }
 
 /**
- * util_scan_entry_athcaps() - function to read ath caps vendor ie
+ * util_scan_entry_mlme_info() - function to read MLME info
  * @scan_entry: scan entry
  *
- * API, function to read ath caps vendor ie
+ * API, function to read MLME info
  *
- * Return: ath caps vendorie or NULL if ie is not present
+ * Return: MLME info or NULL if it is not present
  */
 static inline struct mlme_info*
 util_scan_entry_mlme_info(struct scan_cache_entry *scan_entry)
@@ -1735,6 +1739,7 @@ util_get_last_scan_time(struct wlan_objmgr_vdev *vdev);
 
 /**
  * util_scan_entry_update_mlme_info() - function to update mlme info
+ * @pdev: pdev object
  * @scan_entry: scan entry object
  *
  * API, function to update mlme info in scan DB
@@ -1772,7 +1777,7 @@ util_scan_entry_is_hidden_ap(struct scan_cache_entry *scan_entry)
 }
 
 /**
- * util_scan_entry_espinfo() - function to read ESP info
+ * util_scan_entry_esp_info() - function to read ESP info
  * @scan_entry: scan entry
  *
  * API, function to read ESP info
@@ -1812,6 +1817,29 @@ util_scan_entry_rsnxe(struct scan_cache_entry *scan_entry)
 {
 	return scan_entry->ie_list.rsnxe;
 }
+
+/**
+ * util_is_rsnxe_h2e_capable() - API to check whether the RSNXE has
+ * H2E capable or not.
+ * @rsnxe: Pointer to RSNXE IE.
+ *
+ * Returns true if RSNXE caps has H2E capable bit set or else false.
+ *
+ * Return: bool
+ */
+bool util_is_rsnxe_h2e_capable(const uint8_t *rsnxe);
+
+/**
+ * util_scan_entry_sae_h2e_capable() - API to check whether the
+ * current scan entry is SAE-H2E capable
+ * @scan_entry: Scan cache entry
+ *
+ * Returns true if the current scan entry has RSNXE IE with H2E bit
+ * set.
+ *
+ * Return: bool
+ */
+bool util_scan_entry_sae_h2e_capable(struct scan_cache_entry *scan_entry);
 
 /**
  * util_scan_scm_freq_to_band() - API to get band from frequency
@@ -1898,9 +1926,9 @@ static inline bool util_scan_is_null_ssid(struct wlan_ssid *ssid)
 /**
  * util_scan_get_6g_oper_channel() - function to get primary channel
  * from he op IE
- * he_op_ie : ie pointer
+ * @he_op_ie : ie pointer
  *
- * Return : primary channel or 0 if 6g params is not present.
+ * Return: primary channel or 0 if 6g params is not present.
  */
 #ifdef CONFIG_BAND_6GHZ
 uint8_t util_scan_get_6g_oper_channel(uint8_t *he_op_ie);

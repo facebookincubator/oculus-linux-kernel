@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021,2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,7 +24,7 @@
 #include "hal_api.h"
 
 /**
- * hal_set_link_desc_addr_li - Setup link descriptor in a buffer_addr_info
+ * hal_set_link_desc_addr_li() - Setup link descriptor in a buffer_addr_info
  * HW structure
  *
  * @desc: Descriptor entry (from WBM_IDLE_LINK ring)
@@ -39,7 +39,7 @@ void hal_set_link_desc_addr_li(void *desc, uint32_t cookie,
 /**
  * hal_tx_init_data_ring_li() - Initialize all the TCL Descriptors in SRNG
  * @hal_soc_hdl: Handle to HAL SoC structure
- * @hal_srng: Handle to HAL SRNG structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
  *
  * Return: none
  */
@@ -48,19 +48,19 @@ void hal_tx_init_data_ring_li(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_hw_txrx_default_ops_attach_li(): Add default ops for Lithium chips
- * @ hal_soc_hdl: hal_soc handle
+ * @hal_soc: hal_soc handle
  *
  * Return: None
  */
-void hal_hw_txrx_default_ops_attach_li(struct hal_soc *soc);
+void hal_hw_txrx_default_ops_attach_li(struct hal_soc *hal_soc);
 
 uint32_t hal_rx_wbm_err_src_get_li(hal_ring_desc_t ring_desc);
 uint8_t hal_rx_ret_buf_manager_get_li(hal_ring_desc_t ring_desc);
 
 /**
- * hal_reo_qdesc_setup - Setup HW REO queue descriptor
- *
- * @hal_soc: Opaque HAL SOC handle
+ * hal_reo_qdesc_setup_li() - Setup HW REO queue descriptor
+ * @hal_soc_hdl: Opaque HAL SOC handle
+ * @tid: TID
  * @ba_window_size: BlockAck window size
  * @start_seq: Starting sequence number
  * @hw_qdesc_vaddr: Virtual address of REO queue descriptor memory

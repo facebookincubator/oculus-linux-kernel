@@ -12,6 +12,7 @@
 #include "eureka-sensorlock.dtsi"
 #include "eureka-thermal.dtsi"
 
+/delete-node/ &pcie1;
 /delete-node/ &pcie2;
 
 &fan_pwm_default {
@@ -197,6 +198,7 @@
 		};
 	};
 
+	/delete-node/ pcie1;
 	/delete-node/ pcie2;
 };
 

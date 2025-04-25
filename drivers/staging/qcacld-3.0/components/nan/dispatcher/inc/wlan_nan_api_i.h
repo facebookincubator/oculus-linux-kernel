@@ -54,6 +54,16 @@ uint8_t wlan_nan_get_vdev_id_from_bssid(struct wlan_objmgr_pdev *pdev,
  * Return: True if Discovery is active
  */
 bool wlan_nan_is_disc_active(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * wlan_nan_is_eht_capable() - Get NAN EHT capability
+ * @psoc: pointer to psoc object
+ *
+ * Return: Boolean flag indicating whether the NAN EHT capability is
+ * disabled or not
+ */
+bool wlan_nan_is_eht_capable(struct wlan_objmgr_psoc *psoc);
+
 #else
 static inline
 enum nan_datapath_state wlan_nan_get_ndi_state(struct wlan_objmgr_vdev *vdev)
@@ -71,6 +81,12 @@ uint8_t wlan_nan_get_vdev_id_from_bssid(struct wlan_objmgr_pdev *pdev,
 
 static inline
 bool wlan_nan_is_disc_active(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline bool
+wlan_nan_is_eht_capable(struct wlan_objmgr_psoc *psoc)
 {
 	return false;
 }

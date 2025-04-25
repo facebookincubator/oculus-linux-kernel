@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -82,11 +83,16 @@ QDF_STATUS reg_11d_vdev_created_update(struct wlan_objmgr_vdev *vdev);
 
 /**
  * reg_11d_vdev_delete_update() - update 11d state upon vdev delete
- * @vdev: vdev pointer
+ * @psoc: psoc pointer
+ * @op_mode: Operating mode of the deleted vdev
+ * @vdev_id: Vdev id of the deleted vdev
  *
  * Return: Success or Failure
  */
-QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_vdev *vdev);
+QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_psoc *psoc,
+				      enum QDF_OPMODE op_mode,
+				      uint32_t vdev_id);
+
 
 /**
  * reg_set_11d_offloaded() - Set 11d offloaded flag
@@ -136,8 +142,9 @@ static inline QDF_STATUS reg_11d_vdev_created_update(
 	return QDF_STATUS_SUCCESS;
 }
 
-static inline QDF_STATUS reg_11d_vdev_delete_update(
-	struct wlan_objmgr_vdev *vdev)
+static inline QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_psoc *psoc,
+						    enum QDF_OPMODE op_mode,
+						    uint32_t vdev_id)
 {
 	return QDF_STATUS_SUCCESS;
 }

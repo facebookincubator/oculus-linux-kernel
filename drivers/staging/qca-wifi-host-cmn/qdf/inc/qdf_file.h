@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -41,10 +42,29 @@
 QDF_STATUS qdf_file_read(const char *path, char **out_buf);
 
 /**
+ * qdf_file_read_bytes() - read the entire contents of a file and return the
+ * size read along with the content
+ * @path: the full path of the file to read
+ * @out_buf: double pointer for referring to the file contents buffer
+ * @out_buff_size: size of the contents read
+ *
+ * This API allocates a new, null-terminated buffer containing the contents of
+ * the file at @path. On success, @out_buf points to this new buffer, otherwise
+ * @out_buf is set to NULL.
+ *
+ * Consumers must free the allocated buffer by calling qdf_file_buf_free().
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS qdf_file_read_bytes(const char *path, char **out_buf,
+			       unsigned int *out_buff_size);
+
+/**
  * qdf_file_buf_free() - free a previously allocated file buffer
  * @file_buf: pointer to the file buffer to free
  *
- * This API is used in conjunction with qdf_file_read().
+ * This API is used in conjunction with qdf_file_read() and
+ * qdf_file_read_bytes().
  *
  * Return: None
  */

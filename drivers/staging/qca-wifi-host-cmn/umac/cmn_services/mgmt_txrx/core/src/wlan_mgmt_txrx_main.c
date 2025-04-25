@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,15 +25,39 @@
 
 #include "wlan_mgmt_txrx_main_i.h"
 #include "qdf_nbuf.h"
+#include "wlan_objmgr_pdev_obj.h"
+#include "wlan_objmgr_psoc_obj.h"
 
 QDF_STATUS wlan_mgmt_txrx_desc_pool_init(
 			struct mgmt_txrx_priv_pdev_context *mgmt_txrx_pdev_ctx)
 {
+	struct wlan_objmgr_pdev *pdev;
+	struct wlan_objmgr_psoc *psoc;
 	uint32_t i;
+	uint8_t pdev_id;
+	uint8_t psoc_id;
+
+	pdev = mgmt_txrx_pdev_ctx->pdev;
+	if (!pdev) {
+		mgmt_txrx_err("pdev context passed is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	psoc = wlan_pdev_get_psoc(pdev);
+
+	if (!psoc) {
+		mgmt_txrx_err("psoc context in pdev is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
+
+	psoc_id = wlan_psoc_get_id(psoc);
 
 	mgmt_txrx_debug(
-			"mgmt_txrx ctx: %pK pdev: %pK mgmt desc pool size %d",
-			mgmt_txrx_pdev_ctx, mgmt_txrx_pdev_ctx->pdev,
+			"mgmt_txrx ctx: %pK pdev: %pK pdev_id: %d psoc_id: %d mgmt desc pool size %d",
+			mgmt_txrx_pdev_ctx, pdev,
+			pdev_id, psoc_id,
 			MGMT_DESC_POOL_MAX);
 	mgmt_txrx_pdev_ctx->mgmt_desc_pool.pool = qdf_mem_malloc(
 			MGMT_DESC_POOL_MAX *
@@ -54,6 +79,8 @@ QDF_STATUS wlan_mgmt_txrx_desc_pool_init(
 
 	qdf_spinlock_create(
 		&mgmt_txrx_pdev_ctx->mgmt_desc_pool.desc_pool_lock);
+
+	mgmt_txrx_debug("exit pdev_id:%d psoc_id:%d", pdev_id, psoc_id);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -103,8 +130,8 @@ struct mgmt_txrx_desc_elem_t *wlan_mgmt_txrx_desc_get(
 			!= QDF_STATUS_SUCCESS) {
 		qdf_spin_unlock_bh(
 			&mgmt_txrx_pdev_ctx->mgmt_desc_pool.desc_pool_lock);
-		mgmt_txrx_err("Descriptor freelist empty for mgmt_txrx_ctx %pK",
-				mgmt_txrx_pdev_ctx);
+		mgmt_txrx_err_rl("Descriptor freelist empty for mgmt_txrx_ctx %pK",
+				 mgmt_txrx_pdev_ctx);
 		return NULL;
 	}
 

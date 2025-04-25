@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -16,23 +17,23 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
- /**
+/**
  * DOC: Private API for crypto service with object manager handler
  */
 #ifndef _WLAN_CRYPTO_MAIN_I_H_
 #define _WLAN_CRYPTO_MAIN_I_H_
 
 /**
- * wlan_crypto_init - Init the crypto service with object manager
- *                    Called from umac init context.
+ * __wlan_crypto_init() - Init the crypto service with object manager
+ *                        Called from umac init context.
  *
  * Return: QDF_STATUS_SUCCESS - in case of success
  */
 QDF_STATUS __wlan_crypto_init(void);
 
 /**
- * wlan_crypto_deinit - Deinit the crypto service with object manager
- *                    Called from umac deinit context.
+ * __wlan_crypto_deinit() - Deinit the crypto service with object manager
+ *                          Called from umac deinit context.
  *
  * Return: QDF_STATUS_SUCCESS - in case of success
  */

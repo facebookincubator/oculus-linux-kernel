@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,7 +28,7 @@
 #include "qdf_status.h"
 #include "qdf_types.h"
 
-/**
+/*
  * struct qdf_cpuhp_handler - an opaque hotplug event registration handle
  */
 struct qdf_cpuhp_handler;

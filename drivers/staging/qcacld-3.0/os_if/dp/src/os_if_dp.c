@@ -1040,7 +1040,7 @@ int osif_dp_get_nud_stats(struct wiphy *wiphy,
 	ucfg_dp_set_nud_stats_cb(psoc, osif_request_cookie(request));
 
 	arp_stats_params.pkt_type = WLAN_NUD_STATS_ARP_PKT_TYPE;
-	arp_stats_params.vdev_id = ucfg_dp_get_intf_id(vdev);
+	arp_stats_params.vdev_id = ucfg_dp_get_link_id(vdev);
 
 	/* send NUD failure event only when ARP tracking is enabled. */
 	if (ucfg_dp_nud_fail_data_stall_evt_enabled() &&
@@ -1207,7 +1207,7 @@ int osif_dp_set_nud_stats(struct wiphy *wiphy,
 
 	dp_info("STATS_SET_START Received flag %d!", arp_stats_params.flag);
 
-	arp_stats_params.vdev_id = ucfg_dp_get_intf_id(vdev);
+	arp_stats_params.vdev_id = ucfg_dp_get_link_id(vdev);
 
 	if (QDF_STATUS_SUCCESS !=
 	    ucfg_dp_req_set_arp_stats(psoc, &arp_stats_params)) {

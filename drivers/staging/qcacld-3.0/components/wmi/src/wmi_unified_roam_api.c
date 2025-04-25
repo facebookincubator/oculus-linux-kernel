@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -153,6 +153,24 @@ wmi_extract_roam_vendor_control_param_event(wmi_unified_t wmi_handle,
 	if (wmi_handle->ops->extract_roam_vendor_control_param_event)
 		return wmi_handle->ops->extract_roam_vendor_control_param_event(
 					wmi_handle, event, len, data);
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
+
+#if defined(WLAN_FEATURE_ROAM_OFFLOAD) && defined(WLAN_FEATURE_11BE_MLO)
+QDF_STATUS
+wmi_extract_roam_synch_key_event(wmi_unified_t wmi_handle, uint8_t *event,
+				 uint32_t len,
+				 struct wlan_crypto_key_entry **keys,
+				 uint8_t *num_keys,
+				 struct qdf_mac_addr *mld_addr)
+{
+	if (wmi_handle->ops->extract_roam_synch_key_event)
+		return wmi_handle->ops->extract_roam_synch_key_event(
+							wmi_handle, event,
+							len, keys, num_keys,
+							mld_addr);
+
 	return QDF_STATUS_E_FAILURE;
 }
 #endif

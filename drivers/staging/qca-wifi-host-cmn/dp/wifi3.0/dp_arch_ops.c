@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,6 +33,11 @@ void dp_initialize_arch_ops_be(struct dp_arch_ops *arch_ops);
 qdf_size_t dp_get_soc_context_size_be(void);
 #endif
 
+#ifdef CONFIG_RHINE
+void dp_initialize_arch_ops_rh(struct dp_arch_ops *arch_ops);
+qdf_size_t dp_get_soc_context_size_rh(void);
+#endif
+
 static void dp_initialize_default_arch_ops(struct dp_arch_ops *arch_ops)
 {
 /* assign dummy functions for arch_ops which are architecture specific */
@@ -51,6 +57,12 @@ qdf_size_t dp_get_soc_context_size(uint16_t device_id)
 		return dp_get_soc_context_size_be();
 	break;
 #endif
+#ifdef CONFIG_RHINE
+	case CDP_ARCH_TYPE_RH:
+		return dp_get_soc_context_size_rh();
+	break;
+#endif
+
 	default:
 		QDF_BUG(0);
 	}
@@ -74,6 +86,13 @@ void dp_configure_arch_ops(struct dp_soc *soc)
 		dp_initialize_arch_ops_be(&soc->arch_ops);
 	break;
 #endif
+
+#ifdef CONFIG_RHINE
+	case CDP_ARCH_TYPE_RH:
+		dp_initialize_arch_ops_rh(&soc->arch_ops);
+	break;
+#endif
+
 	default:
 		QDF_BUG(0);
 	}

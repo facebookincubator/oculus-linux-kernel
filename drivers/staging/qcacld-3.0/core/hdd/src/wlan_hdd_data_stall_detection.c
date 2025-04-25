@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,6 +53,10 @@ static void hdd_data_stall_send_event(uint32_t reason)
 	sta_data_stall.reason = reason;
 	hdd_debug("Posting data stall event %x", reason);
 	WLAN_HOST_DIAG_EVENT_REPORT(&sta_data_stall, EVENT_WLAN_STA_DATASTALL);
+
+	cdp_display_stats(cds_get_context(QDF_MODULE_ID_SOC),
+			  CDP_TXRX_PATH_STATS,
+			  QDF_STATS_VERBOSITY_LEVEL_LOW);
 }
 #else
 static inline void hdd_data_stall_send_event(uint32_t reason)

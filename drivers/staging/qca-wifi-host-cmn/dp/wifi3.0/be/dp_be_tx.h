@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -46,10 +46,19 @@ struct __attribute__((__packed__)) dp_tx_comp_peer_id {
 	(((_var) & 0x30) >> 4)
 #define DP_TX_FLOW_OVERRIDE_ENABLE 0x1
 
-#define DP_TX_FAST_DESC_SIZE	24
+#define DP_TX_FAST_DESC_SIZE	28
 #define DP_TX_L3_L4_CSUM_ENABLE	0x1f
 
 #ifdef DP_USE_REDUCED_PEER_ID_FIELD_WIDTH
+static inline uint16_t
+dp_tx_comp_adjust_peer_id_be(struct dp_soc *soc, uint16_t peer_id)
+{
+	struct dp_tx_comp_peer_id *tx_peer_id =
+		(struct dp_tx_comp_peer_id *)&peer_id;
+
+	return (tx_peer_id->peer_id |
+		(tx_peer_id->ml_peer_valid << soc->peer_id_shift));
+}
 /**
  * dp_tx_comp_get_peer_id_be() - Get peer ID from TX Comp Desc
  * @soc: Handle to DP Soc structure
@@ -61,13 +70,15 @@ static inline uint16_t dp_tx_comp_get_peer_id_be(struct dp_soc *soc,
 						 void *tx_comp_hal_desc)
 {
 	uint16_t peer_id = hal_tx_comp_get_peer_id(tx_comp_hal_desc);
-	struct dp_tx_comp_peer_id *tx_peer_id =
-			(struct dp_tx_comp_peer_id *)&peer_id;
 
-	return (tx_peer_id->peer_id |
-		(tx_peer_id->ml_peer_valid << soc->peer_id_shift));
+	return dp_tx_comp_adjust_peer_id_be(soc, peer_id);
 }
 #else
+static inline uint16_t
+dp_tx_comp_adjust_peer_id_be(struct dp_soc *soc, uint16_t peer_id)
+{
+	return peer_id;
+}
 static inline uint16_t dp_tx_comp_get_peer_id_be(struct dp_soc *soc,
 						 void *tx_comp_hal_desc)
 {
@@ -82,7 +93,7 @@ static inline uint16_t dp_tx_comp_get_peer_id_be(struct dp_soc *soc,
  * @vdev: DP vdev handle
  * @tx_desc: Tx Descriptor Handle
  * @fw_metadata: Metadata to send to Target Firmware along with frame
- * @tx_exc_metadata: Handle that holds exception path meta data
+ * @metadata: Handle that holds exception path meta data
  * @msdu_info: msdu_info containing information about TX buffer
  *
  *  Gets the next free TCL HW DMA descriptor and sets up required parameters
@@ -99,18 +110,19 @@ QDF_STATUS dp_tx_hw_enqueue_be(struct dp_soc *soc, struct dp_vdev *vdev,
 
 #ifdef QCA_DP_TX_NBUF_LIST_FREE
 /**
- * dp_tx_hw_enqueue_be() - This is a fast send API to directly enqueue to HW
- * @soc: DP Soc Handle
- * @vdev_id: DP vdev ID
- * @nbuf: network buffer to be transmitted
+ * dp_tx_fast_send_be() - Transmit a frame on a given VAP
+ * @soc_hdl: DP soc handle
+ * @vdev_id: id of DP vdev handle
+ * @nbuf: skb
  *
- *  Gets the next free TCL HW DMA descriptor and sets up required parameters
- *  from software Tx descriptor
+ * Entry point for Core Tx layer (DP_TX) invoked from
+ * hard_start_xmit in OSIF/HDD or from dp_rx_process for intravap forwarding
+ * cases
  *
- * Return: NULL for success
- *         nbuf for failure
+ * Return: NULL on success,
+ *         nbuf when it fails to send
  */
-qdf_nbuf_t dp_tx_fast_send_be(struct cdp_soc_t *soc, uint8_t vdev_id,
+qdf_nbuf_t dp_tx_fast_send_be(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 			      qdf_nbuf_t nbuf);
 #else
 static inline qdf_nbuf_t dp_tx_fast_send_be(struct cdp_soc_t *soc, uint8_t vdev_id,
@@ -126,17 +138,18 @@ static inline qdf_nbuf_t dp_tx_fast_send_be(struct cdp_soc_t *soc, uint8_t vdev_
  * @tx_comp_hal_desc: HAL TX Comp Descriptor
  * @r_tx_desc: SW Tx Descriptor retrieved from HAL desc.
  *
- * Return: None
+ * Return: QDF_STATUS
  */
-void dp_tx_comp_get_params_from_hal_desc_be(struct dp_soc *soc,
-					    void *tx_comp_hal_desc,
-					    struct dp_tx_desc_s **r_tx_desc);
+QDF_STATUS
+dp_tx_comp_get_params_from_hal_desc_be(struct dp_soc *soc,
+				       void *tx_comp_hal_desc,
+				       struct dp_tx_desc_s **r_tx_desc);
 
 /**
  * dp_tx_process_htt_completion_be() - Tx HTT Completion Indication Handler
  * @soc: Handle to DP soc structure
  * @tx_desc: software descriptor head pointer
- * @status : Tx completion status from HTT descriptor
+ * @status: Tx completion status from HTT descriptor
  * @ring_id: ring number
  *
  * This function will process HTT Tx indication messages from Target
@@ -177,6 +190,7 @@ int dp_tx_get_bank_profile(struct dp_soc_be *soc,
 /**
  * dp_tx_put_bank_profile() - release TX bank profile for vdev
  * @soc: DP soc handle
+ * @be_vdev: pointer to be_vdev structure
  *
  * Return: None
  */
@@ -184,7 +198,7 @@ void dp_tx_put_bank_profile(struct dp_soc_be *soc, struct dp_vdev_be *be_vdev);
 
 /**
  * dp_tx_update_bank_profile() - release existing and allocate new bank profile
- * @soc: DP soc handle
+ * @be_soc: DP soc handle
  * @be_vdev: pointer to be_vdev structure
  *
  * The function releases the existing bank profile allocated to the vdev and
@@ -200,33 +214,48 @@ void dp_tx_update_bank_profile(struct dp_soc_be *be_soc,
  * @soc: Handle to DP Soc structure
  * @num_elem: number of descriptor in pool
  * @pool_id: pool ID to allocate
+ * @spcl_tx_desc: if special desc
  *
  * Return: QDF_STATUS_SUCCESS - success, others - failure
  */
 QDF_STATUS dp_tx_desc_pool_init_be(struct dp_soc *soc,
 				   uint32_t num_elem,
-				   uint8_t pool_id);
+				   uint8_t pool_id,
+				   bool spcl_tx_desc);
 /**
  * dp_tx_desc_pool_deinit_be() - De-initialize Tx Descriptor pool(s)
  * @soc: Handle to DP Soc structure
  * @tx_desc_pool: Tx descriptor pool handler
  * @pool_id: pool ID to deinit
+ * @spcl_tx_desc: if special desc
  *
  * Return: None
  */
 void dp_tx_desc_pool_deinit_be(struct dp_soc *soc,
 			       struct dp_tx_desc_pool_s *tx_desc_pool,
-			       uint8_t pool_id);
+			       uint8_t pool_id, bool spcl_tx_desc);
 
 #ifdef WLAN_SUPPORT_PPEDS
 /**
  * dp_ppeds_tx_comp_handler()- Handle tx completions for ppe2tcl ring
- * @soc: Handle to DP Soc structure
+ * @be_soc: Handle to DP Soc structure
  * @quota: Max number of tx completions to process
  *
  * Return: Number of tx completions processed
  */
 int dp_ppeds_tx_comp_handler(struct dp_soc_be *be_soc, uint32_t quota);
+
+/*
+ * dp_ppeds_stats() - Accounting fw2wbm_tx_drop drops in Tx path
+ * @soc: Handle to DP Soc structure
+ * @peer_id: Peer ID in the descriptor
+ *
+ * Return: NONE
+ */
+
+static inline
+void dp_ppeds_stats(struct dp_soc *soc, uint16_t peer_id);
+
 #endif
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
@@ -253,11 +282,28 @@ bool dp_tx_mlo_is_mcast_primary_be(struct dp_soc *soc,
 				   struct dp_vdev *vdev);
 #ifdef WLAN_MCAST_MLO
 #ifdef WLAN_MLO_MULTI_CHIP
+#ifdef CONFIG_MLO_SINGLE_DEV
+/**
+ * dp_tx_mlo_mcast_send_be() - Tx send handler for mlo mcast enhance
+ * @soc: DP soc handle
+ * @vdev: DP vdev handle
+ * @nbuf: skb
+ * @tx_exc_metadata: Handle that holds exception path meta data
+ *
+ * Return: NULL for success
+ *         nbuf for failure
+ */
+
+qdf_nbuf_t dp_tx_mlo_mcast_send_be(struct dp_soc *soc, struct dp_vdev *vdev,
+				   qdf_nbuf_t nbuf,
+				   struct cdp_tx_exception_metadata
+				   *tx_exc_metadata);
+#endif
 /**
  * dp_tx_mlo_mcast_pkt_send() - handler to send MLO Mcast packets
  * @be_vdev: Handle to DP be_vdev structure
  * @ptnr_vdev: DP ptnr_vdev handle
- * @nbuf: nbuf to be enqueued
+ * @arg: nbuf to be enqueued
  *
  * Return: None
  */
@@ -305,4 +351,24 @@ QDF_STATUS dp_tx_compute_tx_delay_be(struct dp_soc *soc,
 				     struct dp_vdev *vdev,
 				     struct hal_tx_completion_status *ts,
 				     uint32_t *delay_us);
+
+/**
+ * dp_tx_desc_pool_alloc_be() - Allocate TX descriptor pool
+ * @soc: Handle to DP Soc structure
+ * @num_elem: Number of elements to allocate
+ * @pool_id: TCL descriptor pool ID
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS dp_tx_desc_pool_alloc_be(struct dp_soc *soc, uint32_t num_elem,
+				    uint8_t pool_id);
+
+/**
+ * dp_tx_desc_pool_free_be() - Free TX descriptor pool
+ * @soc: Handle to DP Soc structure
+ * @pool_id: TCL descriptor pool ID
+ *
+ * Return: none
+ */
+void dp_tx_desc_pool_free_be(struct dp_soc *soc, uint8_t pool_id);
 #endif

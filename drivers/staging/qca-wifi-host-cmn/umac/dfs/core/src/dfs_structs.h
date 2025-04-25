@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2012, 2016-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -21,7 +22,7 @@
 #ifndef _DFS_STRUCTS_H_
 #define _DFS_STRUCTS_H_
 
-/**
+/*
  * This represents the general case of the radar PHY configuration,
  * across all chips.
  *
@@ -32,7 +33,7 @@
 #define WLAN_DFS_PHYERR_PARAM_NOVAL   0xFFFF
 #define WLAN_DFS_PHYERR_PARAM_ENABLE  0x8000
 
-/**
+/*
  * For the dfs_nol_clist_update() method - this is the
  * update command.
  */

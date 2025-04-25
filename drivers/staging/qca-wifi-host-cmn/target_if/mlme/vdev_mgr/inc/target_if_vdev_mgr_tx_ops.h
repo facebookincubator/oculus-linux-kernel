@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -61,8 +61,7 @@ target_if_vdev_mgr_get_tx_ops(struct wlan_objmgr_psoc *psoc)
 }
 
 /**
- * target_if_vdev_mgr_vdev_mlme_register_tx_ops() - define mlme lmac
- * tx ops functions
+ * target_if_vdev_mgr_register_tx_ops() - register vdev mgr tx ops functions
  * @tx_ops: pointer to lmac tx ops
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
@@ -83,7 +82,7 @@ QDF_STATUS target_if_vdev_mgr_send_fd_tmpl(struct wlan_objmgr_vdev *vdev,
 
 /**
  * target_if_vdev_mgr_assert_mgmt() - vdev assert mgmt api
- * @PSOC: pointer to objmgr psoc
+ * @psoc: pointer to objmgr psoc
  * @vdev_id: vdev id
  *
  * Return: NA

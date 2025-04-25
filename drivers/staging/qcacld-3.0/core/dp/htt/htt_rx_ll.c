@@ -562,6 +562,12 @@ static int htt_rx_ring_size(struct htt_pdev_t *pdev)
 
 	size = qdf_get_pwr2(size);
 
+	if (!soc) {
+		QDF_TRACE(QDF_MODULE_ID_HTT, QDF_TRACE_LEVEL_ERROR,
+		  "Unable to get 2x2 cap soc is NULL ring size:%u selected ", size);
+		return size;
+	}
+
 	status = wlan_mlme_get_vht_enable2x2((void *)soc->psoc, &enable_2x2);
 	if (QDF_IS_STATUS_SUCCESS(status))
 		size = (enable_2x2) ? size : QDF_MIN(size, HTT_RX_RING_SIZE_1x1);

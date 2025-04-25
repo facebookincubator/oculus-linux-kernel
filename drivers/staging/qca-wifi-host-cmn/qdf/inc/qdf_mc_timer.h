@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -78,23 +78,25 @@ typedef struct qdf_mc_timer_s {
 } qdf_mc_timer_t;
 
 
+/**
+ * qdf_try_allowing_sleep() - clean up timer states after it has been deactivated
+ * @type: timer type
+ *
+ * Clean up timer states after it has been deactivated check and try to allow
+ * sleep after a timer has been stopped or expired.
+ *
+ * Return: none
+ */
 void qdf_try_allowing_sleep(QDF_TIMER_TYPE type);
 
-/* Function declarations and documentation */
 #ifdef TIMER_MANAGER
-void qdf_mc_timer_manager_init(void);
-void qdf_mc_timer_manager_exit(void);
-void qdf_mc_timer_check_for_leaks(void);
-#else
 /**
  * qdf_mc_timer_manager_init() - initialize QDF debug timer manager
  * This API initializes QDF timer debug functionality.
  *
  * Return: none
  */
-static inline void qdf_mc_timer_manager_init(void)
-{
-}
+void qdf_mc_timer_manager_init(void);
 
 /**
  * qdf_mc_timer_manager_exit() - exit QDF timer debug functionality
@@ -102,9 +104,7 @@ static inline void qdf_mc_timer_manager_init(void)
  *
  * Return: none
  */
-static inline void qdf_mc_timer_manager_exit(void)
-{
-}
+void qdf_mc_timer_manager_exit(void);
 
 /**
  * qdf_mc_timer_check_for_leaks() - Assert there are no active mc timers
@@ -113,7 +113,19 @@ static inline void qdf_mc_timer_manager_exit(void)
  *
  * Return: None
  */
-static inline void qdf_mc_timer_check_for_leaks(void) { }
+void qdf_mc_timer_check_for_leaks(void);
+#else
+static inline void qdf_mc_timer_manager_init(void)
+{
+}
+
+static inline void qdf_mc_timer_manager_exit(void)
+{
+}
+
+static inline void qdf_mc_timer_check_for_leaks(void)
+{
+}
 #endif
 /**
  * qdf_mc_timer_get_current_state() - get the current state of the timer
@@ -122,7 +134,6 @@ static inline void qdf_mc_timer_check_for_leaks(void) { }
  * Return:
  * QDF_TIMER_STATE - qdf timer state
  */
-
 QDF_TIMER_STATE qdf_mc_timer_get_current_state(qdf_mc_timer_t *timer);
 
 /**
@@ -130,7 +141,7 @@ QDF_TIMER_STATE qdf_mc_timer_get_current_state(qdf_mc_timer_t *timer);
  * @timer: Pointer to timer object
  * @timer_type: Type of timer
  * @callback: Callback to be called after timer expiry
- * @ser_data: User data which will be passed to callback function
+ * @user_data: User data which will be passed to callback function
  *
  * This API initializes a QDF Timer object.
  *
@@ -157,8 +168,8 @@ QDF_TIMER_STATE qdf_mc_timer_get_current_state(qdf_mc_timer_t *timer);
  * QDF failure status - Timer initialization failed
  */
 #ifdef TIMER_MANAGER
-#define qdf_mc_timer_init(timer, timer_type, callback, userdata) \
-	qdf_mc_timer_init_debug(timer, timer_type, callback, userdata, \
+#define qdf_mc_timer_init(timer, timer_type, callback, user_data) \
+	qdf_mc_timer_init_debug(timer, timer_type, callback, user_data, \
 				__FILE__, __LINE__)
 
 QDF_STATUS qdf_mc_timer_init_debug(qdf_mc_timer_t *timer,
@@ -302,7 +313,7 @@ uint64_t qdf_get_time_of_the_day_us(void);
 qdf_time_t qdf_get_time_of_the_day_ms(void);
 
 /**
- * qdf_timer_module_deinit() - Deinitializes a QDF timer module.
+ * qdf_timer_module_deinit() - Deinitializes the QDF timer module.
  *
  * This API deinitializes the QDF timer module.
  * Return: none

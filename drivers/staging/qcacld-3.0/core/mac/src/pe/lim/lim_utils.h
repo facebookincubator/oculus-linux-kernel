@@ -39,6 +39,7 @@
 #include "include/wlan_vdev_mlme.h"
 #include "wlan_mlme_vdev_mgr_interface.h"
 #include "wlan_qct_sys.h"
+#include <wlan_cp_stats_chipset_stats.h>
 
 #define LIM_QOS_AP_SUPPORTS_UAPSD         0x80
 
@@ -107,8 +108,11 @@
 /* To check if HT 20mhz detection bit set */
 #define OBSS_DETECTION_IS_HT_20MHZ(_m) ((_m) & OBSS_DETECTION_HT_20MHZ_BIT_MASK)
 
+#define MAX_WAIT_FOR_BCN_TX_COMPLETE_FOR_LL_SAP 500
 #define MAX_WAIT_FOR_BCN_TX_COMPLETE 4000
+
 #define MAX_WAKELOCK_FOR_CSA         5000
+#define MAX_WAIT_FOR_CH_WIDTH_UPDATE_COMPLETE 200
 
 #ifdef WLAN_FEATURE_11BE
 #define MAX_NUM_PWR_LEVELS 16
@@ -131,18 +135,6 @@ typedef struct last_processed_frame {
 	tSirMacAddr sa;
 	uint16_t seq_num;
 } last_processed_msg;
-
-/**
- * struct lim_max_tx_pwr_attr - List of tx powers from various sources
- * @reg_max: power from regulatory database
- * @ap_tx_power: local power constraint adjusted value
- * @frequency: current operating frequency for which above powers are defined
- */
-struct lim_max_tx_pwr_attr {
-	int8_t reg_max;
-	int8_t ap_tx_power;
-	uint32_t frequency;
-};
 
 /* LIM utility functions */
 bool lim_is_valid_frame(last_processed_msg *last_processed_frm,
@@ -194,8 +186,6 @@ uint8_t lim_get_max_tx_power(struct mac_context *mac,
  * lim_calculate_tpc() - Utility to get maximum tx power
  * @mac: mac handle
  * @session: PE Session Entry
- * @is_pwr_constraint_absolute: If local power constraint is an absolute
- * value or an offset value.
  *
  * This function is used to get the maximum possible tx power from the list
  * of tx powers mentioned in @attr.
@@ -203,8 +193,7 @@ uint8_t lim_get_max_tx_power(struct mac_context *mac,
  * Return: None
  */
 void lim_calculate_tpc(struct mac_context *mac,
-		       struct pe_session *session,
-		       bool is_pwr_constraint_absolute);
+		       struct pe_session *session);
 
 /* AID pool management functions */
 
@@ -299,6 +288,17 @@ QDF_STATUS lim_send_mlo_caps_ie(struct mac_context *mac_ctx,
  */
 void lim_strip_mlo_ie(struct mac_context *mac_ctx,
 		      uint8_t *add_ie, uint16_t *add_ielen);
+
+/**
+ * lim_set_emlsr_caps() - This API will set EMLSR caps in vdev obj if ELMSR is
+ * supported.
+ * @mac: mac context
+ * @pe_session: session entry
+ *
+ * Return: Void
+ */
+void lim_set_emlsr_caps(struct mac_context *mac_ctx,
+			struct pe_session *session);
 #else
 static inline uint16_t lim_assign_mlo_conn_idx(struct mac_context *mac,
 					       struct pe_session *pe_session,
@@ -338,6 +338,11 @@ QDF_STATUS lim_send_mlo_caps_ie(struct mac_context *mac_ctx,
 				uint8_t vdev_id)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline void lim_set_emlsr_caps(struct mac_context *mac_ctx,
+				      struct pe_session *session)
+{
 }
 #endif
 
@@ -485,8 +490,6 @@ uint8_t lim_get_cb_mode_for_freq(struct mac_context *mac,
 void lim_update_sta_run_time_ht_switch_chnl_params(struct mac_context *mac,
 						 tDot11fIEHTInfo *pHTInfo,
 						 struct pe_session *pe_session);
-/* Print MAC address utility function */
-void lim_print_mac_addr(struct mac_context *, tSirMacAddr, uint8_t);
 
 /* Deferred Message Queue read/write */
 uint8_t lim_write_deferred_msg_q(struct mac_context *mac,
@@ -1093,6 +1096,18 @@ void lim_strip_eht_ies_from_add_ies(struct mac_context *mac_ctx,
 				    struct pe_session *session);
 
 /**
+ * lim_strip_wapi_ies_from_add_ies() - This function strip WAPI IE from add_ie
+ * @mac_ctx: pointer to mac context
+ * @pe_session: pointer to PE session
+ *
+ * This API is to strip WAPI IE from add_ie
+ *
+ * Return: none
+ */
+void lim_strip_wapi_ies_from_add_ies(struct mac_context *mac_ctx,
+				     struct pe_session *session);
+
+/**
  * lim_del_pmf_sa_query_timer() - This function deletes SA query timer
  * @mac_ctx: pointer to mac context
  * @pe_session: pointer to PE session
@@ -1209,11 +1224,15 @@ QDF_STATUS lim_strip_ie(struct mac_context *mac_ctx,
  * @add_bss: pointer to ADD BSS params
  * @beacon: pointer to beacon
  * @assoc_rsp: pointer to assoc response
+ * @bss_desc: pointer to BSS description
  *
  * Return: None
  */
-void lim_intersect_ap_he_caps(struct pe_session *session, struct bss_params *add_bss,
-		tSchBeaconStruct *pBeaconStruct, tpSirAssocRsp assoc_rsp);
+void lim_intersect_ap_he_caps(struct pe_session *session,
+			      struct bss_params *add_bss,
+			      tSchBeaconStruct *pBeaconStruct,
+			      tpSirAssocRsp assoc_rsp,
+			      struct bss_description *bss_desc);
 
 /**
  * lim_intersect_sta_he_caps() - Intersect STA capability with SAP capability
@@ -1629,8 +1648,10 @@ static inline void lim_update_he_6gop_assoc_resp(
 }
 
 static inline void lim_intersect_ap_he_caps(struct pe_session *session,
-		struct bss_params *add_bss,	tSchBeaconStruct *pBeaconStruct,
-		tpSirAssocRsp assoc_rsp)
+					    struct bss_params *add_bss,
+					    tSchBeaconStruct *pBeaconStruct,
+					    tpSirAssocRsp assoc_rsp,
+					    struct bss_description *bss_desc)
 {
 	return;
 }
@@ -1971,6 +1992,30 @@ void lim_update_sta_eht_capable(struct mac_context *mac,
 				tpDphHashNode sta_ds,
 				struct pe_session *session_entry);
 
+#ifdef FEATURE_WLAN_TDLS
+/**
+ * lim_update_tdls_sta_eht_capable(): Update eht_capable in add tdls sta params
+ * @mac: pointer to MAC context
+ * @add_sta_params: pointer to add sta params
+ * @sta_ds: pointer to dph hash table entry
+ * @session_entry: pointer to PE session
+ *
+ * Return: None
+ */
+void lim_update_tdls_sta_eht_capable(struct mac_context *mac,
+				     tpAddStaParams add_sta_params,
+				     tpDphHashNode sta_ds,
+				     struct pe_session *session_entry);
+#else
+static inline
+void lim_update_tdls_sta_eht_capable(struct mac_context *mac,
+				     tpAddStaParams add_sta_params,
+				     tpDphHashNode sta_ds,
+				     struct pe_session *session_entry)
+{
+}
+#endif
+
 /**
  * lim_update_session_eht_capable_chan_switch(): Update eht_capable in PE
  *                                               session
@@ -2086,7 +2131,46 @@ void lim_update_stads_eht_bw_320mhz(struct pe_session *session,
  * Return: bool
  */
 bool lim_is_session_chwidth_320mhz(struct pe_session *session);
+
+/**
+ * lim_update_eht_caps_mcs() - update eht caps
+ *
+ * @mac: Pointer to Global mac structure
+ * @session: Session pointer of the interface
+ *
+ * Return: None
+ */
+void
+lim_update_eht_caps_mcs(struct mac_context *mac, struct pe_session *session);
+
+/**
+ * lim_update_des_chan_puncture() - set puncture_bitmap of des_chan
+ * @des_chan: pointer to wlan_channel
+ * @ch_params: pointer to ch_params
+ *
+ * Return: void
+ */
+void lim_update_des_chan_puncture(struct wlan_channel *des_chan,
+				  struct ch_params *ch_params);
+
+/**
+ * lim_overwrite_sta_puncture() - overwrite STA puncture with AP puncture
+ * @session: session
+ * @@ch_param: pointer to ch_params
+ *
+ * Return: void
+ */
+void lim_overwrite_sta_puncture(struct pe_session *session,
+				struct ch_params *ch_param);
 #else
+static inline
+void lim_update_tdls_sta_eht_capable(struct mac_context *mac,
+				     tpAddStaParams add_sta_params,
+				     tpDphHashNode sta_ds,
+				     struct pe_session *session_entry)
+{
+}
+
 static inline bool lim_is_session_eht_capable(struct pe_session *session)
 {
 	return false;
@@ -2262,6 +2346,23 @@ lim_is_session_chwidth_320mhz(struct pe_session *session)
 {
 	return false;
 }
+
+static inline void
+lim_update_eht_caps_mcs(struct mac_context *mac, struct pe_session *session)
+{
+}
+
+static inline void
+lim_update_des_chan_puncture(struct wlan_channel *des_chan,
+			     struct ch_params *ch_params)
+{
+}
+
+static inline void
+lim_overwrite_sta_puncture(struct pe_session *session,
+			   struct ch_params *ch_param)
+{
+}
 #endif /* WLAN_FEATURE_11BE */
 
 #ifdef WLAN_FEATURE_11BE_MLO
@@ -2276,6 +2377,18 @@ lim_is_session_chwidth_320mhz(struct pe_session *session)
 void lim_extract_per_link_id(struct pe_session *session,
 			     struct bss_params *add_bss,
 			     tpSirAssocRsp assoc_rsp);
+
+/**
+ * lim_extract_ml_info() - Extract ML info and send with FW
+ * @session: pointer to PE session
+ * @add_bss: pointer to ADD BSS params
+ * @assoc_rsp: pointer to assoc response
+ *
+ * Return: None
+ */
+void lim_extract_ml_info(struct pe_session *session,
+			 struct bss_params *add_bss,
+			 tpSirAssocRsp assoc_rsp);
 
 /**
  * lim_intersect_ap_emlsr_caps() - Intersect AP and self STA EML capabilities
@@ -2310,6 +2423,13 @@ static inline void
 lim_extract_per_link_id(struct pe_session *session,
 			struct bss_params *add_bss,
 			tpSirAssocRsp assoc_rsp)
+{
+}
+
+static inline void
+lim_extract_ml_info(struct pe_session *session,
+		    struct bss_params *add_bss,
+		    tpSirAssocRsp assoc_rsp)
 {
 }
 
@@ -3085,7 +3205,7 @@ void lim_update_nss(struct mac_context *mac_ctx, tpDphHashNode sta_ds,
  * @ch_width: Channel width in operating mode notification
  * @new_ch_width: Final channel bandwifdth
  *
- * function to update channel width
+ * function to send WMI_PEER_SET_PARAM_CMDID to FW to update ch_width
  *
  * Return: Success or Failure
  */
@@ -3115,11 +3235,13 @@ uint8_t lim_get_vht_ch_width(tDot11fIEVHTCaps *vht_cap,
  *
  * @mac_ctx:    Pointer to Global MAC structure
  * @pe_session: Pointer to session
+ * @bss_desc: Pointer to bss description
  *
  * Return: TPC status
  */
 bool
-lim_set_tpc_power(struct mac_context *mac_ctx, struct pe_session *session);
+lim_set_tpc_power(struct mac_context *mac_ctx, struct pe_session *session,
+		  struct bss_description *bss_desc);
 
 /**
  * lim_update_tx_power() - Function to update the TX power for
@@ -3150,6 +3272,23 @@ bool
 lim_skip_tpc_update_for_sta(struct mac_context *mac,
 			    struct pe_session *sta_session,
 			    struct pe_session *sap_session);
+
+#ifdef FEATURE_WLAN_GC_SKIP_JOIN
+static inline bool
+lim_connect_skip_join_for_gc(struct pe_session *pe_session)
+{
+	if (pe_session->opmode == QDF_P2P_CLIENT_MODE)
+		return true;
+	else
+		return false;
+}
+#else
+static inline bool
+lim_connect_skip_join_for_gc(struct pe_session *pe_session)
+{
+	return false;
+}
+#endif
 
 /**
  * lim_get_concurrent_session() - Function to get the concurrent session pointer
@@ -3216,21 +3355,23 @@ void
 lim_update_tx_pwr_on_ctry_change_cb(uint8_t vdev_id);
 
 /*
- * lim_is_chan_connected_for_mode() - Check if frequency is connected
- *                                    for given opmode.
+ * lim_get_connected_chan_for_mode() - Get connected channel for given opmode
+ *                                     in given frequency range.
+ *
  * @psoc: Pointer to psoc object
  * @opmode: Vdev opmode
  * @freq: Frequency
  *
- * Return: Return true if frequency is connected for given opmode.
+ * Return: Return connected channel in given frequcy range for given opmode.
  */
-bool
-lim_is_chan_connected_for_mode(struct wlan_objmgr_psoc *psoc,
-			       enum QDF_OPMODE opmode,
-			       qdf_freq_t freq);
+struct wlan_channel *
+lim_get_connected_chan_for_mode(struct wlan_objmgr_psoc *psoc,
+				enum QDF_OPMODE opmode,
+				qdf_freq_t start_freq,
+				qdf_freq_t end_freq);
 
 /**
- * lim_convert_vht_chwdith_to_phy_chwidth() - Convert VHT operation
+ * lim_convert_vht_chwidth_to_phy_chwidth() - Convert VHT operation
  * ch width into phy ch width
  *
  * @ch_width: VHT op channel width
@@ -3239,5 +3380,259 @@ lim_is_chan_connected_for_mode(struct wlan_objmgr_psoc *psoc,
  * Return: phy chwidth
  */
 enum phy_ch_width
-lim_convert_vht_chwdith_to_phy_chwidth(uint8_t ch_width, bool is_40);
+lim_convert_vht_chwidth_to_phy_chwidth(uint8_t ch_width, bool is_40);
+
+/*
+ * lim_cmp_ssid() - Compare two SSIDs.
+ * @ssid: first ssid
+ * @pe_session: pointer to session
+ *
+ * Return: qdf_mem_cmp of ssids
+ */
+uint32_t lim_cmp_ssid(tSirMacSSid *ssid, struct pe_session *pe_session);
+
+/*
+ * lim_configure_fd_for_existing_6ghz_sap() - Based on the concurrent
+ * legacy SAP interface UP/DOWN, configure the FD for the 6 GHz SAPs.
+ * @session: pointer to pe_session
+ * @is_sap_starting: true if SAP is starting, false if SAP is stopping
+ *
+ * Return: None
+ */
+void
+lim_configure_fd_for_existing_6ghz_sap(struct pe_session *session,
+				       bool is_sap_starting);
+
+#ifdef WLAN_CHIPSET_STATS
+/**
+ * lim_cp_stats_cstats_log_assoc_resp_evt() - Log chipset stats for assoc resp
+ *
+ * @session_entry: pointer to session object
+ * @dir: Direction
+ * @status_code: assoc/reassoc status
+ * @aid: association identifier
+ * @bssid: bssid
+ * @da: destination address
+ * @is_ht: is HT
+ * @is_vht: is VHT
+ * @is_he: is HE
+ * @is_eht: is EHT
+ * @is_reassoc: is reassoc frame
+ *
+ * Return : void
+ */
+void lim_cp_stats_cstats_log_assoc_resp_evt(struct pe_session *session_entry,
+					    enum cstats_dir dir,
+					    uint16_t status_code, uint16_t aid,
+					    uint8_t *bssid, uint8_t *da,
+					    bool is_ht, bool is_vht, bool is_he,
+					    bool is_eht, bool is_reassoc);
+
+/**
+ * lim_cp_stats_cstats_log_auth_evt() - Log chipset stats for auth frames
+ *
+ * @pe_session: pointer to session object
+ * @dir: direction
+ * @algo: auth algorithm
+ * @seq: auth sequence
+ * @status: Status
+ *
+ * Return : void
+ */
+void lim_cp_stats_cstats_log_auth_evt(struct pe_session *pe_session,
+				      enum cstats_dir dir, uint16_t algo,
+				      uint16_t seq, uint16_t status);
+
+/**
+ * lim_cp_stats_cstats_log_deauth_evt() - Log chipset stats for deauth frames
+ *
+ * @pe_session: pointer to session object
+ * @dir: direction
+ * @reasonCode: reason code
+ *
+ * Return : void
+ */
+void lim_cp_stats_cstats_log_deauth_evt(struct pe_session *pe_session,
+					enum cstats_dir dir,
+					uint16_t reasonCode);
+
+/**
+ * lim_cp_stats_cstats_log_disassoc_evt() - Log chipset stats for disassoc frm
+ *
+ * @pe_session: pointer to session object
+ * @dir: direction
+ * @reasonCode: reason code
+ *
+ * Return : void
+ */
+void lim_cp_stats_cstats_log_disassoc_evt(struct pe_session *pe_session,
+					  enum cstats_dir dir,
+					  uint16_t reasonCode);
+
+/**
+ * lim_cp_stats_cstats_log_assoc_req_evt() - Log chipset stats for assoc req frm
+ *
+ * @pe_session: pointer to session object
+ * @dir: Direction
+ * @bssid: bssid
+ * @sa: source addr
+ * @ssid_len: ssid length
+ * @ssid: ssid
+ * @is_ht: is HT
+ * @is_vht: is VHT
+ * @is_he: is HE
+ * @is_eht: is EHT
+ * @is_reassoc: is reassociation request
+ *
+ * Return : void
+ */
+void lim_cp_stats_cstats_log_assoc_req_evt(struct pe_session *pe_session,
+					   enum cstats_dir dir, uint8_t *bssid,
+					   uint8_t *sa, uint8_t ssid_len,
+					   uint8_t *ssid, bool is_ht,
+					   bool is_vht, bool is_he,
+					   bool is_eht, bool is_reassoc);
+
+/**
+ * lim_cp_stats_cstats_log_disc_req_evt() : chipset stats for TDLS disc req
+ *
+ * @frm: pointer to tDot11fTDLSDisReq
+ * @pe_session: pointer to session object
+ *
+ * Return: void
+ */
+void lim_cp_stats_cstats_log_disc_req_evt(tDot11fTDLSDisReq *frm,
+					  struct pe_session *pe_session);
+
+/**
+ * lim_cp_stats_cstats_log_disc_resp_evt() : chipset stats for TDLS disc resp
+ *
+ * @frm: pointer to tDot11fTDLSDisRsp
+ * @pe_session: pointer to session object
+ *
+ * Return: void
+ */
+void lim_cp_stats_cstats_log_disc_resp_evt(tDot11fTDLSDisRsp *frm,
+					   struct pe_session *pe_session);
+
+/**
+ * lim_cp_stats_cstats_log_setup_req_evt() : chipset stats for TDLS setup req
+ *
+ * @frm: pointer to tDot11fTDLSSetupReq
+ * @pe_session: pointer to session object
+ *
+ * Return: void
+ */
+void lim_cp_stats_cstats_log_setup_req_evt(tDot11fTDLSSetupReq *frm,
+					   struct pe_session *pe_session);
+
+/**
+ * lim_cp_stats_cstats_log_setup_resp_evt() : chipset stats for TDLS setup resp
+ *
+ * @frm: pointer to tDot11fTDLSSetupRsp
+ * @pe_session: pointer to session object
+ *
+ * Return: void
+ */
+void lim_cp_stats_cstats_log_setup_resp_evt(tDot11fTDLSSetupRsp *frm,
+					    struct pe_session *pe_session);
+
+/**
+ * lim_cp_stats_cstats_log_setup_confirm_evt() : chipset stats for TDLS setup
+ * confirm
+ *
+ * @frm: pointer to tDot11fTDLSSetupCnf
+ * @pe_session: pointer to session object
+ *
+ * Return: void
+ */
+void lim_cp_stats_cstats_log_setup_confirm_evt(tDot11fTDLSSetupCnf *frm,
+					       struct pe_session *pe_session);
+
+/**
+ * lim_cp_stats_cstats_log_tear_down_evt() : chipset stats for TDLS teardown
+ *
+ * @frm: pointer to tDot11fTDLSSetupCnf
+ * @pe_session: pointer to session object
+ *
+ * Return: void
+ */
+void lim_cp_stats_cstats_log_tear_down_evt(tDot11fTDLSTeardown *frm,
+					   struct pe_session *pe_session);
+#else
+static inline void
+lim_cp_stats_cstats_log_assoc_resp_evt(struct pe_session *session_entry,
+				       enum cstats_dir dir,
+				       uint16_t status_code, uint16_t aid,
+				       uint8_t *bssid, uint8_t *da,
+				       bool is_ht, bool is_vht, bool is_he,
+				       bool is_eht, bool is_reassoc)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_auth_evt(struct pe_session *pe_session,
+				 enum cstats_dir dir, uint16_t algo,
+				 uint16_t seq, uint16_t status)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_deauth_evt(struct pe_session *pe_session,
+				   enum cstats_dir dir, uint16_t reasonCode)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_disassoc_evt(struct pe_session *pe_session,
+				     enum cstats_dir dir, uint16_t reasonCode)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_assoc_req_evt(struct pe_session *pe_session,
+				      enum cstats_dir dir, uint8_t *bssid,
+				      uint8_t *sa, uint8_t ssid_len,
+				      uint8_t *ssid, bool is_ht,
+				      bool is_vht, bool is_he,
+				      bool is_eht, bool is_reassoc)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_disc_req_evt(tDot11fTDLSDisReq *frm,
+				     struct pe_session *pe_session)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_disc_resp_evt(tDot11fTDLSDisRsp *frm,
+				      struct pe_session *pe_session)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_setup_req_evt(tDot11fTDLSSetupReq *frm,
+				      struct pe_session *pe_session)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_setup_resp_evt(tDot11fTDLSSetupRsp *frm,
+				       struct pe_session *pe_session)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_setup_confirm_evt(tDot11fTDLSSetupCnf *frm,
+					  struct pe_session *pe_session)
+{
+}
+
+static inline void
+lim_cp_stats_cstats_log_tear_down_evt(tDot11fTDLSTeardown *frm,
+				      struct pe_session *pe_session)
+{
+}
+#endif /* WLAN_CHIPSET_STATS */
 #endif /* __LIM_UTILS_H */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -95,6 +95,9 @@ action_oui_destroy(struct action_oui_psoc_priv *psoc_priv)
 	uint32_t i;
 
 	psoc_priv->total_extensions = 0;
+	psoc_priv->max_extensions = 0;
+	psoc_priv->host_only_extensions = 0;
+
 	for (i = 0; i < ACTION_OUI_MAXIMUM_ID; i++) {
 		oui_priv = psoc_priv->oui_priv[i];
 		psoc_priv->oui_priv[i] = NULL;
@@ -155,9 +158,6 @@ static void action_oui_load_config(struct action_oui_psoc_priv *psoc_priv)
 		      cfg_get(psoc,
 			      CFG_ACTION_OUI_DISABLE_AGGRESSIVE_TX),
 		      ACTION_OUI_MAX_STR_LEN);
-	qdf_str_lcopy(psoc_priv->action_oui_str[ACTION_OUI_FORCE_MAX_NSS],
-		      cfg_get(psoc, CFG_ACTION_OUI_FORCE_MAX_NSS),
-		      ACTION_OUI_MAX_STR_LEN);
 	qdf_str_lcopy(psoc_priv->action_oui_str
 					  [ACTION_OUI_DISABLE_AGGRESSIVE_EDCA],
 		      cfg_get(psoc,
@@ -188,10 +188,19 @@ static void action_oui_load_config(struct action_oui_psoc_priv *psoc_priv)
 		      cfg_get(psoc,
 			      CFG_ACTION_OUI_ENABLE_CTS2SELF_WITH_QOS_NULL),
 		      ACTION_OUI_MAX_STR_LEN);
+
+	qdf_str_lcopy(psoc_priv->action_oui_str[ACTION_OUI_ENABLE_CTS2SELF],
+		      cfg_get(psoc, CFG_ACTION_OUI_ENABLE_CTS2SELF),
+		      ACTION_OUI_MAX_STR_LEN);
+
 	qdf_str_lcopy(psoc_priv->action_oui_str
 			[ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN],
 		      cfg_get(psoc,
 			      CFG_ACTION_OUI_SEND_SMPS_FRAME_WITH_OMN),
+		      ACTION_OUI_MAX_STR_LEN);
+	qdf_str_lcopy(psoc_priv->action_oui_str
+			[ACTION_OUI_RESTRICT_MAX_MLO_LINKS],
+		      cfg_get(psoc, CFG_ACTION_OUI_RESTRICT_MAX_MLO_LINKS),
 		      ACTION_OUI_MAX_STR_LEN);
 	qdf_str_lcopy(psoc_priv->action_oui_str
 			[ACTION_OUI_AUTH_ASSOC_6MBPS_2GHZ],
@@ -199,6 +208,9 @@ static void action_oui_load_config(struct action_oui_psoc_priv *psoc_priv)
 		      ACTION_OUI_MAX_STR_LEN);
 	qdf_str_lcopy(psoc_priv->action_oui_str[ACTION_OUI_DISABLE_BFORMEE],
 		      cfg_get(psoc, CFG_ACTION_OUI_DISABLE_BFORMEE),
+			      ACTION_OUI_MAX_STR_LEN);
+	qdf_str_lcopy(psoc_priv->action_oui_str[ACTION_OUI_LIMIT_BW],
+		      cfg_get(psoc, CFG_ACTION_OUI_LIMIT_BW),
 			      ACTION_OUI_MAX_STR_LEN);
 }
 
@@ -233,6 +245,18 @@ static void action_oui_parse_config(struct wlan_objmgr_psoc *psoc)
 			action_oui_err("Failed to parse action_oui str: %u",
 				       id);
 	}
+
+	/* FW allocates memory for the extensions only during init time.
+	 * Therefore, send additional legspace for configuring new
+	 * extensions during runtime.
+	 * The current max value is default extensions count + 10.
+	 */
+	psoc_priv->max_extensions = psoc_priv->total_extensions -
+					psoc_priv->host_only_extensions +
+					ACTION_OUI_MAX_ADDNL_EXTENSIONS;
+	action_oui_debug("Extensions - Max: %d Total: %d host_only %d",
+			 psoc_priv->max_extensions, psoc_priv->total_extensions,
+			 psoc_priv->host_only_extensions);
 }
 
 static QDF_STATUS action_oui_send_config(struct wlan_objmgr_psoc *psoc)
@@ -436,6 +460,13 @@ wlan_action_oui_cleanup(struct action_oui_psoc_priv *psoc_priv,
 			psoc_priv->total_extensions--;
 		else
 			action_oui_err("unexpected total_extensions 0");
+
+		if (action_id >= ACTION_OUI_HOST_ONLY) {
+			if (!psoc_priv->host_only_extensions)
+				action_oui_err("unexpected total host extensions");
+			else
+				psoc_priv->host_only_extensions--;
+		}
 	}
 	qdf_mutex_release(&oui_priv->extension_lock);
 

@@ -1052,12 +1052,12 @@ int cnss_idle_restart(struct device *dev)
 		return -EBUSY;
 	}
 
-	cnss_pr_dbg("Doing idle restart\n");
+	cnss_pr_info("Doing idle restart\n");
 
 	reinit_completion(&plat_priv->power_up_complete);
 
 	if (test_bit(CNSS_IN_REBOOT, &plat_priv->driver_state)) {
-		cnss_pr_dbg("Reboot or shutdown is in progress, ignore idle restart\n");
+		cnss_pr_info("Reboot or shutdown is in progress, ignore1 idle restart\n");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1101,7 +1101,7 @@ int cnss_idle_restart(struct device *dev)
 	}
 
 	if (test_bit(CNSS_IN_REBOOT, &plat_priv->driver_state)) {
-		cnss_pr_dbg("Reboot or shutdown is in progress, ignore idle restart\n");
+		cnss_pr_info("Reboot or shutdown is in progress, ignore2 idle restart\n");
 		del_timer(&plat_priv->fw_boot_timer);
 		ret = -EINVAL;
 		goto out;
@@ -3357,14 +3357,14 @@ static ssize_t shutdown_store(struct device *dev,
 {
 	struct cnss_plat_data *plat_priv = dev_get_drvdata(dev);
 
-	cnss_pr_dbg("Received shutdown notification\n");
+	cnss_pr_info("Received shutdown notification\n");
 	if (plat_priv) {
 		set_bit(CNSS_IN_REBOOT, &plat_priv->driver_state);
 		cnss_bus_update_status(plat_priv, CNSS_SYS_REBOOT);
 		del_timer(&plat_priv->fw_boot_timer);
 		complete_all(&plat_priv->power_up_complete);
 		complete_all(&plat_priv->cal_complete);
-		cnss_pr_dbg("Shutdown notification handled\n");
+		cnss_pr_info("Shutdown notification handled\n");
 	}
 
 	return count;
@@ -3610,7 +3610,7 @@ static int cnss_reboot_notifier(struct notifier_block *nb,
 	del_timer(&plat_priv->fw_boot_timer);
 	complete_all(&plat_priv->power_up_complete);
 	complete_all(&plat_priv->cal_complete);
-	cnss_pr_dbg("Reboot is in progress with action %d\n", action);
+	cnss_pr_info("Reboot is in progress with action %d\n", action);
 
 	return NOTIFY_DONE;
 }

@@ -26,7 +26,7 @@ static irqreturn_t isr_primary_nsync(int irq, void *p)
 	int64_t ts_us = ktime_to_us(kt);
 
 	spin_lock_irqsave(&devdata->nsync_lock, flags);
-	devdata->ap_ts_now_us = ts_us;
+	devdata->ap_ts_us[SYNC_HERE(devdata)] = ts_us;
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 
 	return IRQ_HANDLED;
@@ -34,10 +34,14 @@ static irqreturn_t isr_primary_nsync(int irq, void *p)
 
 static void reset_nsync_values_locked(struct nsync_dev_data *devdata)
 {
+	int i;
+
 	devdata->errors = 0;
-	devdata->ap_ts_prev_us = 0;
-	devdata->ap_ts_now_us = 0;
-	devdata->mcu_ts_prev_us = 0;
+	devdata->index = 0;
+	for (i = 0; i < SYNC_HIST_LEN; ++i) {
+		devdata->ap_ts_us[i] = 0;
+		devdata->mcu_ts_us[i] = 0;
+	}
 	devdata->nsync_offset_us = 0;
 	devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_INVALID;
 
@@ -86,23 +90,79 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 	}
 }
 
+static void update_debug_state_locked(struct nsync_dev_data *devdata)
+{
+	static uint32_t seq;
+	struct nsync_debug_state *state = &(devdata->debug.states[devdata->debug.states_index]);
+
+	state->ap_ts_prev_us = devdata->ap_ts_us[SYNC_PREV(devdata)];
+	state->ap_ts_now_us = devdata->ap_ts_us[SYNC_HERE(devdata)];
+	state->mcu_ts_prev_us = devdata->mcu_ts_us[SYNC_PREV(devdata)];
+	state->mcu_ts_now_us = devdata->mcu_ts_us[SYNC_HERE(devdata)];
+	state->errors = devdata->errors;
+	state->long_syncs = devdata->debug.long_syncs;
+	state->status = devdata->nsync_offset_status;
+	state->seq = seq;
+
+	++seq;
+	++devdata->debug.states_index;
+	if (devdata->debug.states_index >= devdata->debug.states_max)
+		devdata->debug.states_index = 0;
+}
+
+static void dump_debug_state(struct nsync_dev_data *devdata)
+{
+	unsigned int index;
+
+	/*
+	 * We don't care if we're locked here. It's read-only. If there's tearing,
+	 * there's tearing.
+	 */
+	dev_info(devdata->dev, "seq,errors,long_syncs,status,ap_ts_prev_us,ap_ts_now_us,mcu_ts_prev_us,mcu_ts_now_us\n");
+	for (index = 0; index < devdata->debug.states_max; ++index) {
+		const struct nsync_debug_state *state = &(devdata->debug.states[index]);
+
+		dev_info(devdata->dev, "%u,%u,%u,%d,%lld,%lld,%lld,%lld\n",
+			state->seq, state->errors, state->long_syncs, state->status, state->ap_ts_prev_us,
+			state->ap_ts_now_us, state->mcu_ts_prev_us, state->mcu_ts_now_us);
+	}
+}
+
 static int handle_display_event(struct nsync_dev_data *devdata, const struct syncboss_data *packet)
 {
 	struct syncboss_display_event *dfevent = (struct syncboss_display_event *)packet->data;
-	int64_t mcu_ts_now_us = (int64_t)dfevent->timestamp;
 	unsigned long flags;
+	int64_t ap_ts_here_us;
+	int64_t ap_ts_prev_us;
+	int64_t ap_ts_pprev_us;
+	int64_t mcu_ts_here_us;
+	int64_t mcu_ts_prev_us;
+	int64_t mcu_ts_pprev_us;
 	int ret = 0;
+	bool do_debug_dump = false;
 
 	spin_lock_irqsave(&devdata->nsync_lock, flags);
 
+	devdata->mcu_ts_us[SYNC_HERE(devdata)] = (int64_t)dfevent->timestamp;
+	ap_ts_here_us = devdata->ap_ts_us[SYNC_HERE(devdata)];
+	ap_ts_prev_us = devdata->ap_ts_us[SYNC_PREV(devdata)];
+	ap_ts_pprev_us = devdata->ap_ts_us[SYNC_PPREV(devdata)];
+	mcu_ts_here_us = devdata->mcu_ts_us[SYNC_HERE(devdata)];
+	mcu_ts_prev_us = devdata->mcu_ts_us[SYNC_PREV(devdata)];
+	mcu_ts_pprev_us = devdata->mcu_ts_us[SYNC_PPREV(devdata)];
+
 	/*
+	 * Design doc:
+	 * https://docs.google.com/document/d/12BCdlFGYYQloGECs1m_eNypQR57rZ-FeSZgKOUhYaRk
+	 *
 	 * MCU is the timing source of truth, since its toggles/measurements are
 	 * hardware-backed. AP measurements are subject to jitter because they're
 	 * executed in software.
 	 */
-	if (devdata->ap_ts_prev_us != 0 && devdata->ap_ts_now_us != 0 && devdata->mcu_ts_prev_us != 0 && mcu_ts_now_us != 0) {
-		int64_t ap_delta_us = devdata->ap_ts_now_us - devdata->ap_ts_prev_us;
-		int64_t mcu_delta_us = mcu_ts_now_us - devdata->mcu_ts_prev_us;
+	if (ap_ts_prev_us != 0 && ap_ts_here_us != 0 && mcu_ts_prev_us != 0 && mcu_ts_here_us != 0) {
+		const int64_t ap_delta_us = ap_ts_here_us - ap_ts_prev_us;
+		const int64_t mcu_delta_us = mcu_ts_here_us - mcu_ts_prev_us;
+		const int64_t error_us = ap_delta_us - mcu_delta_us;
 		int64_t histogram_index = ap_delta_us - mcu_delta_us;
 
 		/* Stats for characterization/debugging. We don't *need* these, but they're nice to have. */
@@ -114,22 +174,78 @@ static int handle_display_event(struct nsync_dev_data *devdata, const struct syn
 		histogram_index += NSYNC_HISTOGRAM_OFFSET;
 		++devdata->debug.histogram[histogram_index];
 
-		if (abs(ap_delta_us - mcu_delta_us) <= devdata->max_delta_error_us) {
+		if (abs(error_us) <= devdata->max_delta_error_us) {
 			if (devdata->nsync_offset_status != SYNCBOSS_TIME_OFFSET_VALID)
 				if (devdata->errors > devdata->debug.sync_max)
 					devdata->debug.sync_max = devdata->errors;
 
-			devdata->nsync_offset_us = devdata->ap_ts_now_us - mcu_ts_now_us;
+			devdata->nsync_offset_us = ap_ts_here_us - mcu_ts_here_us;
 			devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_VALID;
 			devdata->errors = 0;
+		} else if (ap_ts_pprev_us != 0 && mcu_ts_pprev_us != 0) {
+			/*
+			 * mcu(A)         mcu(B)       mcu(C)       mcu(D)
+			 * |              |            |            |
+			 * |ap(A)         |     ap(B)  |ap(C)       |     ap(D)
+			 * ||             |  e  |      ||           |  e  |
+			 *
+			 * delta N-1
+			 * * ap(B) reading was delayed due to AP-side processing latency
+			 * ---------
+			 * mcu(B) - mcu(A) = X
+			 * ap(B)  - ap(A)  = X+e
+			 * * X != (X+e), cannot update sync at timestamp B
+			 *
+			 * delta N
+			 * * ap(C) was on time
+			 * -------
+			 * mcu(C) - mcu(B) = X
+			 * ap(C)  - ap(B)  = X-e
+			 * * X != (X-e), cannot update sync
+			 *   ... however, (X+e) + (X-e) == (X+X), can update sync at timestamp C
+			 *
+			 * delta N+1
+			 * * ap(D) was once again late
+			 * ---------
+			 * mcu(D) - mcu(C) = X
+			 * ap(D)  - ap(D)  = X+e
+			 * * X != (X-e), cannot update sync
+			 *   ... also, even though (X-e) + (X+e) == (X+X), cannot update sync at
+			 *       timestamp D, since mcu(D) and ap(D) are not aligned in time
+			 *
+			 * If delta N-1 had a very long processing latency, delta N is likely
+			 * to appear to have a very short one. This is a false error. If each
+			 * delta has a period of X, a delta with high latency would have an
+			 * apparent period of X+e, and if the next delta occurs without any
+			 * latency, it will have an apparent period of X-e. We can detect this
+			 * case and allow sync on delta N if the apparent period over 2 samples
+			 * is 2*X, which will be the case when (X+e) + (X-e) = (X+X).
+			 *
+			 * We don't want to allow sync on all instances where two periods sum
+			 * to 2*X. Note how at timestamp C above, the mcu+ap timestamp pair
+			 * is time-correlated. If the order is reversed and the second period
+			 * is the short one - as it is at timestamp D - we'd be updating sync
+			 * to an incorrect value.
+			 */
+			if (error_us > 0) {
+				++devdata->errors;
+			} else {
+				const int64_t prev_ap_delta_us = ap_ts_prev_us - ap_ts_pprev_us;
+				const int64_t prev_mcu_delta_us = mcu_ts_prev_us - mcu_ts_pprev_us;
+				const int64_t prev_error_us = prev_ap_delta_us - prev_mcu_delta_us;
+
+				if (prev_error_us > 0 &&
+				    abs(prev_error_us + error_us) <= (devdata->max_delta_error_us * 2)) {
+					devdata->nsync_offset_us = ap_ts_here_us - mcu_ts_here_us;
+					devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_VALID;
+					++devdata->debug.long_syncs;
+					devdata->errors = 0;
+				} else {
+					++devdata->errors;
+				}
+			}
 		} else {
 			++devdata->errors;
-
-			if (devdata->errors > devdata->debug.errors_max)
-				devdata->debug.errors_max = devdata->errors;
-
-			if (devdata->errors >= devdata->max_consecutive_errors)
-				ret = -EINVAL;
 		}
 	} else {
 		/*
@@ -139,11 +255,33 @@ static int handle_display_event(struct nsync_dev_data *devdata, const struct syn
 		 */
 		++devdata->errors;
 	}
+	if (devdata->errors != 0) {
+		if (devdata->errors > devdata->debug.errors_max)
+			devdata->debug.errors_max = devdata->errors;
 
-	devdata->ap_ts_prev_us = devdata->ap_ts_now_us;
-	devdata->mcu_ts_prev_us = mcu_ts_now_us;
+		if (devdata->errors >= devdata->max_consecutive_errors) {
+			/*
+			 * EINVAL return propagates to dependent local functions. It does not
+			 * propagate to userspace. To do that, we need to clear the offset
+			 * status.
+			 */
+			if (devdata->errors == devdata->max_consecutive_errors) {
+				dev_err(devdata->dev, "nsync did not sync in time or lost sync");
+				do_debug_dump = true;
+			}
+			devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_ERROR;
+			ret = -EINVAL;
+		}
+	}
+	update_debug_state_locked(devdata);
+
+	++devdata->index;
+	devdata->index %= SYNC_HIST_LEN;
 
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
+
+	if (do_debug_dump)
+		dump_debug_state(devdata);
 
 	return ret;
 }
@@ -198,14 +336,17 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 		ret = NOTIFY_OK;
 		break;
 	default:
+		ret = NOTIFY_OK;
+		break;
+	}
+
+	if (ret == NOTIFY_OK) {
 		header->nsync_offset_us = devdata->nsync_offset_us;
 		header->nsync_offset_status = devdata->nsync_offset_status;
 #ifdef CONFIG_SYNCBOSS_PERIPHERAL
 		header->remote_offset_us = devdata->remote_offset_us;
 		header->remote_offset_status = devdata->remote_offset_status;
 #endif
-		ret = NOTIFY_OK;
-		break;
 	}
 
 	return ret;
@@ -225,6 +366,7 @@ static ssize_t dump_stats_show(
 	for (i = 1; i < (NSYNC_HISTOGRAM_SIZE - 1); ++i)
 		dev_info(devdata->dev, "histogram[%d us]: %u\n", (i - NSYNC_HISTOGRAM_OFFSET) * 4, devdata->debug.histogram[i]);
 	dev_info(devdata->dev, "histogram[>%d us]: %u\n", NSYNC_HISTOGRAM_OFFSET * 4, devdata->debug.histogram[NSYNC_HISTOGRAM_SIZE - 1]);
+	dump_debug_state(devdata);
 
 	return 0;
 }
@@ -264,6 +406,7 @@ static int syncboss_nsync_probe(struct platform_device *pdev)
 	is_vsync = of_property_read_bool(node, "meta,is-vsync");
 	devdata->max_delta_error_us = is_vsync ? VSYNC_MAX_DELTA_ERROR_US : NSYNC_MAX_DELTA_ERROR_US;
 	devdata->max_consecutive_errors = is_vsync ? VSYNC_MAX_CONSECUTIVE_ERRORS : NSYNC_MAX_CONSECUTIVE_ERRORS;
+	devdata->debug.states_max = is_vsync ? VSYNC_NOMINAL_RATE : NSYNC_NOMINAL_RATE;
 	dev_info(dev, "max-delta-error-us: %lld\n", devdata->max_delta_error_us);
 	dev_info(dev, "max-consecutive-errors: %u\n", devdata->max_consecutive_errors);
 

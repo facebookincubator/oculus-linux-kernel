@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -41,6 +41,8 @@
  * @en_tdls_wideband_support: Get TDLS wideband support
  * @en_tdls_11ax_support: Get TDLS ax support
  * @en_tdls_6g_support: Get TDLS 6g fw capability
+ * @en_tdls_mlo_support: Get TDLS mlo fw support
+ * @en_n_link_mlo_support: Get N-Link mlo fw support
  * @en_roam_offload: enable roam offload
  * @en_11ax: enable 11ax
  * @is_fw_mawc_capable: Motion Aided Wireless Connectivity feature
@@ -56,6 +58,8 @@
  * @en_11be: enable 11be
  * @dynamic_vdev_macaddr_support: Dynamic update of vdev MAC addr is
  *                                supported or not
+ * @is_mlo_per_link_stats_supported: Per link mlo stats is supported or not
+ * @en_mlo_tid_to_link_support: Get tid to link fw support
  */
 struct wma_tgt_services {
 	uint32_t sta_power_save;
@@ -79,6 +83,10 @@ struct wma_tgt_services {
 #ifdef WLAN_FEATURE_11AX
 	bool en_tdls_11ax_support;
 	bool en_tdls_6g_support;
+#endif
+#ifdef WLAN_FEATURE_11BE
+	bool en_tdls_mlo_support;
+	bool en_n_link_mlo_support;
 #endif
 #endif /* FEATURE_WLAN_TDLS */
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
@@ -106,6 +114,12 @@ struct wma_tgt_services {
 #ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
 	bool dynamic_vdev_macaddr_support;
 #endif
+#ifdef WLAN_FEATURE_11BE_MLO
+	bool is_mlo_per_link_stats_supported;
+#endif
+#ifdef WLAN_FEATURE_11BE
+	bool en_mlo_tid_to_link_support;
+#endif
 };
 
 /**
@@ -117,6 +131,7 @@ struct wma_tgt_services {
  * @ht_sgi_20: ht sgi 20
  * @ht_sgi_40: ht sgi 40
  * @num_rf_chains: num of rf chains
+ * @dynamic_smps: Dynamic MIMO powersave
  */
 struct wma_tgt_ht_cap {
 	uint32_t mpdu_density;
@@ -126,6 +141,7 @@ struct wma_tgt_ht_cap {
 	bool ht_sgi_20;
 	bool ht_sgi_40;
 	uint32_t num_rf_chains;
+	bool dynamic_smps;
 };
 
 /**
@@ -160,6 +176,18 @@ struct wma_tgt_vht_cap {
 	uint32_t vht_max_ampdu_len_exp;
 	uint32_t vht_txop_ps;
 	uint32_t vht_mcs_10_11_supp;
+};
+
+/**
+ * struct wma_tgt_aux_dev_caps - aux capability in wma layer
+ * @supported_modes_bitmap: each bit define in WMI_AUX_DEV_CAPS_SUPPORTED_MODE
+ * @listen_pdev_id_map: define which AUX MAC can listen/scan for the HW mode
+ * @emlsr_pdev_id_map: define which AUX MAC can perform eMLSR for the HW mode
+ */
+struct wma_tgt_aux_dev_caps {
+	uint32_t supported_modes_bitmap;
+	uint32_t listen_pdev_id_map;
+	uint32_t emlsr_pdev_id_map;
 };
 
 /**
@@ -209,6 +237,10 @@ struct board_info {
  * @restricted_80p80_bw_supp: Restricted 80+80MHz(165MHz BW) support
  * @twt_bcast_req_support: twt bcast requestor support
  * @twt_bcast_res_support: twt bcast responder support
+ * @twt_nudge_enabled: twt nudge enable
+ * @all_twt_enabled: all twt enabled
+ * @twt_stats_enabled: twt stats enabled
+ *
  */
 struct wma_tgt_cfg {
 	uint32_t target_fw_version;
@@ -264,5 +296,6 @@ struct wma_tgt_cfg {
 	tDot11fIEeht_cap eht_cap_2g;
 	tDot11fIEeht_cap eht_cap_5g;
 #endif
+	struct wma_tgt_aux_dev_caps wma_aux0_dev_caps[WMI_HOST_HW_MODE_MAX];
 };
 #endif /* WMA_TGT_CFG_H */

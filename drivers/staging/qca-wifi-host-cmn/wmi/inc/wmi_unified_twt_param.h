@@ -198,7 +198,7 @@ enum host_twt_session_stats_type {
  * @peer_mac: MAC address of node
  * @event_type: Indicates TWT session type (SETUP/TEARDOWN/UPDATE)
  * @flow_id: TWT flow identifier established with TWT peer
- * @bcast:  If this is a broacast TWT session
+ * @bcast:  If this is a broadcast TWT session
  * @trig: If the TWT session is trigger enabled
  * @announ: If the flow type is announced/unannounced
  * @protection: If the TWT protection field is set
@@ -360,6 +360,8 @@ enum WMI_HOST_GET_STATS_TWT_STATUS {
  * @WMI_HOST_ADD_TWT_STATUS_ROAM_IN_PROGRESS: Roaming in progress
  * @WMI_HOST_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
  * @WMI_HOST_ADD_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
+ * @WMI_HOST_ADD_TWT_STATUS_LINK_SWITCH_IN_PROGRESS: link switch is in progress
+ * @WMI_HOST_ADD_TWT_STATUS_UNSUPPORTED_MODE_MLMR: MLMR mode not supported
  */
 enum WMI_HOST_ADD_TWT_STATUS {
 	WMI_HOST_ADD_TWT_STATUS_OK,
@@ -377,6 +379,8 @@ enum WMI_HOST_ADD_TWT_STATUS {
 	WMI_HOST_ADD_TWT_STATUS_ROAM_IN_PROGRESS,
 	WMI_HOST_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS,
 	WMI_HOST_ADD_TWT_STATUS_SCAN_IN_PROGRESS,
+	WMI_HOST_ADD_TWT_STATUS_LINK_SWITCH_IN_PROGRESS,
+	WMI_HOST_ADD_TWT_STATUS_UNSUPPORTED_MODE_MLMR,
 };
 
 /**

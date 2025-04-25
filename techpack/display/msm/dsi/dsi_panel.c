@@ -804,6 +804,9 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 
 	/* Transform backlight level into illumination period in internal scanlines */
 	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	if (bl_lvl)
+		bl_config->blu_current_duty_cycle = internal_vtotal / bl_lvl;
+
 	blu_scanline_duration = (internal_vtotal * bl_lvl / 1000) * blu_default_duty / 1000;
 
 	/* Don't let the backlight duration be shorter than the guardband at the end of the frame. */
@@ -998,6 +1001,8 @@ static int dsi_panel_stark_olivia_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 
 	/* Transform backlight level into illumination period in scanlines */
 	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	if (bl_lvl)
+		bl_config->blu_current_duty_cycle = vtotal / bl_lvl;
 	bl_lvl = (bl_lvl * vtotal * blu_default_duty) / 1000000;
 
 	/*
@@ -1119,7 +1124,7 @@ static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	struct dsi_mode_info *timing;
 	struct mipi_dsi_device *dsi;
 	struct dsi_backlight_config *bl_config;
-	u32 vtotal, latest_scanline, start_scanline, settling_time_scanlines,
+	u32 vtotal, latest_scanline, start_scanline, settling_time_scanlines, max_stereo_offset_scanlines,
 	panel_1h_ns, guardband_margin_scanlines, settle_time_us, blu_default_duty;
 
 	u8 reg = 0xB9; /* BLU adjust command */
@@ -1149,6 +1154,7 @@ static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	 * scanout to the active scanlines of the panel.
 	 */
 
+	max_stereo_offset_scanlines = bl_config->max_blu_stereo_offset_ns / panel_1h_ns;
 	latest_scanline = vtotal + timing->v_sync_width + timing->v_back_porch + bl_config->blu_max_overlap_ns / panel_1h_ns;
 	if (bl_config->settling_time_target_us < 0xFFFF) {
 		settling_time_scanlines = bl_config->settling_time_target_us * 1000 / panel_1h_ns;
@@ -1163,7 +1169,7 @@ static int dsi_panel_lxs_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	 */
 	start_scanline = timing->v_back_porch + timing->v_sync_width + timing->v_active + settling_time_scanlines;
 
-	// Keep the start scanline out of the guardband region; necessary when MIPI reads are performed
+	// Keep the left scanline out of the guardband region; necessary when MIPI reads are performed
 	if (start_scanline > vtotal - guardband_margin_scanlines && start_scanline <= vtotal)
 		start_scanline = vtotal - guardband_margin_scanlines;
 
@@ -1238,6 +1244,8 @@ int dsi_panel_jdi_nvt_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 
 	/* Transform backlight level into illumination period in scanlines */
 	blu_default_duty = bl_config->blu_default_duty_override > 0 ? bl_config->blu_default_duty_override : bl_config->blu_default_duty;
+	if (bl_lvl)
+		bl_config->blu_current_duty_cycle = vtotal / bl_lvl;
 	bl_lvl = (bl_lvl * vtotal * blu_default_duty) / 1000000;
 
 	/*

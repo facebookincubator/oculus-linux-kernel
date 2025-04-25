@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -21,6 +21,7 @@
 #include <cfg_twt.h>
 #include "wlan_twt_cfg.h"
 #include "twt/core/src/wlan_twt_priv.h"
+#include "wlan_mlme_twt_ucfg_api.h"
 
 QDF_STATUS wlan_twt_cfg_init(struct wlan_objmgr_psoc *psoc)
 {
@@ -125,10 +126,17 @@ QDF_STATUS wlan_twt_cfg_update(struct wlan_objmgr_psoc *psoc)
 				tgt_caps->legacy_bcast_twt_support),
 				(enable_twt &&
 					twt_cfg->bcast_responder_enabled));
-	twt_debug("req: %d resp: %d bcast_req: %d bcast_resp: %d",
+	/*
+	 * flexible twt support is et when  twt enabled and HE cap
+	 * is also having flexible twt support
+	 */
+	twt_cfg->flex_twt_sched = enable_twt &&
+				  ucfg_mlme_is_flexible_twt_enabled(psoc);
+	twt_debug("req: %d resp: %d bcast_req: %d bcast_resp: %d flex_twt %d",
 		  twt_cfg->twt_requestor, twt_cfg->twt_responder,
 		  twt_cfg->bcast_requestor_enabled,
-		  twt_cfg->bcast_responder_enabled);
+		  twt_cfg->bcast_responder_enabled,
+		  twt_cfg->flex_twt_sched);
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -437,4 +445,17 @@ wlan_twt_get_restricted_support(struct wlan_objmgr_psoc *psoc, bool *val)
 		       enable_twt);
 
 	return QDF_STATUS_SUCCESS;
+}
+
+bool
+wlan_twt_get_pmo_allowed(struct wlan_objmgr_psoc *psoc)
+{
+	struct twt_psoc_priv_obj *twt_psoc_obj;
+
+	twt_psoc_obj = wlan_twt_psoc_get_comp_private_obj(psoc);
+
+	if (!twt_psoc_obj || twt_psoc_obj->twt_pmo_disabled)
+		return false;
+
+	return true;
 }

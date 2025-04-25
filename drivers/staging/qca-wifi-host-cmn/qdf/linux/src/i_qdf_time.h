@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -73,8 +73,8 @@ static inline ktime_t __qdf_ns_to_ktime(uint64_t ns)
 /**
  * __qdf_ktime_add() - Adds two ktime objects and returns
  * a ktime object
- * @time1: time as ktime object
- * @time2: time as ktime object
+ * @ktime1: time as ktime object
+ * @ktime2: time as ktime object
  *
  * Return: sum of ktime objects as ktime object
  */
@@ -104,8 +104,45 @@ static inline ktime_t __qdf_ktime_real_get(void)
 }
 
 /**
+ * __qdf_ktime_get_ns() - Gets the current time nano seconds
+ *
+ * Return: ktime in nano sec
+ */
+static inline ktime_t __qdf_ktime_get_ns(void)
+{
+	return ktime_get_ns();
+}
+
+/**
+ * __qdf_ktime_get_real_ns() - Gets the current time in ns using UTC
+ *
+ * Return: ktime in nano sec
+ */
+static inline ktime_t __qdf_ktime_get_real_ns(void)
+{
+	return ktime_get_real_ns();
+}
+
+/**
+ * __qdf_ktime_compare - compare two qdf_ktime_t objects
+ * @ktime1: time as qdf_ktime_t object
+ * @ktime2: time as qdf_ktime_t object
+ *
+ * Return:
+ * * ktime1  < ktime2 - return <0
+ * * ktime1 == ktime2 - return 0
+ * * ktime1  > ktime2 - return >0
+ */
+static inline int __qdf_ktime_compare(ktime_t ktime1, ktime_t ktime2)
+{
+	return ktime_compare(ktime1, ktime2);
+}
+
+/**
  * __qdf_ktime_add_ns() - Adds ktime object and nanoseconds value and
- * returns the ktime object
+ *                        returns the ktime object
+ * @ktime: time as ktime object
+ * @ns: time in nanoseconds
  *
  * Return: ktime object
  */
@@ -117,7 +154,6 @@ static inline ktime_t __qdf_ktime_add_ns(ktime_t ktime, int64_t ns)
 /**
  * __qdf_ktime_to_ns() - convert ktime to nanoseconds
  * @ktime: time as ktime object
- * @ns: time in nanoseconds
  *
  * Return: ktime in nanoseconds
  */
@@ -137,7 +173,6 @@ static inline int64_t __qdf_ktime_to_ms(ktime_t ktime)
 	return ktime_to_ms(ktime);
 }
 
-
 /**
  * __qdf_system_ticks() - get system ticks
  *
@@ -149,7 +184,6 @@ static inline __qdf_time_t __qdf_system_ticks(void)
 }
 
 #define __qdf_system_ticks_per_sec HZ
-
 /**
  * __qdf_system_ticks_to_msecs() - convert system ticks into milli seconds
  * @ticks: System ticks
@@ -159,6 +193,17 @@ static inline __qdf_time_t __qdf_system_ticks(void)
 static inline uint32_t __qdf_system_ticks_to_msecs(unsigned long ticks)
 {
 	return jiffies_to_msecs(ticks);
+}
+
+/**
+ * __qdf_system_ticks_to_nsecs() - convert system ticks into nano seconds
+ * @ticks: System ticks
+ *
+ * Return: system tick converted into nano seconds
+ */
+static inline uint32_t __qdf_system_ticks_to_nsecs(unsigned long ticks)
+{
+	return jiffies_to_nsecs(ticks);
 }
 
 /**
@@ -220,7 +265,7 @@ static inline void __qdf_udelay(uint32_t usecs)
 
 /**
  * __qdf_mdelay() - delay execution for given milliseconds
- * @usecs: Milliseconds to delay
+ * @msecs: Milliseconds to delay
  *
  * Return: none
  */
@@ -235,11 +280,11 @@ static inline void __qdf_mdelay(uint32_t msecs)
  * @b: Time stamp value b
  *
  * Return:
- * true if a < b else false
+ * true if a > b else false
  */
 static inline bool __qdf_system_time_after(__qdf_time_t a, __qdf_time_t b)
 {
-	return (long)(b) - (long)(a) < 0;
+	return (long)((b) - (a)) < 0;
 }
 
 /**
@@ -266,11 +311,11 @@ static inline bool __qdf_system_time_before(__qdf_time_t a, __qdf_time_t b)
  */
 static inline bool __qdf_system_time_after_eq(__qdf_time_t a, __qdf_time_t b)
 {
-	return (long)(a) - (long)(b) >= 0;
+	return (long)((a) - (b)) >= 0;
 }
 
 /**
- * qdf_sched_clock() - use light weight timer to get timestamp
+ * __qdf_sched_clock() - use light weight timer to get timestamp
  *
  * Return: timestamp in ns
  */
@@ -292,7 +337,6 @@ static inline uint64_t __qdf_get_monotonic_boottime(void)
 }
 
 #if defined (MSM_PLATFORM)
-
 /**
  * __qdf_get_log_timestamp() - get msm timer ticks
  *
@@ -409,8 +453,8 @@ static inline unsigned long long __qdf_time_sched_clock(void)
 /**
  * __qdf_time_ktime_sub() - Subtract two ktime objects and returns
  * a ktime object
- * @time1: time as ktime object
- * @time2: time as ktime object
+ * @ktime1: time as ktime object
+ * @ktime2: time as ktime object
  *
  * Return: subtraction of ktime objects as ktime object
  */
@@ -462,4 +506,8 @@ static inline void __qdf_time_ktime_get_real_time(__qdf_timespec_t *ts)
 }
 #endif
 
+static inline void __qdf_usleep_range(unsigned long min, unsigned long max)
+{
+	usleep_range(min, max);
+}
 #endif

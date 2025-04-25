@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -85,6 +86,7 @@ struct wbuff_module {
 /**
  * struct wbuff_holder - allocation holder for wbuff
  * @initialized: to identified whether module is initialized
+ * @mod: list of modules
  * @pf_cache: Reference to page frag cache, used for nbuf allocations
  * @wbuff_debugfs_dir: wbuff debugfs root directory
  * @wbuff_stats_dentry: wbuff debugfs stats file

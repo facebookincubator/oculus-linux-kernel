@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -71,7 +72,8 @@
 struct osif_request;
 
 /**
- * typedef osif_request_dealloc - Private data deallocation function
+ * typedef osif_request_dealloc() - Private data deallocation function
+ * @priv: pointer to request private date
  */
 typedef void (*osif_request_dealloc)(void *priv);
 

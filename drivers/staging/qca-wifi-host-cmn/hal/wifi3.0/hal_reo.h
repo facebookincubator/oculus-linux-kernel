@@ -150,6 +150,9 @@ enum reo_thres_index_reg {
  *	was blocked
  * @HAL_REO_CMD_FAILED: Command has encountered problems when executing, like
  *	the queue descriptor not being valid
+ * @HAL_REO_CMD_RESOURCE_BLOCKED: Command could not be executed as a resource
+ *	was blocked
+ * @HAL_REO_CMD_DRAIN: Command was drained before it could be executed
  */
 enum reo_cmd_exec_status {
 	HAL_REO_CMD_SUCCESS = 0,
@@ -160,7 +163,7 @@ enum reo_cmd_exec_status {
 };
 
 /**
- * struct hal_reo_cmd_params_std: Standard REO command parameters
+ * struct hal_reo_cmd_params_std - Standard REO command parameters
  * @need_status: Status required for the command
  * @addr_lo: Lower 32 bits of REO queue descriptor address
  * @addr_hi: Upper 8 bits of REO queue descriptor address
@@ -172,8 +175,8 @@ struct hal_reo_cmd_params_std {
 };
 
 /**
- * struct hal_reo_cmd_get_queue_stats_params: Parameters to
- *	CMD_GET_QUEUE_STATScommand
+ * struct hal_reo_cmd_get_queue_stats_params - Parameters to
+ *                                             CMD_GET_QUEUE_STATScommand
  * @clear: Clear stats after retrieving
  */
 struct hal_reo_cmd_get_queue_stats_params {
@@ -181,8 +184,8 @@ struct hal_reo_cmd_get_queue_stats_params {
 };
 
 /**
- * struct hal_reo_cmd_flush_queue_params: Parameters to CMD_FLUSH_QUEUE
- * @use_after_flush: Block usage after flush till unblock command
+ * struct hal_reo_cmd_flush_queue_params - Parameters to CMD_FLUSH_QUEUE
+ * @block_use_after_flush: Block usage after flush till unblock command
  * @index: Blocking resource to be used
  */
 struct hal_reo_cmd_flush_queue_params {
@@ -191,13 +194,14 @@ struct hal_reo_cmd_flush_queue_params {
 };
 
 /**
- * struct hal_reo_cmd_flush_cache_params: Parameters to CMD_FLUSH_CACHE
+ * struct hal_reo_cmd_flush_cache_params - Parameters to CMD_FLUSH_CACHE
  * @fwd_mpdus_in_queue: Forward MPDUs before flushing descriptor
  * @rel_block_index: Release blocking resource used earlier
  * @cache_block_res_index: Blocking resource to be used
  * @flush_no_inval: Flush without invalidatig descriptor
- * @use_after_flush: Block usage after flush till unblock command
+ * @block_use_after_flush: Block usage after flush till unblock command
  * @flush_entire_cache: Flush entire REO cache
+ * @flush_q_1k_desc:
  */
 struct hal_reo_cmd_flush_cache_params {
 	bool fwd_mpdus_in_queue;
@@ -206,10 +210,11 @@ struct hal_reo_cmd_flush_cache_params {
 	bool flush_no_inval;
 	bool block_use_after_flush;
 	bool flush_entire_cache;
+	bool flush_q_1k_desc;
 };
 
 /**
- * struct hal_reo_cmd_unblock_cache_params: Parameters to CMD_UNBLOCK_CACHE
+ * struct hal_reo_cmd_unblock_cache_params - Parameters to CMD_UNBLOCK_CACHE
  * @type: Unblock type (enum reo_unblock_cache_type)
  * @index: Blocking index to be released
  */
@@ -219,8 +224,8 @@ struct hal_reo_cmd_unblock_cache_params {
 };
 
 /**
- * struct hal_reo_cmd_flush_timeout_list_params: Parameters to
- *		CMD_FLUSH_TIMEOUT_LIST
+ * struct hal_reo_cmd_flush_timeout_list_params - Parameters to
+ *                                                CMD_FLUSH_TIMEOUT_LIST
  * @ac_list: AC timeout list to be flushed
  * @min_rel_desc: Min. number of link descriptors to be release
  * @min_fwd_buf: Min. number of buffers to be forwarded
@@ -232,7 +237,8 @@ struct hal_reo_cmd_flush_timeout_list_params {
 };
 
 /**
- * struct hal_reo_cmd_update_queue_params: Parameters to CMD_UPDATE_RX_REO_QUEUE
+ * struct hal_reo_cmd_update_queue_params - Parameters to
+ *                                          CMD_UPDATE_RX_REO_QUEUE
  * @update_rx_queue_num: Update receive queue number
  * @update_vld: Update valid bit
  * @update_assoc_link_desc: Update associated link descriptor
@@ -334,8 +340,8 @@ struct hal_reo_cmd_update_queue_params {
 };
 
 /**
- * struct hal_reo_cmd_params: Common structure to pass REO command parameters
- * @hal_reo_cmd_params_std: Standard parameters
+ * struct hal_reo_cmd_params - Common structure to pass REO command parameters
+ * @std: Standard parameters
  * @u: Union of various REO command parameters
  */
 struct hal_reo_cmd_params {
@@ -351,7 +357,7 @@ struct hal_reo_cmd_params {
 };
 
 /**
- * struct hal_reo_status_header: Common REO status header
+ * struct hal_reo_status_header - Common REO status header
  * @cmd_num: Command number
  * @exec_time: execution time
  * @status: command execution status
@@ -365,27 +371,36 @@ struct hal_reo_status_header {
 };
 
 /**
- * struct hal_reo_queue_status: REO queue status structure
+ * struct hal_reo_queue_status - REO queue status structure
  * @header: Common REO status header
  * @ssn: SSN of current BA window
  * @curr_idx: last forwarded pkt
- * @pn_31_0, pn_63_32, pn_95_64, pn_127_96:
- *	PN number bits extracted from IV field
+ * @pn_31_0:
+ * @pn_63_32:
+ * @pn_95_64:
+ * @pn_127_96: PN number bits extracted from IV field
  * @last_rx_enq_tstamp: Last enqueue timestamp
  * @last_rx_deq_tstamp: Last dequeue timestamp
- * @rx_bitmap_31_0, rx_bitmap_63_32, rx_bitmap_95_64
- * @rx_bitmap_127_96, rx_bitmap_159_128, rx_bitmap_191_160
- * @rx_bitmap_223_192, rx_bitmap_255_224: Each bit corresponds to a frame
- *	held in re-order queue
- * @curr_mpdu_cnt, curr_msdu_cnt: Number of MPDUs and MSDUs in the queue
+ * @rx_bitmap_31_0:
+ * @rx_bitmap_63_32:
+ * @rx_bitmap_95_64:
+ * @rx_bitmap_127_96:
+ * @rx_bitmap_159_128:
+ * @rx_bitmap_191_160:
+ * @rx_bitmap_223_192:
+ * @rx_bitmap_255_224: bits of rx bitmap where each bit corresponds to a frame
+ *	               held in re-order queue
+ * @curr_mpdu_cnt: Number of MPDUs in the queue
+ * @curr_msdu_cnt: Number of MSDUs in the queue
  * @fwd_timeout_cnt: Frames forwarded due to timeout
  * @fwd_bar_cnt: Frames forwarded BAR frame
  * @dup_cnt: duplicate frames detected
  * @frms_in_order_cnt: Frames received in order
  * @bar_rcvd_cnt: BAR frame count
- * @mpdu_frms_cnt, msdu_frms_cnt, total_cnt: MPDU, MSDU, total frames
-	processed by REO
- * @late_recv_mpdu_cnt; received after window had moved on
+ * @mpdu_frms_cnt: MPDUs processed by REO
+ * @msdu_frms_cnt: MSDUs processed by REO
+ * @total_cnt: frames processed by REO
+ * @late_recv_mpdu_cnt: received after window had moved on
  * @win_jump_2k: 2K jump count
  * @hole_cnt: sequence hole count
  */
@@ -410,7 +425,7 @@ struct hal_reo_queue_status {
 };
 
 /**
- * struct hal_reo_flush_queue_status: FLUSH_QUEUE status structure
+ * struct hal_reo_flush_queue_status - FLUSH_QUEUE status structure
  * @header: Common REO status header
  * @error: Error detected
  */
@@ -420,7 +435,7 @@ struct hal_reo_flush_queue_status {
 };
 
 /**
- * struct hal_reo_flush_cache_status: FLUSH_CACHE status structure
+ * struct hal_reo_flush_cache_status - FLUSH_CACHE status structure
  * @header: Common REO status header
  * @error: Error detected
  * @block_error: Blocking related error
@@ -438,10 +453,10 @@ struct hal_reo_flush_cache_status {
 };
 
 /**
- * struct hal_reo_unblk_cache_status: UNBLOCK_CACHE status structure
+ * struct hal_reo_unblk_cache_status - UNBLOCK_CACHE status structure
  * @header: Common REO status header
  * @error: error detected
- * unblock_type: resource or cache
+ * @unblock_type: resource or cache
  */
 struct hal_reo_unblk_cache_status {
 	struct hal_reo_status_header header;
@@ -450,7 +465,8 @@ struct hal_reo_unblk_cache_status {
 };
 
 /**
- * struct hal_reo_flush_timeout_list_status: FLUSH_TIMEOUT_LIST status structure
+ * struct hal_reo_flush_timeout_list_status - FLUSH_TIMEOUT_LIST status
+ *                                            structure
  * @header: Common REO status header
  * @error: error detected
  * @list_empty: timeout list empty
@@ -466,11 +482,13 @@ struct hal_reo_flush_timeout_list_status {
 };
 
 /**
- * struct hal_reo_desc_thres_reached_status: desc_thres_reached status structure
+ * struct hal_reo_desc_thres_reached_status - desc_thres_reached status
+ *                                            structure
  * @header: Common REO status header
  * @thres_index: Index of descriptor threshold counter
- * @link_desc_counter0, link_desc_counter1, link_desc_counter2: descriptor
- *	counter values
+ * @link_desc_counter0: descriptor counter value
+ * @link_desc_counter1: descriptor counter value
+ * @link_desc_counter2: descriptor counter value
  * @link_desc_counter_sum: overall descriptor count
  */
 struct hal_reo_desc_thres_reached_status {
@@ -481,7 +499,7 @@ struct hal_reo_desc_thres_reached_status {
 };
 
 /**
- * struct hal_reo_update_rx_queue_status: UPDATE_RX_QUEUE status structure
+ * struct hal_reo_update_rx_queue_status - UPDATE_RX_QUEUE status structure
  * @header: Common REO status header
  */
 struct hal_reo_update_rx_queue_status {
@@ -489,7 +507,7 @@ struct hal_reo_update_rx_queue_status {
 };
 
 /**
- * union hal_reo_status: Union to pass REO status to callbacks
+ * union hal_reo_status - Union to pass REO status to callbacks
  * @queue_status: Refer to struct hal_reo_queue_status
  * @fl_cache_status: Refer to struct hal_reo_flush_cache_status
  * @fl_queue_status: Refer to struct hal_reo_flush_queue_status
@@ -551,9 +569,10 @@ static inline uint8_t hal_find_zero_bit(uint8_t x)
 /* REO command ring routines */
 
 /**
- * hal_uniform_desc_hdr_setup - setup reo_queue_ext descriptor
- * @owner - owner info
- * @buffer_type - buffer type
+ * hal_uniform_desc_hdr_setup() - setup reo_queue_ext descriptor
+ * @desc: descriptor to setup
+ * @owner: owner info
+ * @buffer_type: buffer type
  */
 static inline void
 hal_uniform_desc_hdr_setup(uint32_t *desc, uint32_t owner, uint32_t buffer_type)
@@ -689,8 +708,7 @@ static inline void hal_reo_qdesc_setup(hal_soc_handle_t hal_soc_hdl, int tid,
 
 /**
  * hal_get_ba_aging_timeout - Retrieve BA aging timeout
- *
- * @hal_soc: Opaque HAL SOC handle
+ * @hal_soc_hdl: Opaque HAL SOC handle
  * @ac: Access category
  * @value: timeout duration in millisec
  */
@@ -704,11 +722,10 @@ static inline void hal_get_ba_aging_timeout(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_set_aging_timeout - Set BA aging timeout
- *
- * @hal_soc: Opaque HAL SOC handle
- * @ac: Access category in millisec
- * @value: timeout duration value
+ * hal_set_ba_aging_timeout() - Set BA aging timeout
+ * @hal_soc_hdl: Opaque HAL SOC handle
+ * @ac: Access category
+ * @value: timeout duration value in millisec
  */
 static inline void hal_set_ba_aging_timeout(hal_soc_handle_t hal_soc_hdl,
 					    uint8_t ac,
@@ -765,9 +782,10 @@ hal_get_tlv_hdr_size(hal_soc_handle_t hal_soc_hdl)
 
 /**
  * hal_reo_init_cmd_ring() - Initialize descriptors of REO command SRNG
- * with command number
- * @hal_soc: Handle to HAL SoC structure
- * @hal_ring: Handle to HAL SRNG structure
+ *                           with command number
+ * @hal_soc_hdl: Handle to HAL SoC structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
+ *
  * Return: none
  */
 void hal_reo_init_cmd_ring(hal_soc_handle_t hal_soc_hdl,
@@ -776,7 +794,8 @@ void hal_reo_init_cmd_ring(hal_soc_handle_t hal_soc_hdl,
 #ifdef REO_SHARED_QREF_TABLE_EN
 /**
  * hal_reo_shared_qaddr_setup(): Setup reo qref LUT
- * @hal_soc: Hal soc pointer
+ * @hal_soc_hdl: Hal soc pointer
+ * @reo_qref: REO QREF table to populate
  *
  * Allocate MLO and Non MLO table for storing REO queue
  * reference pointers
@@ -798,7 +817,7 @@ hal_reo_shared_qaddr_setup(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_reo_shared_qaddr_detach(): Detach reo qref LUT
- * @hal_soc: Hal soc pointer
+ * @hal_soc_hdl: Hal soc pointer
  *
  * Detach MLO and Non MLO table start addr to HW reg
  *

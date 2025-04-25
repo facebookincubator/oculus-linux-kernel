@@ -291,7 +291,7 @@ target_if_dp_lro_config_cmd(struct wlan_objmgr_psoc *psoc,
 
 	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
 	if (!dp_lro_cmd || !wmi_handle) {
-		dp_err("Invalid input!");
+		dp_err("wmi_handle or dp_lro_cmd is null");
 		return QDF_STATUS_E_FAILURE;
 	}
 

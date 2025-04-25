@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013, 2016-2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2005-2006 Atheros Communications, Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -53,21 +53,20 @@
 #define DC(x)  ((struct wlan_dfs *)(x))
 
 /**
- * dfs_log: dfs logging using submodule MASKs and
- * QDF trace level.
+ * dfs_log() - dfs logging using submodule MASKs and QDF trace level.
+ * @dfs: The dfs object pointer or NULL if dfs is not defined.
+ * @sm: Submodule BITMASK.
+ * @level: QDF trace level.
+ * @args: Variable argument list.
+ *
  * The logging is controlled by two bitmasks:
  * 1) submodule bitmask: sm
  * 2) trace level masks: level
  *
- * @dfs: The dfs object pointer or NULL if dfs is not defined.
- * @sm: Submodule BITMASK.
- * @level: QDF trace level.
- * @args...: Variable argument list.
- *
  * The submodule(sm) cannot be empty even if argument dfs is NULL.
  * Else the macro will create a  compilation  error.
- * One may provide WLAN_DEBUG_DFS_ALWAYS when  the argument dfs is NULL.
- * Example:-
+ * One may provide WLAN_DEBUG_DFS_ALWAYS when the argument @dfs is NULL.
+ *
  * dfs_log(NULL, WLAN_DEBUG_DFS_ALWAYS, QDF_TRACE_LEVEL_INFO,"Error pulse");
  *
  * Why DC(x) is required?
@@ -76,7 +75,7 @@
  * then during compilation (NULL)->dfs_debug_mask will dereference
  * a (void *) type, which is illegal. Therefore, we need
  * the cast: (DC(dfs))->dfs_debug_mask.
- * Example:-
+ *
  * dfs_log(NULL, WLAN_DEBUG_DFS, QDF_TRACE_LEVEL_INFO,"dfs is NULL");
  */
 #define dfs_log(dfs, sm, level, args...)  do {        \
@@ -109,13 +108,13 @@
 #define DFS_MAX(a, b) ((a) > (b)?(a) : (b))
 #define DFS_DIFF(a, b)(DFS_MAX(a, b) - DFS_MIN(a, b))
 
-/**
+/*
  * Maximum number of radar events to be processed in a single iteration.
  * Allows soft watchdog to run.
  */
 #define MAX_EVENTS 100
 
-/**
+/*
  * Constants to use for chirping detection.
  *
  * All are unconverted as HW reports them.
@@ -126,7 +125,7 @@
 
 #define MAX_DUR_FOR_LOW_RSSI 4
 
-/**
+/*
  * Cascade has issue with reported duration especially when there is a
  * crossover of chirp from one segment to another. It may report a value
  * of duration that is well below 50us for a valid FCC type 5 chirping
@@ -148,7 +147,7 @@
 #define DFS_MARGIN_EQUAL(a, b, margin)	((DFS_DIFF(a, b)) <= margin)
 #define DFS_MAX_STAGGERED_BURSTS    3
 
-/**
+/*
  * All filter thresholds in the radar filter tables are effective at a 50%
  * channel loading.
  */
@@ -255,12 +254,12 @@
 #define DFS_BIN_MAX_PULSES 60 /* max num of pulses in a burst */
 #define DFS_BIN5_PRI_LOWER_LIMIT 990 /* us */
 
-/**
+/*
  * To cover the single pusle burst case, change from 2010 us to
  * 2010000 us.
  */
 
-/**
+/*
  * This is reverted back to 2010 as larger value causes false
  * bin5 detect (EV76432, EV76320)
  */
@@ -269,7 +268,7 @@
 #define DFS_BIN5_WIDTH_MARGIN 4 /* us */
 #define DFS_BIN5_RSSI_MARGIN  5 /* dBm */
 
-/**
+/*
  * Following threshold is not specified but should be
  * okay statistically.
  */
@@ -289,7 +288,7 @@
 /* Max value of valid psidx diff */
 #define DFS_MAX_PSIDX_DIFF 16
 
-/**
+/*
  * Software use: channel interference used for as AR as well as RADAR
  * interference detection.
  */
@@ -411,7 +410,7 @@
  * @DETECTOR_ID_2: Detector ID 2 (Agile detector in 80p80MHZ supported devices).
  * @AGILE_DETECTOR_ID_TRUE_160MHZ:  Agile detector ID in true 160MHz devices.
  * @AGILE_DETECTOR_11BE:  Agile detector ID in true 320 MHz devices.
- * @AGILE_DETECTOR_ID_80p80: Agile detector ID in 80p80MHz supported devices.
+ * @AGILE_DETECTOR_ID_80P80: Agile detector ID in 80p80MHz supported devices.
  * @INVALID_DETECTOR_ID: Invalid detector id.
  */
 enum detector_id {
@@ -449,7 +448,7 @@ struct dfs_pulseparams {
 
 /**
  * struct dfs_pulseline - Pulseline structure.
- * @pl_elems[]:     array of pulses in delay line.
+ * @pl_elems:       array of pulses in delay line.
  * @pl_firstelem:   Index of the first element.
  * @pl_lastelem:    Index of the last element.
  * @pl_numelems:    Number of elements in the delay line.
@@ -472,6 +471,9 @@ struct dfs_pulseline {
 	((e)->re_flags & (DFS_EVENT_HW_CHIRP | DFS_EVENT_SW_CHIRP))
 
 /**
+ * DFS_EVENT_NOTCHIRP() - Check if event can be a chirp
+ * @e: event
+ *
  * Check if the given event is to be rejected as not possibly
  * a chirp.  This means:
  *   (a) it's a hardware or software checked chirp, and
@@ -549,13 +551,13 @@ struct dfs_event {
 /**
  * struct dfs_ar_state - DFS AR state structure.
  * @ar_prevwidth:         Previous width.
- * @ar_phyerrcount[]:     Phy error count.
+ * @ar_phyerrcount:       Phy error count.
  * @ar_acksum:            Acksum.
  * @ar_packetthreshold:   Thresh to determine traffic load.
  * @ar_parthreshold:      Thresh to determine peak.
  * @ar_radarrssi:         Rssi threshold for AR event.
  * @ar_prevtimestamp:     Prev time stamp.
- * @ar_peaklist[]:        Peak list.
+ * @ar_peaklist:          Peak list.
  */
 struct dfs_ar_state {
 	uint32_t ar_prevwidth;
@@ -594,7 +596,7 @@ struct dfs_delayelem {
 
 /**
  * struct dfs_delayline - DFS Delay Line.
- * @dl_elems[]:    Array of pulses in delay line.
+ * @dl_elems:      Array of pulses in delay line.
  * @dl_last_ts:    Last timestamp the delay line was used (in usecs).
  * @dl_firstelem:  Index of the first element.
  * @dl_lastelem:   Index of the last element.
@@ -677,7 +679,7 @@ struct dfs_filter {
 
 /**
  * struct dfs_filtertype - Structure of DFS Filter type.
- * @ft_filters[]:      Array of ptrs storing addresses for struct of dfs_filter.
+ * @ft_filters:        Array of ptrs storing addresses for struct of dfs_filter.
  * @ft_filterdur:      Duration of pulse which specifies filter type.
  * @ft_numfilters:     Num filters of this type.
  * @ft_last_ts:        Last timestamp this filtertype was used (in usecs).
@@ -719,6 +721,8 @@ struct dfs_filtertype {
  *                              in MHZ applicable only for 80+80MHZ mode of
  *                              operation.
  * @dfs_ch_punc_pattern:        Bitmap representing puncturing patterns.
+ * @dfs_internal_radar_pattern: Bitmap representing puncturing patterns caused
+ *                              by radar.
  */
 struct dfs_channel {
 	uint16_t       dfs_ch_freq;
@@ -761,7 +765,8 @@ struct dfs_state {
 
 /**
  * struct dfs_nolelem - DFS NOL element.
- * @nol_dfs           Back pointer to dfs object.
+ * @nolelem_list:     NOL element list node
+ * @nol_dfs:          Back pointer to dfs object.
  * @nol_freq:         Centre frequency.
  * @nol_chwidth:      Event width (MHz).
  * @nol_start_us:     NOL start time in us.
@@ -827,7 +832,7 @@ struct dfs_bin5elem {
 
 /**
  * struct dfs_bin5radars - BIN5 radars.
- * @br_elems[]:    List of bin5 elems that fall within the time window.
+ * @br_elems:      List of bin5 elems that fall within the time window.
  * @br_firstelem:  Index of the first element.
  * @br_lastelem:   Index of the last element.
  * @br_numelems:   Number of elements in the delay line.
@@ -952,9 +957,9 @@ struct dfs_mode_switch_defer_params {
  * @DFS_AGILE_S_INIT:     Default state or the start state of the Agile SM.
  * @DFS_AGILE_S_RUNNING:  Agile Engine is being run.
  * @DFS_AGILE_S_COMPLETE: The Agile Engine's minimum run is complete.
-			  However, it is still running. Used only for RCAC
-			  as RCAC needs to run continuously (uninterrupted)
-			  until the channel change.
+ *                        However, it is still running. Used only for RCAC
+ *                        as RCAC needs to run continuously (uninterrupted)
+ *                        until the channel change.
  * @DFS_AGILE_S_MAX:      Max (invalid) state.
  */
 enum dfs_agile_sm_state {
@@ -973,109 +978,139 @@ struct dfs_rcac_params {
 	qdf_freq_t rcac_pri_freq;
 	struct ch_params rcac_ch_params;
 };
-#endif
 
 /**
+ * struct adfs_completion_params - Agile DFS completion parameters
+ * @ocac_status:   Off channel CAC completion status
+ * @center_freq1:  For 20/40/80/160Mhz, it is the center of the corresponding
+ *                 segment. For 80P80/165MHz, it is the center of the left
+ *                 80MHz.
+ * @center_freq2:  It is valid and non-zero only for 80P80/165MHz. It indicates
+ *                 the Center Frequency of the right 80MHz segment.
+ * @chan_width:    Channel Width
+ */
+struct adfs_completion_params {
+	enum ocac_status_type ocac_status;
+	uint32_t center_freq1;
+	uint32_t center_freq2;
+	uint32_t chan_width;
+};
+#endif
+
+#ifdef WLAN_DISP_CHAN_INFO
+/**
+ * struct dfs_cacelem - CAC parameters of a DFS channel (20 MHz channel).
+ * @cac_start_us: Time in microseconds when cac started (monotonic boot time).
+ * @cac_completed_time: CAC completed time in ms (monotonic boot time).
+ */
+struct dfs_cacelem {
+	uint64_t cac_start_us;
+	uint64_t cac_completed_time;
+};
+#endif
+
+#define DFS_PUNC_SM_SPIN_LOCK(_dfs_obj) \
+	qdf_spin_lock_bh(&((_dfs_obj)->dfs_punc_sm_lock))
+#define DFS_PUNC_SM_SPIN_UNLOCK(_dfs_obj) \
+	qdf_spin_unlock_bh(&((_dfs_obj)->dfs_punc_sm_lock))
+
+#define N_MAX_PUNC_SM 2
+
+/**
+ * enum dfs_punc_sm_evt - DFS Puncturing SM events.
+ * @DFS_PUNC_SM_EV_RADAR: Radar event on DFS puncturing SM.
+ * @DFS_PUNC_SM_EV_NOL_EXPIRY: NOL expiry event on DFS puncturing SM.
+ * @DFS_PUNC_SM_EV_CAC_EXPIRY: CAC expiry event on DFS puncturing SM.
+ * @DFS_PUNC_SM_EV_STOP: STOP event on DFS puncturing SM.
+ */
+enum dfs_punc_sm_evt {
+	DFS_PUNC_SM_EV_RADAR      = 0,
+	DFS_PUNC_SM_EV_NOL_EXPIRY = 1,
+	DFS_PUNC_SM_EV_CAC_EXPIRY = 2,
+	DFS_PUNC_SM_EV_STOP       = 3,
+};
+
+/**
+ * enum dfs_punc_sm_state - DFS Puncturing SM states.
+ * @DFS_S_UNPUNCTURED:    Default state or the start state of the puncturing SM.
+ * @DFS_S_PUNCTURED:      DFS channel is punctured.
+ * @DFS_S_CAC_WAIT:       The channel completed the NOL time and is waiting for
+ *                        CAC completion.
+ * @DFS_PUNCTURING_S_MAX: Max (invalid) state.
+ */
+enum dfs_punc_sm_state {
+	DFS_S_UNPUNCTURED    = 0,
+	DFS_S_PUNCTURED      = 1,
+	DFS_S_CAC_WAIT       = 2,
+	DFS_PUNCTURING_S_MAX = 3,
+};
+
+/**
+ * struct dfs_punc_obj -   DFS puncture object type. Each object represents one
+ *                         set of continuous punctured-channels. These channels
+ *                         were punctured by DFS component (NOT by other
+ *                         components).
+ * @punc_low_freq:         Low frequency of the continuous puncture object.
+ * @punc_high_freq:        High frequency of the continuous puncture object.
+ * @dfs_punc_cac_timer:    CAC timer for DFS unpuncturing for the puncture
+ *                         object.
+ * @dfs:                   Pointer to main DFS structure.
+ * @dfs_punc_sm_hdl:       The handle for the state machine.
+ * @dfs_punc_sm_cur_state: Current state of the Puncturing State Machine.
+ * @dfs_punc_sm_lock:      Puncturing state machine lock.
+ * @dfs_is_unpunctured:    Denotes the SM is unpunctured or not.
+ */
+struct dfs_punc_obj {
+	qdf_freq_t punc_low_freq;
+	qdf_freq_t punc_high_freq;
+	qdf_hrtimer_data_t dfs_punc_cac_timer;
+	struct wlan_dfs *dfs;
+	struct wlan_sm *dfs_punc_sm_hdl;
+	enum dfs_punc_sm_state dfs_punc_sm_cur_state;
+	qdf_spinlock_t dfs_punc_sm_lock;
+	bool dfs_is_unpunctured;
+};
+
+/**
+ * struct dfs_punc_unpunc - The type of the list of the DFS puncture objects.
+ * @dfs_punc_arr:  Array of puncture objects.
+ */
+struct dfs_punc_unpunc {
+	struct dfs_punc_obj dfs_punc_arr[N_MAX_PUNC_SM];
+};
+
+/*
+ * NB: not using kernel-doc format since the kernel-doc script doesn't
+ *     handle the TAILQ_HEAD() or STAILQ_HEAD() macros
+ *
  * struct wlan_dfs -                 The main dfs structure.
  * @dfs_debug_mask:                  Current debug bitmask.
  * @dfs_curchan_radindex:            Current channel radar index.
  * @dfs_extchan_radindex:            Extension channel radar index.
- * @dfsdomain:                       Current DFS domain.
- * @dfs_proc_phyerr:                 Flags for Phy Errs to process.
- * @dfs_eventq:                      Q of free dfs event objects.
- * @dfs_eventqlock:                  Lock for free dfs event list.
- * @dfs_radarq:                      Q of radar events.
- * @dfs_radarqlock:                  Lock for dfs q.
- * @dfs_arq:                         Q of AR events.
- * @dfs_arqlock:                     Lock for AR q.
  * @dfs_ar_state:                    AR state.
- * @dfs_radar[]:                     Per-Channel Radar detector state.
- * @dfs_radarf[]:                    One filter for each radar pulse type.
+ * @dfs_radar:                       Per-Channel Radar detector state.
+ * @dfs_radarf:                      One filter for each radar pulse type.
  * @dfs_rinfo:                       State vars for radar processing.
  * @dfs_b5radars:                    Array of bin5 radar events.
  * @dfs_ftindextable:                Map of radar durs to filter types.
- * @dfs_nol:                         Non occupancy list for radar.
- * @dfs_nol_count:                   How many items?
  * @dfs_defaultparams:               Default phy params per radar state.
- * @wlan_dfs_stats:                  DFS related stats.
- * @pulses:                          Pulse history.
  * @events:                          Events structure.
- * @wlan_radar_tasksched:            Radar task is scheduled.
- * @wlan_dfswait:                    Waiting on channel for radar detect.
- * @wlan_dfstest:                    Test timer in progress.
  * @dfs_caps:                        Object of wlan_dfs_caps structure.
- * @wlan_dfstest_ieeechan:           IEEE chan num to return to after a dfs mute
- *                                   test.
- * @wlan_dfs_cac_time:               CAC period.
- * @wlan_dfstesttime:                Time to stay off chan during dfs test.
- * @wlan_dfstesttimer:               Dfs mute test timer.
- * @dfs_bangradar_type:              Radar simulation type.
- * @is_radar_found_on_secondary_seg: Radar on second segment.
- * @is_radar_during_precac:          Radar found during precac.
- * @dfs_precac_lock:                 Lock to protect precac lists.
- * @dfs_precac_secondary_freq_mhz:   Second segment freq in MHZ for precac.
- *                                   Applicable to only legacy chips.
- * @dfs_precac_primary_freq_mhz:     PreCAC Primary freq in MHZ applicable only
- *                                   to legacy chips.
- * @dfs_defer_precac_channel_change: Defer precac channel change.
- * @dfs_precac_inter_chan_freq:      Intermediate non-DFS freq used while
- *                                   doing precac.
- * @dfs_autoswitch_chan:             Desired channel of dfs_channel structure
- *                                   which will be prioritized for preCAC.
- * @dfs_autoswitch_des_mode:         Desired PHY mode which has to be used
- *                                   after precac.
  * @wlan_dfs_task_timer:             Dfs wait timer.
  * @dur_multiplier:                  Duration multiplier.
  * @wlan_dfs_isdfsregdomain:         True when AP is in DFS domain
- * @wlan_dfs_false_rssi_thres:       False RSSI Threshold.
- * @wlan_dfs_peak_mag:               Peak mag.
- * @radar_log[]:                     Radar log.
- * @dfs_event_log_count:             Event log count.
- * @dfs_event_log_on:                Event log on.
- * @dfs_phyerr_count:                Same as number of PHY radar interrupts.
- * @dfs_phyerr_reject_count:         When TLV is supported, # of radar events
- *                                   ignored after TLV is parsed.
- * @dfs_phyerr_queued_count:         Number of radar events queued for matching
- *                                   the filters.
- * @dfs_phyerr_freq_min:             Phyerr min freq.
- * @dfs_phyerr_freq_max:             Phyerr max freq.
  * @dfs_phyerr_w53_counter:          Phyerr w53 counter.
- * @dfs_pri_multiplier:              Allow pulse if they are within multiple of
- *                                   PRI for the radar type.
- * @wlan_dfs_nol_timeout:            NOL timeout.
- * @update_nol:                      Update NOL.
  * @dfs_seq_num:                     Sequence number.
- * @dfs_nol_free_list:               NOL free list.
- * @dfs_nol_elem_free_work:          The work queue to free an NOL element.
- * @dfs_cac_timer:                   CAC timer.
- * @dfs_cac_valid_timer:             Ignore CAC when this timer is running.
- * @dfs_cac_timeout_override:        Overridden cac timeout.
- * @dfs_enable:                      DFS Enable.
- * @dfs_cac_timer_running:           DFS CAC timer running.
- * @dfs_ignore_dfs:                  Ignore DFS.
- * @dfs_ignore_cac:                  Ignore CAC.
- * @dfs_cac_valid:                   DFS CAC valid.
- * @dfs_cac_valid_time:              Time for which CAC will be valid and will
- *                                   not be re-done.
- * @dfs_precac_timeout_override:     Overridden precac timeout.
- * @dfs_precac_list:                 PreCAC list (contains individual trees).
- * @dfs_precac_chwidth:              PreCAC channel width enum.
- * @dfs_curchan:                     DFS current channel.
- * @dfs_prevchan:                    DFS previous channel.
- * @dfs_cac_started_chan:            CAC started channel.
- * @dfs_pdev_obj:                    DFS pdev object.
- * @dfs_is_offload_enabled:          Set if DFS offload enabled.
- * @dfs_is_bangradar_320_supported:  Set if DFS 320MHZ enabled.
- * @dfs_is_radar_found_chan_freq_eq_center_freq:
- *                                   Set if chan_freq parameter of the radar
- *                                   found wmi event indicates channel center.
- * @dfs_agile_precac_freq_mhz:       Freq in MHZ configured on Agile DFS engine.
- * @dfs_use_nol:                     Use the NOL when radar found(default: TRUE)
- * @dfs_nol_lock:                    Lock to protect nol list.
- * @tx_leakage_threshold:            Tx leakage threshold for dfs.
- * @dfs_use_nol_subchannel_marking:  Use subchannel marking logic to add only
- *                                   radar affected subchannel instead of all
- *                                   bonding channels.
+ * @dfs_min_sidx:                    Minimum sidx of the received radar pulses.
+ * @dfs_max_sidx:                    Maximum sidx of the received radar pulses.
+ * @dfs_data_struct_lock:            DFS data structure lock. This is to protect
+ *                                   all the filtering data structures. For
+ *                                   example: dfs_bin5radars, dfs_filtertype,
+ *                                   etc.
+ * @dfs_lowest_pri_limit:
+ * @dfs_eventq:                      Q of free dfs event objects.
+ * @dfs_radarq:                      Q of radar events.
+ * @dfs_arq:                         Q of AR events.
  * @dfs_host_wait_timer:             The timer that is started from host after
  *                                   sending the average radar parameters.
  *                                   Before this timeout host expects its dfs
@@ -1091,22 +1126,105 @@ struct dfs_rcac_params {
  *                                   radar parameters.
  * @dfs_no_res_from_fw:              Indicates no response from fw.
  * @dfs_spoof_check_failed:          Indicates if the spoof check has failed.
- * @dfs_spoof_test_done:             Indicates if the sppof test is done.
+ * @dfs_radar_found_chan:            The channel on which radar was found.
  * @dfs_status_timeout_override:     Used to change the timeout value of
  *                                   dfs_host_wait_timer.
+ * @dfs_allow_hw_pulses:             Allow/Block HW pulses. When synthetic
+ *                                   pulses are injected, the HW pulses should
+ *                                   be blocked and this variable should be
+ *                                   false so that HW pulses and synthetic
+ *                                   pulses do not get mixed up.
+ * @dfsdomain:                       Current DFS domain.
+ * @dfs_proc_phyerr:                 Flags for Phy Errs to process.
+ * @dfs_eventqlock:                  Lock for free dfs event list.
+ * @dfs_radarqlock:                  Lock for dfs q.
+ * @dfs_arqlock:                     Lock for AR q.
+ * @dfs_nol:                         Non occupancy list for radar.
+ * @dfs_nol_count:                   How many items?
+ * @wlan_dfs_stats:                  DFS related stats.
+ * @pulses:                          Pulse history.
+ * @wlan_radar_tasksched:            Radar task is scheduled.
+ * @wlan_dfswait:                    Waiting on channel for radar detect.
+ * @wlan_dfstest:                    Test timer in progress.
+ * @wlan_dfstest_ieeechan:           IEEE chan num to return to after a dfs mute
+ *                                   test.
+ * @wlan_dfs_cac_time:               CAC period.
+ * @wlan_dfstesttime:                Time to stay off chan during dfs test.
+ * @wlan_dfstesttimer:               Dfs mute test timer.
+ * @dfs_bangradar_type:              Radar simulation type.
+ * @is_radar_found_on_secondary_seg: Radar on second segment.
+ * @is_radar_during_precac:          Radar found during precac.
+ * @dfs_precac_lock:                 Lock to protect precac lists.
+ * @dfs_precac_secondary_freq_mhz:   Second segment freq in MHZ for precac.
+ *                                   Applicable to only legacy chips.
+ * @dfs_precac_primary_freq_mhz:     PreCAC Primary freq in MHZ applicable only
+ *                                   to legacy chips.
+ * @dfs_defer_precac_channel_change: Defer precac channel change.
+ * @dfs_autoswitch_des_mode:         Desired PHY mode which has to be used
+ *                                   after precac.
+ * @dfs_autoswitch_chan:             Desired channel of dfs_channel structure
+ *                                   which will be prioritized for preCAC.
+ * @dfs_precac_inter_chan_freq:      Intermediate non-DFS freq used while
+ *                                   doing precac.
+ * @wlan_dfs_false_rssi_thres:       False RSSI Threshold.
+ * @wlan_dfs_peak_mag:               Peak mag.
+ * @radar_log:                       Radar log.
+ * @dfs_event_log_count:             Event log count.
+ * @dfs_event_log_on:                Event log on.
+ * @dfs_phyerr_count:                Same as number of PHY radar interrupts.
+ * @dfs_phyerr_reject_count:         When TLV is supported, # of radar events
+ *                                   ignored after TLV is parsed.
+ * @dfs_phyerr_queued_count:         Number of radar events queued for matching
+ *                                   the filters.
+ * @dfs_phyerr_freq_min:             Phyerr min freq.
+ * @dfs_phyerr_freq_max:             Phyerr max freq.
+ * @dfs_pri_multiplier:              Allow pulse if they are within multiple of
+ *                                   PRI for the radar type.
+ * @wlan_dfs_nol_timeout:            NOL timeout.
+ * @update_nol:                      Update NOL.
+ * @dfs_nol_free_list:               NOL free list.
+ * @dfs_nol_elem_free_work:          The work queue to free an NOL element.
+ * @dfs_cac_timer:                   CAC timer.
+ * @dfs_cac_valid_timer:             Ignore CAC when this timer is running.
+ * @dfs_cac_timeout_override:        Overridden cac timeout.
+ * @dfs_enable:                      DFS Enable.
+ * @dfs_cac_timer_running:           DFS CAC timer running.
+ * @dfs_ignore_dfs:                  Ignore DFS.
+ * @dfs_ignore_cac:                  Ignore CAC.
+ * @dfs_cac_valid:                   DFS CAC valid.
+ * @dfs_cac_valid_time:              Time for which CAC will be valid and will
+ *                                   not be re-done.
+ * @dfs_precac_timeout_override:     Overridden precac timeout.
+ * @dfs_disable_radar_marking:       To mark or unmark NOL chan as radar hit.
+ * @dfs_precac_list:                 PreCAC list (contains individual trees).
+ * @dfs_precac_chwidth:              PreCAC channel width enum.
+ * @dfs_curchan:                     DFS current channel.
+ * @dfs_prevchan:                    DFS previous channel.
+ * @dfs_cac_started_chan:            CAC started channel.
+ * @dfs_pdev_obj:                    DFS pdev object.
+ * @dfs_soc_obj:                     DFS soc object.
+ * @dfs_psoc_idx:                    DFS psoc index
+ * @adfs_completion_status:          Agile DFS completion parameters object.
+ * @dfs_agile_precac_freq_mhz:       Freq in MHZ configured on Agile DFS engine.
+ * @dfs_is_offload_enabled:          Set if DFS offload enabled.
+ * @dfs_is_bangradar_320_supported:  Set if DFS 320MHZ enabled.
+ * @dfs_is_radar_found_chan_freq_eq_center_freq:
+ *                                   Set if chan_freq parameter of the radar
+ *                                   found wmi event indicates channel center.
+ * @dfs_use_nol:                     Use the NOL when radar found(default: TRUE)
+ * @dfs_nol_lock:                    Lock to protect nol list.
+ * @tx_leakage_threshold:            Tx leakage threshold for dfs.
+ * @dfs_use_nol_subchannel_marking:  Use subchannel marking logic to add only
+ *                                   radar affected subchannel instead of all
+ *                                   bonding channels.
+ * @dfs_spoof_test_done:             Indicates if the sppof test is done.
  * @dfs_is_stadfs_enabled:           Is STADFS enabled.
- * @dfs_min_sidx:                    Minimum sidx of the received radar pulses.
- * @dfs_max_sidx:                    Maximum sidx of the received radar pulses.
  * @dfs_seg_id:                      Segment ID of the radar hit channel.
  * @dfs_is_chirp:                    Radar Chirp in pulse present or not.
+ * @dfs_is_fh_pulse:                 Frequency hopping radar present or not.
  * @dfs_bw_reduced:                  DFS bandwidth reduced channel bit.
  * @dfs_freq_offset:                 Frequency offset where radar was found.
  * @dfs_cac_aborted:                 DFS cac is aborted.
- * @dfs_disable_radar_marking:       To mark or unmark NOL chan as radar hit.
- * @dfs_data_struct_lock:            DFS data structure lock. This is to protect
- *                                   all the filtering data structures. For
- *                                   example: dfs_bin5radars, dfs_filtertype,
- *                                   etc.
  * @dfs_nol_ie_bandwidth:            Minimum Bandwidth of subchannels that
  *                                   are added to NOL.
  * @dfs_nol_ie_startfreq:            The centre frequency of the starting
@@ -1117,7 +1235,6 @@ struct dfs_rcac_params {
  *                                   to be sent in NOL IE with RCSA.
  * @dfs_is_rcsa_ie_sent:             To send or to not send RCSA IE.
  * @dfs_is_nol_ie_sent:              To send or to not send NOL IE.
- * @dfs_agile_precac_ucfg:           User configuration for agile preCAC.
  * @dfs_bw_expand_target_freq:       User configured Channel frequency for
  *                                   bandwidth expansion feature.
  * @dfs_bw_expand_des_mode:          User configured Channel Phymode for
@@ -1126,16 +1243,11 @@ struct dfs_rcac_params {
  *                                   disabling BW Expansion feature.
  * @dfs_use_puncture:                User configured value for enabling or
  *                                   disabling DFS puncturing feature.
+ * @dfs_agile_precac_ucfg:           User configuration for agile preCAC.
  * @dfs_agile_rcac_ucfg:             User configuration for Rolling CAC.
  * @dfs_fw_adfs_support_320:         Target Agile DFS support for 320 BW.
  * @dfs_fw_adfs_support_non_160:     Target Agile DFS support for non-160 BWs.
  * @dfs_fw_adfs_support_160:         Target Agile DFS support for 160 BW.
- * @dfs_allow_hw_pulses:             Allow/Block HW pulses. When synthetic
- *                                   pulses are injected, the HW pulses should
- *                                   be blocked and this variable should be
- *                                   false so that HW pulses and synthetic
- *                                   pulses do not get mixed up.
- *                                   defer timer running.
  * @dfs_defer_params:                DFS deferred event parameters (allocated
  *                                   only for the duration of defer alone).
  * @dfs_agile_detector_id:           Agile detector ID for the DFS object.
@@ -1151,6 +1263,10 @@ struct dfs_rcac_params {
  *                                   CAC REQUIRED, CAC COMPLETED, NOL,
  *                                   PRECAC STARTED, PRECAC COMPLETED etc. of
  *                                   all the DFS channels.
+ * @dfs_cacelems:                    Stores the CAC related parameters of a
+ *                                   channel such as: CAC started time, CAC
+ *                                   completed time.
+ * @dfs_punc_lst:                    List of DFS puncture objects.
  */
 struct wlan_dfs {
 	uint32_t       dfs_debug_mask;
@@ -1273,6 +1389,7 @@ struct wlan_dfs {
 	struct dfs_soc_priv_obj *dfs_soc_obj;
 #if defined(QCA_SUPPORT_AGILE_DFS) || defined(ATH_SUPPORT_ZERO_CAC_DFS)
 	uint8_t dfs_psoc_idx;
+	struct adfs_completion_params adfs_completion_status;
 #endif
 #ifdef CONFIG_CHAN_FREQ_API
 	uint16_t       dfs_agile_precac_freq_mhz;
@@ -1288,6 +1405,7 @@ struct wlan_dfs {
 	bool           dfs_is_stadfs_enabled;
 	uint8_t        dfs_seg_id;
 	uint8_t        dfs_is_chirp;
+	uint8_t        dfs_is_fh_pulse;
 	bool           dfs_bw_reduced;
 	int32_t        dfs_freq_offset;
 	bool           dfs_cac_aborted;
@@ -1326,7 +1444,11 @@ struct wlan_dfs {
 #endif
 #if defined(WLAN_DISP_CHAN_INFO)
 	enum channel_dfs_state dfs_channel_state_array[NUM_DFS_CHANS];
+	struct dfs_cacelem dfs_cacelems[NUM_DFS_CHANS];
 #endif /* WLAN_DISP_CHAN_INFO */
+#if defined(QCA_DFS_BW_PUNCTURE) && !defined(CONFIG_REG_CLIENT)
+	struct dfs_punc_unpunc dfs_punc_lst;
+#endif /* QCA_DFS_BW_PUNCTURE */
 #ifdef QCA_SUPPORT_AGILE_DFS
 #endif
 };
@@ -1334,7 +1456,7 @@ struct wlan_dfs {
 #if defined(QCA_SUPPORT_AGILE_DFS) || defined(ATH_SUPPORT_ZERO_CAC_DFS)
 /**
  * struct wlan_dfs_priv - dfs private struct with agile capability info
- * @wlan_dfs: pointer to wlan_dfs object.
+ * @dfs: pointer to wlan_dfs object.
  * @agile_precac_active: agile precac active information for wlan_dfs_priv obj
  */
 struct wlan_dfs_priv {
@@ -1355,17 +1477,18 @@ struct wlan_dfs_priv {
  *                                radar detection related information to host.
  * @dfs_priv: array of dfs private structs with agile capability info
  * @num_dfs_privs: array size of dfs private structs for given psoc.
- * @cur_dfs_index: index of the current dfs object using the Agile Engine.
+ * @cur_agile_dfs_index: index of the current dfs object using the Agile Engine.
  *                 It is used to index struct wlan_dfs_priv dfs_priv[] array.
  * @dfs_precac_timer: agile precac timer
  * @dfs_precac_timer_running: precac timer running flag
+ * @precac_state_started: true if pre-CAC has started
  * @ocac_status: Off channel CAC complete status
- * @dfs_nol_ctx: dfs NOL data for all radios.
+ * @dfs_psoc_nolinfo: dfs NOL data for all radios.
  * @dfs_rcac_timer: Agile RCAC (Rolling CAC) timer.
  * @dfs_agile_sm_hdl: The handle for the state machine that drives Agile
  *                    Engine.
  * @dfs_agile_sm_cur_state: Current state of the Agile State Machine.
- * @dfs_rcac_sm_lock: DFS Rolling CAC state machine lock.
+ * @dfs_agile_sm_lock: Agile state machine lock.
  */
 struct dfs_soc_priv_obj {
 	struct wlan_objmgr_psoc *psoc;
@@ -1378,7 +1501,7 @@ struct dfs_soc_priv_obj {
 	qdf_hrtimer_data_t    dfs_precac_timer;
 	uint8_t dfs_precac_timer_running;
 	bool precac_state_started;
-	bool ocac_status;
+	enum ocac_status_type ocac_status;
 #endif
 	struct dfsreq_nolinfo *dfs_psoc_nolinfo;
 #ifdef QCA_SUPPORT_ADFS_RCAC
@@ -1392,7 +1515,7 @@ struct dfs_soc_priv_obj {
 };
 
 /**
- * enum DFS debug - This should match the table from if_ath.c.
+ * enum dfs_debug - This should match the table from if_ath.c.
  * @WLAN_DEBUG_DFS:             Minimal DFS debug.
  * @WLAN_DEBUG_DFS1:            Normal DFS debug.
  * @WLAN_DEBUG_DFS2:            Maximal DFS debug.
@@ -1409,8 +1532,11 @@ struct dfs_soc_priv_obj {
  *                              detection.
  * @WLAN_DEBUG_DFS_RANDOM_CHAN: Random channel selection.
  * @WLAN_DEBUG_DFS_AGILE:       Agile PreCAC/RCAC
+ * @WLAN_DEBUG_DFS_PUNCTURING:  DFS puncturing and unpuncturing.
+ * @WLAN_DEBUG_DFS_MAX:         Max flag
+ * @WLAN_DEBUG_DFS_ALWAYS:      Always debug
  */
-enum {
+enum dfs_debug {
 	WLAN_DEBUG_DFS  = 0x00000100,
 	WLAN_DEBUG_DFS1 = 0x00000200,
 	WLAN_DEBUG_DFS2 = 0x00000400,
@@ -1426,22 +1552,23 @@ enum {
 	WLAN_DEBUG_DFS_FALSE_DET2 = 0x00100000,
 	WLAN_DEBUG_DFS_RANDOM_CHAN = 0x00200000,
 	WLAN_DEBUG_DFS_AGILE       = 0x00400000,
+	WLAN_DEBUG_DFS_PUNCTURING  = 0x00800000,
 	WLAN_DEBUG_DFS_MAX        = 0x80000000,
 	WLAN_DEBUG_DFS_ALWAYS     = WLAN_DEBUG_DFS_MAX
 };
 
-/**
- * enum host dfs spoof check status.
- * @HOST_DFS_CHECK_PASSED: Host indicates RADAR detected and the FW
- *                         confirms it to be spoof radar to host.
- * @HOST_DFS_CHECK_FAILED: Host doesn't indicate RADAR detected or spoof
- *                         radar parameters by
- *                         WMI_HOST_DFS_RADAR_FOUND_CMDID doesn't match.
- * @HOST_DFS_STATUS_CHECK_HW_RADAR: Host indicates RADAR detected and the
- *                             FW confirms it to be real HW radar to host.
- */
 #if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(HOST_DFS_SPOOF_TEST)
-enum {
+/**
+ * enum host_dfs_spoof_check_status - DFS spoof check status values
+ * @HOST_DFS_STATUS_CHECK_PASSED: Host indicates RADAR detected and the FW
+ *                                confirms it to be spoof radar to host.
+ * @HOST_DFS_STATUS_CHECK_FAILED: Host doesn't indicate RADAR detected or spoof
+ *                                radar parameters by
+ *                                WMI_HOST_DFS_RADAR_FOUND_CMDID doesn't match.
+ * @HOST_DFS_STATUS_CHECK_HW_RADAR: Host indicates RADAR detected and the FW
+ *                                  confirms it to be real HW radar to host.
+ */
+enum host_dfs_spoof_check_status {
 	HOST_DFS_STATUS_CHECK_PASSED = 0,
 	HOST_DFS_STATUS_CHECK_FAILED = 1,
 	HOST_DFS_STATUS_CHECK_HW_RADAR = 2
@@ -1800,9 +1927,8 @@ void dfs_print_filter(struct wlan_dfs *dfs,
  * @index: To save the index of dfs_radar[]
  * @ext_chan_flag: Extension channel flag;
  */
-struct dfs_state *dfs_getchanstate(struct wlan_dfs *dfs,
-		uint8_t *index,
-		int ext_ch_flag);
+struct dfs_state *dfs_getchanstate(struct wlan_dfs *dfs, uint8_t *index,
+				   int ext_chan_flag);
 
 /**
  * dfs_round() - DFS found.
@@ -1873,7 +1999,7 @@ void dfs_add_pulse(struct wlan_dfs *dfs,
 int dfs_bin_check(struct wlan_dfs *dfs,
 		struct dfs_filter *rf,
 		uint32_t deltaT,
-		uint32_t dur,
+		uint32_t width,
 		int ext_chan_flag);
 
 /**
@@ -2035,6 +2161,7 @@ void dfs_reset(struct wlan_dfs *dfs);
  * dfs_radar_enable() - Enables the radar.
  * @dfs: Pointer to wlan_dfs structure.
  * @no_cac: If no_cac is 0, it cancels the CAC.
+ * @opmode: Operational mode
  */
 #if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 void dfs_radar_enable(struct wlan_dfs *dfs,
@@ -2177,6 +2304,32 @@ bool dfs_is_cac_required(struct wlan_dfs *dfs,
 			 bool is_vap_restart);
 
 /**
+ * dfs_update_cac_elements() - Fill the dfs_cacelem data structure based
+ * on the dfs_ev events posted.
+ * @dfs: Pointer to wlan_dfs structure.
+ * @freq_list: Pointer to a list of frequencies in MHz
+ * @num_chan: Number of frequencies
+ * @dfs_chan: Pointer to dfs_channel
+ * @dfs_ev: DFS events
+ *
+ * Return: QDF STATUS
+ */
+#if defined(WLAN_DISP_CHAN_INFO)
+QDF_STATUS
+dfs_update_cac_elements(struct wlan_dfs *dfs, uint16_t *freq_list,
+			uint8_t num_chan, struct dfs_channel *dfs_chan,
+			enum WLAN_DFS_EVENTS dfs_ev);
+#else
+static inline QDF_STATUS
+dfs_update_cac_elements(struct wlan_dfs *dfs, uint16_t *freq_list,
+			uint8_t num_chan, struct dfs_channel *dfs_chan,
+			enum WLAN_DFS_EVENTS dfs_ev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
+
+/**
  * dfs_send_dfs_events_for_chan() - Send CAC RESET events
  * @dfs: Pointer to wlan_dfs structure.
  * @chan: Pointer to dfs_channel structure.
@@ -2207,7 +2360,7 @@ void dfs_start_cac_timer(struct wlan_dfs *dfs);
 /**
  * dfs_cac_valid_reset_for_freq() - Cancels the dfs_cac_valid_timer timer.
  * @dfs: Pointer to wlan_dfs structure.
- * @prevchan_chan: Prevchan frequency
+ * @prevchan_freq: Prevchan frequency
  * @prevchan_flags: Prevchan flags.
  */
 #ifdef CONFIG_CHAN_FREQ_API
@@ -2257,6 +2410,19 @@ void dfs_cac_timer_reset(struct wlan_dfs *dfs);
 void dfs_cac_timer_detach(struct wlan_dfs *dfs);
 
 /**
+ * dfs_puncture_cac_timer_detach() - Free puncture cac timers.
+ * @dfs: Pointer to wlan_dfs structure.
+ */
+#if defined(QCA_DFS_BW_PUNCTURE) && !defined(CONFIG_REG_CLIENT)
+void dfs_puncture_cac_timer_detach(struct wlan_dfs *dfs);
+#else
+static inline
+void dfs_puncture_cac_timer_detach(struct wlan_dfs *dfs)
+{
+}
+#endif
+
+/**
  * dfs_deliver_cac_state_events() - Deliver the DFS CAC events namely
  * WLAN_EV_CAC_STARTED on cac started channel(current channel) and
  * WLAN_EV_CAC_RESET on previous dfs channel.
@@ -2275,6 +2441,14 @@ void dfs_deliver_cac_state_events(struct wlan_dfs *dfs)
 static inline
 void dfs_stacac_stop(struct wlan_dfs *dfs)
 {
+}
+
+static inline QDF_STATUS
+dfs_update_cac_elements(struct wlan_dfs *dfs, uint16_t *freq_list,
+			uint8_t num_chan, struct dfs_channel *dfs_chan,
+			enum WLAN_DFS_EVENTS dfs_ev)
+{
+	return QDF_STATUS_SUCCESS;
 }
 
 static inline
@@ -2357,6 +2531,12 @@ static inline
 void dfs_deliver_cac_state_events(struct wlan_dfs *dfs)
 {
 }
+
+static inline
+void dfs_puncture_cac_timer_detach(struct wlan_dfs *dfs)
+{
+}
+
 #endif
 /**
  * dfs_set_update_nol_flag() - Sets update_nol flag.
@@ -2674,6 +2854,7 @@ void dfs_get_nol_chfreq_and_chwidth(struct dfsreq_nolelem *dfs_nol,
  * @prev: prev index.
  * @i: Index.
  * @this: index to br_elems[]
+ * @index: index array.
  */
 void bin5_rules_check_internal(struct wlan_dfs *dfs,
 		struct dfs_bin5radars *br,
@@ -2734,11 +2915,11 @@ int dfs_second_segment_radar_disable(struct wlan_dfs *dfs);
 
 /**
  * dfs_fetch_nol_ie_info() - Fill NOL information to be sent with RCSA.
- * @dfs                    - Pointer to wlan_dfs structure.
- * @nol_ie_bandwidth       - Minimum subchannel bandwidth.
- * @nol_ie_startfreq       - Radar affected channel list's first subchannel's
- *                         - centre frequency.
- * @nol_ie_bitmap          - NOL bitmap denoting affected subchannels.
+ * @dfs:                    Pointer to wlan_dfs structure.
+ * @nol_ie_bandwidth:       Minimum subchannel bandwidth.
+ * @nol_ie_startfreq:       Radar affected channel list's first subchannel's
+ *                          centre frequency.
+ * @nol_ie_bitmap:          NOL bitmap denoting affected subchannels.
  */
 #if defined(QCA_DFS_RCSA_SUPPORT)
 void dfs_fetch_nol_ie_info(struct wlan_dfs *dfs, uint8_t *nol_ie_bandwidth,
@@ -2773,6 +2954,34 @@ void dfs_set_rcsa_flags(struct wlan_dfs *dfs, bool is_rcsa_ie_sent,
 #endif
 
 /**
+ * dfs_get_radar_bitmap_from_nolie() - Read the NOL IE bitmap of the RCSA
+ * frame, puncture the nol infected channels and formulate the radar puncture
+ * bitmap.
+ * @dfs: Pointer to wlan_dfs structure.
+ * @phymode: Phymode of enum wlan_phymode.
+ * @nol_ie_start_freq: NOL IE start frequency
+ * @nol_ie_bitmap: NOL bitmap
+ *
+ * Return: radar puncture bitmap
+ */
+#if defined(WLAN_FEATURE_11BE) && defined(QCA_DFS_BW_PUNCTURE) && \
+	defined(QCA_DFS_RCSA_SUPPORT)
+uint16_t
+dfs_get_radar_bitmap_from_nolie(struct wlan_dfs *dfs,
+				enum wlan_phymode phymode,
+				qdf_freq_t nol_ie_start_freq,
+				uint8_t nol_ie_bitmap);
+#else
+static inline uint16_t
+dfs_get_radar_bitmap_from_nolie(struct wlan_dfs *dfs, enum wlan_phymode phymode,
+				qdf_freq_t nol_ie_start_freq,
+				uint8_t nol_ie_bitmap)
+{
+	return NO_SCHANS_PUNC;
+}
+#endif
+
+/**
  * dfs_get_rcsa_flags() - Get flags that are required for sending RCSA and
  * NOL IE.
  * @dfs: Pointer to wlan_dfs structure.
@@ -2794,11 +3003,11 @@ void dfs_get_rcsa_flags(struct wlan_dfs *dfs, bool *is_rcsa_ie_sent,
 
 /**
  * dfs_process_nol_ie_bitmap() - Update NOL with external radar information.
- * @dfs               - Pointer to wlan_dfs structure.
- * @nol_ie_bandwidth  - Minimum subchannel bandwidth.
- * @nol_ie_starfreq   - Radar affected channel list's first subchannel's
- *                    - centre frequency.
- * @nol_ie_bitmap     - Bitmap denoting radar affected subchannels.
+ * @dfs:               Pointer to wlan_dfs structure.
+ * @nol_ie_bandwidth:  Minimum subchannel bandwidth.
+ * @nol_ie_startfreq:  Radar affected channel list's first subchannel's
+ *                     centre frequency.
+ * @nol_ie_bitmap:     Bitmap denoting radar affected subchannels.
  *
  * Return: True if NOL IE should be propagated, else false.
  */
@@ -2849,6 +3058,7 @@ void dfs_timer_detach(struct wlan_dfs *dfs);
  * dfs_is_disable_radar_marking_set() - Check if radar marking is set on
  * NOL chan.
  * @dfs: Pointer to wlan_dfs structure.
+ * @disable_radar_marking: Is radar marking disabled.
  */
 #if defined(WLAN_DFS_FULL_OFFLOAD) && defined(QCA_DFS_NOL_OFFLOAD)
 int dfs_is_disable_radar_marking_set(struct wlan_dfs *dfs,
@@ -2875,7 +3085,7 @@ static inline bool dfs_get_disable_radar_marking(struct wlan_dfs *dfs)
 
 /**
  * dfs_reset_agile_config() - Reset the ADFS config variables.
- * @dfs: Pointer to dfs_soc_priv_obj.
+ * @dfs_soc: Pointer to dfs_soc_priv_obj.
  */
 #ifdef QCA_SUPPORT_AGILE_DFS
 void dfs_reset_agile_config(struct dfs_soc_priv_obj *dfs_soc);
@@ -3058,7 +3268,7 @@ void dfs_clear_cac_started_chan(struct wlan_dfs *dfs);
 
 #ifdef QCA_DFS_BANGRADAR
 /**
- * dfs_bangradar() - Handles all type of Bangradar.
+ * dfs_bang_radar() - Handles all type of Bangradar.
  * @dfs: Pointer to wlan_dfs structure.
  * @indata: reference to input data
  * @insize:  input data size
@@ -3135,10 +3345,9 @@ dfs_restart_rcac_on_nol_expiry(struct wlan_dfs *dfs)
 #endif
 
 /**
- * dfs_chan_to_ch_width: Outputs the channel width in MHz of the given input
- * dfs_channel.
- *
- * chan: Pointer to the input dfs_channel structure.
+ * dfs_chan_to_ch_width() - Outputs the channel width in MHz of the given input
+ *                          dfs_channel.
+ * @chan: Pointer to the input dfs_channel structure.
  *
  * Return: Channel width in MHz. (uint16) -EINVAL on invalid channel.
  */

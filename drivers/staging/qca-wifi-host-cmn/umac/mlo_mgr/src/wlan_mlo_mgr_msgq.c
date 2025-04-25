@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -46,6 +46,18 @@ QDF_STATUS mlo_msgq_post(enum mlo_msg_type type,
 					     WLAN_MLO_MGR_ID);
 		break;
 
+	case MLO_BRIDGE_PEER_CREATE:
+		peer_create = (struct peer_create_notif_s *)payload;
+
+		mlo_mlme_bridge_peer_create(peer_create->vdev_link,
+					    peer_create->ml_peer,
+					    &peer_create->addr,
+					    peer_create->frm_buf);
+		wlan_mlo_peer_release_ref(peer_create->ml_peer);
+		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
+					     WLAN_MLO_MGR_ID);
+		break;
+
 	case MLO_PEER_ASSOC:
 		peer_assoc = (struct peer_assoc_notify_s *)payload;
 		mlo_mlme_peer_assoc(peer_assoc->peer);
@@ -78,6 +90,17 @@ QDF_STATUS mlo_msgq_post(enum mlo_msg_type type,
 	case MLO_PEER_PENDING_AUTH:
 		peer_auth = (struct peer_auth_process_notif_s *)payload;
 		mlo_mlme_peer_process_auth(peer_auth->auth_params);
+		break;
+
+	case MLO_PEER_REASSOC:
+		peer_create = (struct peer_create_notif_s *)payload;
+		mlo_mlme_peer_reassoc(peer_create->vdev_link,
+				      peer_create->ml_peer, &peer_create->addr,
+				      peer_create->frm_buf);
+		qdf_nbuf_free(peer_create->frm_buf);
+		wlan_mlo_peer_release_ref(peer_create->ml_peer);
+		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
+					     WLAN_MLO_MGR_ID);
 		break;
 
 	default:
@@ -173,6 +196,15 @@ QDF_STATUS mlo_msgq_post(enum mlo_msg_type type,
 		qdf_copy_macaddr(&peer_create->addr, &peer_create_l->addr);
 		break;
 
+	case MLO_BRIDGE_PEER_CREATE:
+		peer_create = &msg->m.peer_create;
+		peer_create_l = (struct peer_create_notif_s *)payload;
+		peer_create->frm_buf = peer_create_l->frm_buf;
+		peer_create->ml_peer = peer_create_l->ml_peer;
+		peer_create->vdev_link = peer_create_l->vdev_link;
+		qdf_copy_macaddr(&peer_create->addr, &peer_create_l->addr);
+		break;
+
 	case MLO_PEER_ASSOC:
 		peer_assoc = &msg->m.peer_assoc;
 		peer_assoc_l = (struct peer_assoc_notify_s *)payload;
@@ -202,6 +234,15 @@ QDF_STATUS mlo_msgq_post(enum mlo_msg_type type,
 		peer_auth = &msg->m.peer_auth;
 		peer_auth_l = (struct peer_auth_process_notif_s *)payload;
 		peer_auth->auth_params = peer_auth_l->auth_params;
+		break;
+
+	case MLO_PEER_REASSOC:
+		peer_create = &msg->m.peer_create;
+		peer_create_l = (struct peer_create_notif_s *)payload;
+		peer_create->frm_buf = peer_create_l->frm_buf;
+		peer_create->ml_peer = peer_create_l->ml_peer;
+		peer_create->vdev_link = peer_create_l->vdev_link;
+		qdf_copy_macaddr(&peer_create->addr, &peer_create_l->addr);
 		break;
 
 	default:
@@ -234,6 +275,17 @@ static void mlo_msgq_msg_process_hdlr(struct mlo_ctxt_switch_msg_s *msg)
 				     peer_create->ml_peer,
 				     &peer_create->addr, peer_create->frm_buf);
 		qdf_nbuf_free(peer_create->frm_buf);
+		wlan_mlo_peer_release_ref(peer_create->ml_peer);
+		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
+					     WLAN_MLO_MGR_ID);
+		break;
+
+	case MLO_BRIDGE_PEER_CREATE:
+		peer_create = &msg->m.peer_create;
+		mlo_mlme_bridge_peer_create(peer_create->vdev_link,
+					    peer_create->ml_peer,
+					    &peer_create->addr,
+					    peer_create->frm_buf);
 		wlan_mlo_peer_release_ref(peer_create->ml_peer);
 		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
 					     WLAN_MLO_MGR_ID);
@@ -272,6 +324,17 @@ static void mlo_msgq_msg_process_hdlr(struct mlo_ctxt_switch_msg_s *msg)
 		mlo_mlme_peer_process_auth(peer_auth->auth_params);
 		break;
 
+	case MLO_PEER_REASSOC:
+		peer_create = &msg->m.peer_create;
+		mlo_mlme_peer_reassoc(peer_create->vdev_link,
+				      peer_create->ml_peer, &peer_create->addr,
+				      peer_create->frm_buf);
+		qdf_nbuf_free(peer_create->frm_buf);
+		wlan_mlo_peer_release_ref(peer_create->ml_peer);
+		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
+					     WLAN_MLO_MGR_ID);
+		break;
+
 	default:
 		break;
 	}
@@ -292,6 +355,13 @@ static void mlo_msgq_msg_flush_hdlr(struct mlo_ctxt_switch_msg_s *msg)
 	case MLO_PEER_CREATE:
 		peer_create = &msg->m.peer_create;
 		qdf_nbuf_free(peer_create->frm_buf);
+		wlan_mlo_peer_release_ref(peer_create->ml_peer);
+		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
+					     WLAN_MLO_MGR_ID);
+		break;
+
+	case MLO_BRIDGE_PEER_CREATE:
+		peer_create = &msg->m.peer_create;
 		wlan_mlo_peer_release_ref(peer_create->ml_peer);
 		wlan_objmgr_vdev_release_ref(peer_create->vdev_link,
 					     WLAN_MLO_MGR_ID);

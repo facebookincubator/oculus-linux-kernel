@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,7 +36,7 @@
 #define BW_160      160
 #define BW_320      320
 /**
- * dfs_false_radarfound_reset_vars () - Reset dfs radar detection related
+ * dfs_flush_additional_pulses() - Reset dfs radar detection related
  * variables and queues after processing radar and disabling phyerror reception.
  *
  * @dfs: Pointer to wlan_dfs structure.
@@ -204,6 +204,36 @@ uint16_t dfs_generate_radar_bitmap(struct wlan_dfs *dfs,
 {
 	return 0;
 }
+#endif
+
+/**
+ * dfs_handle_radar_puncturing() - Check if the puncture bitmap is valid
+ *                                 and initialize puncture SM for the
+ *                                 punctured channels.
+ * @dfs:                      Pointer to wlan_dfs structure.
+ * @dfs_radar_bitmap:         Puncture bitmap.
+ * @freq_list:                Channel list affected by radar.
+ * @num_channels:             Number of channels affected by radar.
+ * @is_ignore_radar_puncture: Bool to check if radar should be ignored.
+ *
+ * Return: Nothing.
+ */
+#if defined(QCA_DFS_BW_PUNCTURE) && !defined(CONFIG_REG_CLIENT)
+void
+dfs_handle_radar_puncturing(struct wlan_dfs *dfs,
+			    uint16_t *dfs_radar_bitmap,
+			    uint16_t *freq_list,
+			    uint8_t num_channels,
+			    bool *is_ignore_radar_puncture);
+#else
+static inline
+void dfs_handle_radar_puncturing(struct wlan_dfs *dfs,
+				 uint16_t *dfs_radar_bitmap,
+				 uint16_t *freq_list,
+				 uint8_t num_channels,
+				 bool *is_ignore_radar_puncture)
+{
+}
 #endif /* QCA_DFS_BW_PUNCTURE */
 
 /**
@@ -341,7 +371,7 @@ dfs_get_bonding_channel_without_seg_info_for_freq(struct dfs_channel *chan,
 /**
  * dfs_set_nol_subchannel_marking() - Set or unset NOL subchannel marking.
  * @dfs: Pointer to wlan_dfs structure.
- * @nol_subchannel_marking - Configure NOL subchannel marking.
+ * @nol_subchannel_marking: Configure NOL subchannel marking.
  *
  * Return: Status of the configuration.
  */
@@ -352,7 +382,7 @@ dfs_set_nol_subchannel_marking(struct wlan_dfs *dfs,
 /**
  * dfs_get_nol_subchannel_marking() - Get the value of NOL subchannel marking.
  * @dfs: Pointer to wlan_dfs structure.
- * @nol_subchannel_marking - Read and store the value of NOL subchannel marking
+ * @nol_subchannel_marking: Read and store the value of NOL subchannel marking
  * config.
  *
  * Return: Status of the read.

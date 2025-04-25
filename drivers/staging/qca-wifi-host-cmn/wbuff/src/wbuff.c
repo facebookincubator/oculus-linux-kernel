@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021,2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,7 +28,7 @@
 #include <qdf_debugfs.h>
 #include "i_wbuff.h"
 
-/**
+/*
  * Allocation holder array for all wbuff registered modules
  */
 struct wbuff_holder wbuff;
@@ -462,6 +462,9 @@ qdf_nbuf_t wbuff_buff_put(qdf_nbuf_t buf)
 	unsigned long pool_info = 0;
 	uint8_t module_id = 0, pool_id = 0;
 	struct wbuff_pool *wbuff_pool;
+
+	if (qdf_nbuf_get_users(buffer) > 1)
+		return buffer;
 
 	if (!wbuff.initialized)
 		return buffer;

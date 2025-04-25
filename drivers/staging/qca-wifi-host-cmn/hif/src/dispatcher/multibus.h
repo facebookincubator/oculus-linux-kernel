@@ -99,6 +99,7 @@ struct hif_bus_ops {
 	void (*hif_set_grp_intr_affinity)(struct hif_softc *scn,
 					  uint32_t grp_intr_bitmask, bool perf);
 #endif
+	void (*hif_affinity_mgr_set_affinity)(struct hif_softc *scn);
 };
 
 #ifdef HIF_SNOC

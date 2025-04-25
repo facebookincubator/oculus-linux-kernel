@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -47,10 +47,23 @@ struct wireless_dev;
 
 void hdd_nan_datapath_target_config(struct hdd_context *hdd_ctx,
 						struct wma_tgt_cfg *cfg);
-void hdd_ndp_event_handler(struct hdd_adapter *adapter,
+
+/**
+ * hdd_ndp_event_handler() - API to handle NDP create/delete events
+ * @link_info: Link info pointer in HDD adapter.
+ * @roam_info: Roam data
+ * @roam_status: roam status
+ * @roam_result: Result of roam
+ *
+ * The function performs operations based on NDP create/delete response.
+ *
+ * Return: void
+ */
+void hdd_ndp_event_handler(struct wlan_hdd_link_info *link_info,
 			   struct csr_roam_info *roam_info,
 			   eRoamCmdStatus roam_status,
 			   eCsrRoamResult roam_result);
+
 int wlan_hdd_cfg80211_process_ndp_cmd(struct wiphy *wiphy,
 	struct wireless_dev *wdev, const void *data, int data_len);
 int hdd_init_nan_data_mode(struct hdd_adapter *adapter);
@@ -58,16 +71,14 @@ void hdd_ndp_session_end_handler(struct hdd_adapter *adapter);
 
 /**
  * hdd_cleanup_ndi() - Cleanup NDI state/resources
- * @hdd_ctx: HDD context
- * @adapter: Pointer to the NDI adapter
+ * @link_info: Link info pointer in HDD adapter
  *
  * Cleanup NDI state/resources allocated when NDPs are created on that NDI.
  *
  * Return: None
  */
 
-void hdd_cleanup_ndi(struct hdd_context *hdd_ctx,
-		     struct hdd_adapter *adapter);
+void hdd_cleanup_ndi(struct wlan_hdd_link_info *link_info);
 
 /**
  * hdd_ndi_start() - Start NDI adapter and create NDI vdev
@@ -158,7 +169,8 @@ void hdd_ndp_peer_departed_handler(uint8_t vdev_id, uint16_t sta_id,
 				   struct qdf_mac_addr *peer_mac_addr,
 				   bool last_peer);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0) || \
+(defined CFG80211_CHANGE_NETDEV_REGISTRATION_SEMANTICS))
 /**
  * hdd_ndi_set_mode() - set the adapter mode to NDI
  * @iface_name: NDI interface name
@@ -184,12 +196,14 @@ static inline void hdd_nan_datapath_target_config(struct hdd_context *hdd_ctx,
 						struct wma_tgt_cfg *cfg)
 {
 }
-static inline void hdd_ndp_event_handler(struct hdd_adapter *adapter,
+
+static inline void hdd_ndp_event_handler(struct wlan_hdd_link_info *link_info,
 					 struct csr_roam_info *roam_info,
 					 eRoamCmdStatus roam_status,
 					 eCsrRoamResult roam_result)
 {
 }
+
 static inline int wlan_hdd_cfg80211_process_ndp_cmd(struct wiphy *wiphy,
 		struct wireless_dev *wdev, const void *data, int data_len)
 {
@@ -203,8 +217,7 @@ static inline void hdd_ndp_session_end_handler(struct hdd_adapter *adapter)
 {
 }
 
-static inline void hdd_cleanup_ndi(struct hdd_context *hdd_ctx,
-				   struct hdd_adapter *adapter)
+static inline void hdd_cleanup_ndi(struct wlan_hdd_link_info *link_info)
 {
 }
 

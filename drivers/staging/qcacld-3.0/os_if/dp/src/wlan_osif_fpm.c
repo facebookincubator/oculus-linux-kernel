@@ -558,7 +558,7 @@ static int hdd_fpm_configure(struct wiphy *wiphy, struct hdd_adapter *adapter,
 	id = QCA_WLAN_VENDOR_ATTR_FLOW_POLICY_CONFIG;
 	fpm_config_attr = tb[id];
 
-	fpm_ctx = ucfg_fpm_policy_get_ctx_by_vdev(adapter->vdev);
+	fpm_ctx = ucfg_fpm_policy_get_ctx_by_vdev(adapter->deflink->vdev);
 	if (!fpm_ctx) {
 		osif_err("fpm: fpm_ctx NULL");
 		return -EINVAL;

@@ -126,11 +126,28 @@ QDF_STATUS wlan_scan_cfg_get_passive_6g_dwelltime(struct wlan_objmgr_psoc *psoc,
  */
 void wlan_scan_cfg_get_min_dwelltime_6g(struct wlan_objmgr_psoc *psoc,
 					uint32_t *min_dwell_time_6ghz);
+
+/**
+ * wlan_scan_cfg_set_scan_mode_6g() - API to set scan mode for 6 GHz
+ * @psoc: pointer to psoc object
+ * @scan_mode_6g: scan mode value for 6 GHz
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_scan_cfg_set_scan_mode_6g(struct wlan_objmgr_psoc *psoc,
+					  enum scan_mode_6ghz scan_mode_6g);
 #else
 static inline
 void wlan_scan_cfg_get_min_dwelltime_6g(struct wlan_objmgr_psoc *psoc,
 					uint32_t *min_dwell_time_6ghz)
 {
+}
+
+static inline
+QDF_STATUS wlan_scan_cfg_set_scan_mode_6g(struct wlan_objmgr_psoc *psoc,
+					  enum scan_mode_6ghz scan_mode_6g)
+{
+	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
 
@@ -504,16 +521,6 @@ wlan_scan_get_entry_by_mac_addr(struct wlan_objmgr_pdev *pdev,
 				struct element_info *frame);
 
 /**
- * wlan_scan_get_entry_by_bssid() - function to get scan entry by bssid
- * @pdev: pdev object
- * @bssid: bssid to be fetched from scan db
- *
- * Return : scan entry if found, else NULL
- */
-struct scan_cache_entry *
-wlan_scan_get_entry_by_bssid(struct wlan_objmgr_pdev *pdev,
-			     struct qdf_mac_addr *bssid);
-/**
  * wlan_scan_get_last_scan_ageout_time() - API to get last scan
  * ageout time
  * @psoc: psoc object
@@ -524,6 +531,17 @@ wlan_scan_get_entry_by_bssid(struct wlan_objmgr_pdev *pdev,
 void
 wlan_scan_get_last_scan_ageout_time(struct wlan_objmgr_psoc *psoc,
 				    uint32_t *last_scan_ageout_time);
+/**
+ * wlan_scan_get_entry_by_bssid() - function to get scan entry by bssid
+ * @pdev: pdev object
+ * @bssid: bssid to be fetched from scan db
+ *
+ * Return : scan entry if found, else NULL
+ */
+struct scan_cache_entry *
+wlan_scan_get_entry_by_bssid(struct wlan_objmgr_pdev *pdev,
+			     struct qdf_mac_addr *bssid);
+
 /**
  * wlan_scan_get_mld_addr_by_link_addr() - Function to get MLD address
  * in the scan entry from the link BSSID.
@@ -540,4 +558,21 @@ QDF_STATUS
 wlan_scan_get_mld_addr_by_link_addr(struct wlan_objmgr_pdev *pdev,
 				    struct qdf_mac_addr *link_addr,
 				    struct qdf_mac_addr *mld_mac_addr);
+
+/**
+ * wlan_scan_get_aux_support() - get aux scan policy
+ * @psoc: psoc object
+ *
+ * Set aux scan bits in scan_ctrl_ext_flag value depending on scan type.
+ *
+ * Return: true/false
+ */
+bool wlan_scan_get_aux_support(struct wlan_objmgr_psoc *psoc);
+
+static inline bool
+wlan_scan_entries_contain_cmn_akm(struct scan_cache_entry *entry1,
+				  struct scan_cache_entry *entry2)
+{
+	return scm_scan_entries_contain_cmn_akm(entry1, entry2);
+}
 #endif

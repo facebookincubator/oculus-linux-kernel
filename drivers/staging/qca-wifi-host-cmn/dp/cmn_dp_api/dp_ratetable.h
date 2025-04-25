@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -170,6 +170,7 @@ static inline int dp_ath_rate_out(uint64_t _i)
 #endif
 
 #define INVALID_RATE_ERR -1
+#define NUM_LEGACY_MCS 1
 
 /*
  * The order of the rate types are jumbled below since the current code
@@ -198,7 +199,7 @@ enum DP_CMN_RATE_TYPE {
 /* The following would span more than one octet
  * when 160MHz BW defined for VHT
  * Also it's important to maintain the ordering of
- * this enum else it would break other rate adapation functions.
+ * this enum else it would break other rate adaptation functions.
  */
 enum DP_CMN_MODULATION_TYPE {
 	   DP_CMN_MOD_IEEE80211_T_DS,   /* direct sequence spread spectrum */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2017, 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -252,6 +252,8 @@ typedef struct {
 /**
  * struct host_log_pktlog_info - Packet log info
  * @log_hdr: Log header
+ * @version: Version
+ * @seq_no:  Sequence number
  * @buf_len: Length of the buffer that follows
  * @buf:     Buffer containing the packet log info
  *
@@ -291,7 +293,7 @@ struct host_log_cold_boot_cal_data_type {
 #define WLAN_MAX_SSID_SIZE              32
 
 /**
- * host_log_wlan_mgmt_tx_rx_info: To capture TX/RX mgmt frames' payload
+ * struct host_log_wlan_mgmt_tx_rx_info - To capture TX/RX mgmt frames' payload
  * @hdr: Log header
  * @version: Version number of the payload
  * @vdev_id: Vdev id
@@ -360,7 +362,7 @@ struct wlan_roam_cu_trigger_data {
 } qdf_packed;
 
 /**
- * Struct wlan_roam_rssi_trigger_data - RSSI roam trigger related
+ * struct wlan_roam_rssi_trigger_data - RSSI roam trigger related
  * parameters
  * @threshold: RSSI threshold value in dBm for LOW rssi roam trigger
  */

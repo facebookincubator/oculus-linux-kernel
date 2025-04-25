@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,7 +42,7 @@ wlan_twt_psoc_obj_destroy_handler(struct wlan_objmgr_psoc *psoc, void *arg);
 
 /**
  * wlan_twt_vdev_obj_create_handler() - twt vdev create handler
- * @psoc: psoc handle
+ * @vdev: vdev handle
  * @arg: argument
  *
  * return: QDF_STATUS
@@ -52,7 +52,7 @@ wlan_twt_vdev_obj_create_handler(struct wlan_objmgr_vdev *vdev, void *arg);
 
 /**
  * wlan_twt_vdev_obj_destroy_handler() - twt vdev destroy handler
- * @psoc: psoc handle
+ * @vdev: vdev handle
  * @arg: argument
  *
  * return: QDF_STATUS
@@ -62,7 +62,7 @@ wlan_twt_vdev_obj_destroy_handler(struct wlan_objmgr_vdev *vdev, void *arg);
 
 /**
  * wlan_twt_peer_obj_create_handler() - twt peer create handler
- * @psoc: psoc handle
+ * @peer: peer handle
  * @arg: argument
  *
  * return: QDF_STATUS
@@ -72,7 +72,7 @@ wlan_twt_peer_obj_create_handler(struct wlan_objmgr_peer *peer, void *arg);
 
 /**
  * wlan_twt_peer_obj_destroy_handler() - twt peer destroy handler
- * @psoc: psoc handle
+ * @peer: peer handle
  * @arg: argument
  *
  * return: QDF_STATUS

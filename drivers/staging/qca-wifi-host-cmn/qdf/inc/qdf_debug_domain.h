@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +30,7 @@
 #include "qdf_types.h"
 
 /**
- * struct qdf_debug_domain - debug domains for tracking resource allocations
+ * enum qdf_debug_domain - debug domains for tracking resource allocations
  * @QDF_DEBUG_DOMAIN_INIT: The default debug domain, tied to driver load
  * @QDF_DEBUG_DOMAIN_ACTIVE: The active debug domain, tied some "running" state
  * @QDF_DEBUG_DOMAIN_COUNT: The number of debug domains for iterating, etc.

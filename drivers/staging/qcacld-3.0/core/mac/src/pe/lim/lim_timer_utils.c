@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -48,6 +48,12 @@
  * authentication.
  */
 #define LIM_AUTH_SAE_TIMER_MS 5000
+
+/*
+ * STA stats resp timer of 10secs. This is required for duration of RRM
+ * STA STATS report response from report request.
+ */
+#define LIM_RRM_STA_STATS_RSP_TIMER_MS 10000
 
 static bool lim_create_non_ap_timers(struct mac_context *mac)
 {
@@ -228,16 +234,28 @@ uint32_t lim_create_timers(struct mac_context *mac)
 	cfgValue = SYS_MS_TO_TICKS(cfgValue);
 	if (tx_timer_create(mac, &mac->lim.lim_timers.gLimDeauthAckTimer,
 			    "DISASSOC ACK TIMEOUT",
-			    lim_timer_handler, SIR_LIM_DEAUTH_ACK_TIMEOUT,
+			    lim_process_deauth_ack_timeout,
+			    WLAN_INVALID_VDEV_ID,
 			    cfgValue, 0, TX_NO_ACTIVATE) != TX_SUCCESS) {
 		pe_err("could not create DEAUTH ACK TIMEOUT timer");
 		goto err_timer;
 	}
 
+	if ((tx_timer_create(mac,
+			     &mac->lim.lim_timers.rrm_sta_stats_resp_timer,
+			     "STA STATS RSP timer",
+			     lim_timer_handler,
+			     SIR_LIM_RRM_STA_STATS_RSP_TIMEOUT,
+			     SYS_MS_TO_TICKS(LIM_RRM_STA_STATS_RSP_TIMER_MS), 0,
+			     TX_NO_ACTIVATE)) != TX_SUCCESS) {
+		pe_err("could not create STA STATS RSP Timer");
+		goto err_timer;
+	}
 	return TX_SUCCESS;
 
 err_timer:
 	lim_delete_timers_host_roam(mac);
+	tx_timer_delete(&mac->lim.lim_timers.rrm_sta_stats_resp_timer);
 	tx_timer_delete(&mac->lim.lim_timers.gLimDeauthAckTimer);
 	tx_timer_delete(&mac->lim.lim_timers.gLimDisassocAckTimer);
 	tx_timer_delete(&mac->lim.lim_timers.gLimUpdateOlbcCacheTimer);
@@ -674,6 +692,21 @@ void lim_deactivate_and_change_timer(struct mac_context *mac, uint32_t timerId)
 		if (tx_timer_change(&mac->lim.lim_timers.sae_auth_timer,
 				    val, 0) != TX_SUCCESS)
 			pe_err("unable to change SAE auth timer");
+
+		break;
+	case eLIM_RRM_STA_STATS_RSP_TIMER:
+		if (tx_timer_deactivate
+		   (&mac->lim.lim_timers.rrm_sta_stats_resp_timer)
+		    != TX_SUCCESS)
+			pe_err("Unable to deactivate STA STATS RSP timer");
+
+		/* Change timer to reactivate it in future */
+		val = SYS_MS_TO_TICKS(LIM_RRM_STA_STATS_RSP_TIMER_MS);
+
+		if (tx_timer_change(
+			&mac->lim.lim_timers.rrm_sta_stats_resp_timer,
+			val, 0) != TX_SUCCESS)
+			pe_err("unable to change STA STATS RSP timer");
 
 		break;
 

@@ -410,55 +410,75 @@ static int cam_vfe_bus_ver3_get_comp_vfe_out_res_id_list(
 static enum cam_vfe_bus_ver3_packer_format
 	cam_vfe_bus_ver3_get_packer_fmt(uint32_t out_fmt, int wm_index)
 {
+	enum cam_vfe_bus_ver3_packer_format packer_fmt = PACKER_FMT_VER3_MAX;
 	switch (out_fmt) {
 	case CAM_FORMAT_MIPI_RAW_6:
 	case CAM_FORMAT_MIPI_RAW_16:
 	case CAM_FORMAT_PLAIN16_8:
 	case CAM_FORMAT_PLAIN128:
 	case CAM_FORMAT_PD8:
-		return PACKER_FMT_VER3_PLAIN_128;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_128;
+		break;
 	case CAM_FORMAT_MIPI_RAW_8:
 	case CAM_FORMAT_PLAIN8:
-		return PACKER_FMT_VER3_PLAIN_8;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_8;
+		break;
 	case CAM_FORMAT_MIPI_RAW_10:
-		return PACKER_FMT_VER3_MIPI10;
+		packer_fmt = PACKER_FMT_VER3_MIPI10;
+		break;
 	case CAM_FORMAT_MIPI_RAW_12:
-		return PACKER_FMT_VER3_MIPI12;
+		packer_fmt = PACKER_FMT_VER3_MIPI12;
+		break;
 	case CAM_FORMAT_MIPI_RAW_14:
-		return PACKER_FMT_VER3_MIPI14;
+		packer_fmt = PACKER_FMT_VER3_MIPI14;
+		break;
 	case CAM_FORMAT_MIPI_RAW_20:
-		return PACKER_FMT_VER3_MIPI20;
+		packer_fmt = PACKER_FMT_VER3_MIPI20;
+		break;
 	case CAM_FORMAT_NV21:
 		if ((wm_index == 1) || (wm_index == 3) || (wm_index == 5) || (wm_index == 9))
-			return PACKER_FMT_VER3_PLAIN_8_LSB_MSB_10_ODD_EVEN;
+			packer_fmt = PACKER_FMT_VER3_PLAIN_8_LSB_MSB_10_ODD_EVEN;
+		else
+			packer_fmt = PACKER_FMT_VER3_PLAIN_8_LSB_MSB_10;
+		break;
 	case CAM_FORMAT_NV12:
 	case CAM_FORMAT_UBWC_NV12:
 	case CAM_FORMAT_UBWC_NV12_4R:
 	case CAM_FORMAT_Y_ONLY:
-		return PACKER_FMT_VER3_PLAIN_8_LSB_MSB_10;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_8_LSB_MSB_10;
+		break;
 	case CAM_FORMAT_PLAIN16_10:
-		return PACKER_FMT_VER3_PLAIN_16_10BPP;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_16_10BPP;
+		break;
 	case CAM_FORMAT_PLAIN16_12:
-		return PACKER_FMT_VER3_PLAIN_16_12BPP;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_16_12BPP;
+		break;
 	case CAM_FORMAT_PLAIN16_14:
-		return PACKER_FMT_VER3_PLAIN_16_14BPP;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_16_14BPP;
+		break;
 	case CAM_FORMAT_PLAIN16_16:
-		return PACKER_FMT_VER3_PLAIN_16_16BPP;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_16_16BPP;
+		break;
 	case CAM_FORMAT_PLAIN32:
 	case CAM_FORMAT_ARGB:
-		return PACKER_FMT_VER3_PLAIN_32;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_32;
+		break;
 	case CAM_FORMAT_PLAIN32_20:
-		return PACKER_FMT_VER3_PLAIN32_20BPP;
+		packer_fmt = PACKER_FMT_VER3_PLAIN32_20BPP;
+		break;
 	case CAM_FORMAT_PLAIN64:
 	case CAM_FORMAT_ARGB_16:
 	case CAM_FORMAT_PD10:
-		return PACKER_FMT_VER3_PLAIN_64;
+		packer_fmt = PACKER_FMT_VER3_PLAIN_64;
+		break;
 	case CAM_FORMAT_UBWC_TP10:
 	case CAM_FORMAT_TP10:
-		return PACKER_FMT_VER3_TP_10;
+		packer_fmt = PACKER_FMT_VER3_TP_10;
+		break;
 	default:
-		return PACKER_FMT_VER3_MAX;
+		packer_fmt = PACKER_FMT_VER3_MAX;
 	}
+	return packer_fmt;
 }
 
 static int cam_vfe_bus_ver3_handle_rup_top_half(uint32_t evt_id,
@@ -913,6 +933,7 @@ static int cam_vfe_bus_ver3_res_update_config_wm(
 		case CAM_FORMAT_UBWC_NV12:
 			rsrc_data->en_ubwc = 1;
 			/* Fall through for NV12 */
+			fallthrough;
 		case CAM_FORMAT_NV21:
 		case CAM_FORMAT_NV12:
 		case CAM_FORMAT_Y_ONLY:

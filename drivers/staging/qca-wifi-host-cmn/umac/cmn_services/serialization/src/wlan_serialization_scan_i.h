@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,7 +53,6 @@ wlan_serialization_active_scan_cmd_count_handler(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wlan_serialization_is_scan_pending_queue_empty()
- *
  * @cmd: Serialization command information
  *
  * This API will be find out if scan cmd pending queue is empty.
@@ -66,7 +65,7 @@ wlan_serialization_is_scan_pending_queue_empty(
 
 /**
  * wlan_serialization_is_active_scan_cmd_allowed() - find if scan cmd allowed
- * @pdev: pointer to pdev object
+ * @cmd: Serialization command information
  *
  * This API will be called to find out if active scan cmd is allowed. It has
  * to iterate through all pdev to find out total number of active scan cmds.
@@ -82,6 +81,7 @@ wlan_serialization_is_active_scan_cmd_allowed(
 /**
  * wlan_ser_match_cmd_scan_id() - Compare the scan id and the vdev to the given
  *			command
+ * @nnode: Command list node
  * @cmd: Serialization command information
  * @scan_id: Scan id to be compared
  * @vdev: Pointer to object manager vdev that needs to compared

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -283,6 +283,7 @@ bool ucfg_twt_is_command_in_progress(struct wlan_objmgr_psoc *psoc,
  * @vdev: Vdev pointer
  * @peer_mac: peer mac address
  * @dialog_id: dialog_id
+ * @is_ps_disabled: Whether Power saave is disabled or not
  * @twt_next_action: Set TWT next action to do before work schedule
  *
  * Return: None
@@ -291,6 +292,7 @@ void ucfg_twt_set_work_params(
 		struct wlan_objmgr_vdev *vdev,
 		struct qdf_mac_addr *peer_mac,
 		uint8_t dialog_id,
+		bool is_ps_disabled,
 		uint32_t twt_next_action);
 
 /**
@@ -313,6 +315,13 @@ void ucfg_twt_get_work_params(struct wlan_objmgr_vdev *vdev,
  * Return: QDF_STATUS
  */
 QDF_STATUS ucfg_twt_cfg_set_responder(struct wlan_objmgr_psoc *psoc, bool val);
+/**
+ * ucfg_twt_get_pmo_allowed() - Get twt allowed
+ * @psoc: psoc handler
+ *
+ * Return: QDF_STATUS_SUCCESS
+ */
+bool ucfg_twt_get_pmo_allowed(struct wlan_objmgr_psoc *psoc);
 #else
 static inline
 QDF_STATUS ucfg_twt_psoc_open(struct wlan_objmgr_psoc *psoc)
@@ -408,6 +417,7 @@ ucfg_twt_set_work_params(
 		struct wlan_objmgr_vdev *vdev,
 		struct qdf_mac_addr *peer_mac,
 		uint8_t dialog_id,
+		bool is_ps_disabled,
 		uint32_t twt_next_action)
 {
 }
@@ -431,5 +441,12 @@ bool ucfg_twt_cfg_is_twt_enabled(struct wlan_objmgr_psoc *psoc)
 {
 	return false;
 }
+
+static inline
+bool ucfg_twt_get_pmo_allowed(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
 #endif
 #endif

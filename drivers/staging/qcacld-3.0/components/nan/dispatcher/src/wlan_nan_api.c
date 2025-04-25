@@ -23,6 +23,7 @@
 #include "../../core/src/nan_main_i.h"
 #include "wlan_objmgr_vdev_obj.h"
 #include "wlan_nan_api_i.h"
+#include "cfg_nan_api.h"
 
 inline enum nan_datapath_state wlan_nan_get_ndi_state(
 					struct wlan_objmgr_vdev *vdev)
@@ -52,4 +53,9 @@ uint8_t wlan_nan_get_vdev_id_from_bssid(struct wlan_objmgr_pdev *pdev,
 bool wlan_nan_is_disc_active(struct wlan_objmgr_psoc *psoc)
 {
 	return nan_is_disc_active(psoc);
+}
+
+bool wlan_nan_is_eht_capable(struct wlan_objmgr_psoc *psoc)
+{
+	return cfg_nan_is_eht_cap_enable(psoc);
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -350,9 +350,9 @@ struct rx_mon_pkt_tlvs {
 
 /**
  * hal_rx_get_pkt_tlvs(): Function to retrieve pkt tlvs from nbuf
+ * @rx_buf_start: Pointer to data buffer field
  *
- * @nbuf: Pointer to data buffer field
- * Returns: pointer to rx_pkt_tlvs
+ * Return: pointer to rx_pkt_tlvs
  */
 static inline
 struct rx_pkt_tlvs *hal_rx_get_pkt_tlvs(uint8_t *rx_buf_start)
@@ -362,9 +362,9 @@ struct rx_pkt_tlvs *hal_rx_get_pkt_tlvs(uint8_t *rx_buf_start)
 
 /**
  * hal_rx_get_mpdu_info(): Function to retrieve mpdu info from pkt tlvs
- *
  * @pkt_tlvs: Pointer to pkt_tlvs
- * Returns: pointer to rx_mpdu_info structure
+ *
+ * Return: pointer to rx_mpdu_info structure
  */
 static inline
 struct rx_mpdu_info *hal_rx_get_mpdu_info(struct rx_pkt_tlvs *pkt_tlvs)
@@ -411,9 +411,9 @@ static inline void hal_rx_mon_dest_get_buffer_info_from_tlv(
 		RX_ATTENTION_1_TCP_UDP_CHKSUM_FAIL_MASK,	\
 		RX_ATTENTION_1_TCP_UDP_CHKSUM_FAIL_LSB))
 
-/*
- * hal_rx_attn_tcp_udp_cksum_fail_get(): get tcp_udp cksum fail bit
- * from rx attention
+/**
+ * hal_rx_attn_tcp_udp_cksum_fail_get() - get tcp_udp cksum fail bit
+ *                                        from rx attention
  * @buf: pointer to rx_pkt_tlvs
  *
  * Return: tcp_udp_cksum_fail
@@ -436,9 +436,9 @@ hal_rx_attn_tcp_udp_cksum_fail_get(uint8_t *buf)
 		RX_ATTENTION_1_IP_CHKSUM_FAIL_MASK,	\
 		RX_ATTENTION_1_IP_CHKSUM_FAIL_LSB))
 
-/*
- * hal_rx_attn_ip_cksum_fail_get(): get ip cksum fail bit
- * from rx attention
+/**
+ * hal_rx_attn_ip_cksum_fail_get() - get ip cksum fail bit
+ *                                   from rx attention
  * @buf: pointer to rx_pkt_tlvs
  *
  * Return: ip_cksum_fail
@@ -467,10 +467,11 @@ hal_rx_attn_ip_cksum_fail_get(uint8_t *buf)
 		RX_ATTENTION_1_CCE_MATCH_MASK,			\
 		RX_ATTENTION_1_CCE_MATCH_LSB))
 
-/*
- * hal_rx_msdu_cce_match_get_li(): get CCE match bit
- * from rx attention
+/**
+ * hal_rx_msdu_cce_match_get_li() - get CCE match bit
+ *                                  from rx attention
  * @buf: pointer to rx_pkt_tlvs
+ *
  * Return: CCE match value
  */
 static inline bool
@@ -520,12 +521,13 @@ hal_rx_mpdu_peer_meta_data_get_li(uint8_t *buf)
 		((peer_mdata) << RX_MPDU_INFO_8_PEER_META_DATA_LSB) &	\
 		RX_MPDU_INFO_8_PEER_META_DATA_MASK)
 
-/*
- * @ hal_rx_mpdu_peer_meta_data_set: set peer meta data in RX mpdu start tlv
+/**
+ * hal_rx_mpdu_peer_meta_data_set() - set peer meta data in RX mpdu
+ *                                    start tlv
+ * @buf: rx_tlv_hdr of the received packet
+ * @peer_mdata: peer meta data to be set.
  *
- * @ buf: rx_tlv_hdr of the received packet
- * @ peer_mdata: peer meta data to be set.
- * @ Return: void
+ * Return: void
  */
 static inline void
 hal_rx_mpdu_peer_meta_data_set(uint8_t *buf, uint32_t peer_mdata)
@@ -539,7 +541,7 @@ hal_rx_mpdu_peer_meta_data_set(uint8_t *buf, uint32_t peer_mdata)
 	HAL_RX_MPDU_PEER_META_DATA_SET(mpdu_info, peer_mdata);
 }
 
-/**
+/*
  * LRO information needed from the TLVs
  */
 #define HAL_RX_TLV_GET_LRO_ELIGIBLE(buf) \
@@ -649,10 +651,10 @@ hal_rx_mpdu_peer_meta_data_set(uint8_t *buf, uint32_t peer_mdata)
 		RX_MSDU_START_4_FLOW_ID_TOEPLITZ_LSB))
 
 /**
- * hal_rx_msdu_start_toeplitz_get: API to get the toeplitz hash
- * from rx_msdu_start TLV
+ * hal_rx_msdu_start_toeplitz_get() - API to get the toeplitz hash
+ *                                    from rx_msdu_start TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: toeplitz hash
  */
 static inline uint32_t
@@ -697,11 +699,13 @@ hal_rx_msdu_start_toeplitz_get(uint8_t *buf)
 		RX_MSDU_START_5_USER_RSSI_OFFSET)),	\
 		RX_MSDU_START_5_USER_RSSI_MASK,		\
 		RX_MSDU_START_5_USER_RSSI_LSB))
-/*
- * hal_rx_msdu_start_get_rssi(): API to get the rssi of received pkt
- * from rx_msdu_start
+
+/**
+ * hal_rx_msdu_start_get_rssi() - API to get the rssi of received pkt
+ *                                from rx_msdu_start
  *
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(rssi)
  */
 static inline uint32_t
@@ -778,14 +782,14 @@ hal_rx_msdu_start_get_rssi(uint8_t *buf)
 		REO_DESTINATION_RING_7_REO_ERROR_CODE_MASK) >> \
 		REO_DESTINATION_RING_7_REO_ERROR_CODE_LSB)
 
-/*
- * hal_rx_msdu_link_desc_reinject: Re-injects the MSDU link descriptor to
- * REO entrance ring
+/**
+ * hal_rx_msdu_link_desc_reinject() - Re-injects the MSDU link
+ *                                    descriptor to REO entrance ring
  *
- * @ soc: HAL version of the SOC pointer
- * @ pa: Physical address of the MSDU Link Descriptor
- * @ cookie: SW cookie to get to the virtual address
- * @ error_enabled_reo_q: Argument to determine whether this needs to go
+ * @soc: HAL version of the SOC pointer
+ * @pa: Physical address of the MSDU Link Descriptor
+ * @cookie: SW cookie to get to the virtual address
+ * @error_enabled_reo_q: Argument to determine whether this needs to go
  * to the error enabled REO queue
  *
  * Return: void
@@ -836,195 +840,6 @@ HAL_RX_DESC_GET_DECAP_FORMAT(void *hw_desc_addr) {
 	return HAL_RX_GET(rx_msdu_start, RX_MSDU_START_2, DECAP_FORMAT);
 }
 
-/**
- * hal_rx_dump_rx_attention_tlv: dump RX attention TLV in structured
- *				 humman readable format.
- * @ rx_attn: pointer the rx_attention TLV in pkt.
- * @ dbg_level: log level.
- *
- * Return: void
- */
-static inline void hal_rx_dump_rx_attention_tlv(struct rx_attention *rx_attn,
-						uint8_t dbg_level)
-{
-	hal_verbose_debug("rx_attention tlv (1/2) - "
-			  "rxpcu_mpdu_filter_in_category: %x "
-			  "sw_frame_group_id: %x "
-			  "reserved_0: %x "
-			  "phy_ppdu_id: %x "
-			  "first_mpdu : %x "
-			  "reserved_1a: %x "
-			  "mcast_bcast: %x "
-			  "ast_index_not_found: %x "
-			  "ast_index_timeout: %x "
-			  "power_mgmt: %x "
-			  "non_qos: %x "
-			  "null_data: %x "
-			  "mgmt_type: %x "
-			  "ctrl_type: %x "
-			  "more_data: %x "
-			  "eosp: %x "
-			  "a_msdu_error: %x "
-			  "fragment_flag: %x "
-			  "order: %x "
-			  "cce_match: %x "
-			  "overflow_err: %x "
-			  "msdu_length_err: %x "
-			  "tcp_udp_chksum_fail: %x "
-			  "ip_chksum_fail: %x "
-			  "sa_idx_invalid: %x "
-			  "da_idx_invalid: %x "
-			  "reserved_1b: %x "
-			  "rx_in_tx_decrypt_byp: %x ",
-			  rx_attn->rxpcu_mpdu_filter_in_category,
-			  rx_attn->sw_frame_group_id,
-			  rx_attn->reserved_0,
-			  rx_attn->phy_ppdu_id,
-			  rx_attn->first_mpdu,
-			  rx_attn->reserved_1a,
-			  rx_attn->mcast_bcast,
-			  rx_attn->ast_index_not_found,
-			  rx_attn->ast_index_timeout,
-			  rx_attn->power_mgmt,
-			  rx_attn->non_qos,
-			  rx_attn->null_data,
-			  rx_attn->mgmt_type,
-			  rx_attn->ctrl_type,
-			  rx_attn->more_data,
-			  rx_attn->eosp,
-			  rx_attn->a_msdu_error,
-			  rx_attn->fragment_flag,
-			  rx_attn->order,
-			  rx_attn->cce_match,
-			  rx_attn->overflow_err,
-			  rx_attn->msdu_length_err,
-			  rx_attn->tcp_udp_chksum_fail,
-			  rx_attn->ip_chksum_fail,
-			  rx_attn->sa_idx_invalid,
-			  rx_attn->da_idx_invalid,
-			  rx_attn->reserved_1b,
-			  rx_attn->rx_in_tx_decrypt_byp);
-
-	hal_verbose_debug("rx_attention tlv (2/2) - "
-			  "encrypt_required: %x "
-			  "directed: %x "
-			  "buffer_fragment: %x "
-			  "mpdu_length_err: %x "
-			  "tkip_mic_err: %x "
-			  "decrypt_err: %x "
-			  "unencrypted_frame_err: %x "
-			  "fcs_err: %x "
-			  "flow_idx_timeout: %x "
-			  "flow_idx_invalid: %x "
-			  "wifi_parser_error: %x "
-			  "amsdu_parser_error: %x "
-			  "sa_idx_timeout: %x "
-			  "da_idx_timeout: %x "
-			  "msdu_limit_error: %x "
-			  "da_is_valid: %x "
-			  "da_is_mcbc: %x "
-			  "sa_is_valid: %x "
-			  "decrypt_status_code: %x "
-			  "rx_bitmap_not_updated: %x "
-			  "reserved_2: %x "
-			  "msdu_done: %x ",
-			  rx_attn->encrypt_required,
-			  rx_attn->directed,
-			  rx_attn->buffer_fragment,
-			  rx_attn->mpdu_length_err,
-			  rx_attn->tkip_mic_err,
-			  rx_attn->decrypt_err,
-			  rx_attn->unencrypted_frame_err,
-			  rx_attn->fcs_err,
-			  rx_attn->flow_idx_timeout,
-			  rx_attn->flow_idx_invalid,
-			  rx_attn->wifi_parser_error,
-			  rx_attn->amsdu_parser_error,
-			  rx_attn->sa_idx_timeout,
-			  rx_attn->da_idx_timeout,
-			  rx_attn->msdu_limit_error,
-			  rx_attn->da_is_valid,
-			  rx_attn->da_is_mcbc,
-			  rx_attn->sa_is_valid,
-			  rx_attn->decrypt_status_code,
-			  rx_attn->rx_bitmap_not_updated,
-			  rx_attn->reserved_2,
-			  rx_attn->msdu_done);
-}
-
-/**
- * hal_rx_dump_mpdu_end_tlv: dump RX mpdu_end TLV in structured
- *			     human readable format.
- * @ mpdu_end: pointer the mpdu_end TLV in pkt.
- * @ dbg_level: log level.
- *
- * Return: void
- */
-static inline void hal_rx_dump_mpdu_end_tlv(struct rx_mpdu_end *mpdu_end,
-					    uint8_t dbg_level)
-{
-	hal_verbose_debug("rx_mpdu_end tlv - "
-			  "rxpcu_mpdu_filter_in_category: %x "
-			  "sw_frame_group_id: %x "
-			  "phy_ppdu_id: %x "
-			  "unsup_ktype_short_frame: %x "
-			  "rx_in_tx_decrypt_byp: %x "
-			  "overflow_err: %x "
-			  "mpdu_length_err: %x "
-			  "tkip_mic_err: %x "
-			  "decrypt_err: %x "
-			  "unencrypted_frame_err: %x "
-			  "pn_fields_contain_valid_info: %x "
-			  "fcs_err: %x "
-			  "msdu_length_err: %x "
-			  "rxdma0_destination_ring: %x "
-			  "rxdma1_destination_ring: %x "
-			  "decrypt_status_code: %x "
-			  "rx_bitmap_not_updated: %x ",
-			  mpdu_end->rxpcu_mpdu_filter_in_category,
-			  mpdu_end->sw_frame_group_id,
-			  mpdu_end->phy_ppdu_id,
-			  mpdu_end->unsup_ktype_short_frame,
-			  mpdu_end->rx_in_tx_decrypt_byp,
-			  mpdu_end->overflow_err,
-			  mpdu_end->mpdu_length_err,
-			  mpdu_end->tkip_mic_err,
-			  mpdu_end->decrypt_err,
-			  mpdu_end->unencrypted_frame_err,
-			  mpdu_end->pn_fields_contain_valid_info,
-			  mpdu_end->fcs_err,
-			  mpdu_end->msdu_length_err,
-			  mpdu_end->rxdma0_destination_ring,
-			  mpdu_end->rxdma1_destination_ring,
-			  mpdu_end->decrypt_status_code,
-			  mpdu_end->rx_bitmap_not_updated);
-}
-
-#ifdef NO_RX_PKT_HDR_TLV
-static inline void hal_rx_dump_pkt_hdr_tlv(struct rx_pkt_tlvs *pkt_tlvs,
-					   uint8_t dbg_level)
-{
-}
-#else
-/**
- * hal_rx_dump_pkt_hdr_tlv: dump RX pkt header TLV in hex format
- * @ pkt_hdr_tlv: pointer the pkt_hdr_tlv in pkt.
- * @ dbg_level: log level.
- *
- * Return: void
- */
-static inline void hal_rx_dump_pkt_hdr_tlv(struct rx_pkt_tlvs *pkt_tlvs,
-					   uint8_t dbg_level)
-{
-	struct rx_pkt_hdr_tlv *pkt_hdr_tlv = &pkt_tlvs->pkt_hdr_tlv;
-
-	hal_verbose_debug("\n---------------\nrx_pkt_hdr_tlv"
-			  "\n---------------\nphy_ppdu_id %d ",
-			  pkt_hdr_tlv->phy_ppdu_id);
-	hal_verbose_hex_dump(pkt_hdr_tlv->rx_pkt_hdr, 128);
-}
-#endif
-
 #define HAL_RX_MPDU_GET_FRAME_CONTROL_FIELD(_rx_mpdu_info)	\
 	(_HAL_MS((*_OFFSET_TO_WORD_PTR(_rx_mpdu_info,	\
 		RX_MPDU_INFO_14_MPDU_FRAME_CONTROL_FIELD_OFFSET)),	\
@@ -1032,9 +847,9 @@ static inline void hal_rx_dump_pkt_hdr_tlv(struct rx_pkt_tlvs *pkt_tlvs,
 		RX_MPDU_INFO_14_MPDU_FRAME_CONTROL_FIELD_LSB))
 /**
  * hal_rx_get_rx_more_frag_bit(): Function to retrieve more fragment bit
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: rx more fragment bit
+ * Return: rx more fragment bit
  */
 static inline
 uint8_t hal_rx_get_rx_more_frag_bit(uint8_t *buf)
@@ -1113,17 +928,16 @@ uint32_t hal_rx_msdu_flags_get_li(rx_msdu_desc_info_t msdu_desc_info_hdl)
 	return HAL_RX_MSDU_FLAGS_GET(msdu_desc_info);
 }
 
-/*
- *hal_rx_msdu_desc_info_get_li: Gets the flags related to MSDU descriptor.
- *@desc_addr: REO ring descriptor addr
- *@msdu_desc_info: Holds MSDU descriptor info from HAL Rx descriptor
+/**
+ * hal_rx_msdu_desc_info_get_li() - Gets the flags related to MSDU descriptor.
+ * @desc_addr: REO ring descriptor addr
+ * @msdu_desc_info: Holds MSDU descriptor info from HAL Rx descriptor
  *
  * Specifically flags needed are: first_msdu_in_mpdu,
  * last_msdu_in_mpdu, msdu_continuation, sa_is_valid,
  * sa_idx_timeout, da_is_valid, da_idx_timeout, da_is_MCBC
  *
-
- *Return: void
+ * Return: void
  */
 static inline void
 hal_rx_msdu_desc_info_get_li(void *desc_addr,
@@ -1153,8 +967,8 @@ hal_rx_msdu_desc_info_get_li(void *desc_addr,
 		RX_ATTENTION_1_MSDU_LENGTH_ERR_LSB))
 
 /**
- * hal_rx_attn_msdu_len_err_get_li(): Get msdu_len_err value from
- *  rx attention tlvs
+ * hal_rx_attn_msdu_len_err_get_li() - Get msdu_len_err value from rx
+ *                                     attention tlvs
  * @buf: pointer to rx pkt tlvs hdr
  *
  * Return: msdu_len_err value

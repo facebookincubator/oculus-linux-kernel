@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,16 +35,6 @@ tgt_twt_enable_req_send(struct wlan_objmgr_psoc *psoc,
 	struct wlan_lmac_if_twt_tx_ops *tx_ops;
 	QDF_STATUS status;
 
-	if (!psoc) {
-		twt_err("null psoc");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	if (!req) {
-		twt_err("Invalid input");
-		return QDF_STATUS_E_INVAL;
-	}
-
 	tx_ops = wlan_twt_get_tx_ops(psoc);
 	if (!tx_ops || !tx_ops->enable_req) {
 		twt_err("twt enable_req tx_ops is null");
@@ -66,16 +56,6 @@ tgt_twt_disable_req_send(struct wlan_objmgr_psoc *psoc,
 {
 	struct wlan_lmac_if_twt_tx_ops *tx_ops;
 	QDF_STATUS status;
-
-	if (!psoc) {
-		twt_err("null psoc");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	if (!req) {
-		twt_err("Invalid input");
-		return QDF_STATUS_E_INVAL;
-	}
 
 	tx_ops = wlan_twt_get_tx_ops(psoc);
 	if (!tx_ops || !tx_ops->disable_req) {

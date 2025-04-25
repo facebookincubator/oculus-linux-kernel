@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2019-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -71,8 +72,7 @@ wlan_spectral_get_phy_ch_width(uint8_t nl_chwidth);
 /**
  * wlan_cfg80211_register_spectral_cmd_handler() - Registration api for spectral
  * @pdev:    Pointer to pdev
- * @idx:     Index in function table
- * @handler: Pointer to handler
+ * @handlers: Pointer to handlers
  *
  * Return: 0 on success, negative value on failure
  */

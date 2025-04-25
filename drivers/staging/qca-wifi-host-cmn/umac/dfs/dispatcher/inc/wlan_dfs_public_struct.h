@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,6 +39,7 @@
  * @chan_freq:      channel frequency (Primary channel frequency).
  * @radar_freq:     radar frequency (Is it same as '@chan_freq'?).
  * @sidx:           sidx value (same as freq_offset).
+ * @is_full_bw_nol: Is full bandwidth needed to put to NOL.
  */
 struct radar_found_info {
 	uint32_t pdev_id;
@@ -51,6 +53,7 @@ struct radar_found_info {
 	uint32_t chan_freq;
 	uint32_t radar_freq;
 	int32_t  sidx;
+	uint8_t is_full_bw_nol;
 };
 
 /**
@@ -129,7 +132,7 @@ struct dfs_radar_found_params {
  * enum adfs_ocac_mode - Various Off-Channel CAC modes.
  * @QUICK_OCAC_MODE: Used for OCAC where the CAC timeout value is finite.
  *                   This is also known as PreCAC.
- * @EXTENSIVE_OCAC:  Extensive OCAC.
+ * @EXTENSIVE_OCAC_MODE:  Extensive OCAC.
  * @QUICK_RCAC_MODE: Used for RollingCAC where the timeout value is assumed to
  *                   be infinite by the Firmware code, that is, the FW has to
  *                   be on the agile channel until host stop/aborts the agile
@@ -185,6 +188,7 @@ struct dfs_agile_cac_params {
  *                           DFS channel.
  * @CH_DFS_S_PRECAC_COMPLETED: Indicates that the PreCAC has been completed for
  *                             the DFS channel.
+ * @CH_DFS_S_NON_DFS: Indicates that it is a non-DFS channel.
  */
 enum channel_dfs_state {
 	CH_DFS_S_INVALID,
@@ -194,5 +198,18 @@ enum channel_dfs_state {
 	CH_DFS_S_NOL,
 	CH_DFS_S_PRECAC_STARTED,
 	CH_DFS_S_PRECAC_COMPLETED,
+	CH_DFS_S_NON_DFS,
+};
+
+/**
+ * enum ocac_status_type - Enum for OCAC status for Agile DFS.
+ * @OCAC_SUCCESS:       OCAC completed successfully.
+ * @OCAC_RESET:         OCAC status was reset.
+ * @OCAC_CANCEL:        OCAC canceled.
+ */
+enum ocac_status_type {
+	OCAC_SUCCESS = 0,
+	OCAC_RESET,
+	OCAC_CANCEL,
 };
 #endif

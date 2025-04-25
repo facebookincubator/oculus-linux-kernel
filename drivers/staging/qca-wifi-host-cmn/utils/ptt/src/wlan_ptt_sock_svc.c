@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -152,7 +153,9 @@ int ptt_sock_send_msg_to_app(tAniHdr *wmsg, int radio, int src_mod, int pid)
 	}
 	wnl = (tAniNlHdr *) nlh;
 	wnl->radio = radio;
-	memcpy(&wnl->wmsg, wmsg, wmsg_length);
+
+	/* Offset of data buffer from nlmsg_hdr + sizeof(int) radio */
+	memcpy(nlmsg_data(nlh) + sizeof(wnl->radio), wmsg, wmsg_length);
 #ifdef PTT_SOCK_DEBUG_VERBOSE
 	ptt_sock_dump_buf((const unsigned char *)skb->data, skb->len);
 #endif

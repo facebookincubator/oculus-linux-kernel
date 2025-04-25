@@ -16,7 +16,10 @@
 #include <linux/workqueue.h>
 #include <linux/genalloc.h>
 #include <linux/debugfs.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 #include <linux/dma-iommu.h>
+#endif
 #include <linux/hashtable.h>
 
 #include <soc/qcom/secure_buffer.h>

@@ -1236,6 +1236,56 @@
 	CFG_INI_BOOL("dp_apply_mem_profile", false, \
 		     "enable/disable dp mem profile")
 
+#ifdef WLAN_SUPPORT_RX_FISA
+/*
+ * <ini>
+ * dp_rx_fisa_enable - Control Rx datapath FISA
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to enable DP Rx FISA feature
+ *
+ * Related: dp_rx_flow_search_table_size
+ *
+ * Supported Feature: STA,P2P and SAP IPA disabled terminating
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_DP_RX_FISA_ENABLE \
+	CFG_INI_BOOL("dp_rx_fisa_enable", true, \
+		     "Enable/Disable DP Rx FISA")
+
+/*
+ * <ini>
+ * dp_rx_fisa_lru_del_enable - Control Rx datapath FISA
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to enable DP Rx FISA lru deletion feature
+ *
+ * Related: dp_rx_fisa_enable
+ *
+ * Supported Feature: STA,P2P and SAP IPA disabled terminating
+ *
+ * Usage: Internal
+ *
+ * </ini>
+ */
+#define CFG_DP_RX_FISA_LRU_DEL_ENABLE \
+	CFG_INI_BOOL("dp_rx_fisa_lru_del_enable", true, \
+		     "Enable/Disable DP Rx FISA LRU deletion")
+
+#define CFG_DP_FISA \
+	CFG(CFG_DP_RX_FISA_ENABLE) \
+	CFG(CFG_DP_RX_FISA_LRU_DEL_ENABLE)
+#else
+#define CFG_DP_FISA
+#endif
+
 /*TODO Flow control part to be moved to DP later*/
 
 #ifdef WLAN_FEATURE_DP_BUS_BANDWIDTH
@@ -1308,6 +1358,7 @@
 	CFG_DP_DRIVER_TCP_DELACK \
 	CFG_DP_ENABLE_NUD_TRACKING_ALL \
 	CFG_DP_CONFIG_DP_TRACE_ALL \
-	CFG_DP_HL_BUNDLE
+	CFG_DP_HL_BUNDLE \
+	CFG_DP_FISA
 
 #endif /* WLAN_DP_CFG_H__ */

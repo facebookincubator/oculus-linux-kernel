@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2022, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/iommu.h>
@@ -70,6 +70,7 @@ static const struct msm_vidc_cap_name cap_name_arr[] = {
 	{META_TIMESTAMP,                 "META_TIMESTAMP"             },
 	{META_CONCEALED_MB_CNT,          "META_CONCEALED_MB_CNT"      },
 	{META_HIST_INFO,                 "META_HIST_INFO"             },
+	{META_MULTI_VIEW_ID,             "META_MULTI_VIEW_ID"         },
 	{META_PICTURE_TYPE,              "META_PICTURE_TYPE"          },
 	{META_SEI_MASTERING_DISP,        "META_SEI_MASTERING_DISP"    },
 	{META_SEI_CLL,                   "META_SEI_CLL"               },
@@ -1646,6 +1647,7 @@ bool msm_vidc_allow_metadata_subscription(struct msm_vidc_inst *inst, u32 cap_id
 		case META_CROP_OFFSETS:
 		case META_SEI_MASTERING_DISP:
 		case META_SEI_CLL:
+		case METADATA_MULTI_VIEW:
 		case META_HDR10PLUS:
 			if (!is_meta_rx_inp_enabled(inst, META_OUTBUF_FENCE)) {
 				i_vpr_h(inst,
@@ -1661,6 +1663,7 @@ bool msm_vidc_allow_metadata_subscription(struct msm_vidc_inst *inst, u32 cap_id
 	} else if (port == OUTPUT_PORT) {
 		switch (cap_id) {
 		case META_DPB_TAG_LIST:
+		case METADATA_MULTI_VIEW:
 			if (!is_ubwc_colorformat(inst->capabilities->cap[PIX_FMTS].value)) {
 				i_vpr_h(inst,
 					"%s: cap: %24s not allowed for split mode\n",

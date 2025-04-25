@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,7 +35,7 @@ hdd_handle_nud_fail_sta(struct hdd_context *hdd_ctx,
 			struct hdd_adapter *adapter)
 {
 	struct reject_ap_info ap_info;
-	struct hdd_station_ctx *sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+	struct hdd_station_ctx *sta_ctx;
 	struct qdf_mac_addr bssid;
 
 	if (hdd_is_roaming_in_progress(hdd_ctx)) {
@@ -44,7 +44,9 @@ hdd_handle_nud_fail_sta(struct hdd_context *hdd_ctx,
 	}
 
 	hdd_debug("nud fail detected, try roaming to better BSSID, vdev id: %d",
-		  adapter->vdev_id);
+		  adapter->deflink->vdev_id);
+
+	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter->deflink);
 
 	qdf_mem_zero(&ap_info, sizeof(struct reject_ap_info));
 	ap_info.bssid = sta_ctx->conn_info.bssid;
@@ -56,26 +58,27 @@ hdd_handle_nud_fail_sta(struct hdd_context *hdd_ctx,
 	if (roaming_offload_enabled(hdd_ctx)) {
 		qdf_zero_macaddr(&bssid);
 		ucfg_wlan_cm_roam_invoke(hdd_ctx->pdev,
-					 adapter->vdev_id,
+					 adapter->deflink->vdev_id,
 					 &bssid, 0, CM_ROAMING_NUD_FAILURE);
 	}
 }
 
 static void
-hdd_handle_nud_fail_non_sta(struct hdd_adapter *adapter)
+hdd_handle_nud_fail_non_sta(struct wlan_hdd_link_info *link_info)
 {
-	wlan_hdd_cm_issue_disconnect(adapter,
+	wlan_hdd_cm_issue_disconnect(link_info,
 				     REASON_GATEWAY_REACHABILITY_FAILURE,
 				     false);
 }
 
 /**
  * __hdd_nud_failure_work() - work for nud event
- * @adapter: Pointer to hdd_adapter
+ * @adapter: HDD adapter
  *
  * Return: None
  */
-static void __hdd_nud_failure_work(struct hdd_adapter *adapter)
+static void
+__hdd_nud_failure_work(struct hdd_adapter *adapter)
 {
 	struct hdd_context *hdd_ctx;
 	int status;
@@ -92,7 +95,7 @@ static void __hdd_nud_failure_work(struct hdd_adapter *adapter)
 	if (0 != status)
 		return;
 
-	if (!hdd_cm_is_vdev_associated(adapter)) {
+	if (!hdd_cm_is_vdev_associated(adapter->deflink)) {
 		hdd_debug("Not in Connected State");
 		return;
 	}
@@ -117,23 +120,17 @@ static void __hdd_nud_failure_work(struct hdd_adapter *adapter)
 		hdd_handle_nud_fail_sta(hdd_ctx, adapter);
 		return;
 	}
-	hdd_handle_nud_fail_non_sta(adapter);
+	hdd_handle_nud_fail_non_sta(adapter->deflink);
 
 	hdd_exit();
 }
 
-void hdd_nud_failure_work(hdd_cb_handle context, uint8_t vdev_id)
+void hdd_nud_failure_work(hdd_cb_handle context, qdf_netdev_t netdev)
 {
-	struct hdd_context *hdd_ctx;
 	struct hdd_adapter *adapter;
 	struct osif_vdev_sync *vdev_sync;
 
-	hdd_ctx = hdd_cb_handle_to_context(context);
-	if (!hdd_ctx) {
-		hdd_err("hdd_ctx is null");
-		return;
-	}
-	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	adapter = WLAN_HDD_GET_PRIV_PTR(netdev);
 	if (!adapter) {
 		hdd_err("adapter is null");
 		return;

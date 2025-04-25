@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -25,6 +25,10 @@
 #include <dp_rx_mon_2.0.h>
 #include <dp_rx.h>
 #include <dp_rx_mon.h>
+
+#ifdef BE_PKTLOG_SUPPORT
+#define BUFFER_RESIDUE 1
+#define RX_MON_MIN_HEAD_ROOM   64
 
 QDF_STATUS
 dp_rx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
@@ -67,4 +71,5 @@ dp_rx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
 
 	return QDF_STATUS_SUCCESS;
 }
+#endif
 

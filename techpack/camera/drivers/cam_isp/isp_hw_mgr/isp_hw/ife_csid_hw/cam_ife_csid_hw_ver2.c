@@ -1230,7 +1230,7 @@ void cam_ife_csid_hw_ver2_rdi_line_buffer_conflict_handler(
 	uint8_t *log_buf = NULL;
 	size_t len = 0;
 
-	for (i = CAM_IFE_PIX_PATH_RES_RDI_0; i < CAM_IFE_PIX_PATH_RES_RDI_4;
+	for (i = CAM_IFE_PIX_PATH_RES_RDI_0; i < CAM_IFE_PIX_PATH_RES_RDI_5;
 		i++) {
 		path_reg = csid_reg->path_reg[i - CAM_IFE_PIX_PATH_RES_RDI_0];
 
@@ -1624,7 +1624,6 @@ static int cam_ife_csid_ver2_ipp_bottom_half(
 		goto end;
 	}
 
-
 	evt_info.event_data = &timestamp;
 	evt_info.hw_type    = CAM_ISP_HW_TYPE_CSID;
 	evt_info.hw_idx     = csid_hw->hw_intf->hw_idx;
@@ -1656,9 +1655,9 @@ static int cam_ife_csid_ver2_ipp_bottom_half(
 		csid_hw->event_cb(token, CAM_ISP_HW_EVENT_EOF, (void *)&evt_info);
 
 	if (irq_status_ipp & path_reg->sof_irq_mask) {
-		reinit_completion(&path_cfg->sof_done);
 		ap_monotonic_ts = ((uint64_t)payload->irq_reg_val[CAM_IFE_CSID_IRQ_AP_MONOTONIC_TIMESTAMP_1] << 32) |
 			payload->irq_reg_val[CAM_IFE_CSID_IRQ_AP_MONOTONIC_TIMESTAMP_0];
+		reinit_completion(&path_cfg->sof_done);
 		csid_hw->event_cb(token, CAM_ISP_HW_EVENT_SOF, (void *)&evt_info);
 	}
 
@@ -2507,6 +2506,7 @@ static int cam_ife_csid_hw_ver2_config_rx(
 	case CAM_ISP_IFE_IN_RES_TPG:
 		csid_hw->rx_cfg.phy_sel = 0;
 		csid_hw->rx_cfg.tpg_mux_sel = 0;
+		break;
 	case CAM_ISP_IFE_IN_RES_CPHY_TPG_0:
 		csid_hw->rx_cfg.tpg_mux_sel = 1;
 		csid_hw->rx_cfg.tpg_num_sel = 1;
@@ -4698,7 +4698,6 @@ int cam_ife_csid_ver2_start(void *hw_priv, void *args,
 		return -EINVAL;
 	}
 
-
 	mutex_lock(&csid_hw->hw_info->hw_mutex);
 	csid_hw->flags.sof_irq_triggered = false;
 	csid_hw->counters.irq_debug_cnt = 0;
@@ -4927,6 +4926,7 @@ static int cam_ife_csid_ver2_top_cfg(
 
 	case CAM_IFE_CSID_INPUT_CORE_SFE:
 		csid_hw->top_cfg.out_ife_en = false;
+		fallthrough;
 	case CAM_IFE_CSID_INPUT_CORE_SFE_IFE:
 
 		if (top_args->core_idx == 0) {
@@ -5187,7 +5187,6 @@ static int cam_ife_csid_ver2_get_time_stamp(
 	struct cam_csid_get_time_stamp_args *timestamp_args;
 	struct cam_ife_csid_ver2_reg_info *csid_reg;
 	uint64_t  time_delta;
-	struct timespec64 ts;
 
 	timestamp_args = (struct cam_csid_get_time_stamp_args *)cmd_args;
 	res = timestamp_args->node_res;
@@ -5235,22 +5234,26 @@ static int cam_ife_csid_ver2_get_time_stamp(
 	time_delta = timestamp_args->time_stamp_val -
 		csid_hw->timestamp[res->res_id].prev_sof_ts;
 
-	if (!csid_hw->timestamp[res->res_id].prev_boot_ts) {
-		ktime_get_boottime_ts64(&ts);
-		timestamp_args->boot_timestamp =
-			(uint64_t)((ts.tv_sec * 1000000000) +
-			ts.tv_nsec);
-	} else {
-		timestamp_args->boot_timestamp =
-			csid_hw->timestamp[res->res_id].prev_boot_ts + time_delta;
-	}
-
 	if (!csid_hw->timestamp[res->res_id].prev_monotonic_ts) {
 		timestamp_args->monotonic_timestamp = ktime_get_ns();
 	} else {
 		timestamp_args->monotonic_timestamp =
 			csid_hw->timestamp[res->res_id].prev_monotonic_ts + time_delta;
 	}
+
+	if (g_ref_time.btime == 0) {
+		mutex_lock(&g_ref_time.lock);
+		if (g_ref_time.btime == 0) {
+			g_ref_time.qtime = arch_timer_read_counter();
+			g_ref_time.btime = ktime_get_boottime_ns();
+			g_ref_time.qtime = mul_u64_u32_div(g_ref_time.qtime,
+				CAM_IFE_CSID_QTIMER_MUL_FACTOR, CAM_IFE_CSID_QTIMER_DIV_FACTOR);
+		}
+		mutex_unlock(&g_ref_time.lock);
+	}
+
+	timestamp_args->boot_timestamp = g_ref_time.btime + timestamp_args->time_stamp_val -
+		g_ref_time.qtime;
 
 	// As changing fence callback messages and evt_header is problematic
 	// we override the boot_timestamp of QC directly

@@ -137,7 +137,7 @@ os_if_dp_service_class_set_cmd(struct nlattr *svc_params[])
 	}
 
 	svc_data.svc_id = nla_get_u8(tb[cmd_id]);
-	svc_data.flags |= DP_SVC_FLAGS_SVC_ID;
+	svc_data.flags = DP_SVC_FLAGS_SVC_ID;
 
 	cmd_id = QCA_WLAN_VENDOR_ATTR_SDWF_SVC_BUFFER_LATENCY_TOLERANCE;
 	if (tb[cmd_id]) {
@@ -249,7 +249,10 @@ os_if_dp_service_class_get_cmd(struct wiphy *wiphy, struct nlattr *svc_params[])
 
 	for (i = 0; i < count; i++) {
 		svc_info = nla_nest_start(skb, i);
-
+		if (!svc_info) {
+			wlan_cfg80211_vendor_free_skb(skb);
+			return QDF_STATUS_E_INVAL;
+		}
 		nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SVC_ID, svc_table[i].svc_id);
 		if (svc_table[i].flags & DP_SVC_FLAGS_BUFFER_LATENCY_TOLERANCE)
 			nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SVC_BUFFER_LATENCY_TOLERANCE,

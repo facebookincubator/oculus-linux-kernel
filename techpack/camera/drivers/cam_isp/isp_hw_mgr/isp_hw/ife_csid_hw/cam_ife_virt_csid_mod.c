@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -1061,42 +1061,50 @@ int cam_ife_virt_csid_populate_hybrid_regs(void *hw_priv, void *args,
 			vcdt5 |= sdata->vcdt[9].vc << MULTI_VCDT_VC_SHIFT |
 				sdata->vcdt[9].dt << MULTI_VCDT_DT_SHIFT |
 				1 << MULTI_VCDT_EN_SHIFT;
+			fallthrough;
 		case 9:
 			vcdt5 |= sdata->vcdt[8].vc << VCDT_CFGn_VC_SHIFT |
 				sdata->vcdt[8].dt << VCDT_CFGn_DT_SHIFT |
 				1 << VCDT_CFGn_EN_SHIFT;
 			CAM_ADD_REG_VAL_PAIR(cdm_payload, *idx,
 					RDI3_VCDT_CFG5_OFF, vcdt5);
+			fallthrough;
 		case 8:
 			vcdt4 |= sdata->vcdt[7].vc << MULTI_VCDT_VC_SHIFT |
 				sdata->vcdt[7].dt << MULTI_VCDT_DT_SHIFT |
 				1 << MULTI_VCDT_EN_SHIFT;
+			fallthrough;
 		case 7:
 			vcdt4 |= sdata->vcdt[6].vc << VCDT_CFGn_VC_SHIFT |
 				sdata->vcdt[6].dt << VCDT_CFGn_DT_SHIFT |
 				1 << VCDT_CFGn_EN_SHIFT;
 			CAM_ADD_REG_VAL_PAIR(cdm_payload, *idx,
 					RDI3_VCDT_CFG4_OFF, vcdt4);
+			fallthrough;
 		case 6:
 			vcdt3 |= sdata->vcdt[5].vc << MULTI_VCDT_VC_SHIFT |
 				sdata->vcdt[5].dt << MULTI_VCDT_DT_SHIFT |
 				1 << MULTI_VCDT_EN_SHIFT;
+			fallthrough;
 		case 5:
 			vcdt3 |= sdata->vcdt[4].vc << VCDT_CFGn_VC_SHIFT |
 				sdata->vcdt[4].dt << VCDT_CFGn_DT_SHIFT |
 				1 << VCDT_CFGn_EN_SHIFT;
 			CAM_ADD_REG_VAL_PAIR(cdm_payload, *idx,
 					RDI3_VCDT_CFG3_OFF, vcdt3);
+			fallthrough;
 		case 4:
 			vcdt2 |= sdata->vcdt[3].vc << MULTI_VCDT_VC_SHIFT |
 				sdata->vcdt[3].dt << MULTI_VCDT_DT_SHIFT |
 				1 << MULTI_VCDT_EN_SHIFT;
+			fallthrough;
 		case 3:
 			vcdt2 |= sdata->vcdt[2].vc << VCDT_CFGn_VC_SHIFT |
 				sdata->vcdt[2].dt << VCDT_CFGn_DT_SHIFT |
 				1 << VCDT_CFGn_EN_SHIFT;
 			CAM_ADD_REG_VAL_PAIR(cdm_payload, *idx,
 					RDI3_VCDT_CFG2_OFF, vcdt2);
+			fallthrough;
 		case 2:
 			/* programmed in RDI3_MULTI_VCDT_CFG0 */
 		case 1:

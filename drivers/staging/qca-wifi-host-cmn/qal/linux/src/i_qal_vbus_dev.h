@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,7 +41,8 @@ struct qdf_vbus_rstctl;
 struct qdf_dev_clk;
 struct qdf_pfm_hndl;
 struct qdf_pfm_drv;
-
+struct qdf_device_node;
+typedef enum of_gpio_flags __qdf_of_gpio_flags;
 /**
  * __qal_vbus_get_iorsc() - acquire io resource
  * @devnum: Device Number
@@ -73,6 +75,117 @@ static inline QDF_STATUS
 __qal_vbus_release_iorsc(int devnum)
 {
 	gpio_free(devnum);
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * __qal_vbus_allocate_iorsc() - allocate io resource
+ * @pinnum: pin Number
+ * @label: name of pin
+ *
+ * This function will allocate io resource
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS
+__qal_vbus_allocate_iorsc(unsigned int pinnum, const char *label)
+{
+	int ret;
+
+	ret = gpio_request(pinnum, label);
+
+	return qdf_status_from_os_return(ret);
+}
+
+/**
+ * __qal_vbus_iorsc_dir_output() - set pin dirction to output
+ * @pin: pin Number
+ * @val: value
+ *
+ * This function set the gpio pin direction to output
+ *
+ * Return: 0 on success, error no on failure
+ */
+static inline QDF_STATUS
+__qal_vbus_iorsc_dir_output(unsigned int pin, int val)
+{
+	int ret;
+
+	ret = gpio_direction_output(pin, val);
+
+	return qdf_status_from_os_return(ret);
+}
+
+/**
+ * __qal_vbus_iorsc_set_value() - set pin direction
+ * @pin: pin Number
+ * @val: value
+ *
+ * This function set the gpio pin direction based on value
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS
+__qal_vbus_iorsc_set_value(unsigned int pin, int val)
+{
+	gpio_set_value(pin, val);
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * __qal_vbus_iorsc_toirq() - set irq number to gpio
+ * @pin: pin Number
+ *
+ * This function set the irq number to gpio pin
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS
+__qal_vbus_iorsc_toirq(unsigned int pin)
+{
+	int ret;
+
+	ret = gpio_to_irq(pin);
+
+	return qdf_status_from_os_return(ret);
+}
+
+/**
+ * __qal_vbus_request_irq() - set interrupt handler
+ * @irqnum: irq Number
+ * @handler: function handler to be called
+ * @flags: irq flags
+ * @dev_name: device name
+ * @ctx: pointer to device context
+ *
+ * This function set up the handling of the interrupt
+ *
+ * Return: QDF_STATUS_SUCCESS on success, Error code on failure
+ */
+static inline QDF_STATUS
+__qal_vbus_request_irq(unsigned int irqnum,
+		       irqreturn_t (*handler)(int irq, void *arg),
+		       unsigned long flags, const char *dev_name, void *ctx)
+{
+	int ret;
+
+	ret = request_irq(irqnum, handler, flags, dev_name, ctx);
+	return qdf_status_from_os_return(ret);
+}
+
+/**
+ * __qal_vbus_free_irq() - free irq
+ * @irqnum: irq Number
+ * @ctx: pointer to device context
+ *
+ * This function free the irq number set to gpio pin
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS
+__qal_vbus_free_irq(unsigned int irqnum, void *ctx)
+{
+	free_irq(irqnum, ctx);
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -316,5 +429,35 @@ __qal_vbus_rcu_read_unlock(void)
 
 	return QDF_STATUS_SUCCESS;
 }
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0))
+/**
+ * __qal_vbus_of_get_named_gpio_flags() - Get a GPIO descriptor and flags
+ * for GPIO API
+ * @np: device node to get GPIO from
+ * @list_name: property name containing gpio specifier(s)
+ * @index: index of the GPIO
+ * @flags: a flags pointer to fill in
+ *
+ * The global GPIO number for the GPIO specified by its descriptor.
+ */
+static inline int
+__qal_vbus_of_get_named_gpio_flags(struct qdf_device_node *np,
+				   const char *list_name,
+				   int index, __qdf_of_gpio_flags *flags)
+{
+	return of_get_named_gpio_flags((struct device_node *)np,
+				       list_name, index, flags);
+}
+#else
+static inline int
+__qal_vbus_of_get_named_gpio_flags(struct qdf_device_node *np,
+				   const char *list_name,
+				   int index, __qdf_of_gpio_flags *flags)
+{
+	QDF_ASSERT(0);
+	return QDF_STATUS_E_NOSUPPORT;
+}
+#endif
 
 #endif /* __I_QAL_VBUS_DEV_H */

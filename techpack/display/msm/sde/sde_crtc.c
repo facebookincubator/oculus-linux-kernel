@@ -764,6 +764,24 @@ static ssize_t blu_default_duty_store(struct device *device,
 	return count;
 }
 
+static ssize_t blu_current_duty_cycle_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EINVAL;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+	return scnprintf(buf, PAGE_SIZE, "%u\n", bl_config->blu_current_duty_cycle);
+}
+
 static ssize_t fifo_scanlines_show(struct device *device,
 	struct device_attribute *attr, char *buf)
 {
@@ -975,6 +993,7 @@ static DEVICE_ATTR_RO(lineptr_event);
 static DEVICE_ATTR_WO(lineptr_offset);
 static DEVICE_ATTR_RW(blu_max_overlap_us);
 static DEVICE_ATTR_RW(blu_default_duty);
+static DEVICE_ATTR_RO(blu_current_duty_cycle);
 static DEVICE_ATTR_RO(fifo_scanlines);
 static DEVICE_ATTR_RW(fifo_trim);
 static DEVICE_ATTR_RO(measured_fps);
@@ -993,6 +1012,7 @@ static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_lineptr_offset.attr,
 	&dev_attr_blu_max_overlap_us.attr,
 	&dev_attr_blu_default_duty.attr,
+	&dev_attr_blu_current_duty_cycle.attr,
 	&dev_attr_fifo_scanlines.attr,
 	&dev_attr_fifo_trim.attr,
 	&dev_attr_measured_fps.attr,

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017,2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,7 +36,7 @@
  * @psoc: psoc context
  * @peer: peer
  * @buf: frame buf
- * @params: rx event params
+ * @rx_param: rx event params
  * @frm_type: frame type
  *
  * The callbeack registered to tx/rx module and is called when beacon

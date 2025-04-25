@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -128,6 +129,94 @@ void ol_txrx_vdev_flush(struct cdp_soc_t *soc_hdl, uint8_t vdev_id)
 
 #define OL_TX_VDEV_PAUSE_QUEUE_SEND_MARGIN 400
 #define OL_TX_VDEV_PAUSE_QUEUE_SEND_PERIOD_MS 5
+
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL1 80
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL2 65
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL3 55
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL4 45
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL5 35
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL6 20
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL7 10
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL8 5
+#define OL_TX_THROTTLE_MAX_SEND_LEVEL9 1
+
+/**
+ * ol_tx_get_max_to_send() - Get the maximum number of packets
+ * that can be sent for different phy rate
+ * @pdev: datapath pdev handle
+ *
+ * Return: int type value
+ */
+static int ol_tx_get_max_to_send(struct ol_txrx_pdev_t *pdev)
+{
+	uint16_t consume_num_last_timer;
+	int max_to_send;
+
+	qdf_spin_lock_bh(&pdev->tx_mutex);
+	if (!pdev->tx_throttle.prev_outstanding_num) {
+		max_to_send = OL_TX_THROTTLE_MAX_SEND_LEVEL5;
+	} else {
+		consume_num_last_timer =
+			(pdev->tx_throttle.prev_outstanding_num -
+			 pdev->tx_desc.pool_size +
+			 pdev->tx_desc.num_free);
+		if (consume_num_last_timer >=
+			OL_TX_THROTTLE_MAX_SEND_LEVEL1) {
+			max_to_send = pdev->tx_throttle.tx_threshold;
+		} else if (consume_num_last_timer >=
+				OL_TX_THROTTLE_MAX_SEND_LEVEL2) {
+			max_to_send =
+				OL_TX_THROTTLE_MAX_SEND_LEVEL1;
+		} else if (consume_num_last_timer >=
+				OL_TX_THROTTLE_MAX_SEND_LEVEL3) {
+			max_to_send =
+				OL_TX_THROTTLE_MAX_SEND_LEVEL2;
+		} else if (consume_num_last_timer >=
+				OL_TX_THROTTLE_MAX_SEND_LEVEL4) {
+			max_to_send =
+				OL_TX_THROTTLE_MAX_SEND_LEVEL3;
+		} else if (consume_num_last_timer >=
+				OL_TX_THROTTLE_MAX_SEND_LEVEL5) {
+			max_to_send =
+				OL_TX_THROTTLE_MAX_SEND_LEVEL4;
+		} else if (pdev->tx_throttle.prev_outstanding_num >
+				consume_num_last_timer) {
+			/*
+			 * when TX packet number is smaller than 35,
+			 * most likely low phy rate is being used.
+			 * As long as pdev->tx_throttle.prev_outstanding_num
+			 * is greater than consume_num_last_timer, it
+			 * means small TX packet number isn't limited
+			 * by packets injected from host.
+			 */
+			if (consume_num_last_timer >=
+				OL_TX_THROTTLE_MAX_SEND_LEVEL6)
+				max_to_send =
+					OL_TX_THROTTLE_MAX_SEND_LEVEL6;
+			else if (consume_num_last_timer >=
+					OL_TX_THROTTLE_MAX_SEND_LEVEL7)
+				max_to_send =
+					OL_TX_THROTTLE_MAX_SEND_LEVEL7;
+			else if (consume_num_last_timer >=
+					OL_TX_THROTTLE_MAX_SEND_LEVEL8)
+				max_to_send =
+					OL_TX_THROTTLE_MAX_SEND_LEVEL8;
+			else
+				max_to_send =
+					OL_TX_THROTTLE_MAX_SEND_LEVEL9;
+		} else {
+			/*
+			 * when come here, it means it's hard to evaluate
+			 * current phy rate, for safety, max_to_send set
+			 * to OL_TX_THROTTLE_MAX_SEND_LEVEL5.
+			 */
+			max_to_send = OL_TX_THROTTLE_MAX_SEND_LEVEL5;
+		}
+	}
+	qdf_spin_unlock_bh(&pdev->tx_mutex);
+
+	return max_to_send;
+}
 
 static void ol_tx_vdev_ll_pause_queue_send_base(struct ol_txrx_vdev_t *vdev)
 {
@@ -286,9 +375,7 @@ qdf_nbuf_t ol_tx_ll_queue(ol_txrx_vdev_handle vdev, qdf_nbuf_t msdu_list)
 			 * send the frame
 			 */
 			if (vdev->pdev->tx_throttle.current_throttle_level ==
-			    THROTTLE_LEVEL_0 ||
-			    vdev->pdev->tx_throttle.current_throttle_phase ==
-			    THROTTLE_PHASE_ON) {
+			    THROTTLE_LEVEL_0) {
 				/*
 				 * send as many frames as possible
 				 * from the vdevs backlog
@@ -323,8 +410,23 @@ void ol_tx_pdev_ll_pause_queue_send_all(struct ol_txrx_pdev_t *pdev)
 	if (pdev->tx_throttle.current_throttle_phase == THROTTLE_PHASE_OFF)
 		return;
 
-	/* ensure that we send no more than tx_threshold frames at once */
-	max_to_send = pdev->tx_throttle.tx_threshold;
+	/*
+	 * For host implementation thermal mitigation, there has limitation
+	 * in low phy rate case, like 11A 6M, 11B 11M. Host may have entered
+	 * throttle off state, if a big number packets are queued to ring
+	 * buffer in low phy rate, FW will have to keep active state during
+	 * the whole throttle cycle. So you need to be careful when
+	 * configuring the max_to_send value to avoid the chip temperature
+	 * suddenly rises to very high in high temperature test.
+	 * So add variable prev_outstanding_num to save last time outstanding
+	 * number, when pdev->tx_throttle.tx_timer come again, we can check
+	 * the gap to know high or low phy rate is being used, then choose
+	 * right max_to_send.
+	 * When it's the first time to enter the function, there doesn't have
+	 * info for prev_outstanding_num, to satisfy all rate, the maximum
+	 * safe number is OL_TX_THROTTLE_MAX_SEND_LEVEL5(35).
+	 */
+	max_to_send = ol_tx_get_max_to_send(pdev);
 
 	/* round robin through the vdev queues for the given pdev */
 
@@ -387,19 +489,21 @@ void ol_tx_pdev_ll_pause_queue_send_all(struct ol_txrx_pdev_t *pdev)
 		}
 	} while (more && max_to_send);
 
-	vdev = NULL;
-	TAILQ_FOREACH(vdev, &pdev->vdev_list, vdev_list_elem) {
-		qdf_spin_lock_bh(&vdev->ll_pause.mutex);
-		if (vdev->ll_pause.txq.depth) {
-			qdf_timer_stop(&pdev->tx_throttle.tx_timer);
-			qdf_timer_start(
-				&pdev->tx_throttle.tx_timer,
-				OL_TX_VDEV_PAUSE_QUEUE_SEND_PERIOD_MS);
-			qdf_spin_unlock_bh(&vdev->ll_pause.mutex);
-			return;
-		}
-		qdf_spin_unlock_bh(&vdev->ll_pause.mutex);
-	}
+	qdf_spin_lock_bh(&pdev->tx_mutex);
+	pdev->tx_throttle.prev_outstanding_num =
+		(pdev->tx_desc.pool_size - pdev->tx_desc.num_free);
+	qdf_spin_unlock_bh(&pdev->tx_mutex);
+
+	/*
+	 * currently as long as pdev->tx_throttle.current_throttle_level
+	 * isn't THROTTLE_LEVEL_0, all TX data is scheduled by Tx
+	 * throttle. It's needed to always start pdev->tx_throttle.tx_timer
+	 * at the end of each TX throttle processing to avoid TX cannot be
+	 * scheduled in the remaining throttle_on time.
+	 */
+	qdf_timer_stop(&pdev->tx_throttle.tx_timer);
+	qdf_timer_start(&pdev->tx_throttle.tx_timer,
+			OL_TX_VDEV_PAUSE_QUEUE_SEND_PERIOD_MS);
 }
 
 void ol_tx_vdev_ll_pause_queue_send(void *context)
@@ -408,8 +512,7 @@ void ol_tx_vdev_ll_pause_queue_send(void *context)
 	struct ol_txrx_pdev_t *pdev = vdev->pdev;
 
 	if (pdev &&
-	    pdev->tx_throttle.current_throttle_level != THROTTLE_LEVEL_0 &&
-	    pdev->tx_throttle.current_throttle_phase == THROTTLE_PHASE_OFF)
+	    pdev->tx_throttle.current_throttle_level != THROTTLE_LEVEL_0)
 		return;
 	ol_tx_vdev_ll_pause_queue_send_base(vdev);
 }

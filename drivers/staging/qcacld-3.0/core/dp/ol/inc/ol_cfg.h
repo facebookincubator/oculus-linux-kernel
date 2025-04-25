@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -81,7 +81,7 @@ struct txrx_pdev_cfg_t {
 	u32 max_vdev;
 	u32 max_nbuf_frags;
 	u32 throttle_period_ms;
-	u8 dutycycle_level[4];
+	u8 dutycycle_level[THROTTLE_LEVEL_MAX];
 	enum wlan_frm_fmt frame_type;
 	u8 rx_fwd_disabled;
 	u8 is_packet_log_enabled;

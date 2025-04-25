@@ -48,7 +48,7 @@
  */
 #define SAP_CONC_CHECK_DEFER_TIMEOUT_MS (2000)
 
-/**
+/*
  * Policy Mgr hardware mode list bit-mask definitions.
  * Bits 4:0, 31:29 are unused.
  *
@@ -350,12 +350,13 @@ struct policy_mgr_cfg {
  * @no_of_open_sessions: Number of active vdevs
  * @no_of_active_sessions: Number of active connections
  * @sta_ap_intf_check_work: delayed sap restart work
+ * @work_fail_count: sta_ap work schedule fail count
  * @nan_sap_conc_work: Info related to nan sap conc work
  * @num_dbs_hw_modes: Number of different HW modes supported
  * @hw_mode: List of HW modes supported
  * @old_hw_mode_index: Old HW mode from hw_mode table
  * @new_hw_mode_index: New HW mode from hw_mode table
- * @dual_mac_cfg: DBS configuration currenctly used by FW for
+ * @dual_mac_cfg: DBS configuration currently used by FW for
  *              scan & connections
  * @radio_comb_num: radio combination number
  * @radio_combinations: radio combination list
@@ -377,11 +378,11 @@ struct policy_mgr_cfg {
  * @valid_ch_freq_list_count: number of valid frequencies
  * @dynamic_mcc_adaptive_sched: disable/enable mcc adaptive scheduler feature
  * @dynamic_dfs_master_disabled: current state of dynamic dfs master
- * @set_link_in_progress: To track if set link is in progress
+ * @link_in_progress: To track if set link is in progress
  * @set_link_update_done_evt: qdf event to synchronize set link
- * @restriction_mask:
  * @active_vdev_bitmap: Active vdev id bitmap
  * @inactive_vdev_bitmap: Inactive vdev id bitmap
+ * @restriction_mask:
  */
 struct policy_mgr_psoc_priv_obj {
 	struct wlan_objmgr_psoc *psoc;
@@ -403,6 +404,7 @@ struct policy_mgr_psoc_priv_obj {
 	uint8_t no_of_open_sessions[QDF_MAX_NO_OF_MODE];
 	uint8_t no_of_active_sessions[QDF_MAX_NO_OF_MODE];
 	struct qdf_delayed_work sta_ap_intf_check_work;
+	uint8_t work_fail_count;
 	qdf_work_t nan_sap_conc_work;
 	uint32_t num_dbs_hw_modes;
 	struct dbs_hw_mode_info hw_mode;
@@ -426,7 +428,7 @@ struct policy_mgr_psoc_priv_obj {
 	bool dynamic_mcc_adaptive_sched;
 	bool dynamic_dfs_master_disabled;
 #ifdef WLAN_FEATURE_11BE_MLO
-	bool set_link_in_progress;
+	qdf_atomic_t link_in_progress;
 	qdf_event_t set_link_update_done_evt;
 #endif
 	uint32_t active_vdev_bitmap;
@@ -451,23 +453,6 @@ struct policy_mgr_mac_ss_bw_info {
 	uint32_t mac_bw;
 	uint32_t mac_band_cap;
 	bool support_6ghz_band;
-};
-
-/**
- * union conc_ext_flag - extended flags for concurrency check
- *
- * @mlo: the new connection is MLO
- * @mlo_link_assoc_connected: the new connection is secondary MLO link and
- *  the corresponding assoc link is connected
- * @value: uint32 value for extended flags
- */
-union conc_ext_flag {
-	struct {
-		uint32_t mlo: 1;
-		uint32_t mlo_link_assoc_connected: 1;
-	};
-
-	uint32_t value;
 };
 
 #ifdef WLAN_FEATURE_SR
@@ -804,6 +789,22 @@ void policy_mgr_pdev_set_hw_mode_cb(uint32_t status,
 #ifdef WLAN_FEATURE_11BE_MLO
 void
 policy_mgr_dump_disabled_ml_links(struct policy_mgr_psoc_priv_obj *pm_ctx);
+
+/**
+ * policy_mgr_link_switch_notifier_cb() - link switch notifier callback
+ * @vdev: vdev object
+ * @req: link switch request
+ * @notify_reason: Reason for notification
+ *
+ * This API will be registered to mlo link switch, to be invoked before
+ * do link switch process.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+policy_mgr_link_switch_notifier_cb(struct wlan_objmgr_vdev *vdev,
+				   struct wlan_mlo_link_switch_req *req,
+				   enum wlan_mlo_link_switch_notify_reason notify_reason);
 #else
 static inline void
 policy_mgr_dump_disabled_ml_links(struct policy_mgr_psoc_priv_obj *pm_ctx) {}
@@ -821,8 +822,6 @@ policy_mgr_dump_disabled_ml_links(struct policy_mgr_psoc_priv_obj *pm_ctx) {}
 void policy_mgr_dump_current_concurrency(struct wlan_objmgr_psoc *psoc);
 
 void pm_dbs_opportunistic_timer_handler(void *data);
-enum policy_mgr_con_mode policy_mgr_get_mode(uint8_t type,
-		uint8_t subtype);
 
 /**
  * policy_mgr_get_channel_list() - Get channel list based on PCL and mode
@@ -954,30 +953,6 @@ enum policy_mgr_conc_next_action
 		policy_mgr_get_current_pref_hw_mode_dual_dbs(
 		struct wlan_objmgr_psoc *psoc);
 
-/**
- * policy_mgr_reset_sap_mandatory_channels() - Reset the SAP mandatory channels
- * @pm_ctx: policy mgr context
- *
- * Resets the SAP mandatory channel list and the length of the list
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS policy_mgr_reset_sap_mandatory_channels(
-		struct policy_mgr_psoc_priv_obj *pm_ctx);
-
-/**
- * policy_mgr_dump_freq_range_per_mac() - Function to print frequency range
- * for both MAC 0 and MAC1 for given Hw mode
- *
- * @freq_range: Policy Mgr context
- * @hw_mode: HW mode
- *
- * This Function will print frequency range for both MAC 0 and MAC1 for given
- * Hw mode
- *
- * Return: void
- *
- */
 void
 policy_mgr_dump_freq_range_per_mac(struct policy_mgr_freq_range *freq_range,
 				   enum policy_mgr_mode hw_mode);
@@ -1135,6 +1110,22 @@ bool
 policy_mgr_sbs_24_shared_with_low_5(struct policy_mgr_psoc_priv_obj *pm_ctx);
 
 /**
+ * policy_mgr_2_freq_same_mac_in_dbs() - to check provided frequencies are
+ * in dbs freq range or not
+ *
+ * @pm_ctx: policy mgr psoc priv object
+ * @freq_1: first frequency
+ * @freq_2: second frequency
+ *
+ * This API is used to check provided frequencies are in dbs freq range or not
+ *
+ * Return: true/false.
+ */
+bool
+policy_mgr_2_freq_same_mac_in_dbs(struct policy_mgr_psoc_priv_obj *pm_ctx,
+				  qdf_freq_t freq_1, qdf_freq_t freq_2);
+
+/**
  * policy_mgr_2_freq_same_mac_in_sbs() - to check provided frequencies are
  * in sbs freq range or not
  *
@@ -1194,4 +1185,17 @@ policy_mgr_set_freq_restriction_mask(struct policy_mgr_psoc_priv_obj *pm_ctx,
 {
 }
 #endif
+
+/**
+ * policy_mgr_get_connection_max_channel_width() - Get max channel width
+ * among vdevs in use
+ * @psoc: PSOC object pointer
+ *
+ * This function returns max channel width among in-use vdevs
+ *
+ * Return: enum hw_mode_bandwidth
+ */
+enum hw_mode_bandwidth
+policy_mgr_get_connection_max_channel_width(struct wlan_objmgr_psoc *psoc);
+
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,7 +18,7 @@
  * DOC: Public API implementation of pre cac called from SAP module
  */
 
-#include "../../core/src/wlan_pre_cac_main.h"
+#include "wlan_pre_cac_main.h"
 #include "wlan_pre_cac_api.h"
 
 bool wlan_pre_cac_get_status(struct wlan_objmgr_psoc *psoc)

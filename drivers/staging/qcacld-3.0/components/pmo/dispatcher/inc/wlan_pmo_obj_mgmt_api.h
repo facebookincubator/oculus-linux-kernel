@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -295,6 +295,14 @@ bool
 wlan_pmo_get_go_mode_bus_suspend(struct wlan_objmgr_psoc *psoc);
 
 /*
+ * wlan_pmo_no_op_on_page_fault() - Whether to ignore page fault wakeups
+ * @psoc: PSOC object manager
+ *
+ * Return: true if host has to ignore page fault wakeup events else false.
+ */
+bool wlan_pmo_no_op_on_page_fault(struct wlan_objmgr_psoc *psoc);
+
+/*
  * wlan_pmo_enable_ssr_on_page_fault: Enable/disable ssr on pagefault
  * @psoc: objmgr psoc
  *
@@ -303,13 +311,14 @@ wlan_pmo_get_go_mode_bus_suspend(struct wlan_objmgr_psoc *psoc);
 bool wlan_pmo_enable_ssr_on_page_fault(struct wlan_objmgr_psoc *psoc);
 
 /*
- * wlan_pmo_get_max_pagefault_wakeups_for_ssr: get max pagefault wakeups for ssr
+ * wlan_pmo_get_min_pagefault_wakeups_for_action() - get min pagefault wakeups
+ * for host to initiate action
  * @psoc: objmgr psoc
  *
- * Return: Max pagefault wakeups for SSR
+ * Return: Min pagefault wakeups for action
  */
 uint8_t
-wlan_pmo_get_max_pagefault_wakeups_for_ssr(struct wlan_objmgr_psoc *psoc);
+wlan_pmo_get_min_pagefault_wakeups_for_action(struct wlan_objmgr_psoc *psoc);
 
 /*
  * wlan_pmo_get_interval_for_pagefault_wakeup_counts: get ssr interval for
@@ -508,14 +517,19 @@ wlan_pmo_get_go_mode_bus_suspend(struct wlan_objmgr_psoc *psoc)
 	return false;
 }
 
+static inline bool wlan_pmo_no_op_on_page_fault(struct wlan_objmgr_psoc *psoc)
+{
+	return true;
+}
+
 static inline bool
 wlan_pmo_enable_ssr_on_page_fault(struct wlan_objmgr_psoc *psoc)
 {
-	return 0;
+	return false;
 }
 
 static inline uint8_t
-wlan_pmo_get_max_pagefault_wakeups_for_ssr(struct wlan_objmgr_psoc *psoc)
+wlan_pmo_get_min_pagefault_wakeups_for_action(struct wlan_objmgr_psoc *psoc)
 {
 	return 0;
 }

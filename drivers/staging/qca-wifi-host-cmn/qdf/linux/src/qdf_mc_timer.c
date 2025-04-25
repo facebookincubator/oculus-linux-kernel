@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -72,15 +72,6 @@ qdf_export_symbol(qdf_register_mc_timer_callback);
 
 /* Function declarations and documentation */
 
-/**
- * qdf_try_allowing_sleep() - clean up timer states after it has been deactivated
- * @type: timer type
- *
- * Clean up timer states after it has been deactivated check and try to allow
- * sleep after a timer has been stopped or expired.
- *
- * Return: none
- */
 void qdf_try_allowing_sleep(QDF_TIMER_TYPE type)
 {
 	if (QDF_TIMER_TYPE_WAKE_APPS == type) {
@@ -96,13 +87,6 @@ void qdf_try_allowing_sleep(QDF_TIMER_TYPE type)
 }
 qdf_export_symbol(qdf_try_allowing_sleep);
 
-/**
- * qdf_mc_timer_get_current_state() - get the current state of the timer
- * @timer: Pointer to timer object
- *
- * Return:
- * QDF_TIMER_STATE - qdf timer state
- */
 QDF_TIMER_STATE qdf_mc_timer_get_current_state(qdf_mc_timer_t *timer)
 {
 	QDF_TIMER_STATE timer_state = QDF_TIMER_STATE_UNUSED;
@@ -129,14 +113,6 @@ QDF_TIMER_STATE qdf_mc_timer_get_current_state(qdf_mc_timer_t *timer)
 }
 qdf_export_symbol(qdf_mc_timer_get_current_state);
 
-/**
- * qdf_timer_module_init() - initializes a QDF timer module.
- *
- * This API initializes the QDF timer module. This needs to be called
- * exactly once prior to using any QDF timers.
- *
- * Return: none
- */
 void qdf_timer_module_init(void)
 {
 	QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_INFO_HIGH,
@@ -155,13 +131,6 @@ static inline qdf_list_t *qdf_timer_list_get(enum qdf_debug_domain domain)
 	return &qdf_timer_domains[domain];
 }
 
-/**
- * qdf_mc_timer_manager_init() - initialize QDF debug timer manager
- *
- * This API initializes QDF timer debug functionality.
- *
- * Return: none
- */
 void qdf_mc_timer_manager_init(void)
 {
 	int i;
@@ -260,13 +229,6 @@ static void qdf_timer_clean(void)
 		qdf_mc_timer_free_leaked_timers(&qdf_timer_domains[i]);
 }
 
-/**
- * qdf_mc_timer_manager_exit() - exit QDF timer debug functionality
- *
- * This API exists QDF timer debug functionality
- *
- * Return: none
- */
 void qdf_mc_timer_manager_exit(void)
 {
 	int i;
@@ -326,37 +288,6 @@ static void qdf_mc_timer_setup(qdf_mc_timer_t *timer,
 	timer->platform_info.timer.data = (unsigned long)timer;
 }
 #endif
-/**
- * qdf_mc_timer_init() - initialize a QDF timer
- * @timer: Pointer to timer object
- * @timer_type: Type of timer
- * @callback: Callback to be called after timer expiry
- * @ser_data: User data which will be passed to callback function
- *
- * This API initializes a QDF timer object.
- *
- * qdf_mc_timer_init() initializes a QDF timer object. A timer must be
- * initialized by calling qdf_mc_timer_initialize() before it may be used in
- * any other timer functions.
- *
- * Attempting to initialize timer that is already initialized results in
- * a failure. A destroyed timer object can be re-initialized with a call to
- * qdf_mc_timer_init(). The results of otherwise referencing the object
- * after it has been destroyed are undefined.
- *
- *  Calls to QDF timer functions to manipulate the timer such
- *  as qdf_mc_timer_set() will fail if the timer is not initialized or has
- *  been destroyed. Therefore, don't use the timer after it has been
- *  destroyed until it has been re-initialized.
- *
- *  All callback will be executed within the CDS main thread unless it is
- *  initialized from the Tx thread flow, in which case it will be executed
- *  within the tx thread flow.
- *
- * Return:
- * QDF_STATUS_SUCCESS: timer is initialized successfully
- * QDF failure status: timer initialization failed
- */
 #ifdef TIMER_MANAGER
 QDF_STATUS qdf_mc_timer_init_debug(qdf_mc_timer_t *timer,
 				   QDF_TIMER_TYPE timer_type,
@@ -442,27 +373,6 @@ QDF_STATUS qdf_mc_timer_init(qdf_mc_timer_t *timer, QDF_TIMER_TYPE timer_type,
 qdf_export_symbol(qdf_mc_timer_init);
 #endif
 
-/**
- * qdf_mc_timer_destroy() - destroy QDF timer
- * @timer: Pointer to timer object
- *
- * qdf_mc_timer_destroy() function shall destroy the timer object.
- * After a successful return from \a qdf_mc_timer_destroy() the timer
- * object becomes, in effect, uninitialized.
- *
- * A destroyed timer object can be re-initialized by calling
- * qdf_mc_timer_init().  The results of otherwise referencing the object
- * after it has been destroyed are undefined.
- *
- * Calls to QDF timer functions to manipulate the timer, such
- * as qdf_mc_timer_set() will fail if the lock is destroyed.  Therefore,
- * don't use the timer after it has been destroyed until it has
- * been re-initialized.
- *
- * Return:
- * QDF_STATUS_SUCCESS - timer is initialized successfully
- * QDF failure status - timer initialization failed
- */
 #ifdef TIMER_MANAGER
 QDF_STATUS qdf_mc_timer_destroy(qdf_mc_timer_t *timer)
 {
@@ -543,27 +453,6 @@ qdf_export_symbol(qdf_mc_timer_destroy);
 
 #else
 
-/**
- * qdf_mc_timer_destroy() - destroy QDF timer
- * @timer: Pointer to timer object
- *
- * qdf_mc_timer_destroy() function shall destroy the timer object.
- * After a successful return from \a qdf_mc_timer_destroy() the timer
- * object becomes, in effect, uninitialized.
- *
- * A destroyed timer object can be re-initialized by calling
- * qdf_mc_timer_init(). The results of otherwise referencing the object
- * after it has been destroyed are undefined.
- *
- * Calls to QDF timer functions to manipulate the timer, such
- * as qdf_mc_timer_set() will fail if the lock is destroyed. Therefore,
- * don't use the timer after it has been destroyed until it has
- * been re-initialized.
- *
- * Return:
- * QDF_STATUS_SUCCESS - timer is initialized successfully
- * QDF failure status - timer initialization failed
- */
 QDF_STATUS qdf_mc_timer_destroy(qdf_mc_timer_t *timer)
 {
 	QDF_STATUS v_status = QDF_STATUS_SUCCESS;
@@ -629,23 +518,6 @@ QDF_STATUS qdf_mc_timer_destroy(qdf_mc_timer_t *timer)
 qdf_export_symbol(qdf_mc_timer_destroy);
 #endif
 
-/**
- * qdf_mc_timer_start() - start a QDF timer object
- * @timer: Pointer to timer object
- * @expiration_time: Time to expire
- *
- * qdf_mc_timer_start() function starts a timer to expire after the
- * specified interval, thus running the timer callback function when
- * the interval expires.
- *
- * A timer only runs once (a one-shot timer). To re-start the
- * timer, qdf_mc_timer_start() has to be called after the timer runs
- * or has been cancelled.
- *
- * Return:
- * QDF_STATUS_SUCCESS: timer is initialized successfully
- * QDF failure status: timer initialization failed
- */
 QDF_STATUS qdf_mc_timer_start(qdf_mc_timer_t *timer, uint32_t expiration_time)
 {
 	/* check for invalid pointer */
@@ -670,7 +542,6 @@ QDF_STATUS qdf_mc_timer_start(qdf_mc_timer_t *timer, uint32_t expiration_time)
 		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
 			  "%s: Cannot start a timer with expiration less than 10 ms",
 			  __func__);
-		QDF_ASSERT(0);
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -717,19 +588,6 @@ QDF_STATUS qdf_mc_timer_start(qdf_mc_timer_t *timer, uint32_t expiration_time)
 }
 qdf_export_symbol(qdf_mc_timer_start);
 
-/**
- * qdf_mc_timer_stop() - stop a QDF timer
- * @timer: Pointer to timer object
- * qdf_mc_timer_stop() function stops a timer that has been started but
- * has not expired, essentially cancelling the 'start' request.
- *
- * After a timer is stopped, it goes back to the state it was in after it
- * was created and can be started again via a call to qdf_mc_timer_start().
- *
- * Return:
- * QDF_STATUS_SUCCESS: timer is initialized successfully
- * QDF failure status: timer initialization failed
- */
 QDF_STATUS qdf_mc_timer_stop(qdf_mc_timer_t *timer)
 {
 	/* check for invalid pointer */
@@ -808,33 +666,13 @@ QDF_STATUS qdf_mc_timer_stop_sync(qdf_mc_timer_t *timer)
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_mc_timer_stop_sync);
-/**
- * qdf_mc_timer_get_system_ticks() - get the system time in 10ms ticks
 
- * qdf_mc_timer_get_system_ticks() function returns the current number
- * of timer ticks in 10msec intervals. This function is suitable timestamping
- * and calculating time intervals by calculating the difference between two
- * timestamps.
- *
- * Return:
- * The current system tick count (in 10msec intervals).  This
- * function cannot fail.
- */
 unsigned long qdf_mc_timer_get_system_ticks(void)
 {
 	return jiffies_to_msecs(jiffies) / 10;
 }
 qdf_export_symbol(qdf_mc_timer_get_system_ticks);
 
-/**
- * qdf_mc_timer_get_system_time() - Get the system time in milliseconds
- *
- * qdf_mc_timer_get_system_time() function returns the number of milliseconds
- * that have elapsed since the system was started
- *
- * Return:
- * The current system time in milliseconds
- */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0))
 unsigned long qdf_mc_timer_get_system_time(void)
 {
@@ -862,12 +700,6 @@ s64 qdf_get_monotonic_boottime_ns(void)
 }
 qdf_export_symbol(qdf_get_monotonic_boottime_ns);
 
-/**
- * qdf_timer_module_deinit() - Deinitializes a QDF timer module.
- *
- * This API deinitializes the QDF timer module.
- * Return: none
- */
 void qdf_timer_module_deinit(void)
 {
 	QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_INFO_HIGH,

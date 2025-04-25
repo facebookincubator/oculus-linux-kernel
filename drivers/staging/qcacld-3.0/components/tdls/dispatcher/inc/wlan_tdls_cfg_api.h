@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -234,6 +235,28 @@ cfg_tdls_get_scan_enable(struct wlan_objmgr_psoc *psoc,
 			 bool *val);
 
 /**
+ * cfg_tdls_get_link_id() - get tdls link id
+ * @psoc:        pointer to psoc object
+ *
+ * This function gets tdls link id
+ *
+ * Return: int
+ */
+int cfg_tdls_get_link_id(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * cfg_tdls_set_link_id() - get tdls link id
+ * @psoc:        pointer to psoc object
+ * @val:         the value of link id
+ *
+ * This function gets tdls link id
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+cfg_tdls_set_link_id(struct wlan_objmgr_psoc *psoc,
+		     int val);
+/**
  * cfg_tdls_set_scan_enable() - set tdls scan enable
  * @psoc:        pointer to psoc object
  * @val:         tdls scan enable
@@ -251,6 +274,14 @@ cfg_tdls_set_scan_enable(struct wlan_objmgr_psoc *psoc,
  * This function gets tdls max peer count
  */
 uint16_t cfg_tdls_get_max_peer_count(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * cfg_tdls_get_connected_peer_count() - get tdls connected peer count
+ * @psoc: pointer to psoc object
+ *
+ * This function gets tdls connected peer count
+ */
+uint16_t cfg_tdls_get_connected_peer_count(struct wlan_objmgr_psoc *psoc);
 #else
 static inline QDF_STATUS
 cfg_tdls_get_support_enable(struct wlan_objmgr_psoc *psoc,
@@ -410,10 +441,29 @@ cfg_tdls_set_scan_enable(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
+static inline int
+cfg_tdls_get_link_id(struct wlan_objmgr_psoc *psoc)
+{
+	return 0;
+}
+
+static inline QDF_STATUS
+cfg_tdls_set_link_id(struct wlan_objmgr_psoc *psoc,
+		     int val)
+{
+	return QDF_STATUS_SUCCESS;
+}
 static inline uint16_t
 cfg_tdls_get_max_peer_count(struct wlan_objmgr_psoc *psoc)
 {
 	return 0;
 }
+
+static inline uint16_t
+cfg_tdls_get_connected_peer_count(struct wlan_objmgr_psoc *psoc)
+{
+	return 0;
+}
+
 #endif /* FEATURE_WLAN_TDLS */
 #endif /* _WLAN_TDLS_CFG_API_H_ */

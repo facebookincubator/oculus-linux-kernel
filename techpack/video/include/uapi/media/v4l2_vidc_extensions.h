@@ -51,6 +51,9 @@
 #ifndef V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_10_STILL_PICTURE
 #define V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_10_STILL_PICTURE    (3)
 #endif
+#ifndef V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN
+#define V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN    (4)
+#endif
 
 /* vendor controls start */
 #ifdef V4L2_CTRL_CLASS_CODEC
@@ -280,6 +283,9 @@ enum v4l2_h264_encode_delivery_mode {
 #define V4L2_CID_MPEG_VIDC_EARLY_NOTIFY_LINE_COUNT                            \
 	(V4L2_CID_MPEG_VIDC_BASE + 0x45)
 
+#define V4L2_CID_MPEG_VIDC_METADATA_VIEW_ID_INFO                            \
+	(V4L2_CID_MPEG_VIDC_BASE + 0x46)
+
 /* add new controls above this line */
 /* Deprecate below controls once availble in gki and gsi bionic header */
 #ifndef V4L2_CID_MPEG_VIDEO_BASELAYER_PRIORITY_ID
@@ -423,6 +429,7 @@ enum v4l2_mpeg_vidc_metadata {
 	METADATA_FENCE                        = 0x0300018B,
 	METADATA_TRANSCODING_STAT_INFO        = 0x03000191,
 	METADATA_DV_RPU                       = 0x03000192,
+	METADATA_MULTI_VIEW                   = 0x030001A5,
 };
 enum meta_interlace_info {
 	META_INTERLACE_INFO_NONE                            = 0x00000000,

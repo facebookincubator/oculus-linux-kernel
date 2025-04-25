@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,7 +33,29 @@
 #define HAL_TX_NUM_DSCP_REGISTER_SIZE 32
 
 /**
- * hal_tx_ppe2tcl_ring_halt_set() - Enable ring halt for the ppe2tcl ring
+ * hal_tx_ppe2tcl_ring_halt_get_9224() - Get ring halt for the ppe2tcl ring
+ * @hal_soc: HAL SoC context
+ *
+ * Return: Ring halt status.
+ */
+static uint32_t hal_tx_ppe2tcl_ring_halt_get_9224(hal_soc_handle_t hal_soc)
+{
+	uint32_t cmn_reg_addr;
+	uint32_t regval;
+	struct hal_soc *soc = (struct hal_soc *)hal_soc;
+
+	cmn_reg_addr =
+		HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_ADDR(MAC_TCL_REG_REG_BASE);
+
+	/* Get RING_HALT status */
+	regval = HAL_REG_READ(soc, cmn_reg_addr);
+	return (regval &
+	    (1 <<
+	    HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT));
+}
+
+/**
+ * hal_tx_ppe2tcl_ring_halt_set_9224() - Enable ring halt for the ppe2tcl ring
  * @hal_soc: HAL SoC context
  *
  * Return: none
@@ -57,7 +79,8 @@ static void hal_tx_ppe2tcl_ring_halt_set_9224(hal_soc_handle_t hal_soc)
 }
 
 /**
- * hal_tx_ppe2tcl_ring_halt_reset() - Disable ring halt for the ppe2tcl ring
+ * hal_tx_ppe2tcl_ring_halt_reset_9224() - Disable ring halt for the ppe2tcl
+ *                                         ring
  * @hal_soc: HAL SoC context
  *
  * Return: none
@@ -80,7 +103,8 @@ static void hal_tx_ppe2tcl_ring_halt_reset_9224(hal_soc_handle_t hal_soc)
 }
 
 /**
- * hal_tx_ppe2tcl_ring_halt_done() - Check if ring halt is done for ppe2tcl ring
+ * hal_tx_ppe2tcl_ring_halt_done_9224() - Check if ring halt is done
+ *                                        for ppe2tcl ring
  * @hal_soc: HAL SoC context
  *
  * Return: true if halt done
@@ -102,7 +126,7 @@ static bool hal_tx_ppe2tcl_ring_halt_done_9224(hal_soc_handle_t hal_soc)
 
 /**
  * hal_tx_set_dscp_tid_map_9224() - Configure default DSCP to TID map table
- * @soc: HAL SoC context
+ * @hal_soc: HAL SoC context
  * @map: DSCP-TID mapping table
  * @id: mapping table ID - 0-31
  *
@@ -161,7 +185,7 @@ static void hal_tx_set_dscp_tid_map_9224(struct hal_soc *hal_soc, uint8_t *map,
 		addr += 4;
 	}
 
-	/* Diasble read/write access */
+	/* Disable read/write access */
 	regval = HAL_REG_READ(soc, cmn_reg_addr);
 	regval &=
 	~(HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_DSCP_TID_MAP_PROGRAM_EN_BMSK);
@@ -173,9 +197,9 @@ static void hal_tx_set_dscp_tid_map_9224(struct hal_soc *hal_soc, uint8_t *map,
  * hal_tx_update_dscp_tid_9224() - Update the dscp tid map table as updated
  *					by the user
  * @soc: HAL SoC context
- * @map: DSCP-TID mapping table
- * @id : MAP ID
- * @dscp: DSCP_TID map index
+ * @tid: TID
+ * @id: MAP ID
+ * @dscp: DSCP
  *
  * Return: void
  */
@@ -242,7 +266,7 @@ static void hal_tx_update_dscp_tid_9224(struct hal_soc *soc, uint8_t tid,
 			     HWIO_TCL_R0_DSCP_TID_MAP_n_RMSK));
 	}
 
-	/* Diasble read/write access */
+	/* Disable read/write access */
 	regval = HAL_REG_READ(soc, cmn_reg_addr);
 	regval &=
 	~(HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_DSCP_TID_MAP_PROGRAM_EN_BMSK);
@@ -260,8 +284,8 @@ static void hal_tx_update_dscp_tid_9224(struct hal_soc *soc, uint8_t tid,
 			(HWIO_TCL_R0_RBM_MAPPING0_SW2TCL_CREDIT_RING_SHFT >> 2)
 
 /**
- * hal_tx_config_rbm_mapping_be() - Update return buffer manager ring id
- * @hal_soc: HAL SoC context
+ * hal_tx_config_rbm_mapping_be_9224() - Update return buffer manager ring id
+ * @hal_soc_hdl: HAL SoC context
  * @hal_ring_hdl: Source ring pointer
  * @rbm_id: return buffer manager ring id
  *
@@ -315,7 +339,7 @@ hal_tx_config_rbm_mapping_be_9224(hal_soc_handle_t hal_soc_hdl,
 /**
  * hal_tx_init_cmd_credit_ring_9224() - Initialize command/credit SRNG
  * @hal_soc_hdl: Handle to HAL SoC structure
- * @hal_srng: Handle to HAL SRNG structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
  *
  * Return: none
  */
@@ -326,9 +350,9 @@ hal_tx_init_cmd_credit_ring_9224(hal_soc_handle_t hal_soc_hdl,
 }
 
 /* TX MONITOR */
-#ifdef QCA_MONITOR_2_0_SUPPORT
+#if defined(WLAN_PKT_CAPTURE_TX_2_0) && defined(TX_MONITOR_WORD_MASK)
 
-#if defined(TX_MONITOR_WORD_MASK)
+#define TX_FES_SETUP_MASK 0x3
 typedef struct tx_fes_setup_compact_9224 hal_tx_fes_setup_t;
 struct tx_fes_setup_compact_9224 {
 	/* DWORD - 0 */
@@ -338,7 +362,7 @@ struct tx_fes_setup_compact_9224 {
 		transmit_start_reason		: 3,  // [7: 9]
 		reserved_1b			: 13, // [10: 22]
 		number_of_users			: 6,  // [28: 23]
-		MU_type				: 1,  // [29]
+		mu_type				: 1,  // [29]
 		reserved_1c			: 2;  // [30]
 	/* DWORD - 2 */
 	uint32_t reserved_2a			: 4,  // [0: 3]
@@ -347,7 +371,7 @@ struct tx_fes_setup_compact_9224 {
 		reserved_2b			: 3,  // [7: 9]
 		static_bandwidth		: 3,  // [12: 10]
 		reserved_2c			: 1,  // [13]
-		transmission_contains_MU_RTS	: 1,  // [14]
+		transmission_contains_mu_rts	: 1,  // [14]
 		reserved_2d			: 17; // [15: 31]
 	/* DWORD - 3 */
 	uint32_t reserved_3a			: 15, // [0: 14]
@@ -356,8 +380,205 @@ struct tx_fes_setup_compact_9224 {
 		ndpa				: 1,  // [27]
 		reserved_3c			: 4;  // [28: 31]
 };
+
+#define TX_PEER_ENTRY_MASK 0x103
+typedef struct tx_peer_entry_compact_9224 hal_tx_peer_entry_t;
+struct tx_peer_entry_compact_9224 {
+	/* DWORD - 0 */
+	uint32_t mac_addr_a_31_0		: 32;
+	/* DWORD - 1 */
+	uint32_t mac_addr_a_47_32		: 16,
+		 mac_addr_b_15_0		: 16;
+	/* DWORD - 2 */
+	uint32_t mac_addr_b_47_16		: 32;
+	/* DWORD - 3 */
+	uint32_t reserved_3			: 32;
+	/* DWORD - 16 */
+	uint32_t reserved_16			: 32;
+	/* DWORD - 17 */
+	uint32_t multi_link_addr_crypto_enable	: 1,
+		 reserved_17_a			: 15,
+		 sw_peer_id			: 16;
+};
+
+#define TX_QUEUE_EXT_MASK 0x1
+typedef struct tx_queue_ext_compact_9224 hal_tx_queue_ext_t;
+struct tx_queue_ext_compact_9224 {
+	/* DWORD - 0 */
+	uint32_t frame_ctl			: 16,
+		 qos_ctl			: 16;
+	/* DWORD - 1 */
+	uint32_t ampdu_flag			: 1,
+		 reserved_1			: 31;
+};
+
+#define TX_MSDU_START_MASK 0x1
+typedef struct tx_msdu_start_compact_9224 hal_tx_msdu_start_t;
+struct tx_msdu_start_compact_9224 {
+	/* DWORD - 0 */
+	uint32_t reserved_0			: 32;
+	/* DWORD - 1 */
+	uint32_t reserved_1			: 32;
+};
+
+#define TX_MPDU_START_MASK 0x3
+typedef struct tx_mpdu_start_compact_9224 hal_tx_mpdu_start_t;
+struct tx_mpdu_start_compact_9224 {
+	/* DWORD - 0 */
+	uint32_t mpdu_length			: 14,
+		 frame_not_from_tqm		: 1,
+		 vht_control_present		: 1,
+		 mpdu_header_length		: 8,
+		 retry_count			: 7,
+		 wds				: 1;
+	/* DWORD - 1 */
+	uint32_t pn_31_0			: 32;
+	/* DWORD - 2 */
+	uint32_t pn_47_32			: 16,
+		 mpdu_sequence_number		: 12,
+		 raw_already_encrypted		: 1,
+		 frame_type			: 2,
+		 txdma_dropped_mpdu_warning	: 1;
+	/* DWORD - 3 */
+	uint32_t reserved_3			: 32;
+};
+
+typedef struct rxpcu_user_setup_compact_9224  hal_rxpcu_user_setup_t;
+struct rxpcu_user_setup_compact_9224 {
+};
+
+#define TX_FES_STATUS_END_MASK 0x7
+typedef struct tx_fes_status_end_compact_9224 hal_tx_fes_status_end_t;
+struct tx_fes_status_end_compact_9224 {
+	/* DWORD - 0 */
+	uint32_t reserved_0			: 32;
+	/* DWORD - 1 */
+	struct {
+	uint16_t phytx_abort_reason		: 8,
+		 user_number			: 6,
+		 reserved_1a			: 2;
+	} phytx_abort_request_info_details;
+	uint16_t reserved_1b			: 12,
+		 phytx_abort_request_info_valid	: 1,
+		 reserved_1c			: 3;
+	/* DWORD - 2 */
+	uint32_t start_of_frame_timestamp_15_0	: 16,
+		 start_of_frame_timestamp_31_16 : 16;
+	/* DWORD - 3 */
+	uint32_t end_of_frame_timestamp_15_0	: 16,
+		 end_of_frame_timestamp_31_16	: 16;
+	/* DWORD - 4 */
+	uint32_t terminate_ranging_sequence	: 1,
+		 reserved_4a			: 7,
+		 timing_status			: 2,
+		 response_type			: 5,
+		 r2r_end_status_to_follow	: 1,
+		 transmit_delay			: 16;
+	/* DWORD - 5 */
+	uint32_t reserved_5			: 32;
+};
+
+#define RESPONSE_END_STATUS_MASK 0xD
+typedef struct response_end_status_compact_9224 hal_response_end_status_t;
+struct response_end_status_compact_9224 {
+	/* DWORD - 0 */
+	uint32_t coex_bt_tx_while_wlan_tx	: 1,
+		 coex_wan_tx_while_wlan_tx	: 1,
+		 coex_wlan_tx_while_wlan_tx	: 1,
+		 global_data_underflow_warning	: 1,
+		 response_transmit_status	: 4,
+		 phytx_pkt_end_info_valid	: 1,
+		 phytx_abort_request_info_valid	: 1,
+		 generated_response		: 3,
+		 mba_user_count			: 7,
+		 mba_fake_bitmap_count		: 7,
+		 coex_based_tx_bw		: 3,
+		 trig_response_related		: 1,
+		 dpdtrain_done			: 1;
+	/* DWORD - 1 */
+	uint32_t reserved_1			: 32;
+	/* DWORD - 4 */
+	uint32_t reserved_4			: 32;
+	/* DWORD - 5 */
+	uint32_t start_of_frame_timestamp_15_0	: 16,
+		 start_of_frame_timestamp_31_16 : 16;
+	/* DWORD - 6 */
+	uint32_t end_of_frame_timestamp_15_0	: 16,
+		 end_of_frame_timestamp_31_16	: 16;
+	/* DWORD - 7 */
+	uint32_t reserved_7			: 32;
+};
+
+#define TX_FES_STATUS_PROT_MASK	0x2
+typedef struct tx_fes_status_prot_compact_9224 hal_tx_fes_status_prot_t;
+struct tx_fes_status_prot_compact_9224 {
+	/* DWORD - 2 */
+	uint32_t start_of_frame_timestamp_15_0	: 16,
+		 start_of_frame_timestamp_31_16 : 16;
+	/* DWROD - 3 */
+	uint32_t end_of_frame_timestamp_15_0	: 16,
+		 end_of_frame_timestamp_31_16	: 16;
+};
+
+#define PCU_PPDU_SETUP_INIT_MASK 0x1E800000
+typedef struct pcu_ppdu_setup_init_compact_9224 hal_pcu_ppdu_setup_t;
+struct pcu_ppdu_setup_init_compact_9224 {
+	/* DWORD - 46 */
+	uint32_t reserved_46				: 32;
+	/* DWORD - 47 */
+	uint32_t r2r_group_id				: 6,
+		 r2r_response_frame_type		: 4,
+		 r2r_sta_partial_aid			: 11,
+		 use_address_fields_for_protection	: 1,
+		 r2r_set_required_response_time		: 1,
+		 reserved_47				: 9;
+	/* DWORD - 50 */
+	uint32_t reserved_50				: 32;
+	/* DWORD - 51 */
+	uint32_t protection_frame_ad1_31_0		: 32;
+	/* DWORD - 52 */
+	uint32_t protection_frame_ad1_47_32		: 16,
+		 protection_frame_ad2_15_0		: 16;
+	/* DWORD - 53 */
+	uint32_t protection_frame_ad2_47_16		: 32;
+	/* DWORD - 54 */
+	uint32_t reserved_54				: 32;
+	/* DWORD - 55 */
+	uint32_t protection_frame_ad3_31_0		: 32;
+	/* DWORD - 56 */
+	uint32_t protection_frame_ad3_47_32		: 16,
+		 protection_frame_ad4_15_0		: 16;
+	/* DWORD - 57 */
+	uint32_t protection_frame_ad4_47_16		: 32;
+};
+
+/**
+ * hal_txmon_get_word_mask_qcn9224() - api to get word mask for tx monitor
+ * @wmask: pointer to hal_txmon_word_mask_config_t
+ *
+ * Return: void
+ */
+static inline
+void hal_txmon_get_word_mask_qcn9224(void *wmask)
+{
+	hal_txmon_word_mask_config_t *word_mask = NULL;
+
+	word_mask = (hal_txmon_word_mask_config_t *)wmask;
+
+	word_mask->compaction_enable = 1;
+	word_mask->tx_fes_setup = TX_FES_SETUP_MASK;
+	word_mask->tx_peer_entry = TX_PEER_ENTRY_MASK;
+	word_mask->tx_queue_ext = TX_QUEUE_EXT_MASK;
+	word_mask->tx_msdu_start = TX_MSDU_START_MASK;
+	word_mask->pcu_ppdu_setup_init = PCU_PPDU_SETUP_INIT_MASK;
+	word_mask->tx_mpdu_start = TX_MPDU_START_MASK;
+	word_mask->rxpcu_user_setup = 0xFF;
+	word_mask->tx_fes_status_end = TX_FES_STATUS_END_MASK;
+	word_mask->response_end_status = RESPONSE_END_STATUS_MASK;
+	word_mask->tx_fes_status_prot = TX_FES_STATUS_PROT_MASK;
+}
 #endif
-#endif /* QCA_MONITOR_2_0_SUPPORT */
+
 /**
  * hal_tx_set_ppe_cmn_config_9224() - Set the PPE common config register
  * @hal_soc_hdl: HAL SoC handle
@@ -412,7 +633,7 @@ void hal_tx_set_ppe_cmn_config_9224(hal_soc_handle_t hal_soc_hdl,
 /**
  * hal_tx_set_ppe_vp_entry_9224() - Set the PPE VP entry
  * @hal_soc_hdl: HAL SoC handle
- * @vp_cfg: PPE VP config
+ * @cfg: PPE VP config
  * @ppe_vp_idx : PPE VP index to the table
  *
  * Return: void
@@ -455,7 +676,7 @@ hal_ppeds_cfg_ast_override_map_reg_9224(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_set_ppe_pri2tid_map1_9224()
+ * hal_tx_set_ppe_pri2tid_map_9224() - Set PPE PRI to TID map
  * @hal_soc_hdl: HAL SoC handle
  * @val : PRI to TID value
  * @map_no: Map number
@@ -481,10 +702,10 @@ void hal_tx_set_ppe_pri2tid_map_9224(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_set_ppe_pri2tid_map1_9224()
+ * hal_tx_enable_pri2tid_map_9224() - Enable PRI to TID map
  * @hal_soc_hdl: HAL SoC handle
- * @val : PRI to TID value
- * @map_no: Map number
+ * @val: PRI to TID value
+ * @ppe_vp_idx: Map number
  *
  * Return: void
  */
@@ -515,7 +736,7 @@ void hal_tx_enable_pri2tid_map_9224(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_update_ppe_pri2tid_9224()
+ * hal_tx_update_ppe_pri2tid_9224() - Update PPE PRI to TID
  * @hal_soc_hdl: HAL SoC handle
  * @pri: INT_PRI
  * @tid: Wi-Fi TID

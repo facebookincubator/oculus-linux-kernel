@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -114,6 +114,16 @@ wlan_coex_psoc_deinit(struct wlan_objmgr_psoc *psoc);
  */
 QDF_STATUS wlan_coex_config_send(struct wlan_objmgr_vdev *vdev,
 				 struct coex_config_params *param);
+
+/**
+ * wlan_coex_multi_config_send() - API to send coex multiple configure
+ * @vdev: pointer to vdev object
+ * @param: parameters of coex multiple config
+ *
+ * QDF_STATUS
+ */
+QDF_STATUS wlan_coex_multi_config_send(struct wlan_objmgr_vdev *vdev,
+				       struct coex_multi_config *param);
 
 /**
  * wlan_coex_config_updated() - private API to notify that coex config

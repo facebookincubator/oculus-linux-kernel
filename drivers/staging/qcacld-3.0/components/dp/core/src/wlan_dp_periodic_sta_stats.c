@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -84,14 +84,16 @@ void dp_periodic_sta_stats_config(struct dp_config *config,
 
 void dp_periodic_sta_stats_start(struct wlan_objmgr_vdev *vdev)
 {
-	struct wlan_dp_intf *dp_intf = dp_get_vdev_priv_obj(vdev);
+	struct wlan_dp_link *dp_link = dp_get_vdev_priv_obj(vdev);
+	struct wlan_dp_intf *dp_intf;
 	struct dp_config *dp_cfg;
 
-	if (!dp_intf) {
-		dp_nofl_err("Unable to get DP interface");
+	if (!dp_link) {
+		dp_nofl_err("Unable to get DP link");
 		return;
 	}
 
+	dp_intf = dp_link->dp_intf;
 	dp_cfg = dp_intf->dp_ctx->dp_cfg;
 
 	if ((dp_intf->device_mode == QDF_STA_MODE) &&
@@ -108,14 +110,16 @@ void dp_periodic_sta_stats_start(struct wlan_objmgr_vdev *vdev)
 
 void dp_periodic_sta_stats_stop(struct wlan_objmgr_vdev *vdev)
 {
-	struct wlan_dp_intf *dp_intf = dp_get_vdev_priv_obj(vdev);
+	struct wlan_dp_link *dp_link = dp_get_vdev_priv_obj(vdev);
+	struct wlan_dp_intf *dp_intf;
 	struct dp_config *dp_cfg;
 
-	if (!dp_intf) {
-		dp_nofl_err("Unable to get DP interface");
+	if (!dp_link) {
+		dp_nofl_err("Unable to get DP link");
 		return;
 	}
 
+	dp_intf = dp_link->dp_intf;
 	dp_cfg = dp_intf->dp_ctx->dp_cfg;
 
 	if ((dp_intf->device_mode == QDF_STA_MODE) &&

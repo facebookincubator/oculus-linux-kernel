@@ -622,6 +622,23 @@ void pld_pcie_fw_sim_unregister_driver(void)
 	cnss_fw_sim_wlan_unregister_driver(&pld_pcie_fw_sim_ops);
 }
 
+#ifdef CONFIG_SHADOW_V3
+static inline void
+pld_pcie_fw_sim_populate_shadow_v3_cfg(struct cnss_wlan_enable_cfg *cfg,
+				       struct pld_wlan_enable_cfg *config)
+{
+	cfg->num_shadow_reg_v3_cfg = config->num_shadow_reg_v3_cfg;
+	cfg->shadow_reg_v3_cfg = (struct cnss_shadow_reg_v3_cfg *)
+				 config->shadow_reg_v3_cfg;
+}
+#else
+static inline void
+pld_pcie_fw_sim_populate_shadow_v3_cfg(struct cnss_wlan_enable_cfg *cfg,
+				       struct pld_wlan_enable_cfg *config)
+{
+}
+#endif
+
 /**
  * pld_pcie_fw_sim_wlan_enable() - Enable WLAN
  * @dev: device
@@ -662,6 +679,8 @@ int pld_pcie_fw_sim_wlan_enable(struct device *dev,
 		cfg.rri_over_ddr_cfg.base_addr_high =
 			 config->rri_over_ddr_cfg.base_addr_high;
 	}
+
+	pld_pcie_fw_sim_populate_shadow_v3_cfg(&cfg, config);
 
 	switch (mode) {
 	case PLD_FTM:
@@ -766,4 +785,34 @@ int pld_pcie_fw_sim_get_platform_cap(struct device *dev,
 	return 0;
 }
 
+/*
+ * pld_pcie_get_irq() - Get irq by ce_id
+ * @dev: device
+ * @ce_id: CE id for which irq is requested
+ *
+ * Return irq number.
+ *
+ * Return: irq number for success
+ *             Non zero failure code for errors
+ */
+int pld_pcie_fw_sim_get_irq(struct device *dev, int ce_id)
+{
+	uint32_t msi_data_start;
+	uint32_t msi_data_count;
+	uint32_t msi_irq_start;
+	uint32_t msi_data;
+	int ret;
+
+	ret = cnss_fw_sim_get_user_msi_assignment(dev, "CE",
+						  &msi_data_count,
+						  &msi_data_start,
+						  &msi_irq_start);
+	if (ret)
+		return ret;
+
+	msi_data = (ce_id % msi_data_count) + msi_irq_start;
+	ret = cnss_fw_sim_get_msi_irq(dev, msi_data);
+
+	return ret;
+}
 #endif

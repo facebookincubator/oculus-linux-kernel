@@ -49,6 +49,7 @@
 #include "wmi.h"
 #include "wlan_cm_roam_public_struct.h"
 #include "target_if.h"
+#include <qdf_hang_event_notifier.h>
 
 /* Platform specific configuration for max. no. of fragments */
 #define QCA_OL_11AC_TX_MAX_FRAGS            2
@@ -442,6 +443,8 @@ enum wma_rx_exec_ctx {
  * @noa_sub_ie_len: NOA sub IE length
  * @noa_ie: NOA IE
  * @p2p_ie_offset: p2p IE offset
+ * @csa_count_offset: Offset of Switch count field in CSA IE
+ * @ecsa_count_offset: Offset of Switch count field in ECSA IE
  * @lock: lock
  */
 struct beacon_info {
@@ -455,6 +458,8 @@ struct beacon_info {
 	uint16_t noa_sub_ie_len;
 	uint8_t *noa_ie;
 	uint16_t p2p_ie_offset;
+	uint16_t csa_count_offset;
+	uint16_t ecsa_count_offset;
 	qdf_spinlock_t lock;
 };
 
@@ -473,7 +478,7 @@ struct beacon_tim_ie {
 	uint8_t dtim_count;
 	uint8_t dtim_period;
 	uint8_t tim_bitctl;
-	uint8_t tim_bitmap[1];
+	QDF_FLEX_ARRAY(uint8_t, tim_bitmap);
 } __ATTRIB_PACK;
 
 /**
@@ -765,11 +770,13 @@ struct mac_ss_bw_info {
 /**
  * struct wma_ini_config - Structure to hold wma ini configuration
  * @max_no_of_peers: Max Number of supported
+ * @exclude_selftx_from_cca_busy: Exclude self tx time from cca busy time flag.
  *
  * Placeholder for WMA ini parameters.
  */
 struct wma_ini_config {
 	uint8_t max_no_of_peers;
+	bool exclude_selftx_from_cca_busy;
 };
 
 /**
@@ -795,6 +802,63 @@ struct wma_wlm_stats_data {
 	wma_wlm_stats_cb wlm_stats_callback;
 };
 #endif
+
+#define WLAN_WMA_MAX_PF_SYM 50
+#define WLAN_WMA_PF_APPS_NOTIFY_BUF_LEN QDF_HANG_EVENT_DATA_SIZE
+#define WLAN_WMA_PF_SYM_LEN 4
+#define WLAN_WMA_PF_SYM_CNT_LEN 1
+#define WLAN_WMA_PF_SYM_FLAGS_LEN 1
+#define WLAN_WMA_PER_PF_SYM_NOTIFY_BUF_LEN  (WLAN_WMA_PF_SYM_LEN + \
+					     WLAN_WMA_PF_SYM_CNT_LEN + \
+					     WLAN_WMA_PF_SYM_FLAGS_LEN)
+
+/*
+ * struct wow_pf_sym - WOW PF wakeup symbol info
+ * @symbol: Address of PF symbol
+ * @count: Count of PF symbol
+ * @flags: Flags associated with @symbol
+ */
+struct wow_pf_sym {
+	uint32_t symbol;
+	uint8_t count;
+	uint8_t flags;
+};
+
+/*
+ * struct wow_pf_wakeup_ev_data - WOW PF wakeup event data
+ * @pf_sym: Array of each unique PF symbol in wakeup event payload
+ * @num_pf_syms: Total unique symbols in event.
+ * @pending_pf_syms: Pending PF symbols to process
+ */
+struct wow_pf_wakeup_ev_data {
+	struct wow_pf_sym *pf_sym;
+	uint8_t num_pf_syms;
+	uint8_t pending_pf_syms;
+};
+
+/**
+ * struct wma_pf_sym - Per symbol PF data in PF symbol history
+ * @pf_sym: PF symbol info
+ * @pf_event_ts: Array of page fault event ts
+ */
+struct wma_pf_sym {
+	struct wow_pf_sym pf_sym;
+	qdf_time_t *pf_ev_ts;
+};
+
+/*
+ * struct wma_pf_sym_hist - System level FW PF symbol history
+ * @wma_pf_sym: Array of symbols in history.
+ * @pf_notify_buf_ptr: Pointer to APPS notify buffer
+ * @pf_notify_buf_len: Current data length of @pf_notify_buf_ptr
+ * @lock: Lock to access PF symbol history
+ */
+struct wma_pf_sym_hist {
+	struct wma_pf_sym wma_pf_sym[WLAN_WMA_MAX_PF_SYM];
+	uint8_t *pf_notify_buf_ptr;
+	uint32_t pf_notify_buf_len;
+	qdf_spinlock_t lock;
+};
 
 /**
  * struct t_wma_handle - wma context
@@ -867,7 +931,6 @@ struct wma_wlm_stats_data {
  * @log_completion_timer: log completion timer
  * @old_hw_mode_index: Previous configured HW mode index
  * @new_hw_mode_index: Current configured HW mode index
- * @peer_authorized_cb: peer authorized hdd callback
  * @ocb_config_req: OCB request context
  * @self_gen_frm_pwr: Self-generated frame power
  * @tx_chain_mask_cck: Is the CCK tx chain mask enabled
@@ -915,10 +978,7 @@ struct wma_wlm_stats_data {
  * * @fw_therm_throt_support: FW Supports thermal throttling?
  * @eht_cap: 802.11be capabilities
  * @set_hw_mode_resp_status: Set HW mode response status
- * @pagefault_wakeups_ts: Stores timestamps at which host wakes up by fw
- * because of pagefaults
- * @num_page_fault_wakeups: Stores the number of times host wakes up by fw
- * because of pagefaults
+ * @wma_pf_hist: PF symbol history
  *
  * This structure is the global wma context.  It contains global wma
  * module parameters and handles of other modules.
@@ -995,8 +1055,6 @@ typedef struct {
 	qdf_mc_timer_t log_completion_timer;
 	uint32_t old_hw_mode_index;
 	uint32_t new_hw_mode_index;
-	wma_peer_authorized_fp peer_authorized_cb;
-	struct sir_ocb_config *ocb_config_req;
 	uint16_t self_gen_frm_pwr;
 	bool tx_chain_mask_cck;
 	qdf_mc_timer_t service_ready_ext_timer;
@@ -1057,8 +1115,7 @@ typedef struct {
 	qdf_wake_lock_t sap_d3_wow_wake_lock;
 	qdf_wake_lock_t go_d3_wow_wake_lock;
 	enum set_hw_mode_status set_hw_mode_resp_status;
-	qdf_time_t *pagefault_wakeups_ts;
-	uint8_t num_page_fault_wakeups;
+	struct wma_pf_sym_hist wma_pf_hist;
 } t_wma_handle, *tp_wma_handle;
 
 /**
@@ -1121,12 +1178,14 @@ enum frame_index {
  * @sub_type: sub type
  * @status: status
  * @ack_cmp_work: work structure
+ * @frame: frame nbuf
  */
 struct wma_tx_ack_work_ctx {
 	tp_wma_handle wma_handle;
 	uint16_t sub_type;
 	int32_t status;
 	qdf_work_t ack_cmp_work;
+	qdf_nbuf_t frame;
 };
 
 /**
@@ -1147,32 +1206,6 @@ struct wma_target_req {
 	uint32_t msg_type;
 	uint8_t vdev_id;
 	uint8_t type;
-};
-
-/**
- * struct wma_set_key_params - set key parameters
- * @vdev_id: vdev id
- * @def_key_idx: used to see if we have to read the key from cfg
- * @key_len: key length
- * @peer_mac: peer mac address
- * @singl_tid_rc: 1=Single TID based Replay Count, 0=Per TID based RC
- * @key_type: key type
- * @key_idx: key index
- * @unicast: unicast flag
- * @key_data: key data
- */
-struct wma_set_key_params {
-	uint8_t vdev_id;
-	/* def_key_idx can be used to see if we have to read the key from cfg */
-	uint32_t def_key_idx;
-	uint16_t key_len;
-	uint8_t peer_mac[QDF_MAC_ADDR_SIZE];
-	uint8_t singl_tid_rc;
-	enum eAniEdType key_type;
-	uint32_t key_idx;
-	bool unicast;
-	uint8_t key_data[SIR_MAC_MAX_KEY_LENGTH];
-	uint8_t key_rsc[WLAN_CRYPTO_RSC_SIZE];
 };
 
 /**
@@ -1509,8 +1542,29 @@ int wma_mgmt_tx_bundle_completion_handler(void *handle,
 uint32_t wma_get_vht_ch_width(void);
 
 #ifdef WLAN_FEATURE_11BE
+/**
+ * wma_get_orig_eht_ch_width() - Get original EHT channel width supported
+ *
+ * API to get original EHT channel width
+ *
+ * Return: void
+ */
+uint32_t wma_get_orig_eht_ch_width(void);
+
+/**
+ * wma_get_orig_eht_ch_width() - Get current EHT channel width supported
+ *
+ * API to get current EHT channel width
+ *
+ * Return: void
+ */
 uint32_t wma_get_eht_ch_width(void);
 #else
+static inline uint32_t wma_get_orig_eht_ch_width(void)
+{
+	return 0;
+}
+
 static inline uint32_t wma_get_eht_ch_width(void)
 {
 	return 0;
@@ -1543,9 +1597,6 @@ QDF_STATUS wma_set_gateway_params(tp_wma_handle wma,
 	return QDF_STATUS_SUCCESS;
 }
 #endif /* FEATURE_LFR_SUBNET_DETECTION */
-
-QDF_STATUS wma_lro_config_cmd(void *handle,
-	 struct cdp_lro_hash_config *wma_lro_cmd);
 
 QDF_STATUS wma_ht40_stop_obss_scan(tp_wma_handle wma_handle,
 				int32_t vdev_id);
@@ -1716,6 +1767,29 @@ QDF_STATUS wma_peer_unmap_conf_cb(uint8_t vdev_id,
 bool wma_objmgr_peer_exist(tp_wma_handle wma,
 			   uint8_t *peer_addr, uint8_t *peer_vdev_id);
 
+#ifdef WLAN_FEATURE_PEER_TRANS_HIST
+/**
+ * wma_peer_tbl_trans_add_entry() - Add peer transition to peer history
+ * @peer: Object manager peer pointer
+ * @is_create: Set to %true if @peer is getting created
+ * @peer_info: Info of peer setup on @peer create,
+ *               %NULL if @is_create is %false.
+ *
+ * Adds new entry to peer history about the transition of peer in the system.
+ * The APIs has to be called to keep record of create and delete of peer.
+ *
+ * Returns: void
+ */
+void wma_peer_tbl_trans_add_entry(struct wlan_objmgr_peer *peer, bool is_create,
+				  struct cdp_peer_setup_info *peer_info);
+#else
+static inline void
+wma_peer_tbl_trans_add_entry(struct wlan_objmgr_peer *peer, bool is_create,
+			     struct cdp_peer_setup_info *peer_info)
+{
+}
+#endif
+
 /**
  * wma_get_cca_stats() - send request to fw to get CCA
  * @wmi_hdl: wma handle
@@ -1738,15 +1812,6 @@ struct wma_ini_config *wma_get_ini_handle(tp_wma_handle wma_handle);
  */
 enum wlan_phymode wma_chan_phy_mode(uint32_t freq, enum phy_ch_width chan_width,
 				    uint8_t dot11_mode);
-
-/**
- * wma_host_to_fw_phymode() - convert host to fw phymode
- * @host_phymode: phymode to convert
- *
- * Return: one of the values defined in enum WMI_HOST_WLAN_PHY_MODE;
- *         or WMI_HOST_MODE_UNKNOWN if the conversion fails
- */
-WMI_HOST_WLAN_PHY_MODE wma_host_to_fw_phymode(enum wlan_phymode host_phymode);
 
 /**
  * wma_fw_to_host_phymode() - convert fw to host phymode
@@ -2495,6 +2560,15 @@ QDF_STATUS wma_add_bss_lfr2_vdev_start(struct wlan_objmgr_vdev *vdev,
 #endif
 
 /**
+ * wma_set_vdev_bw() - wma send vdev bw
+ * @vdev_id: vdev id
+ * @bw: band width
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wma_set_vdev_bw(uint8_t vdev_id, uint8_t bw);
+
+/**
  * wma_send_peer_assoc_req() - wma send peer assoc req when sta connect
  * @add_bss: add bss param
  *
@@ -2630,15 +2704,6 @@ QDF_STATUS wma_post_vdev_start_setup(uint8_t vdev_id);
 QDF_STATUS wma_pre_vdev_start_setup(uint8_t vdev_id,
 				    struct bss_params *add_bss);
 
-/**
- * wma_is_multipass_sap() - wma api to verify whether multipass sap
- * support is present in FW
- *
- * @tgt_hdl: target if handler.
- *
- * Return: Success if multipass sap is supported.
- */
-inline bool wma_is_multipass_sap(struct target_psoc_info *tgt_hdl);
 #ifdef FEATURE_ANI_LEVEL_REQUEST
 /**
  * wma_send_ani_level_request() - Send get ani level cmd to WMI

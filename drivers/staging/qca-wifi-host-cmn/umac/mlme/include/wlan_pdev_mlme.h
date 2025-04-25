@@ -25,20 +25,17 @@
 #include <include/wlan_vdev_mlme.h>
 #include <wlan_ext_mlme_obj_types.h>
 
-/*
+/**
  * struct pdev_restart_attr - Pdev restart attributes
  * @vdev: vdev on which the pdev restart cmd was enqueued
  * @restart_bmap: Bitmap for vdev requesting multivdev restart
- *
- * NB: Not using kernel-doc comment since the kernel-doc script
- *     doesn't handle the qdf_bitmap() macro.
  */
 struct pdev_restart_attr {
 	struct wlan_objmgr_vdev *vdev;
 	qdf_bitmap(restart_bmap, WLAN_UMAC_PSOC_MAX_VDEVS);
 };
 
-/*
+/**
  * struct pdev_mlme_obj -  PDEV MLME component object
  * @pdev:                  PDEV object
  * @ext_pdev_ptr:          PDEV MLME legacy pointer
@@ -48,11 +45,8 @@ struct pdev_restart_attr {
  * @restart_pend_vdev_bmap: Bitmap for VDEV RESTART command pending
  * @restart_send_vdev_bmap: Bitmap for VDEV RESTART command sending
  * @start_send_vdev_arr:   Bitmap for VDEV START command sending
- * @pdev_restart:
- * @multivdev_restart_wait_cnt:
- *
- * NB: Not using kernel-doc comment since the kernel-doc script
- *     doesn't handle the qdf_bitmap() macro.
+ * @pdev_restart: Pdev restart attributes structure
+ * @multivdev_restart_wait_cnt: multi vdev restart wait counter
  */
 struct pdev_mlme_obj {
 	struct wlan_objmgr_pdev *pdev;
@@ -67,4 +61,13 @@ struct pdev_mlme_obj {
 	qdf_atomic_t multivdev_restart_wait_cnt;
 };
 
+#ifdef MOBILE_DFS_SUPPORT
+static inline
+bool wlan_rptr_check_rpt_max_phy(struct wlan_objmgr_pdev *pdev)
+{
+	return false;
+}
+#else
+bool wlan_rptr_check_rpt_max_phy(struct wlan_objmgr_pdev *pdev);
+#endif /* MOBILE_DFS_SUPPORT */
 #endif

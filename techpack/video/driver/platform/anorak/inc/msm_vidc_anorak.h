@@ -10,6 +10,11 @@
 #include "msm_vidc_core.h"
 
 #if defined(CONFIG_MSM_VIDC_ANORAK)
+
+#define AOSS_TS_REG_PA 0xC220000
+#define AOSS_TS_REG_VA 0xe0a03000
+#define AOSS_TS_REG_SIZE 0x1000
+
 int msm_vidc_init_platform_anorak(struct msm_vidc_core *core, struct device *dev);
 int msm_vidc_deinit_platform_anorak(struct msm_vidc_core *core, struct device *dev);
 #else

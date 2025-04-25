@@ -147,7 +147,7 @@ struct ol_tx_desc_t *ol_tx_hl_desc_alloc(struct ol_txrx_pdev_t *pdev,
 		    (QDF_NBUF_CB_GET_PACKET_TYPE(msdu) ==
 		    QDF_NBUF_CB_PACKET_TYPE_EAPOL)) {
 			tx_desc = ol_tx_desc_hl(pdev, vdev, msdu, msdu_info);
-			ol_txrx_info("Got tx desc from resv pool\n");
+			ol_txrx_info("Got tx desc from resv pool");
 		}
 	}
 	return tx_desc;
@@ -1435,7 +1435,7 @@ ol_tx_pdev_reset_bundle_require(struct cdp_soc_t *soc_hdl, uint8_t pdev_id)
 
 	TAILQ_FOREACH(vdev, &pdev->vdev_list, vdev_list_elem) {
 		vdev->bundling_required = false;
-		ol_txrx_info("vdev_id %d bundle_require %d\n",
+		ol_txrx_info("vdev_id %d bundle_require %d",
 			     vdev->vdev_id, vdev->bundling_required);
 	}
 }
@@ -1459,7 +1459,7 @@ ol_tx_vdev_set_bundle_require(uint8_t vdev_id, unsigned long tx_bytes,
 		vdev->bundling_required = false;
 
 	if (old_bundle_required != vdev->bundling_required)
-		ol_txrx_info("vdev_id %d bundle_require %d tx_bytes %ld time_in_ms %d high_th %d low_th %d\n",
+		ol_txrx_info("vdev_id %d bundle_require %d tx_bytes %ld time_in_ms %d high_th %d low_th %d",
 			     vdev->vdev_id, vdev->bundling_required, tx_bytes,
 			     time_in_ms, high_th, low_th);
 }

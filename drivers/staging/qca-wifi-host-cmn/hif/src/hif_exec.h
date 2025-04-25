@@ -23,23 +23,6 @@
 #include <hif.h>
 #include <hif_irq_affinity.h>
 #include <linux/cpumask.h>
-/*Number of buckets for latency*/
-#define HIF_SCHED_LATENCY_BUCKETS 8
-
-/*Buckets for latency between 0 to 2 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_0_2 2
-/*Buckets for latency between 3 to 10 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_3_10 10
-/*Buckets for latency between 11 to 20 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_11_20 20
-/*Buckets for latency between 21 to 50 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_21_50 50
-/*Buckets for latency between 50 to 100 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_51_100 100
-/*Buckets for latency between 100 to 250 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_101_250 250
-/*Buckets for latency between 250 to 500 ms*/
-#define HIF_SCHED_LATENCY_BUCKET_251_500 500
 
 #ifndef IRQ_DISABLED_MAX_DURATION_NS
 #define IRQ_DISABLED_MAX_DURATION_NS 100000000

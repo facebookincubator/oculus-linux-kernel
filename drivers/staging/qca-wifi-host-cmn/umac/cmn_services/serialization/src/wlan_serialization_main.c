@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -138,7 +138,7 @@ error:
 
 /**
  * wlan_serialization_destroy_cmd_pool() - Destroy the global cmd pool
- * @ser_pdev_obj: Serialization private pdev object
+ * @pdev_queue: Serialization pdev queue
  *
  * Return: None
  */
@@ -162,8 +162,8 @@ static void wlan_serialization_destroy_cmd_pool(
 
 /**
  * wlan_serialization_create_cmd_pool() - Create the global cmd pool
- * @pdev: PDEV Object
- * @ser_pdev_obj: Serialization private pdev object
+ * @pdev_queue: Serialization pdev queue
+ * @cmd_pool_size: Size of the command pool
  *
  * Global command pool of memory is created here.
  * It is safe to allocate memory individually for each command rather than

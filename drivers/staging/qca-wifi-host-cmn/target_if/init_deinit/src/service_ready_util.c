@@ -246,7 +246,8 @@ static bool new_hw_mode_preferred(uint32_t current_hw_mode,
 {
 	uint8_t hw_mode_id_precedence[WMI_HOST_HW_MODE_MAX + 1] = { 6, 2, 5,
 								    4, 1, 3,
-								    7, 0, 8};
+								    7, 0, 8,
+								    9, 10, 11};
 
 	if (current_hw_mode > WMI_HOST_HW_MODE_MAX ||
 	    new_hw_mode > WMI_HOST_HW_MODE_MAX)
@@ -263,7 +264,7 @@ static bool new_hw_mode_preferred(uint32_t current_hw_mode,
 }
 
 /**
- * select_preferred_mode() - Select preferred hw mode based on current mode.
+ * select_preferred_hw_mode() - Select preferred hw mode based on current mode.
  * @tgt_hdl: target_psoc_info object
  * @hw_mode_caps: HW mode caps of new mode id that needs to checked for
  *                selection.
@@ -561,6 +562,66 @@ exit:
 }
 #endif
 
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+int init_deinit_populate_rcc_aoa_cap_ext2(struct wlan_objmgr_psoc *psoc,
+					  wmi_unified_t handle,
+					  uint8_t *event,
+					  struct tgt_info *info)
+{
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+
+	info->aoa_caps = qdf_mem_malloc(
+		sizeof(struct wlan_psoc_host_rcc_enh_aoa_caps_ext2));
+
+	if (!info->aoa_caps) {
+		target_if_err("Mem alloc for aoa cap failed");
+		return -EINVAL;
+	}
+
+	status = wmi_extract_aoa_caps_service_ready_ext2(
+				handle, event,
+				info->aoa_caps);
+
+	if (QDF_IS_STATUS_ERROR(status)) {
+		target_if_err("Extraction of aoa caps failed");
+		goto free_and_return;
+	}
+
+	return 0;
+
+free_and_return:
+	qdf_mem_free(info->aoa_caps);
+	info->aoa_caps = NULL;
+
+	return qdf_status_to_os_return(status);
+}
+
+QDF_STATUS init_deinit_rcc_aoa_cap_ext2_free(
+		struct target_psoc_info *tgt_psoc_info)
+{
+	qdf_mem_free(tgt_psoc_info->info.aoa_caps);
+	tgt_psoc_info->info.aoa_caps = NULL;
+
+	return QDF_STATUS_SUCCESS;
+}
+#else
+int init_deinit_populate_rcc_aoa_cap_ext2(struct wlan_objmgr_psoc *psoc,
+					  wmi_unified_t handle,
+					  uint8_t *event,
+					  struct tgt_info *info)
+{
+	return 0;
+}
+
+QDF_STATUS init_deinit_rcc_aoa_cap_ext2_free(
+		struct target_psoc_info *tgt_psoc_info)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
+qdf_export_symbol(init_deinit_rcc_aoa_cap_ext2_free);
+
 int init_deinit_populate_dbs_or_sbs_cap_ext2(struct wlan_objmgr_psoc *psoc,
 					     wmi_unified_t handle,
 					     uint8_t *event,
@@ -607,6 +668,52 @@ exit:
 	return qdf_status_to_os_return(status);
 }
 
+int init_deinit_populate_aux_dev_cap_ext2(struct wlan_objmgr_psoc *psoc,
+					  wmi_unified_t handle, uint8_t *event,
+					  struct tgt_info *info)
+
+{
+	uint8_t cap_idx;
+	uint32_t num_aux_dev_caps;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	struct wlan_psoc_host_aux_dev_caps *param;
+
+	num_aux_dev_caps = info->service_ext2_param.num_aux_dev_caps;
+	target_if_info("num_aux_dev_caps = %d", num_aux_dev_caps);
+
+	if (!num_aux_dev_caps)
+		return 0;
+
+	info->aux_dev_caps =
+		qdf_mem_malloc(sizeof(struct wlan_psoc_host_aux_dev_caps) *
+			       num_aux_dev_caps);
+
+	if (!info->aux_dev_caps)
+		return -EINVAL;
+
+	for (cap_idx = 0; cap_idx < num_aux_dev_caps; cap_idx++) {
+		param = &info->aux_dev_caps[cap_idx];
+		status = wmi_extract_aux_dev_cap_service_ready_ext2(handle,
+								    event,
+								    cap_idx,
+								    param);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			target_if_err("Extraction of aux dev cap failed");
+			goto free_and_return;
+		}
+	}
+
+	return 0;
+
+free_and_return:
+	qdf_mem_free(info->aux_dev_caps);
+	info->aux_dev_caps = NULL;
+	/* Set to 0 in case some code later rely on that */
+	info->service_ext2_param.num_aux_dev_caps = 0;
+
+	return qdf_status_to_os_return(status);
+}
+
 QDF_STATUS init_deinit_dbr_ring_cap_free(
 		struct target_psoc_info *tgt_psoc_info)
 {
@@ -637,6 +744,19 @@ QDF_STATUS init_deinit_spectral_scaling_params_free(
 
 qdf_export_symbol(init_deinit_spectral_scaling_params_free);
 
+QDF_STATUS init_deinit_aux_dev_cap_free(
+		struct target_psoc_info *tgt_psoc_info)
+{
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	if (tgt_psoc_info->info.aux_dev_caps) {
+		qdf_mem_free(tgt_psoc_info->info.aux_dev_caps);
+		tgt_psoc_info->info.aux_dev_caps = NULL;
+	}
+
+	return status;
+}
+
 #ifdef DBS_SBS_BAND_LIMITATION_WAR
 #define phy0               0
 #define phy2               2
@@ -645,7 +765,7 @@ qdf_export_symbol(init_deinit_spectral_scaling_params_free);
  * init_deinit_update_phy_reg_cap() - Update the low/high frequency for phy0.
  * @psoc: PSOC common object
  * @info: FW or lower layer related info
- * @wlan_psoc_host_hal_reg_capabilities_ext: Reg caps per PHY
+ * @reg_cap: Reg caps per PHY
  *
  * For the DBS_SBS capable board, update the low or high frequency
  * for phy0 by leveraging the frequency populated for phy2
@@ -724,6 +844,34 @@ init_deinit_fill_host_reg_cap(struct wlan_psoc_hal_reg_capability *cap,
 	reg_cap->high_5ghz_chan = cap->high_5ghz_chan;
 }
 
+static void
+init_deinit_populate_tgt_ext_param(struct tgt_info *info,
+			struct wlan_psoc_host_hal_reg_capabilities_ext *cap)
+{
+	struct wlan_psoc_host_service_ext_param *ext_param;
+
+	ext_param = &info->service_ext_param;
+	ext_param->wireless_modes = cap->wireless_modes;
+	ext_param->low_2ghz_chan = cap->low_2ghz_chan;
+	ext_param->high_2ghz_chan = cap->high_2ghz_chan;
+	ext_param->low_5ghz_chan = cap->low_5ghz_chan;
+	ext_param->high_5ghz_chan = cap->high_5ghz_chan;
+}
+
+static void
+init_deinit_populate_tgt_ext2_param(struct tgt_info *info,
+			struct wlan_psoc_host_hal_reg_capabilities_ext2 *cap)
+{
+	struct wlan_psoc_host_service_ext2_param *ext2_param;
+
+	ext2_param = &info->service_ext2_param;
+	ext2_param->wireless_modes_ext = cap->wireless_modes_ext;
+	ext2_param->low_2ghz_chan_ext = cap->low_2ghz_chan_ext;
+	ext2_param->high_2ghz_chan_ext = cap->high_2ghz_chan_ext;
+	ext2_param->low_5ghz_chan_ext = cap->low_5ghz_chan_ext;
+	ext2_param->high_5ghz_chan_ext = cap->high_5ghz_chan_ext;
+}
+
 int init_deinit_populate_phy_reg_cap(struct wlan_objmgr_psoc *psoc,
 				     wmi_unified_t handle, uint8_t *event,
 				     struct tgt_info *info,
@@ -745,6 +893,7 @@ int init_deinit_populate_phy_reg_cap(struct wlan_objmgr_psoc *psoc,
 		info->service_ext_param.num_phy = 1;
 		num_phy_reg_cap = 1;
 		init_deinit_fill_host_reg_cap(&cap, &reg_cap[0]);
+		init_deinit_populate_tgt_ext_param(info, &reg_cap[0]);
 		target_if_debug("FW wireless modes 0x%llx",
 				reg_cap[0].wireless_modes);
 	} else {
@@ -865,8 +1014,9 @@ int init_deinit_populate_hal_reg_cap_ext2(wmi_unified_t wmi_handle,
 			return qdf_status_to_os_return(status);
 		}
 
-		status = ucfg_reg_update_hal_reg_cap(
-				psoc, reg_cap[reg_idx].wireless_modes_ext,
+		init_deinit_populate_tgt_ext2_param(info, &reg_cap[reg_idx]);
+		status = ucfg_reg_update_hal_cap_wireless_modes(psoc,
+				reg_cap[reg_idx].wireless_modes_ext,
 				reg_idx);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			target_if_err("Failed to update hal reg cap");
@@ -1051,7 +1201,8 @@ QDF_STATUS init_deinit_validate_160_80p80_fw_caps(
 	    (tgt_hdl->info.target_type == TARGET_TYPE_QCA8074V2) ||
 	    (tgt_hdl->info.target_type == TARGET_TYPE_QCN6122) ||
 	    (tgt_hdl->info.target_type == TARGET_TYPE_QCN9160) ||
-	    (tgt_hdl->info.target_type == TARGET_TYPE_QCA6290)) {
+	    (tgt_hdl->info.target_type == TARGET_TYPE_QCA6290) ||
+	    (tgt_hdl->info.target_type == TARGET_TYPE_QCN6432)) {
 		/**
 		 * Return true for now. This is not available in
 		 * qca8074 fw yet

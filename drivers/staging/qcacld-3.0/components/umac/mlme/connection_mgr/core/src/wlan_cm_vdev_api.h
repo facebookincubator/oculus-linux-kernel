@@ -46,7 +46,8 @@
  * as a testbed device with special functionality and not recommended
  * for production.
  * @is_wps_connection: is wps connection
- * @is_osen_connection: is osen connectgion
+ * @is_osen_connection: is osen connection
+ * @is_ssid_hidden: AP SSID is hidden
  * @assoc_ie: assoc ie to be used in assoc req
  * @scan_ie: Default scan ie to be used in the uncast probe req
  * @entry: scan entry for the candidate
@@ -57,9 +58,10 @@
 struct cm_vdev_join_req {
 	uint8_t vdev_id;
 	wlan_cm_id cm_id;
-	uint8_t	force_rsne_override:1,
+	uint8_t force_rsne_override:1,
 		is_wps_connection:1,
-		is_osen_connection:1;
+		is_osen_connection:1,
+		is_ssid_hidden:1;
 	struct element_info assoc_ie;
 	struct element_info scan_ie;
 	struct scan_cache_entry *entry;
@@ -168,9 +170,11 @@ struct cm_host_roam_start_ind {
 /**
  * struct cm_ext_obj - Connection manager legacy object
  * @rso_cfg: connect info to be used in RSO.
+ * @rso_usr_cfg: roam related userspace RSO configs.
  */
 struct cm_ext_obj {
 	struct rso_config rso_cfg;
+	struct rso_user_config rso_usr_cfg;
 };
 
 #ifdef WLAN_FEATURE_FILS_SK
@@ -362,7 +366,6 @@ QDF_STATUS cm_csr_handle_join_req(struct wlan_objmgr_vdev *vdev,
 /**
  * cm_handle_connect_req() - Connection manager ext connect request to
  * start vdev and peer assoc state machine
- * vdev and peer assoc state machine
  * @vdev: VDEV object
  * @req: Vdev connect request
  *
@@ -370,7 +373,7 @@ QDF_STATUS cm_csr_handle_join_req(struct wlan_objmgr_vdev *vdev,
  */
 QDF_STATUS
 cm_handle_connect_req(struct wlan_objmgr_vdev *vdev,
-		      struct wlan_cm_vdev_connect_req *req);
+			    struct wlan_cm_vdev_connect_req *req);
 
 /**
  * cm_send_bss_peer_create_req() - Connection manager ext bss peer create
@@ -763,14 +766,12 @@ cm_send_rso_stop(struct wlan_objmgr_vdev *vdev)
 /**
  * cm_get_ml_partner_info() - Fill ML partner info from scan entry
  * @pdev: PDEV object
- * @scan_entry: Scan entry
- * @partner_info: Partner info to be filled
+ * @conn_req: Connect request pointer
  *
  * Return: QDF_STATUS
  */
 QDF_STATUS
 cm_get_ml_partner_info(struct wlan_objmgr_pdev *pdev,
-		       struct scan_cache_entry *scan_entry,
-		       struct mlo_partner_info *partner_info);
+		       struct cm_connect_req *conn_req);
 #endif
 #endif /* __WLAN_CM_VDEV_API_H__ */

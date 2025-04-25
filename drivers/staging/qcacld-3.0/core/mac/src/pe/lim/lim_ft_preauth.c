@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -324,13 +324,14 @@ QDF_STATUS lim_ft_setup_auth_session(struct mac_context *mac,
 	struct pe_session *ft_session = NULL;
 	uint8_t sessionId = 0;
 	struct sSirFTPreAuthReq *req;
+	QDF_STATUS status;
 
 	ft_session =
 		pe_find_session_by_bssid(mac, pe_session->limReAssocbssId,
 					 &sessionId);
 	if (!ft_session) {
-		pe_err("No session found for bssid");
-		lim_print_mac_addr(mac, pe_session->limReAssocbssId, LOGE);
+		pe_err("No session found for bssid: "QDF_MAC_ADDR_FMT,
+			QDF_MAC_ADDR_REF(pe_session->limReAssocbssId));
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -342,9 +343,13 @@ QDF_STATUS lim_ft_setup_auth_session(struct mac_context *mac,
 
 	req = pe_session->ftPEContext.pFTPreAuthReq;
 	if (req && req->pbssDescription) {
-		lim_fill_ft_session(mac,
-				    req->pbssDescription, ft_session,
-				    pe_session, WLAN_PHYMODE_AUTO);
+		status = lim_fill_ft_session(mac,
+					     req->pbssDescription, ft_session,
+					     pe_session, WLAN_PHYMODE_AUTO);
+		if (QDF_IS_STATUS_ERROR(status))
+			pe_err("Failed to fill ft session for vdev id %d",
+			       ft_session->vdev_id);
+
 		lim_ft_prepare_add_bss_req(mac, ft_session,
 					   req->pbssDescription);
 	}
@@ -478,13 +483,12 @@ void lim_handle_ft_pre_auth_rsp(struct mac_context *mac, QDF_STATUS status,
 		else
 			ft_session->vdev_nss = mac->vdev_type_nss_5g.sta;
 
-		pe_debug("created session (%pK) with id = %d",
-			ft_session, ft_session->peSessionId);
-
 		/* Update the ReAssoc BSSID of the current session */
 		sir_copy_mac_addr(pe_session->limReAssocbssId,
 				  pbssDescription->bssId);
-		lim_print_mac_addr(mac, pe_session->limReAssocbssId, LOGD);
+		pe_debug("created session (%pK) with id = %d BSSID = "QDF_MAC_ADDR_FMT,
+			 ft_session, ft_session->peSessionId,
+			 QDF_MAC_ADDR_REF(pe_session->limReAssocbssId));
 	}
 send_rsp:
 	if ((pe_session->curr_op_freq !=

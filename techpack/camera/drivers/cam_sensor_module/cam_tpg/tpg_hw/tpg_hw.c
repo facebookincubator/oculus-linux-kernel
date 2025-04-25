@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "tpg_hw.h"
@@ -362,6 +363,7 @@ int tpg_hw_dump_status(struct tpg_hw *hw)
 	case TPG_HW_VERSION_1_3:
 		if (hw->hw_info->ops->dump_status)
 			hw->hw_info->ops->dump_status(hw, NULL);
+		break;
 	default:
 		CAM_WARN(CAM_TPG, "Hw version doesn't support status dump");
 		break;

@@ -102,6 +102,7 @@ QDF_STATUS ucfg_pre_cac_set_status(struct wlan_objmgr_vdev *vdev, bool status);
 static inline QDF_STATUS
 ucfg_pre_cac_set_status(struct wlan_objmgr_vdev *vdev, bool status)
 {
+	return QDF_STATUS_SUCCESS;
 }
 #endif
 

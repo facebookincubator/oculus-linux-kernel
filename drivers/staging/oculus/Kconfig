@@ -127,6 +127,7 @@ config MISCFIFO
 
 config MISCFIFO_BENCHMARK
 	tristate "miscfifo benchmark driver"
+	depends on MISCFIFO
 	default n
 	depends on MISCFIFO
 	help
@@ -140,6 +141,13 @@ config MP3314_BLU
 	help
 	  Basic I2C driver for MP3314 BLU hardware.
 
+config NAUTILUS_RESOURCE_MANAGER
+	tristate "Nautilus resource manager kernel driver"
+	default n
+	help
+	  Enable support for controlling the nautilus-related resources, such
+	  as power rails and clocks.
+
 config OCULUS_EXTERNAL_BATTERY
 	tristate "External battery driver"
 	depends on META_USBVDM
@@ -149,21 +157,6 @@ config OCULUS_EXTERNAL_BATTERY
 	  messages. Messages will be sent with host device acting as a source and
 	  a sink to Molokini or Lehua. Also creates debugfs nodes to advertise
 	  external battery parameters.
-
-config POWERSTATE_MANAGER
-	tristate "Powerstate manager driver"
-	default n
-	help
-	  Driver for allowing services to prevent AP suspend. Specifically useful
-	  for vendor services, which cannot talk to the PowerManager service and
-	  have no other robust way to acquire wakelocks.
-
-config NAUTILUS_RESOURCE_MANAGER
-	tristate "Nautilus resource manager kernel driver"
-	default n
-	help
-	  Enable support for controlling the nautilus-related resources, such
-	  as power rails and clocks.
 
 config OCULUS_CHARGING_DOCK
 	tristate "Oculus charging dock driver"
@@ -176,6 +169,22 @@ config OCULUS_CHARGING_DOCK
 	  the sink with acknowledgement built in to the protocol itself.
 	  This driver also creates sysfs nodes to advertise dock parameters which
 	  can be queried from user-space for gathering required dock telemetry.
+
+config ORCHESTRATOR_AGENT
+	bool "Orchestrator Agent subsystem"
+	default n
+	help
+	  Enables the Orchestrator Agent subsystem, which is used to
+	  implement Meta-specific kernel policies for the orchestrator
+	  service.
+
+config POWERSTATE_MANAGER
+	tristate "Powerstate manager driver"
+	default n
+	help
+	  Driver for allowing services to prevent AP suspend. Specifically useful
+	  for vendor services, which cannot talk to the PowerManager service and
+	  have no other robust way to acquire wakelocks.
 
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"
@@ -288,14 +297,6 @@ config VIRTUAL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing a particular
 	  component of a device that can be configured in the device tree.
-
-config ORCHESTRATOR_AGENT
-	bool "Orchestrator Agent subsystem"
-	default n
-	help
-		Enables the Orchestrator Agent subsystem, which is used to
-		implement Meta-specific kernel policies for the orchestrator
-		service.
 
 source "drivers/staging/oculus/langdon/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"

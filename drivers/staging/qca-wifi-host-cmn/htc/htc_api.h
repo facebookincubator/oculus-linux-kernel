@@ -300,7 +300,7 @@ struct htc_endpoint_credit_dist {
 #define IS_EP_ACTIVE(epDist)  ((epDist)->DistFlags & HTC_EP_ACTIVE)
 #define SET_EP_ACTIVE(epDist) (epDist)->DistFlags |= HTC_EP_ACTIVE
 
-/* credit distribution code that is passed into the distrbution function,
+/* credit distribution code that is passed into the distribution function,
  * there are mandatory and optional codes that must be handled
  */
 enum htc_credit_dist_reason {
@@ -533,6 +533,106 @@ void htc_ce_tasklet_debug_dump(HTC_HANDLE htc_handle);
  * Return: QDF_STATUS_SUCCESS
  */
 QDF_STATUS htc_send_pkt(HTC_HANDLE HTCHandle, HTC_PACKET *pPacket);
+
+#ifdef CUSTOM_CB_SCHEDULER_SUPPORT
+/**
+ * htc_register_custom_cb() - Helper API to register the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ * @custom_cb: Custom call back function pointer
+ * @custom_cb_context: Custom callback context
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+htc_register_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id,
+		       void (*custom_cb)(void *), void *custom_cb_context);
+
+/**
+ * htc_unregister_custom_cb() - Helper API to unregister the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+htc_unregister_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id);
+
+/**
+ * htc_enable_custom_cb() - Helper API to enable the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+htc_enable_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id);
+
+/**
+ * htc_disable_custom_cb() - Helper API to disable the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+htc_disable_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id);
+#else
+/**
+ * htc_register_custom_cb() - Helper API to register the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ * @custom_cb: Custom call back function pointer
+ * @custom_cb_context: Custom callback context
+ *
+ * return: QDF_STATUS
+ */
+static inline QDF_STATUS
+htc_register_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id,
+		       void (*custom_cb)(void *), void *custom_cb_context)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * htc_unregister_custom_cb() - Helper API to unregister the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ *
+ * return: QDF_STATUS
+ */
+static inline QDF_STATUS
+htc_unregister_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * htc_enable_custom_cb() - Helper API to enable the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ *
+ * return: QDF_STATUS
+ */
+static inline QDF_STATUS
+htc_enable_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * htc_disable_custom_cb() - Helper API to disable the custom callback
+ * @htc_handle: HTC handle
+ * @endpoint_id: Endpoint ID
+ *
+ * return: QDF_STATUS
+ */
+static inline QDF_STATUS
+htc_disable_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* CUSTOM_CB_SCHEDULER_SUPPORT */
 
 #ifdef ATH_11AC_TXCOMPACT
 /**

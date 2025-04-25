@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -94,7 +95,7 @@ static ssize_t __hdd_sysfs_modify_acl_store(
 		  QDF_MAC_ADDR_REF(peer_mac), list_type, cmd_type);
 
 	qdf_status = wlansap_modify_acl(
-		WLAN_HDD_GET_SAP_CTX_PTR(adapter),
+		WLAN_HDD_GET_SAP_CTX_PTR(adapter->deflink),
 		peer_mac, list_type, cmd_type);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 		hdd_err("Modify ACL failed");

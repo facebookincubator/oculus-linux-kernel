@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -85,6 +85,8 @@ enum reg_domain {
 	FCC17_WORLD = 0xEB,
 	FCC17_ETSIC = 0xEC,
 	FCC18_ETSIC = 0xED,
+	FCC20_FCCA = 0xEF,
+	FCC21_ETSIC = 0xD2,
 
 	ETSI1_WORLD = 0x37,
 	ETSI2_WORLD = 0x35,
@@ -109,6 +111,8 @@ enum reg_domain {
 	ETSI17_WORLD = 0x4B,
 	ETSI18_WORLD = 0x6E,
 	ETSI19_WORLD = 0x7B,
+	ETSI20_WORLD = 0x7C,
+	ETSI21_WORLD = 0x7D,
 
 	APL1_WORLD = 0x52,
 	APL1_ETSIC = 0x55,
@@ -142,6 +146,7 @@ enum reg_domain {
 	APL26_ETSIC = 0x72,
 	APL27_FCCA = 0x73,
 	APL28_ETSIC = 0x76,
+	APL29_ETSIC = 0x77,
 
 	WOR0_WORLD = 0x60,
 	WOR1_WORLD = 0x61,
@@ -191,6 +196,7 @@ enum reg_domain {
 	MKK11_MKKA2 = 0xD8,
 	MKK16_MKKC = 0xDF,
 	MKK17_MKKC = 0xE1,
+	MKK18_MKKC = 0xEE,
 
 	WORLD_60 = 0x60,
 	WORLD_61 = 0x61,
@@ -226,6 +232,8 @@ enum reg_domains_5g {
 	FCC16,
 	FCC17,
 	FCC18,
+	FCC20,
+	FCC21,
 
 	ETSI1,
 	ETSI2,
@@ -245,6 +253,8 @@ enum reg_domains_5g {
 	ETSI17,
 	ETSI18,
 	ETSI19,
+	ETSI20,
+	ETSI21,
 
 	APL1,
 	APL2,
@@ -271,12 +281,14 @@ enum reg_domains_5g {
 	APL26,
 	APL27,
 	APL28,
+	APL29,
 
 	MKK3,
 	MKK5,
 	MKK11,
 	MKK16,
 	MKK17,
+	MKK18,
 	MKK4,
 	MKK9,
 	MKK10,
@@ -557,8 +569,9 @@ struct regulatory_rule_ext {
  * @dfs_region: dfs region
  * @min_bw: minimum bandwidth
  * @max_bw: maximum bandwidth
+ * @ant_gain: antenna gain
  * @num_reg_rules: number of regulatory rules
- * @reg_rules_id: regulatory rule index
+ * @reg_rule_id: regulatory rule index
  */
 struct regdomain   {
 	uint8_t ctl_val;
@@ -579,6 +592,7 @@ struct regdomain   {
  * @max_bw: Maximum bandwidth in MHz
  * @num_reg_rules: number of regulatory rules
  * @reg_rules_id: regulatory rule index
+ * @sixg_reg_rule_id: Rule identifier array of 6 GHz rules
  */
 struct sub_6g_regdomain   {
 	uint16_t min_bw;
@@ -641,12 +655,14 @@ struct reg_domain_pair {
  * @APL6_6G_0A: Super domain APL6_6G_0A for Saudi Arabia LPI STA and AP
  * @MKK1_6G_0B: Super domain MKK1_6G_0B for Japan LPI and VLP
  * @ETSI2_6G_0C: Super domain ETSI2_6G_0C for Australia LPI and VLP
- * @ETSI2_6G_0D: Super domain ETSI2_6G_0D for ISRAEL LPI
+ * @ETSI1_6G_0D: Super domain ETSI1_6G_0D for ISRAEL LPI
  * @ETSI2_6G_0E: Super domain ETSI2_6G_0E for NEW ZEALAND LPI and VLP
  * @FCC2_6G_10: Super domain FCC1_6G_10 for Canada LPI &
-		SP(VLP to be added later)
+ *		SP(VLP to be added later)
  * @APL4_6G_11: Super domain APL3_6G_11 for Costa Rica LPI and VLP
- * @APL5_6G_12: Super domain APL3_6G_12 for CHILE LPI and VLP
+ * @APL5_6G_12: Super domain for future purpose
+ * @APL7_6G_13: Super domain APL7_6G_13 for CHILE
+ * @FCC1_6G_14: Super domain FCC1_6G_14 for DOMINICAN REPUBLIC
  */
 enum reg_super_domain_6g {
 	FCC1_6G_01 = 0x01,
@@ -666,6 +682,8 @@ enum reg_super_domain_6g {
 	FCC2_6G_10 = 0x10,
 	APL4_6G_11 = 0x11,
 	APL5_6G_12 = 0x12,
+	APL7_6G_13 = 0x13,
+	FCC1_6G_14 = 0x14,
 };
 
 #if defined(COMPILE_REGDB_6G)
@@ -696,12 +714,12 @@ QDF_STATUS reg_get_num_countries(int *num_countries);
 QDF_STATUS reg_get_num_reg_dmn_pairs(int *num_reg_dmn);
 
 /**
- * reg_etsi13_regdmn () - Checks if the reg domain is ETSI13 or not
+ * reg_etsi_regdmn () - Check if the reg domain is ETSI13/ETSI18/ETSI20 or not
  * @reg_dmn: reg domain
  *
  * Return: true or false
  */
-bool reg_etsi13_regdmn(uint8_t reg_dmn);
+bool reg_etsi_regdmn(uint8_t reg_dmn);
 
 /**
  * reg_fcc_regdmn () - Checks if the reg domain is FCC3/FCC8/FCC15/FCC16 or not

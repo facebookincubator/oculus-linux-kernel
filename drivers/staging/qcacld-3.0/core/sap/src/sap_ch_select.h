@@ -58,6 +58,8 @@
 #define REG_MAX_EIRP_POWER 36
 #define REG_MIN_EIRP_POWER 14
 
+#define SAP_NORMALISE_ACS_WEIGHT 5
+
 /* In HT40/VHT80, Effect of primary Channel RSSi on Subband1 */
 #define SAP_SUBBAND1_RSSI_EFFECT_PRIMARY  (-20)
 /* In VHT80, Effect of primary Channel RSSI on Subband2 */
@@ -94,24 +96,4 @@ typedef enum {
 	CHANNEL_13,
 	CHANNEL_14
 } tSapChannel;
-
-typedef struct {
-	uint32_t chan_freq;
-	uint16_t bssCount;      /* bss found in scanresult for this channel */
-	int32_t rssiAgr;        /* Max value of rssi among all BSS(es) from scanresult for this channel */
-	uint32_t weight;        /* Weightage of this channel */
-	uint32_t weight_copy;   /* copy of the original weight */
-	bool valid;             /* Is this a valid center frequency for regulatory domain */
-	bool weight_calc_done;
-} tSapSpectChInfo;              /* tDfsSpectChInfo; */
-
-/**
- * Structure holding all the information required to make a
- * decision for the best operating channel based on dfs formula
- */
-
-typedef struct {
-	tSapSpectChInfo *pSpectCh;      /* tDfsSpectChInfo *pSpectCh;  // Ptr to the channels in the entire spectrum band */
-	uint8_t numSpectChans;  /* Total num of channels in the spectrum */
-} tSapChSelSpectInfo;           /* tDfsChSelParams; */
 #endif /* if !defined __SAP_CH_SELECT_H */

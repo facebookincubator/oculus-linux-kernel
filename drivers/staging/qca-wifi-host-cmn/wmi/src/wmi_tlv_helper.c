@@ -184,7 +184,7 @@ uint32_t wmitlv_get_attributes(uint32_t is_cmd_id, uint32_t cmd_event_id,
  * @wmi_cmd_event_id: command event id
  *
  *
- * Helper Function to vaidate the prepared TLV's for
+ * Helper Function to validate the prepared TLV's for
  * an WMI event/command to be sent.
  *
  * Return: 0 if success. Return < 0 if failure.
@@ -429,7 +429,7 @@ Error_wmitlv_check_tlv_params:
  * @wmi_cmd_event_id: command event id
  *
  *
- * Helper Function to vaidate the prepared TLV's for
+ * Helper Function to validate the prepared TLV's for
  * an WMI event/command to be sent.
  *
  * Return: 0 if success. Return < 0 if failure.
@@ -453,7 +453,7 @@ wmitlv_check_event_tlv_params(void *os_handle, void *param_struc_ptr,
  * @wmi_cmd_event_id: command event id
  *
  *
- * Helper Function to vaidate the prepared TLV's for
+ * Helper Function to validate the prepared TLV's for
  * an WMI event/command to be sent.
  *
  * Return: 0 if success. Return < 0 if failure.
@@ -481,7 +481,7 @@ qdf_export_symbol(wmitlv_check_command_tlv_params);
  * @wmi_cmd_struct_ptr: wmi command structure
  *
  *
- * vaidate the TLV's coming for an event/command and
+ * validate the TLV's coming for an event/command and
  * also pads data to TLV's if necessary
  *
  * Return: 0 if success. Return < 0 if failure.

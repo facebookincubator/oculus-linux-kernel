@@ -57,9 +57,8 @@ dp_rx_mon_handle_cfr_mu_info(struct dp_pdev *pdev,
 
 	num_users = ppdu_info->com_info.num_users;
 	for (user_id = 0; user_id < num_users; user_id++) {
-		if (user_id > OFDMA_NUM_USERS) {
+		if (user_id >= OFDMA_NUM_USERS)
 			return;
-		}
 
 		rx_user_status =  &ppdu_info->rx_user_status[user_id];
 		rx_stats_peruser = &cdp_rx_ppdu->user[user_id];
@@ -121,16 +120,15 @@ dp_rx_mon_populate_cfr_ppdu_info(struct dp_pdev *pdev,
 	dp_rx_mon_handle_cfr_mu_info(pdev, ppdu_info, cdp_rx_ppdu);
 	rx_user_status = &ppdu_info->rx_user_status[num_users - 1];
 	sw_peer_id = rx_user_status->sw_peer_id;
+	cdp_rx_ppdu->num_users = num_users;
 	peer = dp_peer_get_ref_by_id(soc, sw_peer_id, DP_MOD_ID_RX_PPDU_STATS);
 	if (!peer) {
 		cdp_rx_ppdu->peer_id = HTT_INVALID_PEER;
-		cdp_rx_ppdu->num_users = 0;
 		return;
 	}
 
 	cdp_rx_ppdu->peer_id = peer->peer_id;
 	cdp_rx_ppdu->vdev_id = peer->vdev->vdev_id;
-	cdp_rx_ppdu->num_users = num_users;
 
 	dp_peer_unref_delete(peer, DP_MOD_ID_RX_PPDU_STATS);
 }
@@ -350,15 +348,15 @@ void
 dp_rx_populate_su_evm_details(struct hal_rx_ppdu_info *ppdu_info,
 			      struct cdp_rx_indication_ppdu *cdp_rx_ppdu)
 {
-	uint8_t pilot_evm;
-	uint8_t nss_count;
-	uint8_t pilot_count;
+	uint16_t pilot_evm;
+	uint16_t nss_count;
+	uint16_t pilot_count;
 
 	nss_count = ppdu_info->evm_info.nss_count;
 	pilot_count = ppdu_info->evm_info.pilot_count;
 
 	if ((nss_count * pilot_count) > DP_RX_MAX_SU_EVM_COUNT) {
-		qdf_err("pilot evm count is more than expected");
+		qdf_debug("pilot evm count is more than expected");
 		return;
 	}
 	cdp_rx_ppdu->evm_info.pilot_count = pilot_count;
@@ -428,7 +426,7 @@ dp_rx_populate_cdp_indication_ppdu_user(struct dp_pdev *pdev,
 
 	num_users = ppdu_info->com_info.num_users;
 	for (i = 0; i < num_users; i++) {
-		if (i > OFDMA_NUM_USERS)
+		if (i >= OFDMA_NUM_USERS)
 			return;
 
 		rx_user_status =  &ppdu_info->rx_user_status[i];
@@ -531,8 +529,7 @@ dp_rx_populate_cdp_indication_ppdu_user(struct dp_pdev *pdev,
 				 * HTT_UL_OFDMA_V0_RU_SIZE_RU_996x2
 				 */
 				if (qdf_unlikely(ru_size >= OFDMA_NUM_RU_SIZE)) {
-					dp_err("invalid ru_size %d\n",
-					       ru_size);
+					dp_err("invalid ru_size %d", ru_size);
 					return;
 				}
 				is_data = dp_rx_inc_rusize_cnt(pdev,
@@ -664,6 +661,33 @@ end:
 	dp_rx_populate_cfr_non_assoc_sta(pdev, ppdu_info, cdp_rx_ppdu);
 }
 
+/*
+ * dp_mon_eval_avg_rate_filter() - Evaluates rate value against filter
+ * @peer: dp peer
+ * @ratekbps: last packet rate in kbps
+ * @avg_rate: average rate for which new rate is to be evaluated
+ *
+ * Return: true when average need to be evaluated else false
+ */
+static inline bool
+dp_mon_eval_avg_rate_filter(struct dp_peer *peer, uint32_t ratekbps,
+			    uint32_t avg_rate) {
+	uint16_t filter_val = 0;
+
+	if (qdf_unlikely(!peer || !peer->vdev ||
+			  !peer->vdev->pdev->soc->wlan_cfg_ctx)) {
+		return true;
+	}
+
+	filter_val =
+		peer->vdev->pdev->soc->wlan_cfg_ctx->avg_rate_stats_filter_val;
+
+	if (!filter_val || avg_rate < filter_val || ratekbps > filter_val) {
+		return true;
+	}
+	return false;
+}
+
 /**
  * dp_rx_rate_stats_update() - Update per-peer rate statistics
  * @peer: Datapath peer handle
@@ -739,8 +763,12 @@ static inline void dp_rx_rate_stats_update(struct dp_peer *peer,
 	ppdu->rix = rix;
 	ppdu_user->rix = rix;
 	DP_STATS_UPD(mon_peer, rx.last_rx_rate, ratekbps);
-	mon_peer->stats.rx.avg_rx_rate =
-		dp_ath_rate_lpf(mon_peer->stats.rx.avg_rx_rate, ratekbps);
+	if (qdf_likely(dp_mon_eval_avg_rate_filter(peer, ratekbps,
+					mon_peer->stats.rx.avg_rx_rate))) {
+		mon_peer->stats.rx.avg_rx_rate =
+			dp_ath_rate_lpf(mon_peer->stats.rx.avg_rx_rate,
+					ratekbps);
+	}
 	ppdu_rx_rate = dp_ath_rate_out(mon_peer->stats.rx.avg_rx_rate);
 	DP_STATS_UPD(mon_peer, rx.rnd_avg_rx_rate, ppdu_rx_rate);
 	ppdu->rx_ratekbps = ratekbps;
@@ -751,66 +779,7 @@ static inline void dp_rx_rate_stats_update(struct dp_peer *peer,
 		peer->vdev->stats.rx.last_rx_rate = ratekbps;
 }
 
-#ifdef WLAN_FEATURE_11BE
-static inline uint8_t dp_get_bw_offset_frm_bw(struct dp_soc *soc,
-					      enum CMN_BW_TYPES bw)
-{
-	uint8_t pkt_bw_offset;
-
-	switch (bw) {
-	case CMN_BW_20MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_20MHZ;
-		break;
-	case CMN_BW_40MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_40MHZ;
-		break;
-	case CMN_BW_80MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_80MHZ;
-		break;
-	case CMN_BW_160MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_160MHZ;
-		break;
-	case CMN_BW_320MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_320MHZ;
-		break;
-	default:
-		pkt_bw_offset = 0;
-		dp_rx_mon_status_debug("%pK: Invalid BW index = %d",
-				       soc, bw);
-	}
-
-	return pkt_bw_offset;
-}
-#else
-static inline uint8_t dp_get_bw_offset_frm_bw(struct dp_soc *soc,
-					      enum CMN_BW_TYPES bw)
-{
-	uint8_t pkt_bw_offset;
-
-	switch (bw) {
-	case CMN_BW_20MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_20MHZ;
-		break;
-	case CMN_BW_40MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_40MHZ;
-		break;
-	case CMN_BW_80MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_80MHZ;
-		break;
-	case CMN_BW_160MHZ:
-		pkt_bw_offset = PKT_BW_GAIN_160MHZ;
-		break;
-	default:
-		pkt_bw_offset = 0;
-		dp_rx_mon_status_debug("%pK: Invalid BW index = %d",
-				       soc, bw);
-	}
-
-	return pkt_bw_offset;
-}
-#endif
-
-#ifdef WLAN_TELEMETRY_STATS_SUPPORT
+#ifdef WLAN_CONFIG_TELEMETRY_AGENT
 static void
 dp_ppdu_desc_user_rx_time_update(struct dp_pdev *pdev,
 				 struct dp_peer *peer,
@@ -842,8 +811,70 @@ dp_ppdu_desc_user_rx_time_update(struct dp_pdev *pdev,
 		return;
 
 	ac = TID_TO_WME_AC(user->tid);
-	DP_STATS_INC(mon_peer, airtime_consumption[ac].consumption,
+	DP_STATS_INC(mon_peer, airtime_stats.rx_airtime_consumption[ac].consumption,
 		     user->rx_time_us);
+}
+
+/**
+ * dp_rx_mon_update_user_deter_stats() - Update per-peer deterministic stats
+ * @pdev: Datapath pdev handle
+ * @peer: Datapath peer handle
+ * @ppdu: PPDU Descriptor
+ * @user: Per user RX stats
+ *
+ * Return: None
+ */
+static inline
+void dp_rx_mon_update_user_deter_stats(struct dp_pdev *pdev,
+				       struct dp_peer *peer,
+				       struct cdp_rx_indication_ppdu *ppdu,
+				       struct cdp_rx_stats_ppdu_user *user)
+{
+	struct dp_mon_peer *mon_peer;
+	uint8_t tid;
+
+	if (!pdev || !ppdu || !user || !peer)
+		return;
+
+	if (!dp_is_subtype_data(ppdu->frame_ctrl))
+		return;
+
+	if (ppdu->u.ppdu_type != HAL_RX_TYPE_SU)
+		return;
+
+	mon_peer = peer->monitor_peer;
+	if (!mon_peer)
+		return;
+
+	tid = user->tid;
+	if (tid >= CDP_DATA_TID_MAX)
+		return;
+
+	DP_STATS_INC(mon_peer,
+		     deter_stats.deter[tid].rx_det.mode_cnt,
+		     1);
+	DP_STATS_UPD(mon_peer,
+		     deter_stats.deter[tid].rx_det.avg_rate,
+		     mon_peer->stats.rx.avg_rx_rate);
+}
+
+/**
+ * dp_rx_mon_update_pdev_deter_stats() - Update pdev deterministic stats
+ * @pdev: Datapath pdev handle
+ * @ppdu: PPDU Descriptor
+ *
+ * Return: None
+ */
+static inline
+void dp_rx_mon_update_pdev_deter_stats(struct dp_pdev *pdev,
+				       struct cdp_rx_indication_ppdu *ppdu)
+{
+	if (!dp_is_subtype_data(ppdu->frame_ctrl))
+		return;
+
+	DP_STATS_INC(pdev,
+		     deter_stats.rx_su_cnt,
+		     1);
 }
 #else
 static inline void
@@ -852,15 +883,26 @@ dp_ppdu_desc_user_rx_time_update(struct dp_pdev *pdev,
 				 struct cdp_rx_indication_ppdu *ppdu_desc,
 				 struct cdp_rx_stats_ppdu_user *user)
 { }
+
+static inline
+void dp_rx_mon_update_user_deter_stats(struct dp_pdev *pdev,
+				       struct dp_peer *peer,
+				       struct cdp_rx_indication_ppdu *ppdu,
+				       struct cdp_rx_stats_ppdu_user *user)
+{ }
+
+static inline
+void dp_rx_mon_update_pdev_deter_stats(struct dp_pdev *pdev,
+				       struct cdp_rx_indication_ppdu *ppdu)
+{ }
 #endif
 
 static void dp_rx_stats_update(struct dp_pdev *pdev,
 			       struct cdp_rx_indication_ppdu *ppdu)
 {
 	struct dp_soc *soc = NULL;
-	uint8_t mcs, preamble, ac = 0, nss, ppdu_type;
+	uint8_t mcs, preamble, ac = 0, nss, ppdu_type, res_mcs = 0;
 	uint32_t num_msdu;
-	uint8_t pkt_bw_offset;
 	struct dp_peer *peer;
 	struct dp_mon_peer *mon_peer;
 	struct cdp_rx_stats_ppdu_user *ppdu_user;
@@ -869,6 +911,7 @@ static void dp_rx_stats_update(struct dp_pdev *pdev,
 	struct dp_mon_ops *mon_ops;
 	struct dp_mon_pdev *mon_pdev = NULL;
 	uint64_t byte_count;
+	bool is_preamble_valid = true;
 
 	if (qdf_likely(pdev))
 		soc = pdev->soc;
@@ -917,8 +960,7 @@ static void dp_rx_stats_update(struct dp_pdev *pdev,
 		byte_count = ppdu_user->mpdu_ok_byte_count +
 			ppdu_user->mpdu_err_byte_count;
 
-		pkt_bw_offset = dp_get_bw_offset_frm_bw(soc, ppdu->u.bw);
-		DP_STATS_UPD(mon_peer, rx.snr, (ppdu->rssi + pkt_bw_offset));
+		DP_STATS_UPD(mon_peer, rx.snr, ppdu->rssi);
 
 		if (qdf_unlikely(mon_peer->stats.rx.avg_snr == CDP_INVALID_SNR))
 			mon_peer->stats.rx.avg_snr =
@@ -971,64 +1013,42 @@ static void dp_rx_stats_update(struct dp_pdev *pdev,
 		DP_STATS_INCC(mon_peer, rx.non_ampdu_cnt, num_msdu,
 			      !(ppdu_user->is_ampdu));
 		DP_STATS_UPD(mon_peer, rx.rx_rate, mcs);
+
+		switch (preamble) {
+		case DOT11_A:
+			res_mcs = (mcs < MAX_MCS_11A) ? mcs : (MAX_MCS - 1);
+		break;
+		case DOT11_B:
+			res_mcs = (mcs < MAX_MCS_11B) ? mcs : (MAX_MCS - 1);
+		break;
+		case DOT11_N:
+			res_mcs = (mcs < MAX_MCS_11N) ? mcs : (MAX_MCS - 1);
+		break;
+		case DOT11_AC:
+			res_mcs = (mcs < MAX_MCS_11AC) ? mcs : (MAX_MCS - 1);
+		break;
+		case DOT11_AX:
+			res_mcs = (mcs < MAX_MCS_11AX) ? mcs : (MAX_MCS - 1);
+		break;
+		default:
+			is_preamble_valid = false;
+		}
+
 		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[MAX_MCS - 1], num_msdu,
-			((mcs >= MAX_MCS_11A) && (preamble == DOT11_A)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[mcs], num_msdu,
-			((mcs < MAX_MCS_11A) && (preamble == DOT11_A)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[MAX_MCS - 1], num_msdu,
-			((mcs >= MAX_MCS_11B) && (preamble == DOT11_B)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[mcs], num_msdu,
-			((mcs < MAX_MCS_11B) && (preamble == DOT11_B)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[MAX_MCS - 1], num_msdu,
-			((mcs >= MAX_MCS_11A) && (preamble == DOT11_N)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[mcs], num_msdu,
-			((mcs < MAX_MCS_11A) && (preamble == DOT11_N)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[MAX_MCS - 1], num_msdu,
-			((mcs >= MAX_MCS_11AC) && (preamble == DOT11_AC)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[mcs], num_msdu,
-			((mcs < MAX_MCS_11AC) && (preamble == DOT11_AC)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[MAX_MCS - 1], num_msdu,
-			((mcs >= (MAX_MCS_11AX)) && (preamble == DOT11_AX)));
-		DP_STATS_INCC(mon_peer,
-			rx.pkt_type[preamble].mcs_count[mcs], num_msdu,
-			((mcs < (MAX_MCS_11AX)) && (preamble == DOT11_AX)));
-		DP_STATS_INCC(mon_peer,
-			rx.su_ax_ppdu_cnt.mcs_count[MAX_MCS - 1], 1,
-			((mcs >= (MAX_MCS_11AX)) && (preamble == DOT11_AX) &&
-			(ppdu_type == HAL_RX_TYPE_SU)));
-		DP_STATS_INCC(mon_peer,
-			rx.su_ax_ppdu_cnt.mcs_count[mcs], 1,
-			((mcs < (MAX_MCS_11AX)) && (preamble == DOT11_AX) &&
-			(ppdu_type == HAL_RX_TYPE_SU)));
-		DP_STATS_INCC(mon_peer,
-			rx.rx_mu[TXRX_TYPE_MU_OFDMA].ppdu.mcs_count[MAX_MCS - 1],
-			1, ((mcs >= (MAX_MCS_11AX)) &&
-			(preamble == DOT11_AX) &&
-			(ppdu_type == HAL_RX_TYPE_MU_OFDMA)));
-		DP_STATS_INCC(mon_peer,
-			rx.rx_mu[TXRX_TYPE_MU_OFDMA].ppdu.mcs_count[mcs],
-			1, ((mcs < (MAX_MCS_11AX)) &&
-			(preamble == DOT11_AX) &&
-			(ppdu_type == HAL_RX_TYPE_MU_OFDMA)));
-		DP_STATS_INCC(mon_peer,
-			rx.rx_mu[TXRX_TYPE_MU_MIMO].ppdu.mcs_count[MAX_MCS - 1],
-			1, ((mcs >= (MAX_MCS_11AX)) &&
-			(preamble == DOT11_AX) &&
-			(ppdu_type == HAL_RX_TYPE_MU_MIMO)));
-		DP_STATS_INCC(mon_peer,
-			rx.rx_mu[TXRX_TYPE_MU_MIMO].ppdu.mcs_count[mcs],
-			1, ((mcs < (MAX_MCS_11AX)) &&
-			(preamble == DOT11_AX) &&
-			(ppdu_type == HAL_RX_TYPE_MU_MIMO)));
+			      rx.pkt_type[preamble].mcs_count[res_mcs], num_msdu,
+			      is_preamble_valid);
+
+		if (preamble == DOT11_AX) {
+			DP_STATS_INCC(mon_peer,
+				      rx.su_ax_ppdu_cnt.mcs_count[res_mcs], 1,
+				      (ppdu_type == HAL_RX_TYPE_SU));
+			DP_STATS_INCC(mon_peer,
+				      rx.rx_mu[TXRX_TYPE_MU_OFDMA].ppdu.mcs_count[res_mcs],
+				      1, (ppdu_type == HAL_RX_TYPE_MU_OFDMA));
+			DP_STATS_INCC(mon_peer,
+				      rx.rx_mu[TXRX_TYPE_MU_MIMO].ppdu.mcs_count[res_mcs],
+				      1, (ppdu_type == HAL_RX_TYPE_MU_MIMO));
+		}
 
 		/*
 		 * If invalid TID, it could be a non-qos frame, hence do not
@@ -1054,8 +1074,7 @@ static void dp_rx_stats_update(struct dp_pdev *pdev,
 			continue;
 
 		dp_peer_stats_notify(pdev, peer);
-		DP_STATS_UPD(mon_peer, rx.last_snr,
-			     (ppdu->rssi + pkt_bw_offset));
+		DP_STATS_UPD(mon_peer, rx.last_snr, ppdu->rssi);
 
 		dp_peer_qos_stats_notify(pdev, ppdu_user);
 
@@ -1065,6 +1084,11 @@ static void dp_rx_stats_update(struct dp_pdev *pdev,
 		dp_send_stats_event(pdev, peer, ppdu_user->peer_id);
 
 		dp_ppdu_desc_user_rx_time_update(pdev, peer, ppdu, ppdu_user);
+
+		if (wlan_cfg_get_sawf_stats_config(pdev->soc->wlan_cfg_ctx))
+			dp_rx_mon_update_user_deter_stats(pdev, peer,
+							  ppdu, ppdu_user);
+
 		dp_peer_unref_delete(peer, DP_MOD_ID_RX_PPDU_STATS);
 	}
 }
@@ -1151,6 +1175,12 @@ dp_rx_handle_ppdu_stats(struct dp_soc *soc, struct dp_pdev *pdev,
 		if (!qdf_unlikely(qdf_nbuf_put_tail(ppdu_nbuf,
 				       sizeof(struct cdp_rx_indication_ppdu))))
 			return;
+
+		if (wlan_cfg_get_sawf_stats_config(pdev->soc->wlan_cfg_ctx)) {
+			if (cdp_rx_ppdu->u.ppdu_type == HAL_RX_TYPE_SU)
+				dp_rx_mon_update_pdev_deter_stats(pdev,
+								  cdp_rx_ppdu);
+		}
 
 		dp_rx_stats_update(pdev, cdp_rx_ppdu);
 
@@ -1326,7 +1356,7 @@ static inline bool
 dp_rx_is_valid_undecoded_frame(uint64_t err_mask, uint8_t err_code)
 {
 	if (err_code < CDP_PHYRX_ERR_MAX &&
-	    (err_mask & (1L << err_code)))
+	    (err_mask & (1ULL << err_code)))
 		return true;
 
 	return false;
@@ -1636,6 +1666,54 @@ dp_rx_handle_smart_mesh_mode(struct dp_soc *soc, struct dp_pdev *pdev,
 	return 0;
 }
 
+#ifdef WLAN_FEATURE_LOCAL_PKT_CAPTURE
+int dp_rx_handle_local_pkt_capture(struct dp_pdev *pdev,
+				   struct hal_rx_ppdu_info *ppdu_info,
+				   qdf_nbuf_t nbuf)
+{
+	uint8_t size;
+	struct dp_mon_vdev *mon_vdev;
+	struct dp_mon_pdev *mon_pdev = pdev->monitor_pdev;
+
+	if (!mon_pdev->mvdev) {
+		dp_info_rl("Monitor vdev is NULL !!");
+		return 1;
+	}
+
+	mon_vdev = mon_pdev->mvdev->monitor_vdev;
+
+	if (!ppdu_info->msdu_info.first_msdu_payload) {
+		dp_info_rl("First msdu payload not present");
+		return 1;
+	}
+
+	/* Adding 8 bytes to get to start of 802.11 frame after phy_ppdu_id */
+	size = (ppdu_info->msdu_info.first_msdu_payload -
+		qdf_nbuf_data(nbuf)) + mon_pdev->phy_ppdu_id_size;
+	ppdu_info->msdu_info.first_msdu_payload = NULL;
+
+	if (!qdf_nbuf_pull_head(nbuf, size)) {
+		dp_info_rl("No header present");
+		return 1;
+	}
+
+	/* Only retain RX MSDU payload in the skb */
+	qdf_nbuf_trim_tail(nbuf, qdf_nbuf_len(nbuf) -
+			   ppdu_info->msdu_info.payload_len +
+			   mon_pdev->phy_ppdu_id_size);
+	if (!qdf_nbuf_update_radiotap(&mon_pdev->ppdu_info.rx_status, nbuf,
+				      qdf_nbuf_headroom(nbuf))) {
+		DP_STATS_INC(pdev, dropped.mon_radiotap_update_err, 1);
+		return 1;
+	}
+
+	if (mon_vdev && mon_vdev->osif_rx_mon)
+		mon_vdev->osif_rx_mon(mon_pdev->mvdev->osif_vdev, nbuf, NULL);
+
+	return 0;
+}
+#endif
+
 qdf_nbuf_t
 dp_rx_nbuf_prepare(struct dp_soc *soc, struct dp_pdev *pdev)
 {
@@ -1851,7 +1929,7 @@ QDF_STATUS dp_rx_mon_deliver(struct dp_soc *soc, uint32_t mac_id,
 	if (mon_pdev->mcopy_mode)
 		return dp_send_mgmt_packet_to_stack(soc, mon_mpdu, pdev);
 
-	if (mon_mpdu && mon_pdev->mvdev &&
+	if (mon_pdev->mvdev &&
 	    mon_pdev->mvdev->osif_vdev &&
 	    mon_pdev->mvdev->monitor_vdev &&
 	    mon_pdev->mvdev->monitor_vdev->osif_rx_mon) {
@@ -1868,7 +1946,8 @@ QDF_STATUS dp_rx_mon_deliver(struct dp_soc *soc, uint32_t mac_id,
 					      mon_mpdu,
 					      qdf_nbuf_headroom(mon_mpdu))) {
 			DP_STATS_INC(pdev, dropped.mon_radiotap_update_err, 1);
-			goto mon_deliver_fail;
+			qdf_nbuf_free(mon_mpdu);
+			return QDF_STATUS_E_INVAL;
 		}
 
 		dp_rx_mon_update_pf_tag_to_buf_headroom(soc, mon_mpdu);
@@ -1880,7 +1959,8 @@ QDF_STATUS dp_rx_mon_deliver(struct dp_soc *soc, uint32_t mac_id,
 				     , soc, mon_mpdu, mon_pdev->mvdev,
 				     (mon_pdev->mvdev ? mon_pdev->mvdev->osif_vdev
 				     : NULL));
-		goto mon_deliver_fail;
+		qdf_nbuf_free(mon_mpdu);
+		return QDF_STATUS_E_INVAL;
 	}
 
 	return QDF_STATUS_SUCCESS;
@@ -1944,11 +2024,6 @@ QDF_STATUS dp_rx_mon_deliver_non_std(struct dp_soc *soc,
 	/* deliver to the user layer application */
 	osif_rx_mon(mon_pdev->mvdev->osif_vdev,
 		    dummy_msdu, NULL);
-
-	/* Clear rx_status*/
-	qdf_mem_zero(&mon_pdev->ppdu_info.rx_status,
-		     sizeof(mon_pdev->ppdu_info.rx_status));
-	mon_pdev->mon_ppdu_status = DP_PPDU_STATUS_START;
 
 	return QDF_STATUS_SUCCESS;
 

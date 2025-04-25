@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -91,6 +91,8 @@ struct action_oui_priv {
  * @action_oui_enable: action oui enable
  * @action_oui_str: oui configuration strings
  * @total_extensions: total count of extensions from all actions
+ * @host_only_extensions: total host only only extensions from all actions
+ * @max_extensions: Max no. of extensions that can be configured to the firmware
  * @oui_priv: array of pointers used to refer each action info
  * @tx_ops: call-back functions to send OUIs to firmware
  */
@@ -99,6 +101,8 @@ struct action_oui_psoc_priv {
 	bool action_oui_enable;
 	uint8_t action_oui_str[ACTION_OUI_MAXIMUM_ID][ACTION_OUI_MAX_STR_LEN];
 	uint32_t total_extensions;
+	uint32_t host_only_extensions;
+	uint32_t max_extensions;
 	struct action_oui_priv *oui_priv[ACTION_OUI_MAXIMUM_ID];
 	struct action_oui_tx_ops tx_ops;
 };

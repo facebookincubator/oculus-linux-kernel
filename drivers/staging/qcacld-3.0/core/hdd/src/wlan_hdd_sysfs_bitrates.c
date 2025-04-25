@@ -37,7 +37,7 @@ static int wlan_hdd_sta_set_11n_rate(struct hdd_adapter *adapter, int rate_code)
 	QDF_STATUS status;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	enum wlan_phymode peer_phymode;
-	uint8_t *peer_mac = adapter->session.station.conn_info.bssid.bytes;
+	uint8_t *peer_mac = adapter->deflink->session.station.conn_info.bssid.bytes;
 
 	hdd_debug("Rate code %d", rate_code);
 
@@ -85,7 +85,7 @@ static int wlan_hdd_sta_set_11n_rate(struct hdd_adapter *adapter, int rate_code)
 	hdd_debug("wmi_vdev_param_fixed_rate val %d rix %d preamble %x nss %d",
 		  rate_code, rix, preamble, nss);
 
-	ret = wma_cli_set_command(adapter->vdev_id,
+	ret = wma_cli_set_command(adapter->deflink->vdev_id,
 				  wmi_vdev_param_fixed_rate,
 				  rate_code, VDEV_CMD);
 
@@ -109,7 +109,7 @@ static int wlan_hdd_sta_set_vht_rate(struct hdd_adapter *adapter, int rate_code)
 	hdd_debug("wmi_vdev_param_fixed_rate val %d rix %d preamble %x nss %d",
 		  rate_code, rix, preamble, nss);
 
-	ret = wma_cli_set_command(adapter->vdev_id,
+	ret = wma_cli_set_command(adapter->deflink->vdev_id,
 				  wmi_vdev_param_fixed_rate,
 				  rate_code, VDEV_CMD);
 
@@ -124,7 +124,7 @@ static int wlan_hdd_sta_set_11ax_rate(struct hdd_adapter *adapter, int rate)
 static int wlan_hdd_sap_set_11n_rate(struct hdd_adapter *adapter, int rate_code)
 {
 	uint8_t preamble = 0, nss = 0, rix = 0;
-	struct sap_config *config = &adapter->session.ap.sap_config;
+	struct sap_config *config = &adapter->deflink->session.ap.sap_config;
 	int ret;
 
 	hdd_debug("SET_HT_RATE val %d", rate_code);
@@ -165,7 +165,7 @@ static int wlan_hdd_sap_set_11n_rate(struct hdd_adapter *adapter, int rate_code)
 		}
 		hdd_debug("SET_HT_RATE val %d rix %d preamble %x nss %d",
 			  rate_code, rix, preamble, nss);
-		ret = wma_cli_set_command(adapter->vdev_id,
+		ret = wma_cli_set_command(adapter->deflink->vdev_id,
 					  wmi_vdev_param_fixed_rate,
 					  rate_code, VDEV_CMD);
 		return ret;
@@ -178,7 +178,7 @@ static int wlan_hdd_sap_set_vht_rate(struct hdd_adapter *adapter, int rate_code)
 {
 	uint8_t preamble = 0, nss = 0, rix = 0;
 	int ret;
-	struct sap_config *config = &adapter->session.ap.sap_config;
+	struct sap_config *config = &adapter->deflink->session.ap.sap_config;
 
 	if (config->SapHw_mode < eCSR_DOT11_MODE_11ac ||
 	    config->SapHw_mode == eCSR_DOT11_MODE_11ax_ONLY ||
@@ -199,7 +199,7 @@ static int wlan_hdd_sap_set_vht_rate(struct hdd_adapter *adapter, int rate_code)
 	hdd_debug("SET_VHT_RATE val %d rix %d preamble %x nss %d",
 		  rate_code, rix, preamble, nss);
 
-	ret = wma_cli_set_command(adapter->vdev_id,
+	ret = wma_cli_set_command(adapter->deflink->vdev_id,
 				  wmi_vdev_param_fixed_rate,
 				  rate_code, VDEV_CMD);
 
@@ -209,7 +209,7 @@ static int wlan_hdd_sap_set_vht_rate(struct hdd_adapter *adapter, int rate_code)
 static int
 wlan_hdd_sap_set_11ax_rate(struct hdd_adapter *adapter, int rate_code)
 {
-	struct sap_config *config = &adapter->session.ap.sap_config;
+	struct sap_config *config = &adapter->deflink->session.ap.sap_config;
 
 	return  hdd_set_11ax_rate(adapter, rate_code, config);
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -93,7 +93,7 @@ void __qdf_frag_mod_exit(void)
  * @alloc_func_line: Allocation function line no.
  * @refcount: No. of references to the frag
  * @last_func_name: Function where frag recently accessed
- * @last_func_line_num: Line number of last function
+ * @last_func_line: Line number of last function
  *
  **/
 struct qdf_frag_track_node_t {
@@ -119,7 +119,7 @@ typedef struct qdf_frag_tracking_list_t {
 
 typedef struct qdf_frag_track_node_t QDF_FRAG_TRACK;
 
-/**
+/*
  * Array of tracking list for maintaining
  * allocated debug frag nodes as per the calculated
  * hash value.
@@ -131,7 +131,7 @@ static struct kmem_cache *frag_tracking_cache;
 /* Tracking list for maintaining the free debug frag nodes */
 static qdf_frag_tracking_list qdf_frag_track_free_list;
 
-/**
+/*
  * Parameters for statistics
  * qdf_frag_track_free_list_count: No. of free nodes
  * qdf_frag_track_used_list_count : No. of nodes used
@@ -412,13 +412,6 @@ void qdf_frag_debug_init(void)
 
 qdf_export_symbol(qdf_frag_debug_init);
 
-/**
- * qdf_frag_buf_debug_exit() - Exit network frag debug functionality
- *
- * Exit network frag tracking debug functionality and log frag memory leaks
- *
- * Return: none
- */
 void qdf_frag_debug_exit(void)
 {
 	uint32_t index;
@@ -835,6 +828,9 @@ qdf_export_symbol(__qdf_mem_unmap_page);
 void __qdf_frag_cache_drain(qdf_frag_cache_t *pf_cache)
 {
 	struct page *page;
+
+	if (!pf_cache->va)
+		return;
 
 	page  = virt_to_page(pf_cache->va);
 	__page_frag_cache_drain(page, pf_cache->pagecnt_bias);

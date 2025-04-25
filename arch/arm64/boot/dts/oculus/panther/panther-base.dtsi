@@ -13,6 +13,7 @@
 #include "panther-sensorlock.dtsi"
 #include "panther-thermal.dtsi"
 
+/delete-node/ &pcie1;
 /delete-node/ &pcie2;
 
 &aliases {
@@ -208,6 +209,7 @@
 		};
 	};
 
+	/delete-node/ pcie1;
 	/delete-node/ pcie2;
 };
 

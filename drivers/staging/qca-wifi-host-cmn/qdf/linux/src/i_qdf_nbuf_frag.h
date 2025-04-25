@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,7 +36,7 @@
  */
 typedef struct page_frag_cache __qdf_frag_cache_t;
 
-/**
+/*
  * typedef __qdf_frag_t - Abstraction for void * for frag address
  */
 typedef void *__qdf_frag_t;
@@ -103,7 +103,7 @@ static inline void __qdf_frag_mod_exit(void)
 }
 #endif /* QDF_NBUF_FRAG_GLOBAL_COUNT */
 
-/**
+/*
  * Maximum number of frags an SKB can hold
  */
 #define __QDF_NBUF_MAX_FRAGS MAX_SKB_FRAGS
@@ -124,7 +124,7 @@ void __qdf_mem_unmap_page(qdf_device_t osdev, qdf_dma_addr_t paddr,
  * @buf: Vaddr to be mapped
  * @dir: qdf_dma_dir_t
  * @nbytes: Number of bytes to be mapped
- * @paddr: Mapped physical address
+ * @phy_addr: Mapped physical address
  *
  * Return: QDF_STATUS
  */

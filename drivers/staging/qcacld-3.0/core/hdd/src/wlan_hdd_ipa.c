@@ -26,7 +26,7 @@
 /* Include Files */
 #include <wlan_hdd_includes.h>
 #include <wlan_hdd_ipa.h>
-#include "wlan_policy_mgr_api.h"
+#include "wlan_policy_mgr_ucfg.h"
 #include "wlan_ipa_ucfg_api.h"
 #include <wlan_hdd_softap_tx_rx.h>
 #include <linux/inetdevice.h>
@@ -40,6 +40,21 @@
 #include "wlan_dp_ucfg_api.h"
 
 #ifdef IPA_OFFLOAD
+
+/**
+ * struct hdd_ipa_connection_info - connectio info for IPA component
+ * @vdev_id: vdev id
+ * @ch_freq: channel frequency
+ * @ch_width: channel width
+ * @wlan_80211_mode: enum qca_wlan_802_11_mode
+ */
+struct hdd_ipa_connection_info {
+	uint8_t vdev_id;
+	qdf_freq_t ch_freq;
+	enum phy_ch_width ch_width;
+	enum qca_wlan_802_11_mode wlan_80211_mode;
+};
+
 #if (defined(QCA_CONFIG_SMP) && defined(PF_WAKE_UP_IDLE)) ||\
 	IS_ENABLED(CONFIG_SCHED_WALT)
 /**
@@ -185,13 +200,14 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t nbuf, qdf_netdev_t dev)
 		return;
 	}
 
-	stats = &adapter->hdd_stats.tx_rx_stats;
+	stats = &adapter->deflink->hdd_stats.tx_rx_stats;
 	hdd_ipa_update_rx_mcbc_stats(adapter, nbuf);
 
 	if ((adapter->device_mode == QDF_SAP_MODE) &&
 	    (qdf_nbuf_is_ipv4_dhcp_pkt(nbuf) == true)) {
 		/* Send DHCP Indication to FW */
-		vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_DP_ID);
+		vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink,
+						   WLAN_DP_ID);
 		if (vdev) {
 			ucfg_dp_softap_inspect_dhcp_packet(vdev, nbuf, QDF_RX);
 			hdd_objmgr_put_vdev_by_user(vdev, WLAN_DP_ID);
@@ -203,7 +219,7 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t nbuf, qdf_netdev_t dev)
 	qdf_dp_trace_set_track(nbuf, QDF_RX);
 
 	ucfg_dp_event_eapol_log(nbuf, QDF_RX);
-	qdf_dp_trace_log_pkt(adapter->vdev_id,
+	qdf_dp_trace_log_pkt(adapter->deflink->vdev_id,
 			     nbuf, QDF_RX, QDF_TRACE_DEFAULT_PDEV_ID,
 			     adapter->device_mode);
 	DPTRACE(qdf_dp_trace(nbuf,
@@ -237,7 +253,8 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t nbuf, qdf_netdev_t dev)
 		if (adapter->device_mode == QDF_SAP_MODE) {
 			ta_addr = adapter->mac_addr.bytes;
 		} else if (adapter->device_mode == QDF_STA_MODE) {
-			sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+			sta_ctx =
+				WLAN_HDD_GET_STATION_CTX_PTR(adapter->deflink);
 			ta_addr = (u8 *)&sta_ctx->conn_info.peer_macaddr;
 		}
 
@@ -266,9 +283,8 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t nbuf, qdf_netdev_t dev)
 	 * Expectation here is vdev will be present during TX/RX processing
 	 * and also DP internally maintaining vdev ref count
 	 */
-	ucfg_dp_inc_rx_pkt_stats(adapter->vdev,
-				 len,
-				 delivered);
+	ucfg_dp_inc_rx_pkt_stats(adapter->deflink->vdev,
+				 len, delivered);
 	/*
 	 * Restore PF_WAKE_UP_IDLE flag in the task structure
 	 */
@@ -286,4 +302,158 @@ void hdd_ipa_set_mcc_mode(bool mcc_mode)
 
 	ucfg_ipa_set_mcc_mode(hdd_ctx->pdev, mcc_mode);
 }
+
+#ifdef IPA_WDI3_TX_TWO_PIPES
+static void
+hdd_ipa_fill_sta_connection_info(struct wlan_hdd_link_info *link,
+				 struct hdd_ipa_connection_info *conn)
+{
+	struct hdd_station_ctx *ctx = WLAN_HDD_GET_STATION_CTX_PTR(link);
+
+	conn->ch_freq = ctx->conn_info.chan_freq;
+	conn->ch_width = ctx->conn_info.ch_width;
+	conn->wlan_80211_mode = hdd_convert_cfgdot11mode_to_80211mode(
+			ctx->conn_info.dot11mode);
+}
+
+static void
+hdd_ipa_fill_sap_connection_info(struct wlan_hdd_link_info *link,
+				 struct hdd_ipa_connection_info *conn)
+{
+	struct hdd_ap_ctx *ctx = WLAN_HDD_GET_AP_CTX_PTR(link);
+
+	conn->ch_freq = ctx->operating_chan_freq;
+	conn->ch_width = ctx->sap_config.ch_params.ch_width;
+	conn->wlan_80211_mode = hdd_convert_phymode_to_80211mode(
+			ctx->sap_config.SapHw_mode);
+}
+
+static void hdd_ipa_fill_connection_info(struct wlan_hdd_link_info *link,
+					 struct hdd_ipa_connection_info *conn)
+{
+	struct hdd_adapter *adapter = link->adapter;
+
+	conn->vdev_id = link->vdev_id;
+
+	if (adapter->device_mode == QDF_STA_MODE)
+		hdd_ipa_fill_sta_connection_info(link, conn);
+	else if (adapter->device_mode == QDF_SAP_MODE)
+		hdd_ipa_fill_sap_connection_info(link, conn);
+}
+
+static QDF_STATUS
+hdd_ipa_get_tx_pipe_multi_conn(struct hdd_context *hdd_ctx,
+			       struct hdd_ipa_connection_info *conn,
+			       bool *tx_pipe)
+{
+	uint32_t new_freq = conn->ch_freq;
+	QDF_STATUS status;
+	uint8_t vdev_id;
+	bool pipe;
+
+	if (ucfg_policy_mgr_get_vdev_same_freq_new_conn(hdd_ctx->psoc,
+							new_freq,
+							&vdev_id)) {
+		/* Inherit the pipe selection of the connection that has
+		 * same freq.
+		 */
+		return ucfg_ipa_get_alt_pipe(hdd_ctx->pdev, vdev_id, tx_pipe);
+	} else {
+		if (ucfg_policy_mgr_get_vdev_diff_freq_new_conn(hdd_ctx->psoc,
+								new_freq,
+								&vdev_id)) {
+			status = ucfg_ipa_get_alt_pipe(hdd_ctx->pdev, vdev_id,
+						       &pipe);
+			if (QDF_IS_STATUS_ERROR(status))
+				return QDF_STATUS_E_INVAL;
+
+			/* Inverse the pipe selection of the connection that
+			 * has different channel frequency.
+			 */
+			*tx_pipe = !pipe;
+			return QDF_STATUS_SUCCESS;
+		} else {
+			return QDF_STATUS_E_INVAL;
+		}
+	}
+}
+
+QDF_STATUS hdd_ipa_get_tx_pipe(struct hdd_context *hdd_ctx,
+			       struct wlan_hdd_link_info *link,
+			       bool *tx_pipe)
+{
+	struct hdd_ipa_connection_info conn;
+	uint32_t count;
+
+	if (qdf_unlikely(!hdd_ctx || !link || !tx_pipe)) {
+		hdd_debug("Invalid parameters");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	/* If SBS not capable, use legacy DBS selection */
+	if (!ucfg_policy_mgr_is_hw_sbs_capable(hdd_ctx->psoc)) {
+		hdd_debug("firmware is not sbs capable");
+		*tx_pipe = WLAN_REG_IS_24GHZ_CH_FREQ(conn.ch_freq);
+		return QDF_STATUS_SUCCESS;
+	}
+
+	hdd_ipa_fill_connection_info(link, &conn);
+
+	/* Always select the primary pipe for connection that is EHT160 or
+	 * EHT320 due to higher tput requiements.
+	 */
+	if (conn.wlan_80211_mode == QCA_WLAN_802_11_MODE_11BE &&
+	    (conn.ch_width == CH_WIDTH_160MHZ ||
+	     conn.ch_width == CH_WIDTH_320MHZ)) {
+		*tx_pipe = false;
+		return QDF_STATUS_SUCCESS;
+	}
+
+	count = ucfg_policy_mgr_get_connection_count(hdd_ctx->psoc);
+	if (!count) {
+		/* For first connection that is below EHT160, select the
+		 * alternate pipe so as to reserve the primary pipe for
+		 * potential connections that are above EHT160.
+		 */
+		*tx_pipe = true;
+		return QDF_STATUS_SUCCESS;
+	}
+
+	return hdd_ipa_get_tx_pipe_multi_conn(hdd_ctx, &conn, tx_pipe);
+}
+#else /* !IPA_WDI3_TX_TWO_PIPES */
+QDF_STATUS hdd_ipa_get_tx_pipe(struct hdd_context *hdd_ctx,
+			       struct wlan_hdd_link_info *link,
+			       bool *tx_pipe)
+{
+	if (qdf_unlikely(!tx_pipe))
+		return QDF_STATUS_E_INVAL;
+
+	/* For IPA_WDI3_TX_TWO_PIPES=n, only one tx pipe is available */
+	*tx_pipe = false;
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* IPA_WDI3_TX_TWO_PIPES */
+
+void hdd_ipa_set_perf_level_bw(enum hw_mode_bandwidth bw)
+{
+	struct hdd_context *hdd_ctx;
+	enum wlan_ipa_bw_level lvl;
+
+	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	if (!hdd_ctx)
+		return;
+
+	if (bw == HW_MODE_320_MHZ)
+		lvl = WLAN_IPA_BW_LEVEL_HIGH;
+	else if (bw == HW_MODE_160_MHZ)
+		lvl = WLAN_IPA_BW_LEVEL_MEDIUM;
+	else
+		lvl = WLAN_IPA_BW_LEVEL_LOW;
+
+	hdd_debug("Vote IPA perf level to %d", lvl);
+	ucfg_ipa_set_perf_level_bw(hdd_ctx->pdev, lvl);
+}
+
 #endif

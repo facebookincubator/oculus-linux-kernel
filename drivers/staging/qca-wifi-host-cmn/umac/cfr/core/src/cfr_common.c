@@ -195,11 +195,108 @@ wlan_cfr_psoc_obj_destroy_handler(struct wlan_objmgr_psoc *psoc, void *arg)
 	return QDF_STATUS_SUCCESS;
 }
 
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static QDF_STATUS wlan_cfr_get_aoa_caps(struct pdev_cfr *pa)
+{
+	struct wlan_objmgr_pdev *pdev = pa->pdev_obj;
+	struct wlan_objmgr_psoc *psoc;
+	struct target_psoc_info *tgt_psoc_info;
+	struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 *aoa_caps;
+	uint32_t i, max_agc_gain_tbl_sz;
+
+	if (!pdev) {
+		cfr_err("Invalid pdev");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc) {
+		cfr_err("psoc is null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	tgt_psoc_info = wlan_psoc_get_tgt_if_handle(psoc);
+	if (!tgt_psoc_info) {
+		cfr_err("target_psoc_info is null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	pa->is_enh_aoa_data = false;
+
+	aoa_caps = target_psoc_get_aoa_caps(tgt_psoc_info);
+
+	if (!aoa_caps) {
+		cfr_info("NO enhanced AoA cap advertised");
+		return QDF_STATUS_SUCCESS;
+	}
+
+	max_agc_gain_tbl_sz = sizeof(uint16_t) * PSOC_MAX_NUM_AGC_GAIN_TBLS;
+	pa->max_entries_all_table = 0;
+	pa->max_agc_gain_tbls = aoa_caps->max_agc_gain_tbls;
+
+	if (pa->max_agc_gain_tbls > PSOC_MAX_NUM_AGC_GAIN_TBLS) {
+		cfr_err("Invalid num of tables advertised");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	qdf_mem_copy(pa->max_agc_gain_per_tbl_2g,
+		     aoa_caps->max_agc_gain_per_tbl_2g,
+		     max_agc_gain_tbl_sz);
+	qdf_mem_copy(pa->max_agc_gain_per_tbl_5g,
+		     aoa_caps->max_agc_gain_per_tbl_5g,
+		     max_agc_gain_tbl_sz);
+	qdf_mem_copy(pa->max_agc_gain_per_tbl_6g,
+		     aoa_caps->max_agc_gain_per_tbl_6g,
+		     max_agc_gain_tbl_sz);
+	qdf_mem_copy(pa->max_bdf_entries_per_tbl,
+		     aoa_caps->max_bdf_entries_per_tbl,
+		     (sizeof(uint8_t) * PSOC_MAX_NUM_AGC_GAIN_TBLS));
+
+	/* table 0's data always starts at offset 0 */
+	pa->start_ent[0] = 0;
+	for (i = 0; i < pa->max_agc_gain_tbls; i++) {
+		pa->max_entries_all_table +=
+			pa->max_bdf_entries_per_tbl[i];
+		if ((i + 1) < pa->max_agc_gain_tbls) {
+			pa->start_ent[i + 1] = (pa->max_bdf_entries_per_tbl[i] +
+					pa->start_ent[i]);
+		}
+	}
+
+	pa->gain_stop_index_array = qdf_mem_malloc(sizeof(uint16_t) *
+					pa->max_entries_all_table *
+					HOST_MAX_CHAINS);
+	if (!pa->gain_stop_index_array) {
+		qdf_err("Failed to allocate gain stop array");
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	pa->enh_phase_delta_array = qdf_mem_malloc(sizeof(uint16_t) *
+					pa->max_entries_all_table *
+					HOST_MAX_CHAINS);
+	if (!pa->enh_phase_delta_array) {
+		qdf_err("Failed to allocate phase delta array");
+		qdf_mem_free(pa->gain_stop_index_array);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	pa->is_enh_aoa_data = true;
+
+	return QDF_STATUS_SUCCESS;
+}
+#else
+static QDF_STATUS wlan_cfr_get_aoa_caps(struct pdev_cfr *pa)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
 QDF_STATUS
 wlan_cfr_pdev_obj_create_handler(struct wlan_objmgr_pdev *pdev, void *arg)
 {
 	struct pdev_cfr *pa = NULL;
 	uint32_t idx;
+	QDF_STATUS status;
 
 	if (!pdev) {
 		cfr_err("PDEV is NULL\n");
@@ -236,12 +333,43 @@ wlan_cfr_pdev_obj_create_handler(struct wlan_objmgr_pdev *pdev, void *arg)
 		pa->lut[idx] = (struct look_up_table *)qdf_mem_malloc(
 			sizeof(struct look_up_table));
 
+	/* Allocate AoA related variables here based on FW capability */
+	status = wlan_cfr_get_aoa_caps(pa);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		cfr_err("Failed to get aoa caps");
+		for (idx = 0; idx < pa->lut_num; idx++)
+			qdf_mem_free(pa->lut[idx]);
+		qdf_mem_free(pa);
+		return status;
+	}
+
 	cfr_wakelock_init(pa);
 	wlan_objmgr_pdev_component_obj_attach(pdev, WLAN_UMAC_COMP_CFR,
 					      (void *)pa, QDF_STATUS_SUCCESS);
 
 	return QDF_STATUS_SUCCESS;
 }
+
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static inline
+void wlan_cfr_cleanup_enhanced_aoa(struct pdev_cfr *pa)
+{
+	/**
+	 * Free enahced AoA related allocations here.
+	 * Caller of this API should ensure pa is not NULL
+	 */
+	if (pa->gain_stop_index_array)
+		qdf_mem_free(pa->gain_stop_index_array);
+
+	if (pa->enh_phase_delta_array)
+		qdf_mem_free(pa->enh_phase_delta_array);
+}
+#else
+static inline
+void wlan_cfr_cleanup_enhanced_aoa(struct pdev_cfr *pa)
+{
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 
 QDF_STATUS
 wlan_cfr_pdev_obj_destroy_handler(struct wlan_objmgr_pdev *pdev, void *arg)
@@ -269,6 +397,8 @@ wlan_cfr_pdev_obj_destroy_handler(struct wlan_objmgr_pdev *pdev, void *arg)
 				qdf_mem_free(pa->lut[idx]);
 			qdf_mem_free(pa->lut);
 		}
+
+		wlan_cfr_cleanup_enhanced_aoa(pa);
 		qdf_mem_free(pa);
 	}
 

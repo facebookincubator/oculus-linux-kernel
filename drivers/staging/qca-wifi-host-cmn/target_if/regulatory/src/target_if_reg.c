@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -39,7 +39,7 @@
 #endif
 
 /**
- * get_chan_list_cc_event_id() - Get chan_list_cc event i
+ * get_chan_list_cc_event_id() - Get chan_list_cc event id
  *
  * Return: Event id
  */
@@ -79,7 +79,7 @@ static bool tgt_if_regulatory_is_regdb_offloaded(struct wlan_objmgr_psoc *psoc)
 }
 
 /**
- * tgt_if_regulatory_is_6ghz_supported() - Check if 6ghz is supported
+ * tgt_if_regulatory_is_6ghz_supported() - Check if 6 GHz is supported
  * @psoc: Pointer to psoc
  *
  * Return: true if regdb if offloaded, else false
@@ -95,10 +95,10 @@ static bool tgt_if_regulatory_is_6ghz_supported(struct wlan_objmgr_psoc *psoc)
 }
 
 /**
- * tgt_if_regulatory_is_5dot9_ghz_supported() - Check if 5.9ghz is supported
+ * tgt_if_regulatory_is_5dot9_ghz_supported() - Check if 5.9 GHz is supported
  * @psoc: Pointer to psoc
  *
- * Return: true if regdb if offloaded, else false
+ * Return: true if 5.9 GHz is supported, else false
  */
 static bool
 tgt_if_regulatory_is_5dot9_ghz_supported(struct wlan_objmgr_psoc *psoc)
@@ -363,7 +363,7 @@ static QDF_STATUS tgt_if_regulatory_unregister_master_list_handler(
 #ifdef CONFIG_BAND_6GHZ
 #ifdef CONFIG_REG_CLIENT
 /**
- * tgt_mem_free_fcc_rules() - Free regulatory fcc rules
+ * tgt_reg_mem_free_fcc_rules() - Free regulatory fcc rules
  * @reg_info: Pointer to regulatory info
  *
  */
@@ -970,6 +970,7 @@ tgt_if_register_afc_callback(struct wlan_lmac_if_reg_tx_ops *reg_ops)
 {
 	reg_ops->send_afc_ind = tgt_if_regulatory_send_afc_cmd;
 	reg_ops->reg_get_min_psd = NULL;
+	reg_ops->trigger_update_channel_list = NULL;
 }
 #else
 static void
@@ -1044,8 +1045,8 @@ void tgt_if_set_reg_afc_configure(struct target_psoc_info *tgt_hdl,
 
 #if defined(CONFIG_BAND_6GHZ)
 /**
- * tgt_if_regulatory_is_lower_6g_edge_ch_supp() - Check if lower 6ghz
- * edge channel (5935MHz) is supported
+ * tgt_if_regulatory_is_lower_6g_edge_ch_supp() - Check if lower 6 GHz
+ * edge channel (5935 MHz) is supported
  * @psoc: Pointer to psoc
  *
  * Return: true if channel is supported, else false
@@ -1064,7 +1065,7 @@ tgt_if_regulatory_is_lower_6g_edge_ch_supp(struct wlan_objmgr_psoc *psoc)
 
 /**
  * tgt_if_regulatory_is_upper_6g_edge_ch_disabled() - Check if upper
- * 6ghz edge channel (7115MHz) is disabled
+ * 6 GHz edge channel (7115 MHz) is disabled
  * @psoc: Pointer to psoc
  *
  * Return: true if channel is disabled, else false
@@ -1182,9 +1183,8 @@ target_if_reg_get_afc_dev_type(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * tgt_if_regulatory_is_eirp_preferred_support() - Check if FW prefers EIRP
+ * target_if_regulatory_is_eirp_preferred_support() - Check if FW prefers EIRP
  * support for TPC power command.
- *
  * @psoc: Pointer to psoc
  *
  * Return: true if FW prefers EIRP format for TPC, else false
@@ -1270,6 +1270,121 @@ static bool tgt_if_reg_is_chip_11be_cap(struct wlan_objmgr_psoc *psoc,
 }
 #endif
 
+static int
+tgt_rate_to_power_complete_handler(ol_scn_t handle, uint8_t *event_buf,
+				   uint32_t len)
+{
+	int ret_val = 0;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_lmac_if_reg_rx_ops *reg_rx_ops;
+	QDF_STATUS status;
+	struct wmi_unified *wmi_handle;
+	struct r2p_table_update_status_obj *update_status_obj = NULL;
+	uint32_t pdev_id;
+
+	TARGET_IF_ENTER();
+
+	psoc = target_if_get_psoc_from_scn_hdl(handle);
+	if (!psoc) {
+		target_if_err("psoc ptr is NULL");
+		ret_val = -EINVAL;
+		goto clean;
+	}
+
+	reg_rx_ops = target_if_regulatory_get_rx_ops(psoc);
+	if (!reg_rx_ops) {
+		target_if_err("reg_rx_ops is NULL");
+		ret_val = -EINVAL;
+		goto clean;
+	}
+
+	if (!reg_rx_ops->reg_r2p_table_update_response_handler) {
+		target_if_err("reg_r2p_table_update_response_handler is NULL");
+		ret_val = -EINVAL;
+		goto clean;
+	}
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("invalid wmi handle");
+		ret_val = -EINVAL;
+		goto clean;
+	}
+
+	update_status_obj = qdf_mem_malloc(sizeof(*update_status_obj));
+	if (!update_status_obj) {
+		ret_val = -ENOMEM;
+		goto clean;
+	}
+
+	status = wmi_extract_tgtr2p_table_event(wmi_handle, event_buf,
+						update_status_obj, len);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		target_if_err("Extraction of r2p update response event failed");
+		ret_val = -EFAULT;
+		goto clean;
+	}
+
+	pdev_id = update_status_obj->pdev_id;
+	status = reg_rx_ops->reg_r2p_table_update_response_handler(psoc,
+								   pdev_id);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		target_if_err("Failed to process r2p update response");
+		ret_val = -EFAULT;
+		goto clean;
+	}
+clean:
+	qdf_mem_free(update_status_obj);
+	TARGET_IF_EXIT();
+
+	return ret_val;
+}
+
+/**
+ * tgt_if_regulatory_register_rate2power_table_update_handler() - Register
+ * rate2power table update handler
+ * @psoc: Pointer to psoc
+ * @arg: Pointer to argument list
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+tgt_if_regulatory_register_rate2power_table_update_handler(
+						struct wlan_objmgr_psoc *psoc,
+						void *arg)
+{
+	wmi_unified_t wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+
+	if (!wmi_handle)
+		return QDF_STATUS_E_FAILURE;
+
+	return wmi_unified_register_event_handler(
+			wmi_handle, wmi_pdev_set_tgtr2p_table_eventid,
+			tgt_rate_to_power_complete_handler, WMI_RX_WORK_CTX);
+}
+
+/**
+ * tgt_if_regulatory_unregister_rate2power_table_update_handler() - Unregister
+ * rate2power table update handler
+ * @psoc: Pointer to psoc
+ * @arg: Pointer to argument list
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+tgt_if_regulatory_unregister_rate2power_table_update_handler(
+						struct wlan_objmgr_psoc *psoc,
+						void *arg)
+{
+	wmi_unified_t wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+
+	if (!wmi_handle)
+		return QDF_STATUS_E_FAILURE;
+
+	return wmi_unified_unregister_event_handler(
+			wmi_handle, wmi_pdev_set_tgtr2p_table_eventid);
+}
+
 QDF_STATUS target_if_register_regulatory_tx_ops(
 		struct wlan_lmac_if_tx_ops *tx_ops)
 {
@@ -1289,7 +1404,7 @@ QDF_STATUS target_if_register_regulatory_tx_ops(
 
 	reg_ops->fill_umac_legacy_chanlist = NULL;
 
-	reg_ops->set_country_failed = NULL;
+	reg_ops->set_wait_for_init_cc_response_event = NULL;
 
 	target_if_register_acs_trigger_for_afc(reg_ops);
 
@@ -1330,6 +1445,18 @@ QDF_STATUS target_if_register_regulatory_tx_ops(
 	tgt_if_register_afc_callback(reg_ops);
 
 	reg_ops->is_chip_11be = tgt_if_reg_is_chip_11be_cap;
+
+	reg_ops->register_rate2power_table_update_event_handler =
+		tgt_if_regulatory_register_rate2power_table_update_handler;
+
+	reg_ops->unregister_rate2power_table_update_event_handler =
+		tgt_if_regulatory_unregister_rate2power_table_update_handler;
+
+	reg_ops->end_r2p_table_update_wait = NULL;
+
+	reg_ops->is_80p80_supported = NULL;
+
+	reg_ops->is_freq_80p80_supported = NULL;
 
 	return QDF_STATUS_SUCCESS;
 }

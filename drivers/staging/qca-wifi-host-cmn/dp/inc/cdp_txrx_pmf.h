@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -21,7 +22,7 @@
 
 /**
  * cdp_get_pn_info() - Returns pn info from peer
- * @soc - data path soc handle
+ * @soc: data path soc handle
  * @peer_mac: peer mac address
  * @vdev_id: virtual device/interface id
  * @last_pn_valid: return last_rmf_pn_valid value from peer.

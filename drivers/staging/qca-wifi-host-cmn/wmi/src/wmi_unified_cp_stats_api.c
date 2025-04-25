@@ -23,7 +23,7 @@
 #include "wmi_unified_cp_stats_api.h"
 
 #if defined(WLAN_SUPPORT_INFRA_CTRL_PATH_STATS) || \
-	defined(WLAN_TELEMETRY_STATS_SUPPORT)
+	defined(WLAN_CONFIG_TELEMETRY_AGENT)
 QDF_STATUS
 wmi_unified_infra_cp_stats_request_send(wmi_unified_t wmi_handle,
 					struct infra_cp_stats_cmd_info *param)

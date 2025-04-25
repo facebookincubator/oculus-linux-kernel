@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,6 +24,10 @@
 
 #include <include/wlan_psoc_mlme.h>
 
+#ifdef WLAN_FEATURE_PEER_TRANS_HIST
+#define MAX_PEER_HIST_LIST_SIZE 256
+#endif
+
 /**
  * wlan_psoc_mlme_get_cmpt_obj() - Returns PSOC MLME component object
  * @psoc: PSOC object
@@ -36,6 +40,66 @@
 struct psoc_mlme_obj *wlan_psoc_mlme_get_cmpt_obj(
 						struct wlan_objmgr_psoc *psoc);
 
+#ifdef WLAN_FEATURE_PEER_TRANS_HIST
+/**
+ * wlan_mlme_psoc_init_peer_trans_history() - Initialize PSOC peer trans history
+ * @psoc_mlme: PSOC MLME priv object
+ *
+ * Return: void
+ */
+static inline void
+wlan_mlme_psoc_init_peer_trans_history(struct psoc_mlme_obj *psoc_mlme)
+{
+	qdf_list_create(&psoc_mlme->peer_history_list, 0);
+}
+
+/**
+ * wlan_mlme_psoc_peer_trans_hist_remove_back() - Remove entry from peer history
+ * @peer_history: Peer history list
+ *
+ * Removes one entry from back in the @peer_history list and free the memory
+ *
+ * Returns: void
+ */
+void wlan_mlme_psoc_peer_trans_hist_remove_back(qdf_list_t *peer_history);
+
+/**
+ * wlan_mlme_psoc_peer_tbl_trans_add_entry() - Add entry to peer history table
+ * @psoc: PSOC object manager pointer
+ * @peer_trans_entry: Entry to add.
+ *
+ * Adds the entry pointed by @peer_trans_entry to peer_history table in PSOC
+ * MLME. The new node is added to the front and if the list size becomes more
+ * than MAX_PEER_HIST_LIST_SIZE, then entry existing at the back of the list
+ * will be flushed before adding this entry.
+ *
+ * Caller to take care of mem_free of buffer pointed by @peer_trans_entry
+ * in case of error.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_psoc_peer_tbl_trans_add_entry(struct wlan_objmgr_psoc *psoc,
+					struct wlan_peer_tbl_trans_entry *peer_trans_entry);
+
+/**
+ * wlan_mlme_psoc_flush_peer_trans_history() - Flush the peer trans table
+ * @psoc: PSOC object manager pointer
+ *
+ * Flush all the entries of peer transition table and free the memory.
+ */
+void wlan_mlme_psoc_flush_peer_trans_history(struct wlan_objmgr_psoc *psoc);
+#else
+static inline void
+wlan_mlme_psoc_init_peer_trans_history(struct psoc_mlme_obj *psoc_mlme)
+{
+}
+
+static inline void
+wlan_mlme_psoc_flush_peer_trans_history(struct wlan_objmgr_psoc *psoc)
+{
+}
+#endif
 /**
  * wlan_psoc_mlme_get_ext_hdl() - Returns legacy handle
  * @psoc: PSOC object

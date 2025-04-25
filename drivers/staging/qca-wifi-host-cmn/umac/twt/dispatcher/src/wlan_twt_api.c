@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,16 +22,14 @@
 #include <wlan_twt_api.h>
 #include "twt/core/src/wlan_twt_objmgr_handler.h"
 #include "twt/core/src/wlan_twt_common.h"
+#ifdef WLAN_POWER_MANAGEMENT_OFFLOAD
+#include <wlan_pmo_obj_mgmt_api.h>
+#endif
 
 struct wlan_lmac_if_twt_tx_ops *
 wlan_twt_get_tx_ops(struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_lmac_if_tx_ops *tx_ops;
-
-	if (!psoc) {
-		twt_err("psoc is null");
-		return NULL;
-	}
 
 	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
 	if (!tx_ops) {
@@ -46,11 +44,6 @@ struct wlan_lmac_if_twt_rx_ops *
 wlan_twt_get_rx_ops(struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_lmac_if_rx_ops *rx_ops;
-
-	if (!psoc) {
-		twt_err("psoc is null");
-		return NULL;
-	}
 
 	rx_ops = wlan_psoc_get_lmac_if_rxops(psoc);
 	if (!rx_ops) {
@@ -75,6 +68,52 @@ wlan_twt_psoc_get_comp_private_obj(struct wlan_objmgr_psoc *psoc)
 
 	return twt_psoc;
 }
+
+#ifdef WLAN_POWER_MANAGEMENT_OFFLOAD
+static QDF_STATUS
+wlan_twt_suspend_handler(struct wlan_objmgr_psoc *psoc, void *arg)
+{
+	wlan_twt_psoc_set_pmo_disable(psoc, REASON_PMO_SUSPEND);
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS
+wlan_twt_resume_handler(struct wlan_objmgr_psoc *psoc, void *arg)
+{
+	wlan_twt_psoc_set_pmo_enable(psoc, REASON_PMO_SUSPEND);
+	return QDF_STATUS_SUCCESS;
+}
+
+static void
+wlan_twt_register_pmo_handler(void)
+{
+	pmo_register_suspend_handler(WLAN_UMAC_COMP_TWT,
+				     wlan_twt_suspend_handler, NULL);
+	pmo_register_resume_handler(WLAN_UMAC_COMP_TWT,
+				    wlan_twt_resume_handler, NULL);
+}
+
+static inline void
+wlan_twt_unregister_pmo_handler(void)
+{
+	pmo_unregister_suspend_handler(WLAN_UMAC_COMP_TWT,
+				       wlan_twt_suspend_handler);
+	pmo_unregister_resume_handler(WLAN_UMAC_COMP_TWT,
+				      wlan_twt_resume_handler);
+}
+
+#else
+static void
+wlan_twt_register_pmo_handler(void)
+{
+}
+
+static inline void
+wlan_twt_unregister_pmo_handler(void)
+{
+}
+
+#endif
 
 QDF_STATUS wlan_twt_init(void)
 {
@@ -220,18 +259,16 @@ QDF_STATUS twt_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	struct wlan_lmac_if_twt_tx_ops *tx_ops;
 
 	tx_ops = wlan_twt_get_tx_ops(psoc);
-	if (!tx_ops) {
-		twt_err("tx_ops is null");
+	if (!tx_ops || !tx_ops->register_events) {
+		twt_err("%s is null", !tx_ops ? "tx_ops" : "register_events");
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	if (tx_ops->register_events) {
-		status = tx_ops->register_events(psoc);
+	status = tx_ops->register_events(psoc);
+	if (QDF_IS_STATUS_ERROR(status))
+		twt_err("twt_register_events failed (status=%d)", status);
 
-		if (QDF_IS_STATUS_ERROR(status))
-			twt_err("twt_register_events failed (status=%d)",
-				status);
-	}
+	wlan_twt_register_pmo_handler();
 
 	return status;
 }
@@ -242,18 +279,18 @@ QDF_STATUS twt_psoc_disable(struct wlan_objmgr_psoc *psoc)
 	struct wlan_lmac_if_twt_tx_ops *tx_ops;
 
 	tx_ops = wlan_twt_get_tx_ops(psoc);
-	if (!tx_ops) {
-		twt_err("tx_ops is null");
+	if (!tx_ops || !tx_ops->deregister_events) {
+		twt_err("%s is null", !tx_ops ? "tx_ops" : "deregister_events");
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	if (tx_ops->deregister_events) {
-		status = tx_ops->deregister_events(psoc);
+	status = tx_ops->deregister_events(psoc);
+	if (QDF_IS_STATUS_ERROR(status))
+		twt_err("twt_deregister_events failed (status=%d)",
+			status);
 
-		if (QDF_IS_STATUS_ERROR(status))
-			twt_err("twt_deregister_events failed (status=%d)",
-				status);
-	}
+	wlan_twt_unregister_pmo_handler();
+
 	return status;
 }
 
@@ -264,3 +301,4 @@ wlan_set_peer_twt_capabilities(struct wlan_objmgr_psoc *psoc,
 {
 	return wlan_twt_set_peer_capabilities(psoc, peer_mac, peer_cap);
 }
+

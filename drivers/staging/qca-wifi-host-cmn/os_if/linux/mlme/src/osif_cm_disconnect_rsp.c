@@ -29,6 +29,10 @@
 #include "osif_cm_util.h"
 #include "wlan_mlo_mgr_sta.h"
 
+#define DRIVER_DISCONNECT_REASON \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_DRIVER_DISCONNECT_REASON
+#define DRIVER_DISCONNECT_REASON_INDEX \
+	QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX
 /**
  * osif_validate_disconnect_and_reset_src_id() - Validate disconnection
  * and resets source and id
@@ -51,7 +55,8 @@ osif_validate_disconnect_and_reset_src_id(struct vdev_osif_priv *osif_priv,
 	/* Always drop internal disconnect */
 	qdf_spinlock_acquire(&osif_priv->cm_info.cmd_id_lock);
 	if (rsp->req.req.source == CM_INTERNAL_DISCONNECT ||
-	    rsp->req.req.source == CM_MLO_ROAM_INTERNAL_DISCONNECT) {
+	    rsp->req.req.source == CM_MLO_ROAM_INTERNAL_DISCONNECT ||
+	    ucfg_cm_is_link_switch_disconnect_resp(rsp)) {
 		osif_debug("ignore internal disconnect");
 		status = QDF_STATUS_E_INVAL;
 		goto rel_lock;
@@ -141,6 +146,59 @@ osif_cm_indicate_disconnect(struct wlan_objmgr_vdev *vdev,
 	}
 }
 #else /* WLAN_FEATURE_11BE_MLO_ADV_FEATURE */
+
+/**
+ * osif_cm_get_anchor_vdev() - API to get the anchor vdev
+ * @vdev: Pointer to vdev
+ *
+ * Return: If the assoc vdev is available, return it. Otherwise, if the MLD is
+ * disconnected, return the current vdev. If neither is available, return NULL.
+ */
+static struct wlan_objmgr_vdev *osif_cm_get_anchor_vdev(
+		struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_objmgr_vdev *assoc_vdev = NULL;
+
+	assoc_vdev = ucfg_mlo_get_assoc_link_vdev(vdev);
+	if (assoc_vdev)
+		return assoc_vdev;
+	else if (ucfg_mlo_is_mld_disconnected(vdev))
+		return vdev;
+	else
+		return NULL;
+}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 213)) && \
+	(LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+/**
+ * osif_cm_indicate_disconnect_for_non_assoc_link() - Wrapper API to clear
+ * current bss param of non-assoc link
+ * @netdev: Pointer to netdev of non-assoc link vdev
+ * @vdev: Pointer to non-assoc link vdev
+ *
+ * Return: None
+ */
+static void osif_cm_indicate_disconnect_for_non_assoc_link(
+		struct net_device *netdev,
+		struct wlan_objmgr_vdev *vdev)
+{
+	int ret;
+
+	ret = cfg80211_clear_current_bss(netdev);
+	if (ret)
+		osif_err("cfg80211_clear_current_bss failed for psoc:%d pdev:%d vdev:%d",
+			 wlan_vdev_get_psoc_id(vdev),
+			 wlan_objmgr_pdev_get_pdev_id(wlan_vdev_get_pdev(vdev)),
+			 wlan_vdev_get_id(vdev));
+}
+#else
+static void osif_cm_indicate_disconnect_for_non_assoc_link(
+		struct net_device *netdev,
+		struct wlan_objmgr_vdev *vdev)
+{
+}
+#endif
+
 void
 osif_cm_indicate_disconnect(struct wlan_objmgr_vdev *vdev,
 			    struct net_device *dev,
@@ -150,7 +208,7 @@ osif_cm_indicate_disconnect(struct wlan_objmgr_vdev *vdev,
 {
 	struct net_device *netdev = dev;
 	struct vdev_osif_priv *osif_priv = NULL;
-	struct wlan_objmgr_vdev *assoc_vdev = NULL;
+	struct wlan_objmgr_vdev *anchor_vdev;
 
 	if (!wlan_vdev_mlme_is_mlo_vdev(vdev) || (link_id != -1)) {
 		osif_cm_indicate_disconnect_result(
@@ -159,12 +217,23 @@ osif_cm_indicate_disconnect(struct wlan_objmgr_vdev *vdev,
 		return;
 	}
 
-	if (ucfg_mlo_is_mld_disconnected(vdev)) {
-		assoc_vdev = ucfg_mlo_get_assoc_link_vdev(vdev);
-		if (!assoc_vdev)
-			return;
-		osif_priv  = wlan_vdev_get_ospriv(assoc_vdev);
+	anchor_vdev = osif_cm_get_anchor_vdev(vdev);
+
+	if (vdev != anchor_vdev)
+		osif_cm_indicate_disconnect_for_non_assoc_link(netdev, vdev);
+
+	if (anchor_vdev && ucfg_mlo_is_mld_disconnected(vdev)) {
+		/**
+		 * Kernel maintains some extra state on the assoc netdev.
+		 * If the assoc vdev exists, send disconnected event on the
+		 * assoc netdev so that kernel cleans up the extra state.
+		 * If the assoc vdev was already removed, kernel would have
+		 * already cleaned up the extra state while processing the
+		 * disconnected event sent as part of the link removal.
+		 */
+		osif_priv = wlan_vdev_get_ospriv(anchor_vdev);
 		netdev = osif_priv->wdev->netdev;
+
 		osif_cm_indicate_disconnect_result(
 				netdev, reason,
 				ie, ie_len,
@@ -235,12 +304,53 @@ osif_is_disconnect_locally_generated(struct wlan_cm_discon_rsp *rsp)
 }
 #endif
 
+#ifdef CONN_MGR_ADV_FEATURE
+/**
+ * osif_cm_indicate_qca_reason: Send driver disconnect reason to user space
+ * @osif_priv: osif_priv pointer
+ * @qca_reason: qca disconnect reason codes
+ *
+ * Return: void
+ */
+
+static void
+osif_cm_indicate_qca_reason(struct vdev_osif_priv *osif_priv,
+			    enum qca_disconnect_reason_codes qca_reason)
+{
+	struct sk_buff *vendor_event;
+
+	vendor_event = wlan_cfg80211_vendor_event_alloc(
+					osif_priv->wdev->wiphy, osif_priv->wdev,
+					NLMSG_HDRLEN + sizeof(qca_reason) +
+					NLMSG_HDRLEN,
+					DRIVER_DISCONNECT_REASON_INDEX,
+					GFP_KERNEL);
+	if (!vendor_event) {
+		osif_err("cfg80211_vendor_event_alloc failed");
+		return;
+	}
+	if (nla_put_u32(vendor_event, DRIVER_DISCONNECT_REASON, qca_reason)) {
+		osif_err("DISCONNECT_REASON put fail");
+		kfree_skb(vendor_event);
+		return;
+	}
+
+	wlan_cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+}
+#else
+static inline void
+osif_cm_indicate_qca_reason(struct vdev_osif_priv *osif_priv,
+			    enum qca_disconnect_reason_codes qca_reason)
+{
+}
+#endif
+
 QDF_STATUS osif_disconnect_handler(struct wlan_objmgr_vdev *vdev,
 				   struct wlan_cm_discon_rsp *rsp)
 {
 	enum ieee80211_reasoncode ieee80211_reason;
 	struct vdev_osif_priv *osif_priv = wlan_vdev_get_ospriv(vdev);
-	bool locally_generated = true;
+	bool locally_generated;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 	enum qca_disconnect_reason_codes qca_reason;
 	int link_id = -1;
@@ -252,11 +362,11 @@ QDF_STATUS osif_disconnect_handler(struct wlan_objmgr_vdev *vdev,
 
 	locally_generated = osif_is_disconnect_locally_generated(rsp);
 
-	osif_nofl_info("%s(vdevid-%d): " QDF_MAC_ADDR_FMT " %sdisconnect " QDF_MAC_ADDR_FMT " cm_id 0x%x source %d reason:%u %s vendor:%u %s",
+	osif_nofl_info("%s(vdevid-%d): " QDF_MAC_ADDR_FMT " %s disconnect " QDF_MAC_ADDR_FMT " cmid 0x%x src %d reason:%u %s vendor:%u %s",
 		       osif_priv->wdev->netdev->name,
 		       rsp->req.req.vdev_id,
 		       QDF_MAC_ADDR_REF(wlan_vdev_mlme_get_macaddr(vdev)),
-		       locally_generated ? "locally-generated " : "",
+		       locally_generated ? "locally-generated" : "",
 		       QDF_MAC_ADDR_REF(rsp->req.req.bssid.bytes),
 		       rsp->req.cm_id, rsp->req.req.source, ieee80211_reason,
 		       ucfg_cm_reason_code_to_str(rsp->req.req.reason_code),
@@ -273,6 +383,9 @@ QDF_STATUS osif_disconnect_handler(struct wlan_objmgr_vdev *vdev,
 		osif_cm_disconnect_comp_ind(vdev, rsp, OSIF_NOT_HANDLED);
 		return status;
 	}
+
+	/* Send driver disconnect Reason */
+	osif_cm_indicate_qca_reason(osif_priv, qca_reason);
 
 	/* If disconnect due to ML Reconfig, fill link id */
 	if (rsp->req.req.reason_code == REASON_HOST_TRIGGERED_LINK_DELETE)

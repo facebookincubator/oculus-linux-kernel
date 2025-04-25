@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 
@@ -127,4 +128,9 @@ int cam_actuator_driver_init(void);
  * @brief : API to remove Actuator Hw from platform framework.
  */
 void cam_actuator_driver_exit(void);
+
+/**
+ * @brief : API to remove Actuator I2C component
+ */
+void cam_actuator_driver_i2c_remove(struct i2c_client *client);
 #endif /* _CAM_ACTUATOR_DEV_H_ */

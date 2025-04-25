@@ -22,7 +22,7 @@
 #include <wlan_hdd_sysfs.h>
 #include "wlan_hdd_sysfs_direct_link_ut_cmd.h"
 
-#define MAX_SYSFS_DIRECT_LNK_UT_USER_COMMAND_LENGTH 64
+#define MAX_SYSFS_DIRECT_LNK_UT_USER_COMMAND_LENGTH 512
 
 static ssize_t __hdd_sysfs_direct_link_ut_cmd_store(struct net_device *net_dev,
 						    char const *buf,
@@ -60,7 +60,8 @@ static ssize_t __hdd_sysfs_direct_link_ut_cmd_store(struct net_device *net_dev,
 		return -EINVAL;
 	if (kstrtou32(token, 0, (uint32_t *)&cmd_info.cmd))
 		return -EINVAL;
-	if (cmd_info.cmd > WFDS_GET_STATS)
+
+	if (cmd_info.cmd >= WFDS_CMD_MAX)
 		return -EINVAL;
 
 	if (cmd_info.cmd == WFDS_STOP_TRAFFIC || cmd_info.cmd == WFDS_GET_STATS)
@@ -101,7 +102,31 @@ static ssize_t __hdd_sysfs_direct_link_ut_cmd_store(struct net_device *net_dev,
 		return -EINVAL;
 	qdf_mac_parse(token, &cmd_info.dest_mac);
 
-	qdf_copy_macaddr(&cmd_info.src_mac, &adapter->mac_addr);
+	if (cmd_info.cmd == WFDS_START_WHC) {
+		token = strsep(&sptr, " ");
+		if (!token)
+			return -EINVAL;
+		qdf_mac_parse(token, &cmd_info.src_mac);
+
+		token = strsep(&sptr, " ");
+		if (!token)
+			return -EINVAL;
+		qdf_ipv4_parse(token, &cmd_info.dest_ip);
+
+		token = strsep(&sptr, " ");
+		if (!token)
+			return -EINVAL;
+		qdf_ipv4_parse(token, &cmd_info.src_ip);
+
+		token = strsep(&sptr, " ");
+		if (!token)
+			return -EINVAL;
+		if (kstrtou16(token, 0, &cmd_info.dest_port))
+			return -EINVAL;
+	} else if (cmd_info.cmd == WFDS_START_TRAFFIC) {
+		qdf_copy_macaddr(&cmd_info.src_mac, &adapter->mac_addr);
+	}
+
 send_request:
 	status = os_if_qmi_wfds_send_ut_cmd_req_msg(&cmd_info);
 	if (QDF_IS_STATUS_ERROR(status))

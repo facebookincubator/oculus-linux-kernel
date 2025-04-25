@@ -24,10 +24,14 @@
 #include <dp_mon.h>
 #include <dp_tx_mon_2.0.h>
 #include <dp_mon_2.0.h>
+#ifdef QCA_SUPPORT_LITE_MONITOR
 #include <dp_lite_mon.h>
+#endif
 
 #define MAX_PPDU_INFO_LIST_DEPTH 64
 
+#if defined(WLAN_TX_PKT_CAPTURE_ENH_BE) || defined(WLAN_PKT_CAPTURE_TX_2_0) ||\
+	defined(WLAN_TX_MON_CORE_DEBUG)
 void
 dp_tx_mon_status_free_packet_buf(struct dp_pdev *pdev,
 				 qdf_frag_t status_frag, uint32_t end_offset,
@@ -104,11 +108,13 @@ dp_tx_mon_status_free_packet_buf(struct dp_pdev *pdev,
 		}
 
 		/* need api definition for hal_tx_status_get_next_tlv */
-		tx_tlv = hal_tx_status_get_next_tlv(tx_tlv);
+		tx_tlv = hal_tx_status_get_next_tlv(tx_tlv,
+						   mon_pdev->is_tlv_hdr_64_bit);
 	} while ((tx_tlv - tx_tlv_start) < end_offset);
 }
+#endif
 
-#if defined(WLAN_TX_PKT_CAPTURE_ENH_BE) && defined(QCA_MONITOR_2_0_SUPPORT)
+#if defined(WLAN_TX_PKT_CAPTURE_ENH_BE) && defined(WLAN_PKT_CAPTURE_TX_2_0)
 /**
  * dp_tx_mon_status_queue_free() - API to free status buffer
  * @pdev: pdev Handle
@@ -126,6 +132,9 @@ dp_tx_mon_status_queue_free(struct dp_pdev *pdev,
 	qdf_frag_t status_frag = NULL;
 	uint8_t i = tx_mon_be->cur_frag_q_idx;
 	uint32_t end_offset = 0;
+
+	if (last_frag_q_idx > MAX_STATUS_BUFFER_IN_PPDU)
+		last_frag_q_idx = MAX_STATUS_BUFFER_IN_PPDU;
 
 	for (; i < last_frag_q_idx; i++) {
 		status_frag = tx_mon_be->frag_q_vec[i].frag_buf;
@@ -163,8 +172,7 @@ dp_tx_mon_enqueue_mpdu_nbuf(struct dp_pdev *pdev,
 	/* enqueue mpdu_nbuf to the per user mpdu_q */
 	qdf_nbuf_queue_t *usr_mpdu_q = NULL;
 
-	if (!TXMON_PPDU_HAL(tx_ppdu_info, rx_user_status) ||
-	    !TXMON_PPDU_HAL(tx_ppdu_info, num_users))
+	if (!TXMON_PPDU_HAL(tx_ppdu_info, num_users))
 		QDF_BUG(0);
 
 	usr_mpdu_q = &TXMON_PPDU_USR(tx_ppdu_info, user_id, mpdu_q);
@@ -345,8 +353,8 @@ dp_tx_mon_generate_cts2self_frm(struct dp_pdev *pdev,
 	wh_min = (struct ieee80211_frame_min_one *)qdf_nbuf_data(mpdu_nbuf);
 	qdf_mem_zero(wh_min, MAX_DUMMY_FRM_BODY);
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_CTL |
-		   IEEE80211_FC0_SUBTYPE_CTS);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_CTL |
+		   QDF_IEEE80211_FC0_SUBTYPE_CTS);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_min->i_fc[1] = 0;
@@ -421,8 +429,8 @@ dp_tx_mon_generate_rts_frm(struct dp_pdev *pdev,
 	wh_min = (struct ieee80211_ctlframe_addr2 *)qdf_nbuf_data(mpdu_nbuf);
 	qdf_mem_zero(wh_min, MAX_DUMMY_FRM_BODY);
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_CTL |
-		   IEEE80211_FC0_SUBTYPE_RTS);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_CTL |
+		   QDF_IEEE80211_FC0_SUBTYPE_RTS);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_min->i_fc[1] = 0;
@@ -505,8 +513,8 @@ dp_tx_mon_generate_ack_frm(struct dp_pdev *pdev,
 
 	wh_addr1 = (struct ieee80211_frame_min_one *)qdf_nbuf_data(mpdu_nbuf);
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_CTL |
-		   IEEE80211_FC0_SUBTYPE_ACK);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_CTL |
+		   QDF_IEEE80211_FC0_SUBTYPE_ACK);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_addr1->i_fc[1] = 0;
@@ -582,8 +590,8 @@ dp_tx_mon_generate_3addr_qos_null_frm(struct dp_pdev *pdev,
 	wh_addr3 = (struct ieee80211_qosframe *)qdf_nbuf_data(mpdu_nbuf);
 	qdf_mem_zero(wh_addr3, sizeof(struct ieee80211_qosframe));
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_DATA |
-		   IEEE80211_FC0_SUBTYPE_QOS_NULL);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_DATA |
+		   QDF_IEEE80211_FC0_SUBTYPE_QOS_NULL);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_addr3->i_fc[1] = 0;
@@ -659,8 +667,8 @@ dp_tx_mon_generate_4addr_qos_null_frm(struct dp_pdev *pdev,
 	wh_addr4 = (struct ieee80211_qosframe_addr4 *)qdf_nbuf_data(mpdu_nbuf);
 	qdf_mem_zero(wh_addr4, sizeof(struct ieee80211_qosframe_addr4));
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_DATA |
-		   IEEE80211_FC0_SUBTYPE_QOS_NULL);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_DATA |
+		   QDF_IEEE80211_FC0_SUBTYPE_QOS_NULL);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_addr4->i_fc[1] = 0;
@@ -763,8 +771,8 @@ dp_tx_mon_generate_mu_block_ack_frm(struct dp_pdev *pdev,
 	wh_addr2 = (struct ieee80211_ctlframe_addr2 *)qdf_nbuf_data(mpdu_nbuf);
 	qdf_mem_zero(wh_addr2, DP_BA_ACK_FRAME_SIZE);
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_CTL |
-		   IEEE80211_FC0_BLOCK_ACK);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_CTL |
+		   QDF_IEEE80211_FC0_SUBTYPE_BA);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_addr2->i_fc[1] = 0;
@@ -913,8 +921,8 @@ dp_tx_mon_generate_block_ack_frm(struct dp_pdev *pdev,
 	wh_addr2 = (struct ieee80211_ctlframe_addr2 *)qdf_nbuf_data(mpdu_nbuf);
 	qdf_mem_zero(wh_addr2, DP_BA_ACK_FRAME_SIZE);
 
-	frm_ctl = (IEEE80211_FC0_VERSION_0 | IEEE80211_FC0_TYPE_CTL |
-		   IEEE80211_FC0_BLOCK_ACK);
+	frm_ctl = (QDF_IEEE80211_FC0_VERSION_0 | QDF_IEEE80211_FC0_TYPE_CTL |
+		   QDF_IEEE80211_FC0_SUBTYPE_BA);
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control) = frm_ctl;
 	TXMON_PPDU_COM(tx_ppdu_info, frame_control_info_valid) = 1;
 	wh_addr2->i_fc[1] = 0;
@@ -1405,40 +1413,179 @@ dp_tx_mon_update_ppdu_info_status(struct dp_pdev *pdev,
 	return status;
 }
 
-QDF_STATUS
-dp_tx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
-			qdf_frag_t status_frag, uint32_t end_offset)
+#ifdef MONITOR_TLV_RECORDING_ENABLE
+/**
+ * dp_tx_mon_record_index_update() - update the indexes of dp_mon_tlv_logger
+ *					to store next Tx TLV
+ *
+ * @mon_pdev_be: pointer to dp_mon_pdev_be
+ *
+ * Return: void
+ */
+void dp_tx_mon_record_index_update(struct dp_mon_pdev_be *mon_pdev_be)
 {
-	struct dp_mon_pdev *mon_pdev = pdev->monitor_pdev;
-	qdf_nbuf_t nbuf = NULL;
-	enum WDI_EVENT pktlog_mode = WDI_NO_VAL;
-	int frag_bytes;
+	struct dp_mon_tlv_logger *tlv_log = NULL;
+	struct dp_tx_mon_tlv_info *tlv_info = NULL;
 
-	if (!mon_pdev->pktlog_hybrid_mode)
-		return QDF_STATUS_E_INVAL;
+	tlv_log = mon_pdev_be->tx_tlv_log;
+	tlv_info = (struct dp_tx_mon_tlv_info *)tlv_log->buff;
 
-	nbuf = qdf_nbuf_alloc(soc->osdev, MAX_DUMMY_FRM_BODY, 0, 4, FALSE);
-	if (!nbuf)
-		return QDF_STATUS_E_NOMEM;
+	(tlv_log->curr_ppdu_pos + 1 == MAX_NUM_PPDU_RECORD) ?
+		tlv_log->curr_ppdu_pos = 0 :
+			tlv_log->curr_ppdu_pos++;
 
-	qdf_nbuf_add_rx_frag(status_frag, nbuf, 0,
-			     (end_offset + 1),
-			     0, true);
-
-	if (mon_pdev->pktlog_hybrid_mode)
-		pktlog_mode = WDI_EVENT_HYBRID_TX;
-
-	frag_bytes = qdf_nbuf_get_frag_len(nbuf, 0);
-	if (pktlog_mode != WDI_NO_VAL) {
-		dp_wdi_event_handler(pktlog_mode, soc,
-				     nbuf, HTT_INVALID_PEER,
-				     WDI_NO_VAL, pdev->pdev_id);
-	}
-	qdf_nbuf_free(nbuf);
-
-	return QDF_STATUS_SUCCESS;
+	tlv_log->wrap_flag = 0;
+	tlv_log->ppdu_start_idx = tlv_log->curr_ppdu_pos *
+		MAX_TLVS_PER_PPDU;
+	tlv_log->mpdu_idx = tlv_log->ppdu_start_idx +
+		MAX_PPDU_START_TLV_NUM;
+	tlv_log->ppdu_end_idx = tlv_log->mpdu_idx + MAX_MPDU_TLV_NUM;
+	tlv_log->max_ppdu_start_idx = tlv_log->ppdu_start_idx +
+		MAX_PPDU_START_TLV_NUM - 1;
+	tlv_log->max_mpdu_idx = tlv_log->mpdu_idx +
+		MAX_MPDU_TLV_NUM - 1;
+	tlv_log->max_ppdu_end_idx = tlv_log->ppdu_end_idx +
+		MAX_PPDU_END_TLV_NUM - 1;
 }
 
+/**
+ * dp_tx_mon_record_tlv() - Store the contents of the tlv in buffer
+ *
+ * @mon_pdev_be: pointer to dp_mon_pdev_be
+ * @data_ppdu_info: pointer to HAL Tx data ppdu info
+ * @proto_ppdu_info: pointer to HAL Tx proto ppdu info
+ *
+ * Return: void
+ */
+void dp_tx_mon_record_tlv(struct dp_mon_pdev_be *mon_pdev_be,
+			  struct hal_tx_ppdu_info *data_ppdu_info,
+			  struct hal_tx_ppdu_info *proto_ppdu_info)
+{
+	struct hal_tx_ppdu_info *ppdu_info = NULL;
+	struct dp_tx_mon_tlv_info *tlv_info = NULL;
+	struct dp_mon_tlv_logger *tlv_log = NULL;
+	uint16_t *ppdu_start_idx = NULL;
+	uint16_t *mpdu_idx = NULL;
+	uint16_t *ppdu_end_idx = NULL;
+	uint32_t tlv_tag;
+
+	if (!mon_pdev_be || !(mon_pdev_be->tx_tlv_log))
+		return;
+
+	tlv_log = mon_pdev_be->tx_tlv_log;
+	if (!tlv_log->tlv_logging_enable || !(tlv_log->buff))
+		return;
+
+	tlv_info = (struct dp_tx_mon_tlv_info *)tlv_log->buff;
+	ppdu_start_idx = &tlv_log->ppdu_start_idx;
+	mpdu_idx = &tlv_log->mpdu_idx;
+	ppdu_end_idx = &tlv_log->ppdu_end_idx;
+
+	ppdu_info = (data_ppdu_info->tx_tlv_info.is_data_ppdu_info) ?
+			data_ppdu_info : proto_ppdu_info;
+	tlv_tag = ppdu_info->tx_tlv_info.tlv_tag;
+
+	if (ppdu_info->tx_tlv_info.tlv_category == CATEGORY_PPDU_START) {
+		tlv_info[*ppdu_start_idx].tlv_tag = tlv_tag;
+		switch (tlv_tag) {
+		case WIFITX_FES_SETUP_E:
+		case WIFITXPCU_BUFFER_STATUS_E:
+		case WIFIPCU_PPDU_SETUP_INIT_E:
+		case WIFISCH_CRITICAL_TLV_REFERENCE_E:
+		case WIFITX_PEER_ENTRY_E:
+		case WIFITX_RAW_OR_NATIVE_FRAME_SETUP_E:
+		case WIFITX_QUEUE_EXTENSION_E:
+		case WIFITX_FES_SETUP_COMPLETE_E:
+		case WIFIFW2SW_MON_E:
+		case WIFISCHEDULER_END_E:
+		case WIFITQM_MPDU_GLOBAL_START_E:
+			;
+		}
+		if (*ppdu_start_idx < tlv_log->max_ppdu_start_idx)
+			(*ppdu_start_idx)++;
+	} else if (ppdu_info->tx_tlv_info.tlv_category == CATEGORY_MPDU) {
+		tlv_info[*mpdu_idx].tlv_tag = tlv_tag;
+		switch (tlv_tag) {
+		case WIFITX_MPDU_START_E:
+		case WIFITX_MSDU_START_E:
+		case WIFITX_DATA_E:
+		case WIFITX_MSDU_END_E:
+		case WIFITX_MPDU_END_E:
+			;
+		}
+		if (*mpdu_idx < tlv_log->max_mpdu_idx) {
+			(*mpdu_idx)++;
+		} else {
+			*mpdu_idx = *mpdu_idx - MAX_MPDU_TLV_NUM + 1;
+			tlv_log->wrap_flag ^= 1;
+		}
+	} else if (ppdu_info->tx_tlv_info.tlv_category == CATEGORY_PPDU_END) {
+		tlv_info[*ppdu_end_idx].tlv_tag = tlv_tag;
+		switch (tlv_tag) {
+		case WIFITX_LAST_MPDU_FETCHED_E:
+		case WIFITX_LAST_MPDU_END_E:
+		case WIFIPDG_TX_REQ_E:
+		case WIFITX_FES_STATUS_START_PPDU_E:
+		case WIFIPHYTX_PPDU_HEADER_INFO_REQUEST_E:
+		case WIFIMACTX_L_SIG_A_E:
+		case WIFITXPCU_PREAMBLE_DONE_E:
+		case WIFIMACTX_USER_DESC_COMMON_E:
+		case WIFIMACTX_SERVICE_E:
+		case WIFITXDMA_STOP_REQUEST_E:
+		case WIFITXPCU_USER_BUFFER_STATUS_E:
+		case WIFITX_FES_STATUS_USER_PPDU_E:
+		case WIFITX_MPDU_COUNT_TRANSFER_END_E:
+		case WIFIRX_START_PARAM_E:
+		case WIFITX_FES_STATUS_ACK_OR_BA_E:
+		case WIFITX_FES_STATUS_USER_RESPONSE_E:
+		case WIFITX_FES_STATUS_END_E:
+		case WIFITX_FES_STATUS_PROT_E:
+		case WIFIMACTX_PHY_DESC_E:
+		case WIFIMACTX_HE_SIG_A_SU_E:
+			;
+		}
+		if (*ppdu_end_idx < tlv_log->max_ppdu_end_idx)
+			(*ppdu_end_idx)++;
+	}
+}
+
+/**
+ * dp_tx_mon_record_clear_buffer() - Clear the buffer to record next PPDU
+ *
+ * @mon_pdev_be : pointer to dp_mon_pdev_be
+ *
+ * Return
+ */
+void dp_tx_mon_record_clear_buffer(struct dp_mon_pdev_be *mon_pdev_be)
+{
+	struct dp_mon_tlv_logger *tlv_log = NULL;
+	struct dp_tx_mon_tlv_info *tlv_info = NULL;
+
+	tlv_log = mon_pdev_be->tx_tlv_log;
+	tlv_info = (struct dp_tx_mon_tlv_info *)tlv_log->buff;
+	qdf_mem_zero(&tlv_info[tlv_log->ppdu_start_idx],
+		     MAX_TLVS_PER_PPDU *
+		     sizeof(struct dp_tx_mon_tlv_info));
+}
+#else
+
+static
+void dp_tx_mon_record_index_update(struct dp_mon_pdev_be *mon_pdev_be)
+{
+}
+
+static
+void dp_tx_mon_record_tlv(struct dp_mon_pdev_be *mon_pdev_be,
+			  struct hal_tx_ppdu_info *data_ppdu_info,
+			  struct hal_tx_ppdu_info *proto_ppdu_info)
+{
+}
+
+static
+void dp_tx_mon_record_clear_buffer(struct dp_mon_pdev_be *mon_pdev_be)
+{
+}
+#endif
 /**
  * dp_tx_mon_process_tlv_2_0() - API to parse PPDU worth information
  * @pdev: DP_PDEV handle
@@ -1446,7 +1593,7 @@ dp_tx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
  *
  * Return: status
  */
-QDF_STATUS
+static QDF_STATUS
 dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 			  struct dp_tx_mon_desc_list *mon_desc_list_ref)
 {
@@ -1503,6 +1650,8 @@ dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 	tlv_status = hal_txmon_status_get_num_users(pdev->soc->hal_soc,
 						    tx_tlv, &num_users);
 	if (tlv_status == HAL_MON_TX_STATUS_PPDU_NOT_DONE || !num_users) {
+		dp_tx_mon_free_ppdu_info(tx_prot_ppdu_info, tx_mon_be);
+		tx_mon_be->tx_prot_ppdu_info = NULL;
 		dp_mon_err("window open with tlv_tag[0x%x] num_users[%d]!\n",
 			   hal_tx_status_get_tlv_tag(tx_tlv), num_users);
 		return QDF_STATUS_E_INVAL;
@@ -1513,6 +1662,8 @@ dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 						    num_users,
 						    tx_mon_be->be_ppdu_id);
 	if (!tx_data_ppdu_info) {
+		dp_tx_mon_free_ppdu_info(tx_prot_ppdu_info, tx_mon_be);
+		tx_mon_be->tx_prot_ppdu_info = NULL;
 		dp_mon_info("tx prot ppdu info alloc got failed!!");
 		return QDF_STATUS_E_NOMEM;
 	}
@@ -1529,6 +1680,8 @@ dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 
 		tx_tlv = status_frag;
 		tx_tlv_start = tx_tlv;
+
+		dp_tx_mon_record_clear_buffer(mon_pdev_be);
 		/*
 		 * parse each status buffer and populate the information to
 		 * dp_tx_ppdu_info
@@ -1542,6 +1695,10 @@ dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 					tx_status_prot,
 					tx_tlv, status_frag);
 
+			dp_tx_mon_record_tlv(mon_pdev_be,
+					     &tx_data_ppdu_info->hal_txmon,
+					     &tx_prot_ppdu_info->hal_txmon);
+
 			status =
 				dp_tx_mon_update_ppdu_info_status(
 							pdev,
@@ -1553,7 +1710,8 @@ dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 							mon_desc_list_ref);
 
 			/* need api definition for hal_tx_status_get_next_tlv */
-			tx_tlv = hal_tx_status_get_next_tlv(tx_tlv);
+			tx_tlv = hal_tx_status_get_next_tlv(tx_tlv,
+						mon_pdev->is_tlv_hdr_64_bit);
 			if ((tx_tlv - tx_tlv_start) >= end_offset)
 				break;
 		} while ((tx_tlv - tx_tlv_start) < end_offset);
@@ -1567,6 +1725,8 @@ dp_tx_mon_process_tlv_2_0(struct dp_pdev *pdev,
 		tx_mon_be->frag_q_vec[cur_frag_q_idx].frag_buf = NULL;
 		tx_mon_be->frag_q_vec[cur_frag_q_idx].end_offset = 0;
 		cur_frag_q_idx = ++tx_mon_be->cur_frag_q_idx;
+
+		dp_tx_mon_record_index_update(mon_pdev_be);
 	}
 
 	/* clear the unreleased frag array */
@@ -1781,8 +1941,9 @@ free_status_buffer:
 	return QDF_STATUS_E_NOMEM;
 }
 
-#else
+#endif
 
+#ifdef WLAN_TX_MON_CORE_DEBUG
 QDF_STATUS
 dp_tx_mon_process_status_tlv(struct dp_soc *soc,
 			     struct dp_pdev *pdev,
@@ -1820,5 +1981,42 @@ dp_tx_mon_process_status_tlv(struct dp_soc *soc,
 void dp_tx_mon_update_end_reason(struct dp_mon_pdev *mon_pdev,
 				 int ppdu_id, int end_reason)
 {
+}
+#endif
+
+#if defined(WLAN_TX_PKT_CAPTURE_ENH_BE) && defined(WLAN_PKT_CAPTURE_TX_2_0) && \
+	defined(BE_PKTLOG_SUPPORT)
+QDF_STATUS
+dp_tx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
+			qdf_frag_t status_frag, uint32_t end_offset)
+{
+	struct dp_mon_pdev *mon_pdev = pdev->monitor_pdev;
+	qdf_nbuf_t nbuf = NULL;
+	enum WDI_EVENT pktlog_mode = WDI_NO_VAL;
+	int frag_bytes;
+
+	if (!mon_pdev->pktlog_hybrid_mode)
+		return QDF_STATUS_E_INVAL;
+
+	nbuf = qdf_nbuf_alloc(soc->osdev, MAX_DUMMY_FRM_BODY, 0, 4, FALSE);
+	if (!nbuf)
+		return QDF_STATUS_E_NOMEM;
+
+	qdf_nbuf_add_rx_frag(status_frag, nbuf, 0,
+			     (end_offset + 1),
+			     0, true);
+
+	if (mon_pdev->pktlog_hybrid_mode)
+		pktlog_mode = WDI_EVENT_HYBRID_TX;
+
+	frag_bytes = qdf_nbuf_get_frag_len(nbuf, 0);
+	if (pktlog_mode != WDI_NO_VAL) {
+		dp_wdi_event_handler(pktlog_mode, soc,
+				     nbuf, HTT_INVALID_PEER,
+				     WDI_NO_VAL, pdev->pdev_id);
+	}
+	qdf_nbuf_free(nbuf);
+
+	return QDF_STATUS_SUCCESS;
 }
 #endif

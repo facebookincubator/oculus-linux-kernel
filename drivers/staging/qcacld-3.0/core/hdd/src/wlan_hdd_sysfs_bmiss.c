@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -34,14 +34,14 @@ wlan_hdd_get_bmiss(struct hdd_adapter *adapter)
 	uint8_t peer_mac[QDF_MAC_ADDR_SIZE];
 	int errno;
 
-	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter->deflink);
 	if (!hdd_sta_ctx) {
 		hdd_debug("hdd_sta_ctx received NULL");
 		return NULL;
 	}
 	qdf_mem_copy(peer_mac, hdd_sta_ctx->conn_info.bssid.bytes,
 		     QDF_MAC_ADDR_SIZE);
-	return wlan_cfg80211_mc_bmiss_get_infra_cp_stats(adapter->vdev,
+	return wlan_cfg80211_mc_bmiss_get_infra_cp_stats(adapter->deflink->vdev,
 							 peer_mac, &errno);
 }
 

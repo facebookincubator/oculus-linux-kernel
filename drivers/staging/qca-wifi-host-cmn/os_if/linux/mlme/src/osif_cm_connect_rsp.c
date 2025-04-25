@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -34,6 +34,8 @@
 #include "wlan_objmgr_vdev_obj.h"
 #include "wlan_objmgr_peer_obj.h"
 #include "utils_mlo.h"
+#include <wlan_mlo_mgr_link_switch.h>
+#include "wlan_crypto_global_api.h"
 
 #ifdef CONN_MGR_ADV_FEATURE
 void osif_cm_get_assoc_req_ie_data(struct element_info *assoc_req,
@@ -141,7 +143,7 @@ osif_get_connect_status_code(struct wlan_cm_connect_resp *rsp)
 
 /**
  * osif_convert_timeout_reason() - Convert to kernel specific enum
- * @timeout_reason: reason for connect timeout
+ * @reason: reason for connect timeout
  *
  * This function is used to convert host timeout
  * reason enum to kernel specific enum.
@@ -199,7 +201,8 @@ osif_connect_timeout(struct net_device *dev, const u8 *bssid,
  * __osif_connect_bss() - API to send connection status to supplicant
  * @dev: network device
  * @bss: bss info
- * @connect_rsp: Connection manager connect response
+ * @rsp: Connection manager connect response
+ * @status: 802.11 status code
  *
  * Context: Any context.
  * Return: void
@@ -266,7 +269,7 @@ static void __osif_connect_bss(struct net_device *dev,
  * osif_connect_bss() - API to send connection status to supplicant
  * @dev: network device
  * @bss: bss info
- * @connect_rsp: Connection manager connect response
+ * @rsp: Connection manager connect response
  *
  * The API is a wrapper to send connection status to supplicant
  *
@@ -314,7 +317,7 @@ static void osif_connect_bss(struct net_device *dev, struct cfg80211_bss *bss,
 #if defined(CFG80211_FILS_SK_OFFLOAD_SUPPORT)
 /**
  * osif_populate_fils_params() - Populate FILS keys to connect response
- * @conn_rsp_params: connect response to supplicant
+ * @rsp_params: connect response to supplicant
  * @connect_ies: Connect response IEs
  *
  * Context: Any context.
@@ -349,7 +352,7 @@ osif_populate_fils_params(struct cfg80211_connect_resp_params *rsp_params,
 #if defined(WLAN_FEATURE_FILS_SK)
 /**
  * osif_populate_fils_params() - Populate FILS keys to connect response
- * @conn_rsp_params: connect response to supplicant
+ * @rsp_params: connect response to supplicant
  * @connect_ies: Connect response IEs
  *
  * Context: Any context.
@@ -459,7 +462,10 @@ osif_get_chan_bss_from_kernel(struct wlan_objmgr_vdev *vdev,
 					    rsp_link_info->link_addr.bytes,
 					    rsp->ssid.ssid, rsp->ssid.length);
 	if (!partner_bss) {
-		osif_err("could not fetch partner bss from kernel");
+		osif_err("could not fetch partner bss from kernel vdev id %d freq %d ssid:" QDF_SSID_FMT " and BSSID " QDF_MAC_ADDR_FMT,
+			 wlan_vdev_get_id(vdev), rsp_link_info->chan_freq,
+			 QDF_SSID_REF(rsp->ssid.length, rsp->ssid.ssid),
+			 QDF_MAC_ADDR_REF(rsp->bssid.bytes));
 		return NULL;
 	}
 
@@ -469,10 +475,12 @@ osif_get_chan_bss_from_kernel(struct wlan_objmgr_vdev *vdev,
 
 #if defined(CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT) && defined(WLAN_FEATURE_11BE_MLO)
 #ifndef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
-static struct wlan_objmgr_vdev *osif_get_partner_vdev(struct wlan_objmgr_vdev *vdev,
-						      struct mlo_link_info rsp_partner_info)
+static struct wlan_objmgr_vdev *osif_get_partner_vdev(
+					struct wlan_objmgr_vdev *vdev,
+					struct mlo_link_info rsp_partner_info,
+					wlan_objmgr_ref_dbgid id)
 {
-	return mlo_get_vdev_by_link_id(vdev, rsp_partner_info.link_id);
+	return mlo_get_vdev_by_link_id(vdev, rsp_partner_info.link_id, id);
 }
 #endif
 
@@ -480,14 +488,18 @@ static
 void osif_populate_connect_response_for_link(struct wlan_objmgr_vdev *vdev,
 					     struct cfg80211_connect_resp_params *conn_rsp_params,
 					     uint8_t link_id,
+					     uint8_t *link_addr,
 					     struct cfg80211_bss *bss)
 {
-	osif_debug("Link_id :%d", link_id);
-	conn_rsp_params->valid_links |=  BIT(link_id);
-	conn_rsp_params->links[link_id].bssid = bss->bssid;
-	conn_rsp_params->links[link_id].bss = bss;
-	conn_rsp_params->links[link_id].addr =
-					 wlan_vdev_mlme_get_macaddr(vdev);
+	if (bss) {
+		osif_debug("Link_id :%d", link_id);
+		conn_rsp_params->valid_links |=  BIT(link_id);
+		conn_rsp_params->links[link_id].bssid = bss->bssid;
+		conn_rsp_params->links[link_id].bss = bss;
+		conn_rsp_params->links[link_id].addr = link_addr;
+	}
+
+	mlo_mgr_osif_update_connect_info(vdev, link_id);
 }
 
 static QDF_STATUS
@@ -515,50 +527,33 @@ osif_fill_peer_mld_mac_connect_resp(struct wlan_objmgr_vdev *vdev,
 }
 
 static void
-osif_populate_partner_links_mlo_params(struct wlan_objmgr_pdev *pdev,
+osif_populate_partner_links_mlo_params(struct wlan_objmgr_vdev *vdev,
 				       struct wlan_cm_connect_resp *rsp,
 				       struct cfg80211_connect_resp_params *conn_rsp_params)
 {
-	struct wlan_objmgr_vdev *partner_vdev;
 	struct mlo_link_info *rsp_partner_info;
-	struct mlo_partner_info assoc_partner_info = {0};
 	struct cfg80211_bss *bss = NULL;
-	QDF_STATUS qdf_status;
 	uint8_t link_id = 0, num_links;
 	int i;
-
-	qdf_status = osif_get_partner_info_from_mlie(rsp, &assoc_partner_info);
-	if (QDF_IS_STATUS_ERROR(qdf_status))
-		return;
+	struct mlo_link_info *link_info;
 
 	num_links = rsp->ml_parnter_info.num_partner_links;
 	for (i = 0 ; i < num_links; i++) {
 		rsp_partner_info = &rsp->ml_parnter_info.partner_link_info[i];
+		link_id = rsp_partner_info->link_id;
 
-		qdf_status = osif_get_link_id_from_assoc_ml_ie(rsp_partner_info,
-							    &assoc_partner_info,
-							    &link_id);
-		if (QDF_IS_STATUS_ERROR(qdf_status))
+		link_info = mlo_mgr_get_ap_link_by_link_id(vdev->mlo_dev_ctx,
+							   link_id);
+		if (!link_info)
 			continue;
 
-		partner_vdev = wlan_objmgr_get_vdev_by_id_from_pdev(pdev,
-						      rsp_partner_info->vdev_id,
-						      WLAN_MLO_MGR_ID);
-		if (!partner_vdev)
-			continue;
+		bss = osif_get_chan_bss_from_kernel(vdev, rsp_partner_info,
+						    rsp);
 
-		bss = osif_get_chan_bss_from_kernel(partner_vdev,
-						    rsp_partner_info, rsp);
-		if (!bss) {
-			wlan_objmgr_vdev_release_ref(partner_vdev,
-						     WLAN_MLO_MGR_ID);
-			continue;
-		}
-
-		osif_populate_connect_response_for_link(partner_vdev,
-							conn_rsp_params,
-							link_id, bss);
-		wlan_objmgr_vdev_release_ref(partner_vdev, WLAN_MLO_MGR_ID);
+		osif_populate_connect_response_for_link(vdev, conn_rsp_params,
+							link_id,
+							link_info->link_addr.bytes,
+							bss);
 	}
 }
 
@@ -569,6 +564,7 @@ static void osif_fill_connect_resp_mlo_params(struct wlan_objmgr_vdev *vdev,
 {
 	uint8_t assoc_link_id;
 	QDF_STATUS qdf_status;
+	struct mlo_link_info *link_info = NULL;
 
 	if (!wlan_vdev_mlme_is_mlo_vdev(vdev))
 		return;
@@ -581,11 +577,19 @@ static void osif_fill_connect_resp_mlo_params(struct wlan_objmgr_vdev *vdev,
 	}
 
 	assoc_link_id = wlan_vdev_get_link_id(vdev);
-	osif_populate_connect_response_for_link(vdev, conn_rsp_params,
-						assoc_link_id, bss);
+	link_info = mlo_mgr_get_ap_link_by_link_id(vdev->mlo_dev_ctx,
+						   assoc_link_id);
+	if (!link_info) {
+		osif_err("Unable to find link_info for link_id: %d",
+			 assoc_link_id);
+		return;
+	}
 
-	osif_populate_partner_links_mlo_params(wlan_vdev_get_pdev(vdev), rsp,
-					       conn_rsp_params);
+	osif_populate_connect_response_for_link(vdev, conn_rsp_params,
+						assoc_link_id,
+						link_info->link_addr.bytes,
+						bss);
+	osif_populate_partner_links_mlo_params(vdev, rsp, conn_rsp_params);
 }
 
 static void
@@ -596,19 +600,20 @@ osif_free_ml_link_params(struct cfg80211_connect_resp_params *conn_rsp_params)
 #ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
 static struct wlan_objmgr_vdev *osif_get_partner_vdev(
 					struct wlan_objmgr_vdev *vdev,
-					struct mlo_link_info rsp_partner_info)
+					struct mlo_link_info rsp_partner_info,
+					wlan_objmgr_ref_dbgid id)
 {
 	return wlan_objmgr_get_vdev_by_id_from_pdev(
 						vdev->vdev_objmgr.wlan_pdev,
-						rsp_partner_info.vdev_id,
-						WLAN_MLO_MGR_ID);
+						rsp_partner_info.vdev_id, id);
 }
 #else
 static struct wlan_objmgr_vdev *osif_get_partner_vdev(
 					struct wlan_objmgr_vdev *vdev,
-					struct mlo_link_info rsp_partner_info)
+					struct mlo_link_info rsp_partner_info,
+					wlan_objmgr_ref_dbgid id)
 {
-	return mlo_get_vdev_by_link_id(vdev, rsp_partner_info.link_id);
+	return mlo_get_vdev_by_link_id(vdev, rsp_partner_info.link_id, id);
 }
 #endif
 static void osif_fill_connect_resp_mlo_params(
@@ -664,12 +669,13 @@ static void osif_fill_connect_resp_mlo_params(
 				break;
 
 			ml_vdev = osif_get_partner_vdev(vdev,
-							rsp_partner_info[i]);
+							rsp_partner_info[i],
+							WLAN_OSIF_CM_ID);
 
 			if (ml_vdev) {
 				osif_priv = wlan_vdev_get_ospriv(ml_vdev);
 				wlan_objmgr_vdev_release_ref(ml_vdev,
-							     WLAN_MLO_MGR_ID);
+							     WLAN_OSIF_CM_ID);
 			} else {
 				osif_err("Partner vdev not found with vdev_id:%d",
 					 rsp_partner_info[i].vdev_id);
@@ -802,7 +808,7 @@ osif_connect_done(struct net_device *dev, struct cfg80211_bss *bss,
  * supplicant.
  * @dev: network device
  * @bss: bss info
- * @connect_rsp: Connection manager connect response
+ * @rsp: Connection manager connect response
  * @vdev: pointer to vdev
  *
  * The API is a wrapper to send connection status to supplicant
@@ -836,6 +842,7 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 {
 	struct cfg80211_bss *bss = NULL;
 	struct ieee80211_channel *chan;
+	int32_t akm;
 
 	if (QDF_IS_STATUS_SUCCESS(rsp->connect_status)) {
 		chan = ieee80211_get_channel(osif_priv->wdev->wiphy,
@@ -853,16 +860,144 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 		return;
 	}
 
+	akm = wlan_crypto_get_param(vdev, WLAN_CRYPTO_PARAM_KEY_MGMT);
 	if (!wlan_vdev_mlme_is_mlo_link_vdev(vdev)) {
 		if (osif_update_connect_results(
 				osif_priv->wdev->netdev, bss,
 				rsp, vdev))
 			osif_connect_bss(osif_priv->wdev->netdev,
 					 bss, rsp);
+	} else if (osif_get_connect_status_code(rsp) == WLAN_STATUS_SUCCESS &&
+		   QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_OWE)) {
+		/*
+		 * For OWE roaming, link vdev is disconnected on receiving
+		 * roam synch indication. As part of the disconnect osif link
+		 * info will be cleared and connect request is prepared from
+		 * mlo roam module.
+		 * So update OSIF Link info for that case here.
+		 */
+		mlo_mgr_osif_update_connect_info(vdev,
+						 wlan_vdev_get_link_id(vdev));
 	}
 
 }
 #else /* WLAN_FEATURE_11BE_MLO_ADV_FEATURE */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 213)) && \
+	(LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0))
+/**
+ * osif_update_current_bss() - Wrapper API to call cfg80211_update_current_bss
+ * @dev: network device
+ * @bss: bss info
+ * @rsp: Connection manager connect response
+ * @vdev: pointer to vdev
+ *
+ * This API is used as wrapper to update the current bss param of non-assoc link
+ * sta vdev.
+ *
+ * Context: Any context.
+ * Return: QDF_STATUS.
+ */
+static QDF_STATUS osif_update_current_bss(struct net_device *dev,
+					  struct cfg80211_bss *bss,
+					  struct wlan_cm_connect_resp *rsp,
+					  struct wlan_objmgr_vdev *vdev)
+{
+	struct cfg80211_connect_resp_params conn_rsp_params;
+	enum ieee80211_statuscode status;
+	int ret;
+
+	osif_enter_dev(dev);
+
+	qdf_mem_zero(&conn_rsp_params, sizeof(conn_rsp_params));
+
+	status = osif_get_connect_status_code(rsp);
+	conn_rsp_params.status = status;
+	osif_copy_connected_info(&conn_rsp_params, rsp, bss, vdev);
+
+	osif_debug("Connect resp status %d", conn_rsp_params.status);
+	ret = cfg80211_update_current_bss(dev, &conn_rsp_params, rsp->ssid.ssid,
+					  rsp->ssid.length);
+	if (ret)
+		osif_err("cfg80211_update_current_bss failed for psoc:%d pdev:%d vdev:%d",
+			 wlan_vdev_get_psoc_id(vdev),
+			 wlan_objmgr_pdev_get_pdev_id(wlan_vdev_get_pdev(vdev)),
+			 wlan_vdev_get_id(vdev));
+
+	return qdf_status_from_os_return(ret);
+}
+
+/**
+ * osif_update_current_bss_for_non_assoc_link_vdevs() - API to update the
+ * current_bss param of non-assoc link STA vdev.
+ * @vdev: Pointer to vdev
+ * @arg: Connection manager connect response
+ *
+ * Return: None.
+ */
+static void osif_update_current_bss_for_non_assoc_link_vdevs(
+		struct wlan_objmgr_vdev *vdev, void *arg)
+{
+	struct wlan_objmgr_vdev *assoc_vdev;
+	struct wlan_cm_connect_resp resp = {0};
+	struct qdf_mac_addr macaddr = {0};
+	struct vdev_osif_priv *osif_priv = NULL;
+	struct wlan_cm_connect_resp *assoc_link_rsp;
+
+	assoc_link_rsp = (struct wlan_cm_connect_resp *)arg;
+	if (!assoc_link_rsp) {
+		osif_err("assoc_link_rsp is null");
+		return;
+	}
+
+	assoc_vdev = wlan_mlo_get_assoc_link_vdev(vdev);
+
+	/* For assoc vdev cfg80211_connect_done() is called to update the
+	 * current bss param. Hence, skip the assoc vdev here.
+	 */
+	if (vdev == assoc_vdev)
+		return;
+
+	wlan_vdev_mlme_get_ssid(vdev, resp.ssid.ssid, &resp.ssid.length);
+
+	wlan_vdev_get_bss_peer_mac(vdev, &macaddr);
+	qdf_mem_copy(resp.bssid.bytes, macaddr.bytes, QDF_MAC_ADDR_SIZE);
+
+	resp.connect_status = assoc_link_rsp->connect_status;
+
+	osif_debug("vdev:%p bssid:" QDF_MAC_ADDR_FMT " ssid.length:%d ssid: " QDF_SSID_FMT,
+		   vdev, QDF_MAC_ADDR_REF(macaddr.bytes), resp.ssid.length,
+		   QDF_SSID_REF(resp.ssid.length, resp.ssid.ssid));
+
+	osif_priv = wlan_vdev_get_ospriv(vdev);
+	osif_update_current_bss(osif_priv->wdev->netdev, NULL, &resp, vdev);
+}
+
+/**
+ * osif_update_current_bss_for_non_assoc_links() - API to update the
+ * current_bss param of non-assoc link STA vdev.
+ * @assoc_vdev: Pointer to assoc vdev
+ * @rsp: Connection manager connect response
+ *
+ * Return: None.
+ */
+static void osif_update_current_bss_for_non_assoc_links(
+		struct wlan_objmgr_vdev *assoc_vdev,
+		struct wlan_cm_connect_resp *rsp)
+{
+	mlo_iterate_connected_vdev_list(
+			assoc_vdev,
+			osif_update_current_bss_for_non_assoc_link_vdevs,
+			rsp);
+}
+#else
+static void osif_update_current_bss_for_non_assoc_links(
+		struct wlan_objmgr_vdev *assoc_vdev,
+		struct wlan_cm_connect_resp *rsp)
+{
+}
+#endif
+
 static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 					 struct vdev_osif_priv *osif_priv,
 					 struct wlan_cm_connect_resp *rsp)
@@ -900,9 +1035,11 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 			return;
 		qdf_mem_copy(&resp, rsp, sizeof(struct wlan_cm_connect_resp));
 		tmp_osif_priv  = wlan_vdev_get_ospriv(assoc_vdev);
-		freq = vdev->vdev_mlme.bss_chan->ch_freq;
-		wlan_vdev_get_bss_peer_mac(assoc_vdev, &macaddr);
+		freq = assoc_vdev->vdev_mlme.bss_chan->ch_freq;
+		qdf_mem_copy(macaddr.bytes, rsp->bssid.bytes,
+			     QDF_MAC_ADDR_SIZE);
 		if (QDF_IS_STATUS_SUCCESS(rsp->connect_status)) {
+			wlan_vdev_get_bss_peer_mac(assoc_vdev, &macaddr);
 			chan = ieee80211_get_channel(tmp_osif_priv->wdev->wiphy,
 						     freq);
 			bss = wlan_cfg80211_get_bss(tmp_osif_priv->wdev->wiphy,
@@ -921,6 +1058,10 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 		if (osif_update_connect_results(tmp_osif_priv->wdev->netdev, bss,
 						&resp, assoc_vdev))
 			osif_connect_bss(tmp_osif_priv->wdev->netdev, bss, &resp);
+
+		if (QDF_IS_STATUS_SUCCESS(rsp->connect_status))
+			osif_update_current_bss_for_non_assoc_links(assoc_vdev,
+								    rsp);
 	}
 }
 #endif /* WLAN_FEATURE_11BE_MLO_ADV_FEATURE */
@@ -1050,7 +1191,8 @@ static void osif_indcate_connect_results(struct wlan_objmgr_vdev *vdev,
 static inline
 bool osif_cm_is_unlink_bss_required(struct wlan_cm_connect_resp *rsp)
 {
-	if (QDF_IS_STATUS_SUCCESS(rsp->connect_status))
+	if (QDF_IS_STATUS_SUCCESS(rsp->connect_status) ||
+	    ucfg_cm_is_link_switch_connect_resp(rsp))
 		return false;
 
 	if (rsp->reason == CM_NO_CANDIDATE_FOUND ||
@@ -1073,25 +1215,45 @@ static inline void osif_check_and_unlink_bss(struct wlan_objmgr_vdev *vdev,
 {}
 #endif
 
+#define OSIF_CM_FAIL_INFO_STRING_SIZE 50
+
+static inline void
+osif_dump_connect_rsp(struct wlan_objmgr_vdev *vdev,
+		      struct vdev_osif_priv *osif_priv,
+		      struct wlan_cm_connect_resp *rsp)
+{
+	char fail_info[OSIF_CM_FAIL_INFO_STRING_SIZE] = {0};
+
+	/* Fill status code and reason only on failure */
+	if (QDF_IS_STATUS_ERROR(rsp->connect_status))
+		qdf_scnprintf(fail_info, sizeof(fail_info),
+			      "reason %d status %d %s",
+			      rsp->reason, rsp->status_code,
+			      rsp->send_disconnect ?
+			      ", Send disconnect" : "");
+
+	osif_nofl_info("%s(vdevid-%d): " QDF_MAC_ADDR_FMT " %s with " QDF_MAC_ADDR_FMT " \"" QDF_SSID_FMT "\" is %s, cmid 0x%x %s",
+		       osif_priv->wdev->netdev->name, rsp->vdev_id,
+		       QDF_MAC_ADDR_REF(wlan_vdev_mlme_get_macaddr(vdev)),
+		       rsp->is_reassoc ? "Roam" : "Connect",
+		       QDF_MAC_ADDR_REF(rsp->bssid.bytes),
+		       QDF_SSID_REF(rsp->ssid.length, rsp->ssid.ssid),
+		       rsp->connect_status ? "FAILURE" : "SUCCESS", rsp->cm_id,
+		       fail_info);
+}
+
 QDF_STATUS osif_connect_handler(struct wlan_objmgr_vdev *vdev,
 				struct wlan_cm_connect_resp *rsp)
 {
 	struct vdev_osif_priv *osif_priv  = wlan_vdev_get_ospriv(vdev);
 	QDF_STATUS status;
 
-	osif_nofl_info("%s(vdevid-%d): " QDF_MAC_ADDR_FMT " Connect with " QDF_MAC_ADDR_FMT " SSID \"" QDF_SSID_FMT "\" is %s cm_id 0x%x cm_reason %d status_code %d is_reassoc %d send discon %d",
-		       osif_priv->wdev->netdev->name, rsp->vdev_id,
-		       QDF_MAC_ADDR_REF(wlan_vdev_mlme_get_macaddr(vdev)),
-		       QDF_MAC_ADDR_REF(rsp->bssid.bytes),
-		       QDF_SSID_REF(rsp->ssid.length, rsp->ssid.ssid),
-		       rsp->connect_status ? "FAILURE" : "SUCCESS", rsp->cm_id,
-		       rsp->reason, rsp->status_code, rsp->is_reassoc,
-		       rsp->send_disconnect);
-
+	osif_dump_connect_rsp(vdev, osif_priv, rsp);
 	osif_check_and_unlink_bss(vdev, rsp);
 
 	status = osif_validate_connect_and_reset_src_id(osif_priv, rsp);
-	if (QDF_IS_STATUS_ERROR(status)) {
+	if (QDF_IS_STATUS_ERROR(status) ||
+	    ucfg_cm_is_link_switch_connect_resp(rsp)) {
 		osif_cm_connect_comp_ind(vdev, rsp, OSIF_NOT_HANDLED);
 		return status;
 	}
@@ -1137,12 +1299,7 @@ QDF_STATUS osif_failed_candidate_handler(struct wlan_objmgr_vdev *vdev,
 {
 	struct vdev_osif_priv *osif_priv  = wlan_vdev_get_ospriv(vdev);
 
-	osif_nofl_info("%s(vdevid-%d): " QDF_MAC_ADDR_FMT " Connect with " QDF_MAC_ADDR_FMT " SSID \"" QDF_SSID_FMT "\" FAILED cm_id 0x%x cm_reason %d reason_code %d",
-		       osif_priv->wdev->netdev->name, rsp->vdev_id,
-		       QDF_MAC_ADDR_REF(wlan_vdev_mlme_get_macaddr(vdev)),
-		       QDF_MAC_ADDR_REF(rsp->bssid.bytes),
-		       QDF_SSID_REF(rsp->ssid.length, rsp->ssid.ssid),
-		       rsp->cm_id, rsp->reason, rsp->status_code);
+	osif_dump_connect_rsp(vdev, osif_priv, rsp);
 
 	/**
 	 * Do not unlink the BSS if it is an ML candidate. In case of ML,

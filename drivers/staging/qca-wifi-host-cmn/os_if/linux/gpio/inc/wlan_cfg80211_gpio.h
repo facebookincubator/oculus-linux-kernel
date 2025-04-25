@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -36,6 +37,7 @@ extern const struct nla_policy
 
 /**
  * wlan_cfg80211_start_gpio_config() - set GPIO config
+ * @wiphy: target wiphy
  * @psoc: pointer to psoc common object
  * @data: Pointer to the data to be passed via vendor interface
  * @data_len: Length of the data to be passed

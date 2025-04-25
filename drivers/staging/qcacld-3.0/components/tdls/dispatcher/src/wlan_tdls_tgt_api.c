@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -362,6 +363,5 @@ void tgt_tdls_peers_deleted_notification(struct wlan_objmgr_psoc *psoc,
 void tgt_tdls_delete_all_peers_indication(struct wlan_objmgr_psoc *psoc,
 					  uint32_t session_id)
 {
-
-	tdls_delete_all_peers_indication(psoc, session_id);
+	tdls_check_and_indicate_delete_all_peers(psoc, session_id);
 }

@@ -132,6 +132,10 @@
 #define CE_MSI_ADDRESS_HIGH       (scn->target_ce_def->d_CE_MSI_ADDRESS_HIGH)
 #define CE_MSI_DATA               (scn->target_ce_def->d_CE_MSI_DATA)
 #define CE_MSI_ENABLE_BIT         (scn->target_ce_def->d_CE_MSI_ENABLE_BIT)
+#define CE_SRC_BATCH_TIMER_INT_SETUP \
+	(scn->target_ce_def->d_CE_SRC_BATCH_TIMER_INT_SETUP)
+#define CE_DST_BATCH_TIMER_INT_SETUP \
+	(scn->target_ce_def->d_CE_DST_BATCH_TIMER_INT_SETUP)
 #define MISC_IE_ADDRESS           (scn->target_ce_def->d_MISC_IE_ADDRESS)
 #define MISC_IS_AXI_ERR_MASK      (scn->target_ce_def->d_MISC_IS_AXI_ERR_MASK)
 #define MISC_IS_DST_ADDR_ERR_MASK \
@@ -280,11 +284,24 @@ uint32_t DEBUG_CE_DEST_RING_READ_IDX_GET(struct hif_softc *scn,
 #define BITS32_TO_35(val) ((uint32_t)(((uint64_t)(val)\
 				     & (uint64_t)(0xF00000000))>>32))
 
-#define VADDR_FOR_CE(scn, CE_ctrl_addr)\
-	((scn->vaddr_rri_on_ddr) + COPY_ENGINE_ID(CE_ctrl_addr))
+#ifdef WLAN_40BIT_ADDRESSING_SUPPORT
+#define RRI_ON_DDR_PADDR_HIGH(val) (uint32_t)(((uint64_t)(val) >> 32) & 0xFF)
+#else
+#define RRI_ON_DDR_PADDR_HIGH(val) BITS32_TO_35(val)
+#endif
+#define RRI_ON_DDR_PADDR_LOW(val) BITS0_TO_31(val)
 
+#ifdef WLAN_64BIT_DATA_SUPPORT
+#define VADDR_FOR_CE(scn, CE_ctrl_addr)\
+	(((uint64_t *)((scn)->vaddr_rri_on_ddr)) + COPY_ENGINE_ID(CE_ctrl_addr))
+#define SRRI_FROM_DDR_ADDR(addr) ((*(addr)) & 0xFFFF)
+#define DRRI_FROM_DDR_ADDR(addr) (((*(addr)) >> 32) & 0xFFFF)
+#else
+#define VADDR_FOR_CE(scn, CE_ctrl_addr)\
+	(((uint32_t *)((scn)->vaddr_rri_on_ddr)) + COPY_ENGINE_ID(CE_ctrl_addr))
 #define SRRI_FROM_DDR_ADDR(addr) ((*(addr)) & 0xFFFF)
 #define DRRI_FROM_DDR_ADDR(addr) (((*(addr))>>16) & 0xFFFF)
+#endif
 
 #define CE_SRC_RING_READ_IDX_GET_FROM_REGISTER(scn, CE_ctrl_addr) \
 	A_TARGET_READ(scn, (CE_ctrl_addr) + CURRENT_SRRI_ADDRESS)
@@ -304,6 +321,7 @@ uint32_t DEBUG_CE_DEST_RING_READ_IDX_GET(struct hif_softc *scn,
 	DRRI_FROM_DDR_ADDR(VADDR_FOR_CE(scn, CE_ctrl_addr))
 #endif
 
+#ifndef QCA_WIFI_WCN6450
 unsigned int hif_get_src_ring_read_index(struct hif_softc *scn,
 		uint32_t CE_ctrl_addr);
 unsigned int hif_get_dst_ring_read_index(struct hif_softc *scn,
@@ -313,6 +331,12 @@ unsigned int hif_get_dst_ring_read_index(struct hif_softc *scn,
 	hif_get_src_ring_read_index(scn, CE_ctrl_addr)
 #define CE_DEST_RING_READ_IDX_GET(scn, CE_ctrl_addr)\
 	hif_get_dst_ring_read_index(scn, CE_ctrl_addr)
+#else
+#define CE_SRC_RING_READ_IDX_GET(scn, CE_ctrl_addr)\
+	CE_SRC_RING_READ_IDX_GET_FROM_DDR(scn, CE_ctrl_addr)
+#define CE_DEST_RING_READ_IDX_GET(scn, CE_ctrl_addr)\
+	CE_DEST_RING_READ_IDX_GET_FROM_DDR(scn, CE_ctrl_addr)
+#endif
 #else
 #define CE_SRC_RING_READ_IDX_GET(scn, CE_ctrl_addr) \
 	CE_SRC_RING_READ_IDX_GET_FROM_REGISTER(scn, CE_ctrl_addr)
@@ -328,6 +352,12 @@ unsigned int hif_get_dst_ring_read_index(struct hif_softc *scn,
 	A_TARGET_READ(scn, (CE_ctrl_addr) + CURRENT_SRRI_ADDRESS)
 #endif
 
+#ifdef WLAN_40BIT_ADDRESSING_SUPPORT
+#define CE_RING_BASE_ADDR_HIGH_MASK 0xFF
+#else
+#define CE_RING_BASE_ADDR_HIGH_MASK 0x1F
+#endif
+
 #define CE_SRC_RING_BASE_ADDR_SET(scn, CE_ctrl_addr, addr) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + SR_BA_ADDRESS, (addr))
 
@@ -339,6 +369,12 @@ unsigned int hif_get_dst_ring_read_index(struct hif_softc *scn,
 
 #define CE_SRC_RING_SZ_SET(scn, CE_ctrl_addr, n) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + SR_SIZE_ADDRESS, (n))
+
+#define CE_IDX_UPD_EN_DMAX_LEN_SET(scn, CE_ctrl_addr, n) \
+	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_CTRL1_ADDRESS, \
+	   ((A_TARGET_READ(scn, (CE_ctrl_addr) + \
+	   CE_CTRL1_ADDRESS) & ~CE_CTRL1_DMAX_LENGTH_MASK) | \
+	   CE_CTRL1_DMAX_LENGTH_SET(n) | CE_CTRL1_IDX_UPD_EN))
 
 #define CE_SRC_RING_DMAX_SET(scn, CE_ctrl_addr, n) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_CTRL1_ADDRESS, \
@@ -363,8 +399,64 @@ unsigned int hif_get_dst_ring_read_index(struct hif_softc *scn,
 #define CE_MSI_ADDR_HIGH_SET(scn, CE_ctrl_addr, addr) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_MSI_ADDRESS_HIGH, (addr))
 
+#define CE_MSI_ADDR_HIGH_GET(scn, CE_ctrl_addr) \
+	A_TARGET_READ(scn, (CE_ctrl_addr) + CE_MSI_ADDRESS_HIGH)
+
 #define CE_MSI_DATA_SET(scn, CE_ctrl_addr, data) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_MSI_DATA, (data))
+
+#define CE_MSI_EN_SET(scn, CE_ctrl_addr) \
+	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_CTRL1_ADDRESS, \
+	(A_TARGET_READ(scn, (CE_ctrl_addr) + CE_CTRL1_ADDRESS) \
+	| CE_MSI_ENABLE_BIT))
+
+#define CE_SRC_BATCH_TIMER_THRESHOLD 0
+#define CE_SRC_BATCH_COUNTER_THRESHOLD 1
+#define CE_DST_BATCH_TIMER_THRESHOLD 512
+#define CE_DST_BATCH_COUNTER_THRESHOLD 0
+
+#define CE_SRC_BATCH_TIMER_THRESH_MASK \
+	(scn->target_ce_def->d_CE_SRC_BATCH_TIMER_THRESH_MASK)
+#define CE_SRC_BATCH_TIMER_THRESH_LSB \
+	(scn->target_ce_def->d_CE_SRC_BATCH_TIMER_THRESH_LSB)
+#define CE_SRC_BATCH_COUNTER_THRESH_MASK \
+	(scn->target_ce_def->d_CE_SRC_BATCH_COUNTER_THRESH_MASK)
+#define CE_SRC_BATCH_COUNTER_THRESH_LSB \
+	(scn->target_ce_def->d_CE_SRC_BATCH_COUNTER_THRESH_LSB)
+#define CE_DST_BATCH_TIMER_THRESH_MASK \
+	(scn->target_ce_def->d_CE_DST_BATCH_TIMER_THRESH_MASK)
+#define CE_DST_BATCH_TIMER_THRESH_LSB \
+	(scn->target_ce_def->d_CE_DST_BATCH_TIMER_THRESH_LSB)
+#define CE_DST_BATCH_COUNTER_THRESH_MASK \
+	(scn->target_ce_def->d_CE_DST_BATCH_COUNTER_THRESH_MASK)
+#define CE_DST_BATCH_COUNTER_THRESH_LSB \
+	(scn->target_ce_def->d_CE_DST_BATCH_COUNTER_THRESH_LSB)
+
+#define CE_CHANNEL_SRC_BATCH_TIMER_INT_SETUP_GET(scn, CE_ctrl_addr) \
+	A_TARGET_READ(scn, (CE_ctrl_addr) + CE_SRC_BATCH_TIMER_INT_SETUP)
+#define CE_CHANNEL_DST_BATCH_TIMER_INT_SETUP_GET(scn, CE_ctrl_addr) \
+	A_TARGET_READ(scn, (CE_ctrl_addr) + CE_DST_BATCH_TIMER_INT_SETUP)
+
+#define CE_CHANNEL_SRC_BATCH_TIMER_INT_SETUP(scn, CE_ctrl_addr, data) \
+	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_SRC_BATCH_TIMER_INT_SETUP, data)
+#define CE_CHANNEL_DST_BATCH_TIMER_INT_SETUP(scn, CE_ctrl_addr, data) \
+	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_DST_BATCH_TIMER_INT_SETUP, data)
+
+#define HOST_IE_SRC_TIMER_BATCH_MASK \
+	(scn->target_ce_def->d_HOST_IE_SRC_TIMER_BATCH_MASK)
+#define HOST_IE_DST_TIMER_BATCH_MASK \
+	(scn->target_ce_def->d_HOST_IE_DST_TIMER_BATCH_MASK)
+
+#define CE_CHANNEL_SRC_TIMER_BATCH_INT_EN(scn, CE_ctrl_addr) \
+	A_TARGET_WRITE(scn, (CE_ctrl_addr) + HOST_IE_ADDRESS, \
+		       A_TARGET_READ(scn, \
+		       (CE_ctrl_addr) + HOST_IE_ADDRESS) | \
+		       HOST_IE_SRC_TIMER_BATCH_MASK)
+#define CE_CHANNEL_DST_TIMER_BATCH_INT_EN(scn, CE_ctrl_addr) \
+	A_TARGET_WRITE(scn, (CE_ctrl_addr) + HOST_IE_ADDRESS, \
+		       A_TARGET_READ(scn, \
+		       (CE_ctrl_addr) + HOST_IE_ADDRESS) | \
+		       HOST_IE_DST_TIMER_BATCH_MASK)
 
 #define CE_CTRL_REGISTER1_SET(scn, CE_ctrl_addr, val) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + CE_CTRL1_ADDRESS, val)
@@ -538,17 +630,29 @@ unsigned int hif_get_dst_ring_read_index(struct hif_softc *scn,
 #define NUM_SHADOW_REGISTERS 24
 u32 shadow_sr_wr_ind_addr(struct hif_softc *scn, u32 ctrl_addr);
 u32 shadow_dst_wr_ind_addr(struct hif_softc *scn, u32 ctrl_addr);
+
+#define CE_SRC_WR_IDX_OFFSET_GET(scn, CE_ctrl_addr) \
+	shadow_sr_wr_ind_addr(scn, CE_ctrl_addr)
+#define CE_DST_WR_IDX_OFFSET_GET(scn, CE_ctrl_addr) \
+	shadow_dst_wr_ind_addr(scn, CE_ctrl_addr)
+#else
+#define CE_SRC_WR_IDX_OFFSET_GET(scn, CE_ctrl_addr) \
+	CE_ctrl_addr + SR_WR_INDEX_ADDRESS
+#define CE_DST_WR_IDX_OFFSET_GET(scn, CE_ctrl_addr) \
+	CE_ctrl_addr + DST_WR_INDEX_ADDRESS
 #endif
 
-
-#ifdef ADRASTEA_SHADOW_REGISTERS
+#if defined(FEATURE_HIF_DELAYED_REG_WRITE)
+#define CE_SRC_RING_WRITE_IDX_SET(scn, CE_ctrl_addr, n) \
+	A_TARGET_DELAYED_REG_WRITE(scn, CE_ctrl_addr, n)
+#define CE_DEST_RING_WRITE_IDX_SET(scn, CE_ctrl_addr, n) \
+	A_TARGET_DELAYED_REG_WRITE(scn, CE_ctrl_addr, n)
+#elif defined(ADRASTEA_SHADOW_REGISTERS)
 #define CE_SRC_RING_WRITE_IDX_SET(scn, CE_ctrl_addr, n) \
 	A_TARGET_WRITE(scn, shadow_sr_wr_ind_addr(scn, CE_ctrl_addr), n)
 #define CE_DEST_RING_WRITE_IDX_SET(scn, CE_ctrl_addr, n) \
 	A_TARGET_WRITE(scn, shadow_dst_wr_ind_addr(scn, CE_ctrl_addr), n)
-
 #else
-
 #define CE_SRC_RING_WRITE_IDX_SET(scn, CE_ctrl_addr, n) \
 	A_TARGET_WRITE(scn, (CE_ctrl_addr) + SR_WR_INDEX_ADDRESS, (n))
 #define CE_DEST_RING_WRITE_IDX_SET(scn, CE_ctrl_addr, n) \

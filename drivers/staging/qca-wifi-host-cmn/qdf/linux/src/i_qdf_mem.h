@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,6 +49,8 @@
  */
 #define GFP_KERNEL 0
 #define GFP_ATOMIC 0
+#define __GFP_KSWAPD_RECLAIM 0
+#define __GFP_DIRECT_RECLAIM 0
 #define kzalloc(size, flags) NULL
 #define vmalloc(size)        NULL
 #define kfree(buf)
@@ -58,8 +60,9 @@
 #define QDF_RET_IP NULL
 #endif /* __KERNEL__ */
 #include <qdf_status.h>
-#if defined(__ANDROID_COMMON_KERNEL__) && \
-	(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)) && defined(MSM_PLATFORM)
+#if (defined(__ANDROID_COMMON_KERNEL__) && \
+		(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)) && \
+		(defined(MSM_PLATFORM) || defined(QCA_IPA_LL_TX_FLOW_CONTROL)))
 #include <linux/qcom-iommu-util.h>
 #endif
 
@@ -119,12 +122,14 @@ typedef struct kmem_cache *qdf_kmem_cache_t;
 	QDF_DEBUG_PANIC(reason_fmt, ## args)
 #endif
 
-/* typedef for dma_data_direction */
+/**
+ * typedef __dma_data_direction - typedef for dma_data_direction
+ */
 typedef enum dma_data_direction __dma_data_direction;
 
 /**
  * __qdf_dma_dir_to_os() - Convert DMA data direction to OS specific enum
- * @dir: QDF DMA data direction
+ * @qdf_dir: QDF DMA data direction
  *
  * Return:
  * enum dma_data_direction
@@ -207,24 +212,104 @@ static inline void __qdf_mem_unmap_nbytes_single(qdf_device_t osdev,
 
 typedef __qdf_mempool_ctxt_t *__qdf_mempool_t;
 
-int __qdf_mempool_init(qdf_device_t osdev, __qdf_mempool_t *pool, int pool_cnt,
-		       size_t pool_entry_size, u_int32_t flags);
+/**
+ * __qdf_mempool_init() - Create and initialize memory pool
+ * @osdev: platform device object
+ * @pool_addr: address of the pool created
+ * @elem_cnt: no. of elements in pool
+ * @elem_size: size of each pool element in bytes
+ * @flags: flags
+ *
+ * Return: Handle to memory pool or NULL if allocation failed
+ */
+int __qdf_mempool_init(qdf_device_t osdev, __qdf_mempool_t *pool_addr,
+		       int elem_cnt, size_t elem_size, u_int32_t flags);
+
+/**
+ * __qdf_mempool_destroy() - Destroy memory pool
+ * @osdev: platform device object
+ * @pool: memory pool
+ *
+ * Returns: none
+ */
 void __qdf_mempool_destroy(qdf_device_t osdev, __qdf_mempool_t pool);
+
+/**
+ * __qdf_mempool_alloc() - Allocate an element memory pool
+ * @osdev: platform device object
+ * @pool: to memory pool
+ *
+ * Return: Pointer to the allocated element or NULL if the pool is empty
+ */
 void *__qdf_mempool_alloc(qdf_device_t osdev, __qdf_mempool_t pool);
+
+/**
+ * __qdf_mempool_free() - Free a memory pool element
+ * @osdev: Platform device object
+ * @pool: Handle to memory pool
+ * @buf: Element to be freed
+ *
+ * Return: none
+ */
 void __qdf_mempool_free(qdf_device_t osdev, __qdf_mempool_t pool, void *buf);
+
+/**
+ * __qdf_kmem_cache_create() - OS abstraction for cache creation
+ * @cache_name: Cache name
+ * @size: Size of the object to be created
+ *
+ * Return: Cache address on successful creation, else NULL
+ */
 qdf_kmem_cache_t __qdf_kmem_cache_create(const char *cache_name,
 					 qdf_size_t size);
+
+/**
+ * __qdf_kmem_cache_destroy() - OS abstraction for cache destruction
+ * @cache: Cache pointer
+ *
+ * Return: void
+ */
 void __qdf_kmem_cache_destroy(qdf_kmem_cache_t cache);
-void* __qdf_kmem_cache_alloc(qdf_kmem_cache_t cache);
+
+/**
+ * __qdf_kmem_cache_alloc() - Function to allocation object from a cache
+ * @cache: Cache address
+ *
+ * Return: Object from cache
+ *
+ */
+void *__qdf_kmem_cache_alloc(qdf_kmem_cache_t cache);
+
+/**
+ * __qdf_kmem_cache_free() - Function to free cache object
+ * @cache: Cache address
+ * @node: Object to be returned to cache
+ *
+ * Return: void
+ */
 void __qdf_kmem_cache_free(qdf_kmem_cache_t cache, void *node);
+
 #define QDF_RET_IP ((void *)_RET_IP_)
 
 #define __qdf_mempool_elem_size(_pool) ((_pool)->elem_size)
 #endif
 
 /**
+ * __qdf_ioremap() - map bus memory into cpu space
+ * @HOST_CE_ADDRESS: bus address of the memory
+ * @HOST_CE_SIZE: memory size to map
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+#define __qdf_ioremap(HOST_CE_ADDRESS, HOST_CE_SIZE) \
+		   ioremap(HOST_CE_ADDRESS, HOST_CE_SIZE)
+#else
+#define __qdf_ioremap(HOST_CE_ADDRESS, HOST_CE_SIZE) \
+		   ioremap_nocache(HOST_CE_ADDRESS, HOST_CE_SIZE)
+#endif
+
+/**
  * __qdf_mem_smmu_s1_enabled() - Return SMMU stage 1 translation enable status
- * @osdev parent device instance
+ * @osdev: parent device instance
  *
  * Return: true if smmu s1 enabled, false if smmu s1 is bypassed
  */
@@ -234,8 +319,8 @@ static inline bool __qdf_mem_smmu_s1_enabled(qdf_device_t osdev)
 }
 
 #if IS_ENABLED(CONFIG_ARM_SMMU) && defined(ENABLE_SMMU_S1_TRANSLATION)
-/*
- * typedef __qdf_iommu_domain_t: abstraction for struct iommu_domain
+/**
+ * typedef __qdf_iommu_domain_t - abstraction for struct iommu_domain
  */
 typedef struct iommu_domain __qdf_iommu_domain_t;
 
@@ -584,7 +669,7 @@ __qdf_mem_set_dma_size(qdf_device_t osdev,
 }
 
 /**
- * __qdf_mem_get_dma_size() - Return DMA physical address
+ * __qdf_mem_get_dma_pa() - Return DMA physical address
  * @osdev: parent device instance
  * @mem_info: Pointer to allocated memory information
  *
@@ -598,7 +683,7 @@ __qdf_mem_get_dma_pa(qdf_device_t osdev,
 }
 
 /**
- * __qdf_mem_set_dma_size() - Set DMA physical address
+ * __qdf_mem_set_dma_pa() - Set DMA physical address
  * @osdev: parent device instance
  * @mem_info: Pointer to allocated memory information
  * @dma_pa: DMA phsical address
@@ -673,11 +758,18 @@ void *__qdf_mem_valloc(size_t size, const char *func, uint32_t line);
  */
 void __qdf_mem_vfree(void *ptr);
 
+/**
+ * __qdf_mem_virt_to_phys() - Convert virtual address to physical
+ * @vaddr: virtual address
+ *
+ * Return: physical address
+ */
+#define __qdf_mem_virt_to_phys(vaddr) virt_to_phys(vaddr)
+
 #ifdef QCA_WIFI_MODULE_PARAMS_FROM_INI
 /**
  * __qdf_untracked_mem_malloc() - allocates non-QDF memory
  * @size: Number of bytes of memory to allocate.
- *
  * @func: Function name of the call site
  * @line: line number of the call site
  *

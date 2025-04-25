@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -50,12 +51,17 @@
 #define sm_engine_nofl_debug(params...) \
 	QDF_TRACE_DEBUG_NO_FL(QDF_MODULE_ID_SM_ENGINE, params)
 
-#define WLAN_SM_ENGINE_HISTORY_SIZE  50
+#ifdef CONN_MGR_ADV_FEATURE
+#define WLAN_SM_ENGINE_HISTORY_SIZE 15
+#else
+#define WLAN_SM_ENGINE_HISTORY_SIZE 50
+#endif /* CONN_MGR_ADV_FEATURE */
+
 struct wlan_sm;
 /**
  * enum wlan_sm_trace_type - history element type
- * @SM_EVENT_STATE_TRANSITION - Represents state transition
- * @SM_EVENT_MSG_PROCESSING - Represents event processing
+ * @SM_EVENT_STATE_TRANSITION: Represents state transition
+ * @SM_EVENT_MSG_PROCESSING: Represents event processing
  */
 enum wlan_sm_trace_type {
 	SM_EVENT_STATE_TRANSITION = 1,
@@ -63,13 +69,15 @@ enum wlan_sm_trace_type {
 };
 
 #ifdef SM_ENG_HIST_ENABLE
-
+#define WLAN_SM_PID_MAX_LEN 7
 /**
  * struct wlan_sm_history_info - history element structure
  * @trace_type:      history element type
  * @event_type:      Type of the event
  * @initial_state:   Current state (state/sub-state)
  * @final_state:     New state
+ * @time:            Timestamp
+ * @pid_name:        Name of task (truncated to WLAN_SM_PID_MAX_LEN bytes)
  */
 struct wlan_sm_history_info {
 	enum wlan_sm_trace_type trace_type;
@@ -77,6 +85,7 @@ struct wlan_sm_history_info {
 	uint8_t initial_state;
 	uint8_t final_state;
 	uint64_t time;
+	char pid_name[WLAN_SM_PID_MAX_LEN];
 };
 
 /**

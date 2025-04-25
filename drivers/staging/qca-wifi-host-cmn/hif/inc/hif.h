@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,6 +26,7 @@ extern "C" {
 
 /* Header files */
 #include <qdf_status.h>
+#include "qdf_ipa.h"
 #include "qdf_nbuf.h"
 #include "qdf_lro.h"
 #include "ol_if_athvar.h"
@@ -83,6 +84,9 @@ typedef void *hif_handle_t;
 #define HIF_TYPE_MANGO 29
 #define HIF_TYPE_QCA5332 30
 #define HIF_TYPE_QCN9160 31
+#define HIF_TYPE_PEACH 32
+#define HIF_TYPE_WCN6450 33
+#define HIF_TYPE_QCN6432 34
 
 #define DMA_COHERENT_MASK_DEFAULT   37
 
@@ -135,7 +139,6 @@ enum hif_ic_irq {
 	txmon2host_monitor_destination_mac2,
 	txmon2host_monitor_destination_mac1,
 	host2tx_monitor_ring1,
-	umac_reset,
 };
 
 #ifdef QCA_SUPPORT_LEGACY_INTERRUPTS
@@ -308,6 +311,23 @@ struct qca_napi_stat {
 #endif
 };
 
+/*Number of buckets for latency*/
+#define HIF_SCHED_LATENCY_BUCKETS 8
+
+/*Buckets for latency between 0 to 2 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_0_2 2
+/*Buckets for latency between 3 to 10 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_3_10 10
+/*Buckets for latency between 11 to 20 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_11_20 20
+/*Buckets for latency between 21 to 50 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_21_50 50
+/*Buckets for latency between 50 to 100 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_51_100 100
+/*Buckets for latency between 100 to 250 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_101_250 250
+/*Buckets for latency between 250 to 500 ms*/
+#define HIF_SCHED_LATENCY_BUCKET_251_500 500
 
 /**
  * struct qca_napi_info - per NAPI instance data structure
@@ -324,6 +344,9 @@ struct qca_napi_stat {
  * @rx_thread_napi:
  * @rx_thread_netdev:
  * @lro_ctx:
+ * @poll_start_time: napi poll service start time
+ * @sched_latency_stats: napi schedule latency stats
+ * @tstamp: napi schedule start timestamp
  *
  * This data structure holds stuff per NAPI instance.
  * Note that, in the current implementation, though scale is
@@ -347,6 +370,13 @@ struct qca_napi_info {
 	struct net_device    rx_thread_netdev;
 #endif /* RECEIVE_OFFLOAD */
 	qdf_lro_ctx_t        lro_ctx;
+#ifdef WLAN_FEATURE_RX_SOFTIRQ_TIME_LIMIT
+	unsigned long long poll_start_time;
+#endif
+#ifdef HIF_LATENCY_PROFILE_ENABLE
+	uint64_t sched_latency_stats[HIF_SCHED_LATENCY_BUCKETS];
+	uint64_t tstamp;
+#endif
 };
 
 enum qca_napi_tput_state {
@@ -400,7 +430,7 @@ struct qca_napi_cpu {
  * @exec_map: bit map of instantiated exec contexts
  * @user_cpu_affin_mask: CPU affinity mask from INI config.
  * @napis:
- * @napi_cpu: cpu info for irq affinty
+ * @napi_cpu: cpu info for irq affinity
  * @lilcl_head:
  * @bigcl_head:
  * @napi_mode: irq affinity & clock voting mode
@@ -432,6 +462,7 @@ struct qca_napi_data {
  * @enable_runtime_pm: Enable Runtime PM
  * @runtime_pm_delay: Runtime PM Delay
  * @rx_softirq_max_yield_duration_ns: Max Yield time duration for RX Softirq
+ * @enable_ce_dp_irq_affine: Enable affinity for CE DP IRQs
  *
  * Structure for holding HIF ini parameters.
  */
@@ -442,6 +473,9 @@ struct hif_config_info {
 	u_int32_t runtime_pm_delay;
 #endif
 	uint64_t rx_softirq_max_yield_duration_ns;
+#ifdef FEATURE_ENABLE_CE_DP_IRQ_AFFINE
+	bool enable_ce_dp_irq_affine;
+#endif
 };
 
 /**
@@ -595,6 +629,29 @@ struct hif_event_misc {
 	int32_t last_irq_index;
 	uint64_t last_irq_ts;
 };
+
+#ifdef WLAN_FEATURE_AFFINITY_MGR
+/**
+ * struct hif_cpu_affinity - CPU affinity mask info for IRQ
+ *
+ * @current_irq_mask: Current CPU mask set for IRQ
+ * @wlan_requested_mask: CPU mask requested by WLAN
+ * @walt_taken_mask: Current CPU taken by Audio
+ * @last_updated: Last time IRQ CPU affinity was updated
+ * @last_affined_away: Last time when IRQ was affined away
+ * @update_requested: IRQ affinity hint set requested by WLAN
+ * @irq: IRQ number
+ */
+struct hif_cpu_affinity {
+	qdf_cpu_mask current_irq_mask;
+	qdf_cpu_mask wlan_requested_mask;
+	qdf_cpu_mask walt_taken_mask;
+	uint64_t last_updated;
+	uint64_t last_affined_away;
+	bool update_requested;
+	int irq;
+};
+#endif
 
 /**
  * struct hif_event_history - history for one interrupt group
@@ -1104,6 +1161,51 @@ struct hif_pipe_addl_info {
 
 struct hif_bus_id;
 
+#ifdef CUSTOM_CB_SCHEDULER_SUPPORT
+/**
+ * hif_register_ce_custom_cb() - Helper API to register the custom callback
+ * @hif_ctx: HIF opaque context
+ * @pipe: Pipe number
+ * @custom_cb: Custom call back function pointer
+ * @custom_cb_context: Custom callback context
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+hif_register_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe,
+			  void (*custom_cb)(void *), void *custom_cb_context);
+
+/**
+ * hif_unregister_ce_custom_cb() - Helper API to unregister the custom callback
+ * @hif_ctx: HIF opaque context
+ * @pipe: Pipe number
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+hif_unregister_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe);
+
+/**
+ * hif_enable_ce_custom_cb() - Helper API to enable the custom callback
+ * @hif_ctx: HIF opaque context
+ * @pipe: Pipe number
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+hif_enable_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe);
+
+/**
+ * hif_disable_ce_custom_cb() - Helper API to disable the custom callback
+ * @hif_ctx: HIF opaque context
+ * @pipe: Pipe number
+ *
+ * return: QDF_STATUS
+ */
+QDF_STATUS
+hif_disable_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe);
+#endif /* CUSTOM_CB_SCHEDULER_SUPPORT */
+
 void hif_claim_device(struct hif_opaque_softc *hif_ctx);
 QDF_STATUS hif_get_config_item(struct hif_opaque_softc *hif_ctx,
 		     int opcode, void *config, uint32_t config_len);
@@ -1486,10 +1588,11 @@ QDF_STATUS hif_rtpm_sync_resume(void);
 /**
  * hif_rtpm_check_and_request_resume() - check if bus is suspended and
  *                                       request resume.
+ * @suspend_in_progress: Request resume if suspend is in progress
  *
  * Return: void
  */
-void hif_rtpm_check_and_request_resume(void);
+void hif_rtpm_check_and_request_resume(bool suspend_in_progress);
 
 /**
  * hif_rtpm_set_client_job() - Set job for the client.
@@ -1663,6 +1766,15 @@ void hif_rtpm_display_last_busy_hist(struct hif_opaque_softc *hif_ctx);
  */
 void hif_rtpm_record_ce_last_busy_evt(struct hif_softc *scn,
 				      unsigned long ce_id);
+
+/**
+ * hif_set_enable_rpm() - Set enable_rpm value
+ * @hif_hdl: hif opaque handle
+ *
+ *  Return: None
+ */
+void hif_set_enable_rpm(struct hif_opaque_softc *hif_hdl);
+
 #else
 
 /**
@@ -1741,7 +1853,7 @@ void hif_rtpm_request_resume(void)
 {}
 
 static inline
-void hif_rtpm_check_and_request_resume(void)
+void hif_rtpm_check_and_request_resume(bool suspend_in_progress)
 {}
 
 static inline
@@ -1771,6 +1883,11 @@ void hif_rtpm_set_monitor_wake_intr(int val)
 static inline
 void hif_rtpm_mark_last_busy(uint32_t id)
 {}
+
+static inline
+void hif_set_enable_rpm(struct hif_opaque_softc *hif_hdl)
+{
+}
 #endif
 
 void hif_enable_power_management(struct hif_opaque_softc *hif_ctx,
@@ -1806,7 +1923,7 @@ enum ipa_hw_type hif_get_ipa_hw_type(void)
 static inline
 bool hif_get_ipa_present(void)
 {
-	if (ipa_uc_reg_rdyCB(NULL) != -EPERM)
+	if (qdf_ipa_uc_reg_rdyCB(NULL) != -EPERM)
 		return true;
 	else
 		return false;
@@ -2086,7 +2203,8 @@ int hif_force_wake_release(struct hif_opaque_softc *handle)
 }
 #endif /* FORCE_WAKE */
 
-#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#if defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HIF_DELAYED_REG_WRITE)
 /**
  * hif_prevent_link_low_power_states() - Prevent from going to low power states
  * @hif: HIF opaque context
@@ -2263,6 +2381,14 @@ hif_softc_to_hif_opaque_softc(struct hif_softc *hif_handle)
 	return (struct hif_opaque_softc *)hif_handle;
 }
 
+/**
+ * hif_try_complete_dp_tasks() - Try to complete all DP related tasks
+ * @hif_ctx: opaque softc handle
+ *
+ * Return: QDF_STATUS of operation
+ */
+QDF_STATUS hif_try_complete_dp_tasks(struct hif_opaque_softc *hif_ctx);
+
 #if defined(HIF_IPCI) && defined(FEATURE_HAL_DELAYED_REG_WRITE)
 QDF_STATUS hif_try_prevent_ep_vote_access(struct hif_opaque_softc *hif_ctx);
 void hif_set_ep_intermediate_vote_access(struct hif_opaque_softc *hif_ctx);
@@ -2356,7 +2482,8 @@ void hif_log_ce_info(struct hif_softc *scn, uint8_t *data,
 }
 #endif
 
-#ifdef HIF_CPU_PERF_AFFINE_MASK
+#if defined(HIF_CPU_PERF_AFFINE_MASK) || \
+	defined(FEATURE_ENABLE_CE_DP_IRQ_AFFINE)
 /**
  * hif_config_irq_set_perf_affinity_hint() - API to set affinity
  * @hif_ctx: hif opaque handle
@@ -2634,14 +2761,16 @@ uint8_t hif_get_max_wmi_ep(struct hif_opaque_softc *scn);
 /**
  * hif_register_umac_reset_handler() - Register UMAC HW reset handler
  * @hif_scn: hif opaque handle
- * @handler: callback handler function
+ * @irq_handler: irq callback handler function
+ * @tl_handler: tasklet callback handler function
  * @cb_ctx: context to passed to @handler
  * @irq: irq number to be used for UMAC HW reset interrupt
  *
  * Return: QDF_STATUS of operation
  */
 QDF_STATUS hif_register_umac_reset_handler(struct hif_opaque_softc *hif_scn,
-					   int (*handler)(void *cb_ctx),
+					   bool (*irq_handler)(void *cb_ctx),
+					   int (*tl_handler)(void *cb_ctx),
 					   void *cb_ctx, int irq);
 
 /**
@@ -2651,10 +2780,13 @@ QDF_STATUS hif_register_umac_reset_handler(struct hif_opaque_softc *hif_scn,
  * Return: QDF_STATUS of operation
  */
 QDF_STATUS hif_unregister_umac_reset_handler(struct hif_opaque_softc *hif_scn);
+QDF_STATUS hif_get_umac_reset_irq(struct hif_opaque_softc *hif_scn,
+				  int *umac_reset_irq);
 #else
 static inline
 QDF_STATUS hif_register_umac_reset_handler(struct hif_opaque_softc *hif_scn,
-					   int (*handler)(void *cb_ctx),
+					   bool (*irq_handler)(void *cb_ctx),
+					   int (*tl_handler)(void *cb_ctx),
 					   void *cb_ctx, int irq)
 {
 	return QDF_STATUS_SUCCESS;
@@ -2662,6 +2794,13 @@ QDF_STATUS hif_register_umac_reset_handler(struct hif_opaque_softc *hif_scn,
 
 static inline
 QDF_STATUS hif_unregister_umac_reset_handler(struct hif_opaque_softc *hif_scn)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+QDF_STATUS hif_get_umac_reset_irq(struct hif_opaque_softc *hif_scn,
+				  int *umac_reset_irq)
 {
 	return QDF_STATUS_SUCCESS;
 }
@@ -2731,4 +2870,133 @@ hif_get_direct_link_ce_srng_info(struct hif_opaque_softc *scn,
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+static inline QDF_STATUS
+hif_irq_set_affinity_hint(int irq_num, qdf_cpu_mask *cpu_mask)
+{
+	QDF_STATUS status;
+
+	qdf_dev_modify_irq_status(irq_num, IRQ_NO_BALANCING, 0);
+	status = qdf_dev_set_irq_affinity(irq_num,
+					  (struct qdf_cpu_mask *)cpu_mask);
+	qdf_dev_modify_irq_status(irq_num, 0, IRQ_NO_BALANCING);
+
+	return status;
+}
+
+#ifdef WLAN_FEATURE_AFFINITY_MGR
+/**
+ * hif_affinity_mgr_init_ce_irq() - Init for CE IRQ
+ * @scn: hif opaque handle
+ * @id: CE ID
+ * @irq: IRQ assigned
+ *
+ * Return: None
+ */
+void
+hif_affinity_mgr_init_ce_irq(struct hif_softc *scn, int id, int irq);
+
+/**
+ * hif_affinity_mgr_init_grp_irq() - Init for group IRQ
+ * @scn: hif opaque handle
+ * @grp_id: GRP ID
+ * @irq_num: IRQ number of hif ext group
+ * @irq: IRQ number assigned
+ *
+ * Return: None
+ */
+void
+hif_affinity_mgr_init_grp_irq(struct hif_softc *scn, int grp_id,
+			      int irq_num, int irq);
+
+/**
+ * hif_affinity_mgr_set_qrg_irq_affinity() - Set affinity for group IRQ
+ * @scn: hif opaque handle
+ * @irq: IRQ assigned
+ * @grp_id: GRP ID
+ * @irq_index: IRQ number of hif ext group
+ * @cpu_mask: reuquested cpu_mask for IRQ
+ *
+ * Return: status
+ */
+QDF_STATUS
+hif_affinity_mgr_set_qrg_irq_affinity(struct hif_softc *scn, uint32_t irq,
+				      uint32_t grp_id, uint32_t irq_index,
+				      qdf_cpu_mask *cpu_mask);
+
+/**
+ * hif_affinity_mgr_set_ce_irq_affinity() - Set affinity for CE IRQ
+ * @scn: hif opaque handle
+ * @irq: IRQ assigned
+ * @ce_id: CE ID
+ * @cpu_mask: reuquested cpu_mask for IRQ
+ *
+ * Return: status
+ */
+QDF_STATUS
+hif_affinity_mgr_set_ce_irq_affinity(struct hif_softc *scn, uint32_t irq,
+				     uint32_t ce_id, qdf_cpu_mask *cpu_mask);
+
+/**
+ * hif_affinity_mgr_affine_irq() - Affine CE and GRP IRQs
+ * @scn: hif opaque handle
+ *
+ * Return: None
+ */
+void hif_affinity_mgr_affine_irq(struct hif_softc *scn);
+#else
+static inline void
+hif_affinity_mgr_init_ce_irq(struct hif_softc *scn, int id, int irq)
+{
+}
+
+static inline void
+hif_affinity_mgr_init_grp_irq(struct hif_softc *scn, int grp_id, int irq_num,
+			      int irq)
+{
+}
+
+static inline QDF_STATUS
+hif_affinity_mgr_set_qrg_irq_affinity(struct hif_softc *scn, uint32_t irq,
+				      uint32_t grp_id, uint32_t irq_index,
+				      qdf_cpu_mask *cpu_mask)
+{
+	return hif_irq_set_affinity_hint(irq, cpu_mask);
+}
+
+static inline QDF_STATUS
+hif_affinity_mgr_set_ce_irq_affinity(struct hif_softc *scn, uint32_t irq,
+				     uint32_t ce_id, qdf_cpu_mask *cpu_mask)
+{
+	return hif_irq_set_affinity_hint(irq, cpu_mask);
+}
+
+static inline
+void hif_affinity_mgr_affine_irq(struct hif_softc *scn)
+{
+}
+#endif
+
+/**
+ * hif_affinity_mgr_set_affinity() - Affine CE and GRP IRQs
+ * @scn: hif opaque handle
+ *
+ * Return: None
+ */
+void hif_affinity_mgr_set_affinity(struct hif_opaque_softc *scn);
+
+#ifdef FEATURE_HIF_DELAYED_REG_WRITE
+/**
+ * hif_print_reg_write_stats() - Print hif delayed reg write stats
+ * @hif_ctx: hif opaque handle
+ *
+ * Return: None
+ */
+void hif_print_reg_write_stats(struct hif_opaque_softc *hif_ctx);
+#else
+static inline void hif_print_reg_write_stats(struct hif_opaque_softc *hif_ctx)
+{
+}
+#endif
+void hif_ce_print_ring_stats(struct hif_opaque_softc *hif_ctx);
 #endif /* _HIF_H_ */

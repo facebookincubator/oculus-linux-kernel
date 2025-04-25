@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -66,36 +66,16 @@ void dp_reo_cmd_srng_event_record(struct dp_soc *soc,
 #endif /*WLAN_FEATURE_DP_EVENT_HISTORY */
 
 #ifdef DP_UMAC_HW_RESET_SUPPORT
-/**
- * dp_pause_reo_send_cmd() - Pause Reo send commands.
- * @soc: dp soc
- *
- * Return: status
- */
 void dp_pause_reo_send_cmd(struct dp_soc *soc)
 {
 	hal_unregister_reo_send_cmd(soc->hal_soc);
 }
 
-/**
- * dp_resume_reo_send_cmd() - Resume Reo send commands.
- * @soc: dp soc
- *
- * Return: status
- */
 void dp_resume_reo_send_cmd(struct dp_soc *soc)
 {
 	hal_register_reo_send_cmd(soc->hal_soc);
 }
 
-/**
- * dp_reset_rx_reo_tid_queue() - Reset the reo tid queues
- * @soc: dp soc
- * @hw_qdesc_vaddr: starting address of the tid queues
- * @size: size of the memory pointed to by hw_qdesc_vaddr
- *
- * Return: status
- */
 void
 dp_reset_rx_reo_tid_queue(struct dp_soc *soc, void *hw_qdesc_vaddr,
 			  uint32_t size)
@@ -195,11 +175,6 @@ next:
 	return processed_count;
 }
 
-/**
- * dp_reo_cmdlist_destroy - Free REO commands in the queue
- * @soc: DP SoC handle
- *
- */
 void dp_reo_cmdlist_destroy(struct dp_soc *soc)
 {
 	struct dp_reo_cmd_info *reo_cmd = NULL;
@@ -221,11 +196,6 @@ void dp_reo_cmdlist_destroy(struct dp_soc *soc)
 }
 
 #ifdef DP_UMAC_HW_RESET_SUPPORT
-/**
- * dp_cleanup_reo_cmd_module - Clean up the reo cmd module
- * @soc: DP SoC handle
- *
- */
 void dp_cleanup_reo_cmd_module(struct dp_soc *soc)
 {
 	dp_reo_cmdlist_destroy(soc);

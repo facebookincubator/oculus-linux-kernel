@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2012,2016-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -125,6 +125,7 @@ enum hdd_wmm_linuxac {
  * @magic: magic number used to verify that this is a valid context when
  *	referenced anonymously
  * @is_inactivity_timer_running: true if inactivity timer is running
+ * @ts_id: identifier which gets used at time of DEL request
  */
 struct hdd_wmm_qos_context {
 	struct list_head node;
@@ -136,6 +137,7 @@ struct hdd_wmm_qos_context {
 	struct work_struct implicit_qos_work;
 	uint32_t magic;
 	bool is_inactivity_timer_running;
+	uint8_t ts_id;
 };
 
 /**

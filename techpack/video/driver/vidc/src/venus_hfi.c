@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  */
-/* Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include <linux/iommu.h>
 #include <linux/qcom_scm.h>
@@ -27,6 +27,10 @@
 #include "hfi_packet.h"
 #include "venus_hfi_response.h"
 #include "msm_vidc_events.h"
+
+#if defined(CONFIG_MSM_VIDC_ANORAK)
+#include "msm_vidc_anorak.h"
+#endif
 
 #define MAX_FIRMWARE_NAME_SIZE 128
 
@@ -1148,7 +1152,8 @@ static void __flush_debug_queue(struct msm_vidc_core *core,
 		 * line.
 		 */
 		log = (u8 *)packet + sizeof(struct hfi_debug_header) + 1;
-		dprintk_firmware(log_level, "%s", log);
+		log_level = (msm_vidc_debug & ~FW_LOGMASK) | (pkt->debug_level << FW_LOGSHIFT);
+		dprintk_firmware(log_level, pkt->size, "%s", log);
 	}
 
 	if (local_packet)
@@ -2218,6 +2223,11 @@ void venus_hfi_interface_queues_deinit(struct msm_vidc_core *core)
 		d_vpr_h("%s: queues already deallocated\n", __func__);
 		return;
 	}
+#if defined(CONFIG_MSM_VIDC_ANORAK)
+	msm_vidc_iommu_unmap(core, &core->aoss_timer.map);
+	core->aoss_timer.align_virtual_addr = NULL;
+	core->aoss_timer.align_device_addr = 0;
+#endif
 
 	msm_vidc_memory_unmap(core, &core->iface_q_table.map);
 	msm_vidc_memory_free(core, &core->iface_q_table.alloc);
@@ -2382,6 +2392,22 @@ int venus_hfi_interface_queues_init(struct msm_vidc_core *core)
 	/* write sfr buffer size in first word */
 	*((u32 *)core->sfr.align_virtual_addr) = core->sfr.mem_size;
 
+#if defined(CONFIG_MSM_VIDC_ANORAK)
+	/* map AOSS timer registers for profiling */
+	memset(&map, 0, sizeof(map));
+	map.region       = MSM_VIDC_NON_SECURE;
+	map.size         = AOSS_TS_REG_SIZE;
+	map.phys_addr    = AOSS_TS_REG_PA;
+	map.device_addr  = AOSS_TS_REG_VA;
+	rc = msm_vidc_iommu_map(core, &map);
+	if (rc) {
+		d_vpr_e("%s: aoss timer reg map failed\n", __func__);
+		return rc;
+	}
+	core->aoss_timer.align_device_addr = map.device_addr;
+	core->aoss_timer.mem_size = map.size;
+	core->aoss_timer.map = map;
+#endif
 	return 0;
 fail_alloc_queue:
 	return -ENOMEM;

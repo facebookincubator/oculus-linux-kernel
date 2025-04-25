@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -215,6 +215,7 @@ static int ipd_i2c_read8_16(struct i2c_client *client,
 		dev_err(&client->dev, "[ipd] I2C Read Error\n");
 		for (i = 0 ; i < wordLen ; i++)
 			rdata[i] = 0;
+		return ret;
 	} else {
 		rdata[0] = (u16)rx[0];
 		for (i = 1 ; i < wordLen ; i++)

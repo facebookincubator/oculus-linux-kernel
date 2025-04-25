@@ -34,6 +34,7 @@ struct wlan_objmgr_debug_info;
  * @psoc:                      Array of PSOCs to maintain PSOC's list,
  *                             its optional
  * @mlo_ctx:                   MLO manager global context
+ * @global_ctx:                DP global context
  * @psoc_create_handler:       PSOC create handler array
  * @psoc_create_handler_arg:   PSOC create handler args array
  * @psoc_destroy_handler:      PSOC destroy handler array
@@ -66,6 +67,9 @@ struct wlan_objmgr_global {
 	struct wlan_objmgr_psoc *psoc[WLAN_OBJMGR_MAX_DEVICES];
 #ifdef WLAN_FEATURE_11BE_MLO
 	struct mlo_mgr_context *mlo_ctx;
+#endif
+#ifdef QCA_SUPPORT_DP_GLOBAL_CTX
+	struct dp_global_context *global_ctx;
 #endif
 	wlan_objmgr_psoc_create_handler
 		psoc_create_handler[WLAN_UMAC_MAX_COMPONENTS];

@@ -121,10 +121,13 @@
 #include "hal_be_rx_tlv.h"
 
 #include <hal_generic_api.h>
-#include <hal_be_generic_api.h>
 #include "hal_be_api_mon.h"
+#include <hal_be_generic_api.h>
 
 #define LINK_DESC_SIZE (NUM_OF_DWORDS_RX_MSDU_LINK << 2)
+
+/* For Berryllium sw2rxdma ring size increased to 20 bits */
+#define HAL_RXDMA_MAX_RING_SIZE_BE 0xFFFFF
 
 #ifdef QCA_GET_TSF_VIA_REG
 #define PCIE_PCIE_MHI_TIME_LOW 0xA28
@@ -144,10 +147,10 @@ static uint32_t hal_get_link_desc_size_kiwi(void)
 }
 
 /**
- * hal_rx_dump_msdu_end_tlv_kiwi: dump RX msdu_end TLV in structured
+ * hal_rx_dump_msdu_end_tlv_kiwi() - dump RX msdu_end TLV in structured
  *			     human readable format.
- * @ msdu_end: pointer the msdu_end TLV in pkt.
- * @ dbg_level: log level.
+ * @msduend: pointer the msdu_end TLV in pkt.
+ * @dbg_level: log level.
  *
  * Return: void
  */
@@ -253,7 +256,6 @@ static void hal_rx_dump_msdu_end_tlv_kiwi(void *msduend,
 			"reo_destination_indication :%x "
 			"flow_idx :%x "
 			"use_ppe :%x "
-			"__reserved_g_0003 :%x "
 			"vlan_ctag_stripped :%x "
 			"vlan_stag_stripped :%x "
 			"fragment_flag :%x "
@@ -286,7 +288,6 @@ static void hal_rx_dump_msdu_end_tlv_kiwi(void *msduend,
 			msdu_end->reo_destination_indication,
 			msdu_end->flow_idx,
 			msdu_end->use_ppe,
-			msdu_end->__reserved_g_0003,
 			msdu_end->vlan_ctag_stripped,
 			msdu_end->vlan_stag_stripped,
 			msdu_end->fragment_flag,
@@ -808,8 +809,8 @@ static uint8_t *hal_rx_desc_get_80211_hdr_be(void *hw_desc_addr)
 }
 
 /**
- * hal_rx_dump_pkt_hdr_tlv: dump RX pkt header TLV in hex format
- * @pkt_hdr_tlv: pointer the pkt_hdr_tlv in pkt.
+ * hal_rx_dump_pkt_hdr_tlv_kiwi() - dump RX pkt header TLV in hex format
+ * @pkt_tlvs: pointer the pkt_hdr_tlv in pkt.
  * @dbg_level: log level.
  *
  * Return: void
@@ -822,7 +823,7 @@ static inline void hal_rx_dump_pkt_hdr_tlv_kiwi(struct rx_pkt_tlvs *pkt_tlvs,
 	hal_verbose_debug("\n---------------\n"
 			  "rx_pkt_hdr_tlv\n"
 			  "---------------\n"
-			  "phy_ppdu_id %lld ",
+			  "phy_ppdu_id 0x%x ",
 			  pkt_hdr_tlv->phy_ppdu_id);
 
 	hal_verbose_hex_dump(pkt_hdr_tlv->rx_pkt_hdr,
@@ -844,9 +845,9 @@ void hal_register_rx_pkt_hdr_tlv_api_kiwi(struct hal_soc *hal_soc)
 #endif
 
 /**
- * hal_rx_dump_mpdu_start_tlv_generic_be: dump RX mpdu_start TLV in structured
+ * hal_rx_dump_mpdu_start_tlv_kiwi(): dump RX mpdu_start TLV in structured
  *			       human readable format.
- * @mpdu_start: pointer the rx_attention TLV in pkt.
+ * @mpdustart: pointer the rx_attention TLV in pkt.
  * @dbg_level: log level.
  *
  * Return: void
@@ -1148,12 +1149,12 @@ hal_rx_tlv_populate_mpdu_desc_info_kiwi(uint8_t *buf,
 }
 
 /**
- * hal_reo_status_get_header_kiwi - Process reo desc info
- * @d - Pointer to reo descriptor
- * @b - tlv type info
- * @h1 - Pointer to hal_reo_status_header where info to be stored
+ * hal_reo_status_get_header_kiwi() - Process reo desc info
+ * @ring_desc: Pointer to reo descriptor
+ * @b: tlv type info
+ * @h1: Pointer to hal_reo_status_header where info to be stored
  *
- * Return - none.
+ * Return: none.
  *
  */
 static void hal_reo_status_get_header_kiwi(hal_ring_desc_t ring_desc, int b,
@@ -1275,10 +1276,10 @@ void *hal_dst_mpdu_desc_info_kiwi(void *dst_ring_desc)
 	return (void *)HAL_DST_MPDU_DESC_INFO(dst_ring_desc);
 }
 
-/*
- * hal_rx_get_tlv_kiwi(): API to get the tlv
- *
+/**
+ * hal_rx_get_tlv_kiwi() - API to get the tlv
  * @rx_tlv: TLV data extracted from the rx packet
+ *
  * Return: uint8_t
  */
 static uint8_t hal_rx_get_tlv_kiwi(void *rx_tlv)
@@ -1287,10 +1288,22 @@ static uint8_t hal_rx_get_tlv_kiwi(void *rx_tlv)
 }
 
 /**
+ * hal_rx_phy_legacy_get_rssi_kiwi() - API to get RSSI from TLV
+ *                                     WIFIPHYRX_RSSI_LEGACY_E
+ * @buf: pointer to the start of WIFIPHYRX_RSSI_LEGACY_E TLV
+ *
+ * Return: value of RSSI
+ */
+static int8_t hal_rx_phy_legacy_get_rssi_kiwi(uint8_t *buf)
+{
+	return HAL_RX_GET_64(buf, PHYRX_RSSI_LEGACY, RSSI_COMB_PPDU);
+}
+
+/**
  * hal_rx_proc_phyrx_other_receive_info_tlv_kiwi()
  *				    - process other receive info TLV
  * @rx_tlv_hdr: pointer to TLV header
- * @ppdu_info: pointer to ppdu_info
+ * @ppdu_info_handle: pointer to ppdu_info
  *
  * Return: None
  */
@@ -1341,9 +1354,9 @@ void hal_reo_config_kiwi(struct hal_soc *soc,
 
 /**
  * hal_rx_msdu_desc_info_get_ptr_kiwi() - Get msdu desc info ptr
- * @msdu_details_ptr - Pointer to msdu_details_ptr
+ * @msdu_details_ptr: Pointer to msdu_details_ptr
  *
- * Return - Pointer to rx_msdu_desc_info structure.
+ * Return: Pointer to rx_msdu_desc_info structure.
  *
  */
 static void *hal_rx_msdu_desc_info_get_ptr_kiwi(void *msdu_details_ptr)
@@ -1352,10 +1365,10 @@ static void *hal_rx_msdu_desc_info_get_ptr_kiwi(void *msdu_details_ptr)
 }
 
 /**
- * hal_rx_link_desc_msdu0_ptr_kiwi - Get pointer to rx_msdu details
- * @link_desc - Pointer to link desc
+ * hal_rx_link_desc_msdu0_ptr_kiwi() - Get pointer to rx_msdu details
+ * @link_desc: Pointer to link desc
  *
- * Return - Pointer to rx_msdu_details structure
+ * Return: Pointer to rx_msdu_details structure
  *
  */
 static void *hal_rx_link_desc_msdu0_ptr_kiwi(void *link_desc)
@@ -1448,9 +1461,9 @@ static uint8_t hal_reo_enable_pn_in_dest_kiwi(void *hal_soc)
 
 /**
  * hal_rx_flow_setup_fse_kiwi() - Setup a flow search entry in HW FST
- * @fst: Pointer to the Rx Flow Search Table
+ * @rx_fst: Pointer to the Rx Flow Search Table
  * @table_offset: offset into the table where the flow is to be setup
- * @flow: Flow Parameters
+ * @rx_flow: Flow Parameters
  *
  * Flow table entry fields are updated in host byte order, little endian order.
  *
@@ -1560,12 +1573,12 @@ hal_rx_flow_setup_fse_kiwi(uint8_t *rx_fst, uint32_t table_offset,
 	return fse;
 }
 
-/*
+/**
  * hal_rx_flow_setup_cmem_fse_kiwi() - Setup a flow search entry in HW CMEM FST
  * @hal_soc: hal_soc reference
  * @cmem_ba: CMEM base address
  * @table_offset: offset into the table where the flow is to be setup
- * @flow: Flow Parameters
+ * @rx_flow: Flow Parameters
  *
  * Return: Success/Failure
  */
@@ -1868,6 +1881,9 @@ static uint16_t hal_get_rx_max_ba_window_kiwi(int tid)
 /**
  * hal_get_reo_qdesc_size_kiwi()- Get the reo queue descriptor size
  *				  from the give Block-Ack window size
+ * @ba_window_size: Block-Ack window size
+ * @tid: TID
+ *
  * Return: reo queue descriptor size
  */
 static uint32_t hal_get_reo_qdesc_size_kiwi(uint32_t ba_window_size, int tid)
@@ -1948,6 +1964,7 @@ uint64_t hal_fw_qtime_to_usecs(uint64_t time)
 /**
  * hal_get_tsf_time_kiwi() - Get tsf time from scratch register
  * @hal_soc_hdl: HAL soc handle
+ * @tsf_id: TSF id
  * @mac_id: mac_id
  * @tsf: pointer to update tsf value
  * @tsf_sync_soc_time: pointer to update tsf sync time
@@ -2008,6 +2025,17 @@ static QDF_STATUS hal_rx_reo_ent_get_src_link_id_kiwi(hal_rxdma_desc_t rx_desc,
 	*src_link_id = reo_ent_desc->src_link_id;
 
 	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * hal_rx_en_mcast_fp_data_filter_kiwi() - Is mcast filter pass enabled
+ *
+ * Return: false for BE MCC
+ */
+static inline
+bool hal_rx_en_mcast_fp_data_filter_kiwi(void)
+{
+	return false;
 }
 
 #ifdef QCA_WIFI_KIWI_V2
@@ -2198,6 +2226,8 @@ static void hal_hw_txrx_ops_attach_kiwi(struct hal_soc *hal_soc)
 					hal_rx_msdu_desc_info_ptr_get_kiwi;
 	hal_soc->ops->hal_ent_mpdu_desc_info = hal_ent_mpdu_desc_info_kiwi;
 	hal_soc->ops->hal_dst_mpdu_desc_info = hal_dst_mpdu_desc_info_kiwi;
+	hal_soc->ops->hal_rx_phy_legacy_get_rssi =
+					hal_rx_phy_legacy_get_rssi_kiwi;
 	hal_soc->ops->hal_rx_get_fc_valid = hal_rx_get_fc_valid_be;
 	hal_soc->ops->hal_rx_get_to_ds_flag = hal_rx_get_to_ds_flag_be;
 	hal_soc->ops->hal_rx_get_mac_addr2_valid =
@@ -2341,6 +2371,18 @@ static void hal_hw_txrx_ops_attach_kiwi(struct hal_soc *hal_soc)
 #ifdef FEATURE_DIRECT_LINK
 	hal_soc->ops->hal_srng_set_msi_config = hal_srng_set_msi_config;
 #endif
+	hal_soc->ops->hal_rx_en_mcast_fp_data_filter =
+					hal_rx_en_mcast_fp_data_filter_kiwi;
+#ifdef WLAN_PKT_CAPTURE_TX_2_0
+	hal_soc->ops->hal_txmon_is_mon_buf_addr_tlv =
+				hal_txmon_is_mon_buf_addr_tlv_generic_be;
+	hal_soc->ops->hal_txmon_populate_packet_info =
+				hal_txmon_populate_packet_info_generic_be;
+	hal_soc->ops->hal_txmon_status_parse_tlv =
+				hal_txmon_status_parse_tlv_generic_be;
+	hal_soc->ops->hal_txmon_status_get_num_users =
+				hal_txmon_status_get_num_users_generic_be;
+#endif /* WLAN_PKT_CAPTURE_TX_2_0 */
 };
 
 struct hal_hw_srng_config hw_srng_table_kiwi[] = {
@@ -2761,9 +2803,39 @@ struct hal_hw_srng_config hw_srng_table_kiwi[] = {
 	{ /* REO2PPE */ 0},
 	{ /* PPE2TCL */ 0},
 	{ /* PPE_RELEASE */ 0},
-	{ /* TX_MONITOR_BUF */ 0},
-	{ /* TX_MONITOR_DST */ 0},
+#ifdef WLAN_PKT_CAPTURE_TX_2_0
+	{ /* TX_MONITOR_BUF */
+		.start_ring_id = HAL_SRNG_SW2TXMON_BUF0,
+		.max_rings = 1,
+		.entry_size = sizeof(struct mon_ingress_ring) >> 2,
+		.lmac_ring = TRUE,
+		.ring_dir = HAL_SRNG_SRC_RING,
+		/* reg_start is not set because LMAC rings are not accessed
+		 * from host
+		 */
+		.reg_start = {},
+		.reg_size = {},
+		.max_size = HAL_RXDMA_MAX_RING_SIZE_BE,
+	},
+	{ /* TX_MONITOR_DST */
+		.start_ring_id = HAL_SRNG_WMAC1_TXMON2SW0,
+		.max_rings = 2,
+		.entry_size = sizeof(struct mon_destination_ring) >> 2,
+		.lmac_ring = TRUE,
+		.ring_dir = HAL_SRNG_DST_RING,
+		/* reg_start is not set because LMAC rings are not accessed
+		 * from host
+		 */
+		.reg_start = {},
+		.reg_size = {},
+		.max_size = HAL_RXDMA_MAX_RING_SIZE_BE,
+	},
+#else
+	{0},
+	{0},
+#endif
 	{ /* SW2RXDMA_NEW */ 0},
+	{ /* SW2RXDMA_LINK_RELEASE */ 0},
 };
 
 /**
@@ -2785,10 +2857,6 @@ static inline void hal_srng_hw_reg_offset_init_kiwi(struct hal_soc *hal_soc)
 	hal_srng_hw_reg_offset_init_misc_1_kiwi(hal_soc);
 }
 
-/**
- * hal_kiwi_attach() - Attach kiwi target specific hal_soc ops,
- *			  offset and srng table
- */
 void hal_kiwi_attach(struct hal_soc *hal_soc)
 {
 	hal_soc->hw_srng_table = hw_srng_table_kiwi;

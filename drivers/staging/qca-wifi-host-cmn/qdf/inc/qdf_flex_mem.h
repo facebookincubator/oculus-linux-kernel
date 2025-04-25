@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,7 +42,7 @@
 #define QDF_FM_BITMAP_BITS (sizeof(QDF_FM_BITMAP) * 8)
 
 /**
- * qdf_flex_mem_pool - a pool of memory segments
+ * struct qdf_flex_mem_pool - a pool of memory segments
  * @seg_list: the list containing the memory segments
  * @lock: spinlock for protecting internal data structures
  * @reduction_limit: the minimum number of segments to keep during reduction
@@ -56,7 +56,7 @@ struct qdf_flex_mem_pool {
 };
 
 /**
- * qdf_flex_mem_segment - a memory pool segment
+ * struct qdf_flex_mem_segment - a memory pool segment
  * @node: the list node for membership in the memory pool
  * @dynamic: true if this segment was dynamically allocated
  * @used_bitmap: bitmap for tracking which items in the segment are in use

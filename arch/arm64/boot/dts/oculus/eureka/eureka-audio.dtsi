@@ -60,6 +60,7 @@
 		pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep
 				&pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
 		qcom,lpi-gpios;
+		#gpio-cells = <0>;
 	};
 
 	cdc_sen_tdm_gpios: sen_tdm_pinctrl {
@@ -70,6 +71,7 @@
 		pinctrl-1 = <&lpi_tdm2_sck_sleep &lpi_tdm2_ws_sleep
 				&lpi_tdm2_sd0_sleep &lpi_tdm2_sd1_sleep>;
 		qcom,lpi-gpios;
+		#gpio-cells = <0>;
 	};
 
 	cdc_dmic01_gpios: cdc_dmic01_pinctrl {

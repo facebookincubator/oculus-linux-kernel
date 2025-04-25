@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011, 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -44,6 +44,8 @@
 #include <htt_internal.h>
 
 #include <cds_utils.h>
+#include <ce_api.h>
+#include <ce_internal.h>
 
 /* IPA Micro controller TX data packet HTT Header Preset
  * 31 | 30  29 | 28 | 27 | 26  22  | 21   16 | 15  13   | 12  8      | 7 0
@@ -369,7 +371,7 @@ int htt_tx_attach(struct htt_pdev_t *pdev, int desc_pool_elems)
 				 * should point next page
 				 */
 				if (!cacheable_pages[i + 1]) {
-					ol_txrx_err("over flow num link %d\n",
+					ol_txrx_err("over flow num link %d",
 						   num_link);
 					goto free_htt_desc;
 				}
@@ -536,7 +538,7 @@ int htt_tx_attach(struct htt_pdev_t *pdev, int desc_pool_elems)
 				 * should pint next page
 				 */
 				if (!page_info->page_v_addr_start) {
-					ol_txrx_err("over flow num link %d\n",
+					ol_txrx_err("over flow num link %d",
 						num_link);
 					goto free_htt_desc;
 				}
@@ -1148,7 +1150,7 @@ static int htt_tx_ipa_uc_wdi_tx_buf_alloc(struct htt_pdev_t *pdev,
 		shared_tx_buffer = qdf_mem_shared_mem_alloc(pdev->osdev,
 							    uc_tx_buf_sz);
 		if (!shared_tx_buffer || !shared_tx_buffer->vaddr) {
-			qdf_print("IPA WDI TX buffer alloc fail %d allocated\n",
+			qdf_print("IPA WDI TX buffer alloc fail %d allocated",
 				tx_buffer_count);
 			goto out;
 		}
@@ -1444,12 +1446,12 @@ htt_tx_desc_fill_tso_info(htt_pdev_handle pdev, void *desc,
 		 tso_seg->seg.tso_flags;
 
 	/* First 24 bytes (6*4) contain the TSO flags */
-	TSO_DEBUG("%s seq# %u l2 len %d, ip len %d\n",
+	TSO_DEBUG("%s seq# %u l2 len %d, ip len %d",
 		  __func__,
 		  tso_seg->seg.tso_flags.tcp_seq_num,
 		  tso_seg->seg.tso_flags.l2_len,
 		  tso_seg->seg.tso_flags.ip_len);
-	TSO_DEBUG("%s flags 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n",
+	TSO_DEBUG("%s flags 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x",
 		  __func__,
 		  *word,
 		  *(word + 1),
@@ -1473,7 +1475,7 @@ htt_tx_desc_fill_tso_info(htt_pdev_handle pdev, void *desc,
 		/* [31:16] length of the first buffer */
 		*word = (tso_seg->seg.tso_frags[i].length << 16) | hi;
 		word++;
-		TSO_DEBUG("%s frag[%d] ptr_low 0x%x ptr_hi 0x%x len %u\n",
+		TSO_DEBUG("%s frag[%d] ptr_low 0x%x ptr_hi 0x%x len %u",
 			__func__, i,
 			msdu_ext_desc->frags[i].u.frag32.ptr_low,
 			msdu_ext_desc->frags[i].u.frag32.ptr_hi,
@@ -1770,7 +1772,7 @@ htt_tx_desc_init(htt_pdev_handle pdev,
 		uint32_t total_len = tso_info->curr_seg->seg.total_len;
 
 		HTT_TX_DESC_FRM_LEN_SET(local_word1, total_len);
-		TSO_DEBUG("%s setting HTT TX DESC Len = %d\n",
+		TSO_DEBUG("%s setting HTT TX DESC Len = %d",
 			  __func__, total_len);
 	} else {
 		HTT_TX_DESC_FRM_LEN_SET(local_word1, qdf_nbuf_len(msdu));
@@ -1850,9 +1852,9 @@ htt_tx_desc_init(htt_pdev_handle pdev,
 		(msdu_info->info.l2_hdr_type != htt_pkt_type_mgmt))) {
 		uint32_t pkt_offset = qdf_nbuf_get_frag_len(msdu, 0);
 
-		data_attr = hw_classify << QDF_CE_TX_CLASSIFY_BIT_S;
-		data_attr |= ce_pkt_type << QDF_CE_TX_PKT_TYPE_BIT_S;
-		data_attr |= pkt_offset  << QDF_CE_TX_PKT_OFFSET_BIT_S;
+		data_attr = hw_classify << CE_DESC_TX_CLASSIFY_BIT_S;
+		data_attr |= ce_pkt_type << CE_DESC_PKT_TYPE_BIT_S;
+		data_attr |= pkt_offset  << CE_DESC_PKT_OFFSET_BIT_S;
 	}
 
 	qdf_nbuf_data_attr_set(msdu, data_attr);

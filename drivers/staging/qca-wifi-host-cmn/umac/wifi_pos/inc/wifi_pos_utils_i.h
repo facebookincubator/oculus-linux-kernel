@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -76,10 +76,10 @@ struct wifi_pos_req_msg;
  * @vdev_id: vdev id
  *
  */
-struct qdf_packed app_reg_rsp_vdev_info {
+struct app_reg_rsp_vdev_info {
 	uint8_t dev_mode;
 	uint8_t vdev_id;
-};
+} qdf_packed;
 
 /**
  * struct wifi_app_reg_rsp - app registration response struct
@@ -87,10 +87,10 @@ struct qdf_packed app_reg_rsp_vdev_info {
  * @vdevs: array indicating all active vdev's information
  *
  */
-struct qdf_packed wifi_app_reg_rsp {
+struct wifi_app_reg_rsp {
 	uint8_t num_inf;
 	struct app_reg_rsp_vdev_info vdevs[1];
-};
+} qdf_packed;
 
 /**
  * struct oem_data_req - data request to be sent to firmware
@@ -129,12 +129,12 @@ struct oem_data_rsp {
  * @dest_mac: Mac address of the sta in the request.
  * @reserved: Reserved in error report.
  */
-struct qdf_packed wifi_pos_err_rpt {
+struct wifi_pos_err_rpt {
 	uint32_t tag_len;
 	uint32_t info;
 	uint8_t  dest_mac[QDF_MAC_ADDR_SIZE + 2];
 	uint32_t reserved;
-};
+} qdf_packed;
 
 #define OEM_MSG_RSP_HEAD_TAG_ID 33
 #define OEM_MEAS_RSP_HEAD_TAG_ID 41
@@ -148,7 +148,7 @@ struct qdf_packed wifi_pos_err_rpt {
  * @time_left: time left in the measurement req.
  * @err_rpt: Error report data.
  */
-struct qdf_packed wifi_pos_err_msg_report {
+struct wifi_pos_err_msg_report {
 	uint32_t msg_tag_len;
 	uint32_t msg_subtype;
 	uint32_t req_id;
@@ -156,7 +156,7 @@ struct qdf_packed wifi_pos_err_msg_report {
 	uint32_t pdev_id;
 	uint32_t time_left;
 	struct wifi_pos_err_rpt err_rpt;
-};
+} qdf_packed;
 
 /**
  * struct wifi_pos_dma_rings_cap - capabilities requested by firmware.
@@ -191,6 +191,7 @@ struct wifi_pos_dma_buf_info {
  * struct wifi_pos_dma_rings_cfg - DMA ring parameters to be programmed to FW.
  * @pdev_id: pdev_id of ring
  * @num_ptr: depth of ring
+ * @ring_alloc_size: size of the ring allocation
  * @base_paddr_unaligned: base physical addr unaligned
  * @base_vaddr_unaligned: base virtual addr unaligned
  * @base_paddr_aligned: base physical addr aligned
@@ -315,7 +316,7 @@ struct wifi_pos_psoc_priv_obj {
 	qdf_spinlock_t wifi_pos_lock;
 	bool oem_6g_support_disable;
 	bool enable_rsta_secure_ltf_support;
-	bool enable_rsta_11az_ranging;
+	uint32_t enable_rsta_11az_ranging;
 	struct wifi_pos_legacy_ops *legacy_ops;
 	QDF_STATUS (*wifi_pos_req_handler)(struct wlan_objmgr_psoc *psoc,
 				    struct wifi_pos_req_msg *req);
@@ -386,7 +387,7 @@ void wifi_pos_set_psoc(struct wlan_objmgr_psoc *psoc);
 struct wlan_objmgr_psoc *wifi_pos_get_psoc(void);
 
 /**
- * wifi_pos_get_psoc: API to clear global PSOC object
+ * wifi_pos_clear_psoc: API to clear global PSOC object
  *
  * Return: none.
  */

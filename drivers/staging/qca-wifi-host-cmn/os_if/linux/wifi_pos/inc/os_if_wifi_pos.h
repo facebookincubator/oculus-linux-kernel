@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2017, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -127,6 +127,7 @@ static inline int os_if_wifi_pos_populate_caps(struct wlan_objmgr_psoc *psoc,
  * @CLD80211_VENDOR_SUB_CMD_OEM_DATA: oem data req/rsp
  * @CLD80211_VENDOR_SUB_CMD_OEM_ERROR: oem error rsp
  * @CLD80211_VENDOR_SUB_CMD_PEER_STATUS_IND: peer status indication
+ * @CLD80211_VENDOR_SUB_CMD__AFTER_LAST: internal marker
  * @CLD80211_VENDOR_SUB_CMD_MAX: Max cld80211 vendor sub cmds
  */
 enum cld80211_vendor_sub_cmds {
@@ -160,6 +161,7 @@ enum cld80211_vendor_sub_cmds {
  * @CLD80211_SUB_ATTR_CAPS_CURRENT_DWELL_TIME_MAX: Current dwell time max
  * @CLD80211_SUB_ATTR_CAPS_SUPPORTED_BANDS: Supported bands
  * @CLD80211_SUB_ATTR_CAPS_USER_DEFINED_CAPS: User defined capabilities
+ * @CLD80211_SUB_ATTR_CAPS_AFTER_LAST: internal marker
  * @CLD80211_SUB_ATTR_CAPS_MAX: Max number for CAP sub attribute
  *
  */
@@ -190,7 +192,7 @@ enum cld80211_sub_attr_cap_rsp {
  * @CLD80211_SUB_ATTR_CH_RESP_INVALID: Invalid channel resp
  * @CLD80211_SUB_ATTR_CH_MORE_DATA: More date sub attr for frag response
  * @CLD80211_SUB_ATTR_CHANNEL_NUM_CHAN: Number of channels in response
- * @CLD80211_SUB_ATTR_CHANNEL_LIST: Channel list nesting
+ * @CLD80211_SUB_ATTR_CH_LIST: Channel list nesting
  * @CLD80211_SUB_ATTR_CH_CHAN_ID: Channel number
  * @CLD80211_SUB_ATTR_CH_MHZ: Channel frequency
  * @CLD80211_SUB_ATTR_CH_BAND_CF_1: Center frequency 1
@@ -198,7 +200,8 @@ enum cld80211_sub_attr_cap_rsp {
  * @CLD80211_SUB_ATTR_CH_INFO: channel info
  * @CLD80211_SUB_ATTR_CH_REG_INFO_1: regulatory info field 1
  * @CLD80211_SUB_ATTR_CH_REG_INFO_2: regulatory info field 2
- * @CLD80211_SUB_ATTR_CAPS_MAX: Max number for CHAN Info sub attribute
+ * @CLD80211_SUB_ATTR_CH_AFTER_LAST: internal marker
+ * @CLD80211_SUB_ATTR_CH_MAX: Max number for CHAN Info sub attribute
  *
  */
 enum cld80211_sub_attr_channel_rsp {
@@ -227,6 +230,7 @@ enum cld80211_sub_attr_channel_rsp {
  * @CLD80211_SUB_ATTR_MSG_OEM_DATA_INVALID: Invalid OEM data request
  * @CLD80211_SUB_ATTR_MSG_OEM_DATA_FW: Data to Firmware
  * @CLD80211_SUB_ATTR_MSG_OEM_DATA_DRIVER: Data to driver
+ * @CLD80211_SUB_ATTR_MSG_OEM_DATA_REQ_AFTER_LAST: internal marker
  * @CLD80211_SUB_ATTR_MSG_OEM_DATA_REQ_MAX: Max number for OEM data req sub
  * attribute
  *
@@ -250,6 +254,7 @@ enum cld80211_sub_attr_oem_data_req {
  * @CLD80211_SUB_ATTR_OEM_DATA_INVALID: Invalid oem data resp
  * @CLD80211_SUB_ATTR_OEM_MORE_DATA: more date sub attribute
  * @CLD80211_SUB_ATTR_BINARY_DATA: Binary data sub attribute
+ * @CLD80211_SUB_ATTR_OEM_DATA_RESP_AFTER_LAST: internal marker
  * @CLD80211_SUB_ATTR_OEM_DATA_RESP_MAX: Max number for OEM data resp
  * sub attribute
  *
@@ -277,6 +282,8 @@ enum cld80211_sub_attr_oem_data_resp {
  * @CLD80211_SUB_ATTR_PEER_CAPABILITY: peer capabilities
  * @CLD80211_SUB_ATTR_PEER_RESERVED: reserved bytes
  * @CLD80211_SUB_ATTR_PEER_CHAN_INFO: peer channel info
+ * @CLD80211_SUB_ATTR_PEER_AFTER_LAST: internal marker
+ * @CLD80211_SUB_ATTR_PEER_MAX: Max number for peer sub attribute
  *
  */
 enum cld80211_sub_attr_peer_info {

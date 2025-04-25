@@ -60,6 +60,9 @@
 /* AEB error count threshold */
 #define CAM_ISP_CONTEXT_AEB_ERROR_CNT_MAX 3
 
+/* UL fastpath error count threshold */
+#define CAM_ISP_CONTEXT_UL_FP_ERROR_CNT_MAX 3
+
 #define CAM_ISP_SLAVE_TS_LSB_IDX      4
 #define CAM_ISP_SLAVE_TS_MSB_IDX      5
 
@@ -477,6 +480,16 @@ struct cam_isp_context_ul_fp_handling_params {
  *                             this stream
  * @ul_fp_params:              Parameters to maintain the ul fastpath result queue
  * @ul_fp_results:             Result queue associated with ul fastpath streams
+ * @ul_fp_err_cnt:             Count of fastpath errors
+ * @stream_image_free_list:    List of free image buffers
+ * @stream_image_ready_list:   List of image buffers that are ready
+ * @stream_image_umd_list:     List of image buffers sent to umd driver
+ * @stream_image_active_list:  List of buffers whose buf done is active
+ * @num_stream_images:         Total number of valid image buffers
+ * @stream_images:             Frame/Image buffers
+ * @stream_image_completion:   Stream images are available to send to UMD
+ * @stream_image_applied:      Frame applied to ISP
+ * @stream_image_wait:         Used to sync multiple waiters
  */
 struct cam_isp_context {
 	struct cam_context              *base;
@@ -569,6 +582,7 @@ struct cam_isp_context {
   uint64_t                               primary_port_exp_mask;
 	struct cam_isp_context_ul_fp_handling_params ul_fp_params;
 	struct cam_isp_context_ul_fp_results *ul_fp_results;
+	int32_t                               ul_fp_err_cnt;
 
 	struct list_head                      stream_image_free_list;
 	struct list_head                      stream_image_ready_list;

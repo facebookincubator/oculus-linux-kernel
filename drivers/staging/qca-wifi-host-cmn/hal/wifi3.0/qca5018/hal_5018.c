@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -132,10 +132,10 @@
 #include "hal_li_generic_api.h"
 
 /**
- * hal_rx_msdu_start_nss_get_5018(): API to get the NSS
+ * hal_rx_msdu_start_nss_get_5018() - API to get the NSS
  * Interval from rx_msdu_start
- *
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(nss)
  */
 static uint32_t hal_rx_msdu_start_nss_get_5018(uint8_t *buf)
@@ -151,10 +151,10 @@ static uint32_t hal_rx_msdu_start_nss_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_start_get_len_5018(): API to get the MSDU length
+ * hal_rx_msdu_start_get_len_5018() - API to get the MSDU length
  * from rx_msdu_start TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: (uint32_t)msdu length
  */
 static uint32_t hal_rx_msdu_start_get_len_5018(uint8_t *buf)
@@ -170,10 +170,10 @@ static uint32_t hal_rx_msdu_start_get_len_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_mon_hw_desc_get_mpdu_status_5018(): Retrieve MPDU status
+ * hal_rx_mon_hw_desc_get_mpdu_status_5018() - Retrieve MPDU status
  *
- * @ hw_desc_addr: Start address of Rx HW TLVs
- * @ rs: Status for monitor mode
+ * @hw_desc_addr: Start address of Rx HW TLVs
+ * @rs: Status for monitor mode
  *
  * Return: void
  */
@@ -207,7 +207,7 @@ static void hal_rx_mon_hw_desc_get_mpdu_status_5018(void *hw_desc_addr,
 
 #define LINK_DESC_SIZE (NUM_OF_DWORDS_RX_MSDU_LINK << 2)
 /**
- * hal_get_link_desc_size_5018(): API to get the link desc size
+ * hal_get_link_desc_size_5018() - API to get the link desc size
  *
  * Return: uint32_t
  */
@@ -217,9 +217,9 @@ static uint32_t hal_get_link_desc_size_5018(void)
 }
 
 /**
- * hal_rx_get_tlv_5018(): API to get the tlv
- *
+ * hal_rx_get_tlv_5018() - API to get the tlv
  * @rx_tlv: TLV data extracted from the rx packet
+ *
  * Return: uint8_t
  */
 static uint8_t hal_rx_get_tlv_5018(void *rx_tlv)
@@ -228,10 +228,10 @@ static uint8_t hal_rx_get_tlv_5018(void *rx_tlv)
 }
 
 /**
- * hal_rx_mpdu_start_tlv_tag_valid_5018 () - API to check if RX_MPDU_START
+ * hal_rx_mpdu_start_tlv_tag_valid_5018() - API to check if RX_MPDU_START
  * tlv tag is valid
  *
- *@rx_tlv_hdr: start address of rx_pkt_tlvs
+ * @rx_tlv_hdr: start address of rx_pkt_tlvs
  *
  * Return: true if RX_MPDU_START is valid, else false.
  */
@@ -246,10 +246,10 @@ uint8_t hal_rx_mpdu_start_tlv_tag_valid_5018(void *rx_tlv_hdr)
 }
 
 /**
- * hal_rx_wbm_err_msdu_continuation_get_5018 () - API to check if WBM
+ * hal_rx_wbm_err_msdu_continuation_get_5018() - API to check if WBM
  * msdu continuation bit is set
  *
- *@wbm_desc: wbm release ring descriptor
+ * @wbm_desc: wbm release ring descriptor
  *
  * Return: true if msdu continuation bit is set.
  */
@@ -348,7 +348,9 @@ void hal_compute_reo_remap_ix2_ix3_5018(uint32_t *ring, uint32_t num_rings,
 }
 
 /**
- * hal_rx_proc_phyrx_other_receive_info_tlv_5018(): API to get tlv info
+ * hal_rx_proc_phyrx_other_receive_info_tlv_5018() - API to get tlv info
+ * @rx_tlv_hdr: start address of rx_pkt_tlvs
+ * @ppdu_info_hdl: PPDU info handle to fill
  *
  * Return: uint32_t
  */
@@ -403,17 +405,19 @@ void hal_rx_get_rtt_info_5018(void *rx_tlv,
 #endif
 
 /**
- * hal_rx_dump_msdu_start_tlv_5018() : dump RX msdu_start TLV in structured
- *			     human readable format.
- * @ msdu_start: pointer the msdu_start TLV in pkt.
- * @ dbg_level: log level.
+ * hal_rx_dump_msdu_start_tlv_5018() - dump RX msdu_start TLV in structured
+ *			               human readable format.
+ * @pkttlvs: pointer to the pkttlvs.
+ * @dbg_level: log level.
  *
  * Return: void
  */
-static void hal_rx_dump_msdu_start_tlv_5018(void *msdustart,
+static void hal_rx_dump_msdu_start_tlv_5018(void *pkttlvs,
 					    uint8_t dbg_level)
 {
-	struct rx_msdu_start *msdu_start = (struct rx_msdu_start *)msdustart;
+	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)pkttlvs;
+	struct rx_msdu_start *msdu_start =
+					&pkt_tlvs->msdu_start_tlv.rx_msdu_start;
 
 	QDF_TRACE(QDF_MODULE_ID_DP, dbg_level,
 		  "rx_msdu_start tlv - "
@@ -478,17 +482,18 @@ static void hal_rx_dump_msdu_start_tlv_5018(void *msdustart,
 }
 
 /**
- * hal_rx_dump_msdu_end_tlv_5018: dump RX msdu_end TLV in structured
- *			     human readable format.
- * @ msdu_end: pointer the msdu_end TLV in pkt.
- * @ dbg_level: log level.
+ * hal_rx_dump_msdu_end_tlv_5018() - dump RX msdu_end TLV in structured
+ *			             human readable format.
+ * @pkttlvs: pointer to the pkttlvs.
+ * @dbg_level: log level.
  *
  * Return: void
  */
-static void hal_rx_dump_msdu_end_tlv_5018(void *msduend,
+static void hal_rx_dump_msdu_end_tlv_5018(void *pkttlvs,
 					  uint8_t dbg_level)
 {
-	struct rx_msdu_end *msdu_end = (struct rx_msdu_end *)msduend;
+	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)pkttlvs;
+	struct rx_msdu_end *msdu_end = &pkt_tlvs->msdu_end_tlv.rx_msdu_end;
 
 	QDF_TRACE(QDF_MODULE_ID_DP, dbg_level,
 		  "rx_msdu_end tlv - "
@@ -579,10 +584,9 @@ static void hal_rx_dump_msdu_end_tlv_5018(void *msduend,
 }
 
 /**
- * hal_rx_mpdu_start_tid_get_5018(): API to get tid
- * from rx_msdu_start
- *
+ * hal_rx_mpdu_start_tid_get_5018() - API to get tid from rx_msdu_start
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(tid value)
  */
 static uint32_t hal_rx_mpdu_start_tid_get_5018(uint8_t *buf)
@@ -598,10 +602,10 @@ static uint32_t hal_rx_mpdu_start_tid_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_start_reception_type_get(): API to get the reception type
- * Interval from rx_msdu_start
- *
+ * hal_rx_msdu_start_reception_type_get_5018() - API to get the reception type
+ *                                               Interval from rx_msdu_start
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(reception_type)
  */
 static uint32_t hal_rx_msdu_start_reception_type_get_5018(uint8_t *buf)
@@ -616,11 +620,10 @@ static uint32_t hal_rx_msdu_start_reception_type_get_5018(uint8_t *buf)
 	return reception_type;
 }
 
- /**
- * hal_rx_msdu_end_da_idx_get_5018: API to get da_idx
- * from rx_msdu_end TLV
+/**
+ * hal_rx_msdu_end_da_idx_get_5018() - API to get da_idx from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: da index
  */
 static uint16_t hal_rx_msdu_end_da_idx_get_5018(uint8_t *buf)
@@ -635,10 +638,10 @@ static uint16_t hal_rx_msdu_end_da_idx_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_get_rx_fragment_number_5018(): Function to retrieve rx fragment number
+ * hal_rx_get_rx_fragment_number_5018() - API to retrieve rx fragment number
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: rx fragment number
+ * Return: rx fragment number
  */
 static
 uint8_t hal_rx_get_rx_fragment_number_5018(uint8_t *buf)
@@ -652,10 +655,10 @@ uint8_t hal_rx_get_rx_fragment_number_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_da_is_mcbc_get_5018(): API to check if pkt is MCBC
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_da_is_mcbc_get_5018() - API to check if pkt is MCBC
+ *                                         from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: da_is_mcbc
  */
 static uint8_t
@@ -668,10 +671,10 @@ hal_rx_msdu_end_da_is_mcbc_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_sa_is_valid_get_5018(): API to get_5018 the
- * sa_is_valid bit from rx_msdu_end TLV
+ * hal_rx_msdu_end_sa_is_valid_get_5018() - API to get_5018 the sa_is_valid
+ *                                          bit from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: sa_is_valid bit
  */
 static uint8_t
@@ -687,10 +690,10 @@ hal_rx_msdu_end_sa_is_valid_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_sa_idx_get_5018(): API to get_5018 the
- * sa_idx from rx_msdu_end TLV
+ * hal_rx_msdu_end_sa_idx_get_5018() - API to get_5018 the sa_idx from
+ *                                     rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: sa_idx (SA AST index)
  */
 static uint16_t hal_rx_msdu_end_sa_idx_get_5018(uint8_t *buf)
@@ -706,8 +709,6 @@ static uint16_t hal_rx_msdu_end_sa_idx_get_5018(uint8_t *buf)
 
 /**
  * hal_rx_desc_is_first_msdu_5018() - Check if first msdu
- *
- * @hal_soc_hdl: hal_soc handle
  * @hw_desc_addr: hardware descriptor address
  *
  * Return: 0 - success/ non-zero failure
@@ -721,10 +722,11 @@ static uint32_t hal_rx_desc_is_first_msdu_5018(void *hw_desc_addr)
 }
 
 /**
- * hal_rx_msdu_end_l3_hdr_padding_get_5018(): API to get_5018 the
- * l3_header padding from rx_msdu_end TLV
+ * hal_rx_msdu_end_l3_hdr_padding_get_5018() - API to get_5018 the
+ *                                             l3_header padding from
+ *                                             rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: number of l3 header padding bytes
  */
 static uint32_t hal_rx_msdu_end_l3_hdr_padding_get_5018(uint8_t *buf)
@@ -739,10 +741,10 @@ static uint32_t hal_rx_msdu_end_l3_hdr_padding_get_5018(uint8_t *buf)
 }
 
 /**
- * @ hal_rx_encryption_info_valid_5018: Returns encryption type.
+ * hal_rx_encryption_info_valid_5018() - Returns encryption type.
+ * @buf: rx_tlv_hdr of the received packet
  *
- * @ buf: rx_tlv_hdr of the received packet
- * @ Return: encryption type
+ * Return: encryption type
  */
 inline uint32_t hal_rx_encryption_info_valid_5018(uint8_t *buf)
 {
@@ -755,11 +757,11 @@ inline uint32_t hal_rx_encryption_info_valid_5018(uint8_t *buf)
 	return encryption_info;
 }
 
-/*
- * @ hal_rx_print_pn_5018: Prints the PN of rx packet.
+/**
+ * hal_rx_print_pn_5018() - Prints the PN of rx packet.
+ * @buf: rx_tlv_hdr of the received packet
  *
- * @ buf: rx_tlv_hdr of the received packet
- * @ Return: void
+ * Return: void
  */
 static void hal_rx_print_pn_5018(uint8_t *buf)
 {
@@ -773,15 +775,15 @@ static void hal_rx_print_pn_5018(uint8_t *buf)
 	uint32_t pn_95_64 = HAL_RX_MPDU_PN_95_64_GET(mpdu_info);
 	uint32_t pn_127_96 = HAL_RX_MPDU_PN_127_96_GET(mpdu_info);
 
-	hal_debug("PN number pn_127_96 0x%x pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x ",
+	hal_debug("PN number pn_127_96 0x%x pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x",
 		  pn_127_96, pn_95_64, pn_63_32, pn_31_0);
 }
 
 /**
- * hal_rx_msdu_end_first_msdu_get_5018: API to get first msdu status
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_first_msdu_get_5018() - API to get first msdu status
+ *                                         from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: first_msdu
  */
 static uint8_t hal_rx_msdu_end_first_msdu_get_5018(uint8_t *buf)
@@ -796,10 +798,10 @@ static uint8_t hal_rx_msdu_end_first_msdu_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_da_is_valid_get_5018: API to check if da is valid
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_da_is_valid_get_5018() - API to check if da is valid
+ *                                          from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: da_is_valid
  */
 static uint8_t hal_rx_msdu_end_da_is_valid_get_5018(uint8_t *buf)
@@ -814,10 +816,10 @@ static uint8_t hal_rx_msdu_end_da_is_valid_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_last_msdu_get_5018: API to get last msdu status
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_last_msdu_get_5018() - API to get last msdu status
+ *                                        from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: last_msdu
  */
 static uint8_t hal_rx_msdu_end_last_msdu_get_5018(uint8_t *buf)
@@ -831,11 +833,11 @@ static uint8_t hal_rx_msdu_end_last_msdu_get_5018(uint8_t *buf)
 	return last_msdu;
 }
 
-/*
- * hal_rx_get_mpdu_mac_ad4_valid(): Retrieves if mpdu 4th addr is valid
+/**
+ * hal_rx_get_mpdu_mac_ad4_valid_5018() - Retrieves if mpdu 4th addr is valid
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of mpdu 4th address valid field
+ * Return: value of mpdu 4th address valid field
  */
 inline bool hal_rx_get_mpdu_mac_ad4_valid_5018(uint8_t *buf)
 {
@@ -849,7 +851,7 @@ inline bool hal_rx_get_mpdu_mac_ad4_valid_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_mpdu_start_sw_peer_id_get_5018: Retrieve sw peer_id
+ * hal_rx_mpdu_start_sw_peer_id_get_5018() - Retrieve sw peer_id
  * @buf: network buffer
  *
  * Return: sw peer_id
@@ -864,11 +866,11 @@ static uint32_t hal_rx_mpdu_start_sw_peer_id_get_5018(uint8_t *buf)
 		&mpdu_start->rx_mpdu_info_details);
 }
 
-/*
- * hal_rx_mpdu_get_to_ds_5018(): API to get the tods info
- * from rx_mpdu_start
- *
+/**
+ * hal_rx_mpdu_get_to_ds_5018() - API to get the tods info from
+ *                                rx_mpdu_start
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(to_ds)
  */
 static uint32_t hal_rx_mpdu_get_to_ds_5018(uint8_t *buf)
@@ -882,11 +884,11 @@ static uint32_t hal_rx_mpdu_get_to_ds_5018(uint8_t *buf)
 	return HAL_RX_MPDU_GET_TODS(mpdu_info);
 }
 
-/*
- * hal_rx_mpdu_get_fr_ds_5018(): API to get the from ds info
- * from rx_mpdu_start
- *
+/**
+ * hal_rx_mpdu_get_fr_ds_5018() - API to get the from ds info from
+ *                                rx_mpdu_start
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(fr_ds)
  */
 static uint32_t hal_rx_mpdu_get_fr_ds_5018(uint8_t *buf)
@@ -900,12 +902,12 @@ static uint32_t hal_rx_mpdu_get_fr_ds_5018(uint8_t *buf)
 	return HAL_RX_MPDU_GET_FROMDS(mpdu_info);
 }
 
-/*
- * hal_rx_get_mpdu_frame_control_valid_5018(): Retrieves mpdu
- * frame control valid
+/**
+ * hal_rx_get_mpdu_frame_control_valid_5018() - Retrieves mpdu frame
+ *                                              control valid
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of frame control valid field
+ * Return: value of frame control valid field
  */
 static uint8_t hal_rx_get_mpdu_frame_control_valid_5018(uint8_t *buf)
 {
@@ -916,11 +918,11 @@ static uint8_t hal_rx_get_mpdu_frame_control_valid_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_get_mpdu_frame_control_field_5018(): Function to
- * retrieve frame control field
+ * hal_rx_get_mpdu_frame_control_field_5018() - Function to retrieve
+ *                                              frame control field
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of frame control field
+ * Return: value of frame control field
  */
 static uint16_t hal_rx_get_mpdu_frame_control_field_5018(uint8_t *buf)
 {
@@ -933,11 +935,11 @@ static uint16_t hal_rx_get_mpdu_frame_control_field_5018(uint8_t *buf)
 	return frame_ctrl;
 }
 
-/*
- * hal_rx_mpdu_get_addr1_5018(): API to check get address1 of the mpdu
- *
+/**
+ * hal_rx_mpdu_get_addr1_5018() - API to check get address1 of the mpdu
  * @buf: pointer to the start of RX PKT TLV headera
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr1_5018(uint8_t *buf,
@@ -967,12 +969,12 @@ static QDF_STATUS hal_rx_mpdu_get_addr1_5018(uint8_t *buf,
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_mpdu_get_addr2_5018(): API to check get address2 of the mpdu
- * in the packet
- *
+/**
+ * hal_rx_mpdu_get_addr2_5018() - API to check get address2 of the mpdu
+ *                                in the packet
  * @buf: pointer to the start of RX PKT TLV header
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr2_5018(uint8_t *buf, uint8_t *mac_addr)
@@ -1001,12 +1003,12 @@ static QDF_STATUS hal_rx_mpdu_get_addr2_5018(uint8_t *buf, uint8_t *mac_addr)
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_mpdu_get_addr3_5018(): API to get address3 of the mpdu
- * in the packet
- *
+/**
+ * hal_rx_mpdu_get_addr3_5018() - API to get address3 of the mpdu
+ *                                in the packet
  * @buf: pointer to the start of RX PKT TLV header
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr3_5018(uint8_t *buf, uint8_t *mac_addr)
@@ -1035,12 +1037,12 @@ static QDF_STATUS hal_rx_mpdu_get_addr3_5018(uint8_t *buf, uint8_t *mac_addr)
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_mpdu_get_addr4_5018(): API to get address4 of the mpdu
- * in the packet
- *
+/**
+ * hal_rx_mpdu_get_addr4_5018() - API to get address4 of the mpdu
+ *                                in the packet
  * @buf: pointer to the start of RX PKT TLV header
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr4_5018(uint8_t *buf, uint8_t *mac_addr)
@@ -1069,12 +1071,12 @@ static QDF_STATUS hal_rx_mpdu_get_addr4_5018(uint8_t *buf, uint8_t *mac_addr)
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_get_mpdu_sequence_control_valid_5018(): Get mpdu
- * sequence control valid
+/**
+ * hal_rx_get_mpdu_sequence_control_valid_5018() - Get mpdu sequence
+ *                                                 control valid
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of sequence control valid field
+ * Return: value of sequence control valid field
  */
 static uint8_t hal_rx_get_mpdu_sequence_control_valid_5018(uint8_t *buf)
 {
@@ -1085,9 +1087,8 @@ static uint8_t hal_rx_get_mpdu_sequence_control_valid_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_is_unicast_5018: check packet is unicast frame or not.
- *
- * @ buf: pointer to rx pkt TLV.
+ * hal_rx_is_unicast_5018() - check packet is unicast frame or not.
+ * @buf: pointer to rx pkt TLV.
  *
  * Return: true on unicast.
  */
@@ -1108,7 +1109,7 @@ static bool hal_rx_is_unicast_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_tid_get_5018: get tid based on qos control valid.
+ * hal_rx_tid_get_5018() - get tid based on qos control valid.
  * @hal_soc_hdl: hal soc handle
  * @buf: pointer to rx pkt TLV.
  *
@@ -1133,7 +1134,7 @@ static uint32_t hal_rx_tid_get_5018(hal_soc_handle_t hal_soc_hdl, uint8_t *buf)
 }
 
 /**
- * hal_rx_hw_desc_get_ppduid_get_5018(): retrieve ppdu id
+ * hal_rx_hw_desc_get_ppduid_get_5018() - retrieve ppdu id
  * @rx_tlv_hdr: rx tlv header
  * @rxdma_dst_ring_desc: rxdma HW descriptor
  *
@@ -1148,10 +1149,10 @@ static uint32_t hal_rx_hw_desc_get_ppduid_get_5018(void *rx_tlv_hdr,
 }
 
 /**
- * hal_reo_status_get_header_5018 - Process reo desc info
+ * hal_reo_status_get_header_5018() - Process reo desc info
  * @ring_desc: REO status ring descriptor
- * @b - tlv type info
- * @h1 - Pointer to hal_reo_status_header where info to be stored
+ * @b: tlv type info
+ * @h1: Pointer to hal_reo_status_header where info to be stored
  *
  * Return - none.
  *
@@ -1270,7 +1271,7 @@ hal_rx_mpdu_start_mpdu_qos_control_valid_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_sa_sw_peer_id_get_5018(): API to get the
+ * hal_rx_msdu_end_sa_sw_peer_id_get_5018() - API to get the
  * sa_sw_peer_id from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
@@ -1286,7 +1287,7 @@ hal_rx_msdu_end_sa_sw_peer_id_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_tx_desc_set_mesh_en_5018 - Set mesh_enable flag in Tx descriptor
+ * hal_tx_desc_set_mesh_en_5018() - Set mesh_enable flag in Tx descriptor
  * @desc: Handle to Tx Descriptor
  * @en:   For raw WiFi frames, this indicates transmission to a mesh STA,
  *        enabling the interpretation of the 'Mesh Control Present' bit
@@ -1361,7 +1362,7 @@ hal_rx_get_ppdu_id_5018(uint8_t *buf)
 }
 
 /**
- * hal_reo_config_5018(): Set reo config parameters
+ * hal_reo_config_5018() - Set reo config parameters
  * @soc: hal soc handle
  * @reg_val: value to be set
  * @reo_params: reo parameters
@@ -1378,7 +1379,7 @@ hal_reo_config_5018(struct hal_soc *soc,
 
 /**
  * hal_rx_msdu_desc_info_get_ptr_5018() - Get msdu desc info ptr
- * @msdu_details_ptr - Pointer to msdu_details_ptr
+ * @msdu_details_ptr: Pointer to msdu_details_ptr
  *
  * Return - Pointer to rx_msdu_desc_info structure.
  *
@@ -1390,7 +1391,7 @@ static void *hal_rx_msdu_desc_info_get_ptr_5018(void *msdu_details_ptr)
 
 /**
  * hal_rx_link_desc_msdu0_ptr_5018 - Get pointer to rx_msdu details
- * @link_desc - Pointer to link desc
+ * @link_desc: Pointer to link desc
  *
  * Return - Pointer to rx_msdu_details structure
  *
@@ -1401,8 +1402,8 @@ static void *hal_rx_link_desc_msdu0_ptr_5018(void *link_desc)
 }
 
 /**
- * hal_rx_msdu_flow_idx_get_5018: API to get flow index
- * from rx_msdu_end TLV
+ * hal_rx_msdu_flow_idx_get_5018() - API to get flow index from
+ *                                   rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: flow index value from MSDU END TLV
@@ -1416,8 +1417,8 @@ static inline uint32_t hal_rx_msdu_flow_idx_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_flow_idx_invalid_5018: API to get flow index invalid
- * from rx_msdu_end TLV
+ * hal_rx_msdu_flow_idx_invalid_5018() - API to get flow index invalid
+ *                                       from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: flow index invalid value from MSDU END TLV
@@ -1431,7 +1432,7 @@ static bool hal_rx_msdu_flow_idx_invalid_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_flow_idx_timeout_5018: API to get flow index timeout
+ * hal_rx_msdu_flow_idx_timeout_5018() - API to get flow index timeout
  * from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
@@ -1446,7 +1447,7 @@ static bool hal_rx_msdu_flow_idx_timeout_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_fse_metadata_get_5018: API to get FSE metadata
+ * hal_rx_msdu_fse_metadata_get_5018() - API to get FSE metadata
  * from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
@@ -1461,7 +1462,7 @@ static uint32_t hal_rx_msdu_fse_metadata_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_cce_metadata_get_5018: API to get CCE metadata
+ * hal_rx_msdu_cce_metadata_get_5018() - API to get CCE metadata
  * from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
@@ -1477,8 +1478,9 @@ hal_rx_msdu_cce_metadata_get_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_get_flow_params_5018: API to get flow index, flow index invalid
- * and flow index timeout from rx_msdu_end TLV
+ * hal_rx_msdu_get_flow_params_5018() - API to get flow index, flow index
+ *                                      invalid and flow index timeout from
+ *                                      rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  * @flow_invalid: pointer to return value of flow_idx_valid
  * @flow_timeout: pointer to return value of flow_idx_timeout
@@ -1513,10 +1515,10 @@ hal_rx_tlv_get_tcp_chksum_5018(uint8_t *buf)
 }
 
 /**
- * hal_rx_get_rx_sequence_5018(): Function to retrieve rx sequence number
+ * hal_rx_get_rx_sequence_5018() - Function to retrieve rx sequence number
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: rx sequence number
+ * Return: rx sequence number
  */
 static
 uint16_t hal_rx_get_rx_sequence_5018(uint8_t *buf)
@@ -1528,7 +1530,7 @@ uint16_t hal_rx_get_rx_sequence_5018(uint8_t *buf)
 }
 
 /**
- * hal_get_window_address_5018(): Function to get hp/tp address
+ * hal_get_window_address_5018() - Function to get hp/tp address
  * @hal_soc: Pointer to hal_soc
  * @addr: address offset of register
  *
@@ -1568,11 +1570,10 @@ static inline void hal_write_window_register(struct hal_soc *hal_soc)
 }
 
 /**
- * hal_rx_msdu_packet_metadata_get_5018(): API to get the
- * msdu information from rx_msdu_end TLV
- *
- * @ buf: pointer to the start of RX PKT TLV headers
- * @ hal_rx_msdu_metadata: pointer to the msdu info structure
+ * hal_rx_msdu_packet_metadata_get_5018() - API to get the msdu
+ *                                          information from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
+ * @msdu_pkt_metadata: pointer to the msdu info structure
  */
 static void
 hal_rx_msdu_packet_metadata_get_5018(uint8_t *buf,
@@ -1593,9 +1594,9 @@ hal_rx_msdu_packet_metadata_get_5018(uint8_t *buf,
 
 /**
  * hal_rx_flow_setup_fse_5018() - Setup a flow search entry in HW FST
- * @fst: Pointer to the Rx Flow Search Table
+ * @rx_fst: Pointer to the Rx Flow Search Table
  * @table_offset: offset into the table where the flow is to be setup
- * @flow: Flow Parameters
+ * @rx_flow: Flow Parameters
  *
  * Return: Success/Failure
  */
@@ -1744,9 +1745,6 @@ static void hal_hw_txrx_ops_attach_qca5018(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_rx_get_tlv = hal_rx_get_tlv_5018;
 	hal_soc->ops->hal_rx_proc_phyrx_other_receive_info_tlv =
 		hal_rx_proc_phyrx_other_receive_info_tlv_5018;
-	hal_soc->ops->hal_rx_dump_msdu_start_tlv =
-					hal_rx_dump_msdu_start_tlv_5018;
-	hal_soc->ops->hal_rx_dump_msdu_end_tlv = hal_rx_dump_msdu_end_tlv_5018;
 	hal_soc->ops->hal_get_link_desc_size = hal_get_link_desc_size_5018;
 	hal_soc->ops->hal_rx_mpdu_start_tid_get =
 					hal_rx_mpdu_start_tid_get_5018;
@@ -1764,8 +1762,18 @@ static void hal_hw_txrx_ops_attach_qca5018(struct hal_soc *hal_soc)
 					hal_rx_status_get_tlv_info_generic_li;
 	hal_soc->ops->hal_rx_wbm_err_info_get =
 					hal_rx_wbm_err_info_get_generic_li;
+
+	hal_soc->ops->hal_rx_dump_msdu_end_tlv = hal_rx_dump_msdu_end_tlv_5018;
+	hal_soc->ops->hal_rx_dump_rx_attention_tlv =
+					hal_rx_dump_rx_attention_tlv_generic_li;
+	hal_soc->ops->hal_rx_dump_msdu_start_tlv =
+					hal_rx_dump_msdu_start_tlv_5018;
 	hal_soc->ops->hal_rx_dump_mpdu_start_tlv =
 					hal_rx_dump_mpdu_start_tlv_generic_li;
+	hal_soc->ops->hal_rx_dump_mpdu_end_tlv =
+					hal_rx_dump_mpdu_end_tlv_generic_li;
+	hal_soc->ops->hal_rx_dump_pkt_hdr_tlv =
+					hal_rx_dump_pkt_hdr_tlv_generic_li;
 
 	hal_soc->ops->hal_tx_set_pcp_tid_map =
 					hal_tx_set_pcp_tid_map_generic_li;
@@ -1880,6 +1888,14 @@ static void hal_hw_txrx_ops_attach_qca5018(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_compute_reo_remap_ix2_ix3 = hal_compute_reo_remap_ix2_ix3_5018;
 	hal_soc->ops->hal_setup_link_idle_list =
 				hal_setup_link_idle_list_generic_li;
+	hal_soc->ops->hal_rx_tlv_get_pn_num = hal_rx_tlv_get_pn_num_li;
+	hal_soc->ops->hal_rx_tlv_mic_err_get = hal_rx_tlv_mic_err_get_li;
+	hal_soc->ops->hal_rx_tlv_decrypt_err_get =
+			hal_rx_tlv_decrypt_err_get_li;
+	hal_soc->ops->hal_rx_tlv_get_pkt_capture_flags =
+					hal_rx_tlv_get_pkt_capture_flags_li;
+	hal_soc->ops->hal_rx_mpdu_info_ampdu_flag_get =
+					hal_rx_mpdu_info_ampdu_flag_get_li;
 	hal_soc->ops->hal_compute_reo_remap_ix0 = NULL;
 	hal_soc->ops->hal_rx_tlv_msdu_len_get =
 				hal_rx_msdu_start_get_len_5018;
@@ -2302,11 +2318,14 @@ struct hal_hw_srng_config hw_srng_table_5018[] = {
 	{ /* TX_MONITOR_BUF */ 0},
 	{ /* TX_MONITOR_DST */ 0},
 	{ /* SW2RXDMA_NEW */ 0},
+	{ /* SW2RXDMA_LINK_RELEASE */ 0},
 };
 
 /**
  * hal_qca5018_attach()- Attach 5018 target specific hal_soc ops,
  *			  offset and srng table
+ * @hal_soc: hal_soc handle
+ *
  * Return: void
  */
 void hal_qca5018_attach(struct hal_soc *hal_soc)

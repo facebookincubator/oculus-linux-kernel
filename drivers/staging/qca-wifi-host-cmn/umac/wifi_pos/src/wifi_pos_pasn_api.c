@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -369,8 +369,8 @@ QDF_STATUS wifi_pos_handle_ranging_peer_create(struct wlan_objmgr_psoc *psoc,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	wifi_pos_debug("PASN peer create request received. Num peers:%d",
-		       total_entries);
+	wifi_pos_debug("vdev:%d PASN peer create request received. Num peers:%d",
+		       vdev_id, total_entries);
 	for (i = 0; i < total_entries; i++) {
 		peer = wlan_objmgr_get_peer_by_mac(psoc, req[i].peer_mac.bytes,
 						   WLAN_WIFI_POS_CORE_ID);
@@ -384,6 +384,13 @@ QDF_STATUS wifi_pos_handle_ranging_peer_create(struct wlan_objmgr_psoc *psoc,
 			wifi_pos_debug("PASN Peer: " QDF_MAC_ADDR_FMT "already exists",
 				       QDF_MAC_ADDR_REF(req[i].peer_mac.bytes));
 			wifi_pos_add_peer_to_list(vdev, &req[i], false);
+
+			if (req[i].is_ltf_keyseed_required)
+				wifi_pos_set_peer_ltf_keyseed_required(peer,
+								       true);
+			else
+				wifi_pos_set_peer_ltf_keyseed_required(peer,
+								       false);
 			wlan_objmgr_peer_release_ref(peer,
 						     WLAN_WIFI_POS_CORE_ID);
 			continue;
@@ -690,6 +697,8 @@ wifi_pos_set_peer_ltf_keyseed_required(struct wlan_objmgr_peer *peer,
 	}
 
 	peer_priv->is_ltf_keyseed_required = value;
+	wifi_pos_debug("peer_mac:" QDF_MAC_ADDR_FMT " value:%d",
+		       QDF_MAC_ADDR_REF(wlan_peer_get_macaddr(peer)), value);
 
 	return QDF_STATUS_SUCCESS;
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,7 +26,7 @@
 
 /**
  * hal_get_radiotap_he_gi_ltf() - Convert HE ltf and GI value
- * from stats enum to radiotap enum
+ *                                from stats enum to radiotap enum
  * @he_gi: HE GI value used in stats
  * @he_ltf: HE LTF value used in stats
  *
@@ -83,8 +83,8 @@ static inline void hal_get_radiotap_he_gi_ltf(uint16_t *he_gi, uint16_t *he_ltf)
 #define FREQ_MULTIPLIER_CONST_20MHZ 20
 /**
  * hal_rx_radiotap_num_to_freq() - Get frequency from chan number
- * @chan_num - Input channel number
- * @center_freq - Input Channel Center frequency
+ * @chan_num: Input channel number
+ * @center_freq: Input Channel Center frequency
  *
  * Return - Channel frequency in Mhz
  */
@@ -120,9 +120,9 @@ hal_rx_radiotap_num_to_freq(uint16_t chan_num, qdf_freq_t center_freq)
 }
 
 /**
- * hal_get_hw_hptp_generic()  - Get HW head and tail pointer value for any ring
+ * hal_get_hw_hptp_generic() - Get HW head and tail pointer value for any ring
  * @hal_soc: Opaque HAL SOC handle
- * @hal_ring: Source ring pointer
+ * @hal_ring_hdl: Source ring pointer
  * @headp: Head Pointer
  * @tailp: Tail Pointer
  * @ring: Ring type
@@ -157,29 +157,6 @@ void hal_get_hw_hptp_generic(struct hal_soc *hal_soc,
 	}
 }
 
-#if defined(WBM_IDLE_LSB_WRITE_CONFIRM_WAR)
-/**
- * hal_wbm_idle_lsb_write_confirm() - Check and update WBM_IDLE_LINK ring LSB
- * @srng: srng handle
- *
- * Return: None
- */
-static void hal_wbm_idle_lsb_write_confirm(struct hal_srng *srng)
-{
-	if (srng->ring_id == HAL_SRNG_WBM_IDLE_LINK) {
-		while (SRNG_SRC_REG_READ(srng, BASE_LSB) !=
-		       ((unsigned int)srng->ring_base_paddr & 0xffffffff))
-				SRNG_SRC_REG_WRITE(srng, BASE_LSB,
-						   srng->ring_base_paddr &
-						   0xffffffff);
-	}
-}
-#else
-static void hal_wbm_idle_lsb_write_confirm(struct hal_srng *srng)
-{
-}
-#endif
-
 #ifdef DP_UMAC_HW_RESET_SUPPORT
 /**
  * hal_srng_src_hw_write_cons_prefetch_timer() - Write cons prefetch timer reg
@@ -196,15 +173,20 @@ void hal_srng_src_hw_write_cons_prefetch_timer(struct hal_srng *srng,
 }
 
 /**
- * hal_srng_hw_disable_generic - Private function to disable SRNG
- * source ring HW
- * @hal_soc: HAL SOC handle
+ * hal_srng_hw_disable_generic() - Private function to disable SRNG
+ *                                 source ring HW
+ * @hal: HAL SOC handle
  * @srng: SRNG ring pointer
  */
 static inline
 void hal_srng_hw_disable_generic(struct hal_soc *hal, struct hal_srng *srng)
 {
 	uint32_t reg_val = 0;
+	struct hal_hw_srng_config *ring_config =
+		HAL_SRNG_CONFIG(hal, srng->ring_type);
+
+	if (ring_config->lmac_ring)
+		return;
 
 	if (srng->ring_dir == HAL_SRNG_DST_RING) {
 		reg_val = SRNG_DST_REG_READ(srng, MISC) & ~(SRNG_ENABLE_BIT);
@@ -229,10 +211,35 @@ void hal_srng_src_hw_write_cons_prefetch_timer(struct hal_srng *srng,
 {
 }
 #endif
+
+#ifndef WLAN_SOFTUMAC_SUPPORT
+#if defined(WBM_IDLE_LSB_WRITE_CONFIRM_WAR)
 /**
- * hal_srng_src_hw_init - Private function to initialize SRNG
- * source ring HW
- * @hal_soc: HAL SOC handle
+ * hal_wbm_idle_lsb_write_confirm() - Check and update WBM_IDLE_LINK ring LSB
+ * @srng: srng handle
+ *
+ * Return: None
+ */
+static void hal_wbm_idle_lsb_write_confirm(struct hal_srng *srng)
+{
+	if (srng->ring_id == HAL_SRNG_WBM_IDLE_LINK) {
+		while (SRNG_SRC_REG_READ(srng, BASE_LSB) !=
+		       ((unsigned int)srng->ring_base_paddr & 0xffffffff))
+				SRNG_SRC_REG_WRITE(srng, BASE_LSB,
+						   srng->ring_base_paddr &
+						   0xffffffff);
+	}
+}
+#else
+static void hal_wbm_idle_lsb_write_confirm(struct hal_srng *srng)
+{
+}
+#endif
+
+/**
+ * hal_srng_src_hw_init_generic() - Private function to initialize SRNG
+ *                                  source ring HW
+ * @hal: HAL SOC handle
  * @srng: SRNG ring pointer
  * @idle_check: Check if ring is idle
  * @idx: ring index
@@ -245,6 +252,8 @@ void hal_srng_src_hw_init_generic(struct hal_soc *hal,
 	uint32_t reg_val = 0;
 	uint64_t tp_addr = 0;
 
+	hal_debug("hw_init srng %d", srng->ring_id);
+
 	if (idle_check) {
 		reg_val = SRNG_SRC_REG_READ(srng, MISC);
 		if (!(reg_val & SRNG_IDLE_STATE_BIT)) {
@@ -254,12 +263,10 @@ void hal_srng_src_hw_init_generic(struct hal_soc *hal,
 
 		hal_srng_src_hw_write_cons_prefetch_timer(srng,
 							  srng->prefetch_timer);
+	} else {
+		reg_val = SRNG_SRC_REG_READ(srng, MISC) & ~(SRNG_ENABLE_BIT);
+		SRNG_SRC_REG_WRITE(srng, MISC, reg_val);
 	}
-
-	hal_debug("hw_init srng %d", srng->ring_id);
-
-	reg_val = SRNG_SRC_REG_READ(srng, MISC) & ~(SRNG_ENABLE_BIT);
-	SRNG_SRC_REG_WRITE(srng, MISC, reg_val);
 
 	reg_val = 0;
 
@@ -302,7 +309,7 @@ void hal_srng_src_hw_init_generic(struct hal_soc *hal,
 	if (srng->intr_timer_thres_us) {
 		reg_val |= SRNG_SM(SRNG_SRC_FLD(CONSUMER_INT_SETUP_IX0,
 			INTERRUPT_TIMER_THRESHOLD),
-			srng->intr_timer_thres_us);
+			srng->intr_timer_thres_us >> 3);
 		/* For HK v2 this should be (srng->intr_timer_thres_us >> 3) */
 	}
 
@@ -425,9 +432,9 @@ static inline void hal_srng_dst_near_full_int_setup(struct hal_srng *srng)
 #endif
 
 /**
- * hal_srng_dst_hw_init - Private function to initialize SRNG
- * destination ring HW
- * @hal_soc: HAL SOC handle
+ * hal_srng_dst_hw_init_generic() - Private function to initialize SRNG
+ *                                  destination ring HW
+ * @hal: HAL SOC handle
  * @srng: SRNG ring pointer
  * @idle_check: Check if ring is idle
  * @idx: Ring index
@@ -440,19 +447,18 @@ void hal_srng_dst_hw_init_generic(struct hal_soc *hal,
 	uint32_t reg_val = 0;
 	uint64_t hp_addr = 0;
 
+	hal_debug("hw_init srng %d", srng->ring_id);
+
 	if (idle_check) {
 		reg_val = SRNG_DST_REG_READ(srng, MISC);
 		if (!(reg_val & SRNG_IDLE_STATE_BIT)) {
 			hal_err("ring_id %d not in idle state", srng->ring_id);
 			qdf_assert_always(0);
 		}
+	} else {
+		reg_val = SRNG_DST_REG_READ(srng, MISC) & ~(SRNG_ENABLE_BIT);
+		SRNG_DST_REG_WRITE(srng, MISC, reg_val);
 	}
-
-	hal_debug("hw_init srng %d", srng->ring_id);
-
-	reg_val = SRNG_DST_REG_READ(srng, MISC) & ~(SRNG_ENABLE_BIT);
-
-	SRNG_DST_REG_WRITE(srng, MISC, reg_val);
 
 	reg_val = 0;
 
@@ -535,7 +541,7 @@ void hal_srng_dst_hw_init_generic(struct hal_soc *hal,
 	 * (when SRNG_ENABLE field for the MISC register is available in fw_api)
 	 * (WCSS_UMAC_CE_0_SRC_WFSS_CE_CHANNEL_SRC_R0_SRC_RING_MISC)
 	 */
-	reg_val |= 0x40;
+	reg_val |= SRNG_ENABLE_BIT;
 
 	SRNG_DST_REG_WRITE(srng, MISC, reg_val);
 
@@ -587,11 +593,22 @@ static inline void hal_srng_hw_reg_offset_init_generic(struct hal_soc *hal_soc)
 				REG_OFFSET(SRC, CONSUMER_PREFETCH_TIMER);
 #endif
 }
+#else
+static inline
+void hal_srng_src_hw_init_generic(struct hal_soc *hal,
+				  struct hal_srng *srng, bool idle_check,
+				  uint32_t idx) {}
+
+static inline
+void hal_srng_dst_hw_init_generic(struct hal_soc *hal,
+				  struct hal_srng *srng, bool idle_check,
+				  uint32_t idx) {}
+#endif
 
 #ifdef FEATURE_DIRECT_LINK
 /**
  * hal_srng_set_msi_config() - Set the MSI config and enable the SRNG
- * @hal_ring_hdl: srng handle
+ * @ring_hdl: srng handle
  * @params: ring parameters
  *
  * Return: QDF status
@@ -609,6 +626,15 @@ QDF_STATUS hal_srng_set_msi_config(hal_ring_handle_t ring_hdl,
 				ring_params->intr_batch_cntr_thres_entries;
 	srng->msi_addr = ring_params->msi_addr;
 	srng->msi_data = ring_params->msi_data;
+
+	if (!srng->msi_addr && !srng->msi_data) {
+		if (srng->ring_dir == HAL_SRNG_SRC_RING)
+			SRNG_SRC_REG_WRITE(srng, MSI1_BASE_MSB, 0);
+		else
+			SRNG_DST_REG_WRITE(srng, MSI1_BASE_MSB, 0);
+
+		return QDF_STATUS_SUCCESS;
+	}
 
 	if (srng->ring_dir == HAL_SRNG_SRC_RING) {
 		reg_val = 0;

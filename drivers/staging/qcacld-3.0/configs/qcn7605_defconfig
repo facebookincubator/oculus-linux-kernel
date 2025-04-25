@@ -18,3 +18,11 @@ CONFIG_WLAN_REG_AUTO := y
 
 # Enable Usable channel feature
 CONFIG_WLAN_FEATURE_GET_USABLE_CHAN_LIST := y
+
+ifeq ($(CONFIG_CNSS_GENL), m)
+CONFIG_CNSS_GENL_MODULE := y
+endif
+
+ifeq ($(CONFIG_CNSS_UTILS), m)
+CONFIG_CNSS_UTILS_MODULE := y
+endif

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2002-2010, Atheros Communications Inc.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -54,7 +54,8 @@ bool dfs_get_update_nol_flag(struct wlan_dfs *dfs)
 }
 
 /**
- * dfs_nol_elem_free_work_cb -  Free NOL element
+ * dfs_nol_elem_free_work_cb() -  Free NOL element
+ * @context: work context (wlan_dfs)
  *
  * Free the NOL element memory
  */
@@ -163,6 +164,7 @@ dfs_remove_from_nol(qdf_hrtimer_data_t *arg)
 {
 	struct wlan_dfs *dfs;
 	uint16_t delfreq;
+	qdf_freq_t nolfreq;
 	uint16_t delchwidth;
 	uint8_t chan;
 	struct dfs_nolelem *nol_arg;
@@ -170,6 +172,10 @@ dfs_remove_from_nol(qdf_hrtimer_data_t *arg)
 	nol_arg = container_of(arg, struct dfs_nolelem, nol_timer);
 	dfs = nol_arg->nol_dfs;
 	delfreq = nol_arg->nol_freq;
+	/* Since the content of delfreq might change remember it.
+	 * The NOL freq will be used by NOL puncture handler.
+	 */
+	nolfreq = delfreq;
 	delchwidth = nol_arg->nol_chwidth;
 
 	/* Delete the given NOL entry. */
@@ -190,6 +196,8 @@ dfs_remove_from_nol(qdf_hrtimer_data_t *arg)
 
 	utils_dfs_save_nol(dfs->dfs_pdev_obj);
 
+	if (dfs->dfs_use_puncture)
+		dfs_handle_nol_puncture(dfs, nolfreq);
 	/*
 	 * Check if a channel is configured by the user to which we have to
 	 * switch after it's NOL expiry. If that is the case, change

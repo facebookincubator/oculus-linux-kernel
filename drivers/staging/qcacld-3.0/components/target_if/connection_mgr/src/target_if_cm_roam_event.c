@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -33,6 +33,8 @@
 #include "target_if_cm_roam_offload.h"
 #include <target_if_vdev_mgr_rx_ops.h>
 #include <target_if_psoc_wake_lock.h>
+#include "wlan_mlo_mgr_peer.h"
+#include "wlan_crypto_global_api.h"
 
 struct wlan_cm_roam_rx_ops *
 target_if_cm_get_roam_rx_ops(struct wlan_objmgr_psoc *psoc)
@@ -74,6 +76,7 @@ target_if_cm_roam_register_rx_ops(struct wlan_cm_roam_rx_ops *rx_ops)
 {
 	rx_ops->roam_sync_event = cm_roam_sync_event_handler;
 	rx_ops->roam_sync_frame_event = cm_roam_sync_frame_event_handler;
+	rx_ops->roam_sync_key_event = cm_roam_sync_key_event_handler;
 	rx_ops->roam_event_rx = cm_roam_event_handler;
 	rx_ops->btm_denylist_event = cm_btm_denylist_event_handler;
 	rx_ops->vdev_disconnect_event = cm_vdev_disconnect_event_handler;
@@ -225,7 +228,6 @@ target_if_cm_roam_sync_frame_event(ol_scn_t scn,
 	}
 
 	frame_ind_ptr = qdf_mem_malloc(sizeof(*frame_ind_ptr));
-
 	if (!frame_ind_ptr)
 		return -ENOMEM;
 
@@ -727,6 +729,175 @@ target_if_register_roam_vendor_control_param_event(wmi_unified_t handle)
 }
 #endif
 
+#if defined(WLAN_FEATURE_ROAM_OFFLOAD) && defined(WLAN_FEATURE_11BE_MLO)
+static void
+target_if_update_pairwise_key_peer_mac(struct wlan_crypto_key_entry *crypto_entry,
+				       struct qdf_mac_addr *ap_link_addr)
+{
+	uint8_t i;
+
+	if (crypto_entry->link_id == MLO_INVALID_LINK_IDX)
+		return;
+
+	for (i = 0; i < WLAN_CRYPTO_MAX_VLANKEYIX; i++) {
+		if (!crypto_entry->keys.key[i])
+			continue;
+
+		if (crypto_entry->keys.key[i]->key_type ==
+		    WLAN_CRYPTO_KEY_TYPE_UNICAST)
+			qdf_copy_macaddr((struct qdf_mac_addr *)crypto_entry->keys.key[i]->macaddr,
+					 ap_link_addr);
+	}
+}
+
+static int
+target_if_roam_synch_key_event_handler(ol_scn_t scn, uint8_t *event,
+				       uint32_t len)
+{
+	struct wlan_objmgr_psoc *psoc;
+	struct wmi_unified *wmi_handle;
+	struct wlan_cm_roam_rx_ops *roam_rx_ops;
+	struct wlan_crypto_key_entry *keys;
+	struct qdf_mac_addr mld_addr;
+	struct wlan_mlo_dev_context *ml_ctx = NULL;
+	struct wlan_objmgr_vdev *vdev_list;
+	struct mlo_link_info *link_info;
+	uint8_t num_keys = 0;
+	int ret = 0;
+	QDF_STATUS status;
+	uint8_t i, j;
+
+	psoc = target_if_get_psoc_from_scn_hdl(scn);
+	if (!psoc) {
+		target_if_err("psoc is null");
+		return -EINVAL;
+	}
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		target_if_err("wmi_handle is null");
+		return -EINVAL;
+	}
+
+	status = wmi_extract_roam_synch_key_event(wmi_handle, event, len, &keys,
+						  &num_keys, &mld_addr);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		target_if_err("parsing of roam sync key event failed");
+		ret = -EINVAL;
+		goto done;
+	}
+
+	wlan_mlo_get_mlpeer_by_peer_mladdr(&mld_addr, &ml_ctx);
+	if (!ml_ctx) {
+		target_if_err("ML context is not found mld addr: "
+			      QDF_MAC_ADDR_FMT,
+			      QDF_MAC_ADDR_REF(mld_addr.bytes));
+		ret = -EINVAL;
+		goto done;
+	}
+
+	target_if_debug("num_keys:%d ML context is found mld addr: "
+			QDF_MAC_ADDR_FMT, num_keys,
+			QDF_MAC_ADDR_REF(mld_addr.bytes));
+
+	/*
+	 * Fill VDEV ID & AP mac address for the pairwise keys
+	 * from link id received in the key event
+	 */
+	for (i = 0; i < num_keys; i++) {
+		keys[i].vdev_id = WLAN_INVALID_VDEV_ID;
+		for (j = 0; j < WLAN_UMAC_MLO_MAX_VDEVS; j++) {
+			vdev_list = ml_ctx->wlan_vdev_list[j];
+			if (!vdev_list)
+				continue;
+
+			if (keys[i].link_id ==
+			    wlan_vdev_get_link_id(vdev_list)) {
+				keys[i].vdev_id = wlan_vdev_get_id(vdev_list);
+				qdf_copy_macaddr((struct qdf_mac_addr *)keys[i].mac_addr.raw,
+						 (struct qdf_mac_addr *)vdev_list->vdev_mlme.linkaddr);
+				link_info = mlo_mgr_get_ap_link_by_link_id(
+							vdev_list->mlo_dev_ctx,
+							keys[i].link_id);
+				if (!link_info) {
+					target_if_err("Link info not found for link_id:%d",
+						      keys[i].link_id);
+					break;
+				}
+				target_if_debug("i:%d link_id:%d vdev_id:%d self link_addr: " QDF_MAC_ADDR_FMT " AP link addr: " QDF_MAC_ADDR_FMT,
+						i, keys[i].link_id, keys[i].vdev_id,
+						QDF_MAC_ADDR_REF(keys[i].mac_addr.raw),
+						QDF_MAC_ADDR_REF(link_info->ap_link_addr.bytes));
+
+				target_if_update_pairwise_key_peer_mac(&keys[i], &link_info->ap_link_addr);
+				break;
+			}
+		}
+
+		/* update for standby vdev also here from link_switch context*/
+		if (keys[i].vdev_id == WLAN_INVALID_VDEV_ID &&
+		    keys[i].link_id != MLO_INVALID_LINK_IDX &&
+		    ml_ctx->link_ctx) {
+			for (j = 0; j < WLAN_MAX_ML_BSS_LINKS; j++) {
+				link_info = &ml_ctx->link_ctx->links_info[j];
+				if (qdf_is_macaddr_zero(&link_info->ap_link_addr))
+					continue;
+
+				if (qdf_is_macaddr_zero(&link_info->link_addr))
+					continue;
+
+				if (link_info->link_id == keys[i].link_id) {
+					target_if_debug("i:%d Standby vdev: link_id:%d ap_link_addr: " QDF_MAC_ADDR_FMT,
+							i, keys[i].link_id,
+							QDF_MAC_ADDR_REF(link_info->ap_link_addr.bytes));
+					qdf_copy_macaddr((struct qdf_mac_addr *)keys[i].mac_addr.raw,
+							 &link_info->link_addr);
+					target_if_update_pairwise_key_peer_mac(&keys[i],
+									       &link_info->ap_link_addr);
+				}
+			}
+		}
+	}
+
+	roam_rx_ops = target_if_cm_get_roam_rx_ops(psoc);
+	if (!roam_rx_ops || !roam_rx_ops->roam_sync_key_event) {
+		target_if_err("No valid roam rx ops");
+		ret = -EINVAL;
+		goto done;
+	}
+
+	status = roam_rx_ops->roam_sync_key_event(psoc, keys, num_keys);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		target_if_err("Add keys failed");
+		ret = 0;
+	}
+done:
+	qdf_mem_zero(keys, WLAN_MAX_ML_BSS_LINKS * sizeof(*keys));
+	qdf_mem_free(keys);
+
+	return ret;
+}
+#endif
+
+#if defined(WLAN_FEATURE_ROAM_OFFLOAD) && defined(WLAN_FEATURE_11BE_MLO)
+static void target_if_register_mlo_roam_events(wmi_unified_t handle)
+{
+	QDF_STATUS status;
+
+	status = wmi_unified_register_event_handler(
+				handle,
+				wmi_roam_synch_key_event_id,
+				target_if_roam_synch_key_event_handler,
+				WMI_RX_SERIALIZER_CTX);
+	if (QDF_IS_STATUS_ERROR(status))
+		target_if_err("wmi event(%u) registration failed, status: %d",
+			      wmi_roam_synch_key_event_id, status);
+}
+#else
+static inline void target_if_register_mlo_roam_events(wmi_unified_t handle)
+{}
+#endif
+
 QDF_STATUS
 target_if_roam_offload_register_events(struct wlan_objmgr_psoc *psoc)
 {
@@ -828,6 +999,8 @@ target_if_roam_offload_register_events(struct wlan_objmgr_psoc *psoc)
 			      wmi_roam_frame_event_id, ret);
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	target_if_register_mlo_roam_events(handle);
 
 	return QDF_STATUS_SUCCESS;
 }

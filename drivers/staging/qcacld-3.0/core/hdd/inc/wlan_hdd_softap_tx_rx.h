@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -128,7 +128,7 @@ QDF_STATUS hdd_softap_deregister_sta(struct hdd_adapter *adapter,
 
 /**
  * hdd_softap_register_sta() - Register a SoftAP STA
- * @adapter: pointer to adapter context
+ * @link_info: Link info pointer in HDD adapter
  * @auth_required: is additional authentication required?
  * @privacy_required: should 802.11 privacy bit be set?
  * @sta_mac: station MAC address
@@ -137,20 +137,19 @@ QDF_STATUS hdd_softap_deregister_sta(struct hdd_adapter *adapter,
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
 QDF_STATUS
-hdd_softap_register_sta(struct hdd_adapter *adapter,
-			bool auth_required,
-			bool privacy_required,
+hdd_softap_register_sta(struct wlan_hdd_link_info *link_info,
+			bool auth_required, bool privacy_required,
 			struct qdf_mac_addr *sta_mac,
 			tSap_StationAssocReassocCompleteEvent *event);
 
 /**
  * hdd_softap_register_bc_sta() - Register the SoftAP broadcast STA
- * @adapter: pointer to adapter context
+ * @link_info: Link info pointer in HDD adapter
  * @privacy_required: should 802.11 privacy bit be set?
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
-QDF_STATUS hdd_softap_register_bc_sta(struct hdd_adapter *adapter,
+QDF_STATUS hdd_softap_register_bc_sta(struct wlan_hdd_link_info *link_info,
 				      bool privacy_required);
 
 /**

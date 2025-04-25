@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -43,6 +43,8 @@ wlan_psoc_mlme_get_11be_capab(struct wlan_objmgr_psoc *psoc, bool *val)
 	return QDF_STATUS_SUCCESS;
 }
 
+qdf_export_symbol(wlan_psoc_mlme_get_11be_capab);
+
 QDF_STATUS
 wlan_psoc_mlme_set_11be_capab(struct wlan_objmgr_psoc *psoc, bool val)
 {
@@ -57,6 +59,8 @@ wlan_psoc_mlme_set_11be_capab(struct wlan_objmgr_psoc *psoc, bool val)
 	psoc_mlme->psoc_cfg.phy_config.eht_cap &= val;
 	return QDF_STATUS_SUCCESS;
 }
+
+qdf_export_symbol(wlan_psoc_mlme_set_11be_capab);
 
 struct psoc_mlme_obj *wlan_psoc_mlme_get_cmpt_obj(struct wlan_objmgr_psoc *psoc)
 {
@@ -73,6 +77,58 @@ struct psoc_mlme_obj *wlan_psoc_mlme_get_cmpt_obj(struct wlan_objmgr_psoc *psoc)
 }
 
 qdf_export_symbol(wlan_psoc_mlme_get_cmpt_obj);
+
+#ifdef WLAN_FEATURE_PEER_TRANS_HIST
+void wlan_mlme_psoc_peer_trans_hist_remove_back(qdf_list_t *peer_history)
+{
+	struct wlan_peer_tbl_trans_entry *peer_trans_entry;
+	qdf_list_node_t *node;
+
+	qdf_list_remove_back(peer_history, &node);
+	peer_trans_entry = qdf_container_of(node,
+					    struct wlan_peer_tbl_trans_entry,
+					    node);
+	qdf_mem_free(peer_trans_entry);
+}
+
+QDF_STATUS
+wlan_mlme_psoc_peer_tbl_trans_add_entry(struct wlan_objmgr_psoc *psoc,
+					struct wlan_peer_tbl_trans_entry *peer_trans_entry)
+{
+	struct psoc_mlme_obj *psoc_mlme;
+	qdf_list_t *peer_hist_list;
+
+	psoc_mlme = wlan_psoc_mlme_get_cmpt_obj(psoc);
+	if (!psoc_mlme) {
+		mlme_err("PSOC MLME component object is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	peer_hist_list = &psoc_mlme->peer_history_list;
+	if (qdf_list_size(peer_hist_list) == MAX_PEER_HIST_LIST_SIZE)
+		wlan_mlme_psoc_peer_trans_hist_remove_back(peer_hist_list);
+
+	return qdf_list_insert_front(peer_hist_list, &peer_trans_entry->node);
+}
+
+void wlan_mlme_psoc_flush_peer_trans_history(struct wlan_objmgr_psoc *psoc)
+{
+	struct psoc_mlme_obj *psoc_mlme;
+	qdf_list_t *peer_hist_list;
+
+	psoc_mlme = wlan_psoc_mlme_get_cmpt_obj(psoc);
+	if (!psoc_mlme) {
+		mlme_err("PSOC MLME component object is NULL");
+		return;
+	}
+
+	peer_hist_list = &psoc_mlme->peer_history_list;
+	while (qdf_list_size(peer_hist_list))
+		wlan_mlme_psoc_peer_trans_hist_remove_back(peer_hist_list);
+
+	qdf_list_destroy(peer_hist_list);
+}
+#endif
 
 mlme_psoc_ext_t *wlan_psoc_mlme_get_ext_hdl(struct wlan_objmgr_psoc *psoc)
 {

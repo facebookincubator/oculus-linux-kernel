@@ -36,6 +36,7 @@ struct module_name {
 static const struct module_name g_dbr_module_name[DBR_MODULE_MAX] = {
 	[DBR_MODULE_SPECTRAL] = {"SPECTRAL"},
 	[DBR_MODULE_CFR]      = {"CFR"},
+	[DBR_MODULE_CBF]      = {"CBF"},
 };
 
 static uint8_t get_num_dbr_modules_per_pdev(struct wlan_objmgr_pdev *pdev)
@@ -182,6 +183,7 @@ g_dbr_ring_debug_event[DBR_RING_DEBUG_EVENT_MAX][RING_DEBUG_EVENT_NAME_SIZE] = {
  * @print_priv: The private data to be consumed by @print
  * @dbr_pdev_obj: Pdev object of the DBR module
  * @mod_id: Module ID
+ * @srng_id: ring id
  *
  * Print ring debug entries of the ring identified by @dbr_pdev_obj and @mod_id
  * using the  given print adapter function
@@ -227,7 +229,7 @@ static QDF_STATUS target_if_dbr_print_ring_debug_entries(
 
 /**
  * target_if_dbr_qdf_err_printer() - QDF error level printer for DBR module
- * @print_priv: The private data
+ * @priv: The private data
  * @fmt: Format string
  *
  * This function should be passed in place of the 'print' argument to
@@ -2013,6 +2015,7 @@ dbr_get_pdev_and_srng_id(struct wlan_objmgr_psoc *psoc, uint8_t pdev_id,
  * @pdev: pointer to pdev object
  * @mod_id: Module ID
  * @event: ring debug event
+ * @srng_id: ring id
  *
  * Log the given event, head and tail pointers of DBR ring of the given module
  * into its ring debug data structure.
@@ -2175,10 +2178,33 @@ static int target_if_direct_buf_rx_rsp_event_handler(ol_scn_t scn,
 
 	if (dbr_rsp.num_meta_data_entry > dbr_rsp.num_buf_release_entry) {
 		direct_buf_rx_err("More than expected number of metadata");
+		direct_buf_rx_err("meta_data_entry:%d cv_meta_data_entry:%d buf_release_entry:%d",
+				  dbr_rsp.num_meta_data_entry,
+				  dbr_rsp.num_cv_meta_data_entry,
+				  dbr_rsp.num_buf_release_entry);
 		wlan_objmgr_pdev_release_ref(pdev, dbr_mod_id);
 		return QDF_STATUS_E_FAILURE;
 	}
-
+	if (dbr_rsp.num_cv_meta_data_entry > dbr_rsp.num_buf_release_entry) {
+		direct_buf_rx_err("More than expected number of cv metadata");
+		direct_buf_rx_err("meta_data_entry:%d cv_meta_data_entry:%d buf_release_entry:%d",
+				  dbr_rsp.num_meta_data_entry,
+				  dbr_rsp.num_cv_meta_data_entry,
+				  dbr_rsp.num_buf_release_entry);
+		wlan_objmgr_pdev_release_ref(pdev, dbr_mod_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+	if (dbr_rsp.num_cqi_meta_data_entry > dbr_rsp.num_buf_release_entry) {
+		direct_buf_rx_err("More than expected number of cqi metadata");
+		direct_buf_rx_err("meta_data_entry:%d cqi_meta_data_entry:%d buf_release_entry:%d",
+				  dbr_rsp.num_meta_data_entry,
+				  dbr_rsp.num_cqi_meta_data_entry,
+				  dbr_rsp.num_buf_release_entry);
+		wlan_objmgr_pdev_release_ref(pdev, dbr_mod_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+	QDF_ASSERT(!(dbr_rsp.num_cv_meta_data_entry &&
+		     dbr_rsp.num_meta_data_entry));
 	for (i = 0; i < dbr_rsp.num_buf_release_entry; i++) {
 		if (wmi_extract_dbr_buf_release_entry(
 			wmi_handle, data_buf, i,
@@ -2205,6 +2231,22 @@ static int target_if_direct_buf_rx_rsp_event_handler(ol_scn_t scn,
 				wmi_handle, data_buf, i,
 				&dbr_data.meta_data) == QDF_STATUS_SUCCESS)
 				dbr_data.meta_data_valid = true;
+		}
+
+		dbr_data.cv_meta_data_valid = false;
+		if (i < dbr_rsp.num_cv_meta_data_entry) {
+			if (wmi_extract_dbr_buf_cv_metadata(
+				wmi_handle, data_buf, i,
+				&dbr_data.cv_meta_data) == QDF_STATUS_SUCCESS)
+				dbr_data.cv_meta_data_valid = true;
+		}
+
+		dbr_data.cqi_meta_data_valid = false;
+		if (i < dbr_rsp.num_cqi_meta_data_entry) {
+			if (wmi_extract_dbr_buf_cqi_metadata(
+				wmi_handle, data_buf, i,
+				&dbr_data.cqi_meta_data) == QDF_STATUS_SUCCESS)
+				dbr_data.cqi_meta_data_valid = true;
 		}
 
 		target_if_dbr_add_ring_debug_entry(pdev, dbr_rsp.mod_id,
@@ -2293,7 +2335,7 @@ static QDF_STATUS target_if_dbr_deinit_ring(struct wlan_objmgr_pdev *pdev,
 	dbr_ring_cfg = mod_param->dbr_ring_cfg;
 	if (dbr_ring_cfg) {
 		target_if_dbr_empty_ring(pdev, dbr_psoc_obj, mod_param);
-		hal_srng_cleanup(dbr_psoc_obj->hal_soc, dbr_ring_cfg->srng);
+		hal_srng_cleanup(dbr_psoc_obj->hal_soc, dbr_ring_cfg->srng, 0);
 		qdf_mem_free_consistent(dbr_psoc_obj->osdev,
 					dbr_psoc_obj->osdev->dev,
 					dbr_ring_cfg->ring_alloc_size,

@@ -1,0 +1,14 @@
+STSAFE320 Embedded Secure Element (eSE) GPIO
+
+Required properties:
+ - compatible: "stm,stsafe320_gpio"
+ - gpio-power_nreset: GPIO pin for reset.
+
+Example:
+
+	stsafe320_gpio {
+		status = "ok";
+		compatible = "stm,stsafe320_gpio";
+		/* gpio used as SE_nRESET */
+		gpio-power_nreset = <&tlmm 48 0x00>;
+	};

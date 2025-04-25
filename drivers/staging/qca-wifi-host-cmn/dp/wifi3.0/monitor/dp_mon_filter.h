@@ -76,6 +76,16 @@ do { \
 	*val |= ((value) << DP_MON_ ## field ## _LSB); \
 } while (0)
 
+#if defined(WLAN_PKT_CAPTURE_RX_2_0) || defined(CONFIG_WORD_BASED_TLV) || \
+	defined(WLAN_FEATURE_LOCAL_PKT_CAPTURE)
+#define DP_RX_MON_FILTER_SET_RX_HDR_LEN(dst, src) \
+do { \
+	(dst)->rx_hdr_length = src.rx_hdr_length; \
+} while (0)
+#else
+#define DP_RX_MON_FILTER_SET_RX_HDR_LEN(dst, src)
+#endif
+
 #define DP_MON_FILTER_PRINT(fmt, args ...) \
 	QDF_TRACE(QDF_MODULE_ID_MON_FILTER, QDF_TRACE_LEVEL_DEBUG, \
 		  fmt, ## args)
@@ -94,6 +104,18 @@ do { \
 struct dp_mon_filter {
 	bool valid;
 	struct htt_rx_ring_tlv_filter tlv_filter;
+};
+
+/* rx hdr tlv dma lengths */
+enum dp_rx_hdr_dma_length {
+	/* default dma length(128B) */
+	DEFAULT_RX_HDR_DMA_LENGTH = 0,
+	/* dma length 64 bytes */
+	RX_HDR_DMA_LENGTH_64B = 1,
+	/* dma length 128 bytes */
+	RX_HDR_DMA_LENGTH_128B = 2,
+	/* dma length 256 bytes */
+	RX_HDR_DMA_LENGTH_256B = 3,
 };
 
 /*
@@ -434,7 +456,7 @@ dp_mon_filter_reset_mon_srng(struct dp_soc *soc, struct dp_pdev *pdev,
 
 /**
  * dp_mon_filter_set_mon_cmn() - Setp the common mon filters
- * @mon_pdev: DP pdev handle
+ * @pdev: DP pdev handle
  * @filter: DP mon filter
  *
  * Return: None
@@ -463,6 +485,12 @@ void dp_mon_filter_setup_mon_mode(struct dp_pdev *pdev);
  * @pdev: DP pdev handle
  */
 void dp_mon_filter_setup_tx_mon_mode(struct dp_pdev *pdev);
+
+/**
+ * dp_mon_filter_reset_tx_mon_mode() - Reset the Tx monitor mode filter
+ * @pdev: DP pdev handle
+ */
+void dp_mon_filter_reset_tx_mon_mode(struct dp_pdev *pdev);
 
 /**
  * dp_mon_filter_reset_mon_mode() - Reset the Rx monitor mode filter
@@ -526,4 +554,79 @@ dp_mon_ht2_rx_ring_cfg(struct dp_soc *soc,
 		       struct dp_pdev *pdev,
 		       enum dp_mon_filter_srng_type srng_type,
 		       struct htt_rx_ring_tlv_filter *tlv_filter);
+
+/**
+ * dp_rx_mon_hdr_length_set() - Setup rx monitor hdr tlv length
+ * @msg_word: msg word
+ * @tlv_filter: rx ring filter configuration
+ */
+void
+dp_rx_mon_hdr_length_set(uint32_t *msg_word,
+			 struct htt_rx_ring_tlv_filter *tlv_filter);
+
+#ifdef WLAN_FEATURE_LOCAL_PKT_CAPTURE
+/**
+ * dp_mon_start_local_pkt_capture() - start local packet capture
+ * @cdp_soc: cdp soc
+ * @pdev_id: pdev id
+ * @filter: filter configuration
+ */
+QDF_STATUS dp_mon_start_local_pkt_capture(struct cdp_soc_t *cdp_soc,
+					  uint8_t pdev_id,
+					  struct cdp_monitor_filter *filter);
+
+/**
+ * dp_mon_stop_local_pkt_capture() - stop local packet capture
+ * @cdp_soc: cdp soc
+ * @pdev_id: pdev id
+ */
+QDF_STATUS dp_mon_stop_local_pkt_capture(struct cdp_soc_t *cdp_soc,
+					 uint8_t pdev_id);
+
+/**
+ * dp_mon_set_local_pkt_capture_running() - set local packet capture running
+ * @mon_pdev: monitor pdev
+ * @val: value
+ */
+QDF_STATUS dp_mon_set_local_pkt_capture_running(struct dp_mon_pdev *mon_pdev,
+						bool val);
+
+/**
+ * dp_mon_get_is_local_pkt_capture_running() - get local packet capture running
+ * @cdp_soc: cdp soc
+ * @pdev_id: pdev id
+ */
+bool dp_mon_get_is_local_pkt_capture_running(struct cdp_soc_t *cdp_soc,
+					     uint8_t pdev_id);
+#else
+static inline
+QDF_STATUS dp_mon_set_local_pkt_capture_running(struct dp_mon_pdev *mon_pdev,
+						   bool val)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline
+QDF_STATUS dp_mon_start_local_pkt_capture(struct cdp_soc_t *cdp_soc,
+					  uint8_t pdev_id,
+					  struct cdp_monitor_filter *filter)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline
+QDF_STATUS dp_mon_stop_local_pkt_capture(struct cdp_soc_t *cdp_soc,
+					 uint8_t pdev_id)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline
+bool dp_mon_get_is_local_pkt_capture_running(struct cdp_soc_t *cdp_soc,
+					     uint8_t pdev_id)
+{
+	return false;
+}
+
+#endif /* WLAN_FEATURE_LOCAL_PKT_CAPTURE */
 #endif /* #ifndef _DP_MON_FILTER_H_ */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -121,19 +121,20 @@ qdf_default_hmac_sha256_kdf(uint8_t *secret, uint32_t secret_len,
 /**
  * qdf_get_keyed_hash: API to get hash using specific crypto and
  * scatterlist elements.
- * @type: crypto type
+ * @alg: crypto type
  * @key: key needs to be used for hmac api
- * @keylen: length of key
- * @element_cnt: scatterlist element count
- * @addr: scatterlist element array
- * @addr_len: element length array
- * @hash: new hash
+ * @key_len: length of key
+ * @src: scatterlist element array
+ * @src_len: scatterlist element length array
+ * @num_elements: scatterlist element count
+ * @out: calculated hash
  *
  * Return: 0 if success else error code
  */
 int qdf_get_keyed_hash(const char *alg, const uint8_t *key,
 			unsigned int key_len, const uint8_t *src[],
 			size_t *src_len, size_t num_elements, uint8_t *out);
+
 /**
  * qdf_update_dbl: This API does the doubling operation as defined in RFC5297
  * @d: input for doubling

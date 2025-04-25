@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_host_stats.h
- * @brief Define the host data path stats API functions
+ * DOC: cdp_txrx_host_stats.h
+ * Define the host data path stats API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_HOST_STATS_H_
@@ -28,12 +28,12 @@
 #include <cdp_txrx_cmn.h>
 #include <wmi_unified_api.h>
 /**
- * cdp_host_stats_get: cdp call to get host stats
+ * cdp_host_stats_get() - cdp call to get host stats
  * @soc: SOC handle
  * @vdev_id: vdev id of vdev
  * @req: Requirement type
  *
- * return: 0 for Success, Failure returns error message
+ * Return: 0 for Success, Failure returns error message
  */
 static inline int cdp_host_stats_get(ol_txrx_soc_handle soc,
 		uint8_t vdev_id,
@@ -53,14 +53,14 @@ static inline int cdp_host_stats_get(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_host_stats_get_ratekbps: cdp call to get rate in kbps
+ * cdp_host_stats_get_ratekbps() - cdp call to get rate in kbps
  * @soc: SOC handle
  * @preamb: Preamble
  * @mcs: Modulation and Coding scheme index
  * @htflag: Flag to identify HT or VHT
  * @gintval: Guard Interval value
  *
- * return: 0 for Failure, Returns rate on Success
+ * Return: 0 for Failure, Returns rate on Success
  */
 static inline int cdp_host_stats_get_ratekbps(ol_txrx_soc_handle soc,
 					      int preamb, int mcs,
@@ -82,11 +82,11 @@ static inline int cdp_host_stats_get_ratekbps(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_host_stats_clr: cdp call to clear host stats
+ * cdp_host_stats_clr() - cdp call to clear host stats
  * @soc: soc handle
  * @vdev_id: vdev handle id
  *
- * return: QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_host_stats_clr(ol_txrx_soc_handle soc, uint8_t vdev_id)
@@ -138,11 +138,11 @@ static inline int cdp_stats_publish
 }
 
 /**
- * @brief Enable enhanced stats functionality.
+ * cdp_enable_enhanced_stats() - Enable enhanced stats functionality.
+ * @soc: the soc object
+ * @pdev_id: id of the physical device object
  *
- * @param soc - the soc object
- * @param pdev_id - id of the physical device object
- * @return - QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_enable_enhanced_stats(ol_txrx_soc_handle soc, uint8_t pdev_id)
@@ -153,20 +153,20 @@ cdp_enable_enhanced_stats(ol_txrx_soc_handle soc, uint8_t pdev_id)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!soc->ops->host_stats_ops ||
-	    !soc->ops->host_stats_ops->txrx_enable_enhanced_stats)
+	if (!soc->ops->mon_ops ||
+	    !soc->ops->mon_ops->txrx_enable_enhanced_stats)
 		return QDF_STATUS_E_FAILURE;
 
-	return soc->ops->host_stats_ops->txrx_enable_enhanced_stats
+	return soc->ops->mon_ops->txrx_enable_enhanced_stats
 			(soc, pdev_id);
 }
 
 /**
- * @brief Disable enhanced stats functionality.
+ * cdp_disable_enhanced_stats() - Disable enhanced stats functionality.
+ * @soc: the soc object
+ * @pdev_id: id of the physical device object
  *
- * @param soc - the soc object
- * @param pdev_id - id of the physical device object
- * @return - QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_disable_enhanced_stats(ol_txrx_soc_handle soc, uint8_t pdev_id)
@@ -177,11 +177,11 @@ cdp_disable_enhanced_stats(ol_txrx_soc_handle soc, uint8_t pdev_id)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!soc->ops->host_stats_ops ||
-	    !soc->ops->host_stats_ops->txrx_disable_enhanced_stats)
+	if (!soc->ops->mon_ops ||
+	    !soc->ops->mon_ops->txrx_disable_enhanced_stats)
 		return QDF_STATUS_E_FAILURE;
 
-	return soc->ops->host_stats_ops->txrx_disable_enhanced_stats
+	return soc->ops->mon_ops->txrx_disable_enhanced_stats
 			(soc, pdev_id);
 }
 
@@ -298,12 +298,11 @@ cdp_host_me_stats(ol_txrx_soc_handle soc, uint8_t vdev_id)
 }
 
 /**
- * cdp_per_peer_stats(): function to print per peer REO Queue stats
+ * cdp_per_peer_stats() - function to print per peer REO Queue stats
  * @soc: soc handle
- * @pdev: physical device
  * @addr: peer address
  *
- * return: status
+ * Return: status
  */
 static inline QDF_STATUS cdp_per_peer_stats(ol_txrx_soc_handle soc,
 					    uint8_t *addr)
@@ -397,13 +396,14 @@ static inline QDF_STATUS cdp_get_dp_htt_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Update pdev host stats received from firmware
+ * cdp_update_pdev_host_stats() - Update pdev host stats received from firmware
  * (wmi_host_pdev_stats and wmi_host_pdev_ext_stats) into dp
+ * @soc: soc handle
+ * @pdev_id: id of the physical device object
+ * @data: pdev stats
+ * @stats_id: statistics to be updated
  *
- * @param soc - soc handle
- * @param pdev_id - id of the physical device object
- * @param data - pdev stats
- * @return - QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_update_pdev_host_stats(ol_txrx_soc_handle soc,
@@ -427,20 +427,19 @@ cdp_update_pdev_host_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Update vdev host stats
- *
+ * cdp_update_vdev_host_stats() - Update vdev host stats
  * @soc: soc handle
  * @vdev_id: id of the virtual device object
  * @data: pdev stats
  * @stats_id: type of stats
- *
+ * @xmit_type: xmit type, MLO/Legacy
  * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_update_vdev_host_stats(ol_txrx_soc_handle soc,
 			   uint8_t vdev_id,
 			   void *data,
-			   uint16_t stats_id)
+			   uint16_t stats_id, uint8_t xmit_type)
 {
 	if (!soc || !soc->ops) {
 		dp_cdp_debug("Invalid Instance");
@@ -454,18 +453,19 @@ cdp_update_vdev_host_stats(ol_txrx_soc_handle soc,
 
 	return soc->ops->host_stats_ops->txrx_update_vdev_stats(soc, vdev_id,
 								data,
-								stats_id);
+								stats_id,
+								xmit_type);
 }
 
 /**
- * @brief Call to get specified peer stats
+ * cdp_txrx_get_peer_stats_param() - Call to get specified peer stats
+ * @soc: soc handle
+ * @vdev_id: vdev_id of vdev object
+ * @peer_mac: mac address of the peer
+ * @type: enum of required stats
+ * @buf: buffer to hold the value
  *
- * @param soc - soc handle
- * @param vdev_id - vdev_id of vdev object
- * @param peer_mac - mac address of the peer
- * @param type - enum of required stats
- * @param buf - buffer to hold the value
- * @return - QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_txrx_get_peer_stats_param(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -491,11 +491,11 @@ cdp_txrx_get_peer_stats_param(ol_txrx_soc_handle soc, uint8_t vdev_id,
 }
 
 /**
- * @brief Call to get soc stats
+ * cdp_host_get_soc_stats() - Call to get soc stats
+ * @soc: soc handle
+ * @soc_stats: buffer for cdp soc stats
  *
- * @param soc - soc handle
- * @soc_stats - buffer for cdp soc stats
- * @return - QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_host_get_soc_stats(ol_txrx_soc_handle soc, struct cdp_soc_stats *soc_stats)
@@ -514,12 +514,13 @@ cdp_host_get_soc_stats(ol_txrx_soc_handle soc, struct cdp_soc_stats *soc_stats)
 }
 
 /**
- * @brief Call to get peer stats
+ * cdp_host_get_peer_stats() - Call to get peer stats
+ * @soc: soc handle
+ * @vdev_id: vdev_id of vdev object
+ * @peer_mac: mac address of the peer
+ * @peer_stats: destination buffer
  *
- * @param soc - soc handle
- * @param vdev_id - vdev_id of vdev object
- * @param peer_mac - mac address of the peer
- * @return - struct cdp_peer_stats
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_host_get_peer_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -541,13 +542,86 @@ cdp_host_get_peer_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
 							     peer_stats);
 }
 
+
 /**
- * @brief Call to reset ald stats
+ * cdp_host_get_peer_stats_based_on_peer_type() - Fetch peer stats based on the
+ * peer type
+ * @soc: soc handle
+ * @vdev_id: vdev_id of vdev object
+ * @peer_mac: mac address of the peer
+ * @peer_stats: destination buffer
+ * @peer_type: type of peer
  *
- * @param soc - soc handle
- * @param vdev_id - vdev_id of vdev object
- * @param peer_mac - mac address of the peer
- * @return - void
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_host_get_peer_stats_based_on_peer_type(ol_txrx_soc_handle soc, uint8_t vdev_id,
+					   uint8_t *peer_mac,
+					   struct cdp_peer_stats *peer_stats,
+					   enum cdp_peer_type peer_type)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->txrx_get_peer_stats_based_on_peer_type)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->txrx_get_peer_stats_based_on_peer_type(
+								soc, vdev_id,
+								peer_mac,
+								peer_stats,
+								peer_type);
+}
+
+/**
+ * cdp_host_get_per_link_peer_stats() - Call to get peer stats
+ * @soc: soc handle
+ * @vdev_id: vdev_id of vdev object
+ * @peer_mac: mac address of the peer
+ * @peer_stats: destination buffer
+ * @peer_type: Peer type
+ * @num_link: Number of ML links
+ *
+ * NOTE: For peer_type = CDP_MLD_PEER_TYPE peer_stats should point to
+ *       buffer of size = (sizeof(*peer_stats) * num_link)
+ *
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_host_get_per_link_peer_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
+				 uint8_t *peer_mac,
+				 struct cdp_peer_stats *peer_stats,
+				 enum cdp_peer_type peer_type,
+				 uint8_t num_link)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->txrx_get_per_link_stats)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->txrx_get_per_link_stats(soc, vdev_id,
+								 peer_mac,
+								 peer_stats,
+								 peer_type,
+								 num_link);
+}
+
+/**
+ * cdp_host_reset_peer_ald_stats() - Call to reset ald stats
+ * @soc: soc handle
+ * @vdev_id: vdev_id of vdev object
+ * @peer_mac: mac address of the peer
+ *
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_host_reset_peer_ald_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -569,12 +643,12 @@ cdp_host_reset_peer_ald_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
 }
 
 /**
- * @brief Call to reset peer stats
+ * cdp_host_reset_peer_stats() - Call to reset peer stats
+ * @soc: soc handle
+ * @vdev_id: vdev_id of vdev object
+ * @peer_mac: mac address of the peer
  *
- * @param soc - soc handle
- * @param vdev_id - vdev_id of vdev object
- * @param peer_mac - mac address of the peer
- * @return - QDF_STATUS
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_host_reset_peer_stats(ol_txrx_soc_handle soc,
@@ -596,12 +670,13 @@ cdp_host_reset_peer_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Call to get vdev stats
+ * cdp_host_get_vdev_stats() - Call to get vdev stats
+ * @soc: dp soc object
+ * @vdev_id: id of dp vdev object
+ * @buf: buffer
+ * @is_aggregate:
  *
- * @param soc - dp soc object
- * @param vdev_id - id of dp vdev object
- * @param buf - buffer
- * @return - int
+ * Return: int
  */
 static inline int
 cdp_host_get_vdev_stats(ol_txrx_soc_handle soc,
@@ -625,13 +700,14 @@ cdp_host_get_vdev_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Call to update vdev stats received from firmware
- * (wmi_host_vdev_stats and wmi_host_vdev_extd_stats) into dp
+ * cdp_update_host_vdev_stats() - Call to update vdev stats received from
+ * firmware (wmi_host_vdev_stats and wmi_host_vdev_extd_stats) into dp
+ * @soc: soc handle
+ * @data: stats data to be updated
+ * @size: size of stats data
+ * @stats_id: stats id
  *
- * @param data - stats data to be updated
- * @param size - size of stats data
- * @param stats_id - stats id
- * @return - int
+ * Return: int
  */
 static inline int
 cdp_update_host_vdev_stats(ol_txrx_soc_handle soc,
@@ -657,12 +733,12 @@ cdp_update_host_vdev_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Call to get vdev extd stats
+ * cdp_get_vdev_extd_stats() - Call to get vdev extd stats
+ * @soc: soc handle
+ * @vdev_id: id of dp vdev object
+ * @buf: buffer
  *
- * @param soc - soc handle
- * @param vdev_id - id of dp vdev object
- * @param buf - buffer
- * @return - int
+ * Return: int
  */
 static inline int
 cdp_get_vdev_extd_stats(ol_txrx_soc_handle soc,
@@ -684,12 +760,12 @@ cdp_get_vdev_extd_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Call to get cdp_pdev_stats
+ * cdp_host_get_pdev_stats() - Call to get cdp_pdev_stats
+ * @soc: soc handle
+ * @pdev_id: id of dp pdev object
+ * @buf: buffer to hold cdp_pdev_stats
  *
- * @param soc - soc handle
- * @param pdev_id - id of dp pdev object
- * @param buf - buffer to hold cdp_pdev_stats
- * @return - success/failure
+ * Return: success/failure
  */
 static inline int
 cdp_host_get_pdev_stats(ol_txrx_soc_handle soc,
@@ -709,12 +785,12 @@ cdp_host_get_pdev_stats(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief Call to get radio stats
+ * cdp_host_get_radio_stats() - Call to get radio stats
+ * @soc: soc handle
+ * @pdev_id: id of dp pdev object
+ * @buf: stats buffer
  *
- * @param soc - soc handle
- * @param pdev_id - id of dp pdev object
- * @param scn_stats_user - stats buffer
- * @return - int
+ * Return: int
  */
 static inline int
 cdp_host_get_radio_stats(ol_txrx_soc_handle soc,
@@ -764,7 +840,7 @@ cdp_get_scan_spcl_vap_stats(ol_txrx_soc_handle soc,
  * @peer_mac: peer mac address
  * @delay_stats: user allocated buffer for peer delay stats
  *
- * return: status Success/Failure
+ * Return: status Success/Failure
  */
 static inline QDF_STATUS
 cdp_get_peer_delay_stats(ol_txrx_soc_handle soc,
@@ -796,7 +872,7 @@ cdp_get_peer_delay_stats(ol_txrx_soc_handle soc,
  * @peer_mac: peer mac address
  * @tid_stats: user allocated buffer for tid_stats
  *
- * return: status Success/Failure
+ * Return: status Success/Failure
  */
 static inline QDF_STATUS
 cdp_get_peer_jitter_stats(ol_txrx_soc_handle soc,
@@ -828,7 +904,7 @@ cdp_get_peer_jitter_stats(ol_txrx_soc_handle soc,
  * @pdev_id: id of dp_pdev handle
  * @stats: user allocated buffer for dp pdev mon stats
  *
- * return: status Success/Failure
+ * Return: status Success/Failure
  */
 static inline QDF_STATUS
 cdp_mon_pdev_get_rx_stats(ol_txrx_soc_handle soc, uint8_t pdev_id,
@@ -855,7 +931,7 @@ cdp_mon_pdev_get_rx_stats(ol_txrx_soc_handle soc, uint8_t pdev_id,
  * @peer_mac: peer mac address
  * @stats: pointer to peer tx capture stats
  *
- * return: status Success/Failure
+ * Return: status Success/Failure
  */
 static inline QDF_STATUS
 cdp_get_peer_tx_capture_stats(ol_txrx_soc_handle soc,
@@ -884,7 +960,7 @@ cdp_get_peer_tx_capture_stats(ol_txrx_soc_handle soc,
  * @pdev_id: id of dp_pdev handle
  * @stats: pointer to pdev tx capture stats
  *
- * return: status Success/Failure
+ * Return: status Success/Failure
  */
 static inline QDF_STATUS
 cdp_get_pdev_tx_capture_stats(ol_txrx_soc_handle soc, uint8_t pdev_id,
@@ -938,7 +1014,7 @@ cdp_enable_disable_vdev_tx_delay_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
  * @soc: soc handle
  * @vdev_id: vdev_id
  *
- * Returns: 1 if enabled, 0 if disabled
+ * Return: 1 if enabled, 0 if disabled
  */
 static inline uint8_t
 cdp_vdev_is_tx_delay_stats_enabled(ol_txrx_soc_handle soc, uint8_t vdev_id)
@@ -980,14 +1056,14 @@ cdp_get_pdev_tid_stats(ol_txrx_soc_handle soc, uint8_t pdev_id,
 								 tid_stats);
 }
 
-#ifdef WLAN_TELEMETRY_STATS_SUPPORT
+#ifdef WLAN_CONFIG_TELEMETRY_AGENT
 /**
- * cdp_get_pdev_telemetry_stats(): function to get pdev telemetry stats
+ * cdp_get_pdev_telemetry_stats() - function to get pdev telemetry stats
  * @soc: soc handle
  * @pdev_id: pdev id
  * @stats: pointer to pdev telemetry stats
  *
- * return: status
+ * Return: status
  */
 static inline QDF_STATUS cdp_get_pdev_telemetry_stats(
 				ol_txrx_soc_handle soc,
@@ -1009,12 +1085,12 @@ static inline QDF_STATUS cdp_get_pdev_telemetry_stats(
 }
 
 /**
- * cdp_get_peer_telemetry_stats(): function to get peer telemetry stats
+ * cdp_get_peer_telemetry_stats() - function to get peer telemetry stats
  * @soc: soc handle
  * @addr: peer address
  * @stats: pointer to peer telemetry stats
  *
- * return: status
+ * Return: status
  */
 static inline QDF_STATUS cdp_get_peer_telemetry_stats(
 				ol_txrx_soc_handle soc,
@@ -1034,15 +1110,98 @@ static inline QDF_STATUS cdp_get_peer_telemetry_stats(
 	return soc->ops->host_stats_ops->txrx_peer_telemetry_stats(
 					soc, addr, stats);
 }
+
+/**
+ * cdp_get_pdev_deter_stats(): function to get pdev deterministic stats
+ * @soc: soc handle
+ * @pdev_id: pdev id
+ * @stats: pointer to pdev deterministic stats
+ *
+ * return: status
+ */
+static inline QDF_STATUS cdp_get_pdev_deter_stats(
+				ol_txrx_soc_handle soc,
+				uint8_t pdev_id,
+				struct cdp_pdev_deter_stats *stats)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->txrx_pdev_deter_stats)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->txrx_pdev_deter_stats(
+					soc, pdev_id, stats);
+}
+
+/**
+ * cdp_get_peer_deter_stats(): function to get peer deterministic stats
+ * @soc: soc handle
+ * @vdev_id: id of vdev handle
+ * @addr: peer address
+ * @stats: pointer to peer telemetry stats
+ *
+ * return: status
+ */
+static inline QDF_STATUS cdp_get_peer_deter_stats(
+				ol_txrx_soc_handle soc,
+				uint8_t vdev_id,
+				uint8_t *addr,
+				struct cdp_peer_deter_stats *stats)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->txrx_peer_deter_stats)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->txrx_peer_deter_stats(
+					soc, vdev_id, addr, stats);
+}
+
+/**
+ * cdp_update_pdev_chan_util_stats(): function to update pdev channel util stats
+ * @soc: soc handle
+ * @pdev_id: pdev id
+ * @ch_util: pointer to pdev ch util stats
+ *
+ * return: status
+ */
+static inline QDF_STATUS cdp_update_pdev_chan_util_stats(
+				ol_txrx_soc_handle soc,
+				uint8_t pdev_id,
+				struct cdp_pdev_chan_util_stats *ch_util)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->txrx_update_pdev_chan_util_stats)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->txrx_update_pdev_chan_util_stats(
+					soc, pdev_id, ch_util);
+}
 #endif
 
 /**
- * cdp_get_peer_extd_rate_link_stats(): cdp function to get peer
+ * cdp_get_peer_extd_rate_link_stats() - cdp function to get peer
  *				extended rate and link stats
  * @soc: soc handle
- * @addr: mac address
+ * @mac_addr: mac address
  *
- * return: status
+ * Return: status
  */
 static inline QDF_STATUS cdp_get_peer_extd_rate_link_stats(
 					ol_txrx_soc_handle soc,
@@ -1062,14 +1221,14 @@ static inline QDF_STATUS cdp_get_peer_extd_rate_link_stats(
 								soc, mac_addr);
 }
 
-/*
- * cdp_get_pdev_obss_pd_stats(): function to get pdev obss stats
+/**
+ * cdp_get_pdev_obss_pd_stats() - function to get pdev obss stats
  * @soc: soc handle
  * @pdev_id: pdev id
  * @stats: pointer to pdev obss stats
  * @req: Pointer to CDP TxRx stats
  *
- * return: status
+ * Return: status
  */
 static inline QDF_STATUS cdp_get_pdev_obss_pd_stats(
 				ol_txrx_soc_handle soc,
@@ -1092,13 +1251,13 @@ static inline QDF_STATUS cdp_get_pdev_obss_pd_stats(
 }
 
 /**
- * cdp_clear_pdev_obss_pd_stats(): function to clear pdev obss stats
+ * cdp_clear_pdev_obss_pd_stats() - function to clear pdev obss stats
  * @soc: soc handle
  * @pdev_id: pdev id
  * @req: Pointer to CDP TxRx stats request. mac_id will be pre-filled
  *	 and should not be overwritten
  *
- * return: status
+ * Return: status
  */
 static inline QDF_STATUS cdp_clear_pdev_obss_pd_stats(
 				ol_txrx_soc_handle soc,
@@ -1117,4 +1276,116 @@ static inline QDF_STATUS cdp_clear_pdev_obss_pd_stats(
 	return soc->ops->host_stats_ops->clear_pdev_obss_pd_stats(
 					soc, pdev_id, req);
 }
+
+/*
+ * cdp_host_get_interface_stats - Get vdev stats for ath interface
+ * @soc: soc handle
+ * @vdev_id: vdev_id
+ * @buf: buffer to hold vdev_stats
+ *
+ * return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_host_get_interface_stats(ol_txrx_soc_handle soc,
+			     uint8_t vdev_id,
+			     struct cdp_vdev_stats *buf)
+{
+	if (!soc || !soc->ops) {
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->txrx_get_interface_stats)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->txrx_get_interface_stats(soc,
+								  vdev_id,
+								  buf,
+								  true);
+}
+
+#ifdef WLAN_FEATURE_TX_LATENCY_STATS
+/**
+ * cdp_host_tx_latency_stats_config() - config transmit latency statistics for
+ * specified vdev
+ * @soc: Handle to struct dp_soc
+ * @vdev_id: vdev id
+ * @config: configuration for transmit latency statistics
+ *
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_host_tx_latency_stats_config(ol_txrx_soc_handle soc,
+				 uint8_t vdev_id,
+				 struct cdp_tx_latency_config *config)
+{
+	if (!soc || !soc->ops) {
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->tx_latency_stats_config)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->tx_latency_stats_config(soc,
+								 vdev_id,
+								 config);
+}
+
+/**
+ * cdp_host_tx_latency_stats_fetch() - fetch transmit latency statistics for
+ * specified link mac address
+ * @soc: Handle to struct dp_soc
+ * @vdev_id: vdev id
+ * @mac: link mac address of remote peer
+ * @latency: buffer to hold per-link transmit latency statistics
+ *
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_host_tx_latency_stats_fetch(ol_txrx_soc_handle soc,
+				uint8_t vdev_id, uint8_t *mac,
+				struct cdp_tx_latency *latency)
+{
+	if (!soc || !soc->ops) {
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->tx_latency_stats_fetch)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->tx_latency_stats_fetch(soc,
+								vdev_id,
+								mac,
+								latency);
+}
+
+/**
+ * cdp_host_tx_latency_stats_register_cb() - register transmit latency
+ * statistics callback
+ * @soc: Handle to struct dp_soc
+ * @cb: callback function for transmit latency statistics
+ *
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_host_tx_latency_stats_register_cb(ol_txrx_soc_handle soc,
+				      cdp_tx_latency_cb cb)
+{
+	if (!soc || !soc->ops) {
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->host_stats_ops ||
+	    !soc->ops->host_stats_ops->tx_latency_stats_register_cb)
+		return QDF_STATUS_E_FAILURE;
+
+	return soc->ops->host_stats_ops->tx_latency_stats_register_cb(soc, cb);
+}
+#endif
 #endif /* _CDP_TXRX_HOST_STATS_H_ */

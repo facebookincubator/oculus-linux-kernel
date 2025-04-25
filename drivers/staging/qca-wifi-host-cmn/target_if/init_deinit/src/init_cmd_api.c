@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,7 @@
 #include <target_if_scan.h>
 #include <target_if_reg.h>
 #include <target_if_twt.h>
+#include <cdp_txrx_ctrl.h>
 
 /**
  *  init_deinit_alloc_host_mem_chunk() - allocates chunk of memory requested
@@ -455,6 +456,50 @@ static inline void init_deinit_derive_afc_dev_type_param(
 }
 #endif
 
+#ifdef WLAN_FEATURE_11BE_MLO
+#ifdef FEATURE_WLAN_TDLS
+static void
+init_deinit_set_tdls_mlo_vdev(struct wmi_init_cmd_param *init_param,
+			      struct wmi_unified *wmi_handle)
+{
+	if (wmi_service_enabled(wmi_handle, wmi_service_tdls_mlo_support))
+		init_param->res_cfg->num_tdls_vdevs = WLAN_UMAC_MLO_MAX_VDEVS;
+}
+#else
+static void
+init_deinit_set_tdls_mlo_vdev(struct wmi_init_cmd_param *init_param,
+			      struct wmi_unified *wmi_handle)
+{}
+#endif
+#else
+static void
+init_deinit_set_tdls_mlo_vdev(struct wmi_init_cmd_param *init_param,
+			      struct wmi_unified *wmi_handle)
+{}
+#endif
+
+/**
+ * init_deinit_set_dp_rx_peer_metadata_ver() - update RX peer metadata
+ *                                             version to DP
+ * @psoc: PSOC object
+ * @peer_md_ver: peer metadata version value
+ *
+ * Return: None
+ */
+static void
+init_deinit_set_dp_rx_peer_metadata_ver(struct wlan_objmgr_psoc *psoc,
+					uint8_t peer_md_ver)
+{
+	ol_txrx_soc_handle soc;
+	cdp_config_param_type val = {0};
+
+	val.cdp_peer_metadata_ver = peer_md_ver;
+	soc = wlan_psoc_get_dp_handle(psoc);
+
+	cdp_txrx_set_psoc_param(soc, CDP_CFG_RX_PEER_METADATA_VER,
+				val);
+}
+
 void init_deinit_prepare_send_init_cmd(
 		 struct wlan_objmgr_psoc *psoc,
 		 struct target_psoc_info *tgt_hdl)
@@ -530,9 +575,24 @@ void init_deinit_prepare_send_init_cmd(
 	if (wmi_service_enabled(wmi_handle, wmi_service_ext2_msg))
 		init_deinit_derive_afc_dev_type_param(psoc, &init_param);
 
+	if (wmi_service_enabled(wmi_handle, wmi_service_v1a_v1b_supported))
+		info->wlan_res_cfg.dp_peer_meta_data_ver =
+					CDP_RX_PEER_METADATA_V1_A_B;
+	else
+		info->wlan_res_cfg.dp_peer_meta_data_ver =
+			target_psoc_get_target_dp_peer_meta_data_ver(tgt_hdl);
+
+	/* notify DP rx peer metadata version */
+	init_deinit_set_dp_rx_peer_metadata_ver(
+			psoc, info->wlan_res_cfg.dp_peer_meta_data_ver);
+
+	init_deinit_set_tdls_mlo_vdev(&init_param, wmi_handle);
+
 	target_if_ext_res_cfg_enable(psoc, tgt_hdl, NULL);
 
 	target_if_set_reo_shared_qref_feature(psoc, info);
+
+	target_if_set_num_max_mlo_link(psoc, info);
 
 	wmi_unified_init_cmd_send(wmi_handle, &init_param);
 

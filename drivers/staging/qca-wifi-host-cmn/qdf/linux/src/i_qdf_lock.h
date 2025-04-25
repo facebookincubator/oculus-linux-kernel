@@ -54,7 +54,7 @@ enum {
 };
 
 /**
- * typedef struct - __qdf_mutex_t
+ * struct qdf_lock_s - mutex abstraction
  * @m_lock: Mutex lock
  * @cookie: Lock cookie
  * @process_id: Process ID to track lock
@@ -71,10 +71,13 @@ struct qdf_lock_s {
 	struct lock_stats stats;
 };
 
+/**
+ * typedef __qdf_mutex_t - Mutex abstraction
+ */
 typedef struct qdf_lock_s __qdf_mutex_t;
 
 /**
- * typedef struct - qdf_spinlock_t
+ * typedef __qdf_spinlock_t - spinlock abstraction
  * @spinlock: Spin lock
  * @flags: Lock flag
  */
@@ -83,10 +86,13 @@ typedef struct __qdf_spinlock {
 	unsigned long flags;
 } __qdf_spinlock_t;
 
+/**
+ * typedef __qdf_semaphore_t - semaphore abstraction
+ */
 typedef struct semaphore __qdf_semaphore_t;
 
 /**
- * typedef struct - qdf_wake_lock_t
+ * typedef qdf_wake_lock_t - wakelock abstraction
  * @lock: this lock needs to be used in kernel version < 5.4
  * @priv: this lock pointer needs to be used in kernel version >= 5.4
  */
@@ -153,15 +159,16 @@ static inline int __qdf_semaphore_acquire(struct semaphore *m)
 }
 
 /**
- * __qdf_semaphore_acquire_intr() - down_interruptible allows a user-space
- * process that is waiting on a semaphore to be interrupted by the user.
- * If the operation is interrupted, the function returns a nonzero value,
- * and the caller does not hold the semaphore.
- * Always checking the return value and responding accordingly.
- * @osdev: OS device handle
+ * __qdf_semaphore_acquire_intr() - Take the semaphore, interruptible
  * @m: Semaphore object
  *
- * Return: int
+ * This function allows a user-space process that is waiting on a
+ * semaphore to be interrupted by the user.  If the operation is
+ * interrupted, the function returns a nonzero value, and the caller
+ * does not hold the semaphore.  Always check the return value and
+ * responding accordingly.
+ *
+ * Return: 0 if the semaphore was acquired, non-zero if not acquired
  */
 static inline int __qdf_semaphore_acquire_intr(struct semaphore *m)
 {
@@ -183,6 +190,7 @@ static inline void __qdf_semaphore_release(struct semaphore *m)
  * __qdf_semaphore_acquire_timeout() - Take the semaphore before timeout
  * @m: semaphore to take
  * @timeout: maximum time to try to take the semaphore
+ *
  * Return: int
  */
 static inline int __qdf_semaphore_acquire_timeout(struct semaphore *m,
@@ -262,7 +270,7 @@ static inline void __qdf_spin_unlock_irqrestore(__qdf_spinlock_t *lock)
 	spin_unlock_irqrestore(_p_lock, _flags)
 
 /**
- * __qdf_spin_is_locked(__qdf_spinlock_t *lock)
+ * __qdf_spin_is_locked() - Test if spinlock is locked
  * @lock: spinlock object
  *
  * Return: nonzero if lock is held.
@@ -334,12 +342,14 @@ static inline void __qdf_spin_unlock_bh(__qdf_spinlock_t *lock)
 }
 
 /**
- * __qdf_spinlock_irq_exec - Execute the input function with spinlock held and interrupt disabled.
+ * __qdf_spinlock_irq_exec() - Execute the input function with
+ *                             spinlock held and interrupt disabled.
  * @hdl: OS handle
  * @lock: spinlock to be held for the critical region
  * @func: critical region function that to be executed
- * @context: context of the critical region function
- * @return - Boolean status returned by the critical region function
+ * @arg: context of the critical region function
+ *
+ * Return: Boolean status returned by the critical region function
  */
 static inline bool __qdf_spinlock_irq_exec(qdf_handle_t hdl,
 			__qdf_spinlock_t *lock,

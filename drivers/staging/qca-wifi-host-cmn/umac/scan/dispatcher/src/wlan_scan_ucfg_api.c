@@ -77,6 +77,11 @@ void ucfg_scan_filter_valid_channel(struct wlan_objmgr_pdev *pdev,
 	scm_filter_valid_channel(pdev, chan_freq_list, num_chan);
 }
 
+uint32_t ucfg_scan_get_entry_frame_len(struct scan_cache_entry *scan_entry)
+{
+	return util_scan_entry_frame_len(scan_entry);
+}
+
 QDF_STATUS ucfg_scan_init(void)
 {
 	QDF_STATUS status;
@@ -824,6 +829,7 @@ wlan_scan_global_init(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_SKIP_6GHZ_AND_INDOOR_FREQ_SCAN);
 	scan_obj->scan_def.last_scan_ageout_time =
 		cfg_get(psoc, CFG_LAST_SCAN_AGEOUT_TIME);
+	scan_obj->aux_mac_support = false;
 
 	/* init scan id seed */
 	qdf_atomic_init(&scan_obj->scan_ids);

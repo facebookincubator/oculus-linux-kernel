@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -148,4 +149,16 @@ bool cfg_nan_is_roam_config_disabled(struct wlan_objmgr_psoc *psoc)
 		return sta_roam_disable & LFR3_STA_ROAM_DISABLE_BY_NAN;
 
 	return false;
+}
+
+bool cfg_nan_is_eht_cap_enable(struct wlan_objmgr_psoc *psoc)
+{
+	struct nan_psoc_priv_obj *nan_obj = cfg_nan_get_priv_obj(psoc);
+
+	if (!nan_obj) {
+		nan_err("nan psoc priv object is NULL");
+		return cfg_default(CFG_NAN_ENABLE_EHT_CAP);
+	}
+
+	return nan_obj->cfg_param.enable_nan_eht_cap;
 }

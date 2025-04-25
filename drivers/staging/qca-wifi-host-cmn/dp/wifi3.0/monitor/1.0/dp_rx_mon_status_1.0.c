@@ -488,8 +488,11 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 				rx_tlv = hal_rx_status_get_next_tlv(rx_tlv,
 						mon_pdev->is_tlv_hdr_64_bit);
 
-				if (qdf_unlikely((rx_tlv - rx_tlv_start)) >=
-					RX_MON_STATUS_BUF_SIZE)
+				if (qdf_unlikely(((rx_tlv - rx_tlv_start) >=
+						RX_MON_STATUS_BUF_SIZE) ||
+						(RX_MON_STATUS_BUF_SIZE -
+						(rx_tlv - rx_tlv_start) <
+						mon_pdev->tlv_hdr_size)))
 					break;
 
 			} while ((tlv_status == HAL_TLV_STATUS_PPDU_NOT_DONE) ||
@@ -524,6 +527,14 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 						pdev, ppdu_info, status_nbuf);
 			if (smart_mesh_status)
 				qdf_nbuf_free(status_nbuf);
+		} else if (qdf_unlikely(IS_LOCAL_PKT_CAPTURE_RUNNING(mon_pdev,
+				is_local_pkt_capture_running))) {
+			int ret;
+
+			ret = dp_rx_handle_local_pkt_capture(pdev, ppdu_info,
+							     status_nbuf);
+			if (ret)
+				qdf_nbuf_free(status_nbuf);
 		} else if (qdf_unlikely(mon_pdev->mcopy_mode)) {
 			dp_rx_process_mcopy_mode(soc, pdev,
 						 ppdu_info, tlv_status,
@@ -541,6 +552,7 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 
 		if (qdf_unlikely(tlv_status == HAL_TLV_STATUS_PPDU_NON_STD_DONE)) {
 			dp_rx_mon_deliver_non_std(soc, mac_id);
+			dp_mon_rx_ppdu_status_reset(mon_pdev);
 		} else if ((qdf_likely(tlv_status == HAL_TLV_STATUS_PPDU_DONE)) &&
 				(qdf_likely(!dp_rx_mon_check_phyrx_abort(pdev, ppdu_info)))) {
 			rx_mon_stats->status_ppdu_done++;
@@ -587,7 +599,7 @@ dp_rx_mon_status_process_tlv(struct dp_soc *soc, struct dp_intr *int_ctx,
 				dp_rx_mon_dest_process(soc, int_ctx, mac_id,
 						       quota);
 
-			mon_pdev->mon_ppdu_status = DP_PPDU_STATUS_START;
+			dp_mon_rx_ppdu_status_reset(mon_pdev);
 		} else {
 			dp_rx_mon_handle_ppdu_undecoded_metadata(soc, pdev,
 								 ppdu_info);
@@ -1095,7 +1107,6 @@ QDF_STATUS dp_rx_mon_status_buffers_replenish(struct dp_soc *dp_soc,
 
 			hal_get_sw_hptp(dp_soc->hal_soc, rxdma_srng, &tp, &hp);
 			dp_err("HP adjusted to proper buffer index, hp:%u tp:%u", hp, tp);
-
 			break;
 		}
 

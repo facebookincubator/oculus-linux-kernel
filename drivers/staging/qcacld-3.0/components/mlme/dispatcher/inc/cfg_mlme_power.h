@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -148,27 +149,6 @@
 
 /*
  * <ini>
- * use_local_tpe - use local or regulatory TPE
- * @Min: 0
- * @Max: 1
- * @Default: 0
- *
- * This ini is used to set the preference of local or regulatory TPE. If the
- * preferred choice is not available, it will fall back on the other choice.
- *
- * Related: None
- *
- * Supported Feature: 6GHz channel transmit power
- *
- * Usage: External
- *
- * </ini>
- */
-#define CFG_USE_LOCAL_TPE CFG_INI_BOOL("use_local_tpe", false, \
-					"use local or regulatory TPE")
-
-/*
- * <ini>
  * skip_tpe_consideration - Skip TPE IE value in tx power calculation for
  * 2G/5G bands
  * @Min: 0
@@ -200,7 +180,6 @@
 	CFG(CFG_SET_TXPOWER_LIMIT5G) \
 	CFG(CFG_CURRENT_TX_POWER_LEVEL) \
 	CFG(CFG_LOCAL_POWER_CONSTRAINT) \
-	CFG(CFG_USE_LOCAL_TPE) \
 	CFG(CFG_SKIP_TPE_CONSIDERATION)
 
 #endif /* __CFG_MLME_POWER_H */

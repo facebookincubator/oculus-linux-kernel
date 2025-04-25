@@ -188,13 +188,13 @@ struct pmo_action_wakeup_set_params {
 };
 
 /**
- * enum pmo_wow_action_wakeup_opertion: describe action wakeup operation
+ * enum pmo_wow_action_wakeup_operation - describe action wakeup operation
  * @pmo_action_wakeup_reset: reset
  * @pmo_action_wakeup_set: set
  * @pmo_action_wakeup_add_set: add and set
  * @pmo_action_wakeup_del_set: delete and set
  */
-enum pmo_wow_action_wakeup_opertion {
+enum pmo_wow_action_wakeup_operation {
 	pmo_action_wakeup_reset = 0,
 	pmo_action_wakeup_set,
 	pmo_action_wakeup_add_set,

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,7 @@
 
 struct hdd_context;
 struct hdd_adapter;
+struct wlan_hdd_link_info;
 struct wma_tgt_cfg;
 struct wmi_twt_add_dialog_param;
 struct wmi_twt_del_dialog_param;
@@ -257,14 +258,15 @@ void hdd_send_twt_role_disable_cmd(struct hdd_context *hdd_ctx,
 
 /**
  * hdd_send_twt_del_all_sessions_to_userspace() - Terminate all TWT sessions
- * @adapter: adapter
+ * @link_info: Link info pointer in HDD adapter
  *
  * This function checks if association exists and TWT session is setup,
  * then send the TWT teardown vendor NL event to the user space.
  *
  * Return: None
  */
-void hdd_send_twt_del_all_sessions_to_userspace(struct hdd_adapter *adapter);
+void
+hdd_send_twt_del_all_sessions_to_userspace(struct wlan_hdd_link_info *link_info);
 
 /**
  * hdd_twt_concurrency_update_on_scc() - Send TWT disable command to fw if
@@ -370,6 +372,28 @@ QDF_STATUS hdd_get_twt_requestor(struct wlan_objmgr_psoc *psoc, bool *val);
  * Return: QDF_STATUS
  */
 QDF_STATUS hdd_get_twt_responder(struct wlan_objmgr_psoc *psoc, bool *val);
+
+/**
+ * wlan_hdd_resume_pmo_twt() - resume twt worker
+ * @hdd_ctx: hdd context
+ *
+ * Return: None
+ */
+void wlan_hdd_resume_pmo_twt(struct hdd_context *hdd_ctx);
+/**
+ * wlan_hdd_suspend_pmo_twt() - suspend twt worker
+ * @hdd_ctx: hdd context
+ *
+ * Return: None
+ */
+void wlan_hdd_suspend_pmo_twt(struct hdd_context *hdd_ctx);
+/**
+ * wlan_hdd_is_twt_pmo_allowed() - check twt disabled
+ * @hdd_ctx: hdd context
+ *
+ * Return: true if twt pmo is allowed otherwise false
+ */
+bool wlan_hdd_is_twt_pmo_allowed(struct hdd_context *hdd_ctx);
 #else
 static inline void hdd_update_tgt_twt_cap(struct hdd_context *hdd_ctx,
 					  struct wma_tgt_cfg *cfg)
@@ -430,8 +454,8 @@ void hdd_send_twt_role_disable_cmd(struct hdd_context *hdd_ctx,
 {
 }
 
-static inline
-void hdd_send_twt_del_all_sessions_to_userspace(struct hdd_adapter *adapter)
+static inline void
+hdd_send_twt_del_all_sessions_to_userspace(struct wlan_hdd_link_info *link_info)
 {
 }
 
@@ -485,6 +509,19 @@ QDF_STATUS hdd_get_twt_responder(struct wlan_objmgr_psoc *psoc, bool *val)
 {
 	*val = false;
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline void wlan_hdd_resume_pmo_twt(struct hdd_context *hdd_ctx)
+{
+}
+
+static inline void wlan_hdd_suspend_pmo_twt(struct hdd_context *hdd_ctx)
+{
+}
+
+static inline bool wlan_hdd_is_twt_pmo_allowed(struct hdd_context *hdd_ctx)
+{
+	return true;
 }
 
 #define FEATURE_VENDOR_SUBCMD_WIFI_CONFIG_TWT

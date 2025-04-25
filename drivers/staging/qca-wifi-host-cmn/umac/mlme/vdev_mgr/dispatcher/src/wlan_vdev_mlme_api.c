@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -482,3 +482,26 @@ wlan_mlme_update_sr_data(struct wlan_objmgr_vdev *vdev, int *val,
 	wlan_vdev_mlme_set_current_srg_pd_threshold(vdev, srg_pd_threshold);
 }
 #endif
+
+void wlan_mlme_disable_fd_in_6ghz_band(struct wlan_objmgr_vdev *vdev,
+				       bool disable_fd)
+{
+	struct vdev_mlme_obj *vdev_mlme;
+
+	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
+	if (!vdev_mlme)
+		return;
+
+	vdev_mlme->mgmt.generic.disable_fd_in_6ghz_band = disable_fd;
+}
+
+bool wlan_mlme_is_fd_disabled_in_6ghz_band(struct wlan_objmgr_vdev *vdev)
+{
+	struct vdev_mlme_obj *vdev_mlme;
+
+	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
+	if (!vdev_mlme)
+		return false;
+
+	return vdev_mlme->mgmt.generic.disable_fd_in_6ghz_band;
+}

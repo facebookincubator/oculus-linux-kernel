@@ -95,8 +95,7 @@ QDF_STATUS hif_dev_send_buffer(struct hif_sdio_device *pdev, uint32_t xfer_id,
 	int frag_count = 0, i, count, head_len;
 
 	if (hif_get_send_address(pdev, pipe, &addr)) {
-		hif_err("%s: Invalid address map for pipe 0x%x",
-			__func__, pipe);
+		hif_err("Invalid address map for pipe 0x%x", pipe);
 
 		return QDF_STATUS_E_INVAL;
 	}
@@ -216,15 +215,13 @@ QDF_STATUS hif_dev_alloc_and_prepare_rx_packets(struct hif_sdio_device *pdev,
 	for (i = 0; i < messages; i++) {
 		hdr = (HTC_FRAME_HDR *)&look_aheads[i];
 		if (hdr->EndpointID >= ENDPOINT_MAX) {
-			hif_err("%s: Invalid Endpoint:%d\n",
-				__func__, hdr->EndpointID);
+			hif_err("Invalid Endpoint:%d", hdr->EndpointID);
 			status = QDF_STATUS_E_INVAL;
 			break;
 		}
 
 		if (hdr->PayloadLen > HTC_MAX_PAYLOAD_LENGTH) {
-			hif_err("%s: Payload length %d exceeds max HTC : %u",
-				__func__,
+			hif_err("Payload length %d exceeds max HTC : %u",
 				hdr->PayloadLen,
 				(uint32_t)HTC_MAX_PAYLOAD_LENGTH);
 			status = QDF_STATUS_E_INVAL;
@@ -245,8 +242,8 @@ QDF_STATUS hif_dev_alloc_and_prepare_rx_packets(struct hif_sdio_device *pdev,
 			 */
 			num_messages++;
 
-			hif_info("%s: HTC header : %u messages in bundle",
-				 __func__, num_messages);
+			hif_info("HTC header : %u messages in bundle",
+				 num_messages);
 		}
 
 		full_length = DEV_CALC_RECV_PADDED_LEN(pdev,
@@ -299,12 +296,12 @@ QDF_STATUS hif_dev_alloc_and_prepare_rx_packets(struct hif_sdio_device *pdev,
 
 			/* make sure  message can fit in the endpoint buffer */
 			if (full_length > packet->BufferLength) {
-				hif_err("%s: Payload Length Error", __func__);
-				hif_err("%s: header reports payload: %u(%u)",
-					__func__, hdr->PayloadLen,
+				hif_err("Payload Length Error");
+				hif_err("header reports payload: %u(%u)",
+					hdr->PayloadLen,
 					full_length);
-				hif_err("%s: endpoint buffer size: %d\n",
-					__func__, packet->BufferLength);
+				hif_err("endpoint buffer size: %d",
+					packet->BufferLength);
 				status = QDF_STATUS_E_INVAL;
 				break;
 			}
@@ -381,7 +378,7 @@ QDF_STATUS hif_dev_process_trailer(struct hif_sdio_device *pdev,
 	HTC_RECORD_HDR *record;
 	HTC_LOOKAHEAD_REPORT *look_ahead;
 
-	hif_debug("%s: length:%d", __func__, length);
+	hif_debug("length:%d", length);
 
 	orig_buffer = buffer;
 	orig_length = length;
@@ -399,11 +396,10 @@ QDF_STATUS hif_dev_process_trailer(struct hif_sdio_device *pdev,
 
 		if (record->Length > length) {
 			/* no room left in buffer for record */
-			hif_err("%s: invalid record len: (%u, %u)",
-				__func__, record->Length,
+			hif_err("Invalid record len: (%u, %u)",
+				record->Length,
 				record->RecordID);
-			hif_err("%s: buffer has %d bytes left",
-				__func__, length);
+			hif_err("Buffer has %d bytes left", length);
 			status = QDF_STATUS_E_PROTO;
 			break;
 		}
@@ -420,12 +416,12 @@ QDF_STATUS hif_dev_process_trailer(struct hif_sdio_device *pdev,
 			if ((look_ahead->PreValid ==
 			     ((~look_ahead->PostValid) & 0xFF)) &&
 			    next_look_aheads) {
-				hif_debug("%s: look_ahead Report", __func__);
-				hif_debug("%s:prevalid:0x%x, postvalid:0x%x",
-					  __func__, look_ahead->PreValid,
+				hif_debug("Look_ahead Report");
+				hif_debug("Prevalid:0x%x, postvalid:0x%x",
+					  look_ahead->PreValid,
 					  look_ahead->PostValid);
-				hif_debug("%s:from endpoint %d : %u",
-					  __func__, from_endpoint,
+				hif_debug("From endpoint %d : %u",
+					  from_endpoint,
 					  look_ahead->LookAhead0);
 				/* look ahead bytes are valid, copy them over */
 				((uint8_t *)(&next_look_aheads[0]))[0] =
@@ -498,8 +494,8 @@ QDF_STATUS hif_dev_process_trailer(struct hif_sdio_device *pdev,
 			}
 			break;
 		default:
-			hif_err("%s: HIF unhandled record: id:%u length:%u",
-				__func__, record->RecordID, record->Length);
+			hif_err("HIF unhandled record: id:%u length:%u",
+				record->RecordID, record->Length);
 			break;
 		}
 
@@ -515,7 +511,7 @@ QDF_STATUS hif_dev_process_trailer(struct hif_sdio_device *pdev,
 		debug_dump_bytes(orig_buffer, orig_length,
 				 "BAD Recv Trailer");
 
-	hif_debug("%s: status = %d", __func__, status);
+	hif_debug("status = %d", status);
 
 	return status;
 }
@@ -572,10 +568,10 @@ QDF_STATUS hif_dev_process_recv_header(struct hif_sdio_device *pdev,
 
 			/* validate the actual header that was refreshed  */
 			if (packet->ActualLength > packet->BufferLength) {
-				hif_err("%s: Bundled RECV Look ahead: 0x%X",
-					__func__, look_ahead);
-				hif_err("%s: Invalid HDR payload length(%d)",
-					__func__,  payloadLen);
+				hif_err("Bundled RECV Look ahead: 0x%X",
+					look_ahead);
+				hif_err("Invalid HDR payload length(%d)",
+					payloadLen);
 				/* limit this to max buffer just to print out
 				 * some of the buffer
 				 */
@@ -588,12 +584,11 @@ QDF_STATUS hif_dev_process_recv_header(struct hif_sdio_device *pdev,
 
 			if (packet->Endpoint
 			    != HTC_GET_FIELD(buf, HTC_FRAME_HDR, ENDPOINTID)) {
-				hif_err("%s: Refreshed HDR EP (%d)",
-					__func__,
+				hif_err("Refreshed HDR EP (%d)",
 					HTC_GET_FIELD(buf, HTC_FRAME_HDR,
 						      ENDPOINTID));
-				hif_err("%s: doesn't match expected EP (%d)",
-					__func__, packet->Endpoint);
+				hif_err("Doesn't match expected EP (%d)",
+					packet->Endpoint);
 				status = QDF_STATUS_E_PROTO;
 				break;
 			}
@@ -604,12 +599,12 @@ QDF_STATUS hif_dev_process_recv_header(struct hif_sdio_device *pdev,
 			 * length did not reflect the actual header
 			 * in the pending message
 			 */
-			hif_err("%s: lookahead mismatch!", __func__);
-			hif_err("%s: pPkt:0x%lX flags:0x%X",
-				__func__, (unsigned long)packet,
+			hif_err("Lookahead mismatch!");
+			hif_err("pPkt:0x%lX flags:0x%X",
+				(unsigned long)packet,
 				packet->PktInfo.AsRx.HTCRxFlags);
-			hif_err("%s: look_ahead 0x%08X != 0x%08X",
-				__func__, look_ahead,
+			hif_err("Look_ahead 0x%08X != 0x%08X",
+				look_ahead,
 				packet->PktInfo.AsRx.ExpectedHdr);
 #ifdef ATH_DEBUG_MODULE
 			debug_dump_bytes((uint8_t *)&packet->PktInfo.AsRx.
@@ -642,12 +637,10 @@ QDF_STATUS hif_dev_process_recv_header(struct hif_sdio_device *pdev,
 
 			if ((temp < sizeof(HTC_RECORD_HDR)) ||
 			    (temp > payloadLen)) {
-				hif_err("%s: invalid header",
-					__func__);
-				hif_err("%s: payloadlength should be :%d",
-					__func__, payloadLen);
-				hif_err("%s: But control bytes is :%d)",
-					__func__, temp);
+				hif_err("Invalid header");
+				hif_err("Payloadlength should be :%d",
+					payloadLen);
+				hif_err("But control bytes is :%d)", temp);
 				status = QDF_STATUS_E_PROTO;
 				break;
 			}

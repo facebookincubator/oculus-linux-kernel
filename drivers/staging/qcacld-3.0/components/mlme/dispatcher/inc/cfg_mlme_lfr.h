@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -3125,12 +3125,8 @@
  * firmware gets empty roam scan results during periodic roam scans.
  * 1. roam_scan_inactivity_time
  * 2. roam_inactive_data_count
- * 3. roam_scan_period_after_inactivity
  * The first two ini "roam_scan_inactivity_time" and "roam_inactive_data_count"
- * is frames the criteria to detect if the DUT is inactive. If the device is
- * identified to be inactive based on the above two ini, then the value,
- * "roam_scan_period_after_inactivity" will be used as periodic roam scan
- * duration.
+ * is frames the criteria to detect if the DUT is inactive.
  *
  * Related: roam_inactive_data_count
  *
@@ -3216,37 +3212,6 @@
 
 /*
  * <ini>
- * roam_scan_period_after_inactivity - Roam scan duration in ms after device is
- * out of inactivity state.
- *
- * @Min: 0
- * @Max: 0xFFFFFFFF
- * @Default: 120000
- *
- * If there is empty scan results during roam scan, firmware will move to
- * roam scan inactive state if roam_scan_inactivity and
- * roam_inactive_data_count criteria are met.
- * This ini is used to configure the roam scan duration in ms once the
- * inactivity is finished and roam scan can be started.
- *
- * Related: roam_scan_inactivity_time, roam_inactive_data_count
- *
- * Supported Feature: Roaming
- *
- * Usage: External
- *
- * </ini>
- */
-#define CFG_POST_INACTIVITY_ROAM_SCAN_PERIOD CFG_INI_UINT( \
-	"roam_scan_period_after_inactivity", \
-	0, \
-	0xFFFFFFFF, \
-	120000, \
-	CFG_VALUE_OR_DEFAULT, \
-	"Roam scan period post inactivity")
-
-/*
- * <ini>
  * RoamScan_InactiveTimer - Roam scan duration in sec after device is
  * out of inactivity state.
  *
@@ -3305,6 +3270,57 @@
 #else
 #define ROAM_REASON_VSIE_ALL
 #endif
+
+/*
+ * <ini>
+ * groam_info_stats_num - number of wlan driver cache roam information
+ * @Min: 0
+ * @Max: 32
+ * @Default: 5
+ *
+ * This ini is used to set the cache number of enhanced roam
+ * information, including roam trigger, scan information and
+ * roam frame information.
+ * If ini set to 0, enhanced roam feature not support
+ *
+ * Related: LFR
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_LFR3_ROAM_INFO_STATS_NUM CFG_INI_UINT( \
+		"groam_info_stats_num", \
+		0, \
+		32, \
+		5, \
+		CFG_VALUE_OR_DEFAULT, \
+		"Roam information cache number in wlan driver")
+
+/*
+ * <ini>
+ * hs20_btm_offload_disable - To enable/disable BTM offload
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to enable/disable BTM offload for Hotspot 2.0.
+ * Some solutions may not have Hotspot 2.0 certification
+ * and there is no need to forward the BTM frame to wpa_supplicant,
+ * in such solutions Let firmware handle the frame, in such cases by
+ * enabling btm_offload so that it doesn't wakeup the host.
+ * Firmware may roam to another AP upon BTM reception.
+ *
+ * Related: LFR
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_HS_20_BTM_OFFLOAD_DISABLE CFG_INI_BOOL( \
+		"hs20_btm_offload_disable", \
+		true, \
+		"To Enable/disable BTM offload for hotspot 2.0")
 
 #define CFG_LFR_ALL \
 	CFG(CFG_LFR_MAWC_ROAM_ENABLED) \
@@ -3394,7 +3410,6 @@
 	CFG(CFG_FT_IM_ROAMING) \
 	CFG(CFG_ROAM_INACTIVE_COUNT) \
 	CFG(CFG_ROAM_PASSIVE_MAX_CHANNEL_TIME) \
-	CFG(CFG_POST_INACTIVITY_ROAM_SCAN_PERIOD) \
 	CFG(CFG_ROAM_SCAN_INACTIVE_TIMER) \
 	CFG(CFG_BSS_LOAD_TRIG_6G_RSSI_THRES) \
 	CFG(CFG_BSS_LOAD_TRIG_5G_RSSI_THRES) \
@@ -3407,6 +3422,8 @@
 	SAE_SINGLE_PMK_ALL \
 	ROAM_REASON_VSIE_ALL \
 	CFG(CFG_LFR_BEACONLOSS_TIMEOUT_ON_WAKEUP) \
-	CFG(CFG_LFR_BEACONLOSS_TIMEOUT_ON_SLEEP)
+	CFG(CFG_LFR_BEACONLOSS_TIMEOUT_ON_SLEEP) \
+	CFG(CFG_LFR3_ROAM_INFO_STATS_NUM) \
+	CFG(CFG_HS_20_BTM_OFFLOAD_DISABLE)
 
 #endif /* CFG_MLME_LFR_H__ */

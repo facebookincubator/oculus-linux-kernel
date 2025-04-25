@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -295,7 +295,7 @@ static QDF_STATUS target_if_wifi_pos_deinit_ring(uint8_t ring_idx,
 {
 	target_if_wifi_pos_empty_ring(ring_idx, priv);
 	priv->dma_buf_pool[ring_idx] = NULL;
-	hal_srng_cleanup(priv->hal_soc, priv->dma_cfg[ring_idx].srng);
+	hal_srng_cleanup(priv->hal_soc, priv->dma_cfg[ring_idx].srng, 0);
 	qdf_mem_free_consistent(NULL, NULL,
 		priv->dma_cfg[ring_idx].ring_alloc_size,
 		priv->dma_cfg[ring_idx].base_vaddr_unaligned,

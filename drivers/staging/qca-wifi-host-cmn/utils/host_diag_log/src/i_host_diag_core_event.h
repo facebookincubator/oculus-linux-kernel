@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -99,7 +99,7 @@ enum auth_timeout_type {
  * not poor.
  * @DIAG_ROAM_REASON_CONGESTION: Roam triggered considering the connected
  * channel or environment being very noisy / congested.
- * @DIAG_ROAM_REASON_EXPLICIT_REQUEST: Roam triggered due to an explicit request
+ * @DIAG_ROAM_REASON_USER_TRIGGER: Roam triggered due to an explicit request
  * from the user (user space).
  * @DIAG_ROAM_REASON_BTM: Roam triggered due to BTM request frame received from
  * connected AP.
@@ -140,6 +140,7 @@ enum diag_roam_reason {
 
 /**
  * enum diag_roam_sub_reason - Used by attribute
+ * @DIAG_ROAM_SUB_REASON_UNKNOWN: Roam sub-reason unknown/unspecified
  * @DIAG_ROAM_SUB_REASON_PERIODIC_TIMER: Roam scan triggered due to periodic
  * timer expiry
  * @DIAG_ROAM_SUB_REASON_INACTIVITY_TIMER_LOW_RSSI: Roam scan trigger due
@@ -205,8 +206,8 @@ static inline void host_log_low_resource_failure(uint8_t event_sub_type)
  * requested rsn info in assoc request
  * @ucast_cipher: Unicast ciphers used in assoc request
  * @mcast_cipher: Group ciphers used in assoc request
- * @akm_suite: Gives information about akm suites used in assoc request
- * @group_mgmt: Requested group mgmt cipher suite
+ * @auth_suite: Gives information about akm suites used in assoc request
+ * @gp_mgmt_cipher: Requested group mgmt cipher suite
  *
  * This function is used to send RSN info used in assoc req to user space
  *

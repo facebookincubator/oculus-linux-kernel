@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -47,7 +47,7 @@ __hdd_sysfs_range_ext_show(struct net_device *net_dev, char *buf)
 		return -EINVAL;
 
 	hdd_debug("GET wmi_vdev_param_he_range_ext");
-	value = wma_cli_get_command(adapter->vdev_id,
+	value = wma_cli_get_command(adapter->deflink->vdev_id,
 				    wmi_vdev_param_he_range_ext, VDEV_CMD);
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n", value);
@@ -114,7 +114,7 @@ static ssize_t __hdd_sysfs_range_ext_store(struct net_device *net_dev,
 		return -EINVAL;
 
 	hdd_debug("wmi_vdev_param_he_range_ext %d", value);
-	errno = wma_cli_set_command(adapter->vdev_id,
+	errno = wma_cli_set_command(adapter->deflink->vdev_id,
 				    wmi_vdev_param_he_range_ext,
 				    value, VDEV_CMD);
 	if (errno)

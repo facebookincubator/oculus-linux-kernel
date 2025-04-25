@@ -44,6 +44,7 @@
  *  channels and doesn't set the flag FLAG_SCAN_ONLY_IF_RNR_FOUND for any 6g
  *  (PSC/non-PSC) channels. Rest of the scans will be done only on RNR (PSC and
  *  non-PSC channels).
+ * @SCAN_MODE_6G_MAX: Max enumeration
  */
 enum scan_mode_6ghz {
 	SCAN_MODE_6G_NO_CHANNEL,
@@ -1481,7 +1482,7 @@ enum scan_mode_6ghz {
 			"last_scan_ageout_time", \
 			0, \
 			30000, \
-			0, \
+			30000, \
 			CFG_VALUE_OR_DEFAULT, \
 			"last scan ageout time")
 #define CFG_SCAN_ALL \

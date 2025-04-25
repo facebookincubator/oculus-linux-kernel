@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -46,17 +46,6 @@ struct sap_config;
  */
 void hdd_update_tgt_eht_cap(struct hdd_context *hdd_ctx,
 			    struct wma_tgt_cfg *cfg);
-
-/**
- * hdd_update_eht_cap_in_cfg() - update EHT cap in global CFG
- * @hdd_ctx: pointer to hdd context
- *
- * This API will update the EHT config in CFG after taking intersection
- * of INI and firmware capabilities provided reading CFG
- *
- * Return: 0 on success and errno on failure
- */
-int hdd_update_eht_cap_in_cfg(struct hdd_context *hdd_ctx);
 
 /**
  * wlan_hdd_check_11be_support() - check if beacon IE and update hw mode

@@ -18,6 +18,18 @@
 #ifndef __HIF_RUNTIME_PM_H__
 #define __HIF_RUNTIME_PM_H__
 
+/**
+ * enum hif_rtpm_fill_type - Caller type for Runtime PM stats fill
+ * @HIF_RTPM_FILL_TYPE_SYSFS: Sysfs is caller for Runtime PM stats
+ * @HIF_RTPM_FILL_TYPE_DEBUGFS: Debugfs is caller for Runtime PM stats
+ * @HIF_RTPM_FILL_TYPE_MAX: max value
+ */
+enum hif_rtpm_fill_type {
+	HIF_RTPM_FILL_TYPE_SYSFS,
+	HIF_RTPM_FILL_TYPE_DEBUGFS,
+	HIF_RTPM_FILL_TYPE_MAX,
+};
+
 #ifdef FEATURE_RUNTIME_PM
 #include <linux/pm_runtime.h>
 
@@ -321,10 +333,27 @@ void hif_rtpm_start(struct hif_softc *scn);
  * Return: None
  */
 void hif_rtpm_stop(struct hif_softc *scn);
+
+/**
+ * hif_rtpm_log_debug_stats() - fill buffer with runtime pm stats
+ * @s: pointer to buffer to fill status
+ * @type: type of caller
+ *
+ * Fills input buffer with runtime pm stats depending on caller type.
+ *
+ * Return: Num of bytes filled if caller type requires, else 0.
+ */
+int hif_rtpm_log_debug_stats(void *s, enum hif_rtpm_fill_type type);
+
 #else
 static inline void hif_rtpm_open(struct hif_softc *scn) {}
 static inline void hif_rtpm_close(struct hif_softc *scn) {}
 static inline void hif_rtpm_start(struct hif_softc *scn) {}
 static inline void hif_rtpm_stop(struct hif_softc *scn) {}
+static inline int hif_rtpm_log_debug_stats(void *s,
+					   enum hif_rtpm_fill_type type)
+{
+	return 0;
+}
 #endif /* FEATURE_RUNTIME_PM */
 #endif /* __HIF_RUNTIME_PM_H__ */

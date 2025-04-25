@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,17 +29,6 @@ uint32_t hal_get_reo_reg_base_offset_be(void)
 	return REO_REG_REG_BASE;
 }
 
-/**
- * hal_reo_qdesc_setup - Setup HW REO queue descriptor
- *
- * @hal_soc: Opaque HAL SOC handle
- * @ba_window_size: BlockAck window size
- * @start_seq: Starting sequence number
- * @hw_qdesc_vaddr: Virtual address of REO queue descriptor memory
- * @hw_qdesc_paddr: Physical address of REO queue descriptor memory
- * @tid: TID
- *
- */
 void hal_reo_qdesc_setup_be(hal_soc_handle_t hal_soc_hdl, int tid,
 			    uint32_t ba_window_size,
 			    uint32_t start_seq, void *hw_qdesc_vaddr,
@@ -205,30 +194,33 @@ hal_reo_cmd_set_descr_addr_be(uint32_t *reo_desc,
 			      uint32_t paddr_lo,
 			      uint8_t paddr_hi)
 {
+	struct reo_get_queue_stats *reo_get_queue_stats;
+	struct reo_flush_queue *reo_flush_queue;
+	struct reo_flush_cache *reo_flush_cache;
+	struct reo_update_rx_reo_queue *reo_update_rx_reo_queue;
+
 	switch (type) {
 	case CMD_GET_QUEUE_STATS:
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_GET_QUEUE_STATS,
-				      RX_REO_QUEUE_DESC_ADDR_31_0, paddr_lo);
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_GET_QUEUE_STATS,
-				      RX_REO_QUEUE_DESC_ADDR_39_32, paddr_hi);
+		reo_get_queue_stats = (struct reo_get_queue_stats *)reo_desc;
+		reo_get_queue_stats->rx_reo_queue_desc_addr_31_0 = paddr_lo;
+		reo_get_queue_stats->rx_reo_queue_desc_addr_39_32 = paddr_hi;
 		break;
 	case CMD_FLUSH_QUEUE:
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_QUEUE,
-				      FLUSH_DESC_ADDR_31_0, paddr_lo);
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_QUEUE,
-				      FLUSH_DESC_ADDR_39_32, paddr_hi);
+		reo_flush_queue = (struct reo_flush_queue *)reo_desc;
+		reo_flush_queue->flush_desc_addr_31_0 = paddr_lo;
+		reo_flush_queue->flush_desc_addr_39_32 = paddr_hi;
 		break;
 	case CMD_FLUSH_CACHE:
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-				      FLUSH_ADDR_31_0, paddr_lo);
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-				      FLUSH_ADDR_39_32, paddr_hi);
+		reo_flush_cache = (struct reo_flush_cache *)reo_desc;
+		reo_flush_cache->flush_addr_31_0 = paddr_lo;
+		reo_flush_cache->flush_addr_39_32 = paddr_hi;
 		break;
 	case CMD_UPDATE_RX_REO_QUEUE:
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-				      RX_REO_QUEUE_DESC_ADDR_31_0, paddr_lo);
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-				      RX_REO_QUEUE_DESC_ADDR_39_32, paddr_hi);
+		reo_update_rx_reo_queue =
+				(struct reo_update_rx_reo_queue *)reo_desc;
+		reo_update_rx_reo_queue->rx_reo_queue_desc_addr_31_0 = paddr_lo;
+		reo_update_rx_reo_queue->rx_reo_queue_desc_addr_39_32 =
+								paddr_hi;
 		break;
 	default:
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
@@ -244,6 +236,7 @@ hal_reo_cmd_queue_stats_be(hal_ring_handle_t  hal_ring_hdl,
 {
 	uint32_t *reo_desc, val;
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
+	struct reo_get_queue_stats *reo_get_queue_stats;
 
 	hal_srng_access_start(hal_soc_hdl, hal_ring_hdl);
 	reo_desc = hal_srng_src_get_next(hal_soc, hal_ring_hdl);
@@ -265,15 +258,15 @@ hal_reo_cmd_queue_stats_be(hal_ring_handle_t  hal_ring_hdl,
 		     sizeof(struct reo_get_queue_stats) -
 		     (NUM_OF_DWORDS_UNIFORM_REO_CMD_HEADER << 2));
 
-	HAL_DESC_64_SET_FIELD(reo_desc, UNIFORM_REO_CMD_HEADER,
-			      REO_STATUS_REQUIRED, cmd->std.need_status);
+	reo_get_queue_stats = (struct reo_get_queue_stats *)reo_desc;
+	reo_get_queue_stats->cmd_header.reo_status_required =
+							cmd->std.need_status;
 
 	hal_reo_cmd_set_descr_addr_be(reo_desc, CMD_GET_QUEUE_STATS,
 				      cmd->std.addr_lo,
 				      cmd->std.addr_hi);
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_GET_QUEUE_STATS, CLEAR_STATS,
-			      cmd->u.stats_params.clear);
+	reo_get_queue_stats->clear_stats = cmd->u.stats_params.clear;
 
 	hal_srng_access_end_v1(hal_soc_hdl, hal_ring_hdl,
 			       HIF_RTPM_ID_HAL_REO_CMD);
@@ -290,6 +283,7 @@ hal_reo_cmd_flush_queue_be(hal_ring_handle_t hal_ring_hdl,
 {
 	uint32_t *reo_desc, val;
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
+	struct reo_flush_queue *reo_flush_queue;
 
 	hal_srng_access_start(hal_soc_hdl, hal_ring_hdl);
 	reo_desc = hal_srng_src_get_next(hal_soc, hal_ring_hdl);
@@ -311,21 +305,18 @@ hal_reo_cmd_flush_queue_be(hal_ring_handle_t hal_ring_hdl,
 		     sizeof(struct reo_flush_queue) -
 		     (NUM_OF_DWORDS_UNIFORM_REO_CMD_HEADER << 2));
 
-	HAL_DESC_64_SET_FIELD(reo_desc, UNIFORM_REO_CMD_HEADER,
-			      REO_STATUS_REQUIRED, cmd->std.need_status);
+	reo_flush_queue = (struct reo_flush_queue *)reo_desc;
+	reo_flush_queue->cmd_header.reo_status_required = cmd->std.need_status;
 
 	hal_reo_cmd_set_descr_addr_be(reo_desc, CMD_FLUSH_QUEUE,
 				      cmd->std.addr_lo, cmd->std.addr_hi);
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_QUEUE,
-			      BLOCK_DESC_ADDR_USAGE_AFTER_FLUSH,
-			      cmd->u.fl_queue_params.block_use_after_flush);
+	reo_flush_queue->block_desc_addr_usage_after_flush =
+				cmd->u.fl_queue_params.block_use_after_flush;
 
-	if (cmd->u.fl_queue_params.block_use_after_flush) {
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_QUEUE,
-				      BLOCK_RESOURCE_INDEX,
-				      cmd->u.fl_queue_params.index);
-	}
+	if (cmd->u.fl_queue_params.block_use_after_flush)
+		reo_flush_queue->block_resource_index =
+						cmd->u.fl_queue_params.index;
 
 	hal_srng_access_end_v1(hal_soc_hdl, hal_ring_hdl,
 			       HIF_RTPM_ID_HAL_REO_CMD);
@@ -344,6 +335,7 @@ hal_reo_cmd_flush_cache_be(hal_ring_handle_t hal_ring_hdl,
 	struct hal_reo_cmd_flush_cache_params *cp;
 	uint8_t index = 0;
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
+	struct reo_flush_cache *reo_flush_cache;
 
 	cp = &cmd->u.fl_cache_params;
 
@@ -382,35 +374,27 @@ hal_reo_cmd_flush_cache_be(hal_ring_handle_t hal_ring_hdl,
 		     sizeof(struct reo_flush_cache) -
 		     (NUM_OF_DWORDS_UNIFORM_REO_CMD_HEADER << 2));
 
-	HAL_DESC_64_SET_FIELD(reo_desc, UNIFORM_REO_CMD_HEADER,
-			      REO_STATUS_REQUIRED, cmd->std.need_status);
+	reo_flush_cache = (struct reo_flush_cache *)reo_desc;
+	reo_flush_cache->cmd_header.reo_status_required = cmd->std.need_status;
 
 	hal_reo_cmd_set_descr_addr_be(reo_desc, CMD_FLUSH_CACHE,
 				      cmd->std.addr_lo, cmd->std.addr_hi);
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-			      FORWARD_ALL_MPDUS_IN_QUEUE,
-			      cp->fwd_mpdus_in_queue);
+	reo_flush_cache->forward_all_mpdus_in_queue = cp->fwd_mpdus_in_queue;
 
 	/* set it to 0 for now */
 	cp->rel_block_index = 0;
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-			      RELEASE_CACHE_BLOCK_INDEX, cp->rel_block_index);
+	reo_flush_cache->release_cache_block_index = cp->rel_block_index;
 
 	if (cp->block_use_after_flush) {
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-				      CACHE_BLOCK_RESOURCE_INDEX, index);
+		reo_flush_cache->cache_block_resource_index = index;
 	}
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-			      FLUSH_WITHOUT_INVALIDATE, cp->flush_no_inval);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE,
-			      BLOCK_CACHE_USAGE_AFTER_FLUSH,
-			      cp->block_use_after_flush);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_CACHE, FLUSH_ENTIRE_CACHE,
-			      cp->flush_entire_cache);
+	reo_flush_cache->flush_without_invalidate = cp->flush_no_inval;
+	reo_flush_cache->flush_queue_1k_desc = cp->flush_q_1k_desc;
+	reo_flush_cache->block_cache_usage_after_flush =
+						cp->block_use_after_flush;
+	reo_flush_cache->flush_entire_cache = cp->flush_entire_cache;
 
 	hal_srng_access_end_v1(hal_soc_hdl, hal_ring_hdl,
 			       HIF_RTPM_ID_HAL_REO_CMD);
@@ -429,6 +413,7 @@ hal_reo_cmd_unblock_cache_be(hal_ring_handle_t hal_ring_hdl,
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
 	uint32_t *reo_desc, val;
 	uint8_t index = 0;
+	struct reo_unblock_cache *reo_unblock_cache;
 
 	hal_srng_access_start(hal_soc_hdl, hal_ring_hdl);
 
@@ -460,17 +445,14 @@ hal_reo_cmd_unblock_cache_be(hal_ring_handle_t hal_ring_hdl,
 		     sizeof(struct reo_unblock_cache) -
 		     (NUM_OF_DWORDS_UNIFORM_REO_CMD_HEADER << 2));
 
-	HAL_DESC_64_SET_FIELD(reo_desc, UNIFORM_REO_CMD_HEADER,
-			      REO_STATUS_REQUIRED, cmd->std.need_status);
+	reo_unblock_cache = (struct reo_unblock_cache *)reo_desc;
+	reo_unblock_cache->cmd_header.reo_status_required =
+							cmd->std.need_status;
+	reo_unblock_cache->unblock_type = cmd->u.unblk_cache_params.type;
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UNBLOCK_CACHE,
-			      UNBLOCK_TYPE, cmd->u.unblk_cache_params.type);
-
-	if (cmd->u.unblk_cache_params.type == UNBLOCK_RES_INDEX) {
-		HAL_DESC_64_SET_FIELD(reo_desc, REO_UNBLOCK_CACHE,
-				      CACHE_BLOCK_RESOURCE_INDEX,
-				      cmd->u.unblk_cache_params.index);
-	}
+	if (cmd->u.unblk_cache_params.type == UNBLOCK_RES_INDEX)
+		reo_unblock_cache->cache_block_resource_index =
+						cmd->u.unblk_cache_params.index;
 
 	hal_srng_access_end(hal_soc, hal_ring_hdl);
 	val = reo_desc[CMD_HEADER_DW_OFFSET];
@@ -485,6 +467,7 @@ hal_reo_cmd_flush_timeout_list_be(hal_ring_handle_t hal_ring_hdl,
 {
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
 	uint32_t *reo_desc, val;
+	struct reo_flush_timeout_list *reo_flush_timeout_list;
 
 	hal_srng_access_start(hal_soc_hdl, hal_ring_hdl);
 	reo_desc = hal_srng_src_get_next(hal_soc, hal_ring_hdl);
@@ -506,19 +489,15 @@ hal_reo_cmd_flush_timeout_list_be(hal_ring_handle_t hal_ring_hdl,
 		     sizeof(struct reo_flush_timeout_list) -
 		     (NUM_OF_DWORDS_UNIFORM_REO_CMD_HEADER << 2));
 
-	HAL_DESC_64_SET_FIELD(reo_desc, UNIFORM_REO_CMD_HEADER,
-			      REO_STATUS_REQUIRED, cmd->std.need_status);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_TIMEOUT_LIST, AC_TIMOUT_LIST,
-			      cmd->u.fl_tim_list_params.ac_list);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_TIMEOUT_LIST,
-			      MINIMUM_RELEASE_DESC_COUNT,
-			      cmd->u.fl_tim_list_params.min_rel_desc);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_FLUSH_TIMEOUT_LIST,
-			      MINIMUM_FORWARD_BUF_COUNT,
-			      cmd->u.fl_tim_list_params.min_fwd_buf);
+	reo_flush_timeout_list = (struct reo_flush_timeout_list *)reo_desc;
+	reo_flush_timeout_list->cmd_header.reo_status_required =
+							cmd->std.need_status;
+	reo_flush_timeout_list->ac_timout_list =
+					cmd->u.fl_tim_list_params.ac_list;
+	reo_flush_timeout_list->minimum_release_desc_count =
+					cmd->u.fl_tim_list_params.min_rel_desc;
+	reo_flush_timeout_list->minimum_forward_buf_count =
+					cmd->u.fl_tim_list_params.min_fwd_buf;
 
 	hal_srng_access_end(hal_soc, hal_ring_hdl);
 	val = reo_desc[CMD_HEADER_DW_OFFSET];
@@ -534,6 +513,7 @@ hal_reo_cmd_update_rx_queue_be(hal_ring_handle_t hal_ring_hdl,
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
 	uint32_t *reo_desc, val;
 	struct hal_reo_cmd_update_queue_params *p;
+	struct reo_update_rx_reo_queue *reo_update_rx_reo_queue;
 
 	p = &cmd->u.upd_queue_params;
 
@@ -557,137 +537,62 @@ hal_reo_cmd_update_rx_queue_be(hal_ring_handle_t hal_ring_hdl,
 		     sizeof(struct reo_update_rx_reo_queue) -
 		     (NUM_OF_DWORDS_UNIFORM_REO_CMD_HEADER << 2));
 
-	HAL_DESC_64_SET_FIELD(reo_desc, UNIFORM_REO_CMD_HEADER,
-			      REO_STATUS_REQUIRED, cmd->std.need_status);
+	reo_update_rx_reo_queue = (struct reo_update_rx_reo_queue *)reo_desc;
+	reo_update_rx_reo_queue->cmd_header.reo_status_required =
+							cmd->std.need_status;
 
 	hal_reo_cmd_set_descr_addr_be(reo_desc, CMD_UPDATE_RX_REO_QUEUE,
 				      cmd->std.addr_lo, cmd->std.addr_hi);
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_RECEIVE_QUEUE_NUMBER,
-			      p->update_rx_queue_num);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE, UPDATE_VLD,
-			      p->update_vld);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_ASSOCIATED_LINK_DESCRIPTOR_COUNTER,
-			      p->update_assoc_link_desc);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_DISABLE_DUPLICATE_DETECTION,
-			      p->update_disable_dup_detect);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_DISABLE_DUPLICATE_DETECTION,
-			      p->update_disable_dup_detect);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_SOFT_REORDER_ENABLE,
-			      p->update_soft_reorder_enab);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_AC, p->update_ac);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_BAR, p->update_bar);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_BAR, p->update_bar);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_RTY, p->update_rty);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_CHK_2K_MODE, p->update_chk_2k_mode);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_OOR_MODE, p->update_oor_mode);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_BA_WINDOW_SIZE, p->update_ba_window_size);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN_CHECK_NEEDED,
-			      p->update_pn_check_needed);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN_SHALL_BE_EVEN, p->update_pn_even);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN_SHALL_BE_UNEVEN, p->update_pn_uneven);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN_HANDLING_ENABLE,
-			      p->update_pn_hand_enab);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN_SIZE, p->update_pn_size);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_IGNORE_AMPDU_FLAG, p->update_ignore_ampdu);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_SVLD, p->update_svld);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_SSN, p->update_ssn);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_SEQ_2K_ERROR_DETECTED_FLAG,
-			      p->update_seq_2k_err_detect);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN_VALID, p->update_pn_valid);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      UPDATE_PN, p->update_pn);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      RECEIVE_QUEUE_NUMBER, p->rx_queue_num);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      VLD, p->vld);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      ASSOCIATED_LINK_DESCRIPTOR_COUNTER,
-			      p->assoc_link_desc);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      DISABLE_DUPLICATE_DETECTION,
-			      p->disable_dup_detect);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      SOFT_REORDER_ENABLE, p->soft_reorder_enab);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE, AC, p->ac);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      BAR, p->bar);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      CHK_2K_MODE, p->chk_2k_mode);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      RTY, p->rty);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      OOR_MODE, p->oor_mode);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_CHECK_NEEDED, p->pn_check_needed);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_SHALL_BE_EVEN, p->pn_even);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_SHALL_BE_UNEVEN, p->pn_uneven);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_HANDLING_ENABLE, p->pn_hand_enab);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      IGNORE_AMPDU_FLAG, p->ignore_ampdu);
+	reo_update_rx_reo_queue->update_receive_queue_number =
+							p->update_rx_queue_num;
+	reo_update_rx_reo_queue->update_vld = p->update_vld;
+	reo_update_rx_reo_queue->update_associated_link_descriptor_counter =
+						p->update_assoc_link_desc;
+	reo_update_rx_reo_queue->update_disable_duplicate_detection =
+						p->update_disable_dup_detect;
+	reo_update_rx_reo_queue->update_soft_reorder_enable =
+						p->update_soft_reorder_enab;
+	reo_update_rx_reo_queue->update_ac = p->update_ac;
+	reo_update_rx_reo_queue->update_bar = p->update_bar;
+	reo_update_rx_reo_queue->update_rty = p->update_rty;
+	reo_update_rx_reo_queue->update_chk_2k_mode = p->update_chk_2k_mode;
+	reo_update_rx_reo_queue->update_oor_mode = p->update_oor_mode;
+	reo_update_rx_reo_queue->update_ba_window_size =
+						p->update_ba_window_size;
+	reo_update_rx_reo_queue->update_pn_check_needed =
+						p->update_pn_check_needed;
+	reo_update_rx_reo_queue->update_pn_shall_be_even = p->update_pn_even;
+	reo_update_rx_reo_queue->update_pn_shall_be_uneven =
+							p->update_pn_uneven;
+	reo_update_rx_reo_queue->update_pn_handling_enable =
+							p->update_pn_hand_enab;
+	reo_update_rx_reo_queue->update_pn_size = p->update_pn_size;
+	reo_update_rx_reo_queue->update_ignore_ampdu_flag =
+							p->update_ignore_ampdu;
+	reo_update_rx_reo_queue->update_svld = p->update_svld;
+	reo_update_rx_reo_queue->update_ssn = p->update_ssn;
+	reo_update_rx_reo_queue->update_seq_2k_error_detected_flag =
+						p->update_seq_2k_err_detect;
+	reo_update_rx_reo_queue->update_pn_valid = p->update_pn_valid;
+	reo_update_rx_reo_queue->update_pn = p->update_pn;
+	reo_update_rx_reo_queue->receive_queue_number = p->rx_queue_num;
+	reo_update_rx_reo_queue->vld = p->vld;
+	reo_update_rx_reo_queue->associated_link_descriptor_counter =
+							p->assoc_link_desc;
+	reo_update_rx_reo_queue->disable_duplicate_detection =
+							p->disable_dup_detect;
+	reo_update_rx_reo_queue->soft_reorder_enable = p->soft_reorder_enab;
+	reo_update_rx_reo_queue->ac = p->ac;
+	reo_update_rx_reo_queue->bar = p->bar;
+	reo_update_rx_reo_queue->chk_2k_mode = p->chk_2k_mode;
+	reo_update_rx_reo_queue->rty = p->rty;
+	reo_update_rx_reo_queue->oor_mode = p->oor_mode;
+	reo_update_rx_reo_queue->pn_check_needed = p->pn_check_needed;
+	reo_update_rx_reo_queue->pn_shall_be_even = p->pn_even;
+	reo_update_rx_reo_queue->pn_shall_be_uneven = p->pn_uneven;
+	reo_update_rx_reo_queue->pn_handling_enable = p->pn_hand_enab;
+	reo_update_rx_reo_queue->ignore_ampdu_flag = p->ignore_ampdu;
 
 	if (p->ba_window_size < 1)
 		p->ba_window_size = 1;
@@ -698,35 +603,18 @@ hal_reo_cmd_update_rx_queue_be(hal_ring_handle_t hal_ring_hdl,
 	 */
 	if (p->ba_window_size == 1)
 		p->ba_window_size++;
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      BA_WINDOW_SIZE, p->ba_window_size - 1);
 
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_SIZE, p->pn_size);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      SVLD, p->svld);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      SSN, p->ssn);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      SEQ_2K_ERROR_DETECTED_FLAG, p->seq_2k_err_detect);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_ERROR_DETECTED_FLAG, p->pn_err_detect);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_31_0, p->pn_31_0);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_63_32, p->pn_63_32);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_95_64, p->pn_95_64);
-
-	HAL_DESC_64_SET_FIELD(reo_desc, REO_UPDATE_RX_REO_QUEUE,
-			      PN_127_96, p->pn_127_96);
+	reo_update_rx_reo_queue->ba_window_size = p->ba_window_size - 1;
+	reo_update_rx_reo_queue->pn_size = p->pn_size;
+	reo_update_rx_reo_queue->svld = p->svld;
+	reo_update_rx_reo_queue->ssn = p->ssn;
+	reo_update_rx_reo_queue->seq_2k_error_detected_flag =
+							p->seq_2k_err_detect;
+	reo_update_rx_reo_queue->pn_error_detected_flag = p->pn_err_detect;
+	reo_update_rx_reo_queue->pn_31_0 = p->pn_31_0;
+	reo_update_rx_reo_queue->pn_63_32 = p->pn_63_32;
+	reo_update_rx_reo_queue->pn_95_64 = p->pn_95_64;
+	reo_update_rx_reo_queue->pn_127_96 = p->pn_127_96;
 
 	hal_srng_access_end_v1(hal_soc_hdl, hal_ring_hdl,
 			       HIF_RTPM_ID_HAL_REO_CMD);

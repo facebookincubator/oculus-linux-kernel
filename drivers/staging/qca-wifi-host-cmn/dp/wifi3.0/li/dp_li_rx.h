@@ -153,7 +153,9 @@ dp_rx_peer_metadata_peer_id_get_li(struct dp_soc *soc, uint32_t peer_metadata)
 bool
 dp_rx_intrabss_handle_nawds_li(struct dp_soc *soc, struct dp_txrx_peer *ta_peer,
 			       qdf_nbuf_t nbuf_copy,
-			       struct cdp_tid_rx_stats *tid_stats);
+			       struct cdp_tid_rx_stats *tid_stats,
+			       uint8_t link_id);
+
 #ifdef QCA_DP_RX_NBUF_AND_NBUF_DATA_PREFETCH
 static inline
 void dp_rx_prefetch_nbuf_data(qdf_nbuf_t nbuf, qdf_nbuf_t next)
@@ -259,27 +261,97 @@ void dp_rx_prefetch_hw_sw_nbuf_desc(struct dp_soc *soc,
 static inline
 QDF_STATUS dp_peer_rx_reorder_queue_setup_li(struct dp_soc *soc,
 					     struct dp_peer *peer,
-					     int tid,
+					     uint32_t tid_bitmap,
 					     uint32_t ba_window_size)
 {
-	struct dp_rx_tid *rx_tid = &peer->rx_tid[tid];
+	int tid;
+	struct dp_rx_tid *rx_tid;
 
-	if (!rx_tid->hw_qdesc_paddr)
-		return QDF_STATUS_E_INVAL;
+	if (!soc->cdp_soc.ol_ops->peer_rx_reorder_queue_setup) {
+		dp_peer_debug("peer_rx_reorder_queue_setup NULL");
+		return QDF_STATUS_SUCCESS;
+	}
 
-	if (soc->cdp_soc.ol_ops->peer_rx_reorder_queue_setup) {
+	for (tid = 0; tid < DP_MAX_TIDS; tid++) {
+		if (!(BIT(tid) & tid_bitmap))
+			continue;
+
+		rx_tid = &peer->rx_tid[tid];
+		if (!rx_tid->hw_qdesc_paddr) {
+			tid_bitmap &= ~BIT(tid);
+			continue;
+		}
+
 		if (soc->cdp_soc.ol_ops->peer_rx_reorder_queue_setup(
 		    soc->ctrl_psoc,
 		    peer->vdev->pdev->pdev_id,
 		    peer->vdev->vdev_id,
 		    peer->mac_addr.raw, rx_tid->hw_qdesc_paddr, tid, tid,
 		    1, ba_window_size)) {
-			dp_peer_err("%pK: Failed to send reo queue setup to FW - tid %d\n",
+			dp_peer_err("%pK: Fail to send reo q setup. tid %d",
 				    soc, tid);
+			return QDF_STATUS_E_FAILURE;
+		}
+
+		if (!tid_bitmap) {
+			dp_peer_err("tid_bitmap=0. All tids setup fail");
 			return QDF_STATUS_E_FAILURE;
 		}
 	}
 
 	return QDF_STATUS_SUCCESS;
 }
+
+/**
+ * dp_rx_wbm_err_reap_desc_li() - Function to reap and replenish
+ *                                WBM RX Error descriptors
+ *
+ * @int_ctx: pointer to DP interrupt context
+ * @soc: core DP main context
+ * @hal_ring_hdl: opaque pointer to the HAL Rx Error Ring, to be serviced
+ * @quota: No. of units (packets) that can be serviced in one shot.
+ * @rx_bufs_used: No. of descriptors reaped
+ *
+ * This function implements the core Rx functionality like reap and
+ * replenish the RX error ring Descriptors, and create a nbuf list
+ * out of it. It also reads wbm error information from descriptors
+ * and update the nbuf tlv area.
+ *
+ * Return: qdf_nbuf_t: head pointer to the nbuf list created
+ */
+qdf_nbuf_t
+dp_rx_wbm_err_reap_desc_li(struct dp_intr *int_ctx, struct dp_soc *soc,
+			   hal_ring_handle_t hal_ring_hdl, uint32_t quota,
+			   uint32_t *rx_bufs_used);
+
+/**
+ * dp_rx_null_q_desc_handle_li() - Function to handle NULL Queue
+ *                                 descriptor violation on either a
+ *                                 REO or WBM ring
+ *
+ * @soc: core DP main context
+ * @nbuf: buffer pointer
+ * @rx_tlv_hdr: start of rx tlv header
+ * @pool_id: mac id
+ * @txrx_peer: txrx peer handle
+ * @is_reo_exception: flag to check if the error is from REO or WBM
+ * @link_id: link Id on which packet is received
+ *
+ * This function handles NULL queue descriptor violations arising out
+ * a missing REO queue for a given peer or a given TID. This typically
+ * may happen if a packet is received on a QOS enabled TID before the
+ * ADDBA negotiation for that TID, when the TID queue is setup. Or
+ * it may also happen for MC/BC frames if they are not routed to the
+ * non-QOS TID queue, in the absence of any other default TID queue.
+ * This error can show up both in a REO destination or WBM release ring.
+ *
+ * Return: QDF_STATUS_SUCCESS, if nbuf handled successfully. QDF status code
+ *         if nbuf could not be handled or dropped.
+ */
+QDF_STATUS
+dp_rx_null_q_desc_handle_li(struct dp_soc *soc, qdf_nbuf_t nbuf,
+			    uint8_t *rx_tlv_hdr, uint8_t pool_id,
+			    struct dp_txrx_peer *txrx_peer,
+			    bool is_reo_exception,
+			    uint8_t link_id);
 #endif

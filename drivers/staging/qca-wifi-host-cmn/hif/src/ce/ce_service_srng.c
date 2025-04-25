@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -344,6 +344,12 @@ ce_recv_buf_enqueue_srng(struct CE_handle *copyeng,
 		return QDF_STATUS_E_IO;
 	}
 
+	/* HP/TP update if any should happen only once per interrupt,
+	 * therefore checking for CE receive_count.
+	 */
+	hal_srng_check_and_update_hptp(scn->hal_soc, dest_ring->srng_ctx,
+				       !CE_state->receive_count);
+
 	if (hal_srng_access_start(scn->hal_soc, dest_ring->srng_ctx)) {
 		qdf_spin_unlock_bh(&CE_state->ce_index_lock);
 		return QDF_STATUS_E_FAILURE;
@@ -446,16 +452,19 @@ ce_completed_recv_next_nolock_srng(struct CE_state *CE_state,
 	int nbytes;
 	struct ce_srng_dest_status_desc dest_status_info;
 
-	if (hal_srng_access_start(scn->hal_soc, status_ring->srng_ctx)) {
-		status = QDF_STATUS_E_FAILURE;
-		goto done;
-	}
+	/* HP/TP update if any should happen only once per interrupt,
+	 * therefore checking for CE receive_count.
+	 */
+	hal_srng_check_and_update_hptp(scn->hal_soc, status_ring->srng_ctx,
+				       !CE_state->receive_count);
+
+	if (hal_srng_access_start(scn->hal_soc, status_ring->srng_ctx))
+		return QDF_STATUS_E_FAILURE;
 
 	dest_status = hal_srng_dst_peek(scn->hal_soc, status_ring->srng_ctx);
 	if (!dest_status) {
-		status = QDF_STATUS_E_FAILURE;
 		hal_srng_access_end_reap(scn->hal_soc, status_ring->srng_ctx);
-		goto done;
+		return QDF_STATUS_E_FAILURE;
 	}
 
 	/*
@@ -981,7 +990,7 @@ static void ce_ring_cleanup_srng(struct hif_softc *scn,
 	}
 
 	if (hal_srng)
-		hal_srng_cleanup(scn->hal_soc, hal_srng);
+		hal_srng_cleanup(scn->hal_soc, hal_srng, 0);
 }
 
 static void ce_construct_shadow_config_srng(struct hif_softc *scn)

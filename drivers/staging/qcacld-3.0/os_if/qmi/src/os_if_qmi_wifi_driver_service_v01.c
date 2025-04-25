@@ -570,6 +570,56 @@ struct qmi_elem_info wfds_ut_cmd_req_msg_v01_ei[] = {
 					   dest_mac),
 	},
 	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x09,
+		.offset         = offsetof(struct
+					   wfds_ut_cmd_req_msg_v01,
+					   ip_ver),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 16,
+		.elem_size      = sizeof(u8),
+		.array_type       = STATIC_ARRAY,
+		.tlv_type       = 0x0A,
+		.offset         = offsetof(struct
+					   wfds_ut_cmd_req_msg_v01,
+					   src_ip_addr),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 16,
+		.elem_size      = sizeof(u8),
+		.array_type       = STATIC_ARRAY,
+		.tlv_type       = 0x0B,
+		.offset         = offsetof(struct
+					   wfds_ut_cmd_req_msg_v01,
+					   dest_ip_addr),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_2_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x0C,
+		.offset         = offsetof(struct
+					   wfds_ut_cmd_req_msg_v01,
+					   dest_port),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 256,
+		.elem_size      = sizeof(u8),
+		.array_type       = STATIC_ARRAY,
+		.tlv_type       = 0x0D,
+		.offset         = offsetof(struct
+					   wfds_ut_cmd_req_msg_v01,
+					   misc),
+	},
+	{
 		.data_type      = QMI_EOTI,
 		.array_type       = NO_ARRAY,
 		.tlv_type       = QMI_COMMON_TLV_TYPE,

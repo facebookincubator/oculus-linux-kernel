@@ -301,10 +301,12 @@ static QDF_STATUS pmo_configure_wow_sta(struct wlan_objmgr_vdev *vdev)
 
 	/*
 	 * when arp offload or ns offloaded is disabled
-	 * from ini file, configure broad cast arp pattern
-	 * to fw, so that host can wake up
+	 * or active offload is disabled from ini file,
+	 * configure broad cast arp pattern to fw, so
+	 * that host can wake up
 	 */
-	if (!vdev_ctx->pmo_psoc_ctx->psoc_cfg.arp_offload_enable) {
+	if (!vdev_ctx->pmo_psoc_ctx->psoc_cfg.arp_offload_enable ||
+	    !vdev_ctx->pmo_psoc_ctx->psoc_cfg.active_mode_offload) {
 		/* Setup all ARP pkt pattern */
 		pmo_debug("ARP offload is disabled in INI enable WoW for ARP");
 		ret = pmo_tgt_send_wow_patterns_to_fw(vdev,
@@ -318,7 +320,8 @@ static QDF_STATUS pmo_configure_wow_sta(struct wlan_objmgr_vdev *vdev)
 		}
 	}
 	/* for NS or NDP offload packets */
-	if (!vdev_ctx->pmo_psoc_ctx->psoc_cfg.ns_offload_enable_static) {
+	if (!vdev_ctx->pmo_psoc_ctx->psoc_cfg.ns_offload_enable_static ||
+	    !vdev_ctx->pmo_psoc_ctx->psoc_cfg.active_mode_offload) {
 		/* Setup all NS pkt pattern */
 		pmo_debug("NS offload is disabled in INI enable WoW for NS");
 		ret = pmo_tgt_send_wow_patterns_to_fw(vdev,
@@ -430,12 +433,23 @@ static void set_action_id_drop_pattern_for_public_action(
 				= DROP_PUBLIC_ACTION_FRAME_BITMAP;
 }
 
+#define PMO_MAX_WAKE_PATTERN_LEN 350
+
+/* Considering 4 char for i and 10 char for action wakeup pattern and
+ * 2 char for brackets, 2 char for 0x and 1 for space and 1 to end string
+ */
+#define PMO_MAX_SINGLE_WAKE_PATTERN_LEN 20
+
 QDF_STATUS
 pmo_register_action_frame_patterns(struct wlan_objmgr_vdev *vdev,
 				   enum qdf_suspend_type suspend_type)
 {
 	struct pmo_action_wakeup_set_params *cmd;
 	int i = 0;
+	uint8_t *info;
+	uint32_t len = 0;
+	int ret;
+
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	cmd = qdf_mem_malloc(sizeof(*cmd));
@@ -466,17 +480,37 @@ pmo_register_action_frame_patterns(struct wlan_objmgr_vdev *vdev,
 	set_action_id_drop_pattern_for_public_action(cmd->action_per_category);
 	set_action_id_drop_pattern_for_block_ack(&cmd->action_category_map[0]);
 
-	for (i = 0; i < PMO_SUPPORTED_ACTION_CATE_ELE_LIST; i++) {
-		if (i < ALLOWED_ACTION_FRAME_MAP_WORDS)
-			pmo_debug("%d action Wakeup pattern 0x%x in fw",
-				  i, cmd->action_category_map[i]);
-		else
-			cmd->action_category_map[i] = 0;
+	info = qdf_mem_malloc(PMO_MAX_WAKE_PATTERN_LEN);
+	if (!info) {
+		qdf_mem_free(cmd);
+		return -ENOMEM;
 	}
 
-	pmo_debug("Spectrum mgmt action id drop bitmap: 0x%x",
-			cmd->action_per_category[PMO_MAC_ACTION_SPECTRUM_MGMT]);
-	pmo_debug("Public action id drop bitmap: 0x%x",
+	for (i = 0; i < PMO_SUPPORTED_ACTION_CATE_ELE_LIST; i++) {
+		if (i < ALLOWED_ACTION_FRAME_MAP_WORDS) {
+			ret = qdf_scnprintf(info + len,
+				PMO_MAX_WAKE_PATTERN_LEN - len,
+				" %d[0x%x]", i, cmd->action_category_map[i]);
+			if (ret <= 0)
+				break;
+			len += ret;
+
+			if (len >= (PMO_MAX_WAKE_PATTERN_LEN -
+				    PMO_MAX_SINGLE_WAKE_PATTERN_LEN)) {
+				pmo_nofl_debug("serial_num[action wakeup pattern in fw]:%s",
+					       info);
+				len = 0;
+			}
+		} else {
+			cmd->action_category_map[i] = 0;
+		}
+	}
+
+	if (len > 0)
+		pmo_nofl_debug("serial_num[action wakeup pattern in fw]:%s",
+			       info);
+	pmo_debug("Spectrum mgmt action id drop bitmap: 0x%x, Public action id drop bitmap: 0x%x",
+			cmd->action_per_category[PMO_MAC_ACTION_SPECTRUM_MGMT],
 			cmd->action_per_category[PMO_MAC_ACTION_PUBLIC_USAGE]);
 
 	/*  config action frame patterns */
@@ -486,6 +520,7 @@ pmo_register_action_frame_patterns(struct wlan_objmgr_vdev *vdev,
 			status);
 
 	qdf_mem_free(cmd);
+	qdf_mem_free(info);
 
 	return status;
 }

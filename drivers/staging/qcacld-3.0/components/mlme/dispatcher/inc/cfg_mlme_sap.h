@@ -766,8 +766,33 @@
  */
 #define CFG_DISABLE_SAP_BCN_PROT CFG_INI_BOOL(\
 				"disable_sap_bcn_prot", \
-				"0", \
+				false, \
 				"Disable beacon protection for SAP")
+
+/*
+ * <ini>
+ * g_sap_ps_with_twt_enable - enable/disable power save between successive TWT
+ * SPs for SAP
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used to enable/disable power save between successive
+ * TWT SPs for SAP
+ *
+ * Related: None
+ *
+ * Supported Feature: SAP
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_SAP_PS_WITH_TWT CFG_INI_BOOL(\
+				"g_sap_ps_with_twt_enable", \
+				false, \
+				"Enable/Disable SAP power save with twt")
+
 #define CFG_SAP_ALL \
 	CFG_SAP_SAE \
 	CFG(CFG_AP_ENABLE_RANDOM_BSSID) \
@@ -803,6 +828,7 @@
 	CFG(CFG_IS_SAP_BCAST_DEAUTH_ENABLED) \
 	CFG(CFG_6G_SAP_FILS_DISCOVERY_ENABLED) \
 	CFG(CFG_DISABLE_MCS13_SUPPORT) \
-	CFG(CFG_DISABLE_SAP_BCN_PROT)
+	CFG(CFG_DISABLE_SAP_BCN_PROT) \
+	CFG(CFG_SAP_PS_WITH_TWT)
 
 #endif /* __CFG_MLME_SAP_H */

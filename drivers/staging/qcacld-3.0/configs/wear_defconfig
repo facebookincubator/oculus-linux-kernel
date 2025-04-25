@@ -74,6 +74,13 @@ ifeq ($(CONFIG_QCA_WIFI_SDIO), y)
 	CONFIG_ROME_IF = sdio
 endif
 
+ifeq ($(CONFIG_CNSS_UTILS), m)
+	CONFIG_CNSS_UTILS_MODULE := y
+endif
+ifeq ($(CONFIG_WCNSS_MEM_PRE_ALLOC), m)
+	CONFIG_WCNSS_MEM_PRE_ALLOC_MODULE := y
+endif
+
 ifdef CONFIG_ICNSS
 	CONFIG_ROME_IF = snoc
 endif
@@ -493,13 +500,11 @@ else
        CONFIG_WLAN_FEATURE_MIB_STATS := n
 endif
 
-# Feature flags which are not (currently) configurable via Kconfig
-
 #Whether to build debug version
-BUILD_DEBUG_VERSION := y
+CONFIG_WLAN_DEBUG_VERSION := y
 
 #Enable this flag to build driver in diag version
-BUILD_DIAG_VERSION := y
+CONFIG_WLAN_DIAG_VERSION := y
 
 ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 	PANIC_ON_BUG := y
@@ -832,6 +837,7 @@ CONFIG_WIFI_POS_LEGACY := y
 endif
 
 CONFIG_CP_STATS := y
+CONFIG_QCA_TARGET_IF_MLME := y
 CONFIG_FEATURE_INTEROP_ISSUES_AP := y
 
 CONFIG_FEATURE_WLAN_WAPI := y

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/ratelimit.h>
@@ -933,30 +933,42 @@ static void cam_vfe_bus_get_comp_vfe_out_res_id_list(
 static enum cam_vfe_bus_packer_format
 	cam_vfe_bus_get_packer_fmt(uint32_t out_fmt, int wm_index)
 {
+	enum cam_vfe_bus_packer_format packer_fmt = PACKER_FMT_MAX;
 	switch (out_fmt) {
 	case CAM_FORMAT_NV21:
 		if ((wm_index == 4) || (wm_index == 6) || (wm_index == 21))
-			return PACKER_FMT_PLAIN_8_LSB_MSB_10_ODD_EVEN;
+			packer_fmt =  PACKER_FMT_PLAIN_8_LSB_MSB_10_ODD_EVEN;
+		else
+			packer_fmt = PACKER_FMT_PLAIN_8_LSB_MSB_10;
+		break;
 	case CAM_FORMAT_NV12:
 	case CAM_FORMAT_UBWC_NV12:
 	case CAM_FORMAT_UBWC_NV12_4R:
 	case CAM_FORMAT_Y_ONLY:
-		return PACKER_FMT_PLAIN_8_LSB_MSB_10;
+		packer_fmt = PACKER_FMT_PLAIN_8_LSB_MSB_10;
+		break;
 	case CAM_FORMAT_PLAIN16_16:
-		return PACKER_FMT_PLAIN_16_16BPP;
+		packer_fmt = PACKER_FMT_PLAIN_16_16BPP;
+		break;
 	case CAM_FORMAT_PLAIN64:
-		return PACKER_FMT_PLAIN_64;
+		packer_fmt = PACKER_FMT_PLAIN_64;
+		break;
 	case CAM_FORMAT_PLAIN8:
-		return PACKER_FMT_PLAIN_8;
+		packer_fmt = PACKER_FMT_PLAIN_8;
+		break;
 	case CAM_FORMAT_PLAIN16_10:
 	case CAM_FORMAT_PLAIN16_10_LSB:
-		return PACKER_FMT_PLAIN_16_10BPP;
+		packer_fmt = PACKER_FMT_PLAIN_16_10BPP;
+		break;
 	case CAM_FORMAT_PLAIN16_12:
-		return PACKER_FMT_PLAIN_16_12BPP;
+		packer_fmt = PACKER_FMT_PLAIN_16_12BPP;
+		break;
 	case CAM_FORMAT_PLAIN16_14:
-		return PACKER_FMT_PLAIN_16_14BPP;
+		packer_fmt = PACKER_FMT_PLAIN_16_14BPP;
+		break;
 	case CAM_FORMAT_PLAIN32_20:
-		return PACKER_FMT_PLAIN_32_20BPP;
+		packer_fmt = PACKER_FMT_PLAIN_32_20BPP;
+		break;
 	case CAM_FORMAT_MIPI_RAW_6:
 	case CAM_FORMAT_MIPI_RAW_8:
 	case CAM_FORMAT_MIPI_RAW_10:
@@ -968,15 +980,19 @@ static enum cam_vfe_bus_packer_format
 	case CAM_FORMAT_PLAIN128:
 	case CAM_FORMAT_PD8:
 	case CAM_FORMAT_PD10:
-		return PACKER_FMT_PLAIN_128;
+		packer_fmt = PACKER_FMT_PLAIN_128;
+		break;
 	case CAM_FORMAT_UBWC_TP10:
 	case CAM_FORMAT_TP10:
-		return PACKER_FMT_TP_10;
+		packer_fmt = PACKER_FMT_TP_10;
+		break;
 	case CAM_FORMAT_ARGB_14:
-		return PACKER_FMT_ARGB_14;
+		packer_fmt = PACKER_FMT_ARGB_14;
+		break;
 	default:
-		return PACKER_FMT_MAX;
+		packer_fmt = PACKER_FMT_MAX;
 	}
+	return packer_fmt;
 }
 
 static int cam_vfe_bus_acquire_wm(
@@ -1097,6 +1113,7 @@ static int cam_vfe_bus_acquire_wm(
 		case CAM_FORMAT_UBWC_NV12:
 			rsrc_data->en_ubwc = 1;
 			/* Fall through for NV12 */
+			fallthrough;
 		case CAM_FORMAT_NV21:
 		case CAM_FORMAT_NV12:
 		case CAM_FORMAT_Y_ONLY:

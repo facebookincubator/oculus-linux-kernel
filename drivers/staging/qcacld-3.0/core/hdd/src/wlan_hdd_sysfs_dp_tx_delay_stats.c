@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -47,9 +47,11 @@ __hdd_sysfs_dp_tx_delay_stats_show(struct net_device *net_dev,
 	if (!wlan_hdd_validate_modules_state(adapter->hdd_ctx))
 		return -EINVAL;
 
-	value = cdp_vdev_is_tx_delay_stats_enabled(dp_soc, adapter->vdev_id);
+	value = cdp_vdev_is_tx_delay_stats_enabled(dp_soc,
+						   adapter->deflink->vdev_id);
 
-	hdd_debug("vdev_id: %d tx_delay_stats: %d", adapter->vdev_id, value);
+	hdd_debug("vdev_id: %d tx_delay_stats: %d",
+		  adapter->deflink->vdev_id, value);
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n", value);
 }
@@ -109,9 +111,12 @@ __hdd_sysfs_dp_tx_delay_stats_store(struct net_device *net_dev, const char *buf,
 	if (kstrtou8(token, 0, &value))
 		return -EINVAL;
 
-	hdd_debug("vdev_id: %d tx_delay_stats: %d", adapter->vdev_id, value);
+	hdd_debug("vdev_id: %d tx_delay_stats: %d",
+		  adapter->deflink->vdev_id, value);
 
-	cdp_enable_disable_vdev_tx_delay_stats(dp_soc, adapter->vdev_id, value);
+	cdp_enable_disable_vdev_tx_delay_stats(dp_soc,
+					       adapter->deflink->vdev_id,
+					       value);
 
 	return count;
 }

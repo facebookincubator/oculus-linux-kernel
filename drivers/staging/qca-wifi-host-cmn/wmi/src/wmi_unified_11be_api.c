@@ -62,10 +62,11 @@ wmi_send_mlo_link_set_active_cmd(wmi_unified_t wmi,
 #ifdef WLAN_FEATURE_11BE
 QDF_STATUS wmi_send_mlo_peer_tid_to_link_map_cmd(
 		wmi_unified_t wmi,
-		struct wmi_host_tid_to_link_map_params *params)
+		struct wmi_host_tid_to_link_map_params *params,
+		bool t2lm_info)
 {
 	if (wmi->ops->send_mlo_peer_tid_to_link_map)
-		return wmi->ops->send_mlo_peer_tid_to_link_map(wmi, params);
+		return wmi->ops->send_mlo_peer_tid_to_link_map(wmi, params, t2lm_info);
 
 	return QDF_STATUS_E_FAILURE;
 }
@@ -80,12 +81,58 @@ QDF_STATUS wmi_send_mlo_vdev_tid_to_link_map_cmd(
 	return QDF_STATUS_E_FAILURE;
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+QDF_STATUS
+wmi_send_mlo_link_switch_req_cnf_cmd(wmi_unified_t wmi,
+				     struct wlan_mlo_link_switch_cnf *params)
+{
+	if (wmi->ops->send_mlo_link_switch_req_cnf_cmd)
+		return wmi->ops->send_mlo_link_switch_req_cnf_cmd(wmi, params);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_extract_mlo_link_switch_request_evt(struct wmi_unified *wmi,
+					void *buf,
+					struct wlan_mlo_link_switch_req *req)
+{
+	if (wmi->ops->extract_mlo_link_switch_request_event)
+		return wmi->ops->extract_mlo_link_switch_request_event(wmi,
+								       buf,
+								       req);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_extract_mlo_link_state_switch_evt(struct wmi_unified *wmi,
+				      void *buf, uint8_t len,
+				      struct mlo_link_switch_state_info *info)
+{
+	if (wmi->ops->extract_mlo_link_state_switch_evt)
+		return wmi->ops->extract_mlo_link_state_switch_evt(
+							wmi, buf, len, info);
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* WLAN_FEATURE_11BE_MLO_ADV_FEATURE */
+
 QDF_STATUS wmi_send_mlo_link_state_request_cmd(
 		wmi_unified_t wmi,
 		struct wmi_host_link_state_params *params)
 {
 	if (wmi->ops->send_mlo_link_state_request)
 		return wmi->ops->send_mlo_link_state_request(wmi, params);
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_send_link_set_bss_params_cmd(
+		wmi_unified_t wmi,
+		struct wmi_host_link_bss_params *params)
+{
+	if (wmi->ops->send_link_set_bss_params_cmd)
+		return wmi->ops->send_link_set_bss_params_cmd(wmi, params);
 	return QDF_STATUS_E_FAILURE;
 }
 
@@ -139,7 +186,6 @@ QDF_STATUS wmi_extract_mlo_link_disable_request_evt(
 
 	return QDF_STATUS_E_FAILURE;
 }
-
 #endif /* WLAN_FEATURE_11BE */
 
 QDF_STATUS
@@ -210,3 +256,42 @@ QDF_STATUS wmi_extract_mgmt_rx_mlo_link_removal_info(
 
 	return QDF_STATUS_E_FAILURE;
 }
+
+#ifdef QCA_SUPPORT_PRIMARY_LINK_MIGRATE
+QDF_STATUS wmi_unified_peer_ptqm_migrate_send(
+					wmi_unified_t wmi_hdl,
+					struct peer_ptqm_migrate_params *param)
+{
+	if (wmi_hdl->ops->send_peer_ptqm_migrate_cmd)
+		return wmi_hdl->ops->send_peer_ptqm_migrate_cmd(wmi_hdl, param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_extract_peer_ptqm_migrate_event(
+		wmi_unified_t wmi, void *evt_buf,
+		struct peer_ptqm_migrate_event_params *resp)
+{
+	if (wmi->ops->extract_peer_ptqm_migrate_event) {
+		return wmi->ops->extract_peer_ptqm_migrate_event(wmi,
+								 evt_buf,
+								 resp);
+	}
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_extract_peer_ptqm_entry_param(
+		wmi_unified_t wmi_handle, void *evt_buf,
+		uint32_t index,
+		struct peer_entry_ptqm_migrate_event_params *entry)
+{
+	if (wmi_handle->ops->extract_peer_entry_ptqm_migrate_event)
+		return wmi_handle->ops->extract_peer_entry_ptqm_migrate_event(
+			wmi_handle, evt_buf,
+			index, entry);
+
+	return QDF_STATUS_E_FAILURE;
+}
+#endif /* QCA_SUPPORT_PRIMARY_LINK_MIGRATE */

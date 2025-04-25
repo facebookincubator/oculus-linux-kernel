@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -230,6 +231,19 @@ ol_tx_non_std(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 		return ol_tx_non_std_ll(vdev, tx_spec, msdu_list);
 }
 #endif
+
+/**
+ * ol_tx_trace_pkt() - Trace TX packet at OL layer
+ *
+ * @skb: skb to be traced
+ * @msdu_id: msdu_id of the packet
+ * @vdev_id: vdev_id of the packet
+ * @op_mode: Vdev Operation mode
+ *
+ * Return: None
+ */
+void ol_tx_trace_pkt(qdf_nbuf_t skb, uint16_t msdu_id, uint8_t vdev_id,
+		     enum QDF_OPMODE op_mode);
 
 void ol_txrx_mgmt_tx_complete(void *ctxt, qdf_nbuf_t netbuf, int err);
 

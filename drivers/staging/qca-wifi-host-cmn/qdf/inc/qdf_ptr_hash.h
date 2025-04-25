@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -84,7 +84,7 @@ struct qdf_ptr_hash_entry {
 /**
  * qdf_ptr_hash_declare() - declare a new qdf_ptr_hash
  * @name: the C identifier to use for the new hash table
- * @bits: The number of bits to use for hashing
+ * @_bits: The number of bits to use for hashing
  *
  * Return: None
  */
@@ -198,9 +198,9 @@ static inline bool qdf_ptr_hash_empty(struct qdf_ptr_hash *ht)
 #ifdef ENABLE_QDF_PTR_HASH_DEBUG
 /**
  * qdf_ptr_hash_dup_check_in_bucket() - check if a hash_entry is duplicated
-					in hash_bucket
+ *					in hash_bucket
  * @bucket: qdf_ptr_hash_bucket pointer
- * cmp_entry: the hash_entry to be checked
+ * @cmp_entry: the hash_entry to be checked
  *
  * if the cmp_entry is found in bucket list, then trigger
  * assert to report duplication.
@@ -313,9 +313,9 @@ __qdf_ptr_hash_remove(struct qdf_ptr_hash *ht, uintptr_t key)
 
 /**
  * qdf_ptr_hash_for_each_by_key() - qdf_ptr_hash item iterator for items whose
- *	keys equal @key
+ *	keys equal @_key
  * @ht: the qdf_ptr_hash to iterate over
- * @key: the pointer to use as a lookup key
+ * @_key: the pointer to use as a lookup key
  * @cursor: a pointer to a type that contains a qdf_ptr_hash_entry
  * @entry_field: C identifier for the qdf_ptr_hash_entry field in @cursor
  */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -57,6 +57,9 @@ QDF_STATUS utils_dfs_reset(struct wlan_objmgr_pdev *pdev)
 	dfs_nol_update(dfs);
 	dfs_reset_precaclists(dfs);
 	dfs_init_chan_state_array(pdev);
+
+	if (dfs->dfs_use_puncture && !dfs->dfs_is_stadfs_enabled)
+		dfs_punc_sm_stop_all(dfs);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -705,7 +708,7 @@ void utils_dfs_get_chan_list(struct wlan_objmgr_pdev *pdev,
  * on current channel list.
  * @pdev: Pointer to pdev structure.
  * @vdev: vdev of request
- * @chan: Pointer to channel list.
+ * @chan_list: Pointer to channel list.
  * @num_chan: number of channels.
  *
  * Get regdb channel list based on dfs current channel.
@@ -809,6 +812,8 @@ static void utils_dfs_get_channel_list(struct wlan_objmgr_pdev *pdev,
 	struct wlan_objmgr_psoc *psoc;
 	uint32_t conn_count = 0;
 	enum policy_mgr_con_mode mode;
+	uint8_t vdev_id = WLAN_INVALID_VDEV_ID;
+	enum QDF_OPMODE op_mode;
 
 	psoc = wlan_pdev_get_psoc(pdev);
 	if (!psoc) {
@@ -820,20 +825,23 @@ static void utils_dfs_get_channel_list(struct wlan_objmgr_pdev *pdev,
 	len = QDF_ARRAY_SIZE(pcl_ch);
 	weight_len = QDF_ARRAY_SIZE(weight_list);
 
-	if (vdev)
-		mode = policy_mgr_convert_device_mode_to_qdf_type(
-				wlan_vdev_mlme_get_opmode(vdev));
-	else
+	if (vdev) {
+		vdev_id = wlan_vdev_get_id(vdev);
+		op_mode = wlan_vdev_mlme_get_opmode(vdev);
+		mode = policy_mgr_qdf_opmode_to_pm_con_mode(psoc, op_mode,
+							    vdev_id);
+	} else {
 		mode = PM_SAP_MODE;
+	}
 	conn_count = policy_mgr_mode_specific_connection_count(
 			psoc, mode, NULL);
 	if (0 == conn_count)
 		policy_mgr_get_pcl(psoc, mode, pcl_ch,
-				   &len, weight_list, weight_len);
+				   &len, weight_list, weight_len, vdev_id);
 	else
 		policy_mgr_get_pcl_for_existing_conn(
 			psoc, mode, pcl_ch, &len, weight_list,
-			weight_len, true);
+			weight_len, true, vdev_id);
 
 	if (*num_chan < len) {
 		dfs_err(NULL, WLAN_DEBUG_DFS_ALWAYS,
@@ -1060,8 +1068,8 @@ void utils_dfs_init_nol(struct wlan_objmgr_pdev *pdev)
 	}
 	qdf_mem_free(dfs_nolinfo);
 }
-#endif
 qdf_export_symbol(utils_dfs_init_nol);
+#endif
 
 #ifndef QCA_DFS_NOL_PLATFORM_DRV_SUPPORT
 void utils_dfs_save_nol(struct wlan_objmgr_pdev *pdev)
@@ -1437,17 +1445,8 @@ utils_dfs_precac_status_for_channel(struct wlan_objmgr_pdev *pdev,
 #define FIRST_DFS_CHAN_NUM  52
 #define CHAN_NUM_SPACING     4
 #define INVALID_INDEX     (-1)
-#define IS_CHAN_DFS(_flags) ((_flags) & REGULATORY_CHAN_RADAR)
-/**
- * utils_dfs_convert_freq_to_index() - Converts a DFS channel frequency
- * to the DFS channel state array index. The input frequency should be a DFS
- * channel frequency and this check should be done in the caller.
- * @freq: Input DFS channel frequency.
- * @index: Output DFS channel state array index.
- *
- * Return: QDF_STATUS.
- */
-static void utils_dfs_convert_freq_to_index(qdf_freq_t freq, int8_t *index)
+
+void utils_dfs_convert_freq_to_index(qdf_freq_t freq, int8_t *index)
 {
 	uint16_t chan_num;
 	int8_t tmp_index;
@@ -1461,13 +1460,13 @@ static void utils_dfs_convert_freq_to_index(qdf_freq_t freq, int8_t *index)
 /**
  * utils_dfs_update_chan_state_array_element() - Update the per dfs channel
  * state array element indexed by the frequency with the new state.
- *
+ * @dfs: DFS context
  * @freq: Input DFS Channel frequency which will converted to channel state
  * array index.
  * @state: Input DFS state with which the value indexed by frequency will be
  * updated with.
  *
- * Return: void.
+ * Return: QDF_STATUS
  */
 static QDF_STATUS
 utils_dfs_update_chan_state_array_element(struct wlan_dfs *dfs,
@@ -1475,8 +1474,14 @@ utils_dfs_update_chan_state_array_element(struct wlan_dfs *dfs,
 					  enum channel_dfs_state state)
 {
 	int8_t index;
+	enum channel_enum chan_enum;
 
 	if (state == CH_DFS_S_INVALID)
+		return QDF_STATUS_E_INVAL;
+
+	chan_enum = wlan_reg_get_chan_enum_for_freq(freq);
+	/* Do not send DFS events on invalid IEEE channels */
+	if (chan_enum == INVALID_CHANNEL)
 		return QDF_STATUS_E_INVAL;
 
 	utils_dfs_convert_freq_to_index(freq, &index);
@@ -1496,18 +1501,17 @@ QDF_STATUS dfs_init_chan_state_array(struct wlan_objmgr_pdev *pdev)
 	int i;
 
 	dfs = wlan_pdev_get_dfs_obj(pdev);
-
 	if (!dfs)
 		return QDF_STATUS_E_FAILURE;
 
 	cur_chan_list = qdf_mem_malloc(NUM_CHANNELS *
 			sizeof(struct regulatory_channel));
-
 	if (!cur_chan_list)
 		return QDF_STATUS_E_NOMEM;
 
 	if (wlan_reg_get_current_chan_list(
 				pdev, cur_chan_list) != QDF_STATUS_SUCCESS) {
+		qdf_mem_free(cur_chan_list);
 		dfs_alert(dfs, WLAN_DEBUG_DFS_ALWAYS,
 			  "failed to get curr channel list");
 		return QDF_STATUS_E_FAILURE;
@@ -1595,3 +1599,112 @@ QDF_STATUS utils_dfs_radar_enable(struct wlan_objmgr_pdev *pdev)
 {
 	return tgt_dfs_radar_enable(pdev, 0, 0, true);
 }
+
+#ifdef WLAN_FEATURE_11BE
+enum phy_ch_width
+utils_dfs_convert_wlan_phymode_to_chwidth(enum wlan_phymode phymode)
+{
+		switch (phymode) {
+		case WLAN_PHYMODE_11NA_HT20:
+		case WLAN_PHYMODE_11NG_HT20:
+		case WLAN_PHYMODE_11AC_VHT20:
+		case WLAN_PHYMODE_11AC_VHT20_2G:
+		case WLAN_PHYMODE_11AXA_HE20:
+		case WLAN_PHYMODE_11AXG_HE20:
+		case WLAN_PHYMODE_11BEG_EHT20:
+		case WLAN_PHYMODE_11BEA_EHT20:
+			return CH_WIDTH_20MHZ;
+		case WLAN_PHYMODE_11NA_HT40:
+		case WLAN_PHYMODE_11NG_HT40PLUS:
+		case WLAN_PHYMODE_11NG_HT40MINUS:
+		case WLAN_PHYMODE_11NG_HT40:
+		case WLAN_PHYMODE_11AC_VHT40:
+		case WLAN_PHYMODE_11AC_VHT40PLUS_2G:
+		case WLAN_PHYMODE_11AC_VHT40MINUS_2G:
+		case WLAN_PHYMODE_11AC_VHT40_2G:
+		case WLAN_PHYMODE_11AXG_HE40PLUS:
+		case WLAN_PHYMODE_11AXG_HE40MINUS:
+		case WLAN_PHYMODE_11AXG_HE40:
+		case WLAN_PHYMODE_11BEA_EHT40:
+		case WLAN_PHYMODE_11BEG_EHT40PLUS:
+		case WLAN_PHYMODE_11BEG_EHT40MINUS:
+		case WLAN_PHYMODE_11BEG_EHT40:
+			return CH_WIDTH_40MHZ;
+		case WLAN_PHYMODE_11AC_VHT80:
+		case WLAN_PHYMODE_11AC_VHT80_2G:
+		case WLAN_PHYMODE_11AXA_HE80:
+		case WLAN_PHYMODE_11AXG_HE80:
+		case WLAN_PHYMODE_11BEA_EHT80:
+			return CH_WIDTH_80MHZ;
+		case WLAN_PHYMODE_11AC_VHT160:
+		case WLAN_PHYMODE_11AXA_HE160:
+		case WLAN_PHYMODE_11BEA_EHT160:
+			return CH_WIDTH_160MHZ;
+		case WLAN_PHYMODE_11AC_VHT80_80:
+		case WLAN_PHYMODE_11AXA_HE80_80:
+			return CH_WIDTH_80P80MHZ;
+		case WLAN_PHYMODE_11BEA_EHT320:
+			return CH_WIDTH_320MHZ;
+		default:
+			return CH_WIDTH_INVALID;
+		}
+}
+#else
+enum phy_ch_width
+utils_dfs_convert_wlan_phymode_to_chwidth(enum wlan_phymode phymode)
+{
+		switch (phymode) {
+		case WLAN_PHYMODE_11NA_HT20:
+		case WLAN_PHYMODE_11NG_HT20:
+		case WLAN_PHYMODE_11AC_VHT20:
+		case WLAN_PHYMODE_11AC_VHT20_2G:
+		case WLAN_PHYMODE_11AXA_HE20:
+		case WLAN_PHYMODE_11AXG_HE20:
+			return CH_WIDTH_20MHZ;
+		case WLAN_PHYMODE_11NA_HT40:
+		case WLAN_PHYMODE_11NG_HT40PLUS:
+		case WLAN_PHYMODE_11NG_HT40MINUS:
+		case WLAN_PHYMODE_11NG_HT40:
+		case WLAN_PHYMODE_11AC_VHT40:
+		case WLAN_PHYMODE_11AC_VHT40PLUS_2G:
+		case WLAN_PHYMODE_11AC_VHT40MINUS_2G:
+		case WLAN_PHYMODE_11AC_VHT40_2G:
+		case WLAN_PHYMODE_11AXG_HE40PLUS:
+		case WLAN_PHYMODE_11AXG_HE40MINUS:
+		case WLAN_PHYMODE_11AXG_HE40:
+			return CH_WIDTH_40MHZ;
+		case WLAN_PHYMODE_11AC_VHT80:
+		case WLAN_PHYMODE_11AC_VHT80_2G:
+		case WLAN_PHYMODE_11AXA_HE80:
+		case WLAN_PHYMODE_11AXG_HE80:
+			return CH_WIDTH_80MHZ;
+		case WLAN_PHYMODE_11AC_VHT160:
+		case WLAN_PHYMODE_11AXA_HE160:
+			return CH_WIDTH_160MHZ;
+		case WLAN_PHYMODE_11AC_VHT80_80:
+		case WLAN_PHYMODE_11AXA_HE80_80:
+			return CH_WIDTH_80P80MHZ;
+		default:
+			return CH_WIDTH_INVALID;
+		}
+}
+#endif
+
+#if defined(WLAN_FEATURE_11BE) && defined(QCA_DFS_BW_EXPAND) && \
+	defined(QCA_DFS_RCSA_SUPPORT)
+uint16_t
+utils_dfs_get_radar_bitmap_from_nolie(struct wlan_objmgr_pdev *pdev,
+				      enum wlan_phymode phy_mode,
+				      qdf_freq_t nol_ie_start_freq,
+				      uint8_t nol_ie_bitmap)
+{
+	struct wlan_dfs *dfs;
+
+	dfs = wlan_pdev_get_dfs_obj(pdev);
+	if (!dfs)
+		return 0;
+
+	return dfs_get_radar_bitmap_from_nolie(dfs, phy_mode, nol_ie_start_freq,
+					       nol_ie_bitmap);
+}
+#endif

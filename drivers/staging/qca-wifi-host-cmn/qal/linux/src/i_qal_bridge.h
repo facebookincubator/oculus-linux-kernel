@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -87,4 +88,26 @@ __qal_bridge_fdb_update_unregister_notify(__qal_notify_blk_t nb)
 	return QDF_STATUS_SUCCESS;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+static inline QDF_STATUS
+__qal_bridge_fdb_add_or_refresh_by_netdev(__qal_netdev_t dev,
+					  const unsigned char *addr,
+					  uint16_t vid,
+					  uint16_t state)
+{
+	int ret;
+
+	ret = br_fdb_add_or_refresh_by_netdev(dev, addr, vid, state);
+	return qdf_status_from_os_return(ret);
+}
+#else
+static inline QDF_STATUS
+__qal_bridge_fdb_add_or_refresh_by_netdev(__qal_netdev_t dev,
+					  const unsigned char *addr,
+					  uint16_t vid,
+					  uint16_t state)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 #endif /* __I_QAL_BRIDGE_H */

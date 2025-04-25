@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -96,7 +97,7 @@ QDF_STATUS wbuff_module_deregister(struct wbuff_mod_handle *hdl);
 
 /**
  * wbuff_buff_get() - return buffer to the requester
- * @handle: wbuff_handle corresponding to the module
+ * @hdl: wbuff_handle corresponding to the module
  * @pool_id: pool identifier
  * @len: length of buffer requested
  * @func_name: function from which buffer is requested
@@ -111,7 +112,6 @@ wbuff_buff_get(struct wbuff_mod_handle *hdl, uint8_t pool_id, uint32_t len,
 
 /**
  * wbuff_buff_put() - put the buffer back to wbuff pool
- * @hdl: wbuff_handle corresponding to the module
  * @buf: pointer to network buffer
  *
  * Return: NULL if success (buffer consumed)

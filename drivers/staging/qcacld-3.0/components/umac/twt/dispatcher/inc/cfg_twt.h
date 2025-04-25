@@ -234,10 +234,31 @@
 		"enable_twt_24ghz", \
 		true, \
 		"enable twt in 2.4Ghz band")
+/*
+ * <ini>
+ * twt_disable_info - Enable/Disable TWT info frame.
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini is used to enable/disable TWT Info frame
+ *
+ * Related: NA
+ *
+ * Supported Feature: 11AX
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_DISABLE_TWT_INFO_FRAME CFG_INI_BOOL( \
+		"twt_disable_info", \
+		false, \
+		"disable twt info frame")
 
 #define CFG_HE_FLEX_TWT_SCHED CFG_BOOL( \
 				"he_flex_twt_sched", \
-				0, \
+				1, \
 				"HE Flex Twt Sched")
 
 /*
@@ -270,6 +291,7 @@
 	CFG(CFG_TWT_CONGESTION_TIMEOUT) \
 	CFG(CFG_BCAST_TWT_REQ_RESP) \
 	CFG(CFG_ENABLE_TWT_24GHZ) \
+	CFG(CFG_DISABLE_TWT_INFO_FRAME) \
 	CFG(CFG_TWT_ENABLE_IN_11N) \
 	CFG(CFG_RTWT_REQ_RESP)
 #elif !defined(WLAN_SUPPORT_TWT) && !defined(WLAN_TWT_CONV_SUPPORTED)

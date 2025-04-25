@@ -86,18 +86,20 @@ enum wlan_twt_session_state {
 	WLAN_TWT_SETUP_STATE_SUSPEND         = 2,
 };
 
-/* enum TWT_ROLE - role specified in ext conf in wmi_twt_enable/disable_cmd
- * TWT_ROLE_REQUESTOR: TWT role is requestor
- * TWT_ROLE_RESPONDER: TWT role is responder
+/**
+ * enum TWT_ROLE - role specified in ext conf in wmi_twt_enable/disable_cmd
+ * @TWT_ROLE_REQUESTOR: TWT role is requestor
+ * @TWT_ROLE_RESPONDER: TWT role is responder
  */
 enum TWT_ROLE {
 	TWT_ROLE_REQUESTOR,
 	TWT_ROLE_RESPONDER,
 };
 
-/* enum TWT_OPERATION - specified in ext conf in wmi_twt_enable/disable_cmd
- * TWT_OPERATION_INDIVIDUAL: Individual TWT operation
- * TWT_OPERATION_BROADCAST: Broadcast TWT operation
+/**
+ * enum TWT_OPERATION - specified in ext conf in wmi_twt_enable/disable_cmd
+ * @TWT_OPERATION_INDIVIDUAL: Individual TWT operation
+ * @TWT_OPERATION_BROADCAST: Broadcast TWT operation
  */
 enum TWT_OPERATION {
 	TWT_OPERATION_INDIVIDUAL,
@@ -179,7 +181,8 @@ struct twt_enable_param {
 	bool r_twt_enable;
 };
 
-/* HOST_TWT_DISABLE_REASON - reason code of disable TWT
+/**
+ * enum HOST_TWT_DISABLE_REASON - reason code of disable TWT
  * @HOST_TWT_DISABLE_REASON_NONE: Host sends TWT disable command to firmware
  *                              in normal case.
  * @HOST_TWT_DISABLE_REASON_CONCURRENCY_SCC: Host sends TWT disable command
@@ -215,16 +218,14 @@ struct twt_disable_param {
 	enum HOST_TWT_DISABLE_REASON dis_reason_code;
 };
 
-/* status code of enabling TWT
- * HOST_TWT_ENABLE_STATUS_OK: enabling TWT successfully completed
- * HOST_TWT_ENABLE_STATUS_ALREADY_ENABLED: TWT already enabled
- * HOST_TWT_ENABLE_STATUS_NOT_READY: FW not ready for enabling TWT
- * HOST_TWT_ENABLE_INVALID_PARAM: invalid parameters
- * HOST_TWT_ENABLE_STATUS_UNKNOWN_ERROR: enabling TWT failed with an
+/**
+ * enum HOST_TWT_ENABLE_STATUS - status code of enabling TWT
+ * @HOST_TWT_ENABLE_STATUS_OK: enabling TWT successfully completed
+ * @HOST_TWT_ENABLE_STATUS_ALREADY_ENABLED: TWT already enabled
+ * @HOST_TWT_ENABLE_STATUS_NOT_READY: FW not ready for enabling TWT
+ * @HOST_TWT_ENABLE_INVALID_PARAM: invalid parameters
+ * @HOST_TWT_ENABLE_STATUS_UNKNOWN_ERROR: enabling TWT failed with an
  *                                      unknown reason
- * HOST_TWT_ENABLE_STATUS_INVALID_COMMAND: If the host has sent TWT enable
- *                     command and received TWT disable event or any other event
- *                     then host sets this status internally.
  */
 enum HOST_TWT_ENABLE_STATUS {
 	HOST_TWT_ENABLE_STATUS_OK,
@@ -234,7 +235,8 @@ enum HOST_TWT_ENABLE_STATUS {
 	HOST_TWT_ENABLE_STATUS_UNKNOWN_ERROR,
 };
 
-/* enum - status code of adding TWT dialog
+/**
+ * enum HOST_ADD_TWT_STATUS - status code of adding TWT dialog
  * @HOST_ADD_TWT_STATUS_OK: adding TWT dialog successfully completed
  * @HOST_ADD_TWT_STATUS_TWT_NOT_ENABLED: TWT not enabled
  * @HOST_ADD_TWT_STATUS_USED_DIALOG_ID: TWT dialog ID is already used
@@ -254,6 +256,8 @@ enum HOST_TWT_ENABLE_STATUS {
  * @HOST_ADD_TWT_STATUS_ROAM_IN_PROGRESS: Roaming in progress
  * @HOST_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
  * @HOST_ADD_TWT_STATUS_SCAN_IN_PROGRESS: Scan is in progress
+ * @HOST_ADD_TWT_STATUS_LINK_SWITCH_IN_PROGRESS: Link switch is in progress
+ * @HOST_ADD_TWT_STATUS_UNSUPPORTED_MODE_MLMR: MLMR mode is not supported
  */
 enum HOST_ADD_TWT_STATUS {
 	HOST_ADD_TWT_STATUS_OK,
@@ -271,6 +275,8 @@ enum HOST_ADD_TWT_STATUS {
 	HOST_ADD_TWT_STATUS_ROAM_IN_PROGRESS,
 	HOST_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS,
 	HOST_ADD_TWT_STATUS_SCAN_IN_PROGRESS,
+	HOST_ADD_TWT_STATUS_LINK_SWITCH_IN_PROGRESS,
+	HOST_ADD_TWT_STATUS_UNSUPPORTED_MODE_MLMR,
 };
 
 /**
@@ -283,7 +289,8 @@ struct twt_enable_complete_event_param {
 	uint32_t status;
 };
 
-/* enum HOST_TWT_DISABLE_STATUS  - status code of disable TWT
+/**
+ * enum HOST_TWT_DISABLE_STATUS  - status code of disable TWT
  * @HOST_TWT_DISABLE_STATUS_OK: TWT disable is successfully completed
  * @HOST_TWT_DISABLE_STATUS_ROAM_IN_PROGRESS: roaming in progress
  * @HOST_TWT_DISABLE_STATUS_CHAN_SW_IN_PROGRESS: channel switch in progress
@@ -299,7 +306,7 @@ enum HOST_TWT_DISABLE_STATUS {
 };
 
 /**
- * struct twt_disable_complete_event:
+ * struct twt_disable_complete_event_param:
  * @pdev_id: pdev_id for identifying the MAC.
  * @status: From enum HOST_TWT_DISABLE_STATUS
  */
@@ -309,7 +316,7 @@ struct twt_disable_complete_event_param {
 };
 
 /**
- * twt_ack_context - twt ack private context
+ * struct twt_ack_context: twt ack private context
  * @vdev_id: vdev id
  * @peer_macaddr: peer mac address
  * @dialog_id: dialog id
@@ -325,7 +332,7 @@ struct twt_ack_context {
 };
 
 /**
- * twt_en_dis_context - twt enable/disable private context
+ * struct twt_en_dis_context:  twt enable/disable private context
  * @twt_role: twt role. When the upper layer is invoking requestor/responder
  * enable/disable command via the TWT component API, Firmware WMI event
  * doesn't have the info in the event params to distinguish if this enable or
@@ -361,11 +368,13 @@ struct twt_ack_complete_event_param {
  * @peer_mac: MAC address of node
  * @event_type: Indicates TWT session type (SETUP/TEARDOWN/UPDATE)
  * @flow_id: TWT flow identifier established with TWT peer
- * @bcast:  If this is a broacast TWT session
+ * @bcast:  If this is a broadcast TWT session
  * @trig: If the TWT session is trigger enabled
  * @announ: If the flow type is announced/unannounced
  * @protection: If the TWT protection field is set
  * @info_frame_disabled: If the TWT Information frame is disabled
+ * @pm_responder_bit_valid: is pm_responder_bit valid
+ * @pm_responder_bit: set pm_responder_bit
  * @dialog_id: Dialog_id of current session
  * @wake_dura_us: wake duration in us
  * @wake_intvl_us: wake time interval in us
@@ -487,7 +496,8 @@ struct twt_add_dialog_param {
 	uint32_t r_twt_ul_tid_bitmap;
 };
 
-/* enum HOST_TWT_GET_STATS_STATUS - status code of TWT Get stats dialog id
+/**
+ * enum HOST_TWT_GET_STATS_STATUS - status code of TWT Get stats dialog id
  * @HOST_TWT_GET_STATS_STATUS_OK: Get status TWT dialog successfully completed
  * @HOST_TWT_GET_STATS_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID does not exist
  * @HOST_TWT_GET_STATS_STATUS_INVALID_PARAM: Invalid parameters
@@ -500,7 +510,8 @@ enum HOST_TWT_GET_STATS_STATUS {
 	HOST_TWT_GET_STATS_STATUS_UNKNOWN_ERROR,
 };
 
-/* enum HOST_TWT_ADD_STATUS - status code of TWT add dialog
+/**
+ * enum HOST_TWT_ADD_STATUS - status code of TWT add dialog
  * @HOST_TWT_ADD_STATUS_OK: add TWT dialog successfully completed
  * @HOST_TWT_ADD_STATUS_TWT_NOT_ENABLED: TWT not enabled
  * @HOST_TWT_ADD_STATUS_USED_DIALOG_ID: TWT dialog ID is already used
@@ -520,6 +531,8 @@ enum HOST_TWT_GET_STATS_STATUS {
  * @HOST_TWT_ADD_STATUS_ROAM_IN_PROGRESS: Roaming in progress
  * @HOST_TWT_ADD_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
  * @HOST_TWT_ADD_STATUS_SCAN_IN_PROGRESS: Scan is in progress
+ * @HOST_TWT_ADD_STATUS_LINK_SWITCH_IN_PROGRESS: link switch is in progress
+ * @HOST_TWT_ADD_STATUS_UNSUPPORTED_MODE_MLMR: MLMR not supported
  */
 enum HOST_TWT_ADD_STATUS {
 	HOST_TWT_ADD_STATUS_OK,
@@ -537,6 +550,8 @@ enum HOST_TWT_ADD_STATUS {
 	HOST_TWT_ADD_STATUS_ROAM_IN_PROGRESS,
 	HOST_TWT_ADD_STATUS_CHAN_SW_IN_PROGRESS,
 	HOST_TWT_ADD_STATUS_SCAN_IN_PROGRESS,
+	HOST_TWT_ADD_STATUS_LINK_SWITCH_IN_PROGRESS,
+	HOST_TWT_ADD_STATUS_UNSUPPORTED_MODE_MLMR,
 };
 
 /**
@@ -558,7 +573,7 @@ enum HOST_TWT_ADD_STATUS {
  *                          0 means responder pm mode field is not valid
  * @pm_responder_bit: 1 means that responder set responder pm mode to 1
  *                    0 means that responder set responder pm mode to 0
- * @wake_dura_us: wake duration in us
+ * @wake_dur_us: wake duration in us
  * @wake_intvl_us: wake time interval in us
  * @sp_offset_us: Time until initial TWT SP occurs
  * @sp_tsf_us_lo: TWT service period tsf in usecs lower bits - 31:0
@@ -582,7 +597,7 @@ struct twt_add_dialog_additional_params {
 };
 
 /**
- * struct twt_add_dialog_complete_param -
+ * struct twt_add_dialog_complete_event_param:
  * @vdev_id: VDEV identifier
  * @peer_macaddr: Peer mac address
  * @dialog_id: TWT dialog ID
@@ -710,7 +725,8 @@ struct twt_nudge_dialog_cmd_param {
 	int32_t sp_start_offset;
 };
 
-/* enum HOST_TWT_PAUSE_STATUS - status code of pause TWT dialog
+/**
+ * enum HOST_TWT_PAUSE_STATUS - status code of pause TWT dialog
  * @HOST_TWT_PAUSE_STATUS_OK: pausing TWT dialog successfully completed
  * @HOST_TWT_PAUSE_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
  * @HOST_TWT_PAUSE_STATUS_INVALID_PARAM: invalid parameters
@@ -754,7 +770,8 @@ struct twt_pause_dialog_complete_event_param {
 	enum HOST_TWT_PAUSE_STATUS status;
 };
 
-/* enum HOST_TWT_NUDGE_STATUS - status code of nudge TWT dialog
+/**
+ * enum HOST_TWT_NUDGE_STATUS - status code of nudge TWT dialog
  * @HOST_TWT_NUDGE_STATUS_OK: nudge TWT dialog successfully completed
  * @HOST_TWT_NUDGE_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
  * @HOST_TWT_NUDGE_STATUS_INVALID_PARAM: invalid parameters
@@ -765,6 +782,7 @@ struct twt_pause_dialog_complete_event_param {
  * request/response frame
  * @HOST_TWT_NUDGE_STATUS_UNKNOWN_ERROR: nudge TWT dialog failed with an
  * unknown reason
+ * @HOST_TWT_NUDGE_STATUS_ALREADY_PAUSED: TWT dialog already in paused state
  * @HOST_TWT_NUDGE_STATUS_CHAN_SW_IN_PROGRESS: Channel switch in progress
  * @HOST_TWT_NUDGE_STATUS_ROAM_IN_PROGRESS: Roaming in progress
  * @HOST_TWT_NUDGE_STATUS_SCAN_IN_PROGRESS: Scan is in progress
@@ -818,7 +836,8 @@ struct twt_resume_dialog_cmd_param {
 	uint32_t next_twt_size;
 };
 
-/* enum HOST_TWT_RESUME_STATUS - status code of resume TWT dialog
+/**
+ * enum HOST_TWT_RESUME_STATUS - status code of resume TWT dialog
  * @HOST_TWT_RESUME_STATUS_OK: resuming TWT dialog successfully completed
  * @HOST_TWT_RESUME_STATUS_DIALOG_ID_NOT_EXIST: TWT dialog ID not exists
  * @HOST_TWT_RESUME_STATUS_INVALID_PARAM: invalid parameters
@@ -862,7 +881,8 @@ struct twt_resume_dialog_complete_event_param {
 	uint32_t status;
 };
 
-/* enum HOST_TWT_NOTIFY_STATUS - status code of notify TWT event
+/**
+ * enum HOST_TWT_NOTIFY_STATUS - status code of notify TWT event
  * @HOST_TWT_NOTIFY_EVENT_READY: FW is ready to process the TWT setup request.
  * @HOST_TWT_NOTIFY_EVENT_AP_TWT_REQ_BIT_SET: AP set the TWT required bit
  * @HOST_TWT_NOTIFY_EVENT_AP_TWT_REQ_BIT_CLEAR: AP cleared the TWT required bit
@@ -883,7 +903,8 @@ struct twt_notify_event_param {
 	enum HOST_TWT_NOTIFY_STATUS status;
 };
 
-/* HOST_TWT_NEXT_WORK_ACTION - next action of TWT worker thread
+/**
+ * enum HOST_TWT_NEXT_WORK_ACTION - next action of TWT worker thread
  * @HOST_TWT_SEND_DELETE_CMD: Send TWT delete command request
  */
 enum HOST_TWT_NEXT_WORK_ACTION {
@@ -894,10 +915,12 @@ enum HOST_TWT_NEXT_WORK_ACTION {
  * struct twt_work_params
  * @peer_macaddr: peer mac address
  * @dialog_id: Dialog ID
+ * @is_ps_disabled: Whether power save is disabled or not.
  */
 struct twt_work_params {
 	struct qdf_mac_addr peer_macaddr;
 	uint32_t dialog_id;
+	bool is_ps_disabled;
 };
 #ifdef WLAN_SUPPORT_BCAST_TWT
 /**
@@ -905,26 +928,31 @@ struct twt_work_params {
  * @vdev_id: VDEV identifier
  * @peer_macaddr: Peer mac address
  * @dialog_id: TWT dialog ID
+ * @r_twt_dl_tid_bitmap: rTWT DL tids bitmap
+ * @r_twt_ul_tid_bitmap: rTWT UL tids bitmap
  */
 struct twt_btwt_invite_sta_cmd_param {
 	uint32_t vdev_id;
 	struct qdf_mac_addr peer_macaddr;
 	uint32_t dialog_id;
+	uint32_t r_twt_dl_tid_bitmap;
+	uint32_t r_twt_ul_tid_bitmap;
 };
 
-/* enum HOST_TWT_INVITATION_BTWT_STATUS - status code of TWT Invitation
+/**
+ * enum HOST_TWT_INVITATION_BTWT_STATUS - status code of TWT Invitation
  *                              dialog
- * HOST_TWT_INVITATION_BTWT_STATUS_OK: BTWT invitation successfully
+ * @HOST_TWT_INVITATION_BTWT_STATUS_OK: BTWT invitation successfully
  *                              completed
- * HOST_TWT_INVITATION_TWT_STATUS_DIALOG_ID_NOT_EXIST: BTWT dialog ID not
+ * @HOST_TWT_INVITATION_BTWT_STATUS_DIALOG_ID_NOT_EXIST: BTWT dialog ID not
  *                              exists
- * HOST_TWT_INVITATION_BTWT_STATUS_INVALID_PARAM: invalid parameters
- * HOST_TWT_INVITATION_BTWT_STATUS_DIALOG_ID_BUSY: FW is in the process of
+ * @HOST_TWT_INVITATION_BTWT_STATUS_INVALID_PARAM: invalid parameters
+ * @HOST_TWT_INVITATION_BTWT_STATUS_DIALOG_ID_BUSY: FW is in the process of
  *                              handling this dialog
- * HOST_TWT_INVITATION_BTWT_STATUS_NO_RESOURCE: FW resource exhausted
- * HOST_TWT_INVITATION_BTWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ * @HOST_TWT_INVITATION_BTWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * @HOST_TWT_INVITATION_BTWT_STATUS_NO_ACK: peer AP/STA did not ACK the
  *                              request/response frame
- * HOST_TWT_INVITATION_BTWT_STATUS_UNKNOWN_ERROR: BTWT invitation failed
+ * @HOST_TWT_INVITATION_BTWT_STATUS_UNKNOWN_ERROR: BTWT invitation failed
  *                              with an unknown reason
  */
 enum HOST_TWT_INVITATION_BTWT_STATUS {
@@ -956,25 +984,30 @@ struct twt_btwt_invite_sta_complete_event_param {
  * @vdev_id: VDEV identifier
  * @peer_macaddr: Peer mac address
  * @dialog_id: BTWT dialog ID
+ * @r_twt_dl_tid_bitmap: rTWT DL tids bitmap
+ * @r_twt_ul_tid_bitmap: rTWT UL tids bitmap
  */
 struct twt_btwt_remove_sta_cmd_param {
 	uint32_t vdev_id;
 	struct qdf_mac_addr peer_macaddr;
 	uint32_t dialog_id;
+	uint32_t r_twt_dl_tid_bitmap;
+	uint32_t r_twt_ul_tid_bitmap;
 };
 
-/* enum HOST_TWT_KICKOFF_BTWT_STATUS - status code of kickoff BTWT dialog
- * HOST_TWT_KICKOFF_BTWT_STATUS_OK: TWT kickoff successfully completed
- * HOST_TWT_KICKOFF_BTWT_STATUS_DIALOG_ID_NOT_EXIST: BTWT dialog ID not
+/**
+ * enum HOST_TWT_KICKOFF_BTWT_STATUS - status code of kickoff BTWT dialog
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_OK: TWT kickoff successfully completed
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_DIALOG_ID_NOT_EXIST: BTWT dialog ID not
  *                              exists
- * HOST_TWT_KICKOFF_BTWT_STATUS_INVALID_PARAM: invalid parameters
- * HOST_TWT_KICKOFF_BTWT_STATUS_DIALOG_ID_BUSY: FW is in the process of
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_INVALID_PARAM: invalid parameters
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_DIALOG_ID_BUSY: FW is in the process of
  *                              handling this dialog
- * HOST_TWT_KICKOFF_BTWT_STATUS_NOT_PAUSED: Dialog not currently paused
- * HOST_TWT_KICKOFF_BTWT_STATUS_NO_RESOURCE: FW resource exhausted
- * HOST_TWT_KICKOFF_BTWT_STATUS_NO_ACK: peer AP/STA did not ACK the
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_NOT_PAUSED: Dialog not currently paused
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_NO_RESOURCE: FW resource exhausted
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_NO_ACK: peer AP/STA did not ACK the
  *                              request/response frame
- * HOST_TWT_KICKOFF_BTWT_STATUS_UNKNOWN_ERROR: BTWT kickoff failed with an
+ * @HOST_TWT_KICKOFF_BTWT_STATUS_UNKNOWN_ERROR: BTWT kickoff failed with an
  *                              unknown reason
  */
 enum HOST_TWT_KICKOFF_BTWT_STATUS {
@@ -1005,12 +1038,12 @@ struct twt_btwt_remove_sta_complete_event_param {
 
 /**
  * enum HOST_TWT_CMD_FOR_ACK_EVENT - Ack event for different TWT command
- * HOST_TWT_ADD_DIALOG_CMDID: Ack event for add dialog command
- * HOST_TWT_DEL_DIALOG_CMDID: Ack event for delete dialog command
- * HOST_TWT_PAUSE_DIALOG_CMDID: Ack event for pause command
- * HOST_TWT_RESUME_DIALOG_CMDID: Ack event for resume command
- * HOST_TWT_NUDGE_DIALOG_CMDID: Ack event for nudge command
- * HOST_TWT_UNKNOWN_CMDID: Ack event for unknown TWT command
+ * @HOST_TWT_ADD_DIALOG_CMDID: Ack event for add dialog command
+ * @HOST_TWT_DEL_DIALOG_CMDID: Ack event for delete dialog command
+ * @HOST_TWT_PAUSE_DIALOG_CMDID: Ack event for pause command
+ * @HOST_TWT_RESUME_DIALOG_CMDID: Ack event for resume command
+ * @HOST_TWT_NUDGE_DIALOG_CMDID: Ack event for nudge command
+ * @HOST_TWT_UNKNOWN_CMDID: Ack event for unknown TWT command
  */
 enum HOST_TWT_CMD_FOR_ACK_EVENT {
 	HOST_TWT_ADD_DIALOG_CMDID = 0,
@@ -1028,6 +1061,14 @@ enum twt_traffic_ac {
 	TWT_AC_BE  = 2,
 	TWT_AC_BK  = 3,
 	TWT_AC_MAX = 4,
+};
+
+/**
+ * enum twt_disable_reason - twt disable/enable reason
+ * @REASON_PMO_SUSPEND: reason is suspended
+ */
+enum twt_disable_reason {
+	REASON_PMO_SUSPEND  = 0x1,
 };
 
 #endif /* _WLAN_TWT_PUBLIC_STRUCTS_H_ */

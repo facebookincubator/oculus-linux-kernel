@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,7 +31,7 @@
 #include <i_qdf_idr.h>
 
 /**
- * qdf_idr - platform idr object
+ * typedef qdf_idr - platform idr object
  */
 typedef __qdf_idr qdf_idr;
 

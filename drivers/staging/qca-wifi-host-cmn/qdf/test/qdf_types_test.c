@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -502,11 +502,11 @@ __ut_mac(const char *str, const char *display_str, QDF_STATUS exp_status,
 		return 0;
 
 	if (qdf_mem_cmp(&value, exp_value, sizeof(value))) {
-		qdf_nofl_alert("FAIL: qdf_mac_parse(%s) -> " QDF_FULL_MAC_FMT
-			       "; expected " QDF_FULL_MAC_FMT,
+		qdf_nofl_alert("FAIL: qdf_mac_parse(%s) -> " QDF_MAC_ADDR_FMT
+			       "; expected " QDF_MAC_ADDR_FMT,
 			       display_str,
-			       QDF_FULL_MAC_REF(value.bytes),
-			       QDF_FULL_MAC_REF(exp_value->bytes));
+			       QDF_MAC_ADDR_REF(value.bytes),
+			       QDF_MAC_ADDR_REF(exp_value->bytes));
 		return 1;
 	}
 

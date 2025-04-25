@@ -887,6 +887,30 @@ struct wlan_mlo_dev_context
 *wlan_mlo_get_mld_ctx_by_mldaddr(struct qdf_mac_addr *mldaddr);
 
 /**
+ * wlan_mlo_list_peek_head() - Returns the head of linked list
+ *
+ * @ml_list: Pointer to the list of MLDs
+ *
+ * API to retrieve the head from the list of active MLDs
+ *
+ * Return: Pointer to mlo device context
+ */
+struct wlan_mlo_dev_context *wlan_mlo_list_peek_head(qdf_list_t *ml_list);
+
+/**
+ * wlan_mlo_get_next_mld_ctx() - Return next mlo dev node from the list
+ *
+ * @ml_list:  Pointer to the list of MLDs
+ * @mld_cur: Pointer to the current mlo dev node
+ *
+ * API to retrieve the next node from the list of active MLDs
+ *
+ * Return: Pointer to mlo device context
+ */
+struct wlan_mlo_dev_context *wlan_mlo_get_next_mld_ctx(qdf_list_t *ml_list,
+					struct wlan_mlo_dev_context *mld_cur);
+
+/**
  * wlan_mlo_check_valid_config() - Check vap config is valid for mld
  *
  * @ml_dev: Pointer to structure of mlo device context
@@ -954,6 +978,70 @@ void wlan_mlo_update_action_frame_from_user(struct wlan_objmgr_vdev *vdev,
 void wlan_mlo_update_action_frame_to_user(struct wlan_objmgr_vdev *vdev,
 					  uint8_t *frame,
 					  uint32_t frame_len);
+
+/**
+ * wlan_mlo_mgr_mld_vdev_attach() - Attach VDEV to MLD
+ * @vdev: VDEV object
+ * @mld_addr: MLD address of MLD, where this VDEV should be attached
+ *
+ * API to set MLD MAC address and  Attaches VDEV to existing MLD.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_mlo_mgr_mld_vdev_attach(struct wlan_objmgr_vdev *vdev,
+					struct qdf_mac_addr *mld_addr);
+
+/**
+ * wlan_mlo_mgr_mld_vdev_detach() - Detach VDEV from MLD
+ * @vdev: VDEV object
+ *
+ * API to reset MLD MAC address and  Detaches VDEV from its MLD.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_mlo_mgr_mld_vdev_detach(struct wlan_objmgr_vdev *vdev);
+
+#ifdef WLAN_MLO_MULTI_CHIP
+/**
+ * mlo_mgr_is_mld_has_active_link() - Check if any MLD has active link
+ *
+ * @is_active: Buffer indicating links are active or not
+ *
+ * The API iterates through all the ML dev ctx in the global MLO
+ * manager to check if there is atleast one active link present in
+ * any of the MLDs
+ *
+ * Return: QDF_STATUS_SUCCESS if link information is retrieved
+ *         successfully else QDF_STATUS_E*.
+ */
+QDF_STATUS mlo_mgr_is_mld_has_active_link(bool *is_active);
+
+#ifdef WLAN_WSI_STATS_SUPPORT
+/**
+ * mlo_wsi_link_info_update_soc() - Update PSOC group in WSI stats
+ * @psoc: PSOC object
+ * @grp_id: Group ID
+ *
+ * API to update PSOC group id in WSI statas.
+ *
+ * Return: void
+ */
+void mlo_wsi_link_info_update_soc(struct wlan_objmgr_psoc *psoc,
+				  uint8_t grp_id);
+#else
+static void mlo_wsi_link_info_update_soc(struct wlan_objmgr_psoc *psoc,
+					 uint8_t grp_id)
+{
+}
+#endif
+#else
+static inline
+QDF_STATUS mlo_mgr_is_mld_has_active_link(bool *is_active)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
+
 #else
 static inline QDF_STATUS wlan_mlo_mgr_init(void)
 {
@@ -998,5 +1086,19 @@ uint8_t wlan_mlo_get_sta_mld_ctx_count(void)
 {
 	return 0;
 }
+
+static inline
+QDF_STATUS wlan_mlo_mgr_mld_vdev_attach(struct wlan_objmgr_vdev *vdev,
+					struct qdf_mac_addr *mld_addr)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+QDF_STATUS wlan_mlo_mgr_mld_vdev_detach(struct wlan_objmgr_vdev *vdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
 #endif
 #endif

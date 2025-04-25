@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -135,14 +135,6 @@ error:
 	return qdf_status;
 }
 
-/**
- * wlan_serialization_stop_timer() - to stop particular timer
- * @ser_timer: pointer to serialization timer
- *
- * This API stops the particular timer
- *
- * Return: QDF_STATUS
- */
 QDF_STATUS
 wlan_serialization_stop_timer(struct wlan_serialization_timer *ser_timer)
 {
@@ -451,19 +443,6 @@ wlan_serialization_is_cmd_present_in_given_queue(
 	return found;
 }
 
-/**
- * wlan_serialization_remove_cmd_from_queue() - to remove command from
- *							given queue
- * @queue: queue from which command needs to be removed
- * @cmd: command to match in the queue
- * @ser_pdev_obj: pointer to private pdev serialization object
- *
- * This API takes the queue, it matches the provided command from this queue
- * and removes it. Before removing the command, it will notify the caller
- * that if it needs to remove any memory allocated by caller.
- *
- * Return: none
- */
 QDF_STATUS
 wlan_serialization_remove_cmd_from_queue(
 		qdf_list_t *queue,

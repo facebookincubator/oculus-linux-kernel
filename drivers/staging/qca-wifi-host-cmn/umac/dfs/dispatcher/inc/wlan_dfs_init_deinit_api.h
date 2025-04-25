@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,8 +29,8 @@
 /**
  * wlan_pdev_get_dfs_obj() - Get DFS object from PDEV.
  * @pdev: Pointer to PDEV structure.
- * @id: DFS component ID.
- * @obj: Pointer to DFS object.
+ *
+ * Return: DFS object
  */
 struct wlan_dfs *wlan_pdev_get_dfs_obj(struct wlan_objmgr_pdev *pdev);
 
@@ -52,6 +52,7 @@ QDF_STATUS dfs_deinit(void);
 /**
  * wlan_dfs_pdev_obj_create_notification() - DFS pdev object create handler.
  * @pdev: Pointer to DFS pdev object.
+ * @arg: component argument
  */
 QDF_STATUS wlan_dfs_pdev_obj_create_notification(struct wlan_objmgr_pdev *pdev,
 		void *arg);
@@ -59,6 +60,7 @@ QDF_STATUS wlan_dfs_pdev_obj_create_notification(struct wlan_objmgr_pdev *pdev,
 /**
  * wlan_dfs_pdev_obj_destroy_notification() - DFS pdev object delete handler.
  * @pdev: Pointer to DFS pdev object.
+ * @arg: component argument
  */
 QDF_STATUS wlan_dfs_pdev_obj_destroy_notification(struct wlan_objmgr_pdev *pdev,
 		void *arg);

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2019, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -16,7 +17,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
- /**
+/**
  * DOC: Public APIs for crypto service
  */
 /* include files */
@@ -56,15 +57,6 @@ cipher2cap(int cipher)
 	return 0;
 }
 
-/**
- * wlan_crypto_set_authmode - called by ucfg to configure authmode for vdev
- * @vdev: vdev
- * @authmode: authmode
- *
- * This function gets called from ucfg to configure authmode for vdev.
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_authmode(struct wlan_crypto_params *crypto_params,
 					uint32_t authmode)
 {
@@ -72,28 +64,11 @@ QDF_STATUS wlan_crypto_set_authmode(struct wlan_crypto_params *crypto_params,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * wlan_crypto_get_authmode - called by ucfg to get authmode of particular vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get authmode of particular vdev
- *
- * Return: authmode
- */
 int32_t wlan_crypto_get_authmode(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->authmodeset;
 }
 
-/**
- * wlan_crypto_set_mcastcipher - called by ucfg to configure mcastcipher in vdev
- * @vdev: vdev
- * @wlan_crypto_cipher_type: mcast cipher value.
- *
- * This function gets called from ucfg to configure mcastcipher in vdev
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_mcastcipher(struct wlan_crypto_params *crypto_params,
 					wlan_crypto_cipher_type cipher)
 {
@@ -115,29 +90,12 @@ QDF_STATUS wlan_crypto_set_mcastcipher(struct wlan_crypto_params *crypto_params,
 	}
 	return status;
 }
-/**
- * wlan_crypto_get_mcastcipher - called by ucfg to get mcastcipher from vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get mcastcipher of particular vdev
- *
- * Return: mcast cipher
- */
+
 int32_t wlan_crypto_get_mcastcipher(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->mcastcipherset;
 }
 
-/**
- * wlan_crypto_set_ucastciphers - called by ucfg to configure
- *                                        unicast ciphers in vdev
- * @vdev: vdev
- * @ciphers: bitmap value of all supported unicast ciphers
- *
- * This function gets called from ucfg to configure unicast ciphers in vdev
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_ucastciphers(
 				struct wlan_crypto_params *crypto_params,
 				uint32_t cipher)
@@ -162,29 +120,11 @@ QDF_STATUS wlan_crypto_set_ucastciphers(
 	return status;
 }
 
-/**
- * wlan_crypto_get_ucastciphers - called by ucfg to get ucastcipher from vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get supported unicast ciphers
- *
- * Return: bitmap value of all supported unicast ciphers
- */
 int32_t wlan_crypto_get_ucastciphers(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->ucastcipherset;
 }
 
-/**
- * wlan_crypto_set_mgmtcipher - called by ucfg to configure
- *                                        mgmt ciphers in vdev
- * @vdev: vdev
- * @ciphers: bitmap value of all supported group mgmt ciphers
- *
- * This function gets called from ucfg to configure group mgmt ciphers in vdev
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_mgmtcipher(
 				struct wlan_crypto_params *crypto_params,
 				uint32_t ciphers)
@@ -201,29 +141,11 @@ QDF_STATUS wlan_crypto_set_mgmtcipher(
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * wlan_crypto_get_mgmtciphers - called by ucfg to get mgmtcipher from vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get supported unicast ciphers
- *
- * Return: bitmap value of all supported unicast ciphers
- */
 int32_t wlan_crypto_get_mgmtciphers(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->mgmtcipherset;
 }
 
-/**
- * wlan_crypto_set_cipher_cap - called by ucfg to configure
- *                                        cipher cap in vdev
- * @vdev: vdev
- * @ciphers: bitmap value of all supported unicast ciphers
- *
- * This function gets called from ucfg to configure unicast ciphers in vdev
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_cipher_cap(
 				struct wlan_crypto_params *crypto_params,
 				uint32_t value)
@@ -233,29 +155,11 @@ QDF_STATUS wlan_crypto_set_cipher_cap(
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * wlan_crypto_get_cipher_cap - called by ucfg to get cipher caps from vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get supported unicast ciphers
- *
- * Return: bitmap value of all supported unicast ciphers
- */
 int32_t wlan_crypto_get_cipher_cap(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->cipher_caps;
 }
 
-/**
- * wlan_crypto_set_rsn_cap - called by ucfg to configure
- *                                        cipher cap in vdev
- * @vdev: vdev
- * @ciphers: bitmap value of all supported unicast ciphers
- *
- * This function gets called from ucfg to configure unicast ciphers in vdev
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_rsn_cap(
 				struct wlan_crypto_params *crypto_params,
 				uint32_t value)
@@ -265,30 +169,20 @@ QDF_STATUS wlan_crypto_set_rsn_cap(
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * wlan_crypto_get_rsn_cap - called by ucfg to get rsn caps from vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get supported unicast ciphers
- *
- * Return: bitmap value of all supported unicast ciphers
- */
+QDF_STATUS wlan_crypto_set_rsnx_cap(
+				struct wlan_crypto_params *crypto_params,
+				uint32_t value)
+{
+	crypto_params->rsnx_caps = value;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 int32_t wlan_crypto_get_rsn_cap(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->rsn_caps;
 }
 
-
-/**
- * wlan_crypto_set_key_mgmt - called by ucfg to configure
- *                                        key_mgmt in vdev
- * @vdev: vdev
- * @ciphers: bitmap value of all supported unicast ciphers
- *
- * This function gets called from ucfg to configure unicast ciphers in vdev
- *
- * Return: QDF_STATUS_SUCCESS - in case of success
- */
 QDF_STATUS wlan_crypto_set_key_mgmt(
 				struct wlan_crypto_params *crypto_params,
 				uint32_t value)
@@ -298,14 +192,6 @@ QDF_STATUS wlan_crypto_set_key_mgmt(
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * wlan_crypto_get_key_mgmt - called by ucfg to get key mgmt from vdev
- * @vdev: vdev
- *
- * This function gets called from ucfg to get supported unicast ciphers
- *
- * Return: bitmap value of all supported unicast ciphers
- */
 int32_t wlan_crypto_get_key_mgmt(struct wlan_crypto_params *crypto_params)
 {
 	return crypto_params->key_mgmt;

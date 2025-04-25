@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -148,9 +148,8 @@ void lim_handle_del_bss_in_re_assoc_context(struct mac_context *mac,
 				&pe_session->dph.dphHashTable);
 		if (!sta) {
 			/* Could not add hash table entry */
-			pe_err("could not add hash entry at DPH for");
-			lim_print_mac_addr(mac,
-				pe_session->limReAssocbssId, LOGE);
+			pe_err("could not add hash entry at DPH for BSSID: "QDF_MAC_ADDR_FMT,
+			       QDF_MAC_ADDR_REF(pe_session->limReAssocbssId));
 			mlmReassocCnf.resultCode =
 				eSIR_SME_RESOURCES_UNAVAILABLE;
 			mlmReassocCnf.protStatusCode = eSIR_SME_SUCCESS;

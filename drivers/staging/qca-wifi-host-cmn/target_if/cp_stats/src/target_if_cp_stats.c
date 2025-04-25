@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -97,6 +97,26 @@ void target_if_infra_cp_stats_free_stats_event(struct infra_cp_stats_event *ev)
 }
 #endif /* WLAN_SUPPORT_TWT */
 
+static
+void target_if_infra_cp_stats_rrm_sta_stats_event_free(
+					struct infra_cp_stats_event *ev)
+{
+	qdf_mem_free(ev->sta_stats);
+	ev->sta_stats = NULL;
+}
+
+static QDF_STATUS
+target_if_infra_cp_stats_rrm_sta_stats_event_alloc(
+			struct infra_cp_stats_event *ev)
+{
+	ev->sta_stats =
+	qdf_mem_malloc(sizeof(*ev->sta_stats));
+	if (!ev->sta_stats) {
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
 #ifdef CONFIG_WLAN_BMISS
 
 /**
@@ -157,6 +177,7 @@ void target_if_infra_cp_stats_event_free(struct infra_cp_stats_event *ev)
 {
 	target_if_infra_cp_stats_twt_event_free(ev);
 	target_if_infra_cp_stats_bmiss_event_free(ev);
+	target_if_infra_cp_stats_rrm_sta_stats_event_free(ev);
 }
 
 /**
@@ -173,11 +194,15 @@ target_if_infra_cp_stats_event_alloc(struct infra_cp_stats_event *ev)
 	QDF_STATUS status;
 
 	status = target_if_infra_cp_stats_twt_event_alloc(ev);
-	if (status)
+	if (QDF_IS_STATUS_ERROR(status))
 		return QDF_STATUS_E_NOMEM;
 
 	status = target_if_infra_cp_stats_bmiss_event_alloc(ev);
-	if (status)
+	if (QDF_IS_STATUS_ERROR(status))
+		return QDF_STATUS_E_NOMEM;
+
+	status = target_if_infra_cp_stats_rrm_sta_stats_event_alloc(ev);
+	if (QDF_IS_STATUS_ERROR(status))
 		return QDF_STATUS_E_NOMEM;
 
 	return QDF_STATUS_SUCCESS;
@@ -549,7 +574,7 @@ static void target_if_register_infra_cp_stats_txops(
 }
 #endif /* WLAN_SUPPORT_INFRA_CTRL_PATH_STATS */
 
-#ifdef WLAN_TELEMETRY_STATS_SUPPORT
+#ifdef WLAN_CONFIG_TELEMETRY_AGENT
 /**
  * target_if_telemetry_cp_stats_req() - API to send stats request to wmi
  * @pdev: pointer to pdev object
@@ -581,6 +606,67 @@ static void target_if_register_telemetry_cp_stats_txops(
 				struct wlan_lmac_if_cp_stats_tx_ops *tx_ops)
 { }
 #endif
+#ifdef WLAN_CHIPSET_STATS
+QDF_STATUS
+target_if_cp_stats_is_service_cstats_enabled(struct wlan_objmgr_psoc *psoc,
+					     bool *is_fw_support_cstats)
+{
+	struct wmi_unified *wmi_handle;
+
+	if (!psoc) {
+		cp_stats_err("psoc is NULL!");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		cp_stats_err("wmi_handle is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	*is_fw_support_cstats =
+		wmi_service_enabled(wmi_handle,
+				    wmi_service_chipset_logging_support);
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS
+target_if_cp_stats_enable_cstats(struct wlan_objmgr_psoc *psoc,
+				 uint32_t param_val, uint8_t mac_id)
+{
+	struct wmi_unified *wmi_handle;
+	struct pdev_params params = {0};
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		cp_stats_err("wmi_handle is null");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	params.param_id = WMI_PDEV_PARAM_ENABLE_CHIPSET_LOGGING;
+	params.param_value = param_val;
+
+	return wmi_unified_pdev_param_send(wmi_handle, &params, mac_id);
+}
+
+/**
+ * target_if_register_cstats_enable_txops() - Register cstats enable in txops
+ *
+ * @ops: pointer to wlan_lmac_if_cp_stats_tx_ops
+ *
+ * Return: void
+ */
+static void
+target_if_register_cstats_enable_txops(struct wlan_lmac_if_cp_stats_tx_ops *ops)
+{
+	ops->send_cstats_enable = target_if_cp_stats_enable_cstats;
+}
+#else
+static void
+target_if_register_cstats_enable_txops(struct wlan_lmac_if_cp_stats_tx_ops *ops)
+{
+}
+#endif
 
 QDF_STATUS
 target_if_cp_stats_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
@@ -597,6 +683,9 @@ target_if_cp_stats_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 		cp_stats_err("lmac tx ops is NULL!");
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	target_if_register_cstats_enable_txops(cp_stats_tx_ops);
+
 	target_if_register_infra_cp_stats_txops(cp_stats_tx_ops);
 	target_if_register_telemetry_cp_stats_txops(cp_stats_tx_ops);
 

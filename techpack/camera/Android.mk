@@ -5,6 +5,12 @@ LOCAL_PATH := $(call my-dir)
 # Path to DLKM make scripts
 DLKM_DIR := $(TOP)/device/qcom/common/dlkm
 
+ifeq ($(TARGET_KERNEL_VERSION), 6.1)
+ifeq ($(TARGET_BOARD_PLATFORM), anorak61)
+	LOCAL_MODULE_DDK_BUILD := true
+endif
+endif
+
 # Kbuild options
 KBUILD_OPTIONS := CAMERA_KERNEL_ROOT=$(shell pwd)/$(LOCAL_PATH)
 KBUILD_OPTIONS += KERNEL_ROOT=$(shell pwd)/kernel/msm-$(TARGET_KERNEL_VERSION)/
@@ -36,6 +42,10 @@ LOCAL_MODULE                := camera.ko
 LOCAL_MODULE_TAGS           := optional
 #LOCAL_MODULE_KBUILD_NAME   := camera.ko
 #LOCAL_MODULE_DEBUG_ENABLE  := true
+
+ifeq ($(LOCAL_MODULE_DDK_BUILD), true)
+	BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
+endif
 
 ifeq ($(TARGET_BOARD_PLATFORM), taro)
 	LOCAL_REQUIRED_MODULES        := mmrm-module-symvers

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -123,7 +123,7 @@ uint8_t *mac_trace_get_lim_sme_state(uint16_t lim_state)
 
 /**
  * mac_trace_get_lim_mlm_state() - Get the lim mlm state
- * @mlmstate: State in numeric form
+ * @mlm_state: State in numeric form
  *
  * This function will return a string equivalent of the state.
  *
@@ -215,6 +215,8 @@ uint8_t *mac_trace_get_sme_msg_string(uint16_t sme_msg)
 		CASE_RETURN_STRING(eWNI_SME_NEIGHBOR_REPORT_IND);
 		CASE_RETURN_STRING(eWNI_SME_BEACON_REPORT_REQ_IND);
 		CASE_RETURN_STRING(eWNI_SME_BEACON_REPORT_RESP_XMIT_IND);
+		CASE_RETURN_STRING(eWNI_SME_CHAN_LOAD_REPORT_RESP_XMIT_IND);
+		CASE_RETURN_STRING(eWNI_SME_CHAN_LOAD_REQ_IND);
 		CASE_RETURN_STRING(eWNI_SME_FT_AGGR_QOS_REQ);
 		CASE_RETURN_STRING(eWNI_SME_FT_AGGR_QOS_RSP);
 #if defined FEATURE_WLAN_ESE
@@ -353,7 +355,6 @@ uint8_t *mac_trace_get_wma_msg_string(uint16_t wma_msg)
 		CASE_RETURN_STRING(WMA_P2P_NOA_ATTR_IND);
 		CASE_RETURN_STRING(WMA_PWR_SAVE_CFG);
 
-		CASE_RETURN_STRING(WMA_IBSS_STA_ADD);
 		CASE_RETURN_STRING(WMA_TIMER_ADJUST_ADAPTIVE_THRESHOLD_IND);
 		CASE_RETURN_STRING(WMA_SET_STA_BCASTKEY_RSP);
 		CASE_RETURN_STRING(WMA_ADD_TS_RSP);
@@ -456,7 +457,6 @@ uint8_t *mac_trace_get_wma_msg_string(uint16_t wma_msg)
 		CASE_RETURN_STRING(WMA_DCC_CLEAR_STATS_CMD);
 		CASE_RETURN_STRING(WMA_DCC_UPDATE_NDL_CMD);
 		CASE_RETURN_STRING(WMA_SET_IE_INFO);
-		CASE_RETURN_STRING(WMA_LRO_CONFIG_CMD);
 		CASE_RETURN_STRING(WMA_GW_PARAM_UPDATE_REQ);
 		CASE_RETURN_STRING(WMA_ADD_BCN_FILTER_CMDID);
 		CASE_RETURN_STRING(WMA_REMOVE_BCN_FILTER_CMDID);
@@ -585,10 +585,10 @@ uint8_t *mac_trace_get_lim_msg_string(uint16_t lim_msg)
 		CASE_RETURN_STRING(SIR_LIM_WPS_OVERLAP_TIMEOUT);
 		CASE_RETURN_STRING(SIR_LIM_FT_PREAUTH_RSP_TIMEOUT);
 		CASE_RETURN_STRING(SIR_LIM_DISASSOC_ACK_TIMEOUT);
-		CASE_RETURN_STRING(SIR_LIM_DEAUTH_ACK_TIMEOUT);
 		CASE_RETURN_STRING(SIR_LIM_PERIODIC_JOIN_PROBE_REQ_TIMEOUT);
 		CASE_RETURN_STRING(SIR_LIM_AUTH_RETRY_TIMEOUT);
 		CASE_RETURN_STRING(SIR_LIM_AUTH_SAE_TIMEOUT);
+		CASE_RETURN_STRING(SIR_LIM_RRM_STA_STATS_RSP_TIMEOUT);
 		CASE_RETURN_STRING(SIR_LIM_MSG_TYPES_END);
 		CASE_RETURN_STRING(LIM_MLM_SCAN_REQ);
 		CASE_RETURN_STRING(LIM_MLM_SCAN_CNF);

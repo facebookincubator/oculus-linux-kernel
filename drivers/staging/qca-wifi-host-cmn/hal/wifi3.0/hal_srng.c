@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -48,11 +48,13 @@ void hal_qca6490_attach(struct hal_soc *hal);
 void hal_qcn9000_attach(struct hal_soc *hal);
 #endif
 #ifdef QCA_WIFI_QCN9224
-void hal_qcn9224v1_attach(struct hal_soc *hal);
 void hal_qcn9224v2_attach(struct hal_soc *hal);
 #endif
 #if defined(QCA_WIFI_QCN6122) || defined(QCA_WIFI_QCN9160)
 void hal_qcn6122_attach(struct hal_soc *hal);
+#endif
+#ifdef QCA_WIFI_QCN6432
+void hal_qcn6432_attach(struct hal_soc *hal);
 #endif
 #ifdef QCA_WIFI_QCA6750
 void hal_qca6750_attach(struct hal_soc *hal);
@@ -133,7 +135,7 @@ static int hal_get_srng_ring_id(struct hal_soc *hal, int ring_type,
 		return -EINVAL;
 	}
 
-	/**
+	/*
 	 * Some DMAC rings share a common source ring, hence don't provide them
 	 * with separate ring IDs per LMAC.
 	 */
@@ -409,7 +411,7 @@ error:
 
 static void hal_target_based_configure(struct hal_soc *hal)
 {
-	/**
+	/*
 	 * Indicate Initialization of srngs to avoid force wake
 	 * as umac power collapse is not enabled yet
 	 */
@@ -444,6 +446,7 @@ static void hal_target_based_configure(struct hal_soc *hal)
 #ifdef QCA_WIFI_KIWI
 	case TARGET_TYPE_KIWI:
 	case TARGET_TYPE_MANGO:
+	case TARGET_TYPE_PEACH:
 		hal->use_register_windowing = true;
 		hal_kiwi_attach(hal);
 		break;
@@ -496,6 +499,18 @@ static void hal_target_based_configure(struct hal_soc *hal)
 		break;
 #endif
 
+#if defined(QCA_WIFI_QCN6432)
+	case TARGET_TYPE_QCN6432:
+		hal->use_register_windowing = true;
+		/*
+		 * Static window map  is enabled for qcn6432 to use 2mb bar
+		 * size and use multiple windows to write into registers.
+		 */
+		hal->static_window_map = true;
+		hal_qcn6432_attach(hal);
+		break;
+#endif
+
 #ifdef QCA_WIFI_QCN9000
 	case TARGET_TYPE_QCN9000:
 		hal->use_register_windowing = true;
@@ -519,7 +534,7 @@ static void hal_target_based_configure(struct hal_soc *hal)
 		hal->use_register_windowing = true;
 		hal->static_window_map = true;
 		if (hal->version == 1)
-			hal_qcn9224v1_attach(hal);
+			qdf_assert_always(0);
 		else
 			hal_qcn9224v2_attach(hal);
 	break;
@@ -529,6 +544,13 @@ static void hal_target_based_configure(struct hal_soc *hal)
 		hal->use_register_windowing = true;
 		hal->static_window_map = true;
 		hal_qca5332_attach(hal);
+	break;
+#endif
+#ifdef QCA_WIFI_WCN6450
+	case TARGET_TYPE_WCN6450:
+		hal->use_register_windowing = true;
+		hal->static_window_map = true;
+		hal_wcn6450_attach(hal);
 	break;
 #endif
 	default:
@@ -574,6 +596,7 @@ char *hal_fill_reg_write_srng_stats(struct hal_srng *srng,
 /* bytes for local buffer */
 #define HAL_REG_WRITE_SRNG_STATS_LEN 100
 
+#ifndef WLAN_SOFTUMAC_SUPPORT
 void hal_dump_reg_write_srng_stats(hal_soc_handle_t hal_soc_hdl)
 {
 	struct hal_srng *srng;
@@ -619,6 +642,16 @@ void hal_dump_reg_write_stats(hal_soc_handle_t hal_soc_hdl)
 		  hist[REG_WRITE_SCHED_DELAY_SUB_5000us],
 		  hist[REG_WRITE_SCHED_DELAY_GT_5000us]);
 }
+#else
+void hal_dump_reg_write_srng_stats(hal_soc_handle_t hal_soc_hdl)
+{
+}
+
+/* TODO: Need separate logic for Evros */
+void hal_dump_reg_write_stats(hal_soc_handle_t hal_soc_hdl)
+{
+}
+#endif
 
 int hal_get_reg_write_pending_work(void *hal_soc)
 {
@@ -639,6 +672,72 @@ int hal_get_reg_write_pending_work(void *hal_soc)
 #else
 #define HAL_REG_WRITE_QUEUE_LEN 32
 #endif
+
+#ifdef QCA_WIFI_QCA6750
+
+#define HAL_DEL_WRITE_FORCE_UPDATE_THRES 5
+
+static inline void hal_srng_update_last_hptp(struct hal_srng *srng)
+{
+	if (srng->ring_dir == HAL_SRNG_SRC_RING)
+		srng->updated_hp = srng->u.src_ring.hp;
+	else
+		srng->updated_tp = srng->u.dst_ring.tp;
+
+	srng->force_cnt = 0;
+}
+
+/* If HP/TP register updates are delayed due to delayed reg
+ * write work not getting scheduled, hardware would see HP/TP
+ * delta and will fire interrupts until the HP/TP updates reach
+ * the hardware.
+ *
+ * When system is heavily stressed, this delay in HP/TP updates
+ * would result in IRQ storm further stressing the system. Force
+ * update HP/TP to the hardware under such scenarios to avoid this.
+ */
+void hal_srng_check_and_update_hptp(struct hal_soc *hal_soc,
+				    struct hal_srng *srng, bool update)
+{
+	uint32_t value;
+
+	if (!update)
+		return;
+
+	SRNG_LOCK(&srng->lock);
+	if (srng->ring_dir == HAL_SRNG_SRC_RING) {
+		value = srng->u.src_ring.hp;
+
+		if (value == srng->updated_hp ||
+		    srng->force_cnt++ < HAL_DEL_WRITE_FORCE_UPDATE_THRES)
+			goto out_unlock;
+
+		hal_write_address_32_mb(hal_soc, srng->u.src_ring.hp_addr,
+					value, false);
+	} else {
+		value = srng->u.dst_ring.tp;
+
+		if (value == srng->updated_tp ||
+		    srng->force_cnt++ < HAL_DEL_WRITE_FORCE_UPDATE_THRES)
+			goto out_unlock;
+
+		hal_write_address_32_mb(hal_soc, srng->u.dst_ring.tp_addr,
+					value, false);
+	}
+
+	hal_srng_update_last_hptp(srng);
+	hal_srng_reg_his_add(srng, value);
+	qdf_atomic_inc(&hal_soc->stats.wstats.direct);
+	srng->wstats.direct++;
+
+out_unlock:
+	SRNG_UNLOCK(&srng->lock);
+}
+#else
+static inline void hal_srng_update_last_hptp(struct hal_srng *srng)
+{
+}
+#endif /* QCA_WIFI_QCA6750 */
 
 /**
  * hal_process_reg_write_q_elem() - process a register write queue element
@@ -673,6 +772,9 @@ hal_process_reg_write_q_elem(struct hal_soc *hal,
 		write_val = srng->u.dst_ring.tp;
 	}
 
+	hal_srng_update_last_hptp(srng);
+	hal_srng_reg_his_add(srng, write_val);
+
 	q_elem->valid = 0;
 	srng->last_dequeue_time = q_elem->dequeue_time;
 	SRNG_UNLOCK(&srng->lock);
@@ -683,7 +785,7 @@ hal_process_reg_write_q_elem(struct hal_soc *hal,
 /**
  * hal_reg_write_fill_sched_delay_hist() - fill reg write delay histogram in hal
  * @hal: hal_soc pointer
- * @delay: delay in us
+ * @delay_us: delay in us
  *
  * Return: None
  */
@@ -762,6 +864,8 @@ static inline bool hal_reg_write_need_delay(struct hal_reg_write_q_elem *elem)
 }
 #endif
 
+#define MAX_DELAYED_REG_WRITE_RETRY 5
+
 /**
  * hal_reg_write_work() - Worker to process delayed writes
  * @arg: hal_soc pointer
@@ -777,6 +881,7 @@ static void hal_reg_write_work(void *arg)
 	uint8_t ring_id;
 	uint32_t *addr;
 	uint32_t num_processed = 0;
+	uint8_t retry_count = 0;
 
 	q_elem = &hal->reg_write_queue[(hal->read_idx)];
 	q_elem->work_scheduled_time = qdf_get_log_timestamp();
@@ -809,9 +914,14 @@ static void hal_reg_write_work(void *arg)
 		if (qdf_unlikely(!q_elem->srng ||
 				 (qdf_atomic_read(&q_elem->ring_id) !=
 				 q_elem->srng->ring_id))) {
-			hal_err_rl("q_elem fields not up to date %d %d",
-				   q_elem->srng->ring_id,
+			hal_err_rl("q_elem fields not up to date 0x%x 0x%x",
+				   q_elem->srng ? q_elem->srng->ring_id : 0xDEAD,
 				   qdf_atomic_read(&q_elem->ring_id));
+			if (retry_count++ < MAX_DELAYED_REG_WRITE_RETRY) {
+				/* Sleep for 1ms before retry */
+				qdf_sleep(1);
+				continue;
+			}
 			qdf_assert_always(0);
 		}
 
@@ -842,6 +952,7 @@ static void hal_reg_write_work(void *arg)
 		hal->read_idx = (hal->read_idx + 1) &
 					(HAL_REG_WRITE_QUEUE_LEN - 1);
 		q_elem = &hal->reg_write_queue[(hal->read_idx)];
+		retry_count = 0;
 	}
 
 	hif_allow_link_low_power_states(hal->hif_handle);
@@ -950,7 +1061,7 @@ static void hal_reg_write_enqueue(struct hal_soc *hal_soc,
 
 /**
  * hal_delayed_reg_write_init() - Initialization function for delayed reg writes
- * @hal_soc: hal_soc pointer
+ * @hal: hal_soc pointer
  *
  * Initialize main data structures to process register writes in a delayed
  * workqueue.
@@ -978,7 +1089,7 @@ static QDF_STATUS hal_delayed_reg_write_init(struct hal_soc *hal)
 
 /**
  * hal_delayed_reg_write_deinit() - De-Initialize delayed reg write processing
- * @hal_soc: hal_soc pointer
+ * @hal: hal_soc pointer
  *
  * De-initialize main data structures to process register writes in a delayed
  * workqueue.
@@ -1057,6 +1168,8 @@ void hal_delayed_reg_write(struct hal_soc *hal_soc,
 		     PLD_MHI_STATE_L0 ==
 		     pld_get_mhi_state(hal_soc->qdf_dev->dev))) {
 			hal_write_address_32_mb(hal_soc, addr, value, false);
+			hal_srng_update_last_hptp(srng);
+			hal_srng_reg_his_add(srng, value);
 			qdf_atomic_inc(&hal_soc->stats.wstats.direct);
 			srng->wstats.direct++;
 		} else {
@@ -1071,6 +1184,7 @@ void hal_delayed_reg_write(struct hal_soc *hal_soc,
 		    PLD_MHI_STATE_L0 ==
 		    pld_get_mhi_state(hal_soc->qdf_dev->dev)) {
 			hal_write_address_32_mb(hal_soc, addr, value, false);
+			hal_srng_reg_his_add(srng, value);
 			qdf_atomic_inc(&hal_soc->stats.wstats.direct);
 			srng->wstats.direct++;
 		} else {
@@ -1091,6 +1205,8 @@ void hal_delayed_reg_write(struct hal_soc *hal_soc,
 		qdf_atomic_inc(&hal_soc->stats.wstats.direct);
 		srng->wstats.direct++;
 		hal_write_address_32_mb(hal_soc, addr, value, false);
+		hal_srng_update_last_hptp(srng);
+		hal_srng_reg_his_add(srng, value);
 	} else {
 		hal_reg_write_enqueue(hal_soc, srng, addr, value);
 	}
@@ -1100,24 +1216,48 @@ void hal_delayed_reg_write(struct hal_soc *hal_soc,
 #endif
 #endif
 
-/**
- * hal_attach - Initialize HAL layer
- * @hif_handle: Opaque HIF handle
- * @qdf_dev: QDF device
- *
- * Return: Opaque HAL SOC handle
- *		 NULL on failure (if given ring is not available)
- *
- * This function should be called as part of HIF initialization (for accessing
- * copy engines). DP layer will get hal_soc handle using hif_get_hal_handle()
- *
- */
+#ifdef HAL_SRNG_REG_HIS_DEBUG
+inline void hal_free_srng_history(struct hal_soc *hal)
+{
+	int i;
+
+	for (i = 0; i < HAL_SRNG_ID_MAX; i++)
+		qdf_mem_free(hal->srng_list[i].reg_his_ctx);
+}
+
+inline bool hal_alloc_srng_history(struct hal_soc *hal)
+{
+	int i;
+
+	for (i = 0; i < HAL_SRNG_ID_MAX; i++) {
+		hal->srng_list[i].reg_his_ctx =
+			qdf_mem_malloc(sizeof(struct hal_srng_reg_his_ctx));
+		if (!hal->srng_list[i].reg_his_ctx) {
+			hal_err("srng_hist alloc failed");
+			hal_free_srng_history(hal);
+			return false;
+		}
+	}
+
+	return true;
+}
+#else
+inline void hal_free_srng_history(struct hal_soc *hal)
+{
+}
+
+inline bool hal_alloc_srng_history(struct hal_soc *hal)
+{
+	return true;
+}
+#endif
+
 void *hal_attach(struct hif_opaque_softc *hif_handle, qdf_device_t qdf_dev)
 {
 	struct hal_soc *hal;
 	int i;
 
-	hal = qdf_mem_malloc(sizeof(*hal));
+	hal = qdf_mem_common_alloc(sizeof(*hal));
 
 	if (!hal) {
 		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
@@ -1154,6 +1294,9 @@ void *hal_attach(struct hif_opaque_softc *hif_handle, qdf_device_t qdf_dev)
 	}
 	qdf_mem_zero(hal->shadow_wrptr_mem_vaddr,
 		sizeof(*(hal->shadow_wrptr_mem_vaddr)) * HAL_MAX_LMAC_RINGS);
+
+	if (!hal_alloc_srng_history(hal))
+		goto fail2;
 
 	for (i = 0; i < HAL_SRNG_ID_MAX; i++) {
 		hal->srng_list[i].initialized = 0;
@@ -1203,18 +1346,12 @@ fail2:
 		sizeof(*(hal->shadow_rdptr_mem_vaddr)) * HAL_SRNG_ID_MAX,
 		hal->shadow_rdptr_mem_vaddr, hal->shadow_rdptr_mem_paddr, 0);
 fail1:
-	qdf_mem_free(hal);
+	qdf_mem_common_free(hal);
 fail0:
 	return NULL;
 }
 qdf_export_symbol(hal_attach);
 
-/**
- * hal_mem_info - Retrieve hal memory base address
- *
- * @hal_soc: Opaque HAL SOC handle
- * @mem: pointer to structure to be updated with hal mem info
- */
 void hal_get_meminfo(hal_soc_handle_t hal_soc_hdl, struct hal_mem_info *mem)
 {
 	struct hal_soc *hal = (struct hal_soc *)hal_soc_hdl;
@@ -1230,18 +1367,7 @@ void hal_get_meminfo(hal_soc_handle_t hal_soc_hdl, struct hal_mem_info *mem)
 }
 qdf_export_symbol(hal_get_meminfo);
 
-/**
- * hal_detach - Detach HAL layer
- * @hal_soc: HAL SOC handle
- *
- * Return: Opaque HAL SOC handle
- *		 NULL on failure (if given ring is not available)
- *
- * This function should be called as part of HIF initialization (for accessing
- * copy engines). DP layer will get hal_soc handle using hif_get_hal_handle()
- *
- */
-extern void hal_detach(void *hal_soc)
+void hal_detach(void *hal_soc)
 {
 	struct hal_soc *hal = (struct hal_soc *)hal_soc;
 
@@ -1252,13 +1378,14 @@ extern void hal_detach(void *hal_soc)
 	qdf_minidump_remove(hal, sizeof(*hal), "hal_soc");
 	qdf_mem_free(hal->ops);
 
+	hal_free_srng_history(hal);
 	qdf_mem_free_consistent(hal->qdf_dev, hal->qdf_dev->dev,
 		sizeof(*(hal->shadow_rdptr_mem_vaddr)) * HAL_SRNG_ID_MAX,
 		hal->shadow_rdptr_mem_vaddr, hal->shadow_rdptr_mem_paddr, 0);
 	qdf_mem_free_consistent(hal->qdf_dev, hal->qdf_dev->dev,
 		sizeof(*(hal->shadow_wrptr_mem_vaddr)) * HAL_MAX_LMAC_RINGS,
 		hal->shadow_wrptr_mem_vaddr, hal->shadow_wrptr_mem_paddr, 0);
-	qdf_mem_free(hal);
+	qdf_mem_common_free(hal);
 
 	return;
 }
@@ -1268,10 +1395,12 @@ qdf_export_symbol(hal_detach);
 #define HAL_CE_CHANNEL_DST_DEST_CTRL_DEST_MAX_LENGTH_BMSK	0x0000ffff
 #define HAL_CE_CHANNEL_DST_DEST_RING_CONSUMER_PREFETCH_TIMER_ADDR(x)	((x) + 0x00000040)
 #define HAL_CE_CHANNEL_DST_DEST_RING_CONSUMER_PREFETCH_TIMER_RMSK	0x00000007
+
 /**
- * hal_ce_dst_setup - Initialize CE destination ring registers
- * @hal_soc: HAL SOC handle
+ * hal_ce_dst_setup() - Initialize CE destination ring registers
+ * @hal: HAL SOC handle
  * @srng: SRNG ring pointer
+ * @ring_num: ring number
  */
 static inline void hal_ce_dst_setup(struct hal_soc *hal, struct hal_srng *srng,
 				    int ring_num)
@@ -1306,15 +1435,6 @@ static inline void hal_ce_dst_setup(struct hal_soc *hal, struct hal_srng *srng,
 
 }
 
-/**
- * hal_reo_read_write_ctrl_ix - Read or write REO_DESTINATION_RING_CTRL_IX
- * @hal: HAL SOC handle
- * @read: boolean value to indicate if read or write
- * @ix0: pointer to store IX0 reg value
- * @ix1: pointer to store IX1 reg value
- * @ix2: pointer to store IX2 reg value
- * @ix3: pointer to store IX3 reg value
- */
 void hal_reo_read_write_ctrl_ix(hal_soc_handle_t hal_soc_hdl, bool read,
 				uint32_t *ix0, uint32_t *ix1,
 				uint32_t *ix2, uint32_t *ix3)
@@ -1390,14 +1510,6 @@ void hal_reo_read_write_ctrl_ix(hal_soc_handle_t hal_soc_hdl, bool read,
 
 qdf_export_symbol(hal_reo_read_write_ctrl_ix);
 
-/**
- * hal_srng_dst_set_hp_paddr_confirm() - Set physical address to dest ring head
- *  pointer and confirm that write went through by reading back the value
- * @srng: sring pointer
- * @paddr: physical address
- *
- * Return: None
- */
 void hal_srng_dst_set_hp_paddr_confirm(struct hal_srng *srng, uint64_t paddr)
 {
 	SRNG_DST_REG_WRITE_CONFIRM(srng, HP_ADDR_LSB, paddr & 0xffffffff);
@@ -1406,13 +1518,6 @@ void hal_srng_dst_set_hp_paddr_confirm(struct hal_srng *srng, uint64_t paddr)
 
 qdf_export_symbol(hal_srng_dst_set_hp_paddr_confirm);
 
-/**
- * hal_srng_dst_init_hp() - Initialize destination ring head
- * pointer
- * @hal_soc: hal_soc handle
- * @srng: sring pointer
- * @vaddr: virtual address
- */
 void hal_srng_dst_init_hp(struct hal_soc_handle *hal_soc,
 			  struct hal_srng *srng,
 			  uint32_t *vaddr)
@@ -1430,7 +1535,7 @@ void hal_srng_dst_init_hp(struct hal_soc_handle *hal_soc,
 
 	if (vaddr) {
 		*srng->u.dst_ring.hp_addr = srng->u.dst_ring.cached_hp;
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_DEBUG,
 			  "hp_addr=%pK, cached_hp=%d",
 			  (void *)srng->u.dst_ring.hp_addr,
 			  srng->u.dst_ring.cached_hp);
@@ -1439,9 +1544,30 @@ void hal_srng_dst_init_hp(struct hal_soc_handle *hal_soc,
 
 qdf_export_symbol(hal_srng_dst_init_hp);
 
+void hal_srng_dst_update_hp_addr(struct hal_soc_handle *hal_soc,
+				 hal_ring_handle_t hal_ring_hdl)
+{
+	struct hal_srng *srng = (struct hal_srng *)hal_ring_hdl;
+	int32_t hw_hp;
+	int32_t hw_tp;
+
+	if (!srng)
+		return;
+
+	if (srng->u.dst_ring.hp_addr) {
+		hal_get_hw_hptp(hal_soc, hal_ring_hdl, &hw_hp, &hw_tp,
+				WBM2SW_RELEASE);
+		*srng->u.dst_ring.hp_addr = hw_hp;
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_DEBUG,
+			  "hw_hp=%d", hw_hp);
+	}
+}
+
+qdf_export_symbol(hal_srng_dst_update_hp_addr);
+
 /**
  * hal_srng_hw_init - Private function to initialize SRNG HW
- * @hal_soc: HAL SOC handle
+ * @hal: HAL SOC handle
  * @srng: SRNG ring pointer
  * @idle_check: Check if ring is idle
  * @idx: ring index
@@ -1456,16 +1582,6 @@ static inline void hal_srng_hw_init(struct hal_soc *hal,
 }
 
 #ifdef WLAN_FEATURE_NEAR_FULL_IRQ
-/**
- * hal_srng_is_near_full_irq_supported() - Check if near full irq is
- *				supported on this SRNG
- * @hal_soc: HAL SoC handle
- * @ring_type: SRNG type
- * @ring_num: ring number
- *
- * Return: true, if near full irq is supported for this SRNG
- *	   false, if near full irq is not supported for this SRNG
- */
 bool hal_srng_is_near_full_irq_supported(hal_soc_handle_t hal_soc,
 					 int ring_type, int ring_num)
 {
@@ -1544,7 +1660,6 @@ hal_srng_set_nf_thresholds(struct hal_srng *srng,
 #if defined(CLEAR_SW2TCL_CONSUMED_DESC)
 /**
  * hal_srng_last_desc_cleared_init - Initialize SRNG last_desc_cleared ptr
- *
  * @srng: Source ring pointer
  *
  * Return: None
@@ -1593,27 +1708,6 @@ static inline void hal_srng_update_high_wm_thresholds(struct hal_srng *srng)
 }
 #endif
 
-/**
- * hal_srng_setup_idx - Initialize HW SRNG ring.
- * @hal_soc: Opaque HAL SOC handle
- * @ring_type: one of the types from hal_ring_type
- * @ring_num: Ring number if there are multiple rings of same type (staring
- * from 0)
- * @mac_id: valid MAC Id should be passed if ring type is one of lmac rings
- * @ring_params: SRNG ring params in hal_srng_params structure.
- * @idle_check: Check if ring is idle
- * @idx: Ring index to be programmed as init value in HP/TP based on srng type
- *
- * Callers are expected to allocate contiguous ring memory of size
- * 'num_entries * entry_size' bytes and pass the physical and virtual base
- * addresses through 'ring_base_paddr' and 'ring_base_vaddr' in
- * hal_srng_params structure. Ring base address should be 8 byte aligned
- * and size of each ring entry should be queried using the API
- * hal_srng_get_entrysize
- *
- * Return: Opaque pointer to ring on success
- *		 NULL on failure (if given ring is not available)
- */
 void *hal_srng_setup_idx(void *hal_soc, int ring_type, int ring_num, int mac_id,
 			 struct hal_srng_params *ring_params, bool idle_check,
 			 uint32_t idx)
@@ -1640,6 +1734,7 @@ void *hal_srng_setup_idx(void *hal_soc, int ring_type, int ring_num, int mac_id,
 		return NULL;
 	}
 
+	hal_srng_reg_his_init(srng);
 	dev_base_addr = hal->dev_base_addr;
 	srng->ring_id = ring_id;
 	srng->ring_type = ring_type;
@@ -1791,10 +1886,26 @@ void *hal_srng_setup_idx(void *hal_soc, int ring_type, int ring_num, int mac_id,
 	}
 
 	if (!(ring_config->lmac_ring)) {
+		/*
+		 * UMAC reset has idle check enabled.
+		 * During UMAC reset Tx ring halt is set
+		 * by Wi-Fi FW during pre-reset stage,
+		 * avoid Tx ring halt again.
+		 */
+		if (idle_check && idx) {
+			if (!hal->ops->hal_tx_ring_halt_get(hal_hdl)) {
+				qdf_print("\nTx ring halt not set:Ring(%d, %d)",
+					  ring_type, ring_num);
+				qdf_assert_always(0);
+			}
+			hal_srng_hw_init(hal, srng, idle_check, idx);
+			goto ce_setup;
+		}
+
 		if (idx) {
 			hal->ops->hal_tx_ring_halt_set(hal_hdl);
 			do {
-				hal_info("Waiting for ring reset\n");
+				hal_info("Waiting for ring reset");
 			} while (!(hal->ops->hal_tx_ring_halt_poll(hal_hdl)));
 		}
 		hal_srng_hw_init(hal, srng, idle_check, idx);
@@ -1803,7 +1914,7 @@ void *hal_srng_setup_idx(void *hal_soc, int ring_type, int ring_num, int mac_id,
 			hal->ops->hal_tx_ring_halt_reset(hal_hdl);
 		}
 
-
+ce_setup:
 		if (ring_type == CE_DST) {
 			srng->u.dst_ring.max_buffer_length = ring_params->max_buffer_length;
 			hal_ce_dst_setup(hal, srng, ring_num);
@@ -1849,26 +1960,17 @@ void *hal_srng_setup(void *hal_soc, int ring_type, int ring_num,
 }
 qdf_export_symbol(hal_srng_setup);
 
-/**
- * hal_srng_cleanup - Deinitialize HW SRNG ring.
- * @hal_soc: Opaque HAL SOC handle
- * @hal_srng: Opaque HAL SRNG pointer
- */
-void hal_srng_cleanup(void *hal_soc, hal_ring_handle_t hal_ring_hdl)
+void hal_srng_cleanup(void *hal_soc, hal_ring_handle_t hal_ring_hdl,
+		      bool umac_reset_inprogress)
 {
 	struct hal_srng *srng = (struct hal_srng *)hal_ring_hdl;
 	SRNG_LOCK_DESTROY(&srng->lock);
 	srng->initialized = 0;
-	hal_srng_hw_disable(hal_soc, srng);
+	if (umac_reset_inprogress)
+		hal_srng_hw_disable(hal_soc, srng);
 }
 qdf_export_symbol(hal_srng_cleanup);
 
-/**
- * hal_srng_get_entrysize - Returns size of ring entry in bytes
- * @hal_soc: Opaque HAL SOC handle
- * @ring_type: one of the types from hal_ring_type
- *
- */
 uint32_t hal_srng_get_entrysize(void *hal_soc, int ring_type)
 {
 	struct hal_soc *hal = (struct hal_soc *)hal_soc;
@@ -1878,13 +1980,6 @@ uint32_t hal_srng_get_entrysize(void *hal_soc, int ring_type)
 }
 qdf_export_symbol(hal_srng_get_entrysize);
 
-/**
- * hal_srng_max_entries - Returns maximum possible number of ring entries
- * @hal_soc: Opaque HAL SOC handle
- * @ring_type: one of the types from hal_ring_type
- *
- * Return: Maximum number of entries for the given ring_type
- */
 uint32_t hal_srng_max_entries(void *hal_soc, int ring_type)
 {
 	struct hal_soc *hal = (struct hal_soc *)hal_soc;
@@ -1904,10 +1999,6 @@ enum hal_srng_dir hal_srng_get_dir(void *hal_soc, int ring_type)
 	return ring_config->ring_dir;
 }
 
-/**
- * hal_srng_dump - Dump ring status
- * @srng: hal srng pointer
- */
 void hal_srng_dump(struct hal_srng *srng)
 {
 	if (srng->ring_dir == HAL_SRNG_SRC_RING) {
@@ -1927,16 +2018,9 @@ void hal_srng_dump(struct hal_srng *srng)
 	}
 }
 
-/**
- * hal_get_srng_params - Retrieve SRNG parameters for a given ring from HAL
- *
- * @hal_soc: Opaque HAL SOC handle
- * @hal_ring: Ring pointer (Source or Destination ring)
- * @ring_params: SRNG parameters will be returned through this structure
- */
-extern void hal_get_srng_params(hal_soc_handle_t hal_soc_hdl,
-				hal_ring_handle_t hal_ring_hdl,
-				struct hal_srng_params *ring_params)
+void hal_get_srng_params(hal_soc_handle_t hal_soc_hdl,
+			 hal_ring_handle_t hal_ring_hdl,
+			 struct hal_srng_params *ring_params)
 {
 	struct hal_srng *srng = (struct hal_srng *)hal_ring_hdl;
 	int i =0;

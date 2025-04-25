@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -38,7 +38,8 @@ static int stats_id = -1;
 static void hdd_sysfs_get_stats(struct hdd_adapter *adapter, ssize_t *length,
 				char *buffer, size_t buf_len)
 {
-	struct hdd_tx_rx_stats *stats = &adapter->hdd_stats.tx_rx_stats;
+	struct hdd_tx_rx_stats *stats =
+				&adapter->deflink->hdd_stats.tx_rx_stats;
 	struct dp_tx_rx_stats *dp_stats;
 	uint32_t len = 0;
 	uint32_t total_rx_pkt = 0, total_rx_dropped = 0;
@@ -53,7 +54,7 @@ static void hdd_sysfs_get_stats(struct hdd_adapter *adapter, ssize_t *length,
 	struct hdd_context *hdd_ctx = adapter->hdd_ctx;
 	struct wlan_objmgr_vdev *vdev;
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_DP_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_DP_ID);
 	if (!vdev)
 		return;
 
@@ -144,7 +145,8 @@ static void hdd_sysfs_get_stats(struct hdd_adapter *adapter, ssize_t *length,
 		stats->txflow_unpause_cnt);
 
 	len += cdp_stats(cds_get_context(QDF_MODULE_ID_SOC),
-			 adapter->vdev_id, &buffer[len], (buf_len - len));
+			 adapter->deflink->vdev_id, &buffer[len],
+			 (buf_len - len));
 	*length = len + 1;
 	qdf_mem_free(dp_stats);
 }

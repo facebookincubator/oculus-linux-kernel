@@ -116,16 +116,6 @@ typedef enum eAniEdType {
 	eSIR_ED_NOT_IMPLEMENTED = SIR_MAX_ENUM_SIZE
 } tAniEdType;
 
-/* / Enum to specify whether key is used */
-/* / for TX only, RX only or both */
-typedef enum eAniKeyDirection {
-	eSIR_TX_ONLY,
-	eSIR_RX_ONLY,
-	eSIR_TX_RX,
-	eSIR_TX_DEFAULT,
-	eSIR_DONOT_USE_KEY_DIRECTION = SIR_MAX_ENUM_SIZE
-} tAniKeyDirection;
-
 typedef struct sAniSSID {
 	uint8_t length;
 	uint8_t ssId[WLAN_SSID_MAX_LEN];
@@ -150,27 +140,6 @@ typedef struct sSirAddie {
 	uint8_t addIEdata[SIR_MAC_MAX_ADD_IE_LENGTH + 2];
 } tSirAddie, *tpSirAddie;
 
-/* / Definition for Encryption Keys */
-typedef struct sSirKeys {
-	uint8_t keyId;
-	uint8_t unicast;        /* 0 for multicast */
-	tAniKeyDirection keyDirection;
-	uint8_t keyRsc[WLAN_CRYPTO_RSC_SIZE];   /* Usage is unknown */
-	uint8_t paeRole;        /* =1 for authenticator, */
-	/* =0 for supplicant */
-	uint16_t keyLength;
-	uint8_t key[SIR_MAC_MAX_KEY_LENGTH];
-} tSirKeys, *tpSirKeys;
-
-/* / Definition for Keying material */
-typedef struct sSirKeyMaterial {
-	uint16_t length;        /* This is the length of all */
-	/* data that follows */
-	tAniEdType edType;      /* Encryption/Decryption type */
-	uint8_t numKeys;
-	tSirKeys key[1];
-} tSirKeyMaterial, *tpSirKeyMaterial;
-
 #define SIR_CIPHER_SEQ_CTR_SIZE 6
 /* / Definition for MIC failure indication */
 typedef struct sSirMicFailureInfo {
@@ -186,11 +155,6 @@ typedef struct sSirMicFailureInfo {
 } tSirMicFailureInfo, *tpSirMicFailureInfo;
 
 typedef struct sTrafStrmMetrics {
-	uint16_t UplinkPktQueueDly;
-	uint16_t UplinkPktQueueDlyHist[4];
-	uint32_t UplinkPktTxDly;
-	uint16_t UplinkPktLoss;
-	uint16_t UplinkPktCount;
 	uint8_t RoamingCount;
 	uint16_t RoamingDly;
 } qdf_packed tTrafStrmMetrics, *tpTrafStrmMetrics;

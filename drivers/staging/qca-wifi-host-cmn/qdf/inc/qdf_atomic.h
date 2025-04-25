@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,13 +28,12 @@
 #include <i_qdf_atomic.h>
 
 /**
- * qdf_atomic_t - atomic type of variable
+ * typedef qdf_atomic_t - atomic type of variable
  *
  * Use this when you want a simple resource counter etc. which is atomic
  * across multiple CPU's. These maybe slower than usual counters on some
  * platforms/OS'es, so use them with caution.
  */
-
 typedef __qdf_atomic_t qdf_atomic_t;
 
 /**
@@ -152,6 +152,18 @@ static inline int32_t qdf_atomic_inc_return(qdf_atomic_t *v)
 static inline int32_t qdf_atomic_dec_return(qdf_atomic_t *v)
 {
 	return __qdf_atomic_dec_return(v);
+}
+
+/**
+ * qdf_atomic_dec_if_positive() - Decrement an atomic variable if its
+ * value is positive
+ * @v: A pointer to an opaque atomic variable
+ *
+ * Return: The old value of the variable minus 1
+ */
+static inline int32_t qdf_atomic_dec_if_positive(qdf_atomic_t *v)
+{
+	return __qdf_atomic_dec_if_positive(v);
 }
 
 /**

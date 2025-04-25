@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2018,2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -175,6 +175,86 @@
 			0, \
 			CFG_VALUE_OR_DEFAULT, \
 			"Thermal Temp Max Level3")
+
+/*
+ * <ini>
+ * gThermalTempMinLevel4 - Set Thermal Temp Min Level
+ * for TX OFF
+ * @Min: 0
+ * @Max: 1000
+ * @Default: 116
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_TEMP_MIN_LEVEL4 CFG_INI_UINT( \
+			"gThermalTempMinLevel4", \
+			0, \
+			1000, \
+			116, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Thermal Temp Min Level4")
+
+/*
+ * <ini>
+ * gThermalTempMaxLevel4 - Set Thermal Temp Max Level
+ * for TX OFF
+ * @Min: 0
+ * @Max: 1000
+ * @Default: 117
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_TEMP_MAX_LEVEL4 CFG_INI_UINT( \
+			"gThermalTempMaxLevel4", \
+			0, \
+			1000, \
+			117, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Thermal Temp Max Level4")
+
+/*
+ * <ini>
+ * gThermalTempMinLevel5 - Set Thermal Temp Min Level
+ * for target shutdown
+ * @Min: 0
+ * @Max: 1000
+ * @Default: 118
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_TEMP_MIN_LEVEL5 CFG_INI_UINT( \
+			"gThermalTempMinLevel5", \
+			0, \
+			1000, \
+			118, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Thermal Temp Min Level5")
+
+/*
+ * <ini>
+ * gThermalTempMaxLevel5 - Set Thermal Temp Max Level
+ * for target shutdown
+ * @Min: 0
+ * @Max: 1000
+ * @Default: 120
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_THERMAL_TEMP_MAX_LEVEL5 CFG_INI_UINT( \
+			"gThermalTempMaxLevel5", \
+			0, \
+			1000, \
+			120, \
+			CFG_VALUE_OR_DEFAULT, \
+			"Thermal Temp Max Level5")
 
 /*
  * <ini>
@@ -465,6 +545,10 @@
 	CFG(CFG_THERMAL_TEMP_MAX_LEVEL2) \
 	CFG(CFG_THERMAL_TEMP_MIN_LEVEL3) \
 	CFG(CFG_THERMAL_TEMP_MAX_LEVEL3) \
+	CFG(CFG_THERMAL_TEMP_MIN_LEVEL4) \
+	CFG(CFG_THERMAL_TEMP_MAX_LEVEL4) \
+	CFG(CFG_THERMAL_TEMP_MIN_LEVEL5) \
+	CFG(CFG_THERMAL_TEMP_MAX_LEVEL5) \
 	CFG(CFG_THERMAL_MITIGATION_ENABLE) \
 	CFG(CFG_THROTTLE_PERIOD) \
 	CFG(CFG_THROTTLE_DUTY_CYCLE_LEVEL0) \

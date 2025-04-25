@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2017, 2019-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,8 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_bus.h
- * @brief Define the host data path bus related functions
+ * DOC: cdp_txrx_bus.h
+ *      Define the host data path bus related functions
  */
 #ifndef _CDP_TXRX_BUS_H_
 #define _CDP_TXRX_BUS_H_
@@ -70,7 +71,7 @@ static inline QDF_STATUS cdp_bus_resume(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_process_wow_ack() - Process wow ack response
+ * cdp_process_wow_ack_rsp() - Process wow ack response
  * @soc: data path soc handle
  * @pdev_id: id of dp pdev handle
  *

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -31,7 +31,7 @@
 /**
  * global_shmem_register_wifi3_0_ops() - Register wifi3.0 operations of
  * global shared memory access module
- * @shmem_tx_ops: Pointer to the local ops table of global shared mem module.
+ * @shmem_local_ops: Pointer to the local ops table of global shared mem module.
  *
  * Return: QDF_STATUS of operation
  */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -100,6 +100,7 @@ struct wlan_serialization_command_list {
  * @blocking_cmd_active: Indicate if a blocking cmd is in active execution
  * @blocking_cmd_waiting: Indicate if a blocking cmd is in pending queue
  * @pdev_queue_lock: pdev lock to protect concurrent operations on the queues
+ * @history: serialization history
  */
 struct wlan_serialization_pdev_queue {
 	qdf_list_t active_list;
@@ -117,7 +118,7 @@ struct wlan_serialization_pdev_queue {
 /**
  * struct wlan_serialization_vdev_queue - queue data related to vdev
  * @active_list: list to hold the commands currently being executed
- * @pending_list list: to hold the commands currently pending
+ * @pending_list: list: to hold the commands currently pending
  * @queue_disable: is the queue disabled
  */
 struct wlan_serialization_vdev_queue {
@@ -127,9 +128,10 @@ struct wlan_serialization_vdev_queue {
 };
 
 /**
- * enum wlan_serialization_pdev_queue_type - Types of available pdev queues
- * @QUEUE_COMP_SCAN: Scan queue
- * @QUEUE_COMP_NON_SCAN: Non Scan queue
+ * enum serialization_pdev_queue_type - Types of available pdev queues
+ * @SER_PDEV_QUEUE_COMP_SCAN: Scan queue
+ * @SER_PDEV_QUEUE_COMP_NON_SCAN: Non Scan queue
+ * @SER_PDEV_QUEUE_COMP_MAX: Max enumeration
  */
 enum serialization_pdev_queue_type {
 	SER_PDEV_QUEUE_COMP_SCAN,
@@ -138,8 +140,9 @@ enum serialization_pdev_queue_type {
 };
 
 /**
- * enum wlan_serialization_vdev_queue_type - Types of available vdev queues
- * @QUEUE_COMP_NON_SCAN: Non Scan queue
+ * enum serialization_vdev_queue_type - Types of available vdev queues
+ * @SER_VDEV_QUEUE_COMP_NON_SCAN: Non Scan queue
+ * @SER_VDEV_QUEUE_COMP_MAX: Max enumeration
  */
 enum serialization_vdev_queue_type {
 	SER_VDEV_QUEUE_COMP_NON_SCAN,
@@ -152,6 +155,7 @@ enum serialization_vdev_queue_type {
  * @WLAN_SER_MATCH_PDEV: Compare pdev
  * @WLAN_SER_MATCH_CMD_TYPE_VDEV: Compare command type and vdev
  * @WLAN_SER_MATCH_CMD_ID_VDEV: Compare command id and vdev
+ * @WLAN_SER_MATCH_MAX: Max enumeration
  */
 enum wlan_serialization_match_type {
 	WLAN_SER_MATCH_VDEV,
@@ -170,7 +174,7 @@ struct wlan_ser_pdev_obj {
 };
 
 /**
- * struct wlan_ser_vdev_priv_obj - Serialization private object of vdev
+ * struct wlan_ser_vdev_obj - Serialization private object of vdev
  * @vdev_q: Array of vdev queues
  */
 struct wlan_ser_vdev_obj {
@@ -179,10 +183,11 @@ struct wlan_ser_vdev_obj {
 
 /**
  * struct wlan_ser_psoc_obj - psoc obj data for serialization
- * @comp_info_cb - module level callback
- * @apply_rules_cb - pointer to apply rules on the cmd
- * @timers - Timers associated with the active commands
- * @max_axtive_cmds - Maximum active commands allowed
+ * @comp_info_cb: module level callback
+ * @apply_rules_cb: pointer to apply rules on the cmd
+ * @timers: Timers associated with the active commands
+ * @max_active_cmds: Maximum active commands allowed
+ * @timer_lock: lock for @timers
  *
  * Serialization component takes a command as input and checks whether to
  * allow/deny the command. It will use the module level callback registered
@@ -193,8 +198,7 @@ struct wlan_ser_vdev_obj {
  * pending list and each active command is associated with a timer.
  */
 struct wlan_ser_psoc_obj {
-	wlan_serialization_comp_info_cb comp_info_cb[
-		WLAN_SER_CMD_MAX][WLAN_UMAC_COMP_ID_MAX];
+	wlan_serialization_comp_info_cb comp_info_cb[WLAN_SER_CMD_MAX][WLAN_UMAC_COMP_ID_MAX];
 	wlan_serialization_apply_rules_cb apply_rules_cb[WLAN_SER_CMD_MAX];
 	struct wlan_serialization_timer *timers;
 	uint8_t max_active_cmds;
@@ -225,9 +229,8 @@ wlan_serialization_remove_cmd_from_queue(
 		enum wlan_serialization_node node_type);
 
 /**
- * wlan_serialization_add_cmd_from_queue() - Add a cmd to
- *							given queue
- * @queue: queue from which command needs to be removed
+ * wlan_serialization_add_cmd_to_queue() - Add a cmd to given queue
+ * @queue: queue to which command needs to be added
  * @cmd_list: Pointer to command list containing the command
  * @ser_pdev_obj: pointer to private pdev serialization object
  * @is_cmd_for_active_queue: Add cmd to active or pending queue
@@ -299,6 +302,7 @@ QDF_STATUS wlan_serialization_get_cmd_from_queue(
  */
 QDF_STATUS
 wlan_serialization_stop_timer(struct wlan_serialization_timer *ser_timer);
+
 /**
  * wlan_serialization_cleanup_vdev_timers() - clean-up all timers for a vdev
  *
@@ -388,7 +392,7 @@ struct wlan_ser_psoc_obj *wlan_serialization_get_psoc_obj(
 
 /**
  * wlan_serialization_get_pdev_obj() - Return the component private obj
- * @psoc: Pointer to the PDEV object
+ * @pdev: Pointer to the PDEV object
  *
  * Return: Serialization component's PDEV level private data object
  */
@@ -495,7 +499,7 @@ uint32_t wlan_serialization_list_size(qdf_list_t *queue);
  */
 bool wlan_serialization_match_cmd_type(
 			qdf_list_node_t *nnode,
-			enum wlan_serialization_cmd_type,
+			enum wlan_serialization_cmd_type cmd_type,
 			enum wlan_serialization_node node_type);
 
 /**
@@ -559,6 +563,8 @@ bool wlan_serialization_match_cmd_blocking(
 
 /**
  * wlan_serialization_find_cmd() - Find the cmd matching the given criteria
+ * @queue: Queue to search
+ * @match_type: Match criteria
  * @cmd: Serialization command information
  * @cmd_type: Command type to be matched
  * @pdev: pdev object that needs to be matched

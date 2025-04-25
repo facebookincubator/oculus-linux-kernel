@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -356,13 +356,12 @@ static inline uintptr_t hal_rx_wbm_get_desc_va(void *hal_desc)
 {
 	uint64_t va_from_desc;
 
-	va_from_desc = HAL_RX_GET(hal_desc,
-				  WBM2SW_COMPLETION_RING_RX,
-				  BUFFER_VIRT_ADDR_31_0) |
-			(((uint64_t)HAL_RX_GET(hal_desc,
-					       WBM2SW_COMPLETION_RING_RX,
-					       BUFFER_VIRT_ADDR_63_32)) << 32);
-
+	va_from_desc = qdf_le64_to_cpu(HAL_RX_GET(hal_desc,
+				       WBM2SW_COMPLETION_RING_RX,
+				       BUFFER_VIRT_ADDR_31_0) |
+				       (((uint64_t)HAL_RX_GET(hal_desc,
+				       WBM2SW_COMPLETION_RING_RX,
+				       BUFFER_VIRT_ADDR_63_32)) << 32));
 	return (uintptr_t)va_from_desc;
 }
 
@@ -495,13 +494,12 @@ static inline uintptr_t hal_rx_get_reo_desc_va(void *reo_desc)
 {
 	uint64_t va_from_desc;
 
-	va_from_desc = HAL_RX_GET(reo_desc,
-				  REO_DESTINATION_RING,
-				  BUFFER_VIRT_ADDR_31_0) |
-		(((uint64_t)HAL_RX_GET(reo_desc,
+	va_from_desc = qdf_le64_to_cpu(HAL_RX_GET(reo_desc,
 				       REO_DESTINATION_RING,
-				       BUFFER_VIRT_ADDR_63_32)) << 32);
-
+				       BUFFER_VIRT_ADDR_31_0) |
+				       (((uint64_t)HAL_RX_GET(reo_desc,
+				       REO_DESTINATION_RING,
+				       BUFFER_VIRT_ADDR_63_32)) << 32));
 	return (uintptr_t)va_from_desc;
 }
 
@@ -538,4 +536,68 @@ hal_rx_tlv_get_dest_chip_pmac_id(uint8_t *buf,
 	*d_chip_pmac_id = HAL_RX_TLV_DEST_CHIP_PMAC_ID_GET(rx_pkt_tlvs);
 }
 #endif /* INTRA_BSS_FWD_OFFLOAD */
+
+static inline uint8_t hal_rx_get_reo_push_rsn(void *desc_addr)
+{
+	struct reo_destination_ring *reo_dst_ring;
+
+	reo_dst_ring = (struct reo_destination_ring *)desc_addr;
+	return reo_dst_ring->reo_push_reason;
+}
+
+/**
+ * hal_rx_get_mpdu_msdu_desc_info_be() - get msdu, mpdu, peer meta data info
+ *					 from HAL Desc.
+ * @desc_addr: REO ring descriptor addr
+ * @mpdu_info: pointer to MPDU info
+ * @peer_mdata: pointer to peer meta data info
+ * @msdu_info: pointer to msdu info
+ *
+ * Return: void
+ */
+static inline void
+hal_rx_get_mpdu_msdu_desc_info_be(void *desc_addr,
+				  uint32_t *mpdu_info,
+				  uint32_t *peer_mdata,
+				  uint32_t *msdu_info)
+{
+	struct reo_destination_ring *reo_dst_ring;
+
+	reo_dst_ring = (struct reo_destination_ring *)desc_addr;
+	*mpdu_info = *(uint32_t *)(&reo_dst_ring->rx_mpdu_desc_info_details);
+	*peer_mdata = *((uint32_t *)
+			&reo_dst_ring->rx_mpdu_desc_info_details + 1);
+	*msdu_info = *(uint32_t *)(&reo_dst_ring->rx_msdu_desc_info_details);
+}
+
+/**
+ * hal_rx_wbm_err_mpdu_msdu_info_get_be() - Copies wbm, msdu, mpdu info
+ *                                          from HAL desc
+ * @desc_addr: WBM2SW Rx Error ring descriptor addr
+ * @wbm_err_info: Holds WBM Error info from HAL Rx descriptor
+ * @mpdu_info: Holds MPDU descriptor info from HAL Rx descriptor
+ * @msdu_info: Holds MSDU descriptor info from HAL Rx descriptor
+ * @peer_meta_data: Holds Peer Meta data from HAL Rx descriptor
+ *
+ * This function copies the WBM error information, MSDU desc info,
+ * MPDU Desc info and peer meta data from HAL RX Desc.
+ *
+ * Return: void
+ */
+static inline void
+hal_rx_wbm_err_mpdu_msdu_info_get_be(void *desc_addr,
+				     uint32_t *wbm_err_info,
+				     uint32_t *mpdu_info,
+				     uint32_t *msdu_info,
+				     uint32_t *peer_meta_data)
+{
+	struct wbm2sw_completion_ring_rx *wbm_rx_err_ring;
+
+	wbm_rx_err_ring = (struct wbm2sw_completion_ring_rx *)desc_addr;
+	*msdu_info = *(uint32_t *)&wbm_rx_err_ring->rx_msdu_desc_info_details;
+	*mpdu_info = *(uint32_t *)&wbm_rx_err_ring->rx_mpdu_desc_info_details;
+	*peer_meta_data =
+		*((uint32_t *)&wbm_rx_err_ring->rx_mpdu_desc_info_details + 1);
+	*wbm_err_info = *((uint32_t *)wbm_rx_err_ring + 2);
+}
 #endif /* _HAL_BE_RX_H_ */

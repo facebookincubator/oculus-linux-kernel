@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,6 +34,7 @@
 #include "cds_utils.h"
 #include "wlan_hdd_main.h"
 #include "wlan_hdd_stats.h"
+#include "../../core/src/wlan_cp_stats_obj_mgr_handler.h"
 
 
 /* max time in ms, caller may wait for stats request get serviced */
@@ -586,7 +587,7 @@ static void get_station_stats_cb(struct stats_event *ev, void *cookie)
 {
 	struct stats_event *priv;
 	struct osif_request *request;
-	uint32_t summary_size, rssi_size, peer_adv_size = 0;
+	uint32_t summary_size, rssi_size, peer_adv_size = 0, pdev_size;
 	uint32_t vdev_extd_size;
 
 	request = osif_request_get(cookie);
@@ -635,6 +636,15 @@ static void get_station_stats_cb(struct stats_event *ev, void *cookie)
 
 		qdf_mem_copy(priv->peer_adv_stats, ev->peer_adv_stats,
 			     peer_adv_size);
+	}
+
+	if (ev->num_pdev_stats && ev->pdev_stats) {
+		pdev_size = sizeof(*ev->pdev_stats) * ev->num_pdev_stats;
+		priv->pdev_stats = qdf_mem_malloc(pdev_size);
+		if (!priv->pdev_stats)
+			goto station_stats_cb_fail;
+
+		qdf_mem_copy(priv->pdev_stats, ev->pdev_stats, pdev_size);
 	}
 
 	if (ev->num_vdev_extd_stats && ev->vdev_extd_stats) {
@@ -783,6 +793,8 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	struct wlan_objmgr_peer *peer;
 	struct osif_request *request;
 	struct infra_cp_stats_cmd_info info = {0};
+	get_infra_cp_stats_cb resp_cb = NULL;
+	void *context = NULL;
 	static const struct osif_request_params params = {
 		.priv_size = sizeof(*priv),
 		.timeout_ms = 2 * CP_STATS_WAIT_TIME_STAT,
@@ -790,13 +802,22 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	};
 
 	osif_debug("Enter");
-
+	status = wlan_cp_stats_infra_cp_get_context(wlan_vdev_get_psoc(vdev),
+						    &resp_cb, &context);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		*errno = -EFAULT;
+		return NULL;
+	}
+	if (resp_cb) {
+		osif_debug("another request already in progress");
+		*errno = -EBUSY;
+		return NULL;
+	}
 	out = qdf_mem_malloc(sizeof(*out));
 	if (!out) {
 		*errno = -ENOMEM;
 		return NULL;
 	}
-
 	out->twt_infra_cp_stats =
 			qdf_mem_malloc(sizeof(*out->twt_infra_cp_stats));
 	if (!out->twt_infra_cp_stats) {
@@ -808,7 +829,8 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	request = osif_request_alloc(&params);
 	if (!request) {
 		*errno = -ENOMEM;
-		goto free_stats_event;
+		wlan_cfg80211_mc_infra_cp_stats_free_stats_event(out);
+		return NULL;
 	}
 
 	cookie = osif_request_cookie(request);
@@ -818,7 +840,7 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 			qdf_mem_malloc(sizeof(*priv->twt_infra_cp_stats));
 	if (!priv->twt_infra_cp_stats) {
 		*errno = -ENOMEM;
-		goto get_twt_stats_fail;
+		goto free_stats_event;
 	}
 	twt_event = priv->twt_infra_cp_stats;
 
@@ -839,7 +861,7 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	if (!peer) {
 		osif_err("peer is null");
 		*errno = -EINVAL;
-		goto get_twt_stats_fail;
+		goto free_stats_event;
 	}
 	wlan_objmgr_peer_release_ref(peer, WLAN_CP_STATS_ID);
 
@@ -848,7 +870,7 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	if (QDF_IS_STATUS_ERROR(status)) {
 		osif_err("Failed to register resp callback: %d", status);
 		*errno = qdf_status_to_os_return(status);
-		goto get_twt_stats_fail;
+		goto free_stats_event;
 	}
 
 	status = ucfg_send_infra_cp_stats_request(vdev, &info);
@@ -881,14 +903,22 @@ wlan_cfg80211_mc_twt_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 		     QDF_MAC_ADDR_SIZE);
 	osif_request_put(request);
 
+	status = ucfg_infra_cp_stats_deregister_resp_cb(
+						wlan_vdev_get_psoc(vdev));
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to deregister resp callback: %d", status);
 	osif_debug("Exit");
 
 	return out;
 
 get_twt_stats_fail:
-	osif_request_put(request);
+	status = ucfg_infra_cp_stats_deregister_resp_cb(
+						wlan_vdev_get_psoc(vdev));
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to deregister resp callback: %d", status);
 
 free_stats_event:
+	osif_request_put(request);
 	wlan_cfg80211_mc_infra_cp_stats_free_stats_event(out);
 
 	osif_debug("Exit");
@@ -949,6 +979,8 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 	struct wlan_objmgr_peer *peer;
 	struct osif_request *request;
 	struct infra_cp_stats_cmd_info info = {0};
+	get_infra_cp_stats_cb resp_cb = NULL;
+	void *context = NULL;
 	static const struct osif_request_params params = {
 		.priv_size = sizeof(*priv),
 		.timeout_ms = 2 * CP_STATS_WAIT_TIME_STAT,
@@ -961,6 +993,14 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 	if (!psoc)
 		return -EINVAL;
 
+	status = wlan_cp_stats_infra_cp_get_context(psoc, &resp_cb, &context);
+	if (QDF_IS_STATUS_ERROR(status))
+		return -EINVAL;
+
+	if (resp_cb) {
+		osif_debug("another request already in progress");
+		return -EINVAL;
+	}
 	request = osif_request_alloc(&params);
 	if (!request)
 		return -ENOMEM;
@@ -1014,12 +1054,18 @@ wlan_cfg80211_mc_twt_clear_infra_cp_stats(
 		osif_err("Failed to send twt stats request status: %d",
 			 status);
 		ret = qdf_status_to_os_return(status);
-		goto clear_twt_stats_fail;
+		goto deregister_cb;
 	}
 
 	ret = osif_request_wait_for_response(request);
 	if (ret)
 		osif_err("wait failed or timed out ret: %d", ret);
+
+deregister_cb:
+	status = ucfg_infra_cp_stats_deregister_resp_cb(
+						wlan_vdev_get_psoc(vdev));
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to deregister resp callback: %d", status);
 
 clear_twt_stats_fail:
 	ucfg_mlme_set_twt_command_in_progress(psoc,
@@ -1118,6 +1164,9 @@ wlan_cfg80211_mc_cp_stats_get_station_stats(struct wlan_objmgr_vdev *vdev,
 	if (priv->peer_adv_stats)
 		out->peer_adv_stats = priv->peer_adv_stats;
 	priv->peer_adv_stats = NULL;
+	if (priv->pdev_stats)
+		out->pdev_stats = priv->pdev_stats;
+	priv->pdev_stats = NULL;
 	if (priv->vdev_extd_stats)
 		out->vdev_extd_stats = priv->vdev_extd_stats;
 	priv->vdev_extd_stats = NULL;
@@ -1508,6 +1557,49 @@ station_adv_stats_cb_fail:
 }
 
 #ifdef WLAN_FEATURE_11BE_MLO
+/**
+ * wlan_cfg80211_get_mlstats_vdev_peer - get peer per ml vdev
+ * @psoc: pointer to psoc struct
+ * @req_info: pointer to request info struct
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static QDF_STATUS
+wlan_cfg80211_get_mlstats_vdev_peer(struct wlan_objmgr_psoc *psoc,
+					struct request_info *req_info)
+{
+	struct wlan_objmgr_vdev *vdev;
+	struct wlan_objmgr_peer *peer;
+	struct mlo_stats_vdev_params *info = &req_info->ml_vdev_info;
+	int i;
+
+	for (i = 0; i < info->ml_vdev_count; i++) {
+		vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc,
+							    info->ml_vdev_id[i],
+							    WLAN_OSIF_STATS_ID);
+		if (!vdev) {
+			hdd_err("vdev object is NULL for vdev %d",
+				info->ml_vdev_id[i]);
+			return QDF_STATUS_E_INVAL;
+		}
+
+		peer = wlan_objmgr_vdev_try_get_bsspeer(vdev,
+							WLAN_OSIF_STATS_ID);
+		if (!peer) {
+			hdd_err("peer is null");
+			wlan_objmgr_vdev_release_ref(vdev, WLAN_OSIF_STATS_ID);
+			return QDF_STATUS_E_INVAL;
+		}
+
+		qdf_mem_copy(&req_info->ml_peer_mac_addr[i][0], peer->macaddr,
+			     QDF_MAC_ADDR_SIZE);
+
+		wlan_objmgr_peer_release_ref(peer, WLAN_OSIF_STATS_ID);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_OSIF_STATS_ID);
+	}
+	return QDF_STATUS_SUCCESS;
+}
+
 static QDF_STATUS
 wlan_cfg80211_get_mlstats_vdev_params(struct wlan_objmgr_vdev *vdev,
 				      struct request_info *info)
@@ -1530,7 +1622,8 @@ wlan_cfg80211_get_mlstats_vdev_params(struct wlan_objmgr_vdev *vdev,
 		}
 	}
 
-	return QDF_STATUS_SUCCESS;
+	status = wlan_cfg80211_get_mlstats_vdev_peer(psoc, info);
+	return status;
 }
 #else
 static QDF_STATUS
@@ -1778,6 +1871,8 @@ wlan_cfg80211_mc_bmiss_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	struct bmiss_infra_cp_stats_event *bmiss_event;
 	struct osif_request *request;
 	struct infra_cp_stats_cmd_info info = {0};
+	get_infra_cp_stats_cb resp_cb = NULL;
+	void *context = NULL;
 	static const struct osif_request_params params = {
 		.priv_size = sizeof(*priv),
 		.timeout_ms = 2 * CP_STATS_WAIT_TIME_STAT,
@@ -1785,6 +1880,17 @@ wlan_cfg80211_mc_bmiss_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	};
 
 	osif_debug("Enter");
+	status = wlan_cp_stats_infra_cp_get_context(wlan_vdev_get_psoc(vdev),
+						    &resp_cb, &context);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		*errno = -EFAULT;
+		return NULL;
+	}
+	if (resp_cb) {
+		osif_debug("another request already in progress");
+		*errno = -EBUSY;
+		return NULL;
+	}
 
 	out = qdf_mem_malloc(sizeof(*out));
 	if (!out) {
@@ -1836,7 +1942,7 @@ wlan_cfg80211_mc_bmiss_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	if (QDF_IS_STATUS_ERROR(status)) {
 		osif_err("Failed to register resp callback: %d", status);
 		*errno = qdf_status_to_os_return(status);
-		goto get_bmiss_stats_fail;
+		goto free_stats;
 	}
 
 	status = ucfg_send_infra_cp_stats_request(vdev, &info);
@@ -1885,9 +1991,18 @@ wlan_cfg80211_mc_bmiss_get_infra_cp_stats(struct wlan_objmgr_vdev *vdev,
 	qdf_mem_copy(&out->bmiss_infra_cp_stats->peer_macaddr, mac,
 		     QDF_MAC_ADDR_SIZE);
 	osif_request_put(request);
+	status = ucfg_infra_cp_stats_deregister_resp_cb(
+					wlan_vdev_get_psoc(vdev));
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to deregister resp callback: %d", status);
 	osif_debug("Exit");
 	return out;
 get_bmiss_stats_fail:
+	status = ucfg_infra_cp_stats_deregister_resp_cb(
+					wlan_vdev_get_psoc(vdev));
+	if (QDF_IS_STATUS_ERROR(status))
+		hdd_err("Failed to deregister resp callback: %d", status);
+free_stats:
 	osif_request_put(request);
 	wlan_cfg80211_mc_infra_cp_stats_free_stats_event(out);
 	osif_debug("Exit");

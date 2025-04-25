@@ -39,7 +39,7 @@
 #include "wlan_crypto_global_def.h"
 
 /**
- * struct osif_akm_crypto_mapping - mapping akm type received from
+ * struct osif_akm_type_crypto_mapping - mapping akm type received from
  *                                 NL to internal crypto type
  * @akm_suite: NL akm type
  * @akm_type_crypto: akm crypto type
@@ -66,7 +66,7 @@ struct osif_cipher_crypto_mapping {
 	u32 cipher_len;
 };
 
-/**
+/*
  * mapping table for auth type received from NL and crypto auth type
  */
 static const wlan_crypto_auth_mode

@@ -1,7 +1,7 @@
 /dts-v1/;
 /plugin/;
 
-#include "montague-talyn.dtsi"
+#include "montague-apache.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. Montague Apache IDP";

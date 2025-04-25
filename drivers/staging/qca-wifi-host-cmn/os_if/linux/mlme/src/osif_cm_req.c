@@ -33,25 +33,14 @@
 #endif
 #include <wlan_mlo_mgr_sta.h>
 #include <utils_mlo.h>
-
-static void osif_cm_free_wep_key_params(struct wlan_cm_connect_req *connect_req)
-{
-	if (connect_req->crypto.wep_keys.key) {
-		qdf_mem_zero(connect_req->crypto.wep_keys.key,
-			     connect_req->crypto.wep_keys.key_len);
-		qdf_mem_free(connect_req->crypto.wep_keys.key);
-		connect_req->crypto.wep_keys.key = NULL;
-	}
-	if (connect_req->crypto.wep_keys.seq) {
-		qdf_mem_zero(connect_req->crypto.wep_keys.seq,
-			     connect_req->crypto.wep_keys.seq_len);
-		qdf_mem_free(connect_req->crypto.wep_keys.seq);
-		connect_req->crypto.wep_keys.seq = NULL;
-	}
-}
+#include <wlan_mgmt_txrx_rx_reo_utils_api.h>
+#if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_MLO_MULTI_CHIP)
+#include <wlan_mlo_mgr_setup.h>
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0) && \
-LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
+LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0) && \
+!defined(CFG80211_CRYPTO_WEP_KEYS_REMOVED)
 static QDF_STATUS
 osif_cm_update_wep_seq_info(struct wlan_cm_connect_req *connect_req,
 			    const struct cfg80211_connect_params *req)
@@ -62,7 +51,7 @@ osif_cm_update_wep_seq_info(struct wlan_cm_connect_req *connect_req,
 		connect_req->crypto.wep_keys.seq =
 			qdf_mem_malloc(connect_req->crypto.wep_keys.seq_len);
 		if (!connect_req->crypto.wep_keys.seq) {
-			osif_cm_free_wep_key_params(connect_req);
+			ucfg_cm_free_wep_key_params(connect_req);
 			return QDF_STATUS_E_NOMEM;
 		}
 		qdf_mem_copy(connect_req->crypto.wep_keys.seq,
@@ -80,6 +69,7 @@ osif_cm_update_wep_seq_info(struct wlan_cm_connect_req *connect_req,
 }
 #endif
 
+#if !defined(CFG80211_CRYPTO_WEP_KEYS_REMOVED)
 static QDF_STATUS
 osif_cm_set_wep_key_params(struct wlan_cm_connect_req *connect_req,
 			   const struct cfg80211_connect_params *req)
@@ -100,6 +90,14 @@ osif_cm_set_wep_key_params(struct wlan_cm_connect_req *connect_req,
 
 	return osif_cm_update_wep_seq_info(connect_req, req);
 }
+#else
+static QDF_STATUS
+osif_cm_set_wep_key_params(struct wlan_cm_connect_req *connect_req,
+			   const struct cfg80211_connect_params *req)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 
 static void osif_cm_set_auth_type(struct wlan_cm_connect_req *connect_req,
 				  const struct cfg80211_connect_params *req)
@@ -159,6 +157,46 @@ osif_cm_set_akm_params(struct wlan_cm_connect_req *connect_req,
 	}
 }
 
+static inline
+uint8_t osif_cm_get_rsn_cap_mfp(enum nl80211_mfp mfp_state)
+{
+	switch (mfp_state) {
+	case NL80211_MFP_REQUIRED:
+		return RSN_CAP_MFP_REQUIRED;
+	case NL80211_MFP_OPTIONAL:
+		return RSN_CAP_MFP_CAPABLE;
+	default:
+		return RSN_CAP_MFP_DISABLED;
+	}
+}
+
+#ifdef CONNECTIVITY_DIAG_EVENT
+/**
+ * osif_cm_populate_user_crypto_param() - API to cache crypto param
+ * received from the userspace.
+ * @connect_req: Connect request buffer to cache parameter
+ * @req: Connection request parameter received from userspace.
+ *
+ * Return: None
+ */
+static void
+osif_cm_populate_user_crypto_param(struct wlan_cm_connect_req *connect_req,
+				   const struct cfg80211_connect_params *req)
+{
+	connect_req->crypto.user_cipher_pairwise =
+					req->crypto.ciphers_pairwise[0];
+	connect_req->crypto.user_akm_suite = req->crypto.akm_suites[0];
+	connect_req->crypto.user_auth_type = req->auth_type;
+	connect_req->crypto.user_grp_cipher = req->crypto.cipher_group;
+}
+#else
+static void
+osif_cm_populate_user_crypto_param(struct wlan_cm_connect_req *connect_req,
+				   const struct cfg80211_connect_params *req)
+{
+}
+#endif
+
 static
 QDF_STATUS osif_cm_set_crypto_params(struct wlan_cm_connect_req *connect_req,
 				     const struct cfg80211_connect_params *req)
@@ -198,6 +236,11 @@ QDF_STATUS osif_cm_set_crypto_params(struct wlan_cm_connect_req *connect_req,
 	status = osif_cm_set_wep_key_params(connect_req, req);
 	if (QDF_IS_STATUS_ERROR(status))
 		osif_err("set wep key params failed");
+
+	/* Copy user configured MFP capability */
+	connect_req->crypto.user_mfp = osif_cm_get_rsn_cap_mfp(req->mfp);
+
+	osif_cm_populate_user_crypto_param(connect_req, req);
 
 	return status;
 }
@@ -458,22 +501,6 @@ osif_cm_fill_connect_params(struct wlan_cm_connect_req *req,
 				 (struct qdf_mac_addr *)&params->prev_bssid);
 }
 
-static void osif_cm_free_connect_req(struct wlan_cm_connect_req *connect_req)
-{
-	if (connect_req->scan_ie.ptr) {
-		qdf_mem_free(connect_req->scan_ie.ptr);
-		connect_req->scan_ie.ptr = NULL;
-	}
-
-	if (connect_req->assoc_ie.ptr) {
-		qdf_mem_free(connect_req->assoc_ie.ptr);
-		connect_req->assoc_ie.ptr = NULL;
-	}
-
-	osif_cm_free_wep_key_params(connect_req);
-	qdf_mem_free(connect_req);
-}
-
 #ifdef WLAN_FEATURE_11BE_MLO
 #ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
 static inline
@@ -490,9 +517,15 @@ void osif_update_partner_vdev_info(struct wlan_objmgr_vdev *vdev,
 				   struct mlo_partner_info partner_info)
 {
 	struct wlan_objmgr_vdev *tmp_vdev;
+	struct wlan_mlo_dev_context *ml_dev = NULL;
 	uint8_t i;
+	uint8_t link_id;
 
 	if (!vdev)
+		return;
+
+	ml_dev = vdev->mlo_dev_ctx;
+	if (!ml_dev)
 		return;
 
 	for (i = 0; i < partner_info.num_partner_links; i++) {
@@ -503,9 +536,14 @@ void osif_update_partner_vdev_info(struct wlan_objmgr_vdev *vdev,
 			mlo_update_connect_req_links(tmp_vdev, 1);
 			wlan_vdev_mlme_set_mlo_vdev(tmp_vdev);
 			wlan_vdev_mlme_set_mlo_link_vdev(tmp_vdev);
-			wlan_vdev_set_link_id(
-				tmp_vdev,
-				partner_info.partner_link_info[i].link_id);
+			/* Set link id for bridge sta vap */
+			if (mlo_is_sta_bridge_vdev(tmp_vdev)) {
+				link_id = ml_dev->bridge_sta_ctx->bridge_link_id;
+				wlan_vdev_set_link_id(tmp_vdev, link_id);
+			} else
+				wlan_vdev_set_link_id(
+					tmp_vdev,
+					partner_info.partner_link_info[i].link_id);
 			osif_debug("link id %d",
 				   tmp_vdev->vdev_mlme.mlo_link_id);
 		}
@@ -525,16 +563,36 @@ QDF_STATUS osif_update_mlo_partner_info(
 	struct mlo_partner_info partner_info = {0};
 	bool ml_ie_found = false, linkidfound = false;
 	uint8_t linkid = 0;
+	uint8_t aplinks = 0;
 	enum wlan_ml_variant variant;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	struct wlan_objmgr_pdev *pdev = NULL;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_mlo_dev_context *ml_dev = NULL;
 
 	if (!vdev || !connect_req || !req)
 		return status;
 
-	if (!vdev->mlo_dev_ctx) {
+	ml_dev = vdev->mlo_dev_ctx;
+	if (!ml_dev) {
 		osif_debug("ML ctx is NULL, ignore ML IE");
 		return QDF_STATUS_SUCCESS;
 	}
+	pdev = wlan_vdev_get_pdev(vdev);
+
+	if (!pdev) {
+		osif_debug("null pdev");
+		return QDF_STATUS_SUCCESS;
+	}
+	psoc = wlan_pdev_get_psoc(pdev);
+
+	if (!psoc) {
+		osif_debug("null psoc");
+		return QDF_STATUS_SUCCESS;
+	}
+
+	if (!wlan_mlo_get_psoc_capable(psoc))
+		return QDF_STATUS_SUCCESS;
 
 	osif_debug("ML IE search start");
 	if (req->ie_len) {
@@ -593,9 +651,19 @@ QDF_STATUS osif_update_mlo_partner_info(
 
 	qdf_mem_copy(&connect_req->ml_parnter_info,
 		     &partner_info, sizeof(struct mlo_partner_info));
-
+	/* Get total number of links in association */
+	aplinks = partner_info.num_partner_links + 1;
 	if (ml_ie_found) {
 		mlo_clear_connect_req_links_bmap(vdev);
+		/* Handle 4 LINK RDP Case*/
+		if (mlo_check_topology(pdev, vdev, aplinks) != QDF_STATUS_SUCCESS) {
+			osif_err("Topology check failed prevent association\n");
+			return QDF_STATUS_E_FAILURE;
+		}
+
+		if (mlo_sta_bridge_exists(vdev))
+			mlo_update_partner_bridge_info(ml_dev, &partner_info);
+
 		mlo_update_connect_req_links(vdev, 1);
 		osif_update_partner_vdev_info(vdev, partner_info);
 		mlo_mlme_sta_op_class(vdev, ml_ie);
@@ -669,7 +737,7 @@ int osif_cm_connect(struct net_device *dev, struct wlan_objmgr_vdev *vdev,
 	connect_req->ssid.length = req->ssid_len;
 	if (connect_req->ssid.length > WLAN_SSID_MAX_LEN) {
 		osif_err("Invalid ssid len %zu", req->ssid_len);
-		osif_cm_free_connect_req(connect_req);
+		ucfg_cm_free_connect_req(connect_req);
 		return -EINVAL;
 	}
 
@@ -719,7 +787,7 @@ int osif_cm_connect(struct net_device *dev, struct wlan_objmgr_vdev *vdev,
 		osif_err("Connect failed with status %d", status);
 
 connect_start_fail:
-	osif_cm_free_connect_req(connect_req);
+	ucfg_cm_free_connect_req(connect_req);
 
 	return qdf_status_to_os_return(status);
 }

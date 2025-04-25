@@ -25,7 +25,6 @@
 #include "cfg_ucfg_api.h"
 #include "qdf_module.h"
 
-#ifdef IPA_OFFLOAD
 void ucfg_ipa_set_pld_enable(bool flag)
 {
 	ipa_set_pld_enable(flag);
@@ -159,7 +158,7 @@ void ucfg_ipa_reg_send_to_nw_cb(struct wlan_objmgr_pdev *pdev,
 
 qdf_export_symbol(ucfg_ipa_reg_send_to_nw_cb);
 
-#ifdef QCA_CONFIG_RPS
+#if defined(QCA_CONFIG_RPS) && !defined(MDM_PLATFORM)
 void ucfg_ipa_reg_rps_enable_cb(struct wlan_objmgr_pdev *pdev,
 				wlan_ipa_rps_enable cb)
 {
@@ -282,9 +281,9 @@ bool ucfg_ipa_is_fw_wdi_activated(struct wlan_objmgr_pdev *pdev)
 qdf_export_symbol(ucfg_ipa_is_fw_wdi_activated);
 
 void ucfg_ipa_uc_cleanup_sta(struct wlan_objmgr_pdev *pdev,
-			     qdf_netdev_t net_dev)
+			     qdf_netdev_t net_dev, uint8_t session_id)
 {
-	return ipa_uc_cleanup_sta(pdev, net_dev);
+	return ipa_uc_cleanup_sta(pdev, net_dev, session_id);
 }
 
 qdf_export_symbol(ucfg_ipa_uc_cleanup_sta);
@@ -298,9 +297,9 @@ QDF_STATUS ucfg_ipa_uc_disconnect_ap(struct wlan_objmgr_pdev *pdev,
 qdf_export_symbol(ucfg_ipa_uc_disconnect_ap);
 
 void ucfg_ipa_cleanup_dev_iface(struct wlan_objmgr_pdev *pdev,
-				qdf_netdev_t net_dev)
+				qdf_netdev_t net_dev, uint8_t session_id)
 {
-	return ipa_cleanup_dev_iface(pdev, net_dev);
+	return ipa_cleanup_dev_iface(pdev, net_dev, session_id);
 }
 
 qdf_export_symbol(ucfg_ipa_cleanup_dev_iface);
@@ -362,4 +361,27 @@ bool ucfg_ipa_is_wds_enabled(void)
 }
 
 qdf_export_symbol(ucfg_ipa_is_wds_enabled);
-#endif
+
+QDF_STATUS ucfg_ipa_get_alt_pipe(struct wlan_objmgr_pdev *pdev,
+				 uint8_t vdev_id,
+				 bool *alt_pipe)
+{
+	return ipa_get_alt_pipe(pdev, vdev_id, alt_pipe);
+}
+
+qdf_export_symbol(ucfg_ipa_get_alt_pipe);
+
+bool ucfg_ipa_set_perf_level_bw_enabled(struct wlan_objmgr_pdev *pdev)
+{
+	return ipa_set_perf_level_bw_enabled(pdev);
+}
+
+qdf_export_symbol(ucfg_ipa_set_perf_level_bw_enabled);
+
+void ucfg_ipa_set_perf_level_bw(struct wlan_objmgr_pdev *pdev,
+				enum wlan_ipa_bw_level lvl)
+{
+	ipa_set_perf_level_bw(pdev, lvl);
+}
+
+qdf_export_symbol(ucfg_ipa_set_perf_level_bw);

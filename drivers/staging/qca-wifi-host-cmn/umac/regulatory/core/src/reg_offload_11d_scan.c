@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -218,21 +219,19 @@ void reg_run_11d_state_machine(struct wlan_objmgr_psoc *psoc)
 	temp_11d_support = psoc_priv_obj->enable_11d_supp;
 	if ((psoc_priv_obj->enable_11d_in_world_mode) && (world_mode))
 		psoc_priv_obj->enable_11d_supp = true;
-	else if (((psoc_priv_obj->user_ctry_set) &&
-		  (psoc_priv_obj->user_ctry_priority)) ||
-		 (psoc_priv_obj->master_vdev_cnt))
+	else if (psoc_priv_obj->user_ctry_set &&
+		 psoc_priv_obj->user_ctry_priority)
 		psoc_priv_obj->enable_11d_supp = false;
 	else
 		psoc_priv_obj->enable_11d_supp =
 			psoc_priv_obj->enable_11d_supp_original;
 
-	reg_debug("inside 11d state machine:tmp %d 11d_supp %d org %d set %d pri %d cnt %d vdev %d",
+	reg_debug("inside 11d state machine:tmp %d 11d_supp %d org %d set %d pri %d vdev %d",
 		  temp_11d_support,
 		  psoc_priv_obj->enable_11d_supp,
 		  psoc_priv_obj->enable_11d_supp_original,
 		  psoc_priv_obj->user_ctry_set,
 		  psoc_priv_obj->user_ctry_priority,
-		  psoc_priv_obj->master_vdev_cnt,
 		  psoc_priv_obj->vdev_id_for_11d_scan);
 
 	if (temp_11d_support != psoc_priv_obj->enable_11d_supp) {
@@ -290,50 +289,23 @@ QDF_STATUS reg_11d_vdev_created_update(struct wlan_objmgr_vdev *vdev)
 		psoc_priv_obj->vdev_cnt_11d++;
 	}
 
-	if ((op_mode == QDF_P2P_GO_MODE) || (op_mode == QDF_SAP_MODE)) {
-		reg_debug("running 11d state machine, opmode %d", op_mode);
-		psoc_priv_obj->master_vdev_cnt++;
-		reg_run_11d_state_machine(parent_psoc);
-	}
-
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_vdev *vdev)
+QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_psoc *psoc,
+				      enum QDF_OPMODE op_mode, uint32_t vdev_id)
 {
 	struct wlan_regulatory_psoc_priv_obj *psoc_priv_obj;
-	struct wlan_objmgr_pdev *parent_pdev;
-	struct wlan_objmgr_psoc *parent_psoc;
-	enum QDF_OPMODE op_mode;
-	uint32_t vdev_id;
 	uint8_t i;
 
-	if (!vdev) {
-		reg_err("NULL vdev");
-		return QDF_STATUS_E_INVAL;
-	}
-	op_mode = wlan_vdev_mlme_get_opmode(vdev);
-
-	parent_pdev = wlan_vdev_get_pdev(vdev);
-	parent_psoc = wlan_pdev_get_psoc(parent_pdev);
-
-	psoc_priv_obj = reg_get_psoc_obj(parent_psoc);
+	psoc_priv_obj = reg_get_psoc_obj(psoc);
 	if (!psoc_priv_obj) {
 		reg_err("NULL reg psoc private obj");
 		return QDF_STATUS_E_FAULT;
 	}
 
-	if ((op_mode == QDF_P2P_GO_MODE) || (op_mode == QDF_SAP_MODE)) {
-		psoc_priv_obj->master_vdev_cnt--;
-		reg_debug("run 11d state machine, deleted opmode %d",
-			  op_mode);
-		reg_run_11d_state_machine(parent_psoc);
-		return QDF_STATUS_SUCCESS;
-	}
-
 	if ((op_mode == QDF_STA_MODE) || (op_mode == QDF_P2P_DEVICE_MODE) ||
 	    (op_mode == QDF_P2P_CLIENT_MODE)) {
-		vdev_id = wlan_vdev_get_id(vdev);
 		for (i = 0; i < MAX_STA_VDEV_CNT; i++) {
 			if (psoc_priv_obj->vdev_ids_11d[i] == vdev_id) {
 				psoc_priv_obj->vdev_ids_11d[i] =
@@ -360,7 +332,7 @@ QDF_STATUS reg_11d_vdev_delete_update(struct wlan_objmgr_vdev *vdev)
 			psoc_priv_obj->enable_11d_supp = false;
 			reg_debug("running 11d state machine, vdev %d",
 				  psoc_priv_obj->vdev_id_for_11d_scan);
-			reg_run_11d_state_machine(parent_psoc);
+			reg_run_11d_state_machine(psoc);
 			break;
 		}
 	}

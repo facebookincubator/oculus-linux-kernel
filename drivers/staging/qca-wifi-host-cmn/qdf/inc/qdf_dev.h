@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -64,7 +65,7 @@ QDF_STATUS
 qdf_dev_release_mem(struct qdf_dev *qdfdev, struct qdf_devm *mrptr);
 
 /**
- * qdf_dev_modify_irq() - modify irq
+ * qdf_dev_modify_irq_status() - modify irq
  * @irnum: irq number
  * @cmask: Bitmap to be cleared for the property mask
  * @smask: Bitmap to be set for the property mask
@@ -104,7 +105,7 @@ qdf_dev_set_irq_status_flags(unsigned int irnum, unsigned long set);
 /**
  * qdf_dev_clear_irq_status_flags() - clear irq status flags
  * @irnum: irq number
- * @clear: status flag to clear
+ * @clr: status flag to clear
  *
  * This function will clear the status for an irq
  *

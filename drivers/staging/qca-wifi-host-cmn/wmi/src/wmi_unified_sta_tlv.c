@@ -544,7 +544,9 @@ static uint8_t tdls_get_wmi_offchannel_mode(uint8_t tdls_sw_mode)
 	case DISABLE_CHANSWITCH:
 		off_chan_mode = WMI_TDLS_DISABLE_OFFCHANNEL;
 		break;
-
+	case DISABLE_ACTIVE_CHANSWITCH:
+		off_chan_mode = WMI_TDLS_ACTIVE_DISABLE_OFFCHANNEL;
+		break;
 	default:
 		wmi_debug("unknown tdls_sw_mode: %d", tdls_sw_mode);
 		off_chan_mode = WMI_TDLS_DISABLE_OFFCHANNEL;
@@ -600,12 +602,21 @@ static QDF_STATUS send_set_tdls_offchan_mode_cmd_tlv(wmi_unified_t wmi_handle,
 {
 	wmi_tdls_set_offchan_mode_cmd_fixed_param *cmd;
 	wmi_buf_t wmi_buf;
+	uint8_t *buf_ptr;
+	struct tdls_ch_params *src_chan_info;
+	wmi_channel *chan_info;
+	uint16_t i;
 	u_int16_t len = sizeof(wmi_tdls_set_offchan_mode_cmd_fixed_param);
+
+	len += WMI_TLV_HDR_SIZE +
+	       sizeof(wmi_channel) * chan_switch_params->num_off_channels;
 
 	wmi_buf = wmi_buf_alloc(wmi_handle, len);
 	if (!wmi_buf) {
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	buf_ptr = (uint8_t *)wmi_buf_data(wmi_buf);
 	cmd = (wmi_tdls_set_offchan_mode_cmd_fixed_param *)
 		wmi_buf_data(wmi_buf);
 	WMITLV_SET_HDR(&cmd->tlv_header,
@@ -640,6 +651,38 @@ static QDF_STATUS send_set_tdls_offchan_mode_cmd_tlv(wmi_unified_t wmi_handle,
 		 cmd->offchan_bw_bitmap,
 		 cmd->is_peer_responder,
 		 cmd->offchan_oper_class);
+
+	buf_ptr += sizeof(*cmd);
+	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC,
+		       sizeof(wmi_channel) *
+		       chan_switch_params->num_off_channels);
+	chan_info = (wmi_channel *)(buf_ptr + WMI_TLV_HDR_SIZE);
+	for (i = 0; i < chan_switch_params->num_off_channels; i++) {
+		WMITLV_SET_HDR(&chan_info->tlv_header,
+			       WMITLV_TAG_STRUC_wmi_channel,
+			       WMITLV_GET_STRUCT_TLVLEN(wmi_channel));
+
+		src_chan_info = &chan_switch_params->allowed_off_channels[i];
+
+		chan_info->mhz = src_chan_info->ch_freq;
+		chan_info->band_center_freq1 = chan_info->mhz;
+		chan_info->band_center_freq2 = 0;
+		if (WLAN_REG_IS_24GHZ_CH_FREQ(chan_info->mhz))
+			WMI_SET_CHANNEL_MODE(chan_info, MODE_11G);
+		else
+			WMI_SET_CHANNEL_MODE(chan_info, MODE_11A);
+
+		if (src_chan_info->dfs_set)
+			WMI_SET_CHANNEL_FLAG(chan_info, WMI_CHAN_FLAG_PASSIVE);
+
+		WMI_SET_CHANNEL_MAX_TX_POWER(chan_info, src_chan_info->pwr);
+		WMI_SET_CHANNEL_REG_POWER(chan_info, src_chan_info->pwr);
+		wmi_debug("chan[%d] = %u TX power:%d DFS[%d]", i,
+			  chan_info->mhz, src_chan_info->pwr,
+			  src_chan_info->dfs_set);
+
+		chan_info++;
+	}
 
 	wmi_mtrace(WMI_TDLS_SET_OFFCHAN_MODE_CMDID, cmd->vdev_id, 0);
 	if (wmi_unified_cmd_send(wmi_handle, wmi_buf, len,

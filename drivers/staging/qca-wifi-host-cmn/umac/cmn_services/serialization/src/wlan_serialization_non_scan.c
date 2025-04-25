@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -55,15 +55,6 @@ wlan_serialization_is_non_scan_pending_queue_empty(
 error:
 	return status;
 }
-
-/**
- * wlan_serialization_is_active_nonscan_cmd_allowed() - find if cmd allowed
- * @pdev: pointer to pdev object
- *
- * This API will be called to find out if non scan cmd is allowed.
- *
- * Return: true or false
- */
 
 bool
 wlan_serialization_is_active_non_scan_cmd_allowed(

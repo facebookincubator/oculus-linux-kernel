@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,7 +53,7 @@ QDF_STATUS init_deinit_handle_host_mem_req(
 /**
  * init_deinit_free_num_units() - Free allocated mem chunks
  * @psoc: PSOC object
- * @tgt_info: PSOC_INFO object
+ * @tgt_hdl: PSOC_INFO object
  *
  * API to free memory
  *

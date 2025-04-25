@@ -528,8 +528,6 @@ struct dsi_split_link_config {
  *			 cmd it points to the line after TE.
  * @dma_sched_window:	 Determines the width of the window during the
  *			 DSI command will be sent by the HW.
- * @min_dma_sched_line:	 Minimum line at which the dma command should get scheduled.
- *			 It is used when dual DPU dfps feature is enabled.
  * @skip_pps_update:	 Skip sending pps command.
  */
 struct dsi_host_common_cfg {
@@ -558,7 +556,6 @@ struct dsi_host_common_cfg {
 	u32 byte_intf_clk_div;
 	u32 dma_sched_line;
 	u32 dma_sched_window;
-	u32 min_dma_sched_line;
 	bool skip_pps_update;
 };
 

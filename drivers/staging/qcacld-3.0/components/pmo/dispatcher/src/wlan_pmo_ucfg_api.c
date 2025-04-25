@@ -607,6 +607,18 @@ QDF_STATUS ucfg_pmo_get_ps_params(struct wlan_objmgr_vdev *vdev,
 	return pmo_core_vdev_get_ps_params(vdev, ps_params);
 }
 
+QDF_STATUS ucfg_pmo_core_vdev_set_ps_opm_mode(struct wlan_objmgr_vdev *vdev,
+					      enum powersave_mode opm_mode)
+{
+	return pmo_vdev_set_ps_opm_mode(vdev, opm_mode);
+}
+
+QDF_STATUS ucfg_pmo_core_vdev_get_ps_opm_mode(struct wlan_objmgr_vdev *vdev,
+					      enum powersave_mode *opm_mode)
+{
+	return pmo_vdev_get_ps_opm_mode(vdev, opm_mode);
+}
+
 bool
 ucfg_pmo_is_arp_offload_enabled(struct wlan_objmgr_psoc *psoc)
 {

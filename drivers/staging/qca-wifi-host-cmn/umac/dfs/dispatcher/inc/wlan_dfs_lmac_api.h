@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -99,6 +100,7 @@ uint32_t lmac_get_target_type(struct wlan_objmgr_pdev *pdev);
 /**
  * lmac_get_phymode_info() - Get phymode info.
  * @pdev: Pointer to PDEV structure.
+ * @chan_mode: Channel mode
  */
 uint32_t lmac_get_phymode_info(struct wlan_objmgr_pdev *pdev,
 		uint32_t chan_mode);

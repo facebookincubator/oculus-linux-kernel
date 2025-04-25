@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,7 +32,7 @@
 #define HAL_FST_HASH_MASK 0x7ffff
 #define HAL_RX_FST_ENTRY_SIZE (NUM_OF_DWORDS_RX_FLOW_SEARCH_ENTRY * 4)
 
-/**
+/*
  * Four possible options for IP SA/DA prefix, currently use 0x0 which
  * maps to type 2 in HW spec
  */
@@ -40,13 +40,13 @@
 
 #define HAL_IP_DA_SA_PREFIX_IPV4_COMPATIBLE_IPV6 0x0
 
-/**
+/*
  * REO destination indication is a lower 4-bits of hash value
  * This should match the REO destination used in Rx hash based routing.
  */
 #define HAL_REO_DEST_IND_HASH_MASK	0xF
 
-/**
+/*
  * REO destinations are valid from 16-31 for Hawkeye
  * and 0-15 are not setup for SW
  */
@@ -68,6 +68,7 @@ enum hal_rx_fse_reo_destination_handler {
 
 /**
  * hal_rx_flow_setup_fse() - Setup a flow search entry in HW FST
+ * @hal_soc_hdl: HAL SOC handle
  * @fst: Pointer to the Rx Flow Search Table
  * @table_offset: offset into the table where the flow is to be setup
  * @flow: Flow Parameters
@@ -121,7 +122,7 @@ hal_rx_flow_delete_entry(hal_soc_handle_t hal_soc_hdl,
  * @hal_hash: HAL 5 tuple hash
  * @tuple_info: 5-tuple info of the flow returned to the caller
  *
- * Return: Success/Failure
+ * Return: 5-tuple flow info
  */
 void *
 hal_rx_flow_get_tuple_info(hal_soc_handle_t hal_soc_hdl,
@@ -131,15 +132,15 @@ hal_rx_flow_get_tuple_info(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_rx_fst_attach() - Initialize Rx flow search table in HW FST
- *
  * @hal_soc_hdl: HAL SOC handle
  * @qdf_dev: QDF device handle
  * @hal_fst_base_paddr: Pointer to the physical base address of the Rx FST
  * @max_entries: Max number of flows allowed in the FST
  * @max_search: Number of collisions allowed in the hash-based FST
  * @hash_key: Toeplitz key used for the hash FST
+ * @fst_cmem_base: FST CMEM base address
  *
- * Return:
+ * Return: FST object on success, NULL on memory allocation failure
  */
 struct hal_rx_fst *
 hal_rx_fst_attach(hal_soc_handle_t hal_soc_hdl,
@@ -150,10 +151,10 @@ hal_rx_fst_attach(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_rx_fst_detach() - De-init the Rx flow search table from HW
- *
  * @hal_soc_hdl: HAL SOC handler
  * @rx_fst: Pointer to the Rx FST
  * @qdf_dev: QDF device handle
+ * @fst_cmem_base: FST CMEM base address
  *
  * Return:
  */
@@ -163,10 +164,10 @@ void hal_rx_fst_detach(hal_soc_handle_t hal_soc_hdl, struct hal_rx_fst *rx_fst,
 /**
  * hal_rx_insert_flow_entry() - Add a flow into the FST table
  * @hal_soc_hdl: HAL SOC handle
- * @hal_fst: HAL Rx FST Handle
+ * @fst: HAL Rx FST Handle
  * @flow_hash: Flow hash computed from flow tuple
  * @flow_tuple_info: Flow tuple used to compute the hash
- * @flow_index: Hash index of the flow in the table when inserted successfully
+ * @flow_idx: Hash index of the flow in the table when inserted successfully
  *
  * Return: Success if flow is inserted into the table, error otherwise
  */
@@ -177,11 +178,11 @@ hal_rx_insert_flow_entry(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_rx_find_flow_from_tuple() - Find a flow in the FST table
- *
+ * @hal_soc_hdl: HAL SOC handle
  * @fst: HAL Rx FST Handle
  * @flow_hash: Flow hash computed from flow tuple
  * @flow_tuple_info: Flow tuple used to compute the hash
- * @flow_index: Hash index of the flow in the table when found
+ * @flow_idx: Hash index of the flow in the table when found
  *
  * Return: Success if matching flow is found in the table, error otherwise
  */
@@ -192,7 +193,6 @@ hal_rx_find_flow_from_tuple(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_rx_get_hal_hash() - Retrieve hash index of a flow in the FST table
- *
  * @hal_fst: HAL Rx FST Handle
  * @flow_hash: Flow hash computed from flow tuple
  *
@@ -202,7 +202,6 @@ uint32_t hal_rx_get_hal_hash(struct hal_rx_fst *hal_fst, uint32_t flow_hash);
 
 /**
  * hal_flow_toeplitz_hash() - Calculate Toeplitz hash by using the cached key
- *
  * @hal_fst: FST Handle
  * @flow: Flow Parameters
  *
@@ -211,6 +210,10 @@ uint32_t hal_rx_get_hal_hash(struct hal_rx_fst *hal_fst, uint32_t flow_hash);
 uint32_t
 hal_flow_toeplitz_hash(void *hal_fst, struct hal_rx_flow *flow);
 
+/**
+ * hal_rx_dump_fse_table() - Dump the RX FSE table
+ * @fst: HAL RX FST table to dump
+ */
 void hal_rx_dump_fse_table(struct hal_rx_fst *fst);
 
 /**

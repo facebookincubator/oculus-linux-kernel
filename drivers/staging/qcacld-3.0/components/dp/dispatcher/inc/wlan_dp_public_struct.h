@@ -295,6 +295,18 @@ struct dp_rsp_stats {
 	uint32_t icmpv4_rsp_recvd;
 };
 
+/**
+ * struct dp_txrx_soc_attach_params - SoC attach params
+ * @dp_ol_if_ops: DP ol_if ops
+ * @target_psoc: target psoc
+ * @target_type: Target type
+ */
+struct dp_txrx_soc_attach_params {
+	struct ol_if_ops *dp_ol_if_ops;
+	void *target_psoc;
+	uint32_t target_type;
+};
+
 struct dp_tx_rx_stats {
 	struct {
 		/* start_xmit stats */
@@ -630,11 +642,11 @@ struct wlan_dp_psoc_callbacks {
 
 	qdf_netdev_t (*dp_get_netdev_by_vdev_mac)(struct qdf_mac_addr *mac_addr);
 	unsigned int (*dp_get_tx_flow_low_watermark)(hdd_cb_handle cb_ctx,
-						     uint8_t intf_id);
-	void (*dp_get_tx_resource)(uint8_t intf_id, struct qdf_mac_addr *mac_addr);
-	void (*dp_get_tsf_time)(uint8_t intf_id,
-				uint64_t input_time, uint64_t *tsf_time);
-
+						     qdf_netdev_t netdev);
+	void (*dp_get_tx_resource)(uint8_t link_id_id,
+				   struct qdf_mac_addr *mac_addr);
+	void (*dp_get_tsf_time)(qdf_netdev_t netdev, uint64_t input_time,
+				uint64_t *tsf_time);
 	void (*dp_tsf_timestamp_rx)(hdd_cb_handle ctx, qdf_nbuf_t nbuf);
 
 	QDF_STATUS (*dp_nbuf_push_pkt)(qdf_nbuf_t nbuf,
@@ -664,13 +676,13 @@ struct wlan_dp_psoc_callbacks {
 	bool (*dp_send_rx_pkt_over_nl)(qdf_netdev_t dev, uint8_t *addr,
 				       qdf_nbuf_t nbuf, bool unecrypted);
 	bool
-	(*wlan_dp_sta_get_dot11mode)(hdd_cb_handle context, uint8_t vdev_id,
+	(*wlan_dp_sta_get_dot11mode)(hdd_cb_handle context, qdf_netdev_t netdev,
 				     enum qca_wlan_802_11_mode *dot11_mode);
 	bool (*wlan_dp_get_ap_client_count)(hdd_cb_handle context,
-					    uint8_t vdev_id,
+					    qdf_netdev_t netdev,
 					    uint16_t *client_count);
 	bool (*wlan_dp_sta_ndi_connected)(hdd_cb_handle context,
-					  uint8_t vdev_id);
+					  qdf_netdev_t netdev);
 	bool (*dp_any_adapter_connected)(hdd_cb_handle context);
 	void (*dp_send_svc_nlink_msg)(int radio, int type, void *data, int len);
 
@@ -679,7 +691,7 @@ struct wlan_dp_psoc_callbacks {
 					       union wlan_tp_data *data,
 					       uint8_t dir);
 	void (*dp_send_mscs_action_frame)(hdd_cb_handle context,
-					  uint8_t vdev_id);
+					  qdf_netdev_t netdev);
 	void (*dp_pm_qos_add_request)(hdd_cb_handle context);
 	void (*dp_pm_qos_remove_request)(hdd_cb_handle context);
 	void (*dp_pm_qos_update_request)(hdd_cb_handle context,
@@ -690,22 +702,22 @@ struct wlan_dp_psoc_callbacks {
 					bool enable_disable_flag,
 					uint8_t user_triggered, int size);
 	bool (*dp_is_roaming_in_progress)(hdd_cb_handle context);
-	bool (*dp_is_ap_active)(hdd_cb_handle context, uint8_t vdev_id);
+	bool (*dp_is_ap_active)(hdd_cb_handle context, qdf_netdev_t netdev);
 	void (*dp_disable_rx_ol_for_low_tput)(hdd_cb_handle context,
 					      bool disable);
 	int (*dp_napi_apply_throughput_policy)(hdd_cb_handle context,
 					       uint64_t tx_packets,
 					       uint64_t rx_packets);
 	void (*wlan_dp_display_tx_multiq_stats)(hdd_cb_handle context,
-						uint8_t vdev_id);
+						qdf_netdev_t netdev);
 	void (*wlan_dp_display_netif_queue_history)(hdd_cb_handle context,
 				enum qdf_stats_verbosity_level verb_lvl);
 	void (*osif_dp_process_mic_error)(struct dp_mic_error_info *info,
 					  struct wlan_objmgr_vdev *vdev);
 	bool (*dp_is_link_adapter)(hdd_cb_handle context, uint8_t vdev_id);
 	void (*os_if_dp_nud_stats_info)(struct wlan_objmgr_vdev *vdev);
-	uint32_t (*dp_get_pause_map)(hdd_cb_handle context, uint8_t vdev_id);
-	void (*dp_nud_failure_work)(hdd_cb_handle context, uint8_t vdev_id);
+	uint32_t (*dp_get_pause_map)(hdd_cb_handle context, qdf_netdev_t dev);
+	void (*dp_nud_failure_work)(hdd_cb_handle context, qdf_netdev_t dev);
 	void (*link_monitoring_cb)(struct wlan_objmgr_psoc *psoc,
 				   uint8_t vdev_id,
 				   bool is_link_speed_good);

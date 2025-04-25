@@ -27,6 +27,7 @@
 
 #include <qdf_status.h>         /* QDF_STATUS */
 #include <linux/ipa_wdi3.h>
+#include <linux/version.h>
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)) || \
 	defined(CONFIG_IPA_WDI_UNIFIED_API)
@@ -296,9 +297,28 @@ typedef struct ipa_wdi_pipe_setup_info_smmu __qdf_ipa_wdi_pipe_setup_info_smmu_t
 
 #define __QDF_IPA_WDI_SETUP_INFO_SMMU_RX_BANK_ID(txrx, bid)	\
 	((((struct ipa_wdi_pipe_setup_info_smmu *)(txrx))->rx_bank_id) = (bid))
+
+/*
+ * rx_pmac_id was added to struct ipa_wdi_pipe_setup_info with
+ * Change-Id Ic9ee13be05b11004982e9a38cb503b3c4d0f81f3. This change
+ * also modified macro IPA_WDI_INST_MAX from 2 to 3, so we can use
+ * this to know if the change is present or not.
+ */
+#if defined(IPA_WDI_INST_MAX) && (IPA_WDI_INST_MAX >= 3)
+#define __QDF_IPA_WDI_SETUP_INFO_RX_PMAC_ID(txrx, pmac_id)	\
+	((((struct ipa_wdi_pipe_setup_info *)(txrx))->rx_pmac_id) = (pmac_id))
+
+#define __QDF_IPA_WDI_SETUP_INFO_SMMU_RX_PMAC_ID(txrx, pmac_id)	\
+	((((struct ipa_wdi_pipe_setup_info_smmu *)(txrx))->rx_pmac_id) = (pmac_id))
+#else
+#define __QDF_IPA_WDI_SETUP_INFO_RX_PMAC_ID(txrx, pmac_id)
+#define __QDF_IPA_WDI_SETUP_INFO_SMMU_RX_PMAC_ID(txrx, pmac_id)
+#endif
 #else
 #define __QDF_IPA_WDI_SETUP_INFO_RX_BANK_ID(txrx, bid)
 #define __QDF_IPA_WDI_SETUP_INFO_SMMU_RX_BANK_ID(txrx, bid)
+#define __QDF_IPA_WDI_SETUP_INFO_RX_PMAC_ID(txrx, pmac_id)
+#define __QDF_IPA_WDI_SETUP_INFO_SMMU_RX_PMAC_ID(txrx, pmac_id)
 #endif
 
 /**

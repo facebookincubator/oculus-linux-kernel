@@ -24,6 +24,7 @@
 
 #include <wmi_unified_roam_param.h>
 #include "wlan_cm_roam_public_struct.h"
+#include "wlan_crypto_def_i.h"
 
 #ifdef FEATURE_LFR_SUBNET_DETECTION
 /**
@@ -117,6 +118,36 @@ wmi_extract_roam_vendor_control_param_event(wmi_unified_t wmi_handle,
 				uint8_t *event, uint32_t len,
 				struct roam_vendor_handoff_params **data);
 
+#endif
+
+#if defined(WLAN_FEATURE_ROAM_OFFLOAD) && defined(WLAN_FEATURE_11BE_MLO)
+/**
+ * wmi_extract_roam_synch_key_event() - extract roam synch key event
+ * @wmi_handle: wmi handle
+ * @event: roam synch key event buffer pointer
+ * @len: event len
+ * @keys: destination buffer to copy keys
+ * @num_keys: Number of keys
+ * @mld_addr: MLD address pointer
+ *
+ * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
+ */
+QDF_STATUS
+wmi_extract_roam_synch_key_event(wmi_unified_t wmi_handle, uint8_t *event,
+				 uint32_t len,
+				 struct wlan_crypto_key_entry **keys,
+				 uint8_t *num_keys,
+				 struct qdf_mac_addr *mld_addr);
+#else
+static inline QDF_STATUS
+wmi_extract_roam_synch_key_event(wmi_unified_t wmi_handle, uint8_t *event,
+				 uint32_t len,
+				 struct wlan_crypto_key_entry **keys,
+				 uint8_t *num_keys,
+				 struct qdf_mac_addr *mld_addr)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
 #endif
 
 /**

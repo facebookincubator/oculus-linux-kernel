@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -81,9 +81,8 @@ if_mgr_ap_stop_bss(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS
 if_mgr_ap_stop_bss_complete(struct wlan_objmgr_vdev *vdev,
 			    struct if_mgr_event_data *event_data);
-#ifdef WLAN_FEATURE_P2P_P2P_STA
 /**
- * if_mgr_csa_complete() - CSA event complete handler
+ * if_mgr_ap_csa_complete() - CSA event complete handler
  * @vdev: vdev object
  * @event_data: Interface mgr event data
  *
@@ -94,16 +93,18 @@ if_mgr_ap_stop_bss_complete(struct wlan_objmgr_vdev *vdev,
  * Return: QDF_STATUS
  */
 QDF_STATUS
-if_mgr_csa_complete(struct wlan_objmgr_vdev *vdev,
-		    struct if_mgr_event_data *event_data);
-#else
-static inline QDF_STATUS
-if_mgr_csa_complete(struct wlan_objmgr_vdev *vdev,
-		    struct if_mgr_event_data *event_data)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
+if_mgr_ap_csa_complete(struct wlan_objmgr_vdev *vdev,
+		       struct if_mgr_event_data *event_data);
+
+/**
+ * if_mgr_ap_csa_start() - CSA start handler for SAP/P2P_GO
+ * @vdev: Pointer to vdev object
+ * @event_data: Interface manager event data
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS if_mgr_ap_csa_start(struct wlan_objmgr_vdev *vdev,
+			       struct if_mgr_event_data *event_data);
 
 #if defined WLAN_MBSS
 /**

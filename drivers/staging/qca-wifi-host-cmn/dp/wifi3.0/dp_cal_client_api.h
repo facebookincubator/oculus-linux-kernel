@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +18,8 @@
  */
 
 /**
- * @file cal_client_api.h
- * @brief: define timer to update DP stats
+ * DOC: dp_cal_client_api.h
+ *      define timer to update DP stats
  */
 #ifndef _DP_CAL_CLIENT_H_
 #define _DP_CAL_CLIENT_H_

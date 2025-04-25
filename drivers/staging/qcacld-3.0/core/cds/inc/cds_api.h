@@ -69,6 +69,7 @@
  * @CDS_DRIVER_STATE_FW_READY: Driver Firmware ready
  * @CDS_DRIVER_STATE_MODULE_STOP: Module stop in progress or done.
  * @CDS_DRIVER_STATE_ASSERTING_TARGET: Driver assert target in progress.
+ * @CDS_DRIVER_STATE_SYS_REBOOTING: System reboot in progress.
  */
 enum cds_driver_state {
 	CDS_DRIVER_STATE_UNINITIALIZED          = 0,
@@ -80,6 +81,7 @@ enum cds_driver_state {
 	CDS_DRIVER_STATE_FW_READY               = BIT(5),
 	CDS_DRIVER_STATE_MODULE_STOP            = BIT(6),
 	CDS_DRIVER_STATE_ASSERTING_TARGET       = BIT(7),
+	CDS_DRIVER_STATE_SYS_REBOOTING          = BIT(8),
 };
 
 /**
@@ -325,6 +327,31 @@ static inline bool cds_is_target_asserting(void)
 
 	return __CDS_IS_DRIVER_STATE(state, CDS_DRIVER_STATE_ASSERTING_TARGET);
 }
+
+/**
+ * cds_set_sys_rebooting() - Set system reboot in progress
+ *
+ * Return: none
+ */
+void cds_set_sys_rebooting(void);
+
+/**
+ * cds_sys_reboot_protect() - Require the lock for system reboot and get
+ * system rebooting state
+ *
+ * cds_sys_reboot_protect() and cds_sys_reboot_unprotect() MUST be used
+ * in pair.
+ *
+ * Return: true if system is rebooting, false otherwise
+ */
+bool cds_sys_reboot_protect(void);
+
+/**
+ * cds_sys_reboot_unprotect() - Release the lock for system reboot
+ *
+ * Return: none
+ */
+void cds_sys_reboot_unprotect(void);
 
 /**
  * cds_init() - Initialize CDS

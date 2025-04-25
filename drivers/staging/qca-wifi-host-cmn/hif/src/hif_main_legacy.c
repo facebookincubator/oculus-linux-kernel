@@ -22,7 +22,8 @@
 #include "qdf_module.h"
 #include "hif_main.h"
 
-#if defined(HIF_PCI) || defined(HIF_SNOC) || defined(HIF_AHB)
+#if defined(HIF_PCI) || defined(HIF_SNOC) || defined(HIF_AHB) || \
+	defined(HIF_IPCI)
 #include "ce_api.h"
 #include "ce_internal.h"
 #endif
@@ -51,7 +52,7 @@ qdf_export_symbol(hif_send_fast);
 /**
  * hif_ce_fastpath_cb_register() - Register callback for fastpath msg handler
  * @hif_ctx: HIF context
- * @handler: Callback funtcion
+ * @handler: Callback function
  * @context: handle for callback function
  *
  * Return: QDF_STATUS_SUCCESS on success or QDF_STATUS_E_FAILURE

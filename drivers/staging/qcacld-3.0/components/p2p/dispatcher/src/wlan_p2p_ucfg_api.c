@@ -31,6 +31,7 @@
 #include "../../core/src/wlan_p2p_main.h"
 #include "../../core/src/wlan_p2p_roc.h"
 #include "../../core/src/wlan_p2p_off_chan_tx.h"
+#include "target_if.h"
 
 static inline struct wlan_lmac_if_p2p_tx_ops *
 ucfg_p2p_psoc_get_tx_ops(struct wlan_objmgr_psoc *psoc)
@@ -661,3 +662,21 @@ bool ucfg_p2p_get_indoor_ch_support(struct wlan_objmgr_psoc *psoc)
 
 	return p2p_soc_obj->param.indoor_channel_support;
 }
+
+#ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
+bool
+ucfg_is_p2p_device_dynamic_set_mac_addr_supported(struct wlan_objmgr_psoc *psoc)
+{
+	struct wmi_unified *wmi_handle;
+
+	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_handle) {
+		p2p_err("wmi handle is NULL");
+		return false;
+	}
+
+	return wmi_service_enabled(wmi_handle,
+				   wmi_service_p2p_device_update_mac_addr_support);
+}
+#endif
+

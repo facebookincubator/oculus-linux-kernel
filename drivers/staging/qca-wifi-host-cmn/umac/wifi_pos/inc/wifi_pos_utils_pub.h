@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -37,13 +38,24 @@
 #define WIFI_POS_RSP_V1_FLAT_MEMORY  0x00000001
 #define WIFI_POS_RSP_V2_NL  0x00000002
 
+#ifdef CNSS_GENL
+#define WIFI_POS_MAX_NUM_CHANNELS NUM_CHANNELS
+#else
+#define WIFI_POS_MAX_NUM_CHANNELS (NUM_CHANNELS * 2)
+#endif
+
 /**
- * enum wifi_pos_cmd_ids
+ * enum wifi_pos_cmd_ids - Wi-Fi Positioning command IDs
+ * @WIFI_POS_CMD_INVALID: invalid command
  * @WIFI_POS_CMD_REGISTRATION: app registration
+ * @WIFI_POS_CMD_SET_CAPS: set userspace capabilities
  * @WIFI_POS_CMD_GET_CAPS: get driver capabilities
  * @WIFI_POS_CMD_GET_CH_INFO: get channel info
  * @WIFI_POS_CMD_OEM_DATA: oem data req/rsp
- * @WIFI_POS_CMD_MAX: Max cld80211 vendor sub cmds
+ * @WIFI_POS_CMD_ERROR: error notification
+ * @WIFI_POS_PEER_STATUS_IND: peer status indication
+ * @WIFI_POS_CMD__AFTER_LAST: internal use
+ * @WIFI_POS_CMD_MAX: Max Wi-Fi Positioning command ID
  */
 
 enum wifi_pos_cmd_ids {
@@ -69,15 +81,15 @@ enum wifi_pos_cmd_ids {
  * @patch: Version ID patch number
  * @build: Version ID build number
  */
-struct qdf_packed wifi_pos_driver_version {
+struct wifi_pos_driver_version {
 	uint8_t major;
 	uint8_t minor;
 	uint8_t patch;
 	uint8_t build;
-};
+} qdf_packed;
 
 /**
- * struct wifi_pos_channel_power
+ * struct wifi_pos_channel_power - Wi-Fi Positioning channel/power info
  * @ch_power: channel_power structure object
  * @band_center_freq1: Center frequency1
  * @phy_mode: Phymode
@@ -91,14 +103,14 @@ struct wifi_pos_channel_power {
 };
 
 /**
- * struct wifi_pos_channel_list
- * @valid_channels: no of valid channels
+ * struct wifi_pos_channel_list - Wi-Fi Positioning channel list
+ * @num_channels: no of valid channels
  * @chan_info: channel info
  */
-struct qdf_packed wifi_pos_channel_list {
+struct wifi_pos_channel_list {
 	uint16_t num_channels;
-	struct wifi_pos_channel_power chan_info[NUM_CHANNELS];
-};
+	struct wifi_pos_channel_power chan_info[WIFI_POS_MAX_NUM_CHANNELS];
+} qdf_packed;
 
 /**
  * struct wifi_pos_driver_caps - OEM Data Capabilities
@@ -110,11 +122,11 @@ struct qdf_packed wifi_pos_channel_list {
  * @allowed_dwell_time_max: Channel dwell time - allowed maximum
  * @curr_dwell_time_min: Channel dwell time - current minimim
  * @curr_dwell_time_max: Channel dwell time - current maximum
- * @supported_bands: Supported bands, 2.4G or 5G Hz
+ * @supported_bands: Supported bands, 2.4 GHz or 5 GHz
  * @num_channels: Num of channels IDs to follow
  * @channel_list: List of channel IDs
  */
-struct qdf_packed wifi_pos_driver_caps {
+struct wifi_pos_driver_caps {
 	uint8_t oem_target_signature[OEM_TARGET_SIGNATURE_LEN];
 	uint32_t oem_target_type;
 	uint32_t oem_fw_version;
@@ -126,11 +138,11 @@ struct qdf_packed wifi_pos_driver_caps {
 	uint16_t supported_bands;
 	uint16_t num_channels;
 	uint8_t channel_list[OEM_CAP_MAX_NUM_CHANNELS];
-};
+} qdf_packed;
 
 /**
  * struct wifi_pos_user_defined_caps - OEM capability to be exchanged between
- * host and userspace
+ *                                     host and userspace
  * @ftm_rr: FTM range report capability bit
  * @lci_capability: LCI capability bit
  * @reserved1: reserved
@@ -148,8 +160,8 @@ struct wifi_pos_user_defined_caps {
  * @driver_cap: target capabilities
  * @user_defined_cap: capabilities set by userspace via set request
  */
-struct qdf_packed wifi_pos_oem_get_cap_rsp {
+struct wifi_pos_oem_get_cap_rsp {
 	struct wifi_pos_driver_caps driver_cap;
 	struct wifi_pos_user_defined_caps user_defined_cap;
-};
+} qdf_packed;
 #endif

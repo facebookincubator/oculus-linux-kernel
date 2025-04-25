@@ -377,6 +377,7 @@ enum wnm_actioncode {
  * @TDLS_PEER_TRAFFIC_RESPONSE: tdls peer traffic response frame
  * @TDLS_DISCOVERY_REQUEST: tdls discovery request frame
  * @TDLS_DISCOVERY_RESPONSE: tdls discovery response frame
+ * @TDLS_MAX_ACTION_CODE: tdls max number of invalid action
  */
 enum tdls_actioncode {
 	TDLS_SETUP_REQUEST = 0,
@@ -391,6 +392,8 @@ enum tdls_actioncode {
 	TDLS_PEER_TRAFFIC_RESPONSE = 9,
 	TDLS_DISCOVERY_REQUEST = 10,
 	TDLS_DISCOVERY_RESPONSE = 14,
+	/* keep last one */
+	TDLS_MAX_ACTION_CODE,
 };
 
 /**
@@ -516,11 +519,17 @@ enum twt_actioncode {
  * @EHT_T2LM_REQUEST: T2LM request action frame
  * @EHT_T2LM_RESPONSE: T2LM response action frame
  * @EHT_T2LM_TEARDOWN: T2LM teardown action frame
+ * @EHT_EPCS_REQUEST: EPCS request action frame
+ * @EHT_EPCS_RESPONSE: EPCS response action frame
+ * @EHT_EPCS_TEARDOWN: EPCS teardown action frame
  */
 enum eht_actioncode {
 	EHT_T2LM_REQUEST = 0,
 	EHT_T2LM_RESPONSE = 1,
 	EHT_T2LM_TEARDOWN = 2,
+	EHT_EPCS_REQUEST = 3,
+	EHT_EPCS_RESPONSE = 4,
+	EHT_EPCS_TEARDOWN = 5,
 };
 
 /**
@@ -665,6 +674,9 @@ struct action_frm_hdr {
  * @MGMT_ACTION_EHT_T2LM_REQUEST: T2LM request frame
  * @MGMT_ACTION_EHT_T2LM_RESPONSE: T2LM response frame
  * @MGMT_ACTION_EHT_T2LM_TEARDOWN: T2LM teardown frame
+ * @MGMT_ACTION_EHT_EPCS_REQUEST: EPCS request frame
+ * @MGMT_ACTION_EHT_EPCS_RESPONSE: EPCS response frame
+ * @MGMT_ACTION_EHT_EPCS_TEARDOWN: EPCS teardown frame
  * @MGMT_ACTION_FTM_REQUEST: FTM request frame
  * @MGMT_ACTION_FTM_RESPONSE: FTM response frame
  * @MGMT_ACTION_FILS_DISCOVERY: FILS Discovery frame
@@ -800,6 +812,9 @@ enum mgmt_frame_type {
 	MGMT_ACTION_EHT_T2LM_REQUEST,
 	MGMT_ACTION_EHT_T2LM_RESPONSE,
 	MGMT_ACTION_EHT_T2LM_TEARDOWN,
+	MGMT_ACTION_EHT_EPCS_REQUEST,
+	MGMT_ACTION_EHT_EPCS_RESPONSE,
+	MGMT_ACTION_EHT_EPCS_TEARDOWN,
 	MGMT_ACTION_FTM_REQUEST,
 	MGMT_ACTION_FTM_RESPONSE,
 	MGMT_ACTION_FILS_DISCOVERY,
@@ -833,13 +848,39 @@ struct frm_conn_ap {
 };
 
 /**
+ * enum mgmt_rx_evt_ext_meta_id - Identifier to rx_params ext data
+ * @MGMT_RX_PARAMS_EXT_META_ADDBA: Tag id to indicate ADDBA meta info
+ * @MGMT_RX_PARAMS_EXT_META_TWT: Tag id to indicate TWT IE in meta info
+ */
+enum mgmt_rx_evt_ext_meta_id {
+	MGMT_RX_PARAMS_EXT_META_ADDBA,
+	MGMT_RX_PARAMS_EXT_META_TWT,
+};
+
+#define MAX_TWT_IE_RX_PARAMS_LEN 255
+/**
  * struct mgmt_rx_event_ext_params - Host mgmt extended params
- * @ba_win_size: Block-Ack window size
- * @reo_win_size: Reo win size
+ * @meta_id: Meta id to identify if this is ADDBA or TWT related info
+ * @add_ba_params: set for meta_id MGMT_RX_PARAMS_EXT_META_ADDBA
+ *     @ba_win_size: Block-Ack window size
+ *     @reo_win_size: Reo win size
+ * @twt_ie:  Set when meta_id is MGMT_RX_PARAMS_EXT_META_TWT
+ *     @ie_len: IE len of TWT IE from FW
+ *     @ie_data: IE data of TWT IE from FW
+ * @u: union of above two params as it is mutually exclusive.
  */
 struct mgmt_rx_event_ext_params {
-	uint16_t ba_win_size;
-	uint16_t reo_win_size;
+	enum mgmt_rx_evt_ext_meta_id meta_id;
+	union {
+		struct add_ba_params {
+			uint16_t ba_win_size;
+			uint16_t reo_win_size;
+		} addba;
+		struct twt_ie {
+			uint16_t ie_len;
+			uint8_t ie_data[MAX_TWT_IE_RX_PARAMS_LEN];
+		} twt;
+	} u;
 };
 
 #ifdef WLAN_FEATURE_11BE_MLO
@@ -848,7 +889,7 @@ struct mgmt_rx_event_ext_params {
  * Maximum number of CU LINKS across the system.
  * this is not the CU links within and AP MLD.
  */
-#define CU_MAX_MLO_LINKS 7
+#define CU_MAX_MLO_LINKS 6
 #define MAX_AP_MLDS_PER_LINK 16
 /**
  * struct mlo_mgmt_ml_info - Ongoing Critical Update information.

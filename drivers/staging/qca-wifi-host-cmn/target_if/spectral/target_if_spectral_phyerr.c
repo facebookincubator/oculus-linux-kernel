@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011,2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -85,7 +85,11 @@ static inline void target_if_spectral_hexdump(unsigned char *_buf, int _len)
 
 		if (!mod) {
 			if (i) {
-				qdf_assert_always(loc < sizeof(hexdump_line));
+				if (loc >= sizeof(hexdump_line)) {
+					spectral_err("loc index is %u, greater than hexdump_line array size",
+						     loc);
+					return;
+				}
 				loc += snprintf(&hexdump_line[loc],
 						sizeof(hexdump_line) - loc,
 						"  %s", ascii);
@@ -96,7 +100,11 @@ static inline void target_if_spectral_hexdump(unsigned char *_buf, int _len)
 			}
 		}
 
-		qdf_assert_always(loc < sizeof(hexdump_line));
+		if (loc >= sizeof(hexdump_line)) {
+			spectral_err("loc index is %u, greater than hexdump_line array size",
+				     loc);
+			return;
+		}
 		loc += snprintf(&hexdump_line[loc], sizeof(hexdump_line) - loc,
 				" %02x", pc[i]);
 
@@ -108,13 +116,21 @@ static inline void target_if_spectral_hexdump(unsigned char *_buf, int _len)
 	}
 
 	while ((i % SPECTRAL_HEXDUMP_NUM_OCTETS_PER_LINE) != 0) {
-		qdf_assert_always(loc < sizeof(hexdump_line));
+		if (loc >= sizeof(hexdump_line)) {
+			spectral_err("loc index is %u, greater than hexdump_line array size",
+				     loc);
+			return;
+		}
 		loc += snprintf(&hexdump_line[loc], sizeof(hexdump_line) - loc,
 				"   ");
 		i++;
 	}
 
-	qdf_assert_always(loc < sizeof(hexdump_line));
+	if (loc >= sizeof(hexdump_line)) {
+		spectral_err("loc index is %u, greater than hexdump_line array size",
+			     loc);
+		return;
+	}
 	snprintf(&hexdump_line[loc], sizeof(hexdump_line) - loc, "  %s", ascii);
 	spectral_debug("%s", hexdump_line);
 }
@@ -2321,11 +2337,10 @@ target_if_spectral_get_bin_count_after_len_adj(
 				fft_bin_count >>= 1;
 			break;
 		case SPECTRAL_FFTBIN_SIZE_NO_WAR:
+			fallthrough;
+		default:
 			*fft_bin_size = 1;
 			/* No length adjustment */
-			break;
-		default:
-			qdf_assert_always(0);
 		}
 
 		if (rpt_mode == 2 && swar->inband_fftbin_size_adj)
@@ -2355,9 +2370,11 @@ target_if_process_sfft_report_gen3(
 	int32_t peak_sidx = 0;
 	int32_t peak_mag;
 
-	qdf_assert_always(p_fft_report);
-	qdf_assert_always(p_sfft);
-	qdf_assert_always(rparams);
+	if (!p_fft_report || !p_sfft || !rparams) {
+		spectral_err("null params: p_fft_report %pK p_sfft %pK rparams %pK",
+			     p_fft_report, p_sfft, rparams);
+		return -EINVAL;
+	}
 
 	/*
 	 * For simplicity, everything is defined as uint32_t (except one).
@@ -2397,7 +2414,9 @@ target_if_process_sfft_report_gen3(
 							 8, 12);
 		break;
 	default:
-		qdf_assert_always(0);
+		spectral_err_rl("Invalid spectral report format: %d",
+				rparams->version);
+		return -EINVAL;
 	}
 
 	p_sfft->fft_peak_sidx = unsigned_to_signed(peak_sidx, 11);
@@ -2440,7 +2459,10 @@ target_if_dump_fft_report_gen3(struct target_if_spectral *spectral,
 	size_t fft_bin_len_inband_tfer = 0;
 	uint8_t tag, signature;
 
-	qdf_assert_always(spectral);
+	if (!spectral) {
+		spectral_err_rl("spectral pointer is null.");
+		return;
+	}
 
 	/* There won't be FFT report/bins in report mode 0, so return */
 	if (!spectral->params[smode].ss_rpt_mode)
@@ -2650,25 +2672,30 @@ target_if_160mhz_delivery_state_change(struct target_if_spectral *spectral,
  * target_if_get_detector_id_sscan_summary_report_gen3() - Get Spectral detector
  * ID from Spectral summary report
  * @data: Pointer to Spectral summary report
+ * @detector_id: Pointer to detector id
  *
- * Return: Detector ID
+ * Return: QDF_STATUS
  */
-static uint8_t
-target_if_get_detector_id_sscan_summary_report_gen3(uint8_t *data) {
+static QDF_STATUS
+target_if_get_detector_id_sscan_summary_report_gen3(uint8_t *data,
+						    uint8_t *detector_id)
+{
 	struct spectral_sscan_summary_report_gen3 *psscan_summary_report;
-	uint8_t detector_id;
 
-	qdf_assert_always(data);
+	if (!data) {
+		spectral_err("Argument(data) is null.");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
 
 	psscan_summary_report =
 		(struct spectral_sscan_summary_report_gen3 *)data;
 
-	detector_id = get_bitfield(
+	*detector_id = get_bitfield(
 			psscan_summary_report->hdr_a,
 			SSCAN_SUMMARY_REPORT_HDR_A_DETECTOR_ID_SIZE_GEN3,
 			SSCAN_SUMMARY_REPORT_HDR_A_DETECTOR_ID_POS_GEN3);
 
-	return detector_id;
+	return QDF_STATUS_SUCCESS;
 }
 
 #ifndef OPTIMIZED_SAMP_MESSAGE
@@ -2690,9 +2717,11 @@ target_if_consume_sscan_summary_report_gen3(
 				struct spectral_report_params *rparams) {
 	struct spectral_sscan_summary_report_gen3 *psscan_summary_report;
 
-	qdf_assert_always(data);
-	qdf_assert_always(fields);
-	qdf_assert_always(rparams);
+	if (!data || !fields || !rparams) {
+		spectral_err("null arguments: data %pK, fields %pK, rparams %pK.",
+			     data, fields, rparams);
+		return;
+	}
 
 	psscan_summary_report =
 		(struct spectral_sscan_summary_report_gen3 *)data;
@@ -2724,7 +2753,9 @@ target_if_consume_sscan_summary_report_gen3(
 			SSCAN_SUMMARY_REPORT_HDR_C_GAINCHANGE_POS_GEN3_V2);
 		break;
 	default:
-		qdf_assert_always(0);
+		spectral_err("Invalid spectral report format version: %d.",
+			     rparams->version);
+		return;
 	}
 }
 #endif
@@ -2930,17 +2961,23 @@ static void target_if_spectral_verify_ts(struct target_if_spectral *spectral,
  * @raw_timestamp: Spectral time stamp reported by target
  * @reset_delay: Reset delay at target
  * @smode: Spectral scan mode
+ * @tstamp: Pointer to adjusted timestamp
  *
  * Correct time stamp to account for reset in time stamp due to target reset
  *
- * Return: Adjusted time stamp
+ * Return: QDF_STATUS
  */
-static uint32_t
+static QDF_STATUS
 target_if_spectral_get_adjusted_timestamp(struct spectral_timestamp_war *twar,
 					  uint32_t raw_timestamp,
 					  uint32_t reset_delay,
-					  enum spectral_scan_mode smode) {
-	qdf_assert_always(smode < SPECTRAL_SCAN_MODE_MAX);
+					  enum spectral_scan_mode smode,
+					  uint32_t *tstamp)
+{
+	if (smode >= SPECTRAL_SCAN_MODE_MAX) {
+		spectral_err("Invalid spectral scan mode: %d", smode);
+		return QDF_STATUS_E_INVAL;
+	}
 
 	if (reset_delay) {
 		enum spectral_scan_mode m =
@@ -2958,7 +2995,9 @@ target_if_spectral_get_adjusted_timestamp(struct spectral_timestamp_war *twar,
 	}
 	twar->last_fft_timestamp[smode] = raw_timestamp;
 
-	return raw_timestamp + twar->timestamp_war_offset[smode];
+	*tstamp = raw_timestamp + twar->timestamp_war_offset[smode];
+
+	return QDF_STATUS_SUCCESS;
 }
 
 #ifdef BIG_ENDIAN_HOST
@@ -2970,8 +3009,11 @@ QDF_STATUS target_if_byte_swap_spectral_headers_gen3(
 	uint32_t *ptr32;
 	size_t words32;
 
-	qdf_assert_always(data);
-	qdf_assert_always(spectral);
+	if (!data || !spectral) {
+		spectral_err_rl("null params: data %pK, spectral %pK.",
+				data, spectral);
+		return QDF_STATUS_E_NULL_VALUE;
+	}
 
 	ptr32 = (uint32_t *)data;
 
@@ -2983,7 +3025,7 @@ QDF_STATUS target_if_byte_swap_spectral_headers_gen3(
 	}
 
 	/* No need to swap the padding bytes */
-	ptr32 += (spectral->rparams.ssumaary_padding_bytes >> 2);
+	ptr32 += (spectral->rparams.ssummary_padding_bytes >> 2);
 
 	/* Search FFT Report */
 	words32 = sizeof(struct spectral_phyerr_fft_report_gen3) >> 2;
@@ -3003,8 +3045,11 @@ QDF_STATUS target_if_byte_swap_spectral_fft_bins_gen3(
 	uint8_t num_bins_per_dword;
 	uint32_t *dword_ptr;
 
-	qdf_assert_always(bin_pwr_data);
-	qdf_assert_always(rparams);
+	if (!bin_pwr_data || !rparams) {
+		spectral_err_rl("null params, bin_pwr_data %pK, rparams %pK.",
+				bin_pwr_data, rparams);
+		return QDF_STATUS_E_NULL_VALUE;
+	}
 
 	num_bins_per_dword = SPECTRAL_DWORD_SIZE / rparams->hw_fft_bin_width;
 	num_dwords = num_fftbins / num_bins_per_dword;
@@ -3030,7 +3075,7 @@ QDF_STATUS target_if_byte_swap_spectral_fft_bins_gen3(
  *
  * Consume Spectral summary report for gen3
  *
- * Return: Success/Failure
+ * Return: QDF_STATUS
  */
 static QDF_STATUS
 target_if_consume_sscan_summary_report_gen3(
@@ -3039,6 +3084,10 @@ target_if_consume_sscan_summary_report_gen3(
 				struct target_if_spectral *spectral)
 {
 	struct spectral_sscan_summary_report_gen3 *psscan_summary_report;
+	struct spectral_sscan_summary_report_padding_gen3_v2 *padding;
+	bool scan_radio_blanking;
+	QDF_STATUS ret;
+	uint8_t dtr_id;
 
 	if (!data) {
 		spectral_err_rl("Summary report buffer is null");
@@ -3063,8 +3112,12 @@ target_if_consume_sscan_summary_report_gen3(
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	fields->sscan_detector_id =
-		target_if_get_detector_id_sscan_summary_report_gen3(*data);
+	ret = target_if_get_detector_id_sscan_summary_report_gen3(*data,
+								  &dtr_id);
+	if (QDF_IS_STATUS_ERROR(ret))
+		return QDF_STATUS_E_FAILURE;
+
+	fields->sscan_detector_id = dtr_id;
 	if (fields->sscan_detector_id >=
 	    spectral->rparams.num_spectral_detectors) {
 		spectral->diag_stats.spectral_invalid_detector_id++;
@@ -3104,12 +3157,42 @@ target_if_consume_sscan_summary_report_gen3(
 			SSCAN_SUMMARY_REPORT_HDR_C_GAINCHANGE_POS_GEN3_V2);
 		break;
 	default:
-		qdf_assert_always(0);
+		spectral_err_rl("Invalid spectral version: %d.",
+				spectral->rparams.version);
+		return QDF_STATUS_E_INVAL;
 	}
 
 	/* Advance buf pointer to the search fft report */
 	*data += sizeof(struct spectral_sscan_summary_report_gen3);
-	*data += spectral->rparams.ssumaary_padding_bytes;
+
+	if (!spectral->rparams.ssummary_padding_bytes)
+		return QDF_STATUS_SUCCESS;
+
+	scan_radio_blanking =
+		wlan_pdev_nif_feat_ext_cap_get(spectral->pdev_obj,
+					       WLAN_PDEV_FEXT_SCAN_BLANKING_EN);
+	padding = (struct spectral_sscan_summary_report_padding_gen3_v2 *)*data;
+
+	if (scan_radio_blanking) {
+		uint32_t blanking_tag;
+		uint8_t blanking_tag_size;
+		uint8_t blanking_tag_pos;
+
+		blanking_tag_size =
+			SSCAN_SUMMARY_REPORT_PAD_HDR_A_BLANKING_SIZE_GEN3_V2;
+		blanking_tag_pos =
+			SSCAN_SUMMARY_REPORT_PAD_HDR_A_BLANKING_POS_GEN3_V2;
+		blanking_tag = get_bitfield(padding->hdr_a, blanking_tag_size,
+					    blanking_tag_pos);
+
+		if (blanking_tag ==
+		    SSCAN_SUMMARY_REPORT_PAD_HDR_A_BLANKING_TAG_GEN3_V2)
+			fields->blanking_status = 1;
+		else
+			fields->blanking_status = 0;
+	}
+
+	*data += sizeof(struct spectral_sscan_summary_report_padding_gen3_v2);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -3139,6 +3222,7 @@ target_if_process_sfft_report_gen3(
 	int32_t peak_sidx = 0;
 	int32_t peak_mag;
 	int fft_hdr_length = 0;
+	uint32_t tstamp;
 	struct target_if_spectral_ops *p_sops;
 	enum spectral_scan_mode spectral_mode;
 	QDF_STATUS ret;
@@ -3220,11 +3304,17 @@ target_if_process_sfft_report_gen3(
 	p_sfft->timestamp = p_fft_report->fft_timestamp;
 	p_sfft->last_raw_timestamp = spectral->timestamp_war.
 					last_fft_timestamp[spectral_mode];
-	p_sfft->adjusted_timestamp = target_if_spectral_get_adjusted_timestamp(
+	ret = target_if_spectral_get_adjusted_timestamp(
 						&spectral->timestamp_war,
 						p_sfft->timestamp,
 						reset_delay,
-						spectral_mode);
+						spectral_mode,
+						&tstamp);
+
+	if (QDF_IS_STATUS_ERROR(ret))
+		return QDF_STATUS_E_FAILURE;
+
+	p_sfft->adjusted_timestamp =  tstamp;
 	/* Timestamp verification */
 	target_if_spectral_verify_ts(spectral, data,
 				     p_sfft->adjusted_timestamp,
@@ -3273,7 +3363,9 @@ target_if_process_sfft_report_gen3(
 				FFT_REPORT_HDR_B_TOTAL_GAIN_POS_GEN3_V2);
 		break;
 	default:
-		qdf_assert_always(0);
+		spectral_err_rl("Invalid spectral version: %d.",
+				spectral->rparams.version);
+		return QDF_STATUS_E_INVAL;
 	}
 
 	p_sfft->fft_peak_sidx = unsigned_to_signed(peak_sidx,
@@ -3388,7 +3480,10 @@ target_if_spectral_populate_samp_params_gen3(
 		return QDF_STATUS_E_FAILURE;
 	}
 	vdev_rxchainmask = wlan_vdev_mlme_get_rxchainmask(vdev);
-	QDF_ASSERT(vdev_rxchainmask != 0);
+	if (vdev_rxchainmask == 0) {
+		spectral_err("Vdev rxchainmask is zero.");
+		return QDF_STATUS_E_FAILURE;
+	}
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_SPECTRAL_ID);
 
 	chn_idx_lowest_enabled =
@@ -3401,6 +3496,7 @@ target_if_spectral_populate_samp_params_gen3(
 	params->noise_floor = report->noisefloor[chn_idx_lowest_enabled];
 	params->agc_total_gain = sscan_fields->sscan_agc_total_gain;
 	params->gainchange = sscan_fields->sscan_gainchange;
+	params->blanking_status = sscan_fields->blanking_status;
 	params->pri80ind = sscan_fields->sscan_pri80;
 
 	params->bin_pwr_data = p_sfft->bin_pwr_data;
@@ -3447,18 +3543,22 @@ target_if_consume_spectral_report_gen3(
 	int det = 0;
 	struct sscan_detector_list *det_list;
 	struct spectral_data_stats *spectral_dp_stats;
+	bool print_fail_msg = true;
 
 	if (!spectral) {
 		spectral_err_rl("Spectral LMAC object is null");
-		goto fail_no_print;
+		print_fail_msg = false;
+		goto fail;
 	}
 
+	qdf_spin_lock_bh(&spectral->spectral_lock);
 	spectral_dp_stats = &spectral->data_stats;
 	spectral_dp_stats->consume_spectral_calls++;
 
 	if (!report) {
 		spectral_err_rl("Spectral report is null");
-		goto fail_no_print;
+		print_fail_msg = false;
+		goto fail_unlock;
 	}
 
 	p_sops = GET_TARGET_IF_SPECTRAL_OPS(spectral);
@@ -3469,7 +3569,7 @@ target_if_consume_spectral_report_gen3(
 		ret = p_sops->byte_swap_headers(spectral, data);
 		if (QDF_IS_STATUS_ERROR(ret)) {
 			spectral_err_rl("Byte-swap on Spectral headers failed");
-			goto fail;
+			goto fail_unlock;
 		}
 	}
 
@@ -3479,7 +3579,7 @@ target_if_consume_spectral_report_gen3(
 							  spectral);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		spectral_err_rl("Failed to process Spectral summary report");
-		goto fail;
+		goto fail_unlock;
 	}
 
 	spectral_mode = target_if_get_spectral_mode(
@@ -3488,13 +3588,14 @@ target_if_consume_spectral_report_gen3(
 	if (spectral_mode >= SPECTRAL_SCAN_MODE_MAX) {
 		spectral_err_rl("No valid Spectral mode for detector id %u",
 				sscan_report_fields.sscan_detector_id);
-		goto fail;
+		goto fail_unlock;
 	}
 
 	/* Drop the sample if Spectral is not active for the current mode */
 	if (!p_sops->is_spectral_active(spectral, spectral_mode)) {
 		spectral_info_rl("Spectral scan is not active");
-		goto fail_no_print;
+		print_fail_msg = false;
+		goto fail_unlock;
 	}
 
 	/* Validate and Process the search FFT report */
@@ -3505,7 +3606,7 @@ target_if_consume_spectral_report_gen3(
 					report->reset_delay);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		spectral_err_rl("Failed to process search FFT report");
-		goto fail;
+		goto fail_unlock;
 	}
 
 	qdf_spin_lock_bh(&spectral->detector_list_lock);
@@ -3518,7 +3619,8 @@ target_if_consume_spectral_report_gen3(
 			qdf_spin_unlock_bh(&spectral->detector_list_lock);
 			spectral_info("Incorrect det id %d for given scan mode and channel width",
 				      p_sfft->fft_detector_id);
-			goto fail_no_print;
+			print_fail_msg = false;
+			goto fail_unlock;
 		}
 	}
 	qdf_spin_unlock_bh(&spectral->detector_list_lock);
@@ -3530,7 +3632,7 @@ target_if_consume_spectral_report_gen3(
 						spectral_mode);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		spectral_err_rl("Failed to update per-session info");
-		goto fail;
+		goto fail_unlock;
 	}
 
 	qdf_spin_lock_bh(&spectral->session_report_info_lock);
@@ -3544,7 +3646,7 @@ target_if_consume_spectral_report_gen3(
 		if (ret != QDF_STATUS_SUCCESS) {
 			qdf_spin_unlock_bh(
 					&spectral->session_report_info_lock);
-			goto fail;
+			goto fail_unlock;
 		}
 	}
 	qdf_spin_unlock_bh(&spectral->session_report_info_lock);
@@ -3565,15 +3667,17 @@ target_if_consume_spectral_report_gen3(
 							report, &params);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		spectral_err_rl("Failed to populate SAMP params");
-		goto fail;
+		goto fail_unlock;
 	}
+
 	/* Fill SAMP message */
 	ret = target_if_spectral_fill_samp_msg(spectral, &params);
 	if (QDF_IS_STATUS_ERROR(ret)) {
 		spectral_err_rl("Failed to fill the SAMP msg");
-		goto fail;
+		goto fail_unlock;
 	}
 
+	qdf_spin_unlock_bh(&spectral->spectral_lock);
 	ret = target_if_spectral_is_finite_scan(spectral, spectral_mode,
 						&finite_scan);
 	if (QDF_IS_STATUS_ERROR(ret)) {
@@ -3591,9 +3695,12 @@ target_if_consume_spectral_report_gen3(
 	}
 
 	return 0;
+fail_unlock:
+	qdf_spin_unlock_bh(&spectral->spectral_lock);
 fail:
-	spectral_err_rl("Error while processing Spectral report");
-fail_no_print:
+	if (print_fail_msg)
+		spectral_err_rl("Error while processing Spectral report");
+
 	if (spectral_mode != SPECTRAL_SCAN_MODE_INVALID)
 		reset_160mhz_delivery_state_machine(spectral, spectral_mode);
 	return -EPERM;
@@ -3647,10 +3754,12 @@ target_if_consume_spectral_report_gen3(
 	uint8_t vdev_rxchainmask;
 	struct sscan_report_fields_gen3 sscan_report_fields = {0};
 	enum spectral_detector_id detector_id;
+	uint8_t dtr_id;
 	QDF_STATUS ret;
 	enum spectral_scan_mode spectral_mode = SPECTRAL_SCAN_MODE_INVALID;
 	uint8_t *temp;
 	bool finite_scan = false;
+	uint32_t tstamp;
 
 	/* Apply byte-swap on the headers */
 	if (p_sops->byte_swap_headers) {
@@ -3669,7 +3778,12 @@ target_if_consume_spectral_report_gen3(
 		goto fail;
 	}
 
-	detector_id = target_if_get_detector_id_sscan_summary_report_gen3(data);
+	ret = target_if_get_detector_id_sscan_summary_report_gen3(data,
+								  &dtr_id);
+	if (QDF_IS_STATUS_ERROR(ret))
+		goto fail;
+
+	detector_id = dtr_id;
 	if (detector_id >= spectral->rparams.num_spectral_detectors) {
 		spectral->diag_stats.spectral_invalid_detector_id++;
 		spectral_err("Invalid detector id %u, expected is 0/1/2",
@@ -3711,7 +3825,7 @@ target_if_consume_spectral_report_gen3(
 						    &spectral->rparams);
 	/* Advance buf pointer to the search fft report */
 	data += sizeof(struct spectral_sscan_summary_report_gen3);
-	data += spectral->rparams.ssumaary_padding_bytes;
+	data += spectral->rparams.ssummary_padding_bytes;
 	params.vhtop_ch_freq_seg1 = report->cfreq1;
 	params.vhtop_ch_freq_seg2 = report->cfreq2;
 
@@ -3773,10 +3887,14 @@ target_if_consume_spectral_report_gen3(
 				last_fft_timestamp[spectral_mode];
 		params.reset_delay = report->reset_delay;
 		params.raw_timestamp = p_sfft->timestamp;
-		params.tstamp = target_if_spectral_get_adjusted_timestamp(
+		ret = target_if_spectral_get_adjusted_timestamp(
 					&spectral->timestamp_war,
 					p_sfft->timestamp, report->reset_delay,
-					spectral_mode);
+					spectral_mode, &tstamp);
+		if (QDF_IS_STATUS_ERROR(ret))
+			goto fail;
+
+		params.tstamp = tstamp;
 		params.timestamp_war_offset = spectral->timestamp_war.
 				timestamp_war_offset[spectral_mode];
 		params.target_reset_count = spectral->timestamp_war.
@@ -3803,7 +3921,10 @@ target_if_consume_spectral_report_gen3(
 			return -EPERM;
 		}
 		vdev_rxchainmask = wlan_vdev_mlme_get_rxchainmask(vdev);
-		QDF_ASSERT(vdev_rxchainmask != 0);
+		if (vdev_rxchainmask == 0) {
+			spectral_err("Vdev rxchainmask is zero.");
+			goto fail;
+		}
 		wlan_objmgr_vdev_release_ref(vdev, WLAN_SPECTRAL_ID);
 
 		chn_idx_lowest_enabled =
@@ -3831,10 +3952,15 @@ target_if_consume_spectral_report_gen3(
 			struct wlan_objmgr_psoc *psoc;
 			struct spectral_fft_bin_markers_160_165mhz *marker;
 
-			qdf_assert_always(spectral->pdev_obj);
+			if (!spectral->pdev_obj) {
+				spectral_err("pdev is null");
+				goto fail;
+			}
 			psoc = wlan_pdev_get_psoc(spectral->pdev_obj);
-			qdf_assert_always(psoc);
-
+			if (!psoc) {
+				spectral_err("psoc is null");
+				goto fail;
+			}
 			params.agc_total_gain_sec80 =
 				sscan_report_fields.sscan_agc_total_gain;
 			params.gainchange_sec80 =
@@ -3969,7 +4095,10 @@ target_if_consume_spectral_report_gen3(
 			return -EPERM;
 		}
 		vdev_rxchainmask = wlan_vdev_mlme_get_rxchainmask(vdev);
-		QDF_ASSERT(vdev_rxchainmask != 0);
+		if (vdev_rxchainmask == 0) {
+			spectral_err("Vdev rxchainmask is zero.");
+			goto fail;
+		}
 		wlan_objmgr_vdev_release_ref(vdev, WLAN_SPECTRAL_ID);
 
 		chn_idx_lowest_enabled =

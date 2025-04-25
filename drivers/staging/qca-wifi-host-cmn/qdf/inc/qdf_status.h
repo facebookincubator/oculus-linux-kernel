@@ -26,18 +26,6 @@
 #ifndef __QDF_STATUS_H
 #define __QDF_STATUS_H
 
-#ifdef IPA_OFFLOAD
-	#ifdef CONFIG_ARCH_KALAMA
-		#include "../../../../dataipa/drivers/platform/msm/ipa/ipa_test_module/ipa_test_module.h"
-		#ifndef IPA_WDI_OPT_DPATH
-			#undef IPA_OFFLOAD
-			#undef IPA_OPT_WIFI_DP
-		#endif
-	#endif
-#else
-	#undef IPA_OPT_WIFI_DP
-#endif
-
 /**
  * typedef QDF_STATUS - QDF error codes
  * @QDF_STATUS_SUCCESS: success
@@ -70,7 +58,7 @@
  * @QDF_STATUS_E_PROTO: protocol error
  * @QDF_STATUS_NOT_INITIALIZED: resource not initialized
  * @QDF_STATUS_E_NULL_VALUE: request is null
- * @QDF_STATUS_HEARTBEAT_TMOUT: hearbeat timeout error
+ * @QDF_STATUS_HEARTBEAT_TMOUT: heartbeat timeout error
  * @QDF_STATUS_NTH_BEACON_DELIVERY: Nth beacon delivery
  * @QDF_STATUS_CSR_WRONG_STATE: csr in wrong state
  * @QDF_STATUS_FT_PREAUTH_KEY_SUCCESS: ft preauth key success
@@ -89,6 +77,13 @@
  * @QDF_STATUS_E_GRO_DROP: return code for GRO drop
  * @QDF_STATUS_E_RESTART: return error code for wait_event_interruptible
  * @QDF_STATUS_FILT_REQ_ERROR: return error code cee filter rule request
+ * @QDF_STATUS_TDLS_MLO_SYNC: tdls mlo sync
+ * @QDF_STATUS_CRYPTO_INVALID_KEYLEN: return code for invalid key length
+ * @QDF_STATUS_CRYPTO_INVALID_KEYID: return code for invalid key index
+ * @QDF_STATUS_CRYPTO_INVALID_CIPHERTYPE: return code for invalid cipher type
+ * @QDF_STATUS_INVALID_ASSOCID: return code for invalid assoc id
+ * @QDF_STATUS_MAX_VHT_STREAMS: Max VHT streams
+ * @QDF_STATUS_NO_OVERLAP_LEGACY_RATES: no overlap legacy rate with assoc-req
  * @QDF_STATUS_MAX: not a real value just a place holder for max
  */
 typedef enum {
@@ -142,6 +137,13 @@ typedef enum {
 	QDF_STATUS_E_GRO_DROP,
 	QDF_STATUS_E_RESTART,
 	QDF_STATUS_FILT_REQ_ERROR,
+	QDF_STATUS_TDLS_MLO_SYNC,
+	QDF_STATUS_CRYPTO_INVALID_KEYLEN,
+	QDF_STATUS_CRYPTO_INVALID_KEYID,
+	QDF_STATUS_CRYPTO_INVALID_CIPHERTYPE,
+	QDF_STATUS_INVALID_ASSOCID,
+	QDF_STATUS_MAX_VHT_STREAMS,
+	QDF_STATUS_NO_OVERLAP_LEGACY_RATES,
 	QDF_STATUS_MAX
 } QDF_STATUS;
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -370,6 +371,35 @@ cfg_tdls_set_scan_enable(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
+int cfg_tdls_get_link_id(struct wlan_objmgr_psoc *psoc)
+{
+	struct tdls_soc_priv_obj *soc_obj;
+
+	soc_obj = wlan_psoc_get_tdls_soc_obj(psoc);
+	if (!soc_obj) {
+		tdls_err("tdls soc null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	return soc_obj->tdls_configs.tdls_link_id;
+}
+
+QDF_STATUS
+cfg_tdls_set_link_id(struct wlan_objmgr_psoc *psoc, int val)
+{
+	struct tdls_soc_priv_obj *soc_obj;
+
+	soc_obj = wlan_psoc_get_tdls_soc_obj(psoc);
+	if (!soc_obj) {
+		tdls_err("tdls soc null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	soc_obj->tdls_configs.tdls_link_id = val;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 uint16_t
 cfg_tdls_get_max_peer_count(struct wlan_objmgr_psoc *psoc)
 {
@@ -382,4 +412,18 @@ cfg_tdls_get_max_peer_count(struct wlan_objmgr_psoc *psoc)
 	}
 
 	return soc_obj->max_num_tdls_sta;
+}
+
+uint16_t
+cfg_tdls_get_connected_peer_count(struct wlan_objmgr_psoc *psoc)
+{
+	struct tdls_soc_priv_obj *soc_obj;
+
+	soc_obj = wlan_psoc_get_tdls_soc_obj(psoc);
+	if (!soc_obj) {
+		tdls_err("tdls soc null");
+		return 0;
+	}
+
+	return soc_obj->connected_peer_count;
 }

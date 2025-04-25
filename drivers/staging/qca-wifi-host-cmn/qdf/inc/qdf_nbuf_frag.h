@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,7 +40,7 @@ typedef __qdf_frag_cache_t qdf_frag_cache_t;
  */
 typedef __qdf_frag_t qdf_frag_t;
 
-/**
+/*
  * Maximum number of frags an SKB can hold
  */
 #define QDF_NBUF_MAX_FRAGS __QDF_NBUF_MAX_FRAGS
@@ -54,7 +54,9 @@ typedef __qdf_frag_t qdf_frag_t;
 void qdf_frag_debug_init(void);
 
 /**
- * qdf_frag_debug_exit() - Destroy frag debug tracker
+ * qdf_frag_debug_exit() - Exit network frag debug functionality
+ *
+ * Exit network frag tracking debug functionality and log frag memory leaks
  *
  * Return: none
  */
@@ -272,7 +274,7 @@ static inline void qdf_frag_mod_exit(void)
  * @buf: Virtual page address to be mapped
  * @dir: qdf_dma_dir_t
  * @nbytes: Size of memory to be mapped
- * @paddr: Corresponding mapped physical address
+ * @phy_addr: Corresponding mapped physical address
  *
  * Return: QDF_STATUS
  */

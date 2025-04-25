@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -119,10 +119,10 @@ struct wifi_pos_ch_info {
 };
 
 /**
- * typedef wifi_pos_ch_info_rsp - Channel information
+ * struct wifi_pos_ch_info_rsp - Channel information
  * @chan_id: channel id
  * @reserved0: reserved for padding and future use
- * @mhz: primary 20 MHz channel frequency in mhz
+ * @mhz: primary 20 MHz channel frequency in Mhz
  * @band_center_freq1: Center frequency 1 in MHz
  * @band_center_freq2: Center frequency 2 in MHz, valid only for 11ac
  *      VHT 80+80 mode
@@ -131,7 +131,7 @@ struct wifi_pos_ch_info {
  *      max power, reg power and reg class id
  * @reg_info_2: regulatory information field 2 which contains antennamax
  */
-struct qdf_packed wifi_pos_ch_info_rsp {
+struct wifi_pos_ch_info_rsp {
 	uint32_t chan_id;
 	uint32_t reserved0;
 	uint32_t mhz;
@@ -140,7 +140,7 @@ struct qdf_packed wifi_pos_ch_info_rsp {
 	uint32_t info;
 	uint32_t reg_info_1;
 	uint32_t reg_info_2;
-};
+} qdf_packed;
 
 /**
  * struct wifi_pos_peer_status_info - Status information for a given peer
@@ -151,14 +151,14 @@ struct qdf_packed wifi_pos_ch_info_rsp {
  * @reserved0: reserved0
  * @peer_chan_info: channel info on which peer is connected
  */
-struct qdf_packed wifi_pos_peer_status_info {
+struct wifi_pos_peer_status_info {
 	uint8_t peer_mac_addr[ETH_ALEN];
 	uint8_t peer_status;
 	uint8_t vdev_id;
 	uint32_t peer_capability;
 	uint32_t reserved0;
 	struct wifi_pos_ch_info_rsp peer_chan_info;
-};
+} qdf_packed;
 
 /**
  * struct wifi_pos_req_msg - wifi pos request struct
@@ -688,13 +688,13 @@ bool wifi_pos_get_rsta_sec_ltf_cap(void);
  * wifi_pos_set_rsta_11az_ranging_cap() - Enable/Disable R-STA 11az ranging
  * @val: Value to set
  */
-void wifi_pos_set_rsta_11az_ranging_cap(bool val);
+void wifi_pos_set_rsta_11az_ranging_cap(uint32_t val);
 
 /**
  * wifi_pos_get_rsta_11az_ranging_cap() - Get if RSTA 11az ranging is enabled
  *
- * Return: True if 11az ranging is enabled
+ * Return: value if 11az TB/NTB ranging is enabled
  */
-bool wifi_pos_get_rsta_11az_ranging_cap(void);
+uint32_t wifi_pos_get_rsta_11az_ranging_cap(void);
 #endif
 #endif /* _WIFI_POS_API_H_ */

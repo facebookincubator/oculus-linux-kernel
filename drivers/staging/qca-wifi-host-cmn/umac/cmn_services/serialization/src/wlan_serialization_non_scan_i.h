@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,7 +50,7 @@ wlan_serialization_is_non_scan_pending_queue_empty(
 		struct wlan_serialization_command *cmd);
 
 /**
- * wlan_serialization_is_active_nonscan_cmd_allowed() - find if cmd allowed
+ * wlan_serialization_is_active_non_scan_cmd_allowed() - find if cmd allowed
  *			to be enqueued in active queue
  * @cmd: Serialization command information
  *
@@ -78,9 +79,9 @@ wlan_ser_add_non_scan_cmd(
 /**
  * wlan_ser_move_non_scan_pending_to_active() - Move a non-scan cmd from pending
  *			queue to active queue
- * @pcmd_list: Pointer to command list containing the command
  * @ser_pdev_obj: Serialization private pdev object
  * @vdev: Pointer to object manager vdev
+ * @blocking_cmd_removed: If a blocking cmd is removed from active queue
  *
  * Return: Status of the cmd's serialization request
  */

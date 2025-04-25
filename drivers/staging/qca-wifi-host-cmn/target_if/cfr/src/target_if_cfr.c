@@ -219,14 +219,18 @@ void target_if_cfr_fill_header(struct csi_cfr_header *hdr,
 		hdr->cmn.cfr_metadata_version = CFR_META_VERSION_8;
 		hdr->cmn.chip_type = CFR_CAPTURE_RADIO_ALDER;
 	} else {
-		if (target_type == TARGET_TYPE_QCN9000)
+		if ((target_type == TARGET_TYPE_QCN9000) ||
+		    (target_type == TARGET_TYPE_QCN9160) ||
+		    (target_type == TARGET_TYPE_QCN9224))
 			hdr->cmn.cfr_metadata_version = CFR_META_VERSION_9;
-		else if (target_type == TARGET_TYPE_QCN9224 ||
-			 target_type == TARGET_TYPE_QCA5332 ||
+		else if (target_type == TARGET_TYPE_QCA5332 ||
+			 target_type == TARGET_TYPE_QCN6432 ||
 			 target_type == TARGET_TYPE_QCA6490 ||
 			 target_type == TARGET_TYPE_QCA6750 ||
 			 target_type == TARGET_TYPE_KIWI ||
-			 target_type == TARGET_TYPE_MANGO)
+			 target_type == TARGET_TYPE_MANGO ||
+			 target_type == TARGET_TYPE_PEACH ||
+			 target_type == TARGET_TYPE_WCN6450)
 			hdr->cmn.cfr_metadata_version = CFR_META_VERSION_7;
 		else if ((target_type == TARGET_TYPE_QCA6018) ||
 			 ((target_type == TARGET_TYPE_QCA5018) && (!is_rcc)))
@@ -242,6 +246,8 @@ void target_if_cfr_fill_header(struct csi_cfr_header *hdr,
 			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_SPRUCE;
 		else if (target_type == TARGET_TYPE_QCN9160)
 			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_YORK;
+		else if (target_type == TARGET_TYPE_QCN6432)
+			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_PEBBLE;
 		else if (target_type == TARGET_TYPE_QCN9224)
 			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_WAIKIKI;
 		else if (target_type == TARGET_TYPE_QCA5332)
@@ -254,6 +260,10 @@ void target_if_cfr_fill_header(struct csi_cfr_header *hdr,
 			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_KIWI;
 		else if (target_type == TARGET_TYPE_MANGO)
 			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_MANGO;
+		else if (target_type == TARGET_TYPE_PEACH)
+			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_PEACH;
+		else if (target_type == TARGET_TYPE_WCN6450)
+			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_EVROS;
 		else
 			hdr->cmn.chip_type = CFR_CAPTURE_RADIO_CYP;
 	}
@@ -326,6 +336,10 @@ static QDF_STATUS target_if_cfr_init_target(struct wlan_objmgr_psoc *psoc,
 		cfr_pdev->chip_type = CFR_CAPTURE_RADIO_KIWI;
 	else if (target == TARGET_TYPE_MANGO)
 		cfr_pdev->chip_type = CFR_CAPTURE_RADIO_MANGO;
+	else if (target == TARGET_TYPE_PEACH)
+		cfr_pdev->chip_type = CFR_CAPTURE_RADIO_PEACH;
+	else if (target == TARGET_TYPE_WCN6450)
+		cfr_pdev->chip_type = CFR_CAPTURE_RADIO_EVROS;
 
 	return status;
 }
@@ -367,7 +381,9 @@ target_if_cfr_init_pdev(struct wlan_objmgr_psoc *psoc,
 	if (target_type == TARGET_TYPE_QCA6490 ||
 	    target_type == TARGET_TYPE_QCA6750 ||
 	    target_type == TARGET_TYPE_KIWI ||
-	    target_type == TARGET_TYPE_MANGO) {
+	    target_type == TARGET_TYPE_MANGO ||
+	    target_type == TARGET_TYPE_PEACH ||
+	    target_type == TARGET_TYPE_WCN6450) {
 		status = target_if_cfr_init_target(psoc,
 						   pdev, target_type);
 	} else if (target_type == TARGET_TYPE_ADRASTEA) {
@@ -392,7 +408,9 @@ target_if_cfr_deinit_pdev(struct wlan_objmgr_psoc *psoc,
 	if (target_type == TARGET_TYPE_QCA6490 ||
 	    target_type == TARGET_TYPE_QCA6750 ||
 	    target_type == TARGET_TYPE_KIWI ||
-	    target_type == TARGET_TYPE_MANGO) {
+	    target_type == TARGET_TYPE_MANGO ||
+	    target_type == TARGET_TYPE_PEACH ||
+	    target_type == TARGET_TYPE_WCN6450) {
 		status = target_if_cfr_deinit_target(psoc, pdev);
 	} else if (target_type == TARGET_TYPE_ADRASTEA) {
 		status = cfr_adrastea_deinit_pdev(psoc, pdev);
@@ -443,7 +461,8 @@ target_if_cfr_init_pdev(struct wlan_objmgr_psoc *psoc,
 		   (target_type == TARGET_TYPE_QCA5018) ||
 		   (target_type == TARGET_TYPE_QCA5332) ||
 		   (target_type == TARGET_TYPE_QCN9224) ||
-		   (target_type == TARGET_TYPE_QCN9160)) {
+		   (target_type == TARGET_TYPE_QCN9160) ||
+		   (target_type == TARGET_TYPE_QCN6432)) {
 		pa->is_cfr_capable = cfr_sc->is_cfr_capable;
 		return cfr_enh_init_pdev(psoc, pdev);
 	} else
@@ -472,7 +491,8 @@ target_if_cfr_deinit_pdev(struct wlan_objmgr_psoc *psoc,
 		   (target_type == TARGET_TYPE_QCA5018) ||
 		   (target_type == TARGET_TYPE_QCA5332) ||
 		   (target_type == TARGET_TYPE_QCN9224) ||
-		   (target_type == TARGET_TYPE_QCN9160)) {
+		   (target_type == TARGET_TYPE_QCN9160) ||
+		   (target_type == TARGET_TYPE_QCN6432)) {
 		return cfr_enh_deinit_pdev(psoc, pdev);
 	} else
 		return QDF_STATUS_E_NOSUPPORT;

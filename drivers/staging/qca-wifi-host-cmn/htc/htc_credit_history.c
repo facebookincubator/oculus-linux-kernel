@@ -98,7 +98,7 @@ void htc_credit_history_init(void)
  *
  * This function records the credits and pending commands whenever a command is
  * sent or credits are returned.  Call this after the credits have been updated
- * according to the transaction.  Call this before dequeing commands.
+ * according to the transaction.  Call this before dequeuing commands.
  *
  * Consider making this function accept an HTC_ENDPOINT and find the current
  * credits and queue depth itself.

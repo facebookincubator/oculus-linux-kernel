@@ -321,6 +321,49 @@ target_if_fwol_is_thermal_stats_enable(struct wlan_fwol_psoc_obj *fwol_obj)
 #endif
 
 #if defined FW_THERMAL_THROTTLE_SUPPORT || defined THERMAL_STATS_SUPPORT
+QDF_STATUS
+target_if_fwol_notify_thermal_throttle(struct wlan_objmgr_psoc *psoc,
+				       struct thermal_throttle_info *info)
+{
+	struct wlan_fwol_psoc_obj *fwol_obj;
+	struct wlan_fwol_rx_ops *rx_ops;
+	QDF_STATUS status;
+
+	fwol_obj = fwol_get_psoc_obj(psoc);
+	if (!fwol_obj) {
+		target_if_err("Failed to get FWOL Obj");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	rx_ops = &fwol_obj->rx_ops;
+	if (!rx_ops) {
+		target_if_err("rx_ops Null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (!info) {
+		target_if_err("info Null");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (rx_ops->notify_thermal_throttle_handler) {
+		if (info->level == THERMAL_UNKNOWN) {
+			target_if_debug("Invalid thermal target lvl");
+			return QDF_STATUS_E_INVAL;
+		}
+		status = rx_ops->notify_thermal_throttle_handler(psoc, info);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			target_if_debug("notify thermal_throttle failed.");
+			return QDF_STATUS_E_INVAL;
+		}
+	} else {
+		target_if_debug("No notify thermal_throttle callback");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	return status;
+}
+
 /**
  * target_if_fwol_thermal_throttle_event_handler() - handler for thermal
  *  throttle event
@@ -456,7 +499,6 @@ target_if_fwol_unregister_thermal_throttle_handler(
 	if (QDF_IS_STATUS_ERROR(status))
 		target_if_debug("Failed to unregister thermal stats event cb");
 }
-
 #else
 static void
 target_if_fwol_register_thermal_throttle_handler(struct wlan_objmgr_psoc *psoc)

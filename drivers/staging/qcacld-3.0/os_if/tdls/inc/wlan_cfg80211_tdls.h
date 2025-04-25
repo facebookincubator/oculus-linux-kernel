@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,6 +32,7 @@
 #include <wlan_tdls_public_structs.h>
 #include <qdf_list.h>
 #include <qdf_types.h>
+#include <wlan_hdd_main.h>
 #include <wlan_tdls_ucfg_api.h>
 
 #ifdef FEATURE_WLAN_TDLS
@@ -110,14 +111,15 @@ QDF_STATUS wlan_cfg80211_tdls_osif_priv_init(struct wlan_objmgr_vdev *vdev);
 void wlan_cfg80211_tdls_osif_priv_deinit(struct wlan_objmgr_vdev *vdev);
 
 /**
- * wlan_cfg80211_tdls_add_peer() - process cfg80211 add TDLS peer request
- * @vdev: vdev object
+ * wlan_cfg80211_tdls_add_peer_mlo() - process cfg80211 add TDLS peer request
+ * @adapter: adapter pointer
  * @mac: MAC address for TDLS peer
+ * @link_id: link id
  *
  * Return: 0 for success; negative errno otherwise
  */
-int wlan_cfg80211_tdls_add_peer(struct wlan_objmgr_vdev *vdev,
-				const uint8_t *mac);
+int wlan_cfg80211_tdls_add_peer_mlo(struct hdd_adapter *adapter,
+				    const uint8_t *mac, uint8_t link_id);
 
 /**
  * wlan_cfg80211_tdls_update_peer() - process cfg80211 update TDLS peer request
@@ -185,8 +187,9 @@ bool wlan_cfg80211_tdls_is_fw_6ghz_capable(struct wlan_objmgr_vdev *vdev);
 #endif
 
 /**
- * wlan_cfg80211_tdls_mgmt() - process TDLS management frames from the supplicant
- * @vdev: vdev object
+ * wlan_cfg80211_tdls_mgmt_mlo() - process TDLS management frames from
+ * the supplicant
+ * @adapter: adapter object
  * @peer: MAC address of the TDLS peer
  * @action_code: type of TDLS mgmt frame to be sent
  * @dialog_token: dialog token used in the frame
@@ -194,14 +197,15 @@ bool wlan_cfg80211_tdls_is_fw_6ghz_capable(struct wlan_objmgr_vdev *vdev);
  * @peer_capability: peer capability information
  * @buf: additional IEs to be included
  * @len: length of additional Ies
+ * @link_id: link id
  *
  * Return: 0 on success; negative errno otherwise
  */
-int wlan_cfg80211_tdls_mgmt(struct wlan_objmgr_vdev *vdev,
-			    const uint8_t *peer,
-			    uint8_t action_code, uint8_t dialog_token,
-			    uint16_t status_code, uint32_t peer_capability,
-			    const uint8_t *buf, size_t len);
+int wlan_cfg80211_tdls_mgmt_mlo(struct hdd_adapter *adapter,
+				const uint8_t *peer,
+				uint8_t action_code, uint8_t dialog_token,
+				uint16_t status_code, uint32_t peer_capability,
+				const uint8_t *buf, size_t len, int link_id);
 
 /**
  * wlan_tdls_antenna_switch() - process TDLS antenna switch

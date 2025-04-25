@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -140,7 +141,6 @@ ol_rx_notify(struct cdp_cfg *cfg_pdev,
 	     uint32_t tsf32,
 	     enum ol_rx_notify_type notify_type, qdf_nbuf_t rx_frame);
 
-#define ol_ctrl_addba_req(pdev, peer_mac_addr, tid) ol_addba_req_reject
 #define ol_ctrl_rx_addba_complete(pdev, peer_mac_addr, tid, failed) /* no-op */
 
 #endif /* _OL_CTRL_TXRX_API__H_ */

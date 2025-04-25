@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -82,6 +82,50 @@ tgt_send_coex_config(struct wlan_objmgr_vdev *vdev,
 		return coex_ops->coex_config_send(pdev, param);
 
 	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+tgt_send_coex_multi_config(struct wlan_objmgr_vdev *vdev,
+			   struct coex_multi_config *param)
+{
+	struct wlan_lmac_if_coex_tx_ops *coex_ops;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_objmgr_pdev *pdev;
+
+	if (!vdev) {
+		coex_err("NULL vdev");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		coex_err("NULL psoc");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev) {
+		coex_err("NULL pdev");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	coex_ops = wlan_psoc_get_coex_txops(psoc);
+	if (coex_ops && coex_ops->coex_multi_config_send)
+		return coex_ops->coex_multi_config_send(pdev, param);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+bool
+tgt_get_coex_multi_config_support(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_lmac_if_coex_tx_ops *coex_ops;
+
+	coex_ops = wlan_psoc_get_coex_txops(psoc);
+	if (coex_ops && coex_ops->coex_get_multi_config_support)
+		return coex_ops->coex_get_multi_config_support(psoc);
+
+	return false;
 }
 
 #ifdef WLAN_FEATURE_DBAM_CONFIG

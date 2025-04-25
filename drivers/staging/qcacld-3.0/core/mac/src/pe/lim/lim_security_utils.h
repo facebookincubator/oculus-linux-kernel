@@ -90,9 +90,6 @@ void lim_encrypt_auth_frame(struct mac_context *, uint8_t, uint8_t *, uint8_t *,
 uint8_t lim_decrypt_auth_frame(struct mac_context *, uint8_t *, uint8_t *,
 			       uint8_t *, uint32_t, uint16_t);
 
-void lim_post_sme_set_keys_cnf(struct mac_context *, tLimMlmSetKeysReq *,
-			       tLimMlmSetKeysCnf *);
-
 #define  PTAPS  0xedb88320
 
 static inline uint32_t lim_crc_update(uint32_t crc, uint8_t x)

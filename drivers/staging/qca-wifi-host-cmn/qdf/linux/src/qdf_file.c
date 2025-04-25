@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2019, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -121,3 +122,34 @@ void qdf_module_param_file_free(char *file_buf)
 	qdf_untracked_mem_free(file_buf);
 }
 #endif
+
+QDF_STATUS qdf_file_read_bytes(const char *path, char **out_buf,
+			       unsigned int *out_buff_size)
+{
+	int errno;
+	const struct firmware *fw;
+	char *buf;
+
+	*out_buf = NULL;
+
+	errno = qdf_firmware_request_nowarn(&fw, path, NULL);
+	if (errno) {
+		qdf_err("Failed to read file %s", path);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	buf = qdf_mem_malloc(fw->size);
+	if (!buf) {
+		release_firmware(fw);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	qdf_mem_copy(buf, fw->data, fw->size);
+	*out_buff_size = fw->size;
+	*out_buf = buf;
+	release_firmware(fw);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+qdf_export_symbol(qdf_file_read_bytes);

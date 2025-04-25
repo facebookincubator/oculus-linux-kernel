@@ -292,6 +292,29 @@ DEFINE_EVENT(msm_vidc_buffer_dma_ops, msm_vidc_dma_buffer,
 	TP_ARGS(buffer_op, dmabuf, size, kvaddr, buf_name, secure, region)
 );
 
+DECLARE_EVENT_CLASS(msm_v4l2_vidc_trace,
+
+	TP_PROTO(int size, char *fw_trace_buf),
+
+	TP_ARGS(size, fw_trace_buf),
+
+	TP_STRUCT__entry(
+		__array(char, fw_trace_buf, MAX_FW_LOG_LEN)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->fw_trace_buf, fw_trace_buf, size)
+	),
+
+	TP_printk("%s", __entry->fw_trace_buf)
+);
+
+DEFINE_EVENT(msm_v4l2_vidc_trace, msm_v4l2_vidc_trace_fw_log,
+
+	TP_PROTO(int size, char *fw_trace_buf),
+
+	TP_ARGS(size, fw_trace_buf)
+);
 #endif
 
 /* This part must be outside protection */

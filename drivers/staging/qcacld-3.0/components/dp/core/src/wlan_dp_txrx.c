@@ -57,21 +57,20 @@ uint32_t wlan_dp_intf_get_pkt_type_bitmap_value(void *intf_ctx)
 }
 
 #if defined(WLAN_SUPPORT_RX_FISA)
-void dp_rx_skip_fisa(struct cdp_soc_t *cdp_soc, uint32_t value)
+void dp_rx_skip_fisa(struct wlan_dp_psoc_context *dp_ctx, uint32_t value)
 {
-	struct dp_soc *soc = (struct dp_soc *)cdp_soc;
-
-	qdf_atomic_set(&soc->skip_fisa_param.skip_fisa, !value);
+	qdf_atomic_set(&dp_ctx->skip_fisa_param.skip_fisa, !value);
 }
 #endif
 
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
-void dp_get_tx_resource(struct wlan_dp_intf *dp_intf,
+void dp_get_tx_resource(struct wlan_dp_link *dp_link,
 			struct qdf_mac_addr *mac_addr)
 {
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	struct wlan_dp_psoc_callbacks *dp_ops = &dp_intf->dp_ctx->dp_ops;
 
-	dp_ops->dp_get_tx_resource(dp_intf->intf_id,
+	dp_ops->dp_get_tx_resource(dp_link->link_id,
 				   mac_addr);
 }
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
@@ -211,7 +210,8 @@ dp_tx_rx_collect_connectivity_stats_info(qdf_nbuf_t nbuf, void *context,
 		enum connectivity_stats_pkt_status action, uint8_t *pkt_type)
 {
 	uint32_t pkt_type_bitmap;
-	struct wlan_dp_intf *dp_intf =  (struct  wlan_dp_intf *)context;
+	struct wlan_dp_link *dp_link = (struct wlan_dp_link *)context;
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 
 	/* ARP tracking is done already. */
 	pkt_type_bitmap = dp_intf->pkt_type_bitmap;
@@ -304,7 +304,7 @@ dp_tx_rx_collect_connectivity_stats_info(qdf_nbuf_t nbuf, void *context,
 							rx_icmpv4_rsp_count;
 				*pkt_type =
 				DP_CONNECTIVITY_CHECK_SET_ICMPV4;
-				dp_info("ICMPv4 Res packet");
+				dp_info("ICMPv4 resp packet");
 			}
 		} else if (qdf_nbuf_is_ipv4_tcp_pkt(nbuf)) {
 			if (qdf_nbuf_data_is_tcp_syn_ack(nbuf) &&
@@ -324,7 +324,7 @@ dp_tx_rx_collect_connectivity_stats_info(qdf_nbuf_t nbuf, void *context,
 				++dp_intf->dp_stats.dns_stats.
 							rx_dns_rsp_count;
 				*pkt_type = DP_CONNECTIVITY_CHECK_SET_DNS;
-				dp_info("DNS response packet");
+				dp_info("DNS resp packet");
 			}
 		}
 		break;
@@ -406,17 +406,18 @@ dp_tx_rx_collect_connectivity_stats_info(qdf_nbuf_t nbuf, void *context,
 
 /**
  * dp_get_transmit_mac_addr() - Get the mac address to validate the xmit
- * @dp_intf: DP interface
+ * @dp_link: DP link handle
  * @nbuf: The network buffer
  * @mac_addr_tx_allowed: The mac address to be filled
  *
  * Return: None
  */
 static
-void dp_get_transmit_mac_addr(struct wlan_dp_intf *dp_intf,
+void dp_get_transmit_mac_addr(struct wlan_dp_link *dp_link,
 			      qdf_nbuf_t nbuf,
 			      struct qdf_mac_addr *mac_addr_tx_allowed)
 {
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	bool is_mc_bc_addr = false;
 	enum nan_datapath_state state;
 
@@ -428,12 +429,12 @@ void dp_get_transmit_mac_addr(struct wlan_dp_intf *dp_intf,
 	 * simple VDEV NULL check should be sufficient to handle the case of
 	 * VDEV getting destroyed first followed by dp_start_xmit().
 	 */
-	if (!dp_intf->vdev)
+	if (!dp_link->vdev)
 		return;
 
 	switch (dp_intf->device_mode) {
 	case QDF_NDI_MODE:
-		state = wlan_nan_get_ndi_state(dp_intf->vdev);
+		state = wlan_nan_get_ndi_state(dp_link->vdev);
 		if (state == NAN_DATA_NDI_CREATED_STATE ||
 		    state == NAN_DATA_CONNECTED_STATE ||
 		    state == NAN_DATA_CONNECTING_STATE ||
@@ -451,9 +452,9 @@ void dp_get_transmit_mac_addr(struct wlan_dp_intf *dp_intf,
 		break;
 	case QDF_STA_MODE:
 	case QDF_P2P_CLIENT_MODE:
-		if (wlan_cm_is_vdev_active(dp_intf->vdev))
+		if (wlan_cm_is_vdev_active(dp_link->vdev))
 			qdf_copy_macaddr(mac_addr_tx_allowed,
-					 &dp_intf->conn_info.bssid);
+					 &dp_link->conn_info.bssid);
 		break;
 	default:
 		break;
@@ -463,19 +464,19 @@ void dp_get_transmit_mac_addr(struct wlan_dp_intf *dp_intf,
 #ifdef HANDLE_BROADCAST_EAPOL_TX_FRAME
 /**
  * dp_fix_broadcast_eapol() - Fix broadcast eapol
- * @dp_intf: pointer to dp interface
+ * @dp_link: pointer to dp link
  * @nbuf: pointer to nbuf
  *
  * Override DA of broadcast eapol with bssid addr.
  *
  * Return: None
  */
-static void dp_fix_broadcast_eapol(struct wlan_dp_intf *dp_intf,
+static void dp_fix_broadcast_eapol(struct wlan_dp_link *dp_link,
 				   qdf_nbuf_t nbuf)
 {
 	qdf_ether_header_t *eth_hdr = (qdf_ether_header_t *)qdf_nbuf_data(nbuf);
 	unsigned char *ap_mac_addr =
-		&dp_intf->conn_info.bssid.bytes[0];
+		&dp_link->conn_info.bssid.bytes[0];
 
 	if (qdf_unlikely((QDF_NBUF_CB_GET_PACKET_TYPE(nbuf) ==
 			  QDF_NBUF_CB_PACKET_TYPE_EAPOL) &&
@@ -490,7 +491,7 @@ static void dp_fix_broadcast_eapol(struct wlan_dp_intf *dp_intf,
 	}
 }
 #else
-static void dp_fix_broadcast_eapol(struct wlan_dp_intf *dp_intf,
+static void dp_fix_broadcast_eapol(struct wlan_dp_link *dp_link,
 				   qdf_nbuf_t nbuf)
 {
 }
@@ -528,6 +529,13 @@ static void dp_mark_icmp_req_to_fw(struct wlan_dp_psoc_context *dp_ctx,
 	if (time_interval_ms == WLAN_CFG_ICMP_REQ_TO_FW_MARK_ALL)
 		QDF_NBUF_CB_TX_PACKET_TO_FW(nbuf) = 1;
 
+	/* For fragment IPV4 ICMP frames
+	 * only mark last segment once to FW
+	 */
+	if (qdf_nbuf_is_ipv4_pkt(nbuf) &&
+	    qdf_nbuf_is_ipv4_fragment(nbuf))
+		return;
+
 	curr_time = qdf_get_log_timestamp();
 	time_delta = curr_time - prev_marked_icmp_time;
 	if (time_delta >= (time_interval_ms *
@@ -554,7 +562,7 @@ void wlan_dp_pkt_add_timestamp(struct wlan_dp_intf *dp_intf,
 		uint64_t tsf_time;
 
 		dp_ops = &dp_intf->dp_ctx->dp_ops;
-		dp_ops->dp_get_tsf_time(dp_intf->intf_id,
+		dp_ops->dp_get_tsf_time(dp_intf->dev,
 					qdf_get_log_timestamp(),
 					&tsf_time);
 		qdf_add_dp_pkt_timestamp(nbuf, index, tsf_time);
@@ -563,8 +571,9 @@ void wlan_dp_pkt_add_timestamp(struct wlan_dp_intf *dp_intf,
 #endif
 
 QDF_STATUS
-dp_start_xmit(struct wlan_dp_intf *dp_intf, qdf_nbuf_t nbuf)
+dp_start_xmit(struct wlan_dp_link *dp_link, qdf_nbuf_t nbuf)
 {
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	struct wlan_dp_psoc_context *dp_ctx = dp_intf->dp_ctx;
 	struct dp_tx_rx_stats *stats;
 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
@@ -628,17 +637,17 @@ dp_start_xmit(struct wlan_dp_intf *dp_intf, qdf_nbuf_t nbuf)
 
 	/* track connectivity stats */
 	if (dp_intf->pkt_type_bitmap)
-		dp_tx_rx_collect_connectivity_stats_info(nbuf, dp_intf,
+		dp_tx_rx_collect_connectivity_stats_info(nbuf, dp_link,
 							 PKT_TYPE_REQ,
 							 &pkt_type);
 
-	dp_get_transmit_mac_addr(dp_intf, nbuf, &mac_addr_tx_allowed);
+	dp_get_transmit_mac_addr(dp_link, nbuf, &mac_addr_tx_allowed);
 	if (qdf_is_macaddr_zero(&mac_addr_tx_allowed)) {
 		dp_info_rl("tx not allowed, transmit operation suspended");
 		goto drop_pkt;
 	}
 
-	dp_get_tx_resource(dp_intf, &mac_addr_tx_allowed);
+	dp_get_tx_resource(dp_link, &mac_addr_tx_allowed);
 
 	if (!qdf_nbuf_ipa_owned_get(nbuf)) {
 		nbuf = dp_nbuf_orphan(dp_intf, nbuf);
@@ -674,7 +683,7 @@ dp_start_xmit(struct wlan_dp_intf *dp_intf, qdf_nbuf_t nbuf)
 			     sizeof(qdf_nbuf_data(nbuf)),
 			     QDF_TX));
 
-	if (!dp_intf_is_tx_allowed(nbuf, dp_intf->intf_id, soc,
+	if (!dp_intf_is_tx_allowed(nbuf, dp_link->link_id, soc,
 				   mac_addr_tx_allowed.bytes)) {
 		dp_info("Tx not allowed for sta:" QDF_MAC_ADDR_FMT,
 			QDF_MAC_ADDR_REF(mac_addr_tx_allowed.bytes));
@@ -690,16 +699,16 @@ dp_start_xmit(struct wlan_dp_intf *dp_intf, qdf_nbuf_t nbuf)
 	/*
 	 * If a transmit function is not registered, drop packet
 	 */
-	if (!dp_intf->tx_fn) {
+	if (!dp_intf->txrx_ops.tx.tx) {
 		dp_err_rl("TX function not registered by the data path");
 		goto drop_pkt_and_release_nbuf;
 	}
 
-	dp_fix_broadcast_eapol(dp_intf, nbuf);
+	dp_fix_broadcast_eapol(dp_link, nbuf);
 
-	if (dp_intf->tx_fn(soc, dp_intf->intf_id, nbuf)) {
+	if (dp_intf->txrx_ops.tx.tx(soc, dp_link->link_id, nbuf)) {
 		dp_debug_rl("Failed to send packet from adapter %u",
-			    dp_intf->intf_id);
+			    dp_link->link_id);
 		goto drop_pkt_and_release_nbuf;
 	}
 
@@ -711,7 +720,7 @@ drop_pkt:
 
 	/* track connectivity stats */
 	if (dp_intf->pkt_type_bitmap)
-		dp_tx_rx_collect_connectivity_stats_info(nbuf, dp_intf,
+		dp_tx_rx_collect_connectivity_stats_info(nbuf, dp_link,
 							 PKT_TYPE_TX_DROPPED,
 							 &pkt_type);
 	qdf_dp_trace_data_pkt(nbuf, QDF_TRACE_DEFAULT_PDEV_ID,
@@ -786,7 +795,8 @@ void dp_tx_timeout(struct wlan_dp_intf *dp_intf)
 
 void dp_sta_notify_tx_comp_cb(qdf_nbuf_t nbuf, void *ctx, uint16_t flag)
 {
-	struct wlan_dp_intf *dp_intf = ctx;
+	struct wlan_dp_link *dp_link = ctx;
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	enum qdf_proto_subtype subtype;
 	struct qdf_mac_addr *dest_mac_addr;
 	QDF_STATUS status;
@@ -825,10 +835,10 @@ void dp_sta_notify_tx_comp_cb(qdf_nbuf_t nbuf, void *ctx, uint16_t flag)
 	}
 
 	/* Since it is TDLS call took TDLS vdev ref*/
-	status = wlan_objmgr_vdev_try_get_ref(dp_intf->vdev, WLAN_TDLS_SB_ID);
+	status = wlan_objmgr_vdev_try_get_ref(dp_link->vdev, WLAN_TDLS_SB_ID);
 	if (QDF_IS_STATUS_SUCCESS(status)) {
-		wlan_tdls_update_tx_pkt_cnt(dp_intf->vdev, dest_mac_addr);
-		wlan_objmgr_vdev_release_ref(dp_intf->vdev, WLAN_TDLS_SB_ID);
+		wlan_tdls_update_tx_pkt_cnt(dp_link->vdev, dest_mac_addr);
+		wlan_objmgr_vdev_release_ref(dp_link->vdev, WLAN_TDLS_SB_ID);
 	}
 }
 
@@ -836,11 +846,13 @@ void dp_sta_notify_tx_comp_cb(qdf_nbuf_t nbuf, void *ctx, uint16_t flag)
 QDF_STATUS dp_mon_rx_packet_cbk(void *context, qdf_nbuf_t rxbuf)
 {
 	struct wlan_dp_intf *dp_intf;
+	struct wlan_dp_link *dp_link;
 	QDF_STATUS status;
 	qdf_nbuf_t nbuf;
 	qdf_nbuf_t nbuf_next;
 	unsigned int cpu_index;
 	struct dp_tx_rx_stats *stats;
+	enum dp_nbuf_push_type type;
 
 	/* Sanity check on inputs */
 	if ((!context) || (!rxbuf)) {
@@ -848,7 +860,12 @@ QDF_STATUS dp_mon_rx_packet_cbk(void *context, qdf_nbuf_t rxbuf)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	dp_intf = (struct wlan_dp_intf *)context;
+	dp_link = (struct wlan_dp_link *)context;
+	dp_intf = dp_link->dp_intf;
+	if (!dp_intf) {
+		dp_err_rl("dp_intf is NULL for dp_link %pK", dp_link);
+		return QDF_STATUS_E_FAILURE;
+	}
 
 	cpu_index = qdf_get_cpu();
 	stats = &dp_intf->dp_stats.tx_rx_stats;
@@ -881,8 +898,10 @@ QDF_STATUS dp_mon_rx_packet_cbk(void *context, qdf_nbuf_t rxbuf)
 			 * This is the last packet on the chain
 			 * Scheduling rx sirq
 			 */
+			type = qdf_in_atomic() ? DP_NBUF_PUSH_NAPI :
+						 DP_NBUF_PUSH_BH_DISABLE;
 			status = dp_intf->dp_ctx->dp_ops.dp_nbuf_push_pkt(nbuf,
-							DP_NBUF_PUSH_NAPI);
+							type);
 		}
 
 		if (QDF_IS_STATUS_SUCCESS(status))
@@ -1329,16 +1348,19 @@ static inline void dp_tsf_timestamp_rx(struct wlan_dp_psoc_context *dp_ctx,
 #endif
 
 QDF_STATUS
-dp_rx_thread_gro_flush_ind_cbk(void *intf_ctx, int rx_ctx_id)
+dp_rx_thread_gro_flush_ind_cbk(void *link_ctx, int rx_ctx_id)
 {
-	struct wlan_dp_intf *dp_intf = intf_ctx;
+	struct wlan_dp_link *dp_link = link_ctx;
+	struct wlan_dp_intf *dp_intf;
 	enum dp_rx_gro_flush_code gro_flush_code = DP_RX_GRO_NORMAL_FLUSH;
 
-	if (qdf_unlikely((!dp_intf) || (!dp_intf->dp_ctx))) {
+	if (qdf_unlikely((!dp_link) || (!dp_link->dp_intf) ||
+			 (!dp_link->dp_intf->dp_ctx))) {
 		dp_err("Null params being passed");
 		return QDF_STATUS_E_FAILURE;
 	}
 
+	dp_intf = dp_link->dp_intf;
 	if (dp_intf->runtime_disable_rx_thread)
 		return QDF_STATUS_SUCCESS;
 
@@ -1351,32 +1373,34 @@ dp_rx_thread_gro_flush_ind_cbk(void *intf_ctx, int rx_ctx_id)
 				   rx_ctx_id, gro_flush_code);
 }
 
-QDF_STATUS dp_rx_pkt_thread_enqueue_cbk(void *intf_ctx,
+QDF_STATUS dp_rx_pkt_thread_enqueue_cbk(void *link_ctx,
 					qdf_nbuf_t nbuf_list)
 {
 	struct wlan_dp_intf *dp_intf;
-	uint8_t intf_id;
+	struct wlan_dp_link *dp_link;
+	uint8_t link_id;
 	qdf_nbuf_t head_ptr;
 
-	if (qdf_unlikely(!intf_ctx || !nbuf_list)) {
+	if (qdf_unlikely(!link_ctx || !nbuf_list)) {
 		dp_err_rl("Null params being passed");
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	dp_intf = (struct wlan_dp_intf *)intf_ctx;
-	if (is_dp_intf_valid(dp_intf))
+	dp_link = (struct wlan_dp_link *)link_ctx;
+	if (!is_dp_link_valid(dp_link))
 		return QDF_STATUS_E_FAILURE;
 
+	dp_intf = dp_link->dp_intf;
 	if (dp_intf->runtime_disable_rx_thread &&
-	    dp_intf->rx_stack)
-		return dp_intf->rx_stack(dp_intf, nbuf_list);
+	    dp_intf->txrx_ops.rx.rx_stack)
+		return dp_intf->txrx_ops.rx.rx_stack(dp_link, nbuf_list);
 
-	intf_id = dp_intf->intf_id;
+	link_id = dp_link->link_id;
 
 	head_ptr = nbuf_list;
 	while (head_ptr) {
 		qdf_nbuf_cb_update_vdev_id(head_ptr,
-					   intf_id);
+					   link_id);
 		head_ptr = qdf_nbuf_next(head_ptr);
 	}
 
@@ -1398,9 +1422,9 @@ QDF_STATUS wlan_dp_rx_deliver_to_stack(struct wlan_dp_intf *dp_intf,
 
 #if defined(WLAN_SUPPORT_RX_FISA)
 /**
- * wlan_dp_set_fisa_disallowed_for_vdev() - Set fisa disallowed bit for a vdev
+ * wlan_dp_set_fisa_disallowed_for_intf() - Set fisa disallowed bit for an intf
  * @soc: DP soc handle
- * @vdev_id: Vdev id
+ * @dp_intf: DP interface handle
  * @rx_ctx_id: rx context id
  * @val: Enable or disable
  *
@@ -1409,16 +1433,16 @@ QDF_STATUS wlan_dp_rx_deliver_to_stack(struct wlan_dp_intf *dp_intf,
  * Return: None
  */
 static inline
-void wlan_dp_set_fisa_disallowed_for_vdev(ol_txrx_soc_handle soc,
-					  uint8_t vdev_id,
+void wlan_dp_set_fisa_disallowed_for_intf(ol_txrx_soc_handle soc,
+					  struct wlan_dp_intf *dp_intf,
 					  uint8_t rx_ctx_id, uint8_t val)
 {
-	dp_set_fisa_disallowed_for_vdev(soc, vdev_id, rx_ctx_id, val);
+	dp_intf->fisa_disallowed[rx_ctx_id] = val;
 }
 #else
 static inline
-void wlan_dp_set_fisa_disallowed_for_vdev(ol_txrx_soc_handle soc,
-					  uint8_t vdev_id,
+void wlan_dp_set_fisa_disallowed_for_intf(ol_txrx_soc_handle soc,
+					  struct wlan_dp_intf *dp_intf,
 					  uint8_t rx_ctx_id, uint8_t val)
 {
 }
@@ -1445,15 +1469,13 @@ QDF_STATUS wlan_dp_rx_deliver_to_stack(struct wlan_dp_intf *dp_intf,
 	if (gro_disallowed == 0 &&
 	    dp_intf->gro_flushed[rx_ctx_id] != 0) {
 		if (qdf_likely(soc))
-			wlan_dp_set_fisa_disallowed_for_vdev(soc,
-							     dp_intf->intf_id,
+			wlan_dp_set_fisa_disallowed_for_intf(soc, dp_intf,
 							     rx_ctx_id, 0);
 		dp_intf->gro_flushed[rx_ctx_id] = 0;
 	} else if (gro_disallowed &&
 		   dp_intf->gro_flushed[rx_ctx_id] == 0) {
 		if (qdf_likely(soc))
-			wlan_dp_set_fisa_disallowed_for_vdev(soc,
-							     dp_intf->intf_id,
+			wlan_dp_set_fisa_disallowed_for_intf(soc, dp_intf,
 							     rx_ctx_id, 1);
 	}
 
@@ -1576,9 +1598,10 @@ dp_is_gratuitous_arp_unsolicited_na(struct wlan_dp_psoc_context *dp_ctx,
 	return false;
 }
 
-QDF_STATUS dp_rx_flush_packet_cbk(void *dp_intf_context, uint8_t intf_id)
+QDF_STATUS dp_rx_flush_packet_cbk(void *dp_link_context, uint8_t link_id)
 {
-	struct wlan_dp_intf *dp_intf = (struct wlan_dp_intf *)dp_intf_context;
+	struct wlan_dp_link *dp_link = (struct wlan_dp_link *)dp_link_context;
+	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	struct wlan_dp_psoc_context *dp_ctx;
 	ol_txrx_soc_handle soc = cds_get_context(QDF_MODULE_ID_SOC);
 
@@ -1592,11 +1615,11 @@ QDF_STATUS dp_rx_flush_packet_cbk(void *dp_intf_context, uint8_t intf_id)
 	qdf_atomic_inc(&dp_intf->num_active_task);
 
 	/* do fisa flush for this vdev */
-	if (dp_ctx->dp_cfg.fisa_enable)
-		wlan_dp_rx_fisa_flush_by_vdev_id((struct dp_soc *)soc, intf_id);
+	if (wlan_dp_cfg_is_rx_fisa_enabled(&dp_ctx->dp_cfg))
+		wlan_dp_rx_fisa_flush_by_vdev_id((struct dp_soc *)soc, link_id);
 
 	if (dp_ctx->enable_dp_rx_threads)
-		dp_txrx_flush_pkts_by_vdev_id(soc, intf_id);
+		dp_txrx_flush_pkts_by_vdev_id(soc, link_id);
 
 	qdf_atomic_dec(&dp_intf->num_active_task);
 
@@ -1607,8 +1630,9 @@ QDF_STATUS dp_rx_flush_packet_cbk(void *dp_intf_context, uint8_t intf_id)
 QDF_STATUS wlan_dp_rx_fisa_cbk(void *dp_soc,
 			       void *dp_vdev, qdf_nbuf_t nbuf_list)
 {
-	return dp_fisa_rx((struct dp_soc *)dp_soc, (struct dp_vdev *)dp_vdev,
-			  nbuf_list);
+	struct wlan_dp_psoc_context *dp_ctx = dp_get_context();
+
+	return dp_fisa_rx(dp_ctx, dp_vdev, nbuf_list);
 }
 
 QDF_STATUS wlan_dp_rx_fisa_flush_by_ctx_id(void *dp_soc, int ring_num)
@@ -1622,10 +1646,11 @@ QDF_STATUS wlan_dp_rx_fisa_flush_by_vdev_id(void *dp_soc, uint8_t vdev_id)
 }
 #endif
 
-QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
+QDF_STATUS dp_rx_packet_cbk(void *dp_link_context,
 			    qdf_nbuf_t rxBuf)
 {
 	struct wlan_dp_intf *dp_intf = NULL;
+	struct wlan_dp_link *dp_link = NULL;
 	struct wlan_dp_psoc_context *dp_ctx = NULL;
 	QDF_STATUS qdf_status = QDF_STATUS_E_FAILURE;
 	qdf_nbuf_t nbuf = NULL;
@@ -1642,12 +1667,13 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 	uint8_t pkt_type;
 
 	/* Sanity check on inputs */
-	if (qdf_unlikely((!dp_intf_context) || (!rxBuf))) {
+	if (qdf_unlikely((!dp_link_context) || (!rxBuf))) {
 		dp_err_rl("Null params being passed");
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	dp_intf = (struct wlan_dp_intf *)dp_intf_context;
+	dp_link = (struct wlan_dp_link *)dp_link_context;
+	dp_intf = dp_link->dp_intf;
 	dp_ctx = dp_intf->dp_ctx;
 
 	cpu_index = qdf_get_cpu();
@@ -1705,11 +1731,11 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 
 		/* track connectivity stats */
 		if (dp_intf->pkt_type_bitmap)
-			dp_tx_rx_collect_connectivity_stats_info(nbuf, dp_intf,
+			dp_tx_rx_collect_connectivity_stats_info(nbuf, dp_link,
 								 PKT_TYPE_RSP,
 								 &pkt_type);
 
-		if ((dp_intf->conn_info.proxy_arp_service) &&
+		if ((dp_link->conn_info.proxy_arp_service) &&
 		    dp_is_gratuitous_arp_unsolicited_na(dp_ctx, nbuf)) {
 			qdf_atomic_inc(&stats->rx_usolict_arp_n_mcast_drp);
 			/* Remove SKB from internal tracking table before
@@ -1720,7 +1746,7 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 		}
 
 		dp_event_eapol_log(nbuf, QDF_RX);
-		qdf_dp_trace_log_pkt(dp_intf->intf_id, nbuf, QDF_RX,
+		qdf_dp_trace_log_pkt(dp_link->link_id, nbuf, QDF_RX,
 				     QDF_TRACE_DEFAULT_PDEV_ID,
 				     dp_intf->device_mode);
 
@@ -1739,12 +1765,12 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 		mac_addr = (struct qdf_mac_addr *)(qdf_nbuf_data(nbuf) +
 						   QDF_NBUF_SRC_MAC_OFFSET);
 
-		status = wlan_objmgr_vdev_try_get_ref(dp_intf->vdev,
+		status = wlan_objmgr_vdev_try_get_ref(dp_link->vdev,
 						      WLAN_TDLS_SB_ID);
 		if (QDF_IS_STATUS_SUCCESS(status)) {
-			wlan_tdls_update_rx_pkt_cnt(dp_intf->vdev, mac_addr,
+			wlan_tdls_update_rx_pkt_cnt(dp_link->vdev, mac_addr,
 						    dest_mac_addr);
-			wlan_objmgr_vdev_release_ref(dp_intf->vdev,
+			wlan_objmgr_vdev_release_ref(dp_link->vdev,
 						     WLAN_TDLS_SB_ID);
 		}
 
@@ -1775,7 +1801,7 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 		/* hold configurable wakelock for unicast traffic */
 		if (!dp_is_current_high_throughput(dp_ctx) &&
 		    dp_ctx->dp_cfg.rx_wakelock_timeout &&
-		    dp_intf->conn_info.is_authenticated)
+		    dp_link->conn_info.is_authenticated)
 			wake_lock = dp_is_rx_wake_lock_needed(nbuf);
 
 		if (wake_lock) {
@@ -1795,7 +1821,7 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 
 		if (send_over_nl && dp_ctx->dp_ops.dp_send_rx_pkt_over_nl) {
 			if (dp_ctx->dp_ops.dp_send_rx_pkt_over_nl(dp_intf->dev,
-					(u8 *)&dp_intf->conn_info.peer_macaddr,
+					(u8 *)&dp_link->conn_info.peer_macaddr,
 								  nbuf, false))
 				qdf_status = QDF_STATUS_SUCCESS;
 			else
@@ -1819,7 +1845,7 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 			/* track connectivity stats */
 			if (dp_intf->pkt_type_bitmap)
 				dp_tx_rx_collect_connectivity_stats_info(
-					nbuf, dp_intf,
+					nbuf, dp_link,
 					PKT_TYPE_RX_DELIVERED,
 					&pkt_type);
 		} else {
@@ -1837,7 +1863,7 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 			/* track connectivity stats */
 			if (dp_intf->pkt_type_bitmap)
 				dp_tx_rx_collect_connectivity_stats_info(
-					nbuf, dp_intf,
+					nbuf, dp_link,
 					PKT_TYPE_RX_REFUSED,
 					&pkt_type);
 		}

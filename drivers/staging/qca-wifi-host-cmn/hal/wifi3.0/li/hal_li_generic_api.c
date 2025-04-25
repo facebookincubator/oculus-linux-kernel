@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -102,7 +102,7 @@ void hal_tx_init_data_ring_li(hal_soc_handle_t hal_soc_hdl,
 	}
 }
 
-/*
+/**
  * hal_rx_msdu_is_wlan_mcast_generic_li(): Check if the buffer is for multicast
  *					address
  * @nbuf: Network buffer
@@ -138,8 +138,9 @@ static uint32_t hal_rx_tlv_decap_format_get_li(void *hw_desc_addr)
 /**
  * hal_rx_dump_pkt_tlvs_li(): API to print all member elements of
  *			 RX TLVs
- * @ buf: pointer the pkt buffer.
- * @ dbg_level: log level.
+ * @hal_soc_hdl: hal_soc handle
+ * @buf: pointer the pkt buffer.
+ * @dbg_level: log level.
  *
  * Return: void
  */
@@ -147,21 +148,14 @@ static void hal_rx_dump_pkt_tlvs_li(hal_soc_handle_t hal_soc_hdl,
 				uint8_t *buf, uint8_t dbg_level)
 {
 	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)buf;
-	struct rx_attention *rx_attn = &pkt_tlvs->attn_tlv.rx_attn;
-	struct rx_mpdu_start *mpdu_start =
-				&pkt_tlvs->mpdu_start_tlv.rx_mpdu_start;
-	struct rx_msdu_start *msdu_start =
-				&pkt_tlvs->msdu_start_tlv.rx_msdu_start;
-	struct rx_mpdu_end *mpdu_end = &pkt_tlvs->mpdu_end_tlv.rx_mpdu_end;
-	struct rx_msdu_end *msdu_end = &pkt_tlvs->msdu_end_tlv.rx_msdu_end;
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
 
-	hal_rx_dump_rx_attention_tlv(rx_attn, dbg_level);
-	hal_rx_dump_mpdu_start_tlv(mpdu_start, dbg_level, hal_soc);
-	hal_rx_dump_msdu_start_tlv(hal_soc, msdu_start, dbg_level);
-	hal_rx_dump_mpdu_end_tlv(mpdu_end, dbg_level);
-	hal_rx_dump_msdu_end_tlv(hal_soc, msdu_end, dbg_level);
-	hal_rx_dump_pkt_hdr_tlv(pkt_tlvs, dbg_level);
+	hal_rx_dump_msdu_end_tlv(hal_soc, pkt_tlvs, dbg_level);
+	hal_rx_dump_rx_attention_tlv(hal_soc, pkt_tlvs, dbg_level);
+	hal_rx_dump_msdu_start_tlv(hal_soc, pkt_tlvs, dbg_level);
+	hal_rx_dump_mpdu_start_tlv(hal_soc, pkt_tlvs, dbg_level);
+	hal_rx_dump_mpdu_end_tlv(hal_soc, pkt_tlvs, dbg_level);
+	hal_rx_dump_pkt_hdr_tlv(hal_soc, pkt_tlvs, dbg_level);
 }
 
 /**
@@ -191,8 +185,8 @@ hal_rx_tlv_get_offload_info_li(uint8_t *rx_tlv,
 	return 0;
 }
 
-/*
- * hal_rx_attn_phy_ppdu_id_get(): get phy_ppdu_id value
+/**
+ * hal_rx_attn_phy_ppdu_id_get_li(): get phy_ppdu_id value
  * from rx attention
  * @buf: pointer to rx_pkt_tlvs
  *
@@ -210,10 +204,11 @@ static uint16_t hal_rx_attn_phy_ppdu_id_get_li(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_start_msdu_len_get(): API to get the MSDU length
+ * hal_rx_msdu_start_msdu_len_get_li(): API to get the MSDU length
  * from rx_msdu_start TLV
  *
- * @ buf: pointer to the start of RX PKT TLV headers
+ * @buf: pointer to the start of RX PKT TLV headers
+ *
  * Return: msdu length
  */
 static uint32_t hal_rx_msdu_start_msdu_len_get_li(uint8_t *buf)
@@ -262,28 +257,6 @@ static int hal_rx_get_l3_l4_offsets_li(uint8_t *buf, uint32_t *l3_hdr_offset,
 	*l4_hdr_offset = HAL_RX_TLV_GET_TCP_OFFSET(buf);
 
 	return 0;
-}
-
-/**
- * hal_rx_tlv_get_pn_num_li() - Get packet number from RX TLV
- * @buf: rx tlv address
- * @pn_num: buffer to store packet number
- *
- * Return: None
- */
-static inline void hal_rx_tlv_get_pn_num_li(uint8_t *buf, uint64_t *pn_num)
-{
-	struct rx_pkt_tlvs *rx_pkt_tlv =
-			(struct rx_pkt_tlvs *)buf;
-	struct rx_mpdu_info *rx_mpdu_info_details =
-	 &rx_pkt_tlv->mpdu_start_tlv.rx_mpdu_start.rx_mpdu_info_details;
-
-	pn_num[0] = rx_mpdu_info_details->pn_31_0;
-	pn_num[0] |=
-		((uint64_t)rx_mpdu_info_details->pn_63_32 << 32);
-	pn_num[1] = rx_mpdu_info_details->pn_95_64;
-	pn_num[1] |=
-		((uint64_t)rx_mpdu_info_details->pn_127_96 << 32);
 }
 
 #ifdef NO_RX_PKT_HDR_TLV
@@ -386,12 +359,13 @@ uint8_t hal_rx_ret_buf_manager_get_li(hal_ring_desc_t ring_desc)
 }
 
 /**
- * hal_rx_reo_buf_paddr_get_li: Gets the physical address and
+ * hal_rx_reo_buf_paddr_get_li() - Gets the physical address and
  * cookie from the REO destination ring element
  *
- * @ rx_desc: Opaque cookie pointer used by HAL to get to
+ * @rx_desc: Opaque cookie pointer used by HAL to get to
  * the current descriptor
- * @ buf_info: structure to return the buffer information
+ * @buf_info: structure to return the buffer information
+ *
  * Return: void
  */
 static void hal_rx_reo_buf_paddr_get_li(hal_ring_desc_t rx_desc,
@@ -407,12 +381,12 @@ static void hal_rx_reo_buf_paddr_get_li(hal_ring_desc_t rx_desc,
 }
 
 /**
- * hal_rx_msdu_link_desc_set_li: Retrieves MSDU Link Descriptor to WBM
+ * hal_rx_msdu_link_desc_set_li() - Retrieves MSDU Link Descriptor to WBM
  *
- * @ hal_soc_hdl	: HAL version of the SOC pointer
- * @ src_srng_desc	: void pointer to the WBM Release Ring descriptor
- * @ buf_addr_info	: void pointer to the buffer_addr_info
- * @ bm_action		: put in IDLE list or release to MSDU_LIST
+ * @hal_soc_hdl: HAL version of the SOC pointer
+ * @src_srng_desc: void pointer to the WBM Release Ring descriptor
+ * @buf_addr_info: void pointer to the buffer_addr_info
+ * @bm_action: put in IDLE list or release to MSDU_LIST
  *
  * Return: void
  */
@@ -481,14 +455,14 @@ void hal_rx_buf_cookie_rbm_get_li(uint32_t *buf_addr_info_hdl,
 }
 
 /**
- * hal_rx_msdu_link_desc_get(): API to get the MSDU information
+ * hal_rx_msdu_list_get_li(): API to get the MSDU information
  * from the MSDU link descriptor
  *
- * @ hal_soc_hdl	: HAL version of the SOC pointer
+ * @hal_soc_hdl: HAL version of the SOC pointer
  * @msdu_link_desc: Opaque pointer used by HAL to get to the
  * MSDU link descriptor (struct rx_msdu_link)
  *
- * @msdu_list: Return the list of MSDUs contained in this link descriptor
+ * @hal_msdu_list: Return the list of MSDUs contained in this link descriptor
  *
  * @num_msdus: Number of MSDUs in the MPDU
  *
@@ -593,6 +567,7 @@ static uint32_t hal_rx_get_reo_error_code_li(hal_ring_desc_t rx_desc)
 
 /**
  * hal_gen_reo_remap_val_generic_li() - Generate the reo map value
+ * @remap_reg: remap register
  * @ix0_map: mapping values for reo
  *
  * Return: IX0 reo remap register value to be written
@@ -635,7 +610,7 @@ hal_gen_reo_remap_val_generic_li(enum hal_reo_remap_reg remap_reg,
  * hal_rx_tlv_csum_err_get_li() - Get IP and tcp-udp checksum fail flag
  * @rx_tlv_hdr: start address of rx_tlv_hdr
  * @ip_csum_err: buffer to return ip_csum_fail flag
- * @tcp_udp_csum_fail: placeholder to return tcp-udp checksum fail flag
+ * @tcp_udp_csum_err: placeholder to return tcp-udp checksum fail flag
  *
  * Return: None
  */
@@ -647,26 +622,6 @@ hal_rx_tlv_csum_err_get_li(uint8_t *rx_tlv_hdr, uint32_t *ip_csum_err,
 	*tcp_udp_csum_err = hal_rx_attn_tcp_udp_cksum_fail_get(rx_tlv_hdr);
 }
 
-static
-void hal_rx_tlv_get_pkt_capture_flags_li(uint8_t *rx_tlv_pkt_hdr,
-					    struct hal_rx_pkt_capture_flags *flags)
-{
-	struct rx_pkt_tlvs *rx_tlv_hdr = (struct rx_pkt_tlvs *)rx_tlv_pkt_hdr;
-	struct rx_attention *rx_attn = &rx_tlv_hdr->attn_tlv.rx_attn;
-	struct rx_mpdu_start *mpdu_start =
-				&rx_tlv_hdr->mpdu_start_tlv.rx_mpdu_start;
-	struct rx_mpdu_end *mpdu_end = &rx_tlv_hdr->mpdu_end_tlv.rx_mpdu_end;
-	struct rx_msdu_start *msdu_start =
-				&rx_tlv_hdr->msdu_start_tlv.rx_msdu_start;
-
-	flags->encrypt_type = mpdu_start->rx_mpdu_info_details.encrypt_type;
-	flags->fcs_err = mpdu_end->fcs_err;
-	flags->fragment_flag = rx_attn->fragment_flag;
-	flags->chan_freq = HAL_RX_MSDU_START_FREQ_GET(msdu_start);
-	flags->rssi_comb = HAL_RX_MSDU_START_RSSI_GET(msdu_start);
-	flags->tsft = msdu_start->ppdu_start_timestamp;
-}
-
 static uint8_t hal_rx_err_status_get_li(hal_ring_desc_t rx_desc)
 {
 	return HAL_RX_ERROR_STATUS_GET(rx_desc);
@@ -675,21 +630,6 @@ static uint8_t hal_rx_err_status_get_li(hal_ring_desc_t rx_desc)
 static uint8_t hal_rx_reo_buf_type_get_li(hal_ring_desc_t rx_desc)
 {
 	return HAL_RX_REO_BUF_TYPE_GET(rx_desc);
-}
-
-static inline bool
-hal_rx_mpdu_info_ampdu_flag_get_li(uint8_t *buf)
-{
-	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)buf;
-	struct rx_mpdu_start *mpdu_start =
-				 &pkt_tlvs->mpdu_start_tlv.rx_mpdu_start;
-
-	struct rx_mpdu_info *mpdu_info = &mpdu_start->rx_mpdu_info_details;
-	bool ampdu_flag;
-
-	ampdu_flag = HAL_RX_MPDU_INFO_AMPDU_FLAG_GET(mpdu_info);
-
-	return ampdu_flag;
 }
 
 static
@@ -873,46 +813,6 @@ static inline uint32_t hal_rx_tlv_get_pkt_type_li(uint8_t *buf)
 	return pkt_type;
 }
 
-/**
- * hal_rx_tlv_mic_err_get_li(): API to get the MIC ERR
- * from rx_mpdu_end TLV
- *
- * @buf: pointer to the start of RX PKT TLV headers
- * Return: uint32_t(mic_err)
- */
-static inline uint32_t
-hal_rx_tlv_mic_err_get_li(uint8_t *buf)
-{
-	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)buf;
-	struct rx_mpdu_end *mpdu_end =
-		&pkt_tlvs->mpdu_end_tlv.rx_mpdu_end;
-	uint32_t mic_err;
-
-	mic_err = HAL_RX_MPDU_END_MIC_ERR_GET(mpdu_end);
-
-	return mic_err;
-}
-
-/**
- * hal_rx_tlv_decrypt_err_get_li(): API to get the Decrypt ERR
- * from rx_mpdu_end TLV
- *
- * @buf: pointer to the start of RX PKT TLV headers
- * Return: uint32_t(decrypt_err)
- */
-static inline uint32_t
-hal_rx_tlv_decrypt_err_get_li(uint8_t *buf)
-{
-	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)buf;
-	struct rx_mpdu_end *mpdu_end =
-		&pkt_tlvs->mpdu_end_tlv.rx_mpdu_end;
-	uint32_t decrypt_err;
-
-	decrypt_err = HAL_RX_MPDU_END_DECRYPT_ERR_GET(mpdu_end);
-
-	return decrypt_err;
-}
-
 /*
  * hal_rx_tlv_first_mpdu_get_li(): get fist_mpdu bit from rx attention
  * @buf: pointer to rx_pkt_tlvs
@@ -929,6 +829,18 @@ hal_rx_tlv_first_mpdu_get_li(uint8_t *buf)
 	first_mpdu = HAL_RX_ATTN_FIRST_MPDU_GET(rx_attn);
 
 	return first_mpdu;
+}
+
+/**
+ * hal_rx_phy_legacy_get_rssi_li() - API to get RSSI from TLV
+ *                                   WIFIPHYRX_RSSI_LEGACY_E
+ * @buf: pointer to the start of WIFIPHYRX_RSSI_LEGACY_E TLV
+ *
+ * Return: value of RSSI
+ */
+static inline int8_t hal_rx_phy_legacy_get_rssi_li(uint8_t *buf)
+{
+	return HAL_RX_GET(buf, PHYRX_RSSI_LEGACY_35, RSSI_COMB);
 }
 
 /*
@@ -974,11 +886,11 @@ hal_rx_tlv_get_is_decrypted_li(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_reo_dst_ind_get_li: Gets the REO
+ * hal_rx_msdu_reo_dst_ind_get_li() - Gets the REO
  * destination ring ID from the msdu desc info
  *
- * @ hal_soc_hdl	: HAL version of the SOC pointer
- * @msdu_link_desc : Opaque cookie pointer used by HAL to get to
+ * @hal_soc_hdl: HAL version of the SOC pointer
+ * @msdu_link_desc: Opaque cookie pointer used by HAL to get to
  * the current descriptor
  *
  * Return: dst_ind (REO destination ring ID)
@@ -1155,13 +1067,11 @@ static uint8_t hal_get_idle_link_bm_id_li(uint8_t chip_id)
 	return WBM_IDLE_DESC_LIST;
 }
 
-/**
- * hal_hw_txrx_default_ops_attach_li() - Attach the default hal ops for
- *		lithium chipsets.
- * @hal_soc_hdl: HAL soc handle
- *
- * Return: None
- */
+static inline uint8_t hal_rx_get_phy_ppdu_id_size_li(void)
+{
+	return sizeof(uint32_t);
+}
+
 void hal_hw_txrx_default_ops_attach_li(struct hal_soc *hal_soc)
 {
 	hal_soc->ops->hal_get_reo_qdesc_size = hal_get_reo_qdesc_size_li;
@@ -1214,15 +1124,11 @@ void hal_hw_txrx_default_ops_attach_li(struct hal_soc *hal_soc)
 					hal_rx_priv_info_set_in_tlv_li;
 	hal_soc->ops->hal_rx_priv_info_get_from_tlv =
 					hal_rx_priv_info_get_from_tlv_li;
-	hal_soc->ops->hal_rx_mpdu_info_ampdu_flag_get =
-					hal_rx_mpdu_info_ampdu_flag_get_li;
 	hal_soc->ops->hal_rx_tlv_mpdu_len_err_get =
 					hal_rx_tlv_mpdu_len_err_get_li;
 	hal_soc->ops->hal_rx_tlv_mpdu_fcs_err_get =
 					hal_rx_tlv_mpdu_fcs_err_get_li;
 	hal_soc->ops->hal_reo_send_cmd = hal_reo_send_cmd_li;
-	hal_soc->ops->hal_rx_tlv_get_pkt_capture_flags =
-					hal_rx_tlv_get_pkt_capture_flags_li;
 	hal_soc->ops->hal_rx_desc_get_80211_hdr = hal_rx_desc_get_80211_hdr_li;
 	hal_soc->ops->hal_rx_hw_desc_mpdu_user_id =
 					hal_rx_hw_desc_mpdu_user_id_li;
@@ -1234,10 +1140,6 @@ void hal_hw_txrx_default_ops_attach_li(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_rx_tlv_sgi_get = hal_rx_tlv_sgi_get_li;
 	hal_soc->ops->hal_rx_tlv_rate_mcs_get = hal_rx_tlv_rate_mcs_get_li;
 	hal_soc->ops->hal_rx_tlv_get_pkt_type = hal_rx_tlv_get_pkt_type_li;
-	hal_soc->ops->hal_rx_tlv_get_pn_num = hal_rx_tlv_get_pn_num_li;
-	hal_soc->ops->hal_rx_tlv_mic_err_get = hal_rx_tlv_mic_err_get_li;
-	hal_soc->ops->hal_rx_tlv_decrypt_err_get =
-			hal_rx_tlv_decrypt_err_get_li;
 	hal_soc->ops->hal_rx_tlv_first_mpdu_get = hal_rx_tlv_first_mpdu_get_li;
 	hal_soc->ops->hal_rx_tlv_get_is_decrypted =
 			hal_rx_tlv_get_is_decrypted_li;
@@ -1254,4 +1156,8 @@ void hal_hw_txrx_default_ops_attach_li(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_set_reo_ent_desc_reo_dest_ind =
 			hal_set_reo_ent_desc_reo_dest_ind_li;
 	hal_soc->ops->hal_get_idle_link_bm_id = hal_get_idle_link_bm_id_li;
+	hal_soc->ops->hal_rx_get_phy_ppdu_id_size =
+						hal_rx_get_phy_ppdu_id_size_li;
+	hal_soc->ops->hal_rx_phy_legacy_get_rssi =
+						hal_rx_phy_legacy_get_rssi_li;
 }

@@ -25,7 +25,6 @@ struct ice_mmio_data {
 #if IS_ENABLED(CONFIG_QTI_HW_KEY_MANAGER)
 	void __iomem *ice_hwkm_mmio;
 #endif
-	bool reprogram_key;
 };
 
 #if IS_ENABLED(CONFIG_QTI_CRYPTO_COMMON)

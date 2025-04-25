@@ -540,11 +540,15 @@ dp_wfds_handle_ipcc_map_n_cfg_ind(struct wlan_qmi_wfds_ipcc_map_n_cfg_ind_msg *i
 	pld_smmu_map(qdf_ctx->dev, ipcc_msg->ipcc_ce_info[0].ipcc_trig_addr,
 		     &dl_wfds->ipcc_dma_addr, sizeof(uint32_t));
 
-	for (i = 0; i < ipcc_msg->ipcc_ce_info_len; i++)
+	dl_wfds->ipcc_ce_id_len = ipcc_msg->ipcc_ce_info_len;
+
+	for (i = 0; i < ipcc_msg->ipcc_ce_info_len; i++) {
+		dl_wfds->ipcc_ce_id[i] = ipcc_msg->ipcc_ce_info[i].ce_id;
 		hif_set_irq_config_by_ceid(hif_ctx,
 				      ipcc_msg->ipcc_ce_info[i].ce_id,
 				      dl_wfds->ipcc_dma_addr,
 				      ipcc_msg->ipcc_ce_info[i].ipcc_trig_data);
+	}
 
 	dp_wfds_event_post(dl_wfds, DP_WFDS_IPCC_MAP_N_CFG, NULL);
 }
@@ -586,9 +590,15 @@ void dp_wfds_del_server(void)
 		       DP_WFDS_SVC_DISCONNECTED);
 
 	if (dl_wfds_state >= DP_WFDS_SVC_IPCC_MAP_N_CFG_DONE &&
-	    dl_wfds->ipcc_dma_addr)
+	    dl_wfds->ipcc_dma_addr) {
+		for (i = 0; i < dl_wfds->ipcc_ce_id_len; i++)
+			hif_set_irq_config_by_ceid(hif_ctx,
+						   dl_wfds->ipcc_ce_id[i],
+						   0, 0);
+
 		pld_smmu_unmap(qdf_ctx->dev, dl_wfds->ipcc_dma_addr,
 			       sizeof(uint32_t));
+	}
 
 	if (dl_wfds_state >= DP_WFDS_SVC_MEM_CONFIG_DONE) {
 		uint64_t *dma_addr = NULL;

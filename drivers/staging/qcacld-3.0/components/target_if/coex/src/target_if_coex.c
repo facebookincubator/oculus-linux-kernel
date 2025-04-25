@@ -22,6 +22,13 @@
 #include <target_if_coex.h>
 #include "wlan_coex_public_structs.h"
 
+/**
+ * target_if_coex_config_send() - Function to send coex config command
+ * @pdev: PDEV object
+ * @param: Pointer to coex config parameters
+ *
+ * Return: QDF STATUS
+ */
 static QDF_STATUS
 target_if_coex_config_send(struct wlan_objmgr_pdev *pdev,
 			   struct coex_config_params *param)
@@ -37,6 +44,50 @@ target_if_coex_config_send(struct wlan_objmgr_pdev *pdev,
 	return wmi_unified_send_coex_config_cmd(pdev_wmi_handle, param);
 }
 
+/**
+ * target_if_coex_multi_config_send() - Function to send coex multiple config
+ * command
+ * @pdev: PDEV object
+ * @param: Pointer to coex multiple config parameters
+ *
+ * Return: QDF STATUS
+ */
+static QDF_STATUS
+target_if_coex_multi_config_send(struct wlan_objmgr_pdev *pdev,
+				 struct coex_multi_config *param)
+{
+	wmi_unified_t pdev_wmi_handle;
+
+	pdev_wmi_handle = GET_WMI_HDL_FROM_PDEV(pdev);
+	if (!pdev_wmi_handle) {
+		coex_err("Invalid PDEV WMI handle");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return wmi_unified_send_coex_multi_config_cmd(pdev_wmi_handle, param);
+}
+
+/**
+ * target_if_coex_get_multi_config_support() - Function to get coex multiple
+ * config command support
+ * @psoc: PSOC object
+ *
+ * Return: true if target support coex multiple config command
+ */
+static bool
+target_if_coex_get_multi_config_support(struct wlan_objmgr_psoc *psoc)
+{
+	wmi_unified_t wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
+
+	if (!wmi_handle) {
+		target_if_err("Invalid wmi handle");
+		return false;
+	}
+
+	return wmi_service_enabled(wmi_handle,
+				   wmi_service_multiple_coex_config_support);
+}
+
 QDF_STATUS
 target_if_coex_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 {
@@ -49,6 +100,9 @@ target_if_coex_register_tx_ops(struct wlan_lmac_if_tx_ops *tx_ops)
 
 	coex_ops = &tx_ops->coex_ops;
 	coex_ops->coex_config_send = target_if_coex_config_send;
+	coex_ops->coex_multi_config_send = target_if_coex_multi_config_send;
+	coex_ops->coex_get_multi_config_support =
+				target_if_coex_get_multi_config_support;
 
 	return QDF_STATUS_SUCCESS;
 }

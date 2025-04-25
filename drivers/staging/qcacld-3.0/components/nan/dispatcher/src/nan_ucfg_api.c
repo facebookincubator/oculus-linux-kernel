@@ -65,6 +65,8 @@ static void nan_cfg_init(struct wlan_objmgr_psoc *psoc,
 	nan_obj->cfg_param.nan_feature_config =
 					cfg_get(psoc, CFG_NAN_FEATURE_CONFIG);
 	nan_obj->cfg_param.disable_6g_nan = cfg_get(psoc, CFG_DISABLE_6G_NAN);
+	nan_obj->cfg_param.enable_nan_eht_cap =
+					cfg_get(psoc, CFG_NAN_ENABLE_EHT_CAP);
 }
 
 /**
@@ -754,9 +756,9 @@ bool ucfg_is_ndi_dbs_supported(struct wlan_objmgr_psoc *psoc)
 }
 
 bool ucfg_is_nan_enable_allowed(struct wlan_objmgr_psoc *psoc,
-				uint32_t nan_ch_freq)
+				uint32_t nan_ch_freq, uint8_t vdev_id)
 {
-	return nan_is_enable_allowed(psoc, nan_ch_freq);
+	return nan_is_enable_allowed(psoc, nan_ch_freq, vdev_id);
 }
 
 bool ucfg_is_nan_disc_active(struct wlan_objmgr_psoc *psoc)
@@ -1001,7 +1003,7 @@ ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id)
 	int err;
 	static const struct osif_request_params params = {
 		.priv_size = 0,
-		.timeout_ms = 1000,
+		.timeout_ms = 2000,
 	};
 
 	if (!ucfg_is_ndi_dbs_supported(psoc))
@@ -1056,21 +1058,16 @@ ucfg_nan_disable_ndi(struct wlan_objmgr_psoc *psoc, uint32_t ndi_vdev_id)
 	if (err) {
 		nan_err("Disabling NDP's timed out waiting for confirmation");
 		status = QDF_STATUS_E_TIMEOUT;
-		goto cleanup;
 	}
 
+cleanup:
 	/*
 	 * Host can assume NDP delete is successful and
 	 * remove policy mgr entry
 	 */
 	policy_mgr_decr_session_set_pcl(psoc, QDF_NDI_MODE, ndi_vdev_id);
 
-cleanup:
-	/* Restore original NDI state in case of failure */
-	if (QDF_IS_STATUS_SUCCESS(status))
-		ucfg_nan_set_ndi_state(ndi_vdev, NAN_DATA_DISCONNECTED_STATE);
-	else
-		ucfg_nan_set_ndi_state(ndi_vdev, curr_ndi_state);
+	ucfg_nan_set_ndi_state(ndi_vdev, NAN_DATA_DISCONNECTED_STATE);
 
 	if (request)
 		osif_request_put(request);
@@ -1204,21 +1201,9 @@ bool ucfg_nan_is_sta_ndp_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
 {
 	uint8_t vdev_id_list[MAX_NUMBER_OF_CONC_CONNECTIONS];
 	uint32_t freq_list[MAX_NUMBER_OF_CONC_CONNECTIONS];
-	uint32_t ndi_cnt, sta_cnt, id, conc_ext_flags;
+	uint32_t ndi_cnt, id, conc_ext_flags;
 
-	sta_cnt = policy_mgr_mode_specific_connection_count(psoc,
-							    PM_STA_MODE, NULL);
-	/* Allow if STA is not in connected state */
-	if (!sta_cnt)
-		return true;
-
-	/* Reject STA+STA in below case
-	 * Non-ML STA: STA+STA+NDP concurrency is not supported
-	 * ML STA: As both links would be treated as separate STAs from
-	 * policy mgr perspective, don't reject here and continue with further
-	 * checks
-	 */
-	if (sta_cnt > 1 && !policy_mgr_is_mlo_sta_present(psoc)) {
+	if (nan_is_sta_sta_concurrency_present(psoc)) {
 		nan_err("STA+STA+NDP concurrency is not allowed");
 		return false;
 	}
@@ -1264,7 +1249,8 @@ bool ucfg_nan_is_sta_ndp_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
 
 	/* The final freq would be provided by FW, it is not known now */
 	return policy_mgr_allow_concurrency(psoc, PM_NDI_MODE, 0,
-					    HW_MODE_20_MHZ, conc_ext_flags);
+					    HW_MODE_20_MHZ, conc_ext_flags,
+					    wlan_vdev_get_id(vdev));
 }
 
 bool

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,10 +31,10 @@
 
 /**
  * enum qdf_pkt_supported_proto - supported protocol for timestamp
- * @QDF_PKT_PROTO_INVAL - invalid
- * @QDF_PKT_PROTO_TCP - tcp protocol
- * @QDF_PKT_PROTO_UDP - udp protocol
- * @QDF_PKT_PROTO_MAX - max, keep it at last
+ * @QDF_PKT_PROTO_INVAL: invalid
+ * @QDF_PKT_PROTO_TCP: tcp protocol
+ * @QDF_PKT_PROTO_UDP: udp protocol
+ * @QDF_PKT_PROTO_MAX: max, keep it at last
  */
 enum qdf_pkt_supported_proto {
 	QDF_PKT_PROTO_INVAL,
@@ -45,11 +45,11 @@ enum qdf_pkt_supported_proto {
 
 /**
  * enum qdf_pkt_timestamp_index - index of different timestamp
- * @QDF_PKT_TX_DRIVER_ENTRY - tx driver entry timestamp
- * @QDF_PKT_TX_DRIVER_EXIT - tx driver exit timestamp
- * @QDF_PKT_RX_DRIVER_ENTRY - rx driver entry timestamp
- * @QDF_PKT_RX_DRIVER_EXIT - rx driver exit timestamp
- * @QDF_PKT_TIMESTAMP_MAX - maximum index, keep it at last
+ * @QDF_PKT_TX_DRIVER_ENTRY: tx driver entry timestamp
+ * @QDF_PKT_TX_DRIVER_EXIT: tx driver exit timestamp
+ * @QDF_PKT_RX_DRIVER_ENTRY: rx driver entry timestamp
+ * @QDF_PKT_RX_DRIVER_EXIT: rx driver exit timestamp
+ * @QDF_PKT_TIMESTAMP_MAX: maximum index, keep it at last
  */
 enum qdf_pkt_timestamp_index {
 	QDF_PKT_TX_DRIVER_ENTRY,

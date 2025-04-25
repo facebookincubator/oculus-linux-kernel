@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,19 +32,64 @@
 #define DP_WDS_AST_AGING_TIMER_DEFAULT_MS	120000
 #define DP_WDS_AST_AGING_TIMER_CNT \
 ((DP_WDS_AST_AGING_TIMER_DEFAULT_MS / DP_AST_AGING_TIMER_DEFAULT_MS) - 1)
+
+/**
+ * dp_soc_wds_attach() - Setup WDS timer and AST table
+ * @soc: Datapath SOC handle
+ *
+ * Return: None
+ */
 void dp_soc_wds_attach(struct dp_soc *soc);
+
+/**
+ * dp_soc_wds_detach() - Detach WDS data structures and timers
+ * @soc: DP SOC handle
+ *
+ * Return: None
+ */
 void dp_soc_wds_detach(struct dp_soc *soc);
 #ifdef QCA_PEER_MULTIQ_SUPPORT
+/**
+ * dp_peer_find_ast_index_by_flowq_id() - API to get ast idx for a given flowid
+ * @soc: soc handle
+ * @vdev_id: vdev ID
+ * @peer_mac_addr: mac address of the peer
+ * @flow_id: flow id to find ast index
+ * @tid: TID
+ *
+ * Return: ast index for a given flow id, -1 for fail cases
+ */
 int dp_peer_find_ast_index_by_flowq_id(struct cdp_soc_t *soc,
 	       uint16_t vdev_id, uint8_t *peer_mac_addr,
 	       uint8_t flow_id, uint8_t tid);
 #endif
+
+/**
+ * dp_rx_da_learn() - Add AST entry based on DA lookup
+ *			This is a WAR for HK 1.0 and will
+ *			be removed in HK 2.0
+ *
+ * @soc: core txrx main context
+ * @rx_tlv_hdr: start address of rx tlvs
+ * @ta_peer: Transmitter peer entry
+ * @nbuf: nbuf to retrieve destination mac for which AST will be added
+ *
+ */
 void
 dp_rx_da_learn(struct dp_soc *soc,
 	       uint8_t *rx_tlv_hdr,
 	       struct dp_txrx_peer *ta_peer,
 	       qdf_nbuf_t nbuf);
 
+/**
+ * dp_tx_mec_handler() - Tx  MEC Notify Handler
+ * @vdev: pointer to dp dev handler
+ * @status : Tx completion status from HTT descriptor
+ *
+ * Handles MEC notify event sent from fw to Host
+ *
+ * Return: none
+ */
 void dp_tx_mec_handler(struct dp_vdev *vdev, uint8_t *status);
 #ifdef FEATURE_WDS
 #ifdef FEATURE_MCL_REPEATER
@@ -75,12 +120,34 @@ static inline bool dp_tx_da_search_override(struct dp_vdev *vdev)
 #endif /* FEATURE_MCL_REPEATER */
 #endif /* FEATURE_WDS */
 #ifdef WDS_VENDOR_EXTENSION
+
+/**
+ * dp_txrx_peer_wds_tx_policy_update() - API to set tx wds policy
+ *
+ * @soc: DP soc handle
+ * @vdev_id: id of vdev handle
+ * @peer_mac: peer mac address
+ * @wds_tx_ucast: policy for unicast transmission
+ * @wds_tx_mcast: policy for multicast transmission
+ *
+ * Return: void
+ */
 QDF_STATUS
-dp_txrx_peer_wds_tx_policy_update(struct cdp_soc_t *cdp_soc,  uint8_t vdev_id,
+dp_txrx_peer_wds_tx_policy_update(struct cdp_soc_t *soc,  uint8_t vdev_id,
 				  uint8_t *peer_mac, int wds_tx_ucast,
 				  int wds_tx_mcast);
+
+/**
+ * dp_txrx_set_wds_rx_policy() - API to store datapath
+ *                            config parameters
+ * @soc_hdl: datapath soc handle
+ * @vdev_id: id of datapath vdev handle
+ * @val: WDS rx policy value
+ *
+ * Return: status
+ */
 QDF_STATUS
-dp_txrx_set_wds_rx_policy(struct cdp_soc_t *cdp_soc, uint8_t vdev_id,
+dp_txrx_set_wds_rx_policy(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 			  u_int32_t val);
 #endif
 
@@ -137,8 +204,8 @@ static inline void dp_wds_ext_peer_learn(struct dp_soc *soc,
  * dp_rx_wds_add_or_update_ast() - Add or update the ast entry.
  *
  * @soc: core txrx main context
- * @ta_txrx_peer: WDS repeater txrx peer
- * @mac_addr: mac address of the peer
+ * @ta_peer: WDS repeater txrx peer
+ * @nbuf: network buffer
  * @is_ad4_valid: 4-address valid flag
  * @is_sa_valid: source address valid flag
  * @is_chfrag_start: frag start flag
@@ -274,6 +341,8 @@ dp_rx_wds_add_or_update_ast(struct dp_soc *soc,
 				 * radio
 				 */
 				dp_peer_del_ast(soc, ast);
+				qdf_spin_unlock_bh(&soc->ast_lock);
+				return;
 			} else {
 				/* this case is when a STA roams from one
 				 * reapter to another repeater, but inside
@@ -286,6 +355,8 @@ dp_rx_wds_add_or_update_ast(struct dp_soc *soc,
 				if (soc->ast_override_support &&
 				    (ta_peer->vdev->opmode == wlan_op_mode_sta)) {
 					dp_peer_del_ast(soc, ast);
+					qdf_spin_unlock_bh(&soc->ast_lock);
+					return;
 				} else {
 					ta_base_peer =
 					dp_peer_get_ref_by_id(soc,
@@ -350,11 +421,11 @@ dp_rx_wds_add_or_update_ast(struct dp_soc *soc,
 /**
  * dp_rx_wds_srcport_learn() - Add or update the STA PEER which
  *				is behind the WDS repeater.
- *
  * @soc: core txrx main context
  * @rx_tlv_hdr: base address of RX TLV header
  * @ta_peer: WDS repeater peer
  * @nbuf: rx pkt
+ * @msdu_end_info:
  *
  * Return: void:
  */
@@ -423,7 +494,7 @@ dp_rx_ipa_wds_srcport_learn(struct dp_soc *soc,
 }
 #endif
 
-/*
+/**
  * dp_rx_ast_set_active() - set the active flag of the astentry
  *				    corresponding to a hw index.
  * @soc: core txrx main context

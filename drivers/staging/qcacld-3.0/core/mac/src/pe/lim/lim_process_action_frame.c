@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -55,6 +55,8 @@
 #include "wlan_p2p_cfg_api.h"
 #include "son_api.h"
 #include "wlan_t2lm_api.h"
+#include "wlan_epcs_api.h"
+#include <wlan_mlo_mgr_sta.h>
 #include "wlan_mlo_mgr_public_structs.h"
 
 #define SA_QUERY_REQ_MIN_LEN \
@@ -67,7 +69,6 @@
 #define OCI_IE_OUI_SIZE 1
 #define OCI_IE_OP_CLS_OFFSET 3
 #define ELE_ID_EXT_LEN 1
-#define SIR_MAC_IE_LEN_OFFSET 1
 
 static last_processed_msg rrm_link_action_frm;
 
@@ -1017,8 +1018,8 @@ __lim_process_sm_power_save_update(struct mac_context *mac, uint8_t *pRxPacketIn
 		dph_lookup_hash_entry(mac, pHdr->sa, &aid,
 				      &pe_session->dph.dphHashTable);
 	if (!pSta) {
-		pe_err("STA context not found - ignoring UpdateSM PSave Mode from");
-		lim_print_mac_addr(mac, pHdr->sa, LOGE);
+		pe_err("STA context not found - ignoring UpdateSM PSave Mode from SA: "QDF_MAC_ADDR_FMT,
+		       QDF_MAC_ADDR_REF(pHdr->sa));
 		return;
 	}
 
@@ -1101,11 +1102,6 @@ __lim_process_radio_measure_request(struct mac_context *mac, uint8_t *pRxPacketI
 	}
 	/* Save seq no of currently processing rrm report req frame */
 	mac->rrm.rrmPEContext.prev_rrm_report_seq_num = curr_seq_num;
-	lim_send_sme_mgmt_frame_ind(mac, pHdr->fc.subType, (uint8_t *)pHdr,
-				    frameLen + sizeof(tSirMacMgmtHdr), 0,
-				    WMA_GET_RX_FREQ(pRxPacketInfo),
-				    WMA_GET_RX_RSSI_NORMALIZED(pRxPacketInfo),
-				    RXMGMT_FLAG_NONE);
 
 	frm = qdf_mem_malloc(sizeof(*frm));
 	if (!frm)
@@ -1127,7 +1123,17 @@ __lim_process_radio_measure_request(struct mac_context *mac, uint8_t *pRxPacketI
 	}
 	/* Call rrm function to handle the request. */
 
-	rrm_process_radio_measurement_request(mac, pHdr->sa, frm,
+	pe_debug("vdev: %d Received rrm req from sa addr:"QDF_MAC_ADDR_FMT" bssId:"QDF_MAC_ADDR_FMT" session addr:"QDF_MAC_ADDR_FMT" session self addr:"QDF_MAC_ADDR_FMT"",
+		 pe_session->vdev_id,
+		 QDF_MAC_ADDR_REF(pHdr->sa),
+		 QDF_MAC_ADDR_REF(pHdr->bssId),
+		 QDF_MAC_ADDR_REF(pe_session->bssId),
+		 QDF_MAC_ADDR_REF(pe_session->self_mac_addr));
+
+	pe_debug("RX RRM - type %hu, sub type %hu, seq num[%d]",
+		 pHdr->fc.type, pHdr->fc.subType, curr_seq_num);
+
+	rrm_process_radio_measurement_request(mac, pe_session->bssId, frm,
 					      pe_session);
 err:
 	qdf_mem_free(frm);
@@ -1254,6 +1260,14 @@ lim_check_oci_match(struct mac_context *mac, struct pe_session *pe_session,
 	 * Primary channel      : 1 byte
 	 * Freq_seg_1_ch_num    : 1 byte
 	 */
+
+	if (oci_ie[SIR_MAC_IE_LEN_OFFSET] <
+	    MIN_OCI_IE_LEN - sizeof(struct ie_header)) {
+		pe_err("OCI len %d is incorrect",
+		       oci_ie[SIR_MAC_IE_LEN_OFFSET]);
+		return false;
+	}
+
 	status = dot11f_unpack_ie_oci(mac,
 				      (uint8_t *)&oci_ie[OCI_IE_OP_CLS_OFFSET],
 				      oci_ie[SIR_MAC_IE_LEN_OFFSET] -
@@ -1553,6 +1567,11 @@ static void lim_process_addba_req(struct mac_context *mac_ctx, uint8_t *rx_pkt_i
 	bool eht_cap = false;
 	uint8_t extd_buff_size = 0;
 
+	if (mlo_is_any_link_disconnecting(session->vdev)) {
+		pe_err("Ignore ADDBA, vdev is in not in conncted state");
+		return;
+	}
+
 	mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
 	body_ptr = WMA_GET_RX_MPDU_DATA(rx_pkt_info);
 	frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_pkt_info);
@@ -1578,10 +1597,16 @@ static void lim_process_addba_req(struct mac_context *mac_ctx, uint8_t *rx_pkt_i
 
 	sta_ds = dph_lookup_hash_entry(mac_ctx, mac_hdr->sa, &aid,
 				       &session->dph.dphHashTable);
-	if (sta_ds && lim_is_session_he_capable(session))
+	if (sta_ds &&
+	    (lim_is_session_he_capable(session) ||
+	     sta_ds->staType == STA_ENTRY_TDLS_PEER))
 		he_cap = lim_is_sta_he_capable(sta_ds);
-	if (sta_ds && lim_is_session_eht_capable(session))
+
+	if (sta_ds &&
+	    (lim_is_session_eht_capable(session) ||
+	     sta_ds->staType == STA_ENTRY_TDLS_PEER))
 		eht_cap = lim_is_sta_eht_capable(sta_ds);
+
 	if (sta_ds && sta_ds->staType == STA_ENTRY_NDI_PEER)
 		he_cap = lim_is_session_he_capable(session);
 
@@ -1725,6 +1750,7 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 	enum wlan_t2lm_resp_frm_type status_code;
 	uint8_t token = 0;
 	struct wlan_objmgr_peer *peer = NULL;
+	QDF_STATUS status;
 
 	if (frame_len < sizeof(*action_hdr)) {
 		pe_debug("frame_len %d less than Action Frame Hdr size",
@@ -1835,7 +1861,7 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 	case ACTION_CATEGORY_HT:
 		/** Type of HT Action to be performed*/
 		switch (action_hdr->actionID) {
-		case SIR_MAC_SM_POWER_SAVE:
+		case HT_ACTION_SMPS:
 			if (LIM_IS_AP_ROLE(session))
 				__lim_process_sm_power_save_update(mac_ctx,
 						(uint8_t *)rx_pkt_info,
@@ -1959,8 +1985,8 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 		}
 		break;
 
-	case SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY:
-	case SIR_MAC_PROT_ACTION_VENDOR_SPECIFIC_CATEGORY:
+	case ACTION_CATEGORY_VENDOR_SPECIFIC:
+	case ACTION_CATEGORY_VENDOR_SPECIFIC_PROTECTED:
 		vendor_specific = (tpSirMacVendorSpecificFrameHdr) action_hdr;
 		mac_hdr = NULL;
 
@@ -1999,11 +2025,19 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 		mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
 
 		switch (action_hdr->actionID) {
-		case SIR_MAC_ACTION_EXT_CHANNEL_SWITCH_ID:
+		case PUB_ACTION_EXT_CHANNEL_SWITCH_ID:
 			lim_process_ext_channel_switch_action_frame(mac_ctx,
 							rx_pkt_info, session);
 			break;
-		case SIR_MAC_ACTION_VENDOR_SPECIFIC:
+		case TDLS_DISCOVERY_RESPONSE:
+			/* do not forward the tdls discovery response frame,
+			 * it is handled by
+			 * tgt_mgmt_txrx_rx_frame_handler ->
+			 * tgt_tdls_mgmt_frame_rx_cb ->
+			 * tdls_process_rx_frame
+			 */
+			break;
+		case PUB_ACTION_VENDOR_SPECIFIC:
 			pub_action =
 				(tpSirMacVendorSpecificPublicActionFrameHdr)
 				action_hdr;
@@ -2024,12 +2058,12 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 			}
 			/* send the frame to supplicant */
 			fallthrough;
-		case SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY:
-		case SIR_MAC_PROT_ACTION_VENDOR_SPECIFIC_CATEGORY:
-		case SIR_MAC_ACTION_2040_BSS_COEXISTENCE:
-		case SIR_MAC_ACTION_GAS_INITIAL_REQUEST:
+		case ACTION_CATEGORY_VENDOR_SPECIFIC:
+		case ACTION_CATEGORY_VENDOR_SPECIFIC_PROTECTED:
+		case PUB_ACTION_2040_BSS_COEXISTENCE:
+		case PUB_ACTION_GAS_INITIAL_REQUEST:
 			if (action_hdr->actionID ==
-				SIR_MAC_ACTION_GAS_INITIAL_REQUEST) {
+				PUB_ACTION_GAS_INITIAL_REQUEST) {
 				wlan_son_anqp_frame(session->vdev,
 						    mac_hdr->fc.subType,
 						    (uint8_t *)mac_hdr,
@@ -2039,9 +2073,9 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 						    &mac_hdr->sa[0]);
 			}
 			fallthrough;
-		case SIR_MAC_ACTION_GAS_INITIAL_RESPONSE:
-		case SIR_MAC_ACTION_GAS_COMEBACK_REQUEST:
-		case SIR_MAC_ACTION_GAS_COMEBACK_RESPONSE:
+		case PUB_ACTION_GAS_INITIAL_RESPONSE:
+		case PUB_ACTION_GAS_COMEBACK_REQUEST:
+		case PUB_ACTION_GAS_COMEBACK_RESPONSE:
 		default:
 			pe_debug("Public action frame: %d",
 				 action_hdr->actionID);
@@ -2087,11 +2121,11 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 		if (!session->vhtCapability)
 			break;
 		switch (action_hdr->actionID) {
-		case SIR_MAC_VHT_OPMODE_NOTIFICATION:
+		case VHT_ACTION_OPMODE_NOTIF:
 			__lim_process_operating_mode_action_frame(mac_ctx,
 					rx_pkt_info, session);
 			break;
-		case SIR_MAC_VHT_GID_NOTIFICATION:
+		case VHT_ACTION_GID_NOTIF:
 			/* Only if ini supports it */
 			if (session->enableVhtGid)
 				__lim_process_gid_management_action_frame(
@@ -2125,10 +2159,10 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 		pe_debug("Rcvd Protected Dual of Public Action: %d",
 			action_hdr->actionID);
 		switch (action_hdr->actionID) {
-		case SIR_MAC_PDPA_GAS_INIT_REQ:
-		case SIR_MAC_PDPA_GAS_INIT_RSP:
-		case SIR_MAC_PDPA_GAS_COMEBACK_REQ:
-		case SIR_MAC_PDPA_GAS_COMEBACK_RSP:
+		case PDPA_GAS_INIT_REQ:
+		case PDPA_GAS_INIT_RSP:
+		case PDPA_GAS_COMEBACK_REQ:
+		case PDPA_GAS_COMEBACK_RSP:
 			mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
 			rssi = WMA_GET_RX_RSSI_NORMALIZED(rx_pkt_info);
 			lim_send_sme_mgmt_frame_ind(mac_ctx,
@@ -2160,7 +2194,7 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 		}
 		break;
 	case ACTION_CATEGORY_PROTECTED_EHT:
-		pe_debug("EHT T2LM action category: %d action: %d",
+		pe_debug("EHT T2LM/EPCS action category: %d action: %d",
 			 action_hdr->category, action_hdr->actionID);
 		mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
 		body_ptr = WMA_GET_RX_MPDU_DATA(rx_pkt_info);
@@ -2174,24 +2208,30 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 		}
 		switch (action_hdr->actionID) {
 		case EHT_T2LM_REQUEST:
-			if (wlan_t2lm_deliver_event(
+			status = wlan_t2lm_deliver_event(
 				session->vdev, peer,
 				WLAN_T2LM_EV_ACTION_FRAME_RX_REQ,
 				(void *)body_ptr, frame_len,
-				&token) == QDF_STATUS_SUCCESS)
+				&token);
+			if (QDF_IS_STATUS_SUCCESS(status))
 				status_code = WLAN_T2LM_RESP_TYPE_SUCCESS;
 			else
 				status_code =
 				WLAN_T2LM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
 
-			if (lim_send_t2lm_action_rsp_frame(
+			if (status == QDF_STATUS_E_NOSUPPORT)
+				pe_err("STA does not support T2LM drop frame");
+			else if (lim_send_t2lm_action_rsp_frame(
 					mac_ctx, mac_hdr->sa, session, token,
-					status_code) != QDF_STATUS_SUCCESS)
+					status_code) != QDF_STATUS_SUCCESS) {
 				pe_err("T2LM action response frame not sent");
-			else
+			} else {
 				wlan_send_peer_level_tid_to_link_mapping(
 								session->vdev,
 								peer);
+				wlan_connectivity_t2lm_status_event(
+								session->vdev);
+			}
 			break;
 		case EHT_T2LM_RESPONSE:
 			wlan_t2lm_deliver_event(
@@ -2205,8 +2245,26 @@ void lim_process_action_frame(struct mac_context *mac_ctx,
 					WLAN_T2LM_EV_ACTION_FRAME_RX_TEARDOWN,
 					(void *)body_ptr, frame_len, NULL);
 			break;
+		case EHT_EPCS_REQUEST:
+			wlan_epcs_deliver_event(
+					session->vdev, peer,
+					WLAN_EPCS_EV_ACTION_FRAME_RX_REQ,
+					(void *)body_ptr, frame_len);
+			break;
+		case EHT_EPCS_RESPONSE:
+			wlan_epcs_deliver_event(
+					session->vdev, peer,
+					WLAN_EPCS_EV_ACTION_FRAME_RX_RESP,
+					(void *)body_ptr, frame_len);
+			break;
+		case EHT_EPCS_TEARDOWN:
+			wlan_epcs_deliver_event(
+					session->vdev, peer,
+					WLAN_EPCS_EV_ACTION_FRAME_RX_TEARDOWN,
+					(void *)body_ptr, frame_len);
+			break;
 		default:
-			pe_err("Unhandled T2LM action frame");
+			pe_err("Unhandled T2LM/EPCS action frame");
 			break;
 		}
 		break;
@@ -2248,7 +2306,12 @@ void lim_process_action_frame_no_session(struct mac_context *mac, uint8_t *pBd)
 	tpSirMacActionFrameHdr action_hdr = (tpSirMacActionFrameHdr) pBody;
 	tpSirMacVendorSpecificPublicActionFrameHdr vendor_specific;
 
-	pe_debug("Received an Action frame -- no session");
+
+	pe_debug("Received an action frame category: %d action_id: %d",
+		 action_hdr->category, (action_hdr->category ==
+		 ACTION_CATEGORY_PUBLIC || action_hdr->category ==
+		 ACTION_CATEGORY_PROTECTED_DUAL_OF_PUBLIC_ACTION) ?
+		 action_hdr->actionID : 255);
 
 	if (frame_len < sizeof(*action_hdr)) {
 		pe_debug("frame_len %d less than action frame header len",
@@ -2258,8 +2321,8 @@ void lim_process_action_frame_no_session(struct mac_context *mac, uint8_t *pBd)
 
 	switch (action_hdr->category) {
 	case ACTION_CATEGORY_PUBLIC:
-		switch (action_hdr->actionID) {
-		case SIR_MAC_ACTION_VENDOR_SPECIFIC:
+	case ACTION_CATEGORY_PROTECTED_DUAL_OF_PUBLIC_ACTION:
+		if (action_hdr->actionID == PUB_ACTION_VENDOR_SPECIFIC) {
 			vendor_specific =
 				(tpSirMacVendorSpecificPublicActionFrameHdr)
 				action_hdr;
@@ -2269,45 +2332,32 @@ void lim_process_action_frame_no_session(struct mac_context *mac, uint8_t *pBd)
 					 frame_len);
 				return;
 			}
-			/*
-			 * Check if it is a DPP public action frame and fall
-			 * thru, else drop the frame.
-			 */
+
+			/* Check if it is a DPP public action frame */
 			if (qdf_mem_cmp(vendor_specific->Oui, dpp_oui, 4)) {
-				pe_debug("Unhandled public action frame (Vendor specific) OUI: %x %x %x %x",
-					vendor_specific->Oui[0],
-					vendor_specific->Oui[1],
-					vendor_specific->Oui[2],
-					vendor_specific->Oui[3]);
-				break;
+				pe_debug("public action frame (Vendor specific) OUI: %x %x %x %x",
+					 vendor_specific->Oui[0],
+					 vendor_specific->Oui[1],
+					 vendor_specific->Oui[2],
+					 vendor_specific->Oui[3]);
 			}
-			fallthrough;
-		case SIR_MAC_ACTION_GAS_INITIAL_REQUEST:
-		case SIR_MAC_ACTION_GAS_INITIAL_RESPONSE:
-		case SIR_MAC_ACTION_GAS_COMEBACK_REQUEST:
-		case SIR_MAC_ACTION_GAS_COMEBACK_RESPONSE:
-			/*
-			 * Forward the GAS frames to  wpa_supplicant
-			 * type is ACTION
-			 */
-			lim_send_sme_mgmt_frame_ind(mac,
-					mac_hdr->fc.subType,
-					(uint8_t *) mac_hdr,
-					frame_len + sizeof(tSirMacMgmtHdr), 0,
-					WMA_GET_RX_FREQ(pBd),
-					WMA_GET_RX_RSSI_NORMALIZED(pBd),
-					RXMGMT_FLAG_NONE);
-			break;
-		default:
-			pe_info_rl("Unhandled public action frame: %x",
-				   action_hdr->actionID);
-			break;
 		}
+
+		/*
+		 * Forward all public action frame with no session to
+		 * wpa_supplicant
+		 */
+		lim_send_sme_mgmt_frame_ind(mac, mac_hdr->fc.subType,
+					    (uint8_t *)mac_hdr,
+					    frame_len + sizeof(tSirMacMgmtHdr),
+					    0, WMA_GET_RX_FREQ(pBd),
+					    WMA_GET_RX_RSSI_NORMALIZED(pBd),
+					    RXMGMT_FLAG_NONE);
+
 		break;
 	default:
-		pe_warn("Unhandled action frame without session: %x",
-			       action_hdr->category);
+		pe_info_rl("Unhandled action frame without session: %x",
+			   action_hdr->category);
 		break;
-
 	}
 }

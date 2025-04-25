@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -357,7 +357,7 @@
  * 0 - Disable both magic pattern match and pattern byte match.
  * 1 - Enable magic pattern match on all interfaces.
  * 2 - Enable pattern byte match on all interfaces.
- * 3 - Enable both magic patter and pattern byte match on all interfaces.
+ * 3 - Enable both magic pattern and pattern byte match on all interfaces.
  *
  * Related: None
  *
@@ -636,14 +636,14 @@
 
 /*
  * <ini>
- * enable_ssr_on_page_fault - Enable SSR on pagefault
- * @Min: 0
- * @Max: 1
- * @Default: 0
+ * action_on_page_fault - Host action on page fault wakeup event
+ * @Min: PMO_PF_HOST_ACTION_NO_OP
+ * @Max: PMO_PF_HOST_ACTION_MAX - 1
+ * @Default: PMO_PF_HOST_ACTION_NO_OP
  *
- * This INI is used to enable/disable SSR when host is woken up with the reason
- * as pagefault.
- * For ex: If enable_ssr_on_page_fault = 1, max_pagefault_wakeups_for_ssr = 30,
+ * This INI is used to determine host behavior on WOW_REASON_PAGE_FAULT wakeup
+ * event.
+ * For ex: If action is to trigger SSR, min_pagefault_wakeups_for_action = 30,
  * interval_for_pagefault_wakeup_counts = 180000 (3 mins) and
  * ssr_frequency_on_pagefault = 3600000 (1hr), in this case host will trigger
  * the SSR if it receives 30 wakeups because of pagefaults in 3 mins, host will
@@ -653,24 +653,28 @@
  *
  * </ini>
  */
-#define CFG_ENABLE_SSR_ON_PAGEFAULT CFG_INI_BOOL( \
-		"enable_ssr_on_page_fault", \
-		0, \
-		"Enable SSR on pagefault")
+#define CFG_HOST_ACTION_ON_PAGEFAULT CFG_INI_UINT( \
+		"action_on_page_fault", \
+		PMO_PF_HOST_ACTION_NO_OP, \
+		PMO_PF_HOST_ACTION_MAX - 1, \
+		PMO_PF_HOST_ACTION_NO_OP, \
+		CFG_VALUE_OR_DEFAULT, \
+		"Host action on FW pagefault event")
 
 /*
  * <ini>
- * max_pagefault_wakeups_for_ssr - Max number of pagefaults wakeups to trigger
- * SSR
- * @Min: 1
+ * min_pagefault_wakeups_for_action - Min number of pagefaults wakeups to
+ * initiate host action.
+ * @Min: 2
  * @Max: 255
  * @Default: 30
  *
- * This ini is used to trigger SSR if fw wakes up host for
- * max_pagefault_wakeups_for_ssr number of times in
- * interval_for_pagefault_wakeup_counts interval. SSR is triggered only once
- * in ssr_frequency_on_pagefault interval.
- * For ex: If enable_ssr_on_page_fault = 1, max_pagefault_wakeups_for_ssr = 30,
+ * This ini is used to get the count of max pagefault wakeups to reach before
+ * host takes action.
+ * If the count is reached within the wakeup time interval host will either
+ * trigger SSR (within the limits of SSR trigger freq) or may notify APPS or
+ * ignore if no action is set.
+ * For ex: If SSR on pagefault = 1, min_pagefault_wakeups_for_action = 30,
  * interval_for_pagefault_wakeup_counts = 180000 (3 mins) and
  * ssr_frequency_on_pagefault = 3600000 (1hr), in this case host will trigger
  * the SSR if it receives 30 wakeups because of pagefaults in 3 mins, host will
@@ -678,9 +682,9 @@
  * trigger next SSR for next 1 hr even if it receives 30 wakeups from fw because
  * of pagefaults. This 1 hr time is getting monitored from last SSR.
  */
-#define CFG_MAX_PAGEFAULT_WAKEUPS_FOR_SSR CFG_INI_UINT( \
-		"max_pagefault_wakeups_for_ssr", \
-		1, \
+#define CFG_MIN_PAGEFAULT_WAKEUPS_FOR_ACTION CFG_INI_UINT( \
+		"min_pagefault_wakeups_for_action", \
+		2, \
 		255, \
 		30, \
 		CFG_VALUE_OR_DEFAULT, \
@@ -689,16 +693,16 @@
 /*
  * <ini>
  * interval_for_pagefault_wakeup_counts - Time in ms in which
- * max_pagefault_wakeups_for_ssr needs to be monitored
- * @Min: 60000
- * @Max: 300000
+ * min_pagefault_wakeups_for_action needs to be monitored
+ * @Min: 60000 (1min)
+ * @Max: 18000000 (5hrs)
  * @Default: 180000 (3 mins)
  *
- * This ini define time in ms in which max_pagefault_wakeups_for_ssr needs to be
- * Monitored. If in interval_for_pagefault_wakeup_counts ms,
- * max_pagefault_wakeups_for_ssr is reached host will trigger the SSR.
+ * This ini define time in ms in which min_pagefault_wakeups_for_host action
+ * needs to be monitored. If in interval_for_pagefault_wakeup_counts ms,
+ * min_pagefault_wakeups_for_action is reached host will trigger the action.
  * SSR is triggered only once in ssr_frequency_on_pagefault interval.
- * For ex: If enable_ssr_on_page_fault = 1, max_pagefault_wakeups_for_ssr = 30,
+ * For ex: If SSR on pagefault = 1, min_pagefault_wakeups_for_action = 30,
  * interval_for_pagefault_wakeup_counts = 180000 (3 mins) and
  * ssr_frequency_on_pagefault = 3600000 (1hr), in this case host will trigger
  * the SSR if it receives 30 wakeups because of pagefaults in 3 mins, host will
@@ -709,10 +713,10 @@
 #define CFG_INTERVAL_FOR_PAGEFAULT_WAKEUP_COUNT CFG_INI_UINT( \
 	"interval_for_pagefault_wakeup_counts", \
 	60000, \
-	300000, \
+	18000000, \
 	180000, \
 	CFG_VALUE_OR_DEFAULT, \
-	"Interval in which max_pagefault_wakeups_for_ssr needs to be monitored")
+	"Interval in which min_pagefault_wakeups_for_ssr needs to be monitored")
 
 /*
  * <ini>
@@ -723,11 +727,11 @@
  * @Default: 3600000 (1 hr)
  *
  * This ini define time in ms in which next SSR needs to be triggered if
- * max_pagefault_wakeups_for_ssr is reached in
+ * min_pagefault_wakeups_for_action is reached in
  * interval_for_pagefault_wakeup_counts time.
  * INIs max_pagefault_wakeups_for_ssr, interval_for_pagefault_wakeup_counts and
  * ssr_frequency_on_pagefault needs to be considered together.
- * For ex: If enable_ssr_on_page_fault = 1, max_pagefault_wakeups_for_ssr = 30,
+ * For ex: If enable_ssr_on_page_fault = 1, min_pagefault_wakeups_for_ssr = 30,
  * interval_for_pagefault_wakeup_counts = 180000 (3 mins) and
  * ssr_frequency_on_pagefault = 3600000 (1hr), in this case host will trigger
  * the SSR if it receives 30 wakeups because of pagefaults in 3 mins, host will
@@ -741,7 +745,7 @@
 	7200000, \
 	3600000, \
 	CFG_VALUE_OR_DEFAULT, \
-	"Interval in which max_pagefault_wakeups_for_ssr needs to be monitored")
+	"Interval in which min_pagefault_wakeups_for_ssr needs to be monitored")
 
 /*
  * <ini>
@@ -790,8 +794,8 @@
 	CFG(CFG_DISCONNECT_SAP_TDLS_IN_WOW) \
 	CFG(CFG_IGMP_VERSION_SUPPORT) \
 	CFG(CFG_ENABLE_ICMP_OFFLOAD) \
-	CFG(CFG_ENABLE_SSR_ON_PAGEFAULT) \
-	CFG(CFG_MAX_PAGEFAULT_WAKEUPS_FOR_SSR) \
+	CFG(CFG_HOST_ACTION_ON_PAGEFAULT) \
+	CFG(CFG_MIN_PAGEFAULT_WAKEUPS_FOR_ACTION) \
 	CFG(CFG_INTERVAL_FOR_PAGEFAULT_WAKEUP_COUNT) \
 	CFG(CFG_SSR_FREQUENCY_ON_PAGEFAULT)
 

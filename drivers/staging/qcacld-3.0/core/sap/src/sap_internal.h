@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -235,6 +235,7 @@ struct sap_context {
 	qdf_list_t ft_pending_assoc_ind_list;
 	qdf_event_t ft_pending_event;
 	uint32_t freq_before_ch_switch;
+	struct ch_params ch_params_before_ch_switch;
 #ifdef WLAN_FEATURE_P2P_P2P_STA
 /*
  *This param is used for GO+GO force scc logic where after
@@ -315,6 +316,31 @@ QDF_STATUS wlansap_pre_start_bss_acs_scan_callback(mac_handle_t mac_handle,
 						   uint8_t sessionid,
 						   uint32_t scanid,
 						   eCsrScanStatus scan_status);
+
+/**
+ * sap_chan_sel_exit() - Exit function for free out the allocated memory,
+ * @ch_info_params: Pointer to sap_sel_ch_info structure
+ *
+ * Return: None
+ */
+void sap_chan_sel_exit(struct sap_sel_ch_info *ch_info_params);
+
+/**
+ * sap_sort_channel_list() - Sort channel list based on channel weight
+ * @mac_ctx: Pointer to mac_context
+ * @vdev_id: Vdev ID
+ * @ch_list: Pointer to qdf_list_t
+ * @ch_info: Pointer to sap_sel_ch_info structure
+ * @domain: Regulatory Domain
+ * @operating_band: Operating band
+ *
+ * Return: None
+ *
+ */
+void
+sap_sort_channel_list(struct mac_context *mac_ctx, uint8_t vdev_id,
+		      qdf_list_t *ch_list, struct sap_sel_ch_info *ch_info,
+		      v_REGDOMAIN_t *domain, uint32_t *operating_band);
 
 /**
  * sap_select_channel() - select SAP channel
@@ -508,6 +534,26 @@ bool
 sap_chan_bond_dfs_sub_chan(struct sap_context *sap_context,
 			   qdf_freq_t channel_freq,
 			   ePhyChanBondState bond_state);
+
+/**
+ * sap_plus_sap_cac_skip() - Check current sap can skip CAC or not
+ *  in SAP+SAP concurrency
+ * @mac: mac ctx
+ * @sap_ctx: SAP context
+ * @chan_freq: SAP channel frequency
+ *
+ * All APs are done with CAC timer, all APs should start beaconing.
+ * Lets assume AP1 and AP2 started beaconing on DFS channel, Now lets
+ * say AP1 goes down and comes back on same DFS channel. In this case
+ * AP1 shouldn't start CAC timer and start beacon immediately because
+ * AP2 is already beaconing on this channel. This case will be handled
+ * by checking CAC completion on AP2.
+ *
+ * Return: true if current SAP can skip CAC
+ */
+bool sap_plus_sap_cac_skip(struct mac_context *mac,
+			   struct sap_context *sap_ctx,
+			   qdf_freq_t chan_freq);
 
 void
 sap_build_start_bss_config(struct start_bss_config *sap_bss_cfg,

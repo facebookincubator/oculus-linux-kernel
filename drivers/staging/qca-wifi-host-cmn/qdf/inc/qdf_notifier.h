@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +16,7 @@
  */
 
 /**
- * @file qdf_notifier.h
+ * DOC: qdf_notifier.h
  * This file abstracts notifier chain call operations.
  */
 
@@ -25,9 +26,9 @@
 #include <i_qdf_notifier.h>
 #include <qdf_status.h>
 
-/*
- * qdf_notif_block - qdf notifier block
- * @__qdf_notifier_block: OS specific notifier block
+/**
+ * typedef qdf_notif_block - qdf notifier block
+ * @notif_block: OS specific notifier block
  * @priv_data: private data of the notifier block
  */
 typedef struct  {
@@ -43,8 +44,8 @@ typedef __qdf_notifier_block qdf_notifier_block;
 
 /**
  * qdf_register_blocking_notifier_chain() - Register for blocking notifier chain
- * @qdf_blocking_notif_head: Head of blocking notifier chain
- * @qdf_notif_block: Notifier Block to be registered for this head chain
+ * @head: Head of blocking notifier chain
+ * @qnb: Notifier Block to be registered for this head chain
  *
  * This function is invoked to add a notifier block for the specific notifier
  * head chain.
@@ -57,8 +58,8 @@ QDF_STATUS qdf_register_blocking_notifier_chain(qdf_blocking_notif_head *head,
 /**
  * qdf_unregister_blocking_notifier_chain() - Unregister for blocking notifier
  * chain
- * @qdf_blocking_notif_head: Head of blocking notifier chain
- * @qdf_notif_block: Notifier Block to be registered for this head chain
+ * @head: Head of blocking notifier chain
+ * @qnb: Notifier Block to be unregistered from this head chain
  *
  * This function is invoked to remove a notifier block for the specific notifier
  * head chain.
@@ -70,7 +71,7 @@ QDF_STATUS qdf_unregister_blocking_notifier_chain(qdf_blocking_notif_head *head,
 						  qdf_notif_block *qnb);
 /**
  * qdf_blocking_notfier_call() - Invoke the function in the blocking chain
- * @qdf_blocking_notif_head: Head of blocking notifier chain
+ * @head: Head of blocking notifier chain
  * @state: state passed during the invoking of the notifier
  * @data: Private data to be passed to all the notifier functions
  *
@@ -86,8 +87,8 @@ QDF_STATUS qdf_blocking_notfier_call(qdf_blocking_notif_head *head,
 
 /**
  * qdf_register_atomic_notifier_chain() - Register for atomic notifier chain
- * @qdf_blocking_notif_head: Head of atomic notifier chain
- * @qdf_notif_block: Notifier Block to be registered for this head chain
+ * @head: Head of atomic notifier chain
+ * @qnb: Notifier Block to be registered for this head chain
  *
  * This function is invoked to add a notifier block for the specific atomic
  * notifier head chain.
@@ -98,10 +99,10 @@ QDF_STATUS qdf_blocking_notfier_call(qdf_blocking_notif_head *head,
 QDF_STATUS qdf_register_atomic_notifier_chain(qdf_atomic_notif_head *head,
 					      qdf_notif_block *qnb);
 /**
- * qdf_unregister_atmoic_notifier_chain() - Unregister for atomic notifier
+ * qdf_unregister_atomic_notifier_chain() - Unregister for atomic notifier
  * chain
- * @qdf_blocking_notif_head: Head of blocking notifier chain
- * @qdf_notif_block: Notifier Block to be registered for this head chain
+ * @head: Head of atomic notifier chain
+ * @qnb: Notifier Block to be unregistered from this head chain
  *
  * This function is invoked to remove a notifier block for the specific notifier
  * head chain.
@@ -112,8 +113,8 @@ QDF_STATUS qdf_register_atomic_notifier_chain(qdf_atomic_notif_head *head,
 QDF_STATUS qdf_unregister_atomic_notifier_chain(qdf_atomic_notif_head *head,
 						qdf_notif_block *qnb);
 /**
- * qdf_blocking_notfier_call() - Invoke the function in the blocking chain
- * @qdf_blocking_notif_head: Head of blocking notifier chain
+ * qdf_atomic_notfier_call() - Invoke the function in the blocking chain
+ * @head: Head of atomic notifier chain
  * @v: Generally state passed during the invoking of the notifier
  * @data: Private data to be passed to all the notifier functions
  *

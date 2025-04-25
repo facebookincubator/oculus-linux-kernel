@@ -39,8 +39,8 @@
 #include "ce_assignment.h"
 #include "ce_tasklet.h"
 #include "qdf_module.h"
-#include <wbuff.h>
 #include "qdf_ssr_driver_dump.h"
+#include <wbuff.h>
 
 #define CE_POLL_TIMEOUT 10      /* ms */
 
@@ -58,13 +58,15 @@
 #if (defined(QCA_WIFI_QCA8074) || defined(QCA_WIFI_QCA6290) || \
 	defined(QCA_WIFI_QCA6018) || defined(QCA_WIFI_QCA5018) || \
 	defined(QCA_WIFI_KIWI) || defined(QCA_WIFI_QCA5332) || \
-	defined(QCA_WIFI_QCA9574)) && !defined(QCA_WIFI_SUPPORT_SRNG)
+	defined(QCA_WIFI_QCA9574)) && !defined(QCA_WIFI_SUPPORT_SRNG) && \
+	!defined(QCA_WIFI_WCN6450)
 #define QCA_WIFI_SUPPORT_SRNG
 #endif
 
 #ifdef QCA_WIFI_SUPPORT_SRNG
 #include <hal_api.h>
 #endif
+#include "qdf_ssr_driver_dump.h"
 
 /* Forward references */
 QDF_STATUS hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info);
@@ -81,15 +83,6 @@ QDF_STATUS hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info);
 #else
 #define BYPASS_QMI 0
 #endif
-
-#ifdef ENABLE_10_4_FW_HDR
-#if (ENABLE_10_4_FW_HDR == 1)
-#define WDI_IPA_SERVICE_GROUP 5
-#define WDI_IPA_TX_SVC MAKE_SERVICE_ID(WDI_IPA_SERVICE_GROUP, 0)
-#define HTT_DATA2_MSG_SVC MAKE_SERVICE_ID(HTT_SERVICE_GROUP, 1)
-#define HTT_DATA3_MSG_SVC MAKE_SERVICE_ID(HTT_SERVICE_GROUP, 2)
-#endif /* ENABLE_10_4_FW_HDR == 1 */
-#endif /* ENABLE_10_4_FW_HDR */
 
 static void hif_config_rri_on_ddr(struct hif_softc *scn);
 
@@ -887,7 +880,7 @@ static struct service_to_pipe target_service_to_ce_map_qcn9000[] = {
 };
 #endif
 
-#if (defined(QCA_WIFI_QCA5332))
+#if (defined(QCA_WIFI_QCA5332) || defined(QCA_WIFI_QCN6432))
 static struct service_to_pipe target_service_to_ce_map_qca5332[] = {
 	{ WMI_DATA_VO_SVC, PIPEDIR_OUT, 3, },
 	{ WMI_DATA_VO_SVC, PIPEDIR_IN, 2, },
@@ -909,6 +902,9 @@ static struct service_to_pipe target_service_to_ce_map_qca5332[] = {
 #ifdef WLAN_DIAG_AND_DBR_OVER_SEPARATE_CE
 	{ WMI_CONTROL_DIAG_SVC, PIPEDIR_IN, 9, },
 	{ WMI_CONTROL_DBR_SVC, PIPEDIR_IN, 9, },
+#else
+	{ WMI_CONTROL_DIAG_SVC, PIPEDIR_IN, 2, },
+	{ WMI_CONTROL_DBR_SVC, PIPEDIR_IN, 2, },
 #endif
 	/* (Additions here) */
 	{ 0, 0, 0, },
@@ -939,8 +935,13 @@ static struct service_to_pipe target_service_to_ce_map_qcn9224[] = {
 	{ WMI_CONTROL_SVC_WMAC1, PIPEDIR_OUT, 7, },
 	{ WMI_CONTROL_SVC_WMAC1, PIPEDIR_IN, 2, },
 	{ PACKET_LOG_SVC, PIPEDIR_IN, 5, },
+#ifdef WLAN_DIAG_AND_DBR_OVER_SEPARATE_CE
 	{ WMI_CONTROL_DIAG_SVC, PIPEDIR_IN, 14, },
 	{ WMI_CONTROL_DBR_SVC, PIPEDIR_IN, 14, },
+#else
+	{ WMI_CONTROL_DIAG_SVC, PIPEDIR_IN, 2, },
+	{ WMI_CONTROL_DBR_SVC, PIPEDIR_IN, 2, },
+#endif
 	/* (Additions here) */
 	{ 0, 0, 0, },
 };
@@ -1176,6 +1177,36 @@ static struct service_to_pipe target_service_to_ce_map_kiwi[] = {
 };
 #else
 static struct service_to_pipe target_service_to_ce_map_kiwi[] = {
+};
+#endif
+
+#ifdef QCA_WIFI_WCN6450
+static struct service_to_pipe target_service_to_ce_map_wcn6450[] = {
+	{ WMI_DATA_VO_SVC, PIPEDIR_OUT, 3, },
+	{ WMI_DATA_VO_SVC, PIPEDIR_IN, 2, },
+	{ WMI_DATA_BK_SVC, PIPEDIR_OUT, 3, },
+	{ WMI_DATA_BK_SVC, PIPEDIR_IN, 2, },
+	{ WMI_DATA_BE_SVC, PIPEDIR_OUT, 3, },
+	{ WMI_DATA_BE_SVC, PIPEDIR_IN, 2, },
+	{ WMI_DATA_VI_SVC, PIPEDIR_OUT, 3, },
+	{ WMI_DATA_VI_SVC, PIPEDIR_IN, 2, },
+	{ WMI_CONTROL_SVC, PIPEDIR_OUT, 3, },
+	{ WMI_CONTROL_SVC, PIPEDIR_IN, 2, },
+	{ HTC_CTRL_RSVD_SVC, PIPEDIR_OUT, 0, },
+	{ HTC_CTRL_RSVD_SVC, PIPEDIR_IN, 2, },
+	{ HTT_DATA_MSG_SVC, PIPEDIR_OUT, 4, },
+	{ HTT_DATA2_MSG_SVC, PIPEDIR_OUT, 5, },
+	{ HTT_DATA_MSG_SVC, PIPEDIR_IN, 1, },
+	{ HTT_DATA2_MSG_SVC, PIPEDIR_IN, 10, },
+	{ HTT_DATA3_MSG_SVC, PIPEDIR_IN, 11, },
+#ifdef WLAN_FEATURE_WMI_DIAG_OVER_CE7
+	{ WMI_CONTROL_DIAG_SVC, PIPEDIR_IN, 7, },
+#endif
+	/* (Additions here) */
+	{ 0, 0, 0, },
+};
+#else
+static struct service_to_pipe target_service_to_ce_map_wcn6450[] = {
 };
 #endif
 
@@ -1453,9 +1484,15 @@ static void hif_select_service_to_pipe_map(struct hif_softc *scn,
 			break;
 		case TARGET_TYPE_KIWI:
 		case TARGET_TYPE_MANGO:
+		case TARGET_TYPE_PEACH:
 			hif_select_service_to_pipe_map_kiwi(scn,
 							 tgt_svc_map_to_use,
 							 sz_tgt_svc_map_to_use);
+			break;
+		case TARGET_TYPE_WCN6450:
+			*tgt_svc_map_to_use = target_service_to_ce_map_wcn6450;
+			*sz_tgt_svc_map_to_use =
+				 sizeof(target_service_to_ce_map_wcn6450);
 			break;
 		case TARGET_TYPE_QCA8074:
 			*tgt_svc_map_to_use = target_service_to_ce_map_qca8074;
@@ -1491,6 +1528,7 @@ static void hif_select_service_to_pipe_map(struct hif_softc *scn,
 						  sz_tgt_svc_map_to_use);
 			break;
 		case TARGET_TYPE_QCA5332:
+		case TARGET_TYPE_QCN6432:
 			*tgt_svc_map_to_use = target_service_to_ce_map_qca5332;
 			*sz_tgt_svc_map_to_use =
 				sizeof(target_service_to_ce_map_qca5332);
@@ -1510,6 +1548,7 @@ static void hif_select_service_to_pipe_map(struct hif_softc *scn,
 					sizeof(struct service_to_pipe);
 }
 
+#ifndef QCA_WIFI_WCN6450
 /**
  * ce_mark_datapath() - marks the ce_state->htt_rx_data accordingly
  * @ce_state : pointer to the state context of the CE
@@ -1550,6 +1589,113 @@ static bool ce_mark_datapath(struct CE_state *ce_state)
 	}
 	return rc;
 }
+
+static void ce_update_msi_batch_intr_flags(struct CE_state *ce_state)
+{
+}
+
+static inline void ce_update_wrt_idx_offset(struct hif_softc *scn,
+					    struct CE_state *ce_state,
+					    struct CE_attr *attr)
+{
+}
+#else
+static bool ce_mark_datapath(struct CE_state *ce_state)
+{
+	struct service_to_pipe *svc_map;
+	uint32_t map_sz, map_len;
+	int i;
+
+	if (ce_state) {
+		hif_select_service_to_pipe_map(ce_state->scn, &svc_map,
+					       &map_sz);
+
+		map_len = map_sz / sizeof(struct service_to_pipe);
+		for (i = 0; i < map_len; i++) {
+			if ((svc_map[i].pipenum == ce_state->id) &&
+			    ((svc_map[i].service_id == HTT_DATA_MSG_SVC)  ||
+			     (svc_map[i].service_id == HTT_DATA2_MSG_SVC) ||
+			     (svc_map[i].service_id == HTT_DATA3_MSG_SVC)) &&
+			    (svc_map[i].pipedir == PIPEDIR_IN))
+				ce_state->htt_rx_data = true;
+			else if ((svc_map[i].pipenum == ce_state->id) &&
+				 (svc_map[i].service_id == HTT_DATA2_MSG_SVC) &&
+				 (svc_map[i].pipedir == PIPEDIR_OUT))
+				ce_state->htt_tx_data = true;
+		}
+	}
+
+	return (ce_state->htt_rx_data || ce_state->htt_tx_data);
+}
+
+static void ce_update_msi_batch_intr_flags(struct CE_state *ce_state)
+{
+	ce_state->msi_supported = true;
+	ce_state->batch_intr_supported = true;
+}
+
+static inline void ce_update_wrt_idx_offset(struct hif_softc *scn,
+					    struct CE_state *ce_state,
+					    struct CE_attr *attr)
+{
+	/* Do not setup CE write index offset for FW only CE rings */
+	if (!attr->src_nentries && !attr->dest_nentries)
+		return;
+
+	if (attr->src_nentries)
+		ce_state->ce_wrt_idx_offset =
+			CE_SRC_WR_IDX_OFFSET_GET(scn, ce_state->ctrl_addr);
+	else if (attr->dest_nentries)
+		ce_state->ce_wrt_idx_offset =
+			CE_DST_WR_IDX_OFFSET_GET(scn, ce_state->ctrl_addr);
+	else
+		QDF_BUG(0);
+}
+
+/*
+ * hif_ce_print_ring_stats() - Print ce ring statistics
+ *
+ * @hif_ctx: hif context
+ *
+ * Returns: None
+ */
+void hif_ce_print_ring_stats(struct hif_opaque_softc *hif_ctx)
+{
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+	struct CE_state *ce_state;
+	int i;
+
+	for (i = 0; i < scn->ce_count; i++) {
+		ce_state = scn->ce_id_to_state[i];
+		if (!ce_state)
+			continue;
+
+		if (ce_state->src_ring) {
+			QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_FATAL,
+				  "ce%d:SW: sw_index %u write_index %u",
+				  ce_state->src_ring->sw_index,
+				  ce_state->src_ring->write_index);
+
+			QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_FATAL,
+				  "ce%d:HW: read_index %u write_index %u",
+				  CE_SRC_RING_READ_IDX_GET_FROM_REGISTER(scn, ce_state->ctrl_addr),
+				  CE_SRC_RING_WRITE_IDX_GET_FROM_REGISTER(scn, ce_state->ctrl_addr));
+		}
+
+		if (ce_state->dest_ring) {
+			QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_FATAL,
+				  "ce%d:SW: sw_index %u write_index %u",
+				  ce_state->dest_ring->sw_index,
+				  ce_state->dest_ring->write_index);
+
+			QDF_TRACE(QDF_MODULE_ID_HIF, QDF_TRACE_LEVEL_FATAL,
+				  "ce%d:HW: read_index %u write_index %u",
+				  CE_DEST_RING_READ_IDX_GET_FROM_REGISTER(scn, ce_state->ctrl_addr),
+				  CE_DEST_RING_WRITE_IDX_GET_FROM_REGISTER(scn, ce_state->ctrl_addr));
+		}
+	}
+}
+#endif
 
 /**
  * hif_get_max_wmi_ep() - Get max WMI EPs configured in target svc map
@@ -1770,9 +1916,11 @@ bool ce_srng_based(struct hif_softc *scn)
 	case TARGET_TYPE_QCA5018:
 	case TARGET_TYPE_KIWI:
 	case TARGET_TYPE_MANGO:
+	case TARGET_TYPE_PEACH:
 	case TARGET_TYPE_QCN9224:
 	case TARGET_TYPE_QCA9574:
 	case TARGET_TYPE_QCA5332:
+	case TARGET_TYPE_QCN6432:
 		return true;
 	default:
 		return false;
@@ -2037,6 +2185,8 @@ static void ce_oom_recovery(void *context)
 		&ce_softc->pipe_info[ce_state->id];
 
 	hif_post_recv_buffers_for_pipe(pipe_info);
+
+	qdf_atomic_dec(&scn->active_oom_work_cnt);
 }
 
 #ifdef HIF_CE_DEBUG_DATA_BUF
@@ -2123,9 +2273,16 @@ uint32_t hif_ce_count_max = CE_COUNT_MAX;
 #define CE_DESC_HISTORY_BUFF_CNT  CE_COUNT_MAX
 #define IS_CE_DEBUG_ONLY_FOR_CRIT_CE  0
 #else
+
+#ifdef QCA_WIFI_SUPPORT_SRNG
+/* Enable CE-1 history only on targets not using CE-1 for datapath */
+#define CE_DESC_HISTORY_BUFF_CNT  4
+#define IS_CE_DEBUG_ONLY_FOR_CRIT_CE (BIT(1) | BIT(2) | BIT(3) | BIT(7))
+#else
 /* CE2, CE3, CE7 */
 #define CE_DESC_HISTORY_BUFF_CNT  3
 #define IS_CE_DEBUG_ONLY_FOR_CRIT_CE (BIT(2) | BIT(3) | BIT(7))
+#endif /* QCA_WIFI_SUPPORT_SRNG */
 #endif
 bool hif_ce_only_for_crit = IS_CE_DEBUG_ONLY_FOR_CRIT_CE;
 struct hif_ce_desc_event
@@ -2165,11 +2322,11 @@ static struct hif_ce_desc_event *
 {
 	struct ce_desc_hist *ce_hist = &scn->hif_ce_desc_hist;
 
-	hif_debug("get ce debug buffer ce_id %u, only_ce2/ce3=0x%x, idx=%u",
+	hif_debug("get ce debug buffer ce_id %u, only_ce2/ce3=0x%lx, idx=%u",
 		  ce_id, IS_CE_DEBUG_ONLY_FOR_CRIT_CE,
 		  ce_hist->ce_id_hist_map[ce_id]);
 	if (IS_CE_DEBUG_ONLY_FOR_CRIT_CE &&
-	    (ce_id == CE_ID_2 || ce_id == CE_ID_3 || ce_id == CE_ID_7)) {
+	    (IS_CE_DEBUG_ONLY_FOR_CRIT_CE & BIT(ce_id))) {
 		uint8_t idx = ce_hist->ce_id_hist_map[ce_id];
 
 		hif_ce_desc_history[ce_id] = hif_ce_desc_history_buff[idx];
@@ -2197,9 +2354,7 @@ alloc_mem_ce_debug_history(struct hif_softc *scn, unsigned int ce_id,
 
 	/* For perf build, return directly for non ce2/ce3 */
 	if (IS_CE_DEBUG_ONLY_FOR_CRIT_CE &&
-	    ce_id != CE_ID_2 &&
-	    ce_id != CE_ID_3 &&
-	    ce_id != CE_ID_7) {
+	    !(IS_CE_DEBUG_ONLY_FOR_CRIT_CE & BIT(ce_id))) {
 		ce_hist->enable[ce_id] = false;
 		ce_hist->data_enable[ce_id] = false;
 		return QDF_STATUS_SUCCESS;
@@ -2364,6 +2519,116 @@ void ce_disable_polling(void *cestate)
 		CE_state->timer_inited = false;
 }
 
+#ifdef WLAN_FEATURE_SSR_DRIVER_DUMP
+#define MAX_CE_STR_LEN 50
+/**
+ * ce_ring_dump_register_region() - Register CE ring with SSR dump
+ * @CE_state: CE_state pointer
+ * @CE_id: CE id
+ *
+ * Return: None
+ */
+static inline
+void ce_ring_dump_register_region(struct CE_state *CE_state, unsigned int CE_id)
+{
+	struct CE_ring_state *ce_ring;
+	char ce[MAX_CE_STR_LEN];
+	char CE_ring_state[MAX_CE_STR_LEN];
+	char srng[MAX_CE_STR_LEN];
+
+	qdf_snprint(ce, MAX_CE_STR_LEN, "%s%d", "ce_", CE_id);
+	qdf_ssr_driver_dump_register_region(ce, CE_state, sizeof(*CE_state));
+
+	if (CE_state->status_ring) {
+		ce_ring = CE_state->status_ring;
+		qdf_snprint(CE_ring_state, MAX_CE_STR_LEN,
+			    "%s%s", ce, "_status_ring");
+		qdf_ssr_driver_dump_register_region(CE_ring_state, ce_ring,
+						    sizeof(struct CE_ring_state)
+						   );
+		qdf_snprint(srng, MAX_CE_STR_LEN,
+			    "%s%s", CE_ring_state, "_ctx");
+		qdf_ssr_driver_dump_register_region(srng, ce_ring->srng_ctx,
+						    sizeof(struct hal_srng));
+	}
+	if (CE_state->dest_ring) {
+		ce_ring = CE_state->dest_ring;
+		qdf_snprint(CE_ring_state, MAX_CE_STR_LEN,
+			    "%s%s", ce, "_dest_ring");
+		qdf_ssr_driver_dump_register_region(CE_ring_state, ce_ring,
+						    sizeof(struct CE_ring_state)
+						   );
+		qdf_snprint(srng, MAX_CE_STR_LEN,
+			    "%s%s", CE_ring_state, "_ctx");
+		qdf_ssr_driver_dump_register_region(srng, ce_ring->srng_ctx,
+						    sizeof(struct hal_srng));
+	}
+	if (CE_state->src_ring) {
+		ce_ring = CE_state->src_ring;
+		qdf_snprint(CE_ring_state, MAX_CE_STR_LEN,
+			    "%s%s", ce, "_src_ring");
+		qdf_ssr_driver_dump_register_region(CE_ring_state, ce_ring,
+						    sizeof(struct CE_ring_state)
+						   );
+		qdf_snprint(srng, MAX_CE_STR_LEN,
+			    "%s%s", CE_ring_state, "_ctx");
+		qdf_ssr_driver_dump_register_region(srng, ce_ring->srng_ctx,
+						    sizeof(struct hal_srng));
+	}
+}
+
+/**
+ * ce_ring_dump_unregister_region() - Unregister CE ring with SSR dump
+ * @CE_state: CE_state pointer
+ * @CE_id: CE id
+ *
+ * Return: None
+ */
+static inline void
+ce_ring_dump_unregister_region(struct CE_state *CE_state, unsigned int CE_id)
+{
+	char ce[MAX_CE_STR_LEN];
+	char CE_ring_state[MAX_CE_STR_LEN];
+	char srng[MAX_CE_STR_LEN];
+
+	qdf_snprint(ce, MAX_CE_STR_LEN, "%s%d", "ce_", CE_id);
+	qdf_ssr_driver_dump_unregister_region(ce);
+	if (CE_state->status_ring) {
+		qdf_snprint(CE_ring_state, MAX_CE_STR_LEN,
+			    "%s%s", ce, "_status_ring");
+		qdf_snprint(srng, MAX_CE_STR_LEN,
+			    "%s%s", CE_ring_state, "_ctx");
+		qdf_ssr_driver_dump_unregister_region(CE_ring_state);
+		qdf_ssr_driver_dump_unregister_region(srng);
+	}
+	if (CE_state->dest_ring) {
+		qdf_snprint(CE_ring_state, MAX_CE_STR_LEN,
+			    "%s%s", ce, "_dest_ring");
+		qdf_snprint(srng, MAX_CE_STR_LEN,
+			    "%s%s", CE_ring_state, "_ctx");
+		qdf_ssr_driver_dump_unregister_region(CE_ring_state);
+		qdf_ssr_driver_dump_unregister_region(srng);
+	}
+	if (CE_state->src_ring) {
+		qdf_snprint(CE_ring_state, MAX_CE_STR_LEN,
+			    "%s%s", ce, "_src_ring");
+		qdf_snprint(srng, MAX_CE_STR_LEN,
+			    "%s%s", CE_ring_state, "_ctx");
+		qdf_ssr_driver_dump_unregister_region(CE_ring_state);
+		qdf_ssr_driver_dump_unregister_region(srng);
+	}
+}
+#else
+static inline
+void ce_ring_dump_register_region(struct CE_state *CE_state, unsigned int CE_id)
+{
+}
+
+static inline void
+ce_ring_dump_unregister_region(struct CE_state *CE_state, unsigned int CE_id)
+{
+}
+#endif
 /*
  * Initialize a Copy Engine based on caller-supplied attributes.
  * This may be called once to initialize both source and destination
@@ -2476,6 +2741,16 @@ struct CE_handle *ce_init(struct hif_softc *scn,
 				goto error_target_access;
 			ce_ring_test_initial_indexes(CE_id, src_ring,
 						     "src_ring");
+			if (CE_state->attr_flags & CE_ATTR_ENABLE_POLL) {
+				qdf_timer_init(scn->qdf_dev,
+					       &CE_state->poll_timer,
+					       ce_poll_timeout,
+					       CE_state,
+					       QDF_TIMER_TYPE_WAKE_APPS);
+				ce_enable_polling(CE_state);
+				qdf_timer_mod(&CE_state->poll_timer,
+					      CE_POLL_TIMEOUT);
+			}
 		}
 	}
 
@@ -2574,9 +2849,14 @@ struct CE_handle *ce_init(struct hif_softc *scn,
 	ce_mark_datapath(CE_state);
 	scn->ce_id_to_state[CE_id] = CE_state;
 
+	ce_ring_dump_register_region(CE_state, CE_id);
+
 	mem_status = alloc_mem_ce_debug_history(scn, CE_id, attr->src_nentries);
 	if (mem_status != QDF_STATUS_SUCCESS)
 		goto error_target_access;
+
+	ce_update_msi_batch_intr_flags(CE_state);
+	ce_update_wrt_idx_offset(scn, CE_state, attr);
 
 	return (struct CE_handle *)CE_state;
 
@@ -2628,6 +2908,137 @@ static int hif_get_pktlog_ce_num(struct hif_softc *scn)
 	}
 	return -EINVAL;
 }
+
+#ifdef WLAN_FEATURE_CE_RX_BUFFER_REUSE
+
+#define HIF_CE_RX_NBUF_WMI_POOL_SIZE 32
+
+static qdf_nbuf_t hif_ce_rx_nbuf_alloc(struct hif_softc *scn, uint8_t ce_id)
+{
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info = &hif_state->pipe_info[ce_id];
+	qdf_nbuf_t nbuf;
+
+	nbuf = wbuff_buff_get(scn->wbuff_handle, ce_id, 0, __func__,
+			      __LINE__);
+	if (!nbuf)
+		nbuf = qdf_nbuf_alloc(scn->qdf_dev, pipe_info->buf_sz,
+				      0, 4, false);
+
+	if (!nbuf)
+		return NULL;
+
+	return nbuf;
+}
+
+static void hif_ce_rx_nbuf_free(qdf_nbuf_t nbuf)
+{
+	nbuf = wbuff_buff_put(nbuf);
+	if (nbuf)
+		qdf_nbuf_free(nbuf);
+}
+
+static int
+hif_calc_wbuff_pool_size(struct hif_softc *scn, struct CE_state *ce_state)
+{
+	int ul_is_polled, dl_is_polled;
+	bool is_wmi_svc, wmi_diag_svc;
+	uint8_t ul_pipe, dl_pipe;
+	int pool_size;
+	int status;
+	int ce_id;
+
+	if (!ce_state)
+		return 0;
+
+	ce_id = ce_state->id;
+
+	status = hif_map_service_to_pipe(&scn->osc, WMI_CONTROL_SVC,
+					 &ul_pipe, &dl_pipe,
+					 &ul_is_polled, &dl_is_polled);
+	is_wmi_svc = !status && (dl_pipe == ce_id);
+
+	status = hif_map_service_to_pipe(GET_HIF_OPAQUE_HDL(scn),
+					 WMI_CONTROL_DIAG_SVC,
+					 &ul_pipe, &dl_pipe,
+					 &ul_is_polled, &dl_is_polled);
+	wmi_diag_svc = !status;
+
+	if (is_wmi_svc && !wmi_diag_svc)
+		pool_size = ce_state->dest_ring->nentries +
+			HIF_CE_RX_NBUF_WMI_POOL_SIZE;
+	else if (is_wmi_svc && wmi_diag_svc)
+		pool_size = ce_state->dest_ring->nentries +
+			HIF_CE_RX_NBUF_WMI_POOL_SIZE / 2;
+	else if (!is_wmi_svc && wmi_diag_svc && ce_id == dl_pipe)
+		pool_size = ce_state->dest_ring->nentries +
+			HIF_CE_RX_NBUF_WMI_POOL_SIZE / 2;
+	else
+		pool_size = ce_state->dest_ring->nentries;
+
+	return pool_size;
+}
+
+static void hif_ce_rx_wbuff_register(struct hif_softc *scn)
+{
+	struct wbuff_alloc_request wbuff_alloc[CE_COUNT_MAX] = {0};
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info;
+	struct CE_state *ce_state;
+	int ce_id;
+
+	for (ce_id = 0; ce_id <  scn->ce_count; ce_id++) {
+		pipe_info = &hif_state->pipe_info[ce_id];
+		ce_state = scn->ce_id_to_state[ce_id];
+
+		if (!pipe_info->buf_sz)
+			continue;
+
+		/* Only RX CEs need WBUFF registration. recv_bufs_needed
+		 * contains valid count for RX CEs during init time.
+		 */
+		if (!atomic_read(&pipe_info->recv_bufs_needed))
+			continue;
+
+		wbuff_alloc[ce_id].pool_id = ce_id;
+		wbuff_alloc[ce_id].buffer_size = pipe_info->buf_sz;
+		wbuff_alloc[ce_id].pool_size =
+				hif_calc_wbuff_pool_size(scn, ce_state);
+	}
+
+	scn->wbuff_handle =
+		wbuff_module_register(wbuff_alloc, CE_COUNT_MAX, 0, 4,
+				      WBUFF_MODULE_CE_RX);
+}
+
+static void hif_ce_rx_wbuff_deregister(struct hif_softc *scn)
+{
+	wbuff_module_deregister(scn->wbuff_handle);
+	scn->wbuff_handle = NULL;
+}
+#else
+static inline qdf_nbuf_t
+hif_ce_rx_nbuf_alloc(struct hif_softc *scn, uint8_t ce_id)
+{
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info = &hif_state->pipe_info[ce_id];
+
+	return qdf_nbuf_alloc(scn->qdf_dev, pipe_info->buf_sz, 0, 4, false);
+}
+
+static inline void hif_ce_rx_nbuf_free(qdf_nbuf_t nbuf)
+{
+	return qdf_nbuf_free(nbuf);
+}
+
+static inline void hif_ce_rx_wbuff_register(struct hif_softc *scn)
+{
+}
+
+static inline void hif_ce_rx_wbuff_deregister(struct hif_softc *scn)
+{
+}
+#endif /* WLAN_FEATURE_CE_RX_BUFFER_REUSE */
 
 #ifdef WLAN_FEATURE_FASTPATH
 /**
@@ -2764,7 +3175,7 @@ void ce_t2h_msg_ce_cleanup(struct CE_handle *ce_hdl)
 		if (nbuf) {
 			qdf_nbuf_unmap_single(ce_state->scn->qdf_dev, nbuf,
 					      QDF_DMA_FROM_DEVICE);
-			qdf_nbuf_free(nbuf);
+			hif_ce_rx_nbuf_free(nbuf);
 		}
 	}
 }
@@ -2823,6 +3234,8 @@ void ce_fini(struct CE_handle *copyeng)
 	ce_disable_polling(CE_state);
 
 	qdf_lro_deinit(CE_state->lro_data);
+
+	ce_ring_dump_unregister_region(CE_state, CE_id);
 
 	if (CE_state->src_ring) {
 		/* Cleanup the datapath Tx ring */
@@ -2943,7 +3356,7 @@ hif_send_head(struct hif_opaque_softc *hif_ctx,
 		 * Clear the packet offset for all but the first CE desc.
 		 */
 		if (i++ > 0)
-			data_attr &= ~QDF_CE_TX_PKT_OFFSET_BIT_M;
+			data_attr &= ~CE_DESC_PKT_OFFSET_BIT_M;
 
 		status = ce_sendlist_buf_add(&sendlist, frag_paddr,
 				    frag_bytes >
@@ -3017,6 +3430,74 @@ void hif_send_complete_check(struct hif_opaque_softc *hif_ctx, uint8_t pipe,
 	ce_per_engine_service(scn, pipe);
 #endif
 }
+
+#ifdef CUSTOM_CB_SCHEDULER_SUPPORT
+QDF_STATUS
+hif_register_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe,
+			  void (*custom_cb)(void *), void *custom_cb_context)
+{
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info;
+
+	if (pipe >= CE_COUNT_MAX)
+		return QDF_STATUS_E_INVAL;
+
+	pipe_info = &hif_state->pipe_info[pipe];
+	ce_register_custom_cb(pipe_info->ce_hdl, custom_cb, custom_cb_context);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+hif_unregister_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe)
+{
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info;
+
+	if (pipe >= CE_COUNT_MAX)
+		return QDF_STATUS_E_INVAL;
+
+	pipe_info = &hif_state->pipe_info[pipe];
+	ce_unregister_custom_cb(pipe_info->ce_hdl);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+hif_enable_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe)
+{
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info;
+
+	if (pipe >= CE_COUNT_MAX)
+		return QDF_STATUS_E_INVAL;
+
+	pipe_info = &hif_state->pipe_info[pipe];
+	ce_enable_custom_cb(pipe_info->ce_hdl);
+	ce_dispatch_interrupt(pipe, &hif_state->tasklets[pipe]);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+hif_disable_ce_custom_cb(struct hif_opaque_softc *hif_ctx, uint8_t pipe)
+{
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ctx);
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct HIF_CE_pipe_info *pipe_info;
+
+	if (pipe >= CE_COUNT_MAX)
+		return QDF_STATUS_E_INVAL;
+
+	pipe_info = &hif_state->pipe_info[pipe];
+	ce_disable_custom_cb(pipe_info->ce_hdl);
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* CUSTOM_CB_SCHEDULER_SUPPORT */
 
 #if defined(CE_TASKLET_SCHEDULE_ON_FULL) && defined(CE_TASKLET_DEBUG_ENABLE)
 #define CE_RING_FULL_THRESHOLD_TIME 3000000
@@ -3099,141 +3580,6 @@ hif_pci_ce_send_done(struct CE_handle *copyeng, void *ce_context,
 			&toeplitz_hash_result) == QDF_STATUS_SUCCESS);
 }
 
-#ifdef WLAN_FEATURE_CE_RX_BUFFER_REUSE
-
-#define HIF_CE_RX_NBUF_WMI_POOL_SIZE 32
-
-static qdf_nbuf_t hif_ce_rx_nbuf_alloc(struct hif_softc *scn, uint8_t ce_id)
-{
-	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
-	struct HIF_CE_pipe_info *pipe_info = &hif_state->pipe_info[ce_id];
-	qdf_nbuf_t nbuf;
-
-	nbuf = wbuff_buff_get(scn->wbuff_handle, ce_id, 0, __func__,
-			      __LINE__);
-	if (!nbuf)
-		nbuf = qdf_nbuf_alloc(scn->qdf_dev, pipe_info->buf_sz,
-				      0, 4, false);
-
-	if (!nbuf)
-		return NULL;
-
-	return nbuf;
-}
-
-static void hif_ce_rx_nbuf_free(qdf_nbuf_t nbuf)
-{
-	nbuf = wbuff_buff_put(nbuf);
-	if (nbuf)
-		qdf_nbuf_free(nbuf);
-}
-
-static int
-hif_calc_wbuff_pool_size(struct hif_softc *scn, struct CE_state *ce_state)
-{
-	int ul_is_polled, dl_is_polled;
-	bool is_wmi_svc, wmi_diag_svc;
-	uint8_t ul_pipe, dl_pipe;
-	int pool_size;
-	int status;
-	int ce_id;
-
-	if (!ce_state)
-		return 0;
-
-	ce_id = ce_state->id;
-
-	status = hif_map_service_to_pipe(&scn->osc, WMI_CONTROL_SVC,
-					 &ul_pipe, &dl_pipe,
-					 &ul_is_polled, &dl_is_polled);
-	is_wmi_svc = !status && (dl_pipe == ce_id);
-
-	status = hif_map_service_to_pipe(GET_HIF_OPAQUE_HDL(scn),
-					 WMI_CONTROL_DIAG_SVC,
-					 &ul_pipe, &dl_pipe,
-					 &ul_is_polled, &dl_is_polled);
-	wmi_diag_svc = !status;
-
-	if (is_wmi_svc && !wmi_diag_svc)
-		pool_size = ce_state->dest_ring->nentries +
-			HIF_CE_RX_NBUF_WMI_POOL_SIZE;
-	else if (is_wmi_svc && wmi_diag_svc)
-		pool_size = ce_state->dest_ring->nentries +
-			HIF_CE_RX_NBUF_WMI_POOL_SIZE / 2;
-	else if (!is_wmi_svc && wmi_diag_svc && ce_id == dl_pipe)
-		pool_size = ce_state->dest_ring->nentries +
-			HIF_CE_RX_NBUF_WMI_POOL_SIZE / 2;
-	else
-		pool_size = ce_state->dest_ring->nentries;
-
-	return pool_size;
-}
-
-static void hif_ce_rx_wbuff_register(struct hif_softc *scn)
-{
-	struct wbuff_alloc_request wbuff_alloc[CE_COUNT_MAX] = {0};
-	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
-	struct HIF_CE_pipe_info *pipe_info;
-	struct CE_state *ce_state;
-	int ce_id;
-
-	for (ce_id = 0; ce_id <  scn->ce_count; ce_id++) {
-		pipe_info = &hif_state->pipe_info[ce_id];
-		ce_state = scn->ce_id_to_state[ce_id];
-
-		if (!pipe_info->buf_sz)
-			continue;
-
-		/* Only RX CEs need WBUFF registration. recv_bufs_needed
-		 * contains valid count for RX CEs during init time.
-		 */
-		if (!atomic_read(&pipe_info->recv_bufs_needed))
-			continue;
-
-		if (ce_is_fastpath_enabled(scn) &&
-		    ce_state->htt_rx_data)
-			continue;
-
-		wbuff_alloc[ce_id].pool_id = ce_id;
-		wbuff_alloc[ce_id].buffer_size = pipe_info->buf_sz;
-		wbuff_alloc[ce_id].pool_size =
-				hif_calc_wbuff_pool_size(scn, ce_state);
-	}
-
-	scn->wbuff_handle =
-		wbuff_module_register(wbuff_alloc, CE_COUNT_MAX, 0, 4,
-				      WBUFF_MODULE_CE_RX);
-}
-
-static void hif_ce_rx_wbuff_deregister(struct hif_softc *scn)
-{
-	wbuff_module_deregister(scn->wbuff_handle);
-	scn->wbuff_handle = NULL;
-}
-#else
-static inline qdf_nbuf_t
-hif_ce_rx_nbuf_alloc(struct hif_softc *scn, uint8_t ce_id)
-{
-	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
-	struct HIF_CE_pipe_info *pipe_info = &hif_state->pipe_info[ce_id];
-
-	return qdf_nbuf_alloc(scn->qdf_dev, pipe_info->buf_sz, 0, 4, false);
-}
-
-static inline void hif_ce_rx_nbuf_free(qdf_nbuf_t nbuf)
-{
-	return qdf_nbuf_free(nbuf);
-}
-
-static inline void hif_ce_rx_wbuff_register(struct hif_softc *scn)
-{
-}
-
-static inline void hif_ce_rx_wbuff_deregister(struct hif_softc *scn)
-{
-}
-#endif /* WLAN_FEATURE_CE_RX_BUFFER_REUSE */
-
 /**
  * hif_ce_do_recv(): send message from copy engine to upper layers
  * @msg_callbacks: structure containing callback and callback context
@@ -3260,6 +3606,33 @@ static inline void hif_ce_do_recv(struct hif_msg_callbacks *msg_callbacks,
 	}
 }
 
+#ifdef WLAN_FEATURE_WMI_DIAG_OVER_CE7
+/**
+ * hif_ce_rtpm_mark_last_busy() - record and mark last busy for RTPM
+ * @scn: hif_softc pointer.
+ * @ce_id: ce ID
+ *
+ * Return: None
+ */
+static inline void
+hif_ce_rtpm_mark_last_busy(struct hif_softc *scn, uint32_t ce_id)
+{
+	/* do NOT mark last busy for diag event, to avoid impacting RTPM */
+	if (ce_id == CE_ID_7)
+		return;
+
+	hif_rtpm_record_ce_last_busy_evt(scn, ce_id);
+	hif_rtpm_mark_last_busy(HIF_RTPM_ID_CE);
+}
+#else
+static inline void
+hif_ce_rtpm_mark_last_busy(struct hif_softc *scn, uint32_t ce_id)
+{
+	hif_rtpm_record_ce_last_busy_evt(scn, ce_id);
+	hif_rtpm_mark_last_busy(HIF_RTPM_ID_CE);
+}
+#endif
+
 /* Called by lower (CE) layer when data is received from the Target. */
 static void
 hif_pci_ce_recv_data(struct CE_handle *copyeng, void *ce_context,
@@ -3275,8 +3648,7 @@ hif_pci_ce_recv_data(struct CE_handle *copyeng, void *ce_context,
 	struct hif_msg_callbacks *msg_callbacks = &pipe_info->pipe_callbacks;
 
 	do {
-		hif_rtpm_record_ce_last_busy_evt(scn, ce_state->id);
-		hif_rtpm_mark_last_busy(HIF_RTPM_ID_CE);
+		hif_ce_rtpm_mark_last_busy(scn, ce_state->id);
 		qdf_nbuf_unmap_single(scn->qdf_dev,
 				      (qdf_nbuf_t) transfer_context,
 				      QDF_DMA_FROM_DEVICE);
@@ -3339,23 +3711,23 @@ static int hif_completion_thread_startup_by_ceid(struct HIF_CE_state *hif_state,
 	if (!hif_msg_callbacks ||
 	    !hif_msg_callbacks->rxCompletionHandler ||
 	    !hif_msg_callbacks->txCompletionHandler) {
-		hif_err("%s: no completion handler registered", __func__);
+		hif_err("no completion handler registered");
 		return -EFAULT;
 	}
 
 	attr = hif_state->host_ce_config[pipe_num];
 	if (attr.src_nentries) {
 		/* pipe used to send to target */
-		hif_debug("%s: pipe_num:%d pipe_info:0x%pK\n",
-			  __func__, pipe_num, pipe_info);
+		hif_debug("pipe_num:%d pipe_info:0x%pK\n",
+			  pipe_num, pipe_info);
 		ce_send_cb_register(pipe_info->ce_hdl,
 				    hif_pci_ce_send_done, pipe_info,
 				    attr.flags & CE_ATTR_DISABLE_INTR);
 		pipe_info->num_sends_allowed = attr.src_nentries - 1;
 	}
 	if (attr.dest_nentries) {
-		hif_debug("%s: pipe_num:%d pipe_info:0x%pK\n",
-			  __func__, pipe_num, pipe_info);
+		hif_debug("pipe_num:%d pipe_info:0x%pK\n",
+			  pipe_num, pipe_info);
 		/* pipe used to receive from target */
 		ce_recv_cb_register(pipe_info->ce_hdl,
 				    hif_pci_ce_recv_data, pipe_info,
@@ -3491,13 +3863,12 @@ static void hif_post_recv_buffers_failure(struct HIF_CE_pipe_info *pipe_info,
 	 */
 	if (bufs_needed_tmp == CE_state->dest_ring->nentries - 1 ||
 	    (ce_srng_based(scn) &&
-	     bufs_needed_tmp == CE_state->dest_ring->nentries - 2))
+	     bufs_needed_tmp == CE_state->dest_ring->nentries - 2)) {
+		qdf_atomic_inc(&scn->active_oom_work_cnt);
 		qdf_sched_work(scn->qdf_dev, &CE_state->oom_allocation_work);
+	}
 
 }
-
-
-
 
 QDF_STATUS hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info)
 {
@@ -3515,6 +3886,11 @@ QDF_STATUS hif_post_recv_buffers_for_pipe(struct HIF_CE_pipe_info *pipe_info)
 	}
 
 	ce_hdl = pipe_info->ce_hdl;
+	if (!ce_hdl) {
+		hif_err("ce_hdl is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
 	ce_id = ((struct CE_state *)ce_hdl)->id;
 
 	qdf_spin_lock_bh(&pipe_info->recv_bufs_needed_lock);
@@ -3910,6 +4286,7 @@ static void hif_destroy_oom_work(struct hif_softc *scn)
 			qdf_destroy_work(scn->qdf_dev,
 					 &ce_state->oom_allocation_work);
 	}
+	qdf_atomic_set(&scn->active_oom_work_cnt, 0);
 }
 
 void hif_ce_stop(struct hif_softc *scn)
@@ -3938,7 +4315,6 @@ void hif_ce_stop(struct hif_softc *scn)
 	}
 
 	hif_buffer_cleanup(hif_state);
-	hif_ce_rx_wbuff_deregister(scn);
 
 	for (pipe_num = 0; pipe_num < scn->ce_count; pipe_num++) {
 		struct HIF_CE_pipe_info *pipe_info;
@@ -3961,6 +4337,8 @@ void hif_ce_stop(struct hif_softc *scn)
 		}
 	}
 
+	hif_ce_rx_wbuff_deregister(scn);
+
 	if (hif_state->sleep_timer_init) {
 		qdf_timer_stop(&hif_state->sleep_timer);
 		qdf_timer_free(&hif_state->sleep_timer);
@@ -3969,6 +4347,39 @@ void hif_ce_stop(struct hif_softc *scn)
 
 	hif_state->started = false;
 }
+
+#ifdef CONFIG_SHADOW_V3
+void hif_preare_shadow_register_cfg_v3(struct hif_softc *scn)
+{
+	int shadow_cfg_idx = scn->num_shadow_registers_configured;
+	int i;
+
+	/* shadow reg config for CE SRC registers */
+	for (i = 0; i < scn->ce_count; i++) {
+		scn->shadow_regs[shadow_cfg_idx].addr =
+				CE_BASE_ADDRESS(i) + SR_WR_INDEX_ADDRESS;
+		shadow_cfg_idx++;
+	}
+
+	/* shadow reg config for CE DST registers */
+	for (i = 0; i < scn->ce_count; i++) {
+		scn->shadow_regs[shadow_cfg_idx].addr =
+				CE_BASE_ADDRESS(i) + DST_WR_INDEX_ADDRESS;
+		shadow_cfg_idx++;
+	}
+
+	scn->num_shadow_registers_configured = shadow_cfg_idx;
+}
+
+void hif_get_shadow_reg_config_v3(struct hif_softc *scn,
+				  struct pld_shadow_reg_v3_cfg **shadow_config,
+				  int *num_shadow_registers_configured)
+{
+	*shadow_config = scn->shadow_regs;
+	*num_shadow_registers_configured =
+				scn->num_shadow_registers_configured;
+}
+#endif
 
 static void hif_get_shadow_reg_cfg(struct hif_softc *scn,
 				   struct shadow_reg_cfg
@@ -4022,32 +4433,25 @@ static void hif_print_hal_shadow_register_cfg(struct pld_wlan_enable_cfg *cfg)
 {
 	int i;
 
-	hif_debug("v3: num_config %d", cfg->num_shadow_reg_v3_cfg);
-
-	for (i = 0; i < cfg->num_shadow_reg_v3_cfg; i++) {
-		hif_debug("i %d, val %x", i, cfg->shadow_reg_v3_cfg[i].addr);
-	}
+	hif_info("v3: num_config %d", cfg->num_shadow_reg_v3_cfg);
+	for (i = 0; i < cfg->num_shadow_reg_v3_cfg; i++)
+		hif_info("i %d, val %x", i, cfg->shadow_reg_v3_cfg[i].addr);
 }
 
 #elif defined(CONFIG_SHADOW_V2)
 static void hif_print_hal_shadow_register_cfg(struct pld_wlan_enable_cfg *cfg)
 {
 	int i;
-	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
-		  "%s: num_config %d", __func__, cfg->num_shadow_reg_v2_cfg);
 
-	for (i = 0; i < cfg->num_shadow_reg_v2_cfg; i++) {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_DEBUG,
-		     "%s: i %d, val %x", __func__, i,
-		     cfg->shadow_reg_v2_cfg[i].addr);
-	}
+	hif_info("v2: num_config %d", cfg->num_shadow_reg_v2_cfg);
+	for (i = 0; i < cfg->num_shadow_reg_v2_cfg; i++)
+		hif_info("i %d, val %x", i, cfg->shadow_reg_v2_cfg[i].addr);
 }
 
 #else
 static void hif_print_hal_shadow_register_cfg(struct pld_wlan_enable_cfg *cfg)
 {
-	QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-		  "%s: CONFIG_SHADOW V2/V3 not defined", __func__);
+	hif_info("CONFIG_SHADOW V2/V3 not defined");
 }
 #endif
 
@@ -4124,8 +4528,8 @@ static inline QDF_STATUS hif_alloc_rri_on_ddr(struct hif_softc *scn)
 	qdf_dma_addr_t paddr_rri_on_ddr = 0;
 
 	scn->vaddr_rri_on_ddr =
-		(uint32_t *)qdf_mem_alloc_consistent(scn->qdf_dev,
-		scn->qdf_dev->dev, (CE_COUNT * sizeof(uint32_t)),
+		(void *)qdf_mem_alloc_consistent(scn->qdf_dev,
+		scn->qdf_dev->dev, RRI_ON_DDR_MEM_SIZE,
 		&paddr_rri_on_ddr);
 
 	if (!scn->vaddr_rri_on_ddr) {
@@ -4135,7 +4539,7 @@ static inline QDF_STATUS hif_alloc_rri_on_ddr(struct hif_softc *scn)
 
 	scn->paddr_rri_on_ddr = paddr_rri_on_ddr;
 
-	qdf_mem_zero(scn->vaddr_rri_on_ddr, CE_COUNT * sizeof(uint32_t));
+	qdf_mem_zero(scn->vaddr_rri_on_ddr, RRI_ON_DDR_MEM_SIZE);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -4153,25 +4557,66 @@ static inline QDF_STATUS hif_alloc_rri_on_ddr(struct hif_softc *scn)
  *
  * Return: None
  */
+#ifdef QCA_WIFI_WCN6450
 static inline void hif_config_rri_on_ddr(struct hif_softc *scn)
 {
 	unsigned int i;
 	uint32_t high_paddr, low_paddr;
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct CE_attr *attr;
 
 	if (hif_alloc_rri_on_ddr(scn) != QDF_STATUS_SUCCESS)
 		return;
 
-	low_paddr  = BITS0_TO_31(scn->paddr_rri_on_ddr);
-	high_paddr = BITS32_TO_35(scn->paddr_rri_on_ddr);
+	low_paddr  = RRI_ON_DDR_PADDR_LOW(scn->paddr_rri_on_ddr);
+	high_paddr = RRI_ON_DDR_PADDR_HIGH(scn->paddr_rri_on_ddr);
 
 	hif_debug("using srri and drri from DDR");
 
 	WRITE_CE_DDR_ADDRESS_FOR_RRI_LOW(scn, low_paddr);
 	WRITE_CE_DDR_ADDRESS_FOR_RRI_HIGH(scn, high_paddr);
 
-	for (i = 0; i < CE_COUNT; i++)
-		CE_IDX_UPD_EN_SET(scn, CE_BASE_ADDRESS(i));
+	for (i = 0; i < CE_COUNT; i++) {
+		attr = &hif_state->host_ce_config[i];
+		if (attr->src_nentries || attr->dest_nentries)
+			CE_IDX_UPD_EN_SET(scn, CE_BASE_ADDRESS(i));
+	}
 }
+#else
+static inline void hif_config_rri_on_ddr(struct hif_softc *scn)
+{
+	unsigned int i;
+	uint32_t high_paddr, low_paddr;
+	struct HIF_CE_state *hif_state = HIF_GET_CE_STATE(scn);
+	struct CE_pipe_config *ce_config;
+
+	if (hif_alloc_rri_on_ddr(scn) != QDF_STATUS_SUCCESS)
+		return;
+
+	low_paddr  = RRI_ON_DDR_PADDR_LOW(scn->paddr_rri_on_ddr);
+	high_paddr = RRI_ON_DDR_PADDR_HIGH(scn->paddr_rri_on_ddr);
+
+	hif_debug("using srri and drri from DDR");
+
+	WRITE_CE_DDR_ADDRESS_FOR_RRI_LOW(scn, low_paddr);
+	WRITE_CE_DDR_ADDRESS_FOR_RRI_HIGH(scn, high_paddr);
+
+	for (i = 0; i < CE_COUNT; i++) {
+		ce_config = &hif_state->target_ce_config[i];
+		/*
+		 * For DST channel program both IDX_UPD_EN and
+		 * DMAX length(behalf of F.W) at once to avoid
+		 * race with F.W register update.
+		 */
+		if (ce_config->pipedir == PIPEDIR_IN && ce_config->nbytes_max)
+			CE_IDX_UPD_EN_DMAX_LEN_SET(scn, CE_BASE_ADDRESS(i),
+						   ce_config->nbytes_max);
+		else
+			CE_IDX_UPD_EN_SET(scn, CE_BASE_ADDRESS(i));
+	}
+}
+#endif
+
 #else
 /**
  * hif_config_rri_on_ddr(): Configure the RRI on DDR mechanism
@@ -4250,6 +4695,8 @@ int hif_wlan_enable(struct hif_softc *scn)
 	switch (tgt_info->target_type) {
 	case TARGET_TYPE_KIWI:
 	case TARGET_TYPE_MANGO:
+	case TARGET_TYPE_PEACH:
+	case TARGET_TYPE_WCN6450:
 		hif_prepare_hal_shadow_reg_cfg_v3(scn, &cfg);
 		break;
 	default:
@@ -4511,6 +4958,14 @@ void hif_ce_prepare_config(struct hif_softc *scn)
 		scn->ce_count = QCN_9160_CE_COUNT;
 		scn->ini_cfg.disable_wake_irq = 1;
 		break;
+	case TARGET_TYPE_QCN6432:
+		hif_state->host_ce_config = host_ce_config_wlan_qcn6432;
+		hif_state->target_ce_config = target_ce_config_wlan_qcn6432;
+		hif_state->target_ce_config_sz =
+					sizeof(target_ce_config_wlan_qcn6432);
+		scn->ce_count = QCN_6432_CE_COUNT;
+		scn->ini_cfg.disable_wake_irq = 1;
+		break;
 	case TARGET_TYPE_QCA5018:
 		hif_state->host_ce_config = host_ce_config_wlan_qca5018;
 		hif_state->target_ce_config = target_ce_config_wlan_qca5018;
@@ -4550,6 +5005,7 @@ void hif_ce_prepare_config(struct hif_softc *scn)
 		break;
 	case TARGET_TYPE_KIWI:
 	case TARGET_TYPE_MANGO:
+	case TARGET_TYPE_PEACH:
 		hif_ce_select_config_kiwi(hif_state);
 		scn->ce_count = KIWI_CE_COUNT;
 		break;
@@ -4570,7 +5026,12 @@ void hif_ce_prepare_config(struct hif_softc *scn)
 					sizeof(target_ce_config_wlan_adrastea);
 		}
 		break;
-
+	case TARGET_TYPE_WCN6450:
+		hif_state->host_ce_config = host_ce_config_wlan_wcn6450;
+		hif_state->target_ce_config = target_ce_config_wlan_wcn6450;
+		hif_state->target_ce_config_sz =
+				sizeof(target_ce_config_wlan_wcn6450);
+		break;
 	}
 	QDF_BUG(scn->ce_count <= CE_COUNT_MAX);
 }
@@ -4756,7 +5217,7 @@ void hif_cleanup_static_buf_to_target(struct hif_softc *scn)
 	qdf_mem_free_consistent(scn->qdf_dev, scn->qdf_dev->dev,
 				FW_SHARED_MEM, target_va,
 				target_pa, 0);
-	hif_write32_mb(snc, scn->mem + BYPASS_QMI_TEMP_REGISTER, 0);
+	hif_write32_mb(scn, scn->mem + BYPASS_QMI_TEMP_REGISTER, 0);
 }
 #endif
 
@@ -4931,7 +5392,7 @@ int hif_config_ce(struct hif_softc *scn)
 	scn->athdiag_procfs_inited = true;
 
 	hif_debug("ce_init done");
-	hif_debug("%s: X, ret = %d", __func__, rv);
+	hif_debug("X, ret = %d", rv);
 
 #ifdef ADRASTEA_SHADOW_REGISTERS
 	hif_debug("Using Shadow Registers instead of CE Registers");
@@ -4994,7 +5455,7 @@ int hif_config_ce_pktlog(struct hif_opaque_softc *hif_hdl)
 
 	qdf_status = hif_completion_thread_startup_by_ceid(hif_state, pipe_num);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
-		hif_err("%s:failed to start hif thread", __func__);
+		hif_err("Failed to start hif thread");
 		goto err;
 	}
 
@@ -5002,14 +5463,14 @@ int hif_config_ce_pktlog(struct hif_opaque_softc *hif_hdl)
 	qdf_status = hif_post_recv_buffers_for_pipe(pipe_info);
 	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
 		/* cleanup is done in hif_ce_disable */
-		hif_err("%s:failed to post buffers", __func__);
+		hif_err("Failed to post buffers");
 		return qdf_status;
 	}
 	scn->pktlog_init = true;
 	return qdf_status != QDF_STATUS_SUCCESS;
 
 err:
-	hif_debug("%s: X, ret = %d", __func__, qdf_status);
+	hif_debug("X, ret = %d", qdf_status);
 	return QDF_STATUS_SUCCESS != QDF_STATUS_E_FAILURE;
 }
 

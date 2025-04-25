@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -443,7 +443,7 @@
  * gWmiCreditCount - Credit count for WMI exchange
  * @0: Not allowed
  * @1: Serialize WMI commands, 1 command at a time
- * @Default: 2: As advertized by FW
+ * @Default: 2: As advertised by FW
  *
  * This ini is used to serialize the WMI commandsif required.
  *
@@ -479,9 +479,38 @@
 #define CFG_HDD_DP_LEGACY_TX_FLOW
 #endif
 
+#ifdef FEATURE_ENABLE_CE_DP_IRQ_AFFINE
+/*
+ * <ini>
+ * Enable_ce_dp_irq_affine - Enable/disable affinity on datapath CE IRQs
+ *
+ * @Min: 0
+ * @Max: 1
+ * Default: 0
+ *
+ * This ini param is used to enable/disable the affinity on datapath
+ * Copy Engine IRQs.
+ *
+ * Supported Feature: STA/SAP
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ENABLE_CE_DP_IRQ_AFFINE CFG_INI_BOOL(\
+			"Enable_ce_dp_irq_affine", \
+			0, \
+			"Enable/disable irq affinity on datapath CEs")
+#define CFG_ENABLE_CE_DP_IRQ_AFFINE_ALL \
+	CFG(CFG_ENABLE_CE_DP_IRQ_AFFINE)
+#else
+#define CFG_ENABLE_CE_DP_IRQ_AFFINE_ALL
+#endif
+
 #define CFG_HDD_DP_ALL \
 	CFG(CFG_DP_NAPI_CE_CPU_MASK) \
 	CFG(CFG_DP_HTC_WMI_CREDIT_CNT) \
 	CFG_MSCS_FEATURE_ALL \
-	CFG_HDD_DP_LEGACY_TX_FLOW
+	CFG_HDD_DP_LEGACY_TX_FLOW \
+	CFG_ENABLE_CE_DP_IRQ_AFFINE_ALL
 #endif

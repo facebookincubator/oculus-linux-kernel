@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -111,6 +111,23 @@ bool ucfg_cm_is_vdev_disconnected(struct wlan_objmgr_vdev *vdev);
  */
 bool ucfg_cm_is_vdev_roaming(struct wlan_objmgr_vdev *vdev);
 
+/**
+ * ucfg_cm_free_wep_key_params() - free up connect request wep key params
+ * sub memory
+ * @req: connect req
+ *
+ * Return: void
+ */
+void ucfg_cm_free_wep_key_params(struct wlan_cm_connect_req *req);
+
+/**
+ * ucfg_cm_free_connect_req() - free up connect request and its sub memory.
+ * @req: connect req
+ *
+ * Return: void
+ */
+void ucfg_cm_free_connect_req(struct wlan_cm_connect_req *req);
+
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
  * ucfg_cm_is_vdev_roam_started() - check if vdev is in roaming state and
@@ -196,4 +213,22 @@ const char *ucfg_cm_reason_code_to_str(enum wlan_reason_code reason)
  * Return: enum band_info
  */
 enum band_info ucfg_cm_get_connected_band(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_cm_is_link_switch_disconnect_resp() - Check if the disconnect response
+ * is for link switch request.
+ * @resp: Connection manager disconnect response.
+ *
+ * Return: bool
+ */
+bool ucfg_cm_is_link_switch_disconnect_resp(struct wlan_cm_discon_rsp *resp);
+
+/**
+ * ucfg_cm_is_link_switch_connect_resp() - Check if the connect response if for
+ * link switch request.
+ * @resp: Connection manager connect response.
+ *
+ * Return: bool
+ */
+bool ucfg_cm_is_link_switch_connect_resp(struct wlan_cm_connect_resp *resp);
 #endif /* __WLAN_CM_UCFG_API_H */

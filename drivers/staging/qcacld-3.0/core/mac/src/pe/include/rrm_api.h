@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2012, 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -91,6 +92,17 @@ rrm_process_beacon_report_xmit(struct mac_context *mac_ctx,
 			       tpSirBeaconReportXmitInd beacon_xmit_ind);
 
 /**
+ * rrm_process_chan_load_report_xmit() - process channel load report xmit
+ * @mac_ctx: Mac context
+ * @chan_load_ind: channel load xmit structure
+ *
+ * Return: None
+ */
+void
+rrm_process_chan_load_report_xmit(struct mac_context *mac_ctx,
+				  struct chan_load_xmit_ind *chan_load_ind);
+
+/**
  * rrm_get_country_code_from_connected_profile() - get country code
  * from connected profile
  * @mac: Mac context
@@ -121,4 +133,44 @@ QDF_STATUS rrm_reject_req(tpSirMacRadioMeasureReport *radiomes_report,
 			  uint8_t measurement_type);
 
 void lim_update_rrm_capability(struct mac_context *mac_ctx);
+
+#ifdef WLAN_SUPPORT_INFRA_CTRL_PATH_STATS
+/**
+ * rrm_send_sta_stats_req - Send RRM STA STATS request
+ * @mac: mac context
+ * @session: pe session
+ * @peer_mac: peer mac
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+rrm_send_sta_stats_req(struct mac_context *mac,
+		       struct pe_session *session,
+		       tSirMacAddr peer_mac);
+#else
+static inline QDF_STATUS
+rrm_send_sta_stats_req(struct mac_context *mac,
+		       struct pe_session *session,
+		       tSirMacAddr peer_mac)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+#endif
+
+/**
+ * rrm_process_rrm_sta_stats_request_failure: send RRM STA Stats report with
+ * failure
+ * @mac: mac context
+ * @pe_session: pe session
+ * @peer: peer mac
+ * @status: failure status
+ * @index: index of report
+ *
+ * Return: void
+ */
+void
+rrm_process_rrm_sta_stats_request_failure(struct mac_context *mac,
+					  struct pe_session *pe_session,
+					  tSirMacAddr peer,
+					  tRrmRetStatus status, uint8_t index);
 #endif

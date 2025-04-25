@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -222,6 +223,29 @@
 	CFG_VALUE_OR_DEFAULT, \
 	"Configures Channel Bonding in 5 GHz")
 
+/*
+ * <ini>
+ * update_cw_allowed - process set channel width or not
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to check whether driver allowed to process set channel
+ * width request from upper layer or not.
+ *
+ * Related: None
+ *
+ * Supported Feature: STA
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_ALLOW_UPDATE_CHANNEL_WIDTH CFG_INI_BOOL( \
+					"update_cw_allowed", \
+					1, \
+					"is update chan width allowed")
+
 #define CFG_FEATURE_FLAG_ALL \
 	CFG(CFG_ACCEPT_SHORT_SLOT_ASSOC_ONLY) \
 	CFG(CFG_HCF_ENABLED) \
@@ -235,7 +259,8 @@
 	CFG(CFG_BLOCK_ACK_ENABLED) \
 	CFG(CFG_ENABLE_AMPDUPS) \
 	CFG(CFG_CHANNEL_BONDING_MODE_24GHZ) \
-	CFG(CFG_CHANNEL_BONDING_MODE_5GHZ)
+	CFG(CFG_CHANNEL_BONDING_MODE_5GHZ) \
+	CFG(CFG_ALLOW_UPDATE_CHANNEL_WIDTH)
 
 #endif /* __CFG_MLME_FEATURE_FLAG_H */
 

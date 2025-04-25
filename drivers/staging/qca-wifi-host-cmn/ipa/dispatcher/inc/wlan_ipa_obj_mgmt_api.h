@@ -72,7 +72,7 @@ static inline bool wlan_ipa_config_is_enabled(void)
 
 /**
  * wlan_ipa_get_hdl() - Get ipa hdl set by IPA driver
- * @psoc: void psoc object
+ * @soc: void psoc object
  * @pdev_id: pdev id
  *
  * Return: IPA handle
@@ -80,7 +80,7 @@ static inline bool wlan_ipa_config_is_enabled(void)
 qdf_ipa_wdi_hdl_t wlan_ipa_get_hdl(void *soc, uint8_t pdev_id);
 
 /**
- * wlan_ipa_is_vlan enabled() - get IPA vlan support enable status
+ * wlan_ipa_is_vlan_enabled() - get IPA vlan support enable status
  *
  * Return: true - ipa vlan support is enabled
  *         false - ipa vlan support is not enabled

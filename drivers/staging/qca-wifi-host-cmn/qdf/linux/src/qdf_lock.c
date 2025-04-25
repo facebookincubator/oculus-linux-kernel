@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,14 +31,6 @@
 #include <i_qdf_lock.h>
 #include <linux/suspend.h>
 
-/**
- * qdf_mutex_create() - Initialize a mutex
- * @m: mutex to initialize
- *
- * Returns: QDF_STATUS
- * =0 success
- * else fail status
- */
 #undef qdf_mutex_create
 QDF_STATUS qdf_mutex_create(qdf_mutex_t *lock, const char *func, int line)
 {
@@ -75,19 +67,6 @@ QDF_STATUS qdf_mutex_create(qdf_mutex_t *lock, const char *func, int line)
 }
 qdf_export_symbol(qdf_mutex_create);
 
-/**
- * qdf_mutex_acquire() - acquire a QDF lock
- * @lock: Pointer to the opaque lock object to acquire
- *
- * A lock object is acquired by calling qdf_mutex_acquire().  If the lock
- * is already locked, the calling thread shall block until the lock becomes
- * available. This operation shall return with the lock object referenced by
- * lock in the locked state with the calling thread as its owner.
- *
- * Return:
- * QDF_STATUS_SUCCESS: lock was successfully initialized
- * QDF failure reason codes: lock is not initialized and can't be used
- */
 QDF_STATUS qdf_mutex_acquire(qdf_mutex_t *lock)
 {
 	int rc;
@@ -153,20 +132,6 @@ QDF_STATUS qdf_mutex_acquire(qdf_mutex_t *lock)
 }
 qdf_export_symbol(qdf_mutex_acquire);
 
-/**
- * qdf_mutex_release() - release a QDF lock
- * @lock: Pointer to the opaque lock object to be released
- *
- * qdf_mutex_release() function shall release the lock object
- * referenced by 'lock'.
- *
- * If a thread attempts to release a lock that it unlocked or is not
- * initialized, an error is returned.
- *
- * Return:
- * QDF_STATUS_SUCCESS: lock was successfully initialized
- * QDF failure reason codes: lock is not initialized and can't be used
- */
 QDF_STATUS qdf_mutex_release(qdf_mutex_t *lock)
 {
 	/* check for invalid pointer */
@@ -282,14 +247,6 @@ static inline void qdf_wake_lock_dbg_untrack(qdf_wake_lock_t *lock,
 { }
 #endif /* WLAN_WAKE_LOCK_DEBUG */
 
-/**
- * qdf_wake_lock_name() - This function returns the name of the wakelock
- * @lock: Pointer to the wakelock
- *
- * This function returns the name of the wakelock
- *
- * Return: Pointer to the name if it is valid or a default string
- */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 const char *qdf_wake_lock_name(qdf_wake_lock_t *lock)
 {
@@ -351,15 +308,6 @@ QDF_STATUS __qdf_wake_lock_create(qdf_wake_lock_t *lock, const char *name,
 #endif
 qdf_export_symbol(__qdf_wake_lock_create);
 
-/**
- * qdf_wake_lock_acquire() - acquires a wake lock
- * @lock: The wake lock to acquire
- * @reason: Reason for wakelock
- *
- * Return:
- * QDF status success: if wake lock is acquired
- * QDF status failure: if wake lock was not acquired
- */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 QDF_STATUS qdf_wake_lock_acquire(qdf_wake_lock_t *lock, uint32_t reason)
 {
@@ -378,15 +326,6 @@ QDF_STATUS qdf_wake_lock_acquire(qdf_wake_lock_t *lock, uint32_t reason)
 #endif
 qdf_export_symbol(qdf_wake_lock_acquire);
 
-/**
- * qdf_wake_lock_timeout_acquire() - acquires a wake lock with a timeout
- * @lock: The wake lock to acquire
- * @reason: Reason for wakelock
- *
- * Return:
- * QDF status success: if wake lock is acquired
- * QDF status failure: if wake lock was not acquired
- */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 QDF_STATUS qdf_wake_lock_timeout_acquire(qdf_wake_lock_t *lock, uint32_t msec)
 {
@@ -410,15 +349,6 @@ QDF_STATUS qdf_wake_lock_timeout_acquire(qdf_wake_lock_t *lock, uint32_t msec)
 #endif /* LINUX_VERSION_CODE */
 qdf_export_symbol(qdf_wake_lock_timeout_acquire);
 
-/**
- * qdf_wake_lock_release() - releases a wake lock
- * @lock: the wake lock to release
- * @reason: Reason for wakelock
- *
- * Return:
- * QDF status success: if wake lock is acquired
- * QDF status failure: if wake lock was not acquired
- */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 QDF_STATUS qdf_wake_lock_release(qdf_wake_lock_t *lock, uint32_t reason)
 {
@@ -460,11 +390,6 @@ void __qdf_wake_lock_destroy(qdf_wake_lock_t *lock,
 #endif
 qdf_export_symbol(__qdf_wake_lock_destroy);
 
-/**
- * qdf_pm_system_wakeup() - wakeup system
- *
- * Return: None
- */
 void qdf_pm_system_wakeup(void)
 {
 	pm_system_wakeup();
@@ -474,7 +399,7 @@ qdf_export_symbol(qdf_pm_system_wakeup);
 
 #ifdef FEATURE_RUNTIME_PM
 /**
- * qdf_to_hif_convert_trpm_id() - Convert QDF Runtime PM ID to HIF RTPM ID
+ * qdf_to_hif_convert_rtpm_id() - Convert QDF Runtime PM ID to HIF RTPM ID
  * @id: Client id
  *
  * Return: HIF Runtime pm ID of client
@@ -591,13 +516,6 @@ QDF_STATUS qdf_rtpm_sync_resume(void)
 	return hif_rtpm_sync_resume();
 }
 #endif
-/**
- * qdf_spinlock_acquire() - acquires a spin lock
- * @lock: Spin lock to acquire
- *
- * Return:
- * QDF status success: if wake lock is acquired
- */
 QDF_STATUS qdf_spinlock_acquire(qdf_spinlock_t *lock)
 {
 	spin_lock(&lock->lock.spinlock);
@@ -606,13 +524,6 @@ QDF_STATUS qdf_spinlock_acquire(qdf_spinlock_t *lock)
 qdf_export_symbol(qdf_spinlock_acquire);
 
 
-/**
- * qdf_spinlock_release() - release a spin lock
- * @lock: Spin lock to release
- *
- * Return:
- * QDF status success : if wake lock is acquired
- */
 QDF_STATUS qdf_spinlock_release(qdf_spinlock_t *lock)
 {
 	spin_unlock(&lock->lock.spinlock);
@@ -620,25 +531,6 @@ QDF_STATUS qdf_spinlock_release(qdf_spinlock_t *lock)
 }
 qdf_export_symbol(qdf_spinlock_release);
 
-/**
- * qdf_mutex_destroy() - destroy a QDF lock
- * @lock: Pointer to the opaque lock object to be destroyed
- *
- * function shall destroy the lock object referenced by lock. After a
- * successful return from qdf_mutex_destroy()
- * the lock object becomes, in effect, uninitialized.
- *
- * A destroyed lock object can be reinitialized using qdf_mutex_create();
- * the results of otherwise referencing the object after it has been destroyed
- * are undefined.  Calls to QDF lock functions to manipulate the lock such
- * as qdf_mutex_acquire() will fail if the lock is destroyed.  Therefore,
- * don't use the lock after it has been destroyed until it has
- * been re-initialized.
- *
- * Return:
- * QDF_STATUS_SUCCESS: lock was successfully initialized
- * QDF failure reason codes: lock is not initialized and can't be used
- */
 QDF_STATUS qdf_mutex_destroy(qdf_mutex_t *lock)
 {
 	/* check for invalid pointer */
@@ -707,9 +599,10 @@ static qdf_atomic_t lock_cookie_untracked_num;
 
 /**
  * qdf_is_lock_cookie - check if memory is a valid lock cookie
+ * @lock_cookie: lock cookie to check
  *
- * return true if the memory is within the range of the lock cookie
- * memory.
+ * Return: true if the memory is within the range of the lock cookie
+ *         memory.
  */
 static bool qdf_is_lock_cookie(struct qdf_lock_cookie *lock_cookie)
 {
@@ -725,6 +618,8 @@ static bool qdf_is_lock_cookie(struct qdf_lock_cookie *lock_cookie)
  * currently this is only true if the cookie is on the freelist.
  *
  * Checking for the function and line being NULL and 0 should also have worked.
+ *
+ * Return: true if the cookie is free
  */
 static bool qdf_is_lock_cookie_free(struct qdf_lock_cookie *lock_cookie)
 {

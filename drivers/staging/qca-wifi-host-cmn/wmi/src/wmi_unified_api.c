@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -75,6 +75,19 @@ QDF_STATUS wmi_unified_soc_set_hw_mode_cmd(wmi_unified_t wmi_handle,
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_unified_soc_set_rf_path_cmd(wmi_unified_t wmi_handle,
+					   uint32_t rf_path_index,
+					   uint8_t pdev_id)
+{
+	if (wmi_handle->ops->send_pdev_set_rf_path_cmd)
+		return wmi_handle->ops->send_pdev_set_rf_path_cmd(
+								wmi_handle,
+								rf_path_index,
+								pdev_id);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 QDF_STATUS wmi_unified_vdev_create_send(wmi_unified_t wmi_handle,
 					uint8_t macaddr[QDF_MAC_ADDR_SIZE],
 					struct vdev_create_params *param)
@@ -111,11 +124,10 @@ wmi_unified_vdev_nss_chain_params_send(wmi_unified_t wmi_handle,
 }
 
 QDF_STATUS wmi_unified_vdev_stop_send(wmi_unified_t  wmi_handle,
-				      uint8_t vdev_id)
+				      struct vdev_stop_params *params)
 {
 	if (wmi_handle->ops->send_vdev_stop_cmd)
-		return wmi_handle->ops->send_vdev_stop_cmd(wmi_handle,
-			   vdev_id);
+		return wmi_handle->ops->send_vdev_stop_cmd(wmi_handle, params);
 
 	return QDF_STATUS_E_FAILURE;
 }
@@ -234,6 +246,18 @@ QDF_STATUS wmi_unified_peer_rx_reorder_queue_setup_send(
 	if (wmi_handle->ops->send_peer_rx_reorder_queue_setup_cmd)
 		return wmi_handle->ops->send_peer_rx_reorder_queue_setup_cmd(
 			wmi_handle, param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_unified_peer_multi_rx_reorder_queue_setup_send(
+		wmi_unified_t wmi_handle,
+		struct multi_rx_reorder_queue_setup_params *param)
+{
+	if (wmi_handle->ops->send_peer_multi_rx_reorder_queue_setup_cmd)
+		return wmi_handle->ops->
+			send_peer_multi_rx_reorder_queue_setup_cmd(
+							wmi_handle, param);
 
 	return QDF_STATUS_E_FAILURE;
 }
@@ -2591,6 +2615,18 @@ wmi_unified_send_btcoex_duty_cycle_cmd(wmi_unified_t wmi_handle,
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS
+wmi_unified_send_egid_info_cmd(wmi_unified_t wmi_handle,
+			       struct esl_egid_params *param)
+{
+	if (wmi_handle->ops->send_egid_info_cmd) {
+		return wmi_handle->ops->send_egid_info_cmd(
+						wmi_handle, param);
+	}
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 QDF_STATUS wmi_extract_service_ready_ext(
 		wmi_unified_t wmi_handle, uint8_t *evt_buf,
 		struct wlan_psoc_host_service_ext_param *param)
@@ -2859,6 +2895,19 @@ QDF_STATUS wmi_extract_spectral_scaling_params_service_ready_ext(
 	return QDF_STATUS_E_FAILURE;
 }
 
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+QDF_STATUS wmi_extract_aoa_caps_service_ready_ext2(
+			wmi_unified_t wmi_handle, uint8_t *evt_buf,
+			struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 *aoa_cap)
+{
+	if (wmi_handle->ops->extract_aoa_caps_service_ready_ext2)
+		return wmi_handle->ops->extract_aoa_caps_service_ready_ext2
+				(wmi_handle, evt_buf, aoa_cap);
+
+	return QDF_STATUS_E_FAILURE;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
 QDF_STATUS wmi_extract_pdev_utf_event(wmi_unified_t wmi_handle,
 				      uint8_t *evt_buf,
 				      struct wmi_host_pdev_utf_event *param)
@@ -2901,6 +2950,17 @@ wmi_unified_send_coex_config_cmd(wmi_unified_t wmi_handle,
 	if (wmi_handle->ops->send_coex_config_cmd)
 		return wmi_handle->ops->send_coex_config_cmd(wmi_handle,
 			param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_unified_send_coex_multi_config_cmd(wmi_unified_t wmi_handle,
+				       struct coex_multi_config *param)
+{
+	if (wmi_handle->ops->send_coex_multi_config_cmd)
+		return wmi_handle->ops->send_coex_multi_config_cmd(wmi_handle,
+								   param);
 
 	return QDF_STATUS_E_FAILURE;
 }
@@ -3570,6 +3630,18 @@ QDF_STATUS wmi_unified_extract_hw_mode_resp(wmi_unified_t wmi,
 	return QDF_STATUS_E_FAILURE;
 }
 
+QDF_STATUS wmi_unified_extract_rf_path_resp(wmi_unified_t wmi,
+					    void *evt_buf,
+					    uint32_t *cmd_status)
+{
+	if (wmi->ops->extract_rf_path_resp)
+		return wmi->ops->extract_rf_path_resp(wmi,
+						      evt_buf,
+						      cmd_status);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
 #ifdef FEATURE_ANI_LEVEL_REQUEST
 QDF_STATUS wmi_unified_ani_level_cmd_send(wmi_unified_t wmi_handle,
 					  uint32_t *freqs,
@@ -4047,3 +4119,17 @@ wmi_extract_csa_ie_received_event(wmi_unified_t wmi_handle,
 
 	return QDF_STATUS_E_FAILURE;
 }
+
+QDF_STATUS wmi_extract_aux_dev_cap_service_ready_ext2(
+		wmi_unified_t wmi_handle,
+		uint8_t *evt_buf, uint8_t idx,
+		struct wlan_psoc_host_aux_dev_caps *param)
+{
+	if (wmi_handle->ops->extract_aux_dev_cap_service_ready_ext2)
+		return wmi_handle->ops->extract_aux_dev_cap_service_ready_ext2(
+				wmi_handle,
+				evt_buf, idx, param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+

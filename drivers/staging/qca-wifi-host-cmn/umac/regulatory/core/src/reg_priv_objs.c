@@ -103,7 +103,7 @@ QDF_STATUS wlan_regulatory_psoc_obj_created_notification(
 	uint8_t i;
 	uint8_t phy_cnt;
 
-	soc_reg_obj = qdf_mem_malloc(sizeof(*soc_reg_obj));
+	soc_reg_obj = qdf_mem_common_alloc(sizeof(*soc_reg_obj));
 	if (!soc_reg_obj)
 		return QDF_STATUS_E_NOMEM;
 
@@ -115,7 +115,6 @@ QDF_STATUS wlan_regulatory_psoc_obj_created_notification(
 	soc_reg_obj->enable_11d_supp = false;
 	soc_reg_obj->indoor_chan_enabled = true;
 	soc_reg_obj->force_ssc_disable_indoor_channel = false;
-	soc_reg_obj->master_vdev_cnt = 0;
 	soc_reg_obj->vdev_cnt_11d = 0;
 	soc_reg_obj->vdev_id_for_11d_scan = INVALID_VDEV_ID;
 	soc_reg_obj->restart_beaconing = CH_AVOID_RULE_RESTART;
@@ -152,7 +151,7 @@ QDF_STATUS wlan_regulatory_psoc_obj_created_notification(
 			QDF_STATUS_SUCCESS);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		qdf_spinlock_destroy(&soc_reg_obj->cbk_list_lock);
-		qdf_mem_free(soc_reg_obj);
+		qdf_mem_common_free(soc_reg_obj);
 		reg_err("Obj attach failed");
 		return status;
 	}
@@ -185,7 +184,7 @@ QDF_STATUS wlan_regulatory_psoc_obj_destroyed_notification(
 
 	reg_debug("reg psoc obj detached");
 
-	qdf_mem_free(psoc_priv_obj);
+	qdf_mem_common_free(psoc_priv_obj);
 
 	return status;
 }
@@ -319,10 +318,11 @@ QDF_STATUS wlan_regulatory_pdev_obj_created_notification(
 	uint32_t range_2g_low, range_2g_high;
 	uint32_t range_5g_low, range_5g_high;
 	QDF_STATUS status;
-	struct reg_rule_info *psoc_reg_rules;
 	struct wlan_lmac_if_reg_tx_ops *tx_ops;
+	enum direction dir;
+	wlan_objmgr_ref_dbgid dbg_id;
 
-	pdev_priv_obj = qdf_mem_malloc(sizeof(*pdev_priv_obj));
+	pdev_priv_obj = qdf_mem_common_alloc(sizeof(*pdev_priv_obj));
 	if (!pdev_priv_obj)
 		return QDF_STATUS_E_NOMEM;
 
@@ -338,17 +338,17 @@ QDF_STATUS wlan_regulatory_pdev_obj_created_notification(
 	psoc_priv_obj = reg_get_psoc_obj(parent_psoc);
 	if (!psoc_priv_obj) {
 		reg_err("reg psoc private obj is NULL");
-		qdf_mem_free(pdev_priv_obj);
+		qdf_mem_common_free(pdev_priv_obj);
 		return QDF_STATUS_E_FAULT;
 	}
 
 	pdev_priv_obj->pdev_ptr = pdev;
 	pdev_priv_obj->dfs_enabled = psoc_priv_obj->dfs_enabled;
 	pdev_priv_obj->set_fcc_channel = psoc_priv_obj->set_fcc_channel;
-	pdev_priv_obj->keep_6ghz_sta_cli_connection = false;
 	pdev_priv_obj->band_capability = psoc_priv_obj->band_capability;
 	pdev_priv_obj->indoor_chan_enabled =
 		psoc_priv_obj->indoor_chan_enabled;
+	reg_set_keep_6ghz_sta_cli_connection(pdev, false);
 
 	reg_set_pdev_afc_dev_type(pdev_priv_obj, psoc_priv_obj);
 
@@ -368,7 +368,7 @@ QDF_STATUS wlan_regulatory_pdev_obj_created_notification(
 
 	for (cnt = 0; cnt < PSOC_MAX_PHY_REG_CAP; cnt++) {
 		if (!reg_cap_ptr) {
-			qdf_mem_free(pdev_priv_obj);
+			qdf_mem_common_free(pdev_priv_obj);
 			reg_err("reg cap ptr is NULL");
 			return QDF_STATUS_E_FAULT;
 		}
@@ -379,7 +379,7 @@ QDF_STATUS wlan_regulatory_pdev_obj_created_notification(
 	}
 
 	if (cnt == PSOC_MAX_PHY_REG_CAP) {
-		qdf_mem_free(pdev_priv_obj);
+		qdf_mem_common_free(pdev_priv_obj);
 		reg_err("extended capabilities not found for pdev");
 		return QDF_STATUS_E_FAULT;
 	}
@@ -395,27 +395,29 @@ QDF_STATUS wlan_regulatory_pdev_obj_created_notification(
 	pdev_priv_obj->range_5g_high = range_5g_high;
 	pdev_priv_obj->wireless_modes = reg_cap_ptr->wireless_modes;
 	reg_init_6g_vars(pdev_priv_obj);
-
-	reg_init_pdev_mas_chan_list(pdev_priv_obj,
-				    &psoc_priv_obj->mas_chan_params[phy_id]);
-
-	psoc_reg_rules = &psoc_priv_obj->mas_chan_params[phy_id].reg_rules;
-	reg_save_reg_rules_to_pdev(psoc_reg_rules, pdev_priv_obj);
 	pdev_priv_obj->chan_list_recvd =
 		psoc_priv_obj->chan_list_recvd[phy_id];
-
-	reg_init_indoor_channel_list(pdev);
 
 	status = wlan_objmgr_pdev_component_obj_attach(
 			pdev, WLAN_UMAC_COMP_REGULATORY, pdev_priv_obj,
 			QDF_STATUS_SUCCESS);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		reg_err("Obj attach failed");
-		qdf_mem_free(pdev_priv_obj);
+		qdf_mem_common_free(pdev_priv_obj);
 		return status;
 	}
 
-	reg_compute_pdev_current_chan_list(pdev_priv_obj);
+	if (psoc_priv_obj->offload_enabled) {
+		dbg_id = WLAN_REGULATORY_NB_ID;
+		dir = NORTHBOUND;
+	} else {
+		dbg_id = WLAN_REGULATORY_SB_ID;
+		dir = SOUTHBOUND;
+	}
+
+	wlan_objmgr_pdev_get_ref(pdev, dbg_id);
+	reg_propagate_mas_chan_list_to_pdev(parent_psoc, pdev, &dir);
+	wlan_objmgr_pdev_release_ref(pdev, dbg_id);
 
 	reg_init_afc_vars(psoc_priv_obj, pdev_priv_obj);
 
@@ -470,6 +472,7 @@ reg_free_afc_pwr_info(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
 		qdf_mem_free(power_info->afc_chan_info);
 
 	qdf_mem_free(power_info);
+	pdev_priv_obj->power_info = NULL;
 }
 #endif
 
@@ -517,7 +520,7 @@ QDF_STATUS wlan_regulatory_pdev_obj_destroyed_notification(
 	reg_destroy_afc_cb_spinlock(pdev_priv_obj);
 	qdf_spinlock_destroy(&pdev_priv_obj->reg_rules_lock);
 
-	qdf_mem_free(pdev_priv_obj);
+	qdf_mem_common_free(pdev_priv_obj);
 
 	return status;
 }

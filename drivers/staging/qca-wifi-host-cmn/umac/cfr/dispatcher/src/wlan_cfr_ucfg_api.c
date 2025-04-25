@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -997,12 +997,12 @@ QDF_STATUS ucfg_cfr_get_cfg(struct wlan_objmgr_vdev *vdev)
 			glbl_cfg->data_subtype_filter);
 		cfr_err("TX Addr: " QDF_MAC_ADDR_FMT,
 			QDF_MAC_ADDR_REF(glbl_cfg->tx_addr));
-		cfr_err("TX Addr Mask: " QDF_FULL_MAC_FMT,
-			QDF_FULL_MAC_REF(glbl_cfg->tx_addr_mask));
+		cfr_err("TX Addr Mask: " QDF_MAC_ADDR_FMT,
+			QDF_MAC_ADDR_REF(glbl_cfg->tx_addr_mask));
 		cfr_err("RX Addr: " QDF_MAC_ADDR_FMT,
 			QDF_MAC_ADDR_REF(glbl_cfg->rx_addr));
-		cfr_err("RX Addr Mask: " QDF_FULL_MAC_FMT,
-			QDF_FULL_MAC_REF(glbl_cfg->rx_addr_mask));
+		cfr_err("RX Addr Mask: " QDF_MAC_ADDR_FMT,
+			QDF_MAC_ADDR_REF(glbl_cfg->rx_addr_mask));
 	}
 
 	wlan_objmgr_pdev_release_ref(pdev, WLAN_CFR_ID);

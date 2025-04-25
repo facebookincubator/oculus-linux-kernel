@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011,2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -154,6 +154,7 @@ target_if_spectral_fill_samp_msg(struct target_if_spectral *spectral,
 		detector_info->agc_total_gain = params->agc_total_gain;
 		detector_info->gainchange = params->gainchange;
 		detector_info->is_sec80 = map_det_info->is_sec80;
+		detector_info->blanking_status = params->blanking_status;
 		/* In 165MHz, Pri80 indication to be set for Span ID 0 only */
 		if (span_id == SPECTRAL_FREQ_SPAN_ID_0)
 			detector_info->pri80ind = params->pri80ind;

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -224,6 +224,11 @@ pkt_capture_process_from_queue(struct pkt_capture_mon_context *mon_ctx)
 
 	spin_lock_bh(&mon_ctx->mon_queue_lock);
 	while (!list_empty(&mon_ctx->mon_thread_queue)) {
+		if (!test_bit(PKT_CAPTURE_REGISTER_EVENT,
+			      &mon_ctx->mon_event_flag)) {
+			complete(&mon_ctx->mon_register_event);
+			break;
+		}
 		pkt = list_first_entry(&mon_ctx->mon_thread_queue,
 				       struct pkt_capture_mon_pkt, list);
 		list_del(&pkt->list);
@@ -261,7 +266,7 @@ static int pkt_capture_mon_thread(void *arg)
 	mon_ctx = (struct pkt_capture_mon_context *)arg;
 	set_user_nice(current, -1);
 #ifdef MSM_PLATFORM
-	set_wake_up_idle(true);
+	qdf_set_wake_up_idle(true);
 #endif
 
 	/**

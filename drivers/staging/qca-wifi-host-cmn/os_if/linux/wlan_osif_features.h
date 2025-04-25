@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -305,6 +305,46 @@
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0) || \
 	(defined CFG80211_MLD_AP_STA_CONNECT_UPSTREAM_SUPPORT))
 #define WLAN_MLD_AP_STA_CONNECT_UPSTREAM_SUPPORT 1
+#endif
+
+/*
+ * WLAN_LINK_STA_PARAMS_PRESENT
+ * WLAN_EHT_CAPABILITY_PRESENT
+ *
+ * To deterministically identify where EHT fields are present (whether in
+ * link_sta_params or station_parameters), enable either
+ * WLAN_LINK_STA_PARAMS_PRESENT or WLAN_EHT_CAPABILITY_PRESENT but not both.
+ *
+ * Incase EHT fields are present in link_sta_parameters only define
+ * WLAN_LINK_STA_PARAMS_PRESENT flag.
+ *
+ * If WLAN_LINK_STA_PARAMS_PRESENT is not defined, then EHT cap can be present
+ * in station_parameters structure, in such case WLAN_EHT_CAPABILITY_PRESENT
+ * flag will be defined.
+ *
+ * If both flags are not enabled then kernel is not EHT capable.
+ *
+ * WLAN_LINK_STA_PARAMS_PRESENT
+ * 577e5b8 wifi: cfg80211: add API to add/modify/remove a link station
+ * b95eb7f wifi: cfg80211/mac80211: separate link params from station params
+ *
+ * The changes are backported to ACK from below commits.
+ * https://android-review.googlesource.com/c/kernel/common/+/2227406
+ * https://android-review.googlesource.com/c/kernel/common/+/2227407
+ *
+ * WLAN_EHT_CAPABILITY_PRESENT
+ * ea05fd3 cfg80211: Support configuration of station EHT capabilities
+ *
+ * The changes are backported to ACK from below commit.
+ * https://android-review.googlesource.com/c/kernel/common/+/1996268
+ *
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0) || \
+	(defined CFG80211_LINK_STA_PARAMS_PRESENT))
+#define WLAN_LINK_STA_PARAMS_PRESENT 1
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || \
+	(defined NL80211_EHT_MIN_CAPABILITY_LEN))
+#define WLAN_EHT_CAPABILITY_PRESENT 1
 #endif
 
 #endif

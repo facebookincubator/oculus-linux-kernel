@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -123,7 +123,8 @@ __hdd_sysfs_pm_pcl_store(struct hdd_context *hdd_ctx,
 
 	status = policy_mgr_get_pcl(hdd_ctx->psoc, val,
 				    pcl, &pcl_len,
-				    weight_list, QDF_ARRAY_SIZE(weight_list));
+				    weight_list, QDF_ARRAY_SIZE(weight_list),
+				    WLAN_INVALID_VDEV_ID);
 
 	if (status != QDF_STATUS_SUCCESS)
 		hdd_err("can't get pcl policy manager");

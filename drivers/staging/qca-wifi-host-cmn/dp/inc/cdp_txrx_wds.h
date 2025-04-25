@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,22 +18,24 @@
  */
 
 /**
- * @file cdp_txrx_wds.h
- * @brief Define the host data path WDS API functions
+ * DOC: cdp_txrx_wds.h
+ * Define the host data path WDS API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_WDS_H_
 #define _CDP_TXRX_WDS_H_
 #include "cdp_txrx_handle.h"
+
 /**
- * @brief set the wds rx filter policy of the device
- * @details
- *  This flag sets the wds rx policy on the vdev. Rx frames not compliant
- *  with the policy will be dropped.
+ * cdp_set_wds_rx_policy() - set the wds rx filter policy of the device
+ * @soc: psoc object
+ * @vdev_id: id of the data virtual device object
+ * @val: the wds rx policy bitmask
  *
- * @param vdev_id - id of the data virtual device object
- * @param val - the wds rx policy bitmask
- * @return - QDF_STATUS
+ * This flag sets the wds rx policy on the vdev. Rx frames not compliant
+ * with the policy will be dropped.
+ *
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_set_wds_rx_policy(ol_txrx_soc_handle soc,
@@ -51,16 +54,17 @@ cdp_set_wds_rx_policy(ol_txrx_soc_handle soc,
 }
 
 /**
- * @brief set the wds rx filter policy of the device
- * @details
- *  This flag sets the wds rx policy on the vdev. Rx frames not compliant
- *  with the policy will be dropped.
+ * cdp_set_wds_tx_policy_update() - set the wds tx filter policy of the device
+ * @soc: psoc object
+ * @vdev_id: id of the data virtual device object
+ * @peer_mac: peer mac address
+ * @wds_tx_ucast: the wds unicast tx policy bitmask
+ * @wds_tx_mcast: the wds multicast tx policy bitmask
  *
- * @param psoc - psoc object
- * @param vdev_id - id of the data virtual device object
- * @param peer_mac - peer mac address
- * @param val - the wds rx policy bitmask
- * @return - QDF_STATUS
+ * This flag sets the wds xx policy on the vdev. Tx frames not compliant
+ * with the policy will be dropped.
+ *
+ * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_set_wds_tx_policy_update(ol_txrx_soc_handle soc,
@@ -82,13 +86,13 @@ cdp_set_wds_tx_policy_update(ol_txrx_soc_handle soc,
 
 /**
  * cdp_vdev_set_wds() - Set/unset wds_enable flag in vdev
- * @soc - data path soc handle
- * @vdev_id - id of data path vap handle
- * @val - value to be set in wds_en flag
+ * @soc: data path soc handle
+ * @vdev_id: id of data path vap handle
+ * @val: value to be set in wds_en flag
  *
  *  This flag enables WDS source port learning feature on a vdev
  *
- * return 1 on success
+ * Return: 1 on success
  */
 static inline int
 cdp_vdev_set_wds(ol_txrx_soc_handle soc, uint8_t vdev_id, uint32_t val)

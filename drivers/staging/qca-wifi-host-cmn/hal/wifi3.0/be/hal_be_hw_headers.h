@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,7 +34,8 @@
 #include "phyrx_common_user_info.h"
 
 /* TX MONITOR */
-#ifdef QCA_MONITOR_2_0_SUPPORT
+#if  defined(WLAN_PKT_CAPTURE_TX_2_0) || \
+defined(WLAN_PKT_CAPTURE_RX_2_0)
 #include "mon_buffer_addr.h"
 /* FES WINDOW OPEN */
 #include "tx_fes_setup.h"
@@ -99,7 +100,6 @@
 #include "coex_tx_status.h"
 /* WIFIR2R_STATUS_END_E */
 #include "rx_preamble.h"
-#include "mactx_service.h"
 #include "mactx_u_sig_eht_su_mu.h"
 #include "mactx_u_sig_eht_tb.h"
 #include "mactx_eht_sig_usr_ofdma.h"
@@ -139,7 +139,7 @@
 #include "rx_trig_info.h"
 #include "expected_response.h"
 /* WIFITRIGGER_RESPONSE_TX_DONE_E */
-#endif /* QCA_MONITOR_2_0_SUPPORT */
+#endif /* WLAN_PKT_CAPTURE_TX_2_0 */
 
 #include <reo_descriptor_threshold_reached_status.h>
 #include <reo_flush_queue.h>

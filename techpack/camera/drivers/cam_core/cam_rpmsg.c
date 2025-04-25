@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -20,6 +20,7 @@
 #include "cam_jpeg_hw_mgr.h"
 #include "cam_fastrpc.h"
 #include "cam_trace.h"
+#include "cam_compat.h"
 
 #define CAM_SLAVE_CHANNEL_NAME "AH_CAM"
 
@@ -805,7 +806,8 @@ ack:
 			rc = cam_mem_get_io_buf(
 				alloc_cmd.out.buf_handle,
 				jpeg_private.jpeg_iommu_hdl,
-				(dma_addr_t *)&cmd_msg.buf_info.iova, (size_t *)&cmd_msg.buf_info.size, NULL);
+				(dma_addr_t *)&cmd_msg.buf_info.iova,
+				(size_t *)&cmd_msg.buf_info.size, NULL);
 			if (rc) {
 				cmd_msg.cmd_msg_type = CAM_DSP2CPU_MEM_ALLOC;
 				cmd_msg.buf_info.ipa_addr = 0;
@@ -818,7 +820,8 @@ ack:
 			cmd_msg.buf_info.buf_handle = alloc_cmd.out.buf_handle;
 			if (!jpeg_private.dmabuf_f_op) {
 				dbuf = dma_buf_get(alloc_cmd.out.fd);
-				jpeg_private.dmabuf_f_op = (const struct file_operations *)dbuf->file->f_op;
+				jpeg_private.dmabuf_f_op =
+					(const struct file_operations *)dbuf->file->f_op;
 			}
 send_ack:
 			mutex_unlock(&jpeg_private.jpeg_mutex);
@@ -828,7 +831,7 @@ send_ack:
 
 			rc = cam_jpeg_rpmsg_send(&cmd_msg);
 			CAM_DBG(CAM_RPMSG, "closing dmabuf fd %d", cmd_msg.buf_info.fd);
-			__close_fd(current->files, cmd_msg.buf_info.fd);
+			cam_close_fd(current->files, cmd_msg.buf_info.fd);
 			break;
 		case CAM_DSP2CPU_REGISTER_BUFFER:
 			map_cmd.flags = CAM_MEM_FLAG_NSP_ACCESS | CAM_MEM_FLAG_HW_READ_WRITE;
@@ -857,12 +860,7 @@ send_ack:
 			}
 			rcu_read_lock();
 			loop:
-			// TODO: Things like this should be moved in cam_compat.
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0))
-			file = fcheck_files(files, map_cmd.fd);
-#else
-			file = files_lookup_fd_rcu(files, map_cmd.fd);
-#endif
+			file = cam_fcheck_files(files, map_cmd.fd);
 			if (!file) {
 				rcu_read_unlock();
 				CAM_ERR(CAM_RPMSG, "null file");
@@ -882,8 +880,8 @@ send_ack:
 					cmd_msg.ret_val = -EINVAL;
 					goto registerEnd;
 				}
-				else if (!get_file_rcu_many(file, 1)) {
-					CAM_ERR(CAM_RPMSG, "get_file_rcu_many 0");
+				else if (!cam_atomic_add_unless(file)) {
+					CAM_ERR(CAM_RPMSG, "cam_atomic_add_unless returns 0");
 					goto loop;
 				}
 			}
@@ -898,7 +896,8 @@ send_ack:
 				break;
 			} else {
 				old_fd = map_cmd.fd;
-				map_cmd.fd = dma_buf_fd((struct dma_buf *)(file->private_data), O_CLOEXEC);
+				map_cmd.fd = dma_buf_fd((struct dma_buf *)(file->private_data),
+						O_CLOEXEC);
 				if (map_cmd.fd < 0) {
 					CAM_ERR(CAM_RPMSG, "get fd fail, *fd=%d", map_cmd.fd);
 					break;
@@ -909,7 +908,8 @@ send_ack:
 			rc = cam_mem_get_io_buf(
 				map_cmd.out.buf_handle,
 				jpeg_private.jpeg_iommu_hdl,
-				(dma_addr_t *)&cmd_msg.buf_info.iova, (size_t *)&cmd_msg.buf_info.size, NULL);
+				(dma_addr_t *)&cmd_msg.buf_info.iova,
+				(size_t *)&cmd_msg.buf_info.size, NULL);
 			cmd_msg.cmd_msg_type = CAM_DSP2CPU_REGISTER_BUFFER;
 			cmd_msg.buf_info.buf_handle = map_cmd.out.buf_handle;
 			cmd_msg.buf_info.fd = old_fd;
@@ -918,7 +918,7 @@ send_ack:
 				cmd_msg.buf_info.fd, cmd_msg.buf_info.iova, cmd_msg.buf_info.size,
 				cmd_msg.buf_info.ipa_addr, cmd_msg.buf_info.buf_handle);
 			CAM_DBG(CAM_RPMSG, "closing dmabuf fd %d", map_cmd.fd);
-			__close_fd(current->files, map_cmd.fd);
+			cam_close_fd(current->files, map_cmd.fd);
 registerEnd:
 			rc = cam_jpeg_rpmsg_send(&cmd_msg);
 			break;
@@ -929,7 +929,8 @@ registerEnd:
 			rc = cam_mem_mgr_release(&release_cmd);
 			mutex_unlock(&jpeg_private.jpeg_mutex);
 			if (rc) {
-				CAM_ERR(CAM_RPMSG, "Failed to release buffer for handle %d", rsp->buf_info.buf_handle);
+				CAM_ERR(CAM_RPMSG, "Failed to release buffer for handle %d",
+						rsp->buf_info.buf_handle);
 				cmd_msg.cmd_msg_type = rsp->type;
 				cmd_msg.ret_val = rc;
 			} else {
