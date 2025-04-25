@@ -2558,6 +2558,7 @@ struct sock  *__sock_hash_lookup_elem(struct bpf_map *map, void *key)
 }
 
 const struct bpf_map_ops sock_map_ops = {
+	.map_meta_equal = bpf_map_meta_equal,
 	.map_alloc = sock_map_alloc,
 	.map_free = sock_map_free,
 	.map_lookup_elem = sock_map_lookup,
@@ -2569,6 +2570,7 @@ const struct bpf_map_ops sock_map_ops = {
 };
 
 const struct bpf_map_ops sock_hash_ops = {
+	.map_meta_equal = bpf_map_meta_equal,
 	.map_alloc = sock_hash_alloc,
 	.map_free = sock_hash_free,
 	.map_lookup_elem = sock_map_lookup,

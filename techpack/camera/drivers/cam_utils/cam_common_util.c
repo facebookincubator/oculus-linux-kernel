@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/slab.h>
+#include <linux/mm.h>
 
 #include "cam_common_util.h"
 #include "cam_debug_util.h"
@@ -48,3 +50,36 @@ uint32_t cam_common_util_remove_duplicate_arr(int32_t *arr, uint32_t num)
 
 	return wr_idx;
 }
+
+int cam_common_mem_kdup(void **dst,
+	void *src, size_t size)
+{
+	gfp_t flag = GFP_KERNEL;
+
+	if (!src || !dst || !size) {
+		CAM_ERR(CAM_UTIL, "Invalid params src: %pK dst: %pK size: %u",
+			src, dst, size);
+		return -EINVAL;
+	}
+
+	if (!in_task())
+		flag = GFP_ATOMIC;
+
+	*dst = kvzalloc(size, flag);
+	if (!*dst) {
+		CAM_ERR(CAM_UTIL, "Failed to allocate memory with size: %u", size);
+		return -ENOMEM;
+	}
+
+	memcpy(*dst, src, size);
+	CAM_DBG(CAM_UTIL, "Allocate and copy memory with size: %u", size);
+
+	return 0;
+}
+EXPORT_SYMBOL(cam_common_mem_kdup);
+
+void cam_common_mem_free(void *memory)
+{
+	kvfree(memory);
+}
+EXPORT_SYMBOL(cam_common_mem_free);

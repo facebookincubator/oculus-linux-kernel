@@ -27,12 +27,14 @@
 #include <wlan_objmgr_pdev_obj.h>
 #include <target_if.h>
 #include <target_if_reg.h>
+#include <target_type.h>
 #include <init_event_handler.h>
 #include <service_ready_util.h>
 #include <service_ready_param.h>
 #include <init_cmd_api.h>
 #include <cdp_txrx_cmn.h>
 #include <wlan_reg_ucfg_api.h>
+#include <pld_common.h>
 
 static void init_deinit_set_send_init_cmd(struct wlan_objmgr_psoc *psoc,
 					  struct target_psoc_info *tgt_hdl)
@@ -497,6 +499,124 @@ static int init_deinit_service_available_handler(ol_scn_t scn_handle,
 	return 0;
 }
 
+static void init_reduce_ldo2_vref(struct wlan_objmgr_psoc *psoc)
+{
+#define WCSS_PHYA_IRON2G_RFA_RFA_SHD_OTP_RFA_SHD_OTP_5	0x5D4414
+#define WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2		0x5D4488
+#define WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1		0x5D44AC
+
+#define LDO_REDUCE_VAL					(4)
+
+	int ret;
+	u32 val1, val2;
+	qdf_device_t qdf_dev = wlan_psoc_get_qdf_dev(psoc);
+	void *plat_priv = qdf_dev->dev;
+
+	/* Read Vref = WCSS_PHYA_IRON2G_RFA_RFA_SHD_OTP_RFA_SHD_OTP_5,
+	 * offset 0x5D4414 [23:20]
+	 */
+	ret = pld_athdiag_read(plat_priv,
+			       WCSS_PHYA_IRON2G_RFA_RFA_SHD_OTP_RFA_SHD_OTP_5,
+			       0xa, 4, (u8 *)&val1);
+	if (ret) {
+		target_if_err("Fail to read register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_SHD_OTP_RFA_SHD_OTP_5,
+			      ret);
+		return;
+	}
+
+	target_if_info("Read register offset 0x%x, val = 0x%x\n",
+		       WCSS_PHYA_IRON2G_RFA_RFA_SHD_OTP_RFA_SHD_OTP_5, val1);
+
+	/* Set WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2 | 0x5D4488 [24] = 1 */
+	ret = pld_athdiag_read(plat_priv,
+			       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2,
+			       0xa, 4, (u8 *)&val2);
+	if (ret) {
+		target_if_err("Fail to read register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2, ret);
+		return;
+	}
+
+	target_if_info("Read register offset 0x%x, val = 0x%x\n",
+		       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2, val2);
+
+	val2 |= BIT(24);
+
+	ret = pld_athdiag_write(plat_priv,
+				WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2, 0xa, 4,
+				(u8 *)&val2);
+	if (ret) {
+		target_if_err("Fail to write register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2, ret);
+		return;
+	}
+
+	target_if_info("Write val 0x%x to register offset 0x%x\n", val2,
+		       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2);
+
+	/* Set
+	 * WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1 | 0x5D44AC [11:8] = Vref - 2
+	 * (or if Vref < 2 then set to 0)
+	 */
+	ret = pld_athdiag_read(plat_priv,
+			       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1,
+			       0xa, 4, (u8 *)&val2);
+	if (ret) {
+		target_if_err("Fail to read register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1, ret);
+		return;
+	}
+
+	target_if_info("Read register offset 0x%x, val = 0x%x\n",
+		       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1, val2);
+
+	val1 >>= 20;
+	val1 &= 0x0000000F;
+	if (val1 > LDO_REDUCE_VAL)
+		val1 -= LDO_REDUCE_VAL;
+	else
+		val1 = 0;
+
+	val2 &= ~0x00000F00;
+	val2 |= (val1 << 8);
+
+	ret = pld_athdiag_write(plat_priv,
+				WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1,
+				0xa, 4, (u8 *)&val2);
+	if (ret) {
+		target_if_err("Fail to write register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1, ret);
+		return;
+	}
+
+	target_if_info("Write val 0x%x (by dec %d) to reg offset 0x%x\n", val2,
+		       LDO_REDUCE_VAL,
+		       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1);
+
+	/* Read back reg value to confirm */
+	ret = pld_athdiag_read(plat_priv,
+			       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2,
+			       0xa, 4, (u8 *)&val1);
+	if (ret) {
+		target_if_err("Fail to read register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2, ret);
+		return;
+	}
+	ret = pld_athdiag_read(plat_priv,
+			       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1,
+			       0xa, 4, (u8 *)&val2);
+	if (ret) {
+		target_if_err("Fail to read register offset 0x%x, err = %d\n",
+			      WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1, ret);
+		return;
+	}
+	target_if_info("Read reg val [0x%x][0x%x] from register offset [0x%x][0x%x]\n",
+		       val1, val2,
+		       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_OV_2,
+		       WCSS_PHYA_IRON2G_RFA_RFA_OTP_OTP_LDO_1);
+}
+
 /* MAC address fourth byte index */
 #define MAC_BYTE_4 4
 
@@ -697,6 +817,11 @@ out:
 	tgt_hdl->info.wmi_ready = TRUE;
 exit:
 	init_deinit_wakeup_host_wait(psoc, tgt_hdl);
+
+	if (tgt_hdl->info.target_type == TARGET_TYPE_QCA6390) {
+		target_if_info("Applying QCA639x workaround");
+		init_reduce_ldo2_vref(psoc);
+	}
 
 	return 0;
 }

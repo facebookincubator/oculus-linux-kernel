@@ -5,6 +5,7 @@
 #include <linux/gpio.h>
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
+#include <linux/uaccess.h>
 
 #include "fwupdate_debug.h"
 #include "fwupdate_operations.h"
@@ -71,7 +72,6 @@ static ssize_t swd_debug_erase_app_write(struct file *fp,
 {
 	int status = 0;
 	int index = 0;
-	static const int reset_gpio_time_ms = 5;
 	struct device *dev = fp->private_data;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	struct swd_mcu_data *childdata;
@@ -95,7 +95,7 @@ static ssize_t swd_debug_erase_app_write(struct file *fp,
 
 	if (gpio_is_valid(devdata->gpio_reset)) {
 		gpio_set_value(devdata->gpio_reset, 1);
-		msleep(reset_gpio_time_ms);
+		msleep(DEFAULT_MCU_RESET_MS);
 	}
 
 	swd_init(dev);
@@ -134,7 +134,6 @@ static ssize_t swd_debug_erase_chip_write(struct file *fp,
 					  size_t count, loff_t *position)
 {
 	int status = 0;
-	static const int reset_gpio_time_ms = 5;
 	struct device *dev = fp->private_data;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
@@ -155,9 +154,15 @@ static ssize_t swd_debug_erase_chip_write(struct file *fp,
 		goto exit_debug_erase_chip;
 	}
 
+	if (!devdata->erase_all) {
+		dev_err(dev, "erase_all is not set!");
+		status = -EOPNOTSUPP;
+		goto exit_debug_erase_chip;
+	}
+
 	if (gpio_is_valid(devdata->gpio_reset)) {
 		gpio_set_value(devdata->gpio_reset, 1);
-		msleep(reset_gpio_time_ms);
+		msleep(DEFAULT_MCU_RESET_MS);
 	}
 
 	swd_init(dev);
@@ -179,7 +184,6 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 					 size_t count, loff_t *position)
 {
 	int status = 0;
-	const int kMcuResetMs = 5;
 	struct device *dev = fp->private_data;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
@@ -208,7 +212,7 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 
 	if (gpio_is_valid(devdata->gpio_reset)) {
 		gpio_direction_output(devdata->gpio_reset, 1);
-		msleep(kMcuResetMs);
+		msleep(DEFAULT_MCU_RESET_MS);
 	}
 
 	swd_init(dev);
@@ -226,6 +230,126 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 		gpio_set_value(devdata->gpio_reset, 0);
 
 	dev_info(dev, "Manual app update complete");
+
+exit_debug_write_swd_init:
+	swd_deinit(dev);
+
+exit_debug_write:
+	fwupdate_release_all_firmware(dev);
+	mutex_unlock(&devdata->state_mutex);
+	return status ? status : count;
+}
+
+static int swd_debug_flash_application(struct device *dev)
+{
+	int index;
+	int status = 0;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct swd_mcu_data *childdata;
+	const bool kForceBootloaderUpdate = true;
+	const bool kForceEraseAll = true;
+
+	if (devdata->num_children == 0) {
+		status = fwupdate_update_single_app(
+				dev, &devdata->mcu_data, kForceEraseAll,
+				kForceBootloaderUpdate);
+		if (status)
+			return status;
+	} else {
+		for (index = 0; index < devdata->num_children; index++) {
+			childdata = &devdata->child_mcu_data[index];
+			status = fwupdate_update_single_app(
+				dev, childdata, kForceEraseAll,
+				kForceBootloaderUpdate);
+			if (status)
+				return status;
+		}
+	}
+
+	return 0;
+}
+
+static ssize_t swd_debug_force_write_all_write(struct file *fp,
+					 const char __user *user_buffer,
+					 size_t count, loff_t *position)
+{
+	int status = 0;
+	struct device *dev = fp->private_data;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	status = fwupdate_check_swd_ops(dev);
+	if (status) {
+		dev_err(dev, "Invalid SWD Ops");
+		return status;
+	}
+
+	if (!mutex_trylock(&devdata->state_mutex)) {
+		dev_err(dev, "Failed to get state mutex");
+		return -EBUSY;
+	}
+
+	if (devdata->fw_update_state == FW_UPDATE_STATE_WRITING_TO_HW) {
+		dev_err(dev, "Update in progress, skipping");
+		status = -EBUSY;
+		goto exit_debug_write;
+	}
+
+	dev_info(dev, "Retrieving firmware images");
+	status = fwupdate_get_firmware_images(dev, devdata);
+	if (status) {
+		dev_err(dev, "Invalid firmware image");
+		goto exit_debug_write;
+	}
+
+	if (devdata->swd_core) {
+		status = regulator_enable(devdata->swd_core);
+		if (status) {
+			dev_err(dev, "Regulator failed to enable");
+			goto exit_debug_write_swd_init;
+		}
+	}
+
+	if (gpio_is_valid(devdata->gpio_reset)) {
+		gpio_direction_output(devdata->gpio_reset, 0);
+		msleep(DEFAULT_MCU_RESET_MS);
+	}
+
+	if (gpio_is_valid(devdata->gpio_reset)) {
+		gpio_direction_output(devdata->gpio_reset, 1);
+		msleep(DEFAULT_MCU_RESET_MS);
+	}
+
+	swd_init(dev);
+	swd_halt(dev);
+
+	dev_info(dev, "Preparing to flash MCU application");
+	if (fwupdate_update_prepare(dev)) {
+		dev_err(dev, "Failed app prepare");
+		goto exit_debug_write_swd_init;
+	}
+
+	// Intentionally ignore the device config for erase_all
+	if (devdata->mcu_data.swd_ops.target_chip_erase) {
+		dev_warn(dev, "Performing full chip erase!");
+		status = devdata->mcu_data.swd_ops.target_chip_erase(dev);
+	}
+
+	// Log but ignore failure because at this point the chip is wiped. We might
+	// still be able to flash the application. If not, the application write will
+	// also fail.
+	if (status)
+		dev_err(dev, "target_chip_erase failed");
+
+	// We have intentionally erased the chip, so we need to update all
+	dev_info(dev, "Flashing MCU applications");
+	status = swd_debug_flash_application(dev);
+	if (status)
+		goto exit_debug_write_swd_init;
+
+	if (gpio_is_valid(devdata->gpio_reset))
+		gpio_set_value(devdata->gpio_reset, 0);
+
+	dev_info(dev, "Forced MCU update complete");
 
 exit_debug_write_swd_init:
 	swd_deinit(dev);
@@ -258,6 +382,12 @@ static const struct file_operations swd_debug_write_app_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
 	.write = swd_debug_write_app_write,
+};
+
+static const struct file_operations swd_debug_force_write_all_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = swd_debug_force_write_all_write,
 };
 
 int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
@@ -312,6 +442,13 @@ int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
 
 	entry = debugfs_create_file("write_app", 0644, devdata->debug_entry, dev,
 			    &swd_debug_write_app_fops);
+	if (!entry) {
+		status = -ENOMEM;
+		goto exit_error;
+	}
+
+	entry = debugfs_create_file("force_write_all", 0644, devdata->debug_entry, dev,
+			    &swd_debug_force_write_all_fops);
 	if (!entry) {
 		status = -ENOMEM;
 		goto exit_error;

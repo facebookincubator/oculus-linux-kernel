@@ -213,7 +213,15 @@ static int xsk_map_delete_elem(struct bpf_map *map, void *key)
 	return 0;
 }
 
+static bool xsk_map_meta_equal(const struct bpf_map *meta0,
+			       const struct bpf_map *meta1)
+{
+	return meta0->max_entries == meta1->max_entries &&
+		bpf_map_meta_equal(meta0, meta1);
+}
+
 const struct bpf_map_ops xsk_map_ops = {
+	.map_meta_equal = xsk_map_meta_equal,
 	.map_alloc = xsk_map_alloc,
 	.map_free = xsk_map_free,
 	.map_get_next_key = xsk_map_get_next_key,

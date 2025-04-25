@@ -441,7 +441,7 @@ typedef struct sDot11fFfTSInfo {
 	uint32_t          unused:15;
 } tDot11fFfTSInfo;
 
-#define DOT11F_FF_TSINFO_LEN (3)
+#define DOT11F_FF_TSINFO_LEN (4)
 
 void dot11f_unpack_ff_ts_info(tpAniSirGlobal, uint8_t *, tDot11fFfTSInfo *);
 
