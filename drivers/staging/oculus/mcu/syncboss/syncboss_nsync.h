@@ -31,14 +31,43 @@
 /*
  * Number of consecutive nsync packets that are allowed to exceed the
  * NSYNC_MAX_DELTA_ERROR_US constraint before an error is logged and
- * communicated to userspace. This is approx. 1 second's worth.
+ * communicated to userspace. This is approx SYNC_ERROR_WINDOW seconds worth.
+ *
+ * The longer this error window, the more clock drift we might accumulate, but
+ * we've seen system load impact sync jitter for a period of at least 1 second.
+ * Instead of always allowing more sync jitter (opening up MAX_DELTA_ERROR_US),
+ * we're going to allow more time for sync to occur at the potential cost of
+ * drift. Requiring the whole window to sync should be rare.
  */
-#define VSYNC_MAX_CONSECUTIVE_ERRORS 90
-#define NSYNC_MAX_CONSECUTIVE_ERRORS 30
+#define SYNC_ERROR_WINDOW 3
+#define VSYNC_NOMINAL_RATE 90
+#define VSYNC_MAX_CONSECUTIVE_ERRORS (SYNC_ERROR_WINDOW * VSYNC_NOMINAL_RATE)
+#define NSYNC_NOMINAL_RATE 30
+#define NSYNC_MAX_CONSECUTIVE_ERRORS (SYNC_ERROR_WINDOW * NSYNC_NOMINAL_RATE)
+#define SYNC_MAX_NOMINAL_RATE \
+	((VSYNC_NOMINAL_RATE > NSYNC_NOMINAL_RATE) ? VSYNC_NOMINAL_RATE : NSYNC_NOMINAL_RATE)
 
 /* This needs to be odd for the way OFFSET is used to be valid */
 #define NSYNC_HISTOGRAM_SIZE 255
 #define NSYNC_HISTOGRAM_OFFSET (NSYNC_HISTOGRAM_SIZE / 2)
+
+/* Number of elements to store of sync history. Must be >= 3. */
+#define SYNC_HIST_LEN 3
+/* index's range is [0, SYNC_HIST_LEN) */
+#define SYNC_HERE(dev) ((dev)->index)
+#define SYNC_PREV(dev) (((dev)->index + (SYNC_HIST_LEN - 1)) % SYNC_HIST_LEN)
+#define SYNC_PPREV(dev) (((dev)->index + (SYNC_HIST_LEN - 2)) % SYNC_HIST_LEN)
+
+struct nsync_debug_state {
+	int64_t ap_ts_prev_us;
+	int64_t ap_ts_now_us;
+	int64_t mcu_ts_prev_us;
+	int64_t mcu_ts_now_us;
+	unsigned int errors;
+	unsigned int long_syncs;
+	enum syncboss_time_offset_status status;
+	uint32_t seq;
+};
 
 struct nsync_dev_data {
 	/* Pointer to this device's on device struct, for convenience. */
@@ -58,13 +87,15 @@ struct nsync_dev_data {
 	/* See comments for V/NSYNC_MAX_CONSECUTIVE_ERRORS */
 	unsigned int max_consecutive_errors;
 
-	/* Previous AP timestamp (us) */
-	int64_t ap_ts_prev_us;
-	/* Previous MCU timestamp (us) */
-	int64_t mcu_ts_prev_us;
-	/* Current AP timestamp (us) from most recent nsync IRQ */
-	int64_t ap_ts_now_us;
-	/* Current MCU timestamp is local-only; cached to prev after use */
+	/*
+	 * Timestamp histories are >= 3 elements deep so we can account for AP-side
+	 * jitter in specific cases by examining 2 deltas worth of timestamps.
+	 */
+	unsigned int index;
+	/* AP timestamp history (us); index is newest */
+	int64_t ap_ts_us[SYNC_HIST_LEN];
+	/* MCU timestamp history (us); index is newest */
+	int64_t mcu_ts_us[SYNC_HIST_LEN];
 
 	/*
 	 * Consecutive timestamp pairs that do not seem to strongly correlate or
@@ -100,6 +131,8 @@ struct nsync_dev_data {
 		 * a time sync.
 		 */
 		unsigned int sync_max;
+		/* Number of times we got sync over a 2-delta window instead of 1 */
+		unsigned int long_syncs;
 		/*
 		 * Histogram is in units of (delta / 4) us, so [-3, 3]us == 0,
 		 * [4, 7]us == 1, etc.
@@ -110,6 +143,13 @@ struct nsync_dev_data {
 		 * index 254 -> >= 508us
 		 */
 		uint32_t histogram[NSYNC_HISTOGRAM_SIZE];
+		/*
+		 * Rotating buffer of algorithm input/state data
+		 * Use *_NOMINAL_RATE as the max index
+		 */
+		struct nsync_debug_state states[SYNC_MAX_NOMINAL_RATE];
+		unsigned int states_index;
+		unsigned int states_max;
 	} debug;
 };
 

@@ -468,6 +468,7 @@ static void msm_restart_prepare(const char *cmd)
 {
 	bool need_warm_reset = false;
 	bool in_thermal_restart;
+	const char *const thermal_shutdown_reason = "shutdown,thermal";
 	/* Write download mode flags if we're panic'ing
 	 * Write download mode flags if restart_mode says so
 	 * Kill download mode if master-kill switch is set
@@ -491,7 +492,7 @@ static void msm_restart_prepare(const char *cmd)
 		pr_info("Forcing a warm reset of the system\n");
 
 	in_thermal_restart = (cmd != NULL && cmd[0] != '\0') &&
-			!strcmp(cmd, "shutdown,thermal");
+			!strncmp(cmd, thermal_shutdown_reason, strlen(thermal_shutdown_reason));
 
 #ifdef CONFIG_PSTORE_RAM
 	if (in_panic || in_thermal_restart)

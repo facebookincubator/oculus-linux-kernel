@@ -364,6 +364,10 @@ static void inode_free_security(struct inode *inode)
 	 * concurrent list_add(), but for better safety against future changes
 	 * in the code, we use list_empty_careful() here.
 	 */
+	if (WARN(!isec, "security structure nil"))
+		return;
+	if (WARN(!isec->list.next || !isec->list.prev, "list not init'ed"))
+		goto out;
 	if (!list_empty_careful(&isec->list)) {
 		spin_lock(&sbsec->isec_lock);
 		list_del_init(&isec->list);
@@ -379,6 +383,7 @@ static void inode_free_security(struct inode *inode)
 	 * leave the current inode->i_security pointer intact.
 	 * The inode will be freed after the RCU grace period too.
 	 */
+out:
 	call_rcu(&isec->rcu, inode_free_rcu);
 }
 

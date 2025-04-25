@@ -250,6 +250,9 @@ struct syncboss_dev_data {
 	/* CPU cores used to schedule SPI transactions */
 	struct cpumask cpu_affinity;
 
+	/* Event data sent to clients containing ready IRQ affinity */
+	struct syncboss_state_data event_data;
+
 	/* Various statistics */
 	struct syncboss_stats stats;
 

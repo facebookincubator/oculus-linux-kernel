@@ -130,7 +130,6 @@ static int syncboss_inc_streaming_client_count_locked(struct syncboss_dev_data *
 	BUG_ON(devdata->streaming_client_count < 0);
 
 	if (devdata->streaming_client_count == 0) {
-		struct syncboss_state_data event_data;
 		int irq_cpu;
 
 		/*
@@ -138,15 +137,15 @@ static int syncboss_inc_streaming_client_count_locked(struct syncboss_dev_data *
 		 * Pass this with SYNCBOSS_EVENT_STREAMING_STARTING to clients.
 		 */
 		irq_cpu = cpumask_first(&devdata->cpu_affinity);
-		cpumask_clear(&event_data.irq_affinity);
-		cpumask_set_cpu(irq_cpu, &event_data.irq_affinity);
+		cpumask_clear(&devdata->event_data.irq_affinity);
+		cpumask_set_cpu(irq_cpu, &devdata->event_data.irq_affinity);
 		if (irq_cpu >= nr_cpu_ids ||
-		    irq_set_affinity_and_hint(devdata->ready_irq, &event_data.irq_affinity)) {
+		    irq_set_affinity_and_hint(devdata->ready_irq, &devdata->event_data.irq_affinity)) {
 			dev_err(&devdata->spi->dev, "failed to set ready IRQ affinity");
 			return -EINVAL;
 		}
 
-		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTING, &event_data);
+		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTING, &devdata->event_data);
 		syncboss_inc_mcu_client_count_locked(devdata);
 
 		dev_dbg(&devdata->spi->dev, "starting streaming thread");
