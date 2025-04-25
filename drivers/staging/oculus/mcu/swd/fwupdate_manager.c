@@ -20,8 +20,6 @@
 #define FW_UPDATE_STATE_WRITING_STR   "writing"
 #define FW_UPDATE_STATE_ERROR_STR     "error"
 
-#define RESET_GPIO_TIME_MS 5
-
 /* SWD Operations for each supported architecture */
 static struct {
 	const char *flavor;
@@ -359,7 +357,7 @@ static int fwupdate_get_num_flash_pages_to_erase(
 	return 0;
 }
 
-static int fwupdate_update_single_app(
+int fwupdate_update_single_app(
 		struct device *dev, struct swd_mcu_data *mcudata, bool erase_all,
 		bool force_bootloader_update)
 {
@@ -513,7 +511,7 @@ static int fwupdate_update_firmware(struct device *dev)
 
 	if (gpio_is_valid(devdata->gpio_reset)) {
 		gpio_direction_output(devdata->gpio_reset, 1);
-		msleep(RESET_GPIO_TIME_MS);
+		msleep(DEFAULT_MCU_RESET_MS);
 	}
 
 	swd_init(dev);
@@ -552,7 +550,7 @@ static int fwupdate_update_firmware(struct device *dev)
 		 * Delay since we don't know when the driver that owns this
 		 * MCU will want to wake it again.
 		 */
-		msleep(RESET_GPIO_TIME_MS);
+		msleep(DEFAULT_MCU_RESET_MS);
 	}
 
 	dev_info(dev, "Done updating firmware.");

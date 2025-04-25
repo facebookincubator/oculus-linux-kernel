@@ -16693,7 +16693,7 @@ uint32_t dot11f_get_packed_del_ts_size(tpAniSirGlobal pCtx,
 	tDot11fDelTS *pFrm, uint32_t *pnNeeded)
 {
 	uint32_t status = 0;
-	*pnNeeded = 7;
+	*pnNeeded = 8;
 	status = get_packed_size_core(pCtx, (uint8_t *)pFrm, pnNeeded,
 				      IES_DelTS);
 	return status;

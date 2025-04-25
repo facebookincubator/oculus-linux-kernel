@@ -21187,12 +21187,12 @@ void wl_cfg80211_enable_trace(bool set, u32 level)
 		wl_dbg_level |= (WL_DBG_LEVEL & level);
 }
 
-uint32 wl_cfg80211_get_print_level()
+uint32 wl_cfg80211_get_print_level(void)
 {
 	return wl_dbg_level;
 }
 
-uint32 wl_cfg80211_get_log_level()
+uint32 wl_cfg80211_get_log_level(void)
 {
 	return wl_log_level;
 }

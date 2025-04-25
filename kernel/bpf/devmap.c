@@ -489,6 +489,7 @@ static int dev_map_update_elem(struct bpf_map *map, void *key, void *value,
 }
 
 const struct bpf_map_ops dev_map_ops = {
+	.map_meta_equal = bpf_map_meta_equal,
 	.map_alloc = dev_map_alloc,
 	.map_free = dev_map_free,
 	.map_get_next_key = dev_map_get_next_key,
